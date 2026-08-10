@@ -374,17 +374,21 @@ body {
 .panel-projects {
 	flex-shrink: 0;
 	max-height: 45%;
-	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
 	padding: 6px 6px 8px;
 	border-bottom: 2px solid var(--border);
 }
 
-/* 最近项目标题固定：项目多时内部滚动，标题不跟着滚走 */
+/* 最近项目标题占位不悬浮：只有项目列表内部滚动，滚动条不会出现在标题右侧 */
 .panel-projects .panel-section-title {
-	position: sticky;
-	top: 0;
-	z-index: 1;
-	background: var(--bg-elev);
+	flex-shrink: 0;
+}
+
+.projects-scroll {
+	flex: 1;
+	overflow-y: auto;
+	min-height: 0;
 }
 
 .panel-section-title {

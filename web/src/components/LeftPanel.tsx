@@ -46,29 +46,31 @@ export function LeftPanel({ chat, send }: LeftPanelProps) {
 			{projects.length > 0 && (
 				<div className="panel-projects">
 					<div className="panel-section-title">{t("recentProjects")}</div>
-					{projects.map((p) => {
-						const active = currentCwd === p.path;
-						return (
-							<button
-								type="button"
-								key={p.path}
-								className={`project-item ${active ? "active" : ""}`}
-								title={p.path}
-								onClick={() => {
-									if (!active) send({ type: "set_cwd", path: p.path });
-								}}
-							>
-								<FiFolder className="project-icon" />
-								<span className="project-info">
-									<span className="project-name">{projectName(p.path)}</span>
-									<span className="project-path">{p.path}</span>
-								</span>
-								<span className="project-time">
-									{formatModified(p.lastUsed)}
-								</span>
-							</button>
-						);
-					})}
+					<div className="projects-scroll">
+						{projects.map((p) => {
+							const active = currentCwd === p.path;
+							return (
+								<button
+									type="button"
+									key={p.path}
+									className={`project-item ${active ? "active" : ""}`}
+									title={p.path}
+									onClick={() => {
+										if (!active) send({ type: "set_cwd", path: p.path });
+									}}
+								>
+									<FiFolder className="project-icon" />
+									<span className="project-info">
+										<span className="project-name">{projectName(p.path)}</span>
+										<span className="project-path">{p.path}</span>
+									</span>
+									<span className="project-time">
+										{formatModified(p.lastUsed)}
+									</span>
+								</button>
+							);
+						})}
+					</div>
 				</div>
 			)}
 			{chat.conversations.length > 0 && (
