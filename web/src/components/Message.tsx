@@ -76,6 +76,11 @@ interface MessageProps {
 	onEdit?: (messageId: string, text: string) => void;
 	/** When set, shows a collapse button (message was expanded from the collapsed view). */
 	onCollapse?: (messageId: string) => void;
+
+	/** Question-nav tag (user questions only): ordinal, active highlight, jump. */
+	qnIndex?: number;
+	qnActive?: boolean;
+	onJump?: (messageId: string) => void;
 }
 
 export const Message = memo(function Message({
@@ -87,6 +92,10 @@ export const Message = memo(function Message({
 	isLast,
 	onEdit,
 	onCollapse,
+
+	qnIndex,
+	qnActive,
+	onJump,
 }: MessageProps) {
 	const t = useT();
 	// Inline edit-and-re-ask editor (user messages only).
@@ -99,6 +108,12 @@ export const Message = memo(function Message({
 	// the user message text.
 	const isFileAttachment =
 		message.role === "custom" && message.customType === "file";
+	// Question text for the per-question tag's tooltip.
+	const questionText = message.content
+		.map((b) => asText(b)?.text ?? "")
+		.filter(Boolean)
+		.join(" ")
+		.trim();
 	// Streaming bubble with no content yet (first token not arrived) — show a
 	// visible “thinking…” placeholder instead of an invisible empty bubble.
 	const isEmptyStreaming = streaming && isLast && message.content.length === 0;
@@ -147,6 +162,18 @@ export const Message = memo(function Message({
 						onClick={() => onCollapse(message.id)}
 					>
 						<FiChevronUp /> {t("collapseMsg")}
+					</button>
+				)}
+				{qnIndex !== undefined && onJump && (
+					<button
+						type="button"
+						className={`qn-tag ${qnActive ? "active" : ""}`}
+						title={`${qnIndex + 1}. ${questionText}`}
+						aria-label={`${qnIndex + 1}. ${questionText}`}
+						onClick={() => onJump(message.id)}
+					>
+						<span className="qn-tag-bar" />
+						<span className="qn-tag-idx">{qnIndex + 1}</span>
 					</button>
 				)}
 			</div>

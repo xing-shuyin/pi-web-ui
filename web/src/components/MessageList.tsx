@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { flushSync } from "react-dom";
+
+import type { CSSProperties } from "react";
 import { FiArrowDown } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiState } from "../types";
 import { Message, asText } from "./Message";
@@ -100,6 +101,13 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 		}
 		return qs;
 	}, [state.messages]);
+
+	/** Question ordinal by message id — each user question renders its own tag. */
+	const qnIndex = useMemo(() => {
+		const m = new Map<string, number>();
+		questions.forEach((q, i) => m.set(q.id, i));
+		return m;
+	}, [questions]);
 
 	// -- floating question-nav rail --------------------------------------------
 	/** Index of the question currently on screen (or last jumped to); -1 = none. */
@@ -291,10 +299,14 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 							<CollapsedMessage key={m.id} message={m} onExpand={expand} />
 						);
 					}
+					const qIdx = m.role === "user" ? qnIndex.get(m.id) : undefined;
 					return (
 						<Message
 							key={m.id}
 							message={m}
+							qnIndex={qIdx}
+							qnActive={qIdx !== undefined ? qIdx === activeIdx : undefined}
+							onJump={jumpTo}
 							toolResults={toolResults}
 							liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
 							toolStatuses={toolStatuses}

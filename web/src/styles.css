@@ -2841,9 +2841,9 @@ body {
 
 /* Question text chip: hidden by default, fades in left of its tick on hover.
    visibility gates hit-testing (hidden = invisible AND unclickable, so the
-   chips never block the conversation underneath). When the mouse leaves the
-   rail, chips linger 0.5s still visible+clickable, so the mouse can travel
-   onto a chip without them disappearing. */
+   chips never block the conversation underneath). The hover bridge keeps
+   :hover alive while the mouse travels onto a chip, so chips hide instantly
+   when the pointer leaves the rail — no lingering delay. */
 .qn-bar-text {
 	position: absolute;
 	right: calc(100% + 10px);
@@ -2872,8 +2872,7 @@ body {
 	opacity: 1;
 }
 .qn-rail:not(:hover) .qn-bar-text {
-	/* linger: stay visible + clickable for 0.5s after the hover ends */
-	transition: opacity 0.15s ease 0.5s, visibility 0s 0.5s;
+	transition: opacity 0.15s ease, visibility 0s;
 }
 .qn-bar:hover .qn-bar-text {
 	color: var(--text);
@@ -2916,8 +2915,10 @@ body {
 	opacity: 1;
 }
 .qn-rail.many:not(:hover) .qn-list {
-	/* linger: stay visible + clickable for 0.5s after the hover ends */
-	transition: opacity 0.15s ease 0.5s, visibility 0s 0.5s;
+	/* Hide immediately when the mouse leaves the rail — the hover bridge
+	   (::before, 260px left of the ticks) keeps :hover alive while the mouse
+	   travels onto the list, so no lingering delay is needed. */
+	transition: opacity 0.15s ease, visibility 0s;
 }
 
 .qn-list-item {
@@ -2970,6 +2971,55 @@ body {
 	white-space: nowrap;
 }
 
+/* --------------------------------------------- per-question tags */
+
+/* Every user question also gets a small tag pinned to the right end of its own
+   message header: a 16×3 tick plus the question's ordinal. Always visible, no
+   hover delay — the tick lives inside the question's container, so hovering it
+   is hovering the question itself. The tag of the question currently being
+   read (top of viewport) is highlighted; clicking it flashes that question. */
+.qn-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	align-self: center;
+	margin-left: auto;
+	padding: 3px 8px 3px 7px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--bg);
+	color: var(--text-faint);
+	font-family: var(--mono);
+	font-size: 10px;
+	line-height: 1;
+	cursor: pointer;
+	transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.qn-tag-bar {
+	width: 16px;
+	height: 3px;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.22);
+	transition: background 0.12s;
+}
+.qn-tag:hover {
+	background: var(--bg-elev2);
+	border-color: var(--accent);
+	color: var(--text);
+}
+.qn-tag:hover .qn-tag-bar {
+	background: var(--accent);
+}
+.qn-tag.active {
+	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+	color: var(--accent);
+}
+.qn-tag.active .qn-tag-bar {
+	background: var(--accent);
+	box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
 /* Highlight flash when jumping to a question. */
 @keyframes qn-flash {
 	0% {
@@ -2984,12 +3034,14 @@ body {
 	animation: qn-flash 1.6s ease-out;
 }
 
+
 @media (max-width: 640px) {
 	/* On phones the rail would cover most of the conversation — hide it. */
 	.qn-rail {
 		display: none;
 	}
 }
+
 
 /* ---------------------------------------------------------------- inputbar */
 
