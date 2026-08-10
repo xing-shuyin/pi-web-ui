@@ -91,15 +91,6 @@ export function App() {
 		}
 	}, [chat.notices, sound]);
 
-	// Streaming indicator: swap the tab favicon to a spinner + prefix the
-	// title while the agent is producing output, restore when idle.
-	useEffect(() => {
-		const streaming = chat.state?.isStreaming ?? false;
-		const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-		if (link) link.href = streaming ? "/favicon-streaming.svg" : "/favicon.svg";
-		document.title = streaming ? `… ${t("appName")}` : t("appName");
-	}, [chat.state?.isStreaming, t]);
-
 	const attach = (
 		path: string,
 		name: string,

@@ -31,7 +31,6 @@ const zh = {
 	langEn: "English",
 	githubRepo: "GitHub 仓库（xing-shuyin/pi-web-ui）",
 	copy: "复制",
-	appName: "pi-web-ui — pi 编码智能体",
 
 	/* topbar */
 	viewSwitch: "视图切换",
@@ -342,7 +341,6 @@ const en: Record<keyof typeof zh, string> = {
 	langEn: "English",
 	githubRepo: "GitHub repository (xing-shuyin/pi-web-ui)",
 	copy: "Copy",
-	appName: "pi-web-ui — pi coding agent",
 
 	/* topbar */
 	viewSwitch: "Switch view",
