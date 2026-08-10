@@ -34,6 +34,11 @@ pi 认证/配置/扩展——无需额外安装或配置任何东西。
   右侧 VSCode 风格**标签条**支持多个并发 shell。通过顶栏按钮在对话/终端视图间切换。
 
 ## 快速开始
+## 界面截图
+
+![pi-web-ui 主界面](assets/shot.jpeg)
+
+## 快速开始
 
 需要 Node.js ≥ 22.19（pi SDK 的要求；旧版 Node 加载 SDK 时会报 `Unexpected token 'with'`）
 以及一个配置好的 pi 安装（先运行一次 `pi` 登录）。
