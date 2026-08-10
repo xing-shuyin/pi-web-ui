@@ -122,7 +122,11 @@ export const Message = memo(function Message({
 	};
 
 	return (
-		<div className={`msg msg-${message.role}`} data-role={message.role}>
+		<div
+			className={`msg msg-${message.role}`}
+			data-role={message.role}
+			data-msg-id={message.id}
+		>
 			<div className="msg-meta">
 				<span className="msg-role">
 					{message.role === "custom"

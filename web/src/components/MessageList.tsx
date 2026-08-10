@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { flushSync } from "react-dom";
 import { FiArrowDown } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiState } from "../types";
-import { Message } from "./Message";
+import { Message, asText } from "./Message";
 import { CollapsedMessage } from "./CollapsedMessage";
 import { useT, type Translate } from "../i18n";
 
@@ -82,6 +84,59 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 			? Math.max(0, state.messages.length - KEEP_RECENT)
 			: 0;
 
+	// All user questions of the current conversation — the source for the
+	// floating question-nav rail (memoized on the stable messages array).
+	const questions = useMemo(() => {
+		const qs: { id: string; text: string }[] = [];
+		for (const m of state.messages) {
+			if (m.role !== "user") continue;
+			const text = m.content
+				.map((b) => asText(b)?.text ?? "")
+				.filter(Boolean)
+				.join(" ")
+				.trim();
+			if (!text) continue;
+			qs.push({ id: m.id, text });
+		}
+		return qs;
+	}, [state.messages]);
+
+	// -- floating question-nav rail --------------------------------------------
+	/** Index of the question currently on screen (or last jumped to); -1 = none. */
+	const [activeIdx, setActiveIdx] = useState(-1);
+	const activeIdxRef = useRef(-1);
+	// Scroll handlers read the latest questions without recreating.
+	const questionsRef = useRef(questions);
+	useEffect(() => {
+		questionsRef.current = questions;
+	}, [questions]);
+
+	// Which question is currently on screen (drives the bar highlight).
+	const updateActiveFromScroll = useCallback(() => {
+		const el = scrollRef.current;
+		const qs = questionsRef.current;
+		if (!el || qs.length === 0) return;
+		const containerTop = el.getBoundingClientRect().top;
+		const margin = 140;
+		let best = -1;
+		for (let i = 0; i < qs.length; i++) {
+			const node = el.querySelector<HTMLElement>(`[data-msg-id="${qs[i].id}"]`);
+			if (!node) continue;
+			if (node.getBoundingClientRect().top <= containerTop + margin) best = i;
+			else break;
+		}
+		if (best !== activeIdxRef.current) {
+			activeIdxRef.current = best;
+			setActiveIdx(best);
+		}
+	}, []);
+
+	// Pick the initial active question when the message set changes (also
+	// covers expand/collapse since it re-renders with new DOM).
+	useEffect(() => {
+		updateActiveFromScroll();
+	}, [questions, updateActiveFromScroll]);
+
 	const expand = useCallback((id: string) => {
 		setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 	}, []);
@@ -94,13 +149,46 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 		});
 	}, []);
 
+	/** Scroll the conversation to a question; expand it first if it's collapsed. */
+	const jumpTo = useCallback(
+		(id: string) => {
+			const idx = state.messages.findIndex((m) => m.id === id);
+			if (idx >= 0 && idx < recentStart && !expanded.has(id)) {
+				// Collapsed row → expand synchronously so the full message is
+				// in the DOM (and in its final position) before we scroll.
+				flushSync(() => expand(id));
+			}
+			const qIdx = questionsRef.current.findIndex((q) => q.id === id);
+			activeIdxRef.current = qIdx;
+			setActiveIdx(qIdx);
+			requestAnimationFrame(() => {
+				const el = scrollRef.current?.querySelector<HTMLElement>(
+					`[data-msg-id="${id}"]`,
+				);
+				if (el) {
+					// Clear the flash from any previously jumped-to message, then
+					// restart the highlight animation on the target.
+					scrollRef.current
+						?.querySelectorAll(".msg-flash")
+						.forEach((n) => n.classList.remove("msg-flash"));
+					el.scrollIntoView({ block: "start" });
+					el.classList.remove("msg-flash");
+					void el.offsetWidth; // restart the highlight animation
+					el.classList.add("msg-flash");
+				}
+			});
+		},
+		[state.messages, recentStart, expanded, expand],
+	);
+
 	const onScroll = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
 		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 		stickRef.current = nearBottom;
 		setStickBottom(nearBottom);
-	}, []);
+		updateActiveFromScroll();
+	}, [updateActiveFromScroll]);
 
 	useEffect(() => {
 		const el = scrollRef.current;
@@ -115,6 +203,48 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 		stickRef.current = true;
 		setStickBottom(true);
 	}, []);
+
+	// The rail is a pointer-event target so it can expand on hover; forward
+	// wheel over it (collapsed strip or expanded panel) to the message list.
+	const railRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const rail = railRef.current;
+		const el = scrollRef.current;
+		if (!rail || !el) return;
+		const onWheel = (e: WheelEvent) => {
+			e.preventDefault();
+			// In "many questions" mode the hover panel is a scrollable list —
+			// wheel over it scrolls the list itself (when it overflows),
+			// otherwise it falls through to the message list.
+			const list = rail.querySelector<HTMLElement>(".qn-list");
+			if (list && list.contains(e.target as Node) && list.scrollHeight > list.clientHeight) {
+				list.scrollTop += e.deltaY;
+				return;
+			}
+			el.scrollTop += e.deltaY;
+		};
+		rail.addEventListener("wheel", onWheel, { passive: false });
+		return () => rail.removeEventListener("wheel", onWheel);
+	}, []);
+
+	// Visible height of the scroll area — drives the adaptive row gap so the
+	// centered tick cluster always fits (no top/bottom clipping).
+	const [railH, setRailH] = useState(0);
+	useEffect(() => {
+		const update = () => setRailH(scrollRef.current?.clientHeight ?? 0);
+		update();
+		window.addEventListener("resize", update);
+		return () => window.removeEventListener("resize", update);
+	}, []);
+	const n = questions.length;
+	const railGap = useMemo(() => {
+		if (n === 0) return 27;
+		const h = railH || 600;
+		return Math.max(4, Math.min(27, Math.floor((h - 16) / n) - 3));
+	}, [n, railH]);
+	/** Many questions: per-tick chips would overlap (pitch < ~24px), so the
+	 *  hover panel becomes a scrollable list instead. */
+	const many = railGap < 20;
 
 	return (
 		<div className="messages-wrap">
@@ -201,6 +331,42 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 				>
 					<FiArrowDown /> {t("backToBottom")}
 				</button>
+			)}
+			{questions.length > 0 && (
+				<div
+					className={`qn-rail ${many ? "many" : ""}`}
+					ref={railRef}
+					aria-label={t("questionNavTitle")}
+					style={{ "--rail-gap": `${railGap}px` } as CSSProperties}
+				>
+					{questions.map((q, i) => (
+						<button
+							type="button"
+							key={q.id}
+							className={`qn-bar ${i === activeIdx ? "active" : ""}`}
+							aria-label={`${i + 1}. ${q.text}`}
+							onClick={() => jumpTo(q.id)}
+						>
+							<span className="qn-bar-text">{i + 1}. {q.text}</span>
+						</button>
+					))}
+					{many && (
+						<div className="qn-list">
+							{questions.map((q, i) => (
+								<button
+									type="button"
+									key={q.id}
+									className={`qn-list-item ${i === activeIdx ? "active" : ""}`}
+									aria-label={`${i + 1}. ${q.text}`}
+									onClick={() => jumpTo(q.id)}
+								>
+									<span className="qn-list-idx">{i + 1}</span>
+									<span className="qn-list-text">{q.text}</span>
+								</button>
+							))}
+						</div>
+					)}
+				</div>
 			)}
 		</div>
 	);

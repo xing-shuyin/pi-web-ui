@@ -1898,8 +1898,13 @@ export class ClientSession {
 				await s.sendCustomMessage(aside.message, { deliverAs: "nextTurn" });
 			}
 			if (s.isStreaming) {
-				// Queue for delivery after the current run finishes.
-				await s.prompt(text, { streamingBehavior: "followUp" });
+				// Steer: interrupts the current run — the message is delivered right
+				// after the current assistant turn settles (remaining planned tool
+				// calls are skipped) and the agent immediately responds to it. This
+				// is the pi CLI Enter-during-streaming semantic (docs/usage: Enter
+				// queues a steering message); followUp would wait for the whole run
+				// to finish, which users perceive as ordinary queueing.
+				await s.prompt(text, { streamingBehavior: "steer" });
 			} else {
 				await s.prompt(text);
 			}

@@ -1895,6 +1895,9 @@ body {
 	max-width: 860px;
 	margin: 0 auto;
 	padding: 6px 20px 14px;
+	/* Question-nav jumps land the message just below the top of the list,
+	 * matching the active-bar detection line in MessageList. */
+	scroll-margin-top: 84px;
 }
 
 .msg-meta {
@@ -2767,6 +2770,225 @@ body {
 .scroll-bottom:hover {
 	color: var(--text);
 	border-color: var(--accent);
+}
+
+/* ------------------------------------------- floating question-nav rail */
+
+/* A small strip hugging the message list's scrollbar. Every user question is
+   one row: a 16×3 tick plus its question text in the same container. The
+   text chip is hidden by default and fades in to the left of its tick while
+   the strip is hovered. The whole group of rows stays centered in the strip;
+   the tick of the question being read is highlighted. Clicking a tick or its
+   text chip scrolls to that question.
+   With many questions the JS-driven --rail-gap shrinks so the tick cluster
+   always fits (never clipped), and the .many variant swaps the per-tick
+   chips for a scrollable question-list panel on hover. */
+.qn-rail {
+	position: absolute;
+	top: 10px;
+	bottom: 10px;
+	right: 14px;
+	width: 24px;
+	z-index: 15;
+	border-radius: 12px;
+	background: transparent;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	/* Fixed row spacing — same collapsed and hovered, no expand animation.
+	   JS sets --rail-gap to shrink it when there are many questions. */
+	gap: var(--rail-gap, 27px);
+}
+
+/* Invisible hover bridge: extends the rail's hover zone leftward over the
+   chip area, so the mouse can travel from the ticks onto a question chip
+   without the chips fading out. pointer-events are only enabled while the
+   rail is hovered — otherwise the bridge would block clicks on the
+   conversation underneath. */
+.qn-rail::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: 100%;
+	width: 260px;
+	pointer-events: none;
+}
+.qn-rail:hover::before {
+	pointer-events: auto;
+}
+
+.qn-bar {
+	position: relative;
+	flex-shrink: 0;
+	width: 16px;
+	height: 3px;
+	border: none;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.18);
+	cursor: pointer;
+	padding: 0;
+	transition: background 0.12s;
+}
+.qn-bar:hover {
+	background: rgba(255, 255, 255, 0.38);
+}
+.qn-bar.active {
+	background: var(--accent);
+	box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* Question text chip: hidden by default, fades in left of its tick on hover.
+   visibility gates hit-testing (hidden = invisible AND unclickable, so the
+   chips never block the conversation underneath). When the mouse leaves the
+   rail, chips linger 0.5s still visible+clickable, so the mouse can travel
+   onto a chip without them disappearing. */
+.qn-bar-text {
+	position: absolute;
+	right: calc(100% + 10px);
+	top: 50%;
+	transform: translateY(-50%);
+	/* All question rows share the same width; text is left-aligned. */
+	width: 210px;
+	text-align: left;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 11px;
+	line-height: 1.3;
+	color: var(--text-dim);
+	background: var(--bg-elev2);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 3px 9px;
+	pointer-events: auto;
+	visibility: hidden;
+	opacity: 0;
+	transition: opacity 0.15s ease, visibility 0s;
+}
+.qn-rail:hover .qn-bar-text {
+	visibility: visible;
+	opacity: 1;
+}
+.qn-rail:not(:hover) .qn-bar-text {
+	/* linger: stay visible + clickable for 0.5s after the hover ends */
+	transition: opacity 0.15s ease 0.5s, visibility 0s 0.5s;
+}
+.qn-bar:hover .qn-bar-text {
+	color: var(--text);
+	border-color: var(--accent);
+}
+.qn-bar.active .qn-bar-text {
+	color: var(--text);
+	border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ---- many questions: scrollable list panel replaces the per-tick chips -- */
+
+.qn-rail.many .qn-bar-text {
+	display: none;
+}
+
+.qn-list {
+	position: absolute;
+	right: calc(100% + 10px);
+	top: 0;
+	bottom: 0;
+	width: 230px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	overflow-y: auto;
+	padding: 6px;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+	pointer-events: none;
+	visibility: hidden;
+	opacity: 0;
+	transition: opacity 0.15s ease, visibility 0s;
+}
+.qn-rail.many:hover .qn-list {
+	pointer-events: auto;
+	visibility: visible;
+	opacity: 1;
+}
+.qn-rail.many:not(:hover) .qn-list {
+	/* linger: stay visible + clickable for 0.5s after the hover ends */
+	transition: opacity 0.15s ease 0.5s, visibility 0s 0.5s;
+}
+
+.qn-list-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+	min-height: 26px;
+	padding: 3px 8px;
+	border: none;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 11.5px;
+	line-height: 1.3;
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.12s, color 0.12s;
+}
+.qn-list-item:hover {
+	background: var(--bg-elev);
+	color: var(--text);
+}
+.qn-list-item.active {
+	background: color-mix(in srgb, var(--accent) 30%, transparent);
+	color: #fff;
+}
+
+.qn-list-idx {
+	flex-shrink: 0;
+	min-width: 17px;
+	height: 17px;
+	line-height: 17px;
+	text-align: center;
+	border-radius: 5px;
+	background: rgba(0, 0, 0, 0.35);
+	color: var(--text-faint);
+	font-size: 10px;
+	font-weight: 700;
+	font-family: var(--mono);
+}
+.qn-list-item.active .qn-list-idx {
+	background: var(--accent);
+	color: #fff;
+}
+
+.qn-list-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Highlight flash when jumping to a question. */
+@keyframes qn-flash {
+	0% {
+		background-color: color-mix(in srgb, var(--accent) 32%, transparent);
+	}
+	100% {
+		background-color: transparent;
+	}
+}
+.msg-flash {
+	border-radius: 8px;
+	animation: qn-flash 1.6s ease-out;
+}
+
+@media (max-width: 640px) {
+	/* On phones the rail would cover most of the conversation — hide it. */
+	.qn-rail {
+		display: none;
+	}
 }
 
 /* ---------------------------------------------------------------- inputbar */

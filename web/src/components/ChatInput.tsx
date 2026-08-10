@@ -113,9 +113,11 @@ export function ChatInput({
 		const trimmed = text.trim();
 		const hasRawAttach = attachments.some((a) => a.imageData || a.fileData);
 		if (!connected || (!trimmed && !hasRawAttach)) return;
-		// While the agent is streaming, the server queues this prompt (as a
-		// followUp) and delivers it when the current run finishes — see
-		// AgentService.prompt() in agent-service.ts.
+		// While the agent is streaming, the server queues this prompt as a
+		// steering message (delivered as soon as the current assistant turn
+		// settles, skipping remaining tool calls — the pi CLI Enter semantic)
+		// and the agent immediately responds to it — see AgentService.prompt()
+		// in agent-service.ts.
 		if (
 			send({
 				type: "prompt",

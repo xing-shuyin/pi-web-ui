@@ -66,6 +66,7 @@ export const CollapsedMessage = memo(function CollapsedMessage({
 		<button
 			type="button"
 			className="msg-collapsed"
+			data-msg-id={message.id}
 			title={`${t("expandMsg")} · ${preview || chips.join(" · ") || message.role}`}
 			onClick={() => onExpand(message.id)}
 		>

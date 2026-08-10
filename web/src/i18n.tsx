@@ -237,6 +237,8 @@ const zh = {
 	clickToFill: "点击填入输入框",
 	waitingResponse: "正在等待模型响应…",
 	backToBottom: "回到底部",
+	questionNavTitle: "问题列表",
+	questionNavTip: "本对话的全部问题，悬浮展开，点击跳转",
 	"ex.understand": "了解这个项目",
 	"ex.understand.prompt": "介绍一下这个项目：整体结构、主要模块和如何运行？",
 	"ex.debug": "排查一个问题",
@@ -551,6 +553,8 @@ const en: Record<keyof typeof zh, string> = {
 	clickToFill: "Click to fill input",
 	waitingResponse: "Waiting for model response…",
 	backToBottom: "Back to bottom",
+	questionNavTitle: "Questions",
+	questionNavTip: "All questions in this conversation — hover to expand, click to jump",
 	"ex.understand": "Understand this project",
 	"ex.understand.prompt":
 		"Introduce this project: overall structure, main modules, and how to run it?",
