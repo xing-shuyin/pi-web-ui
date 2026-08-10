@@ -386,6 +386,11 @@ export type ServerMessage =
 			truncated: boolean;
 	  }
 	/** Content of a workspace file for the preview panel. */
+	/** The server fs.watches the currently-listed directory and pushes this on
+	 *  any file change so the client can refresh the listing instantly
+	 *  (path = the listed directory; unknown/unsupported fs falls back to the
+	 *  10s polling). */
+	| { type: "file_changed"; path: string }
 	| {
 			type: "file_content";
 			path: string;

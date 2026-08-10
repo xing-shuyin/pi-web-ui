@@ -93,6 +93,13 @@ export function RightPanel({
 		}, AUTO_REFRESH_MS);
 		return () => clearInterval(timer);
 	}, [chat.state?.cwd, currentPath, request]);
+	// The server fs.watches the listed directory and pushes `file_changed` on any
+	// change — refresh right away instead of waiting for the 10s poll. The path
+	// guard drops events for a directory the user has already navigated away from.
+	useEffect(() => {
+		const ev = chat.fileChanged;
+		if (ev && ev.path === currentPath) request(currentPath, { silent: true });
+	}, [chat.fileChanged, currentPath, request]);
 
 	// Enter a directory.
 	const openDir = (path: string) => request(path);

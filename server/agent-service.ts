@@ -17,6 +17,7 @@ import {
 	statSync,
 	writeFileSync,
 	mkdirSync,
+	watch,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -902,6 +903,15 @@ export class ClientSession {
 	/** pi-config readiness check, cached briefly so 60ms snapshots don't hit disk. */
 	private piCheckCache: { at: number; configured: boolean } | null = null;
 
+	/** fs.watch on the currently-listed directory — file changes push an instant
+	 *  refresh (`file_changed`) so the tree updates without waiting for the 10s
+	 *  poll. Only the listed directory is watched (one level); navigating
+	 *  re-watches the new target. fs.watch isn't available on every platform /
+	 *  filesystem — failures silently fall back to the poll. */
+	private fsWatcher: ReturnType<typeof watch> | null = null;
+	private watchPath: string | null = null;
+	private watchTimer: ReturnType<typeof setTimeout> | null = null;
+
 	private constructor(
 		clientId: string,
 		cwd: string,
@@ -1015,7 +1025,11 @@ export class ClientSession {
 		this.sinks.delete(send);
 		// No sockets left for this client — kill its terminals so processes don't
 		// survive a closed tab / dropped connection.
-		if (this.sinks.size === 0) this.terminals.killAll();
+		if (this.sinks.size === 0) {
+			this.terminals.killAll();
+			// No sockets → nobody to refresh; drop the dir watcher too.
+			this.unwatchDir();
+		}
 	}
 
 	/** Broadcast to every connected socket of this client. */
@@ -2718,6 +2732,9 @@ export class ClientSession {
 			// always use "/", but relative() returns "\\" on Windows.
 			const rel = rawRel.split(sep).join("/");
 			const { entries, truncated, error } = await readDirForUI(target, rel);
+			// Watch the listed directory (only after a successful read — a missing
+			// dir throws above and must not create a watcher on a phantom path).
+			this.watchDir(target, rel);
 			if (error) {
 				// Windows-only: unreadable system dirs degrade to an empty list
 				// with a warning instead of a hard error — the panel stays usable.
@@ -2746,6 +2763,55 @@ export class ClientSession {
 				text: `读取目录失败：${(err as Error).message}`,
 			});
 		}
+	}
+
+
+	/** Watch a directory for changes so the file panel refreshes instantly
+	 *  instead of waiting for the 10s poll. Watches the directory exactly as
+	 *  listed (one level); navigating re-watches the new target. fs.watch is
+	 *  unavailable on some platforms/filesystems — failures silently fall back
+	 *  to the poll. */
+	private watchDir(absPath: string, rel: string): void {
+		if (this.disposed || this.watchPath === rel) return;
+		this.unwatchDir();
+		this.watchPath = rel;
+		try {
+			// persistent: false — the watcher must not keep the process alive.
+			this.fsWatcher = watch(absPath, { persistent: false }, () => {
+				// Burst events (npm install, git ops, editor save→rename) are
+				// debounced into a single refresh.
+				if (this.watchTimer) return;
+				this.watchTimer = setTimeout(() => {
+					this.watchTimer = null;
+					this.emit({ type: "file_changed", path: this.watchPath ?? "" });
+				}, 400);
+			});
+			this.fsWatcher.on("error", () => {
+				// Directory deleted / unsupported fs — stop watching; the poll (or
+				// the next navigation) restores things.
+				this.unwatchDir();
+			});
+		} catch {
+			// fs.watch unsupported (some network mounts, containers) — poll covers it.
+			this.fsWatcher = null;
+			this.watchPath = null;
+		}
+	}
+
+	private unwatchDir(): void {
+		if (this.watchTimer) {
+			clearTimeout(this.watchTimer);
+			this.watchTimer = null;
+		}
+		if (this.fsWatcher) {
+			try {
+				this.fsWatcher.close();
+			} catch {
+				// already closed
+			}
+			this.fsWatcher = null;
+		}
+		this.watchPath = null;
 	}
 
 	/** Read a workspace file for the preview panel (size-capped, binary-safe). */
@@ -3126,6 +3192,7 @@ export class ClientSession {
 			clearInterval(this.widgetsTimer);
 			this.widgetsTimer = null;
 		}
+		this.unwatchDir();
 		this.webUi.dispose();
 		for (const conv of this.convs.values()) {
 			conv.unsubscribe?.();

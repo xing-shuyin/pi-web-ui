@@ -64,6 +64,9 @@ export interface ChatState {
 	files: FileListing | null;
 	/** Latest file content fetched for the preview panel (path-matched in the modal). */
 	fileContent: FileContent | null;
+
+	/** Last dir-changed push from the server fs.watch (path = listed directory). */
+	fileChanged: { path: string } | null;
 	/** Models with valid auth, for the model dropdown. */
 	models: ModelInfo[];
 	/** True while a model list request is in flight. */
@@ -121,6 +124,8 @@ type Action =
 	  }
 	| { type: "projects"; projects: ProjectSummary[] }
 	| { type: "files"; files: FileListing }
+
+	| { type: "file_changed"; path: string }
 	| { type: "file_content"; content: FileContent }
 	| { type: "models"; models: ModelInfo[]; loading: boolean }
 	| { type: "models_config"; providers: UiProviderConfig[] }
@@ -311,6 +316,8 @@ function reducer(state: ChatState, action: Action): ChatState {
 			return { ...state, projects: action.projects };
 		case "files":
 			return { ...state, files: action.files };
+		case "file_changed":
+			return { ...state, fileChanged: { path: action.path } };
 		case "file_content":
 			return { ...state, fileContent: action.content };
 		case "models":
@@ -400,6 +407,8 @@ export function useChat() {
 		activeConversationId: "",
 		projects: [],
 		files: null,
+
+		fileChanged: null,
 		fileContent: null,
 		models: [],
 		modelsLoading: false,
@@ -544,6 +553,9 @@ export function useChat() {
 					break;
 				case "files":
 					dispatch({ type: "files", files: msg });
+					break;
+				case "file_changed":
+					dispatch({ type: "file_changed", path: msg.path });
 					break;
 				case "file_content":
 					dispatch({ type: "file_content", content: msg });
