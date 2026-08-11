@@ -240,6 +240,9 @@ wss.on("connection", (ws) => {
 			case "get_state":
 				cs.flushSnapshot();
 				break;
+			case "get_commands":
+				void cs.pushSlashCommands();
+				break;
 			case "list_sessions":
 				void cs.refreshSessions();
 				break;

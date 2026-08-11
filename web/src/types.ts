@@ -121,8 +121,23 @@ export interface CommandDef {
 	cwd?: string;
 }
 
+/** A slash command available in the chat input (mirror of SlashCommandInfo). */
+export interface SlashCommandInfo {
+	/** Invokable command name without the leading slash (e.g. "new",
+	 *  "skill:review", "templatename"). */
+	name: string;
+	description?: string;
+	/** Argument placeholder shown in the picker (e.g. "<路径>", "[说明]"). */
+	argumentHint?: string;
+	/** Where the command comes from: web-native builtin / SDK extension /
+	 *  prompt template / skill. */
+	source: "builtin" | "extension" | "prompt" | "skill";
+}
+
 export type ClientMessage =
 	| { type: "hello"; clientId: string }
+	/** Re-request the slash-command catalog (also pushed on attach / cwd change). */
+	| { type: "get_commands" }
 	| {
 			type: "prompt";
 			text: string;
@@ -356,6 +371,9 @@ export type ServerMessage =
 	| { type: "terminal_exit"; terminalId: string; exitCode: number | null }
 	// -- command list (.pi/commands.json) ------------------------------------
 	| { type: "commands"; commands: CommandDef[]; path: string }
+	/** The slash-command catalog for the chat input (builtin + extension +
+	 *  prompt template + skill commands). */
+	| { type: "slash_commands"; commands: SlashCommandInfo[] }
 	| { type: "notice"; level: "info" | "warning" | "error"; text: string }
 	/** Sent every ~10s so clients can detect half-open connections. */
 	| { type: "heartbeat" }

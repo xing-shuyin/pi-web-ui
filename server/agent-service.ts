@@ -41,6 +41,7 @@ import type {
 	ProjectSummary,
 	ServerMessage,
 	SessionSummary,
+	SlashCommandInfo,
 	UiMessage,
 	UiProviderConfig,
 	UiState,
@@ -1019,6 +1020,9 @@ export class ClientSession {
 		// left panel shows every background chat (a fresh socket never got the
 		// newChat/switch pushes).
 		this.emitConversations();
+		// Reconnect: same for the slash-command catalog (the picker needs it even
+		// before the client asks).
+		void this.pushSlashCommands();
 	}
 
 	detachSink(send: (msg: ServerMessage) => void): void {
@@ -1885,6 +1889,222 @@ export class ClientSession {
 	}
 
 	// ---------------------------------------------------------------------------
+	// Slash commands
+	// ---------------------------------------------------------------------------
+
+	/**
+	 * Slash commands implemented natively by the web server (the pi CLI's built-in
+	 * interactive commands like /model and /new are NOT handled by the SDK's
+	 * prompt() — without this they'd be sent to the model as plain text). Keep in
+	 * sync with execNativeCommand(). /help and /copy are client-side UI actions
+	 * (they never reach the server) but stay listed so the picker shows them.
+	 */
+	static NATIVE_COMMANDS: {
+		name: string;
+		description: string;
+		argumentHint?: string;
+	}[] = [
+		{ name: "new", description: "新建对话" },
+		{ name: "model", description: "切换模型", argumentHint: "[名称]" },
+		{ name: "compact", description: "压缩上下文", argumentHint: "[说明]" },
+		{ name: "cwd", description: "切换工作目录", argumentHint: "<路径>" },
+		{
+			name: "thinking",
+			description: "设置思考强度",
+			argumentHint: "<off|low|medium|high>",
+		},
+		{ name: "resume", description: "刷新会话列表" },
+		{ name: "help", description: "显示全部命令" },
+		{ name: "copy", description: "复制上一条助手回复" },
+	];
+
+	/** Parse a prompt into "/command args" — returns null when it isn't one. */
+	private parseSlash(text: string): { name: string; args: string } | null {
+		const trimmed = text.trim();
+		if (!trimmed.startsWith("/")) return null;
+		const m = trimmed.match(/^\/([^\s]+)\s*([\s\S]*)$/);
+		if (!m || !m[1]) return null;
+		return { name: m[1], args: m[2].trim() };
+	}
+
+	/** Run a native slash command (see NATIVE_COMMANDS). Returns false when the
+	 *  name is not a native command (the prompt falls through to the SDK). */
+	private async execNativeCommand(
+		name: string,
+		args: string,
+	): Promise<boolean> {
+		switch (name) {
+			case "new":
+				await this.newChat();
+				return true;
+			case "model": {
+				if (!args) {
+					const current = this.session.model;
+					this.emit({
+						type: "notice",
+						level: "info",
+						text: current
+							? `当前模型：${current.name}（${current.provider}/${current.id}）。用法：/model <名称>`
+							: `用法：/model <名称>`,
+					});
+					return true;
+				}
+				const query = args.toLowerCase();
+				const available = await this.session.modelRuntime.getAvailable();
+				// Prefer an exact "provider/id" match, else id/name substring.
+				const exact = available.find(
+					(m) => m.provider + "/" + m.id === args.trim(),
+				);
+				const matches = exact
+					? [exact]
+					: available.filter(
+							(m) =>
+								m.id.toLowerCase().includes(query) ||
+								m.name.toLowerCase().includes(query) ||
+								m.provider.toLowerCase().includes(query),
+						);
+				if (matches.length === 0) {
+					this.emit({
+						type: "notice",
+						level: "error",
+						text: `没有匹配到模型：${args}（可用模型见顶栏模型列表）`,
+					});
+					return true;
+				}
+				const pick = matches[0];
+				if (matches.length > 1) {
+					this.emit({
+						type: "notice",
+						level: "warning",
+						text: `找到 ${matches.length} 个匹配模型，已选用：${pick.name}（精确匹配请用 provider/id）`,
+					});
+				}
+				await this.setModel(`${pick.provider}/${pick.id}`);
+				return true;
+			}
+			case "compact":
+				try {
+					await this.session.compact(args || undefined);
+				} catch (err) {
+					this.emit({
+						type: "notice",
+						level: "error",
+						text: `压缩上下文失败：${(err as Error).message}`,
+					});
+				}
+				return true;
+			case "cwd":
+				if (!args) {
+					this.emit({
+						type: "notice",
+						level: "info",
+						text: `当前工作目录：${this.cwd}。用法：/cwd <路径>`,
+					});
+				} else {
+					await this.setCwd(args);
+				}
+				return true;
+			case "thinking": {
+				const ALIAS: Record<string, string> = {
+					off: "off",
+					minimal: "minimal",
+					low: "low",
+					medium: "medium",
+					high: "high",
+					xhigh: "xhigh",
+					max: "max",
+					关闭: "off",
+					极简: "minimal",
+					低: "low",
+					中: "medium",
+					高: "high",
+					极高: "xhigh",
+					最大: "max",
+				};
+				const level = ALIAS[args.trim().toLowerCase()];
+				if (!level) {
+					this.emit({
+						type: "notice",
+						level: "error",
+						text: `无效的思考强度：${args || "（空）"}。可用：off / minimal / low / medium / high / xhigh / max`,
+					});
+					return true;
+				}
+				this.setThinking(level);
+				return true;
+			}
+			case "resume":
+				await this.refreshSessions();
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: "会话列表已刷新，请在左侧「历史对话」中选择",
+				});
+				return true;
+			case "help":
+			case "copy":
+				// Client-side UI actions — the client handles them before sending;
+				// swallow here so the SDK never sees them as plain prompt text.
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Catalog of slash commands for the chat input: web-native builtins first,
+	 * then the SDK's invokable commands for the ACTIVE conversation (extension
+	 * commands, prompt templates, skills) — the same set the SDK expands when a
+	 * prompt text starts with "/" (see AgentSession.prompt).
+	 */
+	async pushSlashCommands(): Promise<void> {
+		const commands: SlashCommandInfo[] = [];
+		const seen = new Set<string>();
+		for (const c of ClientSession.NATIVE_COMMANDS) {
+			commands.push({ ...c, source: "builtin" });
+			seen.add(c.name);
+		}
+		try {
+			const s = this.session;
+			// Extension commands — the SDK already suffixes collisions with builtin
+			// names ("new:2"), and those still reach the SDK since execNativeCommand
+			// only intercepts the exact native names.
+			for (const cmd of s.extensionRunner.getRegisteredCommands()) {
+				if (seen.has(cmd.invocationName)) continue;
+				commands.push({
+					name: cmd.invocationName,
+					description: cmd.description,
+					source: "extension",
+				});
+				seen.add(cmd.invocationName);
+			}
+			// Prompt templates: /templatename args
+			for (const t of s.promptTemplates) {
+				if (seen.has(t.name)) continue;
+				commands.push({
+					name: t.name,
+					description: t.description,
+					source: "prompt",
+				});
+				seen.add(t.name);
+			}
+			// Skills: /skill:name args
+			for (const skill of s.resourceLoader.getSkills().skills) {
+				const name = `skill:${skill.name}`;
+				if (seen.has(name)) continue;
+				commands.push({
+					name,
+					description: skill.description,
+					source: "skill",
+				});
+			}
+		} catch {
+			// Session not ready yet — native-only catalog still serves the picker.
+		}
+		this.emit({ type: "slash_commands", commands });
+	}
+
+	// ---------------------------------------------------------------------------
 	// Commands
 	// ---------------------------------------------------------------------------
 
@@ -1905,6 +2125,14 @@ export class ClientSession {
 	): Promise<void> {
 		try {
 			const s = this.session;
+			// Native slash commands (see NATIVE_COMMANDS) are executed here and
+			// never reach the SDK. Extension / skill / template commands fall
+			// through — AgentSession.prompt() handles those itself.
+			const slash = this.parseSlash(text);
+			if (slash && (await this.execNativeCommand(slash.name, slash.args))) {
+				this.flushSnapshot();
+				return;
+			}
 			// Attach files as independent nextTurn context messages (asides) so the
 			// user message stays clean; they render as separate attachment cards.
 			const asides = await this.buildAttachmentMessages(attachments);
@@ -3064,6 +3292,8 @@ export class ClientSession {
 			void this.pushProjects();
 			this.webUi.refresh();
 			this.emitConversations();
+			// Skills / prompt templates are project-bound — refresh the catalog.
+			void this.pushSlashCommands();
 			this.emit({
 				type: "notice",
 				level: "info",

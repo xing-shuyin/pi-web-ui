@@ -11,6 +11,7 @@ import type {
 	ProviderStatus,
 	ServerMessage,
 	SessionSummary,
+	SlashCommandInfo,
 	ToolStatus,
 	UiProviderConfig,
 	UiState,
@@ -104,6 +105,9 @@ export interface ChatState {
 	/** User command list from .pi/commands.json (terminal left panel). */
 	commands: CommandDef[];
 	commandsPath: string;
+	/** Slash-command catalog for the chat input (builtin + extension +
+	 *  template + skill). */
+	slashCommands: SlashCommandInfo[];
 	/** Open terminal tabs (metadata only; streams go through the bridge). */
 	terminals: TerminalMeta[];
 }
@@ -159,6 +163,7 @@ type Action =
 			} | null;
 	  }
 	| { type: "commands"; commands: CommandDef[]; path: string }
+	| { type: "slash_commands"; commands: SlashCommandInfo[] }
 	| { type: "terminal_add"; meta: TerminalMeta }
 	| { type: "terminal_remove"; id: string }
 	| { type: "terminal_exit"; terminalId: string; exitCode: number | null }
@@ -346,7 +351,8 @@ function reducer(state: ChatState, action: Action): ChatState {
 				commands: action.commands,
 				commandsPath: action.path,
 			};
-		case "terminal_add":
+		case "slash_commands":
+			return { ...state, slashCommands: action.commands };		case "terminal_add":
 			return { ...state, terminals: [...state.terminals, action.meta] };
 		case "terminal_remove":
 			return {
@@ -423,6 +429,7 @@ export function useChat() {
 		dialog: null,
 		commands: [],
 		commandsPath: "",
+		slashCommands: [],
 		terminals: [],
 	});
 	const wsRef = useRef<WebSocket | null>(null);
@@ -507,6 +514,9 @@ export function useChat() {
 					);
 					ws.send(
 						JSON.stringify({ type: "list_commands" } satisfies ClientMessage),
+					);
+					ws.send(
+						JSON.stringify({ type: "get_commands" } satisfies ClientMessage),
 					);
 					ws.send(
 						JSON.stringify({ type: "check_update" } satisfies ClientMessage),
@@ -617,6 +627,9 @@ export function useChat() {
 						commands: msg.commands,
 						path: msg.path,
 					});
+					break;
+				case "slash_commands":
+					dispatch({ type: "slash_commands", commands: msg.commands });
 					break;
 				default:
 					break;
