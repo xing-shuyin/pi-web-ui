@@ -234,11 +234,15 @@ npm run test:freeze  # 冻结/重连回归测试（Playwright，需要 chromium 
 - 新增协议消息 → 见第 4 节「协议双端手工同步」。
 - **斜杠命令目录**：服务端 `pushSlashCommands()` 收集当前活动会话的扩展命令
   （`session.extensionRunner.getRegisteredCommands()`）+ 模板（`promptTemplates`）+
-  技能（`resourceLoader.getSkills()` → `skill:<name>`）加上 8 个内置命令，经
-  `slash_commands` 消息推送（attach / set_cwd / get_commands 时刷新）；内置命令在
-  `prompt()` 里拦截（`execNativeCommand`，含 /model 模糊匹配、/thinking 中英别名），
-  其余透传 SDK（SDK 会展开扩展/技能/模板命令）。改动时保持 `NATIVE_COMMANDS` 与
-  `execNativeCommand()` 同步。回归：`slash-commands-test.mjs`。
+  技能（`resourceLoader.getSkills()` → `skill:<name>`）加上 9 个内置命令，经
+  `slash_commands` 消息推送（attach / set_cwd / new_chat / switch_conversation /
+  switch_session / get_commands 时刷新）；内置命令在 `prompt()` 里拦截
+  （`execNativeCommand`，含 /model 模糊匹配、/thinking 中英别名、`/reload` 调
+  `session.reload()` 重新发现扩展/技能/模板后重推目录），其余透传 SDK（SDK 会
+  展开扩展/技能/模板命令）。注意 SDK 的 `getSkills()` 返回的是会话创建时的内存
+  快照——删除/新增 skill 文件后必须 `/reload`（或 /new / 切项目重建 runtime）才
+  生效。改动时保持 `NATIVE_COMMANDS` 与 `execNativeCommand()` 同步。回归：
+  `slash-commands-test.mjs`。
 
 ### 验证清单（改完自检）
 

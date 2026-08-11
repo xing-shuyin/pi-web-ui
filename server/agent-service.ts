@@ -1914,6 +1914,7 @@ export class ClientSession {
 			argumentHint: "<off|low|medium|high>",
 		},
 		{ name: "resume", description: "刷新会话列表" },
+		{ name: "reload", description: "重新加载扩展、技能与模板" },
 		{ name: "help", description: "显示全部命令" },
 		{ name: "copy", description: "复制上一条助手回复" },
 	];
@@ -2040,6 +2041,25 @@ export class ClientSession {
 					level: "info",
 					text: "会话列表已刷新，请在左侧「历史对话」中选择",
 				});
+				return true;
+			case "reload":
+				try {
+					// Re-discovers extensions / skills / prompt templates from disk and
+					// re-pushes the picker catalog (the CLI's /reload semantics).
+					await this.session.reload();
+					await this.pushSlashCommands();
+					this.emit({
+						type: "notice",
+						level: "info",
+						text: "已重新加载扩展、技能与提示模板",
+					});
+				} catch (err) {
+					this.emit({
+						type: "notice",
+						level: "error",
+						text: `重新加载失败：${(err as Error).message}`,
+					});
+				}
 				return true;
 			case "help":
 			case "copy":
@@ -2686,6 +2706,9 @@ export class ClientSession {
 			if (displaced) this.removeConversation(displaced.id);
 			await this.bindSession();
 			this.emitConversations();
+			// The new runtime re-discovered skills/templates — refresh the catalog
+			// so the picker stops showing the previous runtime's list.
+			void this.pushSlashCommands();
 		} catch (err) {
 			this.emit({
 				type: "notice",
@@ -2741,6 +2764,8 @@ export class ClientSession {
 		this.conv.lastActiveAt = Date.now();
 		this.webUi.refresh();
 		this.emitConversations();
+		// The switched-to conversation has its own runtime (own resource cache).
+		void this.pushSlashCommands();
 		this.flushSnapshot();
 	}
 
@@ -2821,6 +2846,8 @@ export class ClientSession {
 			// switches away without sending a new message.
 			this.conv.promptedSinceActive = true;
 			this.emitConversations();
+			// switchSession replaced the runtime — its resource cache is fresh.
+			void this.pushSlashCommands();
 		} catch (err) {
 			this.emit({
 				type: "notice",

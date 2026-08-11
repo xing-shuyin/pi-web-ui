@@ -190,6 +190,27 @@ async function main() {
 	}
 	console.log(`[7] /new → active conversation ${newChat.activeId.slice(0, 8)}…`);
 
+	// --- 8. /reload re-discovers resources and re-pushes the catalog ---
+	c.send({ type: "prompt", text: "/reload" });
+	const catReloaded = await c.wait(
+		(m) => m.type === "slash_commands",
+		20000,
+	);
+	const reloadNotice = await c.wait((m) => m.type === "notice", 8000);
+	if (!reloadNotice.text.includes("已重新加载")) {
+		throw new Error(`FAIL: /reload notice unexpected: ${reloadNotice.text}`);
+	}
+	const namesAfterReload = new Set(catReloaded.commands.map((x) => x.name));
+	const missingAfterReload = NATIVE_NAMES.filter((n) => !namesAfterReload.has(n));
+	if (missingAfterReload.length > 0) {
+		throw new Error(
+			`FAIL: builtin commands missing after /reload: ${missingAfterReload.join(", ")}`,
+		);
+	}
+	console.log(
+		`[8] /reload → catalog re-pushed (${catReloaded.commands.length} commands), ${reloadNotice.text}`,
+	);
+
 	c.close();
 	server.kill();
 	console.log("\n✅ SLASH-COMMAND CHECKS PASSED");
