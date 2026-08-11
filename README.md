@@ -1,6 +1,6 @@
 # pi-web-ui
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.zh-CN.md)
 
 A web chat interface for the [pi coding agent](https://pi.dev) — the agent runs
 in-process via the pi SDK and streams events to the browser over WebSocket. Chat
@@ -10,7 +10,7 @@ configured pi install.
 
 ## Screenshots
 
-![pi-web-ui main interface](assets/shot.jpeg)
+![pi-web-ui main interface](https://cdn.jsdelivr.net/gh/xing-shuyin/pi-web-ui@main/assets/shot.jpeg)
 
 ## Install
 

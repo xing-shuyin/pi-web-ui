@@ -1,6 +1,6 @@
 # pi-web-ui
 
-[English](README.md) | **简体中文**
+[English](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.md) | **简体中文**
 
 [pi 编码智能体](https://pi.dev) 的 Web 聊天界面 —— 智能体通过 pi SDK 在服务端进程内运行，
 事件经 WebSocket 流式推送到浏览器。支持思考块与工具调用、附件与图片问答、内置终端、
@@ -8,7 +8,7 @@
 
 ## 界面截图
 
-![pi-web-ui 主界面](assets/shot.jpeg)
+![pi-web-ui 主界面](https://cdn.jsdelivr.net/gh/xing-shuyin/pi-web-ui@main/assets/shot.jpeg)
 
 ## 安装
 
