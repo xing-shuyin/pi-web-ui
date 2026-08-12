@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import {
 	FiChevronDown,
+	FiBookOpen,
 	FiChevronRight,
 	FiChevronUp,
 	FiEdit3,
@@ -19,6 +20,7 @@ import { Markdown } from "./Markdown";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallBlock, type ToolView } from "./ToolCallBlock";
 import { useT, type Translate } from "../i18n";
+import { parseSkillBlock, type SkillBlock } from "../skill-block";
 
 // ---------------------------------------------------------------------------
 // Narrowing guards. UiContentBlock is an open union (its last member is
@@ -109,11 +111,17 @@ export const Message = memo(function Message({
 	const isFileAttachment =
 		message.role === "custom" && message.customType === "file";
 	// Question text for the per-question tag's tooltip.
-	const questionText = message.content
+	const userText = message.content
 		.map((b) => asText(b)?.text ?? "")
 		.filter(Boolean)
-		.join(" ")
-		.trim();
+		.join("\n");
+	// A user message whose text is a `<skill …>` block (the SDK's /skill:name
+	// expansion) renders as a compact collapsible skill card instead of dumping
+	// the whole SKILL.md into the user bubble — same as the pi CLI.
+	const skillBlock = message.role === "user" ? parseSkillBlock(userText) : null;
+	const questionText = skillBlock
+		? skillBlock.userMessage ?? `skill:${skillBlock.name}`
+		: userText.split("\n").join(" ").trim();
 	// Streaming bubble with no content yet (first token not arrived) — show a
 	// visible “thinking…” placeholder instead of an invisible empty bubble.
 	const isEmptyStreaming = streaming && isLast && message.content.length === 0;
@@ -122,10 +130,14 @@ export const Message = memo(function Message({
 		message.role === "user" && !streaming && !isEmptyStreaming && !!onEdit;
 	const startEdit = () => {
 		setDraft(
-			message.content
-				.map((b) => asText(b)?.text ?? "")
-				.filter(Boolean)
-				.join("\n"),
+			skillBlock
+				? `/skill:${skillBlock.name}${
+						skillBlock.userMessage ? ` ${skillBlock.userMessage}` : ""
+				  }`
+				: message.content
+						.map((b) => asText(b)?.text ?? "")
+						.filter(Boolean)
+						.join("\n"),
 		);
 		setEditing(true);
 	};
@@ -223,6 +235,28 @@ export const Message = memo(function Message({
 						)}
 						{isFileAttachment ? (
 							<AttachmentCard message={message} />
+						) : skillBlock ? (
+							<>
+								<SkillCard block={skillBlock} />
+								{skillBlock.userMessage && (
+									<div className="msg-text">
+										<Markdown text={skillBlock.userMessage} />
+									</div>
+								)}
+								{message.content.map((block, i) =>
+									block.type === "text" ? null : (
+										<Block
+											key={`${message.id}-${i}`}
+											block={block}
+											toolResults={toolResults}
+											liveOutputs={liveOutputs}
+											toolStatuses={toolStatuses}
+											streaming={streaming}
+											isLast={isLast}
+										/>
+									),
+								)}
+							</>
 						) : (
 							message.content.map((block, i) => (
 								<Block
@@ -355,6 +389,42 @@ function stripFileWrapper(text: string): string {
 		/^\s*<file path="[^"]*"(?:\s+lines="[^"]*")?>\s*```\s*\n?([\s\S]*?)\n?```\s*<\/file>\s*$/,
 	);
 	return m ? m[1].trim() : text.trim();
+}
+
+/**
+ * Compact collapsible card for a skill invocation (the SDK's /skill:name
+ * expansion) — the web counterpart of the CLI's SkillInvocationMessageComponent.
+ * Collapsed shows a book icon + skill name + file path, expanded shows the
+ * full SKILL.md content. The user's own question (args) renders separately.
+ */
+function SkillCard({ block }: { block: SkillBlock }) {
+	const t = useT();
+	const [expanded, setExpanded] = useState(false);
+	return (
+		<div className={`skillcard${expanded ? " expanded" : ""}`}>
+			<button
+				type="button"
+				className="skillcard-head"
+				onClick={() => setExpanded((v) => !v)}
+				title={block.location}
+			>
+				<span className="skillcard-icon">
+					<FiBookOpen />
+				</span>
+				<span className="skillcard-name">{block.name}</span>
+				<span className="skillcard-path">{block.location}</span>
+				<span className="skillcard-action">
+					{expanded ? <FiChevronUp /> : <FiChevronDown />}
+					{expanded ? t("collapseMsg") : t("expandMsg")}
+				</span>
+			</button>
+			{expanded && (
+				<div className="skillcard-body">
+					<Markdown text={block.content} />
+				</div>
+			)}
+		</div>
+	);
 }
 
 function Block({

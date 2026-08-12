@@ -924,6 +924,94 @@ body {
 	display: block;
 }
 
+/* --------------------------------------------------------------- skill card */
+
+.skillcard {
+	margin: 8px 0;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-elev2);
+	overflow: hidden;
+}
+
+.skillcard-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 8px 12px;
+	border: none;
+	background: transparent;
+	color: var(--text);
+	font-size: 12.5px;
+	cursor: pointer;
+	text-align: left;
+	transition: background 0.12s ease;
+}
+
+.skillcard-head:hover {
+	background: rgba(139, 92, 246, 0.08);
+}
+
+.skillcard-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-size: 12px;
+}
+
+.skillcard-name {
+	font-family: var(--mono);
+	font-weight: 600;
+	color: var(--text);
+	font-size: 12.5px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.skillcard-path {
+	flex: 1;
+	min-width: 0;
+	color: var(--text-faint);
+	font-size: 11px;
+	font-family: var(--mono);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.skillcard-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+	color: var(--text-faint);
+	font-size: 11.5px;
+}
+
+.skillcard-action:hover {
+	color: var(--text);
+}
+
+.skillcard-body {
+	padding: 10px 14px 12px;
+	border-top: 1px solid var(--border-soft);
+	max-height: 420px;
+	overflow-y: auto;
+	background: rgba(0, 0, 0, 0.15);
+}
+
+.skillcard-body .markdown > :first-child {
+	margin-top: 0;
+}
+
 /* ------------------------------------------------------------ view switch */
 
 .view-pane {

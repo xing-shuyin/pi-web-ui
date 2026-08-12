@@ -16,3 +16,6 @@ data/
 repro-view-switch.mjs
 switch-test3.tmp.mjs
 todo-list.ts
+
+# pi subagent work products (never committed)
+.pi-subagents/

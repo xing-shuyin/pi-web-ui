@@ -5,6 +5,8 @@ import type { CSSProperties } from "react";
 import { FiArrowDown } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiState } from "../types";
 import { Message, asText } from "./Message";
+
+import { parseSkillBlock } from "../skill-block";
 import { CollapsedMessage } from "./CollapsedMessage";
 import { useT, type Translate } from "../i18n";
 
@@ -91,11 +93,14 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 		const qs: { id: string; text: string }[] = [];
 		for (const m of state.messages) {
 			if (m.role !== "user") continue;
-			const text = m.content
+			const joined = m.content
 				.map((b) => asText(b)?.text ?? "")
 				.filter(Boolean)
-				.join(" ")
-				.trim();
+				.join(" ");
+			// Skill invocations show the user's own args (or the skill name),
+			// never the expanded SKILL.md dump.
+			const sb = parseSkillBlock(joined);
+			const text = sb ? (sb.userMessage ?? `skill:${sb.name}`) : joined.trim();
 			if (!text) continue;
 			qs.push({ id: m.id, text });
 		}
