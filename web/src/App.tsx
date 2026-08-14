@@ -4,6 +4,7 @@ import { LeftPanel } from "./components/LeftPanel";
 import { RightPanel } from "./components/RightPanel";
 import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
+import { GoalBar } from "./components/GoalBar";
 import { FooterBar } from "./components/FooterBar";
 import { Dialog } from "./components/Dialog";
 import { TerminalPanel } from "./components/TerminalPanel";
@@ -284,6 +285,7 @@ export function App() {
 								{chat.ready ? t("loadingSession") : t("connectingServer")}
 							</div>
 						)}
+						<GoalBar chat={chat} send={send} />
 						<ChatInput
 							chat={chat}
 							send={send}

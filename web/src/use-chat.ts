@@ -6,6 +6,7 @@ import type {
 	ConversationSummary,
 	FileContent,
 	FileListing,
+	GoalStatus,
 	ModelInfo,
 	ProjectSummary,
 	ProviderStatus,
@@ -110,6 +111,8 @@ export interface ChatState {
 	slashCommands: SlashCommandInfo[];
 	/** Open terminal tabs (metadata only; streams go through the bridge). */
 	terminals: TerminalMeta[];
+	/** Goal / review status (set via the goal bar). */
+	goal: GoalStatus;
 }
 
 type Action =
@@ -167,10 +170,31 @@ type Action =
 	| { type: "terminal_add"; meta: TerminalMeta }
 	| { type: "terminal_remove"; id: string }
 	| { type: "terminal_exit"; terminalId: string; exitCode: number | null }
-	| { type: "terminal_restart"; terminalId: string };
+	| { type: "terminal_restart"; terminalId: string }
+	| { type: "goal_status"; status: GoalStatus };
 
 const MAX_LIVE_OUTPUT = 200_000;
 const MAX_TERM_BUFFER = 200_000;
+
+/** Initial (inactive) goal status before the server pushes the first one. */
+const DEFAULT_GOAL: GoalStatus = {
+	goal: null,
+	reviewModel: null,
+	maxRounds: 3,
+	locked: true,
+	reviewing: false,
+	round: 0,
+	status: "",
+	verdict: "pending",
+	wizard: {
+		active: false,
+		draft: "",
+		model: null,
+		step: 0,
+		maxSteps: 6,
+		status: "",
+	},
+};
 
 /**
  * Bridges terminal output from the socket to live xterm instances. Output for
@@ -352,7 +376,10 @@ function reducer(state: ChatState, action: Action): ChatState {
 				commandsPath: action.path,
 			};
 		case "slash_commands":
-			return { ...state, slashCommands: action.commands };		case "terminal_add":
+			return { ...state, slashCommands: action.commands };
+		case "goal_status":
+			return { ...state, goal: action.status };
+		case "terminal_add":
 			return { ...state, terminals: [...state.terminals, action.meta] };
 		case "terminal_remove":
 			return {
@@ -431,6 +458,7 @@ export function useChat() {
 		commandsPath: "",
 		slashCommands: [],
 		terminals: [],
+		goal: DEFAULT_GOAL,
 	});
 	const wsRef = useRef<WebSocket | null>(null);
 	/** Terminal output bridge (writers keyed by terminalId). */
@@ -630,6 +658,9 @@ export function useChat() {
 					break;
 				case "slash_commands":
 					dispatch({ type: "slash_commands", commands: msg.commands });
+					break;
+				case "goal_status":
+					dispatch({ type: "goal_status", status: msg.status });
 					break;
 				default:
 					break;

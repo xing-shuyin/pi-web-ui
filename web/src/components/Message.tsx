@@ -148,18 +148,30 @@ export const Message = memo(function Message({
 		setEditing(false);
 	};
 
+	// Goal-review verdict cards (server customType "goal-review") and wizard
+	// progress cards ("goal-wizard") get a distinct frame so they read as goal
+	// feedback rather than a plain plugin message.
+	const isGoalReview =
+		message.role === "custom" &&
+		(message.customType === "goal-review" || message.customType === "goal-wizard");
+	const isGoalWizard = message.role === "custom" && message.customType === "goal-wizard";
+
 	return (
 		<div
-			className={`msg msg-${message.role}`}
+			className={`msg msg-${message.role}${isGoalReview ? " msg-goal-review" : ""}`}
 			data-role={message.role}
 			data-msg-id={message.id}
 		>
 			<div className="msg-meta">
 				<span className="msg-role">
 					{message.role === "custom"
-						? message.customType === "file"
-							? t("attachment")
-							: `${t("plugin")} · ${message.customType ?? t("unknown")}`
+						? isGoalWizard
+							? t("goalWizardCard")
+							: isGoalReview
+								? t("goalBarTitle")
+								: message.customType === "file"
+									? t("attachment")
+									: `${t("plugin")} · ${message.customType ?? t("unknown")}`
 						: roleLabel(message.role, t)}
 				</span>
 				{message.model && <span className="msg-model">{message.model}</span>}

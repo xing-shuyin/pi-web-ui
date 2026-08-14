@@ -1729,6 +1729,18 @@ body {
 	left: 0;
 }
 
+/* Open upward (bottom-anchored bars like the goal bar — dropping down would
+   overflow the viewport and a max-height menu then scrolls internally).
+   Desktop only: on ≤768px the dropdown becomes a fixed bottom sheet (see the
+   mobile rules), which is already correctly positioned. */
+@media (min-width: 769px) {
+	.dropdown.dd-up .dd-menu {
+		top: auto;
+		bottom: calc(100% + 6px);
+		max-height: min(360px, calc(100vh - 240px));
+	}
+}
+
 /* Small fixed panels (update etc.): grow to fit content, no scrollbar. */
 .dropdown.fit .dd-menu {
 	max-height: none;
@@ -3130,6 +3142,291 @@ body {
 	}
 }
 
+
+/* ---------------------------------------------------------------- goalbar */
+
+.goalbar {
+	max-width: 860px;
+	margin: 0 auto 8px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--bg-elev1);
+	padding: 8px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.goalbar-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.goalbar-icon {
+	color: var(--amber);
+	display: inline-flex;
+	align-items: center;
+	font-size: 15px;
+	flex-shrink: 0;
+}
+
+.goalbar-spin {
+	display: inline-block;
+	animation: goalbar-spin 1s linear infinite;
+}
+
+@keyframes goalbar-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.goalbar-input {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--text);
+	font-size: 13px;
+	padding: 4px 2px;
+}
+
+.goalbar-input::placeholder {
+	color: var(--text-dim);
+}
+
+.goalbar-btn {
+	background: var(--accent);
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	padding: 5px 12px;
+	font-size: 12px;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
+.goalbar-btn:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.goalbar-btn.wizard {
+	background: var(--amber);
+}
+
+.goalbar-active.wizard {
+	border-color: var(--amber);
+}
+
+.msg-goal-wizard.msg-custom {
+	border-left: 3px solid var(--amber);
+}
+
+.goalbar-icon-btn {
+	background: transparent;
+	border: none;
+	color: var(--text-dim);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	padding: 4px;
+	border-radius: 6px;
+	font-size: 15px;
+	flex-shrink: 0;
+}
+
+.goalbar-icon-btn:hover {
+	color: var(--text);
+	background: var(--bg-elev2);
+}
+
+.goalbar-opts {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	font-size: 12px;
+	color: var(--text-dim);
+}
+
+.goalbar-opt {
+	cursor: pointer;
+	padding: 2px 6px;
+	border-radius: 6px;
+}
+
+.goalbar-opt:hover {
+	background: var(--bg-elev2);
+}
+
+.goalbar-opt b {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.goalbar-round {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-dim);
+	font-size: 12px;
+}
+
+.goalbar-round input {
+	width: 54px;
+	padding: 3px 6px;
+	font-size: 12px;
+	color: var(--text);
+	background: var(--bg-elev2);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	outline: none;
+	text-align: center;
+}
+
+.goalbar-round input:focus {
+	border-color: var(--accent);
+}
+
+.goalbar-round input::placeholder {
+	color: var(--text-faint);
+}
+
+.goalbar-lock-hint {
+	color: var(--text-dim);
+}
+
+/* Active (goal set) state */
+.goalbar-active {
+	border-color: var(--amber);
+	background: color-mix(in srgb, var(--amber) 8%, var(--bg-elev1));
+}
+
+.goalbar-active.reviewing {
+	border-color: var(--green);
+}
+
+.goalbar-active-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 13px;
+}
+
+.goalbar-text {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	color: var(--text);
+	flex: 1;
+	min-width: 0;
+}
+
+.goalbar-chip {
+	flex-shrink: 0;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--bg-elev2);
+	color: var(--text-dim);
+	white-space: nowrap;
+}
+
+.goalbar-chip.reviewing {
+	background: var(--green);
+	color: #fff;
+}
+
+.goalbar-chip.pass {
+	background: var(--green);
+	color: #fff;
+}
+
+.goalbar-chip.fail {
+	background: var(--red);
+	color: #fff;
+}
+
+.goalbar-detail {
+	color: var(--text-dim);
+	font-size: 12px;
+	flex-shrink: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 30%;
+}
+
+.goalbar-x {
+	background: transparent;
+	border: none;
+	color: var(--text-dim);
+	cursor: pointer;
+	padding: 4px;
+	display: inline-flex;
+	border-radius: 6px;
+	flex-shrink: 0;
+}
+
+.goalbar-x:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.goalbar-x:hover:not(:disabled) {
+	color: var(--red);
+	background: var(--bg-elev2);
+}
+
+.goalbar-collapsed {
+	/* No border/panel — a tiny chip that doesn't dominate the bottom strip. */
+	border: none;
+	background: transparent;
+	padding: 0;
+	align-items: flex-start;
+}
+
+.goalbar-hint {
+	background: transparent;
+	border: none;
+	color: var(--text-dim);
+	font-size: 12px;
+	padding: 4px 10px;
+	cursor: pointer;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	border: 1px dashed var(--border);
+	background: var(--bg-elev1);
+	transition: border-color 0.15s, color 0.15s;
+}
+
+.goalbar-hint svg {
+	color: var(--amber);
+}
+
+.goalbar-hint:hover {
+	color: var(--text);
+	border-color: var(--amber);
+	border-style: solid;
+}
+
+.goalbar-hint span {
+	white-space: nowrap;
+}
+
+/* The review-result card inserted into the message flow. */
+.msg-goal-review {
+	border-left: 3px solid var(--amber);
+}
+
+.msg-goal-review.msg-custom {
+	background: transparent;
+}
 
 /* ---------------------------------------------------------------- inputbar */
 

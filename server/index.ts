@@ -336,6 +336,30 @@ wss.on("connection", (ws) => {
 			case "save_commands":
 				void cs.saveCommands(msg.commands);
 				break;
+			case "set_goal":
+				void cs.setGoal(msg.goal, {
+					reviewModel: msg.reviewModel,
+					maxRounds: msg.maxRounds,
+					locked: msg.locked,
+				});
+				break;
+			case "clear_goal":
+				void cs.clearGoal();
+				break;
+			case "start_goal_wizard":
+				void cs.startGoalWizard(msg.text, {
+					wizardModel: msg.wizardModel,
+					maxRounds: msg.maxRounds,
+					locked: msg.locked,
+				});
+				break;
+			case "set_goal_prefs":
+				void cs.setGoalPrefs({
+					reviewModel: msg.reviewModel,
+					maxRounds: msg.maxRounds,
+					locked: msg.locked,
+				});
+				break;
 			default:
 				break;
 		}

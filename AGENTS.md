@@ -56,6 +56,38 @@ pi-web-ui/
 │   │                           #     对比 npm registry，npm i -g 升级后自动重启（launchd KeepAlive /
 │   │                           #     systemd Restart 退出即拉起；前台派生子进程等旧进程释放端口后接管；
 │   │                           #     Docker 容器内提示外部重启）
+│   │                           #   · 目标审查（goal）：输入框上方 GoalBar 设目标（文本 + 审查模型 +
+│   │                           #     最大轮数 + 锁定开关）。每次 agent_end（仅活动对话）触发 runGoalReview：
+│   │                           #     用独立 ModelRuntime + createAgentSessionFromServices 建一个 in-memory
+│   │                           #     审查会话（不污染主会话、可指定不同模型），喂「目标 + 最终文本 +
+│   │                           #     git diff HEAD」→ 解析 {"verdict":"pass|fail","feedback"}；pass 清目标并
+│   │                           #     插 ✅卡片；fail 且未到 maxRounds 则把意见作为 user 消息注入主会话重改，
+│   │                           #     改完再审查。协议：set_goal / clear_goal / goal_status (GoalStatus)
+│   │                           #   · 审查结果作为普通对话消息（**不再用独立的 goal-review 卡片**）：pass / fail
+│   │                           #     都通过 mainSession.sendUserMessage 把「结论 + 目标 + 审查意见」作为一条
+│   │                           #     普通 user 消息注入主会话（fail 且有剩余轮数时，该消息就是触发重改的 steer）。
+│   │                           #     用 sendUserMessage 而不是 sendCustomMessage → 既是审查结果又带“已解除目标
+│   │                           #     模式、响应新指令”的语义，主 agent 不会惯性停留旧目标、把后续新指令
+│   │                           #     （如“发布”）当目标确认回显。
+│   │                           #   · 目标调研向导（start_goal_wizard）：用户输入原始需求，后端起一个
+│   │                           #     独立调研会话（独立 ModelRuntime + in-memory session + 自定义工具
+│   │                           #     goal_ask，绑定 WebUIContext，复用 select/input 的 dialog 桥接逐条
+│   │                           #     提问，单选/自由文本；收敛后按 GOAL: 标记解析出最终目标并设为 goal。
+│   │                           #     GoalBar「AI 提炼」按钮触发；与审查循环互斥（goalWizardRunning 暂停
+│   │                           #     agent_end 的审查触发）。调研进度卡经 sendCustomMessage
+│   │                           #     (customType "goal-wizard") 落主会话。协议：start_goal_wizard
+│   │                           #     + GoalStatus.wizard (WizardStatus)
+│   │                           #   · 调研取消/超时：每道题的 goal_ask 里 ui.select/input 与一个
+│   │                           #     AbortController（wizardAbort）信号做 Promise.race。点 ✗（clear_goal）
+│   │                           #     或空闲超时（WIZARD_IDLE_TIMEOUT_MS=5 分钟）或总时长上限
+│   │                           #     （WIZARD_MAX_TOTAL_MS=20 分钟）都会 ac.abort()：取消待答弹窗
+│   │                           #     （WebUIContext.cancelPendingDialogs 发 dialog_closed）→
+│   │                           #     wizard.abort() 终止 agent 运行 → 不再 setGoal（wizardCancelled
+│   │                           #     标记，ac.signal.aborted 判断）。
+│   │                           #   · 轮数与偏好记忆：审查轮数 maxRounds 0=不限（默认，持续重改到 pass），
+│   │                           #     >0=有限（cap 到 50）；调研提问不设上限（自行收敛，靠时长/空闲超时兜底）。
+│   │                           #     模型选择 + 轮数 + 锁定经 set_goal_prefs 持久化到 client-state.json
+│   │                           #     （stateStore.goalPrefs，attachSink 重连时回推 goal_status，刷新即恢复）。
 │   ├── serialize.ts            # SDK 消息 → UiMessage 序列化（截断、稳定 id、对象缓存）
 │   └── terminals.ts            # TerminalManager（PTY 生命周期）+ .pi/commands.json 读写
 ├── web/                        # 前端（React + Vite，编译到 web/dist/）
@@ -251,6 +283,17 @@ npm run test:freeze  # 冻结/重连回归测试（Playwright，需要 chromium 
 3. 涉及 ws 协议 → 仓库根有现成 Playwright 脚本可参照（`*-test.mjs`）：
    `terminal-smoke-test.mjs` / `freeze-test.mjs` 等，改 PORT 后用
    `node xxx-test.mjs` 跑（需要 `/Users/c/Library/Caches/ms-playwright/.../chrome-headless-shell`）
+
+### 测试规范（写测试/测代码前先读）
+
+- **全局 vs 本地**：用户日常可能正用**全局安装**的 `pi-web-ui`（`~/.local/share/fnm/node-versions/…/lib/node_modules/pi-web-ui`，默认端口 `8787`）跑着对话/工作。开发改造对象永远是**本地仓库** `/Volumes/P/project/pi-web-ui`。用户会在自己测试时手动关闭全局 dev、切到本地。
+- **绝对不要杀全局进程/占 8787**：禁止 `pkill -f "dist/server/index.js"`——它会命中全局 server（端口 8787），把用户正在用的会话打断。清理只针对**自己启动的测试 server**。
+- **隔离端口**：每个 `*-test.mjs` 用独立端口（≥8900，避开 8787/5173/3300），并在启动 server 前先 `lsof -ti :PORT -sTCP:LISTEN` 确认空闲；若被占，改端口而非硬杀。
+- **精确清理自己起的进程**：spawn 后记录 `server.pid`，测试收尾（含异常 catch 路径）用 `process.kill(pid, 'SIGTERM')` 只杀自己启动的。多开几个 server 时用各自 PID 逐个杀，别用宽泛模式匹配。
+- **data-dir 隔离**：测试 server 设 `PI_WEB_DATA_DIR` 为 `mkdtempSync(tmpdir…)`，`PI_WEB_CWD` 指本地仓库——避免污染真实 user data / client-state / session。
+- **需要真模型/走审查调研的**（goal-*, wizard）会真实调用 LLM、耗 token 且依赖本机模型（opencode-go 可能慢/卡）——写测试时区分「协议冒烟（无 token，如 goal-test/goal-prefs 的 set/clear 轮序）」和「live（真调用）」两类，避免误以为功能坏。
+- **验证项**：每改完一版，跑本地 server（隔离端口+独立 data-dir）→ 对应 `*-test.mjs` → `npm run typecheck` → 涉及 UI 再用 `playwright` 浏览器测试（chromium 路径见各测试文件 HEADLESS 常量）。
+- **goal 家族测试**（仓库根 `goal-*.mjs`）：`goal-test`=协议冒烟（set/clear/locked/review-model/rounds 轮序，无 token）；`goal-prefs-test`=偏好持久化跨 reload；`goal-pill-test`=GoalBar UI（胶囊、向上下拉）；`goal-rounds-test`=最大轮数**直接输入**控件（可输任意值/0=不限）；`goal-autostart-test`=直接 set_goal（不带向导）也**自动触发生成**；`goal-abort-test`=**手动 Stop 即清除 goal、停止审查循环**（agent_end 里助手消息 stopReason==="aborted" 判中断）；`goal-wizard-test`=问卷收敛 auto-set + **auto-generate 自动触发生成**；`goal-wizard-cancel-test`=调研取消/超时；`goal-review-loop-test`=锁定+无限轮数的真实审查循环（需要真模型，本机 deepseek 可能卡，fail 属环境非概率即可）。
 
 ## 6. 发布流程（GitHub + npm）
 

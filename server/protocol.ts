@@ -254,7 +254,33 @@ export type ClientMessage =
 	/** Remove a provider from models.json. */
 	| { type: "delete_model_config"; providerId: string }
 	/** List pi's built-in providers with their auth status (key-only config). */
-	| { type: "list_providers" };
+	| { type: "list_providers" }
+	// -- goal / review -------------------------------------------------------
+	/** Set (or clear) the active goal. When set, each finished agent run is
+	 *  reviewed by an isolated reviewer agent; a failing review steers the main
+	 *  session to revise until `maxRounds` runs out. `locked: true` keeps the
+	 *  goal active across every subsequent turn; `false` clears it after the
+	 *  next turn (single-shot). `reviewModel` ("provider/id", optional) selects
+	 *  a different model for the reviewer. */
+	| { type: "set_goal"; goal: string; reviewModel?: string; maxRounds: number; locked: boolean }
+	| { type: "clear_goal" }
+	/** Start the collaborative target wizard: a user requirement goes into an
+	 *  ISOLATED wizard session which questions the user (multiple-choice + free
+	 *  text bridges) to scope details, then AUTO-SETS the refined goal. `text` is
+	 *  the user's raw requirement. `wizardModel` ("provider/id", optional) picks
+	 *  a different model for the wizard; default is the main conversation model.
+	 *  Mutually exclusive with an active review and with a running wizard. */
+	| { type: "start_goal_wizard"; text: string; wizardModel?: string; maxRounds?: number; locked?: boolean }
+	/** Persist the client's goal/review preference defaults (model choice, review
+	 *  rounds cap, locked) so they survive reload. maxRounds 0 = unlimited.
+	 *  Sent by the goal bar whenever a preference changes (model picker, rounds,
+	 *  lock toggle). */
+	| {
+			type: "set_goal_prefs";
+			reviewModel?: string;
+			maxRounds?: number;
+			locked?: boolean;
+	  };
 
 // ---------------------------------------------------------------------------
 // Server -> Client
@@ -300,6 +326,52 @@ export interface ModelInfo {
 	reasoning: boolean;
 	/** Whether the model accepts image input (SDK `input` includes "image"). */
 	vision: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Goal / review status (server -> client snapshot)
+// ---------------------------------------------------------------------------
+
+/** Current state of the goal-review loop, shown in the goal bar UI. */
+export interface GoalStatus {
+	/** Active goal text; null when no goal is set. */
+	goal: string | null;
+	/** Reviewer model id ("provider/id"), or null to use the main model. */
+	reviewModel: string | null;
+	/** Maximum number of review rounds per goal run. */
+	maxRounds: number;
+	/** Whether the goal persists across turns (locked) or just the next one. */
+	locked: boolean;
+	/** True while a review is running right now. */
+	reviewing: boolean;
+	/** 1-based round counter for the current goal (review rounds). */
+	round: number;
+	/** Human-readable status line (e.g. "审查中", "已通过", "本轮不通过"). */
+	status: string;
+	/** Latest review verdict: "pending" | "pass" | "fail". */
+	verdict: "pending" | "pass" | "fail";
+	/** Latest review feedback text (reviewer's verdict reason, pass or fail). */
+	feedback?: string;
+	/** Collaborative target-wizard progress (null when no wizard is running).
+	 *  The wizard turns a raw user requirement into a refined goal by asking
+	 *  questions, then auto-sets the goal. */
+	wizard: WizardStatus;
+}
+
+/** Progress of the collaborative target wizard (see GoalStatus.wizard). */
+export interface WizardStatus {
+	/** True while the wizard session is asking the user questions. */
+	active: boolean;
+	/** The user's raw requirement being scoped. */
+	draft: string;
+	/** Wizard model id ("provider/id"), or null for the main model default. */
+	model: string | null;
+	/** Question count asked so far (UI shows the step). */
+	step: number;
+	/** Max questions the wizard may ask before forcing a conclusion. */
+	maxSteps: number;
+	/** Short status line for the goal bar (e.g. "调研中：请回答第 2 题"). */
+	status: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,4 +537,10 @@ export type ServerMessage =
 			error?: string;
 	  }
 	/** Result of an update_app run (npm i -g). */
-	| { type: "update_result"; ok: boolean; detail: string };
+	| { type: "update_result"; ok: boolean; detail: string }
+	// -- goal / review -------------------------------------------------------
+	/** Goal status pushed whenever it changes (set / review start-end / verdict).
+	 *  Review result CARDS are inserted into the main conversation flow as real
+	 *  custom messages (rendered like an attachment card), so they persist across
+	 *  snapshots/reconnects — this only drives the goal bar status. */
+	| { type: "goal_status"; status: GoalStatus }

@@ -222,7 +222,27 @@ export type ClientMessage =
 	| { type: "list_models_config" }
 	| { type: "save_model_config"; providerId: string; config: UiProviderConfig }
 	| { type: "delete_model_config"; providerId: string }
-	| { type: "list_providers" };
+	| { type: "list_providers" }
+	// -- goal / review -------------------------------------------------------
+	/** Set (or clear) the active goal. See server/protocol.ts GoalStatus. */
+	| {
+			type: "set_goal";
+			goal: string;
+			reviewModel?: string;
+			maxRounds: number;
+			locked: boolean;
+	  }
+	| { type: "clear_goal" }
+	/** Start the collaborative target wizard (isolated scoping session that
+	 *  questions the user and auto-sets the refined goal). */
+	| { type: "start_goal_wizard"; text: string; wizardModel?: string; maxRounds?: number; locked?: boolean }
+	/** Persist goal/review preference defaults (model, rounds cap, locked). */
+	| {
+			type: "set_goal_prefs";
+			reviewModel?: string;
+			maxRounds?: number;
+			locked?: boolean;
+	  };
 
 export interface SessionSummary {
 	path: string;
@@ -292,6 +312,40 @@ export interface FileContent {
 	binary: boolean;
 	lines: number;
 	size: number;
+}
+
+/** Current state of the goal-review loop, shown in the goal bar UI. */
+export interface GoalStatus {
+	/** Active goal text; null when no goal is set. */
+	goal: string | null;
+	/** Reviewer model id ("provider/id"), or null to use the main model. */
+	reviewModel: string | null;
+	/** Maximum number of review rounds per goal run. */
+	maxRounds: number;
+	/** Whether the goal persists across turns (locked) or just the next one. */
+	locked: boolean;
+	/** True while a review is running right now. */
+	reviewing: boolean;
+	/** 1-based round counter for the current goal (review rounds). */
+	round: number;
+	/** Human-readable status line (e.g. "审查中", "已通过", "本轮不通过"). */
+	status: string;
+	/** Latest review verdict: "pending" | "pass" | "fail". */
+	verdict: "pending" | "pass" | "fail";
+	/** Latest review feedback text (reviewer's verdict reason, pass or fail). */
+	feedback?: string;
+	/** Collaborative target-wizard progress (null when no wizard is running). */
+	wizard: WizardStatus;
+}
+
+/** Progress of the collaborative target wizard (see GoalStatus.wizard). */
+export interface WizardStatus {
+	active: boolean;
+	draft: string;
+	model: string | null;
+	step: number;
+	maxSteps: number;
+	status: string;
 }
 
 export interface ModelInfo {
@@ -438,4 +492,7 @@ export type ServerMessage =
 			error?: string;
 	  }
 	/** Result of an update_app run (npm i -g). */
-	| { type: "update_result"; ok: boolean; detail: string };
+	| { type: "update_result"; ok: boolean; detail: string }
+	// -- goal / review -------------------------------------------------------
+	/** Goal status pushed whenever it changes (drives the goal bar UI). */
+	| { type: "goal_status"; status: GoalStatus }

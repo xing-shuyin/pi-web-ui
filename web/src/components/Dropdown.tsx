@@ -14,6 +14,10 @@ interface DropdownProps {
 	 * max-height with a scrollbar (e.g. small fixed panels like the update
 	 * dropdown). */
 	fit?: boolean;
+	/** Which side of the trigger the menu opens on. "down" (default) drops below;
+	 * "up" floats above it — for bottom-anchored bars (e.g. the goal bar) where
+	 * dropping down would overflow the viewport. */
+	direction?: "down" | "up";
 }
 
 /** Click-outside-aware dropdown menu. */
@@ -24,6 +28,7 @@ export function Dropdown({
 	children,
 	align = "right",
 	fit = false,
+	direction = "down",
 }: DropdownProps) {
 	const ref = useRef<HTMLDivElement>(null);
 
@@ -46,7 +51,10 @@ export function Dropdown({
 	}, [open, onOpenChange]);
 
 	return (
-		<div className={`dropdown ${align} ${fit ? "fit" : ""}`} ref={ref}>
+		<div
+			className={`dropdown ${align} ${fit ? "fit" : ""} ${direction === "up" ? "dd-up" : ""}`}
+			ref={ref}
+		>
 			<button
 				type="button"
 				className="chip"
