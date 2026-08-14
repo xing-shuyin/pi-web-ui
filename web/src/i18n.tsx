@@ -334,7 +334,7 @@ const zh = {
 	deleteProviderConfirm: "删除服务商 {id} 及其 {n} 个模型？",
 
 	/* goal / review */
-	goalBarTitle: "🎯 目标",
+	goalBarTitle: "目标",
 	goalBarPlaceholder: "设定一个目标，agent 完成后自动审查…",
 	goalBarSet: "开始",
 	goalBarClear: "取消",
@@ -693,7 +693,7 @@ const en: Record<keyof typeof zh, string> = {
 	deleteProviderConfirm: "Delete provider {id} and its {n} models?",
 
 	/* goal / review */
-	goalBarTitle: "🎯 Goal",
+	goalBarTitle: "Goal",
 	goalBarPlaceholder: "Set a goal; the agent's output is auto-reviewed…",
 	goalBarSet: "Start",
 	goalBarClear: "Cancel",
