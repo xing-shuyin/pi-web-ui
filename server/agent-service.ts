@@ -253,6 +253,26 @@ function looksLikeText(buf: Buffer): boolean {
 	return control / Math.max(text.length, 1) < 0.02;
 }
 
+/** Decode bytes: strict UTF-8 first, falling back to GBK (Windows legacy
+ *  Chinese files), then latin1 as a last resort — so previews and inline
+ *  attachments never show mojibake for GBK/GB2312 encoded files. */
+function decodeText(buf: Buffer): string {
+	try {
+		return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+	} catch {
+		try {
+			return new TextDecoder("gbk").decode(buf);
+		} catch {
+			return buf.toString("latin1");
+		}
+	}
+}
+
+/** Windows persona appendix: legacy Chinese files are often GBK/GB2312 — read
+ *  them via the terminal with the right encoding, never paste mojibake into
+ *  reasoning/answers. Appended to the SDK system prompt on win32 only. */
+const WINDOWS_GBK_PERSONA = `You are a coding agent running on Windows. Many legacy Chinese text files (.html/.txt/.md/.log, exported documents) are GBK/GB2312 encoded: the read tool decodes UTF-8 only and will show mojibake (乱码) for them. If a file's content looks garbled, read it through the terminal instead: in Git Bash use \`cat file | iconv -f GBK -t UTF-8\` (or \`iconv -f GBK -t UTF-8 file\`); in cmd use \`chcp 65001 && type file\`; in PowerShell use \`Get-Content -Encoding Default file\`. Never paste mojibake into your reasoning or answer — describe the decoded content instead.`;
+
 /**
  * Cheap per-message discriminator for the serialization cache key. Persisted
  * message content never changes, so this is stable across snapshots, while
@@ -1086,6 +1106,17 @@ export class ClientSession {
 			const services = await createAgentSessionServices({
 				cwd: effectiveCwd,
 				modelRuntime: this.sharedModelRuntime,
+				...(process.platform === "win32"
+					? {
+							// Windows 上很多老中文文件（.html/.txt/.md/.log、导出文档）是
+							// GBK/GB2312 编码，read 工具按 UTF-8 读会乱码——注入 persona 让模型
+							// 改用终端按 GBK 读，且绝不把乱码贴进推理/回答。
+							resourceLoaderOptions: {
+								systemPromptOverride: (base?: string) =>
+									base ? `${base}\n\n${WINDOWS_GBK_PERSONA}` : WINDOWS_GBK_PERSONA,
+							},
+					  }
+					: {}),
 			});
 			return {
 				...(await createAgentSessionFromServices({ services, sessionManager })),
@@ -2512,7 +2543,7 @@ export class ClientSession {
 							content: [
 								{
 									type: "text",
-									text: `\n<file path="${wirePath}">\n\`\`\`\n${buf.toString("utf8")}\n\`\`\`\n</file>`,
+									text: `\n<file path="${wirePath}">\n\`\`\`\n${decodeText(buf)}\n\`\`\`\n</file>`,
 								},
 							],
 							display: true,
@@ -2657,7 +2688,7 @@ export class ClientSession {
 						content: [
 							{
 								type: "text",
-								text: `\n<file path="${rel}">\n\`\`\`\n${buf.toString("utf8")}\n\`\`\`\n</file>`,
+								text: `\n<file path="${rel}">\n\`\`\`\n${decodeText(buf)}\n\`\`\`\n</file>`,
 							},
 						],
 						display: true,
@@ -2711,7 +2742,7 @@ export class ClientSession {
 					out.push(makeReference());
 					continue;
 				}
-				const parts = buf.toString("utf8").split("\n");
+				const parts = decodeText(buf).split("\n");
 				// A trailing newline yields an empty phantom line — drop it so line
 				// numbers match the preview panel.
 				if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
@@ -3287,7 +3318,7 @@ export class ClientSession {
 						type: "file_content",
 						path: rel,
 						name,
-						text: data.toString("utf8"),
+						text: decodeText(data),
 						truncated: bytesRead < stat.size,
 						binary: false,
 						kind: "text",

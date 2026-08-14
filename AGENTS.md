@@ -180,7 +180,8 @@ createImageBitmap 解码 SVG 会失败，SVG 作为普通文件附加让模型�
 - 客户端发 `{ type: "read_file", path }` → 服务端回 `{ type: "file_content", path, name, text, truncated, binary, lines, size }`。
 - 只读文件前 **512KB**（`MAX_PREVIEW_BYTES`）；**内容嗅探决定文本还是二进制**：
   无 NUL、控制字符占比 < 2% 即按文本预览（`looksLikeText`）——未知/无扩展名文件
-  （jsonl、.log.1 等）也能打开；二进制返回 `binary: true`，`text` 为前 4KB 的
+  （jsonl、.log.1 等）也能打开；**文本解码带 GBK 回退**（`decodeText`：严格 UTF-8
+  失败 → GBK → latin1，预览/内联附件/行附件都用它），Windows 老中文文件不再乱码；二进制返回 `binary: true`，`text` 为前 4KB 的
   **十六进制视图**（`hexDump`，前端 `.fp-hex` 渲染，可下载完整文件）。
   路径经 `resolve + relative` 校验，`..` 越界直接拒。
 - **媒体预览走 HTTP**：image/video 经 `/api/file?clientId=…&path=…` 流式返回（`sendFile` 支持 Range），
@@ -375,6 +376,9 @@ pi-web-ui server status|restart|stop|uninstall
 - **`hello` 前/会话未就绪时的命令**：`server/index.ts` 的 `pending` 队列会缓存并在 attach 后重放。
 - **socket 半开**：服务端 10s 心跳，客户端 30s 无消息主动断开重连（指数退避 1s→10s）。
 - **预览与附件行号**：`countLines` 不算尾随换行；前端 `split("\n")` 后也要 pop 掉末尾空串。
+- **Windows 老中文文件乱码**：预览/内联附件/行附件统一走 `decodeText`（严格 UTF-8 失败 → GBK → latin1）；
+  win32 下 `makeRuntimeFactory` 经 `resourceLoaderOptions.systemPromptOverride` 注入 persona，让模型用终端按
+  GBK 读文件（iconv / chcp / Get-Content -Encoding Default），绝不把乱码贴进推理/回答。
 - **Playwright 脚本**：headless shell 路径写死在本机，CI/换机需要改 `HEADLESS` 常量。
 
 ---
