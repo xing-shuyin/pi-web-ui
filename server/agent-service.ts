@@ -2325,21 +2325,25 @@ export class ClientSession {
 	static NATIVE_COMMANDS: {
 		name: string;
 		description: string;
+		descriptionEn: string;
 		argumentHint?: string;
+		argumentHintEn?: string;
 	}[] = [
-		{ name: "new", description: "新建对话" },
-		{ name: "model", description: "切换模型", argumentHint: "[名称]" },
-		{ name: "compact", description: "压缩上下文", argumentHint: "[说明]" },
-		{ name: "cwd", description: "切换工作目录", argumentHint: "<路径>" },
+		{ name: "new", description: "新建对话", descriptionEn: "New chat" },
+		{ name: "model", description: "切换模型", descriptionEn: "Switch model", argumentHint: "[名称]", argumentHintEn: "[name]" },
+		{ name: "compact", description: "压缩上下文", descriptionEn: "Compact context", argumentHint: "[说明]", argumentHintEn: "[instructions]" },
+		{ name: "cwd", description: "切换工作目录", descriptionEn: "Switch workspace", argumentHint: "<路径>", argumentHintEn: "<path>" },
 		{
 			name: "thinking",
 			description: "设置思考强度",
-			argumentHint: "<off|low|medium|high>",
+			descriptionEn: "Set thinking level",
+			argumentHint: "<off|low|medium|high|xhigh|max>",
+			argumentHintEn: "<off|low|medium|high|xhigh|max>",
 		},
-		{ name: "resume", description: "刷新会话列表" },
-		{ name: "reload", description: "重新加载扩展、技能与模板" },
-		{ name: "help", description: "显示全部命令" },
-		{ name: "copy", description: "复制上一条助手回复" },
+		{ name: "resume", description: "刷新会话列表", descriptionEn: "Refresh session list" },
+		{ name: "reload", description: "重新加载扩展、技能与模板", descriptionEn: "Reload extensions, skills & templates" },
+		{ name: "help", description: "显示全部命令", descriptionEn: "Show all commands" },
+		{ name: "copy", description: "复制上一条助手回复", descriptionEn: "Copy last assistant reply" },
 	];
 
 	/** Parse a prompt into "/command args" — returns null when it isn't one. */

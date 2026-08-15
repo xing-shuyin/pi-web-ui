@@ -154,8 +154,10 @@ export interface SlashCommandInfo {
 	 *  names are suffixed by the SDK ("new:2"), like the CLI. */
 	name: string;
 	description?: string;
+	descriptionEn?: string;
 	/** Argument placeholder shown in the picker (e.g. "<路径>", "[说明]"). */
 	argumentHint?: string;
+	argumentHintEn?: string;
 	/** Where the command comes from: web-native builtin / SDK extension /
 	 *  prompt template / skill. */
 	source: "builtin" | "extension" | "prompt" | "skill";
