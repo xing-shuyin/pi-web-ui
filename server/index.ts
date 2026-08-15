@@ -21,7 +21,7 @@ import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createConnection } from "node:net";
 import { spawn } from "node:child_process";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -29,6 +29,7 @@ import express from "express";
 import { WebSocket, WebSocketServer } from "ws";
 import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { AgentService, previewKind, workspacePath } from "./agent-service.js";
+import { ensureWindowsBash, windowsBashDir } from "./ensure-bash.js";
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -38,6 +39,14 @@ const DATA_DIR = resolve(process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web
 // <SESSION_DIR_ROOT>/--<cwd>--/, shared with the pi CLI/TUI (getAgentDir
 // honors PI_CODING_AGENT_DIR).
 const SESSION_DIR_ROOT = join(getAgentDir(), "sessions");
+
+// Windows 轻量 bash 兜底：把 <home>/.pi-web/bin 前置到 PATH（SDK 的 bash 工具经
+// findBashOnPath 会找到其中的 bash.exe），并在无 Git Bash 时后台下载 busybox-w32。
+// 终端面板的 shell 探测链也已包含该目录（见 terminals.ts resolveShell）。
+if (process.platform === "win32") {
+	process.env.PATH = `${windowsBashDir()}${delimiter}${process.env.PATH ?? ""}`;
+	void ensureWindowsBash();
+}
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));

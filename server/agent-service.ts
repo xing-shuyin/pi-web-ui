@@ -268,10 +268,20 @@ function decodeText(buf: Buffer): string {
 	}
 }
 
-/** Windows persona appendix: legacy Chinese files are often GBK/GB2312 — read
- *  them via the terminal with the right encoding, never paste mojibake into
- *  reasoning/answers. Appended to the SDK system prompt on win32 only. */
-const WINDOWS_GBK_PERSONA = `You are a coding agent running on Windows. Many legacy Chinese text files (.html/.txt/.md/.log, exported documents) are GBK/GB2312 encoded: the read tool decodes UTF-8 only and will show mojibake (乱码) for them. If a file's content looks garbled, read it through the terminal instead: in Git Bash use \`cat file | iconv -f GBK -t UTF-8\` (or \`iconv -f GBK -t UTF-8 file\`); in cmd use \`chcp 65001 && type file\`; in PowerShell use \`Get-Content -Encoding Default file\`. Never paste mojibake into your reasoning or answer — describe the decoded content instead.`;
+/** Windows persona appendix — appended to the SDK system prompt on win32 only.
+ *  Two failure modes it guards against: (1) the SDK bash tool has NO default
+ *  timeout, so a long-running command hangs the whole conversation forever;
+ *  (2) the in-app terminal is an interactive TTY where heredocs / interactive
+ *  programs wait for input that never comes. Legacy Chinese files are often
+ *  GBK/GB2312 — read them with the right encoding, never paste mojibake into
+ *  reasoning/answers. */
+const WINDOWS_PERSONA = `You are a coding agent running on Windows. The bash tool runs Git Bash (bash.exe), not PowerShell. Follow these rules to avoid hanging the session:
+
+- ALWAYS pass a timeout parameter to the bash tool (in seconds). There is NO default timeout — a command that never finishes (servers, watchers, infinite loops, slow downloads/installs) will hang the entire conversation indefinitely. Pick a generous timeout for long-running work, but never omit it.
+- NEVER run interactive or foreground long-running commands through the bash tool (vi, less, top, python -, node -, npm run dev, sleep 10000). For servers/daemons use background execution with output redirected to a log file, then poll the log; stop them when done.
+- In the interactive terminal (TTY) — which is Git Bash too, not PowerShell — NEVER use heredocs (<<'EOF' ... EOF) or here-strings, and NEVER start interactive programs (vi, less, python -, node -, npm init): they wait for keyboard input that never arrives and hang the terminal forever. Prefer writing a temp script file (e.g. .pi-tmp.sh) and running it non-interactively. ALWAYS pass a timeout to long-running commands (e.g. \`timeout 120 npm run dev\`).
+
+Many legacy Chinese text files (.html/.txt/.md/.log, exported documents) are GBK/GB2312 encoded: the read tool decodes UTF-8 only and will show mojibake (乱码) for them. If a file's content looks garbled, read it through the terminal instead: in Git Bash use \`cat file | iconv -f GBK -t UTF-8\` (or \`iconv -f GBK -t UTF-8 file\`); in cmd use \`chcp 65001 && type file\`; in PowerShell use \`Get-Content -Encoding Default file\`. Never paste mojibake into your reasoning or answer — describe the decoded content instead.`;
 
 /**
  * Cheap per-message discriminator for the serialization cache key. Persisted
@@ -890,7 +900,21 @@ interface Conversation {
 	/** tool_execution_start timestamps keyed by toolCallId — lets tool_status
 	 *  report how long a tool actually ran (vs. waiting on the model). */
 	toolStartTimes: Map<string, number>;
+	/** tool_call watchdog timers keyed by toolCallId — a tool that runs past
+	 *  TOOL_WATCHDOG_TIMEOUT_MS gets the session aborted instead of hanging
+	 *  the conversation forever (the SDK bash tool has no default timeout). */
+	toolWatchdogs: Map<string, ReturnType<typeof setTimeout>>;
 }
+
+/** Hard cap on how long ONE tool call may run before the watchdog aborts the
+ *  session. The SDK bash tool has NO default timeout, so a command that never
+ *  finishes (servers, watchers, infinite loops) would otherwise hang the whole
+ *  conversation indefinitely. Override with the PI_WEB_TOOL_TIMEOUT_MS env var
+ *  (milliseconds). */
+const TOOL_WATCHDOG_TIMEOUT_MS = (() => {
+	const v = Number(process.env.PI_WEB_TOOL_TIMEOUT_MS);
+	return Number.isFinite(v) && v > 0 ? v : 20 * 60_000;
+})();
 
 /** Cap on simultaneously open conversations of ONE project (each keeps a full
  *  runtime alive; conversations of other projects keep their own lists). */
@@ -1108,12 +1132,12 @@ export class ClientSession {
 				modelRuntime: this.sharedModelRuntime,
 				...(process.platform === "win32"
 					? {
-							// Windows 上很多老中文文件（.html/.txt/.md/.log、导出文档）是
-							// GBK/GB2312 编码，read 工具按 UTF-8 读会乱码——注入 persona 让模型
-							// 改用终端按 GBK 读，且绝不把乱码贴进推理/回答。
+							// Windows 专属 persona：bash 工具跑 Git Bash 且无默认超时、终端是
+							// 交互式 TTY——注入约束避免 heredoc/交互/长驻命令挂死整个会话；
+							// GBK 老中文文件让模型改用终端按正确编码读（iconv/chcp/Get-Content）。
 							resourceLoaderOptions: {
 								systemPromptOverride: (base?: string) =>
-									base ? `${base}\n\n${WINDOWS_GBK_PERSONA}` : WINDOWS_GBK_PERSONA,
+									base ? `${base}\n\n${WINDOWS_PERSONA}` : WINDOWS_PERSONA,
 							},
 					  }
 					: {}),
@@ -1149,6 +1173,7 @@ export class ClientSession {
 			queueSteering: 0,
 			queueFollowUp: 0,
 			toolStartTimes: new Map(),
+			toolWatchdogs: new Map(),
 		};
 	}
 
@@ -1220,6 +1245,44 @@ export class ClientSession {
 		}, WIDGET_REFRESH_MS);
 	}
 
+	/** Arm the hang-guard for a tool call: if it is still running after
+	 *  TOOL_WATCHDOG_TIMEOUT_MS, abort the session instead of letting the
+	 *  conversation hang forever (the SDK bash tool has no default timeout). */
+	private armToolWatchdog(conv: Conversation, toolCallId: string): void {
+		const t = setTimeout(() => {
+			conv.toolWatchdogs.delete(toolCallId);
+			// The tool finished before the deadline — nothing to do.
+			if (!conv.toolStartTimes.has(toolCallId)) return;
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `工具执行超过 ${Math.round(TOOL_WATCHDOG_TIMEOUT_MS / 60_000)} 分钟，已自动终止（防止挂死）。可调整超时：环境变量 PI_WEB_TOOL_TIMEOUT_MS（毫秒）。`,
+			});
+			conv.toolStartTimes.delete(toolCallId);
+			// Abort the run (kills the process tree via the SDK's abort signal);
+			// agent_end will fire with stopReason "aborted" and existing logic
+			// clears any goal / review loop.
+			void conv.runtime.session.abort().catch(() => {});
+		}, TOOL_WATCHDOG_TIMEOUT_MS);
+		t.unref?.();
+		conv.toolWatchdogs.set(toolCallId, t);
+	}
+
+	/** Cancel a tool's watchdog — called when the tool finishes normally. */
+	private clearToolWatchdog(conv: Conversation, toolCallId: string): void {
+		const t = conv.toolWatchdogs.get(toolCallId);
+		if (t) {
+			clearTimeout(t);
+			conv.toolWatchdogs.delete(toolCallId);
+		}
+	}
+
+	/** Cancel every watchdog of a conversation (removeConversation / dispose). */
+	private clearAllToolWatchdogs(conv: Conversation): void {
+		for (const t of conv.toolWatchdogs.values()) clearTimeout(t);
+		conv.toolWatchdogs.clear();
+	}
+
 	private onEvent(conv: Conversation, event: AgentSessionEvent): void {
 		switch (event.type) {
 			case "bash_execution_update": {
@@ -1237,11 +1300,13 @@ export class ClientSession {
 				// Record the moment the tool actually starts so tool_status can
 				// report real execution time (vs. time spent waiting on the model).
 				conv.toolStartTimes.set(event.toolCallId, Date.now());
+				this.armToolWatchdog(conv, event.toolCallId);
 				break;
 			}
 			case "tool_execution_end": {
 				const startedAt = conv.toolStartTimes.get(event.toolCallId);
 				conv.toolStartTimes.delete(event.toolCallId);
+				this.clearToolWatchdog(conv, event.toolCallId);
 				const durationMs =
 					startedAt !== undefined ? Date.now() - startedAt : undefined;
 				// The bash tool does not put its exit code in result.details — on
@@ -2939,6 +3004,7 @@ export class ClientSession {
 		const conv = this.convs.get(id);
 		if (!conv || id === this.activeId) return;
 		this.convs.delete(id);
+		this.clearAllToolWatchdogs(conv);
 		conv.unsubscribe?.();
 		conv.unsubscribe = undefined;
 		void conv.runtime.dispose().catch(() => {});
@@ -4396,6 +4462,7 @@ export class ClientSession {
 		this.unwatchDir();
 		this.webUi.dispose();
 		for (const conv of this.convs.values()) {
+			this.clearAllToolWatchdogs(conv);
 			conv.unsubscribe?.();
 			try {
 				await conv.runtime.dispose();

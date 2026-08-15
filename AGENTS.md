@@ -32,6 +32,7 @@ Windows 计划任务部署。
 pi-web-ui/
 ├── server/                     # 后端（Node ESM，编译到 dist/server/）
 │   ├── index.ts                # 入口：express 静态 + /ws 端点、消息分发、心跳、优雅停机
+│   │                           #   启动时 win32 把 ~/.pi-web/bin 前置到 PATH + 后台触发 ensureWindowsBash
 │   ├── protocol.ts             # ★ 唯一事实源：wire 协议类型（client↔server 消息）
 │   ├── agent-service.ts        # 核心：ClientSession（每客户端一个会话组，可并行多个对话）+ AgentService
 │   │                           #   · 多对话并发：convs Map<convId, Conversation>，每个对话独立
@@ -89,6 +90,9 @@ pi-web-ui/
 │   │                           #     模型选择 + 轮数 + 锁定经 set_goal_prefs 持久化到 client-state.json
 │   │                           #     （stateStore.goalPrefs，attachSink 重连时回推 goal_status，刷新即恢复）。
 │   ├── serialize.ts            # SDK 消息 → UiMessage 序列化（截断、稳定 id、对象缓存）
+│   ├── ensure-bash.ts          # Windows 轻量 bash 兜底：无 Git Bash 时自动下载 busybox-w32
+│   │                           #   （单 exe ~660KB，含 bash/iconv/sh/timeout）到 ~/.pi-web/bin/bash.exe
+│   │                           #   （busybox 按 argv[0] 派发 applet）；下载失败静默回退 cmd
 │   └── terminals.ts            # TerminalManager（PTY 生命周期）+ .pi/commands.json 读写
 ├── web/                        # 前端（React + Vite，编译到 web/dist/）
 │   ├── vite.config.ts          # dev 端口 5173，/ws 代理到后端
@@ -349,6 +353,8 @@ curl -s https://registry.npmjs.org/pi-web-ui/latest | jq .version
 | `PI_WEB_CWD` | `process.cwd()` | 智能体工作区（读/写/终端都以此为根） |
 | `PI_WEB_DATA_DIR` | `~/.pi-web` | 每客户端持久化 UI 状态（client-state.json，最近项目/工作目录）；对话会话放 SDK 默认目录 `<agentDir>/sessions/--<cwd>--/`（与 pi CLI/TUI 共享同一对话列表） |
 | `PI_WEB_INLINE_FILE_MAX` | `12288` (12KB) | inline 附件的内联阈值，超过自动降级为路径引用 |
+| `PI_WEB_TOOL_TIMEOUT_MS` | `1200000` (20 分钟) | 单个工具调用最长执行时长，超时看门狗自动 abort 会话（防挂死） |
+| `PI_WEB_SHELL` | 自动探测 | Windows 终端面板（node-pty）的 shell：默认优先 Git Bash（与 SDK bash 工具一致），可用此变量显式指定（如 `powershell.exe` / `cmd.exe`） |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi 配置目录（auth.json / models.json / skills） |
 
 ## 8. 部署（速查）
@@ -376,9 +382,17 @@ pi-web-ui server status|restart|stop|uninstall
 - **`hello` 前/会话未就绪时的命令**：`server/index.ts` 的 `pending` 队列会缓存并在 attach 后重放。
 - **socket 半开**：服务端 10s 心跳，客户端 30s 无消息主动断开重连（指数退避 1s→10s）。
 - **预览与附件行号**：`countLines` 不算尾随换行；前端 `split("\n")` 后也要 pop 掉末尾空串。
+- **终端 shell（Windows）**：`terminals.ts` 的 `resolveShell()` 每次创建终端时解析，优先 bash——
+  `PI_WEB_SHELL` 显式 → `$SHELL` → Git Bash（ProgramFiles）→ busybox 兜底
+  （`~/.pi-web/bin/bash.exe`，`ensure-bash.ts` 无 Git Bash 时自动下载 busybox-w32）→ `$COMSPEC` → powershell。
+  与 SDK bash 工具（Git Bash / PATH 上的 bash）保持一致，避免 PowerShell/bash 混用挂死。
 - **Windows 老中文文件乱码**：预览/内联附件/行附件统一走 `decodeText`（严格 UTF-8 失败 → GBK → latin1）；
-  win32 下 `makeRuntimeFactory` 经 `resourceLoaderOptions.systemPromptOverride` 注入 persona，让模型用终端按
-  GBK 读文件（iconv / chcp / Get-Content -Encoding Default），绝不把乱码贴进推理/回答。
+  win32 下 `makeRuntimeFactory` 经 `resourceLoaderOptions.systemPromptOverride` 注入 `WINDOWS_PERSONA`，约束模型：
+  bash 工具必须带 timeout（SDK 无默认超时）、禁 heredoc/交互/前台长驻命令（防整夜挂死）；GBK 文件用终端按正确编码读
+  （iconv / chcp / Get-Content -Encoding Default），绝不把乱码贴进推理/回答。
+- **工具挂死看门狗**：每个 `tool_execution_start` 都会为 toolCallId arm 一个 `TOOL_WATCHDOG_TIMEOUT_MS`（默认 20 分钟，
+  环境变量 `PI_WEB_TOOL_TIMEOUT_MS`（毫秒）覆盖）的 timer——超时仍在跑就 `session.abort()`（杀进程树）+ warning notice，
+  `tool_execution_end` / `removeConversation` / `dispose` 都会清掉对应 timer。
 - **Playwright 脚本**：headless shell 路径写死在本机，CI/换机需要改 `HEADLESS` 常量。
 
 ---

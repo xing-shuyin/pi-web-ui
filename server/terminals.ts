@@ -142,16 +142,48 @@ interface TermEntry {
 }
 
 const isWindows = process.platform === "win32";
+
+/** `-i` makes bash interactive; cmd.exe / powershell.exe are interactive on their own. */
+function bashArgs(shell: string): string[] {
+	return /[\\/]bash(\.exe)?$/i.test(shell) ? ["-i"] : [];
+}
+
 /**
- * Interactive shell for PTYs. Windows has no $SHELL: use Git Bash if the user
- * has it, otherwise the console host from $COMSPEC (always set → cmd.exe).
- * POSIX uses the user's login shell, falling back to bash.
+ * Interactive shell for PTYs.
+ * - Windows: prefer bash — it matches the SDK's bash tool, so the agent and
+ *   the terminal speak the same shell language (no more PowerShell/bash
+ *   混用 that leaves heredocs / `&&` / `<<` hanging or erroring). Order:
+ *   1. PI_WEB_SHELL (explicit override)
+ *   2. $SHELL when it exists on disk (user launched from a Git Bash session)
+ *   3. Git Bash install paths (ProgramFiles / ProgramFiles(x86))
+ *   4. busybox-w32 fallback in <home>/.pi-web/bin/bash.exe (ensure-bash.ts
+ *      downloads it automatically when 2–3 are absent)
+ *   5. $COMSPEC (cmd.exe — always set)
+ *   6. powershell.exe (last resort)
+ * - POSIX: the user's login shell, falling back to bash.
+ * Resolved per terminal spawn (not at module load) so a busybox download that
+ * finishes after startup is picked up by the next terminal.
  */
-const SHELL = isWindows
-	? process.env.SHELL || process.env.COMSPEC || "powershell.exe"
-	: process.env.SHELL || "bash";
-/** `-i` is POSIX-only; cmd.exe / powershell.exe start interactively on their own. */
-const SHELL_ARGS: string[] = isWindows ? [] : ["-i"];
+function resolveShell(): { shell: string; args: string[] } {
+	if (isWindows) {
+		const explicit = process.env.PI_WEB_SHELL;
+		if (explicit) return { shell: explicit, args: bashArgs(explicit) };
+		const she = process.env.SHELL;
+		if (she && existsSync(she)) return { shell: she, args: bashArgs(she) };
+		const pf = process.env.ProgramFiles;
+		const pf86 = process.env["ProgramFiles(x86)"];
+		for (const cand of [
+			pf ? join(pf, "Git", "bin", "bash.exe") : "",
+			pf86 ? join(pf86, "Git", "bin", "bash.exe") : "",
+		]) {
+			if (cand && existsSync(cand)) return { shell: cand, args: ["-i"] };
+		}
+		const busybox = join(homedir(), ".pi-web", "bin", "bash.exe");
+		if (existsSync(busybox)) return { shell: busybox, args: ["-i"] };
+		return { shell: process.env.COMSPEC || "powershell.exe", args: [] };
+	}
+	return { shell: process.env.SHELL || "bash", args: ["-i"] };
+}
 
 /**
  * Environment for spawned shells. System services (launchd/systemd) run with
@@ -358,7 +390,8 @@ export class TerminalManager {
 		repairSpawnHelperPermissions();
 		let pty: IPty;
 		try {
-			pty = spawn(SHELL, SHELL_ARGS, {
+			const { shell, args } = resolveShell();
+			pty = spawn(shell, args, {
 				name: "xterm-256color",
 				cols: Math.max(2, Math.floor(cols) || 80),
 				rows: Math.max(2, Math.floor(rows) || 24),
