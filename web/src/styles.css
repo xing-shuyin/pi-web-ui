@@ -1640,6 +1640,35 @@ body {
 	filter: brightness(1.12);
 }
 
+/* Clear multi-line hover hint for the global interrupt button. */
+.topbar .btn.interrupt[data-tip] {
+	position: relative;
+}
+.topbar .btn.interrupt[data-tip]::after {
+	content: attr(data-tip);
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	background: #232733;
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 6px 10px;
+	font-size: 11px;
+	line-height: 1.5;
+	white-space: pre-line;
+	max-width: 300px;
+	text-align: left;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.09s ease;
+	z-index: 50;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.topbar .btn.interrupt[data-tip]:hover::after {
+	opacity: 1;
+}
+
 /* Desktop-only toolbar block (model/thinking/sound/lang/update/github).
    On phones it is replaced by the single "⋯" button (.topbar-more). */
 .topbar-desktop {

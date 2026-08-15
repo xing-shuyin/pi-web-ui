@@ -190,7 +190,7 @@ export function TopBar({
 				<button
 					type="button"
 					className={`btn interrupt${state?.isStreaming ? " active" : ""}`}
-					title={t("interruptTip")}
+					data-tip={t("interruptTip")}
 					onClick={() => {
 						send({ type: "abort" });
 						if (!state?.isStreaming) {
