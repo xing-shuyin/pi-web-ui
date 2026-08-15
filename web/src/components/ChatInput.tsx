@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FiSend, FiSquare, FiPaperclip, FiArrowUp } from "react-icons/fi";
 import type { ChatState } from "../use-chat";
 import type { ClientMessage, SlashCommandInfo } from "../types";
-import { useT } from "../i18n";
+import { useT, useI18n } from "../i18n";
 import { isRasterImage } from "../image-paste";
 
 import { ModelThinking } from "./ModelThinking";
@@ -51,6 +51,11 @@ export function ChatInput({
 	onManageModels,
 }: ChatInputProps) {
 	const t = useT();
+	const { locale } = useI18n();
+	const slashDesc = (c: SlashCommandInfo) =>
+		locale === "en" && c.descriptionEn ? c.descriptionEn : (c.description ?? "");
+	const slashHint = (c: SlashCommandInfo) =>
+		locale === "en" && c.argumentHintEn ? c.argumentHintEn : (c.argumentHint ?? "");
 	const [text, setText] = useState("");
 	const [dragOver, setDragOver] = useState(false);
 	/** Slash-command picker: non-null while open (filtered by the current input). */
@@ -460,9 +465,9 @@ export function ChatInput({
 								{SOURCE_LABEL[c.source]}
 							</span>
 							<span className="slash-desc">
-								{c.description}
+								{slashDesc(c)}
 								{c.argumentHint && (
-									<span className="slash-hint">{c.argumentHint}</span>
+									<span className="slash-hint">{slashHint(c)}</span>
 								)}
 							</span>
 						</button>
@@ -497,9 +502,9 @@ export function ChatInput({
 											{SOURCE_LABEL[c.source]}
 										</span>
 										<span className="slash-help-desc">
-											{c.description}
+											{slashDesc(c)}
 											{c.argumentHint && (
-												<span className="slash-hint">{c.argumentHint}</span>
+												<span className="slash-hint">{slashHint(c)}</span>
 											)}
 										</span>
 									</div>
