@@ -1617,6 +1617,29 @@ body {
 	min-width: 0;
 }
 
+/* Global interrupt button — prominent red stop, shown in the top bar while a
+   run is streaming so a hung command can always be stopped (even when the
+   input bar is scrolled off screen). */
+.topbar .btn.interrupt {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 12px;
+	border: 1px solid var(--red);
+	border-radius: 6px;
+	background: var(--red);
+	color: #fff;
+	font-size: 12.5px;
+	font-weight: 600;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: filter 0.15s;
+}
+.topbar .btn.interrupt:hover:not(:disabled) {
+	filter: brightness(1.12);
+}
+
 /* Desktop-only toolbar block (model/thinking/sound/lang/update/github).
    On phones it is replaced by the single "⋯" button (.topbar-more). */
 .topbar-desktop {

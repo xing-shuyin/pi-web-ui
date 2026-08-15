@@ -1019,6 +1019,14 @@ export class ClientSession {
 	private static readonly WIZARD_IDLE_TIMEOUT_MS = 5 * 60_000;
 	/** Absolute deadline for the whole wizard session (model latency guard). */
 	private static readonly WIZARD_MAX_TOTAL_MS = 20 * 60_000;
+	/** How long a hard abort waits for session.abort() to make the run idle
+	 *  before force-resetting the conversation (model streams that ignore the
+	 *  abort signal would otherwise leave the chat stuck forever). */
+	private static readonly HARD_ABORT_TIMEOUT_MS = 15_000;
+	/** Extra settle window after session.abort() returns: the run is only
+	 *  considered stopped once its agent_end event arrives. If it doesn't
+	 *  (model stream stuck before the run even started), force-reset. */
+	private static readonly HARD_ABORT_SETTLE_MS = 8_000;
 
 	/** The active conversation (all session operations target it). */
 	private get conv(): Conversation {
@@ -1261,8 +1269,9 @@ export class ClientSession {
 			conv.toolStartTimes.delete(toolCallId);
 			// Abort the run (kills the process tree via the SDK's abort signal);
 			// agent_end will fire with stopReason "aborted" and existing logic
-			// clears any goal / review loop.
-			void conv.runtime.session.abort().catch(() => {});
+			// clears any goal / review loop. interruptRun adds a force-reset
+			// fallback in case the model stream ignores the abort signal.
+			void this.interruptRun(conv, "工具执行超时");
 		}, TOOL_WATCHDOG_TIMEOUT_MS);
 		t.unref?.();
 		conv.toolWatchdogs.set(toolCallId, t);
@@ -2892,9 +2901,50 @@ export class ClientSession {
 		return out;
 	}
 
+	/**
+	 * Hard-abort the running agent (Stop button / global 中断). Tries
+	 * session.abort() first; if the run is not idle within
+	 * HARD_ABORT_TIMEOUT_MS (model stream ignoring the abort signal), the
+	 * conversation's runtime is force-disposed and recreated from the last
+	 * persisted session so the chat ALWAYS comes back usable — never stuck
+	 * overnight. The notice fires only on the forced-reset path.
+	 */
 	async abort(): Promise<void> {
+		await this.interruptRun(this.conv, "已停止");
+		this.flushSnapshot();
+	}
+
+	/** Interrupt a run: abort, with a force-reset fallback on timeout. */
+	private async interruptRun(conv: Conversation, reason: string): Promise<void> {
+		// The run is only truly stopped when its agent_end event arrives:
+		// session.abort() can return without stopping anything when the run is
+		// stuck before the agent even started (e.g. a model stream that never
+		// begins), so we watch for agent_end and force-reset when it never
+		// comes — abort 卡住（超时）或空转（结算窗口）两条路都覆盖。
+		let ended = false;
+		let forced = false;
+		const off = conv.session.subscribe((e) => {
+			if (e.type === "agent_end") {
+				ended = true;
+			}
+		});
+		const force = () => {
+			if (forced) return;
+			forced = true;
+			void this.forceResetConversation(
+				conv,
+				`${reason}：运行未终止，已强制重置当前对话`,
+			);
+		};
+		// 1) abort itself hangs (model stream ignores the signal) → hard kill.
+		const abortTimer = setTimeout(() => {
+			if (!ended) force();
+		}, ClientSession.HARD_ABORT_TIMEOUT_MS);
+		abortTimer.unref?.();
+		// 2) abort itself (Stop semantics: kills the process tree, emits
+		//    agent_end with stopReason "aborted" on the normal path).
 		try {
-			await this.session.abort();
+			await conv.runtime.session.abort();
 		} catch (err) {
 			this.emit({
 				type: "notice",
@@ -2902,7 +2952,48 @@ export class ClientSession {
 				text: `中止失败：${(err as Error).message}`,
 			});
 		}
-		this.flushSnapshot();
+		// 3) abort returned but no agent_end within the settle window → the
+		//    run was stuck before it started; force-reset to recover.
+		if (!ended) {
+			await new Promise((r) => setTimeout(r, ClientSession.HARD_ABORT_SETTLE_MS));
+		}
+		clearTimeout(abortTimer);
+		off();
+		if (!ended) force();
+	}
+
+	/** Force-reset a conversation: dispose the stuck runtime (kills the hung
+	 *  model stream / child processes) and rebuild it from the most recent
+	 *  persisted session. The conversation record itself is kept (same id,
+	 *  same cwd, same serialization caches), so the UI stays attached. */
+	private async forceResetConversation(conv: Conversation, reason: string): Promise<void> {
+		try {
+			conv.unsubscribe?.();
+			conv.unsubscribe = undefined;
+			this.clearAllToolWatchdogs(conv);
+			conv.toolStartTimes.clear();
+			await conv.runtime.dispose();
+			const runtime = await createAgentSessionRuntime(
+				this.makeRuntimeFactory(),
+				{
+					cwd: conv.cwd,
+					agentDir: this.agentDir,
+					sessionManager: SessionManager.continueRecent(conv.cwd),
+				},
+			);
+			conv.runtime = runtime;
+			conv.session = runtime.session;
+			this.emit({ type: "notice", level: "warning", text: reason });
+			await this.bindSession();
+			this.emitConversations();
+			void this.pushSlashCommands();
+		} catch (err) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `强制中断失败：${(err as Error).message}`,
+			});
+		}
 	}
 
 	async newChat(): Promise<void> {

@@ -8,6 +8,7 @@ import {
 	FiMessageSquare,
 	FiMoreHorizontal,
 	FiPlus,
+	FiSquare,
 	FiTerminal,
 	FiVolume2,
 } from "react-icons/fi";
@@ -22,6 +23,7 @@ interface TopBarProps {
 	chat: ChatState;
 	send: (
 		msg:
+			| { type: "abort" }
 			| { type: "list_models" }
 			| { type: "set_model"; modelId: string }
 			| { type: "set_thinking"; level: string }
@@ -179,6 +181,22 @@ export function TopBar({
 			</div>
 
 			<div className="topbar-actions">
+				{/* Global interrupt — visible wherever the page is scrolled, so a
+				    hung run can always be stopped even when the input bar is off
+				    screen. Server-side this is a hard abort: session.abort() plus
+				    a timeout that force-resets the conversation if the model
+				    stream ignores the abort signal. */}
+				{state?.isStreaming && (
+					<button
+						type="button"
+						className="btn interrupt"
+						title={t("interruptTip")}
+						onClick={() => send({ type: "abort" })}
+					>
+						<FiSquare />
+						<span>{t("interrupt")}</span>
+					</button>
+				)}
 				<div
 					className="view-switch"
 					role="tablist"

@@ -393,6 +393,11 @@ pi-web-ui server status|restart|stop|uninstall
 - **工具挂死看门狗**：每个 `tool_execution_start` 都会为 toolCallId arm 一个 `TOOL_WATCHDOG_TIMEOUT_MS`（默认 20 分钟，
   环境变量 `PI_WEB_TOOL_TIMEOUT_MS`（毫秒）覆盖）的 timer——超时仍在跑就 `session.abort()`（杀进程树）+ warning notice，
   `tool_execution_end` / `removeConversation` / `dispose` 都会清掉对应 timer。
+- **强中断（顶栏「中断」按钮 / 输入框「停止」）**：都发 `{ type: "abort" }` → `ClientSession.interruptRun()`——
+  ① `session.abort()`（正常 Stop 语义，agent_end stopReason "aborted"）；② 以 **agent_end 事件**为准：abort 卡住
+  （`HARD_ABORT_TIMEOUT_MS`=15s）或空转（abort 返回后 `HARD_ABORT_SETTLE_MS`=8s 结算窗口内 agent_end 没到，如模型流
+  在 run 开始前就挂起）时 `forceResetConversation()`：dispose 旧 runtime + `SessionManager.continueRecent(cwd)` 从磁盘
+  恢复重建 + 重绑会话（同一 conv 记录，UI 不掉线）；看门狗超时也走同一 `interruptRun`。
 - **Playwright 脚本**：headless shell 路径写死在本机，CI/换机需要改 `HEADLESS` 常量。
 
 ---
