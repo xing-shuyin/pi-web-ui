@@ -1657,12 +1657,15 @@ body {
 	font-size: 11px;
 	line-height: 1.5;
 	white-space: pre-line;
-	max-width: 300px;
+	/* 比按钮宽得多（min-width 保证），内容再长最多 420px */
+	min-width: 240px;
+	max-width: 420px;
 	text-align: left;
 	pointer-events: none;
 	opacity: 0;
 	transition: opacity 0.09s ease;
-	z-index: 50;
+	/* 盖住一切（消息区/bash 卡片/下拉），不被内容遮挡 */
+	z-index: 10000;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .topbar .btn.interrupt[data-tip]:hover::after {
