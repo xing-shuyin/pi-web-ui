@@ -98,7 +98,6 @@ const zh = {
 	interrupt: "中断",
 	interruptTip:
 		"停止整个智能体运行（模型生成 + 工具调用）\n同时清理 AI 在后台启动的服务，释放被占用的端口\n只停某条命令？用命令卡片上的「停止」（对话继续）",
-	interruptIdle: "当前没有正在运行的任务",
 	stopBash: "停止",
 	stopBashTip: "停止正在运行的 bash 命令（对话继续）",
 	supplement: "补充",
@@ -456,7 +455,6 @@ const en: Record<keyof typeof zh, string> = {
 	interrupt: "Interrupt",
 	interruptTip:
 		"Stop the whole agent run (generation + tool calls)\nAlso kills background servers the AI started (frees ports)\nTo stop only one command, use the 停止 button on its card (conversation continues)",
-	interruptIdle: "Nothing is currently running",
 	stopBash: "Stop",
 	stopBashTip: "Stop the running bash command (conversation continues)",
 	supplement: "Follow-up",

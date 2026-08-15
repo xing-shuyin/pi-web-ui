@@ -1676,26 +1676,6 @@ body {
 	opacity: 1;
 }
 
-/* Idle hint shown after clicking 中断 while nothing is running: solid,
-   non-transparent bubble anchored below the button (was a bare span with no
-   background before). */
-.topbar .btn.interrupt .interrupt-idle-tip {
-	position: absolute;
-	top: calc(100% + 6px);
-	right: 0;
-	background: var(--bg-elev2);
-	color: var(--text);
-	border: 1px solid var(--border);
-	border-radius: 10px;
-	padding: 6px 10px;
-	font-size: 11px;
-	line-height: 1.4;
-	white-space: nowrap;
-	pointer-events: none;
-	z-index: 10000;
-	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-}
-
 /* Desktop-only toolbar block (model/thinking/sound/lang/update/github).
    On phones it is replaced by the single "⋯" button (.topbar-more). */
 .topbar-desktop {
