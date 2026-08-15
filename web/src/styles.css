@@ -1634,13 +1634,17 @@ body {
 	font-weight: 600;
 	cursor: pointer;
 	white-space: nowrap;
-	transition: filter 0.15s;
+	/* hover 用 background 变化而不是 filter——filter 会创建 stacking
+	   context，把 tooltip（按钮子元素）的 z-index 关在按钮内部，导致
+	   悬浮提示被消息区/bash 卡片盖住。 */
+	transition: background 0.15s;
 }
 .topbar .btn.interrupt:hover:not(:disabled) {
-	filter: brightness(1.12);
+	background: #d64545;
 }
 
-/* Clear multi-line hover hint for the global interrupt button. */
+/* Clear multi-line hover hint for the global interrupt button — same visual
+   language and stacking as the dd-menu (model/thinking) popups. */
 .topbar .btn.interrupt[data-tip] {
 	position: relative;
 }
@@ -1649,11 +1653,11 @@ body {
 	position: absolute;
 	top: calc(100% + 8px);
 	right: 0;
-	background: #232733;
+	background: var(--bg-elev2);
 	color: var(--text);
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	padding: 6px 10px;
+	border-radius: 10px;
+	padding: 8px 12px;
 	font-size: 11px;
 	line-height: 1.5;
 	white-space: pre-line;
@@ -1664,9 +1668,9 @@ body {
 	pointer-events: none;
 	opacity: 0;
 	transition: opacity 0.09s ease;
-	/* 盖住一切（消息区/bash 卡片/下拉），不被内容遮挡 */
+	/* 与 dd-menu 同级（60）+，且不再被按钮的 stacking context 限制 */
 	z-index: 10000;
-	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 .topbar .btn.interrupt[data-tip]:hover::after {
 	opacity: 1;
@@ -1679,17 +1683,17 @@ body {
 	position: absolute;
 	top: calc(100% + 6px);
 	right: 0;
-	background: #232733;
+	background: var(--bg-elev2);
 	color: var(--text);
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	padding: 4px 9px;
+	border-radius: 10px;
+	padding: 6px 10px;
 	font-size: 11px;
 	line-height: 1.4;
 	white-space: nowrap;
 	pointer-events: none;
 	z-index: 10000;
-	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* Desktop-only toolbar block (model/thinking/sound/lang/update/github).
