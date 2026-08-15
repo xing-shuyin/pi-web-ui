@@ -191,6 +191,8 @@ export type ClientMessage =
 	| { type: "list_commands" }
 	| { type: "save_commands"; commands: CommandDef[] }
 	| { type: "abort" }
+	/** Kill only the running bash command(s) — the agent run itself continues. */
+	| { type: "abort_bash" }
 	| { type: "new_chat" }
 	/** Edit a past user question and re-ask it (forks a new session at that point). */
 	| { type: "edit_message"; messageId: string; text: string }

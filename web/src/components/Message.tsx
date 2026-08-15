@@ -76,6 +76,8 @@ interface MessageProps {
 	isLast: boolean;
 	/** Edit-and-re-ask handler (user messages only). Stable identity — Message is memoized. */
 	onEdit?: (messageId: string, text: string) => void;
+	/** Kill the running bash command from its tool card (agent run continues). */
+	onKillBash?: () => void;
 	/** When set, shows a collapse button (message was expanded from the collapsed view). */
 	onCollapse?: (messageId: string) => void;
 
@@ -93,6 +95,7 @@ export const Message = memo(function Message({
 	streaming,
 	isLast,
 	onEdit,
+	onKillBash,
 	onCollapse,
 
 	qnIndex,
@@ -265,6 +268,7 @@ export const Message = memo(function Message({
 											toolStatuses={toolStatuses}
 											streaming={streaming}
 											isLast={isLast}
+											onKillBash={onKillBash}
 										/>
 									),
 								)}
@@ -279,6 +283,7 @@ export const Message = memo(function Message({
 									toolStatuses={toolStatuses}
 									streaming={streaming}
 									isLast={isLast}
+									onKillBash={onKillBash}
 								/>
 							))
 						)}
@@ -446,6 +451,7 @@ function Block({
 	toolStatuses,
 	streaming,
 	isLast,
+	onKillBash,
 }: {
 	block: UiContentBlock;
 	toolResults: ReadonlyMap<string, UiMessage>;
@@ -453,6 +459,7 @@ function Block({
 	toolStatuses: ReadonlyMap<string, ToolStatus>;
 	streaming: boolean;
 	isLast: boolean;
+	onKillBash?: () => void;
 }) {
 	const t = useT();
 	const text = asText(block);
@@ -485,7 +492,7 @@ function Block({
 			streaming,
 			status: toolStatuses.get(toolCall.id),
 		};
-		return <ToolCallBlock block={toolCall} view={view} />;
+		return <ToolCallBlock block={toolCall} view={view} onKillBash={onKillBash} />;
 	}
 
 	const image = asImage(block);

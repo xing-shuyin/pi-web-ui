@@ -4,6 +4,7 @@ import {
 	FiChevronDown,
 	FiChevronRight,
 	FiCopy,
+	FiSquare,
 	FiTerminal,
 } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiToolCallBlock } from "../types";
@@ -20,6 +21,9 @@ export interface ToolView {
 	 *  exited but the model hasn't responded yet. */
 	status?: ToolStatus;
 }
+
+/** Kill just the running bash command(s) — the agent run itself continues. */
+export type KillBashHandler = () => void;
 
 const TOOL_ICONS: Record<string, string> = {
 	bash: "$",
@@ -38,15 +42,19 @@ function toolIcon(name: string): string {
 export const ToolCallBlock = memo(function ToolCallBlock({
 	block,
 	view,
+	onKillBash,
 }: {
 	block: UiToolCallBlock;
 	view: ToolView;
+	/** Kill the running bash command (bash cards only, while running). */
+	onKillBash?: KillBashHandler;
 }) {
 	const t = useT();
 	const [open, setOpen] = useState(true);
 	const [copied, setCopied] = useState(false);
 
 	const running = !view.result && view.streaming && !view.status;
+	const isBashRunning = block.name === "bash" && running;
 	const done = view.result !== undefined;
 	/** Command finished (tool_status fired) but the authoritative toolResult
 	 *  message hasn't landed in a snapshot yet — the model is still chewing on
@@ -99,6 +107,17 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 					{exitHint && <em className="toolcall-exit">{exitHint}</em>}
 				</span>
 				<span className="toolcall-spacer" />
+				{isBashRunning && onKillBash && (
+					<button
+						type="button"
+						className="toolcall-kill"
+						title={t("stopBashTip")}
+						onClick={onKillBash}
+					>
+						<FiSquare />
+						<span>{t("stopBash")}</span>
+					</button>
+				)}
 				<button
 					type="button"
 					className="toolcall-copy"

@@ -234,6 +234,9 @@ wss.on("connection", (ws) => {
 			case "abort":
 				void cs.abort();
 				break;
+			case "abort_bash":
+				void cs.abortBash();
+				break;
 			case "new_chat":
 				void cs.newChat();
 				break;

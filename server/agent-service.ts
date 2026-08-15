@@ -25,6 +25,8 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
+	createBashTool,
+	createLocalBashOperations,
 	defineTool,
 	getAgentDir,
 	ModelRuntime,
@@ -35,6 +37,7 @@ import {
 	type CreateAgentSessionRuntimeFactory,
 	type ExtensionUIContext,
 	type Theme,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type {
@@ -277,11 +280,62 @@ function decodeText(buf: Buffer): string {
  *  reasoning/answers. */
 const WINDOWS_PERSONA = `You are a coding agent running on Windows. The bash tool runs Git Bash (bash.exe), not PowerShell. Follow these rules to avoid hanging the session:
 
+
+
 - ALWAYS pass a timeout parameter to the bash tool (in seconds). There is NO default timeout — a command that never finishes (servers, watchers, infinite loops, slow downloads/installs) will hang the entire conversation indefinitely. Pick a generous timeout for long-running work, but never omit it.
 - NEVER run interactive or foreground long-running commands through the bash tool (vi, less, top, python -, node -, npm run dev, sleep 10000). For servers/daemons use background execution with output redirected to a log file, then poll the log; stop them when done.
 - In the interactive terminal (TTY) — which is Git Bash too, not PowerShell — NEVER use heredocs (<<'EOF' ... EOF) or here-strings, and NEVER start interactive programs (vi, less, python -, node -, npm init): they wait for keyboard input that never arrives and hang the terminal forever. Prefer writing a temp script file (e.g. .pi-tmp.sh) and running it non-interactively. ALWAYS pass a timeout to long-running commands (e.g. \`timeout 120 npm run dev\`).
 
 Many legacy Chinese text files (.html/.txt/.md/.log, exported documents) are GBK/GB2312 encoded: the read tool decodes UTF-8 only and will show mojibake (乱码) for them. If a file's content looks garbled, read it through the terminal instead: in Git Bash use \`cat file | iconv -f GBK -t UTF-8\` (or \`iconv -f GBK -t UTF-8 file\`); in cmd use \`chcp 65001 && type file\`; in PowerShell use \`Get-Content -Encoding Default file\`. Never paste mojibake into your reasoning or answer — describe the decoded content instead.`;
+/**
+ * Killable bash tool: wraps the SDK bash tool with operations that register
+ * their own AbortController into a client-level set. abortBash() aborts only
+ * those controllers → the command's process tree is killed while the agent
+ * run and the conversation continue (the tool returns an aborted error and
+ * the model moves on). Injected as a customTool overriding the builtin bash.
+ */
+function makeKillableBashTool(
+	cwd: string,
+	kills: Set<AbortController>,
+): ToolDefinition {
+	const base = createLocalBashOperations();
+	const tool = createBashTool(cwd, {
+		operations: {
+			exec: async (command, c, opts) => {
+				const ac = new AbortController();
+				kills.add(ac);
+				try {
+					const signals = [opts.signal, ac.signal].filter(
+						(s): s is AbortSignal => s !== undefined,
+					);
+					return await base.exec(command, c, {
+						...opts,
+						signal:
+							signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+					});
+				} finally {
+					kills.delete(ac);
+				}
+			},
+		},
+	});
+	// AgentTool → ToolDefinition (same fields; customTools expects definitions).
+	return {
+		name: tool.name,
+		label: tool.label,
+		description: tool.description,
+		parameters: tool.parameters,
+		prepareArguments: tool.prepareArguments,
+		executionMode: tool.executionMode,
+		execute: (toolCallId, params, signal, onUpdate) =>
+			tool.execute(
+				toolCallId,
+				params as { command: string; timeout?: number },
+				signal,
+				onUpdate,
+			),
+	} as ToolDefinition;
+}
 
 /**
  * Cheap per-message discriminator for the serialization cache key. Persisted
@@ -1027,6 +1081,9 @@ export class ClientSession {
 	 *  considered stopped once its agent_end event arrives. If it doesn't
 	 *  (model stream stuck before the run even started), force-reset. */
 	private static readonly HARD_ABORT_SETTLE_MS = 8_000;
+	/** Live AbortControllers of THIS client's running bash tool calls — aborting
+	 *  them kills only the command (agent run and conversation continue). */
+	private bashKills = new Set<AbortController>();
 
 	/** The active conversation (all session operations target it). */
 	private get conv(): Conversation {
@@ -1151,7 +1208,16 @@ export class ClientSession {
 					: {}),
 			});
 			return {
-				...(await createAgentSessionFromServices({ services, sessionManager })),
+				...(await createAgentSessionFromServices({
+					services,
+					sessionManager,
+					// 可手动停止的 bash 工具：覆盖 SDK 内置 bash（customTools 按 name
+					// 覆盖），执行时把自己的 AbortController 注册进客户端集合——
+					// abortBash() 只杀这些命令，agent run 与对话继续。
+					customTools: [
+						makeKillableBashTool(effectiveCwd, this.bashKills),
+					],
+				})),
 				services,
 				diagnostics: services.diagnostics,
 			};
@@ -2911,6 +2977,33 @@ export class ClientSession {
 	 */
 	async abort(): Promise<void> {
 		await this.interruptRun(this.conv, "已停止");
+		this.flushSnapshot();
+	}
+
+	/** Kill only the running bash command(s) — the agent run itself continues
+	 *  (the bash tool returns an aborted error and the model moves on). Uses
+	 *  the SDK's session.abortBash(), which aborts the bash tool's
+	 *  AbortController and kills its process tree. */
+	/** Kill only the running bash command(s) — the agent run itself continues
+	 *  (our killable bash tool returns an aborted error and the model moves
+	 *  on). Uses the per-client AbortController set registered by
+	 *  makeKillableBashTool. */
+	async abortBash(): Promise<void> {
+		if (this.bashKills.size === 0) {
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: "当前没有正在运行的 bash 命令",
+			});
+			this.flushSnapshot();
+			return;
+		}
+		for (const ac of [...this.bashKills]) ac.abort();
+		this.emit({
+			type: "notice",
+			level: "info",
+			text: "已停止 bash 命令（对话继续）",
+		});
 		this.flushSnapshot();
 	}
 

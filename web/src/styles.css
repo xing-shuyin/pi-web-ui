@@ -2549,6 +2549,29 @@ body {
 	flex: 1;
 }
 
+/* Kill button on running bash tool cards — stops ONLY the command;
+   the agent run and conversation continue. */
+.toolcall-kill {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	border: 1px solid var(--red);
+	background: var(--red-soft);
+	color: var(--red);
+	font-size: 11px;
+	font-weight: 600;
+	padding: 2px 8px;
+	border-radius: 999px;
+	cursor: pointer;
+	transition:
+		background 0.15s,
+		color 0.15s;
+}
+.toolcall-kill:hover {
+	background: var(--red);
+	color: #fff;
+}
+
 .toolcall-copy,
 .toolcall-toggle {
 	display: inline-flex;

@@ -279,6 +279,7 @@ export function App() {
 								liveOutputs={chat.liveOutputs}
 								toolStatuses={chat.toolStatuses}
 								onEdit={onEditMessage}
+								onKillBash={() => send({ type: "abort_bash" })}
 							/>
 						) : (
 							<div className="boot-wait">

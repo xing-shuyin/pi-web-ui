@@ -63,6 +63,8 @@ export function TopBar({
 	const [moreOpen, setMoreOpen] = useState(false);
 	/** Two-step arm before 立即更新 actually runs npm i -g. */
 	const [updateArmed, setUpdateArmed] = useState(false);
+	/** Brief hint shown when 中断 is clicked while nothing is running. */
+	const [idleTip, setIdleTip] = useState(false);
 
 	const LANGUAGES: { value: Locale; label: string }[] = [
 		{ value: "zh", label: t("langZh") },
@@ -181,22 +183,26 @@ export function TopBar({
 			</div>
 
 			<div className="topbar-actions">
-				{/* Global interrupt — visible wherever the page is scrolled, so a
-				    hung run can always be stopped even when the input bar is off
-				    screen. Server-side this is a hard abort: session.abort() plus
-				    a timeout that force-resets the conversation if the model
-				    stream ignores the abort signal. */}
-				{state?.isStreaming && (
-					<button
-						type="button"
-						className="btn interrupt"
-						title={t("interruptTip")}
-						onClick={() => send({ type: "abort" })}
-					>
-						<FiSquare />
-						<span>{t("interrupt")}</span>
-					</button>
-				)}
+				{/* Global interrupt — ALWAYS visible so a hung run can be stopped at
+				    any moment, even when the input bar is scrolled off screen.
+				    Red/solid while a run is streaming; grey outline when idle
+				    (clicking then is a no-op server-side, with a brief hint). */}
+				<button
+					type="button"
+					className={`btn interrupt${state?.isStreaming ? " active" : ""}`}
+					title={t("interruptTip")}
+					onClick={() => {
+						send({ type: "abort" });
+						if (!state?.isStreaming) {
+							setIdleTip(true);
+							setTimeout(() => setIdleTip(false), 2000);
+						}
+					}}
+				>
+					<FiSquare />
+					<span>{t("interrupt")}</span>
+					{idleTip && <span className="interrupt-idle-tip">{t("interruptIdle")}</span>}
+				</button>
 				<div
 					className="view-switch"
 					role="tablist"

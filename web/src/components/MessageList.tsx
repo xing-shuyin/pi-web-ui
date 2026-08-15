@@ -53,9 +53,11 @@ interface MessageListProps {
 	toolStatuses: ReadonlyMap<string, ToolStatus>;
 	/** Edit-and-re-ask handler (forwarded to user message bubbles). */
 	onEdit?: (messageId: string, text: string) => void;
+	/** Kill the running bash command from its tool card (agent run continues). */
+	onKillBash?: () => void;
 }
 
-export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: MessageListProps) {
+export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBash }: MessageListProps) {
 	const t = useT();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [stickBottom, setStickBottom] = useState(true);
@@ -316,6 +318,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 							liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
 							toolStatuses={toolStatuses}
 							streaming={state.isStreaming}
+							onKillBash={onKillBash}
 							isLast={m.id === lastId}
 							onEdit={onEdit}
 							onCollapse={isExpandedOld ? collapse : undefined}
@@ -334,6 +337,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit }: Messag
 						streaming
 						isLast
 						onEdit={onEdit}
+						onKillBash={onKillBash}
 					/>
 				)}
 				{state.isStreaming && messages.length === 0 && (

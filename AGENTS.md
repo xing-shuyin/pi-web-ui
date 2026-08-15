@@ -398,6 +398,12 @@ pi-web-ui server status|restart|stop|uninstall
   （`HARD_ABORT_TIMEOUT_MS`=15s）或空转（abort 返回后 `HARD_ABORT_SETTLE_MS`=8s 结算窗口内 agent_end 没到，如模型流
   在 run 开始前就挂起）时 `forceResetConversation()`：dispose 旧 runtime + `SessionManager.continueRecent(cwd)` 从磁盘
   恢复重建 + 重绑会话（同一 conv 记录，UI 不掉线）；看门狗超时也走同一 `interruptRun`。
+- **只停止 bash 命令（对话继续）**：bash 工具卡片运行中显示「停止」→ 发 `{ type: "abort_bash" }` →
+  `ClientSession.abortBash()`。服务端用 **killable bash 工具**（`makeKillableBashTool`，经 `customTools` 按 name 覆盖
+  SDK 内置 bash）：执行时把自己的 AbortController 注册进客户端级 `bashKills` 集合，abort 只杀这些 controller
+  → bash 子进程进程树被杀（工具抛 "Command aborted"，被 agent-loop 捕获成工具错误结果）→ **agent run 与对话继续**；
+  与 SDK `session.abortBash()`（只对扩展 `executeBash` 路径有效，agent 工具路径无效）不同，这里对对话中的
+  bash 工具调用真实生效（已用 SDK 直连验证：sleep 30 在 1.5s 内被杀、registry 清理）。
 - **Playwright 脚本**：headless shell 路径写死在本机，CI/换机需要改 `HEADLESS` 常量。
 
 ---
