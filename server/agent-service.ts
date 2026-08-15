@@ -338,6 +338,80 @@ function makeKillableBashTool(
 }
 
 /**
+ * Snapshot currently LISTENING TCP ports → owning pid. Windows: netstat;
+ * POSIX: lsof. Used to detect servers the agent started in the background
+ * (the bash tool itself exits, leaving e.g. `npm run dev &` listening).
+ */
+async function snapshotListeningPorts(): Promise<Map<number, number>> {
+	const m = new Map<number, number>();
+	try {
+		const { execFile } = await import("node:child_process");
+		if (process.platform === "win32") {
+			const out = await new Promise<string>((resolve, reject) =>
+				execFile(
+					"netstat",
+					["-ano", "-p", "tcp"],
+					{ windowsHide: true, timeout: 8000 },
+					(err, stdout) => (err ? reject(err) : resolve(stdout)),
+				),
+			);
+			for (const line of out.split(/\r?\n/)) {
+				const p = line.trim().split(/\s+/);
+				// TCP 0.0.0.0:5173 0.0.0.0:0 LISTENING 12345
+				if (p.length >= 5 && p[0] === "TCP" && p[3] === "LISTENING") {
+					const port = Number(p[1].split(":").pop());
+					const pid = Number(p[4]);
+					if (Number.isFinite(port) && Number.isFinite(pid))
+						m.set(port, pid);
+				}
+			}
+		} else {
+			const out = await new Promise<string>((resolve, reject) =>
+				execFile(
+					"lsof",
+					["-iTCP", "-sTCP:LISTEN", "-P", "-n"],
+					{ timeout: 8000 },
+					(err, stdout) => (err ? reject(err) : resolve(stdout)),
+				),
+			);
+			for (const line of out.split(/\r?\n/).slice(1)) {
+				const p = line.trim().split(/\s+/);
+				if (p.length >= 9) {
+					// NAME column tail: "*:5173 (LISTEN)" or "[::1]:5173 (LISTEN)"
+					const mm = (p[p.length - 1] ?? "").match(/(\d+)\)?\s*$/);
+					const port = mm ? Number(mm[1]) : NaN;
+					const pid = Number(p[1]);
+					if (Number.isFinite(port) && Number.isFinite(pid))
+						m.set(port, pid);
+				}
+			}
+		}
+	} catch {
+		// best effort — snapshot failure just means no tracking this round
+	}
+	return m;
+}
+
+/** Kill a pid and its whole process tree (cross-platform). */
+function killPidTree(pid: number): void {
+	try {
+		if (process.platform === "win32") {
+			void import("node:child_process").then(({ spawn }) => {
+				spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
+					stdio: "ignore",
+					detached: true,
+					windowsHide: true,
+				}).unref();
+			});
+		} else {
+			process.kill(-pid, "SIGKILL");
+		}
+	} catch {
+		// already dead
+	}
+}
+
+/**
  * Cheap per-message discriminator for the serialization cache key. Persisted
  * message content never changes, so this is stable across snapshots, while
  * several same-role messages created within one millisecond (attachment
@@ -1084,6 +1158,12 @@ export class ClientSession {
 	/** Live AbortControllers of THIS client's running bash tool calls — aborting
 	 *  them kills only the command (agent run and conversation continue). */
 	private bashKills = new Set<AbortController>();
+	/** LISTENING-port snapshot taken when the current bash tool started — the
+	 *  end-of-execution diff reveals servers the agent left running in the
+	 *  background (e.g. `npm run dev &`). Keyed by port → pid. */
+	private bashListenBefore: Map<number, number> | null = null;
+	/** Background servers the agent started (port → pid). 「中断」kills them. */
+	private bgServers = new Map<number, { pid: number; since: number }>();
 
 	/** The active conversation (all session operations target it). */
 	private get conv(): Conversation {
@@ -1375,6 +1455,13 @@ export class ClientSession {
 				// Record the moment the tool actually starts so tool_status can
 				// report real execution time (vs. time spent waiting on the model).
 				conv.toolStartTimes.set(event.toolCallId, Date.now());
+				// Snapshot listeners before a bash run — the post-run diff catches
+				// servers the agent started in the background.
+				if (event.toolName === "bash") {
+					void snapshotListeningPorts().then((m) => {
+						this.bashListenBefore = m;
+					});
+				}
 				this.armToolWatchdog(conv, event.toolCallId);
 				break;
 			}
@@ -1382,6 +1469,9 @@ export class ClientSession {
 				const startedAt = conv.toolStartTimes.get(event.toolCallId);
 				conv.toolStartTimes.delete(event.toolCallId);
 				this.clearToolWatchdog(conv, event.toolCallId);
+				// Bash finished — wait briefly for background servers to bind their
+				// ports, then diff against the pre-run snapshot and record them.
+				if (event.toolName === "bash") void this.trackBackgroundServers();
 				const durationMs =
 					startedAt !== undefined ? Date.now() - startedAt : undefined;
 				// The bash tool does not put its exit code in result.details — on
@@ -2977,16 +3067,55 @@ export class ClientSession {
 	 */
 	async abort(): Promise<void> {
 		await this.interruptRun(this.conv, "已停止");
+		// 中断同时清理 AI 在后台启动的服务（npm run dev & 等）——避免用户
+		// 测试时发现端口被占用而不知道是什么进程。
+		const killed = await this.killBackgroundServers();
+		if (killed.length > 0) {
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: `已停止 AI 后台服务：端口 ${killed.join("、")}（进程已结束）`,
+			});
+		}
 		this.flushSnapshot();
+	}
+
+	/** After a bash tool run, wait briefly for background servers to bind,
+	 *  then diff the listening-port snapshot against the pre-run one and
+	 *  remember anything new — those are servers the agent left running. */
+	private async trackBackgroundServers(): Promise<void> {
+		const before = this.bashListenBefore;
+		this.bashListenBefore = null;
+		if (!before) return;
+		await new Promise((r) => setTimeout(r, 1500));
+		const after = await snapshotListeningPorts();
+		for (const [port, pid] of after) {
+			if (!before.has(port) && !this.bgServers.has(port)) {
+				this.bgServers.set(port, { pid, since: Date.now() });
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `检测到 AI 启动的后台服务：端口 ${port}（pid ${pid}）——点顶栏「中断」可停止`,
+				});
+			}
+		}
+	}
+
+	/** Kill every background server the agent started; returns the freed ports. */
+	private async killBackgroundServers(): Promise<string[]> {
+		if (this.bgServers.size === 0) return [];
+		const killed: string[] = [];
+		for (const [port, { pid }] of [...this.bgServers]) {
+			killPidTree(pid);
+			killed.push(String(port));
+		}
+		this.bgServers.clear();
+		return killed;
 	}
 
 	/** Kill only the running bash command(s) — the agent run itself continues
 	 *  (the bash tool returns an aborted error and the model moves on). Uses
-	 *  the SDK's session.abortBash(), which aborts the bash tool's
-	 *  AbortController and kills its process tree. */
-	/** Kill only the running bash command(s) — the agent run itself continues
-	 *  (our killable bash tool returns an aborted error and the model moves
-	 *  on). Uses the per-client AbortController set registered by
+	 *  the per-client AbortController set registered by
 	 *  makeKillableBashTool. */
 	async abortBash(): Promise<void> {
 		if (this.bashKills.size === 0) {

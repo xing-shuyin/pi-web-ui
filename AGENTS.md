@@ -398,6 +398,10 @@ pi-web-ui server status|restart|stop|uninstall
   （`HARD_ABORT_TIMEOUT_MS`=15s）或空转（abort 返回后 `HARD_ABORT_SETTLE_MS`=8s 结算窗口内 agent_end 没到，如模型流
   在 run 开始前就挂起）时 `forceResetConversation()`：dispose 旧 runtime + `SessionManager.continueRecent(cwd)` 从磁盘
   恢复重建 + 重绑会话（同一 conv 记录，UI 不掉线）；看门狗超时也走同一 `interruptRun`。
+  **同时清理 AI 后台启动的服务**：bash 工具执行前后各拍一次监听快照（`snapshotListeningPorts`，Windows netstat /
+  POSIX lsof），diff 出的新增 LISTENING 进程记入 `bgServers`（端口→pid，启动后 notice 提示「点顶栏中断可停止」）；
+  `abort()` 时 `killBackgroundServers()` 对每个 pid `killPidTree`（Windows `taskkill /F /T`）并 notice 报告释放的端口——
+  AI `npm run dev &` 之类后台服务不再残留占端口（已 SDK 直连验证：后台 node server 被检测并杀掉、端口释放）。
 - **只停止 bash 命令（对话继续）**：bash 工具卡片运行中显示「停止」→ 发 `{ type: "abort_bash" }` →
   `ClientSession.abortBash()`。服务端用 **killable bash 工具**（`makeKillableBashTool`，经 `customTools` 按 name 覆盖
   SDK 内置 bash）：执行时把自己的 AbortController 注册进客户端级 `bashKills` 集合，abort 只杀这些 controller
