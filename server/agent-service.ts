@@ -3004,6 +3004,16 @@ export class ClientSession {
 			level: "info",
 			text: "已停止 bash 命令（对话继续）",
 		});
+		// 让 AI 明确知道是用户手动停止：sendUserMessage 触发下一轮，agent
+		// 会看到「命令被用户中止」而不是普通失败，并据此继续（不会困惑于
+		// 为什么命令失败了）。
+		try {
+			await this.conv.runtime.session.sendUserMessage(
+				"（系统：用户手动停止了刚才的 bash 命令——命令被中止，终止前已输出的内容在对应工具结果里。请据此继续，不要重跑被中止的命令，除非确实必要。）",
+			);
+		} catch {
+			// best effort — 消息注入失败不影响命令已停止的事实
+		}
 		this.flushSnapshot();
 	}
 
