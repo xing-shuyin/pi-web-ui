@@ -1819,6 +1819,8 @@ export class ClientSession {
 	 * the process is going to restart itself (so the notice can say so).
 	 */
 	onUpdateReady: (() => boolean) | undefined = undefined;
+	/** Set by index.ts: called when /pi-web-ui:quit is invoked. */
+	onQuit: (() => boolean) | undefined = undefined;
 
 	/** Ask the npm registry for the latest pi-web-ui version and report it. */
 	async checkUpdate(): Promise<void> {
@@ -2344,6 +2346,7 @@ export class ClientSession {
 		{ name: "reload", description: "重新加载扩展、技能与模板", descriptionEn: "Reload extensions, skills & templates" },
 		{ name: "help", description: "显示全部命令", descriptionEn: "Show all commands" },
 		{ name: "copy", description: "复制上一条助手回复", descriptionEn: "Copy last assistant reply" },
+		{ name: "pi-web-ui:quit", description: "退出服务", descriptionEn: "Quit server (supervisor will restart)" },
 	];
 
 	/** Parse a prompt into "/command args" — returns null when it isn't one. */
@@ -2488,6 +2491,20 @@ export class ClientSession {
 					});
 				}
 				return true;
+			case "pi-web-ui:quit": {
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: "正在退出 pi-web-ui… supervisor 将自动重启服务",
+				});
+				setTimeout(() => {
+					const didSchedule = this.onQuit?.() ?? false;
+					if (!didSchedule) {
+						setTimeout(() => process.exit(0), 100);
+					}
+				}, 300);
+				return true;
+			}
 			case "help":
 			case "copy":
 				// Client-side UI actions — the client handles them before sending;
@@ -4809,6 +4826,8 @@ export class AgentService {
 	 * self-update; returns whether the process will restart itself.
 	 */
 	onUpdateReady: (() => boolean) | undefined = undefined;
+	/** Set by index.ts: called when /pi-web-ui:quit is invoked. */
+	onQuit: (() => boolean) | undefined = undefined;
 
 	constructor(
 		private cwd: string,
@@ -4862,8 +4881,9 @@ export class AgentService {
 			}
 		}
 		cs.attachSink(send);
-		// Forward the update hook (set once by index.ts) to every session.
+		// Forward hooks (set once by index.ts) to every session.
 		cs.onUpdateReady = this.onUpdateReady;
+		cs.onQuit = this.onQuit;
 		return cs;
 	}
 

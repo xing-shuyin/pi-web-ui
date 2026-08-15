@@ -204,6 +204,26 @@ function scheduleUpdateRestart(): boolean {
 }
 service.onUpdateReady = scheduleUpdateRestart;
 
+function scheduleQuit(): boolean {
+	const isLaunchd = process.platform === "darwin" && process.ppid === 1;
+	const isSystemd = process.platform === "linux" && !!process.env.INVOCATION_ID;
+	const inDocker = existsSync("/.dockerenv");
+	if (isLaunchd || isSystemd || inDocker) {
+		setTimeout(() => {
+			console.log("pi-web-ui:quit — shutting down (supervisor will restart)…");
+			if (isSystemd) process.exit(3);
+			void shutdown();
+		}, 300);
+		return true;
+	}
+	setTimeout(() => {
+		console.log("pi-web-ui:quit — shutting down (restart to reload)…");
+		void shutdown();
+	}, 300);
+	return true;
+}
+service.onQuit = scheduleQuit;
+
 wss.on("connection", (ws) => {
 	let clientId: string | null = null;
 	let closed = false;
