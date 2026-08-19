@@ -25,4 +25,5 @@ ENV PORT=8787
 EXPOSE 8787
 # Session data (per-client chat history) lives here — mount a volume.
 VOLUME ["/app/.pi-web"]
+USER node
 CMD ["node", "dist/server/index.js"]
