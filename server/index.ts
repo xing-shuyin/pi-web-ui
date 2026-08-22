@@ -266,7 +266,21 @@ if (existsSync(webDist)) {
 }
 
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+// permessage-deflate: compress WebSocket frames. Snapshot payloads (JSON of a
+// whole conversation) are highly compressible (~70-75%%: verified deflate/gzip
+// on production snapshots) and otherwise travel as plaintext over the network
+// link — making big-conversation switch/stream painfully slow on slow links.
+// Frames below the ws default threshold (1024 bytes) are not compressed, so
+// small message_delta/heartbeat stay cheap; only large frames pay the CPU cost.
+// WS compression is a deployment knob: enabled by default (helps the common
+// public-network / tunnel case, where snapshot JSON is huge and the link slow),
+// but can be disabled with PI_WEB_WS_COMPRESSION=0 for LAN/local setups that
+// don't want the (small) deflate CPU cost on a weak host. Frames below the ws
+// default threshold (1024 bytes) are never compressed regardless.
+const wss = new WebSocketServer({
+	noServer: true,
+	perMessageDeflate: process.env.PI_WEB_WS_COMPRESSION !== "0",
+});
 
 // ---------------------------------------------------------------------------
 // Origin / Host admission for WebSocket upgrades.
