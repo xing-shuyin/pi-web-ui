@@ -21,6 +21,9 @@ import type {
 	UiProviderConfig,
 	UiSettingsState,
 	UiState,
+	UiMessage,
+	UiTextBlock,
+	UiThinkingBlock,
 } from "./types";
 
 export type ConnStatus = "connecting" | "open" | "closed";
@@ -137,6 +140,12 @@ type Action =
 	| { type: "status"; status: ConnStatus }
 	| { type: "snapshot"; state: UiState }
 	| { type: "tool_delta"; toolCallId: string; toolName: string; delta: string }
+	| {
+			type: "message_delta";
+			messageId: string;
+			usage: { input: number; output: number; total: number } | null;
+			assistantMessageEvent: { type: string; contentIndex?: number; delta?: string };
+	  }
 	| { type: "tool_status"; status: ToolStatus }
 	| { type: "notice"; notice: Notice }
 	| { type: "dismiss_notice"; id: number }
@@ -365,6 +374,41 @@ function reducer(state: ChatState, action: Action): ChatState {
 				text: capped,
 			});
 			return { ...state, liveOutputs };
+		}
+		case "message_delta": {
+			const ui = state.state;
+			if (!ui) return state;
+			const ame = action.assistantMessageEvent;
+			const delta = ame.delta;
+			const stats = action.usage
+				? { ...ui.stats, tokens: { ...ui.stats.tokens, ...(action.usage as Record<string, number>) } }
+				: ui.stats;
+			if (ame.type === "text_delta" || ame.type === "thinking_delta") {
+				if (!delta) return { ...state, state: { ...ui, stats } };
+				const id = action.messageId;
+				const prev = ui.streamingMessage;
+				const base: UiMessage = prev && prev.id === id ? prev : { id, role: "assistant", content: [] };
+				const content = [...base.content];
+				const idx = ame.contentIndex ?? content.length - 1;
+				const blockType = ame.type === "thinking_delta" ? "thinking" : "text";
+				if (idx >= 0 && idx < content.length && content[idx].type === blockType) {
+					if (blockType === "thinking") {
+						const b = content[idx] as UiThinkingBlock;
+						b.thinking = (b.thinking ?? "") + delta;
+					} else {
+						const b = content[idx] as UiTextBlock;
+						b.text = (b.text ?? "") + delta;
+					}
+				} else {
+					content.push(
+						blockType === "thinking"
+							? { type: "thinking", thinking: delta }
+							: { type: "text", text: delta },
+					);
+				}
+				return { ...state, state: { ...ui, stats, streamingMessage: { ...base, content, id } } };
+			}
+			return { ...state, state: { ...ui, stats } };
 		}
 		case "tool_status":
 			return {
@@ -653,6 +697,14 @@ export function useChat() {
 						toolCallId: msg.toolCallId,
 						toolName: msg.toolName,
 						delta: msg.delta,
+					});
+					break;
+				case "message_delta":
+					dispatch({
+						type: "message_delta",
+						messageId: msg.messageId,
+						usage: msg.usage,
+						assistantMessageEvent: msg.assistantMessageEvent,
 					});
 					break;
 				case "tool_status":
