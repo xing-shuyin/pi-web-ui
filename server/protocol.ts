@@ -654,6 +654,12 @@ export type ServerMessage =
 			toolName: string;
 			delta: string;
 	  }
+	| {
+			type: "message_delta";
+			messageId: string;
+			usage: { input: number; output: number; total: number } | null;
+			assistantMessageEvent: { type: string; contentIndex?: number; delta?: string };
+	  }
 	/** A tool FINISHED executing (SDK tool_execution_end). Unlike toolResult
 	 *  snapshot messages, this arrives the moment the command exits — before
 	 *  the model's next response starts — so the UI can show "done, waiting

@@ -1048,6 +1048,30 @@ export class ClientSession {
 			case "entry_appended":
 				this.scheduleSessionsRefresh();
 				break;
+			case "message_update": {
+				// Streaming assistant-message increment (live rendering independent of the
+				// full snapshot, which backpressure may drop on big sessions). Forward the
+				// SDK small delta — strip partial (cumulative message) to avoid re-serializing.
+				const ame = event.assistantMessageEvent;
+				const m = event.message as AgentMessage & { usage?: unknown };
+				const messageId = `stream-${(m as { timestamp?: number }).timestamp ?? 0}`;
+				const delta: ServerMessage & { type: "message_delta" } = {
+					type: "message_delta",
+					messageId,
+					usage: (() => {
+						try {
+							return (this.session.getSessionStats().tokens as { input: number; output: number; total: number }) ?? null;
+						} catch { return null; }
+					})(),
+					assistantMessageEvent: {
+						type: ame.type,
+						contentIndex: "contentIndex" in ame ? ame.contentIndex : undefined,
+						delta: "delta" in ame ? ame.delta : undefined,
+					},
+				};
+				this.emit(delta);
+				break;
+			}
 			default:
 				break;
 		}
