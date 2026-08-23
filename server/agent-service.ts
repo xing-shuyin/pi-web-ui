@@ -89,6 +89,11 @@ import {
 } from "./vision-bridge.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
+/** Snapshot windowing: beyond the recent window deliver collapsed summaries
+ * (mirrors browser KEEP_RECENT in MessageList). Only kicks in once a
+ * conversation exceeds SNAPSHOT_COLLAPSE_MIN. */
+const SNAPSHOT_KEEP_RECENT = 15;
+const SNAPSHOT_COLLAPSE_MIN = 30;
 const WIDGET_REFRESH_MS = 2000;
 /** Preview panel cap: only the first 512KB of a file is ever read/sent. */
 
@@ -300,6 +305,9 @@ interface Conversation {
 	/** Per-timestamp 1-based user-message seq (drives the `u-<ts>-<seq>` id suffix). */
 	userSeqByTs: Map<number, number>;
 	uiMessageCache: Map<string, UiMessage>;
+	msgById: Map<string, AgentMessage>;
+	/** id → collapsed summary object (stable reference). */
+	collapsedCache: Map<string, UiMessage>;
 	lastMessagesSig: string;
 	lastMessagesArray: UiMessage[];
 	queueSteering: number;
@@ -360,6 +368,42 @@ function conversationTitle(session: AgentSession): string {
 		// best-effort
 	}
 	return DEFAULT_CONV_TITLE;
+}
+
+/** Turn a full UiMessage into a lightweight collapsed summary (keeps the
+ * same id so the browser can get_message the full). Unchanged if already
+ * collapsed or has no content. */
+function collapseMessage(m: UiMessage, cache: Map<string, UiMessage>): UiMessage {
+	// Only collapse assistant messages. user messages are kept FULL because the
+	// question-nav rail and edit_message read their content; toolResult/bash
+	// entries are role-matched (not content-matched) by prune helpers. Collapsing
+	// assistant messages is what actually shrinks big snapshots (thinking/tool
+	// output dominate).
+	if (m.role !== "assistant") return m;
+	if (m.collapsed || !m.content || m.content.length === 0) return m;
+	const hit = cache.get(m.id);
+	if (hit) return hit;
+	let preview = ""; let thinking = 0, toolCall = 0, bash = 0, image = 0;
+	for (const b of m.content) {
+		if (b.type === "text" && !preview && typeof b.text === "string") {
+			const t = b.text.replace(/\s+/g, " ").trim();
+			if (t) preview = t.length > 90 ? t.slice(0, 90) + "…" : t;
+		} else if (b.type === "thinking") thinking++;
+		else if (b.type === "toolCall") toolCall++;
+		else if (b.type === "bash") bash++;
+		else if (b.type === "image") image++;
+	}
+	const collapsed = { ...m, content: [], collapsed: true, summary: { preview: preview || undefined, thinking, toolCall, bash, image } };
+	cache.set(m.id, collapsed);
+	return collapsed;
+}
+/** Apply snapshot windowing: collapse everything outside the recent window. */
+function collapseForWindow(messages: UiMessage[], keepRecent: number, cache: Map<string, UiMessage>): UiMessage[] {
+	if (messages.length <= SNAPSHOT_COLLAPSE_MIN) return messages;
+	const boundary = Math.max(0, messages.length - keepRecent);
+	const out = messages.slice();
+	for (let i = 0; i < boundary; i++) out[i] = collapseMessage(out[i], cache);
+	return out;
 }
 
 export class ClientSession {
@@ -781,6 +825,8 @@ export class ClientSession {
 			nextMsgId: 1,
 			userSeqByTs: new Map(),
 			uiMessageCache: new Map(),
+			msgById: new Map(),
+			collapsedCache: new Map(),
 			lastMessagesSig: "",
 			lastMessagesArray: [],
 			queueSteering: 0,
@@ -1099,7 +1145,10 @@ export class ClientSession {
 			conv.userSeqByTs.set(ts, seq);
 		}
 		const msg = serializeMessage(m, seq);
-		if (msg) conv.uiMessageCache.set(cacheKey, msg);
+		if (msg) {
+			conv.uiMessageCache.set(cacheKey, msg);
+			conv.msgById.set(msg.id, m);
+		}
 		return msg;
 	}
 
@@ -1130,17 +1179,18 @@ export class ClientSession {
 		} catch {
 			// stats are best-effort
 		}
-		const rawMessages = state.messages
+		const allMessages = state.messages
 			.map((m) => this.serializeCached(m))
 			.filter((m): m is NonNullable<typeof m> => m !== null);
+		const collapsedCache = this.conv.collapsedCache;
+		const windowed = collapseForWindow(allMessages, SNAPSHOT_KEEP_RECENT, collapsedCache);
+		const sig = windowed.map((m) => m.id + (m.collapsed ? ":c" : ":f")).join("");
+		const messages = conv.lastMessagesSig === sig ? conv.lastMessagesArray : windowed;
+		conv.lastMessagesSig = sig;
+		conv.lastMessagesArray = windowed;
 		// Reuse the previous array when nothing changed: the element objects are
 		// cached (reference-stable) anyway, and a stable array reference lets the
 		// frontend memoize derived maps instead of rebuilding them every 60ms.
-		const sig = rawMessages.map((m) => m.id).join("\u0001");
-		const messages =
-			conv.lastMessagesSig === sig ? conv.lastMessagesArray : rawMessages;
-		conv.lastMessagesSig = sig;
-		conv.lastMessagesArray = rawMessages;
 		return {
 			clientId: this.clientId,
 			cwd: this.cwd,
@@ -1991,6 +2041,19 @@ export class ClientSession {
 			this.snapshotTimer = null;
 		}
 		if (!this.disposed) this.emit({ type: "snapshot", state: this.snapshot() });
+	}
+
+	/** get_message: full content of a collapsed message. Uses msgById,
+	 * else scans session messages for the serialized id. */
+	async getMessage(id: string): Promise<void> {
+		const conv = this.conv;
+		let found = conv.msgById.get(id);
+		if (!found) {
+			try { for (const m of (this.session.agent.state.messages as AgentMessage[])) { const s = this.serializeCached(m); if (s && s.id === id) { found = m; break; } } } catch {}
+		}
+		if (!found) { this.emit({ type: "notice", level: "warning", text: `找不到消息(id=${id})` }); return; }
+		const full = this.serializeCached(found); if (!full) return;
+		this.emit({ type: "message_full", id, message: full } as ServerMessage);
 	}
 
 	private scheduleSnapshot(): void {

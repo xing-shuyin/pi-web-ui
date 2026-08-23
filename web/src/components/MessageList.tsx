@@ -55,9 +55,12 @@ interface MessageListProps {
 	onEdit?: (messageId: string, text: string) => void;
 	/** Kill the running bash command from its tool card (agent run continues). */
 	onKillBash?: () => void;
+	/** When a collapsed (snapshot-windowed) message is expanded, request its full
+	 * content from the server (get_message). The fetched message replaces it. */
+	onFetchMessage?: (id: string) => void;
 }
 
-export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBash }: MessageListProps) {
+export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBash, onFetchMessage }: MessageListProps) {
 	const t = useT();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [stickBottom, setStickBottom] = useState(true);
@@ -154,7 +157,11 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 
 	const expand = useCallback((id: string) => {
 		setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-	}, []);
+		// If this is a collapsed (snapshot-windowed) message, fetch its full form;
+		// the message_full response replaces it and it renders fully once here.
+		const m = state.messages.find((x) => x.id === id);
+		if (m?.collapsed) onFetchMessage?.(id);
+	}, [state.messages, onFetchMessage]);
 	const collapse = useCallback((id: string) => {
 		setExpanded((prev) => {
 			if (!prev.has(id)) return prev;

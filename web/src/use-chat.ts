@@ -21,6 +21,7 @@ import type {
 	UiProviderConfig,
 	UiSettingsState,
 	UiState,
+	UiMessage,
 } from "./types";
 
 export type ConnStatus = "connecting" | "open" | "closed";
@@ -59,6 +60,10 @@ export interface ChatState {
 	conversations: ConversationSummary[];
 	/** Id of the conversation the current snapshot belongs to. */
 	activeConversationId: string;
+	/** Messages the user expanded (get_message): kept FULL in snapshot
+	 * merges so a later 60ms snapshot can't re-collapse them. Cleared on
+	 * conversation switch. */
+	expandedFull: Map<string, UiMessage>;
 	/** Recent workspaces this client opened (left panel project picker). */
 	projects: ProjectSummary[];
 	/** Workspace file listing for the right panel. */
@@ -137,6 +142,7 @@ type Action =
 	| { type: "status"; status: ConnStatus }
 	| { type: "snapshot"; state: UiState }
 	| { type: "tool_delta"; toolCallId: string; toolName: string; delta: string }
+	| { type: "message_full"; id: string; message: UiMessage }
 	| { type: "tool_status"; status: ToolStatus }
 	| { type: "notice"; notice: Notice }
 	| { type: "dismiss_notice"; id: number }
@@ -345,15 +351,22 @@ function reducer(state: ChatState, action: Action): ChatState {
 			};
 		case "ready":
 			return { ...state, serverVersion: action.serverVersion, ready: true };
-		case "snapshot":
+		case "snapshot": {
+			const ef = state.expandedFull;
+			const messages = ef.size
+				? action.state.messages.map((m) =>
+						m.collapsed && ef.has(m.id) ? (ef.get(m.id) as UiMessage) : m,
+				  )
+				: action.state.messages;
 			return {
 				...state,
 				ready: true,
-				state: action.state,
+				state: { ...action.state, messages },
 				activeConversationId: action.state.conversationId,
 				liveOutputs: pruneLiveOutputs(state.liveOutputs, action.state),
 				toolStatuses: pruneToolStatuses(state.toolStatuses, action.state),
 			};
+		}
 		case "tool_delta": {
 			const prev = state.liveOutputs.get(action.toolCallId);
 			const text = (prev?.text ?? "") + action.delta;
@@ -366,7 +379,15 @@ function reducer(state: ChatState, action: Action): ChatState {
 			});
 			return { ...state, liveOutputs };
 		}
-		case "tool_status":
+		case "message_full": {
+			const ui = state.state;
+			if (!ui) return state;
+			const msgs = ui.messages.map((m) => (m.id === action.id ? action.message : m));
+			const expandedFull = new Map(state.expandedFull).set(action.id, action.message);
+			return { ...state, state: { ...ui, messages: msgs }, expandedFull };
+		}
+
+				case "tool_status":
 			return {
 				...state,
 				toolStatuses: new Map(state.toolStatuses).set(
@@ -384,11 +405,10 @@ function reducer(state: ChatState, action: Action): ChatState {
 		case "sessions":
 			return { ...state, sessions: action.sessions };
 		case "conversations":
-			return {
-				...state,
-				conversations: action.conversations,
-				activeConversationId: action.activeId,
-			};
+			if (action.activeId !== state.activeConversationId && action.activeId !== (state.state?.conversationId || "")) {
+				return { ...state, conversations: action.conversations, activeConversationId: action.activeId, expandedFull: new Map() };
+			}
+			return { ...state, conversations: action.conversations, activeConversationId: action.activeId };
 		case "projects":
 			return { ...state, projects: action.projects };
 		case "files":
@@ -533,6 +553,7 @@ export function useChat() {
 		sessions: [],
 		conversations: [],
 		activeConversationId: "",
+		expandedFull: new Map(),
 		projects: [],
 		files: null,
 
@@ -668,6 +689,9 @@ export function useChat() {
 				}
 				case "sessions":
 					dispatch({ type: "sessions", sessions: msg.sessions });
+					break;
+				case "message_full":
+					dispatch({ type: "message_full", id: msg.id, message: msg.message });
 					break;
 				case "conversations":
 					dispatch({

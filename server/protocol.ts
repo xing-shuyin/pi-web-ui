@@ -69,6 +69,12 @@ export interface UiMessage {
 	customType?: string;
 	/** Extension-provided metadata (e.g. attachment file name/path). */
 	details?: unknown;
+	/** Lightweight COLLAPSED summary (snapshot windowing): present when the
+	 * server sent only a summary instead of full content. Browser calls
+	 * get_message to fetch the full on expand. */
+	collapsed?: boolean;
+	/** Summary fields (only when collapsed===true). */
+	summary?: { preview?: string; thinking?: number; toolCall?: number; bash?: number; image?: number };
 }
 
 export interface UiModelInfo {
@@ -273,6 +279,8 @@ export type ClientMessage =
 	| { type: "list_sessions" }
 	| { type: "switch_session"; path: string }
 	| { type: "switch_conversation"; id: string }
+	/** Fetch FULL content of a collapsed message. */
+	| { type: "get_message"; id: string }
 	| { type: "list_projects" }
 	| { type: "list_files"; path?: string }
 	/** Read a workspace file for the preview panel (size-capped, binary-safe). */
@@ -685,6 +693,8 @@ export type ServerMessage =
 	/** Sent every ~10s so clients can detect half-open connections. */
 	| { type: "heartbeat" }
 	| { type: "sessions"; sessions: SessionSummary[] }
+	/** Response to get_message: full content of a collapsed message. */
+	| { type: "message_full"; id: string; message: UiMessage }
 	| { type: "projects"; projects: ProjectSummary[] }
 	| {
 			type: "files";

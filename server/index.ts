@@ -525,6 +525,9 @@ wss.on("connection", (ws) => {
 			case "get_state":
 				cs.flushSnapshot();
 				break;
+			case "get_message":
+				void cs.getMessage(msg.id);
+				break;
 			case "get_commands":
 				void cs.pushSlashCommands();
 				break;

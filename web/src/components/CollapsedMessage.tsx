@@ -3,11 +3,7 @@ import { FiChevronDown } from "react-icons/fi";
 import type { UiMessage } from "../types";
 import { useT } from "../i18n";
 import {
-	asBash,
-	asImage,
 	asText,
-	asThinking,
-	asToolCall,
 	roleLabel,
 } from "./Message";
 
@@ -30,43 +26,32 @@ export const CollapsedMessage = memo(function CollapsedMessage({
 }: CollapsedMessageProps) {
 	const t = useT();
 
-	// Plain-text preview (first text block, first line, ~90 chars — no Markdown).
-	let preview = "";
-	for (const b of message.content) {
-		const text = asText(b);
-		if (text && text.text.trim()) {
-			// Skill invocations collapse to a `skill:name · <args>` chip instead
-			// of the raw SKILL.md dump.
-			const sb = parseSkillBlock(text.text);
-			if (sb) {
-				preview =
-					`skill:${sb.name}` +
-					(sb.userMessage ? ` · ${sb.userMessage.replace(/\s+/g, " ").trim()}` : "");
-			} else {
-				preview = text.text.replace(/\s+/g, " ").trim();
+	// Windowed snapshot deliveries carry a ready-made summary (preview + counts);
+	// otherwise compute the same from content.
+	const preview =
+		message.summary?.preview ??
+		(() => {
+			// Plain-text preview (first text block, first line, ~90 chars — no Markdown).
+			let p = "";
+			for (const b of message.content) {
+				const text = asText(b);
+				if (text && text.text.trim()) {
+					const sb = parseSkillBlock(text.text);
+					p = sb
+						? `skill:${sb.name}` + (sb.userMessage ? ` · ${sb.userMessage.replace(/\s+/g, " ").trim()}` : "")
+						: text.text.replace(/\s+/g, " ").trim();
+					break;
+				}
 			}
-			break;
-		}
-	}
-	// Attached files get their name as the preview.
-	if (!preview && message.role === "custom" && message.customType === "file") {
-		const details = (message.details ?? {}) as { name?: string; path?: string };
-		preview = details.name ?? details.path ?? "";
-	}
-	const truncated = preview.length > 90;
-	if (truncated) preview = `${preview.slice(0, 90)}…`;
+				const t = p.length > 90 ? p.slice(0, 90) + "…" : p;
+				return t;
+			})();
 
-	// Count heavy block types for the summary chips.
-	let thinking = 0;
-	let tools = 0;
-	let bash = 0;
-	let images = 0;
-	for (const b of message.content) {
-		if (asThinking(b)) thinking++;
-		else if (asToolCall(b)) tools++;
-		else if (asBash(b)) bash++;
-		else if (asImage(b)) images++;
-	}
+	// Count heavy block types for the summary chips (from summary when provided).
+	const thinking = message.summary?.thinking ?? 0;
+	const tools = message.summary?.toolCall ?? 0;
+	const bash = message.summary?.bash ?? 0;
+	const images = message.summary?.image ?? 0;
 	const chips: string[] = [];
 	if (thinking) chips.push(`${t("thinking")} ${thinking}`);
 	if (tools) chips.push(`${t("toolCalls")} ${tools}`);
