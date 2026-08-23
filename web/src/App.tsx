@@ -399,7 +399,6 @@ export function App() {
 								toolStatuses={chat.toolStatuses}
 								onEdit={onEditMessage}
 								onKillBash={() => send({ type: "abort_bash" })}
-								onFetchMessage={(id) => send({ type: "get_message", id })}
 							/>
 						) : (
 							<div className="boot-wait">
