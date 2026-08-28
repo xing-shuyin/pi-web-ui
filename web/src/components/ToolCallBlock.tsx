@@ -9,6 +9,7 @@ import {
 } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiToolCallBlock } from "../types";
 import { useT } from "../i18n";
+import { Markdown } from "./Markdown";
 
 export interface ToolView {
 	/** Tool result message if the tool already finished. */
@@ -39,6 +40,20 @@ function toolIcon(name: string): string {
 	return TOOL_ICONS[name] ?? "🛠";
 }
 
+/** True when this is a `read` tool call whose target path is a Markdown
+ *  file — its output reads much better rendered than as a raw <pre> dump. */
+function isMarkdownReadTarget(block: UiToolCallBlock): boolean {
+	if (block.name !== "read" || !block.argumentsText) return false;
+	try {
+		const args = JSON.parse(block.argumentsText) as { path?: unknown };
+		return (
+			typeof args.path === "string" && /\.(md|markdown)$/i.test(args.path)
+		);
+	} catch {
+		return false;
+	}
+}
+
 export const ToolCallBlock = memo(function ToolCallBlock({
 	block,
 	view,
@@ -56,6 +71,9 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 	const t = useT();
 	const [open, setOpen] = useState(wrap);
 	const [copied, setCopied] = useState(false);
+	// Markdown files read by the `read` tool default to rendered preview,
+	// same convention as the file preview panel (see FilePreview.tsx).
+	const [markdownPreview, setMarkdownPreview] = useState(true);
 
 	const running = !view.result && view.streaming && !view.status;
 	const isBashRunning = block.name === "bash" && running;
@@ -65,6 +83,7 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 	 *  the result. */
 	const waitingModel = !view.result && !!view.status;
 	const isError = view.result?.isError ?? view.status?.isError ?? false;
+	const isMarkdown = isMarkdownReadTarget(block);
 
 	const output = view.result
 		? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
@@ -154,8 +173,29 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 							<div className="toolcall-output-label">
 								{isError ? t("errorOutput") : t("output")}
 								{(running || waitingModel) && <span className="cursor" />}
+								<span className="toolcall-output-spacer" />
+								{isMarkdown && !isError && (
+									<button
+										type="button"
+										className="toolcall-md-toggle"
+										title={
+											markdownPreview
+												? t("showMarkdownSource")
+												: t("showMarkdownPreview")
+										}
+										onClick={() => setMarkdownPreview((v) => !v)}
+									>
+										{markdownPreview ? t("showMarkdownSource") : t("showMarkdownPreview")}
+									</button>
+								)}
 							</div>
-							<pre>{output}</pre>
+							{isMarkdown && markdownPreview && !isError ? (
+								<div className="toolcall-markdown">
+									<Markdown text={output} />
+								</div>
+							) : (
+								<pre>{output}</pre>
+							)}
 						</div>
 					)}
 					{running && output.length === 0 && (

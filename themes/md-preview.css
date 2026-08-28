@@ -3745,6 +3745,59 @@ span.msg-editor-hint svg {
 	line-height: 1.55;
 }
 
+/* Mermaid diagrams rendered from ```mermaid fenced code blocks (see
+   components/MermaidDiagram.tsx). Mirrors .codeblock chrome so a doc mixing
+   diagrams and code reads as one visual family. */
+.mermaid-block {
+	position: relative;
+	margin: 10px 0;
+	padding: 18px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	/* Diagrams read best on their own light "paper" card — matching mermaid's
+	   base theme (see MermaidDiagram.tsx) rather than the app's dark chrome
+	   keeps flowchart boxes/text legible instead of a muddy low-contrast box. */
+	background: #ffffff;
+	box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 20px rgba(0, 0, 0, 0.25);
+	overflow-x: auto;
+	display: flex;
+	justify-content: center;
+}
+.mermaid-svg {
+	width: 100%;
+	display: flex;
+	justify-content: center;
+}
+.mermaid-svg svg {
+	max-width: 100%;
+	height: auto;
+}
+.mermaid-block-loading {
+	width: 100%;
+	padding: 4px 2px;
+	color: var(--text-dim);
+	font-size: 12.5px;
+	text-align: center;
+	background: transparent;
+	box-shadow: none;
+}
+.mermaid-block-error {
+	display: block;
+	background: transparent;
+	box-shadow: none;
+	border-color: rgba(239, 68, 68, 0.35);
+}
+.mermaid-error-note {
+	width: 100%;
+	padding: 4px 2px;
+	font-size: 12.5px;
+	text-align: left;
+	color: #f87171;
+}
+.mermaid-block-error .codeblock {
+	margin: 8px 0 0;
+}
+
 .copy-btn {
 	position: absolute;
 	top: 8px;
@@ -3764,6 +3817,9 @@ span.msg-editor-hint svg {
 	transition: opacity 0.15s;
 }
 .codeblock:hover .copy-btn {
+	opacity: 1;
+}
+.mermaid-block:hover .copy-btn {
 	opacity: 1;
 }
 .copy-btn:hover {
@@ -3887,23 +3943,22 @@ span.msg-editor-hint svg {
 /* Blinking caret shown while the assistant message is streaming. */
 .stream-cursor {
 	display: inline-block;
-	width: 8px;
-	height: 1.05em;
-	margin-left: 3px;
+	width: 2px;
+	height: 1em;
+	margin-left: 4px;
 	vertical-align: text-bottom;
 	border-radius: 1px;
 	background: var(--accent);
-	animation: stream-blink 1s steps(2, start) infinite;
+	animation: stream-blink 1s ease-in-out infinite;
 }
 
 @keyframes stream-blink {
 	0%,
-	49% {
+	100% {
 		opacity: 1;
 	}
-	50%,
-	100% {
-		opacity: 0;
+	50% {
+		opacity: 0.15;
 	}
 }
 
@@ -4063,11 +4118,45 @@ span.msg-editor-hint svg {
 }
 
 .toolcall-output-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	font-size: 11px;
 	text-transform: uppercase;
 	letter-spacing: 0.6px;
 	color: var(--text-faint);
 	margin-bottom: 4px;
+}
+.toolcall-output-spacer {
+	flex: 1;
+}
+.toolcall-md-toggle {
+	border: none;
+	background: transparent;
+	color: var(--text-faint);
+	text-transform: none;
+	letter-spacing: normal;
+	font-size: 11px;
+	cursor: pointer;
+	padding: 2px 6px;
+	border-radius: 5px;
+}
+.toolcall-md-toggle:hover {
+	color: var(--text);
+	background: var(--bg-elev2);
+}
+/* Rendered Markdown output (a `read` on a .md file) — same card chrome as
+   the raw <pre>, but hosts prose instead of monospace text. */
+.toolcall-markdown {
+	max-height: 420px;
+	overflow: auto;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border-soft);
+	border-radius: 6px;
+	padding: 10px 14px;
+}
+.toolcall-markdown .md {
+	font-size: 13px;
 }
 
 .toolcall-output pre {
@@ -4100,17 +4189,22 @@ span.msg-editor-hint svg {
 
 .cursor {
 	display: inline-block;
-	width: 7px;
+	width: 2px;
 	height: 13px;
 	background: var(--accent);
+	border-radius: 1px;
 	vertical-align: -2px;
 	margin-left: 4px;
-	animation: blink 1s steps(2, start) infinite;
+	animation: blink 1s ease-in-out infinite;
 }
 
 @keyframes blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
 	50% {
-		opacity: 0;
+		opacity: 0.15;
 	}
 }
 
@@ -6852,6 +6946,13 @@ span.msg-editor-hint svg {
 .fp-markdown .codeblock pre code {
 	white-space: pre;
 	word-break: normal;
+}
+.fp-markdown .mermaid-block {
+	max-width: 100%;
+	min-width: 0;
+	margin: 1.1em 0;
+	padding: 18px;
+	border-radius: 10px;
 }
 .fp-markdown img {
 	display: block;
