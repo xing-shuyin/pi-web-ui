@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import { segmentStream } from "../stream-markdown";
 import {
 	MarkdownBody,
+	PreWithCopy,
 	rehypePlugins,
 	remarkPlugins,
 } from "./Markdown";
@@ -30,7 +31,7 @@ import {
 /** One frozen segment: immutable input → parses exactly once thanks to memo. */
 const FrozenSegment = memo(function FrozenSegment({ text }: { text: string }) {
 	return (
-		<ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
+		<ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={{ pre: PreWithCopy }}>
 			{text}
 		</ReactMarkdown>
 	);

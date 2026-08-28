@@ -108,9 +108,15 @@ export const ChatInput = memo(function ChatInput({
 		const m = value.match(/^\/([^\s]*)$/);
 		if (m && ready) {
 			const prefix = m[1].toLowerCase();
-			const matches = slashCommands.filter((c) =>
-				c.name.toLowerCase().startsWith(prefix),
-			);
+			const matches = slashCommands.filter((c) => {
+				const name = c.name.toLowerCase();
+				if (name.startsWith(prefix)) return true;
+				// Namespaced commands ("skill:wayfinder", "prompt:foo") should also
+				// match on the part after the colon, so "/wa" finds "/skill:wayfinder"
+				// instead of requiring the "skill:" prefix to be typed out first.
+				const colon = name.indexOf(":");
+				return colon >= 0 && name.slice(colon + 1).startsWith(prefix);
+			});
 			setCompletions(matches.length > 0 ? matches : null);
 			setCompletionIndex(0);
 		} else {
