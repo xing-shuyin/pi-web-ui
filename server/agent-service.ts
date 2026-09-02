@@ -587,6 +587,19 @@ function collectSessionAnchors(
 	return anchors;
 }
 
+/**
+ * pi 0.84.x 的会话存储是扁平布局：主 transcript jsonl 直接位于 sessions 根目录
+ * 顶层（`<root>/<timestamp>_<uuid>.jsonl`），所属 cwd 是文件内字段；sessions 根
+ * 由 PI_CODING_AGENT_SESSION_DIR 决定，未设时为 <agentDir>/sessions。
+ * 而 SDK 无参的 SessionManager.list()/listAll() 仍走旧版
+ * `<agentDir>/sessions/--<cwd>--/` 子目录布局（新版 pi 下基本为空），
+ * 导致历史对话/项目推导列不到终端 pi 的真实会话。
+ * 这里解析与 pi CLI/TUI 相同的 sessions 根，供调用点显式传入。
+ */
+export function piSessionsRoot(): string {
+	return process.env.PI_CODING_AGENT_SESSION_DIR ?? join(getAgentDir(), "sessions");
+}
+
 export class ClientSession {
 	readonly clientId: string;
 	/** Set by AgentService.attach: reflects the SERVICE-wide quiesce flag
@@ -2910,7 +2923,7 @@ export class ClientSession {
 		if (c && c.cwd === this.cwd && now - c.at < ClientSession.SESSION_INFO_CACHE_TTL) {
 			return c.infos;
 		}
-		const infos = await SessionManager.list(this.cwd);
+		const infos = await SessionManager.list(this.cwd, piSessionsRoot());
 		this.sessionInfosCache = { cwd: this.cwd, infos, at: now };
 		return infos;
 	}
@@ -3008,7 +3021,7 @@ export class ClientSession {
 			}
 			if (holder) {
 				// Same source the history panel uses (refreshSessions): newest first.
-				const infos = await SessionManager.list(this.cwd);
+				const infos = await SessionManager.list(this.cwd, piSessionsRoot());
 				const next = infos
 					.filter((s) => resolve(s.path) !== abs)
 					.sort((a, b) => b.modified.getTime() - a.modified.getTime())[0];
@@ -3270,7 +3283,7 @@ export class ClientSession {
 			);
 			const map = new Map<string, number>();
 			for (const p of saved.projects) map.set(p.path, p.lastUsed);
-			const all = await SessionManager.listAll();
+			const all = await SessionManager.listAll(piSessionsRoot());
 			for (const s of all) {
 				if (s.cwd) {
 					const t = s.modified.getTime();
