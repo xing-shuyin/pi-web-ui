@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import type { ClientMessage, CommandDef } from "../types";
 import { buildTermTheme, THEME_CHANGE_EVENT } from "../theme";
+import { useI18n } from "../i18n";
 
 interface TermXtermProps {
 	conversationId: string;
@@ -42,6 +43,7 @@ export function TermXterm({
 }: TermXtermProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
+	const { locale } = useI18n();
 	// Metadata snapshots recreate the command object; use a value key so a
 	// terminal is not torn down when only its running/exit metadata changes.
 	const commandKey = command ? JSON.stringify(command) : "";
@@ -142,6 +144,7 @@ export function TermXterm({
 					type: "terminal_create",
 					terminalId,
 					title,
+					locale,
 					conversationId,
 					cwd,
 					cols: term.cols,
@@ -176,7 +179,7 @@ export function TermXterm({
 			termRef.current = null;
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [conversationId, terminalId, commandKey, send, register]);
+	}, [conversationId, terminalId, commandKey, send, register, locale]);
 
 	// Becoming visible: re-fit (size may have changed while hidden) and focus.
 	useEffect(() => {

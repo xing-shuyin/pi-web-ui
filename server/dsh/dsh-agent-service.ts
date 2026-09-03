@@ -769,6 +769,10 @@ export class DshClientSession {
 							max > 0 && round >= max
 								? `已达轮数上限（${round}/${max}），目标未完成`
 								: `目标进行中（第 ${round} 轮）…`;
+						conv.goal.statusEn =
+							max > 0 && round >= max
+								? `Round cap reached (${round}/${max}), goal incomplete`
+								: `Goal in progress (round ${round})…`;
 						this.emitGoalStatus();
 					}
 					break;
@@ -1554,6 +1558,7 @@ export class DshClientSession {
 			conv.goal.verdict = "pending";
 			conv.goal.feedback = undefined;
 			conv.goal.status = "已手动停止，目标已中止";
+			conv.goal.statusEn = "Stopped manually, goal aborted";
 			this.emitGoalStatus();
 		}
 		this.emit({ type: "notice", level: "info", text: "已停止（DSH 中止 = 重启运行时，进行中的其他对话也会停止）" });
@@ -2220,6 +2225,7 @@ export class DshClientSession {
 			g.verdict = "pending";
 			g.feedback = undefined;
 			g.status = "";
+			g.statusEn = "";
 		} else if (data.goal?.objective) {
 			conv.dsGoal = {
 				id: data.goal.id ?? "",
@@ -2247,19 +2253,26 @@ export class DshClientSession {
 					max > 0 && rounds >= max
 						? `已达轮数上限（${rounds}/${max}），目标未完成`
 						: `目标进行中（第 ${rounds + 1} 轮）…`;
+				g.statusEn =
+					max > 0 && rounds >= max
+						? `Round cap reached (${rounds}/${max}), goal incomplete`
+						: `Goal in progress (round ${rounds + 1})…`;
 			} else if (phase === "complete") {
 				g.reviewing = false;
 				g.verdict = "pass";
 				g.status = "✅ 目标已达成";
+				g.statusEn = "✅ Goal achieved";
 			} else if (phase === "blocked") {
 				g.reviewing = false;
 				g.verdict = "fail";
 				g.feedback = data.goal.blockedReason ?? "（模型报告受阻）";
 				g.status = "目标受阻";
+				g.statusEn = "Goal blocked";
 			} else if (phase === "paused") {
 				g.reviewing = false;
 				g.verdict = "pending";
 				g.status = "目标已暂停";
+				g.statusEn = "Goal paused";
 			} else {
 				g.reviewing = false;
 			}
@@ -2300,6 +2313,7 @@ export class DshClientSession {
 		g.verdict = "pending";
 		g.feedback = undefined;
 		g.status = "目标已设，等待生成…";
+		g.statusEn = "Goal set, waiting to generate…";
 		this.goalPrefs = { reviewModel: g.reviewModel, maxRounds: g.maxRounds, locked: g.locked };
 		this.stateStore.saveGoalPrefs(this.clientId, {
 			reviewModel: g.reviewModel,
@@ -2319,6 +2333,7 @@ export class DshClientSession {
 		} catch (err) {
 			g.reviewing = false;
 			g.status = `目标设置失败：${(err as Error).message}`;
+			g.statusEn = `Goal setup failed: ${(err as Error).message}`;
 			this.emit({ type: "notice", level: "error", text: `目标设置失败：${(err as Error).message}` });
 		}
 		this.emitGoalStatus();
@@ -2348,6 +2363,7 @@ export class DshClientSession {
 		g.verdict = "pending";
 		g.feedback = undefined;
 		g.status = "";
+		g.statusEn = "";
 		this.emitGoalStatus();
 		this.flushSnapshot();
 	}
@@ -2370,7 +2386,9 @@ export class DshClientSession {
 		g.wizard.step = 0;
 		g.wizard.maxSteps = 6;
 		g.wizard.status = "调研中…";
+		g.wizard.statusEn = "Scoping…";
 		g.status = "目标调研中…";
+		g.statusEn = "Scoping the goal…";
 		this.emitGoalStatus();
 		this.emit({
 			type: "notice",
@@ -2401,6 +2419,7 @@ export class DshClientSession {
 		g.wizard.active = false;
 		g.wizard.step = 0;
 		g.wizard.status = "";
+		g.wizard.statusEn = "";
 		// 解析模型最终输出中的 GOAL: 行。
 		const finalText = this.lastAssistantText(conv);
 		const goalMatch = finalText.match(/GOAL\s*[:：]\s*([\s\S]*)/i);

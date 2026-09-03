@@ -8,4 +8,4 @@
  * its own copy in web/src/protocol-version.ts; scripts/check-protocol-sync.mjs
  * verifies the two never drift.
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;

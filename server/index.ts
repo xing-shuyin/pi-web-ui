@@ -435,7 +435,7 @@ import { DshAgentService } from "./dsh/dsh-agent-service.js";
 
 /** TerminalManager 的 dispatch 面（两个引擎共用同一实现类）。 */
 export interface TerminalManagerLike {
-	create(id: string, cwd: string, cols: number, rows: number, fallbackCwd: string, title?: string, opts?: { forceBash?: boolean }): unknown;
+	create(id: string, cwd: string, cols: number, rows: number, fallbackCwd: string, title?: string, opts?: { forceBash?: boolean; locale?: string }): unknown;
 	input(id: string, data: string): void;
 	resize(id: string, cols: number, rows: number): void;
 	kill(id: string): void;
@@ -899,7 +899,7 @@ wss.on("connection", (ws) => {
 				break;
 			case "terminal_create": {
 				const tm = cs.getTerminalManager(msg.conversationId);
-				if (tm) tm.create(msg.terminalId, msg.cwd, msg.cols, msg.rows, cs.getTerminalCwd(msg.conversationId), msg.title);
+				if (tm) tm.create(msg.terminalId, msg.cwd, msg.cols, msg.rows, cs.getTerminalCwd(msg.conversationId), msg.title, msg.locale ? { locale: msg.locale } : undefined);
 				break;
 			}
 			case "terminal_input":

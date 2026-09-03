@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp } from "react-icons/fi";
 import type { ClientMessage, GoalStatus, ModelInfo } from "../types";
-import { useT } from "../i18n";
+import { useT, useI18n } from "../i18n";
 import { Dropdown, DropdownItem } from "./Dropdown";
 
 /** Messages this component sends. */
@@ -34,6 +34,9 @@ interface Props {
 
 export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, activeConversationId, engine, send }: Props) {
 	const t = useT();
+	const { locale } = useI18n();
+	const goalDetail = locale === "en" && goal.statusEn ? goal.statusEn : (goal.status || "");
+	const wizardDetail = locale === "en" && goal.wizard?.statusEn ? goal.wizard.statusEn : (goal.wizard?.status || "");
 	// DSH：无独立审查模型 —— 隐藏 reviewModel 下拉（轮次上限仍然有效）。
 	const isDsh = engine === "dsh";
 	// Goals belong to the conversation that created them. The server keeps the
@@ -133,7 +136,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 						/ {goal.wizard?.maxSteps ?? 6}
 					</span>
 					<span className="goalbar-detail">
-						{goal.wizard?.status || t("goalBarReviewing")}
+						{wizardDetail || t("goalBarReviewing")}
 					</span>
 					<button
 						type="button"
@@ -182,7 +185,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 									: `${t("goalBarRound", { n: goal.round || 1 })} · ${goal.locked ? t("goalBarLocked") : t("goalBarUnlocked")}`}
 						</span>
 					)}
-					<span className="goalbar-detail">{goal.status}</span>
+					<span className="goalbar-detail">{goalDetail}</span>
 					<button
 						type="button"
 						className="goalbar-x"

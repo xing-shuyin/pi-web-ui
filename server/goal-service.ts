@@ -216,7 +216,9 @@ export class GoalService {
 		goal.feedback = undefined;
 		goal.wizard.active = false;
 		goal.wizard.status = "";
+		goal.wizard.statusEn = "";
 		goal.status = "目标已设，等待生成…";
+		goal.statusEn = "Goal set, waiting to generate…";
 		this.emitGoalStatus();
 		this.host.emit({
 			type: "notice",
@@ -316,7 +318,9 @@ export class GoalService {
 		wgoal.wizard.step = 0;
 		wgoal.wizard.maxSteps = maxSteps;
 		wgoal.wizard.status = "调研中…";
+		wgoal.wizard.statusEn = "Scoping…";
 		wgoal.status = "目标调研中…";
+		wgoal.statusEn = "Scoping the goal…";
 		this.emitGoalStatus();
 		// Idle-timeout: cancel the wizard if no question is answered within the
 		// window (a stale dialog with no user response must not run forever). A
@@ -419,6 +423,7 @@ export class GoalService {
 					// the user sees the wizard working even before answering.
 					wgoal.wizard.step = qStep;
 					wgoal.wizard.status = `调研中：请回答第 ${qStep} 题`;
+					wgoal.wizard.statusEn = `Scoping: please answer question ${qStep}`;
 					this.emitGoalStatus();
 					try {
 						armIdle();
@@ -540,6 +545,7 @@ export class GoalService {
 			wgoal.wizard.active = false;
 			wgoal.wizard.step = 0;
 			wgoal.wizard.status = "";
+			wgoal.wizard.statusEn = "";
 			this.wizardSession = null;
 			this.emitGoalStatus();
 		}
@@ -648,7 +654,9 @@ export class GoalService {
 		goal.feedback = undefined;
 		goal.wizard.active = false;
 		goal.wizard.status = "";
+		goal.wizard.statusEn = "";
 		goal.status = "";
+		goal.statusEn = "";
 		this.emitGoalStatus();
 		// Abort a running wizard for real (✗ in the goal bar while scoping).
 		if (this.wizardOwnerId === this.host.activeConvId()) {
@@ -683,6 +691,7 @@ export class GoalService {
 				g.verdict = "pending";
 				g.feedback = undefined;
 				g.status = "已手动停止，目标审查已中止";
+				g.statusEn = "Stopped manually, goal review aborted";
 				this.emitGoalStatus();
 				return "⏹ 已手动停止，目标审查已中止（想继续可重新设定目标）";
 			}
@@ -800,6 +809,7 @@ export class GoalService {
 		) {
 			conv.goal.reviewing = false;
 			conv.goal.status = "审查已中止，目标已更新或取消";
+			conv.goal.statusEn = "Review aborted, goal updated or cleared";
 			this.emitGoalStatus();
 		}
 	}
@@ -835,6 +845,7 @@ export class GoalService {
 		const budget = g.locked ? (g.maxRounds > 0 ? g.maxRounds : Infinity) : 1;
 		if (g.locked && g.maxRounds > 0 && g.round >= budget) {
 			g.status = `已达最大轮数（${budget}），停止审查`;
+			g.statusEn = `Max rounds reached (${budget}), stopping review`;
 			g.reviewing = false;
 			this.emitGoalStatus();
 			return;
@@ -845,6 +856,7 @@ export class GoalService {
 		g.verdict = "pending";
 		g.feedback = undefined;
 		g.status = `审查中（第 ${g.round} 轮）…`;
+		g.statusEn = `Reviewing (round ${g.round})…`;
 		this.emitGoalStatus();
 
 		// Collect the review inputs.
@@ -949,12 +961,15 @@ export class GoalService {
 		const budgetForCard = g.locked ? (Number.isFinite(budget) ? budget : 0) : 1;
 		const verdict = reviewerVerdict;
 		const feedback = reviewerFeedback;
-		/** Format "round/cap" for user-facing strings; cap 0 → 不限. */
-		const capFmt = (cap: number): string =>
-			cap > 0 ? `第 ${round}/${cap} 轮` : `第 ${round} 轮（不限）`;
+		/** Rounds label for the goalStatus* keys — pre-rendered zh + en. */
+		const roundsZh =
+			budgetForCard > 0 ? `第 ${round}/${budgetForCard} 轮` : `第 ${round} 轮（不限）`;
+		const roundsEn =
+			budgetForCard > 0 ? `Round ${round}/${budgetForCard}` : `Round ${round} (unlimited)`;
 
 		if (verdict === "pass") {
 			g.status = "✅ 已通过目标审查";
+			g.statusEn = "✅ Goal review passed";
 			this.host.emit({ type: "notice", level: "info", text: "✅ 目标已通过审查" });
 			g.conversationId = null;
 			g.goal = null; // a passed goal is done and cleared
@@ -979,7 +994,8 @@ export class GoalService {
 		// For unlimited (budget=0) isLastRound is always false → keeps revising.
 		const isLastRound = !g.locked ? true : g.maxRounds > 0 && g.round >= g.maxRounds;
 		if (!isLastRound) {
-			g.status = `本轮不通过，正在把意见交给 agent 修改（${capFmt(budgetForCard)}）…`;
+			g.status = `本轮不通过，正在把意见交给 agent 修改（${roundsZh}）…`;
+			g.statusEn = `Round failed, sending feedback to the agent (${roundsEn})…`;
 			this.host.emit({
 				type: "notice",
 				level: "warning",
@@ -996,6 +1012,7 @@ export class GoalService {
 				});
 			} catch (err) {
 				g.status = `意见注入失败：${(err as Error).message}`;
+				g.statusEn = `Feedback injection failed: ${(err as Error).message}`;
 			}
 			this.emitGoalStatus();
 			this.host.flushSnapshot();
@@ -1005,10 +1022,13 @@ export class GoalService {
 		// Rounds exhausted (finite cap reached / single-shot failed). Deliver the
 		// fail result as an ordinary user message (no separate card), like the pass
 		// and revise paths — the review result always lands in the conversation.
-		g.status =
-			g.locked && g.maxRounds > 0
-				? `已达最大轮数（${g.maxRounds}），目标仍未通过`
-				: `目标未通过（${capFmt(budgetForCard)}）`;
+		if (g.locked && g.maxRounds > 0) {
+			g.status = `已达最大轮数（${g.maxRounds}），目标仍未通过`;
+			g.statusEn = `Max rounds reached (${g.maxRounds}), goal still failing`;
+		} else {
+			g.status = `目标未通过（${roundsZh}）`;
+			g.statusEn = `Goal failed (${roundsEn})`;
+		}
 		try {
 			await mainSession.sendUserMessage(
 				`❌ 目标未通过审查（第 ${round}/${budgetForCard > 0 ? budgetForCard : "不限"} 轮）。\n\n目标：${goalText}\n\n审查意见：${feedback}`,
