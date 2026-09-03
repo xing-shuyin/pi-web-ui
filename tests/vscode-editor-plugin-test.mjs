@@ -33,9 +33,9 @@ function fail(msg) {
 // ---- 种插件目录 + 工作区夹具 ----------------------------------------------
 const plugDst = join(dataDir, "plugins", "vscode-editor");
 mkdirSync(plugDst, { recursive: true });
-cpSync(join(repoRoot, "dev", "plugins", "vscode-editor", "manifest.json"), join(plugDst, "manifest.json"));
-cpSync(join(repoRoot, "dev", "plugins", "vscode-editor", "index.mjs"), join(plugDst, "index.mjs"));
-cpSync(join(repoRoot, "dev", "plugins", "vscode-editor", "client"), join(plugDst, "client"), { recursive: true });
+cpSync(join(repoRoot, "plugins", "vscode-editor", "manifest.json"), join(plugDst, "manifest.json"));
+cpSync(join(repoRoot, "plugins", "vscode-editor", "index.mjs"), join(plugDst, "index.mjs"));
+cpSync(join(repoRoot, "plugins", "vscode-editor", "client"), join(plugDst, "client"), { recursive: true });
 
 // 工作区：src/main.js + GBK 中文 txt + node_modules 噪音
 mkdirSync(join(workspace, "src"), { recursive: true });

@@ -16,7 +16,7 @@ import WebSocket from "ws";
 const PORT = 8968;
 const BASE = `http://127.0.0.1:${PORT}`;
 const PLUGIN_ID = "db-client";
-const SRC = join(import.meta.dirname, "..", "dev", "plugins", PLUGIN_ID);
+const SRC = join(import.meta.dirname, "..", "plugins", PLUGIN_ID);
 
 const serverPath = realpathSync(process.execPath);
 let proc = null;

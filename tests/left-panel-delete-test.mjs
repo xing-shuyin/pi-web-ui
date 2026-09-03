@@ -240,7 +240,7 @@ async function runCurrentSessionCases() {
 	const sessActive = seedSession(null, "cur-target", workDir2, "要删除的当前对话", 1722700802000, agentDir2);
 
 	await startServer({
-		PORT: String(PORT + 1),
+		PI_WEB_PORT: String(PORT + 1),
 		PI_WEB_DATA_DIR: dataDir2,
 		PI_CODING_AGENT_DIR: agentDir2,
 		PI_WEB_CWD: workDir2,
