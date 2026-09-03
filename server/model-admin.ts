@@ -312,11 +312,15 @@ export class ModelAdminService {
 		const pid = provider.trim();
 		const key = apiKey.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID" });
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
+			textEn: "Enter a provider ID"
+			});
 			return;
 		}
 		if (!key) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥" });
+			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥",
+			textEn: "Enter an API key"
+			});
 			return;
 		}
 		try {
@@ -343,6 +347,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "info",
 				text: `✅ 已保存 ${pid} 的密钥「${name}」并刷新模型列表`,
+				textEn: `✅ Saved key "${name}" for ${pid} and refreshed the model list`,
 			});
 			await this.host.pushModels();
 			await this.listProviders();
@@ -352,6 +357,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `保存 API 密钥失败：${(err as Error).message}`,
+				textEn: `Failed to save API key: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -365,11 +371,15 @@ export class ModelAdminService {
 		const pid = provider.trim();
 		const key = apiKey.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID" });
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
+			textEn: "Enter a provider ID"
+			});
 			return;
 		}
 		if (!key) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥" });
+			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥",
+			textEn: "Enter an API key"
+			});
 			return;
 		}
 		try {
@@ -385,6 +395,7 @@ export class ModelAdminService {
 					type: "notice",
 					level: "info",
 					text: `${pid} 已存在该密钥`,
+					textEn: `${pid} already has this key`,
 				});
 				return;
 			}
@@ -400,12 +411,14 @@ export class ModelAdminService {
 					type: "notice",
 					level: "info",
 					text: `🔑 已添加 ${pid} 的密钥「${keyName}」并设为当前`,
+					textEn: `🔑 Added key "${keyName}" for ${pid} and set it active`,
 				});
 			} else {
 				this.host.emit({
 					type: "notice",
 					level: "info",
 					text: `🔑 已添加 ${pid} 的密钥「${keyName}」，点击模型时可切换使用`,
+					textEn: `🔑 Added key "${keyName}" for ${pid}; click a model to switch to it`,
 				});
 			}
 			await this.host.pushModels();
@@ -416,6 +429,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `添加密钥失败：${(err as Error).message}`,
+				textEn: `Failed to add key: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -431,11 +445,15 @@ export class ModelAdminService {
 			const entry = data[pid];
 			const target = entry?.keys.find((k) => k.name === targetName);
 			if (!target) {
-				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在` });
+				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在`,
+				textEn: `Key "${targetName}" for ${pid} does not exist`
+				});
 				return;
 			}
 			if (entry.activeKeyName === targetName) {
-				this.host.emit({ type: "notice", level: "info", text: `「${targetName}」已是当前密钥` });
+				this.host.emit({ type: "notice", level: "info", text: `「${targetName}」已是当前密钥`,
+				textEn: `"${targetName}" is already the active key`
+				});
 				return;
 			}
 			entry.activeKeyName = targetName;
@@ -445,6 +463,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "info",
 				text: `⚡ 已切换到 ${pid} 的「${targetName}」`,
+				textEn: `⚡ Switched to "${targetName}" for ${pid}`,
 			});
 			await this.host.pushModels();
 			await this.listProviders();
@@ -454,6 +473,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `切换密钥失败：${(err as Error).message}`,
+				textEn: `Failed to switch key: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -468,7 +488,9 @@ export class ModelAdminService {
 			const data = this.readProviderKeys();
 			const entry = data[pid];
 			if (!entry || !entry.keys.some((k) => k.name === targetName)) {
-				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在` });
+				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在`,
+				textEn: `Key "${targetName}" for ${pid} does not exist`
+				});
 				return;
 			}
 			const wasActive = entry.activeKeyName === targetName;
@@ -495,6 +517,7 @@ export class ModelAdminService {
 					type: "notice",
 					level: "info",
 					text: `🗑  已移除 ${pid} 的密钥「${targetName}」，该服务商回到未配置状态`,
+					textEn: `🗑  Removed key "${targetName}" for ${pid}; provider is now unconfigured`,
 				});
 			} else {
 				if (wasActive) {
@@ -510,6 +533,9 @@ export class ModelAdminService {
 					text: wasActive
 						? `🗑  已移除「${targetName}」，已切换到 ${entry.keys[0].name}`
 						: `🗑  已移除 ${pid} 的密钥「${targetName}」`,
+					textEn: wasActive
+						? `🗑  Removed "${targetName}", switched to ${entry.keys[0].name}`
+						: `🗑  Removed key "${targetName}" for ${pid}`
 				});
 			}
 			await this.host.pushModels();
@@ -520,6 +546,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `移除密钥失败：${(err as Error).message}`,
+				textEn: `Failed to remove key: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -535,7 +562,9 @@ export class ModelAdminService {
 	async clearProviderApiKey(provider: string): Promise<void> {
 		const pid = provider.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID" });
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
+			textEn: "Enter a provider ID"
+			});
 			return;
 		}
 		try {
@@ -557,6 +586,7 @@ export class ModelAdminService {
 					type: "notice",
 					level: "info",
 					text: `${pid} 没有已保存的密钥`,
+					textEn: `${pid} has no saved key`,
 				});
 				return;
 			}
@@ -575,6 +605,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "info",
 				text: `🗑  已清除 ${pid} 的密钥，该服务商回到未配置状态`,
+				textEn: `🗑  Cleared keys for ${pid}; provider is now unconfigured`,
 			});
 			await this.host.pushModels();
 			await this.listProviders();
@@ -584,6 +615,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `清除密钥失败：${(err as Error).message}`,
+				textEn: `Failed to clear key: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -707,6 +739,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "error",
 				text: `获取服务商列表失败：${(err as Error).message}`,
+				textEn: `Failed to fetch provider list: ${(err as Error).message}`,
 			});
 			return;
 		}
@@ -715,6 +748,7 @@ export class ModelAdminService {
 				type: "notice",
 				level: "warning",
 				text: "服务商列表为空——pi 运行时未注册任何提供商",
+				textEn: "Provider list is empty — the pi runtime registered no providers",
 			});
 		}
 		this.host.emit({ type: "providers_status", providers });
@@ -1054,6 +1088,7 @@ static async probeModelsEndpoint(
 					type: "notice",
 					level: "warning",
 					text: `服务商 ${pid} 不存在或未配置 baseUrl，无法刷新`,
+					textEn: `Provider ${pid} does not exist or has no baseUrl; cannot refresh`,
 				});
 				return done(false, { error: "provider missing or no baseUrl" });
 			}
@@ -1107,6 +1142,7 @@ static async probeModelsEndpoint(
 				type: "notice",
 				level: "error",
 				text: `刷新模型列表失败：${(err as Error).message}`,
+				textEn: `Failed to refresh model list: ${(err as Error).message}`,
 			});
 			return done(false, { error: (err as Error).message });
 		}
@@ -1123,6 +1159,7 @@ static async probeModelsEndpoint(
 				type: "notice",
 				level: "error",
 				text: "服务商 ID 无效（仅字母/数字/._-）",
+				textEn: "Invalid provider ID (letters/digits/._- only)",
 			});
 			return;
 		}
@@ -1137,7 +1174,9 @@ static async probeModelsEndpoint(
 				...(m.maxTokens ? { maxTokens: Number(m.maxTokens) } : {}),
 			}));
 		if (models.length === 0) {
-			this.host.emit({ type: "notice", level: "error", text: "至少需要一个模型" });
+			this.host.emit({ type: "notice", level: "error", text: "至少需要一个模型",
+			textEn: "At least one model is required"
+			});
 			return;
 		}
 		try {
@@ -1195,12 +1234,14 @@ static async probeModelsEndpoint(
 				type: "notice",
 				level: "info",
 				text: `✅ 已保存服务商 ${pid}（${models.length} 个模型）并刷新模型列表`,
+				textEn: `✅ Saved provider ${pid} (${models.length} models) and refreshed the model list`,
 			});
 		} catch (err) {
 			this.host.emit({
 				type: "notice",
 				level: "error",
 				text: `保存模型配置失败：${(err as Error).message}`,
+				textEn: `Failed to save model config: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();
@@ -1215,6 +1256,7 @@ static async probeModelsEndpoint(
 					type: "notice",
 					level: "info",
 					text: `服务商 ${providerId} 不存在`,
+					textEn: `Provider ${providerId} does not exist`,
 				});
 				return;
 			}
@@ -1231,12 +1273,14 @@ static async probeModelsEndpoint(
 				type: "notice",
 				level: "info",
 				text: `🗑  已删除服务商 ${providerId}`,
+				textEn: `🗑  Deleted provider ${providerId}`,
 			});
 		} catch (err) {
 			this.host.emit({
 				type: "notice",
 				level: "error",
 				text: `删除模型配置失败：${(err as Error).message}`,
+				textEn: `Failed to delete model config: ${(err as Error).message}`,
 			});
 		}
 		this.host.flushSnapshot();

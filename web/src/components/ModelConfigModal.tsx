@@ -358,7 +358,7 @@ export function ModelConfigModal({
 		const ok = send({ type: "clone_provider", provider: p.id, reqId });
 		if (!ok) {
 			setCloning(null);
-			setCloneMsg({ ok: false, text: "网络连接已断开，请重连后重试" });
+			setCloneMsg({ ok: false, text: t("netDisconnected") });
 		}
 	};
 
@@ -431,9 +431,9 @@ export function ModelConfigModal({
 				<div className="modal-head">
 					<h2>
 						{addKeyDraft
-							? "添加密钥"
+							? t("addKey")
 							: batch
-								? `批量创建供应商 (${batch.length}个接口)`
+								? t("batchCreateProviders", { n: batch.length })
 								: editing
 									? t("editProvider")
 									: t("manageModelsTitle")}
@@ -445,16 +445,16 @@ export function ModelConfigModal({
 						<div className="model-modal-body">
 							<div className="provider-form">
 								<p className="modal-desc" style={{ marginBottom: 12 }}>
-									为 <strong>{addKeyDraft.api}</strong> · {addKeyDraft.baseUrl || "(无 baseUrl)"} · {addKeyDraft.models.length} 个模型添加第二把密钥，只需指定新供应商名字和密钥即可。
+									{t("secondKeyTitle", { api: addKeyDraft.api, baseUrl: addKeyDraft.baseUrl || t("noBaseUrlShort"), n: addKeyDraft.models.length })}
 								</p>
 								<div className="form-grid">
 									<label className="field">
-										<span className="field-label">供应商名字 <em>（新 ID，如 opencode-2）</em></span>
+										<span className="field-label">{t("providerNameLabel")} <em>{t("providerNameHint")}</em></span>
 										<input type="text" value={addKeyDraft.providerId} onChange={(e) => setAddKeyDraft({ ...addKeyDraft, providerId: e.target.value })} placeholder="opencode-2" />
 									</label>
 									<label className="field">
-										<span className="field-label">API 密钥</span>
-										<input type="password" value={addKeyDraft.apiKey} onChange={(e) => setAddKeyDraft({ ...addKeyDraft, apiKey: e.target.value })} placeholder="sk-… 第二把 key" />
+										<span className="field-label">{t("apiKeyLabel")}</span>
+										<input type="password" value={addKeyDraft.apiKey} onChange={(e) => setAddKeyDraft({ ...addKeyDraft, apiKey: e.target.value })} placeholder={t("secondKeyPlaceholder")} />
 									</label>
 								</div>
 								<div style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
@@ -467,7 +467,7 @@ export function ModelConfigModal({
 								{t("cancel")}
 							</button>
 							<button type="button" className="btn" onClick={() => { const d = addKeyDraft; setAddKeyDraft(null); setEditing(d); }}>
-								高级编辑
+								{t("advancedEdit")}
 							</button>
 							<button type="button" className="btn primary" disabled={!addKeyDraft.providerId.trim() || !addKeyDraft.apiKey.trim()} onClick={saveAddKey}>
 								{t("save")}
@@ -479,11 +479,11 @@ export function ModelConfigModal({
 						<div className="model-modal-body">
 							<div className="provider-form">
 								<p className="modal-desc" style={{ marginBottom: 12 }}>
-									该供应商含多种接口（{batch.map((b) => b.api).join("、")}），已按接口拆分为 {batch.length} 个自定义供应商，分别保存后才能让所有模型（如 muse-spark）都可用。统一填入第二把 API 密钥后一键保存。
+									{t("batchDesc", { apis: batch.map((b) => b.api).join("、"), n: batch.length })}
 								</p>
 								<label className="field" style={{ marginBottom: 16 }}>
-									<span className="field-label">统一 API 密钥（将应用到全部 {batch.length} 个供应商）</span>
-									<input type="password" value={batchKey} onChange={(e) => setBatchKey(e.target.value)} placeholder="sk-… 第二把 key" />
+									<span className="field-label">{t("batchKeyLabel", { n: batch.length })}</span>
+									<input type="password" value={batchKey} onChange={(e) => setBatchKey(e.target.value)} placeholder={t("secondKeyPlaceholder")} />
 								</label>
 								<div className="provider-list" style={{ marginBottom: 16 }}>
 									{batch.map((d, idx) => (
@@ -493,20 +493,20 @@ export function ModelConfigModal({
 												<span style={{ opacity: 0.7 }}>{d.api}</span>
 											</div>
 											<div className="provider-sub" style={{ fontSize: 12, opacity: 0.7 }}>
-												{d.baseUrl || "(无 baseUrl)"} · {d.models.length} 个模型：{d.models.slice(0, 3).map((m) => m.id).join(", ")}{d.models.length > 3 ? ` … +${d.models.length - 3}` : ""}
+												{d.baseUrl || t("noBaseUrlShort")} · {t("modelsCountShort", { n: d.models.length })}{d.models.slice(0, 3).map((m) => m.id).join(", ")}{d.models.length > 3 ? ` … +${d.models.length - 3}` : ""}
 											</div>
 											<input
 												type="text"
 												value={d.providerId}
 												onChange={(e) => setBatch((prev) => prev!.map((x, i) => (i === idx ? { ...x, providerId: e.target.value } : x)))}
-												placeholder="供应商 ID"
+												placeholder={t("providerIdPlaceholder")}
 												style={{ fontSize: 12 }}
 											/>
 											<input
 												type="text"
 												value={d.baseUrl}
 												onChange={(e) => setBatch((prev) => prev!.map((x, i) => (i === idx ? { ...x, baseUrl: e.target.value } : x)))}
-												placeholder="baseUrl 链接，如 https://api.opencode.ai/zen/v1 或 http://127.0.0.1:4096"
+												placeholder={t("baseUrlExamplePh")}
 												style={{ fontSize: 12 }}
 											/>
 										</div>
@@ -551,7 +551,7 @@ export function ModelConfigModal({
 									onClose();
 								}}
 							>
-								一键保存全部 ({batch.length})
+								{t("saveAllBatch", { n: batch.length })}
 							</button>
 						</div>
 					</>

@@ -1172,6 +1172,7 @@ export class ClientSession {
 			type: "notice",
 			level: "warning",
 			text: `上次服务重启时有 ${list.length} 个进行中的对话被中断：${names}。可在历史对话中恢复继续。`,
+textEn: `${list.length} running conversation(s) were interrupted by the last restart: ${names}. Resume them from History.`,
 		});
 	}
 
@@ -1275,6 +1276,7 @@ export class ClientSession {
 						type: "notice",
 						level: "warning",
 						text: `对话「${conv.title}」已 ${mins} 分钟无任何响应，可能已失联（网络中断或服务端挂起）。可点击停止后重试。`,
+textEn: `Conversation "${conv.title}" has been silent for ${mins} min — possibly disconnected (network or hung server). Stop it and retry.`,
 					});
 				}
 			}
@@ -1293,6 +1295,7 @@ export class ClientSession {
 				type: "notice",
 				level: "warning",
 				text: `工具执行超过 ${Math.round(TOOL_WATCHDOG_TIMEOUT_MS / 60_000)} 分钟，已自动终止（防止挂死）。可调整超时：环境变量 PI_WEB_TOOL_TIMEOUT_MS（毫秒）。`,
+textEn: `Tool ran over ${Math.round(TOOL_WATCHDOG_TIMEOUT_MS / 60_000)} min and was auto-terminated (hang guard). Tune via PI_WEB_TOOL_TIMEOUT_MS (ms).`,
 			});
 			conv.toolStartTimes.delete(toolCallId);
 			// Abort the run (kills the process tree via the SDK's abort signal);
@@ -1432,6 +1435,7 @@ export class ClientSession {
 					type: "notice",
 					level: "info",
 					text: "正在压缩上下文…（压缩摘要将显示在消息区）",
+textEn: "Compacting context… (the summary will appear in the message list)",
 				});
 				break;
 			}
@@ -1441,12 +1445,14 @@ export class ClientSession {
 						type: "notice",
 						level: "error",
 						text: `压缩上下文失败：${event.errorMessage}`,
+textEn: `Context compaction failed: ${event.errorMessage}`,
 					});
 				} else if (event.aborted) {
 					this.emit({
 						type: "notice",
 						level: "warning",
 						text: "压缩上下文已取消",
+textEn: "Context compaction cancelled",
 					});
 				} else if (event.result) {
 					const { tokensBefore, estimatedTokensAfter } = event.result;
@@ -1455,6 +1461,7 @@ export class ClientSession {
 						type: "notice",
 						level: "info",
 						text: `上下文压缩完成：${tokensBefore.toLocaleString()} → ${after.toLocaleString()} tokens（摘要已插入消息区）`,
+textEn: `Context compacted: ${tokensBefore.toLocaleString()} → ${after.toLocaleString()} tokens (summary inserted into the message list)`,
 					});
 				}
 				break;
@@ -1987,6 +1994,7 @@ export class ClientSession {
 				type: "notice",
 				level: "info",
 				text: "正在安装 pi agent CLI（npm i -g @earendil-works/pi-coding-agent）…",
+textEn: "Installing pi agent CLI (npm i -g @earendil-works/pi-coding-agent)…",
 			});
 			const { code, out } = await this.runAsync(
 				"npm",
@@ -1998,6 +2006,7 @@ export class ClientSession {
 					type: "notice",
 					level: "info",
 					text: "✅ pi agent CLI 安装完成。填入 API 密钥即可开始，或在终端运行 pi 完成登录。",
+textEn: "✅ pi agent CLI installed. Enter an API key to start, or run pi in a terminal to log in.",
 				});
 				this.emit({ type: "install_result", ok: true, detail: "" });
 			} else {
@@ -2005,6 +2014,7 @@ export class ClientSession {
 					type: "notice",
 					level: "error",
 					text: `pi agent 安装失败（${code ?? "timeout"}）：${out.slice(0, 400)}`,
+textEn: `pi agent install failed (${code ?? "timeout"}): ${out.slice(0, 400)}`,
 				});
 				this.emit({
 					type: "install_result",
@@ -2017,6 +2027,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `pi agent 安装失败：${(err as Error).message}`,
+textEn: `pi agent install failed: ${(err as Error).message}`,
 			});
 		}
 		// The CLI may just have landed on PATH (or the install may have failed) —
@@ -2079,6 +2090,7 @@ export class ClientSession {
 					type: "notice",
 					level: "error",
 					text: `插件命令 /${name} 执行失败：${(err as Error).message}`,
+textEn: `Plugin command /${name} failed: ${(err as Error).message}`,
 				});
 			}
 			return true;
@@ -2349,6 +2361,7 @@ export class ClientSession {
 			type: "notice",
 			level: "error",
 			text: "服务器正在排空存量工作（quiesce），已拒绝新的对话/消息/编辑。存量运行会继续跑完；用 pi-web-ui server unquiesce 可恢复。",
+textEn: "Server is draining (quiesce) and rejected the new chat/message/edit. Existing runs continue; resume with pi-web-ui server unquiesce.",
 		});
 		this.flushSnapshot();
 		return true;
@@ -2467,6 +2480,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `提示发送失败：${(err as Error).message}`,
+textEn: `Failed to send prompt: ${(err as Error).message}`,
 			});
 		}
 		// The active conversation (captured at prompt start — see above) has been
@@ -2552,6 +2566,7 @@ export class ClientSession {
 					type: "notice",
 					level: "error",
 					text: `重新入队插队消息失败：${(err as Error).message}`,
+textEn: `Failed to re-queue the steer message: ${(err as Error).message}`,
 				});
 			}
 		}
@@ -2563,6 +2578,7 @@ export class ClientSession {
 					type: "notice",
 					level: "error",
 					text: `重新入队排队消息失败：${(err as Error).message}`,
+textEn: `Failed to re-queue the queued message: ${(err as Error).message}`,
 				});
 			}
 		}
@@ -2595,6 +2611,7 @@ export class ClientSession {
 					type: "notice",
 					level: "info",
 					text: `后台任务「${taskId}」不存在或已结束`,
+textEn: `Background task "${taskId}" does not exist or has ended`,
 				});
 			}
 			this.bg.push();
@@ -2620,6 +2637,7 @@ export class ClientSession {
 				type: "notice",
 				level: "info",
 				text: "当前没有正在运行的 bash 命令",
+textEn: "No bash command is running",
 			});
 			this.flushSnapshot();
 			return;
@@ -2629,6 +2647,7 @@ export class ClientSession {
 			type: "notice",
 			level: "info",
 			text: "已停止 bash 命令（对话继续）",
+textEn: "Bash command stopped (conversation continues)",
 		});
 		// 让 AI 明确知道是用户手动停止：sendUserMessage 触发下一轮，agent
 		// 会看到「命令被用户中止」而不是普通失败，并据此继续（不会困惑于
@@ -2679,6 +2698,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `中止失败：${(err as Error).message}`,
+textEn: `Abort failed: ${(err as Error).message}`,
 			});
 		}
 		// 3) abort returned but no agent_end within the settle window → the
@@ -2721,6 +2741,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `强制中断失败：${(err as Error).message}`,
+textEn: `Force-stop failed: ${(err as Error).message}`,
 			});
 		}
 	}
@@ -2763,6 +2784,7 @@ export class ClientSession {
 				type: "notice",
 				level: "warning",
 				text: `当前项目运行的对话已达上限（${MAX_OPEN_CONVERSATIONS} 个），请先打开某个对话并离开（不继续对话）以移出列表`,
+textEn: `This project already has the max open conversations (${MAX_OPEN_CONVERSATIONS}). Open one and leave it (without continuing) to remove it from the list.`,
 			});
 			return;
 		}
@@ -2815,6 +2837,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `新建对话失败：${(err as Error).message}`,
+textEn: `Failed to create chat: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3044,6 +3067,7 @@ export class ClientSession {
 					type: "notice",
 					level: "error",
 					text: "只能删除会话目录中的对话记录",
+textEn: "Only transcripts inside the session directory can be deleted",
 				});
 				return;
 			}
@@ -3062,6 +3086,7 @@ export class ClientSession {
 					type: "notice",
 					level: "warning",
 					text: "该对话正在后台运行，请先停止或关闭该对话再删除",
+textEn: "This conversation is still running — stop or close it before deleting",
 				});
 				return;
 			}
@@ -3110,6 +3135,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `删除会话失败：${(err as Error).message}`,
+textEn: `Failed to delete session: ${(err as Error).message}`,
 			});
 		}
 	}
@@ -3173,6 +3199,7 @@ export class ClientSession {
 					type: "notice",
 					level: "warning",
 					text: `当前项目运行的对话已达上限（${MAX_OPEN_CONVERSATIONS} 个），请先打开某个对话并离开（不继续对话）以移出列表`,
+textEn: `This project already has the max open conversations (${MAX_OPEN_CONVERSATIONS}). Open one and leave it (without continuing) to remove it from the list.`,
 				});
 				return;
 			}
@@ -3208,6 +3235,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换会话失败：${(err as Error).message}`,
+textEn: `Failed to switch session: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3261,6 +3289,7 @@ export class ClientSession {
 				type: "notice",
 				level: "warning",
 				text: "编辑内容为空，已取消",
+textEn: "Edited content is empty — cancelled",
 			});
 			this.flushSnapshot();
 			return;
@@ -3271,6 +3300,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: "找不到要编辑的消息（可能已被压缩或不在当前分支）",
+textEn: "Message to edit not found (may have been compacted or is on another branch)",
 			});
 			this.flushSnapshot();
 			return;
@@ -3285,6 +3315,7 @@ export class ClientSession {
 					type: "notice",
 					level: "info",
 					text: "已取消编辑重问",
+textEn: "Edit-and-reask cancelled",
 				});
 				this.flushSnapshot();
 				return;
@@ -3305,12 +3336,14 @@ export class ClientSession {
 				type: "notice",
 				level: "info",
 				text: "已从该问题重新提问（原对话保留在会话列表中）",
+textEn: "Re-asked from that question (the original stays in the session list)",
 			});
 		} catch (err) {
 			this.emit({
 				type: "notice",
 				level: "error",
 				text: `编辑重问失败：${(err as Error).message}`,
+textEn: `Edit-and-reask failed: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3432,6 +3465,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换模型失败：${(err as Error).message}`,
+textEn: `Failed to switch model: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3460,6 +3494,7 @@ export class ClientSession {
 					type: "notice",
 					level: "info",
 					text: `已在工作目录：${abs}`,
+textEn: `Already in directory: ${abs}`,
 				});
 				this.flushSnapshot();
 				return;
@@ -3534,6 +3569,7 @@ export class ClientSession {
 				type: "notice",
 				level: "info",
 				text: `已切换到工作目录：${abs}`,
+textEn: `Switched to directory: ${abs}`,
 			});
 			void this.refreshSessions();
 			void this.listFiles(undefined);
@@ -3544,6 +3580,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换工作目录失败：${(err as Error).message}`,
+textEn: `Failed to switch directory: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3567,6 +3604,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `获取模型列表失败：${(err as Error).message}`,
+textEn: `Failed to fetch model list: ${(err as Error).message}`,
 			});
 		}
 	}
@@ -3651,6 +3689,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换模型失败：${(err as Error).message}`,
+textEn: `Failed to switch model: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3667,6 +3706,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换思考强度失败：${(err as Error).message}`,
+textEn: `Failed to switch thinking level: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3680,6 +3720,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `切换思考强度失败：${(err as Error).message}`,
+textEn: `Failed to switch thinking level: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -3702,7 +3743,9 @@ export class ClientSession {
 			return;
 		}
 		this.emit({ type: "commands", commands, path });
-		this.emit({ type: "notice", level: "info", text: `命令已保存：${path}` });
+		this.emit({ type: "notice", level: "info", text: `命令已保存：${path}`,
+			textEn: `Command saved: ${path}`
+		});
 	}
 
 	async dispose(): Promise<void> {
@@ -3892,6 +3935,7 @@ export class AgentService {
 						type: "notice",
 						level: "info",
 						text: `已恢复上次的工作目录：${cwd}`,
+textEn: `Restored the last working directory: ${cwd}`,
 					});
 				}
 			}

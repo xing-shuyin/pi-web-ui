@@ -303,7 +303,7 @@ export function App() {
 	useEffect(() => {
 		const onPluginRunCommand = (e: Event) => {
 			const detail = (e as CustomEvent<{ title?: string; command?: string }>).detail;
-			const title = detail?.title || "插件命令";
+			const title = detail?.title || t("pluginCommandFallback");
 			const command = detail?.command;
 			if (!command || !chat.ready) return;
 			const def: CommandDef = { name: title, command, cwd: "${pwd}" };
