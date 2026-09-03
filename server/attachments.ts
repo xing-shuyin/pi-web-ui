@@ -233,6 +233,7 @@ export async function buildAttachmentMessages(
 				type: "notice",
 				level: "warning",
 				text: `当前模型（${mainModel?.name ?? mainModel?.id ?? "未知"}）不支持识图，且视觉桥已在设置中关闭：图片将原样发送、可能被忽略。`,
+				textEn: `Current model (${mainModel?.name ?? mainModel?.id ?? "unknown"}) cannot see images and the vision bridge is off in settings: images will be sent as-is and may be ignored.`,
 			});
 		} else {
 			const visionModels = findVisionModels(ctx.session.modelRuntime);
@@ -258,6 +259,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "warning",
 					text: `当前模型（${mainModel?.name ?? mainModel?.id ?? "未知"}）不支持识图，且未找到可用的视觉模型：图片将原样发送、可能被忽略。在模型配置里添加任意支持图片的模型（如 qwen-vl、GLM-4V、Gemini）即可自动启用视觉桥转写。`,
+					textEn: `Current model (${mainModel?.name ?? mainModel?.id ?? "unknown"}) cannot see images and no vision model is available: images will be sent as-is and may be ignored. Add any vision-capable model (e.g. qwen-vl, GLM-4V, Gemini) in model settings to enable vision-bridge transcription.`,
 				});
 			} else {
 				// Batch hash so re-sending identical images (edit & re-ask) reuses
@@ -280,6 +282,7 @@ export async function buildAttachmentMessages(
 						type: "notice",
 						level: "info",
 						text: `当前模型不支持识图，正在用视觉桥（${chosen.label}）转写 ${bridgedImages.length} 张图片…`,
+						textEn: `Current model cannot see images; transcribing ${bridgedImages.length} image(s) via the vision bridge (${chosen.label})…`,
 					});
 					try {
 						const chosenModel = ctx.session.modelRuntime.getModel(
@@ -306,6 +309,7 @@ export async function buildAttachmentMessages(
 							type: "notice",
 							level: "info",
 							text: `✅ 图片已由视觉桥转写完成（${chosen.label}）`,
+							textEn: `✅ Images transcribed by the vision bridge (${chosen.label})`,
 						});
 					} catch (err) {
 						transcript = "";
@@ -313,6 +317,7 @@ export async function buildAttachmentMessages(
 							type: "notice",
 							level: "error",
 							text: `图片转写失败（${chosen.label}）：${(err as Error).message}。图片将原样发送、可能被忽略。`,
+							textEn: `Image transcription failed (${chosen.label}): ${(err as Error).message}. Images will be sent as-is and may be ignored.`,
 						});
 					}
 				}
@@ -338,6 +343,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "error",
 					text: `图片数据为空，已跳过`,
+					textEn: `Image data is empty, skipped`,
 				});
 				continue;
 			}
@@ -346,6 +352,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "warning",
 					text: `图片过大已跳过（>2MB）：${att.name ?? "粘贴图片"}`,
+					textEn: `Image too large, skipped (>2MB): ${att.name ?? "pasted image"}`,
 				});
 				continue;
 			}
@@ -406,6 +413,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "error",
 					text: `文件数据为空，已跳过`,
+					textEn: `File data is empty, skipped`,
 				});
 				continue;
 			}
@@ -414,6 +422,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "warning",
 					text: `文件过大已跳过（>20MB）：${att.name ?? "上传文件"}`,
+					textEn: `File too large, skipped (>20MB): ${att.name ?? "uploaded file"}`,
 				});
 				continue;
 			}
@@ -454,6 +463,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "warning",
 					text: `无法恢复已上传文件（路径不在本客户端上传目录）：${att.name ?? att.uploadPath}`,
+					textEn: `Cannot restore uploaded file (outside this client upload dir): ${att.name ?? att.uploadPath}`,
 				});
 				continue;
 			}
@@ -465,6 +475,7 @@ export async function buildAttachmentMessages(
 					type: "notice",
 					level: "warning",
 					text: `无法恢复已上传文件（已被清理或不可读）：${att.name ?? att.uploadPath}`,
+					textEn: `Cannot restore uploaded file (cleaned up or unreadable): ${att.name ?? att.uploadPath}`,
 				});
 				continue;
 			}
@@ -484,6 +495,7 @@ export async function buildAttachmentMessages(
 				type: "notice",
 				level: "warning",
 				text: `附件路径超出工作区：${att.path}`,
+				textEn: `Attachment path is outside the workspace: ${att.path}`,
 			});
 			continue;
 		}
@@ -500,6 +512,7 @@ export async function buildAttachmentMessages(
 				type: "notice",
 				level: "error",
 				text: `附件不存在：${att.path}`,
+				textEn: `Attachment does not exist: ${att.path}`,
 			});
 			continue;
 		}
@@ -530,6 +543,7 @@ export async function buildAttachmentMessages(
 				type: "notice",
 				level: "warning",
 				text: `跳过非文件附件：${att.path}`,
+				textEn: `Skipped non-file attachment: ${att.path}`,
 			});
 			continue;
 		}
@@ -597,6 +611,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `图片附件过大已跳过（>200KB）：${att.path}`,
+					textEn: `Image attachment too large, skipped (>200KB): ${att.path}`,
 				});
 				continue;
 			}
@@ -672,6 +687,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `行范围无效，已改为仅引用：${att.path}`,
+					textEn: `Invalid line range, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -681,6 +697,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `文件过大，已改为仅引用：${att.path}`,
+					textEn: `File too large, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -691,6 +708,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `二进制文件已改为仅引用：${att.path}`,
+					textEn: `Binary file, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -706,6 +724,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `选中行超出文件范围，已改为仅引用：${att.path}`,
+					textEn: `Selected lines out of range, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -742,6 +761,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `文件过大，已改为仅引用：${att.path}`,
+					textEn: `File too large, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -752,6 +772,7 @@ ${transcript}
 					type: "notice",
 					level: "warning",
 					text: `二进制文件已改为仅引用：${att.path}`,
+					textEn: `Binary file, switched to reference-only: ${att.path}`,
 				});
 				out.push(makeReference());
 				continue;
@@ -771,6 +792,7 @@ ${transcript}
 				type: "notice",
 				level: "warning",
 				text: `二进制文件已跳过（仅引用路径）：${att.path}`,
+				textEn: `Binary file skipped (path referenced only): ${att.path}`,
 			});
 			out.push(makeReference());
 			continue;
