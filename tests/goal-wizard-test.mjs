@@ -95,9 +95,7 @@ async function waitUp() {
 	await next((m) => m.type === "snapshot", "initial snapshot");
 
 	console.log("Starting goal wizard…");
-	ws.send(
-		JSON.stringify({ type: "start_goal_wizard", text: "写一个打开即用的文件去重小工具", maxRounds: 3 }),
-	);
+	ws.send(JSON.stringify({ type: "start_goal_wizard", text: "写一个打开即用的文件去重小工具", maxRounds: 3 }));
 
 	let sawWizardActive = false;
 	let answered = 0;
@@ -114,7 +112,10 @@ async function waitUp() {
 		}
 		if (!msg) {
 			const g = inbox.find((m) => m.type === "goal_status");
-			if (g && g.status.goal) { setGoalSeen = g.status.goal; break; }
+			if (g && g.status.goal) {
+				setGoalSeen = g.status.goal;
+				break;
+			}
 			continue;
 		}
 		if (msg.type === "dialog") {
@@ -136,9 +137,7 @@ async function waitUp() {
 				const snap = await next(
 					(m) =>
 						m.type === "snapshot" &&
-						m.state.messages.some((mm) =>
-							(mm.content?.[0]?.text ?? "").startsWith("【目标已设定】"),
-						),
+						m.state.messages.some((mm) => (mm.content?.[0]?.text ?? "").startsWith("【目标已设定】")),
 					"auto-generate kick-off user message",
 					30000,
 				);

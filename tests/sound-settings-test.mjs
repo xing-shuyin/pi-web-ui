@@ -20,15 +20,11 @@ const workdir = mkdtempSync(join(tmpdir(), "piweb-snd-"));
 process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
-const server = spawn(
-	process.execPath,
-	[join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")],
-	{
-		cwd: new URL("..", import.meta.url).pathname,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")], {
+	cwd: new URL("..", import.meta.url).pathname,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -75,8 +71,7 @@ async function openSoundMenu(page) {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -102,14 +97,8 @@ async function main() {
 			(await page.locator(".sound-menu").textContent())?.includes("回复结束") &&
 			(await page.locator(".sound-menu").textContent())?.includes("出错"),
 	);
-	check(
-		"volume slider present",
-		(await page.locator(".sound-volume input[type=range]").count()) === 1,
-	);
-	check(
-		"default volume is 100",
-		(await page.locator(".sound-vol-num").textContent())?.includes("100"),
-	);
+	check("volume slider present", (await page.locator(".sound-volume input[type=range]").count()) === 1);
+	check("default volume is 100", (await page.locator(".sound-vol-num").textContent())?.includes("100"));
 
 	// -- master switch gates the rows ----------------------------------------
 	const startRow = page.locator(".sound-row", { hasText: "回复开始" });
@@ -118,8 +107,7 @@ async function main() {
 	await page.locator(".sound-master input[type=checkbox]").uncheck();
 	check(
 		"rows disabled when master off",
-		(await startCheckbox.isDisabled()) === true &&
-			(await page.locator(".sound-preview").first().isDisabled()) === true,
+		(await startCheckbox.isDisabled()) === true && (await page.locator(".sound-preview").first().isDisabled()) === true,
 	);
 	await page.locator(".sound-master input[type=checkbox]").check();
 
@@ -129,18 +117,12 @@ async function main() {
 
 	const range = page.locator(".sound-volume input[type=range]");
 	await range.evaluate((el) => {
-		const setter = Object.getOwnPropertyDescriptor(
-			window.HTMLInputElement.prototype,
-			"value",
-		).set;
+		const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
 		setter.call(el, "30");
 		el.dispatchEvent(new Event("input", { bubbles: true }));
 	});
 	await sleep(200);
-	check(
-		"volume label updates",
-		(await page.locator(".sound-vol-num").textContent())?.includes("30"),
-	);
+	check("volume label updates", (await page.locator(".sound-vol-num").textContent())?.includes("30"));
 
 	// -- 试听 must not throw --------------------------------------------------
 	await startRow.locator(".sound-preview").click();
@@ -153,15 +135,9 @@ async function main() {
 	await openSoundMenu(page);
 	check(
 		"start cue persisted after reload",
-		await page
-			.locator(".sound-row", { hasText: "回复开始" })
-			.locator('input[type="checkbox"]')
-			.isChecked(),
+		await page.locator(".sound-row", { hasText: "回复开始" }).locator('input[type="checkbox"]').isChecked(),
 	);
-	check(
-		"volume persisted after reload",
-		(await page.locator(".sound-vol-num").textContent())?.includes("30"),
-	);
+	check("volume persisted after reload", (await page.locator(".sound-vol-num").textContent())?.includes("30"));
 
 	if (consoleErrors.length > 0) {
 		console.log("console errors:", consoleErrors.slice(0, 5));

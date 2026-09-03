@@ -6,9 +6,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-const KEY = JSON.parse(
-	readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"),
-).deepseek.key;
+const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
 	HERE,
 	"..",
@@ -82,9 +80,7 @@ const onNotify = (method, params) => {
 	if (method !== "session.event") return;
 	const ev = params?.event;
 	if (ev?.type === "assistant/message") {
-		lastAssistant = (ev.data?.message?.content ?? [])
-			.map((c) => (c.type === "text" ? c.text : ""))
-			.join("");
+		lastAssistant = (ev.data?.message?.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join("");
 	}
 	if (ev?.type === "turn/end") {
 		turnDone = true;

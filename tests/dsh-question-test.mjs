@@ -39,7 +39,9 @@ if (!key) {
 }
 let rtAvailable = false;
 try {
-	const { resolveRuntimeBase } = await import(pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href);
+	const { resolveRuntimeBase } = await import(
+		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
+	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
 	rtAvailable = false;
@@ -149,9 +151,7 @@ async function main() {
 	});
 
 	// --- 1. 等 question_pending ---
-	const pending = await c
-		.wait((m) => m.type === "question_pending", 90_000)
-		.catch(() => null);
+	const pending = await c.wait((m) => m.type === "question_pending", 90_000).catch(() => null);
 	check(
 		"模型 ask_user_question → question_pending",
 		!!pending && pending.questions.length > 0,

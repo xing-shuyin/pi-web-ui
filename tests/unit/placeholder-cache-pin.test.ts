@@ -16,10 +16,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const src = readFileSync(
-	new URL("../../web/src/components/MessageList.tsx", import.meta.url),
-	"utf8",
-);
+const src = readFileSync(new URL("../../web/src/components/MessageList.tsx", import.meta.url), "utf8");
 
 describe("placeholder measured-height cache (mutation pin)", () => {
 	it("placeholder height flows through getPlaceholderHeight, not a bare estimate", () => {

@@ -48,14 +48,7 @@ interface Range {
 	end: number;
 }
 
-export function FilePreview({
-	file,
-	content,
-	send,
-	onAddLines,
-	onAttach,
-	onClose,
-}: FilePreviewProps) {
+export function FilePreview({ file, content, send, onAddLines, onAttach, onClose }: FilePreviewProps) {
 	const t = useT();
 	const [loaded, setLoaded] = useState<FileContent | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -114,10 +107,7 @@ export function FilePreview({
 			}
 			const target = e.target as HTMLElement | null;
 			const typing =
-				target &&
-				(target.tagName === "INPUT" ||
-					target.tagName === "TEXTAREA" ||
-					target.isContentEditable);
+				target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && !typing) {
 				e.preventDefault();
 				selectAll();
@@ -177,8 +167,7 @@ export function FilePreview({
 		addedTimer.current = setTimeout(() => setAdded(false), 1400);
 	};
 
-	const canEdit =
-		loaded !== null && loaded.kind === "text" && !loaded.binary && !loaded.truncated;
+	const canEdit = loaded !== null && loaded.kind === "text" && !loaded.binary && !loaded.truncated;
 
 	const cancelEditing = () => {
 		setDraft(loaded?.text ?? "");
@@ -228,14 +217,11 @@ export function FilePreview({
 	// streamed over the /api/file HTTP endpoint; "none" is never previewable.
 	const kind = loaded?.kind ?? "text";
 	const isMarkdown = isMarkdownFile(file.name);
-	const showMarkdown =
-		isMarkdown && markdownPreview && !editing && kind === "text" && !isBinary;
+	const showMarkdown = isMarkdown && markdownPreview && !editing && kind === "text" && !isBinary;
 	// /api/file resolves against the requesting client's workspace (the opened
 	// project), not the server's startup cwd — pass clientId so they can differ.
 	const mediaUrl = (p: string) =>
-		withToken(
-			appUrl(`/api/file?clientId=${encodeURIComponent(getClientId())}&path=${encodeURIComponent(p)}`),
-		);
+		withToken(appUrl(`/api/file?clientId=${encodeURIComponent(getClientId())}&path=${encodeURIComponent(p)}`));
 
 	return (
 		<div
@@ -244,20 +230,14 @@ export function FilePreview({
 				if (e.target === e.currentTarget) handleClose();
 			}}
 		>
-			<div
-				className={`fp ${fullscreen ? "fullscreen" : ""}`}
-				style={{ "--fp-zoom": zoom / 100 } as CSSProperties}
-			>
+			<div className={`fp ${fullscreen ? "fullscreen" : ""}`} style={{ "--fp-zoom": zoom / 100 } as CSSProperties}>
 				<div className="fp-head">
 					<span className="fp-name" title={file.path}>
 						{file.name}
 					</span>
 					<span className="fp-path">{file.path}</span>
 					<span className="fp-meta">
-						{loaded &&
-							kind === "text" &&
-							!isBinary &&
-							t("fileLines", { n: lineCount })}
+						{loaded && kind === "text" && !isBinary && t("fileLines", { n: lineCount })}
 						{loaded && ` · ${formatSize(loaded.size)}`}
 					</span>
 					<span className="fp-head-actions">
@@ -265,11 +245,7 @@ export function FilePreview({
 							<button
 								type="button"
 								className={`fp-attach markdown ${markdownPreview ? "on" : ""}`}
-								data-tip={
-									markdownPreview
-										? t("showMarkdownSource")
-										: t("showMarkdownPreview")
-								}
+								data-tip={markdownPreview ? t("showMarkdownSource") : t("showMarkdownPreview")}
 								disabled={editing}
 								onClick={() => setMarkdownPreview((value) => !value)}
 							>
@@ -280,13 +256,7 @@ export function FilePreview({
 							<button
 								type="button"
 								className={`fp-attach edit ${editing ? "on" : ""}`}
-								data-tip={
-									truncated
-										? t("fileEditTruncated")
-										: editing
-											? t("exitEditFile")
-											: t("editFile")
-								}
+								data-tip={truncated ? t("fileEditTruncated") : editing ? t("exitEditFile") : t("editFile")}
 								disabled={!canEdit && !editing}
 								onClick={toggleEditing}
 							>
@@ -314,12 +284,7 @@ export function FilePreview({
 								>
 									<FiZoomOut />
 								</button>
-								<button
-									type="button"
-									className="fp-zoom-val"
-									title={t("resetZoom")}
-									onClick={() => setZoom(100)}
-								>
+								<button type="button" className="fp-zoom-val" title={t("resetZoom")} onClick={() => setZoom(100)}>
 									{zoom}%
 								</button>
 								<button
@@ -359,45 +324,27 @@ export function FilePreview({
 						>
 							{fullscreen ? <FiMinimize /> : <FiMaximize />}
 						</button>
-						<button
-							type="button"
-							className="fp-close"
-							title={t("close")}
-							onClick={handleClose}
-						>
+						<button type="button" className="fp-close" title={t("close")} onClick={handleClose}>
 							<FiX />
 						</button>
 					</span>
 				</div>
 
-				{truncated && kind === "text" && !isBinary && (
-					<div className="fp-notice">{t("previewTruncated")}</div>
-				)}
+				{truncated && kind === "text" && !isBinary && <div className="fp-notice">{t("previewTruncated")}</div>}
 
 				{loading && !loaded && <div className="fp-empty">{t("loading")}</div>}
 
-				{!loading && kind === "none" && !isBinary && (
-					<div className="fp-empty">{t("previewNotSupported")}</div>
-				)}
+				{!loading && kind === "none" && !isBinary && <div className="fp-empty">{t("previewNotSupported")}</div>}
 
 				{!loading && kind === "image" && (
 					<div className="fp-media-wrap">
-						<img
-							className="fp-media"
-							src={mediaUrl(file.path)}
-							alt={file.name}
-						/>
+						<img className="fp-media" src={mediaUrl(file.path)} alt={file.name} />
 					</div>
 				)}
 
 				{!loading && kind === "video" && (
 					<div className="fp-media-wrap">
-						<video
-							className="fp-media"
-							src={mediaUrl(file.path)}
-							controls
-							preload="metadata"
-						/>
+						<video className="fp-media" src={mediaUrl(file.path)} controls preload="metadata" />
 					</div>
 				)}
 
@@ -409,19 +356,15 @@ export function FilePreview({
 					</div>
 				)}
 
-				{!loading &&
-					isBinary &&
-					kind !== "image" &&
-					kind !== "video" &&
-					loaded && (
-						<div className="fp-hex-wrap">
-							<div className="fp-notice">
-								{t("binaryFile")}
-								{loaded.truncated && t("binaryHexTruncated")}
-							</div>
-							<pre className="fp-hex">{loaded.text}</pre>
+				{!loading && isBinary && kind !== "image" && kind !== "video" && loaded && (
+					<div className="fp-hex-wrap">
+						<div className="fp-notice">
+							{t("binaryFile")}
+							{loaded.truncated && t("binaryHexTruncated")}
 						</div>
-					)}
+						<pre className="fp-hex">{loaded.text}</pre>
+					</div>
+				)}
 
 				{!loading && editing && kind === "text" && !isBinary && loaded && (
 					<textarea
@@ -434,26 +377,13 @@ export function FilePreview({
 					/>
 				)}
 
-				{!loading &&
-					!showMarkdown &&
-					!editing &&
-					kind === "text" &&
-					!isBinary &&
-					loaded &&
-					lines.length === 0 && (
-						<div className="fp-empty">{t("emptyFile")}</div>
-					)}
+				{!loading && !showMarkdown && !editing && kind === "text" && !isBinary && loaded && lines.length === 0 && (
+					<div className="fp-empty">{t("emptyFile")}</div>
+				)}
 
-				{!loading &&
-					!showMarkdown &&
-					!editing &&
-					kind === "text" &&
-					!isBinary &&
-					lines.length > 0 && (
+				{!loading && !showMarkdown && !editing && kind === "text" && !isBinary && lines.length > 0 && (
 					<div
-						className={`fp-code ${dragging ? "dragging" : ""} ${
-							wrap ? "" : "no-wrap"
-						}`}
+						className={`fp-code ${dragging ? "dragging" : ""} ${wrap ? "" : "no-wrap"}`}
 						onMouseDown={(e) => {
 							// Block native text selection so click/drag maps to line ranges.
 							if (e.button === 0) e.preventDefault();
@@ -482,9 +412,7 @@ export function FilePreview({
 							);
 						})}
 						{truncatedLines && (
-							<div className="fp-lines-note">
-								{t("previewLinesTruncated", { n: MAX_PREVIEW_LINES })}
-							</div>
+							<div className="fp-lines-note">{t("previewLinesTruncated", { n: MAX_PREVIEW_LINES })}</div>
 						)}
 					</div>
 				)}
@@ -508,7 +436,8 @@ export function FilePreview({
 							</div>
 						</>
 					) : (
-						!showMarkdown && kind === "text" && (
+						!showMarkdown &&
+						kind === "text" && (
 							<>
 								<span className="fp-hint">
 									{sel
@@ -520,28 +449,13 @@ export function FilePreview({
 										: t("selectLinesHint")}
 								</span>
 								<div className="fp-actions">
-									<button
-										type="button"
-										className="btn"
-										disabled={lines.length === 0}
-										onClick={selectAll}
-									>
+									<button type="button" className="btn" disabled={lines.length === 0} onClick={selectAll}>
 										{t("selectAll")}
 									</button>
-									<button
-										type="button"
-										className="btn"
-										disabled={!sel}
-										onClick={() => setSel(null)}
-									>
+									<button type="button" className="btn" disabled={!sel} onClick={() => setSel(null)}>
 										{t("clearSelection")}
 									</button>
-									<button
-										type="button"
-										className="btn primary"
-										disabled={!sel || isBinary}
-										onClick={addToChat}
-									>
+									<button type="button" className="btn primary" disabled={!sel || isBinary} onClick={addToChat}>
 										{added ? <FiCheck /> : null}
 										{added ? t("addedToChat") : t("addToChat")}
 									</button>

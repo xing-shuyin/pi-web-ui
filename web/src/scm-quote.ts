@@ -5,5 +5,4 @@
  * 是完整闭合的单个 shell token。回归：曾因漏掉闭合引号导致
  * `git add -- 'file`（引号未闭合）在终端执行失败（issue #51）。
  */
-export const quotePath = (path: string): string =>
-	`'${path.replace(/'/g, `'\\''`)}'`;
+export const quotePath = (path: string): string => `'${path.replace(/'/g, `'\\''`)}'`;

@@ -7,22 +7,14 @@
  * （emit 推消息 / flushSnapshot 立即刷快照 / isDisposed 停止后台刷新）。
  */
 import type { ServerMessage, BgServer } from "./protocol.js";
-import {
-	killPidTree,
-	lookupProcessName,
-	lookupProcessCommandLine,
-	snapshotListeningPorts,
-} from "./process-utils.js";
+import { killPidTree, lookupProcessName, lookupProcessCommandLine, snapshotListeningPorts } from "./process-utils.js";
 
 const BG_REFRESH_INTERVAL_MS = 30_000;
 /** bash 结束后等这么久再拍「后」快照——给后台服务绑定端口的时间。 */
 const BG_BIND_WAIT_MS = 1500;
 
 export class BgServerTracker {
-	private readonly servers = new Map<
-		number,
-		{ pid: number; since: number; name?: string; command?: string }
-	>();
+	private readonly servers = new Map<number, { pid: number; since: number; name?: string; command?: string }>();
 	/** bash 工具开始执行前拍的监听端口快照（tool_execution_start 时设置）。 */
 	private listenBefore: Map<number, number> | null = null;
 	private refreshTimer: ReturnType<typeof setInterval> | null = null;

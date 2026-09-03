@@ -82,7 +82,12 @@ function rpc(sock, payload, timeoutMs = 25_000) {
 		const timer = setTimeout(() => reject(new Error(`rpc timeout: ${payload.action}`)), timeoutMs);
 		const onMsg = (raw) => {
 			const msg = JSON.parse(raw.toString());
-			if (msg.type === "plugin_data" && msg.pluginId === PLUGIN_ID && msg.payload?.res && msg.payload?.reqId === reqId) {
+			if (
+				msg.type === "plugin_data" &&
+				msg.pluginId === PLUGIN_ID &&
+				msg.payload?.res &&
+				msg.payload?.reqId === reqId
+			) {
 				clearTimeout(timer);
 				sock.off("message", onMsg);
 				resolve(msg.payload);
@@ -175,7 +180,7 @@ try {
 			};
 			sock.on("message", onMsg);
 		});
-		if (!statePush?.state || !Array.isArray(statePush.state.hosts)) fail("onAttach 未主动推送 kind:\"state\" 初始状态");
+		if (!statePush?.state || !Array.isArray(statePush.state.hosts)) fail('onAttach 未主动推送 kind:"state" 初始状态');
 		else console.log("✓ attach 后主动收到插件状态推送（服务端唯一事实源）");
 	}
 
@@ -211,7 +216,8 @@ try {
 	r = await rpc(sock, { action: "state" });
 	const goodHost = r.state.hosts.find((h) => h.name === "local");
 	const badHost = r.state.hosts.find((h) => h.name === "bad");
-	if (!goodHost || !goodHost.hasPass || goodHost.password !== undefined) fail(`主机回显应脱敏: ${JSON.stringify(goodHost)}`);
+	if (!goodHost || !goodHost.hasPass || goodHost.password !== undefined)
+		fail(`主机回显应脱敏: ${JSON.stringify(goodHost)}`);
 	else console.log("✓ hosts_save 落盘 + 回显脱敏（password 不回传）");
 
 	// 凭据已迁移进加密机密库（host.secrets）：ssh-hosts.json 不再含明文密码，
@@ -240,10 +246,18 @@ try {
 	await expectShellText(sock, connId, "welcome-to-mock");
 	console.log("✓ shell 打开并收到欢迎横幅");
 
-	sock.send(JSON.stringify({
-		type: "plugin_message", pluginId: PLUGIN_ID,
-		payload: { action: "shell_input", connId, shellId: r.shellId, b64: Buffer.from("ping-test\r").toString("base64") },
-	}));
+	sock.send(
+		JSON.stringify({
+			type: "plugin_message",
+			pluginId: PLUGIN_ID,
+			payload: {
+				action: "shell_input",
+				connId,
+				shellId: r.shellId,
+				b64: Buffer.from("ping-test\r").toString("base64"),
+			},
+		}),
+	);
 	await expectShellText(sock, connId, "echo:ping-test");
 	console.log("✓ 终端输入回显正常");
 
@@ -288,7 +302,8 @@ try {
 	else console.log("✓ 远程 create 目录");
 
 	r = await rpc(sock, { action: "rename", connId, path: "/home/test/b.txt", newName: "renamed.txt" });
-	if (!r.ok || !mFiles["/home/test/renamed.txt"] || mFiles["/home/test/b.txt"]) fail(`rename 异常: ${JSON.stringify(r)}`);
+	if (!r.ok || !mFiles["/home/test/renamed.txt"] || mFiles["/home/test/b.txt"])
+		fail(`rename 异常: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 rename");
 
 	r = await rpc(sock, { action: "delete", connId, path: "/home/test/renamed.txt", isDir: false });
@@ -367,18 +382,30 @@ try {
 	else console.log("✓ sync_get 初始未配置（configured:false + configPath）");
 
 	// 保存 → 以 vscode-sftp 字段名落到工作区 .vscode/sftp.json
-	r = await rpc(sock, { action: "sync_save", config: {
-		host: "127.0.0.1", port: SSH_PORT, username: "test",
-		password: "secret", remoteRoot: "/home/test",
-		exclude: ["node_modules/**", "**/*.map", "*.log"],
-		uploadOnSave: true,
-	} });
+	r = await rpc(sock, {
+		action: "sync_save",
+		config: {
+			host: "127.0.0.1",
+			port: SSH_PORT,
+			username: "test",
+			password: "secret",
+			remoteRoot: "/home/test",
+			exclude: ["node_modules/**", "**/*.map", "*.log"],
+			uploadOnSave: true,
+		},
+	});
 	if (!r.ok) fail(`sync_save 失败: ${r.error}`);
 	const cfgFile = join(dataDir, ".vscode", "sftp.json");
 	let rawCfg = {};
-	try { rawCfg = JSON.parse(readFileSync(cfgFile, "utf8")); } catch {}
-	if (rawCfg.host !== "127.0.0.1" || rawCfg.remotePath !== "/home/test"
-		|| !Array.isArray(rawCfg.ignore) || rawCfg.uploadOnSave !== true) {
+	try {
+		rawCfg = JSON.parse(readFileSync(cfgFile, "utf8"));
+	} catch {}
+	if (
+		rawCfg.host !== "127.0.0.1" ||
+		rawCfg.remotePath !== "/home/test" ||
+		!Array.isArray(rawCfg.ignore) ||
+		rawCfg.uploadOnSave !== true
+	) {
 		fail(`sftp.json 内容异常: ${JSON.stringify(rawCfg)}`);
 	} else if (rawCfg.password !== "secret") {
 		fail("sftp.json 应保存密码（本机文件约定，供 vscode-sftp 兼容读取）");
@@ -393,9 +420,15 @@ try {
 	} else console.log("✓ sync_get 回读脱敏（hasPass，不回传明文密码）");
 
 	// 密码/私钥留空 = 沿用旧值
-	r = await rpc(sock, { action: "sync_save", config: {
-		host: "127.0.0.1", port: SSH_PORT, username: "test", remoteRoot: "/home/test",
-	} });
+	r = await rpc(sock, {
+		action: "sync_save",
+		config: {
+			host: "127.0.0.1",
+			port: SSH_PORT,
+			username: "test",
+			remoteRoot: "/home/test",
+		},
+	});
 	if (!r.ok || r.config.hasPass !== true) fail(`留空密码应沿用旧值: ${JSON.stringify(r)}`);
 	else console.log("✓ sync_save 留空凭据沿用旧值");
 
@@ -413,10 +446,19 @@ try {
 
 	// -- 15. 同步回环：down/up 单文件（真实走 mock SFTP） ---------------------------------
 	// 写工作区 .vscode/sftp.json 指向 mock SSH（tester/secret123）
-	r = await rpc(sock, { action: "write", path: ".vscode/sftp.json", text: JSON.stringify({
-		host: "127.0.0.1", port: SSH_PORT, username: "tester", password: "secret123",
-		remotePath: "/home/test", uploadOnSave: false, ignore: [],
-	}) });
+	r = await rpc(sock, {
+		action: "write",
+		path: ".vscode/sftp.json",
+		text: JSON.stringify({
+			host: "127.0.0.1",
+			port: SSH_PORT,
+			username: "tester",
+			password: "secret123",
+			remotePath: "/home/test",
+			uploadOnSave: false,
+			ignore: [],
+		}),
+	});
 	if (!r.ok) fail(`写 .vscode/sftp.json 失败: ${r.error}`);
 
 	// down：远端 a.txt → 本地工作区
@@ -424,7 +466,9 @@ try {
 	r = await rpc(sock, { action: "sync_run", dir: "down", scope: "file", path: "a.txt" }, 30_000);
 	if (!r.ok) fail(`sync_run down 失败: ${r.error}`);
 	let dlText = "";
-	try { dlText = readFileSync(join(dataDir, "a.txt"), "utf8"); } catch {}
+	try {
+		dlText = readFileSync(join(dataDir, "a.txt"), "utf8");
+	} catch {}
 	if (dlText !== "hello ssh\n第二行\n") fail(`down 内容不符: ${JSON.stringify(dlText)}`);
 	else console.log("✓ sync down：远端文件下载到本地工作区");
 
@@ -484,7 +528,10 @@ try {
 	console.error(err);
 } finally {
 	try {
-		for (const s of shells) try { s.end(); } catch {}
+		for (const s of shells)
+			try {
+				s.end();
+			} catch {}
 		sshServer?.close();
 		if (proc?.pid) process.kill(proc.pid, "SIGTERM");
 	} catch {}

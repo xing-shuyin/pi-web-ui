@@ -1,12 +1,5 @@
 import { memo, useState } from "react";
-import {
-	FiCheckCircle,
-	FiChevronDown,
-	FiChevronRight,
-	FiCopy,
-	FiSquare,
-	FiTerminal,
-} from "react-icons/fi";
+import { FiCheckCircle, FiChevronDown, FiChevronRight, FiCopy, FiSquare, FiTerminal } from "react-icons/fi";
 import type { ToolStatus, UiMessage, UiToolCallBlock } from "../types";
 import { useT } from "../i18n";
 
@@ -75,10 +68,7 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 	const rawOutput = view.result
 		? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
 		: (view.liveOutput ?? "");
-	const output = rawOutput.replace(
-		/…\[LIVE_OMIT:(\d+)\]…\n/,
-		(_, n) => t("liveOutputOmitted", { n }),
-	);
+	const output = rawOutput.replace(/…\[LIVE_OMIT:(\d+)\]…\n/, (_, n) => t("liveOutputOmitted", { n }));
 
 	const statusClass = isError ? "err" : done ? "ok" : running || waitingModel ? "run" : "idle";
 	let statusLabel = isError
@@ -90,18 +80,12 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 				: waitingModel
 					? t("toolDoneWaitingModel")
 					: t("toolQueued");
-	const duration =
-		waitingModel && view.status?.durationMs !== undefined
-			? formatDuration(view.status.durationMs)
-			: "";
+	const duration = waitingModel && view.status?.durationMs !== undefined ? formatDuration(view.status.durationMs) : "";
 	if (waitingModel && duration) statusLabel = `${statusLabel} · ${duration}`;
 
 	// tool_status doesn't carry the exit code for successful bash runs (only
 	// failures embed "exited with code N" in the error text); show it when known.
-	const exitHint =
-		waitingModel && view.status?.exitCode !== undefined
-			? `exit ${view.status.exitCode}`
-			: "";
+	const exitHint = waitingModel && view.status?.exitCode !== undefined ? `exit ${view.status.exitCode}` : "";
 
 	const copyArgs = () => {
 		if (block.argumentsText) {
@@ -122,29 +106,15 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 				</span>
 				<span className="toolcall-spacer" />
 				{isBashRunning && onKillBash && (
-					<button
-						type="button"
-						className="toolcall-kill"
-						title={t("stopBashTip")}
-						onClick={onKillBash}
-					>
+					<button type="button" className="toolcall-kill" title={t("stopBashTip")} onClick={onKillBash}>
 						<FiSquare />
 						<span>{t("stopBash")}</span>
 					</button>
 				)}
-				<button
-					type="button"
-					className="toolcall-copy"
-					title={t("copyArgs")}
-					onClick={copyArgs}
-				>
+				<button type="button" className="toolcall-copy" title={t("copyArgs")} onClick={copyArgs}>
 					{copied ? <FiCheckCircle /> : <FiCopy />}
 				</button>
-				<button
-					type="button"
-					className="toolcall-toggle"
-					onClick={() => setOpen((v) => (forceOpen ? true : !v))}
-				>
+				<button type="button" className="toolcall-toggle" onClick={() => setOpen((v) => (forceOpen ? true : !v))}>
 					{shown ? <FiChevronDown /> : <FiChevronRight />}
 				</button>
 			</div>
@@ -197,9 +167,7 @@ function TerminalCommand({ args }: { args: string }) {
 		<div className="termline">
 			<FiTerminal className="termline-icon" />
 			<code>{parsed.command}</code>
-			{typeof parsed.timeout === "number" && (
-				<span className="termline-timeout">⏱ {parsed.timeout}s</span>
-			)}
+			{typeof parsed.timeout === "number" && <span className="termline-timeout">⏱ {parsed.timeout}s</span>}
 		</div>
 	);
 }

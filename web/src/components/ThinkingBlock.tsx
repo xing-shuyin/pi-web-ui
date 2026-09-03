@@ -24,19 +24,11 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 	// 搜索期间 forceOpen 只是“视口展开”，用户 open 状态不受影响
 	const shown = expanded || forceOpen;
 	// 折叠预览：流式中取最新文本（实时尾巴），结束后取开头一行。
-	const preview = streaming
-		? thinking.trimEnd().slice(-80)
-		: thinking.split("\n")[0].slice(0, 80);
+	const preview = streaming ? thinking.trimEnd().slice(-80) : thinking.split("\n")[0].slice(0, 80);
 
 	return (
-		<div
-			className={`thinking ${shown ? "open" : ""} ${streaming ? "live" : ""}`}
-		>
-			<button
-				type="button"
-				className="thinking-toggle"
-				onClick={() => setOpen(!expanded)}
-			>
+		<div className={`thinking ${shown ? "open" : ""} ${streaming ? "live" : ""}`}>
+			<button type="button" className="thinking-toggle" onClick={() => setOpen(!expanded)}>
 				{shown ? <FiChevronDown /> : <FiChevronRight />}
 				<FiCpu className="thinking-icon" />
 				<span className="thinking-label">

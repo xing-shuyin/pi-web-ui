@@ -2,14 +2,7 @@ import { memo } from "react";
 import { FiChevronDown } from "react-icons/fi";
 import type { UiMessage } from "../types";
 import { useT } from "../i18n";
-import {
-	asBash,
-	asImage,
-	asText,
-	asThinking,
-	asToolCall,
-	roleLabel,
-} from "./Message";
+import { asBash, asImage, asText, asThinking, asToolCall, roleLabel } from "./Message";
 
 import { parseSkillBlock } from "../skill-block";
 
@@ -24,10 +17,7 @@ interface CollapsedMessageProps {
  * role label, a plain-text preview, and block-type counts. The full message is
  * only rendered after the user clicks to expand.
  */
-export const CollapsedMessage = memo(function CollapsedMessage({
-	message,
-	onExpand,
-}: CollapsedMessageProps) {
+export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpand }: CollapsedMessageProps) {
 	const t = useT();
 
 	// Plain-text preview (first text block, first line, ~90 chars — no Markdown).
@@ -39,9 +29,7 @@ export const CollapsedMessage = memo(function CollapsedMessage({
 			// of the raw SKILL.md dump.
 			const sb = parseSkillBlock(text.text);
 			if (sb) {
-				preview =
-					`skill:${sb.name}` +
-					(sb.userMessage ? ` · ${sb.userMessage.replace(/\s+/g, " ").trim()}` : "");
+				preview = `skill:${sb.name}` + (sb.userMessage ? ` · ${sb.userMessage.replace(/\s+/g, " ").trim()}` : "");
 			} else {
 				preview = text.text.replace(/\s+/g, " ").trim();
 			}
@@ -82,9 +70,7 @@ export const CollapsedMessage = memo(function CollapsedMessage({
 			onClick={() => onExpand(message.id)}
 		>
 			<span className={`msg-collapsed-role role-${message.role}`}>
-				{message.role === "custom" && message.customType === "file"
-					? t("attachment")
-					: roleLabel(message.role, t)}
+				{message.role === "custom" && message.customType === "file" ? t("attachment") : roleLabel(message.role, t)}
 			</span>
 			<span className="msg-collapsed-body">
 				{preview && <span className="msg-collapsed-preview">{preview}</span>}
@@ -98,11 +84,7 @@ export const CollapsedMessage = memo(function CollapsedMessage({
 					</span>
 				)}
 			</span>
-			{message.timestamp ? (
-				<span className="msg-collapsed-time">
-					{formatTime(message.timestamp)}
-				</span>
-			) : null}
+			{message.timestamp ? <span className="msg-collapsed-time">{formatTime(message.timestamp)}</span> : null}
 			<span className="msg-collapsed-action">
 				<FiChevronDown /> {t("expandMsg")}
 			</span>

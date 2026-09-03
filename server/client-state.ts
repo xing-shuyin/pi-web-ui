@@ -54,16 +54,15 @@ export interface ClientSettings {
 /** A named combo of prompt + skill/extension toggles the user can re-apply.
  *  Vision-bridge prefs are intentionally NOT part of a preset — they stay
  *  whatever the user currently has set when a preset is applied. */
-export interface SettingsPreset
-	extends Omit<
-		ClientSettings,
-		| "visionBridgeEnabled"
-		| "visionBridgeModel"
-		| "visionBridgePromptMode"
-		| "visionBridgePrompt"
-		| "thinkingWrap"
-		| "toolsWrap"
-	> {
+export interface SettingsPreset extends Omit<
+	ClientSettings,
+	| "visionBridgeEnabled"
+	| "visionBridgeModel"
+	| "visionBridgePromptMode"
+	| "visionBridgePrompt"
+	| "thinkingWrap"
+	| "toolsWrap"
+> {
 	name: string;
 }
 
@@ -171,10 +170,7 @@ export class ClientStateStore {
 	private load(): Record<string, ClientState> {
 		if (this.cache) return this.cache;
 		try {
-			const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as Record<
-				string,
-				ClientState
-			>;
+			const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as Record<string, ClientState>;
 			this.cache = parsed && typeof parsed === "object" ? parsed : {};
 		} catch {
 			this.cache = {};
@@ -206,10 +202,7 @@ export class ClientStateStore {
 		const state = (all[clientId] ??= { projects: [] });
 		state.lastCwd = cwd;
 		const now = Date.now();
-		state.projects = [
-			{ path: cwd, lastUsed: now },
-			...state.projects.filter((p) => p.path !== cwd),
-		].slice(0, 30);
+		state.projects = [{ path: cwd, lastUsed: now }, ...state.projects.filter((p) => p.path !== cwd)].slice(0, 30);
 		// Opening the workspace again clears its removal tombstone.
 		if (state.removedProjects?.length) {
 			state.removedProjects = state.removedProjects.filter((p) => p !== cwd);
@@ -262,10 +255,7 @@ export class ClientStateStore {
 
 	/** Remember conversations that were still streaming at shutdown (best-
 	 *  effort; called during the graceful-shutdown path). */
-	saveInterrupted(
-		clientId: string,
-		list: { title: string; cwd: string; at: number }[],
-	): void {
+	saveInterrupted(clientId: string, list: { title: string; cwd: string; at: number }[]): void {
 		if (list.length === 0) return;
 		const all = this.load();
 		const state = (all[clientId] ??= { projects: [] });
@@ -301,8 +291,7 @@ export class ClientStateStore {
 			toolsWrap: s?.settings?.toolsWrap ?? true,
 			visionBridgeEnabled: s?.settings?.visionBridgeEnabled ?? true,
 			visionBridgeModel: s?.settings?.visionBridgeModel ?? null,
-			visionBridgePromptMode:
-				s?.settings?.visionBridgePromptMode === "replace" ? "replace" : "append",
+			visionBridgePromptMode: s?.settings?.visionBridgePromptMode === "replace" ? "replace" : "append",
 			visionBridgePrompt: s?.settings?.visionBridgePrompt ?? "",
 			reviewPrompt: s?.settings?.reviewPrompt ?? "",
 			reviewDisabledSkills: s?.settings?.reviewDisabledSkills ?? [],
@@ -319,27 +308,18 @@ export class ClientStateStore {
 			promptMode: settings.promptMode ?? cur.promptMode ?? "append",
 			customSystemPrompt: settings.customSystemPrompt ?? cur.customSystemPrompt ?? "",
 			disabledSkills: settings.disabledSkills ?? cur.disabledSkills ?? [],
-			disabledExtensions:
-				settings.disabledExtensions ?? cur.disabledExtensions ?? [],
-			terminalToolsEnabled:
-				settings.terminalToolsEnabled ?? cur.terminalToolsEnabled ?? true,
+			disabledExtensions: settings.disabledExtensions ?? cur.disabledExtensions ?? [],
+			terminalToolsEnabled: settings.terminalToolsEnabled ?? cur.terminalToolsEnabled ?? true,
 			terminalBash: settings.terminalBash ?? cur.terminalBash ?? false,
-			terminalBashIdleMs:
-				settings.terminalBashIdleMs ?? cur.terminalBashIdleMs ?? 15_000,
+			terminalBashIdleMs: settings.terminalBashIdleMs ?? cur.terminalBashIdleMs ?? 15_000,
 			thinkingWrap: settings.thinkingWrap ?? cur.thinkingWrap ?? false,
 			toolsWrap: settings.toolsWrap ?? cur.toolsWrap ?? true,
-			visionBridgeEnabled:
-				settings.visionBridgeEnabled ?? cur.visionBridgeEnabled ?? true,
+			visionBridgeEnabled: settings.visionBridgeEnabled ?? cur.visionBridgeEnabled ?? true,
 			visionBridgeModel: settings.visionBridgeModel ?? cur.visionBridgeModel ?? null,
-			visionBridgePromptMode:
-				settings.visionBridgePromptMode ??
-				cur.visionBridgePromptMode ??
-				"append",
-			visionBridgePrompt:
-				settings.visionBridgePrompt ?? cur.visionBridgePrompt ?? "",
+			visionBridgePromptMode: settings.visionBridgePromptMode ?? cur.visionBridgePromptMode ?? "append",
+			visionBridgePrompt: settings.visionBridgePrompt ?? cur.visionBridgePrompt ?? "",
 			reviewPrompt: settings.reviewPrompt ?? cur.reviewPrompt ?? "",
-			reviewDisabledSkills:
-				settings.reviewDisabledSkills ?? cur.reviewDisabledSkills ?? [],
+			reviewDisabledSkills: settings.reviewDisabledSkills ?? cur.reviewDisabledSkills ?? [],
 			disabledPlugins: settings.disabledPlugins ?? cur.disabledPlugins ?? [],
 		};
 		this.save();

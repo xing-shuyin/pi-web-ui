@@ -22,11 +22,8 @@ function makePlugin(id: string, code: string, manifest?: Record<string, unknown>
 /** 抓取宿主对象，供断言宿主设施行为。 */
 async function activate(id: string): Promise<PluginHost> {
 	let host!: PluginHost;
-	makePlugin(
-		id,
-		`export default { activate(h) { globalThis.__hosts["${id}"] = h; } };`,
-	);
-(globalThis as unknown as { __hosts?: Record<string, PluginHost> }).__hosts ??= {};
+	makePlugin(id, `export default { activate(h) { globalThis.__hosts["${id}"] = h; } };`);
+	(globalThis as unknown as { __hosts?: Record<string, PluginHost> }).__hosts ??= {};
 	await mgr.ensureLoaded();
 	host = (globalThis as unknown as { __hosts: Record<string, PluginHost> }).__hosts[id];
 	expect(host).toBeTruthy();

@@ -18,10 +18,7 @@ const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = 8898;
 const PROJ = REPO_ROOT;
-const HELPER = join(
-	PROJ,
-	"node_modules/node-pty/build/Release/spawn-helper",
-);
+const HELPER = join(PROJ, "node_modules/node-pty/build/Release/spawn-helper");
 
 let failures = 0;
 const check = (name, ok, extra = "") => {

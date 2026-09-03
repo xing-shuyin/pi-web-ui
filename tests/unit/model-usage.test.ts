@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	incrementUsage,
-	normalizeUsage,
-	sortByUsage,
-} from "../../web/src/model-usage.js";
+import { incrementUsage, normalizeUsage, sortByUsage } from "../../web/src/model-usage.js";
 
 describe("normalizeUsage", () => {
 	it("空/非对象输入返回空映射", () => {
@@ -14,9 +10,7 @@ describe("normalizeUsage", () => {
 	});
 
 	it("只保留正有限整数计数，丢弃坏值/非正数", () => {
-		expect(
-			normalizeUsage({ "a/b": 3, "c/d": -2, "e/f": 1.7, "g/h": "5", "i/j": NaN }),
-		).toEqual({ "a/b": 3, "e/f": 1 });
+		expect(normalizeUsage({ "a/b": 3, "c/d": -2, "e/f": 1.7, "g/h": "5", "i/j": NaN })).toEqual({ "a/b": 3, "e/f": 1 });
 	});
 });
 
@@ -46,19 +40,11 @@ describe("sortByUsage", () => {
 
 	it("使用次数降序，次数相同保持原序", () => {
 		const usage = { "p/b": 5, "p/a": 3 };
-		expect(sortByUsage(models, usage).map((m) => m.id)).toEqual([
-			"p/b",
-			"p/a",
-			"p/c",
-		]);
+		expect(sortByUsage(models, usage).map((m) => m.id)).toEqual(["p/b", "p/a", "p/c"]);
 	});
 
 	it("全部零使用（含缺失）保持原顺序", () => {
-		expect(sortByUsage(models, {}).map((m) => m.id)).toEqual([
-			"p/a",
-			"p/b",
-			"p/c",
-		]);
+		expect(sortByUsage(models, {}).map((m) => m.id)).toEqual(["p/a", "p/b", "p/c"]);
 	});
 
 	it("返回新数组，不改入参", () => {

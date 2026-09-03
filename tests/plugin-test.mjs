@@ -28,10 +28,7 @@ const dataDir = mkdtempSync(join(tmpdir(), "pi-web-plugin-test-"));
 // 1) 正常插件：服务端入口 + 客户端 bundle
 const plugDir = join(dataDir, "plugins", "demo-mailbox");
 mkdirSync(plugDir, { recursive: true });
-writeFileSync(
-	join(plugDir, "manifest.json"),
-	JSON.stringify({ name: "邮箱", version: "0.1.0", description: "demo" }),
-);
+writeFileSync(join(plugDir, "manifest.json"), JSON.stringify({ name: "邮箱", version: "0.1.0", description: "demo" }));
 writeFileSync(
 	join(plugDir, "index.mjs"),
 	`export default {
@@ -45,10 +42,7 @@ writeFileSync(
 	};`,
 );
 mkdirSync(join(plugDir, "client"), { recursive: true });
-writeFileSync(
-	join(plugDir, "client", "entry.mjs"),
-	`export default { mount(el) { el.textContent = "ok"; } };`,
-);
+writeFileSync(join(plugDir, "client", "entry.mjs"), `export default { mount(el) { el.textContent = "ok"; } };`);
 
 // 2) 纯前端插件（无 index.mjs，只有视图 bundle）
 const feDir = join(dataDir, "plugins", "frontend-only");
@@ -90,10 +84,7 @@ function connect(clientId = "plugin-test") {
 /** 等到匹配谓词的 server 消息（带超时）。 */
 function waitFor(sock, pred, label, timeoutMs = 8000) {
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(new Error(`timeout waiting for ${label}`)),
-			timeoutMs,
-		);
+		const timer = setTimeout(() => reject(new Error(`timeout waiting for ${label}`)), timeoutMs);
 		const onMsg = (raw) => {
 			const msg = JSON.parse(raw.toString());
 			if (pred(msg)) {
@@ -164,14 +155,22 @@ try {
 
 	// -- 2. plugin_message 回环 --------------------------------------------
 	const echoP = waitFor(sock, (m) => m.type === "plugin_data" && m.pluginId === "demo-mailbox", "plugin_data");
-	sock.send(JSON.stringify({ type: "plugin_message", pluginId: "demo-mailbox", payload: { action: "ping", value: 42 } }));
+	sock.send(
+		JSON.stringify({ type: "plugin_message", pluginId: "demo-mailbox", payload: { action: "ping", value: 42 } }),
+	);
 	const echo = await echoP;
 	if (echo.payload?.pong !== 42) fail(`echo wrong: ${JSON.stringify(echo.payload)}`);
 	else console.log("✓ plugin_message round-trips to plugin_data");
 
 	// -- 2b. host.notify → 系统通知条 ----------------------------------------
 	const noticeP = waitFor(sock, (m) => m.type === "notice" && m.text?.includes("插件通知测试"), "notice");
-	sock.send(JSON.stringify({ type: "plugin_message", pluginId: "demo-mailbox", payload: { action: "notify", text: "插件通知测试 OK" } }));
+	sock.send(
+		JSON.stringify({
+			type: "plugin_message",
+			pluginId: "demo-mailbox",
+			payload: { action: "notify", text: "插件通知测试 OK" },
+		}),
+	);
 	await noticeP;
 	console.log("✓ host.notify delivers a system notice");
 
@@ -184,7 +183,13 @@ try {
 		if (m.type === "plugin_data" && m.payload?.direct === "b") leaked = true;
 	};
 	sock.on("message", leakWatch);
-	sock.send(JSON.stringify({ type: "plugin_message", pluginId: "demo-mailbox", payload: { action: "echo-to", clientId: "plug-b", direct: "b" } }));
+	sock.send(
+		JSON.stringify({
+			type: "plugin_message",
+			pluginId: "demo-mailbox",
+			payload: { action: "echo-to", clientId: "plug-b", direct: "b" },
+		}),
+	);
 	await toB;
 	await new Promise((r) => setTimeout(r, 300));
 	sock.off("message", leakWatch);
@@ -192,10 +197,18 @@ try {
 	else console.log("✓ host.sendTo targets only the addressed socket");
 
 	// -- 2e. 设置面板插件开关：set_settings 回显 + 持久化 ---------------------
-	const disP = waitFor(sock, (m) => m.type === "settings_state" && m.settings?.disabledPlugins?.includes("demo-mailbox"), "settings_state(disabled)");
+	const disP = waitFor(
+		sock,
+		(m) => m.type === "settings_state" && m.settings?.disabledPlugins?.includes("demo-mailbox"),
+		"settings_state(disabled)",
+	);
 	sock.send(JSON.stringify({ type: "set_settings", disabledPlugins: ["demo-mailbox"] }));
 	await disP;
-	const enP = waitFor(sock, (m) => m.type === "settings_state" && !(m.settings?.disabledPlugins ?? []).includes("demo-mailbox"), "settings_state(re-enabled)");
+	const enP = waitFor(
+		sock,
+		(m) => m.type === "settings_state" && !(m.settings?.disabledPlugins ?? []).includes("demo-mailbox"),
+		"settings_state(re-enabled)",
+	);
 	sock.send(JSON.stringify({ type: "set_settings", disabledPlugins: [] }));
 	await enP;
 	console.log("✓ set_settings echoes disabledPlugins toggle");
@@ -228,10 +241,7 @@ try {
 	}
 	// 服务端代码与 manifest 不在 client/ 白名单里 —— 路由不匹配时落到 SPA
 	// catch-all 返回 index.html（200 但是 HTML），绝不能返回文件本体。
-	for (const bad of [
-		`${BASE}/plugins/demo-mailbox/index.mjs`,
-		`${BASE}/plugins/demo-mailbox/manifest.json`,
-	]) {
+	for (const bad of [`${BASE}/plugins/demo-mailbox/index.mjs`, `${BASE}/plugins/demo-mailbox/manifest.json`]) {
 		const r = await fetch(bad);
 		const body = await r.text();
 		if (!body.startsWith("<!doctype html") && !body.includes("<div id=")) {
@@ -240,9 +250,7 @@ try {
 	}
 	{
 		// 路径穿越：id 段非法，同样只能落 SPA 兑底
-		const r = await fetch(
-			`${BASE}/plugins/%2e%2e%2f%2e%2e%2fclient-state.json/client/entry.mjs`,
-		);
+		const r = await fetch(`${BASE}/plugins/%2e%2e%2f%2e%2e%2fclient-state.json/client/entry.mjs`);
 		const body = await r.text();
 		if (body.includes("{")) fail(`traversal returned data: ${body.slice(0, 80)}`);
 	}

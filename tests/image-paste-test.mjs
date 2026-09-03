@@ -19,8 +19,7 @@ const clientId = randomUUID();
 const ws = new WebSocket(WS_URL);
 
 // 1x1 透明 PNG (base64)
-const TINY_PNG =
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 let step = 0;
 let sawImageMsg = false;

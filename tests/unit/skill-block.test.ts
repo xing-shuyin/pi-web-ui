@@ -9,8 +9,7 @@ name: demo
 
 describe("parseSkillBlock", () => {
 	it("解析标准 <skill> 块（镜像 SDK 正则，勿单独改动）", () => {
-		const text =
-			`<skill name="demo" location="/tmp/demo/SKILL.md">\n${BODY}\n</skill>\n\n帮我做 X`;
+		const text = `<skill name="demo" location="/tmp/demo/SKILL.md">\n${BODY}\n</skill>\n\n帮我做 X`;
 		const b = parseSkillBlock(text);
 		expect(b).not.toBeNull();
 		expect(b!.name).toBe("demo");

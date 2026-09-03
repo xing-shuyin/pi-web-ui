@@ -35,15 +35,11 @@ writeFileSync(join(repo, "newfile.txt"), "brand new\n");
 
 process.env.PI_WEB_PORT = String(PORT);
 
-const server = spawn(
-	NODE,
-	[join(here, "dist", "server", "index.js")],
-	{
-		cwd: here,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(NODE, [join(here, "dist", "server", "index.js")], {
+	cwd: here,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -100,10 +96,7 @@ async function watchTerminalOutput() {
 			return;
 		}
 		if (msg.type === "terminal_output") {
-			termOutput.set(
-				msg.terminalId,
-				(termOutput.get(msg.terminalId) ?? "") + msg.data,
-			);
+			termOutput.set(msg.terminalId, (termOutput.get(msg.terminalId) ?? "") + msg.data);
 		}
 		if (msg.type === "notice") notices.push(msg.text);
 	};
@@ -163,13 +156,13 @@ async function main() {
 	} catch (err) {
 		console.log("[debug] status timeout — panel error:", await page.locator(".scm-error").allTextContents());
 		console.log("[debug] notices:", notices);
-		console.log("[debug] query-terminal output:", JSON.stringify((termOutput.get("scm-git-query") ?? "").slice(0, 800)));
+		console.log(
+			"[debug] query-terminal output:",
+			JSON.stringify((termOutput.get("scm-git-query") ?? "").slice(0, 800)),
+		);
 		throw err;
 	}
-	check(
-		"status lists hello.txt + newfile.txt",
-		fileRows.includes("hello.txt") && fileRows.includes("newfile.txt"),
-	);
+	check("status lists hello.txt + newfile.txt", fileRows.includes("hello.txt") && fileRows.includes("newfile.txt"));
 
 	// branch chip shows the current branch
 	const branchText = await page.locator(".scm-branch-current").textContent();
@@ -188,12 +181,19 @@ async function main() {
 	check("diff shows added line", diffText.includes("+line three"));
 	const addLines = await page.locator(".scm-diff-line.add").count();
 	check("diff renders + lines", addLines >= 1);
-	check("diff header shows file name", await page.locator(".scm-diff-header").textContent().then((s) => s?.includes("hello.txt")));
+	check(
+		"diff header shows file name",
+		await page
+			.locator(".scm-diff-header")
+			.textContent()
+			.then((s) => s?.includes("hello.txt")),
+	);
 
 	// untracked file click → note, not a diff
 	await page.locator(".scm-file-path", { hasText: "newfile.txt" }).click();
 	await waitFor(
-		async () => (await page.locator(".scm-empty").allTextContents()).some((s) => s.includes("未跟踪") || s.includes("Untracked")),
+		async () =>
+			(await page.locator(".scm-empty").allTextContents()).some((s) => s.includes("未跟踪") || s.includes("Untracked")),
 		10000,
 		"untracked note",
 	);
@@ -201,7 +201,7 @@ async function main() {
 
 	// -- commit through the terminal bridge -----------------------------------
 	await page.locator(".scm-commit-input").fill("my first commit");
-	await page.click('.scm-header button.btn.primary');
+	await page.click(".scm-header button.btn.primary");
 	await page.waitForSelector('.view-switch button[aria-selected="true"]:has-text("终端")', {
 		timeout: 5000,
 	});
@@ -210,14 +210,18 @@ async function main() {
 	check("terminal tab 'git commit' created", true);
 
 	// the commit must actually land (git add -A && git commit in the PTY)
-	await waitFor(() => {
-		try {
-			const log = execSync("git log -1 --format=%s", { cwd: repo }).toString().trim();
-			return log === "my first commit" ? log : null;
-		} catch {
-			return null;
-		}
-	}, 30000, "commit lands on disk");
+	await waitFor(
+		() => {
+			try {
+				const log = execSync("git log -1 --format=%s", { cwd: repo }).toString().trim();
+				return log === "my first commit" ? log : null;
+			} catch {
+				return null;
+			}
+		},
+		30000,
+		"commit lands on disk",
+	);
 	check("commit landed with the right message", true);
 	// the commit ran through the terminal bridge — the tab shows the command
 	const tabTitle = await page.locator('.term-tab:has-text("git commit")').textContent();
@@ -226,12 +230,16 @@ async function main() {
 	// -- back to git view: auto-refresh → clean tree --------------------------
 	await page.click('.view-switch button:has-text("Git")');
 	await waitFor(
-		async () => (await page.locator(".scm-empty").allTextContents()).some((s) => s.includes("干净") || s.includes("clean")),
+		async () =>
+			(await page.locator(".scm-empty").allTextContents()).some((s) => s.includes("干净") || s.includes("clean")),
 		25000,
 		"clean tree after commit",
 	);
 	check("status auto-refreshed to clean", true);
-	check("newfile.txt committed too (git add -A)", execSync("git status --porcelain", { cwd: repo }).toString().trim() === "");
+	check(
+		"newfile.txt committed too (git add -A)",
+		execSync("git status --porcelain", { cwd: repo }).toString().trim() === "",
+	);
 
 	// -- branch switching ------------------------------------------------------
 	execSync("git branch feature-x", { cwd: repo, stdio: "ignore" });

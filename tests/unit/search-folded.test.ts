@@ -6,10 +6,9 @@ import {
 	type FoldedMessage,
 } from "../../web/src/search-folded.js";
 
-const RES: ReadonlyMap<string, { content: { type: string; text: string }[] }> =
-	new Map([
-		["call-1", { content: [{ type: "text", text: "工具输出结果文本 OUT" }] }],
-	]);
+const RES: ReadonlyMap<string, { content: { type: string; text: string }[] }> = new Map([
+	["call-1", { content: [{ type: "text", text: "工具输出结果文本 OUT" }] }],
+]);
 
 function msg(id: string, content: { type: string; [k: string]: unknown }[]): FoldedMessage {
 	return { id, role: "assistant", content };
@@ -42,9 +41,7 @@ describe("foldedSearchText", () => {
 	});
 
 	it("无 toolResult 时宿主不拼接结果", () => {
-		const m = msg("m1", [
-			{ type: "toolCall", id: "call-x", name: "read", argumentsText: '{"path":"a"}' },
-		]);
+		const m = msg("m1", [{ type: "toolCall", id: "call-x", name: "read", argumentsText: '{"path":"a"}' }]);
 		expect(foldedSearchText(m, RES)).not.toContain("OUT");
 	});
 
@@ -73,21 +70,14 @@ describe("foldedResultText", () => {
 
 describe("collectFoldedHits", () => {
 	const messages = [
-		msg("folded-1", [
-			{ type: "text", text: "这里有 NEEDLE 和 needle 还有 NEEDLE" },
-		]),
+		msg("folded-1", [{ type: "text", text: "这里有 NEEDLE 和 needle 还有 NEEDLE" }]),
 		msg("folded-2", [{ type: "thinking", thinking: "NEEDLE 只在思考里" }]),
 		msg("rendered-1", [{ type: "text", text: "NEEDLE 但这条已渲染" }]), // 不在 collapsedIds
 		msg("folded-3", [{ type: "toolCall", id: "call-1", name: "bash", argumentsText: '{"command":"echo hi"}' }]),
 	];
 
 	it("只统计折叠消息，大小写不敏感，出现次数计入", () => {
-		const hits = collectFoldedHits(
-			messages,
-			new Set(["folded-1", "folded-2", "folded-3"]),
-			"needle",
-			RES,
-		);
+		const hits = collectFoldedHits(messages, new Set(["folded-1", "folded-2", "folded-3"]), "needle", RES);
 		expect(hits.get("folded-1")).toBe(3);
 		expect(hits.get("folded-2")).toBe(1);
 		expect(hits.get("rendered-1")).toBeUndefined();
@@ -96,19 +86,12 @@ describe("collectFoldedHits", () => {
 	});
 
 	it("toolResult 文本并入宿主后可搜到", () => {
-		const hits = collectFoldedHits(
-			messages,
-			new Set(["folded-3"]),
-			"OUT",
-			RES,
-		);
+		const hits = collectFoldedHits(messages, new Set(["folded-3"]), "OUT", RES);
 		expect(hits.get("folded-3")).toBe(1);
 	});
 
 	it("空查询返回空 Map", () => {
-		expect(
-			collectFoldedHits(messages, new Set(["folded-1"]), "  ", RES).size,
-		).toBe(0);
+		expect(collectFoldedHits(messages, new Set(["folded-1"]), "  ", RES).size).toBe(0);
 	});
 
 	it("无折叠消息时返回空", () => {

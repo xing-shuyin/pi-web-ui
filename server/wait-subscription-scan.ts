@@ -51,15 +51,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 function parseRecord(value: unknown): WaitSubscriptionRecord | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const record = value as Partial<WaitSubscriptionRecord>;
-	if (record.version !== 1
-		|| typeof record.token !== "string"
-		|| !UUID_RE.test(record.token)
-		|| typeof record.sessionId !== "string"
-		|| (record.targetKind !== "async" && record.targetKind !== "foreground")
-		|| typeof record.runId !== "string"
-		|| typeof record.requestedId !== "string"
-		|| typeof record.createdAt !== "number" || !Number.isFinite(record.createdAt)
-		|| typeof record.expiresAt !== "number" || !Number.isFinite(record.expiresAt)) return undefined;
+	if (
+		record.version !== 1 ||
+		typeof record.token !== "string" ||
+		!UUID_RE.test(record.token) ||
+		typeof record.sessionId !== "string" ||
+		(record.targetKind !== "async" && record.targetKind !== "foreground") ||
+		typeof record.runId !== "string" ||
+		typeof record.requestedId !== "string" ||
+		typeof record.createdAt !== "number" ||
+		!Number.isFinite(record.createdAt) ||
+		typeof record.expiresAt !== "number" ||
+		!Number.isFinite(record.expiresAt)
+	)
+		return undefined;
 	return record as WaitSubscriptionRecord;
 }
 
@@ -115,9 +120,7 @@ export function resolveTempScopeId(
 /** wait-subscriptions 目录默认位置（与 pi-subagents 的推导一致）。 */
 export function resolveSubscriptionsDir(env: NodeJS.ProcessEnv = process.env): string {
 	const configured = env.PI_SUBAGENTS_TEMP_ROOT?.trim();
-	const root = configured
-		? path.resolve(configured)
-		: path.join(tmpdir(), `pi-subagents-${resolveTempScopeId(env)}`);
+	const root = configured ? path.resolve(configured) : path.join(tmpdir(), `pi-subagents-${resolveTempScopeId(env)}`);
 	return path.join(path.dirname(path.join(root, "async-subagent-runs")), "wait-subscriptions");
 }
 
@@ -144,8 +147,10 @@ export function hasPendingWaitSubscription(options: PendingWakeScanOptions): boo
 	const now = options.now ?? Date.now;
 	const warn = options.warn ?? ((message: string, error: unknown) => console.warn(message, error));
 	const isNotFound = (error: unknown): boolean =>
-		typeof error === "object" && error !== null && "code" in error
-		&& (error as NodeJS.ErrnoException).code === "ENOENT";
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as NodeJS.ErrnoException).code === "ENOENT";
 	const dir = options.subscriptionsDir ?? resolveSubscriptionsDir();
 	let files: string[];
 	try {
@@ -204,9 +209,7 @@ export function shouldRetainActive(input: DisplacementDecisionInput): boolean {
 	if (input.reviewing || input.wizardRunning) return true;
 	if (input.streaming) return true;
 	if (input.openTerminals > 0) return true;
-	const hasPendingWake = typeof input.hasPendingWake === "function"
-		? input.hasPendingWake()
-		: input.hasPendingWake;
+	const hasPendingWake = typeof input.hasPendingWake === "function" ? input.hasPendingWake() : input.hasPendingWake;
 	if (hasPendingWake) return true;
 	if (input.listed && input.promptedSinceActive) return true;
 	return false;

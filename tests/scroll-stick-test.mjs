@@ -21,15 +21,9 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 for (let i = 1; i <= 35; i++) {
-	writeFileSync(
-		join(workdir, `seed-${String(i).padStart(2, "0")}.txt`),
-		`seed content ${i}\n`,
-	);
+	writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed content ${i}\n`);
 }
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -99,8 +93,7 @@ function seedChat(want) {
 		const sendNext = () => {
 			if (step === 0) {
 				const attachments = [];
-				for (let i = 1; i <= 35; i++)
-					attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
+				for (let i = 1; i <= 35; i++) attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
 				ws.send(
 					JSON.stringify({
 						type: "prompt",
@@ -109,9 +102,7 @@ function seedChat(want) {
 					}),
 				);
 			} else {
-				ws.send(
-					JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step} 条` }),
-				);
+				ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step} 条` }));
 			}
 			step++;
 		};
@@ -179,10 +170,7 @@ async function main() {
 		if (m.type() === "error") consoleErrors.push(m.text());
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
@@ -211,18 +199,11 @@ async function main() {
 	await page.mouse.move(700, 450);
 	await page.mouse.wheel(0, -600);
 	await sleep(400); // let the wheel's own scroll settle
-	const before = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const before = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	await sleep(2200); // well past any re-assert timer / stream end — no force-snap
-	const after = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const after = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	const gap = await distFromBottom(page);
-	check(
-		`user escape: scroll position sticks (Δ${Math.abs(after - before)}px < 400)`,
-		Math.abs(after - before) < 400,
-	);
+	check(`user escape: scroll position sticks (Δ${Math.abs(after - before)}px < 400)`, Math.abs(after - before) < 400);
 	check(`user escape: no force-snap to bottom (gap ${gap}px > 300)`, gap > 300);
 
 	// Post-stream: no late snap-back after growth stops
@@ -258,33 +239,23 @@ async function main() {
 	await page.evaluate(() => window.__collapse(300)); // mid-size shrink (-500 < dSt < -4)
 	await sleep(500);
 	let d3 = await distFromBottom(page);
-	check(
-		`layout-shift while stuck: viewport stays pinned (gap ${d3}px < 80, no phantom escape)`,
-		d3 < 80,
-	);
+	check(`layout-shift while stuck: viewport stays pinned (gap ${d3}px < 80, no phantom escape)`, d3 < 80);
 	// Second collapse: stick must still be armed (escapedRef was not flipped),
 	// so the re-assert keeps pinning through repeated layout shifts.
 	await sleep(1300); // outside grace window again
 	await page.evaluate(() => window.__collapse(300));
 	await sleep(500);
 	d3 = await distFromBottom(page);
-	check(
-		`layout-shift while stuck: second collapse still pinned (gap ${d3}px < 80)`,
-		d3 < 80,
-	);
+	check(`layout-shift while stuck: second collapse still pinned (gap ${d3}px < 80)`, d3 < 80);
 	// And a genuine wheel-up right after must still escape immediately
 	// (proves the discriminator left real user intent fully armed).
 	await page.mouse.move(700, 450);
 	await page.mouse.wheel(0, -300);
 	await sleep(400);
 	const gapEsc = await distFromBottom(page);
-	const stA = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const stA = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	await sleep(1500);
-	const stB = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const stB = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	check(
 		`layout-shift while stuck: user intent still escapes and sticks (gap ${gapEsc}px > 250, Δ${Math.abs(stB - stA)}px < 100)`,
 		gapEsc > 250 && Math.abs(stB - stA) < 100,
@@ -319,9 +290,7 @@ async function main() {
 		}
 		return null;
 	});
-	const anchorLive = await page.evaluate(() =>
-		window.__anchorCls.includes("anchor-live"),
-	);
+	const anchorLive = await page.evaluate(() => window.__anchorCls.includes("anchor-live"));
 	const gap4 = await distFromBottom(page);
 	const visDelta = Math.abs((visAfter ?? 0) - (visBefore ?? 0));
 	check(
@@ -354,10 +323,7 @@ async function main() {
 	// untouched by the shrink), and all re-assert timers have expired.
 	await sleep(500);
 	const gapGrow = await distFromBottom(page);
-	check(
-		`composer-grow while stuck: RO re-pins bottom (gap ${gapGrow}px < 80)`,
-		gapGrow < 80,
-	);
+	check(`composer-grow while stuck: RO re-pins bottom (gap ${gapGrow}px < 80)`, gapGrow < 80);
 	// Chip must be hidden again (RO re-pin keeps its state source consistent).
 	const chipVisible = await page.locator(".scroll-bottom").isVisible();
 	check("composer-grow while stuck: Back-to-bottom chip hidden", !chipVisible);
@@ -366,14 +332,10 @@ async function main() {
 	await page.mouse.move(700, 450);
 	await page.mouse.wheel(0, -600);
 	await sleep(400);
-	const escSt = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const escSt = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	await page.evaluate(() => window.__growComposer(160));
 	await sleep(500);
-	const escStAfter = await page.evaluate(
-		() => document.querySelector(".messages").scrollTop,
-	);
+	const escStAfter = await page.evaluate(() => document.querySelector(".messages").scrollTop);
 	const gapEscGrow = await distFromBottom(page);
 	check(
 		`composer-grow while escaped: viewport not dragged (Δ${Math.abs(escStAfter - escSt)}px < 80, gap ${gapEscGrow}px > 300)`,
@@ -443,10 +405,7 @@ async function main() {
 	await page.evaluate(() => window.__stress(25, false));
 	await sleep(5600); // 25 ticks x 200ms + margin
 	const maxGapC = await page.evaluate(() => window.__probeGap);
-	check(
-		`sustained streaming+pulses while stuck: pinned throughout (max painted gap ${maxGapC}px < 80)`,
-		maxGapC < 80,
-	);
+	check(`sustained streaming+pulses while stuck: pinned throughout (max painted gap ${maxGapC}px < 80)`, maxGapC < 80);
 
 	// Check D: escaped + same stress → viewport stays where the user put it.
 	await page.mouse.move(700, 450);
@@ -528,10 +487,7 @@ async function main() {
 	);
 
 	const pass2 = await wheelApproach(400);
-	check(
-		`wheel reachability PASS 2: still reachable (gap ${pass2.gap}px < 80, ${pass2.ticks} ticks)`,
-		pass2.reached,
-	);
+	check(`wheel reachability PASS 2: still reachable (gap ${pass2.gap}px < 80, ${pass2.ticks} ticks)`, pass2.reached);
 	check(
 		`wheel reachability PASS 2: swaps height-neutral in final approach (scrollHeight growth ${pass2.growthFinal}px < 60)`,
 		pass2.growthFinal !== null && pass2.growthFinal < 60,
@@ -595,8 +551,7 @@ async function main() {
 	);
 
 	check("no page errors", consoleErrors.length === 0);
-	if (consoleErrors.length > 0)
-		console.log("   console errors:", consoleErrors.slice(0, 3));
+	if (consoleErrors.length > 0) console.log("   console errors:", consoleErrors.slice(0, 3));
 
 	await browser.close();
 	console.log(`\n${passed} checks passed`);

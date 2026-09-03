@@ -41,10 +41,7 @@ function connect() {
 							res(inbox.splice(i, 1)[0]);
 							return;
 						}
-						const t = setTimeout(
-							() => rej(new Error("timeout waiting for message")),
-							timeout,
-						);
+						const t = setTimeout(() => rej(new Error("timeout waiting for message")), timeout);
 						waiters.push({
 							pred,
 							resolve: (m) => {
@@ -69,9 +66,7 @@ async function phase1() {
 	console.log("[1] initial cwd =", first.state.cwd);
 
 	c.send({ type: "set_cwd", path: PROJ_B });
-	const afterSwitch = await c.wait(
-		(m) => m.type === "snapshot" && m.state.cwd === PROJ_B,
-	);
+	const afterSwitch = await c.wait((m) => m.type === "snapshot" && m.state.cwd === PROJ_B);
 	console.log("[2] after set_cwd →", afterSwitch.state.cwd);
 
 	const projs = await c.wait((m) => m.type === "projects");

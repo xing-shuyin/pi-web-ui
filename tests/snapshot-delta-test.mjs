@@ -70,8 +70,7 @@ try {
 	ws.on("message", (data) => {
 		const msg = JSON.parse(data.toString());
 		if (msg.type === "ready") sawReady = true;
-		if (msg.type === "snapshot" || msg.type === "snapshot_delta")
-			stream.push(msg);
+		if (msg.type === "snapshot" || msg.type === "snapshot_delta") stream.push(msg);
 	});
 
 	await new Promise((r, j) => {

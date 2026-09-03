@@ -19,15 +19,11 @@ process.env.PI_WEB_DATA_DIR = dataDir;
 const NODE = realpathSync(process.execPath);
 const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
-const server = spawn(
-	NODE,
-	[join(REPO, "dist", "server", "index.js")],
-	{
-		cwd: REPO,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true, // own process group so we can kill the whole tree
-	},
-);
+const server = spawn(NODE, [join(REPO, "dist", "server", "index.js")], {
+	cwd: REPO,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true, // own process group so we can kill the whole tree
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.on("exit", (code) => console.error(`[srv exited early: ${code}]`));
 server.stdout.on("data", (d) => process.stdout.write(`[srv] ${d}`));
@@ -82,10 +78,7 @@ async function main() {
 			return;
 		}
 		if (msg.type === "terminal_output") {
-			outputs.set(
-				msg.terminalId,
-				(outputs.get(msg.terminalId) ?? "") + msg.data,
-			);
+			outputs.set(msg.terminalId, (outputs.get(msg.terminalId) ?? "") + msg.data);
 		}
 		if (msg.type === "terminal_exit") exits.set(msg.terminalId, msg.exitCode);
 		if (msg.type === "commands") commandsReply = msg;
@@ -101,10 +94,7 @@ async function main() {
 	send({ type: "hello", clientId: "smoke-test-client" });
 
 	await new Promise((res, rej) => {
-		const timer = setTimeout(
-			() => rej(new Error("timed out waiting for ready")),
-			30000,
-		);
+		const timer = setTimeout(() => rej(new Error("timed out waiting for ready")), 30000);
 		ws.on("message", (d) => {
 			try {
 				if (JSON.parse(d.toString()).type === "ready") {
@@ -120,20 +110,16 @@ async function main() {
 	await sleep(300);
 	check(
 		"agent exposes persistent terminal tools",
-		["terminal_create", "terminal_list", "terminal_close", "terminal_input", "terminal_key", "terminal_read"].every((name) => snapshotReply?.tools?.includes(name)),
+		["terminal_create", "terminal_list", "terminal_close", "terminal_input", "terminal_key", "terminal_read"].every(
+			(name) => snapshotReply?.tools?.includes(name),
+		),
 	);
 
 	// -- commands: list (fresh dir -> empty), save, list again -----------------
 	send({ type: "list_commands" });
 	await sleep(400);
-	check(
-		"list_commands returns empty list",
-		commandsReply?.commands?.length === 0,
-	);
-	check(
-		"commands path is <cwd>/.pi/commands.json",
-		commandsReply?.path === join(workdir, ".pi", "commands.json"),
-	);
+	check("list_commands returns empty list", commandsReply?.commands?.length === 0);
+	check("commands path is <cwd>/.pi/commands.json", commandsReply?.path === join(workdir, ".pi", "commands.json"));
 
 	send({
 		type: "save_commands",
@@ -145,23 +131,16 @@ async function main() {
 	await sleep(400);
 	check("save_commands persisted", commandsReply?.commands?.length === 2);
 	const { readFileSync, existsSync } = await import("node:fs");
-	check(
-		"commands.json written on disk",
-		existsSync(join(workdir, ".pi", "commands.json")),
-	);
+	check("commands.json written on disk", existsSync(join(workdir, ".pi", "commands.json")));
 	let onDisk = null;
 	try {
-		onDisk = JSON.parse(
-			readFileSync(join(workdir, ".pi", "commands.json"), "utf8"),
-		);
+		onDisk = JSON.parse(readFileSync(join(workdir, ".pi", "commands.json"), "utf8"));
 	} catch {
 		onDisk = null;
 	}
 	check(
 		"disk format is {commands:[...]}",
-		onDisk !== null &&
-			Array.isArray(onDisk.commands) &&
-			onDisk.commands[0].name === "dev",
+		onDisk !== null && Array.isArray(onDisk.commands) && onDisk.commands[0].name === "dev",
 	);
 
 	// -- folder attachment: a directory is accepted (not skipped as a non-file) --
@@ -179,15 +158,11 @@ async function main() {
 		await sleep(1500);
 		check(
 			"folder not skipped as a non-file attachment",
-			!notices.some(
-				(t) => t.includes("跳过非文件附件") && t.includes("subdir"),
-			),
+			!notices.some((t) => t.includes("跳过非文件附件") && t.includes("subdir")),
 		);
 		check(
 			"no attachment error for the folder",
-			!notices.some(
-				(t) => t.includes("附件") && t.includes("subdir") && t.includes("失败"),
-			),
+			!notices.some((t) => t.includes("附件") && t.includes("subdir") && t.includes("失败")),
 		);
 	}
 
@@ -199,10 +174,7 @@ async function main() {
 		const { writeFileSync, mkdirSync } = await import("node:fs");
 		const safePath = `--${workdir.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 		const tuiDir = join(homedir(), ".pi", "agent", "sessions", safePath);
-		const tuiFile = join(
-			tuiDir,
-			"2026-08-04T00-00-00-000Z_tui-smoke-test.jsonl",
-		);
+		const tuiFile = join(tuiDir, "2026-08-04T00-00-00-000Z_tui-smoke-test.jsonl");
 		mkdirSync(tuiDir, { recursive: true });
 		writeFileSync(
 			tuiFile,
@@ -240,9 +212,7 @@ async function main() {
 		await sleep(1000);
 		check(
 			"persisted session appears in the conversation list",
-			sessionsReply?.some(
-				(s) => s.path === tuiFile && s.firstMessage === "TUI 会话标题",
-			) ?? false,
+			sessionsReply?.some((s) => s.path === tuiFile && s.firstMessage === "TUI 会话标题") ?? false,
 		);
 	}
 
@@ -257,13 +227,13 @@ async function main() {
 	});
 	await sleep(600);
 	check("shell produced output", (outputs.get(t1) ?? "").length > 0);
-	check("terminal_list identifies the active conversation", snapshotReply?.conversationId && snapshotReply.conversationId.length > 0);
+	check(
+		"terminal_list identifies the active conversation",
+		snapshotReply?.conversationId && snapshotReply.conversationId.length > 0,
+	);
 	send({ type: "terminal_input", terminalId: t1, data: "echo WS_ECHO_OK\r" });
 	await sleep(800);
-	check(
-		"input echoes through PTY",
-		(outputs.get(t1) ?? "").includes("WS_ECHO_OK"),
-	);
+	check("input echoes through PTY", (outputs.get(t1) ?? "").includes("WS_ECHO_OK"));
 
 	send({ type: "terminal_resize", terminalId: t1, cols: 100, rows: 40 });
 	await sleep(200);
@@ -278,18 +248,12 @@ async function main() {
 		rows: 24,
 	});
 	await sleep(1200);
-	check(
-		"run_command banner shown",
-		(outputs.get(t2) ?? "").includes("WS_CMD_OK"),
-	);
+	check("run_command banner shown", (outputs.get(t2) ?? "").includes("WS_CMD_OK"));
 
 	// ${pwd} resolves to session cwd (= workspace root here)
 	send({ type: "terminal_input", terminalId: t2, data: "pwd\r" });
 	await sleep(600);
-	check(
-		"${pwd} resolved to session cwd",
-		(outputs.get(t2) ?? "").includes(workdir),
-	);
+	check("${pwd} resolved to session cwd", (outputs.get(t2) ?? "").includes(workdir));
 
 	// -- re-run: run_command on an existing terminal restarts it in place ------
 	send({
@@ -310,10 +274,7 @@ async function main() {
 		data: "echo WS_AFTER_RERUN\r",
 	});
 	await sleep(600);
-	check(
-		"restarted shell accepts input",
-		(outputs.get(t2) ?? "").includes("WS_AFTER_RERUN"),
-	);
+	check("restarted shell accepts input", (outputs.get(t2) ?? "").includes("WS_AFTER_RERUN"));
 
 	// -- kill / exit -----------------------------------------------------------
 	send({ type: "terminal_kill", terminalId: t1 });
@@ -352,7 +313,10 @@ async function main() {
 		rows: 12,
 	});
 	await sleep(500);
-	check("run_command enforces terminal limit", notices.some((text) => text.includes("终端数量已达上限")));
+	check(
+		"run_command enforces terminal limit",
+		notices.some((text) => text.includes("终端数量已达上限")),
+	);
 	for (const id of capIds) send({ type: "terminal_kill", terminalId: id });
 
 	// -- key encoding (pure + byte-exact) ------------------------------------
@@ -438,19 +402,36 @@ async function main() {
 		const { TerminalManager, makePersistentTerminalTools } = await import("../dist/server/terminals.js");
 		const toolManager = new TerminalManager(() => {}, workdir);
 		const tools = new Map(makePersistentTerminalTools(toolManager, workdir).map((tool) => [tool.name, tool]));
-		const invoke = async (name, params) => tools.get(name).execute("tool-smoke", params, undefined, undefined, undefined);
+		const invoke = async (name, params) =>
+			tools.get(name).execute("tool-smoke", params, undefined, undefined, undefined);
 		try {
 			await invoke("terminal_create", { terminalId: "agent-smoke", cwd: ".", cols: 40, rows: 12 });
 			const listed = await invoke("terminal_list", {});
-			check("agent terminal_create/list works", JSON.parse(listed.content[0].text).some((t) => t.id === "agent-smoke"));
+			check(
+				"agent terminal_create/list works",
+				JSON.parse(listed.content[0].text).some((t) => t.id === "agent-smoke"),
+			);
 			const initial = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: 0, maxBytes: 2000 });
 			const initialRead = JSON.parse(initial.content[0].text);
 			await invoke("terminal_input", { terminalId: "agent-smoke", data: "printf TOOL_WAIT_OK\r" });
-			const waited = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: initialRead.cursor, waitMs: 2000, maxBytes: 4000 });
-			check("agent terminal_read waits for incremental output", JSON.parse(waited.content[0].text).data.includes("TOOL_WAIT_OK"));
+			const waited = await invoke("terminal_read", {
+				terminalId: "agent-smoke",
+				cursor: initialRead.cursor,
+				waitMs: 2000,
+				maxBytes: 4000,
+			});
+			check(
+				"agent terminal_read waits for incremental output",
+				JSON.parse(waited.content[0].text).data.includes("TOOL_WAIT_OK"),
+			);
 			await invoke("terminal_input", { terminalId: "agent-smoke", data: "printf TOOL_KEY_OK" });
 			await invoke("terminal_key", { terminalId: "agent-smoke", key: "Enter" });
-			const keyed = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: JSON.parse(waited.content[0].text).cursor, waitMs: 2000, maxBytes: 4000 });
+			const keyed = await invoke("terminal_read", {
+				terminalId: "agent-smoke",
+				cursor: JSON.parse(waited.content[0].text).cursor,
+				waitMs: 2000,
+				maxBytes: 4000,
+			});
 			check("agent terminal_key sends named keys", JSON.parse(keyed.content[0].text).data.includes("TOOL_KEY_OK"));
 			await invoke("terminal_close", { terminalId: "agent-smoke" });
 			const afterClose = await invoke("terminal_list", {});

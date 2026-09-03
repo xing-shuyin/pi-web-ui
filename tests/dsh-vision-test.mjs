@@ -40,7 +40,9 @@ if (!key) {
 }
 let rtAvailable = false;
 try {
-	const { resolveRuntimeBase } = await import(pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href);
+	const { resolveRuntimeBase } = await import(
+		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
+	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
 	rtAvailable = false;
@@ -185,11 +187,7 @@ async function main() {
 			.catch(() => null);
 		if (msg) repliedText += msg.assistantMessageEvent.delta;
 	}
-	check(
-		"vision-exp 模型看图回复（text_delta）",
-		repliedText.length >= 8,
-		JSON.stringify(repliedText.slice(0, 100)),
-	);
+	check("vision-exp 模型看图回复（text_delta）", repliedText.length >= 8, JSON.stringify(repliedText.slice(0, 100)));
 
 	c.close();
 	server.kill();

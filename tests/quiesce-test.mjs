@@ -29,20 +29,16 @@ function check(name, cond, extra = "") {
 	}
 }
 
-const server = spawn(
-	process.execPath,
-	[join(REPO, "dist", "server", "index.js")],
-	{
-		env: {
-			...process.env,
-			PI_WEB_PORT: String(PORT),
-			PI_WEB_DATA_DIR: DATA,
-			PI_WEB_CWD: REPO,
-		},
-		stdio: ["ignore", "pipe", "pipe"],
-		windowsHide: true,
+const server = spawn(process.execPath, [join(REPO, "dist", "server", "index.js")], {
+	env: {
+		...process.env,
+		PI_WEB_PORT: String(PORT),
+		PI_WEB_DATA_DIR: DATA,
+		PI_WEB_CWD: REPO,
 	},
-);
+	stdio: ["ignore", "pipe", "pipe"],
+	windowsHide: true,
+});
 let serverLog = "";
 server.stdout.on("data", (d) => (serverLog += d.toString()));
 server.stderr.on("data", (d) => (serverLog += d.toString()));
@@ -61,10 +57,7 @@ async function waitFor(pred, timeoutMs = 15000, desc = "") {
 
 /** Send one command over the control socket; resolves parsed reply or null. */
 function control(cmd) {
-	const path =
-		process.platform === "win32"
-			? `\\\\.\\pipe\\pi-web-ui-${PORT}`
-			: join(DATA, "pi-web-ui.sock");
+	const path = process.platform === "win32" ? `\\\\.\\pipe\\pi-web-ui-${PORT}` : join(DATA, "pi-web-ui.sock");
 	return new Promise((resolvePromise) => {
 		const sock = createConnection(path);
 		let done = false;
@@ -193,8 +186,7 @@ async function main() {
 		check("same-authority opens", same.opened);
 		check(
 			"same-authority got ready + snapshot",
-			same.messages.some((m) => m.type === "ready") &&
-				same.messages.some((m) => m.type === "snapshot"),
+			same.messages.some((m) => m.type === "ready") && same.messages.some((m) => m.type === "snapshot"),
 		);
 		// Different PORT same host → must be rejected.
 		const diffPort = await openWs(`http://${HOST}:${PORT + 1}`);

@@ -57,8 +57,7 @@ const emitTheme = (name, overrides = {}, tail = "") => {
 	return lines.join("\n") + tail;
 };
 
-const writeTheme = (name, file, body) =>
-	writeFileSync(join(here, "themes", file), body, "utf8");
+const writeTheme = (name, file, body) => writeFileSync(join(here, "themes", file), body, "utf8");
 
 // --- 2) palettes -----------------------------------------------------------
 // Only the variables that differ from the dark default are listed. The light
@@ -340,11 +339,7 @@ const DAZZLE = {
 
 // --- 3) emit ----------------------------------------------------------------
 writeTheme("白色", "white.css", emitTheme("白色", WHITE, hljsLight));
-writeTheme(
-	"紫晕",
-	"md-preview.css",
-	emitTheme("紫晕", { "color-scheme": "dark" }, MD_PREVIEW_TAIL),
-);
+writeTheme("紫晕", "md-preview.css", emitTheme("紫晕", { "color-scheme": "dark" }, MD_PREVIEW_TAIL));
 writeTheme("赛博朋克", "cyberpunk.css", emitTheme("赛博朋克", CYBERPUNK));
 writeTheme("炫彩", "dazzle.css", emitTheme("炫彩", DAZZLE));
 

@@ -14,11 +14,19 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
-const { TerminalManager, makeTerminalBashTool, makePersistentTerminalTools, buildTerminalBashLine, stripAnsi, splitTopLevelPipes, detectTrailingLimiter, detectStdoutRedirect, queryTerminalOutput, terminalIdleNotifyLines } =
-	await import(join(REPO, "dist", "server", "terminals.js"));
-const { makeAdaptiveBashTool, makeKillableBashTool } = await import(
-	join(REPO, "dist", "server", "agent-service.js"),
-);
+const {
+	TerminalManager,
+	makeTerminalBashTool,
+	makePersistentTerminalTools,
+	buildTerminalBashLine,
+	stripAnsi,
+	splitTopLevelPipes,
+	detectTrailingLimiter,
+	detectStdoutRedirect,
+	queryTerminalOutput,
+	terminalIdleNotifyLines,
+} = await import(join(REPO, "dist", "server", "terminals.js"));
+const { makeAdaptiveBashTool, makeKillableBashTool } = await import(join(REPO, "dist", "server", "agent-service.js"));
 
 const workdir = mkdtempSync(join(tmpdir(), "piweb-tbash-"));
 mkdirSync(join(workdir, "subdir"));
@@ -38,7 +46,10 @@ const check = (name, cond, extra = "") => {
 // ---- 1. 纯函数 ----
 {
 	const line = buildTerminalBashLine("ls -la");
-	check("单行命令追加哨兵序列", line.includes("ls -la") && line.includes("[pi-exit:%s]") && line.includes("PIPESTATUS"));
+	check(
+		"单行命令追加哨兵序列",
+		line.includes("ls -la") && line.includes("[pi-exit:%s]") && line.includes("PIPESTATUS"),
+	);
 	const ml = buildTerminalBashLine("for i in 1 2\ndo\n echo $i\ndone");
 	check("多行脚本包进 eval $'...'", ml.startsWith("eval $'") && ml.includes("\\n") && !ml.includes("\n"));
 	check("多行脚本仍是一行物理输入", !ml.includes("\n"));
@@ -50,7 +61,11 @@ const check = (name, cond, extra = "") => {
 {
 	const sp = splitTopLevelPipes("echo a | grep b | wc -l");
 	check("splitTopLevelPipes 顶层拆分", sp.length === 3 && sp.map((s) => s.trim()).join("|") === "echo a|grep b|wc -l");
-	check("splitTopLevelPipes 引号内不拆", splitTopLevelPipes("echo 'a|b' | grep c").length === 2 && splitTopLevelPipes("echo 'a|b' | grep c")[0].trim() === "echo 'a|b'");
+	check(
+		"splitTopLevelPipes 引号内不拆",
+		splitTopLevelPipes("echo 'a|b' | grep c").length === 2 &&
+			splitTopLevelPipes("echo 'a|b' | grep c")[0].trim() === "echo 'a|b'",
+	);
 	const lim = detectTrailingLimiter("some cmd | tail -n 5");
 	check("detectTrailingLimiter 识别 tail -n", lim && lim.kind === "tail" && lim.lines === 5 && lim.base === "some cmd");
 	check("detectTrailingLimiter 裸 tail 默认10", detectTrailingLimiter("cmd | tail").lines === 10);
@@ -58,7 +73,13 @@ const check = (name, cond, extra = "") => {
 	check("detectTrailingLimiter 不拆 tail -f", detectTrailingLimiter("cmd | tail -f log") === null);
 	const catLim = detectTrailingLimiter("ls | cat");
 	check("detectTrailingLimiter 识别 cat", catLim && catLim.kind === "cat" && catLim.lines === null);
-	check("detectStdoutRedirect 识别 >file", (() => { const r = detectStdoutRedirect("make > build.log 2>&1"); return r && r.file === "build.log"; })());
+	check(
+		"detectStdoutRedirect 识别 >file",
+		(() => {
+			const r = detectStdoutRedirect("make > build.log 2>&1");
+			return r && r.file === "build.log";
+		})(),
+	);
 	check("detectStdoutRedirect 忽略 /dev/null", detectStdoutRedirect("cmd > /dev/null") === null);
 	check("detectStdoutRedirect 忽略 2>N", detectStdoutRedirect("cmd 2>&1") === null);
 	const qt = queryTerminalOutput("line1\nline2\nline3\n[pi-exit:0]", { tail: 2 });
@@ -89,10 +110,7 @@ const waitTool = persistentTools.find((t) => t.name === "terminal_wait");
 check("terminal_wait 已注册", waitTool !== undefined);
 
 async function run(commandOrParams, timeout) {
-	const params =
-		typeof commandOrParams === "string"
-			? { command: commandOrParams }
-			: { ...commandOrParams };
+	const params = typeof commandOrParams === "string" ? { command: commandOrParams } : { ...commandOrParams };
 	if (timeout) params.timeout = timeout;
 	let result, error;
 	try {
@@ -141,15 +159,9 @@ try {
 			.filter((l) => /^\d+$/.test(l.trim()))
 			.map((l) => l.trim())
 			.join(",");
-		check(
-			"tail:5 只保留末 5 行（26–30）",
-			numLines === "26,27,28,29,30",
-			JSON.stringify(text),
-		);
+		check("tail:5 只保留末 5 行（26–30）", numLines === "26,27,28,29,30", JSON.stringify(text));
 		const full = await run("seq 1 30");
-		const fullLines = (full.result?.content?.[0]?.text ?? "")
-			.split("\n")
-			.filter((l) => /^\d+$/.test(l.trim())).length;
+		const fullLines = (full.result?.content?.[0]?.text ?? "").split("\n").filter((l) => /^\d+$/.test(l.trim())).length;
 		check("不带 tail 时完整返回 30 行", fullLines === 30);
 	}
 
@@ -195,7 +207,8 @@ try {
 		// 显式 cursor=0：存量哨兵可命中（预扫描路径），应秒回不空等
 		const t2 = Date.now();
 		const wr2 = JSON.parse(
-			(await waitTool.execute("tw2", { terminalId: "ai-bash", cursor: 0, maxWaitMs: 3000 }))?.content?.[0]?.text ?? "{}",
+			(await waitTool.execute("tw2", { terminalId: "ai-bash", cursor: 0, maxWaitMs: 3000 }))?.content?.[0]?.text ??
+				"{}",
 		);
 		check("存量哨兵预扫描立即返回", wr2.finished === true && Date.now() - t2 < 1500);
 		// 超时路径：等待一个不会结束的静默命令
@@ -204,7 +217,10 @@ try {
 		const wr3 = JSON.parse(
 			(await waitTool.execute("tw3", { terminalId: "ai-bash", maxWaitMs: 800 }))?.content?.[0]?.text ?? "{}",
 		);
-		check("超时返回 finished:false 且耗时≈阈值", wr3.finished === false && Date.now() - t1 >= 700 && Date.now() - t1 < 2500);
+		check(
+			"超时返回 finished:false 且耗时≈阈值",
+			wr3.finished === false && Date.now() - t1 >= 700 && Date.now() - t1 < 2500,
+		);
 		idleMsOverride = 0;
 		await sleep(5500); // 让 sleep 5 跑完，避免污染后续用例
 	}
@@ -261,7 +277,12 @@ try {
 
 	// ---- 7. 一次性（persist:false）：新建终端、跑完 shell 退出、输出保留在 history ----
 	{
-		const before = new Set(mgr.list().filter((t) => !t.running).map((t) => t.id));
+		const before = new Set(
+			mgr
+				.list()
+				.filter((t) => !t.running)
+				.map((t) => t.id),
+		);
 		const { result, error } = await run({ command: "seq 1 5", persist: false });
 		check("一次性命令正常完成无错误", !error);
 		const text = result?.content?.[0]?.text ?? "";
@@ -282,7 +303,11 @@ try {
 	{
 		const { result } = await run({ command: "seq 1 30", head: 5 });
 		const text = result?.content?.[0]?.text ?? "";
-		const numLines = text.split("\n").filter((l) => /^\d+$/.test(l.trim())).map((l) => l.trim()).join(",");
+		const numLines = text
+			.split("\n")
+			.filter((l) => /^\d+$/.test(l.trim()))
+			.map((l) => l.trim())
+			.join(",");
 		check("head:5 只保留前 5 行（1–5）", numLines === "1,2,3,4,5", JSON.stringify(text));
 		const full = await run("seq 1 30");
 		const fullLines = (full.result?.content?.[0]?.text ?? "").split("\n").filter((l) => /^\d+$/.test(l.trim())).length;
@@ -293,7 +318,11 @@ try {
 	{
 		const { result } = await run({ command: "seq 1 30", head: 20, tail: 3 });
 		const text = result?.content?.[0]?.text ?? "";
-		const numLines = text.split("\n").filter((l) => /^\d+$/.test(l.trim())).map((l) => l.trim()).join(",");
+		const numLines = text
+			.split("\n")
+			.filter((l) => /^\d+$/.test(l.trim()))
+			.map((l) => l.trim())
+			.join(",");
 		check("head:20 再 tail:3 → 末 3 行（18–20）", numLines === "18,19,20", JSON.stringify(text));
 	}
 
@@ -301,7 +330,11 @@ try {
 	{
 		const { result } = await run("seq 1 30 | tail -3");
 		const text = result?.content?.[0]?.text ?? "";
-		const numLines = text.split("\n").filter((l) => /^\d+$/.test(l.trim())).map((l) => l.trim()).join(",");
+		const numLines = text
+			.split("\n")
+			.filter((l) => /^\d+$/.test(l.trim()))
+			.map((l) => l.trim())
+			.join(",");
 		check("管道化解 只留末尾3行", numLines === "28,29,30", JSON.stringify(text));
 		check("管道化解 带说明注记", text.includes("限输出") && text.includes("tail"), JSON.stringify(text.slice(0, 160)));
 		check("管道化解 真实退出码", /\[exit:0\]$/.test(text.trim()));

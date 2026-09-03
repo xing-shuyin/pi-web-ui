@@ -49,14 +49,7 @@ describe("splitCodeLines", () => {
 	});
 
 	it("token span 夹在行间文本里保持完整（span 不跨行）", () => {
-		const input = [
-			"const ",
-			span("hljs-keyword", "x"),
-			" = 1;\n",
-			"return ",
-			span("hljs-keyword", "y"),
-			";",
-		];
+		const input = ["const ", span("hljs-keyword", "x"), " = 1;\n", "return ", span("hljs-keyword", "y"), ";"];
 		const lines = splitCodeLines(input);
 		expect(lines).toHaveLength(2);
 		expect(lines[0]).toHaveLength(3);
@@ -72,11 +65,7 @@ describe("splitCodeLines", () => {
 	it("跨行的 token span 被克隆成每行一个，保持高亮", () => {
 		// 一个 span 的文本跨越两行（极端情况，rehype-highlight 通常不会这样，
 		// 但算法要兜得住）。
-		const input = [
-			span("hljs-string", '"a\nb"'),
-			"\n",
-			"c",
-		];
+		const input = [span("hljs-string", '"a\nb"'), "\n", "c"];
 		const lines = splitCodeLines(input);
 		expect(lines).toHaveLength(3);
 		expect(lines[0]).toHaveLength(1);
@@ -109,8 +98,7 @@ describe("splitCodeLines", () => {
 			"  return 1;\n",
 			"}",
 		]);
-		const inner = (codeEl as { props?: { children?: ReactNode } }).props
-			?.children;
+		const inner = (codeEl as { props?: { children?: ReactNode } }).props?.children;
 		const lines = splitCodeLines(inner as ReactNode);
 		expect(lines).toHaveLength(3);
 		expect(lines[0][0]).toEqual(span("hljs-keyword", "function"));

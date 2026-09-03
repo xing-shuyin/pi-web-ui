@@ -1,26 +1,6 @@
-import {
-	useCallback,
-	useDeferredValue,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactNode,
-} from "react";
-import {
-	FiFileText,
-	FiFolder,
-	FiMessageSquare,
-	FiSearch,
-	FiX,
-} from "react-icons/fi";
-import type {
-	ClientMessage,
-	FileSearchResult,
-	MessageAnchor,
-	ProjectSummary,
-	SessionSearchResult,
-} from "../types";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FiFileText, FiFolder, FiMessageSquare, FiSearch, FiX } from "react-icons/fi";
+import type { ClientMessage, FileSearchResult, MessageAnchor, ProjectSummary, SessionSearchResult } from "../types";
 import { useT } from "../i18n";
 
 interface GlobalSearchModalProps {
@@ -141,26 +121,13 @@ export function GlobalSearchModal({
 	const q = deferredQuery.trim().toLowerCase();
 
 	const sessionHits = useMemo(() => {
-		if (
-			!q ||
-			!sessionSearch ||
-			sessionSearch.reqId !== lastReqRef.current ||
-			!sessionSearch.ok
-		)
-			return [];
+		if (!q || !sessionSearch || sessionSearch.reqId !== lastReqRef.current || !sessionSearch.ok) return [];
 		// 服务端全文匹配结果（已含 AI 输出），直接按返回顺序展示
 		return sessionSearch.results;
 	}, [sessionSearch, q]);
-	const projectHits = useMemo(
-		() =>
-			q
-				? projects.filter((p) => matches(p.path, q)).slice(0, 10)
-				: [],
-		[projects, q],
-	);
+	const projectHits = useMemo(() => (q ? projects.filter((p) => matches(p.path, q)).slice(0, 10) : []), [projects, q]);
 	const fileHits = useMemo(() => {
-		if (!q || !fileSearch || fileSearch.reqId !== lastReqRef.current || !fileSearch.ok)
-			return [];
+		if (!q || !fileSearch || fileSearch.reqId !== lastReqRef.current || !fileSearch.ok) return [];
 		return fileSearch.results;
 	}, [fileSearch, q]);
 
@@ -192,9 +159,7 @@ export function GlobalSearchModal({
 				anchors: s.anchors,
 			})),
 			...projectHits.map((p) => ({ kind: "project" as const, path: p.path })),
-			...fileHits
-				.filter((f) => f.type === "file")
-				.map((f) => ({ kind: "file" as const, path: f.path, name: f.name })),
+			...fileHits.filter((f) => f.type === "file").map((f) => ({ kind: "file" as const, path: f.path, name: f.name })),
 		],
 		[sessionHits, projectHits, fileHits],
 	);
@@ -291,9 +256,7 @@ export function GlobalSearchModal({
 				<div className="gs-results">
 					{!q && <div className="gs-empty">{t("gsHint")}</div>}
 					{q && total === 0 && !fileTruncated && (
-						<div className="gs-empty">
-						{searchPending ? t("gsSearching") : t("gsNoResults")}
-						</div>
+						<div className="gs-empty">{searchPending ? t("gsSearching") : t("gsNoResults")}</div>
 					)}
 
 					{sessionHits.length > 0 && (
@@ -333,23 +296,18 @@ export function GlobalSearchModal({
 							{projectHits.map((p) => {
 								navIdx++;
 								const idx = navIdx;
-								const isCurrent =
-									cwd && p.path === cwd;
+								const isCurrent = cwd && p.path === cwd;
 								return (
 									<button
 										key={p.path}
 										type="button"
 										className={idx === active ? "gs-item active" : "gs-item"}
 										onMouseEnter={() => setActive(idx)}
-										onClick={() =>
-											activate({ kind: "project", path: p.path })
-										}
+										onClick={() => activate({ kind: "project", path: p.path })}
 									>
 										<span className="gs-item-title">
 											{p.path.split(/[\\/]/).pop()}
-											{isCurrent && (
-												<em className="gs-item-meta">{t("gsCurrentProject")}</em>
-											)}
+											{isCurrent && <em className="gs-item-meta">{t("gsCurrentProject")}</em>}
 										</span>
 										<span className="gs-item-sub">{p.path}</span>
 									</button>
@@ -370,9 +328,7 @@ export function GlobalSearchModal({
 										type="button"
 										className={idx === active ? "gs-item active" : "gs-item"}
 										disabled={f.type === "dir"}
-										title={
-											f.type === "dir" ? undefined : t("gsOpenPreview")
-										}
+										title={f.type === "dir" ? undefined : t("gsOpenPreview")}
 										onMouseEnter={() => setActive(idx)}
 										onClick={() => {
 											if (f.type === "file")
@@ -388,9 +344,7 @@ export function GlobalSearchModal({
 									</button>
 								);
 							})}
-							{fileTruncated && (
-								<div className="gs-truncated">{t("gsTruncated")}</div>
-							)}
+							{fileTruncated && <div className="gs-truncated">{t("gsTruncated")}</div>}
 						</div>
 					)}
 				</div>

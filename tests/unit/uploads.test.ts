@@ -2,12 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	cleanupUploads,
-	saveUpload,
-	uploadRetentionDays,
-	uploadsRoot,
-} from "../../server/uploads.js";
+import { cleanupUploads, saveUpload, uploadRetentionDays, uploadsRoot } from "../../server/uploads.js";
 
 const dirs: string[] = [];
 function tempDataDir(): string {
@@ -38,12 +33,7 @@ describe("uploadRetentionDays", () => {
 describe("saveUpload", () => {
 	it("落在 <dataDir>/uploads/<clientId>/ 且清洗文件名", () => {
 		const dataDir = tempDataDir();
-		const { abs, displayName } = saveUpload(
-			"client-1",
-			'坏/名字:"x".txt',
-			Buffer.from("hi"),
-			dataDir,
-		);
+		const { abs, displayName } = saveUpload("client-1", '坏/名字:"x".txt', Buffer.from("hi"), dataDir);
 		// Windows 上 join 产生反斜杠，归一化后再比较
 		const norm = (p: string) => p.replace(/\\/g, "/");
 		expect(norm(abs).startsWith(norm(uploadsRoot(dataDir)) + "/client-1/")).toBe(true);

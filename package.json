@@ -60,7 +60,9 @@
     "test:smoke": "node tests/run-smoke.mjs",
     "check:protocol": "node scripts/check-protocol-sync.mjs",
     "test:freeze": "node tests/freeze-test.mjs",
-    "start": "node dist/server/index.js"
+    "start": "node dist/server/index.js",
+    "format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ tests/*.mjs tests/unit/ *.mjs",
+    "format:check": "prettier --check server/ web/src/ extensions/ scripts/ bin/ tests/*.mjs tests/unit/ *.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh-sdk-jsonrpc-server": "^0.1.1-rc.2",
@@ -92,6 +94,7 @@
     "concurrently": "^9.1.0",
     "cross-env": "^10.1.0",
     "playwright-core": "^1.62.1",
+    "prettier": "^3.9.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",

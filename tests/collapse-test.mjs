@@ -19,16 +19,10 @@ const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 // Real-looking auth so the one-time setup modal doesn't block the UI.
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 // Tiny attachment files — each becomes one custom "file" message (aside).
 for (let i = 1; i <= 35; i++) {
-	writeFileSync(
-		join(workdir, `seed-${String(i).padStart(2, "0")}.txt`),
-		`seed content ${i}\n`,
-	);
+	writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed content ${i}\n`);
 }
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -137,8 +131,7 @@ async function main() {
 	console.log(`chat seeded (${total} messages)`);
 
 	const browser = await chromium.launch({
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -149,10 +142,7 @@ async function main() {
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
 	// Same clientId as the seeder → same session dir.
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
@@ -165,17 +155,11 @@ async function main() {
 	check("old messages render collapsed", (await collapsed.count()) > 0);
 	check("recent messages stay fully rendered", (await full.count()) >= 15);
 	const firstCollapsedPreview = (await collapsed.first().textContent()) ?? "";
-	check(
-		"collapsed row shows a text preview",
-		firstCollapsedPreview.includes("请总结这些文件"),
-	);
+	check("collapsed row shows a text preview", firstCollapsedPreview.includes("请总结这些文件"));
 	const attachmentRow = page.locator(".msg-collapsed", {
 		hasText: "seed-01",
 	});
-	check(
-		"attachment messages collapse with file-name preview",
-		(await attachmentRow.count()) > 0,
-	);
+	check("attachment messages collapse with file-name preview", (await attachmentRow.count()) > 0);
 	check("collapsed row offers 展开", firstCollapsedPreview.includes("展开"));
 
 	// -- expand on click ------------------------------------------------------
@@ -183,26 +167,16 @@ async function main() {
 	await collapsed.first().click();
 	await page.waitForSelector(".msg .msg-collapse-btn", { timeout: 5000 });
 	const afterCount = await page.locator(".msg-collapsed").count();
-	check(
-		"clicked row expanded (one less collapsed row)",
-		afterCount === beforeCount - 1,
-	);
+	check("clicked row expanded (one less collapsed row)", afterCount === beforeCount - 1);
 	await page.waitForSelector(".msg .msg-text", { timeout: 5000 });
-	const expandedText =
-		(await page.locator(".msg .msg-text").first().textContent()) ?? "";
-	check(
-		"expanded content rendered (question text visible)",
-		expandedText.includes("请总结这些文件"),
-	);
+	const expandedText = (await page.locator(".msg .msg-text").first().textContent()) ?? "";
+	check("expanded content rendered (question text visible)", expandedText.includes("请总结这些文件"));
 	const collapseBtn = await page
 		.locator(".msg .msg-collapse-btn")
 		.first()
 		.textContent()
 		.catch(() => null);
-	check(
-		"expanded message shows 收起 button",
-		collapseBtn?.includes("收起") ?? false,
-	);
+	check("expanded message shows 收起 button", collapseBtn?.includes("收起") ?? false);
 
 	// -- collapse again -------------------------------------------------------
 	await page.locator(".msg .msg-collapse-btn").first().click();

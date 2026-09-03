@@ -17,7 +17,13 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { readFile as fspReadFile, readdir as fspReaddir, rm as fspRm, mkdir as fspMkdir, writeFile as fspWriteFile } from "node:fs/promises";
+import {
+	readFile as fspReadFile,
+	readdir as fspReaddir,
+	rm as fspRm,
+	mkdir as fspMkdir,
+	writeFile as fspWriteFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
@@ -103,9 +109,7 @@ function seal(key: Buffer, plaintext: string): SealedBlob {
 function unseal(key: Buffer, blob: SealedBlob): string {
 	const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(blob.iv, "hex"));
 	decipher.setAuthTag(Buffer.from(blob.tag, "hex"));
-	return Buffer.concat([decipher.update(Buffer.from(blob.ct, "hex")), decipher.final()]).toString(
-		"utf8",
-	);
+	return Buffer.concat([decipher.update(Buffer.from(blob.ct, "hex")), decipher.final()]).toString("utf8");
 }
 
 /** 读或创建全局密钥文件（懒加载一次）。 */
@@ -129,10 +133,7 @@ export class PluginSecrets {
 	private store: SecretFile | undefined;
 	private readonly file: string;
 
-	constructor(
-		dataDir: string,
-		pluginDir: string,
-	) {
+	constructor(dataDir: string, pluginDir: string) {
 		this.file = join(pluginDir, "secrets.bin");
 		this.key = PluginSecrets.keyFor(dataDir);
 	}
@@ -155,9 +156,7 @@ export class PluginSecrets {
 		try {
 			const parsed = JSON.parse(readFileSync(this.file, "utf8")) as SecretFile;
 			this.store =
-				parsed && parsed.v === 1 && parsed.items && typeof parsed.items === "object"
-					? parsed
-					: { v: 1, items: {} };
+				parsed && parsed.v === 1 && parsed.items && typeof parsed.items === "object" ? parsed : { v: 1, items: {} };
 		} catch {
 			this.store = { v: 1, items: {} };
 		}
@@ -246,7 +245,10 @@ export function ensurePluginDeps(
 		// 先落一个最小 package.json 钉住安装位置。
 		if (!existsSync(join(pluginDir, "package.json"))) {
 			try {
-				atomicWrite(join(pluginDir, "package.json"), JSON.stringify({ name: "plugin-runtime-deps", private: true }, null, 2));
+				atomicWrite(
+					join(pluginDir, "package.json"),
+					JSON.stringify({ name: "plugin-runtime-deps", private: true }, null, 2),
+				);
 			} catch {}
 		}
 		onProgress?.(`正在安装依赖：${missing.join(", ")}…（首次约需几分钟）`);
@@ -258,10 +260,7 @@ export function ensurePluginDeps(
 			{ cwd: pluginDir, timeout: DEP_TIMEOUT_MS, shell: process.platform === "win32", encoding: "utf8" },
 		);
 		if (res.error || res.status !== 0) {
-			console.error(
-				`[plugin-deps] ${join(pluginDir)} npm install 失败:`,
-				res.error ?? res.stderr?.slice(0, 500),
-			);
+			console.error(`[plugin-deps] ${join(pluginDir)} npm install 失败:`, res.error ?? res.stderr?.slice(0, 500));
 			return false;
 		}
 		const stillMissing = specs.filter((s) => !isDepAvailable(pluginDir, s));

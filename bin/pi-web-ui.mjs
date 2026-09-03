@@ -240,7 +240,7 @@ function openBrowser(url) {
 		if (res.error.code === "ENOENT") {
 			console.warn(
 				`[browser] 未找到打开器 (${res.error.path || "command not found"})，` +
-					"headless 服务器可用 --no-browser 关闭自动打开"
+					"headless 服务器可用 --no-browser 关闭自动打开",
 			);
 		} else {
 			console.warn("[browser] 打开浏览器失败:", res.error.message);
@@ -308,20 +308,13 @@ function uid() {
 /** launchd label / systemd unit name / Windows task name for a service name. */
 function serviceLabel(name) {
 	if (isMac) {
-		return name === "pi-web-ui"
-			? "com.xingshuyin.pi-web-ui"
-			: `com.${name}.server`;
+		return name === "pi-web-ui" ? "com.xingshuyin.pi-web-ui" : `com.${name}.server`;
 	}
 	return name;
 }
 
 function launchAgentPlist(name) {
-	return join(
-		homedir(),
-		"Library",
-		"LaunchAgents",
-		`${serviceLabel(name)}.plist`,
-	);
+	return join(homedir(), "Library", "LaunchAgents", `${serviceLabel(name)}.plist`);
 }
 
 function systemdUnitPath(name) {
@@ -330,10 +323,7 @@ function systemdUnitPath(name) {
 
 /** Windows: per-user config dir (%APPDATA%\pi-web-ui) holding the ps1/vbs launchers + pid file. */
 function winServiceDir() {
-	return join(
-		process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
-		"pi-web-ui",
-	);
+	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "pi-web-ui");
 }
 
 function winCmdPath(name) {
@@ -359,10 +349,7 @@ function winLogPath(name) {
 
 /** True when a scheduled task with this name exists (schtasks exits 0). */
 function winTaskExists(name) {
-	return (
-		spawnSync("schtasks", ["/Query", "/TN", name], { stdio: "ignore" })
-			.status === 0
-	);
+	return spawnSync("schtasks", ["/Query", "/TN", name], { stdio: "ignore" }).status === 0;
 }
 
 /** Windows: per-user autostart registry key (HKCU — writable without admin). */
@@ -381,20 +368,12 @@ function winRunKeyInstalled(name) {
 
 /** Set the per-user autostart Run key value (no admin needed for HKCU). */
 function winRunKeySet(name, value) {
-	run(
-		"reg",
-		["add", `HKCU\\${winRunKeyName()}`, "/v", name, "/t", "REG_SZ", "/d", value, "/f"],
-		{ silent: true },
-	);
+	run("reg", ["add", `HKCU\\${winRunKeyName()}`, "/v", name, "/t", "REG_SZ", "/d", value, "/f"], { silent: true });
 }
 
 /** Remove the per-user autostart Run key value (missing key is a no-op). */
 function winRunKeyDelete(name) {
-	run(
-		"reg",
-		["delete", `HKCU\\${winRunKeyName()}`, "/v", name, "/f"],
-		{ ignoreError: true, silent: true },
-	);
+	run("reg", ["delete", `HKCU\\${winRunKeyName()}`, "/v", name, "/f"], { ignoreError: true, silent: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -418,15 +397,8 @@ function winIcoPath() {
 
 /** Full path to Windows PowerShell 5.1. */
 function winPowershell() {
-	return join(
-		process.env.SystemRoot ?? "C:\\Windows",
-		"System32",
-		"WindowsPowerShell",
-		"v1.0",
-		"powershell.exe",
-	);
+	return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
-
 
 /** Full path to wscript.exe — a console-free host (no conhost window, so no black
  * console box ever appears in the taskbar on double-click). Used as the .lnk target;
@@ -452,7 +424,6 @@ function realNode() {
 function winShortcutPs1Path(name) {
 	return join(winServiceDir(), `${name}-shortcut.ps1`);
 }
-
 
 /** Windows: launcher vbs the desktop .lnk actually runs (wscript.exe, console-free). */
 function winShortcutVbsPath(name) {
@@ -553,7 +524,6 @@ function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
 	].join("\r\n");
 }
 
-
 /**
  * Build the tiny VBS launcher that starts a .ps1 *without* creating any console
  * host: wscript.exe has no console, and WScript.Shell.Run(…, 0, False) launches
@@ -572,7 +542,7 @@ function buildWinHiddenVbs(ps1Path) {
 	return [
 		"Option Explicit",
 		"Dim sh, cmd",
-		"Set sh = CreateObject(\"WScript.Shell\")",
+		'Set sh = CreateObject("WScript.Shell")',
 		`cmd = "${vbsCmd}"`,
 		"sh.Run cmd, 0, False",
 		"Set sh = Nothing",
@@ -590,14 +560,7 @@ function installWinShortcut(opts) {
 	const env = serviceEnv(port, cwd, dataDir, engine, host, agentDir);
 	const url = `http://localhost:${port}`;
 	const ps1Path = winShortcutPs1Path(name);
-	const ps1 = buildWinShortcutPs1(
-		env,
-		cwd,
-		name,
-		url,
-		winLogPath(name),
-		winPidFilePath(name),
-	);
+	const ps1 = buildWinShortcutPs1(env, cwd, name, url, winLogPath(name), winPidFilePath(name));
 	if (opts.print) {
 		console.log(`# ${ps1Path}\n${ps1}`);
 		return;
@@ -627,18 +590,9 @@ function installWinShortcut(opts) {
 		"$lnk.Save()",
 		`Write-Output (Join-Path $desktop ${psQuote(SHORTCUT_LNK_NAME)})`,
 	].join("\r\n");
-	const res = spawnSync(
-		powershell,
-		[
-			"-NoProfile",
-			"-NonInteractive",
-			"-ExecutionPolicy",
-			"Bypass",
-			"-Command",
-			ps,
-		],
-		{ encoding: "utf8" },
-	);
+	const res = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps], {
+		encoding: "utf8",
+	});
 	if (res.status !== 0) {
 		fail(`创建桌面快捷方式失败: ${(res.stderr || res.stdout || "").trim()}`);
 	}
@@ -860,14 +814,8 @@ function buildWinStartPs1(env, cwd, logPath, pidPath) {
 	].join("\r\n");
 }
 
-
-
 function esc(s) {
-	return s
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
+	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 /** Start the autostart service now: wscript runs the VBS hidden and exits at once. */
@@ -971,11 +919,9 @@ function ensureRootForSystemctl() {
 	if (typeof process.getuid === "function" && process.getuid() === 0) return;
 	// process.argv = [node, <bin>, "server", <action>, ...rest] — forward
 	// everything after "server" so flags like --port/--cwd survive.
-	const res = spawnSync(
-		"sudo",
-		[NODE, fileURLToPath(import.meta.url), "server", ...process.argv.slice(3)],
-		{ stdio: "inherit" },
-	);
+	const res = spawnSync("sudo", [NODE, fileURLToPath(import.meta.url), "server", ...process.argv.slice(3)], {
+		stdio: "inherit",
+	});
 	process.exit(res.status ?? 1);
 }
 
@@ -1005,9 +951,7 @@ function serviceOptions(opts) {
 	const engine = opts.engine ?? process.env.PI_WEB_ENGINE ?? "pi";
 	if (engine !== "pi" && engine !== "dsh") fail(`无效引擎: ${engine}（仅支持 pi / dsh）`);
 	const host = opts.host ?? process.env.PI_WEB_HOST;
-	const agentDir = opts.agentDir
-		? resolve(opts.agentDir)
-		: process.env.PI_CODING_AGENT_DIR;
+	const agentDir = opts.agentDir ? resolve(opts.agentDir) : process.env.PI_CODING_AGENT_DIR;
 	return { name, port, cwd, dataDir, engine, host, agentDir };
 }
 
@@ -1188,9 +1132,7 @@ function controlPath(opts) {
 		: process.env.PI_WEB_DATA_DIR
 			? resolve(process.env.PI_WEB_DATA_DIR)
 			: join(homedir(), ".pi-web");
-	return isWin
-		? `\\\\.\\pipe\\pi-web-ui-${effectivePort(opts)}`
-		: join(dir, "pi-web-ui.sock");
+	return isWin ? `\\\\.\\pipe\\pi-web-ui-${effectivePort(opts)}` : join(dir, "pi-web-ui.sock");
 }
 
 /** Send one control command to a RUNNING server; resolves null if unreachable. */
@@ -1235,9 +1177,7 @@ async function printLiveStatus(opts) {
 	console.log("   --- 实时状态 (control socket) ---");
 	console.log(`   版本 : ${st.version} · PID ${st.pid}`);
 	console.log(`   目录 : ${st.cwd}`);
-	console.log(
-		`   排空 : ${st.quiesced ? `是（自 ${new Date(st.quiescedSince).toLocaleString()}）` : "否"}`,
-	);
+	console.log(`   排空 : ${st.quiesced ? `是（自 ${new Date(st.quiescedSince).toLocaleString()}）` : "否"}`);
 	console.log(
 		`   连接 : ${st.connectedClients} 个浏览器 · ${st.activeConversations} 个运行中对话 · ${st.pendingMessages} 条排队消息`,
 	);
@@ -1252,7 +1192,7 @@ async function setQuiesce(opts, on) {
 	console.log(
 		on
 			? "⏸  已进入排空模式（quiesce）：拒绝新的对话/消息/编辑，存量运行继续跑完。\n" +
-				"    跑完后用 pi-web-ui server unquiesce 恢复。"
+					"    跑完后用 pi-web-ui server unquiesce 恢复。"
 			: "▶  已解除排空模式（unquiesce）：恢复接收新的对话/消息/编辑。",
 	);
 }
@@ -1263,9 +1203,7 @@ function controlService(action, opts) {
 	if (isMac) {
 		const label = serviceLabel(name);
 		const target = `gui/${uid()}/${label}`;
-		const loaded = () =>
-			spawnSync("launchctl", ["print", target], { stdio: "ignore" }).status ===
-			0;
+		const loaded = () => spawnSync("launchctl", ["print", target], { stdio: "ignore" }).status === 0;
 
 		if (action === "status") {
 			if (loaded()) {
@@ -1404,9 +1342,7 @@ function controlService(action, opts) {
 		fail(`未知操作: ${action}`);
 	}
 
-	fail(
-		`不支持的系统服务平台: ${process.platform}（仅 macOS / Linux / Windows）`,
-	);
+	fail(`不支持的系统服务平台: ${process.platform}（仅 macOS / Linux / Windows）`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1460,8 +1396,7 @@ function parsePluginSource(rawSpec) {
 		if (url) [, spec] = url;
 	}
 	const segs = spec.split("/").filter(Boolean);
-	if (segs.length < 2)
-		fail(`无法识别的插件源 "${rawSpec}"\n${PLUGIN_HELP}`);
+	if (segs.length < 2) fail(`无法识别的插件源 "${rawSpec}"\n${PLUGIN_HELP}`);
 	for (const s of segs) {
 		if (s === "." || s === "..") fail(`无效的源 "${rawSpec}"：路径段不能是 . 或 ..`);
 	}
@@ -1547,14 +1482,12 @@ function findManifestDirs(root) {
 function locatePluginRoot(checkout, subpath, repoLabel) {
 	if (subpath) {
 		const dir = join(checkout, ...subpath.split("/"));
-		if (!existsSync(join(dir, "manifest.json")))
-			fail(`子目录 "${subpath}" 里没有 manifest.json`);
+		if (!existsSync(join(dir, "manifest.json"))) fail(`子目录 "${subpath}" 里没有 manifest.json`);
 		return dir;
 	}
 	if (existsSync(join(checkout, "manifest.json"))) return checkout;
 	const hits = findManifestDirs(checkout);
-	if (hits.length === 0)
-		fail(`"${repoLabel}" 里没找到 manifest.json —— 不是 pi-web-ui 界面插件`);
+	if (hits.length === 0) fail(`"${repoLabel}" 里没找到 manifest.json —— 不是 pi-web-ui 界面插件`);
 	if (hits.length > 1)
 		fail(
 			`${repoLabel} 里有多个插件（多个 manifest.json），请用子目录写法指定其中一个:\n  ` +
@@ -1598,22 +1531,18 @@ async function pluginInstallCmd(argv) {
 			fail(`manifest.json 不是合法 JSON：${err?.message ?? err}`);
 		}
 		// 默认 id：子目录名 > 仓库名 > 本地目录名
-		const sourceName = src?.subpath
-			? src.subpath.split("/").pop()
-			: (src?.repo ?? localCandidate.split(/[\\/]/).pop());
+		const sourceName = src?.subpath ? src.subpath.split("/").pop() : (src?.repo ?? localCandidate.split(/[\\/]/).pop());
 		const fallbackId =
 			String(manifest.id ?? sourceName)
 				.replace(/[^A-Za-z0-9_-]/g, "-")
 				.replace(/^-+|-+$/g, "") || "plugin";
 		const id = opts.name ?? fallbackId;
-		if (!PLUGIN_ID_RE.test(id))
-			fail(`非法插件 id "${id}"（仅限字母数字-_，可用 --name <id> 自定义）`);
+		if (!PLUGIN_ID_RE.test(id)) fail(`非法插件 id "${id}"（仅限字母数字-_，可用 --name <id> 自定义）`);
 		const target = join(pluginsDir, id);
 		let prevConfig = null;
 		const CONFIG_NAME = "config.json";
 		if (existsSync(target)) {
-			if (!opts.force)
-				fail(`插件目录已存在：${target}\n  加 --force 覆盖，或用 --name <id> 换个名字。`);
+			if (!opts.force) fail(`插件目录已存在：${target}\n  加 --force 覆盖，或用 --name <id> 换个名字。`);
 			// 更新前备份旧版本（<dataDir>/plugin-backups/<id>-<ts>/，保留最近 3 份），
 			// 失败时自动回滚。备份与安装同 filter：不带 .git/node_modules。
 			backupTs = ensurePluginBackup(pluginDataDir(opts), id, { source: rawSpec });
@@ -1643,10 +1572,7 @@ async function pluginInstallCmd(argv) {
 		}
 		// 记录安装来源：设置面板「更新」按钮据此重跑同一条安装命令（--force 覆盖）。
 		try {
-			writeFileSync(
-				join(target, ".pi-source.json"),
-				JSON.stringify({ source: rawSpec }, null, 2) + "\n",
-			);
+			writeFileSync(join(target, ".pi-source.json"), JSON.stringify({ source: rawSpec }, null, 2) + "\n");
 		} catch {
 			/* 尽力而为：没有来源信息只是不显示更新按钮 */
 		}
@@ -1718,7 +1644,9 @@ function pluginListCmd(argv) {
 		if (!PLUGIN_ID_RE.test(n)) continue;
 		try {
 			const m = JSON.parse(readFileSync(join(pluginsDir, n, "manifest.json"), "utf8"));
-			rows.push(`  ${n.padEnd(24)} ${[m.name, m.version ? `v${m.version}` : "", m.description].filter(Boolean).join("  ")}`);
+			rows.push(
+				`  ${n.padEnd(24)} ${[m.name, m.version ? `v${m.version}` : "", m.description].filter(Boolean).join("  ")}`,
+			);
 		} catch {
 			continue; // 坏目录跳过
 		}
@@ -1746,7 +1674,9 @@ async function checkUpdatesCmd(dataDir) {
 	for (const r of rows) {
 		const label = r.name && r.name !== r.id ? `${r.id}（${r.name}）` : r.id;
 		if (r.updatable) {
-			console.log(`  🔄 ${label}${r.version ? ` v${r.version}` : ""}  可更新（已装 ${r.localSha ?? "未知"} → 远端 ${r.remoteSha}）`);
+			console.log(
+				`  🔄 ${label}${r.version ? ` v${r.version}` : ""}  可更新（已装 ${r.localSha ?? "未知"} → 远端 ${r.remoteSha}）`,
+			);
 			console.log(`     更新: pi-web-ui install ${r.source} --name ${r.id} --force`);
 			any = true;
 		} else if (r.remoteSha) {
@@ -1771,8 +1701,7 @@ async function serverCmd(argv) {
 		return;
 	}
 	const action = positionals[0];
-	if (positionals.length > 1)
-		fail(`多余的参数: ${positionals.slice(1).join(" ")}`);
+	if (positionals.length > 1) fail(`多余的参数: ${positionals.slice(1).join(" ")}`);
 	switch (action) {
 		case "shortcut": {
 			if (isWin) {
@@ -1870,8 +1799,7 @@ async function main() {
 		console.log(HELP);
 		return;
 	}
-	if (positionals.length > 0)
-		fail(`未知命令: ${positionals[0]}（--help 查看用法）`);
+	if (positionals.length > 0) fail(`未知命令: ${positionals[0]}（--help 查看用法）`);
 	await startForeground(opts);
 }
 

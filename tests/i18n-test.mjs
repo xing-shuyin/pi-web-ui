@@ -13,15 +13,11 @@ const workdir = mkdtempSync(join(tmpdir(), "piweb-ui-"));
 process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
-const server = spawn(
-	process.execPath,
-	[join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")],
-	{
-		cwd: new URL("..", import.meta.url).pathname,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")], {
+	cwd: new URL("..", import.meta.url).pathname,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -60,8 +56,7 @@ async function waitServer() {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -81,68 +76,43 @@ async function main() {
 	await page.waitForSelector(".brand", { timeout: 5000 });
 	const zhNewChat = await page.locator(".topbar .newchat span").textContent();
 	check(`default UI is Chinese ("新对话")`, zhNewChat?.includes("新对话"));
-	const zhLangChip = await page
-		.locator(".topbar-actions .chip-sub")
-		.last()
-		.textContent();
+	const zhLangChip = await page.locator(".topbar-actions .chip-sub").last().textContent();
 	check(`language chip shows 中文`, zhLangChip?.includes("中文"));
 
 	// -- switch to English ----------------------------------------------------
-	await page
-		.locator(".topbar-actions .dropdown")
-		.last()
-		.locator("button.chip")
-		.click();
+	await page.locator(".topbar-actions .dropdown").last().locator("button.chip").click();
 	await page.waitForSelector(".dd-item:has-text('English')", { timeout: 3000 });
 	await page.locator(".dd-item:has-text('English')").click();
 	await sleep(400);
 
 	const enNewChat = await page.locator(".topbar .newchat span").textContent();
 	check(`UI switched to English ("New chat")`, enNewChat?.includes("New chat"));
-	const enTab = await page
-		.locator(".view-switch button span")
-		.first()
-		.textContent();
+	const enTab = await page.locator(".view-switch button span").first().textContent();
 	check(`view tab shows "Chat"`, enTab?.includes("Chat"));
 
 	// model dropdown header translated
-	await page
-		.locator(".topbar-actions .dropdown")
-		.first()
-		.locator("button.chip")
-		.click();
+	await page.locator(".topbar-actions .dropdown").first().locator("button.chip").click();
 	await page.waitForSelector(".dd-header", { timeout: 3000 });
 	const ddHeader = await page.locator(".dd-header").first().textContent();
-	check(
-		`model dropdown header is "Available models"`,
-		ddHeader?.includes("Available models"),
-	);
+	check(`model dropdown header is "Available models"`, ddHeader?.includes("Available models"));
 	await page.keyboard.press("Escape");
 
 	// -- persistence: reload keeps English ------------------------------------
 	await page.reload();
 	await page.waitForSelector(".topbar", { timeout: 15000 });
 	await sleep(500);
-	const enAfterReload = await page
-		.locator(".topbar .newchat span")
-		.textContent();
+	const enAfterReload = await page.locator(".topbar .newchat span").textContent();
 	check(`English persists across reload`, enAfterReload?.includes("New chat"));
 
 	// -- switch back to Chinese -----------------------------------------------
-	await page
-		.locator(".topbar-actions .dropdown")
-		.last()
-		.locator("button.chip")
-		.click();
+	await page.locator(".topbar-actions .dropdown").last().locator("button.chip").click();
 	await page.waitForSelector(".dd-item:has-text('中文')", { timeout: 3000 });
 	await page.locator(".dd-item:has-text('中文')").first().click();
 	await sleep(400);
 	const zhAgain = await page.locator(".topbar .newchat span").textContent();
 	check(`switched back to Chinese`, zhAgain?.includes("新对话"));
 
-	const errs = consoleErrors.filter(
-		(e) => !e.includes("favicon") && !e.includes("ResizeObserver"),
-	);
+	const errs = consoleErrors.filter((e) => !e.includes("favicon") && !e.includes("ResizeObserver"));
 	check(`no console errors (${errs.length})`, errs.length === 0);
 
 	await browser.close();

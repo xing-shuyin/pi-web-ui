@@ -22,19 +22,7 @@ const PREVIEW_IMAGE_EXTS = new Set([
 	"tif",
 	"tiff",
 ]);
-const PREVIEW_VIDEO_EXTS = new Set([
-	"mp4",
-	"webm",
-	"mov",
-	"mkv",
-	"avi",
-	"m4v",
-	"ogv",
-	"mpg",
-	"mpeg",
-	"wmv",
-	"flv",
-]);
+const PREVIEW_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "avi", "m4v", "ogv", "mpg", "mpeg", "wmv", "flv"]);
 const PREVIEW_TEXT_EXTS = new Set([
 	// code
 	"ts",
@@ -203,13 +191,7 @@ export function decodeText(buf: Buffer): string {
  *  Returns null when the bytes don't look like a known raster format —
  *  callers keep such files as plain path references. */
 export function sniffImageMime(buf: Buffer, ext: string): string | null {
-	if (
-		buf.length >= 8 &&
-		buf[0] === 0x89 &&
-		buf[1] === 0x50 &&
-		buf[2] === 0x4e &&
-		buf[3] === 0x47
-	) {
+	if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
 		return "image/png";
 	}
 	if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
@@ -244,15 +226,9 @@ export function hexDump(buf: Buffer, maxBytes = 4096): string {
 	const rows: string[] = [];
 	for (let off = 0; off < data.length; off += 16) {
 		const chunk = data.subarray(off, off + 16);
-		const hex = [...chunk]
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join(" ");
-		const ascii = [...chunk]
-			.map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : "."))
-			.join("");
-		rows.push(
-			`${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47, " ")}  ${ascii}`,
-		);
+		const hex = [...chunk].map((b) => b.toString(16).padStart(2, "0")).join(" ");
+		const ascii = [...chunk].map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : ".")).join("");
+		rows.push(`${off.toString(16).padStart(8, "0")}  ${hex.padEnd(47, " ")}  ${ascii}`);
 	}
 	return rows.join("\n");
 }

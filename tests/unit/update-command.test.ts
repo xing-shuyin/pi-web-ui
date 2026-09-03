@@ -7,23 +7,17 @@ import { buildUpdateCommand } from "../../web/src/update-command.js";
 
 describe("buildUpdateCommand", () => {
 	it("package (pi extension) → pi update npm:<name>", () => {
-		expect(buildUpdateCommand([{ name: "foo", kind: "package" }])).toBe(
-			"pi update npm:foo",
-		);
+		expect(buildUpdateCommand([{ name: "foo", kind: "package" }])).toBe("pi update npm:foo");
 	});
 
 	it("scoped package", () => {
-		expect(
-			buildUpdateCommand([{ name: "@scope/bar", kind: "package" }]),
-		).toBe("pi update npm:@scope/bar");
+		expect(buildUpdateCommand([{ name: "@scope/bar", kind: "package" }])).toBe("pi update npm:@scope/bar");
 	});
 
 	it("pi-core → npm i -g (globally installed)", () => {
-		expect(
-			buildUpdateCommand([
-				{ name: "@earendil-works/pi-coding-agent", kind: "pi-core" },
-			]),
-		).toBe("npm i -g @earendil-works/pi-coding-agent@latest");
+		expect(buildUpdateCommand([{ name: "@earendil-works/pi-coding-agent", kind: "pi-core" }])).toBe(
+			"npm i -g @earendil-works/pi-coding-agent@latest",
+		);
 	});
 
 	it("chains multiple targets with `;`", () => {
@@ -33,9 +27,7 @@ describe("buildUpdateCommand", () => {
 				{ name: "foo", kind: "package" },
 				{ name: "pi-x", kind: "package" },
 			]),
-		).toBe(
-			"npm i -g @earendil-works/pi-coding-agent@latest; pi update npm:foo; pi update npm:pi-x",
-		);
+		).toBe("npm i -g @earendil-works/pi-coding-agent@latest; pi update npm:foo; pi update npm:pi-x");
 	});
 
 	it("empty list → empty command", () => {

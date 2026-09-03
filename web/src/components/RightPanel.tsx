@@ -28,12 +28,7 @@ interface RightPanelProps {
 	cwd: string;
 	send: (msg: ClientMessage) => boolean;
 	/** Called when the user clicks an attach button on a file or folder. */
-	onAttach: (
-		path: string,
-		name: string,
-		mode: AttachMode,
-		isDir?: boolean,
-	) => void;
+	onAttach: (path: string, name: string, mode: AttachMode, isDir?: boolean) => void;
 	/** Called when the user clicks a file to open the preview modal. */
 	onPreview: (path: string, name: string) => void;
 	/** Show a transient toast (download errors etc.). */
@@ -64,26 +59,21 @@ export const RightPanel = memo(function RightPanel({
 
 	// ---- Right-click “upload files here” context menu ----------------
 	// Menu shows at (x, y); dir = the workspace dir files land in ("" = root).
-	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(
-		null,
-	);
+	const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 	const ctxDir = useRef("");
 	const fileInput = useRef<HTMLInputElement>(null);
 
 	/** Right-click on the blank panel body or a file entry → upload into the
 	 *  currently LISTED directory; right-click on a folder row → upload into
 	 *  THAT folder (same action, different target). */
-	const openCtxMenu = useCallback(
-		(e: React.MouseEvent, dir: string) => {
-			e.preventDefault();
-			ctxDir.current = dir;
-			setCtxMenu({
-				x: Math.min(e.clientX, window.innerWidth - 220),
-				y: Math.min(e.clientY, window.innerHeight - 90),
-			});
-		},
-		[],
-	);
+	const openCtxMenu = useCallback((e: React.MouseEvent, dir: string) => {
+		e.preventDefault();
+		ctxDir.current = dir;
+		setCtxMenu({
+			x: Math.min(e.clientX, window.innerWidth - 220),
+			y: Math.min(e.clientY, window.innerHeight - 90),
+		});
+	}, []);
 
 	const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
@@ -127,8 +117,7 @@ export const RightPanel = memo(function RightPanel({
 				fr.onload = () => {
 					const dataUrl = fr.result as string;
 					const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-					if (b64)
-						send({ type: "upload_file", dirPath: dir, name: f.name, data: b64 });
+					if (b64) send({ type: "upload_file", dirPath: dir, name: f.name, data: b64 });
 				};
 				fr.readAsDataURL(f);
 			}
@@ -147,13 +136,10 @@ export const RightPanel = memo(function RightPanel({
 	// 高亮用命令式 DOM class（不触发 React 重渲染），与逐行 data-path 配合。
 	const bodyRef = useRef<HTMLDivElement>(null);
 
-	const isFileDrag = (e: React.DragEvent) =>
-		Array.from(e.dataTransfer?.types ?? []).includes("Files");
+	const isFileDrag = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
 
 	const clearDropHl = useCallback(() => {
-		bodyRef.current
-			?.querySelectorAll(".file-item.drop-target")
-			.forEach((el) => el.classList.remove("drop-target"));
+		bodyRef.current?.querySelectorAll(".file-item.drop-target").forEach((el) => el.classList.remove("drop-target"));
 		bodyRef.current?.classList.remove("drop-root");
 	}, []);
 
@@ -161,9 +147,7 @@ export const RightPanel = memo(function RightPanel({
 		(dir: string | null) => {
 			clearDropHl();
 			if (dir == null) return;
-			const row = bodyRef.current?.querySelector(
-				`.file-item[data-path="${CSS.escape(dir)}"]`,
-			);
+			const row = bodyRef.current?.querySelector(`.file-item[data-path="${CSS.escape(dir)}"]`);
 			if (row) row.classList.add("drop-target");
 			else bodyRef.current?.classList.add("drop-root");
 		},
@@ -172,8 +156,7 @@ export const RightPanel = memo(function RightPanel({
 
 	/** 拖拽落点目录：命中文件夹行→该文件夹；文件行/未知行/空白→当前列表目录。 */
 	const dropDirFor = (target: EventTarget | null): string => {
-		const el =
-			target instanceof Element ? (target.closest(".file-item") as HTMLElement | null) : null;
+		const el = target instanceof Element ? (target.closest(".file-item") as HTMLElement | null) : null;
 		if (el?.dataset.type === "dir") return el.dataset.path ?? currentPath;
 		return currentPath;
 	};
@@ -240,8 +223,7 @@ export const RightPanel = memo(function RightPanel({
 	// change — refresh right away instead of waiting for the 10s poll. The path
 	// guard drops events for a directory the user has already navigated away from.
 	useEffect(() => {
-		if (fileChanged && fileChanged.path === currentPath)
-			request(currentPath, { silent: true });
+		if (fileChanged && fileChanged.path === currentPath) request(currentPath, { silent: true });
 	}, [fileChanged, currentPath, request]);
 
 	// Enter a directory.
@@ -258,21 +240,12 @@ export const RightPanel = memo(function RightPanel({
 	return (
 		<aside className="panel panel-right">
 			{collapsible && onToggleCollapse && (
-				<button
-					type="button"
-					className="panel-collapse-btn"
-					title={t("collapsePanel")}
-					onClick={onToggleCollapse}
-				>
+				<button type="button" className="panel-collapse-btn" title={t("collapsePanel")} onClick={onToggleCollapse}>
 					<FiChevronsRight />
 				</button>
 			)}
 			<div className="panel-crumbs">
-				<button
-					type="button"
-					className={`crumb ${currentPath === "" ? "active" : ""}`}
-					onClick={() => request("")}
-				>
+				<button type="button" className={`crumb ${currentPath === "" ? "active" : ""}`} onClick={() => request("")}>
 					{t("rootDir")}
 				</button>
 				{crumbs.map((c, i) => {
@@ -322,13 +295,7 @@ export const RightPanel = memo(function RightPanel({
 				}}
 				onDragEnd={clearDropHl}
 			>
-				<input
-					ref={fileInput}
-					type="file"
-					multiple
-					hidden
-					onChange={uploadPicked}
-				/>
+				<input ref={fileInput} type="file" multiple hidden onChange={uploadPicked} />
 				{loading && <div className="panel-empty">{t("loading")}</div>}
 				{!loading && files && files.path === currentPath && (
 					<>
@@ -339,23 +306,19 @@ export const RightPanel = memo(function RightPanel({
 							</button>
 						)}
 						{files.entries.map((e) =>
-								e.type === "dir" ? (
+							e.type === "dir" ? (
 								<div
 									key={e.path}
 									className="file-item dir"
 									data-type="dir"
 									data-path={e.path}
 									onContextMenu={(ev) => {
-									// 拦截冒泡：否则 panel-body 的处理器后执行，把目标覆盖成当前目录
-									ev.stopPropagation();
-									openCtxMenu(ev, e.path);
-								}}
+										// 拦截冒泡：否则 panel-body 的处理器后执行，把目标覆盖成当前目录
+										ev.stopPropagation();
+										openCtxMenu(ev, e.path);
+									}}
 								>
-									<button
-										type="button"
-										className="file-dir-main"
-										onClick={() => openDir(e.path)}
-									>
+									<button type="button" className="file-dir-main" onClick={() => openDir(e.path)}>
 										<FiFolder className="file-icon" />
 										<span className="file-name">{e.name}</span>
 									</button>
@@ -402,7 +365,9 @@ export const RightPanel = memo(function RightPanel({
 												if (r.cancelled) return;
 												onNotice(
 													"error",
-													t("downloadFailed", { error: r.error === DOWNLOAD_FILE_NOT_FOUND ? t("fileNotFoundShort") : r.error }),
+													t("downloadFailed", {
+														error: r.error === DOWNLOAD_FILE_NOT_FOUND ? t("fileNotFoundShort") : r.error,
+													}),
 												);
 											});
 										}}
@@ -428,16 +393,10 @@ export const RightPanel = memo(function RightPanel({
 								</div>
 							),
 						)}
-						{files.truncated && (
-							<div className="panel-empty files-truncated">
-								{t("filesTruncated")}
-							</div>
-						)}
+						{files.truncated && <div className="panel-empty files-truncated">{t("filesTruncated")}</div>}
 					</>
 				)}
-				{!loading && !files && (
-					<div className="panel-empty">{t("noFiles")}</div>
-				)}
+				{!loading && !files && <div className="panel-empty">{t("noFiles")}</div>}
 			</div>
 			{widgets.filter((w) => w.lines.length > 0).length > 0 && (
 				<div className="panel-widgets">
@@ -468,12 +427,7 @@ export const RightPanel = memo(function RightPanel({
 							<div className="widget-expand" onClick={(e) => e.stopPropagation()}>
 								<div className="widget-expand-head">
 									<span className="widget-expand-title">{w.key}</span>
-									<button
-										type="button"
-										className="btn"
-										title={t("close")}
-										onClick={() => setExpandedWidget(null)}
-									>
+									<button type="button" className="btn" title={t("close")} onClick={() => setExpandedWidget(null)}>
 										<FiX />
 									</button>
 								</div>
@@ -493,15 +447,9 @@ export const RightPanel = memo(function RightPanel({
 						e.stopPropagation();
 					}}
 				>
-					<button
-						type="button"
-						className="ctx-item"
-						onClick={pickFiles}
-					>
+					<button type="button" className="ctx-item" onClick={pickFiles}>
 						<FiUpload />
-						{ctxDir.current === currentPath
-							? t("uploadToCurrentDir")
-							: t("uploadToFolder")}
+						{ctxDir.current === currentPath ? t("uploadToCurrentDir") : t("uploadToFolder")}
 					</button>
 				</div>
 			)}

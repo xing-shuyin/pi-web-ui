@@ -29,11 +29,7 @@ import compression from "compression";
 import { WebSocket, WebSocketServer } from "ws";
 import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
-import {
-	AgentService,
-	workspacePath,
-	QuiesceRejectedError,
-} from "./agent-service.js";
+import { AgentService, workspacePath, QuiesceRejectedError } from "./agent-service.js";
 import { previewKind } from "./text-sniff.js";
 import { startControlServer } from "./control-socket.js";
 import { scheduleUploadCleanup } from "./uploads.js";
@@ -41,13 +37,7 @@ import { ensureWindowsBash, windowsBashDir } from "./ensure-bash.js";
 import { listThemes, resolveThemeFile } from "./themes.js";
 import { PluginManager, resolvePluginClientFile } from "./plugins.js";
 import { McpBridge } from "./mcp-bridge.js";
-import type {
-	BgServer,
-	ClientMessage,
-	CommandDef,
-	PromptAttachment,
-	ServerMessage,
-} from "./protocol.js";
+import type { BgServer, ClientMessage, CommandDef, PromptAttachment, ServerMessage } from "./protocol.js";
 
 /** 从 CLI 参数中取 flag 值：支持 --flag value 与 --flag=value 两种写法。
  *  让 `node dist/server/index.js --host 0.0.0.0 --port 9000` 这类直接启动也能生效，
@@ -152,8 +142,7 @@ if (AUTH_TOKEN) {
 }
 
 /** 引擎选择：PI_WEB_ENGINE=pi|dsh（默认 pi）。重启生效。 */
-const ENGINE: "pi" | "dsh" =
-	process.env.PI_WEB_ENGINE === "dsh" ? "dsh" : "pi";
+const ENGINE: "pi" | "dsh" = process.env.PI_WEB_ENGINE === "dsh" ? "dsh" : "pi";
 
 app.get("/api/health", (_req, res) => {
 	res.json({ ok: true, piVersion: VERSION, cwd: CWD, pid: process.pid, engine: ENGINE });
@@ -177,8 +166,7 @@ app.get("/api/file", async (req, res) => {
 		// project), not the server's startup cwd — they can differ when the
 		// client switched projects or restored a previous workspace. Fall
 		// back to the server cwd for requests without a known client.
-		const cid =
-			typeof req.query.clientId === "string" ? req.query.clientId : "";
+		const cid = typeof req.query.clientId === "string" ? req.query.clientId : "";
 		const cs = cid ? service.get(cid) : undefined;
 		const wp = workspacePath(cs?.cwd ?? CWD, raw);
 		if (!wp) {
@@ -219,11 +207,7 @@ const here = dirname(fileURLToPath(import.meta.url)); // <pkg>/dist/server or <p
 function resolvePkgRoot(): string {
 	// 可选：显式指定 pkgRoot（如部署在自定义目录时），否则按候选路径探测。
 	if (process.env.PI_WEB_PKG_ROOT) return process.env.PI_WEB_PKG_ROOT;
-	const candidates = [
-		resolve(here, ".."),
-		resolve(here, "..", ".."),
-		resolve(here, "..", "..", ".."),
-	];
+	const candidates = [resolve(here, ".."), resolve(here, "..", ".."), resolve(here, "..", "..", "..")];
 	for (const c of candidates) {
 		if (existsSync(join(c, "package.json"))) return c;
 	}
@@ -242,11 +226,7 @@ app.get("/api/themes", (_req, res) => {
 // Serve a theme's full CSS file so the frontend can swap the whole stylesheet.
 // Registered before the SPA catch-all below (otherwise it'd return index.html).
 app.get("/themes/:id.css", (req, res) => {
-	const file = resolveThemeFile(
-		BUILTIN_THEMES_DIR,
-		USER_THEMES_DIR,
-		req.params.id,
-	);
+	const file = resolveThemeFile(BUILTIN_THEMES_DIR, USER_THEMES_DIR, req.params.id);
 	if (!file) {
 		res.status(404).end("theme not found");
 		return;
@@ -284,7 +264,9 @@ app.get("/plugins/:id/client/*", (req, res) => {
 	res.setHeader("Cache-Control", "no-cache"); // 开发期改文件即生效
 	res.sendFile(abs, (err) => {
 		if (err && !res.headersSent)
-			res.status((err as NodeJS.ErrnoException & { statusCode?: number }).statusCode === 404 ? 404 : 500).end("not found");
+			res
+				.status((err as NodeJS.ErrnoException & { statusCode?: number }).statusCode === 404 ? 404 : 500)
+				.end("not found");
 	});
 });
 /** Set in the env of the replacement child spawned by a self-update restart. */
@@ -321,8 +303,7 @@ if (existsSync(webDist)) {
 	// without web/dist). Fail loudly with a repair hint instead of serving a
 	// UI-less 404 with no explanation.
 	console.error(
-		"✖ 更新后的安装不完整（缺少 web/dist/index.html）。\n" +
-			"  请手动执行 npm i -g pi-web-ui@latest 修复后重新启动。",
+		"✖ 更新后的安装不完整（缺少 web/dist/index.html）。\n" + "  请手动执行 npm i -g pi-web-ui@latest 修复后重新启动。",
 	);
 	process.exit(1);
 }
@@ -397,16 +378,12 @@ httpServer.on("upgrade", (req, socket, head) => {
 	if (!originAllowed(req)) {
 		// Reject cross-origin browser pages outright. The browser sees a failed
 		// WS connect; the page's own reconnect loop then backs off and retries.
-		socket.write(
-			"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
-		);
+		socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
 		socket.destroy();
 		return;
 	}
 	if (AUTH_TOKEN && !tokenOk(req)) {
-		socket.write(
-			"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
-		);
+		socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
 		socket.destroy();
 		return;
 	}
@@ -435,7 +412,15 @@ import { DshAgentService } from "./dsh/dsh-agent-service.js";
 
 /** TerminalManager 的 dispatch 面（两个引擎共用同一实现类）。 */
 export interface TerminalManagerLike {
-	create(id: string, cwd: string, cols: number, rows: number, fallbackCwd: string, title?: string, opts?: { forceBash?: boolean; locale?: string }): unknown;
+	create(
+		id: string,
+		cwd: string,
+		cols: number,
+		rows: number,
+		fallbackCwd: string,
+		title?: string,
+		opts?: { forceBash?: boolean; locale?: string },
+	): unknown;
 	input(id: string, data: string): void;
 	resize(id: string, cols: number, rows: number): void;
 	kill(id: string): void;
@@ -467,7 +452,11 @@ export interface DispatchSession {
 	listFiles(path?: string): Promise<void>;
 	searchFiles(query: string, reqId: number): Promise<void>;
 	searchSessions(query: string, reqId: number): Promise<void>;
-	scmQuery(kind: "status" | "history" | "filediff" | "commit", reqId: number, opts?: { path?: string; hash?: string }): Promise<void>;
+	scmQuery(
+		kind: "status" | "history" | "filediff" | "commit",
+		reqId: number,
+		opts?: { path?: string; hash?: string },
+	): Promise<void>;
 	readFile(path: string): Promise<void>;
 	writeFile(path: string, text: string): Promise<void>;
 	uploadFile(dirPath: string, name: string, data: string): Promise<void>;
@@ -525,7 +514,11 @@ export interface DispatchSession {
 	listDshPatches?(): Promise<void>;
 	rescanDshPatches?(): Promise<void>;
 	/** DSH engine only: answer a model ask_user_question dialog. */
-	answerQuestion?(id: string, answers: { id: string; selected: string[]; custom?: string }[], cancelled?: boolean): Promise<void>;
+	answerQuestion?(
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+	): Promise<void>;
 	savePreset(name: string): Promise<void>;
 	applyPreset(name: string): Promise<void>;
 	deletePreset(name: string): Promise<void>;
@@ -562,7 +555,15 @@ export interface EngineService {
 	applyPluginCommandCatalog(): void;
 	refreshBackgroundServers(): void;
 	onQuit?: (() => boolean) | undefined;
-	onToolEvent?: ((ev: { phase: "start" | "end"; toolName: string; conversationId: string; durationMs?: number; isError?: boolean }) => void) | undefined;
+	onToolEvent?:
+		| ((ev: {
+				phase: "start" | "end";
+				toolName: string;
+				conversationId: string;
+				durationMs?: number;
+				isError?: boolean;
+		  }) => void)
+		| undefined;
 	pluginToolsProvider?: (() => unknown[]) | undefined;
 	pluginCommandsProvider?: (() => unknown[]) | undefined;
 	pluginBgTasksProvider?: (() => BgServer[]) | undefined;
@@ -871,13 +872,7 @@ wss.on("connection", (ws) => {
 				void cs.listProviders();
 				break;
 			case "fetch_models":
-				void cs.fetchModelsList(
-					msg.reqId,
-					msg.baseUrl,
-					msg.apiKey,
-					msg.authHeader,
-					msg.api,
-				);
+				void cs.fetchModelsList(msg.reqId, msg.baseUrl, msg.apiKey, msg.authHeader, msg.api);
 				break;
 			case "refresh_provider_models":
 				void cs.refreshProviderModels(msg.providerId, msg.reqId);
@@ -899,7 +894,16 @@ wss.on("connection", (ws) => {
 				break;
 			case "terminal_create": {
 				const tm = cs.getTerminalManager(msg.conversationId);
-				if (tm) tm.create(msg.terminalId, msg.cwd, msg.cols, msg.rows, cs.getTerminalCwd(msg.conversationId), msg.title, msg.locale ? { locale: msg.locale } : undefined);
+				if (tm)
+					tm.create(
+						msg.terminalId,
+						msg.cwd,
+						msg.cols,
+						msg.rows,
+						cs.getTerminalCwd(msg.conversationId),
+						msg.title,
+						msg.locale ? { locale: msg.locale } : undefined,
+					);
 				break;
 			}
 			case "terminal_input":

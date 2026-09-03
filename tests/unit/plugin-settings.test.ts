@@ -15,7 +15,10 @@ function makePlugin(id: string, manifest: Record<string, unknown>): Promise<Plug
 	const pdir = join(dir, "plugins", id);
 	mkdirSync(pdir, { recursive: true });
 	writeFileSync(join(pdir, "manifest.json"), JSON.stringify({ name: id, ...manifest }));
-	writeFileSync(join(pdir, "index.mjs"), `export default { activate(h) { (globalThis.__hosts ??= {})["${id}"] = h; } };`);
+	writeFileSync(
+		join(pdir, "index.mjs"),
+		`export default { activate(h) { (globalThis.__hosts ??= {})["${id}"] = h; } };`,
+	);
 	return mgr.ensureLoaded().then(() => (globalThis as unknown as { __hosts: Record<string, PluginHost> }).__hosts[id]!);
 }
 
@@ -69,14 +72,26 @@ describe("savePluginSettings", () => {
 	it("校验 + 原子落盘 + 保留 storage.json 其它键", async () => {
 		const h = await makePlugin("cfg", SCHEMA_PLUGIN);
 		h.storage.set("custom", 42); // 插件自己的键
-		const r = mgr.savePluginSettings("cfg", { pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
+		const r = mgr.savePluginSettings("cfg", {
+			pollSec: 120,
+			notify: false,
+			theme: "light",
+			name: "prod",
+			pass: "s3cret",
+		});
 		expect(r.error).toBeUndefined();
 		const raw = JSON.parse(readFileSync(join(dir, "plugins", "cfg", "storage.json"), "utf8"));
 		expect(raw.settings).toEqual({ pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
 		expect(raw.custom).toBe(42); // 插件数据不被覆盖
 		// 重扫后默认值已被存值覆盖
 		const list = await mgr.list();
-		expect(list.find((x) => x.id === "cfg")?.settingsValues).toEqual({ pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
+		expect(list.find((x) => x.id === "cfg")?.settingsValues).toEqual({
+			pollSec: 120,
+			notify: false,
+			theme: "light",
+			name: "prod",
+			pass: "s3cret",
+		});
 	});
 
 	it("number 越界 / select 非法值被拒", async () => {

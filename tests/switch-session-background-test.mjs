@@ -32,9 +32,13 @@ const mock = createServer(async (req, res) => {
 		return;
 	}
 	const last = payload.messages?.at(-1);
-	const prompt = typeof last?.content === "string"
-		? last.content
-		: last?.content?.filter?.((part) => part.type === "text").map((part) => part.text).join(" ") ?? "";
+	const prompt =
+		typeof last?.content === "string"
+			? last.content
+			: (last?.content
+					?.filter?.((part) => part.type === "text")
+					.map((part) => part.text)
+					.join(" ") ?? "");
 	const slow = prompt.includes("SLOW");
 	const first = slow ? "background-" : "seed-";
 	const lastChunk = slow ? "finished" : "message";
@@ -42,15 +46,16 @@ const mock = createServer(async (req, res) => {
 		"content-type": "text/event-stream",
 		"cache-control": "no-cache",
 	});
-	const writeChunk = (content) => res.write(
-		`data: ${JSON.stringify({
-			id: "switch-session-test",
-			object: "chat.completion.chunk",
-			created: Date.now(),
-			model: payload.model,
-			choices: [{ index: 0, delta: { content }, finish_reason: null }],
-		})}\n\n`,
-	);
+	const writeChunk = (content) =>
+		res.write(
+			`data: ${JSON.stringify({
+				id: "switch-session-test",
+				object: "chat.completion.chunk",
+				created: Date.now(),
+				model: payload.model,
+				choices: [{ index: 0, delta: { content }, finish_reason: null }],
+			})}\n\n`,
+		);
 	writeChunk(first);
 	if (slow) await sleep(2500);
 	writeChunk(lastChunk);
@@ -68,10 +73,7 @@ const mock = createServer(async (req, res) => {
 });
 await new Promise((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "switch-session-test" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "switch-session-test" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -80,13 +82,15 @@ writeFileSync(
 				api: "openai-completions",
 				baseUrl: `http://127.0.0.1:${MOCK_PORT}`,
 				apiKey: "switch-session-test",
-				models: [{
-					id: "switch-session-mock",
-					name: "Switch Session Mock",
-					input: ["text"],
-					contextWindow: 32000,
-					maxTokens: 4096,
-				}],
+				models: [
+					{
+						id: "switch-session-mock",
+						name: "Switch Session Mock",
+						input: ["text"],
+						contextWindow: 32000,
+						maxTokens: 4096,
+					},
+				],
 			},
 		},
 	}),
@@ -214,29 +218,25 @@ try {
 
 	client.send({ type: "switch_session", path: historyPath });
 	await client.waitForState((state) => state.conversationId !== backgroundConversationId);
-	await client.waitForType(
-		"conversations",
-		(message) => message.conversations.some(
-			(conversation) =>
-				conversation.id === backgroundConversationId && conversation.isStreaming,
+	await client.waitForType("conversations", (message) =>
+		message.conversations.some(
+			(conversation) => conversation.id === backgroundConversationId && conversation.isStreaming,
 		),
 	);
 	console.log("✓ history switch leaves the active stream running in background");
 
 	await client.waitForType(
 		"conversations",
-		(message) => message.conversations.some(
-			(conversation) =>
-				conversation.id === backgroundConversationId && !conversation.isStreaming,
-		),
+		(message) =>
+			message.conversations.some(
+				(conversation) => conversation.id === backgroundConversationId && !conversation.isStreaming,
+			),
 		15000,
 	);
 	client.send({ type: "switch_conversation", id: backgroundConversationId });
 	await client.waitForState((state) => state.conversationId === backgroundConversationId);
 	await client.waitForMessage(
-		(message) =>
-			message.role === "assistant" &&
-			JSON.stringify(message.content).includes("background-finished"),
+		(message) => message.role === "assistant" && JSON.stringify(message.content).includes("background-finished"),
 	);
 	console.log("✓ background response completes and remains recoverable");
 } catch (error) {

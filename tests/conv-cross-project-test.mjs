@@ -50,23 +50,28 @@ const mock = createServer(async (req, res) => {
 		return;
 	}
 	const last = payload.messages?.at(-1);
-	const prompt = typeof last?.content === "string"
-		? last.content
-		: last?.content?.filter?.((part) => part.type === "text").map((part) => part.text).join(" ") ?? "";
+	const prompt =
+		typeof last?.content === "string"
+			? last.content
+			: (last?.content
+					?.filter?.((part) => part.type === "text")
+					.map((part) => part.text)
+					.join(" ") ?? "");
 	const slow = prompt.includes("SLOW");
 	res.writeHead(200, {
 		"content-type": "text/event-stream",
 		"cache-control": "no-cache",
 	});
-	const writeChunk = (content) => res.write(
-		`data: ${JSON.stringify({
-			id: "cross-project-test",
-			object: "chat.completion.chunk",
-			created: Date.now(),
-			model: payload.model,
-			choices: [{ index: 0, delta: { content }, finish_reason: null }],
-		})}\n\n`,
-	);
+	const writeChunk = (content) =>
+		res.write(
+			`data: ${JSON.stringify({
+				id: "cross-project-test",
+				object: "chat.completion.chunk",
+				created: Date.now(),
+				model: payload.model,
+				choices: [{ index: 0, delta: { content }, finish_reason: null }],
+			})}\n\n`,
+		);
 	writeChunk(slow ? "cross-" : "seed-");
 	if (slow) await sleep(2500);
 	writeChunk(slow ? "project" : "message");
@@ -84,10 +89,7 @@ const mock = createServer(async (req, res) => {
 });
 await new Promise((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "cross-project-test" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "cross-project-test" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -96,13 +98,15 @@ writeFileSync(
 				api: "openai-completions",
 				baseUrl: `http://127.0.0.1:${MOCK_PORT}`,
 				apiKey: "cross-project-test",
-				models: [{
-					id: "cross-project-mock",
-					name: "Cross Project Mock",
-					input: ["text"],
-					contextWindow: 32000,
-					maxTokens: 4096,
-				}],
+				models: [
+					{
+						id: "cross-project-mock",
+						name: "Cross Project Mock",
+						input: ["text"],
+						contextWindow: 32000,
+						maxTokens: 4096,
+					},
+				],
 			},
 		},
 	}),
@@ -227,9 +231,7 @@ try {
 
 	// Start a SLOW run in project A, then leave for project B while it streams.
 	client.send({ type: "prompt", text: "SLOW cross-project run" });
-	const streamingState = await client.waitForState(
-		(state) => state.isStreaming && state.conversationId !== seedId,
-	);
+	const streamingState = await client.waitForState((state) => state.isStreaming && state.conversationId !== seedId);
 	const aConvId = streamingState.conversationId;
 	check("slow run is streaming in project A", aConvId === client.state.conversationId && client.state.cwd === projA);
 
@@ -239,13 +241,9 @@ try {
 
 	// THE cross-project assertion: the displaced A conversation must STILL be
 	// listed (old behavior filtered it out because cwd ≠ current project).
-	await client.waitForType(
-		"conversations",
-		(message) => message.conversations.some(
-			(conversation) =>
-				conversation.id === aConvId &&
-				conversation.cwd === projA &&
-				conversation.isStreaming,
+	await client.waitForType("conversations", (message) =>
+		message.conversations.some(
+			(conversation) => conversation.id === aConvId && conversation.cwd === projA && conversation.isStreaming,
 		),
 	);
 	check("A's streaming conversation stays visible after leaving the project", true);
@@ -261,12 +259,10 @@ try {
 
 	await client.waitForType(
 		"conversations",
-		(message) => message.conversations.some(
-			(conversation) =>
-				conversation.id === aConvId &&
-				conversation.cwd === projA &&
-				!conversation.isStreaming,
-		),
+		(message) =>
+			message.conversations.some(
+				(conversation) => conversation.id === aConvId && conversation.cwd === projA && !conversation.isStreaming,
+			),
 		15000,
 	);
 	check("A's conversation stays listed after the run finishes", true);
@@ -279,30 +275,30 @@ try {
 	client.send({ type: "switch_conversation", id: aConvId });
 	let switched = false;
 	try {
-		await client.waitForState(
-			(state) => state.conversationId === aConvId && state.cwd === projA,
-		);
+		await client.waitForState((state) => state.conversationId === aConvId && state.cwd === projA);
 		switched = true;
 	} catch {
 		switched = false;
 	}
-	check("switch_conversation switches conversation AND project back to A", switched,
-		`conversation=${client.state.conversationId} cwd=${client.state.cwd}`);
+	check(
+		"switch_conversation switches conversation AND project back to A",
+		switched,
+		`conversation=${client.state.conversationId} cwd=${client.state.cwd}`,
+	);
 	await client.waitForMessage(
-		(message) =>
-			message.role === "assistant" &&
-			JSON.stringify(message.content).includes("cross-project"),
+		(message) => message.role === "assistant" && JSON.stringify(message.content).includes("cross-project"),
 	);
 	check("the background response is still there after switching back", true);
 
 	// The project-switch side-effects fired: a fresh file listing was pushed.
-	const filesAfter = await client.waitForType(
-		"files",
-		() => client.files.length > filesBeforeSwitch,
-	).then(() => client.files.length);
-	check("server re-pushed a file listing after the cross-project switch",
+	const filesAfter = await client
+		.waitForType("files", () => client.files.length > filesBeforeSwitch)
+		.then(() => client.files.length);
+	check(
+		"server re-pushed a file listing after the cross-project switch",
 		filesAfter > filesBeforeSwitch,
-		`${filesBeforeSwitch} → ${filesAfter} pushes`);
+		`${filesBeforeSwitch} → ${filesAfter} pushes`,
+	);
 } catch (error) {
 	console.error(`✗ ${error.message}`);
 	failures++;

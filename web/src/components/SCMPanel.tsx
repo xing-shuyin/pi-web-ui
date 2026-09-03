@@ -13,14 +13,7 @@
 /* ------------------------------------------------------------------ */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-	FiArrowDown,
-	FiArrowUp,
-	FiCheck,
-	FiGitBranch,
-	FiRefreshCw,
-	FiTerminal,
-} from "react-icons/fi";
+import { FiArrowDown, FiArrowUp, FiCheck, FiGitBranch, FiRefreshCw, FiTerminal } from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { ClientMessage, CommandDef, ServerMessage } from "../types";
 import { randomUuid } from "../uuid";
@@ -87,11 +80,7 @@ function fileKind(f: ScmFile): FileKind {
 interface ScmTerminalBridge {
 	create: (meta: TerminalMeta) => void;
 	close: (id: string) => void;
-	register: (
-		conversationId: string,
-		id: string,
-		writer: { write(data: string): void; dispose(): void },
-	) => () => void;
+	register: (conversationId: string, id: string, writer: { write(data: string): void; dispose(): void }) => () => void;
 	restart: (id: string) => void;
 	select: (id: string) => void;
 }
@@ -106,13 +95,7 @@ export interface ScmPanelProps {
 	onSwitchToTerminal: () => void;
 }
 
-export function ScmPanel({
-	chat,
-	send,
-	terminal,
-	active,
-	onSwitchToTerminal,
-}: ScmPanelProps) {
+export function ScmPanel({ chat, send, terminal, active, onSwitchToTerminal }: ScmPanelProps) {
 	const t = useT();
 	const [status, setStatus] = useState<ScmStatus | null>(null);
 	const [branches, setBranches] = useState<ScmBranch[]>([]);
@@ -155,91 +138,84 @@ export function ScmPanel({
 	 * The server answers every request exactly once (ok or error), so loading
 	 * states always settle — no queues or timeouts needed on this side.
 	 */
-	const applyScmData = useCallback(
-		(data: Extract<ServerMessage, { type: "scm_data" }>) => {
-			if (data.reqId === statusReqRef.current) {
-				statusReqRef.current = -1;
-				setBusy(false);
-				setError(null);
-				if (!data.ok) {
-					setError(data.error ?? t("scmQueryFailedShort"));
-					return;
-				}
-				if (data.notRepo) {
-					setNotRepo(true);
-					setStatus(null);
-					setBranches([]);
-					setStatMap(new Map());
-					setHistory([]);
-					setSelectedCommit(null);
-					setCommitDetail("");
-					setFileDiff(null);
-					return;
-				}
-				setNotRepo(false);
-				const st: ScmStatus = {
-					branch: data.branch ?? "",
-					detached: !!data.detached,
-					upstream: data.upstream ?? null,
-					ahead: data.ahead ?? 0,
-					behind: data.behind ?? 0,
-					upstreamGone: !!data.upstreamGone,
-					files: (data.files ?? []).map((f) => ({ ...f })),
-				};
-				const brs: ScmBranch[] = (data.branches ?? []).map((x) => ({ ...x }));
-				const stats = new Map<string, StatInfo>();
-				for (const [path, pair] of Object.entries(data.stats ?? {})) {
-					stats.set(path, { add: pair[0], del: pair[1] });
-				}
-				setStatus(st);
-				setBranches(brs);
-				setStatMap(stats);
-				setBranchSel((prev) => {
-					if (st.detached) return prev || "";
-					if (st.branch && brs.some((x) => x.name === st.branch)) return st.branch;
-					if (prev && brs.some((x) => x.name === prev)) return prev;
-					return brs[0]?.name ?? "";
-				});
-				setFileDiff((prev) =>
-					prev && !st.files.some((f) => f.path === prev.file.path)
-						? null
-						: prev,
-				);
-			} else if (data.reqId === diffReqRef.current) {
-				diffReqRef.current = -1;
-				setDiffLoading(false);
-				if (!data.ok) {
-					setError(data.error ?? t("scmQueryFailedShort"));
-					return;
-				}
-				const file = selectedFileRef.current;
-				if (!file) return;
-				setFileDiff({
-					file,
-					staged: data.stagedText ?? "",
-					worktree: data.worktreeText ?? "",
-					untracked: false,
-				});
-			} else if (data.reqId === historyReqRef.current) {
-				historyReqRef.current = -1;
-				setHistoryLoading(false);
-				if (!data.ok) {
-					setError(data.error ?? t("scmQueryFailedShort"));
-					return;
-				}
-				setHistory((data.history ?? []).map((c) => ({ ...c })));
-			} else if (data.reqId === commitReqRef.current) {
-				commitReqRef.current = -1;
-				setCommitLoading(false);
-				if (!data.ok) {
-					setError(data.error ?? t("scmQueryFailedShort"));
-					return;
-				}
-				setCommitDetail(data.text ?? "");
+	const applyScmData = useCallback((data: Extract<ServerMessage, { type: "scm_data" }>) => {
+		if (data.reqId === statusReqRef.current) {
+			statusReqRef.current = -1;
+			setBusy(false);
+			setError(null);
+			if (!data.ok) {
+				setError(data.error ?? t("scmQueryFailedShort"));
+				return;
 			}
-		},
-		[],
-	);
+			if (data.notRepo) {
+				setNotRepo(true);
+				setStatus(null);
+				setBranches([]);
+				setStatMap(new Map());
+				setHistory([]);
+				setSelectedCommit(null);
+				setCommitDetail("");
+				setFileDiff(null);
+				return;
+			}
+			setNotRepo(false);
+			const st: ScmStatus = {
+				branch: data.branch ?? "",
+				detached: !!data.detached,
+				upstream: data.upstream ?? null,
+				ahead: data.ahead ?? 0,
+				behind: data.behind ?? 0,
+				upstreamGone: !!data.upstreamGone,
+				files: (data.files ?? []).map((f) => ({ ...f })),
+			};
+			const brs: ScmBranch[] = (data.branches ?? []).map((x) => ({ ...x }));
+			const stats = new Map<string, StatInfo>();
+			for (const [path, pair] of Object.entries(data.stats ?? {})) {
+				stats.set(path, { add: pair[0], del: pair[1] });
+			}
+			setStatus(st);
+			setBranches(brs);
+			setStatMap(stats);
+			setBranchSel((prev) => {
+				if (st.detached) return prev || "";
+				if (st.branch && brs.some((x) => x.name === st.branch)) return st.branch;
+				if (prev && brs.some((x) => x.name === prev)) return prev;
+				return brs[0]?.name ?? "";
+			});
+			setFileDiff((prev) => (prev && !st.files.some((f) => f.path === prev.file.path) ? null : prev));
+		} else if (data.reqId === diffReqRef.current) {
+			diffReqRef.current = -1;
+			setDiffLoading(false);
+			if (!data.ok) {
+				setError(data.error ?? t("scmQueryFailedShort"));
+				return;
+			}
+			const file = selectedFileRef.current;
+			if (!file) return;
+			setFileDiff({
+				file,
+				staged: data.stagedText ?? "",
+				worktree: data.worktreeText ?? "",
+				untracked: false,
+			});
+		} else if (data.reqId === historyReqRef.current) {
+			historyReqRef.current = -1;
+			setHistoryLoading(false);
+			if (!data.ok) {
+				setError(data.error ?? t("scmQueryFailedShort"));
+				return;
+			}
+			setHistory((data.history ?? []).map((c) => ({ ...c })));
+		} else if (data.reqId === commitReqRef.current) {
+			commitReqRef.current = -1;
+			setCommitLoading(false);
+			if (!data.ok) {
+				setError(data.error ?? t("scmQueryFailedShort"));
+				return;
+			}
+			setCommitDetail(data.text ?? "");
+		}
+	}, []);
 
 	// Responses arrive through chat.scmData — apply when the reqId matches.
 	useEffect(() => {
@@ -381,11 +357,7 @@ export function ScmPanel({
 	const handleCommit = useCallback(() => {
 		const msg = commitMsg.trim();
 		if (!msg || notRepo) return;
-		const escaped = msg
-			.replace(/\\/g, "\\\\")
-			.replace(/"/g, '\\"')
-			.replace(/`/g, "\\`")
-			.replace(/\$/g, "\\$");
+		const escaped = msg.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
 		runGitCommand("git commit", `git add -A && git commit -m "${escaped}"`);
 		setCommitMsg("");
 	}, [commitMsg, notRepo, runGitCommand]);
@@ -413,10 +385,7 @@ export function ScmPanel({
 			// Remote-tracking ref: create a local branch tracking it (falls back
 			// to a plain checkout when the local branch already exists).
 			const localName = branchSel.slice(entry.remote.length + 1);
-			runGitCommand(
-				"git checkout",
-				`git checkout -b ${localName} ${branchSel} || git checkout ${branchSel}`,
-			);
+			runGitCommand("git checkout", `git checkout -b ${localName} ${branchSel} || git checkout ${branchSel}`);
 		} else {
 			runGitCommand("git checkout", `git checkout ${branchSel}`);
 		}
@@ -566,15 +535,15 @@ export function ScmPanel({
 							{t("scmHistory")}
 						</button>
 					</div>
-						<button
-							type="button"
-							className="panel-refresh"
-							title={t("scmRefreshTip")}
-							disabled={busy}
-							onClick={() => refresh(true)}
-						>
-							<FiRefreshCw className={busy ? "scm-spin" : ""} />
-						</button>
+					<button
+						type="button"
+						className="panel-refresh"
+						title={t("scmRefreshTip")}
+						disabled={busy}
+						onClick={() => refresh(true)}
+					>
+						<FiRefreshCw className={busy ? "scm-spin" : ""} />
+					</button>
 				</div>
 
 				{/* branch + push/pull */}
@@ -605,18 +574,22 @@ export function ScmPanel({
 						<option value="" disabled>
 							{t("scmSelectBranch")}
 						</option>
-						{branches.filter((b) => !b.remote).map((b) => (
-							<option key={b.name} value={b.name}>
-								{b.current ? `* ${b.name}` : b.name}
-							</option>
-						))}
+						{branches
+							.filter((b) => !b.remote)
+							.map((b) => (
+								<option key={b.name} value={b.name}>
+									{b.current ? `* ${b.name}` : b.name}
+								</option>
+							))}
 						{branches.some((b) => b.remote) && (
 							<optgroup label={t("scmRemoteBranches")}>
-								{branches.filter((b) => b.remote).map((b) => (
-									<option key={b.name} value={b.name}>
-										{b.name}
-									</option>
-								))}
+								{branches
+									.filter((b) => b.remote)
+									.map((b) => (
+										<option key={b.name} value={b.name}>
+											{b.name}
+										</option>
+									))}
 							</optgroup>
 						)}
 					</select>
@@ -681,17 +654,13 @@ export function ScmPanel({
 					<div className="scm-history">
 						<div className="scm-files-header">
 							<span>{t("scmHistory")}</span>
-							{history.length > 0 && (
-								<span className="scm-files-count">{history.length}</span>
-							)}
+							{history.length > 0 && <span className="scm-files-count">{history.length}</span>}
 						</div>
 						<div className="scm-history-list">
 							{notRepo ? (
 								<div className="scm-empty">{t("scmNotGitRepo")}</div>
 							) : !status || historyLoading ? (
-								<div className="scm-empty">
-									{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}
-								</div>
+								<div className="scm-empty">{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}</div>
 							) : history.length === 0 ? (
 								<div className="scm-empty">{t("scmNoHistory")}</div>
 							) : (
@@ -711,9 +680,7 @@ export function ScmPanel({
 											<span className="scm-commit-meta">
 												{commit.shortHash} · {commit.author} · {commit.date}
 											</span>
-											{commit.decorations && (
-												<span className="scm-commit-refs">{commit.decorations}</span>
-											)}
+											{commit.decorations && <span className="scm-commit-refs">{commit.decorations}</span>}
 										</span>
 									</button>
 								))
@@ -721,84 +688,76 @@ export function ScmPanel({
 						</div>
 					</div>
 				) : (
-				<div className="scm-files">
-					<div className="scm-files-header">
-						<span>{t("scmChanges")}</span>
-						{status && status.files.length > 0 && (
-							<span className="scm-files-count">{status.files.length}</span>
-						)}
-					</div>
-					<div className="scm-files-list">
-						{notRepo ? (
-							<div className="scm-empty">{t("scmNotGitRepo")}</div>
-						) : !status ? (
-							<div className="scm-empty">
-								{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}
-							</div>
-						) : status.files.length === 0 ? (
-							<div className="scm-empty">{t("scmNoChanges")}</div>
-						) : (
-							status.files.map((f) => {
-								const kind = fileKind(f);
-								const st = statMap.get(f.path);
-								return (
-									<div
-										key={f.path}
-										className={`scm-file ${selected?.path === f.path ? "active" : ""}`}
-										title={kindLabels[kind]}
-										onClick={() => showFileDiff(f)}
-									>
-										<span
-											className={`scm-file-xy ${kind === "untracked" ? "q" : "x"}`}
+					<div className="scm-files">
+						<div className="scm-files-header">
+							<span>{t("scmChanges")}</span>
+							{status && status.files.length > 0 && <span className="scm-files-count">{status.files.length}</span>}
+						</div>
+						<div className="scm-files-list">
+							{notRepo ? (
+								<div className="scm-empty">{t("scmNotGitRepo")}</div>
+							) : !status ? (
+								<div className="scm-empty">{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}</div>
+							) : status.files.length === 0 ? (
+								<div className="scm-empty">{t("scmNoChanges")}</div>
+							) : (
+								status.files.map((f) => {
+									const kind = fileKind(f);
+									const st = statMap.get(f.path);
+									return (
+										<div
+											key={f.path}
+											className={`scm-file ${selected?.path === f.path ? "active" : ""}`}
+											title={kindLabels[kind]}
+											onClick={() => showFileDiff(f)}
 										>
-											{f.x !== " " ? f.x : "\u00a0"}
-										</span>
-										<span
-											className={`scm-file-xy ${kind === "untracked" ? "q" : "y"}`}
-										>
-											{f.y !== " " ? f.y : "\u00a0"}
-										</span>
-										<span className="scm-file-path">{f.path}</span>
-										{st && (st.add > 0 || st.del > 0) && (
-											<span className="scm-file-stat">
-												{st.add > 0 && <span className="add">+{st.add}</span>}
-												{st.del > 0 && <span className="del">-{st.del}</span>}
+											<span className={`scm-file-xy ${kind === "untracked" ? "q" : "x"}`}>
+												{f.x !== " " ? f.x : "\u00a0"}
 											</span>
-										)}
-										<span className="scm-file-actions">
-											{(f.y !== " " || kind === "untracked") && (
-												<button
-													type="button"
-													className="scm-act"
-													title={t("scmStageTip", { path: f.path })}
-													onClick={(e) => {
-														e.stopPropagation();
-														handleStage(f);
-													}}
-												>
-													+
-												</button>
+											<span className={`scm-file-xy ${kind === "untracked" ? "q" : "y"}`}>
+												{f.y !== " " ? f.y : "\u00a0"}
+											</span>
+											<span className="scm-file-path">{f.path}</span>
+											{st && (st.add > 0 || st.del > 0) && (
+												<span className="scm-file-stat">
+													{st.add > 0 && <span className="add">+{st.add}</span>}
+													{st.del > 0 && <span className="del">-{st.del}</span>}
+												</span>
 											)}
-											{kind === "staged" || kind === "both" ? (
-												<button
-													type="button"
-													className="scm-act"
-													title={t("scmUnstageTip", { path: f.path })}
-													onClick={(e) => {
-														e.stopPropagation();
-														handleUnstage(f);
-													}}
-												>
-													−
-												</button>
-											) : null}
-										</span>
-									</div>
-								);
-							})
-						)}
+											<span className="scm-file-actions">
+												{(f.y !== " " || kind === "untracked") && (
+													<button
+														type="button"
+														className="scm-act"
+														title={t("scmStageTip", { path: f.path })}
+														onClick={(e) => {
+															e.stopPropagation();
+															handleStage(f);
+														}}
+													>
+														+
+													</button>
+												)}
+												{kind === "staged" || kind === "both" ? (
+													<button
+														type="button"
+														className="scm-act"
+														title={t("scmUnstageTip", { path: f.path })}
+														onClick={(e) => {
+															e.stopPropagation();
+															handleUnstage(f);
+														}}
+													>
+														−
+													</button>
+												) : null}
+											</span>
+										</div>
+									);
+								})
+							)}
+						</div>
 					</div>
-				</div>
 				)}
 
 				<div className="scm-diff">
@@ -820,28 +779,16 @@ export function ScmPanel({
 						{viewMode === "history" ? (
 							<>
 								{error && <div className="scm-error">{error}</div>}
-								{!selectedCommit && !error && (
-									<div className="scm-empty">{t("scmSelectCommitHint")}</div>
-								)}
-								{selectedCommit && commitLoading && !error && (
-									<div className="scm-empty">{t("scmLoading")}</div>
-								)}
-								{selectedCommit && !commitLoading && !error && commitDetail
-									? renderDiff(commitDetail)
-									: null}
+								{!selectedCommit && !error && <div className="scm-empty">{t("scmSelectCommitHint")}</div>}
+								{selectedCommit && commitLoading && !error && <div className="scm-empty">{t("scmLoading")}</div>}
+								{selectedCommit && !commitLoading && !error && commitDetail ? renderDiff(commitDetail) : null}
 							</>
 						) : (
 							<>
 								{error && <div className="scm-error">{error}</div>}
-								{!selected && !error && (
-									<div className="scm-empty">{t("scmSelectFileHint")}</div>
-								)}
-								{selected && !fileDiff && !error && (
-									<div className="scm-empty">{t("scmLoading")}</div>
-								)}
-								{selected && fileDiff && fileDiff.untracked && (
-									<div className="scm-empty">{t("scmUntrackedNote")}</div>
-								)}
+								{!selected && !error && <div className="scm-empty">{t("scmSelectFileHint")}</div>}
+								{selected && !fileDiff && !error && <div className="scm-empty">{t("scmLoading")}</div>}
+								{selected && fileDiff && fileDiff.untracked && <div className="scm-empty">{t("scmUntrackedNote")}</div>}
 								{selected && fileDiff && !fileDiff.untracked && (
 									<>
 										{fileDiff.staged && (
@@ -856,9 +803,7 @@ export function ScmPanel({
 												{renderDiff(fileDiff.worktree)}
 											</>
 										)}
-										{!fileDiff.staged && !fileDiff.worktree && (
-											<div className="scm-empty">{t("scmNoDiff")}</div>
-										)}
+										{!fileDiff.staged && !fileDiff.worktree && <div className="scm-empty">{t("scmNoDiff")}</div>}
 									</>
 								)}
 							</>

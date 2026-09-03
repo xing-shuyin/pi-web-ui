@@ -66,7 +66,8 @@ function main() {
 		if (!/v2/.test(upd)) throw new Error("更新失败: " + upd);
 		const backups = readdirSync(join(dataDir, "plugin-backups"));
 		if (backups.length !== 1 || !backups[0].startsWith("upd-")) throw new Error("备份缺失: " + backups.join(","));
-		if (readFileSync(join(dataDir, "plugins", "upd", "index.mjs"), "utf8") !== "// v2\n") throw new Error("未更新到 v2");
+		if (readFileSync(join(dataDir, "plugins", "upd", "index.mjs"), "utf8") !== "// v2\n")
+			throw new Error("未更新到 v2");
 		const chk2 = cli(["plugins", "--check-updates", "--data-dir", dataDir]);
 		if (!/已是最新/.test(chk2)) throw new Error("更新后未报最新:\n" + chk2);
 		console.log("✓ install --force 更新 + 自动备份 + sha 刷新 → 已是最新");
@@ -74,7 +75,8 @@ function main() {
 		// —— 5. --rollback 恢复 v1，备份清理 ——
 		const rb = cli(["plugins", "--rollback", "upd", "--data-dir", dataDir]);
 		if (!/已回滚/.test(rb)) throw new Error("回滚失败: " + rb);
-		if (readFileSync(join(dataDir, "plugins", "upd", "index.mjs"), "utf8") !== "// v1\n") throw new Error("回滚后不是 v1");
+		if (readFileSync(join(dataDir, "plugins", "upd", "index.mjs"), "utf8") !== "// v1\n")
+			throw new Error("回滚后不是 v1");
 		if (existsSync(join(dataDir, "plugin-backups"))) {
 			const left = readdirSync(join(dataDir, "plugin-backups"));
 			if (left.length !== 0) throw new Error("备份未清理: " + left.join(","));

@@ -19,11 +19,10 @@ process.env.PI_WEB_CWD = join(base, "work");
 process.env.PI_WEB_DATA_DIR = join(base, "data");
 
 const repoRoot = new URL("..", import.meta.url).pathname;
-const server = spawn(
-	process.execPath,
-	[join(repoRoot, "dist", "server", "index.js")],
-	{ stdio: ["ignore", "pipe", "pipe"], detached: true },
-);
+const server = spawn(process.execPath, [join(repoRoot, "dist", "server", "index.js")], {
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
@@ -61,17 +60,14 @@ async function main() {
 	await waitServer();
 	let pkgVersion = "0.0.0";
 	try {
-		pkgVersion = JSON.parse(
-			readFileSync(join(repoRoot, "package.json"), "utf8"),
-		).version;
+		pkgVersion = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
 	} catch {
 		// keep the fallback — the chip assertion below will simply fail loudly
 	}
 	console.log(`package.json version: ${pkgVersion}`);
 
 	const browser = await chromium.launch({
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -87,10 +83,7 @@ async function main() {
 
 	// -- corner chip shows the running version -------------------------------
 	await page.waitForFunction(
-		(v) =>
-			[...document.querySelectorAll(".topbar-actions .chip")].some((el) =>
-				el.textContent.includes(`v${v}`),
-			),
+		(v) => [...document.querySelectorAll(".topbar-actions .chip")].some((el) => el.textContent.includes(`v${v}`)),
 		pkgVersion,
 		{ timeout: 20000 },
 	);
@@ -105,9 +98,7 @@ async function main() {
 	await page.waitForFunction(
 		() => {
 			const rows = [...document.querySelectorAll(".dd-row")];
-			const latest = rows.find((r) =>
-				r.textContent.includes("最新版本"),
-			)?.textContent;
+			const latest = rows.find((r) => r.textContent.includes("最新版本"))?.textContent;
 			return latest && !latest.includes("检查中");
 		},
 		{ timeout: 20000 },
@@ -115,10 +106,7 @@ async function main() {
 	const rows = await page.locator(".dd-row").allTextContents();
 	const currentRow = rows.find((r) => r.includes("当前版本")) ?? "";
 	const latestRow = rows.find((r) => r.includes("最新版本")) ?? "";
-	check(
-		`current version row shows v${pkgVersion}`,
-		currentRow.includes(`v${pkgVersion}`),
-	);
+	check(`current version row shows v${pkgVersion}`, currentRow.includes(`v${pkgVersion}`));
 	check(
 		"latest version row resolved (version or error)",
 		/v\d+\.\d+\.\d+/.test(latestRow) || latestRow.includes("失败"),

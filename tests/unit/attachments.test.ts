@@ -98,9 +98,7 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 			// 文本小文件 → inline，路径是 uploads 目录下的绝对路径
 			expect(out[0].message.details.mode).toBe("inline");
 			const abs = out[0].message.details.path!;
-			expect(abs.startsWith(uploadsRoot(dataDir).replace(/\\/g, "/"))).toBe(
-				true,
-			);
+			expect(abs.startsWith(uploadsRoot(dataDir).replace(/\\/g, "/"))).toBe(true);
 			expect(out[0].message.content[0].text).toContain("hello world");
 		} finally {
 			if (oldDataDir === undefined) delete process.env.PI_WEB_DATA_DIR;
@@ -115,12 +113,7 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 		try {
 			const clientId = "edit-client";
 			// 先真正落一个上传文件，模拟“之前 prompt 上传过”
-			const { abs, displayName } = saveUpload(
-				clientId,
-				"data.bin",
-				Buffer.from([0, 1, 2, 3, 4]),
-				dataDir,
-			);
+			const { abs, displayName } = saveUpload(clientId, "data.bin", Buffer.from([0, 1, 2, 3, 4]), dataDir);
 			const notices: { level: string; text: string }[] = [];
 			const ctx = makeCtx({ dataDir, cwd: tempDir(), clientId, notices });
 			const out = (await buildAttachmentMessages(ctx, [
@@ -161,9 +154,7 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 				},
 			])) as Aside[];
 			expect(out.length).toBe(0);
-			expect(notices.some((n) => /路径不在本客户端上传目录/.test(n.text))).toBe(
-				true,
-			);
+			expect(notices.some((n) => /路径不在本客户端上传目录/.test(n.text))).toBe(true);
 		} finally {
 			if (oldDataDir === undefined) delete process.env.PI_WEB_DATA_DIR;
 			else process.env.PI_WEB_DATA_DIR = oldDataDir;
@@ -180,9 +171,7 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 			const out = (await buildAttachmentMessages(ctx, [
 				{
 					path: "",
-					uploadPath: uploadsRoot(dataDir)
-						.replace(/\\/g, "/")
-						.concat("/edit-client/12345-gone.txt"),
+					uploadPath: uploadsRoot(dataDir).replace(/\\/g, "/").concat("/edit-client/12345-gone.txt"),
 					name: "gone.txt",
 				},
 			])) as Aside[];

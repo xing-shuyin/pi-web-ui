@@ -44,12 +44,7 @@ function ptyPackageDir(): string | null {
 }
 
 /** Idempotently replace one code fragment in a node-pty source file. */
-function patchFile(
-	pkgDir: string,
-	rel: string,
-	find: string,
-	replace: string,
-): void {
+function patchFile(pkgDir: string, rel: string, find: string, replace: string): void {
 	try {
 		const file = join(pkgDir, rel);
 		if (!existsSync(file)) return;

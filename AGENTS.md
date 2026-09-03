@@ -158,6 +158,7 @@ pi-web-ui/
 ```bash
 npm run dev          # 并行：node --watch 后端(:8788) + vite 前端(:5173)
 npm run typecheck    # 双端 tsc --noEmit（提交前必跑）
+npm run format       # prettier 全仓库格式化（提交前必跑；只检查用 format:check）
 npm run build        # build:web (vite) + build:server (tsc)
 npm start            # 跑编译产物 dist/server/index.js（生产）
 npm test             # vitest 纯函数单测

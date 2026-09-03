@@ -10,17 +10,11 @@
  * 现代浏览器都可用；实在没有（极端环境）才退到 Math.random。
  */
 export function randomUuid(): string {
-	if (
-		typeof crypto !== "undefined" &&
-		typeof crypto.randomUUID === "function"
-	) {
+	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
 		return crypto.randomUUID();
 	}
 	const bytes = new Uint8Array(16);
-	if (
-		typeof crypto !== "undefined" &&
-		typeof crypto.getRandomValues === "function"
-	) {
+	if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
 		crypto.getRandomValues(bytes);
 	} else {
 		for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);

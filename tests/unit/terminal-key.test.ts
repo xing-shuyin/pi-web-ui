@@ -41,8 +41,7 @@ describe("encodeTerminalKey", () => {
 	});
 
 	it("修饰符叠加：xterm 修饰序列 ESC[1;<m>H（无修饰符保持 ESC[H）", () => {
-		const home = (m: object) =>
-			(encodeTerminalKey("Home", m as never) as { data?: string }).data;
+		const home = (m: object) => (encodeTerminalKey("Home", m as never) as { data?: string }).data;
 		expect(home({})).toBe("\x1b[H");
 		expect(home({ shift: true })).toBe("\x1b[1;2H");
 		expect(home({ alt: true })).toBe("\x1b[1;3H");

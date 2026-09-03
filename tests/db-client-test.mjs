@@ -57,9 +57,15 @@ function connect(clientId = "dbclient-test") {
 		sock.on("open", () => sock.send(JSON.stringify({ type: "hello", clientId })));
 		sock.on("message", (raw) => {
 			const msg = JSON.parse(raw.toString());
-			if (msg.type === "ready") { clearTimeout(timer); resolve(sock); }
+			if (msg.type === "ready") {
+				clearTimeout(timer);
+				resolve(sock);
+			}
 		});
-		sock.on("error", (err) => { clearTimeout(timer); reject(err); });
+		sock.on("error", (err) => {
+			clearTimeout(timer);
+			reject(err);
+		});
 	});
 }
 
@@ -104,7 +110,9 @@ try {
 		execFileSync("lsof", ["-ti", `:${PORT}`, "-sTCP:LISTEN"], { stdio: "pipe" });
 		console.error(`✗ port ${PORT} busy — abort`);
 		process.exit(1);
-	} catch { /* free */ }
+	} catch {
+		/* free */
+	}
 
 	proc = spawn(serverPath, [join(import.meta.dirname, "..", "dist", "server", "index.js")], {
 		env: {
@@ -116,7 +124,9 @@ try {
 		stdio: ["ignore", "ignore", "pipe"],
 	});
 	let serverLogs = "";
-	proc.stderr?.on("data", (d) => { serverLogs += d.toString(); });
+	proc.stderr?.on("data", (d) => {
+		serverLogs += d.toString();
+	});
 
 	// 等 /api/health 就绪
 	const deadline = Date.now() + 30_000;
@@ -124,7 +134,9 @@ try {
 		try {
 			const r = await fetch(`${BASE}/api/health`);
 			if (r.ok) break;
-		} catch { /* retry */ }
+		} catch {
+			/* retry */
+		}
 		if (Date.now() > deadline) throw new Error("server not ready in 30s");
 		await new Promise((r) => setTimeout(r, 300));
 	}
@@ -136,7 +148,11 @@ try {
 		const timer = setTimeout(() => reject(new Error("timeout waiting plugins list")), 10_000);
 		const onMsg = (raw) => {
 			const m = JSON.parse(raw.toString());
-			if (m.type === "plugins") { clearTimeout(timer); sock.off("message", onMsg); resolve(m); }
+			if (m.type === "plugins") {
+				clearTimeout(timer);
+				sock.off("message", onMsg);
+				resolve(m);
+			}
 		};
 		sock.on("message", onMsg);
 	});
@@ -210,7 +226,16 @@ try {
 		if (r1.grid.total !== 5) fail(`total 应为 5，实际 ${r1.grid.total}`);
 		if (r1.grid.rows.length !== 2) fail("本页应 2 行");
 		if (r1.grid.columns.join(",") !== "id,name,age") fail(`columns 不符：${r1.grid.columns}`);
-		const r2 = await rpc(sock, { action: "page", connId, db: "main", table: "users", offset: 0, limit: 2, orderBy: "id", dir: "desc" });
+		const r2 = await rpc(sock, {
+			action: "page",
+			connId,
+			db: "main",
+			table: "users",
+			offset: 0,
+			limit: 2,
+			orderBy: "id",
+			dir: "desc",
+		});
 		if (Number(r2.grid.rows[0][0]) !== 5) fail("desc 排序首行 id 应为 5");
 		console.log("· page 分页/排序 ok");
 	}
@@ -232,19 +257,43 @@ try {
 		if (pg.ok && pg.grid.editable !== true) fail("sqlite page 应返回 editable:true");
 		if (pg.ok && pg.grid.pkCol !== "id") fail(`pkCol 应为 id，实际 ${pg.grid.pkCol}`);
 
-		const up = await rpc(sock, { action: "row_update", connId, db: "main", table: "users", pk: { col: "id", val: 1 }, changes: { name: "edited-1" } });
+		const up = await rpc(sock, {
+			action: "row_update",
+			connId,
+			db: "main",
+			table: "users",
+			pk: { col: "id", val: 1 },
+			changes: { name: "edited-1" },
+		});
 		if (!up.ok) fail(`row_update 失败：${up.error}`);
 		else if (up.affected !== 1) fail(`row_update affected 应为 1，实际 ${up.affected}`);
 		const chk = await rpc(sock, { action: "query_exec", connId, db: "main", sql: "SELECT name FROM users WHERE id=1" });
 		if (chk.grid.rows?.[0]?.[0] !== "edited-1") fail("row_update 未生效");
 
-		const ins = await rpc(sock, { action: "row_insert", connId, db: "main", table: "users", values: { name: "zzz", age: 99 } });
+		const ins = await rpc(sock, {
+			action: "row_insert",
+			connId,
+			db: "main",
+			table: "users",
+			values: { name: "zzz", age: 99 },
+		});
 		if (!ins.ok) fail(`row_insert 失败：${ins.error}`);
 		const cnt = await rpc(sock, { action: "query_exec", connId, db: "main", sql: "SELECT COUNT(*) AS n FROM users" });
 		if (cnt.grid.rows[0][0] !== 6) fail("插入后应为 6 行");
 
-		const gid = await rpc(sock, { action: "query_exec", connId, db: "main", sql: "SELECT id FROM users WHERE name='zzz'" });
-		const del = await rpc(sock, { action: "row_delete", connId, db: "main", table: "users", pk: { col: "id", val: gid.grid.rows[0][0] } });
+		const gid = await rpc(sock, {
+			action: "query_exec",
+			connId,
+			db: "main",
+			sql: "SELECT id FROM users WHERE name='zzz'",
+		});
+		const del = await rpc(sock, {
+			action: "row_delete",
+			connId,
+			db: "main",
+			table: "users",
+			pk: { col: "id", val: gid.grid.rows[0][0] },
+		});
 		if (!del.ok || del.affected !== 1) fail(`row_delete 异常：${JSON.stringify(del)}`);
 		const cnt2 = await rpc(sock, { action: "query_exec", connId, db: "main", sql: "SELECT COUNT(*) AS n FROM users" });
 		if (cnt2.grid.rows[0][0] !== 5) fail("删除后应回 5 行");
@@ -302,13 +351,19 @@ try {
 	if (serverLogs) console.error("---- server stderr ----\n" + serverLogs.slice(-3000));
 } finally {
 	if (proc) {
-		try { process.kill(proc.pid, "SIGTERM"); } catch { /* ignore */ }
+		try {
+			process.kill(proc.pid, "SIGTERM");
+		} catch {
+			/* ignore */
+		}
 		// 等端口释放
 		for (let i = 0; i < 40; i++) {
 			await new Promise((r) => setTimeout(r, 250));
 			try {
 				execFileSync("lsof", ["-ti", `:${PORT}`, "-sTCP:LISTEN"], { stdio: "pipe" });
-			} catch { break; }
+			} catch {
+				break;
+			}
 		}
 	}
 	rmSync(dataDir, { recursive: true, force: true });

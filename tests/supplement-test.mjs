@@ -79,10 +79,7 @@ check(
 // --- 3. click 补充 → input clears + queue hint shows ---
 await supplementBtn.click();
 await sleep(600);
-check(
-	"input cleared after 补充",
-	(await page.locator("textarea").inputValue()) === "",
-);
+check("input cleared after 补充", (await page.locator("textarea").inputValue()) === "");
 const hint = await page
 	.locator(".queue-hint")
 	.allTextContents()
@@ -103,20 +100,14 @@ await page
 // The queued supplement delivers immediately after; its user message should
 // appear in the chat, then a second reply streams.
 const supplementSeen = await page
-	.waitForFunction(
-		() => document.body.innerText.includes("补充一句话：请再说一遍"),
-		{ timeout: 180000 },
-	)
+	.waitForFunction(() => document.body.innerText.includes("补充一句话：请再说一遍"), { timeout: 180000 })
 	.then(() => true)
 	.catch(() => false);
 check("supplement message delivered right after reply", supplementSeen);
 // The second assistant reply must follow the supplement (count is
 // race-free even when the reply is fast).
 const secondReply = await page
-	.waitForFunction(
-		() => document.querySelectorAll('.msg[data-role="assistant"]').length >= 2,
-		{ timeout: 90000 },
-	)
+	.waitForFunction(() => document.querySelectorAll('.msg[data-role="assistant"]').length >= 2, { timeout: 90000 })
 	.then(() => true)
 	.catch(() => false);
 check("agent answered the supplement", secondReply);

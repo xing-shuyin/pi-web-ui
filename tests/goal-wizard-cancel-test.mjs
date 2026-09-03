@@ -124,9 +124,7 @@ async function main() {
 
 	// Wait a moment to ensure no delayed goal_set arrives.
 	await sleep(2000);
-	const lateGoal = inbox.some(
-		(m) => m.type === "goal_status" && m.status.goal && m.status.goal !== null,
-	);
+	const lateGoal = inbox.some((m) => m.type === "goal_status" && m.status.goal && m.status.goal !== null);
 	check("no goal set even after waiting", !lateGoal);
 
 	console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);

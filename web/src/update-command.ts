@@ -19,8 +19,6 @@ export interface UpdateTarget {
 
 export function buildUpdateCommand(targets: UpdateTarget[]): string {
 	return targets
-		.map((t) =>
-			t.kind === "package" ? `pi update npm:${t.name}` : `npm i -g ${t.name}@latest`,
-		)
+		.map((t) => (t.kind === "package" ? `pi update npm:${t.name}` : `npm i -g ${t.name}@latest`))
 		.join("; ");
 }

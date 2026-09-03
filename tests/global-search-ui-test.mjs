@@ -63,9 +63,7 @@ async function run() {
 	// 2) 输入关键词 → 文件分区命中
 	await page.fill(".gs-input-row input", "util");
 	await page.waitForSelector(".gs-item", { timeout: 8000 });
-	const fileHit = await page
-		.locator(".gs-item-title", { hasText: "alpha-util.ts" })
-		.count();
+	const fileHit = await page.locator(".gs-item-title", { hasText: "alpha-util.ts" }).count();
 	check("文件命中显示 alpha-util.ts", fileHit > 0);
 
 	// 3) 点击文件 → 打开文件预览

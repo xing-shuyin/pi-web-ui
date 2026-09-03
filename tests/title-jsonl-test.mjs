@@ -94,9 +94,7 @@ ws.send(JSON.stringify({ type: "read_file", path: "data.jsonl" }));
 await waitFor(() => fileContent !== null, "file_content for jsonl", 8000);
 check(
 	"jsonl previews as text",
-	fileContent?.path === "data.jsonl" &&
-		fileContent.text.includes('{"a":1}') &&
-		fileContent.kind === "text",
+	fileContent?.path === "data.jsonl" && fileContent.text.includes('{"a":1}') && fileContent.kind === "text",
 	fileContent ? `kind=${fileContent.kind}` : "no file_content",
 );
 
@@ -109,56 +107,32 @@ const titled = await waitFor(
 	() => sessions.some((s) => s.firstMessage?.includes("只回复")),
 	"session persisted with title",
 );
-check(
-	"session persisted with project A title",
-	titled,
-	sessions.map((s) => s.firstMessage).join(" | "),
-);
-const done = await waitFor(
-	() => snapshot?.messages?.some((m) => m.role === "assistant"),
-	"assistant reply completes",
-);
+check("session persisted with project A title", titled, sessions.map((s) => s.firstMessage).join(" | "));
+const done = await waitFor(() => snapshot?.messages?.some((m) => m.role === "assistant"), "assistant reply completes");
 check("turn completes with a reply", done);
 
 // 2. Switch project to B: the unlisted foreground conversation is dismissed;
 //    B gets its own conversation id, and B has no history.
 ws.send(JSON.stringify({ type: "set_cwd", path: B }));
 const moved = await waitFor(
-	() =>
-		snapshot?.conversationId &&
-		snapshot.conversationId !== conv1 &&
-		snapshot?.cwd === B,
+	() => snapshot?.conversationId && snapshot.conversationId !== conv1 && snapshot?.cwd === B,
 	"B conversation active",
 	15000,
 );
 check("B gets its OWN conversation id", moved, snapshot?.conversationId);
 await sleep(800);
-check(
-	"no running conversations listed",
-	conversations.length === 0,
-	`${conversations.length} listed`,
-);
-check(
-	"project B has no history",
-	sessions.length === 0,
-	sessions.map((s) => s.firstMessage).join(" | "),
-);
+check("no running conversations listed", conversations.length === 0, `${conversations.length} listed`);
+check("project B has no history", sessions.length === 0, sessions.map((s) => s.firstMessage).join(" | "));
 
 // 3. Back to A: a new conversation resumes the persisted session — title and
 //    messages are intact (nothing was lost when the foreground chat left).
 ws.send(JSON.stringify({ type: "set_cwd", path: A }));
 const back = await waitFor(
-	() =>
-		snapshot?.cwd === A &&
-		sessions.some((s) => s.firstMessage?.includes("只回复")),
+	() => snapshot?.cwd === A && sessions.some((s) => s.firstMessage?.includes("只回复")),
 	"A session resumable again",
 	15000,
 );
-check(
-	"A's persisted session is still there (recoverable)",
-	back,
-	sessions.map((s) => s.firstMessage).join(" | "),
-);
+check("A's persisted session is still there (recoverable)", back, sessions.map((s) => s.firstMessage).join(" | "));
 check(
 	"no title leak between projects (B conv is a different id)",
 	snapshot?.conversationId !== conv1,

@@ -34,19 +34,13 @@ const officialEntry = process.env.PI_WEB_DSH_JSONRPC_ENTRY
 		);
 
 const official = await import(pathToFileURL(officialEntry).href);
-const {
-	HarnessSdkJsonRpcServer,
-	Config,
-	apply: officialApply,
-} = official;
+const { HarnessSdkJsonRpcServer, Config, apply: officialApply } = official;
 
 /** 提问桥超时（P0-6）：PI_WEB_DSH_QUESTION_TIMEOUT_MS 可配置，默认 10 分钟。 */
-const QUESTION_TIMEOUT_MS =
-	Number(process.env.PI_WEB_DSH_QUESTION_TIMEOUT_MS) || 10 * 60_000;
+const QUESTION_TIMEOUT_MS = Number(process.env.PI_WEB_DSH_QUESTION_TIMEOUT_MS) || 10 * 60_000;
 
 /** 工具桥超时（#15）：服务端跑插件实现的等待上限。PI_WEB_DSH_TOOL_TIMEOUT_MS 可配置，默认 10 分钟。 */
-const TOOL_TIMEOUT_MS =
-	Number(process.env.PI_WEB_DSH_TOOL_TIMEOUT_MS) || 10 * 60_000;
+const TOOL_TIMEOUT_MS = Number(process.env.PI_WEB_DSH_TOOL_TIMEOUT_MS) || 10 * 60_000;
 
 /** 过滤一条 skill-catalog 用户消息：按 disabled 集合剔除条目并重建文本。
  *  纯函数（可单测）。条目来自消息的 `source.entries`（`{name,description}`），
@@ -57,9 +51,7 @@ export function filterSkillCatalogMessage(message, disabled) {
 	const kept = entries.filter((e) => e && !disabled.has(e.name));
 	if (kept.length === entries.length) return message;
 	const original =
-		(Array.isArray(message.content)
-			? message.content.find((b) => b?.type === "text")?.text
-			: undefined) ?? "";
+		(Array.isArray(message.content) ? message.content.find((b) => b?.type === "text")?.text : undefined) ?? "";
 	const text = rebuildCatalogText(original, kept);
 	return {
 		...message,
@@ -83,10 +75,7 @@ function rebuildCatalogText(original, entries) {
 
 /** 最小 HTML 实体转义（避免 `<`/`&` 破坏 markdown/目录结构）。 */
 function escapeTextSimple(s) {
-	return String(s)
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;");
+	return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 /** 把 pi-web-ui 插件工具的标准 JSON Schema `parameters`（`{type,properties,required[]}`）
@@ -95,11 +84,7 @@ function escapeTextSimple(s) {
  *  而 pi 插件/TypeBox 用的是标准 JSON Schema（required 是对象数组）。纯函数。 */
 function piParamsToDshSpec(parameters) {
 	if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return {};
-	if (
-		parameters.properties &&
-		typeof parameters.properties === "object" &&
-		!Array.isArray(parameters.properties)
-	) {
+	if (parameters.properties && typeof parameters.properties === "object" && !Array.isArray(parameters.properties)) {
 		const required = Array.isArray(parameters.required) ? parameters.required : [];
 		const propMap = {};
 		for (const [key, def] of Object.entries(parameters.properties)) {
@@ -187,9 +172,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		const agent = await agentOf(this, params.sessionId);
 		const view = this.ctx.goals.get(agent);
 		if (view === void 0 || view.id === void 0) throw new Error("no current goal to resume");
-		return viewPayload(
-			this.ctx.goals.resume(agent, { id: view.id, revision: view.revision }),
-		);
+		return viewPayload(this.ctx.goals.resume(agent, { id: view.id, revision: view.revision }));
 	}
 
 	/** 编辑目标（改客观文本或轮次上限，不改 phase）。 */
@@ -208,9 +191,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		if (request.objective === undefined && request.maxGoalRounds === undefined) {
 			throw new TypeError("goal/edit requires objective and/or maxGoalRounds");
 		}
-		return viewPayload(
-			this.ctx.goals.edit(agent, { id: view.id, revision: view.revision }, request),
-		);
+		return viewPayload(this.ctx.goals.edit(agent, { id: view.id, revision: view.revision }, request));
 	}
 
 	/** 方法分发：goal/* 与 attachment/* 走上面/下面，其余交官方。 */
@@ -347,9 +328,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 	invokeBridgedTool(exec, name, args) {
 		const id = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 		const sessionId =
-			exec?.agent?.session?.id && typeof exec.agent.session.id === "string"
-				? String(exec.agent.session.id)
-				: undefined;
+			exec?.agent?.session?.id && typeof exec.agent.session.id === "string" ? String(exec.agent.session.id) : undefined;
 		return new Promise((resolve, reject) => {
 			let done = false;
 			const cleanup = () => {
@@ -605,9 +584,11 @@ function apply(ctx, config) {
 	/* v8 ignore next -- production stdio wiring */
 	const output = config.output ?? process.stdout;
 	/* v8 ignore next -- production exit wiring */
-	const exit = config.exit ?? ((code) => {
-		process.exit(code);
-	});
+	const exit =
+		config.exit ??
+		((code) => {
+			process.exit(code);
+		});
 	const transport = new JsonRpcLineTransport(input, output);
 	const server = new DshGoalJsonRpcServer(ctx, transport, {
 		maxTokensAsSuccess: resolvedConfig.maxTokensAsSuccess,
@@ -642,9 +623,10 @@ function apply(ctx, config) {
 	transport.onRequest(async (method, params) => {
 		if (method === "initialize") await ctx.get("loader")?.await();
 		const result = await server.handleRequest(method, params);
-		if (method === "shutdown") setImmediate(() => {
-			disposeAndExit();
-		});
+		if (method === "shutdown")
+			setImmediate(() => {
+				disposeAndExit();
+			});
 		return result;
 	});
 	ctx.effect(() => {

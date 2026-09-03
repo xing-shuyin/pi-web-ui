@@ -70,8 +70,7 @@ async function waitReady() {
 }
 
 /** 从页面里读出当前 clientId（与 use-chat.ts 的 key 保持一致）。 */
-const readClientId = (page) =>
-	page.evaluate(() => sessionStorage.getItem("pi-web-client-id"));
+const readClientId = (page) => page.evaluate(() => sessionStorage.getItem("pi-web-client-id"));
 /** 等待页面 WebSocket ready。 */
 const waitChatReady = (page) =>
 	page.waitForFunction(() => document.querySelector("textarea") !== null, {
@@ -96,7 +95,11 @@ try {
 
 	const idA = await readClientId(a);
 	const idB = await readClientId(b);
-	check("two tabs have DIFFERENT clientIds", !!idA && !!idB && idA !== idB, `${idA?.slice(0, 8)} vs ${idB?.slice(0, 8)}`);
+	check(
+		"two tabs have DIFFERENT clientIds",
+		!!idA && !!idB && idA !== idB,
+		`${idA?.slice(0, 8)} vs ${idB?.slice(0, 8)}`,
+	);
 
 	// 标签页 B 切换到「历史对话」区域/新建对话，不应影响 A 的输入框可用性
 	// 与消息列表（无共享状态的最直接表现：A 的 DOM 不随 B 操作变化）。
@@ -105,10 +108,7 @@ try {
 	await b.waitForLoadState("domcontentloaded");
 	await sleep(800);
 	const markerA2 = await a.evaluate(() => document.body.innerHTML.length);
-	check(
-		"tab B reload does not disturb tab A",
-		markerA > 0 && markerA === markerA2,
-	);
+	check("tab B reload does not disturb tab A", markerA > 0 && markerA === markerA2);
 
 	// clientId 在刷新后保持稳定（sessionStorage 生命周期）
 	const idA2 = await readClientId(a);

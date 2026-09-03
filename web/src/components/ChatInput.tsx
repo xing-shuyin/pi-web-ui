@@ -88,9 +88,7 @@ export const ChatInput = memo(function ChatInput({
 	const [text, setText] = useState("");
 	const [dragOver, setDragOver] = useState(false);
 	/** Slash-command picker: non-null while open (filtered by the current input). */
-	const [completions, setCompletions] = useState<SlashCommandInfo[] | null>(
-		null,
-	);
+	const [completions, setCompletions] = useState<SlashCommandInfo[] | null>(null);
 	const [completionIndex, setCompletionIndex] = useState(0);
 	/** /help modal — shows the full command catalog. */
 	const [showHelp, setShowHelp] = useState(false);
@@ -116,9 +114,7 @@ export const ChatInput = memo(function ChatInput({
 		const m = value.match(/^\/([^\s]*)$/);
 		if (m && ready) {
 			const prefix = m[1].toLowerCase();
-			const matches = slashCommands.filter((c) =>
-				c.name.toLowerCase().startsWith(prefix),
-			);
+			const matches = slashCommands.filter((c) => c.name.toLowerCase().startsWith(prefix));
 			setCompletions(matches.length > 0 ? matches : null);
 			setCompletionIndex(0);
 		} else {
@@ -137,8 +133,7 @@ export const ChatInput = memo(function ChatInput({
 	/** Insert the highlighted command into the input (" /cmd " + rest). */
 	const acceptCompletion = (cmd?: SlashCommandInfo) => {
 		const list = completions ?? [];
-		const pick =
-			cmd ?? list[completionIndex % Math.max(list.length, 1)];
+		const pick = cmd ?? list[completionIndex % Math.max(list.length, 1)];
 		if (!pick) {
 			setCompletions(null);
 			return;
@@ -154,13 +149,11 @@ export const ChatInput = memo(function ChatInput({
 
 	const copyLastAssistant = async () => {
 		const msgs = messages;
-		const last = [...msgs].reverse().find(
-			(m) =>
-				m.role === "assistant" &&
-				m.content.some((b) => b.type === "text" && (b as { text?: string }).text),
-		);
-		const textToCopy = last
-			?.content.filter((b) => b.type === "text")
+		const last = [...msgs]
+			.reverse()
+			.find((m) => m.role === "assistant" && m.content.some((b) => b.type === "text" && (b as { text?: string }).text));
+		const textToCopy = last?.content
+			.filter((b) => b.type === "text")
 			.map((b) => (b as { text: string }).text)
 			.join("\n");
 		if (!textToCopy) {
@@ -220,9 +213,7 @@ export const ChatInput = memo(function ChatInput({
 		const m = modelState?.model;
 		if (!m?.id) return null;
 		const info = models.find((x) => x.id === m.id);
-		return info && info.vision === false
-			? t("modelNoVision", { name: info.name })
-			: null;
+		return info && info.vision === false ? t("modelNoVision", { name: info.name }) : null;
 	};
 
 	const connected = ready;
@@ -348,9 +339,7 @@ export const ChatInput = memo(function ChatInput({
 					return;
 				case "ArrowUp":
 					e.preventDefault();
-					setCompletionIndex(
-						(i) => (i - 1 + completions.length) % completions.length,
-					);
+					setCompletionIndex((i) => (i - 1 + completions.length) % completions.length);
 					return;
 				case "Tab":
 				case "Enter":
@@ -376,21 +365,11 @@ export const ChatInput = memo(function ChatInput({
 			{streaming ? (
 				<>
 					{text.trim() !== "" && (
-						<button
-							type="button"
-							className="btn supplement"
-							title={t("supplementTip")}
-							onClick={() => submit(true)}
-						>
+						<button type="button" className="btn supplement" title={t("supplementTip")} onClick={() => submit(true)}>
 							<FiSend /> {t("supplement")}
 						</button>
 					)}
-					<button
-						type="button"
-						className="btn stop"
-						title={t("stopAgent")}
-						onClick={() => send({ type: "abort" })}
-					>
+					<button type="button" className="btn stop" title={t("stopAgent")} onClick={() => send({ type: "abort" })}>
 						<FiSquare />
 					</button>
 				</>
@@ -399,11 +378,7 @@ export const ChatInput = memo(function ChatInput({
 					type="button"
 					className="btn send"
 					title={t("sendTip")}
-					disabled={
-						!connected ||
-						(!text.trim() &&
-							!attachments.some((a) => a.imageData || a.fileData))
-					}
+					disabled={!connected || (!text.trim() && !attachments.some((a) => a.imageData || a.fileData))}
 					onClick={() => submit()}
 				>
 					<FiArrowUp />
@@ -413,7 +388,6 @@ export const ChatInput = memo(function ChatInput({
 	);
 
 	return (
-
 		<div
 			className={`inputbar${dragOver ? " drop-active" : ""}`}
 			onDragOver={(e) => {
@@ -462,16 +436,7 @@ export const ChatInput = memo(function ChatInput({
 													: t("attachContent", { path: a.path })
 							}
 						>
-							{a.imageData
-								? "🖼"
-								: a.fileData
-									? "📄"
-									: a.isDir
-										? "📁"
-										: a.mode === "reference"
-											? "🔗"
-											: "📎"}{" "}
-							{a.name}
+							{a.imageData ? "🖼" : a.fileData ? "📄" : a.isDir ? "📁" : a.mode === "reference" ? "🔗" : "📎"} {a.name}
 							{a.mode === "lines" && a.lines && (
 								<span className="attach-range">
 									L{a.lines.start}-{a.lines.end}
@@ -507,14 +472,10 @@ export const ChatInput = memo(function ChatInput({
 							onClick={() => acceptCompletion(c)}
 						>
 							<span className="slash-name">/{c.name}</span>
-							<span className={`slash-source ${c.source}`}>
-								{SOURCE_LABEL[c.source]}
-							</span>
+							<span className={`slash-source ${c.source}`}>{SOURCE_LABEL[c.source]}</span>
 							<span className="slash-desc">
 								{slashDesc(c)}
-								{c.argumentHint && (
-									<span className="slash-hint">{slashHint(c)}</span>
-								)}
+								{c.argumentHint && <span className="slash-hint">{slashHint(c)}</span>}
 							</span>
 						</button>
 					))}
@@ -529,11 +490,7 @@ export const ChatInput = memo(function ChatInput({
 					>
 						<div className="slash-help-head">
 							<span>⚡ {t("slashHelpTitle")}</span>
-							<button
-								type="button"
-								className="btn"
-								onClick={() => setShowHelp(false)}
-							>
+							<button type="button" className="btn" onClick={() => setShowHelp(false)}>
 								{t("close")}
 							</button>
 						</div>
@@ -544,14 +501,10 @@ export const ChatInput = memo(function ChatInput({
 								slashCommands.map((c) => (
 									<div className="slash-help-row" key={c.name}>
 										<span className="slash-help-cmd">/{c.name}</span>
-										<span className={`slash-source ${c.source}`}>
-											{SOURCE_LABEL[c.source]}
-										</span>
+										<span className={`slash-source ${c.source}`}>{SOURCE_LABEL[c.source]}</span>
 										<span className="slash-help-desc">
 											{slashDesc(c)}
-											{c.argumentHint && (
-												<span className="slash-hint">{slashHint(c)}</span>
-											)}
+											{c.argumentHint && <span className="slash-hint">{slashHint(c)}</span>}
 										</span>
 									</div>
 								))
@@ -576,11 +529,7 @@ export const ChatInput = memo(function ChatInput({
 					value={text}
 					rows={1}
 					placeholder={
-						connected
-							? streaming
-								? t("placeholderStreaming")
-								: t("placeholderIdle")
-							: t("placeholderConnecting")
+						connected ? (streaming ? t("placeholderStreaming") : t("placeholderIdle")) : t("placeholderConnecting")
 					}
 					disabled={!connected}
 					onChange={(e) => {
@@ -603,12 +552,7 @@ export const ChatInput = memo(function ChatInput({
 						>
 							<FiPaperclip />
 						</button>
-						<button
-							type="button"
-							className="btn tpl-open"
-							title={t("tpl.openPicker")}
-							onClick={openPicker}
-						>
+						<button type="button" className="btn tpl-open" title={t("tpl.openPicker")} onClick={openPicker}>
 							<FiGrid />
 						</button>
 						<ModelThinking
@@ -621,9 +565,7 @@ export const ChatInput = memo(function ChatInput({
 							compact
 						/>
 					</div>
-					<div className="composer-tools-right">
-						{renderActions()}
-					</div>
+					<div className="composer-tools-right">{renderActions()}</div>
 				</div>
 			</div>
 		</div>

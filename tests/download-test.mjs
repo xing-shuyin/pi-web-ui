@@ -80,11 +80,7 @@ check("click fires a browser download", dl !== null, dl?.suggestedFilename());
 if (dl) {
 	const failure = await dl.failure();
 	check("download completed", failure === null, `failure=${failure}`);
-	check(
-		"downloaded filename preserved",
-		(dl.suggestedFilename() ?? "").includes("报告.zip"),
-		dl.suggestedFilename(),
-	);
+	check("downloaded filename preserved", (dl.suggestedFilename() ?? "").includes("报告.zip"), dl.suggestedFilename());
 	const saved = await dl.path();
 	if (saved) {
 		const fs = await import("node:fs");

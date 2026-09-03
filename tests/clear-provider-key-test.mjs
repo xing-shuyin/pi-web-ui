@@ -124,7 +124,7 @@ try {
 
 	// 2) 清空
 	c.send({ type: "clear_provider_api_key", provider: "deepseek" });
-		await c.waitForNotice("已清除", 30000);
+	await c.waitForNotice("已清除", 30000);
 	check("auth.json entry removed", !readAuth().deepseek);
 
 	// 3) 再清一次 → 友好提示不崩

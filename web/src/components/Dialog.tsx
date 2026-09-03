@@ -37,25 +37,15 @@ export function Dialog({ dialog, send }: DialogProps) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [dialog.id]);
 
-	const options = Array.isArray(dialog.args[0])
-		? (dialog.args[0] as string[])
-		: [];
-	const message =
-		typeof dialog.args[0] === "string" ? (dialog.args[0] as string) : "";
+	const options = Array.isArray(dialog.args[0]) ? (dialog.args[0] as string[]) : [];
+	const message = typeof dialog.args[0] === "string" ? (dialog.args[0] as string) : "";
 
 	return (
 		<div className="dialog-inline" data-dialog-kind={dialog.kind}>
 			<div className="dialog-head">
 				<span className="dialog-badge">{t("pluginRequest")}</span>
-				{dialog.title && dialog.title !== t("pluginRequest") && (
-					<span className="dialog-title">{dialog.title}</span>
-				)}
-				<button
-					type="button"
-					className="dialog-dismiss"
-					title={t("cancel")}
-					onClick={() => respond(null)}
-				>
+				{dialog.title && dialog.title !== t("pluginRequest") && <span className="dialog-title">{dialog.title}</span>}
+				<button type="button" className="dialog-dismiss" title={t("cancel")} onClick={() => respond(null)}>
 					✕
 				</button>
 			</div>
@@ -73,9 +63,7 @@ export function Dialog({ dialog, send }: DialogProps) {
 							{opt}
 						</button>
 					))}
-					{options.length === 0 && (
-						<div className="dialog-hint">{t("noOptions")}</div>
-					)}
+					{options.length === 0 && <div className="dialog-hint">{t("noOptions")}</div>}
 				</div>
 			)}
 
@@ -83,18 +71,10 @@ export function Dialog({ dialog, send }: DialogProps) {
 				<div className="dialog-body">
 					<p>{message}</p>
 					<div className="dialog-actions">
-						<button
-							type="button"
-							className="btn"
-							onClick={() => respond(false)}
-						>
+						<button type="button" className="btn" onClick={() => respond(false)}>
 							{t("cancel")}
 						</button>
-						<button
-							type="button"
-							className="btn primary"
-							onClick={() => respond(true)}
-						>
+						<button type="button" className="btn primary" onClick={() => respond(true)}>
 							{t("ok")}
 						</button>
 					</div>
@@ -116,18 +96,10 @@ export function Dialog({ dialog, send }: DialogProps) {
 						}}
 					/>
 					<div className="dialog-actions">
-						<button
-							type="button"
-							className="btn"
-							onClick={() => respond(null)}
-						>
+						<button type="button" className="btn" onClick={() => respond(null)}>
 							{t("cancel")}
 						</button>
-						<button
-							type="button"
-							className="btn primary"
-							onClick={() => respond(inputValue)}
-						>
+						<button type="button" className="btn primary" onClick={() => respond(inputValue)}>
 							{t("ok")}
 						</button>
 					</div>

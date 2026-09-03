@@ -46,10 +46,7 @@ export const LazyMount = memo(function LazyMount({
 		const delta = h - height;
 		if (delta !== 0) {
 			const wrap = inner.parentElement;
-			if (
-				wrap &&
-				wrap.getBoundingClientRect().bottom <= root.getBoundingClientRect().top
-			) {
+			if (wrap && wrap.getBoundingClientRect().bottom <= root.getBoundingClientRect().top) {
 				// 内容整体在视口上方：占位换真身导致下方内容位移，回滚之。
 				root.scrollTop += delta;
 			}
@@ -64,7 +61,7 @@ export const LazyMount = memo(function LazyMount({
 				ref={lazyRef}
 				className="msg-lazy-ph"
 				data-msg-id={id}
-			data-lazy-id={id}
+				data-lazy-id={id}
 				style={{ height }}
 				aria-hidden="true"
 			/>

@@ -124,11 +124,7 @@ await page.addInitScript(() => {
 });
 check(
 	"crypto.randomUUID actually removed",
-	await page
-		.goto(URL)
-		.then(() =>
-			page.evaluate(() => typeof crypto.randomUUID === "undefined"),
-		),
+	await page.goto(URL).then(() => page.evaluate(() => typeof crypto.randomUUID === "undefined")),
 );
 
 // ---- 1. connection must attach: hello sent, server snapshot arrives ----
@@ -160,10 +156,7 @@ try {
 	await sleep(500);
 	// Target OUR command row specifically — with a hermetic workdir the list
 	// starts empty, but never assume "the first .cmd-run" is ours.
-	await page
-		.locator(".cmd-item", { hasText: "uuid-regression" })
-		.locator(".cmd-run")
-		.click();
+	await page.locator(".cmd-item", { hasText: "uuid-regression" }).locator(".cmd-run").click();
 	tab = await page
 		.waitForSelector(".term-tab", { timeout: 8000 })
 		.then(() => true)
@@ -177,8 +170,7 @@ try {
 			await sleep(500);
 		}
 		termRan = termText.includes("UUID_OK");
-		if (!termRan)
-			console.log(`⚠ term-main dump: ${JSON.stringify(termText.slice(0, 300))}`);
+		if (!termRan) console.log(`⚠ term-main dump: ${JSON.stringify(termText.slice(0, 300))}`);
 	}
 } catch (err) {
 	console.log(`⚠ terminal section aborted: ${err.message.split("\n")[0]}`);
@@ -188,11 +180,7 @@ check("terminal command ran", termRan);
 
 // ---- 3. zero randomUUID errors anywhere ----
 const uuidErrors = pageErrors.filter((e) => e.includes("randomUUID"));
-check(
-	"no randomUUID page errors",
-	uuidErrors.length === 0,
-	uuidErrors.slice(0, 3).join(" | "),
-);
+check("no randomUUID page errors", uuidErrors.length === 0, uuidErrors.slice(0, 3).join(" | "));
 
 await browser.close();
 await stopServer();
@@ -201,9 +189,5 @@ try {
 } catch {
 	/* noop */
 }
-console.log(
-	failures === 0
-		? "\nALL randomUUID TESTS PASSED"
-		: `\n${failures} FAILURE(S)`,
-);
+console.log(failures === 0 ? "\nALL randomUUID TESTS PASSED" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

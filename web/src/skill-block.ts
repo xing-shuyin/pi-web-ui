@@ -21,8 +21,7 @@ export interface SkillBlock {
 	userMessage?: string;
 }
 
-const SKILL_BLOCK_RE =
-	/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/;
+const SKILL_BLOCK_RE = /^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/;
 
 export function parseSkillBlock(text: string): SkillBlock | null {
 	const m = text.match(SKILL_BLOCK_RE);

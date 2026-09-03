@@ -49,14 +49,21 @@ export class McpClient {
 	private child: ChildProcess | null = null;
 	private buffer = "";
 	private nextId = 1;
-	private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+	private pending = new Map<
+		string,
+		{ resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+	>();
 	private log: (...a: unknown[]) => void;
 	readonly name: string;
 	/** 已握手的工具列表（tools/list 结果缓存）。 */
 	private tools: McpToolDefinition[] = [];
 	private shuttingDown = false;
 
-	constructor(name: string, private spec: McpServerSpec, log?: (...a: unknown[]) => void) {
+	constructor(
+		name: string,
+		private spec: McpServerSpec,
+		log?: (...a: unknown[]) => void,
+	) {
 		this.name = name;
 		this.log = log ?? (() => {});
 	}
@@ -88,12 +95,13 @@ export class McpClient {
 			capabilities: {},
 			clientInfo: { name: "pi-web-ui", version: "0.41.0" },
 		});
-		const version = (handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
+		const version =
+			(handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
 		// 通知 initialized（无 id 的 notification）
 		this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
 		// 仍以协商协议版本调用 tools（多数服务器对新版本容忍，这里用协商结果）
 		void version;
-		const listed = (await this.request("tools/list", {}) ?? {}) as {
+		const listed = ((await this.request("tools/list", {})) ?? {}) as {
 			tools?: McpToolDefinition[];
 		};
 		this.tools = Array.isArray(listed.tools) ? listed.tools : [];
@@ -113,12 +121,19 @@ export class McpClient {
 			structuredContent?: unknown;
 		};
 		if (res?.isError) {
-			const msg = (res.content ?? []).map((c) => c.text ?? "").join("\n").trim() || "MCP 工具错误";
+			const msg =
+				(res.content ?? [])
+					.map((c) => c.text ?? "")
+					.join("\n")
+					.trim() || "MCP 工具错误";
 			throw new Error(msg);
 		}
 		// 结构化结果优先，其次文本内容。
 		if (res?.structuredContent !== undefined) return res.structuredContent;
-		const text = (res.content ?? []).map((c) => c.text ?? "").filter((x) => x).join("\n");
+		const text = (res.content ?? [])
+			.map((c) => c.text ?? "")
+			.filter((x) => x)
+			.join("\n");
 		return { content: text, isError: !!res.isError };
 	}
 
@@ -144,7 +159,7 @@ export class McpClient {
 	}
 
 	private request(method: string, params: Record<string, unknown>, timeoutMs = 8000): Promise<unknown> {
-		const id = (rpcSeq++);
+		const id = rpcSeq++;
 		const outId = String(id);
 		return new Promise<unknown>((resolve, reject) => {
 			const timer = setTimeout(() => {
@@ -297,7 +312,10 @@ export class McpBridge {
 	}
 }
 
-function optsOverrideOrRead(specOverride: { name: string; spec: McpServerSpec }[] | undefined, dataDir: string): {
+function optsOverrideOrRead(
+	specOverride: { name: string; spec: McpServerSpec }[] | undefined,
+	dataDir: string,
+): {
 	servers: Record<string, McpServerSpec>;
 } {
 	if (specOverride && specOverride.length > 0) {

@@ -86,7 +86,11 @@ try {
 	await page.waitForSelector('.vsc-sshtree .vsc-row[data-scope^="c"]', { timeout: 25000 });
 	check("连接成功且远端目录树展开", true);
 	const names = await page.locator('.vsc-sshtree .vsc-row[data-scope^="c"] .nm').allInnerTexts();
-	check("远端目录列出 home 内容", names.some((n) => n.includes("a.txt")) && names.some((n) => n.includes("sub")), names.join(","));
+	check(
+		"远端目录列出 home 内容",
+		names.some((n) => n.includes("a.txt")) && names.some((n) => n.includes("sub")),
+		names.join(","),
+	);
 
 	// -- 4. 底部终端面板（SSH tab 的 🖥 入口） --------------------------------------------
 	await page.locator('.vsc-pane[data-pane="ssh"] .vsc-side-head button[data-act="new-term"]').click();
@@ -123,7 +127,10 @@ try {
 
 	// 关闭标签（已保存，不应弹确认框）
 	let dialogFired = false;
-	page.on("dialog", (d) => { dialogFired = true; void d.dismiss(); });
+	page.on("dialog", (d) => {
+		dialogFired = true;
+		void d.dismiss();
+	});
 	await page.locator(".vsc-tab.active .x").click();
 	await sleep(300);
 	check("已保存关闭不弹确认框", !dialogFired);
@@ -133,7 +140,10 @@ try {
 	await page.locator(".vsc-hrow").first().hover();
 	await page.locator('.vsc-hrow button[data-hop="dis"]').click();
 	await page.waitForSelector(".vsc-empty:not(.vsc-hidden)", { timeout: 8000 }).catch(() => {});
-	const phVisible = await page.locator(".vsc-empty").isVisible().catch(() => false);
+	const phVisible = await page
+		.locator(".vsc-empty")
+		.isVisible()
+		.catch(() => false);
 	check("断开后回到空视图", phVisible);
 
 	await browser.close();

@@ -29,10 +29,7 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -94,8 +91,7 @@ function seedChat(want) {
 		const timer = setTimeout(() => reject(new Error("seed timeout")), 180000);
 		let step = 0;
 		let known = 0;
-		const sendNext = () =>
-			ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step++} 条` }));
+		const sendNext = () => ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step++} 条` }));
 		ws.on("open", () => ws.send(JSON.stringify({ type: "hello", clientId: CLIENT_ID })));
 		ws.on("message", (d) => {
 			let msg;
@@ -188,10 +184,7 @@ async function main() {
 		if (m.type() === "error") consoleErrors.push(m.text());
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
 	await page.waitForSelector(".msg", { timeout: 30000 });
@@ -280,8 +273,10 @@ async function main() {
 		`(d) upward wheel: escape still sticks (Δ${Math.abs(topB - topA)}px < 100, gap ${gap}px > 300)`,
 		Math.abs(topB - topA) < 100 && gap > 300,
 	);
-	check("(d) upward wheel: Back-to-bottom chip appears (escape visible)",
-		await page.locator(".scroll-bottom").isVisible());
+	check(
+		"(d) upward wheel: Back-to-bottom chip appears (escape visible)",
+		await page.locator(".scroll-bottom").isVisible(),
+	);
 
 	check("no page errors", consoleErrors.length === 0);
 	if (consoleErrors.length > 0) console.log("   console errors:", consoleErrors.slice(0, 3));

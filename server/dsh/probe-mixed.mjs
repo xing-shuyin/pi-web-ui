@@ -8,9 +8,7 @@ import { join, resolve } from "node:path";
 import { resolveRuntimeBase } from "./runtime/runtime-root.mjs";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-const KEY = JSON.parse(
-	readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"),
-).deepseek.key;
+const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
 	HERE,
 	"..",
@@ -78,9 +76,7 @@ const send = (method, params, timeoutMs = 120_000) =>
 				reject(e);
 			},
 		});
-		proc.stdin.write(
-			JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n",
-		);
+		proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
 	});
 proc.stdout.setEncoding("utf8");
 proc.stdout.on("data", (chunk) => {
@@ -100,9 +96,7 @@ proc.stdout.on("data", (chunk) => {
 			const p = pending.get(msg.id);
 			if (!p) continue;
 			pending.delete(msg.id);
-			msg.error
-				? p.reject(new Error(JSON.stringify(msg.error)))
-				: p.resolve(msg.result);
+			msg.error ? p.reject(new Error(JSON.stringify(msg.error))) : p.resolve(msg.result);
 		} else if (msg.method) {
 			events.push({ method: msg.method, params: msg.params });
 		}

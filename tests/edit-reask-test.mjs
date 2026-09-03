@@ -39,10 +39,7 @@ function connect() {
 							res(inbox.splice(i, 1)[0]);
 							return;
 						}
-						const t = setTimeout(
-							() => rej(new Error("timeout waiting for message")),
-							timeout,
-						);
+						const t = setTimeout(() => rej(new Error("timeout waiting for message")), timeout);
 						waiters.push({
 							pred,
 							resolve: (m) => {
@@ -60,12 +57,9 @@ function connect() {
 
 const msgText = (snap, text) =>
 	snap.state.messages.some(
-		(m) =>
-			m.role === "user" &&
-			m.content.some((b) => b.type === "text" && b.text.includes(text)),
+		(m) => m.role === "user" && m.content.some((b) => b.type === "text" && b.text.includes(text)),
 	);
-const userMessages = (snap) =>
-	snap.state.messages.filter((m) => m.role === "user");
+const userMessages = (snap) => snap.state.messages.filter((m) => m.role === "user");
 
 async function main() {
 	const c = await connect();
@@ -88,14 +82,9 @@ async function main() {
 	console.log("[3] first question persisted");
 
 	c.send({ type: "prompt", text: "第二个问题：如何学习 Rust？" });
-	const preSnap = await c.wait(
-		(m) =>
-			m.type === "snapshot" && msgText(m, "第二个问题") && !m.state.isStreaming,
-	);
+	const preSnap = await c.wait((m) => m.type === "snapshot" && msgText(m, "第二个问题") && !m.state.isStreaming);
 	const pre = userMessages(preSnap);
-	const target = pre.find((m) =>
-		m.content.some((b) => b.text?.includes("第一个问题")),
-	);
+	const target = pre.find((m) => m.content.some((b) => b.text?.includes("第一个问题")));
 	if (!target) throw new Error("FAIL: could not find first user message");
 	console.log("[4] editing message id:", target.id);
 
@@ -104,18 +93,14 @@ async function main() {
 		messageId: target.id,
 		text: "修改后的问题：怎么学 Go？",
 	});
-	const snap2 = await c.wait(
-		(m) => m.type === "snapshot" && msgText(m, "修改后的问题"),
-	);
+	const snap2 = await c.wait((m) => m.type === "snapshot" && msgText(m, "修改后的问题"));
 	console.log("[5] new session:", snap2.state.sessionId.slice(0, 8));
 	if (snap2.state.sessionId === snap0.state.sessionId) {
 		throw new Error("FAIL: session did not change after edit");
 	}
 	const texts = snap2.state.messages
 		.filter((m) => m.role === "user")
-		.map((m) =>
-			m.content.map((b) => (b.type === "text" ? b.text : "")).join(""),
-		);
+		.map((m) => m.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
 	console.log("[6] user messages in new session:", JSON.stringify(texts));
 	if (texts.some((t) => t.includes("第一个问题") || t.includes("第二个问题"))) {
 		throw new Error("FAIL: old questions leaked into the forked session");
@@ -125,14 +110,8 @@ async function main() {
 	}
 
 	c.send({ type: "list_sessions" });
-	const sessions = await c.wait(
-		(m) => m.type === "sessions" && m.sessions.length >= 2,
-	);
-	console.log(
-		"[7] session count:",
-		sessions.sessions.length,
-		"(expect >= 2 — original thread kept + new fork)",
-	);
+	const sessions = await c.wait((m) => m.type === "sessions" && m.sessions.length >= 2);
+	console.log("[7] session count:", sessions.sessions.length, "(expect >= 2 — original thread kept + new fork)");
 	if (sessions.sessions.length < 2) {
 		throw new Error("FAIL: original session should still be in the list");
 	}

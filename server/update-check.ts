@@ -98,9 +98,9 @@ export function listInstalledPackages(agentDir: string): LocalPackage[] {
 function readManifestDeps(agentDir: string): LocalPackage[] | null {
 	let manifest: { dependencies?: Record<string, string> } | null;
 	try {
-		manifest = JSON.parse(
-			readFileSync(join(agentDir, "npm", "package.json"), "utf8"),
-		) as { dependencies?: Record<string, string> } | null;
+		manifest = JSON.parse(readFileSync(join(agentDir, "npm", "package.json"), "utf8")) as {
+			dependencies?: Record<string, string>;
+		} | null;
 		// Literal `null` parses fine but explodes on property access — treat as
 		// unreadable (fallback to the raw walk), per the documented contract.
 		if (!manifest || typeof manifest !== "object") return null;
@@ -161,9 +161,7 @@ function walkNodeModules(agentDir: string): LocalPackage[] {
 
 function readLocalPackage(dir: string): LocalPackage | null {
 	try {
-		const pkg = JSON.parse(
-			readFileSync(join(dir, "package.json"), "utf8"),
-		) as { name?: string; version?: string };
+		const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string };
 		if (!pkg.name || !pkg.version) return null;
 		return { name: pkg.name, version: pkg.version, kind: "package" };
 	} catch {
@@ -196,10 +194,7 @@ const PI_PROBE_TTL_MS = 10_000;
  * Mirrors ClientSession.isPiCliInstalled() (same spawnSync shape; Windows
  * resolves `pi` to a pi.cmd shim that only execs through a shell).
  */
-export const defaultProbePiCore = memoizeWithTtl(
-	rawProbePiCore,
-	PI_PROBE_TTL_MS,
-);
+export const defaultProbePiCore = memoizeWithTtl(rawProbePiCore, PI_PROBE_TTL_MS);
 
 /**
  * Fallback when the CLI probe yields nothing: the version of the vendored pi
@@ -208,16 +203,7 @@ export const defaultProbePiCore = memoizeWithTtl(
 function readVendoredPiCore(agentDir: string): string | null {
 	try {
 		const pkg = JSON.parse(
-			readFileSync(
-				join(
-					agentDir,
-					"npm",
-					"node_modules",
-					...PI_CORE_PACKAGE.split("/"),
-					"package.json",
-				),
-				"utf8",
-			),
+			readFileSync(join(agentDir, "npm", "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"), "utf8"),
 		) as { name?: string; version?: string };
 		if (pkg.name !== PI_CORE_PACKAGE || !pkg.version) return null;
 		return pkg.version;
@@ -238,9 +224,7 @@ export function collectTargets(
 	webuiVersion: string,
 	probePiCore: () => string | null = defaultProbePiCore,
 ): LocalPackage[] {
-	const targets: LocalPackage[] = [
-		{ name: "pi-web-ui", version: webuiVersion, kind: "webui" },
-	];
+	const targets: LocalPackage[] = [{ name: "pi-web-ui", version: webuiVersion, kind: "webui" }];
 	const coreVersion = probePiCore() ?? readVendoredPiCore(agentDir);
 	if (coreVersion) {
 		targets.push({
@@ -249,11 +233,7 @@ export function collectTargets(
 			kind: "pi-core",
 		});
 	}
-	targets.push(
-		...listInstalledPackages(agentDir).filter(
-			(pkg) => pkg.name !== PI_CORE_PACKAGE,
-		),
-	);
+	targets.push(...listInstalledPackages(agentDir).filter((pkg) => pkg.name !== PI_CORE_PACKAGE));
 	return targets;
 }
 
@@ -263,8 +243,7 @@ export type Fetcher = (
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
 /** Default fetcher (real network). Tests inject a fake. */
-export const defaultFetcher: Fetcher = (url, init) =>
-	fetch(url, init) as unknown as ReturnType<Fetcher>;
+export const defaultFetcher: Fetcher = (url, init) => fetch(url, init) as unknown as ReturnType<Fetcher>;
 
 interface RegistryDoc {
 	"dist-tags"?: { latest?: string };
@@ -293,10 +272,7 @@ export async function fetchLatest(
  * error item (upToDate: false) without failing the rest. Results keep the
  * input order. Bounded concurrency (CONCURRENCY) keeps registry load polite.
  */
-export async function checkAll(
-	targets: LocalPackage[],
-	fetcher: Fetcher = defaultFetcher,
-): Promise<UpdateItem[]> {
+export async function checkAll(targets: LocalPackage[], fetcher: Fetcher = defaultFetcher): Promise<UpdateItem[]> {
 	const results: UpdateItem[] = new Array(targets.length);
 	let cursor = 0;
 	async function worker() {
@@ -311,8 +287,7 @@ export async function checkAll(
 					current: t.version,
 					latest,
 					latestPublishedAt,
-					upToDate:
-						latest === null || compareVersions(t.version, latest) >= 0,
+					upToDate: latest === null || compareVersions(t.version, latest) >= 0,
 				};
 			} catch (err) {
 				results[i] = {
@@ -327,8 +302,6 @@ export async function checkAll(
 			}
 		}
 	}
-	await Promise.all(
-		Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker),
-	);
+	await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
 	return results;
 }

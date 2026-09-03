@@ -1,13 +1,5 @@
 import { memo, useState } from "react";
-import {
-	FiChevronDown,
-	FiBookOpen,
-	FiChevronRight,
-	FiChevronUp,
-	FiEdit3,
-	FiImage,
-	FiX,
-} from "react-icons/fi";
+import { FiChevronDown, FiBookOpen, FiChevronRight, FiChevronUp, FiEdit3, FiImage, FiX } from "react-icons/fi";
 import type {
 	PromptAttachment,
 	ToolStatus,
@@ -37,15 +29,11 @@ const MAX_EDIT_UPLOAD_BYTES = 20 * 1024 * 1024;
 // ---------------------------------------------------------------------------
 
 export function asText(block: UiContentBlock): UiTextBlock | null {
-	return block.type === "text" &&
-		typeof (block as UiTextBlock).text === "string"
-		? (block as UiTextBlock)
-		: null;
+	return block.type === "text" && typeof (block as UiTextBlock).text === "string" ? (block as UiTextBlock) : null;
 }
 
 export function asThinking(block: UiContentBlock): UiThinkingBlock | null {
-	return block.type === "thinking" &&
-		typeof (block as UiThinkingBlock).thinking === "string"
+	return block.type === "thinking" && typeof (block as UiThinkingBlock).thinking === "string"
 		? (block as UiThinkingBlock)
 		: null;
 }
@@ -59,17 +47,11 @@ export function asToolCall(block: UiContentBlock): UiToolCallBlock | null {
 }
 
 export function asImage(block: UiContentBlock): UiImageBlock | null {
-	return block.type === "image" &&
-		typeof (block as UiImageBlock).dataUrl === "string"
-		? (block as UiImageBlock)
-		: null;
+	return block.type === "image" && typeof (block as UiImageBlock).dataUrl === "string" ? (block as UiImageBlock) : null;
 }
 
 export function asBash(block: UiContentBlock): UiBashBlock | null {
-	return block.type === "bash" &&
-		typeof (block as UiBashBlock).command === "string"
-		? (block as UiBashBlock)
-		: null;
+	return block.type === "bash" && typeof (block as UiBashBlock).command === "string" ? (block as UiBashBlock) : null;
 }
 
 /** Editor chip kind: raster image (thumb), restored upload (uploadPath),
@@ -111,11 +93,7 @@ interface MessageProps {
 	/** Edit-and-re-ask handler (user messages only). Stable identity — Message is memoized.
 	 *  Attachments are the images kept from the original message plus any newly
 	 *  pasted/dropped ones; they re-fill the visual context the fork drops. */
-	onEdit?: (
-		messageId: string,
-		text: string,
-		attachments?: PromptAttachment[],
-	) => void;
+	onEdit?: (messageId: string, text: string, attachments?: PromptAttachment[]) => void;
 	/** Original attachments attached to this question (precomputed in MessageList
 	 *  from the attachment-card run that follows it): pasted/uploaded images
 	 *  (imageData), uploaded files (uploadPath) and workspace-path attachments
@@ -175,18 +153,14 @@ export const Message = memo(function Message({
 	const [editNotice, setEditNotice] = useState<string | null>(null);
 	const pushEditNotice = (msg: string) => {
 		setEditNotice(msg);
-		window.setTimeout(
-			() => setEditNotice((cur) => (cur === msg ? null : cur)),
-			4000,
-		);
+		window.setTimeout(() => setEditNotice((cur) => (cur === msg ? null : cur)), 4000);
 	};
 	// toolResult content is rendered inside its toolCall card — never standalone
 	// (otherwise the same output shows twice: formatted card + plain text).
 	if (message.role === "toolResult") return null;
 	// Attached files are rendered as their own collapsible card, separate from
 	// the user message text.
-	const isFileAttachment =
-		message.role === "custom" && message.customType === "file";
+	const isFileAttachment = message.role === "custom" && message.customType === "file";
 	// Question text for the per-question tag's tooltip.
 	const userText = message.content
 		.map((b) => asText(b)?.text ?? "")
@@ -197,14 +171,13 @@ export const Message = memo(function Message({
 	// the whole SKILL.md into the user bubble — same as the pi CLI.
 	const skillBlock = message.role === "user" ? parseSkillBlock(userText) : null;
 	const questionText = skillBlock
-		? skillBlock.userMessage ?? `skill:${skillBlock.name}`
+		? (skillBlock.userMessage ?? `skill:${skillBlock.name}`)
 		: userText.split("\n").join(" ").trim();
 	// Streaming bubble with no content yet (first token not arrived) — show a
 	// visible “thinking…” placeholder instead of an invisible empty bubble.
 	const isEmptyStreaming = streaming && isLast && message.content.length === 0;
 
-	const canEdit =
-		message.role === "user" && !streaming && !isEmptyStreaming && !!onEdit;
+	const canEdit = message.role === "user" && !streaming && !isEmptyStreaming && !!onEdit;
 	/** Paste/drop handler inside the edit composer — same downscale pipeline
 	 *  as the main input bar so payloads stay under the server's cap. */
 	const addEditImageFiles = async (files: File[]) => {
@@ -266,9 +239,7 @@ export const Message = memo(function Message({
 	const startEdit = () => {
 		setDraft(
 			skillBlock
-				? `/skill:${skillBlock.name}${
-						skillBlock.userMessage ? ` ${skillBlock.userMessage}` : ""
-				  }`
+				? `/skill:${skillBlock.name}${skillBlock.userMessage ? ` ${skillBlock.userMessage}` : ""}`
 				: message.content
 						.map((b) => asText(b)?.text ?? "")
 						.filter(Boolean)
@@ -295,8 +266,7 @@ export const Message = memo(function Message({
 	// progress cards ("goal-wizard") get a distinct frame so they read as goal
 	// feedback rather than a plain plugin message.
 	const isGoalReview =
-		message.role === "custom" &&
-		(message.customType === "goal-review" || message.customType === "goal-wizard");
+		message.role === "custom" && (message.customType === "goal-review" || message.customType === "goal-wizard");
 	const isGoalWizard = message.role === "custom" && message.customType === "goal-wizard";
 
 	return (
@@ -318,9 +288,7 @@ export const Message = memo(function Message({
 						: roleLabel(message.role, t)}
 				</span>
 				{message.model && <span className="msg-model">{message.model}</span>}
-				{message.timestamp && (
-					<span className="msg-time">{formatTime(message.timestamp)}</span>
-				)}
+				{message.timestamp && <span className="msg-time">{formatTime(message.timestamp)}</span>}
 				{onCollapse && (
 					<button
 						type="button"
@@ -354,16 +322,13 @@ export const Message = memo(function Message({
 							setEditDragOver(true);
 						}}
 						onDragLeave={(e) => {
-							if (!e.currentTarget.contains(e.relatedTarget as Node))
-								setEditDragOver(false);
+							if (!e.currentTarget.contains(e.relatedTarget as Node)) setEditDragOver(false);
 						}}
 						onDrop={(e) => {
 							e.preventDefault();
 							e.stopPropagation();
 							setEditDragOver(false);
-							void addEditDropFiles(
-								Array.from(e.dataTransfer?.files ?? []),
-							);
+							void addEditDropFiles(Array.from(e.dataTransfer?.files ?? []));
 						}}
 					>
 						{editAttachments.length > 0 && (
@@ -377,29 +342,20 @@ export const Message = memo(function Message({
 											title={editAttLabel(att, t)}
 										>
 											{kind === "image" ? (
-												<img
-													src={`data:${att.mimeType ?? "image/png"};base64,${att.imageData}`}
-													alt={att.name}
-												/>
+												<img src={`data:${att.mimeType ?? "image/png"};base64,${att.imageData}`} alt={att.name} />
 											) : (
 												<span className="msg-editor-file">
 													<span className="msg-editor-file-icon">
 														{kind === "path" ? (att.mode === "reference" ? "🔗" : "📎") : "📄"}
 													</span>
-													<span className="msg-editor-file-name">
-														{att.name ?? att.path?.split("/").pop()}
-													</span>
+													<span className="msg-editor-file-name">{att.name ?? att.path?.split("/").pop()}</span>
 												</span>
 											)}
 											<button
 												type="button"
 												className="msg-editor-img-remove"
 												title={t("removeAttachment")}
-												onClick={() =>
-													setEditAttachments((prev) =>
-														prev.filter((_, j) => j !== i),
-													)
-												}
+												onClick={() => setEditAttachments((prev) => prev.filter((_, j) => j !== i))}
 											>
 												<FiX />
 											</button>
@@ -408,9 +364,7 @@ export const Message = memo(function Message({
 								})}
 							</div>
 						)}
-						{editNotice && (
-							<div className="msg-editor-notice">{editNotice}</div>
-						)}
+						{editNotice && <div className="msg-editor-notice">{editNotice}</div>}
 						<textarea
 							className="msg-editor-input"
 							value={draft}
@@ -443,11 +397,7 @@ export const Message = memo(function Message({
 							<span className="msg-editor-hint">
 								<FiImage /> {t("editAttachmentHint")}
 							</span>
-							<button
-								type="button"
-								className="chip"
-								onClick={() => setEditing(false)}
-							>
+							<button type="button" className="chip" onClick={() => setEditing(false)}>
 								{t("cancel")}
 							</button>
 							<button
@@ -463,9 +413,7 @@ export const Message = memo(function Message({
 					</div>
 				) : (
 					<>
-						{message.errorMessage && (
-							<div className="msg-error">{message.errorMessage}</div>
-						)}
+						{message.errorMessage && <div className="msg-error">{message.errorMessage}</div>}
 						{isFileAttachment ? (
 							<AttachmentCard message={message} forceOpen={searchActive} />
 						) : skillBlock ? (
@@ -487,9 +435,9 @@ export const Message = memo(function Message({
 											streaming={streaming}
 											isLast={isLast}
 											onKillBash={onKillBash}
-										toolsWrap={toolsWrap}
+											toolsWrap={toolsWrap}
 											thinkingWrap={thinkingWrap}
-							searchActive={searchActive}
+											searchActive={searchActive}
 										/>
 									),
 								)}
@@ -504,10 +452,10 @@ export const Message = memo(function Message({
 									toolStatuses={toolStatuses}
 									streaming={streaming}
 									isLast={isLast}
-							onKillBash={onKillBash}
-							toolsWrap={toolsWrap}
-							thinkingWrap={thinkingWrap}
-							searchActive={searchActive}
+									onKillBash={onKillBash}
+									toolsWrap={toolsWrap}
+									thinkingWrap={thinkingWrap}
+									searchActive={searchActive}
 								/>
 							))
 						)}
@@ -517,20 +465,13 @@ export const Message = memo(function Message({
 								<span className="dot" />
 							</div>
 						)}
-						{streaming && isLast && !isEmptyStreaming && (
-							<span className="stream-cursor" />
-						)}
+						{streaming && isLast && !isEmptyStreaming && <span className="stream-cursor" />}
 					</>
 				)}
 			</div>
 			{canEdit && !editing && (
 				<div className="msg-actions">
-					<button
-						type="button"
-						className="msg-action"
-						title={t("editReaskTip")}
-						onClick={startEdit}
-					>
+					<button type="button" className="msg-action" title={t("editReaskTip")} onClick={startEdit}>
 						<FiEdit3 /> {t("editReask")}
 					</button>
 				</div>
@@ -565,23 +506,15 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 		.map((b) => b.text)
 		.join("\n");
 	const clean = stripFileWrapper(text);
-	const image = message.content.find((b) => b.type === "image") as
-		| { type: "image"; dataUrl?: string }
-		| undefined;
+	const image = message.content.find((b) => b.type === "image") as { type: "image"; dataUrl?: string } | undefined;
 	const lines = clean.split("\n").length;
 
 	return (
 		<div className={`attachcard ${isReference ? "reference" : ""}`}>
-			<button
-				type="button"
-				className="attachcard-head"
-				onClick={() => setOpen((v) => (forceOpen ? true : !v))}
-			>
+			<button type="button" className="attachcard-head" onClick={() => setOpen((v) => (forceOpen ? true : !v))}>
 				<span className="attachcard-icon">{isFolder ? "📁" : "📎"}</span>
 				<span className="attachcard-name">{name}</span>
-				{details.path && (
-					<span className="attachcard-path">{details.path}</span>
-				)}
+				{details.path && <span className="attachcard-path">{details.path}</span>}
 				<span
 					className={`attachcard-mode ${details.mode === "lines" ? "lines" : isReference ? "ref" : isBridged ? "bridged" : "inline"}`}
 				>
@@ -623,9 +556,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 				))}
 			{isReference && (
 				<div className="attachcard-refnote">
-					{isFolder
-						? t("folderNotExpanded")
-						: t("fileNotExpanded", { size: formatSize(details.size) })}
+					{isFolder ? t("folderNotExpanded") : t("fileNotExpanded", { size: formatSize(details.size) })}
 				</div>
 			)}
 		</div>
@@ -642,13 +573,9 @@ function formatSize(bytes?: number): string {
 /** Strip the <file path="..."> ``` ... ``` </file> or <vision-bridge> ...
  * </vision-bridge> wrapper for display. */
 function stripFileWrapper(text: string): string {
-	const m = text.match(
-		/^\s*<file path="[^"]*"(?:\s+lines="[^"]*")?>\s*```\s*\n?([\s\S]*?)\n?```\s*<\/file>\s*$/,
-	);
+	const m = text.match(/^\s*<file path="[^"]*"(?:\s+lines="[^"]*")?>\s*```\s*\n?([\s\S]*?)\n?```\s*<\/file>\s*$/);
 	if (m) return m[1].trim();
-	const vb = text.match(
-		/^\s*<vision-bridge>\s*([\s\S]*?)\s*<\/vision-bridge>\s*$/,
-	);
+	const vb = text.match(/^\s*<vision-bridge>\s*([\s\S]*?)\s*<\/vision-bridge>\s*$/);
 	return vb ? vb[1].trim() : text.trim();
 }
 
@@ -721,11 +648,7 @@ function Block({
 		const live = streaming && isLast;
 		return (
 			<div className="msg-text">
-				{live ? (
-					<StreamMarkdown text={text.text} />
-				) : (
-					<Markdown text={text.text} />
-				)}
+				{live ? <StreamMarkdown text={text.text} /> : <Markdown text={text.text} />}
 				{text.truncated && <div className="trunc-note">{t("truncated")}</div>}
 			</div>
 		);
@@ -753,7 +676,9 @@ function Block({
 			streaming,
 			status: toolStatuses.get(toolCall.id),
 		};
-		return <ToolCallBlock block={toolCall} view={view} onKillBash={onKillBash} wrap={toolsWrap} forceOpen={searchActive} />;
+		return (
+			<ToolCallBlock block={toolCall} view={view} onKillBash={onKillBash} wrap={toolsWrap} forceOpen={searchActive} />
+		);
 	}
 
 	const image = asImage(block);
@@ -773,20 +698,14 @@ function Block({
 					<span className="bashblock-prompt">$</span>
 					<code>{bash.command}</code>
 					{bash.exitCode !== undefined && (
-						<span
-							className={`bashblock-exit ${bash.exitCode === 0 ? "ok" : "err"}`}
-						>
+						<span className={`bashblock-exit ${bash.exitCode === 0 ? "ok" : "err"}`}>
 							{t("exitCode", { code: bash.exitCode })}
 						</span>
 					)}
-					{bash.cancelled && (
-						<span className="bashblock-exit err">{t("cancelled")}</span>
-					)}
+					{bash.cancelled && <span className="bashblock-exit err">{t("cancelled")}</span>}
 				</div>
 				{bash.output && <pre className="bashblock-output">{bash.output}</pre>}
-				{bash.truncated && (
-					<div className="trunc-note">{t("outputTruncated")}</div>
-				)}
+				{bash.truncated && <div className="trunc-note">{t("outputTruncated")}</div>}
 			</div>
 		);
 	}

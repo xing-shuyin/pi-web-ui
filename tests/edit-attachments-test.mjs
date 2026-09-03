@@ -104,8 +104,7 @@ function connect() {
 }
 
 // A tiny valid 1x1 PNG (base64, no data: prefix) as fake imageData.
-const TINY_PNG =
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-edit-attach-"));
 
@@ -123,17 +122,11 @@ async function main() {
 		text: "旧客户端的编辑重问（无附件字段）",
 	});
 	const n1 = await c.next(
-		(m) =>
-			m.type === "notice" &&
-			(typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text)),
+		(m) => m.type === "notice" && typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text),
 		"old-shape edit_message → deterministic notice",
 		15000,
 	);
-	check(
-		"edit_message without attachments parses & answers",
-		n1.level === "error" || n1.level === "warning",
-		n1.text,
-	);
+	check("edit_message without attachments parses & answers", n1.level === "error" || n1.level === "warning", n1.text);
 
 	// -- new shape: attachments incl. raw images -----------------------------
 	c.send({
@@ -152,26 +145,18 @@ async function main() {
 		],
 	});
 	const n2 = await c.next(
-		(m) =>
-			m.type === "notice" &&
-			(typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text)),
+		(m) => m.type === "notice" && typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text),
 		"attachments edit_message → deterministic notice",
 		15000,
 	);
-	check(
-		"edit_message with attachments parses (no TypeError)",
-		n2.level === "error" || n2.level === "warning",
-		n2.text,
-	);
+	check("edit_message with attachments parses (no TypeError)", n2.level === "error" || n2.level === "warning", n2.text);
 
 	// Empty-text edit with attachments only is still rejected (text required).
 	c.send({
 		type: "edit_message",
 		messageId: "u-nonexistent",
 		text: "  ",
-		attachments: [
-			{ path: "", imageData: TINY_PNG, mimeType: "image/png", name: "a.png" },
-		],
+		attachments: [{ path: "", imageData: TINY_PNG, mimeType: "image/png", name: "a.png" }],
 	});
 	const n3 = await c.next(
 		(m) => m.type === "notice" && /编辑内容为空/.test(m.text ?? ""),
@@ -196,30 +181,26 @@ async function main() {
 		],
 	});
 	const n4 = await c.next(
-		(m) =>
-			m.type === "notice" &&
-			(typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text)),
+		(m) => m.type === "notice" && typeof m.text === "string" && /找不到要编辑的消息|失败/.test(m.text),
 		"uploadPath edit_message → deterministic notice",
 		15000,
 	);
-	check(
-		"edit_message with uploadPath parses (no TypeError)",
-		n4.level === "error" || n4.level === "warning",
-		n4.text,
-	);
+	check("edit_message with uploadPath parses (no TypeError)", n4.level === "error" || n4.level === "warning", n4.text);
 
 	c.ws.close();
 	console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 	process.exitCode = failures === 0 ? 0 : 1;
 }
 
-main().catch((e) => {
-	console.error("ERR", e);
-	process.exitCode = 1;
-}).finally(() => {
-	try {
-		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
-});
+main()
+	.catch((e) => {
+		console.error("ERR", e);
+		process.exitCode = 1;
+	})
+	.finally(() => {
+		try {
+			server?.kill("SIGTERM");
+		} catch {
+			/* ignore */
+		}
+	});

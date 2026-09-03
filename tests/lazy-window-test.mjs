@@ -20,15 +20,9 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 for (let i = 1; i <= 35; i++) {
-	writeFileSync(
-		join(workdir, `seed-${String(i).padStart(2, "0")}.txt`),
-		`seed content ${i}\n`,
-	);
+	writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed content ${i}\n`);
 }
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -53,9 +47,7 @@ const TALL_TEXT = "很长的需求描述。".repeat(2000);
 
 const server = spawn(
 	process.execPath,
-	[
-		join(fileURLToPath(new URL("..", import.meta.url)), "dist", "server", "index.js"),
-	],
+	[join(fileURLToPath(new URL("..", import.meta.url)), "dist", "server", "index.js")],
 	{ stdio: ["ignore", "pipe", "pipe"], detached: true },
 );
 process.on("exit", () => {
@@ -103,8 +95,7 @@ function seedChat(want) {
 		const sendNext = () => {
 			if (step === 0) {
 				const attachments = [];
-				for (let i = 1; i <= 35; i++)
-					attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
+				for (let i = 1; i <= 35; i++) attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
 				ws.send(
 					JSON.stringify({
 						type: "prompt",
@@ -113,9 +104,7 @@ function seedChat(want) {
 					}),
 				);
 			} else {
-				ws.send(
-					JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step} 条` }),
-				);
+				ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step} 条` }));
 			}
 			step++;
 		};
@@ -164,10 +153,7 @@ async function main() {
 		if (m.type() === "error") consoleErrors.push(m.text());
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
@@ -179,10 +165,7 @@ async function main() {
 	check("viewport-distant messages collapsed to placeholders", initialPh > 0);
 
 	// 占位保留 data-msg-id（导航 / 跳转查询不受影响）
-	const phId = await page
-		.locator(".msg-lazy-ph")
-		.first()
-		.getAttribute("data-msg-id");
+	const phId = await page.locator(".msg-lazy-ph").first().getAttribute("data-msg-id");
 	check("placeholder keeps data-msg-id", !!phId);
 
 	// 底部常驻区不被占位：最后一条消息一定是真实渲染
@@ -205,10 +188,7 @@ async function main() {
 	}, phId);
 	check("scrolled-near placeholder remounts as real message", restored);
 	const afterScrollPh = await phCount();
-	check(
-		"far-away messages collapsed while reading the top",
-		afterScrollPh > 0,
-	);
+	check("far-away messages collapsed while reading the top", afterScrollPh > 0);
 
 	// 搜索打开期间强制全渲染（兼容 Range 收集 / DOM 高亮）
 	await page.keyboard.press("Control+f");
@@ -220,24 +200,16 @@ async function main() {
 	// 问题导航跳转：目标消息被 pin 成真实渲染并 flash
 	const qnCount = await page.locator(".qn-bar").count();
 	check("question nav rail rendered", qnCount > 0);
-	const qnText = ((await page.locator(".qn-bar").first().textContent()) ?? "")
-		.replace(/^\d+\.\s*/, "");
+	const qnText = ((await page.locator(".qn-bar").first().textContent()) ?? "").replace(/^\d+\.\s*/, "");
 	await page.locator(".qn-bar").first().click();
 	await sleep(600);
 	const jumpedOk = await page.evaluate((text) => {
-		const target = [
-			...document.querySelectorAll(".messages [data-msg-id]"),
-		].find(
+		const target = [...document.querySelectorAll(".messages [data-msg-id]")].find(
 			(n) =>
 				// 第一个问题是最早的 user 消息
-				n.getAttribute("data-role") === "user" &&
-				n.textContent.includes(text),
+				n.getAttribute("data-role") === "user" && n.textContent.includes(text),
 		);
-		return (
-			!!target &&
-			target.classList.contains("msg") &&
-			target.classList.contains("msg-flash")
-		);
+		return !!target && target.classList.contains("msg") && target.classList.contains("msg-flash");
 	}, qnText);
 	check("jump pins target and flashes it", jumpedOk);
 
@@ -256,8 +228,7 @@ async function main() {
 	check("back-to-bottom button works", atBottom);
 
 	check("no page errors", consoleErrors.length === 0);
-	if (consoleErrors.length > 0)
-		console.log("   console errors:", consoleErrors.slice(0, 3));
+	if (consoleErrors.length > 0) console.log("   console errors:", consoleErrors.slice(0, 3));
 
 	await browser.close();
 	console.log(`\n${passed} checks passed`);

@@ -45,10 +45,10 @@ export function listThemes(builtinDir: string, userDir: string): ThemeInfo[] {
 			.filter((f) => ID_RE.test(f.slice(0, -4)))
 			.sort()
 			.map((f) => ({
-			id: f.slice(0, -4),
-			name: readDisplayName(join(dir, f), f.slice(0, -4)),
-			builtin,
-		}));
+				id: f.slice(0, -4),
+				name: readDisplayName(join(dir, f), f.slice(0, -4)),
+				builtin,
+			}));
 	};
 	const builtin = scan(builtinDir, true);
 	const user = scan(userDir, false);
@@ -59,11 +59,7 @@ export function listThemes(builtinDir: string, userDir: string): ThemeInfo[] {
 }
 
 /** Resolve a theme id to its css file path (user dir first). */
-export function resolveThemeFile(
-	builtinDir: string,
-	userDir: string,
-	id: string,
-): string | null {
+export function resolveThemeFile(builtinDir: string, userDir: string, id: string): string | null {
 	if (!ID_RE.test(id)) return null;
 	const userPath = join(userDir, `${id}.css`);
 	if (existsSync(userPath) && statSync(userPath).isFile()) return userPath;

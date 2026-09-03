@@ -125,7 +125,12 @@ describe("streamRate", () => {
 
 	it("输出回退时速率不为负", () => {
 		// same-time samples shouldn't divide by ~0; guard yields 0
-		expect(streamRate([{ t: 1000, out: 10 }, { t: 1000, out: 10 }])).toBe(0);
+		expect(
+			streamRate([
+				{ t: 1000, out: 10 },
+				{ t: 1000, out: 10 },
+			]),
+		).toBe(0);
 	});
 
 	it("实时速度体验：100ms 内增长 2 token → 20 t/s", () => {

@@ -80,20 +80,16 @@ async function main() {
 	let ok = false;
 	let failure = null;
 	try {
-		child = spawn(
-			realpathSync(process.execPath),
-			[join("dist", "server", "index.js")],
-			{
-				env: {
-					...process.env,
-					PI_WEB_PORT: String(PORT),
-					PI_WEB_CWD: workspace,
-					PI_WEB_DATA_DIR: dataDir,
-					PI_WEB_HOST: "127.0.0.1",
-				},
-				stdio: ["ignore", "pipe", "pipe"],
+		child = spawn(realpathSync(process.execPath), [join("dist", "server", "index.js")], {
+			env: {
+				...process.env,
+				PI_WEB_PORT: String(PORT),
+				PI_WEB_CWD: workspace,
+				PI_WEB_DATA_DIR: dataDir,
+				PI_WEB_HOST: "127.0.0.1",
 			},
-		);
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 		child.stderr.on("data", (d) => process.stderr.write(`[server] ${d}`));
 		await waitReady();
 
@@ -119,15 +115,11 @@ async function main() {
 		const root1 = await listDir("");
 		if (root1.error) throw new Error(root1.error);
 
-		const deepSupported =
-			process.platform === "win32" || process.platform === "darwin";
+		const deepSupported = process.platform === "win32" || process.platform === "darwin";
 
 		// 1) 深层（未列出）目录变化 → file_changed
 		lastFileChanged = null;
-		setTimeout(
-			() => writeFileSync(join(workspace, "deep", "nested", "leaf.txt"), "changed\n"),
-			100,
-		);
+		setTimeout(() => writeFileSync(join(workspace, "deep", "nested", "leaf.txt"), "changed\n"), 100);
 		if (deepSupported) {
 			const ev = await nextFileChanged();
 			console.log(`✓ 深层变化推送 file_changed (path=${ev.path})`);
@@ -171,19 +163,27 @@ async function main() {
 	} catch (err) {
 		failure = err;
 	} finally {
-		try { ws?.close(); } catch {}
+		try {
+			ws?.close();
+		} catch {}
 		if (child?.pid) {
 			// win32 用 taskkill /T 杀进程树；posix 直接 SIGTERM（否则 server 子进程
 			// 泄漏占住端口，下一次跑套件在 PORT 上 EADDRINUSE）。
 			if (process.platform === "win32") {
 				execFile("taskkill", ["/F", "/T", "/PID", String(child.pid)], () => {});
 			} else {
-				try { process.kill(child.pid, "SIGTERM"); } catch {}
+				try {
+					process.kill(child.pid, "SIGTERM");
+				} catch {}
 			}
 		}
 		await sleep(500);
-		try { rmSync(dataDir, { recursive: true, force: true }); } catch {}
-		try { rmSync(workspace, { recursive: true, force: true }); } catch {}
+		try {
+			rmSync(dataDir, { recursive: true, force: true });
+		} catch {}
+		try {
+			rmSync(workspace, { recursive: true, force: true });
+		} catch {}
 	}
 	if (failure) {
 		console.error("✗", failure.message);

@@ -36,10 +36,7 @@ function check(name, ok, extra = "") {
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-theme-test-"));
 // Drop a user theme to prove user themes are listed and served.
 mkdirSync(join(dataDir, "themes"));
-writeFileSync(
-	join(dataDir, "themes", "user-test.css"),
-	":root {\n\t--bg: #123456;\n\t--text: #ffffff;\n}\n",
-);
+writeFileSync(join(dataDir, "themes", "user-test.css"), ":root {\n\t--bg: #123456;\n\t--text: #ffffff;\n}\n");
 
 let server = null;
 async function startServer() {
@@ -123,13 +120,9 @@ try {
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "白色" }).first().click();
 	await page.waitForTimeout(1500);
-	const hasLink = await page.evaluate(() =>
-		document.getElementById("theme-stylesheet")?.getAttribute("href"),
-	);
+	const hasLink = await page.evaluate(() => document.getElementById("theme-stylesheet")?.getAttribute("href"));
 	check("theme <link> injected for white", hasLink === "/themes/white.css", `href=${hasLink}`);
-	const bg = await page.evaluate(() =>
-		getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
-	);
+	const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
 	check("white palette applied", bg === "#ffffff", `--bg=${bg}`);
 
 	// 3. Persists across reload.
@@ -137,9 +130,7 @@ try {
 	await page.waitForTimeout(1500);
 	const afterReload = await page.evaluate(() => {
 		const href = document.getElementById("theme-stylesheet")?.getAttribute("href");
-		const bg = getComputedStyle(document.documentElement)
-			.getPropertyValue("--bg")
-			.trim();
+		const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
 		return { href, bg };
 	});
 	check(
@@ -152,26 +143,16 @@ try {
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "user-test" }).first().click();
 	await page.waitForTimeout(1500);
-	const userBg = await page.evaluate(() =>
-		getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
-	);
+	const userBg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
 	check("user theme applied", userBg === "#123456", `--bg=${userBg}`);
 
 	// 5. Switching back to default removes the injected link.
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "深色" }).first().click();
 	await page.waitForTimeout(800);
-	const linkGone = await page.evaluate(
-		() => document.getElementById("theme-stylesheet") === null,
-	);
-	const bg2 = await page.evaluate(() =>
-		getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
-	);
-	check(
-		"back to default removes link + dark palette",
-		linkGone && bg2 === "#0d0e12",
-		`linkGone=${linkGone} bg=${bg2}`,
-	);
+	const linkGone = await page.evaluate(() => document.getElementById("theme-stylesheet") === null);
+	const bg2 = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
+	check("back to default removes link + dark palette", linkGone && bg2 === "#0d0e12", `linkGone=${linkGone} bg=${bg2}`);
 } catch (err) {
 	console.error("ERROR", err);
 	failures++;

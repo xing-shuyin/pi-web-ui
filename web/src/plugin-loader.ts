@@ -26,10 +26,7 @@ export interface PluginViewContext {
 }
 
 export interface PluginViewModule {
-	mount(
-		container: HTMLElement,
-		ctx: PluginViewContext,
-	): void | (() => void);
+	mount(container: HTMLElement, ctx: PluginViewContext): void | (() => void);
 }
 
 export interface LoadedPluginView {
@@ -41,14 +38,10 @@ const PLUGIN_DATA_EVENT = "pi-web-ui:plugin-data";
 
 /** use-chat 调用：把服务端 plugin_data 消息转成分发事件。 */
 export function emitPluginData(pluginId: string, payload: unknown): void {
-	window.dispatchEvent(
-		new CustomEvent(PLUGIN_DATA_EVENT, { detail: { pluginId, payload } }),
-	);
+	window.dispatchEvent(new CustomEvent(PLUGIN_DATA_EVENT, { detail: { pluginId, payload } }));
 }
 
-function subscribeAll(
-	cb: (pluginId: string, payload: unknown) => void,
-): () => void {
+function subscribeAll(cb: (pluginId: string, payload: unknown) => void): () => void {
 	const handler = (e: Event) => {
 		const d = (e as CustomEvent).detail as {
 			pluginId: string;
@@ -81,9 +74,7 @@ function notify(): void {
 }
 
 /** 订阅当前已加载的插件视图（立即回调一次当前快照）。 */
-export function subscribeLoadedPluginViews(
-	cb: (views: LoadedPluginView[]) => void,
-): () => void {
+export function subscribeLoadedPluginViews(cb: (views: LoadedPluginView[]) => void): () => void {
 	listeners.add(cb);
 	cb(snapshot());
 	return () => listeners.delete(cb);
@@ -95,10 +86,7 @@ export function subscribeLoadedPluginViews(
  * - 清单中消失/被禁用的插件 → 移除已加载视图（React 随之卸载并调 cleanup）
  * - 新出现且未失败过的 → 动态 import
  */
-export async function syncPluginViews(
-	plugins: UiPluginInfo[],
-	epoch: number,
-): Promise<void> {
+export async function syncPluginViews(plugins: UiPluginInfo[], epoch: number): Promise<void> {
 	if (epoch !== lastEpoch) {
 		lastEpoch = epoch;
 		loaded.clear();
@@ -150,8 +138,9 @@ export function makePluginContext(
 	return {
 		pluginId,
 		send: (payload) => send({ type: "plugin_message", pluginId, payload }),
-		onData: (cb) => subscribeAll((pid, payload) => {
-			if (pid === pluginId) cb(payload);
-		}),
+		onData: (cb) =>
+			subscribeAll((pid, payload) => {
+				if (pid === pluginId) cb(payload);
+			}),
 	};
 }

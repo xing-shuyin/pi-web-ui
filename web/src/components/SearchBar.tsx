@@ -1,12 +1,4 @@
-import {
-	useCallback,
-	useDeferredValue,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-	type RefObject,
-} from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { FiChevronDown, FiChevronUp, FiX } from "react-icons/fi";
 import type { UiMessage } from "../types";
 import { useT } from "../i18n";
@@ -34,9 +26,7 @@ import { collectFoldedHits, type FoldedResultMessage } from "../search-folded";
  */
 
 /** 一条命中：渲染在 DOM 里（可高亮/滚动），或折叠层（需先展开这条消息）。 */
-type SearchHit =
-	| { kind: "dom"; range: Range; msgId: string; k: number }
-	| { kind: "folded"; msgId: string; k: number };
+type SearchHit = { kind: "dom"; range: Range; msgId: string; k: number } | { kind: "folded"; msgId: string; k: number };
 
 /** 语义位置：消息 id + 消息内第 k 次出现。展开不改变它 → 展开后能找回同一命中。 */
 interface HitKey {
@@ -113,9 +103,7 @@ function collectAllHits(
 	// DOM 命中按消息分组（外层的 collectRanges 本身是文档序）
 	const domByMsg = new Map<string, Range[]>();
 	for (const r of collectRanges(wrap, query)) {
-		const node = r.startContainer.parentElement?.closest<HTMLElement>(
-			"[data-msg-id]",
-		);
+		const node = r.startContainer.parentElement?.closest<HTMLElement>("[data-msg-id]");
 		if (!node?.dataset.msgId) continue;
 		const arr = domByMsg.get(node.dataset.msgId);
 		if (arr) arr.push(r);
@@ -149,17 +137,12 @@ function setHighlight(name: string, ranges: Range[]) {
 		return;
 	}
 	// Highlight 构造器在旧 lib.dom 里没有类型，运行时按特性检测使用。
-	const Ctor = (
-		window as unknown as { Highlight?: new (...r: Range[]) => unknown }
-	).Highlight;
+	const Ctor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
 	if (Ctor) css.highlights.set(name, new Ctor(...ranges));
 }
 
 /** 从命中节点向容器方向收集带滚动的祖先（内 → 外）。 */
-function collectScrollers(
-	start: HTMLElement | null,
-	end: HTMLElement,
-): HTMLElement[] {
+function collectScrollers(start: HTMLElement | null, end: HTMLElement): HTMLElement[] {
 	const out: HTMLElement[] = [];
 	let el = start;
 	while (el && el !== end) {
@@ -300,13 +283,7 @@ export function SearchBar({
 		let raf = 0;
 		raf = requestAnimationFrame(() => {
 			if (cancelled) return;
-			const hits = collectAllHits(
-				wrap,
-				q,
-				messages,
-				collapsedIds,
-				toolResults,
-			);
+			const hits = collectAllHits(wrap, q, messages, collapsedIds, toolResults);
 			hitsRef.current = hits;
 			const n = hits.length;
 			setTotal(n);
@@ -386,22 +363,15 @@ export function SearchBar({
 		};
 	}, [open, q, messages, containerRef, activeKey, collapsedIds, toolResults, onExpand, onProgrammaticScroll]);
 
-	const step = useCallback(
-		(dir: 1 | -1) => {
-			const hits = hitsRef.current;
-			const n = hits.length;
-			if (n === 0) return;
-			const key = activeKeyRef.current;
-			const cur = key ? hitIndexOf(hits, key) : 0;
-			const nextKey = hits[(cur + dir + n) % n];
-			setActiveKey(
-				nextKey.kind === "dom" || nextKey.kind === "folded"
-					? { msgId: nextKey.msgId, k: nextKey.k }
-					: null,
-			);
-		},
-		[],
-	);
+	const step = useCallback((dir: 1 | -1) => {
+		const hits = hitsRef.current;
+		const n = hits.length;
+		if (n === 0) return;
+		const key = activeKeyRef.current;
+		const cur = key ? hitIndexOf(hits, key) : 0;
+		const nextKey = hits[(cur + dir + n) % n];
+		setActiveKey(nextKey.kind === "dom" || nextKey.kind === "folded" ? { msgId: nextKey.msgId, k: nextKey.k } : null);
+	}, []);
 
 	if (!open) return null;
 	const shownIdx = activeKey
@@ -433,9 +403,7 @@ export function SearchBar({
 				}}
 			/>
 			<span className={`search-count ${total === 0 ? "empty" : ""}`}>
-				{total === 0
-					? t("searchNoResults")
-					: `${Math.min(shownIdx + 1, total)}/${total}`}
+				{total === 0 ? t("searchNoResults") : `${Math.min(shownIdx + 1, total)}/${total}`}
 			</span>
 			<button
 				type="button"
@@ -455,12 +423,7 @@ export function SearchBar({
 			>
 				<FiChevronDown />
 			</button>
-			<button
-				type="button"
-				className="search-btn"
-				title={t("searchClose")}
-				onClick={onClose}
-			>
+			<button type="button" className="search-btn" title={t("searchClose")} onClick={onClose}>
 				<FiX />
 			</button>
 		</div>

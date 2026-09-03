@@ -19,16 +19,10 @@ import { FooterBar } from "./components/FooterBar";
 import { Dialog } from "./components/Dialog";
 import { DshQuestionDialog } from "./components/DshQuestionDialog";
 // 终端视图懒加载：xterm.js 体积大且只在切到终端时才需要，拆出主包
-const TerminalPanel = lazy(() =>
-	import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel })),
-);
+const TerminalPanel = lazy(() => import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 import { ScmPanel } from "./components/SCMPanel";
 import { PluginView } from "./components/PluginView";
-import {
-	syncPluginViews,
-	subscribeLoadedPluginViews,
-	type LoadedPluginView,
-} from "./plugin-loader";
+import { syncPluginViews, subscribeLoadedPluginViews, type LoadedPluginView } from "./plugin-loader";
 import { PiSetupModal } from "./components/PiSetupModal";
 import { ModelConfigModal } from "./components/ModelConfigModal";
 
@@ -38,24 +32,13 @@ import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import { TemplateProvider } from "./components/PromptTemplates";
 import { FilePreview, type PreviewFile } from "./components/FilePreview";
 import { useChat } from "./use-chat";
-import type {
-	ClientMessage,
-	CommandDef,
-	PromptAttachment,
-	UiMessage,
-} from "./types";
+import type { ClientMessage, CommandDef, PromptAttachment, UiMessage } from "./types";
 import { useT, useI18n } from "./i18n";
 import { FiAlertCircle, FiAlertTriangle, FiChevronsLeft, FiChevronsRight, FiInfo, FiX } from "react-icons/fi";
 import type { Notice } from "./use-chat";
 import { fileToProcessedImage, isRasterImage, type ProcessedImage } from "./image-paste";
 import { randomUuid } from "./uuid";
-import {
-	loadSoundSettings,
-	playSound,
-	saveSoundSettings,
-	type SoundKind,
-	type SoundSettings,
-} from "./sounds";
+import { loadSoundSettings, playSound, saveSoundSettings, type SoundKind, type SoundSettings } from "./sounds";
 import { useTheme } from "./theme";
 
 export interface PendingAttachment {
@@ -76,36 +59,21 @@ export interface PendingAttachment {
 	key?: string;
 }
 
-
 /** A single notice toast. Auto-dismisses after a level-dependent delay, but
  *  hovering PAUSES the timer (stays visible as long as the pointer is over it),
  *  resuming when the pointer leaves. Clicking the toast body does NOT hide it —
  *  only the × button dismisses (and the auto timer). */
-function NoticeToast({
-	notice,
-	onDismiss,
-}: {
-	notice: Notice;
-	onDismiss: (id: number) => void;
-}) {
+function NoticeToast({ notice, onDismiss }: { notice: Notice; onDismiss: (id: number) => void }) {
 	const t = useT();
 	const { locale } = useI18n();
 	const text = locale === "en" && notice.textEn ? notice.textEn : notice.text;
 	const [paused, setPaused] = useState(false);
 	useEffect(() => {
 		if (paused) return;
-		const t = setTimeout(
-			() => onDismiss(notice.id),
-			notice.level === "error" ? 12000 : 7000,
-		);
+		const t = setTimeout(() => onDismiss(notice.id), notice.level === "error" ? 12000 : 7000);
 		return () => clearTimeout(t);
 	}, [paused, notice.id, notice.level, onDismiss]);
-	const Icon =
-		notice.level === "error"
-			? FiAlertCircle
-			: notice.level === "warning"
-				? FiAlertTriangle
-				: FiInfo;
+	const Icon = notice.level === "error" ? FiAlertCircle : notice.level === "warning" ? FiAlertTriangle : FiInfo;
 	return (
 		<div
 			className={`notice notice-${notice.level}${paused ? " paused" : ""}`}
@@ -115,12 +83,7 @@ function NoticeToast({
 		>
 			<Icon className="notice-icon" />
 			<span className="notice-text">{text}</span>
-			<button
-				type="button"
-				className="notice-close"
-				title={t("close")}
-				onClick={() => onDismiss(notice.id)}
-			>
+			<button type="button" className="notice-close" title={t("close")} onClick={() => onDismiss(notice.id)}>
 				<FiX />
 			</button>
 		</div>
@@ -146,15 +109,7 @@ function readPanelCollapsed(side: PanelSide): boolean {
 }
 
 /** 面板与主区之间的拖拽分隔条：拖动改宽度，双击复位。 */
-function ResizeHandle({
-	side,
-	width,
-	onResize,
-}: {
-	side: PanelSide;
-	width: number;
-	onResize: (w: number) => void;
-}) {
+function ResizeHandle({ side, width, onResize }: { side: PanelSide; width: number; onResize: (w: number) => void }) {
 	const t = useT();
 	const onPointerDown = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
@@ -195,12 +150,7 @@ function ResizeHandle({
 function PanelRail({ side, onClick }: { side: PanelSide; onClick: () => void }) {
 	const t = useT();
 	return (
-		<button
-			type="button"
-			className={`panel-rail panel-rail-${side}`}
-			title={t("expandPanel")}
-			onClick={onClick}
-		>
+		<button type="button" className={`panel-rail panel-rail-${side}`} title={t("expandPanel")} onClick={onClick}>
 			{side === "left" ? <FiChevronsRight /> : <FiChevronsLeft />}
 		</button>
 	);
@@ -221,18 +171,12 @@ export function App() {
 	const [view, setView] = useState<ViewName>("chat");
 	// 已安装且未在设置面板禁用的插件（决定 tab 与视图加载）。
 	const enabledPlugins = useMemo(
-		() =>
-			chat.plugins.filter(
-				(p) => !chat.settings?.disabledPlugins?.includes(p.id),
-			),
+		() => chat.plugins.filter((p) => !chat.settings?.disabledPlugins?.includes(p.id)),
 		[chat.plugins, chat.settings?.disabledPlugins],
 	);
 	// 已加载的插件视图（bundle 动态 import 完成后出现）。
 	const [pluginViews, setPluginViews] = useState<LoadedPluginView[]>([]);
-	useEffect(
-		() => subscribeLoadedPluginViews(setPluginViews),
-		[],
-	);
+	useEffect(() => subscribeLoadedPluginViews(setPluginViews), []);
 	// 目录清单/禁用集合/epoch 变化 → 同步注册表：新增的拉取、消失的清理
 	// （React 卸载对应 PluginView 时调用插件的 cleanup）、服务端 reload 后重拉。
 	useEffect(() => {
@@ -264,9 +208,7 @@ export function App() {
 	// Viewport class: ≤768px turns the side panels into sliding drawers
 	// (matches the CSS breakpoint) — used to lazy-load panel data only when
 	// a drawer is actually open on mobile.
-	const [isMobile, setIsMobile] = useState(
-		() => window.matchMedia("(max-width: 768px)").matches,
-	);
+	const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 768px)").matches);
 	useEffect(() => {
 		const mq = window.matchMedia("(max-width: 768px)");
 		const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
@@ -377,10 +319,7 @@ export function App() {
 			if (!before?.running || tm.running) continue;
 			if (cmd.startsWith("pi remove ")) {
 				send({ type: "extensions_reload" });
-			} else if (
-				cmd.startsWith("pi-web-ui install ") ||
-				cmd.startsWith("pi-web-ui uninstall ")
-			) {
+			} else if (cmd.startsWith("pi-web-ui install ") || cmd.startsWith("pi-web-ui uninstall ")) {
 				send({ type: "plugins_reload" });
 			} else if (cmd.startsWith("npm i -g ")) {
 				// A component update ran in the visible terminal (per-row "更新"
@@ -432,19 +371,13 @@ export function App() {
 		// multiple ways (e.g. full content AND a line range) without doubling.
 		const key = `${path}|${mode}|${lines ? `${lines.start}-${lines.end}` : ""}`;
 		setAttachments((prev) =>
-			prev.some(
-				(a) =>
-					`${a.path}|${a.mode}|${a.lines ? `${a.lines.start}-${a.lines.end}` : ""}` ===
-					key,
-			)
+			prev.some((a) => `${a.path}|${a.mode}|${a.lines ? `${a.lines.start}-${a.lines.end}` : ""}` === key)
 				? prev
 				: [...prev, { path, name, mode, isDir, ...(lines ? { lines } : {}) }],
 		);
 	};
 	const removeAttachment = (pathOrKey: string) =>
-		setAttachments((prev) =>
-			prev.filter((a) => (a.key ? a.key !== pathOrKey : a.path !== pathOrKey)),
-		);
+		setAttachments((prev) => prev.filter((a) => (a.key ? a.key !== pathOrKey : a.path !== pathOrKey)));
 
 	// Side panels live in mobile drawers — any action inside them (session
 	// switch, cwd change, file list…) should close the drawer. Stable wrapper
@@ -455,10 +388,7 @@ export function App() {
 			// LeftPanel fires read-only list_* probes that must NOT collapse the
 			// freshly-opened drawer (they run through panelSend too). Otherwise the
 			// drawer opens and immediately snaps shut.
-			if (
-				!msg.type.startsWith("list_") &&
-				!msg.type.startsWith("get_")
-			) {
+			if (!msg.type.startsWith("list_") && !msg.type.startsWith("get_")) {
 				setDrawer(null);
 			}
 			return send(msg);
@@ -510,10 +440,7 @@ export function App() {
 	const uploadId = useRef(0);
 	const attachLocalFile = async (f: File) => {
 		if (f.size > MAX_UPLOAD_BYTES) {
-			pushNotice(
-				"warning",
-				t("fileTooLarge", { name: f.name, size: MAX_UPLOAD_BYTES / 1024 / 1024 }),
-			);
+			pushNotice("warning", t("fileTooLarge", { name: f.name, size: MAX_UPLOAD_BYTES / 1024 / 1024 }));
 			return;
 		}
 		let base64: string;
@@ -595,7 +522,7 @@ export function App() {
 						model,
 						thinkingLevel: thinkingLevel ?? "off",
 						availableThinkingLevels: availableThinkingLevels ?? [],
-				  }
+					}
 				: null,
 		// Deps are the STABLE inner refs (server reuses them across snapshots),
 		// so the object identity survives token deltas and ChatInput's memo holds.
@@ -641,8 +568,7 @@ export function App() {
 				setAppDragOver(true);
 			}}
 			onDragLeave={(e) => {
-				if (!e.currentTarget.contains(e.relatedTarget as Node))
-					setAppDragOver(false);
+				if (!e.currentTarget.contains(e.relatedTarget as Node)) setAppDragOver(false);
 			}}
 			onDrop={(e) => {
 				setAppDragOver(false);
@@ -675,8 +601,7 @@ export function App() {
 				onViewChange={(v: ViewName) => {
 					// The terminal panel stays mounted while hidden. Create the first
 					// shell on the user's terminal-view click, not on initial mount.
-					terminalOpenRequested.current =
-						v === "terminal" && chat.terminals.length === 0;
+					terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
 					if (terminalOpenRequested.current && createShell()) {
 						terminalOpenRequested.current = false;
 					}
@@ -694,150 +619,134 @@ export function App() {
 				theme={theme}
 				onThemeChange={switchTheme}
 			/>
-			{chat.protocolMismatch && (
-				<div className="protocol-banner">
-					⚠ {t("protocolMismatch")}
-				</div>
-			)}
+			{chat.protocolMismatch && <div className="protocol-banner">⚠ {t("protocolMismatch")}</div>}
 			<div className="notices">
 				{chat.notices.map((n) => (
 					<NoticeToast key={n.id} notice={n} onDismiss={dismissNotice} />
 				))}
 			</div>
 			<TemplateProvider send={send}>
-			<div
-				className="layout"
-				style={{ "--left-w": `${leftWidth}px`, "--right-w": `${rightWidth}px` } as CSSProperties}
-			>
-				{drawer && (
-					<div className="drawer-backdrop" onClick={() => setDrawer(null)} />
-				)}
-				<div className={`view-pane ${view === "chat" ? "" : "hidden"}`}>
-					{!isMobile && leftCollapsed && (
-						<PanelRail side="left" onClick={toggleLeft} />
-					)}
-					<div
-						className={`panel-drawer drawer-left ${drawer === "left" ? "open" : ""}${isMobile ? "" : leftCollapsed ? " hidden" : ""}`}
-					>
-						<LeftPanel
-							collapsible={!isMobile}
-							onToggleCollapse={toggleLeft}
-							send={panelSend}
-							active={!isMobile || drawer === "left"}
-							ready={chat.ready}
-							status={chat.status}
-							cwd={chat.state?.cwd ?? ""}
-							sessionFile={chat.state?.sessionFile ?? null}
-							conversations={chat.conversations}
-							sessions={chat.sessions}
-							projects={chat.projects}
-							activeConversationId={chat.activeConversationId}
-						/>
-					</div>
-					{!isMobile && (
-						<ResizeHandle side="left" width={leftWidth} onResize={resizeLeft} />
-					)}
-					<main className="main">
-						{chat.state ? (
-							<MessageList
-								key={chat.state.conversationId ?? "boot"}
-								state={chat.state}
-								liveOutputs={chat.liveOutputs}
-								toolStatuses={chat.toolStatuses}
-								onEdit={onEditMessage}
-								onKillBash={() => send({ type: "abort_bash" })}
-								onRemoveQueued={onRemoveQueued}
-								thinkingWrap={chat.settings?.thinkingWrap ?? true}
-							toolsWrap={chat.settings?.toolsWrap ?? true}
-							jumpTarget={searchJump}
-							onJumpDone={() => setSearchJump(null)}
+				<div
+					className="layout"
+					style={{ "--left-w": `${leftWidth}px`, "--right-w": `${rightWidth}px` } as CSSProperties}
+				>
+					{drawer && <div className="drawer-backdrop" onClick={() => setDrawer(null)} />}
+					<div className={`view-pane ${view === "chat" ? "" : "hidden"}`}>
+						{!isMobile && leftCollapsed && <PanelRail side="left" onClick={toggleLeft} />}
+						<div
+							className={`panel-drawer drawer-left ${drawer === "left" ? "open" : ""}${isMobile ? "" : leftCollapsed ? " hidden" : ""}`}
+						>
+							<LeftPanel
+								collapsible={!isMobile}
+								onToggleCollapse={toggleLeft}
+								send={panelSend}
+								active={!isMobile || drawer === "left"}
+								ready={chat.ready}
+								status={chat.status}
+								cwd={chat.state?.cwd ?? ""}
+								sessionFile={chat.state?.sessionFile ?? null}
+								conversations={chat.conversations}
+								sessions={chat.sessions}
+								projects={chat.projects}
+								activeConversationId={chat.activeConversationId}
 							/>
-						) : (
-							<div className="boot-wait">
-								{chat.ready ? t("loadingSession") : t("connectingServer")}
-							</div>
-						)}
-						<GoalBar
+						</div>
+						{!isMobile && <ResizeHandle side="left" width={leftWidth} onResize={resizeLeft} />}
+						<main className="main">
+							{chat.state ? (
+								<MessageList
+									key={chat.state.conversationId ?? "boot"}
+									state={chat.state}
+									liveOutputs={chat.liveOutputs}
+									toolStatuses={chat.toolStatuses}
+									onEdit={onEditMessage}
+									onKillBash={() => send({ type: "abort_bash" })}
+									onRemoveQueued={onRemoveQueued}
+									thinkingWrap={chat.settings?.thinkingWrap ?? true}
+									toolsWrap={chat.settings?.toolsWrap ?? true}
+									jumpTarget={searchJump}
+									onJumpDone={() => setSearchJump(null)}
+								/>
+							) : (
+								<div className="boot-wait">{chat.ready ? t("loadingSession") : t("connectingServer")}</div>
+							)}
+							<GoalBar
+								send={send}
+								goal={chat.goal}
+								models={chat.models}
+								modelsLoading={chat.modelsLoading}
+								activeConversationId={chat.activeConversationId}
+								engine={chat.engine}
+							/>
+							{/* 扩展问卷：非模态内联面板，插在输入框上方，对话内容保持可见 */}
+							{chat.dialog && <Dialog dialog={chat.dialog} send={send} />}
+							{chat.question && <DshQuestionDialog question={chat.question} send={send} />}
+							<ChatInput
+								send={send}
+								ready={chat.ready}
+								streaming={chat.state?.isStreaming ?? false}
+								messages={chat.state?.messages ?? EMPTY_MESSAGES}
+								slashCommands={chat.slashCommands}
+								modelState={modelState}
+								models={chat.models}
+								modelsLoading={chat.modelsLoading}
+								providerKeys={chat.providerKeys}
+								attachments={attachments}
+								onRemoveAttachment={removeAttachmentCb}
+								onAddImageFiles={addImageFilesCb}
+								onAddLocalFiles={addLocalFilesCb}
+								onNotice={pushNotice}
+								onManageModels={openManageModels}
+								onSent={clearAttachments}
+							/>
+						</main>
+						{!isMobile && <ResizeHandle side="right" width={rightWidth} onResize={resizeRight} />}
+						<div
+							className={`panel-drawer drawer-right ${drawer === "right" ? "open" : ""}${isMobile ? "" : rightCollapsed ? " hidden" : ""}`}
+						>
+							<RightPanel
+								collapsible={!isMobile}
+								onToggleCollapse={toggleRight}
+								send={panelSend}
+								files={chat.files}
+								fileChanged={chat.fileChanged}
+								widgets={chat.widgets}
+								cwd={chat.state?.cwd ?? ""}
+								onAttach={(path, name, mode, isDir) => {
+									setDrawer(null);
+									attach(path, name, mode, isDir);
+								}}
+								onPreview={(path, name) => {
+									setDrawer(null);
+									setPreviewFile({ path, name });
+								}}
+								onNotice={(level, text) => pushNotice(level, text)}
+							/>
+						</div>
+						{!isMobile && rightCollapsed && <PanelRail side="right" onClick={toggleRight} />}
+					</div>
+					<div className={`view-pane ${view === "terminal" ? "" : "hidden"}`}>
+						<Suspense fallback={null}>
+							<TerminalPanel chat={chat} send={send} terminal={terminal} />
+						</Suspense>
+					</div>
+					<div className={`view-pane ${view === "git" ? "" : "hidden"}`}>
+						<ScmPanel
+							chat={chat}
 							send={send}
-							goal={chat.goal}
-							models={chat.models}
-							modelsLoading={chat.modelsLoading}
-							activeConversationId={chat.activeConversationId}
-							engine={chat.engine}
-						/>
-						{/* 扩展问卷：非模态内联面板，插在输入框上方，对话内容保持可见 */}
-						{chat.dialog && <Dialog dialog={chat.dialog} send={send} />}
-						{chat.question && <DshQuestionDialog question={chat.question} send={send} />}
-						<ChatInput
-							send={send}
-							ready={chat.ready}
-							streaming={chat.state?.isStreaming ?? false}
-									messages={chat.state?.messages ?? EMPTY_MESSAGES}
-							slashCommands={chat.slashCommands}
-							modelState={modelState}
-							models={chat.models}
-							modelsLoading={chat.modelsLoading}
-							providerKeys={chat.providerKeys}
-							attachments={attachments}
-							onRemoveAttachment={removeAttachmentCb}
-							onAddImageFiles={addImageFilesCb}
-							onAddLocalFiles={addLocalFilesCb}
-							onNotice={pushNotice}
-							onManageModels={openManageModels}
-							onSent={clearAttachments}
-						/>
-					</main>
-					{!isMobile && (
-						<ResizeHandle side="right" width={rightWidth} onResize={resizeRight} />
-					)}
-					<div
-						className={`panel-drawer drawer-right ${drawer === "right" ? "open" : ""}${isMobile ? "" : rightCollapsed ? " hidden" : ""}`}
-					>
-						<RightPanel
-							collapsible={!isMobile}
-							onToggleCollapse={toggleRight}
-							send={panelSend}
-							files={chat.files}
-							fileChanged={chat.fileChanged}
-							widgets={chat.widgets}
-							cwd={chat.state?.cwd ?? ""}
-							onAttach={(path, name, mode, isDir) => {
-								setDrawer(null);
-								attach(path, name, mode, isDir);
-							}}
-							onPreview={(path, name) => {
-								setDrawer(null);
-								setPreviewFile({ path, name });
-							}}
-							onNotice={(level, text) => pushNotice(level, text)}
+							terminal={terminal}
+							active={view === "git"}
+							onSwitchToTerminal={() => setView("terminal")}
 						/>
 					</div>
-					{!isMobile && rightCollapsed && (
-						<PanelRail side="right" onClick={toggleRight} />
-					)}
-				</div>
-				<div className={`view-pane ${view === "terminal" ? "" : "hidden"}`}>
-					<Suspense fallback={null}>
-						<TerminalPanel chat={chat} send={send} terminal={terminal} />
-					</Suspense>
-				</div>
-				<div className={`view-pane ${view === "git" ? "" : "hidden"}`}>
-					<ScmPanel
-						chat={chat}
-						send={send}
-						terminal={terminal}
-						active={view === "git"}
-						onSwitchToTerminal={() => setView("terminal")}
-					/>
-				</div>
-				{pluginViews.map((entry) => {
-					const name = `plugin:${entry.info.id}` as ViewName;
-					return (
-						<div key={entry.info.id} className={`view-pane ${view === name ? "" : "hidden"}`}>
-							<PluginView entry={entry} send={send} />
-						</div>
-					);
-				})}
+					{pluginViews.map((entry) => {
+						const name = `plugin:${entry.info.id}` as ViewName;
+						return (
+							<div key={entry.info.id} className={`view-pane ${view === name ? "" : "hidden"}`}>
+								<PluginView entry={entry} send={send} />
+							</div>
+						);
+					})}
 				</div>
 			</TemplateProvider>
 			<FooterBar chat={chat} send={send} />
@@ -846,27 +755,21 @@ export function App() {
 					file={previewFile}
 					content={chat.fileContent}
 					send={send}
-					onAddLines={(path, name, start, end) =>
-						attach(path, name, "lines", false, { start, end })
-					}
+					onAddLines={(path, name, start, end) => attach(path, name, "lines", false, { start, end })}
 					onAttach={(path, name, mode) => attach(path, name, mode)}
 					onClose={() => setPreviewFile(null)}
 				/>
 			)}
-			{chat.ready &&
-				chat.state &&
-				chat.state.piConfigured === false &&
-				!setupDismissed &&
-				!manageModelsOpen && (
-					<PiSetupModal
-						send={send}
-						piConfigured={chat.state.piConfigured}
-						piAgentInstalled={chat.state.piAgentInstalled}
-						providers={chat.providers}
-						installResult={chat.installResult}
-						onClose={() => setSetupDismissed(true)}
-					/>
-				)}
+			{chat.ready && chat.state && chat.state.piConfigured === false && !setupDismissed && !manageModelsOpen && (
+				<PiSetupModal
+					send={send}
+					piConfigured={chat.state.piConfigured}
+					piAgentInstalled={chat.state.piAgentInstalled}
+					providers={chat.providers}
+					installResult={chat.installResult}
+					onClose={() => setSetupDismissed(true)}
+				/>
+			)}
 			{manageModelsOpen && (
 				<ModelConfigModal
 					send={send}
@@ -888,13 +791,7 @@ export function App() {
 					onClose={() => setSettingsOpen(false)}
 				/>
 			)}
-			{bgTasksOpen && (
-				<BgTasksModal
-					servers={chat.bgServers}
-					send={send}
-					onClose={() => setBgTasksOpen(false)}
-				/>
-			)}
+			{bgTasksOpen && <BgTasksModal servers={chat.bgServers} send={send} onClose={() => setBgTasksOpen(false)} />}
 			<GlobalSearchModal
 				open={globalSearchOpen}
 				send={send}

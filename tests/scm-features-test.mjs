@@ -111,10 +111,7 @@ async function main() {
 	const feat = (st.branches ?? []).find((b) => b.name === "feature");
 	const remFeat = (st.branches ?? []).find((b) => b.name === "origin/feature");
 	check("local branch listed", !!feat);
-	check(
-		"remote branch listed with remote=origin",
-		!!remFeat && remFeat.remote === "origin",
-	);
+	check("remote branch listed with remote=origin", !!remFeat && remFeat.remote === "origin");
 	check("history absent from status payload", !Array.isArray(st.history));
 
 	// -- lazy history ----
@@ -122,8 +119,7 @@ async function main() {
 	check("history ok", hist.ok);
 	check(
 		"history has both commits",
-		(hist.history ?? []).length >= 2 &&
-			(hist.history ?? []).some((c) => c.subject === "feature-work"),
+		(hist.history ?? []).length >= 2 && (hist.history ?? []).some((c) => c.subject === "feature-work"),
 	);
 
 	// -- external CLI commit → watcher pushes scm_changed ----
@@ -139,18 +135,12 @@ async function main() {
 	});
 	writeFileSync(join(repo, "b.txt"), "new\n");
 	execSync("git add -A && git commit -m external", { cwd: repo, stdio: "ignore" });
-	const gotDirty = await Promise.race([
-		dirtyPromise,
-		sleep(8000).then(() => false),
-	]);
+	const gotDirty = await Promise.race([dirtyPromise, sleep(8000).then(() => false)]);
 	check("external commit pushed scm_changed", gotDirty);
 
 	// status after external change reflects it
 	const st2 = await send({ type: "scm_status" });
-	check(
-		"status sees the new commit's parent state (clean tree)",
-		st2.ok && (st2.files ?? []).length === 0,
-	);
+	check("status sees the new commit's parent state (clean tree)", st2.ok && (st2.files ?? []).length === 0);
 
 	ws.close();
 	console.log(`\n${pass} passed, ${fail} failed`);

@@ -152,7 +152,13 @@ try {
 	writeFileSync(authPath, JSON.stringify({ anthropic: { type: "api_key", key: "sk-legacy-a" } }, null, 2) + "\n");
 	c.send({ type: "list_provider_keys" });
 	let legacy = await c.waitProviderKeys("anthropic", 1);
-	check("legacy auth.json key seeded", legacy.length === 1 && legacy[0].active === true && legacy[0].name === "密钥 1" && readKeys().anthropic?.keys?.[0]?.apiKey === "sk-legacy-a");
+	check(
+		"legacy auth.json key seeded",
+		legacy.length === 1 &&
+			legacy[0].active === true &&
+			legacy[0].name === "密钥 1" &&
+			readKeys().anthropic?.keys?.[0]?.apiKey === "sk-legacy-a",
+	);
 	c.send({ type: "add_provider_key", provider: "anthropic", apiKey: "sk-new-b", name: "备用" });
 	await c.waitForNotice("点击模型时可切换", 30000);
 	legacy = await c.waitProviderKeys("anthropic", 2);
@@ -167,7 +173,10 @@ try {
 	check("provider-keys.json records deepseek", readKeys().deepseek?.keys?.length === 1);
 
 	let ks = await c.waitProviderKeys("deepseek", 1);
-	check("provider_keys lists 1 active key (name only)", ks.length === 1 && ks[0].active === true && typeof ks[0].name === "string");
+	check(
+		"provider_keys lists 1 active key (name only)",
+		ks.length === 1 && ks[0].active === true && typeof ks[0].name === "string",
+	);
 	check("no value/masked/id on the wire", !ks.some((k) => ["id", "masked", "apiKey"].some((key) => key in k)));
 	const keyAName = ks[0].name;
 

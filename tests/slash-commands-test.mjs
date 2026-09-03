@@ -25,16 +25,7 @@ const CLIENT_ID = `slash-cmd-test-${Date.now()}`;
 const PROJ = REPO_ROOT;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const NATIVE_NAMES = [
-	"new",
-	"model",
-	"compact",
-	"cwd",
-	"thinking",
-	"resume",
-	"help",
-	"copy",
-];
+const NATIVE_NAMES = ["new", "model", "compact", "cwd", "thinking", "resume", "help", "copy"];
 
 function connect() {
 	return new Promise((resolve, reject) => {
@@ -67,10 +58,7 @@ function connect() {
 							res(inbox.splice(i, 1)[0]);
 							return;
 						}
-						const t = setTimeout(
-							() => rej(new Error("timeout waiting for message")),
-							timeout,
-						);
+						const t = setTimeout(() => rej(new Error("timeout waiting for message")), timeout);
 						waiters.push({
 							pred,
 							resolve: (m) => {
@@ -135,10 +123,7 @@ async function main() {
 	for (const cmd of cat.commands) {
 		bySource[cmd.source] = (bySource[cmd.source] ?? 0) + 1;
 	}
-	console.log(
-		`[1] catalog on attach: ${cat.commands.length} commands`,
-		JSON.stringify(bySource),
-	);
+	console.log(`[1] catalog on attach: ${cat.commands.length} commands`, JSON.stringify(bySource));
 	if (cat.commands.length < NATIVE_NAMES.length) {
 		throw new Error("FAIL: catalog smaller than the native set");
 	}
@@ -147,9 +132,7 @@ async function main() {
 	c.send({ type: "get_commands" });
 	const cat2 = await c.wait((m) => m.type === "slash_commands");
 	if (cat2.commands.length !== cat.commands.length) {
-		throw new Error(
-			`FAIL: get_commands returned ${cat2.commands.length}, expected ${cat.commands.length}`,
-		);
+		throw new Error(`FAIL: get_commands returned ${cat2.commands.length}, expected ${cat.commands.length}`);
 	}
 	console.log(`[2] get_commands re-request: ${cat2.commands.length} commands`);
 
@@ -159,11 +142,7 @@ async function main() {
 	c.send({ type: "prompt", text: `/cwd ${TMP_CWD}` });
 	// 协议 v2：动作后的快照可能是全量 snapshot，也可能是 snapshot_delta
 	// （light state 同样携带 cwd）——两者都必须接受（见 conv-cwd-test 写法）。
-	await c.wait(
-		(m) =>
-			(m.type === "snapshot" || m.type === "snapshot_delta") &&
-			norm(m.state?.cwd) === norm(TMP_CWD),
-	);
+	await c.wait((m) => (m.type === "snapshot" || m.type === "snapshot_delta") && norm(m.state?.cwd) === norm(TMP_CWD));
 	const cwdOk = await c.wait((m) => m.type === "notice", 6000).catch(() => null);
 	if (!cwdOk || !cwdOk.text.includes("已切换到工作目录")) {
 		throw new Error("FAIL: /cwd valid path did not switch workspace");
@@ -187,10 +166,7 @@ async function main() {
 
 	// --- 5. native /help is swallowed (no prompt-send failure) ---
 	c.send({ type: "prompt", text: "/help" });
-	const leak = await c.wait(
-		(m) => m.type === "notice" && m.text.includes("提示发送失败"),
-		3000,
-	).catch(() => null);
+	const leak = await c.wait((m) => m.type === "notice" && m.text.includes("提示发送失败"), 3000).catch(() => null);
 	if (leak) {
 		throw new Error("FAIL: /help leaked to the SDK prompt");
 	}
@@ -206,10 +182,7 @@ async function main() {
 
 	// --- 8. /reload re-discovers resources and re-pushes the catalog ---
 	c.send({ type: "prompt", text: "/reload" });
-	const catReloaded = await c.wait(
-		(m) => m.type === "slash_commands",
-		20000,
-	);
+	const catReloaded = await c.wait((m) => m.type === "slash_commands", 20000);
 	const reloadNotice = await c.wait((m) => m.type === "notice", 8000);
 	if (!reloadNotice.text.includes("已重新加载")) {
 		throw new Error(`FAIL: /reload notice unexpected: ${reloadNotice.text}`);
@@ -217,13 +190,9 @@ async function main() {
 	const namesAfterReload = new Set(catReloaded.commands.map((x) => x.name));
 	const missingAfterReload = NATIVE_NAMES.filter((n) => !namesAfterReload.has(n));
 	if (missingAfterReload.length > 0) {
-		throw new Error(
-			`FAIL: builtin commands missing after /reload: ${missingAfterReload.join(", ")}`,
-		);
+		throw new Error(`FAIL: builtin commands missing after /reload: ${missingAfterReload.join(", ")}`);
 	}
-	console.log(
-		`[8] /reload → catalog re-pushed (${catReloaded.commands.length} commands), ${reloadNotice.text}`,
-	);
+	console.log(`[8] /reload → catalog re-pushed (${catReloaded.commands.length} commands), ${reloadNotice.text}`);
 
 	c.close();
 	server.kill();

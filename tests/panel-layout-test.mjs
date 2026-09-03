@@ -54,42 +54,28 @@ await page.waitForSelector(".panel-left .panel-sessions", { timeout: 15000 });
 await sleep(800);
 
 // 1. Single conversation → history title exists, no convs section.
-const histTitles = await page
-	.locator(".panel-sessions .panel-section-title")
-	.allTextContents();
+const histTitles = await page.locator(".panel-sessions .panel-section-title").allTextContents();
 check(
 	"history title present",
 	histTitles.some((t) => t.includes("历史对话")),
 );
-check(
-	"no convs section yet",
-	(await page.locator(".panel-left .panel-convs").count()) === 0,
-);
+check("no convs section yet", (await page.locator(".panel-left .panel-convs").count()) === 0);
 
 // 2. Two more new chats (still never ran, never displaced while streaming):
 //    the running-conversations section must STAY hidden by design.
 await page.evaluate(() => {
-	const btn = [...document.querySelectorAll("button")].find(
-		(b) => b.textContent && b.textContent.includes("新对话"),
-	);
+	const btn = [...document.querySelectorAll("button")].find((b) => b.textContent && b.textContent.includes("新对话"));
 	btn?.click();
 });
 await sleep(900);
 await page.evaluate(() => {
-	const btn = [...document.querySelectorAll("button")].find(
-		(b) => b.textContent && b.textContent.includes("新对话"),
-	);
+	const btn = [...document.querySelectorAll("button")].find((b) => b.textContent && b.textContent.includes("新对话"));
 	btn?.click();
 });
 await sleep(900);
 
-check(
-	"convs section still absent (no background run)",
-	(await page.locator(".panel-left .panel-convs").count()) === 0,
-);
-const convTitles = await page
-	.locator(".panel-left .panel-section-title")
-	.allTextContents();
+check("convs section still absent (no background run)", (await page.locator(".panel-left .panel-convs").count()) === 0);
+const convTitles = await page.locator(".panel-left .panel-section-title").allTextContents();
 check(
 	"no 运行的对话 title without listed conversations",
 	!convTitles.some((t) => t.includes("运行的对话")),
@@ -97,9 +83,7 @@ check(
 );
 
 // 3. Structure: history title must be OUTSIDE the scroll container.
-const historyTitleInsideScroll = await page
-	.locator(".panel-sessions .sessions-scroll .panel-section-title")
-	.count();
+const historyTitleInsideScroll = await page.locator(".panel-sessions .sessions-scroll .panel-section-title").count();
 check(
 	"history title NOT inside the scroll container",
 	historyTitleInsideScroll === 0,
@@ -117,10 +101,7 @@ const styles = await page.evaluate(() => {
 			: "missing",
 	};
 });
-check(
-	"sessions-scroll is the scrolling area",
-	styles.sessionsScrollOverflow === "auto",
-);
+check("sessions-scroll is the scrolling area", styles.sessionsScrollOverflow === "auto");
 
 // 5. Titles must not move when the sessions list scrolls.
 const before = await page.evaluate(() => {
@@ -134,11 +115,7 @@ const after = await page.evaluate(async () => {
 	const t = document.querySelector(".panel-sessions .panel-section-title");
 	return t ? t.getBoundingClientRect().top : null;
 });
-check(
-	"history title stays fixed after scroll",
-	before !== null && before === after,
-	`top=${before}→${after}`,
-);
+check("history title stays fixed after scroll", before !== null && before === after, `top=${before}→${after}`);
 
 await browser.close();
 server.kill("SIGKILL");

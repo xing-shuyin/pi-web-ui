@@ -22,15 +22,11 @@ process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
-const server = spawn(
-	process.execPath,
-	[join(HERE, "dist", "server", "index.js")],
-	{
-		cwd: HERE,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(HERE, "dist", "server", "index.js")], {
+	cwd: HERE,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -69,9 +65,7 @@ async function waitServer() {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		executablePath:
-			process.env.CHROME_PATH ??
-			"C:/Program Files/Google/Chrome/Application/chrome.exe",
+		executablePath: process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -88,14 +82,15 @@ async function main() {
 	console.log("app booted");
 
 	// 1) Drag a small text file onto the input bar.
-	await page.evaluate(async ({ name, text }) => {
-		const dt = new DataTransfer();
-		dt.items.add(new File([text], name, { type: "text/plain" }));
-		const bar = document.querySelector(".inputbar");
-		bar.dispatchEvent(
-			new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }),
-		);
-	}, { name: "note.txt", text: "拖拽的文本文件 hello" });
+	await page.evaluate(
+		async ({ name, text }) => {
+			const dt = new DataTransfer();
+			dt.items.add(new File([text], name, { type: "text/plain" }));
+			const bar = document.querySelector(".inputbar");
+			bar.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+		},
+		{ name: "note.txt", text: "拖拽的文本文件 hello" },
+	);
 	await page.waitForSelector(".attach-chip.file", { timeout: 8000 });
 	check("drag: 📄 text chip appeared", true);
 
@@ -104,10 +99,7 @@ async function main() {
 	writeFileSync(binFile, Buffer.from([0, 1, 2, 250, 251, 252, 253, 254, 255]));
 	await page.locator('input[type="file"]').setInputFiles(binFile);
 	await page.waitForTimeout(800);
-	check(
-		"upload: two 📄 chips",
-		(await page.locator(".attach-chip.file").count()) === 2,
-	);
+	check("upload: two 📄 chips", (await page.locator(".attach-chip.file").count()) === 2);
 
 	// 3) SVG must NOT go through the image pipeline (createImageBitmap can't
 	//    decode it) — it attaches as a plain file (📄 chip, not 🖼).
@@ -122,9 +114,7 @@ async function main() {
 		"svg: attached as file chip (📄), not image (🖼)",
 		(await page.locator(".attach-chip.file").count()) === 3 &&
 			(await page.locator(".attach-chip.image").count()) === 0 &&
-			(await page.locator(".attach-chip.file").allTextContents()).some((t) =>
-				t.includes("logo.svg"),
-			),
+			(await page.locator(".attach-chip.file").allTextContents()).some((t) => t.includes("logo.svg")),
 	);
 
 	// 4) Send; the text file must inline (content visible), binary referenced.
@@ -138,11 +128,12 @@ async function main() {
 	const firstMode = (await first.locator(".attachcard-mode").textContent()).trim();
 	await first.locator(".attachcard-head").click();
 	await page.waitForTimeout(400);
-	const inlineContent = (await first
-		.locator(".attachcard-content")
-		.textContent()
-		.catch(() => ""))
-		.trim();
+	const inlineContent = (
+		await first
+			.locator(".attachcard-content")
+			.textContent()
+			.catch(() => "")
+	).trim();
 	check(
 		`text card inline: "${firstName}" / ${firstMode} / contains content`,
 		firstName === "note.txt" && inlineContent.includes("拖拽的文本文件"),

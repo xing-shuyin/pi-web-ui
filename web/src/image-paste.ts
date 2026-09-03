@@ -28,20 +28,14 @@ const MAX_BYTES = 2 * 1024 * 1024;
  * useful than a rasterized blob.
  */
 export function isRasterImage(mime: string): boolean {
-	return (
-		mime.startsWith("image/") &&
-		mime !== "image/svg+xml" &&
-		mime !== "image/svg"
-	);
+	return mime.startsWith("image/") && mime !== "image/svg+xml" && mime !== "image/svg";
 }
 
 /**
  * Read + downscale + encode an image File. Returns null when the browser
  * can't decode it (e.g. unsupported format) or it isn't an image.
  */
-export async function fileToProcessedImage(
-	file: File,
-): Promise<ProcessedImage | null> {
+export async function fileToProcessedImage(file: File): Promise<ProcessedImage | null> {
 	if (!file.type.startsWith("image/")) return null;
 	let bitmap: ImageBitmap;
 	try {
@@ -50,10 +44,7 @@ export async function fileToProcessedImage(
 		return null;
 	}
 	try {
-		const scale = Math.min(
-			1,
-			MAX_DIMENSION / Math.max(bitmap.width, bitmap.height),
-		);
+		const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
 		const w = Math.max(1, Math.round(bitmap.width * scale));
 		const h = Math.max(1, Math.round(bitmap.height * scale));
 

@@ -1,0 +1,5 @@
+dist
+web/dist
+node_modules
+coverage
+*.min.js

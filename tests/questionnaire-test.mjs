@@ -21,15 +21,11 @@ const workdir = mkdtempSync(join(tmpdir(), "piweb-q-"));
 process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
-const server = spawn(
-	process.execPath,
-	[join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")],
-	{
-		cwd: new URL("..", import.meta.url).pathname,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")], {
+	cwd: new URL("..", import.meta.url).pathname,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -87,9 +83,7 @@ async function sendPrompt(page, text) {
 
 /** Wait for the last ask_user_question toolcall to reach 完成. */
 async function waitToolDone(page, timeout = 180_000) {
-	const tc = page.locator(
-		'.toolcall:has(.toolcall-name:text-is("ask_user_question"))',
-	);
+	const tc = page.locator('.toolcall:has(.toolcall-name:text-is("ask_user_question"))');
 	await tc.last().waitFor({ state: "visible", timeout });
 	await page
 		.locator('.toolcall:has(.toolcall-name:text-is("ask_user_question"))')
@@ -112,8 +106,7 @@ async function waitToolDone(page, timeout = 180_000) {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -171,15 +164,12 @@ async function main() {
 	check("panel is inside the chat main column", (await mainPanel.count()) === 1);
 	const panelBox = await page.locator(".dialog-inline").boundingBox();
 	const inputBox = await page.locator(".inputbox").boundingBox();
-	const listBox = await page.locator(".messages").boundingBox().catch(() => null);
-	check(
-		"panel sits above the input box",
-		!!panelBox && !!inputBox && panelBox.y + panelBox.height <= inputBox.y + 2,
-	);
-	check(
-		"message list stays visible while asking",
-		!!listBox && listBox.height > 0,
-	);
+	const listBox = await page
+		.locator(".messages")
+		.boundingBox()
+		.catch(() => null);
+	check("panel sits above the input box", !!panelBox && !!inputBox && panelBox.y + panelBox.height <= inputBox.y + 2);
+	check("message list stays visible while asking", !!listBox && listBox.height > 0);
 
 	// Click the first option -> tool resolves, panel closes, agent continues.
 	await page.locator(".dialog-option").first().click();

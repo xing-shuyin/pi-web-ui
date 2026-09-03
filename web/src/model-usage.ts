@@ -23,20 +23,14 @@ export function normalizeUsage(raw: unknown): Record<string, number> {
 }
 
 /** 纯函数：把某模型使用次数 +1，返回新映射（不改入参）。空 id 直接原样返回。 */
-export function incrementUsage(
-	usage: Record<string, number>,
-	modelId: string,
-): Record<string, number> {
+export function incrementUsage(usage: Record<string, number>, modelId: string): Record<string, number> {
 	if (!modelId) return usage;
 	return { ...usage, [modelId]: (usage[modelId] ?? 0) + 1 };
 }
 
 /** 纯函数：按使用次数降序稳定排序（次数相同保持传入顺序，避免无使用记录的
  *  模型被无意义重排）。返回新数组，不改入参。 */
-export function sortByUsage<T extends { id: string }>(
-	models: T[],
-	usage: Record<string, number>,
-): T[] {
+export function sortByUsage<T extends { id: string }>(models: T[], usage: Record<string, number>): T[] {
 	const n = usage;
 	return models
 		.map((m, i) => ({ m, i, count: n[m.id] ?? 0 }))

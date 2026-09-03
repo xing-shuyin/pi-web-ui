@@ -19,8 +19,7 @@ const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
 
-const CHROME =
-	CHROME_PATH;
+const CHROME = CHROME_PATH;
 const PORT = 8915;
 const URL = `http://localhost:${PORT}`;
 const PROJ = REPO_ROOT;
@@ -34,10 +33,21 @@ function check(name, ok, extra = "") {
 (async () => {
 	const server = spawn("node", ["dist/server/index.js"], {
 		cwd: PROJ,
-		env: { ...process.env, PI_WEB_PORT: String(PORT), PI_WEB_DATA_DIR: mkdtempSync(join(tmpdir(), "pi-web-rounds-")), PI_WEB_CWD: PROJ },
+		env: {
+			...process.env,
+			PI_WEB_PORT: String(PORT),
+			PI_WEB_DATA_DIR: mkdtempSync(join(tmpdir(), "pi-web-rounds-")),
+			PI_WEB_CWD: PROJ,
+		},
 		stdio: "ignore",
 	});
-	for (let i = 0; i < 60; i++) { await sleep(250); try { if (!(await portUp(PORT))) throw new Error("port not up"); break; } catch {} }
+	for (let i = 0; i < 60; i++) {
+		await sleep(250);
+		try {
+			if (!(await portUp(PORT))) throw new Error("port not up");
+			break;
+		} catch {}
+	}
 
 	const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 	const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -65,6 +75,11 @@ function check(name, ok, extra = "") {
 
 	console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 	await browser.close();
-	try { process.kill(server.pid, "SIGTERM"); } catch {}
+	try {
+		process.kill(server.pid, "SIGTERM");
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
-})().catch((e) => { console.error("ERR", e); process.exit(1); });
+})().catch((e) => {
+	console.error("ERR", e);
+	process.exit(1);
+});

@@ -84,10 +84,7 @@ async function main() {
 		new Promise((resolve, reject) => {
 			const found = msgs.find(pred);
 			if (found) return resolve(found);
-			const timer = setTimeout(
-				() => reject(new Error(`timeout waiting for message`)),
-				timeoutMs,
-			);
+			const timer = setTimeout(() => reject(new Error(`timeout waiting for message`)), timeoutMs);
 			const listener = (m) => {
 				if (pred(m)) {
 					clearTimeout(timer);
@@ -126,18 +123,13 @@ async function main() {
 	// 2) tool_status must arrive BEFORE the snapshot containing the toolResult
 	//    (i.e. while the model is still chewing on the result).
 	const toolResultSnapshot = await waitFor(
-		(m) =>
-			m.type === "snapshot" &&
-			m.state.messages.some((mm) => mm.role === "toolResult"),
+		(m) => m.type === "snapshot" && m.state.messages.some((mm) => mm.role === "toolResult"),
 		120_000,
 	);
 	const statusIdx = msgs.indexOf(status);
 	// 只在 tool_status 之后找快照 —— 历史快照若含旧 toolResult 不应参与比较
 	const snapIdx = msgs.findIndex(
-		(m, i) =>
-			i > statusIdx &&
-			m.type === "snapshot" &&
-			m.state.messages.some((mm) => mm.role === "toolResult"),
+		(m, i) => i > statusIdx && m.type === "snapshot" && m.state.messages.some((mm) => mm.role === "toolResult"),
 	);
 	check(
 		"tool_status preceded the toolResult snapshot",
@@ -149,22 +141,15 @@ async function main() {
 	//    Match the FIRST settled snapshot AFTER our turn (the initial empty
 	//    snapshot is also !isStreaming).
 	const settled = await waitFor(
-		(m) =>
-			m.type === "snapshot" &&
-			!m.state.isStreaming &&
-			m.state.messages.some((mm) => mm.role === "toolResult"),
+		(m) => m.type === "snapshot" && !m.state.isStreaming && m.state.messages.some((mm) => mm.role === "toolResult"),
 		120_000,
 	);
 	check("run settled", !!settled);
-	const toolResults = settled.state.messages.filter(
-		(mm) => mm.role === "toolResult",
-	);
+	const toolResults = settled.state.messages.filter((mm) => mm.role === "toolResult");
 	check("toolResult landed in final snapshot", toolResults.length > 0);
 	if (status.exitCode !== undefined) {
 		const same = toolResults.some(
-			(mm) =>
-				mm.toolCallId === status.toolCallId &&
-				(mm.isError ?? false) === status.isError,
+			(mm) => mm.toolCallId === status.toolCallId && (mm.isError ?? false) === status.isError,
 		);
 		check("toolResult matches tool_status toolCallId", same);
 	}

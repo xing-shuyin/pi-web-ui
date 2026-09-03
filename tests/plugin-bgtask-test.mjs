@@ -118,7 +118,10 @@ try {
 	let task;
 	for (let i = 0; i < 40 && !task; i++) {
 		task = latestBg.find((s) => s.taskId === "nightly");
-		if (!task) { sock.send(JSON.stringify({ type: "list_bg_servers" })); await new Promise((r) => setTimeout(r, 250)); }
+		if (!task) {
+			sock.send(JSON.stringify({ type: "list_bg_servers" }));
+			await new Promise((r) => setTimeout(r, 250));
+		}
 	}
 	if (!task || task.plugin !== "worker" || task.status !== "每 1h" || task.name !== "🌙 定时任务") {
 		fail(`插件任务未出现在 bg_servers：${JSON.stringify(task)}`);
