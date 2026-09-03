@@ -75,6 +75,10 @@ export function downloadUrl(path: string, download = true): string {
 	return withToken(appUrl(`/api/file?${qs}`));
 }
 
+/** Sentinel error when the file 404s with an empty body ("文件不存在" / "File not found").
+ *  The caller maps it through the fileNotFoundShort i18n key so only one language shows. */
+export const DOWNLOAD_FILE_NOT_FOUND = "FILE_NOT_FOUND";
+
 export type DownloadResult =
 	| { ok: true }
 	| { ok: false; cancelled: true }
@@ -95,7 +99,7 @@ export async function downloadFile(
 				ok: false,
 				cancelled: false,
 				error:
-					body || (res.status === 404 ? "文件不存在" : `HTTP ${res.status}`),
+					body || (res.status === 404 ? DOWNLOAD_FILE_NOT_FOUND : `HTTP ${res.status}`),
 			};
 		}
 		const len = Number(res.headers.get("content-length") ?? "0");

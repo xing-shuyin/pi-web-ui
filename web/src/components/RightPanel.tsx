@@ -13,7 +13,7 @@ import {
 } from "react-icons/fi";
 import type { ClientMessage, FileListing } from "../types";
 import { useT } from "../i18n";
-import { downloadFile } from "../download";
+import { downloadFile, DOWNLOAD_FILE_NOT_FOUND } from "../download";
 
 type AttachMode = "inline" | "reference";
 
@@ -402,7 +402,7 @@ export const RightPanel = memo(function RightPanel({
 												if (r.cancelled) return;
 												onNotice(
 													"error",
-													t("downloadFailed", { error: r.error }),
+													t("downloadFailed", { error: r.error === DOWNLOAD_FILE_NOT_FOUND ? t("fileNotFoundShort") : r.error }),
 												);
 											});
 										}}
