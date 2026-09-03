@@ -1074,6 +1074,7 @@ wss.on("connection", (ws) => {
 						type: "notice",
 						level: "error",
 						text: `会话初始化失败：${(err as Error).message}`,
+						textEn: `Failed to initialize session: ${(err as Error).message}`,
 					});
 				});
 			return;

@@ -336,7 +336,9 @@ export class SettingsService {
 	async savePreset(name: string): Promise<void> {
 		const n = name.trim();
 		if (!n) {
-			this.host.emit({ type: "notice", level: "error", text: "预设名称不能为空" });
+			this.host.emit({ type: "notice", level: "error", text: "预设名称不能为空",
+			textEn: "Preset name cannot be empty"
+			});
 			return;
 		}
 		const preset = {
@@ -362,7 +364,9 @@ export class SettingsService {
 	async applyPreset(name: string): Promise<void> {
 		const p = this.presets.find((x) => x.name === name);
 		if (!p) {
-			this.host.emit({ type: "notice", level: "error", text: `预设不存在：${name}` });
+			this.host.emit({ type: "notice", level: "error", text: `预设不存在：${name}`,
+			textEn: `Preset does not exist: ${name}`
+			});
 			return;
 		}
 		this.settings = {
@@ -414,6 +418,7 @@ export class SettingsService {
 				type: "notice",
 				level: "info",
 				text: "当前回复进行中，设置将在回复结束后自动应用",
+				textEn: "A reply is in progress; settings will apply when it finishes",
 			});
 			return;
 		}
@@ -426,12 +431,15 @@ export class SettingsService {
 			await this.host.reloadSession();
 			this.push();
 			this.host.flushSnapshot();
-			this.host.emit({ type: "notice", level: "info", text: "设置已应用" });
+			this.host.emit({ type: "notice", level: "info", text: "设置已应用",
+			textEn: "Settings applied"
+			});
 		} catch (err) {
 			this.host.emit({
 				type: "notice",
 				level: "error",
 				text: `设置应用失败：${(err as Error).message}`,
+				textEn: `Failed to apply settings: ${(err as Error).message}`,
 			});
 		}
 	}

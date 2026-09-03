@@ -196,6 +196,7 @@ export class FilesService {
 				type: "notice",
 				level: "warning",
 				text: `路径超出工作区：${relPath ?? ""}`,
+				textEn: `Path is outside the workspace: ${relPath ?? ""}`,
 			});
 			return;
 		}
@@ -213,6 +214,7 @@ export class FilesService {
 				type: "notice",
 				level: "warning",
 				text: `目录不可读：${error}`,
+				textEn: `Directory is not readable: ${error}`,
 			});
 		}
 		this.host.emit({
@@ -517,6 +519,7 @@ export class FilesService {
 			type: "notice",
 			level: "info",
 			text: "此目录不支持实时文件监听（网络盘/受限目录），文件面板已改为每 10 秒自动刷新。",
+			textEn: "Live file watching is not supported for this directory (network/restricted); the file panel now refreshes every 10s",
 		});
 	}
 
@@ -549,6 +552,7 @@ export class FilesService {
 					type: "notice",
 					level: "warning",
 					text: `路径超出工作区：${relPath}`,
+					textEn: `Path is outside the workspace: ${relPath}`,
 				});
 				return;
 			}
@@ -559,6 +563,7 @@ export class FilesService {
 					type: "notice",
 					level: "warning",
 					text: `不是文件：${relPath}`,
+					textEn: `Not a file: ${relPath}`,
 				});
 				return;
 			}
@@ -622,6 +627,7 @@ export class FilesService {
 				type: "notice",
 				level: "error",
 				text: `读取文件失败：${(err as Error).message}`,
+				textEn: `Failed to read file: ${(err as Error).message}`,
 			});
 		}
 	}
@@ -636,6 +642,7 @@ export class FilesService {
 					type: "notice",
 					level: "warning",
 					text: `路径超出工作区：${relPath}`,
+					textEn: `Path is outside the workspace: ${relPath}`,
 				});
 				return;
 			}
@@ -644,6 +651,7 @@ export class FilesService {
 					type: "notice",
 					level: "warning",
 					text: "文件内容过大，无法保存（上限 2MB）",
+					textEn: "File too large to save (2MB max)",
 				});
 				return;
 			}
@@ -653,6 +661,7 @@ export class FilesService {
 					type: "notice",
 					level: "warning",
 					text: `不是文件：${relPath}`,
+					textEn: `Not a file: ${relPath}`,
 				});
 				return;
 			}
@@ -661,6 +670,7 @@ export class FilesService {
 				type: "notice",
 				level: "info",
 				text: `已保存：${wp.rel}`,
+				textEn: `Saved: ${wp.rel}`,
 			});
 			// Re-read through the same path as the preview request so the client
 			// gets the canonical content, line count and file size after saving.
@@ -670,6 +680,7 @@ export class FilesService {
 				type: "notice",
 				level: "error",
 				text: `保存文件失败：${(err as Error).message}`,
+				textEn: `Failed to save file: ${(err as Error).message}`,
 			});
 		}
 	}
@@ -725,6 +736,7 @@ export class FilesService {
 				type: "notice",
 				level: "info",
 				text: `已上传：${rawRel.split(sep).join("/")}`,
+				textEn: `Uploaded: ${rawRel.split(sep).join("/")}`,
 			});
 			// Emit for the target directory itself so the panel refreshes even
 			// when the active listing/preview isn't that dir (posix watcher only

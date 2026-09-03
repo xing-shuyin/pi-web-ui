@@ -91,6 +91,7 @@ export class BgServerTracker {
 					type: "notice",
 					level: "info",
 					text: `检测到 AI 启动的后台服务：端口 ${port}（pid ${pid}）——可在顶栏「后台任务」里单独停止或全部关闭`,
+					textEn: `Detected an AI-started background service: port ${port} (pid ${pid}) — stop it individually or all at once under Background tasks in the top bar`,
 				});
 			}
 		}
@@ -148,6 +149,7 @@ export class BgServerTracker {
 				type: "notice",
 				level: "info",
 				text: `端口 ${port} 不在后台任务列表中`,
+				textEn: `Port ${port} is not in the background task list`,
 			});
 			this.opts.flushSnapshot();
 			return false;
@@ -159,6 +161,7 @@ export class BgServerTracker {
 			type: "notice",
 			level: "info",
 			text: `已停止后台任务：端口 ${port}（pid ${entry.pid}）`,
+			textEn: `Stopped background task: port ${port} (pid ${entry.pid})`,
 		});
 		this.opts.flushSnapshot();
 		return true;
