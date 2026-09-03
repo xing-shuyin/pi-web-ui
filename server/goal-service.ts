@@ -224,6 +224,7 @@ export class GoalService {
 			type: "notice",
 			level: "info",
 			text: `🎯 已设目标：${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`,
+			textEn: `🎯 Goal set: ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`,
 		});
 		// Auto-start generation right after setting the goal (unless this setGoal is
 		// the wizard's internal one, which kicks off itself). This makes the direct
@@ -272,6 +273,7 @@ export class GoalService {
 				type: "notice",
 				level: "warning",
 				text: "已有目标调研进行中，请等它完成…",
+				textEn: "A goal survey is already running — wait for it to finish…",
 			});
 			return;
 		}
@@ -280,6 +282,7 @@ export class GoalService {
 				type: "notice",
 				level: "warning",
 				text: "正在审查中，无法开始目标调研，请稍等…",
+				textEn: "A review is running; cannot start a goal survey yet…",
 			});
 			return;
 		}
@@ -357,6 +360,9 @@ export class GoalService {
 			type: "notice",
 			level: "info",
 			text: `🔍 正在围绕需求展开调研：${draft.slice(0, 60)}${
+				draft.length > 60 ? "…" : ""
+			}`,
+			textEn: `🔍 Surveying the requirement: ${draft.slice(0, 60)}${
 				draft.length > 60 ? "…" : ""
 			}`,
 		});
@@ -536,6 +542,7 @@ export class GoalService {
 				type: "notice",
 				level: "error",
 				text: `目标调研失败：${(err as Error).message}`,
+				textEn: `Goal survey failed: ${(err as Error).message}`,
 			});
 		} finally {
 			clearIdle();
@@ -558,6 +565,9 @@ export class GoalService {
 				text: `目标调研已取消${
 					ac.signal.reason ? `：${String((ac.signal.reason as Error)?.message ?? ac.signal.reason)}` : ""
 				}`,
+				textEn: `Goal survey cancelled${
+					ac.signal.reason ? `: ${String((ac.signal.reason as Error)?.message ?? ac.signal.reason)}` : ""
+				}`,
 			});
 			this.wizardAbort = null;
 			return;
@@ -567,6 +577,7 @@ export class GoalService {
 				type: "notice",
 				level: "warning",
 				text: "调研未产出有效目标，请重试",
+				textEn: "The survey produced no usable goal — retry",
 			});
 			return;
 		}
@@ -575,6 +586,7 @@ export class GoalService {
 				type: "notice",
 				level: "info",
 				text: "已切换对话，目标调研结果已丢弃",
+				textEn: "Switched conversations; the survey result was discarded",
 			});
 			return;
 		}
@@ -596,6 +608,9 @@ export class GoalService {
 			type: "notice",
 			level: "info",
 			text: `🎯 调研完成，目标已设为：${refinedGoal.slice(0, 80)}${
+				refinedGoal.length > 80 ? "…" : ""
+			}`,
+			textEn: `🎯 Survey done, goal set: ${refinedGoal.slice(0, 80)}${
 				refinedGoal.length > 80 ? "…" : ""
 			}`,
 		});
@@ -970,7 +985,9 @@ export class GoalService {
 		if (verdict === "pass") {
 			g.status = "✅ 已通过目标审查";
 			g.statusEn = "✅ Goal review passed";
-			this.host.emit({ type: "notice", level: "info", text: "✅ 目标已通过审查" });
+			this.host.emit({ type: "notice", level: "info", text: "✅ 目标已通过审查",
+			textEn: "✅ Goal passed review"
+			});
 			g.conversationId = null;
 			g.goal = null; // a passed goal is done and cleared
 			this.emitGoalStatus();
@@ -1000,6 +1017,7 @@ export class GoalService {
 				type: "notice",
 				level: "warning",
 				text: `目标审查第 ${g.round}/${budgetForCard > 0 ? budgetForCard : "不限"} 轮未通过，把意见交给 agent 修改…`,
+				textEn: `Goal review round ${g.round}/${budgetForCard > 0 ? budgetForCard : "unlimited"} failed; sending feedback to the agent…`,
 			});
 			// Inject the reviewer's feedback into the main session to revise (this IS
 			// the fail review result, as an ordinary user message — no separate card).
@@ -1037,7 +1055,9 @@ export class GoalService {
 		} catch {
 			// Best-effort.
 		}
-		this.host.emit({ type: "notice", level: "warning", text: "目标未通过审查（已达最大轮数）" });
+		this.host.emit({ type: "notice", level: "warning", text: "目标未通过审查（已达最大轮数）",
+		textEn: "Goal failed review (max rounds reached)"
+		});
 		g.conversationId = null;
 		g.goal = null; // loop exhausted — clear the active goal
 		this.emitGoalStatus();
