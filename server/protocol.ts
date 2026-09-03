@@ -269,6 +269,7 @@ export type ClientMessage =
 	| { type: "terminal_input"; terminalId: string; data: string; conversationId?: string }
 	| { type: "terminal_resize"; terminalId: string; cols: number; rows: number; conversationId?: string }
 	| { type: "terminal_kill"; terminalId: string; conversationId?: string }
+	| { type: "rename_terminal"; terminalId: string; title: string; conversationId?: string }
 	// Runs a command in a new shell; if the terminal already exists it is
 	// RESTARTED in place (current process killed, fresh shell runs it again).
 	| {

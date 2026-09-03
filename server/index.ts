@@ -431,6 +431,7 @@ export interface TerminalManagerLike {
 	input(id: string, data: string): void;
 	resize(id: string, cols: number, rows: number): void;
 	kill(id: string): void;
+	rename(id: string, title: string): void;
 	runCommand(id: string, command: CommandDef, cols: number, rows: number, fallbackCwd: string): unknown;
 }
 
@@ -937,6 +938,9 @@ wss.on("connection", (ws) => {
 				break;
 			case "terminal_kill":
 				cs.getTerminalManager(msg.conversationId)?.kill(msg.terminalId);
+				break;
+			case "rename_terminal":
+				cs.getTerminalManager(msg.conversationId)?.rename(msg.terminalId, msg.title);
 				break;
 			case "run_command":
 				cs.getTerminalManager(msg.conversationId)?.runCommand(

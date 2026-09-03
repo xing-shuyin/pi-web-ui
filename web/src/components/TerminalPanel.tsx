@@ -50,6 +50,8 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 	const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// 终端接管 bash 的「AI bash」折叠分组开关（默认展开）。
 	const [aiBashOpen, setAiBashOpen] = useState(true);
+	const [renamingTab, setRenamingTab] = useState<string | null>(null);
+	const [renameDraft, setRenameDraft] = useState("");
 
 	// When the connection drops the server kills all PTYs and the reducer clears
 	// the tab list — make sure the active selection doesn't dangle.
@@ -147,13 +149,37 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 				className="term-tab-main"
 				title={`${tab.cwd}${tab.command ? `\n> ${tab.command.command}` : ""}`}
 				onClick={() => {
+					if (renamingTab) return;
 					setActiveId(tab.id);
 					setSideOpen(false);
 				}}
 			>
 				<span className={`term-tab-dot ${tab.running ? "run" : "exit"}`} />
 				<span className="term-tab-title">
-					{tab.title}
+					{renamingTab === tab.id ? (
+						<input
+							autoFocus
+							className="term-tab-rename-input"
+							value={renameDraft}
+							placeholder={tab.title}
+							onClick={(e) => e.stopPropagation()}
+							onChange={(e) => setRenameDraft(e.target.value)}
+							onKeyDown={(e) => {
+								e.stopPropagation();
+								if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+									const title = renameDraft.trim();
+									if (title)
+										send({ type: "rename_terminal", terminalId: tab.id, conversationId: tab.conversationId, title });
+									setRenamingTab(null);
+								} else if (e.key === "Escape") {
+									setRenamingTab(null);
+								}
+							}}
+							onBlur={() => setRenamingTab(null)}
+						/>
+					) : (
+						tab.title
+					)}
 					{!tab.running && (
 						<span className="term-tab-exit">
 							{t("exited", {
@@ -162,6 +188,18 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 						</span>
 					)}
 				</span>
+			</button>
+			<button
+				type="button"
+				className="term-tab-close term-tab-rename"
+				title={t("renameTerminal")}
+				onClick={(e) => {
+					e.stopPropagation();
+					setRenameDraft(tab.title);
+					setRenamingTab(tab.id);
+				}}
+			>
+				<FiEdit2 />
 			</button>
 			<button type="button" className="term-tab-close" title={t("closeTerminal")} onClick={() => closeTab(tab.id)}>
 				<FiX />

@@ -1358,6 +1358,16 @@ export class TerminalManager {
 		if (this.history.delete(id)) this.emitList();
 	}
 
+	/** Rename a terminal tab (live or retained history). Empty names ignored. */
+	rename(id: string, title: string): void {
+		const trimmed = (title ?? "").trim();
+		if (!trimmed) return;
+		const entry = this.find(id);
+		if (!entry) return;
+		entry.title = trimmed;
+		this.emitList();
+	}
+
 	/** Kill every terminal owned by this conversation. */
 	killAll(): void {
 		for (const entry of this.terms.values()) {

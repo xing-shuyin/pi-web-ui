@@ -1891,6 +1891,23 @@ body.panel-resizing {
 	color: var(--red);
 	background: var(--red-soft);
 }
+/* terminal tab rename pencil: grey idle, amber hover, left of the close X */
+.term-tab-rename:hover {
+	color: var(--amber);
+	background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+/* inline terminal rename field replaces the title while editing */
+.term-tab-rename-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg-input, transparent);
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	color: inherit;
+	font: inherit;
+	font-size: 12.5px;
+	padding: 0 4px;
+}
 
 /* 终端接管 bash 的「AI bash」折叠分组（与用户终端分开）。 */
 .term-folder {
