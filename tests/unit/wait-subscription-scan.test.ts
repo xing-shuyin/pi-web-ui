@@ -1,9 +1,11 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+	hasActiveSubagentRuns,
 	hasPendingWaitSubscription,
+	resolveAsyncRunsDir,
 	resolveSubscriptionsDir,
 	resolveTempScopeId,
 	shouldRetainActive,
@@ -128,6 +130,7 @@ describe("shouldRetainActive（置换决策）", () => {
 		listed: false,
 		promptedSinceActive: false,
 		hasPendingWake: false,
+		hasActiveSubagentWork: false,
 	};
 
 	it("默认可置换（返回 null）", () => {
@@ -165,6 +168,120 @@ describe("shouldRetainActive（置换决策）", () => {
 			},
 		})).toBe(true);
 		expect(calls).toBe(1);
+	});
+	it("有活跃子代理运行 → 保留（在 pending-wake 之后、listed+prompted 之前）", () => {
+		expect(shouldRetainActive({ ...base, hasActiveSubagentWork: true })).toBe(true);
+	});
+	it("hasActiveSubagentWork thunk 只在到达该优先级时才求值", () => {
+		expect(shouldRetainActive({
+			...base,
+			hasPendingWake: true,
+			hasActiveSubagentWork: () => {
+				throw new Error("must not be evaluated");
+			},
+		})).toBe(true);
+	});
+});
+
+describe("hasActiveSubagentRuns", () => {
+	function makeRunsRoot(): string {
+		const root = makeDir();
+		mkdirSync(path.join(root, "async-subagent-runs"));
+		return path.join(root, "async-subagent-runs");
+	}
+	function markerDir(runsRoot: string): string {
+		const dir = path.join(runsRoot, ".active-runs");
+		mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+	function writeMarker(runsRoot: string, name: string, content: string | unknown, mtimeMs = NOW): void {
+		const dir = markerDir(runsRoot);
+		const file = path.join(dir, name);
+		writeFileSync(file, typeof content === "string" ? content : JSON.stringify(content));
+		// 固定 mtime 以便用注入的 now 精确测试 24h staleness。
+		utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+	}
+
+	it("目录不存在 → 无证据（fail-open，静默）", () => {
+		const warnings: string[] = [];
+		expect(hasActiveSubagentRuns({
+			asyncRunsDir: path.join(makeDir(), "missing-runs"),
+			now: () => NOW,
+			warn: (m) => warnings.push(m),
+		})).toBe(false);
+		expect(warnings).toHaveLength(0);
+	});
+
+	it("空 marker（上游 0.64.0 格式）→ 有活跃运行（保留）", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", "");
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
+	});
+
+	it("JSON marker state=running/queued → 有活跃运行（保留）", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", { state: "running" });
+		writeMarker(root, "run-2", { state: "queued" });
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
+	});
+
+	it("终态 marker（complete/failed）→ 无活跃运行", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", { state: "complete" });
+		writeMarker(root, "run-2", { state: "failed" });
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(false);
+	});
+
+	it("过期 marker（mtime > 24h）→ crash 孤儿，无证据", () => {
+		const root = makeRunsRoot();
+		// NOW 为基准时间：marker mtime 在 25h 前。
+		writeMarker(root, "run-1", "", NOW - 25 * 60 * 60 * 1000);
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(false);
+		// 23h 前的 marker 仍算活跃（边界）。
+		writeMarker(root, "run-2", "", NOW - 23 * 60 * 60 * 1000);
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
+	});
+
+	it("损坏 JSON marker → 无证据（fail-open）", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", "{ not json !!!");
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(false);
+	});
+
+	it("state 非字符串 / 无 state 字段的 JSON → 无证据", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", { state: 42 });
+		writeMarker(root, "run-2", { hello: "world" });
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(false);
+	});
+
+	it("一个活跃 + 一个终态 / 损坏 marker → 仍保留（任一活跃即证据）", () => {
+		const root = makeRunsRoot();
+		writeMarker(root, "run-1", { state: "complete" });
+		writeMarker(root, "run-2", "broken");
+		writeMarker(root, "run-3", { state: "running" });
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
+	});
+
+	it("marker 是目录（EISDIR，非 ENOENT）→ warn 且 fail-open", () => {
+		const warnings: string[] = [];
+		const root = makeRunsRoot();
+		mkdirSync(path.join(markerDir(root), "run-1"));
+		expect(hasActiveSubagentRuns({
+			asyncRunsDir: root,
+			now: () => NOW,
+			warn: (m) => warnings.push(m),
+		})).toBe(false);
+		expect(warnings).toHaveLength(1);
+	});
+
+	it("resolveAsyncRunsDir：PI_SUBAGENTS_TEMP_ROOT 覆盖 / 默认推导", () => {
+		expect(resolveAsyncRunsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom" }))
+			.toBe(path.join(path.resolve("/tmp/custom"), "async-subagent-runs"));
+		const cleanEnv = { PATH: "/usr/bin" } as unknown as NodeJS.ProcessEnv;
+		expect(resolveAsyncRunsDir(cleanEnv)).toBe(
+			path.join(tmpdir(), `pi-subagents-${resolveTempScopeId(cleanEnv)}`, "async-subagent-runs"),
+		);
 	});
 });
 

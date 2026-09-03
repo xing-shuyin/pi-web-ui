@@ -25,7 +25,7 @@
 // conversation switches. See the Chinese block above for the persistence layout
 // and the fail-open vs fail-closed rationale.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import path from "node:path";
 
@@ -121,6 +121,18 @@ export function resolveSubscriptionsDir(env: NodeJS.ProcessEnv = process.env): s
 	return path.join(path.dirname(path.join(root, "async-subagent-runs")), "wait-subscriptions");
 }
 
+/**
+ * async-subagent-runs 目录默认位置（与 pi-subagents ASYNC_DIR 推导一致）。
+ * Default async-runs dir: same temp root as wait-subscriptions.
+ */
+export function resolveAsyncRunsDir(env: NodeJS.ProcessEnv = process.env): string {
+	const configured = env.PI_SUBAGENTS_TEMP_ROOT?.trim();
+	const root = configured
+		? path.resolve(configured)
+		: path.join(tmpdir(), `pi-subagents-${resolveTempScopeId(env)}`);
+	return path.join(root, "async-subagent-runs");
+}
+
 export interface PendingWakeScanOptions {
 	/** 默认 resolveSubscriptionsDir()。测试可注入临时目录。 */
 	subscriptionsDir?: string;
@@ -177,6 +189,84 @@ export function hasPendingWaitSubscription(options: PendingWakeScanOptions): boo
 	return false;
 }
 
+export interface ActiveSubagentScanOptions {
+	/** 默认 resolveAsyncRunsDir()。测试可注入临时目录。 */
+	asyncRunsDir?: string;
+	now?: () => number;
+	/** I/O 警告出口（测试可静音）。默认 console.warn。 */
+	warn?: (message: string, error: unknown) => void;
+}
+
+/** 与 pi-subagents 的 DEFAULT_STALE_TERMINAL_ACTIVE_MARKER_MS 对齐：24h。 */
+export const STALE_ACTIVE_RUN_MARKER_MS = 24 * 60 * 60 * 1000;
+
+/** 与 pi-subagents 的 isActiveAsyncState 对齐（active-run-index.ts:42）。 */
+function isActiveAsyncState(state: string): boolean {
+	return state === "queued" || state === "running";
+}
+
+/**
+ * 磁盘扫描：pi-subagents 是否还有未失效的后台异步运行（active-run marker）。
+ * Does pi-subagents have any live async subagent run (active-run marker on disk)?
+ *
+ * 布局：`<async-runs-root>/.active-runs/<runId>`（marker 文件名为 async 目录
+ * basename，即 runId）。pi-subagents 0.64.0 的 marker 是空文件（状态在写入
+ * 时判定：只有 queued/running 才创建 marker，终态会删除）；若 marker 带有
+ * JSON 内容且含字符串 state 字段，则按 isActiveAsyncState 判定。
+ * Marker mtime 超过 24h（STALE_ACTIVE_RUN_MARKER_MS，与上游
+ * DEFAULT_STALE_TERMINAL_ACTIVE_MARKER_MS 一致）视为 crash 孤儿 → 无证据。
+ *
+ * 作用域权衡：marker 只记录 runId，无法从会话 .jsonl 路径可靠映射回所属
+ * 会话，因此这是「任意未失效 active marker」的全局探针（跨会话粒度）。
+ * 保留是自限的（24h staleness + 上游终态即删 marker），全局安全，只是更粗。
+ * The probe is intentionally GLOBAL (any unexpired active marker), not
+ * session-scoped: markers carry only run ids, which cannot be mapped back to
+ * a conversation session file. Retention is self-limiting via the 24h
+ * staleness cap, so the coarser scope is safe.
+ *
+ * fail-open 语义与 hasPendingWaitSubscription 一致：任何 I/O / 解析错误
+ * （目录缺失、损坏 JSON）都按「无证据」处理；ENOENT 静默，其它错误
+ * console.warn 一次。
+ */
+export function hasActiveSubagentRuns(options: ActiveSubagentScanOptions = {}): boolean {
+	const now = options.now ?? Date.now;
+	const warn = options.warn ?? ((message: string, error: unknown) => console.warn(message, error));
+	const isNotFound = (error: unknown): boolean =>
+		typeof error === "object" && error !== null && "code" in error
+		&& (error as NodeJS.ErrnoException).code === "ENOENT";
+	const dir = path.join(options.asyncRunsDir ?? resolveAsyncRunsDir(), ".active-runs");
+	let markers: string[];
+	try {
+		markers = readdirSync(dir).filter((file) => file !== "." && file !== "..");
+	} catch (error) {
+		if (!isNotFound(error)) warn(`Failed to scan active-run markers in '${dir}':`, error);
+		return false; // 目录缺失 / 不可读 → 无证据
+	}
+	for (const marker of markers) {
+		const markerPath = path.join(dir, marker);
+		try {
+			// 先查 mtime：超过 24h 的 marker 是 crash 孤儿（上游同样按 mtime 清理），
+			// 不构成保留证据，也无需再读内容。
+			const age = now() - statSync(markerPath).mtimeMs;
+			if (age > STALE_ACTIVE_RUN_MARKER_MS) continue;
+			const content = readFileSync(markerPath, "utf-8").trim();
+			if (content === "") return true; // 上游 0.64.0 写入的就是空 marker
+			let value: unknown;
+			try {
+				value = JSON.parse(content);
+			} catch {
+				continue; // 损坏 JSON → 无证据（fail-open）
+			}
+			const state = (value as { state?: unknown })?.state;
+			if (typeof state === "string" && isActiveAsyncState(state)) return true;
+		} catch (error) {
+			if (!isNotFound(error)) warn(`Failed to read active-run marker '${markerPath}':`, error);
+			continue; // 单个 marker 读取失败 → 无证据（fail-open），继续看下一个
+		}
+	}
+	return false;
+}
+
 /** displaceActive 决策的输入快照（纯数据，便于单测）。 */
 export interface DisplacementDecisionInput {
 	reviewing: boolean;
@@ -192,13 +282,23 @@ export interface DisplacementDecisionInput {
 	 * invoked at this precedence point, after the cheaper checks pass.
 	 */
 	hasPendingWake: boolean | (() => boolean);
+	/**
+	 * 磁盘扫描结果：存在未失效的 pi-subagents 后台异步运行（active-run
+	 * marker）。可传 thunk 延迟求值 —— 只在前面的保留条件都不命中时才会被
+	 * 调用，避免每次置换都做同步磁盘 I/O。
+	 * Live async subagent work on disk; pass a thunk to defer the disk scan.
+	 */
+	hasActiveSubagentWork: boolean | (() => boolean);
 }
 
 /**
  * 纯函数版置换决策：true = 保留（不得 dispose），false = 调用方可释放。
  * Pure decision core of displaceActive(): true = retain, false = may dispose.
  * 顺序与 displaceActive 保持一致：review/wizard → streaming → terminals →
- * pending wake → listed+continued（「打开后继续过」的会话也保留）。
+ * pending wake → active subagent runs → listed+continued（「打开后继续过」
+ * 的会话也保留）。
+ * Order: review/wizard → streaming → terminals → pending wake → live async
+ * subagent runs → listed+continued.
  */
 export function shouldRetainActive(input: DisplacementDecisionInput): boolean {
 	if (input.reviewing || input.wizardRunning) return true;
@@ -208,6 +308,10 @@ export function shouldRetainActive(input: DisplacementDecisionInput): boolean {
 		? input.hasPendingWake()
 		: input.hasPendingWake;
 	if (hasPendingWake) return true;
+	const hasActiveSubagentWork = typeof input.hasActiveSubagentWork === "function"
+		? input.hasActiveSubagentWork()
+		: input.hasActiveSubagentWork;
+	if (hasActiveSubagentWork) return true;
 	if (input.listed && input.promptedSinceActive) return true;
 	return false;
 }
