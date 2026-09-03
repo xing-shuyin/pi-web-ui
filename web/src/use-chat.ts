@@ -49,6 +49,7 @@ export interface Notice {
 	id: number;
 	level: "info" | "warning" | "error";
 	text: string;
+	textEn?: string;
 }
 
 /** A terminal tab. The output stream itself lives in the xterm instance
@@ -944,7 +945,7 @@ export function useChat() {
 					const id = ++noticeId.current;
 					dispatch({
 						type: "notice",
-						notice: { id, level: msg.level, text: msg.text },
+						notice: { id, level: msg.level, text: msg.text, textEn: msg.textEn },
 					});
 					break;
 				}

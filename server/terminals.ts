@@ -175,6 +175,8 @@ interface TermEntry {
 	/** true = 终端接管 bash 的持久终端（'ai-bash'）：不计入 MAX_TERMINALS，
 	 *  前端单独归到「AI bash」折叠分组。 */
 	agentBash: boolean;
+	/** UI locale at creation ("en" = English exit banner, else Chinese). */
+	locale?: string;
 }
 
 const isWindows = process.platform === "win32";
@@ -356,7 +358,7 @@ export function queryTerminalOutput(
 		.split("\n")
 		.filter((l) => {
 			const t = l.trim();
-			return !/^\[pi-exit:\d+\]$/.test(t) && !/^\[进程已退出/.test(t);
+			return !/^\[pi-exit:\d+\]$/.test(t) && !/^\[进程已退出/.test(t) && !/^\[Process exited/.test(t) && !/^\[.*(已退出|exited)/.test(t);
 		});
 	while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
 	const numbered = (arr: string[], start: number): string =>
@@ -699,11 +701,11 @@ export class TerminalManager {
 		rows: number,
 		fallbackCwd: string,
 		title?: string,
-		opts?: { forceBash?: boolean; agentBash?: boolean },
+		opts?: { forceBash?: boolean; agentBash?: boolean; locale?: string },
 	): TerminalInfo | null {
 		const valid = this.validateId(id);
 		if (valid) {
-			this.fail(id, valid);
+			this.fail(id, valid.text, valid.textEn);
 			return null;
 		}
 		if (this.terms.has(id)) return this.info(this.terms.get(id)!);
@@ -715,7 +717,7 @@ export class TerminalManager {
 		this.history.delete(id);
 		const safeCwd = this.safeCwd(cwd || fallbackCwd);
 		if (!safeCwd) {
-			this.fail(id, "终端工作目录必须位于当前工作区内");
+			this.fail(id, "终端工作目录必须位于当前工作区内", "Terminal cwd must be inside the current workspace");
 			return null;
 		}
 		if (
@@ -728,6 +730,7 @@ export class TerminalManager {
 				undefined,
 				opts?.forceBash,
 				opts?.agentBash,
+				opts?.locale,
 			)
 		) {
 			this.maybeEmitTccHint(id);
@@ -757,10 +760,11 @@ export class TerminalManager {
 		cols: number,
 		rows: number,
 		pwd: string,
+		locale?: string,
 	): void {
 		const invalidId = this.validateId(id);
 		if (invalidId) {
-			this.fail(id, invalidId);
+			this.fail(id, invalidId.text, invalidId.textEn);
 			return;
 		}
 		const existing = this.terms.get(id);
@@ -775,7 +779,7 @@ export class TerminalManager {
 		const command = expandPwd(def.command.trim(), pwd);
 		const title = def.name || command || `终端 ${++this.seq}`;
 		if (!dir) {
-			this.fail(id, "终端工作目录必须位于当前工作区内");
+			this.fail(id, "终端工作目录必须位于当前工作区内", "Terminal cwd must be inside the current workspace");
 			return;
 		}
 
@@ -798,7 +802,8 @@ export class TerminalManager {
 		}
 		this.history.delete(id);
 
-		const ok = this.spawnShell(id, dir, cols, rows, title, def);
+		const keepLocale = locale ?? existing?.locale;
+		const ok = this.spawnShell(id, dir, cols, rows, title, def, undefined, false, keepLocale);
 		if (!ok) return;
 		this.emitList();
 		// Clear the previous run's output, then show a banner and run the command
@@ -823,17 +828,18 @@ export class TerminalManager {
 		command?: CommandDef,
 		forceBash?: boolean,
 		agentBash = false,
+		locale?: string,
 	): boolean {
 		let abs = cwd;
 		if (!abs) abs = homedir();
 		else if (!isAbsolute(abs)) abs = resolve(abs);
 		try {
 			if (!existsSync(abs) || !statSync(abs).isDirectory()) {
-				this.fail(id, `目录不存在或不是目录：${abs}`);
+				this.fail(id, `目录不存在或不是目录：${abs}`, `Directory does not exist or is not a directory: ${abs}`);
 				return false;
 			}
 		} catch {
-			this.fail(id, `无法访问终端目录：${abs}`);
+			this.fail(id, `无法访问终端目录：${abs}`, `Cannot access terminal directory: ${abs}`);
 			return false;
 		}
 		// node-pty's spawn-helper may have lost its +x bit since the last repair
@@ -856,6 +862,9 @@ export class TerminalManager {
 				helper
 					? `启动终端失败：${(err as Error).message}（node-pty 的 spawn-helper 缺少执行权限，请运行：chmod +x "${helper}"）`
 					: `启动终端失败：${(err as Error).message}`,
+				helper
+					? `Failed to start terminal: ${(err as Error).message} (node-pty spawn-helper is not executable, run: chmod +x "${helper}")`
+					: `Failed to start terminal: ${(err as Error).message}`,
 			);
 			return false;
 		}
@@ -879,6 +888,7 @@ export class TerminalManager {
 			idleTimer: null,
 			watches: [],
 			agentBash,
+			locale,
 		};
 		this.terms.set(id, entry);
 		// The closures capture `entry`: after a restart the map points at the
@@ -999,9 +1009,12 @@ export class TerminalManager {
 		}
 	}
 
-	private validateId(id: string): string | null {
+	private validateId(id: string): { text: string; textEn: string } | null {
 		if (!id || id.length > MAX_ID || !/^[A-Za-z0-9._:-]+$/.test(id)) {
-			return "终端名称无效：只能使用字母、数字、.-、_ 或 :（最长 80 字符）";
+			return {
+				text: "终端名称无效：只能使用字母、数字、.-、_ 或 :（最长 80 字符）",
+				textEn: "Invalid terminal name: use letters, digits, .-_ or : (max 80 chars)",
+			};
 		}
 		return null;
 	}
@@ -1020,7 +1033,7 @@ export class TerminalManager {
 		if (agentBash) return true;
 		const liveUser = [...this.terms.values()].filter((t) => !t.agentBash).length;
 		if (liveUser >= MAX_TERMINALS) {
-			this.fail(id, `终端数量已达上限（${MAX_TERMINALS}）`);
+			this.fail(id, `终端数量已达上限（${MAX_TERMINALS}）`, `Terminal limit reached (${MAX_TERMINALS})`);
 			return false;
 		}
 		return true;
@@ -1106,7 +1119,7 @@ export class TerminalManager {
 	}
 
 	inputChecked(id: string, data: string): string | null {
-		if (data.length > MAX_INPUT) return `输入过长（上限 ${MAX_INPUT} 字符）`;
+		if (data.length > MAX_INPUT) return `输入过长（上限 ${MAX_INPUT} 字符） Input too long (max ${MAX_INPUT} chars)`;
 		const entry = this.terms.get(id);
 		if (!entry || entry.exited) return "终端不存在或进程已退出";
 		// 已武装的纪元里任何人（含用户手动敲键盘）写了输入都算新活动，重置倒计时。
@@ -1237,8 +1250,8 @@ export class TerminalManager {
 	}
 
 	/** Emit a terminal failure (bad cwd, spawn error) and mark the terminal dead. */
-	private fail(id: string, text: string): void {
-		this.emit({ type: "notice", level: "error", text });
+	private fail(id: string, text: string, textEn?: string): void {
+		this.emit({ type: "notice", level: "error", text, textEn });
 		this.emit({
 			type: "terminal_output",
 			terminalId: id,
@@ -1254,7 +1267,10 @@ export class TerminalManager {
 		this.disarmIdleWatch(entry);
 		// Flush queued output BEFORE the exit banner so ordering is preserved.
 		this.flushPending(entry);
-		const banner = `\r\n\x1b[90m[进程已退出，退出码 ${exitCode}]\x1b[0m\r\n`;
+		const banner =
+			entry.locale === "en"
+				? `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`
+				: `\r\n\x1b[90m[进程已退出，退出码 ${exitCode}]\x1b[0m\r\n`;
 		this.appendOutput(entry, banner);
 		this.emit({ type: "terminal_output", terminalId: id, data: banner });
 		entry.exited = true;

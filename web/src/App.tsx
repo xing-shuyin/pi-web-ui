@@ -44,7 +44,7 @@ import type {
 	PromptAttachment,
 	UiMessage,
 } from "./types";
-import { useT } from "./i18n";
+import { useT, useI18n } from "./i18n";
 import { FiAlertCircle, FiAlertTriangle, FiChevronsLeft, FiChevronsRight, FiInfo, FiX } from "react-icons/fi";
 import type { Notice } from "./use-chat";
 import { fileToProcessedImage, isRasterImage, type ProcessedImage } from "./image-paste";
@@ -89,6 +89,8 @@ function NoticeToast({
 	onDismiss: (id: number) => void;
 }) {
 	const t = useT();
+	const { locale } = useI18n();
+	const text = locale === "en" && notice.textEn ? notice.textEn : notice.text;
 	const [paused, setPaused] = useState(false);
 	useEffect(() => {
 		if (paused) return;
@@ -112,7 +114,7 @@ function NoticeToast({
 			onMouseLeave={() => setPaused(false)}
 		>
 			<Icon className="notice-icon" />
-			<span className="notice-text">{notice.text}</span>
+			<span className="notice-text">{text}</span>
 			<button
 				type="button"
 				className="notice-close"
