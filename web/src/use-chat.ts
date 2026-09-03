@@ -322,6 +322,9 @@ type Action =
 
 const MAX_LIVE_OUTPUT = 200_000;
 const MAX_TERM_BUFFER = 200_000;
+/** Marker for truncated live output (was "…[前 N 字符已省略]…" / "…[N chars omitted above]…").
+ *  ToolCallBlock maps it through the liveOutputOmitted i18n key so only one language shows. */
+const LIVE_OMIT_MARK = "LIVE_OMIT";
 
 /** Initial (inactive) goal status before the server pushes the first one. */
 const DEFAULT_GOAL: GoalStatus = {
@@ -527,7 +530,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 			const text = (prev?.text ?? "") + action.delta;
 			const capped =
 				text.length > MAX_LIVE_OUTPUT
-					? `…[前 ${text.length - MAX_LIVE_OUTPUT} 字符已省略]…\n` +
+					? `…[${LIVE_OMIT_MARK}:${text.length - MAX_LIVE_OUTPUT}]…\n` +
 					  text.slice(text.length - MAX_LIVE_OUTPUT)
 					: text;
 			const liveOutputs = new Map(state.liveOutputs);

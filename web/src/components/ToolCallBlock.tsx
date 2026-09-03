@@ -72,9 +72,13 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 	const waitingModel = !view.result && !!view.status;
 	const isError = view.result?.isError ?? view.status?.isError ?? false;
 
-	const output = view.result
+	const rawOutput = view.result
 		? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
 		: (view.liveOutput ?? "");
+	const output = rawOutput.replace(
+		/…\[LIVE_OMIT:(\d+)\]…\n/,
+		(_, n) => t("liveOutputOmitted", { n }),
+	);
 
 	const statusClass = isError ? "err" : done ? "ok" : running || waitingModel ? "run" : "idle";
 	let statusLabel = isError

@@ -370,6 +370,7 @@ export class DshClientSession {
 				type: "notice",
 				level: "error",
 				text: `DSH 运行时启动失败：${(err as Error).message}。请检查 DeepSeek API key（~/.pi/agent/auth.json）与 dsh 依赖安装。`,
+				textEn: `DSH runtime failed to start: ${(err as Error).message}. Check the DeepSeek API key (~/.pi/agent/auth.json) and dsh dependencies.`,
 			});
 		});
 		// P0-3 convs 内存回收定时器（unref：不阻止进程退出）。
@@ -422,13 +423,18 @@ export class DshClientSession {
 				type: "notice",
 				level: "error",
 				text: "DSH 运行时反复崩溃，已停止自动重启。请检查 DeepSeek API key 与 dsh 依赖安装。",
+				textEn: "DSH runtime keeps crashing; auto-restart stopped. Check the DeepSeek API key and dsh dependencies.",
 			});
 			this.flushSnapshot();
 			return;
 		}
-		this.emit({ type: "notice", level: "warning", text: "DSH 运行时意外退出，正在自动重启…" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 运行时意外退出，正在自动重启…",
+			textEn: "DSH runtime exited unexpectedly; restarting…"
+		});
 		void this.startWithRetry().catch((err) => {
-			this.emit({ type: "notice", level: "error", text: `自动重启失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `自动重启失败：${(err as Error).message}`,
+				textEn: `Auto-restart failed: ${(err as Error).message}`
+			});
 		});
 		this.flushSnapshot();
 	}
@@ -567,7 +573,9 @@ export class DshClientSession {
 		try {
 			await this.runtime.answerQuestion(id, answers, cancelled);
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `回答失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `回答失败：${(err as Error).message}`,
+				textEn: `Answer failed: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -1193,6 +1201,7 @@ export class DshClientSession {
 				type: "notice",
 				level: "warning",
 				text: `当前项目运行的对话已达上限（${MAX_OPEN_CONVERSATIONS} 个）`,
+				textEn: `This project already has the max open conversations (${MAX_OPEN_CONVERSATIONS}).`,
 			});
 			return;
 		}
@@ -1229,6 +1238,7 @@ export class DshClientSession {
 					type: "notice",
 					level: "error",
 					text: `切换工作区后重启运行时失败：${(err as Error).message}`,
+					textEn: `Failed to restart the runtime after switching workspace: ${(err as Error).message}`,
 				});
 			});
 		}
@@ -1306,6 +1316,7 @@ export class DshClientSession {
 			type: "notice",
 			level: "error",
 			text: "服务器正在排空存量工作（quiesce），已拒绝新的对话/消息/编辑。存量运行会继续跑完；用 pi-web-ui server unquiesce 可恢复。",
+			textEn: "Server is draining (quiesce); new chats/messages/edits rejected. Existing runs continue; resume with pi-web-ui server unquiesce.",
 		});
 		this.flushSnapshot();
 		return true;
@@ -1381,6 +1392,7 @@ export class DshClientSession {
 				type: "notice",
 				level: "error",
 				text: `提示发送失败：${(err as Error).message}`,
+				textEn: `Failed to send prompt: ${(err as Error).message}`,
 			});
 		}
 		this.flushSnapshot();
@@ -1434,7 +1446,9 @@ export class DshClientSession {
 				? `${lastUser}\n\n（以下为原对话上下文，仅作参考）：\n${hist}`
 				: lastUser
 			: "请继续";
-		this.emit({ type: "notice", level: "info", text: "已自动重发（原会话不可续聊）" });
+		this.emit({ type: "notice", level: "info", text: "已自动重发（原会话不可续聊）",
+			textEn: "Auto-resent (the original session cannot be resumed)"
+		});
 		void this.prompt(text);
 	}
 
@@ -1561,18 +1575,24 @@ export class DshClientSession {
 			conv.goal.statusEn = "Stopped manually, goal aborted";
 			this.emitGoalStatus();
 		}
-		this.emit({ type: "notice", level: "info", text: "已停止（DSH 中止 = 重启运行时，进行中的其他对话也会停止）" });
+		this.emit({ type: "notice", level: "info", text: "已停止（DSH 中止 = 重启运行时，进行中的其他对话也会停止）",
+			textEn: "Stopped (DSH abort restarts the runtime; other running conversations stop too)"
+		});
 		try {
 			await this.runtime.restart(this.model);
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `中止后重启失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `中止后重启失败：${(err as Error).message}`,
+				textEn: `Failed to restart after abort: ${(err as Error).message}`
+			});
 		}
 		this.flushSnapshot(true);
 	}
 
 	async abortBash(): Promise<void> {
 		// DSH 无 per-tool 取消；bash 工具由运行时管理，超时策略在运行时侧。
-		this.emit({ type: "notice", level: "info", text: "DSH 引擎暂不支持单独中止 bash（可整体停止对话）" });
+		this.emit({ type: "notice", level: "info", text: "DSH 引擎暂不支持单独中止 bash（可整体停止对话）",
+			textEn: "The DSH engine cannot stop bash alone (stop the whole conversation instead)"
+		});
 	}
 
 	// -----------------------------------------------------------------------
@@ -1656,14 +1676,20 @@ export class DshClientSession {
 			const { rmSync } = await import("node:fs");
 			const abs = resolve(path);
 			if (!abs.startsWith(this.sessionRoot + sep)) {
-				this.emit({ type: "notice", level: "error", text: "拒绝删除会话目录之外的路径" });
+				this.emit({ type: "notice", level: "error", text: "拒绝删除会话目录之外的路径",
+					textEn: "Refusing to delete a path outside the session directory"
+				});
 				return;
 			}
 			rmSync(abs, { recursive: true, force: true });
 			await this.pushSessions();
-			this.emit({ type: "notice", level: "info", text: "会话已删除" });
+			this.emit({ type: "notice", level: "info", text: "会话已删除",
+				textEn: "Session deleted"
+			});
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `删除失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `删除失败：${(err as Error).message}`,
+				textEn: `Delete failed: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -1688,7 +1714,9 @@ export class DshClientSession {
 			this.pushTerminals();
 			this.flushSnapshot(true);
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `切换会话失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `切换会话失败：${(err as Error).message}`,
+				textEn: `Failed to switch session: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -1737,9 +1765,13 @@ export class DshClientSession {
 			if (this.runtime.alive) {
 				await this.runtime.restart(this.model);
 			}
-			this.emit({ type: "notice", level: "info", text: "已重扫用户 patch 并重启运行时" });
+			this.emit({ type: "notice", level: "info", text: "已重扫用户 patch 并重启运行时",
+				textEn: "Rescanned user patches and restarted the runtime"
+			});
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `重扫用户 patch 失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `重扫用户 patch 失败：${(err as Error).message}`,
+				textEn: `Failed to rescan user patches: ${(err as Error).message}`
+			});
 		}
 		await this.listDshPatches();
 	}
@@ -1973,7 +2005,9 @@ export class DshClientSession {
 		// 校验：本地表 + 运行时动态目录（P2-17）。
 		const known = DSH_MODELS.some((m) => m.id === modelId) || this.dynamicModels.has(modelId);
 		if (!known) {
-			this.emit({ type: "notice", level: "warning", text: `未知模型：${modelId}` });
+			this.emit({ type: "notice", level: "warning", text: `未知模型：${modelId}`,
+				textEn: `Unknown model: ${modelId}`
+			});
 			return;
 		}
 		if (modelId === this.model) return;
@@ -1983,14 +2017,19 @@ export class DshClientSession {
 				type: "notice",
 				level: "warning",
 				text: "有对话正在运行，切换模型将中止当前所有运行（DSH 换模型 = 重启运行时）",
+				textEn: "Conversations are running; switching models aborts all of them (DSH model switch restarts the runtime)",
 			});
 		}
 		this.model = modelId;
 		try {
 			await this.runtime.restart(modelId);
-			this.emit({ type: "notice", level: "info", text: `已切换到 ${modelId}` });
+			this.emit({ type: "notice", level: "info", text: `已切换到 ${modelId}`,
+				textEn: `Switched to ${modelId}`
+			});
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `切换模型失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `切换模型失败：${(err as Error).message}`,
+				textEn: `Failed to switch model: ${(err as Error).message}`
+			});
 		}
 		this.flushSnapshot(true);
 	}
@@ -2003,7 +2042,9 @@ export class DshClientSession {
 
 	setThinking(level: string): void {
 		if (level !== "high") {
-			this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度" });
+			this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度",
+				textEn: "DeepSeek V4 only supports high thinking intensity"
+			});
 			return;
 		}
 		this.thinkingLevel = level;
@@ -2012,7 +2053,9 @@ export class DshClientSession {
 
 	cycleThinking(): void {
 		// DSH 固定 high。
-		this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度" });
+		this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度",
+			textEn: "DeepSeek V4 only supports high thinking intensity"
+		});
 	}
 
 	// -----------------------------------------------------------------------
@@ -2125,7 +2168,9 @@ export class DshClientSession {
 
 	async reloadExtensions(): Promise<void> {
 		// DSH 引擎无 pi 扩展体系。
-		this.emit({ type: "notice", level: "info", text: "DSH 引擎不支持 pi 扩展热重载" });
+		this.emit({ type: "notice", level: "info", text: "DSH 引擎不支持 pi 扩展热重载",
+			textEn: "The DSH engine does not support pi extension hot-reload"
+		});
 	}
 
 	async savePreset(name: string): Promise<void> {
@@ -2146,14 +2191,24 @@ export class DshClientSession {
 			reviewDisabledSkills: [],
 		};
 		this.stateStore.savePresets(this.clientId, existing ? presets.map((p) => (p.name === name ? preset : p)) : [...presets, preset]);
-		this.emit({ type: "notice", level: "info", text: `预设「${name}」已保存` });
+		this.emit({
+			type: "notice",
+			level: "info",
+			text: `预设「${name}」已保存`,
+			textEn: `Preset "${name}" saved`,
+		});
 		this.pushSettings();
 	}
 
 	async applyPreset(name: string): Promise<void> {
 		const preset = this.stateStore.getPresets(this.clientId).find((p) => p.name === name);
 		if (!preset) {
-			this.emit({ type: "notice", level: "warning", text: `预设「${name}」不存在` });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `预设「${name}」不存在`,
+				textEn: `Preset "${name}" does not exist`,
+			});
 			return;
 		}
 		this.settings.promptMode = preset.promptMode;
@@ -2321,7 +2376,9 @@ export class DshClientSession {
 			locked: g.locked,
 		});
 		this.emitGoalStatus();
-		this.emit({ type: "notice", level: "info", text: `🎯 已设目标：${text.slice(0, 80)}${text.length > 80 ? "…" : ""}` });
+		this.emit({ type: "notice", level: "info", text: `🎯 已设目标：${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`,
+			textEn: `🎯 Goal set: ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`
+		});
 		try {
 			// goal/set 创建 + arm；round-driver 在 agent idle 时自动续轮，无需额外 prompt。
 			const res = (await this.runtime.goalSet(
@@ -2334,7 +2391,9 @@ export class DshClientSession {
 			g.reviewing = false;
 			g.status = `目标设置失败：${(err as Error).message}`;
 			g.statusEn = `Goal setup failed: ${(err as Error).message}`;
-			this.emit({ type: "notice", level: "error", text: `目标设置失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `目标设置失败：${(err as Error).message}`,
+				textEn: `Goal setup failed: ${(err as Error).message}`
+			});
 		}
 		this.emitGoalStatus();
 		this.flushSnapshot();
@@ -2377,7 +2436,9 @@ export class DshClientSession {
 		if (!draft) return;
 		const g = conv.goal;
 		if (g.goal || g.reviewing || g.wizard.active) {
-			this.emit({ type: "notice", level: "warning", text: "已有目标或调研进行中，请先完成或清除" });
+			this.emit({ type: "notice", level: "warning", text: "已有目标或调研进行中，请先完成或清除",
+				textEn: "A goal or survey is already active — finish or clear it first"
+			});
 			return;
 		}
 		g.wizard.active = true;
@@ -2394,6 +2455,7 @@ export class DshClientSession {
 			type: "notice",
 			level: "info",
 			text: `🔍 正在围绕需求展开调研：${draft.slice(0, 60)}${draft.length > 60 ? "…" : ""}`,
+			textEn: `🔍 Surveying the requirement: ${draft.slice(0, 60)}${draft.length > 60 ? "…" : ""}`,
 		});
 		try {
 			const waiter = new Promise<void>((resolve, reject) => {
@@ -2413,7 +2475,9 @@ export class DshClientSession {
 			await this.promptConv(conv, this.wizardPrompt(draft));
 			await waiter;
 		} catch (err) {
-			this.emit({ type: "notice", level: "warning", text: `目标调研中断：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "warning", text: `目标调研中断：${(err as Error).message}`,
+				textEn: `Goal survey interrupted: ${(err as Error).message}`
+			});
 		}
 		conv.turnWaiter = undefined;
 		g.wizard.active = false;
@@ -2432,7 +2496,9 @@ export class DshClientSession {
 		if (!refined && g.goal) {
 			// 模型可能直接用了 create_goal —— 目标已在运行时，镜像它即可。
 			this.emitGoalStatus();
-			this.emit({ type: "notice", level: "info", text: "🎯 调研完成，目标已由模型创建" });
+			this.emit({ type: "notice", level: "info", text: "🎯 调研完成，目标已由模型创建",
+				textEn: "🎯 Survey done; the model created the goal"
+			});
 			return;
 		}
 		this.emitGoalStatus();
@@ -2446,9 +2512,12 @@ export class DshClientSession {
 				type: "notice",
 				level: "info",
 				text: `🎯 调研完成，目标已设为：${refined.slice(0, 80)}${refined.length > 80 ? "…" : ""}`,
+				textEn: `🎯 Survey done, goal set: ${refined.slice(0, 80)}${refined.length > 80 ? "…" : ""}`,
 			});
 		} else {
-			this.emit({ type: "notice", level: "warning", text: "调研未产出有效目标，请重试" });
+			this.emit({ type: "notice", level: "warning", text: "调研未产出有效目标，请重试",
+				textEn: "The survey produced no usable goal — retry"
+			});
 		}
 	}
 
@@ -2504,9 +2573,13 @@ export class DshClientSession {
 	async saveCommands(commands: CommandDef[]): Promise<void> {
 		const { path, error } = await saveCommandsFile(this.cwd, commands);
 		if (error) {
-			this.emit({ type: "notice", level: "error", text: `保存命令失败：${error}` });
+			this.emit({ type: "notice", level: "error", text: `保存命令失败：${error}`,
+				textEn: `Failed to save command: ${error}`
+			});
 		} else {
-			this.emit({ type: "notice", level: "info", text: `命令已保存（${path}）` });
+			this.emit({ type: "notice", level: "info", text: `命令已保存（${path}）`,
+				textEn: `Command saved (${path})`
+			});
 		}
 	}
 
@@ -2551,7 +2624,9 @@ export class DshClientSession {
 				return true;
 			case "model": {
 				if (!args.trim()) {
-					this.emit({ type: "notice", level: "info", text: `当前模型：${this.model}。用法：/model <名称>` });
+					this.emit({ type: "notice", level: "info", text: `当前模型：${this.model}。用法：/model <名称>`,
+						textEn: `Current model: ${this.model}. Usage: /model <name>`
+					});
 					return true;
 				}
 				const q = args.trim().toLowerCase();
@@ -2564,13 +2639,16 @@ export class DshClientSession {
 						type: "notice",
 						level: "error",
 						text: `没有匹配到模型：${args.trim()}（可用模型见顶栏模型列表）`,
+						textEn: `No matching model: ${args.trim()} (see the model list in the top bar)`,
 					});
 				}
 				return true;
 			}
 			case "cwd": {
 				if (!args.trim()) {
-					this.emit({ type: "notice", level: "info", text: `当前工作目录：${this.cwd}` });
+					this.emit({ type: "notice", level: "info", text: `当前工作目录：${this.cwd}`,
+						textEn: `Current directory: ${this.cwd}`
+					});
 					return true;
 				}
 				await this.setCwd(args.trim());
@@ -2584,14 +2662,20 @@ export class DshClientSession {
 			case "copy":
 				return true; // 前端本地实现
 			case "reload":
-				this.emit({ type: "notice", level: "info", text: "已重新加载（DSH 引擎无扩展/技能热重载，运行时能力内置）" });
+				this.emit({ type: "notice", level: "info", text: "已重新加载（DSH 引擎无扩展/技能热重载，运行时能力内置）",
+					textEn: "Reloaded (the DSH engine has no extension/skill hot-reload; runtime capabilities are built in)"
+				});
 				await this.pushSlashCommands();
 				return true;
 			case "compact":
-				this.emit({ type: "notice", level: "info", text: "DSH 引擎不支持上下文压缩（运行时自动管理）" });
+				this.emit({ type: "notice", level: "info", text: "DSH 引擎不支持上下文压缩（运行时自动管理）",
+					textEn: "The DSH engine does not support context compaction (the runtime manages it)"
+				});
 				return true;
 			case "thinking":
-				this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度" });
+				this.emit({ type: "notice", level: "info", text: "DeepSeek V4 仅支持高思考强度",
+					textEn: "DeepSeek V4 only supports high thinking intensity"
+				});
 				return true;
 			case "pi-web-ui:quit":
 				this.onQuit?.();
@@ -2610,6 +2694,7 @@ export class DshClientSession {
 					type: "notice",
 					level: "error",
 					text: `插件命令 /${name} 执行失败：${(err as Error).message}`,
+					textEn: `Plugin command /${name} failed: ${(err as Error).message}`,
 				});
 			}
 			return true;
@@ -2688,7 +2773,9 @@ export class DshClientSession {
 	async setProviderApiKey(provider: string, apiKey: string): Promise<void> {
 		const key = apiKey.trim();
 		if (!key) {
-			this.emit({ type: "notice", level: "error", text: "请填写 API 密钥" });
+			this.emit({ type: "notice", level: "error", text: "请填写 API 密钥",
+				textEn: "Enter an API key"
+			});
 			return;
 		}
 		try {
@@ -2703,11 +2790,15 @@ export class DshClientSession {
 			auth[provider.trim()] = { type: "api_key", key };
 			mkdirSync(dirname(authPath), { recursive: true });
 			writeFileSync(authPath, JSON.stringify(auth, null, 2) + "\n");
-			this.emit({ type: "notice", level: "info", text: `✅ 已保存 ${provider.trim()} 的 API 密钥` });
+			this.emit({ type: "notice", level: "info", text: `✅ 已保存 ${provider.trim()} 的 API 密钥`,
+				textEn: `Saved API key`
+			});
 			if (this.runtime.alive) await this.runtime.restart(this.model);
 			this.flushSnapshot();
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `保存 key 失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `保存 key 失败：${(err as Error).message}`,
+				textEn: `Failed to save key: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -2717,16 +2808,22 @@ export class DshClientSession {
 			const authPath = join(this.agentDir, "auth.json");
 			const auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
 			if (!(pid in auth)) {
-				this.emit({ type: "notice", level: "info", text: `${pid} 没有已保存的密钥` });
+				this.emit({ type: "notice", level: "info", text: `${pid} 没有已保存的密钥`,
+					textEn: `No saved key`
+				});
 				return;
 			}
 			delete auth[pid];
 			writeFileSync(authPath, JSON.stringify(auth, null, 2) + "\n");
-			this.emit({ type: "notice", level: "info", text: `🗑  已清除 ${pid} 的密钥，该服务商回到未配置状态` });
+			this.emit({ type: "notice", level: "info", text: `🗑  已清除 ${pid} 的密钥，该服务商回到未配置状态`,
+				textEn: "Cleared"
+			});
 			if (this.runtime.alive && pid === "deepseek") await this.runtime.restart(this.model);
 			this.flushSnapshot();
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `清除失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `清除失败：${(err as Error).message}`,
+				textEn: `Clear failed: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -2735,11 +2832,15 @@ export class DshClientSession {
 	}
 
 	async saveModelConfig(providerId: string, config: unknown): Promise<void> {
-		this.emit({ type: "notice", level: "warning", text: "DSH 引擎使用内置 DeepSeek 模型，不支持自定义模型配置" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 引擎使用内置 DeepSeek 模型，不支持自定义模型配置",
+			textEn: "The DSH engine uses the built-in DeepSeek model"
+		});
 	}
 
 	async deleteModelConfig(providerId: string): Promise<void> {
-		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持自定义模型配置" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持自定义模型配置",
+			textEn: "The DSH engine does not support custom model configs"
+		});
 	}
 
 	async listProviders(): Promise<void> {
@@ -2761,15 +2862,21 @@ export class DshClientSession {
 	}
 
 	async addProviderKey(provider: string, apiKey: string, name?: string): Promise<void> {
-		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥",
+			textEn: "The DSH engine does not support multiple keys"
+		});
 	}
 
 	async activateProviderKey(provider: string, keyName: string): Promise<void> {
-		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥",
+			textEn: "The DSH engine does not support multiple keys"
+		});
 	}
 
 	async removeProviderKey(provider: string, keyName: string): Promise<void> {
-		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥" });
+		this.emit({ type: "notice", level: "warning", text: "DSH 引擎不支持多密钥",
+			textEn: "The DSH engine does not support multiple keys"
+		});
 	}
 
 	async fetchModelsList(
@@ -2806,7 +2913,9 @@ export class DshClientSession {
 			const conv = this.conv;
 			const idx = conv.messages.findIndex((m) => m.id === messageId);
 			if (idx < 0) {
-				this.emit({ type: "notice", level: "warning", text: "找不到要编辑的消息" });
+				this.emit({ type: "notice", level: "warning", text: "找不到要编辑的消息",
+					textEn: "Message to edit not found"
+				});
 				return;
 			}
 			// 截断到编辑点之前的所有消息 + 用编辑后的文本 prompt。
@@ -2833,7 +2942,9 @@ export class DshClientSession {
 			this.emitConversations();
 			this.flushSnapshot(true);
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `编辑重问失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `编辑重问失败：${(err as Error).message}`,
+				textEn: `Edit-and-reask failed: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -2841,7 +2952,9 @@ export class DshClientSession {
 		try {
 			const abs = resolve(newCwd);
 			if (!existsSync(abs) || !statSync(abs).isDirectory()) {
-				this.emit({ type: "notice", level: "error", text: `切换工作目录失败：目录不存在：${newCwd}` });
+				this.emit({ type: "notice", level: "error", text: `切换工作目录失败：目录不存在：${newCwd}`,
+					textEn: `Failed to switch directory; does not exist: ${newCwd}`
+				});
 				return;
 			}
 			if (abs === this.cwd) return;
@@ -2851,7 +2964,9 @@ export class DshClientSession {
 			try {
 				await this.runtime.restart(this.model);
 			} catch (err) {
-				this.emit({ type: "notice", level: "error", text: `切换工作区后重启运行时失败：${(err as Error).message}` });
+				this.emit({ type: "notice", level: "error", text: `切换工作区后重启运行时失败：${(err as Error).message}`,
+					textEn: `Failed to restart the runtime after switching workspace: ${(err as Error).message}`
+				});
 			}
 			// 旧 active 会话：活跃的（流式/有终端/跑过）标 listed → 后台运行可见
 			// （与 pi 的 displaceActive 语义一致）；空白的直接弃（不列）。
@@ -2874,7 +2989,9 @@ export class DshClientSession {
 				this.removeConversation(id);
 			}
 			this.onCwdChanged?.(abs);
-			this.emit({ type: "notice", level: "info", text: `已切换到工作目录：${abs}` });
+			this.emit({ type: "notice", level: "info", text: `已切换到工作目录：${abs}`,
+				textEn: `Switched to directory: ${abs}`
+			});
 			this.emitConversations();
 			void this.pushSessions();
 			void this.pushProjects();
@@ -2883,7 +3000,9 @@ export class DshClientSession {
 			this.pushTerminals();
 			this.flushSnapshot(true);
 		} catch (err) {
-			this.emit({ type: "notice", level: "error", text: `切换目录失败：${(err as Error).message}` });
+			this.emit({ type: "notice", level: "error", text: `切换目录失败：${(err as Error).message}`,
+				textEn: `Failed to switch directory: ${(err as Error).message}`
+			});
 		}
 	}
 
@@ -3027,7 +3146,9 @@ export class DshAgentService {
 			this.clients.set(clientId, cs);
 			this.stateStore.remember(clientId, cwd);
 			if (cwd !== this.cwd) {
-				send({ type: "notice", level: "info", text: `已恢复上次的工作目录：${cwd}` });
+				send({ type: "notice", level: "info", text: `已恢复上次的工作目录：${cwd}`,
+					textEn: `Restored the last working directory: ${cwd}`
+				});
 			}
 		}
 		cs.attachSink(send);
