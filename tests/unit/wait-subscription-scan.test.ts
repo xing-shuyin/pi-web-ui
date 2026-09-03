@@ -9,6 +9,7 @@ import {
 	resolveSubscriptionsDir,
 	resolveTempScopeId,
 	shouldRetainActive,
+	STALE_ACTIVE_RUN_MARKER_MS,
 } from "../../server/wait-subscription-scan.js";
 
 const SESSION_FILE = "/root/.pi/agent/sessions/--proj--/2026-01-01T00-00-00Z_session.jsonl";
@@ -240,6 +241,9 @@ describe("hasActiveSubagentRuns", () => {
 		// 23h 前的 marker 仍算活跃（边界）。
 		writeMarker(root, "run-2", "", NOW - 23 * 60 * 60 * 1000);
 		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
+		// 精确 24h 边界：age === STALE_ACTIVE_RUN_MARKER_MS 仍算 ACTIVE（age > 才过期）。
+		writeMarker(root, "run-3", "", NOW - STALE_ACTIVE_RUN_MARKER_MS);
+		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
 	});
 
 	it("损坏 JSON marker → 无证据（fail-open）", () => {
@@ -263,16 +267,30 @@ describe("hasActiveSubagentRuns", () => {
 		expect(hasActiveSubagentRuns({ asyncRunsDir: root, now: () => NOW })).toBe(true);
 	});
 
-	it("marker 是目录（EISDIR，非 ENOENT）→ warn 且 fail-open", () => {
+	it("永久子目录 tool-calls/ 被静默跳过（withFileTypes 仅取文件）", () => {
 		const warnings: string[] = [];
 		const root = makeRunsRoot();
-		mkdirSync(path.join(markerDir(root), "run-1"));
+		// 上游 TOOL_CALL_INDEX_DIR 在 .active-runs 下永久存在，不能当作 marker。
+		mkdirSync(path.join(markerDir(root), "tool-calls"));
+		writeMarker(root, "run-1", "");
+		expect(hasActiveSubagentRuns({
+			asyncRunsDir: root,
+			now: () => NOW,
+			warn: (m) => warnings.push(m),
+		})).toBe(true);
+		expect(warnings).toHaveLength(0);
+	});
+
+	it("仅 tool-calls/ 子目录、无 marker → 无活跃运行，零 warn", () => {
+		const warnings: string[] = [];
+		const root = makeRunsRoot();
+		mkdirSync(path.join(markerDir(root), "tool-calls"));
 		expect(hasActiveSubagentRuns({
 			asyncRunsDir: root,
 			now: () => NOW,
 			warn: (m) => warnings.push(m),
 		})).toBe(false);
-		expect(warnings).toHaveLength(1);
+		expect(warnings).toHaveLength(0);
 	});
 
 	it("resolveAsyncRunsDir：PI_SUBAGENTS_TEMP_ROOT 覆盖 / 默认推导", () => {

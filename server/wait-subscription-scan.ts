@@ -216,13 +216,17 @@ function isActiveAsyncState(state: string): boolean {
  * Marker mtime 超过 24h（STALE_ACTIVE_RUN_MARKER_MS，与上游
  * DEFAULT_STALE_TERMINAL_ACTIVE_MARKER_MS 一致）视为 crash 孤儿 → 无证据。
  *
- * 作用域权衡：marker 只记录 runId，无法从会话 .jsonl 路径可靠映射回所属
- * 会话，因此这是「任意未失效 active marker」的全局探针（跨会话粒度）。
- * 保留是自限的（24h staleness + 上游终态即删 marker），全局安全，只是更粗。
+ * 作用域权衡：marker 名即 async run 目录 basename，session 级保留需要逐
+ * marker 读取 <async-runs-root>/<runId>/status.json（内含 sessionFile/
+ * sessionId），但 queued 运行的 status.json 可能瞬时缺失，因此接受更粗
+ * 的全局探针（任意未失效 active marker）。保留是自限的（24h staleness
+ * + 上游终态即删 marker），全局安全，只是更粗。
  * The probe is intentionally GLOBAL (any unexpired active marker), not
- * session-scoped: markers carry only run ids, which cannot be mapped back to
- * a conversation session file. Retention is self-limiting via the 24h
- * staleness cap, so the coarser scope is safe.
+ * session-scoped: session-scoped retention would require reading
+ * <runId>/status.json per marker (the marker name is the async run dir
+ * basename; status.json carries sessionFile/sessionId), which may be
+ * transiently absent for queued runs. We accept the coarser global probe as
+ * self-limiting (24h staleness cap + terminal-state marker deletion).
  *
  * fail-open 语义与 hasPendingWaitSubscription 一致：任何 I/O / 解析错误
  * （目录缺失、损坏 JSON）都按「无证据」处理；ENOENT 静默，其它错误
@@ -237,7 +241,9 @@ export function hasActiveSubagentRuns(options: ActiveSubagentScanOptions = {}): 
 	const dir = path.join(options.asyncRunsDir ?? resolveAsyncRunsDir(), ".active-runs");
 	let markers: string[];
 	try {
-		markers = readdirSync(dir).filter((file) => file !== "." && file !== "..");
+		markers = readdirSync(dir, { withFileTypes: true })
+			.filter((entry) => entry.isFile())
+			.map((entry) => entry.name); // 仅文件：跳过永久子目录（如 tool-calls/）
 	} catch (error) {
 		if (!isNotFound(error)) warn(`Failed to scan active-run markers in '${dir}':`, error);
 		return false; // 目录缺失 / 不可读 → 无证据

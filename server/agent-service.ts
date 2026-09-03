@@ -2845,12 +2845,17 @@ export class ClientSession {
 		// still owes this conversation a wake-up turn.
 		// 还要检查 pi-subagents 的 active-run marker：后台子代理 / 工作流仍在
 		// 运行（queued/running）时释放运行时会杀死扩展宿主，所有进行中的
-		// 异步运行被中止。保留同样自限：运行终态即删 marker，且 24h mtime
-		// 过期视为 crash 孤儿。
+		// 异步运行被中止。探针是全局粒度（跨会话）：session 级保留需逐 marker
+		// 读 <runId>/status.json（queued 运行可能瞬时缺失），故接受更粗的全局
+		// 探针。保留同样自限：运行终态即删 marker，且 24h mtime 过期视为
+		// crash 孤儿。
 		// And retain while pi-subagents has live async work (active-run markers):
 		// disposing the runtime would kill the extension host and abort every
-		// in-flight background run. Self-limiting: markers are removed on
-		// terminal states and expire after 24h.
+		// in-flight background run. The probe is GLOBAL (cross-session):
+		// session-scoped retention would require reading <runId>/status.json per
+		// marker (transiently absent for queued runs), so we accept the coarser
+		// global probe. Self-limiting: markers are removed on terminal states and
+		// expire after 24h.
 		const retained = shouldRetainActive({
 			reviewing: conv.goal.reviewing,
 			wizardRunning: conv.wizardRunning,
