@@ -11,7 +11,17 @@
  * 运行：先 npm run build:server，再 node tests/vscode-editor-plugin-test.mjs
  */
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
@@ -72,7 +82,12 @@ function rpc(sock, payload) {
 		const timer = setTimeout(() => reject(new Error(`rpc timeout: ${payload.action}`)), 10_000);
 		const onMsg = (raw) => {
 			const msg = JSON.parse(raw.toString());
-			if (msg.type === "plugin_data" && msg.pluginId === "vscode-editor" && msg.payload?.res && msg.payload?.reqId === reqId) {
+			if (
+				msg.type === "plugin_data" &&
+				msg.pluginId === "vscode-editor" &&
+				msg.payload?.res &&
+				msg.payload?.reqId === reqId
+			) {
 				clearTimeout(timer);
 				sock.off("message", onMsg);
 				resolve(msg.payload);
@@ -135,7 +150,7 @@ try {
 	// -- 2. list：根目录（目录优先排序、node_modules 被跳过） -------------------
 	let r = await rpc(sock, { action: "list", dir: "" });
 	if (!r.ok) fail(`list failed: ${r.error}`);
-	else if (readdirSync(workspace).some(() => false), true) {
+	else if ((readdirSync(workspace).some(() => false), true)) {
 		const names = r.entries.map((e) => e.name);
 		if (names.includes("node_modules")) fail("list 应跳过 node_modules");
 		else if (r.entries[0]?.name !== "src" || r.entries[0]?.type !== "dir") fail(`目录应排在文件前: ${names}`);
@@ -199,7 +214,8 @@ try {
 	else {
 		const files = r.files ?? [];
 		if (files.some((f) => f.includes("node_modules"))) fail("flatlist 应跳过 node_modules");
-		else if (!files.includes("README.md") || !files.includes("src/main.js") || !files.includes("docs/tutorial.md")) fail(`flatlist 缺项: ${files}`);
+		else if (!files.includes("README.md") || !files.includes("src/main.js") || !files.includes("docs/tutorial.md"))
+			fail(`flatlist 缺项: ${files}`);
 		else console.log(`✓ flatlist ${files.length} 个相对路径`);
 	}
 
@@ -238,7 +254,13 @@ try {
 	r = await rpc(sock, { action: "upload_begin", dir: "uploads/nested", name: "a.bin", size: 4 });
 	if (!r.ok) fail(`upload_begin 子目录异常: ${JSON.stringify(r)}`);
 	else {
-		const c = await rpc(sock, { action: "upload", uploadId: r.uploadId, i: 0, total: 1, b64: Buffer.from([1, 2, 3, 4]).toString("base64") });
+		const c = await rpc(sock, {
+			action: "upload",
+			uploadId: r.uploadId,
+			i: 0,
+			total: 1,
+			b64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+		});
 		if (!c.ok) fail(`upload 子目录分片失败: ${JSON.stringify(c)}`);
 		else if (!existsSync(join(workspace, "uploads", "nested", "a.bin"))) fail("upload 子目录未落盘");
 		else console.log("✓ upload 自动创建目标目录");
@@ -282,10 +304,7 @@ try {
 
 	// 非 client 子树路径不会命中插件静态路由，而是落 SPA catch-all 返回
 	// index.html —— 安全属性是“绝不返回插件目录里的源码”，而非状态码。
-	for (const u of [
-		`${BASE}/plugins/vscode-editor/%2e%2e/index.mjs`,
-		`${BASE}/plugins/vscode-editor/manifest.json`,
-	]) {
+	for (const u of [`${BASE}/plugins/vscode-editor/%2e%2e/index.mjs`, `${BASE}/plugins/vscode-editor/manifest.json`]) {
 		const res = await fetch(u);
 		const ct = res.headers.get("content-type") ?? "";
 		const body = await res.text();

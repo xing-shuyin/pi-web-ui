@@ -25,10 +25,12 @@ let failed = false;
 
 // 1. shim 存在
 if (!/export\s+type\s+\*\s+from\s+"\.\.\/\.\.\/server\/protocol"/.test(typesSrc)) {
-	console.error("✗ web/src/types.ts 不再是 re-export shim —— 协议必须以 server/protocol.ts 为唯一事实源，不要退回手工镜像。");
+	console.error(
+		"✗ web/src/types.ts 不再是 re-export shim —— 协议必须以 server/protocol.ts 为唯一事实源，不要退回手工镜像。",
+	);
 	failed = true;
 } else {
-	console.log('✓ types.ts 是 protocol.ts 的 type-only re-export shim');
+	console.log("✓ types.ts 是 protocol.ts 的 type-only re-export shim");
 }
 
 // 2. protocol.ts 无运行时代码导出
@@ -36,7 +38,9 @@ const runtimeExports = [
 	...protocolSrc.matchAll(/^export\s+(?!type\b|interface\b)(?:declare\s+)?(const|let|var|function|class|enum)\b/gm),
 ].map((m) => m[1]);
 if (runtimeExports.length > 0) {
-	console.error(`✗ server/protocol.ts 出现运行时代码导出（${[...new Set(runtimeExports)].join(", ")}）——该文件必须保持纯类型，前端要经 type-only re-export 引用它。`);
+	console.error(
+		`✗ server/protocol.ts 出现运行时代码导出（${[...new Set(runtimeExports)].join(", ")}）——该文件必须保持纯类型，前端要经 type-only re-export 引用它。`,
+	);
 	failed = true;
 } else {
 	console.log("✓ protocol.ts 保持纯类型导出（无运行时代码）");

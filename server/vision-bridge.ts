@@ -35,9 +35,7 @@ export interface VisionModelRef {
 }
 
 /** Per-batch timeout; a slow vision provider shouldn't stall a prompt forever. */
-const TRANSCRIBE_TIMEOUT_MS = Number(
-	process.env.PI_WEB_VISION_TIMEOUT_MS ?? 90_000,
-);
+const TRANSCRIBE_TIMEOUT_MS = Number(process.env.PI_WEB_VISION_TIMEOUT_MS ?? 90_000);
 /** Cap the transcript length so it doesn't blow up the main context. */
 const MAX_TRANSCRIBE_TOKENS = 4000;
 
@@ -92,10 +90,7 @@ Follow these rules:
  * an empty custom text still falls back to the default (never send an empty
  * system prompt to the vision model).
  */
-export function buildVisionBridgePrompt(
-	mode: "append" | "replace",
-	custom: string,
-): string {
+export function buildVisionBridgePrompt(mode: "append" | "replace", custom: string): string {
 	const text = custom?.trim() ?? "";
 	if (mode === "replace" && text) return text;
 	if (text) return `${SYSTEM_PROMPT}\n\n${text}`;
@@ -140,9 +135,7 @@ export async function transcribeImages(
 		(() => {
 			const found = findVisionModels(runtime);
 			if (found.length === 0) {
-				throw new Error(
-					"未找到可用的视觉模型（models.json 中没有任何 input 含 image 的模型）",
-				);
+				throw new Error("未找到可用的视觉模型（models.json 中没有任何 input 含 image 的模型）");
 			}
 			return runtime.getModel(found[0].provider, found[0].id);
 		})();
@@ -156,9 +149,7 @@ export async function transcribeImages(
 		const imageBlocks = images.map((img) => ({
 			type: "image" as const,
 			data: img.data.replace(/^data:[^;]*;base64,/, ""),
-			mimeType: img.mimeType?.startsWith("image/")
-				? img.mimeType
-				: "image/png",
+			mimeType: img.mimeType?.startsWith("image/") ? img.mimeType : "image/png",
 		}));
 		const context: VisionContext = {
 			systemPrompt: options.systemPrompt ?? SYSTEM_PROMPT,
@@ -166,10 +157,7 @@ export async function transcribeImages(
 				{
 					role: "user",
 					timestamp: Date.now(),
-					content: [
-						...imageBlocks,
-						{ type: "text", text: buildUserPrompt(images.length) },
-					],
+					content: [...imageBlocks, { type: "text", text: buildUserPrompt(images.length) }],
 				},
 			],
 		};
@@ -178,9 +166,7 @@ export async function transcribeImages(
 			maxTokens: MAX_TRANSCRIBE_TOKENS,
 		});
 		if (msg.stopReason === "error" || msg.stopReason === "aborted") {
-			throw new Error(
-				msg.errorMessage || `视觉模型异常终止（${msg.stopReason}）`,
-			);
+			throw new Error(msg.errorMessage || `视觉模型异常终止（${msg.stopReason}）`);
 		}
 		const text = msg.content
 			.filter((b) => b.type === "text")

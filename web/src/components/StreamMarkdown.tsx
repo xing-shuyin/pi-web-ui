@@ -1,11 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { segmentStream } from "../stream-markdown";
-import {
-	MarkdownBody,
-	rehypePlugins,
-	remarkPlugins,
-} from "./Markdown";
+import { MarkdownBody, rehypePlugins, remarkPlugins } from "./Markdown";
 
 /**
  * Prefix-cached streaming markdown renderer (see stream-markdown.ts for the
@@ -78,15 +74,8 @@ function ActiveTail({ text, inFence }: { text: string; inFence: boolean }) {
 	return <MarkdownBody text={rendered} />;
 }
 
-export const StreamMarkdown = memo(function StreamMarkdown({
-	text,
-}: {
-	text: string;
-}) {
-	const { frozen, active, inFence } = useMemo(
-		() => segmentStream(text),
-		[text],
-	);
+export const StreamMarkdown = memo(function StreamMarkdown({ text }: { text: string }) {
+	const { frozen, active, inFence } = useMemo(() => segmentStream(text), [text]);
 	return (
 		<div className="md">
 			{frozen.map((seg, i) => (
@@ -94,9 +83,7 @@ export const StreamMarkdown = memo(function StreamMarkdown({
 			))}
 			{/* key restarts the throttle whenever a block freezes — the fresh tail
 			    renders immediately instead of waiting out the previous interval. */}
-			{active.length > 0 && (
-				<ActiveTail key={frozen.length} text={active} inFence={inFence} />
-			)}
+			{active.length > 0 && <ActiveTail key={frozen.length} text={active} inFence={inFence} />}
 		</div>
 	);
 });

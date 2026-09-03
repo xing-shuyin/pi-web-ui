@@ -15,9 +15,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = resolve(__dirname, "fixtures/mcp-echo-server.mjs");
 
 const PORT = 8990;
-let server; let dataDir;
+let server;
+let dataDir;
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function sleep(ms) {
+	return new Promise((r) => setTimeout(r, ms));
+}
 
 async function main() {
 	dataDir = mkdtempSync(join(tmpdir(), "mcp-bridge-"));
@@ -34,18 +37,14 @@ async function main() {
 		}),
 	);
 
-	server = spawn(
-		process.execPath,
-		["dist/server/index.js", "--port", String(PORT)],
-		{
-			env: {
-				...process.env,
-				PI_WEB_DATA_DIR: dataDir,
-				PI_WEB_PORT: String(PORT),
-			},
-			stdio: ["ignore", "pipe", "pipe"],
+	server = spawn(process.execPath, ["dist/server/index.js", "--port", String(PORT)], {
+		env: {
+			...process.env,
+			PI_WEB_DATA_DIR: dataDir,
+			PI_WEB_PORT: String(PORT),
 		},
-	);
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	let out = "";
 	server.stdout.on("data", (d) => (out += d.toString()));
 	server.stderr.on("data", (d) => (out += d.toString()));
@@ -74,7 +73,11 @@ async function main() {
 
 main().catch(async (err) => {
 	console.error("✗", err.message);
-	try { server?.kill(); } catch {}
-	try { rmSync(dataDir, { recursive: true, force: true }); } catch {}
+	try {
+		server?.kill();
+	} catch {}
+	try {
+		rmSync(dataDir, { recursive: true, force: true });
+	} catch {}
 	process.exit(1);
 });

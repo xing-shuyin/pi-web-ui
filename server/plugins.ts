@@ -79,9 +79,9 @@ export interface PluginHost {
 	sendTo(clientId: string, payload: unknown): void;
 	/** 注册「新客户端接入」钩子：每次浏览器 attach（含插件刚激活时已在场的连接、
 	 *  以及 plugins_reload 后的重新接入）都会以 clientId 回调。插件应借此主动
-		 *  推送自身完整状态（kind:"state" 等）——服务端是唯一事实源，不要依赖客户端
-		 *  挂载后自己来拉（裸 ctx.send({action:"state"}) 无 reqId，响应会被客户端的
-		 *  pending 匹配静默丢弃，这是已踩过两次的坑）。返回注销函数。 */
+	 *  推送自身完整状态（kind:"state" 等）——服务端是唯一事实源，不要依赖客户端
+	 *  挂载后自己来拉（裸 ctx.send({action:"state"}) 无 reqId，响应会被客户端的
+	 *  pending 匹配静默丢弃，这是已踩过两次的坑）。返回注销函数。 */
 	onAttach(handler: (clientId: string) => void): () => void;
 	/** 订阅智能体的工具执行事件（bash/读写文件等，start+end 成对）；返回注销函数。 */
 	onToolEvent(handler: (ev: PluginToolEvent) => void): () => void;
@@ -252,9 +252,7 @@ function parseSettingsSchema(raw: unknown): UiPluginSettingField[] {
 			...(o.default !== undefined ? { default: o.default as string | number | boolean } : {}),
 			...(typeof o.min === "number" ? { min: o.min } : {}),
 			...(typeof o.max === "number" ? { max: o.max } : {}),
-			...(Array.isArray(o.options)
-				? { options: o.options.filter((x): x is string => typeof x === "string") }
-				: {}),
+			...(Array.isArray(o.options) ? { options: o.options.filter((x): x is string => typeof x === "string") } : {}),
 			...(typeof o.hint === "string" ? { hint: o.hint } : {}),
 		};
 		out.push(field);
@@ -478,9 +476,7 @@ export class PluginManager {
 					// 超时护栏：响应由 handler 自己 sendTo/broadcast 发出，超时只是记
 					// 日志不再等待——绝不能让单条消息把客户端 pending 管线无限拖死。
 					const timer = setTimeout(() => {
-						console.error(
-							`[plugin:${pluginId}] message handler 超时（>${MESSAGE_TIMEOUT_MS}ms），已不再等待`,
-						);
+						console.error(`[plugin:${pluginId}] message handler 超时（>${MESSAGE_TIMEOUT_MS}ms），已不再等待`);
 					}, MESSAGE_TIMEOUT_MS);
 					void ret.finally(() => clearTimeout(timer));
 				}
@@ -565,7 +561,7 @@ export class PluginManager {
 
 	/** 服务端热重载：反激活全部 → 清缓存 → 重扫重激活 → epoch+1。
 	 *  返回新目录清单（含激活结果）。重激活后的插件实例是新模块，
-		 *  内存状态为初始值——逐个客户端触发 onAttach 让它们重推自身状态。 */
+	 *  内存状态为初始值——逐个客户端触发 onAttach 让它们重推自身状态。 */
 	async reload(): Promise<UiPluginInfo[]> {
 		this.dispose();
 		this.attempted.clear();
@@ -608,8 +604,7 @@ export class PluginManager {
 	/** 当前全部插件注册的 AI 工具（扁平化，按插件 id 稳定排序）。 */
 	getAgentTools(): PluginAgentTool[] {
 		const out: PluginAgentTool[] = [];
-		for (const table of [...this.agentTools.values()].sort())
-			out.push(...table.values());
+		for (const table of [...this.agentTools.values()].sort()) out.push(...table.values());
 		return out;
 	}
 	/** 注册一个供 AI 调用的工具；重名拒绝并返回空操作注销函数。 */
@@ -798,8 +793,7 @@ export class PluginManager {
 					id: name,
 					name: typeof m.name === "string" && m.name ? m.name : name,
 					version: typeof m.version === "string" ? m.version : undefined,
-					description:
-						typeof m.description === "string" ? m.description : undefined,
+					description: typeof m.description === "string" ? m.description : undefined,
 					icon: typeof m.icon === "string" && m.icon.trim() ? m.icon.trim() : undefined,
 					hasClient: existsSync(join(dir, "client", "entry.mjs")),
 					error: this.loaded.get(name)?.info.error,
@@ -810,18 +804,18 @@ export class PluginManager {
 					// 声明式设置 schema + 当前存值（⚙ 面板自动渲染表单用）
 					settingsSchema: parseSettingsSchema(m.settings),
 					settingsValues: storedSettingsValues(dir, parseSettingsSchema(m.settings)),
-				// 安装来源（pi-web-ui install 写入的 .pi-source.json）——
-				// 设置面板据此显示「更新」按钮；手工拷入的插件没有此文件。
-				source: await readFile(join(dir, ".pi-source.json"), "utf8")
-					.then((raw) => {
-						try {
-							const s = JSON.parse(raw) as { source?: unknown };
-							return typeof s.source === "string" && s.source ? s.source : undefined;
-						} catch {
-							return undefined;
-						}
-					})
-					.catch(() => undefined),
+					// 安装来源（pi-web-ui install 写入的 .pi-source.json）——
+					// 设置面板据此显示「更新」按钮；手工拷入的插件没有此文件。
+					source: await readFile(join(dir, ".pi-source.json"), "utf8")
+						.then((raw) => {
+							try {
+								const s = JSON.parse(raw) as { source?: unknown };
+								return typeof s.source === "string" && s.source ? s.source : undefined;
+							} catch {
+								return undefined;
+							}
+						})
+						.catch(() => undefined),
 				});
 			} catch {
 				continue; // 无 manifest / JSON 坏 —— 不是插件
@@ -852,7 +846,14 @@ export class PluginManager {
 		if (apiVersion > PLUGIN_API_VERSION) {
 			const msg = `插件要求宿主 API v${apiVersion}，当前宿主 v${PLUGIN_API_VERSION} —— 请升级 pi-web-ui`;
 			console.error(`[plugin:${info.id}] ${msg}`);
-			this.loaded.set(info.id, { info: { ...info, error: msg }, toolHandlers, attachHandlers, cwdHandlers, httpRoutes, settingsHandlers: new Set() });
+			this.loaded.set(info.id, {
+				info: { ...info, error: msg },
+				toolHandlers,
+				attachHandlers,
+				cwdHandlers,
+				httpRoutes,
+				settingsHandlers: new Set(),
+			});
 			return;
 		}
 		// 能力声明：写了 permissions → 严格模式（受控宿主 API 按声明族强制执行）；
@@ -860,7 +861,15 @@ export class PluginManager {
 		const permsDeclared = (info.permissions ?? []).slice();
 		const strict = permsDeclared.length > 0 || apiVersion >= 2;
 		const permFamilies = new Set(permsDeclared.map((x) => x.split(":")[0]!));
-		const p: LoadedPlugin = { info, toolHandlers, attachHandlers, cwdHandlers, commandUnsubscribers: unregisterCommands, httpRoutes, settingsHandlers };
+		const p: LoadedPlugin = {
+			info,
+			toolHandlers,
+			attachHandlers,
+			cwdHandlers,
+			commandUnsubscribers: unregisterCommands,
+			httpRoutes,
+			settingsHandlers,
+		};
 		p.permsDeclared = permsDeclared;
 		p.permFamilies = permFamilies;
 		p.legacyWarned = false;
@@ -921,7 +930,12 @@ export class PluginManager {
 			route: (method, path, handler) => {
 				if (!can("http")) return () => {};
 				const m = String(method ?? "GET").toUpperCase();
-				if (!["GET", "POST", "PUT", "DELETE"].includes(m) || typeof path !== "string" || !path.startsWith("/") || typeof handler !== "function") {
+				if (
+					!["GET", "POST", "PUT", "DELETE"].includes(m) ||
+					typeof path !== "string" ||
+					!path.startsWith("/") ||
+					typeof handler !== "function"
+				) {
 					console.error(`[plugin:${info.id}] route: 非法参数（method=${method} path=${path}），忽略`);
 					return () => {};
 				}
@@ -998,9 +1012,7 @@ export class PluginManager {
 		try {
 			// Node 对同一 URL 的 import() 永远返回缓存模块——追加 epoch 作查询串
 			// 击穿缓存，让 plugins_reload 后的重新激活能拿到磁盘上的新代码。
-			const mod = (await import(
-				pathToFileURL(join(dir, "index.mjs")).href + `?e=${this.epochCounter}`
-			)) as {
+			const mod = (await import(pathToFileURL(join(dir, "index.mjs")).href + `?e=${this.epochCounter}`)) as {
 				default?: {
 					activate?: (host: PluginHost) => void | (() => void) | Promise<void | (() => void)>;
 				};
@@ -1041,11 +1053,7 @@ export class PluginManager {
  * 把 /plugins/:id/client/<rest> 安全映射到 <pluginsDir>/<id>/client/<rest>。
  * 返回绝对路径；任何越界/非法 id 返回 null（调用方回 404）。
  */
-export function resolvePluginClientFile(
-	pluginsDir: string,
-	id: string,
-	rest: string,
-): string | null {
+export function resolvePluginClientFile(pluginsDir: string, id: string, rest: string): string | null {
 	if (!ID_RE.test(id)) return null;
 	const root = resolve(join(pluginsDir, id, "client"));
 	// rest 由 express 路由保证不带 ".."，但双保险：resolve 后必须仍在 root 内
@@ -1070,8 +1078,7 @@ export function syncPluginToolsIntoSession(
 	defs: Array<{ name: string } & Record<string, unknown>>,
 	prevNames: ReadonlySet<string>,
 ): ReadonlySet<string> | null {
-	if (!Array.isArray(session._customTools) || typeof session._refreshToolRegistry !== "function")
-		return null;
+	if (!Array.isArray(session._customTools) || typeof session._refreshToolRegistry !== "function") return null;
 	const byName = new Map(session._customTools.map((d) => [d.name, d]));
 	let changed = false;
 	for (const d of defs) {

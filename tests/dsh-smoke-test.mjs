@@ -40,14 +40,16 @@ const check = (name, ok, extra = "") => {
 let rtAvailable = false;
 try {
 	const { resolveRuntimeBase } = await import(
-		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href,
+		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
 	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
 	rtAvailable = false;
 }
 if (!rtAvailable) {
-	console.log("⏭ SKIP：未找到 dsh 运行时树（需 npm i -g @deepseek-ai/dsh@0.1.1-rc.2 或 PI_WEB_DSH_RUNTIME 指向运行时树根）");
+	console.log(
+		"⏭ SKIP：未找到 dsh 运行时树（需 npm i -g @deepseek-ai/dsh@0.1.1-rc.2 或 PI_WEB_DSH_RUNTIME 指向运行时树根）",
+	);
 	process.exit(0);
 }
 
@@ -131,10 +133,7 @@ function connect(clientId) {
 							res(inbox.splice(i, 1)[0]);
 							return;
 						}
-						const t = setTimeout(
-							() => rej(new Error("timeout waiting for message")),
-							timeout,
-						);
+						const t = setTimeout(() => rej(new Error("timeout waiting for message")), timeout);
 						waiters.push({
 							pred,
 							resolve: (m) => {
@@ -230,9 +229,7 @@ async function main() {
 	let termOk = false;
 	const t0 = Date.now();
 	while (Date.now() - t0 < 15000 && !termOk) {
-		const msg = await c2
-			.wait((m) => m.type === "terminal_output" && m.terminalId === termId, 3000)
-			.catch(() => null);
+		const msg = await c2.wait((m) => m.type === "terminal_output" && m.terminalId === termId, 3000).catch(() => null);
 		if (msg && msg.data.includes("TERM_OK")) termOk = true;
 	}
 	check("terminal echo TERM_OK 回显", termOk);

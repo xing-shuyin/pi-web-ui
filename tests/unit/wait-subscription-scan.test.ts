@@ -43,79 +43,95 @@ function writeRecord(dir: string, value: unknown, file = `${TOKEN}.json`): void 
 
 describe("hasPendingWaitSubscription", () => {
 	it("不存在目录 → 无证据", () => {
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: path.join(makeDir(), "missing", "wait-subscriptions"),
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: path.join(makeDir(), "missing", "wait-subscriptions"),
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("空目录 → 无证据", () => {
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: makeDir(),
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: makeDir(),
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("匹配且未过期 → 有挂起订阅（保留会话）", () => {
 		const dir = makeDir();
 		writeRecord(dir, record());
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(true);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(true);
 	});
 
 	it("匹配但已过期 → 无挂起订阅", () => {
 		const dir = makeDir();
 		writeRecord(dir, record({ expiresAt: NOW - 1 }));
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("其它会话的未过期记录 → 无挂起订阅", () => {
 		const dir = makeDir();
 		writeRecord(dir, record({ sessionId: "/other/session.jsonl" }));
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("损坏 JSON → 视为无证据（fail-open）", () => {
 		const dir = makeDir();
 		writeRecord(dir, "{ not json !!!", "corrupt.json");
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("格式不符（version 缺失等）→ 视为无证据", () => {
 		const dir = makeDir();
 		writeRecord(dir, { hello: "world" }, "foreign.json");
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("非 .json 文件被忽略", () => {
 		const dir = makeDir();
 		writeRecord(dir, record(), "notes.txt");
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 });
 
@@ -149,21 +165,25 @@ describe("shouldRetainActive（置换决策）", () => {
 		expect(shouldRetainActive({ ...base, hasPendingWake: true })).toBe(true);
 	});
 	it("thunk 只在到达 pending-wake 优先级时才求值（前置命中则不调用）", () => {
-		expect(shouldRetainActive({
-			...base,
-			streaming: true,
-			hasPendingWake: () => {
-				throw new Error("must not be evaluated");
-			},
-		})).toBe(true);
+		expect(
+			shouldRetainActive({
+				...base,
+				streaming: true,
+				hasPendingWake: () => {
+					throw new Error("must not be evaluated");
+				},
+			}),
+		).toBe(true);
 		let calls = 0;
-		expect(shouldRetainActive({
-			...base,
-			hasPendingWake: () => {
-				calls += 1;
-				return true;
-			},
-		})).toBe(true);
+		expect(
+			shouldRetainActive({
+				...base,
+				hasPendingWake: () => {
+					calls += 1;
+					return true;
+				},
+			}),
+		).toBe(true);
 		expect(calls).toBe(1);
 	});
 });
@@ -212,10 +232,12 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 	it("resolveSubscriptionsDir：PI_SUBAGENTS_TEMP_ROOT 覆盖（含尾斜杠/相对路径）", () => {
 		// path.resolve 把 /tmp/custom 规范成平台绝对路径（POSIX 原样，
 		// Windows 变 C:\tmp\custom），断言跟随实现，平台无关。
-		expect(resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom" }))
-			.toBe(path.join(path.resolve("/tmp/custom"), "wait-subscriptions"));
-		expect(resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom/" }))
-			.toBe(path.join(path.resolve("/tmp/custom"), "wait-subscriptions"));
+		expect(resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom" })).toBe(
+			path.join(path.resolve("/tmp/custom"), "wait-subscriptions"),
+		);
+		expect(resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom/" })).toBe(
+			path.join(path.resolve("/tmp/custom"), "wait-subscriptions"),
+		);
 		const resolved = resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "rel/root" });
 		expect(path.isAbsolute(resolved)).toBe(true);
 		expect(resolved.endsWith("wait-subscriptions")).toBe(true);
@@ -232,25 +254,32 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 describe("M1/M4/S2 边界与宿主对齐", () => {
 	it("expiresAt 为非有限数值（1e999 → Infinity）→ fail-open", () => {
 		const dir = makeDir();
-		writeFileSync(path.join(dir, `${TOKEN}.json`), JSON.stringify({
-			...record(),
-			expiresAt: JSON.parse("1e999"),
-		}));
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		writeFileSync(
+			path.join(dir, `${TOKEN}.json`),
+			JSON.stringify({
+				...record(),
+				expiresAt: JSON.parse("1e999"),
+			}),
+		);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("文件名与 token 不符（被重命名）→ fail-open", () => {
 		const dir = makeDir();
 		writeRecord(dir, record(), "renamed.json");
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+			}),
+		).toBe(false);
 	});
 
 	it("非 ENOENT I/O 错误 warn 一次且仍 fail-open；ENOENT 静默", () => {
@@ -259,21 +288,25 @@ describe("M1/M4/S2 边界与宿主对齐", () => {
 		// foo.json 是目录 → readFileSync 抛 EISDIR（非 ENOENT）
 		const dir = makeDir();
 		mkdirSync(path.join(dir, "foo.json"));
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: dir,
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-			warn,
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: dir,
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+				warn,
+			}),
+		).toBe(false);
 		expect(warnings).toHaveLength(1);
 		// 目录整体缺失 → ENOENT → 静默
 		const silent: string[] = [];
-		expect(hasPendingWaitSubscription({
-			subscriptionsDir: path.join(makeDir(), "nope"),
-			sessionId: SESSION_FILE,
-			now: () => NOW,
-			warn: (m) => silent.push(m),
-		})).toBe(false);
+		expect(
+			hasPendingWaitSubscription({
+				subscriptionsDir: path.join(makeDir(), "nope"),
+				sessionId: SESSION_FILE,
+				now: () => NOW,
+				warn: (m) => silent.push(m),
+			}),
+		).toBe(false);
 		expect(silent).toHaveLength(0);
 	});
 });

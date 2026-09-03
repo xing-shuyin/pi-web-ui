@@ -47,10 +47,7 @@ export function foldedResultText(m: FoldedResultMessage): string {
 }
 
 /** 一条消息的可搜索折叠文本（顺序 = 内容块顺序，与 DOM 文档序一致）。 */
-export function foldedSearchText(
-	m: FoldedMessage,
-	results: ReadonlyMap<string, FoldedResultMessage>,
-): string {
+export function foldedSearchText(m: FoldedMessage, results: ReadonlyMap<string, FoldedResultMessage>): string {
 	const parts: string[] = [];
 	for (const b of m.content) {
 		if (b.type === "text" && typeof b.text === "string") {
@@ -100,10 +97,7 @@ export function collectFoldedHits(
 	if (!needle) return out;
 	for (const m of messages) {
 		if (!collapsedIds.has(m.id)) continue;
-		const n = countOccurrences(
-			foldedSearchText(m, results).toLowerCase(),
-			needle,
-		);
+		const n = countOccurrences(foldedSearchText(m, results).toLowerCase(), needle);
 		if (n > 0) out.set(m.id, n);
 	}
 	return out;

@@ -43,7 +43,7 @@ if (!key) {
 let rtAvailable = false;
 try {
 	const { resolveRuntimeBase } = await import(
-		(await import("node:url")).pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href,
+		(await import("node:url")).pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
 	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
@@ -162,23 +162,14 @@ async function main() {
 	let passSeen = false;
 	let deadline = Date.now() + 120_000;
 	while (Date.now() < deadline && !passSeen) {
-		const msg = await c
-			.wait(
-				(m) => m.type === "goal_status" && m.status,
-				3000,
-			)
-			.catch(() => null);
+		const msg = await c.wait((m) => m.type === "goal_status" && m.status, 3000).catch(() => null);
 		if (!msg) continue;
 		const s = msg.status;
 		if (s.goal?.includes("2+2") && s.reviewing) activeSeen = true;
 		if (s.verdict === "pass") passSeen = true;
 	}
 	check("set_goal → goal_status 进行中", activeSeen);
-	check(
-		"round-driver 自动续轮 → 模型完成 → verdict=pass",
-		passSeen,
-		`耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`,
-	);
+	check("round-driver 自动续轮 → 模型完成 → verdict=pass", passSeen, `耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 	// --- 2. clear_goal → 清空 ---
 	c.send({ type: "clear_goal" });

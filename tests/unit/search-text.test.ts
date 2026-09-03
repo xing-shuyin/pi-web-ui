@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-	buildSearchHits,
-	countOccurrences,
-	messageSearchText,
-	type SearchMessage,
-} from "../../web/src/search-text.js";
+import { buildSearchHits, countOccurrences, messageSearchText, type SearchMessage } from "../../web/src/search-text.js";
 
-function msg(
-	partial: Partial<SearchMessage> & Pick<SearchMessage, "id" | "role">,
-): SearchMessage {
+function msg(partial: Partial<SearchMessage> & Pick<SearchMessage, "id" | "role">): SearchMessage {
 	return { content: [], ...partial };
 }
 
@@ -83,9 +76,7 @@ describe("buildSearchHits", () => {
 	});
 
 	it("空查询返回空列表；前后空白忽略", () => {
-		const messages = [
-			msg({ id: "u1", role: "user", content: [{ type: "text", text: "abc" }] }),
-		];
+		const messages = [msg({ id: "u1", role: "user", content: [{ type: "text", text: "abc" }] })];
 		expect(buildSearchHits(messages, "")).toEqual([]);
 		expect(buildSearchHits(messages, "  ")).toEqual([]);
 		expect(buildSearchHits(messages, " abc ")).toHaveLength(1);
@@ -97,8 +88,6 @@ describe("buildSearchHits", () => {
 			msg({ id: "a1", role: "assistant", content: [] }),
 			msg({ id: "u1", role: "user", content: [{ type: "text", text: "ABC" }] }),
 		];
-		expect(buildSearchHits(messages, "abc")).toEqual([
-			{ messageId: "u1", occurrence: 0 },
-		]);
+		expect(buildSearchHits(messages, "abc")).toEqual([{ messageId: "u1", occurrence: 0 }]);
 	});
 });

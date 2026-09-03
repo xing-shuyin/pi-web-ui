@@ -15,11 +15,8 @@ export async function snapshotListeningPorts(): Promise<Map<number, number>> {
 		const { execFile } = await import("node:child_process");
 		if (process.platform === "win32") {
 			const out = await new Promise<string>((resolve, reject) =>
-				execFile(
-					"netstat",
-					["-ano", "-p", "tcp"],
-					{ windowsHide: true, timeout: 8000 },
-					(err, stdout) => (err ? reject(err) : resolve(stdout)),
+				execFile("netstat", ["-ano", "-p", "tcp"], { windowsHide: true, timeout: 8000 }, (err, stdout) =>
+					err ? reject(err) : resolve(stdout),
 				),
 			);
 			for (const line of out.split(/\r?\n/)) {
@@ -28,17 +25,13 @@ export async function snapshotListeningPorts(): Promise<Map<number, number>> {
 				if (p.length >= 5 && p[0] === "TCP" && p[3] === "LISTENING") {
 					const port = Number(p[1].split(":").pop());
 					const pid = Number(p[4]);
-					if (Number.isFinite(port) && Number.isFinite(pid))
-						m.set(port, pid);
+					if (Number.isFinite(port) && Number.isFinite(pid)) m.set(port, pid);
 				}
 			}
 		} else {
 			const out = await new Promise<string>((resolve, reject) =>
-				execFile(
-					"lsof",
-					["-iTCP", "-sTCP:LISTEN", "-P", "-n"],
-					{ timeout: 8000 },
-					(err, stdout) => (err ? reject(err) : resolve(stdout)),
+				execFile("lsof", ["-iTCP", "-sTCP:LISTEN", "-P", "-n"], { timeout: 8000 }, (err, stdout) =>
+					err ? reject(err) : resolve(stdout),
 				),
 			);
 			for (const line of out.split(/\r?\n/).slice(1)) {
@@ -48,8 +41,7 @@ export async function snapshotListeningPorts(): Promise<Map<number, number>> {
 					const mm = (p[p.length - 1] ?? "").match(/(\d+)\)?\s*$/);
 					const port = mm ? Number(mm[1]) : NaN;
 					const pid = Number(p[1]);
-					if (Number.isFinite(port) && Number.isFinite(pid))
-						m.set(port, pid);
+					if (Number.isFinite(port) && Number.isFinite(pid)) m.set(port, pid);
 				}
 			}
 		}
@@ -81,9 +73,7 @@ export function killPidTree(pid: number): void {
 /** Best-effort full command line of a pid (PowerShell CIM on win32 — wmic is
  *  gone on recent Win11 builds; ps -o command= on POSIX). Returns undefined
  *  when the process is gone or the lookup fails. */
-export async function lookupProcessCommandLine(
-	pid: number,
-): Promise<string | undefined> {
+export async function lookupProcessCommandLine(pid: number): Promise<string | undefined> {
 	try {
 		const { execFile } = await import("node:child_process");
 		if (process.platform === "win32") {
@@ -106,11 +96,8 @@ export async function lookupProcessCommandLine(
 			return line || undefined;
 		}
 		const out = await new Promise<string>((resolve, reject) =>
-			execFile(
-				"ps",
-				["-o", "command=", "-p", String(pid)],
-				{ timeout: 4000 },
-				(err, stdout) => (err ? reject(err) : resolve(stdout)),
+			execFile("ps", ["-o", "command=", "-p", String(pid)], { timeout: 4000 }, (err, stdout) =>
+				err ? reject(err) : resolve(stdout),
 			),
 		);
 		const line = out.trim();
@@ -139,11 +126,8 @@ export async function lookupProcessName(pid: number): Promise<string | undefined
 			return m ? m[1] : undefined;
 		}
 		const out = await new Promise<string>((resolve, reject) =>
-			execFile(
-				"ps",
-				["-o", "comm=", "-p", String(pid)],
-				{ timeout: 4000 },
-				(err, stdout) => (err ? reject(err) : resolve(stdout)),
+			execFile("ps", ["-o", "comm=", "-p", String(pid)], { timeout: 4000 }, (err, stdout) =>
+				err ? reject(err) : resolve(stdout),
 			),
 		);
 		const name = out.trim();

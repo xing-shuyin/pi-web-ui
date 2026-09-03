@@ -36,10 +36,7 @@ export function saveUpload(
 ): { abs: string; displayName: string } {
 	const dir = join(uploadsRoot(dataDir), clientId);
 	mkdirSync(dir, { recursive: true });
-	const displayName =
-		name
-			.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
-			.slice(0, 80) || "file";
+	const displayName = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").slice(0, 80) || "file";
 	const abs = join(dir, `${Date.now()}-${displayName}`);
 	writeFileSync(abs, buf);
 	return { abs, displayName };
@@ -107,9 +104,7 @@ async function rmdirSafe(dir: string): Promise<void> {
 }
 
 /** Startup sweep + periodic re-sweep. Timer is unref'd so it never blocks exit. */
-export function scheduleUploadCleanup(
-	intervalMs = 6 * 60 * 60 * 1000,
-): void {
+export function scheduleUploadCleanup(intervalMs = 6 * 60 * 60 * 1000): void {
 	void cleanupUploads().catch(() => {});
 	const timer = setInterval(() => {
 		void cleanupUploads().catch(() => {});

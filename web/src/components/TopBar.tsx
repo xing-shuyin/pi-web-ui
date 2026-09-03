@@ -95,11 +95,7 @@ export function TopBar({
 		{ value: "en", label: t("langEn") },
 	];
 
-	const connLabel = chat.ready
-		? t("connected")
-		: chat.status === "closed"
-			? t("reconnecting")
-			: t("connecting");
+	const connLabel = chat.ready ? t("connected") : chat.status === "closed" ? t("reconnecting") : t("connecting");
 	const connClass = chat.ready ? "ok" : "busy";
 
 	/** Run `npm i -g pi-web-ui@latest` in a visible terminal tab (SCM-style):
@@ -127,8 +123,7 @@ export function TopBar({
 		} else {
 			terminal.create({
 				id: randomUuid(),
-				conversationId:
-					chat.activeConversationId || chat.state?.conversationId || "",
+				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
 				cols: 80,
@@ -170,8 +165,7 @@ export function TopBar({
 		} else {
 			terminal.create({
 				id: randomUuid(),
-				conversationId:
-					chat.activeConversationId || chat.state?.conversationId || "",
+				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
 				cols: 80,
@@ -193,9 +187,7 @@ export function TopBar({
 	// Packages (+ the pi core) with a real newer version — targets of the
 	// per-row and "update all" buttons. The web UI itself is excluded: it has
 	// its own dedicated update flow above the all-components section.
-	const updatable = allUpdates.filter(
-		(i) => !i.upToDate && !i.error && i.kind !== "webui",
-	);
+	const updatable = allUpdates.filter((i) => !i.upToDate && !i.error && i.kind !== "webui");
 	const renderAllUpdatesBody = () => (
 		<div className="dd-updates-all">
 			<div className="dd-header">{t("updatesAllTitle")}</div>
@@ -214,11 +206,7 @@ export function TopBar({
 								{item.name}
 							</span>
 							<span className="dd-all-kind">
-								{item.kind === "webui"
-									? t("kindWebUi")
-									: item.kind === "pi-core"
-										? t("kindPiCore")
-										: t("kindPackage")}
+								{item.kind === "webui" ? t("kindWebUi") : item.kind === "pi-core" ? t("kindPiCore") : t("kindPackage")}
 							</span>
 							<span className="dd-all-vers">
 								{item.error ? (
@@ -235,12 +223,7 @@ export function TopBar({
 								<button
 									type="button"
 									className="dd-update-btn"
-									onClick={() =>
-										runPkgUpdate(
-											[item],
-											t("updatePkgTabTitle", { name: item.name }),
-										)
-									}
+									onClick={() => runPkgUpdate([item], t("updatePkgTabTitle", { name: item.name }))}
 								>
 									{t("updateBtn")}
 								</button>
@@ -255,12 +238,7 @@ export function TopBar({
 						type="button"
 						className="dd-refresh accent"
 						style={{ flex: 1 }}
-						onClick={() =>
-								runPkgUpdate(
-									updatable,
-									t("updateAllTabTitle"),
-								)
-						}
+						onClick={() => runPkgUpdate(updatable, t("updateAllTabTitle"))}
 					>
 						{t("updateAllBtn")}
 					</button>
@@ -295,19 +273,12 @@ export function TopBar({
 									: t("checkingUpdate")}
 					</b>
 				</div>
-				{chat.update && chat.update.upToDate && (
-					<div className="dd-note ok">{t("upToDate")}</div>
+				{chat.update && chat.update.upToDate && <div className="dd-note ok">{t("upToDate")}</div>}
+				{chat.update && !chat.update.upToDate && chat.update.latest && (
+					<div className="dd-note warn">{t("updateAvailable", { version: chat.update.latest })}</div>
 				)}
-				{chat.update &&
-					!chat.update.upToDate &&
-					chat.update.latest && (
-						<div className="dd-note warn">
-							{t("updateAvailable", { version: chat.update.latest })}
-						</div>
-					)}
 				{chat.update?.latestPublishedAt &&
-					Date.now() - new Date(chat.update.latestPublishedAt).getTime() <
-						30 * 60_000 && (
+					Date.now() - new Date(chat.update.latestPublishedAt).getTime() < 30 * 60_000 && (
 						<div className="dd-note warn">
 							{t("updateJustPublished", {
 								version: chat.update.latest ?? "",
@@ -319,24 +290,14 @@ export function TopBar({
 				)}
 			</div>
 			<div className="dd-actions">
-				<button
-					type="button"
-					className="dd-refresh"
-					onClick={() => send({ type: "check_update" })}
-				>
+				<button type="button" className="dd-refresh" onClick={() => send({ type: "check_update" })}>
 					{chat.update === null ? t("checkingUpdate") : t("checkUpdate")}
 				</button>
-				{chat.update &&
-					!chat.update.upToDate &&
-					chat.update.latest && (
-						<button
-							type="button"
-							className="dd-refresh accent"
-							onClick={runUpdate}
-						>
-							{t("updateNow")}
-						</button>
-					)}
+				{chat.update && !chat.update.upToDate && chat.update.latest && (
+					<button type="button" className="dd-refresh accent" onClick={runUpdate}>
+						{t("updateNow")}
+					</button>
+				)}
 			</div>
 		</>
 	);
@@ -344,12 +305,7 @@ export function TopBar({
 	return (
 		<header className="topbar">
 			<div className="brand">
-				<button
-					type="button"
-					className="panel-toggle"
-					title={t("openHistory")}
-					onClick={() => onOpenPanel("left")}
-				>
+				<button type="button" className="panel-toggle" title={t("openHistory")} onClick={() => onOpenPanel("left")}>
 					<FiMenu />
 				</button>
 				<span className="brand-logo">π</span>
@@ -359,11 +315,7 @@ export function TopBar({
 			</div>
 
 			<div className="topbar-actions">
-				<div
-					className="view-switch"
-					role="tablist"
-					aria-label={t("viewSwitch")}
-				>
+				<div className="view-switch" role="tablist" aria-label={t("viewSwitch")}>
 					<button
 						type="button"
 						role="tab"
@@ -395,11 +347,7 @@ export function TopBar({
 						<span>{t("scmTab")}</span>
 					</button>
 					{plugins.map((p) => {
-						const tip = p.error
-							? `${p.name}: ${p.error}`
-							: p.description
-								? `${p.name} — ${p.description}`
-								: p.name;
+						const tip = p.error ? `${p.name}: ${p.error}` : p.description ? `${p.name} — ${p.description}` : p.name;
 						return (
 							<button
 								key={p.id}
@@ -421,36 +369,19 @@ export function TopBar({
 				    input row; sound/lang/update/github fold into "⋯" below). */}
 				<div className="topbar-desktop">
 					{/* Global search — sessions / projects / workspace files. */}
-					<button
-						type="button"
-						className="chip"
-						title={t("searchGlobalTip")}
-						onClick={onOpenGlobalSearch}
-					>
+					<button type="button" className="chip" title={t("searchGlobalTip")} onClick={onOpenGlobalSearch}>
 						<FiSearch />
 						<span className="chip-sub">{t("searchGlobal")}</span>
 					</button>
 					{/* Background tasks — AI-started servers still listening. Always shown
 					    so the list survives the conversation that started them (badge = count). */}
-					<button
-						type="button"
-						className="chip bg-task-chip"
-						data-tip={t("bgTasksTip")}
-						onClick={onOpenBgTasks}
-					>
+					<button type="button" className="chip bg-task-chip" data-tip={t("bgTasksTip")} onClick={onOpenBgTasks}>
 						<FiLayers />
 						<span className="chip-sub">{t("bgTasks")}</span>
-						{chat.bgServers.length > 0 && (
-							<span className="bg-task-badge">{chat.bgServers.length}</span>
-						)}
+						{chat.bgServers.length > 0 && <span className="bg-task-badge">{chat.bgServers.length}</span>}
 					</button>
 
-					<button
-						type="button"
-						className="chip"
-						title={t("settingsTitle")}
-						onClick={onOpenSettings}
-					>
+					<button type="button" className="chip" title={t("settingsTitle")} onClick={onOpenSettings}>
 						<FiSettings />
 						<span className="chip-sub">{t("settings")}</span>
 					</button>
@@ -465,20 +396,14 @@ export function TopBar({
 						open={soundOpen}
 						onOpenChange={setSoundOpen}
 					>
-						<SoundSettingsPanel
-							settings={sound}
-							onChange={onSoundChange}
-							onPreview={onSoundPreview}
-						/>
+						<SoundSettingsPanel settings={sound} onChange={onSoundChange} onPreview={onSoundPreview} />
 					</Dropdown>
 
 					<Dropdown
 						trigger={
 							<>
 								<FiGlobe />
-								<span className="chip-sub">
-									{locale === "zh" ? t("langZh") : "EN"}
-								</span>
+								<span className="chip-sub">{locale === "zh" ? t("langZh") : "EN"}</span>
 							</>
 						}
 						open={langOpen}
@@ -538,20 +463,15 @@ export function TopBar({
 							<>
 								<FiDownload />
 								<span className="chip-sub">v{chat.update?.current ?? "…"}</span>
-								{chat.update &&
-									!chat.update.upToDate && (
-										<span
-											className="update-dot"
-											title={t("updateAvailable", {
-												version: chat.update.latest ?? "",
-											})}
-										/>
-									)}
-								{updatesCount > 0 && (
-									<span className="update-badge">
-										{t("updatesAllBadge", { n: updatesCount })}
-									</span>
+								{chat.update && !chat.update.upToDate && (
+									<span
+										className="update-dot"
+										title={t("updateAvailable", {
+											version: chat.update.latest ?? "",
+										})}
+									/>
 								)}
+								{updatesCount > 0 && <span className="update-badge">{t("updatesAllBadge", { n: updatesCount })}</span>}
 							</>
 						}
 						open={updateOpen}
@@ -598,10 +518,7 @@ export function TopBar({
 							<>
 								<FiMoreHorizontal />
 								<span className="chip-sub">{t("more")}</span>
-								{chat.update &&
-									!chat.update.upToDate && (
-										<span className="update-dot" />
-									)}
+								{chat.update && !chat.update.upToDate && <span className="update-dot" />}
 							</>
 						}
 						open={moreOpen}
@@ -638,22 +555,12 @@ export function TopBar({
 							}}
 						>
 							<FiLayers /> {t("bgTasks")}
-							{chat.bgServers.length > 0 && (
-								<em className="bg-task-badge">{chat.bgServers.length}</em>
-							)}
+							{chat.bgServers.length > 0 && <em className="bg-task-badge">{chat.bgServers.length}</em>}
 						</DropdownItem>
-						<SoundSettingsPanel
-							settings={sound}
-							onChange={onSoundChange}
-							onPreview={onSoundPreview}
-						/>
+						<SoundSettingsPanel settings={sound} onChange={onSoundChange} onPreview={onSoundPreview} />
 						<div className="dd-header">{t("language")}</div>
 						{LANGUAGES.map((l) => (
-							<DropdownItem
-								key={l.value}
-								active={locale === l.value}
-								onClick={() => setLocale(l.value)}
-							>
+							<DropdownItem key={l.value} active={locale === l.value} onClick={() => setLocale(l.value)}>
 								{l.label}
 							</DropdownItem>
 						))}
@@ -693,12 +600,7 @@ export function TopBar({
 					</Dropdown>
 				</div>
 
-				<button
-					type="button"
-					className="panel-toggle"
-					title={t("openFiles")}
-					onClick={() => onOpenPanel("right")}
-				>
+				<button type="button" className="panel-toggle" title={t("openFiles")} onClick={() => onOpenPanel("right")}>
 					<FiFolder />
 				</button>
 			</div>

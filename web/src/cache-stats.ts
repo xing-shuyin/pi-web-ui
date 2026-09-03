@@ -85,16 +85,12 @@ export function trimRateSamples(
 
 /** Tokens/sec over the trailing window from an already-trimmed, time-ordered
  *  sample list. 0 when fewer than two samples (no measurable progress yet). */
-export function streamRate(
-	samples: readonly RateSample[],
-	windowMs: number = RATE_WINDOW_MS,
-): number {
+export function streamRate(samples: readonly RateSample[], windowMs: number = RATE_WINDOW_MS): number {
 	if (samples.length < 2) return 0;
 	const last = samples[samples.length - 1];
 	// Samples are pre-trimmed, so the first one is the window edge (or later if
 	// generation only just started — that still yields a live, spiky reading).
-	const firstInWindow =
-		samples.find((s) => s.t >= last.t - windowMs) ?? samples[0];
+	const firstInWindow = samples.find((s) => s.t >= last.t - windowMs) ?? samples[0];
 	const dt = (last.t - firstInWindow.t) / 1000;
 	if (dt <= 0) return 0;
 	return Math.max(0, (last.out - firstInWindow.out) / dt);
@@ -134,7 +130,7 @@ export function estimateTextTokens(text: string): number {
 			(c >= 0x4e00 && c <= 0x9fff) || // CJK unified
 			(c >= 0xf900 && c <= 0xfaff) || // CJK compat
 			(c >= 0xff00 && c <= 0xffef) || // fullwidth/halfwidth
-			(c === 0x3000) // ideographic space
+			c === 0x3000 // ideographic space
 		) {
 			cjk++;
 		}
@@ -144,18 +140,11 @@ export function estimateTextTokens(text: string): number {
 }
 
 /** Cumulative token estimate for the in-flight assistant message content. */
-export function estimateStreamTokens(
-	content: readonly StreamTokenBlock[],
-): number {
+export function estimateStreamTokens(content: readonly StreamTokenBlock[]): number {
 	let tokens = 0;
 	for (const block of content) {
-		if (block.type === "text" && typeof block.text === "string" && block.text)
-			tokens += estimateTextTokens(block.text);
-		else if (
-			block.type === "thinking" &&
-			typeof block.thinking === "string" &&
-			block.thinking
-		)
+		if (block.type === "text" && typeof block.text === "string" && block.text) tokens += estimateTextTokens(block.text);
+		else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking)
 			tokens += estimateTextTokens(block.thinking);
 	}
 	return tokens;

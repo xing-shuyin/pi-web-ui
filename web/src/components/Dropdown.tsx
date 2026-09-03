@@ -62,25 +62,13 @@ export function Dropdown({
 	}, [open, onOpenChange]);
 
 	return (
-		<div
-			className={`dropdown ${align} ${fit ? "fit" : ""} ${direction === "up" ? "dd-up" : ""}`}
-			ref={ref}
-		>
-			<button
-				type="button"
-				className="chip"
-				onClick={() => onOpenChange(!open)}
-				aria-expanded={open}
-			>
+		<div className={`dropdown ${align} ${fit ? "fit" : ""} ${direction === "up" ? "dd-up" : ""}`} ref={ref}>
+			<button type="button" className="chip" onClick={() => onOpenChange(!open)} aria-expanded={open}>
 				{trigger}
 				<FiChevronDown className={`dd-caret ${open ? "up" : ""}`} />
 			</button>
 			{open && (
-				<div
-					className={`dd-menu ${menuClassName ?? ""}`}
-					ref={menuRef}
-					style={menuStyle}
-				>
+				<div className={`dd-menu ${menuClassName ?? ""}`} ref={menuRef} style={menuStyle}>
 					{children}
 				</div>
 			)}

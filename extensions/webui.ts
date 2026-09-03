@@ -64,7 +64,7 @@ function parseArgs(args: string): { port?: number; cwd?: string; noBrowser: bool
 		if ((t === "--port" || t === "-p") && toks[i + 1]) {
 			const n = Number(toks[++i]);
 			if (Number.isInteger(n) && n > 0 && n < 65536) out.port = n;
-		} else if ((t === "--cwd") && toks[i + 1]) {
+		} else if (t === "--cwd" && toks[i + 1]) {
 			out.cwd = resolve(toks[++i]);
 		} else if (t === "--no-browser") {
 			out.noBrowser = true;
@@ -77,18 +77,14 @@ function parseArgs(args: string): { port?: number; cwd?: string; noBrowser: bool
 async function openBrowser(url: string): Promise<void> {
 	const { platform } = process;
 	const [cmd, ...rest] =
-		platform === "darwin"
-			? ["open", url]
-			: platform === "win32"
-				? ["cmd", "/c", "start", "", url]
-				: ["xdg-open", url];
+		platform === "darwin" ? ["open", url] : platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
 	// 无界面环境缺少 xdg-open 等打开器时，ENOENT 以异步 'error' 事件触发，
 	// try/catch 拦不住会崩掉整个进程 —— 必须挂 error 监听。
 	spawn(cmd, rest, { stdio: "ignore", detached: true })
 		.on("error", (err) => {
 			if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
 				console.warn(
-					`[webui] 未找到浏览器打开器 (${(err as NodeJS.ErrnoException).path || "command not found"})，请用 --no-browser 关闭自动打开`
+					`[webui] 未找到浏览器打开器 (${(err as NodeJS.ErrnoException).path || "command not found"})，请用 --no-browser 关闭自动打开`,
 				);
 			} else {
 				console.warn("[webui] 打开浏览器失败:", err.message);
@@ -127,7 +123,9 @@ export default function (pi: ExtensionAPI): void {
 				}
 				const alive = inst.proc.exitCode === null;
 				ctx.ui.notify(
-					alive ? `pi-web-ui 运行中 → ${inst.url}\n端口 ${inst.port} · cwd ${inst.cwd}` : `已退出(exit=${inst.proc.exitCode})`,
+					alive
+						? `pi-web-ui 运行中 → ${inst.url}\n端口 ${inst.port} · cwd ${inst.cwd}`
+						: `已退出(exit=${inst.proc.exitCode})`,
 					alive ? "info" : "warning",
 				);
 				return;

@@ -91,7 +91,14 @@ async function main() {
 	await next((m) => m.type === "snapshot", "initial snapshot", 20000);
 
 	// Locked, unlimited (maxRounds=0).
-	ws.send(JSON.stringify({ type: "set_goal", goal: "用一行 markdown 表格列出三个数 1 2 3 的平方", maxRounds: 0, locked: true }));
+	ws.send(
+		JSON.stringify({
+			type: "set_goal",
+			goal: "用一行 markdown 表格列出三个数 1 2 3 的平方",
+			maxRounds: 0,
+			locked: true,
+		}),
+	);
 	await next((m) => m.type === "goal_status" && m.status.goal, "goal set", 10000);
 	ws.send(JSON.stringify({ type: "prompt", text: "请完成：用 markdown 表格列出 1,2,3 的平方。" }));
 
@@ -109,14 +116,18 @@ async function main() {
 			continue;
 		}
 		if (msg.type === "goal_status") {
-			if (msg.status.reviewing) { sawReviewing = true; lastRound = msg.status.round; }
+			if (msg.status.reviewing) {
+				sawReviewing = true;
+				lastRound = msg.status.round;
+			}
 			if (msg.status.verdict === "pass" || msg.status.verdict === "fail") sawVerdict = true;
 		}
 		if (msg.type === "snapshot") {
-			const rev = msg.state.messages.find(
-				(m) => m.role === "custom" && m.customType === "goal-review",
-			);
-			if (rev) { sawVerdict = true; break; }
+			const rev = msg.state.messages.find((m) => m.role === "custom" && m.customType === "goal-review");
+			if (rev) {
+				sawVerdict = true;
+				break;
+			}
 			// A revision-steer user message appears → review failed and loop continues.
 			if (msg.state.messages.some((m) => m.role === "user" && (m.content?.[0]?.text ?? "").includes("目标审查"))) {
 				sawRevision = true;

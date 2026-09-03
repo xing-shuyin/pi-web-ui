@@ -43,7 +43,7 @@ if (!key) {
 let rtAvailable = false;
 try {
 	const { resolveRuntimeBase } = await import(
-		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href,
+		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
 	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
@@ -205,9 +205,7 @@ async function main() {
 	const markerSeen = {};
 	while (Date.now() - t0 < 120_000) {
 		// 逐个消费队列里的 snapshot/snapshot_delta，检查是否出现桥接工具结果。
-		const msg = await c
-			.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta", 1000)
-			.catch(() => null);
+		const msg = await c.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta", 1000).catch(() => null);
 		if (!msg) continue;
 		const text = allTexts(msg);
 		if (text.includes("ECHO:")) seen.toolResultEcho = true;

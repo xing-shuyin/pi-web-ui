@@ -1,15 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { randomUuid } from "../uuid";
-import {
-	FiEdit2,
-	FiMenu,
-	FiPlay,
-	FiPlus,
-	FiRefreshCw,
-	FiTerminal,
-	FiTrash2,
-	FiX,
-} from "react-icons/fi";
+import { FiEdit2, FiMenu, FiPlay, FiPlus, FiRefreshCw, FiTerminal, FiTrash2, FiX } from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
 import type { ClientMessage, CommandDef } from "../types";
 import { TermXterm } from "./TermXterm";
@@ -150,10 +141,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 
 	// 单个终端标签（用户终端 + ai-bash 分组共用）。
 	const renderTab = (tab: TerminalMeta) => (
-		<div
-			key={tab.id}
-			className={`term-tab ${tab.id === activeId ? "active" : ""}`}
-		>
+		<div key={tab.id} className={`term-tab ${tab.id === activeId ? "active" : ""}`}>
 			<button
 				type="button"
 				className="term-tab-main"
@@ -163,9 +151,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 					setSideOpen(false);
 				}}
 			>
-				<span
-					className={`term-tab-dot ${tab.running ? "run" : "exit"}`}
-				/>
+				<span className={`term-tab-dot ${tab.running ? "run" : "exit"}`} />
 				<span className="term-tab-title">
 					{tab.title}
 					{!tab.running && (
@@ -177,12 +163,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 					)}
 				</span>
 			</button>
-			<button
-				type="button"
-				className="term-tab-close"
-				title={t("closeTerminal")}
-				onClick={() => closeTab(tab.id)}
-			>
+			<button type="button" className="term-tab-close" title={t("closeTerminal")} onClick={() => closeTab(tab.id)}>
 				<FiX />
 			</button>
 		</div>
@@ -242,9 +223,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 	return (
 		<div className="terminal-view">
 			{/* ---------------- left: command list + terminal tabs ---------------- */}
-			<aside
-				className={`term-side term-commands ${sideOpen ? "open" : ""}`}
-			>
+			<aside className={`term-side term-commands ${sideOpen ? "open" : ""}`}>
 				<div className="panel-header">
 					<span className="panel-title">{t("commands")}</span>
 					<div className="panel-header-actions">
@@ -256,12 +235,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 						>
 							<FiRefreshCw />
 						</button>
-						<button
-							type="button"
-							className="panel-new"
-							title={t("newCommand")}
-							onClick={startNew}
-						>
+						<button type="button" className="panel-new" title={t("newCommand")} onClick={startNew}>
 							<FiPlus />
 						</button>
 					</div>
@@ -285,9 +259,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 								className="cmd-input"
 								value={draft.command}
 								placeholder={t("exampleCommand")}
-								onChange={(e) =>
-									setDraft({ ...draft, command: e.target.value })
-								}
+								onChange={(e) => setDraft({ ...draft, command: e.target.value })}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" && !e.nativeEvent.isComposing) {
 										saveDraft();
@@ -295,8 +267,7 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 								}}
 							/>
 							<label htmlFor="cmd-cwd">
-								{t("directory")}{" "}
-								<span className="cmd-hint">{t("cwdHint")}</span>
+								{t("directory")} <span className="cmd-hint">{t("cwdHint")}</span>
 							</label>
 							<input
 								id="cmd-cwd"
@@ -326,35 +297,18 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 						</div>
 					) : (
 						<>
-							{chat.commands.length === 0 && (
-								<div className="panel-empty">{t("noCommands")}</div>
-							)}
+							{chat.commands.length === 0 && <div className="panel-empty">{t("noCommands")}</div>}
 							{chat.commands.map((c, i) => (
 								<div key={i} className="cmd-item">
-									<button
-										type="button"
-										className="cmd-run"
-										title={t("clickToRun")}
-										onClick={() => runCommand(c)}
-									>
+									<button type="button" className="cmd-run" title={t("clickToRun")} onClick={() => runCommand(c)}>
 										<FiPlay />
 									</button>
-									<button
-										type="button"
-										className="cmd-main"
-										title={t("clickToRun")}
-										onClick={() => runCommand(c)}
-									>
+									<button type="button" className="cmd-main" title={t("clickToRun")} onClick={() => runCommand(c)}>
 										<span className="cmd-name">{c.name}</span>
 										<span className="cmd-command">{c.command}</span>
 										{c.cwd && <span className="cmd-cwd">{c.cwd}</span>}
 									</button>
-									<button
-										type="button"
-										className="cmd-act"
-										title={t("edit")}
-										onClick={() => startEdit(i)}
-									>
+									<button type="button" className="cmd-act" title={t("edit")} onClick={() => startEdit(i)}>
 										<FiEdit2 />
 									</button>
 									<button
@@ -375,19 +329,12 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 				<div className="term-tabs-block">
 					<div className="panel-header">
 						<span className="panel-title">{t("terminal")}</span>
-						<button
-							type="button"
-							className="panel-new"
-							title={t("newTerminal")}
-							onClick={openShell}
-						>
+						<button type="button" className="panel-new" title={t("newTerminal")} onClick={openShell}>
 							<FiPlus />
 						</button>
 					</div>
 					<div className="panel-body">
-						{chat.terminals.length === 0 && (
-							<div className="panel-empty">{t("noTerminal")}</div>
-						)}
+						{chat.terminals.length === 0 && <div className="panel-empty">{t("noTerminal")}</div>}
 						{userTabs.map(renderTab)}
 						{agentTabs.length > 0 && (
 							<div className="term-folder">
@@ -397,15 +344,11 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 									title={t("aiBashGroup")}
 									onClick={() => setAiBashOpen((v) => !v)}
 								>
-									<span className="term-folder-caret">
-										{aiBashOpen ? "▾" : "▸"}
-									</span>
+									<span className="term-folder-caret">{aiBashOpen ? "▾" : "▸"}</span>
 									<span className="term-folder-title">{t("aiBashGroup")}</span>
 									<span className="term-folder-count">{agentTabs.length}</span>
 								</button>
-								{aiBashOpen && (
-									<div className="term-folder-body">{agentTabs.map(renderTab)}</div>
-								)}
+								{aiBashOpen && <div className="term-folder-body">{agentTabs.map(renderTab)}</div>}
 							</div>
 						)}
 					</div>
@@ -414,15 +357,8 @@ export function TerminalPanel({ chat, send, terminal }: TerminalPanelProps) {
 
 			{/* ---------------- right: terminals ---------------- */}
 			<div className="term-main">
-				{sideOpen && (
-					<div className="drawer-backdrop" onClick={() => setSideOpen(false)} />
-				)}
-				<button
-					type="button"
-					className="term-side-toggle"
-					title={t("commands")}
-					onClick={() => setSideOpen((v) => !v)}
-				>
+				{sideOpen && <div className="drawer-backdrop" onClick={() => setSideOpen(false)} />}
+				<button type="button" className="term-side-toggle" title={t("commands")} onClick={() => setSideOpen((v) => !v)}>
 					<FiMenu />
 				</button>
 				{chat.terminals.length === 0 ? (

@@ -1,22 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-	FiCheck,
-	FiCopy,
-	FiDownload,
-	FiEdit2,
-	FiKey,
-	FiPlus,
-	FiRefreshCw,
-	FiTrash2,
-	FiX,
-} from "react-icons/fi";
-import type {
-	ClientMessage,
-	ProviderKeyInfo,
-	ProviderStatus,
-	UiModelConfigEntry,
-	UiProviderConfig,
-} from "../types";
+import { FiCheck, FiCopy, FiDownload, FiEdit2, FiKey, FiPlus, FiRefreshCw, FiTrash2, FiX } from "react-icons/fi";
+import type { ClientMessage, ProviderKeyInfo, ProviderStatus, UiModelConfigEntry, UiProviderConfig } from "../types";
 import { useT } from "../i18n";
 
 interface ModelConfigModalProps {
@@ -53,12 +37,7 @@ interface ModelConfigModalProps {
 	onClose: () => void;
 }
 
-const API_TYPES = [
-	"openai-completions",
-	"openai-responses",
-	"anthropic-messages",
-	"google-generative-ai",
-];
+const API_TYPES = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
 
 interface DraftModel {
 	id: string;
@@ -205,11 +184,9 @@ export function ModelConfigModal({
 					if (!f) return m;
 					const next = { ...m };
 					if (!next.name && f.name) next.name = f.name;
-					if (!next.contextWindow && f.contextWindow)
-						next.contextWindow = String(f.contextWindow);
+					if (!next.contextWindow && f.contextWindow) next.contextWindow = String(f.contextWindow);
 					if (!next.maxTokens && f.maxTokens) next.maxTokens = String(f.maxTokens);
-					if (next.input === "text" && f.input?.includes("image"))
-						next.input = "text-image";
+					if (next.input === "text" && f.input?.includes("image")) next.input = "text-image";
 					if (!next.reasoning && f.reasoning) next.reasoning = true;
 					return next;
 				});
@@ -226,9 +203,7 @@ export function ModelConfigModal({
 					}));
 				const merged = [...rows, ...extra];
 				// Drop leftover blank rows once real models exist (re-addable).
-				return merged.some((m) => m.id.trim())
-					? { ...prev, models: merged.filter((m) => m.id.trim()) }
-					: prev;
+				return merged.some((m) => m.id.trim()) ? { ...prev, models: merged.filter((m) => m.id.trim()) } : prev;
 			});
 			setFetchMsg({ ok: true, text: t("fetchModelsOk", { n: fetched.length }) });
 		} else {
@@ -341,8 +316,7 @@ export function ModelConfigModal({
 	// Refresh results clear the per-provider spinner; the server also emits a
 	// notice with the added/total counts.
 	useEffect(() => {
-		if (!refreshProviderResult || refreshProviderResult.reqId === handledRefreshReq.current)
-			return;
+		if (!refreshProviderResult || refreshProviderResult.reqId === handledRefreshReq.current) return;
 		handledRefreshReq.current = refreshProviderResult.reqId;
 		setRefreshing({});
 	}, [refreshProviderResult]);
@@ -420,12 +394,7 @@ export function ModelConfigModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal model-modal" onClick={(e) => e.stopPropagation()}>
-				<button
-					type="button"
-					className="modal-close"
-					aria-label={t("close")}
-					onClick={onClose}
-				>
+				<button type="button" className="modal-close" aria-label={t("close")} onClick={onClose}>
 					<FiX />
 				</button>
 				<div className="modal-head">
@@ -445,20 +414,40 @@ export function ModelConfigModal({
 						<div className="model-modal-body">
 							<div className="provider-form">
 								<p className="modal-desc" style={{ marginBottom: 12 }}>
-									{t("secondKeyTitle", { api: addKeyDraft.api, baseUrl: addKeyDraft.baseUrl || t("noBaseUrlShort"), n: addKeyDraft.models.length })}
+									{t("secondKeyTitle", {
+										api: addKeyDraft.api,
+										baseUrl: addKeyDraft.baseUrl || t("noBaseUrlShort"),
+										n: addKeyDraft.models.length,
+									})}
 								</p>
 								<div className="form-grid">
 									<label className="field">
-										<span className="field-label">{t("providerNameLabel")} <em>{t("providerNameHint")}</em></span>
-										<input type="text" value={addKeyDraft.providerId} onChange={(e) => setAddKeyDraft({ ...addKeyDraft, providerId: e.target.value })} placeholder="opencode-2" />
+										<span className="field-label">
+											{t("providerNameLabel")} <em>{t("providerNameHint")}</em>
+										</span>
+										<input
+											type="text"
+											value={addKeyDraft.providerId}
+											onChange={(e) => setAddKeyDraft({ ...addKeyDraft, providerId: e.target.value })}
+											placeholder="opencode-2"
+										/>
 									</label>
 									<label className="field">
 										<span className="field-label">{t("apiKeyLabel")}</span>
-										<input type="password" value={addKeyDraft.apiKey} onChange={(e) => setAddKeyDraft({ ...addKeyDraft, apiKey: e.target.value })} placeholder={t("secondKeyPlaceholder")} />
+										<input
+											type="password"
+											value={addKeyDraft.apiKey}
+											onChange={(e) => setAddKeyDraft({ ...addKeyDraft, apiKey: e.target.value })}
+											placeholder={t("secondKeyPlaceholder")}
+										/>
 									</label>
 								</div>
 								<div style={{ fontSize: 12, opacity: 0.6, marginTop: 8 }}>
-									{addKeyDraft.models.slice(0, 5).map((m) => m.id).join(", ")}{addKeyDraft.models.length > 5 ? ` … +${addKeyDraft.models.length - 5}` : ""}
+									{addKeyDraft.models
+										.slice(0, 5)
+										.map((m) => m.id)
+										.join(", ")}
+									{addKeyDraft.models.length > 5 ? ` … +${addKeyDraft.models.length - 5}` : ""}
 								</div>
 							</div>
 						</div>
@@ -466,10 +455,23 @@ export function ModelConfigModal({
 							<button type="button" className="btn" onClick={() => setAddKeyDraft(null)}>
 								{t("cancel")}
 							</button>
-							<button type="button" className="btn" onClick={() => { const d = addKeyDraft; setAddKeyDraft(null); setEditing(d); }}>
+							<button
+								type="button"
+								className="btn"
+								onClick={() => {
+									const d = addKeyDraft;
+									setAddKeyDraft(null);
+									setEditing(d);
+								}}
+							>
 								{t("advancedEdit")}
 							</button>
-							<button type="button" className="btn primary" disabled={!addKeyDraft.providerId.trim() || !addKeyDraft.apiKey.trim()} onClick={saveAddKey}>
+							<button
+								type="button"
+								className="btn primary"
+								disabled={!addKeyDraft.providerId.trim() || !addKeyDraft.apiKey.trim()}
+								onClick={saveAddKey}
+							>
 								{t("save")}
 							</button>
 						</div>
@@ -483,29 +485,49 @@ export function ModelConfigModal({
 								</p>
 								<label className="field" style={{ marginBottom: 16 }}>
 									<span className="field-label">{t("batchKeyLabel", { n: batch.length })}</span>
-									<input type="password" value={batchKey} onChange={(e) => setBatchKey(e.target.value)} placeholder={t("secondKeyPlaceholder")} />
+									<input
+										type="password"
+										value={batchKey}
+										onChange={(e) => setBatchKey(e.target.value)}
+										placeholder={t("secondKeyPlaceholder")}
+									/>
 								</label>
 								<div className="provider-list" style={{ marginBottom: 16 }}>
 									{batch.map((d, idx) => (
-										<div className="provider-row" key={idx} style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+										<div
+											className="provider-row"
+											key={idx}
+											style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}
+										>
 											<div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
 												<strong>{d.providerId}</strong>
 												<span style={{ opacity: 0.7 }}>{d.api}</span>
 											</div>
 											<div className="provider-sub" style={{ fontSize: 12, opacity: 0.7 }}>
-												{d.baseUrl || t("noBaseUrlShort")} · {t("modelsCountShort", { n: d.models.length })}{d.models.slice(0, 3).map((m) => m.id).join(", ")}{d.models.length > 3 ? ` … +${d.models.length - 3}` : ""}
+												{d.baseUrl || t("noBaseUrlShort")} · {t("modelsCountShort", { n: d.models.length })}
+												{d.models
+													.slice(0, 3)
+													.map((m) => m.id)
+													.join(", ")}
+												{d.models.length > 3 ? ` … +${d.models.length - 3}` : ""}
 											</div>
 											<input
 												type="text"
 												value={d.providerId}
-												onChange={(e) => setBatch((prev) => prev!.map((x, i) => (i === idx ? { ...x, providerId: e.target.value } : x)))}
+												onChange={(e) =>
+													setBatch((prev) =>
+														prev!.map((x, i) => (i === idx ? { ...x, providerId: e.target.value } : x)),
+													)
+												}
 												placeholder={t("providerIdPlaceholder")}
 												style={{ fontSize: 12 }}
 											/>
 											<input
 												type="text"
 												value={d.baseUrl}
-												onChange={(e) => setBatch((prev) => prev!.map((x, i) => (i === idx ? { ...x, baseUrl: e.target.value } : x)))}
+												onChange={(e) =>
+													setBatch((prev) => prev!.map((x, i) => (i === idx ? { ...x, baseUrl: e.target.value } : x)))
+												}
 												placeholder={t("baseUrlExamplePh")}
 												style={{ fontSize: 12 }}
 											/>
@@ -559,153 +581,130 @@ export function ModelConfigModal({
 					<>
 						<div className="model-modal-fixed-hint">
 							<div className="form-section-title">
-								{t("builtinProviders")}{" "}
-								<em className="section-hint">{t("hintKeyOnly")}</em>
+								{t("builtinProviders")} <em className="section-hint">{t("hintKeyOnly")}</em>
 							</div>
 						</div>
 						<div className="model-modal-body">
 							<div className="provider-list">
-							{providerStatus.length === 0 && (
-								<div className="dd-loading">{t("loading")}</div>
-							)}
-							{providerStatus.map((p) => {
-								const pkeys = providerKeys[p.id] ?? [];
-								return (
-									<div className="provider-row provider-key-row" key={p.id}>
-										<div className="provider-key-head">
-											<div className="provider-info">
-												<span className="provider-name">{p.name}</span>
-												<span className="provider-sub">
-													{p.id}
-													{p.configured && (
-														<span className="auth-badge">
-															{t("configuredBadge")}
-														</span>
-													)}
-													{p.source && !p.configured && (
-														<span className="auth-badge dim">{p.source}</span>
-													)}
-												</span>
-											</div>
-											{p.source === "stored" && (
-												<button
-													type="button"
-													className="btn sm danger"
-													title={t("clearKeyTitle")}
-													onClick={() => clearBuiltinKey(p.id)}
-												>
-													<FiTrash2 /> {t("clearKey")}
-												</button>
-											)}
-										</div>
-										<div className="provider-keys">
-											{pkeys.length === 0 && (
-												<div className="provider-key-empty">{t("noKeyYet")}</div>
-											)}
-											{pkeys.map((k) => (
-												<div className={`provider-key-item ${k.active ? "active" : ""}`} key={k.name}>
-													<span className="provider-key-dot">{k.active ? "●" : "○"}</span>
-													<span className="provider-key-label">{k.name}</span>
-													{!k.active && (
-														<button
-															type="button"
-															className="iconbtn"
-															title={t("activateKey")}
-															onClick={() => activateKey(p.id, k.name)}
-														>
-															<FiCheck />
-														</button>
-													)}
+								{providerStatus.length === 0 && <div className="dd-loading">{t("loading")}</div>}
+								{providerStatus.map((p) => {
+									const pkeys = providerKeys[p.id] ?? [];
+									return (
+										<div className="provider-row provider-key-row" key={p.id}>
+											<div className="provider-key-head">
+												<div className="provider-info">
+													<span className="provider-name">{p.name}</span>
+													<span className="provider-sub">
+														{p.id}
+														{p.configured && <span className="auth-badge">{t("configuredBadge")}</span>}
+														{p.source && !p.configured && <span className="auth-badge dim">{p.source}</span>}
+													</span>
+												</div>
+												{p.source === "stored" && (
 													<button
 														type="button"
-														className="iconbtn danger"
-														title={t("removeKey")}
-														onClick={() => removeKey(p.id, k.name)}
+														className="btn sm danger"
+														title={t("clearKeyTitle")}
+														onClick={() => clearBuiltinKey(p.id)}
 													>
-														<FiTrash2 />
+														<FiTrash2 /> {t("clearKey")}
+													</button>
+												)}
+											</div>
+											<div className="provider-keys">
+												{pkeys.length === 0 && <div className="provider-key-empty">{t("noKeyYet")}</div>}
+												{pkeys.map((k) => (
+													<div className={`provider-key-item ${k.active ? "active" : ""}`} key={k.name}>
+														<span className="provider-key-dot">{k.active ? "●" : "○"}</span>
+														<span className="provider-key-label">{k.name}</span>
+														{!k.active && (
+															<button
+																type="button"
+																className="iconbtn"
+																title={t("activateKey")}
+																onClick={() => activateKey(p.id, k.name)}
+															>
+																<FiCheck />
+															</button>
+														)}
+														<button
+															type="button"
+															className="iconbtn danger"
+															title={t("removeKey")}
+															onClick={() => removeKey(p.id, k.name)}
+														>
+															<FiTrash2 />
+														</button>
+													</div>
+												))}
+												<div className="provider-add-key">
+													<input
+														type="text"
+														className="key-input key-input-name"
+														placeholder={t("keyNamePh")}
+														value={addKeyNames[p.id] ?? ""}
+														onChange={(e) => setAddKeyNames((k) => ({ ...k, [p.id]: e.target.value }))}
+													/>
+													<input
+														type="password"
+														className="key-input key-input-value"
+														placeholder={t("addKeyPlaceholder")}
+														value={addKeys[p.id] ?? ""}
+														onChange={(e) => setAddKeys((k) => ({ ...k, [p.id]: e.target.value }))}
+													/>
+													<button
+														type="button"
+														className="btn primary sm"
+														disabled={!(addKeys[p.id] ?? "").trim() || addKeyBusy === p.id}
+														onClick={() => addKey(p)}
+													>
+														<FiPlus /> {addKeyBusy === p.id ? t("savingKey") : t("addKey")}
 													</button>
 												</div>
-											))}
-											<div className="provider-add-key">
-												<input
-													type="text"
-													className="key-input key-input-name"
-													placeholder={t("keyNamePh")}
-													value={addKeyNames[p.id] ?? ""}
-													onChange={(e) =>
-														setAddKeyNames((k) => ({ ...k, [p.id]: e.target.value }))
-													}
-												/>
-												<input
-													type="password"
-													className="key-input key-input-value"
-													placeholder={t("addKeyPlaceholder")}
-													value={addKeys[p.id] ?? ""}
-													onChange={(e) =>
-														setAddKeys((k) => ({ ...k, [p.id]: e.target.value }))
-													}
-												/>
-												<button
-													type="button"
-													className="btn primary sm"
-													disabled={!(addKeys[p.id] ?? "").trim() || addKeyBusy === p.id}
-													onClick={() => addKey(p)}
-												>
-													<FiPlus />{" "}
-													{addKeyBusy === p.id ? t("savingKey") : t("addKey")}
-												</button>
 											</div>
 										</div>
-									</div>
-								);
-							})}
-						</div>
+									);
+								})}
+							</div>
 
-						<div className="form-section-title">{t("customProviders")}</div>
-						<p className="modal-desc">{t("customDesc")}</p>
-						{providers.length === 0 && (
-							<div className="dd-loading">{t("noCustomProviders")}</div>
-						)}
-						<div className="provider-list">
-							{providers.map((p) => (
-								<div className="provider-row" key={p.providerId}>
-									<div className="provider-info">
-										<span className="provider-name">{p.providerId}</span>
-										<span className="provider-sub">
-											{p.api ?? "—"}
-											{p.baseUrl ? ` · ${p.baseUrl}` : ""}
-											{p.models.length > 0 &&
-												` · ${t("modelsCount", { n: p.models.length })}`}
-										</span>
+							<div className="form-section-title">{t("customProviders")}</div>
+							<p className="modal-desc">{t("customDesc")}</p>
+							{providers.length === 0 && <div className="dd-loading">{t("noCustomProviders")}</div>}
+							<div className="provider-list">
+								{providers.map((p) => (
+									<div className="provider-row" key={p.providerId}>
+										<div className="provider-info">
+											<span className="provider-name">{p.providerId}</span>
+											<span className="provider-sub">
+												{p.api ?? "—"}
+												{p.baseUrl ? ` · ${p.baseUrl}` : ""}
+												{p.models.length > 0 && ` · ${t("modelsCount", { n: p.models.length })}`}
+											</span>
+										</div>
+										<div className="provider-actions">
+											<button
+												type="button"
+												className="iconbtn"
+												title={t("edit")}
+												onClick={() => setEditing(toDraft(p))}
+											>
+												<FiEdit2 />
+											</button>
+											<button
+												type="button"
+												className="iconbtn danger"
+												title={t("delete")}
+												onClick={() => removeProvider(p)}
+											>
+												<FiTrash2 />
+											</button>
+										</div>
 									</div>
-									<div className="provider-actions">
-										<button
-											type="button"
-											className="iconbtn"
-											title={t("edit")}
-											onClick={() => setEditing(toDraft(p))}
-										>
-											<FiEdit2 />
-										</button>
-										<button
-											type="button"
-											className="iconbtn danger"
-											title={t("delete")}
-											onClick={() => removeProvider(p)}
-										>
-											<FiTrash2 />
-										</button>
-									</div>
-								</div>
-							))}
-						</div>
+								))}
+							</div>
 						</div>
 						<div className="modal-actions">
-							<button
-								type="button"
-								className="btn primary"
-								onClick={() => setEditing(emptyDraft())}
-							>
+							<button type="button" className="btn primary" onClick={() => setEditing(emptyDraft())}>
 								<FiPlus /> {t("addProvider")}
 							</button>
 						</div>
@@ -714,203 +713,171 @@ export function ModelConfigModal({
 					<>
 						<div className="model-modal-body">
 							<div className="provider-form">
-						<div className="form-grid">
-							<label className="field">
-								<span className="field-label">
-									{t("providerId")} <em>{t("providerIdHint")}</em>
-								</span>
-								<input
-									type="text"
-									value={editing.providerId}
-									disabled={providers.some(
-										(p) => p.providerId === editing.providerId,
-									)}
-									onChange={(e) =>
-										setEditing({ ...editing, providerId: e.target.value })
-									}
-									placeholder="my-proxy"
-								/>
-							</label>
-							<label className="field">
-								<span className="field-label">{t("displayName")}</span>
-								<input
-									type="text"
-									value={editing.name}
-									onChange={(e) =>
-										setEditing({ ...editing, name: e.target.value })
-									}
-									placeholder={t("displayNamePh")}
-								/>
-							</label>
-							<label className="field">
-								<span className="field-label">{t("apiType")}</span>
-								<select
-									value={editing.api}
-									onChange={(e) =>
-										setEditing({ ...editing, api: e.target.value })
-									}
-								>
-									{API_TYPES.map((a) => (
-										<option key={a} value={a}>
-											{a}
-										</option>
-									))}
-								</select>
-							</label>
-							<label className="field">
-								<span className="field-label">
-									baseUrl <em>{t("baseUrlHint")}</em>
-								</span>
-								<input
-									type="text"
-									value={editing.baseUrl}
-									onChange={(e) =>
-										setEditing({ ...editing, baseUrl: e.target.value })
-									}
-									placeholder="http://localhost:11434/v1"
-								/>
-							</label>
-							<label className="field">
-								<span className="field-label">{t("apiKey")}</span>
-								<input
-									type="password"
-									value={editing.apiKey}
-									onChange={(e) =>
-										setEditing({ ...editing, apiKey: e.target.value })
-									}
-									placeholder={t("apiKeyHint")}
-								/>
-							</label>
-							<label className="field check">
-								<input
-									type="checkbox"
-									checked={editing.authHeader}
-									onChange={(e) =>
-										setEditing({ ...editing, authHeader: e.target.checked })
-									}
-								/>
-								<span>{t("authHeader")}</span>
-							</label>
-						</div>
+								<div className="form-grid">
+									<label className="field">
+										<span className="field-label">
+											{t("providerId")} <em>{t("providerIdHint")}</em>
+										</span>
+										<input
+											type="text"
+											value={editing.providerId}
+											disabled={providers.some((p) => p.providerId === editing.providerId)}
+											onChange={(e) => setEditing({ ...editing, providerId: e.target.value })}
+											placeholder="my-proxy"
+										/>
+									</label>
+									<label className="field">
+										<span className="field-label">{t("displayName")}</span>
+										<input
+											type="text"
+											value={editing.name}
+											onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+											placeholder={t("displayNamePh")}
+										/>
+									</label>
+									<label className="field">
+										<span className="field-label">{t("apiType")}</span>
+										<select value={editing.api} onChange={(e) => setEditing({ ...editing, api: e.target.value })}>
+											{API_TYPES.map((a) => (
+												<option key={a} value={a}>
+													{a}
+												</option>
+											))}
+										</select>
+									</label>
+									<label className="field">
+										<span className="field-label">
+											baseUrl <em>{t("baseUrlHint")}</em>
+										</span>
+										<input
+											type="text"
+											value={editing.baseUrl}
+											onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
+											placeholder="http://localhost:11434/v1"
+										/>
+									</label>
+									<label className="field">
+										<span className="field-label">{t("apiKey")}</span>
+										<input
+											type="password"
+											value={editing.apiKey}
+											onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
+											placeholder={t("apiKeyHint")}
+										/>
+									</label>
+									<label className="field check">
+										<input
+											type="checkbox"
+											checked={editing.authHeader}
+											onChange={(e) => setEditing({ ...editing, authHeader: e.target.checked })}
+										/>
+										<span>{t("authHeader")}</span>
+									</label>
+								</div>
 
-						<div className="model-section-head">
-							<span className="form-section-title">{t("modelsTitle")}</span>
-							<span className="model-section-actions">
-								{fetchMsg && (
-									<span
-										className={`fetch-msg ${fetchMsg.ok ? "ok" : "err"}`}
-										title={fetchMsg.text}
-									>
-										{fetchMsg.text}
+								<div className="model-section-head">
+									<span className="form-section-title">{t("modelsTitle")}</span>
+									<span className="model-section-actions">
+										{fetchMsg && (
+											<span className={`fetch-msg ${fetchMsg.ok ? "ok" : "err"}`} title={fetchMsg.text}>
+												{fetchMsg.text}
+											</span>
+										)}
+										<button
+											type="button"
+											className="btn sm"
+											disabled={fetching || !editing.baseUrl.trim()}
+											title={t("fetchModelsHint")}
+											onClick={fetchModels}
+										>
+											<FiDownload /> {fetching ? t("fetchingModels") : t("fetchModels")}
+										</button>
 									</span>
-								)}
+								</div>
+								{editing.models.map((m, i) => (
+									<div className="model-row" key={i}>
+										<input
+											type="text"
+											value={m.id}
+											onChange={(e) => setModel(i, { id: e.target.value })}
+											placeholder={t("modelIdReq")}
+										/>
+										<input
+											type="text"
+											value={m.name}
+											onChange={(e) => setModel(i, { name: e.target.value })}
+											placeholder={t("displayName")}
+										/>
+										<select
+											value={m.input}
+											onChange={(e) =>
+												setModel(i, {
+													input: e.target.value as DraftModel["input"],
+												})
+											}
+										>
+											<option value="text">{t("text")}</option>
+											<option value="text-image">{t("textImage")}</option>
+										</select>
+										<label className="check">
+											<input
+												type="checkbox"
+												checked={m.reasoning}
+												onChange={(e) => setModel(i, { reasoning: e.target.checked })}
+											/>
+											<span>{t("reasoning")}</span>
+										</label>
+										<input
+											type="number"
+											value={m.contextWindow}
+											onChange={(e) => setModel(i, { contextWindow: e.target.value })}
+											placeholder={t("contextWindow")}
+											title="contextWindow"
+										/>
+										<input
+											type="number"
+											value={m.maxTokens}
+											onChange={(e) => setModel(i, { maxTokens: e.target.value })}
+											placeholder={t("maxOutput")}
+											title="maxTokens"
+										/>
+										<button
+											type="button"
+											className="iconbtn danger"
+											title={t("removeModel")}
+											onClick={() =>
+												setEditing({
+													...editing,
+													models: editing.models.filter((_, j) => j !== i),
+												})
+											}
+										>
+											<FiTrash2 />
+										</button>
+									</div>
+								))}
 								<button
 									type="button"
-									className="btn sm"
-									disabled={fetching || !editing.baseUrl.trim()}
-									title={t("fetchModelsHint")}
-									onClick={fetchModels}
-								>
-									<FiDownload />{" "}
-									{fetching ? t("fetchingModels") : t("fetchModels")}
-								</button>
-							</span>
-						</div>
-						{editing.models.map((m, i) => (
-							<div className="model-row" key={i}>
-								<input
-									type="text"
-									value={m.id}
-									onChange={(e) => setModel(i, { id: e.target.value })}
-									placeholder={t("modelIdReq")}
-								/>
-								<input
-									type="text"
-									value={m.name}
-									onChange={(e) => setModel(i, { name: e.target.value })}
-									placeholder={t("displayName")}
-								/>
-								<select
-									value={m.input}
-									onChange={(e) =>
-										setModel(i, {
-											input: e.target.value as DraftModel["input"],
-										})
-									}
-								>
-									<option value="text">{t("text")}</option>
-									<option value="text-image">{t("textImage")}</option>
-								</select>
-								<label className="check">
-									<input
-										type="checkbox"
-										checked={m.reasoning}
-										onChange={(e) =>
-											setModel(i, { reasoning: e.target.checked })
-										}
-									/>
-									<span>{t("reasoning")}</span>
-								</label>
-								<input
-									type="number"
-									value={m.contextWindow}
-									onChange={(e) =>
-										setModel(i, { contextWindow: e.target.value })
-									}
-									placeholder={t("contextWindow")}
-									title="contextWindow"
-								/>
-								<input
-									type="number"
-									value={m.maxTokens}
-									onChange={(e) => setModel(i, { maxTokens: e.target.value })}
-									placeholder={t("maxOutput")}
-									title="maxTokens"
-								/>
-								<button
-									type="button"
-									className="iconbtn danger"
-									title={t("removeModel")}
+									className="btn"
 									onClick={() =>
 										setEditing({
 											...editing,
-											models: editing.models.filter((_, j) => j !== i),
+											models: [...editing.models, emptyModel()],
 										})
 									}
 								>
-									<FiTrash2 />
+									<FiPlus /> {t("addModel")}
 								</button>
 							</div>
-						))}
-						<button
-							type="button"
-							className="btn"
-							onClick={() =>
-								setEditing({
-									...editing,
-									models: [...editing.models, emptyModel()],
-								})
-							}
-						>
-							<FiPlus /> {t("addModel")}
-						</button>
 						</div>
-					</div>
 						<div className="modal-actions">
-							<button
-								type="button"
-								className="btn"
-								onClick={() => setEditing(null)}
-							>
+							<button type="button" className="btn" onClick={() => setEditing(null)}>
 								{t("cancel")}
 							</button>
 							<button
 								type="button"
 								className="btn primary"
-								disabled={
-									!editing.providerId.trim() ||
-									!editing.models.some((m) => m.id.trim())
-								}
+								disabled={!editing.providerId.trim() || !editing.models.some((m) => m.id.trim())}
 								onClick={save}
 							>
 								{t("save")}

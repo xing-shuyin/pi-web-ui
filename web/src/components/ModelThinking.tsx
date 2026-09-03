@@ -12,15 +12,7 @@ export type ModelThinkingMsg =
 	| { type: "set_thinking"; level: string }
 	| { type: "activate_provider_key"; provider: string; keyName: string };
 
-const THINKING_VALUES = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-] as const;
+const THINKING_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /** Props are deliberately NARROW (no whole-ChatState object): every field is
  *  stable while tokens stream in, so the shallow-compared memo() below keeps
@@ -43,7 +35,15 @@ interface Props {
 /** Model picker + thinking-level picker. Rendered in the composer toolbar
  * inside the input box (ChatInput .composer-tools). Menus open upward because
  * the input bar sits at the bottom of the window. */
-export const ModelThinking = memo(function ModelThinking({ state, models, modelsLoading, send, onManageModels, providerKeys, compact = false }: Props) {
+export const ModelThinking = memo(function ModelThinking({
+	state,
+	models,
+	modelsLoading,
+	send,
+	onManageModels,
+	providerKeys,
+	compact = false,
+}: Props) {
 	const t = useT();
 	const model = state?.model;
 	// snapshot model.id is the bare id; list ids are "provider/id".
@@ -114,10 +114,7 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 		const q = modelFilter.trim().toLowerCase();
 		if (!q) return list;
 		return list.filter(
-			(m) =>
-				m.name.toLowerCase().includes(q) ||
-				m.provider.toLowerCase().includes(q) ||
-				m.id.toLowerCase().includes(q),
+			(m) => m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
 		);
 	}, [sortedModels, modelFilter, providerFilter]);
 	// Each model renders ONCE. A multi-key provider is shown under whichever key
@@ -164,8 +161,7 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 		label: t(`thinking.${v}`),
 		supported: supportedThinking ? supportedThinking.has(v) : true,
 	}));
-	const thinkingLabel = (level: string): string =>
-		thinkingLevels.find((l) => l.value === level)?.label ?? level;
+	const thinkingLabel = (level: string): string => thinkingLevels.find((l) => l.value === level)?.label ?? level;
 
 	// Lazily fetch the model list when the dropdown opens for the first time.
 	useEffect(() => {
@@ -182,8 +178,7 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 	// 在打开后才到达（首次 list_models 尚未返回），故也监听 models.length。
 	useEffect(() => {
 		if (!modelOpen) return;
-		const el =
-			modelScrollRef.current?.querySelector<HTMLElement>(".dd-item.active");
+		const el = modelScrollRef.current?.querySelector<HTMLElement>(".dd-item.active");
 		el?.scrollIntoView({ block: "nearest" });
 	}, [modelOpen, currentModelId, models.length]);
 
@@ -193,17 +188,13 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 				trigger={
 					<>
 						<FiCpu />
-						<span className="chip-model">
-							{model ? model.name : t("selectModel")}
-						</span>
+						<span className="chip-model">{model ? model.name : t("selectModel")}</span>
 						{!compact && model?.vision && (
 							<span className="chip-vision" title={t("vision")}>
 								🖼
 							</span>
 						)}
-						{!compact && model && (
-							<span className="chip-sub">{model.provider}</span>
-						)}
+						{!compact && model && <span className="chip-sub">{model.provider}</span>}
 					</>
 				}
 				open={modelOpen}
@@ -238,9 +229,7 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 								<span>{t("allProviders")}</span>
 							</button>
 							{providerEntries.map((entry) => {
-								const active =
-									providerFilter?.provider === entry.provider &&
-									providerFilter?.keyName === entry.keyName;
+								const active = providerFilter?.provider === entry.provider && providerFilter?.keyName === entry.keyName;
 								return (
 									<button
 										type="button"
@@ -249,13 +238,13 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 										onClick={() =>
 											setProviderFilter(active ? null : { provider: entry.provider, keyName: entry.keyName })
 										}
-										title={entry.keyName ? `${entry.provider} · ${entry.keyName}` : `${entry.provider} · ${entry.count}`}
+										title={
+											entry.keyName ? `${entry.provider} · ${entry.keyName}` : `${entry.provider} · ${entry.count}`
+										}
 									>
 										<span className="dd-provider-txt">
 											<span className="dd-provider-name">{entry.provider}</span>
-											{entry.keyName && (
-												<span className="dd-provider-key">{entry.keyName}</span>
-											)}
+											{entry.keyName && <span className="dd-provider-key">{entry.keyName}</span>}
 										</span>
 										<span className="dd-provider-count">{entry.count}</span>
 									</button>
@@ -264,22 +253,14 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 						</div>
 					)}
 					<div className="dd-model-scroll" ref={modelScrollRef}>
-						{(reqLoading || modelsLoading) && (
-							<div className="dd-loading">{t("loading")}</div>
-						)}
-						{models.length === 0 &&
-							!reqLoading &&
-							!modelsLoading && (
-								<div className="dd-loading">{t("noModels")}</div>
-							)}
+						{(reqLoading || modelsLoading) && <div className="dd-loading">{t("loading")}</div>}
+						{models.length === 0 && !reqLoading && !modelsLoading && <div className="dd-loading">{t("noModels")}</div>}
 						{filteredModels.length === 0 && models.length > 0 && (
 							<div className="dd-loading">{t("noModelMatches")}</div>
 						)}
 						{displayRows.map((row) => {
 							const m = row.model;
-							const isActive =
-								currentModelId === m.id &&
-								(!row.key || row.key.active);
+							const isActive = currentModelId === m.id && (!row.key || row.key.active);
 							return (
 								<DropdownItem
 									key={row.key ? `${m.id}::${row.key.name}` : m.id}
@@ -305,36 +286,26 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 												<span className={`dd-model-key ${row.key.active ? "active" : ""}`}>
 													{row.key.active ? "●" : "○"} {row.key.name}
 												</span>
-										)}
-										{(usage[m.id] ?? 0) > 0 && (
-											<span className="dd-model-usage">
-												{t("modelUsedCount", { n: usage[m.id] })}
-											</span>
-										)}
-										{(m.reasoning || m.vision) && (
-											<span className="dd-model-badges">
-												{m.reasoning && (
-													<span className="dd-model-badge">{t("reasoning")}</span>
-												)}
-												{m.vision && (
-													<span className="dd-model-badge">{t("vision")}</span>
-												)}
-											</span>
-										)}
+											)}
+											{(usage[m.id] ?? 0) > 0 && (
+												<span className="dd-model-usage">{t("modelUsedCount", { n: usage[m.id] })}</span>
+											)}
+											{(m.reasoning || m.vision) && (
+												<span className="dd-model-badges">
+													{m.reasoning && <span className="dd-model-badge">{t("reasoning")}</span>}
+													{m.vision && <span className="dd-model-badge">{t("vision")}</span>}
+												</span>
+											)}
+										</span>
 									</span>
-								</span>
-							</DropdownItem>
+								</DropdownItem>
 							);
 						})}
 					</div>
 				</div>
 				{/* Fixed footer — refresh / manage never scroll away. */}
 				<div className="dd-footer">
-					<button
-						type="button"
-						className="dd-refresh"
-						onClick={() => send({ type: "list_models" })}
-					>
+					<button type="button" className="dd-refresh" onClick={() => send({ type: "list_models" })}>
 						{t("refreshModels")}
 					</button>
 					<button
@@ -348,7 +319,7 @@ export const ModelThinking = memo(function ModelThinking({ state, models, models
 						{t("manageModels")}
 					</button>
 				</div>
-				</Dropdown>
+			</Dropdown>
 
 			<Dropdown
 				trigger={

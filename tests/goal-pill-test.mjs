@@ -18,8 +18,7 @@ const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
 
-const CHROME =
-	CHROME_PATH;
+const CHROME = CHROME_PATH;
 const PORT = 8907;
 const URL = `http://localhost:${PORT}`;
 const PROJ = REPO_ROOT;
@@ -66,9 +65,7 @@ async function run() {
 	const pillCount = await pill.count();
 	check("idle shows compact pill (not panel)", pillCount > 0, `pillCount=${pillCount}`);
 	if (pillCount > 0) {
-		const hasBorder = await page
-			.locator(".goalbar-collapsed")
-			.evaluate((el) => getComputedStyle(el).borderTopStyle);
+		const hasBorder = await page.locator(".goalbar-collapsed").evaluate((el) => getComputedStyle(el).borderTopStyle);
 		check("collapsed pill has no heavy border", hasBorder === "none", hasBorder);
 	}
 
@@ -82,9 +79,7 @@ async function run() {
 	const modelOpt = page.locator(".goalbar-opt").first(); // "审查模型" dropdown trigger
 	await modelOpt.click();
 	await page.waitForSelector(".dd-menu", { timeout: 8000 });
-	const ddUp = await page
-		.locator(".goalbar .dropdown.dd-up .dd-menu")
-		.count();
+	const ddUp = await page.locator(".goalbar .dropdown.dd-up .dd-menu").count();
 	check("model dropdown opens upward (dd-up)", ddUp > 0, `ddUp=${ddUp}`);
 	if (ddUp > 0) {
 		// The menu's bottom should be above the trigger (bottom > trigger's viewport top).

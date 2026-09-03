@@ -61,10 +61,7 @@ describe("syncPluginToolsIntoSession", () => {
 describe("PluginManager.registerAgentTool", () => {
 	function makeFixture(dir: string, body: string) {
 		mkdirSync(join(dir, "plugins", "fixture"), { recursive: true });
-		writeFileSync(
-			join(dir, "plugins", "fixture", "manifest.json"),
-			JSON.stringify({ name: "夹具" }),
-		);
+		writeFileSync(join(dir, "plugins", "fixture", "manifest.json"), JSON.stringify({ name: "夹具" }));
 		writeFileSync(join(dir, "plugins", "fixture", "index.mjs"), body);
 	}
 

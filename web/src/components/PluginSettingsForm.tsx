@@ -7,13 +7,7 @@ import { useT } from "../i18n";
  * 值保存在 storage.json 的 "settings" 键（宿主统一管理），保存时发
  * plugin_settings，服务端校验 + 持久化 + 通知插件（onSettingsChanged）。
  */
-export function PluginSettingsForm({
-	plugin,
-	send,
-}: {
-	plugin: UiPluginInfo;
-	send: (msg: ClientMessage) => boolean;
-}) {
+export function PluginSettingsForm({ plugin, send }: { plugin: UiPluginInfo; send: (msg: ClientMessage) => boolean }) {
 	const t = useT();
 	const schema = plugin.settingsSchema ?? [];
 	const [draft, setDraft] = useState<Record<string, unknown>>(
@@ -41,16 +35,9 @@ export function PluginSettingsForm({
 					<label key={f.key} className="plugin-settings-field" title={f.hint}>
 						<span className="plugin-settings-label">{f.label}</span>
 						{f.type === "boolean" ? (
-							<input
-								type="checkbox"
-								checked={Boolean(draft[f.key])}
-								onChange={(e) => set(f.key, e.target.checked)}
-							/>
+							<input type="checkbox" checked={Boolean(draft[f.key])} onChange={(e) => set(f.key, e.target.checked)} />
 						) : f.type === "select" ? (
-							<select
-								value={String(draft[f.key] ?? "")}
-								onChange={(e) => set(f.key, e.target.value)}
-							>
+							<select value={String(draft[f.key] ?? "")} onChange={(e) => set(f.key, e.target.value)}>
 								{(f.options ?? []).map((o) => (
 									<option key={o} value={o}>
 										{o}
@@ -70,12 +57,7 @@ export function PluginSettingsForm({
 				))}
 			</div>
 			<div className="plugin-settings-actions">
-				<button
-					type="button"
-					className="btn plugin-settings-save"
-					disabled={!isDirty || saving}
-					onClick={save}
-				>
+				<button type="button" className="btn plugin-settings-save" disabled={!isDirty || saving} onClick={save}>
 					{saving ? t("pluginSettingsSaving") : t("pluginSettingsSave")}
 				</button>
 				<button type="button" className="btn plugin-settings-reset" onClick={reset}>

@@ -13,8 +13,7 @@ import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const CHROME =
-	CHROME_PATH;
+const CHROME = CHROME_PATH;
 const PORT = 8900 + Math.floor(Math.random() * 500);
 const MOCK_PORT = PORT + 1;
 const URL = `http://127.0.0.1:${PORT}`;
@@ -42,10 +41,7 @@ const mock = createServer((req, res) => {
 await new Promise((res) => mock.listen(MOCK_PORT, "127.0.0.1", res));
 console.log(`mock /models on :${MOCK_PORT}`);
 
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "k" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "k" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -120,9 +116,7 @@ async function run() {
 		// Open the model dropdown (top-bar chip) → 管理模型.
 		const modelChip = page.locator(".chip-model").first();
 		await modelChip.click();
-		const manageBtn = page
-			.locator(".dd-refresh", { hasText: "管理模型" })
-			.first();
+		const manageBtn = page.locator(".dd-refresh", { hasText: "管理模型" }).first();
 		await manageBtn.waitFor({ timeout: 8000 });
 		await manageBtn.click();
 		await page.waitForSelector(".model-modal", { timeout: 10000 });
@@ -140,35 +134,19 @@ async function run() {
 		await inputs.nth(3).fill("sk-test");
 
 		// Click 自动获取模型列表 and wait for the rows + success message.
-		await page
-			.locator(".model-section-actions button", { hasText: "自动获取模型列表" })
-			.click();
+		await page.locator(".model-section-actions button", { hasText: "自动获取模型列表" }).click();
 		await page.waitForFunction(
 			() => {
 				const rows = [...document.querySelectorAll(".model-row")];
 				const ids = rows.map((r) => r.querySelector("input")?.value ?? "");
-				const okMsg = [...document.querySelectorAll(".fetch-msg.ok")].some(
-					(el) => el.textContent.includes("已获取"),
-				);
-				return (
-					ids.includes("mock-a") &&
-					ids.includes("mock-b") &&
-					ids.includes("mock-c") &&
-					okMsg
-				);
+				const okMsg = [...document.querySelectorAll(".fetch-msg.ok")].some((el) => el.textContent.includes("已获取"));
+				return ids.includes("mock-a") && ids.includes("mock-b") && ids.includes("mock-c") && okMsg;
 			},
 			{ timeout: 15000 },
 		);
 		const rowCount = await page.locator(".model-row").count();
-		check(
-			"fetch fills 3 model rows from /models",
-			rowCount === 3,
-			`rows=${rowCount}`,
-		);
-		const okText = await page
-			.locator(".fetch-msg.ok")
-			.first()
-			.textContent();
+		check("fetch fills 3 model rows from /models", rowCount === 3, `rows=${rowCount}`);
+		const okText = await page.locator(".fetch-msg.ok").first().textContent();
 		check("success message shown", okText.includes("3"), okText);
 
 		// Metadata from the endpoint lands in the rows:
@@ -199,16 +177,12 @@ async function run() {
 
 		// Error path: invalid baseUrl → inline error message.
 		await inputs.nth(2).fill("ht!tp://nope");
-		await page
-			.locator(".model-section-actions button", { hasText: "自动获取模型列表" })
-			.click();
+		await page.locator(".model-section-actions button", { hasText: "自动获取模型列表" }).click();
 		await page.waitForSelector(".fetch-msg.err", { timeout: 10000 });
 		const errText = await page.locator(".fetch-msg.err").first().textContent();
 		check("invalid baseUrl shows error message", errText.includes("无效"), errText);
 
-		console.log(
-			`\n${failures === 0 ? "ALL PASS" : failures + " FAILURES"}`,
-		);
+		console.log(`\n${failures === 0 ? "ALL PASS" : failures + " FAILURES"}`);
 	} finally {
 		await browser.close();
 	}

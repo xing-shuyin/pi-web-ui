@@ -74,11 +74,7 @@ describe("collectQuestionAttachments", () => {
 	});
 
 	it("收集紧随其后的图片 aside 卡（含视觉桥缩略图）", () => {
-		const aside = fileCard(
-			"c1",
-			[{ type: "image", dataUrl: PNG }],
-			{ name: "图.png", mode: "image" },
-		);
+		const aside = fileCard("c1", [{ type: "image", dataUrl: PNG }], { name: "图.png", mode: "image" });
 		const map = collectQuestionAttachments([user("u1", "q"), aside]);
 		const atts = map.get("u1")!;
 		expect(atts).toHaveLength(1);
@@ -87,11 +83,12 @@ describe("collectQuestionAttachments", () => {
 	});
 
 	it("上传文件（upload:true）→ uploadPath 附件", () => {
-		const aside = fileCard(
-			"c1",
-			[{ type: "text", text: '<file path="C:/data/u/1/2-x.txt" />' }],
-			{ name: "x.txt", path: "C:/data/u/1/2-x.txt", mode: "reference", upload: true },
-		);
+		const aside = fileCard("c1", [{ type: "text", text: '<file path="C:/data/u/1/2-x.txt" />' }], {
+			name: "x.txt",
+			path: "C:/data/u/1/2-x.txt",
+			mode: "reference",
+			upload: true,
+		});
 		const map = collectQuestionAttachments([user("u1", "q"), aside]);
 		const atts = map.get("u1")!;
 		expect(atts).toHaveLength(1);
@@ -101,11 +98,12 @@ describe("collectQuestionAttachments", () => {
 	});
 
 	it("工作区路径附件：reference → path+mode", () => {
-		const aside = fileCard(
-			"c1",
-			[{ type: "text", text: '<file path="src/a.ts" size="10" />' }],
-			{ name: "a.ts", path: "src/a.ts", mode: "reference", size: 10 },
-		);
+		const aside = fileCard("c1", [{ type: "text", text: '<file path="src/a.ts" size="10" />' }], {
+			name: "a.ts",
+			path: "src/a.ts",
+			mode: "reference",
+			size: 10,
+		});
 		const map = collectQuestionAttachments([user("u1", "q"), aside]);
 		const atts = map.get("u1")!;
 		expect(atts).toHaveLength(1);
@@ -114,18 +112,14 @@ describe("collectQuestionAttachments", () => {
 	});
 
 	it("工作区路径附件：lines → path+mode+lines 范围", () => {
-		const aside = fileCard(
-			"c1",
-			[{ type: "text", text: '<file path="src/a.ts" lines="2-3">```x```</file>' }],
-			{
-				name: "a.ts",
-				path: "src/a.ts",
-				mode: "lines",
-				size: 100,
-				startLine: 2,
-				endLine: 3,
-			},
-		);
+		const aside = fileCard("c1", [{ type: "text", text: '<file path="src/a.ts" lines="2-3">```x```</file>' }], {
+			name: "a.ts",
+			path: "src/a.ts",
+			mode: "lines",
+			size: 100,
+			startLine: 2,
+			endLine: 3,
+		});
 		const map = collectQuestionAttachments([user("u1", "q"), aside]);
 		const atts = map.get("u1")!;
 		expect(atts).toHaveLength(1);
@@ -139,22 +133,22 @@ describe("collectQuestionAttachments", () => {
 			user("u1", "q"),
 			fileCard("c1", [{ type: "image", dataUrl: PNG }], { name: "a.png", mode: "image" }),
 			fileCard("c2", [{ type: "image", dataUrl: PNG }], { name: "b.png", mode: "image" }),
-			fileCard(
-				"c3",
-				[{ type: "text", text: '<file path="C:/u/1/2-d.txt" />' }],
-				{ name: "d.txt", path: "C:/u/1/2-d.txt", mode: "reference", upload: true },
-			),
-			fileCard(
-				"c4",
-				[{ type: "text", text: '<file path="src/a.ts" />' }],
-				{ name: "a.ts", path: "src/a.ts", mode: "reference", size: 9 },
-			),
+			fileCard("c3", [{ type: "text", text: '<file path="C:/u/1/2-d.txt" />' }], {
+				name: "d.txt",
+				path: "C:/u/1/2-d.txt",
+				mode: "reference",
+				upload: true,
+			}),
+			fileCard("c4", [{ type: "text", text: '<file path="src/a.ts" />' }], {
+				name: "a.ts",
+				path: "src/a.ts",
+				mode: "reference",
+				size: 9,
+			}),
 		];
 		const atts = collectQuestionAttachments(messages).get("u1")!;
 		expect(atts).toHaveLength(4);
-		const kinds = atts.map((a) =>
-			a.imageData ? "image" : a.uploadPath ? "upload" : "path",
-		);
+		const kinds = atts.map((a) => (a.imageData ? "image" : a.uploadPath ? "upload" : "path"));
 		expect(kinds).toEqual(["image", "image", "upload", "path"]);
 	});
 
@@ -170,13 +164,14 @@ describe("collectQuestionAttachments", () => {
 	});
 
 	it("返回的附件可移除后重新发送（编辑重问的 attachments 形状）", () => {
-		const aside = fileCard(
-			"c1",
-			[{ type: "text", text: '<file path="src/a.ts" lines="1-1">```x```</file>' }],
-			{ name: "a.ts", path: "src/a.ts", mode: "lines", startLine: 1, endLine: 1 },
-		);
-		const atts: EditPromptAttachment[] =
-			collectQuestionAttachments([user("u1", "q"), aside]).get("u1") ?? [];
+		const aside = fileCard("c1", [{ type: "text", text: '<file path="src/a.ts" lines="1-1">```x```</file>' }], {
+			name: "a.ts",
+			path: "src/a.ts",
+			mode: "lines",
+			startLine: 1,
+			endLine: 1,
+		});
+		const atts: EditPromptAttachment[] = collectQuestionAttachments([user("u1", "q"), aside]).get("u1") ?? [];
 		// 用户移除第一项后剩下的仍可直接作为 edit_message.attachments 发送
 		const kept = atts.slice(1);
 		expect(kept).toEqual([]);

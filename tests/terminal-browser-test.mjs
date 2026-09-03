@@ -15,15 +15,11 @@ process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 process.env.PI_WEB_DATA_DIR = dataDir;
 
-const server = spawn(
-	process.execPath,
-	[join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")],
-	{
-		cwd: new URL("..", import.meta.url).pathname,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(new URL("..", import.meta.url).pathname, "dist", "server", "index.js")], {
+	cwd: new URL("..", import.meta.url).pathname,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -70,8 +66,7 @@ async function main() {
 	const browser = await chromium.launch({
 		// The installed playwright-core wants a newer browser build; point it at
 		// the cached Chromium for Testing binary instead of downloading.
-		executablePath:
-			CHROME_PATH,
+		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -94,7 +89,7 @@ async function main() {
 		mkdirSync(join(workdir, "subdir"), { recursive: true });
 		// RightPanel refreshes automatically on mount and on fs.watch changes;
 		// there is no manual refresh button in the current UI.
-		await page.waitForSelector('.panel-right .file-item.dir', { timeout: 5000 });
+		await page.waitForSelector(".panel-right .file-item.dir", { timeout: 5000 });
 		await sleep(300);
 		const dirRow = page.locator(".file-item.dir", { hasText: "subdir" });
 		check("folder row visible in file panel", (await dirRow.count()) === 1);
@@ -125,29 +120,18 @@ async function main() {
 	await page.fill("#cmd-cwd", "${pwd}");
 	await page.click(".cmd-form-actions .btn.primary");
 	await sleep(500);
-	check(
-		"command saved into the list",
-		(await page.textContent(".term-commands"))?.includes("hello-test"),
-	);
+	check("command saved into the list", (await page.textContent(".term-commands"))?.includes("hello-test"));
 
 	// commands.json must exist on disk with the expected shape.
 	const { existsSync, readFileSync } = await import("node:fs");
-	check(
-		"commands.json on disk",
-		existsSync(join(workdir, ".pi", "commands.json")),
-	);
+	check("commands.json on disk", existsSync(join(workdir, ".pi", "commands.json")));
 	let onDisk = null;
 	try {
-		onDisk = JSON.parse(
-			readFileSync(join(workdir, ".pi", "commands.json"), "utf8"),
-		);
+		onDisk = JSON.parse(readFileSync(join(workdir, ".pi", "commands.json"), "utf8"));
 	} catch {
 		onDisk = null;
 	}
-	check(
-		"disk commands[0].cwd is ${pwd}",
-		onDisk?.commands?.[0]?.cwd === "${pwd}",
-	);
+	check("disk commands[0].cwd is ${pwd}", onDisk?.commands?.[0]?.cwd === "${pwd}");
 
 	// Run it — a tab appears and the PTY banner/output shows.
 	await page.click(".cmd-run");
@@ -159,9 +143,7 @@ async function main() {
 	check("banner shows command", termText?.includes("> echo BROWSER_PTY_OK"));
 	// Clicking the same command again must REUSE the same tab AND re-run it:
 	// the running process is interrupted and a fresh shell starts.
-	const termTextarea = page
-		.locator(".term-xterm:not(.hidden) .xterm-helper-textarea")
-		.first();
+	const termTextarea = page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first();
 	await termTextarea.click();
 	await page.keyboard.type("echo SH1=$$");
 	await page.keyboard.press("Enter");
@@ -172,10 +154,7 @@ async function main() {
 
 	await page.click(".cmd-run"); // re-run: interrupt + fresh shell in same tab
 	await sleep(1500);
-	check(
-		"same command reuses the running tab",
-		(await page.locator(".term-tab").count()) === 1,
-	);
+	check("same command reuses the running tab", (await page.locator(".term-tab").count()) === 1);
 	const afterRun = await page.textContent(".term-main");
 	check("terminal cleared for the re-run", !afterRun.includes("SH1="));
 	await page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first().click();
@@ -184,30 +163,18 @@ async function main() {
 	await sleep(800);
 	const after = await page.textContent(".term-main");
 	const sh2 = (after.match(/SH2=(\d+)/) ?? [])[1];
-	check(
-		"re-run spawns a fresh shell (old one interrupted)",
-		!!sh1 && !!sh2 && sh1 !== sh2,
-	);
+	check("re-run spawns a fresh shell (old one interrupted)", !!sh1 && !!sh2 && sh1 !== sh2);
 
 	// After the command's shell exits, clicking again restarts the SAME tab.
 	await page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first().click();
 	await page.keyboard.type("exit");
 	await page.keyboard.press("Enter");
 	await sleep(1200);
-	check(
-		"tab marked exited",
-		(await page.locator(".term-tab-exit").count()) === 1,
-	);
+	check("tab marked exited", (await page.locator(".term-tab-exit").count()) === 1);
 	await page.click(".cmd-run");
 	await sleep(1500);
-	check(
-		"exited tab reused (still one tab)",
-		(await page.locator(".term-tab").count()) === 1,
-	);
-	check(
-		"tab running again after re-run",
-		(await page.locator(".term-tab-dot.run").count()) === 1,
-	);
+	check("exited tab reused (still one tab)", (await page.locator(".term-tab").count()) === 1);
+	check("tab running again after re-run", (await page.locator(".term-tab-dot.run").count()) === 1);
 
 	// Type into the terminal through the xterm (paste into its hidden textarea).
 	const textarea = page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first();
@@ -229,18 +196,12 @@ async function main() {
 	await sleep(800);
 	await page.click('.view-switch button:has-text("终端")');
 	await sleep(800);
-	check(
-		"terminals survive view switch",
-		(await page.locator(".term-tab").count()) === 2,
-	);
+	check("terminals survive view switch", (await page.locator(".term-tab").count()) === 2);
 
 	// Close one tab — the other stays.
 	await page.locator(".term-tab-close").first().click();
 	await sleep(800);
-	check(
-		"tab close removes one tab",
-		(await page.locator(".term-tab").count()) === 1,
-	);
+	check("tab close removes one tab", (await page.locator(".term-tab").count()) === 1);
 
 	// Conversation-level persistence: an idle conversation with a terminal must
 	// remain switchable after creating a new chat, and its PTY/tab must return.

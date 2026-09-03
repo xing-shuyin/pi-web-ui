@@ -27,12 +27,8 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
-for (let i = 1; i <= 35; i++)
-	writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed ${i}\n`);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
+for (let i = 1; i <= 35; i++) writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed ${i}\n`);
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -82,8 +78,7 @@ function seedChat(want) {
 		const sendNext = () => {
 			if (step === 0) {
 				const attachments = [];
-				for (let i = 1; i <= 35; i++)
-					attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
+				for (let i = 1; i <= 35; i++) attachments.push({ path: `seed-${String(i).padStart(2, "0")}.txt` });
 				ws.send(JSON.stringify({ type: "prompt", text: "总结", attachments }));
 			} else {
 				ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step} 条` }));
@@ -127,10 +122,7 @@ async function main() {
 
 	const browser = await chromium.launch({ executablePath: CHROME_PATH });
 	const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
 	await page.waitForSelector(".msg", { timeout: 30000 });

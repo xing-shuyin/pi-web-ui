@@ -18,17 +18,10 @@ import type { ServerMessage } from "../../server/protocol.js";
 let dir: string;
 let mgr: PluginManager;
 
-function makePlugin(
-	id: string,
-	code: string,
-	opts?: { client?: boolean; manifest?: Record<string, unknown> },
-): void {
+function makePlugin(id: string, code: string, opts?: { client?: boolean; manifest?: Record<string, unknown> }): void {
 	const pdir = join(dir, "plugins", id);
 	mkdirSync(pdir, { recursive: true });
-	writeFileSync(
-		join(pdir, "manifest.json"),
-		JSON.stringify({ name: id, ...(opts?.manifest ?? {}) }),
-	);
+	writeFileSync(join(pdir, "manifest.json"), JSON.stringify({ name: id, ...(opts?.manifest ?? {}) }));
 	writeFileSync(join(pdir, "index.mjs"), code);
 	if (opts?.client) {
 		mkdirSync(join(pdir, "client"), { recursive: true });
@@ -72,29 +65,32 @@ describe("PluginManager", () => {
 		expect(list.find((p) => p.id === "echo")?.error).toBeUndefined();
 
 		const sent: ServerMessage[] = [];
-		mgr.addSender((m) => sent.push(m), () => "client-1");
+		mgr.addSender(
+			(m) => sent.push(m),
+			() => "client-1",
+		);
 		mgr.handleMessage("echo", { action: "ping", value: 7 }, "client-1");
-		expect(sent).toEqual([
-			{ type: "plugin_data", pluginId: "echo", payload: { pong: 7 } },
-		]);
+		expect(sent).toEqual([{ type: "plugin_data", pluginId: "echo", payload: { pong: 7 } }]);
 	});
 
 	it("handler exceptions are isolated and do not break other handlers", async () => {
-		makePlugin(
-			"thrower",
-			`export default { activate(h) { h.onMessage(() => { throw new Error("nope"); }); } };`,
-		);
+		makePlugin("thrower", `export default { activate(h) { h.onMessage(() => { throw new Error("nope"); }); } };`);
 		makePlugin("echo2", ECHO_PLUGIN);
 		await mgr.ensureLoaded();
 		const sent: ServerMessage[] = [];
-		mgr.addSender((m) => sent.push(m), () => null);
+		mgr.addSender(
+			(m) => sent.push(m),
+			() => null,
+		);
 		mgr.handleMessage("thrower", {}, undefined);
 		mgr.handleMessage("echo2", { action: "ping", value: 1 }, undefined);
 		expect(sent).toHaveLength(1);
 	});
 
 	it("emitToolEvent fans out; throwing handler is isolated", async () => {
-		makePlugin("tools", `
+		makePlugin(
+			"tools",
+			`
 			globalThis.__toolSeen = [];
 			export default {
 				activate(h) {
@@ -102,7 +98,8 @@ describe("PluginManager", () => {
 					const off = h.onToolEvent((ev) => { globalThis.__toolSeen.push(ev.phase); });
 					return () => { off(); offBad(); };
 				},
-			};`);
+			};`,
+		);
 		await mgr.ensureLoaded();
 		const ev: PluginToolEvent = { phase: "start", toolName: "bash" };
 		mgr.emitToolEvent(ev);
@@ -116,8 +113,14 @@ describe("PluginManager", () => {
 		await mgr.ensureLoaded();
 		const a: ServerMessage[] = [];
 		const b: ServerMessage[] = [];
-		mgr.addSender((m) => a.push(m), () => "a");
-		mgr.addSender((m) => b.push(m), () => "b");
+		mgr.addSender(
+			(m) => a.push(m),
+			() => "a",
+		);
+		mgr.addSender(
+			(m) => b.push(m),
+			() => "b",
+		);
 		mgr.handleMessage("echo3", { action: "notify" }, "a");
 		mgr.handleMessage("echo3", { action: "to", clientId: "b" }, "b");
 		expect(a).toContainEqual({
@@ -192,14 +195,15 @@ describe("PluginManager cwd 跟随", () => {
 		expect(probe().activatedCwd).toBe(resolve(dir));
 
 		const sent: ServerMessage[] = [];
-		mgr.addSender((m) => sent.push(m), () => null);
+		mgr.addSender(
+			(m) => sent.push(m),
+			() => null,
+		);
 		const next = resolve(join(dir, "proj-b"));
 		mgr.notifyCwd(join(dir, "proj-b")); // 内部会 resolve，不必预先规范化
 		expect(probe().seen).toEqual([next]);
 		expect(probe().liveCwdInHandler).toBe(next);
-		expect(sent).toEqual([
-			{ type: "plugin_data", pluginId: "ed", payload: { kind: "workspace", root: next } },
-		]);
+		expect(sent).toEqual([{ type: "plugin_data", pluginId: "ed", payload: { kind: "workspace", root: next } }]);
 
 		mgr.notifyCwd(join(dir, "proj-b")); // 幂等：同路径 no-op，不再触发钩子/广播
 		expect(probe().seen).toHaveLength(1);

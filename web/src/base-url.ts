@@ -24,9 +24,11 @@ let cachedBase: string | null = null;
  *  期的 base（根部署固定为 "/"）。 */
 export function resolveBase(pathname?: string): string {
 	if (pathname === undefined) {
-		const doc = (globalThis as unknown as {
-			document?: { baseURI?: string };
-		}).document;
+		const doc = (
+			globalThis as unknown as {
+				document?: { baseURI?: string };
+			}
+		).document;
 		if (doc && typeof doc.baseURI === "string" && doc.baseURI) {
 			try {
 				pathname = new URL(doc.baseURI).pathname;
@@ -36,9 +38,11 @@ export function resolveBase(pathname?: string): string {
 		}
 		if (pathname === undefined) {
 			// 非浏览器环境（单测等）：退回 Vite 构建期 base（根部署为 "/"）。
-			const viteBase = (import.meta as unknown as {
-				env?: { BASE_URL?: string };
-			}).env?.BASE_URL;
+			const viteBase = (
+				import.meta as unknown as {
+					env?: { BASE_URL?: string };
+				}
+			).env?.BASE_URL;
 			return viteBase || "/";
 		}
 	}

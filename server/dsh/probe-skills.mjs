@@ -21,26 +21,26 @@ const JSONRPC_ENTRY = resolve(
 // ---- 1. 纯函数单测：filterSkillCatalogMessage（直接从 goal-rpc.mjs 导入）----
 // 源码兜底路径按 dist 布局计算（up-4），直接导入前需让 JSONRPC_ENTRY 指向项目 node_modules。
 process.env.PI_WEB_DSH_JSONRPC_ENTRY = JSONRPC_ENTRY;
-const { filterSkillCatalogMessage } = await import(
-	pathToFileURL(join(HERE, "runtime", "goal-rpc.mjs")).href
-);
+const { filterSkillCatalogMessage } = await import(pathToFileURL(join(HERE, "runtime", "goal-rpc.mjs")).href);
 {
 	const mkCatalog = (entries) => ({
 		source: { kind: "skill-catalog", entries },
-		content: [{
-			type: "text",
-			text: [
-				"<system-reminder>",
-				"A skill is a reusable set of task-specific instructions. The following skills are available in this session:",
-				"",
-				"<available_skills>",
-				...entries.map((e) => `- \`${e.name}\`: ${e.description}`),
-				"</available_skills>",
-				"",
-				"If the user names a skill, call the `skill` tool with the exact skill name.",
-				"</system-reminder>",
-			].join("\n"),
-		}],
+		content: [
+			{
+				type: "text",
+				text: [
+					"<system-reminder>",
+					"A skill is a reusable set of task-specific instructions. The following skills are available in this session:",
+					"",
+					"<available_skills>",
+					...entries.map((e) => `- \`${e.name}\`: ${e.description}`),
+					"</available_skills>",
+					"",
+					"If the user names a skill, call the `skill` tool with the exact skill name.",
+					"</system-reminder>",
+				].join("\n"),
+			},
+		],
 	});
 	const cat = mkCatalog([
 		{ name: "alpha", description: "alpha skill" },
@@ -150,7 +150,8 @@ try {
 	const listRes = await req("skills/list", {});
 	const names = (listRes.skills ?? []).map((s) => s.name);
 	console.log("skills/list ->", JSON.stringify(names));
-	if (!names.includes("alpha") || !names.includes("beta")) fail("list missing registered skills: " + JSON.stringify(names));
+	if (!names.includes("alpha") || !names.includes("beta"))
+		fail("list missing registered skills: " + JSON.stringify(names));
 
 	const setRes = await req("skills/set-disabled", { skills: ["beta"] });
 	console.log("skills/set-disabled ->", JSON.stringify(setRes));

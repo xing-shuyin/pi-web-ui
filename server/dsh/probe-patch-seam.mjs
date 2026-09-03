@@ -6,9 +6,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-const KEY = JSON.parse(
-	readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"),
-).deepseek.key;
+const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
 	HERE,
 	"..",

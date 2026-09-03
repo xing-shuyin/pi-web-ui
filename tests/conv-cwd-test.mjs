@@ -107,11 +107,7 @@ const conv1 = snapshot.conversationId;
 send({ type: "new_chat" });
 await sleep(600); // any snapshot/delta would have arrived by now
 const conv2 = snapshot.conversationId;
-check(
-	"new_chat reuses the blank active conversation (same id)",
-	conv2 === conv1,
-	`${conv1} → ${conv2}`,
-);
+check("new_chat reuses the blank active conversation (same id)", conv2 === conv1, `${conv1} → ${conv2}`);
 check("conv2 cwd = A", snapshot?.cwd === A);
 await sleep(300);
 check(
@@ -124,16 +120,9 @@ check(
 send({ type: "set_cwd", path: B });
 await waitFor(() => snapshot?.cwd === B, "cwd=B");
 const convB = snapshot.conversationId;
-check(
-	"set_cwd(B) → B gets its OWN conversation id",
-	convB && convB !== conv2,
-	`${conv2} → ${convB}`,
-);
+check("set_cwd(B) → B gets its OWN conversation id", convB && convB !== conv2, `${conv2} → ${convB}`);
 check("convB cwd = B", snapshot?.cwd === B);
-await waitFor(
-	() => files?.entries?.some((e) => e.name === "only-in-B.txt"),
-	"B file tree",
-);
+await waitFor(() => files?.entries?.some((e) => e.name === "only-in-B.txt"), "B file tree");
 check(
 	"file tree shows B's files",
 	files?.entries?.some((e) => e.name === "only-in-B.txt"),
@@ -148,10 +137,7 @@ check(
 	convA2 && convA2 !== convB && convA2 !== conv2,
 	`${convB} → ${convA2}`,
 );
-await waitFor(
-	() => files?.entries?.some((e) => e.name === "only-in-A.txt"),
-	"A file tree",
-);
+await waitFor(() => files?.entries?.some((e) => e.name === "only-in-A.txt"), "A file tree");
 check(
 	"file tree shows A's files",
 	files?.entries?.some((e) => e.name === "only-in-A.txt"),
@@ -159,10 +145,7 @@ check(
 
 // --- set_cwd(B) again: B's previous conv was dismissed; a new one is created ---
 send({ type: "set_cwd", path: B });
-await waitFor(
-	() => snapshot?.cwd === B && snapshot?.conversationId !== convB,
-	"cwd=B again",
-);
+await waitFor(() => snapshot?.cwd === B && snapshot?.conversationId !== convB, "cwd=B again");
 check(
 	"set_cwd(B) again → new B conversation (previous B conv was dismissed)",
 	snapshot?.conversationId !== convB,
@@ -183,8 +166,7 @@ check(
 );
 
 console.log("--- conversation summaries ---");
-for (const c of conversations)
-	console.log(`  ${c.id} title="${c.title}" cwd=${c.cwd}`);
+for (const c of conversations) console.log(`  ${c.id} title="${c.title}" cwd=${c.cwd}`);
 console.log("--- notices ---");
 for (const n of notices) console.log("  ", n);
 

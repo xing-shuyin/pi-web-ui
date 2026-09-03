@@ -166,9 +166,7 @@ try {
 			],
 		},
 	});
-	await c.waitFor("models_config", 10000, (m) =>
-		m.providers.some((p) => p.providerId === "my-provider"),
-	);
+	await c.waitFor("models_config", 10000, (m) => m.providers.some((p) => p.providerId === "my-provider"));
 
 	// 1) refresh #1 — fetched=[a,b], saved=[a] → b 新增；手填字段必须胜出
 	c.send({ type: "refresh_provider_models", providerId: "my-provider", reqId: 11 });
@@ -182,14 +180,10 @@ try {
 			m.providers.find((p) => p.providerId === "my-provider") !== undefined &&
 			m.providers.find((p) => p.providerId === "my-provider").models.length === 2,
 	);
-	const rowA = mc.providers
-		.find((p) => p.providerId === "my-provider")
-		.models.find((m) => m.id === "mock-a");
+	const rowA = mc.providers.find((p) => p.providerId === "my-provider").models.find((m) => m.id === "mock-a");
 	check(
 		"manual fields preserved (name/contextWindow/input NOT overridden)",
-		rowA.name === "Manual A" &&
-			rowA.contextWindow === 123456 &&
-			canonish(rowA.input) === canonish(["text"]),
+		rowA.name === "Manual A" && rowA.contextWindow === 123456 && canonish(rowA.input) === canonish(["text"]),
 		JSON.stringify(rowA),
 	);
 
@@ -203,9 +197,7 @@ try {
 		const p = m.providers.find((x) => x.providerId === "my-provider");
 		return p && p.models.length === 3;
 	});
-	const rowNew = mc.providers
-		.find((p) => p.providerId === "my-provider")
-		.models.find((m) => m.id === "mock-new");
+	const rowNew = mc.providers.find((p) => p.providerId === "my-provider").models.find((m) => m.id === "mock-new");
 	check("new id appended with endpoint metadata (reasoning)", rowNew?.reasoning === true);
 
 	// 3) credentials stayed server-side: probe carried the SAVED key as Bearer

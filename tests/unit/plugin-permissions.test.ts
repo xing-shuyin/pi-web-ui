@@ -79,9 +79,7 @@ describe("tools 能力门控", () => {
 		// 说明：manifest apiVersion>1 会先被版本协商门拦下（提示升级宿主），
 		// 因此「未声明能力默认拒绝」的 v2 语义当前不可达——已在 can() 中预埋，
 		// 宿主 PLUGIN_API_VERSION 升到 2 时生效。此处仅确认版本门仍优先生效。
-		const list = await mgr
-			.ensureLoaded()
-			.then(() => mgr.list());
+		const list = await mgr.ensureLoaded().then(() => mgr.list());
 		expect(Array.isArray(list)).toBe(true);
 	});
 });

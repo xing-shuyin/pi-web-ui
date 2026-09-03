@@ -18,10 +18,7 @@ import {
 	type LocalPackage,
 } from "../../server/update-check.js";
 
-function makeFetcher(
-	latest: Record<string, string>,
-	fail: string[] = [],
-): { fetcher: Fetcher; calls: string[] } {
+function makeFetcher(latest: Record<string, string>, fail: string[] = []): { fetcher: Fetcher; calls: string[] } {
 	const calls: string[] = [];
 	const fetcher: Fetcher = async (url) => {
 		const name = decodeURIComponent(String(url).split("/").pop() ?? "");
@@ -53,21 +50,15 @@ describe("parsePiVersionOutput", () => {
 		expect(parsePiVersionOutput("0.84.4")).toBe("0.84.4");
 		expect(parsePiVersionOutput("v0.84.4")).toBe("0.84.4");
 		expect(parsePiVersionOutput("  0.85.0-beta.1  \n")).toBe("0.85.0-beta.1");
-		expect(parsePiVersionOutput("v0.85.0-beta.1+build.7\n")).toBe(
-			"0.85.0-beta.1+build.7",
-		);
+		expect(parsePiVersionOutput("v0.85.0-beta.1+build.7\n")).toBe("0.85.0-beta.1+build.7");
 	});
 
 	it("exact line wins over a misleading preamble", () => {
-		expect(parsePiVersionOutput("Update available: 0.85.0\n0.84.4")).toBe(
-			"0.84.4",
-		);
+		expect(parsePiVersionOutput("Update available: 0.85.0\n0.84.4")).toBe("0.84.4");
 	});
 
 	it("falls back to the first loose token when no line is exact", () => {
-		expect(parsePiVersionOutput("pi version is 0.84.4 (built today)")).toBe(
-			"0.84.4",
-		);
+		expect(parsePiVersionOutput("pi version is 0.84.4 (built today)")).toBe("0.84.4");
 	});
 
 	it("garbage → null", () => {
@@ -115,10 +106,7 @@ describe("listInstalledPackages", () => {
 		const root = join(dir, "npm", "node_modules");
 		const pkg = (d: string, name: string, version: string) => {
 			mkdirSync(d, { recursive: true });
-			writeFileSync(
-				join(d, "package.json"),
-				JSON.stringify({ name, version }),
-			);
+			writeFileSync(join(d, "package.json"), JSON.stringify({ name, version }));
 		};
 		pkg(join(root, "foo"), "foo", "1.0.0");
 		pkg(join(root, "@scope", "bar"), "@scope/bar", "2.3.4");
@@ -212,9 +200,7 @@ describe("listInstalledPackages (manifest-driven)", () => {
 				name: "foo",
 				version: "1.0.0",
 			});
-			expect(listInstalledPackages(dir)).toEqual([
-				{ name: "foo", version: "1.0.0", kind: "package" },
-			]);
+			expect(listInstalledPackages(dir)).toEqual([{ name: "foo", version: "1.0.0", kind: "package" }]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -283,13 +269,10 @@ describe("collectTargets", () => {
 	});
 
 	it("probe wins over vendored copy; manifest row deduped to one pi-core row", () => {
-		const dir = makeAgentDir(
-			{ foo: "^1.0.0", [CORE]: "^0.84.2" },
-			[
-				["foo", "foo", "1.0.0"],
-				[CORE, CORE, "0.84.3"],
-			],
-		);
+		const dir = makeAgentDir({ foo: "^1.0.0", [CORE]: "^0.84.2" }, [
+			["foo", "foo", "1.0.0"],
+			[CORE, CORE, "0.84.3"],
+		]);
 		try {
 			const targets = collectTargets(dir, "0.48.0", () => "0.84.4");
 			expect(targets[0]).toEqual({
@@ -297,9 +280,7 @@ describe("collectTargets", () => {
 				version: "0.48.0",
 				kind: "webui",
 			});
-			expect(targets.filter((t) => t.name === CORE)).toEqual([
-				{ name: CORE, version: "0.84.4", kind: "pi-core" },
-			]);
+			expect(targets.filter((t) => t.name === CORE)).toEqual([{ name: CORE, version: "0.84.4", kind: "pi-core" }]);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -366,10 +347,7 @@ describe("checkAll", () => {
 			status: 200,
 			json: async () => ({}),
 		});
-		const items = await checkAll(
-			[{ name: "ghost", version: "1.0.0", kind: "package" }],
-			fetcher,
-		);
+		const items = await checkAll([{ name: "ghost", version: "1.0.0", kind: "package" }], fetcher);
 		expect(items[0]).toMatchObject({ latest: null, upToDate: true });
 	});
 });

@@ -1,13 +1,4 @@
-import {
-	createContext,
-	useCallback,
-	useContext,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FiEdit2, FiPlus, FiRotateCcw, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import { useT, type Translate } from "../i18n";
 import type { ClientMessage } from "../types";
@@ -259,8 +250,7 @@ function loadStored(): StoredTemplate[] {
 		const parsed: unknown = JSON.parse(raw);
 		if (!Array.isArray(parsed)) return [];
 		return parsed.filter(
-			(c): c is StoredTemplate =>
-				!!c && typeof c === "object" && typeof (c as StoredTemplate).id === "string",
+			(c): c is StoredTemplate => !!c && typeof c === "object" && typeof (c as StoredTemplate).id === "string",
 		);
 	} catch {
 		return [];
@@ -348,19 +338,17 @@ export function TemplateProvider({
 			else if (isFullTemplate(s) && !isBuiltinId(s.id)) overrides.set(s.id, s);
 			else if (isFullTemplate(s)) overrides.set(s.id, s); // 内置覆盖
 		}
-		const builtins: Template[] = BUILTIN_DEFS.filter((d) => !hiddenIds.has(d.id)).map(
-			(d) => {
-				const o = overrides.get(d.id);
-				return {
-					id: d.id,
-					icon: o?.icon ?? d.icon,
-					title: o?.title ?? t(d.titleKey),
-					desc: o?.desc ?? t(d.descKey),
-					prompt: o?.prompt ?? t(d.promptKey),
-					builtin: true,
-				};
-			},
-		);
+		const builtins: Template[] = BUILTIN_DEFS.filter((d) => !hiddenIds.has(d.id)).map((d) => {
+			const o = overrides.get(d.id);
+			return {
+				id: d.id,
+				icon: o?.icon ?? d.icon,
+				title: o?.title ?? t(d.titleKey),
+				desc: o?.desc ?? t(d.descKey),
+				prompt: o?.prompt ?? t(d.promptKey),
+				builtin: true,
+			};
+		});
 		const extras = stored
 			.filter((s) => isFullTemplate(s) && !isBuiltinId(s.id))
 			.map((s) => ({
@@ -377,25 +365,22 @@ export function TemplateProvider({
 	const fill = useCallback((text: string) => {
 		window.dispatchEvent(new CustomEvent("pi-web:fill", { detail: text }));
 	}, []);
-	const openEdit = useCallback(
-		(tpl?: Template, from = false) => {
-			setFromPicker(from);
-			if (tpl) {
-				setIsNew(false);
-				setEditing({ ...tpl });
-			} else {
-				setIsNew(true);
-				setEditing({
-					id: randomUuid(),
-					icon: "📌",
-					title: "",
-					desc: "",
-					prompt: "",
-				});
-			}
-		},
-		[],
-	);
+	const openEdit = useCallback((tpl?: Template, from = false) => {
+		setFromPicker(from);
+		if (tpl) {
+			setIsNew(false);
+			setEditing({ ...tpl });
+		} else {
+			setIsNew(true);
+			setEditing({
+				id: randomUuid(),
+				icon: "📌",
+				title: "",
+				desc: "",
+				prompt: "",
+			});
+		}
+	}, []);
 	const closeAll = useCallback(() => {
 		setPickerOpen(false);
 		setEditing(null);
@@ -496,9 +481,7 @@ export function TemplateProvider({
 		[templates, fill, openPicker, openEdit, resetConfirm, toggleReset],
 	);
 
-	const hasOverride = editing
-		? stored.some((c) => c.id === editing.id && !c.hidden && isFullTemplate(c))
-		: false;
+	const hasOverride = editing ? stored.some((c) => c.id === editing.id && !c.hidden && isFullTemplate(c)) : false;
 
 	return (
 		<TemplateCtx.Provider value={api}>
@@ -526,9 +509,7 @@ export function TemplateProvider({
 					onRestore={() => restoreOverride(editing)}
 					onRemove={() => removeTemplate(editing)}
 					onFill={() => {
-						window.dispatchEvent(
-							new CustomEvent("pi-web:fill", { detail: editing.prompt }),
-						);
+						window.dispatchEvent(new CustomEvent("pi-web:fill", { detail: editing.prompt }));
 						closeAll();
 					}}
 					onSend={() => {
@@ -567,12 +548,7 @@ export function EmptyTemplateCards() {
 						editTitle={t("tpl.editTpl")}
 					/>
 				))}
-				<button
-					type="button"
-					className="empty-template add"
-					onClick={() => openEdit()}
-					title={t("tpl.add")}
-				>
+				<button type="button" className="empty-template add" onClick={() => openEdit()} title={t("tpl.add")}>
 					<span className="empty-template-icon">
 						<FiPlus />
 					</span>
@@ -663,18 +639,10 @@ function PickerModal({
 
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
-			<div
-				className="modal template-picker"
-				onClick={(e) => e.stopPropagation()}
-			>
+			<div className="modal template-picker" onClick={(e) => e.stopPropagation()}>
 				<div className="template-picker-head">
 					<span className="template-picker-title">{t("tpl.pickerTitle")}</span>
-					<button
-						type="button"
-						className="btn template-modal-close"
-						title={t("close")}
-						onClick={onClose}
-					>
+					<button type="button" className="btn template-modal-close" title={t("close")} onClick={onClose}>
 						<FiX />
 					</button>
 				</div>
@@ -690,12 +658,7 @@ function PickerModal({
 							editTitle={t("tpl.editTpl")}
 						/>
 					))}
-					<button
-						type="button"
-						className="empty-template add"
-						onClick={onNew}
-						title={t("tpl.add")}
-					>
+					<button type="button" className="empty-template add" onClick={onNew} title={t("tpl.add")}>
 						<span className="empty-template-icon">
 							<FiPlus />
 						</span>
@@ -706,11 +669,7 @@ function PickerModal({
 					</button>
 				</div>
 				<div className="template-picker-foot">
-					<button
-						type="button"
-						className="empty-templates-reset"
-						onClick={onResetToggle}
-					>
+					<button type="button" className="empty-templates-reset" onClick={onResetToggle}>
 						<FiRotateCcw />
 						{resetConfirm ? t("tpl.resetConfirm") : t("tpl.reset")}
 					</button>
@@ -792,18 +751,9 @@ function EditModal({
 			<div className="modal template-modal" onClick={(e) => e.stopPropagation()}>
 				<div className="template-modal-head">
 					<span className="template-modal-icon">{editing.icon}</span>
-					<span className="template-modal-badge">
-						{isBuiltin ? t("tpl.builtin") : t("tpl.custom")}
-					</span>
-					<span className="template-modal-title">
-						{isNew ? t("tpl.newTitle") : t("tpl.editTitle")}
-					</span>
-					<button
-						type="button"
-						className="btn template-modal-close"
-						title={t("close")}
-						onClick={onClose}
-					>
+					<span className="template-modal-badge">{isBuiltin ? t("tpl.builtin") : t("tpl.custom")}</span>
+					<span className="template-modal-title">{isNew ? t("tpl.newTitle") : t("tpl.editTitle")}</span>
+					<button type="button" className="btn template-modal-close" title={t("close")} onClick={onClose}>
 						<FiX />
 					</button>
 				</div>
@@ -854,12 +804,7 @@ function EditModal({
 				<div className="template-modal-actions">
 					<div className="template-modal-actions-left">
 						{!isNew && isBuiltin && hasOverride && (
-							<button
-								type="button"
-								className="btn template-btn ghost"
-								title={t("tpl.restoreTip")}
-								onClick={onRestore}
-							>
+							<button type="button" className="btn template-btn ghost" title={t("tpl.restoreTip")} onClick={onRestore}>
 								{t("tpl.restore")}
 							</button>
 						)}
@@ -888,20 +833,10 @@ function EditModal({
 						<button type="button" className="btn template-btn" onClick={save}>
 							{t("tpl.save")}
 						</button>
-						<button
-							type="button"
-							className="btn template-btn fill"
-							onClick={onFill}
-							title={t("tpl.fillTip")}
-						>
+						<button type="button" className="btn template-btn fill" onClick={onFill} title={t("tpl.fillTip")}>
 							{t("tpl.fill")}
 						</button>
-						<button
-							type="button"
-							className="btn template-btn send"
-							onClick={onSend}
-							title={t("tpl.sendTip")}
-						>
+						<button type="button" className="btn template-btn send" onClick={onSend} title={t("tpl.sendTip")}>
 							<FiSend /> {t("tpl.sendNow")}
 						</button>
 					</div>

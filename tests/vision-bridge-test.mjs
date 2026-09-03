@@ -30,8 +30,7 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
 // A 1x1 red PNG (pure base64, no data: prefix).
-const IMG_B64 =
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const IMG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 // A real PNG file in the workspace — for the file-list (path reference) flow.
 writeFileSync(join(workdir, "screenshot.png"), Buffer.from(IMG_B64, "base64"));
 
@@ -56,21 +55,14 @@ const mock = createServer(async (req, res) => {
 	const model = payload.model ?? "";
 	const lastMsg = payload.messages?.at(-1);
 	// The SDK serializes ImageContent to OpenAI's image_url blocks on the wire.
-	const hasImage = Array.isArray(lastMsg?.content) &&
-		lastMsg.content.some(
-			(b) => b.type === "image_url" || b.type === "image",
-		);
+	const hasImage =
+		Array.isArray(lastMsg?.content) && lastMsg.content.some((b) => b.type === "image_url" || b.type === "image");
 	if (hasImage) {
 		visionRequestCount++;
 		visionRequests.push({
 			model,
-			systemPrompt:
-				typeof payload.messages?.[0]?.content === "string"
-					? payload.messages[0].content
-					: null,
-			imageBlocks: lastMsg.content.filter(
-				(b) => b.type === "image_url" || b.type === "image",
-			).length,
+			systemPrompt: typeof payload.messages?.[0]?.content === "string" ? payload.messages[0].content : null,
+			imageBlocks: lastMsg.content.filter((b) => b.type === "image_url" || b.type === "image").length,
 			textPrompt: lastMsg.content
 				.filter((b) => b.type === "text")
 				.map((b) => b.text)
@@ -94,9 +86,7 @@ const mock = createServer(async (req, res) => {
 					object: "chat.completion.chunk",
 					created: Date.now(),
 					model,
-					choices: [
-						{ index: 0, delta: { content: ch }, finish_reason: null },
-					],
+					choices: [{ index: 0, delta: { content: ch }, finish_reason: null }],
 				})}\n\n`,
 			);
 			i++;
@@ -127,9 +117,7 @@ const mock = createServer(async (req, res) => {
 				object: "chat.completion",
 				created: Date.now(),
 				model,
-				choices: [
-					{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" },
-				],
+				choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
 				usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
 			}),
 		);
@@ -343,43 +331,24 @@ try {
 	});
 
 	// 1) "transcribing" notice
-	const startNotice = await c.waitFor(
-		"notice",
-		15000,
-		(m) => m.text && m.text.includes("正在用视觉桥"),
-	);
+	const startNotice = await c.waitFor("notice", 15000, (m) => m.text && m.text.includes("正在用视觉桥"));
 	check("transcribe-start notice", startNotice.level === "info");
 
 	// 2) mock vision API saw the image
 	const doneNotice = await c.waitFor(
 		"notice",
 		25000,
-		(m) =>
-			m.text &&
-			(m.text.includes("转写完成") || m.text.includes("转写失败")),
+		(m) => m.text && (m.text.includes("转写完成") || m.text.includes("转写失败")),
 	);
-	check(
-		"transcribe-done notice",
-		doneNotice.text.includes("vision"),
-	);
+	check("transcribe-done notice", doneNotice.text.includes("vision"));
 	check(
 		"vision API received 1 image",
-		visionRequests.length === 1 &&
-			visionRequests[0].imageBlocks === 1 &&
-			visionRequests[0].model === "qwen-vl-mock",
+		visionRequests.length === 1 && visionRequests[0].imageBlocks === 1 && visionRequests[0].model === "qwen-vl-mock",
 	);
-	check(
-		"vision prompt asks for transcription",
-		/转写/.test(visionRequests[0]?.textPrompt ?? ""),
-	);
+	check("vision prompt asks for transcription", /转写/.test(visionRequests[0]?.textPrompt ?? ""));
 
 	// 3) bridged attachment card in the message list
-	const bridged = await c.waitForMessage(
-		(m) =>
-			m.customType === "file" &&
-			m.details?.mode === "bridged",
-		20000,
-	);
+	const bridged = await c.waitForMessage((m) => m.customType === "file" && m.details?.mode === "bridged", 20000);
 	check("attachment card mode=bridged", true);
 	const bridgedText = (bridged.content ?? [])
 		.filter((b) => b.type === "text")
@@ -416,24 +385,13 @@ try {
 			},
 		],
 	});
-	await c.waitFor(
-		"notice",
-		20000,
-		(m) => m.text && m.text.includes("再看一遍"),
-	).catch(() => {});
+	await c.waitFor("notice", 20000, (m) => m.text && m.text.includes("再看一遍")).catch(() => {});
 	await sleep(4000);
-	check(
-		"same image reuses transcript cache (no 2nd vision call)",
-		visionRequestCount === before,
-	);
+	check("same image reuses transcript cache (no 2nd vision call)", visionRequestCount === before);
 
 	// -- settings: pick a specific vision model ------------------------------
 	// settings_state must carry the vision-bridge fields + the model picker list
-	const ss = await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings && Array.isArray(m.settings.visionModels),
-	);
+	const ss = await c.waitFor("settings_state", 10000, (m) => m.settings && Array.isArray(m.settings.visionModels));
 	check(
 		"settings_state has vision-bridge fields",
 		ss.settings.visionBridgeEnabled === true &&
@@ -443,9 +401,7 @@ try {
 	check(
 		"settings_state carries the built-in default prompts",
 		typeof ss.settings.visionBridgeDefaultPrompt === "string" &&
-			ss.settings.visionBridgeDefaultPrompt.includes(
-				"You are a vision bridge",
-			) &&
+			ss.settings.visionBridgeDefaultPrompt.includes("You are a vision bridge") &&
 			typeof ss.settings.defaultSystemPrompt === "string" &&
 			ss.settings.defaultSystemPrompt.length > 0,
 	);
@@ -455,11 +411,7 @@ try {
 		type: "set_settings",
 		visionBridgeModel: "vision/glm-vl-mock",
 	});
-	await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings?.visionBridgeModel === "vision/glm-vl-mock",
-	);
+	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeModel === "vision/glm-vl-mock");
 	const before2 = visionRequestCount;
 	// A DIFFERENT image (different name -> different batch hash -> no cache hit)
 	c.send({
@@ -476,24 +428,15 @@ try {
 			},
 		],
 	});
-	await c.waitFor(
-		"notice",
-		25000,
-		(m) => m.text && m.text.includes("转写完成"),
-	);
+	await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
 	check(
 		"preferred model from settings is used",
-		visionRequestCount === before2 + 1 &&
-			visionRequests.at(-1)?.model === "glm-vl-mock",
+		visionRequestCount === before2 + 1 && visionRequests.at(-1)?.model === "glm-vl-mock",
 	);
 
 	// -- settings: disable the bridge ----------------------------------------
 	c.send({ type: "set_settings", visionBridgeEnabled: false });
-	await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings?.visionBridgeEnabled === false,
-	);
+	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeEnabled === false);
 	const before3 = visionRequestCount;
 	c.send({
 		type: "prompt",
@@ -509,22 +452,14 @@ try {
 			},
 		],
 	});
-	const offNotice = await c.waitFor(
-		"notice",
-		15000,
-		(m) => m.text && m.text.includes("视觉桥已在设置中关闭"),
-	);
+	const offNotice = await c.waitFor("notice", 15000, (m) => m.text && m.text.includes("视觉桥已在设置中关闭"));
 	check(
 		"disabled bridge warns and skips transcription",
 		offNotice.level === "warning" && visionRequestCount === before3,
 	);
 	// Re-enable for the next scenario.
 	c.send({ type: "set_settings", visionBridgeEnabled: true, visionBridgeModel: null });
-	await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings?.visionBridgeEnabled === true,
-	);
+	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeEnabled === true);
 
 	// -- path-referenced image (file list → attach) ---------------------------
 	// Referencing screenshot.png by PATH must ALSO go through the vision bridge
@@ -541,20 +476,10 @@ try {
 			},
 		],
 	});
-	const pathDone = await c.waitFor(
-		"notice",
-		25000,
-		(m) => m.text && m.text.includes("转写完成"),
-	);
-	check(
-		"path-referenced image triggers the vision bridge",
-		visionRequestCount === beforePath + 1,
-	);
+	const pathDone = await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
+	check("path-referenced image triggers the vision bridge", visionRequestCount === beforePath + 1);
 	const pathCard = await c.waitForMessage(
-		(m) =>
-			m.customType === "file" &&
-			m.details?.mode === "bridged" &&
-			m.details?.path === "screenshot.png",
+		(m) => m.customType === "file" && m.details?.mode === "bridged" && m.details?.path === "screenshot.png",
 		20000,
 	);
 	check("path image renders as a bridged card with path", true);
@@ -564,8 +489,7 @@ try {
 		.join("");
 	check(
 		"bridged card carries the transcript text",
-		pathText.includes("<vision-bridge>") &&
-			pathText.includes(TRANSCRIPT.trim()),
+		pathText.includes("<vision-bridge>") && pathText.includes(TRANSCRIPT.trim()),
 	);
 
 	// -- custom transcription prompt (settings-panel) -------------------------
@@ -600,11 +524,7 @@ try {
 			},
 		],
 	});
-	await c.waitFor(
-		"notice",
-		25000,
-		(m) => m.text && m.text.includes("转写完成"),
-	);
+	await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
 	const appendReq = visionRequests.at(-1);
 	check(
 		"append mode: custom text appended to the built-in default prompt",
@@ -619,11 +539,7 @@ try {
 		visionBridgePromptMode: "replace",
 		visionBridgePrompt: "完全自定义的转写提示词，只输出表格数据。",
 	});
-	await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings?.visionBridgePromptMode === "replace",
-	);
+	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgePromptMode === "replace");
 	const before5 = visionRequestCount;
 	c.send({
 		type: "prompt",
@@ -639,11 +555,7 @@ try {
 			},
 		],
 	});
-	await c.waitFor(
-		"notice",
-		25000,
-		(m) => m.text && m.text.includes("转写完成"),
-	);
+	await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
 	const replaceReq = visionRequests.at(-1);
 	check(
 		"replace mode: built-in prompt fully replaced by custom text",
@@ -671,15 +583,8 @@ try {
 			},
 		],
 	});
-	await c.waitFor(
-		"notice",
-		25000,
-		(m) => m.text && m.text.includes("转写完成"),
-	);
-	check(
-		"custom prompt change invalidates the transcript cache",
-		visionRequestCount === before6 + 1,
-	);
+	await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
+	check("custom prompt change invalidates the transcript cache", visionRequestCount === before6 + 1);
 
 	// Restore defaults so a rerun behaves the same from the start.
 	c.send({
@@ -687,12 +592,7 @@ try {
 		visionBridgePromptMode: "append",
 		visionBridgePrompt: "",
 	});
-	await c.waitFor(
-		"settings_state",
-		10000,
-		(m) => m.settings?.visionBridgePromptMode === "append",
-	);
-
+	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgePromptMode === "append");
 
 	console.log(`\n${passed} checks passed`);
 	await cleanup();

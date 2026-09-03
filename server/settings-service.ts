@@ -74,8 +74,7 @@ export class SettingsService {
 	private skillStillOnDisk(name: string): boolean {
 		const cwd = this.host.cwd();
 		const agentDir = this.host.agentDir();
-		const check = (base: string) =>
-			existsSync(join(base, name)) || existsSync(join(base, `${name}.md`));
+		const check = (base: string) => existsSync(join(base, name)) || existsSync(join(base, `${name}.md`));
 		// ① 用户区 <agentDir>/skills ② 项目 .pi/skills
 		if (check(join(agentDir, "skills"))) return true;
 		if (check(join(cwd, ".pi", "skills"))) return true;
@@ -85,10 +84,7 @@ export class SettingsService {
 			if (check(join(dir, ".agents", "skills"))) return true;
 		}
 		// ④ npm 包内 skills（agent 级 + 项目级，含 @scope 两级子包）
-		for (const npmRoot of [
-			join(agentDir, "npm", "node_modules"),
-			join(cwd, ".pi", "npm", "node_modules"),
-		]) {
+		for (const npmRoot of [join(agentDir, "npm", "node_modules"), join(cwd, ".pi", "npm", "node_modules")]) {
 			try {
 				for (const entry of readdirSync(npmRoot, { withFileTypes: true })) {
 					if (!entry.isDirectory()) continue;
@@ -121,10 +117,7 @@ export class SettingsService {
 			// Prune entries that no longer exist on disk AND aren't disabled
 			// (e.g. a skill/extension file was deleted). Disabled entries are
 			// kept so they can be re-enabled even when filtered out of the loader.
-			const keepSkills = new Set<string>([
-				...loadedSkills.map((s) => s.name),
-				...this.settings.disabledSkills,
-			]);
+			const keepSkills = new Set<string>([...loadedSkills.map((s) => s.name), ...this.settings.disabledSkills]);
 			const keepExts = new Set<string>([
 				...loadedExts.map((e) => extensionKey(e)),
 				...this.settings.disabledExtensions,
@@ -147,10 +140,7 @@ export class SettingsService {
 				const p = e.sourceInfo?.path ?? e.path;
 				this.knownExtensions.set(id, {
 					id,
-					name:
-						e.sourceInfo?.origin === "package" && e.sourceInfo.source
-							? e.sourceInfo.source
-							: basename(p),
+					name: e.sourceInfo?.origin === "package" && e.sourceInfo.source ? e.sourceInfo.source : basename(p),
 					path: p,
 					enabled: true,
 				});
@@ -163,14 +153,12 @@ export class SettingsService {
 		// 推送都会把已删除的 skill 以灰条形式永恒地补回面板（“关闭过的
 		// skill 被一直记录”）。session 未就绪时保守跳过。
 		if (loadedSkillNames !== null) {
-			const stale = [
-				...new Set([...this.settings.disabledSkills, ...this.settings.reviewDisabledSkills]),
-			].filter((name) => !loadedSkillNames!.has(name) && !this.skillStillOnDisk(name));
+			const stale = [...new Set([...this.settings.disabledSkills, ...this.settings.reviewDisabledSkills])].filter(
+				(name) => !loadedSkillNames!.has(name) && !this.skillStillOnDisk(name),
+			);
 			if (stale.length > 0) {
 				this.settings.disabledSkills = this.settings.disabledSkills.filter((n) => !stale.includes(n));
-				this.settings.reviewDisabledSkills = this.settings.reviewDisabledSkills.filter(
-					(n) => !stale.includes(n),
-				);
+				this.settings.reviewDisabledSkills = this.settings.reviewDisabledSkills.filter((n) => !stale.includes(n));
 				this.host.stateStore.saveSettings(this.host.clientId, {
 					disabledSkills: this.settings.disabledSkills,
 					reviewDisabledSkills: this.settings.reviewDisabledSkills,
@@ -225,7 +213,7 @@ export class SettingsService {
 				// text they would otherwise replace (empty until the resource-loader
 				// has run once for the system prompt).
 				defaultSystemPrompt: this.host.effectiveDefaultSystemPrompt(),
-			effectiveSystemPrompt: this.host.effectiveSystemPrompt(),
+				effectiveSystemPrompt: this.host.effectiveSystemPrompt(),
 				visionBridgeDefaultPrompt: SYSTEM_PROMPT,
 				visionModels: this.collectVisionModels(),
 				disabledSkills: [...this.settings.disabledSkills],
@@ -298,10 +286,7 @@ export class SettingsService {
 			this.settings.terminalBash = partial.terminalBash;
 		}
 		if (partial.terminalBashIdleMs !== undefined) {
-			this.settings.terminalBashIdleMs = Math.max(
-				0,
-				Math.floor(partial.terminalBashIdleMs) || 0,
-			);
+			this.settings.terminalBashIdleMs = Math.max(0, Math.floor(partial.terminalBashIdleMs) || 0);
 		}
 		if (partial.thinkingWrap !== undefined) {
 			this.settings.thinkingWrap = partial.thinkingWrap;
@@ -336,8 +321,11 @@ export class SettingsService {
 	async savePreset(name: string): Promise<void> {
 		const n = name.trim();
 		if (!n) {
-			this.host.emit({ type: "notice", level: "error", text: "预设名称不能为空",
-			textEn: "Preset name cannot be empty"
+			this.host.emit({
+				type: "notice",
+				level: "error",
+				text: "预设名称不能为空",
+				textEn: "Preset name cannot be empty",
 			});
 			return;
 		}
@@ -364,8 +352,11 @@ export class SettingsService {
 	async applyPreset(name: string): Promise<void> {
 		const p = this.presets.find((x) => x.name === name);
 		if (!p) {
-			this.host.emit({ type: "notice", level: "error", text: `预设不存在：${name}`,
-			textEn: `Preset does not exist: ${name}`
+			this.host.emit({
+				type: "notice",
+				level: "error",
+				text: `预设不存在：${name}`,
+				textEn: `Preset does not exist: ${name}`,
 			});
 			return;
 		}
@@ -378,12 +369,9 @@ export class SettingsService {
 			terminalToolsEnabled: p.terminalToolsEnabled ?? this.settings.terminalToolsEnabled,
 			// 终端接管偏好随预设走；旧预设缺字段时保留当前值。
 			terminalBash: p.terminalBash ?? this.settings.terminalBash,
-			terminalBashIdleMs:
-				p.terminalBashIdleMs ?? this.settings.terminalBashIdleMs,
+			terminalBashIdleMs: p.terminalBashIdleMs ?? this.settings.terminalBashIdleMs,
 			reviewPrompt: p.reviewPrompt ?? this.settings.reviewPrompt,
-			reviewDisabledSkills: [
-				...(p.reviewDisabledSkills ?? this.settings.reviewDisabledSkills),
-			],
+			reviewDisabledSkills: [...(p.reviewDisabledSkills ?? this.settings.reviewDisabledSkills)],
 			// 纯 UI 偏好不进预设——保留当前值。
 			thinkingWrap: this.settings.thinkingWrap,
 			toolsWrap: this.settings.toolsWrap,
@@ -431,9 +419,7 @@ export class SettingsService {
 			await this.host.reloadSession();
 			this.push();
 			this.host.flushSnapshot();
-			this.host.emit({ type: "notice", level: "info", text: "设置已应用",
-			textEn: "Settings applied"
-			});
+			this.host.emit({ type: "notice", level: "info", text: "设置已应用", textEn: "Settings applied" });
 		} catch (err) {
 			this.host.emit({
 				type: "notice",

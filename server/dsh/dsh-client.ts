@@ -145,9 +145,7 @@ export class DshRuntime {
 		this.sessionRoot = opts.sessionRoot;
 		this.dataDir = opts.dataDir;
 		this.agentDir = opts.agentDir;
-		this.launcher =
-			opts.launcher ??
-			join(dirname(fileURLToPath(import.meta.url)), "runtime", "launcher.mjs");
+		this.launcher = opts.launcher ?? join(dirname(fileURLToPath(import.meta.url)), "runtime", "launcher.mjs");
 		this.jsonrpcEntry =
 			opts.jsonrpcEntry ??
 			(() => {
@@ -463,7 +461,10 @@ export class DshRuntime {
 	}
 
 	/** 调试/probe 用：触发一个桥接工具的完整往返（需运行时 PI_WEB_DSH_DEBUG=1）。 */
-	async invokeTool(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; value?: unknown; error?: string }> {
+	async invokeTool(
+		name: string,
+		args?: Record<string, unknown>,
+	): Promise<{ ok: boolean; value?: unknown; error?: string }> {
 		await this.start();
 		return this._request("tools/invoke", { name, args }) as Promise<{ ok: boolean; value?: unknown; error?: string }>;
 	}
@@ -473,7 +474,10 @@ export class DshRuntime {
 	// -----------------------------------------------------------------------
 
 	/** 列出运行时当前可见技能（SkillRegistry.list）。 */
-	async listSkills(): Promise<{ skills: { name: string; description: string; invocation?: string }[]; error?: string }> {
+	async listSkills(): Promise<{
+		skills: { name: string; description: string; invocation?: string }[];
+		error?: string;
+	}> {
 		await this.start();
 		return this._request("skills/list", {}) as Promise<{
 			skills: { name: string; description: string; invocation?: string }[];

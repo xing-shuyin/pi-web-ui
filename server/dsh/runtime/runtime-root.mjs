@@ -68,16 +68,12 @@ export async function resolveRuntimeBase() {
 	}
 	try {
 		const { spawnSync } = await import("node:child_process");
-		const res = spawnSync(
-			process.platform === "win32" ? "npm" : "npm",
-			["root", "-g"],
-			{
-				encoding: "utf8",
-				timeout: 15_000,
-				windowsHide: true,
-				...(process.platform === "win32" ? { shell: true } : {}),
-			},
-		);
+		const res = spawnSync(process.platform === "win32" ? "npm" : "npm", ["root", "-g"], {
+			encoding: "utf8",
+			timeout: 15_000,
+			windowsHide: true,
+			...(process.platform === "win32" ? { shell: true } : {}),
+		});
 		const root = String(res.stdout ?? "").trim();
 		if (root) {
 			const base = runtimeBaseFor(root);

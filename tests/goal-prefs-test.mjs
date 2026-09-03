@@ -123,9 +123,7 @@ async function main() {
 	);
 	check(
 		"set_goal_prefs applied (model/rounds/locked)",
-		g1.status.reviewModel === "openai/gpt-4o-mini" &&
-			g1.status.maxRounds === 8 &&
-			g1.status.locked === false,
+		g1.status.reviewModel === "openai/gpt-4o-mini" && g1.status.maxRounds === 8 && g1.status.locked === false,
 		JSON.stringify({ rm: g1.status.reviewModel, mr: g1.status.maxRounds, lo: g1.status.locked }),
 	);
 	c1.ws.close();
@@ -135,16 +133,10 @@ async function main() {
 	const c2 = await connect();
 	// The restored prefs come through as goal_status on attach; also snapshot may
 	// not carry prefs, so wait for a goal_status whose prefs are populated.
-	const g2 = await c2.next(
-		(m) => m.type === "goal_status",
-		"goal_status after reload",
-		10000,
-	);
+	const g2 = await c2.next((m) => m.type === "goal_status", "goal_status after reload", 10000);
 	check(
 		"prefs persisted across reload (model/rounds/locked)",
-		g2.status.reviewModel === "openai/gpt-4o-mini" &&
-			g2.status.maxRounds === 8 &&
-			g2.status.locked === false,
+		g2.status.reviewModel === "openai/gpt-4o-mini" && g2.status.maxRounds === 8 && g2.status.locked === false,
 		JSON.stringify({ rm: g2.status.reviewModel, mr: g2.status.maxRounds, lo: g2.status.locked }),
 	);
 	c2.ws.close();

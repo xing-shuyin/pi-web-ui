@@ -90,9 +90,7 @@ export async function gitDirOf(cwd: string): Promise<string | null> {
 
 /** True when the error is "this directory isn't a git repository". */
 export function isNotRepoError(err: unknown): boolean {
-	return /not a git repository/i.test(
-		err instanceof Error ? err.message : String(err),
-	);
+	return /not a git repository/i.test(err instanceof Error ? err.message : String(err));
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,16 +104,26 @@ function unquotePath(s: string): string {
 	const inner = s.endsWith('"') ? s.slice(1, -1) : s.slice(1);
 	return inner.replace(/\\(.)/g, (_m, c: string) => {
 		switch (c) {
-			case "n": return "\n";
-			case "t": return "\t";
-			case "r": return "\r";
-			case "b": return "\b";
-			case "a": return "\a";
-			case "f": return "\f";
-			case "v": return "\v";
-			case "\\": return "\\";
-			case '"': return '"';
-			default: return c;
+			case "n":
+				return "\n";
+			case "t":
+				return "\t";
+			case "r":
+				return "\r";
+			case "b":
+				return "\b";
+			case "a":
+				return "\a";
+			case "f":
+				return "\f";
+			case "v":
+				return "\v";
+			case "\\":
+				return "\\";
+			case '"':
+				return '"';
+			default:
+				return c;
 		}
 	});
 }
@@ -149,8 +157,7 @@ function parseStatusHeader(rest: string): StatusHeader {
 	if (branchPart === "HEAD (no branch)" || branchPart === "HEAD") {
 		out.detached = true;
 	} else {
-		if (branchPart.startsWith("No commits yet on "))
-			branchPart = branchPart.slice("No commits yet on ".length);
+		if (branchPart.startsWith("No commits yet on ")) branchPart = branchPart.slice("No commits yet on ".length);
 		const up = branchPart.indexOf("...");
 		if (up >= 0) {
 			out.branch = branchPart.slice(0, up);
@@ -253,10 +260,7 @@ function parseNumStat(text: string): Record<string, [number, number]> {
 		if (!Number.isFinite(del)) del = 0;
 		const path = unquotePath(line.slice(tab2 + 1).trim());
 		const prev = stats[path];
-		stats[path] = [
-			(prev?.[0] ?? 0) + add,
-			(prev?.[1] ?? 0) + del,
-		];
+		stats[path] = [(prev?.[0] ?? 0) + add, (prev?.[1] ?? 0) + del];
 	}
 	return stats;
 }
@@ -283,23 +287,18 @@ export async function scmHistory(cwd: string): Promise<ScmCommitEntry[]> {
 }
 
 /** Status refresh payload (status + branches + numstat) — parallel. */
-export async function scmStatus(
-	cwd: string,
-): Promise<Omit<ScmStatusData, "history">> {
-	const [statusText, branchText, statText, cachedStatText] =
-		await Promise.all([
-			git(cwd, ["status", "--porcelain=v1", "-b", "--find-renames"]),
-			git(cwd, [
-				"for-each-ref",
-				"refs/heads",
-				"refs/remotes",
-				"--format=%(refname)%09%(HEAD)",
-			]),
-			git(cwd, ["diff", "--numstat"]),
-			git(cwd, ["diff", "--cached", "--numstat"]),
-		]);
+export async function scmStatus(cwd: string): Promise<Omit<ScmStatusData, "history">> {
+	const [statusText, branchText, statText, cachedStatText] = await Promise.all([
+		git(cwd, ["status", "--porcelain=v1", "-b", "--find-renames"]),
+		git(cwd, ["for-each-ref", "refs/heads", "refs/remotes", "--format=%(refname)%09%(HEAD)"]),
+		git(cwd, ["diff", "--numstat"]),
+		git(cwd, ["diff", "--cached", "--numstat"]),
+	]);
 	const header = parseStatusHeader(
-		statusText.split("\n").find((l) => l.startsWith("## "))?.slice(3) ?? "",
+		statusText
+			.split("\n")
+			.find((l) => l.startsWith("## "))
+			?.slice(3) ?? "",
 	);
 	// Worktree + staged line counts, merged per path.
 	const merged: Record<string, [number, number]> = {};
@@ -325,10 +324,7 @@ export async function scmStatus(
 }
 
 /** Staged + worktree diffs for one file (empty strings when no diff). */
-export async function scmFileDiff(
-	cwd: string,
-	path: string,
-): Promise<{ staged: string; worktree: string }> {
+export async function scmFileDiff(cwd: string, path: string): Promise<{ staged: string; worktree: string }> {
 	const [staged, worktree] = await Promise.all([
 		git(cwd, ["diff", "--cached", "--no-color", "--no-ext-diff", "--", path]).catch(() => ""),
 		git(cwd, ["diff", "--no-color", "--no-ext-diff", "--", path]).catch(() => ""),

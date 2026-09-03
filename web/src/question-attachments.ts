@@ -52,9 +52,7 @@ function pushImageAttachments(
 			path: "",
 			imageData: mm[2],
 			mimeType: mm[1] || "image/png",
-			name:
-				fallbackName ??
-				`image.${(mm[1] || "image/png").split("/")[1] ?? "png"}`,
+			name: fallbackName ?? `image.${(mm[1] || "image/png").split("/")[1] ?? "png"}`,
 		});
 	}
 	return hasImage;
@@ -81,9 +79,7 @@ export function collectQuestionAttachments(
 		// any other message kind — assistant/toolResult/next user/etc.).
 		for (
 			let j = i + 1;
-			j < messages.length &&
-			messages[j].role === "custom" &&
-			messages[j].customType === "file";
+			j < messages.length && messages[j].role === "custom" && messages[j].customType === "file";
 			j++
 		) {
 			const details = (messages[j].details ?? {}) as {
@@ -97,8 +93,7 @@ export function collectQuestionAttachments(
 			};
 			// 1) Image card (pasted/uploaded images incl. bridged thumbnails) —
 			//    the raw base64 lives in the image blocks.
-			if (pushImageAttachments(atts, messages[j].content, details.name))
-				continue;
+			if (pushImageAttachments(atts, messages[j].content, details.name)) continue;
 			// 2) Uploaded file (fileData) — re-send the server-generated upload
 			//    path; the server re-reads the persisted bytes from disk.
 			if (details.upload && details.path) {
@@ -114,16 +109,9 @@ export function collectQuestionAttachments(
 			//    — the relative path stays valid on the new branch, so a path +
 			//    mode spec is enough to re-attach it.
 			if (details.path && details.mode) {
-				const mode =
-					details.mode === "inline" || details.mode === "lines"
-						? details.mode
-						: "reference";
+				const mode = details.mode === "inline" || details.mode === "lines" ? details.mode : "reference";
 				const att: EditPromptAttachment = { path: details.path, mode };
-				if (
-					details.mode === "lines" &&
-					typeof details.startLine === "number" &&
-					typeof details.endLine === "number"
-				) {
+				if (details.mode === "lines" && typeof details.startLine === "number" && typeof details.endLine === "number") {
 					att.lines = { start: details.startLine, end: details.endLine };
 				}
 				atts.push(att);

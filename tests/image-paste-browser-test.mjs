@@ -23,19 +23,14 @@ process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
 // 1x1 transparent PNG (base64)
-const PNG_B64 =
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const HERE = fileURLToPath(new URL("../", import.meta.url));
-const server = spawn(
-	process.execPath,
-	[join(HERE, "dist", "server", "index.js")],
-	{
-		cwd: HERE,
-		stdio: ["ignore", "pipe", "pipe"],
-		detached: true,
-	},
-);
+const server = spawn(process.execPath, [join(HERE, "dist", "server", "index.js")], {
+	cwd: HERE,
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+});
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
@@ -74,9 +69,7 @@ async function waitServer() {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		executablePath:
-			process.env.CHROME_PATH ??
-			"C:/Program Files/Google/Chrome/Application/chrome.exe",
+		executablePath: process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
 	});
 	const page = await browser.newPage({
 		viewport: { width: 1400, height: 900 },
@@ -111,10 +104,7 @@ async function main() {
 		{ b64: PNG_B64, name: "paste-me.png" },
 	);
 	await page.waitForSelector(".attach-chip.image", { timeout: 8000 });
-	check(
-		"paste: 🖼 chip appeared",
-		(await page.locator(".attach-chip.image").count()) === 1,
-	);
+	check("paste: 🖼 chip appeared", (await page.locator(".attach-chip.image").count()) === 1);
 
 	// 2) Drag & drop a LARGE image (4000x3000) onto the input bar — the
 	//    client must downscale it to MAX_DIMENSION (1568) before sending.
@@ -132,40 +122,26 @@ async function main() {
 		const dt = new DataTransfer();
 		dt.items.add(new File([blob], "drop-big.png", { type: "image/png" }));
 		const bar = document.querySelector(".inputbar");
-		bar.dispatchEvent(
-			new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }),
-		);
+		bar.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
 	});
 	await page.waitForTimeout(800);
-	check(
-		"drop: two 🖼 chips (big image accepted)",
-		(await page.locator(".attach-chip.image").count()) === 2,
-	);
+	check("drop: two 🖼 chips (big image accepted)", (await page.locator(".attach-chip.image").count()) === 2);
 
 	// 3) Upload via the hidden file input (the button opens it).
 	const upFile = join(workdir, "upload-me.png");
 	writeFileSync(upFile, Buffer.from(PNG_B64, "base64"));
 	await page.locator('input[type="file"]').setInputFiles(upFile);
 	await page.waitForTimeout(500);
-	check(
-		"upload: three 🖼 chips",
-		(await page.locator(".attach-chip.image").count()) === 3,
-	);
+	check("upload: three 🖼 chips", (await page.locator(".attach-chip.image").count()) === 3);
 
 	// Remove one chip and confirm it's gone.
 	await page.locator(".attach-chip.image").first().locator(".attach-remove").click();
 	await page.waitForTimeout(300);
-	check(
-		"remove: back to two 🖼 chips",
-		(await page.locator(".attach-chip.image").count()) === 2,
-	);
+	check("remove: back to two 🖼 chips", (await page.locator(".attach-chip.image").count()) === 2);
 
 	// 4) Image-only send (no text) — the send button must enable, submit
 	//    clears the chips, and the attachment card renders.
-	check(
-		"send button enabled with image-only attachments",
-		!(await page.locator(".btn.send").isDisabled()),
-	);
+	check("send button enabled with image-only attachments", !(await page.locator(".btn.send").isDisabled()));
 	await page.locator(".inputbox textarea").focus();
 	await page.keyboard.press("Enter");
 	await page.waitForSelector(".attachcard", { timeout: 20000 });
@@ -183,14 +159,8 @@ async function main() {
 	const bigImg = bigCard.locator(".attachcard-image img");
 	await bigImg.waitFor({ timeout: 8000 });
 	const naturalWidth = await bigImg.evaluate((el) => el.naturalWidth);
-	check(
-		`chat: 4000px image downscaled to ${naturalWidth}px (≤1568)`,
-		naturalWidth > 100 && naturalWidth <= 1568,
-	);
-	check(
-		"chips cleared after send",
-		(await page.locator(".attach-chip").count()) === 0,
-	);
+	check(`chat: 4000px image downscaled to ${naturalWidth}px (≤1568)`, naturalWidth > 100 && naturalWidth <= 1568);
+	check("chips cleared after send", (await page.locator(".attach-chip").count()) === 0);
 
 	check("no console errors", consoleErrors.length === 0);
 	if (consoleErrors.length) console.log(consoleErrors.slice(0, 5));

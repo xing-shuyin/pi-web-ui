@@ -19,9 +19,7 @@ const WS_URL = `ws://localhost:${PORT}/ws`;
 const clientId = randomUUID();
 const ws = new WebSocket(WS_URL);
 
-const TEXT_SMALL = Buffer.from("你好，这是一个小文本文件。\nsecond line\n").toString(
-	"base64",
-);
+const TEXT_SMALL = Buffer.from("你好，这是一个小文本文件。\nsecond line\n").toString("base64");
 const TEXT_BIG = Buffer.from("x".repeat(30 * 1024)).toString("base64"); // 30KB > 12KB inline cap
 const BINARY = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0xff, 0xfe]).toString("base64");
 
@@ -64,9 +62,7 @@ ws.on("message", async (d) => {
 			const name = msg.details?.name;
 			if (name === "small.txt" && msg.details?.mode === "inline") {
 				// inline content must carry the text
-				const text = (msg.content ?? [])
-					.map((b) => (b.type === "text" ? b.text : ""))
-					.join("");
+				const text = (msg.content ?? []).map((b) => (b.type === "text" ? b.text : "")).join("");
 				if (!results.inline && text.includes("你好") && text.includes("small.txt")) {
 					results.inline = true;
 					log("OK: small text inlined:", name, msg.details.size, "bytes");

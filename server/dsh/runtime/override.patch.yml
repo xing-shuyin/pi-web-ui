@@ -6,26 +6,26 @@
 
 # 会话持久化根 —— 覆盖 base 的 dshHomePath('sessions')，让 pi-web-ui 指向自己的数据目录。
 - id: session-persistence-jsonl
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  name: "@deepseek-ai/dsh-session-persistence-jsonl"
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? dshHomePath('sessions')
 
 # Agent 默认模型 —— initialize() 每次都带 provider/model，这里只兜底。
 - id: agent-default-model
-  name: '@deepseek-ai/dsh-agent-default-model'
+  name: "@deepseek-ai/dsh-agent-default-model"
   config:
     provider: !!js process.env.DSH_DEFAULT_PROVIDER ?? 'deepseek-official'
     model: !!js process.env.DSH_DEFAULT_MODEL ?? 'deepseek-v4-flash'
 
 # 部署人设（默认空；pi-web-ui 设置面板可注入）。
 - id: system-prompt
-  name: '@deepseek-ai/dsh-system-prompt'
+  name: "@deepseek-ai/dsh-system-prompt"
   config:
     persona: !!js process.env.DSH_PERSONA ?? ''
 
 # 沙箱工作区根（workspace-write 权限模式的护栏边界）。
 - id: sandbox-policy
-  name: '@deepseek-ai/dsh-sandbox-policy'
+  name: "@deepseek-ai/dsh-sandbox-policy"
   config:
     mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
     workspaceRoot: !!js process.env.DSH_CWD ?? process.cwd()
@@ -33,14 +33,14 @@
 # 无头 JSON-RPC 服务：没有交互用户来应答审批弹窗；工具在 workspace-write
 # 沙箱内直接执行，用户的 Stop 按钮就是控制手段。
 - id: approval
-  name: '@deepseek-ai/dsh-user-approval'
+  name: "@deepseek-ai/dsh-user-approval"
   config:
-    policy: 'never'
+    policy: "never"
 
 # 权限预设表 —— 与 approval=never 组合匹配。patch 语义：整行 config 全量替换，
 # 必须重述 base 的全部预设并补上 (workspace-write, never) 组合，显式 defaultPreset。
 - id: permission
-  name: '@deepseek-ai/dsh-permission-presets'
+  name: "@deepseek-ai/dsh-permission-presets"
   config:
     presets:
       read-only:
@@ -62,7 +62,7 @@
     # 模型提问工具：ask_user_question → ctx.userQuestions（base 已挂 user-questions
     # 服务）→ goal-rpc wrapper 注册的 provider 桥到浏览器对话框。
     - id: tool-ask-user
-      name: '@deepseek-ai/dsh-tool-ask-user'
+      name: "@deepseek-ai/dsh-tool-ask-user"
     # Stdio JSON-RPC 服务插件（inject: agents）。name 用 !!js 求值为绝对路径
     # （指向项目 node_modules 里的 dsh-sdk-jsonrpc-server），因为 cordis loader
     # 的裸包解析只认 bareModuleBaseUrl（运行时树），混树挂载必须走绝对路径；

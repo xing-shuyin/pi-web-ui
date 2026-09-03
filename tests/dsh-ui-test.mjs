@@ -94,14 +94,19 @@ async function run() {
 	await page.locator('button.chip[title="设置"]').first().click();
 	await page.locator(".settings-tab", { hasText: "界面插件" }).first().click();
 	await page.locator("text=DSH 用户补丁").first().waitFor({ timeout: 10000 });
-	check("设置面板显示「DSH 用户补丁」区块", await page.locator("text=DSH 用户补丁").count() > 0);
+	check("设置面板显示「DSH 用户补丁」区块", (await page.locator("text=DSH 用户补丁").count()) > 0);
 	// 补丁文件应在列表里展示（扫到 00-ui.patch.yml）。
 	await page.locator("text=00-ui.patch.yml").first().waitFor({ timeout: 10000 });
 	check("补丁文件 00-ui.patch.yml 展示", (await page.locator("text=00-ui.patch.yml").count()) > 0);
 
 	// 4. 设置面板「技能」页签 → DSH 说明文案。
 	await page.locator(".settings-tab", { hasText: "技能" }).first().click();
-	const skillsNote = await page.locator("text=DSH 引擎使用运行时内置技能").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+	const skillsNote = await page
+		.locator("text=DSH 引擎使用运行时内置技能")
+		.first()
+		.waitFor({ timeout: 10000 })
+		.then(() => true)
+		.catch(() => false);
 	check("技能页签显示 DSH 说明文案", skillsNote);
 
 	await browser.close().catch(() => {});

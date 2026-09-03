@@ -168,10 +168,7 @@ async function run() {
 			const sections = [...document.querySelectorAll(".set-section")];
 			const vb = sections.find((el) => el.textContent.includes("视觉桥"));
 			const ta = vb?.querySelector(".set-prompt-input");
-			return (
-				ta instanceof HTMLTextAreaElement &&
-				ta.value.includes("You are a vision bridge")
-			);
+			return ta instanceof HTMLTextAreaElement && ta.value.includes("You are a vision bridge");
 		},
 		{ timeout: 10000 },
 	);
@@ -190,10 +187,7 @@ async function run() {
 			const sections = [...document.querySelectorAll(".set-section")];
 			const sys = sections.find((el) => el.textContent.includes("系统提示词"));
 			const ta = sys?.querySelector(".set-prompt-input");
-			return (
-				ta instanceof HTMLTextAreaElement &&
-				ta.value.includes("You are an expert coding assistant")
-			);
+			return ta instanceof HTMLTextAreaElement && ta.value.includes("You are an expert coding assistant");
 		},
 		{ timeout: 10000 },
 	);

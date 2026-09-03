@@ -18,11 +18,7 @@ interface TermXtermProps {
 	/** Whether this terminal is the visible one. */
 	active: boolean;
 	send: (msg: ClientMessage) => boolean;
-	register: (
-		conversationId: string,
-		id: string,
-		writer: { write(data: string): void; dispose(): void },
-	) => () => void;
+	register: (conversationId: string, id: string, writer: { write(data: string): void; dispose(): void }) => () => void;
 }
 
 /**
@@ -31,16 +27,7 @@ interface TermXtermProps {
  * the bridge, and kills the PTY on unmount. Kept mounted while hidden so
  * scrollback survives tab switches.
  */
-export function TermXterm({
-	conversationId,
-	terminalId,
-	command,
-	cwd,
-	title,
-	active,
-	send,
-	register,
-}: TermXtermProps) {
+export function TermXterm({ conversationId, terminalId, command, cwd, title, active, send, register }: TermXtermProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
 	const { locale } = useI18n();
@@ -57,8 +44,7 @@ export function TermXterm({
 
 		const term = new Terminal({
 			theme: buildTermTheme(),
-			fontFamily:
-				'"SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
+			fontFamily: '"SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace',
 			fontSize: 13,
 			cursorBlink: true,
 			scrollback: 8000,
@@ -205,10 +191,5 @@ export function TermXterm({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [active]);
 
-	return (
-		<div
-			ref={containerRef}
-			className={`term-xterm ${active ? "" : "hidden"}`}
-		/>
-	);
+	return <div ref={containerRef} className={`term-xterm ${active ? "" : "hidden"}`} />;
 }

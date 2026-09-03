@@ -88,12 +88,7 @@ export function PiSetupModal({
 	return (
 		<div className="modal-backdrop">
 			<div className="modal setup-modal">
-				<button
-					type="button"
-					className="modal-close"
-					aria-label={t("close")}
-					onClick={onClose}
-				>
+				<button type="button" className="modal-close" aria-label={t("close")} onClick={onClose}>
 					<FiX />
 				</button>
 				<div className="modal-head">
@@ -107,12 +102,7 @@ export function PiSetupModal({
 						<div className="setup-done">{t("installFailed")}</div>
 						<pre className="setup-detail">{installResult.detail}</pre>
 						<div className="setup-actions">
-							<button
-								type="button"
-								className="btn primary"
-								disabled={installing}
-								onClick={doInstall}
-							>
+							<button type="button" className="btn primary" disabled={installing} onClick={doInstall}>
 								{t("retryInstall")}
 							</button>
 							<button type="button" className="btn" onClick={onClose}>
@@ -122,37 +112,22 @@ export function PiSetupModal({
 					</div>
 				) : piAgentInstalled || installResult?.ok ? (
 					<div className="setup-key-form">
-						<div className="setup-done">
-							{installResult?.ok ? t("installDone") : t("cliReadyHint")}
-						</div>
+						<div className="setup-done">{installResult?.ok ? t("installDone") : t("cliReadyHint")}</div>
 						<label className="field">
 							<span className="field-label">{t("provider")}</span>
-							<select
-								value={provider}
-								onChange={(e) => setProvider(e.target.value)}
-							>
-								{providers.length === 0 && (
-									<option value="">{t("loading")}</option>
-								)}
+							<select value={provider} onChange={(e) => setProvider(e.target.value)}>
+								{providers.length === 0 && <option value="">{t("loading")}</option>}
 								{providers.map((p) => (
 									<option key={p.id} value={p.id}>
-										{p.name}（{p.id}）
-										{p.configured ? ` · ${t("configured")}` : ""}
+										{p.name}（{p.id}）{p.configured ? ` · ${t("configured")}` : ""}
 									</option>
 								))}
 							</select>
-							{selected?.configured && (
-								<div className="field-hint">{t("providerKeyReady")}</div>
-							)}
+							{selected?.configured && <div className="field-hint">{t("providerKeyReady")}</div>}
 						</label>
 						<label className="field">
 							<span className="field-label">{t("apiKey")}</span>
-							<input
-								type="password"
-								value={apiKey}
-								onChange={(e) => setApiKey(e.target.value)}
-								placeholder="sk-…"
-							/>
+							<input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" />
 						</label>
 						<div className="setup-actions">
 							<button
@@ -170,12 +145,7 @@ export function PiSetupModal({
 					</div>
 				) : (
 					<div className="setup-actions">
-						<button
-							type="button"
-							className="btn primary"
-							disabled={installing}
-							onClick={doInstall}
-						>
+						<button type="button" className="btn primary" disabled={installing} onClick={doInstall}>
 							{installing ? t("installing") : t("autoInstall")}
 						</button>
 						<button type="button" className="btn" onClick={onClose}>

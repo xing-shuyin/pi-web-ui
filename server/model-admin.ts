@@ -81,9 +81,7 @@ function boolMeta(v: unknown): boolean | undefined {
 }
 
 function strArrMeta(v: unknown): string[] | undefined {
-	return Array.isArray(v)
-		? v.filter((x): x is string => typeof x === "string")
-		: undefined;
+	return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
 }
 
 /** Best-effort extraction of model metadata from an OpenAI-compatible
@@ -96,12 +94,8 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 	const id = typeof r.id === "string" ? r.id : "";
 	const name =
 		(typeof r.name === "string" && r.name.trim() ? r.name : undefined) ??
-		(typeof r.display_name === "string" && r.display_name.trim()
-			? r.display_name
-			: undefined);
-	const modalities =
-		strArrMeta(r.modalities) ??
-		strArrMeta(r.input_modalities);
+		(typeof r.display_name === "string" && r.display_name.trim() ? r.display_name : undefined);
+	const modalities = strArrMeta(r.modalities) ?? strArrMeta(r.input_modalities);
 	const vision =
 		modalities?.includes("image") === true ||
 		boolMeta(r.supports_vision) === true ||
@@ -112,14 +106,8 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		boolMeta(r.supports_reasoning) === true ||
 		modalities?.includes("reasoning") === true;
 	const contextWindow =
-		numMeta(r.context_window) ??
-		numMeta(r.context_length) ??
-		numMeta(r.max_model_len) ??
-		numMeta(r.max_context_length);
-	const maxTokens =
-		numMeta(r.max_tokens) ??
-		numMeta(r.max_output_tokens) ??
-		numMeta(r.max_completion_tokens);
+		numMeta(r.context_window) ?? numMeta(r.context_length) ?? numMeta(r.max_model_len) ?? numMeta(r.max_context_length);
+	const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
 	return {
 		id,
 		...(name ? { name } : {}),
@@ -141,12 +129,8 @@ function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	return {
 		id,
 		...(displayName && displayName !== id ? { name: displayName } : {}),
-		...(numMeta(r.inputTokenLimit)
-			? { contextWindow: numMeta(r.inputTokenLimit) }
-			: {}),
-		...(numMeta(r.outputTokenLimit)
-			? { maxTokens: numMeta(r.outputTokenLimit) }
-			: {}),
+		...(numMeta(r.inputTokenLimit) ? { contextWindow: numMeta(r.inputTokenLimit) } : {}),
+		...(numMeta(r.outputTokenLimit) ? { maxTokens: numMeta(r.outputTokenLimit) } : {}),
 	};
 }
 
@@ -181,14 +165,10 @@ export class ModelAdminService {
 			>;
 			const out: Record<string, ProviderKeysData> = {};
 			for (const [pid, entry] of Object.entries(parsed)) {
-				const keys = Array.isArray(entry?.keys)
-					? entry.keys.filter((k) => k?.name && k?.apiKey)
-					: [];
+				const keys = Array.isArray(entry?.keys) ? entry.keys.filter((k) => k?.name && k?.apiKey) : [];
 				if (!pid || keys.length === 0) continue;
 				const activeKeyName =
-					entry.activeKeyName && keys.some((k) => k.name === entry.activeKeyName)
-						? entry.activeKeyName
-						: keys[0].name;
+					entry.activeKeyName && keys.some((k) => k.name === entry.activeKeyName) ? entry.activeKeyName : keys[0].name;
 				out[pid] = { activeKeyName, keys };
 			}
 			return out;
@@ -209,10 +189,7 @@ export class ModelAdminService {
 
 	/** Resolve a user-supplied (or default) name into a UNIQUE one (append
 	 *  " (2)", " (3)", … on collision) so a name is a reliable switch key. */
-	private uniqueKeyName(
-		entry: { keys: { name: string; apiKey: string }[] },
-		wanted: string | undefined,
-	): string {
+	private uniqueKeyName(entry: { keys: { name: string; apiKey: string }[] }, wanted: string | undefined): string {
 		const base = (wanted?.trim() || this.defaultKeyName(entry.keys)).trim() || this.defaultKeyName(entry.keys);
 		const taken = new Set(entry.keys.map((k) => k.name));
 		let name = base;
@@ -222,9 +199,7 @@ export class ModelAdminService {
 	}
 
 	/** Build the name-only ProviderKeyInfo list for a provider (no value/mask). */
-	private providerKeysInfo(
-		data: Record<string, ProviderKeysData>,
-	): { keys: Record<string, ProviderKeyInfo[]> } {
+	private providerKeysInfo(data: Record<string, ProviderKeysData>): { keys: Record<string, ProviderKeyInfo[]> } {
 		const keys: Record<string, ProviderKeyInfo[]> = {};
 		for (const [pid, entry] of Object.entries(data)) {
 			keys[pid] = entry.keys.map((k) => ({ name: k.name, active: entry.activeKeyName === k.name }));
@@ -312,15 +287,11 @@ export class ModelAdminService {
 		const pid = provider.trim();
 		const key = apiKey.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
-			textEn: "Enter a provider ID"
-			});
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID", textEn: "Enter a provider ID" });
 			return;
 		}
 		if (!key) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥",
-			textEn: "Enter an API key"
-			});
+			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥", textEn: "Enter an API key" });
 			return;
 		}
 		try {
@@ -371,15 +342,11 @@ export class ModelAdminService {
 		const pid = provider.trim();
 		const key = apiKey.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
-			textEn: "Enter a provider ID"
-			});
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID", textEn: "Enter a provider ID" });
 			return;
 		}
 		if (!key) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥",
-			textEn: "Enter an API key"
-			});
+			this.host.emit({ type: "notice", level: "error", text: "请填写 API 密钥", textEn: "Enter an API key" });
 			return;
 		}
 		try {
@@ -445,14 +412,20 @@ export class ModelAdminService {
 			const entry = data[pid];
 			const target = entry?.keys.find((k) => k.name === targetName);
 			if (!target) {
-				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在`,
-				textEn: `Key "${targetName}" for ${pid} does not exist`
+				this.host.emit({
+					type: "notice",
+					level: "error",
+					text: `${pid} 的密钥「${targetName}」不存在`,
+					textEn: `Key "${targetName}" for ${pid} does not exist`,
 				});
 				return;
 			}
 			if (entry.activeKeyName === targetName) {
-				this.host.emit({ type: "notice", level: "info", text: `「${targetName}」已是当前密钥`,
-				textEn: `"${targetName}" is already the active key`
+				this.host.emit({
+					type: "notice",
+					level: "info",
+					text: `「${targetName}」已是当前密钥`,
+					textEn: `"${targetName}" is already the active key`,
 				});
 				return;
 			}
@@ -488,8 +461,11 @@ export class ModelAdminService {
 			const data = this.readProviderKeys();
 			const entry = data[pid];
 			if (!entry || !entry.keys.some((k) => k.name === targetName)) {
-				this.host.emit({ type: "notice", level: "error", text: `${pid} 的密钥「${targetName}」不存在`,
-				textEn: `Key "${targetName}" for ${pid} does not exist`
+				this.host.emit({
+					type: "notice",
+					level: "error",
+					text: `${pid} 的密钥「${targetName}」不存在`,
+					textEn: `Key "${targetName}" for ${pid} does not exist`,
 				});
 				return;
 			}
@@ -535,7 +511,7 @@ export class ModelAdminService {
 						: `🗑  已移除 ${pid} 的密钥「${targetName}」`,
 					textEn: wasActive
 						? `🗑  Removed "${targetName}", switched to ${entry.keys[0].name}`
-						: `🗑  Removed key "${targetName}" for ${pid}`
+						: `🗑  Removed key "${targetName}" for ${pid}`,
 				});
 			}
 			await this.host.pushModels();
@@ -562,9 +538,7 @@ export class ModelAdminService {
 	async clearProviderApiKey(provider: string): Promise<void> {
 		const pid = provider.trim();
 		if (!pid) {
-			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID",
-			textEn: "Enter a provider ID"
-			});
+			this.host.emit({ type: "notice", level: "error", text: "请填写服务商 ID", textEn: "Enter a provider ID" });
 			return;
 		}
 		try {
@@ -572,10 +546,7 @@ export class ModelAdminService {
 			const authPath = join(this.host.agentDir, "auth.json");
 			let data: Record<string, unknown> = {};
 			try {
-				data = JSON.parse(readFileSync(authPath, "utf8")) as Record<
-					string,
-					unknown
-				>;
+				data = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
 			} catch {
 				// no file yet / unparsable — nothing stored to clear
 			}
@@ -657,9 +628,7 @@ export class ModelAdminService {
 							id: m.id,
 							...(m.name && m.name !== m.id ? { name: m.name } : {}),
 							...(m.reasoning ? { reasoning: true } : {}),
-							...(m.input?.includes("image")
-								? { input: ["text", "image"] }
-								: {}),
+							...(m.input?.includes("image") ? { input: ["text", "image"] } : {}),
 							...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
 							...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
 						},
@@ -686,10 +655,7 @@ export class ModelAdminService {
 			const keptMap = new Map<string, UiModelConfigEntry>();
 			for (const m of models) if (!keptMap.has(m.entry.id)) keptMap.set(m.entry.id, m.entry);
 			const kept = [...keptMap.values()].sort((a, b) => a.id.localeCompare(b.id));
-			const taken = new Set([
-				...Object.keys(this.readModelsConfig().providers),
-				...mr.getRegisteredProviderIds(),
-			]);
+			const taken = new Set([...Object.keys(this.readModelsConfig().providers), ...mr.getRegisteredProviderIds()]);
 			let newId = `${pid}-2`;
 			for (let n = 2; taken.has(newId); n++) newId = `${pid}-${n}`;
 			const defaultBaseUrl =
@@ -822,31 +788,29 @@ export class ModelAdminService {
 	/** Send the current models.json custom providers to the client. */
 	async listModelsConfig(): Promise<void> {
 		const { providers } = this.readModelsConfig();
-		const list: UiProviderConfig[] = Object.entries(providers).map(
-			([providerId, p]) => {
-				const models = Array.isArray(p.models)
-					? (p.models as Record<string, unknown>[]).map((m) => ({
-							id: String(m.id ?? ""),
-							name: m.name as string | undefined,
-							reasoning: m.reasoning as boolean | undefined,
-							input: Array.isArray(m.input) ? (m.input as string[]) : undefined,
-							contextWindow: m.contextWindow as number | undefined,
-							maxTokens: m.maxTokens as number | undefined,
-						}))
-					: [];
-				return {
-					providerId,
-					name: p.name as string | undefined,
-					api: p.api as string | undefined,
-					baseUrl: p.baseUrl as string | undefined,
-					apiKey: p.apiKey as string | undefined,
-					authHeader: p.authHeader as boolean | undefined,
-					// headers are intentionally NOT sent to the browser — they may
-					// contain Authorization / API-key values; kept server-side only.
-					models,
-				};
-			},
-		);
+		const list: UiProviderConfig[] = Object.entries(providers).map(([providerId, p]) => {
+			const models = Array.isArray(p.models)
+				? (p.models as Record<string, unknown>[]).map((m) => ({
+						id: String(m.id ?? ""),
+						name: m.name as string | undefined,
+						reasoning: m.reasoning as boolean | undefined,
+						input: Array.isArray(m.input) ? (m.input as string[]) : undefined,
+						contextWindow: m.contextWindow as number | undefined,
+						maxTokens: m.maxTokens as number | undefined,
+					}))
+				: [];
+			return {
+				providerId,
+				name: p.name as string | undefined,
+				api: p.api as string | undefined,
+				baseUrl: p.baseUrl as string | undefined,
+				apiKey: p.apiKey as string | undefined,
+				authHeader: p.authHeader as boolean | undefined,
+				// headers are intentionally NOT sent to the browser — they may
+				// contain Authorization / API-key values; kept server-side only.
+				models,
+			};
+		});
 		this.host.emit({ type: "models_config", providers: list });
 	}
 
@@ -860,9 +824,7 @@ export class ModelAdminService {
 	}
 
 	private static strArrMeta(v: unknown): string[] | undefined {
-		return Array.isArray(v)
-			? v.filter((x): x is string => typeof x === "string")
-			: undefined;
+		return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
 	}
 
 	/** Best-effort extraction of model metadata from an OpenAI-compatible
@@ -875,12 +837,8 @@ export class ModelAdminService {
 		const id = typeof r.id === "string" ? r.id : "";
 		const name =
 			(typeof r.name === "string" && r.name.trim() ? r.name : undefined) ??
-			(typeof r.display_name === "string" && r.display_name.trim()
-				? r.display_name
-				: undefined);
-		const modalities =
-			strArrMeta(r.modalities) ??
-			strArrMeta(r.input_modalities);
+			(typeof r.display_name === "string" && r.display_name.trim() ? r.display_name : undefined);
+		const modalities = strArrMeta(r.modalities) ?? strArrMeta(r.input_modalities);
 		const vision =
 			modalities?.includes("image") === true ||
 			boolMeta(r.supports_vision) === true ||
@@ -895,10 +853,7 @@ export class ModelAdminService {
 			numMeta(r.context_length) ??
 			numMeta(r.max_model_len) ??
 			numMeta(r.max_context_length);
-		const maxTokens =
-			numMeta(r.max_tokens) ??
-			numMeta(r.max_output_tokens) ??
-			numMeta(r.max_completion_tokens);
+		const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
 		return {
 			id,
 			...(name ? { name } : {}),
@@ -920,12 +875,8 @@ export class ModelAdminService {
 		return {
 			id,
 			...(displayName && displayName !== id ? { name: displayName } : {}),
-			...(numMeta(r.inputTokenLimit)
-				? { contextWindow: numMeta(r.inputTokenLimit) }
-				: {}),
-			...(numMeta(r.outputTokenLimit)
-				? { maxTokens: numMeta(r.outputTokenLimit) }
-				: {}),
+			...(numMeta(r.inputTokenLimit) ? { contextWindow: numMeta(r.inputTokenLimit) } : {}),
+			...(numMeta(r.outputTokenLimit) ? { maxTokens: numMeta(r.outputTokenLimit) } : {}),
 		};
 	}
 
@@ -940,15 +891,9 @@ export class ModelAdminService {
 		authHeader?: boolean,
 		api?: string,
 	): Promise<void> {
-		const emitError = (error: string) =>
-			this.host.emit({ type: "fetch_models_result", reqId, ok: false, error });
+		const emitError = (error: string) => this.host.emit({ type: "fetch_models_result", reqId, ok: false, error });
 		try {
-			const models = await ModelAdminService.probeModelsEndpoint(
-				baseUrl,
-				apiKey,
-				authHeader,
-				api,
-			);
+			const models = await ModelAdminService.probeModelsEndpoint(baseUrl, apiKey, authHeader, api);
 			this.host.emit({ type: "fetch_models_result", reqId, ok: true, models });
 		} catch (err) {
 			emitError((err as Error).message);
@@ -961,7 +906,7 @@ export class ModelAdminService {
 	 * a user-facing message on any failure; returns deduped+sorted entries.
 	 * Shared by the edit-form "auto fetch" and the saved-provider refresh.
 	 */
-static async probeModelsEndpoint(
+	static async probeModelsEndpoint(
 		baseUrl: string,
 		apiKey?: string,
 		authHeader?: boolean,
@@ -1037,14 +982,10 @@ static async probeModelsEndpoint(
 			const data = Array.isArray(json.data) ? json.data : null;
 			if (data) {
 				// OpenAI-compatible: { data: [{ id, context_window, modalities, … }] }
-				models = data
-					.map((m) => parseOpenAiModel(m))
-					.filter((m) => m.id);
+				models = data.map((m) => parseOpenAiModel(m)).filter((m) => m.id);
 			} else if (Array.isArray(json.models)) {
 				// Google: { models: [{ name: "models/…", displayName, … }] }
-				models = (json.models as unknown[])
-					.map((m) => parseGoogleModel(m))
-					.filter((m) => m.id);
+				models = (json.models as unknown[]).map((m) => parseGoogleModel(m)).filter((m) => m.id);
 			}
 		} catch {
 			throw new Error("响应不是有效的 JSON");
@@ -1115,9 +1056,7 @@ static async probeModelsEndpoint(
 					...cur, // 手填字段优先：cur 覆盖 f 的同名字段
 				});
 			}
-			const merged = [...prev.values()].sort((a, b) =>
-				a.id.localeCompare(b.id),
-			);
+			const merged = [...prev.values()].sort((a, b) => a.id.localeCompare(b.id));
 			await this.saveModelConfig(pid, {
 				providerId: pid,
 				name: saved.name,
@@ -1149,10 +1088,7 @@ static async probeModelsEndpoint(
 	}
 
 	/** Upsert one provider into models.json and hot-reload the model runtime. */
-	async saveModelConfig(
-		providerId: string,
-		config: UiProviderConfig,
-	): Promise<void> {
+	async saveModelConfig(providerId: string, config: UiProviderConfig): Promise<void> {
 		const pid = providerId.trim();
 		if (!pid || !/^[\w.-]+$/.test(pid)) {
 			this.host.emit({
@@ -1174,8 +1110,11 @@ static async probeModelsEndpoint(
 				...(m.maxTokens ? { maxTokens: Number(m.maxTokens) } : {}),
 			}));
 		if (models.length === 0) {
-			this.host.emit({ type: "notice", level: "error", text: "至少需要一个模型",
-			textEn: "At least one model is required"
+			this.host.emit({
+				type: "notice",
+				level: "error",
+				text: "至少需要一个模型",
+				textEn: "At least one model is required",
 			});
 			return;
 		}
@@ -1190,16 +1129,11 @@ static async probeModelsEndpoint(
 				...(config.baseUrl?.trim() ? { baseUrl: config.baseUrl.trim() } : {}),
 				...(config.apiKey?.trim() ? { apiKey: config.apiKey.trim() } : {}),
 				...(config.authHeader ? { authHeader: true } : {}),
-				...(prevHeaders && Object.keys(prevHeaders).length > 0
-					? { headers: prevHeaders }
-					: {}),
+				...(prevHeaders && Object.keys(prevHeaders).length > 0 ? { headers: prevHeaders } : {}),
 				models,
 			};
 			mkdirSync(this.host.agentDir, { recursive: true });
-			writeFileSync(
-				this.modelsConfigPath(),
-				JSON.stringify({ providers }, null, 2) + "\n",
-			);
+			writeFileSync(this.modelsConfigPath(), JSON.stringify({ providers }, null, 2) + "\n");
 
 			// Allow a custom models.json entry to reuse the provider credential
 			// already stored in auth.json.  Seed the shared runtime too, because
@@ -1207,9 +1141,7 @@ static async probeModelsEndpoint(
 			// for a newly-created custom provider.  Never copy the secret into
 			// models.json.
 			try {
-				const auth = JSON.parse(
-					readFileSync(join(this.host.agentDir, "auth.json"), "utf8"),
-				) as Record<string, unknown>;
+				const auth = JSON.parse(readFileSync(join(this.host.agentDir, "auth.json"), "utf8")) as Record<string, unknown>;
 				const credential = auth[pid];
 				if (
 					credential &&
@@ -1218,10 +1150,7 @@ static async probeModelsEndpoint(
 					typeof credential.key === "string" &&
 					credential.key.trim()
 				) {
-					await this.host.modelRuntime().setRuntimeApiKey(
-						pid,
-						credential.key,
-					);
+					await this.host.modelRuntime().setRuntimeApiKey(pid, credential.key);
 				}
 			} catch {
 				// auth.json is optional; models.json can still use its own apiKey.
@@ -1261,10 +1190,7 @@ static async probeModelsEndpoint(
 				return;
 			}
 			delete providers[providerId];
-			writeFileSync(
-				this.modelsConfigPath(),
-				JSON.stringify({ providers }, null, 2) + "\n",
-			);
+			writeFileSync(this.modelsConfigPath(), JSON.stringify({ providers }, null, 2) + "\n");
 			await this.host.modelRuntime().refresh();
 			this.host.invalidatePiConfig();
 			await this.listModelsConfig();

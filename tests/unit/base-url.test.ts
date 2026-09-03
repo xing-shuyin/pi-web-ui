@@ -26,16 +26,12 @@ describe("resolveBase", () => {
 describe("withAppBase", () => {
 	it("根部署原样返回", () => {
 		expect(withAppBase("/ws", "/")).toBe("/ws");
-		expect(withAppBase("/plugins/x/client/entry.mjs?e=0", "/")).toBe(
-			"/plugins/x/client/entry.mjs?e=0",
-		);
+		expect(withAppBase("/plugins/x/client/entry.mjs?e=0", "/")).toBe("/plugins/x/client/entry.mjs?e=0");
 	});
 
 	it("子路径部署统一加前缀", () => {
 		expect(withAppBase("/ws", "/pi/")).toBe("/pi/ws");
-		expect(withAppBase("/api/file?a=1&b=2", "/pi/")).toBe(
-			"/pi/api/file?a=1&b=2",
-		);
+		expect(withAppBase("/api/file?a=1&b=2", "/pi/")).toBe("/pi/api/file?a=1&b=2");
 		expect(withAppBase("/plugins/vscode-editor/client/entry.mjs?e=3", "/apps/web/")).toBe(
 			"/apps/web/plugins/vscode-editor/client/entry.mjs?e=3",
 		);

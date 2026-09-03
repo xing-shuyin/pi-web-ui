@@ -4,14 +4,7 @@
  * 毫秒级（git 调用 < 1s）、零 token。
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -142,7 +135,10 @@ describe("checkPluginUpdates", () => {
 			"https://github.com/x/c.git": "4444444444444444444444444444444444444444",
 		});
 		const res = await checkPluginUpdates(dataDir, exec);
-		const upd = res.filter((r) => r.updatable).map((r) => r.id).sort();
+		const upd = res
+			.filter((r) => r.updatable)
+			.map((r) => r.id)
+			.sort();
 		expect(upd).toEqual(["a", "c"]);
 		expect(res.find((r) => r.id === "c")?.localSha).toBeNull();
 		expect(res.find((r) => r.id === "a")?.version).toBe("1");

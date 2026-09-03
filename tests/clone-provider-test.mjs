@@ -30,10 +30,7 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
 // Minimal agent config so the server starts cleanly.
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "main-key" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "main-key" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -70,7 +67,9 @@ const sortKeysDeep = (o) => {
 	if (Array.isArray(o)) return o.map(sortKeysDeep);
 	if (o && typeof o === "object")
 		return Object.fromEntries(
-			Object.keys(o).sort().map((k) => [k, sortKeysDeep(o[k])]),
+			Object.keys(o)
+				.sort()
+				.map((k) => [k, sortKeysDeep(o[k])]),
 		);
 	return o;
 };
@@ -199,15 +198,10 @@ try {
 			models: r1.config.models,
 		},
 	});
-	await c.waitFor("models_config", 10000, (m) =>
-		m.providers.some((p) => p.providerId === "deepseek-2"),
-	);
+	await c.waitFor("models_config", 10000, (m) => m.providers.some((p) => p.providerId === "deepseek-2"));
 	c.send({ type: "clone_provider", provider: "deepseek", reqId: 12 });
 	const r2 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 12);
-	check(
-		"id collision avoided: next suggestion is deepseek-3",
-		r2.ok && r2.config?.providerId === "deepseek-3",
-	);
+	check("id collision avoided: next suggestion is deepseek-3", r2.ok && r2.config?.providerId === "deepseek-3");
 
 	// 4) provider without baseUrl now succeeds with templated draft (auto-filled models, no manual needed).
 	//    单供应商全量模型（按占比最高 api），包含 muse-spark 等跨 api 模型
@@ -241,10 +235,7 @@ try {
 	console.log(`\n${passed} checks passed`);
 } catch (err) {
 	if (typeof c !== "undefined") {
-		console.log(
-			"[debug] received so far:",
-			c.received.map((m) => m.type).join(","),
-		);
+		console.log("[debug] received so far:", c.received.map((m) => m.type).join(","));
 	}
 	throw err;
 } finally {

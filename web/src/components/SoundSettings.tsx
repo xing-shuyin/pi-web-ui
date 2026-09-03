@@ -12,11 +12,7 @@ interface SoundSettingsProps {
 const SOUND_EVENTS: {
 	kind: SoundKind;
 	labelKey: "sound.question" | "sound.done" | "sound.start" | "sound.error";
-	descKey:
-		| "sound.question.desc"
-		| "sound.done.desc"
-		| "sound.start.desc"
-		| "sound.error.desc";
+	descKey: "sound.question.desc" | "sound.done.desc" | "sound.start.desc" | "sound.error.desc";
 }[] = [
 	{
 		kind: "question",
@@ -28,14 +24,9 @@ const SOUND_EVENTS: {
 	{ kind: "error", labelKey: "sound.error", descKey: "sound.error.desc" },
 ];
 
-export function SoundSettingsPanel({
-	settings,
-	onChange,
-	onPreview,
-}: SoundSettingsProps) {
+export function SoundSettingsPanel({ settings, onChange, onPreview }: SoundSettingsProps) {
 	const t = useT();
-	const toggle = (patch: Partial<SoundSettings>) =>
-		onChange({ ...settings, ...patch });
+	const toggle = (patch: Partial<SoundSettings>) => onChange({ ...settings, ...patch });
 
 	return (
 		<div className="sound-menu">
@@ -46,18 +37,11 @@ export function SoundSettingsPanel({
 					<FiVolume2 className="sound-icon" />
 					<span>{t("enableSound")}</span>
 				</span>
-				<input
-					type="checkbox"
-					checked={settings.enabled}
-					onChange={(e) => toggle({ enabled: e.target.checked })}
-				/>
+				<input type="checkbox" checked={settings.enabled} onChange={(e) => toggle({ enabled: e.target.checked })} />
 			</label>
 
 			{SOUND_EVENTS.map(({ kind, labelKey, descKey }) => (
-				<label
-					key={kind}
-					className={`sound-row ${settings.enabled ? "" : "disabled"}`}
-				>
+				<label key={kind} className={`sound-row ${settings.enabled ? "" : "disabled"}`}>
 					<span className="sound-label">
 						<span className="sound-name">{t(labelKey)}</span>
 						<span className="sound-desc">{t(descKey)}</span>

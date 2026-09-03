@@ -51,9 +51,27 @@ export const NATIVE_COMMANDS: {
 	argumentHintEn?: string;
 }[] = [
 	{ name: "new", description: "新建对话", descriptionEn: "New chat" },
-	{ name: "model", description: "切换模型", descriptionEn: "Switch model", argumentHint: "[名称]", argumentHintEn: "[name]" },
-	{ name: "compact", description: "压缩上下文", descriptionEn: "Compact context", argumentHint: "[说明]", argumentHintEn: "[instructions]" },
-	{ name: "cwd", description: "切换工作目录", descriptionEn: "Switch workspace", argumentHint: "<路径>", argumentHintEn: "<path>" },
+	{
+		name: "model",
+		description: "切换模型",
+		descriptionEn: "Switch model",
+		argumentHint: "[名称]",
+		argumentHintEn: "[name]",
+	},
+	{
+		name: "compact",
+		description: "压缩上下文",
+		descriptionEn: "Compact context",
+		argumentHint: "[说明]",
+		argumentHintEn: "[instructions]",
+	},
+	{
+		name: "cwd",
+		description: "切换工作目录",
+		descriptionEn: "Switch workspace",
+		argumentHint: "<路径>",
+		argumentHintEn: "<path>",
+	},
 	{
 		name: "thinking",
 		description: "设置思考强度",
@@ -169,9 +187,7 @@ export class SlashCommandsService {
 				const query = args.toLowerCase();
 				const available = await this.host.getSession().modelRuntime.getAvailable();
 				// Prefer an exact "provider/id" match, else id/name substring.
-				const exact = available.find(
-					(m) => m.provider + "/" + m.id === args.trim(),
-				);
+				const exact = available.find((m) => m.provider + "/" + m.id === args.trim());
 				const matches = exact
 					? [exact]
 					: available.filter(

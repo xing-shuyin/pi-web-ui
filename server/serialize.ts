@@ -13,17 +13,12 @@ const TEXT_CAP = 200_000;
 const TOOL_OUTPUT_CAP = 100_000;
 const ARGS_CAP = 20_000;
 
-function truncate(
-	s: string,
-	cap: number,
-): { text: string; truncated: boolean } {
+function truncate(s: string, cap: number): { text: string; truncated: boolean } {
 	if (s.length <= cap) return { text: s, truncated: false };
 	return { text: `${s.slice(0, cap)}\n\n… [truncated]`, truncated: true };
 }
 
-function serializeUserContent(
-	content: Extract<AgentMessage, { content: unknown }>["content"],
-): UiContentBlock[] {
+function serializeUserContent(content: Extract<AgentMessage, { content: unknown }>["content"]): UiContentBlock[] {
 	if (typeof content === "string") return [{ type: "text", text: content }];
 	return content.map((b) => {
 		if (b.type === "image") {
@@ -60,9 +55,7 @@ function serializeUserContent(
 	});
 }
 
-function serializeAssistantContent(
-	content: Extract<AgentMessage, { role: "assistant" }>["content"],
-): UiContentBlock[] {
+function serializeAssistantContent(content: Extract<AgentMessage, { role: "assistant" }>["content"]): UiContentBlock[] {
 	return content.map((b) => {
 		if (b.type === "text") {
 			const { text, truncated } = truncate(b.text, TEXT_CAP);
@@ -75,10 +68,7 @@ function serializeAssistantContent(
 			if (b.arguments === undefined) {
 				return { type: "toolCall", id: b.id, name: b.name };
 			}
-			const { text, truncated } = truncate(
-				JSON.stringify(b.arguments),
-				ARGS_CAP,
-			);
+			const { text, truncated } = truncate(JSON.stringify(b.arguments), ARGS_CAP);
 			return {
 				type: "toolCall",
 				id: b.id,
@@ -91,10 +81,7 @@ function serializeAssistantContent(
 	});
 }
 
-export function serializeMessage(
-	m: AgentMessage,
-	seq: number,
-): UiMessage | null {
+export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null {
 	switch (m.role) {
 		case "user":
 			return {
@@ -117,9 +104,7 @@ export function serializeMessage(
 			};
 
 		case "toolResult": {
-			const raw = m.content
-				.map((c) => (c.type === "text" ? c.text : "[image result]"))
-				.join("\n");
+			const raw = m.content.map((c) => (c.type === "text" ? c.text : "[image result]")).join("\n");
 			const { text, truncated } = truncate(raw, TOOL_OUTPUT_CAP);
 			return {
 				id: `t-${m.toolCallId}`,

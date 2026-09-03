@@ -8,21 +8,8 @@
 import { mkdirSync, statSync, writeFileSync, watch } from "node:fs";
 import { resolve, relative, sep } from "node:path";
 import type { ServerMessage, FileEntry, FileSearchResult } from "./protocol.js";
-import {
-	previewKind,
-	looksLikeText,
-	decodeText,
-	hexDump,
-	countLines,
-} from "./text-sniff.js";
-import {
-	gitDirOf,
-	isNotRepoError,
-	scmStatus,
-	scmHistory,
-	scmFileDiff,
-	scmCommitDetail,
-} from "./scm.js";
+import { previewKind, looksLikeText, decodeText, hexDump, countLines } from "./text-sniff.js";
+import { gitDirOf, isNotRepoError, scmStatus, scmHistory, scmFileDiff, scmCommitDetail } from "./scm.js";
 
 export const IS_WIN32 = process.platform === "win32";
 /** 预览只读文件前 512KB。 */
@@ -54,14 +41,7 @@ const IGNORED_ENTRIES = new Set([
 // hide what would flood or destabilize the panel (dependency trees, VCS
 // internals, session data) plus pure junk. Build output (dist/.next/…) and
 // local env dirs (venv/__pycache__/…) stay visible — "所有文件可查看".
-const IGNORED_ENTRIES_WIN = new Set([
-	"node_modules",
-	".git",
-	".pi-web",
-	".DS_Store",
-	"Thumbs.db",
-	"desktop.ini",
-]);
+const IGNORED_ENTRIES_WIN = new Set(["node_modules", ".git", ".pi-web", ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 /** The ignore set for the current platform — keeps win/posix lists separate. */
 function ignoredEntries(): Set<string> {
@@ -73,10 +53,7 @@ function ignoredEntries(): Set<string> {
  * (".." escapes). Returns { abs, rel } — rel is normalized and slash-
  * separated — or null when the path leaves the workspace.
  */
-export function workspacePath(
-	root: string,
-	raw: string,
-): { abs: string; rel: string } | null {
+export function workspacePath(root: string, raw: string): { abs: string; rel: string } | null {
 	const abs = resolve(root, raw);
 	const rawRel = relative(root, abs);
 	if (rawRel.startsWith("..") || rawRel.includes(`${sep}..`)) return null;
@@ -145,13 +122,7 @@ async function readDirForUI(
 		out.push(entry);
 	}
 
-	out.sort((a, b) =>
-		a.type === b.type
-			? a.name.localeCompare(b.name)
-			: a.type === "dir"
-				? -1
-				: 1,
-	);
+	out.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
 	const truncated = out.length > MAX;
 	if (truncated) out.length = MAX;
 	return { entries: out, truncated };
@@ -220,12 +191,7 @@ export class FilesService {
 		this.host.emit({
 			type: "files",
 			path: rel === "" ? "" : rel,
-			parent:
-				rel === ""
-					? null
-					: rel.includes("/")
-						? rel.slice(0, rel.lastIndexOf("/"))
-						: "",
+			parent: rel === "" ? null : rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "",
 			entries,
 			truncated,
 		});
@@ -256,16 +222,9 @@ export class FilesService {
 		const results: FileSearchResult[] = [];
 		let visited = 0;
 		let truncated = false;
-		const budgetLeft = () =>
-			results.length < MAX_RESULTS &&
-			visited < MAX_VISITED &&
-			Date.now() - start < MAX_MS;
+		const budgetLeft = () => results.length < MAX_RESULTS && visited < MAX_VISITED && Date.now() - start < MAX_MS;
 		// Breadth-first-ish iterative stack; depth cap is a symlink-cycle guard.
-		const walk = async (
-			abs: string,
-			rel: string,
-			depth: number,
-		): Promise<void> => {
+		const walk = async (abs: string, rel: string, depth: number): Promise<void> => {
 			if (!budgetLeft() || depth > 24) {
 				truncated = true;
 				return;
@@ -342,8 +301,12 @@ export class FilesService {
 				if (rel.startsWith("..") || rel === "") throw new Error("路径超出工作区");
 				const { staged, worktree } = await scmFileDiff(cwd, arg.path);
 				this.host.emit({
-					type: "scm_data", reqId, kind, ok: true,
-					stagedText: staged, worktreeText: worktree,
+					type: "scm_data",
+					reqId,
+					kind,
+					ok: true,
+					stagedText: staged,
+					worktreeText: worktree,
 				});
 				return;
 			}
@@ -357,10 +320,21 @@ export class FilesService {
 			if (isNotRepoError(err)) {
 				// Not a repo — a valid empty answer so the panel shows its hint.
 				this.host.emit({
-					type: "scm_data", reqId, kind, ok: true, notRepo: true,
-					branch: "", detached: false, upstream: null,
-					ahead: 0, behind: 0, upstreamGone: false,
-					files: [], branches: [], stats: {}, history: [],
+					type: "scm_data",
+					reqId,
+					kind,
+					ok: true,
+					notRepo: true,
+					branch: "",
+					detached: false,
+					upstream: null,
+					ahead: 0,
+					behind: 0,
+					upstreamGone: false,
+					files: [],
+					branches: [],
+					stats: {},
+					history: [],
 				});
 				this.unwatchGit();
 				return;
@@ -438,32 +412,28 @@ export class FilesService {
 				this.unwatchDir(); // cwd switched to another project
 			}
 			try {
-				const w = watch(
-					root,
-					{ persistent: false, recursive: true },
-					(_event, filename) => {
-						// Skip high-churn subtrees (npm install storms); .git has its
-						// own watcher for the SCM panel. filename may be null on some
-						// platforms — let those through (debounce absorbs bursts).
-						if (filename) {
-							const f = String(filename).split("\\").join("/");
-							// Single-segment names (e.g. the dir itself) have no "/" —
-							// slice(0, -1) would corrupt them, so special-case that.
-							const slash = f.indexOf("/");
-							const top = slash === -1 ? f : f.slice(0, slash);
-							if (top === "node_modules" || top === ".git") return;
-						}
-						// Burst events are debounced into a single refresh.
-						if (this.watchTimer) return;
-						this.watchTimer = setTimeout(() => {
-							this.watchTimer = null;
-							this.host.emit({
-								type: "file_changed",
-								path: this.watchPath ?? "",
-							});
-						}, 400);
-					},
-				);
+				const w = watch(root, { persistent: false, recursive: true }, (_event, filename) => {
+					// Skip high-churn subtrees (npm install storms); .git has its
+					// own watcher for the SCM panel. filename may be null on some
+					// platforms — let those through (debounce absorbs bursts).
+					if (filename) {
+						const f = String(filename).split("\\").join("/");
+						// Single-segment names (e.g. the dir itself) have no "/" —
+						// slice(0, -1) would corrupt them, so special-case that.
+						const slash = f.indexOf("/");
+						const top = slash === -1 ? f : f.slice(0, slash);
+						if (top === "node_modules" || top === ".git") return;
+					}
+					// Burst events are debounced into a single refresh.
+					if (this.watchTimer) return;
+					this.watchTimer = setTimeout(() => {
+						this.watchTimer = null;
+						this.host.emit({
+							type: "file_changed",
+							path: this.watchPath ?? "",
+						});
+					}, 400);
+				});
 				w.on("error", () => {
 					// Directory deleted / unsupported — fall back to poll semantics.
 					this.noticeDegraded(root);
@@ -519,7 +489,8 @@ export class FilesService {
 			type: "notice",
 			level: "info",
 			text: "此目录不支持实时文件监听（网络盘/受限目录），文件面板已改为每 10 秒自动刷新。",
-			textEn: "Live file watching is not supported for this directory (network/restricted); the file panel now refreshes every 10s",
+			textEn:
+				"Live file watching is not supported for this directory (network/restricted); the file panel now refreshes every 10s",
 		});
 	}
 
@@ -693,8 +664,7 @@ export class FilesService {
 	 * for the target dir (the recursive watcher may not cover it on posix).
 	 */
 	async uploadFile(relDir: string, name: string, data: string): Promise<void> {
-		const emitErr = (text: string) =>
-			this.host.emit({ type: "notice", level: "error", text });
+		const emitErr = (text: string) => this.host.emit({ type: "notice", level: "error", text });
 		try {
 			const root = this.host.getCwd();
 			let wp: { abs: string; rel: string } | null;
@@ -710,9 +680,7 @@ export class FilesService {
 			// Basename only — strips any path separators / ".." the name carries;
 			// reject empty results and Windows-illegal characters outright.
 			const base = name.split(/[\\/]/).pop() ?? "";
-			const safe = (
-				base.replace(/[\/:*?"<>|\x00-\x1f]/g, "_").trim() || "file"
-			).slice(0, 200);
+			const safe = (base.replace(/[\/:*?"<>|\x00-\x1f]/g, "_").trim() || "file").slice(0, 200);
 			const abs = resolve(wp.abs, safe);
 			const rawRel = relative(root, abs);
 			if (rawRel.startsWith("..") || rawRel.includes(`${sep}..`)) {
@@ -725,9 +693,7 @@ export class FilesService {
 				return;
 			}
 			if (buf.length > MAX_UPLOAD_BYTES) {
-				emitErr(`文件过大：${name}（上限 ${
-					Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)
-				}MB）`);
+				emitErr(`文件过大：${name}（上限 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB）`);
 				return;
 			}
 			mkdirSync(wp.abs, { recursive: true });
@@ -755,8 +721,7 @@ export class FilesService {
 	 * directory, and return prefix matches (dirs first, capped).
 	 */
 	async completePath(input: string): Promise<void> {
-		const empty = () =>
-			this.host.emit({ type: "path_completions", completions: [] });
+		const empty = () => this.host.emit({ type: "path_completions", completions: [] });
 		try {
 			const fs = await import("node:fs/promises");
 			const { resolve, sep, isAbsolute } = await import("node:path");
@@ -781,32 +746,23 @@ export class FilesService {
 
 			// Split into parent dir + prefix on the LAST separator of either style
 			// (Windows accepts both / and \, so P:\agent/de must work too).
-			const lastSlash = Math.max(
-				expanded.lastIndexOf("/"),
-				expanded.lastIndexOf("\\"),
-			);
+			const lastSlash = Math.max(expanded.lastIndexOf("/"), expanded.lastIndexOf("\\"));
 			const dirPart = lastSlash >= 0 ? expanded.slice(0, lastSlash + 1) : "";
 			const prefix = lastSlash >= 0 ? expanded.slice(lastSlash + 1) : expanded;
 
-			const dirents = await fs
-				.readdir(dirPart, { withFileTypes: true })
-				.catch(() => null);
+			const dirents = await fs.readdir(dirPart, { withFileTypes: true }).catch(() => null);
 			if (!dirents) {
 				empty();
 				return;
 			}
 			const { join } = await import("node:path");
 			const completions = dirents
-				.filter(
-					(d) => d.name.startsWith(prefix) && !ignoredEntries().has(d.name),
-				)
+				.filter((d) => d.name.startsWith(prefix) && !ignoredEntries().has(d.name))
 				.map((d) => ({
 					name: d.name,
 					// Windows users type backslashes — normalize the completion to the
 					// wire format ("/") so the picked path round-trips cleanly.
-					path: IS_WIN32
-						? join(dirPart, d.name).split(sep).join("/")
-						: dirPart + d.name,
+					path: IS_WIN32 ? join(dirPart, d.name).split(sep).join("/") : dirPart + d.name,
 					type: (d.isDirectory() ? "dir" : "file") as "dir" | "file",
 				}))
 				.sort((a, b) => {
@@ -823,4 +779,3 @@ export class FilesService {
 		}
 	}
 }
-

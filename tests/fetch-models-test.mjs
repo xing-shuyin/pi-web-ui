@@ -48,8 +48,7 @@ const mock = createServer((req, res) => {
 		res.end(typeof body === "string" ? body : JSON.stringify(body));
 	};
 	if (url.pathname === "/fallback/models") return send(404, { error: "not found" });
-	if (url.pathname === "/fallback/v1/models")
-		return send(200, { data: [{ id: "fb-only" }] });
+	if (url.pathname === "/fallback/v1/models") return send(200, { data: [{ id: "fb-only" }] });
 	if (url.pathname === "/google/models")
 		return send(200, {
 			models: [
@@ -81,10 +80,7 @@ await new Promise((res) => mock.listen(MOCK_PORT, "127.0.0.1", res));
 console.log(`mock /models on :${MOCK_PORT}`);
 
 // Minimal agent config so the server starts cleanly.
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "main-key" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "main-key" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -121,7 +117,9 @@ const sortKeysDeep = (o) => {
 	if (Array.isArray(o)) return o.map(sortKeysDeep);
 	if (o && typeof o === "object")
 		return Object.fromEntries(
-			Object.keys(o).sort().map((k) => [k, sortKeysDeep(o[k])]),
+			Object.keys(o)
+				.sort()
+				.map((k) => [k, sortKeysDeep(o[k])]),
 		);
 	return o;
 };
@@ -224,9 +222,7 @@ try {
 	);
 	check(
 		"auth header sent (Bearer test-key)",
-		authHeaders.some(
-			(h) => h.path === "/models" && h.auth === "Bearer test-key",
-		),
+		authHeaders.some((h) => h.path === "/models" && h.auth === "Bearer test-key"),
 	);
 
 	// 2) authHeader=false → no Authorization header
@@ -241,10 +237,7 @@ try {
 	const r2 = await c.waitFor("fetch_models_result", 10000, (m) => m.reqId === 2);
 	check(
 		"authHeader=false: ok and no auth recorded on a NEW /models hit",
-		r2.ok &&
-			authHeaders
-				.filter((h) => h.path === "/models")
-				.some((h) => h.auth === null),
+		r2.ok && authHeaders.filter((h) => h.path === "/models").some((h) => h.auth === null),
 	);
 
 	// 3) /v1 fallback: bare /models 404 → retried under /v1/models
@@ -306,9 +299,7 @@ try {
 		"google format parsed (models/ prefix stripped, limits filled)",
 		r10.ok &&
 			canon(r10.models) ===
-				canon([
-					{ id: "gemini-flash", name: "Gemini Flash", contextWindow: 1048576, maxTokens: 8192 },
-				]),
+				canon([{ id: "gemini-flash", name: "Gemini Flash", contextWindow: 1048576, maxTokens: 8192 }]),
 	);
 
 	// 6) concurrent requests: reqIds stay matched
@@ -328,7 +319,8 @@ try {
 	const r12 = await c.waitFor("fetch_models_result", 10000, (m) => m.reqId === 12);
 	check(
 		"concurrent reqIds matched",
-		r11.ok && canon(r11.models) === canon([{ id: "fb-only" }]) &&
+		r11.ok &&
+			canon(r11.models) === canon([{ id: "fb-only" }]) &&
 			r12.ok &&
 			canon(r12.models).includes('"id":"mock-a"') &&
 			canon(r12.models).includes('"contextWindow":32768'),
@@ -338,10 +330,7 @@ try {
 } catch (err) {
 	// Debug aid: dump what actually arrived before the failure.
 	if (typeof c !== "undefined") {
-		console.log(
-			"[debug] received so far:",
-			c.received.map((m) => m.type).join(","),
-		);
+		console.log("[debug] received so far:", c.received.map((m) => m.type).join(","));
 	}
 	throw err;
 } finally {

@@ -65,9 +65,7 @@ await sleep(800);
 // 1. Fresh state: only 历史对话 title; no 运行的对话 section, no divider
 //    (a single fresh conversation is never listed — it never ran in the
 //    background).
-let titles = await page
-	.locator(".panel-left .panel-section-title")
-	.allTextContents();
+let titles = await page.locator(".panel-left .panel-section-title").allTextContents();
 check(
 	"history title present in fresh state",
 	titles.some((t) => t.includes("历史对话")),
@@ -82,33 +80,24 @@ check(
 // 2. Start a second conversation (still project A) — the fresh chat is not
 //    listed either, so the running section stays hidden by design.
 await page.evaluate(() => {
-	const btn = [...document.querySelectorAll("button")].find(
-		(b) => b.textContent && b.textContent.includes("新对话"),
-	);
+	const btn = [...document.querySelectorAll("button")].find((b) => b.textContent && b.textContent.includes("新对话"));
 	btn?.click();
 });
 await sleep(1200);
-titles = await page
-	.locator(".panel-left .panel-section-title")
-	.allTextContents();
+titles = await page.locator(".panel-left .panel-section-title").allTextContents();
 check(
 	"running list still empty after new_chat (by design)",
 	!titles.some((t) => t.includes("运行的对话")),
 	titles.join("|"),
 );
-check(
-	"no divider without running list",
-	(await page.locator(".panel-left .panel-section-divider").count()) === 0,
-);
+check("no divider without running list", (await page.locator(".panel-left .panel-section-divider").count()) === 0);
 
 // 3. Switch workspace to project B (footer cwd input) → file tree + notice.
 await page.locator(".status-cwd").click();
 await page.locator(".status-cwd-input").fill(B);
 await page.keyboard.press("Enter");
 await sleep(1500);
-const fileNames = await page
-	.locator(".panel-right .file-name-text")
-	.allTextContents();
+const fileNames = await page.locator(".panel-right .file-name-text").allTextContents();
 check(
 	"file tree shows B's files after switch",
 	fileNames.some((t) => t.includes("b.txt")),
@@ -129,9 +118,7 @@ await page.locator(".status-cwd").click();
 await page.locator(".status-cwd-input").fill(A);
 await page.keyboard.press("Enter");
 await sleep(1500);
-const fileNamesA = await page
-	.locator(".panel-right .file-name-text")
-	.allTextContents();
+const fileNamesA = await page.locator(".panel-right .file-name-text").allTextContents();
 check(
 	"file tree back to A's files",
 	fileNamesA.some((t) => t.includes("a.txt")),

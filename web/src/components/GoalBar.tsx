@@ -30,20 +30,24 @@ interface Props {
 	send: (msg: GoalBarMsg) => boolean;
 }
 
-
-
-export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, activeConversationId, engine, send }: Props) {
+export const GoalBar = memo(function GoalBar({
+	goal,
+	models,
+	modelsLoading,
+	activeConversationId,
+	engine,
+	send,
+}: Props) {
 	const t = useT();
 	const { locale } = useI18n();
-	const goalDetail = locale === "en" && goal.statusEn ? goal.statusEn : (goal.status || "");
-	const wizardDetail = locale === "en" && goal.wizard?.statusEn ? goal.wizard.statusEn : (goal.wizard?.status || "");
+	const goalDetail = locale === "en" && goal.statusEn ? goal.statusEn : goal.status || "";
+	const wizardDetail = locale === "en" && goal.wizard?.statusEn ? goal.wizard.statusEn : goal.wizard?.status || "";
 	// DSH：无独立审查模型 —— 隐藏 reviewModel 下拉（轮次上限仍然有效）。
 	const isDsh = engine === "dsh";
 	// Goals belong to the conversation that created them. The server keeps the
 	// status around while switching chats so returning to the owner restores the
 	// goal, but never show another conversation's goal as active.
-	const goalBelongsToActiveConversation =
-		!goal.conversationId || goal.conversationId === activeConversationId;
+	const goalBelongsToActiveConversation = !goal.conversationId || goal.conversationId === activeConversationId;
 	const active = goal.goal !== null && goalBelongsToActiveConversation;
 
 	// Draft fields (only meaningful while editing a new goal).
@@ -83,9 +87,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 
 	const reviewModelName = (): string => {
 		if (!reviewModel) return t("goalBarUseMainModel");
-		return (
-			models.find((m) => m.id === reviewModel)?.name ?? reviewModel
-		);
+		return models.find((m) => m.id === reviewModel)?.name ?? reviewModel;
 	};
 
 	const set = () => {
@@ -120,24 +122,22 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 	};
 
 	// A wizard running (scoping questions in flight) — show its progress.
-	const wizardActive =
-		(goal.wizard?.active ?? false) && goalBelongsToActiveConversation;
+	const wizardActive = (goal.wizard?.active ?? false) && goalBelongsToActiveConversation;
 
 	if (wizardActive) {
 		return (
 			<div className={`goalbar goalbar-active ${wizardActive ? "wizard" : ""}`}>
 				<div className="goalbar-active-row">
-					<span className="goalbar-icon"><span className="goalbar-spin">🔍</span></span>
+					<span className="goalbar-icon">
+						<span className="goalbar-spin">🔍</span>
+					</span>
 					<span className="goalbar-text" title={goal.wizard?.draft ?? ""}>
 						{t("goalWizardRunning")}: {goal.wizard?.draft}
 					</span>
 					<span className="goalbar-chip reviewing">
-						{t("goalBarRound", { n: (goal.wizard?.step ?? 0) + 1 })}{" "}
-						/ {goal.wizard?.maxSteps ?? 6}
+						{t("goalBarRound", { n: (goal.wizard?.step ?? 0) + 1 })} / {goal.wizard?.maxSteps ?? 6}
 					</span>
-					<span className="goalbar-detail">
-						{wizardDetail || t("goalBarReviewing")}
-					</span>
+					<span className="goalbar-detail">{wizardDetail || t("goalBarReviewing")}</span>
 					<button
 						type="button"
 						className="goalbar-x"
@@ -158,9 +158,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 		return (
 			<div className={`goalbar goalbar-active ${goal.reviewing ? "reviewing" : ""}`}>
 				<div className="goalbar-active-row">
-					<span className="goalbar-icon">
-						{goal.reviewing ? <span className="goalbar-spin">◌</span> : "🎯"}
-					</span>
+					<span className="goalbar-icon">{goal.reviewing ? <span className="goalbar-spin">◌</span> : "🎯"}</span>
 					<span className="goalbar-text" title={goal.goal ?? ""}>
 						{goal.goal}
 					</span>
@@ -170,13 +168,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 						</span>
 					) : (
 						<span
-							className={`goalbar-chip ${
-								goal.verdict === "pass"
-									? "pass"
-									: goal.verdict === "fail"
-										? "fail"
-										: ""
-							}`}
+							className={`goalbar-chip ${goal.verdict === "pass" ? "pass" : goal.verdict === "fail" ? "fail" : ""}`}
 						>
 							{goal.verdict === "pass"
 								? t("goalBarPassed")
@@ -223,7 +215,9 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 	return (
 		<div className="goalbar">
 			<div className="goalbar-row">
-				<span className="goalbar-icon"><FiTarget /></span>
+				<span className="goalbar-icon">
+					<FiTarget />
+				</span>
 				<input
 					className="goalbar-input"
 					value={text}
@@ -233,12 +227,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 						if (e.key === "Enter") set();
 					}}
 				/>
-				<button
-					type="button"
-					className="goalbar-btn"
-					disabled={!text.trim()}
-					onClick={set}
-				>
+				<button type="button" className="goalbar-btn" disabled={!text.trim()} onClick={set}>
 					{t("goalBarSet")}
 				</button>
 				<button
@@ -263,12 +252,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 				>
 					{locked ? <FiLock /> : <FiUnlock />}
 				</button>
-				<button
-					type="button"
-					className="goalbar-icon-btn"
-					title={t("goalBarClear")}
-					onClick={() => setCollapsed(true)}
-				>
+				<button type="button" className="goalbar-icon-btn" title={t("goalBarClear")} onClick={() => setCollapsed(true)}>
 					<FiChevronUp />
 				</button>
 			</div>
@@ -276,59 +260,51 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 				{isDsh ? (
 					<p className="goalbar-dsh-note">{t("dshNoReviewModel")}</p>
 				) : (
-				<Dropdown
-					trigger={
-						<span className="goalbar-opt">
-							{t("goalBarReviewModel")}: <b>{reviewModelName()}</b>
-						</span>
-					}
-					open={modelOpen}
-					onOpenChange={setModelOpen}
-					direction="up"
-				>
-					<div className="dd-header">{t("goalBarReviewModel")}</div>
-					{(reqLoading || modelsLoading) && (
-						<div className="dd-loading">{t("loading")}</div>
-					)}
-					{models.length === 0 && !reqLoading && !modelsLoading && (
-						<div className="dd-loading">{t("noModels")}</div>
-					)}
-					<DropdownItem
-						active={reviewModel === ""}
-						onClick={() => {
-							setReviewModel("");
-							setModelOpen(false);
-							send({ type: "set_goal_prefs", reviewModel: "" });
-						}}
+					<Dropdown
+						trigger={
+							<span className="goalbar-opt">
+								{t("goalBarReviewModel")}: <b>{reviewModelName()}</b>
+							</span>
+						}
+						open={modelOpen}
+						onOpenChange={setModelOpen}
+						direction="up"
 					>
-						{t("goalBarUseMainModel")}
-					</DropdownItem>
-					{models.map((m) => (
+						<div className="dd-header">{t("goalBarReviewModel")}</div>
+						{(reqLoading || modelsLoading) && <div className="dd-loading">{t("loading")}</div>}
+						{models.length === 0 && !reqLoading && !modelsLoading && <div className="dd-loading">{t("noModels")}</div>}
 						<DropdownItem
-							key={m.id}
-							active={reviewModel === m.id}
+							active={reviewModel === ""}
 							onClick={() => {
-								setReviewModel(m.id);
+								setReviewModel("");
 								setModelOpen(false);
-								send({ type: "set_goal_prefs", reviewModel: m.id });
+								send({ type: "set_goal_prefs", reviewModel: "" });
 							}}
 						>
-							<span className="dd-model-cell">
-								<span className="dd-model-name">{m.name}</span>
-								<span className="dd-model-meta">
-									<span className="dd-model-provider">{m.provider}</span>
-								</span>
-							</span>
+							{t("goalBarUseMainModel")}
 						</DropdownItem>
-					))}
-					<button
-						type="button"
-						className="dd-refresh"
-						onClick={() => send({ type: "list_models" })}
-					>
-						{t("refreshModels")}
-					</button>
-				</Dropdown>
+						{models.map((m) => (
+							<DropdownItem
+								key={m.id}
+								active={reviewModel === m.id}
+								onClick={() => {
+									setReviewModel(m.id);
+									setModelOpen(false);
+									send({ type: "set_goal_prefs", reviewModel: m.id });
+								}}
+							>
+								<span className="dd-model-cell">
+									<span className="dd-model-name">{m.name}</span>
+									<span className="dd-model-meta">
+										<span className="dd-model-provider">{m.provider}</span>
+									</span>
+								</span>
+							</DropdownItem>
+						))}
+						<button type="button" className="dd-refresh" onClick={() => send({ type: "list_models" })}>
+							{t("refreshModels")}
+						</button>
+					</Dropdown>
 				)}
 
 				<label className="goalbar-round" title={t("goalBarMaxRoundsTip")}>
@@ -347,9 +323,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 							}
 							setMaxRounds(v);
 						}}
-						onBlur={() =>
-							send({ type: "set_goal_prefs", maxRounds: maxRounds })
-						}
+						onBlur={() => send({ type: "set_goal_prefs", maxRounds: maxRounds })}
 						onKeyDown={(e) => {
 							if (e.key === "Enter") {
 								send({ type: "set_goal_prefs", maxRounds: maxRounds });
@@ -359,9 +333,7 @@ export const GoalBar = memo(function GoalBar({ goal, models, modelsLoading, acti
 					/>
 				</label>
 
-				<span className="goalbar-lock-hint">
-					{locked ? t("goalBarLocked") : t("goalBarUnlocked")}
-				</span>
+				<span className="goalbar-lock-hint">{locked ? t("goalBarLocked") : t("goalBarUnlocked")}</span>
 			</div>
 		</div>
 	);

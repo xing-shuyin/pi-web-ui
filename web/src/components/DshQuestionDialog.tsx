@@ -99,25 +99,16 @@ export function DshQuestionDialog({ question, send }: DshQuestionDialogProps) {
 				<span className="dialog-badge">{t("modelQuestion")}</span>
 				{remainSec >= 0 && (
 					<span className="question-timer">
-						{remainSec > 0
-							? t("questionTimeout", { s: remainSec })
-							: t("questionTimeoutExpired")}
+						{remainSec > 0 ? t("questionTimeout", { s: remainSec }) : t("questionTimeoutExpired")}
 					</span>
 				)}
-				<button
-					type="button"
-					className="dialog-dismiss"
-					title={t("cancel")}
-					onClick={() => respond(true)}
-				>
+				<button type="button" className="dialog-dismiss" title={t("cancel")} onClick={() => respond(true)}>
 					✕
 				</button>
 			</div>
 			{question.questions.map((q, qi) => (
 				<div className="set-section" key={q.id}>
-					<div className="set-section-title">
-						{q.header ?? `${t("modelQuestion")} ${qi + 1}`}
-					</div>
+					<div className="set-section-title">{q.header ?? `${t("modelQuestion")} ${qi + 1}`}</div>
 					<p className="set-row-desc">{q.question}</p>
 					{q.detail && <p className="set-hint">{q.detail}</p>}
 					{(q.options?.length ?? 0) > 0 && (
@@ -135,9 +126,7 @@ export function DshQuestionDialog({ question, send }: DshQuestionDialogProps) {
 											{q.multiSelect ? (active ? "☑ " : "☐ ") : active ? "● " : "○ "}
 											{o.label}
 										</span>
-										{o.description && (
-											<span className="set-row-desc">{o.description}</span>
-										)}
+										{o.description && <span className="set-row-desc">{o.description}</span>}
 									</button>
 								);
 							})}
@@ -152,19 +141,10 @@ export function DshQuestionDialog({ question, send }: DshQuestionDialogProps) {
 				</div>
 			))}
 			<div className="dialog-actions">
-				<button
-					type="button"
-					className="dialog-submit"
-					disabled={!allAnswered}
-					onClick={() => respond(false)}
-				>
+				<button type="button" className="dialog-submit" disabled={!allAnswered} onClick={() => respond(false)}>
 					{t("modelQuestionSubmit")}
 				</button>
-				<button
-					type="button"
-					className="dialog-dismiss-inline"
-					onClick={() => respond(true)}
-				>
+				<button type="button" className="dialog-dismiss-inline" onClick={() => respond(true)}>
 					{t("cancel")}
 				</button>
 			</div>

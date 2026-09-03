@@ -5,7 +5,11 @@ describe("extensionKey", () => {
 	it("包扩展用 npm spec 作为稳定 id", () => {
 		expect(
 			extensionKey({
-				sourceInfo: { origin: "package", source: "npm:pi-powerline-footer", path: "C:\\agent\\npm\\node_modules\\pi-powerline-footer\\dist\\index.js" },
+				sourceInfo: {
+					origin: "package",
+					source: "npm:pi-powerline-footer",
+					path: "C:\\agent\\npm\\node_modules\\pi-powerline-footer\\dist\\index.js",
+				},
 				path: "C:\\agent\\npm\\node_modules\\pi-powerline-footer\\dist\\index.js",
 			}),
 		).toBe("npm:pi-powerline-footer");

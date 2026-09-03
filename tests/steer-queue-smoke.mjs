@@ -67,9 +67,7 @@ try {
 	await sleep(400);
 
 	// 1) 带 queue=true 的 prompt —— 验证 dispatch 传参不炸（无模型会报"提示发送失败"，可接受）
-	ws.send(
-		JSON.stringify({ type: "prompt", text: "冒烟：queue 字段传递", queue: true, attachments: [] }),
-	);
+	ws.send(JSON.stringify({ type: "prompt", text: "冒烟：queue 字段传递", queue: true, attachments: [] }));
 	await sleep(800);
 
 	// 2) 不带 queue 的 prompt —— 验证默认参数路径

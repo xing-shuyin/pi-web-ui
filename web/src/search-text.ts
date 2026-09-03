@@ -89,10 +89,7 @@ export interface SearchHit {
  * Flatten all hits across messages into a navigation list:
  * one entry per occurrence, in conversation order.
  */
-export function buildSearchHits(
-	messages: readonly SearchMessage[],
-	query: string,
-): SearchHit[] {
+export function buildSearchHits(messages: readonly SearchMessage[], query: string): SearchHit[] {
 	const q = query.trim().toLowerCase();
 	if (!q) return [];
 	const hits: SearchHit[] = [];

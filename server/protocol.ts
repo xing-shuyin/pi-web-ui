@@ -44,12 +44,7 @@ export interface UiBashBlock {
 }
 
 export type UiContentBlock =
-	| UiTextBlock
-	| UiThinkingBlock
-	| UiToolCallBlock
-	| UiImageBlock
-	| UiBashBlock
-	| { type: string; [k: string]: unknown };
+	UiTextBlock | UiThinkingBlock | UiToolCallBlock | UiImageBlock | UiBashBlock | { type: string; [k: string]: unknown };
 
 export interface UiMessage {
 	/** Stable-ish id for React keys: u-<ts>-<seq> / a-<ts>-<seq> / t-<toolCallId>. */
@@ -1135,7 +1130,7 @@ export type ServerMessage =
 			untracked?: boolean;
 			/** commit payload */
 			text?: string;
-  }
+	  }
 	| {
 			type: "path_completions";
 			completions: { name: string; path: string; type: "dir" | "file" }[];
@@ -1228,4 +1223,4 @@ export type ServerMessage =
 	 *  conversation — the list survives conversation switches/ends and only
 	 *  empties when the tasks are stopped (individually or all at once) or the
 	 *  process exits on its own. Pushed on change, on attach and on request. */
-	| { type: "bg_servers"; servers: BgServer[] }
+	| { type: "bg_servers"; servers: BgServer[] };

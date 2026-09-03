@@ -15,9 +15,7 @@ interface MarkdownProps {
  *  as this full-document renderer — streaming preview and final render must
  *  be visually identical. */
 export const remarkPlugins = [remarkGfm];
-export const rehypePlugins: PluggableList = [
-	[rehypeHighlight, { detect: true, ignoreMissing: true }],
-];
+export const rehypePlugins: PluggableList = [[rehypeHighlight, { detect: true, ignoreMissing: true }]];
 
 export function MarkdownBody({ text }: { text: string }) {
 	return (

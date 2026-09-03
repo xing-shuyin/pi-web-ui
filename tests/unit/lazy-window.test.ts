@@ -18,22 +18,12 @@ const VIEW = { top: 0, bottom: 1000 };
 
 describe("planWindow", () => {
 	it("视口内的可见项不产生任何变更", () => {
-		const plan = planWindow(
-			[rect("a", -50, 500), rect("b", 900, 1100)],
-			VIEW,
-			new Set(),
-			new Set(),
-		);
+		const plan = planWindow([rect("a", -50, 500), rect("b", 900, 1100)], VIEW, new Set(), new Set());
 		expect(plan).toEqual({ show: [], hide: [], shrinkAbove: 0 });
 	});
 
 	it("缓冲带外的项进入 hide；视口上方者计入 shrinkAbove", () => {
-		const plan = planWindow(
-			[rect("above", -2000, -300), rect("below", 2600, 3000)],
-			VIEW,
-			new Set(),
-			new Set(),
-		);
+		const plan = planWindow([rect("above", -2000, -300), rect("below", 2600, 3000)], VIEW, new Set(), new Set());
 		expect(plan.hide).toEqual(["above", "below"]);
 		expect(plan.shrinkAbove).toBe(1700); // 只有上方那一条
 	});
@@ -51,35 +41,20 @@ describe("planWindow", () => {
 
 	it("已隐藏的不可见项不重复输出（防连帧重复累计 shrink）", () => {
 		const hidden = new Set(["above", "below"]);
-		const plan = planWindow(
-			[rect("above", -2000, -300), rect("below", 2600, 3000)],
-			VIEW,
-			new Set(),
-			hidden,
-		);
+		const plan = planWindow([rect("above", -2000, -300), rect("below", 2600, 3000)], VIEW, new Set(), hidden);
 		expect(plan.hide).toEqual([]);
 		expect(plan.shrinkAbove).toBe(0);
 	});
 
 	it("已隐藏但滚回视口的项进入 show", () => {
-		const plan = planWindow(
-			[rect("back", -200, 600)],
-			VIEW,
-			new Set(),
-			new Set(["back"]),
-		);
+		const plan = planWindow([rect("back", -200, 600)], VIEW, new Set(), new Set(["back"]));
 		expect(plan.show).toEqual(["back"]);
 		expect(plan.hide).toEqual([]);
 	});
 
 	it("always 集合永不隐藏、永不显示", () => {
 		const always = new Set(["pin"]);
-		const plan = planWindow(
-			[rect("pin", -9999, -9000), rect("far", 5000, 5100)],
-			VIEW,
-			always,
-			new Set(),
-		);
+		const plan = planWindow([rect("pin", -9999, -9000), rect("far", 5000, 5100)], VIEW, always, new Set());
 		expect(plan.hide).toEqual(["far"]);
 		expect(plan.shrinkAbove).toBe(0);
 	});
@@ -142,24 +117,16 @@ describe("pickAlways", () => {
 
 describe("estimateMessageHeight", () => {
 	it("按角色给出量级正确的估算", () => {
-		expect(estimateMessageHeight("user")).toBeLessThan(
-			estimateMessageHeight("assistant"),
-		);
-		expect(estimateMessageHeight("toolResult")).toBeLessThan(
-			estimateMessageHeight("user"),
-		);
-		expect(estimateMessageHeight("custom", "file")).toBeGreaterThan(
-			estimateMessageHeight("user"),
-		);
+		expect(estimateMessageHeight("user")).toBeLessThan(estimateMessageHeight("assistant"));
+		expect(estimateMessageHeight("toolResult")).toBeLessThan(estimateMessageHeight("user"));
+		expect(estimateMessageHeight("custom", "file")).toBeGreaterThan(estimateMessageHeight("user"));
 		expect(estimateMessageHeight("system")).toBeGreaterThan(0);
 	});
 });
 
 describe("contentFingerprint", () => {
 	it("文本/thinking/工具参数/命令输出长度计入指纹", () => {
-		expect(
-			contentFingerprint({ content: [{ type: "text", text: "abcd" }] }),
-		).toBe(4);
+		expect(contentFingerprint({ content: [{ type: "text", text: "abcd" }] })).toBe(4);
 		expect(
 			contentFingerprint({
 				content: [

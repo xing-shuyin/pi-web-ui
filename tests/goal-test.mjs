@@ -68,10 +68,7 @@ function connect() {
 				const existing = inbox.findIndex(pred);
 				if (existing >= 0) return inbox.splice(existing, 1)[0];
 				return new Promise((res, rej) => {
-					const t = setTimeout(
-						() => rej(new Error(`timeout waiting for ${what}`)),
-						ms,
-					);
+					const t = setTimeout(() => rej(new Error(`timeout waiting for ${what}`)), ms);
 					waiters.push((m) => {
 						if (pred(m)) {
 							clearTimeout(t);
@@ -126,26 +123,17 @@ async function run() {
 		(m) => m.type === "goal_status" && m.status.goal === "把首页标题改为 Goal Buddy",
 		"goal_status after set",
 	);
-	check(
-		"set_goal sets status",
-		g1.status.goal === "把首页标题改为 Goal Buddy",
-		JSON.stringify(g1.status),
-	);
+	check("set_goal sets status", g1.status.goal === "把首页标题改为 Goal Buddy", JSON.stringify(g1.status));
 	check(
 		"locked + reviewModel + maxRounds carried",
-		g1.status.locked === true &&
-			g1.status.reviewModel === "openai/gpt-4o-mini" &&
-			g1.status.maxRounds === 2,
+		g1.status.locked === true && g1.status.reviewModel === "openai/gpt-4o-mini" && g1.status.maxRounds === 2,
 		JSON.stringify(g1.status),
 	);
 	check("verdict resets to pending", g1.status.verdict === "pending");
 
 	// 2) Clear it.
 	c.send({ type: "clear_goal" });
-	const g2 = await c.next(
-		(m) => m.type === "goal_status" && m.status.goal === null,
-		"goal_status after clear",
-	);
+	const g2 = await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status after clear");
 	check("clear_goal clears the goal", g2.status.goal === null, JSON.stringify(g2.status));
 
 	// 3) Single-shot (locked=false).
@@ -154,30 +142,16 @@ async function run() {
 		(m) => m.type === "goal_status" && m.status.goal === "只审查这一轮",
 		"goal_status single-shot",
 	);
-	check(
-		"single-shot locked=false",
-		g3.status.locked === false && g3.status.maxRounds === 3,
-		JSON.stringify(g3.status),
-	);
+	check("single-shot locked=false", g3.status.locked === false && g3.status.maxRounds === 3, JSON.stringify(g3.status));
 
 	c.send({ type: "clear_goal" });
-	await c.next(
-		(m) => m.type === "goal_status" && m.status.goal === null,
-		"goal_status cleared again",
-	);
+	await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status cleared again");
 
 	// 4) Empty goal text should clear, not set. Drain any stragglers first.
 	c.inbox.length = 0;
 	c.send({ type: "set_goal", goal: "", maxRounds: 3, locked: true });
-	const g4 = await c.next(
-		(m) => m.type === "goal_status" && m.status.goal === null,
-		"goal_status empty set",
-	);
-	check(
-		"empty goal treated as clear",
-		g4.status.goal === null,
-		`goal=${JSON.stringify(g4.status.goal)}`,
-	);
+	const g4 = await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status empty set");
+	check("empty goal treated as clear", g4.status.goal === null, `goal=${JSON.stringify(g4.status.goal)}`);
 
 	console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 	try {

@@ -49,19 +49,22 @@ export function projectKey(cwd: string): string {
 }
 
 /** 解包一条存储记录：打包的 chunk 行 → 多个 assistant/chunk 事件；否则原样返回。 */
-function decodeStorageRecord(
-	value: Record<string, unknown>,
-): Record<string, unknown>[] {
+function decodeStorageRecord(value: Record<string, unknown>): Record<string, unknown>[] {
 	const t = value.type;
-	if (
-		t === "text-chunks" ||
-		t === "reasoning-chunks" ||
-		t === "tool-call-chunks"
-	) {
+	if (t === "text-chunks" || t === "reasoning-chunks" || t === "tool-call-chunks") {
 		const { seq0, time0, data } = value as {
 			seq0?: number;
 			time0?: number;
-			data?: { texts?: unknown[]; args?: unknown[]; index?: number; id?: string; name?: string; turn?: number; step?: number; dt?: number[] };
+			data?: {
+				texts?: unknown[];
+				args?: unknown[];
+				index?: number;
+				id?: string;
+				name?: string;
+				turn?: number;
+				step?: number;
+				dt?: number[];
+			};
 		};
 		if (!data || (!Array.isArray(data.texts) && !Array.isArray(data.args))) {
 			return [value];
@@ -104,12 +107,7 @@ function zstdDecompressAll(buf: Buffer): string {
 	const MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
 	const starts: number[] = [];
 	for (let i = 0; i + 4 <= buf.length; i++) {
-		if (
-			buf[i] === MAGIC[0] &&
-			buf[i + 1] === MAGIC[1] &&
-			buf[i + 2] === MAGIC[2] &&
-			buf[i + 3] === MAGIC[3]
-		) {
+		if (buf[i] === MAGIC[0] && buf[i + 1] === MAGIC[1] && buf[i + 2] === MAGIC[2] && buf[i + 3] === MAGIC[3]) {
 			starts.push(i);
 		}
 	}
@@ -129,9 +127,7 @@ function zstdDecompressAll(buf: Buffer): string {
 /** 读一个会话 JSONL 文件 → { header, events }。 */
 export function readSessionLog(file: string): SessionLog {
 	const raw = readFileSync(file);
-	const text = file.endsWith(".jsonl.zstd")
-		? zstdDecompressAll(raw)
-		: raw.toString("utf8");
+	const text = file.endsWith(".jsonl.zstd") ? zstdDecompressAll(raw) : raw.toString("utf8");
 	const lines = text.split("\n").filter((l) => l.trim());
 	let header: SessionHeader | null = null;
 	const events: SessionLog["events"] = [];
@@ -179,10 +175,7 @@ export function findSessionFiles(root: string): string[] {
 
 /** 一个工作区的会话文件：官方布局（root/--<cwd>--）+ 旧版 per-cwd 布局。 */
 export function findSessionFilesForCwd(sessionRoot: string, cwd: string): string[] {
-	const dirs = [
-		join(sessionRoot, projectKey(cwd)),
-		join(sessionRoot, encodeURIComponent(cwd), projectKey(cwd)),
-	];
+	const dirs = [join(sessionRoot, projectKey(cwd)), join(sessionRoot, encodeURIComponent(cwd), projectKey(cwd))];
 	const out: string[] = [];
 	for (const d of dirs) out.push(...findSessionFiles(d));
 	return out.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);

@@ -18,8 +18,7 @@ const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
 
-const CHROME =
-	CHROME_PATH;
+const CHROME = CHROME_PATH;
 const PORT = 8904;
 const URL = `http://localhost:${PORT}`;
 const PROJ = REPO_ROOT;
@@ -77,7 +76,10 @@ async function run() {
 	// Active goal bar replaces the edit row.
 	await page.waitForSelector(".goalbar-active", { timeout: 8000 });
 	check("active goal bar shown after set", true);
-	const text = await page.locator(".goalbar-text").innerText().catch(() => "");
+	const text = await page
+		.locator(".goalbar-text")
+		.innerText()
+		.catch(() => "");
 	check("active goal shows the goal text", text.includes("Goal UI 测试"), text);
 
 	// Clear it.

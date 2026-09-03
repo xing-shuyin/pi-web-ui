@@ -21,10 +21,13 @@ writeFileSync(join(WS, "notes.weird"), "hello from an unknown extension\nline2\n
 writeFileSync(join(WS, "data.jsonl"), '{"k":1}\n');
 writeFileSync(join(WS, "app.zip"), Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01, 0x02]));
 writeFileSync(join(WS, "mixed.txt"), Buffer.from([0x61, 0x62, 0x00, 0x63]));
-writeFileSync(join(WS, "pixel.png"), Buffer.from(
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-	"base64",
-));
+writeFileSync(
+	join(WS, "pixel.png"),
+	Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+		"base64",
+	),
+);
 writeFileSync(join(WS, "empty.bin"), "");
 
 let failures = 0;
@@ -78,10 +81,7 @@ check(
 		get("notes.weird")?.text.includes("unknown extension"),
 	get("notes.weird") ? `kind=${get("notes.weird").kind}` : "no result",
 );
-check(
-	"jsonl still text",
-	get("data.jsonl")?.kind === "text" && !get("data.jsonl")?.binary,
-);
+check("jsonl still text", get("data.jsonl")?.kind === "text" && !get("data.jsonl")?.binary);
 check(
 	"binary zip gets hex dump",
 	get("app.zip")?.binary === true && /50 4b 03 04/.test(get("app.zip")?.text ?? ""),
@@ -96,10 +96,7 @@ check(
 	"image stays metadata-only",
 	get("pixel.png")?.binary === true && get("pixel.png")?.kind === "image" && get("pixel.png")?.text === "",
 );
-check(
-	"empty file previews as empty text",
-	get("empty.bin")?.kind === "text" && get("empty.bin")?.text === "",
-);
+check("empty file previews as empty text", get("empty.bin")?.kind === "text" && get("empty.bin")?.text === "");
 
 ws.close();
 server.kill("SIGKILL");

@@ -43,9 +43,7 @@ const a = spawn("node", ["dist/server/index.js"], {
 });
 for (let i = 0; i < 40 && !(await portUp(PORT)); i++) await sleep(250);
 check("instance A up", await portUp(PORT));
-const health = await fetch(`http://localhost:${PORT}/api/health`).then((r) =>
-	r.json().catch(() => null),
-);
+const health = await fetch(`http://localhost:${PORT}/api/health`).then((r) => r.json().catch(() => null));
 check("A answers health", health?.ok === true);
 
 // Instance B: the auto-restart replacement. Must NOT crash — it waits.
@@ -55,11 +53,7 @@ const b = spawn("node", ["dist/server/index.js"], {
 	stdio: "ignore",
 });
 await sleep(2500);
-check(
-	"B did not crash while A holds the port",
-	b.exitCode === null,
-	`exitCode=${b.exitCode ?? "still running"}`,
-);
+check("B did not crash while A holds the port", b.exitCode === null, `exitCode=${b.exitCode ?? "still running"}`);
 
 // Kill A → B should take over the port.
 a.kill("SIGKILL");

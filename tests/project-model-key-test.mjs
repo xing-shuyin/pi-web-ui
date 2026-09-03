@@ -67,13 +67,19 @@ const mock = createServer(async (req, res) => {
 		});
 		res.write(
 			`data: ${JSON.stringify({
-				id: "pmk", object: "chat.completion.chunk", created: Date.now(), model: payload.model,
+				id: "pmk",
+				object: "chat.completion.chunk",
+				created: Date.now(),
+				model: payload.model,
 				choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }],
 			})}\n\n`,
 		);
 		res.write(
 			`data: ${JSON.stringify({
-				id: "pmk", object: "chat.completion.chunk", created: Date.now(), model: payload.model,
+				id: "pmk",
+				object: "chat.completion.chunk",
+				created: Date.now(),
+				model: payload.model,
 				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
 			})}\n\n`,
 		);
@@ -87,10 +93,7 @@ await new Promise((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
 // Multi-key provider "main": k1 active, k2 secondary (a custom provider is fine —
 // provider-keys.json tracks any registered provider id, incl. models.json ones).
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ main: { type: "api_key", key: "k1-val" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "k1-val" } }));
 writeFileSync(
 	join(agentDir, "provider-keys.json"),
 	JSON.stringify({
@@ -155,11 +158,7 @@ class Client {
 			this.received.push(message);
 			if (message.type === "snapshot") {
 				this.state = message.state;
-			} else if (
-				message.type === "snapshot_delta" &&
-				this.state &&
-				this.state.rev === message.baseRev
-			) {
+			} else if (message.type === "snapshot_delta" && this.state && this.state.rev === message.baseRev) {
 				this.state = { ...this.state, ...message.state };
 			}
 		});
@@ -227,14 +226,26 @@ try {
 
 	// (1) client-state recorded BOTH model and active key IMMEDIATELY on set_model.
 	let cs = readClientState();
-	check("client-state remembers project A model", cs.projectModels?.[projA] === "main/beta-mock", JSON.stringify(cs.projectModels));
-	check("client-state remembers project A provider key", cs.projectProviderKeys?.[projA]?.main === "k1", JSON.stringify(cs.projectProviderKeys));
+	check(
+		"client-state remembers project A model",
+		cs.projectModels?.[projA] === "main/beta-mock",
+		JSON.stringify(cs.projectModels),
+	);
+	check(
+		"client-state remembers project A provider key",
+		cs.projectProviderKeys?.[projA]?.main === "k1",
+		JSON.stringify(cs.projectProviderKeys),
+	);
 
 	// Move to B — a fresh conversation (A's blank one is dismissed). Default model = first (alpha-mock).
 	client.send({ type: "set_cwd", path: projB });
 	await client.waitForState((state) => state.cwd === projB);
 	const bDefaultModel = client.state.model?.id;
-	check("project B defaults to alpha-mock (so restore is distinguishable)", bDefaultModel === "alpha-mock", `got ${bDefaultModel}`);
+	check(
+		"project B defaults to alpha-mock (so restore is distinguishable)",
+		bDefaultModel === "alpha-mock",
+		`got ${bDefaultModel}`,
+	);
 
 	// In B switch the ACTIVE key to k2 (saves B→main→k2, global auth.json → k2-val).
 	client.send({ type: "activate_provider_key", provider: "main", keyName: "k2" });

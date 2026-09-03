@@ -43,7 +43,7 @@ if (!key) {
 let rtAvailable = false;
 try {
 	const { resolveRuntimeBase } = await import(
-		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href,
+		pathToFileURL(join(REPO, "server", "dsh", "runtime", "runtime-root.mjs")).href
 	);
 	rtAvailable = !!(await resolveRuntimeBase());
 } catch {
@@ -211,9 +211,7 @@ async function main() {
 	const seen = { mcpEcho: false, markerInConversation: false };
 	const snippet = {};
 	while (Date.now() - t0 < 120_000) {
-		const msg = await c
-			.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta", 1000)
-			.catch(() => null);
+		const msg = await c.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta", 1000).catch(() => null);
 		if (!msg) continue;
 		const text = allTexts(msg);
 		if (text.includes("MCP_ECHO:")) seen.mcpEcho = true;

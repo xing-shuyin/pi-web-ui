@@ -41,17 +41,13 @@ export interface MessageDeltaMsg {
 
 /** Apply one message_delta to the current UiState. Returns a new state object
  *  (input untouched). Non text/thinking event types only update stats. */
-export function applyMessageDelta<S extends MessageDeltaUiState>(
-	ui: S,
-	msg: MessageDeltaMsg,
-): S {
+export function applyMessageDelta<S extends MessageDeltaUiState>(ui: S, msg: MessageDeltaMsg): S {
 	const ame = msg.assistantMessageEvent;
 	// usage rides along on every delta so the footer token counter stays live
 	// even when snapshots are dropped by backpressure. Merge (not replace) so
 	// fields the delta channel doesn't carry keep their last known values.
 	const prevTokens = ui.stats.tokens as Record<string, number>;
-	const tokens =
-		msg.usage !== null ? { ...prevTokens, ...msg.usage } : prevTokens;
+	const tokens = msg.usage !== null ? { ...prevTokens, ...msg.usage } : prevTokens;
 	const stats = tokens === prevTokens ? ui.stats : { ...ui.stats, tokens };
 	if (ame.type !== "text_delta" && ame.type !== "thinking_delta") {
 		return stats === ui.stats ? ui : { ...ui, stats };
@@ -61,9 +57,7 @@ export function applyMessageDelta<S extends MessageDeltaUiState>(
 
 	const prev = ui.streamingMessage ?? null;
 	const base: { id: string; content: DeltaContentBlock[] } =
-		prev && prev.id === msg.messageId
-			? prev
-			: { id: msg.messageId, content: [] };
+		prev && prev.id === msg.messageId ? prev : { id: msg.messageId, content: [] };
 	const content = [...base.content];
 	const blockType = ame.type === "thinking_delta" ? "thinking" : "text";
 	const idx = ame.contentIndex ?? content.length - 1;
@@ -73,20 +67,16 @@ export function applyMessageDelta<S extends MessageDeltaUiState>(
 			blockType === "thinking"
 				? {
 						type: "thinking",
-						thinking:
-							((content[idx] as DeltaThinkingBlock).thinking ?? "") + deltaText,
+						thinking: ((content[idx] as DeltaThinkingBlock).thinking ?? "") + deltaText,
 					}
 				: {
 						type: "text",
-						text:
-							((content[idx] as DeltaTextBlock).text ?? "") + deltaText,
+						text: ((content[idx] as DeltaTextBlock).text ?? "") + deltaText,
 					};
 	} else {
 		// First delta of a new block (or the model switched thinking → text).
 		content.push(
-			blockType === "thinking"
-				? { type: "thinking", thinking: deltaText }
-				: { type: "text", text: deltaText },
+			blockType === "thinking" ? { type: "thinking", thinking: deltaText } : { type: "text", text: deltaText },
 		);
 	}
 	return { ...ui, stats, streamingMessage: { ...base, id: msg.messageId, content } } as S;

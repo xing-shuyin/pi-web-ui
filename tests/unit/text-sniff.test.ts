@@ -45,7 +45,10 @@ describe("decodeText", () => {
 
 	it("GBK 字节回退到 GBK 解码（Windows 老中文文件）", () => {
 		const gbk = Buffer.from([
-			0xd6, 0xd0, 0xce, 0xc4, // "中文" in GBK
+			0xd6,
+			0xd0,
+			0xce,
+			0xc4, // "中文" in GBK
 		]);
 		expect(decodeText(gbk)).toBe("中文");
 	});
@@ -58,9 +61,7 @@ describe("sniffImageMime", () => {
 	});
 
 	it("JPEG 魔数", () => {
-		expect(
-			sniffImageMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), ".jpg"),
-		).toBe("image/jpeg");
+		expect(sniffImageMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), ".jpg")).toBe("image/jpeg");
 	});
 
 	it("GIF87a/GIF89a 魔数", () => {
@@ -69,11 +70,7 @@ describe("sniffImageMime", () => {
 	});
 
 	it("RIFF+WEBP 魔数", () => {
-		const buf = Buffer.concat([
-			Buffer.from("RIFF"),
-			Buffer.alloc(4),
-			Buffer.from("WEBP"),
-		]);
+		const buf = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP")]);
 		expect(sniffImageMime(buf, "")).toBe("image/webp");
 	});
 

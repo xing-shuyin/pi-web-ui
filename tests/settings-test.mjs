@@ -126,7 +126,10 @@ try {
 
 	c.send({ type: "save_preset", name: "测试预设" });
 	const st6 = await c.waitFor("settings_state", 8000, (m) => m.settings.presets.some((p) => p.name === "测试预设"));
-	check("preset saved", st6.settings.presets.some((p) => p.name === "测试预设"));
+	check(
+		"preset saved",
+		st6.settings.presets.some((p) => p.name === "测试预设"),
+	);
 
 	// replace prompt
 	c.send({ type: "set_settings", promptMode: "replace", customSystemPrompt: "你是替换提示词。" });
@@ -152,11 +155,7 @@ try {
 	// 思考折叠开关：默认关（折叠）→ 开 → 再关（纯 UI 偏好，持久化即可）
 	check("thinkingWrap defaults off", st0.settings.thinkingWrap === false);
 	c.send({ type: "set_settings", thinkingWrap: false });
-	const stTW = await c.waitFor(
-		"settings_state",
-		8000,
-		(m) => m.settings.thinkingWrap === false,
-	);
+	const stTW = await c.waitFor("settings_state", 8000, (m) => m.settings.thinkingWrap === false);
 	check("thinkingWrap off round-trips", stTW.settings.thinkingWrap === false);
 	c.send({ type: "set_settings", thinkingWrap: true });
 	await c.waitFor("settings_state", 8000, (m) => m.settings.thinkingWrap === true);

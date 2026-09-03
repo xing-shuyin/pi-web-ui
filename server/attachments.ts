@@ -5,23 +5,11 @@
  *
  * 从 agent-service.ts 抽出，行为保持不变；上下文经 AttachmentContext 注入。
  */
-import type {
-	AgentSession,
-	ModelRuntime,
-} from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage } from "./protocol.js";
-import {
-	countLines,
-	decodeText,
-	looksLikeText,
-	sniffImageMime,
-} from "./text-sniff.js";
+import { countLines, decodeText, looksLikeText, sniffImageMime } from "./text-sniff.js";
 import { saveUpload, uploadsRoot } from "./uploads.js";
-import {
-	buildVisionBridgePrompt,
-	findVisionModels,
-	transcribeImages,
-} from "./vision-bridge.js";
+import { buildVisionBridgePrompt, findVisionModels, transcribeImages } from "./vision-bridge.js";
 import type { ClientSettings } from "./client-state.js";
 
 /** 跨快照的视觉转写缓存：批次 hash（名称 + base64 头 + 提示词）→ 转写文本。
@@ -73,25 +61,14 @@ export async function buildAttachmentMessages(
 ): Promise<{ message: Parameters<AgentSession["sendCustomMessage"]>[0] }[]> {
 	if (!attachments || attachments.length === 0) return [];
 	const fs = await import("node:fs/promises");
-	const { resolve, sep, relative, extname, join, basename } =
-		await import("node:path");
+	const { resolve, sep, relative, extname, join, basename } = await import("node:path");
 
 	const root = resolve(ctx.cwd);
 	const MAX_ATTACHMENT_BYTES = 200 * 1024;
 	// Files at or below this size are inlined; larger files are referenced by
 	// path only (the model reads them on demand — saves tokens for small edits).
-	const MAX_INLINE_BYTES = Number(
-		process.env.PI_WEB_INLINE_FILE_MAX ?? 12 * 1024,
-	);
-	const IMAGE_EXT = new Set([
-		".png",
-		".jpg",
-		".jpeg",
-		".gif",
-		".webp",
-		".bmp",
-		".svg",
-	]);
+	const MAX_INLINE_BYTES = Number(process.env.PI_WEB_INLINE_FILE_MAX ?? 12 * 1024);
+	const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"]);
 	const MIME: Record<string, string> = {
 		".png": "image/png",
 		".jpg": "image/jpeg",
@@ -102,19 +79,14 @@ export async function buildAttachmentMessages(
 		".svg": "image/svg+xml",
 	};
 
-	const out: { message: Parameters<AgentSession["sendCustomMessage"]>[0] }[] =
-		[];
+	const out: { message: Parameters<AgentSession["sendCustomMessage"]>[0] }[] = [];
 
 	/** Push the aside for a raw uploaded file (fresh fileData or a restored
 	 *  uploadPath re-read from disk). Small text files are inlined so the
 	 *  model sees them immediately; everything else becomes a path reference.
 	 *  `upload: true` marks the card as a restorable upload — the browser
 	 *  re-sends it by path when editing & re-asking a question. */
-	const pushUploadAside = (
-		name: string,
-		wirePath: string,
-		buf: Buffer,
-	): void => {
+	const pushUploadAside = (name: string, wirePath: string, buf: Buffer): void => {
 		if (buf.length <= MAX_INLINE_BYTES && looksLikeText(buf)) {
 			const lines = countLines(buf);
 			out.push({
@@ -179,19 +151,14 @@ export async function buildAttachmentMessages(
 	/** Raw image bytes for path-referenced image files (idx → info), pre-read
 	 *  so the loop below doesn't re-read them. SVG stays a plain text file —
 	 *  the model reads its source, far more useful than a rasterized blob. */
-	const pathImageData = new Map<
-		number,
-		{ raw: string; mimeType: string; bytes: number }
-	>();
+	const pathImageData = new Map<number, { raw: string; mimeType: string; bytes: number }>();
 	/** Cap for path images (fully read + base64'd); larger ones fall back to
 	 *  a plain path reference (the model can still attempt to read them). */
 	const MAX_PATH_IMAGE_BYTES = 5 * 1024 * 1024;
 	for (const [idx, att] of attachments.entries()) {
 		if (att.imageData) {
 			const raw = att.imageData.replace(/^data:[^;]*;base64,/, "");
-			const mimeType = att.mimeType?.startsWith("image/")
-				? att.mimeType
-				: "image/png";
+			const mimeType = att.mimeType?.startsWith("image/") ? att.mimeType : "image/png";
 			const bytes = Buffer.byteLength(raw, "base64");
 			// Only images that would actually be sent (non-empty, under the cap).
 			if (bytes > 0 && bytes <= 2 * 1024 * 1024) {
@@ -268,14 +235,9 @@ export async function buildAttachmentMessages(
 				// the custom prompt must invalidate cached transcripts made with
 				// the old prompt.
 				const batchHash =
-					bridgedImages
-						.map((b) => `${b.att.name ?? "img"}:${b.raw.slice(0, 48)}`)
-						.join("|") +
+					bridgedImages.map((b) => `${b.att.name ?? "img"}:${b.raw.slice(0, 48)}`).join("|") +
 					"::" +
-					buildVisionBridgePrompt(
-						ctx.settings.visionBridgePromptMode,
-						ctx.settings.visionBridgePrompt,
-					);
+					buildVisionBridgePrompt(ctx.settings.visionBridgePromptMode, ctx.settings.visionBridgePrompt);
 				let transcript = visionBridgeCache.get(batchHash);
 				if (transcript === undefined) {
 					ctx.emit({
@@ -285,10 +247,7 @@ export async function buildAttachmentMessages(
 						textEn: `Current model cannot see images; transcribing ${bridgedImages.length} image(s) via the vision bridge (${chosen.label})…`,
 					});
 					try {
-						const chosenModel = ctx.session.modelRuntime.getModel(
-							chosen.provider,
-							chosen.id,
-						);
+						const chosenModel = ctx.session.modelRuntime.getModel(chosen.provider, chosen.id);
 						transcript = await transcribeImages(
 							ctx.session.modelRuntime,
 							bridgedImages.map((b) => ({
@@ -321,8 +280,7 @@ export async function buildAttachmentMessages(
 						});
 					}
 				}
-				for (const b of bridgedImages)
-					bridgeTranscripts.set(b.idx, transcript ?? "");
+				for (const b of bridgedImages) bridgeTranscripts.set(b.idx, transcript ?? "");
 			}
 		}
 	}
@@ -334,8 +292,7 @@ export async function buildAttachmentMessages(
 		// browser downscales client-side; this guard only prevents abuse).
 		if (att.imageData) {
 			const raw = att.imageData.replace(/^data:[^;]*;base64,/, "");
-			const mimeType =
-				att.mimeType?.startsWith("image/") ? att.mimeType : "image/png";
+			const mimeType = att.mimeType?.startsWith("image/") ? att.mimeType : "image/png";
 			const bytes = Buffer.byteLength(raw, "base64");
 			const MAX_PASTED_IMAGE_BYTES = 2 * 1024 * 1024;
 			if (bytes === 0) {
@@ -429,11 +386,7 @@ export async function buildAttachmentMessages(
 			// Uploaded files live in a GLOBAL per-user dir (not inside the project
 			// or the per-client session store) so browsing a repo never picks up
 			// uploaded junk: <dataDir>/uploads/<clientId>/（保留期自动清理，见 uploads.ts）。
-			const { abs, displayName: safeName } = saveUpload(
-				ctx.clientId,
-				att.name ?? "file",
-				buf,
-			);
+			const { abs, displayName: safeName } = saveUpload(ctx.clientId, att.name ?? "file", buf);
 			// Wire format: forward-slash absolute path (the read tool accepts
 			// absolute paths; Windows uses "C:/..." — safe inside the XML-ish tag).
 			const wirePath = abs.split(sep).join("/");
@@ -456,8 +409,7 @@ export async function buildAttachmentMessages(
 			const inClientDir =
 				!relToRoot.startsWith("..") &&
 				!relToRoot.includes(`${sep}..`) &&
-				(relToRoot === ctx.clientId ||
-					relToRoot.startsWith(`${ctx.clientId}${sep}`));
+				(relToRoot === ctx.clientId || relToRoot.startsWith(`${ctx.clientId}${sep}`));
 			if (!inClientDir) {
 				ctx.emit({
 					type: "notice",
@@ -480,11 +432,7 @@ export async function buildAttachmentMessages(
 				continue;
 			}
 			if (buf.length === 0) continue;
-			pushUploadAside(
-				att.name ?? basename(abs),
-				abs.split(sep).join("/"),
-				buf,
-			);
+			pushUploadAside(att.name ?? basename(abs), abs.split(sep).join("/"), buf);
 			continue;
 		}
 
@@ -502,9 +450,7 @@ export async function buildAttachmentMessages(
 		// Normalize to forward slashes (relative() returns "\\" on Windows);
 		// <file path> and details.path must use the wire format.
 		const rel = rawRel.split(sep).join("/");
-		let stat:
-			| { size: number; isFile(): boolean; isDirectory(): boolean }
-			| undefined;
+		let stat: { size: number; isFile(): boolean; isDirectory(): boolean } | undefined;
 		try {
 			stat = await fs.stat(abs);
 		} catch {
@@ -567,11 +513,13 @@ ${transcript}
 </vision-bridge>`,
 							},
 							...(pathImg
-								? ([{
-										type: "image",
-										data: pathImg.raw,
-										mimeType: pathImg.mimeType,
-									}]) as const
+								? ([
+										{
+											type: "image",
+											data: pathImg.raw,
+											mimeType: pathImg.mimeType,
+										},
+									] as const)
 								: []),
 						],
 						display: true,
@@ -619,9 +567,7 @@ ${transcript}
 			out.push({
 				message: {
 					customType: "file",
-					content: [
-						{ type: "image", data, mimeType: MIME[ext] ?? "image/png" },
-					],
+					content: [{ type: "image", data, mimeType: MIME[ext] ?? "image/png" }],
 					display: true,
 					details: { name, path: rel, mode: "image", size: stat.size },
 				},

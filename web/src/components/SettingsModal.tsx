@@ -17,14 +17,7 @@ import {
 } from "react-icons/fi";
 import { CopyButton } from "./copy-button";
 import { PluginSettingsForm } from "./PluginSettingsForm";
-import type {
-	ClientMessage,
-	CommandDef,
-	UiExtensionInfo,
-	UiPluginInfo,
-	UiSettingsState,
-	UiSkillInfo,
-} from "../types";
+import type { ClientMessage, CommandDef, UiExtensionInfo, UiPluginInfo, UiSettingsState, UiSkillInfo } from "../types";
 import { randomUuid } from "../uuid";
 import { useT } from "../i18n";
 
@@ -153,23 +146,9 @@ function ToggleRow({
 
 /** 设置弹窗的左侧分组导航（一次只显示一个区块，消灭长滚动）。 */
 type SettingsTab =
-	| "prompt"
-	| "terminal"
-	| "display"
-	| "skills"
-	| "extensions"
-	| "plugins"
-	| "review"
-	| "vision"
-	| "presets";
+	"prompt" | "terminal" | "display" | "skills" | "extensions" | "plugins" | "review" | "vision" | "presets";
 
-export function SettingsModal({
-	chat,
-	send,
-	terminal,
-	onSwitchToTerminal,
-	onClose,
-}: SettingsModalProps) {
+export function SettingsModal({ chat, send, terminal, onSwitchToTerminal, onClose }: SettingsModalProps) {
 	const t = useT();
 	const settings = chat.settings;
 	// DSH 引擎：无 pi 扩展/技能体系与视觉桥概念 —— 隐藏对应分区/改占位说明。
@@ -230,9 +209,7 @@ export function SettingsModal({
 		if (!reviewPromptFocus.current) setReviewPromptDraft(settings.reviewPrompt);
 	}, [settings, promptMode, vbPromptMode]);
 
-	const [idleMsDraft, setIdleMsDraft] = useState<string>(
-		String(settings?.terminalBashIdleMs ?? 15000),
-	);
+	const [idleMsDraft, setIdleMsDraft] = useState<string>(String(settings?.terminalBashIdleMs ?? 15000));
 	useEffect(() => {
 		setIdleMsDraft(String(settings?.terminalBashIdleMs ?? 15000));
 	}, [settings?.terminalBashIdleMs]);
@@ -254,9 +231,7 @@ export function SettingsModal({
 		{ id: "plugins", icon: <FiBox />, label: t("settingsUiPlugins"), count: chat.plugins.length },
 		{ id: "review", icon: <FiZap />, label: t("settingsReview"), count: settings.reviewSkills.length },
 		// DSH：无视觉桥概念（真图片直通 vision 模型），隐藏该分区。
-		...(isDsh
-			? []
-			: [{ id: "vision" as const, icon: <FiEye />, label: t("settingsVisionBridge") }]),
+		...(isDsh ? [] : [{ id: "vision" as const, icon: <FiEye />, label: t("settingsVisionBridge") }]),
 		{ id: "presets", icon: <FiSliders />, label: t("settingsPresets"), count: settings.presets.length },
 	];
 
@@ -350,35 +325,24 @@ export function SettingsModal({
 	 *  visible terminal tab (see runTerminalCommand). */
 	const runUninstall = (pkgName: string) => {
 		setConfirmUninstall(null);
-		runTerminalCommand(
-			`${t("uninstallTitle")} ${pkgName}`,
-			`pi remove npm:${pkgName}`,
-		);
+		runTerminalCommand(`${t("uninstallTitle")} ${pkgName}`, `pi remove npm:${pkgName}`);
 	};
 
 	/** Uninstall a UI plugin: delete <dataDir>/plugins/<id>/ via the CLI.
 	 *  plugins_reload after the tab exits re-scans the dir. */
 	const runUiPluginUninstall = (id: string) => {
 		setConfirmUiUninstall(null);
-		runTerminalCommand(
-			`${t("uninstallTitle")} ${id}`,
-			`pi-web-ui uninstall ${id}`,
-		);
+		runTerminalCommand(`${t("uninstallTitle")} ${id}`, `pi-web-ui uninstall ${id}`);
 	};
 
 	/** Update a UI plugin from its recorded install source (.pi-source.json):
 	 *  re-run the same install command with --force (config.json survives). */
 	const runUiPluginUpdate = (id: string, source: string) => {
-		runTerminalCommand(
-			`${t("pluginUpdate")} ${id}`,
-			`pi-web-ui install ${source} --name ${id} --force`,
-		);
+		runTerminalCommand(`${t("pluginUpdate")} ${id}`, `pi-web-ui install ${source} --name ${id} --force`);
 	};
 
 	const toggleReviewSkill = (s: UiSkillInfo) => {
-		const disabled = new Set(
-			settings.reviewSkills.filter((x) => !x.enabled).map((x) => x.name),
-		);
+		const disabled = new Set(settings.reviewSkills.filter((x) => !x.enabled).map((x) => x.name));
 		if (disabled.has(s.name)) disabled.delete(s.name);
 		else disabled.add(s.name);
 		setPartial({ reviewDisabledSkills: [...disabled] });
@@ -389,9 +353,7 @@ export function SettingsModal({
 		// user didn't actually modify it — store empty so the server falls back
 		// to the default (and switching to append later never duplicates it).
 		const text =
-			promptMode === "replace" &&
-			settings.defaultSystemPrompt &&
-			promptDraft === settings.defaultSystemPrompt
+			promptMode === "replace" && settings.defaultSystemPrompt && promptDraft === settings.defaultSystemPrompt
 				? ""
 				: promptDraft;
 		setPartial({ promptMode, customSystemPrompt: text });
@@ -400,12 +362,7 @@ export function SettingsModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
-				<button
-					type="button"
-					className="modal-close"
-					aria-label={t("close")}
-					onClick={onClose}
-				>
+				<button type="button" className="modal-close" aria-label={t("close")} onClick={onClose}>
 					<FiX />
 				</button>
 				<div className="modal-head">
@@ -418,581 +375,541 @@ export function SettingsModal({
 				{/* Scrollable body — head above and the actions bar below stay
 				    fixed; only these sections scroll. */}
 				<div className="settings-layout">
-				<nav className="settings-rail" aria-label={t("settingsTitle")}>
-					{tabs.map((tb) => (
-						<button
-							key={tb.id}
-							type="button"
-							className={`settings-tab${tab === tb.id ? " active" : ""}`}
-							aria-current={tab === tb.id ? "true" : undefined}
-							title={tb.label}
-							onClick={() => setTab(tb.id)}
-						>
-							<span className="settings-tab-icon">{tb.icon}</span>
-							<span className="settings-tab-label">{tb.label}</span>
-							{tb.count !== undefined && (
-								<span className="set-count">{tb.count}</span>
-							)}
-						</button>
-					))}
-				</nav>
-				<div className="modal-body" ref={bodyRef}>
-
-				{/* ---- system prompt -------------------------------------------- */}
-				{tab === "prompt" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiZap className="set-section-icon" />
-						{t("settingsSystemPrompt")}
-					</div>
-					<div className="set-mode-row">
-						<label className="set-field-label">{t("settingsPromptMode")}</label>
-						<select
-							className="set-select"
-							value={promptMode}
-							onChange={(e) => {
-								const mode = e.target.value as "append" | "replace";
-								setPromptMode(mode);
-								setPartial({ promptMode: mode });
-							}}
-						>
-							<option value="append">{t("promptModeAppend")}</option>
-							<option value="replace">{t("promptModeReplace")}</option>
-						</select>
-						<HintTip
-							text={
-								promptMode === "append"
-									? t("promptAppendHint")
-									: t("promptReplaceHint")
-							}
-						/>
-					</div>
-					<textarea
-						className="set-prompt-input"
-						rows={6}
-						placeholder={t("promptPlaceholder")}
-						value={promptDraft}
-						onFocus={() => (promptFocus.current = true)}
-						onBlur={() => {
-							promptFocus.current = false;
-							savePrompt();
-						}}
-						onChange={(e) => setPromptDraft(e.target.value)}
-					/>
-					<button
-						type="button"
-						className="set-view-prompt-btn"
-						aria-expanded={showFullPrompt}
-						onClick={() => setShowFullPrompt((v) => !v)}
-					>
-						{t("settingsViewPrompt")} {showFullPrompt ? "▴" : "▾"}
-					</button>
-					{showFullPrompt && (
-						<div className="set-prompt-view">
-							<div className="set-prompt-view-head">
-								<span>{t("settingsViewPromptHint")}</span>
-								<CopyButton text={settings.effectiveSystemPrompt} />
-							</div>
-							{settings.effectiveSystemPrompt ? (
-								<pre className="set-prompt-view-text">
-									{settings.effectiveSystemPrompt}
-								</pre>
-							) : (
-								<p className="set-empty">{t("settingsViewPromptEmpty")}</p>
-							)}
-						</div>
-					)}
-				</div>
-				)}
-
-				{/* ---- terminal tools ------------------------------------------ */}
-				{tab === "terminal" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiTerminal className="set-section-icon" />
-						{t("settingsTerminalTools")}
-					</div>
-					<ToggleRow
-						title={t("terminalToolsEnabled")}
-						tip={t("settingsTerminalToolsDesc")}
-						enabled={settings.terminalToolsEnabled}
-						onToggle={() =>
-							setPartial({ terminalToolsEnabled: !settings.terminalToolsEnabled })
-						}
-					/>
-					{!settings.terminalToolsEnabled && (
-						<p className="set-hint">{t("terminalToolsOffHint")}</p>
-					)}
-					<ToggleRow
-						title={t("terminalBashTakeover")}
-						tip={t("terminalBashTakeoverDesc")}
-						enabled={settings.terminalBash}
-						onToggle={() =>
-							setPartial({ terminalBash: !settings.terminalBash })
-						}
-					/>
-					{settings.terminalBash && (
-						<div className="set-field">
-							<label className="set-field-label" htmlFor="tb-idle-ms">
-								{t("terminalBashIdleMs")}
-							</label>
-							<input
-								id="tb-idle-ms"
-								className="set-input"
-								type="number"
-								min={0}
-								step={1000}
-								value={idleMsDraft}
-								onChange={(e) => setIdleMsDraft(e.target.value)}
-								onBlur={() => {
-									const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
-									setIdleMsDraft(String(n));
-									if (n !== settings.terminalBashIdleMs) {
-										setPartial({ terminalBashIdleMs: n });
-									}
-								}}
-							/>
-						</div>
-					)}
-				</div>
-				)}
-
-				{/* ---- message display ----------------------------------------- */}
-				{tab === "display" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiMessageSquare className="set-section-icon" />
-						{t("settingsMessageDisplay")}
-					</div>
-					<ToggleRow
-						title={t("thinkingWrap")}
-						tip={t("thinkingWrapDesc")}
-						enabled={settings.thinkingWrap ?? true}
-						onToggle={() =>
-							setPartial({ thinkingWrap: !(settings.thinkingWrap ?? true) })
-						}
-					/>
-					<ToggleRow
-						title={t("toolsWrap")}
-						tip={t("toolsWrapDesc")}
-						enabled={settings.toolsWrap ?? true}
-						onToggle={() =>
-							setPartial({ toolsWrap: !(settings.toolsWrap ?? true) })
-						}
-					/>
-				</div>
-				)}
-
-				{/* ---- skills --------------------------------------------------- */}
-				{tab === "skills" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiCpu className="set-section-icon" />
-						{t("settingsSkills")}
-						<span className="set-count">{settings.skills.length}</span>
-					</div>
-					{settings.skills.length === 0 ? (
-						<p className="set-empty">
-							{isDsh ? t("dshSkillsNote") : t("noSkills")}
-						</p>
-					) : (
-						<div className="set-list">
-							{settings.skills.map((s) => (
-								<ToggleRow
-									key={s.name}
-									title={s.name}
-									subtitle={s.description}
-									enabled={s.enabled}
-									onToggle={() => toggleSkill(s)}
+					<nav className="settings-rail" aria-label={t("settingsTitle")}>
+						{tabs.map((tb) => (
+							<button
+								key={tb.id}
+								type="button"
+								className={`settings-tab${tab === tb.id ? " active" : ""}`}
+								aria-current={tab === tb.id ? "true" : undefined}
+								title={tb.label}
+								onClick={() => setTab(tb.id)}
+							>
+								<span className="settings-tab-icon">{tb.icon}</span>
+								<span className="settings-tab-label">{tb.label}</span>
+								{tb.count !== undefined && <span className="set-count">{tb.count}</span>}
+							</button>
+						))}
+					</nav>
+					<div className="modal-body" ref={bodyRef}>
+						{/* ---- system prompt -------------------------------------------- */}
+						{tab === "prompt" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiZap className="set-section-icon" />
+									{t("settingsSystemPrompt")}
+								</div>
+								<div className="set-mode-row">
+									<label className="set-field-label">{t("settingsPromptMode")}</label>
+									<select
+										className="set-select"
+										value={promptMode}
+										onChange={(e) => {
+											const mode = e.target.value as "append" | "replace";
+											setPromptMode(mode);
+											setPartial({ promptMode: mode });
+										}}
+									>
+										<option value="append">{t("promptModeAppend")}</option>
+										<option value="replace">{t("promptModeReplace")}</option>
+									</select>
+									<HintTip text={promptMode === "append" ? t("promptAppendHint") : t("promptReplaceHint")} />
+								</div>
+								<textarea
+									className="set-prompt-input"
+									rows={6}
+									placeholder={t("promptPlaceholder")}
+									value={promptDraft}
+									onFocus={() => (promptFocus.current = true)}
+									onBlur={() => {
+										promptFocus.current = false;
+										savePrompt();
+									}}
+									onChange={(e) => setPromptDraft(e.target.value)}
 								/>
-							))}
-						</div>
-					)}
-				</div>
-				)}
+								<button
+									type="button"
+									className="set-view-prompt-btn"
+									aria-expanded={showFullPrompt}
+									onClick={() => setShowFullPrompt((v) => !v)}
+								>
+									{t("settingsViewPrompt")} {showFullPrompt ? "▴" : "▾"}
+								</button>
+								{showFullPrompt && (
+									<div className="set-prompt-view">
+										<div className="set-prompt-view-head">
+											<span>{t("settingsViewPromptHint")}</span>
+											<CopyButton text={settings.effectiveSystemPrompt} />
+										</div>
+										{settings.effectiveSystemPrompt ? (
+											<pre className="set-prompt-view-text">{settings.effectiveSystemPrompt}</pre>
+										) : (
+											<p className="set-empty">{t("settingsViewPromptEmpty")}</p>
+										)}
+									</div>
+								)}
+							</div>
+						)}
 
-				{/* ---- extensions ------------------------------------------------ */}
-				{tab === "extensions" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiPackage className="set-section-icon" />
-						{t("settingsExtensions")}
-						<span className="set-count">{settings.extensions.length}</span>
-					</div>
-					{settings.extensions.length === 0 ? (
-						<p className="set-empty">
-							{isDsh ? t("dshExtensionsNote") : t("noExtensions")}
-						</p>
-					) : (
-						<div className="set-list">
-							{settings.extensions.map((e) => {
-								const pkgName = e.id.startsWith("npm:") ? e.id.slice(4) : null;
-								return (
-									<ToggleRow
-										key={e.id}
-										title={e.name}
-										subtitle={e.path}
-										enabled={e.enabled}
-										onToggle={() => toggleExtension(e)}
-										action={
-											pkgName ? (
-												confirmUninstall === e.id ? (
+						{/* ---- terminal tools ------------------------------------------ */}
+						{tab === "terminal" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiTerminal className="set-section-icon" />
+									{t("settingsTerminalTools")}
+								</div>
+								<ToggleRow
+									title={t("terminalToolsEnabled")}
+									tip={t("settingsTerminalToolsDesc")}
+									enabled={settings.terminalToolsEnabled}
+									onToggle={() => setPartial({ terminalToolsEnabled: !settings.terminalToolsEnabled })}
+								/>
+								{!settings.terminalToolsEnabled && <p className="set-hint">{t("terminalToolsOffHint")}</p>}
+								<ToggleRow
+									title={t("terminalBashTakeover")}
+									tip={t("terminalBashTakeoverDesc")}
+									enabled={settings.terminalBash}
+									onToggle={() => setPartial({ terminalBash: !settings.terminalBash })}
+								/>
+								{settings.terminalBash && (
+									<div className="set-field">
+										<label className="set-field-label" htmlFor="tb-idle-ms">
+											{t("terminalBashIdleMs")}
+										</label>
+										<input
+											id="tb-idle-ms"
+											className="set-input"
+											type="number"
+											min={0}
+											step={1000}
+											value={idleMsDraft}
+											onChange={(e) => setIdleMsDraft(e.target.value)}
+											onBlur={() => {
+												const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
+												setIdleMsDraft(String(n));
+												if (n !== settings.terminalBashIdleMs) {
+													setPartial({ terminalBashIdleMs: n });
+												}
+											}}
+										/>
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ---- message display ----------------------------------------- */}
+						{tab === "display" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiMessageSquare className="set-section-icon" />
+									{t("settingsMessageDisplay")}
+								</div>
+								<ToggleRow
+									title={t("thinkingWrap")}
+									tip={t("thinkingWrapDesc")}
+									enabled={settings.thinkingWrap ?? true}
+									onToggle={() => setPartial({ thinkingWrap: !(settings.thinkingWrap ?? true) })}
+								/>
+								<ToggleRow
+									title={t("toolsWrap")}
+									tip={t("toolsWrapDesc")}
+									enabled={settings.toolsWrap ?? true}
+									onToggle={() => setPartial({ toolsWrap: !(settings.toolsWrap ?? true) })}
+								/>
+							</div>
+						)}
+
+						{/* ---- skills --------------------------------------------------- */}
+						{tab === "skills" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiCpu className="set-section-icon" />
+									{t("settingsSkills")}
+									<span className="set-count">{settings.skills.length}</span>
+								</div>
+								{settings.skills.length === 0 ? (
+									<p className="set-empty">{isDsh ? t("dshSkillsNote") : t("noSkills")}</p>
+								) : (
+									<div className="set-list">
+										{settings.skills.map((s) => (
+											<ToggleRow
+												key={s.name}
+												title={s.name}
+												subtitle={s.description}
+												enabled={s.enabled}
+												onToggle={() => toggleSkill(s)}
+											/>
+										))}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ---- extensions ------------------------------------------------ */}
+						{tab === "extensions" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiPackage className="set-section-icon" />
+									{t("settingsExtensions")}
+									<span className="set-count">{settings.extensions.length}</span>
+								</div>
+								{settings.extensions.length === 0 ? (
+									<p className="set-empty">{isDsh ? t("dshExtensionsNote") : t("noExtensions")}</p>
+								) : (
+									<div className="set-list">
+										{settings.extensions.map((e) => {
+											const pkgName = e.id.startsWith("npm:") ? e.id.slice(4) : null;
+											return (
+												<ToggleRow
+													key={e.id}
+													title={e.name}
+													subtitle={e.path}
+													enabled={e.enabled}
+													onToggle={() => toggleExtension(e)}
+													action={
+														pkgName ? (
+															confirmUninstall === e.id ? (
+																<button
+																	type="button"
+																	className="set-uninstall confirm"
+																	title={t("uninstallConfirmHint")}
+																	onClick={() => runUninstall(pkgName)}
+																>
+																	{t("uninstallConfirm")}
+																</button>
+															) : (
+																<button
+																	type="button"
+																	className="set-uninstall"
+																	title={t("uninstallHint")}
+																	onClick={() => setConfirmUninstall(e.id)}
+																>
+																	<FiTrash2 />
+																	{t("uninstallExt")}
+																</button>
+															)
+														) : undefined
+													}
+												/>
+											);
+										})}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ---- UI plugins（<dataDir>/plugins，纯 UI 隐藏） ----------------- */}
+						{tab === "plugins" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiBox className="set-section-icon" />
+									{t("settingsUiPlugins")}
+									<span className="set-count">{chat.plugins.length}</span>
+								</div>
+								{chat.plugins.length === 0 ? (
+									<p className="set-empty">{t("noUiPlugins")}</p>
+								) : (
+									<div className="set-list">
+										{chat.plugins.map((p) => (
+											<>
+												<ToggleRow
+													key={p.id}
+													title={`${p.icon ? `${p.icon} ` : ""}${p.name}`}
+													subtitle={
+														(p.error
+															? `${p.id} · ${p.error}`
+															: p.source
+																? `${p.id} · ${p.source}`
+																: `${p.id} · ${t("uiPluginNoSource")}`) +
+														(p.permissions?.length ? ` · ${t("uiPluginPerms")}: ${p.permissions.join(", ")}` : "")
+													}
+													enabled={!disabledPlugins.has(p.id) && !p.error}
+													onToggle={() => !p.error && togglePlugin(p)}
+													action={
+														<div className="set-row-actions">
+															{p.source && (
+																<button
+																	type="button"
+																	className="set-uninstall"
+																	title={t("pluginUpdateHint")}
+																	onClick={() => runUiPluginUpdate(p.id, p.source!)}
+																>
+																	<FiRefreshCw />
+																	{t("pluginUpdate")}
+																</button>
+															)}
+															{confirmUiUninstall === p.id ? (
+																<button
+																	type="button"
+																	className="set-uninstall confirm"
+																	title={t("pluginUninstallHint")}
+																	onClick={() => runUiPluginUninstall(p.id)}
+																>
+																	{t("uninstallConfirm")}
+																</button>
+															) : (
+																<button
+																	type="button"
+																	className="set-uninstall"
+																	title={t("pluginUninstallHint")}
+																	onClick={() => setConfirmUiUninstall(p.id)}
+																>
+																	<FiTrash2 />
+																	{t("uninstallExt")}
+																</button>
+															)}
+														</div>
+													}
+												/>
+												{/* 声明式设置：manifest settings schema → 自动渲染表单 */}
+												{p.settingsSchema && p.settingsSchema.length > 0 && (
+													<PluginSettingsForm plugin={p} send={send} />
+												)}
+											</>
+										))}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ---- DSH 用户补丁（<dataDir>/dsh-patches，仅 dsh 引擎） ---------- */}
+						{tab === "plugins" && chat.engine === "dsh" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiBox className="set-section-icon" />
+									{t("dshPatches")}
+									<HintTip text={t("dshPatchesDesc")} />
+									<span className="set-count">{chat.dshPatches?.files.length ?? 0}</span>
+									<button
+										type="button"
+										className="set-uninstall"
+										title={t("dshPatchesRescanHint")}
+										onClick={() => send({ type: "dsh_patches_rescan" })}
+									>
+										<FiRefreshCw />
+										{t("dshPatchesRescan")}
+									</button>
+								</div>
+								{(chat.dshPatches?.files.length ?? 0) === 0 ? (
+									<p className="set-empty">{t("dshPatchesEmpty")}</p>
+								) : (
+									<div className="set-list">
+										{chat.dshPatches!.files.map((f) => (
+											<div className="set-row" key={f.name}>
+												<div className="set-row-info">
+													<div className="set-row-name">{f.name}</div>
+													<div className="set-row-desc">
+														{formatBytes(f.size)} · {new Date(f.mtimeMs).toLocaleString()}
+													</div>
+												</div>
+											</div>
+										))}
+									</div>
+								)}
+								<p className="set-hint">
+									{t("dshPatchesPath")} {chat.dshPatches?.patchDir ?? ""}
+								</p>
+							</div>
+						)}
+
+						{/* ---- goal review ----------------------------------------------- */}
+						{tab === "review" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiZap className="set-section-icon" />
+									{t("settingsReview")}
+									<HintTip text={t("settingsReviewDesc")} />
+									<span className="set-count">{settings.reviewSkills.length}</span>
+								</div>
+								{isDsh && <p className="set-hint">{t("dshReviewPromptNote")}</p>}
+								<textarea
+									className="set-prompt-input"
+									rows={5}
+									placeholder={t("reviewPromptPlaceholder")}
+									value={reviewPromptDraft}
+									onFocus={() => (reviewPromptFocus.current = true)}
+									onBlur={() => {
+										reviewPromptFocus.current = false;
+										setPartial({ reviewPrompt: reviewPromptDraft });
+									}}
+									onChange={(e) => setReviewPromptDraft(e.target.value)}
+								/>
+								<div className="set-field-label">{t("settingsReviewSkills")}</div>
+								{settings.reviewSkills.length === 0 ? (
+									<p className="set-empty">{t("noSkills")}</p>
+								) : (
+									<div className="set-list">
+										{settings.reviewSkills.map((s) => (
+											<ToggleRow
+												key={`review-${s.name}`}
+												title={s.name}
+												subtitle={s.description}
+												enabled={s.enabled}
+												onToggle={() => toggleReviewSkill(s)}
+											/>
+										))}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* ---- vision bridge ---------------------------------------------- */}
+						{tab === "vision" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiEye className="set-section-icon" />
+									{t("settingsVisionBridge")}
+								</div>
+								<ToggleRow
+									title={t("visionBridgeEnabled")}
+									tip={t("settingsVisionBridgeDesc")}
+									enabled={settings.visionBridgeEnabled}
+									onToggle={() => setPartial({ visionBridgeEnabled: !settings.visionBridgeEnabled })}
+								/>
+								{!settings.visionBridgeEnabled && <p className="set-hint">{t("visionBridgeOffHint")}</p>}
+								{settings.visionBridgeEnabled && (
+									<div className="set-mode-row">
+										<label className="set-field-label">{t("visionBridgeModel")}</label>
+										<select
+											className="set-select"
+											value={settings.visionBridgeModel ?? ""}
+											onChange={(e) => setPartial({ visionBridgeModel: e.target.value || null })}
+										>
+											<option value="">{t("visionBridgeAuto")}</option>
+											{settings.visionModels.map((m) => (
+												<option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
+													{m.label}
+												</option>
+											))}
+										</select>
+									</div>
+								)}
+								{settings.visionBridgeEnabled && (
+									<div className="set-mode-row">
+										<label className="set-field-label">{t("visionBridgePromptMode")}</label>
+										<select
+											className="set-select"
+											value={vbPromptMode}
+											onChange={(e) => {
+												const mode = e.target.value as "append" | "replace";
+												setVbPromptMode(mode);
+												setPartial({ visionBridgePromptMode: mode });
+											}}
+										>
+											<option value="append">{t("promptModeAppend")}</option>
+											<option value="replace">{t("promptModeReplace")}</option>
+										</select>
+									</div>
+								)}
+								{settings.visionBridgeEnabled && (
+									<textarea
+										className="set-prompt-input"
+										rows={4}
+										placeholder={t("visionBridgePromptPlaceholder")}
+										value={vbPromptDraft}
+										onFocus={() => (vbPromptFocus.current = true)}
+										onBlur={() => {
+											vbPromptFocus.current = false;
+											// Same contract as the system prompt: an unmodified copy of
+											// the built-in default is stored as empty (use default).
+											const text =
+												vbPromptMode === "replace" &&
+												settings.visionBridgeDefaultPrompt &&
+												vbPromptDraft === settings.visionBridgeDefaultPrompt
+													? ""
+													: vbPromptDraft;
+											setPartial({
+												visionBridgePromptMode: vbPromptMode,
+												visionBridgePrompt: text,
+											});
+										}}
+										onChange={(e) => setVbPromptDraft(e.target.value)}
+									/>
+								)}
+								{settings.visionBridgeEnabled &&
+									(settings.visionModels.length === 0 ? (
+										<p className="set-hint">{t("visionBridgeNoModels")}</p>
+									) : (
+										<p className="set-hint">
+											{t("visionBridgeCurrent", {
+												model: settings.visionBridgeModel ?? t("visionBridgeAuto"),
+											})}
+										</p>
+									))}
+							</div>
+						)}
+
+						{tab === "presets" && (
+							<div className="set-section">
+								<div className="set-section-title">
+									<FiSettings className="set-section-icon" />
+									{t("settingsPresets")}
+									<span className="set-count">{settings.presets.length}</span>
+								</div>
+								<div className="set-preset-save">
+									<input
+										className="set-input"
+										placeholder={t("presetNamePlaceholder")}
+										value={presetName}
+										onChange={(e) => setPresetName(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && presetName.trim()) {
+												send({ type: "save_preset", name: presetName.trim() });
+												setPresetName("");
+											}
+										}}
+									/>
+									<button
+										type="button"
+										className="set-save-btn"
+										disabled={!presetName.trim()}
+										onClick={() => {
+											send({ type: "save_preset", name: presetName.trim() });
+											setPresetName("");
+										}}
+									>
+										<FiPlus /> {t("saveAsPreset")}
+									</button>
+								</div>
+								{settings.presets.length === 0 ? (
+									<p className="set-empty">{t("noPresets")}</p>
+								) : (
+									<div className="set-list">
+										{settings.presets.map((p) => (
+											<div className="set-row" key={p.name}>
+												<div className="set-row-info">
+													<div className="set-row-name">{p.name}</div>
+													<div className="set-row-desc">
+														{p.promptMode === "replace" ? t("promptModeReplace") : t("promptModeAppend")}
+														{p.disabledSkills.length > 0 && ` · ${t("settingsSkills")} ${p.disabledSkills.length}`}
+														{p.disabledExtensions.length > 0 &&
+															` · ${t("settingsExtensions")} ${p.disabledExtensions.length}`}
+													</div>
+												</div>
+												<div className="set-row-actions">
 													<button
 														type="button"
-														className="set-uninstall confirm"
-														title={t("uninstallConfirmHint")}
-														onClick={() => runUninstall(pkgName)}
+														className="dd-refresh"
+														onClick={() => send({ type: "apply_preset", name: p.name })}
 													>
-														{t("uninstallConfirm")}
+														{t("applyPreset")}
 													</button>
-												) : (
 													<button
 														type="button"
-														className="set-uninstall"
-														title={t("uninstallHint")}
-														onClick={() => setConfirmUninstall(e.id)}
+														className="set-icon-btn danger"
+														title={t("deletePreset")}
+														onClick={() => send({ type: "delete_preset", name: p.name })}
 													>
 														<FiTrash2 />
-														{t("uninstallExt")}
 													</button>
-												)
-											) : undefined
-										}
-									/>
-								);
-							})}
-						</div>
-					)}
-				</div>
-				)}
-
-				{/* ---- UI plugins（<dataDir>/plugins，纯 UI 隐藏） ----------------- */}
-				{tab === "plugins" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiBox className="set-section-icon" />
-						{t("settingsUiPlugins")}
-						<span className="set-count">{chat.plugins.length}</span>
-					</div>
-					{chat.plugins.length === 0 ? (
-						<p className="set-empty">{t("noUiPlugins")}</p>
-					) : (
-						<div className="set-list">
-							{chat.plugins.map((p) => (
-								<>
-									<ToggleRow
-										key={p.id}
-									title={`${p.icon ? `${p.icon} ` : ""}${p.name}`}
-									subtitle={
-										(p.error
-											? `${p.id} · ${p.error}`
-											: p.source
-												? `${p.id} · ${p.source}`
-												: `${p.id} · ${t("uiPluginNoSource")}`) + (p.permissions?.length ? ` · ${t("uiPluginPerms")}: ${p.permissions.join(", ")}` : "")
-									}
-									enabled={!disabledPlugins.has(p.id) && !p.error}
-									onToggle={() => !p.error && togglePlugin(p)}
-									action={
-										<div className="set-row-actions">
-											{p.source && (
-												<button
-													type="button"
-													className="set-uninstall"
-													title={t("pluginUpdateHint")}
-													onClick={() => runUiPluginUpdate(p.id, p.source!)}
-												>
-													<FiRefreshCw />
-													{t("pluginUpdate")}
-												</button>
-											)}
-											{confirmUiUninstall === p.id ? (
-												<button
-													type="button"
-													className="set-uninstall confirm"
-													title={t("pluginUninstallHint")}
-													onClick={() => runUiPluginUninstall(p.id)}
-												>
-													{t("uninstallConfirm")}
-												</button>
-											) : (
-												<button
-													type="button"
-													className="set-uninstall"
-													title={t("pluginUninstallHint")}
-													onClick={() => setConfirmUiUninstall(p.id)}
-												>
-													<FiTrash2 />
-													{t("uninstallExt")}
-												</button>
-											)}
-										</div>
-									}
-								/>
-								{/* 声明式设置：manifest settings schema → 自动渲染表单 */}
-								{p.settingsSchema && p.settingsSchema.length > 0 && (
-									<PluginSettingsForm plugin={p} send={send} />
+												</div>
+											</div>
+										))}
+									</div>
 								)}
-								</>
-							))}
-						</div>
-					)}
-				</div>
-				)}
-
-				{/* ---- DSH 用户补丁（<dataDir>/dsh-patches，仅 dsh 引擎） ---------- */}
-				{tab === "plugins" && chat.engine === "dsh" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiBox className="set-section-icon" />
-						{t("dshPatches")}
-						<HintTip text={t("dshPatchesDesc")} />
-						<span className="set-count">{chat.dshPatches?.files.length ?? 0}</span>
-						<button
-							type="button"
-							className="set-uninstall"
-							title={t("dshPatchesRescanHint")}
-							onClick={() => send({ type: "dsh_patches_rescan" })}
-						>
-							<FiRefreshCw />
-							{t("dshPatchesRescan")}
-						</button>
+							</div>
+						)}
 					</div>
-					{(chat.dshPatches?.files.length ?? 0) === 0 ? (
-						<p className="set-empty">{t("dshPatchesEmpty")}</p>
-					) : (
-						<div className="set-list">
-							{chat.dshPatches!.files.map((f) => (
-								<div className="set-row" key={f.name}>
-									<div className="set-row-info">
-										<div className="set-row-name">{f.name}</div>
-										<div className="set-row-desc">
-											{formatBytes(f.size)} · {new Date(f.mtimeMs).toLocaleString()}
-										</div>
-									</div>
-								</div>
-							))}
-						</div>
-					)}
-					<p className="set-hint">{t("dshPatchesPath")} {chat.dshPatches?.patchDir ?? ""}</p>
-				</div>
-				)}
-
-				{/* ---- goal review ----------------------------------------------- */}
-				{tab === "review" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiZap className="set-section-icon" />
-						{t("settingsReview")}
-						<HintTip text={t("settingsReviewDesc")} />
-						<span className="set-count">{settings.reviewSkills.length}</span>
-					</div>
-					{isDsh && <p className="set-hint">{t("dshReviewPromptNote")}</p>}
-					<textarea
-						className="set-prompt-input"
-						rows={5}
-						placeholder={t("reviewPromptPlaceholder")}
-						value={reviewPromptDraft}
-						onFocus={() => (reviewPromptFocus.current = true)}
-						onBlur={() => {
-							reviewPromptFocus.current = false;
-							setPartial({ reviewPrompt: reviewPromptDraft });
-						}}
-						onChange={(e) => setReviewPromptDraft(e.target.value)}
-					/>
-					<div className="set-field-label">{t("settingsReviewSkills")}</div>
-					{settings.reviewSkills.length === 0 ? (
-						<p className="set-empty">{t("noSkills")}</p>
-					) : (
-						<div className="set-list">
-							{settings.reviewSkills.map((s) => (
-								<ToggleRow
-									key={`review-${s.name}`}
-									title={s.name}
-									subtitle={s.description}
-									enabled={s.enabled}
-									onToggle={() => toggleReviewSkill(s)}
-								/>
-							))}
-						</div>
-					)}
-				</div>
-				)}
-
-				{/* ---- vision bridge ---------------------------------------------- */}
-				{tab === "vision" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiEye className="set-section-icon" />
-						{t("settingsVisionBridge")}
-					</div>
-					<ToggleRow
-						title={t("visionBridgeEnabled")}
-						tip={t("settingsVisionBridgeDesc")}
-						enabled={settings.visionBridgeEnabled}
-						onToggle={() =>
-							setPartial({ visionBridgeEnabled: !settings.visionBridgeEnabled })
-						}
-					/>
-					{!settings.visionBridgeEnabled && (
-						<p className="set-hint">{t("visionBridgeOffHint")}</p>
-					)}
-					{settings.visionBridgeEnabled && (
-						<div className="set-mode-row">
-							<label className="set-field-label">
-								{t("visionBridgeModel")}
-							</label>
-							<select
-								className="set-select"
-								value={settings.visionBridgeModel ?? ""}
-								onChange={(e) =>
-									setPartial({ visionBridgeModel: e.target.value || null })
-								}
-							>
-								<option value="">{t("visionBridgeAuto")}</option>
-								{settings.visionModels.map((m) => (
-									<option
-										key={`${m.provider}/${m.id}`}
-										value={`${m.provider}/${m.id}`}
-									>
-										{m.label}
-									</option>
-								))}
-							</select>
-						</div>
-					)}
-					{settings.visionBridgeEnabled && (
-						<div className="set-mode-row">
-							<label className="set-field-label">
-								{t("visionBridgePromptMode")}
-							</label>
-							<select
-								className="set-select"
-								value={vbPromptMode}
-								onChange={(e) => {
-									const mode = e.target.value as "append" | "replace";
-									setVbPromptMode(mode);
-									setPartial({ visionBridgePromptMode: mode });
-								}}
-							>
-								<option value="append">{t("promptModeAppend")}</option>
-								<option value="replace">{t("promptModeReplace")}</option>
-							</select>
-						</div>
-					)}
-					{settings.visionBridgeEnabled && (
-						<textarea
-							className="set-prompt-input"
-							rows={4}
-							placeholder={t("visionBridgePromptPlaceholder")}
-							value={vbPromptDraft}
-							onFocus={() => (vbPromptFocus.current = true)}
-							onBlur={() => {
-								vbPromptFocus.current = false;
-								// Same contract as the system prompt: an unmodified copy of
-								// the built-in default is stored as empty (use default).
-								const text =
-									vbPromptMode === "replace" &&
-									settings.visionBridgeDefaultPrompt &&
-									vbPromptDraft === settings.visionBridgeDefaultPrompt
-										? ""
-										: vbPromptDraft;
-								setPartial({
-									visionBridgePromptMode: vbPromptMode,
-									visionBridgePrompt: text,
-								});
-							}}
-							onChange={(e) => setVbPromptDraft(e.target.value)}
-						/>
-					)}
-					{settings.visionBridgeEnabled &&
-						(settings.visionModels.length === 0 ? (
-							<p className="set-hint">{t("visionBridgeNoModels")}</p>
-						) : (
-							<p className="set-hint">
-								{t("visionBridgeCurrent", {
-									model:
-										settings.visionBridgeModel ??
-										t("visionBridgeAuto"),
-								})}
-							</p>
-						))}
-				</div>
-				)}
-
-				{tab === "presets" && (
-				<div className="set-section">
-					<div className="set-section-title">
-						<FiSettings className="set-section-icon" />
-						{t("settingsPresets")}
-						<span className="set-count">{settings.presets.length}</span>
-					</div>
-					<div className="set-preset-save">
-						<input
-							className="set-input"
-							placeholder={t("presetNamePlaceholder")}
-							value={presetName}
-							onChange={(e) => setPresetName(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && presetName.trim()) {
-									send({ type: "save_preset", name: presetName.trim() });
-									setPresetName("");
-								}
-							}}
-						/>
-						<button
-							type="button"
-							className="set-save-btn"
-							disabled={!presetName.trim()}
-							onClick={() => {
-								send({ type: "save_preset", name: presetName.trim() });
-								setPresetName("");
-							}}
-						>
-							<FiPlus /> {t("saveAsPreset")}
-						</button>
-					</div>
-					{settings.presets.length === 0 ? (
-						<p className="set-empty">{t("noPresets")}</p>
-					) : (
-						<div className="set-list">
-							{settings.presets.map((p) => (
-								<div className="set-row" key={p.name}>
-									<div className="set-row-info">
-										<div className="set-row-name">{p.name}</div>
-										<div className="set-row-desc">
-											{p.promptMode === "replace"
-												? t("promptModeReplace")
-												: t("promptModeAppend")}
-											{p.disabledSkills.length > 0 &&
-												` · ${t("settingsSkills")} ${p.disabledSkills.length}`}
-											{p.disabledExtensions.length > 0 &&
-												` · ${t("settingsExtensions")} ${p.disabledExtensions.length}`}
-										</div>
-									</div>
-									<div className="set-row-actions">
-										<button
-											type="button"
-											className="dd-refresh"
-											onClick={() => send({ type: "apply_preset", name: p.name })}
-										>
-											{t("applyPreset")}
-										</button>
-										<button
-											type="button"
-											className="set-icon-btn danger"
-											title={t("deletePreset")}
-											onClick={() => send({ type: "delete_preset", name: p.name })}
-										>
-											<FiTrash2 />
-										</button>
-									</div>
-								</div>
-							))}
-						</div>
-					)}
-				</div>
-				)}
-				</div>
 				</div>
 
 				<div className="modal-actions">

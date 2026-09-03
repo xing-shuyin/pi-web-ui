@@ -3,12 +3,7 @@ import { flushSync } from "react-dom";
 
 import type { CSSProperties } from "react";
 import { FiArrowDown } from "react-icons/fi";
-import type {
-	PromptAttachment,
-	ToolStatus,
-	UiMessage,
-	UiState,
-} from "../types";
+import type { PromptAttachment, ToolStatus, UiMessage, UiState } from "../types";
 import { Message, asText } from "./Message";
 
 import { collectQuestionAttachments } from "../question-attachments";
@@ -72,11 +67,7 @@ interface MessageListProps {
 	liveOutputs: ReadonlyMap<string, { toolName: string; text: string }>;
 	toolStatuses: ReadonlyMap<string, ToolStatus>;
 	/** Edit-and-re-ask handler (forwarded to user message bubbles). */
-	onEdit?: (
-		messageId: string,
-		text: string,
-		attachments?: PromptAttachment[],
-	) => void;
+	onEdit?: (messageId: string, text: string, attachments?: PromptAttachment[]) => void;
 	/** Kill the running bash command from its tool card (agent run continues). */
 	onKillBash?: () => void;
 	/** Remove one queued prompt (the ✕ on a pending bubble). */
@@ -91,7 +82,18 @@ interface MessageListProps {
 	onJumpDone?: () => void;
 }
 
-export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBash, onRemoveQueued, thinkingWrap, toolsWrap, jumpTarget, onJumpDone }: MessageListProps) {
+export function MessageList({
+	state,
+	liveOutputs,
+	toolStatuses,
+	onEdit,
+	onKillBash,
+	onRemoveQueued,
+	thinkingWrap,
+	toolsWrap,
+	jumpTarget,
+	onJumpDone,
+}: MessageListProps) {
 	const t = useT();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [stickBottom, setStickBottom] = useState(true);
@@ -109,9 +111,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	/** 会话内搜索栏（Ctrl+F / Cmd+F）。 */
 	const [searchOpen, setSearchOpen] = useState(false);
 	/** Persisted messages + the live in-progress assistant message (if any). */
-	const messages = state.streamingMessage
-		? [...state.messages, state.streamingMessage]
-		: state.messages;
+	const messages = state.streamingMessage ? [...state.messages, state.streamingMessage] : state.messages;
 	/**
 	 * toolResult lookup, memoized on the messages array. The server keeps the
 	 * array reference stable while the message set is unchanged, so this Map is
@@ -120,8 +120,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	const toolResults = useMemo(() => {
 		const m = new Map<string, UiMessage>();
 		for (const msg of state.messages) {
-			if (msg.role === "toolResult" && msg.toolCallId)
-				m.set(msg.toolCallId, msg);
+			if (msg.role === "toolResult" && msg.toolCallId) m.set(msg.toolCallId, msg);
 		}
 		return m;
 	}, [state.messages]);
@@ -131,17 +130,11 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	 * attachment asides that follow the question. Pure logic lives in
 	 * question-attachments.ts (unit-tested).
 	 */
-	const questionAttachments = useMemo(
-		() => collectQuestionAttachments(state.messages),
-		[state.messages],
-	);
+	const questionAttachments = useMemo(() => collectQuestionAttachments(state.messages), [state.messages]);
 	const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
 	// Only the last KEEP_RECENT persisted messages are fully rendered; older
 	// ones collapse to summary rows (unless the user expanded them).
-	const recentStart =
-		state.messages.length > COLLAPSE_MIN
-			? Math.max(0, state.messages.length - KEEP_RECENT)
-			: 0;
+	const recentStart = state.messages.length > COLLAPSE_MIN ? Math.max(0, state.messages.length - KEEP_RECENT) : 0;
 
 	/** 当前渲染为折叠摘要行的消息 id（SearchBar 的折叠层搜索索引用它；
 	 *  toolResult 无独立折叠行——其结果文本已并入宿主 toolCall 卡）。
@@ -174,8 +167,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	/** 每条消息的当前内容指纹（id → fingerprint，随 state.messages 重算）。 */
 	const fingerprints = useMemo(() => {
 		const m = new Map<string, number>();
-		for (const msg of state.messages)
-			m.set(msg.id, contentFingerprint(msg));
+		for (const msg of state.messages) m.set(msg.id, contentFingerprint(msg));
 		return m;
 	}, [state.messages]);
 	// 镜像供 sweep（rAF 回调）读取而不重建依赖
@@ -190,11 +182,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	virtualOnRef.current = virtualOn;
 	// 底部常驻区（永不占位）：随每次渲染按预算重算（读取最新实测高度），
 	// 首次全量测量后巨型消息会被预算挤出常驻区、参与正常窗口化。
-	const alwaysSet = pickAlways(
-		state.messages,
-		heightsRef.current,
-		ALWAYS_BUDGET,
-	);
+	const alwaysSet = pickAlways(state.messages, heightsRef.current, ALWAYS_BUDGET);
 	const alwaysRef = useRef(alwaysSet);
 	alwaysRef.current = alwaysSet;
 
@@ -217,8 +205,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 			items.push({ id, top: b.top, bottom: b.bottom });
 			// 显示中的元素顺手记录实测高度——pickAlways 的预算与占位高度都靠它；
 			// 只在隐藏时测量的话，「初始就显示」的消息会永远停留在估算值。
-			if (!hiddenRef.current.has(id))
-				recordMeasured(id, b.bottom - b.top, fpRef.current.get(id));
+			if (!hiddenRef.current.has(id)) recordMeasured(id, b.bottom - b.top, fpRef.current.get(id));
 		}
 		const plan = planWindow(items, viewport, alwaysRef.current, hiddenRef.current);
 		// 收起时用刚实测的高度做占位 ⇒ 流总高度不变 ⇒ 无需任何 scrollTop 补偿。
@@ -238,7 +225,6 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 			sweep();
 		});
 	}, [sweep]);
-
 
 	// 初始挂载：首帧绘制前就把远端内容换成占位（大会话 attach 不再全量布局绘制）
 	useLayoutEffect(() => {
@@ -367,13 +353,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 		const onKey = (e: KeyboardEvent) => {
 			if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "f") return;
 			const target = e.target as HTMLElement | null;
-			if (
-				target &&
-				(target.tagName === "INPUT" ||
-					target.tagName === "TEXTAREA" ||
-					target.isContentEditable)
-			)
-				return;
+			if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
 			e.preventDefault();
 			setSearchOpen(true);
 		};
@@ -403,15 +383,11 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 			activeIdxRef.current = qIdx;
 			setActiveIdx(qIdx);
 			requestAnimationFrame(() => {
-				const el = scrollRef.current?.querySelector<HTMLElement>(
-					`[data-msg-id="${id}"]`,
-				);
+				const el = scrollRef.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
 				if (el) {
 					// Clear the flash from any previously jumped-to message, then
 					// restart the highlight animation on the target.
-					scrollRef.current
-						?.querySelectorAll(".msg-flash")
-						.forEach((n) => n.classList.remove("msg-flash"));
+					scrollRef.current?.querySelectorAll(".msg-flash").forEach((n) => n.classList.remove("msg-flash"));
 					el.scrollIntoView({ block: "start" });
 					el.classList.remove("msg-flash");
 					void el.offsetWidth; // restart the highlight animation
@@ -428,12 +404,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 	// 锚点 = role + timestamp；会话载入后从 UiMessage[] 解析出 message id。
 	const jumpMsgId = useMemo(() => {
 		if (!jumpTarget) return null;
-		return (
-			state.messages.find(
-				(m) =>
-					m.role === jumpTarget.role && m.timestamp === jumpTarget.timestamp,
-			)?.id ?? null
-		);
+		return state.messages.find((m) => m.role === jumpTarget.role && m.timestamp === jumpTarget.timestamp)?.id ?? null;
 	}, [state.messages, jumpTarget]);
 
 	useEffect(() => {
@@ -689,16 +660,10 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 						// toolResult content lives inside its toolCall card — nothing to
 						// show in the collapsed row either.
 						if (m.role === "toolResult") return null;
-						return (
-							<CollapsedMessage key={m.id} message={m} onExpand={expand} />
-						);
+						return <CollapsedMessage key={m.id} message={m} onExpand={expand} />;
 					}
 					const qIdx = m.role === "user" ? qnIndex.get(m.id) : undefined;
-					const show =
-						!virtualOn ||
-						alwaysSet.has(m.id) ||
-						pinned.has(m.id) ||
-						!hidden.has(m.id);
+					const show = !virtualOn || alwaysSet.has(m.id) || pinned.has(m.id) || !hidden.has(m.id);
 					return (
 						<LazyMount
 							key={m.id}
@@ -714,25 +679,25 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 							onMeasured={storeHeight}
 							lazyRef={attachEl}
 						>
-						<Message
-							key={m.id}
-							message={m}
-							qnIndex={qIdx}
-							qnActive={qIdx !== undefined ? qIdx === activeIdx : undefined}
-							onJump={jumpTo}
-							toolResults={toolResults}
-							liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
-							toolStatuses={toolStatuses}
-							streaming={state.isStreaming}
-							onKillBash={onKillBash}
-							toolsWrap={toolsWrap}
-							thinkingWrap={thinkingWrap}
-							isLast={m.id === lastId}
-							onEdit={onEdit}
-							questionAttachments={questionAttachments.get(m.id)}
-							onCollapse={isExpandedOld ? collapse : undefined}
-							searchActive={searchOpen}
-						/>
+							<Message
+								key={m.id}
+								message={m}
+								qnIndex={qIdx}
+								qnActive={qIdx !== undefined ? qIdx === activeIdx : undefined}
+								onJump={jumpTo}
+								toolResults={toolResults}
+								liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
+								toolStatuses={toolStatuses}
+								streaming={state.isStreaming}
+								onKillBash={onKillBash}
+								toolsWrap={toolsWrap}
+								thinkingWrap={thinkingWrap}
+								isLast={m.id === lastId}
+								onEdit={onEdit}
+								questionAttachments={questionAttachments.get(m.id)}
+								onCollapse={isExpandedOld ? collapse : undefined}
+								searchActive={searchOpen}
+							/>
 						</LazyMount>
 					);
 				})}
@@ -741,9 +706,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 						key={state.streamingMessage.id}
 						message={state.streamingMessage}
 						toolResults={toolResults}
-						liveOutputs={
-							hasToolCall(state.streamingMessage) ? liveOutputs : EMPTY_LIVE
-						}
+						liveOutputs={hasToolCall(state.streamingMessage) ? liveOutputs : EMPTY_LIVE}
 						toolStatuses={toolStatuses}
 						streaming
 						isLast
@@ -754,9 +717,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 						searchActive={searchOpen}
 					/>
 				)}
-				{state.isStreaming && messages.length === 0 && (
-					<div className="streaming-wait">{t("waitingResponse")}</div>
-				)}
+				{state.isStreaming && messages.length === 0 && <div className="streaming-wait">{t("waitingResponse")}</div>}
 				{state.queue.steering.map((text, i) => (
 					<div className="queued-msg" key={`q-steer-${i}`}>
 						<div className="queued-bubble">
@@ -795,11 +756,7 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 				))}
 			</div>
 			{!stickBottom && (
-				<button
-					type="button"
-					className="scroll-bottom"
-					onClick={scrollToBottom}
-				>
+				<button type="button" className="scroll-bottom" onClick={scrollToBottom}>
 					<FiArrowDown /> {t("backToBottom")}
 				</button>
 			)}
@@ -833,7 +790,9 @@ export function MessageList({ state, liveOutputs, toolStatuses, onEdit, onKillBa
 							aria-label={`${i + 1}. ${q.text}`}
 							onClick={() => jumpTo(q.id)}
 						>
-							<span className="qn-bar-text">{i + 1}. {q.text}</span>
+							<span className="qn-bar-text">
+								{i + 1}. {q.text}
+							</span>
 						</button>
 					))}
 					{many && (

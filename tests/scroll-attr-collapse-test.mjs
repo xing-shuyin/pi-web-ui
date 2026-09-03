@@ -24,10 +24,7 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(
-	join(agentDir, "auth.json"),
-	JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }),
-);
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
 	JSON.stringify({
@@ -85,8 +82,7 @@ function seedChat() {
 		const timer = setTimeout(() => reject(new Error("seed timeout")), 180000);
 		let step = 0;
 		let known = 0;
-		const sendNext = () =>
-			ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step++} 条` }));
+		const sendNext = () => ws.send(JSON.stringify({ type: "prompt", text: `${TALL_TEXT}\n\n第 ${step++} 条` }));
 		ws.on("open", () => ws.send(JSON.stringify({ type: "hello", clientId: CLIENT_ID })));
 		ws.on("message", (d) => {
 			let msg;
@@ -173,9 +169,7 @@ const gapOf = () => {
 function startArrivals(count) {
 	const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
 	let left = count;
-	ws.on("open", () =>
-		ws.send(JSON.stringify({ type: "hello", clientId: CLIENT_ID + "-arrivals" })),
-	);
+	ws.on("open", () => ws.send(JSON.stringify({ type: "hello", clientId: CLIENT_ID + "-arrivals" })));
 	const timer = setInterval(() => {
 		if (left-- <= 0) {
 			clearInterval(timer);
@@ -208,10 +202,7 @@ async function main() {
 		if (m.type() === "error") consoleErrors.push(m.text());
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
-	await page.addInitScript(
-		(id) => localStorage.setItem("pi-web-client-id", id),
-		CLIENT_ID,
-	);
+	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 	await page.goto(`http://localhost:${PORT}/`);
 	await page.waitForSelector(".topbar", { timeout: 60000 });
 	await page.waitForSelector(".msg", { timeout: 30000 });
@@ -271,4 +262,3 @@ main().catch((e) => {
 	console.error("❌", e.message);
 	process.exit(1);
 });
-

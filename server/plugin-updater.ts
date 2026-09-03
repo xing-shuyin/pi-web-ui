@@ -16,10 +16,7 @@ const PLUGIN_ID_RE = /^[A-Za-z0-9_-]+$/;
 /** 保留的备份份数（超出删除最旧的）。 */
 export const BACKUP_KEEP = 3;
 
-export type Exec = (
-	cmd: string,
-	args: string[],
-) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
+export type Exec = (cmd: string, args: string[]) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
 
 /** 默认执行器：execFile 直跑 git（不经 shell），15s 超时。 */
 export const execGit: Exec = (cmd, args) =>
@@ -41,15 +38,13 @@ export function ensureBackup(dataDir: string, id: string, opts?: { source?: stri
 	const ts = stamp();
 	const dest = join(dataDir, "plugin-backups", `${id}-${ts}`);
 	try {
-		mkdirSync(dirnameOf(dest)!, { recursive: true });		cpSync(target, dest, {
+		mkdirSync(dirnameOf(dest)!, { recursive: true });
+		cpSync(target, dest, {
 			recursive: true,
 			// 与安装一致：不备份 .git/node_modules（纯运行目录），config.json 等保留。
 			filter: (s) => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(s),
 		});
-		writeFileSync(
-			join(dest, ".pi-backup.json"),
-			JSON.stringify({ id, ts, source: opts?.source }, null, 2) + "\n",
-		);
+		writeFileSync(join(dest, ".pi-backup.json"), JSON.stringify({ id, ts, source: opts?.source }, null, 2) + "\n");
 		pruneBackups(dataDir, id);
 		return ts;
 	} catch (err) {
@@ -143,7 +138,7 @@ export async function resolveRemoteSha(spec: string, exec: Exec = execGit): Prom
 	const res = await exec("git", ["ls-remote", remote, "HEAD"]);
 	if (!res.ok) return null;
 	// 行格式: <sha>\tHEAD（可能多行——取第一行）
-	const sha = (res.stdout.match(/^([0-9a-f]{40,64})\s+HEAD/m)?.[1]) ?? null;
+	const sha = res.stdout.match(/^([0-9a-f]{40,64})\s+HEAD/m)?.[1] ?? null;
 	return sha ? sha.slice(0, 12) : null;
 }
 
@@ -162,10 +157,7 @@ export interface PluginUpdateInfo {
 }
 
 /** 扫描全部已装插件，对比本地 sha 与远端 sha，报告更新状态。 */
-export async function checkPluginUpdates(
-	dataDir: string,
-	exec: Exec = execGit,
-): Promise<PluginUpdateInfo[]> {
+export async function checkPluginUpdates(dataDir: string, exec: Exec = execGit): Promise<PluginUpdateInfo[]> {
 	const pluginsDir = join(dataDir, "plugins");
 	let names: string[] = [];
 	try {

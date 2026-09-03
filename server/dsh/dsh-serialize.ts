@@ -103,14 +103,12 @@ export function serializeAssistantBlocks(blocks: DshContentBlock[]): UiContentBl
 // ---------------------------------------------------------------------------
 
 /** tool/result 事件 data → UiMessage（role toolResult）。 */
-export function toolResultEventToUiMessage(
-	data: {
-		message?: {
-			content?: DshContentBlock[];
-			time?: number;
-		};
-	},
-): UiMessage | null {
+export function toolResultEventToUiMessage(data: {
+	message?: {
+		content?: DshContentBlock[];
+		time?: number;
+	};
+}): UiMessage | null {
 	const blocks = Array.isArray(data.message?.content) ? data.message!.content! : [];
 	const tr = blocks.find((b) => b?.type === "tool-result") as
 		| {
@@ -191,7 +189,10 @@ export class DshStreamAccumulator {
 	private readonly blocks = new Map<number, UiContentBlock>();
 	private started = false;
 
-	constructor(firstSeq: number, private readonly turn: number) {
+	constructor(
+		firstSeq: number,
+		private readonly turn: number,
+	) {
 		this.id = `stream-${firstSeq}-t${turn}`;
 	}
 
@@ -251,10 +252,7 @@ export class DshStreamAccumulator {
 					if (block.type === "reasoning") {
 						this.blocks.set(index, { type: "thinking", thinking: block.text ?? "" });
 					} else if (block.type === "tool-call") {
-						const { text, truncated } = truncate(
-							typeof block.arguments === "string" ? block.arguments : "",
-							ARGS_CAP,
-						);
+						const { text, truncated } = truncate(typeof block.arguments === "string" ? block.arguments : "", ARGS_CAP);
 						this.blocks.set(index, {
 							type: "toolCall",
 							id: block.id ?? "",

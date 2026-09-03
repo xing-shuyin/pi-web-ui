@@ -128,7 +128,13 @@ try {
 	}
 
 	// -- 2. plugin_settings 保存 → storage.json + onSettingsChanged + 回显 -------------
-	sock.send(JSON.stringify({ type: "plugin_settings", pluginId: "opts", values: { pollSec: 120, notify: false, theme: "light" } }));
+	sock.send(
+		JSON.stringify({
+			type: "plugin_settings",
+			pluginId: "opts",
+			values: { pollSec: 120, notify: false, theme: "light" },
+		}),
+	);
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "插件设置已保存", "save notice");
 	// 落盘断言
 	const raw = JSON.parse(readFileSync(join(plugDir, "storage.json"), "utf8"));

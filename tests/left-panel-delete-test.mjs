@@ -11,12 +11,7 @@
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -79,12 +74,14 @@ const sessOther = seedSession(null, "del-other", otherDir, "另一个项目的�
 
 const servers = [];
 
-async function startServer(env = {
-	PI_WEB_PORT: String(PORT),
-	PI_WEB_DATA_DIR: dataDir,
-	PI_CODING_AGENT_DIR: agentDir,
-	PI_WEB_CWD: workDir,
-}) {
+async function startServer(
+	env = {
+		PI_WEB_PORT: String(PORT),
+		PI_WEB_DATA_DIR: dataDir,
+		PI_CODING_AGENT_DIR: agentDir,
+		PI_WEB_CWD: workDir,
+	},
+) {
 	const proc = spawn("node", ["dist/server/index.js"], {
 		cwd: REPO_ROOT,
 		env: { ...process.env, ...env },
@@ -114,10 +111,7 @@ function connect(url = URL) {
 				const existing = inbox.findIndex(pred);
 				if (existing >= 0) return inbox.splice(existing, 1)[0];
 				return new Promise((res, rej) => {
-					const t = setTimeout(
-						() => rej(new Error(`timeout waiting for ${what}`)),
-						ms,
-					);
+					const t = setTimeout(() => rej(new Error(`timeout waiting for ${what}`)), ms);
 					waiters.push((m) => {
 						if (pred(m)) {
 							clearTimeout(t);
@@ -170,9 +164,7 @@ async function run() {
 	// （attach 后有防抖的后台重复推送，必须等“确实不含被删项”的那一份）
 	c.send({ type: "delete_session", path: sess1 });
 	const s2 = await c.next(
-		(m) =>
-			m.type === "sessions" &&
-			!(m.sessions ?? []).some((x) => x.path === sess1),
+		(m) => m.type === "sessions" && !(m.sessions ?? []).some((x) => x.path === sess1),
 		"sessions #2（不含被删项）",
 	);
 	const paths2 = (s2.sessions ?? []).map((x) => x.path);
@@ -182,10 +174,7 @@ async function run() {
 
 	// 3) 越界路径拒绝：会话目录之外的文件不能删
 	c.send({ type: "delete_session", path: join(workDir, "a.txt") });
-	const n1 = await c.next(
-		(m) => m.type === "notice" && m.level === "error",
-		"error notice",
-	);
+	const n1 = await c.next((m) => m.type === "notice" && m.level === "error", "error notice");
 	check("越界删除返回错误提示", typeof n1.text === "string" && n1.text.length > 0, n1.text);
 	check("越界文件未被删除", existsSync(join(workDir, "a.txt")));
 
@@ -197,9 +186,7 @@ async function run() {
 
 	c.send({ type: "remove_project", path: otherDir });
 	const p2 = await c.next(
-		(m) =>
-			m.type === "projects" &&
-			!(m.projects ?? []).some((x) => x.path === otherDir),
+		(m) => m.type === "projects" && !(m.projects ?? []).some((x) => x.path === otherDir),
 		"projects #2（不含 otherDir）",
 	);
 	const projPaths2 = (p2.projects ?? []).map((x) => x.path);
@@ -210,10 +197,7 @@ async function run() {
 	const c2 = await connect();
 	c2.send({ type: "list_projects" });
 	const p3 = await c2.next((m) => m.type === "projects", "projects #3");
-	check(
-		"重连后 otherDir 仍不在最近项目里",
-		!(p3.projects ?? []).some((x) => x.path === otherDir),
-	);
+	check("重连后 otherDir 仍不在最近项目里", !(p3.projects ?? []).some((x) => x.path === otherDir));
 
 	c.ws.close();
 	c2.ws.close();
@@ -249,29 +233,23 @@ async function runCurrentSessionCases() {
 	const URL2 = `ws://localhost:${PORT + 1}/ws`;
 	const c = await connect(URL2);
 	const stateMsg = (m) =>
-		(m.type === "snapshot" || m.type === "snapshot_delta") && m.state &&
-		typeof m.state === "object";
+		(m.type === "snapshot" || m.type === "snapshot_delta") && m.state && typeof m.state === "object";
 
 	// A) 启动即恢复最近会话：活跃对话持有 cur-target
-	const init = await c.next(
-		(m) => stateMsg(m) && m.state.sessionFile,
-		"初始 snapshot（含 sessionFile）",
-	);
+	const init = await c.next((m) => stateMsg(m) && m.state.sessionFile, "初始 snapshot（含 sessionFile）");
 	check("启动恢复最近会话（当前对话持有 cur-target）", init.state.sessionFile === sessActive, init.state.sessionFile);
 	const convId1 = init.state.conversationId;
 
 	c.send({ type: "delete_session", path: sessActive });
-	const switched = await c.next(
-		(m) => stateMsg(m) && m.state.sessionFile === sessOld,
-		"自动切换到次新会话",
-	);
+	const switched = await c.next((m) => stateMsg(m) && m.state.sessionFile === sessOld, "自动切换到次新会话");
 	check("删除当前对话后自动切换到次新会话", switched.state.sessionFile === sessOld);
-	check("切换产生了新的活跃对话", switched.state.conversationId !== convId1, `${convId1} → ${switched.state.conversationId}`);
-	const convId2 = switched.state.conversationId;
-	await c.next(
-		(m) => m.type === "conversations" && m.activeId === convId2,
-		"conversations（activeId=新对话）",
+	check(
+		"切换产生了新的活跃对话",
+		switched.state.conversationId !== convId1,
+		`${convId1} → ${switched.state.conversationId}`,
 	);
+	const convId2 = switched.state.conversationId;
+	await c.next((m) => m.type === "conversations" && m.activeId === convId2, "conversations（activeId=新对话）");
 	await c.next(
 		(m) => m.type === "sessions" && !(m.sessions ?? []).some((x) => x.path === sessActive),
 		"sessions（不含被删项）",
@@ -290,10 +268,7 @@ async function runCurrentSessionCases() {
 	}
 	c.send({ type: "delete_session", path: sessOld });
 	const blank = await c.next(
-		(m) =>
-			stateMsg(m) &&
-			m.state.conversationId !== convId2 &&
-			m.state.sessionFile !== sessOld,
+		(m) => stateMsg(m) && m.state.conversationId !== convId2 && m.state.sessionFile !== sessOld,
 		"自动新建空白对话",
 	);
 	check("唯一会话被删后自动新建空白对话", blank.state.conversationId !== convId2, blank.state.conversationId);
@@ -310,32 +285,27 @@ async function runCurrentSessionCases() {
 	const subDir = join(subRoot, "wait-subscriptions");
 	mkdirSync(subDir, { recursive: true });
 	const bgToken = "3f2b8c64-1a2b-4c3d-9e4f-5a6b7c8d9e0f";
-	writeFileSync(join(subDir, `${bgToken}.json`), JSON.stringify({
-		version: 1,
-		token: bgToken,
-		sessionId: sessBg, // 会话 .jsonl 绝对路径（与 conv.session.sessionFile 一致）
-		targetKind: "async",
-		runId: "run-del-test",
-		requestedId: "req-del-test",
-		createdAt: Date.now(),
-		expiresAt: Date.now() + 10 * 60_000,
-	}));
+	writeFileSync(
+		join(subDir, `${bgToken}.json`),
+		JSON.stringify({
+			version: 1,
+			token: bgToken,
+			sessionId: sessBg, // 会话 .jsonl 绝对路径（与 conv.session.sessionFile 一致）
+			targetKind: "async",
+			runId: "run-del-test",
+			requestedId: "req-del-test",
+			createdAt: Date.now(),
+			expiresAt: Date.now() + 10 * 60_000,
+		}),
+	);
 
 	c.send({ type: "switch_session", path: sessBg });
-	const onBg = await c.next(
-		(m) => stateMsg(m) && m.state.sessionFile === sessBg,
-		"切到后台目标会话",
-	);
+	const onBg = await c.next((m) => stateMsg(m) && m.state.sessionFile === sessBg, "切到后台目标会话");
 	const bgConvId = onBg.state.conversationId;
 	c.send({ type: "switch_session", path: sessAfter });
-	await c.next(
-		(m) => stateMsg(m) && m.state.sessionFile === sessAfter,
-		"切走（后台保留）",
-	);
+	await c.next((m) => stateMsg(m) && m.state.sessionFile === sessAfter, "切走（后台保留）");
 	const convsC = await c.next(
-		(m) =>
-			m.type === "conversations" &&
-			(m.conversations ?? []).some((x) => x.id === bgConvId),
+		(m) => m.type === "conversations" && (m.conversations ?? []).some((x) => x.id === bgConvId),
 		"conversations（后台对话在运行列表）",
 	);
 	check(
@@ -346,10 +316,7 @@ async function runCurrentSessionCases() {
 
 	c.send({ type: "delete_session", path: sessBg });
 	const nC = await c.next(
-		(m) =>
-			m.type === "notice" &&
-			m.level === "warning" &&
-			m.text === "该对话正在后台运行，请先停止或关闭该对话再删除",
+		(m) => m.type === "notice" && m.level === "warning" && m.text === "该对话正在后台运行，请先停止或关闭该对话再删除",
 		"后台占用拒绝删除提示",
 	);
 	check("后台对话占用的会话拒绝删除", typeof nC.text === "string" && nC.text.includes("后台运行"), nC.text);

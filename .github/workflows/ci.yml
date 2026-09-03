@@ -21,6 +21,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # 代码格式（prettier；失败先修格式：npm run format）
+      - name: Check formatting
+        run: npm run format:check
+
       # 协议双端手工同步校验（server/protocol.ts ↔ web/src/types.ts）
       - name: Check protocol sync
         run: node scripts/check-protocol-sync.mjs

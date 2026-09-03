@@ -37,10 +37,7 @@ function connect() {
 							res(inbox.splice(i, 1)[0]);
 							return;
 						}
-						const t = setTimeout(
-							() => rej(new Error("timeout waiting for message")),
-							timeout,
-						);
+						const t = setTimeout(() => rej(new Error("timeout waiting for message")), timeout);
 						waiters.push({
 							pred,
 							resolve: (m) => {
@@ -64,28 +61,16 @@ async function main() {
 	// Project A commands first (server default cwd = work dir A).
 	c.send({ type: "list_commands" });
 	const ca = await c.wait((m) => m.type === "commands");
-	console.log(
-		"[1] cwd A commands:",
-		JSON.stringify(ca.commands.map((x) => x.name)),
-		"→",
-		ca.path,
-	);
+	console.log("[1] cwd A commands:", JSON.stringify(ca.commands.map((x) => x.name)), "→", ca.path);
 	if (!ca.commands.some((x) => x.name === "cmd-A")) {
 		throw new Error("FAIL: expected project A command");
 	}
 
 	// Switch to project B — commands must auto-switch to B's file.
 	c.send({ type: "set_cwd", path: "/tmp/cmdtest/proj-b" });
-	await c.wait(
-		(m) => m.type === "snapshot" && m.state.cwd === "/tmp/cmdtest/proj-b",
-	);
+	await c.wait((m) => m.type === "snapshot" && m.state.cwd === "/tmp/cmdtest/proj-b");
 	const cb = await c.wait((m) => m.type === "commands");
-	console.log(
-		"[2] cwd B commands:",
-		JSON.stringify(cb.commands.map((x) => x.name)),
-		"→",
-		cb.path,
-	);
+	console.log("[2] cwd B commands:", JSON.stringify(cb.commands.map((x) => x.name)), "→", cb.path);
 	if (!cb.commands.some((x) => x.name === "cmd-B")) {
 		throw new Error("FAIL: expected project B command after cwd switch");
 	}

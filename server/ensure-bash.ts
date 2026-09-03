@@ -11,14 +11,7 @@
  * Download is fire-and-forget at server start and never throws: on failure
  * the terminal simply falls back to $COMSPEC (cmd.exe) as before.
  */
-import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -43,10 +36,7 @@ export function windowsBashPath(): string {
 export function hasGitBash(): boolean {
 	const pf = process.env.ProgramFiles;
 	const pf86 = process.env["ProgramFiles(x86)"];
-	for (const cand of [
-		pf ? join(pf, "Git", "bin", "bash.exe") : "",
-		pf86 ? join(pf86, "Git", "bin", "bash.exe") : "",
-	]) {
+	for (const cand of [pf ? join(pf, "Git", "bin", "bash.exe") : "", pf86 ? join(pf86, "Git", "bin", "bash.exe") : ""]) {
 		if (cand && existsSync(cand)) return true;
 	}
 	return false;

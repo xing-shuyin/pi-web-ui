@@ -98,8 +98,7 @@ page.on("console", (m) => {
 
 // Connection-refused errors during the deliberate downtime are expected;
 // anything else (e.g. "Insufficient resources", JS exceptions) is a failure.
-const isExpectedError = (text) =>
-	text.includes("ERR_CONNECTION_REFUSED") || text.includes("Connection reset");
+const isExpectedError = (text) => text.includes("ERR_CONNECTION_REFUSED") || text.includes("Connection reset");
 
 // Instrument WebSocket before app code runs: count instances / active sockets.
 await page.addInitScript(() => {
@@ -110,10 +109,7 @@ await page.addInitScript(() => {
 			super(...args);
 			window.__wsCount.created++;
 			window.__wsCount.active++;
-			window.__wsCount.maxActive = Math.max(
-				window.__wsCount.maxActive,
-				window.__wsCount.active,
-			);
+			window.__wsCount.maxActive = Math.max(window.__wsCount.maxActive, window.__wsCount.active);
 			this.addEventListener("close", () => {
 				window.__wsCount.active--;
 				window.__wsCount.closed++;
@@ -125,11 +121,7 @@ await page.addInitScript(() => {
 
 await page.goto(URL);
 const connected = await page
-	.waitForFunction(
-		() =>
-			document.querySelector(".conn-label")?.textContent?.includes("已连接"),
-		{ timeout: 15000 },
-	)
+	.waitForFunction(() => document.querySelector(".conn-label")?.textContent?.includes("已连接"), { timeout: 15000 })
 	.then(() => true)
 	.catch(() => false);
 check("initial connect", connected);
@@ -145,29 +137,14 @@ const responsive1 = await page
 		return { ms: performance.now() - start };
 	})
 	.catch(() => null);
-check(
-	"page responsive with server down",
-	!!responsive1 && responsive1.ms < 3000,
-	JSON.stringify(responsive1),
-);
+check("page responsive with server down", !!responsive1 && responsive1.ms < 3000, JSON.stringify(responsive1));
 
 // Give the client a few backoff attempts (~1s+2s+4s) to prove boundedness.
 await sleep(9000);
 const c1 = await page.evaluate(() => window.__wsCount);
-check(
-	"at most one socket in flight at a time",
-	c1.maxActive <= 1,
-	JSON.stringify(c1),
-);
-check(
-	"bounded reconnect attempts while down",
-	c1.created <= 6,
-	`created=${c1.created}`,
-);
-check(
-	"page still responsive after 9s of downtime",
-	(await page.evaluate(() => 40 + 2)) === 42,
-);
+check("at most one socket in flight at a time", c1.maxActive <= 1, JSON.stringify(c1));
+check("bounded reconnect attempts while down", c1.created <= 6, `created=${c1.created}`);
+check("page still responsive after 9s of downtime", (await page.evaluate(() => 40 + 2)) === 42);
 
 // ---- restart the server: must auto-recover ----
 if (!(await startServer())) {
@@ -176,11 +153,7 @@ if (!(await startServer())) {
 	check("server restarted", true);
 }
 const recovered = await page
-	.waitForFunction(
-		() =>
-			document.querySelector(".conn-label")?.textContent?.includes("已连接"),
-		{ timeout: 25000 },
-	)
+	.waitForFunction(() => document.querySelector(".conn-label")?.textContent?.includes("已连接"), { timeout: 25000 })
 	.then(() => true)
 	.catch(() => false);
 check("auto-reconnect after server restart", recovered);
@@ -188,24 +161,17 @@ check("auto-reconnect after server restart", recovered);
 // ---- prompt round-trip after recovery (text-stability completion detector) ----
 const reply = await page.evaluate(async () => {
 	const ta = document.querySelector("textarea");
-	const setter = Object.getOwnPropertyDescriptor(
-		window.HTMLTextAreaElement.prototype,
-		"value",
-	).set;
+	const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
 	setter.call(ta, "Reply with exactly: recovered");
 	ta.dispatchEvent(new Event("input", { bubbles: true }));
 	await new Promise((r) => setTimeout(r, 100));
-	const sendBtn = [...document.querySelectorAll("button")].find(
-		(b) => b.title === "发送（Enter）",
-	);
+	const sendBtn = [...document.querySelectorAll("button")].find((b) => b.title === "发送（Enter）");
 	sendBtn.click();
 
 	const sample = () => {
 		const msgs = [...document.querySelectorAll(".msg")];
 		const last = msgs[msgs.length - 1];
-		return last?.getAttribute("data-role") === "assistant"
-			? last.textContent.trim()
-			: null;
+		return last?.getAttribute("data-role") === "assistant" ? last.textContent.trim() : null;
 	};
 	let prev = null;
 	const deadline = Date.now() + 120000;
@@ -217,11 +183,7 @@ const reply = await page.evaluate(async () => {
 	}
 	return null;
 });
-check(
-	"prompt round-trip after recovery",
-	!!reply,
-	JSON.stringify(reply?.slice(0, 60)),
-);
+check("prompt round-trip after recovery", !!reply, JSON.stringify(reply?.slice(0, 60)));
 
 check(
 	"no unexpected page errors",
@@ -234,7 +196,5 @@ check(
 
 await browser.close();
 await stopServer();
-console.log(
-	failures === 0 ? "\nALL FREEZE TESTS PASSED" : `\n${failures} FAILURE(S)`,
-);
+console.log(failures === 0 ? "\nALL FREEZE TESTS PASSED" : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

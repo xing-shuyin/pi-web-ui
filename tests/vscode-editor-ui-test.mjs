@@ -102,7 +102,10 @@ try {
 
 	// CRLF 回归：打开零修改的 CRLF 文件直接关闭，不得弹「未保存」确认框
 	let dialogFired = false;
-	page.on("dialog", (d) => { dialogFired = true; void d.dismiss(); });
+	page.on("dialog", (d) => {
+		dialogFired = true;
+		void d.dismiss();
+	});
 	await page.locator(".vsc-row", { hasText: "crlf.js" }).first().click();
 	await sleep(400);
 	await page.locator(".vsc-tab.active .x").click();
@@ -118,7 +121,11 @@ try {
 	await page.keyboard.press("Control+s");
 	await sleep(600);
 	const crlfDisk = readFileSync(join(workspace, "src", "crlf.js"), "utf-8");
-	check("CRLF 文件保存后行尾保持 \\r\\n", crlfDisk.includes("let c = 3;") && !/(?<!\r)\n/.test(crlfDisk), JSON.stringify(crlfDisk));
+	check(
+		"CRLF 文件保存后行尾保持 \\r\\n",
+		crlfDisk.includes("let c = 3;") && !/(?<!\r)\n/.test(crlfDisk),
+		JSON.stringify(crlfDisk),
+	);
 
 	// Ctrl+P 快速打开
 	await page.keyboard.press("Control+p");
@@ -127,7 +134,10 @@ try {
 	await sleep(300);
 	await page.keyboard.press("Enter");
 	await sleep(500);
-	const activeTab = await page.locator(".vsc-tab.active .tn").innerText().catch(() => "");
+	const activeTab = await page
+		.locator(".vsc-tab.active .tn")
+		.innerText()
+		.catch(() => "");
 	check("Ctrl+P 快速打开 app.js", activeTab.includes("app.js"), activeTab);
 
 	// ---- 上传：按钮 ⬆ / 拖拽到树（不触发主应用「附加到对话」） --------------------------
@@ -156,7 +166,8 @@ try {
 	// ③ 拖拽到文件夹行 → 上传到该文件夹
 	await page.evaluate(() => {
 		const row = [...document.querySelectorAll(".vsc-row")].find(
-			(r) => r.dataset.path === "sub" && r.dataset.type === "dir");
+			(r) => r.dataset.path === "sub" && r.dataset.type === "dir",
+		);
 		if (!row) throw new Error("sub 行未找到");
 		const dt = new DataTransfer();
 		dt.items.add(new File(["in sub\n"], "in-sub.txt", { type: "text/plain" }));

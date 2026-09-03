@@ -2,21 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { FiFile, FiFolder } from "react-icons/fi";
 import type { ChatState } from "../use-chat";
 import { useT } from "../i18n";
-import {
-	cacheMetrics,
-	estimateStreamTokens,
-	streamRate,
-	trimRateSamples,
-	type RateSample,
-} from "../cache-stats";
+import { cacheMetrics, estimateStreamTokens, streamRate, trimRateSamples, type RateSample } from "../cache-stats";
 
 interface FooterBarProps {
 	chat: ChatState;
-	send: (
-		msg:
-			| { type: "complete_path"; path: string }
-			| { type: "set_cwd"; path: string },
-	) => boolean;
+	send: (msg: { type: "complete_path"; path: string } | { type: "set_cwd"; path: string }) => boolean;
 }
 
 /**
@@ -46,9 +36,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 
 	// Keep the highlighted item visible while navigating with the keyboard.
 	useEffect(() => {
-		const el = document.querySelector(
-			`.status-completions .pc-item[data-idx="${selIdx}"]`,
-		);
+		const el = document.querySelector(`.status-completions .pc-item[data-idx="${selIdx}"]`);
 		el?.scrollIntoView({ block: "nearest" });
 	}, [selIdx]);
 
@@ -60,9 +48,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 	// resets the moment streaming stops.
 	const samplesRef = useRef<RateSample[]>([]);
 	const streamingNow = state?.isStreaming ?? false;
-	const streamEst = state?.streamingMessage
-		? estimateStreamTokens(state.streamingMessage.content)
-		: 0;
+	const streamEst = state?.streamingMessage ? estimateStreamTokens(state.streamingMessage.content) : 0;
 	useEffect(() => {
 		if (!streamingNow) {
 			samplesRef.current = [];
@@ -80,14 +66,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 
 	const cache = cacheMetrics(s.tokens);
 	const hitPct = cache.hitRate * 100;
-	const hitClass =
-		cache.totalInput === 0
-			? ""
-			: cache.hitRate >= 0.7
-				? "ok"
-				: cache.hitRate >= 0.4
-					? "mid"
-					: "warn";
+	const hitClass = cache.totalInput === 0 ? "" : cache.hitRate >= 0.7 ? "ok" : cache.hitRate >= 0.4 ? "mid" : "warn";
 	const hitText = cache.totalInput > 0 ? `${hitPct.toFixed(1)}%` : "—";
 	const rate = streamingNow ? streamRate(samplesRef.current) : 0;
 
@@ -100,14 +79,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 			? `${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`
 			: "—";
 	const ctxPercent = context.percent ?? null;
-	const ctxBarClass =
-		ctxPercent === null
-			? ""
-			: ctxPercent >= 80
-				? "warn"
-				: ctxPercent >= 50
-					? "mid"
-					: "ok";
+	const ctxBarClass = ctxPercent === null ? "" : ctxPercent >= 80 ? "warn" : ctxPercent >= 50 ? "mid" : "ok";
 
 	const queueTotal = state.queue.steering.length + state.queue.followUp.length;
 
@@ -128,8 +100,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 
 	const commit = (path: string) => {
 		const trimmed = path.trim();
-		if (trimmed && trimmed !== state.cwd)
-			send({ type: "set_cwd", path: trimmed });
+		if (trimmed && trimmed !== state.cwd) send({ type: "set_cwd", path: trimmed });
 		setEditing(false);
 	};
 
@@ -192,12 +163,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 			<span className="status-item status-ctx" title={t("contextUsage")}>
 				{t("context")}
 				<span className={`ctx-bar ${ctxBarClass}`}>
-					{ctxPercent !== null && (
-						<span
-							className="ctx-bar-fill"
-							style={{ width: `${Math.min(ctxPercent, 100)}%` }}
-						/>
-					)}
+					{ctxPercent !== null && <span className="ctx-bar-fill" style={{ width: `${Math.min(ctxPercent, 100)}%` }} />}
 				</span>
 				{ctxText}
 			</span>
@@ -279,9 +245,7 @@ export function FooterBar({ chat, send }: FooterBarProps) {
 										onMouseEnter={() => setSelIdx(i)}
 										onClick={() => applyCompletion(c.path, c.type === "dir")}
 									>
-										<span className="pc-icon">
-											{c.type === "dir" ? <FiFolder /> : <FiFile />}
-										</span>
+										<span className="pc-icon">{c.type === "dir" ? <FiFolder /> : <FiFile />}</span>
 										<span className="pc-body">
 											<span className="pc-name">{c.name}</span>
 											<span className="pc-path">{c.path}</span>

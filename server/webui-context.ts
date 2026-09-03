@@ -6,10 +6,7 @@
  *
  * 从 agent-service.ts 抽出，行为保持不变。
  */
-import type {
-	ExtensionUIContext,
-	Theme,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage } from "./protocol.js";
 
 const WIDGET_WIDTH = 80;
@@ -33,11 +30,9 @@ const mockTheme = new Proxy(
 	},
 	{
 		get(target, prop) {
-			if (prop in target)
-				return (target as Record<string, unknown>)[prop as string];
+			if (prop in target) return (target as Record<string, unknown>)[prop as string];
 			// Unknown theme methods → no-op passthrough.
-			return (_arg: unknown, text?: unknown) =>
-				text !== undefined ? text : "";
+			return (_arg: unknown, text?: unknown) => (text !== undefined ? text : "");
 		},
 	},
 ) as unknown as Theme;
@@ -50,8 +45,7 @@ const mockTui = new Proxy(
 	},
 	{
 		get(target, prop) {
-			if (prop in target)
-				return (target as Record<string, unknown>)[prop as string];
+			if (prop in target) return (target as Record<string, unknown>)[prop as string];
 			return () => {};
 		},
 	},
@@ -91,9 +85,7 @@ export class WebUIContext {
 			return;
 		}
 		if (typeof content === "function") {
-			let comp:
-				| { render?: (w: number) => string[] | undefined; dispose?: () => void }
-				| undefined;
+			let comp: { render?: (w: number) => string[] | undefined; dispose?: () => void } | undefined;
 			try {
 				// Mock TUI/theme: extensions only read a handful of theme helpers;
 				// everything else is a no-op, so the widget renders to plain text.
@@ -191,19 +183,14 @@ export class WebUIContext {
 	// -- dialogs (select/confirm/input bridged to the browser) ---------------
 
 	private dialogSeq = 0;
-	private pendingDialogs = new Map<
-		number,
-		(value: string | boolean | null) => void
-	>();
+	private pendingDialogs = new Map<number, (value: string | boolean | null) => void>();
 
 	select = (title: string, options: string[]): Promise<string | undefined> =>
 		this.openDialog("select", title, [options]) as Promise<string | undefined>;
 	confirm = (title: string, message: string): Promise<boolean> =>
 		this.openDialog("confirm", title, [message]) as Promise<boolean>;
 	input = (title: string, placeholder?: string): Promise<string | undefined> =>
-		this.openDialog("input", title, [placeholder ?? ""]) as Promise<
-			string | undefined
-		>;
+		this.openDialog("input", title, [placeholder ?? ""]) as Promise<string | undefined>;
 
 	private openDialog(
 		kind: "select" | "confirm" | "input",
@@ -247,8 +234,7 @@ export class WebUIContext {
 	setFooter = (): void => {};
 	setHeader = (): void => {};
 	setTitle = (): void => {};
-	custom = <T>(_factory: unknown, _done?: unknown): Promise<T> =>
-		new Promise<T>(() => {});
+	custom = <T>(_factory: unknown, _done?: unknown): Promise<T> => new Promise<T>(() => {});
 	pasteToEditor = (): void => {};
 	setEditorText = (): void => {};
 	getEditorText = (): string => "";

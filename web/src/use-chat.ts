@@ -231,16 +231,24 @@ type Action =
 	  }
 	| { type: "projects"; projects: ProjectSummary[] }
 	| { type: "files"; files: FileListing }
-
 	| { type: "file_changed"; path: string }
 	| { type: "file_content"; content: FileContent }
 	| { type: "models"; models: ModelInfo[]; loading: boolean }
 	| { type: "models_config"; providers: UiProviderConfig[] }
 	| { type: "providers_status"; providers: ProviderStatus[] }
 	| { type: "provider_keys"; keys: Record<string, ProviderKeyInfo[]> }
-	| { type: "fetch_models_result"; result: { reqId: number; ok: boolean; models?: UiModelConfigEntry[]; error?: string } }
-	| { type: "refresh_provider_result"; result: { reqId: number; ok: boolean; added?: number; total?: number; error?: string } }
-	| { type: "clone_provider_result"; result: { reqId: number; ok: boolean; config?: UiProviderConfig; configs?: UiProviderConfig[]; error?: string } }
+	| {
+			type: "fetch_models_result";
+			result: { reqId: number; ok: boolean; models?: UiModelConfigEntry[]; error?: string };
+	  }
+	| {
+			type: "refresh_provider_result";
+			result: { reqId: number; ok: boolean; added?: number; total?: number; error?: string };
+	  }
+	| {
+			type: "clone_provider_result";
+			result: { reqId: number; ok: boolean; config?: UiProviderConfig; configs?: UiProviderConfig[]; error?: string };
+	  }
 	| { type: "scm_data"; data: ServerMessage }
 	| {
 			type: "file_search_result";
@@ -380,8 +388,7 @@ function makeTerminalBridge() {
 				return;
 			}
 			const prev = buffers.get(writerKey) ?? "";
-			const next =
-				prev.length + data.length > MAX_TERM_BUFFER ? data : prev + data;
+			const next = prev.length + data.length > MAX_TERM_BUFFER ? data : prev + data;
 			buffers.set(writerKey, next);
 		},
 		/** Register a writer (xterm instance / output parser); flushes buffered
@@ -442,10 +449,7 @@ function pruneLiveOutputs(
 /** Drop tool_status entries once the authoritative toolResult message lands.
  *  Builds the landed-id Set once (O(messages)) instead of scanning all
  *  messages per status entry (was O(statuses × messages) every snapshot). */
-function pruneToolStatuses(
-	statuses: Map<string, ToolStatus>,
-	state: UiState,
-): Map<string, ToolStatus> {
+function pruneToolStatuses(statuses: Map<string, ToolStatus>, state: UiState): Map<string, ToolStatus> {
 	if (statuses.size === 0) return statuses;
 	const landed = new Set<string>();
 	for (const m of state.messages) {
@@ -481,9 +485,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 				ready: true,
 				// Old page + new server (or the reverse) after an in-place update:
 				// WS handling on either side may be stale — banner asks for refresh.
-				protocolMismatch:
-					action.protocolVersion !== undefined &&
-					action.protocolVersion !== PROTOCOL_VERSION,
+				protocolMismatch: action.protocolVersion !== undefined && action.protocolVersion !== PROTOCOL_VERSION,
 			};
 		case "snapshot":
 			return {
@@ -503,13 +505,11 @@ function reducer(state: ChatState, action: Action): ChatState {
 			// light fields replace wholesale.
 			const ui = state.state;
 			const d = action.msg;
-			if (!ui || ui.conversationId !== d.conversationId || ui.rev !== d.baseRev)
-				return state;
+			if (!ui || ui.conversationId !== d.conversationId || ui.rev !== d.baseRev) return state;
 			const merged: UiState = {
 				...ui,
 				...d.state,
-				messages:
-					d.appended.length > 0 ? [...ui.messages, ...d.appended] : ui.messages,
+				messages: d.appended.length > 0 ? [...ui.messages, ...d.appended] : ui.messages,
 			};
 			return {
 				...state,
@@ -530,8 +530,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 			const text = (prev?.text ?? "") + action.delta;
 			const capped =
 				text.length > MAX_LIVE_OUTPUT
-					? `…[${LIVE_OMIT_MARK}:${text.length - MAX_LIVE_OUTPUT}]…\n` +
-					  text.slice(text.length - MAX_LIVE_OUTPUT)
+					? `…[${LIVE_OMIT_MARK}:${text.length - MAX_LIVE_OUTPUT}]…\n` + text.slice(text.length - MAX_LIVE_OUTPUT)
 					: text;
 			const liveOutputs = new Map(state.liveOutputs);
 			liveOutputs.set(action.toolCallId, {
@@ -551,10 +550,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 		case "tool_status":
 			return {
 				...state,
-				toolStatuses: new Map(state.toolStatuses).set(
-					action.status.toolCallId,
-					action.status,
-				),
+				toolStatuses: new Map(state.toolStatuses).set(action.status.toolCallId, action.status),
 			};
 		case "notice":
 			return { ...state, notices: [...state.notices, action.notice].slice(-6) };
@@ -650,13 +646,12 @@ function reducer(state: ChatState, action: Action): ChatState {
 				action.conversationId &&
 				(state.activeConversationId || state.state?.conversationId) &&
 				action.conversationId !== (state.activeConversationId || state.state?.conversationId)
-			) return state;
+			)
+				return state;
 			return {
 				...state,
 				terminals: state.terminals.map((t) =>
-					t.id === action.terminalId
-						? { ...t, running: false, exitCode: action.exitCode }
-						: t,
+					t.id === action.terminalId ? { ...t, running: false, exitCode: action.exitCode } : t,
 				),
 			};
 		case "terminal_restart":
@@ -664,9 +659,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 			return {
 				...state,
 				terminals: state.terminals.map((t) =>
-					t.id === action.terminalId
-						? { ...t, running: true, exitCode: null }
-						: t,
+					t.id === action.terminalId ? { ...t, running: true, exitCode: null } : t,
 				),
 			};
 		case "terminal_list":
@@ -802,9 +795,7 @@ export function useChat() {
 			resyncTimerRef.current = null;
 			const ws = wsRef.current;
 			if (ws && ws.readyState === WebSocket.OPEN)
-				ws.send(
-					JSON.stringify({ type: "get_state" } satisfies ClientMessage),
-				);
+				ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 		}, 300);
 	};
 
@@ -882,31 +873,17 @@ export function useChat() {
 						engine: msg.engine,
 					});
 					// Ensure a fresh snapshot on (re)connect.
-					ws.send(
-						JSON.stringify({ type: "get_state" } satisfies ClientMessage),
-					);
+					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 					// Sessions + recent projects are LAZY: LeftPanel requests them
 					// when it is actually shown — listing scans every session file
 					// on disk (listAll scans ALL projects), too heavy for the
 					// connect critical path.
-					ws.send(
-						JSON.stringify({ type: "list_files" } satisfies ClientMessage),
-					);
-					ws.send(
-						JSON.stringify({ type: "list_models" } satisfies ClientMessage),
-					);
-					ws.send(
-						JSON.stringify({ type: "list_commands" } satisfies ClientMessage),
-					);
-					ws.send(
-						JSON.stringify({ type: "get_commands" } satisfies ClientMessage),
-					);
-					ws.send(
-						JSON.stringify({ type: "check_update" } satisfies ClientMessage),
-					);
-					ws.send(
-						JSON.stringify({ type: "check_updates_all" } satisfies ClientMessage),
-					);
+					ws.send(JSON.stringify({ type: "list_files" } satisfies ClientMessage));
+					ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
+					ws.send(JSON.stringify({ type: "list_commands" } satisfies ClientMessage));
+					ws.send(JSON.stringify({ type: "get_commands" } satisfies ClientMessage));
+					ws.send(JSON.stringify({ type: "check_update" } satisfies ClientMessage));
+					ws.send(JSON.stringify({ type: "check_updates_all" } satisfies ClientMessage));
 					break;
 				case "snapshot":
 					// Snapshot is authoritative — delta sequence tracking restarts.
@@ -918,12 +895,7 @@ export function useChat() {
 					// doesn't chain onto our current rev (a message was dropped under
 					// backpressure, or we're stale), schedule one debounced full resync.
 					const cur = chatApi.current.chat.state;
-					if (
-						!cur ||
-						cur.conversationId !== msg.conversationId ||
-						cur.rev !== msg.baseRev
-					)
-						scheduleResync();
+					if (!cur || cur.conversationId !== msg.conversationId || cur.rev !== msg.baseRev) scheduleResync();
 					dispatch({ type: "snapshot_delta", msg });
 					break;
 				}
@@ -1178,11 +1150,7 @@ export function useChat() {
 		const watchdog = setInterval(() => {
 			if (!aliveRef.current) return;
 			const ws = wsRef.current;
-			if (
-				ws &&
-				ws.readyState === WebSocket.OPEN &&
-				Date.now() - lastBeatRef.current > 30_000
-			) {
+			if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastBeatRef.current > 30_000) {
 				ws.close();
 			}
 		}, 5_000);
@@ -1198,30 +1166,15 @@ export function useChat() {
 		};
 	}, [connect]);
 
-	const dismissNotice = useCallback(
-		(id: number) => dispatch({ type: "dismiss_notice", id }),
-		[],
-	);
+	const dismissNotice = useCallback((id: number) => dispatch({ type: "dismiss_notice", id }), []);
 
 	// -- terminal tab management ----------------------------------------------
 
-	const terminalCreate = useCallback(
-		(meta: TerminalMeta) => dispatch({ type: "terminal_add", meta }),
-		[],
-	);
-	const terminalClose = useCallback(
-		(id: string) => dispatch({ type: "terminal_remove", id }),
-		[],
-	);
-	const terminalRestart = useCallback(
-		(id: string) => dispatch({ type: "terminal_restart", terminalId: id }),
-		[],
-	);
+	const terminalCreate = useCallback((meta: TerminalMeta) => dispatch({ type: "terminal_add", meta }), []);
+	const terminalClose = useCallback((id: string) => dispatch({ type: "terminal_remove", id }), []);
+	const terminalRestart = useCallback((id: string) => dispatch({ type: "terminal_restart", terminalId: id }), []);
 
-	const terminalSelect = useCallback(
-		(id: string) => dispatch({ type: "terminal_active", id }),
-		[],
-	);
+	const terminalSelect = useCallback((id: string) => dispatch({ type: "terminal_active", id }), []);
 	const terminalRegister = useCallback(
 		(conversationId: string, id: string, writer: TerminalWriter) =>
 			bridgeRef.current.register(conversationId, id, writer),

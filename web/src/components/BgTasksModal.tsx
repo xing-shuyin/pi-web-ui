@@ -55,12 +55,7 @@ export function BgTasksModal({ servers, send, onClose }: BgTasksModalProps) {
 						<FiLayers /> {t("bgTasks")}
 						{servers.length > 0 && <em className="bg-task-count">{servers.length}</em>}
 					</span>
-					<button
-						type="button"
-						className="btn"
-						title={t("close")}
-						onClick={onClose}
-					>
+					<button type="button" className="btn" title={t("close")} onClick={onClose}>
 						<FiX />
 					</button>
 				</div>
@@ -83,53 +78,51 @@ export function BgTasksModal({ servers, send, onClose }: BgTasksModalProps) {
 									<div className="bg-task-info">
 										<div className="bg-task-line1">
 											{isPlugin ? (
-													<span className="bg-task-port" title={s.taskId}>
-														🧩 {s.plugin}
-													</span>
-												) : (
-													<span className="bg-task-port">:{s.port}</span>
-												)}
-												{s.name && <span className="bg-task-name">{s.name}</span>}
-											</div>
-											<div className="bg-task-line2">
-												{!isPlugin && (
-													<span>
-														{t("bgTaskPid")} {s.pid}
-													</span>
-												)}
-												<span>
-													{t("bgTaskSince")} {formatSince(s.since, t)}
+												<span className="bg-task-port" title={s.taskId}>
+													🧩 {s.plugin}
 												</span>
-												{isPlugin && s.status && (
-													<span className="bg-task-status">{s.status}</span>
-												)}
-											</div>
-											{s.command && (
-												<button
-													type="button"
-													className={`bg-task-cmd ${expanded.has(key) ? "open" : ""}`}
-													title={`${t("bgTaskCommand")}: ${s.command}`}
-													onClick={() => toggleCmd(key)}
-												>
-													<FiTerminal />
-													<code>{s.command}</code>
-												</button>
+											) : (
+												<span className="bg-task-port">:{s.port}</span>
 											)}
+											{s.name && <span className="bg-task-name">{s.name}</span>}
 										</div>
-										<button
-											type="button"
-											className="btn bg-task-stop"
-											title={t("bgTaskStop")}
-											onClick={() =>
-													isPlugin
-														? send({ type: "kill_background_server", taskId: s.taskId })
-														: send({ type: "kill_background_server", port: s.port })
-												}
-										>
-											<FiSquare />
-											<span>{t("bgTaskStop")}</span>
-										</button>
-									</li>
+										<div className="bg-task-line2">
+											{!isPlugin && (
+												<span>
+													{t("bgTaskPid")} {s.pid}
+												</span>
+											)}
+											<span>
+												{t("bgTaskSince")} {formatSince(s.since, t)}
+											</span>
+											{isPlugin && s.status && <span className="bg-task-status">{s.status}</span>}
+										</div>
+										{s.command && (
+											<button
+												type="button"
+												className={`bg-task-cmd ${expanded.has(key) ? "open" : ""}`}
+												title={`${t("bgTaskCommand")}: ${s.command}`}
+												onClick={() => toggleCmd(key)}
+											>
+												<FiTerminal />
+												<code>{s.command}</code>
+											</button>
+										)}
+									</div>
+									<button
+										type="button"
+										className="btn bg-task-stop"
+										title={t("bgTaskStop")}
+										onClick={() =>
+											isPlugin
+												? send({ type: "kill_background_server", taskId: s.taskId })
+												: send({ type: "kill_background_server", port: s.port })
+										}
+									>
+										<FiSquare />
+										<span>{t("bgTaskStop")}</span>
+									</button>
+								</li>
 							);
 						})}
 					</ul>

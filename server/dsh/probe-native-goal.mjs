@@ -6,9 +6,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-const KEY = JSON.parse(
-	readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8"),
-).deepseek.key;
+const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
 	HERE,
 	"..",
@@ -85,9 +83,12 @@ const onNotify = (method, params) => {
 		goalEvents.push(ev.data);
 		if (ev.data?.operation === "complete") completed = true;
 		console.log(
-			"goal/change:", ev.data?.operation,
-			"phase:", ev.data?.goal?.phase,
-			"rounds:", ev.data?.roundsStarted,
+			"goal/change:",
+			ev.data?.operation,
+			"phase:",
+			ev.data?.goal?.phase,
+			"rounds:",
+			ev.data?.roundsStarted,
 			ev.data?.cleared ? "(cleared)" : "",
 		);
 	}
@@ -95,7 +96,15 @@ const onNotify = (method, params) => {
 		const src = ev.data?.source;
 		if (src?.kind === "goal") {
 			goalRounds.push(src.round);
-			console.log("goal round admitted:", src.round, "objective:", (ev.data.content ?? []).map((c) => c.text ?? "").join("").slice(0, 60));
+			console.log(
+				"goal round admitted:",
+				src.round,
+				"objective:",
+				(ev.data.content ?? [])
+					.map((c) => c.text ?? "")
+					.join("")
+					.slice(0, 60),
+			);
 		}
 	}
 };

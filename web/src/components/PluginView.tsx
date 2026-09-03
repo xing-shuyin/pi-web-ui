@@ -1,8 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-	makePluginContext,
-	type LoadedPluginView,
-} from "../plugin-loader";
+import { makePluginContext, type LoadedPluginView } from "../plugin-loader";
 import { useT } from "../i18n";
 
 interface PluginViewProps {

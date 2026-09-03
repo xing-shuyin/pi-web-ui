@@ -27,10 +27,7 @@ const dirB = mkdtempSync(join(tmpdir(), "cwd-proj-b-"));
 // ---- 探针插件：记录激活时的 cwd，注册 onCwdChange 广播 workspace ----------
 const plugDir = join(dataDir, "plugins", "probe");
 mkdirSync(plugDir, { recursive: true });
-writeFileSync(
-	join(plugDir, "manifest.json"),
-	JSON.stringify({ name: "cwd-probe", version: "0.1.0" }),
-);
+writeFileSync(join(plugDir, "manifest.json"), JSON.stringify({ name: "cwd-probe", version: "0.1.0" }));
 writeFileSync(
 	join(plugDir, "index.mjs"),
 	`globalThis.__cwdProbe = { activatedCwd: null, seen: [] };
@@ -57,11 +54,7 @@ const workspaces = []; // resolve() 过的根路径，按到达顺序
 
 function handleMessage(raw) {
 	const msg = JSON.parse(raw.toString());
-	if (
-		msg.type === "plugin_data" &&
-		msg.pluginId === "probe" &&
-		msg.payload?.kind === "workspace"
-	) {
+	if (msg.type === "plugin_data" && msg.pluginId === "probe" && msg.payload?.kind === "workspace") {
 		workspaces.push(resolve(String(msg.payload.root)));
 	}
 	return msg;
@@ -91,8 +84,7 @@ function nextWorkspace(i, label, timeoutMs = 10_000) {
 		const t0 = Date.now();
 		const poll = () => {
 			if (workspaces.length > i) return resolve2(workspaces[i]);
-			if (Date.now() - t0 > timeoutMs)
-				return reject(new Error(`timeout waiting for ${label}`));
+			if (Date.now() - t0 > timeoutMs) return reject(new Error(`timeout waiting for ${label}`));
 			setTimeout(poll, 50);
 		};
 		poll();

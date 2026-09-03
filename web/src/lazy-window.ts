@@ -60,12 +60,8 @@ export function planWindow(
 }
 
 /** 把窗口计划应用到隐藏集合（纯函数：不变则原引用返回，便于跳过重渲染）。 */
-export function applyPlan(
-	prev: ReadonlySet<string>,
-	plan: WindowPlan,
-): Set<string> {
-	if (plan.show.length === 0 && plan.hide.length === 0)
-		return prev as Set<string>;
+export function applyPlan(prev: ReadonlySet<string>, plan: WindowPlan): Set<string> {
+	if (plan.show.length === 0 && plan.hide.length === 0) return prev as Set<string>;
 	const next = new Set(prev);
 	for (const id of plan.show) next.delete(id);
 	for (const id of plan.hide) next.add(id);
@@ -97,10 +93,7 @@ export function pickAlways(
  * 从未被渲染过的消息没有实测高度，按角色给一个粗估占位高度。
  * 只求量级正确（首次向上滚动不跳太多）；一旦真实渲染过，测量值会覆盖估算值。
  */
-export function estimateMessageHeight(
-	role: string,
-	customType?: string,
-): number {
+export function estimateMessageHeight(role: string, customType?: string): number {
 	switch (role) {
 		case "user":
 			return 72;
@@ -123,13 +116,7 @@ export interface HeightEntry {
 }
 
 /** 指纹参与计算的字符串字段（各 content block 的主文本）。 */
-const FP_KEYS = [
-	"text",
-	"thinking",
-	"argumentsText",
-	"output",
-	"command",
-] as const;
+const FP_KEYS = ["text", "thinking", "argumentsText", "output", "command"] as const;
 
 /** 指纹输入：各 content block 只取已知文本字段，结构宽松避免耦合协议类型。 */
 export interface FingerprintBlock {
@@ -143,9 +130,7 @@ export interface FingerprintBlock {
 
 /** 便宜的内容指纹：各 block 主文本长度之和（图片记 1）。编辑必然改变某个
  *  文本长度从而改变指纹——O(block 数) 遍历，不哈希整条消息。 */
-export function contentFingerprint(m: {
-	content: readonly FingerprintBlock[];
-}): number {
+export function contentFingerprint(m: { content: readonly FingerprintBlock[] }): number {
 	let n = 0;
 	for (const b of m.content) {
 		if (b.type === "image") n += 1;

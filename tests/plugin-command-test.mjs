@@ -111,12 +111,7 @@ try {
 		let lastCat;
 		for (let i = 0; i < 50 && !entry; i++) {
 			try {
-				lastCat = await waitFor(
-					sock,
-					(m) => m.type === "slash_commands",
-					"slash_commands",
-					8000,
-				);
+				lastCat = await waitFor(sock, (m) => m.type === "slash_commands", "slash_commands", 8000);
 			} catch {
 				break;
 			}
@@ -138,21 +133,13 @@ try {
 	});
 
 	sock.send(JSON.stringify({ type: "prompt", text: "/probe-echo hello 世界" }));
-	const notice1 = await waitFor(
-		sock,
-		(m) => m.type === "notice" && String(m.text).includes("已收到"),
-		"notice echo",
-	);
+	const notice1 = await waitFor(sock, (m) => m.type === "notice" && String(m.text).includes("已收到"), "notice echo");
 	if (!broadcasts.includes("hello 世界")) fail(`插件未收到参数：${JSON.stringify(broadcasts)}`);
 	else console.log(`✓ 插件 run 收到参数并广播；notice 回显「${notice1.text}」`);
 
 	// 空参数分支（三元表达式返回值）
 	sock.send(JSON.stringify({ type: "prompt", text: "/probe-echo" }));
-	await waitFor(
-		sock,
-		(m) => m.type === "notice" && m.text === "已收到（空参数）",
-		"empty-arg notice",
-	);
+	await waitFor(sock, (m) => m.type === "notice" && m.text === "已收到（空参数）", "empty-arg notice");
 	console.log("✓ 空参数调用正常");
 
 	sock.close();

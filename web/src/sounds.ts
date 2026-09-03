@@ -78,9 +78,7 @@ function audio(): AudioContext | null {
 	try {
 		if (!ctx) {
 			const AC =
-				window.AudioContext ??
-				(window as unknown as { webkitAudioContext?: typeof AudioContext })
-					.webkitAudioContext;
+				window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 			if (!AC) return null;
 			ctx = new AC();
 		}
@@ -112,9 +110,7 @@ const DONE: Note[] = [
 	{ type: "sine", freq: 587.33, start: 0.15, dur: 0.32, peak: 0.35 },
 ];
 /** One short tick — a run started. */
-const START: Note[] = [
-	{ type: "triangle", freq: 660, start: 0, dur: 0.08, peak: 0.22 },
-];
+const START: Note[] = [{ type: "triangle", freq: 660, start: 0, dur: 0.08, peak: 0.22 }];
 /** Low double buzz — something went wrong. */
 const ERROR: Note[] = [
 	{ type: "square", freq: 220, start: 0, dur: 0.16, peak: 0.18 },
@@ -149,10 +145,7 @@ function tone(c: AudioContext, note: Note, volume: number): void {
  * before any user interaction — if the browser blocks audio it silently
  * no-ops until a later call after a gesture.
  */
-export function playSound(
-	kind: SoundKind,
-	settings: SoundSettings = loadSoundSettings(),
-): void {
+export function playSound(kind: SoundKind, settings: SoundSettings = loadSoundSettings()): void {
 	if (!settings.enabled || !settings[kind]) return;
 	const c = audio();
 	if (!c) return;
