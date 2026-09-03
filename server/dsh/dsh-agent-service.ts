@@ -1715,6 +1715,24 @@ export class DshClientSession {
 		this.emit({ type: "sessions", sessions: summaries });
 	}
 
+	async renameSession(_path: string, _name: string): Promise<void> {
+		this.emit({
+			type: "notice",
+			level: "warning",
+			text: "DSH 引擎暂不支持重命名会话",
+			textEn: "The DSH engine does not support renaming sessions yet",
+		});
+	}
+
+	async renameConversation(id: string, name: string): Promise<void> {
+		const trimmed = (name ?? "").trim();
+		if (!trimmed) return;
+		const conv = this.convs.get(id);
+		if (!conv) return;
+		conv.title = trimmed;
+		this.emitConversations();
+	}
+
 	async deleteSession(path: string): Promise<void> {
 		try {
 			const { rmSync } = await import("node:fs");

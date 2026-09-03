@@ -4,6 +4,7 @@ import {
 	FiChevronDown,
 	FiChevronUp,
 	FiChevronsLeft,
+	FiEdit2,
 	FiFolder,
 	FiMessageSquare,
 	FiTrash2,
@@ -37,6 +38,8 @@ interface LeftPanelProps {
 			| { type: "set_cwd"; path: string }
 			| { type: "remove_project"; path: string }
 			| { type: "delete_session"; path: string }
+			| { type: "rename_session"; path: string; name: string }
+			| { type: "rename_conversation"; id: string; name: string }
 			| { type: "dismiss_conversation"; id: string },
 	) => boolean;
 	/** True while the panel is actually on screen (desktop: always; mobile:
@@ -128,6 +131,8 @@ export const LeftPanel = memo(function LeftPanel({
 	const currentFile = sessionFile;
 	const currentCwd = cwd;
 	const [confirmDel, setConfirmDel] = useState<string | null>(null);
+	const [renaming, setRenaming] = useState<string | null>(null);
+	const [renameDraft, setRenameDraft] = useState("");
 	const [collapseProjects, toggleProjects] = useCollapsed(LS_COLLAPSE_PROJECTS, false);
 	const [collapseConvs, toggleConvs] = useCollapsed(LS_COLLAPSE_CONVS, false);
 	const [collapseSessions, toggleSessions] = useCollapsed(LS_COLLAPSE_SESSIONS, false);
@@ -263,15 +268,52 @@ export const LeftPanel = memo(function LeftPanel({
 												>
 													<FiMessageSquare className="session-icon" />
 													<span className="session-info">
-														<span className="session-title">
-															{c.isSubagent && <span className="subagent-badge">{t("subagentBadge")}</span>}
-															{c.title}
-														</span>
-														<span className="session-sub">
-															{active ? t("current") : t("messageCount", { n: c.messageCount })}
-														</span>
+														{renaming === `conv:${c.id}` ? (
+															<input
+																autoFocus
+																className="session-rename-input"
+																value={renameDraft}
+																placeholder={t("renameSessionPlaceholder")}
+																onClick={(e) => e.stopPropagation()}
+																onChange={(e) => setRenameDraft(e.target.value)}
+																onKeyDown={(e) => {
+																	e.stopPropagation();
+																	if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+																		const name = renameDraft.trim();
+																		if (name) send({ type: "rename_conversation", id: c.id, name });
+																		setRenaming(null);
+																	} else if (e.key === "Escape") {
+																		setRenaming(null);
+																	}
+																}}
+																onBlur={() => setRenaming(null)}
+															/>
+														) : (
+															<span className="session-title">
+																{c.isSubagent && <span className="subagent-badge">{t("subagentBadge")}</span>}
+																{c.title}
+															</span>
+														)}
+														{renaming === `conv:${c.id}` ? null : (
+															<span className="session-sub">
+																{active ? t("current") : t("messageCount", { n: c.messageCount })}
+															</span>
+														)}
 													</span>
 													{c.isStreaming && <span className="conv-streaming" title={t("streaming")} />}
+												</button>
+												<button
+													type="button"
+													className="lp-del lp-rename"
+													title={t("renameSession")}
+													onClick={(e) => {
+														e.stopPropagation();
+														setConfirmDel(null);
+														setRenameDraft(c.title);
+														setRenaming(`conv:${c.id}`);
+													}}
+												>
+													<FiEdit2 />
 												</button>
 												{!c.isStreaming &&
 													!active &&
@@ -318,22 +360,60 @@ export const LeftPanel = memo(function LeftPanel({
 										className={`session-item ${active ? "active" : ""}`}
 										title={s.path}
 										onClick={() => {
+											if (renaming) return;
 											if (!active) send({ type: "switch_session", path: s.path });
 										}}
 									>
 										<FiMessageSquare className="session-icon" />
 										<span className="session-info">
-											<span className="session-title">{displayName(s)}</span>
-											<span className="session-sub">
-												{active ? t("current") : t("messageCount", { n: s.messageCount })}
-												{s.source === "tui" && (
-													<span className="session-src" title={t("tuiTip")}>
-														TUI
-													</span>
-												)}
-											</span>
+											{renaming === s.path ? (
+												<input
+													autoFocus
+													className="session-rename-input"
+													value={renameDraft}
+													placeholder={t("renameSessionPlaceholder")}
+													onClick={(e) => e.stopPropagation()}
+													onChange={(e) => setRenameDraft(e.target.value)}
+													onKeyDown={(e) => {
+														e.stopPropagation();
+														if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+															const name = renameDraft.trim();
+															if (name) send({ type: "rename_session", path: s.path, name });
+															setRenaming(null);
+														} else if (e.key === "Escape") {
+															setRenaming(null);
+														}
+													}}
+													onBlur={() => setRenaming(null)}
+												/>
+											) : (
+												<span className="session-title">{displayName(s)}</span>
+											)}
+											{renaming === s.path ? null : (
+												<span className="session-sub">
+													{active ? t("current") : t("messageCount", { n: s.messageCount })}
+													{s.source === "tui" && (
+														<span className="session-src" title={t("tuiTip")}>
+															TUI
+														</span>
+													)}
+												</span>
+											)}
 										</span>
 										<span className="session-time">{formatModified(s.modified)}</span>
+									</button>
+									<button
+										type="button"
+										className="lp-del lp-rename"
+										title={t("renameSession")}
+										onClick={(e) => {
+											e.stopPropagation();
+											setConfirmDel(null);
+											setRenameDraft(s.name ?? "");
+											setRenaming(s.path);
+										}}
+									>
+										<FiEdit2 />
 									</button>
 									{delButton(`sess:${s.path}`, t("deleteSession"), t("deleteSessionConfirm"), () =>
 										send({ type: "delete_session", path: s.path }),

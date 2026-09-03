@@ -882,6 +882,25 @@ body.panel-resizing {
 	color: var(--red);
 	background: color-mix(in srgb, var(--red) 12%, transparent);
 }
+/* rename pencil sits left of the trashcan: grey idle, yellow hover */
+.lp-row .lp-del.lp-rename {
+	right: 32px;
+}
+.lp-row .lp-del.lp-rename:hover {
+	color: var(--amber);
+	background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+/* inline session rename field replaces the title row while editing */
+.session-rename-input {
+	flex: 1;
+	min-width: 0;
+	background: var(--bg-input, transparent);
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	color: inherit;
+	font: inherit;
+	padding: 1px 5px;
+}
 /* 确认态：红底白勾，一眼可辨 */
 .lp-row .lp-del.confirm,
 .lp-row .lp-del.confirm:hover {

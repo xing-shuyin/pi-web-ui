@@ -436,8 +436,12 @@ const DEFAULT_CONV_TITLE = "新对话";
 /** First user text in a session, truncated for the conversation list. */
 function conversationTitle(session: AgentSession): string {
 	try {
-		const customName = session.sessionName?.trim();
-		if (customName) return customName;
+		const named = session.sessionManager.getSessionName();
+		if (named && named.trim()) return named.trim();
+	} catch {
+		// best-effort — fall through to first-message title
+	}
+	try {
 		for (const m of session.agent.state.messages) {
 			if (m.role !== "user") continue;
 			const content = m.content as unknown;
@@ -3171,6 +3175,80 @@ export class ClientSession {
 				textEn: `Failed to delete session: ${(err as Error).message}`,
 			});
 		}
+	}
+
+	/** Rename a persisted session by appending a session_info entry — the same
+	 *  mechanism pi's /name uses (SessionManager.appendSessionInfo). Works on
+	 *  any transcript under the sessions root, live or not; no session switch. */
+	async renameSession(path: string, name: string): Promise<void> {
+		try {
+			const trimmed = (name ?? "").trim();
+			if (!trimmed) return;
+			const abs = resolve(path);
+			const sessionsRoot = resolve(this.agentDir, "sessions");
+			if (!abs.startsWith(sessionsRoot + sep)) {
+				this.emit({
+					type: "notice",
+					level: "error",
+					text: "只能重命名会话目录中的对话记录",
+					textEn: "Only transcripts inside the session directory can be renamed",
+				});
+				return;
+			}
+			const mgr = SessionManager.open(abs);
+			mgr.appendSessionInfo(trimmed);
+			this.setConversationTitleForFile(abs, trimmed);
+			this.invalidateSessionInfos();
+			await this.refreshSessions();
+		} catch (err) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `重命名会话失败：${(err as Error).message}`,
+				textEn: `Failed to rename session: ${(err as Error).message}`,
+			});
+		}
+	}
+
+	/** Rename a live conversation by id: retitle in memory AND persist a
+	 *  session_info entry to its transcript so History matches immediately. */
+	async renameConversation(id: string, name: string): Promise<void> {
+		try {
+			const trimmed = (name ?? "").trim();
+			if (!trimmed) return;
+			const conv = this.convs.get(id);
+			if (!conv) return;
+			conv.title = trimmed;
+			try {
+				const file = conv.session.sessionFile;
+				if (file !== undefined) SessionManager.open(resolve(file)).appendSessionInfo(trimmed);
+			} catch {
+				// in-memory title still updated; transcript write is best-effort
+			}
+			this.emitConversations();
+			this.invalidateSessionInfos();
+			await this.refreshSessions();
+		} catch (err) {
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `重命名对话失败：${(err as Error).message}`,
+				textEn: `Failed to rename conversation: ${(err as Error).message}`,
+			});
+		}
+	}
+
+	/** Point every live conversation holding this transcript file at a new title. */
+	private setConversationTitleForFile(abs: string, title: string): void {
+		let changed = false;
+		for (const conv of this.convs.values()) {
+			const file = conv.session.sessionFile;
+			if (file !== undefined && resolve(file) === abs) {
+				conv.title = title;
+				changed = true;
+			}
+		}
+		if (changed) this.emitConversations();
 	}
 
 	/** Dismiss a running conversation from the left-panel list without deleting its

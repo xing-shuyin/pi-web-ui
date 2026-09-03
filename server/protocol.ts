@@ -524,6 +524,10 @@ export type ClientMessage =
 	| { type: "remove_project"; path: string }
 	/** Permanently delete a persisted session transcript file (history list). */
 	| { type: "delete_session"; path: string }
+	/** Append a session_info name entry to a persisted session transcript (history rename). */
+	| { type: "rename_session"; path: string; name: string }
+	/** Rename a live conversation: retitle + persist a session_info entry so History matches. */
+	| { type: "rename_conversation"; id: string; name: string }
 	/** Dismiss a running conversation from the left-panel list (frees its runtime
 	 *  but keeps the persisted transcript in history). Only non-streaming
 	 *  conversations can be dismissed; streaming ones refuse with a notice. */
