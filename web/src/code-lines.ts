@@ -29,7 +29,7 @@ export function splitCodeLines(node: ReactNode): ReactNode[][] {
 		if (n && typeof n === "object" && "props" in n) {
 			const el = n as { type: unknown; props?: { children?: ReactNode } };
 			const kids = el.props?.children;
-			const rest = { ...(el.props ?? {}), children: undefined };
+			const rest = { ...el.props, children: undefined };
 			const sub = kids == null ? ([] as ReactNode[][]) : walk(kids);
 			if (sub.length === 0) return [[createElement(el.type as never, rest)]];
 			return sub.map((seg) => [createElement(el.type as never, rest, ...seg)]);

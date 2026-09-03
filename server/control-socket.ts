@@ -58,7 +58,6 @@ export function startControlServer(opts: { service: ControlService; dataDir: str
 	const { service, dataDir, port } = opts;
 	const path = controlPath(dataDir, port);
 	let server: Server;
-	let stop = false;
 
 	if (process.platform === "win32") {
 		server = createServer(handleConnection);
@@ -147,7 +146,6 @@ export function startControlServer(opts: { service: ControlService; dataDir: str
 	}
 
 	return () => {
-		stop = true;
 		server.close();
 		try {
 			if (process.platform !== "win32" && existsSync(path)) rmSync(path);

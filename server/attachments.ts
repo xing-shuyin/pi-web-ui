@@ -5,7 +5,7 @@
  *
  * 从 agent-service.ts 抽出，行为保持不变；上下文经 AttachmentContext 注入。
  */
-import type { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage } from "./protocol.js";
 import { countLines, decodeText, looksLikeText, sniffImageMime } from "./text-sniff.js";
 import { saveUpload, uploadsRoot } from "./uploads.js";
@@ -61,7 +61,7 @@ export async function buildAttachmentMessages(
 ): Promise<{ message: Parameters<AgentSession["sendCustomMessage"]>[0] }[]> {
 	if (!attachments || attachments.length === 0) return [];
 	const fs = await import("node:fs/promises");
-	const { resolve, sep, relative, extname, join, basename } = await import("node:path");
+	const { resolve, sep, relative, extname, basename } = await import("node:path");
 
 	const root = resolve(ctx.cwd);
 	const MAX_ATTACHMENT_BYTES = 200 * 1024;

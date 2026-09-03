@@ -34,7 +34,7 @@ const officialEntry = process.env.PI_WEB_DSH_JSONRPC_ENTRY
 		);
 
 const official = await import(pathToFileURL(officialEntry).href);
-const { HarnessSdkJsonRpcServer, Config, apply: officialApply } = official;
+const { HarnessSdkJsonRpcServer, Config } = official;
 
 /** 提问桥超时（P0-6）：PI_WEB_DSH_QUESTION_TIMEOUT_MS 可配置，默认 10 分钟。 */
 const QUESTION_TIMEOUT_MS = Number(process.env.PI_WEB_DSH_QUESTION_TIMEOUT_MS) || 10 * 60_000;
@@ -602,6 +602,7 @@ function apply(ctx, config) {
 	// 技能启停（#18）：晚 agent/pre-step 钩子，在 dsh-tool-skill 注入技能目录后
 	// 按 server.disabledSkills 过滤 catalog 消息（剔除禁用技能条目）。
 	// 注册在 base 之后 → 本钩子后跑，能拿到已渲染的 catalog。
+	// eslint-disable-next-line no-empty-pattern -- only next is needed
 	ctx.on("agent/pre-step", async ({}, next) => {
 		const decision = await next();
 		if (server.disabledSkills.size && decision?.kind === "enter" && Array.isArray(decision.messages)) {

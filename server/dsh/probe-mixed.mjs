@@ -96,7 +96,11 @@ proc.stdout.on("data", (chunk) => {
 			const p = pending.get(msg.id);
 			if (!p) continue;
 			pending.delete(msg.id);
-			msg.error ? p.reject(new Error(JSON.stringify(msg.error))) : p.resolve(msg.result);
+			if (msg.error) {
+				p.reject(new Error(JSON.stringify(msg.error)));
+			} else {
+				p.resolve(msg.result);
+			}
 		} else if (msg.method) {
 			events.push({ method: msg.method, params: msg.params });
 		}

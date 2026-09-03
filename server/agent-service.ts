@@ -11,8 +11,8 @@
  * so reconnects just re-request a snapshot.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync, watch } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync, rmSync, statSync, mkdirSync, watch } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	createAgentSessionFromServices,
@@ -20,18 +20,14 @@ import {
 	createAgentSessionServices,
 	createBashTool,
 	createLocalBashOperations,
-	defineTool,
 	getAgentDir,
-	ModelRuntime,
 	SessionManager,
 	VERSION,
 	type AgentSession,
 	type AgentSessionEvent,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
-	type ExtensionUIContext,
 	type SessionInfo,
-	type Theme,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -51,7 +47,7 @@ import { SlashCommandsService, parseSlash } from "./slash-commands.js";
 import { ModelAdminService } from "./model-admin.js";
 import { FilesService, workspacePath } from "./files-service.js";
 import { isExtensionDisabled, type PromptMode, ClientStateStore } from "./client-state.js";
-import { saveUpload } from "./uploads.js";
+
 import {
 	applyHeadTail,
 	makePersistentTerminalTools,
@@ -61,27 +57,21 @@ import {
 	TERMINAL_TOOL_NAMES,
 } from "./terminals.js";
 import { WebUIContext } from "./webui-context.js";
-import { buildAttachmentMessages, parseModelSpec } from "./attachments.js";
+import { buildAttachmentMessages } from "./attachments.js";
 import type {
 	BgServer,
 	CommandDef,
 	ConversationSummary,
-	FileEntry,
 	GoalStatus,
 	MessageAnchor,
 	ProjectSummary,
 	ServerMessage,
 	SessionSummary,
 	UiMessage,
-	UiModelConfigEntry,
-	UiProviderConfig,
-	UiSettingsState,
-	UiVisionBridgeModel,
 	UiState,
 } from "./protocol.js";
 import { serializeMessage, serializeStreamingMessage, type AgentMessage } from "./serialize.js";
 import { loadCommands, saveCommandsFile, TerminalManager } from "./terminals.js";
-import { buildVisionBridgePrompt, SYSTEM_PROMPT, transcribeImages } from "./vision-bridge.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
 /** While assistant deltas are flowing, live rendering is carried by
@@ -1131,6 +1121,7 @@ export class ClientSession {
 	/** Broadcast to every connected socket of this client. */
 	private emit(msg: ServerMessage): void {
 		if (this.disposed) return;
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const sink of [...this.sinks]) sink(msg);
 	}
 
@@ -2495,6 +2486,7 @@ export class ClientSession {
 			this.flushSnapshot();
 			return;
 		}
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const ac of [...this.bashKills]) ac.abort();
 		this.emit({
 			type: "notice",
@@ -3786,6 +3778,7 @@ export class AgentService {
 	async disposeAll(): Promise<void> {
 		// Record still-streaming conversations BEFORE tearing anything down, so
 		// the next attach can tell the user what was lost (SIGTERM / update).
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const [clientId, cs] of [...this.clients]) {
 			try {
 				const running = cs.streamingSummaries();

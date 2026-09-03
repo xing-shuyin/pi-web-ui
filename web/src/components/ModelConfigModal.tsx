@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FiCheck, FiCopy, FiDownload, FiEdit2, FiKey, FiPlus, FiRefreshCw, FiTrash2, FiX } from "react-icons/fi";
+import { FiCheck, FiDownload, FiEdit2, FiPlus, FiTrash2, FiX } from "react-icons/fi";
 import type { ClientMessage, ProviderKeyInfo, ProviderStatus, UiModelConfigEntry, UiProviderConfig } from "../types";
 import { useT } from "../i18n";
 
@@ -102,7 +102,6 @@ export function ModelConfigModal({
 	providerStatus,
 	providerKeys,
 	fetchModelsResult,
-	refreshProviderResult,
 	cloneProviderResult,
 	onClose,
 }: ModelConfigModalProps) {
@@ -119,14 +118,7 @@ export function ModelConfigModal({
 	const [fetchMsg, setFetchMsg] = useState<{ ok: boolean; text: string } | null>(null);
 	const handledReq = useRef(0);
 	/** Saved-provider list refresh: in-flight flags per providerId + reqId echo. */
-	const [refreshing, setRefreshing] = useState<Record<string, boolean>>({});
-	const refreshReqId = useRef(0);
-	const handledRefreshReq = useRef(0);
 	/** Clone built-in → custom draft: in-flight flag + reqId echo. */
-	const [cloning, setCloning] = useState<string | null>(null);
-	const [cloneMsg, setCloneMsg] = useState<{ ok: boolean; text: string } | null>(null);
-	const cloneReqId = useRef(0);
-	const handledCloneReq = useRef(0);
 	/** Multi-api batch clone */
 	const [batch, setBatch] = useState<Draft[] | null>(null);
 	const [batchKey, setBatchKey] = useState("");
@@ -304,62 +296,24 @@ export function ModelConfigModal({
 		onClose();
 	};
 
-	/** Re-fetch the SAVED provider's model list server-side (credentials stay
-	 *  on the server) and merge into its models.json entry. */
-	const refreshProvider = (providerId: string) => {
-		if (refreshing[providerId]) return;
-		const reqId = ++refreshReqId.current + Date.now();
-		setRefreshing((m) => ({ ...m, [providerId]: true }));
-		send({ type: "refresh_provider_models", providerId, reqId });
-	};
-
-	// Refresh results clear the per-provider spinner; the server also emits a
-	// notice with the added/total counts.
-	useEffect(() => {
-		if (!refreshProviderResult || refreshProviderResult.reqId === handledRefreshReq.current) return;
-		handledRefreshReq.current = refreshProviderResult.reqId;
-		setRefreshing({});
-	}, [refreshProviderResult]);
-
-	/** Ask the server to copy a built-in provider (baseUrl + model catalog)
-	 *  into an editable custom draft — lets a second API key coexist with the
-	 *  built-in one. The result opens the edit form pre-filled. */
-	const cloneBuiltin = (p: ProviderStatus) => {
-		if (cloning) return;
-		setCloning(p.id);
-		setCloneMsg(null);
-		const reqId = ++cloneReqId.current + Date.now();
-		const ok = send({ type: "clone_provider", provider: p.id, reqId });
-		if (!ok) {
-			setCloning(null);
-			setCloneMsg({ ok: false, text: t("netDisconnected") });
-		}
-	};
-
 	// Apply the clone result once: open the edit form pre-filled (apiKey left
 	// empty for the user's second key). Errors surface via server notice + inline.
 	// 多 api 供应商返回 configs（按 api 拆分），单 api 仍走 config
 	useEffect(() => {
-		if (!cloneProviderResult || cloneProviderResult.reqId === handledCloneReq.current) return;
-		handledCloneReq.current = cloneProviderResult.reqId;
-		setCloning(null);
+		if (!cloneProviderResult) return;
 		if (cloneProviderResult.ok) {
 			const cs = (cloneProviderResult as { configs?: UiProviderConfig[] }).configs;
 			if (cs && cs.length > 1) {
 				setBatch(cs.map((c) => toDraft({ ...c, apiKey: "" })));
 				setBatchKey("");
-				setCloneMsg(null);
 				return;
 			}
 			if (cloneProviderResult.config) {
 				setAddKeyDraft(toDraft({ ...cloneProviderResult.config, apiKey: "" }));
-				setCloneMsg(null);
 				return;
 			}
 		}
-		if (cloneProviderResult.error) {
-			setCloneMsg({ ok: false, text: cloneProviderResult.error });
-		}
+		// Errors surface via server notice.
 	}, [cloneProviderResult]);
 
 	/** Clear a built-in provider's STORED key (source "stored") — the provider

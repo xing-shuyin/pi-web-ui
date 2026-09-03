@@ -484,6 +484,7 @@ pi-web-ui is a small open-source project — **your contributions are what make 
 **Before opening a PR**, a quick sanity pass keeps reviewers happy:
 
 - `npm run format` — prettier formatting (tabs, width 120; CI checks it).
+- `npm run lint` — oxlint (unused vars, risky patterns; CI runs it).
 - `npm run check:protocol` + `npm test` — protocol sync and unit tests.
 - `npm run typecheck` — no type errors.
 - `npm run build` — both frontend and backend compile.

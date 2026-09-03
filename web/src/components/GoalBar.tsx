@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp } from "react-icons/fi";
-import type { ClientMessage, GoalStatus, ModelInfo } from "../types";
+import type { GoalStatus, ModelInfo } from "../types";
 import { useT, useI18n } from "../i18n";
 import { Dropdown, DropdownItem } from "./Dropdown";
 

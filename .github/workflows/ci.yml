@@ -25,6 +25,10 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # 静态检查（oxlint；失败先看报告：npm run lint）
+      - name: Lint
+        run: npm run lint
+
       # 协议双端手工同步校验（server/protocol.ts ↔ web/src/types.ts）
       - name: Check protocol sync
         run: node scripts/check-protocol-sync.mjs

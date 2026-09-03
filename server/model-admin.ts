@@ -11,8 +11,8 @@
  * 经 ModelAdminHost 与 ClientSession 解耦（同 settings/goal/slash 服务模式）。
  * UI 文案直接中文（服务端 notice 约定）。apiKey/headers 绝不下发浏览器。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ServerMessage, UiModelConfigEntry, UiProviderConfig, ProviderKeyInfo } from "./protocol.js";
 
@@ -926,7 +926,7 @@ export class ModelAdminService {
 		}
 
 		const headers: Record<string, string> = {
-			...(extraHeaders ?? {}),
+			...extraHeaders,
 		};
 		// Per-api auth conventions (mirror pi's built-in provider configs):
 		//   openai-*:      Authorization: Bearer <key>

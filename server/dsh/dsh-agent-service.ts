@@ -33,17 +33,12 @@ import { BgServerTracker } from "../bg-servers.js";
 import { ClientStateStore } from "../client-state.js";
 import { FilesService, workspacePath } from "../files-service.js";
 import { QuiesceRejectedError } from "../agent-service.js";
-import { killPidTree } from "../process-utils.js";
+
 import { NATIVE_COMMANDS, parseSlash } from "../slash-commands.js";
 import { TerminalManager, loadCommands, saveCommandsFile } from "../terminals.js";
-import { saveUpload, uploadsRoot } from "../uploads.js";
+import { saveUpload } from "../uploads.js";
 import type { PluginCommandDef } from "../plugins.js";
-import {
-	checkAll as checkAllUpdates,
-	collectTargets,
-	compareVersions as compareSemver,
-	type UpdateItem,
-} from "../update-check.js";
+import { checkAll as checkAllUpdates, collectTargets } from "../update-check.js";
 import { previewKind } from "../text-sniff.js";
 import type {
 	BgServer,
@@ -60,20 +55,14 @@ import type {
 	UiSkillInfo,
 	UiState,
 } from "../protocol.js";
-import { DshRuntime, DshTransportError, loadDeepSeekKey } from "./dsh-client.js";
+import { DshRuntime, loadDeepSeekKey } from "./dsh-client.js";
 import {
 	DshStreamAccumulator,
 	assistantMessageEventToUiMessage,
 	toolResultEventToUiMessage,
 	userMessageEventToUiMessage,
 } from "./dsh-serialize.js";
-import {
-	firstUserText,
-	findSessionFilesForCwd,
-	projectKey,
-	readSessionLog,
-	replayEventsToMessages,
-} from "./dsh-sessions.js";
+import { firstUserText, findSessionFilesForCwd, readSessionLog, replayEventsToMessages } from "./dsh-sessions.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
 const MAX_OPEN_CONVERSATIONS = 8;
@@ -1171,6 +1160,7 @@ export class DshClientSession {
 
 	private emit(msg: ServerMessage): void {
 		if (this.disposed) return;
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const sink of [...this.sinks]) sink(msg);
 	}
 
@@ -1397,7 +1387,7 @@ export class DshClientSession {
 		conv: DshConversation,
 		text: string,
 		attachments?: PromptAttachment[],
-		queue = false,
+		_queue = false,
 	): Promise<void> {
 		try {
 			if (this.quiesceBlocked()) return;
@@ -1483,7 +1473,7 @@ export class DshClientSession {
 			}
 		}
 		const hist = this.histToContext(conv);
-		const fork = this.forkConversation(conv);
+		this.forkConversation(conv);
 		const text = lastUser
 			? hist.trim()
 				? `${lastUser}\n\n（以下为原对话上下文，仅作参考）：\n${hist}`
@@ -1801,7 +1791,7 @@ export class DshClientSession {
 		try {
 			const { readdirSync } = await import("node:fs");
 			for (const name of readdirSync(dir)) {
-				if (!/^\./u.test(name) && /\.ya?ml$/iu.test(name)) {
+				if (!name.startsWith(".") && /\.ya?ml$/iu.test(name)) {
 					try {
 						const st = statSync(join(dir, name));
 						if (st.isFile()) {
@@ -1920,7 +1910,6 @@ export class DshClientSession {
 			return;
 		}
 		try {
-			const { readFileSync: readSessionFile } = await import("node:fs");
 			const files = findSessionFilesForCwd(this.sessionRoot, this.cwd);
 			const results: SessionSearchResult[] = [];
 			for (const file of files) {
@@ -2889,7 +2878,7 @@ export class DshClientSession {
 					error: i.error,
 				})),
 			});
-		} catch (err) {
+		} catch {
 			this.emit({ type: "update_status_all", items: [] });
 		}
 	}
@@ -2971,7 +2960,7 @@ export class DshClientSession {
 		this.emit({ type: "models_config", providers: [] });
 	}
 
-	async saveModelConfig(providerId: string, config: unknown): Promise<void> {
+	async saveModelConfig(_providerId: string, _config: unknown): Promise<void> {
 		this.emit({
 			type: "notice",
 			level: "warning",
@@ -2980,7 +2969,7 @@ export class DshClientSession {
 		});
 	}
 
-	async deleteModelConfig(providerId: string): Promise<void> {
+	async deleteModelConfig(_providerId: string): Promise<void> {
 		this.emit({
 			type: "notice",
 			level: "warning",
@@ -3007,7 +2996,7 @@ export class DshClientSession {
 		this.emit({ type: "provider_keys", keys: {} });
 	}
 
-	async addProviderKey(provider: string, apiKey: string, name?: string): Promise<void> {
+	async addProviderKey(_provider: string, _apiKey: string, _name?: string): Promise<void> {
 		this.emit({
 			type: "notice",
 			level: "warning",
@@ -3016,7 +3005,7 @@ export class DshClientSession {
 		});
 	}
 
-	async activateProviderKey(provider: string, keyName: string): Promise<void> {
+	async activateProviderKey(_provider: string, _keyName: string): Promise<void> {
 		this.emit({
 			type: "notice",
 			level: "warning",
@@ -3025,7 +3014,7 @@ export class DshClientSession {
 		});
 	}
 
-	async removeProviderKey(provider: string, keyName: string): Promise<void> {
+	async removeProviderKey(_provider: string, _keyName: string): Promise<void> {
 		this.emit({
 			type: "notice",
 			level: "warning",
@@ -3036,19 +3025,19 @@ export class DshClientSession {
 
 	async fetchModelsList(
 		reqId: number,
-		baseUrl: string,
-		apiKey?: string,
-		authHeader?: boolean,
-		api?: string,
+		_baseUrl: string,
+		_apiKey?: string,
+		_authHeader?: boolean,
+		_api?: string,
 	): Promise<void> {
 		this.emit({ type: "fetch_models_result", reqId, ok: false, error: "DSH 引擎不支持自定义 provider 探测" });
 	}
 
-	async refreshProviderModels(providerId: string, reqId: number): Promise<void> {
+	async refreshProviderModels(_providerId: string, reqId: number): Promise<void> {
 		this.emit({ type: "refresh_provider_result", reqId, ok: false, error: "DSH 引擎不支持自定义 provider" });
 	}
 
-	async cloneProvider(provider: string, reqId: number): Promise<void> {
+	async cloneProvider(_provider: string, reqId: number): Promise<void> {
 		const error = "DSH 引擎不支持自定义 provider";
 		this.emit({ type: "notice", level: "error", text: error });
 		this.emit({ type: "clone_provider_result", reqId, ok: false, error });
@@ -3058,7 +3047,7 @@ export class DshClientSession {
 	// 其他
 	// -----------------------------------------------------------------------
 
-	resolveDialog(id: number, value: string | boolean | null): void {
+	resolveDialog(_id: number, _value: string | boolean | null): void {
 		// DSH 引擎无扩展 UI 桥（dialog 由插件宿主走，v1 忽略）。
 	}
 
@@ -3144,6 +3133,7 @@ export class DshClientSession {
 			this.activeId = this.addConversation(`web-${randomUUID().slice(0, 12)}`, abs, false).id;
 			// 旧项目非活跃 conversation 回收（pi 的 displaceActive 语义：切走后
 			// 非 streaming / 无终端 / 未列出的旧会话从内存移除，磁盘 JSONL 可回放恢复）。
+			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 			for (const [id, c] of [...this.convs]) {
 				if (id === this.activeId) continue;
 				if (c.cwd === abs) continue;

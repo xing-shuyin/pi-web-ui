@@ -443,7 +443,7 @@ export function ScmPanel({ chat, send, terminal, active, onSwitchToTerminal }: S
 		const finishedGitWrite = chat.terminals.some((tm) => {
 			if (tm.running !== false) return false;
 			const wasRunning = prev.find((p) => p.id === tm.id)?.running === true;
-			return wasRunning && /^git /.test(tm.title);
+			return wasRunning && tm.title.startsWith("git ");
 		});
 		if (finishedGitWrite && chat.ready && chat.status === "open") {
 			refresh(false, true);

@@ -69,7 +69,7 @@ export class McpClient {
 	}
 
 	/** 启动子进程 + 握手 + 拉取工具列表。 */
-	async start(timeoutMs = 8000): Promise<void> {
+	async start(_timeoutMs = 8000): Promise<void> {
 		if (this.child) return;
 		const { command, args = [], cwd, env } = this.spec;
 		this.log(`[mcp:${this.name}] starting: ${command} ${args.join(" ")}`);

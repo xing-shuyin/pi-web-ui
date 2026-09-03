@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 const HERE = resolve(import.meta.dirname ?? ".");
 const JSONRPC_ENTRY = resolve(
@@ -115,7 +115,11 @@ proc.stdout.on("data", (d) => {
 		if (m.id !== undefined && pending.has(m.id)) {
 			const p = pending.get(m.id);
 			pending.delete(m.id);
-			m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result);
+			if (m.error) {
+				p.reject(new Error(JSON.stringify(m.error)));
+			} else {
+				p.resolve(m.result);
+			}
 		}
 	}
 });

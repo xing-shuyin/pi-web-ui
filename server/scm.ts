@@ -113,6 +113,7 @@ function unquotePath(s: string): string {
 			case "b":
 				return "\b";
 			case "a":
+				// eslint-disable-next-line no-useless-escape -- bell escape for git C-style quoting
 				return "\a";
 			case "f":
 				return "\f";

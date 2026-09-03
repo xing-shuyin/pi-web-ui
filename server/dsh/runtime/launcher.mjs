@@ -72,7 +72,7 @@ const { boot, installFailLoud, loadOverlayPatches } = await import(
 // sdk-jsonrpc 走本地扩展插件 goal-rpc.mjs（官方 server 类 + goal RPC 方法）；
 // 官方入口（base 类）通过 env PI_WEB_DSH_JSONRPC_ENTRY 传给 wrapper。
 const jsonrpcWrapper = join(HERE, "goal-rpc.mjs");
-const jsonrpcEntry = process.env.PI_WEB_DSH_JSONRPC_ENTRY
+const _jsonrpcEntry = process.env.PI_WEB_DSH_JSONRPC_ENTRY
 	? resolve(process.env.PI_WEB_DSH_JSONRPC_ENTRY)
 	: join(
 			resolve(HERE, "..", "..", "..", ".."),

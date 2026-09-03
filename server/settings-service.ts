@@ -122,9 +122,11 @@ export class SettingsService {
 				...loadedExts.map((e) => extensionKey(e)),
 				...this.settings.disabledExtensions,
 			]);
+			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 			for (const name of [...this.knownSkills.keys()]) {
 				if (!keepSkills.has(name)) this.knownSkills.delete(name);
 			}
+			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 			for (const id of [...this.knownExtensions.keys()]) {
 				if (!keepExts.has(id)) this.knownExtensions.delete(id);
 			}

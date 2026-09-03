@@ -263,7 +263,7 @@ export function MessageList({
 	// （依赖用服务端缓存的消息数组——引用稳定，流式增量不会每帧重跑）
 	useEffect(() => {
 		const ids = new Set(state.messages.map((m) => m.id));
-		for (const [id, el] of elsRef.current) {
+		for (const id of elsRef.current.keys()) {
 			if (ids.has(id)) continue;
 			elsRef.current.delete(id);
 			heightsRef.current.delete(id);
@@ -589,9 +589,9 @@ export function MessageList({
 		// deltas / attach trickle append after the jump, and a one-shot
 		// scrollTop=scrollHeight lands short of the moving bottom.
 		requestAnimationFrame(() => requestAnimationFrame(snap));
-		const t1 = setTimeout(snap, 120);
-		const t2 = setTimeout(snap, 300);
-		const t3 = setTimeout(snap, 600);
+		setTimeout(snap, 120);
+		setTimeout(snap, 300);
+		setTimeout(snap, 600);
 	}, []);
 
 	// The rail is a pointer-event target so it can expand on hover; forward

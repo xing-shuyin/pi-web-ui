@@ -680,7 +680,7 @@ export class FilesService {
 			// Basename only — strips any path separators / ".." the name carries;
 			// reject empty results and Windows-illegal characters outright.
 			const base = name.split(/[\\/]/).pop() ?? "";
-			const safe = (base.replace(/[\/:*?"<>|\x00-\x1f]/g, "_").trim() || "file").slice(0, 200);
+			const safe = (base.replace(/[/:*?"<>|\x00-\x1f]/g, "_").trim() || "file").slice(0, 200);
 			const abs = resolve(wp.abs, safe);
 			const rawRel = relative(root, abs);
 			if (rawRel.startsWith("..") || rawRel.includes(`${sep}..`)) {

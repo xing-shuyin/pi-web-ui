@@ -1,0 +1,14 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"rules": {
+		"eslint/no-control-regex": "off",
+		"eslint/no-unused-expressions": "warn",
+		"eslint/no-useless-escape": "warn",
+		"eslint/no-empty-pattern": "warn",
+		"unicorn/no-useless-spread": "warn",
+		"unicorn/no-useless-fallback-in-spread": "warn",
+		"unicorn/prefer-string-starts-ends-with": "warn",
+		"unicorn/no-new-array": "off",
+		"typescript/no-this-alias": "off"
+	}
+}

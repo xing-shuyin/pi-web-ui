@@ -273,7 +273,7 @@ export async function fetchLatest(
  * input order. Bounded concurrency (CONCURRENCY) keeps registry load polite.
  */
 export async function checkAll(targets: LocalPackage[], fetcher: Fetcher = defaultFetcher): Promise<UpdateItem[]> {
-	const results: UpdateItem[] = new Array(targets.length);
+	const results: UpdateItem[] = Array.from({ length: targets.length }) as UpdateItem[];
 	let cursor = 0;
 	async function worker() {
 		while (cursor < targets.length) {

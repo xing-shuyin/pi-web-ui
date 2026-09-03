@@ -777,7 +777,6 @@ export function App() {
 					providerStatus={chat.providers}
 					providerKeys={chat.providerKeys}
 					fetchModelsResult={chat.fetchModelsResult}
-					refreshProviderResult={chat.refreshProviderResult}
 					cloneProviderResult={chat.cloneProviderResult}
 					onClose={() => setManageModelsOpen(false)}
 				/>

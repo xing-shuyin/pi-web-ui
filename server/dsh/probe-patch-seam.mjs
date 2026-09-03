@@ -80,7 +80,11 @@ proc.stdout.on("data", (d) => {
 		if (m.id !== undefined && pending.has(m.id)) {
 			const p = pending.get(m.id);
 			pending.delete(m.id);
-			m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result);
+			if (m.error) {
+				p.reject(new Error(JSON.stringify(m.error)));
+			} else {
+				p.resolve(m.result);
+			}
 		} else if (m.method) {
 			onNotify(m.method, m.params);
 		}

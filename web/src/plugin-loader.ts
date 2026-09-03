@@ -95,9 +95,11 @@ export async function syncPluginViews(plugins: UiPluginInfo[], epoch: number): P
 	// 清掉清单里不再存在的（被删目录 / 设置面板禁用 / 报错）——包括 failed 记录，
 	// 让重新安装的同名插件可以再次尝试。
 	const active = new Set(plugins.map((p) => p.id));
+	// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 	for (const id of [...loaded.keys()]) {
 		if (!active.has(id)) loaded.delete(id);
 	}
+	// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 	for (const id of [...failed]) {
 		if (!active.has(id)) failed.delete(id);
 	}

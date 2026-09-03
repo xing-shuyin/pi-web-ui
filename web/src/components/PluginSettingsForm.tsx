@@ -11,7 +11,7 @@ export function PluginSettingsForm({ plugin, send }: { plugin: UiPluginInfo; sen
 	const t = useT();
 	const schema = plugin.settingsSchema ?? [];
 	const [draft, setDraft] = useState<Record<string, unknown>>(
-		() => ({ ...(plugin.settingsValues ?? {}) }) as Record<string, unknown>,
+		() => ({ ...plugin.settingsValues }) as Record<string, unknown>,
 	);
 	const [saving, setSaving] = useState(false);
 
@@ -26,7 +26,7 @@ export function PluginSettingsForm({ plugin, send }: { plugin: UiPluginInfo; sen
 		setTimeout(() => setSaving(false), 800);
 	};
 
-	const reset = () => setDraft({ ...(plugin.settingsValues ?? {}) });
+	const reset = () => setDraft({ ...plugin.settingsValues });
 
 	return (
 		<div className="plugin-settings-form">

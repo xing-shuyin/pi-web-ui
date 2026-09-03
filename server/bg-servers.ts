@@ -118,6 +118,7 @@ export class BgServerTracker {
 		if (this.opts.isDisposed() || this.servers.size === 0) return;
 		const now = await snapshotListeningPorts();
 		let changed = false;
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const [port, v] of [...this.servers]) {
 			if (now.get(port) !== v.pid) {
 				this.servers.delete(port);
@@ -163,6 +164,7 @@ export class BgServerTracker {
 	async killAll(): Promise<string[]> {
 		if (this.servers.size === 0) return [];
 		const killed: string[] = [];
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const [port, { pid }] of [...this.servers]) {
 			killPidTree(pid);
 			killed.push(String(port));

@@ -207,7 +207,7 @@ export function SearchBar({
 	const [activeKey, setActiveKey] = useState<HitKey | null>(null);
 	/** 命中总数（rAF 内更新，驱动计数显示与 step 取模）。 */
 	const [total, setTotal] = useState(0);
-	const [activeIdx, setActiveIdx] = useState(0);
+	const [, setActiveIdx] = useState(0);
 	const deferredQuery = useDeferredValue(query);
 	const q = open ? deferredQuery.trim() : "";
 

@@ -710,6 +710,7 @@ export class PluginManager {
 			await this.activate(info);
 		}
 		// 已被删除的插件：调用 deactivate 并移出缓存
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const [id, p] of [...this.loaded]) {
 			if (!found.some((f) => f.id === id)) {
 				this.deactivateEntry(id, p);
@@ -725,6 +726,7 @@ export class PluginManager {
 		} catch (err) {
 			console.error(`[plugin:${id}] deactivate failed:`, err);
 		}
+		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 		for (const off of [...(p.agentToolUnsubscribers ?? [])]) {
 			try {
 				off();
@@ -894,7 +896,7 @@ export class PluginManager {
 			console.error(`[plugin:${info.id}] 缺少能力声明 "${family}"（manifest.permissions）——请求被拒`);
 			return false;
 		};
-		const self = this; // 对象字面量 getter 里不能用插件宿主的 this
+		const self = this; // 对象字面量 getter 里不能用插件宿主的 this (oxlint no-this-alias: 誤報, getter closure 需要 host)
 		const host: PluginHost = {
 			broadcast: (payload) => this.broadcast(info.id, payload),
 			notify: (level, text) => this.notifyAll(level, text),

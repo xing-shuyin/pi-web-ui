@@ -231,6 +231,7 @@ export function buildTerminalBashLine(command: string, tailFile?: { file: string
 	// 留下的 141 不是真失败，而是“按要求截断=成功”。只有恰好 141 才转 0，真失败照报。
 	// tailFile：`cmd > log 2>&1 | tail -N`——拆掉 tail 后 stdout 进文件、终端为空；
 	// 在哨兵前补一个 `tail -N log` 让模型看到日志尾部，退出码仍是底层命令的。
+	// eslint-disable-next-line no-useless-escape -- \$? must reach the shell literally
 	const rcGuard = `__pi_rc=\${PIPESTATUS:-\$?}; [ "$__pi_rc" -eq 141 ] && __pi_rc=0`;
 	const tailPart = tailFile
 		? `; tail -n ${Math.max(1, Math.floor(tailFile.lines))} -- '${tailFile.file.replace(/'/g, `'\\''`)}'`
@@ -365,8 +366,8 @@ export function queryTerminalOutput(
 			const t = l.trim();
 			return (
 				!/^\[pi-exit:\d+\]$/.test(t) &&
-				!/^\[进程已退出/.test(t) &&
-				!/^\[Process exited/.test(t) &&
+				!t.startsWith("[进程已退出") &&
+				!t.startsWith("[Process exited") &&
 				!/^\[.*(已退出|exited)/.test(t)
 			);
 		});
@@ -803,7 +804,6 @@ export class TerminalManager {
 		// (exited) does NOT grant one, or re-running exited terminals while at
 		// the cap could push the live count past MAX_TERMINALS.
 		if (!existing && !this.ensureSpawnAllowed(id)) return;
-		const hasHistory = this.history.has(id);
 		const rawDir = resolveCommandCwd(def.cwd, pwd);
 		const dir = this.safeCwd(rawDir);
 		const command = expandPwd(def.command.trim(), pwd);
