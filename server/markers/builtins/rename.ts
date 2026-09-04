@@ -45,7 +45,7 @@ export const renameMarker: MarkerTool<never> = {
 		if (!ctx.renameConversation) return { applied: false, error: "当前环境不支持重命名" };
 		try {
 			ctx.renameConversation(title);
-			ctx.notify(`已重命名为：${title}`, "info");
+			ctx.notify(`已重命名为：${title}`, "info", `Renamed to: ${title}`);
 			return { applied: true, feedback: `renamed to "${title}"` };
 		} catch (e) {
 			return { applied: false, error: `重命名失败: ${(e as Error).message ?? String(e)}` };
@@ -69,7 +69,7 @@ export const renameAliasMarker: MarkerTool<never> = {
 		if (!ctx.renameConversation) return { applied: false, error: "当前环境不支持重命名" };
 		try {
 			ctx.renameConversation(trimmed);
-			ctx.notify(`已重命名为：${trimmed}`, "info");
+			ctx.notify(`已重命名为：${trimmed}`, "info", `Renamed to: ${trimmed}`);
 			return { applied: true, feedback: `renamed to "${trimmed}"` };
 		} catch (e) {
 			return { applied: false, error: `重命名失败: ${(e as Error).message ?? String(e)}` };
@@ -89,7 +89,7 @@ export const titleAliasMarker: MarkerTool<never> = {
 		if (!title) return { applied: false, error: "title:rename 需要标题" };
 		if (!ctx.renameConversation) return { applied: false, error: "当前环境不支持重命名" };
 		ctx.renameConversation(title.slice(0, 80));
-		ctx.notify(`已重命名为：${title.slice(0, 80)}`, "info");
+		ctx.notify(`已重命名为：${title.slice(0, 80)}`, "info", `Renamed to: ${title.slice(0, 80)}`);
 		return { applied: true, feedback: `renamed` };
 	},
 	overlay: undefined,

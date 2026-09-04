@@ -538,7 +538,7 @@ export interface DispatchSession {
 	saveSubagentTemplate(template: UiSubagentTemplate): Promise<void>;
 	/** 删除一个子代理模板。 */
 	deleteSubagentTemplate(name: string): Promise<void>;
-	emitNotice(level: "info" | "warning" | "error", text: string): void;
+	emitNotice(level: "info" | "warning" | "error", text: string, textEn?: string): void;
 	activeConversations(): number;
 	pendingMessages(): number;
 }
@@ -1019,9 +1019,9 @@ wss.on("connection", (ws) => {
 			case "plugin_settings": {
 				const r = pluginMgr.savePluginSettings(msg.pluginId, msg.values ?? {});
 				if (r.error) {
-					cs?.emitNotice("error", `插件设置保存失败：${r.error}`);
+					cs?.emitNotice("error", `插件设置保存失败：${r.error}`, `Failed to save plugin settings: ${r.error}`);
 				} else {
-					cs?.emitNotice("info", "插件设置已保存");
+					cs?.emitNotice("info", "插件设置已保存", "Plugin settings saved");
 				}
 				break;
 			}

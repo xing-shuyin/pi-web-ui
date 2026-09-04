@@ -57,13 +57,15 @@ export function resolveCommandCwd(cwd: string | undefined, pwd: string): string 
 /** Read the command list; missing file → empty list; malformed → empty list + warning text. */
 export async function loadCommands(
 	workspaceRoot: string,
-): Promise<{ commands: CommandDef[]; path: string; warning?: string }> {
+): Promise<{ commands: CommandDef[]; path: string; warning?: string; warningEn?: string }> {
 	const path = commandsFilePath(workspaceRoot);
-	const { commands, warning } = await readCommandsFile(path);
-	return { commands, path, warning };
+	const { commands, warning, warningEn } = await readCommandsFile(path);
+	return { commands, path, warning, warningEn };
 }
 
-async function readCommandsFile(path: string): Promise<{ commands: CommandDef[]; warning?: string }> {
+async function readCommandsFile(
+	path: string,
+): Promise<{ commands: CommandDef[]; warning?: string; warningEn?: string }> {
 	if (!existsSync(path)) return { commands: [] };
 	let raw: string;
 	try {
@@ -72,13 +74,18 @@ async function readCommandsFile(path: string): Promise<{ commands: CommandDef[];
 		return {
 			commands: [],
 			warning: `读取命令文件失败：${(err as Error).message}`,
+			warningEn: `Failed to read commands file: ${(err as Error).message}`,
 		};
 	}
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
 	} catch {
-		return { commands: [], warning: `命令文件不是有效 JSON：${path}` };
+		return {
+			commands: [],
+			warning: `命令文件不是有效 JSON：${path}`,
+			warningEn: `Commands file is not valid JSON: ${path}`,
+		};
 	}
 	if (Array.isArray(parsed)) {
 		// Tolerate a bare array: [{name, command, cwd}]
@@ -108,14 +115,14 @@ async function readCommandsFile(path: string): Promise<{ commands: CommandDef[];
 				.map((c) => ({ name: c.name, command: c.command, cwd: c.cwd })),
 		};
 	}
-	return { commands: [], warning: `命令文件格式不正确：${path}` };
+	return { commands: [], warning: `命令文件格式不正确：${path}`, warningEn: `Commands file has a bad format: ${path}` };
 }
 
 /** Persist the command list, creating .pi/ if needed. */
 export async function saveCommandsFile(
 	workspaceRoot: string,
 	commands: CommandDef[],
-): Promise<{ path: string; error?: string }> {
+): Promise<{ path: string; error?: string; errorEn?: string }> {
 	const path = commandsFilePath(workspaceRoot);
 	try {
 		await mkdir(join(workspaceRoot, ".pi"), { recursive: true });
@@ -123,7 +130,11 @@ export async function saveCommandsFile(
 		await writeFile(path, JSON.stringify(payload, null, 2) + "\n", "utf8");
 		return { path };
 	} catch (err) {
-		return { path, error: `保存命令文件失败：${(err as Error).message}` };
+		return {
+			path,
+			error: `保存命令文件失败：${(err as Error).message}`,
+			errorEn: `Failed to save commands file: ${(err as Error).message}`,
+		};
 	}
 }
 
@@ -366,6 +377,7 @@ export function queryTerminalOutput(
 			const t = l.trim();
 			return (
 				!/^\[pi-exit:\d+\]$/.test(t) &&
+				!/^\[pi-term-exit:-?\d+\]$/.test(t) &&
 				!t.startsWith("[进程已退出") &&
 				!t.startsWith("[Process exited") &&
 				!/^\[.*(已退出|exited)/.test(t)
@@ -1293,14 +1305,13 @@ export class TerminalManager {
 		const entry = this.terms.get(id);
 		if (!entry || entry.exited) return;
 		this.disarmIdleWatch(entry);
-		// Flush queued output BEFORE the exit banner so ordering is preserved.
+		// Flush queued output BEFORE the exit marker so ordering is preserved.
+		// Banner text is CLIENT-rendered (live locale); the stream carries only
+		// a machine sentinel the client strips and replaces.
 		this.flushPending(entry);
-		const banner =
-			entry.locale === "en"
-				? `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`
-				: `\r\n\x1b[90m[进程已退出，退出码 ${exitCode}]\x1b[0m\r\n`;
-		this.appendOutput(entry, banner);
-		this.emit({ type: "terminal_output", terminalId: id, data: banner });
+		const marker = `\r\n[pi-term-exit:${exitCode}]\r\n`;
+		this.appendOutput(entry, marker);
+		this.emit({ type: "terminal_output", terminalId: id, data: marker });
 		entry.exited = true;
 		// 终端退出 → 未命中的输出观察器以 null 回调（宿主可据此通知「终端已关闭」）。
 		const pendingWatches = entry.watches;

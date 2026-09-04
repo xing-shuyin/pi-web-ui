@@ -6,6 +6,18 @@ import type { ClientMessage, CommandDef } from "../types";
 import { buildTermTheme, THEME_CHANGE_EVENT } from "../theme";
 import { useI18n } from "../i18n";
 
+/** Strip exit sentinels/baked banners; the banner itself renders on terminal_exit. */
+export function stripExitBanner(data: string): { clean: string; exitCode: number | null } {
+	let exitCode: number | null = null;
+	const clean = data
+		.replace(/\r?\n?\[pi-term-exit:(-?\d+)\]\r?\n?/g, (_, c: string) => {
+			exitCode = Number(c);
+			return "\r\n";
+		})
+		.replace(/\r?\n?\x1b\[90m\[(?:进程已退出，退出码 |Process exited with code )-?\d+\]\x1b\[0m\r?\n?/g, "\r\n");
+	return { clean, exitCode };
+}
+
 interface TermXtermProps {
 	conversationId: string;
 	terminalId: string;
@@ -17,6 +29,10 @@ interface TermXtermProps {
 	title?: string;
 	/** Whether this terminal is the visible one. */
 	active: boolean;
+	/** Live running flag (banner renders when this flips false). */
+	running?: boolean;
+	/** Exit code (banner text). */
+	exitCode?: number | null;
 	send: (msg: ClientMessage) => boolean;
 	register: (conversationId: string, id: string, writer: { write(data: string): void; dispose(): void }) => () => void;
 }
@@ -27,7 +43,18 @@ interface TermXtermProps {
  * the bridge, and kills the PTY on unmount. Kept mounted while hidden so
  * scrollback survives tab switches.
  */
-export function TermXterm({ conversationId, terminalId, command, cwd, title, active, send, register }: TermXtermProps) {
+export function TermXterm({
+	conversationId,
+	terminalId,
+	command,
+	cwd,
+	title,
+	active,
+	running,
+	exitCode,
+	send,
+	register,
+}: TermXtermProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
 	// UI locale is captured at PTY creation (the server bakes the exit-banner
@@ -97,7 +124,7 @@ export function TermXterm({ conversationId, terminalId, command, cwd, title, act
 		});
 
 		const unregister = register(conversationId, terminalId, {
-			write: (data) => term.write(data),
+			write: (data) => term.write(stripExitBanner(data).clean),
 			dispose: () => term.dispose(),
 		});
 
@@ -197,6 +224,21 @@ export function TermXterm({ conversationId, terminalId, command, cwd, title, act
 		return () => cancelAnimationFrame(raf);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [active]);
+
+	// Exit banner in the LIVE locale (reads t() at effect time, not at
+	// PTY-creation time). Guarded so remounts don't double-write.
+	const { t } = useI18n();
+	const bannerFor = useRef<string | null>(null);
+	useEffect(() => {
+		if (running !== false) return;
+		const key = `${terminalId}:${exitCode ?? ""}`;
+		if (bannerFor.current === key) return;
+		bannerFor.current = key;
+		const inst = termRef.current;
+		if (!inst) return;
+		inst.term.write(`\r\n\x1b[90m${t("exitBanner", { code: exitCode ?? "" })}\x1b[0m\r\n`);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [running, terminalId]);
 
 	return <div ref={containerRef} className={`term-xterm ${active ? "" : "hidden"}`} />;
 }

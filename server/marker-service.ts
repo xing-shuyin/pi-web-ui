@@ -187,8 +187,8 @@ export class MarkerService {
 			const state = getOrInit(token.tool) as never;
 			const ctx: MarkerContext = {
 				conversationId,
-				notify: (msg, level) => {
-					this.host.emit({ type: "notice", level: level ?? "info", text: msg });
+				notify: (msg, level, msgEn) => {
+					this.host.emit({ type: "notice", level: level ?? "info", text: msg, textEn: msgEn });
 				},
 				renameConversation: (title: string) => {
 					this.host.renameConversation(conversationId, title);
@@ -210,7 +210,12 @@ export class MarkerService {
 				}
 				if (token.tool === "todo" || token.tool === "svc") dirty.add(token.tool);
 			} else if (result.error) {
-				this.host.emit({ type: "notice", level: "warning", text: `[${token.tool}] ${result.error}` });
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: `[${token.tool}] ${result.error}`,
+					textEn: `[${token.tool}] ${result.error}`,
+				});
 			}
 		}
 

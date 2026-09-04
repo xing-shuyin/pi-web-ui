@@ -790,7 +790,7 @@ export class ClientSession {
 		try {
 			await conv.session.bindExtensions({
 				mode: "rpc",
-				onError: (err) => this.emit({ type: "notice", level: "error", text: err.error }),
+				onError: (err) => this.emit({ type: "notice", level: "error", text: err.error, textEn: err.error }),
 			});
 		} catch {
 			// 绑定失败不阻断运行。
@@ -801,6 +801,7 @@ export class ClientSession {
 				type: "notice",
 				level: "error",
 				text: `子代理 ${conversationId} 启动失败: ${err instanceof Error ? err.message : String(err)}`,
+				textEn: `Subagent ${conversationId} failed to start: ${err instanceof Error ? err.message : String(err)}`,
 			});
 		});
 		this.emitConversations();
@@ -1121,6 +1122,7 @@ export class ClientSession {
 					type: "notice",
 					level: d.type,
 					text: d.message,
+					textEn: d.message,
 				});
 			}
 		}
@@ -1397,7 +1399,7 @@ export class ClientSession {
 			mode: "rpc",
 			uiContext: this.webUi,
 			onError: (err) => {
-				this.emit({ type: "notice", level: "error", text: err.error });
+				this.emit({ type: "notice", level: "error", text: err.error, textEn: err.error });
 			},
 		});
 		conv.unsubscribe = conv.session.subscribe((event) => this.onEvent(conv, event));
@@ -1653,7 +1655,7 @@ export class ClientSession {
 				if (aborted) {
 					const stopNotice = this.goalSvc.onAgentEnd(conv, true);
 					if (stopNotice) {
-						this.emit({ type: "notice", level: "warning", text: stopNotice });
+						this.emit({ type: "notice", level: "warning", text: stopNotice.text, textEn: stopNotice.textEn });
 					}
 					break;
 				}
@@ -2241,7 +2243,7 @@ export class ClientSession {
 				const result = await def.run(args, { clientId: this.clientId });
 				// 字符串返回值 → 通知条回显给发起人；富展示用 broadcast/sendTo。
 				if (typeof result === "string" && result.trim()) {
-					this.emit({ type: "notice", level: "info", text: result });
+					this.emit({ type: "notice", level: "info", text: result, textEn: result });
 				}
 			} catch (err) {
 				this.emit({
@@ -2781,8 +2783,8 @@ export class ClientSession {
 	}
 
 	/** 插件设置保存结果等需要从 index.ts 发 notice 时用（emit 是私有的）。 */
-	emitNotice(level: "info" | "warning" | "error", text: string): void {
-		this.emit({ type: "notice", level, text });
+	emitNotice(level: "info" | "warning" | "error", text: string, textEn?: string): void {
+		this.emit({ type: "notice", level, text, textEn });
 	}
 
 	/** Kill ONE background server (by port); returns whether anything was killed. */
@@ -2912,7 +2914,12 @@ export class ClientSession {
 			});
 			conv.runtime = runtime;
 			conv.session = runtime.session;
-			this.emit({ type: "notice", level: "warning", text: reason });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: reason,
+				textEn: `${reason} (forced reset: run did not terminate)`,
+			});
 			await this.bindSession();
 			this.emitConversations();
 			void this.pushSlashCommands();
@@ -3299,6 +3306,9 @@ export class ClientSession {
 						text: stillRunning
 							? "对话仍在后台运行，已停止删除；请等待其结束后再删除"
 							: "未能切换到其他对话，已取消删除本次操作",
+						textEn: stillRunning
+							? "Conversation is still running in the background; delete aborted — wait for it to finish and retry"
+							: "Could not switch to another conversation; delete cancelled",
 					});
 					return;
 				}
@@ -3400,11 +3410,21 @@ export class ClientSession {
 	async dismissConversation(id: string): Promise<void> {
 		const conv = this.convs.get(id);
 		if (!conv) {
-			this.emit({ type: "notice", level: "warning", text: "该对话不存在或已关闭" });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "该对话不存在或已关闭",
+				textEn: "This conversation does not exist or is already closed",
+			});
 			return;
 		}
 		if (id === this.activeId) {
-			this.emit({ type: "notice", level: "warning", text: "当前对话不能直接移出，请先切换到其他对话" });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "当前对话不能直接移出，请先切换到其他对话",
+				textEn: "The active conversation cannot be removed directly — switch to another conversation first",
+			});
 			return;
 		}
 		if (!conv.listed) {
@@ -3429,18 +3449,21 @@ export class ClientSession {
 					type: "notice",
 					level: "warning",
 					text: `对话「${conv.title}」仍在运行中，请先等待结束或点击停止后再移出`,
+					textEn: `Conversation "${conv.title}" is still running — wait for it to finish or press Stop before removing`,
 				});
 			} else if (conv.terminals.list().length > 0) {
 				this.emit({
 					type: "notice",
 					level: "warning",
 					text: `对话「${conv.title}」还有未关闭的终端，请先关闭终端后再移出`,
+					textEn: `Conversation "${conv.title}" still has open terminals — close them before removing`,
 				});
 			} else {
 				this.emit({
 					type: "notice",
 					level: "warning",
 					text: `对话「${conv.title}」暂时无法移出（存在待处理的后台任务/审查）`,
+					textEn: `Conversation "${conv.title}" cannot be removed right now (pending background task/review)`,
 				});
 			}
 			return;
@@ -3836,7 +3859,7 @@ export class ClientSession {
 				if (displaced) this.removeConversation(displaced.id);
 				for (const d of newRuntime.diagnostics) {
 					if (d.type !== "info") {
-						this.emit({ type: "notice", level: d.type, text: d.message });
+						this.emit({ type: "notice", level: d.type, text: d.message, textEn: d.message });
 					}
 				}
 				await this.bindSession();
@@ -4014,18 +4037,18 @@ export class ClientSession {
 
 	/** Push the user command list (.pi/commands.json) to the client. */
 	async listCommands(): Promise<void> {
-		const { commands, path, warning } = await loadCommands(this.cwd);
+		const { commands, path, warning, warningEn } = await loadCommands(this.cwd);
 		if (warning) {
-			this.emit({ type: "notice", level: "warning", text: warning });
+			this.emit({ type: "notice", level: "warning", text: warning, textEn: warningEn });
 		}
 		this.emit({ type: "commands", commands, path });
 	}
 
 	/** Persist the user command list (.pi/commands.json). */
 	async saveCommands(commands: CommandDef[]): Promise<void> {
-		const { path, error } = await saveCommandsFile(this.cwd, commands);
+		const { path, error, errorEn } = await saveCommandsFile(this.cwd, commands);
 		if (error) {
-			this.emit({ type: "notice", level: "error", text: error });
+			this.emit({ type: "notice", level: "error", text: error, textEn: errorEn });
 			return;
 		}
 		this.emit({ type: "commands", commands, path });

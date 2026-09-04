@@ -602,19 +602,19 @@ export class ModelAdminService {
 	 */
 	async cloneProvider(providerId: string, reqId: number): Promise<void> {
 		const pid = providerId.trim();
-		const fail = (error: string) => {
-			this.host.emit({ type: "notice", level: "error", text: error });
+		const fail = (error: string, errorEn?: string) => {
+			this.host.emit({ type: "notice", level: "error", text: error, textEn: errorEn });
 			this.host.emit({ type: "clone_provider_result", reqId, ok: false, error });
 		};
 		try {
 			if (!pid) {
-				fail("请填写服务商 ID");
+				fail("请填写服务商 ID", "Enter a provider ID");
 				return;
 			}
 			const mr = this.host.modelRuntime();
 			const p = mr.getProvider(pid);
 			if (!p) {
-				fail(`供应商 ${pid} 不存在`);
+				fail(`供应商 ${pid} 不存在`, `Provider ${pid} does not exist`);
 				return;
 			}
 			const noBaseUrl = !p.baseUrl;
@@ -643,7 +643,10 @@ export class ModelAdminService {
 				models = readModels();
 			}
 			if (models.length === 0) {
-				fail(`${pid} 的模型列表为空，无法复制（请稍后重试）`);
+				fail(
+					`${pid} 的模型列表为空，无法复制（请稍后重试）`,
+					`Model list for ${pid} is empty, cannot clone (retry later)`,
+				);
 				return;
 			}
 			// 供应商级 api 取占比最高，模型保留全量去重（避免 muse-spark 被过滤）
@@ -673,10 +676,13 @@ export class ModelAdminService {
 				text: noBaseUrl
 					? `📋 已复制 ${pid} → ${newId}（${kept.length} 个模型），该供应商无远程 baseUrl，已生成模板请手动填写 baseUrl 和新的 API 密钥后保存`
 					: `📋 已复制 ${pid} → ${newId}（${kept.length} 个模型），请填入新的 API 密钥后保存`,
+				textEn: noBaseUrl
+					? `📋 Cloned ${pid} → ${newId} (${kept.length} models); this provider has no remote baseUrl — template generated, fill in baseUrl and a new API key, then save`
+					: `📋 Cloned ${pid} → ${newId} (${kept.length} models); fill in the new API key, then save`,
 			});
 			this.host.emit({ type: "clone_provider_result", reqId, ok: true, config, configs: [config] });
 		} catch (err) {
-			fail(`复制服务商失败：${(err as Error).message}`);
+			fail(`复制服务商失败：${(err as Error).message}`, `Failed to clone provider: ${(err as Error).message}`);
 		}
 		this.host.flushSnapshot();
 	}
@@ -1074,6 +1080,10 @@ export class ModelAdminService {
 					added > 0
 						? `🔄 已刷新 ${pid}：新增 ${added} 个模型，共 ${merged.length} 个`
 						: `🔄 已刷新 ${pid}：无新增模型（共 ${merged.length} 个）`,
+				textEn:
+					added > 0
+						? `🔄 Refreshed ${pid}: ${added} new models, ${merged.length} total`
+						: `🔄 Refreshed ${pid}: no new models (${merged.length} total)`,
 			});
 			return done(true, { added, total: merged.length });
 		} catch (err) {

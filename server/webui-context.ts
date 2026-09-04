@@ -145,8 +145,8 @@ export class WebUIContext {
 
 	// -- notifications --------------------------------------------------------
 
-	notify = (message: string, type?: "info" | "warning" | "error"): void => {
-		this.emit({ type: "notice", level: type ?? "info", text: message });
+	notify = (message: string, type?: "info" | "warning" | "error", messageEn?: string): void => {
+		this.emit({ type: "notice", level: type ?? "info", text: message, textEn: messageEn });
 	};
 
 	// -- footer status (pi-lens "LSP Inactive", pi-cache-optimizer cache stats) --

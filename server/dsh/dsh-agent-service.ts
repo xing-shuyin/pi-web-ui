@@ -1164,8 +1164,8 @@ export class DshClientSession {
 		for (const sink of [...this.sinks]) sink(msg);
 	}
 
-	emitNotice(level: "info" | "warning" | "error", text: string): void {
-		this.emit({ type: "notice", level, text });
+	emitNotice(level: "info" | "warning" | "error", text: string, textEn?: string): void {
+		this.emit({ type: "notice", level, text, textEn });
 	}
 
 	private pushTerminals(): void {
@@ -1454,6 +1454,9 @@ export class DshClientSession {
 			text: hadGoal
 				? "已新建分支继续对话（DSH 引擎不支持原地续聊旧会话）；原目标已随旧会话存档，如需继续请重新设置目标"
 				: "已新建分支继续对话（DSH 引擎不支持原地续聊旧会话）",
+			textEn: hadGoal
+				? "Started a branch to continue (DSH engine cannot resume an old session in place); the old goal was archived with it — set a new goal to continue"
+				: "Started a branch to continue (DSH engine cannot resume an old session in place)",
 		});
 		return fork;
 	}
@@ -1762,11 +1765,21 @@ export class DshClientSession {
 	async dismissConversation(id: string): Promise<void> {
 		const conv = this.convs.get(id);
 		if (!conv) {
-			this.emit({ type: "notice", level: "warning", text: "该对话不存在或已关闭" });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "该对话不存在或已关闭",
+				textEn: "This conversation does not exist or is already closed",
+			});
 			return;
 		}
 		if (id === this.activeId) {
-			this.emit({ type: "notice", level: "warning", text: "当前对话不能直接移出，请先切换到其他对话" });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: "当前对话不能直接移出，请先切换到其他对话",
+				textEn: "The active conversation cannot be removed directly — switch to another conversation first",
+			});
 			return;
 		}
 		if (!conv.listed) {
@@ -1778,11 +1791,17 @@ export class DshClientSession {
 				type: "notice",
 				level: "warning",
 				text: `对话「${conv.title}」仍在运行中，请先等待结束或停止后再移出`,
+				textEn: `Conversation "${conv.title}" is still running — wait for it to finish or press Stop before removing`,
 			});
 			return;
 		}
 		if (conv.terminals.list().length > 0) {
-			this.emit({ type: "notice", level: "warning", text: `对话「${conv.title}」还有未关闭的终端` });
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `对话「${conv.title}」还有未关闭的终端，请先关闭终端后再移出`,
+				textEn: `Conversation "${conv.title}" still has open terminals — close them before removing`,
+			});
 			return;
 		}
 		this.removeConversation(id);
@@ -2885,7 +2904,7 @@ export class DshClientSession {
 			try {
 				const result = await def.run(args, { clientId: this.clientId });
 				if (typeof result === "string" && result.trim()) {
-					this.emit({ type: "notice", level: "info", text: result });
+					this.emit({ type: "notice", level: "info", text: result, textEn: result });
 				}
 			} catch (err) {
 				this.emit({
@@ -3122,7 +3141,8 @@ export class DshClientSession {
 
 	async cloneProvider(_provider: string, reqId: number): Promise<void> {
 		const error = "DSH 引擎不支持自定义 provider";
-		this.emit({ type: "notice", level: "error", text: error });
+		const errorEn = "DSH engine does not support custom providers";
+		this.emit({ type: "notice", level: "error", text: error, textEn: errorEn });
 		this.emit({ type: "clone_provider_result", reqId, ok: false, error });
 	}
 

@@ -215,6 +215,9 @@ export class SlashCommandsService {
 						text: current
 							? `当前模型：${current.name}（${current.provider}/${current.id}）。用法：/model <名称>`
 							: `用法：/model <名称>`,
+						textEn: current
+							? `Current model: ${current.name} (${current.provider}/${current.id}). Usage: /model <name>`
+							: `Usage: /model <name>`,
 					});
 					return true;
 				}

@@ -71,7 +71,7 @@ export interface PluginHost {
 	/** 向所有已连接的浏览器广播一条本插件的消息（plugin_data）。 */
 	broadcast(payload: unknown): void;
 	/** 发一条系统通知条（notice）给所有已连接的浏览器。 */
-	notify(level: "info" | "warning" | "error", text: string): void;
+	notify(level: "info" | "warning" | "error", text: string, textEn?: string): void;
 	/** 注册客户端上行消息（plugin_message）处理器；回调第二参为发送方 clientId
 	 *  （可用于 sendTo 定向回复）。返回注销函数。 */
 	onMessage(handler: (payload: unknown, from?: string) => void): () => void;
@@ -502,6 +502,7 @@ export class PluginManager {
 			this.notifyAll(
 				perms.length ? "warning" : "info",
 				`插件「${info.name}」已激活（${prev ? "能力清单变更" : "首次安装"}；声明能力：${list}）——请确认来源可信`,
+				`Plugin "${info.name}" activated (${prev ? "capability list changed" : "first install"}; declared: ${list}) — verify the source is trusted`,
 			);
 			writeFileSync(markerFile, JSON.stringify({ v: 1, key, perms }), "utf8");
 		} catch (err) {
@@ -537,8 +538,8 @@ export class PluginManager {
 	}
 
 	/** 系统通知：发给所有 socket（复用 notice 消息，前端 toast 展示）。 */
-	notifyAll(level: "info" | "warning" | "error", text: string): void {
-		this.deliverAll({ type: "notice", level, text });
+	notifyAll(level: "info" | "warning" | "error", text: string, textEn?: string): void {
+		this.deliverAll({ type: "notice", level, text, textEn });
 	}
 
 	/** 给指定客户端定向发一条插件消息；找不到该 socket 时静默忽略。 */
@@ -899,7 +900,7 @@ export class PluginManager {
 		const self = this; // 对象字面量 getter 里不能用插件宿主的 this (oxlint no-this-alias: 誤報, getter closure 需要 host)
 		const host: PluginHost = {
 			broadcast: (payload) => this.broadcast(info.id, payload),
-			notify: (level, text) => this.notifyAll(level, text),
+			notify: (level, text, textEn) => this.notifyAll(level, text, textEn),
 			sendTo: (clientId, payload) => this.sendTo(clientId, info.id, payload),
 			onMessage: (h) => {
 				handlers.add(h);

@@ -10,6 +10,7 @@ const STORAGE_KEY = "pi-web-ui:lang";
 
 const zh = {
 	/* common */
+	docTitle: "pi-web-ui — pi 编码智能体",
 	cancel: "取消",
 	ok: "确定",
 	save: "保存",
@@ -548,6 +549,7 @@ const zh = {
 	termEmptySub: "点击左侧命令运行，或点右侧 + 新建终端",
 	noTerminal: "暂无终端",
 	exited: "（已退出{code}）",
+	exitBanner: "[进程已退出，退出码 {code}]",
 	closeTerminal: "关闭终端",
 	renameTerminal: "重命名终端",
 	rerun: "重新读取 .pi/commands.json",
@@ -845,6 +847,7 @@ const zh = {
 
 const en: Record<keyof typeof zh, string> = {
 	/* common */
+	docTitle: "pi-web-ui — pi coding agent",
 	cancel: "Cancel",
 	ok: "OK",
 	save: "Save",
@@ -1392,6 +1395,7 @@ const en: Record<keyof typeof zh, string> = {
 	termEmptySub: "Click a command on the left to run it, or + on the right for a new terminal",
 	noTerminal: "No terminals",
 	exited: "(exited{code})",
+	exitBanner: "[Process exited with code {code}]",
 	closeTerminal: "Close terminal",
 	renameTerminal: "Rename terminal",
 	rerun: "Reload .pi/commands.json",
@@ -1748,6 +1752,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+		document.title = locale === "zh" ? zh.docTitle : en.docTitle;
 	}, [locale]);
 
 	const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);

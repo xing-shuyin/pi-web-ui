@@ -677,7 +677,7 @@ export class GoalService {
 	 * Otherwise, spawn the isolated reviewer if a goal is pending. Returns a
 	 * notice text for the host to emit (manual-stop case), or null.
 	 */
-	onAgentEnd(conv: GoalConversation, aborted: boolean): string | null {
+	onAgentEnd(conv: GoalConversation, aborted: boolean): { text: string; textEn: string } | null {
 		const g = conv.goal;
 		if (aborted) {
 			if (g.goal && g.conversationId === conv.id) {
@@ -690,7 +690,10 @@ export class GoalService {
 				g.status = "已手动停止，目标审查已中止";
 				g.statusEn = "Stopped manually, goal review aborted";
 				this.emitGoalStatus();
-				return "⏹ 已手动停止，目标审查已中止（想继续可重新设定目标）";
+				return {
+					text: "⏹ 已手动停止，目标审查已中止（想继续可重新设定目标）",
+					textEn: "⏹ Stopped manually, goal review aborted (set a new goal to continue)",
+				};
 			}
 			return null;
 		}

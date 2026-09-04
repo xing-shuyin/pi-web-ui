@@ -664,14 +664,14 @@ export class FilesService {
 	 * for the target dir (the recursive watcher may not cover it on posix).
 	 */
 	async uploadFile(relDir: string, name: string, data: string): Promise<void> {
-		const emitErr = (text: string) => this.host.emit({ type: "notice", level: "error", text });
+		const emitErr = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
 			const root = this.host.getCwd();
 			let wp: { abs: string; rel: string } | null;
 			if (relDir) {
 				wp = workspacePath(resolve(root), relDir);
 				if (!wp) {
-					emitErr(`路径超出工作区：${relDir}`);
+					emitErr(`路径超出工作区：${relDir}`, `Path outside workspace: ${relDir}`);
 					return;
 				}
 			} else {
@@ -684,16 +684,19 @@ export class FilesService {
 			const abs = resolve(wp.abs, safe);
 			const rawRel = relative(root, abs);
 			if (rawRel.startsWith("..") || rawRel.includes(`${sep}..`)) {
-				emitErr(`文件名不合法：${name}`);
+				emitErr(`文件名不合法：${name}`, `Invalid file name: ${name}`);
 				return;
 			}
 			const buf = Buffer.from(data, "base64");
 			if (buf.length === 0) {
-				emitErr(`空文件：${name}`);
+				emitErr(`空文件：${name}`, `Empty file: ${name}`);
 				return;
 			}
 			if (buf.length > MAX_UPLOAD_BYTES) {
-				emitErr(`文件过大：${name}（上限 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB）`);
+				emitErr(
+					`文件过大：${name}（上限 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB）`,
+					`File too large: ${name} (max ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB)`,
+				);
 				return;
 			}
 			mkdirSync(wp.abs, { recursive: true });
@@ -712,7 +715,7 @@ export class FilesService {
 				path: wp.rel,
 			});
 		} catch (err) {
-			emitErr(`上传文件失败：${(err as Error).message}`);
+			emitErr(`上传文件失败：${(err as Error).message}`, `Upload failed: ${(err as Error).message}`);
 		}
 	}
 

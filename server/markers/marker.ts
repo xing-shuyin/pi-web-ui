@@ -30,7 +30,7 @@ export interface MarkerContext {
 	/** 当前对话 id（用于 rename 等需要定位对话的标记）。 */
 	conversationId: string;
 	/** 通知 UI（非打断）。 */
-	notify(text: string, level?: "info" | "warning" | "error"): void;
+	notify(text: string, level?: "info" | "warning" | "error", textEn?: string): void;
 	/** 重命名当前对话（rename 标记专用）。 */
 	renameConversation?(title: string): void;
 }
