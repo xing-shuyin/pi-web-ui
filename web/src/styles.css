@@ -4511,6 +4511,43 @@ span.msg-editor-hint svg {
 	border-color: var(--accent);
 }
 
+/* Mermaid diagrams: own light "paper" card so charts stay readable under both
+   app themes (mermaid always renders with its light base theme, see
+   web/src/components/MermaidBlock.tsx). */
+.mermaid-block {
+	position: relative;
+	margin: 10px 0;
+	padding: 12px;
+	background: #ffffff;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+}
+/* Mermaid sizes its root <svg> to the drawn diagram (inline width/height), so
+   small diagrams stay small — do NOT force them to the container width. Only
+   oversized renders need scrolling. */
+.mermaid-svg {
+	overflow-x: auto;
+}
+.mermaid-svg svg {
+	display: block;
+	margin: 0 auto;
+}
+.mermaid-note {
+	font-size: 12px;
+	color: var(--text-faint);
+	font-style: italic;
+	padding: 2px 34px 2px 0;
+}
+.mermaid-block-loading {
+	min-height: 34px;
+}
+.mermaid-block-error .codeblock {
+	margin: 6px 0 0;
+}
+.mermaid-block:hover .copy-btn {
+	opacity: 1;
+}
+
 .trunc-note {
 	margin-top: 6px;
 	font-size: 11.5px;
