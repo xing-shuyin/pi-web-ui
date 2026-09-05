@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { CopyButton } from "./copy-button";
 import { splitCodeLines } from "../code-lines";
+import { MermaidBlock, mermaidCodeFromPre } from "./MermaidBlock";
 
 interface MarkdownProps {
 	text: string;
@@ -35,6 +36,9 @@ export const Markdown = memo(function Markdown({ text }: MarkdownProps) {
 });
 
 function PreWithCopy({ children, ...props }: JSX.IntrinsicElements["pre"]) {
+	// ```mermaid fences render as SVG diagrams instead of highlighted code.
+	const mermaidCode = mermaidCodeFromPre(children);
+	if (mermaidCode !== null) return <MermaidBlock code={mermaidCode} />;
 	// react-markdown 传进来的是 <pre><code …>…</code></pre> 里的 code 元素；
 	// 按逻辑行切分的是它内部的 span/文本 children，而不是 code 元素本身
 	// （否则每行会嵌套一个克隆的 <code>，且尾随空行无法被丢弃）。
