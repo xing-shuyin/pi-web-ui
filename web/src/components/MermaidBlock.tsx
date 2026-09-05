@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useT } from "../i18n";
 import { CopyButton } from "./copy-button";
-import { childrenText, routePreToMermaid, singleCodeChild } from "./mermaid";
+import { childrenText, preserveMermaidSvgWidth, routePreToMermaid } from "./mermaid";
 
 /** Lazily-loaded, memoized mermaid module — most chats never hit a mermaid
  *  fence, so this stays out of the main bundle until one actually renders. */
@@ -53,11 +53,9 @@ export function MermaidBlock({ code }: { code: string }) {
 		setSvg(null);
 		setError(null);
 		const renderId = `mermaid-${reactId}-${++renderSeq}`;
-		// Render through an offscreen container we own: mermaid sizes its root <svg>
-		// to the container width when one is supplied (it stays natural-size when
-		// rendering into body), and it removes the container itself once serialized —
-		// on parse/draw failures too, so nothing accumulates. Cancelled mid-flight
-		// renders are the only leftovers; cleaned in the catch below.
+		// Render in an offscreen holder we own. Passing it prevents Mermaid from
+		// attaching temporary render nodes directly to body; this component is
+		// responsible for removing the holder on success, failure, and unmount.
 		const holder = document.createElement("div");
 		holder.style.position = "absolute";
 		holder.style.left = "-99999px";
@@ -73,7 +71,7 @@ export function MermaidBlock({ code }: { code: string }) {
 			.then((mermaid) => mermaid.render(renderId, code, holder))
 			.then(({ svg }) => {
 				cleanup();
-				if (!cancelled) setSvg(svg);
+				if (!cancelled) setSvg(preserveMermaidSvgWidth(svg));
 			})
 			.catch((err: unknown) => {
 				cleanup();
@@ -121,7 +119,6 @@ export function MermaidBlock({ code }: { code: string }) {
 /** Helper for PreWithCopy: the fence's raw source when this <pre> wraps a
  *  single mermaid <code> element, else null (normal codeblock chrome applies). */
 export function mermaidCodeFromPre(children: unknown): string | null {
-	const code = singleCodeChild(children);
-	if (!code || !routePreToMermaid(children)) return null;
+	if (!routePreToMermaid(children)) return null;
 	return childrenText(children);
 }

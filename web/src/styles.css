@@ -4522,8 +4522,6 @@ span.msg-editor-hint svg {
 	border: 1px solid var(--border);
 	border-radius: 8px;
 }
-/* Wide diagrams must scroll inside the container rather than blow out the
-   message area; the SVG fits smaller widths naturally. */
 /* Mermaid sizes its root <svg> to the drawn diagram (inline width/height), so
    small diagrams stay small — do NOT force them to the container width. Only
    oversized renders need scrolling. */

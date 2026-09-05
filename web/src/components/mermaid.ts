@@ -31,6 +31,31 @@ export function singleCodeChild(children: unknown): { props?: { className?: unkn
 	return child as { props?: { className?: unknown } };
 }
 
+/** Give Mermaid's root SVG an intrinsic pixel width from its viewBox.
+ * Mermaid emits width="100%" plus max-width for small charts; for wide charts
+ * that makes mobile browsers squeeze the entire diagram until labels are
+ * unreadable. A concrete width preserves both cases: small charts stay at
+ * their natural size and wide charts overflow their scroll container. */
+export function preserveMermaidSvgWidth(svg: string): string {
+	const match = svg.match(/<svg\b([^>]*)>/i);
+	if (!match) return svg;
+	const attrs = match[1];
+	const viewBox = attrs.match(/\bviewBox=(['"])([^'"]+)\1/i)?.[2];
+	if (!viewBox) return svg;
+	const values = viewBox
+		.trim()
+		.split(/[\s,]+/)
+		.map(Number);
+	const width = values.length === 4 ? values[2] : Number.NaN;
+	if (!Number.isFinite(width) || width <= 0) return svg;
+
+	const existingStyle = attrs.match(/\sstyle=(['"])(.*?)\1/i)?.[2] ?? "";
+	const cleanStyle = existingStyle.replace(/(?:^|;)\s*(?:max-)?width\s*:[^;]*/gi, "").replace(/^\s*;|;\s*$/g, "");
+	const sizedAttrs = attrs.replace(/\swidth=(['"])[^'"]*\1/i, "").replace(/\sstyle=(['"])(.*?)\1/i, "");
+	const style = cleanStyle ? `${cleanStyle}; max-width:none` : "max-width:none";
+	return svg.replace(match[0], `<svg${sizedAttrs} width="${width}" style="${style}">`);
+}
+
 /** The `components={{ pre: ... }}` decision: does this pre's children hold a
  *  mermaid-tagged code element? Pure so tests can assert routing without React. */
 export function routePreToMermaid(children: unknown): boolean {
