@@ -1,7 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { segmentStream } from "../stream-markdown";
-import { MarkdownBody, rehypePlugins, remarkPlugins } from "./Markdown";
+import { MarkdownBody } from "./Markdown";
 
 /**
  * Prefix-cached streaming markdown renderer (see stream-markdown.ts for the
@@ -25,11 +24,9 @@ import { MarkdownBody, rehypePlugins, remarkPlugins } from "./Markdown";
 
 /** One frozen segment: immutable input → parses exactly once thanks to memo. */
 const FrozenSegment = memo(function FrozenSegment({ text }: { text: string }) {
-	return (
-		<ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
-			{text}
-		</ReactMarkdown>
-	);
+	// Must go through MarkdownBody — the shared pipeline config (codeblock chrome +
+	// mermaid interception). A bare <ReactMarkdown> here silently skipped mermaid.
+	return <MarkdownBody text={text} />;
 });
 
 const TAIL_INTERVAL_MS = 200;

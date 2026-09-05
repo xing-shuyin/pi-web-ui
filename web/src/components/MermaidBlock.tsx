@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useT } from "../i18n";
 import { CopyButton } from "./copy-button";
-import { childrenText, isMermaidLanguage, singleCodeChild } from "./mermaid";
+import { childrenText, routePreToMermaid, singleCodeChild } from "./mermaid";
 
 /** Lazily-loaded, memoized mermaid module — most chats never hit a mermaid
  *  fence, so this stays out of the main bundle until one actually renders. */
@@ -47,28 +47,42 @@ export function MermaidBlock({ code }: { code: string }) {
 	const reactId = useId().replace(/[^a-zA-Z0-9]/g, "");
 	const [svg, setSvg] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const containerRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		let cancelled = false;
 		setSvg(null);
 		setError(null);
 		const renderId = `mermaid-${reactId}-${++renderSeq}`;
+		// Render through an offscreen container we own: mermaid sizes its root <svg>
+		// to the container width when one is supplied (it stays natural-size when
+		// rendering into body), and it removes the container itself once serialized —
+		// on parse/draw failures too, so nothing accumulates. Cancelled mid-flight
+		// renders are the only leftovers; cleaned in the catch below.
+		const holder = document.createElement("div");
+		holder.style.position = "absolute";
+		holder.style.left = "-99999px";
+		holder.style.width = "1000px";
+		holder.dataset.mermaidRender = renderId;
+		document.body.appendChild(holder);
+		const cleanup = () => document.querySelector(`[data-mermaid-render="${renderId}"]`)?.remove();
 		loadMermaid()
-			.then((mermaid) => mermaid.render(renderId, code))
+			// Render into mermaid's offscreen temp container (no svgContainingElement
+			// — the documented path). Mermaid's own render() removes that container on
+			// success and on parse/draw failures, but NOT when the result lands after
+			// this component unmounted (cancelled below) — the catch cleans then.
+			.then((mermaid) => mermaid.render(renderId, code, holder))
 			.then(({ svg }) => {
+				cleanup();
 				if (!cancelled) setSvg(svg);
 			})
 			.catch((err: unknown) => {
+				cleanup();
 				if (cancelled) return;
 				setError(err instanceof Error ? err.message : String(err));
-				// mermaid's error path leaves its offscreen render target in the DOM
-				// (the raw id, or its "d"-prefixed fallback container). Nothing in
-				// our tree references it, but clean both up so they can't accumulate.
-				for (const id of [renderId, `d${renderId}`]) document.getElementById(id)?.remove();
 			});
 		return () => {
 			cancelled = true;
+			cleanup();
 		};
 	}, [code, reactId]);
 
@@ -99,7 +113,7 @@ export function MermaidBlock({ code }: { code: string }) {
 			<CopyButton text={code} />
 			{/* mermaid.render() output is markup we generated locally from plain-text
 			    source (securityLevel: "strict" sanitizes shapes/labels). */}
-			<div ref={containerRef} className="mermaid-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+			<div className="mermaid-svg" dangerouslySetInnerHTML={{ __html: svg }} />
 		</div>
 	);
 }
@@ -108,6 +122,6 @@ export function MermaidBlock({ code }: { code: string }) {
  *  single mermaid <code> element, else null (normal codeblock chrome applies). */
 export function mermaidCodeFromPre(children: unknown): string | null {
 	const code = singleCodeChild(children);
-	if (!code || !isMermaidLanguage(code.props?.className)) return null;
+	if (!code || !routePreToMermaid(children)) return null;
 	return childrenText(children);
 }

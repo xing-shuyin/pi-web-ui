@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * Pure helpers for ```mermaid fenced-code detection — kept free of React so
  * they're unit-testable (tests/unit/mermaid.test.ts) and importable from
@@ -28,4 +29,11 @@ export function singleCodeChild(children: unknown): { props?: { className?: unkn
 	const child = Array.isArray(children) ? children[0] : children;
 	if (!child || typeof child !== "object" || !("props" in child)) return null;
 	return child as { props?: { className?: unknown } };
+}
+
+/** The `components={{ pre: ... }}` decision: does this pre's children hold a
+ *  mermaid-tagged code element? Pure so tests can assert routing without React. */
+export function routePreToMermaid(children: unknown): boolean {
+	const code = singleCodeChild(children);
+	return code !== null && isMermaidLanguage(code.props?.className);
 }
