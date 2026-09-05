@@ -6895,6 +6895,12 @@ span.msg-editor-hint svg {
 	user-select: text;
 }
 
+.set-sep {
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 12px 0;
+}
+
 .set-hint {
 	margin: 0;
 	font-size: 12px;

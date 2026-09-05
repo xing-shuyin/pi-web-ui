@@ -38,6 +38,7 @@ import {
 	savePromptHistorySettings,
 } from "../prompt-history";
 import { randomUuid } from "../uuid";
+import { useMermaidEnabled, loadMermaidSettings, saveMermaidSettings } from "../mermaid-settings";
 import { useT } from "../i18n";
 
 /** Minimal terminal-tab bridge (same shape SCMPanel uses). */
@@ -217,6 +218,8 @@ export function SettingsModal({ chat, send, terminal, onSwitchToTerminal, onClos
 	const [confirmTplDelete, setConfirmTplDelete] = useState<string | null>(null);
 	// Read-only viewer for the FULL system prompt actually in effect.
 	const [showFullPrompt, setShowFullPrompt] = useState(false);
+	// Mermaid 图表渲染开关（纯前端 localStorage，见 mermaid-settings.ts）。
+	const mermaidEnabled = useMermaidEnabled();
 	// Prompt history settings (纯前端 localStorage，不经过 server).
 	const [phSettings, setPhSettings] = useState(() => loadPromptHistorySettings());
 	const [phCount, setPhCount] = useState(() => {
@@ -725,6 +728,13 @@ export function SettingsModal({ chat, send, terminal, onSwitchToTerminal, onClos
 									tip={t("toolsWrapDesc")}
 									enabled={settings.toolsWrap ?? true}
 									onToggle={() => setPartial({ toolsWrap: !(settings.toolsWrap ?? true) })}
+								/>
+								<hr className="set-sep" />
+								<ToggleRow
+									title={t("mermaidRenderSetting")}
+									tip={t("mermaidRenderSettingDesc")}
+									enabled={mermaidEnabled}
+									onToggle={() => saveMermaidSettings({ enabled: !mermaidEnabled })}
 								/>
 							</div>
 						)}

@@ -7,6 +7,7 @@ import { CopyButton } from "./copy-button";
 import { splitCodeLines } from "../code-lines";
 import { MermaidBlock, mermaidCodeFromPre } from "./MermaidBlock";
 import { routePreToMermaid } from "./mermaid";
+import { useMermaidEnabled } from "../mermaid-settings";
 
 interface MarkdownProps {
 	text: string;
@@ -37,8 +38,11 @@ export const Markdown = memo(function Markdown({ text }: MarkdownProps) {
 });
 
 function PreWithCopy({ children, ...props }: JSX.IntrinsicElements["pre"]) {
-	// ```mermaid fences render as SVG diagrams instead of highlighted code.
-	if (routePreToMermaid(children)) return <MermaidBlock code={mermaidCodeFromPre(children)!} />;
+	const mermaidEnabled = useMermaidEnabled();
+	// ```mermaid fences render as SVG diagrams (toggle in Settings → 消息显示).
+	if (mermaidEnabled && routePreToMermaid(children)) {
+		return <MermaidBlock code={mermaidCodeFromPre(children)!} />;
+	}
 	// react-markdown 传进来的是 <pre><code …>…</code></pre> 里的 code 元素；
 	// 按逻辑行切分的是它内部的 span/文本 children，而不是 code 元素本身
 	// （否则每行会嵌套一个克隆的 <code>，且尾随空行无法被丢弃）。

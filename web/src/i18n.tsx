@@ -147,6 +147,9 @@ const zh = {
 	slashCopyEmpty: "还没有可复制的助手回复",
 	mermaidRendering: "图表渲染中…",
 	mermaidRenderFailed: "图表渲染失败，以下为原始代码：",
+	mermaidRenderSetting: "渲染 Mermaid 图表",
+	mermaidRenderSettingDesc:
+		"开启后，消息中的 ```mermaid 代码块会渲染为图表；关闭则始终按普通代码块显示，跳过图表引擎的加载与渲染开销",
 
 	/* left panel */
 	recentProjects: "最近项目",
@@ -989,6 +992,9 @@ const en: Record<keyof typeof zh, string> = {
 	slashCopyEmpty: "No assistant reply to copy yet",
 	mermaidRendering: "Rendering diagram…",
 	mermaidRenderFailed: "Failed to render diagram — raw source below:",
+	mermaidRenderSetting: "Render Mermaid diagrams",
+	mermaidRenderSettingDesc:
+		"When on, ```mermaid code blocks in messages render as diagrams; when off they stay plain code blocks and the diagram engine is never loaded",
 
 	/* left panel */
 	recentProjects: "Recent projects",
