@@ -66,9 +66,14 @@ describe("preserveMermaidSvgWidth", () => {
 	});
 
 	it("没有有效 viewBox 时保持 SVG 不变", () => {
-		const svg = '<svg width="100%"></svg>';
-		expect(preserveMermaidSvgWidth(svg)).toBe(svg);
-		expect(preserveMermaidSvgWidth("not svg")).toBe("not svg");
+		for (const svg of [
+			'<svg width="100%"></svg>',
+			'<svg viewBox="0 0 nope 70"></svg>',
+			"<svg viewBox='0,0,-20,70'></svg>",
+			"not svg",
+		]) {
+			expect(preserveMermaidSvgWidth(svg)).toBe(svg);
+		}
 	});
 });
 
