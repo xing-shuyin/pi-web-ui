@@ -4973,7 +4973,10 @@ span.msg-editor-hint svg {
 	padding: 4px;
 	border-radius: 5px;
 	opacity: 0.35;
-	transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+	transition:
+		opacity 0.15s ease,
+		color 0.15s ease,
+		background 0.15s ease;
 	z-index: 1;
 }
 .msg-text:hover .msg-text-copy,

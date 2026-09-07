@@ -1,5 +1,15 @@
 import { memo, useState } from "react";
-import { FiBookOpen, FiCheckCircle, FiChevronDown, FiChevronRight, FiChevronUp, FiCopy, FiEdit3, FiImage, FiX } from "react-icons/fi";
+import {
+	FiBookOpen,
+	FiCheckCircle,
+	FiChevronDown,
+	FiChevronRight,
+	FiChevronUp,
+	FiCopy,
+	FiEdit3,
+	FiImage,
+	FiX,
+} from "react-icons/fi";
 import type {
 	PromptAttachment,
 	ToolStatus,

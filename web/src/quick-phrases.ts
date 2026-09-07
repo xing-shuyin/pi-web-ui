@@ -9,7 +9,14 @@
 export const QUICK_PHRASE_DEFAULTS: Record<"zh" | "en" | "it", string[]> = {
 	zh: ["继续", "总结一下", "详细解释一下", "检查并修复问题", "补充测试覆盖", "发布上传"],
 	en: ["Continue", "Summarize", "Explain in detail", "Check and fix issues", "Add test coverage", "Publish release"],
-	it: ["Continua", "Riassumi", "Spiega in dettaglio", "Verifica e correggi i problemi", "Aggiungi copertura dei test", "Pubblica la release"],
+	it: [
+		"Continua",
+		"Riassumi",
+		"Spiega in dettaglio",
+		"Verifica e correggi i problemi",
+		"Aggiungi copertura dei test",
+		"Pubblica la release",
+	],
 };
 
 const SEED_KEY = "pi-web-ui:quick-seeded";
