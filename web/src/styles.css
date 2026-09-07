@@ -4941,6 +4941,36 @@ span.msg-editor-hint svg {
 	background: var(--bg-elev2);
 }
 
+/* Copy button on plain assistant text blocks (hover-reveal, faint on touch) */
+.msg-text {
+	position: relative;
+}
+.msg-text-copy {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border-soft);
+	background: var(--bg-elev2);
+	color: var(--text-faint);
+	cursor: pointer;
+	padding: 4px;
+	border-radius: 5px;
+	opacity: 0.35;
+	transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+	z-index: 1;
+}
+.msg-text:hover .msg-text-copy,
+.msg-text-copy:focus-visible {
+	opacity: 1;
+}
+.msg-text-copy:hover {
+	color: var(--text);
+	background: var(--bg-elev2);
+}
+
 .toolcall-body {
 	border-top: 1px solid var(--border-soft);
 	padding: 8px 12px 10px;
