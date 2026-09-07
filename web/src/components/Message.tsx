@@ -656,7 +656,7 @@ function Block({
 			<div className="msg-text">
 				{live ? <StreamMarkdown text={text.text} /> : <Markdown text={text.text} />}
 				{text.truncated && <div className="trunc-note">{t("truncated")}</div>}
-				{role === "assistant" && (
+				{role === "assistant" || role === "user" ? (
 					<button
 						type="button"
 						className="msg-text-copy"
@@ -670,7 +670,7 @@ function Block({
 					>
 						{copied ? <FiCheckCircle /> : <FiCopy />}
 					</button>
-				)}
+				) : null}
 			</div>
 		);
 	}

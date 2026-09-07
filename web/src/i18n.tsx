@@ -2480,6 +2480,8 @@ const it: Record<keyof typeof zh, string> = {
 	running: "In esecuzione…",
 	toolQueued: "In coda",
 	copyArgs: "Copia argomenti",
+	copyMessage: "Copia messaggio",
+	copied: "Copiato",
 	errorOutput: "Output errore",
 	output: "Output",
 	waitingOutput: "In attesa dell'output…",

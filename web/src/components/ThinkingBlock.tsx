@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FiChevronDown, FiChevronRight, FiCpu } from "react-icons/fi";
+import { FiCheckCircle, FiChevronDown, FiChevronRight, FiCopy, FiCpu } from "react-icons/fi";
 import { useT } from "../i18n";
 
 interface ThinkingBlockProps {
@@ -25,25 +25,42 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 	const shown = expanded || forceOpen;
 	// 折叠预览：流式中取最新文本（实时尾巴），结束后取开头一行。
 	const preview = streaming ? thinking.trimEnd().slice(-80) : thinking.split("\n")[0].slice(0, 80);
+	const [copied, setCopied] = useState(false);
+	const copyThinking = () => {
+		void navigator.clipboard.writeText(thinking);
+		setCopied(true);
+		window.setTimeout(() => setCopied(false), 1200);
+	};
 
 	return (
 		<div className={`thinking ${shown ? "open" : ""} ${streaming ? "live" : ""}`}>
-			<button type="button" className="thinking-toggle" onClick={() => setOpen(!expanded)}>
-				{shown ? <FiChevronDown /> : <FiChevronRight />}
-				<FiCpu className="thinking-icon" />
-				<span className="thinking-label">
-					{streaming && shown ? (
-						<span className="thinking-live-label">
-							{t("thinkingNow")}
-							<span className="dots" />
-						</span>
-					) : shown ? (
-						t("thinking")
-					) : (
-						t("thinkingPreview", { preview })
-					)}
-				</span>
-			</button>
+			<div className="thinking-head">
+				<button type="button" className="thinking-toggle" onClick={() => setOpen(!expanded)}>
+					{shown ? <FiChevronDown /> : <FiChevronRight />}
+					<FiCpu className="thinking-icon" />
+					<span className="thinking-label">
+						{streaming && shown ? (
+							<span className="thinking-live-label">
+								{t("thinkingNow")}
+								<span className="dots" />
+							</span>
+						) : shown ? (
+							t("thinking")
+						) : (
+							t("thinkingPreview", { preview })
+						)}
+					</span>
+				</button>
+				<button
+					type="button"
+					className="toolcall-copy thinking-copy"
+					title={copied ? t("copied") : t("copyMessage")}
+					aria-label={t("copyMessage")}
+					onClick={copyThinking}
+				>
+					{copied ? <FiCheckCircle /> : <FiCopy />}
+				</button>
+			</div>
 			{shown && <div className="thinking-body">{thinking}</div>}
 		</div>
 	);

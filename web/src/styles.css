@@ -4721,8 +4721,22 @@ span.msg-editor-hint svg {
 	background: var(--glow-015);
 }
 
+.thinking-head {
+	display: flex;
+	align-items: center;
+	padding-right: 8px;
+}
+.thinking-head .thinking-copy {
+	flex: none;
+	opacity: 0.35;
+}
+.thinking:hover .thinking-copy,
+.thinking-copy:focus-visible {
+	opacity: 1;
+}
 .thinking-toggle {
 	display: flex;
+	flex: 1;
 	align-items: center;
 	gap: 7px;
 	width: 100%;
