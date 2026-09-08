@@ -56,7 +56,12 @@ function withTimeout(promise, ms, label) {
 }
 
 /** 标识符方言引用（防注入：标识符一律过引号函数） */
-function qMysql(s) { return "`" + String(s).replace(/`/g, "``") + "`"; }
+function qMysql(s) {
+	const str = String(s);
+	// 标识符（库名/表名/列名）只允许安全字符，防止转义被绕过导致 SQL 注入
+	if (!/^[A-Za-z0-9_$]+$/.test(str)) throw new Error(`非法标识符: ${str}`);
+	return "`" + str + "`";
+}
 function qPg(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
 function qMssql(s) { return "[" + String(s).replace(/\]/g, "]]") + "]"; }
 function qSqlite(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
@@ -123,7 +128,7 @@ async function mysqlAdapter(cfg) {
 	await conn.ping();
 	let curDb = null;
 	async function useDb(db) {
-		if (db && db !== curDb) { await conn.query(`USE ${qMysql(db)}`); curDb = db; }
+		if (db && db !== curDb) { await conn.query("USE ??", [db]); curDb = db; }
 	}
 	return {
 		kind: "sql",
@@ -153,7 +158,8 @@ async function mysqlAdapter(cfg) {
 				 GROUP BY index_name, NON_UNIQUE`, [db, t]);
 			let ddl = "";
 			try {
-				const [[row]] = await conn.query(`SHOW CREATE TABLE ${qMysql(db)}.${qMysql(t)}`);
+				const showSql = `SHOW CREATE TABLE ${qMysql(db)}.${qMysql(t)}`;
+				const [[row]] = await conn.query(showSql);
 				ddl = row["Create Table"] ?? row["Create View"] ?? "";
 			} catch { /* 视图等场景失败可忽略 */ }
 			return {
@@ -167,14 +173,16 @@ async function mysqlAdapter(cfg) {
 		},
 		async selectPage(db, t, opt) {
 			// mysql 数据页不支持 JSON filter（那是 mongodb 专属参数）
-			const totalRes = await conn.query(`SELECT COUNT(*) AS n FROM ${qMysql(db)}.${qMysql(t)}`);
+			// 使用 mysql2 的 ?? 标识符占位符传参，避免将动态标识符直接拼入 SQL 字符串
+			const totalRes = await conn.query("SELECT COUNT(*) AS n FROM ??.??", [db, t]);
 			const total = Number(totalRes[0][0]?.n ?? 0);
-			const orderSql = opt.orderBy ? ` ORDER BY ${qMysql(opt.orderBy)} ${opt.dir === "desc" ? "DESC" : "ASC"}` : "";
+			const orderSql = opt.orderBy ? ` ORDER BY ?? ${opt.dir === "desc" ? "DESC" : "ASC"}` : "";
+			const pageParams = opt.orderBy ? [db, t, opt.orderBy] : [db, t];
 			const [rows] = await conn.query(
-				`SELECT * FROM ${qMysql(db)}.${qMysql(t)}${orderSql} LIMIT ? OFFSET ?`,
-				[Math.min(Number(opt.limit) || 50, MAX_PAGE_ROWS), Math.max(Number(opt.offset) || 0, 0)]);
+				`SELECT * FROM ??.??${orderSql} LIMIT ? OFFSET ?`,
+				[...pageParams, Math.min(Number(opt.limit) || 50, MAX_PAGE_ROWS), Math.max(Number(opt.offset) || 0, 0)]);
 			const fields = rows.length ? Object.keys(rows[0])
-				: (await conn.query(`SELECT * FROM ${qMysql(db)}.${qMysql(t)} LIMIT 1`))[0]?.fields?.map((f) => f.name)
+				: (await conn.query("SELECT * FROM ??.?? LIMIT 1", [db, t]))[0]?.fields?.map((f) => f.name)
 					?? (await conn.query(
 						`SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position`, [db, t]))[0].map((r) => r.column_name);
 			const [pkRows] = await conn.query(
@@ -195,8 +203,9 @@ async function mysqlAdapter(cfg) {
 		async updateRow(db, t, pkCol, pkVal, changes) {
 			const cols = Object.keys(changes);
 			if (!cols.length) throw new Error("没有要修改的列");
+			const updateSql = `UPDATE ${qMysql(db)}.${qMysql(t)} SET ${cols.map((c) => `${qMysql(c)}=?`).join(", ")} WHERE ${qMysql(pkCol)}=?`;
 			const [r] = await conn.query(
-				`UPDATE ${qMysql(db)}.${qMysql(t)} SET ${cols.map((c) => `${qMysql(c)}=?`).join(", ")} WHERE ${qMysql(pkCol)}=?`,
+				updateSql,
 				[...Object.values(changes), pkVal]);
 			return { affected: Number(r?.affectedRows ?? 0) };
 		},
@@ -209,7 +218,8 @@ async function mysqlAdapter(cfg) {
 			return { affected: 1, id: r?.insertId ?? null };
 		},
 		async deleteRow(db, t, pkCol, pkVal) {
-			const [r] = await conn.query(`DELETE FROM ${qMysql(db)}.${qMysql(t)} WHERE ${qMysql(pkCol)}=?`, [pkVal]);
+			const deleteSql = `DELETE FROM ${qMysql(db)}.${qMysql(t)} WHERE ${qMysql(pkCol)}=?`;
+			const [r] = await conn.query(deleteSql, [pkVal]);
 			return { affected: Number(r?.affectedRows ?? 0) };
 		},
 		async close() { try { await conn.end(); } catch { /* ignore */ } },
