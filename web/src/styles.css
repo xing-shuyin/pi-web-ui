@@ -6862,6 +6862,23 @@ div.chead[role="button"]:focus-visible,
 	box-shadow: 0 4px 16px rgba(59, 130, 246, 0.45);
 }
 
+/* 插队: steer —— 当前回合结算后立刻送达（桌面端等同 Enter；移动端软键盘没有 Shift/
+   Ctrl、Enter 被有意留作换行，所以这是移动端唯一的插队入口）。 */
+.inputbox .btn.steer {
+	width: auto;
+	border-radius: 999px;
+	padding: 0 16px;
+	gap: 5px;
+	font-size: 13px;
+	border-color: rgba(251, 191, 36, 0.45);
+	color: var(--amber);
+}
+.inputbox .btn.steer:hover:not(:disabled) {
+	background: var(--amber);
+	border-color: var(--amber);
+	color: var(--on-amber);
+}
+
 /* 补充: queue a message that sends the moment the current reply finishes. */
 .inputbox .btn.supplement {
 	width: auto;

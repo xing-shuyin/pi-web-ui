@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { FiSend, FiSquare, FiPaperclip, FiArrowUp, FiGrid } from "react-icons/fi";
+import { FiSend, FiSquare, FiPaperclip, FiArrowUp, FiGrid, FiZap } from "react-icons/fi";
 import type { ClientMessage, ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState } from "../types";
 import { useT, useI18n } from "../i18n";
 import { isRasterImage } from "../image-paste";
@@ -510,9 +510,16 @@ export const ChatInput = memo(function ChatInput({
 			{streaming ? (
 				<>
 					{text.trim() !== "" && (
-						<button type="button" className="btn supplement" title={t("supplementTip")} onClick={() => submit(true)}>
-							<FiSend /> {t("supplement")}
-						</button>
+						<>
+							{/* 插队（steer）：当前回合结算后立刻送达。桌面端等同 Enter；移动端软键盘
+							 *  没有 Shift/Ctrl，Enter 被有意留作换行，所以这里是移动端唯一的插队入口。 */}
+							<button type="button" className="btn steer" title={t("queueSteerTag")} onClick={() => submit()}>
+								<FiZap /> {t("queueSteerTag")}
+							</button>
+							<button type="button" className="btn supplement" title={t("supplementTip")} onClick={() => submit(true)}>
+								<FiSend /> {t("supplement")}
+							</button>
+						</>
 					)}
 					<button type="button" className="btn stop" title={t("stopAgent")} onClick={() => send({ type: "abort" })}>
 						<FiSquare />
