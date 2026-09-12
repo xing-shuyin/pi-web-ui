@@ -3,3 +3,10 @@ web/dist
 node_modules
 coverage
 *.min.js
+
+# legado-web 插件：内嵌的上游前端源码与其构建产物，保持上游风格/原样
+plugins/legado-web/app
+plugins/legado-web/client/app
+plugins/legado-web/server
+# 插件的运行期数据（书源/书架/进度）
+plugins/*/storage

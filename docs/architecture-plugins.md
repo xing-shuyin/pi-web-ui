@@ -96,6 +96,21 @@ vendor 本地加载（如 mermaid 插件 `vendor/mermaid.bundle.mjs`，本地优
 
 App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore */`），TopBar 为每个插件加一个 🧩 tab（激活失败的置灰）；插件不共享 React 实例，与主应用只有 ctx.send/onData 两条窄通道。
 
+### 插件 → 宿主动作桥（`window.__piWebUiHost`）
+
+插件 bundle 是裸 ESM，import 不到应用模块；需要主应用配合的**动作**（不只是数据）走 `window.__piWebUiHost`：
+
+| 字段 | 说明 |
+| --- | --- |
+| `version` | 宿主 API 版本（当前 1；插件可用它判断宿主能力） |
+| `setView(view)` | 切主视图（`"chat"` / `"terminal"` / `"git"` / `"plugin:<id>"`） |
+| `startChat({ prompt, newChat?, cwd? })` | 新建对话（可选切工作目录）并把 prompt 作为用户消息发出；返回"已受理" |
+
+定义：`web/src/plugin-host.ts`（纯逻辑 `createPluginHostApi`，App 挂载时 `installPluginHostApi`）。
+**时序坑**：服务端 `new_chat` 是异步的（`void cs.newChat()`），紧接着发 `prompt` 会落到旧对话，
+所以 `startChat` 内部串行等：cwd 切过去 → 对话变空白/换新 → 才发 prompt（每步有超时，超时也发，不静默丢）。
+现有用户：legado-web 插件的「🤖 AI 修复源 / AI 新建书源」按钮（阅读页与书源页一键把现场发给 AI 开新对话）。
+
 `syncPluginViews(plugins, epoch)` 统一同步注册表：清单消失/被禁用即卸载视图（调 cleanup）、epoch 变化清 failed 重拉 bundle。
 
 设置面板 ⚙ 有「界面插件」开关区（`set_settings.disabledPlugins`，持久化 client-state、纯 UI 隐藏不触发 runtime reload）+ **每行「更新/卸载」按钮**（更新需 CLI install 记录的来源 `.pi-source.json` → `UiPluginInfo.source`；两个操作都走可见终端 tab，退出后 App 观察器发 `plugins_reload` 热重载）。
@@ -146,6 +161,7 @@ custom 文件 + notice 回显）。内置条目不可经 UI 移除。
 | vscode-editor | `plugins/vscode-editor/` | 📝 编辑器 + SSH（原独立插件合并）                                                                 |
 | db-client     | `plugins/db-client/`     | 🗄️ 数据库连接管理（mysql2/pg/mssql/sqlite/mongodb/redis）                                         |
 | run-trace     | `plugins/run-trace/`     | 🧭 运行轨迹时间线：当前对话的横向泳道时间轴 + 分段分析（host.onRunEvent + getActiveConversation + onConversationChanged） |
+| legado-web    | `plugins/legado-web/`    | 📖 Legado 阅读（文本源）：搜索/发现/详情/目录/正文，书源与安卓版兼容；内嵌 Vite 前端（`client/app/`，iframe 视图）+ 自带 `/proxy`（跨域+GBK）与 `/store`（书源/书架/进度只落数据目录 `<dataDir>/legado-web/`，不写 localStorage）+ 四个 AI 修源工具（`legado_rules`/`legado_book_sources`/`legado_source_probe`/`legado_run_rule`，规则引擎跑在 worker 里，同步 JS 规则走 SharedArrayBuffer 桥） |
 
 ## 回归测试
 
@@ -162,6 +178,12 @@ custom 文件 + notice 回显）。内置条目不可经 UI 移除。
 | `plugin-update-test.mjs`         | —    | install/check-updates/rollback 全链路                                                                                |
 | `ssh-plugin-test.mjs`            | 8964 | SSH 远程文件/终端全链路（mock SSH 服务端）                                                                           |
 | `db-client-test.mjs`             | 8968 | SQLite 全链路协议冒烟                                                                                                |
+| `legado-web-test.mjs`            | 8993 | legado-web：内嵌前端静态托管 / 代理（UTF-8+GBK、charset 驱动的 URL 与 body 编码、浏览器头不外泄、上游失败 502）/ 存储读写与非法键 |
+| `legado-web-engine-test.mjs`     | 8995 | legado-web AI 修源接口：工具注册 / 书源文件读写 / 链路诊断（含 step 单步）/ 试规则 / 单段 CSS 规则回归 / 同步 `java.ajax`（零 token） |
+| `legado-web-ai-fix-test.mjs`     | 8996 | legado-web 「AI 修复源 / 新建书源」按钮 E2E：harness 页充当宿主（假 `__piWebUiHost`）+ 内嵌阅读页点按钮 → 正文含现场 / 切 chat / 新对话 / cwd=书源目录（书源页 + 发现页 + 新建；缺 Chrome 自动 SKIP） |
+| `legado-web-explore-test.mjs`     | 8998/8999 | legado-web 发现页：收藏书源（下拉「⭐ 常用」分组 + 常用快捷行 + `prefs.json`）/ 直接搜这个源 / 分类浏览与搜索共用列表容器互不串味（缺 Chrome 自动 SKIP） |
+| `legado-web-storage-test.mjs`    | 8997 | legado-web 存储契约：数据只落数据目录文件——1.8MB 书源 + 3000 章书架不报 QuotaExceededError / localStorage 无 `legado.*` 键 / 刷新后仍在 / 老浏览器数据一次性迁移 / 书源页搜索与 ⭐ 置顶落 `prefs.json`（缺 Chrome 自动 SKIP） |
+| 单测 `plugin-host.test.ts`       | —    | 宿主动作桥：startChat 时序（等 cwd/等新对话才发 prompt）/ 未就绪拒绝 / newChat=false |
 | 单测 `plugin-facilities.test.ts` | —    | storage/secrets/deps/apiVersion 门控                                                                                 |
 | 单测 `plugin-settings.test.ts`   | —    | schema 解析/校验/持久化                                                                                              |
 | 单测 `mcp-bridge.test.ts`        | —    | 握手/工具列表/调用/超时                                                                                              |

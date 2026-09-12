@@ -38,6 +38,8 @@ const ALL = [
 	"goal-prefs-test",
 	"goal-test",
 	"left-panel-delete-test",
+	"legado-web-engine-test",
+	"legado-web-test",
 	"list-files-missing-dir-test",
 	"plugin-bgtask-test",
 	"plugin-command-test",

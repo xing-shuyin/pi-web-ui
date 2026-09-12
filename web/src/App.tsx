@@ -22,6 +22,7 @@ import { DshQuestionDialog } from "./components/DshQuestionDialog";
 const TerminalPanel = lazy(() => import("./components/TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 import { ScmPanel } from "./components/SCMPanel";
 import { PluginView } from "./components/PluginView";
+import { createPluginHostApi, installPluginHostApi } from "./plugin-host";
 import { syncPluginViews, subscribeLoadedPluginViews, type LoadedPluginView } from "./plugin-loader";
 import { setFenceSend, syncFenceRenderers } from "./plugin-fence";
 import { PiSetupModal } from "./components/PiSetupModal";
@@ -227,6 +228,26 @@ export function App() {
 		syncFenceRenderers(enabledPlugins, chat.pluginsEpoch);
 		void syncPluginViews(enabledPlugins, chat.pluginsEpoch);
 	}, [enabledPlugins, chat.pluginsEpoch, send]);
+	// 插件宿主动作桥（window.__piWebUiHost）：插件 client bundle 拿不到 React 实例，
+	// 需要「切视图 / 新建对话 + 自动发一段话」这类动作时走它（见 plugin-host.ts）。
+	// deps 读的是 ref（挂载时装一次，不能把每次渲染的闭包困在里面）。
+	const chatRefForPlugins = useRef(chat);
+	chatRefForPlugins.current = chat;
+	const setViewRefForPlugins = useRef(setView);
+	setViewRefForPlugins.current = setView;
+	useEffect(() => {
+		installPluginHostApi(
+			createPluginHostApi({
+				send,
+				isReady: () => Boolean(chatRefForPlugins.current.state),
+				setView: (v) => setViewRefForPlugins.current(v as ViewName),
+				getCwd: () => chatRefForPlugins.current.state?.cwd ?? "",
+				getConversationId: () => chatRefForPlugins.current.state?.conversationId ?? null,
+				isConversationBlank: () => (chatRefForPlugins.current.state?.messages.length ?? 0) === 0,
+			}),
+		);
+		return () => installPluginHostApi(null);
+	}, [send]);
 	// 左右面板可拖拽宽度（桌面端）：localStorage 持久化，双击手柄复位。
 	const [leftWidth, setLeftWidth] = useState(() => readPanelWidth("left"));
 	const [rightWidth, setRightWidth] = useState(() => readPanelWidth("right"));

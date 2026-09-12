@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Legado Web · 文本源阅读</title>
+    <script>
+      // 启动自诊断（内嵌在插件 iframe 里跑，出问题时直接在黑屏上写原因）：
+      //   - 脚本/样式加载失败（最常见：产物没构建、路由 404、缓存拿到旧文件名）
+      //   - 模块抛错 / Promise 未处理
+      //   - 6 秒后还没渲染出任何内容（脚本没跑起来或被拦）
+      (function () {
+        function box(title, detail) {
+          var el = document.getElementById('boot-error');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'boot-error';
+            el.style.cssText =
+              'position:fixed;left:0;right:0;top:0;z-index:9999;padding:10px 14px;font:13px/1.5 ui-monospace,Consolas,monospace;background:#5a1414;color:#ffd9d9;border-bottom:1px solid #8a2b2b;white-space:pre-wrap';
+            (document.body || document.documentElement).appendChild(el);
+          }
+          el.textContent += (el.textContent ? '\n' : '') + '⚠ ' + title + (detail ? '：' + detail : '');
+        }
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e.target;
+            if (t && t.tagName && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+              box('脚本/样式加载失败', t.src || t.href);
+              return;
+            }
+            if (e.message) box('脚本报错', e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0));
+          },
+          true,
+        );
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          box('异步任务失败', String((r && (r.stack || r.message)) || r));
+        });
+        setTimeout(function () {
+          var el = document.getElementById('tab-shelf');
+          if (el && !el.textContent.trim() && !document.getElementById('boot-error')) {
+            box('界面脚本没有渲染出内容', '按 Ctrl+F5 硬刷新；仍不行就打开 DevTools（右键 → 检查）看 Console 报错');
+          }
+        }, 6000);
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-DK20znyk.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DkOMpmJk.css">
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>📖 Legado Web <small>文本源 · 代理模式</small></h1>
+        <nav>
+          <button data-tab="shelf" class="on">书架</button>
+          <button data-tab="search">搜索</button>
+          <button data-tab="explore">发现</button>
+          <button data-tab="sources">书源</button>
+          <button data-tab="check">检测</button>
+          <button data-tab="read">阅读</button>
+        </nav>
+      </header>
+      <main>
+        <section id="tab-shelf"></section>
+        <section id="tab-search" hidden></section>
+        <section id="tab-explore" hidden></section>
+        <section id="tab-sources" hidden></section>
+        <section id="tab-check" hidden></section>
+        <section id="tab-read" hidden></section>
+      </main>
+      <footer><span id="status">代理：插件内置（/plugins-api/legado-web/proxy）</span></footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+	"name": "legado-web-app",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Legado 核心读书功能（文本源）：搜索 / 发现 / 详情 / 目录 / 正文。内嵌于 pi-web-ui 的 legado-web 插件，构建产物落到 ../client/app/。",
+	"scripts": {
+		"build": "tsc --noEmit && vite build",
+		"typecheck": "tsc --noEmit",
+		"dev": "vite",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@xmldom/xmldom": "^0.9.8",
+		"cheerio": "^1.0.0",
+		"js-md5": "^0.9.2",
+		"jsonpath-plus": "^10.3.0",
+		"xpath": "^0.0.32"
+	},
+	"devDependencies": {
+		"typescript": "~5.6.3",
+		"vite": "^6.0.3"
+	}
+}

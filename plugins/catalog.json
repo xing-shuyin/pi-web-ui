@@ -43,5 +43,14 @@
 		"descriptionEn": "Run trajectory: task → thinking → tools → file changes → result timeline with replay and node details.",
 		"source": "xing-shuyin/pi-web-ui/plugins/run-trace",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace"
+	},
+	{
+		"id": "legado-web",
+		"name": "legado-web",
+		"icon": "📖",
+		"description": "Legado 阅读（文本源）：搜索 / 发现 / 详情 / 目录 / 正文，书源 JSON 与安卓版兼容，可导入、检测、删废源；内置跨域+GBK 代理与本地存储，并给 AI 配了修源接口（读规则、读书源文件、逐步诊断链路、试规则验证）。",
+		"descriptionEn": "Legado reader (text book sources): search / explore / info / TOC / content with Android-compatible book source JSON, plus source import and health checking. Ships its own CORS+GBK proxy, local store, and AI tools to diagnose and repair book sources.",
+		"source": "xing-shuyin/pi-web-ui/plugins/legado-web",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web"
 	}
 ]
