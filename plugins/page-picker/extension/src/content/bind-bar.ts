@@ -5,8 +5,13 @@
  *
  * 它解决的是远程/局域网部署的第一公里：地址可能是 `http://39.99.235.208:8787`、
  * 端口也不固定，而用户此刻就站在那个页面上 —— 与其让他去选项页手打地址，不如在页面上
- * 问一句「要不要把它设成拾取服务地址」。注入时机由 background 决定（探测出本页是
- * pi-web-ui 才注入），所以这里不再判断「是不是 pi-web-ui」，只算「要问什么」。
+ * 问一句「要不要把它设成拾取服务地址」。
+ *
+ * **它自己会先认页面**（不依赖 background 的 MAIN world 探测）：
+ * 1. 同源探一次 `/api/health`（页面自己的请求，不需要额外权限，跨版本都有这个路由）；
+ * 2. 兵形：输入区 `.inputbox textarea` 在 + 标题带 `pi-web-ui`（两个都成立才算）。
+ * 认不出就**自己退场**并让 worker 补注入拾取器 —— 所以哪怕 background 那边的 MAIN world
+ * 探测失败（CSP/权限/奇怪环境），用户也不会得到「点了没反应」这个结果。
  *
  * 与拾取器的区别：只提供信息，不改页面数据。挂在 Shadow DOM 里（`:host { all: initial }`），
  * 页面 CSS 进不来、我们的样式出不去。
@@ -24,6 +29,29 @@ const HOST_ID = "pi-page-picker-bind-host";
 
 interface BarRuntime {
 	destroy: () => void;
+}
+
+/**
+ * 这个页面看起来是不是 pi-web-ui（content script 视角，只能看同源请求与 DOM）。
+ *
+ * 为什么不用宿主动作桥：`window.__piWebUiHost` 在页面主世界，隔离世界看不到它 ——
+ * 所以这里的两个判据都是隔离世界能拿到的，且**不需要额外权限**。
+ */
+async function pageLooksLikePiWebUi(): Promise<boolean> {
+	try {
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), 1200);
+		const res = await fetch("/api/health", { cache: "no-store", signal: ctrl.signal });
+		clearTimeout(timer);
+		if (res.ok) {
+			const info = (await res.json()) as { ok?: unknown; piVersion?: unknown; engine?: unknown } | null;
+			if (info && info.ok === true && (typeof info.piVersion === "string" || typeof info.engine === "string"))
+				return true;
+		}
+	} catch {
+		/* 探不通（404 / 不是 JSON / 超时）→ 走下面的 DOM 兵形 */
+	}
+	return /pi-web-ui/i.test(document.title ?? "") && Boolean(document.querySelector(".inputbox textarea"));
 }
 
 const CSS = `
@@ -78,7 +106,7 @@ function createBar(): BarRuntime & { render: (view: BindView) => void } {
 	const pickBtn = el("button", { text: "在本页拾取元素" });
 	const authBtn = el("button", { class: "hidden", text: "打开设置页授权" });
 	const closeBtn = el("button", { text: "关闭" });
-	const card = el("div", { class: "card" });
+	const card = el("div", { class: "card hidden" }); // 认完页面才显示（否则非目标页会闪一下空卡片）
 	const foot = el("div", { class: "row" });
 	foot.append(pickBtn, authBtn, el("span", { class: "grow" }), closeBtn, bindBtn);
 	card.append(title, detail, status, foot);
@@ -105,6 +133,7 @@ function createBar(): BarRuntime & { render: (view: BindView) => void } {
 	};
 
 	const render = (view: BindView): void => {
+		card.classList.remove("hidden"); // 认出页面了，可以露面了
 		title.textContent = view.title;
 		detail.textContent = view.detail;
 		// 已经是这个地址了：没有可绑的东西，只留「在本页拾取」（开发 pi-web-ui 自己时用得上）
@@ -160,8 +189,9 @@ function createBar(): BarRuntime & { render: (view: BindView) => void } {
 
 /**
  * 入口：重复注入（再点一次图标）只把浮条换成新的，不会叠出第二条。
- * 设置从 background 取（`serverUrl` 不是秘密，storage 只有它那边能读）—— 取不到就
- * 按默认地址算，反正只是决定「当前地址」那一行显示什么。
+ *
+ * 顺序是「先自认页面，再向 worker 要设置」：认不出就退场并让 worker 补注入拾取器
+ * （那种情况下先闪一块空卡片很莫名其妙）。
  */
 const w = window as unknown as Record<string, unknown>;
 (w[FLAG] as BarRuntime | undefined)?.destroy(); // 再点一次图标：换新的，不叠第二条
@@ -169,6 +199,15 @@ const runtime = createBar();
 w[FLAG] = runtime;
 
 void (async () => {
+	if (!(await pageLooksLikePiWebUi())) {
+		runtime.destroy();
+		try {
+			await chrome.runtime.sendMessage({ type: "page-picker:pick-anyway" });
+		} catch {
+			/* worker 不在线也不至于卡住：这个页面本来也不是我们的目标 */
+		}
+		return;
+	}
 	let bound = "";
 	try {
 		const res = (await chrome.runtime.sendMessage({ type: "page-picker:settings" })) as

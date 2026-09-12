@@ -16,6 +16,7 @@ import { code, collapse, truncate } from "../../plugins/page-picker/extension/sr
 import { toPrompt } from "../../plugins/page-picker/extension/src/shared/to-prompt.js";
 import {
 	DEFAULT_SERVER_URL,
+	isValidMatchPattern,
 	normalizeServerUrl,
 	originPattern,
 	tabMatchesBase,
@@ -408,6 +409,19 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 		expect(tabMatchesBase("https://host/", base)).toBe(false);
 		expect(tabMatchesBase("http://localhost:5173/", base)).toBe(false);
 		expect(tabMatchesBase(undefined, base)).toBe(false);
+	});
+
+	it("originPattern 的结果一定是合法 match pattern（能直接交给 chrome.tabs.query）", () => {
+		// 真事故（0.2.0）：曾经把「裸 origin」也当成查询模式之一传进去，真 Chrome/Edge 直接抛
+		// `Invalid url pattern 'http://localhost:8787'`，而被 catch 成「没找到页面」。
+		expect(isValidMatchPattern(originPattern("http://localhost:8787"))).toBe(true);
+		expect(isValidMatchPattern(originPattern("https://pi.example.com/pi"))).toBe(true);
+		expect(isValidMatchPattern(originPattern("192.168.1.10:9000"))).toBe(true);
+		expect(isValidMatchPattern("http://localhost:8787")).toBe(false); // 裸 origin（无路径）→ 非法
+		expect(isValidMatchPattern("localhost:8787/*")).toBe(false); // 缺 scheme
+		expect(isValidMatchPattern("http://host")).toBe(false);
+		expect(isValidMatchPattern("http://*/*")).toBe(true); // 任意主机（manifest 里的预置权限就是这种）
+		expect(isValidMatchPattern(undefined)).toBe(false);
 	});
 
 	it("根部署：/ 与任意子路径都算，别的端口/协议不算", () => {

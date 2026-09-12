@@ -10,7 +10,14 @@
 
 ## [Unreleased]
 
-暂无未发布内容。
+### Fixed
+
+- **page-picker 扩展：修「pi-web-ui 页面明明开着，却报『没找到打开的 pi-web-ui 页面』」**——0.2.0 查找目标标签页时传的过滤条件是 `["<地址>/*", "<地址>"]`，而**裸地址（没有路径的 origin）不是合法 match pattern**：真 Chrome/Edge 的 `chrome.tabs.query` 会直接抛 `Invalid url pattern 'http://localhost:8787'`，那个异常被 catch 成了「没找到页面」，于是拾取结果只能退化成「复制到剪贴板」（选项页「测试连接」里的同名查询也一并修）。现在查询只用 origin 级模式（`http://localhost:8787/*`），路径前缀仍由 `tabMatchesBase` 严格复核（子路径反代、前缀相似的站点都不受影响）。
+  - 这个 bug 能活着发布，是因为单测/E2E 用的是**假 chrome**，它不校验 match pattern：现在假 chrome 也按真 Chrome 的规则校验入参（`isValidMatchPattern`），这类坑会直接挂在单测上。
+  - 另加一条**装真扩展**的 E2E（`tests/page-picker-edge-ext-test.mjs`）：实测 Edge（152，headless）仍接受 `--load-extension`，所以能在真 `chrome.*` 上把「拾取 → 投递 → Markdown 真的落进 pi-web-ui 输入框」跑一遍（没装 Edge 自动 SKIP）。
+- **page-picker 扩展：修「在 pi-web-ui 页面上点图标没任何反应」**——绑定浮条原来完全依赖 background 的 MAIN world 探测（`__piWebUiHost` / `/api/health`），那个注入一旦被 CSP/权限/环境挡住，就会静默回落到拾取器，用户看到的就是「新功能没出现」。现在：探测不可用时也照旧注入浮条，**浮条自己再认一次页面**（同源 `/api/health` + 标题/输入框 DOM 兵形），认出是 pi-web-ui 就正常问「要不要绑成服务地址」，不是就自己退场并请 worker 补注入拾取器——**「点了图标什么都没发生」在三条路上都不可能发生**；路由决策同时打进 service worker 控制台，方便排障。
+
+暂无其他未发布内容。
 
 ## [0.81.1] — 2026-09-13
 

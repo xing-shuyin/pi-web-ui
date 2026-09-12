@@ -13,6 +13,7 @@ import {
 	openOptionsFor,
 	startPicking,
 } from "../../plugins/page-picker/extension/src/background.js";
+import { isValidMatchPattern } from "../../plugins/page-picker/extension/src/shared/settings.js";
 import type { PiProbe } from "../../plugins/page-picker/extension/src/shared/bind.js";
 import { MAX_SHOT_EDGE, planCrop } from "../../plugins/page-picker/extension/src/shared/shot-crop.js";
 
@@ -76,7 +77,17 @@ function fakeChrome(
 		},
 		runtime: { getURL: vi.fn((path: string) => `chrome-extension://fake/${path}`) },
 		tabs: {
-			query: vi.fn(async () => opts.tabs ?? []),
+			// 关键：假 chrome 也要像真 Chrome 一样**校验 match pattern**。
+			// `http://localhost:8787`（裸 origin，无路径）在真浏览器里会直接抛
+			// `Invalid url pattern`，而被 catch 成「没找到页面」—— 0.2.0 的投递失败就是这么来的，
+			// 当时假 chrome 不校验，测试全绿。
+			query: vi.fn(async (info: { url?: string | string[] } = {}) => {
+				const patterns = info.url == null ? [] : Array.isArray(info.url) ? info.url : [info.url];
+				for (const p of patterns) {
+					if (!isValidMatchPattern(p)) throw new Error(`Invalid url pattern '${p}'`);
+				}
+				return opts.tabs ?? [];
+			}),
 			update: vi.fn(async () => ({})),
 			create: vi.fn(async () => ({})),
 		},
@@ -170,11 +181,18 @@ describe("handleAction（点图标：先认页面，再决定注入什么）", (
 		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
 	});
 
-	it("探测注不进去（chrome:// / 页面 CSP）→ 回落拾取流程，失败要可见", async () => {
-		const chrome = fakeChrome({ probeThrows: true, injectThrows: "Cannot access a chrome:// URL" });
+	it("detect 注不进去（chrome:// / 页面 CSP）→ **照样注入浮条让它自检**（不得到「点了没反应」）", async () => {
+		// 真实动机：MAIN world 注入可能被环境挡住，而文件注入（拾取器/浮条）一直是好用的；
+		// 那就把「认页面」这件事下放给浮条（它自己探 /api/health + DOM 兵形）
+		const chrome = fakeChrome({ probeThrows: true });
+		await handleAction({ id: 9 });
+		expect(injectedFiles(chrome)).toEqual(["dist/bind.js"]);
+	});
+
+	it("探测明确说「不是 pi-web-ui」→ 才走拾取器", async () => {
+		const chrome = fakeChrome({ probe: { isPiWebUi: false, url: "http://localhost:5173/" } });
 		await handleAction({ id: 9 });
 		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
-		expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ text: "!", tabId: 9 });
 	});
 
 	it("没有 tabId → 什么都不做（不抛）", async () => {
@@ -378,6 +396,29 @@ describe("deliver", () => {
 		const res = await deliver(payload(), "# md", { ...settings, serverUrl: "https://pi.example.com/pi" });
 		expect(res.ok).toBe(true);
 		expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 5 } }));
+	});
+
+	// 回归（0.2.0 真实事故）：tabs.query 的 url 过滤只能是合法 match pattern。
+	// 之前传的是 [`${base}/*`, base]，那个裸 origin 让真 Chrome/Edge 直接抛
+	// `Invalid url pattern` → 被 catch 成「没找到页面」→ 页明明开着却报「没找到」。
+	it("tabs.query 只拿到 **合法 match pattern**（裸 origin 会让真浏览器抛异常）", async () => {
+		const chrome = fakeChrome({ tabs: [{ id: 42, url: "http://127.0.0.1:8787/" }], injectResult: { ok: true } });
+		const res = await deliver(payload(), "# md", settings);
+		expect(res.ok).toBe(true);
+		const arg = chrome.tabs.query.mock.calls[0][0] as { url: string[] };
+		expect(arg.url).toEqual(["http://127.0.0.1:8787/*"]);
+		for (const p of arg.url) expect(isValidMatchPattern(p)).toBe(true);
+	});
+
+	it("目标是子路径时，查询用 origin 模式、路径靠 tabMatchesBase 复核（不误认前缀相似的站）", async () => {
+		const chrome = fakeChrome({
+			tabs: [{ id: 7, url: "https://host/pi-other/" }],
+			injectResult: { ok: true },
+		});
+		const res = await deliver(payload(), "# md", { ...settings, serverUrl: "https://host/pi" });
+		expect(res.ok).toBe(false);
+		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+		expect((chrome.tabs.query.mock.calls[0][0] as { url: string[] }).url).toEqual(["https://host/*"]);
 	});
 });
 

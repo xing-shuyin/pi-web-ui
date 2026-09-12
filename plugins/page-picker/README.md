@@ -159,15 +159,16 @@ CI 在打 tag 时自动跑同一条命令并把 zip 挂到 GitHub Release（见 
 
 **绝不会出现「点了添加、什么都没发生」**：
 
-| 情况                                  | 行为                                                                               |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| 没打开 pi-web-ui 页面                 | 提示 + **Markdown 复制到剪贴板**，手动粘进输入框                                   |
-| 在 pi-web-ui 页面上点了图标（不小心） | 不是报错：改成问「要不要把它绑成服务地址」，也提供「在本页拾取元素」               |
-| 点了「设为服务地址」但缺授权          | 浮条提示差哪次授权，并给「打开设置页授权」（那种页面上的点击给不了浏览器要的手势） |
-| pi-web-ui 版本过旧（无 compose）      | 明确提示升级后刷新页面，同样复制兜底                                               |
-| 输入框还没就绪                        | 提示刷新页面后再试，同样复制兜底                                                   |
-| 截屏失败（无 activeTab 等）           | 只是没有截图，Markdown 照常投递                                                    |
-| 页面注入不了（`chrome://`、商店页）   | 扩展角标 `!` + 悬浮提示写明原因                                                    |
+| 情况                                           | 行为                                                                                                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 没打开 pi-web-ui 页面                          | 提示 + **Markdown 复制到剪贴板**，手动粘进输入框                                                                                                               |
+| 在 pi-web-ui 页面上点了图标（不小心）          | 不是报错：改成问「要不要把它绑成服务地址」，也提供「在本页拾取元素」                                                                                           |
+| background 认页面失败（CSP / 权限 / 奇怪环境） | 浮条会**自己再认一次**（同源 `/api/health` + DOM 兵形）：是 pi-web-ui 就正常问绑定，不是就自己退场并让 worker 补注入拾取器 —— 不会出现「点了图标什么都没发生」 |
+| 点了「设为服务地址」但缺授权                   | 浮条提示差哪次授权，并给「打开设置页授权」（那种页面上的点击给不了浏览器要的手势）                                                                             |
+| pi-web-ui 版本过旧（无 compose）               | 明确提示升级后刷新页面，同样复制兜底                                                                                                                           |
+| 输入框还没就绪                                 | 提示刷新页面后再试，同样复制兜底                                                                                                                               |
+| 截屏失败（无 activeTab 等）                    | 只是没有截图，Markdown 照常投递                                                                                                                                |
+| 页面注入不了（`chrome://`、商店页）            | 扩展角标 `!` + 悬浮提示写明原因                                                                                                                                |
 
 ## 为什么必须装扩展
 
@@ -183,10 +184,13 @@ CI 在打 tag 时自动跑同一条命令并把 zip 挂到 GitHub Release（见 
 
 ## 已知限制
 
-- **自动化装不了扩展**：Chromium 137 起移除了 `--load-extension`（本机 Chrome 153 实测
-  `chrome://extensions` 装不上），所以本仓库的 E2E 走「注入真实 `dist/picker.js` + 真
-  background 模块 + 真 pi-web-ui 页面」的等价路线（见 `tests/page-picker-test.mjs`）。
-  手动「加载已解压的扩展程序」不受影响。
+- **自动化装扩展：Chrome 不行、Edge 行**。Chrome 137 起移除了 `--load-extension`（本机
+  Chrome 153 实测 `chrome://extensions` 装不上），所以主力 E2E 走「注入真实 `dist/picker.js`
+  - 真 background 模块 + 真 pi-web-ui 页面」的等价路线（`tests/page-picker-test.mjs`）；
+    但**实测 Edge（152，headless）仍然接受 `--load-extension`**，于是另有一条**装真扩展**的
+    E2E（`tests/page-picker-edge-ext-test.mjs`，没装 Edge 就 SKIP）—— 它跑的是真 `chrome.*`，
+    能发现「假 chrome 不校验 match pattern」那类问题（0.2.0 的投递失败就是这么漏掉的）。
+    手动「加载已解压的扩展程序」不受影响。
 - 截图只截**当前可见区域**（`captureVisibleTab`）；元素几乎全在视口外时不截，而不是截一张误导人的碎图。
 - Vue 只有文件没有行号（SFC 行信息要 sourcemap 才能还原）；生产构建没有 `_debugSource`，
   React/Vue 定位会自然降级到「命中的 CSS 位置」。
@@ -211,11 +215,12 @@ npm run build:extension && npx tsc -p plugins/page-picker/extension/tsconfig.jso
 npx vitest run tests/unit/page-picker.test.ts tests/unit/page-picker-background.test.ts tests/unit/page-picker-options.test.ts
 npm run build   # 仓库构建（E2E 要用 dist/server）
 node tests/page-picker-test.mjs
+node tests/page-picker-edge-ext-test.mjs   # 装真扩展跑（需 Edge，否则 SKIP）
 ```
 
 - `tests/unit/page-picker.test.ts`：定位串 / HTML 骨架 / 契约 → Markdown（jsdom）+
   绑定文案 `bindView` + 页面识别 `detectPiWebUi`（真桥 / `/api/health` / 探不通 / 超时自断）
-- `tests/unit/page-picker-background.test.ts`：service worker 决策（假 chrome）+ 裁剪数学 +
-  点图标的分流（pi-web-ui 页 → 绑定浮条；普通页 → 拾取器）+ 绑定/授权失败路径
+- `tests/unit/page-picker-background.test.ts`：service worker 决策（假 chrome，**且像真 Chrome 那样校验 match pattern**）+ 裁剪数学 + 点图标的分流（pi-web-ui 页 → 绑定浮条；普通页 → 拾取器；探测不可用 → 浮条自检）+ 绑定/授权失败路径
 - `tests/unit/page-picker-options.test.ts`：设置页的 `?bind=` 面板（真 options.html + 假 chrome）
-- `tests/page-picker-test.mjs`：端到端（真实 Chrome + 真实 pi-web-ui 页面 + 真实探测/绑定浮条）
+- `tests/page-picker-test.mjs`：端到端（真实 Chrome + 真实 pi-web-ui 页面 + 真实探测/绑定浮条 + 浮条自退场）
+- `tests/page-picker-edge-ext-test.mjs`：**装真扩展**的端到端（真 `chrome.*`：投递真落到输入框、绑定浮条真弹出、非目标页真自退场）；需本机有 Edge，没有就 SKIP

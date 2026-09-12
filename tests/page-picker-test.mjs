@@ -178,7 +178,14 @@ globalThis.chrome = {
 	},
 	runtime: { getURL: (path) => `chrome-extension://fake/${path}` },
 	tabs: {
-		query: async () => tabs,
+		// 真的像 Chrome 一样校验 match pattern（裸 origin 会让真浏览器抛 Invalid url pattern）
+		query: async (info = {}) => {
+			for (const p of info.url ?? []) {
+				// 像 Chrome 一样校验：match pattern 的 path 不能缺（裸 origin 会让真浏览器抛异常）
+				if (!/^https?:\/\/[^/]+\//.test(String(p))) throw new Error(`Invalid url pattern '${p}'`);
+			}
+			return tabs;
+		},
 		update: async () => ({}),
 		create: async () => ({}),
 		captureVisibleTab: async () => {
@@ -483,6 +490,22 @@ const landed2 = await piPage
 check("绑定后的内容落在输入框里", landed2);
 
 check("夹具页全程无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
+
+// ================================ 场景 7：浮条自己认页面（background 探测失败也不能「什么都没发生」）
+// 真动机：MAIN world 探测可能被 CSP/权限挡住 —— 那时 background 照样注入浮条，
+// 浮条自认不是 pi-web-ui 就得自己退场，并请 worker 补注入拾取器。
+fx.on("pageerror", (e) => jsErrors.push(String(e)));
+await fx.addScriptTag({ path: BIND_BUNDLE });
+await fx.waitForTimeout(400);
+check(
+	"非 pi-web-ui 页面上：浮条自己退场（不闪空卡片、不留下垃圾 DOM）",
+	(await fx.$("#pi-page-picker-bind-host")) === null,
+);
+check(
+	"退场时请 worker 补注入拾取器（用户不会得到「点了没反应」）",
+	bridgeLog.some((m) => m.type === "page-picker:pick-anyway"),
+);
+check("夹具页仍然无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
 
 await browser.close();
 fixture.close();

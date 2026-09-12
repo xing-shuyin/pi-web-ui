@@ -117,15 +117,28 @@ async function probeTab(tabId: number): Promise<PiProbe | undefined> {
  *
  * 在 pi-web-ui 自己的页面上注入拾取器是没有意义的（这里的元素不是用户要改的代码），
  * 而且远程部署的用户此刻正站在这页上 —— 正是问「要不要把它设成服务地址」的最佳时机。
+ *
+ * 三条分支都**不会静默**：
+ * - 是 pi-web-ui → 注入绑定浮条；
+ * - 不是 → 照旧注入拾取器；
+ * - **探测本身不可用**（MAIN world 被 CSP/权限挡）→ 照样注入浮条，让它自己认页面
+ *   （认不出会自己退场并请 worker 补注入拾取器）。路由决策也打进 SW 控制台，方便排障。
  */
 export async function handleAction(tab: { id?: number; url?: string } | undefined): Promise<void> {
 	const tabId = tab?.id;
 	if (tabId == null) return;
 	const probe = await probeTab(tabId);
 	if (probe?.isPiWebUi) {
+		console.log("[page-picker] 本页是 pi-web-ui → 注入绑定浮条", tabId, probe.url);
 		await injectBindBar(tabId);
 		return;
 	}
+	if (probe === undefined) {
+		console.log("[page-picker] MAIN 探测不可用 → 交给浮条自检", tabId);
+		await injectBindBar(tabId);
+		return;
+	}
+	console.log("[page-picker] 本页不是 pi-web-ui → 注入拾取器", tabId, probe.url);
 	await startPicking(tab);
 }
 
@@ -246,7 +259,11 @@ async function findTargetTab(settings: PickerSettings): Promise<{ tab?: chrome.t
 	}
 	let tabs: chrome.tabs.Tab[] = [];
 	try {
-		tabs = await chrome.tabs.query({ url: [`${base}/*`, `${base}`] });
+		// 只按 **origin 模式** 过滤（`http://localhost:8787/*`）：
+		// 裸 origin（`http://localhost:8787`）不是合法 match pattern，Chrome/Edge 会直接抛
+		// `Invalid url pattern` —— 一旦被 catch 成「没找到页面」，就变成「页开着但投不进去」。
+		// 路径前缀的精确认定交给下面的 tabMatchesBase（它才认子路径反代）。
+		tabs = await chrome.tabs.query({ url: [originPattern(base)] });
 	} catch {
 		return { miss: "no-tab" };
 	}

@@ -13,6 +13,7 @@ import {
 	normalizeServerUrl,
 	normalizeSettings,
 	originPattern,
+	tabMatchesBase,
 	type PickerSettings,
 } from "./shared/settings.js";
 
@@ -131,8 +132,10 @@ async function testConnection(): Promise<void> {
 /** 浏览器里当前开着几个这个地址的 pi-web-ui 页面（投递的目标）。 */
 async function countOpenTabs(base: string): Promise<number> {
 	try {
-		const tabs = await chrome.tabs.query({ url: [`${base}/*`, `${base}`] });
-		return tabs.filter((t) => t.url === base || t.url?.startsWith(`${base}/`) || t.url?.startsWith(`${base}?`)).length;
+		// 同 findTargetTab：只能用 origin 级 match pattern（裸 origin 会让 tabs.query 抛异常），
+		// 路径前缀自己复核（否则 `https://host/pi-other` 也会被算成我们的页面）
+		const tabs = await chrome.tabs.query({ url: [originPattern(base)] });
+		return tabs.filter((t) => tabMatchesBase(t.url, base)).length;
 	} catch {
 		return 0;
 	}

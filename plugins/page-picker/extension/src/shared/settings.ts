@@ -109,3 +109,24 @@ export function serverUrl(settings: PickerSettings, path = "/"): string {
 	const suffix = path.startsWith("/") ? path : `/${path}`;
 	return `${base}${suffix}`;
 }
+
+/**
+ * Chrome 的 match pattern 校验（够用版）。
+ *
+ * 为什么要有这个函数：`chrome.tabs.query({ url: [...] })` 的过滤器必须是合法 match pattern，
+ * 而 **裸 origin（`http://localhost:8787`，没有路径）会被直接抛异常**
+ * （`Invalid url pattern 'http://localhost:8787'`）。这个异常很容易被 catch 成「没找到页面」，
+ * 于是「页明明开着但投不过去」—— 0.2.0 真的踩了这个坑（假 chrome 不校验模式，测试全绿）。
+ *
+ * 所以：所有要交给 chrome.* 的模式都过 `originPattern()`；而测试里的假 chrome 也用这个
+ * 函数校验入参，把这类坑钉在单测里（见 tests/unit/page-picker*.test.ts）。
+ */
+export function isValidMatchPattern(pattern: unknown): boolean {
+	if (typeof pattern !== "string") return false;
+	// `<scheme>://<host>/<path…>`：path 可以只是一个 `/`，但不能缺
+	const m = /^(https?):\/\/([^/]*)\/(.*)$/.exec(pattern);
+	if (!m) return false;
+	const host = m[2];
+	if (!host) return false;
+	return host === "*" || /^(\*\.)?[a-z0-9.-]+(:\d+|:\*)?$/i.test(host) || /^\[[0-9a-f:.]+\](:\d+)?$/i.test(host);
+}
