@@ -7,7 +7,7 @@
  * 因为生成骨架本身不便宜，而渲染时又会丢掉它。
  */
 
-import type { DetailLevel, ElementRect, ElementSnapshot, PageContext } from "../shared/contract.js";
+import type { DetailLevel, ElementRect, ElementSnapshot, PageContext, PickSection } from "../shared/contract.js";
 import { htmlSkeleton } from "../shared/html-skeleton.js";
 import { buildDomPath, buildSelector, buildXPath, tagSummary } from "../shared/selector.js";
 import { collectSource } from "./adapters/index.js";
@@ -15,8 +15,15 @@ import { collectMatchedRules, collectStyles } from "./styles.js";
 
 export interface SnapshotOptions {
 	detail: DetailLevel;
+	/** 要采集哪几类信息（设置页多选）。缺省 = 全要（调用方没传时的宽容行为）。 */
+	sections?: PickSection[];
 	/** innerText 截断上限（骨架另有自己的上限）。 */
 	maxText?: number;
+}
+
+/** 这一项要不要采（没传 sections = 全采）。 */
+function wants(sections: PickSection[] | undefined, section: PickSection): boolean {
+	return sections === undefined || sections.includes(section);
 }
 
 /** 相对视口的矩形 + 占视口比例（比例比裸 px 有用：AI 不知道你的屏多宽）。 */
@@ -41,9 +48,10 @@ export function elementText(el: Element, maxText = 600): string {
 	return raw.length > maxText ? raw.slice(0, maxText) : raw;
 }
 
-/** 组装一个元素的快照（按档位决定采集深度）。 */
+/** 组装一个元素的快照（按档位决定采集深度，按勾选项决定采哪几类）。 */
 export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnapshot {
 	const detail = opts.detail;
+	const sections = opts.sections;
 	const full = detail === "full";
 	const snapshot: ElementSnapshot = {
 		tag: el.tagName.toLowerCase(),
@@ -53,25 +61,35 @@ export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnap
 		tagSummary: tagSummary(el, { maxAttrs: full ? 3 : 2 }),
 		rect: elementRect(el),
 	};
-	if (full) {
+	// 以下都是「贵」的部分：没勾就不采（生成骨架/读 CSSOM 都不便宜，渲染时又会丢掉）
+	if (wants(sections, "locator")) {
 		snapshot.xpath = buildXPath(el);
 		snapshot.domPath = buildDomPath(el, { maxDepth: 5 });
 	}
-	if (detail !== "compact") {
+	if (wants(sections, "text")) {
 		snapshot.text = elementText(el, opts.maxText ?? (full ? 600 : 400));
+	}
+	if (wants(sections, "skeleton")) {
 		snapshot.htmlSkeleton = htmlSkeleton(el, {
 			maxDepth: full ? 3 : 2,
 			maxText: 60,
 			maxLength: full ? 800 : 400,
 		});
+	}
+	// 命中的规则：勾了 rules 要，勾了 source 也要 —— 源码位置的兵形之一就是「哪条 CSS 命中了它」
+	if (wants(sections, "rules") || wants(sections, "source")) {
 		const rules = collectMatchedRules(el);
 		if (rules.length > 0) snapshot.matchedRules = rules;
+	}
+	if (wants(sections, "styles")) {
 		const styles = collectStyles(el, { full });
 		if (Object.keys(styles).length > 0) snapshot.styles = styles;
 	}
 	// 源码定位（React fiber / Vue 实例 / CSS 命中）：认不出来就留空，绝不因此失败
-	const source = collectSource(el, snapshot.matchedRules);
-	if (source) snapshot.source = source;
+	if (wants(sections, "source")) {
+		const source = collectSource(el, snapshot.matchedRules);
+		if (source) snapshot.source = source;
+	}
 	return snapshot;
 }
 

@@ -132,6 +132,22 @@
 			.grant-state.warn {
 				color: #fbbf24;
 			}
+			.cols {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 2px 14px;
+				margin-top: 4px;
+			}
+			.cols label.check span b {
+				font-weight: 500;
+				font-size: 13px;
+			}
+			.cols label.check span i {
+				display: block;
+			}
+			select#preset {
+				flex: 1 1 auto;
+			}
 			.bind-panel {
 				margin-top: 12px;
 				padding: 12px;
@@ -196,19 +212,21 @@
 			</fieldset>
 
 			<fieldset>
-				<legend>拾取</legend>
+				<legend>发送什么（可多选）</legend>
+				<div class="hint" style="margin: 0 0 10px">
+					每一项都是一类信息，勾了就采、也发；没勾的<strong>根本不采</strong>（既省上下文也省时间）。
+					嫌信息多就先挑一个预设，再按需增减。
+				</div>
 				<label class="row"
-					><span>详细度</span>
-					<select id="detail">
-						<option value="compact">精简 — 选择器 + 文本 + 源码位置（最省上下文）</option>
-						<option value="standard">标准 — 再加命中的 CSS 与 HTML 骨架（推荐）</option>
-						<option value="full">完整 — 再加 XPath / DOM 路径 / 更多计算样式</option>
-					</select></label
-				>
-				<label class="check"
+					><span>预设</span>
+					<select id="preset"></select
+				></label>
+				<div class="cols" id="sectionList"></div>
+				<label class="check" style="margin-top: 12px"
 					><input id="screenshots" type="checkbox" />
 					<span><b>采集元素截图</b><i>作为附件一并送进对话（纯文本模型请看视觉桥）</i></span></label
 				>
+				<div class="hint" id="sectionSummary" style="margin-top: 6px"></div>
 			</fieldset>
 
 			<fieldset>

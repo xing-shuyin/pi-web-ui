@@ -438,8 +438,9 @@ export function handleMessage(
 ): boolean | undefined {
 	const msg = (raw ?? {}) as { type?: string; payload?: PickPayload; url?: string };
 	if (msg.type === "page-picker:settings") {
-		// serverUrl 不是秘密（和 token 不同），绑定浮条要拿它对比「本页是不是就是已绑定的那个」
-		void loadSettings().then((s) => respond({ detail: s.detail, serverUrl: s.serverUrl }));
+		// serverUrl 不是秘密（和 token 不同），绑定浮条要拿它对比「本页是不是就是已绑定的那个」；
+		// detail + sections 是拾取器要的「采多深 + 采哪几类」
+		void loadSettings().then((s) => respond({ detail: s.detail, sections: s.sections, serverUrl: s.serverUrl }));
 		return true;
 	}
 	if (msg.type === "page-picker:bind") {

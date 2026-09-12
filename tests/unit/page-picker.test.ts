@@ -22,6 +22,14 @@ import {
 	tabMatchesBase,
 } from "../../plugins/page-picker/extension/src/shared/settings.js";
 import { bindView } from "../../plugins/page-picker/extension/src/shared/bind.js";
+import { snapshotElement } from "../../plugins/page-picker/extension/src/content/element.js";
+import {
+	PICK_SECTIONS,
+	SECTION_PRESETS,
+	normalizeSections,
+	presetForSections,
+	sectionsForDepth,
+} from "../../plugins/page-picker/extension/src/shared/contract.js";
 import { detectPiWebUi } from "../../plugins/page-picker/extension/src/background.js";
 import type { ElementSnapshot } from "../../plugins/page-picker/extension/src/shared/contract.js";
 
@@ -297,6 +305,62 @@ describe("toPrompt", () => {
 		expect(md).toContain("- DOM：`body > main > section.card`");
 	});
 
+	// ---------------------------------------------------------- 多选：发哪几类信息
+
+	/** 一份「什么都有」的快照：只要渲染层漏了一类，下面就能看出来。 */
+	const everything = (over = {}) =>
+		snap({
+			text: "卡片标题",
+			xpath: "/html/body/main/section[1]",
+			domPath: "body > main > section.card",
+			htmlSkeleton: `<section class="card">…</section>`,
+			styles: { display: "flex" },
+			matchedRules: [{ file: "/src/a.css", line: 3, selector: ".card", declarations: "display:flex" }],
+			source: { kind: "react" as const, file: "/src/Card.tsx", line: 18, component: "Card" },
+			...over,
+		});
+
+	it("只勾「定位 + 源码」→ 只有选择器/尺寸/源码，样式与骨架都不出现", () => {
+		const md = toPrompt(payload({ sections: ["selector", "source"], elements: [{ snapshot: everything() }] }));
+		expect(md).toContain("- 选择器：`main > section.card:nth-of-type(2)`");
+		expect(md).toContain("- 源码：`/src/Card.tsx:18`");
+		expect(md).toContain("- 尺寸：");
+		for (const gone of ["- 页面：", "- 文本：", "- XPath：", "- DOM：", "命中的 CSS", "计算样式", "HTML 骨架"]) {
+			expect(md, `不该出现 ${gone}`).not.toContain(gone);
+		}
+	});
+
+	it("只勾「定位 + XPath/DOM」→ 有路径、没有源码/样式/骨架", () => {
+		const md = toPrompt(payload({ sections: ["selector", "locator"], elements: [{ snapshot: everything() }] }));
+		expect(md).toContain("- XPath：`/html/body/main/section[1]`");
+		expect(md).toContain("- DOM：`body > main > section.card`");
+		expect(md).not.toContain("- 源码：");
+		expect(md).not.toContain("计算样式");
+	});
+
+	it("只勾「样式排查」→ 有命中 CSS 与计算样式，没有骨架/源码/路径", () => {
+		const md = toPrompt(payload({ sections: ["selector", "rules", "styles"], elements: [{ snapshot: everything() }] }));
+		expect(md).toContain("命中的 CSS");
+		expect(md).toContain("计算样式");
+		expect(md).not.toContain("HTML 骨架");
+		expect(md).not.toContain("- 源码：");
+		expect(md).not.toContain("- XPath：");
+	});
+
+	it("勾了「源码」但没勾「选择器」→ 源码还在（不因顺带关系被误杀）", () => {
+		const md = toPrompt(payload({ sections: ["source"], elements: [{ snapshot: everything() }] }));
+		expect(md).toContain("- 源码：`/src/Card.tsx:18`");
+		expect(md).not.toContain("- 选择器：");
+		expect(md).not.toContain("- 尺寸：");
+	});
+
+	it("老载荷（没带 sections）仍按档位渲染 —— 向后兼容", () => {
+		const md = toPrompt(payload({ detail: "standard", elements: [{ snapshot: everything() }] }));
+		expect(md).toContain("- 页面：");
+		expect(md).toContain("命中的 CSS");
+		expect(md).not.toContain("- XPath："); // standard 不含 locator
+	});
+
 	it("命中的 CSS 带文件:行号，且是合法 css 围栏", () => {
 		const md = toPrompt(
 			payload({
@@ -430,6 +494,90 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 		expect(tabMatchesBase("http://127.0.0.1:8787/anything", base)).toBe(true);
 		expect(tabMatchesBase("http://127.0.0.1:5173/", base)).toBe(false);
 		expect(tabMatchesBase("https://127.0.0.1:8787/", base)).toBe(false);
+	});
+});
+
+// --------------------------------------------------------------- 多选：内容项与预设
+
+describe("内容项（sections）：预设 / 归一 / 反查", () => {
+	it("三个档位各自对应一套组合（老设置升级后行为不变）", () => {
+		expect(sectionsForDepth("compact")).toEqual(["page", "selector", "source", "text"]);
+		expect(sectionsForDepth("standard")).toEqual(["page", "selector", "source", "text", "rules", "styles", "skeleton"]);
+		expect(sectionsForDepth("full")).toEqual([...PICK_SECTIONS]);
+	});
+
+	it("预设覆盖了「我不想要这么多」的常见组合（且不知道的项不会漏）", () => {
+		const ids = SECTION_PRESETS.map((p) => p.id);
+		expect(ids).toContain("lean");
+		expect(ids).toContain("source"); // 只改代码：选择器 + 源码
+		expect(ids).toContain("styles"); // 只排查样式
+		for (const preset of SECTION_PRESETS) {
+			expect(preset.sections.length).toBeGreaterThan(0);
+			for (const key of preset.sections) expect(PICK_SECTIONS).toContain(key);
+		}
+	});
+
+	it("normalizeSections：去重 / 丢掉不认识的项 / 空的一律回落标准组合", () => {
+		expect(normalizeSections(["source", "source", "locator"])).toEqual(["source", "locator"]);
+		expect(normalizeSections(["source", "不存在的项", 42, null])).toEqual(["source"]);
+		expect(normalizeSections("selector,source")).toEqual(["selector", "source"]);
+		expect(normalizeSections([])).toEqual(sectionsForDepth("standard"));
+		expect(normalizeSections(undefined)).toEqual(sectionsForDepth("standard"));
+	});
+
+	it("presetForSections：能反查出当前组合属于哪个预设（顺序无关），自定义则 undefined", () => {
+		expect(presetForSections([...sectionsForDepth("standard")].reverse())?.id).toBe("standard");
+		expect(presetForSections(["selector", "source"])?.id).toBe("source");
+		expect(presetForSections(["selector", "text", "skeleton"])?.id).toBe("text");
+		expect(presetForSections(["selector", "locator", "text"])).toBeUndefined();
+	});
+});
+
+describe("采集层也按勾选项来（没勾的不采，不只是不渲染）", () => {
+	const mountFull = (): Element => {
+		mount(
+			`<main><section id="card" class="card" style="display:flex;padding:12px"><h3>标题</h3><p>正文</p></section></main>`,
+		);
+		return document.getElementById("card") as Element;
+	};
+
+	it("只勾「定位」→ 不采文本/骨架/样式/规则/XPath（生成它们本身就不便宜）", () => {
+		const snap = snapshotElement(mountFull(), { detail: "standard", sections: ["selector"] });
+		expect(snap.selector).toBeTruthy();
+		expect(snap.rect).toBeTruthy(); // jsdom 没有布局，尺寸恒为 0：这里只保证「定位信息这一块仍在」
+		expect(snap.text).toBeUndefined();
+		expect(snap.htmlSkeleton).toBeUndefined();
+		expect(snap.styles).toBeUndefined();
+		expect(snap.xpath).toBeUndefined();
+		expect(snap.domPath).toBeUndefined();
+		expect(snap.source).toBeUndefined();
+	});
+
+	it("勾了「源码」→ 源码要采（即使没勾文本/骨架）", () => {
+		const el = mountFull();
+		// 造一个 React fiber：适配器靠 __reactFiber$ 前缀 + _debugSource 工作
+		(el as unknown as Record<string, unknown>)["__reactFiber$t"] = {
+			_debugSource: { fileName: "/src/Card.tsx", lineNumber: 12, columnNumber: 3 },
+			type: function Card() {},
+			return: null,
+		};
+		const snap = snapshotElement(el, { detail: "standard", sections: ["source"] });
+		expect(snap.source?.file).toBe("/src/Card.tsx");
+		expect(snap.text).toBeUndefined();
+		expect(snap.htmlSkeleton).toBeUndefined();
+	});
+
+	it("勾了「样式」→ 只采样式差异（文本/骨架仍不采）", () => {
+		const snap = snapshotElement(mountFull(), { detail: "standard", sections: ["selector", "styles"] });
+		expect(snap.styles?.display).toBe("flex");
+		expect(snap.text).toBeUndefined();
+		expect(snap.htmlSkeleton).toBeUndefined();
+	});
+
+	it("不传 sections（旧调用方）→ 全采，老行为不变", () => {
+		const snap = snapshotElement(mountFull(), { detail: "standard" });
+		expect(snap.text).toContain("标题");
+		expect(snap.htmlSkeleton).toBeTruthy();
 	});
 });
 

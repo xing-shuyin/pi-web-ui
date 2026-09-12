@@ -162,6 +162,8 @@ const fakeStorage = {
 	serverUrl: `http://localhost:${PORT}`,
 	token: "",
 	detail: "standard",
+	// 「发送什么」的多选（设置页勾的那几项）：场景 8 会改成「只要定位+源码」
+	sections: ["page", "selector", "source", "text", "rules", "styles", "skeleton"],
 	copyToClipboard: true,
 	screenshots: false,
 	focusTarget: false,
@@ -490,6 +492,26 @@ const landed2 = await piPage
 check("绑定后的内容落在输入框里", landed2);
 
 check("夹具页全程无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
+
+// ====================== 场景 8：多选生效（「信息太多」时只发勾了的那几类）
+await ta.fill("");
+fakeStorage.sections = ["selector", "source"]; // 只要定位 + 源码位置
+await injectPicker();
+await fx.click("#card");
+await fx.keyboard.press("Control+Enter");
+await fx.waitForTimeout(600);
+const lean = delivered.at(-1)?.text ?? "";
+check("多选：勾了的（选择器/源码）在", lean.includes("- 选择器：") && lean.includes("- 源码："), "");
+check(
+	"多选：没勾的（CSS 规则 / 计算样式 / HTML 骨架 / XPath）整段不出现",
+	!lean.includes("命中的 CSS") &&
+		!lean.includes("计算样式") &&
+		!lean.includes("HTML 骨架") &&
+		!lean.includes("- XPath："),
+	lean.split(String.fromCharCode(10)).slice(0, 3).join(" | "),
+);
+check("多选：Markdown 也真的投进了输入框", (await ta.inputValue()).includes("- 选择器："));
+fakeStorage.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"]; // 还原
 
 // ================================ 场景 7：浮条自己认页面（background 探测失败也不能「什么都没发生」）
 // 真动机：MAIN world 探测可能被 CSP/权限挡住 —— 那时 background 照样注入浮条，

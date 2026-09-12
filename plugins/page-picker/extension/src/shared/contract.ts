@@ -11,13 +11,124 @@
  *   就生效（compact / standard / full），而不是渲染时再删。
  */
 
-/** 详细度档位：控制采集多少东西（默认 standard）。 */
+/** 详细度档位：控制**采集多深**（默认 standard）。 */
 export type DetailLevel = "compact" | "standard" | "full";
 
 export const DETAIL_LEVELS: DetailLevel[] = ["compact", "standard", "full"];
 
 export function isDetailLevel(v: unknown): v is DetailLevel {
-	return typeof v === "string" && (DETAIL_LEVELS as string[]).includes(v);
+	return typeof v === "string" && (DETAIL_LEVELS as readonly string[]).includes(v);
+}
+
+/**
+ * 发送内容的**组成项**（可多选）：一项 = 输出里一类信息。
+ *
+ * 为什么要有它：档位（compact/standard/full）只能「一起多、一起少」—— 真的使用时往往是
+ * 「这次只要源码位置」「这次只要样式」。「上下文预算」应该是可拆的，所以拆成这些开关：
+ * 设置页勾选，采集层就只采勾了的（没勾的不采也不渲染，既省体积也省 CPU）。
+ */
+export const PICK_SECTIONS = ["page", "selector", "locator", "source", "text", "rules", "styles", "skeleton"] as const;
+
+export type PickSection = (typeof PICK_SECTIONS)[number];
+
+export function isPickSection(v: unknown): v is PickSection {
+	return typeof v === "string" && (PICK_SECTIONS as readonly string[]).includes(v);
+}
+
+/** 每一项的中文说明（扩展 UI 是中文的，文案就放在这里，设置页直接读）。 */
+export const SECTION_INFO: Record<PickSection, { label: string; hint: string }> = {
+	page: { label: "页面上下文", hint: "URL / 标题 / 视口 / 疑似框架" },
+	selector: { label: "定位信息", hint: "选择器 + 标签名 + 尺寸（改代码时几乎总要）" },
+	locator: { label: "XPath 与 DOM 路径", hint: "选择器不唯一/失效时的兜底定位" },
+	source: { label: "源码位置", hint: "React/Vue 文件:行号 + 组件调用链 —— 「一次改对」的关键" },
+	text: { label: "文本内容", hint: "元素里的文字（过长会截断）" },
+	rules: { label: "命中的 CSS 规则", hint: "哪条规则命中了它、来自哪个文件的哪一行" },
+	styles: { label: "计算样式", hint: "只报与默认值/继承值不同的项（通常 3~5 行）" },
+	skeleton: { label: "HTML 骨架", hint: "结构（子节点折叠成 …），比整段 outerHTML 省得多" },
+};
+
+/** 预设：常用组合（设置页一键勾选）。`depth` 决定采集深浅，`sections` 决定要哪几类信息。 */
+export interface SectionPreset {
+	id: string;
+	label: string;
+	hint: string;
+	depth: DetailLevel;
+	sections: PickSection[];
+}
+
+export const SECTION_PRESETS: SectionPreset[] = [
+	{
+		id: "lean",
+		label: "精简（最省上下文）",
+		hint: "只留定位 + 源码位置 + 短文本：大约三五行/元素",
+		depth: "compact",
+		sections: ["page", "selector", "source", "text"],
+	},
+	{
+		id: "standard",
+		label: "标准（推荐）",
+		hint: "再加命中的 CSS、计算样式差异与 HTML 骨架",
+		depth: "standard",
+		sections: ["page", "selector", "source", "text", "rules", "styles", "skeleton"],
+	},
+	{
+		id: "full",
+		label: "完整",
+		hint: "全要，并采得更深（选择器/骨架更深、文本更长）",
+		depth: "full",
+		sections: [...PICK_SECTIONS],
+	},
+	{
+		id: "source",
+		label: "只要能改对地方",
+		hint: "选择器 + 源码位置（React/Vue 文件:行号），不报样式",
+		depth: "standard",
+		sections: ["selector", "source"],
+	},
+	{
+		id: "styles",
+		label: "只排查样式",
+		hint: "选择器 + 命中的 CSS + 计算样式差异（间距/颜色/布局问题）",
+		depth: "standard",
+		sections: ["selector", "rules", "styles"],
+	},
+	{
+		id: "text",
+		label: "只看文案/结构",
+		hint: "选择器 + 文本 + HTML 骨架，不报源码与样式",
+		depth: "compact",
+		sections: ["selector", "text", "skeleton"],
+	},
+];
+
+/**
+ * 档位 → 内容项。
+ *
+ * 两个用途：① 兼容老设置（老版本只存了 `detail`，没有 `sections`）；
+ * ② 老载荷（没带 sections 的）渲染时按档位推。所以 compact/standard/full 必须各自有对应组合。
+ */
+export function sectionsForDepth(depth: DetailLevel): PickSection[] {
+	const id = depth === "compact" ? "lean" : depth === "full" ? "full" : "standard";
+	const preset = SECTION_PRESETS.find((p) => p.id === id);
+	return preset ? [...preset.sections] : [...SECTION_PRESETS[1].sections];
+}
+
+/** 任意来源的数组/字符串数组 → 干净的 section 列表（去重、只留认识的项）。
+ *  空数组（或全都认不出）→ 回落标准组合 —— 一项都不发比多发更让人意外。 */
+export function normalizeSections(raw: unknown): PickSection[] {
+	const list = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(",") : [];
+	const out: PickSection[] = [];
+	for (const item of list) {
+		const v = typeof item === "string" ? item.trim() : item;
+		if (isPickSection(v) && !out.includes(v)) out.push(v);
+	}
+	return out.length > 0 ? out : sectionsForDepth("standard");
+}
+
+/** 当前勾选项对应的预设（与任何预设都不一致时返回 undefined → UI 显示「自定义」）。 */
+export function presetForSections(sections: PickSection[]): SectionPreset | undefined {
+	const key = [...sections].sort().join(",");
+	return SECTION_PRESETS.find((p) => [...p.sections].sort().join(",") === key);
 }
 
 /** 源码定位：理想情况下告诉 AI「改哪个文件的哪一行」。 */
@@ -109,6 +220,8 @@ export interface PickPayload {
 	/** 用户在浮条上写的整体说明（对所有元素生效）。 */
 	note?: string;
 	detail: DetailLevel;
+	/** 本次发送包含哪几类信息（可多选；旧载荷没有这个字段时按 `detail` 推）。 */
+	sections?: PickSection[];
 }
 
 /** 生成拾取 id（时间戳 + 随机后缀，够用且可读）。 */

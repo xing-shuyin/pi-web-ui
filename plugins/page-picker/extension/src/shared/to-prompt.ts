@@ -10,14 +10,14 @@
  * - 一切路径/选择器走行内代码，长文本走截断。
  */
 
-import type { DetailLevel, ElementSnapshot, PickPayload, PickedElement } from "./contract.js";
+import type { DetailLevel, ElementSnapshot, PickPayload, PickSection, PickedElement } from "./contract.js";
+import { sectionsForDepth } from "./contract.js";
 import { collapse, code, truncate } from "./text.js";
 
-const LEVEL_ORDER: Record<DetailLevel, number> = { compact: 0, standard: 1, full: 2 };
-
-/** 当前档位是否达到 min（档位只影响「渲染哪些段」，采集时没拿到的数据渲染不出来）。 */
-function atLeast(level: DetailLevel, min: DetailLevel): boolean {
-	return LEVEL_ORDER[level] >= LEVEL_ORDER[min];
+/** 本次要渲染哪几类信息（新载荷看 `sections`；老载荷按 `detail` 推）。 */
+function sectionsOf(payload: PickPayload): Set<PickSection> {
+	const list = payload.sections ?? sectionsForDepth(payload.detail ?? "standard");
+	return new Set(list);
 }
 
 const FRAMEWORK_LABEL: Record<string, string> = {
@@ -31,7 +31,7 @@ const FRAMEWORK_LABEL: Record<string, string> = {
 export interface ToPromptOptions {
 	/** 最多完整渲染几个元素（默认 8）—— 超出的只留一行清单，避免一条消息撑爆上下文。 */
 	maxElements?: number;
-	/** 单个元素的文本最多几个字符（默认 400；compact 档默认 160）。 */
+	/** 单个元素的文本最多几个字符（默认 400；精简档默认 160）。 */
 	maxText?: number;
 }
 
@@ -40,17 +40,18 @@ export function toPrompt(payload: PickPayload, opts: ToPromptOptions = {}): stri
 	const elements = (payload.elements ?? []).filter((e) => e?.snapshot);
 	if (elements.length === 0) return "";
 	const level: DetailLevel = payload.detail ?? "standard";
+	const sections = sectionsOf(payload);
 	const max = Math.max(1, opts.maxElements ?? 8);
 	const shown = elements.slice(0, max);
 
 	const lines: string[] = [];
 	lines.push(`### 网页元素拾取（${elements.length} 个元素）`);
 	lines.push("");
-	lines.push(...renderPage(payload));
+	if (sections.has("page")) lines.push(...renderPage(payload));
 	if (payload.note?.trim()) lines.push(`- 整体说明：${collapse(payload.note)}`);
 	lines.push("");
 	shown.forEach((el, i) => {
-		lines.push(...renderElement(el, level, i + 1, opts));
+		lines.push(...renderElement(el, level, i + 1, sections, opts));
 	});
 	if (elements.length > shown.length) {
 		lines.push(`（另有 ${elements.length - shown.length} 个已拾取元素未展开）`);
@@ -76,32 +77,43 @@ function renderPage(payload: PickPayload): string[] {
 	return out;
 }
 
-function renderElement(el: PickedElement, level: DetailLevel, index: number, opts: ToPromptOptions): string[] {
+function renderElement(
+	el: PickedElement,
+	level: DetailLevel,
+	index: number,
+	sections: Set<PickSection>,
+	opts: ToPromptOptions,
+): string[] {
 	const snap = el.snapshot;
 	const maxText = Math.max(0, opts.maxText ?? (level === "compact" ? 160 : 400));
 	const out: string[] = [];
 	out.push(`#### 元素 ${index} · ${code(snap.tagSummary || `<${snap.tag}>`)}`);
 	out.push("");
-	out.push(`- 选择器：${code(snap.selector)}`);
-	const source = renderSource(snap);
-	if (source) out.push(`- 源码：${source}`);
-	out.push(`- 尺寸：${renderRect(snap)}`);
-	const text = snap.text ? collapse(snap.text) : "";
+	if (sections.has("selector")) {
+		out.push(`- 选择器：${code(snap.selector)}`);
+		const source = sections.has("source") ? renderSource(snap) : "";
+		if (source) out.push(`- 源码：${source}`);
+		out.push(`- 尺寸：${renderRect(snap)}`);
+	} else if (sections.has("source")) {
+		const source = renderSource(snap);
+		if (source) out.push(`- 源码：${source}`);
+	}
+	const text = sections.has("text") && snap.text ? collapse(snap.text) : "";
 	if (text) out.push(`- 文本：${code(truncate(text, maxText))}`);
 	if (el.shot) out.push("- 截图：见本轮附图");
-	if (atLeast(level, "full")) {
+	if (sections.has("locator")) {
 		if (snap.xpath) out.push(`- XPath：${code(snap.xpath)}`);
 		if (snap.domPath) out.push(`- DOM：${code(snap.domPath)}`);
 	}
 	if (el.note?.trim()) out.push(`- 备注：${collapse(el.note)}`);
 
-	const rules = atLeast(level, "standard") ? renderRules(snap) : [];
+	const rules = sections.has("rules") ? renderRules(snap) : [];
 	if (rules.length > 0) {
 		out.push("", "命中的 CSS：", "", "```css", ...rules, "```");
 	}
-	const styles = atLeast(level, "standard") ? renderStyles(snap) : "";
+	const styles = sections.has("styles") ? renderStyles(snap) : "";
 	if (styles) out.push("", `计算样式（仅与默认/继承值不同的）：${styles}`);
-	const skeleton = atLeast(level, "standard") ? snap.htmlSkeleton?.trim() : "";
+	const skeleton = sections.has("skeleton") ? snap.htmlSkeleton?.trim() : "";
 	if (skeleton) out.push("", "HTML 骨架：", "", "```html", skeleton, "```");
 
 	out.push("");

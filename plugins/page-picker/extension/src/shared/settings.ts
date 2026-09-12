@@ -6,15 +6,17 @@
  * 就让拾取整条链挂掉**（回落到默认值继续工作）。
  */
 
-import { isDetailLevel, type DetailLevel } from "./contract.js";
+import { isDetailLevel, normalizeSections, sectionsForDepth, type DetailLevel, type PickSection } from "./contract.js";
 
 export interface PickerSettings {
 	/** pi-web-ui 服务地址（含协议，末尾不带 /）。 */
 	serverUrl: string;
 	/** PI_WEB_TOKEN（服务端开了口令时必填）。 */
 	token: string;
-	/** 默认详细度档位。 */
+	/** 采集深浅（由预设决定；决定选择器/骨架的深度与文本长度）。 */
 	detail: DetailLevel;
+	/** 发送内容包含哪几类信息（可多选）。 */
+	sections: PickSection[];
 	/** 注入 pi-web-ui 输入框的同时，也把 Markdown 复制到剪贴板（兜底：注入失败时可以手贴）。 */
 	copyToClipboard: boolean;
 	/** 是否采集元素截图（走附件）。 */
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: PickerSettings = {
 	serverUrl: DEFAULT_SERVER_URL,
 	token: "",
 	detail: "standard",
+	sections: sectionsForDepth("standard"),
 	copyToClipboard: true,
 	screenshots: true,
 	focusTarget: false,
@@ -58,10 +61,13 @@ export function normalizeServerUrl(raw: unknown): string {
 /** 任意来源的对象 → 合法设置（缺项/类型错一律回落默认值）。 */
 export function normalizeSettings(raw: unknown): PickerSettings {
 	const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	const detail = isDetailLevel(src.detail) ? src.detail : DEFAULT_SETTINGS.detail;
 	return {
 		serverUrl: normalizeServerUrl(src.serverUrl ?? DEFAULT_SETTINGS.serverUrl),
 		token: typeof src.token === "string" ? src.token.trim() : DEFAULT_SETTINGS.token,
-		detail: isDetailLevel(src.detail) ? src.detail : DEFAULT_SETTINGS.detail,
+		detail,
+		// 老版本设置里没有 sections（只有 detail）→ 按那个档位推导，升级后行为不变
+		sections: src.sections === undefined ? sectionsForDepth(detail) : normalizeSections(src.sections),
 		copyToClipboard: bool(src.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
 		screenshots: bool(src.screenshots, DEFAULT_SETTINGS.screenshots),
 		focusTarget: bool(src.focusTarget, DEFAULT_SETTINGS.focusTarget),

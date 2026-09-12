@@ -22,14 +22,20 @@
  * `host.contains(e.target)` 判断，而输入框里的 Enter/Esc 直接挂输入框自己的监听器。
  */
 
-import { makePickId, type DetailLevel, type PickPayload, type PickedElement } from "../shared/contract.js";
+import {
+	makePickId,
+	type DetailLevel,
+	type PickPayload,
+	type PickSection,
+	type PickedElement,
+} from "../shared/contract.js";
 import { pageContext, snapshotElement } from "./element.js";
 
 const FLAG = "__piWebUiPagePicker";
 const HOST_ID = "pi-page-picker-host";
 
 interface PickerRuntime {
-	start: (opts?: { detail?: DetailLevel }) => void;
+	start: (opts?: { detail?: DetailLevel; sections?: PickSection[] }) => void;
 	destroy: () => void;
 }
 
@@ -125,6 +131,7 @@ function createPicker(): PickerRuntime {
 	let picked: Picked[] = [];
 	let hovered: Element | null = null;
 	let detail: DetailLevel = "standard";
+	let sections: PickSection[] | undefined; // undefined = 没拿到设置 → 采集层按「全采」宽容处理
 	let note = "";
 	let rafId = 0;
 	let stopped = true;
@@ -309,7 +316,7 @@ function createPicker(): PickerRuntime {
 			return;
 		}
 		try {
-			picked.push({ el: target, snapshot: snapshotElement(target, { detail }), note: "" });
+			picked.push({ el: target, snapshot: snapshotElement(target, { detail, sections }), note: "" });
 			renderHud();
 			renderBar();
 		} catch (err) {
@@ -357,6 +364,8 @@ function createPicker(): PickerRuntime {
 		pickedAt: new Date().toISOString(),
 		page: pageContext(),
 		detail,
+		// 只有拿到设置时才写 sections（渲染层见到 undefined 会按 detail 推，老行为不丢）
+		...(sections ? { sections } : {}),
 		elements: picked.map((p) => ({
 			snapshot: p.snapshot,
 			...(p.note.trim() ? { note: p.note.trim() } : {}),
@@ -422,7 +431,7 @@ function createPicker(): PickerRuntime {
 		if (w[FLAG] === runtime) delete w[FLAG];
 	};
 
-	const runtime: PickerRuntime & { start: (o?: { detail?: DetailLevel }) => void } = {
+	const runtime: PickerRuntime & { start: (o?: { detail?: DetailLevel; sections?: PickSection[] }) => void } = {
 		start(opts): void {
 			if (!stopped) {
 				showToast("已经在拾取模式了");
@@ -434,6 +443,7 @@ function createPicker(): PickerRuntime {
 			note = "";
 			hovered = null;
 			if (opts?.detail) detail = opts.detail;
+			if (opts?.sections) sections = opts.sections;
 			noteInput.value = "";
 			sendBtn.disabled = false;
 			sendBtn.textContent = "添加到对话";
@@ -477,12 +487,17 @@ w[FLAG] = runtime;
 
 void (async () => {
 	let detail: DetailLevel | undefined;
+	let sections: PickSection[] | undefined;
 	try {
 		const res = (await chrome.runtime.sendMessage({ type: "page-picker:settings" })) as
-			{ detail?: DetailLevel } | undefined;
+			{ detail?: DetailLevel; sections?: PickSection[] } | undefined;
 		detail = res?.detail;
+		sections = res?.sections;
 	} catch {
 		/* 拿不到设置也能用默认档拾取 */
 	}
-	runtime.start(detail ? { detail } : undefined);
+	const startOpts: { detail?: DetailLevel; sections?: PickSection[] } = {};
+	if (detail) startOpts.detail = detail;
+	if (sections) startOpts.sections = sections;
+	runtime.start(startOpts);
 })();

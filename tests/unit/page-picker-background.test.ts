@@ -14,6 +14,7 @@ import {
 	startPicking,
 } from "../../plugins/page-picker/extension/src/background.js";
 import { isValidMatchPattern } from "../../plugins/page-picker/extension/src/shared/settings.js";
+import { sectionsForDepth } from "../../plugins/page-picker/extension/src/shared/contract.js";
 import type { PiProbe } from "../../plugins/page-picker/extension/src/shared/bind.js";
 import { MAX_SHOT_EDGE, planCrop } from "../../plugins/page-picker/extension/src/shared/shot-crop.js";
 
@@ -301,6 +302,7 @@ describe("deliver", () => {
 		serverUrl: "http://127.0.0.1:8787",
 		token: "",
 		detail: "standard" as const,
+		sections: sectionsForDepth("standard"),
 		copyToClipboard: true,
 		screenshots: true,
 		focusTarget: false,
@@ -430,13 +432,22 @@ function ask<T>(message: unknown): Promise<T> {
 }
 
 describe("handleMessage", () => {
-	it("settings 请求 → 只回 detail 和 serverUrl（**token 不下发**给内容脚本）", async () => {
+	it("settings 请求 → 回 detail + sections + serverUrl（**token 不下发**给内容脚本）", async () => {
 		fakeChrome({ stored: { serverUrl: "http://127.0.0.1:8787", token: "secret", detail: "full" } });
 		expect(handleMessage({ type: "page-picker:settings" }, {}, () => {})).toBe(true);
 		expect(await ask({ type: "page-picker:settings" })).toEqual({
 			detail: "full",
+			// 老设置里只有 detail → 按档位推出对应组合（升级后行为不变）
+			sections: sectionsForDepth("full"),
 			serverUrl: "http://127.0.0.1:8787",
 		});
+	});
+
+	it("settings 请求 → 用户自己勾的 sections 原样回给拾取器", async () => {
+		fakeChrome({
+			stored: { serverUrl: "http://127.0.0.1:8787", detail: "standard", sections: ["selector", "source"] },
+		});
+		expect(await ask({ type: "page-picker:settings" })).toMatchObject({ sections: ["selector", "source"] });
 	});
 
 	it("bind → 按页面地址绑定，结果回给浮条", async () => {
@@ -559,6 +570,7 @@ describe("attachShots", () => {
 		serverUrl: "http://127.0.0.1:8787",
 		token: "",
 		detail: "standard" as const,
+		sections: sectionsForDepth("standard"),
 		copyToClipboard: true,
 		screenshots: true,
 		focusTarget: false,

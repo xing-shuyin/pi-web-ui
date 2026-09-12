@@ -77,6 +77,88 @@ beforeEach(() => {
 	fakeChrome();
 });
 
+describe("options 页的「发送什么」（多选 + 预设）", () => {
+	/** 勾/取消勾某一项（真 DOM 里的 checkbox）。 */
+	const toggle = (key: string, on: boolean): void => {
+		const box = document.getElementById(`sec-${key}`) as HTMLInputElement;
+		box.checked = on;
+		box.dispatchEvent(new Event("change"));
+	};
+	const checked = (): string[] =>
+		["page", "selector", "locator", "source", "text", "rules", "styles", "skeleton"].filter(
+			(k) => (document.getElementById(`sec-${k}`) as HTMLInputElement).checked,
+		);
+
+	it("七项开关 + 预设下拉都渲染出来，默认勾的是标准组合", async () => {
+		mountOptionsPage("");
+		fakeChrome();
+		await import("../../plugins/page-picker/extension/src/options.js");
+		await settle();
+
+		expect(document.querySelectorAll("#sectionList input[type=checkbox]").length).toBe(8);
+		expect(checked()).toEqual(["page", "selector", "source", "text", "rules", "styles", "skeleton"]);
+		expect((document.getElementById("preset") as HTMLSelectElement).value).toBe("standard");
+		expect(text("sectionSummary")).toContain("预设：标准");
+	});
+
+	it("取消勾选真的落盘（sections 不再包含它）—— 这是「信息太多」的解药", async () => {
+		stored.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"];
+		mountOptionsPage("");
+		fakeChrome();
+		await import("../../plugins/page-picker/extension/src/options.js");
+		await settle();
+
+		toggle("skeleton", false);
+		toggle("styles", false);
+		await settle();
+
+		expect(stored.sections).toEqual(["page", "selector", "source", "text", "rules"]);
+		expect((document.getElementById("preset") as HTMLSelectElement).value).toBe("custom");
+		expect(text("sectionSummary")).toContain("自定义");
+	});
+
+	it("点预设 → 勾选项跟着变（且写成那个预设的组合）", async () => {
+		mountOptionsPage("");
+		fakeChrome();
+		await import("../../plugins/page-picker/extension/src/options.js");
+		await settle();
+
+		const preset = document.getElementById("preset") as HTMLSelectElement;
+		const lean = Array.from(preset.options).find((o) => o.textContent?.startsWith("精简"));
+		preset.value = lean?.value ?? "lean";
+		preset.dispatchEvent(new Event("change"));
+		await settle();
+
+		expect(checked()).toEqual(["page", "selector", "source", "text"]);
+		expect(stored.sections).toEqual(["page", "selector", "source", "text"]);
+		expect(stored.detail).toBe("compact"); // 预设同时决定采集深度
+	});
+
+	it("全部取消 → 提示并回落标准组合（不静默变成「什么都不发」）", async () => {
+		mountOptionsPage("");
+		fakeChrome();
+		await import("../../plugins/page-picker/extension/src/options.js");
+		await settle();
+
+		for (const key of checked()) toggle(key, false);
+		await settle();
+
+		expect(text("status")).toContain("至少要勾一项");
+		expect(JSON.stringify(stored.sections)).toContain("selector"); // 回落成标准组合
+	});
+
+	it("老设置里只有 detail → 按档位预勾（升级后行为不变）", async () => {
+		stored = { serverUrl: "http://127.0.0.1:8787", detail: "full" };
+		mountOptionsPage("");
+		fakeChrome();
+		await import("../../plugins/page-picker/extension/src/options.js");
+		await settle();
+
+		expect(checked()).toEqual(["page", "selector", "locator", "source", "text", "rules", "styles", "skeleton"]);
+		expect((document.getElementById("preset") as HTMLSelectElement).value).toBe("full");
+	});
+});
+
 describe("options 页的 ?bind= 面板", () => {
 	it("没有 ?bind= → 面板不出现（平常看设置页不该多一块东西）", async () => {
 		mountOptionsPage("");

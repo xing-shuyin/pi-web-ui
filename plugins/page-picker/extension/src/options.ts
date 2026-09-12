@@ -16,6 +16,16 @@ import {
 	tabMatchesBase,
 	type PickerSettings,
 } from "./shared/settings.js";
+import {
+	PICK_SECTIONS,
+	SECTION_INFO,
+	SECTION_PRESETS,
+	normalizeSections,
+	presetForSections,
+	sectionsForDepth,
+	type DetailLevel,
+	type PickSection,
+} from "./shared/contract.js";
 
 const $ = <T extends HTMLElement>(id: string): T => {
 	const node = document.getElementById(id);
@@ -26,11 +36,85 @@ const $ = <T extends HTMLElement>(id: string): T => {
 const fields = {
 	serverUrl: $<HTMLInputElement>("serverUrl"),
 	token: $<HTMLInputElement>("token"),
-	detail: $<HTMLSelectElement>("detail"),
+	preset: $<HTMLSelectElement>("preset"),
 	copyToClipboard: $<HTMLInputElement>("copyToClipboard"),
 	screenshots: $<HTMLInputElement>("screenshots"),
 	focusTarget: $<HTMLInputElement>("focusTarget"),
 };
+
+/**
+ * 「发送什么」的多选控件。
+ *
+ * 设计：**预设 + 逐项勾选**。预设决定「采多深 + 默认勾哪些」，用户再自己增减；
+ * 勾选只影响内容项，深度（文本长度/骨架深度）沿用最近一次预设 —— 这样「嫌多」时
+ * 只需取消勾选，不必再关心档位。
+ */
+const sectionBoxes = new Map<PickSection, HTMLInputElement>();
+/** 最近一次应用的预设深度（手动勾选不改它）。 */
+let depth: DetailLevel = DEFAULT_SETTINGS.detail;
+
+function buildSectionList(): void {
+	const list = $("sectionList");
+	fields.preset.replaceChildren(
+		...SECTION_PRESETS.map((p) => {
+			const opt = document.createElement("option");
+			opt.value = p.id;
+			opt.textContent = `${p.label} — ${p.hint}`;
+			return opt;
+		}),
+	);
+	const custom = document.createElement("option");
+	custom.value = "custom";
+	custom.textContent = "自定义（自己勾）";
+	fields.preset.append(custom);
+
+	list.replaceChildren(
+		...PICK_SECTIONS.map((key) => {
+			const info = SECTION_INFO[key];
+			const box = document.createElement("input");
+			box.type = "checkbox";
+			box.id = `sec-${key}`;
+			box.addEventListener("change", () => {
+				const picked = checkedSections();
+				renderPresetSelect(picked);
+				void (async () => {
+					await save();
+					// 提示要在「已保存」之后落笔，否则会被它覆盖掉
+					if (picked.length === 0) status("至少要勾一项；全不勾会回落成标准组合", "warn");
+				})();
+			});
+			sectionBoxes.set(key, box);
+			const label = document.createElement("label");
+			label.className = "check";
+			const span = document.createElement("span");
+			const b = document.createElement("b");
+			b.textContent = info.label;
+			const i = document.createElement("i");
+			i.textContent = info.hint;
+			span.append(b, i);
+			label.append(box, span);
+			return label;
+		}),
+	);
+}
+
+function checkedSections(): PickSection[] {
+	return PICK_SECTIONS.filter((key) => sectionBoxes.get(key)?.checked);
+}
+
+/** 预设下拉的选中项：与某个预设一致就选它，否则「自定义」。 */
+function renderPresetSelect(sections: PickSection[]): void {
+	const matched = presetForSections(sections);
+	fields.preset.value = matched ? matched.id : "custom";
+	renderSummary(sections, matched?.label);
+}
+
+function renderSummary(sections: PickSection[], presetLabel?: string): void {
+	const names = sections.map((k) => SECTION_INFO[k].label);
+	$("sectionSummary").textContent =
+		`当前发送：${names.length > 0 ? names.join(" / ") : "（都没勾 —— 将回落标准组合）"}` +
+		`（共 ${sections.length} 项${presetLabel ? `，预设：${presetLabel}` : "，自定义"}）`;
+}
 
 function status(text: string, kind: "ok" | "err" | "warn" | "info" = "info"): void {
 	const box = $("status");
@@ -42,7 +126,8 @@ function readForm(): PickerSettings {
 	return normalizeSettings({
 		serverUrl: fields.serverUrl.value,
 		token: fields.token.value,
-		detail: fields.detail.value,
+		detail: depth,
+		sections: checkedSections(),
 		copyToClipboard: fields.copyToClipboard.checked,
 		screenshots: fields.screenshots.checked,
 		focusTarget: fields.focusTarget.checked,
@@ -52,10 +137,13 @@ function readForm(): PickerSettings {
 function fillForm(s: PickerSettings): void {
 	fields.serverUrl.value = s.serverUrl;
 	fields.token.value = s.token;
-	fields.detail.value = s.detail;
 	fields.copyToClipboard.checked = s.copyToClipboard;
 	fields.screenshots.checked = s.screenshots;
 	fields.focusTarget.checked = s.focusTarget;
+	depth = s.detail;
+	const effective = s.sections.length > 0 ? s.sections : sectionsForDepth(s.detail);
+	for (const [key, box] of sectionBoxes) box.checked = effective.includes(key);
+	renderPresetSelect(effective);
 }
 
 async function load(): Promise<void> {
@@ -141,13 +229,23 @@ async function countOpenTabs(base: string): Promise<number> {
 	}
 }
 
-for (const node of Object.values(fields)) {
+buildSectionList();
+for (const [key, node] of Object.entries(fields)) {
+	if (key === "preset") continue; // 预设自己处理（要连带勾选项与深度）
 	node.addEventListener("change", () => void save());
 }
+fields.preset.addEventListener("change", () => {
+	const preset = SECTION_PRESETS.find((p) => p.id === fields.preset.value);
+	if (!preset) return; // 「自定义」= 不动勾选（只是当前状态的名字）
+	depth = preset.depth;
+	for (const [key, box] of sectionBoxes) box.checked = preset.sections.includes(key);
+	renderPresetSelect(preset.sections);
+	void save();
+});
 $("grant").addEventListener("click", () => void ensureOrigin());
 $("test").addEventListener("click", () => void testConnection());
 $("reset").addEventListener("click", () => {
-	fillForm(DEFAULT_SETTINGS);
+	fillForm({ ...DEFAULT_SETTINGS, sections: [...normalizeSections(DEFAULT_SETTINGS.sections)] });
 	void save();
 });
 
