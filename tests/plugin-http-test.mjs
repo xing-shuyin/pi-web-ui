@@ -36,6 +36,9 @@ writeFileSync(
 		const off = host.route("GET", "/gone", (_req, res) => res.send("bye"));
 		off(); // 注册即注销 → 应 404
 		host.route("GET", "/boom", () => { throw new Error("炸了"); });
+		// 异步 handler 的 rejection：宿主必须也能接住（只 try/catch 同步抛错的话，
+		// 这里会变成 unhandledRejection 把整个服务打挂）
+		host.route("GET", "/boom-async", async () => { throw new Error("异步炸了"); });
 	},
 };`,
 );
@@ -112,7 +115,14 @@ try {
 	if (r.status !== 404) fail(`未知插件应 404，实际 ${r.status}`);
 	r = await fetch(`${BASE}/plugins-api/api/boom`);
 	if (r.status !== 500) fail(`handler 抛错应 500，实际 ${r.status}`);
-	console.log("✓ 未知插件 → 404；handler 抛错 → 500");
+	r = await fetch(`${BASE}/plugins-api/api/boom-async`);
+	if (r.status !== 500) fail(`异步 handler 抛错应 500，实际 ${r.status}`);
+	// 关键：进程必须还活着（旧实现会因 unhandledRejection 直接退出）
+	const alive = await fetch(`${BASE}/api/health`)
+		.then((x) => x.ok)
+		.catch(() => false);
+	if (!alive) fail("异步 handler 抛错后服务挂了（unhandledRejection 未被兜住）");
+	console.log("✓ 未知插件 → 404；handler（同步/异步）抛错 → 500 且服务存活");
 
 	sock.close();
 } catch (err) {

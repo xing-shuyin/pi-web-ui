@@ -690,7 +690,15 @@ export class PluginManager {
 			return;
 		}
 		try {
-			handler(req, res);
+			// 异步 handler（`async (req, res) => …`）的 rejection 不会被这里的 try 接住，
+			// 会变成 unhandledRejection 直接杀掉整个服务（插件读文件失败、host.fs 越界
+			// 拒绝、上游超时…都会走到这条路上）——用 Promise.resolve().catch 兜住，
+			// 与同步抛错同样转 500。
+			void Promise.resolve(handler(req, res)).catch((err: unknown) => {
+				console.error(`[plugin:${pluginId}] http ${method} ${path} failed:`, err);
+				if (!res.headersSent) res.status(500).end("internal error");
+				else res.end();
+			});
 		} catch (err) {
 			console.error(`[plugin:${pluginId}] http ${method} ${path} failed:`, err);
 			if (!res.headersSent) res.status(500).end("internal error");
@@ -928,7 +936,13 @@ export class PluginManager {
 		return found.map((f) => this.loaded.get(f.id)?.info ?? f);
 	}
 
-	/** 反激活单个插件：deactivate + 注销 AI 工具 + 清缓存。 */
+	/** 反激活单个插件：deactivate + 注销 AI 工具 + 清缓存。
+	 *
+	 *  注意这里必须把 id 从 attempted 里摘掉：目录一时不在（`pi-web-ui install --force`
+	 *  先 rm 再 cp，扫描正好撞上窗口期）只是「暂时看成卸载」，目录回来后还要能重新激活；
+	 *  留在 attempted 里 = 本进程内永远不再激活，插件的 HTTP 路由 / AI 工具全没了，
+	 *  前端只会看到「代理请求失败 404 <url>」（插件的 /proxy 路由不存在），且 CLI 承诺的
+	 *  「刷新浏览器即可加载」失效，必须重启服务才能恢复。 */
 	private deactivateEntry(id: string, p: LoadedPlugin): void {
 		try {
 			p.deactivate?.();
@@ -945,6 +959,11 @@ export class PluginManager {
 		}
 		this.loaded.delete(id);
 		this.messageHandlers.delete(id);
+		this.attempted.delete(id);
+		// 重新激活时会 import 磁盘上的 index.mjs：Node 的 ESM 缓存按 URL（含 ?e=）
+		// 命中，epoch 不变就会拿到旧模块（更新插件后还是旧代码）——所以这里也 +1，
+		// 顺带让浏览器端 ?e= 变化、重拉插件的 client bundle。
+		this.epochCounter += 1;
 		console.log(`[plugin:${id}] removed`);
 	}
 

@@ -27,22 +27,30 @@ const dataDir = mkdtempSync(join(tmpdir(), "pi-web-plugin-test-"));
 // ---- 种插件目录 ------------------------------------------------------------
 // 1) 正常插件：服务端入口 + 客户端 bundle
 const plugDir = join(dataDir, "plugins", "demo-mailbox");
-mkdirSync(plugDir, { recursive: true });
-writeFileSync(join(plugDir, "manifest.json"), JSON.stringify({ name: "邮箱", version: "0.1.0", description: "demo" }));
-writeFileSync(
-	join(plugDir, "index.mjs"),
-	`export default {
+const DEMO_MANIFEST = { name: "邮箱", version: "0.1.0", description: "demo" };
+const DEMO_CLIENT_ENTRY = `export default { mount(el) { el.textContent = "ok"; } };`;
+/** demo 插件的服务端入口。marker = host.route 的响应体（重新激活后应换成磁盘上的新值）。 */
+function demoIndexCode(marker) {
+	return `export default {
 		activate(host) {
-			return host.onMessage((payload) => {
+			const offRoute = host.route("GET", "/ping", (req, res) => res.end(${JSON.stringify(marker)}));
+			const offMsg = host.onMessage((payload) => {
 				if (payload && payload.action === "ping") host.broadcast({ pong: payload.value });
 				else if (payload && payload.action === "notify") host.notify("info", String(payload.text ?? "插件通知测试"));
 				else if (payload && payload.action === "echo-to") host.sendTo(String(payload.clientId), { direct: payload.direct });
 			});
+			return () => { offRoute(); offMsg(); };
 		},
-	};`,
-);
-mkdirSync(join(plugDir, "client"), { recursive: true });
-writeFileSync(join(plugDir, "client", "entry.mjs"), `export default { mount(el) { el.textContent = "ok"; } };`);
+	};`;
+}
+/** 落一份完整的 demo 插件目录（模拟 `pi-web-ui install`：manifest + 服务端入口 + client bundle）。 */
+function seedDemoPlugin(marker) {
+	mkdirSync(join(plugDir, "client"), { recursive: true });
+	writeFileSync(join(plugDir, "manifest.json"), JSON.stringify(DEMO_MANIFEST));
+	writeFileSync(join(plugDir, "index.mjs"), demoIndexCode(marker));
+	writeFileSync(join(plugDir, "client", "entry.mjs"), DEMO_CLIENT_ENTRY);
+}
+seedDemoPlugin("pong-v1");
 
 // 2) 纯前端插件（无 index.mjs，只有视图 bundle）
 const feDir = join(dataDir, "plugins", "frontend-only");
@@ -245,6 +253,47 @@ try {
 	else console.log(`✓ plugins_reload bumps epoch (${beforeEpoch} → ${reMsg.epoch}) and re-pushes catalog`);
 
 	sock2.close();
+
+	// -- 2f. 插件 HTTP 路由（install --force 的 rm→cp 窗口后必须能自愈） -------
+	// 背景：CLI 装插件是先删目录再拷文件；扫描撞上窗口期会把插件反激活，目录回来后
+	// 若不能重新激活，插件的 /proxy 等路由就永久消失（前端只看到「代理请求失败 404」）。
+	const ping = await fetch(`${BASE}/plugins-api/demo-mailbox/ping`);
+	if (ping.status !== 200 || (await ping.text()) !== "pong-v1") {
+		fail(`plugin HTTP route broken: ${ping.status} ${await ping.text()}`);
+	} else {
+		console.log("✓ host.route serves /plugins-api/:id/* with the plugin's own handler");
+	}
+	// 安装窗口期：目录暂时不在 → 另一次 attach 触发的扫描视作卸载
+	rmSync(plugDir, { recursive: true, force: true });
+	const sockGone = await connect("plug-gone");
+	await waitFor(
+		sockGone,
+		(m) => m.type === "plugins" && !(m.plugins ?? []).some((p) => p.id === "demo-mailbox"),
+		"plugins(after rm)",
+	);
+	sockGone.close();
+	{
+		const r = await fetch(`${BASE}/plugins-api/demo-mailbox/ping`);
+		if (r.status !== 404) fail(`deactivated plugin route should 404, got ${r.status}`);
+	}
+	// 安装完成：目录带着新代码回来 → 下一次 attach 必须重新激活并拿到新代码
+	seedDemoPlugin("pong-v2");
+	const sockBack = await connect("plug-back");
+	const backMsg = await waitFor(
+		sockBack,
+		(m) => m.type === "plugins" && (m.plugins ?? []).some((p) => p.id === "demo-mailbox"),
+		"plugins(after restore)",
+	);
+	if (backMsg.plugins.find((p) => p.id === "demo-mailbox")?.error) {
+		fail(`reactivation failed: ${backMsg.plugins.find((p) => p.id === "demo-mailbox").error}`);
+	}
+	sockBack.close();
+	const ping2 = await fetch(`${BASE}/plugins-api/demo-mailbox/ping`);
+	if (ping2.status !== 200 || (await ping2.text()) !== "pong-v2") {
+		fail(`plugin not reactivated after dir came back: ${ping2.status} ${await ping2.text()}`);
+	} else {
+		console.log("✓ plugin reactivates with fresh code after the install window (no server restart)");
+	}
 
 	// -- 3. 未知/未激活插件的静默丢弃 --------------------------------------
 	sock.send(JSON.stringify({ type: "plugin_message", pluginId: "no-such", payload: { x: 1 } }));
