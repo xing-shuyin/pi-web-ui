@@ -4,7 +4,7 @@
 
 **English** | [简体中文](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.zh-CN.md)
 
-*The polished browser cockpit for the [pi coding agent](https://pi.dev).*
+_The polished browser cockpit for the [pi coding agent](https://pi.dev)._
 
 <p>
   <a href="https://www.npmjs.com/package/pi-web-ui"><img src="https://img.shields.io/npm/v/pi-web-ui?color=cb3837&logo=npm&label=pi-web-ui" alt="npm version"></a>
@@ -37,8 +37,8 @@ theme switching, and a full settings panel — tuned for daily development.
 
 ## ✨ Highlights
 
-| 💬 **Chat that works like you do** | 🖼️ **Files & images** | 🧩 **Extensible by design** | 🔒 **Private by default** |
-| --- | --- | --- | --- |
+| 💬 **Chat that works like you do**                                                                                | 🖼️ **Files & images**                                                                               | 🧩 **Extensible by design**                                                                                   | 🔒 **Private by default**                                                        |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Streaming replies, steer & follow-up queueing, slash commands, multiple conversations per project, edit-&-re-ask. | Attach files, paste images, ask about pictures (vision bridge), preview anything with GBK fallback. | Drop-in UI **plugins** (extra top-bar tabs + agent tools) and standalone **themes** — no rebuild, no restart. | Loopback-only, credential-safe: provider keys & headers never reach the browser. |
 
 ## 📚 Table of Contents
@@ -89,7 +89,7 @@ theme switching, and a full settings panel — tuned for daily development.
 - **Running list** — grouped by project (the current one first), with subagent children indented under their parent, badges for subagent / error (the tooltip carries the reason) / streaming, inline rename (✎) and a scoped ✕ that offers “dismiss finished subagents only” or “force-dismiss everything” (a second confirmation while a run is streaming). Right-clicking a row scopes the menu to that conversation's subtree.
 - **History** — sessions are read from `<agentDir>/sessions/--<cwd>--/`, i.e. the same transcripts the pi CLI/TUI writes, so the browser and a terminal `pi` session share one list per project. Rename (✎ — the same `session_info` entry pi's `/name` writes) and two-step delete.
 - **Recent projects** — stored per browser, merged with every directory that has transcripts, minus the ones you removed (tombstones) and the ones that no longer exist, sorted by last use (20 shown, 30 stored).
-- **Coming back** — reconnecting restores the last workspace the browser used (with a notice), the tab title can show the project folder, and each project remembers its own model + active provider key for *new* chats (a chat that already has messages keeps its own model).
+- **Coming back** — reconnecting restores the last workspace the browser used (with a notice), the tab title can show the project folder, and each project remembers its own model + active provider key for _new_ chats (a chat that already has messages keeps its own model).
 - If the server was shut down mid-answer, the next attach reports it once (“last run was interrupted”) instead of leaving a silent gap in the history.
 
 ### 🔎 Search & navigation
@@ -113,8 +113,8 @@ theme switching, and a full settings panel — tuned for daily development.
 - Live file tree — the server watches the listed directory (`fs.watch`) and re-lists on change; oversized directories show a truncation warning.
 - **Browse anywhere** — the tree climbs past the workspace root to a 💻 “This computer” level that lists every mounted drive (`/` on POSIX), the breadcrumb jumps straight to any level, `..` goes up, and a listing that vanished or lost its permissions degrades into an empty list plus a warning instead of an error page.
 - **Row actions** — hover a file for download / attach inline (＋) / attach as reference (🔗) / copy name / copy path; folders offer reference-attach, copy name and copy path (copying falls back to a hidden textarea on plain-HTTP origins where the clipboard API is unavailable).
-- **Upload from the tree** — right-click a **folder row** → **Upload files to this folder** (that folder's menu also offers **Open as project**), or right-click a file row / the panel body → **Upload files to current directory** (the directory you are browsing). Dragging OS files onto a folder row uploads into exactly that folder (the row highlights), dropping them on the panel uploads into the browsed directory, and dragging a *folder* warns that folders aren't supported instead of doing nothing. Uploads accept one file up to 100 MB, refuse empty files, strip the name to a basename with Windows-illegal characters replaced (200-char clamp), create the target directory if needed, and refresh the listing afterwards even if you are browsing somewhere else.
-- **Listings that stay honest** — on Windows/macOS a recursive watcher on the workspace root refreshes the tree for changes in *any* subdirectory (400 ms debounce), with a 10 s polling fallback — announced once per workspace — on network drives where watching isn't supported; POSIX hides build noise (`node_modules`, `.git`, `dist`, `.venv`, …) and caps at 500 entries, Windows hides only dependency/VCS/data directories and caps at 2000, and both say when they truncated.
+- **Upload from the tree** — right-click a **folder row** → **Upload files to this folder** (that folder's menu also offers **Open as project**), or right-click a file row / the panel body → **Upload files to current directory** (the directory you are browsing). Dragging OS files onto a folder row uploads into exactly that folder (the row highlights), dropping them on the panel uploads into the browsed directory, and dragging a _folder_ warns that folders aren't supported instead of doing nothing. Uploads accept one file up to 100 MB, refuse empty files, strip the name to a basename with Windows-illegal characters replaced (200-char clamp), create the target directory if needed, and refresh the listing afterwards even if you are browsing somewhere else.
+- **Listings that stay honest** — on Windows/macOS a recursive watcher on the workspace root refreshes the tree for changes in _any_ subdirectory (400 ms debounce), with a 10 s polling fallback — announced once per workspace — on network drives where watching isn't supported; POSIX hides build noise (`node_modules`, `.git`, `dist`, `.venv`, …) and caps at 500 entries, Windows hides only dependency/VCS/data directories and caps at 2000, and both say when they truncated.
 - **The preview is an editor too** — text files can be edited in place and saved with Ctrl/Cmd+S (2 MB cap, dirty-guarded; closing with unsaved changes asks first), Markdown toggles between rendered and source, HTML renders in a sandboxed iframe through a directory-mapped URL so relative CSS/images resolve (with a per-file “enable scripts” opt-in that never grants same-origin), images and videos stream over HTTP Range, binaries get a hex dump, and text gets line numbers, selection by click/drag/Shift (add to chat as `lines`), zoom 50–200 %, a word-wrap toggle and fullscreen.
 - **Download without Safe Browsing fights** — downloads fetch the bytes and use the browser's save picker where available (falling back to a blob link, and to native streaming above 200 MB), sanitize Windows-illegal file names and report a cancelled dialog as “not an error”.
 
@@ -133,7 +133,7 @@ theme switching, and a full settings panel — tuned for daily development.
 - Model management — edit `models.json` in the UI and set per-provider API keys (keys/headers never leave the server).
   - **Model picker** — searchable by name/provider/id, with a provider sidebar once you have several providers; models you pick often float to the top with a “used N×” badge plus reasoning/vision badges, opening it scrolls to the active model, and the footer keeps **Refresh models** and **Manage models**.
   - **Several keys per provider** — built-in providers can store multiple named keys (`<agentDir>/provider-keys.json`): add a second key without losing the first, activate another by name, remove one (dropping the active key promotes the next). The picker lists each key separately, so picking a model under a key switches to it — and only nicknames reach the browser.
-  - **Custom providers** — add/edit/delete a provider (API type, `baseUrl`, key, optional auth header) with per-model metadata (context window, max output, text/text-image, reasoning); **Fetch models** probes `/models` *server-side* (so a LAN/loopback endpoint works despite CORS) and merges what it advertises, and an existing provider can be re-probed in place. Hand-edited `models.json` is picked up with **Reload models.json** (comments allowed, like the SDK).
+  - **Custom providers** — add/edit/delete a provider (API type, `baseUrl`, key, optional auth header) with per-model metadata (context window, max output, text/text-image, reasoning); **Fetch models** probes `/models` _server-side_ (so a LAN/loopback endpoint works despite CORS) and merges what it advertises, and an existing provider can be re-probed in place. Hand-edited `models.json` is picked up with **Reload models.json** (comments allowed, like the SDK).
 - Thinking level per model — seven levels, but the ones the current model doesn't support are shown disabled rather than silently snapped to another.
 - First-run setup wizard — installs the pi CLI for you when it's missing (with failure detail, Retry and Skip) and then takes a provider + API key so you can start immediately.
 - Settings panel:
@@ -142,7 +142,7 @@ theme switching, and a full settings panel — tuned for daily development.
   - **Skills** — per-skill switches plus a **Full** chip that injects a whole `SKILL.md` into the prompt instead of its catalog line (8 KB per file, 32 KB total).
   - **Extensions** — per-extension switches, and one-click uninstall for `npm:`-installed ones (runs `pi remove npm:<pkg>` in a reusable terminal tab).
   - **UI plugins**, **goal review**, **vision bridge** and **subagent templates** have their own pages — see [Plugins](#plugins).
-  - **Presets** — save the current combination (prompt template/mode/overrides, skill & extension switches, tool switches, terminal-bash settings, retry count, reviewer prompt, skill full-text list) under a name and re-apply or delete it; deliberately *not* captured (questionnaire, goal mode, display prefs, vision bridge, default subagent model, quick phrases) stay as they are.
+  - **Presets** — save the current combination (prompt template/mode/overrides, skill & extension switches, tool switches, terminal-bash settings, retry count, reviewer prompt, skill full-text list) under a name and re-apply or delete it; deliberately _not_ captured (questionnaire, goal mode, display prefs, vision bridge, default subagent model, quick phrases) stay as they are.
   - **Apply timing** — tool switches, retry count, display preferences, markers and the skill full-text list apply immediately; the prompt template/overrides and skill/extension switches need a session reload, and a change made mid-answer is deferred with a “takes effect after this reply” notice.
   - **Display preferences** — thinking blocks expanded or collapsed by default, tool cards expanded by default, wide chat column (drops the 860 px cap on very wide viewports), project name in the browser tab title, and a chat wallpaper (image URL or upload, with dim and blur sliders).
 
@@ -214,9 +214,9 @@ theme switching, and a full settings panel — tuned for daily development.
 
 - Loopback-only by default; set `PI_WEB_HOST=0.0.0.0` for LAN / containers.
 - **Token auth** — `PI_WEB_TOKEN` accepts any of `Authorization: Bearer …`, `X-PI-Token: …`, `?token=…` or the `pi_web_token` cookie. A `?token=` link logs you in once, strips the token from the address bar and stores the cookie; every authorised request refreshes it and a stale cookie is expired on the 401 response, so after changing the password one correct `?token=` visit recovers permanently. `/api/health` stays open for probes.
-- WebSocket Origin/Host same-authority check — cross-origin pages are rejected (403), `Origin: null` (a `file://` page) is rejected outright, and when a token is configured a bad credential is refused *before* the upgrade; `PI_WEB_ALLOW_ORIGINS` whitelist for reverse proxies.
+- WebSocket Origin/Host same-authority check — cross-origin pages are rejected (403), `Origin: null` (a `file://` page) is rejected outright, and when a token is configured a bad credential is refused _before_ the upgrade; `PI_WEB_ALLOW_ORIGINS` whitelist for reverse proxies.
 - **Host allow-list** — `PI_WEB_ALLOW_HOSTS=host1,host2` adds a strict hostname allow-list on top of the always-on same-authority check.
-- **Instance scoping** — `PI_WEB_TABS=chat,terminal,git` exposes only those tabs: hidden tabs are also refused *server-side* (their messages answer with an explanation), and `chat` can never be switched off. `PI_WEB_MANAGED=1` declares the instance as deployed from outside: the server refuses self-update, pi-CLI installs and marketplace installs with a reason, and the UI hides those entry points (the version chip becomes a plain label saying the deployment owns updates).
+- **Instance scoping** — `PI_WEB_TABS=chat,terminal,git` exposes only those tabs: hidden tabs are also refused _server-side_ (their messages answer with an explanation), and `chat` can never be switched off. `PI_WEB_MANAGED=1` declares the instance as deployed from outside: the server refuses self-update, pi-CLI installs and marketplace installs with a reason, and the UI hides those entry points (the version chip becomes a plain label saying the deployment owns updates).
 - **File boundaries** — workspace-relative reads/writes reject `..` escapes (a path outside the workspace is only reachable through explicit absolute / machine browsing); inline `/api/file` streaming is limited to images, video and HTML, so a binary can never be smuggled through an `<img>` tag — anything else needs `?download=1` (attachment disposition). The HTML preview route is always served sandboxed.
 - Quiesce drain mode via a local control socket (`server status|quiesce|unquiesce`) — refuses new prompts/forks/resumes (and, on the DSH engine, brand-new client connections) while in-flight runs finish.
 - Credentials stay server-side — provider headers (which may carry `Authorization`) are never sent to the browser, and provider API keys reach it only as nicknames.
@@ -227,51 +227,49 @@ theme switching, and a full settings panel — tuned for daily development.
 ### 🚢 Deploy & update
 
 - Foreground, global npm install, Docker (see [Docker](#docker)), macOS launchd, Linux systemd, Windows autostart (a per-user `Run` key with a console-free launcher and a crash watchdog), and a desktop shortcut (`server shortcut`).
-- `server install --print` prints the launchd plist / systemd unit / Windows launcher it *would* write and exits, so you can review it before installing.
-- **Update panel** — the version chip shows an amber dot when a newer web UI exists and a badge with how many *other* components have updates. “Check all updates” compares the web UI, the globally installed pi core and the direct packages declared in `<agentDir>/npm/package.json`; each row has its own Update, plus “Update all” and “Re-check all”, and the commands run in a visible terminal (`pi update npm:<name>` for pi extensions — the only command that updates the copy pi actually loads — and `npm i -g <name>@latest` for the rest). A “just published (<30 min)” warning tells you npm's cached metadata may be stale. On an instance owned by launchd/systemd/the Windows watchdog there is also a **Restart service** button; on a foreground instance there isn't, because nothing would bring it back.
+- `server install --print` prints the launchd plist / systemd unit / Windows launcher it _would_ write and exits, so you can review it before installing.
+- **Update panel** — the version chip shows an amber dot when a newer web UI exists and a badge with how many _other_ components have updates. “Check all updates” compares the web UI, the globally installed pi core and the direct packages declared in `<agentDir>/npm/package.json`; each row has its own Update, plus “Update all” and “Re-check all”, and the commands run in a visible terminal (`pi update npm:<name>` for pi extensions — the only command that updates the copy pi actually loads — and `npm i -g <name>@latest` for the rest). A “just published (<30 min)” warning tells you npm's cached metadata may be stale. On an instance owned by launchd/systemd/the Windows watchdog there is also a **Restart service** button; on a foreground instance there isn't, because nothing would bring it back.
 - **Plugin updates from the CLI** — `pi-web-ui plugins --check-updates` compares each installed plugin's recorded commit with the remote HEAD and prints the exact update command; every `install --force` snapshots the outgoing version into `<dataDir>/plugin-backups/` (newest 3 kept, and it auto-rolls back if the copy fails), so `pi-web-ui plugins --rollback <id>` can undo an upgrade.
 - In the pi CLI there is also `/webui` (from the bundled `extensions/webui.ts`): `/webui` starts a server on the first free port from 8787, and `/webui --port 9000`, `--cwd <path>`, `--no-browser`, `status` and `stop` manage it — one subprocess per pi session, killed when the session shuts down so no orphan servers linger.
 
-
 ## Keyboard shortcuts
 
-| Keys | What it does |
-| --- | --- |
-| `Enter` | Send. On touch-first devices `Enter` inserts a newline instead and `Ctrl/Cmd+Enter` sends (Windows touch laptops are treated as desktops). |
-| `Shift+Enter` | Newline in the composer. |
-| `↑` / `↓` | Walk the global prompt history (persisted across conversations) when the caret is on the first/last line; `Esc` returns to your draft. |
-| `Ctrl/Cmd+K` | Global search over conversations, projects and workspace file names. |
-| `Ctrl/Cmd+F` | Search inside the open conversation — `Enter` next hit, `Shift+Enter` previous, `Esc` closes. |
-| `/` | Open the slash-command picker (`↑`/`↓` to move, `Tab` or `Enter` to complete, `Esc` to dismiss; typing a space closes it). |
-| `Ctrl/Cmd+S` | Save while editing a file in the preview. |
-| `Ctrl/Cmd+A` | Select all lines in the preview (when the caret isn't in a text field). |
-| `Ctrl/Cmd+Enter` | Submit the edit-&-re-ask editor. |
-| `Ctrl/Cmd+C` / `Ctrl/Cmd+V` | In the terminal: copy the current selection (no selection = `^C` goes to the shell) / paste natively. |
-| `Esc` | Close the preview, a dialog, the command picker, a questionnaire or an extension request panel — with unsaved preview edits it asks first. |
-| Drag & drop | Dropping files anywhere in the window attaches them to the chat; over the file tree it uploads into the folder you dropped on; folders can't be dropped (expand and pick files). |
+| Keys                        | What it does                                                                                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enter`                     | Send. On touch-first devices `Enter` inserts a newline instead and `Ctrl/Cmd+Enter` sends (Windows touch laptops are treated as desktops).                                       |
+| `Shift+Enter`               | Newline in the composer.                                                                                                                                                         |
+| `↑` / `↓`                   | Walk the global prompt history (persisted across conversations) when the caret is on the first/last line; `Esc` returns to your draft.                                           |
+| `Ctrl/Cmd+K`                | Global search over conversations, projects and workspace file names.                                                                                                             |
+| `Ctrl/Cmd+F`                | Search inside the open conversation — `Enter` next hit, `Shift+Enter` previous, `Esc` closes.                                                                                    |
+| `/`                         | Open the slash-command picker (`↑`/`↓` to move, `Tab` or `Enter` to complete, `Esc` to dismiss; typing a space closes it).                                                       |
+| `Ctrl/Cmd+S`                | Save while editing a file in the preview.                                                                                                                                        |
+| `Ctrl/Cmd+A`                | Select all lines in the preview (when the caret isn't in a text field).                                                                                                          |
+| `Ctrl/Cmd+Enter`            | Submit the edit-&-re-ask editor.                                                                                                                                                 |
+| `Ctrl/Cmd+C` / `Ctrl/Cmd+V` | In the terminal: copy the current selection (no selection = `^C` goes to the shell) / paste natively.                                                                            |
+| `Esc`                       | Close the preview, a dialog, the command picker, a questionnaire or an extension request panel — with unsaved preview edits it asks first.                                       |
+| Drag & drop                 | Dropping files anywhere in the window attaches them to the chat; over the file tree it uploads into the folder you dropped on; folders can't be dropped (expand and pick files). |
 
 ## Screenshots
 
 ![Chat with prompt templates](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/chat-prompts.jpeg)
 
-*Chat with prompt templates*
+_Chat with prompt templates_
 
 ![Run trajectory timeline](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/trajectory.jpeg)
 
-*Run trajectory timeline (run-trace plugin)*
+_Run trajectory timeline (run-trace plugin)_
 
 ![Settings panel](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/settings.jpeg)
 
-*Settings panel*
+_Settings panel_
 
 ![Built-in terminal](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/terminal.jpeg)
 
-*Built-in terminal*
+_Built-in terminal_
 
 ![Git source control panel](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/git.jpeg)
 
-*Git source control panel*
-
+_Git source control panel_
 
 ## Install
 
@@ -364,17 +362,17 @@ pi-web-ui                                           # foreground, http://localho
 **Start flags & environment variables** — every setting can be passed as a `--flag` on the command
 line **or** set as an environment variable (flag wins). Pick whichever you prefer:
 
-| Flag | Env var | Default | Purpose |
-| --- | --- | --- | --- |
-| `--port <n>` | `PI_WEB_PORT` | `8787` | HTTP port |
-| `--cwd <dir>` | `PI_WEB_CWD` | current dir | workspace root (read/write/terminal) |
-| `--data-dir <dir>` | `PI_WEB_DATA_DIR` | `~/.pi-web` | data dir (UI state, plugins, uploads, themes, locales) |
-| `--engine <pi\|dsh>` | `PI_WEB_ENGINE` | `pi` | agent engine; `--engine dsh` = DeepSeek Harness |
-| `--host <addr>` | `PI_WEB_HOST` | `127.0.0.1` | listen address (`0.0.0.0` for LAN/Docker) |
-| `--agent-dir <dir>` | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi config dir (auth.json, models.json, sessions, skills) |
-| `--no-browser` | — | off | start without auto-opening the browser |
-| _env only_ | `PI_WEB_TOKEN` | empty | optional shared auth token |
-| _env only_ | `PI_WEB_DSH_*` | — | dsh runtime, patches & debug settings |
+| Flag                 | Env var               | Default       | Purpose                                                  |
+| -------------------- | --------------------- | ------------- | -------------------------------------------------------- |
+| `--port <n>`         | `PI_WEB_PORT`         | `8787`        | HTTP port                                                |
+| `--cwd <dir>`        | `PI_WEB_CWD`          | current dir   | workspace root (read/write/terminal)                     |
+| `--data-dir <dir>`   | `PI_WEB_DATA_DIR`     | `~/.pi-web`   | data dir (UI state, plugins, uploads, themes, locales)   |
+| `--engine <pi\|dsh>` | `PI_WEB_ENGINE`       | `pi`          | agent engine; `--engine dsh` = DeepSeek Harness          |
+| `--host <addr>`      | `PI_WEB_HOST`         | `127.0.0.1`   | listen address (`0.0.0.0` for LAN/Docker)                |
+| `--agent-dir <dir>`  | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi config dir (auth.json, models.json, sessions, skills) |
+| `--no-browser`       | —                     | off           | start without auto-opening the browser                   |
+| _env only_           | `PI_WEB_TOKEN`        | empty         | optional shared auth token                               |
+| _env only_           | `PI_WEB_DSH_*`        | —             | dsh runtime, patches & debug settings                    |
 
 The two are equivalent — pick one:
 
@@ -405,7 +403,6 @@ npm uninstall -g pi-web-ui
 ```
 
 Uninstalling does **not** delete your chats: the transcripts you see in the history panel live in `<agentDir>/sessions/` (default `~/.pi/agent/sessions/`, per project), and the rest of your state — UI settings, recent projects, plugins, uploads, themes, language packs — lives in `<dataDir>` (default `~/.pi-web/`). Both survive uninstall, upgrade and reinstall; rerunning `pi-web-ui server install` afterward picks them up again (and if you plan to delete them, back up `sessions/` and `plugins/` first — an uninstall never touches either).
-
 
 ## System service
 
@@ -439,7 +436,6 @@ by hand. See the [start flags table](#quick-start) above.
 ```bash
 pi-web-ui server install --engine dsh --port 9000 --cwd /path/to/project
 ```
-
 
 ## Docker
 
@@ -482,14 +478,14 @@ up in the UI.
 These plugins ship in this repository (`plugins/<id>/`) and can be installed
 straight from GitHub:
 
-| Plugin | What it does |
-| --- | --- |
-| 📬 [webmail](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail) | IMAP inbox browsing / search / read / mark / delete + SMTP sending, new-mail notifications, and an optional "allow AI to manage my mailbox" switch (six `mail_*` agent tools). Auto-installs its npm deps on first activation. |
-| 🗄️ [db-client](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client) | Database workbench: connection manager + schema tree for MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis — table structure, paginated data with sorting, SQL editor, and row editing. Drivers auto-install on first use. |
-| 📝 [vscode-editor](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor) | VS Code-like workbench: multi-root file tree (local + SSH hosts), CodeMirror multi-tab editor, Remote-SSH remote file browsing/editing, draggable multi-terminal panel (xterm.js), SFTP sync & upload/download to your computer. Auto-installs `ssh2`. |
-| 📊 [mermaid](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid) | Renders ` ```mermaid ` fences in chat messages as SVG diagrams (fenced-code renderer plugin, offline-first local engine). |
-| 🧭 [run-trace](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace) | Run trajectory: task → thinking → tools → file changes → result timeline with replay and node details. |
-| 📖 [legado-web](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web) | Legado book reader (📖 阅读): search / discovery / book info / TOC / chapter reading on top of Android-compatible **book sources**, with source import, health checking and dead-source cleanup, and four agent tools (`legado_rules`, `legado_book_sources`, `legado_source_probe`, `legado_run_rule`) plus an “🤖 AI fix this source” button that opens a new chat with the failure context. Sources/shelf/progress persist under `<dataDir>/legado-web/`. |
+| Plugin                                                                                       | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 📬 [webmail](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail)             | IMAP inbox browsing / search / read / mark / delete + SMTP sending, new-mail notifications, and an optional "allow AI to manage my mailbox" switch (six `mail_*` agent tools). Auto-installs its npm deps on first activation.                                                                                                                                                                                                                               |
+| 🗄️ [db-client](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client)         | Database workbench: connection manager + schema tree for MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis — table structure, paginated data with sorting, SQL editor, and row editing. Drivers auto-install on first use.                                                                                                                                                                                                                          |
+| 📝 [vscode-editor](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor) | VS Code-like workbench: multi-root file tree (local + SSH hosts), CodeMirror multi-tab editor, Remote-SSH remote file browsing/editing, draggable multi-terminal panel (xterm.js), SFTP sync & upload/download to your computer. Auto-installs `ssh2`.                                                                                                                                                                                                       |
+| 📊 [mermaid](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid)             | Renders ` ```mermaid ` fences in chat messages as SVG diagrams (fenced-code renderer plugin, offline-first local engine).                                                                                                                                                                                                                                                                                                                                    |
+| 🧭 [run-trace](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace)         | Run trajectory: task → thinking → tools → file changes → result timeline with replay and node details.                                                                                                                                                                                                                                                                                                                                                       |
+| 📖 [legado-web](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web)       | Legado book reader (📖 阅读): search / discovery / book info / TOC / chapter reading on top of Android-compatible **book sources**, with source import, health checking and dead-source cleanup, and four agent tools (`legado_rules`, `legado_book_sources`, `legado_source_probe`, `legado_run_rule`) plus an “🤖 AI fix this source” button that opens a new chat with the failure context. Sources/shelf/progress persist under `<dataDir>/legado-web/`. |
 
 `plugins/demo-mailbox` stays in the repo as the minimal plugin template (server entry + client view + two-way message protocol) and test fixture — start there if you want to write your own.
 
@@ -573,6 +569,29 @@ pi-web-ui uninstall <id>      # remove a plugin
   disappears. Plugin configuration written inside the plugin dir is removed
   too — back up `<dataDir>/plugins/<id>/config.json` first if you need it.
 
+## Browser extension
+
+### 🎯 Web element picker (page-picker)
+
+Pick elements on the site you are developing and turn them into context an AI can act on, then drop it
+straight into the pi-web-ui composer (`Alt+Shift+P` or the toolbar icon → hover highlight → click to pick
+→ `Shift`+click for multi-select → add a note → "Add to chat").
+
+It is a **browser extension**, not a pi-web-ui server plugin (so `pi-web-ui install` does not apply):
+
+**Download & install** (no Node required): [`page-picker-extension.zip`](https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip) → unzip →
+open `chrome://extensions`, enable "Developer mode", choose "Load unpacked" and select the unzipped
+folder → open the extension options and set your pi-web-ui address (click "Authorize this address"
+first for remote/LAN addresses).
+
+See [`plugins/page-picker/README.md`](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/page-picker) for the interaction details,
+what gets captured, remote/LAN setups and known limitations.
+
+It captures what actually lets an AI fix the code in one shot — not a screenshot: the React component
+source location from the fiber (`Card.tsx:18:5` plus the component chain), the Vue SFC file, the
+**source file and line** of the CSS rules that matched (reverse-computed in Vite dev), a computed-style
+subset limited to values that differ from the defaults, a short unique selector, an HTML skeleton and
+truncated text. An optional element screenshot rides along as a chat attachment.
 
 ## Themes
 
@@ -616,29 +635,28 @@ Want your theme shipped to everyone? Open a pull request at [github.com/xing-shu
 
 Rules for merged themes: the file must be a single CSS file, set the `--term-*` variables for a readable terminal, and override `.hljs` syntax colors for readable code on light themes.
 
-
 ## Tuning & advanced environment variables
 
 All optional — the defaults are what the app is developed against. Full reference: [`docs/env-vars.md`](docs/env-vars.md).
 
-| Variable | Default | What it changes |
-| --- | --- | --- |
-| `PI_WEB_TOOL_TIMEOUT_MS` | `1200000` (20 min) | Per-tool-call watchdog; a tool still running is aborted (`ask_user_question` is exempt). |
-| `PI_WEB_STALL_NOTIFY_MS` | `180000` (3 min) | Warn — without aborting — when a streaming run produces no event at all; `0` disables. |
-| `PI_WEB_TERMINAL_IDLE_MS` | `15000` | Nudge the AI when a terminal it opened goes silent for this long; `0` disables. |
-| `PI_WEB_TERMINAL_IDLE_LINES` | `10` | How many trailing terminal lines that nudge quotes back (1–500). |
-| `PI_WEB_INLINE_FILE_MAX` | `12288` (12 KB) | Size under which a path-less uploaded file is inlined instead of referenced. |
-| `PI_WEB_VISION_TIMEOUT_MS` | `90000` | Timeout for one whole vision-bridge transcription batch. |
-| `PI_WEB_UPLOAD_RETENTION_DAYS` | `14` | Retention for `<dataDir>/uploads/`; `0` never sweeps. |
-| `PI_WEB_SHELL` | auto | Windows only: which shell node-pty spawns (auto: `PI_WEB_SHELL` → `$SHELL` → Git Bash → bundled busybox → `%COMSPEC%` → PowerShell). |
-| `PI_WEB_TABS` | all tabs | Comma-separated tab allow-list (`chat,terminal,git,search,tasks,settings,plugins`); hidden tabs are refused server-side, `chat` can't be turned off. |
-| `PI_WEB_MANAGED` | off | `1`/`true` declares the instance externally deployed: self-update, pi-CLI install and plugin installs are refused with a reason and hidden in the UI. |
-| `PI_WEB_ALLOW_HOSTS` | empty | Strict hostname allow-list for the HTTP/WS `Host` header, on top of the always-on same-authority check. |
-| `PI_WEB_LOCALE` | empty | Fallback UI language for first-time visitors (an explicit choice and the browser's languages win over it). |
-| `PI_WEB_LOCALE_BASE_URL` | GitHub raw | Where language packs are downloaded from — point it at a mirror for offline/intranet installs. |
-| `PI_WEB_PKG_ROOT` | auto | Overrides where the server looks for `package.json`, `themes/`, `plugins/catalog.json` and `web/dist` (non-standard install layouts). |
-| `PI_CODING_AGENT_SESSION_DIR` | empty | Flat session layout for pi instead of `<agentDir>/sessions/--<cwd>--/` (changes what the history list reads). |
-| `DSH_*` | — | DSH runtime knobs: `PI_WEB_DSH_RUNTIME`, `PI_WEB_DSH_DATA_DIR`, `PI_WEB_DSH_PATCH_DIR`, `PI_WEB_DSH_QUESTION_TIMEOUT_MS`, `PI_WEB_DSH_TOOL_TIMEOUT_MS`, `PI_WEB_DSH_SESSION_RETENTION_DAYS`, `PI_WEB_DSH_DEBUG`. |
+| Variable                       | Default            | What it changes                                                                                                                                                                                                  |
+| ------------------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PI_WEB_TOOL_TIMEOUT_MS`       | `1200000` (20 min) | Per-tool-call watchdog; a tool still running is aborted (`ask_user_question` is exempt).                                                                                                                         |
+| `PI_WEB_STALL_NOTIFY_MS`       | `180000` (3 min)   | Warn — without aborting — when a streaming run produces no event at all; `0` disables.                                                                                                                           |
+| `PI_WEB_TERMINAL_IDLE_MS`      | `15000`            | Nudge the AI when a terminal it opened goes silent for this long; `0` disables.                                                                                                                                  |
+| `PI_WEB_TERMINAL_IDLE_LINES`   | `10`               | How many trailing terminal lines that nudge quotes back (1–500).                                                                                                                                                 |
+| `PI_WEB_INLINE_FILE_MAX`       | `12288` (12 KB)    | Size under which a path-less uploaded file is inlined instead of referenced.                                                                                                                                     |
+| `PI_WEB_VISION_TIMEOUT_MS`     | `90000`            | Timeout for one whole vision-bridge transcription batch.                                                                                                                                                         |
+| `PI_WEB_UPLOAD_RETENTION_DAYS` | `14`               | Retention for `<dataDir>/uploads/`; `0` never sweeps.                                                                                                                                                            |
+| `PI_WEB_SHELL`                 | auto               | Windows only: which shell node-pty spawns (auto: `PI_WEB_SHELL` → `$SHELL` → Git Bash → bundled busybox → `%COMSPEC%` → PowerShell).                                                                             |
+| `PI_WEB_TABS`                  | all tabs           | Comma-separated tab allow-list (`chat,terminal,git,search,tasks,settings,plugins`); hidden tabs are refused server-side, `chat` can't be turned off.                                                             |
+| `PI_WEB_MANAGED`               | off                | `1`/`true` declares the instance externally deployed: self-update, pi-CLI install and plugin installs are refused with a reason and hidden in the UI.                                                            |
+| `PI_WEB_ALLOW_HOSTS`           | empty              | Strict hostname allow-list for the HTTP/WS `Host` header, on top of the always-on same-authority check.                                                                                                          |
+| `PI_WEB_LOCALE`                | empty              | Fallback UI language for first-time visitors (an explicit choice and the browser's languages win over it).                                                                                                       |
+| `PI_WEB_LOCALE_BASE_URL`       | GitHub raw         | Where language packs are downloaded from — point it at a mirror for offline/intranet installs.                                                                                                                   |
+| `PI_WEB_PKG_ROOT`              | auto               | Overrides where the server looks for `package.json`, `themes/`, `plugins/catalog.json` and `web/dist` (non-standard install layouts).                                                                            |
+| `PI_CODING_AGENT_SESSION_DIR`  | empty              | Flat session layout for pi instead of `<agentDir>/sessions/--<cwd>--/` (changes what the history list reads).                                                                                                    |
+| `DSH_*`                        | —                  | DSH runtime knobs: `PI_WEB_DSH_RUNTIME`, `PI_WEB_DSH_DATA_DIR`, `PI_WEB_DSH_PATCH_DIR`, `PI_WEB_DSH_QUESTION_TIMEOUT_MS`, `PI_WEB_DSH_TOOL_TIMEOUT_MS`, `PI_WEB_DSH_SESSION_RETENTION_DAYS`, `PI_WEB_DSH_DEBUG`. |
 
 ## Security
 
@@ -657,7 +675,6 @@ All optional — the defaults are what the app is developed against. Full refere
   `Authorization` / API keys) are never sent to the browser; the model
   management UI edits everything else and the server preserves the headers.
 
-
 ## 🪪 Code signing policy
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by
@@ -672,11 +689,11 @@ build of the source code at that tag.
 
 ### Team roles
 
-| Role | Who |
-| --- | --- |
-| **Authors / committers** (may push to `main`) | [@xing-shuyin](https://github.com/xing-shuyin) |
+| Role                                                                                    | Who                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Authors / committers** (may push to `main`)                                           | [@xing-shuyin](https://github.com/xing-shuyin)                                                                                                                                  |
 | **Reviewers** (every non-committer change arrives as a PR and is reviewed before merge) | [@xing-shuyin](https://github.com/xing-shuyin) — community contributions are credited in the [contributors graph](https://github.com/xing-shuyin/pi-web-ui/graphs/contributors) |
-| **Approvers** (must approve each signing request) | [@xing-shuyin](https://github.com/xing-shuyin) |
+| **Approvers** (must approve each signing request)                                       | [@xing-shuyin](https://github.com/xing-shuyin)                                                                                                                                  |
 
 All team members use multi-factor authentication for both GitHub and SignPath.
 Our release artifacts contain no binaries we did not build ourselves, except
@@ -697,13 +714,13 @@ server binds loopback unless you explicitly expose it.
 
 Network requests happen only in these cases:
 
-| When | To | What leaves your machine |
-| --- | --- | --- |
-| You send a message, or the agent calls a model | the model providers **you** configure (e.g. `api.openai.com`, `api.opencode.ai`, a local endpoint) | your prompt, the attached file contents and the conversation context |
-| Model catalog refresh (startup, then every 4 h) | `pi.dev` | nothing but the request itself |
-| You install or update a plugin, theme or language pack | `github.com` / `raw.githubusercontent.com` | nothing but the request itself |
-| You check for or install an update | `registry.npmjs.org` | nothing but the request itself |
-| Terminals on Windows, when neither Git Bash nor a `bash` on `PATH` exists | `frippery.org` | one download of `busybox64u.exe` into `~/.pi-web/bin/bash.exe`, reused offline afterwards |
+| When                                                                      | To                                                                                                 | What leaves your machine                                                                  |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| You send a message, or the agent calls a model                            | the model providers **you** configure (e.g. `api.openai.com`, `api.opencode.ai`, a local endpoint) | your prompt, the attached file contents and the conversation context                      |
+| Model catalog refresh (startup, then every 4 h)                           | `pi.dev`                                                                                           | nothing but the request itself                                                            |
+| You install or update a plugin, theme or language pack                    | `github.com` / `raw.githubusercontent.com`                                                         | nothing but the request itself                                                            |
+| You check for or install an update                                        | `registry.npmjs.org`                                                                               | nothing but the request itself                                                            |
+| Terminals on Windows, when neither Git Bash nor a `bash` on `PATH` exists | `frippery.org`                                                                                     | one download of `busybox64u.exe` into `~/.pi-web/bin/bash.exe`, reused offline afterwards |
 
 Reverse-proxy setups, the optional `PI_WEB_TOKEN` password and Docker port
 mappings are under your control — see [Security](#security).
@@ -773,18 +790,17 @@ Key points:
 
 Full working example (with an frp tunnel): `deploy/nginx-subpath.conf`.
 
-
 ## Contribute
 
 pi-web-ui is a small open-source project — **your contributions are what make it grow**. Code, plugins, themes, docs, translations, ideas: everything is welcome, and every merged PR ships to all users with the next `npm publish`. ❤️
 
-| Way to contribute | How to get started |
-| --- | --- |
-| 🧩 **Write a plugin** | Build your own UI tab + agent tools. Copy `plugins/demo-mailbox` as the minimal template (it doubles as the test fixture), develop locally, then either open a PR to ship it in the [catalog](#plugin-catalog) or [publish it standalone](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins). |
-| 🎨 **Contribute a theme** | Copy `themes/white.css` (light) or `themes/cyberpunk.css` (dark) as a pure-palette template, tweak the `:root` palette + `--term-*` + `.hljs`, verify with `npm run dev`, then open a PR — full walkthrough in [Contributing a theme](#contributing-a-theme-to-the-repository-github). |
-| 💻 **Fix a bug / add a feature** | Look for [open issues](https://github.com/xing-shuyin/pi-web-ui/issues) or propose something new. Fork → branch → PR. Keep the code conventions in `AGENTS.md` (tabs, i18n keys in both languages, protocol changes in `server/protocol.ts`). |
-| 📖 **Docs & translations** | Improve the READMEs, write plugin docs, fix typos, or help translate the UI / docs into more languages. |
-| 💡 **Ideas & feedback** | Open an [issue](https://github.com/xing-shuyin/pi-web-ui/issues) or start a [discussion](https://github.com/xing-shuyin/pi-web-ui/discussions) — feature requests, bug reports, UI polish ideas, deployment experience reports. |
+| Way to contribute                | How to get started                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 🧩 **Write a plugin**            | Build your own UI tab + agent tools. Copy `plugins/demo-mailbox` as the minimal template (it doubles as the test fixture), develop locally, then either open a PR to ship it in the [catalog](#plugin-catalog) or [publish it standalone](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins). |
+| 🎨 **Contribute a theme**        | Copy `themes/white.css` (light) or `themes/cyberpunk.css` (dark) as a pure-palette template, tweak the `:root` palette + `--term-*` + `.hljs`, verify with `npm run dev`, then open a PR — full walkthrough in [Contributing a theme](#contributing-a-theme-to-the-repository-github).                 |
+| 💻 **Fix a bug / add a feature** | Look for [open issues](https://github.com/xing-shuyin/pi-web-ui/issues) or propose something new. Fork → branch → PR. Keep the code conventions in `AGENTS.md` (tabs, i18n keys in both languages, protocol changes in `server/protocol.ts`).                                                          |
+| 📖 **Docs & translations**       | Improve the READMEs, write plugin docs, fix typos, or help translate the UI / docs into more languages.                                                                                                                                                                                                |
+| 💡 **Ideas & feedback**          | Open an [issue](https://github.com/xing-shuyin/pi-web-ui/issues) or start a [discussion](https://github.com/xing-shuyin/pi-web-ui/discussions) — feature requests, bug reports, UI polish ideas, deployment experience reports.                                                                        |
 
 **Before opening a PR**, a quick sanity pass keeps reviewers happy:
 
@@ -798,7 +814,6 @@ pi-web-ui is a small open-source project — **your contributions are what make 
 > Enjoying pi-web-ui? Give the repo a ⭐ — it helps others find it. And if you
 > built something cool on top (plugin, theme, deployment recipe), tell us — we
 > love showcasing community work.
-
 
 ## License
 

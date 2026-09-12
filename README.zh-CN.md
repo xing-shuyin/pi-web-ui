@@ -195,42 +195,42 @@
 
 ## 快捷键
 
-| 按键 | 作用 |
-| --- | --- |
-| `Enter` | 发送。触屏设备上 `Enter` 改为换行，`Ctrl/Cmd+Enter` 才发送（Windows 触屏笔记本当作桌面）。 |
-| `Shift+Enter` | 输入框内换行。 |
-| `↑` / `↓` | 光标在首/末行时翻全局输入历史（跨对话持久化）；`Esc` 回到草稿。 |
-| `Ctrl/Cmd+K` | 全局搜索（对话 / 项目 / 工作区文件名）。 |
-| `Ctrl/Cmd+F` | 搜当前对话 —— `Enter` 下一个命中，`Shift+Enter` 上一个，`Esc` 关闭。 |
-| `/` | 打开斜杠命令选择器（`↑`/`↓` 选择、`Tab` 或 `Enter` 补全、`Esc` 关闭；输入空格则自动关闭）。 |
-| `Ctrl/Cmd+S` | 预览里编辑文件时保存。 |
-| `Ctrl/Cmd+A` | 预览里全选行（光标不在文本框时）。 |
-| `Ctrl/Cmd+Enter` | 提交「编辑重问」编辑器。 |
-| `Ctrl/Cmd+C` / `Ctrl/Cmd+V` | 终端里：有选中则复制（无选中时 `^C` 仍发给 shell）/ 原生粘贴。 |
-| `Esc` | 关闭预览、对话框、命令选择器、问卷或扩展请求面板（预览有未保存改动时会先问）。 |
-| 拖放 | 窗口任意位置拖入文件 = 附件到对话；拖到文件树 = 上传到那一个目录；不支持拖文件夹（展开后选文件）。 |
+| 按键                        | 作用                                                                                               |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `Enter`                     | 发送。触屏设备上 `Enter` 改为换行，`Ctrl/Cmd+Enter` 才发送（Windows 触屏笔记本当作桌面）。         |
+| `Shift+Enter`               | 输入框内换行。                                                                                     |
+| `↑` / `↓`                   | 光标在首/末行时翻全局输入历史（跨对话持久化）；`Esc` 回到草稿。                                    |
+| `Ctrl/Cmd+K`                | 全局搜索（对话 / 项目 / 工作区文件名）。                                                           |
+| `Ctrl/Cmd+F`                | 搜当前对话 —— `Enter` 下一个命中，`Shift+Enter` 上一个，`Esc` 关闭。                               |
+| `/`                         | 打开斜杠命令选择器（`↑`/`↓` 选择、`Tab` 或 `Enter` 补全、`Esc` 关闭；输入空格则自动关闭）。        |
+| `Ctrl/Cmd+S`                | 预览里编辑文件时保存。                                                                             |
+| `Ctrl/Cmd+A`                | 预览里全选行（光标不在文本框时）。                                                                 |
+| `Ctrl/Cmd+Enter`            | 提交「编辑重问」编辑器。                                                                           |
+| `Ctrl/Cmd+C` / `Ctrl/Cmd+V` | 终端里：有选中则复制（无选中时 `^C` 仍发给 shell）/ 原生粘贴。                                     |
+| `Esc`                       | 关闭预览、对话框、命令选择器、问卷或扩展请求面板（预览有未保存改动时会先问）。                     |
+| 拖放                        | 窗口任意位置拖入文件 = 附件到对话；拖到文件树 = 上传到那一个目录；不支持拖文件夹（展开后选文件）。 |
 
 ## 界面截图
 
 ![对话 + 提示词模板](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/chat-prompts.jpeg)
 
-*对话 + 提示词模板*
+_对话 + 提示词模板_
 
 ![运行轨迹时间线](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/trajectory.jpeg)
 
-*运行轨迹时间线（run-trace 插件）*
+_运行轨迹时间线（run-trace 插件）_
 
 ![设置面板](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/settings.jpeg)
 
-*设置面板*
+_设置面板_
 
 ![内置终端](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/terminal.jpeg)
 
-*内置终端*
+_内置终端_
 
 ![Git 源代码管理面板](https://raw.githubusercontent.com/xing-shuyin/pi-web-ui/main/assets/git.jpeg)
 
-*Git 源代码管理面板*
+_Git 源代码管理面板_
 
 ## 安装
 
@@ -297,17 +297,17 @@ pi-web-ui                                           # 前台，http://localhost:
 **启动参数 & 环境变量** —— 每个设置既能用命令行的 `--flag` 传，也能用环境变量设（flag 优先）。
 二者任选一种即可：
 
-| 参数 | 环境变量 | 默认 | 作用 |
-| --- | --- | --- | --- |
-| `--port <n>` | `PI_WEB_PORT` | `8787` | HTTP 端口 |
-| `--cwd <dir>` | `PI_WEB_CWD` | 当前目录 | 工作区根（读/写/终端） |
-| `--data-dir <dir>` | `PI_WEB_DATA_DIR` | `~/.pi-web` | 数据目录（界面状态/插件/上传/主题/语言包） |
-| `--engine <pi\|dsh>` | `PI_WEB_ENGINE` | `pi` | 智能体引擎；`--engine dsh` = DeepSeek Harness |
-| `--host <addr>` | `PI_WEB_HOST` | `127.0.0.1` | 监听地址（`0.0.0.0` 供局域网/Docker） |
-| `--agent-dir <dir>` | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi 配置目录（auth.json、models.json、会话、技能） |
-| `--no-browser` | — | 关 | 启动但不自动打开浏览器 |
-| _仅环境变量_ | `PI_WEB_TOKEN` | 空 | 可选共享鉴权口令 |
-| _仅环境变量_ | `PI_WEB_DSH_*` | — | dsh 运行时、补丁与调试设置 |
+| 参数                 | 环境变量              | 默认          | 作用                                              |
+| -------------------- | --------------------- | ------------- | ------------------------------------------------- |
+| `--port <n>`         | `PI_WEB_PORT`         | `8787`        | HTTP 端口                                         |
+| `--cwd <dir>`        | `PI_WEB_CWD`          | 当前目录      | 工作区根（读/写/终端）                            |
+| `--data-dir <dir>`   | `PI_WEB_DATA_DIR`     | `~/.pi-web`   | 数据目录（界面状态/插件/上传/主题/语言包）        |
+| `--engine <pi\|dsh>` | `PI_WEB_ENGINE`       | `pi`          | 智能体引擎；`--engine dsh` = DeepSeek Harness     |
+| `--host <addr>`      | `PI_WEB_HOST`         | `127.0.0.1`   | 监听地址（`0.0.0.0` 供局域网/Docker）             |
+| `--agent-dir <dir>`  | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | pi 配置目录（auth.json、models.json、会话、技能） |
+| `--no-browser`       | —                     | 关            | 启动但不自动打开浏览器                            |
+| _仅环境变量_         | `PI_WEB_TOKEN`        | 空            | 可选共享鉴权口令                                  |
+| _仅环境变量_         | `PI_WEB_DSH_*`        | —             | dsh 运行时、补丁与调试设置                        |
 
 两者等价 —— 任选其一：
 
@@ -408,14 +408,14 @@ volumes:
 
 以下插件随本仓库发布（`plugins/<id>/`），可直接从 GitHub 安装：
 
-| 插件 | 功能 |
-| --- | --- |
-| 📬 [网页邮箱 webmail](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail) | IMAP 收件箱浏览/搜索/阅读/标记/删除 + SMTP 发信、新邮件通知，可选「允许 AI 管理邮箱」（六个 `mail_*` AI 工具）。首次激活自动补装 npm 依赖。 |
-| 🗄️ [数据库 db-client](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client) | 数据库工作台：MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis 连接管理 + 库表树 —— 表结构、分页排序、SQL 编辑器、行编辑。驱动首次使用自动安装。 |
-| 📝 [编辑器 + SSH vscode-editor](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor) | 类 VSCode 工作台：多根文件树（本地 + SSH 主机）、CodeMirror 多标签编辑器、Remote-SSH 远程文件浏览/编辑、可拖拽多终端面板（xterm.js）、SFTP 同步与下载到电脑。自动安装 `ssh2`。 |
-| 📊 [图表 mermaid](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid) | 把对话里的 ` ```mermaid ` 围栏渲染成 SVG 图表（fenced-code 渲染插件，本地引擎离线优先）。 |
-| 🧭 [运行轨迹 run-trace](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace) | 运行轨迹：任务 → 思考 → 工具 → 文件改动 → 结果的时间线聚合视图，支持回放与节点详情。 |
-| 📖 [阅读 legado-web](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web) | Legado 阅读（文本源）：基于兼容安卓书源的搜书 / 发现 / 详情 / 目录 / 正文阅读，支持书源导入、检测与删废源，并提供四个修源 AI 工具（`legado_rules`、`legado_book_sources`、`legado_source_probe`、`legado_run_rule`）与「🤖 AI 修复源」按钮（带失败现场直接开新对话）。书源/书架/进度存在 `<dataDir>/legado-web/`。 |
+| 插件                                                                                                      | 功能                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 📬 [网页邮箱 webmail](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail)                 | IMAP 收件箱浏览/搜索/阅读/标记/删除 + SMTP 发信、新邮件通知，可选「允许 AI 管理邮箱」（六个 `mail_*` AI 工具）。首次激活自动补装 npm 依赖。                                                                                                                                                                        |
+| 🗄️ [数据库 db-client](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/db-client)               | 数据库工作台：MySQL / PostgreSQL / SQLite / SQL Server / MongoDB / Redis 连接管理 + 库表树 —— 表结构、分页排序、SQL 编辑器、行编辑。驱动首次使用自动安装。                                                                                                                                                         |
+| 📝 [编辑器 + SSH vscode-editor](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/vscode-editor) | 类 VSCode 工作台：多根文件树（本地 + SSH 主机）、CodeMirror 多标签编辑器、Remote-SSH 远程文件浏览/编辑、可拖拽多终端面板（xterm.js）、SFTP 同步与下载到电脑。自动安装 `ssh2`。                                                                                                                                     |
+| 📊 [图表 mermaid](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/mermaid)                     | 把对话里的 ` ```mermaid ` 围栏渲染成 SVG 图表（fenced-code 渲染插件，本地引擎离线优先）。                                                                                                                                                                                                                          |
+| 🧭 [运行轨迹 run-trace](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/run-trace)             | 运行轨迹：任务 → 思考 → 工具 → 文件改动 → 结果的时间线聚合视图，支持回放与节点详情。                                                                                                                                                                                                                               |
+| 📖 [阅读 legado-web](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web)               | Legado 阅读（文本源）：基于兼容安卓书源的搜书 / 发现 / 详情 / 目录 / 正文阅读，支持书源导入、检测与删废源，并提供四个修源 AI 工具（`legado_rules`、`legado_book_sources`、`legado_source_probe`、`legado_run_rule`）与「🤖 AI 修复源」按钮（带失败现场直接开新对话）。书源/书架/进度存在 `<dataDir>/legado-web/`。 |
 
 `plugins/demo-mailbox` 作为最小插件模板保留在仓库里（服务端入口 + 客户端视图 + 双向消息协议），兼作测试夹具——想自己写插件从这里入手。
 
@@ -484,6 +484,27 @@ pi-web-ui uninstall <id>      # 卸载插件
 - `uninstall` 会删除插件目录；刷新浏览器后 tab 即消失。写在插件目录内的配置文件也会一并删除——
   如需保留请先备份 `<dataDir>/plugins/<id>/config.json`。
 
+## 浏览器扩展
+
+### 🎯 网页元素拾取（page-picker）
+
+在**开发中的网页**上点选元素，把它整理成 AI 能直接动手的上下文，一键注入 pi-web-ui 的对话输入框
+（`Alt+Shift+P` 或点扩展图标 → hover 高亮 → 点击拾取 → `Shift`+点击多选 → 写备注 → 「添加到对话」）。
+
+它不是 pi-web-ui 的服务端插件，而是一个**浏览器扩展**（所以不走 `pi-web-ui install`）：
+
+**下载装**（不需要 Node）：[`page-picker-extension.zip`](https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip) →
+解压 → `chrome://extensions` 打开「开发者模式」→「加载已解压的扩展程序」→ 选解压出的目录 →
+点扩展的「扩展程序选项」填 pi-web-ui 地址（远程地址先点「授权该地址」）。
+
+详细说明（交互、采集了什么、远程部署、已知限制）见
+[`plugins/page-picker/README.md`](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/page-picker)。
+
+采集的不是截图，而是**能让 AI 一次改对**的东西：React fiber 里的组件源码位置（`Card.tsx:18:5` +
+调用链）、Vue SFC 文件、命中的 CSS 规则**源文件与行号**（Vite dev 下精确反推）、
+只保留「与默认值不同」的计算样式子集、短且唯一的定位串、HTML 骨架与折叠文本；
+可选元素截图会走对话附件。
+
 ## 主题
 
 每个主题是**一份纯 `:root` 调色板覆盖** —— 只写 CSS 变量的声明文件（变量全集见 `web/src/styles.css` 的 `:root`：`--bg/--accent/--term-*` 基础色，加 `--tooltip-bg/--code-bg/--notice-*` 等派生色）。布局只存在于打包的 `web/src/styles.css` 里，选主题只是覆盖变量，因此任何主题都能在所有版本上工作，改布局也不需要碰主题文件。内置主题由 `node make-light-theme.mjs` 生成。
@@ -526,29 +547,28 @@ pi-web-ui uninstall <id>      # 卸载插件
 
 合并主题的规则：必须是单一 CSS 文件、设置 `--term-*` 变量保证终端可读、浅色主题覆盖 `.hljs` 语法高亮色以保证代码可读。
 
-
 ## 环境变量调优
 
 以下全部可选——默认值就是开发时一直在用的配置。完整参考：[`docs/env-vars.md`](docs/env-vars.md)。
 
-| 变量 | 默认 | 作用 |
-| --- | --- | --- |
-| `PI_WEB_TOOL_TIMEOUT_MS` | `1200000`（20 分） | 单工具调用看门狗；超时自动中止（`ask_user_question` 豁免）。 |
-| `PI_WEB_STALL_NOTIFY_MS` | `180000`（3 分） | 流式运行完全没事件时给警告（不中止）；`0` = 关。 |
-| `PI_WEB_TERMINAL_IDLE_MS` | `15000` | AI 开过的终端静默这么久就催它去看一眼；`0` = 关。 |
-| `PI_WEB_TERMINAL_IDLE_LINES` | `10` | 该催命消息回送的终端尾部行数（1–500）。 |
-| `PI_WEB_INLINE_FILE_MAX` | `12288`（12KB） | 小于它且无工作区归属的上传文件被内联而不是只给路径。 |
-| `PI_WEB_VISION_TIMEOUT_MS` | `90000` | 视觉桥整批转写的超时。 |
-| `PI_WEB_UPLOAD_RETENTION_DAYS` | `14` | `<dataDir>/uploads/` 保留天数；`0` = 不清理。 |
-| `PI_WEB_SHELL` | 自动 | 仅 Windows：node-pty 用哪个 shell（自动顺序：`PI_WEB_SHELL` → `$SHELL` → Git Bash → 随包 busybox → `%COMSPEC%` → PowerShell）。 |
-| `PI_WEB_TABS` | 全部标签页 | 逗号分隔的标签页白名单（`chat,terminal,git,search,tasks,settings,plugins`）；未列入的在服务端也被拒绝，`chat` 不可关。 |
-| `PI_WEB_MANAGED` | 关 | `1`/`true` 声明实例由外部部署管理：自更新、装 pi CLI、装插件都被拒绝并说明原因，前端也隐藏入口。 |
-| `PI_WEB_ALLOW_HOSTS` | 空 | 严格的主机名白名单（叠加在始终生效的同权威校验之上）。 |
-| `PI_WEB_LOCALE` | 空 | 首访回退语言（显式选择与浏览器语言优先级更高）。 |
-| `PI_WEB_LOCALE_BASE_URL` | GitHub raw | 语言包下载根 —— 指向镜像即可做离线/内网安装。 |
-| `PI_WEB_PKG_ROOT` | 自动 | 显式指定包根目录（非标准安装位置时用）。 |
-| `PI_CODING_AGENT_SESSION_DIR` | 空 | 让 pi 把转录扁平写入该目录（而非 `<agentDir>/sessions/--<cwd>--/`，会改变历史列表读到的内容）。 |
-| `DSH_*` | — | DSH 运行时旋钮：`PI_WEB_DSH_RUNTIME`、`PI_WEB_DSH_DATA_DIR`、`PI_WEB_DSH_PATCH_DIR`、`PI_WEB_DSH_QUESTION_TIMEOUT_MS`、`PI_WEB_DSH_TOOL_TIMEOUT_MS`、`PI_WEB_DSH_SESSION_RETENTION_DAYS`、`PI_WEB_DSH_DEBUG`。 |
+| 变量                           | 默认               | 作用                                                                                                                                                                                                           |
+| ------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PI_WEB_TOOL_TIMEOUT_MS`       | `1200000`（20 分） | 单工具调用看门狗；超时自动中止（`ask_user_question` 豁免）。                                                                                                                                                   |
+| `PI_WEB_STALL_NOTIFY_MS`       | `180000`（3 分）   | 流式运行完全没事件时给警告（不中止）；`0` = 关。                                                                                                                                                               |
+| `PI_WEB_TERMINAL_IDLE_MS`      | `15000`            | AI 开过的终端静默这么久就催它去看一眼；`0` = 关。                                                                                                                                                              |
+| `PI_WEB_TERMINAL_IDLE_LINES`   | `10`               | 该催命消息回送的终端尾部行数（1–500）。                                                                                                                                                                        |
+| `PI_WEB_INLINE_FILE_MAX`       | `12288`（12KB）    | 小于它且无工作区归属的上传文件被内联而不是只给路径。                                                                                                                                                           |
+| `PI_WEB_VISION_TIMEOUT_MS`     | `90000`            | 视觉桥整批转写的超时。                                                                                                                                                                                         |
+| `PI_WEB_UPLOAD_RETENTION_DAYS` | `14`               | `<dataDir>/uploads/` 保留天数；`0` = 不清理。                                                                                                                                                                  |
+| `PI_WEB_SHELL`                 | 自动               | 仅 Windows：node-pty 用哪个 shell（自动顺序：`PI_WEB_SHELL` → `$SHELL` → Git Bash → 随包 busybox → `%COMSPEC%` → PowerShell）。                                                                                |
+| `PI_WEB_TABS`                  | 全部标签页         | 逗号分隔的标签页白名单（`chat,terminal,git,search,tasks,settings,plugins`）；未列入的在服务端也被拒绝，`chat` 不可关。                                                                                         |
+| `PI_WEB_MANAGED`               | 关                 | `1`/`true` 声明实例由外部部署管理：自更新、装 pi CLI、装插件都被拒绝并说明原因，前端也隐藏入口。                                                                                                               |
+| `PI_WEB_ALLOW_HOSTS`           | 空                 | 严格的主机名白名单（叠加在始终生效的同权威校验之上）。                                                                                                                                                         |
+| `PI_WEB_LOCALE`                | 空                 | 首访回退语言（显式选择与浏览器语言优先级更高）。                                                                                                                                                               |
+| `PI_WEB_LOCALE_BASE_URL`       | GitHub raw         | 语言包下载根 —— 指向镜像即可做离线/内网安装。                                                                                                                                                                  |
+| `PI_WEB_PKG_ROOT`              | 自动               | 显式指定包根目录（非标准安装位置时用）。                                                                                                                                                                       |
+| `PI_CODING_AGENT_SESSION_DIR`  | 空                 | 让 pi 把转录扁平写入该目录（而非 `<agentDir>/sessions/--<cwd>--/`，会改变历史列表读到的内容）。                                                                                                                |
+| `DSH_*`                        | —                  | DSH 运行时旋钮：`PI_WEB_DSH_RUNTIME`、`PI_WEB_DSH_DATA_DIR`、`PI_WEB_DSH_PATCH_DIR`、`PI_WEB_DSH_QUESTION_TIMEOUT_MS`、`PI_WEB_DSH_TOOL_TIMEOUT_MS`、`PI_WEB_DSH_SESSION_RETENTION_DAYS`、`PI_WEB_DSH_DEBUG`。 |
 
 ## 安全
 
@@ -626,13 +646,13 @@ server {
 
 pi-web-ui 是一个小型开源项目 —— **你的贡献就是它成长的力量**。代码、插件、主题、文档、翻译、想法，统统欢迎；每一个合并的 PR 都会随下一次 `npm publish` 送达所有用户。❤️
 
-| 贡献方式 | 如何开始 |
-| --- | --- |
-| 🧩 **写插件** | 打造你自己的界面 tab + AI 工具。以 `plugins/demo-mailbox` 为最小模板（它兼作测试夹具），本地开发后既可开 PR 收录进[插件目录](#插件目录)，也可独立发布。 |
-| 🎨 **贡献主题** | 以 `themes/white.css`（浅色）或 `themes/cyberpunk.css`（深色）为纯调色板模板，调整 `:root` 配色 + `--term-*` + `.hljs`，用 `npm run dev` 验证后开 PR —— 完整步骤见[向仓库贡献主题](#向仓库贡献主题github)。 |
-| 💻 **修 bug / 加功能** | 在 [Issues](https://github.com/xing-shuyin/pi-web-ui/issues) 里挑一个，或提出新想法。Fork → 分支 → PR。代码约定见 `AGENTS.md`（Tab 缩进、i18n 双语 key、协议改动只动 `server/protocol.ts`）。 |
-| 📖 **文档与翻译** | 完善 README、补插件文档、改错别字，或帮忙把界面/文档翻译成更多语言。 |
-| 💡 **想法与反馈** | 在 [Issues](https://github.com/xing-shuyin/pi-web-ui/issues) 或 [Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions) 里开帖 —— 功能建议、bug 报告、界面优化点子、部署经验分享都欢迎。 |
+| 贡献方式               | 如何开始                                                                                                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧩 **写插件**          | 打造你自己的界面 tab + AI 工具。以 `plugins/demo-mailbox` 为最小模板（它兼作测试夹具），本地开发后既可开 PR 收录进[插件目录](#插件目录)，也可独立发布。                                                     |
+| 🎨 **贡献主题**        | 以 `themes/white.css`（浅色）或 `themes/cyberpunk.css`（深色）为纯调色板模板，调整 `:root` 配色 + `--term-*` + `.hljs`，用 `npm run dev` 验证后开 PR —— 完整步骤见[向仓库贡献主题](#向仓库贡献主题github)。 |
+| 💻 **修 bug / 加功能** | 在 [Issues](https://github.com/xing-shuyin/pi-web-ui/issues) 里挑一个，或提出新想法。Fork → 分支 → PR。代码约定见 `AGENTS.md`（Tab 缩进、i18n 双语 key、协议改动只动 `server/protocol.ts`）。               |
+| 📖 **文档与翻译**      | 完善 README、补插件文档、改错别字，或帮忙把界面/文档翻译成更多语言。                                                                                                                                        |
+| 💡 **想法与反馈**      | 在 [Issues](https://github.com/xing-shuyin/pi-web-ui/issues) 或 [Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions) 里开帖 —— 功能建议、bug 报告、界面优化点子、部署经验分享都欢迎。        |
 
 **开 PR 前**，快速自检能让维护者更省心：
 

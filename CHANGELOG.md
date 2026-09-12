@@ -10,7 +10,18 @@
 
 ## [Unreleased]
 
-暂无未发布内容。
+### Added
+
+- **宿主动作桥新增 `compose()`：把内容放进输入框草稿（宿主 API v1 → v2）**——`startChat()` 是「新建对话并把一段话直接发出去」（脚本化，`prompt` 立刻发），但「元素拾取」这类场景需要的是**人在环中**：内容先落进输入框，用户补一句「这三处间距不一致」再自己发。现在 `window.__piWebUiHost.compose({ text?, attachments? })` 干这件事，与 `startChat` 的差别是**不要求连接就绪**（草稿是本地状态，断线也能先攒着）且输入框没挂载时明确拒收（返回 false，不静默丢）。合并语义复用「撤回消息放回输入框」的同一个纯函数（空则填入、非空追加、**绝不覆盖用户正在打的内容**）；附件按 path+mode+行区间去重，与手动 attach 的口径一致。定义见 `web/src/plugin-host.ts` + `web/src/composer-bridge.ts`（草稿在 ChatInput、附件在 App，两处各自注册自己那一半）。
+- **浏览器扩展「网页元素拾取」（`plugins/page-picker`）**：在开发中的网页上点选元素，整理成 AI 能直接动手的上下文，一键注入 pi-web-ui 输入框（`Alt+Shift+P` / 扩展图标 → hover 高亮 → 点击拾取，`Shift`+点击多选，`Esc` 退出，`Ctrl+Enter` 直接发送）。采集的不是截图而是**能让 AI 一次改对**的东西：React fiber 里的组件源码位置（`Card.tsx:18:5` + 调用链）、Vue SFC 文件、命中的 CSS 规则**源文件与行号**（Vite dev 的 `<style data-vite-dev-id>` 的 textContent 与源文件逐字对应，行号可精确反推）、计算样式里**只保留与默认值/继承值不同的项**（现场造同 tag 空元素当探针比对，一个真实卡片通常只剩 3~5 行而不是 300 个属性）、短且唯一的定位串（`#card` > `section.card` > 兜底全 `:nth-of-type`，兄弟冲突会在父级内补 `:nth-of-type` 收窄）、HTML 骨架、可选元素截图（走对话附件，不是把 base64 塞进正文）。详细度三档（精简/标准/完整）在**采集层**就生效。失败一律有兜底：没开 pi-web-ui 页面 / 版本过旧 / 输入框未就绪 / 截屏失败，都会把 Markdown 复制到剪贴板并说明原因，**绝不出现「点了添加什么都没发生」**。
+  - 装法：下载 [`page-picker-extension.zip`](https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip)（打 tag 由 `.github/workflows/extension-release.yml` 自动出包，含 CRC 自校验；zip 打包器是自写的零依赖实现，Windows 上也能出同样的包）→ 解压 → `chrome://extensions` 开发者模式「加载已解压的扩展程序」。也可以从源码 `npm run build:extension` 后加载 `plugins/page-picker/extension/`。远程/局域网部署只需在选项页多点一下「授权该地址」。
+- **`pi-web-ui` 命令行/插件市场不适用于浏览器扩展**：那条通道装的是**服务端插件**（`<dataDir>/plugins/<id>/`），装不了浏览器扩展 —— 这一点在根 README 与插件 README 里都写明了，免得有人对着 `pi-web-ui install` 找半天。
+
+- **legado-web 插件：阅读页章末导航（读到底就能翻章）**——阅读页原来只有顶部工具栏有「上一章 / 下一章」，正文读到页面底部什么也没有，这一章看完想接着读必须滚回顶部。现在正文末尾多一条「← 上一章 / 目录 / 下一章 →」（跟在正文下面，带《书名》· 第 n/总 章），换章后自动回到页面顶部；第一章「上一章」、最后一章「下一章」置灰并写明「已是最后一章」（顶栏同名按钮同规则，不再点了没反应），章末「目录」展开目录并回到顶部。回归：`tests/unit/legado-chapnav.test.ts`（禁用态与文案边界：首章/中间章/末章/单章/空目录）+ `tests/legado-web-reader-test.mjs`（真浏览器 + 3 章假书源，钉住导航条长在正文末尾、换章回顶、末章置灰、目录展开）。
+
+### Fixed
+
+- **命令行 `pi-web-ui install <插件> --force` 之后插件一直「不存在」**：CLI 装插件是先整目录删掉再拷新的（`install --force` 的 rm→cp 窗口），撞上这个窗口期的一次插件扫描会把插件当成「已卸载」反激活；而反激活时没把插件从 `attempted` 集合里摘掉，目录回来后永远不会再激活——插件的 HTTP 路由（如 legado-web 的 `/plugins-api/legado-web/proxy`）与 AI 工具在本进程内彻底消失，前端只报「代理请求失败 404 <url>」，CLI 承诺的「服务运行中刷新浏览器即可加载」失效，必须重启服务才恢复。现在反激活会摘掉 `attempted` 并推进 epoch（重新 `import` 拿到磁盘上的新代码、浏览器也重拉插件 client bundle），刷新浏览器即自愈。回归：`tests/unit/plugin-manager.test.ts`（目录消失→回来必须重新激活且用新代码）+ `tests/plugin-test.mjs`（真实 HTTP 路由的 rm→cp 窗口自愈）。
 
 ## [0.80.2] — 2026-09-12
 
@@ -31,9 +42,11 @@
 - nginx 子路径示例配置删掉 `favicon-streaming.svg` 的那条 `location`：该图标早已不存在，留着只会让人以为得额外补一个文件。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 本版无文案增量（相对 v0.80.1，已核查）。
+
 <!-- auto-i18n:end -->
 
 ## [0.80.1] — 2026-09-12
@@ -47,10 +60,12 @@
 - **终端接管 bash 修复：没有尾部管道的命令不再报 `Cannot read properties of null (reading 'segment')`（issue #121）**：`date`、`ls | head -5` 这类命令没有「尾部限输出管道」，`detectTrailingLimiter()` 返回 `null`，而 #91 v2 的取值重构把原本的可选链写成了非空断言 `limiter!.segment` —— 结果几乎每条一次性 bash 命令都在取值处直接 TypeError（只有以 `| tail` / `| less` / `| more` / `| cat` 结尾的命令能跑）。现已改回可选链（这几个值只在真的拆掉管道时才被取用）。回归：`tests/unit/terminal-bash-limiter.test.ts`（桩终端钉住取值路径，CI 必跑）；`tests/terminal-bash-test.mjs` 同步恢复可跑（动态导入走 `pathToFileURL`，Windows 上也跑得起来；提示文案断言钉死中文；一次性终端退出改为轮询而非固定等待）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（3）：`restartService`、`restartingService`、`restartServiceTip`
 - 服务端新增 key（2）：`terminals.headtail.omitted.below`、`terminals.headtail.omitted.above`
+
 <!-- auto-i18n:end -->
 
 ## [0.80.0] — 2026-09-12
@@ -79,9 +94,11 @@
 - `db-client` 插件跟随亮色主题：同上，文件树/主区/表头/弹窗输入框底色引用的 `--bg-elev0/1` 改走 `--bg/--bg-elev`（该插件无自绘深色组件，一次变量映射即完整跟随）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（1）：`queueRecallTip`
+
 <!-- auto-i18n:end -->
 
 ## [0.78.0] — 2026-09-11
@@ -104,9 +121,11 @@
 - `docs/architecture-attachments.md` 的文件预览协议补一节「HTML 渲染走目录映射的 HTTP」（沙箱策略与相对引用语义）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（8）：`showHtmlSource`、`showHtmlPreview`、`htmlJsOff`、`htmlJsOffTip`、`htmlJsOn`、`htmlJsOnTip`、`htmlEnableJs`、`htmlDisableJs`
+
 <!-- auto-i18n:end -->
 
 ## [0.77.0] — 2026-09-11
@@ -134,10 +153,12 @@
 - 问卷（`ask_user_question`）不再被工具挂死看门狗剁掉：以前它跟普通工具一样被算作「一个工具跑了 20 分钟」（`PI_WEB_TOOL_TIMEOUT_MS`），到点就 abort 整轮对话并弹「工具执行超过…已自动终止」——把还在思考的用户连对话一起终止。现在按工具名豁免：问卷等的是人类回答，不是挂死的工具，收场只走用户回答/取消与会话 dispose，**不限时**。同理，问卷挂着也不再算「失联」（stall 告警默认 180s 无 SDK 事件，对该对话跳过）。同时补上「刷新/重连后问卷对话框不再消失」：`question_pending` 是即时通道，只推给提问那一刻在线的连接，刷新页面/新标签页都拿不到那条历史消息，而服务端还在阻塞等人回答；现在待答问卷同时挂在快照（`UiState.pendingQuestion`，标准引擎只带当前对话的那张，切回原对话会重推快照）上，两个引擎（标准 pi / DSH）重连后都会把面板恢复出来，由快照恢复的面板也能被快照收起（另一标签页答完/服务端取消），但即时通道弹出的面板不会被在途旧快照闪掉，已答过的问卷也不会被在途旧快照重新弹出。回归 `tests/question-bridge-test.mjs`（零 token，本地假模型驱动整条链路）+ `tests/unit/pending-question.test.ts`。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（28）：`placeholderStreamingQueued`、`steerTip`、`settingsTools`、`toolsSectionTerminal`、`toolsSectionSubagent`、`toolsSectionOther`、`toolsSubagentDepHint`、`delegateTaskEnabledDesc`、`delegateTaskOffHint`、`todoListEnabledDesc`、`todoListOffHint`、`toolDescSubagentSpawn`、`toolDescSubagentGetResult`、`toolDescSubagentSteer`、`toolDescSubagentList`、`toolDescSubagentStop`、`toolDescSubagentWaitAll`、`toolDescSubagentTemplates`、`skillFullTextLabel`、`skillFullTextDesc`、`skillFullTextShort`、`delegateOpenSubagent`、`delegateSecTask`、`delegateSecExpected`、`delegateSecTools`、`delegateSecMustDo`、`delegateSecMustNotDo`、`delegateSecContext`
 - 服务端新增 key（3）：`delegate.validate.agent`、`delegate.validate.short`、`delegate.started`
+
 <!-- auto-i18n:end -->
 
 ## [0.76.0] — 2026-09-11
@@ -153,11 +174,13 @@
 - 修掉「只有第一次弹、之后怎么都不弹」：通知带固定 `tag` 时，Windows 把同 tag 的新通知当成**替掉旧条目**，而且是静默的 —— 没有横幅、没有提示音，只要系统通知中心里还躺着一条 pi-web-ui 通知，后续每一条都会被无声替换（页面上看 `showNotification` 明明成功了）。现在干脆不用 tag（也不依赖 `renotify` —— 实测它在 Windows toast 这层不起作用），每条都是全新 toast；代价是通知中心里会累积几条。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（9）：`notifyTest`、`notifyTestBody`、`notifyTestSent`、`notifyTestFailed`、`notifyTestState`、`notifyTestHeld`、`notifyTestDropped`、`notifyTestGateSuppressed`、`notifyTestGateOpen`
 - 前端中文变更（1）：`notifyEnableDesc`
 - 前端英文变更（1）：`notifyEnableDesc`
+
 <!-- auto-i18n:end -->
 
 ## [0.75.0] — 2026-09-11
@@ -186,11 +209,13 @@
   - 提示词模板选择器与编辑弹窗改为「头尾固定、中段滚动」：模板多、字段区高时标题与操作按钮不再被滚走。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（2）：`notifyInsecure`、`notifyWindowsHint`
 - 前端中文变更（2）：`notifyEnableDesc`、`notifyDenied`
 - 前端英文变更（2）：`notifyEnableDesc`、`notifyDenied`
+
 <!-- auto-i18n:end -->
 
 ## [0.74.0] — 2026-09-10
@@ -233,6 +258,7 @@
 - 对话框内边距与粘性头（sticky）偏移微调。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（13）：`dismissFinishedSubagents`、`dismissFinishedSubagentsScoped`、`dismissConversationWithSubagents`、`dismissConversationWithSubagentsMixed`、`dismissStreamingConfirm`、`dismissFinishedOnly`、`dismissForceAll`、`forceDismissTitle`、`forceDismissConversation`、`forceDismissConfirm`、`noFinishedSubagents`、`reloadModelsConfig`、`reloadModelsHint`
@@ -254,11 +280,13 @@
 - 设置「消息显示」改名「对话」（中英 + 8 语言包同步）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（4）：`modelRetryAttempts`、`modelRetryHint`、`retryNow`、`retryLastTip`
 - 前端中文变更（1）：`settingsMessageDisplay`
 - 前端英文变更（1）：`settingsMessageDisplay`
+
 <!-- auto-i18n:end -->
 
 ## [0.71.0] — 2026-09-09

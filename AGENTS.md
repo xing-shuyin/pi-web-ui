@@ -20,13 +20,13 @@ Windows 安装包随 GitHub Release 发布（CI 出包，当前未签名，见 `
 
 ## 2. 技术栈
 
-| 层 | 技术 |
-| --- | --- |
-| 后端 | Node + Express（静态 + `/api/health`）+ `ws`（`/ws` WebSocket 协议） |
-| 前端 | React 18 + Vite 6 + react-markdown + highlight.js + xterm.js |
-| 智能体 | `@earendil-works/pi-coding-agent` SDK（进程内，读 `~/.pi/agent` 配置） |
-| 终端 | node-pty（服务端 PTY）+ `@xterm/xterm`（浏览器渲染，经 terminal bridge 转发） |
-| 样式 | 单文件 `web/src/styles.css`（CSS 变量主题，深色） |
+| 层     | 技术                                                                          |
+| ------ | ----------------------------------------------------------------------------- |
+| 后端   | Node + Express（静态 + `/api/health`）+ `ws`（`/ws` WebSocket 协议）          |
+| 前端   | React 18 + Vite 6 + react-markdown + highlight.js + xterm.js                  |
+| 智能体 | `@earendil-works/pi-coding-agent` SDK（进程内，读 `~/.pi/agent` 配置）        |
+| 终端   | node-pty（服务端 PTY）+ `@xterm/xterm`（浏览器渲染，经 terminal bridge 转发） |
+| 样式   | 单文件 `web/src/styles.css`（CSS 变量主题，深色）                             |
 
 ## 3. 目录结构
 
@@ -79,6 +79,7 @@ pi-web-ui/
 │   │   ├── sounds.ts           # WebAudio 提示音
 │   │   ├── notify.ts           # 桌面/OS 通知（PWA）：是否吞掉通知的判定（Windows 最小化检测）+ 诊断",
 │   │   ├── download.ts         # 下载（fetch→blob，绕开 Chrome Safe Browsing）
+│   │   ├── composer-bridge.ts  # ★ 输入框注入桥：宿主（扩展/插件）把内容塞进输入框草稿的模块级 sink 注册点，有单测（配 composer-draft.ts 的合并/去重纯函数）
 │   │   ├── message-delta.ts    # message_delta 增量 patch 纯函数，有单测
 │   │   ├── lazy-window.ts      # 消息列表惰性窗口化纯函数，有单测
 │   │   ├── search-text.ts      # 会话内搜索索引纯函数，有单测
@@ -109,7 +110,7 @@ pi-web-ui/
 ├── .github/workflows/release-notes.yml   # tag 推送 → 按 CHANGELOG 建/更新 GitHub Release
 ├── .github/workflows/desktop-release.yml  # tag 推送 → windows-latest 出 NSIS 安装包并附到 Release（签名以后加这里）
 ├── extensions/                 # pi 扩展：webui.ts（/webui 命令启动本机服务并打开浏览器）
-├── plugins/                    # 官方插件（webmail / db-client / vscode-editor / demo-mailbox / mermaid / run-trace / legado-web，各自的 README.md 见其目录）
+├── plugins/                    # 官方插件（webmail / db-client / vscode-editor / demo-mailbox / mermaid / run-trace / legado-web / image-toolkit，各自的 README.md 见其目录；page-picker/extension 是**浏览器扩展**，不是 pi-web-ui 插件）
 │   └── catalog.json            # ★ 插件市场内置列表（随包发布；社区加插件 = 在此加一条 + PR）
 ├── dev/                        # 本地开发辅助（notice/search 预览等，不入 npm 包）
 ├── Dockerfile / docker-compose.yml
@@ -128,54 +129,54 @@ pi-web-ui/
 
 `web/src/components/` 速览：
 
-| 组件 | 职责 |
-| --- | --- |
-| `FilePreview.tsx` | 文件预览弹窗：行号、点选/拖拽/Shift 选区、添加到对话；Markdown 预览可切换原文；可编辑保存 |
-| `LeftPanel.tsx` | 左栏：最近项目、运行的对话、历史对话（含删除） |
-| `RightPanel.tsx` | 文件树浏览（list_files），文件名点击→预览，📎/🔗/👁 附件按钮；服务端原生递归 watcher |
-| `ChatInput.tsx` | 输入框 + 附件 chips（inline/reference/lines 三色）；全窗口拖放目标；followUp 排队/steer 插队；斜杠命令选择器 |
-| `Message.tsx` / `MessageList.tsx` | 消息渲染（附件卡片、流式光标、tool 结果关联）；编辑重问保留原附件；技能卡片折叠；惰性窗口化；问题导航双通道；流式 StreamMarkdown |
-| `ToolCallBlock.tsx` / `ThinkingBlock.tsx` / `BashBlock` | 工具调用卡片（卡头状态图标右侧显示关键参数提示：文件路径 `.toolcall-path` / 超时 `.toolcall-timeout`，任何工具都试取，脏参数静默不显示）、思考块、bash 输出 |
-| `TerminalPanel.tsx` / `TermXterm.tsx` | 终端视图 + xterm 实例桥接 |
-| `SCMPanel.tsx` | 源代码管理（Git）视图：status/branch/diff；提交/推送/拉取/切换分支 |
-| `TopBar.tsx` / `FooterBar.tsx` | 顶栏（模型/思考强度/后台任务/声音/新对话/视图切换）、底栏（上下文/成本/工作目录） |
-| `Dialog.tsx` | 扩展 `ui.select/confirm/input` → 浏览器弹窗（正文/选项走 `Markdown(rawHtml)` 富渲染） |
-| `DshQuestionDialog.tsx` | 模型提问对话框（`question_pending`，DSH 引擎经 goal-rpc userQuestions、标准 pi 引擎经 pi-web-ui 注册的 `ask_user_question` customTool 共用）：单选/多选/自定义文本 + 选中带 `preview` 的选项时「选项预览」富文本；question/detail/description/preview 走 `Markdown(rawHtml)`。待答问卷同时挂在快照（`UiState.pendingQuestion`）上，刷新/重连后由 `web/src/pending-question.ts` 恢复面板 |
-| `ModelConfigModal.tsx` / `PiSetupModal.tsx` | models.json 管理 / 首次配置引导 |
-| `SettingsModal.tsx` | 设置面板（侧边栏分页：提示词/工具（含终端＋标记管理）/消息显示/技能/插件/界面插件/目标审查/视觉桥/预设/子代理模板；DSH 另有问卷页、无工具页） |
-| `GoalBar.tsx` | 输入框上方目标条：设目标/清除/AI 提炼/轮数下拉 |
-| `BgTasksModal.tsx` | 后台任务弹窗：AI 启动的监听端口进程列表 |
-| `ModelThinking.tsx` | 模型 + 思考强度下拉（模型下拉左侧按服务商筛选 + 顶部搜索过滤框） |
-| `GlobalSearchModal.tsx` | 全局搜索弹窗（Ctrl+K）：搜历史对话/最近项目/工作区文件名 |
-| `PluginView.tsx` | 插件视图宿主：薄 React 壳 + 动态 import client bundle |
-| `CollapsedMessage.tsx` / `LazyMount.tsx` | 消息折叠摘要行 / 消息级惰性挂载包装 |
-| `SearchBar.tsx` | 会话内搜索栏（Ctrl+F，CSS Custom Highlight API 高亮） |
-| `Markdown.tsx` / `Dropdown.tsx` / `copy-button.tsx` / `HintTip.tsx` / `SoundSettings.tsx` | 通用件（HintTip：`?` 悬浮提示 portal 顶层渲染） |
+| 组件                                                                                      | 职责                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FilePreview.tsx`                                                                         | 文件预览弹窗：行号、点选/拖拽/Shift 选区、添加到对话；Markdown 预览可切换原文；可编辑保存                                                                                                                                                                                                                                                                                               |
+| `LeftPanel.tsx`                                                                           | 左栏：最近项目、运行的对话、历史对话（含删除）                                                                                                                                                                                                                                                                                                                                          |
+| `RightPanel.tsx`                                                                          | 文件树浏览（list_files），文件名点击→预览，📎/🔗/👁 附件按钮；服务端原生递归 watcher                                                                                                                                                                                                                                                                                                     |
+| `ChatInput.tsx`                                                                           | 输入框 + 附件 chips（inline/reference/lines 三色）；全窗口拖放目标；followUp 排队/steer 插队；斜杠命令选择器                                                                                                                                                                                                                                                                            |
+| `Message.tsx` / `MessageList.tsx`                                                         | 消息渲染（附件卡片、流式光标、tool 结果关联）；编辑重问保留原附件；技能卡片折叠；惰性窗口化；问题导航双通道；流式 StreamMarkdown                                                                                                                                                                                                                                                        |
+| `ToolCallBlock.tsx` / `ThinkingBlock.tsx` / `BashBlock`                                   | 工具调用卡片（卡头状态图标右侧显示关键参数提示：文件路径 `.toolcall-path` / 超时 `.toolcall-timeout`，任何工具都试取，脏参数静默不显示）、思考块、bash 输出                                                                                                                                                                                                                             |
+| `TerminalPanel.tsx` / `TermXterm.tsx`                                                     | 终端视图 + xterm 实例桥接                                                                                                                                                                                                                                                                                                                                                               |
+| `SCMPanel.tsx`                                                                            | 源代码管理（Git）视图：status/branch/diff；提交/推送/拉取/切换分支                                                                                                                                                                                                                                                                                                                      |
+| `TopBar.tsx` / `FooterBar.tsx`                                                            | 顶栏（模型/思考强度/后台任务/声音/新对话/视图切换）、底栏（上下文/成本/工作目录）                                                                                                                                                                                                                                                                                                       |
+| `Dialog.tsx`                                                                              | 扩展 `ui.select/confirm/input` → 浏览器弹窗（正文/选项走 `Markdown(rawHtml)` 富渲染）                                                                                                                                                                                                                                                                                                   |
+| `DshQuestionDialog.tsx`                                                                   | 模型提问对话框（`question_pending`，DSH 引擎经 goal-rpc userQuestions、标准 pi 引擎经 pi-web-ui 注册的 `ask_user_question` customTool 共用）：单选/多选/自定义文本 + 选中带 `preview` 的选项时「选项预览」富文本；question/detail/description/preview 走 `Markdown(rawHtml)`。待答问卷同时挂在快照（`UiState.pendingQuestion`）上，刷新/重连后由 `web/src/pending-question.ts` 恢复面板 |
+| `ModelConfigModal.tsx` / `PiSetupModal.tsx`                                               | models.json 管理 / 首次配置引导                                                                                                                                                                                                                                                                                                                                                         |
+| `SettingsModal.tsx`                                                                       | 设置面板（侧边栏分页：提示词/工具（含终端＋标记管理）/消息显示/技能/插件/界面插件/目标审查/视觉桥/预设/子代理模板；DSH 另有问卷页、无工具页）                                                                                                                                                                                                                                           |
+| `GoalBar.tsx`                                                                             | 输入框上方目标条：设目标/清除/AI 提炼/轮数下拉                                                                                                                                                                                                                                                                                                                                          |
+| `BgTasksModal.tsx`                                                                        | 后台任务弹窗：AI 启动的监听端口进程列表                                                                                                                                                                                                                                                                                                                                                 |
+| `ModelThinking.tsx`                                                                       | 模型 + 思考强度下拉（模型下拉左侧按服务商筛选 + 顶部搜索过滤框）                                                                                                                                                                                                                                                                                                                        |
+| `GlobalSearchModal.tsx`                                                                   | 全局搜索弹窗（Ctrl+K）：搜历史对话/最近项目/工作区文件名                                                                                                                                                                                                                                                                                                                                |
+| `PluginView.tsx`                                                                          | 插件视图宿主：薄 React 壳 + 动态 import client bundle                                                                                                                                                                                                                                                                                                                                   |
+| `CollapsedMessage.tsx` / `LazyMount.tsx`                                                  | 消息折叠摘要行 / 消息级惰性挂载包装                                                                                                                                                                                                                                                                                                                                                     |
+| `SearchBar.tsx`                                                                           | 会话内搜索栏（Ctrl+F，CSS Custom Highlight API 高亮）                                                                                                                                                                                                                                                                                                                                   |
+| `Markdown.tsx` / `Dropdown.tsx` / `copy-button.tsx` / `HintTip.tsx` / `SoundSettings.tsx` | 通用件（HintTip：`?` 悬浮提示 portal 顶层渲染）                                                                                                                                                                                                                                                                                                                                         |
 
 ## 4. 核心架构（摘要）
 
 > 详细文档见 `docs/architecture-*.md`
 
-| 主题 | 文档 | 要点 |
-| --- | --- | --- |
-| **快照驱动** | `docs/architecture-core.md` | 服务端是唯一事实源，60ms 节流推快照；增量快照（snapshot_delta）；message_delta 实时增量通道不经 snapshot 通道；WS permessage-deflate 压缩；多标签页序列化共享；协议版本协商 |
-| **协议单源** | `docs/architecture-core.md` | `server/protocol.ts` 是唯一事实源；`web/src/types.ts` 是 `export type *` shim；新增消息只改 protocol.ts，两端 switch 各加分支 |
-| **全局运行态** | `docs/architecture-core.md` | `web/src/app-globals.ts`：身份/能力（engine/managed/tabs/版本号）+ 连接态与 cwd 这类「整棵树都要」的信息放模块级 store，窄 props 组件用 `useAppField(key)` 单字段订阅、不再要 prop（吃整个 ChatState 的 App/TopBar/FooterBar 仍直读 `chat.*`）；全局发送器 `appSend` 也在这里（组件不收 `send` prop，面板的 `panelSend` 包装除外）；快照流里的数据严禁进去（store 通知绕过 memo） |
-| **安全边界** | `docs/architecture-core.md` | 默认只绑 loopback；WS Origin/Host 同权威校验；quiesce 准入控制；控制 socket；provider headers 不下发浏览器 |
-| **主题切换** | `docs/architecture-core.md` | styles.css 是唯一布局文件，主题 = 纯 `:root` 变量覆盖（非整文件副本）；内置主题由 make-light-theme.mjs 从 styles.css 变量清单生成；改布局永不碰主题；终端跟随主题 |
-| **多对话并发** | `docs/architecture-core.md` | 每对话独立 AgentSessionRuntime；对话按项目归属；set_cwd 切到目标项目对话；8 个上限/项目（子代理不计入）；共享同一个 ModelRuntime |
-| **附件** | `docs/architecture-attachments.md` | 三种模式（inline/reference/lines）；图片问答（base64 + 缩放）；文件上传（fileData 落盘）；视觉桥（纯文本模型看图转写） |
-| **文件预览** | `docs/architecture-attachments.md` | 512KB 上限 + 内容嗅探（文本/二进制 + GBK 回退）；媒体预览走 HTTP Range；下载绕开 Chrome Safe Browsing |
-| **终端** | `docs/architecture-terminal.md` | 每 Conversation 一个 TerminalManager；spawn 统一准入；按键编码纯函数；输出微批合并；node-pty × --watch 兼容自愈 |
-| **SCM** | `docs/architecture-terminal.md` | 只读 git 查询走 execFile 直跑（不经过 shell）；git-dir watcher；写操作走可见终端 tab |
-| **终端接管 bash** | `docs/architecture-terminal.md` | 覆盖 SDK bash；设置开关 `terminalBash` 分流（关=原生 SDK 纯进程 bash，开=可见终端）；开时 `persist` 决定一次性/持久（false=跑完进程结束、输出保留；true=持久 ai-bash，shell 状态跨调用保留）；`head`/`tail` 截返回行；哨兵行技术；静默解阻（持久）；ai-bash/ai-bash-<n> 前端「AI bash」折叠分组且不计入终端数量上限 |
-| **插件** | `docs/architecture-plugins.md` | <dataDir>/plugins/<id>/ 目录（manifest.json + index.mjs + client/entry.mjs）；attach 时热重扫；fenced-code 渲染插件（renderers + view:false，命中 ```lang 才懒加载，见 plugin-fence.ts）；官方插件走 `pi-web-ui install`（含子目录 source）分发，不进 npm 包；插件市场（plugins/catalog.json 内置列表 + 用户自定义，设置面板一键 `install --name <id>`，见 plugin-catalog.ts）；插件→宿主动作桥 `window.__piWebUiHost`（setView / startChat：新建对话+自动发消息，时序见 web/src/plugin-host.ts）；MCP 工具桥 |
-| **子代理模板** | `server/subagents.ts` + `server/subagent-templates.ts` | 设置面板配置角色系统提示词（append/replace）+ 技能/扩展白名单；AI 经 subagent_templates 查询、subagent_spawn(template=) 选用也可不传按默认；停用模板对 AI 不可见；全局共享 |
-| **工具结束实时状态** | `docs/architecture-core.md` | tool_status 先于快照落盘，浏览器卡片立即从「执行中」→「已结束」 |
-| **工具挂死看门狗** | `docs/architecture-core.md` | 20 分钟超时自动 abort 会话；只停止运行不碰后台服务；**`ask_user_question` 豁免**（等人类回答不限时，问卷挂着也不算失联） |
-| **待答问卷进快照** | `docs/architecture-core.md` | `UiState.pendingQuestion` + `web/src/pending-question.ts`：刷新/重连后恢复问卷对话框（即时通道只推给提问那一刻在线的连接） |
-| **后台任务列表** | `docs/architecture-core.md` | bash 前后端口快照 diff；按客户端持久；单停/全部关闭 |
-| **扩展 UI 桥** | `docs/architecture-core.md` | setWidget/setStatus/notify/select/confirm/input → 浏览器消息；dialog_response 回传 |
+| 主题                 | 文档                                                   | 要点                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **快照驱动**         | `docs/architecture-core.md`                            | 服务端是唯一事实源，60ms 节流推快照；增量快照（snapshot_delta）；message_delta 实时增量通道不经 snapshot 通道；WS permessage-deflate 压缩；多标签页序列化共享；协议版本协商                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **协议单源**         | `docs/architecture-core.md`                            | `server/protocol.ts` 是唯一事实源；`web/src/types.ts` 是 `export type *` shim；新增消息只改 protocol.ts，两端 switch 各加分支                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **全局运行态**       | `docs/architecture-core.md`                            | `web/src/app-globals.ts`：身份/能力（engine/managed/tabs/版本号）+ 连接态与 cwd 这类「整棵树都要」的信息放模块级 store，窄 props 组件用 `useAppField(key)` 单字段订阅、不再要 prop（吃整个 ChatState 的 App/TopBar/FooterBar 仍直读 `chat.*`）；全局发送器 `appSend` 也在这里（组件不收 `send` prop，面板的 `panelSend` 包装除外）；快照流里的数据严禁进去（store 通知绕过 memo）                                                                                                                                                                                                 |
+| **安全边界**         | `docs/architecture-core.md`                            | 默认只绑 loopback；WS Origin/Host 同权威校验；quiesce 准入控制；控制 socket；provider headers 不下发浏览器                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **主题切换**         | `docs/architecture-core.md`                            | styles.css 是唯一布局文件，主题 = 纯 `:root` 变量覆盖（非整文件副本）；内置主题由 make-light-theme.mjs 从 styles.css 变量清单生成；改布局永不碰主题；终端跟随主题                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **多对话并发**       | `docs/architecture-core.md`                            | 每对话独立 AgentSessionRuntime；对话按项目归属；set_cwd 切到目标项目对话；8 个上限/项目（子代理不计入）；共享同一个 ModelRuntime                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **附件**             | `docs/architecture-attachments.md`                     | 三种模式（inline/reference/lines）；图片问答（base64 + 缩放）；文件上传（fileData 落盘）；视觉桥（纯文本模型看图转写）                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **文件预览**         | `docs/architecture-attachments.md`                     | 512KB 上限 + 内容嗅探（文本/二进制 + GBK 回退）；媒体预览走 HTTP Range；下载绕开 Chrome Safe Browsing                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **终端**             | `docs/architecture-terminal.md`                        | 每 Conversation 一个 TerminalManager；spawn 统一准入；按键编码纯函数；输出微批合并；node-pty × --watch 兼容自愈                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **SCM**              | `docs/architecture-terminal.md`                        | 只读 git 查询走 execFile 直跑（不经过 shell）；git-dir watcher；写操作走可见终端 tab                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **终端接管 bash**    | `docs/architecture-terminal.md`                        | 覆盖 SDK bash；设置开关 `terminalBash` 分流（关=原生 SDK 纯进程 bash，开=可见终端）；开时 `persist` 决定一次性/持久（false=跑完进程结束、输出保留；true=持久 ai-bash，shell 状态跨调用保留）；`head`/`tail` 截返回行；哨兵行技术；静默解阻（持久）；ai-bash/ai-bash-<n> 前端「AI bash」折叠分组且不计入终端数量上限                                                                                                                                                                                                                                                               |
+| **插件**             | `docs/architecture-plugins.md`                         | <dataDir>/plugins/<id>/ 目录（manifest.json + index.mjs + client/entry.mjs）；attach 时热重扫；fenced-code 渲染插件（renderers + view:false，命中 ```lang 才懒加载，见 plugin-fence.ts）；官方插件走 `pi-web-ui install`（含子目录 source）分发，不进 npm 包；插件市场（plugins/catalog.json 内置列表 + 用户自定义，设置面板一键 `install --name <id>`，见 plugin-catalog.ts）；插件→宿主动作桥 `window.__piWebUiHost`（setView / startChat：新建对话+自动发消息，时序见 web/src/plugin-host.ts；compose：塞进输入框草稿等用户自己发，见 web/src/composer-bridge.ts）；MCP 工具桥 |
+| **子代理模板**       | `server/subagents.ts` + `server/subagent-templates.ts` | 设置面板配置角色系统提示词（append/replace）+ 技能/扩展白名单；AI 经 subagent_templates 查询、subagent_spawn(template=) 选用也可不传按默认；停用模板对 AI 不可见；全局共享                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **工具结束实时状态** | `docs/architecture-core.md`                            | tool_status 先于快照落盘，浏览器卡片立即从「执行中」→「已结束」                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **工具挂死看门狗**   | `docs/architecture-core.md`                            | 20 分钟超时自动 abort 会话；只停止运行不碰后台服务；**`ask_user_question` 豁免**（等人类回答不限时，问卷挂着也不算失联）                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **待答问卷进快照**   | `docs/architecture-core.md`                            | `UiState.pendingQuestion` + `web/src/pending-question.ts`：刷新/重连后恢复问卷对话框（即时通道只推给提问那一刻在线的连接）                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **后台任务列表**     | `docs/architecture-core.md`                            | bash 前后端口快照 diff；按客户端持久；单停/全部关闭                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **扩展 UI 桥**       | `docs/architecture-core.md`                            | setWidget/setStatus/notify/select/confirm/input → 浏览器消息；dialog_response 回传                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## 5. 开发工作流
 
@@ -191,6 +192,8 @@ npm start            # 跑编译产物 dist/server/index.js（生产）
 npm test             # vitest 纯函数单测
 npm run test:smoke   # 零 token 协议冒烟聚合跑器
 npm run desktop:dev  # Electron 桌面壳指到本地 sidecar（:随机口，需先 npm run build）
+npm run build:extension  # 打包 page-picker 浏览器扩展（esbuild → plugins/page-picker/extension/dist/）
+npm run pack:extension   # 打浏览器扩展 zip → release/（打 tag 时 CI 自动出包并挂 Release）
 npm run desktop:dist # 本地打桌面安装包 → release/（gitignore；CI 也跑同一条）
 ```
 
@@ -219,14 +222,14 @@ npm publish
 
 > 完整列表见 `docs/env-vars.md`
 
-| 变量 | 默认 | 一句话作用 |
-| --- | --- | --- |
-| `PI_WEB_PORT` | `8787` | HTTP 端口 |
-| `PI_WEB_HOST` | `127.0.0.1` | 监听地址（默认只绑 loopback） |
-| `PI_WEB_CWD` | `process.cwd()` | 智能体工作区 |
-| `PI_WEB_DATA_DIR` | `~/.pi-web` | 数据目录（client-state / uploads / plugins） |
-| `PI_WEB_TOKEN` | 空 | 可选共享口令鉴权 |
-| `PI_WEB_TOOL_TIMEOUT_MS` | 20 分钟 | 工具挂死看门狗超时（`ask_user_question` 问卷豁免，不受此限制） |
+| 变量                     | 默认            | 一句话作用                                                     |
+| ------------------------ | --------------- | -------------------------------------------------------------- |
+| `PI_WEB_PORT`            | `8787`          | HTTP 端口                                                      |
+| `PI_WEB_HOST`            | `127.0.0.1`     | 监听地址（默认只绑 loopback）                                  |
+| `PI_WEB_CWD`             | `process.cwd()` | 智能体工作区                                                   |
+| `PI_WEB_DATA_DIR`        | `~/.pi-web`     | 数据目录（client-state / uploads / plugins）                   |
+| `PI_WEB_TOKEN`           | 空              | 可选共享口令鉴权                                               |
+| `PI_WEB_TOOL_TIMEOUT_MS` | 20 分钟         | 工具挂死看门狗超时（`ask_user_question` 问卷豁免，不受此限制） |
 
 ## 8. 部署
 
@@ -255,4 +258,5 @@ npm publish
 - **Playwright 脚本**：Chrome 路径由 `tests/lib/chrome.mjs` 逐平台探测（`PI_WEB_CHROME` 可覆盖），不再写死本机路径；脚本里取仓库根一律用 `fileURLToPath(new URL("..", import.meta.url))`——`URL.pathname` 在 Windows 上得到 `/E:/...`，`spawn` 会直接 ENOENT；服务端进程清理在 win32 走 `tests/lib/port-utils.mjs` 的 `freePort`（负数 PID 的进程组在 Windows 上不存在）。
 
 ---
-*结构/流程变更时同步更新本文件及相关 `docs/` 文档。修改后运行 `/reload` 生效。*
+
+_结构/流程变更时同步更新本文件及相关 `docs/` 文档。修改后运行 `/reload` 生效。_
