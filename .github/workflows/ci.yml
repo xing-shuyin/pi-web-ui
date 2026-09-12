@@ -39,6 +39,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # 浏览器扩展打包（esbuild；语法/入口问题在 PR 阶段就暴露）
+      - name: Build browser extension
+        run: npm run build:extension
+
+      - name: Pack browser extension (自校验 zip)
+        run: npm run pack:extension
+
       # 纯函数单测（毫秒级、零 token）
       - name: Unit tests
         run: npx vitest run

@@ -1,0 +1,87 @@
+name: Browser extension (page-picker)
+
+# 打 tag 后构建「网页元素拾取」浏览器扩展并挂到该 tag 的 GitHub Release 上
+# （Release 本体由 release-notes.yml 创建；两者同时被 tag 触发，这里会等它出现）。
+#
+# 为什么不用 `zip` 命令：扩展的 zip 由 `plugins/page-picker/extension/pack.mjs` 自己拼字节
+# （store 模式 + CRC32 自校验，见 zip.mjs），所以 CI 与本地（Windows 用户）产出的包一致，
+# 不需要额外装工具。
+#
+# 手动跑（只出 workflow artifact、不动 Release 资产）：Actions → Browser extension → Run workflow
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 扩展的 tsc 也在根 typecheck 里（npm run typecheck 已覆盖），这里单独跑一遍让失败更直观
+      - name: Typecheck extension
+        run: npx tsc -p plugins/page-picker/extension/tsconfig.json --noEmit
+
+      - name: Build extension (esbuild → dist/)
+        run: npm run build:extension
+
+      # 产物落在 release/（gitignore），含两个文件名：
+      #   page-picker-extension-<版本>.zip  ← 带版本，便于归档/回退
+      #   page-picker-extension.zip         ← 无版本，README 用它做「永远指向最新」的稳定链接
+      - name: Pack distributable zip
+        run: npm run pack:extension
+
+      - name: Verify zip structure (external unpacker)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, zipfile
+          for path in sorted(glob.glob("release/page-picker-extension*.zip")):
+              with zipfile.ZipFile(path) as z:
+                  bad = z.testzip()
+                  assert bad is None, f"{path}: CRC 校验失败 -> {bad}"
+                  names = z.namelist()
+                  # Chrome 要求 manifest.json 直接在 zip 根目录
+                  assert "manifest.json" in names, f"{path}: 缺 manifest.json"
+                  assert all(not n.startswith("/") for n in names), f"{path}: 有绝对路径条目"
+              print(f"✓ {path}: {len(names)} 个条目, CRC 全通过")
+          PY
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-picker-extension
+          path: release/page-picker-extension*.zip
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          # release-notes.yml 并行跑，等 Release 建出来（最多 3 分钟）再挂资产
+          for _ in $(seq 1 36); do
+            if gh release view "$TAG" >/dev/null 2>&1; then break; fi
+            echo "waiting for release $TAG …"
+            sleep 5
+          done
+          gh release view "$TAG" >/dev/null
+          gh release upload "$TAG" release/page-picker-extension*.zip --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name'

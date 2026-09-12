@@ -10,6 +10,7 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"noEmit": true,
+		"allowJs": true,
 		"types": ["node", "vitest/globals"]
 	},
 	"include": ["tests/unit/**/*.ts", "server/**/*.ts", "web/src/skill-block.ts", "web/src/components/scroll-classify.ts"]

@@ -1,0 +1,314 @@
+/// <reference path="./chrome.d.ts" />
+/// <reference lib="dom" />
+/**
+ * Service worker：扩展的大脑（唯一知道 pi-web-ui 在哪的一块）。
+ *
+ * 职责边界：
+ * - content script 只管「在被调试页面上拾取 + 画 UI」，**不知道 pi-web-ui 的存在**；
+ * - 这里负责读设置、把契约渲染成 Markdown、找到 pi-web-ui 标签页、注入内容；
+ * - 投递用 `world: "MAIN"` 注入（隔离世界看不到页面上的 `window.__piWebUiHost`）。
+ *
+ * 兜底纪律：**投递失败也必须把 Markdown 交给用户**（回给 content script 复制到剪贴板），
+ * 绝不出现「点了发送，什么都没发生」。
+ */
+
+import type { PickPayload } from "./shared/contract.js";
+import {
+	normalizeServerUrl,
+	normalizeSettings,
+	originPattern,
+	tabMatchesBase,
+	type PickerSettings,
+} from "./shared/settings.js";
+import { planCrop, type CropPlan } from "./shared/shot-crop.js";
+import { toPrompt } from "./shared/to-prompt.js";
+
+export const PICKER_FILE = "dist/picker.js";
+
+/** 截图那条链上用到的最小 chrome 面（注入以便单测替换）。 */
+export interface ChromeLike {
+	tabs: { captureVisibleTab(windowId: number | undefined, options: { format: "png" }): Promise<string> };
+}
+
+/** 注入 MAIN world 的函数：调页面上的宿主动作桥，把内容塞进输入框草稿。 */
+interface ComposeResult {
+	ok: boolean;
+	reason?: "no-host" | "refused";
+}
+
+interface ComposeAttachment {
+	path: string;
+	name: string;
+	mode: "inline";
+	imageData: string;
+	key: string;
+}
+
+/** MAIN world 里执行：只做「找到桥 + 调用」，所有判断回传给 worker 做。 */
+export function composeInPage(text: string, attachments: ComposeAttachment[]): ComposeResult {
+	const host = (globalThis as unknown as Record<string, unknown>).__piWebUiHost as
+		{ compose?: (o: { text: string; attachments?: ComposeAttachment[] }) => boolean } | undefined;
+	if (!host || typeof host.compose !== "function") return { ok: false, reason: "no-host" };
+	const ok = host.compose(attachments.length > 0 ? { text, attachments } : { text });
+	return ok ? { ok: true } : { ok: false, reason: "refused" };
+}
+
+export async function loadSettings(): Promise<PickerSettings> {
+	try {
+		const raw = await chrome.storage.sync.get(null);
+		return normalizeSettings(raw);
+	} catch {
+		return normalizeSettings(null);
+	}
+}
+
+/** 点扩展图标 / 按快捷键：往当前标签页注入拾取器。 */
+export async function startPicking(tab: { id?: number } | undefined): Promise<void> {
+	const tabId = tab?.id;
+	if (tabId == null) return;
+	try {
+		await chrome.scripting.executeScript({ target: { tabId }, files: [PICKER_FILE] });
+		await chrome.action.setBadgeText({ text: "", tabId });
+	} catch (err) {
+		// 浏览器内部页 / 商店页 / PDF 等注入不了：明确告诉用户，别静默失败
+		const message = err instanceof Error ? err.message : String(err);
+		await chrome.action.setBadgeText({ text: "!", tabId }).catch(() => {});
+		await chrome.action.setTitle({ title: `这个页面无法拾取：${message}`, tabId }).catch(() => {});
+	}
+}
+
+/** 找不到目标页面的原因（要能区分，否则远程用户会被误导着去查错地方）。 */
+export type TargetMiss = "no-permission" | "no-tab";
+
+async function findTargetTab(settings: PickerSettings): Promise<{ tab?: chrome.tabs.Tab; miss?: TargetMiss }> {
+	const base = normalizeServerUrl(settings.serverUrl);
+	// 权限先查：没授权时 tabs.query 的 url 过滤会被静默忽略（返回全部标签页），
+	// 再往下走就可能把内容注入到无关页面，还会报一个「找不到页面」的错诊。
+	try {
+		const granted = await chrome.permissions.contains({ origins: [originPattern(base)] });
+		if (!granted) return { miss: "no-permission" };
+	} catch {
+		/* 老版本/测试环境没有 permissions API → 不阻断，继续往下（后面还有 URL 复核兜底） */
+	}
+	let tabs: chrome.tabs.Tab[] = [];
+	try {
+		tabs = await chrome.tabs.query({ url: [`${base}/*`, `${base}`] });
+	} catch {
+		return { miss: "no-tab" };
+	}
+	// 复核 URL：远程/子路径部署下绝不靠「有 id 就算」挑第一个
+	const tab = tabs.find((t) => t.id != null && tabMatchesBase(t.url, base));
+	return tab ? { tab } : { miss: "no-tab" };
+}
+
+/**
+ * 给每个元素补截图（可选，设置里开）。
+ *
+ * 整屏截一次（`captureVisibleTab` 只给可见区域），然后按每个元素的 rect × dpr 抠出来、
+ * 缩到长边 ≤1568。**任何一步失败都只是「没有截图」**，绝不因此让整次拾取失败 ——
+ * 用户点的是「添加到对话」，不是「截图」。
+ */
+export async function attachShots(
+	payload: PickPayload,
+	settings: PickerSettings,
+	tab: { id?: number; windowId?: number } | undefined,
+	chromeApi: ChromeLike = chrome,
+): Promise<PickPayload> {
+	if (!settings.screenshots) return payload;
+	const tabId = tab?.id;
+	if (tabId == null || !tab) return payload;
+	let dataUrl: string;
+	try {
+		dataUrl = await chromeApi.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+	} catch {
+		return payload; // 没有 activeTab/权限、页面正在滚动……都不是致命错
+	}
+	if (!dataUrl) return payload;
+	let bitmap: ImageBitmap;
+	try {
+		bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+	} catch {
+		return payload;
+	}
+	const dpr = payload.page?.viewport?.dpr ?? 1;
+	const elements = [...payload.elements];
+	let changed = false;
+	for (let i = 0; i < elements.length; i++) {
+		const el = elements[i];
+		if (el.shot) continue;
+		const plan = planCrop(el.snapshot.rect, { dpr, imageW: bitmap.width, imageH: bitmap.height });
+		if (!plan) continue;
+		try {
+			const shot = await cropToPng(bitmap, plan);
+			if (shot) {
+				elements[i] = { ...el, shot };
+				changed = true;
+			}
+		} catch {
+			/* 单个元素截图失败不影响其它的 */
+		}
+	}
+	bitmap.close();
+	return changed ? { ...payload, elements } : payload;
+}
+
+/** 按计划抠图 → PNG data URL（service worker 里用 OffscreenCanvas，无 DOM 依赖）。 */
+async function cropToPng(bitmap: ImageBitmap, plan: CropPlan): Promise<string | undefined> {
+	const canvas = new OffscreenCanvas(plan.dstW, plan.dstH);
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return undefined;
+	ctx.drawImage(bitmap, plan.srcX, plan.srcY, plan.srcW, plan.srcH, 0, 0, plan.dstW, plan.dstH);
+	const blob = await canvas.convertToBlob({ type: "image/png" });
+	const bytes = new Uint8Array(await blob.arrayBuffer());
+	return `data:image/png;base64,${toBase64(bytes)}`;
+}
+
+/** 手写 base64（SW 里没有 FileReader/btoa 的那套 DOM 便利）——分块避免超长参数栈溢出。 */
+export function toBase64(bytes: Uint8Array): string {
+	const TABLE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	let out = "";
+	for (let i = 0; i < bytes.length; i += 3) {
+		const b0 = bytes[i];
+		const b1 = bytes[i + 1];
+		const b2 = bytes[i + 2];
+		out += TABLE[b0 >> 2];
+		out += TABLE[((b0 & 3) << 4) | ((b1 ?? 0) >> 4)];
+		out += b1 === undefined ? "=" : TABLE[((b1 & 15) << 2) | ((b2 ?? 0) >> 6)];
+		out += b2 === undefined ? "=" : TABLE[b2 & 63];
+	}
+	return out;
+}
+
+/** 卡片 → 对话附件（截图）。
+ *  无路径无 key 的裸数据在宿主侧不会去重，所以 key 必须带上拾取 id（重试时不叠加）。 */
+export function attachmentsOf(payload: PickPayload): ComposeAttachment[] {
+	const out: ComposeAttachment[] = [];
+	payload.elements.forEach((el, i) => {
+		if (!el.shot) return;
+		out.push({
+			path: "",
+			name: `元素${i + 1}-${el.snapshot.tag}.png`,
+			mode: "inline",
+			imageData: el.shot,
+			key: `${payload.id}-${i + 1}`,
+		});
+	});
+	return out;
+}
+
+/** 把 Markdown（+ 截图附件）投进已打开的 pi-web-ui 页面输入框。 */
+export async function deliver(
+	payload: PickPayload,
+	markdown: string,
+	settings: PickerSettings,
+): Promise<{ ok: boolean; message: string; copy?: string }> {
+	const copy = settings.copyToClipboard ? markdown : undefined;
+	const { tab, miss } = await findTargetTab(settings);
+	if (!tab?.id) {
+		const base = normalizeServerUrl(settings.serverUrl);
+		const suffix = copy ? "，Markdown 已复制到剪贴板" : "";
+		if (miss === "no-permission") {
+			return {
+				ok: false,
+				copy,
+				message: `还没授权 ${originPattern(base)} —— 到扩展选项页点「授权该地址」${suffix}`,
+			};
+		}
+		return { ok: false, copy, message: `没找到打开的 pi-web-ui 页面（${base}）${suffix}` };
+	}
+	let result: ComposeResult | undefined;
+	try {
+		const [first] = await chrome.scripting.executeScript<ComposeResult>({
+			target: { tabId: tab.id },
+			world: "MAIN",
+			func: composeInPage,
+			args: [markdown, attachmentsOf(payload)],
+		});
+		result = first?.result;
+	} catch (err) {
+		return {
+			ok: false,
+			copy,
+			message: `注入 pi-web-ui 失败：${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+	if (result?.ok) {
+		if (settings.focusTarget) await focusTab(tab);
+		const n = payload.elements.length;
+		return { ok: true, copy, message: `已添加到 pi-web-ui 输入框（${n} 个元素），补充说明后发送` };
+	}
+	if (result?.reason === "no-host") {
+		return {
+			ok: false,
+			copy,
+			message: "这个 pi-web-ui 页面还不支持输入框注入（版本过旧），请更新 pi-web-ui 后刷新页面",
+		};
+	}
+	return { ok: false, copy, message: "pi-web-ui 输入框还没就绪，刷新页面后再试" };
+}
+
+async function focusTab(tab: chrome.tabs.Tab): Promise<void> {
+	try {
+		if (tab.id != null) await chrome.tabs.update(tab.id, { active: true });
+		if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+	} catch {
+		/* 切不过去不影响已注入的内容 */
+	}
+}
+
+/**
+ * 消息路由（导出以便单测直接用假 chrome 驱动）。
+ * @returns true = 会异步 respond（Chrome 要求回调返回 true 才保持通道）
+ */
+export function handleMessage(
+	raw: unknown,
+	sender: chrome.runtime.MessageSender,
+	respond: (response?: unknown) => void,
+): boolean | undefined {
+	const msg = (raw ?? {}) as { type?: string; payload?: PickPayload };
+	if (msg.type === "page-picker:settings") {
+		void loadSettings().then((s) => respond({ detail: s.detail }));
+		return true;
+	}
+	if (msg.type === "page-picker:picked") {
+		void (async () => {
+			const settings = await loadSettings();
+			const original = msg.payload;
+			if (!original?.elements?.length) {
+				respond({ ok: false, message: "没有可发送的元素" });
+				return;
+			}
+			// 截图先补上（失败就只是没图），再渲染 —— 渲染要按最终的元素集合写「见本轮附图」
+			const payload = await attachShots(original, settings, sender.tab).catch(() => original);
+			const markdown = toPrompt(payload);
+			if (!markdown) {
+				respond({ ok: false, message: "没有可发送的元素" });
+				return;
+			}
+			try {
+				respond(await deliver(payload, markdown, settings));
+			} catch (err) {
+				respond({
+					ok: false,
+					copy: markdown,
+					message: `发送失败：${err instanceof Error ? err.message : String(err)}`,
+				});
+			}
+		})();
+		return true; // 异步 respond
+	}
+	void sender;
+	return undefined;
+}
+
+// 事件接线（在单测里 import 本模块时没有 chrome 全局，所以得过一道护栏）
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+	chrome.action?.onClicked?.addListener((tab) => {
+		void startPicking(tab);
+	});
+	chrome.commands?.onCommand?.addListener((command, tab) => {
+		if (command !== "toggle-picking") return;
+		void startPicking(tab);
+	});
+	chrome.runtime.onMessage.addListener(handleMessage);
+}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<title>pi-web-ui 元素拾取 · 设置</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				--bg: #0f172a;
+				--card: #1e293b;
+				--line: #334155;
+				--text: #e2e8f0;
+				--dim: #94a3b8;
+				--accent: #2563eb;
+			}
+			body {
+				margin: 0;
+				padding: 28px;
+				background: var(--bg);
+				color: var(--text);
+				font:
+					14px/1.6 -apple-system,
+					"Segoe UI",
+					"Microsoft YaHei",
+					sans-serif;
+			}
+			main {
+				max-width: 680px;
+				margin: 0 auto;
+			}
+			h1 {
+				font-size: 18px;
+				margin: 0 0 4px;
+			}
+			.hint {
+				color: var(--dim);
+				font-size: 13px;
+				margin-bottom: 20px;
+			}
+			fieldset {
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				background: var(--card);
+				padding: 14px 16px;
+				margin: 0 0 14px;
+			}
+			legend {
+				padding: 0 6px;
+				color: var(--dim);
+				font-size: 12px;
+			}
+			label.row {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				margin: 8px 0;
+			}
+			label.row > span:first-child {
+				flex: 0 0 190px;
+			}
+			input[type="text"],
+			input[type="password"],
+			select {
+				flex: 1 1 auto;
+				min-width: 0;
+				padding: 6px 9px;
+				border-radius: 6px;
+				border: 1px solid var(--line);
+				background: #0b1220;
+				color: var(--text);
+				font-size: 13px;
+			}
+			label.check {
+				display: flex;
+				gap: 8px;
+				align-items: flex-start;
+				margin: 8px 0;
+			}
+			label.check span b {
+				display: block;
+				font-weight: 600;
+			}
+			label.check span i {
+				color: var(--dim);
+				font-style: normal;
+				font-size: 12px;
+			}
+			.actions {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+				flex-wrap: wrap;
+			}
+			button {
+				padding: 7px 12px;
+				border-radius: 7px;
+				border: 1px solid var(--line);
+				background: #24324a;
+				color: var(--text);
+				font-size: 13px;
+				cursor: pointer;
+			}
+			button.primary {
+				background: var(--accent);
+				border-color: var(--accent);
+				color: #fff;
+				font-weight: 600;
+			}
+			.status {
+				margin-left: auto;
+				font-size: 12px;
+			}
+			.status.ok {
+				color: #4ade80;
+			}
+			.status.err {
+				color: #f87171;
+			}
+			.status.info {
+				color: var(--dim);
+			}
+			.status.warn {
+				color: #fbbf24;
+			}
+			.grant-state {
+				margin-top: 10px;
+				font-size: 12px;
+			}
+			.grant-state.ok {
+				color: #4ade80;
+			}
+			.grant-state.warn {
+				color: #fbbf24;
+			}
+			code {
+				background: #0b1220;
+				padding: 1px 5px;
+				border-radius: 4px;
+				font-size: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>pi-web-ui 元素拾取</h1>
+			<div class="hint">
+				在开发网页上按扩展图标（或 <code>Alt+Shift+P</code>）开始拾取，选中的元素会整理成上下文注入 pi-web-ui 的输入框，
+				你补一句说明再发送。
+			</div>
+
+			<fieldset>
+				<legend>pi-web-ui 服务</legend>
+				<label class="row"
+					><span>服务地址</span><input id="serverUrl" type="text" placeholder="http://127.0.0.1:8787"
+				/></label>
+				<label class="row"
+					><span>访问口令 PI_WEB_TOKEN</span><input id="token" type="password" placeholder="没开鉴权就留空"
+				/></label>
+				<div class="actions">
+					<button id="grant">授权该地址</button>
+					<button id="test">测试连接</button>
+					<span id="status" class="status info"></span>
+				</div>
+				<div class="hint" style="margin: 10px 0 0">
+					只预置了 <code>localhost</code> / <code>127.0.0.1</code> 的权限。换成局域网 IP、域名或 https
+					地址（<b>远程部署就是这种</b>）后： 先点「授权该地址」。<br />
+					投递是往<b>浏览器里打开的那个 pi-web-ui 页面</b
+					>注入内容的，所以这个地址的页面得开着（可以在另一个标签页/窗口，不必是当前标签）； 页面关着时会退化成「复制
+					Markdown 到剪贴板」。
+				</div>
+				<div class="grant-state warn" id="grantState"></div>
+			</fieldset>
+
+			<fieldset>
+				<legend>拾取</legend>
+				<label class="row"
+					><span>详细度</span>
+					<select id="detail">
+						<option value="compact">精简 — 选择器 + 文本 + 源码位置（最省上下文）</option>
+						<option value="standard">标准 — 再加命中的 CSS 与 HTML 骨架（推荐）</option>
+						<option value="full">完整 — 再加 XPath / DOM 路径 / 更多计算样式</option>
+					</select></label
+				>
+				<label class="check"
+					><input id="screenshots" type="checkbox" />
+					<span><b>采集元素截图</b><i>作为附件一并送进对话（纯文本模型请看视觉桥）</i></span></label
+				>
+			</fieldset>
+
+			<fieldset>
+				<legend>投递</legend>
+				<label class="check"
+					><input id="copyToClipboard" type="checkbox" />
+					<span><b>同时复制 Markdown 到剪贴板</b><i>注入失败时的兜底，建议开着</i></span></label
+				>
+				<label class="check"
+					><input id="focusTarget" type="checkbox" />
+					<span><b>注入后切到 pi-web-ui 标签页</b><i>关掉则留在当前网页继续看</i></span></label
+				>
+			</fieldset>
+
+			<div class="actions">
+				<button id="reset">恢复默认</button>
+			</div>
+		</main>
+		<script type="module" src="dist/options.js"></script>
+	</body>
+</html>

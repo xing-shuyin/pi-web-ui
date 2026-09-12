@@ -1,0 +1,184 @@
+# page-picker · 网页元素拾取（浏览器扩展）
+
+在**开发中的网页**上点选元素，把它整理成 AI 能直接动手的上下文，一键注入 pi-web-ui 的对话输入框。
+
+```
+在开发网页上按 Alt+Shift+P（或点扩展图标）
+   → hover 高亮、点击拾取（Shift+点击多选）
+   → 底部浮条写备注
+   → 「添加到对话」
+   → pi-web-ui 输入框出现已排版好的上下文，你补一句「这三处间距不一致」再发送
+```
+
+采集的不是一张截图，而是**能让 AI 一次改对的东西**：
+
+| 采什么                                             | 为什么关键                                                                                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **React 组件源码位置**（`Card.tsx:18:5` + 调用链） | 从 fiber 的 `_debugSource` 挖出来。这是「AI 一次改对」与「AI 满仓库 grep」的分界线                               |
+| **Vue SFC 文件**                                   | 从组件实例的 `__file` 拿（只有文件，没有行号 —— 不硬编假行号）                                                   |
+| **命中的 CSS：文件 + 源文件行号**                  | Vite dev 的 `<style data-vite-dev-id>` 的 textContent 与源文件逐字对应，行号可精确反推                           |
+| **计算样式子集**                                   | **只报与默认值/继承值不同的项**（现场造同 tag 空元素当探针比对）。一个真实卡片通常只剩 3~5 行，而不是 300 个属性 |
+| 选择器 / XPath / DOM 路径                          | 首选短且唯一的（`#card` > `section#card` > 兜底全 `:nth-of-type`）                                               |
+| HTML 骨架 + 折叠文本                               | 结构而不是整棵 `outerHTML`（超深子节点折成 `…`）                                                                 |
+| 元素截图（可选）                                   | 走对话附件，不是塞 base64 进正文                                                                                 |
+
+详细度三档（设置页可切）：精简 / **标准（默认）** / 完整 —— 决定采集与渲染多少东西，
+上下文预算在**采集层**就生效，不是渲染时再删。
+
+## 装
+
+扩展**不在 Chrome 应用商店**（上架要走开发者账号 + 审核，且这个扩展的服务地址得你自己填，
+商店版没什么额外好处）。三条路，按你是谁选：
+
+### ① 直接下载装（推荐，不需要 Node）
+
+**下载**：[`page-picker-extension.zip`](https://github.com/xing-shuyin/pi-web-ui/releases/latest/download/page-picker-extension.zip)
+（永远指向最新版；想钉版本就去 [Releases](https://github.com/xing-shuyin/pi-web-ui/releases) 页
+下带版本号的那个）
+
+1. 解压 zip（得到含 `manifest.json` 的目录）
+2. Chrome / Edge 打开 `chrome://extensions`（Edge 是 `edge://extensions`）
+3. 右上角打开「**开发者模式**」
+4. 点「**加载已解压的扩展程序**」，选第 1 步解压出来的目录
+5. 点扩展的「**扩展程序选项**」：确认 pi-web-ui 地址（默认 `http://127.0.0.1:8787`）；
+   远程/局域网地址要先点「**授权该地址**」，再点「**测试连接**」
+
+> 装完在 `chrome://extensions` 里它会有个「开发者模式扩展」的提示，这是所有未上架扩展的
+> 常态（Chrome 更新后偶尔会弹一次「停用开发者模式扩展」，点保留即可）。
+
+### ② 从源码装（改代码的人）
+
+```bash
+npm run build:extension        # esbuild 打包到 plugins/page-picker/extension/dist/
+```
+
+然后按上面 ① 的第 3~4 步装，只是目录选仓库里的 `plugins/page-picker/extension/`。
+改完源码重新 `npm run build:extension`，在 `chrome://extensions` 里点这个扩展的「刷新」图标即可。
+
+### ③ 打包成 zip 分发（自己出包）
+
+```bash
+npm run pack:extension         # → release/page-picker-extension-<版本>.zip（含 CRC 自校验）
+```
+
+CI 在打 tag 时自动跑同一条命令并把 zip 挂到 GitHub Release（见 `.github/workflows/extension-release.yml`），
+所以 ① 的链接永远是最新的。
+
+### 权限观感
+
+只预置了 `localhost` / `127.0.0.1` 的 host 权限 + `activeTab`（**点图标那一次**才临时授权
+当前标签页），不做常驻全站注入。换成局域网 IP / 域名 / https 地址时，需要你在选项页手动
+授权那一个 origin。
+
+### 前置：pi-web-ui 版本要够新
+
+扩展靠 pi-web-ui 页面上的宿主动作桥 `window.__piWebUiHost.compose()` 注入内容
+（宿主 API **v2**）。旧版 pi-web-ui 没有这个方法时，扩展会明确提示「版本过旧」并改成
+复制 Markdown 兜底，不会静默失败。
+
+## 远程 / 局域网部署（pi-web-ui 不在本机）
+
+**能用，而且不需要在服务器上装任何东西** —— 扩展是纯浏览器侧的东西，投递走的是
+「浏览器里打开的那个 pi-web-ui 页面」，不是服务端 API。所以典型的远端场景是这样：
+
+```
+[你的浏览器]
+  ├─ 标签页 A：https://pi.example.com/         ← pi-web-ui（远在服务器上）
+  └─ 标签页 B：http://localhost:5173/settings  ← 你正在开发/调试的站点
+        ↑ 在这里按 Alt+Shift+P 拾取 → 内容注入到标签页 A 的输入框
+```
+
+只需要做一件事：**授权那个远程地址**。
+
+1. 扩展选项页把地址改成 `https://pi.example.com`（或局域网 `http://192.168.1.10:8787`、
+   反代子路径 `https://host/pi`）
+2. 点「授权该地址」（这一步是必须的：manifest 只预置了 `localhost` / `127.0.0.1`，
+   其余地址要显式授权；没授权时连「找到那个标签页」都做不到）
+3. 点「测试连接」——它会同时告诉你**服务端在不在**和**浏览器里有没有打开这个页面**
+
+远程场景下的注意点：
+
+| 情况                                           | 行为                                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| pi-web-ui 页面**关着**（服务器在跑但没开页面） | 投递失败 → 复制 Markdown 兜底。**这是设计使然**：注入目标就是那个页面                   |
+| 没授权该地址                                   | 明确提示「还没授权 `https://pi.example.com/*`，去选项页点授权」，并复制兜底             |
+| 开着多个标签页（含你正在调试的站点）           | 按 URL 复核，只投给 pi-web-ui 那个页面；**绝不往调试站点/前缀相似的站注入**             |
+| 子路径反代（`https://host/pi/`）               | 支持（授权按 origin，页面匹配按你填的路径前缀）                                         |
+| 开了 `PI_WEB_TOKEN`                            | 与扩展无关：鉴权由页面自己带（cookie/URL），扩展只是往已登录的页面里写草稿              |
+| HTTPS + 自签证书                               | 需要浏览器先信任该证书，否则页面打不开就无从注入                                        |
+| 服务端与浏览器不在同一台机器                   | 完全没问题，扩展不直接访问服务端（只有选项页的「测试连接」会 fetch 一下 `/api/health`） |
+
+## 交互
+
+| 操作                       | 效果                                         |
+| -------------------------- | -------------------------------------------- |
+| 点扩展图标 / `Alt+Shift+P` | 进入拾取模式（当前标签页）                   |
+| hover                      | 高亮 + 尺寸/标签浮签                         |
+| 点击                       | 拾取该元素并进入确认条（普通流程）           |
+| `Shift`+点击               | 追加多选，停留在拾取模式                     |
+| `Enter`                    | 从拾取模式进入确认条                         |
+| `Backspace`                | 撤销最后一个                                 |
+| `Ctrl/⌘+Enter`             | 直接发送（键盘能把整套流程走完）             |
+| `Esc`                      | 确认条 → 回拾取模式；拾取模式 → 退出（丢弃） |
+
+确认条里每个元素一行：选择器 + 「这个元素的问题」备注框 + ✕ 移除；下面还有一条整体说明。
+
+## 失败时的兜底
+
+**绝不会出现「点了添加、什么都没发生」**：
+
+| 情况                                | 行为                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| 没打开 pi-web-ui 页面               | 提示 + **Markdown 复制到剪贴板**，手动粘进输入框 |
+| pi-web-ui 版本过旧（无 compose）    | 明确提示升级后刷新页面，同样复制兜底             |
+| 输入框还没就绪                      | 提示刷新页面后再试，同样复制兜底                 |
+| 截屏失败（无 activeTab 等）         | 只是没有截图，Markdown 照常投递                  |
+| 页面注入不了（`chrome://`、商店页） | 扩展角标 `!` + 悬浮提示写明原因                  |
+
+## 为什么必须装扩展
+
+「在任意网页上点选元素」这件事只能由浏览器内的代码做（要读你打开的那个页面的 DOM、
+要能跨站点运行）。可选的替代方案都更差：
+
+- **书签小工具（bookmarklet）**：不用装东西，但会被页面 CSP 挡（`script-src` 不含
+  `unsafe-inline` 的站点直接失效），且无法可靠地把结果送进另一个源的 pi-web-ui 页面。
+- **纯 DevTools Snippets**：手贴一段代码，每次都要自己找、自己跑，没有 hover 高亮与多选。
+
+所以扩展是唯一干净的做法；代价就是要在**使用它的那台浏览器**里装一次（开发者模式加载即
+可，不必上架商店）。
+
+## 已知限制
+
+- **自动化装不了扩展**：Chromium 137 起移除了 `--load-extension`（本机 Chrome 153 实测
+  `chrome://extensions` 装不上），所以本仓库的 E2E 走「注入真实 `dist/picker.js` + 真
+  background 模块 + 真 pi-web-ui 页面」的等价路线（见 `tests/page-picker-test.mjs`）。
+  手动「加载已解压的扩展程序」不受影响。
+- 截图只截**当前可见区域**（`captureVisibleTab`）；元素几乎全在视口外时不截，而不是截一张误导人的碎图。
+- Vue 只有文件没有行号（SFC 行信息要 sourcemap 才能还原）；生产构建没有 `_debugSource`，
+  React/Vue 定位会自然降级到「命中的 CSS 位置」。
+- 跨域样式表读不到 `cssRules` → 只跳过那张表，不影响其它来源的规则与拾取本身。
+- 投递**依赖 pi-web-ui 页面开着**（这是当前架构的取舍：走页面上的 `compose()` 而不是服务端
+  API，好处是零服务端改动、天然复用登录态与草稿合并逻辑；代价是页面关着时只能复制兜底）。
+  要做成「页面没开也能收到」，得在服务端插件里加一条 HTTP 收件路由 —— 那是另一条路。
+
+## 分发方式（给维护者）
+
+| 通道                           | 现状                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| GitHub Release zip             | ✅ 打 tag 自动出包（`extension-release.yml`），文件名 `page-picker-extension-<版本>.zip` + 无版本号的稳定别名 |
+| 仓库源码                       | ✅ `plugins/page-picker/extension/`，需 `npm run build:extension`                                             |
+| Chrome 应用商店                | ❌ 未上架（需开发者账号 + 审核；用户自填服务地址的扩展在商店里也拿不到额外好处）                              |
+| `pi-web-ui install` / 插件市场 | ❌ 不适用 —— 那条通道装的是 **pi-web-ui 服务端插件**，装不了浏览器扩展                                        |
+
+## 自测
+
+```bash
+npm run build:extension && npx tsc -p plugins/page-picker/extension/tsconfig.json --noEmit
+npx vitest run tests/unit/page-picker.test.ts tests/unit/page-picker-background.test.ts
+npm run build   # 仓库构建（E2E 要用 dist/server）
+node tests/page-picker-test.mjs
+```
+
+- `tests/unit/page-picker.test.ts`：定位串 / HTML 骨架 / 契约 → Markdown（jsdom）
+- `tests/unit/page-picker-background.test.ts`：service worker 决策（假 chrome）+ 裁剪数学
+- `tests/page-picker-test.mjs`：端到端（真实 Chrome + 真实 pi-web-ui 页面）
