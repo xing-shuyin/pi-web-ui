@@ -12,6 +12,30 @@
 
 暂无未发布内容。
 
+## [0.80.2] — 2026-09-12
+
+### Added
+
+- **新官方插件 legado-web（📖 阅读）**：把 [Legado / 阅读](https://github.com/gedoor/legado) 的读书链路搬进 pi-web-ui——搜索 / 发现 / 详情 / 目录 / 正文，书源 JSON 与安卓版兼容，另带书源导入、废源检测与清理。插件自带内嵌前端需要的一切后端：跨域 + GBK 代理、本地存储（书源 / 书架 / 阅读进度只落数据目录 `<dataDir>/legado-web/`，不写浏览器 localStorage）、静态托管。安装 `pi-web-ui install xing-shuyin/pi-web-ui/plugins/legado-web`（插件市场里也可一键装），刷新后顶栏多一个 📖 tab。
+  - **顺带给 AI 配了修源接口**：四个 agent 工具 `legado_rules`（规则速查）/ `legado_book_sources`（读书源文件、只改坏掉的那几个字段）/ `legado_source_probe`（逐步跑链路，回报每步请求、HTTP 状态、用到的规则与失败明细）/ `legado_run_rule`（拿真实页体试一条规则再落盘）；阅读页与书源页的「🤖 AI 修复源 / AI 新建书源」按钮把现场直接发给 AI 并开一个新对话（工作目录限定在插件数据目录）。规则引擎跑在 worker 里，同步 JS 规则（`java.ajax` 等）走 SharedArrayBuffer 桥。
+- **插件 → 宿主动作桥 `window.__piWebUiHost`**：插件 client bundle 是裸 ESM，import 不到应用模块，之前只能往宿主发数据；现在也能让主应用**做事**——`setView("chat" | "terminal" | "git" | "plugin:<id>")` 切主视图，`startChat({ prompt, newChat?, cwd? })` 新建对话（可选切工作目录）并把 prompt 作为用户消息发出去。时序上 `startChat` 会串行等「cwd 切过去 → 对话换成新空白」才发 prompt（服务端 `new_chat` 是异步的，紧接着发会落到旧对话），每步都有超时，超时也发、不静默丢。定义见 `web/src/plugin-host.ts`。
+
+### Changed
+
+- **升级 SDK `@earendil-works/pi-coding-agent` 0.84.4 → 0.85.1**（上游带来 `@earendil-works/chord`、Anthropic SDK 0.123.0、esbuild 0.28 等）；本仓库代码无需跟着改。
+- **README 中英双版按当前实况重写**：功能清单补全（快捷键、Docker、队列撤回、消息构成、项目与会话、搜索与导航、文件树、终端与 Git、模型与设置、Agent 工具与内联标记、声音与通知、PWA、调优用环境变量等章节），中英两边同步并修掉失效锚点。
+- 插件运行期数据 `plugins/*/storage/` 加入 `.gitignore`；legado-web 的上游前端源码与构建产物加入 `.prettierignore`（保持上游风格，不被格式化重排）。
+
+### Fixed
+
+- nginx 子路径示例配置删掉 `favicon-streaming.svg` 的那条 `location`：该图标早已不存在，留着只会让人以为得额外补一个文件。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 本版无文案增量（相对 v0.80.1，已核查）。
+<!-- auto-i18n:end -->
+
 ## [0.80.1] — 2026-09-12
 
 ### Added

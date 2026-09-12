@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.80.1",
+	"version": "0.80.2",
 	"description": "Web chat interface for the pi coding agent, powered by the pi SDK (@earendil-works/pi-coding-agent) — one-command run, Docker/systemd/launchd deployable",
 	"license": "MIT",
 	"author": {
@@ -81,7 +81,7 @@
 	"dependencies": {
 		"@deepseek-ai/dsh-sdk-jsonrpc-server": "^0.1.1-rc.2",
 		"@deepseek-ai/dsh-sdk-protocol": "^0.1.1-rc.2",
-		"@earendil-works/pi-coding-agent": "^0.84.4",
+		"@earendil-works/pi-coding-agent": "^0.85.1",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",
 		"compression": "^1.8.1",
