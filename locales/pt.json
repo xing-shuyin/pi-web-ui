@@ -1,7 +1,7 @@
 {
   "code": "pt",
   "nativeName": "Português",
-  "version": "0.69.0",
+  "version": "0.80.2",
   "strings": {
     "docTitle": "pi-web-ui — agente de codificação pi",
     "cancel": "Cancelar",
@@ -308,7 +308,7 @@
     "volume": "Volume",
     "notifyHeader": "Notificações na área de trabalho",
     "notifyEnable": "Ativar notificações na área de trabalho",
-    "notifyEnableDesc": "Avisa-te quando uma sessão termina ou precisa da tua resposta. Requer permissão; só dispara quando a página não está à vista (outra aplicação, janela minimizada ou separador em segundo plano). No Windows dispara também após dois minutos sem interagir com a página — os sinais de estado do sistema são falsos aí, e um aviso a mais é melhor do que um perdido.",
+    "notifyEnableDesc": "Avisa você quando uma sessão termina ou precisa da sua resposta. Requer permissão; só dispara quando a página não está à vista (outra aplicação, janela minimizada ou aba em segundo plano). No Windows, também dispara após dois minutos sem interação na página — os sinais de presença da plataforma são incorretos lá, e um aviso a mais é melhor do que um perdido.",
     "notifyDenied": "A permissão de notificações está bloqueada — permita notificações para este site nas configurações do navegador (no Windows, permita também o navegador/a aplicação em Configurações → Sistema → Notificações e desligue o Assistente de foco).",
     "notifyUnsupported": "As notificações não são suportadas por este navegador.",
     "notifyInsecure": "Este endereço não é um contexto seguro (http simples num host que não é localhost), por isso o navegador não disponibiliza a API de notificações — abra a aplicação através de 127.0.0.1 ou HTTPS.",
@@ -1111,6 +1111,11 @@
     "vision.model.unavailable": "Modelo de visão indisponível (ModelRuntime.getModel retornou vazio)",
     "vision.model.terminated": "Modelo de visão encerrado de forma anormal ({msg.stopReason})",
     "vision.transcript.empty": "O modelo de visão retornou uma transcrição vazia",
-    "subagents.wait.empty": "Não há subagentes para aguardar (a própria sessão que chama nunca é aguardada)."
+    "subagents.wait.empty": "Não há subagentes para aguardar (a própria sessão que chama nunca é aguardada).",
+    "terminals.headtail.omitted.above": "…[{n} linhas omitidas acima]…",
+    "terminals.headtail.omitted.below": "…[{n} linhas omitidas abaixo]…",
+    "delegate.validate.agent": "Delegação rejeitada: o template \"{agent}\" não está disponível (inexistente ou desativado). Templates disponíveis: {available}. Use subagent_templates para ver as descrições; não invente nomes de template.",
+    "delegate.validate.short": "Delegação rejeitada: a seção {section} está curta demais (mínimo de {min} caracteres). As seis seções são obrigatórias e prompts vagos reprovam: complete e tente de novo; não burle a validação via subagent_spawn.",
+    "delegate.started": "Delegado: {convId}\nTemplate: {agent} · Título: {title}\nO subagente está na lista de execuções à esquerda. Use subagent_wait_all para esperar todos de uma vez (sem polling) e subagent_get_result para o resultado de um deles; continue as interações na MESMA sessão do subagente (subagent_steer), não delegue de novo. Verifique o resultado antes de reportar."
   }
 }
