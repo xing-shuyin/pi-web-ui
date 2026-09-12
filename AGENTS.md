@@ -80,6 +80,7 @@ pi-web-ui/
 │   │   ├── notify.ts           # 桌面/OS 通知（PWA）：是否吞掉通知的判定（Windows 最小化检测）+ 诊断",
 │   │   ├── download.ts         # 下载（fetch→blob，绕开 Chrome Safe Browsing）
 │   │   ├── composer-bridge.ts  # ★ 输入框注入桥：宿主（扩展/插件）把内容塞进输入框草稿的模块级 sink 注册点，有单测（配 composer-draft.ts 的合并/去重纯函数）
+│   │   ├── caret-visual-line.ts # ★ 输入框光标的首/末**视觉行**判定（镜像 div 量 offsetTop，自动折行算行；无布局时回落逻辑行），供 ↑/↓ 翻输入历史用，有单测 + 真浏览器回归（tests/composer-history-test.mjs）
 │   │   ├── message-delta.ts    # message_delta 增量 patch 纯函数，有单测
 │   │   ├── lazy-window.ts      # 消息列表惰性窗口化纯函数，有单测
 │   │   ├── search-text.ts      # 会话内搜索索引纯函数，有单测

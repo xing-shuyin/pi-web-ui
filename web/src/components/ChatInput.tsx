@@ -5,6 +5,7 @@ import { useT, useI18n } from "../i18n";
 import { appSend, useAppField, useIsDsh } from "../app-globals";
 import { mergeRecalledDraft } from "../composer-draft";
 import { registerDraftSink } from "../composer-bridge";
+import { caretVisualLineFlags } from "../caret-visual-line";
 import { isRasterImage } from "../image-paste";
 import { recordModelUsage } from "../model-usage";
 import { loadPromptHistory, pushPromptHistory } from "../prompt-history";
@@ -342,17 +343,8 @@ export const ChatInput = memo(function ChatInput({
 		}
 	}, [text]);
 
-	/** 输入框光标是否在第一行（Up 才进入历史；多行时光标在首行内才触发，避免打断多行编辑）。 */
-	const isCursorAtFirstLine = (ta: HTMLTextAreaElement): boolean => {
-		if (ta.selectionStart !== ta.selectionEnd) return false;
-		const before = ta.value.slice(0, ta.selectionStart);
-		return !before.includes("\n");
-	};
-	const isCursorAtLastLine = (ta: HTMLTextAreaElement): boolean => {
-		if (ta.selectionStart !== ta.selectionEnd) return false;
-		const after = ta.value.slice(ta.selectionStart);
-		return !after.includes("\n");
-	};
+	/* 光标是否在首/末**视觉行**交给 caret-visual-line.ts：自动折行的长草稿（没有 \n，
+	 * 但界面上是多行）也必须先让 ↑/↓ 走普通光标移动，不能误触发历史（issue #127）。 */
 
 	/** 把当前待发送附件（含粘贴图/上传文件/工作区引用）转成 prompt 消息格式。
 	 *  submit 与快捷短语发送共用 —— 点短语时文件引用同样带上，不丢失。 */
@@ -476,16 +468,18 @@ export const ChatInput = memo(function ChatInput({
 		}
 		// Global prompt history cycling (issue #68): Up = older, Down = newer.
 		// 不绑定到特定会话；存储在 localStorage，跨对话全局共享。
-		// 多行编辑时：仅当光标在首行（Up）/ 末行（Down）才进入历史，避免打断行内光标移动。
+		// 多行编辑时：仅当光标在首/末**视觉行**才进入历史（自动折行的长草稿同样算多行，
+		// 见 caret-visual-line.ts），否则交给浏览器做普通光标移动，避免打断行内编辑。
 		if (e.key === "ArrowUp" || e.key === "ArrowDown") {
 			// 修饰键组合不触发历史（避免与快捷键冲突）。
 			if (e.ctrlKey || e.metaKey || e.altKey) return;
 			const ta = taRef.current;
 			if (!ta) return;
 			const isUp = e.key === "ArrowUp";
-			// 多行时非边界行：走光标移动，不进历史。
-			if (isUp && !isCursorAtFirstLine(ta)) return;
-			if (!isUp && !isCursorAtLastLine(ta)) return;
+			// 非边界视觉行：走光标移动，不进历史（自动折行也算多行）。
+			const lineFlags = caretVisualLineFlags(ta);
+			if (isUp && !lineFlags.first) return;
+			if (!isUp && !lineFlags.last) return;
 			// Down 且当前不在历史中：不消耗，让光标正常移动（末行 Down 本来就是无操作）。
 			if (!isUp && historyIndexRef.current === -1) return;
 			const history = loadPromptHistory();
