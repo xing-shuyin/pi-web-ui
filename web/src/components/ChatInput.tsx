@@ -4,6 +4,7 @@ import type { ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState }
 import { useT, useI18n } from "../i18n";
 import { appSend, useAppField, useIsDsh } from "../app-globals";
 import { mergeRecalledDraft } from "../composer-draft";
+import { registerDraftSink } from "../composer-bridge";
 import { isRasterImage } from "../image-paste";
 import { recordModelUsage } from "../model-usage";
 import { loadPromptHistory, pushPromptHistory } from "../prompt-history";
@@ -104,7 +105,6 @@ export const ChatInput = memo(function ChatInput({
 	const slashHint = (c: SlashCommandInfo) =>
 		locale !== "zh" && c.argumentHintEn ? c.argumentHintEn : (c.argumentHint ?? "");
 	const [text, setText] = useState("");
-	const [dragOver, setDragOver] = useState(false);
 	/** Slash-command picker: non-null while open (filtered by the current input). */
 	const [completions, setCompletions] = useState<SlashCommandInfo[] | null>(null);
 	const [completionIndex, setCompletionIndex] = useState(0);
@@ -140,6 +140,24 @@ export const ChatInput = memo(function ChatInput({
 			ta.selectionStart = ta.selectionEnd = ta.value.length;
 		});
 	}, [recallDrafts]);
+
+	// 宿主注入草稿（浏览器元素拾取扩展 / 插件 → window.__piWebUiHost.compose）：
+	// 合并语义与撤回完全一致（空则填入、非空追加、绝不覆盖），所以直接复用同一个纯函数。
+	// 挂载时装一次：setText 是 useState 的稳定引用，不依赖任何会变的闭包。
+	useEffect(() => {
+		registerDraftSink((incoming) => {
+			setText((prev) => mergeRecalledDraft(prev, incoming));
+			historyIndexRef.current = -1;
+			draftRef.current = "";
+			requestAnimationFrame(() => {
+				const ta = taRef.current;
+				if (!ta) return;
+				ta.focus();
+				ta.selectionStart = ta.selectionEnd = ta.value.length;
+			});
+		});
+		return () => registerDraftSink(null);
+	}, []);
 
 	const SOURCE_LABEL: Record<SlashCommandInfo["source"], string> = {
 		builtin: t("slashBuiltin"),
@@ -605,29 +623,19 @@ export const ChatInput = memo(function ChatInput({
 	return (
 		<div
 			ref={composerRef}
-			className={`inputbar${dragOver ? " drop-active" : ""}`}
+			className="inputbar"
 			onDragOver={(e) => {
+				// 只做 preventDefault（允许落点 drop）；提示交给全窗口遮罩
+				// （App.tsx 的 .app-drop-overlay），输入条不再叠一层局部遮罩。
 				e.preventDefault();
-				e.stopPropagation();
-				setDragOver(true);
-			}}
-			onDragLeave={(e) => {
-				if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-					setDragOver(false);
-				}
 			}}
 			onDrop={(e) => {
+				// 输入条优先：stopPropagation 后 App 的 onDrop 不再重复附加。
 				e.preventDefault();
 				e.stopPropagation();
-				setDragOver(false);
 				handleFiles(e.dataTransfer?.files ?? null);
 			}}
 		>
-			{dragOver && (
-				<div className="drop-overlay">
-					<span>📎 {t("dropHereToAttach")}</span>
-				</div>
-			)}
 			{attachments.length > 0 && (
 				<div className="attach-row">
 					{attachments.map((a) => (

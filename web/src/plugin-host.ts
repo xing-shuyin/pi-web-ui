@@ -7,10 +7,15 @@
  * 例如 legado-web 插件的「AI 修复源」按钮）。这些动作走 window 上的单例：
  *
  *   window.__piWebUiHost = {
- *     version: 1,
+ *     version: 2,
  *     setView("chat" | "terminal" | "git" | `plugin:<id>`),
  *     startChat({ prompt, newChat?, cwd? }) → boolean   // 已受理，动作在后台串行完成
+ *     compose({ text?, attachments? }) → boolean        // 放进输入框草稿，等用户自己发
  *   }
+ *
+ * startChat 与 compose 是两条不同的路：前者“直接开一个新对话把话发出去”（脚本化），
+ * 后者“把内容放进输入框草稿让用户补一句再发”（人在环中）—— 元素拾取这类需要用户
+ * 补充描述的场景走 compose（见 composer-bridge.ts）。
  *
  * 时序坑：服务端的 `new_chat` 是异步的（`void cs.newChat()`），紧接着发 `prompt` 会落到
  * **旧对话**里（activeId 要等 runtime 建好才切）。所以这里串行等待：先等 cwd 切过去、
@@ -21,10 +26,12 @@
  */
 
 import type { AppSend } from "./app-globals";
+import { composeToComposer, isComposerReady, type ComposerPayload } from "./composer-bridge";
 
 export const PLUGIN_HOST_GLOBAL = "__piWebUiHost";
-/** 宿主 API 版本：插件可用它判断宿主能力（> 本值表示宿主更新）。 */
-export const PLUGIN_HOST_API_VERSION = 1;
+/** 宿主 API 版本：插件可用它判断宿主能力（> 本值表示宿主更新）。
+ *  2 = 新增 `compose()`（注入输入框草稿）。 */
+export const PLUGIN_HOST_API_VERSION = 2;
 
 export interface PluginHostStartChatOptions {
 	/** 要作为用户消息发出的文本（必填，空串直接拒绝）。 */
@@ -35,6 +42,9 @@ export interface PluginHostStartChatOptions {
 	cwd?: string;
 }
 
+/** 注入输入框草稿的内容（见 composer-bridge.ts 的 ComposerPayload）。 */
+export type PluginHostComposeOptions = ComposerPayload;
+
 export interface PluginHostApi {
 	version: number;
 	/** 切主视图（"chat" | "terminal" | "git" | `plugin:<id>`）。 */
@@ -42,6 +52,10 @@ export interface PluginHostApi {
 	/** 新建对话（可选切工作目录）并把 prompt 作为用户消息发出去。
 	 *  返回「已受理」；完整流程在后台串行完成（每步都有超时，超时也照发，不静默丢消息）。 */
 	startChat(opts: PluginHostStartChatOptions): boolean;
+	/** 把内容放进**输入框草稿**（用户补一句话再自己发），返回是否受理。
+	 *  与 startChat 的差别：不要求连接就绪（草稿是本地状态，断线也能先攒着），
+	 *  但输入框还没挂载时返回 false；内容全空也返回 false。 */
+	compose(opts: PluginHostComposeOptions): boolean;
 }
 
 export interface PluginHostDeps {
@@ -106,6 +120,13 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 				/* 发送失败已有各自的上层提示，这里不抛到调用方 */
 			});
 			return true;
+		},
+		compose(opts) {
+			if (!isComposerReady()) return false;
+			return composeToComposer({
+				text: typeof opts?.text === "string" ? opts.text : undefined,
+				attachments: Array.isArray(opts?.attachments) ? opts.attachments : undefined,
+			});
 		},
 	};
 }

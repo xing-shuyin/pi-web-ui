@@ -23,6 +23,8 @@ const TerminalPanel = lazy(() => import("./components/TerminalPanel").then((m) =
 import { ScmPanel } from "./components/SCMPanel";
 import { PluginView } from "./components/PluginView";
 import { createPluginHostApi, installPluginHostApi } from "./plugin-host";
+import { registerAttachmentSink } from "./composer-bridge";
+import { appendDraftAttachments } from "./composer-draft";
 import { syncPluginViews, subscribeLoadedPluginViews, type LoadedPluginView } from "./plugin-loader";
 import { setFenceSend, syncFenceRenderers } from "./plugin-fence";
 import { PiSetupModal } from "./components/PiSetupModal";
@@ -197,11 +199,25 @@ export function App() {
 		document.title = name ? `${name} — pi-web-ui` : t("docTitle");
 	}, [cwd, projectTitle, t]);
 	const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+	// 宿主注入的待发附件（浏览器元素拾取扩展的截图 → window.__piWebUiHost.compose）：
+	// 只追加不覆盖，判重口径与下面的 attach() 一致（见 composer-draft.ts）。
+	useEffect(() => {
+		registerAttachmentSink((items) => setAttachments((prev) => appendDraftAttachments(prev, items)));
+		return () => registerAttachmentSink(null);
+	}, []);
 	const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
 	/** Full-window file drag in progress (issue #19) — shows the app-wide
 	 *  drop overlay; drop anywhere attaches, the input bar keeps priority via
 	 *  its own stopPropagation handlers. */
 	const [appDragOver, setAppDragOver] = useState(false);
+	// 嵌套落点（输入条 / 消息编辑器）的 onDrop 会 stopPropagation（保优先级），
+	// 父级 onDrop 就收不到 → 全屏遮罩会一直挂着。在 window 捕获阶段兜底复位：
+	// 捕获先于任何子 handler 执行，只清提示、不碰落点处理。
+	useEffect(() => {
+		const clear = () => setAppDragOver(false);
+		window.addEventListener("drop", clear, true);
+		return () => window.removeEventListener("drop", clear, true);
+	}, []);
 	const [viewChosen, setView] = useState<ViewName>("chat");
 	/* PI_WEB_TABS: a tab this instance does not offer cannot be shown, even if
 	   something else asks for it — a plugin firing pi-web-ui:plugin-run-command,

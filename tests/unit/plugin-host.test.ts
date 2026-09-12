@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPluginHostApi, PLUGIN_HOST_API_VERSION } from "../../web/src/plugin-host";
+import { registerAttachmentSink, registerDraftSink, resetComposerSinks } from "../../web/src/composer-bridge";
 import type { ClientMessage } from "../../web/src/types";
 
 /** 宿主 API 的时序纪律：new_chat 是异步的（`void cs.newChat()`），prompt 必须等
@@ -126,5 +127,53 @@ describe("createPluginHostApi", () => {
 		h.api.setView("chat");
 		h.api.setView("  ");
 		expect(h.views).toEqual(["chat"]);
+	});
+});
+
+describe("createPluginHostApi.compose", () => {
+	/** 装上双 sink（模拟 App + ChatInput 已挂载）。 */
+	function mountComposer() {
+		const drafts: string[] = [];
+		registerDraftSink((t) => drafts.push(t));
+		registerAttachmentSink(() => {});
+		return drafts;
+	}
+
+	it("宿主 API 版本 ≥ 2（compose 是 v2 新增能力）", () => {
+		expect(harness().api.version).toBeGreaterThanOrEqual(2);
+	});
+
+	it("输入框还没挂载 → 拒收（不静默丢，交给调用方提示）", () => {
+		resetComposerSinks();
+		expect(harness().api.compose({ text: "x" })).toBe(false);
+	});
+
+	it("文本进草稿，且**不要求连接就绪**（草稿是本地状态）", () => {
+		const drafts = mountComposer();
+		const h = harness();
+		h.setReady(false);
+		expect(h.api.compose({ text: "### 元素\n看这个" })).toBe(true);
+		expect(drafts).toEqual(["### 元素\n看这个"]);
+		// 关键差异：startChat 此时拒收，compose 照收
+		expect(h.api.startChat({ prompt: "x" })).toBe(false);
+		expect(h.sent).toHaveLength(0);
+		resetComposerSinks();
+	});
+
+	it("附件透传给附件 sink，不带文本也能投", () => {
+		resetComposerSinks();
+		const got: unknown[] = [];
+		registerAttachmentSink((items) => got.push(items));
+		const shot = { path: "", name: "s.png", mode: "inline" as const, imageData: "AAA", key: "k" };
+		expect(harness().api.compose({ attachments: [shot] })).toBe(true);
+		expect(got).toEqual([[shot]]);
+		resetComposerSinks();
+	});
+
+	it("空内容 → 拒收", () => {
+		mountComposer();
+		expect(harness().api.compose({})).toBe(false);
+		expect(harness().api.compose({ text: "   " })).toBe(false);
+		resetComposerSinks();
 	});
 });
