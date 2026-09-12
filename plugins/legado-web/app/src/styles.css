@@ -26,6 +26,12 @@ button.ghost.aifix:hover { background: color-mix(in srgb, var(--acc) 14%, transp
 .toc div:hover { background: var(--line); } .toc div.cur { color: var(--acc); font-weight: 700; }
 .content { font-size: 18px; line-height: 1.9; white-space: pre-wrap; }
 .content p { margin: .6em 0; }
+/* 章末导航：正文读到底就能直接翻章，不用滚回顶部 */
+.chapnav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+  margin: 26px 0 2px; padding-top: 14px; border-top: 1px solid var(--line); }
+.chapnav button.ghost { padding: 8px 18px; }
+.chapnav button[disabled] { opacity: .4; cursor: default; }
+.chapnav .meta { flex-basis: 100%; text-align: center; font-size: 13px; opacity: .75; }
 footer { margin-top: 24px; font-size: 12px; opacity: .6; }
 .err { color: #d33f49; font-size: 13px; }
 .ok { color: #1a9e54; font-size: 13px; }

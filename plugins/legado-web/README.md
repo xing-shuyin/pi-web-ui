@@ -210,6 +210,8 @@ npm run build:server && node tests/legado-web-test.mjs         # 端口 8993/899
 node tests/legado-web-engine-test.mjs                          # 端口 8995：AI 工具 + 规则引擎（零 token）
 node tests/legado-web-ai-fix-test.mjs                          # 端口 8996：「AI 修复源」按钮 E2E（缺 Chrome 自动 SKIP）
 node tests/legado-web-storage-test.mjs                         # 端口 8997：大数据量下的存储降级（缺 Chrome 自动 SKIP）
+node tests/legado-web-explore-test.mjs                         # 端口 8998/8999：发现页 + 收藏书源 E2E（缺 Chrome 自动 SKIP）
+node tests/legado-web-reader-test.mjs                          # 端口 8971/8972：阅读页章末导航 E2E（缺 Chrome 自动 SKIP）
 ```
 
 `legado-web-test`：清单推送 / 内嵌前端静态托管 / 代理 UTF-8+GBK / charset 编码（URL 与 POST body）/
@@ -222,4 +224,11 @@ node tests/legado-web-storage-test.mjs                         # 端口 8997：�
 
 `legado-web-storage-test`（Chrome）：存储契约——1.8MB 书源 + 3000 章书架下不报 QuotaExceededError、
 跑完后 localStorage **一个 `legado.*` 键都不剩**、刷新后数据仍在（来自文件）、老浏览器数据被迁进文件且老键被清。
-前两个进了 `npm run test:smoke`；宿主动作桥的时序另有单测 `tests/unit/plugin-host.test.ts`。
+
+`legado-web-explore-test`（Chrome）：发现页「★ 收藏书源」+ 直接搜这个源 + 分类浏览。
+
+`legado-web-reader-test`（Chrome）：阅读页**章末导航**——正文末尾出现「上一章 / 目录 / 下一章」、
+第一章上一章置灰、读到底点下一章换章并回顶、最后一章下一章置灰 + 「已是最后一章」、章末目录展开并回顶。
+
+前两个进了 `npm run test:smoke`；章末导航的纯逻辑单测在 `tests/unit/legado-chapnav.test.ts`；
+宿主动作桥的时序另有单测 `tests/unit/plugin-host.test.ts`。

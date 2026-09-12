@@ -5,6 +5,7 @@ import { fetchText } from './core/request'
 import { ruleErrors } from './core/analyzeRule'
 import { checkSource, type CheckMode, type CheckResult } from './core/check'
 import { clearExploreKindsCache, getInfoMap, loadExploreBooks, parseExploreKinds, type ExploreKind } from './core/explore'
+import { chapterNavState } from './core/chapnav'
 import { evalJsRule, getScope } from './core/js'
 import { hydrateFromBackend, prefsStore, remoteStoreChanged, shelfStore, sourceStore, checkStore, storageEvents, storageMode, type CheckRecord } from './store'
 import {
@@ -471,11 +472,16 @@ async function renderReader(idx: number) {
   }
   curIdx = idx
   const total = chapters.length
+  // 章末导航（正文读到底直接翻章，不用滚回顶部）与顶栏同名按钮同规则：
+  // 走不通的方向直接置灰 + 末章写「已是最后一章」，不再点了没反应。
+  const nav = chapterNavState(idx, total, cur.name)
+  const hasPrev = nav.canPrev
+  const hasNext = nav.canNext
   el.innerHTML = `<div class="card"><div class="row">
       <b style="flex:1">${esc(cur.name)} ${total ? `（${idx + 1}/${total}）` : ''}</b>
       <button class="ghost" id="r-toc">目录</button>
-      <button class="ghost" id="r-prev">上一章</button>
-      <button class="ghost" id="r-next">下一章</button>
+      <button class="ghost" id="r-prev" ${hasPrev ? '' : 'disabled'}>上一章</button>
+      <button class="ghost" id="r-next" ${hasNext ? '' : 'disabled'}>下一章</button>
       <button class="ghost" id="r-reload" title="重读数据目录里的书源/书架，再按新规则重拉本章（AI 改过书源后点它；目录规则变了会一并重拉目录）">刷新</button>
       <button class="ghost" id="r-del-src" title="这本书读不了时可删掉这个书源">删源</button>
       ${aiFixButton({ scene: 'content', sourceUrl: cur.bookSourceUrl, sourceName: sourceStore.all().find((s) => s.bookSourceUrl === cur!.bookSourceUrl)?.bookSourceName, bookName: cur.name, bookUrl: cur.bookUrl })}
@@ -484,7 +490,13 @@ async function renderReader(idx: number) {
     <div class="meta" id="r-srcinfo" style="margin-top:4px">源：${esc(sourceStore.all().find((s) => s.bookSourceUrl === cur!.bookSourceUrl)?.bookSourceName ?? '(已删除)')}</div>
     <div class="toc" id="r-toclist" hidden style="margin-top:8px;max-height:300px;overflow:auto"></div>
     <h3 id="r-title">${esc(chapters[idx]?.name ?? '')}</h3>
-    <div class="content" id="r-body">正文加载中…</div></div>`
+    <div class="content" id="r-body">正文加载中…</div>
+    <div class="chapnav" id="r-nav">
+      <button class="ghost" id="r-prev2" ${hasPrev ? '' : 'disabled'}>← 上一章</button>
+      <button class="ghost" id="r-toc2" title="展开目录并回到顶部">目录</button>
+      <button class="ghost" id="r-next2" ${hasNext ? '' : 'disabled'}>下一章 →</button>
+      <div class="meta" id="r-nav-meta">${esc(nav.note)}</div>
+    </div></div>`
   const toc = $('#r-toclist') as HTMLElement
   toc.innerHTML = chapters.map((c, i) => `<div data-i="${i}" class="${i === idx ? 'cur' : ''}">${esc(c.name)}</div>`).join('')
   toc.querySelectorAll('[data-i]').forEach((d) => {
@@ -493,11 +505,20 @@ async function renderReader(idx: number) {
   $('#r-toc')?.addEventListener('click', () => {
     toc.hidden = !toc.hidden
   })
-  $('#r-prev')?.addEventListener('click', () => {
+  const goPrev = () => {
     if (idx > 0) renderReader(idx - 1)
-  })
-  $('#r-next')?.addEventListener('click', () => {
+  }
+  const goNext = () => {
     if (idx < total - 1) renderReader(idx + 1)
+  }
+  $('#r-prev')?.addEventListener('click', goPrev)
+  $('#r-next')?.addEventListener('click', goNext)
+  // 章末那一条：同一个动作（换章后 renderReader 会把页面滚回顶部）
+  $('#r-prev2')?.addEventListener('click', goPrev)
+  $('#r-next2')?.addEventListener('click', goNext)
+  $('#r-toc2')?.addEventListener('click', () => {
+    toc.hidden = false // 目录在顶栏下方，展开后滚上去就能选章
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   })
   // 重读数据目录 + 按新规则重拉本章（AI 修完源不用去别的页面找刷新按钮）
   $('#r-reload')?.addEventListener('click', () => void refreshFromStore('刷新'))
