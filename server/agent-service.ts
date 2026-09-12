@@ -1031,18 +1031,13 @@ export class ClientSession {
 		this.convs.set(conv.id, conv);
 		// 子代理不走 bindSession——这里同样注入面板的重试次数覆盖。
 		this.applyRetryOverrides();
-		// 扩展绑定（rpc 模式；uiContext 只给无害的 mock theme/status 槽，避免与主对话
-		// 的 widget 冲突。无 uiContext 时扩展的 ctx.ui.theme.fg 会打到 TUI 真 theme
-		// 代理上抛 "Theme not initialized"，每个扩展一条 error toast。）
+		// 扩展绑定（rpc 模式）；使用完整的 Web UI context，避免扩展调用新增的
+		// ExtensionUIContext 方法时因局部 mock 缺失而崩溃。子代理的 UI 输出不下发，
+		// 因此不会与主对话的 widget/status 冲突。
 		try {
 			await conv.session.bindExtensions({
 				mode: "rpc",
-				uiContext: {
-					theme: mockThemeProxy,
-					setStatus: () => {},
-					setWidget: () => {},
-					notify: () => {},
-				} as never,
+				uiContext: new WebUIContext(() => {}),
 				onError: (err) => this.emit({ type: "notice", level: "error", text: err.error, textEn: err.error }),
 			});
 		} catch {
