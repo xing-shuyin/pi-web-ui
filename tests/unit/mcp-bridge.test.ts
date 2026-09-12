@@ -38,11 +38,11 @@ afterEach(() => {
 });
 
 describe("McpClient 握手与工具", () => {
-	it("start 握手 + 列出 7 个工具", async () => {
+	it("start 握手 + 列出 8 个工具", async () => {
 		const c = client();
 		await c.start();
 		const names = c.getTools().map((t) => t.name);
-		expect(names).toEqual(["echo", "add", "fail", "slow", "screenshot", "pdf", "mixed"]);
+		expect(names).toEqual(["echo", "add", "fail", "slow", "screenshot", "pdf", "textfile", "mixed"]);
 	});
 
 	it("echo 原样返回；add 求和", async () => {
@@ -92,6 +92,14 @@ describe("McpClient 握手与工具", () => {
 		expect(res.content[0].text).toContain("9 字节");
 	});
 
+	it("textfile 的文本型 resource 不丢正文（按文本形状返回）", async () => {
+		const c = client();
+		await c.start();
+		// TextResourceContents（resource.text）是真实正文，不是「无法内联的二进制」：
+		// 与普通 text 工具同形返回（纯文本结果仍是拼接字符串）。
+		await expect(c.call("textfile", {})).resolves.toEqual({ content: "文本资源正文", isError: false });
+	});
+
 	it("mixed 保序透传（文本块在前、图片块在后）", async () => {
 		const c = client();
 		await c.start();
@@ -108,7 +116,7 @@ describe("McpBridge 聚合适配", () => {
 		});
 		await bridge.load();
 		const tools = bridge.getTools();
-		expect(tools.length).toBe(7);
+		expect(tools.length).toBe(8);
 		const add = tools.find((t) => t.name === "add")!;
 		expect(add.label).toContain("csrv");
 		expect(typeof add.execute).toBe("function");

@@ -21,6 +21,8 @@
 
 ### Fixed
 
+- **MCP 桥把非文本内容块静默丢掉：截图 / 图像生成 / 图表类工具一律返回空串**——`server/mcp-bridge.ts` 的 `McpClient.call()` 以前只拼 `type === "text"` 的块，`image` 与 `resource` 块被直接丢弃，模型既不报错也拿不到任何东西，工具形同虚设（同一 `browser_screenshot` 调用：桥内得到 `""`，桥外直连 stdio 是 22840 字符的 `image/png`）。现在按块类型保序映射：`image` 原样透传成 SDK 的 `ImageContent`（`{type,data,mimeType}`，进会话后由 SDK 的 `normalizeToolResultImages` 统一缩放，超大图不会再让 provider 整段报错）；**文本型 `resource`（`resource.text`）当文本透传**——MCP 的 `EmbeddedResource` 分 TextResourceContents 与 BlobResourceContents 两种，前者是真实正文（filesystem 类 MCP 的 read_text_file 就走这条），退化成「已跳过」等于把文件内容吞掉；PDF 这类 blob 与 audio 退化为「mimeType + 约 N 字节，无法内联」的提示（SDK 内容联合只有 text/image/thinking/toolCall，没有 blob 载体）；纯文本结果仍返回拼接字符串（老形状不变，不破坏既有调用方）。回归：`tests/unit/mcp-bridge.test.ts`（image 逐字保真 / 文本资源不丢正文 / blob 退化提示 / 混合保序）+ `tests/mcp-bridge-test.mjs`（e2e 握手 8 tools）。限定：Web UI 的工具卡按既有行为只渲染文本（工具结果里的图片在序列化时是 `[image result]`），图片会进**模型上下文**但不在 tool 卡里显示。
+
 - **命令行 `pi-web-ui install <插件> --force` 之后插件一直「不存在」**：CLI 装插件是先整目录删掉再拷新的（`install --force` 的 rm→cp 窗口），撞上这个窗口期的一次插件扫描会把插件当成「已卸载」反激活；而反激活时没把插件从 `attempted` 集合里摘掉，目录回来后永远不会再激活——插件的 HTTP 路由（如 legado-web 的 `/plugins-api/legado-web/proxy`）与 AI 工具在本进程内彻底消失，前端只报「代理请求失败 404 <url>」，CLI 承诺的「服务运行中刷新浏览器即可加载」失效，必须重启服务才恢复。现在反激活会摘掉 `attempted` 并推进 epoch（重新 `import` 拿到磁盘上的新代码、浏览器也重拉插件 client bundle），刷新浏览器即自愈。回归：`tests/unit/plugin-manager.test.ts`（目录消失→回来必须重新激活且用新代码）+ `tests/plugin-test.mjs`（真实 HTTP 路由的 rm→cp 窗口自愈）。
 
 ## [0.80.2] — 2026-09-12

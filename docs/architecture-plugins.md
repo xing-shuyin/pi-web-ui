@@ -128,6 +128,8 @@ App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore
 
 读取 `<dataDir>/mcp.json` 启动外部 MCP 服务器（stdio、换行分隔 JSON-RPC，零三方依赖；`{servers:{名:{command,args,cwd,env}}}`），握手 initialize→initialized→tools/list→tools/call 后把每个远端工具适配成 PluginAgentTool（名字归一化 sanitizeToolName），并入 plugin.d.ts 的 pluginToolsProvider（与插件工具同一 customTools 管线）。单服务器失败隔离（rejectAll + 日志，不炸进程）；dispose 时 kill 子进程；请求按 id 匹配 + 超时看门狗。
 
+**工具结果的 content 块按类型映射**（以前只拼 `type==="text"`，截图/图表类工具一律返回空串）：`image` 块原样透传为 SDK 的 `ImageContent`（`{type,data,mimeType}`，进会话后由 SDK 的 `normalizeToolResultImages` 统一缩放，超限图不会让 provider 整段报错）；文本型 `resource`（`resource.text`，filesystem 类 MCP 的 read_text_file 走这条）当文本透传；blob（PDF 等）与 audio 退化为「mimeType + 约 N 字节，无法内联」的提示（SDK 内容联合只有 text|image|thinking|toolCall，没有 blob 载体）；纯文本结果仍是拼接字符串（老形状不破坏既有调用方）。注意 Web UI 的工具卡按既有行为只渲染文本（工具结果里的图片在 `serialize.ts` 里是 `[image result]`），模型上下文不受影响。
+
 ## 插件市场（可一键安装的插件列表）
 
 > 设置面板「界面插件」页上方新增的「插件市场」区：列表里每条插件一个「安装」

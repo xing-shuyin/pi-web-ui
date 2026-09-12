@@ -44,7 +44,7 @@ interface McpContentBlock {
 	text?: string;
 	data?: string;
 	mimeType?: string;
-	resource?: { uri?: string; mimeType?: string; blob?: string } | string;
+	resource?: { uri?: string; mimeType?: string; text?: string; blob?: string } | string;
 }
 
 /** 桥透传给会话的内容块：text 原样；image 字段与 SDK 的 ImageContent（type/data/mimeType）一致。 */
@@ -157,9 +157,16 @@ export class McpClient {
 				continue;
 			}
 			if (c.type && c.type !== "text") {
-				// resource/audio 等块在 SDK 内容联合里没有载体（只有 text|image|thinking|toolCall），
-				// 退化为文本提示，让模型至少知道工具返回了什么，而不是看到一个空串。
 				const r = typeof c.resource === "object" && c.resource !== null ? c.resource : {};
+				// MCP 的 EmbeddedResource 有两种承载：TextResourceContents（resource.text）与
+				// BlobResourceContents（resource.blob）。文本型带真实正文（filesystem 类 MCP 的
+				// read_text_file 就走这条），当文本透传 —— 退化成「已跳过」等于把文件内容吞掉。
+				if (typeof r.text === "string" && r.text) {
+					blocks.push({ type: "text", text: r.text });
+					continue;
+				}
+				// resource(blob)/audio 等块在 SDK 内容联合里没有载体（只有 text|image|thinking|toolCall），
+				// 退化为文本提示，让模型至少知道工具返回了什么，而不是看到一个空串。
 				const mime = (c.mimeType ?? r.mimeType ?? "").trim();
 				const blob = typeof r.blob === "string" && r.blob ? r.blob : c.data;
 				const size =

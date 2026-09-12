@@ -2,8 +2,8 @@
 /**
  * MCP 测试夹具服务器 —— 极简 NDJSON JSON-RPC 实现，用作 mcp-bridge 的对手端。
  * 工具：echo（原样回传 parameters）、add（a+b）、fail（isError 工具）、
- * slow（延迟后返回，用于校验超时）、screenshot（image 块）、pdf（resource 块）、
- * mixed（文本 + 图片混合块，校验保序透传）。
+ * slow（延迟后返回，用于校验超时）、screenshot（image 块）、pdf（资源 blob 块）、
+ * textfile（资源 text 块）、mixed（文本 + 图片混合块，校验保序透传）。
  * 用法：node mcp-echo-server.mjs [delay-resp-ms]
  */
 import { createInterface } from "node:readline";
@@ -28,7 +28,8 @@ const TOOLS = [
 	{ name: "fail", description: "总是失败（isError）", inputSchema: { type: "object" } },
 	{ name: "slow", description: "睡眠 resp-delay 后返回", inputSchema: { type: "object" } },
 	{ name: "screenshot", description: "返回一张 PNG 图片（image 块）", inputSchema: { type: "object" } },
-	{ name: "pdf", description: "返回一个 PDF 资源（resource 块）", inputSchema: { type: "object" } },
+	{ name: "pdf", description: "返回一个 PDF 资源（resource 块，blob）", inputSchema: { type: "object" } },
+	{ name: "textfile", description: "返回一个文本资源（resource 块，text）", inputSchema: { type: "object" } },
 	{ name: "mixed", description: "文本 + 图片混合结果", inputSchema: { type: "object" } },
 ];
 
@@ -98,6 +99,20 @@ rl.on("line", (line) => {
 							uri: "obscura://capture/current-page.pdf",
 							mimeType: "application/pdf",
 							blob: "JVBERi0xLjQK",
+						},
+					},
+				],
+			});
+		}
+		if (name === "textfile") {
+			return finish(msg.id, {
+				content: [
+					{
+						type: "resource",
+						resource: {
+							uri: "file:///tmp/notes.txt",
+							mimeType: "text/plain",
+							text: "文本资源正文",
 						},
 					},
 				],

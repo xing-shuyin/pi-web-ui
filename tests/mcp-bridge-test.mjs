@@ -2,7 +2,7 @@
  * MCP 工具桥端到端冒烟（零 token、自包含、独立端口 8990）：
  * 临时 data-dir 写 mcp.json（指向本地夹具服务器），起真实 server：
  *  - server 启动时 MCP 服务器被拉起（stdout 出现 ready 日志）
- *  - 工具数量正确（7）
+ *  - 工具数量正确（8）
  *  - MCP 服务器失败不炸 server 进程
  */
 import { spawn } from "node:child_process";
@@ -53,10 +53,10 @@ async function main() {
 	let ok = false;
 	for (let i = 0; i < 60 && !ok; i++) {
 		await sleep(250);
-		if (/listening|ready|available/i.test(out) && /\[mcp:csrv\] ready, 7 tools/.test(out)) ok = true;
+		if (/listening|ready|available/i.test(out) && /\[mcp:csrv\] ready, 8 tools/.test(out)) ok = true;
 	}
 	if (!ok) throw new Error("server 或 MCP 未就绪。输出：\n" + out);
-	console.log("✓ MCP 服务器启动并握手（日志：[mcp:csrv] ready, 7 tools）");
+	console.log("✓ MCP 服务器启动并握手（日志：[mcp:csrv] ready, 8 tools）");
 
 	// badsrv 失败不应影响 server 存活
 	if (/definitely-not-a-real-cmd-xyz/.test(out) && !/\[mcp\] 服务器「badsrv」启动失败/.test(out)) {
