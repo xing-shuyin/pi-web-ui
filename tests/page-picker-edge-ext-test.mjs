@@ -246,6 +246,35 @@ const bar = await piPage.evaluate(() => {
 });
 check("真扩展在 pi-web-ui 页面上弹出绑定浮条（自己认得出页面）", bar.present && !bar.hidden, bar.text.slice(0, 50));
 
+// 3b) 设置页的「发送什么」多选（真浏览器渲染 + 真 storage）
+const optionsUrl = `${sw.url().split("/dist/")[0]}/options.html`;
+const optPage = await ctx.newPage();
+await optPage.goto(optionsUrl, { waitUntil: "domcontentloaded" });
+await optPage.waitForSelector("#sectionList input[type=checkbox]", { timeout: 5000 });
+const boxes = await optPage.$$eval("#sectionList input[type=checkbox]", (els) => els.map((e) => e.id));
+check("设置页渲染出 8 个内容项开关 + 预设下拉", boxes.length === 8, boxes.join(","));
+const presetCount = await optPage.$$eval("#preset option", (els) => els.length);
+check("预设下拉含 6 个预设 + 自定义", presetCount === 7, `${presetCount} 项`);
+// 取消勾「HTML 骨架」→ 真 storage 里 sections 少一项
+await optPage.uncheck("#sec-skeleton");
+await optPage.waitForTimeout(400);
+const storedSections = await sw.evaluate(async () => (await chrome.storage.sync.get(null)).sections);
+check(
+	"取消勾选真的写进 storage（不再采集骨架）",
+	Array.isArray(storedSections) && !storedSections.includes("skeleton"),
+	JSON.stringify(storedSections),
+);
+// 选预设「只排查样式」→ 勾选项跟着变
+await optPage.selectOption("#preset", "styles");
+await optPage.waitForTimeout(400);
+const afterPreset = await sw.evaluate(async () => (await chrome.storage.sync.get(null)).sections);
+check(
+	"选预设「只排查样式」→ 只剩 选择器/命中 CSS/计算样式",
+	JSON.stringify(afterPreset) === JSON.stringify(["selector", "rules", "styles"]),
+	JSON.stringify(afterPreset),
+);
+await optPage.close();
+
 // 4) 非 pi-web-ui 页面上浮条要自己退场（background 探测失败时也不能「什么都没发生」）
 const beforePick = await fxPage.evaluate(() => Boolean(document.getElementById("pi-page-picker-host")));
 await sw.evaluate(
