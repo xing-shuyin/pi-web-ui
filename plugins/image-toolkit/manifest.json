@@ -1,0 +1,65 @@
+{
+	"id": "image-toolkit",
+	"name": "图片工具",
+	"version": "0.1.0",
+	"icon": "🖼",
+	"description": "图片处理工作台：压缩（可按目标体积二分逼近）、裁剪、缩放、旋转/翻转、格式转换（PNG/JPEG/WebP/AVIF）、批量导出 ZIP、水印、滤镜调色、图片信息与 EXIF，可直接读写工作区图片；另给 AI 配了 4 个工具，让 agent 自己压缩/裁剪/缩放/加水印工作区里的图。",
+	"descriptionEn": "Image workbench: compress (with target-size binary search), crop, resize, rotate/flip, format conversion (PNG/JPEG/WebP/AVIF), batch ZIP export, watermark, filters, image info + EXIF, and direct workspace read/write. Ships 4 AI tools so the agent can compress/crop/resize/watermark workspace images itself.",
+	"permissions": ["fs", "http", "tools"],
+	"settings": [
+		{
+			"key": "defaultFormat",
+			"type": "select",
+			"label": "默认输出格式",
+			"default": "keep",
+			"options": ["keep", "jpeg", "webp", "png", "avif"],
+			"hint": "keep = 保持原格式；avif 需要浏览器支持编码（Chrome 多数不支持，会自动禁用）"
+		},
+		{
+			"key": "quality",
+			"type": "number",
+			"label": "默认质量",
+			"default": 0.82,
+			"min": 0.1,
+			"max": 1,
+			"hint": "0.1 - 1（只有 JPEG / WebP / AVIF 用得上）"
+		},
+		{
+			"key": "maxDim",
+			"type": "number",
+			"label": "长边上限（像素，0 = 不限）",
+			"default": 0,
+			"min": 0,
+			"max": 20000,
+			"hint": "新导入图片的默认缩放上限"
+		},
+		{
+			"key": "suffix",
+			"type": "text",
+			"label": "输出文件名后缀",
+			"default": "-min",
+			"hint": "保存回工作区时用；如 -min → photo-min.webp"
+		},
+		{
+			"key": "overwrite",
+			"type": "boolean",
+			"label": "覆盖同名文件",
+			"default": false,
+			"hint": "关：同名时自动加 -1、-2 后缀，绝不误删"
+		},
+		{
+			"key": "aiTools",
+			"type": "boolean",
+			"label": "让 AI 处理图片（注册工具）",
+			"default": true,
+			"hint": "关掉后 agent 看不到 image_* 工具，只能你来点界面"
+		},
+		{
+			"key": "allowServerDeps",
+			"type": "boolean",
+			"label": "允许安装纯 JS 编解码包（JPEG 支持）",
+			"default": true,
+			"hint": "服务端处理 JPEG 需要一次性装 jpeg-js（纯 JS、无原生编译）；关掉则 AI 只能处理 PNG/BMP"
+		}
+	]
+}

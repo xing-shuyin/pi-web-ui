@@ -52,5 +52,14 @@
 		"descriptionEn": "Legado reader (text book sources): search / explore / info / TOC / content with Android-compatible book source JSON, plus source import and health checking. Ships its own CORS+GBK proxy, local store, and AI tools to diagnose and repair book sources.",
 		"source": "xing-shuyin/pi-web-ui/plugins/legado-web",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/legado-web"
+	},
+	{
+		"id": "image-toolkit",
+		"name": "image-toolkit",
+		"icon": "🖼",
+		"description": "图片处理工作台：压缩（可按目标体积二分逼近）、裁剪、缩放、旋转/翻转、格式转换（PNG/JPEG/WebP/AVIF）、批量导出 ZIP、水印、滤镜调色、图片信息与 EXIF，可直接读写工作区图片；另给 AI 配了 4 个工具，让 agent 自己压缩/裁剪/缩放/加水印工作区里的图。",
+		"descriptionEn": "Image workbench: compress (with target-size binary search), crop, resize, rotate/flip, format conversion (PNG/JPEG/WebP/AVIF), batch ZIP export, watermark, filters, image info + EXIF, and direct workspace read/write. Ships 4 AI tools so the agent can compress/crop/resize/watermark workspace images itself.",
+		"source": "xing-shuyin/pi-web-ui/plugins/image-toolkit",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/image-toolkit"
 	}
 ]
