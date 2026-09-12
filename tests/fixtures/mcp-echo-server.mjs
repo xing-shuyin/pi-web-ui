@@ -2,7 +2,8 @@
 /**
  * MCP 测试夹具服务器 —— 极简 NDJSON JSON-RPC 实现，用作 mcp-bridge 的对手端。
  * 工具：echo（原样回传 parameters）、add（a+b）、fail（isError 工具）、
- * slow（延迟后返回，用于校验超时）。
+ * slow（延迟后返回，用于校验超时）、screenshot（image 块）、pdf（resource 块）、
+ * mixed（文本 + 图片混合块，校验保序透传）。
  * 用法：node mcp-echo-server.mjs [delay-resp-ms]
  */
 import { createInterface } from "node:readline";
@@ -26,6 +27,9 @@ const TOOLS = [
 	},
 	{ name: "fail", description: "总是失败（isError）", inputSchema: { type: "object" } },
 	{ name: "slow", description: "睡眠 resp-delay 后返回", inputSchema: { type: "object" } },
+	{ name: "screenshot", description: "返回一张 PNG 图片（image 块）", inputSchema: { type: "object" } },
+	{ name: "pdf", description: "返回一个 PDF 资源（resource 块）", inputSchema: { type: "object" } },
+	{ name: "mixed", description: "文本 + 图片混合结果", inputSchema: { type: "object" } },
 ];
 
 function reply(msg) {
@@ -73,6 +77,43 @@ rl.on("line", (line) => {
 			// 用进程参数里的延迟；默认 5000ms（测试里会注入更小的波长 → 超时）
 			const d = Number(process.env.MCP_SLOW_MS ?? 5000);
 			return setTimeout(() => finish(msg.id, { content: [{ type: "text", text: "slow done" }] }), d);
+		}
+		if (name === "screenshot") {
+			return finish(msg.id, {
+				content: [
+					{
+						type: "image",
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+						mimeType: "image/png",
+					},
+				],
+			});
+		}
+		if (name === "pdf") {
+			return finish(msg.id, {
+				content: [
+					{
+						type: "resource",
+						resource: {
+							uri: "obscura://capture/current-page.pdf",
+							mimeType: "application/pdf",
+							blob: "JVBERi0xLjQK",
+						},
+					},
+				],
+			});
+		}
+		if (name === "mixed") {
+			return finish(msg.id, {
+				content: [
+					{ type: "text", text: "文本在前" },
+					{
+						type: "image",
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+						mimeType: "image/png",
+					},
+				],
+			});
 		}
 		return finish(msg.id, {
 			content: [{ type: "text", text: `unknown tool: ${name}` }],

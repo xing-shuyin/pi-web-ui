@@ -38,6 +38,18 @@ interface RpcIncoming {
 	error?: { code: number; message: string; data?: unknown };
 }
 
+/** MCP 服务器返回的内容块（规范子集：text / image / resource / audio…）。 */
+interface McpContentBlock {
+	type?: string;
+	text?: string;
+	data?: string;
+	mimeType?: string;
+	resource?: { uri?: string; mimeType?: string; blob?: string } | string;
+}
+
+/** 桥透传给会话的内容块：text 原样；image 字段与 SDK 的 ImageContent（type/data/mimeType）一致。 */
+type McpToolResultBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
 const PROTOCOL_VERSION = "2025-03-26"; // 广泛支持的工具版本
 
 let rpcSeq = 0;
@@ -114,10 +126,13 @@ export class McpClient {
 		return this.tools.map((t) => ({ ...t }));
 	}
 
-	/** 调用一个工具，返回结果文本（多 content 拼接为 JSON 字符串保真）。 */
+	/**
+	 * 调用一个工具，返回其结果。
+	 * 纯文本块拼接成字符串（老形状，向后兼容）；出现非文本块（image/resource/audio 等）时按序透传或退化提示，不再静默丢弃。
+	 */
 	async call(name: string, args: Record<string, unknown>, timeoutMs = 60000): Promise<unknown> {
 		const res = (await this.request("tools/call", { name, arguments: args }, timeoutMs)) as {
-			content?: Array<{ type?: string; text?: string }>;
+			content?: McpContentBlock[];
 			isError?: boolean;
 			structuredContent?: unknown;
 		};
@@ -129,13 +144,41 @@ export class McpClient {
 					.trim() || "MCP 工具错误";
 			throw new Error(msg);
 		}
-		// 结构化结果优先，其次文本内容。
+		// 结构化结果优先，其次内容块。
 		if (res?.structuredContent !== undefined) return res.structuredContent;
-		const text = (res.content ?? [])
-			.map((c) => c.text ?? "")
-			.filter((x) => x)
-			.join("\n");
-		return { content: text, isError: !!res.isError };
+		const blocks: McpToolResultBlock[] = [];
+		let hasNonText = false;
+		for (const c of res.content ?? []) {
+			if (c.type === "image" && typeof c.data === "string" && c.data) {
+				// MCP image 块字段（type/data/mimeType）与 SDK 的 ImageContent 完全一致，原样透传；
+				// 超大图由 SDK 的 normalizeToolResultImages 统一缩放（afterToolCall 钩子，默认 autoResize）。
+				blocks.push({ type: "image", data: c.data, mimeType: c.mimeType?.trim() || "image/png" });
+				hasNonText = true;
+				continue;
+			}
+			if (c.type && c.type !== "text") {
+				// resource/audio 等块在 SDK 内容联合里没有载体（只有 text|image|thinking|toolCall），
+				// 退化为文本提示，让模型至少知道工具返回了什么，而不是看到一个空串。
+				const r = typeof c.resource === "object" && c.resource !== null ? c.resource : {};
+				const mime = (c.mimeType ?? r.mimeType ?? "").trim();
+				const blob = typeof r.blob === "string" && r.blob ? r.blob : c.data;
+				const size =
+					typeof blob === "string" && blob ? `，约 ${Math.max(1, Math.round((blob.length * 3) / 4))} 字节` : "";
+				blocks.push({
+					type: "text",
+					text: `[MCP 工具返回了非文本内容块（${mime || c.type || "未知类型"}${size}），当前会话无法内联，已跳过。]`,
+				});
+				hasNonText = true;
+				continue;
+			}
+			const text = c.text ?? "";
+			if (text) blocks.push({ type: "text", text });
+		}
+		if (!hasNonText) {
+			// 纯文本结果保持旧形状（拼接字符串），不破坏既有调用方。
+			return { content: blocks.map((b) => (b.type === "text" ? b.text : "")).join("\n"), isError: !!res.isError };
+		}
+		return { content: blocks, isError: !!res.isError };
 	}
 
 	/** 关闭：kill 子进程，拒绝所有在途请求。 */
