@@ -6,12 +6,15 @@
  * 职责边界：
  * - content script 只管「在被调试页面上拾取 + 画 UI」，**不知道 pi-web-ui 的存在**；
  * - 这里负责读设置、把契约渲染成 Markdown、找到 pi-web-ui 标签页、注入内容；
- * - 投递用 `world: "MAIN"` 注入（隔离世界看不到页面上的 `window.__piWebUiHost`）。
+ * - 投递用 `world: "MAIN"` 注入（隔离世界看不到页面上的 `window.__piWebUiHost`）；
+ * - 点图标时**先认页面**：当前页就是 pi-web-ui 的话，注入绑定浮条问用户要不要把它
+ *   设成服务地址（远程/局域网部署不用再手打地址），而不是往它上面注入拾取器。
  *
  * 兜底纪律：**投递失败也必须把 Markdown 交给用户**（回给 content script 复制到剪贴板），
  * 绝不出现「点了发送，什么都没发生」。
  */
 
+import type { BindResult, PiProbe } from "./shared/bind.js";
 import type { PickPayload } from "./shared/contract.js";
 import {
 	normalizeServerUrl,
@@ -24,6 +27,7 @@ import { planCrop, type CropPlan } from "./shared/shot-crop.js";
 import { toPrompt } from "./shared/to-prompt.js";
 
 export const PICKER_FILE = "dist/picker.js";
+export const BIND_FILE = "dist/bind.js";
 
 /** 截图那条链上用到的最小 chrome 面（注入以便单测替换）。 */
 export interface ChromeLike {
@@ -51,6 +55,156 @@ export function composeInPage(text: string, attachments: ComposeAttachment[]): C
 	if (!host || typeof host.compose !== "function") return { ok: false, reason: "no-host" };
 	const ok = host.compose(attachments.length > 0 ? { text, attachments } : { text });
 	return ok ? { ok: true } : { ok: false, reason: "refused" };
+}
+
+/**
+ * MAIN world 里执行：判断当前这个页面是不是 pi-web-ui，以及页面上有没有宿主动作桥。
+ *
+ * 两个判据（**都要**，因为版本分布很杂）：
+ * 1. `window.__piWebUiHost`（宿主 API v2 起有）—— 最硬，但仍要 `/api/health` 兜底，
+ *    因为老版本没有这个桥；
+ * 2. 同源探一次 `/api/health`（pi-web-ui 一直有这个路由，返回 `{ok, piVersion, engine}`）。
+ *    这是**页面自己**发的同源请求，不需要扩展有该 origin 的权限（远程部署下正是缺这个）。
+ *
+ * 注意：这个函数会被序列化后注入页面，**不能引用模块作用域的任何东西**（只能用全局）。
+ * 探测最长等 1.2s：点图标这件事绝不能被一个慢请求卡住。
+ */
+export async function detectPiWebUi(): Promise<PiProbe> {
+	const g = globalThis as unknown as { __piWebUiHost?: { compose?: unknown } };
+	const url = location.href;
+	const title = document.title;
+	const hasHost = typeof g.__piWebUiHost?.compose === "function";
+	if (hasHost) return { isPiWebUi: true, hasHost: true, url, title };
+	try {
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), 1200);
+		const res = await fetch("/api/health", { cache: "no-store", signal: ctrl.signal });
+		clearTimeout(timer);
+		if (res.ok) {
+			const info = (await res.json()) as { ok?: unknown; piVersion?: unknown; engine?: unknown } | null;
+			if (info && info.ok === true && (typeof info.piVersion === "string" || typeof info.engine === "string")) {
+				return {
+					isPiWebUi: true,
+					hasHost: false,
+					url,
+					title,
+					...(typeof info.piVersion === "string" ? { piVersion: info.piVersion } : {}),
+				};
+			}
+		}
+	} catch {
+		/* 探不通（跨域/CSP/超时）→ 就当它不是 pi-web-ui，走原来的拾取流程 */
+	}
+	return { isPiWebUi: false, hasHost, url, title };
+}
+
+/** 在当前标签页里跑探测（注入不了就返回 undefined，交给调用方按老路走）。 */
+async function probeTab(tabId: number): Promise<PiProbe | undefined> {
+	try {
+		const [first] = await chrome.scripting.executeScript<PiProbe>({
+			target: { tabId },
+			world: "MAIN",
+			func: detectPiWebUi,
+		});
+		return first?.result;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * 点扩展图标 / 按快捷键的入口：**先认页面，再决定注入什么**。
+ *
+ * 在 pi-web-ui 自己的页面上注入拾取器是没有意义的（这里的元素不是用户要改的代码），
+ * 而且远程部署的用户此刻正站在这页上 —— 正是问「要不要把它设成服务地址」的最佳时机。
+ */
+export async function handleAction(tab: { id?: number; url?: string } | undefined): Promise<void> {
+	const tabId = tab?.id;
+	if (tabId == null) return;
+	const probe = await probeTab(tabId);
+	if (probe?.isPiWebUi) {
+		await injectBindBar(tabId);
+		return;
+	}
+	await startPicking(tab);
+}
+
+/** 注入绑定浮条（它自己会找 background 要设置、按 location.href 算文案）。 */
+export async function injectBindBar(tabId: number): Promise<void> {
+	try {
+		await chrome.scripting.executeScript({ target: { tabId }, files: [BIND_FILE] });
+		await chrome.action.setBadgeText({ text: "", tabId });
+		await chrome.action
+			.setTitle({ title: "这个页面是 pi-web-ui：页面上会问你要不要把它设为拾取服务地址", tabId })
+			.catch(() => {});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		await chrome.action.setBadgeText({ text: "!", tabId }).catch(() => {});
+		await chrome.action.setTitle({ title: `这个页面无法注入：${message}`, tabId }).catch(() => {});
+	}
+}
+
+/** permissions API 的最小面（老环境可能整个没有 → 按可选处理）。 */
+interface PermissionsLike {
+	contains?: (p: { origins: string[] }) => Promise<boolean>;
+	request?: (p: { origins: string[] }) => Promise<boolean>;
+}
+
+/**
+ * 该 origin 的 host 权限有没有（没有就申请一次）。
+ *
+ * 申请必须在**用户手势**里发出，而绑定按钮点在页面上（content script 的 UI），
+ * 浏览器不认这个手势 → `request` 会返回 false，于是回 needAuth，让用户去选项页点
+ * （那里的点击一定带手势）。老环境没有 permissions API 时不阻断（后面按 URL 复核兜底）。
+ */
+async function ensureOrigin(pattern: string): Promise<boolean> {
+	const perms = chrome.permissions as PermissionsLike | undefined;
+	if (!perms?.contains || !perms.request) return true;
+	try {
+		if (await perms.contains({ origins: [pattern] })) return true;
+	} catch {
+		return true;
+	}
+	try {
+		return await perms.request({ origins: [pattern] });
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * 把某个 pi-web-ui 页面绑成服务地址（浮条上点了「设为服务地址」）。
+ *
+ * 地址一律按页面**归一后**再存：`http://host:8787/?token=x` → `http://host:8787`。
+ * 授权拿不到就不写存储 —— 没授权时连「找到那个标签页」都做不到，绑了也是白绑。
+ */
+export async function bindServer(pageUrl: string): Promise<BindResult> {
+	const base = normalizeServerUrl(pageUrl);
+	const pattern = originPattern(base);
+	if (!(await ensureOrigin(pattern))) {
+		return {
+			ok: false,
+			base,
+			needAuth: true,
+			message: `还差一次授权（${pattern}）：浏览器要求这个动作在扩展自己的页面里点一下`,
+		};
+	}
+	try {
+		await chrome.storage.sync.set({ serverUrl: base });
+	} catch (err) {
+		return { ok: false, base, message: `保存失败：${err instanceof Error ? err.message : String(err)}` };
+	}
+	return { ok: true, base, message: `已绑定 ${base} —— 以后拾取的内容都注入到这里` };
+}
+
+/** 打开选项页并带上 `?bind=`（那边有真正的用户手势，能授权、能测试连接）。 */
+export async function openOptionsFor(pageUrl: string): Promise<void> {
+	const base = normalizeServerUrl(pageUrl);
+	try {
+		await chrome.tabs.create({ url: chrome.runtime.getURL(`options.html?bind=${encodeURIComponent(base)}`) });
+	} catch {
+		/* 打不开就只是没打开：用户还能自己去 chrome://extensions → 选项页 */
+	}
 }
 
 export async function loadSettings(): Promise<PickerSettings> {
@@ -265,9 +419,32 @@ export function handleMessage(
 	sender: chrome.runtime.MessageSender,
 	respond: (response?: unknown) => void,
 ): boolean | undefined {
-	const msg = (raw ?? {}) as { type?: string; payload?: PickPayload };
+	const msg = (raw ?? {}) as { type?: string; payload?: PickPayload; url?: string };
 	if (msg.type === "page-picker:settings") {
-		void loadSettings().then((s) => respond({ detail: s.detail }));
+		// serverUrl 不是秘密（和 token 不同），绑定浮条要拿它对比「本页是不是就是已绑定的那个」
+		void loadSettings().then((s) => respond({ detail: s.detail, serverUrl: s.serverUrl }));
+		return true;
+	}
+	if (msg.type === "page-picker:bind") {
+		void (async () => {
+			const url = typeof msg.url === "string" && msg.url ? msg.url : (sender.tab?.url ?? "");
+			try {
+				respond(await bindServer(url));
+			} catch (err) {
+				respond({ ok: false, base: "", message: `绑定失败：${err instanceof Error ? err.message : String(err)}` });
+			}
+		})();
+		return true;
+	}
+	if (msg.type === "page-picker:open-options") {
+		void openOptionsFor(typeof msg.url === "string" ? msg.url : "");
+		respond({ ok: true });
+		return true;
+	}
+	if (msg.type === "page-picker:pick-anyway") {
+		// 绑定浮条上的「仍然在本页拾取」：内容脚本自己收掉浮条，这里补注入拾取器
+		void startPicking(sender.tab);
+		respond({ ok: true });
 		return true;
 	}
 	if (msg.type === "page-picker:picked") {
@@ -304,11 +481,11 @@ export function handleMessage(
 // 事件接线（在单测里 import 本模块时没有 chrome 全局，所以得过一道护栏）
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 	chrome.action?.onClicked?.addListener((tab) => {
-		void startPicking(tab);
+		void handleAction(tab);
 	});
 	chrome.commands?.onCommand?.addListener((command, tab) => {
 		if (command !== "toggle-picking") return;
-		void startPicking(tab);
+		void handleAction(tab);
 	});
 	chrome.runtime.onMessage.addListener(handleMessage);
 }

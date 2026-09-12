@@ -40,7 +40,8 @@ declare namespace chrome {
 		function executeScript<T>(injection: {
 			target: { tabId: number; allFrames?: boolean };
 			files?: string[];
-			func?: (...args: never[]) => T;
+			/** 注入函数可以同步也可以异步（探测页面的那个会发一次请求）。 */
+			func?: (...args: never[]) => T | Promise<T>;
 			args?: unknown[];
 			world?: "ISOLATED" | "MAIN";
 		}): Promise<InjectionResult<T>[]>;
@@ -55,6 +56,8 @@ declare namespace chrome {
 		}
 		function query(info: { url?: string | string[]; active?: boolean; currentWindow?: boolean }): Promise<Tab[]>;
 		function update(tabId: number, props: { active?: boolean }): Promise<Tab>;
+		/** 新开标签页（绑定需要授权时，把用户带到带 `?bind=` 的选项页）。 */
+		function create(props: { url: string }): Promise<Tab>;
 		/** 截当前可见区域（物理像素，需 activeTab / host 权限）。 */
 		function captureVisibleTab(
 			windowId: number | undefined,

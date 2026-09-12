@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makePickId, type PickPayload } from "../../plugins/page-picker/extension/src/shared/contract.js";
 import {
 	buildDomPath,
@@ -20,6 +20,8 @@ import {
 	originPattern,
 	tabMatchesBase,
 } from "../../plugins/page-picker/extension/src/shared/settings.js";
+import { bindView } from "../../plugins/page-picker/extension/src/shared/bind.js";
+import { detectPiWebUi } from "../../plugins/page-picker/extension/src/background.js";
 import type { ElementSnapshot } from "../../plugins/page-picker/extension/src/shared/contract.js";
 
 /** 页面元素拾取扩展的纯逻辑：定位串生成 / HTML 骨架 / 契约渲染成 Markdown。
@@ -414,5 +416,102 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 		expect(tabMatchesBase("http://127.0.0.1:8787/anything", base)).toBe(true);
 		expect(tabMatchesBase("http://127.0.0.1:5173/", base)).toBe(false);
 		expect(tabMatchesBase("https://127.0.0.1:8787/", base)).toBe(false);
+	});
+});
+
+// --------------------------------------------------------------- 绑定服务（点图标认页面）
+
+describe("bindView（在 pi-web-ui 本页上问什么）", () => {
+	it("远程 IP + 端口 → 文案里两个地址都在，带主按钮", () => {
+		const view = bindView("http://39.99.235.208:8787/", "http://127.0.0.1:8787");
+		expect(view.base).toBe("http://39.99.235.208:8787");
+		expect(view.same).toBe(false);
+		expect(view.bindLabel).toBe("设为服务地址");
+		expect(view.detail).toContain("http://127.0.0.1:8787");
+		expect(view.detail).toContain("http://39.99.235.208:8787");
+	});
+
+	it("页面带 ?token= / hash → 只留 origin（子路径保留：反代部署）", () => {
+		expect(bindView("http://39.99.235.208:8787/?token=x#/chat", "").base).toBe("http://39.99.235.208:8787");
+		expect(bindView("https://host/pi/", "").base).toBe("https://host/pi");
+	});
+
+	it("页面就是已绑定的地址 → 不再问「要不要绑」，只说现状", () => {
+		const view = bindView("http://localhost:9000/", "http://localhost:9000");
+		expect(view.same).toBe(true);
+		expect(view.bindLabel).toBeUndefined();
+		expect(view.title).toContain("已绑定");
+	});
+
+	it("localhost 与 127.0.0.1 视为**不同**（匹配用的是字面串，不做别名推断）", () => {
+		// 想换地址？在页面上点一下图标就能重绑，没必要在两个回环别名之间“智能”猜测
+		expect(bindView("http://localhost:8787/", "http://127.0.0.1:8787").same).toBe(false);
+	});
+});
+
+describe("detectPiWebUi（认页面：桥 + /api/health 两个判据）", () => {
+	const realFetch = globalThis.fetch;
+	const setHost = (value: unknown): void => {
+		(globalThis as Record<string, unknown>).__piWebUiHost = value;
+	};
+	const okHealth = (body: unknown): void => {
+		globalThis.fetch = (async () => ({ ok: true, json: async () => body })) as unknown as typeof fetch;
+	};
+
+	beforeEach(() => {
+		delete (globalThis as Record<string, unknown>).__piWebUiHost;
+	});
+
+	it("有宿主动作桥 → 直接认定（不再发探针请求）", async () => {
+		setHost({ compose: () => true });
+		const fetchSpy = vi.fn();
+		globalThis.fetch = fetchSpy as unknown as typeof fetch;
+		const probe = await detectPiWebUi();
+		expect(probe.isPiWebUi).toBe(true);
+		expect(probe.hasHost).toBe(true);
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	it("没有桥也能认（老版本）：/api/health 回 {ok, piVersion}", async () => {
+		okHealth({ ok: true, piVersion: "0.81.0", cwd: "/tmp", engine: "pi" });
+		const probe = await detectPiWebUi();
+		expect(probe.isPiWebUi).toBe(true);
+		expect(probe.hasHost).toBe(false);
+		expect(probe.piVersion).toBe("0.81.0");
+	});
+
+	it("别的服务返回同一个路径 → 不误认（要 ok + piVersion/engine）", async () => {
+		okHealth({ hello: "world" });
+		expect((await detectPiWebUi()).isPiWebUi).toBe(false);
+		okHealth({ ok: true });
+		expect((await detectPiWebUi()).isPiWebUi).toBe(false);
+	});
+
+	it("探不通（404 / 抛错 / 非 JSON）→ 当它不是 pi-web-ui，不抛", async () => {
+		globalThis.fetch = (async () => ({ ok: false, json: async () => ({}) })) as unknown as typeof fetch;
+		expect((await detectPiWebUi()).isPiWebUi).toBe(false);
+		globalThis.fetch = (async () => {
+			throw new Error("net::ERR_CONNECTION_REFUSED");
+		}) as unknown as typeof fetch;
+		expect((await detectPiWebUi()).isPiWebUi).toBe(false);
+	});
+
+	it("请求挂住 → 1.2s 后自我中断（点图标绝不能被一个慢请求卡住）", async () => {
+		let aborted = false;
+		globalThis.fetch = ((_url: string, init?: { signal?: AbortSignal }) => {
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					aborted = true;
+					reject(new Error("aborted"));
+				});
+			});
+		}) as unknown as typeof fetch;
+		const probe = await detectPiWebUi();
+		expect(probe.isPiWebUi).toBe(false);
+		expect(aborted).toBe(true);
+	});
+
+	afterEach(() => {
+		globalThis.fetch = realFetch;
 	});
 });

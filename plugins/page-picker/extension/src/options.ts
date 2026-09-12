@@ -148,4 +148,51 @@ $("reset").addEventListener("click", () => {
 	void save();
 });
 
-void load().then(refreshGrant);
+// --------------------------------------------------------------------- ?bind= 绑定面板
+
+/**
+ * `?bind=<url>`：从 pi-web-ui 页面上的绑定浮条跳过来（用户在那个页面上点了「设为服务地址」）。
+ *
+ * 为什么不能就地完成：`chrome.permissions.request` 必须在**用户手势**里发出，而浮条的按钮
+ * 点在网页上（content script 的 UI），浏览器不认这个手势 —— 只能把用户送到扩展自己的页面，
+ * 这里的点击一定带手势。所以这条路径不是多余的，是权限模型要求的。
+ */
+async function initBindPanel(): Promise<void> {
+	const raw = new URLSearchParams(location.search).get("bind");
+	if (!raw) return;
+	const base = normalizeServerUrl(raw);
+	const already = normalizeServerUrl(fields.serverUrl.value) === base;
+	fields.serverUrl.value = base;
+
+	const title = $("bindTitle");
+	const body = $("bindBody");
+	const accept = $<HTMLButtonElement>("bindAccept");
+	if (already) {
+		title.textContent = `已经是当前服务地址：${base}`;
+		body.textContent = "无需改动。要换地址就直接改上面的输入框（改完自动保存）。";
+		accept.classList.add("hidden");
+	} else {
+		const granted = await originGranted();
+		title.textContent = granted ? `把 ${base} 设为服务地址？` : `检测到 pi-web-ui 页面：${base}`;
+		body.textContent = granted
+			? "该地址已授权，点下面按钮就能绑定（之后在别的页面拾取的内容都注入到这里）。"
+			: `浏览器要求在本页点一次才能授权 ${originPattern(base)}；点下面按钮即可授权并绑定。`;
+		accept.textContent = granted ? "设为服务地址" : "授权并绑定";
+		accept.addEventListener("click", () => void acceptBind(base));
+	}
+	$("bindPanel").classList.remove("hidden");
+	$("bindDismiss").addEventListener("click", () => $("bindPanel").classList.add("hidden"));
+}
+
+/** 授权（如需要）+ 写入设置。失败时 ensureOrigin 已经写了原因，不要静默。 */
+async function acceptBind(base: string): Promise<void> {
+	if (!(await originGranted()) && !(await ensureOrigin())) return;
+	await save(); // save 会回显归一后的地址，用户看得见实际会用哪个
+	status(`已绑定 ${base} —— 以后拾取的内容都注入到这里`, "ok");
+	$("bindPanel").classList.add("hidden");
+}
+
+void load().then(async () => {
+	await refreshGrant();
+	await initBindPanel();
+});

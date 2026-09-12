@@ -3,12 +3,17 @@ import type { PickPayload } from "../../plugins/page-picker/extension/src/shared
 import {
 	attachShots,
 	attachmentsOf,
+	bindServer,
 	composeInPage,
 	deliver,
+	handleAction,
 	handleMessage,
+	injectBindBar,
 	loadSettings,
+	openOptionsFor,
 	startPicking,
 } from "../../plugins/page-picker/extension/src/background.js";
+import type { PiProbe } from "../../plugins/page-picker/extension/src/shared/bind.js";
 import { MAX_SHOT_EDGE, planCrop } from "../../plugins/page-picker/extension/src/shared/shot-crop.js";
 
 /** 扩展 service worker 的决策逻辑（用假 chrome 驱动，零浏览器）：
@@ -39,11 +44,12 @@ interface FakeChrome {
 	storage: {
 		sync: { get: () => Promise<Record<string, unknown>>; set: (v: Record<string, unknown>) => Promise<void> };
 	};
-	tabs: { query: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+	runtime: { getURL: ReturnType<typeof vi.fn> };
+	tabs: { query: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
 	windows: { update: ReturnType<typeof vi.fn> };
 	scripting: { executeScript: ReturnType<typeof vi.fn> };
 	action: { setBadgeText: ReturnType<typeof vi.fn>; setTitle: ReturnType<typeof vi.fn> };
-	permissions: { contains: ReturnType<typeof vi.fn> };
+	permissions: { contains: ReturnType<typeof vi.fn>; request: ReturnType<typeof vi.fn> };
 }
 
 function fakeChrome(
@@ -54,29 +60,45 @@ function fakeChrome(
 		stored?: Record<string, unknown>;
 		/** false = 没授权该地址（远程/局域网部署的第一步就是授权）。 */
 		permissionGranted?: boolean;
+		/** 探测注入（认页面）的返回值；undefined = 注不进去 → 走原来的拾取流程。 */
+		probe?: PiProbe;
+		probeThrows?: boolean;
+		/** `permissions.request` 的结果：true = 浏览器给了手势。 */
+		permissionRequest?: boolean;
 	} = {},
 ): FakeChrome {
 	const chrome: FakeChrome = {
 		storage: {
 			sync: {
 				get: async () => opts.stored ?? {},
-				set: async () => {},
+				set: vi.fn(async () => {}),
 			},
 		},
+		runtime: { getURL: vi.fn((path: string) => `chrome-extension://fake/${path}`) },
 		tabs: {
 			query: vi.fn(async () => opts.tabs ?? []),
 			update: vi.fn(async () => ({})),
+			create: vi.fn(async () => ({})),
 		},
 		windows: { update: vi.fn(async () => ({})) },
 		scripting: {
-			executeScript: vi.fn(async (injection: { files?: string[]; func?: unknown }) => {
+			executeScript: vi.fn(async (injection: { files?: string[]; func?: unknown; args?: unknown[] }) => {
 				if (opts.injectThrows) throw new Error(opts.injectThrows);
-				// files 注入（拾取器）没有返回值；func 注入（投递）回 fake 结果
-				return injection.files ? [{}] : [{ result: opts.injectResult }];
+				// files 注入（拾取器 / 绑定浮条）没有返回值；func 注入：带 args 的是投递（compose），
+				// 不带的是一次「这个页面是不是 pi-web-ui」的探测
+				if (injection.files) return [{}];
+				if (injection.args === undefined) {
+					if (opts.probeThrows) throw new Error("Cannot access a chrome:// URL");
+					return [{ result: opts.probe }];
+				}
+				return [{ result: opts.injectResult }];
 			}),
 		},
 		action: { setBadgeText: vi.fn(async () => {}), setTitle: vi.fn(async () => {}) },
-		permissions: { contains: vi.fn(async () => opts.permissionGranted ?? true) },
+		permissions: {
+			contains: vi.fn(async () => opts.permissionGranted ?? true),
+			request: vi.fn(async () => opts.permissionRequest ?? false),
+		},
 	};
 	(globalThis as Record<string, unknown>).chrome = chrome;
 	return chrome;
@@ -123,6 +145,89 @@ describe("startPicking", () => {
 		expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ text: "!", tabId: 3 });
 		const title = chrome.action.setTitle.mock.calls[0][0] as { title: string };
 		expect(title.title).toContain("chrome://");
+	});
+});
+
+/** 注入过的脚本文件名（拾取器 / 绑定浮条）。 */
+function injectedFiles(chrome: FakeChrome): string[] {
+	return chrome.scripting.executeScript.mock.calls
+		.map(([injection]) => (injection as { files?: string[] }).files?.[0])
+		.filter((f): f is string => Boolean(f));
+}
+
+describe("handleAction（点图标：先认页面，再决定注入什么）", () => {
+	const probe: PiProbe = { isPiWebUi: true, hasHost: true, url: "http://39.99.235.208:8787/" };
+
+	it("当前页就是 pi-web-ui → 注入绑定浮条，**不注入拾取器**", async () => {
+		const chrome = fakeChrome({ probe });
+		await handleAction({ id: 9 });
+		expect(injectedFiles(chrome)).toEqual(["dist/bind.js"]);
+	});
+
+	it("普通页面 → 照旧注入拾取器", async () => {
+		const chrome = fakeChrome({ probe: { isPiWebUi: false, url: "http://localhost:5173/" } });
+		await handleAction({ id: 9 });
+		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
+	});
+
+	it("探测注不进去（chrome:// / 页面 CSP）→ 回落拾取流程，失败要可见", async () => {
+		const chrome = fakeChrome({ probeThrows: true, injectThrows: "Cannot access a chrome:// URL" });
+		await handleAction({ id: 9 });
+		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
+		expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ text: "!", tabId: 9 });
+	});
+
+	it("没有 tabId → 什么都不做（不抛）", async () => {
+		const chrome = fakeChrome();
+		await handleAction(undefined);
+		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+	});
+});
+
+describe("injectBindBar", () => {
+	it("注入浮条并清掉上一次的角标", async () => {
+		const chrome = fakeChrome();
+		await injectBindBar(4);
+		expect(chrome.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 4 }, files: ["dist/bind.js"] });
+		expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ text: "", tabId: 4 });
+	});
+});
+
+describe("bindServer（把当前 pi-web-ui 页绑成服务地址）", () => {
+	it("已授权 → 写入**归一后**的地址（?token= / hash / 尾斜杠都不进设置）", async () => {
+		const chrome = fakeChrome({ permissionGranted: true });
+		const res = await bindServer("http://39.99.235.208:8787/?token=abc#/chat");
+		expect(res.ok).toBe(true);
+		expect(res.base).toBe("http://39.99.235.208:8787");
+		expect(chrome.storage.sync.set).toHaveBeenCalledWith({ serverUrl: "http://39.99.235.208:8787" });
+		expect(chrome.permissions.request).not.toHaveBeenCalled(); // 已授权就不再烦用户
+	});
+
+	it("没授权但浏览器给了手势 → 申请该 origin 的权限再存", async () => {
+		const chrome = fakeChrome({ permissionGranted: false, permissionRequest: true });
+		const res = await bindServer("https://pi.example.com/pi/");
+		expect(res.ok).toBe(true);
+		expect(chrome.permissions.request).toHaveBeenCalledWith({ origins: ["https://pi.example.com/*"] });
+		expect(chrome.storage.sync.set).toHaveBeenCalledWith({ serverUrl: "https://pi.example.com/pi" });
+	});
+
+	it("授权拿不到（页面上的点击给不了手势）→ **不写设置**，回 needAuth 让用户去选项页", async () => {
+		const chrome = fakeChrome({ permissionGranted: false, permissionRequest: false });
+		const res = await bindServer("http://39.99.235.208:8787");
+		expect(res.ok).toBe(false);
+		expect(res.needAuth).toBe(true);
+		expect(res.message).toContain("http://39.99.235.208:8787/*");
+		expect(chrome.storage.sync.set).not.toHaveBeenCalled();
+	});
+});
+
+describe("openOptionsFor", () => {
+	it("带 ?bind= 打开扩展自己的选项页（那里才有手势能授权）", async () => {
+		const chrome = fakeChrome();
+		await openOptionsFor("http://39.99.235.208:8787/?token=x");
+		expect(chrome.tabs.create).toHaveBeenCalledWith({
+			url: "chrome-extension://fake/options.html?bind=http%3A%2F%2F39.99.235.208%3A8787",
+		});
 	});
 });
 
@@ -284,10 +389,38 @@ function ask<T>(message: unknown): Promise<T> {
 }
 
 describe("handleMessage", () => {
-	it("settings 请求 → 只回 detail（token 不下发给内容脚本）", async () => {
+	it("settings 请求 → 只回 detail 和 serverUrl（**token 不下发**给内容脚本）", async () => {
 		fakeChrome({ stored: { serverUrl: "http://127.0.0.1:8787", token: "secret", detail: "full" } });
 		expect(handleMessage({ type: "page-picker:settings" }, {}, () => {})).toBe(true);
-		expect(await ask({ type: "page-picker:settings" })).toEqual({ detail: "full" });
+		expect(await ask({ type: "page-picker:settings" })).toEqual({
+			detail: "full",
+			serverUrl: "http://127.0.0.1:8787",
+		});
+	});
+
+	it("bind → 按页面地址绑定，结果回给浮条", async () => {
+		fakeChrome({ permissionGranted: true });
+		const res = await ask<{ ok: boolean; base: string }>({
+			type: "page-picker:bind",
+			url: "http://39.99.235.208:8787/",
+		});
+		expect(res.ok).toBe(true);
+		expect(res.base).toBe("http://39.99.235.208:8787");
+	});
+
+	it("pick-anyway → 补注入拾取器（浮条上选「在本页拾取」）", async () => {
+		const chrome = fakeChrome();
+		const res = await new Promise<{ ok: boolean }>((resolve) => {
+			handleMessage({ type: "page-picker:pick-anyway" }, { tab: { id: 7 } }, (r) => resolve(r as { ok: boolean }));
+		});
+		expect(res.ok).toBe(true);
+		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
+	});
+
+	it("open-options → 打开带 ?bind= 的选项页", async () => {
+		const chrome = fakeChrome();
+		await ask({ type: "page-picker:open-options", url: "http://39.99.235.208:8787/" });
+		expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
 	});
 
 	it("picked → 渲染 + 投递，回传结果", async () => {

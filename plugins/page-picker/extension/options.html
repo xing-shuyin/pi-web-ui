@@ -132,6 +132,20 @@
 			.grant-state.warn {
 				color: #fbbf24;
 			}
+			.bind-panel {
+				margin-top: 12px;
+				padding: 12px;
+				border: 1px solid var(--accent);
+				border-radius: 8px;
+				background: rgba(37, 99, 235, 0.12);
+			}
+			.bind-panel b {
+				display: block;
+				margin-bottom: 4px;
+			}
+			.hidden {
+				display: none !important;
+			}
 			code {
 				background: #0b1220;
 				padding: 1px 5px;
@@ -164,11 +178,21 @@
 				<div class="hint" style="margin: 10px 0 0">
 					只预置了 <code>localhost</code> / <code>127.0.0.1</code> 的权限。换成局域网 IP、域名或 https
 					地址（<b>远程部署就是这种</b>）后： 先点「授权该地址」。<br />
+					<b>更省事的办法：直接在 pi-web-ui 页面上点扩展图标</b> —— 扩展会认出那个页面，
+					在页面上问你「要不要把它设为服务地址」，地址和端口都不用手打。<br />
 					投递是往<b>浏览器里打开的那个 pi-web-ui 页面</b
 					>注入内容的，所以这个地址的页面得开着（可以在另一个标签页/窗口，不必是当前标签）； 页面关着时会退化成「复制
 					Markdown 到剪贴板」。
 				</div>
 				<div class="grant-state warn" id="grantState"></div>
+				<div class="bind-panel hidden" id="bindPanel">
+					<b id="bindTitle">检测到 pi-web-ui 页面</b>
+					<div class="hint" id="bindBody" style="margin: 0"></div>
+					<div class="actions" style="margin-top: 10px">
+						<button class="primary" id="bindAccept">授权并绑定</button>
+						<button id="bindDismiss">忽略</button>
+					</div>
+				</div>
 			</fieldset>
 
 			<fieldset>

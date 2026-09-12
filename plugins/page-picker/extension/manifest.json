@@ -1,8 +1,8 @@
 {
 	"manifest_version": 3,
 	"name": "pi-web-ui 元素拾取",
-	"version": "0.1.0",
-	"description": "在开发网页上拾取元素，把 DOM 结构、命中的 CSS（文件:行号）与 React/Vue 源码位置整理成上下文，一键注入 pi-web-ui 对话输入框。",
+	"version": "0.2.0",
+	"description": "在开发网页上拾取元素，把 DOM 结构、命中的 CSS（文件:行号）与 React/Vue 源码位置整理成上下文，一键注入 pi-web-ui 对话输入框；在 pi-web-ui 页面上点图标即可绑定服务地址。",
 	"minimum_chrome_version": "116",
 	"permissions": ["activeTab", "scripting", "storage"],
 	"host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
