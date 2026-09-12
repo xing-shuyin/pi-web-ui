@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+暂无未发布内容。
+
+## [0.81.2] — 2026-09-13
+
 ### Fixed
 
 - **page-picker 扩展：修「pi-web-ui 页面明明开着，却报『没找到打开的 pi-web-ui 页面』」**——0.2.0 查找目标标签页时传的过滤条件是 `["<地址>/*", "<地址>"]`，而**裸地址（没有路径的 origin）不是合法 match pattern**：真 Chrome/Edge 的 `chrome.tabs.query` 会直接抛 `Invalid url pattern 'http://localhost:8787'`，那个异常被 catch 成了「没找到页面」，于是拾取结果只能退化成「复制到剪贴板」（选项页「测试连接」里的同名查询也一并修）。现在查询只用 origin 级模式（`http://localhost:8787/*`），路径前缀仍由 `tabMatchesBase` 严格复核（子路径反代、前缀相似的站点都不受影响）。
