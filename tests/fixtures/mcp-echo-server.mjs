@@ -3,7 +3,8 @@
  * MCP 测试夹具服务器 —— 极简 NDJSON JSON-RPC 实现，用作 mcp-bridge 的对手端。
  * 工具：echo（原样回传 parameters）、add（a+b）、fail（isError 工具）、
  * slow（延迟后返回，用于校验超时）、screenshot（image 块）、pdf（资源 blob 块）、
- * textfile（资源 text 块）、mixed（文本 + 图片混合块，校验保序透传）。
+ * textfile（资源 text 块）、mixed（文本 + 图片混合块，校验保序透传）、
+ * crash（收到调用即 process.exit 自杀，模拟 MCP 服务器崩溃，校验桥的自愈重启）。
  * 用法：node mcp-echo-server.mjs [delay-resp-ms]
  */
 import { createInterface } from "node:readline";
@@ -31,6 +32,7 @@ const TOOLS = [
 	{ name: "pdf", description: "返回一个 PDF 资源（resource 块，blob）", inputSchema: { type: "object" } },
 	{ name: "textfile", description: "返回一个文本资源（resource 块，text）", inputSchema: { type: "object" } },
 	{ name: "mixed", description: "文本 + 图片混合结果", inputSchema: { type: "object" } },
+	{ name: "crash", description: "调用即自杀（模拟 MCP 服务器崩溃）", inputSchema: { type: "object" } },
 ];
 
 function reply(msg) {
@@ -129,6 +131,10 @@ rl.on("line", (line) => {
 					},
 				],
 			});
+		}
+		if (name === "crash") {
+			// 模拟崩溃：不等应答直接退出（非零退出码），观察桥端是否自愈重启。
+			return process.exit(2);
 		}
 		return finish(msg.id, {
 			content: [{ type: "text", text: `unknown tool: ${name}` }],
