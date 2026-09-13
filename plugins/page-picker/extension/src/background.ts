@@ -436,11 +436,38 @@ export function handleMessage(
 	sender: chrome.runtime.MessageSender,
 	respond: (response?: unknown) => void,
 ): boolean | undefined {
-	const msg = (raw ?? {}) as { type?: string; payload?: PickPayload; url?: string };
+	const msg = (raw ?? {}) as {
+		type?: string;
+		payload?: PickPayload;
+		url?: string;
+		detail?: unknown;
+		sections?: unknown;
+	};
 	if (msg.type === "page-picker:settings") {
 		// serverUrl 不是秘密（和 token 不同），绑定浮条要拿它对比「本页是不是就是已绑定的那个」；
 		// detail + sections 是拾取器要的「采多深 + 采哪几类」
 		void loadSettings().then((s) => respond({ detail: s.detail, sections: s.sections, serverUrl: s.serverUrl }));
+		return true;
+	}
+	if (msg.type === "page-picker:set-sections") {
+		// 拾取浮条上直接改了预设 / 勾选项（不用再去选项页）→ 写回同一份设置。
+		// 只写 detail + sections 两个键（patch 式）：serverUrl / token 这些不在这次改动范围内，
+		// 并发改设置的两个页面也不该互相覆盖。
+		void (async () => {
+			try {
+				const current = await loadSettings();
+				const next = normalizeSettings({
+					...current,
+					...(msg.detail === undefined ? {} : { detail: msg.detail }),
+					...(msg.sections === undefined ? {} : { sections: msg.sections }),
+				});
+				await chrome.storage.sync.set({ detail: next.detail, sections: next.sections });
+				// 把归一后的结果回给浮条：它照着回显，就不会出现「显示的和会生效的不一样」
+				respond({ ok: true, detail: next.detail, sections: next.sections });
+			} catch (err) {
+				respond({ ok: false, message: `保存失败：${err instanceof Error ? err.message : String(err)}` });
+			}
+		})();
 		return true;
 	}
 	if (msg.type === "page-picker:bind") {

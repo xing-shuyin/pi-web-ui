@@ -22,11 +22,15 @@
 | HTML 骨架 + 折叠文本                               | 结构而不是整棵 `outerHTML`（超深子节点折成 `…`）                                                                 |
 | 元素截图（可选）                                   | 走对话附件，不是塞 base64 进正文                                                                                 |
 
-**发什么由你勾**（设置页「发送什么」多选）：页面上下文 / 定位信息 / XPath 与 DOM 路径 /
-源码位置 / 文本 / 命中的 CSS / 计算样式 / HTML 骨架，逐项开关 —— 没勾的**根本不采集**
-（不只是不渲染），所以「这次只要源码」「这次只要样式」都是最省的那一种。嫌麻烦就用预设：
-精简 / **标准（默认）** / 完整 / 只要能改对地方（选择器+源码）/ 只排查样式 / 只看文案结构，
-预设一键勾好，之后可以再手动增减（预设同时决定采集深浅：文本长度、骨架深度）。
+**发什么由你勾**：页面上下文 / 定位信息 / XPath 与 DOM 路径 / 源码位置 / 文本 /
+命中的 CSS / 计算样式 / HTML 骨架，逐项开关 —— 没勾的**根本不采集**（不只是不渲染），
+所以「这次只要源码」「这次只要样式」都是最省的那一种。嫌麻烦就用预设：
+精简 / **标准（默认）** / 完整 / 只要能改对地方（选择器+源码）/ 只排查样式 / 只看文案结构。
+
+**预设与逐项勾选在拾取浮条上就能改**（点完元素后那条里的一排 chip，`Alt+1~6` 是同一个入口），
+不用再去扩展选项页 —— 「这次只要源码位置」这种判断本来就是站在页面上看着元素时才有的。
+改完会**立即按新档位重新采集已选元素**，所以浮条上写的就是这次会发出去的；选择会写回扩展设置
+（选项页同步、下次拾取沿用）。预设同时决定采集深浅（文本长度、骨架深度），逐项勾选不改深浅。
 
 ## 装
 
@@ -144,19 +148,22 @@ CI 在打 tag 时自动跑同一条命令并把 zip 挂到 GitHub Release（见 
 
 ## 交互
 
-| 操作                                         | 效果                                                                |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| 点扩展图标 / `Alt+Shift+P`                   | **当前页是 pi-web-ui** → 问要不要把它绑成服务地址；否则进入拾取模式 |
-| （绑定浮条）设为服务地址 / 在本页拾取 / 关闭 | 写入设置 / 像普通页面一样拾取 / 关掉浮条（`Esc` 同）                |
-| hover                                        | 高亮 + 尺寸/标签浮签                                                |
-| 点击                                         | 拾取该元素并进入确认条（普通流程）                                  |
-| `Shift`+点击                                 | 追加多选，停留在拾取模式                                            |
-| `Enter`                                      | 从拾取模式进入确认条                                                |
-| `Backspace`                                  | 撤销最后一个                                                        |
-| `Ctrl/⌘+Enter`                               | 直接发送（键盘能把整套流程走完）                                    |
-| `Esc`                                        | 确认条 → 回拾取模式；拾取模式 → 退出（丢弃）                        |
+| 操作                                         | 效果                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| 点扩展图标 / `Alt+Shift+P`                   | **当前页是 pi-web-ui** → 问要不要把它绑成服务地址；否则进入拾取模式  |
+| （绑定浮条）设为服务地址 / 在本页拾取 / 关闭 | 写入设置 / 像普通页面一样拾取 / 关掉浮条（`Esc` 同）                 |
+| hover                                        | 高亮 + 尺寸/标签浮签                                                 |
+| 点击                                         | 拾取该元素并进入确认条（普通流程）                                   |
+| `Shift`+点击                                 | 追加多选，停留在拾取模式                                             |
+| `Enter`                                      | 从拾取模式进入确认条                                                 |
+| `Backspace`                                  | 撤销最后一个                                                         |
+| `Alt+1~6`                                    | 一键切预设（精简/标准/完整/改对地方/样式/文案）—— 拾取与确认条都能用 |
+| `Ctrl/⌘+Enter`                               | 直接发送（键盘能把整套流程走完）                                     |
+| `Esc`                                        | 确认条 → 回拾取模式；拾取模式 → 退出（丢弃）                         |
 
-确认条里每个元素一行：选择器 + 「这个元素的问题」备注框 + ✕ 移除；下面还有一条整体说明。
+确认条里每个元素一行：选择器 + 「这个元素的问题」备注框 + ✕ 移除。元素列表上面是一排**预设 chip**
+（精简 / 标准 / 完整 / 改对地方 / 样式 / 文案）+ 右边「调整项 ▾」（展开 8 项逐项勾选，与选项页等价，
+默认收起）；预设行下面有一条摘要写着「当前发送什么 + 采集深浅」；再往下还有一条整体说明。
 
 ## 失败时的兜底
 
@@ -215,7 +222,7 @@ CI 在打 tag 时自动跑同一条命令并把 zip 挂到 GitHub Release（见 
 
 ```bash
 npm run build:extension && npx tsc -p plugins/page-picker/extension/tsconfig.json --noEmit
-npx vitest run tests/unit/page-picker.test.ts tests/unit/page-picker-background.test.ts tests/unit/page-picker-options.test.ts
+npx vitest run tests/unit/page-picker.test.ts tests/unit/page-picker-background.test.ts tests/unit/page-picker-options.test.ts tests/unit/page-picker-preset-ui.test.ts
 npm run build   # 仓库构建（E2E 要用 dist/server）
 node tests/page-picker-test.mjs
 node tests/page-picker-edge-ext-test.mjs   # 装真扩展跑（需 Edge，否则 SKIP）
@@ -225,5 +232,7 @@ node tests/page-picker-edge-ext-test.mjs   # 装真扩展跑（需 Edge，否则
   绑定文案 `bindView` + 页面识别 `detectPiWebUi`（真桥 / `/api/health` / 探不通 / 超时自断）
 - `tests/unit/page-picker-background.test.ts`：service worker 决策（假 chrome，**且像真 Chrome 那样校验 match pattern**）+ 裁剪数学 + 点图标的分流（pi-web-ui 页 → 绑定浮条；普通页 → 拾取器；探测不可用 → 浮条自检）+ 绑定/授权失败路径
 - `tests/unit/page-picker-options.test.ts`：设置页的 `?bind=` 面板（真 options.html + 假 chrome）
+- `tests/unit/page-picker-preset-ui.test.ts`：浮条上的预设控件（jsdom 真点击）：点 chip 的回调、
+  逐项勾选、**取消最后一项被拒**、折叠面板、`Alt+1~6` 解析、摘要文案
 - `tests/page-picker-test.mjs`：端到端（真实 Chrome + 真实 pi-web-ui 页面 + 真实探测/绑定浮条 + 浮条自退场）
 - `tests/page-picker-edge-ext-test.mjs`：**装真扩展**的端到端（真 `chrome.*`：投递真落到输入框、绑定浮条真弹出、非目标页真自退场）；需本机有 Edge，没有就 SKIP

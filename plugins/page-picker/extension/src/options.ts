@@ -20,6 +20,7 @@ import {
 	PICK_SECTIONS,
 	SECTION_INFO,
 	SECTION_PRESETS,
+	describeSections,
 	normalizeSections,
 	presetForSections,
 	sectionsForDepth,
@@ -106,14 +107,8 @@ function checkedSections(): PickSection[] {
 function renderPresetSelect(sections: PickSection[]): void {
 	const matched = presetForSections(sections);
 	fields.preset.value = matched ? matched.id : "custom";
-	renderSummary(sections, matched?.label);
-}
-
-function renderSummary(sections: PickSection[], presetLabel?: string): void {
-	const names = sections.map((k) => SECTION_INFO[k].label);
-	$("sectionSummary").textContent =
-		`当前发送：${names.length > 0 ? names.join(" / ") : "（都没勾 —— 将回落标准组合）"}` +
-		`（共 ${sections.length} 项${presetLabel ? `，预设：${presetLabel}` : "，自定义"}）`;
+	// 摘要文案与拾取浮条共用一份实现（describeSections）—— 两处说的必须是同一件事
+	$("sectionSummary").textContent = describeSections(sections);
 }
 
 function status(text: string, kind: "ok" | "err" | "warn" | "info" = "info"): void {
@@ -243,6 +238,13 @@ fields.preset.addEventListener("change", () => {
 	void save();
 });
 $("grant").addEventListener("click", () => void ensureOrigin());
+// 拾取浮条上也能改这两项（页面上直接切预设，不用回设置页）→ 两个写者必须互相看得见，
+// 否则会出现「在页面上切了预设，回选项页随手改一下别的，预设又被旧值覆盖回去」。
+chrome.storage.onChanged?.addListener((changes, area) => {
+	if (area !== "sync") return;
+	if (!changes.detail && !changes.sections) return;
+	void load();
+});
 $("test").addEventListener("click", () => void testConnection());
 $("reset").addEventListener("click", () => {
 	fillForm({ ...DEFAULT_SETTINGS, sections: [...normalizeSections(DEFAULT_SETTINGS.sections)] });

@@ -23,13 +23,19 @@
  */
 
 import {
+	PICK_SECTIONS,
+	SECTION_PRESETS,
+	applySectionToggle,
 	makePickId,
+	presetHotkeyIndex,
+	presetShortLabel,
 	type DetailLevel,
 	type PickPayload,
 	type PickSection,
 	type PickedElement,
 } from "../shared/contract.js";
 import { pageContext, snapshotElement } from "./element.js";
+import { createPresetControls } from "./preset-controls.js";
 
 const FLAG = "__piWebUiPagePicker";
 const HOST_ID = "pi-page-picker-host";
@@ -65,13 +71,19 @@ const CSS = `
 }
 .pick .tag { background: #22c55e; }
 .hud {
-  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+  position: fixed; top: 14px; left: 0; right: 0; z-index: 10;
+  /* 宽度：fit-content + 两侧 auto 居中 —— 不能用 left:50% + translateX(-50%)，
+     那只给了它 **50vw** 的可用宽度（left 到右边缘），挤到极限时文字会被压成竖排 */
+  width: fit-content; max-width: 92vw; margin: 0 auto;
   display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px;
   background: rgba(17,24,39,.94); color: #e5e7eb; font-size: 13px;
   /* 纯信息条：绝不能可点 —— 否则它会挡住页面顶部元素的点击（拾取器最不能犯的错） */
   pointer-events: none;
-  box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 92vw;
+  /* 挤不下时整项换行（而不是把字压成竖排） */
+  flex-wrap: wrap; justify-content: center;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
 }
+.hud > * { white-space: nowrap; }
 .hud b { color: #93c5fd; font-weight: 600; }
 .hud .k { padding: 1px 5px; border: 1px solid #4b5563; border-radius: 4px; font-size: 11px; color: #9ca3af; }
 .bar {
@@ -102,14 +114,39 @@ button:hover { filter: brightness(1.15); }
 .foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .foot .grow { flex: 1 1 auto; }
 .toast {
-  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 18px; left: 0; right: 0; margin: 0 auto;
+  width: fit-content; max-width: 92vw;
   padding: 10px 14px; border-radius: 8px; background: rgba(17,24,39,.97); color: #e5e7eb;
   font-size: 13px; pointer-events: none; box-shadow: 0 8px 26px rgba(0,0,0,.4);
 }
 .toast.ok { border-left: 3px solid #22c55e; }
 .toast.err { border-left: 3px solid #ef4444; }
+/* 预设行：六个 chip 一键套组合，右边「调整项」展开逐项勾（默认收起，浮条只占一行） */
+.preset-box { margin-top: 10px; border-top: 1px solid #1f2937; padding-top: 10px; }
+.presets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.presets .plabel { color: #94a3b8; font-size: 12px; }
+.presets .grow { flex: 1 1 auto; }
+.chip {
+  padding: 3px 9px; border-radius: 999px; border: 1px solid #374151; background: #1f2937;
+  color: #cbd5e1; font-size: 12px; cursor: pointer;
+}
+.chip.active { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+.chip.custom { cursor: default; border-style: dashed; }
+.chip.custom.active { background: #374151; border-color: #4b5563; color: #e5e7eb; font-weight: 600; }
+.link { padding: 3px 8px; border: none; background: none; color: #93c5fd; font-size: 12px; cursor: pointer; }
+.link:hover { text-decoration: underline; filter: none; }
+.sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 2px 10px; margin-top: 8px; }
+.sections .sec { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; }
+.sump { color: #94a3b8; font-size: 11px; margin-top: 6px; }
 .hidden { display: none !important; }
 `;
+
+/** 焦点在可编辑元素里吗（页面上正打字时绝不抢它的键盘）。 */
+function isEditable(target: EventTarget | null): boolean {
+	if (!(target instanceof Element)) return false;
+	const tag = target.tagName.toLowerCase();
+	return tag === "input" || tag === "textarea" || tag === "select" || (target as HTMLElement).isContentEditable;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -147,12 +184,28 @@ function createPicker(): PickerRuntime {
 	shadow.append(el("style", { text: CSS }), hl, picks, hud, bar, toast);
 
 	const rows = el("div", { class: "rows" });
+	// 预设控件：**改设置不用再去扩展选项页** —— chip 一键套组合，展开还能逐项勾。
+	// 三个回调都汇到 applyPickOptions / applyPreset 这一个口上（重采 + 重画 + 写回只写一遍）。
+	let optionsNotice = ""; // 写回设置失败时挂在摘要行上（确认条正开着，不宜拿 toast 遮它）
+	const presets = createPresetControls({
+		onPreset: (id) => applyPreset(id),
+		onToggleSection: (key, on) => applyPickOptions(detail, applySectionToggle(effectiveSections(), key, on)),
+		onRefuseEmpty: () => showToast("至少要留一项：全不勾会回落成标准组合", "err"),
+	});
 	const noteInput = el("input", { type: "text", placeholder: "整体说明（可选）：比如「这三处间距不一致」" });
+	// 勾选项里按 Esc 也要能退（焦点落在我们自己的 UI 里时，全局键盘监听会跳过）—— 与备注框一致
+	presets.root.addEventListener("keydown", (e) => {
+		if (e.key !== "Escape") return;
+		e.stopPropagation();
+		if (phase === "editing") setPhase("picking");
+		else stop();
+	});
 	const sendBtn = el("button", { class: "primary", text: "添加到对话" });
 	const moreBtn = el("button", { text: "继续选" });
 	const cancelBtn = el("button", { text: "取消" });
 	bar.append(
 		rows,
+		presets.root,
 		noteInput,
 		el("div", { class: "foot" }, [el("span", { class: "grow" }), moreBtn, cancelBtn, sendBtn]),
 	);
@@ -215,6 +268,8 @@ function createPicker(): PickerRuntime {
 				el("span", { text: "退出" }),
 			);
 			if (picked.length > 0) parts.unshift(el("b", { text: `已选 ${picked.length}` }));
+			// 当前预设写在这里（HUD 是不可点的纯信息条）—— 确认条里有 chip，这里只报「现在是哪个」
+			parts.push(el("span", { text: "预设" }), el("b", { text: presetShortLabel(effectiveSections()) }));
 		} else {
 			parts.push(
 				el("b", { text: `已选 ${picked.length} 个元素` }),
@@ -255,7 +310,79 @@ function createPicker(): PickerRuntime {
 		});
 		rows.replaceChildren(...rowNodes);
 		noteInput.value = note;
+		presets.render({
+			detail,
+			sections: effectiveSections(),
+			...(optionsNotice ? { notice: optionsNotice } : {}),
+		});
 	};
+
+	// ------------------------------------------------------------------ 预设 / 勾选项
+
+	/** 当前**实际**要发的项（设置没取到时显示全采 —— 与采集层的宽容语义一致）。 */
+	const effectiveSections = (): PickSection[] => sections ?? [...PICK_SECTIONS];
+
+	/**
+	 * 预设 / 逐项勾选的**唯一入口**：改状态 → 重采已选元素 → 重画 → 写回设置。
+	 *
+	 * 为什么要重采（而不是只影响下一个选的元素）：快照是点击那一刻取的，不重采就会出现
+	 * 「浮条上写着精简、发出去的还是完整档」—— 用户改设置的全部目的就是改**这次**发什么。
+	 */
+	const applyPickOptions = (nextDetail: DetailLevel, nextSections: PickSection[]): void => {
+		detail = nextDetail;
+		sections = nextSections;
+		optionsNotice = ""; // 新的一次选择清掉上一次的失败提示
+		resnapshotPicked();
+		renderHud();
+		renderBar();
+		void persistPickOptions();
+	};
+
+	const applyPreset = (id: string): void => {
+		const preset = SECTION_PRESETS.find((p) => p.id === id);
+		if (!preset) return;
+		applyPickOptions(preset.depth, [...preset.sections]);
+	};
+
+	/** 已选元素按新设置重新采一遍（元素已被页面换掉就留着旧快照，不弄丢）。 */
+	const resnapshotPicked = (): void => {
+		let failed = 0;
+		for (const p of picked) {
+			if (!p.el.isConnected) continue;
+			try {
+				p.snapshot = snapshotElement(p.el, { detail, sections });
+			} catch {
+				failed++;
+			}
+		}
+		if (failed > 0) showToast(`${failed} 个元素按新设置重采失败（保留原来的内容）`, "err");
+	};
+
+	/**
+	 * 把这次的选择写回扩展设置（选项页同步可见，下次拾取沿用）。
+	 *
+	 * 失败**不阻断拾取**：本地已经生效了，这条消息只是「记住它」。但必须说出来 ——
+	 * 静默失败会让人以为下次也是这个档位。
+	 */
+	async function persistPickOptions(): Promise<void> {
+		let res: { ok?: boolean; detail?: DetailLevel; sections?: PickSection[] } | undefined;
+		try {
+			res = (await chrome.runtime.sendMessage({ type: "page-picker:set-sections", detail, sections })) as
+				{ ok?: boolean; detail?: DetailLevel; sections?: PickSection[] } | undefined;
+		} catch {
+			/* 后台没响应 → 下面统一提示 */
+		}
+		if (!res?.ok) {
+			optionsNotice = "没同步到扩展设置（这次的选择只在本页生效）";
+			renderBar();
+			return;
+		}
+		// 后台做过归一（比如空列表回落标准组合）→ 以它为准，别让浮条显示一个不会生效的状态
+		if (res.detail) detail = res.detail;
+		if (res.sections) sections = res.sections;
+		renderHud();
+		renderBar();
+	}
 
 	const setPhase = (next: Phase): void => {
 		phase = next;
@@ -330,6 +457,14 @@ function createPicker(): PickerRuntime {
 			swallow(e);
 			if (phase === "editing") setPhase("picking");
 			else stop();
+			return;
+		}
+		// Alt+1~6 切预设：整个流程都能用键盘走完（HUD 上写着这个提示）。
+		// 焦点在输入框里时不动手 —— 页面上正打字，macOS 的 Option+数字是在打 ¡ 这类字符。
+		const presetIndex = presetHotkeyIndex(e);
+		if (presetIndex > 0 && !isEditable(e.target)) {
+			swallow(e);
+			applyPreset(SECTION_PRESETS[presetIndex - 1].id);
 			return;
 		}
 		// Ctrl/Cmd+Enter 在编辑阶段直接发送（键盘能把整套流程走完，不依赖鼠标）
@@ -445,6 +580,7 @@ function createPicker(): PickerRuntime {
 			if (opts?.detail) detail = opts.detail;
 			if (opts?.sections) sections = opts.sections;
 			noteInput.value = "";
+			presets.setPanelOpen(false); // 新一轮从「只有六个 chip」开始，不叠着上轮的展开状态
 			sendBtn.disabled = false;
 			sendBtn.textContent = "添加到对话";
 			(document.body ?? document.documentElement).append(host);

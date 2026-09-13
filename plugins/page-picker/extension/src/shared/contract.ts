@@ -47,10 +47,13 @@ export const SECTION_INFO: Record<PickSection, { label: string; hint: string }> 
 	skeleton: { label: "HTML 骨架", hint: "结构（子节点折叠成 …），比整段 outerHTML 省得多" },
 };
 
-/** 预设：常用组合（设置页一键勾选）。`depth` 决定采集深浅，`sections` 决定要哪几类信息。 */
+/** 预设：常用组合（选项页下拉、拾取浮条上的 chip 都是它）。`depth` 决定采集深浅，`sections` 决定要哪几类信息。 */
 export interface SectionPreset {
 	id: string;
+	/** 完整名字（选项页下拉里用）。 */
 	label: string;
+	/** 短名（拾取浮条上只有一指宽，放不下完整名字）。 */
+	short: string;
 	hint: string;
 	depth: DetailLevel;
 	sections: PickSection[];
@@ -60,6 +63,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "lean",
 		label: "精简（最省上下文）",
+		short: "精简",
 		hint: "只留定位 + 源码位置 + 短文本：大约三五行/元素",
 		depth: "compact",
 		sections: ["page", "selector", "source", "text"],
@@ -67,6 +71,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "standard",
 		label: "标准（推荐）",
+		short: "标准",
 		hint: "再加命中的 CSS、计算样式差异与 HTML 骨架",
 		depth: "standard",
 		sections: ["page", "selector", "source", "text", "rules", "styles", "skeleton"],
@@ -74,6 +79,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "full",
 		label: "完整",
+		short: "完整",
 		hint: "全要，并采得更深（选择器/骨架更深、文本更长）",
 		depth: "full",
 		sections: [...PICK_SECTIONS],
@@ -81,6 +87,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "source",
 		label: "只要能改对地方",
+		short: "改对地方",
 		hint: "选择器 + 源码位置（React/Vue 文件:行号），不报样式",
 		depth: "standard",
 		sections: ["selector", "source"],
@@ -88,6 +95,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "styles",
 		label: "只排查样式",
+		short: "样式",
 		hint: "选择器 + 命中的 CSS + 计算样式差异（间距/颜色/布局问题）",
 		depth: "standard",
 		sections: ["selector", "rules", "styles"],
@@ -95,6 +103,7 @@ export const SECTION_PRESETS: SectionPreset[] = [
 	{
 		id: "text",
 		label: "只看文案/结构",
+		short: "文案",
 		hint: "选择器 + 文本 + HTML 骨架，不报源码与样式",
 		depth: "compact",
 		sections: ["selector", "text", "skeleton"],
@@ -129,6 +138,63 @@ export function normalizeSections(raw: unknown): PickSection[] {
 export function presetForSections(sections: PickSection[]): SectionPreset | undefined {
 	const key = [...sections].sort().join(",");
 	return SECTION_PRESETS.find((p) => [...p.sections].sort().join(",") === key);
+}
+
+/** 采集深浅的名字（拾取浮条上要显示「这次采多深」）。 */
+export const DETAIL_LABELS: Record<DetailLevel, string> = {
+	compact: "精简",
+	standard: "标准",
+	full: "完整",
+};
+
+/** 当前组合的短名（浮条上的状态提示；不一致就是「自定义」）。 */
+export function presetShortLabel(sections: PickSection[]): string {
+	return presetForSections(sections)?.short ?? "自定义";
+}
+
+/**
+ * 勾 / 取消勾一项 → 新的组合。
+ *
+ * 返回值一律按 `PICK_SECTIONS` 排 —— 顺序会进存储、也用来比对「是不是某个预设」，
+ * 乱序会让比较结果飘（这条规则只能有一份实现，选项页与浮条都走它）。
+ */
+export function applySectionToggle(sections: PickSection[], key: PickSection, on: boolean): PickSection[] {
+	const set = new Set(sections);
+	if (on) set.add(key);
+	else set.delete(key);
+	return PICK_SECTIONS.filter((k) => set.has(k));
+}
+
+/**
+ * Alt+1~6 → 第几个预设（0 = 不是这个组合键）。
+ *
+ * 为什么用 `code` 优先：macOS 上 Alt(Option)+数字会打出 ¡™£ 这类字符，`key` 不再是数字，
+ * 但 `code` 仍然是 `Digit1`；反过来的布局（AZERTY）也靠 key 兜底。
+ */
+export function presetHotkeyIndex(e: {
+	key?: string;
+	code?: string;
+	altKey?: boolean;
+	ctrlKey?: boolean;
+	metaKey?: boolean;
+}): number {
+	if (!e.altKey || e.ctrlKey || e.metaKey) return 0;
+	const byCode = /^Digit([1-9])$/.exec(e.code ?? "");
+	const digit = byCode ? Number(byCode[1]) : /^[1-9]$/.test(e.key ?? "") ? Number(e.key) : 0;
+	return digit >= 1 && digit <= SECTION_PRESETS.length ? digit : 0;
+}
+
+/**
+ * 一句话说清「这次发送什么」（选项页与拾取浮条共用一份文案，免得两处漂移）。
+ * 空列表不是合法状态（会回落标准组合），但真出现了也要说明白，而不是显示「发了 0 项」。
+ */
+export function describeSections(sections: PickSection[]): string {
+	const names = sections.map((k) => SECTION_INFO[k].label);
+	const matched = presetForSections(sections);
+	return (
+		`当前发送：${names.length > 0 ? names.join(" / ") : "（都没勾 —— 将回落标准组合）"}` +
+		`（共 ${sections.length} 项${matched ? `，预设：${matched.label}` : "，自定义"}）`
+	);
 }
 
 /** 源码定位：理想情况下告诉 AI「改哪个文件的哪一行」。 */

@@ -469,6 +469,52 @@ describe("handleMessage", () => {
 		expect(injectedFiles(chrome)).toEqual(["dist/picker.js"]);
 	});
 
+	it("set-sections（浮条上切预设）→ 只写 detail + sections，不碰 serverUrl/token", async () => {
+		const chrome = fakeChrome({ stored: { serverUrl: "http://127.0.0.1:8787", token: "secret" } });
+		const res = await ask<{ ok: boolean; detail: string; sections: string[] }>({
+			type: "page-picker:set-sections",
+			detail: "compact",
+			sections: ["page", "selector", "source", "text"],
+		});
+		// 回给浮条的是**归一后**的结果，浮条照着它回显（否则会出现「显示的和生效的不一样」）
+		expect(res).toEqual({ ok: true, detail: "compact", sections: ["page", "selector", "source", "text"] });
+		expect(chrome.storage.sync.set).toHaveBeenCalledWith({
+			detail: "compact",
+			sections: ["page", "selector", "source", "text"],
+		});
+	});
+
+	it("set-sections 收到脏数据 → 回落默认（空列表不能变成「什么都不发」）", async () => {
+		const chrome = fakeChrome();
+		const res = await ask<{ ok: boolean; detail: string; sections: string[] }>({
+			type: "page-picker:set-sections",
+			detail: "nonsense",
+			sections: ["nope"],
+		});
+		expect(res.ok).toBe(true);
+		expect(res.detail).toBe("standard");
+		expect(res.sections).toEqual(sectionsForDepth("standard"));
+	});
+
+	it("set-sections 只写存储里这两个键（并发改设置的两个页面不互相覆盖）", async () => {
+		const chrome = fakeChrome({ stored: { serverUrl: "http://127.0.0.1:8787", focusTarget: true } });
+		await ask({ type: "page-picker:set-sections", sections: ["selector", "source"] });
+		const written = vi.mocked(chrome.storage.sync.set).mock.calls[0][0] as Record<string, unknown>;
+		expect(Object.keys(written).sort()).toEqual(["detail", "sections"]);
+	});
+
+	it("set-sections 存储写失败 → ok:false 并说明原因（浮条据此提示「只在本页生效」，不静默）", async () => {
+		const chrome = fakeChrome();
+		vi.mocked(chrome.storage.sync.set).mockRejectedValueOnce(new Error("quota exceeded"));
+		const res = await ask<{ ok: boolean; message: string }>({
+			type: "page-picker:set-sections",
+			detail: "full",
+			sections: ["selector"],
+		});
+		expect(res.ok).toBe(false);
+		expect(res.message).toContain("quota exceeded");
+	});
+
 	it("open-options → 打开带 ?bind= 的选项页", async () => {
 		const chrome = fakeChrome();
 		await ask({ type: "page-picker:open-options", url: "http://39.99.235.208:8787/" });

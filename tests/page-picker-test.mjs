@@ -529,6 +529,49 @@ check(
 );
 check("夹具页仍然无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
 
+// ==================== 场景 9：六个预设能**在拾取页面上**直接切（不用回扩展选项页）
+// 「这次只要源码位置」这种判断是站在页面上看着元素时才有的 —— 为了改一个勾选去开
+// chrome://extensions 太远。这里验收三件事：落盘（选项页会同步）、**已选元素按新档位重采**、
+// 真正发出去的 Markdown 跟着变。chip 在闭合 shadow 里（自动化只能走键盘 Alt+1~6），
+// 但两条路都汇到 applyPickOptions 同一个口上。
+await ta.fill("");
+fakeStorage.detail = "standard";
+fakeStorage.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"];
+await injectPicker();
+await fx.click("#card");
+await fx.keyboard.press("Alt+1"); // 精简（compact）
+await fx.waitForTimeout(250);
+check(
+	"页面上切预设 → 写回扩展设置（选项页会同步、下次拾取沿用）",
+	fakeStorage.detail === "compact" &&
+		JSON.stringify(fakeStorage.sections) === JSON.stringify(["page", "selector", "source", "text"]),
+	`detail=${fakeStorage.detail} sections=${JSON.stringify(fakeStorage.sections)}`,
+);
+check(
+	"切预设真的回传给了 background（不是只改了页面里的变量）",
+	bridgeLog.some((m) => m.type === "page-picker:set-sections"),
+);
+
+await fx.keyboard.press("Control+Enter");
+await fx.waitForTimeout(600);
+const leanPick = bridgeLog.filter((m) => m.type === "page-picker:picked").at(-1);
+check(
+	"**已经选好的元素也按新预设重采**（不是只影响下一个选的）",
+	leanPick?.payload?.detail === "compact" &&
+		JSON.stringify(leanPick?.payload?.sections) === JSON.stringify(["page", "selector", "source", "text"]),
+	`detail=${leanPick?.payload?.detail} sections=${JSON.stringify(leanPick?.payload?.sections)}`,
+);
+const mdLean = delivered.at(-1)?.text ?? "";
+check(
+	"精简档发出去的 Markdown 真的瘦了（CSS 规则/计算样式/骨架整段不出现）",
+	mdLean.includes("- 选择器：") &&
+		!mdLean.includes("命中的 CSS") &&
+		!mdLean.includes("计算样式") &&
+		!mdLean.includes("HTML 骨架"),
+	mdLean.split("\n").slice(0, 2).join(" | "),
+);
+check("夹具页仍然无 JS 报错（切预设没把页面搞崩）", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
+
 await browser.close();
 fixture.close();
 server.kill();

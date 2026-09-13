@@ -74,6 +74,10 @@ declare namespace chrome {
 			get(keys: string[] | null): Promise<Record<string, unknown>>;
 			set(items: Record<string, unknown>): Promise<void>;
 		};
+		/** 存储变化监听。拾取浮条也能改预设与勾选项 → 选项页得跟着刷新（老环境/测试里可能没有）。 */
+		const onChanged:
+			| { addListener(cb: (changes: Record<string, { newValue?: unknown }>, areaName: string) => void): void }
+			| undefined;
 	}
 
 	namespace permissions {
