@@ -3,6 +3,7 @@
  * confirm/input 等调用桥接到浏览器（widgets/statuses/notice/dialog 消息）。
  * TUI 专属能力（终端输入、footer/header、自定义组件）为惰性 no-op；
  * select/confirm/input 弹窗经 dialog_response 回传，Esc 视为取消。
+ * headless 实例（子代理会话）不接任何浏览器：见 WebUIContext.headless()。
  *
  * 从 agent-service.ts 抽出，行为保持不变。
  */
@@ -60,17 +61,36 @@ interface WidgetEntry {
 
 /**
  * Implements the subset of ExtensionUIContext that makes sense for a web UI.
- * TUI-only affordances (select/confirm/input dialogs, terminal input, custom
- * footer) are inert: dialogs resolve to cancellation instead of blocking.
+ * widgets/statuses/notices/dialogs are bridged to the browser (a dialog nobody
+ * answers resolves to cancellation); TUI-only affordances (terminal input,
+ * footer/header, custom components, editor hooks) are inert.
+ *
+ * 两种实例：挂浏览器的（构造时给真 emitter）与 headless 的（`WebUIContext.headless()`，
+ * 子代理会话用——见该方法的说明）。
  */
 export class WebUIContext {
 	readonly theme = mockThemeProxy;
 	private widgets = new Map<string, WidgetEntry>();
 	private lastLines = new Map<string, string[]>();
 	private emit: (msg: ServerMessage) => void;
+	/** headless 实例没有浏览器面板：输出全部丢弃、弹窗直接按取消返回。 */
+	private headless: boolean;
 
-	constructor(emit: (msg: ServerMessage) => void) {
-		this.emit = emit;
+	constructor(emit: (msg: ServerMessage) => void, options: { headless?: boolean } = {}) {
+		this.headless = options.headless === true;
+		this.emit = this.headless ? () => {} : emit;
+	}
+
+	/** 子代理会话用的上下文：方法面与挂浏览器的那个完全一致（扩展调用任何
+	 *  ExtensionUIContext 方法都不会因方法缺失而崩），但没有面板接收输出，因此
+	 *
+	 *   - widgets/status/notice 一律丢弃（不会与主对话的 widget/status 串台）；
+	 *   - widget 组件工厂不调用（没人 dispose 的组件会一直挂着）；
+	 *   - select/confirm/input 直接按「取消」resolve —— 关键：这里没有浏览器应答，
+	 *     照常挂 Promise 会让扩展永久 await（只有 20 分钟的工具看门狗兜底）。
+	 */
+	static headless(): WebUIContext {
+		return new WebUIContext(() => {}, { headless: true });
 	}
 
 	// -- widgets -------------------------------------------------------------
@@ -88,6 +108,8 @@ export class WebUIContext {
 	/** Matches ExtensionUIContext's overloaded setWidget exactly. */
 	setWidget: ExtensionUIContext["setWidget"] = (key, content, options) => {
 		void options;
+		// headless：没有面板可渲染，连组件工厂都不调用。
+		if (this.headless) return;
 		if (content === undefined) {
 			this.widgets.delete(key);
 			this.lastLines.delete(key);
@@ -207,6 +229,8 @@ export class WebUIContext {
 		title: string,
 		args: unknown[],
 	): Promise<string | boolean | null> {
+		// headless：没人能应答，立刻按「取消」结束（与 cancelPendingDialogs 同值）。
+		if (this.headless) return Promise.resolve(null);
 		return new Promise((resolve) => {
 			const id = ++this.dialogSeq;
 			this.pendingDialogs.set(id, resolve);

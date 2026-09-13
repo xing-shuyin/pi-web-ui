@@ -85,7 +85,7 @@ import {
 	isTerminalGuidanceOn,
 	MARKERS_LIST_TOOL_NAME,
 } from "./tool-manager.js";
-import { WebUIContext, mockThemeProxy } from "./webui-context.js";
+import { WebUIContext } from "./webui-context.js";
 import { decodeText } from "./text-sniff.js";
 import { makeEditSoftTool } from "./edit-soft-tool.js";
 import {
@@ -1031,13 +1031,15 @@ export class ClientSession {
 		this.convs.set(conv.id, conv);
 		// 子代理不走 bindSession——这里同样注入面板的重试次数覆盖。
 		this.applyRetryOverrides();
-		// 扩展绑定（rpc 模式）；使用完整的 Web UI context，避免扩展调用新增的
-		// ExtensionUIContext 方法时因局部 mock 缺失而崩溃。子代理的 UI 输出不下发，
-		// 因此不会与主对话的 widget/status 冲突。
+		// 扩展绑定（rpc 模式）；用 headless 的 Web UI context：
+		// 扩展绑定时不会因缺方法崩，UI 输出也不下发（不会与主对话的 widget/status 冲突）。
 		try {
 			await conv.session.bindExtensions({
 				mode: "rpc",
-				uiContext: new WebUIContext(() => {}),
+				// 子代理的扩展照常拿到完整 ExtensionUIContext（扩展调用新增方法不会因
+				// 局部 mock 缺失而崩），但它是 headless 的：UI 输出全部丢弃、弹窗按取消返回，
+				// 因此既不与主对话的 widget/status 串台，也不会让扩展卡在永远无人应答的弹窗上。
+				uiContext: WebUIContext.headless(),
 				onError: (err) => this.emit({ type: "notice", level: "error", text: err.error, textEn: err.error }),
 			});
 		} catch {

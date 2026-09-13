@@ -38,3 +38,40 @@ describe("WebUIContext SDK wrap", () => {
 		});
 	});
 });
+
+describe("WebUIContext.headless (subagent sessions)", () => {
+	it("cancels dialogs right away instead of waiting for a browser", async () => {
+		// 没有浏览器应答：挂 Promise 会让扩展永久 await（PR #128 回归点）。
+		const ui = WebUIContext.headless();
+		await expect(ui.select("pick", ["a"])).resolves.toBeNull();
+		await expect(ui.confirm("sure?", "m")).resolves.toBeNull();
+		await expect(ui.input("name")).resolves.toBeNull();
+	});
+
+	it("drops every UI message (no cross-talk with the main conversation)", () => {
+		// 先盯「挂浏览器的上下文照常发」，再盯「headless 一条都不发」。
+		const attached: ServerMessage[] = [];
+		const live = new WebUIContext((msg) => attached.push(msg));
+		const ui = WebUIContext.headless();
+		for (const ctx of [live, ui]) {
+			ctx.setStatus("probe", "on");
+			ctx.notify("hello", "info");
+			ctx.setWidget("probe", ["line"]);
+		}
+		expect(attached.length).toBeGreaterThan(0);
+		expect(live.snapshot()).not.toEqual([]);
+		expect(ui.snapshot()).toEqual([]);
+	});
+
+	it("never builds widget components (nothing would ever dispose them)", () => {
+		const ui = WebUIContext.headless();
+		let built = 0;
+		const factory = (() => {
+			built++;
+			return { render: () => ["probe"] };
+		}) as unknown as Parameters<WebUIContext["setWidget"]>[1];
+		ui.setWidget("probe", factory);
+		expect(built).toBe(0);
+		expect(ui.snapshot()).toEqual([]);
+	});
+});

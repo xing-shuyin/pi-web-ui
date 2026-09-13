@@ -63,6 +63,7 @@ const ALL = [
 	"ssh-plugin-test",
 	"steer-queue-smoke",
 	"subagent-template-test",
+	"subagent-ui-context-test",
 	"switch-session-background-test",
 	"terminal-smoke-test",
 	"token-auth-test",
