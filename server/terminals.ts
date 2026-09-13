@@ -770,7 +770,16 @@ export class TerminalManager {
 		this.history.delete(id);
 		const safeCwd = this.safeCwd(cwd || fallbackCwd);
 		if (!safeCwd) {
-			this.fail(id, "终端工作目录必须位于当前工作区内", "Terminal cwd must be inside the current workspace");
+			this.fail(
+				id,
+				pick(
+					this.lang?.() ?? "en",
+					"终端工作目录必须位于当前工作区内",
+					"Terminal cwd must be inside the current workspace",
+					"terminals.cwd.outside.workspace",
+				),
+				"Terminal cwd must be inside the current workspace",
+			);
 			return null;
 		}
 		if (
@@ -824,7 +833,16 @@ export class TerminalManager {
 		const command = expandPwd(def.command.trim(), pwd);
 		const title = def.name || command || `终端 ${++this.seq}`;
 		if (!dir) {
-			this.fail(id, "终端工作目录必须位于当前工作区内", "Terminal cwd must be inside the current workspace");
+			this.fail(
+				id,
+				pick(
+					this.lang?.() ?? "en",
+					"终端工作目录必须位于当前工作区内",
+					"Terminal cwd must be inside the current workspace",
+					"terminals.cwd.outside.workspace",
+				),
+				"Terminal cwd must be inside the current workspace",
+			);
 			return;
 		}
 
