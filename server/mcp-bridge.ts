@@ -57,6 +57,8 @@ let rpcSeq = 0;
 /**
  * 单个 MCP 服务器的客户端：管理子进程、请求/响应按 id 关联、握手与工具调用。
  * 线程模型：无需并发控制（MCP 允许乱序 + 我们按请求 id 匹配响应）。
+ * 自愈：子进程意外退出（崩溃/被杀）后不永久失效 —— 下一次工具调用会惰性重启并
+ * 重新握手、重新拉取工具列表；显式 close() 之后才永久停用。
  */
 export class McpClient {
 	private child: ChildProcess | null = null;
@@ -71,6 +73,10 @@ export class McpClient {
 	/** 已握手的工具列表（tools/list 结果缓存）。 */
 	private tools: McpToolDefinition[] = [];
 	private shuttingDown = false;
+	/** 进行中的启动/重启（并发调用共享同一次重连）。 */
+	private starting: Promise<void> | null = null;
+	/** 已启动次数（含自愈重启；诊断/测试用）。 */
+	private startedCount = 0;
 
 	constructor(
 		name: string,
@@ -81,11 +87,12 @@ export class McpClient {
 		this.log = log ?? (() => {});
 	}
 
-	/** 启动子进程 + 握手 + 拉取工具列表。 */
-	async start(_timeoutMs = 8000): Promise<void> {
+	/** 启动子进程 + 握手 + 拉取工具列表。可安全重入：子进程退出后再次调用即全新启动。 */
+	async start(timeoutMs = 8000): Promise<void> {
 		if (this.child) return;
 		const { command, args = [], cwd, env } = this.spec;
 		this.log(`[mcp:${this.name}] starting: ${command} ${args.join(" ")}`);
+		this.buffer = "";
 		const child = spawn(command, args, {
 			cwd: cwd ?? undefined,
 			env: { ...process.env, ...env },
@@ -93,32 +100,83 @@ export class McpClient {
 			windowsHide: true,
 		});
 		this.child = child;
+		// 进程退出后向 stdin 写请求会触发 EPIPE —— 静默忽略（send 也会判 child 存活）。
+		child.stdin?.on("error", () => {});
 		child.stderr.on("data", (d) => this.log(`[mcp:${this.name}] stderr:`, d.toString().trimEnd()));
 		child.on("error", (err) => this.rejectAll(new Error(`[mcp:${this.name}] spawn error: ${err.message}`)));
 		child.on("exit", (code, sig) => {
 			this.child = null;
-			if (!this.shuttingDown) this.rejectAll(new Error(`[mcp:${this.name}] 进程退出 (${sig ?? code})`));
+			this.buffer = "";
+			if (!this.shuttingDown) {
+				this.log(`[mcp:${this.name}] 进程退出 (${sig ?? code})，下次调用将自动重启`);
+				this.rejectAll(new Error(`[mcp:${this.name}] 进程退出 (${sig ?? code})`));
+			}
 		});
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => this.onData(chunk));
+		this.startedCount++;
 
-		// 握手
-		const handshake = await this.request("initialize", {
-			protocolVersion: this.spec.protocolVersion ?? PROTOCOL_VERSION,
-			capabilities: {},
-			clientInfo: { name: "pi-web-ui", version: "0.41.0" },
-		});
-		const version =
-			(handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
-		// 通知 initialized（无 id 的 notification）
-		this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
-		// 仍以协商协议版本调用 tools（多数服务器对新版本容忍，这里用协商结果）
-		void version;
-		const listed = ((await this.request("tools/list", {})) ?? {}) as {
-			tools?: McpToolDefinition[];
-		};
-		this.tools = Array.isArray(listed.tools) ? listed.tools : [];
-		this.log(`[mcp:${this.name}] ready, ${this.tools.length} tools`);
+		try {
+			// 握手
+			const handshake = await this.request(
+				"initialize",
+				{
+					protocolVersion: this.spec.protocolVersion ?? PROTOCOL_VERSION,
+					capabilities: {},
+					clientInfo: { name: "pi-web-ui", version: "0.41.0" },
+				},
+				timeoutMs,
+			);
+			const version =
+				(handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
+			// 通知 initialized（无 id 的 notification）
+			this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+			// 仍以协商协议版本调用 tools（多数服务器对新版本容忍，这里用协商结果）
+			void version;
+			const listed = ((await this.request("tools/list", {}, timeoutMs)) ?? {}) as {
+				tools?: McpToolDefinition[];
+			};
+			this.tools = Array.isArray(listed.tools) ? listed.tools : [];
+			this.log(`[mcp:${this.name}] ready, ${this.tools.length} tools`);
+			// 若重启过程中被显式 close()，趁机回收刚启动的子进程，不留孤儿。
+			if (this.shuttingDown) {
+				try {
+					child.kill();
+				} catch {
+					/* 已退出 */
+				}
+				if (this.child === child) this.child = null;
+			}
+		} catch (err) {
+			// 启动/握手失败：回收本次子进程，避免泄漏；调用方可安全重试（自愈会再试）。
+			try {
+				child.kill();
+			} catch {
+				/* 已退出 */
+			}
+			if (this.child === child) this.child = null;
+			throw err;
+		}
+	}
+
+	/** 已启动次数（含自愈重启；诊断/测试用）。 */
+	get startCount(): number {
+		return this.startedCount;
+	}
+
+	/**
+	 * 保活：子进程还活着就直接返回；已意外退出则惰性重启（并发调用共享同一次重连）。
+	 * 显式 close() 后抛错，绝不复活。
+	 */
+	private async ensureStarted(timeoutMs: number): Promise<void> {
+		if (this.child) return;
+		if (this.shuttingDown) throw new Error(`[mcp:${this.name}] 客户端已关闭，不会重启`);
+		if (!this.starting) {
+			this.starting = this.start(timeoutMs).finally(() => {
+				this.starting = null;
+			});
+		}
+		await this.starting;
 	}
 
 	/** 已发现工具。 */
@@ -131,6 +189,14 @@ export class McpClient {
 	 * 纯文本块拼接成字符串（老形状，向后兼容）；出现非文本块（image/resource/audio 等）时按序透传或退化提示，不再静默丢弃。
 	 */
 	async call(name: string, args: Record<string, unknown>, timeoutMs = 60000): Promise<unknown> {
+		if (this.shuttingDown) throw new Error(`[mcp:${this.name}] 客户端已关闭，不会重启`);
+		try {
+			// 自愈：子进程已退出（非主动关闭）→ 先惰性重启再发；重启失败给出明确错误而不是挂 60s 超时。
+			await this.ensureStarted(8000);
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(`[mcp:${this.name}] 服务器进程已退出且自动重启失败：${detail}`);
+		}
 		const res = (await this.request("tools/call", { name, arguments: args }, timeoutMs)) as {
 			content?: McpContentBlock[];
 			isError?: boolean;
