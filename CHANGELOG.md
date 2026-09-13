@@ -10,7 +10,10 @@
 
 ## [Unreleased]
 
-暂无未发布内容。
+### Fixed
+
+- **子代理会话里的扩展不再因为调用新 UI API 崩溃，也不会卡在无人应答的弹窗上**（PR #128）——子代理原来只拿到 `{ theme, setStatus, setWidget, notify }` 四个方法的 mock，扩展一旦调用 `ExtensionUIContext` 上的其他方法（`setWorkingVisible` / `setToolsExpanded` / `setTheme` …）就 TypeError，浏览器上还多一条 error toast；补成完整 `WebUIContext` 之后换了个坑：那个上下文没有浏览器面板，`select / confirm / input` 照旧挂 Promise，第一个在子代理里问用户问题的扩展会**永久 await**（只有 20 分钟的工具看门狗兜底）。现在子代理用 `WebUIContext.headless()`：方法面与主对话完全一致，但 UI 输出全部丢弃（不会与主对话的 widget/status 串台）、widget 组件工厂不调用（不留下没人 dispose 的组件）、弹窗立即按「取消」返回。
+  - 回归：`tests/unit/webui-context.test.ts`（弹窗立即取消 / 输出丢弃 / 不构造组件）+ `tests/subagent-ui-context-test.mjs`（零 token 端到端：探针扩展把 21 个新 UI 方法都调一遍，再断言子代理侧 `confirm=null`、主对话侧仍是「没人答」；改动前这两条分别挂 4 项与 1 项）。
 
 ## [0.82.0] — 2026-09-13
 
