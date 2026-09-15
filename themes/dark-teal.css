@@ -186,7 +186,8 @@
 .dd-refresh.accent,
 .attach-chip.inline,
 .attachcard-mode.bridged,
-.browser-control-modal .bc-cite {
+.browser-control-modal .bc-cite,
+.notice-info {
 	border-color: #5DC7B080;
 }
 .chip.newchat {
