@@ -11,15 +11,15 @@
 	--text-dim: #a8a8b3;
 	--text-faint: #6e6e7a;
 	--accent: #31ac9d;
-	--accent-soft: rgb(58 140 138 / 15%);
+	--accent-soft: #3A8C8A26;
 	--green: #2dd4bf; 
-	--green-soft: rgba(74, 222, 128, 0.12);
+	--green-soft: #4ADE801F;
 	--amber: #eab380;
 	--term-bg: #0b0b0e;
 	--term-fg: #ededf0;
 	--term-cursor: #2dd4bf;
 	--term-cursor-accent: #0b0b0e;
-	--term-selection: rgba(45, 212, 191, 0.28);
+	--term-selection: #2DD4BF47;
 	--term-black: #1c1c22;
 	--term-green: #4ade80;
 	--term-cyan: #2dd4bf;
@@ -58,7 +58,7 @@
 	--on-amber: #12121a;
 	--search-active-fg: #0f0f12;
 	--switch-knob: #f5f5f7;
-	--bg-elev3: rgba(255, 255, 255, 0.05);
+	--bg-elev3: #FFFFFF0D;
 	--control-fg: #a8a8b3;
 	--control-bg: #1c1c22;
 	--control-border: #33333d;
@@ -136,11 +136,11 @@
 }
 .hljs-addition {
 	color: #86efac;
-	background: rgba(74, 222, 128, 0.14);
+	background: #4ADE8024;
 }
 .hljs-deletion {
 	color: #fca5a5;
-	background: rgba(248, 113, 113, 0.14);
+	background: #F8717124;
 }
 
 /* 亮底上的按钮/徽标：内置写死 color:#fff，压亮青只有 1.9:1 → 统一换近黑墨色（只改颜色） */
@@ -172,7 +172,7 @@
 
 /* 模板卡悬停阴影 */
 .empty-template:hover {
-	box-shadow: 0 8px 22px rgb(93 199 176 / 25%);
+	box-shadow: 0 8px 22px #5DC7B040;
 }
 
 /* 内置几处写死的紫描边，换成符合主题的青 */
@@ -187,7 +187,7 @@
 .attach-chip.inline,
 .attachcard-mode.bridged,
 .browser-control-modal .bc-cite {
-	border-color: rgb(93 199 176 / 50%);
+	border-color: #5DC7B080;
 }
 .chip.newchat {
 	border-color: var(--accent);
@@ -237,11 +237,10 @@
 	background: #303038;
 }
 .fp-markdown blockquote {
-	border: 1px solid rgb(92 246 213 / 37%);
+	border: 1px solid #5CF6D55E;
 	border-left-width: 4px; 
     background: #5cd6f612;
 }
 .fp-markdown {
-	background: radial-gradient(circle at 10% 0%, rgb(92 203 246 / 5%), transparent 34%), #00000038;
+	background: radial-gradient(circle at 10% 0%, #5CCBF60D, transparent 34%), #00000038;
 }
-
