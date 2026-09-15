@@ -218,11 +218,13 @@
 
 /* 输入框发送\停止按钮阴影 */
 .inputbox .btn.send,
-.inputbox .btn.stop {
+.inputbox .btn.stop,
+.inputbox .split-send {
     box-shadow: 0px 2px 14px #5dc7b040;
 }
 .inputbox .btn.send:hover:not(:disabled),
-.inputbox .btn.stop:hover:not(:disabled) {
+.inputbox .btn.stop:hover:not(:disabled),
+.inputbox .split-send:hover {
     box-shadow: 0 8px 22px #5dc7b040;
 }
 
