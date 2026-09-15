@@ -70,6 +70,23 @@ import type {
 	UiSubagentTemplate,
 } from "./protocol.js";
 
+/** Strip npm-injected env (`npm start` exports `npm_config_*` / `npm_package_*` /
+ *  `npm_lifecycle_*` into every child). Anything this server spawns — shells,
+ *  `pi update` — would otherwise inherit `npm_config_allow_scripts`, which npm
+ *  maps to its env config layer and rejects in project-scoped installs
+ *  (EALLOWSCRIPTS). The unit keeps `npm ci && npm run build && npm start`;
+ *  this is the single scrub point so no wrapper is needed. */
+for (const k of Object.keys(process.env)) {
+	if (
+		k === "npm_config_allow_scripts" ||
+		k.startsWith("npm_config_") ||
+		k.startsWith("npm_package_") ||
+		k.startsWith("npm_lifecycle_")
+	) {
+		delete (process.env as Record<string, string | undefined>)[k];
+	}
+}
+
 /** 从 CLI 参数中取 flag 值：支持 --flag value 与 --flag=value 两种写法。
  *  让 `node dist/server/index.js --host 0.0.0.0 --port 9000` 这类直接启动也能生效，
  *  而不只是经由 bin/pi-web-ui.mjs 的 env 转发。bin 仍是主入口，此处仅作兜底。 */
