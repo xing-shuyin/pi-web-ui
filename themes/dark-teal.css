@@ -242,6 +242,9 @@
 	border-left-width: 4px; 
     background: #5cd6f612;
 }
+.fp-markdown thead {
+    background: #5cd6f612;
+}
 .fp-markdown {
 	background: radial-gradient(circle at 10% 0%, #5CCBF60D, transparent 34%), #00000038;
 }
