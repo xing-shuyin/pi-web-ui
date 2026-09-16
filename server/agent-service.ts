@@ -2235,25 +2235,75 @@ export class ClientSession {
 	}
 
 	/** Summaries of conversations currently streaming — captured at shutdown
-	 *  so the next attach can tell the user their run was interrupted. */
-	streamingSummaries(): { title: string; cwd: string }[] {
-		const out: { title: string; cwd: string }[] = [];
+	 *  so the next attach can reopen them and continue their runs. */
+	streamingSummaries(): { title: string; cwd: string; sessionFile?: string }[] {
+		const out: { title: string; cwd: string; sessionFile?: string }[] = [];
 		for (const conv of this.convs.values()) {
-			if (conv.session.isStreaming) out.push({ title: conv.title, cwd: conv.cwd });
+			if (!conv.session.isStreaming) continue;
+			let sessionFile: string | undefined;
+			try {
+				sessionFile = conv.session.sessionFile ?? undefined;
+			} catch {
+				sessionFile = undefined;
+			}
+			out.push({ title: conv.title, cwd: conv.cwd, sessionFile });
 		}
 		return out;
 	}
 
-	/** Tell the user about runs lost to the last server restart (once). */
-	notifyInterrupted(list: { title: string; cwd: string; at: number }[] | undefined): void {
+	/** Reopen sessions interrupted by the last restart and continue them.
+	 *
+	 *  For each record WITH a session file: reopen it (listed, keeps running
+	 *  when displaced) and send a short Continue prompt so the run resumes
+	 *  from the persisted context. Records WITHOUT a file fall back to the
+	 *  warning notice. The conversation active before the resume is restored
+	 *  at the end, so the user lands where they were and clicks whichever
+	 *  resumed run they want — nothing steals the view.
+	 *
+	 *  Called once on the first attach after a restart (fire-and-forget from
+	 *  the attach path — each step is internally guarded and never throws). */
+	async resumeInterrupted(
+		list: { title: string; cwd: string; at: number; sessionFile?: string }[] | undefined,
+	): Promise<void> {
 		if (!list || list.length === 0) return;
-		const names = list.map((r) => `「${r.title}」（${r.cwd}）`).join("、");
-		this.pendingNotices.push({
-			type: "notice",
-			level: "warning",
-			text: `上次服务重启时有 ${list.length} 个进行中的对话被中断：${names}。可在历史对话中恢复继续。`,
-			textEn: `${list.length} running conversation(s) were interrupted by the last restart: ${names}. Resume them from History.`,
-		});
+		const resumable = list.filter((r) => r.sessionFile);
+		const orphaned = list.filter((r) => !r.sessionFile);
+		if (orphaned.length > 0) {
+			const names = orphaned.map((r) => `「${r.title}」（${r.cwd}）`).join("、");
+			this.emit({
+				type: "notice",
+				level: "warning",
+				text: `上次服务重启时有 ${orphaned.length} 个进行中的对话被中断且无法自动恢复：${names}。可在历史对话中手动恢复继续。`,
+				textEn: `${orphaned.length} running conversation(s) were interrupted by the last restart and could not be resumed automatically: ${names}. Resume them manually from History.`,
+			});
+		}
+		if (resumable.length === 0) return;
+		const continueText = this.getLang() === "zh" ? "继续" : "Continue";
+		const restoreId = this.activeId;
+		for (const r of resumable) {
+			try {
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `上次服务重启中断了「${r.title}」，正在自动恢复并继续。`,
+					textEn: `Restart interrupted "${r.title}" — reopening it and continuing automatically.`,
+				});
+				await this.switchSession(r.sessionFile!);
+				await this.prompt(continueText);
+			} catch {
+				// switchSession/prompt already surface failures as notices;
+				// one bad session must not block the rest.
+			}
+		}
+		// Hand the view back: the user lands where they were, resumed runs
+		// keep going in the background list.
+		try {
+			if (restoreId && this.convs.has(restoreId) && restoreId !== this.activeId) {
+				await this.switchConversation(restoreId);
+			}
+		} catch {
+			/* staying on the last resumed session is a fine fallback */
+		}
 	}
 
 	/** Add a socket to this client's broadcast set; flushes buffered startup notices. */
@@ -6949,10 +6999,11 @@ export class AgentService {
 				}
 			}
 		}
-		// First attach after a restart: report runs that were interrupted when
-		// the previous process shut down (consumed once, then cleared). Queue
-		// BEFORE attachSink so the notice rides the initial pending-notice flush.
-		cs.notifyInterrupted(this.stateStore.takeInterrupted(clientId));
+		// First attach after a restart: reopen sessions that were streaming
+		// when the previous process shut down and continue them (consumed
+		// once, then cleared). Fire-and-forget AFTER attachSink + hooks:
+		// resume emits directly to sinks and needs the owner guards.
+		// Progress arrives over the socket as usual.
 		cs.attachSink(send);
 		// Forward hooks (set once by index.ts) to every session.
 		cs.onQuit = this.onQuit;
@@ -6976,6 +7027,7 @@ export class AgentService {
 		// notifyCwd 幂等去重；此后 set_cwd 成功时由 cs.onCwdChanged 继续驱动。
 		cs.onCwdChanged = (abs, roots) => this.onClientCwdChanged?.(abs, roots);
 		this.onClientCwdChanged?.(cs.cwd, cs.workspaceRoots);
+		void cs.resumeInterrupted(this.stateStore.takeInterrupted(clientId));
 		return cs;
 	}
 
@@ -7039,7 +7091,11 @@ export class AgentService {
 		return fallback;
 	}
 
-	async disposeAll(): Promise<void> {
+	/** Snapshot still-streaming conversations for post-restart resume.
+	 *  Called during graceful shutdown AND from the restart_service handler
+	 *  (which exits without shutdown under systemd — without this, the
+	 *  interrupted-run record would silently never be written there). */
+	recordInterruptedRuns(): void {
 		// Record still-streaming conversations BEFORE tearing anything down, so
 		// the next attach can tell the user what was lost (SIGTERM / update).
 		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
@@ -7056,6 +7112,10 @@ export class AgentService {
 				// best effort — never block shutdown on bookkeeping
 			}
 		}
+	}
+
+	async disposeAll(): Promise<void> {
+		this.recordInterruptedRuns();
 		const all = [...this.clients.values()];
 		this.clients.clear();
 		await Promise.all(all.map((cs) => cs.dispose()));

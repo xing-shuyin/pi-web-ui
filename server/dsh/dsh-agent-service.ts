@@ -4628,4 +4628,9 @@ export class DshAgentService {
 		}
 		this.clients.clear();
 	}
+
+	/** dsh engine keeps no interrupted-run record — resume is pi-only. */
+	recordInterruptedRuns(): void {
+		/* no-op */
+	}
 }

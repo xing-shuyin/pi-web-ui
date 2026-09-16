@@ -885,6 +885,10 @@ export interface EngineService {
 	detach(clientId: string, send: (msg: ServerMessage) => void): void;
 	get(clientId: string): DispatchSession | undefined;
 	disposeAll(): Promise<void>;
+	/** Snapshot still-streaming conversations for post-restart resume (pi
+	 *  engine records them; dsh engine no-ops). Called from graceful
+	 *  shutdown and the restart_service handler. */
+	recordInterruptedRuns(): void;
 	noteSocketOpen(): void;
 	noteSocketClose(): void;
 	isQuiesced(): boolean;
@@ -1500,9 +1504,18 @@ wss.on("connection", (ws) => {
 				send({
 					type: "notice",
 					level: "info",
-					text: "正在重启服务…页面会在服务恢复后自动重连。",
-					textEn: "Restarting the service… this page reconnects once it is back.",
+					text: "正在重启服务…页面会在服务恢复后自动重连，进行中的对话会自动恢复并继续。",
+					textEn:
+						"Restarting the service… this page reconnects once it is back; running conversations resume automatically.",
 				});
+				// Record streaming runs BEFORE exiting: under systemd this path
+				// exits via process.exit without shutdown(), so without this the
+				// post-restart resume would find nothing to continue.
+				try {
+					service.recordInterruptedRuns();
+				} catch {
+					/* best effort — never block the restart on bookkeeping */
+				}
 				// Let the notice (and this socket's backlog) flush before we go down.
 				setTimeout(() => void scheduleQuit(), 400);
 				break;

@@ -288,7 +288,7 @@ export interface ClientState {
 	/** Conversations that were STILL STREAMING when the server last shut down
 	 *  (SIGTERM / self-update restart). Consumed once on the next attach so
 	 *  the user learns a run was lost instead of wondering where it went. */
-	interrupted?: { title: string; cwd: string; at: number }[];
+	interrupted?: { title: string; cwd: string; at: number; sessionFile?: string }[];
 	/** Workspaces the user explicitly removed from the recent list. Kept as
 	 *  tombstones so cwds re-discovered from session files stay hidden until
 	 *  the workspace is opened again. */
@@ -465,7 +465,7 @@ export class ClientStateStore {
 
 	/** Remember conversations that were still streaming at shutdown (best-
 	 *  effort; called during the graceful-shutdown path). */
-	saveInterrupted(clientId: string, list: { title: string; cwd: string; at: number }[]): void {
+	saveInterrupted(clientId: string, list: { title: string; cwd: string; at: number; sessionFile?: string }[]): void {
 		if (list.length === 0) return;
 		const all = this.load();
 		const state = (all[clientId] ??= { projects: [] });
