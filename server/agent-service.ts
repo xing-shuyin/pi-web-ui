@@ -43,6 +43,7 @@ import {
 	collectTargets,
 	compareVersions as compareSemver,
 	resolveNpmRegistry,
+	sortUpdateItems,
 	type UpdateItem,
 } from "./update-check.js";
 import { hasActiveSubagentRun, hasPendingWaitSubscription, shouldRetainActive } from "./wait-subscription-scan.js";
@@ -3663,7 +3664,9 @@ export class ClientSession {
 		}
 		try {
 			const targets = collectTargets(this.agentDir, ClientSession.currentAppVersion());
-			const items = await checkAllUpdates(targets, undefined, () => this.getLang(), resolveNpmRegistry(this.agentDir));
+			const items = sortUpdateItems(
+				await checkAllUpdates(targets, undefined, () => this.getLang(), resolveNpmRegistry(this.agentDir)),
+			);
 			this.updatesAllCache = { at: Date.now(), items };
 			this.emit({ type: "update_status_all", items });
 		} catch (err) {

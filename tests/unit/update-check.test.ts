@@ -430,3 +430,45 @@ describe("npmrc registry resolution (issue #151)", () => {
 		}
 	});
 });
+
+describe("sortUpdateItems", () => {
+	it("pins webui/pi-core top, outdated before up-to-date, errors last", async () => {
+		const { sortUpdateItems } = await import("../../server/update-check.js");
+		const items = [
+			{ name: "ok-pkg", kind: "package", current: "1.0.0", latest: "1.0.0", latestPublishedAt: null, upToDate: true },
+			{
+				name: "bad-pkg",
+				kind: "package",
+				current: "1.0.0",
+				latest: null,
+				latestPublishedAt: null,
+				upToDate: false,
+				error: "boom",
+			},
+			{ name: "old-pkg", kind: "package", current: "1.0.0", latest: "2.0.0", latestPublishedAt: null, upToDate: false },
+			{
+				name: "@earendil-works/pi-coding-agent",
+				kind: "pi-core",
+				current: "1.0.0",
+				latest: "1.0.0",
+				latestPublishedAt: null,
+				upToDate: true,
+			},
+			{
+				name: "pi-web-ui",
+				kind: "webui",
+				current: "0.48.0",
+				latest: "0.48.0",
+				latestPublishedAt: null,
+				upToDate: true,
+			},
+		] as Parameters<typeof sortUpdateItems>[0];
+		expect(sortUpdateItems(items).map((i) => i.name)).toEqual([
+			"pi-web-ui",
+			"@earendil-works/pi-coding-agent",
+			"old-pkg",
+			"ok-pkg",
+			"bad-pkg",
+		]);
+	});
+});

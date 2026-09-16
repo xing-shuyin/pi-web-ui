@@ -444,3 +444,23 @@ export async function checkAll(
 	await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
 	return results;
 }
+
+/** Display order for the Component Updates panel: pi-web-ui and pi-core
+ *  pinned at the top regardless of state, then out-of-date packages, then
+ *  up-to-date ones, errors last. Stable within each bucket (Array.sort is
+ *  stable) so registry order survives ties. */
+export function sortUpdateItems(items: UpdateItem[]): UpdateItem[] {
+	const kindRank = (k: UpdateItemKind): number => (k === "webui" ? 0 : k === "pi-core" ? 1 : 2);
+	return [...items].sort((a, b) => {
+		const ka = kindRank(a.kind);
+		const kb = kindRank(b.kind);
+		if (ka !== kb) return ka - kb;
+		const ea = a.error ? 1 : 0;
+		const eb = b.error ? 1 : 0;
+		if (ea !== eb) return ea - eb;
+		const sa = a.upToDate ? 1 : 0;
+		const sb = b.upToDate ? 1 : 0;
+		if (sa !== sb) return sa - sb;
+		return 0;
+	});
+}
