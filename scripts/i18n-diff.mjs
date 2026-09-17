@@ -13,6 +13,8 @@
  *   node scripts/i18n-diff.mjs [--base v0.70.0]            # 人看：控制台表格
  *   node scripts/i18n-diff.mjs --base v0.70.0 --markdown   # CHANGELOG ### i18n / Release 说明片段
  *   node scripts/i18n-diff.mjs --base v0.70.0 --json       # 机器消费
+ *   node scripts/i18n-diff.mjs --check-packs               # CI 门禁：locales/*.json key 与 zh 源头对照，缺/多余即 exit 1
+ *   node scripts/i18n-diff.mjs --prune                     # 只列死 key（zh 源头已无的 key），不删除（删前需译者确认）
  *   npm run i18n:diff -- --base v0.70.0 --markdown
  *
  * --base 缺省时自动取「上一个 tag」（HEAD 正好落在最新 tag 上则再往前一个）。
@@ -622,6 +624,56 @@ function collectServerKeys(getContent, files) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 语言包：locales/*.json 与 zh 源头的 key 对照（CI 门禁 --check-packs） */
+/* ------------------------------------------------------------------ */
+
+/** 返回每个包的 {code, version, missing[], extra[]}（missing 按 zh 顺序，extra 即死 key）。 */
+export function checkPacks() {
+	const zhKeys = parseLocaleMaps(readFileSync(join(root, I18N_FILE), "utf8")).zh.order;
+	const zhSet = new Set(zhKeys);
+	const out = [];
+	for (const f of readdirSync(join(root, "locales"))
+		.filter((f) => f.endsWith(".json"))
+		.sort()) {
+		const p = JSON.parse(readFileSync(join(root, "locales", f), "utf8"));
+		const keys = Object.keys(p.strings ?? {});
+		const packSet = new Set(keys);
+		out.push({
+			code: p.code ?? f,
+			version: p.version ?? "unknown",
+			missing: zhKeys.filter((k) => !packSet.has(k)),
+			extra: keys.filter((k) => !zhSet.has(k)),
+		});
+	}
+	return out;
+}
+
+function checkPacksMain() {
+	const rows = checkPacks();
+	let bad = 0;
+	for (const r of rows) {
+		const ok = r.missing.length === 0 && r.extra.length === 0;
+		if (!ok) bad++;
+		console.log(`${ok ? "OK  " : "FAIL"} ${r.code}（v${r.version}）：缺 ${r.missing.length}，多余 ${r.extra.length}`);
+		if (r.missing.length > 0) console.log(`  缺：${r.missing.join("、")}`);
+		if (r.extra.length > 0) console.log(`  多余（死 key）：${r.extra.join("、")}`);
+	}
+	if (bad > 0) {
+		console.error(`语言包 ${bad}/${rows.length} 个与 zh 源头不一致：缺 key 按 zh 顺序补入，死 key 经译者确认后删除。`);
+		process.exit(1);
+	}
+	console.log(`${rows.length} 个语言包 key 与 zh 一一对应。`);
+}
+
+/** 只列死 key，不删除。 */
+function pruneMain() {
+	for (const r of checkPacks()) {
+		if (r.extra.length === 0) console.log(`${r.code}：无死 key`);
+		else console.log(`${r.code} 死 key（${r.extra.length}）：${r.extra.join("、")}`);
+	}
+}
+
+/* ------------------------------------------------------------------ */
 /* diff                                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -749,7 +801,15 @@ function main() {
 		return i !== -1 ? (argv[i + 1] ?? null) : null;
 	};
 	if (argv.includes("-h") || argv.includes("--help")) {
-		console.log("用法：node scripts/i18n-diff.mjs [--base <tag>] [--markdown|--json]");
+		console.log("用法：node scripts/i18n-diff.mjs [--base <tag>] [--markdown|--json] [--check-packs] [--prune]");
+		return;
+	}
+	if (argv.includes("--check-packs")) {
+		checkPacksMain();
+		return;
+	}
+	if (argv.includes("--prune")) {
+		pruneMain();
 		return;
 	}
 	const base = resolveBase(getOpt("--base"));

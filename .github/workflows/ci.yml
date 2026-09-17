@@ -41,6 +41,10 @@ jobs:
       - name: Check protocol sync
         run: node scripts/check-protocol-sync.mjs
 
+      # 语言包 key 对照（locales/*.json 与 web/src/i18n.tsx 的 zh 源头；缺 key / 死 key 即红）
+      - name: Check locale packs
+        run: npm run i18n:check
+
       - name: Typecheck
         run: npm run typecheck
 

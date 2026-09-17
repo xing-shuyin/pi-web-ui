@@ -834,15 +834,7 @@
 
 ### Fixed
 
-- **发送失败给出可见错误提示** —— 发送失败不再静默吞掉，界面上直接提示。
-- **排队消息按索引删除**（#200）—— `removeQueued` 按索引删，文本只做回退匹配，重复文本不再连带误删。
-- **更新面板：过时行按钮优先 + git 扩展名填充**（#202）。
-- **↑ 翻历史可靠进入 prompt 历史**；**提交后按时间戳水位丢弃过期草稿**；**switchSession 限定 sessions 根目录**；**折叠控制展开时保持在左侧**。
-- **在资源管理器中显示 / 默认打开不再压住 GUI 窗口**；**git 扩展更新命令加 `git:` 前缀，更新面板隐藏 SHA 并修复横向滚动**。
-- **Windows ConPTY 关停死锁改走外部看门狗**（#215）；**心跳定时器 unref，不再阻塞进程退出**。
-- **无挂载 widget 时跳过刷新**（perf）；**未知消息类型节流打日志**；**WS maxPayload 对齐 100MB 上限**。
-- **安全**：TLS 下 `pi_web_token` cookie 加 `Secure` 标记；`shell.openExternal` 前做 URL scheme 白名单校验。
-- **设置重载失败打日志**，不再静默吞错。
+- **git 源扩展更新命令补 `git:` 前缀**（P1 TODO 14）—— 更新面板为 git 源扩展生成的命令由 `pi update <host>/<path>` 改为 `pi update git:<host>/<path>`（裸路径会被 pi core 拒绝并提示 `Did you mean git:...?`）；已带 `git:` 前缀的输入不会重复加前缀。
 
 <!-- auto-i18n:start -->
 
@@ -851,6 +843,7 @@
 - 前端新增 key（27）：`brandLogo`、`brandName`、`manageProjects`、`projectPickerTitle`、`newProject`、`projectName`、`createAndOpenProject`、`invalidProjectName`、`openProject`、`fileCompress`、`fileExtract`、`fileCompressDownload`、`fileUploadFolder`、`fileChooseFolder`、`fileExtractDestination`、`fileConflictPolicy`、`fileConflictSkip`、`fileConflictOverwrite`、`fileConflictError`、`fileArchiveLimits`、`fileFolderUploadHint`、`fileTransferBusy`、`fileTransferFailed`、`conversationReadEnabledDesc`、`conversationReadOffHint`、`scheduleTaskEnabledDesc`、`scheduleTaskOffHint`
 - 服务端新增 key（9）：`sched.not.wired`、`sched.task.bad.schedule`、`sched.task.interval.too.short`、`sched.task.empty.prompt`、`sched.task.no.cwd`、`sched.list.empty`、`sched.cancel.empty.id`、`sched.cancel.not.found`、`sched.cancel.ok`
 
+- 前端新增 key（26）：`fileCompress`、`fileExtract`、`fileCompressDownload`、`fileUploadFolder`、`fileChooseFolder`、`fileExtractDestination`、`fileConflictPolicy`、`fileConflictSkip`、`fileConflictOverwrite`、`fileConflictError`、`fileArchiveLimits`、`fileFolderUploadHint`、`fileTransferBusy`、`fileTransferFailed`、`tmuxNewWindow`、`tmuxTakeControl`、`tmuxTakeControlShort`、`tmuxRelease`、`tmuxReleaseShort`、`tmuxReadonly`、`tmuxAdopted`、`tmuxDetach`、`tmuxDetachShort`、`tmuxAdoptGroup`、`tmuxAdopt`、`tmuxNoAdoptable`
 <!-- auto-i18n:end -->
 
 ## [0.89.0] — 2026-09-17
@@ -1853,6 +1846,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 [0.90.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.1
 [0.90.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.90.0
 [0.89.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.89.0
+[Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.88.0...main
 [0.88.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.88.0
 [0.87.2]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.87.2
 [0.87.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.87.1

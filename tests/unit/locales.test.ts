@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { zh } from "../../web/src/i18n.js";
+import { en, zh } from "../../web/src/i18n.js";
 
 interface Pack {
 	code: string;
@@ -53,6 +53,10 @@ describe("language packs", () => {
 			expect(p.nativeName.trim().length, code).toBeGreaterThan(0);
 			expect(p.version.trim().length, code).toBeGreaterThan(0);
 		}
+	});
+
+	it("zh/en 源头顺序一致（新增 key 两处同位置）", () => {
+		expect(Object.keys(en)).toEqual(Object.keys(zh));
 	});
 
 	it("key 与 zh 一一对应（顺序一致）", () => {

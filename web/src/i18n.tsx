@@ -2920,6 +2920,8 @@ export const en: Record<keyof typeof zh, string> = {
 	previous: "Previous",
 	questionStep: "Q {cur} / {total}",
 	optionPreview: "Option preview",
+	noOptions: "(no options)",
+	inputPlaceholder: "Enter content",
 	questionTimeout: "⏳ {s}s left — auto-cancels on timeout",
 	questionTimeoutExpired: "Question timed out, resuming conversation…",
 	questionNoneAvailable: "No answerable questions under the current conditions",
@@ -2928,9 +2930,6 @@ export const en: Record<keyof typeof zh, string> = {
 	dshReviewPromptNote: "DSH has no separate reviewer: this text is appended to the system prompt for goal rounds",
 	dshNoReviewModel:
 		"DSH has no separate reviewer model — the model self-certifies goal completion; max rounds = auto-iteration count",
-	noOptions: "(no options)",
-	inputPlaceholder: "Enter content",
-
 	/* sound settings */
 	soundHeader: "Sound notifications",
 	enableSound: "Enable sound",
@@ -4075,16 +4074,16 @@ export const en: Record<keyof typeof zh, string> = {
 	subagentTemplateEdit: "Edit",
 	subagentTemplateClosed: "Disabled",
 	tplDefaultBadge: "Built-in",
+	subagentTemplateOffHint:
+		"Disabled templates stay in the panel and can be re-enabled, but AI tools can't see or pick them",
+	subagentTemplateEnable: "Enable",
+	subagentTemplateDisable: "Disable",
 	subagentDefaultModelLabel: "Default subagent model",
 	subagentFollowMain: "Follow the main conversation's current model",
 	subagentDefaultModelHint:
 		"Fallback model for all subagents (a template's own model and the subagent_spawn model param take priority); does not change the main conversation's model.",
 	subagentNoModels:
 		"No usable models yet (configure a provider API key first) — subagents will follow the main conversation's model.",
-	subagentTemplateOffHint:
-		"Disabled templates stay in the panel and can be re-enabled, but AI tools can't see or pick them",
-	subagentTemplateEnable: "Enable",
-	subagentTemplateDisable: "Disable",
 	tplNamePlaceholder: "Template name (referenced by AI via subagent_spawn's template param)…",
 	tplDescriptionPlaceholder: "Description (AI uses it to judge when to pick this template)…",
 	tplDescriptionEnPlaceholder:
