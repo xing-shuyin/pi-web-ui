@@ -1249,6 +1249,7 @@ export class FilesService {
 					"已在资源管理器中显示：" + base,
 					"Revealed in File Explorer: " + base,
 				);
+				this.bringExplorerToFrontWin32(isDir ? t.abs : dirname(t.abs));
 			} else if (process.platform === "darwin") {
 				await this.spawnDetached(
 					"open",
@@ -1268,6 +1269,56 @@ export class FilesService {
 		} catch (e) {
 			err("定位失败：" + (e as Error).message, "Reveal failed: " + (e as Error).message);
 		}
+	}
+
+	/** Windows 专享优化：强行将刚调起的资源管理器窗口置顶到最前台（突破系统反抢焦点锁定）。 */
+	private bringExplorerToFrontWin32(dirPath: string): void {
+		try {
+			const norm = dirPath.split("\\").join("/").replace(/^[A-Za-z]:/, "");
+			const segs = norm.split("/").filter(Boolean);
+			const pattern = segs[segs.length - 1] ?? "";
+			if (!pattern) return;
+			const psScript = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class W {
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, int e);
+    public static void Top(IntPtr h) {
+        keybd_event(0x12, 0, 0, 0); keybd_event(0x12, 0, 2, 0);
+        ShowWindow(h, 9);
+        SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 0x43);
+        SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, 0x43);
+        SetForegroundWindow(h);
+    }
+}
+"@
+$s = New-Object -ComObject Shell.Application
+for ($i = 0; $i -lt 12; $i++) {
+    foreach ($w in $s.Windows()) {
+        if ($w.LocationURL -like "*${pattern}*") {
+            [W]::Top([IntPtr]$w.HWND)
+            exit 0
+        }
+    }
+    Start-Sleep -Milliseconds 150
+}
+`;
+			import("node:child_process")
+				.then(({ spawn }) => {
+					const b64 = Buffer.from(psScript, "utf16le").toString("base64");
+					const child = spawn("powershell.exe", ["-NoProfile", "-EncodedCommand", b64], {
+						detached: true,
+						stdio: "ignore",
+						windowsHide: true,
+					});
+					if (typeof child.unref === "function") child.unref();
+				})
+				.catch(() => {});
+		} catch {}
 	}
 
 	/** 用系统默认应用打开文件（issue #187）：仅文件；目录请用 reveal。 */
