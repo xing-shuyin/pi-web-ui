@@ -1242,9 +1242,10 @@ export class FilesService {
 			const base = segs[segs.length - 1] ?? path;
 			if (process.platform === "win32") {
 				// /select, 与路径分两个 argv 传（explorer 对此格式稳定支持，路径含空格也无碍）。
+				// 目录传 /n, 强制打开新窗口，防止若该目录已在后台打开时被 Windows 静默复用且因反抢焦点机制不置顶。
 				await this.spawnDetached(
 					"explorer.exe",
-					isDir ? [t.abs] : ["/select,", t.abs],
+					isDir ? ["/n,", t.abs] : ["/select,", t.abs],
 					"已在资源管理器中显示：" + base,
 					"Revealed in File Explorer: " + base,
 				);
