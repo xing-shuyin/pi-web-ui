@@ -1271,7 +1271,7 @@ export class FilesService {
 		}
 	}
 
-	/** Windows 专享优化：强行将刚调起的资源管理器窗口置顶到最前台（突破系统反抢焦点锁定）。 */
+	/** Windows 专享优化：强行将刚调起的资源管理器窗口置顶到最前台（AttachThreadInput 突破系统反抢焦点锁定）。 */
 	private bringExplorerToFrontWin32(dirPath: string): void {
 		try {
 			const norm = dirPath.split("\\").join("/").replace(/^[A-Za-z]:/, "");
@@ -1282,25 +1282,39 @@ export class FilesService {
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class W {
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);
-    [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, int e);
-    public static void Top(IntPtr h) {
-        keybd_event(0x12, 0, 0, 0); keybd_event(0x12, 0, 2, 0);
-        ShowWindow(h, 9);
-        SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 0x43);
-        SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, 0x43);
-        SetForegroundWindow(h);
+public class WAttach {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+
+    public static bool SwitchWindow(IntPtr targetHWnd) {
+        IntPtr fgHWnd = GetForegroundWindow();
+        if (fgHWnd == targetHWnd) return true;
+        uint fgThread = GetWindowThreadProcessId(fgHWnd, IntPtr.Zero);
+        uint curThread = GetCurrentThreadId();
+        bool attached = false;
+        if (fgThread != 0 && fgThread != curThread) {
+            attached = AttachThreadInput(curThread, fgThread, true);
+        }
+        ShowWindow(targetHWnd, 9);
+        BringWindowToTop(targetHWnd);
+        bool ok = SetForegroundWindow(targetHWnd);
+        if (attached) {
+            AttachThreadInput(curThread, fgThread, false);
+        }
+        return ok;
     }
 }
 "@
 $s = New-Object -ComObject Shell.Application
-for ($i = 0; $i -lt 12; $i++) {
+for ($i = 0; $i -lt 15; $i++) {
     foreach ($w in $s.Windows()) {
         if ($w.LocationURL -like "*${pattern}*") {
-            [W]::Top([IntPtr]$w.HWND)
+            [WAttach]::SwitchWindow([IntPtr]$w.HWND)
             exit 0
         }
     }
