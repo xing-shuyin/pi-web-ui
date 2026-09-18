@@ -1241,14 +1241,14 @@ export class FilesService {
 			const segs = path.split("/");
 			const base = segs[segs.length - 1] ?? path;
 			if (process.platform === "win32") {
-				// Windows: 目录直接传完整路径；文件传 /select,path 单参数（防空格解析错位）。
+				// /select, 与路径分两个 argv 传（explorer 对此格式稳定支持，路径含空格也无碍）。
+				// 目录传 /n, 强制打开新窗口，防止若该目录已在后台打开时被 Windows 静默复用且因反抢焦点机制不置顶。
 				await this.spawnDetached(
 					"explorer.exe",
-					isDir ? [t.abs] : [`/select,${t.abs}`],
+					isDir ? ["/n,", t.abs] : ["/select,", t.abs],
 					"已在资源管理器中显示：" + base,
 					"Revealed in File Explorer: " + base,
 				);
-				this.bringExplorerToFrontWin32(isDir ? t.abs : dirname(t.abs));
 			} else if (process.platform === "darwin") {
 				await this.spawnDetached(
 					"open",
@@ -1268,70 +1268,6 @@ export class FilesService {
 		} catch (e) {
 			err("定位失败：" + (e as Error).message, "Reveal failed: " + (e as Error).message);
 		}
-	}
-
-	/** Windows 专享优化：强行将刚调起的资源管理器窗口置顶到最前台（AttachThreadInput + SwitchToThisWindow）。 */
-	private bringExplorerToFrontWin32(dirPath: string): void {
-		try {
-			const norm = dirPath.split("\\").join("/").replace(/^[A-Za-z]:/, "");
-			const segs = norm.split("/").filter(Boolean);
-			const pattern = segs[segs.length - 1] ?? "";
-			if (!pattern) return;
-			const psScript = `
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class WAttach {
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
-    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] public static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
-    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-
-    public static void SwitchWindow(IntPtr targetHWnd) {
-        IntPtr fgHWnd = GetForegroundWindow();
-        uint fgThread = GetWindowThreadProcessId(fgHWnd, IntPtr.Zero);
-        uint curThread = GetCurrentThreadId();
-        bool attached = false;
-        if (fgThread != 0 && fgThread != curThread) {
-            attached = AttachThreadInput(curThread, fgThread, true);
-        }
-        ShowWindow(targetHWnd, 9);
-        BringWindowToTop(targetHWnd);
-        SwitchToThisWindow(targetHWnd, true);
-        SetForegroundWindow(targetHWnd);
-        if (attached) {
-            AttachThreadInput(curThread, fgThread, false);
-        }
-    }
-}
-"@
-$s = New-Object -ComObject Shell.Application
-for ($i = 0; $i -lt 20; $i++) {
-    foreach ($w in $s.Windows()) {
-        if ($w.LocationURL -like "*${pattern}*") {
-            [WAttach]::SwitchWindow([IntPtr]$w.HWND)
-            exit 0
-        }
-    }
-    Start-Sleep -Milliseconds 150
-}
-`;
-			import("node:child_process")
-				.then(({ spawn }) => {
-					const b64 = Buffer.from(psScript, "utf16le").toString("base64");
-					const child = spawn("powershell.exe", ["-NoProfile", "-EncodedCommand", b64], {
-						detached: true,
-						stdio: "ignore",
-						windowsHide: true,
-					});
-					if (typeof child.unref === "function") child.unref();
-				})
-				.catch(() => {});
-		} catch {}
 	}
 
 	/** 用系统默认应用打开文件（issue #187）：仅文件；目录请用 reveal。 */
