@@ -1105,6 +1105,31 @@ export const ChatInput = memo(function ChatInput({
 			};
 		});
 
+	/** 输入框内容被消费（发送/客户端直执行）→ 草稿作废：L1/定时器/镜像/水位重置。
+	 *  服务端 prompt() 同样清（server/composer-drafts.ts 的 clear 水位拦迟到写）；
+	 *  `/help` 与 `/copy` 不走 server，本地不清则旧文本经 L1/timer 复活（TODO 9）。 */
+	const clearDraftAfterConsume = () => {
+		if (draftLocalKey) {
+			try {
+				localStorage.removeItem(draftLocalKey);
+			} catch {
+				// ignore
+			}
+		}
+		if (draftTimerRef.current) {
+			clearTimeout(draftTimerRef.current);
+			draftTimerRef.current = null;
+		}
+		touchedRef.current = false;
+		// 提交时刻打水位（不是 0）：之前打的旧草稿（防抖延迟的 draft_update、
+		// prompt() 处理前的全量快照里带的旧 draft）ts 都 <= 此刻，恢复 effect
+		// 因此不再把刚消费的文本倒回输入框（TODO 9）。提交后新打的字 ts
+		// 更大，照常恢复；同 ms 的并列按「不恢复」算（`<=` 守卫）。
+		appliedDraftTsRef.current = Date.now();
+		textMirrorRef.current = "";
+		lastEditTsRef.current = 0;
+	};
+
 	const submit = (queue = false) => {
 		const trimmed = text.trim();
 		const hasAttach = attachments.length > 0;
@@ -1136,11 +1161,13 @@ export const ChatInput = memo(function ChatInput({
 			setHelpWidth(box?.width);
 			setShowHelp(true);
 			setText("");
+			clearDraftAfterConsume();
 			taRef.current?.focus();
 			return;
 		}
 		if (trimmed === "/copy") {
 			setText("");
+			clearDraftAfterConsume();
 			taRef.current?.focus();
 			void copyLastAssistant();
 			return;
@@ -1167,25 +1194,7 @@ export const ChatInput = memo(function ChatInput({
 			draftRef.current = "";
 			setText("");
 			// 发送成功：草稿作废（服务端 prompt() 里已清），本地 L1/定时器/追踪重置。
-			if (draftLocalKey) {
-				try {
-					localStorage.removeItem(draftLocalKey);
-				} catch {
-					// ignore
-				}
-			}
-			if (draftTimerRef.current) {
-				clearTimeout(draftTimerRef.current);
-				draftTimerRef.current = null;
-			}
-			touchedRef.current = false;
-			// 提交时刻打水位（不是 0）：之前打的旧草稿（防抖延迟的 draft_update、
-			// prompt() 处理前的全量快照里带的旧 draft）ts 都 <= 此刻，恢复 effect
-			// 因此不再把刚发出去的文本倒回输入框（TODO 9）。提交后新打的字 ts
-			// 更大，照常恢复；同 ms 的并列按「不恢复」算（`<=` 守卫）。
-			appliedDraftTsRef.current = Date.now();
-			textMirrorRef.current = "";
-			lastEditTsRef.current = 0;
+			clearDraftAfterConsume();
 			onSent();
 			// 提交成功 → 把本次使用的模型使用次数 +1（模型下拉按次数排序）。
 			const m = modelState?.model;
