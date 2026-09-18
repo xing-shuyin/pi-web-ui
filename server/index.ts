@@ -2541,6 +2541,21 @@ async function shutdown(signal: "SIGINT" | "SIGTERM" = "SIGINT"): Promise<void> 
 	}
 	shuttingDown = true;
 	console.log("\nshutting down…");
+	// Windows ConPTY 死锁防护：独立外部看门狗，即便 Node 主线程在 C++ ClosePseudoConsole 死锁也能 3s 强制收尾
+	if (process.platform === "win32") {
+		try {
+			const { spawn: spawnKiller } = await import("node:child_process");
+			const killer = spawnKiller("cmd.exe", [
+				"/c",
+				`timeout /t 3 /nobreak >nul && taskkill /F /PID ${process.pid}`,
+			], {
+				detached: true,
+				stdio: "ignore",
+				windowsHide: true,
+			});
+			killer.unref();
+		} catch {}
+	}
 	const forceExitTimer = setTimeout(() => {
 		console.error("shutdown 超时仍未完成，强制退出…");
 		process.exit(1);
