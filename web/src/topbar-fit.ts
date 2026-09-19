@@ -55,12 +55,22 @@ export function sortOverflowMenuItems<T extends { id: string; align?: string }>(
  * @param gap       条目间距（容器的 `columnGap`，px）。
  * @param reserve   「⋯」按钮自身宽度 + 它与前一个条目之间的间距（px）。
  */
-export function fitTopbar(items: TopbarFitItem[], available: number, gap: number, reserve: number): Set<string> {
+export function fitTopbar(
+	items: TopbarFitItem[],
+	available: number,
+	gap: number,
+	reserve: number,
+	keepIds: ReadonlySet<string> = new Set(),
+): Set<string> {
 	const drop = new Set<string>();
 	// 没测到宽度（未挂载 / jsdom / display:none 的容器）时**全保留**：
 	// 拿不到数据就把顶栏清空是最糟的降级（与 TopBar 里 uiPrimary 缺省时的口径一致）。
 	if (!Number.isFinite(available) || available <= 0) return drop;
-	const budget = Math.max(0, available - Math.max(0, reserve));
+	// 常驻项先占预算；其它条目不够时退进 ⋯，常驻项自身永不被丢。
+	const keptWidth = items
+		.filter((it) => keepIds.has(it.id) && it.width > 0)
+		.reduce((sum, it) => sum + it.width + gap, 0);
+	const budget = Math.max(0, available - Math.max(0, reserve) - keptWidth);
 	let acc = 0;
 	// 一旦某个条目放不下，它后面的条目（有宽度的）一律跟着进溢出：
 	// 跳过式的「抽空隙塞」会让剩余条目在宽度变化时反复换位。
@@ -69,6 +79,7 @@ export function fitTopbar(items: TopbarFitItem[], available: number, gap: number
 		// 该断点下没有宽度 = CSS 藏起来的条目（桌面端的 ☰/📁 抽屉开关等）：
 		// 既不占宽度、也不该被丢进溢出菜单（那会给落地页一个点了没用的入口）。
 		if (!(it.width > 0)) continue;
+		if (keepIds.has(it.id)) continue;
 		const need = it.width + gap;
 		if (overflowing || acc + need > budget) {
 			overflowing = true;

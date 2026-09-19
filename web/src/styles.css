@@ -2392,6 +2392,190 @@ select.plugin-topbar-item.plugin-topbar-select {
 	overflow: visible;
 }
 
+/* 插件面板（顶栏 🧩 入口，Chrome 扩展图标的位置）：列出全部已装插件，每行一个
+   「钉到顶栏」开关。portal 到 body + fixed（与 .plugin-topbar-menu.portal 同招，
+   理由见 TopbarOverflowMenu 的注释）。
+   视觉直接对齐隔壁的「⋯」溢出菜单（.plugin-topbar-menu，已迭代多轮且手机端可用）——
+   两个弹层同一个触发器区域，不该有两套观感：border-soft + 圆角 10 + bg-elev +
+   同一条投影 + 同样的 6px 内边距/4px 行距。
+   注：CONTRACT 里写的 --panel / --hover 在本仓从未定义（--muted / --border-subtle
+   也只作为带 fallback 的引用存在，见 css-tokens.test.ts 的 GUEST_FALLBACK_TOKENS），
+   所以这里一律用真实 token：--bg-elev / --bg-elev2 / --border-soft / --text-dim。 */
+.pm-panel {
+	position: fixed;
+	z-index: 70;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	width: max-content;
+	min-width: 240px;
+	max-width: min(360px, calc(100vw - 16px));
+	max-height: min(70vh, 560px);
+	overflow: hidden;
+	padding: 6px;
+	border: 1px solid var(--border-soft);
+	border-radius: 10px;
+	background: var(--bg-elev, #1c1e24);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+.pm-list {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+/* 标题行：与菜单里的 chip 行同一左缩进（10px），小号灰字。 */
+.pm-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 10px 6px;
+	color: var(--text-dim);
+	font-size: 11px;
+	letter-spacing: 0.2px;
+}
+.pm-head-icon {
+	font-size: 12px;
+}
+.pm-empty {
+	padding: 6px 10px 8px;
+	color: var(--text-faint);
+	font-size: 12px;
+}
+/* 行：与菜单里搬进来的 chip 行同几何（圆角 9、左缩进 10、hover = --bg-elev2），
+   但行高按面板的语义固定 36px（一排一个插件，行高一致才扫得快）。 */
+.pm-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 36px;
+	padding: 0 6px 0 10px;
+	border-radius: 9px;
+}
+.pm-row.drop-target {
+	background: var(--accent-soft);
+	box-shadow: inset 0 0 0 2px var(--accent);
+}
+.pm-row:hover {
+	background: var(--bg-elev2);
+}
+.pm-row-main {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1;
+	min-width: 0;
+	height: 36px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+/* 纯渲染器 / 报错的插件：行还在（面板承诺列出全部已装插件），但不可点开。 */
+.pm-row-main:disabled {
+	cursor: default;
+	opacity: 0.55;
+}
+.pm-drag {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 28px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: grab;
+}
+.pm-drag:active {
+	cursor: grabbing;
+}
+.pm-drag:focus-visible,
+.pm-pin:focus-visible,
+.pm-manage:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+.pm-row .pm-icon,
+.pm-row .plugin-icon-glyph {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	font-size: 15px;
+	line-height: 1;
+}
+.pm-name {
+	flex: none;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.pm-sub {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-faint);
+	font-size: 11px;
+}
+/* Chrome 式图钉：未固定是斜线图钉，固定后用强调色实心图钉。 */
+.pm-pin {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: none;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition:
+		color 0.15s,
+		background 0.15s;
+}
+.pm-pin:hover {
+	background: var(--bg-elev3, var(--border));
+	color: var(--text);
+}
+.pm-pin.on {
+	color: var(--accent);
+}
+.pm-pin svg {
+	width: 17px;
+	height: 17px;
+}
+.pm-manage {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: 100%;
+	min-height: 38px;
+	margin-top: 2px;
+	padding: 0 10px;
+	border: 0;
+	border-top: 1px solid var(--border-soft);
+	background: transparent;
+	color: var(--text-dim);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.pm-manage:hover {
+	color: var(--text);
+	background: var(--bg-elev2);
+}
+
 /* Mobile panel drawers: transparent wrappers on desktop, so the classic
    3-column layout is untouched. Toggled fixed drawers kick in ≤768px. */
 .panel-drawer {

@@ -2,7 +2,7 @@
  * vscode-editor 插件 — 浏览器 UI 冒烟测试（零 token）。
  *
  * 起隔离端口 server（临时 data-dir + 临时工作区），Chrome headless 加载页面：
- * - 顶栏出现 📝 插件 tab，点击切到插件视图
+ * - 顶栏 🧩 插件面板列出 📝 编辑器，点行切到插件视图
  * - 文件树渲染工作区条目
  * - 点击文件 → 标签页出现 + CodeMirror 编辑器带内容
  * - 修改内容 + Ctrl+S → 磁盘落盘核对
@@ -61,11 +61,20 @@ try {
 	page.on("pageerror", (e) => console.error("[pageerror]", e.message));
 	await page.goto(URL);
 
-	// 等插件清单到达（顶栏出现插件 tab）
-	await page.waitForSelector("button.plugin-tab", { timeout: 20000 });
-	const tab = page.locator("button.plugin-tab", { hasText: "编辑器" }).first();
-	check("顶栏出现 📝 插件 tab", (await tab.count()) > 0);
-	await tab.click();
+	// 等插件清单到达，再从顶栏 🧩 插件面板切到插件视图（插件视图 tab 默认不钉顶栏，
+	// 只有用户在面板里钉住才出现 —— 见 ui-slots 的 withPluginViewItems）。
+	// 🧩 被实测溢出丢进「⋯」时，菜单里仍是同一个 chip（keep 包装）→ 同一个 locator 两种情形都命中。
+	const plugBtn = page.locator('button[aria-haspopup="menu"]', { hasText: "🧩" }).first();
+	await plugBtn.waitFor({ state: "attached", timeout: 15000 }).catch(() => {});
+	if ((await plugBtn.count()) === 0) {
+		await page.locator(".plugin-topbar-more > button").first().click();
+		await plugBtn.waitFor({ state: "attached", timeout: 5000 });
+	}
+	await plugBtn.click();
+	const row = page.locator(".pm-panel .pm-row-main", { hasText: "编辑器" }).first();
+	await row.waitFor({ timeout: 15000 });
+	check("插件面板列出 📝 编辑器", (await row.count()) > 0);
+	await row.click();
 
 	// 视图挂载 + 文件树渲染
 	await page.waitForSelector(".vsc .vsc-tree .vsc-row", { timeout: 15000 });

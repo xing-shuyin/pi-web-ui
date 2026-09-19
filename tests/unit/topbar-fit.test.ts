@@ -63,6 +63,16 @@ describe("fitTopbar", () => {
 		// 预算 100：只放得下 a（68），b 起全部退进溢出。
 		expect([...fitTopbar(five, 300, gap, 200)]).toEqual(["b", "c", "d", "e"]);
 	});
+
+	it("常驻项永不进入溢出，其它条目为它让出空间", () => {
+		const rows = items([
+			["chat", 60],
+			["plugin", 60],
+			["host:settings", 60],
+		]);
+		expect([...fitTopbar(rows, 150, gap, 0, new Set(["host:settings"]))]).toEqual(["plugin"]);
+		expect(fitTopbar(items([["host:settings", 200]]), 20, gap, 0, new Set(["host:settings"])).size).toBe(0);
+	});
 });
 
 describe("手机端固定位", () => {

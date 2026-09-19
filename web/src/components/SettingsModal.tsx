@@ -62,7 +62,14 @@ import { useWideChat, saveChatWidthSettings } from "../chat-width-settings";
 import { useProjectTitle, saveTitleSettings } from "../title-settings";
 import { sanitizeWallpaperUrl, fileToWallpaperUrl, saveWallpaperSettings, useWallpaperSettings } from "../wallpaper";
 import { useT, useI18n } from "../i18n";
-import { buildUiSlots, restoreAllUi, restoreUiItem, withPluginViewItems, type UiSlotEntry } from "../ui-slots";
+import {
+	buildUiSlots,
+	REQUIRED_TOPBAR_ITEM_IDS,
+	restoreAllUi,
+	restoreUiItem,
+	withPluginViewItems,
+	type UiSlotEntry,
+} from "../ui-slots";
 import type { CatalogSyncState, PluginJobState } from "../use-chat";
 import { appSend, useAppGlobals } from "../app-globals";
 import { countPluginPhases, pluginPhase, type PluginPhase } from "../plugin-phase";
@@ -108,6 +115,8 @@ interface SettingsTerminalBridge {
 }
 
 interface SettingsModalProps {
+	/** Optional direct entry used by the top-bar plugin menu. */
+	initialSection?: "plugins";
 	chat: {
 		settings: UiSettingsState | null;
 		plugins: UiPluginInfo[];
@@ -368,7 +377,7 @@ type SettingsTab =
 	| "subagent-templates"
 	| `plugin-page:${string}`;
 
-export function SettingsModal({ chat, terminal, onSwitchToTerminal, onClose }: SettingsModalProps) {
+export function SettingsModal({ chat, terminal, initialSection, onSwitchToTerminal, onClose }: SettingsModalProps) {
 	const t = useT();
 	const { locale } = useI18n();
 	// {{token}} 元数据文案键是动态的（promptTok_<token>[,_desc]），用 tt 跳过字面量类型。
@@ -379,7 +388,7 @@ export function SettingsModal({ chat, terminal, onSwitchToTerminal, onClose }: S
 	// DSH 引擎：无 pi 扩展/技能体系与视觉桥概念 —— 隐藏对应分区/改占位说明。
 	const isDsh = engine === "dsh";
 	// 当前左侧导航选中的分组。
-	const [tab, setTab] = useState<SettingsTab>("prompt");
+	const [tab, setTab] = useState<SettingsTab>(initialSection ?? "prompt");
 	// 界面插件分组内的子页签：市场 / 已安装（一次只看一坨，免得 5 大块堆在一起滚半天；默认进市场，安装一步直达）。
 	const [pluginSub, setPluginSub] = useState<"market" | "installed">("market");
 	// 内容滚动容器：切换分组后回到顶部（各组高度不同，停留旧滚动位置会像没切换）。
@@ -2387,10 +2396,16 @@ export function SettingsModal({ chat, terminal, onSwitchToTerminal, onClose }: S
 									if (q && total === 0) return null;
 									const renderRow = (it: UiSlotEntry, rowItems: UiSlotEntry[]) => {
 										const idx = rowItems.findIndex((e) => e.id === it.id);
+										const required = REQUIRED_TOPBAR_ITEM_IDS.has(it.id);
 										return (
 											<div key={it.id} className="set-row">
-												<label className="set-toggle" title={it.id}>
-													<input type="checkbox" checked={!it.hidden} onChange={() => toggleUiHidden(it)} />
+												<label className="set-toggle" title={required ? t("uiLayoutRequired") : it.id}>
+													<input
+														type="checkbox"
+														checked={!it.hidden}
+														disabled={required}
+														onChange={() => toggleUiHidden(it)}
+													/>
 													<span>
 														{it.icon ? `${it.icon} ` : ""}
 														{it.label}
@@ -3534,7 +3549,9 @@ export function SettingsModal({ chat, terminal, onSwitchToTerminal, onClose }: S
 												<textarea
 													className="set-prompt-input"
 													rows={4}
-													placeholder={`${t("tplSystemPromptLabel")}${locale === "zh" ? "：" : ": "}${t("tplSystemPromptPlaceholder")}`}
+													placeholder={`${t("tplSystemPromptLabel")}${locale === "zh" ? "：" : ": "}${t(
+														"tplSystemPromptPlaceholder",
+													)}`}
 													value={tplDraft.systemPrompt}
 													onChange={(e) => setTplDraft({ ...tplDraft, systemPrompt: e.target.value })}
 												/>
@@ -3674,7 +3691,9 @@ export function SettingsModal({ chat, terminal, onSwitchToTerminal, onClose }: S
 														className={`set-switch${tp.enabled ? " on" : ""}`}
 														role="switch"
 														aria-checked={tp.enabled}
-														title={`${tp.enabled ? t("subagentTemplateDisable") : t("subagentTemplateEnable")} · ${t("subagentTemplateOffHint")}`}
+														title={`${tp.enabled ? t("subagentTemplateDisable") : t("subagentTemplateEnable")} · ${t(
+															"subagentTemplateOffHint",
+														)}`}
 														onClick={() =>
 															appSend({ type: "save_subagent_template", template: { ...tp, enabled: !tp.enabled } })
 														}

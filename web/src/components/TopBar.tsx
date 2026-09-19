@@ -29,11 +29,18 @@ import { NotifyToggle } from "./NotifyToggle";
 import type { SoundKind, SoundSettings } from "../sounds";
 import { PluginIcon } from "../plugin-icon";
 import { useI18n, localeShort } from "../i18n";
-import { type UiSlotEntry } from "../ui-slots";
+import {
+	isPluginViewItem,
+	REQUIRED_TOPBAR_ITEM_IDS,
+	setPluginViewOrder,
+	setPluginViewPinned,
+	type UiSlotEntry,
+} from "../ui-slots";
 import { fitTopbar, MOBILE_ASIDE_TOPBAR_IDS, sortOverflowMenuItems } from "../topbar-fit";
 import { openContextMenu } from "../context-menu-state";
 import { appSend, useAppField, useAppGlobals, useIsManaged, useServiceInfo } from "../app-globals";
 import { ProjectPicker } from "./ProjectPicker";
+import { PluginMenu } from "./PluginMenu";
 import { LocaleModal } from "./LocaleModal";
 import { isDesktopShell } from "../desktop";
 import { desktopReleasesUrl, useDesktopUpdater } from "../desktop-updater";
@@ -193,7 +200,16 @@ interface TopBarProps {
 	onViewChange: (view: "chat" | "terminal" | "git" | `plugin:${string}`) => void;
 	/** Installed optional plugins (<dataDir>/plugins) — one view tab each
 	 *  (view:false renderer-only plugins are filtered out by the caller). */
-	plugins: { id: string; name: string; icon?: string; description?: string; error?: string; view?: boolean }[];
+	plugins: {
+		id: string;
+		name: string;
+		icon?: string;
+		iconSvg?: string;
+		version?: string;
+		description?: string;
+		error?: string;
+		view?: boolean;
+	}[];
 	/** 顶栏主栏条目（内置 + 插件的最终结果，已按用户偏好/插件 arrange 排好；由 App 计算）。 */
 	uiPrimary?: UiSlotEntry[];
 	/** 溢出菜单条目：被隐藏/被移到 overflow 的条目（用户仍能从这里找回）。 */
@@ -207,6 +223,8 @@ interface TopBarProps {
 	onOpenPanel: (side: "left" | "right") => void;
 	/** Open the settings panel (system prompt / skills / extensions / presets). */
 	onOpenSettings: () => void;
+	/** Open settings directly at UI plugins → marketplace. */
+	onManagePlugins: () => void;
 	/** Open the background-task panel (AI-started servers — stop individually or all). */
 	onOpenBgTasks: () => void;
 	/** Open the global search panel (sessions / projects / workspace files). */
@@ -235,6 +253,7 @@ export function TopBar({
 	onViewChange,
 	onOpenPanel,
 	onOpenSettings,
+	onManagePlugins,
 	onOpenBgTasks,
 	onOpenGlobalSearch,
 	sound,
@@ -252,6 +271,11 @@ export function TopBar({
 	   （浏览磁盘目录 / 选当前目录 / ＋新建项目后切过去）。cwd 与额外工作区根走全局 store
 	   （整棵树都要的值，不再从 App 传参）。 */
 	const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+	/* 插件面板（host:plugins 的 🧩 入口）：锚点是**点击那一刻**的矩形快照 —— 触发器常从「⋯」
+	   溢出菜单里被点，那里的 .plugin-topbar-menu-keep 点完即卸载，ref 当场就指不到东西了。
+	   面板本身渲染在 header 根上（不在 keep 包装里），否则会跟着 ⋯ 菜单一起被卸载。
+	   el 只用来认「再点一次同一个触发器 = 关」（且已被卸载的 el 不影响判断）。 */
+	const [pluginMenuAnchor, setPluginMenuAnchor] = useState<{ rect: DOMRect; el: HTMLElement } | null>(null);
 	const cwd = useAppField("cwd");
 	const workspaceRoots = useAppField("workspaceRoots");
 	// 溢出菜单触发按钮：portal 菜单按它的视口矩形锚定（issue #162）。
@@ -264,7 +288,28 @@ export function TopBar({
 	/** 常驻溢出菜单的条目：「布局页里被隐藏的宿主条目 ＋ topbar.overflow 声明项」。
 	 *  品牌（host:brand）没有动作，进菜单会变成死按钮 —— 直接过滤（布局页仍可勾回来）。
 	 *  另外还有「本断点放不下」的条目，那是实测出来的（见下面的 fitTopbar），不在这里。 */
-	const pinnedOverflowItems = [...(uiOverflow ?? [])].filter((it) => !(it.source === "host" && it.id === "host:brand"));
+	const pinnedOverflowItems = [...(uiOverflow ?? [])].filter(
+		(it) => !(it.source === "host" && it.id === "host:brand") && !isPluginViewItem(it),
+	);
+	/** 已钉在顶栏上的插件 id：直接看槽位结果 —— 钉住 = 条目在 uiPrimary（非 hidden），
+	 *  没钉 = 条目在 uiOverflow（hidden）。合成条目（默认 hidden）与插件自声明的 __view
+	 *  条目（默认可见）在同一套口径下都读得出来，不需要额外的存储层。 */
+	const pinnedPluginIds = new Set(
+		[...(uiPrimary ?? []), ...(uiOverflow ?? [])]
+			.filter((e) => isPluginViewItem(e) && !e.hidden)
+			.map((e) => e.source.slice("plugin:".length)),
+	);
+	// 面板里的排序不能从「主栏 + 溢出栏」倒推：窗口变窄时，已固定条目会在两栏间移动，
+	// 拼接两栏会把刚固定的项误排到最前。只读用户显式保存的顺序，其他保持插件列表原序。
+	const pluginOrderRank = new Map((chat.settings?.uiLayout?.order ?? []).map((id, index) => [id, index]));
+	const orderedPluginIds = plugins
+		.map((plugin, index) => ({ id: plugin.id, index }))
+		.sort(
+			(a, b) =>
+				(pluginOrderRank.get(`${a.id}:__view`) ?? 1_000_000 + a.index) -
+				(pluginOrderRank.get(`${b.id}:__view`) ?? 1_000_000 + b.index),
+		)
+		.map((plugin) => plugin.id);
 	/**
 	 * 顶栏统一渲染（方案 A：**完全扁平**，桌面与手机同一份 slot 数据）——
 	 * 所有条目都是 `.topbar-flow` 的直接子节点，**没有任何按种类包裹的容器**
@@ -283,6 +328,7 @@ export function TopBar({
 		"host:chat",
 		"host:terminal",
 		"host:git",
+		"host:plugins",
 		"host:search",
 		"host:browser",
 		"host:tasks",
@@ -353,6 +399,13 @@ export function TopBar({
 				return true;
 			case "host:settings":
 				onOpenSettings();
+				return true;
+			case "host:plugins":
+				// 扁平行后备（hostNodes 那条路点不到时，例如插件 tab 被白名单关掉）：
+				// 锚到「⋯」按钮自己 —— 至少面板开在用户点的地方。
+				setPluginMenuAnchor(
+					moreBtnRef.current ? { rect: moreBtnRef.current.getBoundingClientRect(), el: moreBtnRef.current } : null,
+				);
 				return true;
 			default:
 				// 视图条目（chat/terminal/git/插件视图）与插件动作交给 App 的 onUiAction
@@ -856,6 +909,26 @@ export function TopBar({
 				<span>{t("scmTab")}</span>
 			</button>
 		) : null,
+		// 插件面板入口（Chrome 扩展图标那个位置）：一个 🧩 列出全部已装插件，每行带「钉到顶栏」
+		// 开关。钉住的插件视图 tab 才回到直流里（合成条目默认 hidden，见 withPluginViewItems）。
+		// 图标用 emoji（与 BgTasksModal / 插件文档里的通用插件符号一致）：图标词表里没有
+		// 「拼图」这个词，而词表外的词会被布局页原样当文字画出来。
+		"host:plugins": (
+			<button
+				type="button"
+				className="chip"
+				data-tip={t("pluginMenuTitle")}
+				aria-haspopup="menu"
+				aria-expanded={pluginMenuAnchor !== null}
+				onClick={(e) => {
+					const el = e.currentTarget;
+					setPluginMenuAnchor((prev) => (prev?.el === el ? null : { rect: el.getBoundingClientRect(), el }));
+				}}
+			>
+				<span aria-hidden>🧩</span>
+				<span className="chip-sub">{t("pluginMenuTitle")}</span>
+			</button>
+		),
 		"host:search": (
 			<button type="button" className="chip" data-tip={t("searchGlobalTip")} onClick={onOpenGlobalSearch}>
 				<FiSearch />
@@ -1022,7 +1095,7 @@ export function TopBar({
 
 	/** 桌面工具 chips 的可见性历史口径（不扩大）：只有 search / tasks / settings 这几个成员
 	 *  的显隐还受 PI_WEB_TABS 白名单管（服务端会拒绝对应的消息，画出来只会给一个点了没反应用的按钮）。 */
-	const TABS_GATED_IDS = new Set(["host:search", "host:tasks", "host:settings"]);
+	const TABS_GATED_IDS = new Set(["host:search", "host:tasks", "host:settings", "host:plugins"]);
 	/** 溢出菜单里**整块搬进来**的宿主条目（菜单型：下拉/外链/自带面板）。
 	 *  其余宿主条目（history / files / new-chat / search / tasks / settings）在菜单里是一条扁平
 	 *  菜单项，由 dispatchHostOverflow 分派到本地处理器 —— 扁平的更像菜单，整块的才需要搬组件。 */
@@ -1146,12 +1219,15 @@ export function TopBar({
 			flow.clientWidth,
 			gap,
 			0,
+			REQUIRED_TOPBAR_ITEM_IDS,
 		);
 		setDroppedIds((prev) => (prev.size === next.size && [...next].every((id) => prev.has(id)) ? prev : next));
 	};
 	// 条目集合 / 文案 / 视图 / 语言 / 断点变了就重算一次（绘制前实测，用户看不到中间态）；窗口尺寸变化由
 	// 下面的 ResizeObserver 兜。**不**随快照流每次渲染都量（那会变成 60ms 一次的强制重排）。
-	const measureKey = `${keptItems.map((it) => `${it.id}:${it.entry?.label ?? ""}`).join("|")}|${view}|${(chat.tabs ?? []).join(",")}|${isMobile ? "m" : "d"}`;
+	const measureKey = `${keptItems.map((it) => `${it.id}:${it.entry?.label ?? ""}`).join("|")}|${view}|${(
+		chat.tabs ?? []
+	).join(",")}|${isMobile ? "m" : "d"}`;
 	useLayoutEffect(measure, [measureKey]); // eslint-disable-line react-hooks/exhaustive-deps
 	useEffect(() => {
 		const flow = flowRef.current;
@@ -1313,6 +1389,28 @@ export function TopBar({
 			))}
 
 			{localeModalOpen && <LocaleModal onClose={() => setLocaleModalOpen(false)} />}
+			{pluginMenuAnchor && (
+				<PluginMenu
+					anchorRect={pluginMenuAnchor.rect}
+					anchorEl={pluginMenuAnchor.el}
+					plugins={plugins}
+					pinnedIds={pinnedPluginIds}
+					orderedPluginIds={orderedPluginIds}
+					onTogglePin={(id, pinned) =>
+						// 固定只改变显隐；顺序只能由用户拖拽写入，不能因固定动作被重排。
+						appSend({ type: "set_settings", uiLayout: setPluginViewPinned(chat.settings?.uiLayout, id, pinned) })
+					}
+					onReorder={(ids) =>
+						appSend({ type: "set_settings", uiLayout: setPluginViewOrder(chat.settings?.uiLayout, ids) })
+					}
+					onOpenView={(id) => {
+						setPluginMenuAnchor(null);
+						onViewChange(`plugin:${id}`);
+					}}
+					onManagePlugins={onManagePlugins}
+					onClose={() => setPluginMenuAnchor(null)}
+				/>
+			)}
 			{projectPickerOpen && (
 				<ProjectPicker
 					open

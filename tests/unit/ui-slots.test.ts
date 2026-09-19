@@ -12,9 +12,14 @@
 import { describe, expect, it } from "vitest";
 import {
 	BUILTIN_UI_ITEMS,
+	PLUGIN_VIEW_ITEM_ID,
 	buildUiSlots,
+	isPluginViewItem,
+	pluginViewItemId,
 	restoreAllUi,
 	restoreUiItem,
+	setPluginViewPinned,
+	setPluginViewOrder,
 	splitOverflow,
 	withPluginViewItems,
 } from "../../web/src/ui-slots.js";
@@ -104,6 +109,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:chat",
 			"host:terminal",
 			"host:git",
+			"host:plugins",
 			"host:search",
 			"host:browser",
 			"host:tasks",
@@ -156,7 +162,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 	/** 缺省收起 = 低频 / 有替代入口的条目落进顶栏「⋯」（App.tsx 把 hidden 的 primary 条目
 	 *  塞进 uiOverflow → 菜单里能点，菜单型条目在菜单里是整块组件，功能不少）。
 	 *  这条断言是「顶栏默认长什么样」的唯一入口 —— 想改默认口径就改这里与 BUILTIN_UI_ITEMS。 */
-	it("缺省收进「⋯」的 6 条 + 常驻的 11 条", () => {
+	it("缺省收进「⋯」的 6 条 + 常驻的 12 条", () => {
 		const slots = build([]);
 		const top = slots["topbar.primary"];
 		expect(top.filter((e) => e.hidden).map((e) => e.id)).toEqual([
@@ -176,6 +182,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:chat",
 			"host:terminal",
 			"host:git",
+			"host:plugins",
 			"host:search",
 			"host:tasks",
 			"host:settings",
@@ -361,20 +368,20 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 			items: [],
 			arrange: [
 				{
-					id: "host:settings",
+					id: "host:chat",
 					slot: "topbar.overflow",
 					hide: true,
 					group: "p-group",
 					order: 7,
-					label: "设置（改过）",
+					label: "对话（改过）",
 					icon: "star",
 				},
 			],
 		});
 		const slots = build([p]);
-		expect(ids(slots["topbar.primary"])).not.toContain("host:settings");
-		const moved = slots["topbar.overflow"].find((e) => e.id === "host:settings");
-		expect(moved?.label).toBe("设置（改过）");
+		expect(ids(slots["topbar.primary"])).not.toContain("host:chat");
+		const moved = slots["topbar.overflow"].find((e) => e.id === "host:chat");
+		expect(moved?.label).toBe("对话（改过）");
 		expect(moved?.icon).toBe("star");
 		expect(moved?.group).toBe("p-group");
 		expect(moved?.order).toBe(7);
@@ -382,7 +389,17 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 		expect(moved?.movedFrom).toBe("topbar.primary");
 		expect(moved?.arrangedBy).toEqual(["p"]);
 		// 没被 arrange 碰过的内置条目审计字段为空
-		expect(slots["topbar.primary"].find((e) => e.id === "host:chat")?.arrangedBy).toEqual([]);
+		expect(slots["topbar.primary"].find((e) => e.id === "host:terminal")?.arrangedBy).toEqual([]);
+	});
+
+	it("设置入口不能被插件移走或隐藏", () => {
+		const p = plugin("p", {
+			items: [],
+			arrange: [{ id: "host:settings", slot: "topbar.overflow", hide: true }],
+		});
+		const settings = build([p])["topbar.primary"].find((e) => e.id === "host:settings");
+		expect(settings?.hidden).toBe(false);
+		expect(settings?.slot).toBe("topbar.primary");
 	});
 
 	it("undefined 的字段 = 不动（hide 缺省不会把条目藏起来）", () => {
@@ -438,6 +455,27 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 
 	it("没有 ui 字段的插件不报错", () => {
 		expect(ids(build([plugin("noview", undefined)])["topbar.primary"])).toContain("host:chat");
+	});
+});
+
+describe("顶栏插件视图区段", () => {
+	it("固定插件从 Git 后开始，旧布局顺序也不能把它们挤到最前", () => {
+		const slots = build(
+			withPluginViewItems([
+				plugin("run-trace", { items: [], arrange: [] }),
+				plugin("editor", { items: [], arrange: [] }),
+			]),
+			{
+				layout: {
+					shown: ["run-trace:__view", "editor:__view"],
+					order: ["run-trace:__view", "host:chat", "editor:__view"],
+				},
+			},
+		);
+		const ids = slots["topbar.primary"].filter((entry) => !entry.hidden).map((entry) => entry.id);
+		expect(ids.indexOf("host:git")).toBeLessThan(ids.indexOf("run-trace:__view"));
+		expect(ids.indexOf("run-trace:__view")).toBeLessThan(ids.indexOf("host:plugins"));
+		expect(ids.indexOf("run-trace:__view")).toBeLessThan(ids.indexOf("editor:__view"));
 	});
 });
 
@@ -831,6 +869,9 @@ describe("withPluginViewItems（插件视图 tab 进槽位）", () => {
 				view: "plugin:mail",
 				order: 23,
 				align: "end",
+				// 插件视图 tab 默认不钉顶栏（顶栏只留一个 🧩 插件面板入口），
+				// 用户钉住时才由 setPluginViewPinned 写进 layout.shown 翻出来。
+				hidden: true,
 			},
 		]);
 		expect(out[1]?.ui).toBeUndefined();
@@ -874,6 +915,72 @@ describe("withPluginViewItems（插件视图 tab 进槽位）", () => {
 		const hidden = build(ps, { layout: { hidden: ["mail:__view"] } });
 		expect(hidden["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(true);
 		const ordered = build(ps, { layout: { order: ["mail:__view", "host:chat"] } });
-		expect(ids(ordered["topbar.primary"]).slice(0, 2)).toEqual(["mail:__view", "host:chat"]);
+		const orderedIds = ids(ordered["topbar.primary"]);
+		expect(orderedIds.indexOf("host:git")).toBeLessThan(orderedIds.indexOf("mail:__view"));
+	});
+
+	it("合成条目默认 hidden：不钉顶栏时它落在溢出集合里，shown 才把它翻回主栏", () => {
+		const ps = withPluginViewItems([plugin("mail", { items: [], arrange: [] })]);
+		const plain = build(ps);
+		expect(plain["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(true);
+		const pinned = build(ps, { layout: { shown: ["mail:__view"] } });
+		expect(pinned["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(false);
+	});
+});
+
+describe("插件视图的钉住开关（pluginViewItemId / setPluginViewPinned / isPluginViewItem）", () => {
+	it("插件排序只替换插件视图条目的相对顺序，保留其它偏好", () => {
+		expect(
+			setPluginViewOrder({ order: ["host:chat", "mail:__view", "unloaded:__view", "host:settings"] }, [
+				"notes",
+				"mail",
+			]),
+		).toEqual({
+			order: ["host:chat", "unloaded:__view", "host:settings", "notes:__view", "mail:__view"],
+		});
+	});
+	it("pluginViewItemId = <pluginId>:__view", () => {
+		expect(pluginViewItemId("mail")).toBe("mail:__view");
+		expect(PLUGIN_VIEW_ITEM_ID).toBe("__view");
+	});
+
+	it("isPluginViewItem：只认「来源插件自己的那条 __view」，不误伤同后缀的其他条目", () => {
+		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:mail" })).toBe(true);
+		// id 恰好等于 source 的视图条目
+		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:other" })).toBe(false);
+		// 宿主条目
+		expect(isPluginViewItem({ id: "host:git", source: "host" })).toBe(false);
+		// 插件贡献的普通条目，恰好也以 :__view 结尾（不误伤）
+		expect(isPluginViewItem({ id: "mail:list:__view", source: "plugin:mail" })).toBe(false);
+	});
+
+	it("钉住：写进 shown、从 hidden 摘掉；取消钉住：反过来（两边都不留重复项）", () => {
+		expect(setPluginViewPinned(undefined, "mail", true)).toEqual({ hidden: [], shown: ["mail:__view"] });
+		expect(setPluginViewPinned(undefined, "mail", false)).toEqual({ hidden: ["mail:__view"], shown: [] });
+		const both = { hidden: ["mail:__view", "host:sound"], shown: ["mail:__view"] };
+		expect(setPluginViewPinned(both, "mail", true)).toEqual({
+			hidden: ["host:sound"],
+			shown: ["mail:__view"],
+		});
+		expect(setPluginViewPinned(both, "mail", false)).toEqual({
+			hidden: ["host:sound", "mail:__view"],
+			shown: [],
+		});
+		// 其他字段原样保留（只动这一个 id）
+		const rich = { order: ["mail:__view"], labels: { "host:chat": "聊天" }, topbarText: false };
+		expect(setPluginViewPinned(rich, "mail", true)).toEqual({
+			order: ["mail:__view"],
+			labels: { "host:chat": "聊天" },
+			topbarText: false,
+			hidden: [],
+			shown: ["mail:__view"],
+		});
+	});
+
+	it("钉住 → 取消钉住 → 再钉住：幂等，不累积脏数据", () => {
+		let prefs = setPluginViewPinned(undefined, "mail", true);
+		prefs = setPluginViewPinned(prefs, "mail", false);
+		prefs = setPluginViewPinned(prefs, "mail", true);
+		expect(prefs).toEqual({ hidden: [], shown: ["mail:__view"] });
 	});
 });
