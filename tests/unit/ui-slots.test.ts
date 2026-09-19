@@ -12,9 +12,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	BUILTIN_UI_ITEMS,
+	PLUGIN_VIEW_ITEM_ID,
 	buildUiSlots,
+	isPluginViewItem,
+	pluginViewItemId,
 	restoreAllUi,
 	restoreUiItem,
+	setPluginViewPinned,
 	splitOverflow,
 	withPluginViewItems,
 } from "../../web/src/ui-slots.js";
@@ -104,6 +108,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:chat",
 			"host:terminal",
 			"host:git",
+			"host:plugins",
 			"host:search",
 			"host:browser",
 			"host:tasks",
@@ -156,7 +161,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 	/** 缺省收起 = 低频 / 有替代入口的条目落进顶栏「⋯」（App.tsx 把 hidden 的 primary 条目
 	 *  塞进 uiOverflow → 菜单里能点，菜单型条目在菜单里是整块组件，功能不少）。
 	 *  这条断言是「顶栏默认长什么样」的唯一入口 —— 想改默认口径就改这里与 BUILTIN_UI_ITEMS。 */
-	it("缺省收进「⋯」的 6 条 + 常驻的 11 条", () => {
+	it("缺省收进「⋯」的 6 条 + 常驻的 12 条", () => {
 		const slots = build([]);
 		const top = slots["topbar.primary"];
 		expect(top.filter((e) => e.hidden).map((e) => e.id)).toEqual([
@@ -176,6 +181,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:chat",
 			"host:terminal",
 			"host:git",
+			"host:plugins",
 			"host:search",
 			"host:tasks",
 			"host:settings",
@@ -831,6 +837,9 @@ describe("withPluginViewItems（插件视图 tab 进槽位）", () => {
 				view: "plugin:mail",
 				order: 23,
 				align: "end",
+				// 插件视图 tab 默认不钉顶栏（顶栏只留一个 🧩 插件面板入口），
+				// 用户钉住时才由 setPluginViewPinned 写进 layout.shown 翻出来。
+				hidden: true,
 			},
 		]);
 		expect(out[1]?.ui).toBeUndefined();
@@ -875,5 +884,60 @@ describe("withPluginViewItems（插件视图 tab 进槽位）", () => {
 		expect(hidden["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(true);
 		const ordered = build(ps, { layout: { order: ["mail:__view", "host:chat"] } });
 		expect(ids(ordered["topbar.primary"]).slice(0, 2)).toEqual(["mail:__view", "host:chat"]);
+	});
+
+	it("合成条目默认 hidden：不钉顶栏时它落在溢出集合里，shown 才把它翻回主栏", () => {
+		const ps = withPluginViewItems([plugin("mail", { items: [], arrange: [] })]);
+		const plain = build(ps);
+		expect(plain["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(true);
+		const pinned = build(ps, { layout: { shown: ["mail:__view"] } });
+		expect(pinned["topbar.primary"].find((e) => e.id === "mail:__view")?.hidden).toBe(false);
+	});
+});
+
+describe("插件视图的钉住开关（pluginViewItemId / setPluginViewPinned / isPluginViewItem）", () => {
+	it("pluginViewItemId = <pluginId>:__view", () => {
+		expect(pluginViewItemId("mail")).toBe("mail:__view");
+		expect(PLUGIN_VIEW_ITEM_ID).toBe("__view");
+	});
+
+	it("isPluginViewItem：只认「来源插件自己的那条 __view」，不误伤同后缀的其他条目", () => {
+		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:mail" })).toBe(true);
+		// id 恰好等于 source 的视图条目
+		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:other" })).toBe(false);
+		// 宿主条目
+		expect(isPluginViewItem({ id: "host:git", source: "host" })).toBe(false);
+		// 插件贡献的普通条目，恰好也以 :__view 结尾（不误伤）
+		expect(isPluginViewItem({ id: "mail:list:__view", source: "plugin:mail" })).toBe(false);
+	});
+
+	it("钉住：写进 shown、从 hidden 摘掉；取消钉住：反过来（两边都不留重复项）", () => {
+		expect(setPluginViewPinned(undefined, "mail", true)).toEqual({ hidden: [], shown: ["mail:__view"] });
+		expect(setPluginViewPinned(undefined, "mail", false)).toEqual({ hidden: ["mail:__view"], shown: [] });
+		const both = { hidden: ["mail:__view", "host:sound"], shown: ["mail:__view"] };
+		expect(setPluginViewPinned(both, "mail", true)).toEqual({
+			hidden: ["host:sound"],
+			shown: ["mail:__view"],
+		});
+		expect(setPluginViewPinned(both, "mail", false)).toEqual({
+			hidden: ["host:sound", "mail:__view"],
+			shown: [],
+		});
+		// 其他字段原样保留（只动这一个 id）
+		const rich = { order: ["mail:__view"], labels: { "host:chat": "聊天" }, topbarText: false };
+		expect(setPluginViewPinned(rich, "mail", true)).toEqual({
+			order: ["mail:__view"],
+			labels: { "host:chat": "聊天" },
+			topbarText: false,
+			hidden: [],
+			shown: ["mail:__view"],
+		});
+	});
+
+	it("钉住 → 取消钉住 → 再钉住：幂等，不累积脏数据", () => {
+		let prefs = setPluginViewPinned(undefined, "mail", true);
+		prefs = setPluginViewPinned(prefs, "mail", false);
+		prefs = setPluginViewPinned(prefs, "mail", true);
+		expect(prefs).toEqual({ hidden: [], shown: ["mail:__view"] });
 	});
 });

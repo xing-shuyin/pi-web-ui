@@ -237,6 +237,20 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		group: "views",
 		align: "end",
 	},
+	// 插件面板（Chrome 扩展图标那个位置）：一个 🧩 入口列出全部已装插件，每行带「钉到顶栏」
+	// 开关。插件视图 tab 默认不钉（合成条目 hidden，见 withPluginViewItems），钉住的才回到
+	// 这里当 tab（order 23，紧跟本条目之前）。图标用 emoji 而不是词表名：词表名会被布局页
+	// 原样当文字画出来（见 ui-slots 末尾的图标词表注释）。
+	{
+		id: "host:plugins",
+		slot: "topbar.primary",
+		labelKey: "pluginMenuTitle",
+		icon: "🧩",
+		kind: "action",
+		order: 24,
+		group: "views",
+		align: "end",
+	},
 	// 工具组：全局搜索 / 浏览器操作 / 后台任务（后台任务的角标数由运行时给 badge）。
 	{
 		id: "host:search",
@@ -1076,6 +1090,39 @@ export const LP_SECTION_ENTRY_IDS: ReadonlySet<string> = new Set([
 /** 插件视图 tab 的合成条目 id（`<pluginId>:__view`，`__view` 为保留字）。 */
 export const PLUGIN_VIEW_ITEM_ID = "__view";
 
+/** 某个插件的视图条目全局 id（`<pluginId>:__view`）—— 顶栏与布局偏好的 key。 */
+export function pluginViewItemId(pluginId: string): string {
+	return `${pluginId}:${PLUGIN_VIEW_ITEM_ID}`;
+}
+
+/** 这条槽位条目是不是「插件视图 tab」（`<pluginId>:__view`，且来源就是那个插件）。 */
+export function isPluginViewItem(entry: { id: string; source: string }): boolean {
+	if (!entry.source.startsWith("plugin:")) return false;
+	return entry.id === pluginViewItemId(entry.source.slice("plugin:".length));
+}
+
+/**
+ * 钉住 / 取消钉住某个插件的视图 tab，返回新的 UiLayoutPrefs。
+ *
+ * 语义与设置面板「界面布局」页的勾选框完全一致（hidden = 藏、shown = 显），只是换了个入口：
+ * 钉住 = 写进 shown（并把它从 hidden 里摘掉），取消钉住 = 写进 hidden（并从 shown 摘掉）。
+ * 两边都写是为了覆盖两类插件：合成的视图条目默认 hidden（钉住靠 shown 把它翻出来），
+ * 而插件自己声明的 `__view` 条目默认可见（取消钉住必须写 hidden 才压得下去）。
+ * 纯函数：不改入参。
+ */
+export function setPluginViewPinned(
+	layout: UiLayoutPrefs | undefined,
+	pluginId: string,
+	pinned: boolean,
+): UiLayoutPrefs {
+	const id = pluginViewItemId(pluginId);
+	const hidden = (layout?.hidden ?? []).filter((x) => x !== id);
+	const shown = (layout?.shown ?? []).filter((x) => x !== id);
+	if (pinned) shown.push(id);
+	else hidden.push(id);
+	return { ...layout, hidden, shown };
+}
+
 /** 品牌旧 id（已合并为 `host:brand`，此处仅做偏好迁移用）。 */
 export const BRAND_ITEM_ID = "host:brand";
 const BRAND_OLD_IDS: readonly string[] = ["host:brand-logo", "host:brand-name"];
@@ -1153,6 +1200,9 @@ export function migrateBrandLayout<T extends UiLayoutPrefs>(src: T): T {
  *
  * 纯函数：不改入参（只为需要补条目的插件浅拷贝）；view:false（纯渲染器）与已声明过
  * 同名条目的插件原样返回。报错/被禁用的插件由 buildUiSlots 整份丢弃（含这条合成）。
+ *
+ * `hidden: true`：插件视图 tab **默认不钉顶栏**（顶栏只留一个 🧩 插件面板入口），
+ * 用户在面板里钉住某个插件时才由 `setPluginViewPinned` 把它写进 layout.shown 翻出来。
  */
 export function withPluginViewItems(plugins: UiPluginInfo[]): UiPluginInfo[] {
 	return plugins.map((p) => {
@@ -1169,6 +1219,7 @@ export function withPluginViewItems(plugins: UiPluginInfo[]): UiPluginInfo[] {
 			view: `plugin:${p.id}`,
 			order: 23,
 			align: "end",
+			hidden: true,
 		};
 		return {
 			...p,

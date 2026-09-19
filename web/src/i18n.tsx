@@ -1195,6 +1195,11 @@ export const zh = {
 	uiLayoutHint:
 		"插件可以调整这里的条目（包括宿主内置入口）；你随时能改回来：取消勾选＝隐藏，↑/↓ 调顺序，改过的条目会显示「恢复」。隐藏的条目仍能在顶栏溢出菜单里点到。",
 	pluginTopbarMore: "更多插件按钮",
+	pluginMenuTitle: "插件",
+	pluginMenuPin: "钉到顶栏",
+	pluginMenuUnpin: "取消钉住",
+	pluginMenuEmpty: "未安装界面插件（<dataDir>/plugins/）",
+	pluginMenuNoView: "无独立界面",
 	uiLayoutTopbar: "顶栏",
 	uiLayoutTopbarText: "显示按钮文字",
 	uiLayoutTopbarOverflow: "顶栏溢出菜单",
@@ -2677,6 +2682,11 @@ const en: Record<keyof typeof zh, string> = {
 	uiLayoutHint:
 		"Plugins can rearrange these entries (built-in ones included). You can always change them back: uncheck to hide, ↑/↓ to reorder; changed rows offer “Restore”. Hidden entries stay reachable from the top-bar overflow menu.",
 	pluginTopbarMore: "More plugin buttons",
+	pluginMenuTitle: "Plugins",
+	pluginMenuPin: "Pin to top bar",
+	pluginMenuUnpin: "Unpin from top bar",
+	pluginMenuEmpty: "No UI plugins installed (<dataDir>/plugins/)",
+	pluginMenuNoView: "No standalone view",
 	uiLayoutTopbar: "Top bar",
 	uiLayoutTopbarText: "Show button labels",
 	uiLayoutTopbarOverflow: "Top-bar overflow",
