@@ -3039,6 +3039,26 @@ body.panel-resizing .scm-divider::after {
 	color: var(--text-faint);
 	border-bottom: 1px solid var(--border-soft);
 }
+
+/* 提交树过滤框（主题/作者/hash，纯前端过滤），贴在列表头上方。 */
+.scm-history-filter {
+	margin: 8px 10px 4px;
+	width: calc(100% - 20px);
+	height: 26px;
+	padding: 0 8px;
+	font-size: 12px;
+	color: var(--text);
+	background: var(--bg-elev2);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+.scm-history-filter:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+.scm-history-filter::placeholder {
+	color: var(--text-faint);
+}
 .scm-files-count {
 	font-family: var(--mono);
 	font-size: 11px;

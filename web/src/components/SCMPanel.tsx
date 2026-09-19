@@ -27,6 +27,14 @@ import type { ClientMessage, CommandDef, ServerMessage } from "../types";
 import { randomUuid } from "../uuid";
 import { quotePath } from "../scm-quote";
 import { clampScmSidebarWidth, parseScmSidebarWidth, SCM_SIDEBAR_DEFAULT, SCM_SIDEBAR_WIDTH_KEY } from "../scm-sidebar";
+import { filterScmCommits } from "../scm-history-filter";
+import {
+	COMMIT_RECALL_INITIAL,
+	cycleCommitRecall,
+	loadCommitHistory,
+	rememberCommitMessage,
+	type CommitRecallState,
+} from "../scm-commit-history";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import type { UiSlotEntry } from "../ui-slots";
@@ -144,6 +152,11 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		parseScmSidebarWidth(localStorage.getItem(SCM_SIDEBAR_WIDTH_KEY)),
 	);
 	const [commitMsg, setCommitMsg] = useState("");
+	// 提交树过滤框（纯前端过滤主题/作者/hash，随历史重查与切工作区重置）。
+	const [historyFilter, setHistoryFilter] = useState("");
+	// 提交信息历史（localStorage，最近 20 条）与 ↑/↓ 回溯游标。
+	const [commitHistory, setCommitHistory] = useState<string[]>(() => loadCommitHistory());
+	const recallRef = useRef<CommitRecallState>(COMMIT_RECALL_INITIAL);
 
 	/** Monotonic request id — responses are matched per pending slot below. */
 	const seqRef = useRef(0);
@@ -346,6 +359,7 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 				setBranches([]);
 				setStatMap(new Map());
 				setHistory([]);
+				setHistoryFilter("");
 				setHistoryLoading(false);
 				historyReqRef.current = -1;
 				setSelectedCommit(null);
@@ -444,7 +458,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		if (!msg || notRepo) return;
 		const escaped = msg.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
 		runGitCommand("git commit", `git commit -m "${escaped}"`);
+		setCommitHistory(rememberCommitMessage(msg));
 		setCommitMsg("");
+		recallRef.current = COMMIT_RECALL_INITIAL;
 	}, [commitMsg, notRepo, runGitCommand]);
 
 	const handleCommitAll = useCallback(() => {
@@ -452,7 +468,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		if (!msg || notRepo) return;
 		const escaped = msg.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/`/g, "\\`").replace(/\$/g, "\\$");
 		runGitCommand("git commit", `git add -A && git commit -m "${escaped}"`);
+		setCommitHistory(rememberCommitMessage(msg));
 		setCommitMsg("");
+		recallRef.current = COMMIT_RECALL_INITIAL;
 	}, [commitMsg, notRepo, runGitCommand]);
 
 	const handleStage = useCallback(
@@ -568,6 +586,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		untracked: t("scmUntracked"),
 		both: t("scmStagedUnstaged"),
 	};
+
+	// 提交树过滤（主题/作者/hash/decorations，空格分隔 AND；空查询原样返回）。
+	const filteredHistory = filterScmCommits(history, historyFilter);
 
 	const renderDiff = (text: string) => {
 		const lines = text.split("\n");
@@ -757,10 +778,31 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 				value={commitMsg}
 				placeholder={t("scmCommitPlaceholder")}
 				disabled={notRepo}
-				onChange={(e) => setCommitMsg(e.target.value)}
+				title={commitHistory.length > 0 ? t("scmCommitHistoryTip") : undefined}
+				onChange={(e) => {
+					setCommitMsg(e.target.value);
+					// 用户手动编辑即退出回溯态（草稿已无意义）。
+					recallRef.current = COMMIT_RECALL_INITIAL;
+				}}
 				onKeyDown={(e) => {
-					if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+					if (e.nativeEvent.isComposing) return;
+					if (e.key === "Enter") {
 						handleCommit();
+						return;
+					}
+					// ↑/↓ 回溯最近用过的提交信息（shell 风格；↑ 记住当前草稿，↓ 退回）。
+					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+						const hit = cycleCommitRecall(
+							commitHistory,
+							recallRef.current,
+							commitMsg,
+							e.key === "ArrowUp" ? "up" : "down",
+						);
+						if (hit) {
+							e.preventDefault();
+							recallRef.current = hit.state;
+							setCommitMsg(hit.text);
+						}
 					}
 				}}
 			/>
@@ -854,8 +896,21 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 					<div className="scm-history">
 						<div className="scm-files-header">
 							<span>{t("scmHistory")}</span>
-							{history.length > 0 && <span className="scm-files-count">{history.length}</span>}
+							{history.length > 0 && (
+								<span className="scm-files-count">
+									{historyFilter.trim() ? `${filteredHistory.length}/${history.length}` : history.length}
+								</span>
+							)}
 						</div>
+						{history.length > 0 && !notRepo && (
+							<input
+								className="scm-history-filter"
+								value={historyFilter}
+								placeholder={t("scmHistoryFilterPlaceholder")}
+								title={t("scmHistoryFilterTip")}
+								onChange={(e) => setHistoryFilter(e.target.value)}
+							/>
+						)}
 						<div className="scm-history-list">
 							{notRepo ? (
 								<div className="scm-empty">{t("scmNotGitRepo")}</div>
@@ -863,8 +918,10 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 								<div className="scm-empty">{chat.status === "open" ? t("scmLoading") : t("scmConnecting")}</div>
 							) : history.length === 0 ? (
 								<div className="scm-empty">{t("scmNoHistory")}</div>
+							) : filteredHistory.length === 0 ? (
+								<div className="scm-empty">{t("scmHistoryFilterEmpty")}</div>
 							) : (
-								history.map((commit) => (
+								filteredHistory.map((commit) => (
 									<button
 										key={commit.hash}
 										type="button"
