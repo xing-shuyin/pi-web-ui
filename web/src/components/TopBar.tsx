@@ -1005,54 +1005,30 @@ export function TopBar({
 			</Dropdown>
 		),
 		"host:theme": (
-					<Dropdown
-						trigger={
-							<>
-								<FiSun />
-								<span className="chip-sub">{t("theme")}</span>
-							</>
-						}
-						tip={t("theme")}
-						open={themeOpen}
-						onOpenChange={(v) => {
-							setThemeOpen(v);
-							// 挂载那次拉取若撞上服务端重启会扑空：打开时列表还空就补拉一次
-							if (v && themes.length === 0) reloadThemes();
-						}}
-					>
-						{(() => {
-							const classics = themes.filter((th) => th.group === "classic");
-							const builtins = themes.filter((th) => th.group !== "classic");
-							return (
+			<Dropdown
+				trigger={
+					<>
+						<FiSun />
+						<span className="chip-sub">{t("theme")}</span>
+					</>
+				}
+				tip={t("theme")}
+				open={themeOpen}
+				onOpenChange={(v) => {
+					setThemeOpen(v);
+					// 挂载那次拉取若撞上服务端重启会扑空：打开时列表还空就补拉一次
+					if (v && themes.length === 0) reloadThemes();
+				}}
+			>
+				{(() => {
+					const classics = themes.filter((th) => th.group === "classic");
+					const builtins = themes.filter((th) => th.group !== "classic");
+					return (
+						<>
+							{classics.length > 0 && (
 								<>
-									{classics.length > 0 && (
-										<>
-											<div className="dd-header">{t("themeGroupClassics")}</div>
-											{classics.map((th) => (
-												<DropdownItem
-													key={th.id}
-													active={theme === th.id}
-													onClick={() => {
-														onThemeChange(th.id);
-														setThemeOpen(false);
-													}}
-												>
-													{locale === "zh" ? th.name : (th.nameEn ?? th.name)}
-												</DropdownItem>
-											))}
-										</>
-									)}
-									<div className="dd-header">{classics.length > 0 ? t("themeGroupBuiltin") : t("theme")}</div>
-									<DropdownItem
-										active={theme === null}
-										onClick={() => {
-											onThemeChange(null);
-											setThemeOpen(false);
-										}}
-									>
-										{t("themeDefault")}
-									</DropdownItem>
-									{builtins.map((th) => (
+									<div className="dd-header">{t("themeGroupClassics")}</div>
+									{classics.map((th) => (
 										<DropdownItem
 											key={th.id}
 											active={theme === th.id}
@@ -1065,9 +1041,33 @@ export function TopBar({
 										</DropdownItem>
 									))}
 								</>
-							);
-						})()}
-					</Dropdown>
+							)}
+							<div className="dd-header">{classics.length > 0 ? t("themeGroupBuiltin") : t("theme")}</div>
+							<DropdownItem
+								active={theme === null}
+								onClick={() => {
+									onThemeChange(null);
+									setThemeOpen(false);
+								}}
+							>
+								{t("themeDefault")}
+							</DropdownItem>
+							{builtins.map((th) => (
+								<DropdownItem
+									key={th.id}
+									active={theme === th.id}
+									onClick={() => {
+										onThemeChange(th.id);
+										setThemeOpen(false);
+									}}
+								>
+									{locale === "zh" ? th.name : (th.nameEn ?? th.name)}
+								</DropdownItem>
+							))}
+						</>
+					);
+				})()}
+			</Dropdown>
 		),
 		"host:update": managed ? (
 			<span className="chip" data-tip={t("updatesManaged")}>

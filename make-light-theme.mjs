@@ -1516,11 +1516,23 @@ writeTheme("赛博朋克", "cyberpunk.css", emitTheme("赛博朋克", CYBERPUNK,
 writeTheme("炫彩", "dazzle.css", emitTheme("炫彩", DAZZLE, "", "Dazzle"));
 
 // 现代经典流行主题（带 group: classic，分组置顶展示）
-writeTheme("Catppuccin", "catppuccin.css", emitTheme("Catppuccin", CATPPUCCIN, hljsCatppuccin, "Catppuccin Mocha", "classic"));
-writeTheme("Catppuccin 浅色", "catppuccin-latte.css", emitTheme("Catppuccin 浅色", CATPPUCCIN_LATTE, hljsCatppuccinLatte, "Catppuccin Latte", "classic"));
+writeTheme(
+	"Catppuccin",
+	"catppuccin.css",
+	emitTheme("Catppuccin", CATPPUCCIN, hljsCatppuccin, "Catppuccin Mocha", "classic"),
+);
+writeTheme(
+	"Catppuccin 浅色",
+	"catppuccin-latte.css",
+	emitTheme("Catppuccin 浅色", CATPPUCCIN_LATTE, hljsCatppuccinLatte, "Catppuccin Latte", "classic"),
+);
 writeTheme("东京之夜", "tokyo-night.css", emitTheme("东京之夜", TOKYO_NIGHT, hljsTokyoNight, "Tokyo Night", "classic"));
 writeTheme("北欧极光", "nord.css", emitTheme("北欧极光", NORD, hljsNord, "Nord", "classic"));
-writeTheme("日照浅色", "solarized-light.css", emitTheme("日照浅色", SOLARIZED_LIGHT, hljsSolarized, "Solarized Light", "classic"));
+writeTheme(
+	"日照浅色",
+	"solarized-light.css",
+	emitTheme("日照浅色", SOLARIZED_LIGHT, hljsSolarized, "Solarized Light", "classic"),
+);
 writeTheme("One Dark", "one-dark.css", emitTheme("One Dark", ONE_DARK, hljsOneDark, "One Dark Pro", "classic"));
 
 console.log("themes regenerated: white / paper / mist / sakura / md-preview / cyberpunk / dazzle / 6 classics");
