@@ -6,10 +6,10 @@
 	--bg-elev: #fffdf6;
 	--bg-elev2: #efe7d3;
 	--border: #ddcfae;
-	--border-soft: #e7dcc2;
+	--border-soft: #ded1b3;
 	--text: #3f372c;
 	--text-dim: #6f6250;
-	--text-faint: #a2937a;
+	--text-faint: #6c5a41;
 	--accent: #b45309;
 	--accent-soft: rgba(180, 83, 9, 0.12);
 	--green: #15803d;
@@ -30,7 +30,7 @@
 	--term-magenta: #9333ea;
 	--term-cyan: #0e7490;
 	--term-white: #3f372c;
-	--term-bright-black: #a2937a;
+	--term-bright-black: #6c5a41;
 	--term-bright-red: #b91c1c;
 	--term-bright-green: #15803d;
 	--term-bright-yellow: #a16207;
@@ -89,14 +89,14 @@
 	--bg-image: none;
 	--bg-image-dim: 0.78;
 	--bg-image-blur: 0px;
-	--wallpaper-panel-alpha: 62%;
-	--topbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
-	--statusbar-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
-	--panel-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
-	--card-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
-	--chip-bg: color-mix(in srgb, var(--bg-elev2) var(--wallpaper-panel-alpha, 62%), transparent);
-	--msgs-bg: color-mix(in srgb, var(--bg-elev) var(--wallpaper-panel-alpha, 62%), transparent);
-	--inputbox-bg: color-mix(in srgb, var(--bg-elev2) var(--wallpaper-panel-alpha, 62%), transparent);
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #fffdf6;
+	--statusbar-bg: #fffdf6;
+	--panel-bg: #fffdf6;
+	--card-bg: #fffdf6;
+	--chip-bg: #efe7d3;
+	--msgs-bg: #fffdf6;
+	--inputbox-bg: #efe7d3;
 	--menu-bg: var(--bg-elev2);
 }
 
@@ -144,7 +144,7 @@
 .hljs-comment,
 .hljs-code,
 .hljs-formula {
-	color: #8a7d64;
+	color: #5f533e;
 }
 .hljs-name,
 .hljs-quote,

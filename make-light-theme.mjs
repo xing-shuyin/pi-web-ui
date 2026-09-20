@@ -165,10 +165,10 @@ const PAPER = {
 	"--bg-elev": "#fffdf6",
 	"--bg-elev2": "#efe7d3",
 	"--border": "#ddcfae",
-	"--border-soft": "#e7dcc2",
+	"--border-soft": "#ded1b3",
 	"--text": "#3f372c",
 	"--text-dim": "#6f6250",
-	"--text-faint": "#a2937a",
+	"--text-faint": "#6c5a41",
 	"--accent": "#b45309",
 	"--accent-soft": "rgba(180, 83, 9, 0.12)",
 	"--green": "#15803d",
@@ -189,7 +189,7 @@ const PAPER = {
 	"--term-magenta": "#9333ea",
 	"--term-cyan": "#0e7490",
 	"--term-white": "#3f372c",
-	"--term-bright-black": "#a2937a",
+	"--term-bright-black": "#6c5a41",
 	"--term-bright-red": "#b91c1c",
 	"--term-bright-green": "#15803d",
 	"--term-bright-yellow": "#a16207",
@@ -226,6 +226,15 @@ const PAPER = {
 	"--control-fg": "#6f6250",
 	"--control-bg": "#efe7d3",
 	"--control-border": "#ddcfae",
+	/* 暖纸实底卡片（issue #243）：避免半透明透光冲淡文字，保证截图与复制为图片字迹清晰 */
+	"--wallpaper-panel-alpha": "100%",
+	"--topbar-bg": "#fffdf6",
+	"--statusbar-bg": "#fffdf6",
+	"--panel-bg": "#fffdf6",
+	"--card-bg": "#fffdf6",
+	"--chip-bg": "#efe7d3",
+	"--msgs-bg": "#fffdf6",
+	"--inputbox-bg": "#efe7d3",
 	/* 壁纸默认关闭（纯色背景），用户/主题按需打开 */
 	"--bg-image": "none",
 	"--bg-image-dim": "0.78",
@@ -460,7 +469,7 @@ const hljsPaper = `
 .hljs-comment,
 .hljs-code,
 .hljs-formula {
-	color: #8a7d64;
+	color: #5f533e;
 }
 .hljs-name,
 .hljs-quote,
@@ -860,6 +869,228 @@ const DAZZLE = {
 	"--send-blue-hover": "#6366f1",
 };
 
+// --- Catppuccin Mocha（现代经典柔和深色）--------------------------------
+const CATPPUCCIN = {
+	"color-scheme": "dark",
+	"--bg": "#1e1e2e",
+	"--bg-elev": "#24273a",
+	"--bg-elev2": "#313244",
+	"--border": "#45475a",
+	"--border-soft": "#363a4f",
+	"--text": "#cdd6f4",
+	"--text-dim": "#a6adc8",
+	"--text-faint": "#6c7086",
+	"--accent": "#89b4fa",
+	"--accent-soft": "rgba(137, 180, 250, 0.14)",
+	"--green": "#a6e3a1",
+	"--green-soft": "rgba(166, 227, 161, 0.12)",
+	"--red": "#f38ba8",
+	"--red-soft": "rgba(243, 139, 168, 0.12)",
+	"--amber": "#f9e2af",
+	"--term-bg": "#181825",
+	"--term-fg": "#cdd6f4",
+	"--term-cursor": "#f5e0dc",
+	"--term-cursor-accent": "#181825",
+	"--term-selection": "rgba(88, 91, 112, 0.4)",
+	"--term-black": "#45475a",
+	"--term-red": "#f38ba8",
+	"--term-green": "#a6e3a1",
+	"--term-yellow": "#f9e2af",
+	"--term-blue": "#89b4fa",
+	"--term-magenta": "#cba6f7",
+	"--term-cyan": "#89dceb",
+	"--term-white": "#bac2de",
+	"--term-bright-black": "#585b70",
+	"--term-bright-red": "#f38ba8",
+	"--term-bright-green": "#a6e3a1",
+	"--term-bright-yellow": "#f9e2af",
+	"--term-bright-blue": "#89b4fa",
+	"--term-bright-magenta": "#cba6f7",
+	"--term-bright-cyan": "#89dceb",
+	"--term-bright-white": "#a6adc8",
+	"--brand-grad-a": "#89b4fa",
+	"--brand-grad-b": "#cba6f7",
+	"--send-blue": "#89b4fa",
+	"--send-blue-hover": "#b4befe",
+	"--link": "#89b4fa",
+	"--link-hover": "#b4befe",
+	"--link-soft": "#89b4fa",
+	"--md-strong": "#cdd6f4",
+	"--skill-blue": "#89b4fa",
+	"--info-blue": "#89dceb",
+	"--auth-green": "#a6e3a1",
+	"--err-text": "#f38ba8",
+	"--red-text": "#f38ba8",
+	"--amber-text": "#f9e2af",
+	"--code-bg": "#181825",
+	"--code-text": "#cdd6f4",
+	"--tooltip-bg": "#313244",
+	"--scroll-thumb": "#45475a",
+	"--scroll-thumb-hover": "#585b70",
+	"--control-fg": "#a6adc8",
+	"--control-bg": "#313244",
+	"--control-border": "#45475a",
+	"--wallpaper-panel-alpha": "100%",
+	"--topbar-bg": "#24273a",
+	"--statusbar-bg": "#181825",
+	"--panel-bg": "#24273a",
+	"--card-bg": "#24273a",
+	"--chip-bg": "#313244",
+	"--msgs-bg": "#1e1e2e",
+	"--inputbox-bg": "#313244",
+};
+
+const hljsCatppuccin = `
+/* ---- syntax highlighting (Catppuccin Mocha) ---- */
+.hljs {
+	color: #cdd6f4;
+	background: #181825;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #cba6f7;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #89b4fa;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fab387;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #a6e3a1;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #f9e2af;
+}
+.hljs-comment,
+.hljs-code {
+	color: #6c7086;
+}
+.hljs-tag,
+.hljs-name {
+	color: #89dceb;
+}
+`;
+
+// --- Tokyo Night（深邃蓝紫极客风）------------------------------------------
+const TOKYO_NIGHT = {
+	"color-scheme": "dark",
+	"--bg": "#1a1b26",
+	"--bg-elev": "#24283b",
+	"--bg-elev2": "#1f2335",
+	"--border": "#414868",
+	"--border-soft": "#292e42",
+	"--text": "#c0caf5",
+	"--text-dim": "#9aa5ce",
+	"--text-faint": "#565f89",
+	"--accent": "#7aa2f7",
+	"--accent-soft": "rgba(122, 162, 247, 0.14)",
+	"--green": "#9ece6a",
+	"--green-soft": "rgba(158, 206, 106, 0.12)",
+	"--red": "#f7768e",
+	"--red-soft": "rgba(247, 118, 142, 0.12)",
+	"--amber": "#e0af68",
+	"--term-bg": "#16161e",
+	"--term-fg": "#c0caf5",
+	"--term-cursor": "#c0caf5",
+	"--term-cursor-accent": "#16161e",
+	"--term-selection": "rgba(81, 92, 138, 0.4)",
+	"--term-black": "#414868",
+	"--term-red": "#f7768e",
+	"--term-green": "#9ece6a",
+	"--term-yellow": "#e0af68",
+	"--term-blue": "#7aa2f7",
+	"--term-magenta": "#bb9af7",
+	"--term-cyan": "#7dcfff",
+	"--term-white": "#a9b1d6",
+	"--term-bright-black": "#565f89",
+	"--term-bright-red": "#f7768e",
+	"--term-bright-green": "#9ece6a",
+	"--term-bright-yellow": "#e0af68",
+	"--term-bright-blue": "#7aa2f7",
+	"--term-bright-magenta": "#bb9af7",
+	"--term-bright-cyan": "#7dcfff",
+	"--term-bright-white": "#c0caf5",
+	"--brand-grad-a": "#7aa2f7",
+	"--brand-grad-b": "#bb9af7",
+	"--send-blue": "#7aa2f7",
+	"--send-blue-hover": "#89ddff",
+	"--link": "#7aa2f7",
+	"--link-hover": "#89ddff",
+	"--link-soft": "#7aa2f7",
+	"--md-strong": "#c0caf5",
+	"--skill-blue": "#7aa2f7",
+	"--info-blue": "#7dcfff",
+	"--auth-green": "#9ece6a",
+	"--err-text": "#f7768e",
+	"--red-text": "#f7768e",
+	"--amber-text": "#e0af68",
+	"--code-bg": "#16161e",
+	"--code-text": "#c0caf5",
+	"--tooltip-bg": "#24283b",
+	"--scroll-thumb": "#3b4261",
+	"--scroll-thumb-hover": "#565f89",
+	"--control-fg": "#9aa5ce",
+	"--control-bg": "#24283b",
+	"--control-border": "#414868",
+	"--wallpaper-panel-alpha": "100%",
+	"--topbar-bg": "#24283b",
+	"--statusbar-bg": "#16161e",
+	"--panel-bg": "#24283b",
+	"--card-bg": "#24283b",
+	"--chip-bg": "#1f2335",
+	"--msgs-bg": "#1a1b26",
+	"--inputbox-bg": "#1f2335",
+};
+
+const hljsTokyoNight = `
+/* ---- syntax highlighting (Tokyo Night) ---- */
+.hljs {
+	color: #c0caf5;
+	background: #16161e;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #bb9af7;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #7aa2f7;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #ff9e64;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #9ece6a;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #2ac3de;
+}
+.hljs-comment,
+.hljs-code {
+	color: #565f89;
+}
+.hljs-tag,
+.hljs-name {
+	color: #7dcfff;
+}
+`;
+
 // --- 3) emit ----------------------------------------------------------------
 writeTheme("白色", "white.css", emitTheme("白色", WHITE, hljsLight, "White"));
 writeTheme("暖纸", "paper.css", emitTheme("暖纸", PAPER, hljsPaper, "Warm Paper"));
@@ -868,5 +1099,7 @@ writeTheme("樱粉", "sakura.css", emitTheme("樱粉", SAKURA, hljsSakura, "Saku
 writeTheme("紫晕", "md-preview.css", emitTheme("紫晕", { "color-scheme": "dark" }, MD_PREVIEW_TAIL, "Purple Haze"));
 writeTheme("赛博朋克", "cyberpunk.css", emitTheme("赛博朋克", CYBERPUNK, "", "Cyberpunk"));
 writeTheme("炫彩", "dazzle.css", emitTheme("炫彩", DAZZLE, "", "Dazzle"));
+writeTheme("Catppuccin", "catppuccin.css", emitTheme("Catppuccin", CATPPUCCIN, hljsCatppuccin, "Catppuccin Mocha"));
+writeTheme("东京之夜", "tokyo-night.css", emitTheme("东京之夜", TOKYO_NIGHT, hljsTokyoNight, "Tokyo Night"));
 
-console.log("themes regenerated: white / paper / mist / sakura / md-preview / cyberpunk / dazzle");
+console.log("themes regenerated: white / paper / mist / sakura / md-preview / cyberpunk / dazzle / catppuccin / tokyo-night");
