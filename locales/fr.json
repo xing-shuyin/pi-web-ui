@@ -48,6 +48,8 @@
 		"sound": "Son",
 		"theme": "Thème",
 		"themeDefault": "Sombre (défaut)",
+		"themeGroupClassics": "Classiques",
+		"themeGroupBuiltin": "Original",
 		"newChat": "Nouvelle discussion",
 		"more": "Plus",
 		"brand": "Marque",

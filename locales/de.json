@@ -48,6 +48,8 @@
 		"sound": "Ton",
 		"theme": "Theme",
 		"themeDefault": "Dunkel (Standard)",
+		"themeGroupClassics": "Klassiker",
+		"themeGroupBuiltin": "Original",
 		"newChat": "Neuer Chat",
 		"more": "Mehr",
 		"brand": "Marke",

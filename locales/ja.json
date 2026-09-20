@@ -48,6 +48,8 @@
 		"sound": "サウンド",
 		"theme": "テーマ",
 		"themeDefault": "ダーク（デフォルト）",
+		"themeGroupClassics": "モダンクラシック",
+		"themeGroupBuiltin": "オリジナル",
 		"newChat": "新規チャット",
 		"more": "その他",
 		"brand": "ブランド",

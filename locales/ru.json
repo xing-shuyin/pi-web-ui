@@ -48,6 +48,8 @@
 		"sound": "Звук",
 		"theme": "Тема",
 		"themeDefault": "Тёмная (по умолчанию)",
+		"themeGroupClassics": "Классика",
+		"themeGroupBuiltin": "Оригинал",
 		"newChat": "Новый чат",
 		"more": "Ещё",
 		"brand": "Бренд",

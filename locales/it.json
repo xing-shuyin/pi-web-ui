@@ -48,6 +48,8 @@
 		"sound": "Suono",
 		"theme": "Tema",
 		"themeDefault": "Scuro (predefinito)",
+		"themeGroupClassics": "Classici",
+		"themeGroupBuiltin": "Original",
 		"newChat": "Nuova chat",
 		"more": "Altro",
 		"brand": "Marchio",

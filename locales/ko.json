@@ -48,6 +48,8 @@
 		"sound": "소리",
 		"theme": "테마",
 		"themeDefault": "다크(기본)",
+		"themeGroupClassics": "모던 클래식",
+		"themeGroupBuiltin": "오리지널",
 		"newChat": "새 대화",
 		"more": "더 보기",
 		"brand": "브랜드",

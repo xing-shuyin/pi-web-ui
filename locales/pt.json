@@ -48,6 +48,8 @@
 		"sound": "Som",
 		"theme": "Tema",
 		"themeDefault": "Escuro (padrão)",
+		"themeGroupClassics": "Clássicos",
+		"themeGroupBuiltin": "Original",
 		"newChat": "Nova conversa",
 		"more": "Mais",
 		"brand": "Marca",
