@@ -18,6 +18,7 @@ export interface ThemeInfo {
 	name: string;
 	builtin: boolean;
 	nameEn?: string;
+	group?: "classic" | "builtin";
 }
 
 /** Only simple file ids — no path traversal. */
@@ -31,10 +32,11 @@ const ID_RE = /^[A-Za-z0-9_-]+$/;
  *  filename stays ASCII (id must match ID_RE). */
 const THEME_NAME_RE = /\/\*\s*theme-name:\s*(.+?)\s*\*\//;
 const THEME_NAME_EN_RE = /\/\*\s*theme-name-en:\s*(.+?)\s*\*\//;
+const THEME_GROUP_RE = /\/\*\s*theme-group:\s*(.+?)\s*\*\//;
 
 function readDisplayName(path: string, fallback: string): string {
 	try {
-		const head = readFileSync(path, "utf8").slice(0, 300);
+		const head = readFileSync(path, "utf8").slice(0, 400);
 		return head.match(THEME_NAME_RE)?.[1]?.trim() || fallback;
 	} catch {
 		return fallback;
@@ -43,11 +45,22 @@ function readDisplayName(path: string, fallback: string): string {
 
 function readDisplayNameEn(path: string): string | undefined {
 	try {
-		const head = readFileSync(path, "utf8").slice(0, 300);
+		const head = readFileSync(path, "utf8").slice(0, 400);
 		return head.match(THEME_NAME_EN_RE)?.[1]?.trim() || undefined;
 	} catch {
 		return undefined;
 	}
+}
+
+function readGroup(path: string): "classic" | "builtin" {
+	try {
+		const head = readFileSync(path, "utf8").slice(0, 400);
+		const g = head.match(THEME_GROUP_RE)?.[1]?.trim();
+		if (g === "classic") return "classic";
+	} catch {
+		// ignore
+	}
+	return "builtin";
 }
 
 export function listThemes(builtinDir: string, userDir: string): ThemeInfo[] {
@@ -62,10 +75,12 @@ export function listThemes(builtinDir: string, userDir: string): ThemeInfo[] {
 				const id = f.slice(0, -4);
 				const name = readDisplayName(path, id);
 				const nameEn = readDisplayNameEn(path);
+				const group = readGroup(path);
 				return {
 					id,
 					name,
 					builtin,
+					group,
 					...(nameEn ? { nameEn } : {}),
 				};
 			});

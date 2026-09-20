@@ -1,0 +1,131 @@
+/* theme-name: 日照浅色 */
+/* theme-name-en: Solarized Light */
+/* theme-group: classic */
+:root {
+	color-scheme: light;
+	--bg: #fdf6e3;
+	--bg-elev: #eee8d5;
+	--bg-elev2: #e0d8be;
+	--border: #d5cbab;
+	--border-soft: #e0d8be;
+	--text: #586e75;
+	--text-dim: #657b83;
+	--text-faint: #839496;
+	--accent: #268bd2;
+	--accent-soft: rgba(38, 139, 210, 0.12);
+	--green: #859900;
+	--green-soft: rgba(133, 153, 0, 0.12);
+	--red: #dc322f;
+	--red-soft: rgba(220, 50, 47, 0.1);
+	--amber: #b58900;
+	--term-bg: #fdf6e3;
+	--term-fg: #586e75;
+	--term-cursor: #586e75;
+	--term-cursor-accent: #fdf6e3;
+	--term-selection: rgba(7, 54, 66, 0.18);
+	--term-black: #073642;
+	--term-red: #dc322f;
+	--term-green: #859900;
+	--term-yellow: #b58900;
+	--term-blue: #268bd2;
+	--term-magenta: #d33682;
+	--term-cyan: #2aa198;
+	--term-white: #eee8d5;
+	--term-bright-black: #586e75;
+	--term-bright-red: #cb4b16;
+	--term-bright-green: #859900;
+	--term-bright-yellow: #b58900;
+	--term-bright-blue: #268bd2;
+	--term-bright-magenta: #6c71c4;
+	--term-bright-cyan: #2aa198;
+	--term-bright-white: #fdf6e3;
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #fdf6e3;
+	--code-bg: #eee8d5;
+	--code-text: #586e75;
+	--code-border: var(--border-soft);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #dc322f;
+	--red-text: #dc322f;
+	--amber-text: #b58900;
+	--info-blue: #2aa198;
+	--link: #268bd2;
+	--link-hover: #2aa198;
+	--link-soft: #268bd2;
+	--md-strong: #073642;
+	--skill-blue: #268bd2;
+	--plugin-purple: #b58cff;
+	--auth-green: #859900;
+	--scroll-thumb: #d5cbab;
+	--scroll-thumb-hover: #b7a982;
+	--notice-err-bg: #401d23;
+	--notice-warn-bg: #38251f;
+	--notice-info-bg: #1b2544;
+	--notice-err-border: #ef4444;
+	--notice-warn-border: #f59e0b;
+	--notice-info-border: #3b82f6;
+	--send-blue: #268bd2;
+	--send-blue-hover: #2aa198;
+	--brand-grad-a: #268bd2;
+	--brand-grad-b: #2aa198;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #1a1d26;
+	--switch-knob: #ffffff;
+	--bg-elev3: rgba(255, 255, 255, 0.06);
+	--sunken-bg: rgba(0, 0, 0, 0.15);
+	--glow-015: rgba(255, 255, 255, 0.015);
+	--glow-025: rgba(255, 255, 255, 0.025);
+	--glow-03: rgba(255, 255, 255, 0.03);
+	--glow-04: rgba(255, 255, 255, 0.04);
+	--glow-05: rgba(255, 255, 255, 0.05);
+	--glow-12: rgba(255, 255, 255, 0.12);
+	--glow-18: rgba(255, 255, 255, 0.18);
+	--glow-22: rgba(255, 255, 255, 0.22);
+	--glow-38: rgba(255, 255, 255, 0.38);
+	--control-fg: #657b83;
+	--control-bg: #eee8d5;
+	--control-border: #d5cbab;
+	--bg-image: none;
+	--bg-image-dim: 0.78;
+	--bg-image-blur: 0px;
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #eee8d5;
+	--statusbar-bg: #eee8d5;
+	--panel-bg: #eee8d5;
+	--card-bg: #eee8d5;
+	--chip-bg: #e0d8be;
+	--msgs-bg: #fdf6e3;
+	--inputbox-bg: #e0d8be;
+	--menu-bg: var(--bg-elev2);
+}
+
+/* ---- syntax highlighting (Solarized Light) ---- */
+.hljs {
+	color: #586e75;
+	background: #eee8d5;
+}
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #859900;
+}
+.hljs-title,
+.hljs-title.function_ {
+	color: #268bd2;
+}
+.hljs-number,
+.hljs-literal {
+	color: #d33682;
+}
+.hljs-string {
+	color: #2aa198;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #b58900;
+}
+.hljs-comment {
+	color: #93a1a1;
+	font-style: italic;
+}

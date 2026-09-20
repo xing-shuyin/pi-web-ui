@@ -1,0 +1,136 @@
+/* theme-name: Catppuccin 浅色 */
+/* theme-name-en: Catppuccin Latte */
+/* theme-group: classic */
+:root {
+	color-scheme: light;
+	--bg: #eff1f5;
+	--bg-elev: #e6e9ef;
+	--bg-elev2: #dce0e8;
+	--border: #ccd0da;
+	--border-soft: #bcc0cc;
+	--text: #4c4f69;
+	--text-dim: #6c6f85;
+	--text-faint: #8c8fa1;
+	--accent: #1e66f5;
+	--accent-soft: rgba(30, 102, 245, 0.12);
+	--green: #40a02b;
+	--green-soft: rgba(64, 160, 43, 0.12);
+	--red: #d20f39;
+	--red-soft: rgba(210, 15, 57, 0.1);
+	--amber: #df8e1d;
+	--term-bg: #eff1f5;
+	--term-fg: #4c4f69;
+	--term-cursor: #dc8a78;
+	--term-cursor-accent: #eff1f5;
+	--term-selection: rgba(172, 176, 190, 0.35);
+	--term-black: #5c5f77;
+	--term-red: #d20f39;
+	--term-green: #40a02b;
+	--term-yellow: #df8e1d;
+	--term-blue: #1e66f5;
+	--term-magenta: #8839ef;
+	--term-cyan: #179299;
+	--term-white: #4c4f69;
+	--term-bright-black: #8c8fa1;
+	--term-bright-red: #d20f39;
+	--term-bright-green: #40a02b;
+	--term-bright-yellow: #df8e1d;
+	--term-bright-blue: #1e66f5;
+	--term-bright-magenta: #8839ef;
+	--term-bright-cyan: #179299;
+	--term-bright-white: #3c3e53;
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #ffffff;
+	--code-bg: #e6e9ef;
+	--code-text: #4c4f69;
+	--code-border: var(--border-soft);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #d20f39;
+	--red-text: #d20f39;
+	--amber-text: #df8e1d;
+	--info-blue: #179299;
+	--link: #1e66f5;
+	--link-hover: #7287fd;
+	--link-soft: #1e66f5;
+	--md-strong: #3c3e53;
+	--skill-blue: #1e66f5;
+	--plugin-purple: #b58cff;
+	--auth-green: #40a02b;
+	--scroll-thumb: #ccd0da;
+	--scroll-thumb-hover: #bcc0cc;
+	--notice-err-bg: #401d23;
+	--notice-warn-bg: #38251f;
+	--notice-info-bg: #1b2544;
+	--notice-err-border: #ef4444;
+	--notice-warn-border: #f59e0b;
+	--notice-info-border: #3b82f6;
+	--send-blue: #1e66f5;
+	--send-blue-hover: #7287fd;
+	--brand-grad-a: #1e66f5;
+	--brand-grad-b: #8839ef;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #1a1d26;
+	--switch-knob: #ffffff;
+	--bg-elev3: rgba(255, 255, 255, 0.06);
+	--sunken-bg: rgba(0, 0, 0, 0.15);
+	--glow-015: rgba(255, 255, 255, 0.015);
+	--glow-025: rgba(255, 255, 255, 0.025);
+	--glow-03: rgba(255, 255, 255, 0.03);
+	--glow-04: rgba(255, 255, 255, 0.04);
+	--glow-05: rgba(255, 255, 255, 0.05);
+	--glow-12: rgba(255, 255, 255, 0.12);
+	--glow-18: rgba(255, 255, 255, 0.18);
+	--glow-22: rgba(255, 255, 255, 0.22);
+	--glow-38: rgba(255, 255, 255, 0.38);
+	--control-fg: #6c6f85;
+	--control-bg: #dce0e8;
+	--control-border: #ccd0da;
+	--bg-image: none;
+	--bg-image-dim: 0.78;
+	--bg-image-blur: 0px;
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #e6e9ef;
+	--statusbar-bg: #e6e9ef;
+	--panel-bg: #e6e9ef;
+	--card-bg: #e6e9ef;
+	--chip-bg: #dce0e8;
+	--msgs-bg: #eff1f5;
+	--inputbox-bg: #dce0e8;
+	--menu-bg: var(--bg-elev2);
+}
+
+/* ---- syntax highlighting (Catppuccin Latte) ---- */
+.hljs {
+	color: #4c4f69;
+	background: #e6e9ef;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #8839ef;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #1e66f5;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fe640b;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #40a02b;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #df8e1d;
+}
+.hljs-comment,
+.hljs-code {
+	color: #7c7f93;
+}
