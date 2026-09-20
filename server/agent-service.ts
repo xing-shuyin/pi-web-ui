@@ -4782,7 +4782,22 @@ export class ClientSession {
 			const curId = cur ? `${cur.provider}/${cur.id}` : null;
 			// Restore the model's provider key first so setModel's auth check passes.
 			await this.restoreKeyForModel(savedModel, cwd);
-			if (curId === savedModel) return;
+			if (curId === savedModel) {
+				// 即使模型已是目标模型，也确保恢复其专属思考强度或全局默认思考强度
+				const sm = this.session.settingsManager as unknown as {
+					getModelThinkingLevel?: (p: string, id: string) => string | undefined;
+					getDefaultThinkingLevel?: () => string | undefined;
+				};
+				const targetThinking = sm?.getModelThinkingLevel?.(model.provider, model.id) ?? sm?.getDefaultThinkingLevel?.();
+				if (targetThinking && this.session.thinkingLevel !== targetThinking) {
+					try {
+						(this.session.setThinkingLevel as (l: unknown) => void)(targetThinking);
+					} catch {
+						/* 模型可能不支持该强度 */
+					}
+				}
+				return;
+			}
 			await this.session.setModel(model);
 		} catch {
 			// model no longer resolvable / key gone — keep the conversation default
@@ -5966,6 +5981,7 @@ export class ClientSession {
 		// Carry the model chosen in the active chat over to the new chat so it
 		// doesn't silently revert to the ModelRuntime default model.
 		const prevModel = this.conv.session.agent.state.model ?? null;
+		const prevThinking = this.conv.session.thinkingLevel ?? null;
 		let ready = false;
 		try {
 			const conversationId = this.nextConversationId();
@@ -5993,6 +6009,13 @@ export class ClientSession {
 					await this.restoreKeyForModel(mid, this.cwd);
 				} catch {
 					// model no longer resolvable — keep the default
+				}
+			}
+			if (prevThinking) {
+				try {
+					(this.session.setThinkingLevel as (l: unknown) => void)(prevThinking);
+				} catch {
+					// model may not support previous thinking level
 				}
 			}
 			this.emitConversations();
@@ -7458,6 +7481,7 @@ export class ClientSession {
 			// Preserve the model the user had selected — fork() seeds a new
 			// branch with the ModelRuntime default model otherwise.
 			const prevModel = this.session.agent.state.model ?? null;
+			const prevThinking = this.session.thinkingLevel ?? null;
 			const result = await this.runtime.fork(entryId);
 			if (result.cancelled) {
 				this.emit({
@@ -7478,6 +7502,13 @@ export class ClientSession {
 					await this.restoreKeyForModel(`${pm.provider}/${pm.id}`, this.cwd);
 				} catch {
 					// model no longer resolvable — keep the default
+				}
+			}
+			if (prevThinking) {
+				try {
+					(this.session.setThinkingLevel as (l: unknown) => void)(prevThinking);
+				} catch {
+					// model no longer supports previous thinking level
 				}
 			}
 			await this.prompt(trimmed, attachments);
@@ -8229,7 +8260,15 @@ export class ClientSession {
 	/** Set the thinking level for future turns. */
 	setThinking(level: string): void {
 		try {
-			this.session.setThinkingLevel(level as Parameters<AgentSession["setThinkingLevel"]>[0]);
+			const lvl = level as Parameters<AgentSession["setThinkingLevel"]>[0];
+			(this.session.setThinkingLevel as (l: unknown, opts?: { persist?: boolean }) => void)(lvl, { persist: true });
+			const cur = this.session.model;
+			if (cur) {
+				const sm = this.session.settingsManager as unknown as {
+					setModelThinkingLevel?: (p: string, id: string, l: unknown) => void;
+				};
+				sm?.setModelThinkingLevel?.(cur.provider, cur.id, lvl);
+			}
 		} catch (err) {
 			this.emit({
 				type: "notice",
@@ -8243,7 +8282,15 @@ export class ClientSession {
 
 	cycleThinking(): void {
 		try {
-			this.session.cycleThinkingLevel();
+			(this.session.cycleThinkingLevel as (opts?: { persist?: boolean }) => unknown)({ persist: true });
+			const cur = this.session.model;
+			const curLevel = this.session.thinkingLevel;
+			if (cur && curLevel) {
+				const sm = this.session.settingsManager as unknown as {
+					setModelThinkingLevel?: (p: string, id: string, l: unknown) => void;
+				};
+				sm?.setModelThinkingLevel?.(cur.provider, cur.id, curLevel);
+			}
 		} catch (err) {
 			this.emit({
 				type: "notice",
