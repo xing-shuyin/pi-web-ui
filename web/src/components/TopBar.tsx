@@ -235,7 +235,7 @@ interface TopBarProps {
 	onSoundChange: (settings: SoundSettings) => void;
 	onSoundPreview: (kind: SoundKind) => void;
 	/** Theme list + current selection + switch handler (owned by App). */
-	themes: { id: string; name: string; builtin: boolean; nameEn?: string }[];
+	themes: { id: string; name: string; builtin: boolean; nameEn?: string; group?: "classic" | "builtin" }[];
 	theme: string | null;
 	onThemeChange: (id: string | null) => void;
 	/** Re-fetch the theme list (called when a theme menu opens with an empty list). */
