@@ -102,4 +102,55 @@ describe("FooterBar 连接状态", () => {
 		expect(connWrapper).toBeTruthy();
 		expect(connWrapper?.textContent).toContain("重连中…");
 	});
+
+	it("无 softCap 时底栏 Context 显示物理上限并按物理上限计算百分比", () => {
+		const chat = makeChatState({
+			state: {
+				stats: {
+					tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					contextUsage: { tokens: 4000, contextWindow: 8000, percent: 50, estimated: false },
+					cost: 0,
+					totalMessages: 0,
+				},
+				queue: { steering: [], followUp: [] },
+			} as unknown as ChatState["state"],
+		});
+		const { container } = mountFooter(chat);
+		const ctxWrapper = container.querySelector(".status-ctx");
+		expect(ctxWrapper).toBeTruthy();
+		expect(ctxWrapper?.textContent).toContain("4k / 8k");
+		const fill = container.querySelector(".ctx-bar-fill") as HTMLElement;
+		expect(fill?.style.width).toBe("50%");
+	});
+
+	it("存在有效 softCap 时底栏 Context 锚定到 softCap 为满格刻度", () => {
+		const chat = makeChatState({
+			state: {
+				stats: {
+					tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					contextUsage: {
+						tokens: 150000,
+						contextWindow: 1000000,
+						softCap: 300000,
+						percent: 15,
+						estimated: false,
+					},
+					cost: 0,
+					totalMessages: 0,
+				},
+				queue: { steering: [], followUp: [] },
+			} as unknown as ChatState["state"],
+		});
+		const { container } = mountFooter(chat);
+		const ctxWrapper = container.querySelector(".status-ctx") as HTMLElement;
+		expect(ctxWrapper).toBeTruthy();
+		// 文本显示 150k / 300k 而非 150k / 1M
+		expect(ctxWrapper?.textContent).toContain("150k / 300k");
+		// 进度条填充度为 150000 / 300000 = 50%
+		const fill = container.querySelector(".ctx-bar-fill") as HTMLElement;
+		expect(fill?.style.width).toBe("50%");
+		// hover tooltip 包含软上限与物理上限提示
+		expect(ctxWrapper?.title).toContain("300k");
+		expect(ctxWrapper?.title).toContain("1M");
+	});
 });

@@ -134,11 +134,19 @@ export function FooterBar({ chat, bottombarItems, onUiAction }: FooterBarProps) 
 	const connLabel = chat.ready ? t("connected") : chat.status === "closed" ? t("reconnecting") : t("connecting");
 
 	const context = s.contextUsage;
+	// 压缩软上限（issue #229 / #245）：设置了有效软上限时，底栏进度条与数字显示以该上限为满格刻度
+	const cap = context.softCap ?? null;
+	const hasCap = cap !== null && cap > 0 && cap < context.contextWindow;
+	const effectiveMax = hasCap ? cap : context.contextWindow;
+
+	const ctxPercent =
+		context.tokens !== null && effectiveMax > 0
+			? Math.min(100, Math.round((context.tokens / effectiveMax) * 100))
+			: null;
 	const ctxText =
-		context.tokens !== null && context.percent !== null
-			? `${context.estimated ? "~" : ""}${formatTokens(context.tokens)} / ${formatTokens(context.contextWindow)}`
+		context.tokens !== null && ctxPercent !== null
+			? `${context.estimated ? "~" : ""}${formatTokens(context.tokens)} / ${formatTokens(effectiveMax)}`
 			: "—";
-	const ctxPercent = context.percent ?? null;
 	const ctxBarClass = ctxPercent === null ? "" : ctxPercent >= 80 ? "warn" : ctxPercent >= 50 ? "mid" : "ok";
 
 	const queueTotal = state.queue.steering.length + state.queue.followUp.length;
@@ -217,11 +225,11 @@ export function FooterBar({ chat, bottombarItems, onUiAction }: FooterBarProps) 
 				</span>
 			) : null,
 		"host:ctx": (() => {
-			// 压缩软上限标记线（issue #229）：画在 cap/window 处，到线即自动压缩。
-			const cap = context.softCap ?? null;
-			const capPct = cap !== null && cap > 0 && context.contextWindow > 0 ? (cap / context.contextWindow) * 100 : null;
-			const ctxTitle =
-				capPct !== null ? `${t("contextUsage")} · ${t("softCapMarker")}: ${formatTokens(cap!)}` : t("contextUsage");
+			const ctxTitle = hasCap
+				? `${t("contextUsage")}: ${formatTokens(context.tokens ?? 0)} / ${formatTokens(cap)} (${t("softCapMarker")}, max ${formatTokens(context.contextWindow)})`
+				: cap !== null && cap > 0
+					? `${t("contextUsage")} · ${t("softCapMarker")}: ${formatTokens(cap)}`
+					: t("contextUsage");
 			return (
 				<span className="status-item status-ctx" title={ctxTitle}>
 					{/* 窄屏（≤420px）只留进度条 + 数字，标签由 CSS 收起 */}
@@ -229,9 +237,6 @@ export function FooterBar({ chat, bottombarItems, onUiAction }: FooterBarProps) 
 					<span className={`ctx-bar ${ctxBarClass}`}>
 						{ctxPercent !== null && (
 							<span className="ctx-bar-fill" style={{ width: `${Math.min(ctxPercent, 100)}%` }} />
-						)}
-						{capPct !== null && capPct > 0 && capPct < 100 && (
-							<span className="ctx-cap-marker" style={{ left: `${capPct}%` }} />
 						)}
 					</span>
 					{ctxText}
