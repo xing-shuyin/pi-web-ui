@@ -151,6 +151,6 @@ describe("FooterBar 连接状态", () => {
 		expect(fill?.style.width).toBe("50%");
 		// hover tooltip 包含软上限与物理上限提示
 		expect(ctxWrapper?.title).toContain("300K");
-		expect(ctxWrapper?.title).toContain("1M");
+		expect(ctxWrapper?.title).toContain("1000K");
 	});
 });
