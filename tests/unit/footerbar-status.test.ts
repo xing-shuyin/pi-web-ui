@@ -118,7 +118,7 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const ctxWrapper = container.querySelector(".status-ctx");
 		expect(ctxWrapper).toBeTruthy();
-		expect(ctxWrapper?.textContent).toContain("4k / 8k");
+		expect(ctxWrapper?.textContent).toContain("4K / 8K");
 		const fill = container.querySelector(".ctx-bar-fill") as HTMLElement;
 		expect(fill?.style.width).toBe("50%");
 	});
@@ -144,13 +144,13 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const ctxWrapper = container.querySelector(".status-ctx") as HTMLElement;
 		expect(ctxWrapper).toBeTruthy();
-		// 文本显示 150k / 300k 而非 150k / 1M
-		expect(ctxWrapper?.textContent).toContain("150k / 300k");
+		// 文本显示 150K / 300K 而非 150K / 1M
+		expect(ctxWrapper?.textContent).toContain("150K / 300K");
 		// 进度条填充度为 150000 / 300000 = 50%
 		const fill = container.querySelector(".ctx-bar-fill") as HTMLElement;
 		expect(fill?.style.width).toBe("50%");
 		// hover tooltip 包含软上限与物理上限提示
-		expect(ctxWrapper?.title).toContain("300k");
+		expect(ctxWrapper?.title).toContain("300K");
 		expect(ctxWrapper?.title).toContain("1M");
 	});
 });
