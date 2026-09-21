@@ -538,6 +538,27 @@ list with a one-line PR to `plugins/catalog.json`.
 Each plugin's directory in the repo has its own `README.md` with full feature
 lists, configuration and per-plugin caveats.
 
+### Community plugins
+
+The catalog is not limited to this repository: an entry's `source` may point at any GitHub
+repository (`owner/repo`, an `owner/repo/subdir` inside a monorepo, either with an optional
+`#ref`), so a plugin that is developed, released and supported elsewhere can still be listed in
+the market and installed exactly like the ones above — same install / update / rollback
+lifecycle, same `<dataDir>/plugins/<id>/` layout, `config.json` preserved across updates.
+
+The code is fetched from that repository at install time, not vendored here: a community entry
+is a pointer, and its license, issues and release cadence belong to its author. Put a `#ref` in
+the `source` if you want a pinned revision.
+
+| Plugin | What it does |
+| ------ | ------------ |
+| 🌿 [multi-git](https://github.com/EinErste/pi-web-multigit) | Multi-repository Git overview: changes, diffs, history, branches, stashes, cross-repo search, a timeline and per-file rollback for every repository below the project directory, plus a workspace-wide branch view, Fetch/Pull (fast-forward only) and an optional PTY terminal. Read-only otherwise. |
+
+Getting listed is the same one line as any other entry — an entry in `plugins/catalog.json` plus a
+PR. Without a PR you can register the plugin locally in the market (stored in
+`<dataDir>/plugin-catalog.json`), or point the market at a catalog document you host yourself
+with `pi-web-ui install --catalog <url>`.
+
 ### Installing
 
 From GitHub (any of these source forms):
@@ -833,7 +854,7 @@ pi-web-ui is a small open-source project — **your contributions are what make 
 
 | Way to contribute                | How to get started                                                                                                                                                                                                                                                                                     |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🧩 **Write a plugin**            | Build your own UI tab + agent tools. Copy `plugins/demo-mailbox` as the minimal template (it doubles as the test fixture), develop locally, then either open a PR to ship it in the [catalog](#plugin-catalog) or [publish it standalone](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins). |
+| 🧩 **Write a plugin**            | Build your own UI tab + agent tools. Copy `plugins/demo-mailbox` as the minimal template (it doubles as the test fixture), develop locally, then either open a PR to ship it in the [catalog](#plugin-catalog) or [publish it standalone](https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins) and list it there anyway — see [Community plugins](#community-plugins). |
 | 🎨 **Contribute a theme**        | Copy `themes/white.css` (light) or `themes/cyberpunk.css` (dark) as a pure-palette template, tweak the `:root` palette + `--term-*` + `.hljs`, verify with `npm run dev`, then open a PR — full walkthrough in [Contributing a theme](#contributing-a-theme-to-the-repository-github).                 |
 | 💻 **Fix a bug / add a feature** | Look for [open issues](https://github.com/xing-shuyin/pi-web-ui/issues) or propose something new. Fork → branch → PR. Keep the code conventions in `AGENTS.md` (tabs, i18n keys in both languages, protocol changes in `server/protocol.ts`).                                                          |
 | 📖 **Docs & translations**       | Improve the READMEs, write plugin docs, fix typos, or help translate the UI / docs into more languages.                                                                                                                                                                                                |

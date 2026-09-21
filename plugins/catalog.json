@@ -108,5 +108,15 @@
 		"descriptionEn": "Notes, todos and scheduled reminders in one place: a freely draggable always-on-top panel (position, size and settings all live in it, no separate view tab); reminders fire server-side (survive restarts, delivered on next open), with 5 AI tools and /note /todo /remind quick capture.",
 		"source": "xing-shuyin/pi-web-ui/plugins/notes",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/notes"
+	},
+	{
+		"id": "pi-web-multigit",
+		"name": "multi-git",
+		"icon": "🌿",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"18\" r=\"3\"/><circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><path d=\"M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9\"/><path d=\"M12 12v3\"/></svg>",
+		"description": "多仓库 Git 总览：工作区内每个仓库的变更、差异、历史、分支、贮藏、跨仓搜索与时间线，另有工作区分支聚合、Fetch/Pull 与内置终端（其余只读）。",
+		"descriptionEn": "Multi-repo Git overview: changes, diffs, history, branches, stashes, cross-repo search and a timeline for every repository in the workspace, plus a workspace-wide branch view, Fetch/Pull and an optional terminal.",
+		"source": "EinErste/pi-web-multigit",
+		"homepage": "https://github.com/EinErste/pi-web-multigit"
 	}
 ]
