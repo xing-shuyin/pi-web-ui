@@ -35,7 +35,7 @@ import { parseSkillBlock, type SkillBlock } from "../skill-block";
 import { isRasterImage, fileToProcessedImage } from "../image-paste";
 import { openContextMenu } from "../context-menu-state";
 import { messageMarkdown, messagePlainText } from "../copy-text";
-import { copyMessageCardAsImage } from "../message-image";
+import { openExportImage, toggleExportImageSelect, useExportImage } from "../export-image-state";
 import { hasMessageWidget } from "../plugin-fence";
 import type { UiSlotEntry } from "../ui-slots";
 
@@ -372,6 +372,7 @@ export const Message = memo(function Message({
 	const cardRef = useRef<HTMLDivElement>(null);
 	/** 最近一次整条复制的回显（成功 ✓ / 失败 title 报错），1.6s 后自动复位。 */
 	const [copyState, setCopyState] = useState<{ id: string; ok: boolean } | null>(null);
+	const exportImage = useExportImage();
 	const copyTimer = useRef(0);
 	const wholeMarkdown = messageMarkdown(message.content);
 	/** 只有人/助手消息的文本才值得整条复制（工具卡片、附件卡各有自己的复制键）。 */
@@ -382,9 +383,8 @@ export const Message = memo(function Message({
 			if (id === "host:msg-copy-text") await navigator.clipboard.writeText(messagePlainText(message.content));
 			else if (id === "host:msg-copy-markdown") await navigator.clipboard.writeText(wholeMarkdown);
 			else {
-				if (!cardRef.current) throw new Error("no card element");
-				// 长图导出（html-to-image 按需加载，不进首屏 bundle）。
-				await copyMessageCardAsImage(cardRef.current);
+				openExportImage(message.id);
+				return;
 			}
 			window.clearTimeout(copyTimer.current);
 			setCopyState({ id, ok: true });
@@ -593,14 +593,30 @@ export const Message = memo(function Message({
 		? JSON.stringify({ customType: message.customType, details: message.details ?? {} })
 		: "";
 
+	const exportSelected = exportImage.open && exportImage.selectedIds.includes(message.id);
+	const showExportCheck = exportImage.open && canCopyWhole;
+	const exportForceThinking = exportSelected && exportImage.includeThinking;
+	const exportForceTools = exportSelected && exportImage.includeTools;
+
 	return (
 		<div
 			ref={cardRef}
-			className={`msg msg-${message.role}${isGoalReview ? " msg-goal-review" : ""}`}
+			className={`msg msg-${message.role}${isGoalReview ? " msg-goal-review" : ""}${exportSelected ? " msg-export-selected" : ""}`}
 			data-role={message.role}
 			data-msg-id={message.id}
 			onContextMenu={onMsgContextMenu}
 		>
+			{showExportCheck && (
+				<input
+					type="checkbox"
+					className="msg-export-check"
+					checked={exportSelected}
+					title={t("copyImage")}
+					aria-label={t("copyImage")}
+					onClick={(e) => e.stopPropagation()}
+					onChange={() => toggleExportImageSelect(message.id)}
+				/>
+			)}
 			<div className="msg-meta">
 				{onCollapse && (
 					<button
@@ -782,6 +798,8 @@ export const Message = memo(function Message({
 											toolImages={toolImages}
 											thinkingWrap={thinkingWrap}
 											searchActive={searchActive}
+											forceThinking={exportForceThinking}
+											forceTools={exportForceTools}
 											role={message.role}
 											showCopy={copyAllowed}
 											uiContextToolCall={uiContextToolCall}
@@ -806,6 +824,8 @@ export const Message = memo(function Message({
 										toolImages={toolImages}
 										thinkingWrap={thinkingWrap}
 										searchActive={searchActive}
+										forceThinking={exportForceThinking}
+										forceTools={exportForceTools}
 										role={message.role}
 										showCopy={copyAllowed}
 										uiContextToolCall={uiContextToolCall}
@@ -828,6 +848,8 @@ export const Message = memo(function Message({
 									toolImages={toolImages}
 									thinkingWrap={thinkingWrap}
 									searchActive={searchActive}
+									forceThinking={exportForceThinking}
+									forceTools={exportForceTools}
 									role={message.role}
 									showCopy={copyAllowed}
 									uiContextToolCall={uiContextToolCall}
@@ -1158,6 +1180,8 @@ function Block({
 	toolsWrap,
 	toolImages,
 	searchActive,
+	forceThinking,
+	forceTools,
 	role,
 	showCopy,
 	uiContextToolCall,
@@ -1178,6 +1202,10 @@ function Block({
 	toolImages?: boolean;
 	/** 会话内搜索打开：强制展开思考/工具卡。 */
 	searchActive?: boolean;
+	/** 导出图勾了「包含思考」且本条被选中。 */
+	forceThinking?: boolean;
+	/** 导出图勾了「包含工具」且本条被选中。 */
+	forceTools?: boolean;
 	/** 消息角色 — assistant/user 的纯文本块显示复制按钮。 */
 	role?: UiMessage["role"];
 	/** 是否画文本块上的复制键（false = 宿主在布局里隐藏了 `host:msg-copy`）。 */
@@ -1243,7 +1271,7 @@ function Block({
 				thinking={thinking.thinking}
 				streaming={streaming && isLast}
 				wrap={thinkingWrap}
-				forceOpen={searchActive}
+				forceOpen={searchActive || forceThinking}
 			/>
 		);
 	}
@@ -1265,7 +1293,7 @@ function Block({
 				onKillBash={onKillBash}
 				wrap={toolsWrap}
 				showImages={toolImages ?? true}
-				forceOpen={searchActive}
+				forceOpen={searchActive || forceTools}
 				uiContextToolCall={uiContextToolCall}
 				onUiAction={onUiAction}
 			/>

@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { UiMessage } from "../types";
 import { useT } from "../i18n";
 import { asBash, asImage, asText, asThinking, asToolCall, roleLabel } from "./Message";
+import { isExportableMessage, toggleExportImageSelect, useExportImage } from "../export-image-state";
 
 import { parseSkillBlock } from "../skill-block";
 
@@ -18,6 +19,10 @@ interface CollapsedMessageProps {
  */
 export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpand }: CollapsedMessageProps) {
 	const t = useT();
+	const exportImage = useExportImage();
+	const exportable = isExportableMessage(message);
+	const exportSelected = exportImage.open && exportImage.selectedIds.includes(message.id);
+	const showExportCheck = exportImage.open && exportable;
 
 	// Plain-text preview (first text block, first line, ~90 chars — no Markdown).
 	let preview = "";
@@ -64,7 +69,7 @@ export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpa
 		<div
 			role="button"
 			tabIndex={0}
-			className="msg-collapsed"
+			className={`msg-collapsed${exportSelected ? " msg-export-selected" : ""}`}
 			data-msg-id={message.id}
 			title={`${t("expandMsg")} · ${preview || chips.join(" · ") || message.role}`}
 			onClick={() => onExpand(message.id)}
@@ -75,6 +80,17 @@ export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpa
 				}
 			}}
 		>
+			{showExportCheck && (
+				<input
+					type="checkbox"
+					className="msg-export-check"
+					checked={exportSelected}
+					title={t("copyImage")}
+					aria-label={t("copyImage")}
+					onClick={(e) => e.stopPropagation()}
+					onChange={() => toggleExportImageSelect(message.id)}
+				/>
+			)}
 			<span className={`msg-collapsed-role role-${message.role}`}>
 				{message.role === "custom" && message.customType === "file" ? t("attachment") : roleLabel(message.role, t)}
 			</span>

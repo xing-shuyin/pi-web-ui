@@ -27,6 +27,8 @@ import { classifyScroll } from "./scroll-classify";
 import { EmptyTemplateCards } from "./PromptTemplates";
 import { renderSlotToolbar } from "../slot-toolbar";
 import { useT } from "../i18n";
+import { isExportableMessage, setExportMessageCatalog, useExportImage } from "../export-image-state";
+import { SaveImageDialog } from "./SaveImageDialog";
 
 /** Stable shared empty map — passing this (instead of a fresh Map) lets
  *  React.memo skip messages that have no live tool output to show. */
@@ -209,6 +211,7 @@ export function MessageList({
 	onUiAction,
 }: MessageListProps) {
 	const t = useT();
+	const exportImage = useExportImage();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [stickBottom, setStickBottom] = useState(true);
 	const stickRef = useRef(true);
@@ -461,6 +464,28 @@ export function MessageList({
 	const expand = useCallback((id: string) => {
 		setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 	}, []);
+
+	useLayoutEffect(() => {
+		setExportMessageCatalog(
+			state.messages.filter(isExportableMessage).map((m) => ({ id: m.id, role: m.role, content: m.content })),
+		);
+	}, [state.messages]);
+
+	useEffect(() => {
+		if (!exportImage.open) return;
+		for (const id of exportImage.selectedIds) expand(id);
+		setPinned((prev) => {
+			let changed = false;
+			const next = new Set(prev);
+			for (const id of exportImage.selectedIds) {
+				if (!next.has(id)) {
+					next.add(id);
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [exportImage.open, exportImage.selectedIds, expand]);
 
 	// Ctrl+F / Cmd+F 打开搜索（可编辑元素内不抢占）
 	useEffect(() => {
@@ -781,7 +806,7 @@ export function MessageList({
 	const many = railGap < 20;
 
 	return (
-		<div className="messages-wrap">
+		<div className={`messages-wrap${exportImage.open ? " messages-exporting" : ""}`}>
 			<div
 				// anchor-live：未钉底（逃逸阅读）时启用原生滚动锚定，兜住部分跨视口
 				// 边缘消息的占位⇄真身互换跳动；与钉底期的程序性再钉互斥（那时无此类）。
@@ -973,6 +998,7 @@ export function MessageList({
 					)}
 				</div>
 			)}
+			<SaveImageDialog />
 		</div>
 	);
 }
