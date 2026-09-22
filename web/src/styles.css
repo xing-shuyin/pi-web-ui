@@ -1210,6 +1210,13 @@ body.rp-resizing .rp-sash.dragging::after {
 .lp-row:hover .lp-del {
 	display: inline-flex;
 }
+/* 触屏没有 hover，也没有可靠的右键：elsewhere 行的操作钮在无悬停设备上常驻可见
+   （其余行的 ✎/✕ 仍按 hover 显隐，避免一次性改动既有行的视觉）。 */
+@media (hover: none) {
+	.lp-row .lp-elsewhere-act {
+		display: inline-flex;
+	}
+}
 /* hover 时隐藏时间标签，给删除按钮腾位置 */
 .lp-row:hover .project-time,
 .lp-row:hover .session-time {

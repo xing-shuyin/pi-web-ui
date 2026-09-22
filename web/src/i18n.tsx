@@ -202,6 +202,7 @@ export const zh = {
 	runningConversations: "运行的对话",
 	elsewhereBadge: "另一处",
 	elsewhereTip: "在其他标签页 / 设备上打开的对话（运行中或已结束未关闭，右键可过户到本页查看）",
+	elsewhereActions: "操作（过户到本页 / 复制 id…）",
 	takeoverConversation: "过户到当前页面",
 	takeoverHasQuestion: "有问卷等答复，点击直接作答",
 	waitingQuestionBadge: "有问卷等答复，点击查看",
@@ -1753,6 +1754,7 @@ const en: Record<keyof typeof zh, string> = {
 	elsewhereBadge: "Elsewhere",
 	elsewhereTip:
 		"Conversation open in another tab / device (running, or finished but still held there; right-click to take over and view it here)",
+	elsewhereActions: "Actions (take over here, copy id…)",
 	takeoverConversation: "Take over to this page",
 	takeoverHasQuestion: "Has a pending question — click to answer it here",
 	waitingQuestionBadge: "Waiting on your answer — click to view",

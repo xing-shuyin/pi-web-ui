@@ -8,6 +8,7 @@ import {
 	FiFolder,
 	FiFolderPlus,
 	FiMessageSquare,
+	FiMoreVertical,
 	FiPlus,
 	FiTrash2,
 	FiX,
@@ -829,6 +830,29 @@ export const LeftPanel = memo(function LeftPanel({
 															</span>
 															{c.isStreaming && <span className="conv-streaming" title={t("streaming")} />}
 														</div>
+														{/* 触屏没有右键（contextmenu 不可靠）：给「另一处」行一个可见的操作钮，点开与右键同一个会话菜单
+															（过户 / 抢答问卷 / 复制 id）；槽位暂无可显示条目时不渲染（同右键路径的让路口径）。 */}
+														{sessionMenuAvailable && (
+															<button
+																type="button"
+																className="lp-del lp-elsewhere-act"
+																title={t("elsewhereActions")}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	forceArmedRef.current = null;
+																	// 坐标按按钮矩形锚定（触屏 click 的 clientX/Y 不可靠），clampMenuPosition 会自行钳进视口。
+																	const r = e.currentTarget.getBoundingClientRect();
+																	showSessionMenu(r.left, r.bottom + 4, {
+																		id: (c as RowConv).convId ?? c.id,
+																		kind: "elsewhere",
+																		label: c.title,
+																		...((c as RowConv).owner ? { owner: (c as RowConv).owner } : {}),
+																	});
+																}}
+															>
+																<FiMoreVertical />
+															</button>
+														)}
 													</div>
 												);
 											}
