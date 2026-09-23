@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
+import { basename } from "node:path";
 import { makeEvalTool, disposeAllEvalKernels, EVAL_TOOL_NAME } from "../../server/eval-tool.js";
 
 async function run(
@@ -172,21 +173,21 @@ describe("eval tool (persistent sandbox)", () => {
 	it("sandbox cwd is an isolated temp dir; project dir is exposed as PROJECT_DIR", async () => {
 		const tool = makeEvalTool({ cwd: process.cwd(), ownerId: "test-sandbox-cwd" });
 		const projectCwd = process.cwd();
-		expect(projectCwd).toContain("pi-web-ui-repo");
+		const base = basename(projectCwd);
 
 		// Python: kernel cwd 落在系统临时目录，PROJECT_DIR 指向项目。
 		const pyCwd = await run(tool, { language: "py", code: "import os; os.getcwd()", timeout: 10 });
 		expect(pyCwd.details.ok).toBe(true);
-		expect(pyCwd.details.result).not.toContain("pi-web-ui-repo");
+		expect(pyCwd.details.result).not.toContain(base);
 
 		const pyProject = await run(tool, { language: "py", code: "PROJECT_DIR", timeout: 10 });
 		expect(pyProject.details.ok).toBe(true);
-		expect(pyProject.details.result).toContain("pi-web-ui-repo");
+		expect(pyProject.details.result).toContain(base);
 
 		// JS: same contract.
 		const jsCwd = await run(tool, { language: "js", code: "process.cwd()", timeout: 10 });
 		expect(jsCwd.details.ok).toBe(true);
-		expect(jsCwd.details.result).not.toContain("pi-web-ui-repo");
+		expect(jsCwd.details.result).not.toContain(base);
 
 		const jsProject = await run(tool, { language: "js", code: "PROJECT_DIR", timeout: 10 });
 		expect(jsProject.details.ok).toBe(true);
