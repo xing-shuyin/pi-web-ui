@@ -3138,8 +3138,7 @@ const en: Record<keyof typeof zh, string> = {
 		"Disabled: the AI can no longer claim files (post-hoc touch reminders still work, only the up-front intent signal is gone)",
 	evalEnabledDesc:
 		"Execute Python or JavaScript/TypeScript code in an isolated sandbox with persistent variables; ideal for calculations, data analysis, and algorithm verification (default-off to prevent tool crowding-out).",
-	evalOffHint:
-		"Disabled: the AI cannot use the persistent code sandbox (can still run scripts via bash)",
+	evalOffHint: "Disabled: the AI cannot use the persistent code sandbox (can still run scripts via bash)",
 	/* Tool definition dialog (tool-card right-click → show tool details; the definition comes from get_tool_info) */
 	toolInfoMenuLabel: "Show tool details",
 	toolInfoTitle: "Tool details",

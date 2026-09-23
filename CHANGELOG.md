@@ -21,9 +21,11 @@
 - **Docker 构建阶段安装 Python 工具链** — `Dockerfile` 的 `build` 阶段增加 `python3 make g++` 安装，避免在缺少 `node-pty` 预编译二进制的平台架构下执行 `npm ci` 时因 `node-gyp rebuild` 找不到 Python 报错（#279）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（3）：`elsewhereActions`、`evalEnabledDesc`、`evalOffHint`
+
 <!-- auto-i18n:end -->
 
 ## [0.94.1] — 2026-09-22

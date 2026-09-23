@@ -8958,7 +8958,7 @@ ${DANGLING_TOOL_RESULT_TEXT_EN}`,
 				// best effort
 			}
 		}
-			disposeAllEvalKernels();
+		disposeAllEvalKernels();
 	}
 }
 
