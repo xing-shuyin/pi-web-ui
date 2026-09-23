@@ -1364,6 +1364,8 @@
 		"skillOffHint": "Disabled: the AI can no longer load skill bodies by name (the catalog in the prompt is unaffected)",
 		"claimFilesEnabledDesc": "Declare which files you are about to edit so parallel runs in the same project can steer clear (advisory only — it never blocks edits). First-wins; claims expire automatically.",
 		"claimFilesOffHint": "Disabled: the AI can no longer claim files",
+		"evalEnabledDesc": "変数が保持される隔離されたサンドボックスで Python または JavaScript/TypeScript コードを実行します。即時の計算、データ分析、アルゴリズム検証に最適です（デフォルト無効）。",
+		"evalOffHint": "無効：AI は永続的なコードサンドボックスを使用できません（bash 経由でスクリプトを実行できます）",
 		"toolInfoMenuLabel": "ツールの詳細を表示",
 		"toolInfoTitle": "ツールの詳細",
 		"toolInfoLoading": "ツール定義を読み込み中…",

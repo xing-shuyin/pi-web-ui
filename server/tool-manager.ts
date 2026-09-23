@@ -61,6 +61,8 @@ export const SKILL_TOOL_NAME = "skill";
 export const SCHEDULE_TASK_TOOL_NAME = "schedule_task";
 export const SCHEDULE_LIST_TOOL_NAME = "schedule_list";
 export const SCHEDULE_CANCEL_TOOL_NAME = "schedule_cancel";
+/** 持久代码求值沙箱工具（定义见 eval-tool.ts）：在受控持久内核中执行 Python 或 JS/TS 代码。 */
+export const EVAL_TOOL_NAME = "eval";
 /** 展示文件工具（定义见 present-files-tool.ts）：把图片/视频/文本作为预览卡片
  *  推到对话里，卡片带预览/本地打开/在文件夹中显示/下载/复制路径。 */
 export const PRESENT_FILES_TOOL_NAME = "present_files";
@@ -88,7 +90,7 @@ export interface AgentToolEntry {
 	offHintKey?: string;
 }
 
-/** 可开关的 Agent 工具总目录（共 26 个；bash 本体与 SDK 内置 edit/read
+/** 可开关的 Agent 工具总目录（共 27 个；bash 本体与 SDK 内置 edit/read
  *  不进目录——关了 agent 就残了，不给关）。 */
 export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 	...TERMINAL_TOOL_NAMES.map((name): AgentToolEntry => ({
@@ -176,6 +178,16 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		dshVisible: false,
 		descKey: "skillEnabledDesc",
 		offHintKey: "skillOffHint",
+	},
+	// 持久代码求值沙箱（Python / Node.js）：默认关（opt-in，防工具挤占）；
+	// DSH 引擎没有该 customTool。
+	{
+		name: EVAL_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		dshVisible: false,
+		descKey: "evalEnabledDesc",
+		offHintKey: "evalOffHint",
 	},
 	// 定时/延时唤醒：默认开（不打开 AI 根本不知道能定时；60s 间隔底线＋面板可随时取消），
 	// DSH 引擎没有该 customTool（走 goal-rpc，无 customTool 注册面）。

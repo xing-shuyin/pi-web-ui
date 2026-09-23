@@ -1364,6 +1364,8 @@
 		"skillOffHint": "Disabled: the AI can no longer load skill bodies by name (the catalog in the prompt is unaffected)",
 		"claimFilesEnabledDesc": "Declare which files you are about to edit so parallel runs in the same project can steer clear (advisory only — it never blocks edits). First-wins; claims expire automatically.",
 		"claimFilesOffHint": "Disabled: the AI can no longer claim files",
+		"evalEnabledDesc": "Выполнение кода Python или JavaScript/TypeScript в изолированной песочнице с постоянными переменными; идеально подходит для вычислений, анализа данных и проверки алгоритмов (по умолчанию отключено).",
+		"evalOffHint": "Отключено: ИИ не может использовать постоянную песочницу (по-прежнему можно запускать скрипты через bash)",
 		"toolInfoMenuLabel": "Показать описание инструмента",
 		"toolInfoTitle": "Описание инструмента",
 		"toolInfoLoading": "Загрузка описания инструмента…",

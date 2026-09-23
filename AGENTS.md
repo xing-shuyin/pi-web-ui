@@ -46,7 +46,7 @@ pi-web-ui/
 │   ├── settings-service.ts     # 设置面板状态机
 │   ├── goal-service.ts         # 目标/审查循环/调研向导
 │   ├── i18n.ts                 # 服务端语言协商 + 翻译表注册（resolveServerLang/pick/bilingual/getServerBlock；v2 见下）
-│   ├── tool-manager.ts         # ★ Agent 工具统一开关：AGENT_TOOL_CATALOG（终端 7＋子代理 7＋其他 12：edit_soft/delegate_task/ask_user_question/todo_list/browser_page/conversation_read/skill/schedule_task/schedule_list/schedule_cancel/present_files/claim_files；合计 26）＋ tool_manage 出入口（setAgentToolEnabled/applyAgentToolsGating），持久化只有 disabledAgentTools，遗留三开关双向同步
+│   ├── tool-manager.ts         # ★ Agent 工具统一开关：AGENT_TOOL_CATALOG（终端 7＋子代理 7＋其他 13：edit_soft/delegate_task/ask_user_question/todo_list/browser_page/conversation_read/skill/schedule_task/schedule_list/schedule_cancel/present_files/claim_files/eval；合计 27）＋ tool_manage 出入口（setAgentToolEnabled/applyAgentToolsGating），持久化只有 disabledAgentTools，遗留三开关双向同步
 │   ├── edit-soft-tool.ts       # 独立宽松编辑工具 edit_soft（行核心匹配，忽略缩进差异；开关走统一工具 tab）
 │   ├── read-tool.ts            # 覆盖内置 read：路径是目录时列目录条目（复用 SDK ls 的口径，其余原样转发内置；行为开关 readDirEnabled 在设置「工具」页，不入 AGENT_TOOL_CATALOG）
 │   ├── present-files-tool.ts   # ★ AI 展示文件（present_files）：只读探测 stat/未知扩展嗅探/文本摘录 → 结构化 items 走 toolResult 的 details → 前端预览卡片；不自动打开任何窗口

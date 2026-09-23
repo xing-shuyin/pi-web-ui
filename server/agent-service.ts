@@ -118,6 +118,8 @@ import { makeEditSoftTool } from "./edit-soft-tool.js";
 import { makeReadDirTool } from "./read-tool.js";
 // 展示文件给用户（present_files）：图片/视频内联、文本开预览弹窗、本地打开按钮。
 import { makePresentFilesTool } from "./present-files-tool.js";
+// 持久代码求值沙箱（eval）：Python / Node.js 沙箱内核。
+import { disposeAllEvalKernels, disposeEvalSession, makeEvalTool } from "./eval-tool.js";
 // 工具定义说明的归一化（工具卡右键 → 「显示工具详细信息」，见 getToolInfo）。
 import { normalizeToolInfo, type RawToolDefinition } from "./tool-info.js";
 import {
@@ -2777,6 +2779,13 @@ export class ClientSession {
 					// 会话同样注册（owner 即真正派发的父对话）。开关走统一工具 tab。
 					// DSH 引擎无 customTool 注册面，不接。
 					...makeScheduleTools(this.scheduleToolHost(), ownerId, () => this.getLang()),
+					// 持久代码求值沙箱（eval）：开关走统一工具 tab（ActiveSet 门控，默认关）。
+					// ownerId 绑定当前会话；DSH 引擎无 customTool 注册面，不接。
+					makeEvalTool({
+						cwd: effectiveCwd,
+						ownerId,
+						lang: () => this.getLang(),
+					}),
 				],
 			});
 			// 桥接工具归属锚点：SDK 会话对象在本 runtime 生命周期内稳定，过户只搬对话
@@ -6274,6 +6283,7 @@ ${DANGLING_TOOL_RESULT_TEXT_EN}`,
 			conv.unsubscribe = undefined;
 			this.clearAllToolWatchdogs(conv);
 			conv.toolStartTimes.clear();
+			disposeEvalSession(conv.id);
 			await conv.runtime.dispose();
 			// #280：dispose 丢弃了内存里的在飞状态（未落盘的工具结果蒸发），
 			// 文件尾可能留下一个悬空 toolCall——先补合成 toolResult 再重建，
@@ -6746,6 +6756,9 @@ ${DANGLING_TOOL_RESULT_TEXT_EN}`,
 		}
 		this.convs.delete(id);
 		this.clearAllToolWatchdogs(conv);
+		// 关对话 → 连它的 eval 内核（Python/Node 子进程 + 临时沙箱目录）一起回收：
+		// 这些进程是 detached 进程组，父进程退出不会自动带走它们。
+		disposeEvalSession(id);
 		conv.terminals.killAll();
 		conv.unsubscribe?.();
 		conv.unsubscribe = undefined;
@@ -8936,6 +8949,8 @@ ${DANGLING_TOOL_RESULT_TEXT_EN}`,
 		this.bg.stop();
 		for (const conv of this.convs.values()) {
 			this.clearAllToolWatchdogs(conv);
+			// 逐个对话回收 eval 内核；下面的兜底再清一次表（含已 delete 的残留）。
+			disposeEvalSession(conv.id);
 			conv.unsubscribe?.();
 			try {
 				await conv.runtime.dispose();
@@ -8943,6 +8958,7 @@ ${DANGLING_TOOL_RESULT_TEXT_EN}`,
 				// best effort
 			}
 		}
+			disposeAllEvalKernels();
 	}
 }
 

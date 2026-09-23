@@ -14,6 +14,7 @@ import {
 	defaultDisabledAgentTools,
 	deriveLegacy,
 	effectiveDisabledAgentTools,
+	EVAL_TOOL_NAME,
 	foldLegacyIntoDisabled,
 	isAgentToolEnabled,
 	isKnownAgentTool,
@@ -39,16 +40,17 @@ function fakeSet(initial: string[] = []) {
 }
 
 describe("catalog", () => {
-	it("共 26 个可开关工具（终端 7＋子代理 7＋其他 12）", () => {
-		expect(AGENT_TOOL_CATALOG).toHaveLength(26);
+	it("共 27 个可开关工具（终端 7＋子代理 7＋其他 13）", () => {
+		expect(AGENT_TOOL_CATALOG).toHaveLength(27);
 		expect(TERMINAL_TOOL_NAMES).toHaveLength(7);
 		expect(SUBAGENT_TOOL_NAMES).toHaveLength(7);
 	});
 
-	it("默认：终端组/edit_soft 关，其余开（与改动前行为一致）", () => {
+	it("默认：终端组/edit_soft/eval 关，其余开（与改动前行为一致）", () => {
 		const off = new Set(defaultDisabledAgentTools());
 		for (const n of TERMINAL_TOOL_NAMES) expect(off.has(n)).toBe(true);
 		expect(off.has("edit_soft")).toBe(true);
+		expect(off.has(EVAL_TOOL_NAME)).toBe(true);
 		for (const n of SUBAGENT_TOOL_NAMES) expect(off.has(n)).toBe(false);
 		expect(off.has("delegate_task")).toBe(false);
 		expect(off.has(ASK_USER_QUESTION_TOOL_NAME)).toBe(false);

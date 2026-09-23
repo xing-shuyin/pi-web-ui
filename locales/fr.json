@@ -1364,6 +1364,8 @@
 		"skillOffHint": "Disabled: the AI can no longer load skill bodies by name (the catalog in the prompt is unaffected)",
 		"claimFilesEnabledDesc": "Declare which files you are about to edit so parallel runs in the same project can steer clear (advisory only — it never blocks edits). First-wins; claims expire automatically.",
 		"claimFilesOffHint": "Disabled: the AI can no longer claim files",
+		"evalEnabledDesc": "Exécutez du code Python ou JavaScript/TypeScript dans un bac à sable isolé avec des variables persistantes ; idéal pour les calculs, l'analyse de données et la vérification d'algorithmes (désactivé par défaut).",
+		"evalOffHint": "Désactivé : L'IA ne peut pas utiliser le bac à sable de code persistant (peut toujours exécuter des scripts via bash)",
 		"toolInfoMenuLabel": "Afficher les détails de l’outil",
 		"toolInfoTitle": "Détails de l’outil",
 		"toolInfoLoading": "Chargement de la définition de l’outil…",

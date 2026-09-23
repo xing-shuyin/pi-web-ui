@@ -1533,6 +1533,9 @@ export const zh = {
 	claimFilesEnabledDesc:
 		"声明你要改哪些文件，让同项目的并行对话绕行（纯建议，不拦编辑）：开着 AI 才知道能认领，先到先得，过期自动释放。",
 	claimFilesOffHint: "已关闭：AI 不能再认领文件（并行触碰提醒照常工作，只是少了事前意图这一路）",
+	evalEnabledDesc:
+		"在隔离的代码求值沙箱中执行 Python 或 JavaScript/TypeScript 代码，变量状态跨调用保持；适用于即时数学计算、数据处理与算法验证（默认关闭，防工具挤占）。",
+	evalOffHint: "已关闭：AI 不能使用持久代码求值沙箱（可使用 bash 工具运行临时脚本）",
 	/* 工具定义说明弹窗（工具卡右键 → 显示工具详细信息；定义走 get_tool_info 现取） */
 	toolInfoMenuLabel: "显示工具详细信息",
 	toolInfoTitle: "工具详细信息",
@@ -3133,6 +3136,10 @@ const en: Record<keyof typeof zh, string> = {
 		"Declare which files you are about to edit so parallel runs in the same project can steer clear (advisory only — it never blocks edits). First-wins; claims expire automatically.",
 	claimFilesOffHint:
 		"Disabled: the AI can no longer claim files (post-hoc touch reminders still work, only the up-front intent signal is gone)",
+	evalEnabledDesc:
+		"Execute Python or JavaScript/TypeScript code in an isolated sandbox with persistent variables; ideal for calculations, data analysis, and algorithm verification (default-off to prevent tool crowding-out).",
+	evalOffHint:
+		"Disabled: the AI cannot use the persistent code sandbox (can still run scripts via bash)",
 	/* Tool definition dialog (tool-card right-click → show tool details; the definition comes from get_tool_info) */
 	toolInfoMenuLabel: "Show tool details",
 	toolInfoTitle: "Tool details",

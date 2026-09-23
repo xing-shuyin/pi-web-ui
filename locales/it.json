@@ -1364,6 +1364,8 @@
 		"skillOffHint": "Disabled: the AI can no longer load skill bodies by name (the catalog in the prompt is unaffected)",
 		"claimFilesEnabledDesc": "Declare which files you are about to edit so parallel runs in the same project can steer clear (advisory only — it never blocks edits). First-wins; claims expire automatically.",
 		"claimFilesOffHint": "Disabled: the AI can no longer claim files",
+		"evalEnabledDesc": "Esegui codice Python o JavaScript/TypeScript in una sandbox isolata con variabili persistenti; ideale per calcoli, analisi dati e verifica di algoritmi (disattivato per impostazione predefinita).",
+		"evalOffHint": "Disattivato: L'IA non può utilizzare la sandbox persistente (può comunque eseguire script tramite bash)",
 		"toolInfoMenuLabel": "Mostra dettagli dello strumento",
 		"toolInfoTitle": "Dettagli dello strumento",
 		"toolInfoLoading": "Caricamento della definizione dello strumento…",
