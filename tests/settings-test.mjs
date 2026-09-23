@@ -188,10 +188,12 @@ try {
 	// 终端接管 bash：开关 + 阈值往返（回归：dispatch 曾漏转发导致点击无效）
 	check("terminalBash defaults off", st0.settings.terminalBash === false);
 	check("terminalBashIdleMs defaults 15000", st0.settings.terminalBashIdleMs === 15000);
-	c.send({ type: "set_settings", terminalBash: true, terminalBashIdleMs: 5000 });
+	check("terminalBashMaxForegroundMs defaults 60000", st0.settings.terminalBashMaxForegroundMs === 60000);
+	c.send({ type: "set_settings", terminalBash: true, terminalBashIdleMs: 5000, terminalBashMaxForegroundMs: 30000 });
 	const stTB = await c.waitFor("settings_state", 8000, (m) => m.settings.terminalBash === true);
 	check("terminalBash on round-trips", stTB.settings.terminalBash === true);
 	check("terminalBashIdleMs round-trips", stTB.settings.terminalBashIdleMs === 5000);
+	check("terminalBashMaxForegroundMs round-trips", stTB.settings.terminalBashMaxForegroundMs === 30000);
 	c.send({ type: "set_settings", terminalBash: false });
 	await c.waitFor("settings_state", 8000, (m) => m.settings.promptMode === "append");
 	// 思考折叠开关：默认关（折叠）→ 开 → 再关（纯 UI 偏好，持久化即可）

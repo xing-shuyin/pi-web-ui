@@ -94,12 +94,14 @@ const check = (name, cond, extra = "") => {
 const mgr = new TerminalManager(() => {}, workdir);
 let bgDone = null;
 let idleMsOverride = 0; // 默认永不静默解阻（纯阻塞模式），个别用例注入小阈值
+let maxForegroundMsOverride = 0;
 const tool = makeTerminalBashTool(mgr, {
 	cwd: workdir,
 	// 默认持久（reuse ai-bash）——本文件大部分用例测的是原来「终端接管」的持久语义；
 	// 一次性（persist:false）与 head 参数在后面的新增用例里显式传。
 	defaultPersist: () => true,
 	idleMs: () => idleMsOverride,
+	maxForegroundMs: () => maxForegroundMsOverride,
 	// 钉死服务端语言：本文件的提示文案断言写的是中文（默认语言是英文）。
 	lang: () => "zh",
 	kills: new Set(),
@@ -243,6 +245,54 @@ try {
 			wr4.applicable === false && Date.now() - t3 < 1500,
 			JSON.stringify(wr4),
 		);
+	}
+
+	// ---- 4d. 总时长解阻（持久终端）：即使持续有输出，达到阈值也转后台 ----
+	{
+		idleMsOverride = 0;
+		maxForegroundMsOverride = 800;
+		bgDone = null;
+		mgr.kill("ai-bash");
+		const t0 = Date.now();
+		// 每 300ms 输出一行，持续约 2.4s，静默解阻永远不会触发
+		const { result } = await run("for i in 1 2 3 4 5 6 7 8; do echo tick-$i; sleep 0.3; done");
+		const elapsed = Date.now() - t0;
+		const text = result?.content?.[0]?.text ?? "";
+		check("总时长解阻：流式输出下提前返回", elapsed < 2200, `${elapsed}ms`);
+		check("返回总时长转后台说明", text.includes("前台执行已达") && text.includes("自动转入后台"));
+		check("返回已有部分输出", text.includes("tick-1"));
+		check(
+			"details 标记 running 与 reason: elapsed",
+			result?.details?.running === true && result?.details?.reason === "elapsed",
+		);
+		for (let i = 0; i < 60 && !bgDone; i++) await sleep(100);
+		check("总时长解阻后台命令完成回调", bgDone !== null);
+		if (bgDone) {
+			check("通知退出码为 0", bgDone.exitCode === 0);
+		}
+		maxForegroundMsOverride = 0;
+		await sleep(300);
+	}
+
+	// ---- 4e. 总时长解阻（一次性终端 persist: false）：平滑转后台并在完成后退出 ----
+	{
+		idleMsOverride = 0;
+		maxForegroundMsOverride = 800;
+		bgDone = null;
+		const t0 = Date.now();
+		const { result } = await run({ command: "echo oneshot-start; sleep 2.0; echo oneshot-end", persist: false });
+		const elapsed = Date.now() - t0;
+		const text = result?.content?.[0]?.text ?? "";
+		check("一次性终端总时长超限提前返回", elapsed < 1800, `${elapsed}ms`);
+		check("一次性终端提示自动退出说明", text.includes("该终端将自动退出并发送通知"));
+		check("details 记录 persist: false", result?.details?.persist === false);
+		for (let i = 0; i < 60 && !bgDone; i++) await sleep(100);
+		check("一次性终端后台跑完收到通知", bgDone !== null);
+		if (bgDone) {
+			check("一次性终端退出码为 0", bgDone.exitCode === 0);
+		}
+		maxForegroundMsOverride = 0;
+		await sleep(300);
 	}
 
 	// ---- 5. shell 状态跨调用保留 ----

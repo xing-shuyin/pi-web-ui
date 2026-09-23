@@ -26,6 +26,7 @@ function makeHost(over: Partial<SettingsHost> & { emitted?: unknown[] } = {}): S
 				terminalToolsEnabled: false,
 				terminalBash: false,
 				terminalBashIdleMs: 15_000,
+				terminalBashMaxForegroundMs: 60_000,
 				editSoftEnabled: false,
 				questionnaireEnabled: true,
 				goalModeEnabled: true,

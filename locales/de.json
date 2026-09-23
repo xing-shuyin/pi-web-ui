@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "Dieser Schalter entscheidet, ob bash durch die Terminal-Variante ersetzt wird: Aus = natives SDK-bash (reiner Prozess, kein Terminal); Ein = Ausführung im sichtbaren Terminal, wobei der Parameter persist darauf aufbauend über einmalig (false, der Prozess endet nach Befehlsende, die Ausgabe bleibt erhalten) oder persistent (true, Shell-Zustand bleibt über Aufrufe erhalten, stille Befehle wandern automatisch in den Hintergrund und benachrichtigen die KI) entscheidet",
 		"terminalBashIdleMs": "Schwelle für Stille bis Hintergrundbetrieb (Millisekunden)",
 		"terminalBashIdleMsDesc": "Im persistenten Terminalmodus gilt: Erzeugt ein Befehl so lange keine Ausgabe, wird nicht länger blockierend gewartet, sondern er läuft im Hintergrund weiter und die KI wird benachrichtigt, sobald er fertig ist; 0 = stets bis zum Befehlsende warten (Standard 15000)",
+		"terminalBashMaxForegroundMs": "Maximale Wartezeit im Vordergrund (ms)",
+		"terminalBashMaxForegroundMsDesc": "Im Terminal-Übernahmemodus wird ein Befehl automatisch in den Hintergrund verschoben und das Modell entsperrt, sobald seine Gesamtlaufzeit im Vordergrund diesen Schwellenwert erreicht; 0 = unbegrenzt (Standard 60000)",
 		"readDirEnabled": "read für Verzeichnisse",
 		"readDirEnabledDesc": "An: Wird read ein Verzeichnis übergeben, werden dessen Einträge aufgelistet (eine Zeile pro Eintrag, Verzeichnisse enden auf '/', limit begrenzt dann die Anzahl der Einträge); Aus: ein Verzeichnis wird unverändert an das eingebaute read weitergegeben (EISDIR — zum Durchsuchen bash ls nutzen). Nur pi-Engine.",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

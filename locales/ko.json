@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "이 스위치는 bash를 터미널 버전으로 덮어쓸지 정해요. 끄기 = 네이티브 SDK bash(순수 프로세스, 터미널을 열지 않아요). 켜기 = 보이는 터미널에서 실행하고, persist 파라미터가 이 스위치 기준으로 일회성(false, 명령이 끝나면 프로세스 종료, 출력은 보관)인지 지속형(true, 셸 상태가 호출 간 유지되고, 조용해지면 자동으로 백그라운드로 전환해 AI에게 알려줘요)인지 정해요",
 		"terminalBashIdleMs": "조용하면 백그라운드 전환 기준(밀리초)",
 		"terminalBashIdleMsDesc": "지속 터미널 모드에서 명령 출력이 이 시간만큼 계속 없으면 더 이상 대기하지 않고 백그라운드로 실행을 이어가며 AI에게 알려줘요. 0 = 명령이 끝날 때까지 계속 기다려요(기본값 15000)",
+		"terminalBashMaxForegroundMs": "포그라운드 최대 대기 시간(밀리초)",
+		"terminalBashMaxForegroundMsDesc": "터미널 인계 모드에서 포그라운드 실행 총 시간이 이 임계값에 도달하면 출력 여부와 관계없이 자동으로 백그라운드로 전환되어 모델 차단을 해제합니다. 0 = 무제한(기본값 60000)",
 		"readDirEnabled": "read로 디렉터리 읽기",
 		"readDirEnabledDesc": "켬: read에 디렉터리 경로를 넘기면 항목을 나열해요(한 줄에 하나, 디렉터리는 '/'로 끝나며 이때 limit은 항목 수 상한이에요). 끔: 디렉터리 경로는 내장 read로 그대로 전달돼요(EISDIR — 둘러보려면 bash ls). pi 엔진 전용이에요.",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

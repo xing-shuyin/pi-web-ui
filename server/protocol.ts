@@ -721,6 +721,8 @@ export type ClientMessage =
 			/** 终端接管 bash 开关 + 静默解阻阈值毫秒（0 = 一直等到命令结束）。 */
 			terminalBash?: boolean;
 			terminalBashIdleMs?: number;
+			/** 终端接管 bash 前台最长等待毫秒（0 = 不限；达到后无论是否有输出均自动转后台）。 */
+			terminalBashMaxForegroundMs?: number;
 			/** 工具执行看门狗超时（毫秒，0 = 禁用；默认 20 分钟即 1200000）。 */
 			toolWatchdogTimeoutMs?: number;
 			/** read 工具读目录开关（默认开）。开 → read(目录路径) 列出目录条目，
@@ -1946,6 +1948,8 @@ export interface UiSettingsState {
 	terminalBash: boolean;
 	/** 接管模式下 bash 的静默解阻阈值毫秒数（0 = 一直等到命令结束）。 */
 	terminalBashIdleMs: number;
+	/** 接管模式下 bash 前台最长等待毫秒数（0 = 不限；达到后自动转后台）。 */
+	terminalBashMaxForegroundMs: number;
 	/** 工具执行看门狗超时毫秒数（0 = 禁用；默认 20 分钟即 1200000）。 */
 	toolWatchdogTimeoutMs: number;
 	/** read 工具读目录开关（默认开）：开 → read(目录路径) 列出目录条目（见

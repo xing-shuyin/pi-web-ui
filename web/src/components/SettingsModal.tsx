@@ -573,6 +573,10 @@ export function SettingsModal({ chat, terminal, initialSection, onSwitchToTermin
 	useEffect(() => {
 		setIdleMsDraft(String(settings?.terminalBashIdleMs ?? 15000));
 	}, [settings?.terminalBashIdleMs]);
+	const [maxMsDraft, setMaxMsDraft] = useState<string>(String(settings?.terminalBashMaxForegroundMs ?? 60000));
+	useEffect(() => {
+		setMaxMsDraft(String(settings?.terminalBashMaxForegroundMs ?? 60000));
+	}, [settings?.terminalBashMaxForegroundMs]);
 	// 工具看门狗超时（分钟，默认 20 分钟；0 = 禁用）。
 	const [watchdogMinDraft, setWatchdogMinDraft] = useState<string>(
 		String(Math.round((settings?.toolWatchdogTimeoutMs ?? 1200000) / 60_000)),
@@ -745,6 +749,7 @@ export function SettingsModal({ chat, terminal, initialSection, onSwitchToTermin
 		terminalToolsEnabled?: boolean;
 		terminalBash?: boolean;
 		terminalBashIdleMs?: number;
+		terminalBashMaxForegroundMs?: number;
 		toolWatchdogTimeoutMs?: number;
 		/** read 工具读目录开关（默认开；行为开关，live 生效无需 reload，见 server/read-tool.ts）。 */
 		readDirEnabled?: boolean;
@@ -1724,24 +1729,48 @@ export function SettingsModal({ chat, terminal, initialSection, onSwitchToTermin
 									onToggle={() => setPartial({ terminalBash: !settings.terminalBash })}
 								/>
 								{settings.terminalBash && (
-									<FieldRow label={t("terminalBashIdleMs")} htmlFor="tb-idle-ms">
-										<input
-											id="tb-idle-ms"
-											className="set-input"
-											type="number"
-											min={0}
-											step={1000}
-											value={idleMsDraft}
-											onChange={(e) => setIdleMsDraft(e.target.value)}
-											onBlur={() => {
-												const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
-												setIdleMsDraft(String(n));
-												if (n !== settings.terminalBashIdleMs) {
-													setPartial({ terminalBashIdleMs: n });
-												}
-											}}
-										/>
-									</FieldRow>
+									<>
+										<FieldRow label={t("terminalBashIdleMs")} tip={t("terminalBashIdleMsDesc")} htmlFor="tb-idle-ms">
+											<input
+												id="tb-idle-ms"
+												className="set-input"
+												type="number"
+												min={0}
+												step={1000}
+												value={idleMsDraft}
+												onChange={(e) => setIdleMsDraft(e.target.value)}
+												onBlur={() => {
+													const n = Math.max(0, Math.floor(Number(idleMsDraft) || 0));
+													setIdleMsDraft(String(n));
+													if (n !== settings.terminalBashIdleMs) {
+														setPartial({ terminalBashIdleMs: n });
+													}
+												}}
+											/>
+										</FieldRow>
+										<FieldRow
+											label={t("terminalBashMaxForegroundMs")}
+											tip={t("terminalBashMaxForegroundMsDesc")}
+											htmlFor="tb-max-ms"
+										>
+											<input
+												id="tb-max-ms"
+												className="set-input"
+												type="number"
+												min={0}
+												step={1000}
+												value={maxMsDraft}
+												onChange={(e) => setMaxMsDraft(e.target.value)}
+												onBlur={() => {
+													const n = Math.max(0, Math.floor(Number(maxMsDraft) || 0));
+													setMaxMsDraft(String(n));
+													if (n !== settings.terminalBashMaxForegroundMs) {
+														setPartial({ terminalBashMaxForegroundMs: n });
+													}
+												}}
+											/>
+										</FieldRow>
+									</>
 								)}
 								<div className="set-field-label">
 									{t("toolsSectionSubagent")} <HintTip text={t("toolsSubagentDepHint")} />

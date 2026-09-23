@@ -1190,6 +1190,9 @@ export const zh = {
 	terminalBashIdleMs: "静默转后台阈值（毫秒）",
 	terminalBashIdleMsDesc:
 		"持久终端模式下，命令连续无输出达到该时长即不再阻塞等待，转入后台继续运行并通知 AI；0 = 一直等到命令结束（默认 15000）",
+	terminalBashMaxForegroundMs: "前台最长等待（毫秒）",
+	terminalBashMaxForegroundMsDesc:
+		"接管模式下，命令在前台执行的总时长达到该值后，无论是否有输出，均自动转入后台继续执行并解阻模型；0 = 不限（默认 60000）",
 	readDirEnabled: "read 读目录",
 	readDirEnabledDesc:
 		"开启：read 工具传目录路径时列出目录条目（一行一项、目录带 / 后缀，此时 limit 是条目上限）；关闭：目录参数原样交给内置 read（报 EISDIR，看目录得用 bash 的 ls）。DSH 引擎没有该覆盖，仅 pi 引擎生效",
@@ -2774,6 +2777,9 @@ const en: Record<keyof typeof zh, string> = {
 	terminalBashIdleMs: "Silence-to-background threshold (ms)",
 	terminalBashIdleMsDesc:
 		"In persistent-terminal mode, when a command produces no output for this long, stop blocking and let it keep running in the background; the AI is notified when it finishes. 0 = always wait until completion (default 15000)",
+	terminalBashMaxForegroundMs: "Max foreground wait (ms)",
+	terminalBashMaxForegroundMsDesc:
+		"In terminal-takeover mode, when a command's total foreground runtime reaches this threshold, it is automatically moved to the background regardless of output activity, unblocking the model. 0 = unlimited (default 60000)",
 	readDirEnabled: "read a directory",
 	readDirEnabledDesc:
 		"On: passing a directory path to read lists its entries (one per line, directories end with '/'; limit then caps the entry count); Off: a directory path goes to the built-in read unchanged (EISDIR — use bash ls to browse). DSH engine has no such override; pi engine only",

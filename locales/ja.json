@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "このスイッチは bash をターミナル版で上書きするかを決めます。オフ = ネイティブSDKの bash です（プロセスのみでターミナルは開きません）。オン = 可視ターミナルで実行します。さらに persist パラメータで、使い捨て（false：コマンド終了後にプロセスは終了し、出力は保存されます）か永続（true：shell の状態は呼び出しをまたいで保持され、静かに自動でバックグラウンドに移行してAIに通知します）かを決めます",
 		"terminalBashIdleMs": "無出力でバックグラウンドに移すしきい値（ミリ秒）",
 		"terminalBashIdleMsDesc": "永続ターミナルモードでは、コマンドの無出力状態がこの時間続くとブロックせずに待つのをやめ、バックグラウンドで続行してAIに通知します。0 = コマンド終了までずっと待ちます（デフォルトは15000）",
+		"terminalBashMaxForegroundMs": "フォアグラウンド最大待機時間（ミリ秒）",
+		"terminalBashMaxForegroundMsDesc": "ターミナル引き継ぎモードで、フォアグラウンド実行の合計時間がこのしきい値に達すると、出力の有無にかかわらず自動的にバックグラウンドに移動してモデルのブロックを解除します。0 = 無制限（デフォルト 60000）",
 		"readDirEnabled": "read でディレクトリを読む",
 		"readDirEnabledDesc": "オン：read にディレクトリのパスを渡すと中身を一覧します（1 行 1 項目、ディレクトリの末尾は '/'、このとき limit は項目数の上限）。オフ：ディレクトリのパスはそのまま組み込み read に渡します（EISDIR — 中身を見るには bash の ls）。pi エンジンのみ。",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

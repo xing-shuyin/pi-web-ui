@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "Questo interruttore decide se bash viene rimpiazzato da una versione terminale: OFF = bash nativo dell'SDK (spawn di processo, nessun terminale); ON = gira in un terminale visibile, dove il parametro persist decide (oltre all'interruttore) monouso (false — il processo esce quando il comando termina, output conservato) vs persistente (true — lo stato della shell è conservato tra le chiamate, i comandi silenziosi passano in background e notificano l'AI)",
 		"terminalBashIdleMs": "Soglia silenzio-in-background (ms)",
 		"terminalBashIdleMsDesc": "In modalità terminale persistente, quando un comando non produce output per questo tempo, smette di bloccare e lo lascia girare in background; l'AI viene notificata al termine. 0 = attendi sempre il completamento (predefinito 15000)",
+		"terminalBashMaxForegroundMs": "Tempo massimo di attesa in primo piano (ms)",
+		"terminalBashMaxForegroundMsDesc": "In modalità takeover terminale, quando il tempo di esecuzione in primo piano raggiunge questa soglia, il comando passa automaticamente in background senza bloccare il modello; 0 = illimitato (predefinito 60000)",
 		"readDirEnabled": "read delle cartelle",
 		"readDirEnabledDesc": "Attivo: passando a read il percorso di una cartella ne elenca il contenuto (una voce per riga, le cartelle terminano con '/'; limit limita allora il numero di voci); Disattivo: il percorso viene passato invariato al read integrato (EISDIR — per sfogliare usa bash ls). Solo motore pi.",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

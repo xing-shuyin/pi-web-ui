@@ -1670,6 +1670,8 @@ export function makeTerminalBashTool(
 		defaultPersist: () => boolean;
 		/** 静默解阻阈值毫秒（仅 persist=true 生效）；每次调用时读取（设置即时生效）；0 = 不解阻。 */
 		idleMs: () => number;
+		/** 前台运行最长毫秒；每次调用时读取；0 = 不限。达到后自动转入后台继续执行并解阻模型。 */
+		maxForegroundMs?: () => number;
 		/** abort_bash 的控制器集合。 */
 		kills: Set<AbortController>;
 		/** 后台命令最终结束时的宿主通知（exitCode null = 终端被关闭）。 */
@@ -1766,6 +1768,8 @@ export function makeTerminalBashTool(
 				if (!persist) void terminals.inputChecked(termId, "exit\r");
 			};
 			const idleMs = Math.max(0, opts.idleMs());
+			const maxForegroundMs = Math.max(0, opts.maxForegroundMs?.() ?? 0);
+			const startTime = Date.now();
 			const deadline = p.timeout && p.timeout > 0 ? Date.now() + p.timeout * 1000 : null;
 			// 拆掉模型常写的尾部输出限制/过滤管道（`| tail -N` / `| less` / `| more` / `| cat`）：
 			// 这类管道在终端里 ①缓冲输出——可见终端全程哑火、无法感知实时进度；②吞掉真实退出码——
@@ -1861,6 +1865,23 @@ export function makeTerminalBashTool(
 							applyHeadTail(cleanBashOutput(collected), p.head, effectiveTail, lang),
 							Math.round((Date.now() - lastDataAt) / 1000),
 							lang,
+							termId,
+							persist,
+							"idle",
+						);
+					}
+					// 总时长解阻（持久与一次性终端）：前台运行达到上限，转入后台继续执行，避免卡死。
+					if (maxForegroundMs > 0 && Date.now() - startTime >= maxForegroundMs) {
+						return backgroundResult(
+							terminals,
+							opts,
+							runCommand,
+							applyHeadTail(cleanBashOutput(collected), p.head, effectiveTail, lang),
+							Math.round((Date.now() - startTime) / 1000),
+							lang,
+							termId,
+							persist,
+							"elapsed",
 						);
 					}
 				}
@@ -1871,49 +1892,99 @@ export function makeTerminalBashTool(
 	});
 }
 
-/** 静默解阻路径：注册完成观察器后立即返回「仍在后台运行」。 */
+/** 静默 / 总时长解阻路径：注册完成观察器后立即返回「仍在后台运行」。 */
 function backgroundResult(
 	terminals: TerminalManager,
 	opts: Parameters<typeof makeTerminalBashTool>[1],
 	command: string,
 	partialText: string,
-	silentSeconds: number,
+	durationSeconds: number,
 	lang: ServerLang,
+	termId: string = "ai-bash",
+	persist: boolean = true,
+	reason: "idle" | "elapsed" = "idle",
 ): { content: { type: "text"; text: string }[]; details: unknown } {
-	terminals.watchOutput("ai-bash", BASH_SENTINEL_RE, (m) => {
+	terminals.watchOutput(termId, BASH_SENTINEL_RE, (m) => {
 		// 后台命令最终结束（或终端被关）→ 清除待决标记，terminal_wait 不再适用。
-		terminals.setSentinelPending("ai-bash", false);
+		terminals.setSentinelPending(termId, false);
 		opts.notifyBackgroundDone({
-			terminalId: "ai-bash",
+			terminalId: termId,
 			command,
 			exitCode: m ? Number(m[1]) : null,
 		});
+		if (!persist) {
+			void terminals.inputChecked(termId, "exit\r");
+		}
 	});
 	// partialText 已在调用方做过 cleanBashOutput + applyTail。
 	const partial = truncateMiddle(partialText, 6000);
 	// 空输出占位按语言预渲染（issue #91 v2：vars 只收干净标识）。
 	const partialZh = partial || "（暂无输出）";
 	const partialEn = partial || "(no output yet)";
+
+	let descZh = "";
+	let descEn = "";
+
+	if (reason === "elapsed") {
+		descZh =
+			`命令仍在终端 ${termId} 中运行（前台执行已达 ${durationSeconds} 秒上限，自动转入后台）。` +
+			`本次调用不阻塞——命令继续在后台执行，结束时你会收到自动通知。\n` +
+			`已有输出：\n${partialZh}\n`;
+		descEn =
+			`Command still running in terminal ${termId} (foreground execution reached ${durationSeconds}s limit, moved to background). ` +
+			`This call does not block — the command keeps running in the background and you will be notified automatically when it finishes.\n` +
+			`Partial output:\n${partialEn}\n`;
+	} else {
+		descZh =
+			`命令仍在持久终端 ${termId} 中运行（已连续 ${durationSeconds} 秒无输出，未结束）。` +
+			`本次调用不阻塞——命令继续在后台执行，结束时你会收到自动通知。\n` +
+			`已有输出：\n${partialZh}\n`;
+		descEn =
+			`Command still running in the persistent terminal ${termId} (no output for ${durationSeconds}s, not finished). ` +
+			`This call does not block — the command keeps running in the background and you will be notified automatically when it finishes.\n` +
+			`Partial output:\n${partialEn}\n`;
+	}
+
+	if (persist) {
+		descZh += `要重新阻塞等它结束就用 terminal_wait(terminalId="${termId}")（无需反复轮询）；需要交互用 terminal_input / terminal_key（Ctrl+C 可终止）。`;
+		descEn += `To block until it finishes, use terminal_wait(terminalId="${termId}") (no polling needed); use terminal_input / terminal_key to interact (Ctrl+C aborts).`;
+	} else {
+		descZh += `命令完成后该终端将自动退出并发送通知；如需查看输出可用 terminal_read(terminalId="${termId}")。`;
+		descEn += `When completed, this terminal will exit automatically and notify; to inspect output, use terminal_read(terminalId="${termId}").`;
+	}
+
+	if (reason === "elapsed") {
+		return {
+			content: [
+				{
+					type: "text",
+					text: pick(
+						lang,
+						descZh,
+						descEn,
+						"terminals.bash.background.elapsed",
+						{ durationSeconds, partialZh, partialEn, termId },
+					),
+				},
+			],
+			details: { running: true, terminalId: termId, persist, durationSeconds, reason },
+		};
+	}
+
 	return {
 		content: [
 			{
 				type: "text",
 				text: pick(
 					lang,
-					`命令仍在持久终端 ai-bash 中运行（已连续 ${silentSeconds} 秒无输出，未结束）。` +
-						`本次调用不阻塞——命令继续在后台执行，结束时你会收到自动通知。\n` +
-						`已有输出：\n${partialZh}\n` +
-						`要重新阻塞等它结束就用 terminal_wait(terminalId="ai-bash")（无需反复轮询）；需要交互用 terminal_input / terminal_key（Ctrl+C 可终止）。`,
-					`Command still running in the persistent terminal ai-bash (no output for ${silentSeconds}s, not finished). ` +
-						`This call does not block — the command keeps running in the background and you will be notified automatically when it finishes.\n` +
-						`Partial output:\n${partialEn}\n` +
-						`To block until it finishes, use terminal_wait(terminalId="ai-bash") (no polling needed); use terminal_input / terminal_key to interact (Ctrl+C aborts).`,
+					descZh,
+					descEn,
 					"terminals.bash.background.running",
-					{ silentSeconds, partialZh, partialEn },
+					{ silentSeconds: durationSeconds, durationSeconds, partialZh, partialEn, termId },
 				),
 			},
 		],
-		details: { running: true, terminalId: "ai-bash", silentSeconds },
+		details: { running: true, terminalId: termId, persist, durationSeconds, reason },
 	};
 }
 

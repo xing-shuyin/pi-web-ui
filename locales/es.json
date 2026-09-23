@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "Este conmutador decide si bash se sustituye por la versión de terminal: desactivado = bash nativo del SDK (proceso puro, sin abrir terminal); activado = se ejecuta en el terminal visible, y el parámetro persist decide sobre esta base entre un solo uso (false, el proceso sale al terminar el comando y la salida queda archivada) o persistente (true, el estado del shell se conserva entre llamadas, pasa automáticamente a segundo plano en silencio y avisa a la IA)",
 		"terminalBashIdleMs": "Umbral de paso silencioso a segundo plano (ms)",
 		"terminalBashIdleMsDesc": "En modo de terminal persistente, si un comando pasa este tiempo sin salida, deja de esperar bloqueando y continúa en segundo plano avisando a la IA; 0 = esperar siempre hasta que termine el comando (predeterminado 15000)",
+		"terminalBashMaxForegroundMs": "Tiempo máximo de espera en primer plano (ms)",
+		"terminalBashMaxForegroundMsDesc": "En modo de toma de control de terminal, cuando el tiempo de ejecución en primer plano alcanza este umbral, el comando pasa automáticamente a segundo plano sin bloquear el modelo; 0 = ilimitado (predeterminado 60000)",
 		"readDirEnabled": "read de directorios",
 		"readDirEnabledDesc": "Activado: si pasas la ruta de un directorio a read, se listan sus entradas (una por línea, los directorios terminan en '/'; limit limita entonces el número de entradas); Desactivado: la ruta se pasa sin cambios al read integrado (EISDIR — usa bash ls para explorar). Solo motor pi.",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

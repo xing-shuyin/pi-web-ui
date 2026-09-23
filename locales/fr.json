@@ -1048,6 +1048,8 @@
 		"terminalBashTakeoverDesc": "Cet interrupteur décide si bash est remplacé par la version terminal : coupé = bash natif du SDK (pur processus, pas de terminal) ; actif = exécuté dans le terminal visible, et le paramètre persist décide sur cette base entre unique (false, le processus quitte à la fin, sortie archivée) et persistant (true, l'état shell survit aux appels, bascule auto silencieuse en arrière-plan avec notification à l'IA)",
 		"terminalBashIdleMs": "Seuil de bascule silencieuse en arrière-plan (ms)",
 		"terminalBashIdleMsDesc": "En mode terminal persistant, si une commande reste sans sortie pendant cette durée, on cesse d'attendre en bloc, elle continue en arrière-plan avec notification à l'IA ; 0 = attendre toujours la fin (15000 par défaut)",
+		"terminalBashMaxForegroundMs": "Temps d'attente maximal au premier plan (ms)",
+		"terminalBashMaxForegroundMsDesc": "En mode prise de contrôle du terminal, lorsque le temps d'exécution au premier plan atteint ce seuil, la commande passe automatiquement en arrière-plan sans bloquer le modèle; 0 = illimité (par défaut 60000)",
 		"readDirEnabled": "read des dossiers",
 		"readDirEnabledDesc": "Activé : si vous passez le chemin d'un dossier à read, ses entrées sont listées (une par ligne, les dossiers finissent par '/', limit plafonne alors le nombre d'entrées) ; Désactivé : le chemin est transmis tel quel au read intégré (EISDIR — utilisez bash ls pour parcourir). Moteur pi uniquement.",
 		"toolWatchdogTimeout": "Tool watchdog timeout (min)",

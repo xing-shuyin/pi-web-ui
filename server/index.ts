@@ -1073,6 +1073,7 @@ export interface DispatchSession {
 		terminalToolsEnabled?: boolean;
 		terminalBash?: boolean;
 		terminalBashIdleMs?: number;
+		terminalBashMaxForegroundMs?: number;
 		editSoftEnabled?: boolean;
 		thinkingWrap?: boolean;
 		toolsWrap?: boolean;
@@ -2262,6 +2263,7 @@ wss.on("connection", (ws) => {
 					terminalToolsEnabled: msg.terminalToolsEnabled,
 					terminalBash: msg.terminalBash,
 					terminalBashIdleMs: msg.terminalBashIdleMs,
+					terminalBashMaxForegroundMs: (msg as { terminalBashMaxForegroundMs?: number }).terminalBashMaxForegroundMs,
 					toolWatchdogTimeoutMs: (msg as { toolWatchdogTimeoutMs?: number }).toolWatchdogTimeoutMs,
 					readDirEnabled: (msg as { readDirEnabled?: boolean }).readDirEnabled,
 					editSoftEnabled: (msg as { editSoftEnabled?: boolean }).editSoftEnabled,
