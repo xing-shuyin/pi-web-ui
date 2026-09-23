@@ -1295,33 +1295,40 @@ export class FilesService {
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "warning", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
-			const { dirname } = await import("node:path");
-			const t = this.resolveOpTarget(path);
-			if (!t) {
-				err("此处不可定位：" + path, "Cannot reveal here: " + path);
-				return;
+			const { dirname, basename: pathBasename } = await import("node:path");
+			const wire = normWirePath(path.trim());
+			let abs: string;
+			if (!wire) {
+				abs = resolve(this.host.getCwd());
+			} else {
+				const t = this.resolveOpTarget(path);
+				if (!t) {
+					err("此处不可定位：" + path, "Cannot reveal here: " + path);
+					return;
+				}
+				abs = t.abs;
 			}
-			const st = await fsp.stat(t.abs).catch(() => null);
+			const st = await fsp.stat(abs).catch(() => null);
 			if (!st) {
 				err("文件不存在：" + path, "Not found: " + path);
 				return;
 			}
 			const isDir = st.isDirectory();
 			const segs = path.split("/");
-			const base = segs[segs.length - 1] ?? path;
+			const base = !wire ? pathBasename(abs) || "workspace" : (segs[segs.length - 1] ?? path);
 			if (process.platform === "win32") {
 				// /select, 与路径分两个 argv 传（explorer 对此格式稳定支持，路径含空格也无碍）。
 				// 目录传 /n, 强制打开新窗口，防止若该目录已在后台打开时被 Windows 静默复用且因反抢焦点机制不置顶。
 				await this.spawnDetached(
 					"explorer.exe",
-					isDir ? ["/n,", t.abs] : ["/select,", t.abs],
+					isDir ? ["/n,", abs] : ["/select,", abs],
 					"已在资源管理器中显示：" + base,
 					"Revealed in File Explorer: " + base,
 				);
 			} else if (process.platform === "darwin") {
 				await this.spawnDetached(
 					"open",
-					isDir ? [t.abs] : ["-R", t.abs],
+					isDir ? [abs] : ["-R", abs],
 					"已在访达中显示：" + base,
 					"Revealed in Finder: " + base,
 				);
@@ -1329,7 +1336,7 @@ export class FilesService {
 				// Linux 无统一选中语义：打开其父目录（目录则打开自身）。
 				await this.spawnDetached(
 					"xdg-open",
-					[isDir ? t.abs : dirname(t.abs)],
+					[isDir ? abs : dirname(abs)],
 					"已打开所在目录：" + base,
 					"Opened containing folder: " + base,
 				);
