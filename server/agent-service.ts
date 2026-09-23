@@ -2688,8 +2688,7 @@ export class ClientSession {
 							// 设置开 = 用终端；此分支里 persist 未显式给时默认一次性（false）。
 							defaultPersist: () => false,
 							idleMs: () => Math.max(0, Math.floor(this.settingsSvc.current.terminalBashIdleMs) || 0),
-							maxForegroundMs: () =>
-								Math.max(0, Math.floor(this.settingsSvc.current.terminalBashMaxForegroundMs) || 0),
+							maxForegroundMs: () => Math.max(0, Math.floor(this.settingsSvc.current.terminalBashMaxForegroundMs) || 0),
 							kills: this.bashKills,
 							notifyBackgroundDone: (info) => this.notifyTerminalBashDone(terminals, info),
 							// issue #91：bash 返回按客户端 UI 语言出中英（英文默认）。

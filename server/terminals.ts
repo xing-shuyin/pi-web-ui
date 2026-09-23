@@ -1958,13 +1958,12 @@ function backgroundResult(
 			content: [
 				{
 					type: "text",
-					text: pick(
-						lang,
-						descZh,
-						descEn,
-						"terminals.bash.background.elapsed",
-						{ durationSeconds, partialZh, partialEn, termId },
-					),
+					text: pick(lang, descZh, descEn, "terminals.bash.background.elapsed", {
+						durationSeconds,
+						partialZh,
+						partialEn,
+						termId,
+					}),
 				},
 			],
 			details: { running: true, terminalId: termId, persist, durationSeconds, reason },
@@ -1975,13 +1974,13 @@ function backgroundResult(
 		content: [
 			{
 				type: "text",
-				text: pick(
-					lang,
-					descZh,
-					descEn,
-					"terminals.bash.background.running",
-					{ silentSeconds: durationSeconds, durationSeconds, partialZh, partialEn, termId },
-				),
+				text: pick(lang, descZh, descEn, "terminals.bash.background.running", {
+					silentSeconds: durationSeconds,
+					durationSeconds,
+					partialZh,
+					partialEn,
+					termId,
+				}),
 			},
 		],
 		details: { running: true, terminalId: termId, persist, durationSeconds, reason },
