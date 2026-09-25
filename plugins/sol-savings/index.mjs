@@ -54,7 +54,7 @@ export function analyzeSolSavings(messages = []) {
 			if (!text.includes("[large tool result replaced")) continue;
 
 			const match = text.match(
-				/\[large tool result replaced after its first \d+ provider requests\][\s\S]*?id:\s*([^\n\r]+)[\s\S]*?tool:\s*([^\n\r]+)[\s\S]*?original_bytes:\s*(\d+)[\s\S]*?estimated_tokens:\s*(\d+)/i,
+				/\[large tool result replaced after its first \d+ provider requests\][\s\S]*?id:\s*["']?([^"'\n\r,]+)["']?[\s\S]*?tool:\s*["']?([^"'\n\r,]+)["']?[\s\S]*?original_bytes:\s*["']?(\d+)["']?[\s\S]*?estimated_tokens:\s*["']?(\d+)["']?/i,
 			);
 			if (match) {
 				const id = match[1].trim();
@@ -159,7 +159,7 @@ export function solSavingsPlugin(host) {
 
 		if (stats.totalSavedTokens > 0) {
 			const savedFmt = formatTokens(stats.totalSavedTokens);
-			badgeText = planInfo ? `${savedFmt} · ${planInfo.progress} ${planInfo.marker}` : `${savedFmt} 省`;
+			badgeText = planInfo ? `省 ${savedFmt} · ${planInfo.progress} ${planInfo.marker}` : `省 ${savedFmt}`;
 		} else if (planInfo) {
 			badgeText = `Plan ${planInfo.badge}`;
 		}
@@ -207,21 +207,21 @@ export function solSavingsPlugin(host) {
 		const planInfo = formatPlanSummary(cachedStats.plan);
 
 		const textZh = [
-			`⚡ **SoL-Pi 会话节省统计明细**`,
-			`• **累计节省 Token**：约 **${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
-			`• **打包大输出数量**：共 **${cachedStats.packedCount}** 个结果（原体积 ${formatBytes(cachedStats.totalOriginalBytes)}）`,
-			breakdown ? `• **按工具细分**：\n${breakdown}` : null,
-			planInfo ? `• **活动规划（Plan）**：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
+			`⚡ SoL-Pi 会话节省统计明细`,
+			`• 累计节省 Token：约 ${cachedStats.totalSavedTokens.toLocaleString()} tokens`,
+			`• 打包大输出数量：共 ${cachedStats.packedCount} 个结果（原体积 ${formatBytes(cachedStats.totalOriginalBytes)}）`,
+			breakdown ? `• 按工具细分：\n${breakdown}` : null,
+			planInfo ? `• 活动规划（Plan）：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
 		]
 			.filter(Boolean)
 			.join("\n");
 
 		const textEn = [
-			`⚡ **SoL-Pi Session Savings Details**`,
-			`• **Tokens Saved**: ~**${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
-			`• **Outputs Packed**: **${cachedStats.packedCount}** observations (${formatBytes(cachedStats.totalOriginalBytes)} raw)`,
-			breakdown ? `• **Tool Breakdown**:\n${breakdown}` : null,
-			planInfo ? `• **Active Plan**: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
+			`⚡ SoL-Pi Session Savings Details`,
+			`• Tokens Saved: ~${cachedStats.totalSavedTokens.toLocaleString()} tokens`,
+			`• Outputs Packed: ${cachedStats.packedCount} observations (${formatBytes(cachedStats.totalOriginalBytes)} raw)`,
+			breakdown ? `• Tool Breakdown:\n${breakdown}` : null,
+			planInfo ? `• Active Plan: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
 		]
 			.filter(Boolean)
 			.join("\n");

@@ -106,9 +106,38 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		expect(updates.length).toBeGreaterThan(0);
 		const lastUpdate = updates[updates.length - 1];
 		expect(lastUpdate.id).toBe("sol-savings-badge");
-		expect(lastUpdate.patch.badge).toContain("k");
+		expect(lastUpdate.patch.badge).toBe("省 2.4k");
 		expect(lastUpdate.patch.hint).toContain("SoL-Pi");
 		expect(mockHost.route).toHaveBeenCalledWith("POST", "/trigger-details", expect.any(Function));
 		expect(mockHost.route).toHaveBeenCalledWith("GET", "/details", expect.any(Function));
+	});
+
+	it('在包含转义或引号时仍能干净解析工具名称（避免 bash", 等脏字符）', () => {
+		const mockMessages = [
+			{
+				role: "tool_result",
+				content: [
+					{
+						type: "text",
+						text: [
+							"[large tool result replaced after its first 2 provider requests]",
+							'id: "obs_clean_1",',
+							'tool: "bash",',
+							'original_bytes: "20480",',
+							'estimated_tokens: "6000"',
+						].join("\n"),
+					},
+				],
+			},
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "完成" }],
+			},
+		];
+
+		const stats = analyzeSolSavings(mockMessages);
+		expect(stats.packedCount).toBe(1);
+		expect((stats.toolBreakdown as Record<string, number>).bash).toBe(1);
+		expect(Object.keys(stats.toolBreakdown)).toEqual(["bash"]);
 	});
 });
