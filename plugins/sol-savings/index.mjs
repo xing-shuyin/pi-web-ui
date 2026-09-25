@@ -134,7 +134,7 @@ export function formatPlanSummary(plan) {
 	};
 }
 
-export default function solSavingsPlugin(host) {
+export function solSavingsPlugin(host) {
 	let cachedStats = null;
 
 	function refreshFooter() {
@@ -258,3 +258,8 @@ export default function solSavingsPlugin(host) {
 	// 初始刷新
 	refreshFooter();
 }
+
+export const activate = solSavingsPlugin;
+export default {
+	activate: solSavingsPlugin,
+};

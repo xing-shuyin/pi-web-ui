@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { analyzeSolSavings, formatPlanSummary } from "../../plugins/sol-savings/index.mjs";
-import solSavingsPlugin from "../../plugins/sol-savings/index.mjs";
+import { analyzeSolSavings, formatPlanSummary, solSavingsPlugin } from "../../plugins/sol-savings/index.mjs";
 
 describe("SoL-Pi Savings 插件与底栏统计", () => {
 	it("正确分析 Observation Pack 大工具输出打包并计算节省 Token", () => {
