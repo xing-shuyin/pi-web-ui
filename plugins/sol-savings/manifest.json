@@ -10,7 +10,7 @@
 	"apiVersion": 2,
 	"view": false,
 	"preload": true,
-	"permissions": ["ui", "fs"],
+	"permissions": ["ui", "fs", "http"],
 	"ui": {
 		"bottombar": [
 			{

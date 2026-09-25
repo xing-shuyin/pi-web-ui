@@ -99,6 +99,7 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 			onRunEvent: vi.fn(),
 			onMessage: vi.fn(),
 			notify: vi.fn(),
+			route: vi.fn(),
 		};
 
 		solSavingsPlugin(mockHost);
@@ -108,5 +109,7 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		expect(lastUpdate.id).toBe("sol-savings-badge");
 		expect(lastUpdate.patch.badge).toContain("k");
 		expect(lastUpdate.patch.hint).toContain("SoL-Pi");
+		expect(mockHost.route).toHaveBeenCalledWith("POST", "/trigger-details", expect.any(Function));
+		expect(mockHost.route).toHaveBeenCalledWith("GET", "/details", expect.any(Function));
 	});
 });

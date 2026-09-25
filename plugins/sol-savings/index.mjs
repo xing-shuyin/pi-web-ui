@@ -229,6 +229,17 @@ export default function solSavingsPlugin(host) {
 		host.notify("info", textZh, textEn);
 	}
 
+	// 注册 HTTP 路由供客户端动作桥（client/entry.mjs）调用
+	if (typeof host.route === "function") {
+		host.route("POST", "/trigger-details", (_req, res) => {
+			showDetails();
+			res.json({ ok: true });
+		});
+		host.route("GET", "/details", (_req, res) => {
+			res.json(cachedStats || {});
+		});
+	}
+
 	// 注册 UI 动作与消息监听
 	host.onMessage((msg) => {
 		if (msg && typeof msg === "object" && msg.action === "sol-savings:details") {
