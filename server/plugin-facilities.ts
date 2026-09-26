@@ -339,13 +339,45 @@ function str(v: unknown): string {
 	return typeof v === "string" ? v.trim() : "";
 }
 
-/** 从插件目录出发能否解析到这个模块（模拟插件自身 import() 的查找链）。 */
+/** 纯包名（`foo` / `@scope/foo`）：能按 `node_modules/<name>/package.json` 判盘。
+ *  `node:path`、URL、相对/绝对路径、git spec 一律 false（交给 resolve 判）。 */
+function isPlainPackageName(name: string): boolean {
+	return /^(?:@[a-z\d](?:[a-z\d._-]*[a-z\d])?\/)?[a-z\d](?:[a-z\d._-]*[a-z\d])?$/i.test(name);
+}
+
+/** 从 fromDir 沿目录树向上找 `node_modules/<name>/package.json` 是否已落盘。 */
+function depOnDisk(fromDir: string, name: string): boolean {
+	let dir = fromDir;
+	for (;;) {
+		try {
+			if (existsSync(join(dir, "node_modules", ...name.split("/"), "package.json"))) return true;
+		} catch {
+			/* 权限/坏路径：当作这一层没有，继续往上找 */
+		}
+		const up = dirname(dir);
+		if (!up || up === dir) return false;
+		dir = up;
+	}
+}
+
+/** 从插件目录出发能否解析到这个模块（模拟插件自身 import() 的查找链）。
+ *
+ *  resolve 失败后再看一眼「文件是否已落盘」，这不是冗余判据而是**修 bug**（issue #383）：
+ *  Node 的 CJS 解析会把 `node_modules/<pkg>/package.json` 不存在的**负结果**缓存在
+ *  进程内存里（packageJsonReader 的路径缓存）。于是「探测缺失 → npm install 成功 →
+ *  复查」这组三连里，最后一次复查永远命中那条负缓存，恒抛
+ *  `Cannot find module`，用户看到的是「装成功了却报 npm install 没跑通」，
+ *  且非重启整个进程不能恢复。落盘判据不碰 CJS 缓存，天然免疫。
+ *
+ *  顺序保持「先 resolve 后判盘」：解析成功仍然是最强的信号（含 exports 映射等
+ *  盘上判据覆盖不到的形状），判盘只是给解析的假阴性兜底，不会放宽真缺失。 */
 export function isDepAvailable(pluginDir: string, spec: string): boolean {
+	const name = depName(spec);
 	try {
-		createRequire(join(pluginDir, "index.mjs")).resolve(depName(spec));
+		createRequire(join(pluginDir, "index.mjs")).resolve(name);
 		return true;
 	} catch {
-		return false;
+		return isPlainPackageName(name) && depOnDisk(pluginDir, name);
 	}
 }
 

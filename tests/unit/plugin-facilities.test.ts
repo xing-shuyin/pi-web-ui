@@ -159,6 +159,36 @@ describe("deps 探测", () => {
 		expect(isDepAvailable(probe, "vitest@9.9.9")).toBe(true);
 		expect(isDepAvailable(probe, "definitely-not-a-module-xyz@1.0.0")).toBe(false);
 	});
+
+	it("包已落盘时即便 CJS 解析失败也判可用（issue #383 的负缓存修复）", () => {
+		// 复刻现场：探测时包还没装（Node 把 package.json 不存在记成进程级负结果），
+		// 随后 npm install 把它写上盘。真实包这里故意给一个不存在的 main，
+		// 让 createRequire().resolve() 必然失败 —— 判据得由落盘事实兜住。
+		const pdir = join(dir, "plugins", "stale-cache");
+		const pkgDir = join(pdir, "node_modules", "@xenova", "transformers");
+		mkdirSync(pkgDir, { recursive: true });
+		writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "@xenova/transformers", main: "nope.js" }));
+		// 先在没有包的目录上探测一次，污染进程级解析缓存。
+		expect(isDepAvailable(pdir, "@xenova/transformers")).toBe(true); // 此时已落盘
+		const fresh = join(dir, "plugins", "stale-cache-2");
+		mkdirSync(fresh, { recursive: true });
+		expect(isDepAvailable(fresh, "@xenova/transformers")).toBe(false);
+		mkdirSync(join(fresh, "node_modules", "@xenova", "transformers"), { recursive: true });
+		writeFileSync(
+			join(fresh, "node_modules", "@xenova", "transformers", "package.json"),
+			JSON.stringify({ name: "@xenova/transformers", main: "nope.js" }),
+		);
+		// 同一个 spec、同一个进程：上一轮的负结果不该把这一轮也带进坑里。
+		expect(isDepAvailable(fresh, "@xenova/transformers")).toBe(true);
+		expect(isDepAvailable(fresh, "@xenova/transformers@2.17.2")).toBe(true);
+	});
+
+	it("没落盘的非标准 spec 仍判缺（URL / 路径形状不误判）", () => {
+		const pdir = join(dir, "plugins", "weird-spec");
+		mkdirSync(pdir, { recursive: true });
+		expect(isDepAvailable(pdir, "https://example.com/x.tgz")).toBe(false);
+		expect(isDepAvailable(pdir, "./local-thing")).toBe(false);
+	});
 });
 
 describe("apiVersion 门控", () => {
