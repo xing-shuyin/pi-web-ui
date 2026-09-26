@@ -12,7 +12,13 @@
  * 端到端流程见 tests/ 下的手工 smoke。
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { GoalService, type GoalConversation, type GoalHost } from "../../server/goal-service.js";
+import {
+	GoalService,
+	stripGoalDraftPrefix,
+	buildWizardConversationContext,
+	type GoalConversation,
+	type GoalHost,
+} from "../../server/goal-service.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 const sent: ServerMessage[] = [];
@@ -123,5 +129,40 @@ describe("setGoal 落点（issue #292）", () => {
 		await svc.setGoal("先设一个", { autoStart: false });
 		await svc.setGoal("");
 		expect(convs.get("conv-a")!.goal.goal).toBeNull();
+	});
+
+	it("stripGoalDraftPrefix 自动剥离复制重发时带入的单层/多层中英文草案卡片前缀", () => {
+		expect(stripGoalDraftPrefix("🎯 Initial goal draft: 写报告")).toBe("写报告");
+		expect(stripGoalDraftPrefix("🎯 原始目标草案：写报告")).toBe("写报告");
+		expect(stripGoalDraftPrefix("🎯 Initial goal draft: 🎯 Initial goal draft: 写报告")).toBe("写报告");
+		expect(stripGoalDraftPrefix("🎯 原始目标草案：🎯 Initial goal draft: 写报告")).toBe("写报告");
+		expect(stripGoalDraftPrefix("普通需求文本")).toBe("普通需求文本");
+	});
+
+	it("buildWizardConversationContext 能从主会话消息中提取摘要与近期轮次（含工具调用摘要）", () => {
+		const messages = [
+			{ role: "system", content: "You are an assistant." },
+			{ role: "compactionSummary", summary: "历史摘要：完成了模型A与模型B的前序评测" },
+			{ role: "user", content: [{ type: "text", text: "请生成七方全景对比报告" }] },
+			{
+				role: "assistant",
+				content: [
+					{ type: "toolCall", name: "edit", arguments: { path: "scripts/build_report.py" } },
+					{ type: "text", text: "已生成对比报告，正在核对指标" },
+				],
+			},
+		];
+		const ctx = buildWizardConversationContext(messages);
+		expect(ctx).toContain("Previous Context Summary");
+		expect(ctx).toContain("模型A与模型B的前序评测");
+		expect(ctx).toContain("Recent Conversation Turns");
+		expect(ctx).toContain("请生成七方全景对比报告");
+		expect(ctx).toContain("[tool:edit scripts/build_report.py]");
+	});
+
+	it("buildWizardConversationContext 在空消息或异常结构时安全返回空字符串", () => {
+		expect(buildWizardConversationContext([])).toBe("");
+		expect(buildWizardConversationContext(null as unknown as unknown[])).toBe("");
+		expect(buildWizardConversationContext([{}])).toBe("");
 	});
 });

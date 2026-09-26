@@ -91,6 +91,77 @@ export function isGoalCompletionSignal(finalText: string): boolean {
 	return GOAL_COMPLETION_RE.test(finalText);
 }
 
+/** 剥离复制调研草案卡片时带入的前缀（支持中英文与多层重复，纯函数供单测共用）。 */
+export function stripGoalDraftPrefix(raw: string): string {
+	return (raw ?? "")
+		.trim()
+		.replace(/^(?:(?:🎯\s*)?(?:Initial goal draft|原始目标草案)\s*[:：]\s*)+/i, "")
+		.trim();
+}
+
+/**
+ * 从主会话消息列表中提取结构化上下文（压缩摘要 + 近期轮次），注入向导 prompt，
+ * 避免向导会话处于无上下文的盲搜状态（借鉴 pi-goal-x / pi-plan 的 warm context 设计）。
+ */
+export function buildWizardConversationContext(messages: unknown[], maxChars = 16_000): string {
+	if (!Array.isArray(messages) || messages.length === 0) return "";
+	let summaryPart = "";
+	const recentLines: string[] = [];
+
+	for (const m of messages) {
+		if (!m || typeof m !== "object") continue;
+		const msg = m as {
+			role?: string;
+			summary?: string;
+			content?: unknown;
+			toolName?: string;
+		};
+		if (msg.role === "compactionSummary" && typeof msg.summary === "string" && msg.summary.trim()) {
+			const s = msg.summary.trim();
+			summaryPart = s.length > 8000 ? s.slice(0, 4000) + "\n...\n" + s.slice(-4000) : s;
+		} else if (msg.role === "user" || msg.role === "assistant") {
+			const parts: string[] = [];
+			if (Array.isArray(msg.content)) {
+				for (const c of msg.content) {
+					if (!c || typeof c !== "object") continue;
+					const block = c as {
+						type?: string;
+						text?: string;
+						name?: string;
+						arguments?: Record<string, unknown>;
+					};
+					if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+						parts.push(block.text.trim());
+					} else if (block.type === "toolCall" && block.name) {
+						const args = block.arguments;
+						const target = args?.path || args?.file_path || args?.pattern || args?.command || args?.query || "";
+						parts.push(`[tool:${block.name}${target ? " " + String(target).slice(0, 80) : ""}]`);
+					}
+				}
+			} else if (typeof msg.content === "string" && msg.content.trim()) {
+				parts.push(msg.content.trim());
+			}
+			if (parts.length > 0) {
+				const joined = parts.join(" ").slice(0, 2000);
+				recentLines.push(`[${msg.role}]: ${joined}`);
+			}
+		}
+	}
+
+	const recentBudget = summaryPart ? Math.max(4000, maxChars - summaryPart.length) : maxChars;
+	let recentAcc = "";
+	for (let i = recentLines.length - 1; i >= 0; i--) {
+		const line = recentLines[i];
+		if (recentAcc.length + line.length + 1 > recentBudget) break;
+		recentAcc = line + (recentAcc ? "\n" + recentAcc : "");
+	}
+
+	const sections: string[] = [];
+	if (summaryPart) sections.push(`## Previous Context Summary\n${summaryPart}`);
+	if (recentAcc) sections.push(`## Recent Conversation Turns\n${recentAcc}`);
+	return sections.join("\n\n").slice(0, maxChars);
+}
+
 /** 提取 raw 中第一个括号平衡的 {...} 子串（字符串字面量内的引号/转义/花括号不参与配对）。 */
 function firstBalancedJsonObject(raw: string): string | undefined {
 	const start = raw.indexOf("{");
@@ -176,15 +247,18 @@ export function buildDiffFingerprint(diffOut: string, statusOut: string): string
 /** System prompt for the goal-wizard session. The wizard asks the user a few
  *  questions (via its goal_ask tool) to scope a raw requirement into a precise,
  *  reviewable goal, then emits ONLY the final goal text as its last message. */
-function wizardPrompt(draft: string): string {
+function wizardPrompt(draft: string, contextSummary = ""): string {
 	return [
 		`You are a goal-clarification wizard. The user has stated a raw requirement. Your job is to turn it into ONE precise, actionable goal that a coding agent can fully satisfy and that can be strictly reviewed.`, // eslint-disable-line max-len
+		...(contextSummary ? [``, `# Current conversation context (background & recent history)`, contextSummary] : []),
 		``,
 		`# User's raw requirement`, // eslint-disable-line no-regex-spaces
 		draft,
 		``,
 		`Use your goal_ask tool to ask the user focused questions to pin down the essential, ambiguous details.`,
 		`Convergence guidelines:`,
+		`- Ground your understanding in the conversation context above so you already know what files, models, and prior work the user is referring to. Do NOT re-ask things already clear from context.`, // eslint-disable-line max-len
+		`- If you need to verify a specific file or directory in the workspace, do at most 1 to 3 quick read-only checks (read/ls/find/grep), then IMMEDIATELY call goal_ask. Never do exhaustive exploration or attempt the actual task during scoping.`, // eslint-disable-line max-len
 		`- Ask ONE question at a time, strictly 1 to 3 questions total: what exactly to build/do, scope boundaries (what NOT to do), acceptance criteria / done-definition, and any constraints (style, performance, environment).`, // eslint-disable-line max-len
 		`- Prefer multiple-choice with 2-4 mutually exclusive options and place your recommended choice FIRST.`,
 		`- In each option, concisely explain the impact or tradeoff. Use open questions only for things that genuinely need free text.`, // eslint-disable-line max-len
@@ -434,7 +508,7 @@ export class GoalService {
 			});
 			return;
 		}
-		const draft = (text ?? "").trim();
+		const draft = stripGoalDraftPrefix(text);
 		if (!draft) return;
 
 		// The wizard and its progress cards belong to the conversation that
@@ -501,9 +575,11 @@ export class GoalService {
 		wgoal.status = "目标调研中…";
 		wgoal.statusEn = "Scoping the goal…";
 		this.emitGoalStatus();
-		// Idle-timeout: cancel the wizard if no question is answered within the
-		// window (a stale dialog with no user response must not run forever). A
-		// fresh timer is armed for each question; cleared once the run ends.
+		// Idle-timeout: cancel the wizard if the user does NOT answer a pending dialog
+		// within the window (a stale dialog with no user response must not hang forever).
+		// Note: armed strictly while waiting for the user's answer in goal_ask, and
+		// cleared once the user answers — model thinking / read-only checks are governed
+		// by totalTimer, avoiding false "waited too long for an answer" timeouts.
 		const ac = this.wizardAbort;
 		let idleTimer: ReturnType<typeof setTimeout> | null = null;
 		const armIdle = () => {
@@ -531,7 +607,6 @@ export class GoalService {
 				idleTimer = null;
 			}
 		};
-		armIdle();
 		// Total-duration guard: hard cap on the whole wizard session (model
 		// latency / unexpected loops must not run forever).
 		const totalTimer = setTimeout(() => {
@@ -579,6 +654,9 @@ export class GoalService {
 			const services = await createAgentSessionServices({
 				cwd: wizardConversation.cwd,
 				agentDir: this.host.agentDir,
+				resourceLoaderOptions: {
+					skillsOverride: (res) => ({ ...res, skills: [] }),
+				},
 				modelRuntime: await ModelRuntime.create({
 					authPath: join(this.host.agentDir, "auth.json"),
 					modelsPath: join(this.host.agentDir, "models.json"),
@@ -656,7 +734,7 @@ export class GoalService {
 							"goal.wizard.question.title",
 							{ qStep: qStep, "params.question": params.question },
 						);
-						const optionsJoined = params.options!.join(" / ");
+						const optionsJoined = isChoice ? params.options!.join(" / ") : "";
 						const choiceSuffixZh = isChoice ? `【${optionsJoined}】` : "";
 						const choiceSuffixEn = isChoice ? ` [${optionsJoined}]` : "";
 						await this.pushWizardCard(
@@ -684,6 +762,7 @@ export class GoalService {
 						const choose = isChoice ? ctx.ui.select(qTitle, params.options!) : ctx.ui.input(qTitle);
 						const ans = (await choose) as string | boolean | undefined;
 						ac.signal.removeEventListener("abort", onAbort);
+						clearIdle();
 						if (aborted || ac.signal.aborted) {
 							return {
 								content: [
@@ -771,11 +850,61 @@ export class GoalService {
 				services,
 				sessionManager: sm,
 				customTools: [goalAsk],
+				// 仅暴露提问工具与只读检索工具：允许向导在提问前查阅工作区文件细节，
+				// 但严禁调用 bash/edit/write 等具破坏性或耗时不可控的写/执行工具。
+				tools: ["goal_ask", "read", "ls", "find", "grep"],
 				...(model ? { model } : {}),
 			});
 			const wizard = srv.session;
 			this.wizardSession = wizard;
 			await wizard.bindExtensions({ mode: "rpc", uiContext: this.host.webUi });
+
+			// 实时反馈：向导查阅上下文文件时，在目标栏展示当前动作，告别黑盒等待
+			const unsubscribe = wizard.subscribe((event) => {
+				if (event.type === "tool_execution_start" && event.toolName !== "goal_ask") {
+					const argHint =
+						typeof event.args === "object" && event.args !== null
+							? String(
+									(event.args as Record<string, unknown>).path ||
+										(event.args as Record<string, unknown>).file_path ||
+										(event.args as Record<string, unknown>).pattern ||
+										(event.args as Record<string, unknown>).query ||
+										"",
+								).slice(0, 30)
+							: "";
+					const toolLabelZh =
+						event.toolName === "read"
+							? "正在查阅文件"
+							: event.toolName === "grep"
+								? "正在检索内容"
+								: event.toolName === "find"
+									? "正在查找文件"
+									: event.toolName === "ls"
+										? "正在浏览目录"
+										: "正在查阅上下文";
+					wgoal.wizard.status = `调研中：${toolLabelZh}${argHint ? ` ${argHint}` : "…"}`;
+					wgoal.wizard.statusEn = `Scoping: checking ${event.toolName}${argHint ? ` ${argHint}` : "…"}`;
+					this.emitGoalStatus();
+				}
+			});
+
+			// 扩展动态注册的模型（如 cliproxyapi/grok-4.7）在 bindExtensions 后才进入 ModelRuntime，此处兜底补绑
+			if (!model) {
+				if (wmSpec) model = services.modelRuntime.getModel(wmSpec.provider, wmSpec.id);
+				if (!model) {
+					const mainModel = mainSession.model as { provider?: string; id?: string } | undefined;
+					if (mainModel?.provider && mainModel.id) {
+						model = services.modelRuntime.getModel(mainModel.provider, mainModel.id);
+					}
+				}
+				if (model) {
+					try {
+						await wizard.setModel(model);
+					} catch {
+						/* best-effort */
+					}
+				}
+			}
 			// Cancel watcher: when the user ✗s / idle-timeout fires, truly stop the
 			// wizard's agent run (not just mark it).
 			if (!ac.signal.aborted) {
@@ -789,7 +918,21 @@ export class GoalService {
 					{ once: true },
 				);
 			}
-			await wizard.prompt(wizardPrompt(draft));
+
+			// 从发起调研的主会话中提取上下文历史（摘要与近期轮次），避免孤立向导完全失忆
+			const mainMessages =
+				(
+					mainSession as unknown as { sessionManager?: { buildSessionContext?: () => { messages?: unknown[] } } }
+				).sessionManager?.buildSessionContext?.()?.messages ??
+				(mainSession as unknown as { messages?: unknown[] }).messages ??
+				[];
+			const contextSummary = buildWizardConversationContext(mainMessages);
+
+			try {
+				await wizard.prompt(wizardPrompt(draft, contextSummary));
+			} finally {
+				unsubscribe();
+			}
 			refinedGoal = wizard.getLastAssistantText()?.trim() ?? "";
 			// The wizard is prompted to emit "GOAL: <text>". Parse past the marker;
 			// if it didn't follow, strip a leading preamble line and keep the rest.
@@ -1318,6 +1461,21 @@ export class GoalService {
 				});
 				const reviewCap = g.locked && g.maxRounds > 0 ? g.maxRounds : 0; // 0 = no cap
 				const reviewer = srv.session;
+				if (!model) {
+					try {
+						await reviewer.bindExtensions({ mode: "rpc" });
+						if (rmSpec) model = services.modelRuntime.getModel(rmSpec.provider, rmSpec.id);
+						if (!model) {
+							const mainModel = mainSession.model as { provider?: string; id?: string } | undefined;
+							if (mainModel?.provider && mainModel.id) {
+								model = services.modelRuntime.getModel(mainModel.provider, mainModel.id);
+							}
+						}
+						if (model) await reviewer.setModel(model);
+					} catch {
+						/* best-effort */
+					}
+				}
 				await reviewer.prompt(this.reviewerPrompt(goalText, g.round, reviewCap, finalText, diff, reviewPrompt));
 
 				// Parse the reviewer's final output (expected to be a JSON object).
