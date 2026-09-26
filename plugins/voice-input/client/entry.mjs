@@ -9,11 +9,14 @@
  *   （用户再编辑发送）；「直接发送」经 `startChat({ prompt, newChat:false })`
  *   发给当前对话，不需要编辑。
  *
- * 识别策略：
- *   1. 有 Web Speech API（Chrome/Edge）→ 浏览器本地识别，免费实时出字；
- *   2. 没有 / 出错 / 用户手动切 → 服务端录音：AudioWorklet 现场采 16k 单声道 WAV →
+ * 识别策略（`engine` 设置，点 🎤 时直接分流，不必等联网失败）：
+ *   auto   先用浏览器原生识别（Chrome/Edge，免费实时出字），出错/不支持再降级；
+ *   local  直接走服务端本地 Whisper（录音不出本机）；还没装就直接弹一键安装；
+ *   remote 直接走服务端远端接口。
+ *   三档都能在录音浮层里随时切（切完写回设置，下次 🎤 直接用这一档）。
+ *   服务端录音：AudioWorklet 现场采 16k 单声道 WAV →
  *      POST /plugins-api/voice-input/transcribe → 本地 Whisper 或远端接口转写；
- *   3. 服务端也没得用 → 浮层里「一键安装本地 Whisper」（后台下载，进度轮询，
+ *   服务端也没得用 → 浮层里「一键安装本地 Whisper」（后台下载，进度轮询，
  *      装完自动开始录音），或去设置里配远端转写接口。
  *
  * Edge 排障经验（用户实测“完全不能识别”多半是这三个之一）：
@@ -123,6 +126,28 @@ const T = {
 	installNote: isZh
 		? "本地 Whisper：免费、无需 key、录音不出本机。首次安装要下载约 150–300MB（模型）+ 运行时，关掉浮层会在后台继续装。"
 		: "Local Whisper: free, no key, audio never leaves this machine. First install downloads ~150–300MB (model) + runtime; closing this panel keeps installing in background.",
+	switchEngine: isZh ? "切换识别方式" : "Switch engine",
+	pickEngine: isZh ? "用哪种识别方式？" : "Which recognition engine?",
+	pickEngineNote: isZh
+		? "选完会存回插件设置，下次点 🎤 直接用这一档。本地 Whisper 还没装的话，选它会直接带你装。"
+		: "Your choice is saved back to the plugin settings and used by the 🎤 button next time. If local Whisper isn't installed yet, picking it walks you through the install.",
+	engAuto: isZh ? "浏览器联网识别（免费实时）" : "Browser recognition (free, live)",
+	engLocal: isZh ? "本地 Whisper（离线，不出本机）" : "Local Whisper (offline, on-device)",
+	engRemote: isZh ? "远端转写接口" : "Remote endpoint",
+	engLocalMissing: isZh ? "本地 Whisper（未安装，点此安装）" : "Local Whisper (not installed — install)",
+	engRemoteMissing: isZh ? "远端接口（未配置）" : "Remote endpoint (not configured)",
+	engineNotSaved: isZh
+		? "切换没存上（服务端没确认），这次没开始：请到插件设置里直接把「转写引擎」改成你要的那一档"
+		: "Couldn't save the switch (the server didn't confirm), so nothing started: change “Transcription engine” in the plugin settings instead",
+	localNotInstalled: isZh
+		? "本地 Whisper 还没装。装一次就能一直离线识别，录音不出本机、不需要 key。"
+		: "Local Whisper isn't installed yet. Install it once for offline dictation — audio never leaves this machine, no key needed.",
+	remoteNotConfigured: isZh
+		? "还没配远端转写接口：在插件设置里填「转写接口基址」与密钥，或改成用本地 Whisper。"
+		: "No remote endpoint configured: fill in the transcription base URL and key in the plugin settings, or switch to local Whisper.",
+	serverFallbackOff: isZh
+		? "「服务端转写降级」关着，服务端录音这条路被封了：去插件设置里打开它，或改用浏览器识别。"
+		: "“Server transcription fallback” is off, so server recording is disabled: turn it on in the plugin settings, or use browser recognition.",
 };
 
 /** 浏览器原生识别的错误码 → 中文人话。纯展示映射，方便单测/排障。 */
@@ -243,6 +268,7 @@ function hostApi() {
 /* ------------------------------------------------------------------ */
 
 let overlay = null;
+let overlayTimer = 0;
 
 function closeOverlay() {
 	if (overlay) {
@@ -254,6 +280,12 @@ function closeOverlay() {
 /** 建浮层。返回 { setText, setState, onDone, onCancel } 由调用方接线。 */
 function openOverlay() {
 	closeOverlay();
+	// 上一个浮层的计时器要停掉：它盯的是全局 `overlay`，换一个浮层它并不会自杀，
+	// 于是每切一次识别方式就泄一个 500ms 的 interval（一直写进已脱离文档的节点）。
+	if (overlayTimer) {
+		clearInterval(overlayTimer);
+		overlayTimer = 0;
+	}
 	const root = document.createElement("div");
 	root.className = "vi-overlay";
 	root.innerHTML = `
@@ -298,9 +330,10 @@ function openOverlay() {
 	const btnsEl = root.querySelector(".vi-btns");
 	overlay = root;
 	const t0 = Date.now();
-	const timer = setInterval(() => {
+	overlayTimer = setInterval(() => {
 		if (!overlay) {
-			clearInterval(timer);
+			clearInterval(overlayTimer);
+			overlayTimer = 0;
 			return;
 		}
 		const s = Math.floor((Date.now() - t0) / 1000);
@@ -522,6 +555,106 @@ function serverUsable(cfg) {
 	return Boolean(cfg.localReady || cfg.serverReady);
 }
 
+/**
+ * 引擎设置 + 当前就绪情况 → 起手动作。纯函数（不碰 DOM/fetch），单测覆盖。
+ *
+ * 返回：
+ *   "sr"              浏览器原生识别（Web Speech）
+ *   "rec"             服务端录音（本地 Whisper / 远端接口转写）
+ *   "install-local"   选了 local 但没装 → 直接弹一键安装
+ *   "remote-missing"  选了 remote 但没配接口 → 提示去设置
+ *   "install-generic" auto 且浏览器没识别能力、服务端也没得用
+ *   "fallback-off"    auto 且服务端就绪但「降级」开关关着
+ *
+ * 关键点（issue #383）：`local` / `remote` 是**主动选择**，点 🎤 就直接走它，
+ * 不再「先测浏览器能不能联网、失败后才降级」—— 那是旧 toggle 的毛病，
+ * 于是每次都得先干等几秒报错。
+ */
+export function pickEngineRoute(engine, flags = {}) {
+	const e = String(engine || "auto").toLowerCase();
+	if (e === "local") return flags.localReady ? "rec" : "install-local";
+	if (e === "remote") return flags.serverReady ? "rec" : "remote-missing";
+	if (flags.srSupported) return "sr";
+	if (!flags.localReady && !flags.serverReady) return "install-generic";
+	return flags.serverFallback === false ? "fallback-off" : "rec";
+}
+
+/** 按引擎分发起始识别。toggle() 与切换面板共用这一份，别写两套。 */
+function startByEngine(cfg) {
+	const route = pickEngineRoute(cfg?.engine, {
+		srSupported: srSupported(),
+		localReady: Boolean(cfg?.localReady),
+		serverReady: Boolean(cfg?.serverReady),
+		serverFallback: cfg?.serverFallback !== false,
+	});
+	// 显式选了 local/remote 时，「服务端转写降级」开关不该拦住用户点名要的那条路
+	//（降级开关是给 auto 兜底用的）。
+	const explicit = cfg?.engine === "local" || cfg?.engine === "remote";
+	if (route === "sr") {
+		startSpeechRecognition(cfg?.lang || "zh-CN", cfg);
+		return;
+	}
+	if (route === "rec") {
+		void startRecorderFlow({ explicit });
+		return;
+	}
+	if (route === "install-local") {
+		showInstallPrompt(T.localNotInstalled);
+		return;
+	}
+	if (route === "remote-missing") {
+		showError(T.remoteNotConfigured);
+		return;
+	}
+	if (route === "fallback-off") {
+		showError(T.serverFallbackOff);
+		return;
+	}
+	showInstallPrompt(T.noSpeech);
+}
+
+/** 把引擎选择写回服务端（= 声明式设置里的 `engine`）。失败不抛：本次仍照用。 */
+async function persistEngine(eng) {
+	try {
+		const r = await fetch(`${apiBase()}/engine`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ engine: eng }),
+			credentials: "same-origin",
+		});
+		if (!r.ok) return false;
+		// 配置缓存作废：下面 startByEngine 要拿到新的 localReady/serverReady。
+		settingsCache = null;
+		settingsAt = 0;
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** 「用哪种识别方式」面板：常驻在录音浮层里，不必等联网失败才有机会换（issue #383）。 */
+function showEnginePicker(cfg) {
+	const ui = openOverlay();
+	ui.setStatus("🎤");
+	ui.setText(T.pickEngine);
+	ui.setNote(T.pickEngineNote);
+	const pick = (eng) => () => {
+		// 先本地改缓存：不等网络回包就能开始录音（写回失败也只是不持久）。
+		if (settingsCache) settingsCache = { ...settingsCache, engine: eng };
+		const next = { ...(cfg ?? {}), engine: eng };
+		void persistEngine(eng).then((ok) => {
+			if (!ok) showError(T.engineNotSaved);
+			else startByEngine(next);
+		});
+	};
+	ui.setButtons([
+		{ label: T.engAuto, onClick: pick("auto") },
+		{ label: cfg?.localReady ? T.engLocal : T.engLocalMissing, onClick: pick("local") },
+		{ label: cfg?.serverReady ? T.engRemote : T.engRemoteMissing, onClick: pick("remote") },
+		{ label: T.close, onClick: closeOverlay },
+	]);
+}
+
 function startSpeechRecognition(lang, cfg) {
 	const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
 	const rec = new Ctor();
@@ -533,14 +666,42 @@ function startSpeechRecognition(lang, cfg) {
 	session.finalText = "";
 	session.interim = "";
 	session.manualStop = false;
+	// 必须清掉上一轮的 switching：从识别切到「切换面板」再切回来时，
+	// 旗子残留会让新识别的 onend 误以为是切途中（不续听也不收尾，识别静默死掉）。
+	session.switching = false;
 	session.srRestarts = 0;
 	const ui = openOverlay();
 	session.ui = ui;
 	ui.setStatus(`🎤 ${T.listening}`);
 	const wireButtons = () => {
+		/** 离开当前识别去做别的（切服务端 / 开切换面板）：先立旗再 abort，
+		 *  否则 abort 激起的 onend 会把浏览器半截文字收尾。
+		 *  半截文字直接丢掉（切过去就是要重说），onend 见空会让路。 */
+		const leave = (next) => {
+			session.switching = true;
+			session.manualStop = true;
+			session.finalText = "";
+			session.interim = "";
+			try {
+				rec.abort();
+			} catch {
+				/* ignore */
+			}
+			next();
+		};
 		const btns = [
 			{ label: T.fill, primary: true, onClick: () => finishWithText(srTotalText(session.finalText, session.interim)) },
 			{ label: T.send, onClick: () => sendDirectText(srTotalText(session.finalText, session.interim)) },
+			// 常驻的切换入口：不必等浏览器联网失败才有机会换成本地识别（issue #383）。
+			// 走 resetSession 而不是 leave()：它先把 mode 置 idle 再收工，abort 激起的
+			// onend 醒来时看到 idle 就直接返回，浮层关掉后也不会留下“僵尸识别态”。
+			{
+				label: T.switchEngine,
+				onClick: () => {
+					resetSession();
+					showEnginePicker(cfg);
+				},
+			},
 			{
 				label: T.cancel,
 				onClick: () => {
@@ -552,21 +713,7 @@ function startSpeechRecognition(lang, cfg) {
 		if (serverUsable(cfg)) {
 			btns.splice(1, 0, {
 				label: T.useServer,
-				onClick: () => {
-					// 手动切服务端：先立 switching 旗再 abort，否则 abort 激起的
-					// onend 会把浏览器半截文字直接收尾——“识别成功了还弹录音”就是这么来的。
-					// 半截文字直接丢掉（切过去就是要重说），onend 见空会让路。
-					session.switching = true;
-					session.manualStop = true;
-					session.finalText = "";
-					session.interim = "";
-					try {
-						rec.abort();
-					} catch {
-						/* ignore */
-					}
-					void startRecorderFlow();
-				},
+				onClick: () => leave(() => void startRecorderFlow()),
 			});
 		}
 		ui.setButtons(btns);
@@ -849,7 +996,11 @@ function capturePcm16k(onAutoStop) {
 	});
 }
 
-async function startRecorderFlow() {
+/**
+ * 服务端录音 → 转写。opts.explicit = 用户显式选了 local/remote 引擎，
+ * 此时「服务端转写降级」开关不拦（它是给 auto 兜底用的）。
+ */
+async function startRecorderFlow(opts = {}) {
 	let cfg;
 	try {
 		cfg = await getSettings();
@@ -857,7 +1008,8 @@ async function startRecorderFlow() {
 		showInstallPrompt(T.serverMissing);
 		return;
 	}
-	if (!serverUsable(cfg)) {
+	const explicitOk = Boolean(opts.explicit) && Boolean(cfg.localReady || cfg.serverReady);
+	if (!explicitOk && !serverUsable(cfg)) {
 		showInstallPrompt(T.serverMissing);
 		return;
 	}
@@ -885,6 +1037,14 @@ async function startRecorderFlow() {
 		{
 			label: T.send,
 			onClick: () => stopAndTranscribe("send"),
+		},
+		{
+			// 常驻的切换入口：录到一半也能改主意换引擎（resetSession 顺带关麦）。
+			label: T.switchEngine,
+			onClick: () => {
+				resetSession();
+				showEnginePicker(cfg);
+			},
 		},
 		{
 			label: T.cancel,
@@ -1116,16 +1276,15 @@ async function toggle() {
 		showError(T.insecure);
 		return;
 	}
-	// 空闲 → 开始：先读配置（语言 + 降级开关 + 服务端是否就绪）。
-	let cfg = { lang: "zh-CN", serverFallback: true, serverReady: false, localReady: false };
+	// 空闲 → 开始：先读配置（语言 + 引擎 + 降级开关 + 服务端是否就绪）。
+	let cfg = { lang: "zh-CN", engine: "auto", serverFallback: true, serverReady: false, localReady: false };
 	try {
 		cfg = await getSettings();
 	} catch {
-		/* 读不到就按纯浏览器模式跑，降级时再报错 */
+		/* 读不到就按默认引擎跑，降级时再报错 */
 	}
-	if (srSupported()) startSpeechRecognition(cfg.lang || "zh-CN", cfg);
-	else if (serverUsable(cfg)) void startRecorderFlow();
-	else showInstallPrompt(T.noSpeech);
+	// 引擎分流在 startByEngine 一处（与浮层里的切换面板共用，issue #383）。
+	startByEngine(cfg);
 }
 
 /* ------------------------------------------------------------------ */

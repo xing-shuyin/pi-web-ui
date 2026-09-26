@@ -20,8 +20,8 @@
 				"action": "voice-input:toggle",
 				"order": 1,
 				"align": "start",
-				"hint": "点击说话，识别结果填入输入框（再点一次结束）",
-				"hintEn": "Click to dictate into the input box (click again to finish)"
+				"hint": "点击说话，识别结果填入输入框（再点一次结束）；浮层里可随时切换浏览器联网识别 / 本地 Whisper，不必等联网失败才弹窗",
+				"hintEn": "Click to dictate into the input box (click again to finish); the panel lets you switch between browser recognition and local Whisper at any time"
 			},
 			{
 				"id": "camera",
@@ -66,7 +66,14 @@
 			"label": "转写引擎",
 			"default": "auto",
 			"options": ["auto", "local", "remote"],
-			"hint": "auto=本地优先、挂了切远端；local=只用本地（需先一键安装）；remote=只用远端接口"
+			"hint": "点 🎤 时直接决定先走哪条路（麦克风浮层里也能随时切，选完会存回这里）：auto=先用浏览器联网识别（免费实时），失败/不支持再降级服务端；local=直接用本地 Whisper（录音不出本机，未装会先带你装）；remote=只用远端接口。auto 与 local 在服务端转写时都是「本地优先、挂了切远端」"
+		},
+		{
+			"key": "hfEndpoint",
+			"type": "text",
+			"label": "模型下载源",
+			"default": "",
+			"hint": "留空 = 官方 huggingface.co。国内直连经常超时，可填社区镜像 https://hf-mirror.com ；也认环境变量 HF_ENDPOINT"
 		},
 		{
 			"key": "localModel",

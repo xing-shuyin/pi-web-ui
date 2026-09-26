@@ -10,6 +10,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **语音输入可主动选识别方式（#383）** —— 麦克风浮层新增常驻的「切换识别方式」面板（浏览器联网识别 / 本地 Whisper / 远端接口），选中即用并写回插件设置，下次点 🎤 直接走这一档；「转写引擎」设为本地或远端时，点 🎤 直接走对应引擎（本地没装就直接弹一键安装，不必再干等浏览器联网失败几秒）。
+
+### Fixed
+
+- **本地语音运行时「装成功却报没装上」（#383）** —— 修复安装本地 Whisper 后仍报「npm install 没跑通」：Node 的 CJS 解析会把 `package.json` 不存在的负结果缓存整个进程，装完复查永远命中它。依赖探测改为「解析失败再看文件是否已落盘」，插件侧也改为直接按 `package.json` 定位 transformers.js 入口，不再依赖被污染的解析缓存（非重启服务即可恢复）。
+- **模型下载源可配（#383）** —— 新增「模型下载源」设置（也认环境变量 `HF_ENDPOINT`），国内直连 huggingface.co 超时时可填 `https://hf-mirror.com`。
+- **语音浮层计时器泄漏** —— 切换识别方式时上一个浮层的计时器不再残留（此前每切一次泄一个 500ms 定时器）。
+
 ## [0.96.1] — 2026-09-26
 
 ### Fixed
@@ -24,10 +34,12 @@
 - **输入框与顶栏控件排版微调** —— 顶栏 chip 统一幽灵化；输入框底部模型与思考强度 chip 尺寸微调收紧；思考强度 Chip 文案精简为 `{level}`，保留 tooltip 说明；预设选择器图标优化为 `FiSliders`。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端中文变更（1）：`thinkingChip`
 - 前端英文变更（1）：`thinkingChip`
+
 <!-- auto-i18n:end -->
 
 ## [0.96.0] — 2026-09-26
@@ -52,9 +64,10 @@
 ### Changed
 
 - **输入框 `@` 提及支持技能（skills）自动补全** —— 在消息文本任意位置键入 `@` 或 `@skill:` 即可弹出技能候选列表（名称匹配优先于描述匹配，支持中英文双语描述检索与 `@page` 页面置顶防挤占）；点选后自动在光标处插入 `@skill:<name>` 词元，与 Pi 运行时的技能提升扩展无缝联动。
-- **收敛型澄清提问与决策就绪型计划规范（#330）** —— `ask_user_question` 现在单次严格限制 1~3 个问题（优先 1 个，超过 3 个直接报错阻断，防止问卷轰炸），选项 schema 收紧为 2~4 个互斥选项且推荐方案置顶，选项 description 要求一句话说明影响与权衡；`plan_update` 提示词升级为「决策就绪型」规划：动代码前先在步骤中落实排查发现（Discovery）、受影响文件清单（File Touch List）与风险回滚预案（Rollback），并随执行实时流转步骤状态。目标向导（`goal_ask` / wizardPrompt）与 DSH 澄清提示词同步对齐收敛型交互。
+- **收敛型澄清提问与决策就绪型计划规范（#330）** —— `ask_user_question` 现在单次严格限制 1~~3 个问题（优先 1 个，超过 3 个直接报错阻断，防止问卷轰炸），选项 schema 收紧为 2~~4 个互斥选项且推荐方案置顶，选项 description 要求一句话说明影响与权衡；`plan_update` 提示词升级为「决策就绪型」规划：动代码前先在步骤中落实排查发现（Discovery）、受影响文件清单（File Touch List）与风险回滚预案（Rollback），并随执行实时流转步骤状态。目标向导（`goal_ask` / wizardPrompt）与 DSH 澄清提示词同步对齐收敛型交互。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（49）：`reaskDirectly`、`reaskDirectlyTip`、`kindPlugin`、`pluginCheckUpdates`、`pluginCheckUpdatesHint`、`pluginUpdateAvailableBadge`、`pluginUpdateAvailableDetail`、`pluginAllUpToDate`、`piCoreSplitRun`、`piSdkSplitNote`、`piSdkBundledNote`、`installGlobalEngineBtn`、`installGlobalEngineTabTitle`、`saveResultUnknown`、`questionNoneAvailable`、`notifyApprovalTitle`、`notifyApprovalBody`、`notifyApprovalBodyTool`、`sound.approval`、`sound.approval.desc`、`settingsSoundVoice`、`ttsHeader`、`ttsEnable`、`ttsEnableDesc`、`ttsAnnounce`、`ttsAnnounceDesc`、`ttsReadReplies`、`ttsReadRepliesDesc`、`ttsRate`、`ttsVoice`、`ttsVoiceAuto`、`ttsVoiceOnline`、`ttsUnavailable`、`ttsPreviewLine`、`ttsAnnounceDone`、`ttsAnnounceQuestion`、`ttsAnnounceError`、`ttsAnnounceApproval`、`speakMsg`、`stopSpeakingMsg`、`apiKeySavedHint`、`settingsViewPromptTokens`、`settingsPromptContextTotal`、`toolsSectionCore`、`toolsCoreHint`、`toolCoreBashDesc`、`toolCoreReadDesc`、`toolCoreEditDesc`、`toolCoreWriteDesc`
@@ -63,6 +76,7 @@
 - 服务端新增 key（3）：`plugincatalog.sync.doc.invalid`、`terminals.bash.nosentinel.note`、`terminals.command.blocked`
 - 服务端文案变更（1）：`terminals.bash.timeout`
 - 服务端删除 key（2）：`plugincatalog.sync.source.invalid`、`plugincatalog.sync.read.failed`
+
 <!-- auto-i18n:end -->
 
 ## [0.95.0] — 2026-09-24

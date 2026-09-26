@@ -22,14 +22,16 @@ import { parseUiContributions } from "../../server/plugins.js";
 import { createMockHost } from "../../plugin-sdk/index.mjs";
 import voiceInput, {
 	decodeWav16k,
+	hfEndpointHost,
 	joinUrl,
 	LOCAL_MODELS,
+	pkgEntryCandidates,
 	resampleLinear,
 	resolveLocalModel,
 	whisperFullLang,
 	whisperLang,
 } from "../../plugins/voice-input/index.mjs";
-import { encodeWavPCM, srExplain, srTotalText } from "../../plugins/voice-input/client/entry.mjs";
+import { encodeWavPCM, pickEngineRoute, srExplain, srTotalText } from "../../plugins/voice-input/client/entry.mjs";
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugins", "voice-input");
 const manifest = JSON.parse(readFileSync(join(pluginDir, "manifest.json"), "utf8"));
@@ -89,6 +91,93 @@ describe("voice-input manifest", () => {
 		expect(byKey.localModel.type).toBe("select");
 		expect(byKey.localModel.default).toBe("base");
 		expect(byKey.localModel.options).toEqual(expect.arrayContaining(["base", "tiny"]));
+		// 模型下载源（issue #383）：国内直连 huggingface.co 会超时，留空 = 官方源。
+		expect(byKey.hfEndpoint.type).toBe("text");
+		expect(byKey.hfEndpoint.default).toBe("");
+	});
+});
+
+/* ------------------------------------------------------------------ */
+/* 引擎分流（issue #383：不再「先试浏览器联网、失败才降级」）              */
+/* ------------------------------------------------------------------ */
+
+describe("pickEngineRoute", () => {
+	it("local：已装直接录服务端，没装直接给安装入口（不等联网失败）", () => {
+		expect(pickEngineRoute("local", { localReady: true, serverReady: false, srSupported: true })).toBe("rec");
+		expect(pickEngineRoute("local", { localReady: false, serverReady: true, srSupported: true })).toBe("install-local");
+	});
+	it("remote：已配直接录，没配指向设置", () => {
+		expect(pickEngineRoute("remote", { serverReady: true, localReady: false })).toBe("rec");
+		expect(pickEngineRoute("remote", { serverReady: false, localReady: true })).toBe("remote-missing");
+	});
+	it("显式选引擎时「服务端转写降级」开关不拦（它是给 auto 兜底用的）", () => {
+		expect(pickEngineRoute("local", { localReady: true, serverFallback: false })).toBe("rec");
+		expect(pickEngineRoute("remote", { serverReady: true, serverFallback: false })).toBe("rec");
+	});
+	it("auto：浏览器原生优先，没有则降级服务端，两边都没得用才引导安装", () => {
+		expect(pickEngineRoute("auto", { srSupported: true, localReady: false, serverReady: false })).toBe("sr");
+		expect(pickEngineRoute("auto", { srSupported: false, localReady: true, serverFallback: true })).toBe("rec");
+		expect(pickEngineRoute("auto", { srSupported: false, localReady: false, serverReady: true })).toBe("rec");
+		expect(pickEngineRoute("auto", { srSupported: false, localReady: false, serverReady: false })).toBe(
+			"install-generic",
+		);
+		// 服务端就绪但降级开关关着：说清楚是开关的事，不弹安装。
+		expect(pickEngineRoute("auto", { srSupported: false, localReady: true, serverFallback: false })).toBe(
+			"fallback-off",
+		);
+	});
+	it("非法/缺省引擎回落 auto", () => {
+		expect(pickEngineRoute(undefined, { srSupported: true })).toBe("sr");
+		expect(pickEngineRoute("LOCAL", { localReady: true })).toBe("rec");
+		expect(pickEngineRoute("", { srSupported: false })).toBe("install-generic");
+	});
+	it("toggle 不再自己判浏览器能力（分流只有 startByEngine 一处）", () => {
+		const src = readFileSync(join(pluginDir, "client", "entry.mjs"), "utf8");
+		const toggle = src.slice(
+			src.indexOf("async function toggle()"),
+			src.indexOf("/* ---", src.indexOf("async function toggle()")),
+		);
+		expect(toggle).toContain("startByEngine(cfg)");
+		// 旧写法「先试 srSupported() 再降级」不许回潮。
+		expect(toggle).not.toContain("srSupported()");
+	});
+});
+
+describe("pkgEntryCandidates", () => {
+	it("exports 带条件时按 import/module/default/require 排优先级", () => {
+		expect(
+			pkgEntryCandidates({
+				exports: { ".": { require: "./dist/transformers.cjs", import: "./dist/transformers.mjs" } },
+			}),
+		).toEqual([
+			"./dist/transformers.mjs",
+			"./dist/transformers.cjs",
+			"dist/transformers.js",
+			"dist/transformers.mjs",
+			"dist/transformers.cjs",
+		]);
+	});
+	it("exports 是字符串 / 只有 module / 只有 main 都认", () => {
+		// 相对路径原样保留（join 吃得下 "./" 前缀），不在这里做形状归一。
+		expect(pkgEntryCandidates({ exports: { ".": "./dist/transformers.js" } })[0]).toBe("./dist/transformers.js");
+		expect(pkgEntryCandidates({ module: "esm.js", main: "cjs.js" }).slice(0, 2)).toEqual(["esm.js", "cjs.js"]);
+	});
+	it("没有可用字段也兜一个历史布局名，不返回空", () => {
+		expect(pkgEntryCandidates({})).toContain("dist/transformers.js");
+		expect(pkgEntryCandidates(null)).toContain("dist/transformers.js");
+	});
+});
+
+describe("hfEndpointHost", () => {
+	it("设置优先于环境变量，末尾斜杠归一", () => {
+		expect(hfEndpointHost("https://hf-mirror.com/", "https://huggingface.co")).toBe("https://hf-mirror.com");
+		expect(hfEndpointHost("", "https://hf-mirror.com")).toBe("https://hf-mirror.com");
+	});
+	it("非 http(s) / 空 → 空（不改官方源）", () => {
+		expect(hfEndpointHost("")).toBe("");
+		expect(hfEndpointHost(undefined, "")).toBe("");
+		expect(hfEndpointHost("file:///etc/passwd")).toBe("");
+		expect(hfEndpointHost("ftp://x.example")).toBe("");
 	});
 });
 
@@ -268,6 +357,64 @@ describe("srTotalText", () => {
 		const src = readFileSync(join(pluginDir, "client", "entry.mjs"), "utf8");
 		expect(src).toContain("newChat: false");
 		expect(src).toContain("startChat");
+	});
+});
+
+describe("引擎切换路由（POST /engine）", () => {
+	/** 抓插件注册的真路由处理器（走 activate 真路径，不 mock 被测逻辑）。 */
+	function route(
+		host: { mock: { routes: { method: string; path: string; handler: (req: unknown, res: unknown) => unknown }[] } },
+		method: string,
+		path: string,
+	) {
+		const r = host.mock.routes.find((x) => x.method === method && x.path === path);
+		if (!r) throw new Error(`没注册路由：${method} ${path}`);
+		return r.handler;
+	}
+	function fakeRes() {
+		return {
+			statusCode: 200,
+			headersSent: false,
+			body: null as unknown,
+			status(code: number) {
+				this.statusCode = code;
+				return this;
+			},
+			json(payload: unknown) {
+				this.body = payload;
+				return this;
+			},
+			end() {
+				return this;
+			},
+		};
+	}
+
+	it("合法值写回声明式设置，并只动 engine 这一个键", async () => {
+		const { host } = boot({ engine: "auto" });
+		host.storage.set("settings", { lang: "en-US" });
+		const res = fakeRes();
+		await route(host, "POST", "/engine")({ body: { engine: "local" } }, res);
+		expect(res.statusCode).toBe(200);
+		expect(res.body).toMatchObject({ ok: true, engine: "local" });
+		// 其它设置项不能被抹掉（也不该把合并后的默认值固化成存值）。
+		expect(host.storage.get("settings")).toEqual({ lang: "en-US", engine: "local" });
+	});
+
+	it("大小写/空白归一，非法值 400 且不写盘", async () => {
+		const { host } = boot();
+		const ok = fakeRes();
+		await route(host, "POST", "/engine")({ body: { engine: " Local " } }, ok);
+		expect(ok.body).toMatchObject({ engine: "local" });
+
+		const bad = fakeRes();
+		await route(host, "POST", "/engine")({ body: { engine: "evil" } }, bad);
+		expect(bad.statusCode).toBe(400);
+		expect(host.storage.get("settings")).toEqual({ engine: "local" });
+
+		const empty = fakeRes();
+		await route(host, "POST", "/engine")({}, empty);
+		expect(empty.statusCode).toBe(400);
 	});
 });
 
