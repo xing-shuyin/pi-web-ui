@@ -141,4 +141,132 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		expect((stats.toolBreakdown as Record<string, number>).bash).toBe(1);
 		expect(stats.totalOriginalBytes).toBe(2048);
 	});
+
+	it("无节省或未触发打包时，底栏常驻显示极简 '省 0' 且文案明确当前会话", () => {
+		const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
+		const mockHost = {
+			getActiveConversation: vi.fn().mockReturnValue({
+				messages: [
+					{ role: "user", content: [{ type: "text", text: "你好" }] },
+					{ role: "assistant", content: [{ type: "text", text: "你好！有什么我可以帮你的？" }] },
+				],
+			}),
+			ui: {
+				update: vi.fn((id, patch) => {
+					updates.push({ id, patch });
+				}),
+			},
+			onAttach: vi.fn(),
+			onRunEvent: vi.fn(),
+			onMessage: vi.fn(),
+			notify: vi.fn(),
+		};
+
+		solSavingsPlugin(mockHost);
+
+		expect(updates.length).toBeGreaterThan(0);
+		const lastUpdate = updates[updates.length - 1];
+		expect(lastUpdate.id).toBe("sol-savings-badge");
+		expect(lastUpdate.patch.badge).toBe("省 0");
+		expect(lastUpdate.patch.hint).toContain("当前会话");
+		expect(lastUpdate.patch.hint).toContain("已节省 0 tokens");
+	});
+
+	it("多会话切换严格按当前会话隔离，不跨会话累加或污染", () => {
+		const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
+		let activeConv = {
+			id: "conv-1",
+			title: "大任务分析",
+			messages: [
+				{
+					role: "tool_result",
+					content: [
+						{
+							type: "text",
+							text: [
+								"[large tool result replaced after its first 2 provider requests]",
+								"id: obs_conv1",
+								"tool: bash",
+								"original_bytes: 51200",
+								"original_lines: 400",
+								"estimated_tokens: 12000",
+							].join("\n"),
+						},
+					],
+				},
+				{ role: "assistant", content: [{ type: "text", text: "处理完毕" }] },
+				{ role: "assistant", content: [{ type: "text", text: "再次确认" }] },
+			],
+		};
+
+		let onConvChangedCb: (() => void) | undefined;
+		const mockHost = {
+			getActiveConversation: vi.fn(() => activeConv),
+			ui: {
+				update: vi.fn((id, patch) => {
+					updates.push({ id, patch });
+				}),
+			},
+			onAttach: vi.fn(),
+			onConversationChanged: vi.fn((cb) => {
+				onConvChangedCb = cb;
+			}),
+			onRunEvent: vi.fn(),
+			onMessage: vi.fn(),
+			notify: vi.fn(),
+		};
+
+		solSavingsPlugin(mockHost);
+
+		// 会话 1：有大输出截断，产生节省
+		let lastUpdate = updates[updates.length - 1];
+		expect(lastUpdate.patch.badge).toBe("省 23.8k");
+
+		// 切换至新开启的会话 2（干净会话，尚未触发截断）
+		activeConv = {
+			id: "conv-2",
+			title: "日常问答",
+			messages: [
+				{ role: "user", content: [{ type: "text", text: "帮我看一下天气" }] },
+				{ role: "assistant", content: [{ type: "text", text: "今天天气晴朗" }] },
+			],
+		};
+		onConvChangedCb?.();
+
+		// 会话 2：必须独立显示 "省 0"，绝对不能继承会话 1 的 23.8k
+		lastUpdate = updates[updates.length - 1];
+		expect(lastUpdate.patch.badge).toBe("省 0");
+		expect(lastUpdate.patch.hint).toContain("已节省 0 tokens");
+
+		// 再切回会话 1
+		activeConv = {
+			id: "conv-1",
+			title: "大任务分析",
+			messages: [
+				{
+					role: "tool_result",
+					content: [
+						{
+							type: "text",
+							text: [
+								"[large tool result replaced after its first 2 provider requests]",
+								"id: obs_conv1",
+								"tool: bash",
+								"original_bytes: 51200",
+								"original_lines: 400",
+								"estimated_tokens: 12000",
+							].join("\n"),
+						},
+					],
+				},
+				{ role: "assistant", content: [{ type: "text", text: "处理完毕" }] },
+				{ role: "assistant", content: [{ type: "text", text: "再次确认" }] },
+			],
+		};
+		onConvChangedCb?.();
+
+		// 恢复会话 1 的数据
+		lastUpdate = updates[updates.length - 1];
+		expect(lastUpdate.patch.badge).toBe("省 23.8k");
+	});
 });

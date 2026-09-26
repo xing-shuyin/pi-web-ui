@@ -22,6 +22,26 @@ function hostApi() {
 	}
 }
 
+function formatBytes(bytes) {
+	const n = Number(bytes) || 0;
+	if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+	if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+	return `${n} B`;
+}
+
+function formatPlanSummary(plan) {
+	if (!Array.isArray(plan) || plan.length === 0) return null;
+	const completed = plan.filter((s) => s.status === "completed").length;
+	const active = plan.find((s) => s.status === "in_progress");
+	const marker = active ? "◐" : "○";
+	const currentGoal = active ? active.goal || active.title || "" : "";
+	return {
+		progress: `${completed}/${plan.length}`,
+		marker,
+		goal: currentGoal.length > 20 ? `${currentGoal.slice(0, 19)}…` : currentGoal,
+	};
+}
+
 /** 应用根（含 nginx 子路径前缀），由本 bundle URL 推导。 */
 function appRoot() {
 	try {
@@ -118,17 +138,64 @@ function showModal(content, statusInfo) {
 		gap: 14px;
 	`;
 
-	// 1. 会话实时节省统计区
+	// 1. 会话实时节省统计区（严格按当前会话呈现，非项目全局累计）
+	const stats = statusInfo?.stats;
 	const statsBox = document.createElement("div");
 	statsBox.style.cssText = `
 		background: var(--bg-elev2, rgba(255,255,255,0.03));
 		border: 1px solid var(--border, #333);
 		border-radius: 6px;
 		padding: 12px 14px;
-		white-space: pre-wrap;
-		word-break: break-word;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		font-size: 13px;
 	`;
-	statsBox.textContent = content;
+
+	if (stats) {
+		const totalTokens = (stats.totalSavedTokens || 0).toLocaleString();
+		const totalBytes = formatBytes(stats.totalOriginalBytes || 0);
+		const packedCount = stats.packedCount || 0;
+
+		const toolEntries = Object.entries(stats.toolBreakdown || {});
+		const toolStr = toolEntries.length > 0
+			? toolEntries.map(([t, c]) => `${esc(t)}: ${c} 次`).join(", ")
+			: "无";
+
+		const planSummary = formatPlanSummary(stats.plan);
+
+		statsBox.innerHTML = `
+			<div style="font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px;">
+				<span>📊 当前会话节省看板</span>
+				<span style="font-size: 11px; color: var(--text-dim, #888); font-weight: normal;">仅限当前会话 · 跨会话隔离</span>
+			</div>
+			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0;">
+				<div style="background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.04);">
+					<div style="font-size: 11px; color: var(--text-dim, #888);">累计节省 Token</div>
+					<div style="font-size: 16px; font-weight: bold; color: ${stats.totalSavedTokens > 0 ? "var(--green, #10b981)" : "inherit"}; margin-top: 2px;">
+						${totalTokens} <span style="font-size: 11px; font-weight: normal; color: var(--text-dim, #888);">tokens</span>
+					</div>
+				</div>
+				<div style="background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.04);">
+					<div style="font-size: 11px; color: var(--text-dim, #888);">大输出打包截断</div>
+					<div style="font-size: 16px; font-weight: bold; margin-top: 2px;">
+						${packedCount} <span style="font-size: 11px; font-weight: normal; color: var(--text-dim, #888);">次 (${totalBytes})</span>
+					</div>
+				</div>
+			</div>
+			${toolEntries.length > 0 ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">• 工具打包明细: ${toolStr}</div>` : ""}
+			${planSummary ? `<div style="font-size: 12px; color: var(--text-dim, #aaa);">• 活动规划进度: ${esc(planSummary.progress)} ${esc(planSummary.marker)} ${esc(planSummary.goal)}</div>` : ""}
+			${stats.totalSavedTokens === 0 ? `
+				<div style="font-size: 12px; color: var(--text-dim, #888); background: rgba(255,255,255,0.02); padding: 6px 8px; border-radius: 4px; border-left: 2px solid var(--accent, #3b82f6); line-height: 1.5;">
+					💡 提示：当前会话尚未产生 &gt;10KB 的工具大输出（或处于前 2 轮观察期），未触发截断，节省量为 0。切换至其他会话将展示对应会话的独立节省数据。
+				</div>
+			` : ""}
+		`;
+	} else {
+		statsBox.style.whiteSpace = "pre-wrap";
+		statsBox.style.wordBreak = "break-word";
+		statsBox.textContent = content;
+	}
 	body.appendChild(statsBox);
 
 	// 2. SoL-Pi 扩展与配置状态区
@@ -321,7 +388,7 @@ function register() {
 				document.querySelector('[data-pi-slot="bottombar"] button.status-action[title*="SoL-Pi"]') ||
 				document.querySelector('button.status-action[title*="SoL-Pi"]');
 			const tip = btn?.getAttribute("title") || "";
-			let content = "⚡ SoL-Pi：当前会话暂未产生大输出打包或上下文规划数据。";
+			let content = "⚡ SoL-Pi（当前会话）：当前会话暂未产生大输出打包或上下文规划数据。";
 			if (tip) {
 				const lines = tip.split("\n").filter((l) => !l.includes("点击查看"));
 				if (lines.length > 0) content = lines.join("\n");

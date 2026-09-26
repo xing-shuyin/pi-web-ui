@@ -229,6 +229,8 @@ export function solSavingsPlugin(host) {
 			badgeText = planInfo ? `省 ${savedFmt} · ${planInfo.progress} ${planInfo.marker}` : `省 ${savedFmt}`;
 		} else if (planInfo) {
 			badgeText = `Plan ${planInfo.badge}`;
+		} else {
+			badgeText = "省 0";
 		}
 
 		const breakdownStr = Object.entries(stats.toolBreakdown)
@@ -237,17 +239,17 @@ export function solSavingsPlugin(host) {
 
 		const hintZh =
 			stats.totalSavedTokens > 0
-				? `⚡ SoL-Pi 已为本会话节省约 ${stats.totalSavedTokens.toLocaleString()} tokens（压缩 ${stats.packedCount} 个输出${breakdownStr ? ` [${breakdownStr}]` : ""}，累计原始数据 ${formatBytes(stats.totalOriginalBytes)}）${planInfo ? `\n🎯 规划进度：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : ""}\n点击查看完整明细`
+				? `⚡ SoL-Pi（当前会话）：已节省约 ${stats.totalSavedTokens.toLocaleString()} tokens（压缩 ${stats.packedCount} 个输出${breakdownStr ? ` [${breakdownStr}]` : ""}，累计原始数据 ${formatBytes(stats.totalOriginalBytes)}）${planInfo ? `\n🎯 规划进度：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : ""}\n点击查看当前会话明细`
 				: planInfo
-					? `⚡ SoL-Pi 规划进行中：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}`
-					: `⚡ SoL-Pi：当前会话暂未触发大工具输出打包或在线压缩`;
+					? `⚡ SoL-Pi（当前会话）规划进行中：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}\n点击查看当前会话明细`
+					: `⚡ SoL-Pi（当前会话）：已节省 0 tokens，暂未触发大工具输出打包（阈值 >10KB）\n点击查看当前会话明细`;
 
 		const hintEn =
 			stats.totalSavedTokens > 0
-				? `⚡ SoL-Pi saved ~${stats.totalSavedTokens.toLocaleString()} tokens in this session (${stats.packedCount} outputs packed${breakdownStr ? ` [${breakdownStr}]` : ""}, ${formatBytes(stats.totalOriginalBytes)} raw data)${planInfo ? `\n🎯 Plan: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : ""}\nClick for full details`
+				? `⚡ SoL-Pi (Current conversation): Saved ~${stats.totalSavedTokens.toLocaleString()} tokens in this session (${stats.packedCount} outputs packed${breakdownStr ? ` [${breakdownStr}]` : ""}, ${formatBytes(stats.totalOriginalBytes)} raw data)${planInfo ? `\n🎯 Plan: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : ""}\nClick for session details`
 				: planInfo
-					? `⚡ SoL-Pi Plan in progress: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}`
-					: `⚡ SoL-Pi: No observations packed or plan active in this session yet`;
+					? `⚡ SoL-Pi (Current conversation) Plan in progress: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}\nClick for session details`
+					: `⚡ SoL-Pi (Current conversation): 0 tokens saved (no outputs >10KB packed yet)\nClick for session details`;
 
 		host.ui.update("sol-savings-badge", {
 			badge: badgeText,
@@ -261,8 +263,8 @@ export function solSavingsPlugin(host) {
 		if (!cachedStats || (cachedStats.totalSavedTokens === 0 && !cachedStats.plan)) {
 			host.notify(
 				"info",
-				"⚡ SoL-Pi：当前会话暂无大输出被打包，尚未产生 Token 节省。",
-				"⚡ SoL-Pi: No large tool outputs packed yet in this session.",
+				"⚡ SoL-Pi（当前会话）：暂未触发大输出截断（阈值 >10KB），当前会话累计节省 0 Tokens。\n• 仅按当前会话独立统计，未跨会话累加。",
+				"⚡ SoL-Pi (Current conversation): No large tool outputs packed yet (>10KB threshold), 0 tokens saved in this session.",
 			);
 			return;
 		}
@@ -274,21 +276,23 @@ export function solSavingsPlugin(host) {
 		const planInfo = formatPlanSummary(cachedStats.plan);
 
 		const textZh = [
-			`⚡ **SoL-Pi 会话节省统计明细**`,
-			`• **累计节省 Token**：约 **${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
+			`⚡ **SoL-Pi 会话节省统计明细（当前会话）**`,
+			`• **当前会话累计节省**：约 **${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
 			`• **打包大输出数量**：共 **${cachedStats.packedCount}** 个结果（原体积 ${formatBytes(cachedStats.totalOriginalBytes)}）`,
 			breakdown ? `• **按工具细分**：\n${breakdown}` : null,
 			planInfo ? `• **活动规划（Plan）**：${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
+			`• **统计范围**：仅限当前会话，切换会话自动隔离。`,
 		]
 			.filter(Boolean)
 			.join("\n");
 
 		const textEn = [
-			`⚡ **SoL-Pi Session Savings Details**`,
-			`• **Tokens Saved**: ~**${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
+			`⚡ **SoL-Pi Session Savings Details (Current Conversation)**`,
+			`• **Current Session Tokens Saved**: ~**${cachedStats.totalSavedTokens.toLocaleString()}** tokens`,
 			`• **Outputs Packed**: **${cachedStats.packedCount}** observations (${formatBytes(cachedStats.totalOriginalBytes)} raw)`,
 			breakdown ? `• **Tool Breakdown**:\n${breakdown}` : null,
 			planInfo ? `• **Active Plan**: ${planInfo.progress} ${planInfo.marker} ${planInfo.goal}` : null,
+			`• **Scope**: Current conversation only; isolated across sessions.`,
 		]
 			.filter(Boolean)
 			.join("\n");
@@ -298,7 +302,14 @@ export function solSavingsPlugin(host) {
 
 	// 注册 HTTP 路由供前端弹窗查询状态与一键配置/安装
 	host.route?.("GET", "/status", (_req, res) => {
-		res.json(checkSolPiStatus());
+		const conv = host.getActiveConversation?.();
+		const stats = conv && Array.isArray(conv.messages) ? analyzeSolSavings(conv.messages) : null;
+		res.json({
+			...checkSolPiStatus(),
+			conversationId: conv?.conversationId || conv?.id || null,
+			conversationTitle: conv?.title || null,
+			stats,
+		});
 	});
 
 	host.route?.("POST", "/action", async (req, res) => {
