@@ -301,6 +301,32 @@ silences the warning):
 npm i -g --allow-scripts=node-pty,@google/genai,protobufjs pi-web-ui@latest
 ```
 
+### 🐧 Linux build prerequisites
+
+`node-pty` (the built-in terminal) publishes prebuilds only for macOS and Windows,
+so on Linux `npm install` always falls back to `node-gyp` and compiles it from
+source. Install a C/C++ toolchain **before** installing pi-web-ui:
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y build-essential python3
+# Fedora / RHEL
+sudo dnf install -y python3 make gcc-c++
+# Arch
+sudo pacman -S --needed base-devel python
+```
+
+Without it the whole install aborts with:
+
+```
+npm error path .../node_modules/node-pty
+npm error command sh -c node scripts/prebuild.js || node-gyp rebuild
+npm error > Rebuilding because directory .../node_modules/node-pty/prebuilds/linux-x64 does not exist
+npm error make: g++: No such file or directory
+```
+
+Android / Termux is a special case — see [Termux (Android)](#termux-android).
+
 ### 🖥️ Desktop app (Windows installer)
 
 Prefer a window over a browser tab? Every release ships installers built from

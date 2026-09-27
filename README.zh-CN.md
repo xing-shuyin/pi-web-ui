@@ -250,6 +250,31 @@ node-pty 是原生模块，需要放行其脚本（其余两个包只是 no-op/�
 npm i -g --allow-scripts=node-pty,@google/genai,protobufjs pi-web-ui@latest
 ```
 
+### 🐧 Linux：安装前的编译依赖
+
+内置终端依赖的 `node-pty` 只发布 macOS / Windows 的预编译产物，Linux 上
+`npm install` 一律回退到 `node-gyp` 源码编译。请在安装 pi-web-ui **之前**装好 C/C++ 工具链：
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y build-essential python3
+# Fedora / RHEL
+sudo dnf install -y python3 make gcc-c++
+# Arch
+sudo pacman -S --needed base-devel python
+```
+
+缺少时会整体安装失败：
+
+```
+npm error path .../node_modules/node-pty
+npm error command sh -c node scripts/prebuild.js || node-gyp rebuild
+npm error > Rebuilding because directory .../node_modules/node-pty/prebuilds/linux-x64 does not exist
+npm error make: g++: No such file or directory
+```
+
+Android / Termux 是特殊情况，见 [Termux（Android）](#termuxandroid)。
+
 ### Termux（Android）
 
 pi-web-ui 可以通过 [Termux](https://termux.dev) 在 Android 上运行，但原生依赖
