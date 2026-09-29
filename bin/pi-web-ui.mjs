@@ -546,6 +546,15 @@ function winWscript() {
 }
 
 /**
+ * The node binary the launcher scripts must bake in: the executable this
+ * process itself runs on. Under Bun this resolves to bun, so a Bun-hosted
+ * install never bakes in pi.exe.
+ */
+function resolveNode() {
+	return process.execPath;
+}
+
+/**
  * Resolve the real node binary. fnm/volta/nvm shims (e.g. fnm_multishells)
  * point into temp dirs that vanish when the installing shell exits — the
  * baked-in launcher scripts must use the stable real path instead.
