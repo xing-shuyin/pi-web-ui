@@ -2,6 +2,18 @@
 
 /* pi-web-ui — dark theme, pi-flavored */
 
+/* ---- 基础：按钮内联 SVG 图标不被 flex 收缩掉 ----
+   iOS <17 WebKit 的 flexbox 缺陷（issue #399，iOS 16.4 真机复现）：固定宽度的
+   flex 按钮（.panel-toggle / .file-attach / .notice-close / .close-btn）内，作为
+   flex item 的内联 SVG 会被错误收缩计算为 width:0，图标只剩余壳不绘制；svg 属性/
+   内联 width、translateZ 均救不回。react-icons 图标统一以 width="1em" 属性定尺寸，
+   min-width/height:1em 在正常浏览器上是恒等操作，仅在旧 WebKit 上生效为修复。 */
+button > svg {
+	min-width: 1em;
+	min-height: 1em;
+	flex-shrink: 0;
+}
+
 /* File manager archive / folder transfer dialog. Native dialog traps focus. */
 .file-transfer-dialog {
 	background: var(--bg-elev);
