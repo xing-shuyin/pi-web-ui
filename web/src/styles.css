@@ -12588,6 +12588,14 @@ button.source-default-toggle {
 	max-height: none;
 	overflow-y: visible;
 }
+/* 设置弹窗内全部解除 260px 限高：modal-body 本身就是滚动容器（overflow-y:auto），
+   卡片内再套一层限高内滚会双重滚动——列表末行被裁、卡片下方留大片空白
+   （快捷短语 / 技能 / 目标审查三区实测）。这里整体沿用 .set-list-flat 的
+   「高度交给外层统一滚」约定，只作用于设置弹窗，不影响 dialog-inline 等其他用家。 */
+.settings-modal .set-list {
+	max-height: none;
+	overflow-y: visible;
+}
 
 .set-row {
 	display: flex;
