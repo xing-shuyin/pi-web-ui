@@ -657,7 +657,7 @@ function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
 		"    try { if ((Invoke-WebRequest -Uri $h -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { Start-Process $u | Out-Null; break } } catch {}",
 		"  }",
 		"} -ArgumentList $url",
-		`& ${psQuote(node)} ${HAS_SDK_HOOK ? `--import ${psQuote(SDK_HOOK)} ` : ""}${psQuote(SERVER_ENTRY)} *>> $log`,
+		`& ${psQuote(node)} ${HAS_SDK_HOOK ? `--import ${psQuote(pathToFileURL(SDK_HOOK).href)} ` : ""}${psQuote(SERVER_ENTRY)} *>> $log`,
 		"Remove-Item $pidFile -ErrorAction SilentlyContinue",
 		"",
 	].join("\r\n");
@@ -981,7 +981,7 @@ function buildWinStartPs1(env, cwd, logPath, pidPath) {
 		`$PID | Out-File -Encoding ascii ${psQuote(pidPath)}`,
 		"try {",
 		"  while ($true) {",
-		`    & ${psQuote(realNode())} ${HAS_SDK_HOOK ? `--import ${psQuote(SDK_HOOK)} ` : ""}${psQuote(SERVER_ENTRY)} *>> ${psQuote(logPath)}`,
+		`    & ${psQuote(realNode())} ${HAS_SDK_HOOK ? `--import ${psQuote(pathToFileURL(SDK_HOOK).href)} ` : ""}${psQuote(SERVER_ENTRY)} *>> ${psQuote(logPath)}`,
 		"    Start-Sleep 10",
 		"  }",
 		"} finally {",
