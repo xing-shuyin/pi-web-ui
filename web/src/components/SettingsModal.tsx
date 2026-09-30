@@ -3448,7 +3448,9 @@ export function SettingsModal({
 																</span>
 															)}
 														</div>
-														{e.description && <div className="set-catalog-desc">{e.description}</div>}
+														{({locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description}) && (
+															<div className="set-catalog-desc">{locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description}</div>
+														)}
 														<div className="set-catalog-source">{e.source}</div>
 														{renderJobStatus(e.id)}
 													</div>
