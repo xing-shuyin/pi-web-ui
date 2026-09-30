@@ -3425,6 +3425,7 @@ export function SettingsModal({
 											const upd = chat.pluginUpdates?.[e.id];
 											const isUpdatable = installed && upd?.updatable === true;
 											const isRunning = Boolean(jobFor(e.id) && jobFor(e.id)?.phase !== "done");
+											const desc = locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description;
 											return (
 												<div key={e.id} className="set-catalog-row">
 													<div className="set-catalog-main">
@@ -3448,9 +3449,7 @@ export function SettingsModal({
 																</span>
 															)}
 														</div>
-														{({locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description}) && (
-															<div className="set-catalog-desc">{locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description}</div>
-														)}
+														{desc && <div className="set-catalog-desc">{desc}</div>}
 														<div className="set-catalog-source">{e.source}</div>
 														{renderJobStatus(e.id)}
 													</div>
