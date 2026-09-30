@@ -1,7 +1,7 @@
 {
 	"id": "vscode-editor",
 	"name": "编辑器",
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"icon": "📝",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"m16 18 6-6-6-6\"/><path d=\"m8 6-6 6 6 6\"/></svg>",
 	"description": "类 VSCode 编辑器视图：多根文件树（本地 + SSH 主机）/ 多标签 CodeMirror / Remote-SSH 远程文件浏览与编辑 / 底部多终端（xterm.js）/ SFTP 上传下载同步；复制-粘贴-创建副本-搜索与右栏文件列表同口径。向 AI 注册 15 个 vsc_sftp_*/vsc_ssh_*/vsc_remote_* 工具：自主配置 SFTP/SSH、上传代码、操作远端文件。依赖 ssh2 首次激活自动安装。",

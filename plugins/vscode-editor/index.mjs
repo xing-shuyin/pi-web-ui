@@ -212,6 +212,90 @@ export function parseSshConfig(text) {
 	return out;
 }
 
+/** 展开一条 Include 模式：相对 ~/.ssh/ 解析，支持 glob（`*?[]`）。
+ * 纯函数/辅助函数，单独导出供单测。 */
+export async function expandSshInclude(pattern, options = {}) {
+	const configFile = options.configFile || path.join(options.homeDir || os.homedir(), ".ssh", "config");
+	const fsImpl = options.fs || fs;
+	const homeDir = options.homeDir || os.homedir();
+	let p = String(pattern ?? "").trim();
+	if (!p) return [];
+	if (p === "~") p = homeDir;
+	else if (p.startsWith("~/")) p = path.join(homeDir, p.slice(2));
+	else if (!path.isAbsolute(p)) p = path.join(path.dirname(configFile), p);
+	if (!/[*?\[]/.test(p)) {
+		try {
+			await fsImpl.access(p);
+			return [p];
+		} catch {
+			return [];
+		}
+	}
+	const dir = path.dirname(p);
+	const base = path.basename(p);
+	let entries;
+	try {
+		entries = await fsImpl.readdir(dir);
+	} catch {
+		return [];
+	}
+	const re = new RegExp(
+		"^" +
+			[...base]
+				.map((ch) => (ch === "*" ? ".*" : ch === "?" ? "." : "\\^$.|+()[]{}".includes(ch) ? "\\" + ch : ch))
+				.join("") +
+			"$",
+	);
+	return entries
+		.filter((n) => re.test(n))
+		.sort()
+		.map((n) => path.join(dir, n));
+}
+
+/** 递归加载主 config + 所有 Include（深度/数量封顶防循环），返回合并后的块数组。
+ * 纯函数/辅助函数，单独导出供单测。 */
+export async function loadSshConfigBlocks(options = {}) {
+	const configFile = options.configFile || path.join(options.homeDir || os.homedir(), ".ssh", "config");
+	const fsImpl = options.fs || fs;
+	const out = [];
+	const seenFiles = new Set();
+	let fileCount = 0;
+	async function loadFile(file, depth) {
+		if (depth > 8 || fileCount > 64) return;
+		let real;
+		try {
+			real = path.resolve(file);
+		} catch {
+			return;
+		}
+		if (seenFiles.has(real)) return;
+		seenFiles.add(real);
+		fileCount++;
+		let text;
+		try {
+			text = await fsImpl.readFile(real, "utf8");
+		} catch (err) {
+			if (err?.code === "ENOENT") return;
+			throw err;
+		}
+		const blocks = parseSshConfigBlocks(text);
+		for (const b of blocks) {
+			out.push(b);
+			// Include 按出现顺序就地展开（OpenSSH 语义：被包含内容如同写在这个位置）
+			if (b.includes?.length) {
+				for (const pat of b.includes) {
+					for (const f of await expandSshInclude(pat, { configFile, fs: fsImpl, homeDir: options.homeDir })) {
+						await loadFile(f, depth + 1);
+					}
+				}
+				b.includes = [];
+			}
+		}
+	}
+	await loadFile(configFile, 0);
+	return out;
+}
+
 export default {
 	activate(host) {
 		// 可变：跟随主应用 set_cwd 实时切换（host.onCwdChange 回调，见 activate 尾部）
@@ -1000,85 +1084,9 @@ export default {
 		const SSH_CONFIG_FILE = path.join(os.homedir(), ".ssh", "config");
 		let sshConfigCache = { at: 0, blocks: [], list: [] };
 
-		/** 展开一条 Include 模式：相对 ~/.ssh/ 解析，支持 glob（`*?[]`）。 */
-		async function expandSshInclude(pattern) {
-			let p = String(pattern ?? "").trim();
-			if (!p) return [];
-			if (p === "~") p = os.homedir();
-			else if (p.startsWith("~/")) p = path.join(os.homedir(), p.slice(2));
-			else if (!path.isAbsolute(p)) p = path.join(path.dirname(SSH_CONFIG_FILE), p);
-			if (!/[*?\[]/.test(p)) {
-				try {
-					await fs.access(p);
-					return [p];
-				} catch {
-					return [];
-				}
-			}
-			const dir = path.dirname(p);
-			const base = path.basename(p);
-			let entries;
-			try {
-				entries = await fs.readdir(dir);
-			} catch {
-				return [];
-			}
-			const re = new RegExp(
-				"^" +
-					[...base]
-						.map((ch) => (ch === "*" ? ".*" : ch === "?" ? "." : "\\^$.|+()[]{}".includes(ch) ? "\\" + ch : ch))
-						.join("") +
-					"$",
-			);
-			return entries
-				.filter((n) => re.test(n))
-				.sort()
-				.map((n) => path.join(dir, n));
-		}
-
-		/** 递归加载主 config + 所有 Include（深度/数量封顶防循环），返回合并后的块数组。 */
-		async function loadSshConfigBlocks() {
-			const out = [];
-			const seenFiles = new Set();
-			let fileCount = 0;
-			await async function loadFile(file, depth) {
-				if (depth > 8 || fileCount > 64) return;
-				let real;
-				try {
-					real = path.resolve(file);
-				} catch {
-					return;
-				}
-				if (seenFiles.has(real)) return;
-				seenFiles.add(real);
-				fileCount++;
-				let text;
-				try {
-					text = await fs.readFile(real, "utf8");
-				} catch {
-					return;
-				}
-				const blocks = parseSshConfigBlocks(text);
-				for (const b of blocks) {
-					out.push(b);
-					// Include 按出现顺序就地展开（OpenSSH 语义：被包含内容如同写在这个位置）
-					if (b.includes?.length) {
-						for (const pat of b.includes) {
-							for (const f of await expandSshInclude(pat)) await loadFile(f, depth + 1);
-						}
-						b.includes = [];
-					}
-				}
-			};
-			await loadFile(SSH_CONFIG_FILE, 0);
-			return out;
-		}
-
 		async function refreshSshConfigCache() {
 			try {
-				const blocks = await loadSshConfigBlocks();
-				const list = parseSshConfig(""); // 占位（真值下面按 blocks 重算，保持单源）
-				void list;
+				const blocks = await loadSshConfigBlocks({ configFile: SSH_CONFIG_FILE });
 				const out = [];
 				const seen = new Set();
 				for (const b of blocks) {
@@ -1099,9 +1107,11 @@ export default {
 						});
 					}
 				}
-				sshConfigCache = { at: Date.now(), blocks, list: out };
-			} catch {
-				sshConfigCache = { at: Date.now(), blocks: [], list: [] };
+				sshConfigCache = { at: Date.now(), blocks, list: out, error: null };
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				host.log("warn", `刷新 ~/.ssh/config 缓存失败: ${msg}`);
+				sshConfigCache = { at: Date.now(), blocks: [], list: [], error: msg };
 			}
 			return sshConfigCache;
 		}
@@ -1159,7 +1169,8 @@ export default {
 		}
 
 		async function readSshConfigCandidates() {
-			const { list } = await refreshSshConfigCache();
+			const { list, error } = await refreshSshConfigCache();
+			if (error) throw new Error(`读取 ~/.ssh/config 失败：${error}`);
 			if (!list.length) throw new Error("~/.ssh/config 里没有可导入的主机");
 			await ensureSshCfgs();
 			const exists = new Set();
@@ -1175,7 +1186,8 @@ export default {
 
 		/** config 别名 → 可直连候选（自动加载用；找不到抛错）。 */
 		async function resolveConfigAlias(alias) {
-			const { list } = await refreshSshConfigCache();
+			const { list, error } = await refreshSshConfigCache();
+			if (error) throw new Error(`读取 ~/.ssh/config 失败：${error}`);
 			const c = list.find((x) => x.alias === String(alias ?? ""));
 			if (!c) throw new Error(`~/.ssh/config 里没有主机「${alias}」（VSCode 侧改完 config 刷新即生效）`);
 			return c;
