@@ -42,6 +42,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      # 入库的构建产物必须与 src/ 同步：改了插件 src/ 却忘了重新生成 bundle，这里直接红。
+      # 守卫范围 = 能在 CI 里廉价重建的那些（mermaid / run-trace vendor 已含在 npm run build）。
+      # legado-web 的 app 构建需要它自己的 node_modules（node build.mjs --install），不在守卫范围。
+      - name: Check committed plugin bundles are up to date
+        run: |
+          node plugins/db-client/build.mjs
+          node plugins/vscode-editor/build.mjs
+          git diff --exit-code -- \
+            plugins/db-client/client/entry.mjs \
+            plugins/vscode-editor/client/entry.mjs \
+            plugins/mermaid/client/vendor \
+            plugins/run-trace/client/vendor
+
       # 浏览器扩展打包（esbuild；语法/入口问题在 PR 阶段就暴露）
       - name: Build browser extension
         run: npm run build:extension
