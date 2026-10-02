@@ -45,10 +45,12 @@ jobs:
       # 入库的构建产物必须与 src/ 同步：改了插件 src/ 却忘了重新生成 bundle，这里直接红。
       # 守卫范围 = 能在 CI 里廉价重建的那些（mermaid / run-trace vendor 已含在 npm run build）。
       # legado-web 的 app 构建需要它自己的 node_modules（node build.mjs --install），不在守卫范围。
+      # 注意：两个 build.mjs 的 entryPoints/outfile 都是**相对 cwd** 的（无 absWorkingDir），
+      # 必须在各自插件目录里跑 —— 在仓库根跑会报 `Could not resolve "src/client.js"`。
       - name: Check committed plugin bundles are up to date
         run: |
-          node plugins/db-client/build.mjs
-          node plugins/vscode-editor/build.mjs
+          (cd plugins/db-client && node build.mjs)
+          (cd plugins/vscode-editor && node build.mjs)
           git diff --exit-code -- \
             plugins/db-client/client/entry.mjs \
             plugins/vscode-editor/client/entry.mjs \
