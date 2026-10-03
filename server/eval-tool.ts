@@ -528,7 +528,7 @@ export function makeEvalTool(opts: { cwd: string; ownerId?: string; lang?: () =>
 			"Execute Python or JavaScript/TypeScript code in an isolated evaluation sandbox. " +
 			"Variables and imported modules persist across calls within the conversation. " +
 			"Ideal for quick calculations, data transformations, algorithm verification, and inspecting outputs without creating temporary script files.",
-		promptSnippet: "evaluate Python or JS/TS code with persistent state (default-off sandbox)",
+		promptSnippet: "evaluate Python or JS/TS code with persistent state",
 		parameters: Type.Object({
 			code: Type.String({
 				description: "The code snippet to evaluate. Top-level variables and functions are preserved across calls.",
