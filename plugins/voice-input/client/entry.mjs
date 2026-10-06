@@ -358,7 +358,7 @@ function openOverlay() {
 	.vi-status { opacity: .75; }
 	.vi-badge {
 		font-size: 11px; padding: 1px 6px; border-radius: 4px;
-		background: var(--bg-card, rgba(255,255,255,.08));
+		background: var(--chip-bg, var(--bg-elev2));
 		border: 1px solid var(--border, #333);
 		opacity: .85; flex: none; white-space: nowrap;
 	}
