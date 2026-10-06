@@ -14150,8 +14150,13 @@ export class AgentService {
 			// issue #291：跳过无浏览器连接的残骸（非伪客户端 sinkCount=0 = 断连留存）。
 			// 伪客户端（scheduler:/plugin:）不走浏览器，sinkCount 永远为 0，保留。
 			const isPseudo = AgentService.isPseudoClientId(clientId);
-			if (!isPseudo && cs.sinkCount() === 0) continue;
+			// 断连残骸里「仍在跑」的对话不能一起跳掉：别处的打开/发送/删除守卫只按
+			// owner.isStreaming 拒绝（不看对方在不在线），而这一行是那份转录唯一的
+			// 收场入口（过户 / 抢答问卷）—— 藏掉行 = 守卫只拒绝、不给路：用户看不到、
+			// 开不了、也删不掉（跑着的时候关掉标签页即可复现）。空闲行照旧藏（#291）。
+			const offline = !isPseudo && cs.sinkCount() === 0;
 			for (const r of cs.streamingSummariesAll()) {
+				if (offline && !r.isStreaming) continue;
 				out.push({
 					...r,
 					owner: clientId,
