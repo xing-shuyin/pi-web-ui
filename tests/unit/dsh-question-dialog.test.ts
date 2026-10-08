@@ -75,6 +75,22 @@ function click(container: HTMLElement, sel: string | HTMLElement) {
 	});
 }
 
+/** 把 IME 预编辑文本写进 DOM（真实输入法走的是同一条 input 链路）。 */
+function setNativeValue(input: HTMLInputElement, value: string) {
+	const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+	act(() => {
+		setter.call(input, value);
+		input.dispatchEvent(new CompositionEvent("input", { bubbles: true, data: value }));
+	});
+}
+
+/** 派发一个 keydown（默认 Enter），isComposing 可控。 */
+function pressEnter(input: HTMLInputElement, isComposing = false) {
+	act(() => {
+		input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing }));
+	});
+}
+
 afterEach(() => {
 	setAppSend(null); // 断开全局发送器，避免串到下一个用例
 	if (root) {
@@ -486,5 +502,65 @@ describe("DshQuestionDialog 折叠与展开", () => {
 
 		expect(container.querySelector(".dialog-inline")?.classList.contains("collapsed")).toBe(false);
 		expect(container.querySelector(".set-section")).not.toBeNull();
+	});
+});
+
+/**
+ * issue #560：macOS 中文输入法（鼠须管）下，「补充回答」输入框里敲英文按回车是**上屏**，
+ * 不是提交。修复前只看 `e.key === "Enter"`，文字刚上屏就把问卷答案发给模型，面板随之收起
+ * 且无法修改。本组用例锁住两条漏判路径（与 #248 同源）。
+ */
+describe("DshQuestionDialog 输入法上屏回车不提交（issue #560）", () => {
+	it("组合态回车（isComposing=true）不提交，仅让文字上屏", () => {
+		const { container, sent } = mount(baseQuestion);
+		const input = container.querySelector(".question-custom") as HTMLInputElement;
+
+		act(() => {
+			input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+		});
+		setNativeValue(input, "hello");
+		pressEnter(input, true);
+
+		expect(sent).toEqual([]);
+		expect(input.value).toBe("hello");
+		// 面板仍在（没有提交就没有收起）
+		expect(container.querySelector(".question-custom")).not.toBeNull();
+	});
+
+	it("compositionend 刚结束时那个 isComposing=false 的回车也不提交（#248 的 macOS 变体）", () => {
+		const { container, sent } = mount(baseQuestion);
+		const input = container.querySelector(".question-custom") as HTMLInputElement;
+
+		setNativeValue(input, "hello");
+		act(() => {
+			input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "hello" }));
+		});
+		pressEnter(input, false);
+
+		expect(sent).toEqual([]);
+		expect(input.value).toBe("hello");
+	});
+
+	it("上屏回车之后再按一次回车才是提交（答案含刚上屏的文本）", () => {
+		const { container, sent } = mount(baseQuestion);
+		const input = container.querySelector(".question-custom") as HTMLInputElement;
+
+		setNativeValue(input, "hello");
+		act(() => {
+			input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "hello" }));
+		});
+		pressEnter(input, false); // 上屏用
+		expect(sent).toEqual([]);
+
+		// 等过 50ms 宽限期：跨过时间窗后同一个键就是正常提交
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.now() + 1000);
+		pressEnter(input, false);
+		vi.useRealTimers();
+
+		expect(sent).toHaveLength(1);
+		const msg = sent[0] as { type: string; answers: { id: string; custom?: string }[] };
+		expect(msg.type).toBe("question_answer");
+		expect(msg.answers[0]?.custom).toBe("hello");
 	});
 });

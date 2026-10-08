@@ -3,6 +3,7 @@ import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
 import { useEscapeKey } from "../shortcut-stack";
+import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { hoverCapable } from "../tip-position";
 import { HoverDetail } from "./HoverDetail";
 import { Markdown } from "./Markdown";
@@ -57,6 +58,8 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 	const [selections, setSelections] = useState<Record<string, string[]>>({});
 	const [customs, setCustoms] = useState<Record<string, string>>({});
 	const [collapsed, setCollapsed] = useState(false);
+	/** 输入法守卫：macOS 中文输入法下 Enter 是「上屏」而非「提交」（issue #560，与 #248 同源）。 */
+	const imeGuard = useImeCompositionGuard();
 	/** 向导当前步（question.questions 下标），每次新提问从第一题开始。 */
 	const [step, setStep] = useState(0);
 	// P0-6：倒计时（秒），归零自动取消提问（服务端同样超时 reject）。
@@ -329,7 +332,12 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 							placeholder={t("modelQuestionCustom")}
 							value={customs[q.id] ?? ""}
 							onChange={(e) => setCustoms((prev) => ({ ...prev, [q.id]: e.target.value }))}
+							onCompositionEnd={imeGuard.onCompositionEnd}
 							onKeyDown={(e) => {
+								// 输入法上屏用的回车不是提交：只看 e.key 会把「敲英文 → 回车原样上屏」当成
+								// 提交/下一步，答案刚上屏就发给模型且无法撤回（issue #560）。判定与聊天输入框
+								// 同源（web/src/ime-guard.ts，issue #248 的 isComposing/229/时间窗三条件）。
+								if (imeGuard.isImeKey(e.nativeEvent)) return;
 								// 回车提交（最后一题提交、否则进入下一题）；未作答则不触发。
 								if (e.key === "Enter") {
 									e.preventDefault();
