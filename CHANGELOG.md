@@ -34,6 +34,8 @@
 
 ### Fixed
 
+- **问卷「补充回答」输入框里敲英文按回车，不再被当成提交** —— macOS 中文输入法（鼠须管 / Squirrel、微信输入法等）在编码态下敲 Enter 是「把未上屏的编码原样上屏」，但问卷输入框只判了 `e.key === "Enter"`，于是那记上屏回车直接触发「下一步 / 提交」，刚上屏的文字被当作答案发给模型、面板随之收起，而服务端挂起提问已 resolve，**没有修改答案的入口**。现在问卷输入框与聊天输入框共用同一套输入法判定（组合态 `isComposing`、退化环境的 `keyCode 229`、以及 compositionend 后 50ms 内的那个 `isComposing=false` 回车），上屏回车一律放行给输入法；聊天输入框的既有行为不变。回归：`tests/unit/dsh-question-dialog.test.ts`、`tests/unit/ime-guard.test.ts`。
+
 - **界面布局页的「改名」对内置条目是假承诺** —— 底栏数字徽标（上下文 / 成本 / 缓存命中 / 消息数 / 连接态…）与顶栏按钮的文案一直是写死的 i18n 与实际数值，改名只写进设置页那一行、界面上不动，重开设置有值、条目标题却还是旧的。现在合并引擎给「被显式指定过的文案」打旗（`UiSlotEntry.labelExplicit`，用户改名与插件 `arrange.label` 都算），渲染层看旗让位：名字型条目用你的文案顶掉内置文案，数值型条目把名字插在数值前（改名只换名字，不吞掉实时数据；成本仍是 `名字 $0.0123`）。没改过名的条目渲染结果与旧版逐字节一致。回归：`tests/unit/bar-item-unified.test.ts`、`tests/ui-layout-ui-test.mjs`（该脚本里两处按「底栏文字里有『上下文』」定位的旧断言一并改成按条目 id 定位 —— 它们本来永远失败，只是脚本不在 CI 里没被发现）。
 - **pi 启动时报「宿主提供的扩展包必须只声明在 peerDependencies」** —— `@earendil-works/pi-coding-agent` 与 `typebox` 同时躺在 `dependencies` 与 `peerDependencies` 里，pi 的扩展加载器一看到 `dependencies` 就告警（怕装下嵌套副本绕开加载器注入、搞出两份 typebox 运行时）。这两个包本包**确实要**用（服务端进程直接 import，`PI_WEB_SDK=bundled` 也承诺自带副本可用），所以移进 `optionalDependencies`：npm 默认照装（自带副本不丢），而加载器只读 `dependencies`，告警消失。守卫 `tests/unit/extension-host-packages.test.ts` 拦「谁搬回去」。
 - **过户夭折后对话变成「幽灵会话」（#556）** —— 过户是「源会话先摘除、目标会话再接入」两步，中间那一瞬间对话两头都不挂；只要第二步报错，runtime 还在跑但谁的列表里都没有，刷新页面也找不回来，只有重启服务才能靠落盘会话恢复。现在这一步是**事务性**的：接入失败就把整包对话原样搬回源页面（含订阅 / 终端 / 待答问卷 / 待审批 / 看门狗剩余时间）并切回去，两边都收到诚实的回执；万不得已也宁可留在目标页面的运行列表里，绝不落到无人持有的空档。过户进来的主对话同时显式置 `listed`，即使后续切换失败也一定在运行列表里可见。回归：`tests/takeover-rollback-test.mjs`（故障注入）。
