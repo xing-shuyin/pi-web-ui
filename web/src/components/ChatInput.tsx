@@ -30,6 +30,7 @@ import { getPluginComposerProvider, listPluginComposerProviders } from "../plugi
 import { detectTouchFirstDevice } from "../touch-device";
 import { resolveBackspaceMention } from "../chat-input-backspace";
 import { copyTextToClipboard } from "../use-copy-feedback";
+import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { groupByAlign } from "../ui-slots";
 import { nextSearchReqId } from "../search-req-id";
 
@@ -410,9 +411,10 @@ export const ChatInput = memo(function ChatInput({
 	const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const draftScopeRef = useRef<string | null>(null);
 	const pendingCarryOverRef = useRef<string | null>(null);
-	/** 最近一次 IME compositionend 的时间戳（issue #248：macOS 中文输入法下敲英文字母按 Enter 上屏时，
-	 *  浏览器会先派发 compositionend 再派发 keydown(Enter, isComposing=false)，需通过时间差拦截误发送）。 */
-	const compositionEndTimeRef = useRef(0);
+	/** 输入法守卫（issue #248：macOS 中文输入法下敲英文字母按 Enter 上屏时，浏览器会先派发
+	 *  compositionend 再派发 keydown(Enter, isComposing=false)，需通过时间差拦截误发送）。
+	 *  判定与 ask_user_question 问卷输入框同源：web/src/ime-guard.ts。 */
+	const imeGuard = useImeCompositionGuard();
 
 	const readLocalDraft = (key: string): { text: string; ts: number } | null => {
 		try {
@@ -1132,10 +1134,8 @@ export const ChatInput = memo(function ChatInput({
 		// macOS 中文输入法下输入英文字母按 Enter 上屏时，浏览器会先触发 compositionend，
 		// 紧接着立即派发 keydown (Enter, isComposing=false, keyCode=13)。
 		// 若只查 isComposing 会漏掉该 Enter，导致文字刚上屏就误发送（issue #248）。
-		// 检查 isComposing、keyCode 229 以及距离 compositionend < 50ms 的按键并拦截。
-		if (e.nativeEvent.isComposing || e.keyCode === 229 || Date.now() - compositionEndTimeRef.current < 50) {
-			return;
-		}
+		// 三条件判定（isComposing / keyCode 229 / 距 compositionend < 50ms）见 web/src/ime-guard.ts。
+		if (imeGuard.isImeKey(e.nativeEvent)) return;
 		// 统一浮层导航（`/` 与 `@` 同一个浮层，按 kind 换内容）：上下 + 回车/Tab
 		// 接受 + Esc 关闭。历史导航在浮层打开时让路（浮层优先级更高）。
 		if (menu && menu.items.length > 0) {
@@ -1719,9 +1719,7 @@ export const ChatInput = memo(function ChatInput({
 							}
 						}
 					}}
-					onCompositionEnd={() => {
-						compositionEndTimeRef.current = Date.now();
-					}}
+					onCompositionEnd={imeGuard.onCompositionEnd}
 					onBlur={flushComposerDraft}
 					onKeyDown={onKeyDown}
 					onPaste={onPaste}
