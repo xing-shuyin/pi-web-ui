@@ -196,5 +196,15 @@
 		"descriptionEn": "Supervise AI-started background tasks with pm2: long-running services and debug instances get a name, a status and logs, so the host background-tasks panel and the plugin panel show one shared list with status/CPU/memory/restarts/logs plus per-app stop or delete; one-click pm2 install when missing. It never intercepts AI commands — whether a process goes through pm2 is up to the model and the user.",
 		"source": "xing-shuyin/pi-web-ui/plugins/pm2-manager",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/pm2-manager"
+	},
+	{
+		"id": "md-chat",
+		"name": "聊天归档",
+		"nameEn": "Chat Archive",
+		"icon": "📄",
+		"description": "本地持久聊天归档：保留压缩前原文、按分支浏览历史、问题跳转与 Markdown 文件查看；不调用模型，不修改原会话。",
+		"descriptionEn": "Persistent local chat archive preserving pre-compaction originals, with branch history, question navigation and a Markdown file viewer. No model calls or native-session edits.",
+		"source": "engharat/pi-web-ui-md-chat",
+		"homepage": "https://github.com/engharat/pi-web-ui-md-chat"
 	}
 ]
