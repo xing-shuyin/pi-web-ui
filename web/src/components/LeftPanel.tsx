@@ -32,6 +32,7 @@ import { ProjectPicker } from "./ProjectPicker.js";
 import { type UiSlotEntry } from "../ui-slots";
 import { contextMenuItems, openContextMenu, type ContextMenuRequest } from "../context-menu-state";
 import { composeToComposer, focusComposer } from "../composer-bridge";
+import { buildSessionDeepLink, extractSessionIdFromPath } from "../session-url";
 import { clearCachedProject, clearCachedSession, clearLastCwdIfMatches } from "../use-chat";
 
 /** Props are deliberately NARROW (no whole-ChatState object): every field is
@@ -456,6 +457,17 @@ export const LeftPanel = memo(function LeftPanel({
 					const hasFile = conversations.some((c) => c.id === scopeId && c.sessionFile);
 					return hasFile ? entry : { ...entry, when: [...(entry.when ?? []), "disabled"] };
 				}
+				if (entry.id === "host:conv-copy-link") {
+					if (target.kind === "history") {
+						const sess = sessions.find((s) => s.path === target.id);
+						const sid = sess?.sessionId || extractSessionIdFromPath(target.id);
+						return sid ? entry : { ...entry, hidden: true };
+					}
+					if (!scopeId) return { ...entry, hidden: true };
+					const conv = conversations.find((c) => c.id === scopeId);
+					const sid = conv?.sessionId || extractSessionIdFromPath(conv?.sessionFile);
+					return sid ? entry : { ...entry, when: [...(entry.when ?? []), "disabled"] };
+				}
 				if (entry.id === "host:conv-quote")
 					return takeId || target.kind === "history" ? entry : { ...entry, hidden: true };
 				return entry;
@@ -534,6 +546,20 @@ export const LeftPanel = memo(function LeftPanel({
 						? target.id
 						: (scopeId && conversations.find((c) => c.id === scopeId)?.sessionFile) || undefined;
 				if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+				return;
+			}
+			if (entry.id === "host:conv-copy-link") {
+				const sid =
+					target.kind === "history"
+						? sessions.find((s) => s.path === target.id)?.sessionId || extractSessionIdFromPath(target.id)
+						: scopeId
+							? conversations.find((c) => c.id === scopeId)?.sessionId ||
+								extractSessionIdFromPath(conversations.find((c) => c.id === scopeId)?.sessionFile)
+							: null;
+				if (sid) {
+					const url = buildSessionDeepLink(window.location.href, { sessionId: sid });
+					void navigator.clipboard?.writeText(url).catch(() => {});
+				}
 				return;
 			}
 			if (entry.id === "host:conv-quote") {

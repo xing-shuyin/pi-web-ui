@@ -19,7 +19,17 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import * as fsPromises from "node:fs/promises";
-import { appendFileSync, existsSync, readFileSync, rmSync, statSync, mkdirSync, watch, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	mkdirSync,
+	watch,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9659,8 +9669,12 @@ export class ClientSession {
 				// 落盘会话才有文件（inMemory 子代理缺省）：右键复制路径 / AI 按 path 读历史时用。
 				...(() => {
 					try {
+						const sid = conv.session.sessionId;
 						const f = conv.session.sessionFile;
-						return f ? { sessionFile: f } : {};
+						return {
+							...(sid ? { sessionId: sid } : {}),
+							...(f ? { sessionFile: f } : {}),
+						};
 					} catch {
 						return {};
 					}
@@ -9995,6 +10009,7 @@ export class ClientSession {
 				const isPinned = this.stateStore?.isSessionPinned(this.cwd, s.path);
 				sessions.set(s.path, {
 					path: s.path,
+					...(s.id ? { sessionId: s.id } : {}),
 					name: s.name,
 					firstMessage: s.firstMessage,
 					messageCount: s.messageCount,
@@ -10798,7 +10813,49 @@ export class ClientSession {
 		}
 	}
 
-	/** Open a persisted session as the active conversation (from listSessions).
+	/** 按 sessionId 解析磁盘上的转录文件路径（issue #587：供 `#s=<sessionId>` 深链直接打开尚未加载进列表的历史会话）。 */
+	private async resolveSessionPathById(sessionId: string): Promise<string | null> {
+		const want = sessionId.trim();
+		if (!want) return null;
+		const infos = await this.loadSessionInfos();
+		for (const info of infos) {
+			if (info.id === want) return info.path;
+			const base = basename(info.path);
+			if (base === `${want}.jsonl` || base.endsWith(`_${want}.jsonl`)) return info.path;
+		}
+		// 跨项目目录兜底扫描（<agentDir>/sessions 及 PI_CODING_AGENT_SESSION_DIR）
+		const roots = [join(this.agentDir, "sessions")];
+		const extra = piSessionsRoot();
+		if (extra) roots.push(extra);
+		for (const root of roots) {
+			if (!existsSync(root)) continue;
+			try {
+				const entries = readdirSync(root, { withFileTypes: true });
+				for (const e of entries) {
+					if (e.isFile() && (e.name === `${want}.jsonl` || e.name.endsWith(`_${want}.jsonl`))) {
+						return join(root, e.name);
+					}
+					if (e.isDirectory()) {
+						const subDir = join(root, e.name);
+						try {
+							for (const f of readdirSync(subDir)) {
+								if (f === `${want}.jsonl` || f.endsWith(`_${want}.jsonl`)) {
+									return join(subDir, f);
+								}
+							}
+						} catch {
+							/* ignore unreadable subdir */
+						}
+					}
+				}
+			} catch {
+				/* ignore unreadable root */
+			}
+		}
+		return null;
+	}
+
+	/** Open a persisted session as the active conversation (from listSessions or `#s=<sessionId>` deep link).
 	 *
 	 * A persisted-session click must follow the same ownership rule as
 	 * new_chat/switch_conversation: every open conversation keeps its own
@@ -10806,11 +10863,38 @@ export class ClientSession {
 	 * current runtime, which would otherwise stop a response merely because the
 	 * user opened history while it was streaming.
 	 */
-	async switchSession(path: string): Promise<void> {
+	async switchSession(path: string, sessionId?: string): Promise<void> {
 		if (this.quiesceBlocked()) return;
 		let openedRuntime: AgentSessionRuntime | null = null;
 		let openedTerminals: TerminalManager | null = null;
 		try {
+			const wantSid = sessionId?.trim() ?? "";
+			if (!path.trim() && wantSid) {
+				for (const conv of this.convs.values()) {
+					let sid = "";
+					try {
+						sid = conv.session.sessionId;
+					} catch {
+						/* ignore */
+					}
+					if (sid === wantSid || conv.id === wantSid) {
+						await this.switchConversation(conv.id);
+						return;
+					}
+				}
+				const resolved = await this.resolveSessionPathById(wantSid);
+				if (!resolved) {
+					this.emit({
+						type: "notice",
+						level: "warning",
+						text: `未找到会话：${wantSid}`,
+						textEn: `Session not found: ${wantSid}`,
+					});
+					this.flushSnapshot();
+					return;
+				}
+				path = resolved;
+			}
 			const targetPath = resolve(path);
 			if (!isInsideSessionsDir(this.agentDir, targetPath)) {
 				this.emit({
@@ -11478,6 +11562,7 @@ export class ClientSession {
 					const isPinned = this.stateStore?.isSessionPinned(this.cwd, s.path);
 					const base: SessionSummary = {
 						path: s.path,
+						...(s.id ? { sessionId: s.id } : {}),
 						name: s.name,
 						firstMessage: s.firstMessage,
 						messageCount: s.messageCount,

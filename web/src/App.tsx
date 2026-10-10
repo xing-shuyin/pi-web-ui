@@ -18,6 +18,7 @@ import { GoalBar } from "./components/GoalBar";
 import { FiRefreshCw } from "react-icons/fi";
 
 import { FooterBar } from "./components/FooterBar";
+import { formatSessionHash, parseSessionHash } from "./session-url";
 import { SideDock } from "./components/SideDock";
 import { Dialog } from "./components/Dialog";
 import { DshQuestionDialog } from "./components/DshQuestionDialog";
@@ -832,6 +833,94 @@ export function App() {
 		const t = setTimeout(() => setSearchJump(null), 15_000);
 		return () => clearTimeout(t);
 	}, [searchJump]);
+
+	// ---- 会话与消息 URL 深链（#s=<sessionId>&m=<messageId>，issue #587）----
+	const [urlJump, setUrlJump] = useState<{ sessionId: string; messageId: string } | null>(null);
+	const pendingHashSessionRef = useRef<string | null>(null);
+	const awaitingHashSessionRef = useRef<string | null>(null);
+	const activeSessionId = chat.state?.sessionId ?? "";
+	const activeSessionIdRef = useRef(activeSessionId);
+	activeSessionIdRef.current = activeSessionId;
+	const readyRef = useRef(chat.ready);
+	readyRef.current = chat.ready;
+
+	useEffect(() => {
+		const applyFromLocation = () => {
+			const parsed = parseSessionHash(window.location.hash);
+			if (!parsed) return;
+			if (parsed.messageId) {
+				setUrlJump({ sessionId: parsed.sessionId, messageId: parsed.messageId });
+			} else {
+				setUrlJump(null);
+			}
+			if (!readyRef.current || !activeSessionIdRef.current) {
+				pendingHashSessionRef.current = parsed.sessionId;
+				return;
+			}
+			if (activeSessionIdRef.current !== parsed.sessionId) {
+				awaitingHashSessionRef.current = parsed.sessionId;
+				setView("chat");
+				send({ type: "switch_session", path: "", sessionId: parsed.sessionId });
+			}
+		};
+		applyFromLocation();
+		window.addEventListener("hashchange", applyFromLocation);
+		window.addEventListener("popstate", applyFromLocation);
+		return () => {
+			window.removeEventListener("hashchange", applyFromLocation);
+			window.removeEventListener("popstate", applyFromLocation);
+		};
+	}, [send]);
+
+	// 当请求的目标会话不存在（服务端返回 warning notice）或超时时，解除 awaiting 状态并回退到当前会话 URL。
+	useEffect(() => {
+		const awaiting = awaitingHashSessionRef.current;
+		if (!awaiting) return;
+		const notFound = chat.notices.some(
+			(n) => n.text.includes(awaiting) && (n.text.includes("未找到会话") || n.text.includes("Session not found")),
+		);
+		if (notFound) {
+			awaitingHashSessionRef.current = null;
+			setUrlJump(null);
+			if (activeSessionId) {
+				const nextHash = formatSessionHash({ sessionId: activeSessionId });
+				if (window.location.hash !== nextHash) {
+					window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+				}
+			}
+		}
+	}, [chat.notices, activeSessionId]);
+
+	// 首载连接就绪后：若 URL hash 指定了目标会话则切过去；否则保持地址栏 hash 跟随当前活跃会话。
+	useEffect(() => {
+		if (!chat.ready || !activeSessionId) return;
+		if (pendingHashSessionRef.current) {
+			const wantSid = pendingHashSessionRef.current;
+			pendingHashSessionRef.current = null;
+			if (wantSid !== activeSessionId) {
+				awaitingHashSessionRef.current = wantSid;
+				setView("chat");
+				send({ type: "switch_session", path: "", sessionId: wantSid });
+				return;
+			}
+		}
+		if (awaitingHashSessionRef.current) {
+			if (activeSessionId === awaitingHashSessionRef.current) {
+				awaitingHashSessionRef.current = null;
+			} else {
+				return;
+			}
+		}
+		const currentParsed = parseSessionHash(window.location.hash);
+		const keepMsgId = currentParsed?.sessionId === activeSessionId ? currentParsed.messageId : undefined;
+		const nextHash = formatSessionHash({
+			sessionId: activeSessionId,
+			...(keepMsgId ? { messageId: keepMsgId } : {}),
+		});
+		if (window.location.hash !== nextHash) {
+			window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+		}
+	}, [chat.ready, activeSessionId, send]);
 
 	// 插件视图桥：插件无 chat 上下文，通过窗口事件请求在可见终端执行命令
 	// （与 SCM 面板同款：已有同名 tab 原地重跑，否则新建并自动切到终端视图）。
@@ -1829,6 +1918,8 @@ export function App() {
 										keepRecent={chat.settings?.keepRecentMessages}
 										jumpTarget={searchJump}
 										onJumpDone={() => setSearchJump(null)}
+										urlJumpMessageId={urlJump && urlJump.sessionId === chat.state.sessionId ? urlJump.messageId : null}
+										onUrlJumpDone={() => setUrlJump(null)}
 									/>
 								</>
 							) : (

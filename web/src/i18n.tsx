@@ -831,6 +831,10 @@ export const zh = {
 	"tpl.clickCard": "点击填入输入框",
 	"tpl.editTpl": "编辑 / 删除模板",
 	"tpl.openPicker": "提示词模板（常用提示词，随时取用）",
+	"tpl.confirmFillTitle": "输入框已有草稿内容",
+	"tpl.confirmFillDesc": "当前输入框中已有未发送的内容，要如何填入所选模板？",
+	"tpl.confirmFillAppend": "追加到末尾",
+	"tpl.confirmFillOverwrite": "覆盖现有内容",
 	/* 计划模式：只规划不实施（服务端会话级硬闸门）。
 	   目标条上的「计划」是一次性动作（开闸门 + 直接发送输入），不是开关；
 	   开关语义已删除，退出走计划看板里的「开始实施」。 */
@@ -1877,6 +1881,8 @@ export const zh = {
 	/* 对话引用（左栏右键 / 全局搜索 / 💬 chip） */
 	copyConversationId: "复制对话 ID",
 	copyConversationPath: "复制会话文件路径",
+	copyConversationLink: "复制会话链接",
+	copyMessageLink: "复制消息链接",
 	quoteConversation: "引用到输入框（AI 可读）",
 	quoteConversationShort: "引用",
 	attachConversation: "对话引用：{name}（AI 经 conversation_read 按需读取）",
@@ -2807,6 +2813,10 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.clickCard": "Click to fill the input",
 	"tpl.editTpl": "Edit / delete template",
 	"tpl.openPicker": "Prompt templates (reusable prompts, anytime)",
+	"tpl.confirmFillTitle": "Composer already has text",
+	"tpl.confirmFillDesc": "You already have unsent text in the composer. How would you like to apply this template?",
+	"tpl.confirmFillAppend": "Append",
+	"tpl.confirmFillOverwrite": "Overwrite",
 	/* plan mode: research + plan only, no implementation */
 	planMode: "Plan mode",
 	planActionBtn: "Plan",
@@ -3901,6 +3911,8 @@ export const en: Record<keyof typeof zh, string> = {
 	/* Conversation quote (left-panel right-click / global search / 💬 chip) */
 	copyConversationId: "Copy conversation ID",
 	copyConversationPath: "Copy session file path",
+	copyConversationLink: "Copy link to session",
+	copyMessageLink: "Copy link to message",
 	quoteConversation: "Quote into composer (readable by the AI)",
 	quoteConversationShort: "Quote",
 	attachConversation: "Conversation reference: {name} (the AI reads it via conversation_read on demand)",

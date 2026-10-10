@@ -3,7 +3,14 @@ import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera }
 import type { FileSearchResult, ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState } from "../types";
 import { useT, useI18n } from "../i18n";
 import { appSend, useAppField, useIsDsh } from "../app-globals";
-import { mergeRecalledDraft, selectDraftToRestore, shouldCarryOverDraft } from "../composer-draft";
+import {
+	applyTemplateFill,
+	mergeRecalledDraft,
+	selectDraftToRestore,
+	shouldCarryOverDraft,
+	shouldConfirmTemplateFill,
+	type TemplateFillChoice,
+} from "../composer-draft";
 import {
 	registerDraftSink,
 	registerFocusSink,
@@ -919,10 +926,29 @@ export const ChatInput = memo(function ChatInput({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [slashCommands]);
 
-	// Fill the input from the welcome-page example cards.
+	// Fill the input from the welcome-page example cards / template picker (issue #586:
+	// confirm before overwriting a non-empty composer draft).
+	const [pendingFill, setPendingFill] = useState<string | null>(null);
+	const resolvePendingFill = (choice: TemplateFillChoice) => {
+		const incoming = pendingFill;
+		setPendingFill(null);
+		if (incoming === null) return;
+		const next = applyTemplateFill(lastTextRef.current, incoming, choice);
+		if (next !== null) {
+			setMenu(null);
+			menuTextRef.current = next;
+			setText(next);
+		}
+		requestAnimationFrame(() => taRef.current?.focus());
+	};
 	useEffect(() => {
 		const onFill = (e: Event) => {
 			const detail = (e as CustomEvent<string>).detail;
+			if (typeof detail !== "string") return;
+			if (shouldConfirmTemplateFill(lastTextRef.current, detail)) {
+				setPendingFill(detail);
+				return;
+			}
 			setMenu(null);
 			menuTextRef.current = detail;
 			setText(detail);
@@ -932,15 +958,22 @@ export const ChatInput = memo(function ChatInput({
 		return () => window.removeEventListener("pi-web:fill", onFill);
 	}, []);
 
-	// Esc closes the /help modal.
+	// Esc closes the /help modal or the template-fill confirm modal.
 	useEffect(() => {
-		if (!showHelp) return;
+		if (!showHelp && pendingFill === null) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setShowHelp(false);
+			if (e.key === "Escape") {
+				if (pendingFill !== null) {
+					setPendingFill(null);
+					requestAnimationFrame(() => taRef.current?.focus());
+				} else {
+					setShowHelp(false);
+				}
+			}
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [showHelp]);
+	}, [showHelp, pendingFill]);
 
 	// Auto-grow the textarea; no scrollbar until it hits the height cap.
 	// composerH 是手动拉出的**保底高度**：没拖过走老逻辑（贴合内容，上限 220）；
@@ -1593,6 +1626,36 @@ export const ChatInput = memo(function ChatInput({
 						</span>
 					</div>
 					{menu.kind === "slash" ? renderSlashRows() : renderAtRows()}
+				</div>
+			)}
+			{pendingFill !== null && (
+				<div className="modal-backdrop" onClick={() => resolvePendingFill("cancel")}>
+					<div
+						className="slash-help"
+						role="dialog"
+						aria-modal="true"
+						aria-label={t("tpl.confirmFillTitle")}
+						style={{ maxWidth: 420 }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="slash-help-head">
+							<span>{t("tpl.confirmFillTitle")}</span>
+						</div>
+						<div className="slash-help-body" style={{ padding: "12px 16px" }}>
+							<p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{t("tpl.confirmFillDesc")}</p>
+							<div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+								<button type="button" className="btn" autoFocus onClick={() => resolvePendingFill("cancel")}>
+									{t("cancel")}
+								</button>
+								<button type="button" className="btn" onClick={() => resolvePendingFill("append")}>
+									{t("tpl.confirmFillAppend")}
+								</button>
+								<button type="button" className="btn primary" onClick={() => resolvePendingFill("overwrite")}>
+									{t("tpl.confirmFillOverwrite")}
+								</button>
+							</div>
+						</div>
+					</div>
 				</div>
 			)}
 			{showHelp && (

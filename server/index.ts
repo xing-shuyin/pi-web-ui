@@ -1154,7 +1154,7 @@ export interface DispatchSession {
 	deletePlanStep?(stepId: string, conversationId?: string): void;
 	addPlanStep?(step: import("./protocol.js").PlanStep, afterStepId?: string, conversationId?: string): void;
 	planCleanHandoff?(steps: import("./protocol.js").PlanStep[], promptText: string): Promise<void>;
-	switchSession(path: string): Promise<void>;
+	switchSession(path: string, sessionId?: string): Promise<void>;
 	switchConversation(id: string): Promise<void>;
 	listFiles(path?: string): Promise<void>;
 	searchFiles(query: string, reqId: number): Promise<void>;

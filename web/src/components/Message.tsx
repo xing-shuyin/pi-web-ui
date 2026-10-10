@@ -42,6 +42,7 @@ import { appUrl } from "../base-url";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallBlock, type ToolView } from "./ToolCallBlock";
 import { useT, type Translate } from "../i18n";
+import { buildSessionDeepLink, parseSessionHash } from "../session-url";
 import { fetchCompactedHistory, useCompactedHistory } from "../compacted-history-state";
 import { parseSkillBlock, type SkillBlock } from "../skill-block";
 import { isRasterImage, fileToProcessedImage } from "../image-paste";
@@ -570,6 +571,10 @@ export const Message = memo(function Message({
 					return canCopyWhole ? entry : { ...entry, hidden: true };
 				case "host:msg-ctx-copy-image":
 					return canCopyWhole && !readOnly ? entry : { ...entry, hidden: true };
+				case "host:msg-ctx-copy-link": {
+					const sid = parseSessionHash(window.location.hash)?.sessionId;
+					return !streaming && Boolean(sid && message.id) ? entry : { ...entry, hidden: true };
+				}
 				case "host:msg-ctx-reask":
 				case "host:msg-ctx-edit-reask":
 					return canEdit ? entry : { ...entry, hidden: true };
@@ -604,6 +609,17 @@ export const Message = memo(function Message({
 					case "host:msg-ctx-copy-image":
 						void doWholeCopy("host:msg-copy-image");
 						return undefined;
+					case "host:msg-ctx-copy-link": {
+						const sid = parseSessionHash(window.location.hash)?.sessionId;
+						if (sid && message.id) {
+							const url = buildSessionDeepLink(window.location.href, {
+								sessionId: sid,
+								messageId: message.id,
+							});
+							void copyTextToClipboard(url);
+						}
+						return undefined;
+					}
 					case "host:msg-ctx-reask":
 						directReask();
 						return undefined;

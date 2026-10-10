@@ -26,6 +26,7 @@ npm run desktop:dist     # 本地打包（产物在 release/，已 gitignore）
 
 - 端口：随机空闲口，不抢 `8787`，可与网页版/全局安装并存。`PI_WEB_PORT` 显式指定时优先，
   但**已占用就退回随机口**（从 pi-web-ui 自己的终端里跑 `desktop:dev` 会继承它的 `PI_WEB_PORT=8787`）。
+- 启动就绪等待：默认等待 sidecar `/api/health` 最多 60 秒（`PI_WEB_HEALTH_TIMEOUT_MS` 可覆盖，毫秒；兼顾企业杀软实时扫描下的慢启动）。若 sidecar 提前退出或超时，桌面壳以非零退出码（`1`）退出；若环境中设置了 `PI_WEB_TOKEN`，窗口首跳 URL 会自动附带 `?token=` 完成鉴权并落盘 Cookie。
 - 图标：复用网页版的 `web/public/icons/icon-1024.png`，electron-builder 自己转 `.ico`/`.icns`，
   换图标只改这一处（网页版 PWA 图标同步变）。
 - 数据：`PI_WEB_DATA_DIR` 默认 `<userData>/data`，和 `~/.pi-web` 隔离；

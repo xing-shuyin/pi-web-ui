@@ -1001,6 +1001,16 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		context: "session",
 		order: 40,
 	},
+	// 复制会话深链（#s=<sessionId>，issue #587）：运行中对话与历史会话均可复制。
+	{
+		id: "host:conv-copy-link",
+		slot: "contextmenu.session",
+		labelKey: "copyConversationLink",
+		icon: "link",
+		kind: "action",
+		context: "session",
+		order: 45,
+	},
 	// 引用到输入框：把该对话加进待发附件（💬 chip），发送后 AI 经 conversation_read 按需读取。
 	{
 		id: "host:conv-quote",
@@ -1309,6 +1319,16 @@ export const BUILTIN_UI_ITEMS: BuiltinUiItem[] = [
 		kind: "action",
 		context: "message",
 		order: 12,
+		group: "copy",
+	},
+	{
+		id: "host:msg-ctx-copy-link",
+		slot: "contextmenu.message",
+		labelKey: "copyMessageLink",
+		icon: "link",
+		kind: "action",
+		context: "message",
+		order: 13,
 		group: "copy",
 	},
 	{

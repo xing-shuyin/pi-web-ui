@@ -563,7 +563,7 @@ export type ClientMessage =
 	 *  应答 `tool_prompt`。 */
 	| { type: "get_tool_prompt"; name: string }
 	| { type: "list_sessions" }
-	| { type: "switch_session"; path: string }
+	| { type: "switch_session"; path: string; sessionId?: string }
 	| { type: "switch_conversation"; id: string }
 	/** 手动过户：把另一处（elsewhere 行，owner/convId 标识）的对话整体搬到本页
 	 *  （含等答复的问卷/页调用），搬完自动切过去. */
@@ -1285,6 +1285,8 @@ export type ClientMessage =
 
 export interface SessionSummary {
 	path: string;
+	/** 稳定会话 UUID（转录头 `id` 或目录名，供 `#s=<sessionId>` URL 深链与跨重启定位，issue #587）。 */
+	sessionId?: string;
 	name?: string;
 	firstMessage: string;
 	messageCount: number;
@@ -2399,6 +2401,8 @@ export interface ConversationSummary {
 	canceled?: boolean;
 	/** 父对话 id（Running 面板嵌套展示用）。 */
 	parentId?: string;
+	/** 稳定会话 UUID（供 `#s=<sessionId>` URL 深链与右键「复制会话链接」使用，issue #587）。 */
+	sessionId?: string;
 	/** 落盘会话文件（persisted conversation 才有；inMemory 子代理缺省）。
 	 *  右键「复制会话文件路径」与 AI 按 path 读历史时用。 */
 	sessionFile?: string;

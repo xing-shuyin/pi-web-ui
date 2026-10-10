@@ -4,13 +4,16 @@ productName: pi-web-ui-desktop
 directories:
   output: release
 files:
+  - bin
   - dist/desktop
   - dist/server
   - web/dist
   - themes
+  - plugin-sdk
+  - plugins/catalog.json
   - package.json
-# 仓库 package.json 的 main 是 CLI（bin/pi-web-ui.mjs，桌面包不带它，也不该拿它当入口）：
-# 不改这一行 electron-builder 会以它做 sanity check → 直接报 entry file does not exist。
+# 仓库 package.json 的 main 是 CLI（bin/pi-web-ui.mjs，供插件安装器等子进程调用）：
+# 桌面壳主进程入口必须是 dist/desktop/main.js，故通过 extraMetadata 覆写 main。
 extraMetadata:
   main: dist/desktop/main.js
 # asar:false：server 以 ELECTRON_RUN_AS_NODE 跑在纯 Node 语义下，

@@ -386,7 +386,7 @@ export function handleSessionLifecycleMessage(msg: ClientMessage, cs: DispatchSe
 			void cs.dismissFinishedSubagents(msg.parentId);
 			return true;
 		case "switch_session":
-			void cs.switchSession(msg.path);
+			void cs.switchSession(msg.path, msg.sessionId);
 			return true;
 		case "switch_conversation":
 			void cs.switchConversation(msg.id);

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	advanceComposerSession,
 	appendDraftAttachments,
+	applyTemplateFill,
 	mergeRecalledDraft,
 	selectDraftToRestore,
 	shouldCarryOverDraft,
+	shouldConfirmTemplateFill,
 	type DraftAttachment,
 } from "../../web/src/composer-draft.js";
 
@@ -206,5 +208,28 @@ describe("shouldCarryOverDraft", () => {
 
 	it("目标对话自身已有草稿 → 不承接，优先显示目标对话的草稿", () => {
 		expect(shouldCarryOverDraft("some text", 0, true)).toBe(false);
+	});
+});
+
+describe("shouldConfirmTemplateFill & applyTemplateFill (issue #586)", () => {
+	it("输入框为空或仅空白 → 不弹确认，直接填入", () => {
+		expect(shouldConfirmTemplateFill("", "模板内容")).toBe(false);
+		expect(shouldConfirmTemplateFill("   \n\t ", "模板内容")).toBe(false);
+	});
+
+	it("模板内容为空或与当前草稿一致 → 不弹确认", () => {
+		expect(shouldConfirmTemplateFill("已有草稿", "")).toBe(false);
+		expect(shouldConfirmTemplateFill("已有草稿", "   ")).toBe(false);
+		expect(shouldConfirmTemplateFill("相同内容", "  相同内容\n")).toBe(false);
+	});
+
+	it("输入框已有不同草稿文本 → 需要弹确认（cancel / append / overwrite）", () => {
+		expect(shouldConfirmTemplateFill("正在写的半截提示词", "模板提示词")).toBe(true);
+	});
+
+	it("applyTemplateFill 正确处理 cancel / append / overwrite 三种选择", () => {
+		expect(applyTemplateFill("当前草稿", "模板内容", "cancel")).toBeNull();
+		expect(applyTemplateFill("当前草稿  \n", "模板内容", "append")).toBe("当前草稿\n模板内容");
+		expect(applyTemplateFill("当前草稿", "模板内容", "overwrite")).toBe("模板内容");
 	});
 });

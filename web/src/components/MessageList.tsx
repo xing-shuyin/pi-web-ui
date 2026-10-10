@@ -34,6 +34,7 @@ import { SelectionQuoteButton } from "./SelectionQuoteButton";
 import { TextQuoteCard } from "./TextQuoteCard";
 import { splitQuotedPrompt } from "../../../server/text-quote.js";
 import { appSend } from "../app-globals";
+import { resolveMessageIdForJump } from "../session-url";
 
 /** Stable shared empty map — passing this (instead of a fresh Map) lets
  *  React.memo skip messages that have no live tool output to show. */
@@ -205,6 +206,9 @@ interface MessageListProps {
 	 *  消息载入后定位到对应消息并滚动高亮，完成后回调 onJumpDone。 */
 	jumpTarget?: { path: string; role: string; timestamp: number } | null;
 	onJumpDone?: () => void;
+	/** URL 深链 `#s=<sessionId>&m=<messageId>` 的消息跳转目标（issue #587）。 */
+	urlJumpMessageId?: string | null;
+	onUrlJumpDone?: () => void;
 }
 
 export function MessageList({
@@ -222,6 +226,8 @@ export function MessageList({
 	keepRecent,
 	jumpTarget,
 	onJumpDone,
+	urlJumpMessageId,
+	onUrlJumpDone,
 	uiMessageActions,
 	uiContextMessage,
 	uiContextToolCall,
@@ -624,6 +630,21 @@ export function MessageList({
 		}
 		// 会话还在切换中（快照未到）→ 保持等待，消息数组更新后再试
 	}, [jumpMsgId, jumpTo, onJumpDone, jumpTarget, state.sessionFile, state.messages.length]);
+
+	// ---- URL 深链 `#s=<sessionId>&m=<messageId>` 消息跳转（issue #587）----
+	useEffect(() => {
+		if (!urlJumpMessageId) return;
+		const resolved = resolveMessageIdForJump(state.messages, urlJumpMessageId);
+		if (resolved) {
+			jumpTo(resolved);
+			onUrlJumpDone?.();
+			return;
+		}
+		// 会话消息已载入但目标消息不存在（例如分支后或 m= 无效）→ 留在会话末尾并清除待跳状态
+		if (state.messages.length > 0) {
+			onUrlJumpDone?.();
+		}
+	}, [urlJumpMessageId, state.messages, jumpTo, onUrlJumpDone]);
 
 	const onScroll = useCallback(() => {
 		const el = scrollRef.current;

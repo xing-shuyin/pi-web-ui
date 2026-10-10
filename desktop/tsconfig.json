@@ -8,5 +8,5 @@
 		"sourceMap": false,
 		"types": ["node", "electron"]
 	},
-	"include": ["main.ts", "preload.ts", "external-url.ts"]
+	"include": ["main.ts", "preload.ts", "external-url.ts", "startup.ts"]
 }

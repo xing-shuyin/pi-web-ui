@@ -1619,6 +1619,7 @@ export class DshClientSession {
 			if (!conv.listed && !this.shownInRunningList(conv)) continue;
 			list.push({
 				id: conv.id,
+				sessionId: conv.sessionId,
 				title: conv.title,
 				cwd: conv.cwd,
 				messageCount: conv.messages.length,
@@ -2345,6 +2346,7 @@ export class DshClientSession {
 					const { events } = readSessionLog(file);
 					summaries.push({
 						path: file,
+						sessionId,
 						name: sessionId,
 						firstMessage: firstUserText(events, this.getLang()),
 						messageCount: events.filter(
@@ -2485,14 +2487,27 @@ export class DshClientSession {
 	}
 
 	/** 切换会话：读 JSONL 回放 → 新建 conversation（同一 sessionId 续聊）。 */
-	async switchSession(path: string): Promise<void> {
+	async switchSession(path: string, wantSessionId?: string): Promise<void> {
 		try {
-			const abs = resolve(path);
-			const sessionId = basename(dirname(abs));
+			const explicitSid = wantSessionId?.trim() ?? "";
+			const sessionId = explicitSid || basename(dirname(resolve(path)));
 			// 同一 sessionId 已在运行 → 直接切过去。
 			for (const conv of this.convs.values()) {
-				if (conv.sessionId === sessionId) {
+				if (conv.sessionId === sessionId || conv.id === sessionId) {
 					await this.switchConversation(conv.id);
+					return;
+				}
+			}
+			if (!path.trim() && explicitSid) {
+				const candidateFile = join(this.sessionRoot, explicitSid, "session.jsonl");
+				if (!existsSync(candidateFile)) {
+					this.emit({
+						type: "notice",
+						level: "warning",
+						text: `未找到会话：${explicitSid}`,
+						textEn: `Session not found: ${explicitSid}`,
+					});
+					this.flushSnapshot(true);
 					return;
 				}
 			}

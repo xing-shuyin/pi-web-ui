@@ -150,3 +150,37 @@ export function shouldCarryOverDraft(
 	if (hasExistingDraftOnTarget) return false;
 	return true;
 }
+
+/** 提示词模板填入非空输入框时的三种用户选择（issue #586）。 */
+export type TemplateFillChoice = "cancel" | "append" | "overwrite";
+
+/**
+ * 判断点击提示词模板（`pi-web:fill`）时是否需要先弹确认框（issue #586）：
+ * - 输入框为空 / 仅空白 → 直接填入，不弹窗；
+ * - 待填入文本为空，或与当前内容去首尾空白后完全一致 → 不弹窗；
+ * - 输入框已有其他草稿文本 → 弹窗询问（取消 / 追加 / 覆盖）。
+ */
+export function shouldConfirmTemplateFill(current: string, incoming: string): boolean {
+	if (!incoming || !incoming.trim()) return false;
+	const cur = current.trim();
+	if (!cur) return false;
+	if (cur === incoming.trim()) return false;
+	return true;
+}
+
+/**
+ * 按用户在模板填入确认框中的选择计算新的输入框内容（issue #586）：
+ * - `"cancel"` → 返回 `null`（保持原样不动）；
+ * - `"append"` → 复用 `mergeRecalledDraft(current, incoming)` 以换行追加到末尾；
+ * - `"overwrite"` → 用 `incoming` 替换当前内容。
+ */
+export function applyTemplateFill(current: string, incoming: string, choice: TemplateFillChoice): string | null {
+	switch (choice) {
+		case "cancel":
+			return null;
+		case "append":
+			return mergeRecalledDraft(current, incoming);
+		case "overwrite":
+			return incoming;
+	}
+}

@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isAllowedExternalUrl } from "./external-url.js";
+import { buildDesktopLoadUrl, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** 开发：dist/desktop → dist/server；打包后：asar 关闭，app 目录即根布局（dist/server + web/dist + themes）。 */
@@ -77,24 +78,20 @@ async function resolvePort(): Promise<number> {
 	return pickFreePort();
 }
 
-/** /api/health 轮询：server 就绪后再建窗口，避免白屏。 */
-async function waitForHealth(url: string, timeoutMs = 20_000): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		try {
-			const res = await fetch(`${url}/api/health`);
-			if (res.ok) return;
-		} catch {
-			/* 还没起来 */
-		}
-		if (Date.now() > deadline) throw new Error(`server 未在 ${timeoutMs}ms 内就绪：${url}`);
-		await new Promise((r) => setTimeout(r, 200));
-	}
-}
-
 let serverProc: ChildProcess | null = null;
 let mainWin: BrowserWindow | null = null;
 let serverHealthy = false;
+
+/** 启动失败时清理子进程并以非零码退出（issue #584：避免退出码 0 掩盖启动失败）。 */
+function exitOnStartupFailure(code = 1): void {
+	try {
+		serverProc?.kill();
+	} catch {
+		/* ignore */
+	}
+	serverProc = null;
+	app.exit(code);
+}
 
 console.log("[desktop] main started, waiting for app ready…");
 
@@ -144,16 +141,23 @@ async function startServerSidecar(): Promise<string> {
 			windowsHide: true,
 		},
 	);
+	let earlyExitError: Error | null = null;
 	serverProc.on("error", (err) => {
 		console.error(`[desktop] server spawn 失败：${err.message}`);
-		if (!serverHealthy) app.quit();
+		earlyExitError = new Error(`server spawn 失败：${err.message}`);
+		if (!serverHealthy) exitOnStartupFailure(1);
 	});
 	serverProc.on("exit", (code, signal) => {
 		console.error(`[desktop] server 提前退出（code=${code} signal=${signal}），请看上方 server 日志`);
-		if (!serverHealthy) app.quit();
+		earlyExitError = new Error(`server 提前退出（code=${code} signal=${signal}）`);
+		if (!serverHealthy) exitOnStartupFailure(typeof code === "number" && code !== 0 ? code : 1);
 	});
 	const url = `http://127.0.0.1:${port}`;
-	await waitForHealth(url);
+	const timeoutMs = resolveHealthTimeoutMs(process.env);
+	await waitForHealth(url, {
+		timeoutMs,
+		shouldAbort: () => earlyExitError,
+	});
 	serverHealthy = true;
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
@@ -171,9 +175,10 @@ async function createWindow(url: string): Promise<void> {
 			sandbox: true,
 		},
 	});
+	const loadUrl = buildDesktopLoadUrl(url, process.env);
 	console.log(`[desktop] opening window: ${url}`);
 	try {
-		await mainWin.loadURL(url);
+		await mainWin.loadURL(loadUrl);
 	} catch (err) {
 		console.error(`[desktop] loadURL 失败：${(err as Error).message}`);
 	}
@@ -236,7 +241,7 @@ void app.whenReady().then(async () => {
 		await wireAutoUpdater();
 	} catch (err) {
 		console.error("✖ 桌面版启动失败：", err);
-		app.quit();
+		exitOnStartupFailure(1);
 	}
 });
 

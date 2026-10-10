@@ -10,7 +10,11 @@
 
 ## [Unreleased]
 
-暂无未发布内容。
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（10）：`tpl.confirmFillTitle`、`tpl.confirmFillDesc`、`tpl.confirmFillAppend`、`tpl.confirmFillOverwrite`、`pluginOfficialMarket`、`pluginOfficialMarketHint`、`pluginOfficialLink`、`pluginOfficialLinkHint`、`copyConversationLink`、`copyMessageLink`
+<!-- auto-i18n:end -->
 
 ## [0.101.0] — 2026-10-10
 
