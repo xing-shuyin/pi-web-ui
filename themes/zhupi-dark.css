@@ -306,21 +306,21 @@ div.chead[role="button"]:hover,
 	padding: 1px 5px;
 }
 
-/* ---- 5. 工具调用 = 台账行：无框无底，点线引导符填空 ---- */
+/* ---- 5. 工具调用 = 笺纸凹版卡片（与代码块同色，点线引导符填空） ---- */
 .toolcall {
-	margin: 1px 0 !important;
-	border: none !important;
-	border-radius: 0 !important;
-	background: transparent !important;
-	box-shadow: none !important;
-	overflow: visible !important;
+	margin: 6px 0 !important;
+	border: 1px solid var(--border-soft) !important;
+	border-radius: 4px !important;
+	background: var(--code-bg) !important;
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25) !important;
+	overflow: hidden !important;
 }
 
 .toolcall-head {
 	display: flex;
 	align-items: center;
-	min-height: 24px;
-	padding: 2px 0;
+	min-height: 28px;
+	padding: 4px 10px !important;
 	font-family: var(--mono);
 	font-size: 12px;
 }
@@ -344,6 +344,11 @@ div.chead[role="button"]:hover,
 	color: var(--text-faint) !important;
 }
 
+.toolcall.run {
+	border-color: rgba(224, 90, 53, 0.5) !important;
+	background: var(--code-bg) !important;
+}
+
 .toolcall.run .toolcall-name {
 	color: var(--accent) !important;
 }
@@ -354,6 +359,11 @@ div.chead[role="button"]:hover,
 
 .toolcall.ok .toolcall-status {
 	color: var(--green) !important;
+}
+
+.toolcall.err {
+	border-color: rgba(224, 101, 78, 0.5) !important;
+	background: var(--red-soft) !important;
 }
 
 .toolcall.err .toolcall-status {
@@ -374,10 +384,11 @@ div.chead[role="button"]:hover,
 	padding: 0 !important;
 }
 
-/* 工具卡体：去掉分隔线与内边距，参数/输出与卡头同距平铺 */
+/* 工具卡体：带淡墨顶部分隔线与舒适内边距 */
 .toolcall-body {
-	border-top: none !important;
-	padding: 0 0 6px !important;
+	border-top: 1px solid var(--border-soft) !important;
+	padding: 8px 12px !important;
+	background: transparent !important;
 }
 
 /* 卡内重复的终端图标只剩噪音（卡头已有工具图标），参照全透明主题隐藏 */
@@ -393,18 +404,23 @@ div.chead[role="button"]:hover,
 	border-radius: 3px;
 }
 
-/* ---- 6. 思考流 = 脚注：※ 起手，淡墨小字 ---- */
+/* ---- 6. 思考流 = 笺纸凹版卡片 + 空态高度修复（※ 起手，淡墨小字） ---- */
 .thinking {
-	margin: 4px 0 !important;
-	border: none !important;
-	border-radius: 0 !important;
-	background: transparent !important;
-	box-shadow: none !important;
+	margin: 6px 0 !important;
+	border: 1px solid var(--border-soft) !important;
+	border-radius: 4px !important;
+	background: var(--code-bg) !important;
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25) !important;
+	overflow: hidden !important;
 }
 
 .thinking-head {
 	font-size: 12px;
 	color: var(--text-faint);
+	padding: 4px 10px !important;
+	min-height: 28px;
+	display: flex;
+	align-items: center;
 }
 
 .thinking-icon {
@@ -412,21 +428,34 @@ div.chead[role="button"]:hover,
 }
 
 .thinking-body {
-	border-top: none !important;
+	border-top: 1px solid var(--border-soft) !important;
 	font-style: normal !important;
 	font-size: 12.5px !important;
 	color: var(--text-dim) !important;
-	background: transparent;
+	background: transparent !important;
 	position: relative;
-	padding: 2px 14px 2px 1.6em !important;
+	padding: 8px 14px 8px 2em !important;
+	min-height: 2.4em;
+	line-height: 1.6;
 }
 
 .thinking-body::before {
 	content: "※";
 	position: absolute;
-	left: 0;
-	top: 2px;
+	left: 8px;
+	top: 8px;
 	color: var(--text-faint);
+}
+
+.thinking-body:empty::after {
+	content: "（无思考文本记录）";
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.thinking-live {
+	border-color: rgba(224, 90, 53, 0.5) !important;
+	background: var(--code-bg) !important;
 }
 
 .thinking-live .thinking-toggle,

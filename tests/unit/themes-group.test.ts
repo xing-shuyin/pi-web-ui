@@ -117,4 +117,14 @@ describe("主题分组与现代经典主题测试", () => {
 		expect(paperCss).toContain("--text-faint: #6c5a41");
 		expect(paperCss).toContain("color: #5f533e");
 	});
+
+	it("朱批与朱批·夜主题具备笺纸凹版边框及空思考高度兜底", () => {
+		for (const file of ["zhupi.css", "zhupi-dark.css"]) {
+			const css = readFileSync(join(BUILTIN_DIR, file), "utf8");
+			expect(css).toContain("border: 1px solid var(--border-soft) !important;");
+			expect(css).toContain("background: var(--code-bg) !important;");
+			expect(css).toContain(".thinking-body:empty::after");
+			expect(css).toContain("min-height: 2.4em;");
+		}
+	});
 });
