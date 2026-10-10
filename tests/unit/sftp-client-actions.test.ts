@@ -55,6 +55,10 @@ function stubFetch() {
 					plan: null,
 				});
 			}
+			if (u.includes("/ignore-toggle")) {
+				posts.push({ path: u, body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown> });
+				return send({ ok: true, action: "added" });
+			}
 			if (u.includes("/remote")) return send({ dir: "/home/test", entries: [] });
 			return send({
 				cwd: CWD,
@@ -104,9 +108,16 @@ afterEach(() => {
 const fire = (action: string, target: { id: string; kind?: string; label?: string }) =>
 	handlers.get(action)?.(action, undefined, target);
 
-describe("sftp 右键菜单上传动作", () => {
-	it("两条动作都真的被客户端接管（当年缺的就是这一环）", () => {
-		expect([...handlers.keys()].sort()).toEqual(["sftp:upload-dir", "sftp:upload-file"]);
+describe("sftp 右键菜单上传与下载动作", () => {
+	it("全部六条上传、下载及忽略动作都真的被客户端接管", () => {
+		expect([...handlers.keys()].sort()).toEqual([
+			"sftp:download-dir",
+			"sftp:download-file",
+			"sftp:ignore-item",
+			"sftp:unignore-item",
+			"sftp:upload-dir",
+			"sftp:upload-file",
+		]);
 	});
 
 	it("面板还没挂载：先打开面板并排队，mount 完立刻跑", async () => {
@@ -168,5 +179,43 @@ describe("sftp 右键菜单上传动作", () => {
 		await flush();
 		expect(posts).toHaveLength(0);
 		expect(el.textContent ?? "").toContain("Only files inside the workspace");
+	});
+
+	it("右键文件列表空白处（代表当前目录，id: ''）：上传与下载整目录", async () => {
+		document.documentElement.lang = "zh";
+		stubFetch();
+		mount();
+		await flush();
+
+		// 空白处上传当前目录
+		fire("sftp:upload-dir", { id: "", kind: "list", label: "根目录" });
+		await flush();
+		expect(posts).toHaveLength(1);
+		expect(posts[0]?.body).toMatchObject({ direction: "up", path: "" });
+
+		// 空白处从远端下载同步当前目录
+		fire("sftp:download-dir", { id: "", kind: "list", label: "根目录" });
+		await flush();
+		expect(posts).toHaveLength(2);
+		expect(posts[1]?.body).toMatchObject({ direction: "down", path: "" });
+	});
+
+	it("右键文件/目录添加到忽略与从忽略移除", async () => {
+		document.documentElement.lang = "zh";
+		stubFetch();
+		mount();
+		await flush();
+
+		fire("sftp:ignore-item", { id: "dist", kind: "dir", label: "dist" });
+		await flush();
+		expect(posts).toHaveLength(1);
+		expect(posts[0]?.path).toContain("/ignore-toggle");
+		expect(posts[0]?.body).toMatchObject({ path: "dist", mode: "add" });
+
+		fire("sftp:unignore-item", { id: "dist", kind: "dir", label: "dist" });
+		await flush();
+		expect(posts).toHaveLength(2);
+		expect(posts[1]?.path).toContain("/ignore-toggle");
+		expect(posts[1]?.body).toMatchObject({ path: "dist", mode: "remove" });
 	});
 });

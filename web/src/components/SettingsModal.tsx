@@ -600,6 +600,10 @@ interface SettingsPatch {
 	readDirEnabled?: boolean;
 	/** 工具延迟加载开关（默认开）：只影响新会话与之后的门控重放。 */
 	toolLazyLoading?: boolean;
+	/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式）。 */
+	codemodeMode?: "on" | "only";
+	/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
+	codemodeInlineBudget?: number;
 	/** 工具执行审批总开关（默认开；纯运行开关，live 生效无需 reload）。 */
 	toolApprovalEnabled?: boolean;
 	editSoftEnabled?: boolean;
@@ -2779,17 +2783,85 @@ export function SettingsModal({
 								<div className="set-field-label">{t("toolsSectionOther")}</div>
 								{OTHER_AGENT_TOOLS.map((tool) => {
 									const blocked = isBlockedByPreset(tool.name);
+									const isCodemodeActive = tool.name === "codemode" && !blocked && !disabledTools.has(tool.name);
 									return (
-										<ToggleRow
-											key={tool.name}
-											title={tool.name}
-											tip={`${tt(tool.descKey ?? tool.name)}\n${tt(tool.offHintKey ?? tool.name)}`}
-											action={toolEditAction(tool.name)}
-											subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
-											enabled={!blocked && !disabledTools.has(tool.name)}
-											disabled={blocked}
-											onToggle={() => toggleAgentTool(tool.name)}
-										/>
+										<div key={tool.name}>
+											<ToggleRow
+												title={tool.name}
+												tip={`${tt(tool.descKey ?? tool.name)}\n${tt(tool.offHintKey ?? tool.name)}`}
+												action={toolEditAction(tool.name)}
+												subtitle={blocked ? t("toolsBlockedByPreset", { name: piPresetName }) : undefined}
+												enabled={!blocked && !disabledTools.has(tool.name)}
+												disabled={blocked}
+												onToggle={() => toggleAgentTool(tool.name)}
+											/>
+											{isCodemodeActive && (
+												<div
+													className="sub-settings-block"
+													style={{
+														marginLeft: 24,
+														marginTop: -6,
+														marginBottom: 12,
+														padding: "10px 14px",
+														borderRadius: 6,
+														backgroundColor: "var(--bg-elev2, rgba(255,255,255,0.03))",
+														border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+														display: "flex",
+														flexDirection: "column",
+														gap: 8,
+													}}
+												>
+													<div
+														style={{
+															display: "flex",
+															justifyContent: "space-between",
+															alignItems: "center",
+														}}
+													>
+														<label className="set-field-label" style={{ margin: 0, fontSize: 13 }}>
+															{t("codemodeModeLabel")}
+															<HintTip text={t("codemodeModeHint")} />
+														</label>
+														<select
+															className="set-select"
+															style={{ width: "auto", minWidth: 140 }}
+															value={settings.codemodeMode ?? "on"}
+															onChange={(e) => setPartial({ codemodeMode: e.target.value as "on" | "only" })}
+														>
+															<option value="on">{t("codemodeModeOn")}</option>
+															<option value="only">{t("codemodeModeOnly")}</option>
+														</select>
+													</div>
+													<div
+														style={{
+															display: "flex",
+															justifyContent: "space-between",
+															alignItems: "center",
+														}}
+													>
+														<label className="set-field-label" style={{ margin: 0, fontSize: 13 }}>
+															{t("codemodeInlineBudgetLabel")}
+															<HintTip text={t("codemodeInlineBudgetHint")} />
+														</label>
+														<input
+															type="number"
+															className="set-input"
+															style={{ width: 100, textAlign: "right" }}
+															min={500}
+															max={50000}
+															step={500}
+															value={settings.codemodeInlineBudget ?? 3000}
+															onChange={(e) => {
+																const val = parseInt(e.target.value, 10);
+																if (!isNaN(val) && val > 0) {
+																	setPartial({ codemodeInlineBudget: val });
+																}
+															}}
+														/>
+													</div>
+												</div>
+											)}
+										</div>
 									);
 								})}
 								<div className="set-field-label">

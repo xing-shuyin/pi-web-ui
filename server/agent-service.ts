@@ -634,6 +634,8 @@ export interface Conversation {
 	toolStartTimes: Map<string, number>;
 	/** 暂存正在执行中的工具参数（如 SoL-Pi 的 update_plan 参数，供 tool_execution_end 同步看板使用）。 */
 	toolPendingArgs: Map<string, unknown>;
+	/** 当前正在执行中的工具集合（toolCallId -> toolName），便于高危审批等拦截识别父级上下文（如 codemode）。 */
+	activeToolCalls: Map<string, string>;
 	/** LLM 瞬时报错自动重试进行中（agent_end willRetry 占位 → auto_retry_start
 	 *  填实 → auto_retry_end 清除）。置位期间快照隐藏末尾的 stopReason=error
 	 *  assistant 消息（重试成功则用户永远看不到，耗尽才永久标红），前端改显
@@ -710,7 +712,7 @@ export { pickAdoptableOrphan, sameCwd, type OrphanCandidate };
 
 /** 手动过户时跟着对话一起搬走的等答复问卷（id 在目标会话重排）. */
 export interface TakeoverQuestion {
-	resolve: (value: QuestionAnswer[] | null) => void;
+	resolve: (value: QuestionAnswer[] | { cancelled: true; reason?: string } | null) => void;
 	questions: UiQuestion[];
 	conversationId: string;
 }
@@ -1081,6 +1083,7 @@ export class ClientSession {
 		this.applyRetryOverrides();
 		// 软上限覆盖同样重放（子代理跟随主对话的压缩阈值，issue #229）。
 		this.applyCompactionOverrides();
+		this.applyCodemodeOverrides();
 		// 扩展绑定（rpc 模式）；用 headless 的 Web UI context：
 		// 扩展绑定时不会因缺方法崩，UI 输出也不下发（不会与主对话的 widget/status 冲突）。
 		try {
@@ -2158,7 +2161,11 @@ export class ClientSession {
 	 *  conversationId 记录谁问的：看门狗豁免、快照恢复都靠它。 */
 	private pendingQuestions = new Map<
 		string,
-		{ resolve: (value: QuestionAnswer[] | null) => void; questions: UiQuestion[]; conversationId?: string }
+		{
+			resolve: (value: QuestionAnswer[] | { cancelled: true; reason?: string } | null) => void;
+			questions: UiQuestion[];
+			conversationId?: string;
+		}
 	>();
 
 	/** 任务计划管理器（Plan Mode / Step State Machine）。 */
@@ -2250,12 +2257,14 @@ export class ClientSession {
 					// （含重试次数覆盖）——依次重放：重试覆盖 → 软上限覆盖 → 终端门控。
 					this.applyRetryOverrides();
 					this.applyCompactionOverrides();
+					this.applyCodemodeOverrides();
 					// reload() 会把 custom 工具重新加回活跃集——重放当前会话归属预设门控。
 					this.applyToolGating(this.session, this.conv?.agentPreset);
 					await this.pushSlashCommands();
 				},
 				applyRetryOverrides: () => this.applyRetryOverrides(),
 				applyCompactionOverrides: () => this.applyCompactionOverrides(),
+				applyCodemodeOverrides: () => this.applyCodemodeOverrides(),
 				applyToolGating: () => {
 					for (const conv of this.convs.values()) {
 						this.applyToolGating(conv.session, conv.agentPreset);
@@ -2710,7 +2719,7 @@ export class ClientSession {
 					// 覆盖，则用 composer 把 {{token}} 展开为各来源文本（工具列表/项目上下文/技能
 					// 等都取自本次 run 的 systemPromptOptions，永远最新）。
 					extensionFactories: [
-						createCodemodeExtension({ mode: "on" }),
+						createCodemodeExtension(),
 						createToolSearchExtension(),
 						{
 							name: "pi-webui-persona",
@@ -3166,6 +3175,7 @@ export class ClientSession {
 			queueFollowUp: [],
 			toolStartTimes: new Map(),
 			toolPendingArgs: new Map(),
+			activeToolCalls: new Map(),
 			toolWatchdogs: new Map(),
 			workspaceSnapshots: [],
 		};
@@ -3459,6 +3469,7 @@ export class ClientSession {
 		this.applyRetryOverrides();
 		// 软上限覆盖同路重放（新 runtime 的 SettingsManager 是干净的，issue #229）。
 		this.applyCompactionOverrides();
+		this.applyCodemodeOverrides();
 		this.scheduleSnapshot();
 		this.webUi.refresh();
 		this.startWidgetsTimer();
@@ -3954,6 +3965,7 @@ export class ClientSession {
 				// Record the moment the tool actually starts so tool_status can
 				// report real execution time (vs. time spent waiting on the model).
 				conv.toolStartTimes.set(event.toolCallId, Date.now());
+				conv.activeToolCalls.set(event.toolCallId, event.toolName);
 				// Snapshot listeners before a bash run — the post-run diff catches
 				// servers the agent started in the background.
 				if (event.toolName === "bash") {
@@ -3993,6 +4005,7 @@ export class ClientSession {
 			case "tool_execution_end": {
 				const startedAt = conv.toolStartTimes.get(event.toolCallId);
 				conv.toolStartTimes.delete(event.toolCallId);
+				conv.activeToolCalls.delete(event.toolCallId);
 				this.clearToolWatchdog(conv, event.toolCallId);
 				const pendingArgs = conv.toolPendingArgs.get(event.toolCallId);
 				conv.toolPendingArgs.delete(event.toolCallId);
@@ -4841,7 +4854,7 @@ export class ClientSession {
 		questions: UiQuestion[],
 		sig: { aborted?: boolean },
 		conversationId?: string,
-	): Promise<QuestionAnswer[] | null> {
+	): Promise<QuestionAnswer[] | { cancelled: true; reason?: string } | null> {
 		return new Promise((resolve, reject) => {
 			if (sig?.aborted || this.disposed) {
 				reject(new Error("ask_user_question 已中止"));
@@ -4880,11 +4893,15 @@ export class ClientSession {
 	 *  成功 resolve 后同步推 question_retracted + conversations：本页 live 对话框
 	 *  靠前者收起（跨页作答时源页就靠它），别处的「?」角标靠后者即时消失。
 	 *  返回是否真的恢复了一个挂起提问（跨页作答的送达回执用）。 */
-	resolveQuestion(id: string, answers: QuestionAnswer[], cancelled?: boolean): boolean {
+	resolveQuestion(id: string, answers: QuestionAnswer[], cancelled?: boolean, cancelReason?: string): boolean {
 		const pending = this.pendingQuestions.get(id);
 		if (!pending) return false;
 		this.pendingQuestions.delete(id);
-		pending.resolve(cancelled ? null : answers);
+		if (cancelled) {
+			pending.resolve(cancelReason?.trim() ? { cancelled: true, reason: cancelReason.trim() } : null);
+		} else {
+			pending.resolve(answers);
+		}
 		this.emit({ type: "question_retracted", id });
 		// 同上：角标消失也要即时推送（否则要等到 run 结束别处才知道问完了）。
 		this.emitConversations();
@@ -4921,8 +4938,8 @@ export class ClientSession {
 
 	/** 标准引擎的 question_answer 路由入口（index.ts 经 cs.answerQuestion?. 转发）。
 	 *  DSH 引擎的 AgentService 也实现了同名方法，此处为 ClientSession 的转发。 */
-	answerQuestion(id: string, answers: QuestionAnswer[], cancelled?: boolean): Promise<void> {
-		this.resolveQuestion(id, answers, cancelled);
+	answerQuestion(id: string, answers: QuestionAnswer[], cancelled?: boolean, cancelReason?: string): Promise<void> {
+		this.resolveQuestion(id, answers, cancelled, cancelReason);
 		return Promise.resolve();
 	}
 
@@ -5005,6 +5022,15 @@ export class ClientSession {
 				return;
 			}
 			const conversationTitle = conv?.title;
+			let parentTool: string | undefined;
+			if (conv?.activeToolCalls) {
+				for (const [id, name] of conv.activeToolCalls.entries()) {
+					if (name === "codemode" && id !== toolCallId) {
+						parentTool = "codemode";
+						break;
+					}
+				}
+			}
 			const entry: PendingApprovalEntry = {
 				id,
 				toolCallId,
@@ -5014,6 +5040,7 @@ export class ClientSession {
 				reasonEn,
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
+				...(parentTool ? { parentTool } : {}),
 				conversationId,
 				conversationTitle,
 				resolve,
@@ -5030,6 +5057,7 @@ export class ClientSession {
 				reasonEn,
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
+				...(parentTool ? { parentTool } : {}),
 				...(conversationId !== undefined ? { conversationId } : {}),
 				...(conversationTitle ? { conversationTitle } : {}),
 			});
@@ -6025,6 +6053,7 @@ export class ClientSession {
 			// /reload 同样重读磁盘 settings.json——重放重试覆盖 + 软上限覆盖 + 终端门控。
 			this.applyRetryOverrides();
 			this.applyCompactionOverrides();
+			this.applyCodemodeOverrides();
 			this.applyToolGating(this.session, this.conv?.agentPreset);
 		},
 		pluginCommands: () => this.pluginCommandsProvider?.() ?? [],
@@ -6414,6 +6443,21 @@ export class ClientSession {
 		c.session.settingsManager.applyOverrides({
 			compaction: { reserveTokens: reserve ?? DEFAULT_COMPACTION_RESERVE_TOKENS },
 		});
+	}
+
+	/** 把 codemode 运行模式与内联预算即时注入各存活会话的 SDK SettingsManager。 */
+	applyCodemodeOverrides(): void {
+		const mode = this.settingsSvc.current.codemodeMode ?? "on";
+		const inlineBudget = this.settingsSvc.current.codemodeInlineBudget ?? 3000;
+		for (const c of this.convs.values()) {
+			try {
+				c.session.settingsManager.applyOverrides({
+					codemode: { mode, inlineBudget },
+				});
+			} catch {
+				// 会话未就绪或已释放 → 其 runtime 创建时统一注入。
+			}
+		}
 	}
 
 	/** 会话模型变化时重放该会话的软上限覆盖。SDK 恢复历史会话的模型

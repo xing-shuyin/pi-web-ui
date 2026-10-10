@@ -14,6 +14,7 @@
  *   - 传输前后按大小校验，静默截断变成显式失败。
  */
 
+import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { Transform } from "node:stream";
@@ -29,12 +30,38 @@ export const MAX_SCAN_DEPTH = 32;
 export const SCAN_CONCURRENCY = 8;
 /** mtime 容差（秒）：FAT/NTFS/各种 sshd 的秒级精度会有 1-2 秒抖动。 */
 const MTIME_TOLERANCE_S = 2;
+/** 单次 SFTP RPC 超时（防通道窗口耗尽或死连接永久挂死整个同步任务）。 */
+const SFTP_CALL_TIMEOUT_MS = 30_000;
+/** 流式传输无字节进展的超时。 */
+const STREAM_IDLE_TIMEOUT_MS = 45_000;
+/** 小于此阈值的文件直接走单次 writeFile/readFile，避免 1500+ 次 createWriteStream 耗尽 ssh2 句柄或窗口。 */
+const DIRECT_IO_MAX_BYTES = 256 * 1024;
 
-/** SFTP 回调 API → Promise。 */
+/** SFTP 回调 API → Promise（带超时防挂死）。 */
 export function sftpCall(sftp, method, ...args) {
 	return new Promise((resolve, reject) => {
 		if (typeof sftp?.[method] !== "function") return reject(new Error(`SFTP 不支持 ${method}`));
-		sftp[method](...args, (err, r) => (err ? reject(err) : resolve(r)));
+		let settled = false;
+		const timer = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			reject(new Error(`SFTP ${method} 超时（${Math.round(SFTP_CALL_TIMEOUT_MS / 1000)}s）`));
+		}, SFTP_CALL_TIMEOUT_MS);
+		if (typeof timer.unref === "function") timer.unref();
+		try {
+			sftp[method](...args, (err, r) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				if (err) reject(err);
+				else resolve(r);
+			});
+		} catch (err) {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			reject(err);
+		}
 	});
 }
 
@@ -545,6 +572,19 @@ export async function planSync({
 		}
 		if (truncated) warnings.push(`已扫描到 ${MAX_SCAN_FILES} 个文件上限 —— 结果可能不完整，建议缩小范围或补充 ignore`);
 
+		// 当两侧文件大小完全一致、仅 mtime 不同（如远端曾 git clone 或旧版未保留 mtime）时，
+		// 若有 execScan 则批量校验 md5：内容一致即视为相同（不再全量重传），并顺手对齐远端 mtime。
+		if (compare === "mtime+size" && typeof execScan === "function") {
+			await reconcileSameSizeByHash({
+				local,
+				remote,
+				remoteBaseAbs,
+				execScan,
+				signal,
+				concurrency: scanConcurrency,
+			});
+		}
+
 		const entries = [];
 		const keys = new Set([...local.keys(), ...remote.keys()]);
 		for (const rel of [...keys].sort()) {
@@ -609,6 +649,79 @@ export async function planSync({
 		// 远端这一趟是走了一次 find 还是逐目录 readdir（只用于日志/诊断，不参与判定）
 		remoteScan: remoteViaFind ? "find" : "sftp",
 	};
+}
+
+/**
+ * 对「大小完全相同、仅 mtime 不同」的候选文件做一次快速 MD5 对拍（仅在开启远端命令时生效）：
+ * 避免因 git clone / 历史上传未保留 mtime 导致每次同步都把几千个内容毫无变化的文件重新传一遍。
+ */
+async function reconcileSameSizeByHash({ local, remote, remoteBaseAbs, execScan, signal, concurrency = 8 }) {
+	const MAX_HASH_FILE_SIZE = 16 * 1024 * 1024;
+	const candidates = [];
+	for (const [rel, l] of local) {
+		const r = remote.get(rel);
+		if (!r) continue;
+		if (l.size !== r.size || l.size > MAX_HASH_FILE_SIZE) continue;
+		if (l.mtime == null || r.mtime == null) continue;
+		if (Math.abs(l.mtime - r.mtime) <= MTIME_TOLERANCE_S) continue;
+		if (!isSafeRelPath(rel)) continue;
+		candidates.push({ rel, l, r });
+	}
+	if (!candidates.length) return;
+
+	// 0 字节文件大小相同必然内容一致
+	const nonEmpty = [];
+	for (const c of candidates) {
+		if (c.l.size === 0) {
+			c.r.mtime = c.l.mtime;
+		} else {
+			nonEmpty.push(c);
+		}
+	}
+	if (!nonEmpty.length) return;
+
+	// 1) 远端按 200 个文件一批跑 md5sum
+	const CHUNK = 200;
+	const remoteHashes = new Map();
+	for (let i = 0; i < nonEmpty.length; i += CHUNK) {
+		throwIfAborted(signal);
+		const slice = nonEmpty.slice(i, i + CHUNK);
+		const cmd = `cd ${shellQuote(remoteBaseAbs)} && md5sum -- ${slice.map((c) => shellQuote(c.rel)).join(" ")}`;
+		let res;
+		try {
+			res = await execScan(cmd, { timeoutMs: 30_000, maxBytes: 4 * 1024 * 1024 });
+		} catch {
+			return;
+		}
+		if (!res || res.code !== 0 || res.truncated) return;
+		for (const line of String(res.stdout ?? "").split(/\r?\n/)) {
+			if (!line) continue;
+			const m = /^([0-9a-fA-F]{32})\s+[ *]?(.+)$/.exec(line.trim());
+			if (m) remoteHashes.set(m[2], m[1].toLowerCase());
+		}
+	}
+	if (!remoteHashes.size) return;
+
+	// 2) 本地并行算 MD5 对比
+	await runPool(
+		nonEmpty,
+		concurrency,
+		async (c) => {
+			throwIfAborted(signal);
+			const rHash = remoteHashes.get(c.rel);
+			if (!rHash) return;
+			try {
+				const buf = await fs.readFile(c.l.abs);
+				const lHash = createHash("md5").update(buf).digest("hex").toLowerCase();
+				if (lHash === rHash) {
+					c.r.mtime = c.l.mtime;
+				}
+			} catch {
+				/* ignore */
+			}
+		},
+		{ signal },
+	);
 }
 
 /** 单个文件两侧对比 → 一条计划项。 */
@@ -709,28 +822,89 @@ export function makeRemoteMkdir(sftp) {
 	};
 }
 
-/** 上传一个文件（半成品 + rename + 大小校验）。`signal` 中止会掉正在传的流并清掉半成品。 */
+/** 带空闲超时与取消监听的流式传输（防 ssh2 流卡死或取消时不触发 close）。 */
+async function pipelineWithTimeout(rs, transform, ws, signal) {
+	throwIfAborted(signal);
+	let timer = null;
+	let abortHandler = null;
+	const resetTimer = (reject) => {
+		if (timer) clearTimeout(timer);
+		timer = setTimeout(() => {
+			const err = new Error(`文件流传输超时（${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s 无进展）`);
+			try {
+				rs.destroy(err);
+			} catch {}
+			try {
+				ws.destroy(err);
+			} catch {}
+			reject(err);
+		}, STREAM_IDLE_TIMEOUT_MS);
+		if (typeof timer.unref === "function") timer.unref();
+	};
+	try {
+		await new Promise((resolve, reject) => {
+			resetTimer(reject);
+			if (signal) {
+				abortHandler = () => {
+					const err = signal.reason instanceof Error ? signal.reason : abortError();
+					try {
+						rs.destroy(err);
+					} catch {}
+					try {
+						ws.destroy(err);
+					} catch {}
+					reject(err);
+				};
+				if (signal.aborted) return abortHandler();
+				signal.addEventListener("abort", abortHandler, { once: true });
+			}
+			rs.on("data", () => resetTimer(reject));
+			pipeline(rs, transform, ws, { signal }).then(resolve, reject);
+		});
+	} finally {
+		if (timer) clearTimeout(timer);
+		if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
+	}
+}
+
+/** 上传一个文件（半成品 + rename + 大小校验 + 保留 mtime）。`signal` 中止会掉正在传的流并清掉半成品。 */
 export async function uploadFile(sftp, localAbs, remoteAbs, { onBytes, mkdirp, signal } = {}) {
 	throwIfAborted(signal);
 	if (mkdirp) await mkdirp(posixDir(remoteAbs));
-	const expected = (await fs.stat(localAbs)).size;
+	const localStat = await fs.stat(localAbs);
+	const expected = localStat.size;
+	const mtime = Math.floor(localStat.mtimeMs / 1000);
 	const tmp = `${posixDir(remoteAbs)}/.sftp-tmp-${process.pid}-${(tmpSeq++).toString(36)}-${path.posix.basename(remoteAbs)}`;
 	try {
-		await pipeline(createReadStream(localAbs), counting(onBytes), sftp.createWriteStream(tmp), { signal });
+		if (expected <= DIRECT_IO_MAX_BYTES && typeof sftp?.writeFile === "function") {
+			const buf = await fs.readFile(localAbs);
+			throwIfAborted(signal);
+			await sftpCall(sftp, "writeFile", tmp, buf);
+			onBytes?.(buf.length);
+		} else {
+			await pipelineWithTimeout(createReadStream(localAbs), counting(onBytes), sftp.createWriteStream(tmp), signal);
+		}
 		if (expected > 0) {
 			const st = await statRemote(sftp, tmp);
 			if (!st || st.size !== expected) throw new Error(`上传后大小不符（期望 ${expected}，远端 ${st?.size ?? "?"}）`);
 		}
 		await renameRemote(sftp, tmp, remoteAbs);
+		if (mtime > 0 && typeof sftp?.setstat === "function") {
+			await sftpCall(sftp, "setstat", remoteAbs, { atime: mtime, mtime }).catch(() => {});
+		}
 		return expected;
 	} catch (err) {
-		await sftpCall(sftp, "unlink", tmp).catch(() => {});
+		if (signal?.aborted) {
+			void sftpCall(sftp, "unlink", tmp).catch(() => {});
+		} else {
+			await sftpCall(sftp, "unlink", tmp).catch(() => {});
+		}
 		throw err;
 	}
 }
 
-/** 下载一个文件（半成品 + rename + 大小校验）。 */
-export async function downloadFile(sftp, remoteAbs, localAbs, { onBytes, expectedSize, signal } = {}) {
+/** 下载一个文件（半成品 + rename + 大小校验 + 保留 mtime）。 */
+export async function downloadFile(sftp, remoteAbs, localAbs, { onBytes, expectedSize, expectedMtime, signal } = {}) {
 	throwIfAborted(signal);
 	await fs.mkdir(path.dirname(localAbs), { recursive: true });
 	const tmp = path.join(
@@ -739,19 +913,34 @@ export async function downloadFile(sftp, remoteAbs, localAbs, { onBytes, expecte
 	);
 	let written = 0;
 	try {
-		await pipeline(
-			sftp.createReadStream(remoteAbs),
-			counting((n) => {
-				written = n;
-				onBytes?.(n);
-			}),
-			createWriteStream(tmp),
-			{ signal },
-		);
+		if (
+			typeof expectedSize === "number" &&
+			expectedSize <= DIRECT_IO_MAX_BYTES &&
+			typeof sftp?.readFile === "function"
+		) {
+			const buf = await sftpCall(sftp, "readFile", remoteAbs);
+			throwIfAborted(signal);
+			written = buf.length;
+			onBytes?.(written);
+			await fs.writeFile(tmp, buf);
+		} else {
+			await pipelineWithTimeout(
+				sftp.createReadStream(remoteAbs),
+				counting((n) => {
+					written = n;
+					onBytes?.(n);
+				}),
+				createWriteStream(tmp),
+				signal,
+			);
+		}
 		if (typeof expectedSize === "number" && expectedSize !== written) {
 			throw new Error(`下载后大小不符（期望 ${expectedSize}，实际 ${written}）`);
 		}
 		await fs.rename(tmp, localAbs);
+		if (typeof expectedMtime === "number" && expectedMtime > 0) {
+			await fs.utimes(localAbs, expectedMtime, expectedMtime).catch(() => {});
+		}
 		return written;
 	} catch (err) {
 		await fs.rm(tmp, { force: true }).catch(() => {});
@@ -1000,8 +1189,8 @@ async function uploadBatchViaTar({ exec, tasks, signal }) {
 		if (send.length < BATCH_MIN_FILES) return null;
 		const packed = send.map((f) => ({ rel: f.rel, size: f.size, absRemote: f.task.absRemote }));
 
-		// 1) 解包到暂存目录（-m：不保留 mtime，与逐文件路径行为一致）
-		const unpack = await exec(`mkdir -p ${shellQuote(staging)} && tar -x -m -f - -C ${shellQuote(staging)}`, {
+		// 1) 解包到暂存目录（保留 ustar 头里的 mtime，防止下次同步误判为内容差异）
+		const unpack = await exec(`mkdir -p ${shellQuote(staging)} && tar -x -f - -C ${shellQuote(staging)}`, {
 			inputStream: tarStream(send, { signal }),
 			signal,
 			timeoutMs: 300_000,
@@ -1040,18 +1229,45 @@ async function uploadBatchViaTar({ exec, tasks, signal }) {
 		}
 
 		// 3) 落位：同盘 mv 仍然是原子的（保留「半成品不落位」的不变式）
-		// 目标用条目自带的 absRemote（= 基点 + rel），不是 remoteRoot + rel
+		// 分批执行 mv（每批最多 200 个），避免上千个文件拼成超长命令行触发 ARG_MAX 失败回落
+		const MV_CHUNK = 200;
 		const dirs = [...new Set(packed.map((e) => posixDir(e.absRemote)).filter((d) => d && d !== base))];
-		const cmds = [];
-		if (dirs.length) cmds.push(`mkdir -p ${dirs.map(shellQuote).join(" ")}`);
-		for (const e of packed) cmds.push(`mv -f ${shellQuote(posixJoin(staging, e.rel))} ${shellQuote(e.absRemote)}`);
-		cmds.push(`rm -rf ${shellQuote(staging)}`);
-		const move = await exec(cmds.join(" && "), { timeoutMs: 300_000, maxBytes: 64 * 1024 });
-		if (!move || move.code !== 0) {
-			// 前面的 mv 可能已经生效：那些文件再走一次逐文件上传只是白传一遍，结果依然正确
-			engineNote(`批量打包落位失败（退出码 ${move?.code ?? "?"}），回落逐文件上传`);
-			await cleanup();
-			return null;
+		if (packed.length <= MV_CHUNK) {
+			const cmds = [];
+			if (dirs.length) cmds.push(`mkdir -p ${dirs.map(shellQuote).join(" ")}`);
+			for (const e of packed) cmds.push(`mv -f ${shellQuote(posixJoin(staging, e.rel))} ${shellQuote(e.absRemote)}`);
+			cmds.push(`rm -rf ${shellQuote(staging)}`);
+			const move = await exec(cmds.join(" && "), { timeoutMs: 300_000, maxBytes: 64 * 1024 });
+			if (!move || move.code !== 0) {
+				engineNote(`批量打包落位失败（退出码 ${move?.code ?? "?"}），回落逐文件上传`);
+				await cleanup();
+				return null;
+			}
+		} else {
+			for (let i = 0; i < dirs.length; i += MV_CHUNK) {
+				const slice = dirs.slice(i, i + MV_CHUNK);
+				const mk = await exec(`mkdir -p ${slice.map(shellQuote).join(" ")}`, {
+					timeoutMs: 60_000,
+					maxBytes: 64 * 1024,
+				});
+				if (!mk || mk.code !== 0) {
+					engineNote(`批量打包建目录失败（退出码 ${mk?.code ?? "?"}），回落逐文件上传`);
+					await cleanup();
+					return null;
+				}
+			}
+			for (let i = 0; i < packed.length; i += MV_CHUNK) {
+				throwIfAborted(signal);
+				const slice = packed.slice(i, i + MV_CHUNK);
+				const cmds = slice.map((e) => `mv -f ${shellQuote(posixJoin(staging, e.rel))} ${shellQuote(e.absRemote)}`);
+				if (i + MV_CHUNK >= packed.length) cmds.push(`rm -rf ${shellQuote(staging)}`);
+				const move = await exec(cmds.join(" && "), { timeoutMs: 120_000, maxBytes: 64 * 1024 });
+				if (!move || move.code !== 0) {
+					engineNote(`批量打包落位失败（退出码 ${move?.code ?? "?"}），回落逐文件上传`);
+					await cleanup();
+					return null;
+				}
+			}
 		}
 		return { rels: packed.map((e) => e.rel), bytes };
 	} catch (err) {
@@ -1172,6 +1388,9 @@ async function downloadBatchViaTar({ execStream, tasks, cwd, signal }) {
 			}
 			await fs.mkdir(path.dirname(to), { recursive: true });
 			await fs.rename(from, to);
+			if (typeof t.remoteMtime === "number" && t.remoteMtime > 0) {
+				await fs.utimes(to, t.remoteMtime, t.remoteMtime).catch(() => {});
+			}
 		}
 		await cleanup();
 		return { rels: [...got.keys()], bytes };
@@ -1337,6 +1556,7 @@ export async function applyPlan({
 				} else if (e.action === "download") {
 					const n = await downloadFile(sftp, e.absRemote, e.absLocal, {
 						expectedSize: e.remoteSize ?? undefined,
+						expectedMtime: e.remoteMtime ?? undefined,
 						signal,
 						onBytes: (b) => onProgress?.({ phase: "bytes", rel: e.rel, fileBytes: b }),
 					});

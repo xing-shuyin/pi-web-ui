@@ -839,6 +839,10 @@ export type ClientMessage =
 			bgAutoCleanupMin?: number;
 			/** 工具延迟加载开关（默认开）。 */
 			toolLazyLoading?: boolean;
+			/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式：其他工具对模型隐藏，所有调用都经由 codemode 脚本）。 */
+			codemodeMode?: "on" | "only";
+			/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
+			codemodeInlineBudget?: number;
 			/** edit_soft 工具开关（默认关）。开 → AI 可用不严格要求缩进的 edit_soft 工具。 */
 			editSoftEnabled?: boolean;
 			/** 问卷提问（ask_user_question）开关（默认开）。关 → 模型不再弹问卷。 */
@@ -1094,6 +1098,7 @@ export type ClientMessage =
 			id: string;
 			answers: QuestionAnswer[];
 			cancelled?: boolean;
+			cancelReason?: string;
 			owner?: string;
 	  }
 	/** 用户对高危工具调用的审批答复（tool_approval_pending 回复）。
@@ -1328,6 +1333,8 @@ export interface UiQuestionOption {
 	label: string;
 	description?: string;
 	preview?: string;
+	/** 推荐选项标记（true = 建议用户首选，UI 渲染推荐徽标）。 */
+	recommended?: boolean;
 }
 
 /** 模型 ask_user_question 的一道题。question/detail/header 允许 markdown/HTML
@@ -1439,6 +1446,8 @@ export interface UiToolApproval {
 	category?: UiApprovalCategory;
 	/** 命中的高危规则清单（用于参数框定位与高危片段标记，issue #566）。 */
 	hits?: UiApprovalHit[];
+	/** 若该工具调用是由某个上层工具嵌套发起（例如 codemode 沙箱脚本调用），记录上层工具名。 */
+	parentTool?: string;
 	conversationId?: string;
 	conversationTitle?: string;
 }
@@ -2748,6 +2757,10 @@ export interface UiSettingsState {
 	 *  常驻，其余工具在系统提示词里只有「名字 + 一行摘要」，模型用 `load_tools` 拉取后完整
 	 *  参数 schema 才进上下文（见 server/load-tools-tool.ts）。DSH 引擎无 pi 工具注册面，恒为 true。 */
 	toolLazyLoading: boolean;
+	/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式：其他工具对模型隐藏，所有调用都经由 codemode 脚本）。 */
+	codemodeMode: "on" | "only";
+	/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
+	codemodeInlineBudget: number;
 	/** @deprecated 遗留别名（由 disabledAgentTools 推导）。开 → AI 可用不严格要求缩进的 edit_soft 工具。 */
 	editSoftEnabled: boolean;
 	/** 问卷提问开关（默认开）。关 → 模型不再弹问卷对话框。 */
@@ -3529,6 +3542,8 @@ export type ServerMessage =
 			category?: UiApprovalCategory;
 			/** 命中的高危规则清单（issue #566）。 */
 			hits?: UiApprovalHit[];
+			/** 若该工具调用是由某个上层工具嵌套发起（例如 codemode 沙箱脚本调用），记录上层工具名。 */
+			parentTool?: string;
 			conversationId?: string;
 			conversationTitle?: string;
 	  }

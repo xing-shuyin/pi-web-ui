@@ -1065,11 +1065,12 @@ export class AgentService {
 		id: string,
 		answers: QuestionAnswer[],
 		cancelled?: boolean,
+		cancelReason?: string,
 	): Promise<void> {
 		const target = this.clients.get(targetId);
 		if (!target) return;
 		const source = this.clients.get(ownerId);
-		const ok = source ? source.resolveQuestion(id, answers, cancelled) : false;
+		const ok = source ? source.resolveQuestion(id, answers, cancelled, cancelReason) : false;
 		if (!ok) {
 			target.sendNotice({
 				type: "notice",

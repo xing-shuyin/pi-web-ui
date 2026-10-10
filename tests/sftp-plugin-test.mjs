@@ -263,13 +263,20 @@ try {
 		);
 		check(!uiItems.some((x) => x.slot === "bottombar"), "底栏不再有 SFTP 条目");
 		check(
-			uiItems.filter((x) => x.slot === "contextmenu.file").length === 2,
-			"文件右键菜单仍是两条（上传文件 / 上传目录）",
+			uiItems.filter((x) => x.slot === "contextmenu.file").length === 6,
+			"文件右键菜单包含六条上传、下载及忽略动作",
 		);
-		// 右键菜单的两条动作必须真的有人接管（客户端 bundle 里的 host.onUiAction），
+		// 右键菜单的动作必须真的有人接管（客户端 bundle 里的 host.onUiAction），
 		// 否则点了只会得到「插件没有接管这个动作（可能版本不匹配）」。
 		const clientSrc = readFileSync(join(REPO, "plugins", PLUGIN_ID, "client", "entry.mjs"), "utf8");
-		for (const action of ["sftp:upload-file", "sftp:upload-dir"]) {
+		for (const action of [
+			"sftp:upload-file",
+			"sftp:upload-dir",
+			"sftp:download-file",
+			"sftp:download-dir",
+			"sftp:ignore-item",
+			"sftp:unignore-item",
+		]) {
 			check(
 				clientSrc.includes(`"${action}"`) && /onUiAction\?\.\(/.test(clientSrc),
 				`右键菜单动作 ${action} 已被客户端接管`,

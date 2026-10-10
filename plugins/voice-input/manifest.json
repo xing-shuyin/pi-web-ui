@@ -1,7 +1,7 @@
 {
 	"id": "voice-input",
 	"name": "语音与拍照输入",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"icon": "🎤",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><line x1=\"12\" y1=\"19\" x2=\"12\" y2=\"23\"/><line x1=\"8\" y1=\"23\" x2=\"16\" y2=\"23\"/></svg>",
 	"description": "语音与拍照输入：输入框旁的 🎤 语音识别直接听写进输入框（不支持/识别失败自动降级服务端转写）；📷 摄像头现场拍照（或调起手机系统相机）直接把照片放进对话；另给 AI 一个 transcribe_audio 工具，能把工作区里的录音文件转成文字。",

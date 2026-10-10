@@ -113,6 +113,19 @@ export function ToolApprovalDialog({ approval }: ToolApprovalDialogProps) {
 					<code className="tool-info-name" style={{ fontWeight: 700 }}>
 						{approval.toolName}
 					</code>
+					{approval.parentTool === "codemode" && (
+						<span
+							className="tool-info-label"
+							style={{
+								backgroundColor: "rgba(245, 158, 11, 0.15)",
+								color: "var(--amber, #f59e0b)",
+								border: "1px solid rgba(245, 158, 11, 0.35)",
+								fontWeight: 600,
+							}}
+						>
+							⚡ {t("codemodeNestedApprovalBadge")}
+						</span>
+					)}
 					{approval.conversationTitle && <span className="tool-info-label">{approval.conversationTitle}</span>}
 					<button type="button" className="btn" title={t("toolApprovalDeny")} onClick={handleDeny}>
 						<FiX />
@@ -120,6 +133,27 @@ export function ToolApprovalDialog({ approval }: ToolApprovalDialogProps) {
 				</div>
 
 				<div className="tool-info-body" style={{ padding: "16px 20px" }}>
+					{/* 嵌套调用来源提示 */}
+					{approval.parentTool === "codemode" && (
+						<div
+							style={{
+								padding: "8px 12px",
+								borderRadius: 6,
+								backgroundColor: "rgba(99, 102, 241, 0.12)",
+								border: "1px solid rgba(99, 102, 241, 0.25)",
+								marginBottom: 12,
+								color: "var(--text, #e2e8f0)",
+								fontSize: 12.5,
+								display: "flex",
+								alignItems: "center",
+								gap: 6,
+							}}
+						>
+							<span style={{ fontSize: 14 }}>⚡</span>
+							<span>{t("codemodeNestedApprovalDesc")}</span>
+						</div>
+					)}
+
 					{/* 风险告警原因 */}
 					{(approval.reason || approval.reasonEn) && (
 						<div

@@ -149,6 +149,8 @@ export interface PendingApprovalEntry {
 	category?: UiApprovalCategory;
 	/** 命中的高危片段清单（issue #566）。 */
 	hits?: RuleHitDetail[];
+	/** 若该工具调用是由某个上层工具嵌套发起（例如 codemode 沙箱脚本调用），记录上层工具名。 */
+	parentTool?: string;
 	conversationId?: string;
 	conversationTitle?: string;
 	resolve: (res: ToolApprovalResolution) => void;

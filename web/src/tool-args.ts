@@ -14,6 +14,8 @@
  * 够用）；不解析 `paths: [...]` 这类数组参数。
  */
 
+import type { UiQuestion } from "./types";
+
 /** 扫描上限：够覆盖正常工具参数，又不会因 write 的大 content 卡住渲染。 */
 const SCAN_LIMIT = 256 * 1024;
 
@@ -45,6 +47,8 @@ interface ToolArgHints {
 	codeLines?: number;
 	/** 搜索关键词（tool_search / 检索类工具）。 */
 	query?: string;
+	/** 问卷提问卡头摘要（ask_user_question 卡头用）。 */
+	questionTitle?: string;
 }
 
 /**
@@ -61,6 +65,7 @@ export function toolArgHints(argsText?: string): ToolArgHints {
 		agent: agentHint(text),
 		codeLines: codeLinesHint(argsText),
 		query: queryHint(text),
+		questionTitle: questionnaireHint(text),
 	};
 }
 
@@ -215,4 +220,34 @@ function codeLinesHint(argsText: string): number | undefined {
 	if (!parsed.code) return undefined;
 	const lines = parsed.code.split("\n").length;
 	return lines > 0 ? lines : undefined;
+}
+
+const QUESTION_RE = /"(?:header|question)"\s*:\s*"((?:[^"\\\n]|\\.){0,200})"/;
+
+function questionnaireHint(text: string): string | undefined {
+	const m = QUESTION_RE.exec(text);
+	if (!m) return undefined;
+	const raw = decodeJsonString(m[1]);
+	const cleaned = raw
+		.replace(/[\u0000-\u001f\u007f]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!cleaned) return undefined;
+	return cleaned.length > 40 ? `${cleaned.slice(0, 38)}…` : cleaned;
+}
+
+/** 解析 ask_user_question 工具参数：安全获取结构化 questions 列表 */
+export function parseQuestionnaireArgs(argsText?: string): { questions: UiQuestion[] } | null {
+	if (!argsText || argsText.length > SCAN_LIMIT) return null;
+	try {
+		const o = JSON.parse(argsText) as unknown;
+		if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+		const qs = (o as { questions?: unknown }).questions;
+		if (Array.isArray(qs) && qs.length > 0) {
+			return { questions: qs as UiQuestion[] };
+		}
+		return null;
+	} catch {
+		return null;
+	}
 }

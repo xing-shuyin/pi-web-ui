@@ -61,6 +61,8 @@ function makeCtx(opts: {
 			promptOverrides: {},
 			toolPromptOverrides: {},
 			toolLazyLoading: true,
+			codemodeMode: "on" as const,
+			codemodeInlineBudget: 3000,
 			disabledSkills: [],
 			disabledExtensions: [],
 			disabledAgentTools: [],

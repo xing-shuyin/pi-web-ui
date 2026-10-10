@@ -43,6 +43,8 @@ export const PRESET_FIELD_GROUPS = {
 		"disabledPluginTools",
 		"toolPromptOverrides",
 		"toolLazyLoading",
+		"codemodeMode",
+		"codemodeInlineBudget",
 		"readDirEnabled",
 		"toolApprovalEnabled",
 		"toolWatchdogTimeoutMs",
@@ -196,6 +198,18 @@ export const PRESET_FIELD_META = {
 		labelEn: "Tool Lazy Loading",
 		hintZh: "仅常驻核心工具，其余工具通过 load_tools 按需动态引入（节省上下文）",
 		hintEn: "Keep only core tools active; load others on demand (saves context)",
+	},
+	codemodeMode: {
+		labelZh: "codemode 运行模式",
+		labelEn: "Codemode Execution Mode",
+		hintZh: "常规模式（on）或纯代码模式（only，仅通过沙箱脚本调用工具）",
+		hintEn: "Regular mode (on) or strict code mode (only, all tool calls run via sandbox script)",
+	},
+	codemodeInlineBudget: {
+		labelZh: "codemode 工具声明预算",
+		labelEn: "Codemode Inline Budget",
+		hintZh: "直接嵌入在 codemode 系统提示词中的工具声明 Token 预算（默认 3000）",
+		hintEn: "Token budget for tool declarations directly embedded in the codemode prompt (default: 3000)",
 	},
 	readDirEnabled: {
 		labelZh: "read 工具列目录",
@@ -625,6 +639,18 @@ export function formatPresetFieldValue(
 	}
 
 	// 8. 模式类字段
+	if (field === "codemodeMode") {
+		return {
+			summary:
+				value === "only"
+					? isZh
+						? "纯代码模式 (only，仅通过沙箱脚本调用工具)"
+						: "Strict code mode (only, sandbox scripts only)"
+					: isZh
+						? "常规模式 (on，常规可用，支持脚本批处理)"
+						: "Standard mode (on, direct & scripts)",
+		};
+	}
 	if (
 		field === "promptMode" ||
 		field === "visionBridgePromptMode" ||
@@ -704,6 +730,9 @@ export function formatPresetFieldValue(
 
 	// 11. 数字配置
 	if (typeof value === "number") {
+		if (field === "codemodeInlineBudget") {
+			return { summary: `${value} tokens` };
+		}
 		if (field === "softCapTokens") {
 			return { summary: value > 0 ? `${value} tokens` : isZh ? "跟随默认 (16384 tokens)" : "Default (16384 tokens)" };
 		}

@@ -181,7 +181,10 @@ type WhenContext = Record<string, boolean>;
  *  （RightPanel: file/dir；LeftPanel: running/history；Message: message）。 */
 export function buildWhenContext(slot: ContextMenuSlot, target: ContextMenuRequest["target"] | undefined): WhenContext {
 	const kind = String(target?.kind ?? "");
-	if (slot === "contextmenu.file") return { "file.isDir": kind === "dir", "file.isFile": kind === "file" };
+	if (slot === "contextmenu.file") {
+		const isDir = kind === "dir" || (kind === "list" && target?.id !== "@root");
+		return { "file.isDir": isDir, "file.isFile": kind === "file" };
+	}
 	if (slot === "contextmenu.session") return { "session.isRunning": kind === "running" };
 	if (slot === "contextmenu.message") {
 		let hasSelection = false;

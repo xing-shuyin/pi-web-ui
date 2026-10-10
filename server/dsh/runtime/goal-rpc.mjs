@@ -923,7 +923,11 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 		this.questionBridge.pending = null;
 		if (params?.cancelled) {
-			pending.reject(new Error("用户取消了提问"));
+			const reason =
+				typeof params?.cancelReason === "string" && params.cancelReason.trim()
+					? `（附言：${params.cancelReason.trim()}）`
+					: "";
+			pending.reject(new Error(`用户取消了提问${reason}`));
 		} else {
 			const answers = Array.isArray(params?.answers) ? params.answers : [];
 			pending.resolve({ answers });

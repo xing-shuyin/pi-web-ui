@@ -2,7 +2,7 @@
 	"id": "sftp",
 	"name": "SFTP 同步",
 	"nameEn": "SFTP Sync",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"icon": "☁️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 16.5a4.5 4.5 0 0 0-.9-8.9 6 6 0 0 0-11.4 1.6A4 4 0 0 0 6.5 17\"/><path d=\"M12 12v7\"/><path d=\"m9 15 3-3 3 3\"/></svg>",
 	"description": "项目级 SFTP 同步：配置存项目 .pi/sftp.json（多环境 profile + .pi/sftp.local.json 本机覆盖），先算差异再传，扫描与传输按层/按文件并行且随时可停（面板「停止」或 action=cancel），支持 dry-run 预览与计划复用（预览完直接执行不重扫）、删除保护（进垃圾桶可回滚）、并发流式传输与原子落盘；打开远端命令执行后另有两条快通道（一次 find 完成远端扫描；一批小文件上行打成 tar 流、下行 tar -czf - 一次拉回，失败自动回落）；凭据走 ${env:} / ${secret:} / ${file:} 引用，明文永不进配置。面板里可直接手动上传/下载单个文件或整棵目录（永不动删除策略），也向 AI 注册**一个** action 式 sftp 工具（status/save/secret/test/plan/sync/cancel/ls/read/write/mkdir/mv/rm/search，可选 exec）。",
@@ -110,6 +110,44 @@
 				"when": ["file.isDir"],
 				"hint": "把该子树同步到当前连接的远端根（打开同步面板并就地显示进度）",
 				"hintEn": "Sync this subtree to the active connection's remote root (opens the sync panel and shows progress there)"
+			},
+			{
+				"id": "download-dir",
+				"label": "从远端下载此目录",
+				"labelEn": "Download this folder from remote",
+				"icon": "☁",
+				"action": "sftp:download-dir",
+				"when": ["file.isDir"],
+				"hint": "从当前连接的远端根拉取该子树到本地（打开同步面板并就地显示进度）",
+				"hintEn": "Sync this subtree down from the active connection's remote root (opens the sync panel and shows progress there)"
+			},
+			{
+				"id": "download-file",
+				"label": "从远端下载此文件",
+				"labelEn": "Download this file from remote",
+				"icon": "☁",
+				"action": "sftp:download-file",
+				"when": ["file.isFile"],
+				"hint": "从当前连接的远端根下载并覆盖该文件（打开同步面板并就地显示进度）",
+				"hintEn": "Download this file from the active connection's remote root (opens the sync panel and shows progress there)"
+			},
+			{
+				"id": "ignore-item",
+				"label": "添加到 SFTP 忽略",
+				"labelEn": "Add to SFTP Ignore",
+				"icon": "🚫",
+				"action": "sftp:ignore-item",
+				"hint": "将该文件或目录追加到当前 SFTP 连接的忽略列表中",
+				"hintEn": "Add this file or directory to current SFTP ignore list"
+			},
+			{
+				"id": "unignore-item",
+				"label": "从 SFTP 忽略移除",
+				"labelEn": "Remove from SFTP Ignore",
+				"icon": "↩",
+				"action": "sftp:unignore-item",
+				"hint": "从当前 SFTP 连接的忽略列表中移除该项",
+				"hintEn": "Remove this item from current SFTP ignore list"
 			}
 		]
 	}

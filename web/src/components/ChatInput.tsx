@@ -1014,27 +1014,36 @@ export const ChatInput = memo(function ChatInput({
 		}
 	}, [text, composerH]);
 
-	/** 快捷短语按钮行：整行高度实测写进 CSS 变量 `--quick-row-h`。消息区要按这个值
-	 *  往下铺一层（.messages-wrap 的负 margin / .messages 的底部留白，见 styles.css
-	 *  的「消息列表」），正文才能从短语行后面透出来；行高会随短语条数/窗口宽度变
-	 *  （窄屏折行），所以挂 ResizeObserver 而不是只量一次。行不存在时归 0。 */
+	/** 输入框上方的芯片行（文件引用 `.attach-row` + 快捷短语 `.quick-row`）：
+	 *  实测总高写进 CSS 变量 `--quick-row-h`。消息区按这个值往下铺一层
+	 *  （.messages-wrap 的负 margin / .messages 的底部留白，见 styles.css
+	 *  的「消息列表」），正文才能从芯片行后面透出来；行高会随条数/窗口宽度变
+	 *  （窄屏折行），所以挂 ResizeObserver 而不是只量一次。两行都不存在时归 0。 */
+	const attachRowRef = useRef<HTMLDivElement>(null);
 	const quickRowRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		const el = quickRowRef.current;
+		const attachEl = attachRowRef.current;
+		const quickEl = quickRowRef.current;
 		const root = document.documentElement;
-		if (!el) {
+		if (!attachEl && !quickEl) {
 			root.style.removeProperty("--quick-row-h");
 			return;
 		}
-		const apply = () => root.style.setProperty("--quick-row-h", `${el.offsetHeight}px`);
+		const apply = () => {
+			const ah = attachEl ? attachEl.offsetHeight : 0;
+			const qh = quickEl ? quickEl.offsetHeight : 0;
+			const gap = attachEl && quickEl ? 6 : 0;
+			root.style.setProperty("--quick-row-h", `${ah + gap + qh}px`);
+		};
 		apply();
 		const ro = new ResizeObserver(apply);
-		ro.observe(el);
+		if (attachEl) ro.observe(attachEl);
+		if (quickEl) ro.observe(quickEl);
 		return () => {
 			ro.disconnect();
 			root.style.removeProperty("--quick-row-h");
 		};
-	}, [quickPhrasesEnabled, quickPhrases.length]);
+	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length]);
 
 	/* 光标是否在首/末**视觉行**交给 caret-visual-line.ts：自动折行的长草稿（没有 \n，
 	 * 但界面上是多行）也必须先让 ↑/↓ 走普通光标移动，不能误触发历史（issue #127）。 */
@@ -1538,7 +1547,7 @@ export const ChatInput = memo(function ChatInput({
 			}}
 		>
 			{attachments.length > 0 && (
-				<div className="attach-row">
+				<div className="attach-row" ref={attachRowRef}>
 					{attachments.map((a) =>
 						a.mode === "quote" && a.quote ? (
 							<TextQuoteCard key={a.key} quote={a.quote} onRemove={() => onRemoveAttachment(a.key ?? "")} />

@@ -66,6 +66,24 @@ describe("输入框上方的带子里是消息正文", () => {
 		// 行本身必须是流内项（浮动版会让行与药丸/浮标抢同一条带子）
 		const row = bodyOf(".quick-row");
 		expect(row).not.toMatch(/position:\s*absolute/);
+		// 文件引用/附件芯片（.attach-chip 及其变体）同样位于输入区上方带子内，背景必须与 --bg-elev 实底混合不透明
+		for (const sel of [
+			".attach-chip",
+			".attach-chip.reference",
+			".attach-chip.lines",
+			".attach-chip.image",
+			".attach-chip.file",
+			".attach-chip.page",
+			".file-attach.ref",
+			".file-attach.download",
+			".file-attach.copy",
+		]) {
+			const b = bodyOf(sel);
+			expect(b, `${sel} 背景必须是不透明实底混合`).toMatch(
+				/background:\s*color-mix\(in srgb,[^;]+,\s*var\(--bg-elev\)\)/,
+			);
+		}
+		expect(bodyOf(".file-pill:hover")).toMatch(/background:\s*color-mix\(in srgb,[^;]+,\s*var\(--bg-elev2\)\)/);
 	});
 
 	it("钉底时最后一条消息停在芯片上面（底部留白带上行高）", () => {

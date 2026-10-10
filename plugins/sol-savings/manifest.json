@@ -2,7 +2,7 @@
 	"id": "sol-savings",
 	"name": "SoL-Pi 状态",
 	"nameEn": "SoL-Pi Status",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"icon": "⚡",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"/></svg>",
 	"description": "实时统计并展示 SoL-Pi 在当前会话中节省的上下文 Token（Observation Pack 大工具结果压缩、在线边界压缩）与 Plan 规划进度，借鉴 pi-sol-plan-footer 在底栏显示，点击可查看明细。",

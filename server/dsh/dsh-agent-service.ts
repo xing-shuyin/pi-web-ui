@@ -2953,6 +2953,8 @@ export class DshClientSession {
 			bgAutoCleanupMin: Number(this.settings.bgAutoCleanupMin ?? 0),
 			// DSH 无 pi 工具注册面，不适用延迟加载；保协议完整。
 			toolLazyLoading: true,
+			codemodeMode: "on",
+			codemodeInlineBudget: 3000,
 			editSoftEnabled: this.settings.editSoftEnabled,
 			// DSH 无独立重试配置（pi 引擎才暴露），保持默认。
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,

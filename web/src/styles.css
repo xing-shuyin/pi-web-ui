@@ -1976,7 +1976,7 @@ button.session-item.elsewhere-item.confirm {
 
 /* download icon : save the file (any kind, incl. binary/archives) */
 .file-attach.download {
-	background: rgba(52, 211, 153, 0.14);
+	background: color-mix(in srgb, #34d399 14%, var(--bg-elev));
 	color: var(--green);
 	text-decoration: none;
 }
@@ -1987,7 +1987,7 @@ button.session-item.elsewhere-item.confirm {
 
 /* link icon : reference path only */
 .file-attach.ref {
-	background: rgba(251, 191, 36, 0.12);
+	background: color-mix(in srgb, #fbbf24 12%, var(--bg-elev));
 	color: var(--amber);
 }
 .file-attach.ref:hover {
@@ -1997,7 +1997,7 @@ button.session-item.elsewhere-item.confirm {
 
 /* copy icons : copy file/folder name or absolute path to clipboard */
 .file-attach.copy {
-	background: rgba(148, 163, 184, 0.14);
+	background: color-mix(in srgb, #94a3b8 14%, var(--bg-elev));
 	color: var(--text-dim);
 }
 .file-attach.copy:hover {
@@ -2027,31 +2027,33 @@ button.session-item.elsewhere-item.confirm {
 	padding: 3px 10px;
 	border: 1px solid rgba(139, 92, 246, 0.4);
 	border-radius: 999px;
-	background: var(--accent-soft);
+	/* 实底色（与 --bg-elev 混合而非 rgba 半透）：.attach-row 压在消息正文上，
+	   不透明背景才能避免底下正文从引用按钮里透出来。 */
+	background: color-mix(in srgb, var(--accent) 16%, var(--bg-elev));
 	color: var(--text);
 	font-size: 12px;
 	max-width: 320px;
 }
 .attach-chip.reference {
 	border-color: rgba(251, 191, 36, 0.4);
-	background: rgba(251, 191, 36, 0.1);
+	background: color-mix(in srgb, #fbbf24 12%, var(--bg-elev));
 }
 .attach-chip.lines {
 	border-color: rgba(52, 211, 153, 0.4);
-	background: rgba(52, 211, 153, 0.1);
+	background: color-mix(in srgb, #34d399 12%, var(--bg-elev));
 }
 .attach-chip.image {
 	border-color: rgba(236, 72, 153, 0.45);
-	background: rgba(236, 72, 153, 0.12);
+	background: color-mix(in srgb, #ec4899 14%, var(--bg-elev));
 }
 .attach-chip.file {
 	border-color: rgba(96, 165, 250, 0.45);
-	background: rgba(96, 165, 250, 0.12);
+	background: color-mix(in srgb, #60a5fa 14%, var(--bg-elev));
 }
 /* 网页引用（page-picker 授权页面）：与文件引用同一排 chips，颜色区分开 */
 .attach-chip.page {
 	border-color: rgba(56, 189, 248, 0.5);
-	background: rgba(56, 189, 248, 0.12);
+	background: color-mix(in srgb, #38bdf8 14%, var(--bg-elev));
 }
 
 /* 全窗口拖放提示（issue #19）：拖入文件时覆盖整个视口，drop 任意位置即附加。
@@ -2084,7 +2086,7 @@ button.session-item.elsewhere-item.confirm {
 	font-size: 10.5px;
 	padding: 0 6px;
 	border-radius: 999px;
-	background: rgba(52, 211, 153, 0.18);
+	background: color-mix(in srgb, #34d399 22%, var(--bg-elev));
 	color: var(--green);
 }
 
@@ -8516,6 +8518,55 @@ div.chead[role="button"]:focus-visible,
 	border-radius: 4px;
 }
 
+.codemode-images-sec {
+	margin-top: 8px;
+}
+.codemode-images-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 6px;
+}
+.codemode-image-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 8px;
+	border-radius: 5px;
+	background: var(--bg-elev2, rgba(255, 255, 255, 0.03));
+	border: 1px solid var(--border-soft, rgba(255, 255, 255, 0.06));
+	font-size: 12px;
+}
+.codemode-image-icon {
+	color: var(--accent);
+	flex-shrink: 0;
+	font-size: 13px;
+}
+.codemode-image-path {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+.codemode-image-info {
+	color: var(--text-faint);
+	font-size: 11px;
+	flex-shrink: 0;
+}
+.codemode-image-copy {
+	padding: 2px 4px;
+	font-size: 11px;
+	color: var(--text-dim);
+	flex-shrink: 0;
+}
+.codemode-image-copy:hover {
+	color: var(--text);
+}
+
 /* tool_search 结果徽标与关键词预览 */
 .toolcall-query {
 	font-size: 11px;
@@ -12031,6 +12082,301 @@ div.chead[role="button"]:focus-visible,
 	margin-top: 10px;
 	padding-top: 10px;
 	border-top: 1px dashed var(--border-soft);
+}
+
+/* ---- 问卷步骤胶囊导航与快捷键/推荐项徽标 ---- */
+.question-step-pills {
+	display: flex;
+	gap: 6px;
+	overflow-x: auto;
+	padding: 4px 10px 6px;
+	border-bottom: 1px solid var(--border-soft);
+	overscroll-behavior: contain;
+}
+.question-step-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 9px;
+	border-radius: 12px;
+	font-size: 11px;
+	background: var(--bg);
+	border: 1px solid var(--border-soft);
+	color: var(--text-dim);
+	cursor: pointer;
+	transition: all 0.15s ease;
+	flex: none;
+}
+.question-step-pill:hover {
+	background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+	color: var(--text);
+}
+.question-step-pill.active {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+	color: var(--text);
+	font-weight: 600;
+}
+.question-step-pill.done:not(.active) {
+	border-color: color-mix(in srgb, var(--accent) 40%, var(--border-soft));
+	color: var(--text);
+}
+.question-step-pill-idx {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 15px;
+	height: 15px;
+	border-radius: 50%;
+	font-size: 10px;
+	font-weight: 700;
+	background: var(--border-soft);
+	color: var(--text);
+	flex: none;
+}
+.question-step-pill.active .question-step-pill-idx {
+	background: var(--accent);
+	color: #fff;
+}
+.question-step-pill.done:not(.active) .question-step-pill-idx {
+	background: color-mix(in srgb, var(--accent) 35%, transparent);
+	color: #fff;
+}
+.question-step-pill-label {
+	max-width: 130px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.question-recommended-badge {
+	display: inline-flex;
+	align-items: center;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1;
+	padding: 2px 6px;
+	border-radius: 999px;
+	margin-left: 6px;
+	vertical-align: middle;
+	background: color-mix(in srgb, var(--accent) 15%, transparent);
+	color: var(--accent);
+	border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+	flex: none;
+}
+.question-key-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 15px;
+	height: 15px;
+	padding: 0 3px;
+	font-size: 9.5px;
+	font-family: var(--mono);
+	font-weight: 700;
+	border-radius: 3px;
+	background: var(--bg);
+	border: 1px solid var(--border-soft);
+	color: var(--text-dim);
+	margin-right: 4px;
+	flex: none;
+	line-height: 1;
+	opacity: 0.85;
+}
+.dialog-dismiss-inline.reject-note {
+	border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+	color: var(--accent);
+	font-weight: 600;
+}
+
+/* ---- 消息流中结构化问卷卡片 (QuestionnaireCard) ---- */
+.qcard-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 8px 10px;
+	background: var(--bg-elev);
+	border-radius: 8px;
+	border: 1px solid var(--border-soft);
+	font-size: 12.5px;
+	min-width: 0;
+	max-width: 100%;
+}
+.qcard-status {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	border-radius: 6px;
+	font-size: 11.5px;
+	font-weight: 600;
+}
+.qcard-status-cancelled {
+	background: color-mix(in srgb, #ef4444 12%, transparent);
+	border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+	color: #ef4444;
+	flex-wrap: wrap;
+}
+.qcard-status-waiting {
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+	color: var(--accent);
+}
+.qcard-status-icon {
+	display: inline-flex;
+	align-items: center;
+}
+.qcard-reject-reason {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 4px;
+	font-size: 11px;
+	color: var(--text);
+	font-weight: normal;
+}
+.qcard-items {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.qcard-item {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--bg);
+	border: 1px solid var(--border-soft);
+	min-width: 0;
+}
+.qcard-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	font-size: 12px;
+	color: var(--text);
+}
+.qcard-idx {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--accent);
+	color: #fff;
+	font-size: 10px;
+	flex: none;
+	font-weight: 700;
+}
+.qcard-title {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.qcard-question {
+	font-size: 12px;
+	color: var(--text);
+	line-height: 1.4;
+	word-break: break-word;
+}
+.qcard-detail {
+	font-size: 11px;
+	color: var(--text-dim);
+	line-height: 1.35;
+}
+.qcard-options {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 3px;
+}
+.qcard-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 4px 8px;
+	border-radius: 5px;
+	font-size: 11.5px;
+	border: 1px solid transparent;
+	transition: all 0.15s ease;
+	min-width: 0;
+}
+.qcard-option.selected {
+	background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+	border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+	font-weight: 600;
+	color: var(--text);
+}
+.qcard-option.dimmed {
+	opacity: 0.55;
+}
+.qcard-opt-mark {
+	flex: none;
+	font-size: 11px;
+	color: var(--accent);
+	margin-top: 2px;
+	display: inline-flex;
+	align-items: center;
+}
+.qcard-check-icon {
+	stroke-width: 3;
+	color: var(--accent);
+}
+.qcard-opt-content {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	flex: 1;
+}
+.qcard-opt-label {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px;
+	word-break: break-word;
+}
+.qcard-opt-desc {
+	font-size: 10.5px;
+	color: var(--text-dim);
+	font-weight: normal;
+}
+.qcard-empty-sel {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+	padding: 2px 4px;
+}
+.qcard-custom-note {
+	display: flex;
+	align-items: flex-start;
+	gap: 5px;
+	padding: 4px 8px;
+	border-radius: 5px;
+	background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+	border: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--border-soft));
+	font-size: 11px;
+	color: var(--text);
+	margin-top: 2px;
+	word-break: break-word;
+}
+.qcard-note-icon {
+	flex: none;
+	margin-top: 2px;
+	color: var(--accent);
+}
+.qcard-custom-label {
+	font-weight: 600;
+	color: var(--accent);
+	flex: none;
+}
+.qcard-custom-text {
+	flex: 1;
+	min-width: 0;
 }
 
 .btn.primary {
@@ -17631,7 +17977,7 @@ a.set-uninstall:hover {
 }
 
 .file-pill:hover {
-	background: var(--bg-elev3);
+	background: color-mix(in srgb, var(--accent) 16%, var(--bg-elev2));
 	border-color: var(--accent, #60a5fa);
 	color: var(--accent, #93c5fd);
 	transform: translateY(-1px);

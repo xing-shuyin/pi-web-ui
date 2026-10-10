@@ -10,10 +10,20 @@
 
 ## [Unreleased]
 
+## [0.102.0] — 2026-10-10
+
+### Added
+
+- **问卷卡片与交互式选项组件（QuestionnaireCard）** —— 在对话消息流中支持内联交互式问卷卡片，清晰呈现多分支选项、推荐选项徽标与单选/多选表单；支持键盘数字快捷键快速选定；支持附带原因拒绝或提交自定义说明；支持问卷草稿持久化与会话切换恢复（`question-draft`）。
+- **CodeMode 代码运行模式与 Token 预算配置** —— 设置面板支持针对 CodeMode 工具进行模式切换（常规模式 `on` / 严格纯代码模式 `only`）以及内联提示词 Token 预算调节（`codemodeInlineBudget`），参数完整纳入预设共享与白名单体系。
+- **插件升级自动保护凭据与持久化存储** —— CLI 在插件升级或强制重装时自动暂存并无损还原 `config.json`、`secrets.bin` 与 `storage.json`，防止插件升级导致凭据与私有状态丢失；新增内置插件版本变更守卫单测，保证插件代码更新时版本号严格递增。
+- **桌面端会话深度链接与打包流程增强（#583 #584 #587）** —— 桌面端支持会话深度链接拉起；优化打包健康探测与 Token 鉴权流程；支持提示词模板填入时二次确认覆盖或追加（#586）；CI 集成 SignPath Windows 安装包测试签名。
+- **SFTP 插件深度增强与引擎优化** —— 扩充默认 SSH 私钥探测路径与连接稳定性；优化客户端文件操作列表与动作响应机制。
+
 <!-- auto-i18n:start -->
 ### i18n
 
-- 前端新增 key（10）：`tpl.confirmFillTitle`、`tpl.confirmFillDesc`、`tpl.confirmFillAppend`、`tpl.confirmFillOverwrite`、`pluginOfficialMarket`、`pluginOfficialMarketHint`、`pluginOfficialLink`、`pluginOfficialLinkHint`、`copyConversationLink`、`copyMessageLink`
+- 前端新增 key（28）：`modelQuestionRejectWithNote`、`modelQuestionRejectWithNoteTip`、`recommended`、`keyShortcutTip`、`questionCardWaiting`、`questionCardCancelled`、`questionCardRejectReason`、`questionCardUserCustom`、`questionCardNoSelection`、`tpl.confirmFillTitle`、`tpl.confirmFillDesc`、`tpl.confirmFillAppend`、`tpl.confirmFillOverwrite`、`pluginOfficialMarket`、`pluginOfficialMarketHint`、`pluginOfficialLink`、`pluginOfficialLinkHint`、`copyConversationLink`、`copyMessageLink`、`codemodeModeLabel`、`codemodeModeHint`、`codemodeModeOn`、`codemodeModeOnly`、`codemodeInlineBudgetLabel`、`codemodeInlineBudgetHint`、`codemodeNestedApprovalBadge`、`codemodeNestedApprovalDesc`、`codemodeSavedImages`
 <!-- auto-i18n:end -->
 
 ## [0.101.0] — 2026-10-10

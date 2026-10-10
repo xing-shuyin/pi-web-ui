@@ -271,8 +271,10 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				keepaliveInterval: 10_000,
 				keepaliveCountMax: 3,
 			};
-			if (auth.password) opts.password = auth.password;
-			else if (auth.agent) opts.agent = auth.agent;
+			if (auth.password) {
+				opts.password = auth.password;
+				opts.tryKeyboard = true;
+			} else if (auth.agent) opts.agent = auth.agent;
 			else if (auth.privateKey) {
 				opts.privateKey = auth.privateKey;
 				if (auth.passphrase) opts.passphrase = auth.passphrase;
@@ -294,6 +296,11 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				}
 				reject(err);
 			};
+			if (auth.password) {
+				client.on("keyboard-interactive", (_name, _instr, _lang, prompts, finish) => {
+					finish(Array.isArray(prompts) ? prompts.map(() => auth.password) : [auth.password]);
+				});
+			}
 			client.on("error", fail);
 			client.on("close", () => {
 				const cur = pool.get(key);
@@ -575,7 +582,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		}
 		const pubLine = rawLine;
 
-		// 决定连接认证凭据：优先使用本次传入的临时密码，否则使用现有凭据
+		// 决定连接认证凭据：优先使用本次传入的临时密码 → 配置中的密码 → 机密库中同名 password → 现有凭据
 		const connectOpts = {
 			host: conn.host,
 			port: conn.port || 22,
@@ -585,18 +592,28 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			keepaliveCountMax: 3,
 		};
 
-		if (password) {
-			connectOpts.password = password;
-		} else {
-			const auth = await resolveAuth(conn);
-			if (auth.password) connectOpts.password = auth.password;
-			else if (auth.agent) connectOpts.agent = auth.agent;
-			else if (auth.privateKey) {
-				connectOpts.privateKey = auth.privateKey;
-				if (auth.passphrase) connectOpts.passphrase = auth.passphrase;
-			} else {
-				throw new Error("安装公钥需要远程服务器密码，请在输入框或弹窗中提供密码");
+		let effectivePassword = password ? String(password) : "";
+		if (!effectivePassword && conn.auth?.password) {
+			try {
+				const r = await resolveRef(conn.auth.password, { secrets, label: `${conn.name}.auth.password` });
+				effectivePassword = r.value || "";
+			} catch {
+				/* ignore missing ref */
 			}
+		}
+		if (!effectivePassword && conn.name) {
+			try {
+				effectivePassword = secrets?.get?.(`${conn.name}-password`) || "";
+			} catch {
+				/* ignore */
+			}
+		}
+
+		if (effectivePassword) {
+			connectOpts.password = effectivePassword;
+			connectOpts.tryKeyboard = true;
+		} else {
+			throw new Error("NEED_PASSWORD: 请先在上方「密码」输入框填写一次远程服务器密码，再点击「添加公钥到远端」");
 		}
 
 		// 建立临时 SSH + SFTP 连接
@@ -612,6 +629,11 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				reject(err);
 			};
 			client.on("error", fail);
+			if (effectivePassword) {
+				client.on("keyboard-interactive", (_name, _instr, _lang, prompts, finish) => {
+					finish(Array.isArray(prompts) ? prompts.map(() => effectivePassword) : [effectivePassword]);
+				});
+			}
 			client.on("ready", () => {
 				client.sftp((err, s) => {
 					if (err) return fail(err);

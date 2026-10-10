@@ -7,6 +7,7 @@ import {
 	FiCheckCircle,
 	FiClock,
 	FiCopy,
+	FiImage,
 	FiLoader,
 	FiMinus,
 	FiSquare,
@@ -20,11 +21,19 @@ import { openContextMenu } from "../context-menu-state";
 import { openToolInfo } from "../tool-info-state";
 import { CollapsibleHead } from "./CollapsibleHead";
 import type { UiSlotEntry } from "../ui-slots";
-import { parseCodemodeArgs, parseDelegateArgs, shortenPath, toolArgHints, type DelegateField } from "../tool-args";
+import {
+	parseCodemodeArgs,
+	parseDelegateArgs,
+	parseQuestionnaireArgs,
+	shortenPath,
+	toolArgHints,
+	type DelegateField,
+} from "../tool-args";
 import { PRESENT_FILES_TOOL_NAME } from "../../../server/tool-manager.js";
 import { parsePresentArgs } from "../present-items";
 import { useCopyFeedback } from "../use-copy-feedback";
 import { PresentedFiles } from "./PresentedFiles";
+import { QuestionnaireCard } from "./QuestionnaireCard";
 import { renderHighlightedCommand } from "../bash-danger";
 
 export interface ToolView {
@@ -54,6 +63,7 @@ const TOOL_ICONS: Record<string, string> = {
 	ls: "📂",
 	codemode: "⚡",
 	tool_search: "🔎",
+	ask_user_question: "❓",
 	[PRESENT_FILES_TOOL_NAME]: "🖼",
 };
 
@@ -145,6 +155,11 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 	const codemodeArgs = useMemo(
 		() => (isCodemode ? parseCodemodeArgs(block.argumentsText) : null),
 		[isCodemode, block.argumentsText],
+	);
+	const isQuestionnaire = block.name === "ask_user_question";
+	const questionnaireArgs = useMemo(
+		() => (isQuestionnaire ? parseQuestionnaireArgs(block.argumentsText) : null),
+		[isQuestionnaire, block.argumentsText],
 	);
 	// 展示文件卡片：参数（路径清单）在流式期间可能是半截 JSON，解析失败就回落到
 	// 原文展示；卡片内容本体不依赖 details（它只让 kind/size/摘录更准）。
@@ -311,6 +326,11 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 								🔎 {hints.query}
 							</span>
 						)}
+						{hints.questionTitle && isQuestionnaire && (
+							<span className="toolcall-query" title={hints.questionTitle}>
+								❓ {hints.questionTitle}
+							</span>
+						)}
 						{hints.timeout && <span className="toolcall-timeout">⏱ {hints.timeout}</span>}
 						{isDelegate && hints.agent && (
 							<span className="toolcall-agent" title={hints.agent}>
@@ -422,7 +442,20 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 					) : isDelegate ? (
 						<DelegateBrief args={delegateArgs} />
 					) : isCodemode && codemodeArgs?.code ? (
-						<CodemodeCard code={codemodeArgs.code} options={codemodeArgs.options} details={view.result?.details} />
+						<CodemodeCard
+							code={codemodeArgs.code}
+							options={codemodeArgs.options}
+							details={view.result?.details}
+							output={output}
+						/>
+					) : isQuestionnaire && questionnaireArgs ? (
+						<QuestionnaireCard
+							questions={questionnaireArgs.questions}
+							details={view.result?.details}
+							output={output}
+							isError={isError}
+							waiting={running || waitingModel}
+						/>
 					) : (
 						block.argumentsText && (
 							<div className="toolcall-args">
@@ -431,7 +464,7 @@ export const ToolCallBlock = memo(function ToolCallBlock({
 						)
 					)}
 					{block.name === "tool_search" && <ToolSearchDetails details={view.result?.details} />}
-					{output.length > 0 && (
+					{output.length > 0 && !(isQuestionnaire && questionnaireArgs) && (
 						<div className="toolcall-output">
 							<div className="toolcall-output-label">
 								{isError ? t("errorOutput") : t("output")}
@@ -527,15 +560,29 @@ function CodemodeCard({
 	code,
 	options,
 	details,
+	output,
 }: {
 	code: string;
 	options?: Record<string, unknown>;
 	details?: unknown;
+	output?: string;
 }) {
 	const t = useT();
 	const callDetails = details as { calls?: CodemodeCallItem[]; fullOutputPath?: string } | undefined;
 	const calls = Array.isArray(callDetails?.calls) ? callDetails.calls : [];
 	const fullOutputPath = typeof callDetails?.fullOutputPath === "string" ? callDetails.fullOutputPath : undefined;
+
+	// 识别 codemode 脚本输出中保存的图片：[Image saved to <path> (<mimeType>, <size>)]
+	const savedImages = useMemo(() => {
+		if (!output) return [];
+		const regex = /\[Image saved to (.*?) \((.*?)\)\]/g;
+		const list: { path: string; info: string }[] = [];
+		let match: RegExpExecArray | null;
+		while ((match = regex.exec(output)) !== null) {
+			list.push({ path: match[1], info: match[2] });
+		}
+		return list;
+	}, [output]);
 
 	return (
 		<div className="codemode-card">
@@ -569,6 +616,37 @@ function CodemodeCard({
 									<span className="codemode-call-duration">{formatDuration(c.durationMs)}</span>
 								)}
 								{c.error && <div className="codemode-call-error">{c.error}</div>}
+							</div>
+						))}
+					</div>
+				</div>
+			)}
+
+			{savedImages.length > 0 && (
+				<div className="codemode-sec codemode-images-sec">
+					<div className="codemode-sec-head">
+						<span className="codemode-sec-title">{t("codemodeSavedImages")}</span>
+						<span className="codemode-count-badge">{savedImages.length}</span>
+					</div>
+					<div className="codemode-images-list">
+						{savedImages.map((img, idx) => (
+							<div key={idx} className="codemode-image-item">
+								<FiImage className="codemode-image-icon" />
+								<code className="codemode-image-path" title={img.path}>
+									{img.path}
+								</code>
+								<span className="codemode-image-info">{img.info}</span>
+								<button
+									type="button"
+									className="btn-ghost codemode-image-copy"
+									title={t("copy")}
+									onClick={(e) => {
+										e.stopPropagation();
+										void navigator.clipboard.writeText(img.path);
+									}}
+								>
+									<FiCopy />
+								</button>
 							</div>
 						))}
 					</div>

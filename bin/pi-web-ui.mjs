@@ -2355,8 +2355,8 @@ async function installOnePlugin({ rawSpec, name, force, build, noBuild, dataDir,
 			);
 		const target = join(pluginsDir, id);
 		let backupTs = null;
-		let prevConfig = null;
-		const CONFIG_NAME = "config.json";
+		const PRESERVED_FILES = ["config.json", "secrets.bin", "storage.json"];
+		const preservedData = new Map();
 		if (existsSync(target)) {
 			if (!force)
 				throw new Error(
@@ -2367,11 +2367,13 @@ async function installOnePlugin({ rawSpec, name, force, build, noBuild, dataDir,
 			// 更新前备份旧版本（<dataDir>/plugin-backups/<id>-<ts>/，保留最近 3 份），
 			// 失败时自动回滚。备份与安装同 filter：不带 .git/node_modules。
 			backupTs = ensurePluginBackup(dataDir, id, { source: rawSpec });
-			// 插件凭据/配置不因升级丢失：先取出旧 config.json，拷完新文件后原样放回
-			try {
-				prevConfig = readFileSync(join(target, CONFIG_NAME), "utf8");
-			} catch {
-				/* 无配置文件 */
+			// 插件凭据/加密机密/私有存储不因升级丢失：先取出旧 config.json / secrets.bin / storage.json，拷完新文件后原样放回
+			for (const fname of PRESERVED_FILES) {
+				try {
+					preservedData.set(fname, readFileSync(join(target, fname)));
+				} catch {
+					/* 无该文件 */
+				}
 			}
 			rmSync(target, { recursive: true, force: true });
 		}
@@ -2393,8 +2395,10 @@ async function installOnePlugin({ rawSpec, name, force, build, noBuild, dataDir,
 					: `Plugin update failed: ${err?.message ?? err}\n  (no backup available, re-run install --force)`,
 			);
 		}
-		if (prevConfig !== null && !existsSync(join(target, CONFIG_NAME))) {
-			writeFileSync(join(target, CONFIG_NAME), prevConfig);
+		for (const [fname, buf] of preservedData) {
+			if (!existsSync(join(target, fname))) {
+				writeFileSync(join(target, fname), buf);
+			}
 		}
 		// 记录安装来源：设置面板「更新」按钮据此重跑同一条安装命令（--force 覆盖）。
 		try {

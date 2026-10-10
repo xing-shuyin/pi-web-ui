@@ -1,7 +1,7 @@
 {
 	"id": "image-toolkit",
 	"name": "图片工具",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"icon": "🖼",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\" ry=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><polyline points=\"21 15 16 10 5 21\"/></svg>",
 	"description": "图片处理工作台：压缩（可按目标体积二分逼近）、裁剪、缩放、旋转/翻转、格式转换（PNG/JPEG/WebP/AVIF）、批量导出 ZIP、水印、滤镜调色、图片信息与 EXIF，可直接读写工作区图片；另给 AI 配了 4 个工具，让 agent 自己压缩/裁剪/缩放/加水印工作区里的图。",

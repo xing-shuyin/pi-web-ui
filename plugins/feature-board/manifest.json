@@ -2,17 +2,14 @@
 	"id": "feature-board",
 	"name": "需求与投票",
 	"nameEn": "Feature Board",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"icon": "💡",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5\"/><path d=\"M9 18h6\"/><path d=\"M10 22h4\"/></svg>",
 	"description": "用户需求建议箱与投票墙：查看社区热门需求、提交新建议、为心仪功能投票。",
 	"descriptionEn": "Feature requests and voting board: view community ideas, submit new suggestions, and vote for features.",
 	"apiVersion": 2,
 	"view": true,
-	"permissions": [
-		"ui",
-		"http"
-	],
+	"permissions": ["ui", "http"],
 	"settings": [
 		{
 			"key": "apiUrl",

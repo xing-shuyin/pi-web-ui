@@ -8,6 +8,6 @@
 	"name": "会话迁移",
 	"permissions": ["ui", "tools", "fs"],
 	"ui": { "views": [{ "id": "main", "label": "会话迁移", "labelEn": "Session Migrate", "icon": "🔄" }] },
-	"version": "0.4.0",
+	"version": "0.4.1",
 	"view": true
 }

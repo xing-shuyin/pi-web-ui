@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.101.0",
+	"version": "0.102.0",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {

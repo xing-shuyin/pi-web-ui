@@ -1,7 +1,7 @@
 {
 	"id": "live-preview",
 	"name": "实时预览",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"icon": "🌐",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"2\" y1=\"12\" x2=\"22\" y2=\"12\"/><path d=\"M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z\"/></svg>",
 	"description": "Live Server 式预览：文件树右键经 /liveserver 打开 HTML（含相对资源与自动刷新）、右键 md 经 /md 渲染 Markdown，点击直接新标签打开（无独立视图）；AI 可用 live_preview 工具给地址。",

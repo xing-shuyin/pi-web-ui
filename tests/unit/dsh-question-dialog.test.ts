@@ -6,6 +6,7 @@ import { act } from "react-dom/test-utils";
 import { DshQuestionDialog } from "../../web/src/components/DshQuestionDialog.js";
 import { setAppSend } from "../../web/src/app-globals.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
+import { clearQuestionDraft } from "../../web/src/question-draft.js";
 
 /**
  * DshQuestionDialog 测试（jsdom）：验证
@@ -97,6 +98,10 @@ afterEach(() => {
 		act(() => root!.unmount());
 		root = null;
 	}
+	clearQuestionDraft("q1");
+	clearQuestionDraft("q2");
+	clearQuestionDraft("q3");
+	clearQuestionDraft("q4");
 	document.body.innerHTML = "";
 });
 

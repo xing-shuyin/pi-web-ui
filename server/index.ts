@@ -1297,6 +1297,7 @@ export interface DispatchSession {
 		id: string,
 		answers: { id: string; selected: string[]; custom?: string }[],
 		cancelled?: boolean,
+		cancelReason?: string,
 	): Promise<void>;
 	/** 浏览器页面调用回包（browser_page 工具，pi 引擎专有；DSH 无页面桥，
 	 *  方法缺失时 dispatch 侧的 `?.` 直接忽略这条消息）。 */

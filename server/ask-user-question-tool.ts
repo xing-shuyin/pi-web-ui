@@ -15,7 +15,11 @@ import type { QuestionAnswer, UiQuestion } from "./protocol.js";
  */
 export function makeAskUserQuestionTool(
 	clientSession: {
-		askUser: (q: UiQuestion[], sig: { aborted?: boolean }, conversationId?: string) => Promise<QuestionAnswer[] | null>;
+		askUser: (
+			q: UiQuestion[],
+			sig: { aborted?: boolean },
+			conversationId?: string,
+		) => Promise<QuestionAnswer[] | { cancelled: true; reason?: string } | null>;
 	},
 	/** 本 runtime 所属会话：提问跟着对话走，快照只把当前对话的问卷推给客户端。 */
 	ownerId?: string,
@@ -30,6 +34,11 @@ export function makeAskUserQuestionTool(
 		preview: Type.Optional(
 			Type.String({
 				description: "Optional preview (markdown/HTML/code)",
+			}),
+		),
+		recommended: Type.Optional(
+			Type.Boolean({
+				description: "Highlight as recommended option",
 			}),
 		),
 	});
@@ -90,16 +99,23 @@ export function makeAskUserQuestionTool(
 					"ask_user_question allows at most 3 questions per call to prevent question fatigue (单次提问最多不得超过 3 个问题)",
 				);
 			}
-			const answers = await clientSession.askUser(
+			const res = await clientSession.askUser(
 				qs,
 				{
 					aborted: signal?.aborted,
 				},
 				ownerId,
 			);
-			if (answers === null) {
+			if (res === null) {
 				throw new Error("User cancelled the question.\n用户取消了提问。");
 			}
+			if (!Array.isArray(res) && (res as { cancelled?: boolean }).cancelled) {
+				const cancelReason = (res as { reason?: string }).reason?.trim();
+				const note = cancelReason ? `\nUser note / 附言: ${cancelReason}` : "";
+				const noteZh = cancelReason ? `\n附言：${cancelReason}` : "";
+				throw new Error(`User cancelled the question.${note}\n用户取消了提问。${noteZh}`);
+			}
+			const answers = res as QuestionAnswer[];
 			// 工具结果：把每道题的回答拼成简洁文本给模型，同时留 details 供 UI 展示。
 			const lines = answers.map((a) => {
 				const q = qs.find((q) => q.id === a.id);

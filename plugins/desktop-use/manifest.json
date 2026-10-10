@@ -1,7 +1,7 @@
 {
 	"id": "desktop-use",
 	"name": "桌面控制",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"icon": "🖱️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5\" y=\"2\" width=\"14\" height=\"20\" rx=\"7\"/><line x1=\"12\" y1=\"6\" x2=\"12\" y2=\"10\"/></svg>",
 	"description": "让 AI 操作 Windows 桌面：按元素名查控件坐标（UI Automation，无需截图）→ 点击 / 输入（含中文粘贴）/ 按键 / 聚焦窗口。输入库缺失时自动安装，卸载时连带删除。",

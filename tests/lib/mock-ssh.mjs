@@ -499,8 +499,8 @@ export async function startMockSsh(pluginDir, port, opts = {}) {
 									return false;
 								}
 								if (/^cd\s+'.*'$/.test(step)) return true; // 目录切换：mock 只有一棵树，空操作
-								// 批量上传：tar -x -m -f - -C '<暂存目录>'（数据从 stdin 来）
-								const tarX = step.match(/^tar\s+-x\s+-m\s+-f\s+-\s+-C\s+'([^']*)'$/);
+								// 批量上传：tar -x [-m] -f - -C '<暂存目录>'（数据从 stdin 来）
+								const tarX = step.match(/^tar\s+-x\s+(?:-m\s+)?-f\s+-\s+-C\s+'([^']*)'$/);
 								if (tarX) {
 									const base = tarX[1].replace(/\/+$/, "");
 									ops.ensureDir(base);

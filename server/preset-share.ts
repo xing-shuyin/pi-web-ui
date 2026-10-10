@@ -304,6 +304,8 @@ const PRESET_FIELD_KINDS = {
 	disabledPluginTools: "list",
 	toolPromptOverrides: "toolPromptOverrides",
 	toolLazyLoading: "bool",
+	codemodeMode: "codemodeMode",
+	codemodeInlineBudget: "number",
 	readDirEnabled: "bool",
 	bgAutoCleanupMin: "number",
 	toolApprovalEnabled: "bool",
@@ -436,6 +438,10 @@ export function sanitizePresetSettings(input: unknown, opts?: { enabledTools?: u
 			}
 			case "bool":
 				if (typeof raw === "boolean") settings[key] = raw;
+				else rejected.push(key);
+				break;
+			case "codemodeMode":
+				if (raw === "on" || raw === "only") settings[key] = raw;
 				else rejected.push(key);
 				break;
 			case "number":

@@ -39,33 +39,32 @@ pi-web-ui 是 pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 W
 
 详细文档位于 `docs/<主题>.md`，以下为各模块核心设计原则与事实源：
 
-
 `docs/` 索引（找详细文档先看这里，均为 `docs/<名>.md`）：**architecture-core** 快照驱动/协议单源/安全边界/主题/多对话并发 · **architecture-attachments** 附件/图片/视觉桥/上传预览下载 · **architecture-terminal** 终端 PTY/SCM/活力检测/bash 接管 · **architecture-plugins** 插件形态/协议/宿主扩展点/MCP 桥/多根工作区 · **architecture-system-prompt** 系统提示词组装链路与 override 钩子 · **tool-context-budget** 工具上下文预算（文案精简 / 逐工具覆盖 / **延迟加载** + 前缀缓存硬约束）· **dsh-engine** DSH 预设/问卷/底栏统计/工具桥 · **goal-conversation-design** 目标模式 2.0（把目标审查变成对话：执行对话干活 + 当前对话当审查者；**已实施且只剩这一条路径** —— v1 的隐藏隔离审查会话 + 自治标记路径已删除，轮次/熔断/代次全在服务端，见该文档 §4/§11）· **development** 开发工作流/CI/编码约定/测试规范 · **release** 发布流程 · **deployment** 部署 · **env-vars** 环境变量全表 · **preset-sharing** 预设导入/导出/社区共享仓库（交换格式 / 白名单净化 / 一键分享 / 浏览列表）· **antigravity-proxy** 反代接入 · **directory-reference** 完整注释版目录树
 
-| 主题 | 文档 | 一句话 |
-| --------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 快照驱动 | `docs/architecture-core.md` | 服务端唯一事实源，60ms 节流；`snapshot_delta` 增量 + `message_delta` 实时通道；`send()` 背压超阈丢 snapshot（幂等，250ms 重试）；`get_state`/`flushSnapshot` 立即推一次 |
-| 协议单源 | 同上 | 只改 `server/protocol.ts`，两端 switch 各加分支；`web/src/types.ts` 是 shim |
-| 全局运行态 | 同上 | 整树共享放 `app-globals.ts`（`useAppField` 单字段订阅，组件不收 `send` prop 用 `appSend`）；快照流数据禁入 store |
-| 安全边界 | 同上 | 默认 loopback；WS Origin/Host 校验；quiesce 准入；provider headers 不下发浏览器 |
-| 主题 | 同上 | styles.css 是共享基线；主题=完整样式表可覆盖一切；终端跟随主题 |
-| 多对话并发 | 同上 | 每对话独立 runtime，上限 8/项目（子代理不计）；运行列表口径 listed ∪ 有内容的当前对话；clientId 存 sessionStorage，每标签页独立 |
-| 附件/预览 | `docs/architecture-attachments.md` | 只给路径引用（`reference`/`lines`，内容不注入）；预览 512KB 上限+嗅探+GBK 回退；媒体走 HTTP Range；下载绕 Safe Browsing |
-| 终端/SCM | `docs/architecture-terminal.md` | 每 Conversation 一个 TerminalManager；`terminalBash` 开关分流（`persist` 决定一次性/ai-bash 持久）；SCM 只读走 execFile，写操作走可见终端 |
-| 工具开关/read 目录 | `docs/architecture-core.md` | `AGENT_TOOL_CATALOG` 唯一事实源；`read` 覆盖目录走 ls 口径（`readDirEnabled` 是行为开关，不入目录；仅 pi 引擎）；`read`/`write`/`edit` 三处覆盖与第三方扩展同名工具的共存（基底 = 扩展实现优先）见 `server/tool-overrides.ts` |
-| 审批 | `server/tool-approval.ts` | 规则库 `<dataDir>/approval-rules.json`（ask/deny/allow）；三档放行：全局关→本对话全部允许→允许同类；记忆只在内存，随过户搬 |
-| 问卷/草稿进快照 | `docs/architecture-core.md` | `UiState.pendingQuestion`（刷新恢复）+ `UiState.draft`（只跟全量快照，`draft_update` 自带 sessionId） |
-| 临时对话 | `server/agent-service.ts` | `new_chat {ephemeral:true}`→内存不落盘；`UiState.isEphemeral` 恒存在于 light state；`persist_conversation` 一键转正（id 不变） |
-| 插件/UI 扩展点 | `docs/architecture-plugins.md` | `<dataDir>/plugins/<id>/`；manifest `ui` 与 `host.ui.register()` 同一套别名+枚举；合并「宿主<插件<arrange<用户偏好」；插件不碰 DOM；`PLUGIN_API_VERSION=2` |
-| 多根工作区 | 同上 | `set_workspace_roots` 按项目 cwd 存（上限 8）；**额外根=工作区内**，插件读免授权；AI 只在主 cwd 干活 |
-| 子代理模板 | `server/subagent-templates.ts` | 全局共享；append/replace + 白名单 + 可选模型/强度（空=跟随）；停用对 AI 不可见 |
-| DSH | `docs/dsh-engine.md` | 四预设 file: 克隆 mount；问卷/技能钩子挂 agent scope（host 收不到 scoped 事件）；底栏统计吃直播帧+usage（`dsh-usage.ts`） |
-| 压缩软上限 | `server/soft-cap.ts` | C→`reserveTokens=W−C` live 注入；关/非法回填 16384；pi 引擎独有 |
-| 看门狗 | `docs/architecture-core.md` | 20 分钟 abort 会话（不碰后台服务）；`ask_user_question` 豁免 |
-| present_files | `server/present-files-tool.ts` | 只读探测+摘录预算走 `details`；前端无 details 也能渲染（参数解析+合并）；远端本地打开报不支持 |
-| browser_page/对话引用 | `docs/architecture-core.md` | 闸门在扩展侧；对话引用只发 `<conversation-ref>` aside，模型经 `conversation_read` 按需取 |
-| 计划模式 | `server/plan-mode.ts` | 目标条展开行「只规划」触发；动态剔除写工具并施加硬闸门拦截；禁倾倒大段代码；必须通过计划看板「开始实施」退出；回归 `plan-mode-test`。 |
-| 审查者模式 | `server/delegate-mode.ts` | 开启后主会话只审不干，Prompt 自动投递常驻执行对话；硬闸门拦截一切写类与派发工具；计划模式优先级高于委派；回归 `delegate-mode-test`。 |
+| 主题                  | 文档                               | 一句话                                                                                                                                                                                                                        |
+| --------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 快照驱动              | `docs/architecture-core.md`        | 服务端唯一事实源，60ms 节流；`snapshot_delta` 增量 + `message_delta` 实时通道；`send()` 背压超阈丢 snapshot（幂等，250ms 重试）；`get_state`/`flushSnapshot` 立即推一次                                                       |
+| 协议单源              | 同上                               | 只改 `server/protocol.ts`，两端 switch 各加分支；`web/src/types.ts` 是 shim                                                                                                                                                   |
+| 全局运行态            | 同上                               | 整树共享放 `app-globals.ts`（`useAppField` 单字段订阅，组件不收 `send` prop 用 `appSend`）；快照流数据禁入 store                                                                                                              |
+| 安全边界              | 同上                               | 默认 loopback；WS Origin/Host 校验；quiesce 准入；provider headers 不下发浏览器                                                                                                                                               |
+| 主题                  | 同上                               | styles.css 是共享基线；主题=完整样式表可覆盖一切；终端跟随主题                                                                                                                                                                |
+| 多对话并发            | 同上                               | 每对话独立 runtime，上限 8/项目（子代理不计）；运行列表口径 listed ∪ 有内容的当前对话；clientId 存 sessionStorage，每标签页独立                                                                                               |
+| 附件/预览             | `docs/architecture-attachments.md` | 只给路径引用（`reference`/`lines`，内容不注入）；预览 512KB 上限+嗅探+GBK 回退；媒体走 HTTP Range；下载绕 Safe Browsing                                                                                                       |
+| 终端/SCM              | `docs/architecture-terminal.md`    | 每 Conversation 一个 TerminalManager；`terminalBash` 开关分流（`persist` 决定一次性/ai-bash 持久）；SCM 只读走 execFile，写操作走可见终端                                                                                     |
+| 工具开关/read 目录    | `docs/architecture-core.md`        | `AGENT_TOOL_CATALOG` 唯一事实源；`read` 覆盖目录走 ls 口径（`readDirEnabled` 是行为开关，不入目录；仅 pi 引擎）；`read`/`write`/`edit` 三处覆盖与第三方扩展同名工具的共存（基底 = 扩展实现优先）见 `server/tool-overrides.ts` |
+| 审批                  | `server/tool-approval.ts`          | 规则库 `<dataDir>/approval-rules.json`（ask/deny/allow）；三档放行：全局关→本对话全部允许→允许同类；记忆只在内存，随过户搬                                                                                                    |
+| 问卷/草稿进快照       | `docs/architecture-core.md`        | `UiState.pendingQuestion`（刷新恢复）+ `UiState.draft`（只跟全量快照，`draft_update` 自带 sessionId）                                                                                                                         |
+| 临时对话              | `server/agent-service.ts`          | `new_chat {ephemeral:true}`→内存不落盘；`UiState.isEphemeral` 恒存在于 light state；`persist_conversation` 一键转正（id 不变）                                                                                                |
+| 插件/UI 扩展点        | `docs/architecture-plugins.md`     | `<dataDir>/plugins/<id>/`；manifest `ui` 与 `host.ui.register()` 同一套别名+枚举；合并「宿主<插件<arrange<用户偏好」；插件不碰 DOM；`PLUGIN_API_VERSION=2`                                                                    |
+| 多根工作区            | 同上                               | `set_workspace_roots` 按项目 cwd 存（上限 8）；**额外根=工作区内**，插件读免授权；AI 只在主 cwd 干活                                                                                                                          |
+| 子代理模板            | `server/subagent-templates.ts`     | 全局共享；append/replace + 白名单 + 可选模型/强度（空=跟随）；停用对 AI 不可见                                                                                                                                                |
+| DSH                   | `docs/dsh-engine.md`               | 四预设 file: 克隆 mount；问卷/技能钩子挂 agent scope（host 收不到 scoped 事件）；底栏统计吃直播帧+usage（`dsh-usage.ts`）                                                                                                     |
+| 压缩软上限            | `server/soft-cap.ts`               | C→`reserveTokens=W−C` live 注入；关/非法回填 16384；pi 引擎独有                                                                                                                                                               |
+| 看门狗                | `docs/architecture-core.md`        | 20 分钟 abort 会话（不碰后台服务）；`ask_user_question` 豁免                                                                                                                                                                  |
+| present_files         | `server/present-files-tool.ts`     | 只读探测+摘录预算走 `details`；前端无 details 也能渲染（参数解析+合并）；远端本地打开报不支持                                                                                                                                 |
+| browser_page/对话引用 | `docs/architecture-core.md`        | 闸门在扩展侧；对话引用只发 `<conversation-ref>` aside，模型经 `conversation_read` 按需取                                                                                                                                      |
+| 计划模式              | `server/plan-mode.ts`              | 目标条展开行「只规划」触发；动态剔除写工具并施加硬闸门拦截；禁倾倒大段代码；必须通过计划看板「开始实施」退出；回归 `plan-mode-test`。                                                                                         |
+| 审查者模式            | `server/delegate-mode.ts`          | 开启后主会话只审不干，Prompt 自动投递常驻执行对话；硬闸门拦截一切写类与派发工具；计划模式优先级高于委派；回归 `delegate-mode-test`。                                                                                          |
 
 ## 5. 开发工作流
 
@@ -107,23 +106,21 @@ npm publish
 
 > 完整参数全表与高级配置见 `docs/env-vars.md`
 
-
-
-| 变量 | 默认 | 作用 |
+| 变量                        | 默认                            | 作用                                                                                                                                                                                                                                                                         |
 | --------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PI_WEB_PORT` | `8787` | HTTP 端口 |
-| `PI_WEB_HOST` | `127.0.0.1` | 监听地址（默认 loopback） |
-| `PI_WEB_CWD` | `process.cwd()` | 智能体工作区 |
-| `PI_WEB_DATA_DIR` | `~/.pi-web` | 数据目录 |
-| `PI_WEB_SDK` | `global` | #321 起默认跟随：机器上有**更新**的 pi 副本（祖先链，如全局 pi CLI）就用它（多份取最高），没有或更旧回落自带副本；`bundled`/off/0/false/no = 强制自带（可复现，报 bug 用）。升级全局 pi 后**重启服务**即生效；更新面板会亮「运行中 vs 机器上」差距并提供「安装全局引擎」入口 |
-| `PI_WEB_TOKEN` | 空 | 共享口令鉴权 |
-| `PI_WEB_PLUGIN_CATALOG_URL` | 官方清单 | 市场目录来源；空/`off`/`0`/`false`/`no` 关闭；`PI_WEB_PLUGIN_CATALOG_INSTALL=1` 才开机自动安装 |
-| `PI_WEB_TOOL_TIMEOUT_MS` | 20 分钟 | 看门狗超时（`ask_user_question` 豁免） |
-| `PI_WEB_TOOL_LAZY_LOADING` | `1`（开） | 工具延迟加载的**部署级默认**（设置页开关优先）：`0`/`false`/`off` = 全部工具直接活跃（见 `docs/tool-context-budget.md`） |
-| `PI_WEB_PRESET_REPO` | `xing-shuyin/pi-web-ui-presets` | 设置预设的社区共享仓库（`owner/name`）；`off`/`0`/`false`/`no` = 关闭一键分享（导入/导出仍可用），见 `docs/preset-sharing.md` |
-| `PI_WEB_PRESET_CATALOG_URL` | 仓库 `index.json` 的 raw 地址 | 「浏览分享」的列表来源；空串或 `off` = 关闭浏览；5 分钟缓存 + 刷新绕过，失败保留上次列表 |
-| `PI_WEB_PRESET_GH` | `gh` | 一键分享调用的 GitHub CLI 路径（不可用时先试令牌 API，再回落「复制 JSON + 打开预填建 Issue 页」） |
-| `PI_WEB_PRESET_TOKEN` | 空 | 无 gh 时直连 GitHub API 的令牌（`PI_WEB_PRESET_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`）：有令牌就不需要 gh；不设也能用（预填页点一下 Submit） |
+| `PI_WEB_PORT`               | `8787`                          | HTTP 端口                                                                                                                                                                                                                                                                    |
+| `PI_WEB_HOST`               | `127.0.0.1`                     | 监听地址（默认 loopback）                                                                                                                                                                                                                                                    |
+| `PI_WEB_CWD`                | `process.cwd()`                 | 智能体工作区                                                                                                                                                                                                                                                                 |
+| `PI_WEB_DATA_DIR`           | `~/.pi-web`                     | 数据目录                                                                                                                                                                                                                                                                     |
+| `PI_WEB_SDK`                | `global`                        | #321 起默认跟随：机器上有**更新**的 pi 副本（祖先链，如全局 pi CLI）就用它（多份取最高），没有或更旧回落自带副本；`bundled`/off/0/false/no = 强制自带（可复现，报 bug 用）。升级全局 pi 后**重启服务**即生效；更新面板会亮「运行中 vs 机器上」差距并提供「安装全局引擎」入口 |
+| `PI_WEB_TOKEN`              | 空                              | 共享口令鉴权                                                                                                                                                                                                                                                                 |
+| `PI_WEB_PLUGIN_CATALOG_URL` | 官方清单                        | 市场目录来源；空/`off`/`0`/`false`/`no` 关闭；`PI_WEB_PLUGIN_CATALOG_INSTALL=1` 才开机自动安装                                                                                                                                                                               |
+| `PI_WEB_TOOL_TIMEOUT_MS`    | 20 分钟                         | 看门狗超时（`ask_user_question` 豁免）                                                                                                                                                                                                                                       |
+| `PI_WEB_TOOL_LAZY_LOADING`  | `1`（开）                       | 工具延迟加载的**部署级默认**（设置页开关优先）：`0`/`false`/`off` = 全部工具直接活跃（见 `docs/tool-context-budget.md`）                                                                                                                                                     |
+| `PI_WEB_PRESET_REPO`        | `xing-shuyin/pi-web-ui-presets` | 设置预设的社区共享仓库（`owner/name`）；`off`/`0`/`false`/`no` = 关闭一键分享（导入/导出仍可用），见 `docs/preset-sharing.md`                                                                                                                                                |
+| `PI_WEB_PRESET_CATALOG_URL` | 仓库 `index.json` 的 raw 地址   | 「浏览分享」的列表来源；空串或 `off` = 关闭浏览；5 分钟缓存 + 刷新绕过，失败保留上次列表                                                                                                                                                                                     |
+| `PI_WEB_PRESET_GH`          | `gh`                            | 一键分享调用的 GitHub CLI 路径（不可用时先试令牌 API，再回落「复制 JSON + 打开预填建 Issue 页」）                                                                                                                                                                            |
+| `PI_WEB_PRESET_TOKEN`       | 空                              | 无 gh 时直连 GitHub API 的令牌（`PI_WEB_PRESET_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`）：有令牌就不需要 gh；不设也能用（预填页点一下 Submit）                                                                                                                                  |
 
 ## 8. 部署
 
@@ -138,6 +135,7 @@ npm publish
 以下规则由历史线上问题与核心架构硬约束提炼而成，编写代码时必须严格遵守：
 
 ### 1. 通信协议与数据安全
+
 - **`details` 字段硬限制 ≤64KB**：下发与持久化会超限整包丢弃。新工具严禁塞入大块原始数据（参照 `present-files-tool.ts` 做摘录预算）；前端渲染必须支持无 details 降级（`present-items.ts`）。
 - **服务端 URL 必须包裹 `appUrl()`**：包括 `/ws`、`/api/*`、`/plugins/*`、`/themes/*`，杜绝反向代理子路径部署时 404。
 - **Token Cookie 校验前必须解码**：`pi_web_token` 经 `encodeURIComponent` 存储，服务端读取必须先 `decodeCookieToken` 再校验（`server/auth-cookie.ts`）。
@@ -146,11 +144,12 @@ npm publish
 - **文本解码与行号统计规范**：预览与附件统一使用 `decodeText`（UTF-8 → GBK → latin1）；`countLines` 不计末尾空行，前端需 pop 末尾空串。
 
 ### 2. 工具定义与提示词规范
+
 - **工具提示词三处职责分离（严禁跨处复述）**：
   1. Tool Schema 的 `description`：仅描述“做什么与边界”，≤600 字符；
   2. 系统提示词中的 `promptSnippet`：仅写“何时触发”，≤80 字符，不带工具名前缀；
   3. `Guidelines` 段落的 `promptGuidelines`：仅写“调用顺序/禁令/跨工具路由”。
-  *必须使用精炼纯英文，违规会被守卫单测拦截*（守卫：`tests/unit/tool-prompt-hygiene.test.ts`）。`edit` 工具提示词亦归本项目单源覆盖（`agent-service.ts`）。
+     _必须使用精炼纯英文，违规会被守卫单测拦截_（守卫：`tests/unit/tool-prompt-hygiene.test.ts`）。`edit` 工具提示词亦归本项目单源覆盖（`agent-service.ts`）。
 - **工具延迟加载硬约束：绝不破坏前缀缓存**：
   供应商 Prompt Cache 依赖系统提示词前缀完全一致。系统提示词 `{{tools}}` 目录必须保持完整且不随已加载状态变化；新加载工具的要点随 `load_tools` 回执进入对话；注册表仅允许追加（`toolsAdded`），严禁就地修改或删除（守卫：`tests/lazy-tools-test.mjs`，文档：`docs/tool-context-budget.md`）。
 - **单工具多执行路径必须提示词单源**：以 bash 为例，原生、终端和自适应分流路径共用 `server/tool-prompts.ts`，禁止在 execute 覆盖实现中硬编码或复制描述。
@@ -158,6 +157,7 @@ npm publish
 - **逐工具文案可编辑机制**：用户自定义文案仅作为偏好存入 `toolPromptOverrides`，新增可配置维度必须同步打补丁逻辑、wire 协议与设置页编辑器三处（守卫：`tests/unit/tool-prompt-overrides.test.ts`）。
 
 ### 3. UI 布局与样式规范
+
 - **CSS 变量必须先定义后引用**：未定义的 `var(--x)` 会导致整条 CSS 声明失效；内联代码前景色与背景色对比度必须 ≥2:1（守卫：`tests/unit/css-tokens.test.ts`、`theme-inline-code-contrast.test.ts`）。
 - **长文本与长路径防溢出标准**：
   - 行容器（flex 容器）必须添加 `min-width: 0` 与 `max-width: 100%`；
@@ -178,6 +178,7 @@ npm publish
 - **新会话初始化交互**：切换或新建会话须经 `focusComposer()` 聚焦（触屏除外），非 chat 视图自动切回，待发附件 chips 随新会话清空（守卫：`composer-draft.test.ts`）。
 
 ### 4. 架构与运行态约束
+
 - **目标模式 2.0 运行铁律**：主对话作为审查者，服务端另起落盘执行者；轮次、代次与停滞熔断全由服务端管控，严禁模型自行调用 wait/spawn；审查指令必须注入执行证据（`goal-evidence.ts`）；会话中止或关闭即停止循环，不得无限续轮（守卫：`goal-delegated.test.ts`、`goal-evidence.test.ts`，文档：`docs/goal-conversation-design.md`）。
 - **审查者委派模式（Delegate Mode）**：开启后主对话只审不干，用户输入自动派发给常驻执行会话；闸门强制拦截写操作与子代理派发；计划模式优先级高于委派。
 - **预设分享必须白名单严格净化**：导入外部 JSON 必须通过 `server/preset-share.ts` 白名单校验（`preset-fields.ts`），丢弃未知字段，执行 dryRun 确认，严禁未经校验直接摊入 `ClientSettings`（守卫：`preset-share.test.ts`，文档：`docs/preset-sharing.md`）。
@@ -187,10 +188,13 @@ npm publish
 - **会话过户与状态迁移**：`take_over_conversation` 完整搬迁 runtime 本体，且**是事务性的**（源侧已摘、目标侧接入失败就原样搬回，绝不留「还在跑但没人持有」的幽灵会话，见 `#556` / `tests/takeover-rollback-test.mjs`）；**断连残骸的「另一处」行有宽限期**（`PI_WEB_OFFLINE_ROWS_TTL_MS`，默认 30 分钟，标 `ownerOffline`，仍可过户——手机 run 途中关页面后换设备仍能接管）；`ask_user_question` / `browser_page` 解析创建时的 session 对象（`bridgeTarget`）；跨页答复带 owner。
 - **宿主提供的包只能声明在 `peerDependencies`（`"*"`）**：pi 扩展加载器只扫 `dependencies`（命中 `@earendil-works/pi-coding-agent` / `typebox` 就告警：嵌套副本会绕开加载器注入、搞出重复运行时模块）。本包同时是扩展与独立服务端，服务端子进程真要这两个包（`PI_WEB_SDK=bundled` 也要自带副本）→ 落在 `optionalDependencies`（npm 默认照装）。守卫 `tests/unit/extension-host-packages.test.ts`。
 - **布局页改名 / 插件 `arrange.label` 必须落到渲染层**：合并引擎对「显式指定的文案」置 `UiSlotEntry.labelExplicit`；内置条目（顶栏按钮、底栏数值徽标）一直画写死的 i18n 与实时数值，只有旗立着时才让位（名字型顶掉内置文案；数值型把名字插在数值前，不吞实时数据）。只在设置页生效 = 假承诺（`#555`，守卫 `tests/unit/bar-item-unified.test.ts`）。
+- **插件修改必须递增版本号（Bump Version）**：内置官方插件（`plugins/<id>/`）凡修改了代码/功能/静态资源（非纯文档），必须同步递增 `manifest.json` 中的 `version`（若有 `package.json` 的 `version` 须保持一致）。原因：随包热同步（`syncBuiltinPlugins`）与更新器（`plugin-updater`）均以 `compareVersions(srcVer, tgtVer) > 0` 作为升级判定的唯一权威事实源；若漏改版本号，老用户更新主程序后数据目录中的旧插件代码永远不会被热更新覆盖，导致缺陷滞留（守卫：`tests/unit/plugin-version-bump-guard.test.ts`）。
 - **国际化字面量要求**：`i18n.tsx` 的词条值必须使用字符串字面量（仅允许 `+` 拼接），确保 `scripts/i18n-diff.mjs` 静态解析器正常运行。
 
 ### 5. 提交前三连验（防 CI 失败铁律）
+
 任何修改在提交 PR 或交付前，**必须依次通过以下三道硬验证**：
+
 1. `npx prettier --write <改动文件>`：确保代码风格符合 Prettier 规则（CI 第一步硬门禁）；
 2. `npm run typecheck`：确保全项目 5 个 tsconfig 零类型错误（编写单测 mock 上下文严禁传裸 `{}`，必须使用 `{} as any` 避免 TS2740）；
 3. `npx vitest run <相关单测>`：确保改动模块所有单元测试全部通过。

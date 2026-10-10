@@ -277,12 +277,15 @@ describe("evaluateWhen（P0-3 条件表达式）", () => {
 });
 
 describe("buildWhenContext（按槽位 + target 现场构造）", () => {
-	it("文件菜单按 kind 给 file.isDir/isFile", () => {
+	it("文件菜单按 kind 给 file.isDir/isFile（列表空白处代表当前目录，同样具备 file.isDir，机器根除外）", () => {
 		expect(buildWhenContext("contextmenu.file", { id: "x", kind: "dir" })).toEqual({
 			"file.isDir": true,
 			"file.isFile": false,
 		});
 		expect(buildWhenContext("contextmenu.file", { id: "x", kind: "file" })["file.isFile"]).toBe(true);
+		expect(buildWhenContext("contextmenu.file", { id: "", kind: "list" })["file.isDir"]).toBe(true);
+		expect(buildWhenContext("contextmenu.file", { id: "src", kind: "list" })["file.isDir"]).toBe(true);
+		expect(buildWhenContext("contextmenu.file", { id: "@root", kind: "list" })["file.isDir"]).toBe(false);
 	});
 
 	it("会话菜单按 kind 给 session.isRunning", () => {

@@ -250,6 +250,20 @@ export const DEFAULT_TOOL_LAZY_LOADING = (() => {
 	return !(v === "0" || v === "false" || v === "off" || v === "no");
 })();
 
+export const DEFAULT_CODEMODE_MODE: "on" | "only" = "on";
+export const DEFAULT_CODEMODE_INLINE_BUDGET = 3000;
+
+export function normalizeCodemodeMode(v: unknown): "on" | "only" {
+	return v === "only" ? "only" : "on";
+}
+
+export function normalizeCodemodeInlineBudget(v: unknown): number {
+	if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+		return Math.floor(v);
+	}
+	return DEFAULT_CODEMODE_INLINE_BUDGET;
+}
+
 /** Settings-panel state (system prompt + disabled skills/extensions). */
 export interface ClientSettings {
 	promptMode: PromptMode;
@@ -292,6 +306,10 @@ export interface ClientSettings {
 	 *  关 → 回到旧行为（按禁用名单/预设直接活跃）。live 生效无需 reload，
 	 *  只影响新会话与之后的门控重放。DSH 引擎无 pi 工具注册面，忽略此开关。 */
 	toolLazyLoading: boolean;
+	/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式：其他工具对模型隐藏，所有调用都经由 codemode 脚本）。 */
+	codemodeMode: "on" | "only";
+	/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
+	codemodeInlineBudget: number;
 	/** Agent 工具禁用名单（统一开关，见 tool-manager.ts；live 生效无需 reload）。 */
 	disabledAgentTools: string[];
 	/** 插件 AI 工具禁用名单（工具名全局唯一；live 生效无需 reload；
@@ -1018,6 +1036,8 @@ export class ClientStateStore {
 			readDirEnabled: stored?.readDirEnabled ?? true,
 			bgAutoCleanupMin: normalizeBgCleanupMinutes(stored?.bgAutoCleanupMin),
 			toolLazyLoading: stored?.toolLazyLoading ?? DEFAULT_TOOL_LAZY_LOADING,
+			codemodeMode: normalizeCodemodeMode(stored?.codemodeMode),
+			codemodeInlineBudget: normalizeCodemodeInlineBudget(stored?.codemodeInlineBudget),
 			toolApprovalEnabled: stored?.toolApprovalEnabled ?? true,
 			editSoftEnabled:
 				stored?.disabledAgentTools !== undefined
@@ -1090,6 +1110,10 @@ export class ClientStateStore {
 			readDirEnabled: settings.readDirEnabled ?? cur.readDirEnabled ?? true,
 			bgAutoCleanupMin: normalizeBgCleanupMinutes(settings.bgAutoCleanupMin ?? cur.bgAutoCleanupMin),
 			toolLazyLoading: settings.toolLazyLoading ?? cur.toolLazyLoading ?? DEFAULT_TOOL_LAZY_LOADING,
+			codemodeMode: normalizeCodemodeMode(settings.codemodeMode ?? cur.codemodeMode ?? DEFAULT_CODEMODE_MODE),
+			codemodeInlineBudget: normalizeCodemodeInlineBudget(
+				settings.codemodeInlineBudget ?? cur.codemodeInlineBudget ?? DEFAULT_CODEMODE_INLINE_BUDGET,
+			),
 			toolApprovalEnabled: settings.toolApprovalEnabled ?? cur.toolApprovalEnabled ?? true,
 			editSoftEnabled: settings.editSoftEnabled ?? cur.editSoftEnabled ?? false,
 			questionnaireEnabled: settings.questionnaireEnabled ?? cur.questionnaireEnabled ?? true,

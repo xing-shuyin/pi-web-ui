@@ -634,6 +634,7 @@ export function handleInteractiveResponseMessage(
 			id: string,
 			answers: { id: string; selected: string[]; custom?: string }[],
 			cancelled?: boolean,
+			cancelReason?: string,
 		) => Promise<void>;
 	},
 	clientId: string | undefined,
@@ -647,7 +648,14 @@ export function handleInteractiveResponseMessage(
 			if (msg.owner) {
 				// 跨页作答：答案转交持有方会话（本页不持有该问卷）。
 				if (typeof service.answerElsewhereQuestion === "function" && clientId) {
-					void service.answerElsewhereQuestion(clientId, msg.owner, msg.id, msg.answers, msg.cancelled);
+					void service.answerElsewhereQuestion(
+						clientId,
+						msg.owner,
+						msg.id,
+						msg.answers,
+						msg.cancelled,
+						msg.cancelReason,
+					);
 				} else {
 					send({
 						type: "notice",
@@ -657,7 +665,7 @@ export function handleInteractiveResponseMessage(
 					});
 				}
 			} else {
-				void cs.answerQuestion?.(msg.id, msg.answers, msg.cancelled);
+				void cs.answerQuestion?.(msg.id, msg.answers, msg.cancelled, msg.cancelReason);
 			}
 			return true;
 		case "tool_approval_response":

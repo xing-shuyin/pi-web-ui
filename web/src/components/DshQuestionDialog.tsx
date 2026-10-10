@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
@@ -7,13 +7,14 @@ import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { hoverCapable } from "../tip-position";
 import { HoverDetail } from "./HoverDetail";
 import { Markdown } from "./Markdown";
+import { loadQuestionDraft, saveQuestionDraft, clearQuestionDraft } from "../question-draft";
 
 interface QuestionItem {
 	id: string;
 	question: string;
 	detail?: string;
 	header?: string;
-	options?: { label: string; description?: string; preview?: string }[];
+	options?: { label: string; description?: string; preview?: string; recommended?: boolean }[];
 	multiSelect?: boolean;
 	/** 级联依赖（Waterfall）：仅当指定 questionId 选中了特定值（未给 value 则表示只要已作答）时本题才展示；不满足则跳过。 */
 	dependsOn?: {
@@ -21,7 +22,7 @@ interface QuestionItem {
 		value?: string | string[];
 	};
 	/** 动态级联选项映射：根据前序依赖题的所选值动态提供候选选项列表。 */
-	optionsMap?: Record<string, { label: string; description?: string; preview?: string }[]>;
+	optionsMap?: Record<string, { label: string; description?: string; preview?: string; recommended?: boolean }[]>;
 }
 
 interface DshQuestionDialogProps {
@@ -55,29 +56,49 @@ interface DshQuestionDialogProps {
 export function DshQuestionDialog({ question, owner, conversationTitle }: DshQuestionDialogProps) {
 	const t = useT();
 	const convTitle = question.conversationTitle || conversationTitle;
-	const [selections, setSelections] = useState<Record<string, string[]>>({});
-	const [customs, setCustoms] = useState<Record<string, string>>({});
+	const [selections, setSelections] = useState<Record<string, string[]>>(() => {
+		const draft = loadQuestionDraft(question.id);
+		return draft?.selections ?? {};
+	});
+	const [customs, setCustoms] = useState<Record<string, string>>(() => {
+		const draft = loadQuestionDraft(question.id);
+		return draft?.customs ?? {};
+	});
 	const [collapsed, setCollapsed] = useState(false);
 	/** 输入法守卫：macOS 中文输入法下 Enter 是「上屏」而非「提交」（issue #560，与 #248 同源）。 */
 	const imeGuard = useImeCompositionGuard();
-	/** 向导当前步（question.questions 下标），每次新提问从第一题开始。 */
-	const [step, setStep] = useState(0);
+	/** 向导当前步（question.questions 下标），支持从草稿恢复。 */
+	const [step, setStep] = useState<number>(() => {
+		const draft = loadQuestionDraft(question.id);
+		return draft?.step ?? 0;
+	});
 	// P0-6：倒计时（秒），归零自动取消提问（服务端同样超时 reject）。
 	const [remainSec, setRemainSec] = useState<number>(() =>
 		question.deadline ? Math.max(0, Math.ceil((question.deadline - Date.now()) / 1000)) : -1,
 	);
+	/** 已结算标记：提交或取消后禁止 effect 再次回写草稿 */
+	const submittedRef = useRef(false);
 
 	useEffect(() => {
-		// 每个新提问重置本地状态。
-		setSelections({});
-		setCustoms({});
-		setStep(0);
+		submittedRef.current = false;
+		// 优先从草稿恢复，未找到草稿才重置本地状态。
+		const draft = loadQuestionDraft(question.id);
+		if (draft) {
+			setSelections(draft.selections);
+			setCustoms(draft.customs);
+			setStep(draft.step);
+		} else {
+			setSelections({});
+			setCustoms({});
+			setStep(0);
+		}
 		setCollapsed(false);
 		const remain = question.deadline ? Math.max(0, Math.ceil((question.deadline - Date.now()) / 1000)) : -1;
 		setRemainSec(remain);
 		// 审查 #9：挂载时已过期的提问立即取消 —— 下面的定时器分支（s > 0 才发）
 		// 永远不会触发，过期提问会一直挂着等用户手点或服务端超时。
 		if (question.deadline && remain <= 0) {
+			clearQuestionDraft(question.id);
 			appSend({
 				type: "question_answer",
 				id: question.id,
@@ -88,6 +109,12 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 		}
 	}, [question.id, question.deadline, owner]);
 
+	// 草稿自动暂存：作答状态变更时即时同步到持久化存储（切会话/刷新防丢）
+	useEffect(() => {
+		if (submittedRef.current) return;
+		saveQuestionDraft(question.id, { selections, customs, step });
+	}, [question.id, selections, customs, step]);
+
 	useEffect(() => {
 		if (!question.deadline) return;
 		const id = setInterval(() => {
@@ -95,6 +122,7 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 				const next = Math.max(0, Math.ceil((question.deadline! - Date.now()) / 1000));
 				if (next <= 0 && s > 0) {
 					// 归零 → 自动取消（服务端超时 reject 模型提问，对话继续）。
+					clearQuestionDraft(question.id);
 					appSend({
 						type: "question_answer",
 						id: question.id,
@@ -110,10 +138,22 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [question.id, question.deadline]);
 
-	/** 取消提问：✕ / Esc / 底部「取消」与自动取消共用同一出口。 */
-	const cancel = () => {
-		appSend({ type: "question_answer", id: question.id, answers: [], cancelled: true, ...(owner ? { owner } : {}) });
-	};
+	/** 取消提问：✕ / Esc / 底部「取消」/「驳回并附言」与自动取消共用同一出口。 */
+	const cancel = useCallback(
+		(reason?: string) => {
+			submittedRef.current = true;
+			clearQuestionDraft(question.id);
+			appSend({
+				type: "question_answer",
+				id: question.id,
+				answers: [],
+				cancelled: true,
+				...(reason?.trim() ? { cancelReason: reason.trim() } : {}),
+				...(owner ? { owner } : {}),
+			});
+		},
+		[question.id, owner],
+	);
 
 	// 审查 #12：Esc 改走 shortcut-stack 分层栈（与 Modal 同一调度）——
 	// 多层弹窗叠开时内层优先消费，不再裸 document 监听抢 Esc。
@@ -162,7 +202,7 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 							{convTitle}
 						</span>
 					)}
-					<button type="button" className="dialog-dismiss" title={t("cancel")} onClick={cancel}>
+					<button type="button" className="dialog-dismiss" title={t("cancel")} onClick={() => cancel()}>
 						✕
 					</button>
 				</div>
@@ -187,6 +227,8 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 
 	/** 把（可能刚更新、尚未落 state 的）选中结果连同全部题的答案一并提交。 */
 	const submitSelections = (sel: Record<string, string[]>) => {
+		submittedRef.current = true;
+		clearQuestionDraft(question.id);
 		const answers = question.questions.map((qq) => {
 			const selected = sel[qq.id] ?? [];
 			const custom = (customs[qq.id] ?? "").trim();
@@ -243,6 +285,56 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 
 	const questionPreview = (q.header || q.question).replace(/\s+/g, " ").trim();
 
+	// 驳回附言检测：当前题或任意题存在自定义输入时，支持带说明取消/驳回
+	const currentCustom = (customs[q.id] ?? "").trim();
+	const allCustoms = Object.values(customs)
+		.map((c) => c?.trim())
+		.filter(Boolean)
+		.join(";\n");
+	const hasRejectNote = currentCustom.length > 0 || allCustoms.length > 0;
+	const rejectReason = currentCustom || allCustoms;
+
+	// 全键盘导航：非输入状态下支持数字键 1-9 快捷点选、左右键切换题步、Enter 推进
+	useEffect(() => {
+		if (collapsed) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			const target = e.target as HTMLElement | null;
+			const isEditing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+			if (isEditing) return;
+
+			// 数字键 1-9：快速点选对应选项
+			if (e.key >= "1" && e.key <= "9") {
+				const idx = parseInt(e.key, 10) - 1;
+				if (idx < effectiveOptions.length) {
+					e.preventDefault();
+					onOptionClick(q.id, effectiveOptions[idx].label, !!q.multiSelect);
+					return;
+				}
+			}
+
+			// 方向键左右：切换步骤
+			if (e.key === "ArrowLeft" && currentStep > 0) {
+				e.preventDefault();
+				setStep(currentStep - 1);
+				return;
+			}
+			if (e.key === "ArrowRight" && currentStep < total - 1 && answered(q.id)) {
+				e.preventDefault();
+				setStep(currentStep + 1);
+				return;
+			}
+
+			// Enter 推进或提交
+			if (e.key === "Enter" && answered(q.id)) {
+				e.preventDefault();
+				onNext();
+			}
+		};
+
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [collapsed, effectiveOptions, q.id, q.multiSelect, currentStep, total, answered, onNext, onOptionClick]);
+
 	return (
 		<div className={`dialog-inline${collapsed ? " collapsed" : ""}`} data-dialog-kind="select">
 			<div className="dialog-head" onClick={collapsed ? () => setCollapsed(false) : undefined}>
@@ -278,10 +370,10 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 					<button
 						type="button"
 						className="dialog-dismiss"
-						title={t("cancel")}
+						title={hasRejectNote ? t("modelQuestionRejectWithNoteTip") : t("cancel")}
 						onClick={(e) => {
 							e.stopPropagation();
-							cancel();
+							cancel(hasRejectNote ? rejectReason : undefined);
 						}}
 					>
 						✕
@@ -290,6 +382,28 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 			</div>
 			{!collapsed && (
 				<>
+					{total > 1 && (
+						<div className="question-step-pills" role="tablist">
+							{visibleQuestions.map((qq, i) => {
+								const isCurrent = i === currentStep;
+								const isDone = answered(qq.id);
+								const pillLabel = qq.header || `${t("modelQuestion")} ${i + 1}`;
+								return (
+									<button
+										key={qq.id}
+										type="button"
+										className={`question-step-pill${isCurrent ? " active" : ""}${isDone ? " done" : ""}`}
+										onClick={() => setStep(i)}
+										title={pillLabel}
+										aria-selected={isCurrent}
+									>
+										<span className="question-step-pill-idx">{isDone && !isCurrent ? "✓" : i + 1}</span>
+										<span className="question-step-pill-label">{pillLabel}</span>
+									</button>
+								);
+							})}
+						</div>
+					)}
 					<div className="set-section" key={q.id}>
 						<div className="set-section-title">{q.header ?? `${t("modelQuestion")} ${currentStep + 1}`}</div>
 						<div className="question-head">
@@ -302,8 +416,10 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 						)}
 						{effectiveOptions.length > 0 && (
 							<div className="set-list">
-								{effectiveOptions.map((o) => {
+								{effectiveOptions.map((o, optIdx) => {
 									const active = (selections[q.id] ?? []).includes(o.label);
+									const isRecommended = o.recommended ?? (optIdx === 0 && effectiveOptions.length > 1);
+									const keyNum = optIdx < 9 ? optIdx + 1 : undefined;
 									return (
 										<QuestionOption
 											key={o.label}
@@ -311,6 +427,8 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 											description={o.description}
 											mark={q.multiSelect ? (active ? "☑ " : "☐ ") : active ? "● " : "○ "}
 											active={active}
+											keyNumber={keyNum}
+											recommended={isRecommended}
 											onPick={() => onOptionClick(q.id, o.label, !!q.multiSelect)}
 										/>
 									);
@@ -347,8 +465,13 @@ export function DshQuestionDialog({ question, owner, conversationTitle }: DshQue
 						/>
 					</div>
 					<div className="dialog-nav">
-						<button type="button" className="dialog-dismiss-inline" onClick={cancel}>
-							{t("cancel")}
+						<button
+							type="button"
+							className={`dialog-dismiss-inline${hasRejectNote ? " reject-note" : ""}`}
+							onClick={() => cancel(hasRejectNote ? rejectReason : undefined)}
+							title={hasRejectNote ? t("modelQuestionRejectWithNoteTip") : t("cancel")}
+						>
+							{hasRejectNote ? t("modelQuestionRejectWithNote") : t("cancel")}
 						</button>
 						<div className="dialog-nav-right">
 							<button
@@ -380,6 +503,8 @@ function QuestionOption({
 	description,
 	mark,
 	active,
+	keyNumber,
+	recommended,
 	onPick,
 }: {
 	label: string;
@@ -387,14 +512,23 @@ function QuestionOption({
 	/** 单选/多选的勾选标记（☑ ☐ ● ○）。 */
 	mark: string;
 	active: boolean;
+	keyNumber?: number;
+	recommended?: boolean;
 	onPick: () => void;
 }) {
 	const rowRef = useRef<HTMLButtonElement>(null);
+	const t = useT();
 	return (
 		<button type="button" ref={rowRef} className={`set-row question-option${active ? " active" : ""}`} onClick={onPick}>
 			<div className="set-row-name">
+				{keyNumber !== undefined && (
+					<span className="question-key-badge" title={t("keyShortcutTip", { key: keyNumber })}>
+						{keyNumber}
+					</span>
+				)}
 				<span className="question-mark">{mark}</span>
 				<Markdown text={label} rawHtml />
+				{recommended && <span className="question-recommended-badge">{t("recommended")}</span>}
 			</div>
 			{description && (
 				<>

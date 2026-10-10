@@ -84,6 +84,8 @@ export interface SettingsHost {
 	 *  （无需 reload；reload/建会话/换模型后由调用方重放，见
 	 *  agent-service applyCompactionOverrides，issue #229）。 */
 	applyCompactionOverrides: () => void;
+	/** 把 codemode 运行模式与内联预算即时注入各会话的 SettingsManager（无需 reload）。 */
+	applyCodemodeOverrides?: () => void;
 	/** 把统一工具开关即时应用到活动会话的 ActiveSet（无需 reload；
 	 *  reload/创建后由调用方重放，见 agent-service applyToolGating）。 */
 	applyToolGating: () => void;
@@ -373,6 +375,8 @@ export class SettingsService {
 				readDirEnabled: this.settings.readDirEnabled !== false,
 				bgAutoCleanupMin: normalizeBgCleanupMinutes(this.settings.bgAutoCleanupMin),
 				toolLazyLoading: this.settings.toolLazyLoading !== false,
+				codemodeMode: this.settings.codemodeMode ?? "on",
+				codemodeInlineBudget: this.settings.codemodeInlineBudget ?? 3000,
 				toolApprovalEnabled: this.settings.toolApprovalEnabled !== false,
 				approvalPolicy: this.host.getApprovalPolicy?.() ?? { allowAll: false, categories: [] },
 				approvalRules: this.approvalRules?.list() ?? [],
@@ -506,6 +510,10 @@ export class SettingsService {
 		bgAutoCleanupMin?: number;
 		/** 工具延迟加载开关（默认开）：只影响新会话与之后的门控重放。 */
 		toolLazyLoading?: boolean;
+		/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式）。 */
+		codemodeMode?: "on" | "only";
+		/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
+		codemodeInlineBudget?: number;
 		/** 工具执行审批总开关（默认开；纯运行开关，每次审批实时读取，无需 reload）。 */
 		toolApprovalEnabled?: boolean;
 		editSoftEnabled?: boolean;
@@ -650,6 +658,21 @@ export class SettingsService {
 		// 集合不会被反向清空（不想让在跑的对话凭空丢掉工具）。
 		if (partial.toolLazyLoading !== undefined) {
 			this.settings.toolLazyLoading = partial.toolLazyLoading !== false;
+		}
+		let codemodeChanged = false;
+		if (partial.codemodeMode !== undefined && partial.codemodeMode !== this.settings.codemodeMode) {
+			this.settings.codemodeMode = partial.codemodeMode;
+			codemodeChanged = true;
+		}
+		if (
+			partial.codemodeInlineBudget !== undefined &&
+			partial.codemodeInlineBudget !== this.settings.codemodeInlineBudget
+		) {
+			this.settings.codemodeInlineBudget = partial.codemodeInlineBudget;
+			codemodeChanged = true;
+		}
+		if (codemodeChanged) {
+			this.host.applyCodemodeOverrides?.();
 		}
 		// 工具执行审批总开关：审批入口每次实时读取（askApproval 顶部门禁），无需 reload。
 		if (partial.toolApprovalEnabled !== undefined) {

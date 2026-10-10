@@ -535,11 +535,19 @@ export default {
 			};
 		});
 
+		function forceAbortJob() {
+			job.phase = "cancelling";
+			jobCtrl?.abort(new Error("已取消（用户中止）"));
+			const timer = setTimeout(() => {
+				if (job.running) ssh.dropAll();
+			}, 300);
+			if (typeof timer.unref === "function") timer.unref();
+		}
+
 		// 停正在跑的同步（包括还在扫的那一段）。UI 的「停止」按钮和 AI 工具的 action=cancel 走这里。
 		route("POST", "/cancel", () => {
 			if (!job.running) return { cancelled: false, job: { ...job } };
-			job.phase = "cancelling";
-			jobCtrl?.abort(new Error("已取消（用户中止）"));
+			forceAbortJob();
 			return { cancelled: true, job: { ...job } };
 		});
 
@@ -591,7 +599,7 @@ export default {
 			const hit = [...conn.roots]
 				.sort((a, b) => b.remote.length - a.remote.length)
 				.find((r) => abs === r.remote || abs.startsWith(`${r.remote.replace(/\/+$/, "")}/`));
-			if (!hit) throw new Error(`「${abs}」不在任何同步根内（远端根 ${conn.remotePath}）`);
+			if (!hit) throw new Error(`「${abs}」不在任何同步根内（远端根 ${conn.remotePath}，无本地对应目录）`);
 			const rest = abs.slice(hit.remote.replace(/\/+$/, "").length).replace(/^\/+/, "");
 			return hit.local ? (rest ? `${hit.local}/${rest}` : hit.local) : rest;
 		}
@@ -645,6 +653,57 @@ export default {
 				plan: serializePlan(out.plan),
 				cancelled: Boolean(out.cancelled),
 			};
+		});
+
+		route("POST", "/ignore-toggle", async (req) => {
+			const rawPath = String(req.body?.path ?? "").trim();
+			const mode = req.body?.mode ?? "add";
+			const loaded = await load(req.body?.profile);
+			const conn = requireConn(loaded);
+			const pattern = rawPath.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+			if (!pattern) throw new Error("无法忽略根目录");
+
+			const current = [...(conn.ignore ?? [])];
+			const idx = current.indexOf(pattern);
+			const exists = idx >= 0;
+
+			let actionTaken = "";
+			if (mode === "remove") {
+				if (!exists) {
+					return { ok: true, pattern, action: "none", message: `「${pattern}」不在 SFTP 忽略列表中`, ignores: current };
+				}
+				current.splice(idx, 1);
+				actionTaken = "removed";
+			} else if (mode === "add") {
+				if (exists) {
+					return { ok: true, pattern, action: "none", message: `「${pattern}」已在 SFTP 忽略列表中`, ignores: current };
+				}
+				current.push(pattern);
+				actionTaken = "added";
+			} else {
+				if (exists) {
+					current.splice(idx, 1);
+					actionTaken = "removed";
+				} else {
+					current.push(pattern);
+					actionTaken = "added";
+				}
+			}
+
+			await upsertConnection(host.cwd, conn.name, { ignore: current }, { target: "base" });
+			planCache = null;
+
+			const msgZh =
+				actionTaken === "added" ? `已将「${pattern}」加入 SFTP 忽略列表` : `已将「${pattern}」从 SFTP 忽略列表中移除`;
+			const msgEn =
+				actionTaken === "added"
+					? `Added "${pattern}" to SFTP ignore list`
+					: `Removed "${pattern}" from SFTP ignore list`;
+			try {
+				host.notify?.("info", `☁ ${msgZh}`, `☁ ${msgEn}`);
+			} catch {}
+
+			return { ok: true, pattern, action: actionTaken, message: msgZh, ignores: current };
 		});
 
 		route("GET", "/remote", async (req) => {
@@ -887,8 +946,7 @@ export default {
 			async cancel() {
 				if (!job.running) return "当前没有正在跑的同步任务（没有需要停止的东西）。";
 				const what = job.kind === "plan" ? "扫描" : "同步";
-				job.phase = "cancelling";
-				jobCtrl?.abort(new Error("已取消（用户中止）"));
+				forceAbortJob();
 				return `已请求停止${what} —— 正在收尾：在传的文件会中断并清掉半成品，已传完的文件保留，垃圾桶批次可回滚。`;
 			},
 
