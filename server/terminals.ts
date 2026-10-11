@@ -1184,7 +1184,6 @@ export class TerminalManager {
 			this.queueOut(entry, data);
 		});
 		pty.onExit(({ exitCode }) => {
-			entry.exited = true;
 			if (this.terms.get(id) !== entry) return;
 			this.exit(id, exitCode);
 		});

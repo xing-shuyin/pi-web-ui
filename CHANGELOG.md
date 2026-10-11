@@ -10,6 +10,12 @@
 
 ## [Unreleased]
 
+## [0.103.1] — 2026-10-11
+
+### Fixed
+
+- **终端退出事件分发与冒烟测试就绪状态加固** —— 修复 `TerminalManager` 在监听到底层 PTY 进程退出（`pty.onExit`）时因提前置位 `entry.exited` 导致 `exit()` 方法首行守卫误拦截，使得 `terminal_exit` 事件无法分发至客户端的缺陷；加固 `terminal-smoke-test` 中子进程创建与命令回显的异步轮询等待，确保不同平台与慢速 CI 环境下测试结果确定性。
+
 ## [0.103.0] — 2026-10-11
 
 ### Added
@@ -1603,6 +1609,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 0.29.0（2026-08-23）：全局搜索弹窗（Ctrl+K）+ 消息列表惰性窗口化。
 
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.101.0...main
+[0.103.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.1
 [0.103.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.0
 [0.102.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.102.0
 [0.101.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.101.0

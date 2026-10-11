@@ -316,7 +316,7 @@ async function main() {
 	check("terminal_kill emits exit", exits.has(t1));
 
 	send({ type: "terminal_input", terminalId: t2, data: "exit\r" });
-	await sleep(600);
+	await waitFor(() => exits.has(t2), 3000);
 	check("shell exit emits terminal_exit", exits.has(t2));
 	// Exited PTYs leave the live map: the same name can be created again and
 	// accepts input, proving exited entries do not consume the terminal limit.
@@ -329,8 +329,8 @@ async function main() {
 	});
 	await sleep(500);
 	send({ type: "terminal_input", terminalId: t2, data: "echo REUSED_OK\r" });
-	await sleep(600);
-	check("exited terminal name can be reused", (outputs.get(t2) ?? "").includes("REUSED_OK"));
+	const reused = await waitFor(() => (outputs.get(t2) ?? "").includes("REUSED_OK"), 3000);
+	check("exited terminal name can be reused", reused);
 
 	// The command-list spawn path must enforce the same live-terminal cap as
 	// terminal_create; otherwise unique browser IDs could bypass the limit.
@@ -453,11 +453,10 @@ async function main() {
 		for (const id of ids147) {
 			send({ type: "terminal_create", terminalId: id, cwd: workdir, cols: 40, rows: 12 });
 		}
-		await sleep(1500);
+		await waitFor(() => (lastTermList?.filter((t) => t.running).length ?? 0) >= 16, 5000);
 		// 先证明确实打满：再建一个用户终端必须被拒（否则后面的豁免断言无意义）。
 		send({ type: "terminal_create", terminalId: "b147-over", cwd: workdir, cols: 40, rows: 12 });
-		await sleep(600);
-		const capped = notices.slice(fillNotices).some((n) => n.includes("终端数量已达上限"));
+		const capped = await waitFor(() => notices.slice(fillNotices).some((n) => n.includes("终端数量已达上限")), 3000);
 		check("issue #147 setup: user cap is full", capped);
 		if (capped) {
 			const before = notices.length;
@@ -494,28 +493,45 @@ async function main() {
 				"agent terminal_create/list works",
 				JSON.parse(listed.content[0].text).some((t) => t.id === "agent-smoke"),
 			);
-			const initial = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: 0, maxBytes: 2000 });
-			const initialRead = JSON.parse(initial.content[0].text);
-			await invoke("terminal_input", { terminalId: "agent-smoke", data: "printf TOOL_WAIT_OK\r" });
-			const waited = await invoke("terminal_read", {
-				terminalId: "agent-smoke",
-				cursor: initialRead.cursor,
-				waitMs: 2000,
-				maxBytes: 4000,
-			});
-			check(
-				"agent terminal_read waits for incremental output",
-				JSON.parse(waited.content[0].text).data.includes("TOOL_WAIT_OK"),
-			);
-			await invoke("terminal_input", { terminalId: "agent-smoke", data: "printf TOOL_KEY_OK" });
+			// 等待 shell 初始 prompt 就绪
+			let initialRead = { cursor: 0 };
+			for (let i = 0; i < 30; i++) {
+				const r = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: 0, maxBytes: 2000 });
+				initialRead = JSON.parse(r.content[0].text);
+				if (initialRead.cursor > 0) break;
+				await sleep(100);
+			}
+			await invoke("terminal_input", { terminalId: "agent-smoke", data: "echo TOOL_WAIT_OK\r" });
+			let waitedText = "";
+			let cur = initialRead.cursor;
+			for (let i = 0; i < 30 && !waitedText.includes("TOOL_WAIT_OK"); i++) {
+				const waited = await invoke("terminal_read", {
+					terminalId: "agent-smoke",
+					cursor: cur,
+					waitMs: 500,
+					maxBytes: 4000,
+				});
+				const parsed = JSON.parse(waited.content[0].text);
+				waitedText += parsed.data;
+				cur = parsed.cursor;
+			}
+			check("agent terminal_read waits for incremental output", waitedText.includes("TOOL_WAIT_OK"));
+
+			await invoke("terminal_input", { terminalId: "agent-smoke", data: "echo TOOL_KEY_OK" });
 			await invoke("terminal_key", { terminalId: "agent-smoke", key: "Enter" });
-			const keyed = await invoke("terminal_read", {
-				terminalId: "agent-smoke",
-				cursor: JSON.parse(waited.content[0].text).cursor,
-				waitMs: 2000,
-				maxBytes: 4000,
-			});
-			check("agent terminal_key sends named keys", JSON.parse(keyed.content[0].text).data.includes("TOOL_KEY_OK"));
+			let keyedText = "";
+			for (let i = 0; i < 30 && !keyedText.includes("TOOL_KEY_OK"); i++) {
+				const keyed = await invoke("terminal_read", {
+					terminalId: "agent-smoke",
+					cursor: cur,
+					waitMs: 500,
+					maxBytes: 4000,
+				});
+				const parsed = JSON.parse(keyed.content[0].text);
+				keyedText += parsed.data;
+				cur = parsed.cursor;
+			}
+			check("agent terminal_key sends named keys", keyedText.includes("TOOL_KEY_OK"));
 			await invoke("terminal_close", { terminalId: "agent-smoke" });
 			const afterClose = await invoke("terminal_list", {});
 			check("agent terminal_close releases the PTY", JSON.parse(afterClose.content[0].text).length === 0);
@@ -592,10 +608,19 @@ async function main() {
 	check("server still alive after bogus messages", true);
 
 	ws.close();
-	await sleep(300);
+	try {
+		server.kill();
+	} catch {}
+	await sleep(100);
 	console.log(`\n${passed} checks passed`);
 	process.exit(process.exitCode ?? 0);
 }
+
+process.on("uncaughtException", (err) => {
+	if (err && err.code === "EAGAIN") return;
+	console.error("UNCAUGHT EXCEPTION:", err);
+	process.exitCode = 1;
+});
 
 process.on("unhandledRejection", (err) => {
 	console.error("UNHANDLED REJECTION:", err);
@@ -612,6 +637,9 @@ main().catch((err) => {
 // process.kill(-pid) only works on posix (process groups don't exist on
 // win32) — freePort covers Windows via netstat+taskkill (see port-utils.mjs).
 process.on("exit", () => {
+	try {
+		server.kill();
+	} catch {}
 	try {
 		process.kill(-server.pid, "SIGKILL");
 	} catch {
