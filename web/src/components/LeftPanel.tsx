@@ -1059,7 +1059,11 @@ export const LeftPanel = memo(function LeftPanel({
 								{groupConversations(runningAll, cwd, activeConversationId).map((g) => (
 									<div key={g.cwd} className="panel-conv-group">
 										{!g.isCurrent && (
-											<div className="panel-conv-group-title" title={g.cwd}>
+											<div
+												className="panel-conv-group-title"
+												title={g.cwd}
+												onContextMenu={(e) => openProjectMenu(e, { path: g.cwd, lastUsed: 0 })}
+											>
 												{projectName(g.cwd)}
 											</div>
 										)}

@@ -316,6 +316,33 @@ export default {
 		};
 		const isLoggedIn = () => !!getToken();
 		const ilink = () => createIlink({ base: st.base, version: VERSION, getToken });
+		const getWorkspace = () => String(settings().workspace ?? "").trim();
+		const getHostCwd = () => {
+			try {
+				return String(host.cwd ?? "").trim();
+			} catch {
+				return "";
+			}
+		};
+		function setWorkspace(rawPath) {
+			const clean = String(rawPath ?? "")
+				.trim()
+				.slice(0, 1024);
+			cfg = { ...cfg, workspace: clean };
+			try {
+				const prev = store.get("settings", {});
+				const baseObj = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : {};
+				store.set("settings", { ...baseObj, workspace: clean });
+			} catch (err) {
+				host.log("save workspace failed:", err?.message ?? err);
+			}
+			host.notify(
+				"info",
+				clean ? `微信通道根目录已设为：${clean}` : "微信通道根目录已清空（跟随当前项目）",
+				clean ? `WeChat workspace root set to: ${clean}` : "WeChat workspace root cleared (follows current project)",
+			);
+			pushState();
+		}
 
 		// ---- 视图状态 ------------------------------------------------------
 		function snapshot() {
@@ -333,6 +360,8 @@ export default {
 				pendingPeers: [...st.pendingPeers],
 				inbox: st.inbox.slice(-30),
 				pendingRuns: st.pendingRuns.size,
+				workspace: getWorkspace(),
+				hostCwd: getHostCwd(),
 			};
 		}
 		function pushState(to) {
@@ -455,7 +484,7 @@ export default {
 			// issue #226：透传宿主 host.chat 四件套（工作空间/模型/思考强度/绑定网页会话）。
 			// issue #345：按微信用户 ID 隔离 accountId，避免全员共享同一伪客户端与无头会话。
 			const req = { text: `[${label}] ${text}`, accountId: peerAccountId(peer) };
-			const workspace = String(settings().workspace ?? "").trim();
+			const workspace = getWorkspace() || getHostCwd();
 			if (workspace) req.cwd = workspace;
 			const model = String(settings().model ?? "").trim();
 			if (model) req.model = model;
@@ -811,6 +840,10 @@ export default {
 						pushState();
 						break;
 					}
+					case "set_workspace": {
+						setWorkspace(msg.workspace);
+						break;
+					}
 					case "send": {
 						const peer = String(msg.peer ?? "").trim();
 						const text = String(msg.text ?? "").trim();
@@ -837,6 +870,13 @@ export default {
 				pushState(clientId);
 			} catch (err) {
 				host.log("attach push failed:", err?.message ?? err);
+			}
+		});
+		const offCwd = host.onCwdChange?.(() => {
+			try {
+				pushState();
+			} catch {
+				/* 忽略 */
 			}
 		});
 
@@ -868,6 +908,13 @@ export default {
 			offRun();
 			offMsg();
 			offAttach();
+			if (offCwd) {
+				try {
+					offCwd();
+				} catch {
+					/* 忽略 */
+				}
+			}
 			if (offSettings) {
 				try {
 					offSettings();

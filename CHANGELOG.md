@@ -10,6 +10,13 @@
 
 ## [Unreleased]
 
+## [0.103.2] — 2026-10-11
+
+### Added
+
+- **微信通道插件根目录联动与交互升级（plugins/wechat-ilink v0.3.0）** —— 支持微信通道与当前工作区根目录联动，扫码与配对视图优化。
+- **左侧栏运行中会话项目分组右键菜单** —— 左栏非当前项目的运行中会话分组标题支持右键调出项目操作菜单（以项目打开、移除等）。
+
 ## [0.103.1] — 2026-10-11
 
 ### Fixed
@@ -1609,6 +1616,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 0.29.0（2026-08-23）：全局搜索弹窗（Ctrl+K）+ 消息列表惰性窗口化。
 
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.101.0...main
+[0.103.2]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.2
 [0.103.1]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.1
 [0.103.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.0
 [0.102.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.102.0
