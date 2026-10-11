@@ -14,6 +14,11 @@ import {
 import type { ServerLang } from "./i18n.js";
 import { applyHeadTail } from "./terminals.js";
 import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_SNIPPET } from "./tool-prompts.js";
+import {
+	getGlobalRemoteSshService,
+	isRemoteWorkspaceUri,
+	restoreWorkspaceUriFromSessionDir,
+} from "./remote-ssh-service.js";
 
 /**
  * Killable bash tool: wraps the SDK bash tool (native process spawn, NO terminal).
@@ -37,9 +42,27 @@ export function makeKillableBashTool(
 				kills.add(ac);
 				try {
 					const signals = [opts.signal, ac.signal].filter((s): s is AbortSignal => s !== undefined);
+					const combinedSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+					const effCwd = restoreWorkspaceUriFromSessionDir(c || cwd);
+					if (isRemoteWorkspaceUri(effCwd)) {
+						const sshSvc = getGlobalRemoteSshService();
+						if (!sshSvc) {
+							throw new Error("Remote SSH service is not initialized");
+						}
+						const timeoutMs =
+							opts.timeout !== undefined && Number.isFinite(opts.timeout) && opts.timeout > 0
+								? opts.timeout * 1000
+								: undefined;
+						const res = await sshSvc.execInWorkspace(effCwd, command, {
+							signal: combinedSignal,
+							timeoutMs,
+							onData: opts.onData,
+						});
+						return { exitCode: res.exitCode };
+					}
 					return await base.exec(command, c, {
 						...opts,
-						signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],
+						signal: combinedSignal,
 					});
 				} finally {
 					kills.delete(ac);

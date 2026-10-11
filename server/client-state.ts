@@ -590,8 +590,12 @@ export interface ClientState {
 	lastActive?: number;
 }
 
-/** 跨平台（尤其是 Windows）路径归一化键：统一转绝对路径，并在 Windows 下转小写以消除大小写与正反斜杠差异。 */
+/** 跨平台（尤其是 Windows）路径归一化键：统一转绝对路径，并在 Windows 下转小写以消除大小写与正反斜杠差异。
+ *  对于 ssh:// 格式的远程工作区 URI 保持原样不走路径解析。 */
 export function normalizePathKey(p: string): string {
+	if (p.startsWith("ssh://")) {
+		return p;
+	}
 	try {
 		const resolved = resolve(p);
 		return process.platform === "win32" ? resolved.toLowerCase() : resolved;
@@ -874,8 +878,12 @@ export class ClientStateStore {
 	}
 
 	/** 单条路径的存活性探测（issue #441）：异步 access，绝不阻塞事件循环。
+	 *  远程工作区 URI (ssh://) 始终判定存活，避免被本地 fs.access 过滤掉。
 	 *  独立成 protected 方法便于单测用子类覆写做计数探针。 */
 	protected async pathExists(path: string): Promise<boolean> {
+		if (path.startsWith("ssh://")) {
+			return true;
+		}
 		return fsPromises.access(path).then(
 			() => true,
 			() => false,

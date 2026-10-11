@@ -41,7 +41,10 @@ import {
 	createBashToolDefinition,
 	createCodemodeExtension,
 	createEditToolDefinition,
+	createFindToolDefinition,
+	createGrepToolDefinition,
 	createLocalBashOperations,
+	createLsToolDefinition,
 	createToolSearchExtension,
 	createWriteToolDefinition,
 	getAgentDir,
@@ -124,6 +127,17 @@ import { MarkerService } from "./marker-service.js";
 import { SlashCommandsService, parseSlash } from "./slash-commands.js";
 import { ModelAdminService } from "./model-admin.js";
 import { FilesService, MACHINE_ROOT, desktopDirWire, workspacePath } from "./files-service.js";
+import {
+	buildRemoteWorkspacePersona,
+	createRemoteSdkOperations,
+	formatCwdForPrompt,
+	getGlobalRemoteSshService,
+	isRemoteWorkspaceUri,
+	RemoteSshService,
+	resolveWorkspaceSessionDir,
+	restoreWorkspaceUriFromSessionDir,
+	setGlobalRemoteSshService,
+} from "./remote-ssh-service.js";
 import {
 	DEFAULT_TOOL_WATCHDOG_TIMEOUT_MS,
 	effectiveToolWatchdogMs,
@@ -1039,10 +1053,11 @@ export class ClientSession {
 		const spawnerSession = spawner?.session ?? this.session;
 		const baseCwd = spawner?.cwd ?? this.cwd;
 		// 相对 cwd 按派发者所在目录解析：直接透传会相对 server 进程 cwd 落到别处。
-		const resolvedCwd = cwd ? resolve(baseCwd, cwd) : baseCwd;
+		const resolvedCwd = isRemoteWorkspaceUri(baseCwd) ? baseCwd : cwd ? resolve(baseCwd, cwd) : baseCwd;
+		const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, resolvedCwd);
 		const conversationId = persist ? `conv-${randomUUID().slice(0, 8)}` : `sa-${randomUUID().slice(0, 8)}`;
 		const terminals = this.makeTerminalManager(conversationId, resolvedCwd);
-		const sessionManager = persist ? SessionManager.create(resolvedCwd) : SessionManager.inMemory(resolvedCwd);
+		const sessionManager = persist ? SessionManager.create(sessionBaseDir) : SessionManager.inMemory(sessionBaseDir);
 		if (!persist) {
 			// 为内存子代理提供隔离的临时运行目录（供 SoL-Pi 等依赖 getSessionDir 的扩展正常放置缓存），
 			// 但保持 persist = false（不写 .jsonl 对话文件、不污染历史记录）
@@ -1053,11 +1068,12 @@ export class ClientSession {
 			} catch {}
 		}
 		const runtime = await createAgentSessionRuntime(this.makeRuntimeFactory(terminals, apply, conversationId), {
-			cwd: resolvedCwd,
+			cwd: sessionBaseDir,
 			agentDir: this.agentDir,
 			sessionManager,
 		});
 		const conv = this.makeConversation(runtime, conversationId, terminals);
+		conv.cwd = resolvedCwd;
 		conv.isSubagent = !persist;
 		// 父对话 = 真正派发它的会话（按会话归属的 host 包装填入）。直接用 active
 		// 会错：后台对话运行时用户可能正看着别的项目对话，孩子会被记到无关
@@ -1610,8 +1626,10 @@ export class ClientSession {
 		this.noteSkillCatalogDigest(src.skills);
 		const showSkills = presetShowsSkillCatalog(preset);
 		const effectiveSkills = showSkills ? this.fillSkillContents(src.skills) : [];
+		const realCwd = restoreWorkspaceUriFromSessionDir(src.cwd);
+		const isRemote = isRemoteWorkspaceUri(realCwd);
 		return {
-			cwd: src.cwd,
+			cwd: formatCwdForPrompt(realCwd),
 			systemPromptFile: this.lastBaseSystemPrompt || undefined,
 			builtinSoul: BUILTIN_SOUL,
 			selectedTools: src.selectedTools,
@@ -1624,7 +1642,11 @@ export class ClientSession {
 			piDocs: PI_DOC_PATHS.docs,
 			piExamples: PI_DOC_PATHS.examples,
 			appendFiles: this.lastSdkAppendFiles,
-			windowsPersona: process.platform === "win32" ? WINDOWS_PERSONA : "",
+			windowsPersona: isRemote
+				? buildRemoteWorkspacePersona(realCwd)
+				: process.platform === "win32"
+					? WINDOWS_PERSONA
+					: "",
 			terminalGuidance: isTerminalGuidanceOn(effectiveDisabledAgentTools(this.settingsSvc.current), preset)
 				? TERMINAL_TOOLS_GUIDANCE
 				: "",
@@ -2460,6 +2482,10 @@ export class ClientSession {
 		const agentDir = process.env.PI_CODING_AGENT_DIR ?? getAgentDir();
 
 		const cs = new ClientSession(clientId, cwd, agentDir, stateStore);
+		if (!getGlobalRemoteSshService()) {
+			setGlobalRemoteSshService(new RemoteSshService(stateStore.dataDir));
+		}
+		const sessionBaseDir = resolveWorkspaceSessionDir(stateStore.dataDir, cwd);
 		const conversationId = cs.nextConversationId();
 		const terminals = cs.makeTerminalManager(conversationId, cwd);
 		// Resume the most recent session for this project — the SDK default
@@ -2469,14 +2495,14 @@ export class ClientSession {
 		// issue #235：坏转录（重复压缩标记成环）修一次再试，否则整项目首屏
 		// "Failed to initialize session"。
 		const opened = await cs.openManagerAndRuntime(
-			() => (opts?.blank ? SessionManager.create(cwd) : SessionManager.continueRecent(cwd)),
+			() => (opts?.blank ? SessionManager.create(sessionBaseDir) : SessionManager.continueRecent(sessionBaseDir)),
 			(m) =>
 				createAgentSessionRuntime(cs.makeRuntimeFactory(terminals, undefined, conversationId), {
-					cwd,
+					cwd: sessionBaseDir,
 					agentDir,
 					sessionManager: m,
 				}),
-			async () => (await SessionManager.list(cwd))[0]?.path,
+			async () => (await SessionManager.list(sessionBaseDir))[0]?.path,
 		);
 		const runtime = opened.runtime;
 		if (opened.repair) {
@@ -2486,6 +2512,7 @@ export class ClientSession {
 		// ModelRuntime that every later conversation reuses.
 		cs.sharedModelRuntime = runtime.services.modelRuntime;
 		const conv = cs.makeConversation(runtime, conversationId, terminals);
+		conv.cwd = cwd;
 		cs.convs.set(conv.id, conv);
 		cs.activeId = conv.id;
 		for (const d of runtime.diagnostics) {
@@ -2657,7 +2684,12 @@ export class ClientSession {
 						if (this.delegateModeOf(ownerId) && !this.planModeOf(ownerId)) {
 							out.push(DELEGATION_SYSTEM_PROMPT);
 						}
-						if (process.platform === "win32") {
+						const realCwd = restoreWorkspaceUriFromSessionDir(effectiveCwd);
+						if (isRemoteWorkspaceUri(realCwd)) {
+							// 远程 SSH 工作区：明确告知 AI 当前处于远程主机以及所有工具已透明桥接至远端，
+							// 绝不注入本地 WINDOWS_PERSONA 以免误导模型以为在本地 Windows 环境。
+							out.push(buildRemoteWorkspacePersona(realCwd));
+						} else if (process.platform === "win32") {
 							// Windows 专属 persona：bash 工具跑 Git Bash 且无默认超时、终端
 							// 是交互式 TTY——注入约束避免 heredoc/交互/长驻命令挂死整个会话；
 							// GBK 老中文文件让模型改用终端按正确编码读（iconv/chcp/Get-Content）。
@@ -2796,8 +2828,11 @@ export class ClientSession {
 												skills?: { name: string; description?: string; filePath?: string }[];
 										  }
 										| undefined;
+									const rawCwdForPrompt =
+										typeof opts?.cwd === "string" ? opts.cwd : (conv?.cwd ?? effectiveCwd ?? this.cwd);
+									const realCwdForPrompt = restoreWorkspaceUriFromSessionDir(rawCwdForPrompt);
 									const rendered = this.renderMainCompose({
-										cwd: typeof opts?.cwd === "string" ? opts.cwd : (conv?.cwd ?? effectiveCwd ?? this.cwd),
+										cwd: realCwdForPrompt,
 										selectedTools: baseNames.length > 0 ? baseNames : (opts?.selectedTools ?? []),
 										toolSnippets: activeSnippets,
 										toolSignatures: activeSignatures,
@@ -2811,8 +2846,20 @@ export class ClientSession {
 										})),
 										preset: currentPreset,
 									});
-									// 不自定义时 rendered 为 undefined：不返回提示词，前面扩展的改动原样保留。
-									return rendered ? { systemPrompt: rewrap(rendered) } : undefined;
+									if (rendered) {
+										return { systemPrompt: rewrap(rendered) };
+									}
+									// 未自定义模板但处于远程工作区时，将 SDK 默认提示词里的本地缓存目录替换为远程真实目录
+									if (isRemoteWorkspaceUri(realCwdForPrompt)) {
+										const patchedCore = core.replace(
+											/Current working directory:\s*[^\r\n]+/,
+											`Current working directory: ${formatCwdForPrompt(realCwdForPrompt)}`,
+										);
+										if (patchedCore !== core) {
+											return { systemPrompt: rewrap(patchedCore) };
+										}
+									}
+									return undefined;
 								});
 							},
 						},
@@ -3139,7 +3186,7 @@ export class ClientSession {
 			isSubagent: false,
 			runtime,
 			session: runtime.session,
-			cwd: runtime.cwd,
+			cwd: restoreWorkspaceUriFromSessionDir(runtime.cwd),
 			createdAt: Date.now(),
 			agentPreset: this.settingsSvc.current.defaultAgentPreset ?? "standard",
 			presetLocked: false,
@@ -4805,6 +4852,18 @@ export class ClientSession {
 	/** Resolve a browser-bridged dialog (select/confirm/input) for this session. */
 	resolveDialog(id: number, value: string | boolean | null): void {
 		this.webUi.resolveDialog(id, value);
+	}
+
+	handleTuiOverlayInput(id: number, data: string): void {
+		this.webUi.handleTuiOverlayInput(id, data);
+	}
+
+	handleTuiOverlayResize(id: number, cols: number, rows: number): void {
+		this.webUi.handleTuiOverlayResize(id, cols, rows);
+	}
+
+	handleTuiOverlayCancel(id: number): void {
+		this.webUi.handleTuiOverlayCancel(id);
 	}
 
 	// -----------------------------------------------------------------------
@@ -7008,7 +7067,8 @@ export class ClientSession {
 					base,
 				),
 			);
-		return [
+		const remoteOps = createRemoteSdkOperations(cwd);
+		const specs: ToolOverrideSpec[] = [
 			{
 				name: "read",
 				// 没有扩展 read：完整覆盖（内置基底 + 英文描述 + file_path 别名）。
@@ -7024,13 +7084,39 @@ export class ClientSession {
 				// 参数 schema / guidelines / 执行体；有扩展 edit 时（composeWith）一律不动它的文案。
 				fallback: () =>
 					composeEdit({
-						...createEditToolDefinition(cwd),
+						...createEditToolDefinition(cwd, remoteOps ? { operations: remoteOps.edit } : undefined),
 						description: EDIT_DESCRIPTION,
 						promptGuidelines: EDIT_GUIDELINES,
 					} as unknown as AnyToolDefinition),
 				composeWith: (base) => composeEdit(base),
 			},
 		];
+		if (remoteOps) {
+			specs.push(
+				{
+					name: "ls",
+					fallback: () => createLsToolDefinition(cwd, { operations: remoteOps.ls }) as unknown as AnyToolDefinition,
+				},
+				{
+					name: "find",
+					fallback: () => createFindToolDefinition(cwd, { operations: remoteOps.find }) as unknown as AnyToolDefinition,
+				},
+				{
+					name: "grep",
+					fallback: () => {
+						const baseGrep = createGrepToolDefinition(cwd);
+						return {
+							...baseGrep,
+							execute: async (_id: string, params: any) => {
+								const text = await remoteOps.grepExecute(params ?? {});
+								return { content: [{ type: "text", text }], details: undefined };
+							},
+						} as unknown as AnyToolDefinition;
+					},
+				},
+			);
+		}
+		return specs;
 	}
 
 	/** 统一工具门控（tool_manage 唯一落点）：按 disabledAgentTools 把目录内工具
@@ -8696,18 +8782,19 @@ export class ClientSession {
 			// #280 & #335：转录链损坏时修一次再试（见 openManagerAndRuntime）。
 			// 严禁在 ownFile 不存在时回退到 continueRecent(conv.cwd) 或按 mtime list 历史文件，
 			// 否则会直接接错并顶替同项目的其它历史会话，污染别人的转录记录。
+			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, conv.cwd);
 			const opened = await this.openManagerAndRuntime(
 				() => {
 					if (ownFile && existsSync(ownFile)) {
 						return SessionManager.open(ownFile);
 					}
-					return conv.isEphemeral ? SessionManager.inMemory(conv.cwd) : SessionManager.create(conv.cwd);
+					return conv.isEphemeral ? SessionManager.inMemory(sessionBaseDir) : SessionManager.create(sessionBaseDir);
 				},
 				(m) =>
 					// 子代理带模板时按原模板重建（conv.subagentTemplate 是派发时工厂
 					// 用的同一快照）；普通对话 undefined，行为不变。
 					createAgentSessionRuntime(this.makeRuntimeFactory(conv.terminals, conv.subagentTemplate, conv.id), {
-						cwd: conv.cwd,
+						cwd: sessionBaseDir,
 						agentDir: this.agentDir,
 						sessionManager: m,
 					}),
@@ -8839,9 +8926,10 @@ export class ClientSession {
 		try {
 			const conversationId = this.nextConversationId();
 			const terminals = this.makeTerminalManager(conversationId, this.cwd);
+			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, this.cwd);
 			let sessionManager: SessionManager;
 			if (ephemeral) {
-				sessionManager = SessionManager.inMemory(this.cwd);
+				sessionManager = SessionManager.inMemory(sessionBaseDir);
 				// 为无痕临时会话提供隔离的临时运行目录（供 SoL-Pi 等依赖 getSessionDir 的扩展正常放置缓存），
 				// 但保持 persist = false（不写 .jsonl 对话文件、不污染历史记录）
 				const ephemeralDir = join(this.agentDir, "ephemeral-sessions", conversationId);
@@ -8850,17 +8938,18 @@ export class ClientSession {
 					(sessionManager as unknown as { sessionDir: string }).sessionDir = ephemeralDir;
 				} catch {}
 			} else {
-				sessionManager = SessionManager.create(this.cwd);
+				sessionManager = SessionManager.create(sessionBaseDir);
 			}
 			const runtime = await createAgentSessionRuntime(
 				this.makeRuntimeFactory(terminals, undefined, conversationId, prevModel ?? undefined, _preset),
 				{
-					cwd: this.cwd,
+					cwd: sessionBaseDir,
 					agentDir: this.agentDir,
 					sessionManager,
 				},
 			);
 			const conv = this.makeConversation(runtime, conversationId, terminals);
+			conv.cwd = this.cwd;
 			if (ephemeral) conv.isEphemeral = true;
 			if (_preset) {
 				const hit = PI_AGENT_PRESETS.find((p) => p.id === _preset);
@@ -9916,11 +10005,12 @@ export class ClientSession {
 		const inFlight = ClientSession.sessionInfosInFlight.get(cwdKey);
 		if (inFlight) return inFlight;
 
+		const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, this.cwd);
 		const run = (async (): Promise<SessionInfo[]> => {
 			try {
 				const sessionDir = piSessionsRoot()
 					? resolve(piSessionsRoot()!)
-					: SessionManager.create(this.cwd).getSessionDir();
+					: SessionManager.create(sessionBaseDir).getSessionDir();
 				if (!existsSync(sessionDir)) return [];
 
 				const dirEntries = await fsPromises.readdir(sessionDir);
@@ -9963,23 +10053,18 @@ export class ClientSession {
 				);
 
 				const validInfos = results.filter((info): info is SessionInfo => info !== null);
-				// issue #438：扁平布局（PI_CODING_AGENT_SESSION_DIR）下根目录顶层直接是**所有项目**
-				// 共享的 .jsonl，所属 cwd 是文件内字段；不过滤的话其他项目的会话会混进本项目
-				// 「历史会话」列表，点开即把整个工作区切走。与 SessionManager.list(cwd, ...) 的
-				// fallback 及 discoverRecentProjectsFromDisk 同口径：normalizePathKey（Windows
-				// 大小写/斜杠归一）。空 cwd 的损坏文件须排除——normalizePathKey("") 会 resolve 到
-				// process.cwd()，恰好等于本项目时会把垃圾文件误收进来。
-				const ownInfos = validInfos.filter((info) => info.cwd !== "" && normalizePathKey(info.cwd) === cwdKey);
-				// 200 名额只在 cwd 过滤**之后**分配：扁平布局下若先截断，本项目会话可能被
-				// 其他项目的文件挤出列表。截断仍按上面的 mtime 降序序取（Promise.all 保序），
-				// 与原有选集口径一致；非扁平布局每-cwd 子目录内文件全属本项目，过滤幂等。
+				const baseDirKey = normalizePathKey(sessionBaseDir);
+				const ownInfos = validInfos.filter(
+					(info) =>
+						info.cwd !== "" && (normalizePathKey(info.cwd) === cwdKey || normalizePathKey(info.cwd) === baseDirKey),
+				);
 				const candidates = ownInfos.slice(0, 200);
 				candidates.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 				ClientSession.sessionInfosCache.set(cwdKey, { infos: candidates, at: Date.now() });
 				return candidates;
 			} catch {
 				try {
-					const fallback = await SessionManager.list(this.cwd, piSessionsRoot());
+					const fallback = await SessionManager.list(sessionBaseDir, piSessionsRoot());
 					// 统一口径：列表缓存一律不带转录全文（issue #440），搜索按需另行加载
 					const stripped = fallback.map((s) => ({ ...s, allMessagesText: "" }));
 					ClientSession.sessionInfosCache.set(cwdKey, { infos: stripped, at: Date.now() });
@@ -10404,7 +10489,8 @@ export class ClientSession {
 		const wasEphemeral = !!conv.isEphemeral;
 		try {
 			const cwd = conv.cwd || this.cwd;
-			const sampleSm = SessionManager.create(cwd);
+			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, cwd);
+			const sampleSm = SessionManager.create(sessionBaseDir);
 			const sessionDir = sampleSm.getSessionDir();
 			if (!existsSync(sessionDir)) {
 				mkdirSync(sessionDir, { recursive: true });
@@ -11000,13 +11086,15 @@ export class ClientSession {
 			this.repairTranscriptFileBeforeOpen(targetPath);
 			const sessionManager = SessionManager.open(targetPath);
 			calibrateSessionLeaf(sessionManager);
-			const targetCwd = sessionManager.getCwd();
+			const rawSessionCwd = sessionManager.getCwd();
+			const targetCwd = restoreWorkspaceUriFromSessionDir(rawSessionCwd);
+			const runtimeCwd = resolveWorkspaceSessionDir(this.stateStore?.dataDir, targetCwd);
 			const conversationId = this.nextConversationId();
 			openedTerminals = this.makeTerminalManager(conversationId, targetCwd);
 			openedRuntime = await createAgentSessionRuntime(
 				this.makeRuntimeFactory(openedTerminals, undefined, conversationId),
 				{
-					cwd: targetCwd,
+					cwd: runtimeCwd,
 					agentDir: this.agentDir,
 					sessionManager,
 				},
@@ -11161,12 +11249,13 @@ export class ClientSession {
 			const conversationId = this.nextConversationId();
 			const terminals = this.makeTerminalManager(conversationId, targetConv.cwd);
 
+			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, targetConv.cwd);
 			let forkedManager: SessionManager;
 			if (isPersisted) {
 				const sessionDir = targetConv.session.sessionManager.getSessionDir();
 				let forkedSessionPath: string | undefined;
 				if (!targetLeafId) {
-					const sm = SessionManager.create(targetConv.cwd, sessionDir);
+					const sm = SessionManager.create(sessionBaseDir, sessionDir);
 					sm.newSession({ parentSession: currentSessionFile });
 					forkedSessionPath = sm.getSessionFile();
 				} else {
@@ -11179,7 +11268,7 @@ export class ClientSession {
 				forkedManager = SessionManager.open(forkedSessionPath, sessionDir);
 				calibrateSessionLeaf(forkedManager);
 			} else {
-				forkedManager = SessionManager.create(targetConv.cwd);
+				forkedManager = SessionManager.create(sessionBaseDir);
 				if (targetLeafId) {
 					const branch = targetConv.session.sessionManager.getBranch(targetLeafId);
 					for (const e of branch) {
@@ -11199,7 +11288,7 @@ export class ClientSession {
 			const runtime = await createAgentSessionRuntime(
 				this.makeRuntimeFactory(terminals, undefined, conversationId, prevModel ?? undefined),
 				{
-					cwd: targetConv.cwd,
+					cwd: sessionBaseDir,
 					agentDir: this.agentDir,
 					sessionManager: forkedManager,
 				},
@@ -11787,12 +11876,23 @@ export class ClientSession {
 				});
 				return;
 			}
-			// Windows 裸盘符（"C:"）与相对路径基准的处理收敛到 resolveCwdTarget
-			// （纯函数，含 win32/posix 差异说明与单测）。
-			const abs = resolveCwdTarget(trimmed, this.cwd);
-			const st = await fs.stat(abs);
-			if (!st.isDirectory()) {
-				throw new Error("路径不是目录");
+			const isRemote = isRemoteWorkspaceUri(trimmed);
+			let abs: string;
+			let sessionBaseDir: string;
+			if (isRemote) {
+				abs = trimmed;
+				// 远程工作区在本地数据目录下分配隔离的物理会话存储目录，保证所有对话历史、记录 100% 存在本地
+				sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, abs);
+			} else {
+				// Windows 裸盘符（"C:"）与相对路径基准的处理收敛到 resolveCwdTarget
+				// （纯函数，含 win32/posix 差异说明与单测）。
+				const baseForResolve = isRemoteWorkspaceUri(this.cwd) ? homedir() : this.cwd;
+				abs = resolveCwdTarget(trimmed, baseForResolve);
+				const st = await fs.stat(abs);
+				if (!st.isDirectory()) {
+					throw new Error("路径不是目录");
+				}
+				sessionBaseDir = abs;
 			}
 			if (abs === this.cwd) {
 				this.emit({
@@ -11844,7 +11944,7 @@ export class ClientSession {
 				// 别处无可见行时不扫目录（首访切项目的常见情形零开销）。
 				if ((this.listExternalRunning?.() ?? []).length > 0) {
 					try {
-						const infos = await SessionManager.list(abs, piSessionsRoot());
+						const infos = await SessionManager.list(sessionBaseDir, piSessionsRoot());
 						const recent = infos[0]?.path ? resolve(infos[0].path) : undefined;
 						const owner = recent ? this.findSessionOwner?.(recent) : null;
 						if (owner) {
@@ -11859,20 +11959,21 @@ export class ClientSession {
 				// #235：manager＋runtime 一起建，转录链损坏时修最近文件后重试一次
 				// （见 openManagerAndRuntime）。blank（别处在跑）是全新空会话，不会坏。
 				const opened = await this.openManagerAndRuntime(
-					() => (resumeSkipped ? SessionManager.create(abs) : SessionManager.continueRecent(abs)),
+					() => (resumeSkipped ? SessionManager.create(sessionBaseDir) : SessionManager.continueRecent(sessionBaseDir)),
 					(m) =>
 						createAgentSessionRuntime(this.makeRuntimeFactory(terminals, undefined, conversationId), {
-							cwd: abs,
+							cwd: sessionBaseDir,
 							agentDir: this.agentDir,
 							sessionManager: m,
 						}),
-					async () => (await SessionManager.list(abs))[0]?.path,
+					async () => (await SessionManager.list(sessionBaseDir))[0]?.path,
 				);
 				const newRuntime = opened.runtime;
 				if (opened.repair) {
 					for (const n of this.transcriptRepairNotices(opened.repair)) this.emit(n);
 				}
 				const conv = this.makeConversation(newRuntime, conversationId, terminals);
+				conv.cwd = abs;
 				this.convs.set(conv.id, conv);
 				this.activeId = conv.id;
 				if (displaced) this.removeConversation(displaced.id);

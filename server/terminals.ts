@@ -28,6 +28,7 @@ import { Type } from "typebox";
 import type { CommandDef, ServerMessage, TerminalInfo } from "./protocol.js";
 import { BASH_DESCRIPTION, BASH_PARAMETERS, BASH_PROMPT_GUIDELINES, BASH_PROMPT_SNIPPET } from "./tool-prompts.js";
 import { pick, type ServerLang } from "./i18n.js";
+import { getGlobalRemoteSshService, isRemoteWorkspaceUri, resolveWorkspaceSessionDir } from "./remote-ssh-service.js";
 
 // ---------------------------------------------------------------------------
 // .pi/commands.json
@@ -39,6 +40,10 @@ export interface CommandsFile {
 
 /** Location of the command list for a project: <workspaceRoot>/.pi/commands.json */
 export function commandsFilePath(workspaceRoot: string): string {
+	if (isRemoteWorkspaceUri(workspaceRoot)) {
+		const dataDir = process.env.PI_WEB_DATA_DIR || join(homedir(), ".pi-web");
+		return join(resolveWorkspaceSessionDir(dataDir, workspaceRoot), ".pi", "commands.json");
+	}
 	return join(workspaceRoot, ".pi", "commands.json");
 }
 
@@ -52,7 +57,8 @@ export function expandPwd(input: string, pwd: string): string {
 
 /** Resolve a command's directory: default to the session cwd, expand ${pwd}/~, resolve relative paths. */
 export function resolveCommandCwd(cwd: string | undefined, pwd: string): string {
-	if (!cwd || cwd.trim() === "") return pwd;
+	if (!cwd || cwd.trim() === "" || cwd.trim() === "${pwd}") return pwd;
+	if (isRemoteWorkspaceUri(pwd)) return pwd;
 	const expanded = expandPwd(cwd.trim(), pwd);
 	return isAbsolute(expanded) ? expanded : resolve(pwd, expanded);
 }
@@ -1064,30 +1070,66 @@ export class TerminalManager {
 		locale?: string,
 	): boolean {
 		let abs = cwd;
-		if (!abs) abs = homedir();
-		else if (!isAbsolute(abs)) abs = resolve(abs);
-		try {
-			if (!existsSync(abs) || !statSync(abs).isDirectory()) {
-				this.fail(id, `目录不存在或不是目录：${abs}`, `Directory does not exist or is not a directory: ${abs}`);
+		let shell: string;
+		let args: string[];
+		const targetUri =
+			cwd && cwd.startsWith("ssh://")
+				? cwd
+				: this.workspaceRoot && this.workspaceRoot.startsWith("ssh://")
+					? this.workspaceRoot
+					: null;
+
+		if (targetUri) {
+			const match = /^ssh:\/\/([^@]+)@([^:]+):(\d+)(\/.*)$/.exec(targetUri);
+			if (match) {
+				const username = match[1];
+				const host = match[2];
+				const port = match[3];
+				const remotePath = match[4];
+				abs = homedir();
+				shell = process.platform === "win32" ? "ssh.exe" : "ssh";
+				args = ["-t", "-p", port, `${username}@${host}`, `cd "${remotePath}" && exec bash -l || exec sh`];
+			} else {
+				if (!abs) abs = homedir();
+				else if (!isAbsolute(abs)) abs = resolve(abs);
+				const s = forceBash ? resolveBashShell() : resolveShell();
+				shell = s.shell;
+				args = s.args;
+			}
+		} else {
+			if (!abs) abs = homedir();
+			else if (!isAbsolute(abs)) abs = resolve(abs);
+			try {
+				if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+					this.fail(id, `目录不存在或不是目录：${abs}`, `Directory does not exist or is not a directory: ${abs}`);
+					return false;
+				}
+			} catch {
+				this.fail(id, `无法访问终端目录：${abs}`, `Cannot access terminal directory: ${abs}`);
 				return false;
 			}
-		} catch {
-			this.fail(id, `无法访问终端目录：${abs}`, `Cannot access terminal directory: ${abs}`);
-			return false;
+			const s = forceBash ? resolveBashShell() : resolveShell();
+			shell = s.shell;
+			args = s.args;
 		}
+
 		// node-pty's spawn-helper may have lost its +x bit since the last repair
 		// (e.g. a global npm install replaced the helper while this server runs).
 		repairSpawnHelperPermissions();
 		let pty: IPty;
 		try {
-			const { shell, args } = forceBash ? resolveBashShell() : resolveShell();
-			pty = spawn(shell, args, {
-				name: "xterm-256color",
-				cols: Math.max(2, Math.floor(cols) || 80),
-				rows: Math.max(2, Math.floor(rows) || 24),
-				cwd: abs,
-				env: shellEnv(),
-			});
+			const sshSvc = targetUri ? getGlobalRemoteSshService() : null;
+			if (targetUri && sshSvc) {
+				pty = sshSvc.createVirtualPty(targetUri, cols, rows);
+			} else {
+				pty = spawn(shell, args, {
+					name: "xterm-256color",
+					cols: Math.max(2, Math.floor(cols) || 80),
+					rows: Math.max(2, Math.floor(rows) || 24),
+					cwd: abs,
+					env: shellEnv(),
+				});
+			}
 		} catch (err) {
 			const helper = brokenSpawnHelper();
 			this.fail(

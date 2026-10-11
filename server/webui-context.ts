@@ -7,8 +7,18 @@
  *
  * 从 agent-service.ts 抽出，行为保持不变。
  */
-import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, Theme, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type { Component, OverlayHandle, OverlayOptions } from "@earendil-works/pi-tui";
 import type { ServerMessage } from "./protocol.js";
+import { VirtualTuiBridge } from "./virtual-tui.js";
+
+// Ensure global theme is initialized so extensions calling getSettingsListTheme(),
+// getMarkdownTheme(), or touching global `theme` proxy don't throw.
+try {
+	initTheme("dark", false);
+} catch {
+	// best effort
+}
 
 const WIDGET_WIDTH = 80;
 
@@ -69,12 +79,19 @@ interface WidgetEntry {
  * 子代理会话用——见该方法的说明）。
  */
 export class WebUIContext {
-	readonly theme = mockThemeProxy;
+	get theme(): Theme {
+		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
+		const current = (globalThis as Record<symbol, unknown>)[key];
+		return (current as Theme) ?? mockThemeProxy;
+	}
 	private widgets = new Map<string, WidgetEntry>();
 	private lastLines = new Map<string, string[]>();
 	private emit: (msg: ServerMessage) => void;
 	/** headless 实例没有浏览器面板：输出全部丢弃、弹窗直接按取消返回。 */
 	private headless: boolean;
+
+	private tuiOverlaySeq = 0;
+	private activeTuiOverlays = new Map<number, VirtualTuiBridge<unknown>>();
 
 	constructor(emit: (msg: ServerMessage) => void, options: { headless?: boolean } = {}) {
 		this.headless = options.headless === true;
@@ -263,6 +280,92 @@ export class WebUIContext {
 		}
 	}
 
+	// -- TUI overlay & customs ----------------------------------------------
+
+	custom = async <T>(
+		factory: (
+			tui: any,
+			theme: Theme,
+			keybindings: any,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+		options?: {
+			overlay?: boolean;
+			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+			onHandle?: (handle: OverlayHandle) => void;
+		},
+	): Promise<T> => {
+		// headless (subagent / background): no browser is listening.
+		// Immediately resolve without hanging to prevent stuck overlayOpen guards.
+		if (this.headless) {
+			options?.onHandle?.({
+				hide: () => {},
+				setHidden: () => {},
+				isHidden: () => false,
+				focus: () => {},
+				unfocus: () => {},
+				isFocused: () => false,
+				getBounds: () => undefined,
+			});
+			return Promise.resolve(undefined as unknown as T);
+		}
+
+		const id = ++this.tuiOverlaySeq;
+		const bridge = new VirtualTuiBridge<T>({
+			id,
+			onRender: (ansi) => {
+				this.emit({ type: "tui_overlay_render", id, ansi });
+			},
+			onClose: () => {
+				this.activeTuiOverlays.delete(id);
+				this.emit({ type: "tui_overlay_close", id });
+			},
+		});
+
+		this.activeTuiOverlays.set(id, bridge as VirtualTuiBridge<unknown>);
+		if (options?.onHandle) {
+			options.onHandle(bridge.createOverlayHandle());
+		}
+
+		try {
+			const compResult = factory(bridge.createTuiFacade(), this.theme, bridge.keybindings, (result) =>
+				bridge.done(result),
+			);
+			const comp = compResult instanceof Promise ? await compResult : compResult;
+			if (comp) {
+				bridge.setComponent(comp);
+			}
+			if (!bridge.isClosed) {
+				this.emit({
+					type: "tui_overlay_open",
+					id,
+					cols: bridge.cols,
+					rows: bridge.rows,
+					initialAnsi: bridge.getInitialAnsi(),
+				});
+			}
+		} catch (err) {
+			bridge.fail(err);
+		}
+
+		return bridge.promise;
+	};
+
+	handleTuiOverlayInput(id: number, data: string): void {
+		const bridge = this.activeTuiOverlays.get(id);
+		bridge?.feedInput(data);
+	}
+
+	handleTuiOverlayResize(id: number, cols: number, rows: number): void {
+		const bridge = this.activeTuiOverlays.get(id);
+		bridge?.resize(cols, rows);
+	}
+
+	handleTuiOverlayCancel(id: number): void {
+		const bridge = this.activeTuiOverlays.get(id);
+		bridge?.cancel();
+	}
+
 	// -- inert TUI-only affordances ------------------------------------------
 
 	onTerminalInput = (): (() => void) => () => {};
@@ -273,7 +376,6 @@ export class WebUIContext {
 	setFooter = (): void => {};
 	setHeader = (): void => {};
 	setTitle = (): void => {};
-	custom = <T>(_factory: unknown, _done?: unknown): Promise<T> => new Promise<T>(() => {});
 	pasteToEditor = (): void => {};
 	setEditorText = (): void => {};
 	getEditorText = (): string => "";
@@ -282,8 +384,19 @@ export class WebUIContext {
 	setEditorComponent = (): void => {};
 	getEditorComponent = (): undefined => undefined;
 	getAllThemes = (): { name: string; path: string | undefined }[] => [];
-	getTheme = (): undefined => undefined;
-	setTheme = (): { success: boolean; error?: string } => ({ success: false });
+	getTheme = (_name: string): Theme | undefined => undefined;
+	setTheme = (themeOrName: string | Theme): { success: boolean; error?: string } => {
+		try {
+			const name = typeof themeOrName === "string" ? themeOrName : themeOrName.name;
+			if (name) {
+				initTheme(name, false);
+				return { success: true };
+			}
+			return { success: false, error: "Theme name missing" };
+		} catch (err) {
+			return { success: false, error: (err as Error).message };
+		}
+	};
 	getToolsExpanded = (): boolean => false;
 	setToolsExpanded = (): void => {};
 
@@ -304,5 +417,10 @@ export class WebUIContext {
 			this.emit({ type: "dialog_closed", id });
 		}
 		this.pendingDialogs.clear();
+		// Cancel any pending TUI overlays.
+		for (const bridge of this.activeTuiOverlays.values()) {
+			bridge.cancel();
+		}
+		this.activeTuiOverlays.clear();
 	}
 }

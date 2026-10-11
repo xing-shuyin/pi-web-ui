@@ -21,6 +21,7 @@ import { toServiceInfo, launchOrigin } from "./launch-origin.js";
 import { isPseudoClientId, checkPluginCwd } from "./client-id-utils.js";
 import { pickAdoptableOrphan, type OrphanCandidate } from "./orphan-manager.js";
 import { piSessionsRoot } from "./session-search.js";
+import { isRemoteWorkspaceUri, resolveWorkspaceSessionDir } from "./remote-ssh-service.js";
 import { MAX_OPEN_CONVERSATIONS } from "./agent-formatters.js";
 import { collectSubagentDescendantIds } from "./subagents.js";
 import { pickLatestClientSnapshot } from "./plugin-conversation-view.js";
@@ -1127,14 +1128,18 @@ export class AgentService {
 					let cwd = this.cwd;
 					const saved = this.stateStore.get(clientId);
 					if (saved.lastCwd && saved.lastCwd !== this.cwd) {
-						try {
-							// issue #295：异步 stat —— 同步 stat 落在坏挂载（已卸载的外部卷/
-							// autofs 触发点）上会在内核里挂起，冻住整个事件循环（含控制
-							// socket 与其他客户端的心跳）；异步版本只挡本连接，超时提示照发。
-							const { stat } = await import("node:fs/promises");
-							if ((await stat(saved.lastCwd)).isDirectory()) cwd = saved.lastCwd;
-						} catch {
-							// gone (unmounted drive / deleted / hanging mount) — fall back to the default
+						if (isRemoteWorkspaceUri(saved.lastCwd)) {
+							cwd = saved.lastCwd;
+						} else {
+							try {
+								// issue #295：异步 stat —— 同步 stat 落在坏挂载（已卸载的外部卷/
+								// autofs 触发点）上会在内核里挂起，冻住整个事件循环（含控制
+								// socket 与其他客户端的心跳）；异步版本只挡本连接，超时提示照发。
+								const { stat } = await import("node:fs/promises");
+								if ((await stat(saved.lastCwd)).isDirectory()) cwd = saved.lastCwd;
+							} catch {
+								// gone (unmounted drive / deleted / hanging mount) — fall back to the default
+							}
 						}
 					}
 					// Sessions use the SDK default per-project dir — no per-client dir.
@@ -1145,7 +1150,8 @@ export class AgentService {
 					let createOpts: { blank?: boolean; blankTitle?: string; idleHeld?: boolean } | undefined;
 					if (this.clients.size > 0) {
 						try {
-							const infos = await SessionManager.list(cwd, piSessionsRoot());
+							const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore.dataDir, cwd);
+							const infos = await SessionManager.list(sessionBaseDir, piSessionsRoot());
 							const recent = infos[0]?.path ? resolve(infos[0].path) : undefined;
 							const owner = recent ? this.findSessionOwner(recent, clientId) : null;
 							if (owner) {

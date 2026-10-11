@@ -31,6 +31,13 @@ import {
 } from "./plugin-tool-guard.js";
 import type { UiApprovalCategory, UiApprovalHit } from "./protocol.js";
 import type { AnyToolDefinition } from "./tool-overrides.js";
+import {
+	createRemoteSdkOperations,
+	isRemoteWorkspaceUri,
+	parseRemoteWorkspaceUri,
+	resolveRemoteWorkspacePath,
+	restoreWorkspaceUriFromSessionDir,
+} from "./remote-ssh-service.js";
 
 /**
  * 插件工具拦截钩子（P1-5）：index.ts 注入，把 bash/read 的 pre/post 决策委托给
@@ -336,6 +343,12 @@ export function withToolGuard(
 
 /** 校验目标路径是否在工作区（或多根工作区）内。严格规范化防止 ".." 逃逸与 Windows 盘符大小写不一致。 */
 export function isInsideWorkspaceRoots(targetPath: string, cwd: string, roots: string[] = []): boolean {
+	const effCwd = restoreWorkspaceUriFromSessionDir(cwd);
+	if (isRemoteWorkspaceUri(effCwd)) {
+		const parsed = parseRemoteWorkspaceUri(effCwd);
+		if (!parsed) return false;
+		return resolveRemoteWorkspacePath(parsed.remotePath, targetPath) !== null;
+	}
 	const abs = resolve(cwd, targetPath);
 	const allRoots = [resolve(cwd), ...roots.map((r) => resolve(r))];
 	return allRoots.some((r) => isPathInsideRoot(abs, r));
@@ -354,10 +367,13 @@ export function wrapWriteToolWithPermission(
 	askApproval?: AskApprovalFn,
 	getConversationId?: () => string | undefined,
 	getRules?: () => ApprovalRule[],
-	base: AnyToolDefinition = createWriteToolDefinition(cwd),
+	base?: AnyToolDefinition,
 ): ToolDefinition {
+	const remoteOps = !base ? createRemoteSdkOperations(cwd) : null;
+	const effectiveBase: AnyToolDefinition =
+		base ?? createWriteToolDefinition(cwd, remoteOps ? { operations: remoteOps.write } : undefined);
 	return {
-		...base,
+		...effectiveBase,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			const perm = getPermission();
 			if (perm === "read-only") {
@@ -448,7 +464,13 @@ export function wrapWriteToolWithPermission(
 				}
 			}
 
-			const result = (await base.execute(toolCallId, effectiveParams as never, signal, onUpdate, ctx)) as unknown as {
+			const result = (await effectiveBase.execute(
+				toolCallId,
+				effectiveParams as never,
+				signal,
+				onUpdate,
+				ctx,
+			)) as unknown as {
 				details?: Record<string, unknown>;
 				[k: string]: unknown;
 			};
@@ -494,10 +516,13 @@ export function wrapEditToolWithPermission(
 	askApproval?: AskApprovalFn,
 	getConversationId?: () => string | undefined,
 	getRules?: () => ApprovalRule[],
-	base: AnyToolDefinition = createEditToolDefinition(cwd),
+	base?: AnyToolDefinition,
 ): ToolDefinition {
+	const remoteOps = !base ? createRemoteSdkOperations(cwd) : null;
+	const effectiveBase: AnyToolDefinition =
+		base ?? createEditToolDefinition(cwd, remoteOps ? { operations: remoteOps.edit } : undefined);
 	return {
-		...base,
+		...effectiveBase,
 		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			const perm = getPermission();
 			if (perm === "read-only") {
@@ -588,7 +613,13 @@ export function wrapEditToolWithPermission(
 				}
 			}
 
-			const result = (await base.execute(toolCallId, effectiveParams as never, signal, onUpdate, ctx)) as unknown as {
+			const result = (await effectiveBase.execute(
+				toolCallId,
+				effectiveParams as never,
+				signal,
+				onUpdate,
+				ctx,
+			)) as unknown as {
 				details?: Record<string, unknown>;
 				[k: string]: unknown;
 			};

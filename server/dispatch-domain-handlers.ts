@@ -10,6 +10,7 @@
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import type { DispatchSession } from "./index.js";
 import { SchedulerValidationError, type SchedulerStore } from "./scheduler-tasks.js";
+import type { RemoteSshService } from "./remote-ssh-service.js";
 
 /** 文件与工作区相关操作 */
 export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): boolean {
@@ -644,6 +645,15 @@ export function handleInteractiveResponseMessage(
 		case "dialog_response":
 			cs.resolveDialog(msg.id, msg.value);
 			return true;
+		case "tui_overlay_input":
+			cs.handleTuiOverlayInput?.(msg.id, msg.data);
+			return true;
+		case "tui_overlay_resize":
+			cs.handleTuiOverlayResize?.(msg.id, msg.cols, msg.rows);
+			return true;
+		case "tui_overlay_cancel":
+			cs.handleTuiOverlayCancel?.(msg.id);
+			return true;
 		case "question_answer":
 			if (msg.owner) {
 				// 跨页作答：答案转交持有方会话（本页不持有该问卷）。
@@ -682,6 +692,68 @@ export function handleInteractiveResponseMessage(
 			// 浏览器（page-picker 扩展经前端）对 browser_page 的回包：恢复挂起的
 			// pageCall；id 不匹配（超时后迟到/页面刷新）由 resolvePageCall 静默忽略。
 			cs.resolvePageCall?.(msg.id, msg.ok, msg.result, msg.error);
+			return true;
+		default:
+			return false;
+	}
+}
+
+/** 远程 SSH 连接、探针与目录浏览处理 */
+export function handleRemoteSshMessage(
+	msg: ClientMessage,
+	remoteSshSvc: RemoteSshService,
+	send: (msg: ServerMessage) => void,
+): boolean {
+	switch (msg.type) {
+		case "remote_ssh_probe":
+			void (async () => {
+				const res = await remoteSshSvc.probe(msg.params);
+				send({
+					type: "remote_ssh_probe_result",
+					reqId: msg.reqId,
+					...res,
+				});
+			})();
+			return true;
+		case "remote_ssh_list_dir":
+			void (async () => {
+				const res = await remoteSshSvc.listDir(msg.connectionId, msg.path);
+				send({
+					type: "remote_ssh_list_dir_result",
+					reqId: msg.reqId,
+					...res,
+				});
+			})();
+			return true;
+		case "remote_ssh_install_tools":
+			void (async () => {
+				const res = await remoteSshSvc.installTools(msg.connectionId, msg.tools);
+				send({
+					type: "remote_ssh_install_result",
+					reqId: msg.reqId,
+					...res,
+				});
+			})();
+			return true;
+		case "remote_ssh_list_profiles":
+			void (async () => {
+				const profiles = await remoteSshSvc.listProfiles();
+				send({
+					type: "remote_ssh_profiles_result",
+					reqId: msg.reqId,
+					profiles,
+				});
+			})();
+			return true;
+		case "remote_ssh_delete_profile":
+			void (async () => {
+				await remoteSshSvc.deleteProfile(msg.name);
+				const profiles = await remoteSshSvc.listProfiles();
+				send({
+					type: "remote_ssh_profiles_result",
+					profiles,
+				});
+			})();
 			return true;
 		default:
 			return false;

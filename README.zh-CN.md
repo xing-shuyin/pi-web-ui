@@ -1,6 +1,6 @@
 # pi-web-ui
 
-[English](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.md) | **简体中文**
+[English](https://github.com/xing-shuyin/pi-web-ui/blob/main/README.md) | **简体中文** · 🌐 [**官方网站**](https://xing-shuyin.github.io/pi-web-ui-site/) · 📖 [**详细文档中心**](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)
 
 [![npm 版本](https://img.shields.io/npm/v/pi-web-ui?color=cb3837&logo=npm)](https://www.npmjs.com/package/pi-web-ui)
 [![Node.js](https://img.shields.io/node/v/pi-web-ui?logo=node.js&logoColor=white)](https://nodejs.org/)

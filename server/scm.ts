@@ -9,6 +9,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pick, type ServerLang } from "./i18n.js";
+import { getGlobalRemoteSshService, isRemoteWorkspaceUri, shellQuotePosix } from "./remote-ssh-service.js";
 
 const exec = promisify(execFile);
 
@@ -58,6 +59,19 @@ export interface ScmStatusData {
 /** Run one git command; throws Error with a readable message on failure. */
 async function git(cwd: string, args: string[], lang?: () => ServerLang): Promise<string> {
 	const l = lang?.() ?? "en";
+	if (isRemoteWorkspaceUri(cwd)) {
+		const sshSvc = getGlobalRemoteSshService();
+		if (!sshSvc) {
+			throw new Error("Remote SSH service is not initialized");
+		}
+		const cmd = `git -c core.quotepath=false ${args.map(shellQuotePosix).join(" ")}`;
+		const res = await sshSvc.execInWorkspace(cwd, cmd, { timeoutMs: GIT_TIMEOUT_MS });
+		if (res.exitCode !== 0) {
+			const detail = (res.stderr || res.stdout || "").trim().split("\n")[0];
+			throw new Error(detail || pick(l, "git 命令失败", "git command failed", "scm.git.failed"));
+		}
+		return res.stdout;
+	}
 	try {
 		const { stdout } = await exec("git", ["-c", "core.quotepath=false", ...args], {
 			cwd,
@@ -86,6 +100,7 @@ async function git(cwd: string, args: string[], lang?: () => ServerLang): Promis
 /** Absolute path of the repo's git dir (handles worktrees/submodules), or
  *  null when cwd isn't inside a repository. */
 export async function gitDirOf(cwd: string): Promise<string | null> {
+	if (isRemoteWorkspaceUri(cwd)) return null;
 	try {
 		const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
 			cwd,

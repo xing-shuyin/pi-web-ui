@@ -7,12 +7,19 @@
  */
 import { Dirent, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, watch } from "node:fs";
 import { homedir } from "node:os";
-import { resolve, relative, sep, isAbsolute } from "node:path";
+import { resolve, relative, sep, isAbsolute, posix } from "node:path";
 import type { ServerMessage, FileEntry, FileSearchResult } from "./protocol.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { previewKind, looksLikeText, decodeText, hexDump, countLines } from "./text-sniff.js";
 import { extractOfficeText, isOfficeFile, OFFICE_MAX_FILE_BYTES } from "./office-parse.js";
 import { gitDirOf, isNotRepoError, scmStatus, scmHistory, scmFileDiff, scmCommitDetail } from "./scm.js";
+import {
+	getGlobalRemoteSshService,
+	isRemoteWorkspaceUri,
+	parseRemoteWorkspaceUri,
+	resolveRemoteWorkspacePath,
+	shellQuotePosix,
+} from "./remote-ssh-service.js";
 
 export const IS_WIN32 = process.platform === "win32";
 
@@ -349,8 +356,14 @@ export class FilesService {
 	}
 
 	async listFiles(relPath?: string): Promise<void> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd)) {
+			this.unwatchDir();
+			await this.listRemoteFiles(rawCwd, relPath);
+			return;
+		}
 		const { resolve, sep, relative } = await import("node:path");
-		const root = resolve(this.host.getCwd());
+		const root = resolve(rawCwd);
 		let raw = relPath ?? "";
 		// Expand a leading "~/" (path-bar input) to the home directory — same
 		// rules as completePath/makeDir. The result is absolute, so it lands in
@@ -434,6 +447,11 @@ export class FilesService {
 	 * stalls (ok:false on unexpected failure).
 	 */
 	async searchFiles(query: string, reqId: number): Promise<void> {
+		const activeCwd = this.host.getActiveCwd();
+		if (isRemoteWorkspaceUri(activeCwd)) {
+			await this.searchRemoteFiles(activeCwd, query, reqId);
+			return;
+		}
 		const { join } = await import("node:path");
 		const fsp = await import("node:fs/promises");
 		const q = query.trim().toLowerCase();
@@ -441,7 +459,7 @@ export class FilesService {
 			this.host.emit({ type: "search_files_result", reqId, ok: true, results: [] });
 			return;
 		}
-		const root = resolve(this.host.getActiveCwd());
+		const root = resolve(activeCwd);
 		const ignored = ignoredEntries();
 		const MAX_RESULTS = 50;
 		const MAX_VISITED = 20000;
@@ -519,7 +537,8 @@ export class FilesService {
 		arg?: { path?: string; hash?: string },
 	): Promise<void> {
 		const cwd = this.host.getActiveCwd();
-		if (kind === "status") this.watchGitDir(cwd);
+		const isRemote = isRemoteWorkspaceUri(cwd);
+		if (kind === "status" && !isRemote) this.watchGitDir(cwd);
 		try {
 			if (kind === "status") {
 				const data = await scmStatus(cwd, () => this.lang());
@@ -532,14 +551,24 @@ export class FilesService {
 				return;
 			}
 			if (kind === "filediff" && arg?.path) {
-				// Path stays inside the workspace (defense in depth — paths come
-				// from our own listing, and execFile passes args verbatim anyway).
-				const { resolve, relative } = await import("node:path");
-				const rel = relative(resolve(cwd), resolve(cwd, arg.path));
-				if (rel.startsWith("..") || rel === "")
-					throw new Error(
-						pick(this.lang(), "路径超出工作区", "Path is outside the workspace", "files.path.outside.workspace"),
-					);
+				if (isRemote) {
+					const parsed = parseRemoteWorkspaceUri(cwd);
+					const resolved = parsed ? resolveRemoteWorkspacePath(parsed.remotePath, arg.path) : null;
+					if (!resolved || !resolved.rel) {
+						throw new Error(
+							pick(this.lang(), "路径超出工作区", "Path is outside the workspace", "files.path.outside.workspace"),
+						);
+					}
+				} else {
+					// Path stays inside the workspace (defense in depth — paths come
+					// from our own listing, and execFile passes args verbatim anyway).
+					const { resolve, relative } = await import("node:path");
+					const rel = relative(resolve(cwd), resolve(cwd, arg.path));
+					if (rel.startsWith("..") || rel === "")
+						throw new Error(
+							pick(this.lang(), "路径超出工作区", "Path is outside the workspace", "files.path.outside.workspace"),
+						);
+				}
 				const { staged, worktree } = await scmFileDiff(cwd, arg.path, () => this.lang());
 				this.host.emit({
 					type: "scm_data",
@@ -757,9 +786,13 @@ export class FilesService {
 
 	/** Read a workspace file for the preview panel (size-capped, binary-safe). */
 	async readFile(relPath: string): Promise<void> {
+		const root = this.host.getCwd();
+		if (isRemoteWorkspaceUri(root)) {
+			await this.readRemoteFile(root, relPath);
+			return;
+		}
 		try {
 			const fs = await import("node:fs/promises");
-			const root = this.host.getCwd();
 			const absWire = isAbsoluteWirePath(relPath);
 			let abs: string;
 			let rel: string;
@@ -882,8 +915,12 @@ export class FilesService {
 
 	/** Save text from the file preview panel within the active workspace. */
 	async writeFile(relPath: string, text: string): Promise<void> {
+		const root = this.host.getCwd();
+		if (isRemoteWorkspaceUri(root)) {
+			await this.writeRemoteFile(root, relPath, text);
+			return;
+		}
 		try {
-			const root = this.host.getCwd();
 			const absWire = isAbsoluteWirePath(relPath);
 			let abs: string;
 			let rel: string;
@@ -951,9 +988,13 @@ export class FilesService {
 	 * for the target dir (the recursive watcher may not cover it on posix).
 	 */
 	async uploadFile(relDir: string, name: string, data: string): Promise<void> {
+		const root = this.host.getCwd();
+		if (isRemoteWorkspaceUri(root)) {
+			await this.uploadRemoteFile(root, relDir, name, data);
+			return;
+		}
 		const emitErr = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
-			const root = this.host.getCwd();
 			const absDir = relDir ? isAbsoluteWirePath(relDir) : false;
 			let wp: { abs: string; rel: string } | null;
 			if (relDir && !absDir) {
@@ -1042,6 +1083,37 @@ export class FilesService {
 	 * with a notice; the picker refreshes its listing on its own.
 	 */
 	async makeDir(input: string): Promise<string | null> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd) || isRemoteWorkspaceUri(input)) {
+			try {
+				const sshSvc = getGlobalRemoteSshService();
+				if (!sshSvc) throw new Error("Remote SSH service not initialized");
+				const uri = isRemoteWorkspaceUri(input) ? input.trim() : rawCwd;
+				const parsed = parseRemoteWorkspaceUri(uri);
+				if (!parsed) throw new Error("Invalid remote workspace URI");
+				const targetAbs = isRemoteWorkspaceUri(input)
+					? parsed.remotePath
+					: input.trim().startsWith("/")
+						? posix.normalize(input.trim())
+						: posix.resolve(parsed.remotePath, input.trim());
+				await sshSvc.sftpMkdirRecursive(uri, targetAbs);
+				this.host.emit({
+					type: "notice",
+					level: "info",
+					text: `已创建远程文件夹：${targetAbs}`,
+					textEn: `Remote folder created: ${targetAbs}`,
+				});
+				return isRemoteWorkspaceUri(input) ? uri : targetAbs;
+			} catch (err) {
+				this.host.emit({
+					type: "notice",
+					level: "error",
+					text: `创建远程文件夹失败：${(err as Error).message}`,
+					textEn: `Failed to create remote folder: ${(err as Error).message}`,
+				});
+				return null;
+			}
+		}
 		try {
 			const fs = await import("node:fs/promises");
 			const { resolve, sep, isAbsolute } = await import("node:path");
@@ -1126,6 +1198,11 @@ export class FilesService {
 
 	/** 在 dir 下新建空文件或空文件夹。已存在不覆盖（报错）；成功后对 dir 推 file_changed。 */
 	async createEntry(dir: string, name: string, kind: "file" | "dir"): Promise<void> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd)) {
+			await this.createRemoteEntry(rawCwd, dir, name, kind);
+			return;
+		}
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
@@ -1161,6 +1238,11 @@ export class FilesService {
 
 	/** 同目录内重命名（newName 只取 basename，不跨目录）。成功后对父目录推 file_changed。 */
 	async renameEntry(path: string, newName: string): Promise<void> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd)) {
+			await this.renameRemoteEntry(rawCwd, path, newName);
+			return;
+		}
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
@@ -1196,6 +1278,11 @@ export class FilesService {
 
 	/** 删除文件或目录（目录递归删）。工作区根/机器根/盘符根拒绝；成功后对父目录推 file_changed。 */
 	async deleteEntry(path: string): Promise<void> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd)) {
+			await this.deleteRemoteEntry(rawCwd, path);
+			return;
+		}
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
@@ -1221,6 +1308,11 @@ export class FilesService {
 	/** 复制或移动（move=true 即剪切粘贴）。destDir 与源同目录即「创建副本」；
 	 *  重名自动加 " copy" 后缀；目录搬进自身/子目录拒绝；跨盘移动回落为复制+删源。 */
 	async copyEntry(src: string, destDir: string, move?: boolean): Promise<void> {
+		const rawCwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(rawCwd)) {
+			await this.copyRemoteEntry(rawCwd, src, destDir, move);
+			return;
+		}
 		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
 		try {
 			const fsp = await import("node:fs/promises");
@@ -1420,12 +1512,16 @@ export class FilesService {
 	 */
 	async completePath(input: string): Promise<void> {
 		const empty = () => this.host.emit({ type: "path_completions", completions: [] });
+		const cwd = this.host.getCwd();
+		if (isRemoteWorkspaceUri(input) || (isRemoteWorkspaceUri(cwd) && !isAbsoluteWirePath(input.trim()))) {
+			await this.completeRemotePath(isRemoteWorkspaceUri(input) ? input.trim() : cwd, input.trim());
+			return;
+		}
 		try {
 			const fs = await import("node:fs/promises");
 			const { resolve, sep, isAbsolute } = await import("node:path");
 			const { homedir } = await import("node:os");
 			const home = homedir();
-			const cwd = this.host.getCwd();
 			const isWin = IS_WIN32;
 			const rawInput = input.trim();
 			if (rawInput === "") {
@@ -1523,6 +1619,523 @@ export class FilesService {
 					const aHidden = a.name.startsWith(".");
 					const bHidden = b.name.startsWith(".");
 					if (aHidden !== bHidden) return aHidden ? 1 : -1;
+					if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+					return a.name.localeCompare(b.name);
+				})
+				.slice(0, 100);
+			this.host.emit({ type: "path_completions", completions });
+		} catch {
+			empty();
+		}
+	}
+
+	// =========================================================================
+	// 远程 SSH 工作区 (ssh://...) 专属文件操作实现
+	// =========================================================================
+
+	private resolveRemoteTarget(
+		rawCwd: string,
+		p: string,
+		allowRoot: boolean = false,
+	): { abs: string; rel: string; parentRel: string; absolute: boolean } | null {
+		const parsed = parseRemoteWorkspaceUri(rawCwd);
+		if (!parsed) return null;
+		const trimmed = (p || "").trim();
+		if (trimmed === MACHINE_ROOT || trimmed === MACHINE_ROOT + "/") return null;
+		if (!trimmed) {
+			if (!allowRoot) return null;
+			return { abs: parsed.remotePath, rel: "", parentRel: "", absolute: false };
+		}
+		if (trimmed.startsWith("/")) {
+			const abs = posix.normalize(trimmed);
+			if (abs === "/" && !allowRoot) return null;
+			const parentRel = abs === "/" ? "" : posix.dirname(abs);
+			return { abs, rel: abs, parentRel, absolute: true };
+		}
+		const w = resolveRemoteWorkspacePath(parsed.remotePath, trimmed);
+		if (!w || (!allowRoot && w.rel === "")) return null;
+		const parentRel = w.rel.includes("/") ? w.rel.slice(0, w.rel.lastIndexOf("/")) : "";
+		return { abs: w.abs, rel: w.rel, parentRel, absolute: false };
+	}
+
+	private async listRemoteFiles(rawCwd: string, relPath?: string): Promise<void> {
+		const sshSvc = getGlobalRemoteSshService();
+		const parsed = parseRemoteWorkspaceUri(rawCwd);
+		if (!sshSvc || !parsed) {
+			this.emitListError(rawCwd, "Remote SSH service is not available");
+			return;
+		}
+		const raw = (relPath ?? "").trim();
+		if (raw === MACHINE_ROOT || raw === MACHINE_ROOT + "/") {
+			this.host.emit({
+				type: "files",
+				path: MACHINE_ROOT,
+				parent: null,
+				entries: [{ name: "/", path: "/", type: "dir" }],
+				truncated: false,
+				absolute: true,
+			});
+			return;
+		}
+
+		const isAbs = raw.startsWith("/");
+		let targetAbs: string;
+		let wirePath: string;
+		let parentWire: string | null;
+
+		if (isAbs) {
+			targetAbs = posix.normalize(raw);
+			wirePath = targetAbs;
+			parentWire = targetAbs === "/" ? MACHINE_ROOT : posix.dirname(targetAbs) || "/";
+		} else {
+			const w = resolveRemoteWorkspacePath(parsed.remotePath, raw);
+			if (!w) {
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: `路径超出工作区：${relPath ?? ""}`,
+					textEn: `Path is outside the workspace: ${relPath ?? ""}`,
+				});
+				return;
+			}
+			targetAbs = w.abs;
+			wirePath = w.rel;
+			parentWire =
+				w.rel === ""
+					? parsed.remotePath === "/"
+						? MACHINE_ROOT
+						: posix.dirname(parsed.remotePath)
+					: w.rel.includes("/")
+						? w.rel.slice(0, w.rel.lastIndexOf("/"))
+						: "";
+		}
+
+		try {
+			const rawEntries = await sshSvc.sftpReaddir(rawCwd, targetAbs);
+			const ignored = IGNORED_ENTRIES_WIN;
+			const out: FileEntry[] = [];
+			for (const d of rawEntries) {
+				if (ignored.has(d.name)) continue;
+				const entryPath =
+					wirePath === ""
+						? d.name
+						: wirePath.endsWith("/")
+							? `${wirePath.slice(0, -1)}/${d.name}`
+							: `${wirePath}/${d.name}`;
+				const entry: FileEntry = {
+					name: d.name,
+					path: entryPath,
+					type: d.type,
+				};
+				if (d.type === "file") entry.kind = previewKind(d.name);
+				out.push(entry);
+			}
+			out.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
+			const MAX = 2000;
+			const truncated = out.length > MAX;
+			if (truncated) out.length = MAX;
+
+			this.host.emit({
+				type: "files",
+				path: wirePath,
+				parent: parentWire,
+				entries: out,
+				truncated,
+				...(isAbs ? { absolute: true } : {}),
+			});
+		} catch (err) {
+			const e = err as NodeJS.ErrnoException;
+			this.host.emit({
+				type: "files",
+				path: wirePath,
+				parent: parentWire,
+				entries: [],
+				truncated: false,
+				...(isAbs ? { absolute: true } : {}),
+			});
+			this.emitListError(targetAbs, e.message || String(err), e.code);
+		}
+	}
+
+	private async searchRemoteFiles(rawCwd: string, query: string, reqId: number): Promise<void> {
+		const q = query.trim().toLowerCase();
+		if (!q) {
+			this.host.emit({ type: "search_files_result", reqId, ok: true, results: [] });
+			return;
+		}
+		const sshSvc = getGlobalRemoteSshService();
+		if (!sshSvc) {
+			this.host.emit({ type: "search_files_result", reqId, ok: false, results: [] });
+			return;
+		}
+		try {
+			const cmd = `find . -maxdepth 8 \\( -name node_modules -o -name .git -o -name .pi-web \\) -prune -o -print 2>/dev/null | head -n 5000`;
+			const res = await sshSvc.execInWorkspace(rawCwd, cmd, { timeoutMs: 8000 });
+			const lines = res.stdout.split(/\r?\n/);
+			const results: FileSearchResult[] = [];
+			let truncated = false;
+			for (const line of lines) {
+				const clean = line.trim().replace(/^\.\//, "");
+				if (!clean || clean === ".") continue;
+				const name = posix.basename(clean);
+				if (name.toLowerCase().includes(q)) {
+					results.push({
+						path: clean,
+						name,
+						type: "file",
+					});
+					if (results.length >= 50) {
+						truncated = true;
+						break;
+					}
+				}
+			}
+			this.host.emit({
+				type: "search_files_result",
+				reqId,
+				ok: true,
+				results,
+				...(truncated ? { truncated: true } : {}),
+			});
+		} catch {
+			this.host.emit({ type: "search_files_result", reqId, ok: false, results: [] });
+		}
+	}
+
+	private async readRemoteFile(rawCwd: string, relPath: string): Promise<void> {
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const t = this.resolveRemoteTarget(rawCwd, relPath);
+			if (!t) {
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: `路径超出工作区：${relPath}`,
+					textEn: `Path is outside the workspace: ${relPath}`,
+				});
+				return;
+			}
+			const st = await sshSvc.sftpStat(rawCwd, t.abs);
+			if (!st.isFile) {
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: `不是文件：${relPath}`,
+					textEn: `Not a file: ${relPath}`,
+				});
+				return;
+			}
+			const name = posix.basename(t.abs) || relPath;
+			if (isOfficeFile(name) && st.size <= OFFICE_MAX_FILE_BYTES) {
+				try {
+					const { data } = await sshSvc.sftpReadFile(rawCwd, t.abs, OFFICE_MAX_FILE_BYTES);
+					const office = extractOfficeText(name, data);
+					if (office) {
+						this.host.emit({
+							type: "file_content",
+							path: t.rel,
+							name,
+							text: office.text,
+							truncated: office.truncated || data.length < st.size,
+							binary: false,
+							kind: "text",
+							lines: countLines(Buffer.from(office.text)),
+							size: st.size,
+						});
+						return;
+					}
+				} catch {}
+			}
+			const kind = previewKind(name);
+			const { data, size } = await sshSvc.sftpReadFile(rawCwd, t.abs, MAX_PREVIEW_BYTES);
+			if (looksLikeText(data)) {
+				this.host.emit({
+					type: "file_content",
+					path: t.rel,
+					name,
+					text: decodeText(data),
+					truncated: data.length < size,
+					binary: false,
+					kind: "text",
+					lines: countLines(data),
+					size,
+				});
+			} else {
+				this.host.emit({
+					type: "file_content",
+					path: t.rel,
+					name,
+					text: hexDump(data),
+					truncated: data.length < size,
+					binary: true,
+					kind: kind === "text" ? "text" : "none",
+					lines: 0,
+					size,
+				});
+			}
+		} catch (err) {
+			this.host.emit({
+				type: "notice",
+				level: "error",
+				text: `读取远程文件失败：${(err as Error).message}`,
+				textEn: `Failed to read remote file: ${(err as Error).message}`,
+			});
+		}
+	}
+
+	private async writeRemoteFile(rawCwd: string, relPath: string, text: string): Promise<void> {
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const t = this.resolveRemoteTarget(rawCwd, relPath);
+			if (!t) {
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: `路径超出工作区：${relPath}`,
+					textEn: `Path is outside the workspace: ${relPath}`,
+				});
+				return;
+			}
+			if (Buffer.byteLength(text, "utf8") > 2 * 1024 * 1024) {
+				this.host.emit({
+					type: "notice",
+					level: "warning",
+					text: "文件内容过大，无法保存（上限 2MB）",
+					textEn: "File too large to save (2MB max)",
+				});
+				return;
+			}
+			await sshSvc.sftpWriteFile(rawCwd, t.abs, text);
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: `已保存：${t.rel}`,
+				textEn: `Saved: ${t.rel}`,
+			});
+			await this.readRemoteFile(rawCwd, t.rel);
+		} catch (err) {
+			this.host.emit({
+				type: "notice",
+				level: "error",
+				text: `保存远程文件失败：${(err as Error).message}`,
+				textEn: `Failed to save remote file: ${(err as Error).message}`,
+			});
+		}
+	}
+
+	private async uploadRemoteFile(rawCwd: string, relDir: string, name: string, data: string): Promise<void> {
+		const emitErr = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const dirTarget = this.resolveRemoteTarget(rawCwd, relDir, true);
+			if (!dirTarget) {
+				emitErr(`路径超出工作区：${relDir}`, `Path outside workspace: ${relDir}`);
+				return;
+			}
+			const safe = this.sanitizeName(name);
+			if (!safe) {
+				emitErr(`文件名不合法：${name}`, `Invalid file name: ${name}`);
+				return;
+			}
+			if (isUploadDataTooLong(data.length)) {
+				emitErr(`文件过大：${name}`, `File too large: ${name}`);
+				return;
+			}
+			const buf = Buffer.from(data, "base64");
+			if (buf.length === 0 || buf.length > MAX_UPLOAD_BYTES) {
+				emitErr(`文件大小不合法：${name}`, `Invalid file size: ${name}`);
+				return;
+			}
+			const destAbs = posix.join(dirTarget.abs, safe);
+			const exists = await sshSvc.sftpStat(rawCwd, destAbs).catch(() => null);
+			if (exists) {
+				emitErr(`已存在：${safe}`, `Already exists: ${safe}`);
+				return;
+			}
+			await sshSvc.sftpWriteFile(rawCwd, destAbs, buf, { createParents: true });
+			const uploadRel = dirTarget.rel ? `${dirTarget.rel}/${safe}` : safe;
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: `已上传：${uploadRel}`,
+				textEn: `Uploaded: ${uploadRel}`,
+			});
+			this.host.emit({
+				type: "file_changed",
+				path: dirTarget.rel,
+			});
+		} catch (err) {
+			emitErr(`上传文件失败：${(err as Error).message}`, `Upload failed: ${(err as Error).message}`);
+		}
+	}
+
+	private async createRemoteEntry(rawCwd: string, dir: string, name: string, kind: "file" | "dir"): Promise<void> {
+		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const safe = this.sanitizeName(name);
+			if (!safe) {
+				err("名称不合法：" + name, "Invalid name: " + name);
+				return;
+			}
+			const parent = this.resolveRemoteTarget(rawCwd, dir, true);
+			if (!parent) {
+				err("此处不可新建：" + dir, "Cannot create here: " + dir);
+				return;
+			}
+			const targetAbs = posix.join(parent.abs, safe);
+			const existing = await sshSvc.sftpStat(rawCwd, targetAbs).catch(() => null);
+			if (existing) {
+				err("已存在同名项：" + safe, "Already exists: " + safe);
+				return;
+			}
+			if (kind === "dir") {
+				await sshSvc.sftpMkdirRecursive(rawCwd, targetAbs);
+			} else {
+				await sshSvc.sftpWriteFile(rawCwd, targetAbs, "");
+			}
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: (kind === "dir" ? "已新建文件夹：" : "已新建文件：") + safe,
+				textEn: (kind === "dir" ? "Created folder: " : "Created file: ") + safe,
+			});
+			this.host.emit({ type: "file_changed", path: parent.rel });
+		} catch (e) {
+			err("新建失败：" + (e as Error).message, "Create failed: " + (e as Error).message);
+		}
+	}
+
+	private async renameRemoteEntry(rawCwd: string, pathStr: string, newName: string): Promise<void> {
+		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const safe = this.sanitizeName(newName);
+			if (!safe) {
+				err("新名称不合法：" + newName, "Invalid name: " + newName);
+				return;
+			}
+			const t = this.resolveRemoteTarget(rawCwd, pathStr);
+			if (!t) {
+				err("此处不可重命名：" + pathStr, "Cannot rename: " + pathStr);
+				return;
+			}
+			const destAbs = posix.join(posix.dirname(t.abs), safe);
+			if (destAbs === t.abs) return;
+			const existing = await sshSvc.sftpStat(rawCwd, destAbs).catch(() => null);
+			if (existing) {
+				err("目标已存在：" + safe, "Already exists: " + safe);
+				return;
+			}
+			await sshSvc.sftpRename(rawCwd, t.abs, destAbs);
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: "已重命名为：" + safe,
+				textEn: "Renamed to: " + safe,
+			});
+			this.host.emit({ type: "file_changed", path: t.parentRel });
+		} catch (e) {
+			err("重命名失败：" + (e as Error).message, "Rename failed: " + (e as Error).message);
+		}
+	}
+
+	private async deleteRemoteEntry(rawCwd: string, pathStr: string): Promise<void> {
+		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const t = this.resolveRemoteTarget(rawCwd, pathStr);
+			if (!t) {
+				err("此处不可删除：" + pathStr, "Cannot delete: " + pathStr);
+				return;
+			}
+			await sshSvc.sftpRemove(rawCwd, t.abs);
+			const base = posix.basename(t.abs);
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: "已删除：" + base,
+				textEn: "Deleted: " + base,
+			});
+			this.host.emit({ type: "file_changed", path: t.parentRel });
+		} catch (e) {
+			err("删除失败：" + (e as Error).message, "Delete failed: " + (e as Error).message);
+		}
+	}
+
+	private async copyRemoteEntry(rawCwd: string, src: string, destDir: string, move?: boolean): Promise<void> {
+		const err = (text: string, textEn?: string) => this.host.emit({ type: "notice", level: "error", text, textEn });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			if (!sshSvc) throw new Error("Remote SSH service not initialized");
+			const s = this.resolveRemoteTarget(rawCwd, src);
+			const d = this.resolveRemoteTarget(rawCwd, destDir, true);
+			if (!s || !d) {
+				err("无效的路径", "Invalid path");
+				return;
+			}
+			const base = posix.basename(s.abs);
+			let destAbs = posix.join(d.abs, base);
+			if (destAbs === s.abs) {
+				if (move) return;
+				const ext = posix.extname(base);
+				const stem = ext ? base.slice(0, -ext.length) : base;
+				destAbs = posix.join(d.abs, `${stem} copy${ext}`);
+			}
+			await sshSvc.sftpCopy(rawCwd, s.abs, destAbs, move);
+			this.host.emit({
+				type: "notice",
+				level: "info",
+				text: (move ? "已移动：" : "已复制：") + posix.basename(destAbs),
+				textEn: (move ? "Moved: " : "Copied: ") + posix.basename(destAbs),
+			});
+			this.host.emit({ type: "file_changed", path: d.rel });
+			if (move && s.parentRel !== d.rel) {
+				this.host.emit({ type: "file_changed", path: s.parentRel });
+			}
+		} catch (e) {
+			err((move ? "移动失败：" : "复制失败：") + (e as Error).message);
+		}
+	}
+
+	private async completeRemotePath(rawCwd: string, rawInput: string): Promise<void> {
+		const empty = () => this.host.emit({ type: "path_completions", completions: [] });
+		try {
+			const sshSvc = getGlobalRemoteSshService();
+			const parsed = parseRemoteWorkspaceUri(rawCwd);
+			if (!sshSvc || !parsed) {
+				empty();
+				return;
+			}
+			let targetPath = rawInput;
+			if (isRemoteWorkspaceUri(rawInput)) {
+				const p = parseRemoteWorkspaceUri(rawInput);
+				targetPath = p ? p.remotePath + (rawInput.endsWith("/") ? "/" : "") : "/";
+			} else if (!targetPath.startsWith("/")) {
+				targetPath = posix.resolve(parsed.remotePath, targetPath);
+			}
+			const lastSlash = targetPath.lastIndexOf("/");
+			const dirPart = lastSlash >= 0 ? targetPath.slice(0, lastSlash + 1) || "/" : "/";
+			const prefix = lastSlash >= 0 ? targetPath.slice(lastSlash + 1) : targetPath;
+			const entries = await sshSvc.sftpReaddir(rawCwd, dirPart).catch(() => null);
+			if (!entries) {
+				empty();
+				return;
+			}
+			const completions = entries
+				.filter((d) => d.name.startsWith(prefix))
+				.map((e) => ({
+					name: e.name,
+					type: e.type,
+					path: dirPart === "/" ? `/${e.name}` : `${dirPart.replace(/\/+$/, "")}/${e.name}`,
+				}))
+				.sort((a, b) => {
 					if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
 					return a.name.localeCompare(b.name);
 				})

@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.102.0",
+	"version": "0.103.0",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {
@@ -8,6 +8,10 @@
 		"email": "xingshuyin@users.noreply.github.com"
 	},
 	"type": "module",
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org/"
+	},
 	"bin": {
 		"pi-web-ui": "bin/pi-web-ui.mjs"
 	},
@@ -89,6 +93,7 @@
 		"electron-updater": "^6.8.9",
 		"express": "^5.2.1",
 		"node-pty": "^1.1.0",
+		"ssh2": "^1.17.0",
 		"tar": "^7.5.22",
 		"undici": "^8.9.0",
 		"ws": "^8.21.3",
@@ -116,6 +121,7 @@
 		"@types/node": "^26.6.1",
 		"@types/react": "^19.3.0",
 		"@types/react-dom": "^19.3.0",
+		"@types/ssh2": "^1.15.6",
 		"@types/ws": "^8.18.1",
 		"@types/yauzl": "^3.4.0",
 		"@vitejs/plugin-react": "^6.1.1",

@@ -23,6 +23,7 @@
 import { constants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { createRemoteSdkOperations } from "./remote-ssh-service.js";
 import { isAbsolute, join, resolve as nodeResolve } from "node:path";
 import { Type } from "typebox";
 import {
@@ -437,6 +438,7 @@ export function makeEditSoftTool(fallbackCwd: string, getLang?: () => ServerLang
 			}
 			const cwd = typeof ctx?.cwd === "string" ? ctx.cwd : fallbackCwd;
 			const absolutePath = resolveToCwd(path, cwd);
+			const remoteOps = createRemoteSdkOperations(cwd);
 
 			return withFileMutationQueue(absolutePath, async () => {
 				const throwIfAborted = () => {
@@ -446,7 +448,11 @@ export function makeEditSoftTool(fallbackCwd: string, getLang?: () => ServerLang
 
 				throwIfAborted();
 				try {
-					await access(absolutePath, constants.R_OK | constants.W_OK);
+					if (remoteOps) {
+						await remoteOps.edit.access(absolutePath);
+					} else {
+						await access(absolutePath, constants.R_OK | constants.W_OK);
+					}
 				} catch (error: unknown) {
 					throwIfAborted();
 					const errorMessage = error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
@@ -462,7 +468,7 @@ export function makeEditSoftTool(fallbackCwd: string, getLang?: () => ServerLang
 				}
 				throwIfAborted();
 
-				const buffer = await readFile(absolutePath);
+				const buffer = remoteOps ? await remoteOps.edit.readFile(absolutePath) : await readFile(absolutePath);
 				const rawContent = buffer.toString("utf-8");
 				throwIfAborted();
 
@@ -473,7 +479,11 @@ export function makeEditSoftTool(fallbackCwd: string, getLang?: () => ServerLang
 				throwIfAborted();
 
 				const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-				await writeFile(absolutePath, finalContent, "utf-8");
+				if (remoteOps) {
+					await remoteOps.edit.writeFile(absolutePath, finalContent);
+				} else {
+					await writeFile(absolutePath, finalContent, "utf-8");
+				}
 				throwIfAborted();
 
 				const diffResult = generateDiffString(baseContent, newContent);

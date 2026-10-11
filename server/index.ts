@@ -89,7 +89,9 @@ import {
 	handleScheduleMessage,
 	handleSettingsMessage,
 	handleInteractiveResponseMessage,
+	handleRemoteSshMessage,
 } from "./dispatch-domain-handlers.js";
+import { RemoteSshService, setGlobalRemoteSshService } from "./remote-ssh-service.js";
 import { handlePluginMessage } from "./dispatch-plugin-handlers.js";
 import type {
 	BgServer,
@@ -1192,6 +1194,9 @@ export interface DispatchSession {
 	checkUpdatesAll(force?: boolean): Promise<void>;
 	checkPluginUpdates?(manual?: boolean): Promise<void>;
 	resolveDialog(id: number, value: string | boolean | null): void;
+	handleTuiOverlayInput?(id: number, data: string): void;
+	handleTuiOverlayResize?(id: number, cols: number, rows: number): void;
+	handleTuiOverlayCancel?(id: number): void;
 	installPiAgent(): Promise<void>;
 	setProviderApiKey(provider: string, apiKey: string): Promise<void>;
 	clearProviderApiKey(provider: string): Promise<void>;
@@ -1637,6 +1642,10 @@ async function confirmPluginInstallHelper(items: Array<{ id: string; source: str
 		onGrantsChanged: pushPluginPermissions,
 	});
 }
+
+// 远程 SSH 连接管理、环境探针与目录浏览服务
+const remoteSshService = new RemoteSshService(DATA_DIR);
+setGlobalRemoteSshService(remoteSshService);
 
 // 内置定时任务（issue #184）：全局 <dataDir>/scheduler-tasks.json，TTL 与
 // client-state 同级；Agent 工具建的任务优先唤醒发起对话（issue #193：
@@ -2222,6 +2231,7 @@ wss.on("connection", (ws) => {
 			if (handleSessionLifecycleMessage(msg, cs)) return;
 			if (handlePlanAndGoalMessage(msg, cs)) return;
 			if (handleScheduleMessage(msg, scheduler, send)) return;
+			if (handleRemoteSshMessage(msg, remoteSshService, send)) return;
 			if (handleSettingsMessage(msg, cs)) return;
 			if (handleInteractiveResponseMessage(msg, cs, service, clientId, send)) return;
 			if (

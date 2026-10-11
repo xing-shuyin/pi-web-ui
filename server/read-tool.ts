@@ -40,6 +40,7 @@ import { Type, type Static } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
 // 覆盖层要接住任意具体定义（内置的、扩展注册的），只能用 any 参数化的工具定义别名。
 import type { AnyToolDefinition } from "./tool-overrides.js";
+import { createRemoteSdkOperations } from "./remote-ssh-service.js";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -157,7 +158,11 @@ async function dirAwareExecute(
 	const path = typeof rawPath === "string" ? rawPath : "";
 	if (path && dirEnabled()) {
 		const cwd = typeof ctx?.cwd === "string" ? ctx.cwd : fallbackCwd;
-		if (await isDirectoryPath(resolvePathForDirCheck(path, cwd))) {
+		const remoteOps = createRemoteSdkOperations(cwd);
+		const isDir = remoteOps
+			? await remoteOps.isDirectory(resolvePathForDirCheck(path, cwd))
+			: await isDirectoryPath(resolvePathForDirCheck(path, cwd));
+		if (isDir) {
 			const limit = typeof input.limit === "number" && input.limit > 0 ? Math.floor(input.limit) : undefined;
 			// 列目录本体完全复用 SDK 的 ls。
 			const listed = (await ls.execute(
@@ -197,7 +202,8 @@ export function withReadDirSupport(
 ): AnyToolDefinition {
 	const dirEnabled = options.dirEnabled ?? ((): boolean => true);
 	const getLang = options.getLang ?? ((): ServerLang => "en");
-	const ls = createLsToolDefinition(fallbackCwd);
+	const remoteOps = createRemoteSdkOperations(fallbackCwd);
+	const ls = createLsToolDefinition(fallbackCwd, remoteOps ? { operations: remoteOps.ls } : undefined);
 	return defineTool({
 		...base,
 		description: `${base.description} ${DIR_DESCRIPTION_NOTE}`,
@@ -226,8 +232,9 @@ export function withReadDirSupport(
  * 有扩展同名工具时改用 `withReadDirSupport` 组合它的实现（见 tool-overrides.ts）。
  */
 export function makeReadDirTool(fallbackCwd: string, options: ReadDirToolOptions = {}) {
-	const base = createReadToolDefinition(fallbackCwd);
-	const ls = createLsToolDefinition(fallbackCwd);
+	const remoteOps = createRemoteSdkOperations(fallbackCwd);
+	const base = createReadToolDefinition(fallbackCwd, remoteOps ? { operations: remoteOps.read } : undefined);
+	const ls = createLsToolDefinition(fallbackCwd, remoteOps ? { operations: remoteOps.ls } : undefined);
 	const dirEnabled = options.dirEnabled ?? ((): boolean => true);
 	const getLang = options.getLang ?? ((): ServerLang => "en");
 

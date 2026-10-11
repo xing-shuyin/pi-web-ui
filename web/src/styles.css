@@ -4701,6 +4701,208 @@ body.panel-resizing .scm-divider::after {
 	outline: none;
 }
 
+/* ------------------------------------------------------------------ */
+/* 远程 SSH 工作区选择器与探针面板样式                                       */
+/* ------------------------------------------------------------------ */
+
+.cwd-mode-tabs {
+	display: flex;
+	gap: 4px;
+	margin-bottom: 2px;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 4px;
+}
+
+.cwd-mode-tab {
+	flex: 1;
+	padding: 3px 8px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-dim);
+	font-size: 11px;
+	cursor: pointer;
+	text-align: center;
+	transition: all 0.15s ease;
+}
+
+.cwd-mode-tab:hover {
+	color: var(--text);
+	background: var(--bg-elev2);
+}
+
+.cwd-mode-tab.active {
+	color: var(--accent);
+	background: var(--bg-elev);
+	border-color: var(--border);
+	font-weight: 500;
+}
+
+.cwd-ssh-container {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	height: 100%;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.cwd-ssh-form {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.cwd-ssh-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.cwd-ssh-row label {
+	font-size: 11px;
+	color: var(--text-dim);
+	width: 54px;
+	flex-shrink: 0;
+}
+
+.cwd-ssh-input {
+	flex: 1;
+	min-width: 0;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--bg-elev);
+	color: var(--text);
+	font-size: 11px;
+	padding: 3px 6px;
+	outline: none;
+	font-family: var(--mono);
+}
+
+.cwd-ssh-input:focus {
+	border-color: var(--accent);
+}
+
+.cwd-ssh-select {
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--bg-elev);
+	color: var(--text);
+	font-size: 11px;
+	padding: 2px 6px;
+	outline: none;
+}
+
+.cwd-ssh-profiles-title {
+	font-size: 11px;
+	color: var(--text-dim);
+	font-weight: 500;
+	margin-top: 4px;
+	margin-bottom: 2px;
+}
+
+.cwd-ssh-profile-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 8px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--bg-elev);
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+.cwd-ssh-profile-card:hover {
+	background: var(--bg-elev2);
+	border-color: var(--accent);
+}
+
+.cwd-ssh-profile-meta {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.cwd-ssh-profile-name {
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cwd-ssh-profile-addr {
+	font-size: 10px;
+	color: var(--text-dim);
+	font-family: var(--mono);
+}
+
+.cwd-ssh-profile-del {
+	background: transparent;
+	border: none;
+	color: var(--text-dim);
+	cursor: pointer;
+	padding: 2px 4px;
+	font-size: 12px;
+	border-radius: 3px;
+}
+
+.cwd-ssh-profile-del:hover {
+	color: var(--red);
+	background: var(--red-soft);
+}
+
+.cwd-ssh-probe-box {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--bg-elev);
+}
+
+.cwd-ssh-probe-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.cwd-ssh-tool-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	font-size: 10px;
+	font-family: var(--mono);
+}
+
+.cwd-ssh-tool-badge.ok {
+	background: rgba(34, 197, 94, 0.15);
+	color: #22c55e;
+}
+
+.cwd-ssh-tool-badge.missing {
+	background: rgba(239, 68, 68, 0.15);
+	color: #ef4444;
+}
+
+.cwd-ssh-install-box {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 8px;
+	border: 1px dashed var(--amber);
+	border-radius: 5px;
+	background: rgba(245, 158, 11, 0.08);
+	font-size: 11px;
+}
+
 .status-queue {
 	color: var(--amber);
 }
@@ -9665,6 +9867,10 @@ div.chead[role="button"]:focus-visible,
 .main:has(.goalbar-collapsed):not(:has(.plan-board)):not(:has(.dialog-inline)) .scroll-bottom {
 	bottom: calc(32px + var(--composer-strip));
 }
+/* 对话框在场时隐藏回底浮标，防止挡住对话框头部与关闭按钮 */
+.main:has(.dialog-inline) .scroll-bottom {
+	display: none;
+}
 .scroll-bottom:hover {
 	color: var(--text);
 	border-color: var(--accent);
@@ -11570,13 +11776,17 @@ div.chead[role="button"]:focus-visible,
 	margin: 0 var(--chat-inset) 8px;
 	max-height: 45vh;
 	overflow-y: auto;
-	/* 不自带底色：与聊天背景一致（见 .main）；靠强调色边框 + 投影区分层次。 */
+	position: relative;
+	z-index: 10;
+	background: var(--bg-elev);
+	/* 实底色：遮盖背景消息与浮动元素，靠强调色边框 + 投影区分层次。 */
 	border: 1px solid var(--accent);
 	border-left: 3px solid var(--accent);
 	border-radius: 10px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 	padding: 10px 12px;
 	animation: dialog-slide-up 0.18s ease-out;
+	overscroll-behavior: contain;
 }
 
 .dialog-inline.collapsed {
@@ -11587,6 +11797,9 @@ div.chead[role="button"]:focus-visible,
 }
 
 .dialog-inline.collapsed .dialog-head {
+	border-bottom: none;
+	margin: -6px -12px;
+	padding: 6px 12px;
 	cursor: pointer;
 	user-select: none;
 }
@@ -11603,6 +11816,14 @@ div.chead[role="button"]:focus-visible,
 }
 
 .dialog-head {
+	position: sticky;
+	top: -10px;
+	z-index: 12;
+	background: var(--bg-elev);
+	margin: -10px -12px 2px;
+	padding: 10px 12px 8px;
+	border-bottom: 1px solid var(--border-soft);
+	border-radius: 9px 9px 0 0;
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -11672,14 +11893,16 @@ div.chead[role="button"]:focus-visible,
 	border: none;
 	color: var(--text-faint);
 	cursor: pointer;
-	font-size: 13px;
+	font-size: 14px;
 	line-height: 1;
-	padding: 4px 6px;
+	padding: 5px 8px;
 	border-radius: 6px;
+	position: relative;
+	z-index: 13;
 }
 .dialog-dismiss:hover {
 	color: var(--text);
-	background: var(--bg-elev);
+	background: var(--bg-elev2);
 }
 
 .dialog-head-actions {
@@ -11728,10 +11951,18 @@ div.chead[role="button"]:focus-visible,
 	flex-direction: column;
 	gap: 8px;
 }
-.dialog-custom-row {
+.dialog-custom-row,
+.dialog-options > .dialog-actions {
+	position: sticky;
+	bottom: -10px;
+	z-index: 12;
+	background: var(--bg-elev);
+	margin: 4px -12px -10px;
+	padding: 8px 12px 10px;
+	border-top: 1px solid var(--border-soft);
+	border-radius: 0 0 9px 9px;
 	display: flex;
 	gap: 8px;
-	margin-top: 4px;
 }
 .dialog-custom-row .dialog-input {
 	flex: 1;
@@ -11929,12 +12160,13 @@ div.chead[role="button"]:focus-visible,
 }
 .dialog-inline .dialog-nav {
 	position: sticky;
-	bottom: 0;
-	z-index: 2;
-	background: var(--bg-elev2);
-	margin-top: 2px;
-	padding-top: 6px;
+	bottom: -10px;
+	z-index: 12;
+	background: var(--bg-elev);
+	margin: 2px -12px -10px;
+	padding: 8px 12px 10px;
 	border-top: 1px solid var(--border-soft);
+	border-radius: 0 0 9px 9px;
 }
 
 /* ---- DSH 提问对话框：富文本（markdown + html）排版收起 ---- */
@@ -12598,6 +12830,71 @@ div.chead[role="button"]:focus-visible,
 	flex-shrink: 0;
 	padding: 20px 22px 12px;
 	border-bottom: 1px solid var(--border-soft);
+}
+/* TUI 扩展模态弹窗（ctx.ui.custom 虚拟终端桥） */
+.tui-overlay-modal {
+	max-width: 900px;
+	width: min(92vw, 900px);
+	height: min(85vh, 640px);
+	max-height: 85vh;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	padding: 0;
+	background: var(--bg-elev);
+}
+.tui-overlay-modal > .modal-close {
+	position: absolute;
+	top: 8px;
+	right: 12px;
+	margin: 0;
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 1;
+}
+.tui-overlay-modal .modal-head {
+	flex-shrink: 0;
+	height: 44px;
+	padding: 0 44px 0 16px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1;
+	border-bottom: 1px solid var(--border-soft);
+}
+.tui-overlay-modal .modal-head-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 16px;
+	line-height: 1;
+}
+.tui-overlay-body {
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	background: #0d1117;
+	border-radius: 0 0 10px 10px;
+	overflow: hidden;
+	padding: 8px;
+}
+.tui-overlay-xterm {
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	overflow: hidden;
+}
+.tui-overlay-xterm .xterm {
+	height: 100%;
+	padding: 4px;
 }
 /* 子代理模板编辑弹窗：盖在设置弹窗之上（同 z-index、后渲染即在上，保险起见 +1） */
 .tpl-modal-backdrop {
@@ -15128,6 +15425,8 @@ a.set-uninstall:hover {
 .modal-head-icon {
 	color: var(--accent);
 	font-size: 18px;
+	display: inline-flex;
+	align-items: center;
 }
 .modal-head h2 {
 	font-size: 16px;

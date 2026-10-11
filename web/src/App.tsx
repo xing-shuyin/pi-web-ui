@@ -71,6 +71,7 @@ import { PluginPage } from "./components/PluginPage";
 import { RollbackDialog } from "./components/RollbackDialog";
 import { openRollbackDialog } from "./rollback-state";
 import { ToolApprovalDialog } from "./components/ToolApprovalDialog";
+import { TuiOverlayModal } from "./components/TuiOverlayModal";
 import { PlanBoard } from "./components/PlanBoard";
 // 工具定义说明弹窗（工具卡右键 → 「显示工具详细信息」）：状态在 tool-info-state.ts 的模块级 store 里，
 // 这里只挂一份渲染（触发点在消息流里的每张工具卡）。
@@ -2392,6 +2393,8 @@ export function App() {
 			<RollbackDialog />
 			{/* 人机协同拦截与「改写执行」审批弹窗 */}
 			<ToolApprovalDialog approval={chat.approval} />
+			{/* TUI 扩展模态弹窗（ctx.ui.custom 虚拟终端桥） */}
+			{chat.tuiOverlay && <TuiOverlayModal overlay={chat.tuiOverlay} />}
 			{/* 插件弹窗（modal.dialog 槽位）：action 点即分发 + 关弹窗，view 挂插件视图。 */}
 			{openModalEntry && (
 				<PluginModal

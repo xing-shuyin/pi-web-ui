@@ -622,6 +622,12 @@ export type ClientMessage =
 	 *  refreshes its own listing afterwards. When setAsCwd is true, switches cwd to it atomically. */
 	| { type: "make_dir"; path: string; setAsCwd?: boolean }
 	| { type: "dialog_response"; id: number; value: string | boolean | null }
+	/** Send terminal input keystrokes to an active TUI overlay component. */
+	| { type: "tui_overlay_input"; id: number; data: string }
+	/** Notify server that TUI overlay dimensions changed. */
+	| { type: "tui_overlay_resize"; id: number; cols: number; rows: number }
+	/** Cancel / close an active TUI overlay from the client side. */
+	| { type: "tui_overlay_cancel"; id: number }
 	// -- self-update ----------------------------------------------------------
 	/** Check the npm registry for a newer pi-web-ui version. */
 	| { type: "check_update" }
@@ -1282,7 +1288,86 @@ export type ClientMessage =
 			type: "get_compacted_messages";
 			compactionMessageId: string;
 			conversationId?: string;
+	  }
+	// -- remote SSH & probe (远程项目环境探针与目录浏览) -------------------
+	/** 远程 SSH 连接与环境探针（探测操作系统、架构、git/node/bash 依赖） */
+	| {
+			type: "remote_ssh_probe";
+			reqId?: string;
+			params: RemoteSshProbeParams;
+	  }
+	/** 浏览远程目录（通过已有连接或指定路径） */
+	| {
+			type: "remote_ssh_list_dir";
+			reqId?: string;
+			connectionId: string;
+			path?: string;
+	  }
+	/** 在远端执行工具一键安装（如 git / bash） */
+	| {
+			type: "remote_ssh_install_tools";
+			reqId?: string;
+			connectionId: string;
+			tools: string[];
+	  }
+	/** 获取已保存的 SSH 远程连接配置列表 */
+	| {
+			type: "remote_ssh_list_profiles";
+			reqId?: string;
+	  }
+	/** 删除已保存的 SSH profile */
+	| {
+			type: "remote_ssh_delete_profile";
+			name: string;
 	  };
+
+// -- Remote SSH & Probe types -----------------------------------------------
+export type RemoteSshAuth =
+	| { type: "password"; password: string }
+	| { type: "key"; privateKeyPath?: string; privateKey?: string; passphrase?: string }
+	| { type: "agent" };
+
+export interface RemoteSshProbeParams {
+	host: string;
+	port?: number;
+	username: string;
+	auth: RemoteSshAuth;
+	profileName?: string;
+	saveProfile?: boolean;
+}
+
+export interface RemoteSshSystemInfo {
+	os: string;
+	arch: string;
+	hostname: string;
+	homeDir: string;
+	user: string;
+}
+
+export interface RemoteSshToolsInfo {
+	git: { installed: boolean; version?: string };
+	node: { installed: boolean; version?: string };
+	bash: { installed: boolean; path?: string };
+	python?: { installed: boolean; version?: string };
+}
+
+export interface RemoteSshDirItem {
+	name: string;
+	path: string;
+	type: "dir" | "file";
+	size?: number;
+	mtime?: number;
+}
+
+export interface RemoteSshProfileSummary {
+	name: string;
+	host: string;
+	port: number;
+	username: string;
+	authType: "password" | "key" | "agent";
+	privateKeyPath?: string;
+	lastConnected?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Server -> Client
@@ -3292,6 +3377,19 @@ export type ServerMessage =
 	  }
 	/** The server resolved (or abandoned) a dialog — the client must close it. */
 	| { type: "dialog_closed"; id: number }
+	/** Open a TUI overlay modal dialog in the web UI. */
+	| {
+			type: "tui_overlay_open";
+			id: number;
+			title?: string;
+			cols: number;
+			rows: number;
+			initialAnsi?: string;
+	  }
+	/** Re-render frame for an active TUI overlay. */
+	| { type: "tui_overlay_render"; id: number; ansi: string }
+	/** Close the TUI overlay modal dialog. */
+	| { type: "tui_overlay_close"; id: number }
 	// -- self-update ----------------------------------------------------------
 	/** Result of a check_update run (current/latest from the npm registry). */
 	| {
@@ -3612,4 +3710,40 @@ export type ServerMessage =
 			conversationId: string;
 			messages: UiMessage[];
 			error?: string;
+	  }
+	// -- remote SSH & probe results ------------------------------------------
+	| {
+			type: "remote_ssh_probe_result";
+			reqId?: string;
+			ok: boolean;
+			connectionId?: string;
+			error?: string;
+			system?: RemoteSshSystemInfo;
+			tools?: RemoteSshToolsInfo;
+			packageManager?: string;
+			suggestedInstall?: string[];
+	  }
+	| {
+			type: "remote_ssh_list_dir_result";
+			reqId?: string;
+			ok: boolean;
+			connectionId: string;
+			path: string;
+			parentPath?: string | null;
+			items: RemoteSshDirItem[];
+			error?: string;
+	  }
+	| {
+			type: "remote_ssh_install_result";
+			reqId?: string;
+			ok: boolean;
+			connectionId: string;
+			tool: string;
+			output?: string;
+			error?: string;
+	  }
+	| {
+			type: "remote_ssh_profiles_result";
+			reqId?: string;
+			profiles: RemoteSshProfileSummary[];
 	  };

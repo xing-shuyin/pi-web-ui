@@ -48,6 +48,7 @@ import type {
 
 import { applyMessageDelta, type MessageDeltaMsg } from "./message-delta";
 import { resolvePendingQuestion, type QuestionSource } from "./pending-question";
+import { emitTuiOverlayRender } from "./tui-overlay-bridge";
 import { setAppGlobals, setAppSend } from "./app-globals";
 // 工具定义说明弹窗（工具卡右键 → 「显示工具详细信息」）：应答直接回模块级 store，
 // 不进 ChatState（弹窗挂在 App 上，消息列表里几十张卡片不必为此各拿一份数据）。
@@ -60,6 +61,7 @@ import { emitPluginData } from "./plugin-loader";
 import { ingestPluginLogsData } from "./plugin-logs";
 import { resolveCatalogSyncResult } from "./plugin-host";
 import { PROTOCOL_VERSION } from "./protocol-version";
+import { dispatchRemoteSshMessage } from "./remote-ssh-client";
 import {
 	initialProviderOAuthState,
 	reduceProviderOAuthState,
@@ -307,6 +309,14 @@ export interface ChatState {
 		kind: "select" | "confirm" | "input";
 		title: string;
 		args: unknown[];
+	} | null;
+	/** Active TUI modal overlay (from ctx.ui.custom) awaiting user interaction. */
+	tuiOverlay: {
+		id: number;
+		title?: string;
+		cols: number;
+		rows: number;
+		initialAnsi?: string;
 	} | null;
 	/** 待用户审批的高危工具调用（Human-in-the-Loop: Edit & Run）。 */
 	approval: UiToolApproval | null;
@@ -633,6 +643,16 @@ type Action =
 				kind: "select" | "confirm" | "input";
 				title: string;
 				args: unknown[];
+			} | null;
+	  }
+	| {
+			type: "tui_overlay";
+			overlay: {
+				id: number;
+				title?: string;
+				cols: number;
+				rows: number;
+				initialAnsi?: string;
 			} | null;
 	  }
 	| {
@@ -1074,6 +1094,8 @@ function reducer(state: ChatState, action: Action): ChatState {
 			return { ...state, statuses: action.statuses };
 		case "dialog":
 			return { ...state, dialog: action.dialog };
+		case "tui_overlay":
+			return { ...state, tuiOverlay: action.overlay };
 		case "question":
 			return { ...state, question: action.question };
 		case "remote_question":
@@ -1457,6 +1479,7 @@ export function useChat() {
 		widgets: [],
 		statuses: [],
 		dialog: null,
+		tuiOverlay: null,
 		approval: null,
 		question: null,
 		remoteQuestion: null,
@@ -1998,6 +2021,24 @@ export function useChat() {
 				case "dialog_closed":
 					dispatch({ type: "dialog", dialog: null });
 					break;
+				case "tui_overlay_open":
+					dispatch({
+						type: "tui_overlay",
+						overlay: {
+							id: msg.id,
+							title: msg.title,
+							cols: msg.cols,
+							rows: msg.rows,
+							initialAnsi: msg.initialAnsi,
+						},
+					});
+					break;
+				case "tui_overlay_render":
+					emitTuiOverlayRender(msg.id, msg.ansi);
+					break;
+				case "tui_overlay_close":
+					dispatch({ type: "tui_overlay", overlay: null });
+					break;
 				case "question_pending":
 					questionSourceRef.current = "live";
 					dispatch({
@@ -2350,6 +2391,12 @@ export function useChat() {
 				case "plugin_data":
 					// 宿主保留通道（host.log 按需拉取回包）先拦截：命中即吞掉，只进日志 store。
 					if (!ingestPluginLogsData(msg.pluginId, msg.payload)) emitPluginData(msg.pluginId, msg.payload);
+					break;
+				case "remote_ssh_probe_result":
+				case "remote_ssh_list_dir_result":
+				case "remote_ssh_install_result":
+				case "remote_ssh_profiles_result":
+					dispatchRemoteSshMessage(msg);
 					break;
 				default:
 					break;

@@ -10,6 +10,26 @@
 
 ## [Unreleased]
 
+## [0.103.0] — 2026-10-11
+
+### Added
+
+- **远程工作区支持（Remote SSH Workspace）** —— 支持通过 `ssh://[user@]host[:port]/path` URI 直接连接远程 Linux/Unix 主机作为当前对话的工作区；本地提供安全的工作区会话投影（`remote-workspaces/<slug>`），所有对话记录、草稿与运行数据 100% 在本地安全落盘；文件服务、SCM 版本管理、终端 PTY、只读探测与文件读写工具全面原生适配远程执行。
+- **远程主机配置与环境探针（Remote Host & Probe）** —— 目录浏览器新增远程 SSH 模式；支持保存并管理多个远程连接配置；连接建立后自动探测远端系统架构及 Git / Node / Bash 基础工具安装情况，并提供工具缺失一键自动安装引导；支持直接浏览远程服务器文件树并一键打开作为工作区。
+- **虚拟 TUI 交互浮层（Virtual TUI Modal & Bridge）** —— 终端管理器新增虚拟 TUI 浮层支持；当工具启动交互式命令行或全屏终端应用时，Web 前端自动唤起全屏/半屏 TUI 交互弹窗，无缝桥接键盘输入与屏幕缓冲区渲染。
+- **官网与文档中心导航指引** —— README 首页新增 pi-web-ui 官方网站与详细文档中心快捷访问链接。
+
+### Fixed
+
+- **会话物理路径与远程目录解析健壮性** —— 修复在部分未初始化或 mock 状态下 `stateStore` 访问异常的问题，并在非远程工作区场景提供零损耗快速回退。
+- **样式与 CSS 变量兼容性修复** —— 统一目录浏览器 SSH 相关面板的 Hover 高亮样式为系统标准 `--bg-elev2`，消除未定义变量告警。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（21）：`workspaceModeLocal`、`workspaceModeRemote`、`sshHost`、`sshPort`、`sshUser`、`sshAuthType`、`sshPassword`、`sshKeyPath`、`sshAgent`、`sshSaveProfile`、`sshProfileName`、`sshConnectAndProbe`、`sshConnecting`、`sshSavedProfiles`、`sshInstallTool`、`sshInstalling`、`sshSkipAndBrowse`、`sshOpenRemoteWorkspace`、`sshDisconnect`、`sshDeleteProfileConfirm`、`tuiOverlayTitle`
+<!-- auto-i18n:end -->
+
 ## [0.102.0] — 2026-10-10
 
 ### Added
@@ -1583,6 +1603,8 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 0.29.0（2026-08-23）：全局搜索弹窗（Ctrl+K）+ 消息列表惰性窗口化。
 
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.101.0...main
+[0.103.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.103.0
+[0.102.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.102.0
 [0.101.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.101.0
 [0.100.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.100.0
 [0.99.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.99.0
