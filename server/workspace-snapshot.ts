@@ -12,7 +12,7 @@
  *   只还原/清理 cwd 子树，绝不触碰同仓库的兄弟目录。
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { copyFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -36,6 +36,98 @@ async function runGit(cwd: string, args: string[], envExtra?: NodeJS.ProcessEnv)
 	return stdout.trim();
 }
 
+/** 向 git 标准输入写一段内容。用于 `update-index --index-info` 这类不能把数万路径塞进 argv 的命令。 */
+function runGitInput(cwd: string, args: string[], input: string, envExtra?: NodeJS.ProcessEnv): Promise<void> {
+	return new Promise((resolvePromise, reject) => {
+		const child = spawn("git", ["-c", "core.quotepath=false", ...args], {
+			cwd,
+			env: envExtra ? { ...process.env, ...envExtra } : process.env,
+			windowsHide: true,
+			// stdout 不读会把管道缓冲写满，git 可能一直不退出；也不要让它漏进测试进程的 console。
+			stdio: ["pipe", "ignore", "pipe"],
+		});
+		let stderr = "";
+		let settled = false;
+		const timer = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			child.kill();
+			reject(new Error(`git ${args[0] ?? ""} timed out`));
+		}, GIT_SNAPSHOT_TIMEOUT_MS);
+		child.stderr?.on("data", (chunk: Buffer) => {
+			stderr += chunk.toString();
+		});
+		child.on("error", (err) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			reject(err);
+		});
+		child.on("close", (code) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			if (code === 0) resolvePromise();
+			else reject(new Error(stderr.trim() || `git exited ${code}`));
+		});
+		child.stdin.end(input);
+	});
+}
+
+/**
+ * 把用户真实 index 拷贝为快照用的临时 index，避免每次对空 index 做全量 `git add -A`。
+ *
+ * 空 index 上 `git add -A` 会把 cwd 子树里所有未 ignore 文件重新哈希。大仓库（数万文件）上这一步要 3–15 秒，
+ * 而它又挡在 `s.prompt()` 之前，用户气泡要等它做完才会出现。拷贝现有 index 后，`git add -A` 只哈希
+ * 变更和未跟踪文件。
+ *
+ * 子目录 cwd 必须先从临时 index 里剔掉子树之外的条目，否则 `write-tree` 会把整仓写进快照，
+ * 破坏「快照顶层只有该子目录」的约定。剔除失败则删掉临时 index，回退到空 index 全量添加，不改语义。
+ * 只动临时文件，不写用户的 `.git/index`。
+ */
+async function seedSnapshotIndex(cwd: string, tempIndex: string, env: NodeJS.ProcessEnv): Promise<void> {
+	try {
+		const indexReal = resolve(cwd, await runGit(cwd, ["rev-parse", "--git-path", "index"]));
+		await copyFile(indexReal, tempIndex);
+	} catch {
+		return;
+	}
+	let prefix = "";
+	try {
+		prefix = (await runGit(cwd, ["rev-parse", "--show-prefix"], env)).replace(/\\/g, "/").replace(/\/+$/, "");
+	} catch {
+		await rm(tempIndex, { force: true });
+		return;
+	}
+	if (!prefix) return;
+	const prefixSlash = `${prefix}/`;
+	let listed = "";
+	try {
+		// 必须从仓库根列：在子目录 cwd 里不带 :(top) 时，ls-files 只返回当前子树，
+		// 兄弟目录会被漏掉，write-tree 仍会把整仓写进快照。
+		listed = await runGit(cwd, ["ls-files", "-z", "--full-name", "--", ":(top)"], env);
+	} catch {
+		await rm(tempIndex, { force: true });
+		return;
+	}
+	const outside = listed.split("\0").filter((path) => {
+		if (!path || path.includes("\n")) return false;
+		const norm = path.replace(/\\/g, "/");
+		return norm !== prefix && !norm.startsWith(prefixSlash);
+	});
+	if (listed.includes("\n") && listed.split("\0").some((path) => path.includes("\n"))) {
+		await rm(tempIndex, { force: true });
+		return;
+	}
+	if (outside.length === 0) return;
+	const info = outside.map((path) => `0 0000000000000000000000000000000000000000\t${path}\n`).join("");
+	try {
+		await runGitInput(cwd, ["update-index", "--index-info"], info, env);
+	} catch {
+		await rm(tempIndex, { force: true });
+	}
+}
+
 /** 检查工作区是否由 Git 管理。 */
 export async function isGitWorkspace(cwd: string): Promise<boolean> {
 	return (await gitDirOf(cwd)) !== null;
@@ -55,6 +147,8 @@ export async function createWorkspaceSnapshot(cwd: string): Promise<string | nul
 	const env = { GIT_INDEX_FILE: tempIndex };
 
 	try {
+		// 先种入真实 index（子目录再剔掉子树外条目）。失败则临时 index 不存在，下面的 add 仍从空 index 开始。
+		await seedSnapshotIndex(cwd, tempIndex, env);
 		// 1. 将 cwd 子树（而非整个工作区）的当前改动（含未跟踪与新增）记录到临时 index；
 		//    暂存路径相对仓库根，write-tree 顶层因此只有该子目录一个条目
 		await runGit(cwd, ["add", "-A", "--", "."], env);

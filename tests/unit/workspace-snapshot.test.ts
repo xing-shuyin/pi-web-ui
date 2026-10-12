@@ -254,6 +254,41 @@ describe("工作区版本影子快照与双向联动回滚 (Dual-State Rollback)
 		expect(existsSync(join(testDir, "created.txt"))).toBe(false);
 	}, 20000);
 
+	it("种入真实 index 后仍只快照 cwd 子树，且不改用户暂存区", async () => {
+		execSync("git init", { cwd: testDir, stdio: "ignore" });
+		execSync("git config user.name test && git config user.email test@test.com", {
+			cwd: testDir,
+			stdio: "ignore",
+		});
+		writeFileSync(join(testDir, "root.txt"), "root v1\n");
+		mkdirSync(join(testDir, "proj"));
+		writeFileSync(join(testDir, "proj", "a.txt"), "a v1\n");
+		mkdirSync(join(testDir, "other"));
+		writeFileSync(join(testDir, "other", "keep.txt"), "keep v1\n");
+		execSync("git add . && git commit -m 'initial'", { cwd: testDir, stdio: "ignore" });
+		writeFileSync(join(testDir, "other", "staged.txt"), "staged only\n");
+		execSync("git add other/staged.txt", { cwd: testDir, stdio: "ignore" });
+
+		const projDir = join(testDir, "proj");
+		writeFileSync(join(projDir, "a.txt"), "a v2\n");
+		writeFileSync(join(projDir, "new.txt"), "new\n");
+		const snapshot = await createWorkspaceSnapshot(projDir);
+		expect(snapshot).toBeTruthy();
+
+		const top = execSync(`git ls-tree --name-only ${snapshot}`, { cwd: testDir }).toString().trim();
+		expect(top).toBe("proj");
+		expect(execSync(`git show ${snapshot}:proj/a.txt`, { cwd: testDir }).toString().replace(/\r\n/g, "\n")).toBe(
+			"a v2\n",
+		);
+		expect(execSync(`git show ${snapshot}:proj/new.txt`, { cwd: testDir }).toString().replace(/\r\n/g, "\n")).toBe(
+			"new\n",
+		);
+		expect(() => execSync(`git cat-file -e ${snapshot}:other/keep.txt`, { cwd: testDir, stdio: "ignore" })).toThrow();
+
+		const staged = execSync("git diff --cached --name-only", { cwd: testDir }).toString().trim();
+		expect(staged).toBe("other/staged.txt");
+	}, 20000);
+
 	describe("findMatchingWorkspaceSnapshot 匹配决策纯函数", () => {
 		const snaps: WorkspaceSnapshotRecord[] = [
 			{ entryId: "e1", timestamp: 1000, snapshotRef: "ref-1" },
