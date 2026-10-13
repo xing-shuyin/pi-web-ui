@@ -10,7 +10,7 @@
  */
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, existsSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { pick, type ServerLang } from "./i18n.js";
 import { sdkCopies, type SdkCopy } from "./sdk-origin.js";
@@ -403,19 +403,8 @@ const PI_PROBE_TTL_MS = 10_000;
 
 let piCoreProbe: { at: number; version: string | null } | null = null;
 
-/** Locate the pi CLI on PATH without spawning anything. */
-function piCliOnPath(): string | null {
-	const dirs = (process.env.PATH ?? "").split(delimiter);
-	for (const dir of dirs) {
-		if (!dir) continue;
-		const candidate = join(dir, "pi");
-		if (existsSync(candidate)) return candidate;
-	}
-	return null;
-}
-
 /** Read a pi-core package.json's version, or null when absent, not ours, or
- *  unreadable. Shared by both resolution strategies below. */
+ *  unreadable. Shared by all resolution strategies below. */
 function readPiCoreVersionAt(pkgPath: string): string | null {
 	if (!existsSync(pkgPath)) return null;
 	try {
@@ -460,14 +449,94 @@ function versionFromSymlinkWalk(bin: string): string | null {
 }
 
 /**
- * Read the pi core version from disk: resolve the `pi` bin on PATH, then try
- * the concrete global-npm layout first (Windows) and the POSIX symlink walk
- * second. Exported for unit tests — defaultProbePiCore memoizes its result.
+ * Attempt to resolve the installed @earendil-works/pi-coding-agent package version
+ * from a candidate `pi` executable/script path.
  */
-export function readPiCoreVersionFromDisk(): string | null {
-	const bin = piCliOnPath();
-	if (!bin) return null;
-	return versionFromSiblingNodeModules(bin) ?? versionFromSymlinkWalk(bin);
+function versionFromCandidate(bin: string): string | null {
+	// 1. Sibling layout: <binDir>/node_modules/<pkg>/package.json
+	const sib = versionFromSiblingNodeModules(bin);
+	if (sib) return sib;
+
+	// 2. .bin layout: if bin is inside a `.bin` folder, check sibling of `.bin` (which is node_modules)
+	const dir = dirname(bin);
+	const parent = dirname(dir);
+	if (dir.endsWith(".bin") || dir.endsWith(".bin\\") || dir.endsWith(".bin/")) {
+		const parentNm = readPiCoreVersionAt(join(parent, ...PI_CORE_PACKAGE.split("/"), "package.json"));
+		if (parentNm) return parentNm;
+	}
+
+	// 3. Wrapper script content inspection (Windows .cmd / .ps1 or shell wrapper)
+	try {
+		const head = readFileSync(bin, "utf8").slice(0, 4096);
+		const m = head.match(/[^\r\n"']*@earendil-works[/\\]pi-coding-agent[^\r\n"']*/);
+		if (m) {
+			const matchedPath = m[0].trim().replace(/%~?dp0%?[/\\]/gi, "");
+			const targetDir = isAbsolute(matchedPath) ? matchedPath : join(dir, matchedPath);
+			let cur = targetDir;
+			for (let i = 0; i < 5; i++) {
+				const pj = join(cur, "package.json");
+				const v = readPiCoreVersionAt(pj);
+				if (v) return v;
+				const p = dirname(cur);
+				if (p === cur) break;
+				cur = p;
+			}
+		}
+	} catch {
+		/* ignore */
+	}
+
+	// 4. POSIX symlink walk
+	const sym = versionFromSymlinkWalk(bin);
+	if (sym) return sym;
+
+	// 5. Global prefix layout: <binDir>/../lib/node_modules/<pkg> or <binDir>/../node_modules/<pkg>
+	const libNm = readPiCoreVersionAt(join(parent, "lib", "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"));
+	if (libNm) return libNm;
+	const upNm = readPiCoreVersionAt(join(parent, "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"));
+	if (upNm) return upNm;
+
+	return null;
+}
+
+/**
+ * Read the pi core version from disk: resolve the `pi` bin on PATH (traversing all
+ * matches until a valid version is found), then falling back to standard global
+ * prefix directories.
+ */
+export function readPiCoreVersionFromDisk(env: NodeJS.ProcessEnv = process.env): string | null {
+	const rawPath = env.PATH ?? "";
+	const dirs = rawPath.split(delimiter).filter(Boolean);
+	const isWin = process.platform === "win32";
+	const names = isWin ? ["pi.cmd", "pi.exe", "pi.ps1", "pi"] : ["pi"];
+
+	for (const dir of dirs) {
+		for (const name of names) {
+			const candidate = join(dir, name);
+			if (!existsSync(candidate)) continue;
+			const version = versionFromCandidate(candidate);
+			if (version) return version;
+		}
+	}
+
+	// Fallback to global prefix directories (npm global prefix, pnpm, etc.)
+	const home = env.HOME || env.USERPROFILE || "";
+	const prefix = env.npm_config_prefix || env.PREFIX;
+	const prefixDirs: string[] = [];
+	if (prefix) prefixDirs.push(prefix);
+	if (home) prefixDirs.push(join(home, ".npm-global"));
+	if (env.APPDATA) prefixDirs.push(join(env.APPDATA, "npm"));
+	if (env.PNPM_HOME) prefixDirs.push(env.PNPM_HOME);
+	if (env.LOCALAPPDATA) prefixDirs.push(join(env.LOCALAPPDATA, "pnpm", "global"));
+
+	for (const p of prefixDirs) {
+		const v1 = readPiCoreVersionAt(join(p, "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"));
+		if (v1) return v1;
+		const v2 = readPiCoreVersionAt(join(p, "lib", "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"));
+		if (v2) return v2;
+	}
+
+	return null;
 }
 
 /**
@@ -477,11 +546,11 @@ export function readPiCoreVersionFromDisk(): string | null {
  * instead of spawning `pi --version`. FORK-FREE by design — see the note on
  * defaultProbePiCore.
  */
-export function defaultProbePiCore(): string | null {
+export function defaultProbePiCore(env: NodeJS.ProcessEnv = process.env): string | null {
 	const now = Date.now();
 	const cached = piCoreProbe;
 	if (cached && now - cached.at < PI_PROBE_TTL_MS) return cached.version;
-	const version = readPiCoreVersionFromDisk();
+	const version = readPiCoreVersionFromDisk(env);
 	piCoreProbe = { at: now, version };
 	return version;
 }

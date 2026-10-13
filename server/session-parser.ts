@@ -254,3 +254,122 @@ export async function parseSessionInfoFast(
 		return null;
 	}
 }
+
+/**
+ * 历史会话列表的 fork 父会话过滤：
+ * - `showForkedParents === true` 时保留全部会话（父会话与子会话同时显示）；
+ * - `showForkedParents === false`（默认）时隐藏「已被后续分支派生、且该分支链上存在叶子会话」的父会话，
+ *   仅保留每条 fork 链最新的链尾叶子会话；
+ * - 若某条链因异常形成纯环（无叶子）或自环，环上节点保留而不整条隐藏。
+ */
+export function filterForkedParentSessions<T extends { path: string; parentSessionPath?: string }>(
+	infos: T[],
+	showForkedParents = false,
+): T[] {
+	if (showForkedParents || infos.length <= 1) return infos;
+	const byKey = new Map<string, T>();
+	for (const info of infos) {
+		byKey.set(normalizePathKey(info.path), info);
+	}
+	const childrenOf = new Map<string, Set<string>>();
+	for (const info of infos) {
+		if (typeof info.parentSessionPath !== "string" || !info.parentSessionPath) continue;
+		const childKey = normalizePathKey(info.path);
+		const parentKey = normalizePathKey(info.parentSessionPath);
+		if (!parentKey || parentKey === childKey || !byKey.has(parentKey)) continue;
+		let set = childrenOf.get(parentKey);
+		if (!set) {
+			set = new Set<string>();
+			childrenOf.set(parentKey, set);
+		}
+		set.add(childKey);
+	}
+	if (childrenOf.size === 0) return infos;
+
+	const canReachLeaf = new Set<string>();
+	for (const key of byKey.keys()) {
+		const children = childrenOf.get(key);
+		if (!children || children.size === 0) {
+			canReachLeaf.add(key);
+		}
+	}
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const [parentKey, children] of childrenOf.entries()) {
+			if (canReachLeaf.has(parentKey)) continue;
+			for (const childKey of children) {
+				if (canReachLeaf.has(childKey)) {
+					canReachLeaf.add(parentKey);
+					changed = true;
+					break;
+				}
+			}
+		}
+	}
+
+	const kept = infos.filter((info) => {
+		const key = normalizePathKey(info.path);
+		const children = childrenOf.get(key);
+		if (!children || children.size === 0) return true;
+		return !canReachLeaf.has(key);
+	});
+	return kept.length > 0 ? kept : infos;
+}
+
+/**
+ * 极速定位指定目录下最近修改的单个有效会话文件路径（用于 attach/恢复 判定，毫秒级返回）。
+ *
+ * 绝不使用 SessionManager.list 递归全量加载解析全部历史消息（大历史会有数百个文件、
+ * 几百兆 JSON 反序列化耗时数十秒，严重饿死 Node 事件循环）。
+ *
+ * 逻辑：
+ * 1. 扫描目录下的 .jsonl 文件；
+ * 2. 按 mtime 降序排序；
+ * 3. 逐个轻量探测（仅读首行 cwd，使用 readCwdFromSessionHeader）；
+ * 4. 找到首个匹配 targetCwd（若指定）的有效会话文件后立即返回；若未指定 targetCwd 则直接返回最新文件的路径。
+ */
+export async function findMostRecentSessionFileFast(
+	sessionDir: string,
+	targetCwd?: string,
+): Promise<string | undefined> {
+	try {
+		try {
+			await fsPromises.access(sessionDir);
+		} catch {
+			return undefined;
+		}
+		const dirEntries = await fsPromises.readdir(sessionDir);
+		const jsonlFiles = dirEntries.filter((f) => f.endsWith(".jsonl"));
+		if (jsonlFiles.length === 0) return undefined;
+
+		const stats = await Promise.all(
+			jsonlFiles.map(async (f) => {
+				const fp = join(sessionDir, f);
+				try {
+					const st = await fsPromises.stat(fp);
+					return { path: fp, mtime: st.mtimeMs };
+				} catch {
+					return null;
+				}
+			}),
+		);
+		const validStats = stats.filter((s): s is { path: string; mtime: number } => s !== null);
+		validStats.sort((a, b) => b.mtime - a.mtime);
+
+		if (!targetCwd) {
+			return validStats[0]?.path;
+		}
+
+		const targetKey = normalizePathKey(targetCwd);
+		for (const item of validStats) {
+			const headerCwd = await readCwdFromSessionHeader(item.path);
+			if (headerCwd && normalizePathKey(headerCwd) === targetKey) {
+				return item.path;
+			}
+		}
+		return validStats[0]?.path;
+	} catch {
+		return undefined;
+	}
+}

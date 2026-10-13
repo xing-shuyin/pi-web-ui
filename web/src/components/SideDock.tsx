@@ -21,6 +21,8 @@ interface SideDockProps {
 	onOpenProjectPicker?: () => void;
 	onThemeToggle?: () => void;
 	onSoundToggle?: () => void;
+	zenMode?: boolean;
+	onToggleZenMode?: () => void;
 }
 
 /**
@@ -49,6 +51,8 @@ export function SideDock({
 	onOpenProjectPicker,
 	onThemeToggle: _onThemeToggle,
 	onSoundToggle: _onSoundToggle,
+	zenMode,
+	onToggleZenMode,
 }: SideDockProps) {
 	const { t } = useI18n();
 	const [collapsed, setCollapsed] = useState(false);
@@ -106,6 +110,8 @@ export function SideDock({
 			onOpenProjectPicker={onOpenProjectPicker}
 			onUiAction={onUiAction}
 			uiContextEntries={uiContextTopbar}
+			zenMode={zenMode}
+			onToggleZenMode={onToggleZenMode}
 		/>
 	);
 

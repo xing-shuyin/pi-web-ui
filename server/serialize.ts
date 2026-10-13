@@ -5,8 +5,9 @@
  */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { TextQuote, UiContentBlock, UiImageBlock, UiMessage } from "./protocol.js";
-import { splitQuotedPrompt } from "./text-quote.js";
+import { splitQuotedPrompt, type QueuedAttachmentMeta } from "./text-quote.js";
 import { saveAttachmentSync } from "./attachment-store.js";
+import { stripMarkers } from "./markers/index.js";
 
 /** AgentMessage is not re-exported from the package root; derive it from AgentSession. */
 export type AgentMessage = AgentSession["messages"][number];
@@ -161,10 +162,14 @@ function serializeUserContent(content: Extract<AgentMessage, { content: unknown 
 	});
 }
 
-function serializeAssistantContent(content: Extract<AgentMessage, { role: "assistant" }>["content"]): UiContentBlock[] {
+function serializeAssistantContent(
+	content: Extract<AgentMessage, { role: "assistant" }>["content"],
+	streaming = false,
+): UiContentBlock[] {
 	return content.map((b) => {
 		if (b.type === "text") {
-			const { text, truncated } = truncate(b.text, TEXT_CAP);
+			const cleaned = stripMarkers(b.text, { stripTrailingIncomplete: streaming });
+			const { text, truncated } = truncate(cleaned, TEXT_CAP);
 			return { type: "text", text, truncated };
 		}
 		if (b.type === "thinking") {
@@ -320,18 +325,23 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 	switch (m.role) {
 		case "user": {
 			const quotes: TextQuote[] = [];
+			const attachments: QueuedAttachmentMeta[] = [];
 			const raw = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 			const content = raw.map((block) => {
 				if (block.type !== "text") return block;
 				const parsed = splitQuotedPrompt(block.text);
 				quotes.push(...parsed.quotes);
+				if (parsed.attachments?.length) attachments.push(...parsed.attachments);
 				return { ...block, text: parsed.text };
 			});
+			const details: Record<string, unknown> = {};
+			if (quotes.length) details.quotes = quotes;
+			if (attachments.length) details.attachments = attachments;
 			return {
 				id,
 				role: "user",
 				content: serializeUserContent(content),
-				...(quotes.length ? { details: { quotes } } : {}),
+				...(Object.keys(details).length ? { details } : {}),
 				timestamp: m.timestamp,
 			};
 		}
@@ -491,5 +501,6 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 export function serializeStreamingMessage(m: AgentMessage): UiMessage | null {
 	const msg = serializeMessage(m, 0);
 	if (!msg) return null;
-	return { ...msg, id: `stream-${m.timestamp ?? 0}` };
+	const content = m.role === "assistant" ? serializeAssistantContent(m.content, true) : msg.content;
+	return { ...msg, id: `stream-${m.timestamp ?? 0}`, content };
 }

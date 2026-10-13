@@ -92,6 +92,28 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(auto.tools).not.toContain("{{");
 	});
 
+	it("tools（lazy 模式）：声明核心工具常驻且其他工具按需 load_tools", () => {
+		const enAuto = resolveSectionTexts(
+			inputs({
+				lazy: true,
+				catalogTools: ["bash", "read", "edit", "write", "patch"],
+				lang: "en",
+			}),
+		);
+		expect(enAuto.tools).toContain("Core tools (bash, read, edit, write) and `load_tools` are always active");
+		expect(enAuto.tools).toContain("pass their names to `load_tools` before calling them");
+
+		const zhAuto = resolveSectionTexts(
+			inputs({
+				lazy: true,
+				catalogTools: ["bash", "read", "edit", "write", "patch"],
+				lang: "zh",
+			}),
+		);
+		expect(zhAuto.tools).toContain("核心工具（bash, read, edit, write）及 `load_tools` 始终常驻可用，无需加载");
+		expect(zhAuto.tools).toContain("调用前先用 `load_tools` 附加上完整参数");
+	});
+
 	it("guidelines：探索引导 + 工具引导去重 + 固定两行", () => {
 		const auto = resolveSectionTexts(inputs());
 		expect(auto.guidelines).toContain("Guidelines:\n- Use bash for file operations like ls, rg, find");

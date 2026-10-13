@@ -81,6 +81,8 @@ export const PRESET_FIELD_GROUPS = {
 		"toolsWrap",
 		"toolImagesEnabled",
 		"keepRecentMessages",
+		"showForkedParentSessions",
+		"retainFinishedConversations",
 		"bgAutoCleanupMin",
 		"quickPhrases",
 		"quickPhrasesEnabled",
@@ -413,6 +415,18 @@ export const PRESET_FIELD_META = {
 		labelEn: "Messages Kept In Full",
 		hintZh: "消息列表尾部保持完整渲染的消息条数；更早的折叠为摘要行",
 		hintEn: "Recent messages rendered in full; older ones collapse to summary rows",
+	},
+	showForkedParentSessions: {
+		labelZh: "显示已分支的父会话",
+		labelEn: "Show Forked Parent Sessions",
+		hintZh: "编辑历史提问或派生分支后，在历史对话列表中同时保留原父会话",
+		hintEn: "Keep original parent sessions visible in the history list after editing a message or forking",
+	},
+	retainFinishedConversations: {
+		labelZh: "保留已结束的运行对话",
+		labelEn: "Retain Finished Running Conversations",
+		hintZh: "切换对话或新建对话时，已结束（空闲）的对话依然保留在运行列表中，直到手动移出",
+		hintEn: "Keep finished (idle) conversations in the Running Chats list when switching away until manually removed",
 	},
 	quickPhrases: {
 		labelZh: "快捷短语列表",

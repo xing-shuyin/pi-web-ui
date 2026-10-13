@@ -30,7 +30,7 @@ interface TipPos {
 
 /** 锚点包围盒 + 气泡实测尺寸 + 视口尺寸 → 气泡的 `fixed` 坐标。 */
 export function computeTipPosition(anchor: TipRect, tip: TipSize, viewport: TipSize): TipPos {
-	let left = anchor.left - TIP_MARGIN;
+	let left = Math.max(TIP_MARGIN, anchor.left - TIP_MARGIN);
 	let top = anchor.bottom + TIP_MARGIN;
 	if (left + tip.width > viewport.width - TIP_MARGIN)
 		left = Math.max(TIP_MARGIN, anchor.right + TIP_MARGIN - tip.width);

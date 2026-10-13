@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyMessageDelta, type MessageDeltaMsg, type MessageDeltaUiState } from "../../web/src/message-delta.js";
-import { flattenThinkingText, thinkingPreview } from "../../web/src/components/ThinkingBlock.js";
+import { flattenThinkingText, formatThinkingBody, thinkingPreview } from "../../web/src/components/ThinkingBlock.js";
 
 // P1 thinking first-char probe (w25, 2026-09-17): live wire capture from
 // openai-codex/gpt-5.6-luna — the ONLY run (of 4, across 3 providers) where
@@ -96,5 +96,18 @@ describe("ThinkingBlock preview (thinkingPreview)", () => {
 		const bodyFinal = long;
 		expect(bodyFinal).toBe(bodyStreaming);
 		expect(bodyFinal[0]).toBe("F");
+	});
+
+	it("formatThinkingBody strips trailing newlines and collapses excessive blank lines in expanded view", () => {
+		const rawWithTrailingBlankLines =
+			"User interface attention points are the primary focus. Analyze where these switches are typically located.\n\n\n";
+		expect(formatThinkingBody(rawWithTrailingBlankLines)).toBe(
+			"User interface attention points are the primary focus. Analyze where these switches are typically located.",
+		);
+
+		const withHeaderAndGaps = "# Thinking Process\n\nStep 1: inspect DOM\n   \n\n\nStep 2: fix padding\n\n";
+		expect(formatThinkingBody(withHeaderAndGaps)).toBe("Step 1: inspect DOM\n\nStep 2: fix padding");
+
+		expect(formatThinkingBody("   \n\n  ")).toBe("");
 	});
 });

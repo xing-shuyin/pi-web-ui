@@ -45,6 +45,10 @@ jobs:
       - name: Package Windows installer
         run: npx electron-builder -c desktop/electron-builder.yml --win --publish never
 
+      - name: Package Windows portable edition (with built-in Git)
+        shell: bash
+        run: node scripts/make-portable.mjs --skip-pack --zip --with-git
+
       # ───────────────────────────────────────────────────────────────────────────
       # SignPath 签名流程：
       # 1. 上传未签名的 exe 到 GitHub Artifact
@@ -90,6 +94,7 @@ jobs:
             release/*.exe
             release/*.exe.blockmap
             release/latest.yml
+            release/*-portable.zip
           if-no-files-found: error
 
       - name: Attach installer to GitHub Release
@@ -108,7 +113,7 @@ jobs:
           done
           gh release view "$TAG" >/dev/null
           ASSETS=()
-          for f in release/*.exe release/*.exe.blockmap release/latest.yml; do
+          for f in release/*.exe release/*.exe.blockmap release/latest.yml release/*-portable.zip; do
             if [ -f "$f" ]; then ASSETS+=("$f"); fi
           done
           printf 'uploading: %s\n' "${ASSETS[@]}"

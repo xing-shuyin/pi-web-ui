@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { LanguageProvider } from "./i18n";
@@ -8,6 +8,78 @@ import { applyTheme, loadTheme } from "./theme";
 import { initAuthToken } from "./auth-token";
 import { installScrollbarGutterVar } from "./scrollbar-gutter";
 import { appBase } from "./base-url";
+
+/** 根级错误边界：防止渲染期 JS 异常导致整棵 React 树卸载为纯黑屏。 */
+class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+	override state: { error: Error | null } = { error: null };
+
+	static getDerivedStateFromError(error: Error) {
+		return { error };
+	}
+
+	override componentDidCatch(error: Error, info: unknown) {
+		console.error("RootErrorBoundary caught error:", error, info);
+	}
+
+	override render() {
+		if (this.state.error) {
+			return (
+				<div
+					style={{
+						minHeight: "100vh",
+						display: "flex",
+						flexDirection: "column",
+						alignItems: "center",
+						justifyContent: "center",
+						padding: "24px",
+						background: "var(--bg, rgb(13, 14, 18))",
+						color: "var(--text, #e2e8f0)",
+						fontFamily: "system-ui, -apple-system, sans-serif",
+						textAlign: "center",
+					}}
+				>
+					<h2 style={{ fontSize: "18px", marginBottom: "12px", color: "var(--red, #f43f5e)" }}>
+						页面加载出现异常 / App Failed to Render
+					</h2>
+					<pre
+						style={{
+							maxWidth: "600px",
+							overflow: "auto",
+							padding: "12px 16px",
+							background: "rgba(0, 0, 0, 0.4)",
+							borderRadius: "8px",
+							fontSize: "12px",
+							lineHeight: "1.5",
+							marginBottom: "20px",
+							whiteSpace: "pre-wrap",
+							wordBreak: "break-word",
+							color: "#94a3b8",
+						}}
+					>
+						{this.state.error.message || String(this.state.error)}
+					</pre>
+					<button
+						type="button"
+						style={{
+							padding: "8px 20px",
+							background: "var(--accent, #38bdf8)",
+							color: "#0f172a",
+							border: "none",
+							borderRadius: "6px",
+							fontWeight: 600,
+							cursor: "pointer",
+							fontSize: "13px",
+						}}
+						onClick={() => window.location.reload()}
+					>
+						刷新重试 / Reload
+					</button>
+				</div>
+			);
+		}
+		return this.props.children;
+	}
+}
 
 // 吸收地址栏 ?token=（PI_WEB_TOKEN 鉴权入口）并持久化，须在首次请求前执行
 initAuthToken();
@@ -21,9 +93,11 @@ installScrollbarGutterVar();
 
 createRoot(document.getElementById("root")!).render(
 	<StrictMode>
-		<LanguageProvider>
-			<App />
-		</LanguageProvider>
+		<RootErrorBoundary>
+			<LanguageProvider>
+				<App />
+			</LanguageProvider>
+		</RootErrorBoundary>
 	</StrictMode>,
 );
 

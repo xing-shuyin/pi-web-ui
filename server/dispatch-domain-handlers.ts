@@ -55,17 +55,47 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 			void cs.makeDir(msg.path, msg.setAsCwd === true);
 			return true;
 		case "set_cwd":
-			void cs.setCwd(msg.path);
+			void (async () => {
+				try {
+					await cs.setCwd(msg.path);
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`切换工作目录失败：${(err as Error).message}`,
+						`Failed to switch workspace: ${(err as Error).message}`,
+					);
+				}
+			})();
 			return true;
 		case "set_workspace_roots":
-			void cs.setWorkspaceRoots(msg.roots);
+			void (async () => {
+				try {
+					await cs.setWorkspaceRoots(msg.roots);
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`设置额外工作区根失败：${(err as Error).message}`,
+						`Failed to set workspace roots: ${(err as Error).message}`,
+					);
+				}
+			})();
 			return true;
 		case "create_sandbox":
-			void cs.createSandbox?.({
-				name: msg.name,
-				sourcePath: msg.sourcePath,
-				ephemeral: msg.ephemeral,
-			});
+			void (async () => {
+				try {
+					await cs.createSandbox?.({
+						name: msg.name,
+						sourcePath: msg.sourcePath,
+						ephemeral: msg.ephemeral,
+					});
+				} catch (err) {
+					cs.emitNotice(
+						"error",
+						`创建沙盒失败：${(err as Error).message}`,
+						`Failed to create sandbox: ${(err as Error).message}`,
+					);
+				}
+			})();
 			return true;
 		case "reset_sandbox":
 			void cs.resetSandbox?.(msg.path);
@@ -599,6 +629,7 @@ export function handleSettingsMessage(msg: ClientMessage, cs: DispatchSession): 
 				toolsWrap: msg.toolsWrap,
 				toolImagesEnabled: (msg as { toolImagesEnabled?: boolean }).toolImagesEnabled,
 				keepRecentMessages: (msg as { keepRecentMessages?: number }).keepRecentMessages,
+				showForkedParentSessions: (msg as { showForkedParentSessions?: boolean }).showForkedParentSessions,
 				devNoCache: (msg as { devNoCache?: boolean }).devNoCache,
 				autoReload: (msg as { autoReload?: boolean }).autoReload,
 				skillsFullText: (msg as { skillsFullText?: string[] }).skillsFullText,

@@ -20,7 +20,22 @@ npm run desktop:dev      # Electron 指到本地 sidecar（http://127.0.0.1:<随
 # 联调前端：另开 npm run dev:server(:8788) + vite(:5173)，再
 PI_WEB_DESKTOP_URL=http://localhost:5173 npm run desktop:dev
 npm run desktop:dist     # 本地打包（产物在 release/，已 gitignore）
+npm run desktop:portable # 制作 U 盘便携版（产物在 release/PiWebUI-Portable/）
 ```
+
+## 便携版（U 盘即插即用）
+
+支持完全自包含的便携模式（见 `desktop/portable.ts` 与 `launcher/` 启动器）：
+
+- **特性**：
+  1. 动态自适应：基于执行文件相对路径动态计算所有路径，免疫 U 盘盘符浮动；
+  2. 100% 数据隔离自包含：Electron 缓存、WebUI 数据、Agent 模型认证（auth.json/models.json）、会话历史、Git 全局配置全部重定向至 `data/` 目录，拔掉 U 盘不污染宿主机系统；
+  3. PortableGit 自动发现：在 `runtime/git` 下放入 PortableGit 即可自带完整 Linux 工具链与 Git/Bash，目标机无需安装任何开发环境。
+- **制作命令**：
+  - `npm run desktop:portable`：制作基础便携版目录（产出 `release/PiWebUI-Portable/`）；
+  - `npm run desktop:portable:full`：制作**完整便携版**（自动下载并内置 PortableGit，开箱即用零依赖）；
+  - CI 自动化发版：在推送 tag 时，GitHub Actions 会自动带 `--with-git` 打包出完整内置 Git 的便携 zip 压缩包（`pi-web-ui-desktop-<版本号>-portable.zip`）并挂载到 Release 资产中。
+- **运行方式**：直接把 `PiWebUI-Portable/` 文件夹拷入 U 盘，双击根目录下的 `启动Pi.bat`（或 `PiPortable.bat`）。
 
 ## 约定
 

@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import {
 	FiActivity,
 	FiAnchor,
+	FiAperture,
 	FiCheck,
 	FiChevronUp,
 	FiClipboard,
@@ -29,6 +30,7 @@ import {
 	FiEdit2,
 	FiExternalLink,
 	FiEye,
+	FiFeather,
 	FiFile,
 	FiFileText,
 	FiFolder,
@@ -63,11 +65,13 @@ import {
 	FiZap,
 	FiZoomIn,
 } from "react-icons/fi";
+import { LuFlaskConical } from "react-icons/lu";
 import { PluginIcon } from "./plugin-icon";
 
 /** icon 名 → 预览节点。键就是 BUILTIN_UI_ITEMS 里出现过的全部 `icon` 值。 */
 const HOST_ICON_NODES: Record<string, ReactNode> = {
 	activity: <FiActivity />,
+	aperture: <FiAperture />,
 	branch: <FiGitBranch />,
 	browser: <FiGlobe />,
 	chat: <FiMessageSquare />,
@@ -83,7 +87,9 @@ const HOST_ICON_NODES: Record<string, ReactNode> = {
 	dot: <span className="host-icon-char">●</span>,
 	download: <FiDownload />,
 	edit: <FiEdit2 />,
+	engine: <FiAperture />,
 	eye: <FiEye />,
+	feather: <FiFeather />,
 	file: <FiFile />,
 	folder: <FiFolder />,
 	gauge: <FiActivity />,
@@ -108,6 +114,7 @@ const HOST_ICON_NODES: Record<string, ReactNode> = {
 	pin: <FiAnchor />,
 	plus: <FiPlus />,
 	refresh: <FiRefreshCw />,
+	sandbox: <LuFlaskConical />,
 	save: <FiSave />,
 	search: <FiSearch />,
 	send: <FiSend />,

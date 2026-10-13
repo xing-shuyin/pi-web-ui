@@ -52,6 +52,7 @@ import {
 	type CronParts,
 } from "./plugin-schedule.js";
 import { PluginPermissionStore, type PermissionFamily } from "./plugin-permissions.js";
+import { getAppVersion } from "./pkg-info.js";
 import { readCatalog, addCustomEntry, removeCustomEntry, type CatalogAddInput } from "./plugin-catalog.js";
 import { PluginGrantsStore, normalizeGrantPath } from "./plugin-grants.js";
 import { normalizeIconSvg } from "./icon-svg.js";
@@ -926,17 +927,9 @@ export function satisfiesEnginesConstraint(constraint: string, current: string):
 }
 
 /** 宿主自身版本（package.json version，读一次缓存；读不到回 null——调用方放行）。 */
-let cachedHostVersion: string | null | undefined;
 export function readHostVersion(): string | null {
-	if (cachedHostVersion !== undefined) return cachedHostVersion;
-	try {
-		const here = dirname(fileURLToPath(import.meta.url));
-		const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as { version?: unknown };
-		cachedHostVersion = typeof pkg.version === "string" ? pkg.version : null;
-	} catch {
-		cachedHostVersion = null;
-	}
-	return cachedHostVersion;
+	const ver = getAppVersion();
+	return ver ? ver : null;
 }
 
 /** 每个 WS 连接注册一个 sender；cid() 返回该 socket 的 clientId（attach 前 null）。 */

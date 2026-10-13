@@ -2035,14 +2035,16 @@ button.session-item.elsewhere-item.confirm {
 }
 
 /* 悬浮即时说明（hover 立刻出气泡，不等原生 title 约 1s 的延迟）：触发器下方的气泡。
-   .chip 全局生效；顶栏的非 chip 控件（视图 tab / 抽屉开关 / 插件条目/⋯按钮）同款。 */
+   .chip 全局生效；顶栏的非 chip 控件（视图 tab / 抽屉开关 / 插件条目 / 通用 bar-item / ⋯按钮）同款。 */
 .chip[data-tip],
+.topbar .bar-item[data-tip],
 .topbar .tb-tab[data-tip],
 .topbar .panel-toggle[data-tip],
 .topbar .plugin-topbar-item[data-tip] {
 	position: relative;
 }
 .chip[data-tip]::after,
+.topbar .bar-item[data-tip]::after,
 .topbar .tb-tab[data-tip]::after,
 .topbar .panel-toggle[data-tip]::after,
 .topbar .plugin-topbar-item[data-tip]::after {
@@ -2065,40 +2067,53 @@ button.session-item.elsewhere-item.confirm {
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .chip[data-tip]:hover::after,
+.topbar .bar-item[data-tip]:hover::after,
 .topbar .tb-tab[data-tip]:hover::after,
 .topbar .panel-toggle[data-tip]:hover::after,
 .topbar .plugin-topbar-item[data-tip]:hover::after {
 	opacity: 1;
 }
 /* 顶栏气泡分段锚定：base 的 `right: 0`（气泡右缘对齐按钮右缘、向左展开）只适合贴右边的按钮 ——
-   左段按钮（☰、π、新对话等）贴着窗口左缘，向左展开会探出视口、左边几个字被裁掉（隐藏文字
-   模式下按钮只剩 28px 图标，气泡比按钮宽得多，最明显）。
+   左段按钮（☰、π、新对话、打开项目、引擎下拉等）贴着窗口左缘，向左展开会探出视口、左边几个字被裁掉
+   （隐藏文字模式下按钮只剩 28px 图标，气泡比按钮宽得多，最明显）。
    两个 .tb-spacer 把直流分成左/中/右三段（见 TopBar 的 segStart/segCenter/segEnd；无分组容器，
    纯兄弟选择器 `~` 按 DOM 顺序定位，用户重排/改对齐后依然准确）：
-   - 左段（spacer 之前）：向右展开（left: 0）；
+   - 左段（spacer 之前）：向右偏移展开（left: 0; right: auto）；
    - 中段（一个 spacer 之后）：按钮下方居中；
-   - 右段（两个 spacer 之后）：保持 base 的向左展开（right: 0），防右侧溢出。
-   嵌套一层的触发器（Dropdown 的 .chip、BrowserControl 的内层按钮）各补一条后代选择器；
-   面板内部（dd-menu、BrowserControlPanel）目前没有 data-tip，不会被误伤。
+   - 右段（.tb-spacer-end 或两个 spacer 之后）：保持 base 的向左展开（right: 0），防右侧溢出；
+   - 任何实测视觉位置靠左的条目（data-tip-align="right"）：强制向右偏移展开，防窄屏/空左段时靠左图标的气泡向左越界。
+   同时覆盖嵌套包裹容器（Dropdown / BrowserControl / bar-item-wrap / bar-item-engine-wrap）内的触发器。
    直流外的两个右缘入口（⋯ 按钮、手机端 📁 固定位）同样向左展开。 */
 .topbar .topbar-flow > [data-tip]::after,
+.topbar .topbar-flow > :not(.tb-spacer) [data-tip]::after,
 .topbar .topbar-flow > .dropdown > [data-tip]::after,
 .topbar .topbar-flow > .bc-anchor [data-tip]::after {
 	left: 0;
 	right: auto;
+	transform: none;
 }
 .topbar .topbar-flow > .tb-spacer ~ [data-tip]::after,
+.topbar .topbar-flow > .tb-spacer ~ :not(.tb-spacer) [data-tip]::after,
 .topbar .topbar-flow > .tb-spacer ~ .dropdown > [data-tip]::after,
 .topbar .topbar-flow > .tb-spacer ~ .bc-anchor [data-tip]::after {
 	left: 50%;
 	right: auto;
 	transform: translateX(-50%);
 }
+.topbar .topbar-flow > .tb-spacer-end ~ [data-tip]::after,
+.topbar .topbar-flow > .tb-spacer-end ~ :not(.tb-spacer) [data-tip]::after,
 .topbar .topbar-flow > .tb-spacer ~ .tb-spacer ~ [data-tip]::after,
+.topbar .topbar-flow > .tb-spacer ~ .tb-spacer ~ :not(.tb-spacer) [data-tip]::after,
 .topbar .topbar-flow > .tb-spacer ~ .tb-spacer ~ .dropdown > [data-tip]::after,
 .topbar .topbar-flow > .tb-spacer ~ .tb-spacer ~ .bc-anchor [data-tip]::after {
 	left: auto;
 	right: 0;
+	transform: none;
+}
+.topbar .topbar-flow > [data-tip-align="right"][data-tip]::after,
+.topbar .topbar-flow > [data-tip-align="right"] [data-tip]::after {
+	left: 0;
+	right: auto;
 	transform: none;
 }
 .topbar > :not(.topbar-flow)[data-tip]::after,
@@ -4490,18 +4505,194 @@ body.panel-resizing .scm-divider::after {
 	color: var(--accent);
 }
 
-/* 引擎徽标（DSH 引擎时显示；pi 引擎隐藏，不占空间） */
+/* 引擎徽标（pi 与 DSH 引擎常驻显示，点击可一键零重启热切） */
 .engine-badge {
-	padding: 0 4px;
+	padding: 0 5px;
 	border-radius: 3px;
 	font-size: 9.5px;
 	font-weight: 700;
 	letter-spacing: 0.3px;
 	line-height: 1.6;
+	cursor: pointer;
+	user-select: none;
+	transition:
+		opacity 0.15s ease,
+		transform 0.1s ease;
+}
+.engine-badge:hover {
+	opacity: 0.88;
+}
+.engine-badge.engine-pi {
+	color: var(--accent);
+	background: var(--accent-soft, rgba(139, 92, 246, 0.16));
+	border: 1px solid rgba(139, 92, 246, 0.35);
 }
 .engine-badge.engine-dsh {
 	color: #0b0f14;
 	background: linear-gradient(135deg, #4fc3f7, #7c4dff);
+}
+
+/* 引擎选择器（EnginePicker：顶栏/底栏常驻显式切换胶囊，支持任意多引擎扩展） */
+.engine-picker-wrap {
+	display: inline-flex;
+	align-items: center;
+}
+.engine-picker-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 8px;
+	border-radius: 6px;
+	background: var(--chip-bg, rgba(255, 255, 255, 0.05));
+	border: 1px solid var(--border);
+	cursor: pointer;
+	transition: all 0.15s ease;
+	user-select: none;
+}
+.engine-picker-btn:hover {
+	background: var(--bg-elev2);
+	border-color: var(--accent);
+}
+.engine-picker-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+.engine-picker-icon {
+	font-size: 12px;
+	color: var(--accent);
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.engine-picker-btn.engine-pi .engine-picker-icon,
+.engine-picker-wrap.engine-pi .engine-picker-icon {
+	color: var(--accent);
+}
+.engine-picker-btn.engine-dsh .engine-picker-icon,
+.engine-picker-wrap.engine-dsh .engine-picker-icon {
+	color: #4fc3f7;
+}
+.engine-picker-name {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text);
+	white-space: nowrap;
+}
+/* 状态栏紧凑样式 */
+.statusbar .engine-picker-btn,
+.footer .engine-picker-btn {
+	padding: 0;
+	height: 18px;
+	min-height: 18px;
+	line-height: 18px;
+	gap: 3px;
+	background: transparent !important;
+	border: 1px solid transparent !important;
+}
+.statusbar .engine-picker-btn .engine-picker-name,
+.footer .engine-picker-btn .engine-picker-name {
+	font-size: 11px;
+}
+.statusbar .engine-picker-btn .engine-badge,
+.footer .engine-picker-btn .engine-badge {
+	font-size: 9px;
+	padding: 0 4px;
+	line-height: 15px;
+}
+.engine-picker-menu {
+	min-width: 290px;
+	max-width: 340px;
+	padding: 8px;
+	border-radius: 9px;
+	background: var(--menu-bg, var(--bg-elev2));
+	border: 1px solid var(--border);
+	box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+}
+.engine-picker-header {
+	padding: 2px 4px 8px;
+	border-bottom: 1px solid var(--border);
+	margin-bottom: 6px;
+}
+.engine-picker-title {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	font-size: 12px;
+	color: var(--text);
+}
+.engine-picker-subtitle {
+	font-size: 11px;
+	color: var(--text-dim);
+	margin-top: 3px;
+	line-height: 1.35;
+}
+.engine-picker-list {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.engine-picker-item {
+	width: 100%;
+	text-align: left;
+	background: var(--glow-025);
+	border: 1px solid transparent;
+	border-radius: 7px;
+	padding: 8px 10px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+.engine-picker-item:hover {
+	background: var(--bg-elev3);
+	border-color: var(--border);
+}
+.engine-picker-item.active {
+	background: var(--accent-soft);
+	border-color: rgba(139, 92, 246, 0.35);
+}
+.engine-picker-item-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.engine-picker-item-name {
+	font-weight: 600;
+	font-size: 12.5px;
+	color: var(--text);
+}
+.engine-picker-item-icon {
+	font-size: 13px;
+	color: var(--accent);
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+}
+.engine-picker-item.engine-dsh .engine-picker-item-icon {
+	color: #4fc3f7;
+}
+.engine-picker-item-tag {
+	font-size: 10px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--bg-elev3);
+	color: var(--text-dim);
+	border: 1px solid var(--border);
+	letter-spacing: 0.2px;
+}
+.engine-picker-check {
+	margin-left: auto;
+	color: var(--accent);
+	font-size: 14px;
+	flex-shrink: 0;
+}
+.engine-picker-item-desc {
+	font-size: 11px;
+	color: var(--text-dim);
+	margin-top: 4px;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
 }
 
 .working-spin {
@@ -5128,8 +5319,11 @@ body.panel-resizing .scm-divider::after {
 .topbar.no-labels .tb-tab > span:not(.plugin-icon-svg):not(.plugin-icon-glyph):not(.chip-emoji),
 .topbar.no-labels .plugin-topbar-item > span:not(.plugin-icon-svg):not(.plugin-icon-glyph):not(.chip-emoji),
 .topbar.no-labels .panel-toggle > span:not(.plugin-icon-svg):not(.plugin-icon-glyph):not(.chip-emoji),
-.topbar.no-labels .brand-name {
-	display: none;
+.topbar.no-labels .brand-name,
+.topbar.no-labels .engine-picker-btn .engine-badge,
+.topbar.no-labels .engine-picker-btn .engine-picker-name,
+.topbar.no-labels .engine-picker-btn .dd-caret {
+	display: none !important;
 }
 /* 「只显示图标」模式下把**纯图标**控件做成圆形（宽 = 高 = --topbar-ctl-h，圆角 50%）：
    悬浮出来的边框与背景呈现为完美的正圆形。
@@ -6582,6 +6776,10 @@ body.panel-resizing .scm-divider::after {
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
+.sandbox-banner-icon {
+	flex: none;
+	font-size: 13px;
+}
 .sandbox-banner-desc {
 	font-size: 11px;
 	color: var(--text-dim);
@@ -6598,6 +6796,9 @@ body.panel-resizing .scm-divider::after {
 	flex-shrink: 0;
 }
 .sandbox-banner-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	padding: 3px 8px;
 	border-radius: 6px;
 	border: 1px solid var(--border);
@@ -6856,6 +7057,9 @@ body.panel-resizing .scm-divider::after {
 	background: rgba(59, 130, 246, 0.1);
 }
 .sandbox-choice-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 	font-size: 12.5px;
 	font-weight: 600;
 }
@@ -8480,6 +8684,7 @@ span.msg-editor-hint svg {
 
 .thinking-body {
 	padding: var(--card-body-pad, 4px 14px 12px);
+	padding-block: 6px 8px;
 	color: var(--text-dim);
 	font-style: italic;
 	font-size: 13px;
@@ -9847,6 +10052,36 @@ div.chead[role="button"]:focus-visible,
 	.msg-queued-remove {
 		padding: 8px 9px;
 	}
+}
+
+/* 排队消息气泡内与已完成消息顶部的附件徽标条 */
+.queued-attachments,
+.msg-queued-atts-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 6px;
+}
+.queued-att-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 6px;
+	font-size: 11.5px;
+	background: var(--bg-elev2, rgba(255, 255, 255, 0.06));
+	border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+	color: var(--text-dim);
+	max-width: 260px;
+}
+.queued-att-icon {
+	font-size: 12px;
+	flex: none;
+}
+.queued-att-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .msg-user {
@@ -19399,10 +19634,12 @@ a.set-uninstall:hover {
 }
 
 /* 浮动停靠栏 tooltip */
-.side-dock-left .side-dock-btn[data-tip]::after {
+.side-dock-left .side-dock-btn[data-tip]::after,
+.side-dock-left [data-tip]::after {
 	content: attr(data-tip);
 	position: absolute;
 	left: calc(100% + 8px);
+	right: auto;
 	top: 50%;
 	transform: translateY(-50%);
 	background: var(--tooltip-bg);
@@ -19419,10 +19656,12 @@ a.set-uninstall:hover {
 	z-index: 999;
 }
 
-.side-dock-right .side-dock-btn[data-tip]::after {
+.side-dock-right .side-dock-btn[data-tip]::after,
+.side-dock-right [data-tip]::after {
 	content: attr(data-tip);
 	position: absolute;
 	right: calc(100% + 8px);
+	left: auto;
 	top: 50%;
 	transform: translateY(-50%);
 	background: var(--tooltip-bg);
@@ -19439,7 +19678,8 @@ a.set-uninstall:hover {
 	z-index: 999;
 }
 
-.side-dock .side-dock-btn[data-tip]:hover::after {
+.side-dock .side-dock-btn[data-tip]:hover::after,
+.side-dock [data-tip]:hover::after {
 	opacity: 1;
 }
 
@@ -19735,11 +19975,22 @@ a.set-uninstall:hover {
 }
 
 /* 在侧边停靠栏（.side-dock）中：只显示纯图标，隐藏文字，宽高固定为 30px × 30px 正圆形，默认不显示边框 */
-.side-dock .bar-item-wrap {
+.side-dock .bar-item-wrap,
+.side-dock .bar-item-engine-wrap,
+.side-dock .engine-picker-wrap {
 	width: auto;
+	display: inline-flex;
+	justify-content: center;
+	align-items: center;
 }
 
 .side-dock .bar-item-text {
+	display: none !important;
+}
+
+.side-dock .engine-picker-btn .engine-badge,
+.side-dock .engine-picker-btn .engine-picker-name,
+.side-dock .engine-picker-btn .dd-caret {
 	display: none !important;
 }
 

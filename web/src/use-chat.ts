@@ -15,6 +15,7 @@ import type {
 	ModelInfo,
 	PlanState,
 	ProjectSummary,
+	PromptAttachment,
 	SandboxDiffView,
 	ProviderKeyInfo,
 	ProviderOAuthFlowState,
@@ -49,6 +50,14 @@ import type {
 } from "./types";
 
 import { applyMessageDelta, type MessageDeltaMsg } from "./message-delta";
+import {
+	createOptimisticQueueTracker,
+	reconcileOptimisticQueue,
+	recordOptimisticQueueAdd,
+	recordOptimisticQueueRemove,
+	rollbackUnconfirmedOptimisticAdds,
+	type OptimisticQueueTracker,
+} from "./optimistic-queue";
 import { resolvePendingQuestion, type QuestionSource } from "./pending-question";
 import { emitTuiOverlayRender } from "./tui-overlay-bridge";
 import { setAppGlobals, setAppSend } from "./app-globals";
@@ -91,6 +100,18 @@ function readUiLocale(): string {
 
 /** Event fired by i18n.tsx setLocale when the user switches UI language. */
 const UI_LOCALE_EVENT = "pi-web-ui:locale";
+
+/**
+ * Safe WebSocket readyState constants:
+ * In customized shells (e.g. WebView2/Neutralino), proxy scripts, or user extensions that monkey-patch
+ * `window.WebSocket`, static properties like `WebSocket.OPEN` may be missing/undefined.
+ * Fallbacks (OPEN=1, CLOSING=2, CLOSED=3) guarantee checks never silently fail (report 20261012 §2).
+ */
+const WS_OPEN = typeof WebSocket !== "undefined" && WebSocket.OPEN !== undefined ? WebSocket.OPEN : 1;
+const WS_CLOSING = typeof WebSocket !== "undefined" && WebSocket.CLOSING !== undefined ? WebSocket.CLOSING : 2;
+const WS_CLOSED = typeof WebSocket !== "undefined" && WebSocket.CLOSED !== undefined ? WebSocket.CLOSED : 3;
+
+export const isWsOpen = (ws?: WebSocket | null): ws is WebSocket => Boolean(ws && ws.readyState === WS_OPEN);
 
 /** One component in an all-source update check (update_status_all). */
 export interface UpdateAllItem {
@@ -524,6 +545,8 @@ export interface ChatState {
 	transition: WorkspaceTransitionState | null;
 	/** 沙盒与源项目的最新对比结果（点击「写回源项目」弹窗时拉取展示）。 */
 	sandboxDiff: SandboxDiffView | null;
+	/** 流式期间发送排队/插队消息与撤回的本地乐观状态追踪器（消除按 Enter 后气泡延迟与在途快照闪退）。 */
+	optimisticQueue: OptimisticQueueTracker;
 }
 
 export interface WorkspaceTransitionState {
@@ -798,7 +821,9 @@ type Action =
 	| { type: "dsh_permission"; options: DshPermissionOption[]; defaultPreset: string }
 	| { type: "sync_cached_sessions"; sessions: SessionSummary[] }
 	| { type: "host_metrics"; metrics?: UiHostMetrics; latencyMs?: number | null }
-	| { type: "sandbox_diff"; diff: SandboxDiffView | null };
+	| { type: "sandbox_diff"; diff: SandboxDiffView | null }
+	| { type: "optimistic_queue_add"; text: string; attachments?: PromptAttachment[]; queue?: boolean }
+	| { type: "optimistic_queue_remove"; kind: "steer" | "followUp"; text: string; index?: number };
 
 const MAX_LIVE_OUTPUT = 200_000;
 const MAX_TERM_BUFFER = 200_000;
@@ -959,7 +984,8 @@ function reducer(state: ChatState, action: Action): ChatState {
 				...(action.metrics !== undefined ? { hostMetrics: action.metrics } : {}),
 				...(action.latencyMs !== undefined ? { latencyMs: action.latencyMs } : {}),
 			};
-		case "ready":
+		case "ready": {
+			const engineChanged = Boolean(state.engine && action.engine && state.engine !== action.engine);
 			return {
 				...state,
 				serverVersion: action.serverVersion,
@@ -968,11 +994,20 @@ function reducer(state: ChatState, action: Action): ChatState {
 				managed: action.managed === true,
 				tabs: action.tabs,
 				ready: true,
+				...(engineChanged
+					? {
+							terminals: [],
+							dshPatches: null,
+							dshAgentPresets: null,
+							dshPermissionPresets: null,
+						}
+					: {}),
 				...(typeof action.latencyMs === "number" && state.latencyMs == null ? { latencyMs: action.latencyMs } : {}),
 				// Old page + new server (or the reverse) after an in-place update:
 				// WS handling on either side may be stale — banner asks for refresh.
 				protocolMismatch: action.protocolVersion !== undefined && action.protocolVersion !== PROTOCOL_VERSION,
 			};
+		}
 		case "snapshot": {
 			const prevCwd = state.state?.cwd;
 			const prevConvId = state.state?.conversationId;
@@ -1006,16 +1041,18 @@ function reducer(state: ChatState, action: Action): ChatState {
 					nextTransition = null;
 				}
 			}
+			const reconciled = reconcileOptimisticQueue(state.optimisticQueue, action.state);
 			return {
 				...state,
 				ready: true,
-				state: action.state,
+				state: reconciled.state,
+				optimisticQueue: reconciled.tracker,
 				transition: nextTransition,
 				sessions: nextSessions,
-				approval: action.state.pendingApproval ?? null,
-				activeConversationId: action.state.conversationId,
-				liveOutputs: pruneLiveOutputs(state.liveOutputs, action.state),
-				toolStatuses: pruneToolStatuses(state.toolStatuses, action.state),
+				approval: reconciled.state.pendingApproval ?? null,
+				activeConversationId: reconciled.state.conversationId,
+				liveOutputs: pruneLiveOutputs(state.liveOutputs, reconciled.state),
+				toolStatuses: pruneToolStatuses(state.toolStatuses, reconciled.state),
 			};
 		}
 		case "snapshot_delta": {
@@ -1028,19 +1065,53 @@ function reducer(state: ChatState, action: Action): ChatState {
 			const ui = state.state;
 			const d = action.msg;
 			if (!ui || ui.conversationId !== d.conversationId || ui.rev !== d.baseRev) return state;
-			const merged: UiState = {
+			const rawMerged: UiState = {
 				...ui,
 				...d.state,
 				messages: d.appended.length > 0 ? [...ui.messages, ...d.appended] : ui.messages,
 			};
+			const reconciled = reconcileOptimisticQueue(state.optimisticQueue, rawMerged);
+			const merged = reconciled.state;
 			return {
 				...state,
 				ready: true,
 				state: merged,
+				optimisticQueue: reconciled.tracker,
 				approval: merged.pendingApproval !== undefined ? (merged.pendingApproval ?? null) : state.approval,
 				activeConversationId: merged.conversationId,
 				liveOutputs: pruneLiveOutputs(state.liveOutputs, merged),
 				toolStatuses: pruneToolStatuses(state.toolStatuses, merged),
+			};
+		}
+		case "optimistic_queue_add": {
+			const goalReviewing =
+				state.goal.reviewing &&
+				Boolean(state.state?.conversationId && state.goal.conversationId === state.state.conversationId);
+			const res = recordOptimisticQueueAdd(state.optimisticQueue, state.state, {
+				text: action.text,
+				attachments: action.attachments,
+				queue: action.queue,
+				engine: state.engine,
+				goalReviewing,
+			});
+			if (res.tracker === state.optimisticQueue && res.state === state.state) return state;
+			return {
+				...state,
+				optimisticQueue: res.tracker,
+				state: res.state,
+			};
+		}
+		case "optimistic_queue_remove": {
+			const res = recordOptimisticQueueRemove(state.optimisticQueue, state.state, {
+				kind: action.kind,
+				text: action.text,
+				index: action.index,
+			});
+			if (res.tracker === state.optimisticQueue && res.state === state.state) return state;
+			return {
+				...state,
+				optimisticQueue: res.tracker,
+				state: res.state,
 			};
 		}
 		case "tool_approval":
@@ -1079,7 +1150,18 @@ function reducer(state: ChatState, action: Action): ChatState {
 			};
 		case "notice": {
 			const nextNotices = enqueueNotice(state.notices, action.notice);
-			return nextNotices === state.notices ? state : { ...state, notices: nextNotices };
+			const shouldRollback =
+				(action.notice.level === "error" || action.notice.level === "warning") && state.optimisticQueue.adds.length > 0;
+			const rolled = shouldRollback
+				? rollbackUnconfirmedOptimisticAdds(state.optimisticQueue, state.state)
+				: { tracker: state.optimisticQueue, state: state.state };
+			if (nextNotices === state.notices && rolled.tracker === state.optimisticQueue) return state;
+			return {
+				...state,
+				notices: nextNotices,
+				optimisticQueue: rolled.tracker,
+				state: rolled.state,
+			};
 		}
 		case "dismiss_notice":
 			return {
@@ -1667,6 +1749,7 @@ export function useChat() {
 		protocolMismatch: false,
 		transition: null,
 		sandboxDiff: null,
+		optimisticQueue: createOptimisticQueueTracker(),
 	});
 	const wsRef = useRef<WebSocket | null>(null);
 	/** Terminal output bridge (writers keyed by terminalId). */
@@ -1707,8 +1790,7 @@ export function useChat() {
 		resyncTimerRef.current = setTimeout(() => {
 			resyncTimerRef.current = null;
 			const ws = wsRef.current;
-			if (ws && ws.readyState === WebSocket.OPEN)
-				ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
+			if (isWsOpen(ws)) ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 		}, 300);
 	};
 
@@ -1816,7 +1898,7 @@ export function useChat() {
 			}
 		}
 		const ws = wsRef.current;
-		if (ws && ws.readyState === WebSocket.OPEN) {
+		if (isWsOpen(ws)) {
 			// Forced re-check: drop stale rows immediately so the "checking"
 			// state renders instead of the cached list.
 			if (msg.type === "check_updates_all" && msg.force === true) {
@@ -1826,6 +1908,23 @@ export function useChat() {
 				dispatch({ type: "plugin_updates_check_started" });
 			}
 			ws.send(JSON.stringify(msg));
+			// 流式期间发送排队/插队消息或点 ✕ / ↩ 撤回：立即在本地做乐观队列更新，
+			// 消除按完 Enter 到服务端快照回包之间的视觉真空期与在途旧快照闪退。
+			if (msg.type === "prompt") {
+				dispatch({
+					type: "optimistic_queue_add",
+					text: msg.text,
+					attachments: msg.attachments,
+					queue: msg.queue,
+				});
+			} else if (msg.type === "queue_remove") {
+				dispatch({
+					type: "optimistic_queue_remove",
+					kind: msg.kind,
+					text: msg.text,
+					index: msg.index,
+				});
+			}
 			// 提交/取消模型提问后立即收起对话框：服务端只 resolve 模型侧 Promise，
 			// 不会发任何回执清除前端面板（否则会出现“回答后不消失、取消无效”）。
 			// 模型再次 ask_user_question 时会重新 question_pending，面板自动回来。
@@ -1937,6 +2036,10 @@ export function useChat() {
 					// 全局运行态（engine / managed / tabs / 版本号）在这里落一次：
 					// 同步于 dispatch 之前，等 React 因为新状态重渲染时，读全局的组件
 					// 已经拿到正确值（不会闪一帧 pi）。详见 web/src/app-globals.ts。
+					const prevEngine = chatApi.current.chat.engine;
+					if (prevEngine && msg.engine && prevEngine !== msg.engine) {
+						bridgeRef.current.clear();
+					}
 					setAppGlobals({
 						engine: msg.engine ?? "pi",
 						managed: !!msg.managed,
@@ -1996,7 +2099,7 @@ export function useChat() {
 						// 前端当前没有任何快照（冷启动 boot 加载态）：增量快照无法应用，
 						// 立即无延迟向服务端请求全量快照，迅速脱离 boot-wait 加载态！
 						const ws = wsRef.current;
-						if (ws && ws.readyState === WebSocket.OPEN) {
+						if (isWsOpen(ws)) {
 							ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 						}
 					} else if (cur.conversationId !== msg.conversationId || cur.rev !== msg.baseRev) {
@@ -2699,7 +2802,7 @@ export function useChat() {
 		const watchdog = setInterval(() => {
 			if (!aliveRef.current) return;
 			const ws = wsRef.current;
-			if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastBeatRef.current > 30_000) {
+			if (isWsOpen(ws) && Date.now() - lastBeatRef.current > 30_000) {
 				ws.close();
 			}
 		}, 5_000);
@@ -2712,7 +2815,7 @@ export function useChat() {
 			if (!aliveRef.current) return;
 			if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
 			const ws = wsRef.current;
-			if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+			if (!ws || ws.readyState === WS_CLOSED || ws.readyState === WS_CLOSING) {
 				if (timerRef.current) {
 					clearTimeout(timerRef.current);
 					timerRef.current = null;
@@ -2720,7 +2823,7 @@ export function useChat() {
 				connect();
 				return;
 			}
-			if (ws.readyState === WebSocket.OPEN) {
+			if (isWsOpen(ws)) {
 				if (Date.now() - lastBeatRef.current > 15_000 || !chatApi.current.chat.state) {
 					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 				}

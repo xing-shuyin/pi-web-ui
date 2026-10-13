@@ -15,6 +15,7 @@ import {
 	FiTrash2,
 	FiX,
 } from "react-icons/fi";
+import { LuFlaskConical } from "react-icons/lu";
 import type {
 	ConversationSummary,
 	ElsewhereRunning,
@@ -1014,9 +1015,7 @@ export const LeftPanel = memo(function LeftPanel({
 									aria-label={t("sandboxNewBtn")}
 									onClick={() => onOpenSandboxModal()}
 								>
-									<span aria-hidden style={{ fontSize: "13px", lineHeight: 1 }}>
-										🧪
-									</span>
+									<LuFlaskConical />
 								</button>
 							)}
 							<button
@@ -1066,9 +1065,7 @@ export const LeftPanel = memo(function LeftPanel({
 											{switching ? (
 												<FiLoader className="project-icon spin" />
 											) : sbx ? (
-												<span className="project-icon sandbox-icon" aria-hidden>
-													🧪
-												</span>
+												<LuFlaskConical className="project-icon sandbox-icon" />
 											) : (
 												<FiFolder className="project-icon" />
 											)}
@@ -1608,6 +1605,23 @@ export const LeftPanel = memo(function LeftPanel({
 														{s.source === "tui" && (
 															<span className="session-src" title={t("tuiTip")}>
 																TUI
+															</span>
+														)}
+														{s.parentSessionPath && (
+															<span
+																className="session-src session-fork-badge"
+																title={t("forkedSessionTip", {
+																	parent: (() => {
+																		const normP = norm(s.parentSessionPath).replace(/\\/g, "/");
+																		const pSess = sessions.find((p) => norm(p.path).replace(/\\/g, "/") === normP);
+																		if (pSess) return displayName(pSess);
+																		const base =
+																			s.parentSessionPath.replace(/\\/g, "/").split("/").pop() ?? s.parentSessionPath;
+																		return base.replace(/\.jsonl$/i, "");
+																	})(),
+																})}
+															>
+																{t("forkedSessionBadge")}
 															</span>
 														)}
 													</span>

@@ -9,11 +9,11 @@
 
 ## 1. 三条路径
 
-| 路径        | 入口                                                              | 走哪条通道                                                | 落点                                                  |
-| ----------- | ----------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
-| 导出 / 分享 | 预设区顶部「分享预设」主按钮，或预设行的分享图标，或面板页签       | `preset_export` / `preset_share`                          | 剪贴板 / 下载 `.json` / 社区仓库 Issue                |
-| 导入        | 预设区顶部「导入预设」按钮，或面板「导入」页签                     | `preset_import`（粘贴/文件）、`preset_import_url`（网址） | 本地 `presets` 存储（同名覆盖），可选立即应用         |
-| 浏览分享    | 预设区顶部「浏览共享」按钮，或面板「浏览分享」页签                 | `preset_catalog`                                          | 拉仓库 `index.json` → 列表 → 一键导入（复用网址导入） |
+| 路径        | 入口                                                         | 走哪条通道                                                | 落点                                                  |
+| ----------- | ------------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------------- |
+| 导出 / 分享 | 预设区顶部「分享预设」主按钮，或预设行的分享图标，或面板页签 | `preset_export` / `preset_share`                          | 剪贴板 / 下载 `.json` / 社区仓库 Issue                |
+| 导入        | 预设区顶部「导入预设」按钮，或面板「导入」页签               | `preset_import`（粘贴/文件）、`preset_import_url`（网址） | 本地 `presets` 存储（同名覆盖），可选立即应用         |
+| 浏览分享    | 预设区顶部「浏览共享」按钮，或面板「浏览分享」页签           | `preset_catalog`                                          | 拉仓库 `index.json` → 列表 → 一键导入（复用网址导入） |
 
 三个顶部按钮打开的是同一个面板（`PresetShareTab` 决定先落在哪个页签），不再需要在面板里先切页签。
 
@@ -51,7 +51,7 @@ raw.githubusercontent.com 会撞 CORS。所以「解析 → 净化 → 落盘」
 | `terminal` 终端接管       | `terminalBash` · `terminalBashIdleMs` · `terminalBashMaxForegroundMs`                                                                                                                                                                                                                                                        |
 | `skills` 技能与扩展       | `disabledSkills` · `disabledExtensions` · `skillsFullText`                                                                                                                                                                                                                                                                   |
 | `ai` 模型行为与专用提示词 | `retryMaxAttempts` · `softCapTokens` · `softCapByModel` · `subagentDefaultModel` · `visionBridgeEnabled` · `visionBridgeModel` · `visionBridgePromptMode` · `visionBridgePrompt` · `scmCommitMsgPromptMode` · `scmCommitMsgPrompt` · `planModePromptMode` · `planModePrompt` · `goalModeEnabled` · `parallelReminderEnabled` |
-| `ui` 界面与交互偏好       | `uiLayout` · `disabledPlugins` · `thinkingWrap` · `toolsWrap` · `toolImagesEnabled` · `quickPhrases` · `quickPhrasesEnabled` · `devNoCache` · `autoReload`                                                                                                                                                                   |
+| `ui` 界面与交互偏好       | `uiLayout` · `disabledPlugins` · `thinkingWrap` · `toolsWrap` · `toolImagesEnabled` · `keepRecentMessages` · `showForkedParentSessions` · `quickPhrases` · `quickPhrasesEnabled` · `devNoCache` · `autoReload`                                                                                                               |
 | `engine` 引擎默认         | `defaultAgentPreset` · `defaultPermissionPreset`                                                                                                                                                                                                                                                                             |
 
 **仍在预设之外**（不在 `ClientSettings` 里，各有自己的存储）：标记开关（`markersEnabled`/`disabledMarkers`）、

@@ -743,6 +743,10 @@ function resolveShell(): { shell: string; args: string[] } {
  */
 function resolveBashShell(): { shell: string; args: string[] } {
 	if (isWindows) {
+		const explicit = process.env.PI_WEB_SHELL;
+		if (explicit && existsSync(explicit)) return { shell: explicit, args: ["-i"] };
+		const she = process.env.SHELL;
+		if (she && existsSync(she) && she.toLowerCase().includes("bash")) return { shell: she, args: ["-i"] };
 		const pf = process.env.ProgramFiles;
 		const pf86 = process.env["ProgramFiles(x86)"];
 		for (const cand of [
@@ -755,7 +759,7 @@ function resolveBashShell(): { shell: string; args: string[] } {
 		if (existsSync(busybox)) return { shell: busybox, args: ["-i"] };
 	}
 	const she = process.env.SHELL;
-	if (she && she.endsWith("bash") && existsSync(she)) {
+	if (she && (she.endsWith("bash") || she.endsWith("bash.exe")) && existsSync(she)) {
 		return { shell: she, args: ["-i"] };
 	}
 	return { shell: "bash", args: ["-i"] };

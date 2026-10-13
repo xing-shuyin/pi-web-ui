@@ -61,6 +61,36 @@ describe("readPiCoreVersionFromDisk — sibling node_modules (Windows npm layout
 			expect(readPiCoreVersionFromDisk()).toBe("0.92.3");
 		});
 	});
+
+	it("skips unresolvable candidate in early PATH entry and resolves from later entry", () => {
+		const dummyDir = makeTmp("pi-dummy-");
+		// First entry has a pi file that doesn't point to pi-core
+		writeFileSync(join(dummyDir, "pi"), "#!/bin/sh\necho not-our-pi\n");
+
+		const validDir = makeTmp("pi-valid-");
+		writeFileSync(
+			join(validDir, "pi"),
+			'#!/bin/sh\nbasedir=$(dirname "$0")\nexec node "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"\n',
+		);
+		writePiCorePackage(validDir, "1.2.3");
+
+		withPath([dummyDir, validDir], () => {
+			expect(readPiCoreVersionFromDisk()).toBe("1.2.3");
+		});
+	});
+
+	it("resolves from wrapper script pointing to sibling package", () => {
+		const binDir = makeTmp("pi-wrapper-bin-");
+		const targetDir = makeTmp("pi-target-");
+		writePiCorePackage(targetDir, "1.5.0");
+
+		const cliPath = join(targetDir, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js");
+		writeFileSync(join(binDir, "pi"), `#!/bin/sh\nexec node "${cliPath}" "$@"\n`);
+
+		withPath([binDir], () => {
+			expect(readPiCoreVersionFromDisk()).toBe("1.5.0");
+		});
+	});
 });
 
 describe("readPiCoreVersionFromDisk — POSIX symlink walk (unchanged)", () => {

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
 	FiAlertTriangle,
+	FiAperture,
 	FiArchive,
 	FiBox,
 	FiCheck,
@@ -50,6 +51,7 @@ import { PluginSettingsForm } from "./PluginSettingsForm";
 import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
 import { PUBLIC_SKILLS, type PublicSkill } from "../skill-catalog";
+import { SUPPORTED_ENGINES } from "./EnginePicker";
 import type {
 	CommandDef,
 	DshPermissionOption,
@@ -615,6 +617,10 @@ interface SettingsPatch {
 	toolImagesEnabled?: boolean;
 	/** 消息列表尾部常驻渲染的消息条数（纯 UI 偏好，默认 15）。 */
 	keepRecentMessages?: number;
+	/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
+	showForkedParentSessions?: boolean;
+	/** 结束的对话切换时不自动从运行列表移出（默认 false）。 */
+	retainFinishedConversations?: boolean;
 	devNoCache?: boolean;
 	autoReload?: boolean;
 	skillsFullText?: string[];
@@ -1987,6 +1993,35 @@ export function SettingsModal({
 						{tab === "prompt" && (
 							<div className="set-section">
 								<div className="set-section-title">
+									<FiAperture className="set-section-icon" />
+									{t("settingsEngineSection")}
+									<HintTip text={t("settingsEngineHint")} />
+								</div>
+								<div className="set-mode-row" role="radiogroup" aria-label={t("settingsEngineSection")}>
+									{SUPPORTED_ENGINES.map((item) => {
+										const isSelected = item.id === engine;
+										return (
+											<button
+												key={item.id}
+												type="button"
+												role="radio"
+												aria-checked={isSelected}
+												data-testid={`engine-switch-${item.id}`}
+												className={`set-mode-btn${isSelected ? " active" : ""}`}
+												onClick={() => {
+													if (!isSelected) appSend({ type: "switch_engine", engine: item.id as "pi" | "dsh" });
+												}}
+											>
+												<div className="set-mode-title">
+													<span style={{ marginRight: 6 }}>{t(item.titleKey)}</span>
+													<span className={`engine-badge ${item.colorClass}`}>{item.badge}</span>
+												</div>
+												<div className="set-mode-desc">{t(item.descKey)}</div>
+											</button>
+										);
+									})}
+								</div>
+								<div className="set-section-title" style={{ marginTop: 16 }}>
 									<FiZap className="set-section-icon" />
 									{t("settingsSystemPrompt")}
 									<HintTip text={`${t("promptComposeHint")}\n${t("promptComposeDesc")}`} />
@@ -3100,6 +3135,24 @@ export function SettingsModal({
 										}}
 									/>
 								</FieldRow>
+								<ToggleRow
+									title={t("showForkedParents")}
+									tip={t("showForkedParentsDesc")}
+									enabled={settings.showForkedParentSessions ?? false}
+									onToggle={() =>
+										setPartial({ showForkedParentSessions: !(settings.showForkedParentSessions ?? false) })
+									}
+								/>
+								<ToggleRow
+									title={t("retainFinishedConversations")}
+									tip={t("retainFinishedConversationsDesc")}
+									enabled={settings.retainFinishedConversations ?? false}
+									onToggle={() =>
+										setPartial({
+											retainFinishedConversations: !(settings.retainFinishedConversations ?? false),
+										})
+									}
+								/>
 								<ToggleRow
 									title={t("presentAutoOpen")}
 									tip={t("presentAutoOpenDesc")}

@@ -1,0 +1,3 @@
+[错误] 找不到 app\pi-web-ui-desktop.exe。
+便携文件夹不完整。请确保已解压完整的 PiWebUI-Portable 目录，
+并将桌面主程序文件解压或移动到 app 文件夹中。

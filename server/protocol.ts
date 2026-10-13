@@ -642,6 +642,8 @@ export type ClientMessage =
 	 *  this process exits and its supervisor brings it back). The server refuses
 	 *  when no supervisor manages this instance (foreground / dev / Docker). */
 	| { type: "restart_service" }
+	/** Switch active agent engine ("pi" | "dsh") for this client tab in-process without restarting. */
+	| { type: "switch_engine"; engine: "pi" | "dsh" }
 	// -- pi agent setup ------------------------------------------------------
 	/** Auto-install the pi agent (mkdir config dir + npm i -g the CLI). */
 	| { type: "install_pi_agent" }
@@ -875,6 +877,10 @@ export type ClientMessage =
 			/** 消息列表尾部保持完整渲染的消息条数（默认 15）；更早的折叠为摘要行。
 			 *  纯 UI 偏好，不需要 reload runtime。 */
 			keepRecentMessages?: number;
+			/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
+			showForkedParentSessions?: boolean;
+			/** 结束的对话切换时不自动从运行列表移出（默认 false = 切走且未继续对话的会话自动移出）。 */
+			retainFinishedConversations?: boolean;
 			/** skill 全文注入名单（默认空 = 名录模式）。名单里的技能 {{skills}} 展开正文。 */
 			skillsFullText?: string[];
 			/** 子代理默认模型（"provider/id"；null/未设 = 子代理跟随主对话当前模型）。
@@ -1406,6 +1412,8 @@ export interface SessionSummary {
 	source?: "web" | "tui";
 	/** 用户钉住（常驻运行列表 / 历史置顶）：带 📌 标记。 */
 	pinned?: boolean;
+	/** 父会话路径（由编辑重问或分支派生产生的子会话，供历史列表展示分支标记）。 */
+	parentSessionPath?: string;
 }
 
 /** 会话转录中一条命中消息的定位锚点：会话载入后按 role + timestamp 在
@@ -2419,7 +2427,20 @@ export interface UiPluginUi {
  *  dom:anchor = 仅限 anchors 挂载点的范围 DOM（免用户授权，完整 document
  *  仍需 "dom" + 用户授权）。 */
 export type PluginPermissionFamily =
-	"fs" | "fs:read" | "fs:write" | "ui" | "tools" | "http" | "chat" | "llm" | "net" | "dom" | "dom:anchor";
+	| "fs"
+	| "fs:read"
+	| "fs:write"
+	| "ui"
+	| "tools"
+	| "http"
+	| "chat"
+	| "llm"
+	| "net"
+	| "dom"
+	| "dom:anchor"
+	| "notify"
+	| "storage"
+	| "secrets";
 
 /** 插件间事件总线的一条事件（host.events.emit/on）。 */
 export interface PluginBusEvent {
@@ -2953,6 +2974,10 @@ export interface UiSettingsState {
 	/** 消息列表尾部保持完整渲染的消息条数（默认 15 = 与原硬编码一致）；更早的消息折叠为摘要行，
 	 *  点击摘要行可展开。纯 UI 偏好，不进预设。 */
 	keepRecentMessages: number;
+	/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
+	showForkedParentSessions: boolean;
+	/** 结束的对话切换时不自动从运行列表移出（默认 false）。 */
+	retainFinishedConversations: boolean;
 	/** skill 全文注入名单（默认空 = 名录模式）：名单里的技能 {{skills}} 展开正文。 */
 	skillsFullText: string[];
 	/** Vision bridge on/off (default on). Off → images are sent as-is. */

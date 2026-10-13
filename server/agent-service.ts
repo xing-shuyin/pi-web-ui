@@ -71,6 +71,7 @@ import {
 	type UpdateItem,
 } from "./update-check.js";
 import { checkPluginUpdates } from "./plugin-updater.js";
+import { getAppVersion } from "./pkg-info.js";
 import { isBundledInUse, sdkCopies } from "./sdk-origin.js";
 import {
 	hasActiveSubagentRun,
@@ -301,7 +302,7 @@ import { getWorktreeContext, removeWorktree, normalizeWirePath } from "./worktre
 import type { WorktreeInfo } from "./protocol.js";
 import { sameSessionFile, type SchedulerStore } from "./scheduler-tasks.js";
 import { buildAttachmentMessages, findTurnBaseEntryId, parseModelSpec } from "./attachments.js";
-import { formatQuotedPrompt, readTextQuote } from "./text-quote.js";
+import { formatQuotedPrompt, formatStreamingPrompt, readTextQuote, splitQuotedPrompt } from "./text-quote.js";
 import { buildVisionBridgePrompt, findVisionModels, transcribeImages } from "./vision-bridge.js";
 import { generateScmCommitMessage } from "./scm-commitmsg.js";
 import {
@@ -662,6 +663,7 @@ export interface Conversation {
 	 *  renders them as pending bubbles in the real message list. */
 	queueSteering: string[];
 	queueFollowUp: string[];
+	queuedImages: Map<string, { type: "image"; data: string; mimeType: string }[]>;
 	/** tool_execution_start timestamps keyed by toolCallId — lets tool_status
 	 *  report how long a tool actually ran (vs. waiting on the model). */
 	toolStartTimes: Map<string, number>;
@@ -701,6 +703,8 @@ export interface Conversation {
 	workspaceSnapshots: Array<{ entryId?: string; timestamp: number; snapshotRef: string }>;
 	/** 当前对话正在并发执行中的影子快照生成任务（工具调用前必须等待其完成，保证快照点在修改前）。 */
 	pendingWorkspaceSnapshot?: Promise<string | null>;
+	/** 流式入队前置阶段（如附件/视觉桥异步构建中）用户已在前端点 ✕/↩ 取消的待入队项。 */
+	cancelledInFlightQueue?: Array<{ kind: "steer" | "followUp"; text: string }>;
 	/** 当前正在启动中（读取附件、视觉桥、快照准备等）的 prompt 取消控制器 */
 	activePromptAc?: AbortController;
 	/** prompt() 已进门、尚未进入流式：前置附件构建 / 工作区影子快照是异步的，
@@ -724,7 +728,12 @@ import {
 } from "./session-search.js";
 export { piSessionsRoot, isInsideSessionsDir };
 
-import { discoverRecentProjectsFromDisk, parseSessionInfoFast } from "./session-parser.js";
+import {
+	discoverRecentProjectsFromDisk,
+	filterForkedParentSessions,
+	findMostRecentSessionFileFast,
+	parseSessionInfoFast,
+} from "./session-parser.js";
 
 export interface SessionOwnerInfo {
 	clientId: string;
@@ -1336,6 +1345,9 @@ export class ClientSession {
 		// Background conversations keep collecting output in their own PTY buffer.
 		// Do not stream it into the active xterm; push the retained window on switch.
 		if (msg.type === "terminal_output" && conversationId !== this.activeId) return;
+		if (msg.type === "terminal_exit") {
+			this.updatesAllCache = null;
+		}
 		if (msg.type === "terminal_output" || msg.type === "terminal_exit" || msg.type === "terminal_list") {
 			this.emit({ ...msg, conversationId } as ServerMessage);
 			return;
@@ -1598,8 +1610,11 @@ export class ClientSession {
 				});
 				continue;
 			}
-			if (name === LOAD_TOOLS_TOOL_NAME) {
-				rejected.push({ name, reason: pick(lang, "常驻工具，无需加载", "always available", "loadtools.always") });
+			if (name === LOAD_TOOLS_TOOL_NAME || (LAZY_CORE_TOOL_NAMES as readonly string[]).includes(name)) {
+				rejected.push({
+					name,
+					reason: pick(lang, "常驻核心工具，无需加载", "always available without loading", "loadtools.always"),
+				});
 				continue;
 			}
 			if (set.has(name)) {
@@ -1649,7 +1664,14 @@ export class ClientSession {
 	 * automatically mark it as loaded so subsequent turns track it as fully active.
 	 */
 	private autoActivateToolIfLoadable(session: AgentSession, conv: Conversation, name: string): void {
-		if (!this.lazyLoadingOn() || !name || name === LOAD_TOOLS_TOOL_NAME) return;
+		if (
+			!this.lazyLoadingOn() ||
+			!name ||
+			name === LOAD_TOOLS_TOOL_NAME ||
+			(LAZY_CORE_TOOL_NAMES as readonly string[]).includes(name)
+		) {
+			return;
+		}
 		const loaded = this.lazyLoadedFor(session, this.sessionHasTranscript(session));
 		if (loaded.has(name)) return;
 		const allowed = new Set(this.allowedToolNames(session, conv));
@@ -2364,6 +2386,9 @@ export class ClientSession {
 				onGoalModeDisabled: () => {
 					void this.goalSvc.stopAllGoals();
 				},
+				onSessionsFilterChanged: () => {
+					void this.pushSessions();
+				},
 				getMcpServers: () => this.listMcpServers(),
 			},
 			this.subagentTemplates,
@@ -2582,7 +2607,7 @@ export class ClientSession {
 					agentDir,
 					sessionManager: m,
 				}),
-			async () => (await SessionManager.list(sessionBaseDir))[0]?.path,
+			() => findMostRecentSessionFileFast(sessionBaseDir, cwd),
 		);
 		const runtime = opened.runtime;
 		if (opened.repair) {
@@ -3373,6 +3398,7 @@ export class ClientSession {
 			lastMessagesArray: [],
 			queueSteering: [],
 			queueFollowUp: [],
+			queuedImages: new Map(),
 			toolStartTimes: new Map(),
 			toolPendingArgs: new Map(),
 			activeToolCalls: new Map(),
@@ -4287,6 +4313,14 @@ export class ClientSession {
 			case "queue_update":
 				conv.queueSteering = [...event.steering];
 				conv.queueFollowUp = [...event.followUp];
+				if (conv.queuedImages && conv.queuedImages.size > 0) {
+					const allQueued = new Set([...event.steering, ...event.followUp]);
+					for (const key of conv.queuedImages.keys()) {
+						if (!allQueued.has(key)) {
+							conv.queuedImages.delete(key);
+						}
+					}
+				}
 				break;
 			// 手动 /compact 或阈值/溢出自动压缩开始——常驻进度条（快照 compaction
 			// 字段），而不是一次性 toast（toast 几秒就消失，而摘要生成可能持续
@@ -4490,6 +4524,16 @@ export class ClientSession {
 				}
 				// 本轮真正结束且不再重试：立即向客户端广播最新会话状态（流式状态及时复位）
 				if (!event.willRetry) {
+					if (conv.queueSteering.length === 0 && conv.queueFollowUp.length === 0) {
+						conv.queuedImages?.clear();
+						if (
+							Array.isArray(
+								(conv.session as unknown as { _pendingNextTurnMessages?: unknown[] })?._pendingNextTurnMessages,
+							)
+						) {
+							(conv.session as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
+						}
+					}
 					this.emitConversations();
 				}
 				break;
@@ -4530,6 +4574,14 @@ export class ClientSession {
 				// 每条 assistant 气泡流式结束 → 立即解析其中的内联标记：每个气泡各自
 				// 生效（不再等整轮 agent_end），同一轮里先前消息的标记也不再丢。
 				const mm = event.message as { role?: string; stopReason?: unknown; content?: unknown };
+				if (mm?.role === "user") {
+					// 用户消息定稿（无论是空闲首轮提问，还是流式期间从 steer/followUp 队列出队落盘）：
+					// SDK 在 _emit(message_end) 返回后的同一同步 tick 内执行 sessionManager.appendMessage，
+					// 因此在微任务里即可精确拿到本条用户消息的 entryId 并异步绑定工作区影子快照，
+					// 既不阻塞流式入队与 UI 快照推送，又保证插队/排队轮次也有独立的写工具前快照。
+					this.bindOrStartWorkspaceSnapshotForUserMessage(conv);
+					break;
+				}
 				if (mm?.role !== "assistant") break;
 				// 非 error 的 assistant 定稿 = 重试周期结束（与 SDK 重置
 				// _retryAttempt 的条件一致）：即使 auto_retry_end 丢失，横幅也不会卡住。
@@ -4612,12 +4664,18 @@ export class ClientSession {
 		// 字节都没变。后台对话的内容在切过去时取（switch_session / get_state 强制
 		// 全量），它在左栏的运行态由 emitConversations 走另一条通道。
 		if (conv.id !== this.conv.id) return;
+		const eventMsgRole =
+			event.type === "message_start" || event.type === "message_end"
+				? (event.message as { role?: string } | undefined)?.role
+				: undefined;
 		if (
 			event.type === "agent_end" ||
 			event.type === "tool_execution_end" ||
 			event.type === "compaction_end" ||
 			event.type === "auto_retry_start" ||
-			event.type === "auto_retry_end"
+			event.type === "auto_retry_end" ||
+			event.type === "queue_update" ||
+			eventMsgRole === "user"
 		) {
 			this.flushSnapshot();
 		} else {
@@ -5732,7 +5790,34 @@ export class ClientSession {
 		const now = Date.now();
 		const cached = this.piCheckCache;
 		if (cached && now - cached.at < 2000) return cached.configured;
-		const configured = (this.sharedModelRuntime?.getAvailableSnapshot().length ?? 0) > 0;
+		let configured = (this.sharedModelRuntime?.getAvailableSnapshot().length ?? 0) > 0;
+		if (!configured) {
+			try {
+				const authFile = join(this.agentDir, "auth.json");
+				if (existsSync(authFile)) {
+					const auth = JSON.parse(readFileSync(authFile, "utf8")) as Record<string, unknown>;
+					if (auth && typeof auth === "object" && Object.keys(auth).length > 0) {
+						configured = true;
+					}
+				}
+			} catch {
+				/* ignore */
+			}
+			if (!configured) {
+				try {
+					const modelsFile = join(this.agentDir, "models.json");
+					if (existsSync(modelsFile)) {
+						const conf = JSON.parse(readFileSync(modelsFile, "utf8")) as Record<string, unknown>;
+						const provs = conf?.providers;
+						if (provs && typeof provs === "object" && Object.keys(provs).length > 0) {
+							configured = true;
+						}
+					}
+				} catch {
+					/* ignore */
+				}
+			}
+		}
 		this.piCheckCache = { at: now, configured };
 		return configured;
 	}
@@ -5756,6 +5841,10 @@ export class ClientSession {
 	private static readonly PI_CLI_PROBE_TTL_MS = 10_000;
 
 	private isPiCliInstalled(): boolean {
+		// 在便携模式或已加载智能体引擎（内置 SDK）时直接视为就绪，无需系统全局安装外部 pi CLI
+		if (process.env.PI_PORTABLE === "1" || this.sharedModelRuntime != null) {
+			return true;
+		}
 		const now = Date.now();
 		const cached = ClientSession.piCliProbe;
 		if (cached && now - cached.at < ClientSession.PI_CLI_PROBE_TTL_MS) return cached.installed;
@@ -5767,7 +5856,11 @@ export class ClientSession {
 	private static piCliOnPath(): boolean {
 		const dirs = (process.env.PATH ?? "").split(delimiter);
 		for (const dir of dirs) {
-			if (dir && existsSync(join(dir, "pi"))) return true;
+			if (!dir) continue;
+			if (existsSync(join(dir, "pi"))) return true;
+			if (process.platform === "win32") {
+				if (existsSync(join(dir, "pi.cmd")) || existsSync(join(dir, "pi.exe"))) return true;
+			}
 		}
 		return false;
 	}
@@ -5850,14 +5943,7 @@ export class ClientSession {
 	 * resolved from this compiled module: <pkg>/dist/server → <pkg>).
 	 */
 	private static currentAppVersion(): string {
-		try {
-			const here = dirname(fileURLToPath(import.meta.url));
-			const pkgRoot = resolve(here, "..", "..");
-			const pkg = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")) as { version?: string };
-			return pkg.version ?? "0.0.0";
-		} catch {
-			return "0.0.0";
-		}
+		return getAppVersion() || "0.0.0";
 	}
 
 	/** Simple numeric semver compare: >0 means a newer than b. */
@@ -6737,6 +6823,8 @@ export class ClientSession {
 		thinkingWrap?: boolean;
 		toolsWrap?: boolean;
 		toolImagesEnabled?: boolean;
+		showForkedParentSessions?: boolean;
+		retainFinishedConversations?: boolean;
 		visionBridgeEnabled?: boolean;
 		visionBridgeModel?: string | null;
 		visionBridgePromptMode?: PromptMode;
@@ -7586,6 +7674,92 @@ export class ClientSession {
 				// best-effort
 			}
 		}
+	}
+
+	/** 启动一次工作区版本影子快照并挂到 conv.pendingWorkspaceSnapshot（供写工具门禁等待）。 */
+	private startWorkspaceSnapshot(conv: Conversation): Promise<string | null> {
+		const snapshotPromise = createWorkspaceSnapshot(conv.cwd).catch((err) => {
+			console.warn(`[workspace-snapshot] 创建快照失败 (${conv.cwd}):`, (err as Error).message);
+			return null;
+		});
+		conv.pendingWorkspaceSnapshot = snapshotPromise;
+		return snapshotPromise;
+	}
+
+	/**
+	 * 在用户消息定稿（message_end, role="user"）时绑定或启动工作区影子快照：
+	 * - 空闲提问：复用 prompt() 已提前并发启动的 pendingWorkspaceSnapshot；
+	 * - 流式插队/排队（steer/followUp）：在消息真正出队开跑的瞬间启动快照（入队阶段零 git 开销，不阻塞气泡上屏）。
+	 * SDK 在 _emit(message_end) 返回后的同一同步 tick 追加 sessionManager entry，因此用 queueMicrotask 精确捕获 entryId。
+	 */
+	private bindOrStartWorkspaceSnapshotForUserMessage(conv: Conversation): void {
+		const snapshotPromise = conv.pendingWorkspaceSnapshot ?? this.startWorkspaceSnapshot(conv);
+		queueMicrotask(() => {
+			let entryId: string | undefined;
+			const timestamp = Date.now();
+			try {
+				const entries = conv.session.sessionManager.buildContextEntries();
+				const lastUserEntry = [...entries]
+					.reverse()
+					.find(
+						(e) => e.type === "message" && (e as unknown as { message?: { role?: string } }).message?.role === "user",
+					);
+				entryId = lastUserEntry?.id;
+			} catch {
+				// best-effort
+			}
+			void snapshotPromise
+				.then((snapshotRef) => {
+					if (conv.pendingWorkspaceSnapshot === snapshotPromise) {
+						conv.pendingWorkspaceSnapshot = undefined;
+					}
+					if (!snapshotRef || this.disposed) return;
+					try {
+						// 若 이미为同一 entryId 记录过快照则不重复写
+						if (entryId && conv.workspaceSnapshots.some((r) => r.entryId === entryId)) return;
+						const record: WorkspaceSnapshotRecord = {
+							entryId,
+							timestamp,
+							snapshotRef,
+						};
+						conv.workspaceSnapshots.push(record);
+						if (conv.workspaceSnapshots.length > 50) {
+							conv.workspaceSnapshots.shift();
+						}
+						appendWorkspaceSnapshotToSession(conv.session.sessionManager, record);
+					} catch {
+						// best-effort
+					}
+				})
+				.catch(() => {
+					if (conv.pendingWorkspaceSnapshot === snapshotPromise) {
+						conv.pendingWorkspaceSnapshot = undefined;
+					}
+				});
+		});
+	}
+
+	/** 检查并消费「流式入队前置阶段已被用户在前端点 ✕/↩ 取消」的待入队项。 */
+	private consumeCancelledInFlightQueue(
+		conv: Conversation,
+		kind: "steer" | "followUp",
+		rawText: string,
+		fullPromptText: string,
+	): boolean {
+		const list = conv.cancelledInFlightQueue;
+		if (!list || list.length === 0) return false;
+		const normRaw = rawText.trim();
+		const normFull = splitQuotedPrompt(fullPromptText).text.trim();
+		const idx = list.findIndex(
+			(item) =>
+				item.kind === kind &&
+				(item.text === fullPromptText ||
+					item.text.trim() === normRaw ||
+					splitQuotedPrompt(item.text).text.trim() === normFull),
+		);
+		if (idx < 0) return false;
+		list.splice(idx, 1);
+		return true;
 	}
 
 	/**
@@ -8558,18 +8732,22 @@ export class ClientSession {
 						.map((a) => readTextQuote(a.quote))
 						.filter((q) => q !== null)
 				: [];
-			const asides = await buildAttachmentMessages(
-				{
-					cwd: this.cwd,
-					clientId: this.clientId,
-					emit: (msg) => this.emit(msg),
-					settings: this.settingsSvc.current,
-					session: this.session,
-					// issue #91：附件/视觉桥文案按客户端 UI 语言出中英（英文默认）。
-					getLang: () => this.getLang(),
-				},
-				streamingQuotes.length ? attachments?.filter((a) => a.mode !== "quote") : attachments,
-			);
+			const nonQuoteAttachments = streamingQuotes.length ? attachments?.filter((a) => a.mode !== "quote") : attachments;
+			const asides =
+				nonQuoteAttachments && nonQuoteAttachments.length > 0
+					? await buildAttachmentMessages(
+							{
+								cwd: this.cwd,
+								clientId: this.clientId,
+								emit: (msg) => this.emit(msg),
+								settings: this.settingsSvc.current,
+								session: this.session,
+								// issue #91：附件/视觉桥文案按客户端 UI 语言出中英（英文默认）。
+								getLang: () => this.getLang(),
+							},
+							nonQuoteAttachments,
+						)
+					: [];
 			if (promptAc.signal.aborted) {
 				conv.activePromptAc = undefined;
 				// #492：displacement（新对话顶替/会话被移出）在 prompt 前置阶段 abort 时
@@ -8582,28 +8760,64 @@ export class ClientSession {
 				});
 				return;
 			}
-			for (const aside of asides) {
-				if (s.isStreaming) {
-					await s.sendCustomMessage(aside.message, { deliverAs: "nextTurn" });
-				} else {
+			const mainSupportsVision = s.model?.input?.includes("image") ?? false;
+			const promptImages: { type: "image"; data: string; mimeType: string }[] = [];
+			const textAsides: string[] = [];
+			const imageNames: string[] = [];
+
+			if (s.isStreaming) {
+				for (const aside of asides) {
+					const details = aside.message.details as { name?: string; mode?: string } | undefined;
+					for (const b of aside.message.content) {
+						if (typeof b === "string") {
+							if (b.trim()) textAsides.push(b.trim());
+							continue;
+						}
+						if (!b || typeof b !== "object") continue;
+						if (b.type === "image" && typeof (b as { data?: unknown }).data === "string") {
+							if (mainSupportsVision) {
+								promptImages.push({
+									type: "image",
+									data: (b as { data: string }).data,
+									mimeType: (b as { mimeType?: string }).mimeType || "image/png",
+								});
+								if (details?.name) {
+									imageNames.push(details.name);
+								}
+							}
+						} else if (
+							b.type === "text" &&
+							typeof (b as { text?: unknown }).text === "string" &&
+							(b as { text: string }).text.trim()
+						) {
+							textAsides.push((b as { text: string }).text.trim());
+							if (details?.mode === "bridged" && details?.name) {
+								imageNames.push(details.name);
+							}
+						}
+					}
+				}
+				// 关键修复：流式排队/插队期间严禁使用 deliverAs: "nextTurn" 注入 custom message。
+				// Pi SDK 的 _pendingNextTurnMessages 只在非流式 prompt() 消费；流式期间注入会导致
+				// 排队消息无法获取附件，且附件残留泄露到下一次提问。
+				// 保证 SDK 内部暂存队列清空，防止历史残留污染。
+				if (Array.isArray((s as unknown as { _pendingNextTurnMessages?: unknown[] })._pendingNextTurnMessages)) {
+					(s as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
+				}
+			} else {
+				for (const aside of asides) {
 					await s.sendCustomMessage(aside.message);
 				}
+				if (asides.length > 0) {
+					this.flushSnapshot();
+				}
+				if (Array.isArray((s as unknown as { _pendingNextTurnMessages?: unknown[] })._pendingNextTurnMessages)) {
+					(s as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
+				}
 			}
-			// 附件处理完毕后立即刷新快照，让引用的文件卡片在等待模型首字前瞬间出现在界面上
-			if (asides.length > 0) {
-				this.flushSnapshot();
-			}
-			// 启动工作区版本影子快照（与模型首字并发执行，消除发送到气泡上屏的等待；写工具执行前自动门禁拦截）
-			const snapshotPromise = createWorkspaceSnapshot(conv.cwd).catch((err) => {
-				console.warn(`[workspace-snapshot] 创建快照失败 (${conv.cwd}):`, (err as Error).message);
-				return null;
-			});
-			conv.pendingWorkspaceSnapshot = snapshotPromise;
-
 			if (promptAc.signal.aborted) {
 				conv.activePromptAc = undefined;
-				conv.pendingWorkspaceSnapshot = undefined;
-				// #492：同上——影子快照阶段的 abort 也必须给回执，不能静默黑洞。
+				// #492：同上——前置阶段的 abort 也必须给回执，不能静默黑洞。
 				this.emit({
 					type: "notice",
 					level: "warning",
@@ -8613,7 +8827,7 @@ export class ClientSession {
 				return;
 			}
 			conv.activePromptAc = undefined;
-			// 前置阶段（附件 / 影子快照）期间用户可能已经切走或新建了对话：消息仍然
+			// 前置阶段（附件）期间用户可能已经切走或新建了对话：消息仍然
 			// 落在本对话里，指给用户看，免得「发出去的消息不见了」。
 			if (conv.id !== this.activeId) {
 				this.emit({
@@ -8634,43 +8848,34 @@ export class ClientSession {
 				// Enter-during-streaming semantic (docs/usage: Enter queues a
 				// steering message); followUp would wait for the whole run
 				// to finish, which users perceive as ordinary queueing.
-				await s.prompt(formatQuotedPrompt(text, streamingQuotes), {
-					streamingBehavior: queue ? "followUp" : "steer",
+				//
+				// 注意：流式期间入队仅进入 SDK 内存队列（尚未落盘为 sessionManager entry），
+				// 严禁在此处启动或 await 工作区 Git 影子快照（否则在大型仓库或工具占锁时会把
+				// 入队回执与 flushSnapshot 阻塞数秒至 15 秒，造成「按完 Enter 消息消失」）。
+				// 排队/插队消息的工作区快照在其真正出队定稿（message_end, role="user"）时异步生成。
+				const kind = queue ? "followUp" : "steer";
+				const fullPromptText = formatStreamingPrompt(text, textAsides, streamingQuotes, imageNames);
+				if (this.consumeCancelledInFlightQueue(conv, kind, text, fullPromptText)) {
+					this.flushSnapshot();
+					return;
+				}
+				if (promptImages.length > 0) {
+					conv.queuedImages.set(fullPromptText, promptImages);
+				}
+				await s.prompt(fullPromptText, {
+					streamingBehavior: kind,
+					images: promptImages.length > 0 ? promptImages : undefined,
 				});
 			} else {
-				await s.prompt(formatQuotedPrompt(text, streamingQuotes));
-			}
-
-			// 关联快照与本次 prompt 产生的用户消息 entry
-			let snapshotRef: string | null = null;
-			try {
-				snapshotRef = await conv.pendingWorkspaceSnapshot;
-			} catch {
-				// best-effort
-			} finally {
-				conv.pendingWorkspaceSnapshot = undefined;
-			}
-
-			if (snapshotRef) {
+				// 空闲提问：启动工作区版本影子快照（与模型首字并发执行，写工具由门禁等待；
+				// 绑定由 message_end 异步完成，绝不阻塞 prompt 收尾与气泡上屏）。
+				const snapshotPromise = this.startWorkspaceSnapshot(conv);
 				try {
-					const entries = conv.session.sessionManager.buildContextEntries();
-					const lastUserEntry = [...entries]
-						.reverse()
-						.find(
-							(e) => e.type === "message" && (e as unknown as { message?: { role?: string } }).message?.role === "user",
-						);
-					const record: WorkspaceSnapshotRecord = {
-						entryId: lastUserEntry?.id,
-						timestamp: Date.now(),
-						snapshotRef,
-					};
-					conv.workspaceSnapshots.push(record);
-					if (conv.workspaceSnapshots.length > 50) {
-						conv.workspaceSnapshots.shift();
+					await s.prompt(formatQuotedPrompt(text, streamingQuotes));
+				} finally {
+					if (conv.pendingWorkspaceSnapshot === snapshotPromise) {
+						conv.pendingWorkspaceSnapshot = undefined;
 					}
-					appendWorkspaceSnapshotToSession(conv.session.sessionManager, record);
-				} catch {
-					// best-effort
 				}
 			}
 		} catch (err) {
@@ -8721,6 +8926,13 @@ export class ClientSession {
 		if (this.conv.activePromptAc) {
 			this.conv.activePromptAc.abort();
 			this.conv.activePromptAc = undefined;
+		}
+		if (
+			Array.isArray(
+				(this.conv.session as unknown as { _pendingNextTurnMessages?: unknown[] })?._pendingNextTurnMessages,
+			)
+		) {
+			(this.conv.session as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
 		}
 		const isRunning = this.conversationStreaming(this.conv) || !this.conv.session.isIdle;
 		if (!isRunning) {
@@ -8830,16 +9042,30 @@ export class ClientSession {
 		const conv = this.conv;
 		// Always-defined display mirrors; also the provenance of bubble rendering.
 		const local = kind === "steer" ? conv.queueSteering : conv.queueFollowUp;
-		if (!local.includes(text)) {
-			// Already gone (delivered / cleared elsewhere) — just refresh the display.
-			this.flushSnapshot();
-			return;
+		let targetText = text;
+		if (!local.includes(targetText)) {
+			// 前端乐观气泡在视觉桥等异步附件完成前只带基础文本，按净化后的正文匹配兜底
+			const parsedTarget = splitQuotedPrompt(text).text.trim();
+			const fallback = parsedTarget
+				? local.find((item) => splitQuotedPrompt(item).text.trim() === parsedTarget)
+				: undefined;
+			if (fallback !== undefined) {
+				targetText = fallback;
+			} else {
+				// 若当前仍有流式 prompt 处于前置构建阶段（尚未进 SDK 队列），记录取消标记拦截其后续入队
+				if (conv.promptInFlight) {
+					(conv.cancelledInFlightQueue ??= []).push({ kind, text });
+				}
+				// Already gone (delivered / cleared elsewhere) — just refresh the display.
+				this.flushSnapshot();
+				return;
+			}
 		}
 		const s = this.conv.session;
 		if (!s) {
 			// Runtime not bound yet (fresh conversation) — drop the display mirror;
 			// a later queue_update reconciles any SDK-side state.
-			const next = removeQueuedByIndexOrText(local, text, index);
+			const next = removeQueuedByIndexOrText(local, targetText, index);
 			if (next.length !== local.length) {
 				local.splice(0, local.length, ...next);
 			}
@@ -8855,7 +9081,7 @@ export class ClientSession {
 			// 回退到本地显示镜像移除，等 queue_update 对账；绝不把 reject 的 Promise
 			// 扔回给 dispatch（无兜底 handler 时 unhandledRejection 直接崩进程）。
 			console.error("[agent-service] clearQueue failed while removing a queued message:", err);
-			const next = removeQueuedByIndexOrText(local, text, index);
+			const next = removeQueuedByIndexOrText(local, targetText, index);
 			if (next.length !== local.length) {
 				local.splice(0, local.length, ...next);
 			}
@@ -8865,13 +9091,14 @@ export class ClientSession {
 		// 气泡 ✕ 对应的是「第几个气泡」（index），不是「哪段文本」：同一文本排队两次时
 		// 按文本只会删掉第一条，点第二个气泡却删掉第一个。用 index 定位，位置对不上
 		// （队列在点击与执行之间变化）或旧客户端没发 index 时回落到第一处文本匹配。
-		const keptSteering = kind === "steer" ? removeQueuedByIndexOrText(steering, text, index) : steering;
-		const keptFollowUp = kind === "followUp" ? removeQueuedByIndexOrText(followUp, text, index) : followUp;
+		const keptSteering = kind === "steer" ? removeQueuedByIndexOrText(steering, targetText, index) : steering;
+		const keptFollowUp = kind === "followUp" ? removeQueuedByIndexOrText(followUp, targetText, index) : followUp;
 		// Re-queue the survivors in original order. Guard each call so a single
 		// failure can't leave the queue half-drained silently.
 		for (const t of keptSteering) {
 			try {
-				await s.steer(t);
+				const imgs = conv.queuedImages?.get(t);
+				await s.steer(t, imgs);
 			} catch (err) {
 				this.emit({
 					type: "notice",
@@ -8883,7 +9110,8 @@ export class ClientSession {
 		}
 		for (const t of keptFollowUp) {
 			try {
-				await s.followUp(t);
+				const imgs = conv.queuedImages?.get(t);
+				await s.followUp(t, imgs);
 			} catch (err) {
 				this.emit({
 					type: "notice",
@@ -8892,6 +9120,10 @@ export class ClientSession {
 					textEn: `Failed to re-queue the queued message: ${(err as Error).message}`,
 				});
 			}
+		}
+		conv.queuedImages?.delete(targetText);
+		if (Array.isArray((s as unknown as { _pendingNextTurnMessages?: unknown[] })._pendingNextTurnMessages)) {
+			(s as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
 		}
 		this.flushSnapshot();
 	}
@@ -9232,11 +9464,12 @@ export class ClientSession {
 			).length;
 			const maxOpenConversations = getMaxOpenConversations();
 			if (openInProject >= maxOpenConversations) {
+				const notice = this.maxOpenConversationsNotice(maxOpenConversations);
 				this.emit({
 					type: "notice",
 					level: "warning",
-					text: `当前项目运行的对话已达上限（${maxOpenConversations} 个），请先移出不需要的对话（打开后离开不继续对话即移出；钉住的对话需先取消钉住）`,
-					textEn: `This project already has the max open conversations (${maxOpenConversations}). Open one and leave it (without continuing) to remove it from the list; pinned chats must be unpinned first.`,
+					text: notice.text,
+					textEn: notice.textEn,
 				});
 				return false;
 			}
@@ -9645,6 +9878,32 @@ export class ClientSession {
 		}
 	}
 
+	/** 会话是否已产生内容或已被列入运行列表（非刚新建且一言未发的空白会话）。 */
+	private isConversationStarted(conv: Conversation): boolean {
+		if (conv.listed) return true;
+		if (conv.title !== DEFAULT_CONV_TITLE) return true;
+		if (conv.forkFrom) return true;
+		try {
+			return conv.session.getSessionStats().totalMessages > 0;
+		} catch {
+			return false;
+		}
+	}
+
+	private maxOpenConversationsNotice(limit: number): { text: string; textEn: string } {
+		const retain = Boolean(this.settingsSvc?.current.retainFinishedConversations);
+		if (retain) {
+			return {
+				text: `当前项目运行的对话已达上限（${limit} 个），请先在「运行的对话」中点击 ✕ 移出不需要的对话（钉住的对话需先取消钉住）`,
+				textEn: `This project already has the max open conversations (${limit}). Please remove unneeded conversations with ✕ in "Running Chats" first (pinned chats must be unpinned first).`,
+			};
+		}
+		return {
+			text: `当前项目运行的对话已达上限（${limit} 个），请先移出不需要的对话（打开后离开不继续对话即移出；钉住的对话需先取消钉住）`,
+			textEn: `This project already has the max open conversations (${limit}). Open one and leave it (without continuing) to remove it from the list; pinned chats must be unpinned first.`,
+		};
+	}
+
 	private displaceActive(): Conversation | null {
 		const conv = this.conv;
 		// 正在过户给其他会话：绝不就地释放（runtime/终端等整体搬迁给 target）。
@@ -9674,8 +9933,11 @@ export class ClientSession {
 		// points at it: dropping an idle in-memory parent orphans the child row
 		// (the child vanishes from Running Chats with no result available).
 		const hasLiveChild = [...this.convs.values()].some((child) => child.parentId === conv.id);
+		const retainFinished =
+			Boolean(this.settingsSvc?.current.retainFinishedConversations) && this.isConversationStarted(conv);
 		const retained =
 			hasLiveChild ||
+			retainFinished ||
 			shouldRetainActive({
 				reviewing: conv.goal.reviewing,
 				wizardRunning: conv.wizardRunning,
@@ -10513,22 +10775,10 @@ export class ClientSession {
 			// use — one listing covers every conversation of the current folder.
 			const infos = await this.loadSessionInfos();
 
-			// 隐藏「被 fork 掉的父会话」，历史列表只保留每条 fork 链最新的链尾会话
-			// （全文搜索 searchSessions 保留全部会话，不受此影响）。
-			const normSessionPath = (p: string) => normalizePathKey(p);
-			const forkedParentPaths = new Set<string>();
-			for (const info of infos) {
-				if (typeof info.parentSessionPath === "string" && info.parentSessionPath) {
-					forkedParentPaths.add(normSessionPath(info.parentSessionPath));
-				}
-			}
-			const visibleInfos =
-				forkedParentPaths.size > 0
-					? (() => {
-							const kept = infos.filter((info) => !forkedParentPaths.has(normSessionPath(info.path)));
-							return kept.length > 0 ? kept : infos;
-						})()
-					: infos;
+			// 默认隐藏「被 fork 掉的父会话」（仅保留每条 fork 链最新的链尾会话）；
+			// 开启 showForkedParentSessions 时保留全部会话（全文搜索 searchSessions 始终保留全部）。
+			const showForkedParents = this.settingsSvc.current.showForkedParentSessions === true;
+			const visibleInfos = filterForkedParentSessions(infos, showForkedParents);
 
 			const sessions = new Map<string, SessionSummary>();
 			for (const s of visibleInfos) {
@@ -10542,6 +10792,7 @@ export class ClientSession {
 					modified: s.modified.getTime(),
 					source: "web",
 					...(isPinned ? { pinned: true } : {}),
+					...(s.parentSessionPath ? { parentSessionPath: s.parentSessionPath } : {}),
 				});
 			}
 			const sorted = [...sessions.values()].sort((a, b) => b.modified - a.modified).slice(0, 200); // newest first — the panel shows recent history
@@ -11560,11 +11811,12 @@ export class ClientSession {
 					text: `当前项目运行的对话已达上限（${maxOpenConversations} 个）`,
 					textEn: `Max open conversations (${maxOpenConversations}) reached`,
 				});
+				const notice = this.maxOpenConversationsNotice(maxOpenConversations);
 				this.emit({
 					type: "notice",
 					level: "warning",
-					text: `当前项目运行的对话已达上限（${maxOpenConversations} 个），请先移出不需要的对话（打开后离开不继续对话即移出；钉住的对话需先取消钉住）`,
-					textEn: `This project already has the max open conversations (${maxOpenConversations}). Open one and leave it (without continuing) to remove it from the list; pinned chats must be unpinned first.`,
+					text: notice.text,
+					textEn: notice.textEn,
 				});
 				return;
 			}
@@ -11794,11 +12046,12 @@ export class ClientSession {
 				this.conv.listed = oldListed;
 				terminals.killAll();
 				await runtime.dispose();
+				const notice = this.maxOpenConversationsNotice(maxOpenConversations);
 				this.emit({
 					type: "notice",
 					level: "warning",
-					text: `当前项目运行的对话已达上限（${maxOpenConversations} 个），请先移出不需要的对话（打开后离开不继续对话即移出；钉住的对话需先取消钉住）`,
-					textEn: `This project already has the max open conversations (${maxOpenConversations}). Open one and leave it (without continuing) to remove it from the list; pinned chats must be unpinned first.`,
+					text: notice.text,
+					textEn: notice.textEn,
 				});
 				return;
 			}
@@ -11807,6 +12060,8 @@ export class ClientSession {
 			this.activeId = conversationId;
 			if (displaced) this.removeConversation(displaced.id);
 			await this.bindSession();
+			this.invalidateSessionInfos();
+			this.scheduleSessionsRefresh();
 			// #436：同 switchSession —— 派生出的会话若从转录回放恢复了 planMode，
 			// 工厂里的门控当时读不到它，注册后补一次。
 			this.applyToolGating(newConv.session, newConv.agentPreset);
@@ -11898,6 +12153,7 @@ export class ClientSession {
 			targetConv.lastMessagesArray = [];
 			targetConv.queueSteering = [];
 			targetConv.queueFollowUp = [];
+			targetConv.queuedImages = new Map();
 			try {
 				targetConv.session.clearQueue?.();
 			} catch {
@@ -12029,6 +12285,8 @@ export class ClientSession {
 				return;
 			}
 			await this.bindSession();
+			this.invalidateSessionInfos();
+			this.scheduleSessionsRefresh();
 			this.conv.uiMessageCache.clear();
 			this.conv.msgIds.clear();
 			this.conv.userSeqByTs.clear();
@@ -12037,6 +12295,7 @@ export class ClientSession {
 			this.conv.lastMessagesArray = [];
 			this.conv.queueSteering = [];
 			this.conv.queueFollowUp = [];
+			this.conv.queuedImages = new Map();
 			// Restore the previously-selected model on the forked branch.
 			if (prevModel && this.sharedModelRuntime) {
 				try {
@@ -12056,11 +12315,16 @@ export class ClientSession {
 				}
 			}
 			await this.prompt(trimmed, attachments);
+			const showParents = this.settingsSvc.current.showForkedParentSessions === true;
 			this.emit({
 				type: "notice",
 				level: "info",
-				text: "已从该问题重新提问（原对话保留在会话列表中）",
-				textEn: "Re-asked from that question (the original stays in the session list)",
+				text: showParents
+					? "已从该问题重新提问（原对话保留在会话列表中）"
+					: "已从该问题重新提问（原对话已保留，但默认不在历史列表中显示）",
+				textEn: showParents
+					? "Re-asked from that question (the original stays in the session list)"
+					: "Re-asked from that question (the original is kept, but hidden from the history list by default)",
 			});
 		} catch (err) {
 			this.emit({
@@ -12481,10 +12745,10 @@ export class ClientSession {
 				// 别处无可见行时不扫目录（首访切项目的常见情形零开销）。
 				if ((this.listExternalRunning?.() ?? []).length > 0) {
 					try {
-						const infos = await SessionManager.list(sessionBaseDir, piSessionsRoot());
-						const recent = infos[0]?.path ? resolve(infos[0].path) : undefined;
+						const recentPath = await findMostRecentSessionFileFast(sessionBaseDir, abs);
+						const recent = recentPath ? resolve(recentPath) : undefined;
 						const owner = recent ? this.findSessionOwner?.(recent) : null;
-						if (owner) {
+						if (owner && (owner.connected || owner.isStreaming)) {
 							resumeSkipped = owner;
 						}
 					} catch {
@@ -12503,7 +12767,7 @@ export class ClientSession {
 							agentDir: this.agentDir,
 							sessionManager: m,
 						}),
-					async () => (await SessionManager.list(sessionBaseDir))[0]?.path,
+					() => findMostRecentSessionFileFast(sessionBaseDir, abs),
 					async (m) => {
 						const { totalMessages, previewMessages } = this.extractTranscriptPreview(m, 16);
 						this.emit({

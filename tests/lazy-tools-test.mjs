@@ -76,7 +76,7 @@ const mock = createServer((req, res) => {
 		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 		const chunks = alreadyCalled
 			? [delta(payload.model ?? "mock-model", { content: "done" })]
-			: [toolCall(payload.model ?? "mock-model", "load_tools", { tools: ["patch"] })];
+			: [toolCall(payload.model ?? "mock-model", "load_tools", { tools: ["patch", "read"] })];
 		for (const c of chunks) res.write(`data: ${JSON.stringify(c)}\n\n`);
 		res.write(
 			`data: ${JSON.stringify({
@@ -200,6 +200,14 @@ check("系统提示词带「先 load_tools」的说明", /load_tools/.test(first
 // 等 load_tools 执行完 → 第二次请求
 const second = await waitRequest(1);
 check("load_tools 执行后又发了一次请求", Boolean(second), `requests=${requests.length}`);
+const toolResult = (second?.messages ?? []).find((m) => m.role === "tool");
+const toolContent =
+	typeof toolResult?.content === "string" ? toolResult.content : JSON.stringify(toolResult?.content ?? "");
+check(
+	"load_tools 拒绝对核心常驻工具 read 的加载请求（提示无需加载）",
+	/read: (always available|常驻)/.test(toolContent),
+	`toolContent=${toolContent}`,
+);
 const secondTools = toolNames(second);
 check("patch 已被加载进 tools", secondTools.includes("patch"), secondTools.join(","));
 

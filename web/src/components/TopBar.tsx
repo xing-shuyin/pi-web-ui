@@ -4,6 +4,7 @@ import {
 	FiBox,
 	FiDownload,
 	FiEdit2,
+	FiFeather,
 	FiFolder,
 	FiFolderPlus,
 	FiGitBranch,
@@ -16,8 +17,6 @@ import {
 	FiPlus,
 	FiSettings,
 	FiLayers,
-	FiMaximize2,
-	FiMinimize2,
 	FiTerminal,
 	FiVolume2,
 } from "react-icons/fi";
@@ -55,6 +54,7 @@ import { useFloatingPanel } from "../use-floating-panel";
 import { isDesktopShell } from "../desktop";
 import { desktopReleasesUrl, useDesktopUpdater } from "../desktop-updater";
 import { BarItem } from "./BarItem";
+import { EnginePicker } from "./EnginePicker";
 
 /** 「安装全局引擎」按钮的目标（issue #321）：buildUpdateCommand 对 pi-core 生成
  *  `npm i -g <name>@latest`，装完重启服务即由 resolve-global-sdk 自动切到更新的那份。 */
@@ -301,6 +301,7 @@ export function TopBar({
 	const FALLBACK_TOPBAR_IDS = [
 		"host:history",
 		"host:brand",
+		"host:engine",
 		"host:open-project",
 		"host:chat",
 		"host:terminal",
@@ -510,6 +511,24 @@ export function TopBar({
 	/** Run `npm i -g pi-web-ui@latest` in a visible terminal tab (SCM-style):
 	 *  reuse the tab with the same title, otherwise create one; switch to the
 	 *  terminal view so the user watches the install live. */
+	const updateTermIdsRef = useRef<Set<string>>(new Set());
+
+	useEffect(() => {
+		if (updateTermIdsRef.current.size === 0) return;
+		let finished = false;
+		for (const tid of Array.from(updateTermIdsRef.current)) {
+			const tm = chat.terminals.find((t) => t.id === tid);
+			if (tm && !tm.running) {
+				updateTermIdsRef.current.delete(tid);
+				finished = true;
+			}
+		}
+		if (finished && chat.ready) {
+			appSend({ type: "check_update" });
+			appSend({ type: "check_updates_all", force: true });
+		}
+	}, [chat.terminals, chat.ready]);
+
 	const runUpdate = () => {
 		if (!chat.ready) return;
 		const title = t("updateTabTitle");
@@ -520,6 +539,7 @@ export function TopBar({
 		};
 		const existing = chat.terminals.find((tm) => tm.title === title);
 		if (existing) {
+			updateTermIdsRef.current.add(existing.id);
 			terminal.restart(existing.id);
 			appSend({
 				type: "run_command",
@@ -530,8 +550,10 @@ export function TopBar({
 				rows: 24,
 			});
 		} else {
+			const tid = randomUuid();
+			updateTermIdsRef.current.add(tid);
 			terminal.create({
-				id: randomUuid(),
+				id: tid,
 				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
@@ -561,6 +583,7 @@ export function TopBar({
 		};
 		const existing = chat.terminals.find((tm) => tm.title === title);
 		if (existing) {
+			updateTermIdsRef.current.add(existing.id);
 			terminal.restart(existing.id);
 			appSend({
 				type: "run_command",
@@ -571,8 +594,10 @@ export function TopBar({
 				rows: 24,
 			});
 		} else {
+			const tid = randomUuid();
+			updateTermIdsRef.current.add(tid);
 			terminal.create({
-				id: randomUuid(),
+				id: tid,
 				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
@@ -625,11 +650,21 @@ export function TopBar({
 		const s = v.replace(/ \([0-9a-f]{7}\)$/, "");
 		return /^[0-9a-f]{7}$/.test(s) ? "" : s;
 	};
+	const extractGitSha = (v: string) => {
+		const m = v.match(/\(([0-9a-f]{7})\)$/) ?? v.match(/^([0-9a-f]{7})$/);
+		return m?.[1] ?? null;
+	};
 	const shortGitRange = (current: string, latest: string | null) => {
 		if (!latest) return stripGitSha(current);
 		const c = stripGitSha(current);
 		const l = stripGitSha(latest);
-		return c === l ? c : `${c} → ${l}`;
+		if (c !== l) return `${c} → ${l}`;
+		const cSha = extractGitSha(current);
+		const lSha = extractGitSha(latest);
+		if (cSha && lSha && cSha !== lSha) {
+			return c ? `${c} (${cSha} → ${lSha})` : `${cSha} → ${lSha}`;
+		}
+		return c;
 	};
 	const renderAllUpdatesBody = () => (
 		<div className="dd-updates-all">
@@ -687,7 +722,11 @@ export function TopBar({
 										}
 									>
 										{item.error ? (
-											t("updateCheckFailed")
+											item.kind === "pi-core" && item.current === "unknown" ? (
+												t("piCoreUndetected")
+											) : (
+												t("updateCheckFailed")
+											)
 										) : item.kind === "git-extension" ? (
 											item.upToDate ? (
 												stripGitSha(item.current)
@@ -1082,7 +1121,7 @@ export function TopBar({
 				aria-label={t("zenMode")}
 				aria-pressed={zenMode}
 			>
-				{zenMode ? <FiMinimize2 /> : <FiMaximize2 />}
+				<FiFeather />
 				<span className="chip-sub">{t("zenMode")}</span>
 			</button>
 		),
@@ -1276,11 +1315,7 @@ export function TopBar({
 				<span className="chip-sub">{chat.status}</span>
 			</span>
 		),
-		"host:engine": (
-			<span className="chip" data-tip="engine">
-				<span className="chip-sub">{chat.engine ?? "pi"}</span>
-			</span>
-		),
+		"host:engine": <EnginePicker direction="down" align="left" caret={false} bar="top" />,
 		"host:ctx": (
 			<span className="chip" data-tip={t("contextUsage")}>
 				<span className="chip-sub">
@@ -1320,7 +1355,14 @@ export function TopBar({
 	/** 溢出菜单里**整块搬进来**的宿主条目（菜单型：下拉/外链/自带面板）。
 	 *  其余宿主条目（history / files / new-chat / search / tasks / settings）在菜单里是一条扁平
 	 *  菜单项，由 dispatchHostOverflow 分派到本地处理器 —— 扁平的更像菜单，整块的才需要搬组件。 */
-	const OVERFLOW_AS_NODE_IDS = new Set(["host:sound", "host:language", "host:theme", "host:update", "host:browser"]);
+	const OVERFLOW_AS_NODE_IDS = new Set([
+		"host:sound",
+		"host:language",
+		"host:theme",
+		"host:update",
+		"host:browser",
+		"host:engine",
+	]);
 	/** TABS 白名单门禁（历史口径，不扩大）：search/tasks/settings 的显隐还受白名单管，
 	 *  其余宿主入口只看 slot（各节点工厂内部自行判断，见 hostNodes）。 */
 	const isTabGatedOff = (id: string) => TABS_GATED_IDS.has(id) && !tabOn(id.slice("host:".length));
@@ -1416,6 +1458,8 @@ export function TopBar({
 					isPluginMenuOpen={pluginMenuAnchor !== null}
 					onUiAction={onUiAction}
 					uiContextEntries={uiContextTopbar}
+					zenMode={zenMode}
+					onToggleZenMode={onToggleZenMode}
 					dropdownProps={{
 						sound,
 						onSoundChange,
@@ -1506,6 +1550,18 @@ export function TopBar({
 		if (kids.length === kept.length) {
 			kept.forEach((it, i) => widthCacheRef.current.set(it.id, (kids[i] as HTMLElement).offsetWidth));
 		}
+		for (const child of kids) {
+			const el = child as HTMLElement;
+			if (
+				el.offsetWidth > 0 &&
+				flow.clientWidth > 0 &&
+				el.offsetLeft + el.offsetWidth / 2 < Math.min(220, flow.clientWidth / 2)
+			) {
+				el.setAttribute("data-tip-align", "right");
+			} else {
+				el.removeAttribute("data-tip-align");
+			}
+		}
 		const gap = Number.parseFloat(getComputedStyle(flow).columnGap) || 0;
 		// 「⋯」按钮是流容器的**兄弟**节点：flex 已经把它占的宽度从 clientWidth 里扣掉了，
 		// 所以这里不用为它预留（reserve = 0）。没有 slot 元数据的条目（回退模式）不参与溢出
@@ -1567,11 +1623,18 @@ export function TopBar({
 				{segStart.map((it) => (
 					<Fragment key={it.id}>{it.node}</Fragment>
 				))}
-				{(segCenter.length > 0 || segEnd.length > 0) && <span className="tb-spacer" aria-hidden="true" />}
+				{(segCenter.length > 0 || segEnd.length > 0) && (
+					<span
+						className={`tb-spacer${segCenter.length === 0 && segEnd.length > 0 ? " tb-spacer-end" : ""}`}
+						aria-hidden="true"
+					/>
+				)}
 				{segCenter.map((it) => (
 					<Fragment key={it.id}>{it.node}</Fragment>
 				))}
-				{segCenter.length > 0 && <span className="tb-spacer" aria-hidden="true" />}
+				{segCenter.length > 0 && (
+					<span className={`tb-spacer${segEnd.length > 0 ? " tb-spacer-end" : ""}`} aria-hidden="true" />
+				)}
 				{segEnd.map((it) => (
 					<Fragment key={it.id}>{it.node}</Fragment>
 				))}

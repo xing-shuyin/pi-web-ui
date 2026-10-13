@@ -82,6 +82,17 @@ export const zh = {
 	messages: "消息",
 	pluginStatus: "插件状态",
 	engineBadge: "引擎",
+	engineSwitchTip: "点击切换智能体引擎（零重启秒级热切）",
+	engineTagFull: "完整生态",
+	engineTagFast: "极速补丁",
+	enginePickerDesc: "零重启热切换智能体引擎，不同标签页可同时运行不同引擎",
+	settingsEngineSection: "智能体引擎",
+	settingsEngineHint:
+		"支持零重启秒级热切换：切换后本标签页立即接入目标引擎，原引擎后台运行中的对话不会中断；也可打开多个浏览器标签页同时分别进行 pi 与 DSH 对话。",
+	settingsEnginePiTitle: "pi 引擎（标准）",
+	settingsEnginePiDesc: "完整插件生态、扩展与技能、工具延迟加载、审批门禁、目标模式 2.0 与子代理",
+	settingsEngineDshTitle: "DSH 引擎（DeepSeek Harness）",
+	settingsEngineDshDesc: "轻量级代码编辑循环、hashline 补丁引擎、Agent 预设与三档权限控制",
 	working: "工作中",
 	queued: "排队",
 	enterPath: "输入路径，Enter 切换",
@@ -232,6 +243,8 @@ export const zh = {
 	current: "当前",
 	messageCount: "{n} 条消息",
 	tuiTip: "pi 终端（TUI）中的对话",
+	forkedSessionBadge: "分支",
+	forkedSessionTip: "分支自：{parent}",
 	deleteProject: "从最近项目移出",
 	deleteProjectConfirm: "确认移出",
 	deleteSession: "删除该对话记录（不可恢复）",
@@ -513,6 +526,7 @@ export const zh = {
 	pluginUpdateAvailableDetail: "可更新：{version}",
 	updatesAllRefresh: "重新检查全部",
 	updateCheckFailed: "检查失败",
+	piCoreUndetected: "无法检测",
 	updateBtn: "更新",
 	updateAllBtn: "全部更新",
 	updatePkgTabTitle: "更新 {name}",
@@ -1151,6 +1165,7 @@ export const zh = {
 	addKeyPlaceholder: "粘贴密钥值…",
 	keyNamePh: "名称（可留空，如 备用）",
 	netDisconnected: "网络连接已断开，请重连后重试",
+	sessionInitializingNotice: "会话正在初始化，请稍候…",
 	noKeyYet: "尚无密钥，添加一把即可用",
 	activateKey: "设为当前",
 	removeKey: "移除",
@@ -1210,7 +1225,7 @@ export const zh = {
 	goalBarExecModel: "执行模型",
 	goalBarExecModelTip: "执行对话的模型；空 = 跟随当前对话",
 	goalBarOpenExec: "执行对话",
-	goalBarOpenExecTip: "打开执行者对话（左栏可随时点开）",
+	goalBarOpenExecTip: "打开执行者对话（左栏可随时点开；执行期间在本对话发送的消息会自动同步给执行者）",
 	goalBarStaleBackend: "⚠️ 服务端版本较旧（进程未重启）：目标模式 2.0 不会生效，请重启 pi-web-ui 服务",
 	goalBarStop: "停止目标（并停掉执行对话）",
 
@@ -1456,6 +1471,11 @@ export const zh = {
 	keepRecent: "常驻渲染预热条数",
 	keepRecentDesc:
 		"消息列表尾部常驻预热的消息条数（默认 15）。历史消息采用智能视口探测自动挂载与离屏占位，滚动无感流畅且避免性能浪费",
+	showForkedParents: "显示被分支的父会话",
+	showForkedParentsDesc: "编辑历史提问或派生分支后，在历史对话列表中同时保留原父会话（默认仅显示每条分支链的最新会话）",
+	retainFinishedConversations: "切走时保留已结束的对话",
+	retainFinishedConversationsDesc:
+		"开启：切换对话或新建对话时，已结束（空闲）的对话依然保留在「运行的对话」列表中，直到手动点击 ✕ 移出；关闭：切走且未继续对话的会话自动移出",
 	toolImageZoom: "点击预览大图",
 	devNoCache: "开发模式：不缓存页面",
 	devNoCacheDesc: "开启：每次加载都取最新页面（源码开发用）；关闭：允许浏览器缓存（安装包默认）",
@@ -2166,6 +2186,18 @@ export const en: Record<keyof typeof zh, string> = {
 	messages: "messages",
 	pluginStatus: "Plugin status",
 	engineBadge: "Engine",
+	engineSwitchTip: "Click to switch agent engine (zero-restart hot switch)",
+	engineTagFull: "Full Ecosystem",
+	engineTagFast: "Fast Patching",
+	enginePickerDesc: "Hot-switch agent engine in-place; tabs can run different engines simultaneously",
+	settingsEngineSection: "Agent Engine",
+	settingsEngineHint:
+		"Zero-restart hot switch: switches this tab immediately while keeping background runs in the other engine alive; you can also open multiple tabs to run pi and DSH conversations simultaneously.",
+	settingsEnginePiTitle: "pi Engine (Standard)",
+	settingsEnginePiDesc:
+		"Full plugin ecosystem, extensions & skills, lazy tool loading, approval rules, Goal Mode 2.0 & subagents",
+	settingsEngineDshTitle: "DSH Engine (DeepSeek Harness)",
+	settingsEngineDshDesc: "Lightweight coding loop, hashline patch engine, Agent presets & 3-tier permission presets",
 	working: "Working",
 	queued: "queued",
 	enterPath: "Type a path, Enter to switch",
@@ -2325,6 +2357,8 @@ export const en: Record<keyof typeof zh, string> = {
 	current: "Current",
 	messageCount: "{n} messages",
 	tuiTip: "Chat in the pi terminal (TUI)",
+	forkedSessionBadge: "Fork",
+	forkedSessionTip: "Forked from: {parent}",
 	deleteProject: "Remove from recent projects",
 	deleteProjectConfirm: "Confirm remove",
 	deleteSession: "Delete this chat transcript permanently",
@@ -2613,6 +2647,7 @@ export const en: Record<keyof typeof zh, string> = {
 	pluginUpdateAvailableDetail: "Update available: {version}",
 	updatesAllRefresh: "Re-check all",
 	updateCheckFailed: "Check failed",
+	piCoreUndetected: "Undetected",
 	updateBtn: "Update",
 	updateAllBtn: "Update all",
 	updatePkgTabTitle: "Update {name}",
@@ -3259,6 +3294,7 @@ export const en: Record<keyof typeof zh, string> = {
 	addKeyPlaceholder: "Paste the key value…",
 	keyNamePh: "Name (optional, e.g. backup)",
 	netDisconnected: "Network disconnected — reconnect and retry",
+	sessionInitializingNotice: "Session is initializing, please wait…",
 	noKeyYet: "No key yet — add one to use this provider",
 	activateKey: "Set active",
 	removeKey: "Remove",
@@ -3320,7 +3356,8 @@ export const en: Record<keyof typeof zh, string> = {
 	goalBarExecModel: "Executor model",
 	goalBarExecModelTip: "Model for the executor conversation; empty = follow the main conversation",
 	goalBarOpenExec: "Executor chat",
-	goalBarOpenExecTip: "Open the executor conversation (also reachable from the left panel)",
+	goalBarOpenExecTip:
+		"Open the executor conversation (also reachable from the left panel; messages sent here while executing are forwarded to the executor)",
 	goalBarStaleBackend:
 		"⚠️ Stale server build (process not restarted): goal mode 2.0 will not take effect — restart the pi-web-ui service",
 	goalBarStop: "Stop goal (also stops the executor conversation)",
@@ -3589,6 +3626,12 @@ export const en: Record<keyof typeof zh, string> = {
 	keepRecent: "Messages kept in full",
 	keepRecentDesc:
 		"How many recent messages stay fully warm at the bottom (default 15). Earlier history uses automatic viewport detection for seamless scrolling while off-screen items are held in cheap placeholders to conserve performance",
+	showForkedParents: "Show forked parent sessions",
+	showForkedParentsDesc:
+		"Keep original parent sessions visible in the history list after editing a message or forking a branch (by default only the latest branch in each chain is shown)",
+	retainFinishedConversations: "Keep finished chats on switch",
+	retainFinishedConversationsDesc:
+		"On: keep finished (idle) conversations in the Running Chats list when switching away or creating new chats until manually removed with ✕; Off: chats left without continuing are auto-cleared",
 	toolImageZoom: "Click to preview",
 	devNoCache: "Dev mode: no page cache",
 	devNoCacheDesc:
@@ -4490,9 +4533,23 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 	return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
+const fallbackI18nValue: I18nContextValue = {
+	locale: "en",
+	setLocale: () => {},
+	t: (key: keyof typeof zh, vars?: Record<string, string | number>) => {
+		const raw = en[key] ?? zh[key] ?? (key as string);
+		if (!vars) return raw;
+		return Object.entries(vars).reduce((acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v)), raw);
+	},
+	packs: [],
+	reloadPacks: async () => null,
+};
+
 export function useI18n(): I18nContextValue {
 	const ctx = useContext(I18nContext);
-	if (!ctx) throw new Error("useI18n must be used within LanguageProvider");
+	if (!ctx) {
+		return fallbackI18nValue;
+	}
 	return ctx;
 }
 

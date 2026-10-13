@@ -102,6 +102,8 @@ export interface SettingsHost {
 	getApprovalPolicy?: () => UiApprovalPolicyState;
 	/** 可选：目标模式总开关 on→off 时调 —— 停掉在飞的目标/调研（否则循环照跑照派）。 */
 	onGoalModeDisabled?: () => void;
+	/** 可选：历史对话列表过滤偏好（如 showForkedParentSessions）变化时立即重推历史列表。 */
+	onSessionsFilterChanged?: () => void;
 	/** 可选：查询 MCP 服务器列表与配置文件路径（设置面板展示）。 */
 	getMcpServers?: () => {
 		servers: import("./protocol.js").UiMcpServer[];
@@ -395,6 +397,8 @@ export class SettingsService {
 				toolsWrap: this.settings.toolsWrap,
 				toolImagesEnabled: this.settings.toolImagesEnabled ?? true,
 				keepRecentMessages: normalizeKeepRecentMessages(this.settings.keepRecentMessages),
+				showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
+				retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 				visionBridgeEnabled: this.settings.visionBridgeEnabled,
 				visionBridgeModel: this.settings.visionBridgeModel,
 				visionBridgePromptMode: this.settings.visionBridgePromptMode,
@@ -531,6 +535,9 @@ export class SettingsService {
 		toolImagesEnabled?: boolean;
 		/** 消息列表尾部常驻渲染的消息条数（默认 15 = 与原硬编码一致；纯 UI 偏好）。 */
 		keepRecentMessages?: number;
+		/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
+		showForkedParentSessions?: boolean;
+		retainFinishedConversations?: boolean;
 		devNoCache?: boolean;
 		autoReload?: boolean;
 		skillsFullText?: string[];
@@ -712,6 +719,17 @@ export class SettingsService {
 		if (partial.keepRecentMessages !== undefined) {
 			this.settings.keepRecentMessages = normalizeKeepRecentMessages(partial.keepRecentMessages);
 		}
+		if (partial.retainFinishedConversations !== undefined) {
+			this.settings.retainFinishedConversations = Boolean(partial.retainFinishedConversations);
+		}
+		let sessionsFilterChanged = false;
+		if (partial.showForkedParentSessions !== undefined) {
+			const nextVal = Boolean(partial.showForkedParentSessions);
+			if (nextVal !== (this.settings.showForkedParentSessions ?? false)) {
+				sessionsFilterChanged = true;
+			}
+			this.settings.showForkedParentSessions = nextVal;
+		}
 		// 编排模式 / skill 全文注入：before_agent_start 逐 run 实时读取（agent-service
 		// composeInputs + 指导块追加），开关下一轮即生效，无需 reload runtime。
 		if (partial.skillsFullText !== undefined) {
@@ -786,6 +804,7 @@ export class SettingsService {
 		if (toolGatingChanged) this.host.applyToolGating();
 		this.host.stateStore.saveSettings(this.host.clientId, this.settings);
 		this.push();
+		if (sessionsFilterChanged) this.host.onSessionsFilterChanged?.();
 		this.host.flushSnapshot();
 		if (needsReload) await this.applyRuntime();
 	}
@@ -844,6 +863,7 @@ export class SettingsService {
 		const patch: Record<string, unknown> = { ...(p as unknown as Record<string, unknown>) };
 		delete patch.name;
 		for (const k of Object.keys(patch)) if (patch[k] === undefined) delete patch[k];
+		const prevShowForked = this.settings.showForkedParentSessions ?? false;
 		this.settings = {
 			...this.settings,
 			...patch,
@@ -856,6 +876,9 @@ export class SettingsService {
 		// 预设可能改了重试次数：即时注入（流式中延迟的 reload 之后还会由调用方重放）。
 		this.host.applyRetryOverrides();
 		this.push();
+		if ((this.settings.showForkedParentSessions ?? false) !== prevShowForked) {
+			this.host.onSessionsFilterChanged?.();
+		}
 		// 预设带了工具开关：live 应用（reload 路径会重放，流式中延迟到 agent_end）。
 		this.host.applyToolGating();
 		await this.applyRuntime();

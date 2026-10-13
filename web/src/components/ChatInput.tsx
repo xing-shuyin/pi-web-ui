@@ -914,6 +914,7 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const connected = ready;
+	const sessionReady = ready && Boolean(sessionId);
 
 	// Re-open the picker when the command catalog arrives late — the user may
 	// have typed "/" before the server pushed slash_commands (cold start).
@@ -1097,6 +1098,10 @@ export const ChatInput = memo(function ChatInput({
 			onNotice("error", t("netDisconnected"));
 			return;
 		}
+		if (!sessionReady) {
+			onNotice("warning", t("sessionInitializingNotice"));
+			return;
+		}
 		// Client-side slash commands (never sent to the server).
 		if (trimmed === "/help") {
 			// Match the modal width to the input box (the backdrop spans the full
@@ -1174,6 +1179,10 @@ export const ChatInput = memo(function ChatInput({
 		if (!trimmed) return;
 		if (!connected) {
 			onNotice("error", t("netDisconnected"));
+			return;
+		}
+		if (!sessionReady) {
+			onNotice("warning", t("sessionInitializingNotice"));
 			return;
 		}
 		if (appSend({ type: "prompt", text: trimmed, queue, attachments: buildPromptAttachments() })) {
@@ -1356,7 +1365,7 @@ export const ChatInput = memo(function ChatInput({
 
 	// 有东西可发才允许提交（空文本 + 无附件时 submit() 直接 return）：
 	// 空闲态的发送按钮和运行中的对半胶囊共用这一个条件。与 submit() 口径保持一致。
-	const canSubmit = connected && (text.trim() !== "" || attachments.length > 0);
+	const canSubmit = sessionReady && (text.trim() !== "" || attachments.length > 0);
 
 	// 插件输入框动作按 align 分组（未接线回落用；接线后统一走下面的 composerGroups）。
 	const pluginActions = useMemo(
@@ -1453,7 +1462,13 @@ export const ChatInput = memo(function ChatInput({
 					</button>
 				)
 			) : (
-				<button type="button" className="btn send" title={t("sendTip")} disabled={!canSubmit} onClick={() => submit()}>
+				<button
+					type="button"
+					className="btn send"
+					title={!connected ? t("netDisconnected") : !sessionReady ? t("sessionInitializingNotice") : t("sendTip")}
+					disabled={!canSubmit}
+					onClick={() => submit()}
+				>
 					<FiArrowUp />
 				</button>
 			)}

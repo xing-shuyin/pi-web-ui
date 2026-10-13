@@ -12,15 +12,15 @@
  *
  * 从 agent-service.ts 抽出为独立模块。
  */
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { statSync } from "node:fs";
-import { VERSION, SessionManager, getAgentDir, type AgentSession } from "@earendil-works/pi-coding-agent";
+import { VERSION, getAgentDir, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { ClientStateStore } from "./client-state.js";
 import { ClaimStore } from "./claim-store.js";
 import { toServiceInfo, launchOrigin } from "./launch-origin.js";
 import { isPseudoClientId, checkPluginCwd } from "./client-id-utils.js";
 import { pickAdoptableOrphan, type OrphanCandidate } from "./orphan-manager.js";
-import { piSessionsRoot } from "./session-search.js";
+import { findMostRecentSessionFileFast } from "./session-parser.js";
 import { isRemoteWorkspaceUri, resolveWorkspaceSessionDir } from "./remote-ssh-service.js";
 import { getMaxOpenConversations } from "./agent-formatters.js";
 import { collectSubagentDescendantIds } from "./subagents.js";
@@ -98,9 +98,9 @@ export class AgentService {
 
 	constructor(
 		private cwd: string,
-		stateFile: string,
+		stateFile: string | ClientStateStore,
 	) {
-		this.stateStore = new ClientStateStore(stateFile);
+		this.stateStore = typeof stateFile === "string" ? new ClientStateStore(stateFile) : stateFile;
 		this.claimStore = new ClaimStore(join(this.stateStore.dataDir, "claims.json"));
 	}
 
@@ -1152,10 +1152,10 @@ export class AgentService {
 					if (this.clients.size > 0) {
 						try {
 							const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore.dataDir, cwd);
-							const infos = await SessionManager.list(sessionBaseDir, piSessionsRoot());
-							const recent = infos[0]?.path ? resolve(infos[0].path) : undefined;
+							const recentPath = await findMostRecentSessionFileFast(sessionBaseDir, cwd);
+							const recent = recentPath ? resolve(recentPath) : undefined;
 							const owner = recent ? this.findSessionOwner(recent, clientId) : null;
-							if (owner) {
+							if (owner && (owner.connected || owner.isStreaming)) {
 								createOpts = { blank: true, blankTitle: owner.title, ...(owner.isStreaming ? {} : { idleHeld: true }) };
 							}
 						} catch {

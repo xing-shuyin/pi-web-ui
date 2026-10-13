@@ -136,7 +136,27 @@ function QueuedMessage({
 					{parsed.quotes.map((quote, i) => (
 						<TextQuoteCard key={`quote-${i}`} quote={quote} />
 					))}
-					<Markdown text={parsed.text} hardBreaks />
+					{parsed.attachments && parsed.attachments.length > 0 && (
+						<div className="queued-attachments">
+							{parsed.attachments.map((att, i) => (
+								<span key={`att-${i}`} className="queued-att-chip">
+									<span className="queued-att-icon">
+										{att.type === "image" || att.type === "vision-bridge"
+											? "🖼️"
+											: att.type === "folder"
+												? "📁"
+												: att.type === "page"
+													? "🌐"
+													: att.type === "conversation"
+														? "💬"
+														: "📎"}
+									</span>
+									<span className="queued-att-name">{att.name}</span>
+								</span>
+							))}
+						</div>
+					)}
+					{parsed.text ? <Markdown text={parsed.text} hardBreaks /> : null}
 				</div>
 			</div>
 		</div>
@@ -170,6 +190,46 @@ function CompactionBanner({ compaction }: { compaction: NonNullable<UiState["com
 
 function hasToolCall(m: UiMessage): boolean {
 	return m.content.some((b) => b.type === "toolCall");
+}
+
+export interface StreamKeyTracker {
+	convKey: string;
+	pending: { index: number; streamKey: string } | null;
+	finalizedMap: Map<string, string>;
+}
+
+/**
+ * 保持流式助手气泡（`id = "stream-..."`）在定稿转入 `state.messages`（`id = "a-..."`）时的
+ * React `key` 稳定一致，避免定稿瞬间 `<LazyMount>` 与 `<Message>` 整树卸载重建导致闪烁。
+ */
+export function syncStreamRenderKeys(
+	tracker: StreamKeyTracker,
+	convKey: string,
+	persistedMessages: readonly Pick<UiMessage, "id" | "role">[],
+	streamingMessage: Pick<UiMessage, "id" | "role"> | null | undefined,
+	onTransferred?: (fromStreamKey: string, toMessageId: string) => void,
+): ReadonlyMap<string, string> {
+	if (tracker.convKey !== convKey) {
+		tracker.convKey = convKey;
+		tracker.pending = null;
+		tracker.finalizedMap.clear();
+	}
+	if (tracker.pending && streamingMessage?.id !== tracker.pending.streamKey) {
+		const { index, streamKey } = tracker.pending;
+		for (let i = Math.max(0, index); i < persistedMessages.length; i++) {
+			const candidate = persistedMessages[i];
+			if (candidate.role === "assistant" && !tracker.finalizedMap.has(candidate.id)) {
+				tracker.finalizedMap.set(candidate.id, streamKey);
+				onTransferred?.(streamKey, candidate.id);
+				break;
+			}
+		}
+		tracker.pending = null;
+	}
+	if (streamingMessage) {
+		tracker.pending = { index: persistedMessages.length, streamKey: streamingMessage.id };
+	}
+	return tracker.finalizedMap;
 }
 
 interface MessageListProps {
@@ -385,12 +445,30 @@ export function MessageList({
 	virtualOnRef.current = virtualOn;
 	// 底部常驻区（永不占位）：随每次渲染按预算重算（读取最新实测高度），
 	// 结合 keepRecentCount 保障常驻预算，首次全量测量后巨型消息会被预算挤出常驻区、参与正常窗口化。
-	const alwaysSet = pickAlways(state.messages, heightsRef.current, Math.max(ALWAYS_BUDGET, keepRecentCount * 120));
+	// 使用统一的 messages（包含当前流式消息），确保正在生成的末尾消息恒在常驻区内。
+	const alwaysSet = pickAlways(messages, heightsRef.current, Math.max(ALWAYS_BUDGET, keepRecentCount * 120));
 	const alwaysRef = useRef(alwaysSet);
 	alwaysRef.current = alwaysSet;
 
 	// 会话切换时：同步将新会话的非视口历史预置入 hidden，彻底杜绝大会话切换时的全量首帧挂载
 	const convKey = `${state.conversationId ?? ""}:${state.sessionFile ?? ""}`;
+	const streamKeyTrackerRef = useRef<StreamKeyTracker>({
+		convKey,
+		pending: null,
+		finalizedMap: new Map(),
+	});
+	const stableKeyMap = syncStreamRenderKeys(
+		streamKeyTrackerRef.current,
+		convKey,
+		state.messages,
+		state.streamingMessage,
+		(fromStreamKey, toMessageId) => {
+			const h = heightsRef.current.get(fromStreamKey);
+			if (h !== undefined && !heightsRef.current.has(toMessageId)) {
+				heightsRef.current.set(toMessageId, h);
+			}
+		},
+	);
 	const prevLazyConvKeyRef = useRef(convKey);
 	if (prevLazyConvKeyRef.current !== convKey) {
 		prevLazyConvKeyRef.current = convKey;
@@ -916,8 +994,6 @@ export function MessageList({
 				}
 			};
 			requestAnimationFrame(() => requestAnimationFrame(snap));
-			const t = setTimeout(snap, 180);
-			return () => clearTimeout(t);
 		}
 	}, [state.isStreaming, jumpTarget, urlJumpMessageId, scrollToBottom, pinToBottom]);
 
@@ -1096,7 +1172,7 @@ export function MessageList({
 						)}
 					</div>
 				)}
-				{state.messages.map((m) => {
+				{messages.map((m) => {
 					// system 不占位——旧快照残留的空 SYSTEM 气泡直接丢掉，不进折叠行也不进 LazyMount。
 					if (m.role === "system") return null;
 					// toolResult content lives inside its toolCall card — nothing to show as top-level row.
@@ -1123,9 +1199,11 @@ export function MessageList({
 					}
 					const qIdx = m.role === "user" ? qnIndex.get(m.id) : undefined;
 					const show = !virtualOn || alwaysSet.has(m.id) || pinned.has(m.id) || !hidden.has(m.id);
+					const isStreamingThis = (state.isStreaming || m.id === state.streamingMessage?.id) && m.role === "assistant";
+					const renderKey = stableKeyMap.get(m.id) ?? m.id;
 					return (
 						<LazyMount
-							key={m.id}
+							key={renderKey}
 							id={m.id}
 							show={show}
 							height={getPlaceholderHeight(
@@ -1143,7 +1221,7 @@ export function MessageList({
 								uiContextMessage={uiContextMessage}
 								uiContextToolCall={uiContextToolCall}
 								onUiAction={onUiAction}
-								key={m.id}
+								key={renderKey}
 								message={m}
 								qnIndex={qIdx}
 								qnActive={qIdx !== undefined ? qIdx === activeIdx : undefined}
@@ -1151,7 +1229,7 @@ export function MessageList({
 								toolResults={toolResults}
 								liveOutputs={hasToolCall(m) ? liveOutputs : EMPTY_LIVE}
 								toolStatuses={toolStatuses}
-								streaming={state.isStreaming}
+								streaming={isStreamingThis}
 								onKillBash={onKillBash}
 								onRetry={m.id === lastId ? onRetry : undefined}
 								toolsWrap={toolsWrap}
@@ -1167,27 +1245,6 @@ export function MessageList({
 						</LazyMount>
 					);
 				})}
-				{state.streamingMessage && (
-					<Message
-						uiMessageActions={uiMessageActions}
-						uiContextMessage={uiContextMessage}
-						uiContextToolCall={uiContextToolCall}
-						onUiAction={onUiAction}
-						key={state.streamingMessage.id}
-						message={state.streamingMessage}
-						toolResults={toolResults}
-						liveOutputs={hasToolCall(state.streamingMessage) ? liveOutputs : EMPTY_LIVE}
-						toolStatuses={toolStatuses}
-						streaming
-						isLast
-						onEdit={onEdit}
-						onKillBash={onKillBash}
-						toolsWrap={toolsWrap}
-						toolImages={toolImages}
-						thinkingWrap={thinkingWrap}
-						searchActive={searchOpen}
-					/>
-				)}
 				{/* 仅流式中显示：isStreaming 为 false 说明运行已结算，此时若 retry
 					残留必是过期 flag（结束信号丢失），不显示，后续成功消息/agent_end
 					会把它清掉 */}

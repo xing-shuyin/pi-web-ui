@@ -372,6 +372,11 @@ export interface ClientSettings {
 	/** 消息列表尾部保持完整渲染的消息条数（默认 15 = 与原硬编码一致）；更早的消息
 	 *  折叠为摘要行，点开再展开。纯 UI 偏好，不进预设。 */
 	keepRecentMessages: number;
+	/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示每条 fork 链最新的链尾分支）。 */
+	showForkedParentSessions?: boolean;
+	/** 结束的对话切换时不自动从运行的对话消失（默认关）。开 → 对话结束（空闲）且切换到其他对话时，
+	 *  依然保留在运行列表中，不自动释放；关 → 切走且未继续对话的会话自动移出。纯运行开关，无需 reload。 */
+	retainFinishedConversations?: boolean;
 	/** skill 全文注入名单（默认空 = 名录模式）。名单里的技能 {{skills}} 展开正文
 	 *  （oh-my-pi 式全文注入；单文件 8KB、总量 32KB 封顶，超限回落名录）。
 	 *  进预设；逐 run 实时读取，改动下一轮即生效。 */
@@ -596,6 +601,10 @@ export interface ClientState {
 	 *  English default, issue #91) for tool return values / AI prompts.
 	 *  Missing = never reported → English. */
 	locale?: string;
+	/** 客户端当前激活的智能体引擎（"pi" | "dsh"，按标签页 clientId 独立记忆，刷新后保持）。 */
+	engine?: "pi" | "dsh";
+	/** 全局默认智能体引擎（"pi" | "dsh"，存于 __settings__ 下，新标签页与重启后默认跟随）。 */
+	defaultEngine?: "pi" | "dsh";
 	/** 客户端最近活跃时间（epoch ms）。服务端在 per-client 写路径上打点（内存态，
 	 *  随任意后续 save 落盘）；旧存档缺省时按 max(projects[].lastUsed, interrupted[].at)
 	 *  推断。仅用于死 clientId 清理（issue #441），不参与任何业务语义。 */
@@ -1075,6 +1084,8 @@ export class ClientStateStore {
 			toolsWrap: stored?.toolsWrap ?? true,
 			toolImagesEnabled: stored?.toolImagesEnabled ?? true,
 			keepRecentMessages: normalizeKeepRecentMessages(stored?.keepRecentMessages),
+			showForkedParentSessions: stored?.showForkedParentSessions ?? false,
+			retainFinishedConversations: stored?.retainFinishedConversations ?? false,
 			skillsFullText: normalizeSkillList(stored?.skillsFullText),
 			visionBridgeEnabled: stored?.visionBridgeEnabled ?? true,
 			visionBridgeModel: stored?.visionBridgeModel ?? null,
@@ -1147,6 +1158,8 @@ export class ClientStateStore {
 			keepRecentMessages: normalizeKeepRecentMessages(
 				settings.keepRecentMessages ?? cur.keepRecentMessages ?? DEFAULT_KEEP_RECENT_MESSAGES,
 			),
+			showForkedParentSessions: settings.showForkedParentSessions ?? cur.showForkedParentSessions ?? false,
+			retainFinishedConversations: settings.retainFinishedConversations ?? cur.retainFinishedConversations ?? false,
 			skillsFullText: normalizeSkillList(settings.skillsFullText ?? cur.skillsFullText),
 			visionBridgeEnabled: settings.visionBridgeEnabled ?? cur.visionBridgeEnabled ?? true,
 			// 按键存在性合并：null 是合法值（清除语义），`null ?? cur` 会把旧值
@@ -1517,6 +1530,35 @@ export class ClientStateStore {
 			markersEnabled: settings.markersEnabled ?? cur.markersEnabled ?? true,
 			disabledMarkers: settings.disabledMarkers ?? cur.disabledMarkers ?? [],
 		};
+		this.save();
+	}
+
+	/** 读取某客户端（标签页）上次使用的引擎（未设置返回 undefined）。 */
+	getClientEngine(clientId: string): "pi" | "dsh" | undefined {
+		const eng = this.load()[clientId]?.engine;
+		return eng === "dsh" || eng === "pi" ? eng : undefined;
+	}
+
+	/** 保存某客户端（标签页）当前使用的引擎。 */
+	saveClientEngine(clientId: string, engine: "pi" | "dsh"): void {
+		const all = this.load();
+		const state = (all[clientId] ??= { projects: [] });
+		state.engine = engine;
+		this.touchClient(all, clientId);
+		this.save();
+	}
+
+	/** 读取全局默认引擎（存在 __settings__ 下，新标签页及服务重启后默认跟随）。 */
+	getDefaultEngine(): "pi" | "dsh" | undefined {
+		const eng = this.load()[ClientStateStore.GLOBAL_SETTINGS_KEY]?.defaultEngine;
+		return eng === "dsh" || eng === "pi" ? eng : undefined;
+	}
+
+	/** 保存全局默认引擎。 */
+	saveDefaultEngine(engine: "pi" | "dsh"): void {
+		const all = this.load();
+		const state = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
+		state.defaultEngine = engine;
 		this.save();
 	}
 }

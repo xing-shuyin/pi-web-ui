@@ -17,7 +17,7 @@ import { ChatInput } from "./components/ChatInput";
 import { GoalBar } from "./components/GoalBar";
 import { SandboxModal } from "./components/SandboxModal";
 import { WorktreeBanner } from "./components/WorktreeBanner";
-import { FiRefreshCw, FiMinimize2 } from "react-icons/fi";
+import { FiRefreshCw, FiFeather } from "react-icons/fi";
 import { useEscapeKey } from "./shortcut-stack";
 
 import { FooterBar } from "./components/FooterBar";
@@ -66,6 +66,7 @@ import {
 import { setFenceSend, syncFenceRenderers, syncMessageWidgets } from "./plugin-fence";
 import { findFileHandler, syncFileHandlers, type FileHandlerPlugin } from "./plugin-file-handlers";
 import { PiSetupModal } from "./components/PiSetupModal";
+import { isDesktopShell } from "./desktop";
 import { ModelConfigModal } from "./components/ModelConfigModal";
 
 import { SettingsModal } from "./components/SettingsModal";
@@ -90,7 +91,19 @@ import { appUrl } from "./base-url";
 import type { ClientMessage, CommandDef, PromptAttachment, UiMessage } from "./types";
 import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
-import { FiAlertCircle, FiAlertTriangle, FiChevronsLeft, FiChevronsRight, FiInfo, FiX } from "react-icons/fi";
+import {
+	FiAlertCircle,
+	FiAlertTriangle,
+	FiBookmark,
+	FiCheck,
+	FiChevronsLeft,
+	FiChevronsRight,
+	FiInfo,
+	FiTrash2,
+	FiUpload,
+	FiX,
+} from "react-icons/fi";
+import { LuFlaskConical } from "react-icons/lu";
 import type { Notice } from "./use-chat";
 import { fileToProcessedImage, isRasterImage, type ProcessedImage } from "./image-paste";
 import { randomUuid } from "./uuid";
@@ -778,7 +791,21 @@ export function App() {
 		backdropSelector: ".drawer-backdrop.persistent",
 	});
 	// Setup modal: one-time prompt when the pi agent config is missing.
-	const [setupDismissed, setSetupDismissed] = useState(false);
+	const [setupDismissed, setSetupDismissed] = useState(() => {
+		try {
+			return localStorage.getItem("pi_web_setup_dismissed") === "1";
+		} catch {
+			return false;
+		}
+	});
+	const dismissSetup = () => {
+		setSetupDismissed(true);
+		try {
+			localStorage.setItem("pi_web_setup_dismissed", "1");
+		} catch {
+			/* ignore */
+		}
+	};
 	// Custom model config panel (model dropdown → 管理模型).
 	const [manageModelsOpen, setManageModelsOpen] = useState(false);
 	// Settings panel (system prompt / skills / extensions / presets).
@@ -1603,6 +1630,26 @@ export function App() {
 						parsed.quotes.map((quote) => ({ path: "", name: "", mode: "quote", quote, key: randomUuid() })),
 					),
 				);
+			if (parsed.attachments?.length) {
+				const restored = parsed.attachments
+					.filter((att) => att.type !== "vision-bridge")
+					.map((att) => ({
+						path: att.path || att.url || "",
+						name: att.name,
+						mode: (att.type === "page"
+							? "page"
+							: att.type === "conversation"
+								? "conversation"
+								: att.lines
+									? "lines"
+									: "reference") as PromptAttachment["mode"],
+						lines: att.lines,
+						key: randomUuid(),
+					}));
+				if (restored.length) {
+					setAttachments((prev) => appendDraftAttachments(prev, restored));
+				}
+			}
 			setRecallDrafts((prev) => [...prev.slice(-9), item]);
 		},
 		[send],
@@ -1729,7 +1776,7 @@ export function App() {
 					title={t("zenModeExitTip")}
 					aria-label={t("zenModeExit")}
 				>
-					<FiMinimize2 />
+					<FiFeather />
 					<span>{t("zenModeExit")}</span>
 				</button>
 			)}
@@ -1913,6 +1960,8 @@ export function App() {
 						uiContextTopbar={uiSlots["contextmenu.topbar"]}
 						onThemeToggle={() => switchTheme(theme === "light" ? null : "light")}
 						onSoundToggle={() => setSound({ ...sound, enabled: !sound.enabled })}
+						zenMode={zenMode}
+						onToggleZenMode={toggleZenMode}
 					/>
 					<div className={`view-pane ${view === "chat" ? "" : "hidden"}`}>
 						{!isMobile && leftCollapsed && <PanelRail side="left" onClick={toggleLeft} />}
@@ -1993,7 +2042,8 @@ export function App() {
 										<div className="sandbox-banner" role="region" aria-label={chat.state.sandbox.name}>
 											<div className="sandbox-banner-info">
 												<span className="sandbox-banner-title">
-													🧪 {t("sandboxBannerTitle", { name: chat.state.sandbox.name })}
+													<LuFlaskConical className="sandbox-banner-icon" aria-hidden />
+													{t("sandboxBannerTitle", { name: chat.state.sandbox.name })}
 													<span
 														className={`lp-sandbox-badge ${chat.state.sandbox.ephemeral ? "ephemeral" : "permanent"}`}
 													>
@@ -2014,7 +2064,7 @@ export function App() {
 														title={t("sandboxActionPersistTip")}
 														onClick={() => send({ type: "persist_sandbox", path: chat.state?.sandbox?.path })}
 													>
-														📌 {t("sandboxActionPersist")}
+														<FiBookmark aria-hidden /> {t("sandboxActionPersist")}
 													</button>
 												)}
 												{chat.state.sandbox.sourcePath && (
@@ -2024,7 +2074,7 @@ export function App() {
 														title={t("sandboxActionApplySourceTip")}
 														onClick={() => setSandboxModalMode("apply")}
 													>
-														✅ {t("sandboxActionApplySource")}
+														<FiCheck aria-hidden /> {t("sandboxActionApplySource")}
 													</button>
 												)}
 												<button
@@ -2033,7 +2083,7 @@ export function App() {
 													title={t("sandboxActionPromoteTip")}
 													onClick={() => setSandboxModalMode("promote")}
 												>
-													📤 {t("sandboxActionPromote")}
+													<FiUpload aria-hidden /> {t("sandboxActionPromote")}
 												</button>
 												<button
 													type="button"
@@ -2047,7 +2097,7 @@ export function App() {
 														}
 													}}
 												>
-													🔄 {t("sandboxActionReset")}
+													<FiRefreshCw aria-hidden /> {t("sandboxActionReset")}
 												</button>
 												<button
 													type="button"
@@ -2061,7 +2111,7 @@ export function App() {
 														}
 													}}
 												>
-													🗑️ {t("sandboxActionDestroy")}
+													<FiTrash2 aria-hidden /> {t("sandboxActionDestroy")}
 												</button>
 											</div>
 										</div>
@@ -2493,6 +2543,8 @@ export function App() {
 						uiContextTopbar={uiSlots["contextmenu.topbar"]}
 						onThemeToggle={() => switchTheme(theme === "light" ? null : "light")}
 						onSoundToggle={() => setSound({ ...sound, enabled: !sound.enabled })}
+						zenMode={zenMode}
+						onToggleZenMode={toggleZenMode}
 					/>
 				</div>
 			</TemplateProvider>
@@ -2540,17 +2592,22 @@ export function App() {
 					}}
 				/>
 			)}
-			{chat.ready && chat.state && chat.state.piConfigured === false && !setupDismissed && !manageModelsOpen && (
-				<PiSetupModal
-					piConfigured={chat.state.piConfigured}
-					piAgentInstalled={chat.state.piAgentInstalled}
-					providers={chat.providers}
-					providerOAuthFlows={chat.providerOAuthFlows}
-					providerOAuthResults={chat.providerOAuthResults}
-					installResult={chat.installResult}
-					onClose={() => setSetupDismissed(true)}
-				/>
-			)}
+			{chat.ready &&
+				chat.state &&
+				chat.state.piConfigured === false &&
+				!setupDismissed &&
+				!manageModelsOpen &&
+				!isDesktopShell() && (
+					<PiSetupModal
+						piConfigured={chat.state.piConfigured}
+						piAgentInstalled={chat.state.piAgentInstalled}
+						providers={chat.providers}
+						providerOAuthFlows={chat.providerOAuthFlows}
+						providerOAuthResults={chat.providerOAuthResults}
+						installResult={chat.installResult}
+						onClose={dismissSetup}
+					/>
+				)}
 			{manageModelsOpen && (
 				<ModelConfigModal
 					providers={chat.modelsConfig}

@@ -34,6 +34,7 @@ import { VERSION, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { sdkCopies, sdkOriginNote } from "./sdk-origin.js";
 import { PROTOCOL_VERSION } from "./protocol-version.js";
 import { AgentService, workspacePath, QuiesceRejectedError, ClientSession } from "./agent-service.js";
+import { ClientStateStore } from "./client-state.js";
 import { WS_MAX_PAYLOAD_BYTES, isAbsoluteWirePath, wireToAbs } from "./files-service.js";
 import { httpHostAllowed } from "./host-guard.js";
 import { registerFileTransferRoutes } from "./file-transfer-routes.js";
@@ -77,6 +78,7 @@ import { SchedulerStore, SchedulerValidationError } from "./scheduler-tasks.js";
 import { initHttpProxy } from "./http-proxy.js";
 import { globalLspPool } from "./lsp-tool.js";
 import { buildPiWebTokenCookie, decodeCookieToken, isTlsRequest } from "./auth-cookie.js";
+import { getAppVersion, getPkgRoot } from "./pkg-info.js";
 import {
 	handleFileMessage,
 	handleScmMessage,
@@ -161,6 +163,11 @@ try {
 } catch (err) {
 	console.warn(`[data] 无法创建数据目录 ${DATA_DIR}: ${(err as Error).message}`);
 }
+try {
+	mkdirSync(CWD, { recursive: true });
+} catch (err) {
+	console.warn(`[cwd] 无法创建工作区目录 ${CWD}: ${(err as Error).message}`);
+}
 // issue #295：工作区直接就是家目录时，SDK 初始化期的同步目录扫描会落在 $HOME 上
 // （iCloud 占位符/外部卷坏挂载 → scandir/open 内核挂起 → 事件循环假死，hello 后无
 // ready）。新装服务默认已是 ~/pi-web-ui（见 bin/pi-web-ui.mjs serviceOptions）；
@@ -222,17 +229,8 @@ const LOCALE_BASE_URL =
  * and always fell back to `main`. Reading it lazily costs one branch and
  * gives the real number.
  */
-let appVersionCache: string | null = null;
 function appVersion(): string {
-	if (appVersionCache === null) {
-		try {
-			const pkg = JSON.parse(readFileSync(join(resolvePkgRoot(), "package.json"), "utf8")) as { version?: string };
-			appVersionCache = pkg.version ?? "";
-		} catch {
-			appVersionCache = "";
-		}
-	}
-	return appVersionCache;
+	return getAppVersion();
 }
 /** On-disk web-build id: the main JS bundle hash from the built index.html.
  *  Changes on every rebuild — stale pages compare and reload themselves.
@@ -392,8 +390,42 @@ if (AUTH_TOKEN) {
 	});
 }
 
-/** 引擎选择：--engine pi|dsh > PI_WEB_ENGINE > 默认 pi。重启生效。 */
-const ENGINE: "pi" | "dsh" = (cliFlag("--engine") ?? process.env.PI_WEB_ENGINE) === "dsh" ? "dsh" : "pi";
+/** 共享客户端持久化存储：双引擎（pi + dsh）共用同一份内存缓存与落盘通道，避免互相覆盖。 */
+const sharedStateStore = new ClientStateStore(join(DATA_DIR, "client-state.json"));
+
+/** 启动参数显式指定的引擎（--engine pi|dsh 或 PI_WEB_ENGINE）。未显式传则优先读持久化默认引擎。 */
+const EXPLICIT_ENGINE_ARG = cliFlag("--engine") ?? process.env.PI_WEB_ENGINE;
+let currentDefaultEngine: "pi" | "dsh" =
+	EXPLICIT_ENGINE_ARG === "dsh"
+		? "dsh"
+		: EXPLICIT_ENGINE_ARG === "pi"
+			? "pi"
+			: (sharedStateStore.getDefaultEngine() ?? "pi");
+/** 默认引擎标识（兼容 /api/health 等读取）。 */
+const ENGINE: "pi" | "dsh" = currentDefaultEngine;
+/** 每个客户端（浏览器标签页 clientId）当前激活的引擎。支持多标签页同时跑不同引擎 + 零重启热切。 */
+const clientEngines = new Map<string, "pi" | "dsh">();
+
+function resolveClientEngine(clientId: string): "pi" | "dsh" {
+	const mem = clientEngines.get(clientId);
+	if (mem) return mem;
+	if (!EXPLICIT_ENGINE_ARG) {
+		const saved = sharedStateStore.getClientEngine(clientId);
+		if (saved) {
+			clientEngines.set(clientId, saved);
+			return saved;
+		}
+	}
+	clientEngines.set(clientId, currentDefaultEngine);
+	return currentDefaultEngine;
+}
+
+function setClientEngine(clientId: string, engine: "pi" | "dsh"): void {
+	clientEngines.set(clientId, engine);
+	currentDefaultEngine = engine;
+	sharedStateStore.saveClientEngine(clientId, engine);
+	sharedStateStore.saveDefaultEngine(engine);
+}
 
 /** PI_WEB_MANAGED=1: this instance is updated by whoever deploys it. */
 const MANAGED = isManaged();
@@ -418,7 +450,7 @@ app.get("/api/health", (_req, res) => {
 		// issue #260：服务实际加载的是自带副本，不是全局 pi CLI 那份。这里把两份都报出来，
 		// 用户就不用猜「为什么升了全局 SDK 不生效」。（纯新增字段，piVersion 语义不变。）
 		piSdkCopies: sdkCopies(),
-		engine: ENGINE,
+		engine: currentDefaultEngine,
 	});
 });
 
@@ -644,13 +676,7 @@ const here = dirname(fileURLToPath(import.meta.url)); // <pkg>/dist/server or <p
 // Resolve the package root robustly: dev runs from <repo>/server (tsx), prod
 // from <pkg>/dist/server — the ancestor that actually has package.json wins.
 function resolvePkgRoot(): string {
-	// 可选：显式指定 pkgRoot（如部署在自定义目录时），否则按候选路径探测。
-	if (process.env.PI_WEB_PKG_ROOT) return process.env.PI_WEB_PKG_ROOT;
-	const candidates = [resolve(here, ".."), resolve(here, "..", ".."), resolve(here, "..", "..", "..")];
-	for (const c of candidates) {
-		if (existsSync(join(c, "package.json"))) return c;
-	}
-	return candidates[0];
+	return getPkgRoot();
 }
 const pkgRoot = resolvePkgRoot();
 // Theme CSS files: complete standalone stylesheets. Builtin themes ship in
@@ -1330,6 +1356,8 @@ export interface DispatchSession {
 		thinkingWrap?: boolean;
 		toolsWrap?: boolean;
 		toolImagesEnabled?: boolean;
+		keepRecentMessages?: number;
+		showForkedParentSessions?: boolean;
 		visionBridgeEnabled?: boolean;
 		visionBridgeModel?: string | null;
 		visionBridgePromptMode?: "append" | "replace";
@@ -1511,14 +1539,165 @@ export interface EngineService {
 	onClientCwdChanged?: ((cwd: string, roots: string[]) => void) | undefined;
 }
 
-const service: EngineService =
-	ENGINE === "dsh"
-		? new DshAgentService(CWD, join(DATA_DIR, "client-state.json"), DATA_DIR, getAgentDir())
-		: new AgentService(
-				CWD,
-				// Per-client persisted UI state: last-used workspace + recent projects.
-				join(DATA_DIR, "client-state.json"),
-			);
+let piServiceInstance: AgentService | null = null;
+let dshServiceInstance: DshAgentService | null = null;
+let wireEngineHooks: ((svc: EngineService) => void) | null = null;
+let sharedSocketCount = 0;
+let sharedQuiesced = false;
+
+function activeEngines(): EngineService[] {
+	const list: EngineService[] = [];
+	if (piServiceInstance) list.push(piServiceInstance);
+	if (dshServiceInstance) list.push(dshServiceInstance);
+	return list;
+}
+
+function ensureEngine(engine: "pi" | "dsh"): EngineService {
+	if (engine === "dsh") {
+		if (!dshServiceInstance) {
+			dshServiceInstance = new DshAgentService(CWD, sharedStateStore, DATA_DIR, getAgentDir());
+			for (let i = 0; i < sharedSocketCount; i++) dshServiceInstance.noteSocketOpen();
+			if (sharedQuiesced) dshServiceInstance.quiesce();
+			wireEngineHooks?.(dshServiceInstance);
+		}
+		return dshServiceInstance;
+	}
+	if (!piServiceInstance) {
+		piServiceInstance = new AgentService(CWD, sharedStateStore);
+		for (let i = 0; i < sharedSocketCount; i++) piServiceInstance.noteSocketOpen();
+		if (sharedQuiesced) piServiceInstance.quiesce();
+		wireEngineHooks?.(piServiceInstance);
+	}
+	return piServiceInstance;
+}
+
+// 启动时预热默认引擎实例
+ensureEngine(currentDefaultEngine);
+
+const service: EngineService = {
+	attach(clientId, send) {
+		return ensureEngine(resolveClientEngine(clientId)).attach(clientId, send);
+	},
+	detach(clientId, send) {
+		const eng = clientEngines.get(clientId);
+		if (eng) {
+			ensureEngine(eng).detach(clientId, send);
+		} else {
+			for (const s of activeEngines()) s.detach(clientId, send);
+		}
+	},
+	get(clientId) {
+		if (!clientId) return undefined;
+		const eng = clientEngines.get(clientId);
+		if (eng) return ensureEngine(eng).get(clientId);
+		for (const s of activeEngines()) {
+			const cs = s.get(clientId);
+			if (cs) return cs;
+		}
+		return undefined;
+	},
+	async disposeAll() {
+		await Promise.all(activeEngines().map((s) => s.disposeAll()));
+	},
+	recordInterruptedRuns() {
+		for (const s of activeEngines()) s.recordInterruptedRuns();
+	},
+	noteSocketOpen() {
+		sharedSocketCount++;
+		for (const s of activeEngines()) s.noteSocketOpen();
+	},
+	noteSocketClose() {
+		sharedSocketCount = Math.max(0, sharedSocketCount - 1);
+		for (const s of activeEngines()) s.noteSocketClose();
+	},
+	isQuiesced() {
+		return sharedQuiesced || activeEngines().some((s) => s.isQuiesced());
+	},
+	quiesce() {
+		sharedQuiesced = true;
+		for (const s of activeEngines()) s.quiesce();
+	},
+	unquiesce() {
+		sharedQuiesced = false;
+		for (const s of activeEngines()) s.unquiesce();
+	},
+	quiesceInfo() {
+		for (const s of activeEngines()) {
+			const info = s.quiesceInfo();
+			if (info.quiesced) return info;
+		}
+		return { quiesced: false };
+	},
+	serviceStatus() {
+		const primary = ensureEngine(currentDefaultEngine);
+		const base = primary.serviceStatus();
+		let active = 0;
+		let pending = 0;
+		for (const s of activeEngines()) {
+			active += s.activeConversations();
+			pending += s.pendingMessages();
+		}
+		return {
+			...base,
+			activeConversations: active,
+			pendingMessages: pending,
+		};
+	},
+	activeConversations() {
+		let n = 0;
+		for (const s of activeEngines()) n += s.activeConversations();
+		return n;
+	},
+	pendingMessages() {
+		let n = 0;
+		for (const s of activeEngines()) n += s.pendingMessages();
+		return n;
+	},
+	applyPluginAgentTools() {
+		for (const s of activeEngines()) s.applyPluginAgentTools();
+	},
+	applyPluginCommandCatalog() {
+		for (const s of activeEngines()) s.applyPluginCommandCatalog();
+	},
+	refreshBackgroundServers() {
+		for (const s of activeEngines()) s.refreshBackgroundServers();
+	},
+	setLocale(clientId, locale) {
+		return ensureEngine(resolveClientEngine(clientId)).setLocale(clientId, locale);
+	},
+	takeOverConversation(targetId, ownerId, convId) {
+		const targetSvc = ensureEngine(resolveClientEngine(targetId));
+		if (typeof targetSvc.takeOverConversation === "function") {
+			return targetSvc.takeOverConversation(targetId, ownerId, convId);
+		}
+		return Promise.resolve();
+	},
+	peekElsewhereQuestion(targetId, ownerId, convId) {
+		const targetSvc = ensureEngine(resolveClientEngine(targetId));
+		if (typeof targetSvc.peekElsewhereQuestion === "function") {
+			return targetSvc.peekElsewhereQuestion(targetId, ownerId, convId);
+		}
+		return Promise.resolve();
+	},
+	answerElsewhereQuestion(targetId, ownerId, id, answers, cancelled) {
+		const targetSvc = ensureEngine(resolveClientEngine(targetId));
+		if (typeof targetSvc.answerElsewhereQuestion === "function") {
+			return targetSvc.answerElsewhereQuestion(targetId, ownerId, id, answers, cancelled);
+		}
+		return Promise.resolve();
+	},
+	readConversationForPlugins(options) {
+		if (options?.clientId) {
+			const eng = resolveClientEngine(options.clientId);
+			return ensureEngine(eng).readConversationForPlugins?.(options) ?? null;
+		}
+		return piServiceInstance?.readConversationForPlugins?.(options) ?? null;
+	},
+	chatFromPlugin(pluginId, req) {
+		const piSvc = ensureEngine("pi") as AgentService;
+		return piSvc.chatFromPlugin(pluginId, req);
+	},
+};
 
 // Server-string tables (issue #91 v2): packs' `serverStrings` sections feed
 // pick() lookup for non-zh/en UI languages (missing key → English fallback).
@@ -1710,7 +1889,7 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 	executor: async (task) => {
 		let result: { ok: boolean; conversationId?: string; error?: string };
 		try {
-			const svc = service as unknown as {
+			const svc = ensureEngine("pi") as unknown as {
 				chatFromScheduler?: (t: {
 					id: string;
 					cwd: string;
@@ -1854,9 +2033,9 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 	// issue #291：任务删除（含单次任务跑完自删）后回收其伪客户端，
 	// 否则 scheduler:<taskId> 会话会永久占据其他客户端的 elsewhere 列表。
 	onTaskRemoved: (taskId) => {
-		const svc = service as unknown as { releaseSchedulerClient?: (id: string) => void };
+		const svc = piServiceInstance as unknown as { releaseSchedulerClient?: (id: string) => void } | null;
 		try {
-			svc.releaseSchedulerClient?.(taskId);
+			svc?.releaseSchedulerClient?.(taskId);
 		} catch {
 			// 回收失败不影响任务删除
 		}
@@ -1919,44 +2098,45 @@ void mcpBridge.load().then(() => {
 	// 播种在 load 之后：否则指纹可能记在 load 读到的版本之前，白重载一次。
 	mcpHotReload.start();
 });
-// 插件扩展点：SDK 工具执行事件（bash/读文件等 start+end）转发给已注册的插件。
-service.onToolEvent = (ev) => pluginMgr.emitToolEvent(ev);
-// 插件扩展点（P1-5）：bash/read 执行前后的拦截（pre 拒/问即拦、post 脱敏补上下文；
-// 只覆盖已接管的这两处，DSH 引擎无 customTool 注册面不接）。
-service.toolGuard = {
-	pre: (req, lang) => pluginMgr.evaluateToolPre(req, lang),
-	post: (req, lang) => pluginMgr.evaluateToolPost(req, lang),
+// 插件与宿主钩子统一挂载器：无论引擎在启动时预热还是运行期按需懒加载，都一致注入全部回调。
+wireEngineHooks = (svc: EngineService) => {
+	svc.onToolEvent = (ev) => pluginMgr.emitToolEvent(ev);
+	svc.toolGuard = {
+		pre: (req, lang) => pluginMgr.evaluateToolPre(req, lang),
+		post: (req, lang) => pluginMgr.evaluateToolPost(req, lang),
+	};
+	svc.onRunEvent = (ev) => pluginMgr.emitRunEvent(ev);
+	svc.onConversationChanged = () => pluginMgr.emitConversationChanged();
+	svc.onClientModelChanged = (snap) => pluginMgr.emitClientModelChanged(snap);
+	svc.pluginToolsProvider = () => [...pluginMgr.getAgentTools(), ...mcpBridge.getTools()];
+	svc.pluginCommandsProvider = () => pluginMgr.listCommands();
+	svc.pluginBgTasksProvider = () => pluginMgr.bgTasks();
+	svc.pluginStopBgTask = (taskId) => pluginMgr.stopPluginBgTask(taskId);
+	svc.onClientCwdChanged = (cwd, roots) => {
+		pluginMgr.notifyCwd(cwd);
+		pluginMgr.notifyWorkspaceRoots(roots);
+	};
+	svc.onQuit = scheduleQuit;
+	if ("schedulerStore" in svc) {
+		(svc as unknown as { schedulerStore: typeof scheduler }).schedulerStore = scheduler;
+	}
 };
-service.onRunEvent = (ev) => pluginMgr.emitRunEvent(ev);
-// 插件扩展点：对话切换通知（轨迹视图切会话后即重拉；dsh 引擎暂无）。
-service.onConversationChanged = () => pluginMgr.emitConversationChanged();
+for (const s of activeEngines()) wireEngineHooks(s);
+
 // 插件扩展点：当前打开对话的快照（轨迹视图直接显示打开对话的时间线；
 // dsh 引擎无此方法时回退 null，插件显示空态）。#542：透传 {clientId} 选本标签页的对话。
 pluginMgr.conversationProvider = (opts) => service.readConversationForPlugins?.(opts) ?? null;
-// 插件扩展点：模型切换成功事件（#542；dsh 引擎无此钩子 = 不发事件）。
-service.onClientModelChanged = (snap) => pluginMgr.emitClientModelChanged(snap);
 // 插件扩展点：无头调用 agent（微信通道等经 host.chat 投递外部消息，无浏览器也能跑）。
 pluginMgr.chatProvider = (pluginId, req) =>
 	service.chatFromPlugin?.(pluginId, req) ?? Promise.reject(new Error("当前引擎不支持无头调用（仅标准 pi 引擎）"));
-// 插件扩展点：插件注册的 AI 工具（registerAgentTool）+ MCP 桥工具 → 会话创建时
-// 带上 + 变化时动态注入/移除已有会话。
-service.pluginToolsProvider = () => [...pluginMgr.getAgentTools(), ...mcpBridge.getTools()];
 pluginMgr.onAgentToolsChanged = () => {
 	service.applyPluginAgentTools();
 	void pluginMgr.pushToAll().catch(() => {});
 };
 // 插件扩展点：插件斜杠命令（registerCommand）→ 命令选择器目录 + prompt 拦截执行。
 pluginMgr.onCommandsChanged = () => service.applyPluginCommandCatalog();
-service.pluginCommandsProvider = () => pluginMgr.listCommands();
 // 插件扩展点：插件常驻后台任务（registerBackgroundTask）→ 并入「后台任务」面板。
 pluginMgr.onBgTasksChanged = () => service.refreshBackgroundServers();
-service.pluginBgTasksProvider = () => pluginMgr.bgTasks();
-service.pluginStopBgTask = (taskId) => pluginMgr.stopPluginBgTask(taskId);
-// 定时任务 Agent 工具的数据源（schedule 单 action：create/list/cancel）：标准 pi 引擎的
-// AgentService 才有 schedulerStore 字段，DSH service 没有 —— 有才设。
-if ("schedulerStore" in service) {
-	(service as unknown as { schedulerStore: typeof scheduler }).schedulerStore = scheduler;
-}
 // ---------------------------------------------------------------------------
 // 插件扩展点 v2（并行任务在 server/plugins.ts 加 host.conversations/prompt/
 // steer/abortRun/chatWait/fs.watch/scm/bash/schedule/models/onStats/onStreaming/
@@ -1993,10 +2173,10 @@ if ("schedulerStore" in service) {
 	type PluginSteerClient = {
 		steerForPlugins?: (cid: string, t: string) => Promise<{ ok: boolean; error?: string }>;
 	};
-	/** 挑一个客户端会话：标准 pi 引擎走 service.pluginClient()，DSH/未知引擎无此方法即 undefined。 */
+	/** 挑一个客户端会话：标准 pi 引擎走 piServiceInstance.pluginClient()，DSH/未知引擎无此方法即 undefined。 */
 	const pickClient = (): ReturnType<AgentService["pluginClient"]> => {
 		try {
-			return service instanceof AgentService ? service.pluginClient() : undefined;
+			return piServiceInstance ? piServiceInstance.pluginClient() : undefined;
 		} catch {
 			return undefined;
 		}
@@ -2071,7 +2251,7 @@ if ("schedulerStore" in service) {
 	(pm as any).llmProvider = async (pluginId: string, req: unknown) => {
 		try {
 			// SAFETY: Only invoked after the optional method is checked; request fields are narrowed below.
-			const svc = service as unknown as {
+			const svc = ensureEngine("pi") as unknown as {
 				completeForPlugins?: (
 					pluginId: string,
 					req: { prompt?: string; system?: string; model?: string; maxChars?: number; timeoutMs?: number },
@@ -2085,13 +2265,6 @@ if ("schedulerStore" in service) {
 		}
 	};
 }
-// 插件宿主工作区实时跟随当前项目：任意客户端 set_cwd 成功后同步给
-// PluginManager，编辑器等工作区跟随型插件随即切根（详见 plugins.ts notifyCwd）。
-service.onClientCwdChanged = (cwd, roots) => {
-	pluginMgr.notifyCwd(cwd);
-	// 工作区根（宿主侧多根，issue #146）：插件宿主的「工作区内」判定要跟着变。
-	pluginMgr.notifyWorkspaceRoots(roots);
-};
 
 // ---------------------------------------------------------------------------
 // Self-update
@@ -2452,6 +2625,67 @@ wss.on("connection", (ws) => {
 					setTimeout(() => void scheduleQuit(), 400);
 					break;
 				}
+				case "switch_engine": {
+					const targetEngine = msg.engine === "dsh" ? "dsh" : msg.engine === "pi" ? "pi" : null;
+					if (!targetEngine) {
+						send({
+							type: "notice",
+							level: "error",
+							text: `无效的引擎类型：${String(msg.engine)}（仅支持 pi / dsh）`,
+							textEn: `Invalid engine "${String(msg.engine)}" (supported: pi, dsh)`,
+						});
+						break;
+					}
+					const prevEngine = resolveClientEngine(clientId);
+					if (prevEngine === targetEngine) {
+						setClientEngine(clientId, targetEngine);
+						break;
+					}
+					// 从旧引擎解绑当前 socket 的推送（不中止旧引擎后台正在运行的会话）
+					ensureEngine(prevEngine).detach(clientId, send);
+					setClientEngine(clientId, targetEngine);
+					attachDone = false;
+					if (!closed) {
+						send(readyMsg(clientId));
+					}
+					const cid = clientId;
+					const nextSvc = ensureEngine(targetEngine);
+					nextSvc
+						.attach(cid, send)
+						.then((newCs) => {
+							if (closed) {
+								nextSvc.detach(cid, send);
+								return;
+							}
+							nextSvc.applyPluginCommandCatalog();
+							newCs.flushSnapshot(true);
+							newCs.pushSettings();
+							void newCs.refreshSessions();
+							void newCs.pushProjects();
+							attachDone = true;
+							for (const m of pending.drain()) dispatch(m);
+							newCs.emitNotice(
+								"info",
+								targetEngine === "dsh"
+									? "已热切换至 DSH 引擎（pi 引擎后台会话保持运行，可随时切回）"
+									: "已热切换至 pi 引擎（DSH 引擎后台会话保持运行，可随时切回）",
+								targetEngine === "dsh"
+									? "Switched to DSH engine in-place (pi background conversations keep running)"
+									: "Switched to pi engine in-place (DSH background conversations keep running)",
+							);
+						})
+						.catch((err: unknown) => {
+							pending.clear();
+							attachDone = true;
+							send({
+								type: "notice",
+								level: "error",
+								text: `切换引擎失败：${(err as Error).message}`,
+								textEn: `Failed to switch engine: ${(err as Error).message}`,
+							});
+						});
+					break;
+				}
 				default: {
 					// 未知 type 只计数 + 节流 warn，不改变已知类型行为。
 					// default 分支里 msg 已收窄成 never，type 需从宽化后取。
@@ -2475,13 +2709,13 @@ wss.on("connection", (ws) => {
 		}
 	};
 
-	/** ready 握手帧：首连与重复 hello 的幂等回包共用同一构造，避免两处漂移。 */
+	/** ready 握手帧：首连、重复 hello 与引擎热切共用同一构造，按 clientId 动态携带所属引擎。 */
 	const readyMsg = (cid: string): ServerMessage => ({
 		type: "ready",
 		clientId: cid,
 		serverVersion: VERSION,
 		protocolVersion: PROTOCOL_VERSION,
-		engine: ENGINE,
+		engine: resolveClientEngine(cid),
 		// This package's own version. `serverVersion` is the pi SDK's,
 		// and the client used to learn ours from the update check —
 		// which a managed instance never runs.

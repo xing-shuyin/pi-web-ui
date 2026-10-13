@@ -27,6 +27,7 @@
 import type { TextQuote, UiContentBlock, UiMessage } from "../protocol.js";
 import { parseTextQuote } from "../text-quote.js";
 import { ARGS_CAP, TEXT_CAP, TOOL_OUTPUT_CAP, truncate } from "../serialize.js";
+import { stripMarkers } from "../markers/index.js";
 
 // ---------------------------------------------------------------------------
 // 消息内容块序列化
@@ -58,13 +59,24 @@ export function serializeUserBlocks(blocks: DshContentBlock[]): UiContentBlock[]
 	});
 }
 
+/** 提取 DSH assistant 事件中的原始未剥离文本（供 MarkerService 解析内联标记）。 */
+export function extractDshAssistantRawText(data: { message?: { content?: DshContentBlock[] } }): string {
+	const blocks = data.message?.content;
+	if (!Array.isArray(blocks)) return "";
+	return blocks
+		.filter((b) => b?.type === "text" && typeof b.text === "string")
+		.map((b) => b.text as string)
+		.join("\n");
+}
+
 /** DSH assistant-role content blocks → UiContentBlock[]。 */
 export function serializeAssistantBlocks(blocks: DshContentBlock[]): UiContentBlock[] {
 	if (!Array.isArray(blocks)) return [];
 	return blocks.map((b) => {
 		switch (b?.type) {
 			case "text": {
-				const { text, truncated } = truncate(b.text ?? "", TEXT_CAP);
+				const cleaned = stripMarkers(b.text ?? "");
+				const { text, truncated } = truncate(cleaned, TEXT_CAP);
 				return { type: "text", text, truncated };
 			}
 			case "reasoning": {
@@ -281,6 +293,8 @@ export class DshStreamAccumulator {
 			const b = this.blocks.get(index)!;
 			if (b.type === "toolCall" && (b.argumentsText ?? "") === "") {
 				out.push({ type: "toolCall", id: b.id, name: b.name });
+			} else if (b.type === "text") {
+				out.push({ ...b, text: stripMarkers(String(b.text ?? ""), { stripTrailingIncomplete: true }) });
 			} else {
 				out.push(b);
 			}

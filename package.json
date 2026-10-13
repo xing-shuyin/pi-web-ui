@@ -81,6 +81,8 @@
 		"build:desktop": "tsc -p desktop/tsconfig.json",
 		"desktop:dev": "npm run build:desktop && electron dist/desktop/main.js",
 		"desktop:dist": "npm run build && npm run build:desktop && electron-builder -c desktop/electron-builder.yml",
+		"desktop:portable": "npm run build && npm run build:desktop && node scripts/make-portable.mjs",
+		"desktop:portable:full": "npm run build && npm run build:desktop && node scripts/make-portable.mjs --with-git",
 		"format": "prettier --write server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/ *.mjs",
 		"format:check": "prettier --check server/ web/src/ extensions/ scripts/ bin/ desktop/ tests/*.mjs tests/unit/ *.mjs",
 		"lint": "oxlint server/ web/src/ extensions/ scripts/ bin/ desktop/",

@@ -41,6 +41,7 @@ function mount(opts: {
 				createElement(TemplateProvider, {
 					currentModelId: null,
 					children: createElement(ChatInput, {
+						sessionId: "sess-1",
 						streaming: false,
 						messages: [],
 						slashCommands: [],

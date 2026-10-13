@@ -34,7 +34,9 @@ publish:
   owner: xing-shuyin
   repo: pi-web-ui
 win:
-  target: nsis
+  target:
+    - nsis
+    - dir
   icon: web/public/icons/icon-1024.png
 mac:
   # dmg 给人手装，zip 给 electron-updater 原地更新（Squirrel.Mac 只吃 zip，

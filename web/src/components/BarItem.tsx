@@ -5,6 +5,7 @@ import {
 	FiCpu,
 	FiDatabase,
 	FiDownload,
+	FiFeather,
 	FiFolder,
 	FiFolderPlus,
 	FiGitBranch,
@@ -36,6 +37,7 @@ import { NotifyToggle } from "./NotifyToggle";
 import { BrowserControl } from "./BrowserControl";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import type { SoundKind, SoundSettings } from "../sounds";
+import { EnginePicker } from "./EnginePicker";
 
 export type ViewName = "chat" | "terminal" | "git" | `plugin:${string}`;
 
@@ -65,6 +67,8 @@ export interface BarItemProps {
 	isProjectPickerOpen?: boolean;
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 	uiContextEntries?: UiSlotEntry[];
+	zenMode?: boolean;
+	onToggleZenMode?: () => void;
 	dropdownProps?: {
 		sound?: SoundSettings;
 		onSoundChange?: (settings: SoundSettings) => void;
@@ -126,6 +130,8 @@ export function BarItem({
 	onUiAction,
 	uiContextEntries,
 	dropdownProps,
+	zenMode,
+	onToggleZenMode,
 }: BarItemProps) {
 	const t = useT();
 	const { locale, packs, setLocale } = useI18n();
@@ -337,18 +343,22 @@ export function BarItem({
 		);
 	}
 
-	// 3. 特殊条目：引擎徽标（仅非 pi 引擎有效）
+	// 3. 特殊条目：引擎选择器（常驻显示下拉胶囊，支持任意多引擎扩展）
 	if (id === "host:engine") {
-		if (engine === "pi") return null;
 		return (
 			<span
-				className={`bar-item status-item engine-badge engine-${engine} bar-item-engine`}
-				title={`${t("engineBadge")}: ${engine}`}
-				data-tip={`${t("engineBadge")}: ${engine}`}
 				onContextMenu={handleContextMenu}
 				data-bar-item={id}
+				className="bar-item-engine-wrap"
+				style={{ display: "inline-flex", alignItems: "center" }}
 			>
-				{withName(engine === "dsh" ? "DSH" : engine)}
+				<EnginePicker
+					direction={bar === "bottom" ? "up" : "down"}
+					align={bar === "right" ? "right" : "left"}
+					caret={false}
+					bar={bar}
+					label={entry.labelExplicit ? entry.label : undefined}
+				/>
 			</span>
 		);
 	}
@@ -581,18 +591,14 @@ export function BarItem({
 				onOpenChange={setSoundOpen}
 				tip={named(t("sound"))}
 				caret={false}
+				triggerClassName="bar-item chip"
+				onContextMenu={handleContextMenu}
+				dataBarItem={id}
 				trigger={
-					<button
-						type="button"
-						className="bar-item chip"
-						title={named(t("sound"))}
-						data-tip={named(t("sound"))}
-						onContextMenu={handleContextMenu}
-						data-bar-item={id}
-					>
+					<>
 						<FiVolume2 className="bar-item-icon" />
 						<span className="chip-sub bar-item-text">{named(t("sound"))}</span>
-					</button>
+					</>
 				}
 			>
 				{dropdownProps?.sound && dropdownProps?.onSoundChange ? (
@@ -616,18 +622,14 @@ export function BarItem({
 				onOpenChange={setLangOpen}
 				tip={named(t("language"))}
 				caret={false}
+				triggerClassName="bar-item chip"
+				onContextMenu={handleContextMenu}
+				dataBarItem={id}
 				trigger={
-					<button
-						type="button"
-						className="bar-item chip"
-						title={named(t("language"))}
-						data-tip={named(t("language"))}
-						onContextMenu={handleContextMenu}
-						data-bar-item={id}
-					>
+					<>
 						<FiGlobe className="bar-item-icon" />
 						<span className="chip-sub bar-item-text">{withName(localeShort(locale))}</span>
-					</button>
+					</>
 				}
 			>
 				<div className="dd-header">{t("language")}</div>
@@ -671,18 +673,14 @@ export function BarItem({
 				}}
 				tip={named(t("theme"))}
 				caret={false}
+				triggerClassName="bar-item chip"
+				onContextMenu={handleContextMenu}
+				dataBarItem={id}
 				trigger={
-					<button
-						type="button"
-						className="bar-item chip"
-						title={named(t("theme"))}
-						data-tip={named(t("theme"))}
-						onContextMenu={handleContextMenu}
-						data-bar-item={id}
-					>
+					<>
 						<FiSun className="bar-item-icon" />
 						<span className="chip-sub bar-item-text">{named(t("theme"))}</span>
-					</button>
+					</>
 				}
 			>
 				{(() => {
@@ -772,20 +770,16 @@ export function BarItem({
 				tip={named(t("update"))}
 				fit
 				caret={false}
+				triggerClassName="bar-item chip"
+				onContextMenu={handleContextMenu}
+				dataBarItem={id}
 				trigger={
-					<button
-						type="button"
-						className="bar-item chip"
-						title={named(t("update"))}
-						data-tip={named(t("update"))}
-						onContextMenu={handleContextMenu}
-						data-bar-item={id}
-					>
+					<>
 						<FiDownload className="bar-item-icon" />
 						<span className="chip-sub bar-item-text">{withName(`v${chat.update?.current ?? "…"}`)}</span>
 						{chat.update && !chat.update.upToDate && <span className="update-dot" />}
 						{updatesCount > 0 && <span className="update-badge">{updatesCount}</span>}
-					</button>
+					</>
 				}
 			>
 				<div className="dd-header">{t("update")}</div>
@@ -883,6 +877,14 @@ export function BarItem({
 				badgeNode = <span className="bg-task-badge bar-item-badge">{chat.bgServers.length}</span>;
 			}
 			onClick = () => onOpenBgTasks?.();
+			break;
+		case "host:zen-mode":
+			iconNode = <FiFeather className="bar-item-icon" />;
+			labelText = named(t("zenMode"));
+			extraClasses = "chip chip-zen";
+			isActive = Boolean(zenMode);
+			tipOverride = t("zenModeTip");
+			onClick = () => onToggleZenMode?.();
 			break;
 		case "host:settings":
 			iconNode = <FiSettings className="bar-item-icon" />;

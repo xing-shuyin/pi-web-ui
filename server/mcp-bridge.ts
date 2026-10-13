@@ -23,11 +23,23 @@ import type { UiMcpToolInfo } from "./protocol.js";
 
 /** 获取全局 MCP 配置文件路径 */
 export function getGlobalMcpPath(agentDir?: string, dataDir?: string): string {
-	const defaultAgentDir = agentDir || process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
-	const agentPath = join(defaultAgentDir, "mcp.json");
-	if (existsSync(agentPath)) return agentPath;
-	if (dataDir && existsSync(join(dataDir, "mcp.json"))) return join(dataDir, "mcp.json");
-	return agentPath;
+	if (agentDir) {
+		const agentPath = join(agentDir, "mcp.json");
+		if (existsSync(agentPath)) return agentPath;
+		if (dataDir && existsSync(join(dataDir, "mcp.json"))) return join(dataDir, "mcp.json");
+		return agentPath;
+	}
+	if (process.env.PI_CODING_AGENT_DIR) {
+		const envPath = join(process.env.PI_CODING_AGENT_DIR, "mcp.json");
+		if (existsSync(envPath)) return envPath;
+	}
+	if (dataDir) {
+		const dataPath = join(dataDir, "mcp.json");
+		if (existsSync(dataPath)) return dataPath;
+		return dataPath;
+	}
+	const defaultAgentDir = join(homedir(), ".pi", "agent");
+	return join(defaultAgentDir, "mcp.json");
 }
 
 /** 获取项目级 MCP 配置文件路径 */

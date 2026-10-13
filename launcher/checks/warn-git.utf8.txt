@@ -1,0 +1,5 @@
+[提示] 未在 runtime\git 目录下检测到内置的 PortableGit。
+智能体执行命令将回落依赖宿主系统的 Git 和 Bash。
+如需实现完全自包含（随插即用，宿主机无需任何环境），请前往：
+https://github.com/git-for-windows/git/releases
+下载 PortableGit-xxx-64-bit.7z.exe 并解压到 runtime\git 目录中。

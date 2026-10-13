@@ -441,4 +441,39 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		act(() => root.unmount());
 		container.remove();
 	});
+
+	it("引擎选择器 host:engine 常驻显示下拉胶囊（含引擎名与 PI 徽标），点击展开多引擎下拉菜单", () => {
+		const engEntry: UiSlotEntry = {
+			id: "host:engine",
+			slot: "bottombar",
+			source: "host",
+			label: "引擎",
+			kind: "action",
+			order: 5,
+			align: "start",
+			hidden: false,
+			userOverrides: [],
+			arrangedBy: [],
+		};
+		const { container, root } = renderBarItem(engEntry, "bottom");
+		// 图标作为直接子 svg 渲染，拥有 bar-item-icon 与 engine-picker-icon 类，确保任何隐藏文字模式都不会误杀图标
+		const icon = container.querySelector("svg.bar-item-icon.engine-picker-icon");
+		expect(icon).not.toBeNull();
+		const badge = container.querySelector(".engine-badge.engine-pi");
+		expect(badge).not.toBeNull();
+		expect(badge?.textContent).toBe("PI");
+		const triggerBtn = container.querySelector(".engine-picker-btn") as HTMLButtonElement | null;
+		expect(triggerBtn).not.toBeNull();
+		expect(triggerBtn?.textContent).toContain("pi 引擎");
+		act(() => {
+			triggerBtn?.click();
+		});
+		const items = container.querySelectorAll(".engine-picker-item");
+		expect(items.length).toBeGreaterThanOrEqual(2);
+		// 菜单条目也包含引擎图标
+		const itemIcons = container.querySelectorAll(".engine-picker-item-icon");
+		expect(itemIcons.length).toBeGreaterThanOrEqual(2);
+		act(() => root.unmount());
+		container.remove();
+	});
 });

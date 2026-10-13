@@ -39,6 +39,20 @@ function stripLeadingGenericHeader(thinking: string): string {
 }
 
 /**
+ * 格式化思考展开态正文：
+ * - 剥离首行无意义模板标题与首尾空白/换行，消除模型输出尾随 `\n\n\n` 在
+ *   `white-space: pre-wrap` 下撑出的底部大片空白；
+ * - 将段间连续 3 个及以上换行收敛为单空行（`\n\n`），保留正常段落层次。
+ */
+export function formatThinkingBody(thinking: string): string {
+	const normalized = thinking.replace(/\r\n/g, "\n").replace(/[ \t]+\n/g, "\n");
+	const body = stripLeadingGenericHeader(normalized).trim();
+	const source = body || normalized.trim();
+	if (!source) return "";
+	return source.replace(/\n{3,}/g, "\n\n");
+}
+
+/**
  * 将多行思考压平为单行连续文本：
  * - 流式时不因换行而清空闪烁，也不因单行超出宽度而卡住不动；
  * - 结束时不因首行过短而留出大片空白，充分利用整行宽度。
@@ -102,6 +116,7 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 	const activeStream = live || draining;
 
 	const displayedThinking = useSmoothStreamText(thinking, activeStream, !live && draining, handleStreamSettled);
+	const bodyText = formatThinkingBody(displayedThinking);
 	// 折叠预览：流式中取最新文本（实时最后一行），结束后取首句实质思路。
 	const preview = thinkingPreview(displayedThinking, activeStream);
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
@@ -173,7 +188,7 @@ export function ThinkingBlock({ thinking, streaming, wrap = true, forceOpen = fa
 			</CollapsibleHead>
 			{shown && (
 				<div className="thinking-body">
-					{displayedThinking}
+					{bodyText}
 					{activeStream && <span className="stream-cursor" />}
 				</div>
 			)}

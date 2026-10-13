@@ -3,6 +3,7 @@ import { FiCpu, FiRefreshCw, FiX } from "react-icons/fi";
 import type { ProviderOAuthFlowState, ProviderStatus } from "../types";
 import { useT } from "../i18n";
 import { appSend, useIsManaged } from "../app-globals";
+import { isDesktopShell } from "../desktop";
 import { ProviderOAuthControls, type ProviderOAuthResultView } from "./ProviderOAuthControls";
 
 interface PiSetupModalProps {
@@ -35,6 +36,7 @@ export function PiSetupModal({
 	onClose,
 }: PiSetupModalProps) {
 	const t = useT();
+	const isDesktop = isDesktopShell();
 	// PI_WEB_MANAGED=1：装软件不是本页的事（全局，见 web/src/app-globals.ts）。
 	const managed = useIsManaged();
 	const [installing, setInstalling] = useState(false);
@@ -117,7 +119,7 @@ export function PiSetupModal({
 							</button>
 						</div>
 					</div>
-				) : piAgentInstalled || installResult?.ok ? (
+				) : piAgentInstalled || installResult?.ok || isDesktop ? (
 					<div className="setup-key-form">
 						<div className="setup-done">{installResult?.ok ? t("installDone") : t("cliReadyHint")}</div>
 						<label className="field">

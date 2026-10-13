@@ -4,6 +4,7 @@ import {
 	parseTextQuote,
 	readTextQuote,
 	formatQuotedPrompt,
+	formatStreamingPrompt,
 	splitQuotedPrompt,
 	messageTextWithQuotes,
 } from "../../server/text-quote.js";
@@ -82,5 +83,30 @@ describe("文字引用", () => {
 		});
 		expect(message.content).toEqual([{ type: "text", text: "解释这段" }]);
 		expect(message.details).toEqual({ quotes: [quote] });
+	});
+	it("流式排队提示词格式化与拆分：附件标记与引用完整提取且正文保持纯净", () => {
+		const formatted = formatStreamingPrompt(
+			"请检查这些内容",
+			[
+				'<file path="src/main.ts" lines="1-20" />',
+				'<folder path="docs" />',
+				'<browser-page url="https://example.com" title="Example Page">\nPage Content\n</browser-page>',
+				'<conversation-ref id="c1" title="历史对话">\nRef\n</conversation-ref>',
+				"<vision-bridge>\n图表转写结果\n</vision-bridge>",
+			],
+			[quote],
+			["screenshot.png"],
+		);
+		const parsed = splitQuotedPrompt(formatted);
+		expect(parsed.text).toBe("请检查这些内容");
+		expect(parsed.quotes).toEqual([quote]);
+		expect(parsed.attachments).toEqual([
+			{ type: "image", name: "screenshot.png" },
+			{ type: "file", name: "main.ts", path: "src/main.ts", lines: { start: 1, end: 20 } },
+			{ type: "folder", name: "docs", path: "docs" },
+			{ type: "page", name: "Example Page", url: "https://example.com" },
+			{ type: "conversation", name: "历史对话" },
+			{ type: "vision-bridge", name: "视觉转写" },
+		]);
 	});
 });

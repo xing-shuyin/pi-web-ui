@@ -5,6 +5,7 @@ import type { PluggableList } from "unified";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
+import remarkBackslashMath from "../remark-backslash-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
@@ -40,10 +41,10 @@ interface MarkdownProps {
  *  StreamMarkdown's per-segment renderers reuse the exact same configuration
  *  as this full-document renderer — streaming preview and final render must
  *  be visually identical. */
-const remarkPlugins = [remarkGfm, remarkMath];
+const remarkPlugins = [remarkGfm, remarkMath, remarkBackslashMath];
 /** Same pipeline + hard line breaks — used for USER bubbles so typed/pasted
  *  multi-line text keeps every line break (see MarkdownProps.hardBreaks). */
-const remarkPluginsHardBreaks = [remarkGfm, remarkBreaks, remarkMath];
+const remarkPluginsHardBreaks = [remarkGfm, remarkBreaks, remarkMath, remarkBackslashMath];
 const rehypePlugins: PluggableList = [
 	// KaTeX 在 highlight 之前：两者目标节点不相交（.math vs pre code），
 	// 公式解析失败时只显示红色源码（throwOnError: false），不打断整条消息。

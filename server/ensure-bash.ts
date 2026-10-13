@@ -37,8 +37,13 @@ export function windowsBashPath(): string {
 export function hasGitBash(): boolean {
 	const pf = process.env.ProgramFiles;
 	const pf86 = process.env["ProgramFiles(x86)"];
-	for (const cand of [pf ? join(pf, "Git", "bin", "bash.exe") : "", pf86 ? join(pf86, "Git", "bin", "bash.exe") : ""]) {
-		if (cand && existsSync(cand)) return true;
+	for (const cand of [
+		process.env.PI_WEB_SHELL ?? "",
+		process.env.SHELL ?? "",
+		pf ? join(pf, "Git", "bin", "bash.exe") : "",
+		pf86 ? join(pf86, "Git", "bin", "bash.exe") : "",
+	]) {
+		if (cand && existsSync(cand) && cand.toLowerCase().includes("bash")) return true;
 	}
 	return false;
 }

@@ -206,6 +206,7 @@ web/src/
 ├── export-image-state.ts # 图片导出状态
 ├── uuid.ts             # randomUuid（crypto 兜底），有单测
 ├── pending-question.ts # 待答问卷恢复（UiState.pendingQuestion → 恢复对话框）
+├── optimistic-queue.ts # 流式排队/插队消息与撤回的本地乐观更新与权威快照对账纯函数（有单测）
 ├── question-attachments.ts # 问卷附件 chips
 ├── plugin-host.ts      # 插件宿主桥（window.__piWebUiHost，宿主 API 时序）
 ├── plugin-loader.ts    # 插件 client bundle 加载（含 view:false 懒加载 / preload 预加载）

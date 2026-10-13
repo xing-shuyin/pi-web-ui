@@ -10,6 +10,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **切走时保留已结束的对话开关（`retainFinishedConversations`）**：
+  设置页「界面与交互」新增「切走时保留已结束的对话」开关（默认关闭）。开启后，切换到其他对话或新建对话时，已结束（空闲）的对话依然保留在左栏「运行的对话」列表中，不自动释放运行时，直到用户点击 ✕ 手动移出；未开始对话的空白新会话依然自动回收以避免堆积。同时会话达到同项目并发上限时的提示文案亦随该开关自动适配指导点击 ✕ 移出。
+
 ### Fixed
 
 - **工作区影子快照（Dual-State Rollback）全链路并发与缓存优化**：
@@ -21,12 +26,15 @@
 - **大仓库发消息不再被影子快照的冷 `git add -A` 挡住** —— 创建工作区影子快照时先把真实 index 拷进临时 index（子目录 cwd 再剔掉子树外条目），`git add -A` 只哈希变更和未跟踪文件，不再每次对空 index 重哈希整棵工作树。快照仍在模型改文件之前完成，回滚语义不变，也不写用户的暂存区。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
-- 前端新增 key（24）：`networkLatency`、`zenMode`、`zenModeTip`、`zenModeExit`、`zenModeExitTip`、`hideModelRow`、`hideModelRowDesc`、`toolsWorktreeDesc`、`toolsWorktreeOffHint`、`worktreeBadgeLinked`、`worktreeBadgeDirtyCount`、`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMain`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemove`、`worktreeActionRemoveTip`、`worktreeActionRemoveConfirm`、`worktreeActionCollapse`、`worktreeActionMore`
+- 前端新增 key（41）：`networkLatency`、`engineSwitchTip`、`engineTagFull`、`engineTagFast`、`enginePickerDesc`、`settingsEngineSection`、`settingsEngineHint`、`settingsEnginePiTitle`、`settingsEnginePiDesc`、`settingsEngineDshTitle`、`settingsEngineDshDesc`、`zenMode`、`zenModeTip`、`zenModeExit`、`zenModeExitTip`、`forkedSessionBadge`、`forkedSessionTip`、`piCoreUndetected`、`showForkedParents`、`showForkedParentsDesc`、`retainFinishedConversations`、`retainFinishedConversationsDesc`、`hideModelRow`、`hideModelRowDesc`、`toolsWorktreeDesc`、`toolsWorktreeOffHint`、`worktreeBadgeLinked`、`worktreeBadgeDirtyCount`、`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMain`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemove`、`worktreeActionRemoveTip`、`worktreeActionRemoveConfirm`、`worktreeActionCollapse`、`worktreeActionMore`
 - 前端中文变更（2）：`keepRecent`、`keepRecentDesc`
 - 前端英文变更（1）：`keepRecentDesc`
 - 服务端新增 key（16）：`worktree.not.git`、`worktree.remove.dirty`、`worktree.list.empty`、`worktree.list.header`、`worktree.tag.main`、`worktree.tag.current`、`worktree.tag.dirty`、`worktree.tag.ahead`、`worktree.create.missing_path`、`worktree.create.switched`、`worktree.create.success`、`worktree.switch.missing_path`、`worktree.switch.success`、`worktree.remove.missing_path`、`worktree.remove.success`、`worktree.op.failed`
+- 服务端文案变更（2）：`loadtools.always`、`prompt.tools.lazy`
+
 <!-- auto-i18n:end -->
 
 ## [0.104.4] — 2026-10-12

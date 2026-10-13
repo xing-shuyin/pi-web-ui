@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockHost } from "../../plugin-sdk/index.mjs";
 import plugin, {
 	expandSshInclude,
@@ -230,6 +230,8 @@ Host ea-gpu
 		);
 
 		// 通过修改 process.env.HOME / USERPROFILE 或注入 mock
+		const homeSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
+		cleanups.push(() => homeSpy.mockRestore());
 		const prevHome = process.env.HOME;
 		const prevUserProfile = process.env.USERPROFILE;
 		process.env.HOME = homeDir;
@@ -253,6 +255,7 @@ Host ea-gpu
 
 		expect(sent).toHaveLength(1);
 		const res = sent[0];
+		if (!res.ok) console.error("res error details:", JSON.stringify(res, null, 2));
 		expect(res.ok).toBe(true);
 		expect(res.reqId).toBe("r1");
 		expect(res.hosts).toBeDefined();

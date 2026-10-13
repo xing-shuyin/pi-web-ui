@@ -79,9 +79,11 @@ import type {
 import { launchOrigin, toServiceInfo } from "../launch-origin.js";
 import { DshRuntime, loadDeepSeekKey, type DshAgentPreset } from "./dsh-client.js";
 import { formatTextQuote, readTextQuote, messageTextWithQuotes } from "../text-quote.js";
+import { MarkerService } from "../marker-service.js";
 import {
 	DshStreamAccumulator,
 	assistantMessageEventToUiMessage,
+	extractDshAssistantRawText,
 	toolResultEventToUiMessage,
 	userMessageEventToUiMessage,
 } from "./dsh-serialize.js";
@@ -104,6 +106,7 @@ import {
 	sharePresetVia,
 	type PresetSharePort,
 } from "../preset-share.js";
+import { getAppVersion } from "../pkg-info.js";
 import { getMaxOpenConversations } from "../agent-formatters.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
@@ -240,6 +243,8 @@ interface DshSettings {
 	toolImagesEnabled: boolean;
 	/** 消息列表尾部常驻渲染的消息条数（纯 UI 偏好，默认 15）。 */
 	keepRecentMessages: number;
+	showForkedParentSessions: boolean;
+	retainFinishedConversations: boolean;
 	disabledPlugins: string[];
 	/** 宿主 UI 布局偏好（插件 UI 贡献 + 内置条目；纯 UI，per-client；issue #146）。 */
 	uiLayout: UiLayoutPrefs;
@@ -303,6 +308,8 @@ const DEFAULT_SETTINGS: DshSettings = {
 	toolsWrap: true,
 	toolImagesEnabled: true,
 	keepRecentMessages: DEFAULT_KEEP_RECENT_MESSAGES,
+	showForkedParentSessions: false,
+	retainFinishedConversations: false,
 	disabledPlugins: [],
 	uiLayout: {},
 	reviewPrompt: "",
@@ -389,6 +396,7 @@ export class DshClientSession {
 	private readonly files: FilesService;
 	private readonly bg: BgServerTracker;
 	private readonly sandboxes: SandboxManager;
+	private readonly markerSvc: MarkerService;
 
 	/** 插件扩展点（index.ts 注入）。 */
 	onToolEvent:
@@ -446,6 +454,22 @@ export class DshClientSession {
 			pluginTasks: () => this.pluginBgTasksProvider?.() ?? [],
 			cleanupMinutes: () => Number(this.settings.bgAutoCleanupMin ?? 0),
 		});
+		this.markerSvc = new MarkerService({
+			clientId,
+			stateStore,
+			emit: (msg) => this.emit(msg),
+			isDisposed: () => this.disposed,
+			getActiveConversationId: () => this.activeId,
+			getSessionManager: () => undefined,
+			renameConversation: (convId, title) => {
+				void this.renameConversation(convId, title);
+			},
+			refreshMarkers: () => this.flushSnapshot(),
+			onActionsChange: (convId) => {
+				if (convId === this.activeId) this.flushSnapshot();
+			},
+			lang: () => this.getLang(),
+		});
 	}
 
 	static create(
@@ -489,6 +513,8 @@ export class DshClientSession {
 				toolsWrap: savedSettings.toolsWrap,
 				toolImagesEnabled: savedSettings.toolImagesEnabled ?? true,
 				keepRecentMessages: normalizeKeepRecentMessages(savedSettings.keepRecentMessages),
+				showForkedParentSessions: savedSettings.showForkedParentSessions ?? false,
+				retainFinishedConversations: savedSettings.retainFinishedConversations ?? false,
 				disabledPlugins: savedSettings.disabledPlugins ?? [],
 				uiLayout: normalizeUiLayout(savedSettings.uiLayout),
 				reviewPrompt: savedSettings.reviewPrompt,
@@ -718,7 +744,7 @@ export class DshClientSession {
 			agentDir: this.agentDir,
 			env: {
 				...(presetPatch ? { PI_WEB_DSH_PRESET_PATCH: presetPatch } : {}),
-				PI_WEB_DSH_CUSTOM_PROMPT: this.settings.customSystemPrompt.trim(),
+				...this.buildPersonaEnv(),
 			},
 		});
 	}
@@ -1168,6 +1194,10 @@ export class DshClientSession {
 					conv.streaming = null;
 					this.appendMessage(conv, msg);
 				}
+				const rawText = extractDshAssistantRawText(ev.data as never);
+				if (rawText && rawText.includes("[[")) {
+					void this.markerSvc.handleAssistantText(conv.id, rawText);
+				}
 				// 新版运行时的 usage 挂在这条持久事件上（老运行时没有 → undefined 保持原统计）。
 				this.applyUsage(conv, (ev.data as { usage?: unknown }).usage);
 				break;
@@ -1271,7 +1301,12 @@ export class DshClientSession {
 				break;
 		}
 		// 事件驱动快照（60ms 节流；边界事件立即）。
-		if (ev.type === "turn/end" || ev.type === "tool/result" || ev.type === "assistant/message") {
+		if (
+			ev.type === "turn/end" ||
+			ev.type === "tool/result" ||
+			ev.type === "assistant/message" ||
+			ev.type === "agent/inbox/spliced"
+		) {
 			this.flushSnapshot();
 		} else {
 			this.scheduleSnapshot();
@@ -1496,7 +1531,7 @@ export class DshClientSession {
 			permission: conv.permissionPreset ?? null,
 			queue: { steering: conv.queue.steering, followUp: conv.queue.followUp },
 			pendingQuestion: this.pendingQuestionForSnapshot(),
-			actionSuggestions: null,
+			actionSuggestions: this.markerSvc.getActionSuggestions(this.activeId) ?? null,
 			tools: [],
 			version: ++this.version,
 			piConfigured: this.isDshConfigured(),
@@ -1655,6 +1690,14 @@ export class DshClientSession {
 		});
 	}
 
+	private shouldRetainDshConversation(conv: DshConversation): boolean {
+		if (conv.isStreaming) return true;
+		if (conv.terminals.countBlockingLive() > 0) return true;
+		if (conv.promptedSinceActive) return true;
+		if (this.settings?.retainFinishedConversations && (conv.messages.length > 0 || conv.listed)) return true;
+		return false;
+	}
+
 	/** 语义同 pi 引擎的 newChat：true = 当前活动对话是可接收首条的空白新对话
 	 *  （/new <prompt> 靠它决定要不要把首条提示发出去）。preset = 新会话预设
 	 *  （复用空白会话时等价一次空白切换）。 */
@@ -1691,7 +1734,7 @@ export class DshClientSession {
 		}
 		// 旧对话保留（listed 生命周期简化：不主动移除）。
 		const prevModel = this.model;
-		active.listed = active.isStreaming || active.terminals.countBlockingLive() > 0 || active.promptedSinceActive;
+		active.listed = this.shouldRetainDshConversation(active);
 		const conv = this.addConversation(`chat-${randomUUID().slice(0, 12)}`, this.cwd, false, preset);
 		this.activeId = conv.id;
 		this.model = prevModel;
@@ -1708,7 +1751,7 @@ export class DshClientSession {
 		if (!this.convs.has(id) || id === this.activeId) return;
 		const prev = this.conv;
 		// 只看“用过”的存活终端：没动过的空 shell 不钉住 listed（与 pi 的 displaceActive 同口径）。
-		prev.listed = prev.isStreaming || prev.terminals.countBlockingLive() > 0 || prev.promptedSinceActive;
+		prev.listed = this.shouldRetainDshConversation(prev);
 		this.activeId = id;
 		// 后台列表可能属于另一项目 → 切会话同时切工作区（与 pi 一致：文件树/
 		// 会话历史/最近项目跟着走）。DSH 单 runtime 换 cwd → 异步重启。
@@ -1775,6 +1818,7 @@ export class DshClientSession {
 			}
 		}
 		let conv = this.conv;
+		this.markerSvc.clearActions(conv.id);
 		// issue #145：同文件守卫 —— 别处正在跑同一 sessionId 时拒绝发送（不造第二个 writer）。
 		const fileOwner = this.findSessionOwnerById?.(conv.sessionId);
 		if (fileOwner && fileOwner.isStreaming) {
@@ -1949,14 +1993,15 @@ export class DshClientSession {
 				},
 			};
 			this.appendMessage(conv, optimistic);
-			this.flushSnapshot();
 			if (conv.isStreaming) {
 				// DSH 无 mid-run steering：isStreaming 时入队（followUp），
-				// 运行时 inbox 在 run 结束后消费。
+				// 运行时 inbox 在 run 结束后消费。入队后立即 flushSnapshot 让排队气泡上屏。
 				conv.queue.followUp.push(text);
+				this.flushSnapshot();
 				await this.runtime.prompt(conv.sessionId, blocks);
 				conv.queue.followUp = conv.queue.followUp.filter((t) => t !== text);
 			} else {
+				this.flushSnapshot();
 				await this.runtime.prompt(conv.sessionId, blocks);
 			}
 			// 首轮用户发言送达 → 预设锁定（官方语义；回放会话建时已锁）。
@@ -2541,7 +2586,7 @@ export class DshClientSession {
 			}
 			const prev = this.conv;
 			// 只看“用过”的存活终端：没动过的空 shell 不钉住 listed（与 pi 的 displaceActive 同口径）。
-			prev.listed = prev.isStreaming || prev.terminals.countBlockingLive() > 0 || prev.promptedSinceActive;
+			prev.listed = this.shouldRetainDshConversation(prev);
 			const conv = this.addConversation(sessionId, this.cwd, true);
 			conv.fromDisk = true; // 磁盘回放 → prompt 时 fork
 			this.activeId = conv.id;
@@ -3195,6 +3240,8 @@ export class DshClientSession {
 			toolsWrap: this.settings.toolsWrap,
 			toolImagesEnabled: this.settings.toolImagesEnabled,
 			keepRecentMessages: normalizeKeepRecentMessages(this.settings.keepRecentMessages),
+			showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
+			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			// DSH 无 skill 全文注入概念，给空保协议完整。
 			skillsFullText: [],
 			visionBridgeEnabled: false,
@@ -3227,9 +3274,9 @@ export class DshClientSession {
 			reviewSkills: [],
 			extensions: [],
 			presets: this.stateStore.getPresets(this.clientId).map(settingsPresetToUi),
-			markersEnabled: true,
-			disabledMarkers: [],
-			markers: [],
+			markersEnabled: this.markerSvc.current.markersEnabled,
+			disabledMarkers: [...this.markerSvc.current.disabledMarkers],
+			markers: this.markerSvc.listForUi(),
 			subagentTemplates: [],
 			subagentDefaultTemplates: [],
 			subagentDefaultModel: null,
@@ -3266,6 +3313,8 @@ export class DshClientSession {
 		toolsWrap?: boolean;
 		toolImagesEnabled?: boolean;
 		keepRecentMessages?: number;
+		showForkedParentSessions?: boolean;
+		retainFinishedConversations?: boolean;
 		visionBridgeEnabled?: boolean;
 		visionBridgeModel?: string | null;
 		visionBridgePromptMode?: "append" | "replace";
@@ -3305,6 +3354,10 @@ export class DshClientSession {
 		if (partial.toolImagesEnabled !== undefined) this.settings.toolImagesEnabled = partial.toolImagesEnabled;
 		if (partial.keepRecentMessages !== undefined)
 			this.settings.keepRecentMessages = normalizeKeepRecentMessages(partial.keepRecentMessages);
+		if (partial.showForkedParentSessions !== undefined)
+			this.settings.showForkedParentSessions = Boolean(partial.showForkedParentSessions);
+		if (partial.retainFinishedConversations !== undefined)
+			this.settings.retainFinishedConversations = Boolean(partial.retainFinishedConversations);
 		if (partial.disabledPlugins !== undefined) this.settings.disabledPlugins = partial.disabledPlugins;
 		if (partial.uiLayout !== undefined) this.settings.uiLayout = normalizeUiLayout(partial.uiLayout);
 		if (partial.reviewPrompt !== undefined) this.settings.reviewPrompt = partial.reviewPrompt;
@@ -3316,6 +3369,12 @@ export class DshClientSession {
 				.slice(0, 30);
 		}
 		if (partial.quickPhrasesEnabled !== undefined) this.settings.quickPhrasesEnabled = partial.quickPhrasesEnabled;
+		const prevMarkerGuidance = this.markerSvc.buildGuidance();
+		this.markerSvc.setAll({
+			markersEnabled: partial.markersEnabled,
+			disabledMarkers: partial.disabledMarkers,
+		});
+		const markerGuidanceChanged = this.markerSvc.buildGuidance() !== prevMarkerGuidance;
 		// 持久化（跨重连存活）。
 		this.stateStore.saveSettings(this.clientId, {
 			promptMode: this.settings.promptMode,
@@ -3340,6 +3399,8 @@ export class DshClientSession {
 			toolsWrap: this.settings.toolsWrap,
 			toolImagesEnabled: this.settings.toolImagesEnabled,
 			keepRecentMessages: normalizeKeepRecentMessages(this.settings.keepRecentMessages),
+			showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
+			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			disabledPlugins: this.settings.disabledPlugins,
 			uiLayout: normalizeUiLayout(this.settings.uiLayout),
 			reviewPrompt: this.settings.reviewPrompt,
@@ -3349,9 +3410,10 @@ export class DshClientSession {
 			promptTemplate: this.settings.promptTemplate ?? "",
 			promptOverrides: this.settings.promptOverrides ?? {},
 		});
-		// 仅系统提示词变化才重启运行时（DSH_PERSONA 由 launcher env 注入）；
+		// 仅系统提示词或内联标记指引变化才重启运行时（DSH_PERSONA 由 launcher env 注入）；
 		// 其他设置（开关/隐藏插件等）只存不回写运行时。
-		const personaChanged = partial.promptMode !== undefined || partial.customSystemPrompt !== undefined;
+		const personaChanged =
+			partial.promptMode !== undefined || partial.customSystemPrompt !== undefined || markerGuidanceChanged;
 		if (personaChanged) await this.applyPersona();
 		// 技能启停（#18）：禁用集变化 → 同步运行时（晚 pre-step 钩子过滤目录）并刷新技能列表。
 		if (partial.disabledSkills !== undefined) {
@@ -3362,18 +3424,24 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	private applyPersona(): Promise<void> {
+	private buildPersonaEnv(): { DSH_PERSONA: string; PI_WEB_DSH_CUSTOM_PROMPT: string } {
 		const custom = this.settings.customSystemPrompt.trim();
+		const markerGuidance = this.markerSvc.buildGuidance().trim();
+		const effectiveCustom = [custom, markerGuidance].filter(Boolean).join("\n\n");
 		const persona =
 			this.settings.promptMode === "replace" && custom
-				? custom
-				: this.settings.promptMode === "append" && custom
-					? `\n\n${custom}`
+				? effectiveCustom
+				: effectiveCustom
+					? `\n\n${effectiveCustom}`
 					: "";
+		return { DSH_PERSONA: persona, PI_WEB_DSH_CUSTOM_PROMPT: effectiveCustom };
+	}
+
+	private applyPersona(): Promise<void> {
 		// 自定义提示词双通道：DSH_PERSONA（host 部署人设；预设 persona 会 shadow 它，
 		// minimal 更全压住）+ PI_WEB_DSH_CUSTOM_PROMPT（独立 host section，随
 		// standard/ptc/cordis 下发；minimal 下被 complete 压住，官方语义）。
-		this.runtime.env = { ...this.runtime.env, DSH_PERSONA: persona, PI_WEB_DSH_CUSTOM_PROMPT: custom };
+		this.runtime.env = { ...this.runtime.env, ...this.buildPersonaEnv() };
 		if (this.runtime.alive) {
 			return this.runtime.restart(this.model).catch(() => {
 				/* keep old runtime */
@@ -3735,6 +3803,8 @@ export class DshClientSession {
 			toolsWrap: this.settings.toolsWrap,
 			toolImagesEnabled: this.settings.toolImagesEnabled,
 			keepRecentMessages: normalizeKeepRecentMessages(this.settings.keepRecentMessages),
+			showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
+			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			disabledPlugins: this.settings.disabledPlugins,
 			uiLayout: normalizeUiLayout(this.settings.uiLayout),
 			reviewPrompt: this.settings.reviewPrompt,
@@ -4393,14 +4463,7 @@ export class DshClientSession {
 	// -----------------------------------------------------------------------
 
 	static currentAppVersion(): string {
-		try {
-			const pkg = JSON.parse(
-				readFileSync(join(dirname(new URL(import.meta.url).pathname), "..", "package.json"), "utf8"),
-			) as { version?: string };
-			return pkg.version ?? "0.0.0";
-		} catch {
-			return "0.0.0";
-		}
+		return getAppVersion() || "0.0.0";
 	}
 
 	async checkUpdate(): Promise<void> {
@@ -4795,7 +4858,7 @@ export class DshClientSession {
 				.join("\n");
 			const prev = this.conv;
 			// 只看“用过”的存活终端：没动过的空 shell 不钉住 listed（与 pi 的 displaceActive 同口径）。
-			prev.listed = prev.isStreaming || prev.terminals.countBlockingLive() > 0 || prev.promptedSinceActive;
+			prev.listed = this.shouldRetainDshConversation(prev);
 			this.activeId = fresh.id;
 			// 编辑后的提问本身在 prompt 里；历史作为附加上下文（首条 prompt）。
 			const headText = contextNote.trim()
@@ -4901,11 +4964,7 @@ export class DshClientSession {
 			// 旧 active 会话：活跃的（流式/有终端/跑过）标 listed → 后台运行可见
 			// （与 pi 的 displaceActive 语义一致）；空白的直接弃（不列）。
 			const prev = this.conv;
-			prev.listed =
-				prev.isStreaming ||
-				prev.terminals.countBlockingLive() > 0 ||
-				prev.promptedSinceActive ||
-				prev.messages.length > 0;
+			prev.listed = this.shouldRetainDshConversation(prev) || prev.messages.length > 0;
 			// 新项目 → 新会话。
 			this.activeId = this.addConversation(`web-${randomUUID().slice(0, 12)}`, abs, false).id;
 			// 旧项目非活跃 conversation 回收（pi 的 displaceActive 语义：切走后
@@ -5015,11 +5074,11 @@ export class DshAgentService {
 
 	constructor(
 		private cwd: string,
-		stateFile: string,
+		stateFile: string | ClientStateStore,
 		dataDir: string,
 		private agentDir?: string,
 	) {
-		this.stateStore = new ClientStateStore(stateFile);
+		this.stateStore = typeof stateFile === "string" ? new ClientStateStore(stateFile) : stateFile;
 		this.dataDir = dataDir;
 	}
 

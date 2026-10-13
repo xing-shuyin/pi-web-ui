@@ -76,6 +76,34 @@ const MAX_EDIT_UPLOAD_BYTES = 20 * 1024 * 1024;
 // not work — same pattern pi-vsc uses in shared/blocks.ts.
 // ---------------------------------------------------------------------------
 
+const INLINE_MARKER_TOKEN_RE = /\[\[\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([A-Za-z][A-Za-z0-9_-]*)\s*:(.*?)\s*\]\]/g;
+const KNOWN_INLINE_MARKER_TOOLS = new Set(["todo", "notify", "conv", "rename", "title", "action", "suggest"]);
+const TRAILING_INCOMPLETE_INLINE_MARKER_RE =
+	/[ \t]*\[\[\s*(?:todo|notify|conv|rename|title|action|suggest)(?:\s*:[^\]]*)?$/i;
+
+/**
+ * 剥离助手回复中的内联状态标记（与服务端 stripMarkers 同构）。
+ * 实时 message_delta 增量流直接拼接原始 token，前端渲染前同步剥离可避免：
+ * 1) 流式打字期间裸露 [[conv:rename:...]] / [[action:suggest:...]]；
+ * 2) 流式结束被服务端快照替换时因文本突变触发二次重排。
+ */
+export function stripInlineMarkers(text: string, stripTrailingIncomplete = false): string {
+	if (!text || !text.includes("[[")) return text;
+	let out = text.replace(INLINE_MARKER_TOKEN_RE, (raw, tool: string, _op: string, body: string) => {
+		if (body.includes("[[")) return raw;
+		if (!KNOWN_INLINE_MARKER_TOOLS.has(tool.toLowerCase())) return raw;
+		return "";
+	});
+	if (stripTrailingIncomplete) {
+		out = out.replace(TRAILING_INCOMPLETE_INLINE_MARKER_RE, "");
+	}
+	if (out === text) return text;
+	return out
+		.replace(/^[ \t]+\n/gm, "\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}
+
 export function asText(block: UiContentBlock): UiTextBlock | null {
 	return block.type === "text" && typeof (block as UiTextBlock).text === "string" ? (block as UiTextBlock) : null;
 }
@@ -311,6 +339,23 @@ export const Message = memo(function Message({
 		message.role === "user" && Array.isArray(quoteValues)
 			? quoteValues.map(readTextQuote).filter((q): q is TextQuote => q !== null)
 			: [];
+	const queuedAtts = (
+		message.details as
+			| {
+					attachments?: {
+						type: string;
+						name: string;
+						path?: string;
+						url?: string;
+						lines?: { start: number; end: number };
+					}[];
+			  }
+			| undefined
+	)?.attachments;
+	const messageAttachments =
+		message.role === "user" && Array.isArray(queuedAtts)
+			? queuedAtts.filter((a) => a.type !== "image" || !message.content.some((b) => b.type === "image"))
+			: [];
 	// Question text for the per-question tag's tooltip.
 	const userText = message.content
 		.map((b) => asText(b)?.text ?? "")
@@ -327,7 +372,7 @@ export const Message = memo(function Message({
 		: userText.split("\n").join(" ").trim();
 	// Streaming bubble with no content yet (first token not arrived) — show a
 	// visible “thinking…” placeholder instead of an invisible empty bubble.
-	const isEmptyStreaming = streaming && isLast && message.content.length === 0;
+	const isEmptyStreaming = streaming && isLast && message.role === "assistant" && message.content.length === 0;
 
 	const canEdit = !readOnly && message.role === "user" && !streaming && !isEmptyStreaming && !!onEdit;
 	/** Paste/drop handler inside the edit composer — same downscale pipeline
@@ -444,9 +489,9 @@ export const Message = memo(function Message({
 	const exportImage = useExportImage();
 	const copyTimer = useRef(0);
 	const wholeMarkdown = messageMarkdown(message.content);
-	/** 只有人/助手消息的文本才值得整条复制（工具卡片、附件卡各有自己的复制键）。 */
-	const canCopyWhole =
-		(message.role === "assistant" || message.role === "user") && wholeMarkdown.length > 0 && !streaming;
+	/** 只有人/助手消息的文本才值得整条复制（工具卡片、附件卡各有自己的复制键）。
+	 *  保持流式期间也有操作栏占位，杜绝流结束时突兀插入一整行高度导致内容上下跳动。 */
+	const canCopyWhole = (message.role === "assistant" || message.role === "user") && wholeMarkdown.length > 0;
 	const doWholeCopy = async (id: string) => {
 		try {
 			let ok = false;
@@ -1126,6 +1171,26 @@ export const Message = memo(function Message({
 						{messageQuotes.map((quote, i) => (
 							<TextQuoteCard key={`quote-${i}`} quote={quote} forceOpen={searchActive} />
 						))}
+						{messageAttachments.length > 0 && (
+							<div className="msg-queued-atts-bar">
+								{messageAttachments.map((att, i) => (
+									<span key={`qatt-${i}`} className="queued-att-chip">
+										<span className="queued-att-icon">
+											{att.type === "image" || att.type === "vision-bridge"
+												? "🖼️"
+												: att.type === "folder"
+													? "📁"
+													: att.type === "page"
+														? "🌐"
+														: att.type === "conversation"
+															? "💬"
+															: "📎"}
+										</span>
+										<span className="queued-att-name">{att.name}</span>
+									</span>
+								))}
+							</div>
+						)}
 						{fileQuote ? (
 							<TextQuoteCard quote={fileQuote} forceOpen={searchActive} />
 						) : isFileAttachment ? (
@@ -1220,7 +1285,6 @@ export const Message = memo(function Message({
 								<span className="dot" />
 							</div>
 						)}
-						{streaming && isLast && !isEmptyStreaming && <span className="stream-cursor" />}
 					</>
 				)}
 			</div>
@@ -1651,10 +1715,15 @@ function Block({
 }) {
 	const t = useT();
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
-	const text = asText(block);
-	const live = !!(text && streaming && isLast);
+	const rawText = asText(block);
+	const live = !!(rawText && streaming && isLast);
 	const liveRef = useRef(live);
 	liveRef.current = live;
+	// 标记此文本块是否在当前组件生命周期内曾作为实时流式生成过。
+	// 若曾参与流式，在流结束后保持当前已渲染的 StreamMarkdown DOM，
+	// 避免在打完字瞬间整树卸载替换为 Markdown 造成重排闪烁与高度跳动。
+	const wasLiveRef = useRef(live);
+	if (live) wasLiveRef.current = true;
 	const [draining, setDraining] = useState(live);
 	useEffect(() => {
 		if (live) setDraining(true);
@@ -1662,7 +1731,10 @@ function Block({
 	const handleStreamSettled = useCallback(() => {
 		if (!liveRef.current) setDraining(false);
 	}, []);
-	if (text) {
+	if (rawText) {
+		const cleanedText = role === "user" ? rawText.text : stripInlineMarkers(rawText.text, live);
+		if (!cleanedText.trim()) return null;
+		const text = cleanedText === rawText.text ? rawText : { ...rawText, text: cleanedText };
 		// 单行消息：复制键不再用绝对定位压住文字，改成行内 flex 右键——与各 head
 		// 同样的 6px 间距、垂直居中、28px 尺寸。多行仍用右上浮层。
 		// showCopy=false：宿主在布局里隐藏了 host:msg-copy（那个条目的落点就是这里）。
@@ -1673,7 +1745,7 @@ function Block({
 				// 用户自己的气泡：保留输入/粘贴时的单个换行（CommonMark 软换行会把
 				// 多行纯文本折叠成连续文字）。助手消息仍走标准 markdown 段落语义。
 				<Markdown text={text.text} hardBreaks />
-			) : live || draining ? (
+			) : live || draining || wasLiveRef.current ? (
 				<StreamMarkdown text={text.text} finishing={!live && draining} onSettled={handleStreamSettled} />
 			) : (
 				<Markdown text={text.text} />

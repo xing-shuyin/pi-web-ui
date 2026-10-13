@@ -19,7 +19,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isAllowedExternalUrl } from "./external-url.js";
+import { setupPortableMode } from "./portable.js";
 import { buildDesktopLoadUrl, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
+
+// 便携模式初始化：在 app ready 之前完成 Electron userData 重定向与便携环境变量装载
+setupPortableMode(app);
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** 开发：dist/desktop → dist/server；打包后：asar 关闭，app 目录即根布局（dist/server + web/dist + themes）。 */

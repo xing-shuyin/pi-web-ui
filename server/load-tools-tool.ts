@@ -69,7 +69,8 @@ export function makeLoadToolsTool(host: LoadToolsHost, lang?: () => ServerLang):
 		promptGuidelines: [
 			"When a task needs a tool that is only listed in the catalog (name + one-line summary, no schema yet), " +
 				"call load_tools with its name first instead of guessing arguments",
-			"Load every tool you expect to need in ONE call — each load re-declares the tool set",
+			"Core tools (bash, read, edit, write) are always active — never pass them to load_tools",
+			"Tool loading is additive across turns — never reload tools that have already been loaded",
 		],
 		parameters: Type.Object({
 			tools: Type.Array(Type.String(), {

@@ -13,7 +13,7 @@ describe("极简沉浸模式 (Zen / Focus Mode)", () => {
 		expect(entry).toBeDefined();
 		expect(entry?.slot).toBe("topbar.primary");
 		expect(entry?.labelKey).toBe("zenMode");
-		expect(entry?.icon).toBe("maximize");
+		expect(entry?.icon).toBe("feather");
 		expect(entry?.kind).toBe("action");
 		expect(entry?.group).toBe("tools");
 	});
@@ -28,9 +28,8 @@ describe("极简沉浸模式 (Zen / Focus Mode)", () => {
 		}
 	});
 
-	it("HOST_ICON_NAMES 包含 maximize 与 minimize 图标", () => {
-		expect(HOST_ICON_NAMES).toContain("maximize");
-		expect(HOST_ICON_NAMES).toContain("minimize");
+	it("HOST_ICON_NAMES 包含 feather 图标", () => {
+		expect(HOST_ICON_NAMES).toContain("feather");
 	});
 
 	it("styles.css 包含完整的极简模式类名与隐藏规则", () => {

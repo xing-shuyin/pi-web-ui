@@ -66,6 +66,10 @@ function splitArgs(body: string): { args: string[]; kwargs: Record<string, strin
 	return { args, kwargs };
 }
 
+const KNOWN_MARKER_TOOLS = new Set(["todo", "notify", "conv", "rename", "title", "action", "suggest"]);
+
+const TRAILING_INCOMPLETE_MARKER_RE = /[ \t]*\[\[\s*(?:todo|notify|conv|rename|title|action|suggest)(?:\s*:[^\]]*)?$/i;
+
 export function parseMarkers(text: string): ParsedToken[] {
 	const tokens: ParsedToken[] = [];
 	TOKEN_RE.lastIndex = 0;
@@ -77,4 +81,27 @@ export function parseMarkers(text: string): ParsedToken[] {
 		tokens.push({ tool, op, args, kwargs, raw: m[0] });
 	}
 	return tokens;
+}
+
+/**
+ * 从助手展示文本中剥离内联状态标记（[[todo:...]] / [[notify:...]] / [[conv:rename:...]] / [[action:suggest:...]] 等）。
+ * 仅剥离已知标记命名空间，避免误删正文或代码中的普通双括号内容；
+ * `stripTrailingIncomplete` 为 true 时同步剥离流式末尾尚未闭合的半截标记。
+ */
+export function stripMarkers(text: string, options?: { stripTrailingIncomplete?: boolean }): string {
+	if (!text || !text.includes("[[")) return text;
+	let out = text.replace(TOKEN_RE, (raw, tool: string, _op: string, body: string) => {
+		if (body.includes("[[")) return raw;
+		if (!KNOWN_MARKER_TOOLS.has(tool.toLowerCase())) return raw;
+		return "";
+	});
+	if (options?.stripTrailingIncomplete) {
+		out = out.replace(TRAILING_INCOMPLETE_MARKER_RE, "");
+	}
+	if (out === text) return text;
+	// 清理因剥离首尾标记残留在行首/段首/段尾的空行与空白
+	return out
+		.replace(/^[ \t]+\n/gm, "\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
 }

@@ -583,3 +583,39 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 		expect(document.querySelectorAll(".plugin-topbar-menu .plugin-topbar-menu-keep > .tb-tab").length).toBe(2);
 	});
 });
+
+describe("TopBar 靠左图标提示向右偏移（防左缘溢出裁剪）", () => {
+	it("无 center 段、仅有 start 与 end 段时，单 spacer 挂 tb-spacer-end 类名区分右段", () => {
+		const { container } = mount("chat", [
+			{ ...hostEntry("host:open-project"), align: "start" },
+			{ ...hostEntry("host:chat"), align: "end" },
+		]);
+		const spacers = container.querySelectorAll(".topbar-flow > .tb-spacer");
+		expect(spacers.length).toBe(1);
+		expect(spacers[0]!.classList.contains("tb-spacer-end")).toBe(true);
+	});
+
+	it("下拉面板类条目（sound/language/theme/update）在顶栏只渲染单层触发按钮，不嵌套双层 data-tip", () => {
+		const { container } = mount("chat", [
+			{ ...hostEntry("host:sound"), align: "start" },
+			{ ...hostEntry("host:language"), align: "start" },
+			{ ...hostEntry("host:theme"), align: "start" },
+			{ ...hostEntry("host:update"), align: "start" },
+		]);
+		const dropdowns = container.querySelectorAll(".topbar-flow > .dropdown");
+		expect(dropdowns.length).toBe(4);
+		for (const dd of dropdowns) {
+			const buttons = dd.querySelectorAll("button");
+			expect(buttons.length).toBe(1);
+			expect(buttons[0]!.classList.contains("bar-item")).toBe(true);
+			expect(buttons[0]!.getAttribute("data-tip")).toBeTruthy();
+		}
+	});
+
+	it("styles.css 锁定顶栏左段及 data-tip-align='right' 气泡向右偏移展开（left: 0; right: auto）", () => {
+		const css = readFileSync(join(ROOT, "web", "src", "styles.css"), "utf8");
+		expect(css).toContain(".topbar .topbar-flow > :not(.tb-spacer) [data-tip]::after");
+		expect(css).toContain('.topbar .topbar-flow > [data-tip-align="right"][data-tip]::after');
+		expect(css).toContain(".topbar .topbar-flow > .tb-spacer-end ~ [data-tip]::after");
+	});
+});

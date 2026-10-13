@@ -99,6 +99,25 @@ describe("输入框上方的带子里是消息正文", () => {
 		expect(bodyOf(".qn-rail")).toMatch(/bottom:\s*calc\(10px \+ var\(--composer-strip\)\)/);
 	});
 
+	it("目标条展开、任务看板或内联对话框在场时，取消 .messages-wrap 负外边距以防遮挡首行输入框 (#623)", () => {
+		expect(
+			bodyOf(
+				".main:has(.goalbar) .messages-wrap,\n.main:has(.plan-board) .messages-wrap,\n.main:has(.dialog-inline) .messages-wrap",
+			),
+		).toMatch(/margin-bottom:\s*0/);
+		expect(
+			bodyOf(
+				".main:has(.goalbar) .scroll-bottom,\n.main:has(.plan-board) .scroll-bottom,\n.main:has(.dialog-inline) .scroll-bottom",
+			),
+		).toMatch(/bottom:\s*4px/);
+		expect(
+			bodyOf(".main:has(.goalbar) .qn-rail,\n.main:has(.plan-board) .qn-rail,\n.main:has(.dialog-inline) .qn-rail"),
+		).toMatch(/bottom:\s*10px/);
+		const goalbar = bodyOf(".goalbar");
+		expect(goalbar).toMatch(/position:\s*relative/);
+		expect(goalbar).toMatch(/z-index:\s*2/);
+	});
+
 	it("不给 .messages 加 mask/filter（那会让内部 fixed 后代改包含块）", () => {
 		const body = bodyOf(".messages");
 		expect(/mask(-image)?\s*:/.test(body), "滚动容器上出现 mask 会打歪 fixed 下拉/灯箱").toBe(false);

@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { getAppVersion } from "./pkg-info.js";
 import {
 	normalizeDisabledPluginTools,
 	normalizeRetryMaxAttempts,
@@ -93,22 +94,9 @@ const TAG_COUNT_MAX = 8;
 /* 配置（env 在调用时读取，便于测试与热改）                            */
 /* ------------------------------------------------------------------ */
 
-/** 本包版本（写进交换文档的 appVersion；读不到就空串）。首次调用时读一次。 */
-let cachedPackageVersion: string | null = null;
+/** 本包版本（写进交换文档的 appVersion；读不到就空串）。 */
 export function packageVersion(): string {
-	if (cachedPackageVersion === null) {
-		try {
-			const pkg = JSON.parse(
-				readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
-			) as {
-				version?: string;
-			};
-			cachedPackageVersion = pkg.version ?? "";
-		} catch {
-			cachedPackageVersion = "";
-		}
-	}
-	return cachedPackageVersion;
+	return getAppVersion();
 }
 
 /** 只需要读到「文本响应」的抓取器形状（比 update-check 的 Fetcher 多 text()）。
@@ -369,6 +357,8 @@ const PRESET_FIELD_KINDS = {
 	toolsWrap: "bool",
 	toolImagesEnabled: "bool",
 	keepRecentMessages: "number",
+	showForkedParentSessions: "bool",
+	retainFinishedConversations: "bool",
 	quickPhrases: "list",
 	quickPhrasesEnabled: "bool",
 	devNoCache: "bool",

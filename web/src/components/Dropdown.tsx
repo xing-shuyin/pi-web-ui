@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import {
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type MouseEvent as ReactMouseEvent,
+	type ReactNode,
+	type Ref,
+} from "react";
 import { FiChevronDown } from "react-icons/fi";
 import { useClickOutside } from "../use-click-outside";
 import { useEscapeKey } from "../shortcut-stack";
@@ -31,6 +40,10 @@ interface DropdownProps {
 	menuRef?: Ref<HTMLDivElement>;
 	/** Custom class for the trigger button (default "chip"). */
 	triggerClassName?: string;
+	/** Optional contextmenu handler for the trigger button (e.g. BarItem layout menu). */
+	onContextMenu?: (e: ReactMouseEvent<HTMLElement>) => void;
+	/** Optional data-bar-item attribute for the trigger button. */
+	dataBarItem?: string;
 	/** Whether to render the trailing dropdown caret arrow (default true). */
 	caret?: boolean;
 	/** Inline style for the menu panel — used to LOCK a measured width/height
@@ -82,6 +95,8 @@ export function Dropdown({
 	caret = true,
 	menuClassName,
 	triggerClassName,
+	onContextMenu,
+	dataBarItem,
 	menuRef,
 	menuStyle,
 }: DropdownProps) {
@@ -153,8 +168,10 @@ export function Dropdown({
 				type="button"
 				className={triggerClassName ?? "chip"}
 				onClick={() => onOpenChange(!open)}
+				onContextMenu={onContextMenu}
 				aria-expanded={open}
 				data-tip={tip}
+				data-bar-item={dataBarItem}
 			>
 				{trigger}
 				{caret && <FiChevronDown className={`dd-caret ${open ? "up" : ""}`} />}

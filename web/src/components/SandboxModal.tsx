@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { FiX } from "react-icons/fi";
+import { FiBookmark, FiCheck, FiClock, FiFilePlus, FiFolder, FiPackage, FiUpload, FiX } from "react-icons/fi";
+import { LuFlaskConical } from "react-icons/lu";
 import { useT } from "../i18n";
 import type { ClientMessage, ProjectSummary, SandboxDiffView, SandboxInfo } from "../types";
 
@@ -122,7 +123,7 @@ export function SandboxModal({
 				</button>
 				<div className="modal-head">
 					<span className="modal-head-icon" aria-hidden>
-						🧪
+						<LuFlaskConical />
 					</span>
 					<h2>{headerTitle}</h2>
 				</div>
@@ -139,7 +140,9 @@ export function SandboxModal({
 									className={`sandbox-choice-card ${initMode === "import" ? "active" : ""}`}
 									onClick={() => setInitMode("import")}
 								>
-									<div className="sandbox-choice-title">📦 {t("sandboxModeImport")}</div>
+									<div className="sandbox-choice-title">
+										<FiPackage aria-hidden /> {t("sandboxModeImport")}
+									</div>
 									<div className="sandbox-choice-desc">{t("sandboxModeImportDesc")}</div>
 								</button>
 								<button
@@ -147,7 +150,9 @@ export function SandboxModal({
 									className={`sandbox-choice-card ${initMode === "blank" ? "active" : ""}`}
 									onClick={() => setInitMode("blank")}
 								>
-									<div className="sandbox-choice-title">✨ {t("sandboxModeBlank")}</div>
+									<div className="sandbox-choice-title">
+										<FiFilePlus aria-hidden /> {t("sandboxModeBlank")}
+									</div>
 									<div className="sandbox-choice-desc">{t("sandboxModeBlankDesc")}</div>
 								</button>
 							</div>
@@ -174,7 +179,8 @@ export function SandboxModal({
 												onClick={() => setSourcePath(p.path)}
 												title={p.path}
 											>
-												📁 {baseNameOf(p.path)}
+												<FiFolder aria-hidden style={{ marginRight: 4, verticalAlign: "-1px" }} />
+												{baseNameOf(p.path)}
 											</button>
 										))}
 									</div>
@@ -190,7 +196,9 @@ export function SandboxModal({
 									className={`sandbox-choice-card ${ephemeral ? "active" : ""}`}
 									onClick={() => setEphemeral(true)}
 								>
-									<div className="sandbox-choice-title">⏱ {t("sandboxLifecycleEphemeral")}</div>
+									<div className="sandbox-choice-title">
+										<FiClock aria-hidden /> {t("sandboxLifecycleEphemeral")}
+									</div>
 									<div className="sandbox-choice-desc">{t("sandboxLifecycleEphemeralDesc")}</div>
 								</button>
 								<button
@@ -198,7 +206,9 @@ export function SandboxModal({
 									className={`sandbox-choice-card ${!ephemeral ? "active" : ""}`}
 									onClick={() => setEphemeral(false)}
 								>
-									<div className="sandbox-choice-title">📌 {t("sandboxLifecyclePermanent")}</div>
+									<div className="sandbox-choice-title">
+										<FiBookmark aria-hidden /> {t("sandboxLifecyclePermanent")}
+									</div>
 									<div className="sandbox-choice-desc">{t("sandboxLifecyclePermanentDesc")}</div>
 								</button>
 							</div>
@@ -224,7 +234,8 @@ export function SandboxModal({
 								{t("cancel")}
 							</button>
 							<button type="submit" className="btn primary" disabled={initMode === "import" && !sourcePath.trim()}>
-								🧪 {t("sandboxCreateSubmit")}
+								<LuFlaskConical aria-hidden style={{ marginRight: 5, verticalAlign: "-2px" }} />
+								{t("sandboxCreateSubmit")}
 							</button>
 						</div>
 					</form>
@@ -257,7 +268,8 @@ export function SandboxModal({
 								{t("cancel")}
 							</button>
 							<button type="submit" className="btn primary" disabled={!targetPath.trim()}>
-								📤 {t("sandboxPromoteSubmit")}
+								<FiUpload aria-hidden style={{ marginRight: 5, verticalAlign: "-2px" }} />
+								{t("sandboxPromoteSubmit")}
 							</button>
 						</div>
 					</form>
@@ -319,7 +331,8 @@ export function SandboxModal({
 								{t("cancel")}
 							</button>
 							<button type="submit" className="btn primary" disabled={!diffMatchesCurrent || totalChangedCount === 0}>
-								✅ {t("sandboxApplySubmit", { count: totalChangedCount })}
+								<FiCheck aria-hidden style={{ marginRight: 5, verticalAlign: "-2px" }} />
+								{t("sandboxApplySubmit", { count: totalChangedCount })}
 							</button>
 						</div>
 					</form>

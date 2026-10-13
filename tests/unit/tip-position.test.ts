@@ -42,6 +42,14 @@ describe("computeTipPosition", () => {
 		// 92 + 1100 = 1192 === 1200 - 8 → 视为放得下
 		expect(computeTipPosition(anchor, { width: 1100, height: 60 }, VIEWPORT).left).toBe(92);
 	});
+
+	it("锚点贴近视口左缘时，气泡左坐标向右钳制在 TIP_MARGIN 处（不向左越出屏幕）", () => {
+		const anchor = { left: 4, top: 10, right: 32, bottom: 38 };
+		expect(computeTipPosition(anchor, { width: 120, height: 40 }, VIEWPORT)).toEqual({
+			left: TIP_MARGIN,
+			top: 38 + TIP_MARGIN,
+		});
+	});
 });
 
 describe("hoverCapable", () => {
