@@ -47,6 +47,9 @@ export const LOCALE_PACKS: LocalePackMeta[] = [
 	{ code: "ko", nativeName: "한국어" },
 	{ code: "pt", nativeName: "Português" },
 	{ code: "ru", nativeName: "Русский" },
+	// Traditional Chinese (Taiwan). Core "zh" is Simplified; generated from it
+	// by scripts/zh-tw-locale (OpenCC + Taiwan glossary).
+	{ code: "zh-TW", nativeName: "繁體中文" },
 ];
 
 export function isKnownPack(code: string): boolean {

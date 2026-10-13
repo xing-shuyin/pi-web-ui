@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { FiAlertTriangle, FiCheck, FiCheckCircle, FiEdit3, FiLayers, FiX } from "react-icons/fi";
 import { appSend } from "../app-globals";
-import { useI18n, useT } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import { renderHighlightedCommand } from "../bash-danger";
 import type { UiToolApproval } from "../types";
 
@@ -173,10 +173,13 @@ export function ToolApprovalDialog({ approval }: ToolApprovalDialogProps) {
 							{/* 文案随界面语言定：服务端两种语言都带（reason/reasonEn），中文界面用
 							    reason、其它语言用 reasonEn。之前写的是 `reason || reasonEn`，
 							    reason 恒存在 → 非中文界面也显示中文风险说明。 */}
-							<div>{locale === "zh" ? approval.reason || approval.reasonEn : approval.reasonEn || approval.reason}</div>
+							<div>
+								{isZhLocale(locale) ? approval.reason || approval.reasonEn : approval.reasonEn || approval.reason}
+							</div>
 							{approval.category && (
 								<div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-									{t("toolApprovalCategory")}：{locale === "zh" ? approval.category.label : approval.category.labelEn}
+									{t("toolApprovalCategory")}：
+									{isZhLocale(locale) ? approval.category.label : approval.category.labelEn}
 								</div>
 							)}
 							{/* 命中高危规则清单（issue #566） */}
@@ -190,7 +193,7 @@ export function ToolApprovalDialog({ approval }: ToolApprovalDialogProps) {
 											<div key={idx} className="approval-hit-item">
 												<div className="approval-hit-header">
 													<span className="approval-hit-badge">
-														{locale === "zh" ? hit.label : hit.labelEn || hit.label}
+														{isZhLocale(locale) ? hit.label : hit.labelEn || hit.label}
 													</span>
 													<span className="approval-hit-field">{hit.field}</span>
 													<span className="approval-hit-pos">

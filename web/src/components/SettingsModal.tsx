@@ -87,7 +87,7 @@ import { useWideChat, saveChatWidthSettings, useHideModelRow, saveHideModelRowSe
 import { usePresentAutoOpen, savePresentAutoOpen } from "../present-settings";
 import { useProjectTitle, saveTitleSettings } from "../title-settings";
 import { sanitizeWallpaperUrl, fileToWallpaperUrl, saveWallpaperSettings, useWallpaperSettings } from "../wallpaper";
-import { useT, useI18n } from "../i18n";
+import { isZhLocale, useT, useI18n } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import {
 	buildUiSlots,
@@ -2583,7 +2583,7 @@ export function SettingsModal({
 										)}
 										{(approvalPolicy?.categories ?? []).map((c) => (
 											<div className="set-row" key={c.id}>
-												<span className="set-hint">{locale === "zh" ? c.label : c.labelEn}</span>
+												<span className="set-hint">{isZhLocale(locale) ? c.label : c.labelEn}</span>
 												<button
 													type="button"
 													className="btn"
@@ -3578,14 +3578,14 @@ export function SettingsModal({
 										<div className="mcp-market-grid">
 											{filteredMarketSkills.map((sk) => {
 												const isInstalled = installedSkillNames.has(sk.id.toLowerCase());
-												const descText = locale === "zh" ? sk.descriptionZh : sk.description;
-												const nameText = locale === "zh" ? sk.nameZh : sk.name;
+												const descText = isZhLocale(locale) ? sk.descriptionZh : sk.description;
+												const nameText = isZhLocale(locale) ? sk.nameZh : sk.name;
 												return (
 													<div key={sk.id} className="mcp-market-card skill-market-card">
 														<div className="mcp-market-card-head">
 															<div className="mcp-market-title-wrap">
 																<span className="mcp-market-name">{sk.name}</span>
-																{locale === "zh" && <span className="mcp-market-subname">({nameText})</span>}
+																{isZhLocale(locale) && <span className="mcp-market-subname">({nameText})</span>}
 															</div>
 															<span className="mcp-badge-official">{skillCategoryBadge(sk.category)}</span>
 														</div>
@@ -4336,8 +4336,8 @@ export function SettingsModal({
 											const upd = chat.pluginUpdates?.[e.id];
 											const isUpdatable = installed && upd?.updatable === true;
 											const isRunning = Boolean(jobFor(e.id) && jobFor(e.id)?.phase !== "done");
-											const name = locale !== "zh" && e.nameEn ? e.nameEn : e.name;
-											const desc = locale !== "zh" && e.descriptionEn ? e.descriptionEn : e.description;
+											const name = !isZhLocale(locale) && e.nameEn ? e.nameEn : e.name;
+											const desc = !isZhLocale(locale) && e.descriptionEn ? e.descriptionEn : e.description;
 											return (
 												<div key={e.id} className="set-catalog-row">
 													<div className="set-catalog-main">
@@ -5168,7 +5168,7 @@ export function SettingsModal({
 												<textarea
 													className="set-prompt-input"
 													rows={4}
-													placeholder={`${t("tplSystemPromptLabel")}${locale === "zh" ? "：" : ": "}${t(
+													placeholder={`${t("tplSystemPromptLabel")}${isZhLocale(locale) ? "：" : ": "}${t(
 														"tplSystemPromptPlaceholder",
 													)}`}
 													value={tplDraft.systemPrompt}
@@ -5289,7 +5289,7 @@ export function SettingsModal({
 														{!tp.enabled && <span className="tpl-badge">{t("subagentTemplateClosed")}</span>}
 													</div>
 													<div className="set-row-desc">
-														{(locale !== "zh" && tp.descriptionEn ? tp.descriptionEn : tp.description) ||
+														{(!isZhLocale(locale) && tp.descriptionEn ? tp.descriptionEn : tp.description) ||
 															`${tp.promptMode === "replace" ? t("promptModeReplace") : t("promptModeAppend")}`}
 														{tp.model ? ` · ${t("tplModelLabel")} ${tp.model}` : ` · ${t("subagentFollowMain")}`}
 														{tp.thinkingLevel
@@ -5594,7 +5594,7 @@ export function SettingsModal({
 																		: t("approvalRuleActionAsk")}
 															</span>
 															<strong style={{ fontSize: 13 }}>
-																{locale === "zh" ? rule.label : rule.labelEn || rule.label}
+																{isZhLocale(locale) ? rule.label : rule.labelEn || rule.label}
 															</strong>
 															{isBuiltin && <span className="tpl-badge">{t("approvalRuleBuiltin")}</span>}
 															<span className="rule-meta-code">{rule.tools.join(", ")}</span>
@@ -5613,7 +5613,7 @@ export function SettingsModal({
 															</div>
 															{(rule.reason || rule.reasonEn) && (
 																<div style={{ opacity: 0.75, fontSize: 11 }}>
-																	{locale === "zh" ? rule.reason : rule.reasonEn || rule.reason}
+																	{isZhLocale(locale) ? rule.reason : rule.reasonEn || rule.reason}
 																</div>
 															)}
 														</div>

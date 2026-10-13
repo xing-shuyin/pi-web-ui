@@ -34,6 +34,7 @@ import type {
 	UiSlotId,
 } from "./types";
 import { LP_SECTION_ENTRY_ID } from "./left-sections";
+import { isZhLocale } from "./pick-locale";
 
 export type {
 	UiAlign,
@@ -1847,7 +1848,7 @@ function placeTopbarPluginViews(entries: WorkingEntry[], rank: RankMap): Working
 export function buildUiSlots(
 	plugins: UiPluginInfo[],
 	opts: {
-		/** 当前界面语言（"zh" 时文案用 label 字段；其它语言插件回落 labelEn）。 */
+		/** 当前界面语言（中文系 "zh" / "zh-TW" 时文案用 label 字段；其它语言插件回落 labelEn）。 */
 		locale: string;
 		/** host 条目的翻译函数（无参；带占位符的 key 由渲染层用 labelKey 自行补参）。 */
 		t: (key: string) => string;
@@ -1862,7 +1863,7 @@ export function buildUiSlots(
 		diagnostics?: UiDiagnostic[];
 	},
 ): Record<UiSlotId, UiSlotEntry[]> {
-	const zh = opts.locale === "zh";
+	const zh = isZhLocale(opts.locale);
 	const disabled = new Set(opts.disabledPlugins ?? []);
 	const layout = migrateBrandLayout(opts.layout ?? {});
 	// 诊断收集（可选）：每条带 pluginId / slot / entryId 归因，布局页据此告诉用户

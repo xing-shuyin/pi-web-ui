@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { FiLock, FiPlus, FiSliders } from "react-icons/fi";
 import type { UiAgentPreset } from "../types";
-import { useI18n, useT, type Translate } from "../i18n";
+import { isZhLocale, useI18n, useT, type Translate } from "../i18n";
 import { appSend } from "../app-globals";
 import { focusComposer } from "../composer-bridge";
 import { Dropdown, DropdownItem } from "./Dropdown";
@@ -65,7 +65,7 @@ function presetDescKey(id: string): PresetDescKey | null {
  * 修的正是「英文界面仍见全功能/极简模式」：服务端只下发中文 name。
  */
 export function presetText(p: UiAgentPreset, locale: string, t: Translate): { name: string; description?: string } {
-	const zh = locale === "zh";
+	const zh = isZhLocale(locale);
 	const labelKey = presetLabelKey(p.id);
 	const descKey = presetDescKey(p.id);
 	if (labelKey && descKey) return { name: t(labelKey), description: t(descKey) };

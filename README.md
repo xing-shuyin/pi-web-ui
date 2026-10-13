@@ -225,7 +225,7 @@ QQ群 1126050727
 - **File boundaries** — workspace-relative reads/writes reject `..` escapes (a path outside the workspace is only reachable through explicit absolute / machine browsing); inline `/api/file` streaming is limited to images, video and HTML, so a binary can never be smuggled through an `<img>` tag — anything else needs `?download=1` (attachment disposition). The HTML preview route is always served sandboxed.
 - Quiesce drain mode via a local control socket (`server status|quiesce|unquiesce`) — refuses new prompts/forks/resumes (and, on the DSH engine, brand-new client connections) while in-flight runs finish.
 - Credentials stay server-side — provider headers (which may carry `Authorization`) are never sent to the browser, and provider API keys reach it only as nicknames.
-- 10 UI languages — Chinese/English built in, plus 8 downloadable packs (German, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian); the top-bar language menu installs or removes packs — see [Languages & language packs](#-languages--language-packs).
+- 11 UI languages — Chinese/English built in, plus 9 downloadable packs (German, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian, Traditional Chinese); the top-bar language menu installs or removes packs — see [Languages & language packs](#-languages--language-packs).
 - **Retention** — uploaded files older than `PI_WEB_UPLOAD_RETENTION_DAYS` (14; `0` = never) are swept at startup and every 6 h; DSH sessions have their own 90-day sweep.
 - **Operational watchdogs** — tool timeout, model-stall warning and terminal liveness are all tunable, see [Tuning & advanced environment variables](#tuning--advanced-environment-variables).
 

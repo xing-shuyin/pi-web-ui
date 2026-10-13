@@ -24,7 +24,7 @@ import { LuMessageSquareDashed } from "react-icons/lu";
 import type { UiSlotEntry, UiSlotId } from "../ui-slots";
 import type { ChatState } from "../use-chat";
 import { useFormattedCost } from "../cost-format";
-import { useT, useI18n } from "../i18n";
+import { isZhLocale, useT, useI18n } from "../i18n";
 import { useAppGlobals, appSend } from "../app-globals";
 import { PluginIcon } from "../plugin-icon";
 import { focusComposer } from "../composer-bridge";
@@ -89,6 +89,7 @@ function formatTokens(n: number): string {
 }
 
 function localeShort(code: string): string {
+	if (code === "zh-TW") return "TW";
 	if (code.startsWith("zh")) return "ZH";
 	if (code.startsWith("ja")) return "JA";
 	if (code.startsWith("ko")) return "KO";
@@ -688,10 +689,10 @@ export function BarItem({
 					const classics = themes.filter((th) => th.group === "classic");
 					const builtins = themes.filter((th) => th.group !== "classic");
 					const themeLabel = (th: BarItemTheme) => {
-						const base = locale === "zh" ? th.name : (th.nameEn ?? th.name);
+						const base = isZhLocale(locale) ? th.name : (th.nameEn ?? th.name);
 						const scheme = th.scheme === "light" ? t("themeLight") : th.scheme === "dark" ? t("themeDark") : "";
 						if (!scheme) return base;
-						return locale === "zh" ? `${base}（${scheme}）` : `${base} (${scheme})`;
+						return isZhLocale(locale) ? `${base}（${scheme}）` : `${base} (${scheme})`;
 					};
 					return (
 						<>

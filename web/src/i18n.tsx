@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { appUrl } from "./base-url";
 import { withToken } from "./auth-token";
-import { pickLocale } from "./pick-locale.js";
+import { isZhLocale, pickLocale } from "./pick-locale.js";
+
+export { isZhLocale };
 
 /** Locale code ("zh" / "en" built in; the rest are downloadable packs, see below). */
 export type Locale = string;
@@ -4280,7 +4282,8 @@ export interface LocalePackStatus {
 
 /** Core locales ship with the bundle (always available, synchronous). */
 export const CORE_LOCALES: { code: string; nativeName: string }[] = [
-	{ code: "zh", nativeName: "中文" },
+	// "简体" tells it apart from the Traditional Chinese pack (zh-TW) in the switcher.
+	{ code: "zh", nativeName: "简体中文" },
 	{ code: "en", nativeName: "English" },
 ];
 
@@ -4304,9 +4307,11 @@ export function unregisterLocale(code: string): void {
 	delete PACK_REGISTRY[code];
 }
 
-/** Short chip label for the topbar (native for zh, uppercase code otherwise). */
+/** Short chip label for the topbar (native for Chinese, uppercase code otherwise). */
 export function localeShort(code: string): string {
-	return code === "zh" ? "中文" : code.toUpperCase();
+	if (code === "zh") return "中文";
+	if (code === "zh-TW") return "繁中";
+	return code.toUpperCase();
 }
 
 /** html lang attribute for a locale code. */
@@ -4455,10 +4460,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 			// Pack strings are best-effort: missing keys fall back to English.
 			let raw: string | undefined = PACK_REGISTRY[locale]?.strings[key];
 			// 假翻译防护（issue #502）：非中日语言包若包含中文汉字，说明该 key 尚未真正本地化，安全回退到英文
-			if (raw && locale !== "zh" && locale !== "ja" && /[\u4e00-\u9fff]/.test(raw)) {
+			// （繁中 zh-TW 等中文语言包本来就是汉字，不在防护范围）
+			const zhFamily = isZhLocale(locale);
+			if (raw && !zhFamily && locale !== "ja" && /[\u4e00-\u9fff]/.test(raw)) {
 				raw = undefined;
 			}
-			let str: string = raw ?? (locale === "zh" ? zh[key] : en[key]);
+			// 中文语言包（zh-TW）缺 key 或尚未载入时回落简中，比英文更易读
+			let str: string = raw ?? (zhFamily ? zh[key] : en[key]);
 			if (vars) {
 				for (const [k, v] of Object.entries(vars)) {
 					str = str.replaceAll(`{${k}}`, String(v));

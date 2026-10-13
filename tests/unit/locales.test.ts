@@ -30,8 +30,8 @@ function placeholders(s: string): string[] {
 }
 
 describe("language packs", () => {
-	it("8 个语言包齐全（de/es/fr/it/ja/ko/pt/ru）", () => {
-		expect([...packs.keys()].sort()).toEqual(["de", "es", "fr", "it", "ja", "ko", "pt", "ru"]);
+	it("9 个语言包齐全（de/es/fr/it/ja/ko/pt/ru/zh-TW）", () => {
+		expect([...packs.keys()].sort()).toEqual(["de", "es", "fr", "it", "ja", "ko", "pt", "ru", "zh-TW"]);
 	});
 
 	it("meta 合法：文件名=code、nativeName 非空、version 非空", () => {
@@ -64,7 +64,8 @@ describe("language packs", () => {
 
 	it("非中文/非日文语言包（de/es/fr/it/ko/pt/ru）无中文假翻译残留 (issue #502)", () => {
 		for (const [code, p] of packs) {
-			if (code === "zh" || code === "ja") continue;
+			// zh / zh-TW / ja packs are written in Han characters by design.
+			if (code === "zh" || code.startsWith("zh-") || code === "ja") continue;
 			for (const [k, v] of Object.entries(p.strings)) {
 				expect(/[\u4e00-\u9fff]/.test(v), `${code}.${k} 包含中文残留: ${v}`).toBe(false);
 			}

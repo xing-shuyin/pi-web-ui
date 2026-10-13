@@ -10,7 +10,7 @@ import {
 	FiX,
 } from "react-icons/fi";
 import type { UiPresetCatalogEntry } from "../types";
-import { useT } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import { appSend } from "../app-globals";
 import { saveDownloadBlob } from "../download";
 import { randomUuid } from "../uuid";
@@ -99,6 +99,7 @@ export function PresetShareModal({
 	onClose,
 }: PresetShareModalProps) {
 	const t = useT();
+	const { locale } = useI18n();
 	const [tab, setTab] = useState<Tab>(initialTab);
 
 	// ---- 导出/分享页签 -----------------------------------------------------
@@ -255,7 +256,8 @@ export function PresetShareModal({
 
 	const preview = presetImport?.dryRun ? presetImport.preview : undefined;
 	const importDone = presetImport?.ok && !presetImport.dryRun ? presetImport.preview : undefined;
-	const isZh = t("ok") === "确定";
+	// 按界面语言判断（中文系含 zh-TW；旧做法比对 t("ok") 的简中译文，繁中会被误判为英文）
+	const isZh = isZhLocale(locale);
 	const lang = isZh ? ("zh" as const) : ("en" as const);
 	// 可选导入：按分组拆分预览里的字段，默认全选（picked === null 时视作全选）。
 	const previewFields = preview?.fields ?? [];

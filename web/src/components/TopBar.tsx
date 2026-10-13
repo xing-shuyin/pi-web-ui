@@ -35,7 +35,7 @@ import { NotifyToggle } from "./NotifyToggle";
 import type { SoundKind, SoundSettings } from "../sounds";
 import { PluginIcon } from "../plugin-icon";
 import { formatCostDisplay } from "../cost-format";
-import { useI18n, localeShort } from "../i18n";
+import { isZhLocale, useI18n, localeShort } from "../i18n";
 import {
 	isPluginViewItem,
 	REQUIRED_TOPBAR_ITEM_IDS,
@@ -1166,13 +1166,13 @@ export function TopBar({
 					const classics = themes.filter((th) => th.group === "classic");
 					const builtins = themes.filter((th) => th.group !== "classic");
 					const themeLabel = (th: (typeof themes)[number]) => {
-						const base = locale === "zh" ? th.name : (th.nameEn ?? th.name);
-						// 括号后缀必须走 i18n：themeLight/themeDark 已经在 zh/en + 8 个语言包里
+						const base = isZhLocale(locale) ? th.name : (th.nameEn ?? th.name);
+						// 括号后缀必须走 i18n：themeLight/themeDark 已经在 zh/en + 各语言包里
 						// 备好（与 themeDefault 的「深色（默认）」/「Dark (default)」同一套约定），
 						// 写死中文全角括号会让其它语言看到中英混排。
 						const scheme = th.scheme === "light" ? t("themeLight") : th.scheme === "dark" ? t("themeDark") : "";
 						if (!scheme) return base;
-						return locale === "zh" ? `${base}（${scheme}）` : `${base} (${scheme})`;
+						return isZhLocale(locale) ? `${base}（${scheme}）` : `${base} (${scheme})`;
 					};
 					return (
 						<>

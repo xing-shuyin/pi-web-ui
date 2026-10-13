@@ -36,9 +36,12 @@ function stubFetch(body: unknown, status = 200) {
 }
 
 describe("locales", () => {
-	it("isKnownPack 只认 manifest 里的 8 个包", () => {
+	it("isKnownPack 只认 manifest 里的 9 个包", () => {
 		expect(isKnownPack("ja")).toBe(true);
 		expect(isKnownPack("it")).toBe(true);
+		expect(isKnownPack("zh-TW")).toBe(true);
+		// Codes are exact: the browser-side picker canonicalizes the case first.
+		expect(isKnownPack("zh-tw")).toBe(false);
 		expect(isKnownPack("zh")).toBe(false);
 		expect(isKnownPack("en")).toBe(false);
 		expect(isKnownPack("../evil")).toBe(false);

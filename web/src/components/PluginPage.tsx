@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { ensurePluginViewLoaded, makePluginContext, pluginEntryUrl, type PluginViewModule } from "../plugin-loader";
 import { withPluginScopeAsync } from "../plugin-host";
-import { useI18n, useT, type Translate } from "../i18n";
+import { isZhLocale, useI18n, useT, type Translate } from "../i18n";
 import type { UiPluginInfo } from "../types";
 
 interface PluginPageProps {
@@ -58,7 +58,7 @@ function failureDetail(err: unknown): string {
  * 其它语言回落英文，与「缺表回落英文」的 i18n 语义保持一致。
  */
 function failureText(failure: PageFailure, name: string, locale: string, t: Translate): string {
-	const zh = locale === "zh";
+	const zh = isZhLocale(locale);
 	switch (failure.kind) {
 		case "no-client":
 			return zh

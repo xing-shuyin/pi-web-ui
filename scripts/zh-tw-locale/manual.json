@@ -1,0 +1,14 @@
+{
+	"delegateModeDesc": [["一個常駐的寫入磁碟執行對話去做事", "一個常駐的執行對話去做事"]],
+	"toolApprovalEditAndRun": "修改後執行 (Edit & Run)",
+	"approvalRuleActionAllow": "免核准允許",
+	"toolApprovalPolicyAllowAll": "本對話已全部允許",
+	"pluginOfficialMarketHint": "前往官方外掛儲存庫與社群市集 (GitHub)",
+	"delegateTaskEnabledDesc": [["缺段或含糊直接錯誤打回", "缺段或含糊會直接回報錯誤並退回"]],
+	"tpl.sk.implement": "依規格實作",
+	"themeGroupBuiltin": "原始",
+	"exited": "（已結束{code}）",
+	"docTitle": "pi-web-ui — pi 程式設計代理",
+	"tpl.sk.totickets.desc": [["可建置", "可實作"]],
+	"tpl.sk.totickets.prompt": [["逐個建置", "逐個實作"]]
+}

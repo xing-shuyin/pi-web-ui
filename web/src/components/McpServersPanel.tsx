@@ -22,7 +22,7 @@ import {
 import { appSend } from "../app-globals";
 import { CopyButton } from "./copy-button";
 import { HintTip } from "./HintTip";
-import { useI18n, useT } from "../i18n";
+import { isZhLocale, useI18n, useT } from "../i18n";
 import type { McpScope, RemoteMcpServer, UiMcpServer, UiMcpToolInfo, UiSettingsState } from "../types";
 import type { ChatState } from "../use-chat";
 import { PUBLIC_MCP_SERVERS, type PublicMcpServer } from "../mcp-catalog";
@@ -188,8 +188,8 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 		return PUBLIC_MCP_SERVERS.map((s) => ({
 			id: s.id,
 			name: s.name,
-			displayName: locale === "zh" ? s.nameZh : s.name,
-			description: locale === "zh" ? s.descriptionZh : s.description,
+			displayName: isZhLocale(locale) ? s.nameZh : s.name,
+			description: isZhLocale(locale) ? s.descriptionZh : s.description,
 			homepage: s.homepage,
 			package: s.package,
 			command: s.command,

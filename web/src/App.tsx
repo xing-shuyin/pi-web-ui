@@ -88,7 +88,7 @@ import { useChat } from "./use-chat";
 import { useSwipeDrawer } from "./use-swipe-drawer";
 import { appUrl } from "./base-url";
 import type { ClientMessage, CommandDef, PromptAttachment, UiMessage } from "./types";
-import { useT, useI18n } from "./i18n";
+import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
 import { FiAlertCircle, FiAlertTriangle, FiChevronsLeft, FiChevronsRight, FiInfo, FiX } from "react-icons/fi";
 import type { Notice } from "./use-chat";
@@ -143,7 +143,7 @@ export interface PendingAttachment {
 function NoticeToast({ notice, onDismiss }: { notice: Notice; onDismiss: (id: number) => void }) {
 	const t = useT();
 	const { locale } = useI18n();
-	const text = locale !== "zh" && notice.textEn ? notice.textEn : notice.text;
+	const text = !isZhLocale(locale) && notice.textEn ? notice.textEn : notice.text;
 	const [paused, setPaused] = useState(false);
 	useEffect(() => {
 		if (paused) return;
@@ -1975,7 +1975,7 @@ export function App() {
 									<div className="workspace-transition-pill">
 										<span className="workspace-transition-spinner" aria-hidden="true" />
 										<span className="workspace-transition-text">
-											{locale !== "zh" && chat.transition.textEn ? chat.transition.textEn : chat.transition.text}
+											{!isZhLocale(locale) && chat.transition.textEn ? chat.transition.textEn : chat.transition.text}
 										</span>
 										<span className="workspace-transition-pct">{chat.transition.progress}%</span>
 									</div>

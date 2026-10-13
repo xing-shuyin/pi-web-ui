@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useState, type ReactNode } from "react";
 import { FiTarget, FiLock, FiUnlock, FiX, FiChevronUp, FiArrowUpRight, FiSquare } from "react-icons/fi";
 import type { GoalStatus, ModelInfo } from "../types";
-import { useT, useI18n } from "../i18n";
+import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useIsDsh } from "../app-globals";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import type { UiSlotEntry } from "../ui-slots";
@@ -32,8 +32,8 @@ export const GoalBar = memo(function GoalBar({
 }: Props) {
 	const t = useT();
 	const { locale } = useI18n();
-	const goalDetail = locale !== "zh" && goal.statusEn ? goal.statusEn : goal.status || "";
-	const wizardDetail = locale !== "zh" && goal.wizard?.statusEn ? goal.wizard.statusEn : goal.wizard?.status || "";
+	const goalDetail = !isZhLocale(locale) && goal.statusEn ? goal.statusEn : goal.status || "";
+	const wizardDetail = !isZhLocale(locale) && goal.wizard?.statusEn ? goal.wizard.statusEn : goal.wizard?.status || "";
 	// DSH：不接目标模式 2.0 的执行对话（隐藏执行模型下拉；轮次上限仍然有效）。
 	// engine 走全局（web/src/app-globals.ts），不再从 App 一路传下来。
 	const isDsh = useIsDsh();
@@ -47,7 +47,7 @@ export const GoalBar = memo(function GoalBar({
 	const execRoleConvId = execRole?.convId;
 	// 执行者实时动态（轮次边界刷新）：跑什么工具 / 自述头；中英按 locale 二选一。
 	const execActivity = execRole?.activity
-		? locale !== "zh" && execRole.activityEn
+		? !isZhLocale(locale) && execRole.activityEn
 			? execRole.activityEn
 			: execRole.activity
 		: execRole?.streaming
@@ -57,9 +57,10 @@ export const GoalBar = memo(function GoalBar({
 	const roundBudget = goal.locked && goal.maxRounds > 0 ? goal.maxRounds : 0;
 	const roundLabel =
 		roundBudget > 0
-			? locale !== "zh"
-				? `Round ${goal.round}/${roundBudget}`
-				: `第 ${goal.round}/${roundBudget} 轮`
+			? isZhLocale(locale)
+				? // 走 i18n 词条：简中「第 N/M 轮」、繁中「第 N/M 輪」
+					t("goalBarRound", { n: `${goal.round}/${roundBudget}` })
+				: `Round ${goal.round}/${roundBudget}`
 			: `${t("goalBarRound", { n: goal.round })}${goal.locked ? ` · ${t("goalBarUnlimitedShort")}` : ""}`;
 	// 本目标累计用量（执行者 + 审查者，轮次边界累计）。
 	const usageTotal = (goal.usage?.inputTokens ?? 0) + (goal.usage?.outputTokens ?? 0);

@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera } from "react-icons/fi";
 import type { FileSearchResult, ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState } from "../types";
-import { useT, useI18n } from "../i18n";
+import { isZhLocale, useT, useI18n } from "../i18n";
 import { appSend, useAppField, useIsDsh } from "../app-globals";
 import {
 	applyTemplateFill,
@@ -214,9 +214,9 @@ export const ChatInput = memo(function ChatInput({
 	/** 打开模板库（对话中途也可随时取用提示词模板）。 */
 	const { openPicker } = useTemplates();
 	const slashDesc = (c: SlashCommandInfo) =>
-		locale !== "zh" && c.descriptionEn ? c.descriptionEn : (c.description ?? "");
+		!isZhLocale(locale) && c.descriptionEn ? c.descriptionEn : (c.description ?? "");
 	const slashHint = (c: SlashCommandInfo) =>
-		locale !== "zh" && c.argumentHintEn ? c.argumentHintEn : (c.argumentHint ?? "");
+		!isZhLocale(locale) && c.argumentHintEn ? c.argumentHintEn : (c.argumentHint ?? "");
 	const [text, setText] = useState("");
 	/** 手动拉出的保底高度：null = 没拖过（纯自适应，上限 220）；数字 = 保底（持久化）。
 	 * 注意：这是下限不是固定值——内容少时撑到它，内容多时继续往上长。 */
