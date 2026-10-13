@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_CLIENT_SECRET = "qq.clientSecret";
 const QQ_AUTH_URL = "https://bots.qq.com/app/getAppAccessToken";

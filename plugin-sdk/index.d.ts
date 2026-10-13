@@ -5,7 +5,20 @@
  */
 
 export type PluginPermissionFamily =
-	"fs" | "fs:read" | "fs:write" | "ui" | "tools" | "http" | "chat" | "net" | "dom" | "dom:anchor";
+	| "fs"
+	| "fs:read"
+	| "fs:write"
+	| "ui"
+	| "tools"
+	| "http"
+	| "chat"
+	| "net"
+	| "llm"
+	| "dom"
+	| "dom:anchor"
+	| "notify"
+	| "storage"
+	| "secrets";
 
 export interface WsEntry {
 	name: string;

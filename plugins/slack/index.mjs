@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_BOT_TOKEN = "slack.botToken";
 export const SECRET_APP_TOKEN = "slack.appToken";

@@ -43,6 +43,9 @@ export const KNOWN_PERMISSION_FAMILIES: ReadonlySet<string> = new Set([
 	"llm",
 	"dom",
 	"dom:anchor",
+	"notify",
+	"storage",
+	"secrets",
 ]);
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -9,7 +9,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 const execFileAsync = promisify(execFile);
 export const IMESSAGE_BOT_PREFIX = "🤖 PI\n";

@@ -7725,6 +7725,56 @@ export class ClientSession {
 	}
 
 	/**
+	 * 目标模式 2.0 执行期（phase === "executing"）：执行者在干活时，用户在主会话
+	 * 发送的补充信息/约束澄清自动 steer/followUp 进执行者会话，主会话不跑模型，杜绝双轨脱节与竞态 (#625)。
+	 */
+	private async dispatchToGoalExecutor(conv: Conversation, text: string, queue = false): Promise<boolean> {
+		if (conv.planMode === true) return false;
+		if (conv.goal?.phase !== "executing") return false;
+		const gc = conv as unknown as GoalConversation;
+		const execId = gc.roleExec?.convId;
+		if (!execId) return false;
+		const execConv = this.convs.get(execId);
+		if (!execConv?.session) return false;
+		const trimmed = text.trim();
+		if (!trimmed) return false;
+
+		// 原生斜杠命令（如 /model、/clear）由主会话本地消费，不转发给执行者
+		const slash = parseSlash(trimmed);
+		if (slash && (await this.slash.exec(slash.name, slash.args))) {
+			this.flushSnapshot();
+			return true;
+		}
+
+		try {
+			await execConv.session.sendUserMessage(
+				trimmed,
+				execConv.session.isStreaming ? { deliverAs: queue ? "followUp" : "steer" } : undefined,
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			this.emit({
+				type: "notice",
+				level: "error",
+				text: `目标执行者：同步消息失败（${msg}）`,
+				textEn: `Goal executor: message sync failed (${msg})`,
+			});
+			this.flushSnapshot();
+			// 返回 true 拦截本轮，绝不落回主会话并发起跑模型
+			return true;
+		}
+
+		this.emit({
+			type: "notice",
+			level: "info",
+			text: `🎯 已同步至目标执行者：${trimmed.slice(0, 120)}${trimmed.length > 120 ? "…" : ""}`,
+			textEn: `🎯 Synchronized to goal executor: ${trimmed.slice(0, 120)}${trimmed.length > 120 ? "…" : ""}`,
+		});
+		this.flushSnapshot();
+		return true;
+	}
+
+	/**
 	 * 切换计划模式（会话级，只规划不实施）。
 	 *  软约束（系统提示词段）+ 硬闸门（写类/旁路工具与非常规 bash 直接拒）双管：
 	 *  状态随会话转录落盘（切会话/重载恢复），并即时提示用户当前口径。
@@ -8133,7 +8183,13 @@ export class ClientSession {
 		// 对话执行，主会话这一轮**不跑模型**。接在 promptAc 之后、draft 清理之前：
 		// 转走的内容不该把主对话的草稿也清掉（用户可能还想在主对话里追一句）。
 		// 计划模式优先（那边直接返回 false）。
-		if (await this.dispatchToDelegate(conv, text)) {
+		if (conv.delegateMode === true && (await this.dispatchToDelegate(conv, text))) {
+			conv.presetLocked = true;
+			return;
+		}
+		// 目标模式 2.0 执行期：执行者干活时，用户在主会话发送的补充说明自动 steer/followUp 给执行者，
+		// 主会话不跑模型，杜绝双轨脱节与竞态 (#625)。
+		if (await this.dispatchToGoalExecutor(conv, text, queue)) {
 			conv.presetLocked = true;
 			return;
 		}

@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_CORP_SECRET = "wecom.corpSecret";
 export const SECRET_WEBHOOK_KEY = "wecom.webhookKey";

@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "dingtalk",
 	"nameEn": "DingTalk",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "钉钉机器人与工作台：钉钉 Bot 双工对话（出站长连接 / 智能 Markdown 分块 / 多轮会话隔离）/ 群聊与单聊消息推送 / 自定义机器人 Webhook / AI 钉钉工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "DingTalk workspace & Bot: DingTalk Bot duplex chat (outbound long-connection, structure-aware Markdown chunks, isolated multi-turn sessions), group/single message push, custom bot Webhooks, and AI dingtalk tool.",
 	"author": "pi-web-ui",

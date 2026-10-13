@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "slack",
 	"nameEn": "Slack",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "Slack 机器人：官方 Socket Mode 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI slack 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "Slack Bot: official Socket Mode outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI slack tool.",
 	"author": "pi-web-ui",

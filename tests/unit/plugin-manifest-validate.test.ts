@@ -1,5 +1,10 @@
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { validatePluginManifest, KNOWN_PERMISSION_FAMILIES } from "../../server/plugin-manifest-validate.js";
+
+const PLUGINS_DIR = fileURLToPath(new URL("../../plugins", import.meta.url));
 
 describe("P1-6 manifest 校验失败即拒", () => {
 	it("旧插件（无 permissions/apiVersion）放行", () => {
@@ -39,11 +44,22 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		expect(v.errors.some((e) => e.path === "permissions[0]")).toBe(true);
 	});
 
-	it("已知能力族全过", () => {
+	it("已知能力族全过（含 notify / storage / secrets）", () => {
 		for (const f of KNOWN_PERMISSION_FAMILIES) {
 			const v = validatePluginManifest({ permissions: [f] }, "x");
 			expect(v.errors).toEqual([]);
 		}
+		expect(KNOWN_PERMISSION_FAMILIES.has("notify")).toBe(true);
+		expect(KNOWN_PERMISSION_FAMILIES.has("storage")).toBe(true);
+		expect(KNOWN_PERMISSION_FAMILIES.has("secrets")).toBe(true);
+		// 验证 imessage 等官方机器人插件的完整声明在 v2 严格模式下通过
+		const botManifest = {
+			apiVersion: 2,
+			name: "imessage",
+			permissions: ["ui", "tools", "notify", "storage", "secrets", "llm", "chat"],
+		};
+		const vBot = validatePluginManifest(botManifest, "imessage");
+		expect(vBot.errors).toEqual([]);
 	});
 
 	it("有 ui 声明却无 ui 能力（严格模式）即拒", () => {
@@ -64,5 +80,27 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		expect(validatePluginManifest({ permissions: ["ui"], ui: 123 }, "x").errors.some((e) => e.path === "ui")).toBe(
 			true,
 		);
+	});
+
+	it("所有内置官方插件 manifest.json 通过校验且入口不跨目录 import 其他插件 (#622)", () => {
+		const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory());
+		expect(entries.length).toBeGreaterThan(0);
+		for (const dir of entries) {
+			const manifestPath = join(PLUGINS_DIR, dir.name, "manifest.json");
+			if (!existsSync(manifestPath)) continue;
+			const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
+			const v = validatePluginManifest(raw, dir.name);
+			expect(v.errors, `plugins/${dir.name}/manifest.json validation errors`).toEqual([]);
+			if (typeof raw.server === "string" && raw.server) {
+				const serverEntry = join(PLUGINS_DIR, dir.name, raw.server);
+				if (existsSync(serverEntry)) {
+					const code = readFileSync(serverEntry, "utf8");
+					expect(
+						/from\s+["']\.\.\//.test(code),
+						`plugins/${dir.name}/${raw.server} must not import across plugin directories (../)`,
+					).toBe(false);
+				}
+			}
+		}
 	});
 });

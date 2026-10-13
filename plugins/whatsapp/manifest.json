@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "whatsapp",
 	"nameEn": "WhatsApp",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "WhatsApp 机器人与工作台：WhatsApp Cloud API 与双工对话（智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI whatsapp 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "WhatsApp workspace & Bot: WhatsApp Cloud API & duplex chat (structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI whatsapp tool.",
 	"author": "pi-web-ui",

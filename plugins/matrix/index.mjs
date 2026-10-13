@@ -8,7 +8,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_ACCESS_TOKEN = "matrix.accessToken";
 

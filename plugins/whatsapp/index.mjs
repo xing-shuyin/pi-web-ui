@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chunkMarkdownText } from "../feishu/markdown-chunks.mjs";
+import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_ACCESS_TOKEN = "whatsapp.accessToken";
 const GRAPH_API_BASE = "https://graph.facebook.com/v20.0";
