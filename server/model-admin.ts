@@ -11,7 +11,7 @@
  * 经 ModelAdminHost 与 ClientSession 解耦（同 settings/goal/slash 服务模式）。
  * UI 文案直接中文（服务端 notice 约定）。apiKey/headers 绝不下发浏览器。
  */
-import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -101,6 +101,17 @@ export function graduateOverlayModels(
 /** 原子写 JSON（tmp + rename）：进程崩溃不留半截文件。 */
 function atomicWriteJson(path: string, data: unknown): void {
 	writeJsonAtomicSync(path, data);
+}
+
+/** 原子写凭据 JSON 并修权限 0600（port from fork 50e723f，保留上游原子写语义）。
+ *  chmod 覆盖已存在文件（mode 选项只对新建有效）。Windows 下尽力而为。 */
+function atomicWriteCredentialJson(path: string, data: unknown): void {
+	writeJsonAtomicSync(path, data);
+	try {
+		chmodSync(path, CREDENTIAL_FILE_MODE);
+	} catch {
+		/* best-effort (win) */
+	}
 }
 
 /** Strip // and /* *\/ comments without touching string literals (URLs contain //). */
@@ -284,11 +295,40 @@ export interface ProviderKeysData {
 	keys: { name: string; apiKey: string }[];
 }
 
+/** Credential files hold raw provider API keys — always mode 0600.
+ *  models.json can hold per-provider apiKey/headers, so it gets the same treatment. */
+export const CREDENTIAL_FILE_MODE = 0o600;
+
+/** Write a credential file (provider-keys.json / auth.json / models.json) with mode 0600.
+ *  The `mode` option covers creation; the chmod covers pre-existing files
+ *  (mode is ignored when the file already exists). Best-effort on Windows. */
+export function writeCredentialFile(path: string, data: string): void {
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, data, { mode: CREDENTIAL_FILE_MODE });
+	try {
+		chmodSync(path, CREDENTIAL_FILE_MODE);
+	} catch {
+		/* best-effort (win) */
+	}
+}
+
+/** Startup repair: chmod existing credential files to 0600 (best-effort). */
+export function ensureCredentialFilePermissions(agentDir: string): void {
+	for (const name of ["provider-keys.json", "auth.json", "models.json"]) {
+		try {
+			chmodSync(join(agentDir, name), CREDENTIAL_FILE_MODE);
+		} catch {
+			/* missing / win — ignore */
+		}
+	}
+}
+
 export class ModelAdminService {
 	private readonly oauthFlows: ProviderOAuthFlowManager;
 	private readonly activeEnrichAbort = new Map<number, AbortController>();
 
 	constructor(private readonly host: ModelAdminHost) {
+		ensureCredentialFilePermissions(host.agentDir);
 		this.oauthFlows = new ProviderOAuthFlowManager({
 			modelRuntime:
 				host.modelRuntime ??
@@ -426,8 +466,14 @@ export class ModelAdminService {
 	}
 
 	private writeProviderKeys(data: Record<string, ProviderKeysData>): void {
-		// 原子写（tmp+rename）：崩溃不留半截 JSON。
-		writeJsonAtomicSync(this.providerKeysPath(), data);
+		atomicWriteCredentialJson(this.providerKeysPath(), data);
+		// Keep the sibling credential file at 0600 too (e.g. adding an
+		// inactive key rewrites provider-keys.json but not auth.json).
+		try {
+			chmodSync(join(this.host.agentDir, "auth.json"), CREDENTIAL_FILE_MODE);
+		} catch {
+			/* missing / win — ignore */
+		}
 	}
 
 	/** 解析失败的配置文件改名留存为 <name>.corrupt-<timestamp>。改名失败（占用/
@@ -549,7 +595,6 @@ export class ModelAdminService {
 	/** Persist the ACTIVE key's apiKey into auth.json + runtime override + refresh. */
 	private async applyActiveKey(pid: string, apiKey: string): Promise<void> {
 		const authPath = join(this.host.agentDir, "auth.json");
-		mkdirSync(this.host.agentDir, { recursive: true });
 		let data: Record<string, unknown> = {};
 		try {
 			data = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
@@ -557,7 +602,12 @@ export class ModelAdminService {
 			// no file yet / unparsable — start fresh
 		}
 		data[pid] = { type: "api_key", key: apiKey };
-		atomicWriteJson(authPath, data);
+		atomicWriteCredentialJson(authPath, data);
+		try {
+			chmodSync(this.providerKeysPath(), CREDENTIAL_FILE_MODE);
+		} catch {
+			/* missing / win — ignore */
+		}
 		const mr = this.host.modelRuntime?.();
 		if (mr) {
 			await mr.setRuntimeApiKey(pid, apiKey);
@@ -780,7 +830,7 @@ export class ModelAdminService {
 					// no file yet — nothing to clean
 				}
 				delete auth[pid];
-				atomicWriteJson(authPath, auth);
+				atomicWriteCredentialJson(authPath, auth);
 				const mr = this.host.modelRuntime?.();
 				if (mr) {
 					await mr.removeRuntimeApiKey(pid);
@@ -870,7 +920,7 @@ export class ModelAdminService {
 				return;
 			}
 			delete data[pid];
-			atomicWriteJson(authPath, data);
+			atomicWriteCredentialJson(authPath, data);
 			// Clear every stored key so the provider returns to unconfigured.
 			delete keyData[pid];
 			this.writeProviderKeys(keyData);
@@ -1803,7 +1853,7 @@ export class ModelAdminService {
 		const graduated = graduateOverlayModels(providers, official);
 		if (graduated.length === 0) return graduated;
 		try {
-			atomicWriteJson(this.modelsConfigPath(), { providers });
+			atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 		} catch {
 			return [];
 		}
@@ -1845,7 +1895,7 @@ export class ModelAdminService {
 		pid: string,
 	): Promise<void> {
 		mkdirSync(this.host.agentDir, { recursive: true });
-		atomicWriteJson(this.modelsConfigPath(), { providers });
+		atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 
 		// Allow a models.json entry to reuse the provider credential already
 		// stored in auth.json. Seed the shared runtime too, because older pi-ai
@@ -2012,7 +2062,7 @@ export class ModelAdminService {
 				return;
 			}
 			delete providers[providerId];
-			atomicWriteJson(this.modelsConfigPath(), { providers });
+			atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 			await this.host.modelRuntime?.()?.refresh();
 			this.host.invalidatePiConfig?.();
 			await this.listModelsConfig();

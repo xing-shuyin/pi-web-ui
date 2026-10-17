@@ -60,6 +60,7 @@ import { checkAll as checkAllUpdates, collectTargets, resolveNpmRegistry } from 
 import { collectInstalledEngineTargets } from "../engine-probe.js";
 import { previewKind } from "../text-sniff.js";
 import { removeQueuedByIndexOrText } from "../queue-utils.js";
+import { ensureCredentialFilePermissions } from "../model-admin.js";
 import type {
 	BgServer,
 	ClientMessage,
@@ -458,6 +459,7 @@ export class DshClientSession {
 		this.roots = stateStore.getWorkspaceRoots(clientId, cwd);
 		this.dataDir = dataDir;
 		this.agentDir = agentDir;
+		ensureCredentialFilePermissions(this.agentDir);
 		this.sessionRoot = dshSessionRoot(dataDir);
 		this.sandboxes = new SandboxManager(dataDir);
 		try {

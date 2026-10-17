@@ -182,17 +182,39 @@ export function contentFingerprint(m: AgentMessage): string {
 	}
 	const content = (m as unknown as { content?: unknown }).content;
 	if (!Array.isArray(content) || content.length === 0) return "empty";
-	const first = content[0] as { type?: string; text?: string; data?: string };
+	const first = content[0] as {
+		type?: string;
+		text?: string;
+		thinking?: string;
+		data?: string;
+		id?: string;
+		name?: string;
+	};
 	if (first?.type === "image") {
 		return `img:${(first.data ?? "").length}`;
 	}
-	const text = typeof first?.text === "string" ? first.text : "";
+	if (first?.type === "toolCall") {
+		if (typeof first?.id === "string" && first.id.length > 0) return `tc:${first.id}`;
+		return `tc:${first?.name ?? ""}`;
+	}
+	// Ported from fork fix(cache): type-aware contentFingerprint (949a8bd):
+	// thinking-first blocks hash their thinking text (they carry no .text —
+	// else all collide as txt:45h:0). Per-type prefix keeps old txt: keys stable.
+	const tag = first?.type === "thinking" ? "thk" : "txt";
+	const s =
+		tag === "thk"
+			? typeof first?.thinking === "string"
+				? first.thinking
+				: ""
+			: typeof first?.text === "string"
+				? first.text
+				: "";
 	// djb2 — fast enough to run per snapshot, distinct enough for asides.
 	let h = 5381;
-	for (let i = 0; i < text.length && i < 512; i++) {
-		h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+	for (let i = 0; i < s.length && i < 512; i++) {
+		h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
 	}
-	return `txt:${h.toString(36)}:${text.length}`;
+	return `${tag}:${h.toString(36)}:${s.length}`;
 }
 
 export function extractPartialText(partial: unknown): string | null {
