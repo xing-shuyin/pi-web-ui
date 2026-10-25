@@ -361,9 +361,17 @@ export default {
 			return { ok: true, output: clip(out || `pm2 ${st.pm2.version} 已安装`), error: "" };
 		}
 
-		/** 当前应用列表（按需拉，面板每次轮询 /status 时都刷新）。 */
-		async function refreshApps() {
+		let lastRefreshAt = 0;
+		const REFRESH_CACHE_TTL_MS = 2500;
+
+		/** 当前应用列表（带 2.5s TTL 缓存防面板高频轮询开销；变更时传 force=true 强制刷新）。 */
+		async function refreshApps(force = false) {
+			const now = Date.now();
+			if (!force && lastRefreshAt && now - lastRefreshAt < REFRESH_CACHE_TTL_MS) {
+				return st.apps;
+			}
 			st.apps = st.pm2.installed ? await listApps() : [];
+			lastRefreshAt = Date.now();
 			return st.apps;
 		}
 
@@ -414,7 +422,7 @@ export default {
 
 				if (action === "install") {
 					const r = await installPm2();
-					await refreshApps();
+					await refreshApps(true);
 					return r.ok
 						? `pm2 已安装：${st.pm2.version}\n${clip(r.output, 1200)}`
 						: `安装失败：${r.error}\n${clip(r.output, 1200)}`;
@@ -449,7 +457,7 @@ export default {
 					const extra = Array.isArray(p.args) ? p.args.map(String).filter((s) => s !== "") : [];
 					if (extra.length) argv.push("--", ...extra);
 					const r = await pm2(argv);
-					await refreshApps();
+					await refreshApps(true);
 					return r.ok
 						? `已用 pm2 托管 ${appName}：\n${clip(r.output, 1500)}`
 						: `启动失败：${r.error || r.output}\n命令：pm2 ${argv.join(" ")}`;
@@ -471,7 +479,7 @@ export default {
 					const miss = needName();
 					if (miss) return miss;
 					const r = await pm2([action, name]);
-					await refreshApps();
+					await refreshApps(true);
 					return r.ok ? `已 ${action} ${name}：\n${clip(r.output, 800)}` : `操作失败：${r.error || r.output}`;
 				}
 				return `未知 action：${action || "(空)"}。可用：list/start/stop/restart/delete/logs/describe/install/version。`;
@@ -479,9 +487,9 @@ export default {
 		});
 
 		// ── HTTP 路由（面板用）─────────────────────────────────────────────
-		const statusPayload = async () => {
+		const statusPayload = async (force = false) => {
 			if (!st.pm2.installed) await detectPm2({ deep: true });
-			await refreshApps();
+			await refreshApps(force);
 			return {
 				ok: true,
 				installed: st.pm2.installed,
@@ -498,7 +506,7 @@ export default {
 		});
 		const offInstall = host.route("POST", "/install", (_req, res) => {
 			void installPm2()
-				.then(() => statusPayload())
+				.then(() => statusPayload(true))
 				.then((payload) => res.json(payload))
 				.catch((err) => res.json({ ok: false, error: String(err?.message ?? err) }));
 		});
@@ -519,8 +527,7 @@ export default {
 			}
 			void pm2(argv)
 				.then(async (r) => {
-					await refreshApps();
-					const payload = await statusPayload();
+					const payload = await statusPayload(true);
 					res.json({ ...payload, ok: r.ok, output: clip(r.output, 4000), error: r.ok ? "" : r.error });
 				})
 				.catch((err) => res.json({ ok: false, error: String(err?.message ?? err) }));

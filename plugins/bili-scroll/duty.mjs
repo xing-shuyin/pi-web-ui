@@ -136,16 +136,18 @@ export class BiliDutyEngine {
 	}
 
 	getSeenBvids() {
-		if (!existsSync(this.seenFile)) return new Set();
-		try {
-			const text = readFileSync(this.seenFile, "utf8");
-			const set = new Set();
-			const matches = text.matchAll(/BV[0-9A-Za-z]{10}/g);
-			for (const m of matches) set.add(m[0]);
-			return set;
-		} catch {
-			return new Set();
+		const set = new Set();
+		for (const file of [this.seenFile, `${this.seenFile}.1`]) {
+			if (!existsSync(file)) continue;
+			try {
+				const text = readFileSync(file, "utf8");
+				const matches = text.matchAll(/BV[0-9A-Za-z]{10}/g);
+				for (const m of matches) set.add(m[0]);
+			} catch {
+				// ignore
+			}
 		}
+		return set;
 	}
 
 	markSeenVideo(bvid, title, up = "UP主", status = "跳过") {
@@ -160,6 +162,63 @@ export class BiliDutyEngine {
 		const line = `| ${day} ${time} | ${bvid} | ${cleanTitle} | ${cleanUp} | ${status} |\n`;
 		try {
 			appendFileSync(this.seenFile, line, "utf8");
+			this.rotateSeenIfBig();
+		} catch {
+			// ignore
+		}
+	}
+
+	rotateSeenIfBig(limit = 1024 * 1024) {
+		try {
+			if (!existsSync(this.seenFile) || statSync(this.seenFile).size < limit) return;
+			const text = readFileSync(this.seenFile, "utf8");
+			const lines = text.split("\n");
+			if (lines.length <= 1500) return;
+
+			const videoRows = [];
+			let inVideoSection = false;
+			for (const line of lines) {
+				if (line.startsWith("## 看过的视频")) {
+					inVideoSection = true;
+					continue;
+				}
+				if (
+					inVideoSection &&
+					line.trim().startsWith("|") &&
+					!line.includes("日期 | bvid") &&
+					!line.includes("--- | ---")
+				) {
+					videoRows.push(line);
+				}
+			}
+
+			// 保留最近 1500 条视频记录
+			const keptVideoRows = videoRows.slice(-1500);
+
+			// 备份旧文件
+			const bak = `${this.seenFile}.1`;
+			try {
+				rmSync(bak, { force: true });
+			} catch {}
+			renameSync(this.seenFile, bak);
+
+			// 重建规范的 seen.md 表头与保留的最新记录
+			const reconstructed = [
+				"# 刷B站 · 判重表（宿主预建，那一轮只往后面追加）",
+				"",
+				"## 评论记录（BV | rpid | root（楼中楼才填） | 时间 | 正文前 20 字）",
+				"",
+				"| BV | rpid | root（楼中楼才填） | 时间 | 正文前 20 字 |",
+				"| --- | --- | --- | --- | --- |",
+				"",
+				"## 看过的视频",
+				"",
+				"| 日期 | bvid | 标题 | UP | 状态 |",
+				"| --- | --- | --- | --- | --- |",
+				...keptVideoRows,
+				"",
+			].join("\n");
+			writeFileSync(this.seenFile, reconstructed, "utf8");
 		} catch {
 			// ignore
 		}
@@ -716,8 +775,6 @@ export class BiliDutyEngine {
 					hasSubtitle: subInfo.hasSubtitle,
 				});
 
-				this.markSeenVideo(item.bvid, item.title, item.author, `收(${aiAnalysis.tier})`);
-
 				this.emitAction({
 					step: "picked",
 					bvid: item.bvid,
@@ -785,6 +842,11 @@ export class BiliDutyEngine {
 
 		chunk += `\n*因无字幕跳过 ${skippedNoSubtitle} 条。*\n\n`;
 		writeFileSync(reportPath, existing + chunk, "utf8");
+
+		// 日报写盘成功后，再将本轮挑中视频记入 seen.md 判重表（避免写盘失败导致视频被永久排除）
+		for (const p of pickedThisRound) {
+			this.markSeenVideo(p.bvid, p.title, p.author, `收(${p.tier})`);
+		}
 
 		// 拆分单条笔记到 reports/<BV>-<日期>.md，并镜像至指定的 workspace/bili-notes
 		const syncedCount = this.syncSingleNotes(today, settings.workspace);

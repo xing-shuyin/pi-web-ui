@@ -1,7 +1,7 @@
 {
 	"id": "bili-scroll",
 	"name": "bili-scroll",
-	"version": "2.0.3",
+	"version": "2.0.4",
 	"icon": "📺",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"7\" width=\"20\" height=\"15\" rx=\"3\"/><polyline points=\"17 2 12 7 7 2\"/><line x1=\"8\" y1=\"12\" x2=\"8\" y2=\"12.01\"/><line x1=\"16\" y1=\"12\" x2=\"16\" y2=\"12.01\"/></svg>",
 	"description": "每天替你刷一轮 B 站：通读原文字幕深度排雷、三档位精选、默认私信投递、支持私信双向对话与分享看片、视频卡片墙与自动收藏。",

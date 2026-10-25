@@ -1,6 +1,6 @@
 {
 	"name": "bili-scroll",
-	"version": "2.0.3",
+	"version": "2.0.4",
 	"description": "每天替你刷一轮 B站：读字幕排雷挑出值得看的、写一份日报，默认私信投递，支持私信双向看片、刷过的视频卡片墙与自动收藏",
 	"type": "module",
 	"main": "index.mjs"
