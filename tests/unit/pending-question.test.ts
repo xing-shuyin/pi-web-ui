@@ -173,4 +173,29 @@ describe("resolvePendingQuestion", () => {
 		expect(d.question?.id).toBe("q-2");
 		expect(d.source).toBe("snapshot");
 	});
+
+	it("异会话在途快照的待答问卷绝不恢复到当前会话（防串台）", () => {
+		// 当前在 conv-2，收到了 conv-1 晚到的快照
+		const d = resolvePendingQuestion({
+			current: null,
+			source: "live",
+			snapshot: { ...q("q-1"), conversationId: "conv-1" },
+			answered: none,
+			activeConversationId: "conv-2",
+		});
+		expect(d.changed).toBe(false);
+		expect(d.question).toBeNull();
+	});
+
+	it("当前面板属于 conv-1，切到 conv-2 且收到 conv-1 的在途快照时仍立即收起面板", () => {
+		const d = resolvePendingQuestion({
+			current: { ...q("q-1"), conversationId: "conv-1" },
+			source: "snapshot",
+			snapshot: { ...q("q-1"), conversationId: "conv-1" },
+			answered: none,
+			activeConversationId: "conv-2",
+		});
+		expect(d.changed).toBe(true);
+		expect(d.question).toBeNull();
+	});
 });

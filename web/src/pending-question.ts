@@ -39,8 +39,12 @@ export function resolvePendingQuestion(args: {
 	activeConversationId?: string;
 }): PendingQuestionDecision {
 	const { current, source, snapshot, answered, activeConversationId } = args;
-	// 1. 快照有待答问卷 → 恢复（已答过的不恢复；同一张已经在展示则不动）。
-	if (snapshot && snapshot.id && !answered.has(snapshot.id)) {
+	// 若快照携带了具体会话归属且与当前激活会话不符，说明是异会话在途快照，绝不可用于恢复当前面板
+	const isForeignSnapshot = Boolean(
+		snapshot?.conversationId && activeConversationId && snapshot.conversationId !== activeConversationId,
+	);
+	// 1. 快照有待答问卷 → 恢复（已答过的不恢复；同一张已经在展示则不动；跨会话快照不恢复）。
+	if (snapshot && snapshot.id && !answered.has(snapshot.id) && !isForeignSnapshot) {
 		if (current?.id === snapshot.id) return { changed: false, question: current, source };
 		return { changed: true, question: snapshot, source: "snapshot" };
 	}
@@ -50,7 +54,8 @@ export function resolvePendingQuestion(args: {
 	}
 	// 3. 快照明确没有待答问卷 → 收起「由快照恢复的」面板
 	//    （另一标签页答完 / 服务端取消 / 切换对话）。
-	if (!snapshot && current && source === "snapshot") {
+	//    注：若是跨会话快照（isForeignSnapshot），不代表当前激活会话没有问卷，不触发收起。
+	if (!snapshot && current && source === "snapshot" && !isForeignSnapshot) {
 		return { changed: true, question: null, source: "live" };
 	}
 	return { changed: false, question: current, source };

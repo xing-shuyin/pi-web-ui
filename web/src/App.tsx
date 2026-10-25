@@ -99,7 +99,7 @@ import { PluginFilePreview } from "./components/PluginFilePreview";
 import { useChat } from "./use-chat";
 import { useSwipeDrawer } from "./use-swipe-drawer";
 import { appUrl } from "./base-url";
-import type { ClientMessage, CommandDef, PromptAttachment, UiMessage } from "./types";
+import type { ClientMessage, CommandDef, PromptAttachment, UiMessage, UiTextBlock } from "./types";
 import { isZhLocale, useT, useI18n } from "./i18n";
 import { QUICK_PHRASE_DEFAULTS } from "./quick-phrases";
 import {
@@ -130,7 +130,6 @@ import {
 	type StreamSpeechQueue,
 	type TtsSettings,
 } from "./tts";
-import { messagePlainText } from "./copy-text";
 import { shouldSuppressNotify, currentPresence } from "./notify";
 import { useWideChat, useHideModelRow } from "./chat-width-settings";
 import { registerFilePreviewHost } from "./file-preview-bridge";
@@ -1429,6 +1428,7 @@ export function App() {
 	// ── 流式边打字边开口说话管道（Token-to-Speech Streaming Pipeline） ──
 	const streamSpeechQueueRef = useRef<StreamSpeechQueue | null>(null);
 	const streamSpokenOffsetRef = useRef(0);
+	const streamLastScanTimeRef = useRef(0);
 
 	useEffect(() => {
 		const isStreaming = chat.state?.isStreaming ?? false;
@@ -1441,9 +1441,12 @@ export function App() {
 				const msgs = latestMessagesRef.current;
 				const lastMsg = Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null;
 				if (lastMsg && lastMsg.role === "assistant") {
-					const fullRaw = messagePlainText(lastMsg.content);
-					if (fullRaw.length > streamSpokenOffsetRef.current) {
-						const tail = fullRaw.slice(streamSpokenOffsetRef.current);
+					const text = (lastMsg.content ?? [])
+						.filter((b): b is UiTextBlock => b.type === "text")
+						.map((b) => b.text ?? "")
+						.join("\n");
+					if (text.length > streamSpokenOffsetRef.current) {
+						const tail = text.slice(streamSpokenOffsetRef.current);
 						const clean = stripMarkdownForSpeech(tail, 0);
 						if (clean) streamSpeechQueueRef.current.push(clean);
 					}
@@ -1451,6 +1454,7 @@ export function App() {
 				streamSpeechQueueRef.current.finish();
 				streamSpeechQueueRef.current = null;
 				streamSpokenOffsetRef.current = 0;
+				streamLastScanTimeRef.current = 0;
 			}
 			return;
 		}
@@ -1460,8 +1464,19 @@ export function App() {
 		const lastMsg = Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null;
 		if (!lastMsg || lastMsg.role !== "assistant") return;
 
-		const fullRaw = messagePlainText(lastMsg.content);
-		if (fullRaw.length <= streamSpokenOffsetRef.current) return;
+		// 快速提取 text 块原始文本（跳过 thinking/工具调用，避免反复对整条消息跑全局 Markdown 正则）
+		const rawText = (lastMsg.content ?? [])
+			.filter((b): b is UiTextBlock => b.type === "text")
+			.map((b) => b.text ?? "")
+			.join("\n");
+		if (rawText.length <= streamSpokenOffsetRef.current) return;
+
+		// 节流处理：避免高频 message_delta（可能每 10~20ms 一次）频繁触发断句查找
+		const now = Date.now();
+		if (now - streamLastScanTimeRef.current < 150) {
+			return;
+		}
+		streamLastScanTimeRef.current = now;
 
 		// 启动流式播放队列
 		if (!streamSpeechQueueRef.current) {
@@ -1470,7 +1485,7 @@ export function App() {
 		}
 
 		// 在尚未消费的区间寻找标点断句
-		const unconsumed = fullRaw.slice(streamSpokenOffsetRef.current);
+		const unconsumed = rawText.slice(streamSpokenOffsetRef.current);
 		const match = unconsumed.match(/(?:[。！？!?；;\n]|(?<=.{25,})[，,])/);
 		if (match && typeof match.index === "number") {
 			const boundary = match.index + match[0].length;

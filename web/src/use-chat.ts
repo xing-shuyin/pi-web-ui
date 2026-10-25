@@ -1014,16 +1014,17 @@ function reducer(state: ChatState, action: Action): ChatState {
 				ready: true,
 				...(action.engines ? { engines: action.engines } : {}),
 				...(engineChanged
-					? {
+					? ({
 							state: null,
 							models: [],
 							sessions: readCachedSessions(state.state?.cwd, action.engine),
 							conversations: [],
 							terminals: [],
 							dshPatches: null,
-							dshAgentPresets: null,
-							dshPermissionPresets: null,
-						}
+							dshMarket: null,
+							dshPresets: null,
+							dshPermission: null,
+						} satisfies Partial<ChatState>)
 					: {}),
 				...(typeof action.latencyMs === "number" && state.latencyMs == null ? { latencyMs: action.latencyMs } : {}),
 				// Old page + new server (or the reverse) after an in-place update:
@@ -1967,6 +1968,10 @@ export function useChat() {
 	}, [chat.transition]);
 
 	const send = useCallback((msg: ClientMessage) => {
+		const ws = wsRef.current;
+		if (!isWsOpen(ws)) {
+			return false;
+		}
 		// 切换工作目录 / 历史会话 / 运行中对话 / 新建对话：0ms 乐观启动流式进度指示
 		const curState = chatApi.current.chat.state;
 		if (msg.type === "set_cwd" && msg.path) {
@@ -2030,7 +2035,6 @@ export function useChat() {
 				});
 			}
 		}
-		const ws = wsRef.current;
 		if (isWsOpen(ws)) {
 			// Forced re-check: drop stale rows immediately so the "checking"
 			// state renders instead of the cached list.
@@ -2245,8 +2249,13 @@ export function useChat() {
 					} else if (cur.conversationId !== msg.conversationId || cur.rev !== msg.baseRev) {
 						scheduleResync();
 					}
+					const activeId = chatApi.current.chat.activeConversationId || cur?.conversationId;
+					if (activeId && msg.conversationId !== activeId) {
+						// 跨会话晚到 delta，直接丢弃，防止污染当前会话或串台弹问卷
+						break;
+					}
 					dispatch({ type: "snapshot_delta", msg });
-					syncPendingQuestion(msg.state.pendingQuestion, msg.conversationId);
+					syncPendingQuestion(msg.state.pendingQuestion, activeId || msg.conversationId);
 					break;
 				}
 				case "earlier_messages":

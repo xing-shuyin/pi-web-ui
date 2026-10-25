@@ -930,6 +930,11 @@ export function MessageList({
 		[isPagingActive, messages, visibleCount, requestServerPage, earlierPageSize, cancelSettle, capturePrependAnchor],
 	);
 
+	const hasEarlierRef = useRef(hasEarlier);
+	hasEarlierRef.current = hasEarlier;
+	const loadEarlierRef = useRef(loadEarlier);
+	loadEarlierRef.current = loadEarlier;
+
 	const loadAllEarlier = useCallback(() => {
 		if (preview) return;
 		cancelSettle();
@@ -1445,10 +1450,10 @@ export function MessageList({
 				disengageStick();
 
 				// 若滚轮接近顶部且还有更早历史，自动静默预加载上一页
-				if (hasEarlier) {
+				if (hasEarlierRef.current) {
 					const el = scrollRef.current;
 					if (el && el.scrollTop <= 80) {
-						loadEarlier();
+						loadEarlierRef.current();
 					}
 				}
 			} else if (e.deltaY > 0) {
