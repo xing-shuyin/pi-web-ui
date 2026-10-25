@@ -93,7 +93,7 @@ export const fileHandlers = [
 						<div style="font-size: 42px; margin-bottom: 14px;">📑</div>
 						<div style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: #f8fafc;">需要就绪 Univer 高保真运行时</div>
 						<div style="font-size: 12.5px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px;">
-							Univer 原生 Canvas 渲染与 1:1 双向编辑需要一次性下载独立运行时组件（压缩包约 42MB，不占用 npm 发布体积）。安装完成后永久本地离线运行。
+							Univer 原生 Canvas 渲染与 1:1 双向编辑需要一次性下载独立运行时组件（压缩包约 34MB，不占用 npm 发布体积）。安装完成后永久本地离线运行。
 						</div>
 						<div data-el="prog-wrap" style="display: none; margin-bottom: 18px;">
 							<div style="height: 6px; background: #333a4d; border-radius: 3px; overflow: hidden; margin-bottom: 6px;">
@@ -102,7 +102,7 @@ export const fileHandlers = [
 							<div data-el="prog-text" style="font-size: 11.5px; color: #94a3b8;">正在下载运行时组件…</div>
 						</div>
 						<button data-act="start-download" type="button" style="background: #3b82f6; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .15s;">
-							⚡ 一键自动下载并激活 (~42MB)
+							⚡ 一键自动下载并激活 (~34MB)
 						</button>
 					</div>
 				`;

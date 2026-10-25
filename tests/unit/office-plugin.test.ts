@@ -9,8 +9,8 @@ describe("office plugin verification (plugins/office)", () => {
 		const manifest = JSON.parse(readFileSync(join(pluginDir, "manifest.json"), "utf8"));
 		const pkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf8"));
 
-		expect(manifest.version).toBe("0.3.4");
-		expect(pkg.version).toBe("0.3.4");
+		expect(manifest.version).toBe("0.3.5");
+		expect(pkg.version).toBe("0.3.5");
 		expect(manifest.apiVersion).toBe(2);
 		expect(manifest.permissions).toContain("tools");
 		expect(manifest.permissions).toContain("http");
@@ -58,5 +58,47 @@ describe("office plugin verification (plugins/office)", () => {
 		const resolved = mockHost.resolveInWorkspace("data.xlsx");
 		expect(hostResolveCalled).toBe(true);
 		expect(resolved).toBe(resolve(mockCwd, "data.xlsx"));
+	});
+
+	it("纯按需下载架构：artifacts 产物已从 git 剥离，且插件激活在无预装产物时优雅降级并暴露就绪状态", async () => {
+		const mod = await import(join(pluginDir, "index.mjs"));
+		const logs: string[] = [];
+		const routes: Record<string, Function> = {};
+		let registeredTool: any = null;
+
+		const mockHost = {
+			cwd: resolve("/fake/workspace"),
+			log: (msg: string) => logs.push(msg),
+			route: (method: string, path: string, handler: Function) => {
+				routes[`${method} ${path}`] = handler;
+			},
+			registerTool: (tool: any) => {
+				registeredTool = tool;
+			},
+		};
+
+		const cleanup = await mod.default.activate(mockHost);
+		expect(logs.some((l) => l.includes("按需下载"))).toBe(true);
+		expect(typeof routes["GET /status"]).toBe("function");
+		expect(typeof routes["POST /provision-runtime"]).toBe("function");
+
+		// 验证 /status 路由报告 hasArtifacts 为 false
+		let jsonResult: any = null;
+		const mockRes = {
+			json: (data: any) => {
+				jsonResult = data;
+			},
+		};
+		await routes["GET /status"]({}, mockRes);
+		expect(jsonResult).toBeTruthy();
+		expect(jsonResult.ok).toBe(true);
+		expect(jsonResult.ready).toBe(false);
+		expect(jsonResult.hasArtifacts).toBe(false);
+
+		// 工具正确注册
+		expect(registeredTool).toBeTruthy();
+		expect(registeredTool.name).toBe("office");
+
+		if (typeof cleanup === "function") cleanup();
 	});
 });

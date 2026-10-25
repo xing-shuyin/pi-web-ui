@@ -1,6 +1,6 @@
 {
 	"name": "office-plugin",
-	"version": "0.3.4",
+	"version": "0.3.5",
 	"private": true,
 	"type": "module",
 	"description": "pi-web-ui plugin for high-fidelity Office preview powered by Univer Canvas engine"

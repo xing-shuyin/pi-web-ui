@@ -3,7 +3,7 @@
  *
  * 架构：
  * 1. 采用纯插件化解耦设计，不随 npm 发布大体积二进制包；
- * 2. 首次使用时支持按需自动流式下载解压 ~42MB 运行时资产（artifacts）；
+ * 2. 首次使用时支持按需自动流式下载解压 ~34MB 运行时资产（artifacts）；
  * 3. 激活时拉起本地隔离的 Univer Gateway 守护进程（动态端口）；
  * 4. 注册 fileHandlers 接管 .pptx / .docx / .xlsx 文件的 1:1 Canvas 渲染与双向编辑；
  * 5. 注册 AI 专属工具 office，支持结构化表格查询、读写与无损写回磁盘。
@@ -35,7 +35,7 @@ const PLUGIN_NODE_MODULES = join(__dirname, "node_modules");
 
 const DEFAULT_RUNTIME_URL =
 	process.env.PI_WEB_UNIVER_RUNTIME_URL ||
-	"https://github.com/xing-shuyin/pi-web-ui/releases/download/v0.110.0/univer-artifacts.tar.gz";
+	"https://github.com/xing-shuyin/pi-web-ui/releases/download/v0.111.0/univer-artifacts.tar.gz";
 
 /** 工作区边界：relPath/targetPath 解析后必须落在 cwd 内，防越界读写
  *  （`../../secret` 之类可借路由读写工作区外任意文件）。 */
@@ -157,8 +157,10 @@ export default {
 		if (existsSync(GATEWAY_ENTRY) && existsSync(VIEWER_ROOT)) {
 			await startGateway();
 		} else {
-			host.log("Univer 运行时资产尚未就绪，将在首次需要时按需下载（约 42MB）");
+			host.log("Univer 运行时资产尚未就绪，将在首次需要时按需下载（约 34MB）");
 		}
+
+		let activeDownloadPromise = null;
 
 		/** 流式下载并解压运行时压缩包 */
 		async function downloadAndExtractRuntime() {
@@ -166,90 +168,100 @@ export default {
 				await startGateway();
 				return { ok: true, message: "Runtime already present" };
 			}
+			if (activeDownloadPromise) {
+				return await activeDownloadPromise;
+			}
 
-			provisioningState.downloading = true;
-			provisioningState.progress = 0;
-			provisioningState.error = null;
+			activeDownloadPromise = (async () => {
+				provisioningState.downloading = true;
+				provisioningState.progress = 0;
+				provisioningState.error = null;
 
-			const targetTar = join(__dirname, "univer-artifacts.tar.gz");
-			try {
-				host.log(`正在从 ${DEFAULT_RUNTIME_URL} 下载 Univer 运行时压缩包...`);
-				// 停滞连接（对端不发 RST）会让裸 fetch 挂数分钟，期间
-				// provisioningState.downloading 卡在 true，一键安装只回
-				// "Download already in progress"——整体 10 分钟兜底超时。
-				const fetchFn = typeof host.fetch === "function" ? host.fetch.bind(host) : fetch;
-				const res = await fetchFn(DEFAULT_RUNTIME_URL, { timeoutMs: 600_000, signal: AbortSignal.timeout(600_000) });
-				if (!res.ok) throw new Error(`下载 Univer 运行时失败: HTTP ${res.status}`);
+				const targetTar = join(__dirname, "univer-artifacts.tar.gz");
+				try {
+					host.log(`正在从 ${DEFAULT_RUNTIME_URL} 下载 Univer 运行时压缩包...`);
+					// 停滞连接（对端不发 RST）会让裸 fetch 挂数分钟，期间
+					// provisioningState.downloading 卡在 true，一键安装只回
+					// "Download already in progress"——整体 10 分钟兜底超时。
+					const fetchFn = typeof host.fetch === "function" ? host.fetch.bind(host) : fetch;
+					const res = await fetchFn(DEFAULT_RUNTIME_URL, { timeoutMs: 600_000, signal: AbortSignal.timeout(600_000) });
+					if (!res.ok) throw new Error(`下载 Univer 运行时失败: HTTP ${res.status}`);
 
-				const total = Number(res.headers.get("content-length") || 0);
-				provisioningState.total = total;
+					const total = Number(res.headers.get("content-length") || 0);
+					provisioningState.total = total;
 
-				const fileStream = createWriteStream(targetTar);
-				// 写盘失败（磁盘满/权限）默认不会抛到 await 链，必须显式监听
-				let streamError = null;
-				fileStream.on("error", (e) => {
-					streamError = e;
-				});
-				const reader = res.body?.getReader();
-				if (!reader) throw new Error("无法读取响应体流");
+					const fileStream = createWriteStream(targetTar);
+					// 写盘失败（磁盘满/权限）默认不会抛到 await 链，必须显式监听
+					let streamError = null;
+					fileStream.on("error", (e) => {
+						streamError = e;
+					});
+					const reader = res.body?.getReader();
+					if (!reader) throw new Error("无法读取响应体流");
 
-				let downloaded = 0;
-				while (true) {
-					if (streamError) throw streamError;
-					const { done, value } = await reader.read();
-					if (done) break;
-					if (value) {
-						if (!fileStream.write(Buffer.from(value))) {
-							await new Promise((r) => fileStream.once("drain", r));
-						}
-						downloaded += value.length;
-						provisioningState.downloaded = downloaded;
-						if (total > 0) {
-							provisioningState.progress = Math.round((downloaded / total) * 100);
+					let downloaded = 0;
+					while (true) {
+						if (streamError) throw streamError;
+						const { done, value } = await reader.read();
+						if (done) break;
+						if (value) {
+							if (!fileStream.write(Buffer.from(value))) {
+								await new Promise((r) => fileStream.once("drain", r));
+							}
+							downloaded += value.length;
+							provisioningState.downloaded = downloaded;
+							if (total > 0) {
+								provisioningState.progress = Math.round((downloaded / total) * 100);
+							}
 						}
 					}
+					await new Promise((r) => fileStream.end(r));
+					if (streamError) throw streamError;
+
+					host.log("下载完成，正在解压 Univer 运行时组件...");
+					// 解压到 staging 目录、成功后整体替换：tar 顺序解压中途失败（磁盘满/
+					// 进程被杀/压缩包截断）会在 artifacts/ 留下 gateway.cjs 已解出而 viewer
+					// 只解一半的半成品——所有 existsSync 门禁随即误判"已安装"，且下载
+					// 函数开头 short-circuit，再无自愈通道，用户永远只看到"网关启动超时"。
+					const stagingDir = join(__dirname, `.univer-staging-${Date.now()}`);
+					mkdirSync(stagingDir, { recursive: true });
+					try {
+						execSync(`tar -xzf "${targetTar}" -C "${stagingDir}"`, { windowsHide: true });
+						const extracted = existsSync(join(stagingDir, "artifacts")) ? join(stagingDir, "artifacts") : stagingDir;
+						rmSync(join(__dirname, "artifacts"), { recursive: true, force: true });
+						renameSync(extracted, join(__dirname, "artifacts"));
+					} catch (e) {
+						rmSync(join(__dirname, "artifacts"), { recursive: true, force: true });
+						throw e;
+					} finally {
+						rmSync(stagingDir, { recursive: true, force: true });
+					}
+					try {
+						unlinkSync(targetTar);
+					} catch {}
+
+					provisioningState.downloading = false;
+					provisioningState.progress = 100;
+
+					const started = await startGateway();
+					if (!started) throw new Error("运行时解压成功但启动网关守护进程失败");
+
+					host.log("Univer 运行时就绪且网关已成功拉起！");
+					return { ok: true };
+				} catch (err) {
+					provisioningState.downloading = false;
+					provisioningState.error = err.message || String(err);
+					try {
+						unlinkSync(targetTar);
+					} catch {}
+					host.log(`Univer 运行时自动安装失败: ${provisioningState.error}`);
+					throw err;
 				}
-				await new Promise((r) => fileStream.end(r));
-				if (streamError) throw streamError;
+			})().finally(() => {
+				activeDownloadPromise = null;
+			});
 
-				host.log("下载完成，正在解压 Univer 运行时组件...");
-				// 解压到 staging 目录、成功后整体替换：tar 顺序解压中途失败（磁盘满/
-				// 进程被杀/压缩包截断）会在 artifacts/ 留下 gateway.cjs 已解出而 viewer
-				// 只解一半的半成品——所有 existsSync 门禁随即误判"已安装"，且下载
-				// 函数开头 short-circuit，再无自愈通道，用户永远只看到"网关启动超时"。
-				const stagingDir = join(__dirname, `.univer-staging-${Date.now()}`);
-				mkdirSync(stagingDir, { recursive: true });
-				try {
-					execSync(`tar -xzf "${targetTar}" -C "${stagingDir}"`, { windowsHide: true });
-					rmSync(join(__dirname, "artifacts"), { recursive: true, force: true });
-					renameSync(join(stagingDir, "artifacts"), join(__dirname, "artifacts"));
-				} catch (e) {
-					rmSync(join(__dirname, "artifacts"), { recursive: true, force: true });
-					throw e;
-				} finally {
-					rmSync(stagingDir, { recursive: true, force: true });
-				}
-				try {
-					unlinkSync(targetTar);
-				} catch {}
-
-				provisioningState.downloading = false;
-				provisioningState.progress = 100;
-
-				const started = await startGateway();
-				if (!started) throw new Error("运行时解压成功但启动网关守护进程失败");
-
-				host.log("Univer 运行时就绪且网关已成功拉起！");
-				return { ok: true };
-			} catch (err) {
-				provisioningState.downloading = false;
-				provisioningState.error = err.message || String(err);
-				try {
-					unlinkSync(targetTar);
-				} catch {}
-				host.log(`Univer 运行时自动安装失败: ${provisioningState.error}`);
-				throw err;
-			}
+			return await activeDownloadPromise;
 		}
 
 		// 内存缓存：filePath:mtime -> { univerPath, unitId }
@@ -258,8 +270,15 @@ export default {
 		/** 将工作区 Office 文件转换并注册为 Univer Unit */
 		async function prepareUniverDoc(absPath) {
 			if (!gatewayReady) {
-				const ok = await startGateway();
-				if (!ok) throw new Error("Univer 渲染网关尚未就绪，请先安装运行时组件");
+				if (!existsSync(GATEWAY_ENTRY) || !existsSync(VIEWER_ROOT)) {
+					host.log("Univer 运行时资产未就绪，正在按需自动下载解压 (~34MB)...");
+					await downloadAndExtractRuntime();
+				} else {
+					await startGateway();
+				}
+				if (!gatewayReady) {
+					throw new Error("Univer 渲染网关尚未就绪，请先安装运行时组件");
+				}
 			}
 
 			const st = statSync(absPath);

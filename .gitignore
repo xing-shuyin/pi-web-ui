@@ -34,6 +34,8 @@ plugins/*/*.cookie*
 plugins/*/*_token*
 plugins/*/*_cookie*
 plugins/*/*_session*
+plugins/*/artifacts/
+plugins/*/*.tar.gz
 
 # Scratch/test temp files
 tests/scratch/
