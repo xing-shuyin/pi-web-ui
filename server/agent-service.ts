@@ -187,6 +187,7 @@ import {
 	approvalSuppressionReason,
 	checkDangerousToolCall,
 	isApprovalPolicyEmpty,
+	pluginApprovalCategory,
 	type ApprovalPolicy,
 	type PendingApprovalEntry,
 	type ToolApprovalResolution,
@@ -3435,22 +3436,22 @@ export class ClientSession {
 						() => this.getLang(),
 					),
 					...makePersistentTerminalTools(terminals, effectiveCwd, () => this.getLang(), {
-						checkSafety: (cmd) => {
+						checkSafety: async (cmd, ctx) => {
 							// 沙盒硬围栏：禁止引用源项目路径或跳出沙盒根。
 							const activeSbx = this.sandboxes.getByCwd(effectiveCwd);
 							if (activeSbx) {
 								const sbxDenied = evaluateSandboxJail(activeSbx, "bash", { command: cmd }, effectiveCwd);
-								if (sbxDenied) return { blocked: true, reason: sbxDenied.reason };
+								if (sbxDenied) return { blocked: true, reason: sbxDenied.reason, reasonEn: sbxDenied.reasonEn };
 							}
 							// 计划模式：终端只放行只读命令（常驻终端也走这条，与 bash 覆盖同口径）。
 							if (this.planModeOf(ownerId)) {
 								const denied = planModeDenial("bash", { command: cmd });
-								if (denied) return { blocked: true, reason: denied.reason };
+								if (denied) return { blocked: true, reason: denied.reason, reasonEn: denied.reasonEn };
 							}
 							// 目标审查回合：常驻终端同样只放只读命令（审查者跑测试可以，改文件不行）。
 							if (this.goalReviewTurnOf(ownerId)) {
 								const denied = goalReviewDenial("bash", { command: cmd });
-								if (denied) return { blocked: true, reason: denied.reason };
+								if (denied) return { blocked: true, reason: denied.reason, reasonEn: denied.reasonEn };
 							}
 							const perm =
 								(ownerId ? this.convs.get(ownerId)?.permissionPreset : undefined) ??
@@ -3465,9 +3466,14 @@ export class ClientSession {
 									this.approvalRules.list(),
 								);
 								if (danger.denied || danger.dangerous) {
-									return { blocked: true, reason: danger.reason || "只读模式禁止执行高危/破坏性命令" };
+									return {
+										blocked: true,
+										reason: danger.reason || "只读模式禁止执行高危/破坏性命令",
+										reasonEn: danger.reasonEn || "Read-only mode forbids dangerous or destructive commands",
+									};
 								}
 							}
+							// 1. 系统核心安全：内置高危操作检测与自定义审批规则先行（优先级最高，防绕过）
 							const danger = checkDangerousToolCall(
 								"bash",
 								{ command: cmd },
@@ -3476,7 +3482,76 @@ export class ClientSession {
 								this.approvalRules.list(),
 							);
 							if (danger.denied) {
-								return { blocked: true, reason: danger.reason || "命中系统阻断规则" };
+								return {
+									blocked: true,
+									reason: danger.reason || "命中系统阻断规则",
+									reasonEn: danger.reasonEn || "Blocked by system approval rule",
+								};
+							}
+							// 2. 插件前置守卫 deny 拦截
+							let pre: Awaited<ReturnType<ToolGuardHook["pre"]>> | undefined;
+							if (this.lateToolGuard) {
+								try {
+									pre = await this.lateToolGuard.pre(
+										{ toolName: "bash", params: { command: cmd }, conversationId: ownerId },
+										this.getLang(),
+									);
+								} catch {
+									pre = { verdict: { decision: "allow" } };
+								}
+							}
+							if (pre?.verdict.decision === "deny") {
+								return {
+									blocked: true,
+									reason: pre.verdict.reason ?? "插件拒绝执行此命令",
+									reasonEn: pre.verdict.reasonEn ?? "Plugin denied execution of this command",
+								};
+							}
+
+							// 3. 决定是否需要弹窗审批（系统高危 ask 优先于插件通用 ask，issue #721）
+							let needApproval = false;
+							let approvalReason: string | undefined;
+							let approvalReasonEn: string | undefined;
+							let approvalCategory: UiApprovalCategory | undefined;
+							let approvalHits: UiApprovalHit[] | undefined;
+
+							if (danger.dangerous) {
+								needApproval = true;
+								approvalReason = danger.reason;
+								approvalReasonEn = danger.reasonEn;
+								approvalCategory = danger.category;
+								approvalHits = danger.hits;
+							} else if (pre?.verdict.decision === "ask") {
+								needApproval = true;
+								approvalReason = pre.verdict.reason ?? "插件要求确认本次操作";
+								approvalReasonEn = pre.verdict.reasonEn ?? "Plugin requested confirmation for this operation";
+								approvalCategory = pluginApprovalCategory(pre.pluginId ?? "plugin");
+							}
+
+							if (needApproval) {
+								const res = await this.askApproval(
+									ctx.toolCallId,
+									"bash",
+									{ command: cmd, terminalId: ctx.terminalId },
+									approvalReason,
+									approvalReasonEn,
+									ownerId,
+									approvalCategory,
+									approvalHits,
+								);
+								if (res.decision === "deny") {
+									return {
+										blocked: true,
+										userDenied: true,
+										reason: res.reason || "操作被用户拒绝",
+										reasonEn: res.reason || "Operation denied by user",
+									};
+								}
+								if (res.decision === "edit") {
+									const editedCmd =
+										typeof (res.editedParams as any)?.command === "string" ? (res.editedParams as any).command : cmd;
+									return { editedCommand: editedCmd };
+								}
 							}
 							return {};
 						},

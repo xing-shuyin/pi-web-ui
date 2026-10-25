@@ -199,6 +199,8 @@ interface TermEntry {
 	used: boolean;
 	/** UI locale at creation ("en" = English exit banner, else Chinese). */
 	locale?: string;
+	/** AI 输入累积命令行缓冲（用于 terminal_input / terminal_key 跨调用行判定防绕过，issue #721） */
+	agentPendingLine: string;
 }
 
 const isWindows = process.platform === "win32";
@@ -976,6 +978,51 @@ export function encodeTerminalKey(
 	return { data };
 }
 
+export interface TerminalLineStreamParseResult {
+	/** 本次输入闭合提交的所有完整命令行（每一项已去除末尾换行符） */
+	completedLines: string[];
+	/** 剩余未闭合的待提交命令行片段（无换行） */
+	remainingPending: string;
+}
+
+/**
+ * 终端行输入流状态机解析（纯函数，issue #721）。
+ *
+ * 结合前次未完成的行缓冲与本次输入字符，按换行符（CR / LF / CRLF）切分出
+ * 全部已闭合的完整命令行，并正确处理退格（Backspace）与中断清除（Ctrl+C / Ctrl+U）。
+ */
+export function parseTerminalLineStream(previousPending: string, inputChunk: string): TerminalLineStreamParseResult {
+	const completedLines: string[] = [];
+	let current = previousPending;
+	let i = 0;
+	while (i < inputChunk.length) {
+		const ch = inputChunk[i];
+		if (ch === "\r" || ch === "\n") {
+			completedLines.push(current);
+			current = "";
+			// 处理 CRLF 双字符换行：若为 \r 且后一个字符是 \n，跳过后续 \n
+			if (ch === "\r" && i + 1 < inputChunk.length && inputChunk[i + 1] === "\n") {
+				i++;
+			}
+		} else if (ch === "\x03" || ch === "\x15") {
+			// Ctrl+C (ETX) 或 Ctrl+U (NAK) 清除当前行
+			current = "";
+		} else if (ch === "\x7f" || ch === "\x08") {
+			// 退格键 Backspace
+			if (current.length > 0) {
+				current = current.slice(0, -1);
+			}
+		} else {
+			current += ch;
+		}
+		i++;
+	}
+	return {
+		completedLines,
+		remainingPending: current,
+	};
+}
+
 /**
  * Owns one or more PTYs for a conversation. All output is forwarded as
  * `terminal_output` messages through the provided emit (broadcast to every
@@ -993,6 +1040,23 @@ export class TerminalManager {
 	/** 宿主回调：AI 触碰过的终端静默 ≥ 阈值时触发（一次性/纪元语义见
 	 *  noteAgentActivity）。宿主自行判断会话是否在运行并决定是否注入。 */
 	onAgentIdle: ((terminalId: string, idleMs: number, title: string, lastLines: string) => void) | null = null;
+
+	/** 获取该终端当前被 AI 累积但尚未提交的命令行（issue #721） */
+	getAgentPendingLine(id: string): string {
+		return this.terms.get(id)?.agentPendingLine ?? "";
+	}
+
+	/** 设置该终端 AI 累积的待提交行（issue #721） */
+	setAgentPendingLine(id: string, line: string): void {
+		const entry = this.terms.get(id);
+		if (entry) entry.agentPendingLine = line;
+	}
+
+	/** 清空该终端 AI 累积的待提交行（issue #721） */
+	clearAgentPendingLine(id: string): void {
+		const entry = this.terms.get(id);
+		if (entry) entry.agentPendingLine = "";
+	}
 
 	constructor(
 		private emit: (msg: ServerMessage) => void,
@@ -1287,6 +1351,7 @@ export class TerminalManager {
 			// noteAgentActivity）。
 			used: agentBash || command !== undefined,
 			locale,
+			agentPendingLine: "",
 		};
 		this.terms.set(id, entry);
 		// The closures capture `entry`: after a restart the map points at the
@@ -1762,6 +1827,9 @@ export class TerminalManager {
 	}
 
 	input(id: string, data: string): void {
+		if (data.includes("\r") || data.includes("\n") || data.includes("\x03")) {
+			this.clearAgentPendingLine(id);
+		}
 		void this.inputChecked(id, data);
 	}
 
@@ -2399,15 +2467,32 @@ export const TERMINAL_TOOLS_GUIDANCE = `Persistent interactive terminal tools ar
 - The user asks you to work in the visible terminal panel.
 Liveness watchdog: terminals you touched are monitored — if one goes silent while you are working (default 15s), a system reminder prompts you to check it (terminal_read), answer its input prompt, or close it (terminal_close) if no longer needed.`;
 
+export interface TerminalSafetyCheckResult {
+	blocked?: boolean;
+	reason?: string;
+	reasonEn?: string;
+	userDenied?: boolean;
+	editedCommand?: string;
+}
+
+export interface PersistentTerminalToolsOptions {
+	checkSafety?: (
+		cmd: string,
+		ctx: {
+			terminalId: string;
+			toolCallId: string;
+			toolName: "terminal_input" | "terminal_key";
+		},
+	) => Promise<TerminalSafetyCheckResult> | TerminalSafetyCheckResult;
+}
+
 /** Build the agent-facing persistent terminal tools for one conversation. */
 export function makePersistentTerminalTools(
 	terminals: TerminalManager,
 	cwd: string,
 	/** per-call 返回文本的服务端语言（默认英文）；工具 definition 为纯英文。 */
 	lang?: () => ServerLang,
-	options?: {
-		checkSafety?: (cmd: string) => { blocked?: boolean; reason?: string };
-	},
+	options?: PersistentTerminalToolsOptions,
 ): ToolDefinition[] {
 	const getLang: () => ServerLang = lang ?? (() => "en");
 	const result = (
@@ -2419,6 +2504,29 @@ export function makePersistentTerminalTools(
 	} => ({ content: [{ type: "text", text }], details });
 	const failIf = (error: string | null): void => {
 		if (error) throw new Error(error);
+	};
+
+	// 针对单测或外部 mock 的行缓冲兜底支持
+	const fallbackPending = new Map<string, string>();
+	const getPending = (id: string): string => {
+		if (typeof terminals.getAgentPendingLine === "function") {
+			return terminals.getAgentPendingLine(id);
+		}
+		return fallbackPending.get(id) ?? "";
+	};
+	const setPending = (id: string, line: string): void => {
+		if (typeof terminals.setAgentPendingLine === "function") {
+			terminals.setAgentPendingLine(id, line);
+		} else {
+			fallbackPending.set(id, line);
+		}
+	};
+	const clearPending = (id: string): void => {
+		if (typeof terminals.clearAgentPendingLine === "function") {
+			terminals.clearAgentPendingLine(id);
+		} else {
+			fallbackPending.delete(id);
+		}
 	};
 
 	return [
@@ -2501,21 +2609,75 @@ export function makePersistentTerminalTools(
 			parameters: Type.Object({ terminalId: Type.String(), data: Type.String() }),
 			execute: async (_id, p) => {
 				const lang = getLang();
-				if (options?.checkSafety && (p.data.includes("\n") || p.data.includes("\r"))) {
-					const safety = options.checkSafety(p.data.trim());
-					if (safety.blocked) {
-						throw new Error(
-							pick(
-								lang,
-								`【终端输入命令被安全规则阻断】${safety.reason ? ` 原因：${safety.reason}` : ""}`,
-								`[Terminal command blocked by safety rule]${safety.reason ? ` Reason: ${safety.reason}` : ""}`,
-								"terminals.command.blocked",
-								{ reason: safety.reason ?? "" },
-							),
-						);
+				const prevPending = getPending(p.terminalId);
+				const parsed = parseTerminalLineStream(prevPending, p.data);
+
+				if (options?.checkSafety && parsed.completedLines.length > 0) {
+					for (const line of parsed.completedLines) {
+						const cleanCmd = stripAnsi(line).trim();
+						if (!cleanCmd) continue;
+						const safety = await options.checkSafety(cleanCmd, {
+							terminalId: p.terminalId,
+							toolCallId: _id,
+							toolName: "terminal_input",
+						});
+						if (safety.blocked) {
+							// 发现阻断：若终端此前已留有未提交字符，发送 \x03 取消当前行
+							if (prevPending) {
+								try {
+									terminals.inputChecked(p.terminalId, "\x03");
+								} catch {
+									// ignore
+								}
+							}
+							clearPending(p.terminalId);
+							const reason = pick(lang, safety.reason ?? "", safety.reasonEn ?? safety.reason ?? "");
+							const reasonSuffix = reason ? (lang === "zh" ? ` 原因：${reason}` : ` Reason: ${reason}`) : "";
+							throw new Error(
+								safety.userDenied
+									? pick(
+											lang,
+											`【操作被用户拒绝】${reasonSuffix}`,
+											`[Operation denied by user]${reasonSuffix}`,
+											"terminals.operation.denied",
+											{ reasonSuffix },
+										)
+									: pick(
+											lang,
+											`【终端输入命令被安全规则阻断】${reasonSuffix}`,
+											`[Terminal command blocked by safety rule]${reasonSuffix}`,
+											"terminals.command.blocked",
+											{ reasonSuffix },
+										),
+							);
+						}
+						if (safety.editedCommand !== undefined) {
+							// 用户通过审批改写了命令
+							if (prevPending) {
+								try {
+									terminals.inputChecked(p.terminalId, "\x03");
+								} catch {
+									// ignore
+								}
+							}
+							clearPending(p.terminalId);
+							failIf(terminals.inputChecked(p.terminalId, safety.editedCommand + "\r"));
+							terminals.noteAgentActivity(p.terminalId);
+							return result(
+								pick(
+									lang,
+									`已发送改写后的命令到 ${p.terminalId}：${safety.editedCommand}`,
+									`Sent edited command to ${p.terminalId}: ${safety.editedCommand}`,
+									"terminals.input.edited_sent",
+									{ command: safety.editedCommand, "p.terminalId": p.terminalId },
+								),
+							);
+						}
 					}
 				}
+
 				failIf(terminals.inputChecked(p.terminalId, p.data));
+				setPending(p.terminalId, parsed.remainingPending);
 				// AI 发了输入 = 在等结果，重开一个静默纪元。
 				terminals.noteAgentActivity(p.terminalId);
 				return result(
@@ -2548,8 +2710,88 @@ export function makePersistentTerminalTools(
 			}),
 			execute: async (_id, p) => {
 				const lang = getLang();
-				failIf(terminals.key(p.terminalId, p.key, p.modifiers));
-				// 同 terminal_input：AI 主动交互后重新计时。
+				const encoded = encodeTerminalKey(p.key, p.modifiers);
+				if ("error" in encoded) throw new Error(encoded.error);
+
+				const isEnter = encoded.data.includes("\r") || encoded.data.includes("\n");
+				if (isEnter) {
+					const pending = getPending(p.terminalId);
+					const cleanCmd = stripAnsi(pending).trim();
+					if (options?.checkSafety && cleanCmd) {
+						const safety = await options.checkSafety(cleanCmd, {
+							terminalId: p.terminalId,
+							toolCallId: _id,
+							toolName: "terminal_key",
+						});
+						if (safety.blocked) {
+							// 阻断 Enter 提交：发送 \x03 冲刷取消终端屏幕残留的脏命令
+							try {
+								terminals.inputChecked(p.terminalId, "\x03");
+							} catch {
+								// ignore
+							}
+							clearPending(p.terminalId);
+							const reason = pick(lang, safety.reason ?? "", safety.reasonEn ?? safety.reason ?? "");
+							const reasonSuffix = reason ? (lang === "zh" ? ` 原因：${reason}` : ` Reason: ${reason}`) : "";
+							throw new Error(
+								safety.userDenied
+									? pick(
+											lang,
+											`【操作被用户拒绝】${reasonSuffix}`,
+											`[Operation denied by user]${reasonSuffix}`,
+											"terminals.operation.denied",
+											{ reasonSuffix },
+										)
+									: pick(
+											lang,
+											`【终端输入命令被安全规则阻断】${reasonSuffix}`,
+											`[Terminal command blocked by safety rule]${reasonSuffix}`,
+											"terminals.command.blocked",
+											{ reasonSuffix },
+										),
+							);
+						}
+						if (safety.editedCommand !== undefined) {
+							// 用户在审批弹窗中改写了命令：先取消原行，再提交改写后的命令
+							try {
+								terminals.inputChecked(p.terminalId, "\x03");
+							} catch {
+								// ignore
+							}
+							clearPending(p.terminalId);
+							failIf(terminals.inputChecked(p.terminalId, safety.editedCommand + "\r"));
+							terminals.noteAgentActivity(p.terminalId);
+							return result(
+								pick(
+									lang,
+									`已发送改写后的命令到 ${p.terminalId}：${safety.editedCommand}`,
+									`Sent edited command to ${p.terminalId}: ${safety.editedCommand}`,
+									"terminals.key.edited_sent",
+									{ command: safety.editedCommand, "p.terminalId": p.terminalId },
+								),
+							);
+						}
+					}
+					// 提交回车成功
+					failIf(terminals.inputChecked(p.terminalId, encoded.data));
+					clearPending(p.terminalId);
+					terminals.noteAgentActivity(p.terminalId);
+					return result(
+						pick(
+							lang,
+							`已发送按键 ${p.key} 到 ${p.terminalId}`,
+							`Sent key ${p.key} to ${p.terminalId}`,
+							"terminals.key.sent",
+							{ "p.key": p.key, "p.terminalId": p.terminalId },
+						),
+					);
+				}
+
+				// 非回车按键：若为退格或清除键，更新 pending 缓冲
+				const prev = getPending(p.terminalId);
+				const parsed = parseTerminalLineStream(prev, encoded.data);
+				failIf(terminals.inputChecked(p.terminalId, encoded.data));
+				setPending(p.terminalId, parsed.remainingPending);
 				terminals.noteAgentActivity(p.terminalId);
 				return result(
 					pick(
