@@ -236,6 +236,8 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	if ((waitingModel || done) && duration) statusLabel = `${statusLabel} · ${duration}`;
 
 	const exitHint = waitingModel && view.status?.exitCode !== undefined ? `exit ${view.status.exitCode}` : "";
+	const hints = toolArgHints(block.argumentsText);
+	const isSkill = block.name === "skill";
 
 	// 轻量检查输出类型（图片/Markdown），无需在每帧拼接和正则数万字的长文本
 	const hasImages = useMemo(() => {
@@ -297,12 +299,12 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			.map((b) => b.dataUrl as string);
 
 		const currentPresentArgs = isPresent ? parsePresentArgs(block.argumentsText) : null;
-		const hints = toolArgHints(block.argumentsText);
+		const inspectorTitle = isSkill && hints.skillName ? `skill(${hints.skillName})` : `${block.name}()`;
 
 		openToolInspector({
 			isThinking: false,
 			name: block.name,
-			title: `${block.name}()`,
+			title: inspectorTitle,
 			status: statusLabel,
 			statusClass,
 			duration,
@@ -356,7 +358,9 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			}}
 			role="button"
 			tabIndex={0}
-			title={`${block.name}() · ${statusLabel}`}
+			title={
+				isSkill && hints.skillName ? `skill(${hints.skillName}) · ${statusLabel}` : `${block.name}() · ${statusLabel}`
+			}
 		>
 			<div className="toolcall-head chead">
 				<span className={`toolcall-icon chead-icon ${toolIconClass(block.name)}`}>{toolIcon(block.name)}</span>
@@ -632,11 +636,13 @@ const ToolCallCard = memo(function ToolCallCard({
 			.map((b) => b.dataUrl as string);
 
 		const currentPresentArgs = isPresent ? parsePresentArgs(block.argumentsText) : null;
+		const isSkill = block.name === "skill";
+		const inspectorTitle = isSkill && hints.skillName ? `skill(${hints.skillName})` : `${block.name}()`;
 
 		openToolInspector({
 			isThinking: false,
 			name: block.name,
-			title: `${block.name}()`,
+			title: inspectorTitle,
 			status: statusLabel,
 			statusClass,
 			duration,
@@ -765,6 +771,11 @@ const ToolCallCard = memo(function ToolCallCard({
 						{isDelegate && hints.agent && (
 							<span className="toolcall-agent" title={hints.agent}>
 								◈ {hints.agent}
+							</span>
+						)}
+						{block.name === "skill" && hints.skillName && (
+							<span className="toolcall-skill" title={hints.skillName}>
+								{hints.skillName}
 							</span>
 						)}
 						<span className="toolcall-spacer" />

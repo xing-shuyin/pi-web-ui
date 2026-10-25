@@ -10826,6 +10826,18 @@
 		font-size: 11px;
 		color: var(--accent);
 	}
+	/* skill 技能名（skill 卡头，状态图标右侧；折叠时也可见） */
+	.toolcall-skill {
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: min(30ch, 24vw);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--mono);
+		font-size: 11px;
+		color: var(--skill-blue);
+	}
 	/* 跳到子代理对话（派单卡头；ghost 按钮，与复制键同高 28px） */
 	.toolcall-open {
 		display: inline-flex;

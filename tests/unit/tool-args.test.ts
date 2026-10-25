@@ -219,3 +219,38 @@ describe("delegate_task 参数解析", () => {
 		}
 	});
 });
+
+describe("toolArgHints — skillName", () => {
+	it("识别 name 参数（skill 工具标准参数）", () => {
+		expect(toolArgHints('{"name":"coding-workflow"}').skillName).toBe("coding-workflow");
+		expect(toolArgHints('{"name": "git-commit-helper"}').skillName).toBe("git-commit-helper");
+	});
+
+	it("兼容 skill 键", () => {
+		expect(toolArgHints('{"skill":"review-code"}').skillName).toBe("review-code");
+	});
+
+	it("半截 JSON 时仍能提取 skillName（流式早期显示）", () => {
+		expect(toolArgHints('{"name":"coding-workflow"').skillName).toBe("coding-workflow");
+		expect(toolArgHints('{"name":"coding-workflow", "args": {').skillName).toBe("coding-workflow");
+	});
+
+	it("转义字符解码与控制字符剥离", () => {
+		expect(toolArgHints('{"name":"my\\u002dskill"}').skillName).toBe("my-skill");
+		expect(toolArgHints('{"name":"clean\\nname"}').skillName).toBe("clean name");
+	});
+
+	it("脏输入 / 非字符串 / 空串 → undefined", () => {
+		expect(toolArgHints('{"name": 123}').skillName).toBeUndefined();
+		expect(toolArgHints('{"name": ""}').skillName).toBeUndefined();
+		expect(toolArgHints('{"name": "   "}').skillName).toBeUndefined();
+		expect(toolArgHints('{"other": "value"}').skillName).toBeUndefined();
+	});
+
+	it("超长 skill 名截断至 VALUE_LIMIT", () => {
+		const long = "skill-".repeat(100);
+		const got = toolArgHints(JSON.stringify({ name: long })).skillName ?? "";
+		expect(got.length).toBeLessThanOrEqual(301);
+		expect(got.endsWith("…")).toBe(true);
+	});
+});

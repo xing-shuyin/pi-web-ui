@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
+	FiBookOpen,
 	FiCheck,
 	FiChevronDown,
 	FiChevronRight,
@@ -35,6 +36,7 @@ import { Markdown } from "./Markdown";
 
 const TOOL_ICONS: Record<string, ReactNode> = {
 	bash: <FiTerminal />,
+	skill: <FiBookOpen />,
 	read: <FiFileText />,
 	write: <FiEdit3 />,
 	edit: <FiEdit2 />,
@@ -88,6 +90,7 @@ function ToolInspectorDialog({ state }: { state: ToolInspectorState }) {
 	const isCodemode = state.name === "codemode";
 	const isQuestionnaire = state.name === "ask_user_question";
 	const isBash = state.name === "bash";
+	const isSkill = state.name === "skill";
 
 	const presentArgs = useMemo(
 		() => (isPresent && state.args ? parsePresentArgs(state.args) : null),
@@ -258,7 +261,14 @@ function ToolInspectorDialog({ state }: { state: ToolInspectorState }) {
 					<div className="tool-inspector-title-group pi-we-inspector-title-group">
 						<div className="tool-inspector-icon pi-we-inspector-icon">{toolIconNode}</div>
 						<div className="tool-inspector-title pi-we-inspector-title">
-							{isThinking ? t("toolInspectorThinkingTitle") : title || (name ? `${name}()` : t("toolInspectorTitle"))}
+							{isThinking
+								? t("toolInspectorThinkingTitle")
+								: title ||
+									(name
+										? isSkill && hints?.skillName
+											? `skill(${hints.skillName})`
+											: `${name}()`
+										: t("toolInspectorTitle"))}
 						</div>
 						<div className={`tool-inspector-badge pi-we-inspector-badge ${badgeClass}`}>{badgeText}</div>
 						{exitHint && <div className="tool-inspector-badge pi-we-inspector-badge">{exitHint}</div>}
@@ -359,13 +369,19 @@ function ToolInspectorDialog({ state }: { state: ToolInspectorState }) {
 					</div>
 				)}
 
-				{/* 次要元数据标签条（Meta Chips Strip）：展示 Agent、超时、退出码等 */}
-				{!isThinking && (hints?.agent || hints?.timeout || exitHint) && (
+				{/* 次要元数据标签条（Meta Chips Strip）：展示 Agent、Skill、超时、退出码等 */}
+				{!isThinking && (hints?.agent || (isSkill && hints?.skillName) || hints?.timeout || exitHint) && (
 					<div className="tool-inspector-meta-strip">
 						{hints?.agent && (
 							<div className="tool-inspector-chip" title={hints.agent}>
 								<FiUsers className="tool-inspector-chip-icon" />
 								<span>Agent: {hints.agent}</span>
+							</div>
+						)}
+						{isSkill && hints?.skillName && (
+							<div className="tool-inspector-chip" title={`Skill: ${hints.skillName}`}>
+								<FiBookOpen className="tool-inspector-chip-icon" />
+								<span>Skill: {hints.skillName}</span>
 							</div>
 						)}
 						{hints?.timeout && (

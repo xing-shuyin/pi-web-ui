@@ -27,6 +27,8 @@ const PATH_RE = /"(path|file_path|filePath|filename|file)"\s*:\s*"((?:[^"\\\n]|\
 
 /** 派单目标模板名（delegate_task 的 `agent` 参数；流式半截 JSON 也能 early 显示）。 */
 const AGENT_RE = /"agent"\s*:\s*"((?:[^"\\\n]|\\.){0,200})"/;
+/** skill 技能名（skill 工具的 `name` / `skill` 参数；流式半截 JSON 也能 early 显示）。 */
+const SKILL_RE = /"(?:name|skill)"\s*:\s*"((?:[^"\\\n]|\\.){0,4000})"/;
 const TIMEOUT_RE =
 	/"(timeout|timeoutSeconds|timeout_seconds|timeoutSec|timeoutMs|timeout_ms|timeoutMilliseconds)"\s*:\s*(-?\d+(?:\.\d+)?)(?![0-9eE.])/;
 const QUERY_RE = /"(query|q|search)"\s*:\s*"((?:[^"\\\n]|\\.){0,400})"/;
@@ -43,6 +45,8 @@ export interface ToolArgHints {
 	command?: string;
 	/** 派单目标模板名（delegate_task 卡头用）。 */
 	agent?: string;
+	/** skill 技能名（skill 工具卡头用）。 */
+	skillName?: string;
 	/** codemode 脚本行数。 */
 	codeLines?: number;
 	/** 搜索关键词（tool_search / 检索类工具）。 */
@@ -63,6 +67,7 @@ export function toolArgHints(argsText?: string): ToolArgHints {
 		timeout: timeoutHint(text),
 		command: commandHint(argsText),
 		agent: agentHint(text),
+		skillName: skillHint(text),
 		codeLines: codeLinesHint(argsText),
 		query: queryHint(text),
 		questionTitle: questionnaireHint(text),
@@ -76,6 +81,19 @@ function agentHint(text: string): string | undefined {
 	const v = m[1].replace(/[\u0000-\u001f\u007f]/g, "").trim();
 	if (!v) return undefined;
 	return v.length > VALUE_LIMIT ? `${v.slice(0, VALUE_LIMIT)}…` : v;
+}
+
+/** skill 技能名：控制字符归一化、转义解码、超长截断；扫不到静默 undefined。 */
+function skillHint(text: string): string | undefined {
+	const m = SKILL_RE.exec(text);
+	if (!m) return undefined;
+	const raw = decodeJsonString(m[1]);
+	const cleaned = raw
+		.replace(/[\u0000-\u001f\u007f]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!cleaned) return undefined;
+	return cleaned.length > VALUE_LIMIT ? `${cleaned.slice(0, VALUE_LIMIT - 1)}…` : cleaned;
 }
 
 /** delegate_task 六段字段名（卡片正文按此顺序渲染）。 */
