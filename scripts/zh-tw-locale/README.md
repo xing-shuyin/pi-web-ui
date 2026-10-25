@@ -19,16 +19,22 @@
 
 ## 用法
 
-`opencc-js` 不在專案依賴裡，要先裝到獨立目錄。腳本從 `OPENCC_DIR` 載入它；沒設定時預設是系統暫存目錄下的 `zhtw-deps`。
+推薦直接使用專案統一指令：
+
+```bash
+npm run i18n:sync
+```
+
+`npm run i18n:sync`（`scripts/sync-locales.mjs`）是專案唯一標準的語言包同步器，會調用本目錄的 `opencc.mjs`、`glossary.mjs` 與 `manual.json`，並同步全量 12 個語言包。
+
+若需要 OpenCC 高精度轉換（避免純規則回退），可先安裝 `opencc-js`（若全域或環境中未安裝）：
 
 macOS／Linux：
 
 ```bash
 export OPENCC_DIR="${TMPDIR:-/tmp}/zhtw-deps"
 npm i --prefix "$OPENCC_DIR" opencc-js
-
-# 一鍵同步全部三個繁中語言包：
-node --import tsx scripts/zh-tw-locale/build-all.mjs .
+npm run i18n:sync
 ```
 
 Windows（PowerShell）：
@@ -36,11 +42,9 @@ Windows（PowerShell）：
 ```powershell
 $env:OPENCC_DIR = Join-Path $env:TEMP "zhtw-deps"
 npm i --prefix $env:OPENCC_DIR opencc-js
-
-# 一鍵同步全部三個繁中語言包：
-node --import tsx scripts/zh-tw-locale/build-all.mjs .
+npm run i18n:sync
 ```
 
 `verify.mjs` 的「可能殘留簡體」是提示，不是錯誤：`核准`（准）、`干擾`（干）、`局限`（局）在台灣都是正確用法。
 
-簡中新增或修改 key 後，重跑上面的流程即可同步。個別修正可寫進 `manual.json` 或 `glossary.mjs`。
+簡中新增或修改 key 後，重跑 `npm run i18n:sync` 即可同步。個別修正可寫進 `manual.json` 或 `glossary.mjs`。

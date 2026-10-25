@@ -95,6 +95,7 @@ async function loadOpenCc(repoRoot) {
 		const manualPath = join(repoRoot, "scripts/zh-tw-locale/manual.json");
 		const twRules = existsSync(glossaryPath) ? await import(pathToFileURL(glossaryPath).href) : { pre: [], post: [] };
 		const twManual = existsSync(manualPath) ? JSON.parse(readFileSync(manualPath, "utf8")) : {};
+		const punctRules = Array.isArray(twRules.punct) && twRules.punct.length > 0 ? twRules.punct : PUNCT_RULES;
 
 		const twBase = OpenCC.Converter({ from: "cn", to: "twp" });
 		const hantBase = OpenCC.Converter({ from: "cn", to: "t" });
@@ -115,18 +116,23 @@ async function loadOpenCc(repoRoot) {
 
 		return {
 			tw: (text, key) => {
-				let r = applyRules(applyRules(twBase(applyRules(text, twRules.pre || [])), twRules.post || []), PUNCT_RULES);
+				let r = applyRules(applyRules(twBase(applyRules(text, twRules.pre || [])), twRules.post || []), punctRules);
 				const m = twManual[key];
 				if (typeof m === "string") r = m;
 				else if (Array.isArray(m)) {
 					for (const [from, to] of m) {
-						if (r.includes(from)) r = r.split(from).join(to);
+						if (!r.includes(from)) {
+							throw new Error(
+								`[sync-locales] manual patch for "${key}": 找不到待替換文字 ${JSON.stringify(from)}，當前文本為：${JSON.stringify(r)}`,
+							);
+						}
+						r = r.split(from).join(to);
 					}
 				}
 				return r;
 			},
-			hant: (text) => applyRules(hantBase(text), PUNCT_RULES),
-			hk: (text) => applyRules(applyRules(hkBase(text), hkPost), PUNCT_RULES),
+			hant: (text) => applyRules(hantBase(text), punctRules),
+			hk: (text) => applyRules(applyRules(hkBase(text), hkPost), punctRules),
 		};
 	} catch (err) {
 		// OpenCC 缺失时回退到基于词汇表的规则转换，但必须明示：静默降级会让
