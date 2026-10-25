@@ -10,8 +10,8 @@ describe("bili-scroll plugin 2.0 verification", () => {
 		const manifest = JSON.parse(readFileSync(join(pluginDir, "manifest.json"), "utf8"));
 		const pkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf8"));
 
-		expect(manifest.version).toBe("2.0.3");
-		expect(pkg.version).toBe("2.0.3");
+		expect(manifest.version).toBe("2.0.4");
+		expect(pkg.version).toBe("2.0.4");
 		expect(manifest.apiVersion).toBe(2);
 		expect(manifest.permissions).toContain("tools");
 		expect(manifest.permissions).toContain("ui");

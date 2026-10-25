@@ -4,7 +4,7 @@
  * 带控制字符、缺字段、脏 timeout 值——一律静默降级，绝不抛错。
  */
 import { describe, expect, it } from "vitest";
-import { parseDelegateArgs, shortenPath, toolArgHints } from "../../web/src/tool-args.js";
+import { parseDelegateArgs, resolveToolHeadline, shortenPath, toolArgHints } from "../../web/src/tool-args.js";
 
 describe("toolArgHints — 脏输入不抛错", () => {
 	it("undefined / 空串 / 纯空白 → 全空", () => {
@@ -252,5 +252,81 @@ describe("toolArgHints — skillName", () => {
 		const got = toolArgHints(JSON.stringify({ name: long })).skillName ?? "";
 		expect(got.length).toBeLessThanOrEqual(301);
 		expect(got.endsWith("…")).toBe(true);
+	});
+});
+
+describe("resolveToolHeadline — 元数据驱动关键信息统一提取", () => {
+	it("bash: 折叠态显示带 $ 前缀，展开态不显示", () => {
+		const hlCollapsed = resolveToolHeadline({
+			name: "bash",
+			argumentsText: '{"command":"echo hello\\necho world"}',
+			isCollapsed: true,
+		});
+		expect(hlCollapsed).toEqual({
+			text: "echo hello +1",
+			title: "echo hello\necho world",
+			prefix: "$ ",
+			className: "toolcall-cmd",
+		});
+
+		const hlExpanded = resolveToolHeadline({
+			name: "bash",
+			argumentsText: '{"command":"echo hello"}',
+			isCollapsed: false,
+		});
+		expect(hlExpanded).toBeNull();
+	});
+
+	it("read / write / edit: 提取并缩写路径", () => {
+		const hl = resolveToolHeadline({
+			name: "read",
+			argumentsText: '{"path":"src/components/ToolCallBlock.tsx"}',
+		});
+		expect(hl?.text).toBe("src/components/ToolCallBlock.tsx");
+		expect(hl?.className).toBe("toolcall-path");
+	});
+
+	it("skill: 提取技能名与专用样式", () => {
+		const hl = resolveToolHeadline({
+			name: "skill",
+			argumentsText: '{"name":"coding-workflow"}',
+		});
+		expect(hl).toEqual({
+			text: "coding-workflow",
+			title: "coding-workflow",
+			className: "toolcall-skill",
+		});
+	});
+
+	it("delegate_task: 提取 agent 模板名并带 ◈ 前缀", () => {
+		const hl = resolveToolHeadline({
+			name: "delegate_task",
+			argumentsText: '{"agent":"oracle"}',
+		});
+		expect(hl).toEqual({
+			text: "oracle",
+			title: "oracle",
+			prefix: "◈ ",
+			className: "toolcall-agent",
+		});
+	});
+
+	it("codemode: 提取代码行数并带 λ 前缀", () => {
+		const hl = resolveToolHeadline({
+			name: "codemode",
+			argumentsText: '{"code":"const a = 1;\\nconst b = 2;"}',
+		});
+		expect(hl?.text).toBe("2L");
+		expect(hl?.prefix).toBe("λ ");
+		expect(hl?.className).toBe("toolcall-timeout");
+	});
+
+	it("tool_search: 提取搜索关键词", () => {
+		const hl = resolveToolHeadline({
+			name: "tool_search",
+			argumentsText: '{"query":"terminal"}',
+		});
+		expect(hl?.text).toBe("terminal");
+		expect(hl?.className).toBe("toolcall-query");
 	});
 });

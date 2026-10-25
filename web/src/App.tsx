@@ -122,11 +122,11 @@ import { recordModelUsage } from "./model-usage";
 import { loadSoundSettings, playSound, saveSoundSettings, type SoundSettings } from "./sounds";
 import {
 	assistantPlainText,
+	StreamSentenceExtractor,
 	loadTtsSettings,
 	saveTtsSettings,
 	speak,
 	startStreamSpeech,
-	stripMarkdownForSpeech,
 	type StreamSpeechQueue,
 	type TtsSettings,
 } from "./tts";
@@ -1427,7 +1427,7 @@ export function App() {
 
 	// ── 流式边打字边开口说话管道（Token-to-Speech Streaming Pipeline） ──
 	const streamSpeechQueueRef = useRef<StreamSpeechQueue | null>(null);
-	const streamSpokenOffsetRef = useRef(0);
+	const streamExtractorRef = useRef<StreamSentenceExtractor | null>(null);
 	const streamLastScanTimeRef = useRef(0);
 
 	useEffect(() => {
@@ -1440,20 +1440,16 @@ export function App() {
 			if (streamSpeechQueueRef.current) {
 				const msgs = latestMessagesRef.current;
 				const lastMsg = Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null;
-				if (lastMsg && lastMsg.role === "assistant") {
+				if (lastMsg && lastMsg.role === "assistant" && streamExtractorRef.current) {
 					const text = (lastMsg.content ?? [])
 						.filter((b): b is UiTextBlock => b.type === "text")
 						.map((b) => b.text ?? "")
 						.join("\n");
-					if (text.length > streamSpokenOffsetRef.current) {
-						const tail = text.slice(streamSpokenOffsetRef.current);
-						const clean = stripMarkdownForSpeech(tail, 0);
-						if (clean) streamSpeechQueueRef.current.push(clean);
-					}
+					streamExtractorRef.current.flush(text);
 				}
 				streamSpeechQueueRef.current.finish();
 				streamSpeechQueueRef.current = null;
-				streamSpokenOffsetRef.current = 0;
+				streamExtractorRef.current = null;
 				streamLastScanTimeRef.current = 0;
 			}
 			return;
@@ -1464,39 +1460,28 @@ export function App() {
 		const lastMsg = Array.isArray(msgs) && msgs.length > 0 ? msgs[msgs.length - 1] : null;
 		if (!lastMsg || lastMsg.role !== "assistant") return;
 
-		// 快速提取 text 块原始文本（跳过 thinking/工具调用，避免反复对整条消息跑全局 Markdown 正则）
-		const rawText = (lastMsg.content ?? [])
-			.filter((b): b is UiTextBlock => b.type === "text")
-			.map((b) => b.text ?? "")
-			.join("\n");
-		if (rawText.length <= streamSpokenOffsetRef.current) return;
-
-		// 节流处理：避免高频 message_delta（可能每 10~20ms 一次）频繁触发断句查找
+		// 节流处理：避免高频 message_delta 频繁触发断句查找
 		const now = Date.now();
 		if (now - streamLastScanTimeRef.current < 150) {
 			return;
 		}
 		streamLastScanTimeRef.current = now;
 
-		// 启动流式播放队列
+		// 启动流式播放队列与断句管道
 		if (!streamSpeechQueueRef.current) {
-			streamSpeechQueueRef.current = startStreamSpeech(tts, conversationId);
-			streamSpokenOffsetRef.current = 0;
+			const queue = startStreamSpeech(tts, conversationId);
+			streamSpeechQueueRef.current = queue;
+			streamExtractorRef.current = new StreamSentenceExtractor((cleanSentence) => {
+				queue.push(cleanSentence);
+			});
 		}
 
-		// 在尚未消费的区间寻找标点断句
-		const unconsumed = rawText.slice(streamSpokenOffsetRef.current);
-		const match = unconsumed.match(/(?:[。！？!?；;\n]|(?<=.{25,})[，,])/);
-		if (match && typeof match.index === "number") {
-			const boundary = match.index + match[0].length;
-			const sentenceRaw = unconsumed.slice(0, boundary);
-			streamSpokenOffsetRef.current += boundary;
+		const rawText = (lastMsg.content ?? [])
+			.filter((b): b is UiTextBlock => b.type === "text")
+			.map((b) => b.text ?? "")
+			.join("\n");
 
-			const cleanSentence = stripMarkdownForSpeech(sentenceRaw, 0);
-			if (cleanSentence) {
-				streamSpeechQueueRef.current.push(cleanSentence);
-			}
-		}
+		streamExtractorRef.current?.feed(rawText);
 	}, [chat.state?.messages, chat.state?.isStreaming, chat.state?.conversationId, tts]);
 
 	// Questionnaire cue — each new dialog id + each new DSH question id.

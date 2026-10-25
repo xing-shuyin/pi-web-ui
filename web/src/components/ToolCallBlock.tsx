@@ -52,7 +52,7 @@ import {
 	parseCodemodeArgs,
 	parseDelegateArgs,
 	parseQuestionnaireArgs,
-	shortenPath,
+	resolveToolHeadline,
 	toolArgHints,
 	type DelegateField,
 } from "../tool-args";
@@ -237,7 +237,8 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 
 	const exitHint = waitingModel && view.status?.exitCode !== undefined ? `exit ${view.status.exitCode}` : "";
 	const hints = toolArgHints(block.argumentsText);
-	const isSkill = block.name === "skill";
+	const headline = resolveToolHeadline({ name: block.name, argumentsText: block.argumentsText, hints });
+	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
 	// 轻量检查输出类型（图片/Markdown），无需在每帧拼接和正则数万字的长文本
 	const hasImages = useMemo(() => {
@@ -299,7 +300,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			.map((b) => b.dataUrl as string);
 
 		const currentPresentArgs = isPresent ? parsePresentArgs(block.argumentsText) : null;
-		const inspectorTitle = isSkill && hints.skillName ? `skill(${hints.skillName})` : `${block.name}()`;
 
 		openToolInspector({
 			isThinking: false,
@@ -358,9 +358,7 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			}}
 			role="button"
 			tabIndex={0}
-			title={
-				isSkill && hints.skillName ? `skill(${hints.skillName}) · ${statusLabel}` : `${block.name}() · ${statusLabel}`
-			}
+			title={`${block.name}(${headline ? headline.text : ""}) · ${statusLabel}`}
 		>
 			<div className="toolcall-head chead">
 				<span className={`toolcall-icon chead-icon ${toolIconClass(block.name)}`}>{toolIcon(block.name)}</span>
@@ -558,14 +556,17 @@ const ToolCallCard = memo(function ToolCallCard({
 	// failures embed "exited with code N" in the error text); show it when known.
 	const exitHint = waitingModel && view.status?.exitCode !== undefined ? `exit ${view.status.exitCode}` : "";
 
-	// 卡头右侧提示：任何工具都从参数里安全取路径/超时（AI 填错也只是不显示，见
-	// tool-args.ts）；bash 类的命令行给正文的终端行，折叠时卡头跟一小段预览。
-	// delegate_task 额外取 agent 名。
+	// 卡头右侧提示：统一通过元数据模型 resolveToolHeadline 解析，
+	// 任何工具均安全按需提取关键摘要，折叠态支持 bash 终端预览。
 	const hints = toolArgHints(block.argumentsText);
 	const bashCommand = block.name === "bash" ? hints.command : undefined;
-	// 折叠预览：只取首行（空白压成单空格），80 字截断；多行折成 +N 后缀。
-	// 完整命令放 title 悬浮里；展开时正文有完整终端行，这里不再显示。
-	const collapsedCmd = !shown && bashCommand ? collapsedBashPreview(bashCommand) : undefined;
+	const headline = resolveToolHeadline({
+		name: block.name,
+		argumentsText: block.argumentsText,
+		hints,
+		isCollapsed: !shown,
+	});
+	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
 	const copyArgs = () => {
 		if (block.argumentsText) {
@@ -636,8 +637,6 @@ const ToolCallCard = memo(function ToolCallCard({
 			.map((b) => b.dataUrl as string);
 
 		const currentPresentArgs = isPresent ? parsePresentArgs(block.argumentsText) : null;
-		const isSkill = block.name === "skill";
-		const inspectorTitle = isSkill && hints.skillName ? `skill(${hints.skillName})` : `${block.name}()`;
 
 		openToolInspector({
 			isThinking: false,
@@ -742,42 +741,13 @@ const ToolCallCard = memo(function ToolCallCard({
 								{duration}
 							</span>
 						)}
-						{collapsedCmd && (
-							<span className="toolcall-cmd" title={bashCommand}>
-								$ {collapsedCmd}
-							</span>
-						)}
-						{hints.path && (
-							<span className="toolcall-path" title={hints.path}>
-								{shortenPath(hints.path)}
-							</span>
-						)}
-						{hints.codeLines && (
-							<span className="toolcall-timeout" title={`${hints.codeLines} lines`}>
-								λ {hints.codeLines}L
-							</span>
-						)}
-						{hints.query && block.name === "tool_search" && (
-							<span className="toolcall-query" title={hints.query}>
-								{hints.query}
-							</span>
-						)}
-						{hints.questionTitle && isQuestionnaire && (
-							<span className="toolcall-query" title={hints.questionTitle}>
-								{hints.questionTitle}
+						{headline && (
+							<span className={headline.className} title={headline.title ?? headline.text}>
+								{headline.prefix}
+								{headline.text}
 							</span>
 						)}
 						{hints.timeout && <span className="toolcall-timeout">⏱ {hints.timeout}</span>}
-						{isDelegate && hints.agent && (
-							<span className="toolcall-agent" title={hints.agent}>
-								◈ {hints.agent}
-							</span>
-						)}
-						{block.name === "skill" && hints.skillName && (
-							<span className="toolcall-skill" title={hints.skillName}>
-								{hints.skillName}
-							</span>
-						)}
 						<span className="toolcall-spacer" />
 						{isBashRunning && onKillBash && (
 							<button
@@ -1168,17 +1138,6 @@ export function CodemodeCard({
 			)}
 		</div>
 	);
-}
-
-/** 折叠态 bash 命令预览：首行空白归一后取 80 字，多行追加 `+N` 后缀。
- *  输入脏（空串/全空白）返回 undefined——卡头不显示。 */
-function collapsedBashPreview(command: string): string | undefined {
-	const lines = command.split("\n");
-	const first = lines[0].replace(/\s+/g, " ").trim();
-	if (!first) return undefined;
-	const rest = lines.length - 1;
-	const short = first.length > 80 ? `${first.slice(0, 80)}…` : first;
-	return rest > 0 ? `${short} +${rest}` : short;
 }
 
 /** "45ms" / "1.2s" / "1m 05s" — for tool execution duration. */

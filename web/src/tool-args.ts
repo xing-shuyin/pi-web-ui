@@ -55,6 +55,129 @@ export interface ToolArgHints {
 	questionTitle?: string;
 }
 
+/** 工具卡头与检查器关键摘要数据模型（通用化，解耦逐工具硬编码）。 */
+export interface ToolHeadline {
+	/** 显示文本（可能已缩写/截断） */
+	text: string;
+	/** 完整悬浮提示（title） */
+	title?: string;
+	/** 前缀符号（如 "$ ", "◈ ", "λ "） */
+	prefix?: string;
+	/** 专属类名（如 "toolcall-path", "toolcall-cmd", "toolcall-agent", "toolcall-skill"） */
+	className: string;
+}
+
+/** bash 折叠态预览格式化（首行空白归一后截断，多行追加 +N 后缀）。 */
+export function formatCollapsedBashCommand(command: string): string | undefined {
+	const lines = command.split("\n");
+	const first = lines[0].replace(/\s+/g, " ").trim();
+	if (!first) return undefined;
+	const rest = lines.length - 1;
+	const short = first.length > 80 ? `${first.slice(0, 80)}…` : first;
+	return rest > 0 ? `${short} +${rest}` : short;
+}
+
+/**
+ * 通用工具卡头关键信息解析器：元数据驱动解析，彻底杜绝在每个卡片组件里写 if (name === ...)
+ */
+export function resolveToolHeadline(args: {
+	name: string;
+	argumentsText?: string;
+	hints?: ToolArgHints;
+	isCollapsed?: boolean;
+}): ToolHeadline | null {
+	const { name, argumentsText, isCollapsed = false } = args;
+	const hints = args.hints ?? toolArgHints(argumentsText);
+
+	switch (name) {
+		case "bash": {
+			if (!isCollapsed || !hints.command) return null;
+			const preview = formatCollapsedBashCommand(hints.command);
+			if (!preview) return null;
+			return {
+				text: preview,
+				title: hints.command,
+				prefix: "$ ",
+				className: "toolcall-cmd",
+			};
+		}
+		case "read":
+		case "write":
+		case "edit":
+		case "edit_soft":
+		case "patch":
+		case "ls": {
+			if (!hints.path) return null;
+			return {
+				text: shortenPath(hints.path),
+				title: hints.path,
+				className: "toolcall-path",
+			};
+		}
+		case "skill": {
+			if (!hints.skillName) return null;
+			return {
+				text: hints.skillName,
+				title: hints.skillName,
+				className: "toolcall-skill",
+			};
+		}
+		case "delegate_task": {
+			if (!hints.agent) return null;
+			return {
+				text: hints.agent,
+				title: hints.agent,
+				prefix: "◈ ",
+				className: "toolcall-agent",
+			};
+		}
+		case "codemode":
+		case "eval": {
+			if (!hints.codeLines) return null;
+			return {
+				text: `${hints.codeLines}L`,
+				title: `${hints.codeLines} lines`,
+				prefix: "λ ",
+				className: "toolcall-timeout",
+			};
+		}
+		case "tool_search": {
+			if (!hints.query) return null;
+			return {
+				text: hints.query,
+				title: hints.query,
+				className: "toolcall-query",
+			};
+		}
+		case "ask_user_question": {
+			if (!hints.questionTitle) return null;
+			return {
+				text: hints.questionTitle,
+				title: hints.questionTitle,
+				className: "toolcall-query",
+			};
+		}
+		default: {
+			// 通用启发式兜底：优先 path，其次 query/agent/skillName
+			if (hints.path) {
+				return {
+					text: shortenPath(hints.path),
+					title: hints.path,
+					className: "toolcall-path",
+				};
+			}
+			if (hints.query) {
+				return {
+					text: hints.query,
+					title: hints.query,
+					className: "toolcall-query",
+				};
+			}
+			return null;
+		}
+	}
+}
+
 /**
  * 从 argumentsText 提取卡头提示。任何异常输入（undefined / 空串 / 非 JSON /
  * 类型不对 / 半截 JSON / 超长）都只是少显示一个提示，绝不抛错。

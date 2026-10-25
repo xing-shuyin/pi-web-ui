@@ -238,6 +238,19 @@ export interface PluginInstallInspectState {
 	manifest?: { id?: string; name?: string; version?: string; description?: string; permissions?: string[] };
 }
 
+/** DSH 引擎专有状态命名空间（切换引擎时物理整体清空，杜绝散落字段残留与死键）。 */
+export interface DshEngineState {
+	patches: { patchDir: string; files: DshPatchFileInfo[] } | null;
+	market: {
+		count: number;
+		updated?: string;
+		categories: Record<string, { en: string; zh: string }>;
+		plugins: DshMarketPlugin[];
+	} | null;
+	presets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
+	permission: { options: DshPermissionOption[]; defaultPreset: string } | null;
+}
+
 export interface ChatState {
 	status: ConnStatus;
 	/** True once the server confirmed the agent session is ready (hello processed). */
@@ -507,18 +520,20 @@ export interface ChatState {
 		models?: string[];
 		reason?: string;
 	}[];
-	/** DSH engine: <dataDir>/dsh-patches user patch files (list + dir). */
+	/** DSH engine: 专属状态命名空间（切换引擎时一键清空）。 */
+	dsh: DshEngineState | null;
+	/** DSH engine: <dataDir>/dsh-patches user patch files (list + dir)（兼容镜像）。 */
 	dshPatches: { patchDir: string; files: DshPatchFileInfo[] } | null;
-	/** DSH engine: awesome-dsh-plugin / dsh-market 社区插件市场数据。 */
+	/** DSH engine: awesome-dsh-plugin / dsh-market 社区插件市场数据（兼容镜像）。 */
 	dshMarket: {
 		count: number;
 		updated?: string;
 		categories: Record<string, { en: string; zh: string }>;
 		plugins: DshMarketPlugin[];
 	} | null;
-	/** DSH engine: Agent 预设名录（null = 未加载/legacy，UI 隐藏预设条）。 */
+	/** DSH engine: Agent 预设名录（兼容镜像）。 */
 	dshPresets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
-	/** DSH engine: 权限预设选项表 + 新会话默认（null = 未就绪/legacy，UI 隐藏权限条）。 */
+	/** DSH engine: 权限预设选项表 + 新会话默认（兼容镜像）。 */
 	dshPermission: { options: DshPermissionOption[]; defaultPreset: string } | null;
 	/** Increments when the server reports the watched git dir changed
 	 *  outside the panel — SCMPanel refreshes on change while visible. */
@@ -1020,6 +1035,7 @@ function reducer(state: ChatState, action: Action): ChatState {
 							sessions: readCachedSessions(state.state?.cwd, action.engine),
 							conversations: [],
 							terminals: [],
+							dsh: null,
 							dshPatches: null,
 							dshMarket: null,
 							dshPresets: null,
@@ -1428,22 +1444,43 @@ function reducer(state: ChatState, action: Action): ChatState {
 		case "plugin_install_inspect_result":
 			// 只留最近一次（输入框下面的那一句话），旧的直接丢掉。
 			return { ...state, installInspect: action.result };
-		case "dsh_patches":
-			return { ...state, dshPatches: { patchDir: action.patchDir, files: action.files } };
-		case "dsh_market_data":
+		case "dsh_patches": {
+			const patches = { patchDir: action.patchDir, files: action.files };
 			return {
 				...state,
-				dshMarket: {
-					count: action.count,
-					updated: action.updated,
-					categories: action.categories,
-					plugins: action.plugins,
-				},
+				dsh: { ...(state.dsh ?? { patches: null, market: null, presets: null, permission: null }), patches },
+				dshPatches: patches,
 			};
-		case "dsh_presets":
-			return { ...state, dshPresets: { presets: action.presets, defaultPreset: action.defaultPreset } };
-		case "dsh_permission":
-			return { ...state, dshPermission: { options: action.options, defaultPreset: action.defaultPreset } };
+		}
+		case "dsh_market_data": {
+			const market = {
+				count: action.count,
+				updated: action.updated,
+				categories: action.categories,
+				plugins: action.plugins,
+			};
+			return {
+				...state,
+				dsh: { ...(state.dsh ?? { patches: null, market: null, presets: null, permission: null }), market },
+				dshMarket: market,
+			};
+		}
+		case "dsh_presets": {
+			const presets = { presets: action.presets, defaultPreset: action.defaultPreset };
+			return {
+				...state,
+				dsh: { ...(state.dsh ?? { patches: null, market: null, presets: null, permission: null }), presets },
+				dshPresets: presets,
+			};
+		}
+		case "dsh_permission": {
+			const permission = { options: action.options, defaultPreset: action.defaultPreset };
+			return {
+				...state,
+				dsh: { ...(state.dsh ?? { patches: null, market: null, presets: null, permission: null }), permission },
+				dshPermission: permission,
+			};
+		}
 		case "terminal_add":
 			return { ...state, terminals: [...state.terminals, action.meta] };
 		case "terminal_remove":
@@ -1873,6 +1910,7 @@ export function useChat() {
 		pluginPermissions: [],
 		pathRequests: [],
 		permRequests: [],
+		dsh: null,
 		dshPatches: null,
 		dshMarket: null,
 		mcpMarketResult: null,
@@ -2142,6 +2180,20 @@ export function useChat() {
 			);
 		};
 
+		/**
+		 * 属于具体会话生命周期的增量流式消息类型集合。
+		 * 这些消息若归属于其他会话（非当前激活会话），直接在顶层门禁丢弃，杜绝跨会话串台与脏数据写入。
+		 */
+		const SESSION_STREAM_MESSAGE_TYPES = new Set([
+			"snapshot_delta",
+			"message_delta",
+			"tool_delta",
+			"earlier_messages",
+			"terminal_output",
+			"terminal_exit",
+			"terminal_list",
+		]);
+
 		ws.onmessage = (ev) => {
 			if (wsRef.current !== ws) return; // stale socket
 			lastBeatRef.current = Date.now(); // any traffic proves the connection is alive
@@ -2150,6 +2202,20 @@ export function useChat() {
 				msg = JSON.parse(ev.data as string) as ServerMessage;
 			} catch {
 				return;
+			}
+			// ── 顶层会话门禁（Session Envelope Gate）─────────────────────────
+			// 属于具体会话生命周期的增量流式消息：若归属的 conversationId 与当前激活会话不符，
+			// 在入口处直接丢弃，绝不允许其向下渗透并污染当前会话的 reducer、状态或副作用。
+			if (
+				"conversationId" in msg &&
+				typeof msg.conversationId === "string" &&
+				SESSION_STREAM_MESSAGE_TYPES.has(msg.type)
+			) {
+				const activeId = chatApi.current.chat.activeConversationId || chatApi.current.chat.state?.conversationId;
+				if (activeId && msg.conversationId !== activeId) {
+					// 异会话在途增量消息（用户切走了该会话），直接截断丢弃
+					return;
+				}
 			}
 			switch (msg.type) {
 				case "ready": {

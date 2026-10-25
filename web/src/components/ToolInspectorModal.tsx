@@ -27,7 +27,13 @@ import {
 } from "react-icons/fi";
 import { useT } from "../i18n";
 import { closeToolInspector, useToolInspectorState, type ToolInspectorState } from "../tool-inspector-state";
-import { parseCodemodeArgs, parseDelegateArgs, parseQuestionnaireArgs, toolArgHints } from "../tool-args";
+import {
+	parseCodemodeArgs,
+	parseDelegateArgs,
+	parseQuestionnaireArgs,
+	resolveToolHeadline,
+	toolArgHints,
+} from "../tool-args";
 import { parsePresentArgs } from "../present-items";
 import { PresentedFiles } from "./PresentedFiles";
 import { QuestionnaireCard } from "./QuestionnaireCard";
@@ -248,6 +254,8 @@ function ToolInspectorDialog({ state }: { state: ToolInspectorState }) {
 		(isQuestionnaire && questionnaireArgs) ||
 		(isBash && targetCommand);
 
+	const headline = name ? resolveToolHeadline({ name, argumentsText: args, hints }) : null;
+
 	return (
 		<div
 			className="tool-inspector-backdrop pi-we-inspector-backdrop open"
@@ -263,12 +271,7 @@ function ToolInspectorDialog({ state }: { state: ToolInspectorState }) {
 						<div className="tool-inspector-title pi-we-inspector-title">
 							{isThinking
 								? t("toolInspectorThinkingTitle")
-								: title ||
-									(name
-										? isSkill && hints?.skillName
-											? `skill(${hints.skillName})`
-											: `${name}()`
-										: t("toolInspectorTitle"))}
+								: title || (name ? (headline ? `${name}(${headline.text})` : `${name}()`) : t("toolInspectorTitle"))}
 						</div>
 						<div className={`tool-inspector-badge pi-we-inspector-badge ${badgeClass}`}>{badgeText}</div>
 						{exitHint && <div className="tool-inspector-badge pi-we-inspector-badge">{exitHint}</div>}

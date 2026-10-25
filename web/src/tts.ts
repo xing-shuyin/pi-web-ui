@@ -139,6 +139,53 @@ export function stripMarkdownForSpeech(input: string, maxChars: number = MAX_TTS
 	return text;
 }
 
+/**
+ * 响应式流式断句管道（Token-to-Speech Streaming Pipeline）：
+ * 解耦 React 组件渲染周期，实现增量 O(1) 状态机断句与轻量 Markdown 清理。
+ */
+export class StreamSentenceExtractor {
+	private cursor = 0;
+	private onSentence: (sentence: string) => void;
+
+	constructor(onSentence: (sentence: string) => void) {
+		this.onSentence = onSentence;
+	}
+
+	/** 增量推送最新累计文本，自动断句并回调。 */
+	feed(fullText: string): void {
+		if (fullText.length <= this.cursor) return;
+		const unconsumed = fullText.slice(this.cursor);
+		const match = unconsumed.match(/(?:[。！？!?；;\n]|(?<=.{25,})[，,])/);
+		if (match && typeof match.index === "number") {
+			const boundary = match.index + match[0].length;
+			const sentenceRaw = unconsumed.slice(0, boundary);
+			this.cursor += boundary;
+
+			const clean = stripMarkdownForSpeech(sentenceRaw, 0);
+			if (clean) {
+				this.onSentence(clean);
+			}
+		}
+	}
+
+	/** 冲刷末尾尚未以标点结尾的残余句子（流式生成结束时触发）。 */
+	flush(fullText: string): void {
+		if (fullText.length > this.cursor) {
+			const tail = fullText.slice(this.cursor);
+			const clean = stripMarkdownForSpeech(tail, 0);
+			if (clean) {
+				this.onSentence(clean);
+			}
+			this.cursor = fullText.length;
+		}
+	}
+
+	/** 重置管道游标（新一轮流式开始时调用）。 */
+	reset(): void {
+		this.cursor = 0;
+	}
+}
+
 /** Minimal message shape (subset of UiMessage) so tests stay framework-free. */
 interface SpeechLikeMessage {
 	role: string;
