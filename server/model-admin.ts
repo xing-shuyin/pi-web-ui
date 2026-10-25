@@ -227,6 +227,42 @@ function strArrMeta(v: unknown): string[] | undefined {
 	return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
 }
 
+/**
+ * 体系化启发式推断模型是否具备推理/深度思考能力：
+ * 1. 显式端点元数据优先（reasoning / supports_reasoning / modalities 包含 reasoning）；
+ * 2. 业界主流推理模型命名特征正则库：
+ *    - thinking / reasoner / reasoning 显式词
+ *    - OpenAI o1 / o3 / o4 系列（如 o1, o1-mini, o1-preview, o3-mini, o3-high, o4 等）
+ *    - DeepSeek R1 / Reasoner 系列（如 deepseek-r1, r1-distill 等）
+ *    - 阿里千问 QwQ 系列（如 qwq-32b, qwq-32b-preview）
+ *    - 智谱 GLM-Zero 系列（如 glm-4-zero, glm-zero）
+ *    - CoT (Chain of Thought) 显式标记
+ */
+export function detectReasoningCapability(id: string, rawMeta?: Record<string, unknown>): boolean {
+	if (!id) return false;
+	const r = rawMeta ?? {};
+	const modalities = strArrMeta(r.modalities) ?? strArrMeta(r.input_modalities);
+	if (
+		boolMeta(r.reasoning) === true ||
+		boolMeta(r.supports_reasoning) === true ||
+		modalities?.includes("reasoning") === true
+	) {
+		return true;
+	}
+
+	const lower = id.toLowerCase();
+	const REASONING_PATTERNS = [
+		/thinking|reasoner|reasoning/i,
+		/(?:^|[-_/])o[134](?:[-_](?:mini|preview|high|low|medium|max))?(?:[-_/]|$)/i,
+		/(?:^|[-_/])(?:deepseek[-_])?r1(?:[-_/]|$)/i,
+		/(?:^|[-_/])qwq(?:[-_]\d+b)?(?:[-_/]|$)/i,
+		/(?:^|[-_/])(?:glm[-_]4[-_]?zero|glm[-_]?zero)(?:[-_/]|$)/i,
+		/(?:^|[-_/])cot(?:[-_/]|$)/i,
+	];
+
+	return REASONING_PATTERNS.some((pattern) => pattern.test(lower));
+}
+
 /** Best-effort extraction of model metadata from an OpenAI-compatible
  *  /models `data[]` item. Most endpoints only return `{ id }` — the extra
  *  fields (context_window / max_model_len / modalities / supports_vision /
@@ -244,14 +280,9 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		boolMeta(r.supports_vision) === true ||
 		boolMeta(r.vision) === true ||
 		strArrMeta(r.input)?.includes("image") === true;
-	// 名字兜底：很多端点（如 Antigravity-Manager 的 /v1/models）只给 id 不给
-	// 元数据；id 含 thinking 即视为思考模型（与反代自身的 is_thinking_model
-	// 同口径）。只增不减：取消勾选靠手填（编辑页/刷新合并都只补缺）。
-	const reasoning =
-		boolMeta(r.reasoning) === true ||
-		boolMeta(r.supports_reasoning) === true ||
-		modalities?.includes("reasoning") === true ||
-		id.toLowerCase().includes("thinking");
+	// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征推断。
+	// 只增不减：取消勾选靠手填（编辑页/刷新合并都只补缺）。
+	const reasoning = detectReasoningCapability(id, r);
 	const contextWindow =
 		numMeta(r.context_window) ?? numMeta(r.context_length) ?? numMeta(r.max_model_len) ?? numMeta(r.max_context_length);
 	const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
@@ -273,8 +304,8 @@ function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	const rawName = typeof r.name === "string" ? r.name : "";
 	const id = rawName.replace(/^models\//, "");
 	const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
-	// 与 OpenAI 形状同口径的名字兜底（见 parseOpenAiModel）。
-	const reasoning = id.toLowerCase().includes("thinking");
+	// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability）。
+	const reasoning = detectReasoningCapability(id, r);
 	return {
 		id,
 		...(displayName && displayName !== id ? { name: displayName } : {}),
@@ -1413,13 +1444,8 @@ export class ModelAdminService {
 			boolMeta(r.supports_vision) === true ||
 			boolMeta(r.vision) === true ||
 			strArrMeta(r.input)?.includes("image") === true;
-		// 名字兜底（同模块级 parseOpenAiModel）：只给 id 的端点靠 id 含 thinking
-		// 视为思考模型，只增不减，手填合并只补缺。
-		const reasoning =
-			boolMeta(r.reasoning) === true ||
-			boolMeta(r.supports_reasoning) === true ||
-			modalities?.includes("reasoning") === true ||
-			id.toLowerCase().includes("thinking");
+		// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征推断。
+		const reasoning = detectReasoningCapability(id, r);
 		const contextWindow =
 			numMeta(r.context_window) ??
 			numMeta(r.context_length) ??
@@ -1444,8 +1470,8 @@ export class ModelAdminService {
 		const rawName = typeof r.name === "string" ? r.name : "";
 		const id = rawName.replace(/^models\//, "");
 		const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
-		// 与 OpenAI 形状同口径的名字兜底（见模块级 parseOpenAiModel）。
-		const reasoning = id.toLowerCase().includes("thinking");
+		// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability）。
+		const reasoning = detectReasoningCapability(id, r);
 		return {
 			id,
 			...(displayName && displayName !== id ? { name: displayName } : {}),

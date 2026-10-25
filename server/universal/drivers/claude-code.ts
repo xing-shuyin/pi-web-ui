@@ -96,6 +96,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	private turnHadText = false;
 	private turnCompleteEmitted = false;
 	private lastTurnMeta?: AgentTurnMeta;
+	private currentThinkingLevel: string = "medium";
 
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
@@ -117,6 +118,14 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 	getActiveSessionId(): string | null {
 		return this.activeSessionId;
+	}
+
+	override setThinkingLevel(level: string): void {
+		this.currentThinkingLevel = level;
+	}
+
+	override getSupportedThinkingLevels(): string[] {
+		return ["off", "low", "medium", "high", "xhigh", "max"];
 	}
 
 	async sendPrompt(prompt: string, attachments: PromptAttachment[] | undefined, sink: AgentEventSink): Promise<void> {
@@ -169,6 +178,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		if (targetModel) {
 			args.push("--model", targetModel);
+		}
+
+		if (this.currentThinkingLevel && this.currentThinkingLevel !== "off") {
+			args.push("--effort", this.currentThinkingLevel);
 		}
 
 		if (this.activeSessionId) {

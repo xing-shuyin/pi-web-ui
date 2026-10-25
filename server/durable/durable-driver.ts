@@ -49,11 +49,20 @@ export class DurableAgentDriver extends BaseAgentDriver {
 	private currentConversationId: string | null = null;
 	private activeWatch: any = null;
 	private currentRunningConv: any = null;
+	private currentThinkingLevel: string = "medium";
 
 	constructor(cwd: string, opts?: { dataDir?: string; agentDir?: string }) {
 		super(cwd);
 		this.dataDir = opts?.dataDir ?? process.cwd();
 		this.agentDir = opts?.agentDir;
+	}
+
+	override setThinkingLevel(level: string): void {
+		this.currentThinkingLevel = level;
+	}
+
+	override getSupportedThinkingLevels(): string[] {
+		return ["off", "low", "medium", "high"];
 	}
 
 	/**

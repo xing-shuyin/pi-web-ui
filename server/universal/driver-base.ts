@@ -166,6 +166,16 @@ export abstract class BaseAgentDriver {
 		/* 可由子类覆盖 */
 	}
 
+	/** 设置运行态思考强度档位（可选） */
+	setThinkingLevel?(_level: string): void {
+		/* 可由子类覆盖 */
+	}
+
+	/** 获取该驱动/运行态支持的思考档位列表（默认回落为标准档位） */
+	getSupportedThinkingLevels?(): string[] {
+		return ["off", "low", "medium", "high"];
+	}
+
 	/** 转换为标准底座能力声明（AgentEngineCapabilities）供前端与快照使用 */
 	getEngineCapabilities(): AgentEngineCapabilities {
 		return {

@@ -338,6 +338,10 @@ export class UniversalSession implements DispatchSession {
 			this.currentModel = savedModel;
 		}
 
+		if (typeof this.driver.setThinkingLevel === "function") {
+			this.driver.setThinkingLevel(this.thinkingLevel);
+		}
+
 		this.modelAdmin = new ModelAdminService({
 			agentDir: this.agentDir,
 			emit: (msg) => this.send(msg),
@@ -583,7 +587,10 @@ export class UniversalSession implements DispatchSession {
 				vision: curModel.vision,
 			},
 			thinkingLevel: this.thinkingLevel,
-			availableThinkingLevels: ["off", "low", "medium", "high"],
+			availableThinkingLevels:
+				typeof this.driver.getSupportedThinkingLevels === "function"
+					? this.driver.getSupportedThinkingLevels()
+					: ["off", "low", "medium", "high"],
 			queue: {
 				steering: [],
 				followUp: this.followUpQueue.map((q) => q.text),
@@ -1682,6 +1689,9 @@ export class UniversalSession implements DispatchSession {
 
 	setThinking(level: string): void {
 		this.thinkingLevel = level;
+		if (typeof this.driver.setThinkingLevel === "function") {
+			this.driver.setThinkingLevel(level);
+		}
 		this.flushSnapshot();
 	}
 

@@ -106,6 +106,10 @@ export class DshAgentDriver extends BaseAgentDriver {
 		return this.activeSessionId;
 	}
 
+	override getSupportedThinkingLevels(): string[] {
+		return ["high"];
+	}
+
 	/** 绑定运行时通知事件分发到 Universal 底座的 sink */
 	private setupNotificationHandler(): void {
 		this.runtime.onNotification((method: string, params: unknown) => {
