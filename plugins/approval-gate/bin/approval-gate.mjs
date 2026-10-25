@@ -56,7 +56,13 @@ function resolveToken() {
 		const line = readFileSync(SECRET_ENV, "utf8")
 			.split("\n")
 			.find((l) => /PI_WEB_TOKEN\s*=/.test(l));
-		if (line) return line.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "");
+		if (line)
+			return line
+				.split("=")
+				.slice(1)
+				.join("=")
+				.trim()
+				.replace(/^["']|["']$/g, "");
 	}
 	return "";
 }
@@ -69,12 +75,16 @@ function baseUrl() {
 
 async function api(method, path, body) {
 	const token = resolveToken();
-	const url = `${baseUrl()}/plugins-api/approval-gate${path}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+	const url = `${baseUrl()}/plugins-api/approval-gate${path}`;
+	const headers = {
+		...(body ? { "content-type": "application/json" } : {}),
+		...(token ? { "x-pi-token": token, authorization: `Bearer ${token}` } : {}),
+	};
 	let res;
 	try {
 		res = await fetch(url, {
 			method,
-			headers: body ? { "content-type": "application/json" } : undefined,
+			headers: Object.keys(headers).length > 0 ? headers : undefined,
 			body: body ? JSON.stringify(body) : undefined,
 		});
 	} catch (err) {
@@ -88,11 +98,17 @@ async function api(method, path, body) {
 
 /** 建快照会话（泛化自 面板更新/scripts/notify-session.sh 的 A 档模式）并返回会话 id。 */
 function autoSession(prompt, project, model, timeoutSec) {
-	const piBin = ["pi", join(homedir(), ".pi/agent/bin/pi"), join(homedir(), ".local/share/pi-node/node-v22.23.2-darwin-arm64/bin/pi")].find(
-		(p) => (p.includes("/") ? existsSync(p) : spawnSync("which", [p], { encoding: "utf8" }).status === 0),
-	);
+	const piBin = [
+		"pi",
+		join(homedir(), ".pi/agent/bin/pi"),
+		join(homedir(), ".local/share/pi-node/node-v22.23.2-darwin-arm64/bin/pi"),
+	].find((p) => (p.includes("/") ? existsSync(p) : spawnSync("which", [p], { encoding: "utf8" }).status === 0));
 	if (!piBin) die(66, "找不到 pi 可执行文件（PATH / ~/.pi/agent/bin）");
-	const child = spawn(piBin, ["-p", "--model", model, prompt], { cwd: project, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutSec * 1000 });
+	const child = spawn(piBin, ["-p", "--model", model, prompt], {
+		cwd: project,
+		stdio: ["ignore", "pipe", "pipe"],
+		timeout: timeoutSec * 1000,
+	});
 	let out = "";
 	child.stdout.on("data", (d) => (out += d));
 	child.stderr.on("data", () => {});
@@ -148,13 +164,19 @@ async function main() {
 		const data = await api("GET", "/list");
 		let items = data.items ?? [];
 		if (args.pending) items = items.filter((x) => x.status === "pending");
-		for (const it of items) console.log(`${it.status === "pending" ? "●" : "○"} ${it.id}  [${it.status}] ${it.task} · ${it.title}  (${it.conversationId || "无会话"})`);
+		for (const it of items)
+			console.log(
+				`${it.status === "pending" ? "●" : "○"} ${it.id}  [${it.status}] ${it.task} · ${it.title}  (${it.conversationId || "无会话"})`,
+			);
 		console.error(`共 ${items.length} 项`);
 		return;
 	}
 	if (cmd === "resolve") {
 		if (!args.id) die(64, "resolve 需要 --id <拍板项id>");
-		const data = await api("POST", "/resolve", { id: args.id, status: args.status === "dismissed" ? "dismissed" : "resolved" });
+		const data = await api("POST", "/resolve", {
+			id: args.id,
+			status: args.status === "dismissed" ? "dismissed" : "resolved",
+		});
 		console.log(`已标记 ${data.item?.id} → ${data.item?.status}`);
 		return;
 	}
@@ -179,7 +201,9 @@ async function main() {
 			const itemId = pre.item.id;
 			const rawReq = String(args["auto-session"]);
 			const prompt = args.raw ? rawReq : buildTemplatePrompt(rawReq, itemId);
-			console.error(`[approval-gate] 建快照会话（model=${model}，timeout=${timeout}s，cwd=${project}${args.raw ? "，raw" : ""}）…`);
+			console.error(
+				`[approval-gate] 建快照会话（model=${model}，timeout=${timeout}s，cwd=${project}${args.raw ? "，raw" : ""}）…`,
+			);
 			const r = await autoSession(prompt, project, model, timeout);
 			if (!r.sessionId) {
 				// 会话失败：把占位项标记 dismissed，不留孤儿 pending
@@ -189,7 +213,9 @@ async function main() {
 			conversationId = r.sessionId;
 			await api("POST", "/update", { id: itemId, conversationId });
 			console.error(`[approval-gate] 快照会话已建并关联：${conversationId}`);
-			console.log(`已登记：${itemId}  ${args.title}${conversationId ? `（会话 ${conversationId}，拍板后自动清账）` : ""}`);
+			console.log(
+				`已登记：${itemId}  ${args.title}${conversationId ? `（会话 ${conversationId}，拍板后自动清账）` : ""}`,
+			);
 			return;
 		}
 		const data = await api("POST", "/register", {
@@ -203,7 +229,9 @@ async function main() {
 			console.log(`当日已登记（幂等跳过）：${data.item.id} [${data.item.status}] ${data.item.title}`);
 			return;
 		}
-		console.log(`已登记：${data.item.id}  ${data.item.title}${data.item.conversationId ? `（会话 ${data.item.conversationId}）` : ""}`);
+		console.log(
+			`已登记：${data.item.id}  ${data.item.title}${data.item.conversationId ? `（会话 ${data.item.conversationId}）` : ""}`,
+		);
 		return;
 	}
 	die(64, "用法：approval-gate <register|resolve|list>（--help 看 bin/approval-gate.mjs 头注释）");

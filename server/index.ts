@@ -3386,6 +3386,14 @@ wss.on("connection", (ws) => {
 				void probeAllEngines().then((engines) => {
 					if (!closed) send({ type: "engines_status", engines });
 				});
+				if (!isLoopbackHost(HOST) && !AUTH_TOKEN) {
+					send({
+						type: "notice",
+						level: "warning",
+						text: `安全告警：服务监听在非回环地址 (${HOST}) 且未配置口令 (PI_WEB_TOKEN)，局域网设备可在未授权状态下访问与执行命令！`,
+						textEn: `Security Warning: Server is bound to non-loopback (${HOST}) without PI_WEB_TOKEN; any device on the network can access without authentication!`,
+					});
+				}
 			}
 			// attach 慢提示：本体继续等，不取消；完成后照常走快照流程。
 			const slowTimer = setTimeout(() => {
@@ -3580,6 +3588,24 @@ httpServer.listen(PORT, HOST, () => {
 	}
 	console.log(`    bind        : ${HOST}:${PORT}`);
 	console.log(`    setup       : http://127.0.0.1:${PORT}/setup （仅本机：配 token/监听/白名单）`);
+	if (!isLoopbackHost(HOST) && !AUTH_TOKEN) {
+		const requireAuth = /^(1|true|yes)$/i.test(process.env.PI_WEB_REQUIRE_AUTH ?? "");
+		if (requireAuth) {
+			console.error("");
+			console.error(
+				`  [FATAL] PI_WEB_REQUIRE_AUTH is enabled, but server is bound to non-loopback host (${HOST}) without PI_WEB_TOKEN.`,
+			);
+			console.error("  Please set PI_WEB_TOKEN or bind to 127.0.0.1.");
+			console.error("");
+			process.exit(1);
+		}
+		console.warn("");
+		console.warn("  ─────────────────────────────────────────────────────────────────────────────");
+		console.warn(`  ⚠️  【安全告警】服务监听在非回环地址 (${HOST}:${PORT}) 且未配置 PI_WEB_TOKEN！`);
+		console.warn("     局域网（或公网路由）任意设备均可在未授权状态下访问 Web 界面并执行系统命令！");
+		console.warn("     建议配置 PI_WEB_TOKEN 环境变量，或将监听地址绑定至 127.0.0.1。");
+		console.warn("  ─────────────────────────────────────────────────────────────────────────────");
+	}
 	console.log("");
 });
 

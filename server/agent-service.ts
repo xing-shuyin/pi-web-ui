@@ -5749,7 +5749,9 @@ export class ClientSession {
 				return;
 			}
 			const id = `appr-${++this.approvalSeq}`;
-			const conv = conversationId ? this.convs.get(conversationId) : this.conv;
+			const targetConv = conversationId ? this.convs.get(conversationId) : this.conv;
+			const resolvedConvId = conversationId ?? targetConv?.id ?? this.activeId;
+			const conv = (resolvedConvId ? this.convs.get(resolvedConvId) : undefined) ?? targetConv;
 			const suppression = approvalSuppressionReason(
 				conv?.approvalPolicy,
 				this.settingsSvc.current.toolApprovalEnabled !== false,
@@ -5760,7 +5762,7 @@ export class ClientSession {
 			if (suppression) {
 				// 记录静默放行审计日志（Issue #722）
 				this.auditLogger.record({
-					conversationId,
+					conversationId: resolvedConvId,
 					toolName,
 					params,
 					decision: "approved",
@@ -5797,7 +5799,7 @@ export class ClientSession {
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
 				...(parentTool ? { parentTool } : {}),
-				conversationId,
+				conversationId: resolvedConvId,
 				conversationTitle,
 				resolve,
 				createdAt: Date.now(),
@@ -5814,7 +5816,7 @@ export class ClientSession {
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
 				...(parentTool ? { parentTool } : {}),
-				...(conversationId !== undefined ? { conversationId } : {}),
+				...(resolvedConvId !== undefined ? { conversationId: resolvedConvId } : {}),
 				...(conversationTitle ? { conversationTitle } : {}),
 			});
 			this.flushSnapshot();
@@ -5838,7 +5840,14 @@ export class ClientSession {
 		const pending = this.pendingApprovals.get(id);
 		if (!pending) return false;
 		const convId = pending.conversationId ?? this.activeId;
-		const conv = this.convs.get(convId);
+		const conv = convId ? this.convs.get(convId) : undefined;
+		if (!conv) {
+			this.pendingApprovals.delete(id);
+			pending.resolve({ decision: "deny", reason: "所属对话不存在或已关闭" });
+			this.emit({ type: "tool_approval_resolved", id });
+			this.flushSnapshot();
+			return false;
+		}
 		this.pendingApprovals.delete(id);
 		// 记录用户主动决策审计日志（Issue #722）
 		this.auditLogger.record({
@@ -5876,7 +5885,7 @@ export class ClientSession {
 		let n = 0;
 		// eslint-disable-next-line unicorn/no-useless-spread -- 快照：循环里会从 map 删项（迭代中改集合）
 		for (const [oid, o] of [...this.pendingApprovals]) {
-			if ((o.conversationId ?? this.activeId) !== convId) continue;
+			if (o.conversationId !== convId) continue;
 			if (!approvalSuppressionReason(policy, true, o.category?.id, o.toolName, o.params)) continue;
 			this.pendingApprovals.delete(oid);
 			this.auditLogger.record({
@@ -5973,8 +5982,9 @@ export class ClientSession {
 	 */
 	setApprovalPolicy(partial: { conversationId?: string; allowAll?: boolean; categories?: string[] }): void {
 		const convId = partial.conversationId ?? this.activeId;
+		if (!convId) return;
 		const conv = this.convs.get(convId);
-		if (!conv) return;
+		if (!conv || conv.isSubagent) return;
 		const cur = conv.approvalPolicy;
 		const next: ApprovalPolicy = {
 			allowAll: partial.allowAll ?? cur?.allowAll ?? false,
