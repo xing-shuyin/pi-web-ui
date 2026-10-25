@@ -14272,6 +14272,7 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
+		flex-shrink: 0;
 	}
 
 	.dialog-badge {
@@ -14323,11 +14324,23 @@
 
 	.dialog-title {
 		flex: 1;
+		min-width: 0;
 		font-size: 13px;
 		font-weight: 700;
 		color: var(--text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.dialog-prompt {
+		font-size: 13px;
+		color: var(--text);
+		line-height: 1.5;
 		white-space: pre-wrap;
 		word-break: break-word;
+		overflow-wrap: anywhere;
+		min-height: 0;
 	}
 
 	.dialog-dismiss {
@@ -14394,8 +14407,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+		flex-shrink: 0;
 	}
-	.dialog-custom-row,
 	.dialog-options > .dialog-actions {
 		position: sticky;
 		bottom: -10px;
@@ -14407,15 +14420,6 @@
 		border-radius: 0 0 9px 9px;
 		display: flex;
 		gap: 8px;
-	}
-	.dialog-custom-row .dialog-input {
-		flex: 1;
-		font-size: 13px;
-		padding: 7px 10px;
-	}
-	.dialog-custom-row .btn {
-		padding: 6px 14px;
-		font-size: 13px;
 	}
 
 	.dialog-option {
@@ -14432,6 +14436,8 @@
 		cursor: pointer;
 		white-space: pre-wrap;
 		word-break: break-word;
+		overflow-wrap: anywhere;
+		flex-shrink: 0;
 		transition:
 			border-color 0.12s,
 			background 0.12s;
@@ -14456,18 +14462,21 @@
 	.dialog-body p {
 		margin: 0 0 8px;
 	}
-	/* ui.select/confirm 对话框内的 markdown（选项按钮 / 确认正文）收紧排版 */
+	/* ui.select/confirm 对话框内的 markdown（选项按钮 / 确认正文 / 提问提示）收紧排版 */
 	.dialog-option .md,
-	.dialog-body .md {
+	.dialog-body .md,
+	.dialog-prompt .md {
 		font-size: 13px;
 		line-height: 1.5;
 	}
 	.dialog-option .md p,
-	.dialog-body .md p {
+	.dialog-body .md p,
+	.dialog-prompt .md p {
 		margin: 0;
 	}
 	.dialog-option .md :not(pre) > code,
-	.dialog-body .md :not(pre) > code {
+	.dialog-body .md :not(pre) > code,
+	.dialog-prompt .md :not(pre) > code {
 		padding: 0.12em 0.34em;
 		border: 1px solid var(--border-soft);
 		border-radius: 5px;
@@ -14495,6 +14504,7 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: 8px;
+		flex-shrink: 0;
 	}
 
 	/* ---- DSH 模型提问对话框（question_pending） ---------------------------- */

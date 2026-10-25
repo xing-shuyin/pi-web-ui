@@ -115,6 +115,7 @@ const TEXT_CONTAINERS = [
 	".setup-detail",
 	".set-prompt-view-text",
 	".dialog-body",
+	".dialog-prompt",
 	".dialog-option",
 	".msg-error", // 长报错（URL / 报错码）
 	".goalbar-stale", // 旧后端告警（整句，能断行）
@@ -144,6 +145,7 @@ const SINGLE_LINE_IN_ROW = [
 	".msg-collapsed-preview",
 	".msg-collapsed-chip",
 	".question-collapsed-preview",
+	".dialog-title",
 ];
 
 /** 横向不许外溢的**行容器**（flex 行/列本身必须钉在列宽内）。

@@ -38,59 +38,76 @@ export function Dialog({ dialog }: DialogProps) {
 	const options = Array.isArray(dialog.args[0]) ? (dialog.args[0] as string[]) : [];
 	const message = typeof dialog.args[0] === "string" ? (dialog.args[0] as string) : "";
 
+	// 标题处理：如果 title 包含换行，提取首行作为顶栏紧凑单行概要，完整内容放在滚动正文区
+	const titleText = dialog.title && dialog.title !== t("pluginRequest") ? dialog.title : "";
+	const headTitle = titleText ? titleText.split("\n")[0].trim() : "";
+
+	useEffect(() => {
+		if (dialog.kind !== "select" || options.length === 0) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "ArrowDown") {
+				e.preventDefault();
+				setSel((s) => (s + 1) % options.length);
+			} else if (e.key === "ArrowUp") {
+				e.preventDefault();
+				setSel((s) => (s - 1 + options.length) % options.length);
+			} else if (e.key === "Enter" && !e.isComposing) {
+				e.preventDefault();
+				if (options[sel] !== undefined) {
+					respond(options[sel]);
+				}
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [dialog.kind, dialog.id, options, sel]);
+
 	return (
 		<div className="dialog-inline" data-dialog-kind={dialog.kind}>
 			<div className="dialog-head">
 				<span className="dialog-badge">{t("pluginRequest")}</span>
-				{dialog.title && dialog.title !== t("pluginRequest") && <span className="dialog-title">{dialog.title}</span>}
+				{headTitle && (
+					<span className="dialog-title" title={titleText}>
+						{headTitle}
+					</span>
+				)}
 				<button type="button" className="dialog-dismiss" title={t("cancel")} onClick={() => respond(null)}>
 					✕
 				</button>
 			</div>
 
 			{dialog.kind === "select" && (
-				<div className="dialog-options">
-					{options.map((opt, i) => (
-						<button
-							type="button"
-							key={i}
-							className={`dialog-option ${i === sel ? "sel" : ""}`}
-							onMouseEnter={() => setSel(i)}
-							onClick={() => respond(opt)}
-						>
-							<Markdown text={opt} rawHtml />
-						</button>
-					))}
-					{options.length === 0 && <div className="dialog-hint">{t("noOptions")}</div>}
-					<div className="dialog-custom-row">
-						<input
-							className="dialog-input"
-							value={inputValue}
-							placeholder={t("modelQuestionCustom")}
-							onChange={(e) => setInputValue(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && !e.nativeEvent.isComposing && inputValue.trim()) {
-									respond(inputValue.trim());
-								}
-							}}
-						/>
-						<button
-							type="button"
-							className="btn primary"
-							disabled={!inputValue.trim()}
-							onClick={() => {
-								if (inputValue.trim()) respond(inputValue.trim());
-							}}
-						>
-							{t("ok")}
-						</button>
+				<>
+					{titleText && (
+						<div className="dialog-prompt dialog-body">
+							<Markdown text={titleText} rawHtml />
+						</div>
+					)}
+					<div className="dialog-options">
+						{options.map((opt, i) => (
+							<button
+								type="button"
+								key={i}
+								className={`dialog-option ${i === sel ? "sel" : ""}`}
+								onMouseEnter={() => setSel(i)}
+								onClick={() => respond(opt)}
+							>
+								<Markdown text={opt} rawHtml />
+							</button>
+						))}
+						{options.length === 0 && <div className="dialog-hint">{t("noOptions")}</div>}
 					</div>
-				</div>
+				</>
 			)}
 
 			{dialog.kind === "confirm" && (
 				<div className="dialog-body">
-					<Markdown text={message} rawHtml />
+					{titleText && (titleText.includes("\n") || titleText.length > 50 || !message) && (
+						<div className="dialog-prompt">
+							<Markdown text={titleText} rawHtml />
+						</div>
+					)}
+					{message && <Markdown text={message} rawHtml />}
 					<div className="dialog-actions">
 						<button type="button" className="btn" onClick={() => respond(false)}>
 							{t("cancel")}
@@ -104,6 +121,11 @@ export function Dialog({ dialog }: DialogProps) {
 
 			{dialog.kind === "input" && (
 				<div className="dialog-body">
+					{titleText && (
+						<div className="dialog-prompt">
+							<Markdown text={titleText} rawHtml />
+						</div>
+					)}
 					<input
 						className="dialog-input"
 						value={inputValue}
