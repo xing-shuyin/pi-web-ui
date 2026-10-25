@@ -2391,13 +2391,23 @@ export function App() {
 												? `preview:${chat.transition.target}`
 												: (chat.state.conversationId ?? "boot")
 										}
+										preview={Boolean(chat.transition?.previewMessages?.length)}
 										state={
 											chat.transition?.previewMessages?.length
 												? {
 														...chat.state,
+														conversationId:
+															chat.transition.kind === "conversation"
+																? chat.transition.target
+																: `preview:${chat.transition.target}`,
+														sessionFile: undefined,
+														historyStart: 0,
+														historyTotal: chat.transition.previewMessages.length,
 														messages: chat.transition.previewMessages,
 														streamingMessage: null,
 														isStreaming: false,
+														pendingQuestion: null,
+														pendingApproval: null,
 													}
 												: chat.state
 										}

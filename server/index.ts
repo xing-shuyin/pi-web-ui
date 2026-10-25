@@ -1511,6 +1511,10 @@ export interface DispatchSession {
 	editMessage(messageId: string, text: string, attachments?: PromptAttachment[]): Promise<void>;
 	forkSession?(messageId: string, position?: "before" | "at", targetConvId?: string): Promise<void>;
 	flushSnapshot(forceFull?: boolean): void;
+	/** 当前活跃会话 ID（历史翻页按需回水与自愈用）。 */
+	activeConversationId?(): string;
+	/** 获取指定会话的全量 UiMessage 列表（历史窗口按需回水）。 */
+	getMessagesOfConversation?(convId: string): import("./protocol.js").UiMessage[] | undefined;
 	pushSlashCommands(): Promise<void>;
 	/** 取一条工具的**定义说明** → `tool_info`（工具卡右键 → 「显示工具详细信息」）。
 	 *  pi 与 dsh 都实现了；缺失时 dispatch 回 `unsupported`（不静默 —— 否则点开弹窗
@@ -3096,7 +3100,31 @@ wss.on("connection", (ws) => {
 		// 历史窗口按需加载：连接级窗口化直接服务（四个引擎通吃，不依赖引擎实现）。
 		// 放在引擎分发之前：它不是引擎能力，窗口化关闭时静默无回执（前端保持现状）。
 		if (msg.type === "load_earlier_messages") {
-			windowTap.loadEarlier(msg.count, msg.all, msg.conversationId);
+			let handled = windowTap.loadEarlier({
+				count: msg.count,
+				all: msg.all,
+				conversationId: msg.conversationId,
+				beforeId: msg.beforeId,
+				before: msg.before,
+			});
+			if (!handled && cs) {
+				const activeId = typeof cs.activeConversationId === "function" ? cs.activeConversationId() : undefined;
+				const convId = msg.conversationId || activeId;
+				const full = convId ? cs.getMessagesOfConversation?.(convId) : undefined;
+				if (convId && full && full.length > 0) {
+					windowTap.rehydrate(convId, full, msg.before);
+					handled = windowTap.loadEarlier({
+						count: msg.count,
+						all: msg.all,
+						conversationId: convId,
+						beforeId: msg.beforeId,
+						before: msg.before,
+					});
+				}
+				if (!handled && (!msg.conversationId || msg.conversationId === activeId)) {
+					cs.flushSnapshot(true);
+				}
+			}
 			return;
 		}
 		// Managed instances do not install software on themselves, and tabs this

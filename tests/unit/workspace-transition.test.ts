@@ -119,4 +119,40 @@ describe("workspace & session streaming transition", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+
+	it("preview state in transition isolates historyStart and conversationId from previous conversation", () => {
+		const prevChatState = {
+			conversationId: "conv-old",
+			sessionId: "sess-old",
+			sessionFile: "/path/to/old.jsonl",
+			historyStart: 150,
+			historyTotal: 300,
+			messages: [{ id: "m1", role: "user", content: [] }],
+		};
+		const transition = {
+			kind: "conversation" as const,
+			target: "conv-target",
+			previewMessages: [
+				{ id: "p1", role: "user", content: [{ type: "text", text: "preview 1" }] },
+				{ id: "p2", role: "assistant", content: [{ type: "text", text: "preview 2" }] },
+			],
+		};
+		const previewState = {
+			...prevChatState,
+			conversationId: transition.kind === "conversation" ? transition.target : `preview:${transition.target}`,
+			sessionFile: undefined,
+			historyStart: 0,
+			historyTotal: transition.previewMessages.length,
+			messages: transition.previewMessages,
+			streamingMessage: null,
+			isStreaming: false,
+			pendingQuestion: null,
+			pendingApproval: null,
+		};
+		expect(previewState.conversationId).toBe("conv-target");
+		expect(previewState.historyStart).toBe(0);
+		expect(previewState.historyTotal).toBe(2);
+		expect(previewState.sessionFile).toBeUndefined();
+		expect(previewState.messages).toHaveLength(2);
+	});
 });

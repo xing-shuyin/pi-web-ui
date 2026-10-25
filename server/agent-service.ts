@@ -921,6 +921,18 @@ export class ClientSession {
 		if (!conv) throw new Error("no active conversation");
 		return conv;
 	}
+	/** 当前激活会话 ID（供服务端按需回水定位用）。 */
+	activeConversationId(): string {
+		return this.activeId;
+	}
+
+	/** 获取指定会话的全量 UiMessage 列表（供历史窗口按需回水与补齐使用）。 */
+	getMessagesOfConversation(convId: string): UiMessage[] | undefined {
+		const conv = this.convs.get(convId);
+		if (!conv) return undefined;
+		return this.messagesOf(conv);
+	}
+
 	/** Runtime of the active conversation. */
 	get runtime(): AgentSessionRuntime {
 		return this.conv.runtime;

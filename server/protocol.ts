@@ -762,9 +762,18 @@ export type ClientMessage =
 	 *  消息窗口往前扩一页，服务端回 `earlier_messages`（新增的更早一段，客户端前插）。
 	 *  `count` 缺省 = 一页；`all: true` = 一路拉到最早（「全部展开」/ 打开页内搜索）。
 	 *  `conversationId` 指明要翻页的会话（多标签/后台流式时 lastConversationId 不可靠）；
+	 *  `beforeId` 客户端当前首条消息的 ID（不可变锚点，优先于下标，彻底防数组位移）；
+	 *  `before` 客户端当前窗口起点下标（自描述游标，entry 丢失或失忆时作为截断右边界）；
 	 *  缺省时回退服务端最近一次快照的会话（老客户端兼容）。
 	 *  窗口化关闭或服务端未实现时该消息被忽略（无回执），前端保持现状。 */
-	| { type: "load_earlier_messages"; count?: number; all?: boolean; conversationId?: string }
+	| {
+			type: "load_earlier_messages";
+			count?: number;
+			all?: boolean;
+			conversationId?: string;
+			beforeId?: string;
+			before?: number;
+	  }
 	// -- source-control panel (read-only git queries, server-side execFile) --
 	/** SCM refresh payload: status + branches + numstat (history loads
 	 *  lazily via scm_history so big repos don't pay for it every refresh). */

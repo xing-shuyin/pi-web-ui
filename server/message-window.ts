@@ -34,7 +34,15 @@ export const DEFAULT_HISTORY_PAGE = 30;
 /** 单次翻页上限，防止一条消息把几千条历史一次拉下来。 */
 const MAX_PAGE = 2000;
 /** 最多为几个对话保留全量缓存（LRU）—— 引用的是引擎已序列化好的对象，只有指针开销。 */
-const MAX_CACHED_CONVERSATIONS = 4;
+const MAX_CACHED_CONVERSATIONS = 64;
+
+export interface LoadEarlierOptions {
+	count?: number;
+	all?: boolean;
+	conversationId?: string;
+	beforeId?: string;
+	before?: number;
+}
 
 export interface MessageWindowConfig {
 	/** 尾部窗口条数；<= 0 表示关闭窗口化（全量下发，与旧行为一致）。 */
@@ -189,18 +197,59 @@ export class MessageWindowTap {
 		this.send(msg);
 	}
 
+	/**
+	 * 按需回水：从运行时或存储中恢复某个会话的全量消息基线，
+	 * 供 LRU 逐出、冷启动或跨连接无快照状态下立即恢复翻页服务能力。
+	 */
+	rehydrate(convId: string, full: UiMessage[], start?: number): void {
+		const entry = this.entry(convId);
+		entry.full = full;
+		if (start !== undefined && Number.isFinite(start) && start >= 0) {
+			entry.start = Math.min(full.length, start);
+		} else if (entry.start < 0) {
+			entry.start = pickWindowStart(full, this.cfg);
+		}
+	}
+
 	/** 客户端往上翻页：把窗口起点往前扩 `count` 条（`all` = 一路拉到最早）。
-	 *  `conversationId` 缺省时回退最近一次快照的会话（老客户端兼容）；
-	 *  显式传入时只服务该会话——多标签/后台流式会顶掉 `lastConversationId`，
-	 *  若前端明确说自己正在看哪个会话就必须以它为准，避免跨会话串台。 */
-	loadEarlier(count?: number, all?: boolean, conversationId?: string): void {
-		const convId = conversationId || this.lastConversationId;
+	 *  - `conversationId`: 会话 ID（缺省回退最近一次快照会话）；
+	 *  - `beforeId`: 客户端首条消息的 ID（优先使用该不可变锚点，不受压缩/重试导致的下标漂移影响）；
+	 *  - `before`: 客户端当前窗口起点下标（自描述游标，entry 丢失或失忆时作为截断右边界）；
+	 *  返回 boolean: true = 已命中并下发 earlier_messages; false = entry 未命中（调用方可尝试回水）。 */
+	loadEarlier(
+		countOrOpts?: number | LoadEarlierOptions,
+		all?: boolean,
+		conversationId?: string,
+		beforeId?: string,
+		before?: number,
+	): boolean {
+		const opts: LoadEarlierOptions =
+			typeof countOrOpts === "object" && countOrOpts !== null
+				? countOrOpts
+				: { count: countOrOpts, all, conversationId, beforeId, before };
+
+		const convId = opts.conversationId || this.lastConversationId;
 		const entry = convId ? this.convs.get(convId) : undefined;
-		if (!entry || !convId) return;
+		if (!entry || !convId) return false;
+
 		const total = entry.full.length;
-		const page = all ? entry.start : Math.min(MAX_PAGE, Math.max(1, Math.floor(count ?? this.cfg.pageSize) || 1));
-		const start = all ? 0 : Math.max(0, entry.start - page);
-		const messages = start < entry.start ? entry.full.slice(start, entry.start) : [];
+		// 确定翻页右边界（end）：
+		// 1. 优先使用不可变消息 ID beforeId 定位（防数组位移）；
+		// 2. 其次使用客户端自描述下标 before（自描述游标）；
+		// 3. 最后回退服务端自身记录的 entry.start（若小于 0 则说明未初始化，回退 total）。
+		let end = entry.start >= 0 ? entry.start : total;
+		if (opts.beforeId) {
+			const idx = entry.full.findIndex((m) => m.id === opts.beforeId);
+			if (idx >= 0) {
+				end = idx;
+			}
+		} else if (typeof opts.before === "number" && Number.isFinite(opts.before) && opts.before >= 0) {
+			end = Math.min(total, opts.before);
+		}
+
+		const page = opts.all ? end : Math.min(MAX_PAGE, Math.max(1, Math.floor(opts.count ?? this.cfg.pageSize) || 1));
+		const start = opts.all ? 0 : Math.max(0, end - page);
+		const messages = start < end ? entry.full.slice(start, end) : [];
 		entry.start = start;
 		this.send({
 			type: "earlier_messages",
@@ -209,6 +258,7 @@ export class MessageWindowTap {
 			historyStart: start,
 			historyTotal: total,
 		});
+		return true;
 	}
 
 	/** 取（或建）对话窗口；LRU 超限时淘汰最久未用的那个。 */

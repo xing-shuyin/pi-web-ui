@@ -234,6 +234,34 @@ ws.send(JSON.stringify({ type: "set_settings", reversePagination: false }));
 for (let i = 0; i < 100 && settings?.reversePagination !== false; i++) await sleep(50);
 check("set_settings 能关回去", settings?.reversePagination === false, `value=${settings?.reversePagination}`);
 
+// ── 7. 自描述翻页：切回长会话后携带 conversationId + beforeId 精准定位 ─────
+const pagesLenBefore7 = earlierPages.length;
+ws.send(JSON.stringify({ type: "switch_session", path: seedFile }));
+for (let i = 0; i < 100 && state?.historyStart !== 30; i++) await sleep(50);
+const seedConvId = state?.conversationId;
+const firstMsgId = state?.messages?.[0]?.id;
+ws.send(
+	JSON.stringify({
+		type: "load_earlier_messages",
+		conversationId: seedConvId,
+		beforeId: firstMsgId,
+		before: 30,
+		count: 5,
+	}),
+);
+for (let i = 0; i < 100 && earlierPages.length === pagesLenBefore7; i++) await sleep(50);
+const page7 = earlierPages.at(-1);
+check(
+	"自描述 beforeId 定位翻页成功",
+	page7?.conversationId === seedConvId && page7?.historyStart === 25 && page7?.messages?.length === 5,
+	`conv=${page7?.conversationId} start=${page7?.historyStart} n=${page7?.messages?.length}`,
+);
+check(
+	"beforeId 翻页末尾条目紧邻 beforeId 消息",
+	page7?.messages?.at(-1)?.content?.[0]?.text === "assistant message 30",
+	page7?.messages?.at(-1)?.content?.[0]?.text,
+);
+
 try {
 	ws.close();
 } catch {

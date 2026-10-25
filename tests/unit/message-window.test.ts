@@ -200,4 +200,46 @@ describe("MessageWindowTap", () => {
 		tap.accept(notice);
 		expect(out[0]).toBe(notice);
 	});
+
+	it("未命中时返回 false；rehydrate 回水后当场成功服务", () => {
+		const { tap, out, full } = makeTap(1000, 300);
+		// 尚未接收快照，直接翻页未命中返回 false
+		expect(tap.loadEarlier({ conversationId: "c_unknown", count: 30 })).toBe(false);
+		expect(out).toHaveLength(0);
+
+		// 按需回水：从运行时注回全量消息
+		tap.rehydrate("c_unknown", full, 700);
+		// 回水后立即成功，返回 true 并发出 earlier_messages
+		expect(tap.loadEarlier({ conversationId: "c_unknown", count: 30 })).toBe(true);
+		expect(out).toHaveLength(1);
+		const page = out[0] as Extract<ServerMessage, { type: "earlier_messages" }>;
+		expect(page.type).toBe("earlier_messages");
+		expect(page.conversationId).toBe("c_unknown");
+		expect(page.historyStart).toBe(670);
+		expect(page.messages).toHaveLength(30);
+	});
+
+	it("beforeId 优先于下标进行不可变锚定（防止下标漂移）", () => {
+		const { tap, out, full } = makeTap(1000, 300);
+		tap.accept(snapshot("c1", full));
+		// 客户端首条是 full[700]，带 beforeId="m700"
+		const ok = tap.loadEarlier({ conversationId: "c1", count: 20, beforeId: "m700" });
+		expect(ok).toBe(true);
+		const page = out[1] as Extract<ServerMessage, { type: "earlier_messages" }>;
+		expect(page.historyStart).toBe(680);
+		expect(page.messages).toHaveLength(20);
+		expect(page.messages.at(-1)?.id).toBe("m699");
+	});
+
+	it("before 下标自描述游标截取", () => {
+		const { tap, out, full } = makeTap(1000, 300);
+		tap.accept(snapshot("c1", full));
+		const ok = tap.loadEarlier({ conversationId: "c1", count: 20, before: 500 });
+		expect(ok).toBe(true);
+		const page = out[1] as Extract<ServerMessage, { type: "earlier_messages" }>;
+		expect(page.historyStart).toBe(480);
+		expect(page.messages).toHaveLength(20);
+		expect(page.messages[0].id).toBe("m480");
+		expect(page.messages.at(-1)?.id).toBe("m499");
+	});
 });

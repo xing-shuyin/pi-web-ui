@@ -87,8 +87,8 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(withFile.soul).toContain("Be concise in your responses");
 	});
 
-	it("tools：非懒加载返回空串（全量 schema 已下发，目录不重复）", () => {
-		const auto = resolveSectionTexts(inputs());
+	it("tools：非懒加载且无 snippet 覆盖时返回空串（全量 schema 已下发，目录不重复）", () => {
+		const auto = resolveSectionTexts(inputs({ toolSnippets: {} }));
 		expect(auto.tools).toBe("");
 	});
 

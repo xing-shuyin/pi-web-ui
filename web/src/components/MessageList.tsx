@@ -436,6 +436,8 @@ interface MessageListProps {
 	/** URL 深链 `#s=<sessionId>&m=<messageId>` 的消息跳转目标（issue #587）。 */
 	urlJumpMessageId?: string | null;
 	onUrlJumpDone?: () => void;
+	/** 切换会话过渡预览态（纯展示模式，禁用一切翻页网络请求与历史条渲染）。 */
+	preview?: boolean;
 }
 
 export function MessageList({
@@ -457,6 +459,7 @@ export function MessageList({
 	onJumpDone,
 	urlJumpMessageId,
 	onUrlJumpDone,
+	preview = false,
 	uiMessageActions,
 	uiContextMessage,
 	uiContextToolCall,
@@ -850,6 +853,10 @@ export function MessageList({
 		};
 	}, [isPagingActive, visibleCount, defaultPageSize, convKey]);
 	const effectiveVisibleCount = isPagingActive ? Math.min(messages.length, visibleCount) : messages.length;
+	// 服务端回执到达（包括边界空页或自愈快照对齐时）：游标变更即时解除翻页防重锁
+	useEffect(() => {
+		pagePendingRef.current = false;
+	}, [state.historyStart, state.historyTotal]);
 	/** 服务端窗口起点（>0 = 服务端还握着更早的历史没下发，见 server/message-window.ts）。
 	 *  老服务端/窗口化关闭时恒为 0，行为与之前完全一致。 */
 	const historyStart = Math.max(0, state.historyStart ?? 0);
@@ -862,28 +869,35 @@ export function MessageList({
 		visibleCount,
 		historyStart,
 	});
-	const hasEarlier = !exportImage.open && !searchOpen && earlierCount > 0;
+	const hasEarlier = !preview && !exportImage.open && !searchOpen && earlierCount > 0;
 	const visibleMessages =
 		isPagingActive && effectiveVisibleCount < messages.length ? messages.slice(-effectiveVisibleCount) : messages;
 
 	/** 向服务端要一页更早的历史（窗口化扫码，前插到 messages 头部）。 */
 	const requestServerPage = useCallback(
 		(opts: { count?: number; all?: boolean }) => {
+			if (preview) return;
 			if (pagePendingRef.current) return;
 			pagePendingRef.current = true;
 			cancelSettle();
 			capturePrependAnchor();
+			const firstMsgId = messages[0]?.id;
+			const curStart = historyStartRef.current;
 			appSend(
 				opts.all
 					? ({
 							type: "load_earlier_messages",
 							all: true,
 							conversationId: state.conversationId ?? undefined,
+							beforeId: firstMsgId,
+							before: curStart,
 						} satisfies ClientMessage)
 					: ({
 							type: "load_earlier_messages",
 							count: opts.count ?? earlierPageSize,
 							conversationId: state.conversationId ?? undefined,
+							beforeId: firstMsgId,
+							before: curStart,
 						} satisfies ClientMessage),
 			);
 			// 服务端窗口化关闭时不会有回执：兜底解锁，不影响继续点击（回执到也会提前清掉）。
@@ -891,11 +905,12 @@ export function MessageList({
 				pagePendingRef.current = false;
 			}, 3000);
 		},
-		[earlierPageSize, cancelSettle, capturePrependAnchor],
+		[preview, messages, earlierPageSize, cancelSettle, capturePrependAnchor, state.conversationId],
 	);
 
 	const loadEarlier = useCallback(
 		(count?: number) => {
+			if (preview) return;
 			const page = count ?? earlierPageSize;
 			cancelSettle();
 			// 本地还有没展示的更早消息（开启向上分页模式下）：直接撑开，零网络（同样锚定复位）。
@@ -916,17 +931,27 @@ export function MessageList({
 	);
 
 	const loadAllEarlier = useCallback(() => {
+		if (preview) return;
 		cancelSettle();
 		if (isPagingActive && messages.length > visibleCount) {
 			capturePrependAnchor();
 			setVisibleCount(messages.length);
 		}
 		if (historyStartRef.current > 0) requestServerPage({ all: true });
-	}, [historyStartRef, requestServerPage, isPagingActive, messages, visibleCount, cancelSettle, capturePrependAnchor]);
+	}, [
+		preview,
+		historyStartRef,
+		requestServerPage,
+		isPagingActive,
+		messages,
+		visibleCount,
+		cancelSettle,
+		capturePrependAnchor,
+	]);
 
 	// 需要扫全文/全量的入口（页内搜索、导出图片）打开时：服务端窗口化时把更早历史
 	// 一次拉全，否则搜不到/导出缺前半段。（用户主动触发，一次付清）
-	const needsFullHistory = searchOpen || exportImage.open;
+	const needsFullHistory = !preview && (searchOpen || exportImage.open);
 	useEffect(() => {
 		if (!needsFullHistory) return;
 		if (historyStartRef.current > 0) requestServerPage({ all: true });
