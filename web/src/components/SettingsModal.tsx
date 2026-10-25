@@ -661,6 +661,7 @@ interface SettingsPatch {
 	planModeDefaultPrompt?: string;
 	subagentDefaultModel?: string | null;
 	subagentMaxDepth?: number;
+	subagentAutoWakeMaxTurns?: number;
 	retryMaxAttempts?: number;
 	softCapTokens?: number;
 	softCapByModel?: Record<string, number>;
@@ -6587,23 +6588,42 @@ export function SettingsModal({
 								{settings.subagentModels.length === 0 && <p className="set-hint">{t("subagentNoModels")}</p>}
 								{/* 只有 Pi 引擎接了这个设置；durable 也会显示本页但不处理它 */}
 								{engine === "pi" && (
-									<FieldRow label={t("subagentMaxDepth")} tip={t("subagentMaxDepthDesc")}>
-										<select
-											className="set-select"
-											value={settings.subagentMaxDepth ?? 0}
-											onChange={(e) => setPartial({ subagentMaxDepth: Number(e.target.value) })}
-										>
-											<option value={0}>{t("subagentMaxDepthUnlimited")}</option>
-											{/* 预设导入可能带来 >5 的值，并入列表免得下拉显示空白 */}
-											{[...new Set([1, 2, 3, 4, 5, settings.subagentMaxDepth ?? 0])]
-												.filter((n) => n > 0)
-												.map((n) => (
-													<option key={n} value={n}>
-														{n}
-													</option>
-												))}
-										</select>
-									</FieldRow>
+									<>
+										<FieldRow label={t("subagentMaxDepth")} tip={t("subagentMaxDepthDesc")}>
+											<select
+												className="set-select"
+												value={settings.subagentMaxDepth ?? 0}
+												onChange={(e) => setPartial({ subagentMaxDepth: Number(e.target.value) })}
+											>
+												<option value={0}>{t("subagentMaxDepthUnlimited")}</option>
+												{/* 预设导入可能带来 >5 的值，并入列表免得下拉显示空白 */}
+												{[...new Set([1, 2, 3, 4, 5, settings.subagentMaxDepth ?? 0])]
+													.filter((n) => n > 0)
+													.map((n) => (
+														<option key={n} value={n}>
+															{n}
+														</option>
+													))}
+											</select>
+										</FieldRow>
+										<FieldRow label={t("subagentAutoWakeMaxTurns")} tip={t("subagentAutoWakeMaxTurnsDesc")}>
+											<select
+												className="set-select"
+												value={settings.subagentAutoWakeMaxTurns ?? 5}
+												onChange={(e) => setPartial({ subagentAutoWakeMaxTurns: Number(e.target.value) })}
+											>
+												<option value={0}>{t("subagentAutoWakeMaxTurnsUnlimited")}</option>
+												{[...new Set([1, 2, 3, 5, 8, 10, 15, 20, settings.subagentAutoWakeMaxTurns ?? 5])]
+													.filter((n) => n > 0)
+													.sort((a, b) => a - b)
+													.map((n) => (
+														<option key={n} value={n}>
+															{n}
+														</option>
+													))}
+											</select>
+										</FieldRow>
+									</>
 								)}
 
 								{/* ---- 编辑器：独立弹窗（新建 / 编辑同表单，列表页保持干净） ---------- */}

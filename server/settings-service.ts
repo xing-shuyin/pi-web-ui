@@ -35,6 +35,8 @@ import {
 	normalizeSkillsCatalogMaxDesc,
 	normalizeToolWatchdogTimeoutMs,
 	normalizeUiLayout,
+	defaultSubagentAutoWakeMaxTurns,
+	normalizeSubagentAutoWakeMaxTurns,
 	settingsPresetToUi,
 	type ClientStateStore,
 	type ClientSettings,
@@ -455,6 +457,7 @@ export class SettingsService {
 				subagentDefaultTemplates: DEFAULT_TEMPLATES.map((t) => t.name),
 				subagentDefaultModel: this.settings.subagentDefaultModel ?? null,
 				subagentMaxDepth: this.settings.subagentMaxDepth ?? 0,
+				subagentAutoWakeMaxTurns: this.settings.subagentAutoWakeMaxTurns ?? defaultSubagentAutoWakeMaxTurns(),
 				retryMaxAttempts: this.settings.retryMaxAttempts,
 				softCapTokens: this.settings.softCapTokens,
 				softCapByModel: { ...this.settings.softCapByModel },
@@ -583,6 +586,8 @@ export class SettingsService {
 		subagentDefaultModel?: string | null;
 		/** 子代理最大嵌套层数（0 = 不限制；派生时实时读取，只影响之后新派生的子代理，无需 reload）。 */
 		subagentMaxDepth?: number;
+		/** 子代理连续自动唤醒上限轮数（0 = 不限制，默认 5；实时生效，无需 reload）。 */
+		subagentAutoWakeMaxTurns?: number;
 		retryMaxAttempts?: number;
 		softCapTokens?: number;
 		softCapByModel?: Record<string, number>;
@@ -821,6 +826,9 @@ export class SettingsService {
 		if (partial.subagentMaxDepth !== undefined) {
 			const n = Math.floor(Number(partial.subagentMaxDepth));
 			this.settings.subagentMaxDepth = Number.isFinite(n) && n > 0 ? n : 0;
+		}
+		if (partial.subagentAutoWakeMaxTurns !== undefined) {
+			this.settings.subagentAutoWakeMaxTurns = normalizeSubagentAutoWakeMaxTurns(partial.subagentAutoWakeMaxTurns);
 		}
 		if (partial.retryMaxAttempts !== undefined) {
 			// 出错重试次数：持久化 + 即时注入各会话（SDK 在每次退避前都重读

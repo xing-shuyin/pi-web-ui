@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { extractSubagentConclusion, formatSubagentsCompletionNotice } from "../../server/subagent-notify.js";
 import { ClientSession, type Conversation } from "../../server/agent-service.js";
+import { defaultSubagentAutoWakeMaxTurns, normalizeSubagentAutoWakeMaxTurns } from "../../server/client-state.js";
 
 function makeMockConv(opts: {
 	id: string;
@@ -262,6 +263,472 @@ describe("subagent-notify (Issue #713)", () => {
 
 			await new Promise((r) => setTimeout(r, 450));
 			expect(sendUserMessage).toHaveBeenCalledWith(expect.any(String), { deliverAs: "steer" });
+		});
+	});
+
+	describe("Issue #726 subagent auto-wake circuit breaker & notification buffering", () => {
+		const origEnv = process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS;
+
+		afterEach(() => {
+			if (origEnv !== undefined) {
+				process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS = origEnv;
+			} else {
+				delete process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS;
+			}
+		});
+
+		it("defaultSubagentAutoWakeMaxTurns 默认 5 并支持环境变量覆盖与归一化", () => {
+			delete process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS;
+			expect(defaultSubagentAutoWakeMaxTurns()).toBe(5);
+
+			process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS = "10";
+			expect(defaultSubagentAutoWakeMaxTurns()).toBe(10);
+
+			process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS = "0";
+			expect(defaultSubagentAutoWakeMaxTurns()).toBe(0);
+
+			expect(normalizeSubagentAutoWakeMaxTurns(undefined)).toBe(0); // reads env=0
+			expect(normalizeSubagentAutoWakeMaxTurns(8)).toBe(8);
+			expect(normalizeSubagentAutoWakeMaxTurns("15")).toBe(15);
+			expect(normalizeSubagentAutoWakeMaxTurns(-5)).toBe(0); // invalid falls back to default
+		});
+
+		it("自主唤醒达到配置的轮数上限时挂起唤醒，且通知不丢（放入 suspendedSubagents）", async () => {
+			const sendUserMessage = vi.fn().mockResolvedValue(undefined);
+			const parentConv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: {
+					sendUserMessage,
+					isStreaming: false,
+					isCompacting: false,
+				},
+				autonomousTurnsWithoutUser: 2,
+			};
+
+			const emit = vi.fn();
+			const cs: any = {
+				cwd: "/test",
+				getLang: () => "zh",
+				subagentOwnerOf: () => cs,
+				convs: new Map([["parent-c1", parentConv]]),
+				pendingSubagentNotices: new Map(),
+				settingsSvc: {
+					current: {
+						subagentAutoWakeMaxTurns: 2, // 上限配置为 2
+					},
+				},
+				flushSnapshot: vi.fn(),
+				emit,
+				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
+				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
+				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
+			};
+
+			const sa1 = makeMockConv({ id: "sa-breaker-1", output: "产出1" });
+			(sa1 as any).parentId = "parent-c1";
+
+			cs.scheduleSubagentCompletionNotice(sa1);
+			await new Promise((r) => setTimeout(r, 450));
+
+			// 达到上限，未向父对话发送消息
+			expect(sendUserMessage).not.toHaveBeenCalled();
+			// 未标记为已通知，防止通知永久丢失
+			expect((sa1 as any).subagentDoneNotified).toBeUndefined();
+			// 挂起通知已暂存至 parentConv.suspendedSubagents
+			expect(parentConv.suspendedSubagents).toBeDefined();
+			expect(parentConv.suspendedSubagents.has(sa1)).toBe(true);
+
+			// 发送了 warning notice 提示用户
+			expect(emit).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "notice",
+					level: "warning",
+					text: expect.stringContaining("已暂停自动唤醒（1 个完成通知已暂存）"),
+				}),
+			);
+
+			// 随后又有一个子代理完成，同样进入暂存池
+			const sa2 = makeMockConv({ id: "sa-breaker-2", output: "产出2" });
+			(sa2 as any).parentId = "parent-c1";
+
+			cs.scheduleSubagentCompletionNotice(sa2);
+			await new Promise((r) => setTimeout(r, 450));
+
+			expect(sendUserMessage).not.toHaveBeenCalled();
+			expect((sa2 as any).subagentDoneNotified).toBeUndefined();
+			expect(parentConv.suspendedSubagents.size).toBe(2);
+			expect(parentConv.suspendedSubagents.has(sa2)).toBe(true);
+			expect(emit).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					type: "notice",
+					level: "warning",
+					text: expect.stringContaining("已暂停自动唤醒（2 个完成通知已暂存）"),
+				}),
+			);
+		});
+
+		it("配置为 0（不限制）时，即使连续超过 5 轮仍可正常自动推进", async () => {
+			const sendUserMessage = vi.fn().mockResolvedValue(undefined);
+			const parentConv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: {
+					sendUserMessage,
+					isStreaming: false,
+					isCompacting: false,
+				},
+				autonomousTurnsWithoutUser: 8, // 已超过 5
+				consecutiveIdleWakeTurns: 0,
+				recentWakeSubagentIds: ["sa-old-1", "sa-old-2"],
+			};
+
+			const cs: any = {
+				cwd: "/test",
+				getLang: () => "zh",
+				subagentOwnerOf: () => cs,
+				convs: new Map([["parent-c1", parentConv]]),
+				pendingSubagentNotices: new Map(),
+				settingsSvc: {
+					current: {
+						subagentAutoWakeMaxTurns: 0, // 0 = 不限制
+					},
+				},
+				flushSnapshot: vi.fn(),
+				emit: vi.fn(),
+				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
+				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
+				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
+			};
+
+			const sa = makeMockConv({ id: "sa-progressing-9", output: "第9步完成" });
+			(sa as any).parentId = "parent-c1";
+
+			cs.scheduleSubagentCompletionNotice(sa);
+			await new Promise((r) => setTimeout(r, 450));
+
+			expect(sendUserMessage).toHaveBeenCalledTimes(1);
+			expect(parentConv.autonomousTurnsWithoutUser).toBe(9);
+			expect((sa as any).subagentDoneNotified).toBe(true);
+		});
+
+		it("智能熔断：连续空转（consecutiveIdleWakeTurns >= 2）即使未达总轮数上限也挂起", async () => {
+			const sendUserMessage = vi.fn().mockResolvedValue(undefined);
+			const parentConv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: {
+					sendUserMessage,
+					isStreaming: false,
+					isCompacting: false,
+				},
+				autonomousTurnsWithoutUser: 2, // 未达 5
+				consecutiveIdleWakeTurns: 2, // 连续 2 轮空转（未调用任何工具）
+			};
+
+			const emit = vi.fn();
+			const cs: any = {
+				cwd: "/test",
+				getLang: () => "zh",
+				subagentOwnerOf: () => cs,
+				convs: new Map([["parent-c1", parentConv]]),
+				pendingSubagentNotices: new Map(),
+				settingsSvc: {
+					current: {
+						subagentAutoWakeMaxTurns: 5,
+					},
+				},
+				flushSnapshot: vi.fn(),
+				emit,
+				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
+				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
+				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
+			};
+
+			const sa = makeMockConv({ id: "sa-idle-check", output: "结果" });
+			(sa as any).parentId = "parent-c1";
+
+			cs.scheduleSubagentCompletionNotice(sa);
+			await new Promise((r) => setTimeout(r, 450));
+
+			expect(sendUserMessage).not.toHaveBeenCalled();
+			expect(parentConv.suspendedSubagents.has(sa)).toBe(true);
+			expect(emit).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "notice",
+					level: "warning",
+					text: expect.stringContaining("连续 2 轮未执行任何操作（处于空转/等待状态）"),
+				}),
+			);
+		});
+
+		it("智能熔断：单一子代理反复震荡死锁（连续 4 次唤醒完全来自同一个子代理）及时挂起", async () => {
+			const sendUserMessage = vi.fn().mockResolvedValue(undefined);
+			const parentConv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: {
+					sendUserMessage,
+					isStreaming: false,
+					isCompacting: false,
+				},
+				autonomousTurnsWithoutUser: 3, // 未达 5
+				consecutiveIdleWakeTurns: 0,
+				recentWakeSubagentIds: ["sa-loop-1", "sa-loop-1", "sa-loop-1", "sa-loop-1"], // 连续 4 次同一个
+			};
+
+			const emit = vi.fn();
+			const cs: any = {
+				cwd: "/test",
+				getLang: () => "zh",
+				subagentOwnerOf: () => cs,
+				convs: new Map([["parent-c1", parentConv]]),
+				pendingSubagentNotices: new Map(),
+				settingsSvc: {
+					current: {
+						subagentAutoWakeMaxTurns: 5,
+					},
+				},
+				flushSnapshot: vi.fn(),
+				emit,
+				scheduleSubagentCompletionNotice: (ClientSession.prototype as any).scheduleSubagentCompletionNotice,
+				flushSubagentCompletionNotice: (ClientSession.prototype as any).flushSubagentCompletionNotice,
+				checkSubagentWakeCircuitBreaker: (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker,
+			};
+
+			const sa = makeMockConv({ id: "sa-loop-1", output: "又报错了" });
+			(sa as any).parentId = "parent-c1";
+
+			cs.scheduleSubagentCompletionNotice(sa);
+			await new Promise((r) => setTimeout(r, 450));
+
+			expect(sendUserMessage).not.toHaveBeenCalled();
+			expect(parentConv.suspendedSubagents.has(sa)).toBe(true);
+			expect(emit).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "notice",
+					level: "warning",
+					text: expect.stringContaining("连续反复唤醒父对话达到 4 次，可能陷入修改死循环"),
+				}),
+			);
+		});
+
+		it("用户下一次 prompt 交互时，自动提取暂存的通知并合并注入，重置自主轮次", async () => {
+			const sa1 = makeMockConv({ id: "sa-buf-1111", output: "摸底完成" });
+			const sa2 = makeMockConv({ id: "sa-buf-2222", output: "单元测试通过" });
+
+			let deliveredText = "";
+			const sessionMock: any = {
+				prompt: vi.fn().mockImplementation((text: string) => {
+					deliveredText = text;
+					return Promise.resolve();
+				}),
+				isStreaming: false,
+				agent: { state: { messages: [] } },
+				getSessionStats: () => ({ totalMessages: 1 }),
+			};
+
+			const conv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: sessionMock,
+				autonomousTurnsWithoutUser: 5,
+				consecutiveIdleWakeTurns: 2,
+				recentWakeSubagentIds: ["sa-buf-1111"],
+				suspendedSubagents: new Set([sa1, sa2]),
+			};
+
+			const cs: any = {
+				conv,
+				session: sessionMock,
+				cwd: "/test",
+				clientId: "test-client",
+				getLang: () => "zh",
+				markerSvc: { clearActions: vi.fn() },
+				dispatchToDelegate: vi.fn().mockResolvedValue(false),
+				dispatchToGoalExecutor: vi.fn().mockResolvedValue(false),
+				quiesceBlocked: () => false,
+				parseSlash: () => null,
+				slash: { exec: vi.fn().mockResolvedValue(false) },
+				settingsSvc: {
+					current: {
+						parallelReminderEnabled: false,
+						defaultAgentPreset: "standard",
+					},
+				},
+				convs: new Map([["parent-c1", conv]]),
+				activeId: "parent-c1",
+				flushSnapshot: vi.fn(),
+				emit: vi.fn(),
+				emitConversations: vi.fn(),
+				startWorkspaceSnapshot: vi.fn(),
+				activeSessionFileResolved: () => undefined,
+				triggerSoftCapCompactionIfExceeded: vi.fn().mockResolvedValue(false),
+				drainSuspendedSubagents: (ClientSession.prototype as any).drainSuspendedSubagents,
+				prompt: (ClientSession.prototype as any).prompt,
+			};
+
+			// 用户发送新指令
+			await cs.prompt("好的，开始提交代码");
+			expect(cs.emit.mock.calls).toEqual([]);
+
+			// 挂起的通知被提取，状态重置
+			expect(conv.autonomousTurnsWithoutUser).toBe(0);
+			expect(conv.consecutiveIdleWakeTurns).toBe(0);
+			expect(conv.recentWakeSubagentIds).toEqual([]);
+			expect(conv.suspendedSubagents.size).toBe(0);
+			expect((sa1 as any).subagentDoneNotified).toBe(true);
+			expect((sa2 as any).subagentDoneNotified).toBe(true);
+
+			// 投递文本中同时包含了暂存子代理的摘要以及用户的新指令
+			expect(deliveredText).toContain("[在自动唤醒挂起期间已完成的子代理通知]：");
+			expect(deliveredText).toContain("sa-buf-1");
+			expect(deliveredText).toContain("摸底完成");
+			expect(deliveredText).toContain("sa-buf-2");
+			expect(deliveredText).toContain("单元测试通过");
+			expect(deliveredText).toContain("[用户最新指令]：");
+			expect(deliveredText).toContain("好的，开始提交代码");
+		});
+
+		it("用户发送空白 prompt 时，直接以暂存的子代理通知作为提示词投递继续", async () => {
+			const sa1 = makeMockConv({ id: "sa-buf-3333", output: "构建成功" });
+
+			let deliveredText = "";
+			const sessionMock: any = {
+				prompt: vi.fn().mockImplementation((text: string) => {
+					deliveredText = text;
+					return Promise.resolve();
+				}),
+				isStreaming: false,
+				agent: { state: { messages: [] } },
+				getSessionStats: () => ({ totalMessages: 1 }),
+			};
+
+			const conv: any = {
+				id: "parent-c1",
+				cwd: "/test",
+				session: sessionMock,
+				autonomousTurnsWithoutUser: 5,
+				consecutiveIdleWakeTurns: 0,
+				suspendedSubagents: new Set([sa1]),
+			};
+
+			const cs: any = {
+				conv,
+				session: sessionMock,
+				cwd: "/test",
+				clientId: "test-client",
+				getLang: () => "zh",
+				markerSvc: { clearActions: vi.fn() },
+				dispatchToDelegate: vi.fn().mockResolvedValue(false),
+				dispatchToGoalExecutor: vi.fn().mockResolvedValue(false),
+				quiesceBlocked: () => false,
+				parseSlash: () => null,
+				slash: { exec: vi.fn().mockResolvedValue(false) },
+				settingsSvc: {
+					current: {
+						parallelReminderEnabled: false,
+						defaultAgentPreset: "standard",
+					},
+				},
+				convs: new Map([["parent-c1", conv]]),
+				activeId: "parent-c1",
+				flushSnapshot: vi.fn(),
+				emit: vi.fn(),
+				emitConversations: vi.fn(),
+				startWorkspaceSnapshot: vi.fn(),
+				activeSessionFileResolved: () => undefined,
+				triggerSoftCapCompactionIfExceeded: vi.fn().mockResolvedValue(false),
+				drainSuspendedSubagents: (ClientSession.prototype as any).drainSuspendedSubagents,
+				prompt: (ClientSession.prototype as any).prompt,
+			};
+
+			await cs.prompt("");
+
+			expect(conv.autonomousTurnsWithoutUser).toBe(0);
+			expect(conv.suspendedSubagents.size).toBe(0);
+			expect((sa1 as any).subagentDoneNotified).toBe(true);
+			// 没有用户输入时，直接投递子代理通知本身
+			expect(deliveredText).toContain("[子代理执行完成通知]");
+			expect(deliveredText).toContain("sa-buf-3");
+			expect(deliveredText).toContain("构建成功");
+		});
+
+		it("人类在 UI 批准危险操作（resolveToolApproval）时重置自主轮次与空转计数", () => {
+			const conv: any = {
+				id: "parent-c1",
+				autonomousTurnsWithoutUser: 4,
+				consecutiveIdleWakeTurns: 2,
+				recentWakeSubagentIds: ["sa-1"],
+			};
+
+			let recordedDecision: any;
+			const cs: any = {
+				convs: new Map([["parent-c1", conv]]),
+				pendingApprovals: new Map([
+					[
+						"app-1",
+						{
+							conversationId: "parent-c1",
+							toolName: "bash",
+							params: { command: "rm -rf tmp" },
+							resolve: vi.fn(),
+						},
+					],
+				]),
+				auditLogger: {
+					record: (entry: any) => {
+						recordedDecision = entry;
+					},
+				},
+				emit: vi.fn(),
+				flushSnapshot: vi.fn(),
+				resolveToolApproval: (ClientSession.prototype as any).resolveToolApproval,
+			};
+
+			const ok = cs.resolveToolApproval("app-1", "approve");
+			expect(ok).toBe(true);
+			// 人类审批重置了计数
+			expect(conv.autonomousTurnsWithoutUser).toBe(0);
+			expect(conv.consecutiveIdleWakeTurns).toBe(0);
+			expect(conv.recentWakeSubagentIds).toEqual([]);
+			expect(recordedDecision?.decision).toBe("approved");
+		});
+
+		it("父对话通过 get_result / wait_all 消费子代理时，从挂起池中移除该子代理", () => {
+			const sa1 = makeMockConv({ id: "sa-consumed-1", output: "报告" });
+			const sa2 = makeMockConv({ id: "sa-consumed-2", output: "代码" });
+
+			const conv: any = {
+				id: "parent-c1",
+				suspendedSubagents: new Set([sa1, sa2]),
+			};
+
+			const cs: any = {
+				convs: new Map([
+					["parent-c1", conv],
+					["sa-consumed-1", sa1],
+					["sa-consumed-2", sa2],
+				]),
+				subagentOwnerOf: () => cs,
+				subagentCurrentId: (id: string) => id,
+			};
+
+			// 模拟 markSubagentsConsumed 逻辑
+			for (const id of ["sa-consumed-1"]) {
+				const owner = cs.subagentOwnerOf(id);
+				const target = owner.convs.get(id);
+				if (target) {
+					target.subagentConsumedByParent = true;
+					for (const parent of owner.convs.values()) {
+						parent.suspendedSubagents?.delete(target);
+					}
+				}
+			}
+
+			expect((sa1 as any).subagentConsumedByParent).toBe(true);
+			expect(conv.suspendedSubagents.has(sa1)).toBe(false);
+			expect(conv.suspendedSubagents.has(sa2)).toBe(true);
 		});
 	});
 });

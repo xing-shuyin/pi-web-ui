@@ -71,6 +71,7 @@ export const PRESET_FIELD_GROUPS = {
 		"softCapByModel",
 		"subagentDefaultModel",
 		"subagentMaxDepth",
+		"subagentAutoWakeMaxTurns",
 		"visionBridgeEnabled",
 		"visionBridgeModel",
 		"visionBridgePromptMode",
@@ -361,6 +362,12 @@ export const PRESET_FIELD_META = {
 		labelEn: "Subagent Max Depth",
 		hintZh: "主对话下最多几层子代理（0 = 不限制，1 = 子代理不能再派发）",
 		hintEn: "Max subagent layers below the main chat (0 = unlimited, 1 = subagents cannot spawn)",
+	},
+	subagentAutoWakeMaxTurns: {
+		labelZh: "子代理自动唤醒轮数上限",
+		labelEn: "Subagent Max Auto-Wake Rounds",
+		hintZh: "连续自动唤醒父对话的最大轮数（默认 5，0 = 不限制，挂起期间通知不丢）",
+		hintEn: "Max consecutive autonomous wake rounds (default 5, 0 = unlimited; buffered on suspend)",
 	},
 	visionBridgeEnabled: {
 		labelZh: "视觉桥 (看图转写)",

@@ -112,6 +112,26 @@ export function normalizeRetryMaxAttempts(v: unknown): number {
 	return Math.min(100, Math.max(0, n));
 }
 
+/** 子代理无人类干预连续自动唤醒上限轮数的默认值（默认 5；0 = 不限制；环境变量 PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS 覆盖）。 */
+export function defaultSubagentAutoWakeMaxTurns(): number {
+	const raw = process.env.PI_WEB_SUBAGENT_AUTO_WAKE_MAX_TURNS;
+	if (raw !== undefined && raw.trim() !== "") {
+		const v = Number(raw);
+		if (Number.isFinite(v) && v >= 0) {
+			return Math.floor(v);
+		}
+	}
+	return 5;
+}
+
+/** 归一化子代理自动唤醒轮数上限：缺省/非数回落默认值；有效整数（0 = 不限制）。 */
+export function normalizeSubagentAutoWakeMaxTurns(v: unknown): number {
+	if (v === null || v === undefined || v === "") return defaultSubagentAutoWakeMaxTurns();
+	const n = Math.floor(Number(v));
+	if (!Number.isFinite(n) || n < 0) return defaultSubagentAutoWakeMaxTurns();
+	return n;
+}
+
 /**
  * 归一化 UI 布局偏好（UiLayoutPrefs）：只收字符串数组 / 字符串字典，去重 + 长度上限。
  * 脏数据（数字、对象、超长 key、嵌套）一律丢弃而不是整份回落 —— 用户手动调过的那部分
@@ -417,6 +437,9 @@ export interface ClientSettings {
 	subagentDefaultModel?: string | null;
 	/** 子代理最大嵌套层数（主对话下的子代理层数；0 = 不限制，默认）。到达上限那层的内存子代理不注入 subagent / delegate_task。 */
 	subagentMaxDepth?: number;
+	/** 子代理无人类干预连续自动唤醒上限轮数（默认 5；0 = 不限制）。
+	 *  达到上限后挂起后续唤醒并暂存通知，等待人类回复或介入后自动合并投递（issue #726）。 */
+	subagentAutoWakeMaxTurns?: number;
 	/** 大模型 API 出错自动重试次数（默认 6；0 = 失败即停）。SDK
 	 *  settings.retry.maxRetries 的按客户端覆盖（SDK 默认 3），经
 	 *  applyOverrides 注入各会话的 SettingsManager（session.reload()
@@ -1157,6 +1180,7 @@ export class ClientStateStore {
 			planModePrompt: stored?.planModePrompt ?? "",
 			subagentDefaultModel: stored?.subagentDefaultModel ?? null,
 			subagentMaxDepth: stored?.subagentMaxDepth ?? 0,
+			subagentAutoWakeMaxTurns: normalizeSubagentAutoWakeMaxTurns(stored?.subagentAutoWakeMaxTurns),
 			retryMaxAttempts: normalizeRetryMaxAttempts(stored?.retryMaxAttempts),
 			softCapTokens: normalizeSoftCapTokens(stored?.softCapTokens),
 			softCapByModel: normalizeSoftCapByModel(stored?.softCapByModel),
@@ -1249,6 +1273,9 @@ export class ClientStateStore {
 					? (settings.subagentDefaultModel ?? null)
 					: (cur.subagentDefaultModel ?? null),
 			subagentMaxDepth: settings.subagentMaxDepth ?? cur.subagentMaxDepth ?? 0,
+			subagentAutoWakeMaxTurns: normalizeSubagentAutoWakeMaxTurns(
+				settings.subagentAutoWakeMaxTurns ?? cur.subagentAutoWakeMaxTurns,
+			),
 			retryMaxAttempts: normalizeRetryMaxAttempts(
 				settings.retryMaxAttempts ?? cur.retryMaxAttempts ?? DEFAULT_RETRY_MAX_ATTEMPTS,
 			),
@@ -1287,6 +1314,9 @@ export class ClientStateStore {
 			retryMaxAttempts: normalizeRetryMaxAttempts(p.retryMaxAttempts),
 			// Older presets predate the compaction soft cap (issue #229).
 			softCapTokens: normalizeSoftCapTokens((p as { softCapTokens?: unknown }).softCapTokens),
+			subagentAutoWakeMaxTurns: normalizeSubagentAutoWakeMaxTurns(
+				(p as { subagentAutoWakeMaxTurns?: unknown }).subagentAutoWakeMaxTurns,
+			),
 			softCapByModel: normalizeSoftCapByModel((p as { softCapByModel?: unknown }).softCapByModel),
 		}));
 	}

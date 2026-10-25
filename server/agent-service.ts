@@ -133,6 +133,7 @@ import {
 } from "./remote-ssh-service.js";
 import {
 	DEFAULT_TOOL_WATCHDOG_TIMEOUT_MS,
+	defaultSubagentAutoWakeMaxTurns,
 	effectiveToolWatchdogMs,
 	isExtensionDisabled,
 	isExtensionEnabled,
@@ -575,6 +576,16 @@ export interface Conversation {
 	subagentThinking?: string;
 	/** 连续由子代理唤醒且未发生人类交互的轮次（防多代理死循环熔断）。 */
 	autonomousTurnsWithoutUser?: number;
+	/** 自动唤醒触发熔断/挂起期间已完成但尚未向父对话交付的子代理集合（防通知丢失，issue #726）。 */
+	suspendedSubagents?: Set<Conversation>;
+	/** 连续由子代理唤醒后、未发生任何工具操作或行动的空转轮次（用于空转熔断，issue #726）。 */
+	consecutiveIdleWakeTurns?: number;
+	/** 当前回合唤醒原因（"subagent_completion" | "user" 等）。 */
+	wakeReason?: "subagent_completion" | "user" | "other";
+	/** 本轮唤醒期间是否触发了实质性的工具操作（issue #726）。 */
+	wakeTurnHadAction?: boolean;
+	/** 最近唤醒父对话的子代理 ID 序列（用于单代理反复震荡死锁检测，issue #726）。 */
+	recentWakeSubagentIds?: string[];
 	/** 正在过户给其他会话（detach 阶段切走 active 时不触发销毁）。 */
 	transferring?: boolean;
 	runtime: AgentSessionRuntime;
@@ -1456,6 +1467,85 @@ export class ClientSession {
 	}
 
 	/**
+	 * issue #726：提取并清空当前对话挂起的子代理通知。
+	 * 过滤掉已被消费（subagentConsumedByParent）或已通知（subagentDoneNotified）的子代理，
+	 * 将留存的挂起子代理标为已通知，返回待交付的列表。
+	 */
+	private drainSuspendedSubagents(conv: Conversation): Conversation[] {
+		if (!conv.suspendedSubagents || conv.suspendedSubagents.size === 0) return [];
+		const buffered = Array.from(conv.suspendedSubagents).filter(
+			(c) => !c.subagentConsumedByParent && !c.subagentDoneNotified,
+		);
+		conv.suspendedSubagents.clear();
+		for (const c of buffered) {
+			c.subagentDoneNotified = true;
+		}
+		return buffered;
+	}
+
+	/**
+	 * issue #726：检查子代理自动唤醒熔断条件。
+	 * 区分真正的循环（空转/单代理反复震荡/超出配置的轮数上限）与有效流程推进。
+	 */
+	private checkSubagentWakeCircuitBreaker(
+		targetConv: Conversation,
+		parentOwner: ClientSession,
+		_toNotify: Conversation[],
+	): {
+		suspend: boolean;
+		reason: "idle_loop" | "single_agent_oscillation" | "max_turns";
+		messageZh: (count: number) => string;
+		messageEn: (count: number) => string;
+	} | null {
+		// 1. 空转熔断：父对话由子代理唤醒后，连续 2 轮未执行任何工具操作（纯回复或停止），又有子代理唤醒
+		const idleTurns = targetConv.consecutiveIdleWakeTurns ?? 0;
+		if (idleTurns >= 2) {
+			return {
+				suspend: true,
+				reason: "idle_loop",
+				messageZh: (count) =>
+					`子代理协作检测到父对话已连续 ${idleTurns} 轮未执行任何操作（处于空转/等待状态），已挂起后续自动唤醒（${count} 个完成通知已暂存）。请查看结果并输入新指令。`,
+				messageEn: (count) =>
+					`Subagent orchestration detected ${idleTurns} consecutive idle wake turns (no tool actions performed); auto-wake suspended (${count} notice(s) buffered). Please inspect and reply.`,
+			};
+		}
+
+		// 2. 单代理反复震荡死锁检测：如果最近连续 4 次唤醒完全来自于同一个子代理（无其他子代理且无人类干预）
+		const recentIds = targetConv.recentWakeSubagentIds ?? [];
+		if (recentIds.length >= 4) {
+			const tail = recentIds.slice(-4);
+			const first = tail[0];
+			if (tail.every((id) => id === first)) {
+				const short = first.slice(0, 8);
+				return {
+					suspend: true,
+					reason: "single_agent_oscillation",
+					messageZh: (count) =>
+						`检测到同一个子代理 ${short} 连续反复唤醒父对话达到 4 次，可能陷入修改死循环，已挂起自动唤醒（${count} 个完成通知已暂存）。请查看结果并介入。`,
+					messageEn: (count) =>
+						`Subagent ${short} consecutively woke parent conversation 4 times (potential oscillation loop); auto-wake suspended (${count} notice(s) buffered). Please inspect.`,
+				};
+			}
+		}
+
+		// 3. 自主连续轮次上限检测：可配置（0 = 不限制，默认 5 轮）
+		const autoTurns = targetConv.autonomousTurnsWithoutUser ?? 0;
+		const maxTurns = parentOwner?.settingsSvc?.current?.subagentAutoWakeMaxTurns ?? defaultSubagentAutoWakeMaxTurns();
+		if (maxTurns > 0 && autoTurns >= maxTurns) {
+			return {
+				suspend: true,
+				reason: "max_turns",
+				messageZh: (count) =>
+					`子代理协作已自动推进 ${autoTurns} 轮，已触发防死循环熔断（上限 ${maxTurns} 轮），已暂停自动唤醒（${count} 个完成通知已暂存）。请查看结果或输入新指令继续。`,
+				messageEn: (count) =>
+					`Subagent orchestration advanced ${autoTurns} autonomous rounds (limit ${maxTurns}); auto-wake suspended to prevent loops (${count} notice(s) buffered). Please inspect or reply to continue.`,
+			};
+		}
+
+		return null;
+	}
+
+	/**
 	 * 执行向父对话投递已完成子代理的结构化通知。
 	 */
 	private async flushSubagentCompletionNotice(parentId: string, retryCount = 0): Promise<void> {
@@ -1498,15 +1588,21 @@ export class ClientSession {
 			return;
 		}
 
-		// 自主代际防死循环熔断：单个会话无人类干预连续唤醒超 5 轮则暂停自动唤醒
-		const autoTurns = targetConv.autonomousTurnsWithoutUser ?? 0;
-		if (autoTurns >= 5) {
-			for (const c of toNotify) c.subagentDoneNotified = true;
-			this.emit({
+		// issue #726：自适应防死循环熔断（检查空转、单代理震荡、配置的轮次上限）
+		const checker =
+			this.checkSubagentWakeCircuitBreaker ?? (ClientSession.prototype as any).checkSubagentWakeCircuitBreaker;
+		const circuit = checker.call(this, targetConv, parentOwner, toNotify);
+		if (circuit) {
+			targetConv.suspendedSubagents = targetConv.suspendedSubagents ?? new Set<Conversation>();
+			for (const c of toNotify) {
+				targetConv.suspendedSubagents.add(c);
+			}
+			const count = targetConv.suspendedSubagents.size;
+			parentOwner.emit({
 				type: "notice",
 				level: "warning",
-				text: `子代理协作已自动推进 ${autoTurns} 轮，已触发防死循环熔断，暂停自动唤醒。请查看结果并输入新指令。`,
-				textEn: `Subagent orchestration advanced ${autoTurns} autonomous rounds; auto-wake suspended to prevent loops. Please inspect and reply.`,
+				text: circuit.messageZh(count),
+				textEn: circuit.messageEn(count),
 			});
 			return;
 		}
@@ -1528,7 +1624,15 @@ export class ClientSession {
 
 		const noticeText = formatSubagentsCompletionNotice(toNotify, this.getLang(), isFallback ? parentId : undefined);
 
+		const autoTurns = targetConv.autonomousTurnsWithoutUser ?? 0;
 		targetConv.autonomousTurnsWithoutUser = autoTurns + 1;
+		targetConv.wakeReason = "subagent_completion";
+		targetConv.wakeTurnHadAction = false;
+		targetConv.recentWakeSubagentIds = [
+			...(targetConv.recentWakeSubagentIds ?? []),
+			...toNotify.map((c) => c.id),
+		].slice(-10);
+
 		try {
 			await targetConv.session.sendUserMessage(
 				noticeText,
@@ -1536,7 +1640,7 @@ export class ClientSession {
 			);
 			parentOwner.flushSnapshot();
 		} catch (err) {
-			this.emit({
+			parentOwner.emit({
 				type: "notice",
 				level: "warning",
 				text: `向父对话投递子代理完成通知失败：${(err as Error).message}`,
@@ -2368,7 +2472,12 @@ export class ClientSession {
 				const owner = this.subagentOwnerOf(id);
 				const curId = owner.convs.has(id) ? id : this.subagentCurrentId(id);
 				const conv = owner.convs.get(curId);
-				if (conv) conv.subagentConsumedByParent = true;
+				if (conv) {
+					conv.subagentConsumedByParent = true;
+					for (const parent of owner.convs.values()) {
+						parent.suspendedSubagents?.delete(conv);
+					}
+				}
 			}
 		},
 		handoffSubagent: async (fromRunId, toRunId, payload) => {
@@ -4628,6 +4737,8 @@ export class ClientSession {
 				break;
 			}
 			case "tool_execution_start": {
+				// issue #726：记录本轮触发了实质性工具操作，证明非空转推进
+				conv.wakeTurnHadAction = true;
 				// JIT Auto-activation: if an allowed catalog tool is executed without prior load_tools,
 				// automatically mark it as loaded so subsequent turns track it as fully active.
 				if (conv.session && event.toolName) {
@@ -4895,6 +5006,12 @@ export class ClientSession {
 					if (stopNotice) {
 						this.emit({ type: "notice", level: "warning", text: stopNotice.text, textEn: stopNotice.textEn });
 					}
+					// 用户手动中止，重置自主轮次与空转计数（issue #726）
+					conv.autonomousTurnsWithoutUser = 0;
+					conv.consecutiveIdleWakeTurns = 0;
+					conv.recentWakeSubagentIds = [];
+					conv.wakeReason = undefined;
+					conv.wakeTurnHadAction = undefined;
 					if (
 						conv.isSubagent &&
 						conv.notifyOnDone !== false &&
@@ -4931,6 +5048,16 @@ export class ClientSession {
 				// 或「等对话空闲」上，而 onAgentEnd 随后会把它需要的 verdict 交回。
 				this.notifyTurnEnd(conv);
 				this.goalSvc.onAgentEnd(conv, false);
+				// issue #726：若本轮是由子代理唤醒触发，核算是否为空转
+				if (conv.wakeReason === "subagent_completion") {
+					if (conv.wakeTurnHadAction) {
+						conv.consecutiveIdleWakeTurns = 0;
+					} else {
+						conv.consecutiveIdleWakeTurns = (conv.consecutiveIdleWakeTurns ?? 0) + 1;
+					}
+					conv.wakeReason = undefined;
+					conv.wakeTurnHadAction = undefined;
+				}
 				// issue #713：子代理终态（非可重试瞬时错）时，安排向父对话自动发送完成通知
 				if (
 					conv.isSubagent &&
@@ -5861,6 +5988,10 @@ export class ClientSession {
 			categoryId: pending.category?.id,
 			reason: decision === "deny" ? reason : pending.reason,
 		});
+		// 用户主动审批（批准/编辑/拒绝）代表人类介入，重置自主轮次与空转计数（issue #726）
+		conv.autonomousTurnsWithoutUser = 0;
+		conv.consecutiveIdleWakeTurns = 0;
+		conv.recentWakeSubagentIds = [];
 		pending.resolve({ decision, editedParams, reason });
 		this.emit({ type: "tool_approval_resolved", id });
 		if (decision === "approve" && scope && scope !== "once" && conv) {
@@ -9003,8 +9134,36 @@ export class ClientSession {
 		 */
 		queue = false,
 	): Promise<void> {
-		const trimmedText = (text ?? "").trim();
+		// Captured at the START (before any await): the conversation being
+		// addressed by this prompt. See the naming block below — a concurrent
+		// switch/new_chat while prompt() is in flight must never target a
+		// different conversation.
+		const conv = this.conv;
+		// 人类用户发送新消息，重置自主轮次与空转计数器（issue #726）
+		conv.autonomousTurnsWithoutUser = 0;
+		conv.consecutiveIdleWakeTurns = 0;
+		conv.recentWakeSubagentIds = [];
+		conv.wakeReason = "user";
+		conv.wakeTurnHadAction = undefined;
+
+		// issue #726：若当前对话存在自动唤醒挂起期间暂存的子代理完成通知，
+		// 自动提取合并并注入，确保挂起期间的通知 100% 零丢失
+		const drainer = this.drainSuspendedSubagents ?? (ClientSession.prototype as any).drainSuspendedSubagents;
+		const bufferedSubagents = drainer ? drainer.call(this, conv) : [];
+		const rawTrimmed = (text ?? "").trim();
 		const hasAttachments = Boolean(attachments && attachments.length > 0);
+		if (bufferedSubagents.length > 0) {
+			const bufferedNotice = formatSubagentsCompletionNotice(bufferedSubagents, this.getLang());
+			if (!rawTrimmed && !hasAttachments) {
+				text = bufferedNotice;
+			} else {
+				const prefixZh = `[在自动唤醒挂起期间已完成的子代理通知]：\n\n${bufferedNotice}\n\n---\n[用户最新指令]：\n`;
+				const prefixEn = `[Buffered subagent completion notice(s) during suspended auto-wake]:\n\n${bufferedNotice}\n\n---\n[User instruction]:\n`;
+				text = `${this.getLang() === "zh" ? prefixZh : prefixEn}${text}`;
+			}
+		}
+
+		const trimmedText = (text ?? "").trim();
 		if (!trimmedText && !hasAttachments) {
 			this.emit({
 				type: "notice",
@@ -9016,13 +9175,6 @@ export class ClientSession {
 			return;
 		}
 
-		// Captured at the START (before any await): the conversation being
-		// addressed by this prompt. See the naming block below — a concurrent
-		// switch/new_chat while prompt() is in flight must never target a
-		// different conversation.
-		const conv = this.conv;
-		// 人类用户发送新消息，重置自主轮次计数器
-		conv.autonomousTurnsWithoutUser = 0;
 		const promptAc = new AbortController();
 		conv.activePromptAc = promptAc;
 		this.markerSvc.clearActions(conv.id);
@@ -10736,6 +10888,10 @@ export class ClientSession {
 			// ignore
 		}
 		this.convs.delete(id);
+		conv.suspendedSubagents?.clear();
+		for (const c of this.convs.values()) {
+			c.suspendedSubagents?.delete(conv);
+		}
 		const pendingNotice = this.pendingSubagentNotices.get(id);
 		if (pendingNotice) {
 			clearTimeout(pendingNotice.timer);
@@ -14338,6 +14494,9 @@ export class ClientSession {
 			clearTimeout(entry.timer);
 		}
 		this.pendingSubagentNotices.clear();
+		for (const c of this.convs.values()) {
+			c.suspendedSubagents?.clear();
+		}
 		// 关闭所有挂起的用户提问（dispose 时以「取消」解析，避免模型挂死）。
 		this.cancelPendingQuestions();
 		// 同理关闭挂起的页面调用（以失败解析：对面是扩展，没有答可等）。

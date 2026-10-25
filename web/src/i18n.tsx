@@ -2001,6 +2001,10 @@ export const zh = {
 	subagentMaxDepthDesc:
 		"主对话下面最多几层子代理。不限制（默认）：子代理都能继续派发。1：主对话派出的子代理不能再派发。2：子代理可以再派一层，第二层不能再派。到上限的子代理不注入 subagent / delegate_task；只影响之后新派生的子代理，持久化对话不受影响。",
 	subagentMaxDepthUnlimited: "不限制",
+	subagentAutoWakeMaxTurns: "子代理自动唤醒轮数上限",
+	subagentAutoWakeMaxTurnsDesc:
+		"父对话在无人类交互下，连续被子代理完成唤醒的最大轮数。0 表示不限制；默认 5 轮。达到上限后挂起唤醒并暂存通知，等待人类回复或介入后自动合并投递。",
+	subagentAutoWakeMaxTurnsUnlimited: "不限制 (0 轮)",
 	subagentNoModels: "暂无可用的模型（需要先配置服务商 API Key）——子代理将跟随主对话模型。",
 	tplNamePlaceholder: "模板名（AI 用 subagent_spawn 的 template 参数引用）…",
 	tplDescriptionPlaceholder: "简介（AI 据此判断适用场景）…",
@@ -4413,6 +4417,10 @@ export const en: Record<keyof typeof zh, string> = {
 	subagentMaxDepthDesc:
 		"How many subagent layers may sit below the main conversation. Unlimited (default): every subagent can keep dispatching. 1: subagents spawned by the main conversation cannot dispatch. 2: subagents can dispatch one more layer, which cannot dispatch further. Subagents at the limit get neither subagent nor delegate_task; only affects subagents spawned afterwards, persistent conversations are unaffected.",
 	subagentMaxDepthUnlimited: "Unlimited",
+	subagentAutoWakeMaxTurns: "Max autonomous wake rounds",
+	subagentAutoWakeMaxTurnsDesc:
+		"Maximum consecutive times subagents can auto-wake the parent conversation without human interaction. 0 disables limit; default is 5 rounds. When reached, auto-wake is suspended and completion notices are buffered until the next human reply.",
+	subagentAutoWakeMaxTurnsUnlimited: "Unlimited (0)",
 	subagentNoModels:
 		"No usable models yet (configure a provider API key first) — subagents will follow the main conversation's model.",
 	tplNamePlaceholder: "Template name (referenced by AI via subagent_spawn's template param)…",

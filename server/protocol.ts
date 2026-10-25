@@ -1167,6 +1167,8 @@ export type ClientMessage =
 			subagentDefaultModel?: string | null;
 			/** 子代理最大嵌套层数（主对话下的子代理层数；0 = 不限制）。到达上限那层的内存子代理不注入 subagent / delegate_task。 */
 			subagentMaxDepth?: number;
+			/** 子代理无人类干预连续自动唤醒上限轮数（默认 5；0 = 不限制）。达到上限后挂起唤醒并暂存通知。 */
+			subagentAutoWakeMaxTurns?: number;
 			/** Vision bridge on/off + preferred "provider/id" model (null = auto). */
 			visionBridgeEnabled?: boolean;
 			visionBridgeModel?: string | null;
@@ -3392,6 +3394,8 @@ export interface UiSettingsState {
 	subagentDefaultModel: string | null;
 	/** 子代理最大嵌套层数（缺省 / 0 = 不限制）。 */
 	subagentMaxDepth?: number;
+	/** 子代理无人类干预连续自动唤醒上限轮数（默认 5；0 = 不限制）。 */
+	subagentAutoWakeMaxTurns?: number;
 	/** 大模型 API 出错自动重试次数（默认 6；0 = 失败即停）。 */
 	retryMaxAttempts: number;
 	/** 上下文压缩软上限（tokens，0 = 关闭）：达到即触发压缩（issue #229）。 */
