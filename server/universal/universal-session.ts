@@ -187,7 +187,18 @@ export class UniversalSession implements DispatchSession {
 		this.subagentTemplates = new SubagentTemplatesStore(templatesPath);
 
 		this.subagentHost = {
-			spawnSubagent: async (prompt, type, cwd, templateName, model, parentId, persist, thinking, notifyOnDone) => {
+			spawnSubagent: async (
+				prompt,
+				type,
+				cwd,
+				templateName,
+				model,
+				parentId,
+				persist,
+				thinking,
+				notifyOnDone,
+				_isolation,
+			) => {
 				const { convId } = await this.spawnSubagent(
 					prompt,
 					type,
@@ -202,6 +213,7 @@ export class UniversalSession implements DispatchSession {
 				);
 				return convId;
 			},
+			finalizeSubagentWorktree: async (_convId: string) => {},
 			getSubagent: (convId: string) => {
 				const conv = this.conversations.get(convId);
 				if (!conv || !conv.isSubagent) return undefined;

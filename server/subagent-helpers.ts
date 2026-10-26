@@ -120,6 +120,17 @@ export function toSubagentSnapshot(conv: Conversation): SubagentSnapshot {
 		persisted: isPersisted,
 		handoffTo: conv.peerHandoffTo ? [...conv.peerHandoffTo] : undefined,
 		handoffFrom: conv.peerHandoffFrom ? [...conv.peerHandoffFrom] : undefined,
+		worktree: conv.subagentWorktree
+			? {
+					path: conv.subagentWorktree.worktreePath,
+					branch: conv.subagentWorktree.branch,
+					cleanedUp: Boolean(conv.subagentWorktree.cleanedUp),
+					isDirty: conv.subagentWorktree.isDirty,
+					uncommittedCount: conv.subagentWorktree.uncommittedCount,
+					aheadCount: conv.subagentWorktree.aheadCount,
+					error: conv.subagentWorktree.error,
+				}
+			: undefined,
 	};
 }
 

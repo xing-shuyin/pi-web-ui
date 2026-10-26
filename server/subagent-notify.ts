@@ -105,7 +105,26 @@ export function formatSubagentsCompletionNotice(
 
 		const taskLine = conv.title ? `  - ${pick(lang, "目标", "Goal", "subagents.notify.goal")}: ${conv.title}\n` : "";
 
-		return `- **${sId}**（${metaTag}）— ${statusLabel}\n${taskLine}  - ${pick(lang, "产出摘要", "Summary", "subagents.notify.summary")}:\n${indentedConclusion}`;
+		let wtLine = "";
+		if (conv.subagentWorktree) {
+			const wt = conv.subagentWorktree;
+			if (wt.cleanedUp) {
+				wtLine = `  - ${pick(lang, "工作树隔离", "Worktree isolation", "subagents.notify.worktree")}: ${pick(lang, "无文件修改，临时工作树已自动清理", "No changes made; temporary worktree cleaned up", "subagents.notify.worktree.cleaned")}\n`;
+			} else {
+				wtLine =
+					`  - ${pick(lang, "工作树隔离", "Worktree isolation", "subagents.notify.worktree")}: ` +
+					pick(
+						lang,
+						`已保留分支 ${wt.branch}（${wt.uncommittedCount ?? 0} 处未提交修改，${wt.aheadCount ?? 0} 个新提交）`,
+						`Preserved branch ${wt.branch} (${wt.uncommittedCount ?? 0} uncommitted, ${wt.aheadCount ?? 0} commits ahead)`,
+						"subagents.notify.worktree.preserved",
+						{ branch: wt.branch, uncommitted: wt.uncommittedCount ?? 0, ahead: wt.aheadCount ?? 0 },
+					) +
+					`\n  - ${pick(lang, "工作树路径", "Worktree path", "subagents.notify.worktree.path")}: ${wt.worktreePath}\n`;
+			}
+		}
+
+		return `- **${sId}**（${metaTag}）— ${statusLabel}\n${taskLine}${wtLine}  - ${pick(lang, "产出摘要", "Summary", "subagents.notify.summary")}:\n${indentedConclusion}`;
 	});
 
 	const footer = pick(

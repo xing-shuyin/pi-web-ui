@@ -96,6 +96,16 @@ export interface SubagentSnapshot {
 	handoffTo?: string[];
 	/** 同行协作接收自的来源子代理 convId 列表（谁交接给该子代理）。 */
 	handoffFrom?: string[];
+	/** 工作树隔离运行态快照（若启用 isolation="worktree"）。 */
+	worktree?: {
+		path: string;
+		branch: string;
+		cleanedUp: boolean;
+		isDirty?: boolean;
+		uncommittedCount?: number;
+		aheadCount?: number;
+		error?: string;
+	};
 }
 
 /**
@@ -124,6 +134,7 @@ export interface SubagentToolHost {
 		persist?: boolean,
 		thinking?: string,
 		notifyOnDone?: boolean,
+		isolation?: string,
 	): Promise<string>;
 	/** 取单个子代理快照（按 convId）。 */
 	getSubagent(convId: string): SubagentSnapshot | undefined;
@@ -152,6 +163,8 @@ export interface SubagentToolHost {
 	handoffSubagent(fromRunId: string, toRunId: string, payload: string): Promise<void>;
 	/** 标记指定子代理已被父会话消费（通过 wait_all 或 get_result），后续避免重复发送终态通知。 */
 	markSubagentsConsumed?(runIds: string[]): void;
+	/** 终态结算与清理子代理的工作树（若启用了工作树隔离）。 */
+	finalizeSubagentWorktree?(convId: string): Promise<void>;
 	/** 可选语言（主会话按客户端 locale 提供 getLang；缺省英文）。 */
 	lang?: () => ServerLang;
 }
@@ -174,10 +187,24 @@ export function subagentTitle(prompt: string): string {
 export function withSubagentOwner(host: SubagentToolHost, ownerId: string): SubagentToolHost {
 	return {
 		...host,
-		spawnSubagent: (prompt, type, cwd, templateName, model, _parentId, persist, thinking, notifyOnDone) =>
-			host.spawnSubagent(prompt, type, cwd, templateName, model, ownerId, persist, thinking, notifyOnDone),
+		spawnSubagent: (prompt, type, cwd, templateName, model, _parentId, persist, thinking, notifyOnDone, isolation) => {
+			const args: [string, string, string, string?, string?, string?, boolean?, string?, boolean?, string?] = [
+				prompt,
+				type,
+				cwd,
+				templateName,
+				model,
+				ownerId,
+				persist,
+				thinking,
+				notifyOnDone,
+			];
+			if (isolation !== undefined) args.push(isolation);
+			return host.spawnSubagent(...args);
+		},
 		handoffSubagent: (fromRunId, toRunId, payload) => host.handoffSubagent(fromRunId || ownerId, toRunId, payload),
 		markSubagentsConsumed: (runIds) => host.markSubagentsConsumed?.(runIds),
+		finalizeSubagentWorktree: (convId) => host.finalizeSubagentWorktree?.(convId) ?? Promise.resolve(),
 	};
 }
 
@@ -312,6 +339,13 @@ export function makeSubagentTool(
 					description: "spawn: persist as a regular session (default = ephemeral).",
 				}),
 			),
+			isolation: Type.Optional(
+				Type.String({
+					enum: ["worktree", "none"],
+					description:
+						'spawn: workspace isolation mode ("worktree" creates a dedicated git worktree & branch; "none" = shared cwd).',
+				}),
+			),
 			kind: Type.Optional(
 				Type.String({
 					enum: ["all", "subagent", "persistent"],
@@ -373,19 +407,34 @@ export function makeSubagentTool(
 							),
 						);
 					}
+					const isolationMode = p.isolation?.trim().toLowerCase();
+					if (isolationMode && isolationMode !== "worktree" && isolationMode !== "none") {
+						return text(
+							pick(
+								getLang(),
+								`不支持的隔离模式：${p.isolation}。可选模式："worktree"（基于 Git 工作树物理隔离）或 "none"（默认共享工作区）。`,
+								`Unsupported isolation mode: ${p.isolation}. Supported modes: "worktree" (git worktree isolation) or "none" (shared workspace).`,
+								"subagents.spawn.isolation.invalid",
+								{ isolation: p.isolation },
+							),
+						);
+					}
 					let convId: string;
 					try {
-						convId = await host.spawnSubagent(
-							p.prompt,
-							p.type ?? "general",
-							p.cwd ?? ctx.cwd,
-							p.template,
-							p.model,
-							undefined,
-							p.persist,
-							p.thinking,
-							p.notifyOnDone,
-						);
+						const spawnArgs: [string, string, string, string?, string?, string?, boolean?, string?, boolean?, string?] =
+							[
+								p.prompt,
+								p.type ?? "general",
+								p.cwd ?? ctx.cwd,
+								p.template,
+								p.model,
+								undefined,
+								p.persist,
+								p.thinking,
+								p.notifyOnDone,
+							];
+						if (isolationMode === "worktree") spawnArgs.push("worktree");
+						convId = await host.spawnSubagent(...spawnArgs);
 					} catch (err) {
 						const msg = err instanceof Error ? err.message : String(err);
 						return text(
@@ -404,14 +453,17 @@ export function makeSubagentTool(
 					const thinkingLineEn = p.thinking ? `\nThinking: ${p.thinking}` : "";
 					const notifyLineZh = p.notifyOnDone === false ? "\n自动通知：已关闭" : "";
 					const notifyLineEn = p.notifyOnDone === false ? "\nAuto-notify: disabled" : "";
+					const isolationLineZh = isolationMode === "worktree" ? "\n工作树隔离：已启用（独立 Git 工作树与分支）" : "";
+					const isolationLineEn =
+						isolationMode === "worktree" ? "\nWorktree isolation: enabled (dedicated Git worktree & branch)" : "";
 					const kindLabelZh = p.persist ? "普通持久化对话" : "子代理";
 					const kindLabelEn = p.persist ? "Persistent conversation" : "Subagent";
 					return text(
 						pick(
 							getLang(),
-							`${kindLabelZh}已启动（运行列表可见）：${convId}\n类型：${subagentType} · 标题：${subagentTitleText}${templateLineZh}${modelLineZh}${thinkingLineZh}${notifyLineZh}` +
+							`${kindLabelZh}已启动（运行列表可见）：${convId}\n类型：${subagentType} · 标题：${subagentTitleText}${templateLineZh}${modelLineZh}${thinkingLineZh}${notifyLineZh}${isolationLineZh}` +
 								`\n用 subagent(action="wait_all") 一次等全部完成（不用轮询），subagent(action="get_result") 取单个结果，subagent(action="list") 看运行态，subagent(action="steer") 改向，subagent(action="stop") 停止。`,
-							`${kindLabelEn} started (visible in the running list): ${convId}\nType: ${subagentType} · Title: ${subagentTitleText}${templateLineEn}${modelLineEn}${thinkingLineEn}${notifyLineEn}` +
+							`${kindLabelEn} started (visible in the running list): ${convId}\nType: ${subagentType} · Title: ${subagentTitleText}${templateLineEn}${modelLineEn}${thinkingLineEn}${notifyLineEn}${isolationLineEn}` +
 								`\nUse subagent(action="wait_all") to wait for all at once (no polling), subagent(action="get_result") for a single result, subagent(action="list") for live status, subagent(action="steer") to redirect, subagent(action="stop") to stop.`,
 							"subagents.spawn.started",
 							{
@@ -429,6 +481,8 @@ export function makeSubagentTool(
 								thinkingLineEn,
 								notifyLineZh,
 								notifyLineEn,
+								isolationLineZh,
+								isolationLineEn,
 								kindLabel: kindLabelEn,
 								kindLabelEn,
 								kindLabelZh,
@@ -441,6 +495,7 @@ export function makeSubagentTool(
 							thinking: p.thinking,
 							persisted: !!p.persist,
 							notifyOnDone: p.notifyOnDone !== false,
+							isolation: isolationMode === "worktree" ? "worktree" : undefined,
 						},
 					);
 				}
@@ -456,7 +511,7 @@ export function makeSubagentTool(
 							),
 						);
 					}
-					const r = host.getSubagent(p.runId);
+					let r = host.getSubagent(p.runId);
 					const missingId = shortId(p.runId);
 					if (!r)
 						return text(
@@ -490,13 +545,37 @@ export function makeSubagentTool(
 					}
 					// 终态结果被父对话取走，标记已消费，避免后续重复触发自动通知
 					host.markSubagentsConsumed?.([p.runId]);
+					if (host.finalizeSubagentWorktree) {
+						await host.finalizeSubagentWorktree(p.runId);
+						r = host.getSubagent(p.runId) ?? r;
+					}
+					let worktreeDetail = "";
+					if (r.worktree) {
+						const wt = r.worktree;
+						if (wt.cleanedUp) {
+							worktreeDetail = pick(
+								getLang(),
+								"\n\n[工作树隔离] 无文件修改，临时工作树与分支已自动清理。",
+								"\n\n[Worktree isolation] No changes made; temporary worktree and branch have been cleaned up automatically.",
+								"subagents.get.worktree.cleaned",
+							);
+						} else {
+							worktreeDetail = pick(
+								getLang(),
+								`\n\n[工作树隔离] 代码改动已保留供审阅：\n- 路径：${wt.path}\n- 分支：${wt.branch}\n- 改动：${wt.uncommittedCount ?? 0} 个未提交文件修改，领先 ${wt.aheadCount ?? 0} 个提交\n（提示：可执行 git merge ${wt.branch} 合并，或调用 worktree(action="remove", path="${wt.path}", force=true) 放弃）`,
+								`\n\n[Worktree isolation] Changes preserved for review:\n- Path: ${wt.path}\n- Branch: ${wt.branch}\n- Changes: ${wt.uncommittedCount ?? 0} uncommitted file(s), ${wt.aheadCount ?? 0} commit(s) ahead\n(Note: run git merge ${wt.branch} to merge, or worktree(action="remove", path="${wt.path}", force=true) to discard)`,
+								"subagents.get.worktree.preserved",
+								{ path: wt.path, branch: wt.branch, uncommitted: wt.uncommittedCount ?? 0, ahead: wt.aheadCount ?? 0 },
+							);
+						}
+					}
 					return text(
 						pick(
 							getLang(),
-							`子代理 ${doneId}（${r.type}${modelTag}）状态：${verdict}\n${doneDetail}\n${doneOutput}`,
-							`Subagent ${doneId} (${r.type}${modelTag}) status: ${verdict}\n${doneDetail}\n${doneOutput}`,
+							`子代理 ${doneId}（${r.type}${modelTag}）状态：${verdict}\n${doneDetail}\n${doneOutput}${worktreeDetail}`,
+							`Subagent ${doneId} (${r.type}${modelTag}) status: ${verdict}\n${doneDetail}\n${doneOutput}${worktreeDetail}`,
 							"subagents.get.done",
-							{ doneId, "r.type": r.type, modelTag, verdict, doneDetail, doneOutput },
+							{ doneId, "r.type": r.type, modelTag, verdict, doneDetail, doneOutput: `${doneOutput}${worktreeDetail}` },
 						),
 						r,
 					);
@@ -716,6 +795,19 @@ export function makeSubagentTool(
 					const tLang = getLang();
 					const waitedSecs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 					const timeoutSecs = Math.round(timeoutMs / 1000);
+
+					// 收口的子代理标记已消费，避免后续重复自动通知打扰父对话；同时结算隔离工作树
+					const finishedIds = Array.from(wanted).filter((id) => {
+						const r = host.getSubagent(id);
+						return r === undefined || isSubagentTerminal(r);
+					});
+					if (finishedIds.length > 0) {
+						host.markSubagentsConsumed?.(finishedIds);
+						if (host.finalizeSubagentWorktree) {
+							await Promise.all(finishedIds.map((id) => host.finalizeSubagentWorktree!(id)));
+						}
+					}
+
 					const lines = Array.from(wanted)
 						.map((id) => {
 							const r = host.getSubagent(id);
@@ -732,7 +824,21 @@ export function makeSubagentTool(
 							const verdict = subagentVerdict(r, tLang);
 							const detail = verdictText(r, tLang);
 							const out = clipSubagentOutput(r.output || (tLang === "zh" ? "（无输出）" : "(no output)"), tLang);
-							return `- ${sId}（${r.type} · ${verdict} · ${r.title}）${detail ? ` · ${detail}` : ""}:\n${out}`;
+							let wtTag = "";
+							let wtPathInfo = "";
+							if (r.worktree) {
+								if (r.worktree.cleanedUp) {
+									wtTag = tLang === "zh" ? " · 工作树已清理" : " · worktree cleaned";
+								} else {
+									wtTag =
+										tLang === "zh"
+											? ` · 工作树保留: ${r.worktree.branch} (${r.worktree.uncommittedCount ?? 0} 改动, +${r.worktree.aheadCount ?? 0} 提交)`
+											: ` · worktree kept: ${r.worktree.branch} (${r.worktree.uncommittedCount ?? 0} dirty, +${r.worktree.aheadCount ?? 0} commits)`;
+									wtPathInfo =
+										tLang === "zh" ? `\n  - 工作树路径：${r.worktree.path}` : `\n  - Worktree path: ${r.worktree.path}`;
+								}
+							}
+							return `- ${sId}（${r.type} · ${verdict} · ${r.title}${wtTag}）${detail ? ` · ${detail}` : ""}:\n${out}${wtPathInfo}`;
 						})
 						.join("\n\n");
 
@@ -740,15 +846,6 @@ export function makeSubagentTool(
 						const r = host.getSubagent(id);
 						return !isSubagentTerminal(r);
 					});
-
-					// 收口的子代理标记已消费，避免后续重复自动通知打扰父对话
-					const finishedIds = Array.from(wanted).filter((id) => {
-						const r = host.getSubagent(id);
-						return r === undefined || isSubagentTerminal(r);
-					});
-					if (finishedIds.length > 0) {
-						host.markSubagentsConsumed?.(finishedIds);
-					}
 
 					const head =
 						remaining.length === 0

@@ -576,6 +576,10 @@ export interface Conversation {
 	subagentThinking?: string;
 	/** 连续由子代理唤醒且未发生人类交互的轮次（防多代理死循环熔断）。 */
 	autonomousTurnsWithoutUser?: number;
+	/** Git 工作树隔离信息（spawn isolation="worktree" 时注入，issue #728）。 */
+	subagentWorktree?: import("./worktree-service.js").SubagentWorktreeContext;
+	/** finalizeSubagentWorktree 进行中的 Promise（防并发重复判定清理，issue #728）。 */
+	subagentWorktreePromise?: Promise<import("./worktree-service.js").SubagentWorktreeContext | undefined>;
 	/** 自动唤醒触发熔断/挂起期间已完成但尚未向父对话交付的子代理集合（防通知丢失，issue #726）。 */
 	suspendedSubagents?: Set<Conversation>;
 	/** 连续由子代理唤醒后、未发生任何工具操作或行动的空转轮次（用于空转熔断，issue #726）。 */
@@ -1076,6 +1080,7 @@ export class ClientSession {
 		title?: string,
 		thinking?: string,
 		notifyOnDone?: boolean,
+		isolation?: string,
 	): Promise<string> {
 		// 数量上限先行：每个子代理都是完整 runtime + TerminalManager，无上限时一次
 		// 并行派发几十个会把服务进程拖垮。持久化普通对话则受项目会话上限限制。
@@ -1128,9 +1133,28 @@ export class ClientSession {
 			const baseCwd = spawner?.cwd ?? this.cwd;
 			// 相对 cwd 按派发者所在目录解析：直接透传会相对 server 进程 cwd 落到别处。
 			const resolvedCwd = isRemoteWorkspaceUri(baseCwd) ? baseCwd : cwd ? resolve(baseCwd, cwd) : baseCwd;
-			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, resolvedCwd);
 			const conversationId = persist ? `conv-${randomUUID().slice(0, 8)}` : `sa-${randomUUID().slice(0, 8)}`;
-			const terminals = this.makeTerminalManager(conversationId, resolvedCwd);
+			let effectiveCwd = resolvedCwd;
+			let worktreeContext: import("./worktree-service.js").SubagentWorktreeContext | undefined;
+
+			if (isolation === "worktree") {
+				if (isRemoteWorkspaceUri(resolvedCwd)) {
+					throw new Error(
+						pick(
+							this.getLang(),
+							"远程 SSH 工作区暂不支持工作树物理隔离",
+							"Worktree isolation is not supported in remote SSH workspaces",
+							"agent.subagent.worktree.remote_unsupported",
+						),
+					);
+				}
+				const { createSubagentWorktree } = await import("./worktree-service.js");
+				worktreeContext = await createSubagentWorktree(resolvedCwd, conversationId, () => this.getLang());
+				effectiveCwd = worktreeContext.subagentCwd;
+			}
+
+			const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, effectiveCwd);
+			const terminals = this.makeTerminalManager(conversationId, effectiveCwd);
 			const sessionManager = persist ? SessionManager.create(sessionBaseDir) : SessionManager.inMemory(sessionBaseDir);
 			if (!persist) {
 				// 为内存子代理提供隔离的临时运行目录（供 SoL-Pi 等依赖 getSessionDir 的扩展正常放置缓存），
@@ -1142,16 +1166,30 @@ export class ClientSession {
 				} catch {}
 			}
 			const noSpawnTools = !persist && this.subagentAtDepthLimit(parentId ?? this.activeId ?? undefined);
-			const runtime = await createAgentSessionRuntime(
-				this.makeRuntimeFactory(terminals, apply, conversationId, undefined, undefined, noSpawnTools),
-				{
-					cwd: sessionBaseDir,
-					agentDir: this.agentDir,
-					sessionManager,
-				},
-			);
+			let runtime: AgentSessionRuntime;
+			try {
+				runtime = await createAgentSessionRuntime(
+					this.makeRuntimeFactory(terminals, apply, conversationId, undefined, undefined, noSpawnTools),
+					{
+						cwd: sessionBaseDir,
+						agentDir: this.agentDir,
+						sessionManager,
+					},
+				);
+			} catch (runtimeErr) {
+				if (worktreeContext) {
+					const { removeWorktree } = await import("./worktree-service.js");
+					try {
+						await removeWorktree(worktreeContext.mainRepoPath, worktreeContext.worktreePath, true);
+					} catch {}
+				}
+				throw runtimeErr;
+			}
 			const conv = this.makeConversation(runtime, conversationId, terminals);
-			conv.cwd = resolvedCwd;
+			conv.cwd = effectiveCwd;
+			if (worktreeContext) {
+				conv.subagentWorktree = worktreeContext;
+			}
 			conv.isSubagent = !persist;
 			if (conv.isSubagent) {
 				// 首轮 sendUserMessage 进入流式前的预检/模型切换窗口标记为投递中，
@@ -1406,6 +1444,7 @@ export class ClientSession {
 		persist: boolean | undefined,
 		thinking?: string,
 		notifyOnDone?: boolean,
+		isolation?: string,
 	): Promise<string> {
 		// 模板：存在且启用时应用；传了名字但不可用 → 抛错让工具转给 AI。
 		const tpl = templateName ? this.subagentTemplates.get(templateName) : undefined;
@@ -1434,11 +1473,38 @@ export class ClientSession {
 			undefined,
 			thinking,
 			notifyOnDone,
+			isolation,
 		);
 	}
 
 	private subagentRunOutcome(conv: Conversation) {
 		return subagentRunOutcome(conv);
+	}
+
+	/**
+	 * 终态结算与清理子代理的工作树（issue #728）。
+	 * 判定是否有未提交或提交修改：无修改自动清理，有修改保留供审阅。
+	 */
+	async finalizeSubagentWorktree(
+		conv: Conversation,
+	): Promise<import("./worktree-service.js").SubagentWorktreeContext | undefined> {
+		const wt = conv.subagentWorktree;
+		if (!wt) return undefined;
+		if (wt.finalized) return wt;
+		if (conv.subagentWorktreePromise) return conv.subagentWorktreePromise;
+
+		conv.subagentWorktreePromise = (async () => {
+			try {
+				try {
+					conv.terminals.killAll();
+				} catch {}
+				const { finalizeSubagentWorktree } = await import("./worktree-service.js");
+				return await finalizeSubagentWorktree(wt, () => this.getLang());
+			} finally {
+				conv.subagentWorktreePromise = undefined;
+			}
+		})();
+		return conv.subagentWorktreePromise;
 	}
 
 	/**
@@ -1557,6 +1623,11 @@ export class ClientSession {
 		// 过滤出未被消费、未被通知过的子代理
 		const toNotify = Array.from(entry.subagents).filter((c) => !c.subagentConsumedByParent && !c.subagentDoneNotified);
 		if (toNotify.length === 0) return;
+
+		// issue #728：提前结算隔离工作树，确保通知文本包含最新工作树状态
+		if (typeof this.finalizeSubagentWorktree === "function") {
+			await Promise.all(toNotify.map((c) => this.finalizeSubagentWorktree(c)));
+		}
 
 		// 寻找父对话（支持跨 ClientSession 查找）
 		const parentOwner = this.subagentOwnerOf(parentId);
@@ -2441,7 +2512,7 @@ export class ClientSession {
 	}
 
 	private subagentHost: SubagentToolHost = {
-		spawnSubagent: (prompt, type, cwd, templateName, model, parentId, persist, thinking, notifyOnDone) => {
+		spawnSubagent: (prompt, type, cwd, templateName, model, parentId, persist, thinking, notifyOnDone, isolation) => {
 			// B20：过户后 parentId 的主对话可能已搬去另一个 ClientSession ——
 			// 委托给真正持有父对话的会话 spawn（模板/上限/注册/左栏全随它），
 			// 否则新子代理注册进旧会话、目标页左栏「不见/错位」。
@@ -2456,7 +2527,16 @@ export class ClientSession {
 				persist,
 				thinking,
 				notifyOnDone,
+				isolation,
 			);
+		},
+		finalizeSubagentWorktree: async (convId: string) => {
+			const owner = this.subagentOwnerOf(convId);
+			const curId = owner.convs.has(convId) ? convId : this.subagentCurrentId(convId);
+			const conv = owner.convs.get(curId);
+			if (conv) {
+				await owner.finalizeSubagentWorktree(conv);
+			}
 		},
 		getSubagent: (convId) => {
 			// B20：本会话查不到就去「当前持有方」查 —— 过户把子代理整体搬走后，
@@ -2501,6 +2581,9 @@ export class ClientSession {
 						conv,
 						pick(owner.getLang(), "用户停止子代理", "User stopped the subagent", "agent.subagent.stop.user"),
 					);
+				}
+				if (conv.subagentWorktree && !conv.subagentWorktree.finalized) {
+					void owner.finalizeSubagentWorktree(conv).catch(() => {});
 				}
 			}
 		},
@@ -10919,6 +11002,9 @@ export class ClientSession {
 			try {
 				rmSync(ephemeralDir, { recursive: true, force: true });
 			} catch {}
+			if (conv.subagentWorktree && !conv.subagentWorktree.finalized) {
+				void this.finalizeSubagentWorktree(conv).catch(() => {});
+			}
 		}
 		if (conv.isEphemeral) {
 			const ephemeralDir = join(this.agentDir, "ephemeral-sessions", conv.id);

@@ -284,7 +284,19 @@ export async function removeWorktree(
 	if (force) args.push("--force");
 	args.push(targetPath);
 
-	await runGit(cwd, args);
+	let lastErr: unknown;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			await runGit(cwd, args);
+			return;
+		} catch (err) {
+			lastErr = err;
+			if (attempt < 2) {
+				await new Promise((r) => setTimeout(r, 200));
+			}
+		}
+	}
+	throw lastErr;
 }
 
 /** 获取当前目录的完整工作树上下文元数据（用于 UI 横幅与快照）。 */
@@ -313,4 +325,229 @@ export async function getWorktreeContext(cwd: string): Promise<WorktreeInfo | nu
 	} catch {
 		return null;
 	}
+}
+
+/** 仓库级异步操作互斥锁（防止多个子代理并发创建/删除工作树时碰撞 Git 内部文件锁）。 */
+const repoLocks = new Map<string, Promise<unknown>>();
+
+export async function withRepoLock<T>(repoPath: string, task: () => Promise<T>): Promise<T> {
+	const key = normalizeWirePath(repoPath);
+	const prev = repoLocks.get(key) ?? Promise.resolve();
+	let release: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	repoLocks.set(
+		key,
+		prev.catch(() => {}).then(() => gate),
+	);
+	try {
+		await prev.catch(() => {});
+		return await task();
+	} finally {
+		release!();
+		if (repoLocks.get(key) === gate) {
+			repoLocks.delete(key);
+		}
+	}
+}
+
+/** 自动将 .worktrees/ 加入 .git/info/exclude（零污染：防止未在 .gitignore 忽略此目录的用户仓库出现 untracked 脏状态）。 */
+export async function ensureWorktreeExcluded(repoPath: string): Promise<void> {
+	try {
+		const gitCommonDir = (await runGit(repoPath, ["rev-parse", "--git-common-dir"], FAST_GIT_TIMEOUT_MS)).trim();
+		const absGitCommon = resolve(repoPath, gitCommonDir);
+		const excludeFile = resolve(absGitCommon, "info", "exclude");
+		const { existsSync, readFileSync, appendFileSync, mkdirSync, writeFileSync } = await import("node:fs");
+		if (existsSync(excludeFile)) {
+			const content = readFileSync(excludeFile, "utf-8");
+			if (!content.includes(".worktrees")) {
+				appendFileSync(excludeFile, "\n# pi-web-ui worktrees\n.worktrees/\n");
+			}
+		} else {
+			mkdirSync(resolve(absGitCommon, "info"), { recursive: true });
+			writeFileSync(excludeFile, "# pi-web-ui worktrees\n.worktrees/\n", "utf-8");
+		}
+	} catch {
+		// non-fatal
+	}
+}
+
+/** 子代理专用的 Git 工作树上下文元数据 */
+export interface SubagentWorktreeContext {
+	/** 工作树根目录绝对路径 */
+	worktreePath: string;
+	/** 关联的主仓库根目录绝对路径 */
+	mainRepoPath: string;
+	/** 本次子代理专用的 Git 分支名（例如 subagent/sa-xxxx） */
+	branch: string;
+	/** 创建工作树时的基准 HEAD commit SHA */
+	baseCommit: string;
+	/** 子代理的工作区 cwd（若派发时在子目录中，则定位到工作树中对应的子目录；否则为 worktreePath） */
+	subagentCwd: string;
+	/** 是否已完成终态判定与清理（避免重复执行清理） */
+	finalized?: boolean;
+	/** 终态检查时是否因无修改而被自动清理 */
+	cleanedUp?: boolean;
+	/** 是否有未提交的改动 */
+	isDirty?: boolean;
+	/** 未提交的改动文件数 */
+	uncommittedCount?: number;
+	/** 相对于 baseCommit 的新 commit 数 */
+	aheadCount?: number;
+	/** 清理或检查失败时的错误信息（若有） */
+	error?: string;
+}
+
+/**
+ * 为子代理创建专用的 Git 工作树与分支（issue #728）。
+ * 自动从当前 HEAD 检出，并建立依赖软链接（node_modules/.venv 等），使子代理可立即执行测试。
+ */
+export async function createSubagentWorktree(
+	baseCwd: string,
+	subagentId: string,
+	lang?: () => ServerLang,
+): Promise<SubagentWorktreeContext> {
+	const l = lang?.() ?? "en";
+	const inside = await isInsideGitRepo(baseCwd);
+	if (!inside) {
+		throw new Error(
+			pick(
+				l,
+				`Git 工作树隔离失败：目录「${baseCwd}」不是 Git 仓库。worktree 隔离模式要求工作区位于有效的 Git 仓库中。`,
+				`Git worktree isolation failed: "${baseCwd}" is not a Git repository. Worktree isolation mode requires a valid Git repository.`,
+				"worktree.isolation.not_git",
+				{ baseCwd },
+			),
+		);
+	}
+
+	const rawText = await runGit(baseCwd, ["worktree", "list", "--porcelain"]);
+	const rawItems = parseWorktreePorcelain(rawText);
+	const mainRepoPath = rawItems[0]?.path || normalizeWirePath(resolve(baseCwd));
+	const worktreeDir = normalizeWirePath(resolve(mainRepoPath, ".worktrees", subagentId));
+	const branchName = `subagent/${subagentId}`;
+
+	// 获取创建时刻的当前 HEAD SHA 作为基准
+	const baseCommit = (await runGit(baseCwd, ["rev-parse", "HEAD"])).trim();
+
+	// 确定子代理的执行目录（若 baseCwd 在 mainRepoPath 的子目录中，则映射至工作树对应子目录）
+	const normBase = normalizeWirePath(resolve(baseCwd));
+	const normMain = normalizeWirePath(resolve(mainRepoPath));
+	let subagentCwd = worktreeDir;
+	if (normBase.startsWith(normMain + "/")) {
+		const rel = normBase.slice(normMain.length + 1);
+		subagentCwd = normalizeWirePath(resolve(worktreeDir, rel));
+	}
+
+	await withRepoLock(mainRepoPath, async () => {
+		await ensureWorktreeExcluded(mainRepoPath);
+		const { mkdirSync, existsSync, symlinkSync } = await import("node:fs");
+		mkdirSync(resolve(mainRepoPath, ".worktrees"), { recursive: true });
+
+		// 使用 -B 确保分支已存在时安全重置，HEAD 确保从当前状态检出
+		await runGit(mainRepoPath, ["worktree", "add", "-B", branchName, worktreeDir, "HEAD"]);
+
+		// 依赖桥接：若主仓库根有 node_modules 或 .venv，在工作树中建立目录软连接/Junction，
+		// 这样子代理可立即运行 npm test / python 测试，无需耗时重装依赖
+		for (const depDir of ["node_modules", ".venv"]) {
+			const src = resolve(mainRepoPath, depDir);
+			const dest = resolve(worktreeDir, depDir);
+			if (existsSync(src) && !existsSync(dest)) {
+				try {
+					symlinkSync(src, dest, process.platform === "win32" ? "junction" : "dir");
+				} catch {
+					// 软链接失败不阻断工作树核心流程
+				}
+			}
+		}
+	});
+
+	return {
+		worktreePath: worktreeDir,
+		mainRepoPath,
+		branch: branchName,
+		baseCommit,
+		subagentCwd,
+	};
+}
+
+/**
+ * 终态判定与清理（issue #728）：
+ * 双重判定改动（未提交修改 + 领先 commit 数）：
+ * - 无改动：自动安全清理工作树并删除临时分支；
+ * - 有改动：保留工作树与分支供父对话审阅、合并或清理。
+ */
+export async function finalizeSubagentWorktree(
+	wt: SubagentWorktreeContext,
+	lang?: () => ServerLang,
+): Promise<SubagentWorktreeContext> {
+	if (wt.finalized) return wt;
+
+	const { existsSync } = await import("node:fs");
+	if (!existsSync(wt.worktreePath)) {
+		wt.finalized = true;
+		wt.cleanedUp = true;
+		return wt;
+	}
+
+	try {
+		const { isDirty, count: uncommittedCount } = await getUncommittedCount(wt.worktreePath);
+		let aheadCount = 0;
+		try {
+			const currentHead = (await runGit(wt.worktreePath, ["rev-parse", "HEAD"])).trim();
+			if (currentHead !== wt.baseCommit) {
+				aheadCount = await getAheadCount(wt.worktreePath, wt.baseCommit);
+				if (aheadCount === 0 && currentHead !== wt.baseCommit) {
+					aheadCount = 1;
+				}
+			}
+		} catch {
+			aheadCount = 0;
+		}
+
+		wt.isDirty = isDirty;
+		wt.uncommittedCount = uncommittedCount;
+		wt.aheadCount = aheadCount;
+
+		const hasChanges = isDirty || aheadCount > 0;
+		if (!hasChanges) {
+			// 没有改动 -> 自动清理工作树与临时分支
+			await withRepoLock(wt.mainRepoPath, async () => {
+				// 先移除建立的软链接/Junction，防止 Windows 下锁死目录句柄
+				for (const depDir of ["node_modules", ".venv"]) {
+					const p = resolve(wt.worktreePath, depDir);
+					if (existsSync(p)) {
+						try {
+							const { unlinkSync } = await import("node:fs");
+							unlinkSync(p);
+						} catch {}
+					}
+				}
+				await removeWorktree(wt.mainRepoPath, wt.worktreePath, true, lang);
+				try {
+					await runGit(wt.mainRepoPath, ["branch", "-D", wt.branch]);
+				} catch {}
+			});
+			wt.cleanedUp = true;
+		} else {
+			// 有改动 -> 完整保留，由父对话决定合并还是清理
+			wt.cleanedUp = false;
+		}
+		wt.finalized = true;
+	} catch (err) {
+		wt.finalized = true;
+		wt.error = (err as Error).message;
+	}
+
+	return wt;
+}
+
+/** 剪枝清理已损坏或残留的孤儿工作树 */
+export async function pruneOrphanSubagentWorktrees(cwd: string): Promise<void> {
+	try {
+		const inside = await isInsideGitRepo(cwd);
+		if (!inside) return;
+		await runGit(cwd, ["worktree", "prune"], FAST_GIT_TIMEOUT_MS);
+	} catch {}
 }
