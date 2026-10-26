@@ -17,7 +17,7 @@ const SERVER = argSrv || '{{SERVER}}';
 const TOKEN  = process.env.PI_TUNNEL_TOKEN || '{{TOKEN}}';
 const sockMap = new Map();
 const ts = () => new Date().toTimeString().slice(0, 8); // 日志时间戳（诊断断线循环时序用）
-const CLI_VER = 'p15'; // 能力版本：server 握手下发最新版，本地旧则自更新（拉 /cli 原子替换后重启由 launchd 拉起）
+const CLI_VER = 'p16'; // 能力版本：server 握手下发最新版，本地旧则自更新（拉 /cli 原子替换后重启由 launchd 拉起）
 const SELF_PATH = process.argv[1] ? path.resolve(process.argv[1]) : ''; // 自更新定位自身文件
 const CFG_FILE = path.join(homedir(), '.pi-tunnel-cli.json');
 let piPath = ''; // pi agent 可执行路径（启动时探测；未装则 /task 提示安装）
@@ -62,6 +62,29 @@ cfg.whitelist = [...new Set(cfg.whitelist)];
 const saveCfg = () => { try { fs.writeFileSync(CFG_FILE, JSON.stringify(cfg, null, 2)); } catch {} };
 
 const expandHome = p => p === '~' ? homedir() : (p.startsWith('~/') ? path.join(homedir(), p.slice(2)) : p);
+function isRestrictedBrowsePath(targetPath) {
+  if (!targetPath || typeof targetPath !== 'string') return true;
+  const norm = targetPath.trim().replace(/\\/g, '/');
+  const blockedPrefixes = ['/etc', '/proc', '/sys', '/dev', '/var', '/root', '/boot', '/bin', '/sbin', '/usr'];
+  if (norm === '/' || blockedPrefixes.some(p => norm === p || norm.startsWith(p + '/'))) {
+    return true;
+  }
+  const resolved = path.resolve(targetPath);
+  const home = path.resolve(homedir());
+  if (resolved === home || resolved.startsWith(home + path.sep)) return false;
+  const plat = process.platform;
+  if (plat === 'darwin' && (resolved === '/Volumes' || resolved.startsWith('/Volumes/'))) return false;
+  if (plat === 'linux' && /^\/(media|mnt)($|\/)/.test(resolved)) return false;
+  if (plat === 'win32') {
+    const isDrive = /^[a-zA-Z]:\\?/.test(resolved);
+    const winSys = process.env.SystemRoot ? path.resolve(process.env.SystemRoot) : 'C:\\Windows';
+    if (resolved.toLowerCase().startsWith(winSys.toLowerCase())) return true;
+    if (isDrive) return false;
+  }
+  if (blockedPrefixes.some(p => resolved === p || resolved.startsWith(p + '/'))) return true;
+  if (resolved === '/' || resolved === path.parse(resolved).root) return true;
+  return true;
+}
 const inWhitelist = p => {
   const rp = path.resolve(p);
   return cfg.whitelist.some(w => {
@@ -170,11 +193,15 @@ const ctrlSrv = http.createServer((req, res) => {
       });
       return;
     }
-    if (u.pathname === '/fs/browse') { // 目录浏览：仅目录名（供面板选白名单路径）；不做白名单校验但审计覆盖，文件内容仍需白名单
+    if (u.pathname === '/fs/browse') { // 目录浏览：仅目录名（供面板选白名单路径）；限制在用户目录/外置存储卷并审计覆盖
       if (!cfg.fsRead) { audit('fs.browse.denied', ''); return json(res, 403, { error: '读开关未开启' }); }
       const raw = u.searchParams.get('path') || '~';
       try {
         const p = path.resolve(expandHome(raw));
+        if (isRestrictedBrowsePath(p)) {
+          audit('fs.browse.denied', raw);
+          return json(res, 403, { error: '系统保留或非允许目录禁止浏览' });
+        }
         const dirs = fs.readdirSync(p, { withFileTypes: true })
           .filter(e => e.isDirectory() && !e.name.startsWith('.'))
           .map(e => e.name).sort();
@@ -238,6 +265,15 @@ const ctrlSrv = http.createServer((req, res) => {
         } catch {}
         if (!prompt.trim()) return json(res, 400, { error: 'prompt 为空' });
         if (!/^[a-z_,*+.-]+$/i.test(tools)) return json(res, 400, { error: 'tools 非法' });
+        const requestedTools = tools.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        const writeTools = ['bash', 'edit', 'write', 'patch'];
+        const readTools = ['read', 'grep', 'glob', 'find'];
+        if (!cfg.fsWrite && requestedTools.some(t => writeTools.includes(t))) {
+          return json(res, 403, { error: '设备未开启写入/命令执行能力（fsWrite=false）' });
+        }
+        if (!cfg.fsRead && requestedTools.some(t => readTools.includes(t))) {
+          return json(res, 403, { error: '设备未开启读取能力（fsRead=false）' });
+        }
         if (!piPath) piPath = detectPiSync(); // 懒重试：安装发生在启动后（如常驻命令装 pi）也能被 /task 发现
         if (!piPath) return json(res, 400, { error: '设备未安装 pi agent（更新常驻命令以安装）' });
         if (taskBusy) return json(res, 429, { error: '已有任务在执行（设备端串行）' });

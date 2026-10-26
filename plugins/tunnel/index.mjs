@@ -45,6 +45,87 @@ function loadWs() {
 }
 
 // ── 纯函数区（可离线单测）─────────────────────────────────────────────────────
+/** 常时口令安全比对（SHA-256 哈希后 timingSafeEqual，消除逐字节短路时序侧信道）。 */
+export function safeTokenEqual(candidate, expected) {
+	if (typeof candidate !== "string" || typeof expected !== "string" || !expected || !candidate) return false;
+	try {
+		const a = crypto.createHash("sha256").update(candidate).digest();
+		const b = crypto.createHash("sha256").update(expected).digest();
+		return crypto.timingSafeEqual(a, b);
+	} catch {
+		return false;
+	}
+}
+
+export const WRITE_EXEC_TOOLS = ["bash", "edit", "write", "patch"];
+export const READ_TOOLS = ["read", "grep", "glob", "find"];
+
+/** 校验任务通道工具是否符合设备端能力模型约束（fsRead / fsWrite）。 */
+export function validateTaskTools(toolsStr, caps = { fsRead: true, fsWrite: false }) {
+	const tools = String(toolsStr || "")
+		.split(",")
+		.map((s) => s.trim().toLowerCase())
+		.filter(Boolean);
+	const hasWrite = tools.some((t) => WRITE_EXEC_TOOLS.includes(t));
+	const hasRead = tools.some((t) => READ_TOOLS.includes(t));
+	if (hasWrite && !caps.fsWrite) {
+		return { ok: false, error: "设备未开启写入/命令执行能力（fsWrite=false）" };
+	}
+	if (hasRead && !caps.fsRead) {
+		return { ok: false, error: "设备未开启读取能力（fsRead=false）" };
+	}
+	return { ok: true, tools };
+}
+
+/** 过滤并校验 mesh 发送目标名称（必须合法标识符，防止路径穿越）。 */
+export function sanitizeMeshTo(to) {
+	if (typeof to !== "string") return "";
+	const s = to.trim();
+	return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
+}
+
+/** 目录浏览安全白名单检查（限制在用户目录与外置卷，禁止系统保留根路径）。 */
+export function isRestrictedBrowsePath(targetPath, homeDir = os.homedir()) {
+	if (!targetPath || typeof targetPath !== "string") return true;
+	const norm = targetPath.trim().replace(/\\/g, "/");
+
+	// 严格禁止 Unix 系统敏感目录及根目录
+	const blockedPrefixes = ["/etc", "/proc", "/sys", "/dev", "/var", "/root", "/boot", "/bin", "/sbin", "/usr"];
+	if (norm === "/" || blockedPrefixes.some((p) => norm === p || norm.startsWith(p + "/"))) {
+		return true;
+	}
+
+	const resolved = path.resolve(targetPath);
+	const home = path.resolve(homeDir);
+
+	// 允许在用户主目录或其子目录中浏览
+	if (resolved === home || resolved.startsWith(home + path.sep)) {
+		return false;
+	}
+
+	// 跨盘/外接存储卷（macOS /Volumes/*, Linux /media/*, /mnt/*, Windows X:\）
+	const plat = process.platform;
+	if (plat === "darwin" && (resolved === "/Volumes" || resolved.startsWith("/Volumes/"))) {
+		return false;
+	}
+	if (plat === "linux" && /^\/(media|mnt)($|\/)/.test(resolved)) {
+		return false;
+	}
+	if (plat === "win32") {
+		const isDrivePath = /^[a-zA-Z]:\\?/.test(resolved);
+		const winSys = process.env.SystemRoot ? path.resolve(process.env.SystemRoot) : "C:\\Windows";
+		if (resolved.toLowerCase().startsWith(winSys.toLowerCase())) return true;
+		if (isDrivePath) return false;
+	}
+
+	if (blockedPrefixes.some((p) => resolved === p || resolved.startsWith(p + "/"))) {
+		return true;
+	}
+	if (resolved === "/" || resolved === path.parse(resolved).root) return true;
+
+	return true;
+}
+
 /** 解析 SOCKS5 CONNECT 请求（RFC1928，仅 CMD=CONNECT；ATYP 1=IPv4 3=域名；4=IPv6 不支持）。 */
 export function parseSocksConnect(buf) {
 	if (buf.length < 7 || buf[0] !== 5 || buf[1] !== 1) return null;
@@ -134,12 +215,13 @@ export default {
 						status: 400,
 						body: { error: "该设备 CLI 为旧版，不支持此操作——请在面板「设备常驻化」重新安装后重试" },
 					});
-				const rid = `r${++ctrlSeq}`;
+				const rid = crypto.randomUUID();
 				const timer = setTimeout(() => {
 					state.ctrlPending.delete(rid);
 					resolve({ status: 504, body: { error: "设备响应超时" } });
 				}, timeoutMs);
 				state.ctrlPending.set(rid, {
+					aid,
 					resolve: (v) => {
 						clearTimeout(timer);
 						resolve(v);
@@ -256,31 +338,48 @@ export default {
 				notifyDebounced("info", `网络隧道：出口设备已切换到 ${nm}`);
 			}
 		};
-		const CLI_VER_PUBLISH = "p15"; // 能力版本：server 握手下发最新版，本地旧则自更新（与 assets/cli.mjs CLI_VER 同步）
+		const CLI_VER_PUBLISH = "p16"; // 能力版本：server 握手下发最新版，本地旧则自更新（与 assets/cli.mjs CLI_VER 同步）
 		const lanIp = detectLanIp(); // 面板生成常驻命令用（网络变化随插件重载自动更新）
-		const statusSnapshot = () => ({
-			running,
-			rev: "c1-p3", // 代码版本标记：reload 后可观测新代码是否激活
-			lanIp,
-			agentOnline: !!activeAgent(), // 兼容旧面板语义：当前出口在线
-			activeAgentId: state.activeAgentId,
-			devices: [...state.agents.entries()].map(([id, a]) => ({
-				id,
-				name: a.name || id,
-				os: a.os || "",
-				online: a.ws.readyState === 1,
-				since: a.since,
-				ctrlPort: a.ctrlPort ?? 0,
-				ver: a.ver || "",
-				caps: capsOf(a.name || id),
-			})),
-			activeConns: state.conns.size,
-			totalServed: state.totalServed,
-			tokenPrefix: `${token.slice(0, 4)}…`,
-			token, // 完整下发：面板（宿主 route 已过面板鉴权）需用它拼设备 persistCmd 的 /cli 下载参数；wsPort /status 已加 tnlAuthed，非授信方拿不到 snapshot
-			wsPort,
-			socksPort,
-		});
+
+		const hostHasToken = () => {
+			if (process.env.PI_WEB_TOKEN && process.env.PI_WEB_TOKEN.trim()) return true;
+			try {
+				const cfgPath = path.join(os.homedir(), ".pi-web", "config.json");
+				if (fs.existsSync(cfgPath)) {
+					const j = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+					if (typeof j?.token === "string" && j.token.trim()) return true;
+				}
+			} catch {}
+			return false;
+		};
+
+		const statusSnapshot = (opts = {}) => {
+			const includeToken = opts.includeToken ?? hostHasToken();
+			return {
+				running,
+				rev: "c1-p3", // 代码版本标记：reload 后可观测新代码是否激活
+				lanIp,
+				agentOnline: !!activeAgent(), // 兼容旧面板语义：当前出口在线
+				activeAgentId: state.activeAgentId,
+				devices: [...state.agents.entries()].map(([id, a]) => ({
+					id,
+					name: a.name || id,
+					os: a.os || "",
+					online: a.ws.readyState === 1,
+					since: a.since,
+					ctrlPort: a.ctrlPort ?? 0,
+					ver: a.ver || "",
+					caps: capsOf(a.name || id),
+				})),
+				activeConns: state.conns.size,
+				totalServed: state.totalServed,
+				tokenPrefix: `${token.slice(0, 4)}…`,
+				token: includeToken ? token : "", // 宿主未设 PI_WEB_TOKEN 时脱敏保护，防止公网反代无鉴权暴露下泄露
+				tokenRedacted: !includeToken,
+				wsPort,
+				socksPort,
+			};
+		};
 		const cliCode = (req) => {
 			let code = fs.readFileSync(path.join(__dirname, "assets", "cli.mjs"), "utf8");
 			const safeHost = sanitizeHostHeader(req?.headers?.host, `${lanIp || "127.0.0.1"}:${wsPort}`);
@@ -306,7 +405,7 @@ export default {
 		};
 		const tnlAuthed = (_req, url) => {
 			try {
-				return url.searchParams.get("token") === token;
+				return safeTokenEqual(url.searchParams.get("token"), token);
 			} catch {
 				return false;
 			}
@@ -322,7 +421,7 @@ export default {
 			if (url.pathname === "/status") {
 				if (!tnlAuthed(req, url)) return tnlDeny(res);
 				res.writeHead(200, { "content-type": "application/json" });
-				return res.end(JSON.stringify(statusSnapshot()));
+				return res.end(JSON.stringify(statusSnapshot({ includeToken: true })));
 			}
 			if (url.pathname === "/pi-pkg") {
 				if (!tnlAuthed(req, url)) return tnlDeny(res);
@@ -340,7 +439,7 @@ export default {
 		const wss = new WebSocketServer({ noServer: true });
 		httpSrv.on("upgrade", (req, sock, head) => {
 			const url = new URL(req.url, "http://local");
-			if (url.pathname !== "/agent" || url.searchParams.get("token") !== token) {
+			if (url.pathname !== "/agent" || !safeTokenEqual(url.searchParams.get("token"), token)) {
 				sock.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
 				return sock.destroy();
 			}
@@ -356,6 +455,16 @@ export default {
 						return;
 					}
 					const e = state.conns.get(m.id);
+					// SOCKS 连接消息设备归属校验：防止任一已配对设备伪造/跨设备串扰其他连接
+					if (["open", "data", "end", "err", "close"].includes(m.t) && e && e.aid !== aid) {
+						auditRing.push({
+							ts: Date.now(),
+							device: state.agents.get(aid)?.name || aid,
+							op: "socks.conn.hijack_denied",
+							detail: `attempted ${m.t} on conn ${m.id} owned by ${e.aid}`,
+						});
+						return;
+					}
 					switch (m.t) {
 						case "ping": {
 							// 应用层心跳应答（CLI 25s 一发，服务端回 pong 供其判僵尸——TCP 半开时 onclose 不触发，靠这个自愈）
@@ -429,65 +538,81 @@ export default {
 							break;
 						}
 						case "audit": {
-							// C 档 P1：CLI 批量上报的操作审计
+							// C 档 P1：CLI 批量上报的操作审计（清洗字段并钳制时间戳）
 							const nm = state.agents.get(aid)?.name || aid;
-							for (const it of m.items ?? []) {
-								auditRing.push({ ts: it.ts, device: nm, op: it.op, detail: it.detail });
+							const items = Array.isArray(m.items) ? m.items.slice(0, 50) : [];
+							const now = Date.now();
+							for (const it of items) {
+								if (!it || typeof it !== "object") continue;
+								const rawTs = Number(it.ts);
+								const ts = Number.isFinite(rawTs) && rawTs > 0 && rawTs <= now ? rawTs : now;
+								const op = String(it.op ?? "").slice(0, 64);
+								const detail = String(it.detail ?? "").slice(0, 500);
+								if (op) auditRing.push({ ts, device: nm, op, detail });
 							}
 							if (auditRing.length > 500) auditRing.splice(0, auditRing.length - 500);
 							break;
 						}
 						case "open":
-							if (e && !e.replied) {
+							if (e && e.aid === aid && !e.replied) {
 								e.replied = true;
 								socksReply(e.c, 0);
 							}
 							break;
 						case "data":
-							if (e) e.c.write(Buffer.from(m.b64, "base64"));
+							if (e && e.aid === aid) e.c.write(Buffer.from(m.b64, "base64"));
 							break;
 						case "end":
-							if (e) e.c.end();
+							if (e && e.aid === aid) e.c.end();
 							break;
 						case "err":
-							if (e)
+							if (e && e.aid === aid) {
 								auditRing.push({
 									ts: Date.now(),
 									device: state.agents.get(aid)?.name || aid,
 									op: "socks.connect.fail",
 									detail: String(m.msg || "").slice(0, 200) + " → " + (e.lastTarget ?? ""),
 								});
-							if (e && !e.replied) {
-								e.replied = true;
-								socksReply(e.c, 5);
+								if (!e.replied) {
+									e.replied = true;
+									socksReply(e.c, 5);
+								}
+								e.c.destroy();
 							}
-							if (e) e.c.destroy();
 							break;
 						case "close":
-							if (e) {
+							if (e && e.aid === aid) {
 								e.c.destroy();
 								state.conns.delete(m.id);
 							}
 							break;
 						case "ctrl-resp": {
-							// P4: 设备控制响应回给等待中的面板请求
+							// P4: 设备控制响应回给等待中的面板请求（校验 aid 归属防止抢答）
 							const p = state.ctrlPending.get(m.rid);
-							if (p) {
+							if (p && p.aid === aid) {
 								state.ctrlPending.delete(m.rid);
 								p.resolve({ status: m.status ?? 500, body: m.body ?? {} });
 							}
 							break;
 						}
 						case "msg-res": {
-							// P3a: 设备 mesh 任务结果上行 → 写发起方 inbox（wake 由 pi-messenger watcher 自带）
-							const dn = state.agents.get(aid)?.name || aid;
-							const nm = meshAgentName(dn);
+							// P3a: 设备 mesh 任务结果上行 → 写发起方 inbox
 							const pm = meshPending.get(m.msgId);
-							if (pm) {
-								clearTimeout(pm.timer);
-								meshPending.delete(m.msgId);
+							if (!pm || pm.targetAid !== aid) {
+								auditRing.push({
+									ts: Date.now(),
+									device: state.agents.get(aid)?.name || aid,
+									op: "mesh.reply.denied",
+									detail: `unsolicited or aid mismatch msgId=${m.msgId}`,
+								});
+								break;
 							}
-							const to = String(m.to || pm?.to || "");
+							clearTimeout(pm.timer);
+							meshPending.delete(m.msgId);
+
+							const dn = state.agents.get(aid)?.name || aid;
+							const nm = pm.from || meshAgentName(dn);
+							const to = pm.to; // 严格以服务端记录的发起方为准，绝不信任客户端自报的 m.to
 							const text = m.ok
 								? String(m.text || "").slice(0, 8000) || "（设备端无文本回复）"
 								: `任务失败：${String(m.err || "未知错误").slice(0, 300)}`;
@@ -625,14 +750,16 @@ export default {
 			} catch {}
 		}
 		function meshDeliver(to, fromName, text, replyTo) {
+			const safeTo = sanitizeMeshTo(to);
+			if (!safeTo) return false;
 			// 写发起方（mini 侧 pi 会话）inbox → 其 pi-messenger watcher 自动 wake（零改造）
 			try {
-				const dir = path.join(MESH_DIR, "inbox", to);
+				const dir = path.join(MESH_DIR, "inbox", safeTo);
 				fs.mkdirSync(dir, { recursive: true });
 				const msg = {
 					id: crypto.randomUUID(),
 					from: fromName,
-					to,
+					to: safeTo,
 					text,
 					timestamp: new Date().toISOString(),
 					replyTo: replyTo ?? null,
@@ -680,9 +807,10 @@ export default {
 						} catch {}
 						continue;
 					}
+					const msgId = msg.id || crypto.randomUUID();
 					const payload = JSON.stringify({
 						mesh: true,
-						msgId: msg.id,
+						msgId,
 						from: msg.from,
 						prompt: String(msg.text ?? ""),
 						tools: "read,grep",
@@ -701,12 +829,13 @@ export default {
 						try {
 							fs.renameSync(file, file + ".done");
 						} catch {} // 投递成功即标记（server 重启不重投；结果由 msg-res 异步回）
-						meshPending.set(msg.id, {
+						meshPending.set(msgId, {
+							targetAid,
 							to: msg.from,
 							from: nm,
 							timer: setTimeout(() => {
-								meshPending.delete(msg.id);
-								meshDeliver(msg.from, nm, "任务超时（10min）——设备端可能仍在执行，结果将被丢弃。", msg.id);
+								meshPending.delete(msgId);
+								meshDeliver(msg.from, nm, "任务超时（10min）——设备端可能仍在执行，结果将被丢弃。", msgId);
 							}, 600_000),
 						});
 					} else {
@@ -714,7 +843,7 @@ export default {
 							msg.from,
 							nm,
 							`投递失败：设备返回 ${d.status} ${JSON.stringify(d.body ?? {}).slice(0, 200)}`,
-							msg.id,
+							msgId,
 						);
 						try {
 							fs.renameSync(file, file + ".done");
@@ -790,8 +919,9 @@ export default {
 			}
 			for (const [, p] of meshPending) clearTimeout(p.timer);
 			meshPending.clear();
-			const ag = activeAgent();
-			if (ag) meshRegistry(meshAgentName(ag.name), ag.name, false);
+			for (const [, a] of state.agents) {
+				if (a?.name) meshRegistry(meshAgentName(a.name), a.name, false);
+			}
 			console.log("[tunnel] mesh 桥已停止");
 		}
 		host.route("GET", "/mesh", (_req, res) => {
@@ -886,6 +1016,7 @@ export default {
 		}
 		function stopTunnel() {
 			if (!running) return;
+			stopMeshBridge(); // 停隧道一并关闭 mesh 桥并标记 registry 下线，防 watcher/timer 句柄泄露
 			for (const [, e] of state.conns) {
 				try {
 					e.c.destroy();
@@ -968,6 +1099,23 @@ export default {
 		const offRotate = host.route("POST", "/rotate", (_req, res) => {
 			token = crypto.randomBytes(16).toString("hex");
 			host.storage.set("token", token);
+			// 踢掉所有已连接设备与现有 SOCKS 连接：旧 token 失效后必须重新配对
+			for (const [, e] of state.conns) {
+				try {
+					e.c.destroy();
+				} catch {}
+			}
+			state.conns.clear();
+			for (const [, a] of state.agents) {
+				try {
+					a.ws.send(JSON.stringify({ t: "kicked", reason: "令牌已重置" }));
+				} catch {}
+				try {
+					a.ws.close();
+				} catch {}
+			}
+			state.agents.clear();
+			state.activeAgentId = null;
 			res.setHeader("content-type", "application/json");
 			res.end(
 				JSON.stringify({ ok: true, tokenPrefix: `${token.slice(0, 4)}…`, hint: "令牌已重置：所有设备需重新下载 CLI" }),
@@ -1097,9 +1245,19 @@ export default {
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? "");
+				res.setHeader("content-type", "application/json");
+				if (!id) return res.end(JSON.stringify({ error: "缺少设备 id" }));
+				const ag = state.agents.get(id);
+				if (!ag) return res.end(JSON.stringify({ error: "设备不在线" }));
+
+				const caps = capsOf(ag.name || id);
+				const toolsCheck = validateTaskTools(j.tools || "read,grep,glob", caps);
+				if (!toolsCheck.ok) {
+					return res.end(JSON.stringify({ error: toolsCheck.error }));
+				}
+
 				const me = resolveModelEnv(String(j.model ?? "").trim()); // 请求级 model override 优先于面板手动/自动
 				if (!me || me.error) {
-					res.setHeader("content-type", "application/json");
 					return res.end(
 						JSON.stringify({
 							error:
@@ -1111,7 +1269,7 @@ export default {
 				}
 				const payload = JSON.stringify({
 					prompt: String(j.prompt ?? ""),
-					tools: String(j.tools || "read,grep,glob"),
+					tools: toolsCheck.tools.join(","),
 					env: me.env,
 					model: me.model,
 					timeoutS: +j.timeoutS || 300,
@@ -1119,10 +1277,7 @@ export default {
 				console.log(
 					`[tunnel] task → ${id} model=${me.model} src=${me.source} baseUrl=${me.baseUrl || "-"} promptLen=${payload.length}`,
 				);
-				const d = id
-					? await deviceCtrl(id, "/task", { method: "POST", body: payload }, (+j.timeoutS || 300) * 1000 + 30000)
-					: { status: 400, body: { error: "缺少设备 id" } };
-				res.setHeader("content-type", "application/json");
+				const d = await deviceCtrl(id, "/task", { method: "POST", body: payload }, (+j.timeoutS || 300) * 1000 + 30000);
 				res.end(JSON.stringify(d.body));
 			}
 		});
@@ -1259,6 +1414,7 @@ export default {
 			offConfig();
 			offAudit();
 			offTool();
+			stopMeshBridge();
 			stopTunnel();
 			try {
 				wss.close();

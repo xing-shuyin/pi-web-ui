@@ -4,7 +4,7 @@
  * 可重入：mount 返回清理函数，plugins_reload 后由宿主重新 mount。
  * HTML 拼接用字符串相加而非嵌套模板串（20261019 嵌套模板曾触发 V8 解析错，规避）。
  */
-import { defineView } from "./sdk/index.mjs";
+import { defineView, esc } from "./sdk/index.mjs";
 
 const CSS = `
 .tnl-wrap { font-family: -apple-system, "PingFang SC", sans-serif; font-size: 13px; line-height: 1.7; max-width: 720px; padding: 18px; color: var(--text, inherit); --green: #34c759; --green-soft: #34c75933; --green-text: #2e9e47; }
@@ -82,6 +82,7 @@ const CSS = `
 let lastLanIp = ""; // 由 status 轮询填充；无内网 IP 时命令里用占位符提示替换
 let lastPort = 8765;
 let lastToken = ""; // tunnel 令牌（snapshot 完整下发）：persistCmd 下载 /cli 时作鉴权参数
+let lastDevices = [];
 
 /** 三平台常驻安装命令（CLI 已在用户主目录：~/pi-tunnel-cli.mjs / %USERPROFILE%\pi-tunnel-cli.mjs）。 */
 function persistCmd(os) {
@@ -90,7 +91,7 @@ function persistCmd(os) {
 	const tk = lastToken || "<tunnel令牌>"; // /cli 已鉴权（tnlAuthed），下载必须带 token
 	if (os === "Windows") {
 		return [
-			"curl.exe -o $env:USERPROFILE\\pi-tunnel-cli.mjs \"http://" + host + ":" + port + "/cli?token=" + tk + "\"",
+			'curl.exe -o $env:USERPROFILE\\pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
 			"npm i -g @earendil-works/pi-coding-agent",
 			'schtasks /create /tn "pi-tunnel" /tr "node $env:USERPROFILE\\pi-tunnel-cli.mjs" /sc onlogon /f',
 			'schtasks /run /tn "pi-tunnel"',
@@ -99,7 +100,7 @@ function persistCmd(os) {
 	}
 	if (os === "Linux") {
 		return [
-			"curl -o ~/pi-tunnel-cli.mjs \"http://" + host + ":" + port + "/cli?token=" + tk + "\"",
+			'curl -o ~/pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
 			"npm i -g @earendil-works/pi-coding-agent",
 			"mkdir -p ~/.config/systemd/user",
 			"cat > ~/.config/systemd/user/pi-tunnel.service <<UNIT",
@@ -119,9 +120,9 @@ function persistCmd(os) {
 	}
 	// macOS（默认）
 	return [
-		"curl -o ~/pi-tunnel-cli.mjs \"http://" + host + ":" + port + "/cli?token=" + tk + "\"",
+		'curl -o ~/pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
 		"NODE_BIN=$(command -v node)",
-		"curl -o ~/pi-agent.tgz \"http://" + host + ":" + port + "/pi-pkg?token=" + tk + "\"",
+		'curl -o ~/pi-agent.tgz "http://' + host + ":" + port + "/pi-pkg?token=" + tk + '"',
 		"mkdir -p ~/pi-agent/node_modules && tar xzf ~/pi-agent.tgz -C ~/pi-agent/node_modules && rm -f ~/pi-agent.tgz",
 		"mkdir -p ~/Library/LaunchAgents",
 		"launchctl bootout gui/$(id -u)/com.pi-tunnel.cli 2>/dev/null",
@@ -147,15 +148,6 @@ function persistCmd(os) {
 		"launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.pi-tunnel.cli.plist",
 		"echo 常驻已装：开机自启+掉线自愈",
 	].join("\n");
-}
-
-function esc(s) {
-	return String(s)
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&#39;");
 }
 
 export default defineView({
@@ -319,9 +311,17 @@ export default defineView({
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-task")) {
-				// P4-B: 打开任务面板
+				// P4-B: 打开任务面板（受设备能力模型约束）
+				const dev = (lastDevices || []).find((d) => d.id === b.dataset.id);
 				$("#tnl-tk").style.display = "flex";
 				$("#tnl-tk-prompt").dataset.id = b.dataset.id;
+				const canWrite = !!dev?.caps?.fsWrite;
+				const fullBox = $("#tnl-tk-full");
+				if (fullBox) {
+					fullBox.disabled = !canWrite;
+					if (!canWrite) fullBox.checked = false;
+					fullBox.title = canWrite ? "" : "设备未开启写权限（可在能力设置中开启）";
+				}
 				return;
 			}
 			try {
@@ -615,11 +615,18 @@ export default defineView({
 				btn.textContent = d.running ? "停止服务" : "启动服务";
 				btn.className = "tnl-btn " + (d.running ? "danger" : "primary");
 				$("#tnl-conns").textContent = "活跃 " + d.activeConns + " · 累计 " + d.totalServed;
-				$("#tnl-token").textContent = d.tokenPrefix;
+				if (d.tokenRedacted) {
+					$("#tnl-token").textContent = d.tokenPrefix + " (脱敏)";
+					$("#tnl-token").title = "宿主未设 PI_WEB_TOKEN，公网下已脱敏保护；设置口令后解锁";
+				} else {
+					$("#tnl-token").textContent = d.tokenPrefix;
+					$("#tnl-token").title = "";
+				}
 				$("#tnl-ports").textContent = "WS :" + d.wsPort + " · SOCKS5 127.0.0.1:" + d.socksPort;
 				lastLanIp = d.lanIp || "";
 				lastPort = d.wsPort || 8765;
 				lastToken = d.token || "";
+				lastDevices = d.devices || [];
 				$("#tnl-persist").textContent = persistCmd(curOs); // lanIp/port 到位后刷新命令
 				renderDevs(d);
 			} catch {
