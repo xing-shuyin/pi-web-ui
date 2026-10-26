@@ -24,6 +24,7 @@ function makeHostSpies() {
 		stopSubagent: vi.fn(async () => {}),
 		handoffSubagent: vi.fn(async () => {}),
 		markSubagentsConsumed: vi.fn(),
+		dismissSubagent: vi.fn(async () => ({ ok: true })),
 		listTemplates: vi.fn(() => [{ name: "reviewer", description: "只读审查" }]),
 		isTemplateUsable: vi.fn((name: string) => name === "reviewer"),
 	};
@@ -50,7 +51,7 @@ describe("subagents tools", () => {
 		}
 	});
 
-	it("SUBAGENT_TOOL_NAMES 只包含单个 subagent 工具，SUBAGENT_ACTIONS 包含 8 种 action", () => {
+	it("SUBAGENT_TOOL_NAMES 只包含单个 subagent 工具，SUBAGENT_ACTIONS 包含 9 种 action", () => {
 		expect(SUBAGENT_TOOL_NAMES).toEqual(["subagent"]);
 		expect(SUBAGENT_ACTIONS).toEqual([
 			"spawn",
@@ -61,6 +62,7 @@ describe("subagents tools", () => {
 			"wait_all",
 			"templates",
 			"handoff",
+			"dismiss",
 		]);
 		const host = makeHostSpies();
 		const tools = makeSubagentTools(host);
@@ -1132,5 +1134,443 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 		);
 
 		expect(host.markSubagentsConsumed).toHaveBeenCalledWith(expect.arrayContaining(["sa-1", "sa-2"]));
+	});
+
+	describe("subagent(action='dismiss') 回收已结束子代理与安全护栏", () => {
+		it("缺少目标参数时报错并指导传参", async () => {
+			const host = makeHostSpies();
+			const [tool] = makeSubagentTools(host, () => "zh");
+			const res = (await tool.execute!("t1", { action: "dismiss" } as never, undefined, undefined, {} as never)) as {
+				content: { text: string }[];
+			};
+			expect(res.content[0].text).toContain("缺少目标参数");
+			expect(res.content[0].text).toContain('scope="finished_all"');
+		});
+
+		it("引擎未提供 dismissSubagent 实现时返回不支持提示", async () => {
+			const host = makeHostSpies();
+			delete host.dismissSubagent;
+			const [tool] = makeSubagentTools(host, () => "zh");
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-123" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(res.content[0].text).toContain("当前引擎不支持子代理移出能力");
+		});
+
+		it("单个终态子代理成功移出并返回不可逆提示与 get_result 引导", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockReturnValue({
+				convId: "sa-done-1",
+				type: "explore",
+				title: "调研任务",
+				prompt: "调研任务",
+				state: "done",
+				streaming: false,
+				messageCount: 5,
+				output: "完成",
+				parentId: "c1",
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-done-1" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[]; details: any };
+
+			expect(host.dismissSubagent).toHaveBeenCalledWith("sa-done-1", {
+				force: undefined,
+				includePersisted: undefined,
+			});
+			expect(res.content[0].text).toContain("已移出子代理 sa-done-");
+			expect(res.content[0].text).toContain("移出后不可逆");
+			expect(res.content[0].text).toContain('subagent(action="get_result")');
+			expect(res.details.dismissed).toEqual(["sa-done-1"]);
+		});
+
+		it("未找到子代理时返回明确错误", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockReturnValue(undefined);
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-missing" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+
+			expect(res.content[0].text).toContain("未找到子代理 sa-missi（可能已移出或不存在）");
+		});
+
+		it("护栏1：拒绝移出调用者自身与前端当前激活会话", async () => {
+			const host = makeHostSpies();
+			host.getActiveConversationId = vi.fn(() => "sa-active-viewing");
+			(host.getSubagent as any).mockImplementation((id: string) => ({
+				convId: id,
+				type: "explore",
+				title: id,
+				prompt: id,
+				state: "done",
+				streaming: false,
+				messageCount: 1,
+				output: "ok",
+				parentId: "c1",
+			}));
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			// 移出当前自身 -> 拒绝
+			const resSelf = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "c1" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(resSelf.content[0].text).toContain("不能移出当前会话自身");
+
+			// 移出前端处于 active 打开态的子代理 -> 拒绝
+			const resActive = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-active-viewing" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(resActive.content[0].text).toContain("正在前端处于活动打开状态，无法直接移出");
+		});
+
+		it("护栏2：运行中子代理无 force 拒绝，带 force=true 强行中止移出", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockReturnValue({
+				convId: "sa-running-1",
+				type: "explore",
+				title: "运行中任务",
+				prompt: "运行中任务",
+				state: "running",
+				streaming: true,
+				messageCount: 3,
+				output: "running...",
+				parentId: "c1",
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			// 无 force -> 拒绝
+			const resRefuse = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-running-1" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(resRefuse.content[0].text).toContain("仍在运行中（状态：running）");
+			expect(resRefuse.content[0].text).toContain("force=true 强行中止并移出");
+			expect(host.dismissSubagent).not.toHaveBeenCalled();
+
+			// 带 force=true -> 成功放行
+			const resForce = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-running-1", force: true } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(host.dismissSubagent).toHaveBeenCalledWith("sa-running-1", {
+				force: true,
+				includePersisted: undefined,
+			});
+			expect(resForce.content[0].text).toContain("已移出子代理 sa-runni");
+		});
+
+		it("护栏3：拒绝跨父移出非本会话派发族谱的子代理", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockImplementation((id: string) => {
+				if (id === "sa-stranger") {
+					return {
+						convId: "sa-stranger",
+						type: "explore",
+						title: "异族子代理",
+						prompt: "异族子代理",
+						state: "done",
+						streaming: false,
+						messageCount: 2,
+						output: "done",
+						parentId: "c-other-chat",
+					};
+				}
+				if (id === "c-other-chat") {
+					return {
+						convId: "c-other-chat",
+						parentId: undefined,
+					};
+				}
+				return undefined;
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-stranger" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(res.content[0].text).toContain("不属于当前会话的派发族谱（仅允许移出由当前会话派发的子代理）");
+			expect(host.dismissSubagent).not.toHaveBeenCalled();
+		});
+
+		it("护栏4：持久化子代理无 includePersisted 拒绝，显式指定后允许", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockReturnValue({
+				convId: "conv-persisted-1",
+				type: "explore",
+				title: "持久化对话",
+				prompt: "持久化对话",
+				state: "done",
+				streaming: false,
+				messageCount: 5,
+				output: "done",
+				parentId: "c1",
+				persisted: true,
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			// 默认拒绝
+			const resDenied = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "conv-persisted-1" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(resDenied.content[0].text).toContain("为持久化会话（已落盘历史）");
+			expect(resDenied.content[0].text).toContain("includePersisted=true");
+			expect(host.dismissSubagent).not.toHaveBeenCalled();
+
+			// 传入 includePersisted=true -> 放行
+			const resAllowed = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "conv-persisted-1", includePersisted: true } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(host.dismissSubagent).toHaveBeenCalledWith("conv-persisted-1", {
+				force: undefined,
+				includePersisted: true,
+			});
+			expect(resAllowed.content[0].text).toContain("已移出子代理 conv-per");
+		});
+
+		it("护栏5：脏工作树拒绝移出并给出详细改动信息与合并/清理指引", async () => {
+			const host = makeHostSpies();
+			host.finalizeSubagentWorktree = vi.fn(async () => {});
+			(host.getSubagent as any).mockReturnValue({
+				convId: "sa-dirty-wt",
+				type: "explore",
+				title: "改动任务",
+				prompt: "改动任务",
+				state: "done",
+				streaming: false,
+				messageCount: 4,
+				output: "done",
+				parentId: "c1",
+				worktree: {
+					path: "/repo/.worktrees/sa-dirty-wt",
+					branch: "subagent/sa-dirty-wt",
+					cleanedUp: false,
+					isDirty: true,
+					uncommittedCount: 3,
+					aheadCount: 2,
+				},
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-dirty-wt" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+			expect(host.finalizeSubagentWorktree).toHaveBeenCalledWith("sa-dirty-wt");
+			expect(res.content[0].text).toContain("工作树存在未合并改动，无法移出（静默移出会丢失代码）");
+			expect(res.content[0].text).toContain("路径：/repo/.worktrees/sa-dirty-wt");
+			expect(res.content[0].text).toContain("分支：subagent/sa-dirty-wt");
+			expect(res.content[0].text).toContain("未提交改动：3 个文件，领先提交：2 个");
+			expect(res.content[0].text).toContain("git merge subagent/sa-dirty-wt");
+			expect(res.content[0].text).toContain('worktree(action="remove"');
+			expect(host.dismissSubagent).not.toHaveBeenCalled();
+		});
+
+		it("批量移出：runIds 支持多目标且深度优先排序（子级先于父级移出）", async () => {
+			const host = makeHostSpies();
+			const calls: string[] = [];
+			(host.dismissSubagent as any).mockImplementation(async (id: string) => {
+				calls.push(id);
+				return { ok: true };
+			});
+			(host.getSubagent as any).mockImplementation((id: string) => {
+				if (id === "sa-parent") {
+					return {
+						convId: "sa-parent",
+						type: "general",
+						title: "父任务",
+						prompt: "父任务",
+						state: "done",
+						streaming: false,
+						messageCount: 2,
+						output: "ok",
+						parentId: "c1",
+					};
+				}
+				if (id === "sa-child") {
+					return {
+						convId: "sa-child",
+						type: "general",
+						title: "子任务",
+						prompt: "子任务",
+						state: "done",
+						streaming: false,
+						messageCount: 2,
+						output: "ok",
+						parentId: "sa-parent",
+					};
+				}
+				return undefined;
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runIds: ["sa-parent", "sa-child"] } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[]; details: any };
+
+			expect(calls).toEqual(["sa-child", "sa-parent"]);
+			expect(res.content[0].text).toContain("已成功移出 2 个子代理");
+			expect(res.details.dismissed).toEqual(["sa-child", "sa-parent"]);
+		});
+
+		it("批量移出：scope='finished_all' 自动搜集本族已结束子代理", async () => {
+			const host = makeHostSpies();
+			const list = [
+				{
+					convId: "sa-done-1",
+					type: "explore",
+					title: "任务1",
+					prompt: "任务1",
+					state: "done",
+					streaming: false,
+					messageCount: 2,
+					output: "ok",
+					parentId: "c1",
+				},
+				{
+					convId: "sa-done-2",
+					type: "explore",
+					title: "任务2",
+					prompt: "任务2",
+					state: "done",
+					streaming: false,
+					messageCount: 2,
+					output: "ok",
+					parentId: "c1",
+				},
+				{
+					convId: "sa-running-3",
+					type: "explore",
+					title: "任务3仍在跑",
+					prompt: "任务3",
+					state: "running",
+					streaming: true,
+					messageCount: 2,
+					output: "running",
+					parentId: "c1",
+				},
+			];
+			(host.listSubagents as any).mockReturnValue(list);
+			(host.getSubagent as any).mockImplementation((id: string) => list.find((s) => s.convId === id));
+
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", scope: "finished_all" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[]; details: any };
+
+			expect(host.dismissSubagent).toHaveBeenCalledWith("sa-done-1", {
+				force: undefined,
+				includePersisted: undefined,
+			});
+			expect(host.dismissSubagent).toHaveBeenCalledWith("sa-done-2", {
+				force: undefined,
+				includePersisted: undefined,
+			});
+			expect(host.dismissSubagent).not.toHaveBeenCalledWith("sa-running-3", expect.anything());
+			expect(res.content[0].text).toContain("已成功移出 2 个子代理");
+		});
+
+		it("批量移出：scope='finished_all' 当无任何可移出子代理时返回空提示", async () => {
+			const host = makeHostSpies();
+			(host.listSubagents as any).mockReturnValue([]);
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", scope: "finished_all" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[] };
+
+			expect(res.content[0].text).toContain("没有可移出的已结束子代理");
+			expect(host.dismissSubagent).not.toHaveBeenCalled();
+		});
+
+		it("过户改名后通过旧 id 移出子代理：host 透传旧 id 且正确回收", async () => {
+			const host = makeHostSpies();
+			(host.getSubagent as any).mockImplementation((id: string) => {
+				if (id === "sa-old-123" || id === "sa-renamed-456") {
+					return {
+						convId: "sa-renamed-456",
+						type: "explore",
+						title: "过户任务",
+						prompt: "过户任务",
+						state: "done",
+						streaming: false,
+						messageCount: 3,
+						output: "ok",
+						parentId: "c1",
+					};
+				}
+				return undefined;
+			});
+			const [tool] = makeSubagentTools(host, () => "zh", "c1");
+
+			const res = (await tool.execute!(
+				"t1",
+				{ action: "dismiss", runId: "sa-old-123" } as never,
+				undefined,
+				undefined,
+				{} as never,
+			)) as { content: { text: string }[]; details: any };
+
+			expect(host.dismissSubagent).toHaveBeenCalledWith("sa-old-123", {
+				force: undefined,
+				includePersisted: undefined,
+			});
+			expect(res.content[0].text).toContain("已移出子代理 sa-old-1");
+			expect(res.details.dismissed).toEqual(["sa-old-123"]);
+		});
 	});
 });

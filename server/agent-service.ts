@@ -2683,6 +2683,24 @@ export class ClientSession {
 				}
 			}
 		},
+		getActiveConversationId: () => this.activeId,
+		dismissSubagent: async (convId, opts) => {
+			const owner = this.subagentOwnerOf(convId);
+			const curId = owner.convs.has(convId) ? convId : this.subagentCurrentId(convId);
+			const conv = owner.convs.get(curId);
+			if (!conv) {
+				return { ok: false, reason: "not_found" };
+			}
+			if (curId === owner.activeId) {
+				return { ok: false, reason: "active" };
+			}
+			if (!conv.isSubagent && !conv.parentId && !conv.subagentPrompt) {
+				return { ok: false, reason: "not_subagent" };
+			}
+			await owner.dismissConversation(curId, true, opts?.force);
+			const stillThere = owner.convs.has(curId);
+			return stillThere ? { ok: false, reason: "retained" } : { ok: true };
+		},
 		getWatchdogTimeoutMs: () => this.getBaseToolWatchdogTimeoutMs(),
 		// issue #91：子代理工具返回按客户端 UI 语言出中英（英文默认）。
 		lang: () => this.getLang(),

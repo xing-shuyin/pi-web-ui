@@ -257,6 +257,16 @@ export class UniversalSession implements DispatchSession {
 				const t = this.subagentTemplates.get(name);
 				return !!t && t.enabled !== false;
 			},
+			getActiveConversationId: () => this.activeConvId,
+			dismissSubagent: async (convId: string, opts?: { force?: boolean }) => {
+				const conv = this.conversations.get(convId);
+				if (!conv) return { ok: false, reason: "not_found" };
+				if (convId === this.activeConvId) return { ok: false, reason: "active" };
+				if (!conv.isSubagent && !conv.subagentParentId) return { ok: false, reason: "not_subagent" };
+				await this.dismissConversation(convId, true, opts?.force);
+				const stillThere = this.conversations.has(convId);
+				return stillThere ? { ok: false, reason: "retained" } : { ok: true };
+			},
 			getWatchdogTimeoutMs: () => 20 * 60_000,
 			handoffSubagent: (fromRunId: string, toRunId: string, payload: string) =>
 				this.handoffSubagent(fromRunId, toRunId, payload),

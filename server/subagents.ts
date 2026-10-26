@@ -159,6 +159,13 @@ export interface SubagentToolHost {
 	}[];
 	/** 获取当前生效的工具看门狗超时（毫秒），用于计算 wait_all 的最大等待上限。 */
 	getWatchdogTimeoutMs?(): number;
+	/** 获取当前激活的会话 ID（防止误删前端正在查看的会话）。 */
+	getActiveConversationId?(): string | undefined;
+	/** 移出子代理会话（释放内存运行时、临时目录与左栏展示）。 */
+	dismissSubagent?(
+		convId: string,
+		opts?: { force?: boolean; includePersisted?: boolean },
+	): Promise<{ ok: boolean; reason?: string }>;
 	/** 检查某个模板名是否可用于派生子代理（存在且 enabled）。 */
 	isTemplateUsable(name: string): boolean;
 	/** 将任务产物或指令从一个子代理直接交接给另一个同行子代理（对等协作路由）。 */
@@ -214,6 +221,9 @@ export function withSubagentOwner(host: SubagentToolHost, ownerId: string): Suba
 		handoffSubagent: (fromRunId, toRunId, payload) => host.handoffSubagent(fromRunId || ownerId, toRunId, payload),
 		markSubagentsConsumed: (runIds) => host.markSubagentsConsumed?.(runIds),
 		finalizeSubagentWorktree: (convId) => host.finalizeSubagentWorktree?.(convId) ?? Promise.resolve(),
+		getActiveConversationId: () => host.getActiveConversationId?.(),
+		dismissSubagent: (convId, opts) =>
+			host.dismissSubagent?.(convId, opts) ?? Promise.resolve({ ok: false, reason: "unsupported" }),
 	};
 }
 
@@ -228,6 +238,7 @@ export const SUBAGENT_ACTIONS = [
 	"wait_all",
 	"templates",
 	"handoff",
+	"dismiss",
 ] as const;
 
 export type SubagentAction = (typeof SUBAGENT_ACTIONS)[number];
@@ -257,6 +268,58 @@ export function makeSubagentTool(
 		details,
 	});
 
+	const expandDescendants = (roots: Set<string> | string[]): string[] => {
+		if (roots instanceof Set ? roots.size === 0 : (roots as string[]).length === 0) return [];
+		const rootSet = roots instanceof Set ? roots : new Set(roots);
+		// B20：带 forSelfId（本会话的族）展开 —— 过户把整族搬到别的会话后，
+		// 只列本会话自己的列表会展不开后代，wait_all 会误报「没有需要等待的子代理」。
+		const all = host.listSubagents(undefined, selfIdOf());
+		const out: string[] = [];
+		for (const s of all) {
+			if (rootSet.has(s.convId)) continue;
+			let curParent = s.parentId;
+			const seen = new Set<string>();
+			while (curParent) {
+				if (rootSet.has(curParent)) {
+					out.push(s.convId);
+					break;
+				}
+				if (seen.has(curParent)) break;
+				seen.add(curParent);
+				curParent = host.getSubagent(curParent)?.parentId;
+			}
+		}
+		return out;
+	};
+
+	const isDescendantOf = (targetId: string, rootId: string): boolean => {
+		const target = host.getSubagent(targetId);
+		if (!target) return false;
+		let curParent = target.parentId;
+		const seen = new Set<string>([targetId]);
+		while (curParent) {
+			if (curParent === rootId) return true;
+			if (seen.has(curParent)) break;
+			seen.add(curParent);
+			curParent = host.getSubagent(curParent)?.parentId;
+		}
+		return false;
+	};
+
+	const depthOf = (targetId: string): number => {
+		let d = 0;
+		let cur = host.getSubagent(targetId);
+		const seen = new Set<string>([targetId]);
+		while (cur?.parentId) {
+			if (seen.has(cur.parentId)) break;
+			seen.add(cur.parentId);
+			d++;
+			cur = host.getSubagent(cur.parentId);
+			if (!cur) break;
+		}
+		return d;
+	};
+
 	const currentWaitCapMs =
 		typeof host.getWatchdogTimeoutMs === "function"
 			? computeWaitCapMs(host.getWatchdogTimeoutMs())
@@ -269,7 +332,7 @@ export function makeSubagentTool(
 		description:
 			"Manage background subagent conversations for parallel delegation, research, and execution. " +
 			"Each action's arguments are documented on the parameters below.",
-		promptSnippet: "manage background subagents (spawn/steer/wait/templates)",
+		promptSnippet: "manage background subagents (spawn/steer/wait/dismiss)",
 		parameters: Type.Object({
 			action: Type.Unsafe<SubagentAction>({
 				type: "string",
@@ -283,12 +346,12 @@ export function makeSubagentTool(
 			),
 			runId: Type.Optional(
 				Type.String({
-					description: "get_result/steer/stop: target conversation ID.",
+					description: "get_result/steer/stop/dismiss: target conversation ID.",
 				}),
 			),
 			runIds: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "wait_all: conversation IDs to wait for (omit = all active).",
+					description: "wait_all/dismiss: conversation IDs to wait for or dismiss.",
 				}),
 			),
 			message: Type.Optional(
@@ -369,6 +432,22 @@ export function makeSubagentTool(
 					maximum: capSeconds,
 				}),
 			),
+			scope: Type.Optional(
+				Type.String({
+					enum: ["finished_all"],
+					description: 'dismiss: batch dismissal scope ("finished_all" to dismiss all finished descendant subagents).',
+				}),
+			),
+			force: Type.Optional(
+				Type.Boolean({
+					description: "dismiss: force abort running subagents before dismissing (default: false).",
+				}),
+			),
+			includePersisted: Type.Optional(
+				Type.Boolean({
+					description: "dismiss: allow dismissing persisted subagents (default: false).",
+				}),
+			),
 		}),
 		execute: async (_id, p, signal, _onUpdate, ctx) => {
 			const action = (p.action ?? "").trim().toLowerCase();
@@ -376,8 +455,8 @@ export function makeSubagentTool(
 				return text(
 					pick(
 						getLang(),
-						"subagent 工具缺少 action 参数（可选：spawn, get_result, steer, list, stop, wait_all, templates, handoff）。",
-						"subagent tool requires an action parameter (one of: spawn, get_result, steer, list, stop, wait_all, templates, handoff).",
+						"subagent 工具缺少 action 参数（可选：spawn, get_result, steer, list, stop, wait_all, templates, handoff, dismiss）。",
+						"subagent tool requires an action parameter (one of: spawn, get_result, steer, list, stop, wait_all, templates, handoff, dismiss).",
 						"subagents.action.missing",
 					),
 				);
@@ -741,29 +820,6 @@ export function makeSubagentTool(
 						}
 						return out;
 					};
-					const expandDescendants = (roots: Set<string> | string[]): string[] => {
-						if (roots instanceof Set ? roots.size === 0 : (roots as string[]).length === 0) return [];
-						const rootSet = roots instanceof Set ? roots : new Set(roots);
-						// B20：带 forSelfId（本会话的族）展开 —— 过户把整族搬到别的会话后，
-						// 只列本会话自己的列表会展不开后代，wait_all 会误报「没有需要等待的子代理」。
-						const all = host.listSubagents(undefined, selfId);
-						const out: string[] = [];
-						for (const s of all) {
-							if (rootSet.has(s.convId)) continue;
-							let curParent = s.parentId;
-							const seen = new Set<string>();
-							while (curParent) {
-								if (rootSet.has(curParent)) {
-									out.push(s.convId);
-									break;
-								}
-								if (seen.has(curParent)) break;
-								seen.add(curParent);
-								curParent = host.getSubagent(curParent)?.parentId;
-							}
-						}
-						return out;
-					};
 
 					const explicit = p.runIds && p.runIds.length > 0;
 					const wanted = new Set<string>();
@@ -1033,12 +1089,305 @@ export function makeSubagentTool(
 					}
 				}
 
+				case "dismiss": {
+					if (!host.dismissSubagent) {
+						return text(
+							pick(
+								getLang(),
+								"当前引擎不支持子代理移出能力。",
+								"Subagent dismissal is not supported by the current engine.",
+								"subagents.dismiss.unsupported",
+							),
+						);
+					}
+
+					const explicitIds: string[] = [];
+					if (Array.isArray(p.runIds) && p.runIds.length > 0) {
+						for (const id of p.runIds) {
+							if (typeof id === "string" && id.trim()) {
+								explicitIds.push(id.trim());
+							}
+						}
+					} else if (p.runId && typeof p.runId === "string" && p.runId.trim()) {
+						explicitIds.push(p.runId.trim());
+					}
+
+					const isFinishedAll = p.scope === "finished_all";
+
+					if (explicitIds.length === 0 && !isFinishedAll) {
+						return text(
+							pick(
+								getLang(),
+								'subagent(action="dismiss") 缺少目标参数：请指定 runId、runIds 或 scope="finished_all"。',
+								'subagent(action="dismiss") requires target parameter: specify runId, runIds, or scope="finished_all".',
+								"subagents.dismiss.missing.target",
+							),
+						);
+					}
+
+					const selfId = selfIdOf();
+					const activeConvId = host.getActiveConversationId?.();
+
+					let candidateIds: string[] = [];
+					if (isFinishedAll) {
+						const all = host.listSubagents(undefined, selfId);
+						let inScopeList = all;
+						if (selfId) {
+							const descIds = new Set(expandDescendants(new Set([selfId])));
+							inScopeList = all.filter((s) => descIds.has(s.convId));
+						}
+						// 口径与 finishedSubagentCount 一致：isSubagent、非 streaming、非当前 active
+						candidateIds = inScopeList
+							.filter((s) => {
+								if (s.streaming || s.state === "running") return false;
+								if (s.convId === selfId) return false;
+								if (activeConvId && s.convId === activeConvId) return false;
+								if (s.persisted && !p.includePersisted) return false;
+								return true;
+							})
+							.map((s) => s.convId);
+
+						if (candidateIds.length === 0) {
+							return text(
+								pick(
+									getLang(),
+									"没有可移出的已结束子代理。",
+									"No finished subagents to dismiss.",
+									"subagents.dismiss.finished_all.empty",
+								),
+								{ dismissed: [], skipped: [] },
+							);
+						}
+					} else {
+						candidateIds = [...new Set(explicitIds)];
+					}
+
+					const isSingleExplicit = !isFinishedAll && explicitIds.length === 1;
+					if (isSingleExplicit) {
+						const targetId = candidateIds[0];
+						const snapshot = host.getSubagent(targetId);
+						if (!snapshot) {
+							const missingId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`未找到子代理 ${missingId}（可能已移出或不存在）。`,
+									`Subagent ${missingId} not found (may have been dismissed or non-existent).`,
+									"subagents.dismiss.not_found",
+									{ missingId },
+								),
+							);
+						}
+						if (selfId && targetId === selfId) {
+							return text(
+								pick(
+									getLang(),
+									"拒绝移出：不能移出当前会话自身。",
+									"Refused: cannot dismiss the current conversation itself.",
+									"subagents.dismiss.self",
+								),
+							);
+						}
+						if (activeConvId && targetId === activeConvId) {
+							const activeId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`子代理 ${activeId} 正在前端处于活动打开状态，无法直接移出。`,
+									`Subagent ${activeId} is currently active in the UI and cannot be dismissed.`,
+									"subagents.dismiss.active",
+									{ activeId },
+								),
+							);
+						}
+						if (selfId && !isDescendantOf(targetId, selfId)) {
+							const notDescId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`拒绝移出：子代理 ${notDescId} 不属于当前会话的派发族谱（仅允许移出由当前会话派发的子代理）。`,
+									`Refused: subagent ${notDescId} does not belong to the descendant hierarchy of this conversation (can only dismiss subagents spawned by this conversation).`,
+									"subagents.dismiss.not_descendant",
+									{ notDescId },
+								),
+							);
+						}
+						if (snapshot.persisted && !p.includePersisted) {
+							const persistedId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`子代理 ${persistedId} 为持久化会话（已落盘历史）。如确认需要移出，请传入 includePersisted=true。`,
+									`Subagent ${persistedId} is a persistent session. If you are sure you want to dismiss it, pass includePersisted=true.`,
+									"subagents.dismiss.persisted",
+									{ persistedId },
+								),
+							);
+						}
+						const isRunning = snapshot.streaming || snapshot.state === "running";
+						if (isRunning && !p.force) {
+							const runningId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`子代理 ${runningId} 仍在运行中（状态：${snapshot.state}）。请等待其完成、调用 subagent(action="stop")，或指定 force=true 强行中止并移出。`,
+									`Subagent ${runningId} is still running (state: ${snapshot.state}). Wait for it to finish, call subagent(action="stop"), or specify force=true to force abort and dismiss.`,
+									"subagents.dismiss.running",
+									{ runningId, state: snapshot.state },
+								),
+							);
+						}
+						if (host.finalizeSubagentWorktree) {
+							await host.finalizeSubagentWorktree(targetId);
+						}
+						const updated = host.getSubagent(targetId) ?? snapshot;
+						if (updated.worktree && !updated.worktree.cleanedUp) {
+							const wt = updated.worktree;
+							const isDirty = Boolean(wt.isDirty || (wt.uncommittedCount ?? 0) > 0 || (wt.aheadCount ?? 0) > 0);
+							if (isDirty) {
+								const dirtyId = shortId(targetId);
+								return text(
+									pick(
+										getLang(),
+										`子代理 ${dirtyId} 的工作树存在未合并改动，无法移出（静默移出会丢失代码）：\n- 路径：${wt.path}\n- 分支：${wt.branch}\n- 未提交改动：${wt.uncommittedCount ?? 0} 个文件，领先提交：${wt.aheadCount ?? 0} 个\n请先合并分支（git merge ${wt.branch}）或确认放弃后通过 worktree(action="remove", path="${wt.path}", force=true) 清理。`,
+										`Subagent ${dirtyId} has unmerged worktree changes and cannot be dismissed (silent dismissal would lose code):\n- Path: ${wt.path}\n- Branch: ${wt.branch}\n- Changes: ${wt.uncommittedCount ?? 0} uncommitted file(s), ${wt.aheadCount ?? 0} commit(s) ahead\nPlease merge the branch (git merge ${wt.branch}) or discard changes via worktree(action="remove", path="${wt.path}", force=true).`,
+										"subagents.dismiss.worktree.dirty",
+										{
+											dirtyId,
+											path: wt.path,
+											branch: wt.branch,
+											uncommitted: wt.uncommittedCount ?? 0,
+											ahead: wt.aheadCount ?? 0,
+										},
+									),
+								);
+							}
+						}
+
+						const res = await host.dismissSubagent(targetId, {
+							force: p.force,
+							includePersisted: p.includePersisted,
+						});
+						if (!res.ok) {
+							const failedId = shortId(targetId);
+							return text(
+								pick(
+									getLang(),
+									`移出子代理 ${failedId} 失败：${res.reason ?? "未知原因"}。`,
+									`Failed to dismiss subagent ${failedId}: ${res.reason ?? "unknown reason"}.`,
+									"subagents.dismiss.failed",
+									{ failedId, reason: res.reason ?? "unknown" },
+								),
+							);
+						}
+						const doneId = shortId(targetId);
+						return text(
+							pick(
+								getLang(),
+								`已移出子代理 ${doneId}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 subagent(action="get_result")。`,
+								`Dismissed subagent ${doneId}. Dismissal is irreversible (session removed from panel, runtime and temporary data released). Note: call subagent(action="get_result") before dismissal if you need its output.`,
+								"subagents.dismiss.success.single",
+								{ doneId },
+							),
+							{ dismissed: [targetId], skipped: [] },
+						);
+					}
+
+					candidateIds.sort((a, b) => depthOf(b) - depthOf(a));
+
+					const dismissed: string[] = [];
+					const skipped: { runId: string; reason: string }[] = [];
+
+					for (const targetId of candidateIds) {
+						const snapshot = host.getSubagent(targetId);
+						if (!snapshot) {
+							skipped.push({ runId: targetId, reason: "not_found" });
+							continue;
+						}
+						if (selfId && targetId === selfId) {
+							skipped.push({ runId: targetId, reason: "self" });
+							continue;
+						}
+						if (activeConvId && targetId === activeConvId) {
+							skipped.push({ runId: targetId, reason: "active" });
+							continue;
+						}
+						if (selfId && !isDescendantOf(targetId, selfId)) {
+							skipped.push({ runId: targetId, reason: "not_descendant" });
+							continue;
+						}
+						if (snapshot.persisted && !p.includePersisted) {
+							skipped.push({ runId: targetId, reason: "persisted" });
+							continue;
+						}
+						const isRunning = snapshot.streaming || snapshot.state === "running";
+						if (isRunning && !p.force) {
+							skipped.push({ runId: targetId, reason: "running" });
+							continue;
+						}
+						if (host.finalizeSubagentWorktree) {
+							await host.finalizeSubagentWorktree(targetId);
+						}
+						const updated = host.getSubagent(targetId) ?? snapshot;
+						if (updated.worktree && !updated.worktree.cleanedUp) {
+							const wt = updated.worktree;
+							const isDirty = Boolean(wt.isDirty || (wt.uncommittedCount ?? 0) > 0 || (wt.aheadCount ?? 0) > 0);
+							if (isDirty) {
+								skipped.push({ runId: targetId, reason: "dirty_worktree" });
+								continue;
+							}
+						}
+
+						const res = await host.dismissSubagent(targetId, {
+							force: p.force,
+							includePersisted: p.includePersisted,
+						});
+						if (res.ok) {
+							dismissed.push(targetId);
+						} else {
+							skipped.push({ runId: targetId, reason: res.reason ?? "failed" });
+						}
+					}
+
+					if (dismissed.length === 0) {
+						if (isFinishedAll) {
+							return text(
+								pick(
+									getLang(),
+									"没有可移出的已结束子代理。",
+									"No finished subagents to dismiss.",
+									"subagents.dismiss.finished_all.empty",
+								),
+								{ dismissed: [], skipped },
+							);
+						}
+						return text(
+							pick(getLang(), "没有成功移出任何子代理。", "No subagents were dismissed.", "subagents.dismiss.none"),
+							{ dismissed: [], skipped },
+						);
+					}
+
+					const skippedCount = skipped.length;
+					const skippedZh = skippedCount > 0 ? `（${skippedCount} 个已跳过）` : "";
+					const skippedEn = skippedCount > 0 ? ` (${skippedCount} skipped)` : "";
+					return text(
+						pick(
+							getLang(),
+							`已成功移出 ${dismissed.length} 个子代理${skippedZh}。移出后不可逆（会话已从左栏移除并释放运行时与临时数据）。提示：如需获取产物，请在移出前调用 subagent(action="get_result")。`,
+							`Successfully dismissed ${dismissed.length} subagent(s)${skippedEn}. Dismissal is irreversible (sessions removed from panel, runtimes and temporary data released). Note: call subagent(action="get_result") before dismissal if you need their outputs.`,
+							"subagents.dismiss.success.batch",
+							{ count: dismissed.length, skippedZh, skippedEn },
+						),
+						{ dismissed, skipped },
+					);
+				}
+
 				default:
 					return text(
 						pick(
 							getLang(),
-							`未知 action：${action}。支持的 action：spawn, get_result, steer, list, stop, wait_all, templates, handoff。`,
-							`Unknown action: ${action}. Supported actions: spawn, get_result, steer, list, stop, wait_all, templates, handoff.`,
+							`未知 action：${action}。支持的 action：spawn, get_result, steer, list, stop, wait_all, templates, handoff, dismiss。`,
+							`Unknown action: ${action}. Supported actions: spawn, get_result, steer, list, stop, wait_all, templates, handoff, dismiss.`,
 							"subagents.action.unknown",
 							{ action },
 						),
