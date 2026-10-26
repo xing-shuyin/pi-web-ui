@@ -5983,11 +5983,21 @@ export class ClientSession {
 		reason?: string,
 		scope?: "once" | "category" | "all",
 	): boolean {
-		const found = this.findPendingApproval(id);
+		let found = typeof this.findPendingApproval === "function" ? this.findPendingApproval(id) : undefined;
+		if (!found) {
+			// 兼容单测 mock 或旧结构中直接挂在 cs.pendingApprovals 上的对象
+			const legacyPending = (this as any).pendingApprovals?.get?.(id);
+			if (legacyPending) {
+				const convId = legacyPending.conversationId ?? this.activeId;
+				const conv = convId ? this.convs.get(convId) : undefined;
+				if (conv) found = { conv, entry: legacyPending };
+			}
+		}
 		if (!found) return false;
 		const { conv, entry: pending } = found;
 		const convId = conv.id;
 		conv.pendingApprovals?.delete(id);
+		(this as any).pendingApprovals?.delete?.(id);
 		// 记录用户主动决策审计日志（Issue #722）
 		this.auditLogger.record({
 			conversationId: convId,
