@@ -637,6 +637,8 @@ export interface Conversation {
 	 *  categories = 「允许同类」记住的规则档位。放在对话对象上而非 ClientSession：
 	 *  手动过户搬的就是对话本体，策略跟着走；重启/新对话即恢复询问。 */
 	approvalPolicy?: ApprovalPolicy;
+	/** 本对话当前挂起的工具调用审批（仅内存，不落盘）。挂在对话对象上实现自洽隔离。 */
+	pendingApprovals?: Map<string, PendingApprovalEntry>;
 	/** 派生源信息（若本会话是从另一会话的消息派生而来）。 */
 	forkFrom?: {
 		conversationId: string;
@@ -2743,8 +2745,22 @@ export class ClientSession {
 	/** 任务计划管理器（Plan Mode / Step State Machine）。 */
 	private planManager: PlanManager;
 	private approvalSeq = 0;
-	/** 待审批高危工具调用（Human-in-the-Loop: Edit & Run）。 */
-	private pendingApprovals = new Map<string, PendingApprovalEntry>();
+
+	/** 确保对话拥有待审批项 Map */
+	private ensurePendingApprovals(conv: Conversation): Map<string, PendingApprovalEntry> {
+		if (!conv.pendingApprovals) conv.pendingApprovals = new Map();
+		return conv.pendingApprovals;
+	}
+
+	/** 跨对话查找挂起的审批条目及其所属对话 */
+	private findPendingApproval(id: string): { conv: Conversation; entry: PendingApprovalEntry } | undefined {
+		for (const conv of this.convs.values()) {
+			if (conv.pendingApprovals?.has(id)) {
+				return { conv, entry: conv.pendingApprovals.get(id)! };
+			}
+		}
+		return undefined;
+	}
 
 	// -----------------------------------------------------------------------
 	// 浏览器页面桥（标准 pi 引擎的 browser_page customTool）：模型调工具 → 发
@@ -5796,9 +5812,8 @@ export class ClientSession {
 		for (const p of this.pendingQuestions.values()) {
 			if (p.conversationId === undefined || p.conversationId === conversationId) return true;
 		}
-		for (const a of this.pendingApprovals.values()) {
-			if (a.conversationId === undefined || a.conversationId === conversationId) return true;
-		}
+		const conv = this.convs.get(conversationId);
+		if (conv?.pendingApprovals && conv.pendingApprovals.size > 0) return true;
 		return false;
 	}
 
@@ -5916,6 +5931,10 @@ export class ClientSession {
 					}
 				}
 			}
+			if (!conv) {
+				resolve({ decision: "deny", reason: "目标对话不存在" });
+				return;
+			}
 			const entry: PendingApprovalEntry = {
 				id,
 				toolCallId,
@@ -5926,12 +5945,12 @@ export class ClientSession {
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
 				...(parentTool ? { parentTool } : {}),
-				conversationId: resolvedConvId,
+				conversationId: conv.id,
 				conversationTitle,
 				resolve,
 				createdAt: Date.now(),
 			};
-			this.pendingApprovals.set(id, entry);
+			this.ensurePendingApprovals(conv).set(id, entry);
 			this.emit({
 				type: "tool_approval_pending",
 				id,
@@ -5943,7 +5962,7 @@ export class ClientSession {
 				...(category ? { category } : {}),
 				...(hits && hits.length > 0 ? { hits } : {}),
 				...(parentTool ? { parentTool } : {}),
-				...(resolvedConvId !== undefined ? { conversationId: resolvedConvId } : {}),
+				conversationId: conv.id,
 				...(conversationTitle ? { conversationTitle } : {}),
 			});
 			this.flushSnapshot();
@@ -5964,18 +5983,11 @@ export class ClientSession {
 		reason?: string,
 		scope?: "once" | "category" | "all",
 	): boolean {
-		const pending = this.pendingApprovals.get(id);
-		if (!pending) return false;
-		const convId = pending.conversationId ?? this.activeId;
-		const conv = convId ? this.convs.get(convId) : undefined;
-		if (!conv) {
-			this.pendingApprovals.delete(id);
-			pending.resolve({ decision: "deny", reason: "所属对话不存在或已关闭" });
-			this.emit({ type: "tool_approval_resolved", id });
-			this.flushSnapshot();
-			return false;
-		}
-		this.pendingApprovals.delete(id);
+		const found = this.findPendingApproval(id);
+		if (!found) return false;
+		const { conv, entry: pending } = found;
+		const convId = conv.id;
+		conv.pendingApprovals?.delete(id);
 		// 记录用户主动决策审计日志（Issue #722）
 		this.auditLogger.record({
 			conversationId: convId,
@@ -5994,11 +6006,11 @@ export class ClientSession {
 		conv.recentWakeSubagentIds = [];
 		pending.resolve({ decision, editedParams, reason });
 		this.emit({ type: "tool_approval_resolved", id });
-		if (decision === "approve" && scope && scope !== "once" && conv) {
+		if (decision === "approve" && scope && scope !== "once") {
 			const policy = this.ensureApprovalPolicy(conv);
 			if (scope === "all") policy.allowAll = true;
 			else if (pending.category) policy.categories.set(pending.category.id, pending.category);
-			this.emitApprovalPolicyNotice(scope, pending.category, this.approveCoveredPending(convId, policy));
+			this.emitApprovalPolicyNotice(scope, pending.category, this.approveCoveredPending(conv, policy));
 			this.settingsSvc.push();
 		}
 		this.flushSnapshot();
@@ -6012,15 +6024,15 @@ export class ClientSession {
 	}
 
 	/** 把某对话里已被策略覆盖的其它待审批项一并放行，返回放行条数。 */
-	private approveCoveredPending(convId: string, policy: ApprovalPolicy): number {
+	private approveCoveredPending(conv: Conversation, policy: ApprovalPolicy): number {
 		let n = 0;
+		if (!conv.pendingApprovals || conv.pendingApprovals.size === 0) return 0;
 		// eslint-disable-next-line unicorn/no-useless-spread -- 快照：循环里会从 map 删项（迭代中改集合）
-		for (const [oid, o] of [...this.pendingApprovals]) {
-			if (o.conversationId !== convId) continue;
+		for (const [oid, o] of [...conv.pendingApprovals]) {
 			if (!approvalSuppressionReason(policy, true, o.category?.id, o.toolName, o.params)) continue;
-			this.pendingApprovals.delete(oid);
+			conv.pendingApprovals.delete(oid);
 			this.auditLogger.record({
-				conversationId: convId,
+				conversationId: conv.id,
 				toolName: o.toolName,
 				params: o.params,
 				decision: "approved",
@@ -6060,31 +6072,35 @@ export class ClientSession {
 
 	/** 全局审批开关被关掉时：挂着的待审批全部按批准放行（否则弹窗还在等人点）。 */
 	autoApprovePendingApprovals(reasonZh: string, reasonEn: string): void {
-		if (this.pendingApprovals.size === 0) return;
 		let n = 0;
-		// eslint-disable-next-line unicorn/no-useless-spread -- 快照：循环里会从 map 删项（迭代中改集合）
-		for (const [oid, o] of [...this.pendingApprovals]) {
-			this.pendingApprovals.delete(oid);
-			this.auditLogger.record({
-				conversationId: o.conversationId,
-				toolName: o.toolName,
-				params: o.params,
-				decision: "approved",
-				decisionSource: "batch_approved_disabled",
-				categoryId: o.category?.id,
-				reason: o.reason,
-			});
-			o.resolve({ decision: "approve" });
-			this.emit({ type: "tool_approval_resolved", id: oid });
-			n++;
+		for (const conv of this.convs.values()) {
+			if (!conv.pendingApprovals || conv.pendingApprovals.size === 0) continue;
+			// eslint-disable-next-line unicorn/no-useless-spread -- 快照：循环里会从 map 删项（迭代中改集合）
+			for (const [oid, o] of [...conv.pendingApprovals]) {
+				conv.pendingApprovals.delete(oid);
+				this.auditLogger.record({
+					conversationId: o.conversationId,
+					toolName: o.toolName,
+					params: o.params,
+					decision: "approved",
+					decisionSource: "batch_approved_disabled",
+					categoryId: o.category?.id,
+					reason: o.reason,
+				});
+				o.resolve({ decision: "approve" });
+				this.emit({ type: "tool_approval_resolved", id: oid });
+				n++;
+			}
 		}
-		this.emit({
-			type: "notice",
-			level: "info",
-			text: `${reasonZh}，已自动放行 ${n} 项待审批。`,
-			textEn: `${reasonEn} — auto-approved ${n} pending request(s).`,
-		});
-		this.flushSnapshot();
+		if (n > 0) {
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: `${reasonZh}，已自动放行 ${n} 项待审批。`,
+				textEn: `${reasonEn} — auto-approved ${n} pending request(s).`,
+			});
+			this.flushSnapshot();
+		}
 	}
 
 	/**
@@ -6132,8 +6148,9 @@ export class ClientSession {
 	}
 
 	private pendingApprovalForSnapshot(): UiState["pendingApproval"] {
-		for (const [id, p] of this.pendingApprovals) {
-			if (p.conversationId !== undefined && p.conversationId !== this.activeId) continue;
+		const conv = this.conv;
+		if (!conv?.pendingApprovals || conv.pendingApprovals.size === 0) return null;
+		for (const [id, p] of conv.pendingApprovals) {
 			return {
 				id,
 				toolCallId: p.toolCallId,
@@ -6277,15 +6294,17 @@ export class ClientSession {
 				// 单个结算异常不影响其余清理
 			}
 		}
-		for (const [id, a] of this.pendingApprovals) {
-			if (a.conversationId !== convId) continue;
-			this.pendingApprovals.delete(id);
-			try {
-				a.resolve({ decision: "deny", reason: "运行已停止" });
-			} catch {
-				// 单个结算异常不影响其余清理
+		const conv = this.convs.get(convId);
+		if (conv?.pendingApprovals && conv.pendingApprovals.size > 0) {
+			for (const [id, a] of conv.pendingApprovals) {
+				try {
+					a.resolve({ decision: "deny", reason: "运行已停止" });
+				} catch {
+					// 单个结算异常不影响其余清理
+				}
+				this.emit({ type: "tool_approval_resolved", id });
 			}
-			this.emit({ type: "tool_approval_resolved", id });
+			conv.pendingApprovals.clear();
 		}
 		for (const [id, p] of this.pendingPageCalls) {
 			if (p.conversationId !== convId) continue;
@@ -6302,14 +6321,17 @@ export class ClientSession {
 	/** 关闭所有挂起审批（dispose 时清理）：以「拒绝」解析，避免等答复的
 	 *  Promise 与对应 runtime 泄漏（会话没了，审批弹窗永远不会有人点）。 */
 	cancelPendingApprovals(): void {
-		for (const [id, a] of this.pendingApprovals) {
-			this.pendingApprovals.delete(id);
-			try {
-				a.resolve({ decision: "deny", reason: "会话已关闭" });
-			} catch {
-				// 单个 resolve 异常不影响其余清理
+		for (const conv of this.convs.values()) {
+			if (!conv.pendingApprovals || conv.pendingApprovals.size === 0) continue;
+			for (const [id, a] of conv.pendingApprovals) {
+				try {
+					a.resolve({ decision: "deny", reason: "会话已关闭" });
+				} catch {
+					// 单个 resolve 异常不影响其余清理
+				}
+				this.emit({ type: "tool_approval_resolved", id });
 			}
-			this.emit({ type: "tool_approval_resolved", id });
+			conv.pendingApprovals.clear();
 		}
 	}
 
@@ -11045,22 +11067,24 @@ export class ClientSession {
 		// 永远等不到答复）。只搬归属明确的（conversationId 对得上，与问卷/页调用
 		// 同一规则）；目标侧按新 id 重发弹窗，等待中的 Promise 原样过户不 resolve。
 		const approvals: TakeoverApproval[] = [];
-		for (const [aid, a] of this.pendingApprovals) {
-			if (a.conversationId !== undefined && set.has(a.conversationId)) {
-				this.pendingApprovals.delete(aid);
-				approvals.push({
-					resolve: a.resolve,
-					toolCallId: a.toolCallId,
-					toolName: a.toolName,
-					params: a.params,
-					reason: a.reason,
-					reasonEn: a.reasonEn,
-					...(a.category ? { category: a.category } : {}),
-					...(a.hits ? { hits: a.hits } : {}),
-					conversationId: a.conversationId,
-					...(a.conversationTitle ? { conversationTitle: a.conversationTitle } : {}),
-					createdAt: a.createdAt,
-				});
+		for (const conv of convs) {
+			if (conv.pendingApprovals && conv.pendingApprovals.size > 0) {
+				for (const [aid, a] of conv.pendingApprovals) {
+					approvals.push({
+						resolve: a.resolve,
+						toolCallId: a.toolCallId,
+						toolName: a.toolName,
+						params: a.params,
+						reason: a.reason,
+						reasonEn: a.reasonEn,
+						...(a.category ? { category: a.category } : {}),
+						...(a.hits ? { hits: a.hits } : {}),
+						conversationId: a.conversationId ?? conv.id,
+						...(a.conversationTitle ? { conversationTitle: a.conversationTitle } : {}),
+						createdAt: a.createdAt,
+					});
+				}
+				conv.pendingApprovals.clear();
 			}
 		}
 		this.emitConversations();
@@ -11181,34 +11205,37 @@ export class ClientSession {
 		for (const a of payload.approvals) {
 			const nid = `appr-${++this.approvalSeq}`;
 			const aConvId = fix(a.conversationId);
-			this.pendingApprovals.set(nid, {
-				id: nid,
-				toolCallId: a.toolCallId,
-				toolName: a.toolName,
-				params: a.params,
-				reason: a.reason,
-				reasonEn: a.reasonEn,
-				...(a.category ? { category: a.category } : {}),
-				...(a.hits ? { hits: a.hits } : {}),
-				conversationId: aConvId,
-				...(a.conversationTitle ? { conversationTitle: a.conversationTitle } : {}),
-				resolve: a.resolve,
-				createdAt: a.createdAt,
-			});
-			if (aConvId === mainId) {
-				this.emit({
-					type: "tool_approval_pending",
+			const targetConv = this.convs.get(aConvId);
+			if (targetConv) {
+				this.ensurePendingApprovals(targetConv).set(nid, {
 					id: nid,
 					toolCallId: a.toolCallId,
 					toolName: a.toolName,
-					params: a.params as Record<string, unknown>,
+					params: a.params,
 					reason: a.reason,
 					reasonEn: a.reasonEn,
 					...(a.category ? { category: a.category } : {}),
 					...(a.hits ? { hits: a.hits } : {}),
 					conversationId: aConvId,
 					...(a.conversationTitle ? { conversationTitle: a.conversationTitle } : {}),
+					resolve: a.resolve,
+					createdAt: a.createdAt,
 				});
+				if (aConvId === mainId) {
+					this.emit({
+						type: "tool_approval_pending",
+						id: nid,
+						toolCallId: a.toolCallId,
+						toolName: a.toolName,
+						params: a.params as Record<string, unknown>,
+						reason: a.reason,
+						reasonEn: a.reasonEn,
+						...(a.category ? { category: a.category } : {}),
+						...(a.hits ? { hits: a.hits } : {}),
+						conversationId: aConvId,
+						...(a.conversationTitle ? { conversationTitle: a.conversationTitle } : {}),
+					});
+				}
 			}
 		}
 		return mainId;
