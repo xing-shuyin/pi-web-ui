@@ -1618,10 +1618,7 @@ export const zh = {
 		"消息列表尾部常驻预热的消息条数（默认 15）。历史消息采用智能视口探测自动挂载与离屏占位，滚动无感流畅且避免性能浪费",
 	reversePagination: "向上分页加载",
 	reversePaginationDesc:
-		"开启：默认仅挂载最近消息，向上滚动或点击加载更早历史；完全不使用视口动态占位符，享受极致原生流畅度；关闭：使用视口惰性占位探测",
-	earlierMessagesInfo: "还有 {count} 条更早消息",
-	loadEarlier: "加载前 {count} 条",
-	loadAllEarlier: "全部展开",
+		"开启：默认仅挂载最近消息，向上滚动自动无缝前插更早历史；完全不使用视口动态占位符，享受极致原生流畅度；关闭：使用视口惰性占位探测",
 	showForkedParents: "显示被分支的父会话",
 	showForkedParentsDesc: "编辑历史提问或派生分支后，在历史对话列表中同时保留原父会话（默认仅显示每条分支链的最新会话）",
 	retainFinishedConversations: "切走时保留已结束的对话",
@@ -4026,10 +4023,7 @@ export const en: Record<keyof typeof zh, string> = {
 		"How many recent messages stay fully warm at the bottom (default 15). Earlier history uses automatic viewport detection for seamless scrolling while off-screen items are held in cheap placeholders to conserve performance",
 	reversePagination: "Load earlier messages",
 	reversePaginationDesc:
-		"On: only mount recent messages; scroll up or click to load earlier history. Zero viewport placeholders for butter-smooth native scrolling; Off: use dynamic viewport placeholders",
-	earlierMessagesInfo: "{count} earlier messages",
-	loadEarlier: "Load {count} earlier",
-	loadAllEarlier: "Load all",
+		"On: only mount recent messages; scroll up to seamlessly preload earlier history without viewport placeholders for butter-smooth native scrolling; Off: use dynamic viewport placeholders",
 	showForkedParents: "Show forked parent sessions",
 	showForkedParentsDesc:
 		"Keep original parent sessions visible in the history list after editing a message or forking a branch (by default only the latest branch in each chain is shown)",

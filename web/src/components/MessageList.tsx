@@ -36,7 +36,7 @@ import {
 	type WinRect,
 } from "../lazy-window";
 import { SearchBar } from "./SearchBar";
-import { classifyScroll, shouldEscapeOnScroll } from "./scroll-classify";
+import { useChatScroll } from "./use-chat-scroll";
 import { EmptyTemplateCards } from "./PromptTemplates";
 import { renderSlotToolbar } from "../slot-toolbar";
 import { useT } from "../i18n";
@@ -69,21 +69,6 @@ const KEEP_RECENT_MAX = 100;
 /** 惰性窗口化（占位符）的启动门槛：与折叠判据解耦——折叠是显示偏好（随设置
  *  变化），窗口化是纯性能手段，门槛固定，不让大窗口用户牺牲渲染性能。 */
 const VIRTUAL_MIN = 30;
-/** Grace window after a programmatic scroll during which onScroll ignores
- *  negative scrollTop jumps from our own snap() re-asserts.
- *
- *  PRIMARY discriminator for layout shifts vs user intent is now the
- *  scrollHeight delta: user wheel-up never changes content height, while a
- *  layout collapse (tool card finalize, message trim, placeholder swap)
- *  always does. The grace window remains as a backstop for
- *  jump-while-growing races (scrollToBottom snap() firing during appends),
- *  and is re-stamped by the layout-shift re-assert.
- *
- *  Effective protection window is ~850ms, not 250ms: each snap() re-stamps
- *  progUntilRef to fireTime+250ms, and snaps keep firing through the 600ms
- *  re-assert timer, so the grace runs until ~600+250 = ~850ms. */
-const PROGRAMMATIC_SCROLL_GRACE_MS = 250;
-
 /** 惰性窗口化挂载缓冲带：视口上下各多保留 1200px 的真实内容提前挂载。 */
 const LAZY_MOUNT_MARGIN = 1200;
 /** 惰性窗口化卸载缓冲带（迟滞安全区）：距离视口超过 2400px 时才卸载回占位符，
@@ -470,54 +455,9 @@ export function MessageList({
 	const t = useT();
 	const exportImage = useExportImage();
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const [stickBottom, setStickBottom] = useState(true);
 	const stickRef = useRef(true);
-	/** 上一帧 scrollTop —— 判定滚动方向（向上 = 用户要离开底部）。 */
-	const prevStRef = useRef(0);
-	/** 上一帧 scrollHeight —— 布局塌缩/增长的判据（用户滚轮不会改变内容高度）。 */
-	const prevScrollHeightRef = useRef(0);
-	/** 用户已主动离开底部：流式结束 / finalize 塌缩时不再自动吸回。 */
 	const escapedRef = useRef(false);
-	const pauseForSelection = useCallback(() => {
-		escapedRef.current = true;
-		stickRef.current = false;
-		setStickBottom(false);
-	}, []);
-	/** Timestamp until which scroll events are treated as programmatic. */
-	const progUntilRef = useRef(0);
-	/** 用户物理向上滚动/滑动手势的最新时间戳（滚轮向上 / 触屏向上翻页 / 键盘向上翻页）。 */
-	const userUpwardGestureTimeRef = useRef(0);
-	/** 用户指针是否在容器内按下（用于识别按住滚动条滑块拖动）。 */
-	const isPointerDownRef = useRef(false);
-	/** 鼠标中键是否按下（中键自动滚动 autoscroll 期间同样视为用户物理意图，#684）。 */
-	const middleDownRef = useRef(false);
-	/** 触摸起始 clientY。 */
-	const touchStartYRef = useRef(0);
 
-	/** 用户主动向上手势：当场同步切断吸底并作废 programmatic 保护窗，绝不等异步 onScroll，
-	 *  彻底防止浏览器平滑滚动第一帧被流式 MutationObserver / useEffect 强行拽回底部。 */
-	const disengageStick = useCallback(() => {
-		userUpwardGestureTimeRef.current = Date.now();
-		progUntilRef.current = 0;
-		escapedRef.current = true;
-		stickRef.current = false;
-		setStickBottom(false);
-	}, []);
-
-	/** 统一安全的程序吸底总阀门：
-	 *  只要已处于 escaped、未 stick 或近期有用户向上手势，一律在总阀门处拒绝吸底；
-	 *  吸底时同步延展 programmatic 保护窗并对齐 prevStRef，杜绝 echo 误判。 */
-	const pinToBottom = useCallback(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		if (escapedRef.current || !stickRef.current || Date.now() - userUpwardGestureTimeRef.current < 500) {
-			return;
-		}
-		progUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_GRACE_MS;
-		el.scrollTop = el.scrollHeight;
-		prevStRef.current = el.scrollTop;
-		prevScrollHeightRef.current = el.scrollHeight;
-	}, []);
 	/** Messages the user expanded from the collapsed view — stay expanded. */
 	const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 	/** 会话内搜索栏（Ctrl+F / Cmd+F）。 */
@@ -618,7 +558,8 @@ export function MessageList({
 	const sweepIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// ---- 向上分页加载状态（Reverse Pagination）-----------------------------
-	const defaultPageSize = flowStream ? Math.max(120, keepRecentCount) : Math.max(30, keepRecentCount);
+	// 初始默认加载 2 页（普通 60 条、极简 240 条），保证首载即具备双缓冲深度
+	const defaultPageSize = flowStream ? Math.max(240, keepRecentCount * 2) : Math.max(60, keepRecentCount * 2);
 	/** 向上翻页步长：极简行文下工具是行内小胶囊（约 4 条占一行），30 条只有 ~200px，
 	 *  每滚一点就触发下一页、体感卡顿；按高度折算放大到 120 条 ≈ 一屏，翻页次数减到约 1/4。 */
 	const earlierPageSize = flowStream ? 120 : 30;
@@ -632,6 +573,7 @@ export function MessageList({
 	const prevPagingConvKeyRef = useRef(convKey);
 	const prevMsgLenRef = useRef(messages.length);
 	const prevFirstMsgIdRef = useRef(messages[0]?.id);
+	const initialPreloadConvRef = useRef<string | null>(null);
 	/** 前插锚点快照：捕获前插提交前的 scrollHeight/scrollTop + 视口顶部首个可见单元。
 	 *  复位优先按锚点残差（与原生滚动锚定可叠加收敛），锚点在集群接缝合并中消失时退化为高度差。 */
 	const pendingAnchorRef = useRef<{
@@ -788,6 +730,7 @@ export function MessageList({
 	}, [cancelSettle, findTopAnchor, restorePrependAnchor, setAnchorLockBoth]);
 	if (prevPagingConvKeyRef.current !== convKey) {
 		prevPagingConvKeyRef.current = convKey;
+		initialPreloadConvRef.current = null;
 		setVisibleCount(firstPaintSize);
 		prevMsgLenRef.current = messages.length;
 		prevFirstMsgIdRef.current = messages[0]?.id;
@@ -837,8 +780,6 @@ export function MessageList({
 	}, [visibleCount]);
 
 	const isPagingActive = !!reversePagination && !exportImage.open && !searchOpen;
-	/** 首屏预热中（首帧只画了 firstPaintSize 条，整页还在补齐）。 */
-	const pagingWarming = isPagingActive && visibleCount < defaultPageSize;
 	useEffect(() => {
 		if (!isPagingActive || visibleCount >= defaultPageSize) return;
 		let raf2 = 0;
@@ -935,24 +876,21 @@ export function MessageList({
 	const loadEarlierRef = useRef(loadEarlier);
 	loadEarlierRef.current = loadEarlier;
 
-	const loadAllEarlier = useCallback(() => {
-		if (preview) return;
-		cancelSettle();
-		if (isPagingActive && messages.length > visibleCount) {
-			capturePrependAnchor();
-			setVisibleCount(messages.length);
-		}
-		if (historyStartRef.current > 0) requestServerPage({ all: true });
-	}, [
-		preview,
-		historyStartRef,
-		requestServerPage,
-		isPagingActive,
-		messages,
-		visibleCount,
-		cancelSettle,
-		capturePrependAnchor,
-	]);
+	// 会话首次挂载双缓冲预热：首屏贴底就绪后，若还有更早历史未下发，
+	// 自动静默预取第 2 页，确保用户向上翻阅时开局就坐拥两页现成内容，绝无撞顶等待感。
+	useEffect(() => {
+		const cid = state.conversationId;
+		if (!cid || initialPreloadConvRef.current === cid) return;
+		if (!hasEarlier || preview) return;
+		const timer = setTimeout(() => {
+			if (initialPreloadConvRef.current === cid) return;
+			initialPreloadConvRef.current = cid;
+			if (hasEarlierRef.current) {
+				loadEarlier();
+			}
+		}, 150);
+		return () => clearTimeout(timer);
+	}, [state.conversationId, hasEarlier, preview, loadEarlier]);
 
 	// 需要扫全文/全量的入口（页内搜索、导出图片）打开时：服务端窗口化时把更早历史
 	// 一次拉全，否则搜不到/导出缺前半段。（用户主动触发，一次付清）
@@ -1435,365 +1373,36 @@ export function MessageList({
 		}
 	}, [urlJumpMessageId, state.messages, jumpTo, onUrlJumpDone]);
 
-	// ---- 用户物理输入意图捕获（滚轮 / 触摸 / 拖动滚动条 / 翻页键）----
-	const handleWheel = useCallback(
-		(e: React.WheelEvent<HTMLDivElement>) => {
-			if (e.deltaY < 0) {
-				// 若鼠标位于内部可滚动子容器（如工具输出 pre）且该子容器自身还能向上滚，则不切断外层；
-				// 否则当场同步切断外层吸底，绝不等异步 onScroll！
-				const target = e.target instanceof Element ? e.target : null;
-				const innerScroll = target?.closest<HTMLElement>(".toolcall-output pre, .toolcall-args pre, .codemode-code");
-				if (innerScroll && innerScroll.scrollHeight > innerScroll.clientHeight && innerScroll.scrollTop > 0) {
-					return;
-				}
-				userUpwardGestureTimeRef.current = Date.now();
-				disengageStick();
-
-				// 若滚轮接近顶部且还有更早历史，自动静默预加载上一页
-				if (hasEarlierRef.current) {
-					const el = scrollRef.current;
-					if (el && el.scrollTop <= 80) {
-						loadEarlierRef.current();
-					}
-				}
-			} else if (e.deltaY > 0) {
-				// 物理向下滚动：清除向上手势锁；若已接近底部，立即恢复吸底
-				userUpwardGestureTimeRef.current = 0;
-				const el = scrollRef.current;
-				if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 96) {
-					escapedRef.current = false;
-					stickRef.current = true;
-					setStickBottom(true);
-				}
-			}
-		},
-		[disengageStick],
-	);
-
-	const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-		if (e.touches.length > 0) {
-			touchStartYRef.current = e.touches[0].clientY;
-		}
-	}, []);
-
-	const handleTouchMove = useCallback(
-		(e: React.TouchEvent<HTMLDivElement>) => {
-			if (e.touches.length > 0) {
-				const deltaY = e.touches[0].clientY - touchStartYRef.current;
-				if (deltaY > 8) {
-					// 手指往下拉，内容往上走（浏览上方历史）：当场同步切断吸底
-					disengageStick();
-				} else if (deltaY < -8) {
-					// 手指往上滑，视口往底看
-					userUpwardGestureTimeRef.current = 0;
-					const el = scrollRef.current;
-					if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 96) {
-						escapedRef.current = false;
-						stickRef.current = true;
-						setStickBottom(true);
-					}
-				}
-			}
-		},
-		[disengageStick],
-	);
-
-	const handlePointerDown = useCallback(
-		(e: React.PointerEvent<HTMLDivElement>) => {
-			if (e.button === 1) {
-				// 鼠标中键按下（用户准备使用中键滚轮 autoscroll 滚动）：立即切断吸底并标记物理手势（#684）
-				userUpwardGestureTimeRef.current = Date.now();
-				disengageStick();
-				return;
-			}
-			if (e.button !== 0) return;
-			const el = e.currentTarget;
-			// 仅当直接点击在 .messages 容器自身的右侧滚动条槽位（clientX 落在 clientWidth 之外）时，
-			// 才标记为按住滚动条滑块拖动；点击内部子元素（如建议按钮、折叠卡头、正文）绝不置位！
-			if (e.target === el && e.clientX >= el.getBoundingClientRect().left + el.clientWidth) {
-				isPointerDownRef.current = true;
-			}
-		},
-		[disengageStick],
-	);
-
-	useEffect(() => {
-		const onPointerUp = (e?: MouseEvent | PointerEvent) => {
-			isPointerDownRef.current = false;
-			// 中键释放才清除按住态；左/右键释放不影响中键拖滚动（#684）
-			if (!e || (e as MouseEvent).button === 1) middleDownRef.current = false;
-		};
-		const onPointerDownGlobal = (e: MouseEvent | PointerEvent) => {
-			if (e.button === 1) {
-				// 浏览器窗口内任一位置按下鼠标中键，均切断吸底并赋予向上物理意图时间戳；
-				// 按住期间 onScroll 的负位移一律视为用户向上意图，pinToBottom 总阀门拒绝吸底（#684）
-				middleDownRef.current = true;
-				userUpwardGestureTimeRef.current = Date.now();
-				disengageStick();
-			}
-		};
-		const onKeyDown = (e: KeyboardEvent) => {
-			const target = e.target as HTMLElement | null;
-			if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-				return;
-			}
-			if (e.key === "PageUp" || e.key === "ArrowUp" || e.key === "Home") {
-				disengageStick();
-			} else if (e.key === "End") {
-				userUpwardGestureTimeRef.current = 0;
-			}
-		};
-		window.addEventListener("pointerup", onPointerUp);
-		window.addEventListener("pointercancel", onPointerUp);
-		window.addEventListener("pointerdown", onPointerDownGlobal, { capture: true });
-		window.addEventListener("keydown", onKeyDown);
-		return () => {
-			window.removeEventListener("pointerup", onPointerUp);
-			window.removeEventListener("pointercancel", onPointerUp);
-			window.removeEventListener("pointerdown", onPointerDownGlobal, { capture: true });
-			window.removeEventListener("keydown", onKeyDown);
-		};
-	}, [disengageStick]);
-
-	const onScroll = useCallback(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		const dSt = el.scrollTop - prevStRef.current;
-		const dSh = el.scrollHeight - prevScrollHeightRef.current;
-		prevStRef.current = el.scrollTop;
-		prevScrollHeightRef.current = el.scrollHeight;
-		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 36;
-
-		// 用户按住滚动条滑块向上拖动：当场切断吸底
-		if (isPointerDownRef.current && dSt < -1) {
-			disengageStick();
-		}
-
-		// Programmatic jumps (pinToBottom re-asserts) land here too — never
-		// treat them as upward user intent, or the stick gets undone instantly.
-		const programmatic = Date.now() < progUntilRef.current;
-
-		// 中键按住自动滚动期间持续刷新手势时间戳：autoscroll 只产生 scroll 事件
-		// 不产生 wheel 事件，靠按住态兜底，否则会被误判为布局抖动而反复吸底（#684）
-		if (middleDownRef.current && dSt < 0) {
-			userUpwardGestureTimeRef.current = Date.now();
-			disengageStick();
-		}
-		// 判定是否有真实物理向上意图：最近 800ms 内有滚轮向上/触屏向下拉/键盘向上/中键自动滚动，或按住拖动滚动条且向上运动
-		const hasUserUpwardIntent =
-			Date.now() - userUpwardGestureTimeRef.current < 800 ||
-			(isPointerDownRef.current && dSt < 0) ||
-			middleDownRef.current;
-
-		const decision = classifyScroll({
-			dSt,
-			dSh,
-			escaped: escapedRef.current,
-			graceActive: programmatic,
-			stuck: stickRef.current,
-		});
-		if (decision.reassert && !hasUserUpwardIntent) {
-			pinToBottom();
-		}
-		const { shouldEscape, shouldReassert } = shouldEscapeOnScroll({
-			decisionFlipEscape: decision.flipEscape,
-			hasUserUpwardIntent,
-			stuck: stickRef.current,
-			escaped: escapedRef.current,
-		});
-		if (shouldEscape) {
-			escapedRef.current = true;
-			stickRef.current = false;
-		} else if (shouldReassert) {
-			pinToBottom();
-		}
-
-		if (!programmatic && !hasUserUpwardIntent) {
-			if (dSt < 0) {
-				// 无向上物理意图时的 dSt < 0 不撤销 stickRef
-			} else if (nearBottom && (dSt > 0 || !escapedRef.current)) {
-				// 只有当用户真正向下滚动到达底部（dSt > 0 && nearBottom），或原本就未逃逸时，才恢复/保持吸底！
-				// 防止用户在底部附近微动被误判为“滚回底部”又吸回去。
-				stickRef.current = true;
-				escapedRef.current = false;
-			}
-		}
-		if (dSt < 0 && el.scrollTop <= 80 && hasEarlier) {
-			loadEarlier();
-		}
-		// 避免每帧滚动重复 dispatch 相同状态
-		setStickBottom((prev) => (prev !== stickRef.current ? stickRef.current : prev));
-		scheduleActiveFromScroll();
-		scheduleSweep();
-	}, [scheduleActiveFromScroll, scheduleSweep, pinToBottom, disengageStick]);
-
-	const scrollToBottom = useCallback(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		userUpwardGestureTimeRef.current = 0;
-		stickRef.current = true;
-		escapedRef.current = false;
-		setStickBottom(true);
-		pinToBottom();
-		// Re-assert while live content keeps inflating the bottom: streaming
-		// deltas / attach trickle append after the jump, and a one-shot
-		// scrollTop=scrollHeight lands short of the moving bottom.
-		requestAnimationFrame(() => requestAnimationFrame(pinToBottom));
-		setTimeout(pinToBottom, 120);
-		setTimeout(pinToBottom, 300);
-		setTimeout(pinToBottom, 600);
-	}, [pinToBottom]);
-
-	// 新一轮流式开始 & 流结束兜底：
-	// 1. 新一轮运行启动（!was && state.isStreaming）：用户刚发了消息或点了建议按钮，
-	//    立即解除之前的 escaped 状态并自动吸底跟随；
-	// 2. 流结束瞬间（was && !state.isStreaming）：finalize 切换可能让内容高度塌缩一帧，
-	//    若用户并未主动离开（!escaped），等布局稳定后吸回底部。
-	const wasStreamingRef = useRef(false);
-	useEffect(() => {
-		const was = wasStreamingRef.current;
-		wasStreamingRef.current = !!state.isStreaming;
-		if (!was && state.isStreaming && !jumpTarget && !urlJumpMessageId) {
-			scrollToBottom();
-			return;
-		}
-		if (was && !state.isStreaming && !escapedRef.current) {
-			const snap = () => {
-				if (scrollRef.current && !escapedRef.current) {
-					stickRef.current = true;
-					setStickBottom(true);
-					pinToBottom();
-				}
-			};
-			requestAnimationFrame(() => requestAnimationFrame(snap));
-		}
-	}, [state.isStreaming, jumpTarget, urlJumpMessageId, scrollToBottom, pinToBottom]);
-
-	// 用户发送新消息（questions 末尾新增）或切换会话时：无条件恢复吸底跟随，
-	// 确保即使此前向上翻看过历史（escaped=true），发消息后也立刻定位到新提问并跟随回答。
-	const lastQuestionId = questions.length > 0 ? questions[questions.length - 1].id : null;
-	const prevConvKeyRef = useRef(`${state.conversationId ?? ""}:${state.sessionFile ?? ""}`);
-	const prevLastQuestionIdRef = useRef<string | null>(lastQuestionId);
-	useEffect(() => {
-		const convKey = `${state.conversationId ?? ""}:${state.sessionFile ?? ""}`;
-		const convChanged = convKey !== prevConvKeyRef.current;
-		const questionAdded = !convChanged && lastQuestionId !== null && lastQuestionId !== prevLastQuestionIdRef.current;
-		prevConvKeyRef.current = convKey;
-		prevLastQuestionIdRef.current = lastQuestionId;
-		if ((convChanged || questionAdded) && !jumpTarget && !urlJumpMessageId) {
-			scrollToBottom();
-		}
-	}, [state.conversationId, state.sessionFile, lastQuestionId, jumpTarget, urlJumpMessageId, scrollToBottom]);
-
-	// 使用 useLayoutEffect 在 DOM 提交后、浏览器 Paint 上屏前同步完成贴底，
-	// 消除 useEffect 绘制后异步跳变带来的底部最后一行“先长高、后拉起”的单帧微颤（1-frame jitter）。
-	useLayoutEffect(() => {
-		const el = scrollRef.current;
-		if (el && stickRef.current && !escapedRef.current) {
-			pinToBottom();
-		}
-	}, [messages, state.isStreaming, liveOutputs, toolStatuses, pinToBottom]);
-
-	// Queued prompts (插队/排队) render as pending bubbles at the list bottom —
-	// 新增排队/插队消息也是用户的发送动作，自动恢复吸底并滚入视野。
-	const queueSig = state.queue.steering.join("\u0000") + "\u0001" + state.queue.followUp.join("\u0000");
-	const queueTotal = state.queue.steering.length + state.queue.followUp.length;
-	const prevQueueTotalRef = useRef(queueTotal);
-	useLayoutEffect(() => {
-		const added = queueTotal > prevQueueTotalRef.current;
-		prevQueueTotalRef.current = queueTotal;
-		if (added) {
-			scrollToBottom();
-			return;
-		}
-		const el = scrollRef.current;
-		if (el && stickRef.current && !escapedRef.current) {
-			pinToBottom();
-		}
-	}, [queueSig, queueTotal, scrollToBottom, pinToBottom]);
-
-	// The composer sits BELOW this scroll container in a flex column. Its
-	// growth shrinks this box from the bottom; ChatInput sets scrollTop =
-	// pre-transient position + net growth, so the anchor row stays stationary.
-	// Only box GROWTH (composer shrink) needs a nudge — clamp the stranded
-	// scrollTop back so no dead gap lingers at the bottom. Content-height
-	// growth (streaming appends, image loads) doesn't change the box and stays
-	// covered by the messages/liveOutputs snap effects.
-	useEffect(() => {
-		const el = scrollRef.current;
-		if (!el || typeof ResizeObserver === "undefined") return;
-		let prevH = el.clientHeight;
-		const ro = new ResizeObserver(() => {
-			const h = el.clientHeight;
-			const grew = h - prevH;
-			prevH = h;
-			if (grew > 0) el.scrollTop = Math.min(el.scrollTop, el.scrollHeight - el.clientHeight);
-		});
-		ro.observe(el);
-		return () => ro.disconnect();
-	}, []);
-	// Content-level growth watch: the RO above only sees the BOX of .messages.
-	// Content growing INSIDE the container without a React state change —
-	// extension / liveOutputs / tool cards mutating via DOM, post-jump height
-	// corrections in collapsed rows — is invisible to the RO AND to the
-	// messages/liveOutputs snap effects: the bottom drifts away silently with
-	// zero scroll events. A MutationObserver on the scroll content closes that
-	// gap: any content mutation while stuck && !escaped re-pins the bottom,
-	// coalesced to at most one snap per frame. No feedback loop: snap mutates
-	// scrollTop only — no DOM mutation, so the observer never re-triggers.
-	useEffect(() => {
-		const el = scrollRef.current;
-		if (!el || typeof MutationObserver === "undefined") return;
-		let queued = false;
-		const mo = new MutationObserver(() => {
-			if (queued) return;
-			queued = true;
-			requestAnimationFrame(() => {
-				queued = false;
-				const el2 = scrollRef.current;
-				if (el2 && stickRef.current && !escapedRef.current) {
-					pinToBottom();
-					// keep the chip's state source in sync (same as RO re-pin)
-					setStickBottom(true);
-				}
-			});
-		});
-		mo.observe(el, { childList: true, subtree: true, characterData: true });
-		return () => mo.disconnect();
-	}, [pinToBottom]);
-
-	// The rail is a pointer-event target so it can expand on hover; forward
-	// wheel over it (collapsed strip or expanded panel) to the message list.
-	const railRef = useRef<HTMLDivElement>(null);
-	useEffect(() => {
-		const rail = railRef.current;
-		const el = scrollRef.current;
-		if (!rail || !el) return;
-		const onWheel = (e: WheelEvent) => {
-			e.preventDefault();
-			// In "many questions" mode the hover panel is a scrollable list —
-			// wheel over it scrolls the list itself (when it overflows),
-			// otherwise it falls through to the message list.
-			const list = rail.querySelector<HTMLElement>(".qn-list");
-			if (list && list.contains(e.target as Node) && list.scrollHeight > list.clientHeight) {
-				list.scrollTop += e.deltaY;
-				return;
-			}
-			if (e.deltaY < 0) {
-				disengageStick();
-			} else if (e.deltaY > 0) {
-				userUpwardGestureTimeRef.current = 0;
-				if (el.scrollHeight - el.scrollTop - el.clientHeight < 96) {
-					escapedRef.current = false;
-					stickRef.current = true;
-					setStickBottom(true);
-				}
-			}
-			el.scrollTop += e.deltaY;
-		};
-		rail.addEventListener("wheel", onWheel, { passive: false });
-		return () => rail.removeEventListener("wheel", onWheel);
-	}, [disengageStick]);
+	// ---- 对话流贴底滚动与用户逃逸阅读生命周期统一管理器 ----
+	const {
+		railRef,
+		stickBottom,
+		scrollToBottom,
+		pauseForSelection,
+		handleWheel,
+		handleTouchStart,
+		handleTouchMove,
+		handlePointerDown,
+		onScroll,
+	} = useChatScroll({
+		scrollRef,
+		stickRef,
+		escapedRef,
+		messages,
+		isStreaming: state.isStreaming,
+		liveOutputs,
+		toolStatuses,
+		queue: state.queue,
+		conversationId: state.conversationId,
+		sessionFile: state.sessionFile,
+		questions,
+		jumpTarget,
+		urlJumpMessageId,
+		hasEarlier,
+		loadEarlier,
+		scheduleActiveFromScroll,
+		scheduleSweep,
+	});
 
 	// Visible height of the scroll area — drives the adaptive row gap so the
 	// centered tick cluster always fits (no top/bottom clipping).
@@ -1845,19 +1454,7 @@ export function MessageList({
 						)}
 					</div>
 				)}
-				{hasEarlier && !pagingWarming && (
-					<div className="earlier-messages-bar">
-						<span className="earlier-messages-info">{t("earlierMessagesInfo", { count: earlierCount })}</span>
-						<div className="earlier-messages-actions">
-							<button type="button" className="earlier-messages-btn" onClick={() => loadEarlier()}>
-								↑ {t("loadEarlier", { count: Math.min(earlierPageSize, earlierCount) })}
-							</button>
-							<button type="button" className="earlier-messages-btn earlier-messages-btn-all" onClick={loadAllEarlier}>
-								{t("loadAllEarlier")}
-							</button>
-						</div>
-					</div>
-				)}
+
 				{clusteredItems.map((item) => {
 					if (item.type === "tool_cluster") {
 						const streamingId = state.streamingMessage?.id;
@@ -2098,9 +1695,7 @@ export function MessageList({
 				onExpand={expand}
 				onProgrammaticScroll={() => {
 					// 搜索跳转让位贴底机制：之后再吸底部会覆盖搜索定位
-					escapedRef.current = true;
-					stickRef.current = false;
-					setStickBottom(false);
+					pauseForSelection();
 				}}
 				open={searchOpen}
 				onClose={() => setSearchOpen(false)}

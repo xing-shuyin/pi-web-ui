@@ -10,7 +10,19 @@
 
 ## [Unreleased]
 
-暂无未发布内容。
+<!-- auto-i18n:start -->
+
+### i18n
+
+- 前端新增 key（19）：`toolApprovalDshNotice`、`cmdInspectorTitle`、`cmdInspectorLines`、`cmdInspectorExpand`、`cmdInspectorCollapse`、`cmdInspectorRisk`、`cmdCopied`、`rejectWithNote`、`rejectWithNoteSubmit`、`rejectNotePlaceholder`、`rejectFeedbackPrefix`、`promptToggleEnabled`、`uiLayoutToolCardFooter`、`subagentMaxDepth`、`subagentMaxDepthDesc`、`subagentMaxDepthUnlimited`、`subagentAutoWakeMaxTurns`、`subagentAutoWakeMaxTurnsDesc`、`subagentAutoWakeMaxTurnsUnlimited`
+- 前端删除 key（3）：`earlierMessagesInfo`、`loadEarlier`、`loadAllEarlier`
+- 前端中文变更（3）：`promptTok_tools_desc`、`promptTok_guidelines_desc`、`reversePaginationDesc`
+- 前端英文变更（3）：`promptTok_tools_desc`、`promptTok_guidelines_desc`、`reversePaginationDesc`
+- 服务端新增 key（25）：`agent.subagent.worktree.remote_unsupported`、`agent.subagent.model.failed`、`agent.subagent.model.not.found`、`canvas.edge.self`、`canvas.edge.duplicate`、`subagents.notify.fallback`、`subagents.notify.header`、`subagents.notify.status.failed`、`subagents.notify.status.canceled`、`subagents.notify.status.done`、`subagents.notify.goal`、`subagents.notify.worktree`、`subagents.notify.worktree.cleaned`、`subagents.notify.worktree.preserved`、`subagents.notify.worktree.path`、`subagents.notify.summary`、`subagents.notify.footer`、`subagents.spawn.thinking.invalid`、`subagents.spawn.isolation.invalid`、`subagents.get.worktree.cleaned`、`subagents.get.worktree.preserved`、`terminals.operation.denied`、`terminals.input.edited_sent`、`terminals.key.edited_sent`、`worktree.isolation.not_git`
+- 服务端文案变更（4）：`subagents.spawn.started`、`subagents.get.running`、`subagents.get.done`、`terminals.command.blocked`
+- 服务端删除 key（2）：`prompt.guidelines.be.concise`、`prompt.guidelines.show.paths`
+
+<!-- auto-i18n:end -->
 
 ## [0.111.0] — 2026-10-24
 

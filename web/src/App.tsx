@@ -2388,7 +2388,7 @@ export function App() {
 										onUiAction={onUiAction}
 										key={
 											chat.transition?.previewMessages?.length
-												? `preview:${chat.transition.target}`
+												? chat.transition.target
 												: (chat.state.conversationId ?? "boot")
 										}
 										preview={Boolean(chat.transition?.previewMessages?.length)}
@@ -2396,10 +2396,7 @@ export function App() {
 											chat.transition?.previewMessages?.length
 												? {
 														...chat.state,
-														conversationId:
-															chat.transition.kind === "conversation"
-																? chat.transition.target
-																: `preview:${chat.transition.target}`,
+														conversationId: chat.transition.target,
 														sessionFile: undefined,
 														historyStart: 0,
 														historyTotal: chat.transition.previewMessages.length,
