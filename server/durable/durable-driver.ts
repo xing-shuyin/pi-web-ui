@@ -20,6 +20,7 @@ import {
 	type DurableModelInfo,
 } from "./durable-models.js";
 import { loadDurableModule, loadDurablePeerModule } from "./durable-loader.js";
+import { DurableEventProjector } from "./durable-event-projector.js";
 import { DEFAULT_DURABLE_CAPABILITIES } from "../engine-capabilities.js";
 
 export class DurableAgentDriver extends BaseAgentDriver {
@@ -321,78 +322,23 @@ export class DurableAgentDriver extends BaseAgentDriver {
 
 			this.currentRunningConv = targetConv;
 
-			// 启动 Durable 反应式实时流 (LiveDoc / entries / tools 增量监听)
-			let emittedTextLen = 0;
-			let emittedThinkingLen = 0;
-			const startedToolCalls = new Set<string>();
-			const finishedToolCalls = new Set<string>();
-
+			// 启动 Durable 反应式事件流（正文/思考增量 + 工具入参与回执，全部来自引擎事件，见 durable-event-projector.ts）
+			const projector = new DurableEventProjector();
 			let watch: any = null;
-			if (typeof targetConv.watch === "function") {
+			const watchEventsFn = this.durableModule?.watchEvents;
+			const numericConvId = Number(targetConv?.id ?? this.currentConversationId);
+			if (typeof watchEventsFn === "function" && Number.isSafeInteger(numericConvId) && numericConvId > 0) {
 				try {
-					watch = await targetConv.watch(this.backgroundContext);
+					watch = await watchEventsFn(this.harness, numericConvId, this.backgroundContext);
 					this.activeWatch = watch;
-					watch.start((value: any) => {
+					// 挂接前可能已有在飞的半截回复（重启续跑/自愈），先把快照里的部分补上再吃增量
+					if (watch?.snapshot) projector.primeSnapshot(watch.snapshot, sink);
+					watch.start(async (events: readonly unknown[]) => {
 						if (this.aborted) return;
-						const live = value?.docs?.["pi.live"];
-						if (!live) return;
-
-						// 1. 实时流式捕获思考与正文内容
-						const genMessage = live.generation?.message;
-						if (genMessage?.content && Array.isArray(genMessage.content)) {
-							for (const block of genMessage.content) {
-								if (block.type === "thinking" && typeof block.thinking === "string") {
-									const delta = block.thinking.slice(emittedThinkingLen);
-									if (delta) {
-										emittedThinkingLen = block.thinking.length;
-										sink.onThinkingDelta(delta);
-									}
-								} else if (block.type === "text" && typeof block.text === "string") {
-									const delta = block.text.slice(emittedTextLen);
-									if (delta) {
-										emittedTextLen = block.text.length;
-										sink.onTextDelta(delta);
-									}
-								}
-							}
-						}
-
-						// 2. 实时流式捕获任务图中的工具槽位执行状态
-						const toolSlots = live.tools || live.nestedTools;
-						if (Array.isArray(toolSlots)) {
-							for (const slot of toolSlots) {
-								if (!slot || !slot.callId) continue;
-								const callId = String(slot.callId);
-
-								// 工具开始运行：发射 onToolStart
-								if (!startedToolCalls.has(callId) && (slot.status === "running" || slot.status === "done")) {
-									startedToolCalls.add(callId);
-									sink.onToolStart?.(callId, slot.name || slot.tool || "tool", slot.input ?? {});
-								}
-
-								// 工具执行结束：发射 onToolEnd
-								if (
-									startedToolCalls.has(callId) &&
-									!finishedToolCalls.has(callId) &&
-									(slot.status === "done" || slot.status === "error")
-								) {
-									finishedToolCalls.add(callId);
-									const outputText =
-										typeof slot.output === "string"
-											? slot.output
-											: slot.output
-												? JSON.stringify(slot.output, null, 2)
-												: "";
-									sink.onToolEnd?.(callId, {
-										output: outputText,
-										error: slot.error ? String(slot.error) : undefined,
-									});
-								}
-							}
-						}
+						projector.project(events, sink);
 					});
 				} catch {
-					/* watch 启动失败安全回退到等待模式 */
+					/* 事件流不可用时退化为仅最终回执（不阻断执行） */
 				}
 			}
 
@@ -417,30 +363,15 @@ export class DurableAgentDriver extends BaseAgentDriver {
 						const entryData = await this.storage.entry(settled.answer);
 						const modelTurn = entryData?.entry?.model?.[0];
 						finalUsage = modelTurn?.usage;
-						if (modelTurn?.content && Array.isArray(modelTurn.content)) {
-							for (const block of modelTurn.content) {
-								if (block.type === "thinking" && typeof block.thinking === "string") {
-									const delta = block.thinking.slice(emittedThinkingLen);
-									if (delta) {
-										emittedThinkingLen = block.thinking.length;
-										sink.onThinkingDelta(delta);
-									}
-								} else if (block.type === "text" && typeof block.text === "string") {
-									const delta = block.text.slice(emittedTextLen);
-									if (delta) {
-										emittedTextLen = block.text.length;
-										sink.onTextDelta(delta);
-									}
-								}
-							}
-						}
+						// 存储里的完整回复作为最后一道保险：投影器按 contentIndex 记账，已流式下发的部分不会重发
+						if (modelTurn) projector.projectMessage(modelTurn, sink);
 					} catch {
 						/* fallback */
 					}
 				}
 
 				// 若流式期间未发射出正文且 answer 为文本或对象，进行最终保底输出
-				if (emittedTextLen === 0 && settled.answer) {
+				if (!projector.emittedAnyText && settled.answer) {
 					const text = typeof settled.answer === "string" ? settled.answer : JSON.stringify(settled.answer);
 					sink.onTextDelta(text);
 				}
@@ -478,28 +409,31 @@ export class DurableAgentDriver extends BaseAgentDriver {
 				model: "pi-durable-error",
 			});
 		} finally {
-			if (this.activeWatch) {
-				try {
-					await this.activeWatch.stop();
-				} catch {
-					/* ignore */
-				}
-				this.activeWatch = null;
-			}
+			await this.haltActiveWatch();
 			this.currentRunningConv = null;
+		}
+	}
+
+	/**
+	 * 停掉当前活动的事件流：ConversationWatch 用 `cancel()`，AgentEventStream 用 `stop()`，两种均不得抛。
+	 */
+	private haltActiveWatch(): Promise<void> {
+		const watch = this.activeWatch;
+		this.activeWatch = null;
+		if (!watch) return Promise.resolve();
+		try {
+			const pending = typeof watch.cancel === "function" ? watch.cancel() : watch.stop?.();
+			return Promise.resolve(pending)
+				.then(() => undefined)
+				.catch(() => undefined);
+		} catch {
+			return Promise.resolve();
 		}
 	}
 
 	async abort(): Promise<void> {
 		this.aborted = true;
-		if (this.activeWatch) {
-			try {
-				this.activeWatch.cancel();
-			} catch {
-				/* ignore */
-			}
-			this.activeWatch = null;
-		}
+		void this.haltActiveWatch();
 
 		if (this.currentRunningConv && typeof this.currentRunningConv.abort === "function") {
 			try {

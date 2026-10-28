@@ -341,3 +341,19 @@ pointer-events:none、2.2s 淡出），避免用户以为页面自己在动。�
 扩展的 `setWidget/setStatus/notify/select/confirm/input` → `widgets/statuses/notice/dialog` 消息；对话框经 `dialog_response` 回传，Esc 视为取消。`Dialog.tsx`（扩展对话框）与 `DshQuestionDialog.tsx`（DSH 模型提问桥）的正文/选项/详情/预览都走 `Markdown(rawHtml)` 富渲染（markdown + 原始 HTML 混排，模型自选、信任模型；默认 `rawHtml=false` 的聊天正文渲染不受影响），可选项 `preview` 展示「选项预览」框。
 
 `snapshot` 里 `streamingMessage` 是进行中的消息（60ms 粒度流式），`messages` 是已落盘的。
+
+### Durable 引擎的数据来源：只认 AgentEvent，不读 `pi.live` 槽位（`server/durable/durable-event-projector.ts`）
+
+Pi Durable（`@earendil-works/pi-durable`）把同一件事分成两份投影，**职责不能混**：
+
+- `pi.live`（`conv.watch()`）是**廉价可剪的运行期进度投影**：工具槽位只有 `running` 期间带 `output`，结算即被剪掉；
+  槽位**从不携带 `input`**（模型发起调用的入参在工具任务的 `state.checkpoint` 里）。因此抓槽位拿不到入参、也拿不到回执。
+- `watchEvents(harness, conversationId, ctx)` 才是权威事件流：`tool_execution_start.args`（引擎已从 checkpoint 解析好，
+  嵌套调用直接给槽位的 `arguments`）、`tool_execution_end.entry`（模型调用，`model[0]` 是 ToolResultMessage）或
+  `.result`（嵌套调用）、`message_start/message_update/message_end`（正文与思考）、`tool_execution_update`（进度输出）。
+
+历史坑（#774）：驱动曾对 `pi.live` 做差分，读 `slot.input`（永不存在）与结算后的 `slot.output`（已剪），
+导致工具卡命令空、结果空，并同链路污染落盘会话（`argumentsText: "{}"`）。现在全部改由 `DurableEventProjector`
+投影事件流：按 `contentIndex` 记账已下发的正文/思考长度（流式增量与最终整段落盘不重复不丢字），
+工具回执「成功只带 `output`、失败只带 `error`」向下游对齐；嵌套调用（`parentToolCallId`）不单独出卡片，
+保住「一个父调用一张卡」的展示口径。回归：`tests/unit/durable-event-projector.test.ts`（含驱动不得再读 `slot.input/slot.output` 的守卫）。
