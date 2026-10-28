@@ -39,9 +39,11 @@ const mock = createServer((req, res) => {
 				id: "mock-a",
 				context_window: 999999, // fetched metadata — must NOT override manual
 				display_name: "Fetched A",
+				// 网关自报的思考档位 → 必须推导成 thinkingLevelMap 并落盘（#771）
+				reasoning_levels: ["low", "high", "xhigh"],
 			},
 			{ id: "mock-b" },
-			...(bumped ? [{ id: "mock-new", reasoning: true }] : []),
+			...(bumped ? [{ id: "mock-new", reasoning: true, supported_reasoning_levels: [{ effort: "max" }] }] : []),
 		];
 		res.writeHead(200, { "content-type": "application/json" });
 		res.end(JSON.stringify({ data }));
@@ -186,6 +188,13 @@ try {
 		rowA.name === "Manual A" && rowA.contextWindow === 123456 && canonish(rowA.input) === canonish(["text"]),
 		JSON.stringify(rowA),
 	);
+	// #771：网关自报 reasoning_levels → 现有行补上 thinkingLevelMap（xhigh 否则永远选不到）
+	const expectedMapA = { minimal: null, low: "low", medium: null, high: "high", xhigh: "xhigh", max: null };
+	check(
+		"existing row gains derived thinkingLevelMap (xhigh/max open up)",
+		canonish(rowA.thinkingLevelMap) === canonish(expectedMapA),
+		JSON.stringify(rowA.thinkingLevelMap),
+	);
 
 	// 2) bump the mock to advertise a new id → appended with its metadata
 	bumped = true;
@@ -199,6 +208,12 @@ try {
 	});
 	const rowNew = mc.providers.find((p) => p.providerId === "my-provider").models.find((m) => m.id === "mock-new");
 	check("new id appended with endpoint metadata (reasoning)", rowNew?.reasoning === true);
+	check(
+		"new id also gains derived thinkingLevelMap (max)",
+		canonish(rowNew?.thinkingLevelMap) ===
+			canonish({ minimal: null, low: null, medium: null, high: null, xhigh: null, max: "max" }),
+		JSON.stringify(rowNew?.thinkingLevelMap),
+	);
 
 	// 3) credentials stayed server-side: probe carried the SAVED key as Bearer
 	check(

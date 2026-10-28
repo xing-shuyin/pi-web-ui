@@ -101,7 +101,7 @@ server/
 ├── wait-subscription-scan.ts # 挂起 wake 订阅扫描（保留带 pending 子代理 wake 的对话）
 ├── slash-commands.ts       # 斜杠命令（NATIVE_COMMANDS 内置命令拦截执行 + 目录推送）
 ├── prompt-composer.ts      # 主会话系统提示词自由组合模板（{{token}} 在每次 run 前展开）
-├── model-admin.ts          # 模型/服务商配置管理（含内置服务商多密钥：provider-keys.json + add/activate/remove_provider_key，模型目录复用系统默认，不复制）
+├── model-admin.ts          # 模型/服务商配置管理（含内置服务商多密钥：provider-keys.json + add/activate/remove_provider_key，模型目录复用系统默认，不复制；网关 /models 自报的 reasoning_levels / supported_reasoning_levels[].effort 会推导成模型级 thinkingLevelMap 并贯穿保存/合并/下发，见 issue #771）
 ├── model-enrich.ts         # 用公开模型目录给自定义供应商的模型行补参数
 ├── provider-oauth-flow.ts  # 见文件头注释
 ├── resolve-global-sdk.ts   # 优先用全局/祖先那份 pi SDK 的解析钩子（issue #260）

@@ -18,10 +18,11 @@ import { stripJsonComments } from "./json-utils.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
 	ServerMessage,
+	UiEnrichResult,
 	UiModelConfigEntry,
 	UiProviderConfig,
+	UiThinkingLevelMap,
 	ProviderKeyInfo,
-	UiEnrichResult,
 } from "./protocol.js";
 import { enrichBatch, type EnrichLang } from "./model-enrich.js";
 import { pick, type ServerLang } from "./i18n.js";
@@ -153,6 +154,11 @@ export function mergeProviderConfigEntry(
 		else delete merged.contextWindow;
 		if (model.maxTokens) merged.maxTokens = Number(model.maxTokens);
 		else delete merged.maxTokens;
+		// thinkingLevelMap：表单带了就覆盖，没带（undefined）= 保留磁盘上的手写映射，
+		// 与 api/baseUrl/cost/compat 同语义。注意不能 `else delete`——那会把用户在
+		// models.json 里手写的 xhigh/max 映射抹掉，档位又会退回 off…high。
+		const thinkingLevelMap = sanitizeThinkingLevelMap(model.thinkingLevelMap);
+		if (thinkingLevelMap) merged.thinkingLevelMap = thinkingLevelMap;
 		return merged;
 	});
 
@@ -223,11 +229,174 @@ export function detectReasoningCapability(id: string, rawMeta?: Record<string, u
 	return REASONING_PATTERNS.some((pattern) => pattern.test(lower));
 }
 
+// ---------------------------------------------------------------------------
+// 思考档位（models.json 的模型级 thinkingLevelMap）
+// ---------------------------------------------------------------------------
+
+/** pi-ai 的思考档位，同时也是 `thinkingLevelMap` 认识的全部键（顺序 = 下拉顺序）。 */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/** pi-ai 默认开放给「推理模型」的档位（没有 thinkingLevelMap 时就是这个集合）。 */
+const DEFAULT_THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+
+/** 网关/推理端点常见的档位字面值 → pi 档位（查表前先归一化，见 normalizeLevelToken）。 */
+const THINKING_LEVEL_ALIASES: Record<string, ThinkingLevel> = {
+	off: "off",
+	none: "off",
+	no: "off",
+	"none-thinking": "off",
+	nothink: "off",
+	"no-think": "off",
+	disabled: "off",
+	disable: "off",
+	minimal: "minimal",
+	min: "minimal",
+	minimum: "minimal",
+	low: "low",
+	medium: "medium",
+	med: "medium",
+	mid: "medium",
+	middle: "medium",
+	high: "high",
+	xhigh: "xhigh",
+	"x-high": "xhigh",
+	"extra-high": "xhigh",
+	"very-high": "xhigh",
+	max: "max",
+	maximum: "max",
+	ultra: "max",
+};
+
+/** `/v1/models` 条目里可能携带推理档位的字段名（各家字段拼写不一）。 */
+const THINKING_LEVEL_META_KEYS = [
+	"reasoning_levels",
+	"reasoningLevels",
+	"supported_reasoning_levels",
+	"supportedReasoningLevels",
+	"thinking_levels",
+	"supported_thinking_levels",
+	"supportedThinkingLevels",
+] as const;
+
+function normalizeLevelToken(token: string): string {
+	return token
+		.trim()
+		.toLowerCase()
+		.replace(/[\s_]+/g, "-");
+}
+
+/** 档位元数据可能是数组、对象数组（`.effort`）、字典或逗号串——统一摊平成字面值列表。 */
+function collectLevelTokens(value: unknown, out: string[], depth = 0): void {
+	if (depth > 2 || value === null || value === undefined) return;
+	if (typeof value === "string") {
+		for (const part of value.split(/[,;|]/)) if (part.trim()) out.push(part);
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			if (typeof item === "string") {
+				out.push(item);
+				continue;
+			}
+			if (item && typeof item === "object") {
+				const row = item as Record<string, unknown>;
+				for (const key of ["effort", "level", "name", "id", "value", "type"]) {
+					if (typeof row[key] === "string") {
+						out.push(row[key] as string);
+						break;
+					}
+				}
+			}
+		}
+		return;
+	}
+	if (typeof value === "object") {
+		const row = value as Record<string, unknown>;
+		// 形如 { levels: [...] } / { supported: [...] } 的包裹
+		for (const key of ["levels", "values", "supported"]) {
+			if (key in row) {
+				collectLevelTokens(row[key], out, depth + 1);
+				return;
+			}
+		}
+		// 形如 { low: true, high: {…} } 的字典（false/null 表示不支持）
+		for (const [key, val] of Object.entries(row)) {
+			if (val === false || val === null || val === undefined) continue;
+			out.push(key);
+		}
+	}
+}
+
+/** 从网关 `/models` 条目的推理档位元数据推导 pi-ai 的模型级 `thinkingLevelMap`。
+ *
+ *  背景：pi-ai 的 `getSupportedThinkingLevels()` 只有在模型带 `thinkingLevelMap`
+ *  且 `xhigh` / `max` 有显式映射时才开放这两档（见 pi-ai dist/models.js），否则
+ *  自定义服务商（vLLM / 聚合网关）永远只能选到 `off`…`high`。网关自己在
+ *  `reasoning_levels` / `supported_reasoning_levels[].effort` 里报了能力，这里就
+ *  把它翻译成 pi 的映射：报了的档位映射成网关字面值，没报的显式写 `null`（= 不支持）。
+ *
+ *  两条保守规则：
+ *  - `off` 永不隐藏（不写 `null`）：关掉思考总是合法的，而且多数网关也没有
+ *    `none` / `off` 这个字面值；只有在网关明确报了这类字面值时才映射过去。
+ *  - 推导结果与 pi 默认能力（`off` + `minimal/low/medium/high`）完全一致时不返回
+ *    任何映射，避免每次刷新都把 models.json 无谓改写一遍。
+ *
+ *  纯函数，单测见 tests/unit/model-admin-thinking-levels.test.ts。
+ */
+export function buildThinkingLevelMapFromMeta(raw?: Record<string, unknown>): UiThinkingLevelMap | undefined {
+	const meta = raw ?? {};
+	const tokens: string[] = [];
+	for (const key of THINKING_LEVEL_META_KEYS) {
+		if (key in meta) collectLevelTokens(meta[key], tokens);
+	}
+	if (tokens.length === 0) return undefined;
+
+	const advertised = new Map<ThinkingLevel, string>();
+	for (const token of tokens) {
+		const level = THINKING_LEVEL_ALIASES[normalizeLevelToken(token)];
+		if (level && !advertised.has(level)) advertised.set(level, token.trim());
+	}
+	// 只报了「关思考」类字面值 = 这模型压根不推理，别当成档位元数据。
+	if (![...advertised.keys()].some((level) => level !== "off")) return undefined;
+
+	const map: UiThinkingLevelMap = {};
+	for (const level of THINKING_LEVELS) {
+		if (level === "off") {
+			const offLiteral = advertised.get("off");
+			if (offLiteral) map.off = offLiteral;
+			continue;
+		}
+		map[level] = advertised.get(level) ?? null;
+	}
+
+	const enabled = THINKING_LEVELS.filter((level) => map[level] !== null);
+	const sameAsDefault =
+		enabled.length === DEFAULT_THINKING_LEVELS.length &&
+		enabled.every((level, i) => level === DEFAULT_THINKING_LEVELS[i]);
+	if (sameAsDefault && map.off === undefined) return undefined;
+	return map;
+}
+
+/** 只保留 pi 认识的 7 个档位键，值归一化成「非空字符串」或 `null`。
+ *  models.json 的模型 schema 只列这 7 个键，未知键写进去既无意义也可能被拒。 */
+export function sanitizeThinkingLevelMap(value: unknown): UiThinkingLevelMap | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const src = value as Record<string, unknown>;
+	const out: UiThinkingLevelMap = {};
+	for (const level of THINKING_LEVELS) {
+		const raw = src[level];
+		if (raw === null) out[level] = null;
+		else if (typeof raw === "string" && raw.trim()) out[level] = raw.trim();
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Best-effort extraction of model metadata from an OpenAI-compatible
  *  /models `data[]` item. Most endpoints only return `{ id }` — the extra
  *  fields (context_window / max_model_len / modalities / supports_vision /
- *  reasoning / display_name) come from vLLM and other extended
- *  implementations, and are filled into the form when present. */
+ *  reasoning / display_name / 推理档位) come from vLLM, 聚合网关 and other
+ *  extended implementations, and are filled into the form when present. */
 function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 	const r = (m ?? {}) as Record<string, unknown>;
 	const id = typeof r.id === "string" ? r.id : "";
@@ -242,7 +411,10 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		strArrMeta(r.input)?.includes("image") === true;
 	// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征推断。
 	// 只增不减：取消勾选靠手填（编辑页/刷新合并都只补缺）。
-	const reasoning = detectReasoningCapability(id, r);
+	// 网关自报推理档位同样是「这是推理模型」的铁证（如聚合网关的 glm-5.3，
+	// 名字认不出来，但 reasoning_levels 报了 low/high/max）。
+	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r);
+	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined;
 	const contextWindow =
 		numMeta(r.context_window) ?? numMeta(r.context_length) ?? numMeta(r.max_model_len) ?? numMeta(r.max_context_length);
 	const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
@@ -250,6 +422,7 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		id,
 		...(name ? { name } : {}),
 		...(reasoning ? { reasoning: true } : {}),
+		...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 		...(vision ? { input: ["text", "image"] } : {}),
 		...(contextWindow ? { contextWindow } : {}),
 		...(maxTokens ? { maxTokens } : {}),
@@ -265,11 +438,13 @@ function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	const id = rawName.replace(/^models\//, "");
 	const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
 	// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability）。
-	const reasoning = detectReasoningCapability(id, r);
+	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r);
+	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined;
 	return {
 		id,
 		...(displayName && displayName !== id ? { name: displayName } : {}),
 		...(reasoning ? { reasoning: true } : {}),
+		...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 		...(numMeta(r.inputTokenLimit) ? { contextWindow: numMeta(r.inputTokenLimit) } : {}),
 		...(numMeta(r.outputTokenLimit) ? { maxTokens: numMeta(r.outputTokenLimit) } : {}),
 	};
@@ -1312,6 +1487,9 @@ export class ModelAdminService {
 						input: Array.isArray(m.input) ? (m.input as string[]) : undefined,
 						contextWindow: m.contextWindow as number | undefined,
 						maxTokens: m.maxTokens as number | undefined,
+						// 思考档位映射必须下发：前端模型行拿不到它就会在保存往返里丢掉，
+						// 编辑页也无法展示网关自报的 xhigh/max 能力。
+						thinkingLevelMap: sanitizeThinkingLevelMap(m.thinkingLevelMap),
 					}))
 				: [];
 			return {
@@ -1355,72 +1533,8 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Numeric metadata value (NaN/string "unknown" → undefined). */
-	private static numMeta(v: unknown): number | undefined {
-		return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-	}
-
-	private static boolMeta(v: unknown): boolean | undefined {
-		return typeof v === "boolean" ? v : undefined;
-	}
-
-	private static strArrMeta(v: unknown): string[] | undefined {
-		return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
-	}
-
-	/** Best-effort extraction of model metadata from an OpenAI-compatible
-	 *  /models `data[]` item. Most endpoints only return `{ id }` — the extra
-	 *  fields (context_window / max_model_len / modalities / supports_vision /
-	 *  reasoning / display_name) come from vLLM and other extended
-	 *  implementations, and are filled into the form when present. */
-	private static parseOpenAiModel(m: unknown): UiModelConfigEntry {
-		const r = (m ?? {}) as Record<string, unknown>;
-		const id = typeof r.id === "string" ? r.id : "";
-		const name =
-			(typeof r.name === "string" && r.name.trim() ? r.name : undefined) ??
-			(typeof r.display_name === "string" && r.display_name.trim() ? r.display_name : undefined);
-		const modalities = strArrMeta(r.modalities) ?? strArrMeta(r.input_modalities);
-		const vision =
-			modalities?.includes("image") === true ||
-			boolMeta(r.supports_vision) === true ||
-			boolMeta(r.vision) === true ||
-			strArrMeta(r.input)?.includes("image") === true;
-		// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征推断。
-		const reasoning = detectReasoningCapability(id, r);
-		const contextWindow =
-			numMeta(r.context_window) ??
-			numMeta(r.context_length) ??
-			numMeta(r.max_model_len) ??
-			numMeta(r.max_context_length);
-		const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
-		return {
-			id,
-			...(name ? { name } : {}),
-			...(reasoning ? { reasoning: true } : {}),
-			...(vision ? { input: ["text", "image"] } : {}),
-			...(contextWindow ? { contextWindow } : {}),
-			...(maxTokens ? { maxTokens } : {}),
-		};
-	}
-
-	/** google-generative-ai /models shape:
-	 *  { models: [{ name: "models/gemini-flash", displayName, inputTokenLimit,
-	 *               outputTokenLimit, supportedGenerationMethods }] } */
-	private static parseGoogleModel(m: unknown): UiModelConfigEntry {
-		const r = (m ?? {}) as Record<string, unknown>;
-		const rawName = typeof r.name === "string" ? r.name : "";
-		const id = rawName.replace(/^models\//, "");
-		const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
-		// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability）。
-		const reasoning = detectReasoningCapability(id, r);
-		return {
-			id,
-			...(displayName && displayName !== id ? { name: displayName } : {}),
-			...(reasoning ? { reasoning: true } : {}),
-			...(numMeta(r.inputTokenLimit) ? { contextWindow: numMeta(r.inputTokenLimit) } : {}),
-			...(numMeta(r.outputTokenLimit) ? { maxTokens: numMeta(r.outputTokenLimit) } : {}),
-		};
-	}
+	// 模型元数据解析（numMeta/boolMeta/strArrMeta/parseOpenAiModel/parseGoogleModel）
+	// 单源在模块级：这几份曾是静态方法里的死副本，改一处漏一处（#771 白改一遍）。
 
 	/** Probe a custom provider's OpenAI-compatible /models endpoint (server-side
 	 *  because the baseUrl is often a LAN/loopback host the browser can't reach
@@ -1828,10 +1942,12 @@ export class ModelAdminService {
 	 *  toModelRow itself only trims); absent values keep being inherited
 	 *  from sibling models at compose time. */
 	private static toModelRow(m: UiModelConfigEntry): UiModelConfigEntry {
+		const thinkingLevelMap = sanitizeThinkingLevelMap(m.thinkingLevelMap);
 		return {
 			id: m.id.trim(),
 			...(m.name?.trim() ? { name: m.name.trim() } : {}),
 			...(m.reasoning ? { reasoning: true } : {}),
+			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 			...(m.input?.length ? { input: m.input } : {}),
 			...(m.contextWindow ? { contextWindow: Number(m.contextWindow) } : {}),
 			...(m.maxTokens ? { maxTokens: Number(m.maxTokens) } : {}),

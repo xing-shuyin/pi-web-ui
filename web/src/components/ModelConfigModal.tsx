@@ -19,6 +19,7 @@ import type {
 	UiEnrichResult,
 	UiModelConfigEntry,
 	UiProviderConfig,
+	UiThinkingLevelMap,
 } from "../types";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
@@ -227,6 +228,9 @@ interface DraftModel {
 	input: "text" | "text-image";
 	contextWindow: string;
 	maxTokens: string;
+	/** 模型级思考档位映射：前端不编辑，但必须原样带着往返（见 issue #771），
+	 *  否则「刷新 → 保存」会把网关自报的 xhigh/max 档位抹掉。 */
+	thinkingLevelMap?: UiThinkingLevelMap;
 	src?: string;
 }
 
@@ -279,6 +283,7 @@ function toDraft(p: UiProviderConfig): Draft {
 			input: m.input?.includes("image") ? "text-image" : "text",
 			contextWindow: m.contextWindow ? String(m.contextWindow) : "",
 			maxTokens: m.maxTokens ? String(m.maxTokens) : "",
+			...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 		})),
 	};
 }
@@ -298,17 +303,25 @@ function parseEnrichHints(text: string): Record<string, string> {
 /** 候选模型采纳器弹窗 (Candidate Model Picker) */
 function CandidatePickerModal({
 	candidates,
+	preselectedIds,
 	onAdopt,
 	onClose,
 }: {
 	candidates: UiModelConfigEntry[];
+	/** 表单里已有的模型 id：默认勾选它们（增量采纳 = 补新模型）。 */
+	preselectedIds?: string[];
 	onAdopt: (selected: UiModelConfigEntry[]) => void;
 	onClose: () => void;
 }) {
 	const t = useT();
 	const [search, setSearch] = useState("");
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
-		// 默认勾选非 embedding / audio 的模型
+		// 已有模型默认勾选：采纳器的常见场景是「网关新上了几个模型」的增量采纳，
+		// 现有模型本来就要保留，全选会让用户每次手动取消一大片。
+		const all = new Set(candidates.map((c) => c.id));
+		const preset = (preselectedIds ?? []).map((id) => id.trim()).filter((id) => all.has(id));
+		if (preset.length > 0) return new Set(preset);
+		// 没有已保存的模型（新服务商）：默认勾选非 embedding / audio 的模型
 		const set = new Set<string>();
 		for (const c of candidates) {
 			const lower = c.id.toLowerCase();
@@ -793,6 +806,8 @@ export function ModelConfigModal({
 					input: s.input?.includes("image") ? "text-image" : "text",
 					contextWindow: s.contextWindow ? String(s.contextWindow) : "",
 					maxTokens: s.maxTokens ? String(s.maxTokens) : "",
+					// 探测时从网关元数据推导的档位映射跟着走，采纳后即可选 xhigh/max
+					...(s.thinkingLevelMap ? { thinkingLevelMap: s.thinkingLevelMap } : {}),
 				}));
 			return {
 				...prev,
@@ -858,6 +873,9 @@ export function ModelConfigModal({
 				input: m.input === "text-image" ? ["text", "image"] : undefined,
 				contextWindow: m.contextWindow ? Number(m.contextWindow) : undefined,
 				maxTokens: m.maxTokens ? Number(m.maxTokens) : undefined,
+				// 原样带回：服务端合并时「没带 = 保留磁盘值」，但草稿里带着更精确
+				// （编辑浏览器期间被刷新的档位不会丢）。
+				...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 			}));
 		const config: UiProviderConfig = {
 			providerId,
@@ -1715,6 +1733,7 @@ export function ModelConfigModal({
 				{candidateList && (
 					<CandidatePickerModal
 						candidates={candidateList}
+						preselectedIds={editing?.models.map((m) => m.id.trim()).filter(Boolean) ?? []}
 						onAdopt={adoptSelectedModels}
 						onClose={() => setCandidateList(null)}
 					/>

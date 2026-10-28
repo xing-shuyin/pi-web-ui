@@ -2217,6 +2217,13 @@ export interface UiEnrichResult {
 	/** Why unmatched / low-confidence note. */
 	note?: string;
 }
+/** 模型级思考档位映射（pi-ai `ThinkingLevelMap`）：值 = 发给该档的供应方字面值，
+ *  `null` = 该档不支持，缺键 = 走供应方默认。pi-ai 只看 `xhigh` / `max` 是否有
+ *  显式映射来决定这两档是否出现在「思考强度」下拉里，所以自定义服务商的路由器
+ *  网关报的 `reasoning_levels` 会被推导成这个字段存进 models.json。 */
+export type UiThinkingLevelMap = Partial<
+	Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>
+>;
 /** One model definition inside a custom provider. */
 export interface UiModelConfigEntry {
 	id: string;
@@ -2225,6 +2232,8 @@ export interface UiModelConfigEntry {
 	input?: string[];
 	contextWindow?: number;
 	maxTokens?: number;
+	/** 模型级思考档位映射（手写或经刷新从网关元数据推导），保存/合并/下发均原样保留。 */
+	thinkingLevelMap?: UiThinkingLevelMap;
 	/** Per-model override (rarely needed): api type (openai-completions /
 	 *  openai-responses / anthropic-messages / google-generative-ai) and/or
 	 *  baseUrl. When absent they are inherited from sibling models of the

@@ -70,7 +70,8 @@ const mock = createServer((req, res) => {
 				{ id: "mock-a", owned_by: "test", context_window: 32768, modalities: ["text", "image"] },
 				{ id: "mock-b", max_model_len: 128000, supports_vision: true, reasoning: true },
 				{ id: "mock-a" }, // duplicate — must be deduped
-				{ id: "mock-c" },
+				// 网关自报思考档位 → 推导成 thinkingLevelMap（#771：xhigh/max 才会出现）
+				{ id: "mock-c", reasoning_levels: ["low", "high", "max"] },
 				{ id: "mock-d", display_name: "Mock D", max_output_tokens: 8192 },
 			],
 		});
@@ -217,7 +218,11 @@ try {
 				canon([
 					{ id: "mock-a", contextWindow: 32768, input: ["text", "image"] },
 					{ id: "mock-b", reasoning: true, contextWindow: 128000, input: ["text", "image"] },
-					{ id: "mock-c" },
+					{
+						id: "mock-c",
+						reasoning: true,
+						thinkingLevelMap: { minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+					},
 					{ id: "mock-d", name: "Mock D", maxTokens: 8192 },
 				]),
 	);
