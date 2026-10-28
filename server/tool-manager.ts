@@ -529,7 +529,11 @@ export function applyAgentToolsGating(
 	try {
 		const off = new Set(disabled);
 		const allNames = session.getAllTools().map((t) => t.name);
-		const names = new Set(allNames);
+		const initialActiveNames = new Set(session.getActiveToolNames());
+		// issue #777: 扩展主动禁用的工具（在 getAllTools 全集里，但不在初始活跃集里，
+		// 且不是本项目统一管理的 AGENT_TOOL_CATALOG 工具或核心内置工具）原样保持禁用，
+		// 避免会话恢复重放门控时意外重新启用，破坏模型 Prompt 缓存。
+		const names = new Set(allNames.filter((name) => initialActiveNames.has(name) || isConfigurableAgentTool(name)));
 		for (const t of AGENT_TOOL_CATALOG) {
 			if (off.has(t.name)) {
 				// issue #481: 若第三方扩展注册了同名工具（如 nicobailon/pi-subagents 的 subagent），

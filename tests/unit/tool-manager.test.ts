@@ -243,6 +243,20 @@ describe("tool_manage 出入口", () => {
 			AGENT_TOOL_CATALOG.map((t) => t.name),
 		);
 		expect(s2.peek()).toEqual(["bash"]);
+
+		// issue #777: 扩展主动禁用的工具（在 getAllTools 里但不在活跃名单中），全量重放时不得重新启用
+		let activeWithExtension = ["bash", "read"];
+		const sessionWithExtension = {
+			getActiveToolNames: () => [...activeWithExtension],
+			getAllTools: () => ["bash", "read", "url_context"].map((name) => ({ name })),
+			setActiveToolsByName: (next: string[]) => {
+				activeWithExtension = [...next];
+			},
+		};
+		applyAgentToolsGating(sessionWithExtension, []);
+		expect(activeWithExtension).not.toContain("url_context");
+		expect(activeWithExtension).toContain("bash");
+		expect(activeWithExtension).toContain("read");
 	});
 
 	it("applyAgentToolsGating forceActive：预设白名单外也强制加回，非延迟加载时不暴露 load_tools", () => {
