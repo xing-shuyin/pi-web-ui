@@ -30,6 +30,8 @@ import {
 	foldLegacyIntoDisabled,
 	isAgentToolEnabled,
 	isKnownAgentTool,
+	isHostManagedTool,
+	isConfigurableAgentTool,
 	lazyLoadingDisabledTools,
 	isTerminalGuidanceOn,
 	legacyToDisabled,
@@ -141,6 +143,18 @@ describe("normalize", () => {
 		}
 		expect(normalizeDisabledAgentTools(["schedule_task", "schedule_list"])).toEqual(["schedule"]);
 		expect(normalizeDisabledAgentTools(["schedule"])).toEqual(["schedule"]);
+	});
+
+	it("isHostManagedTool 与 isConfigurableAgentTool 正确识别宿主受管工具与外部工具", () => {
+		expect(isHostManagedTool("bash")).toBe(true);
+		expect(isHostManagedTool("read")).toBe(true);
+		expect(isHostManagedTool("edit_soft")).toBe(true);
+		expect(isHostManagedTool("subagent")).toBe(true);
+		expect(isHostManagedTool("url_context")).toBe(false);
+		expect(isHostManagedTool("unknown_external_tool")).toBe(false);
+
+		expect(isConfigurableAgentTool("bash")).toBe(true);
+		expect(isConfigurableAgentTool("url_context")).toBe(false);
 	});
 
 	it("isKnownAgentTool / isAgentToolEnabled", () => {

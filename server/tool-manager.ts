@@ -408,9 +408,19 @@ export function isKnownAgentTool(name: string): boolean {
 	return Boolean(entry && entry.allowAgentToggle !== false);
 }
 
-/** 是否为预设可配置的有效工具（宿主目录登记工具 ∪ 核心内置工具）。 */
-export function isConfigurableAgentTool(name: string): boolean {
+/**
+ * 是否为受宿主配置统一管辖的工具（宿主受管工具 Host-Managed Tools）：
+ * 即核心内置工具（bash/read/edit/write/powershell 等）∪ AGENT_TOOL_CATALOG 目录登记工具。
+ * 只有这类工具的开关受 Web UI 的设置面板（disabledAgentTools）与模式闸门管辖。
+ * 其余工具（第三方扩展动态注册的工具如 url_context 等）归扩展自主管辖。
+ */
+export function isHostManagedTool(name: string): boolean {
 	return ALL_KNOWN_SET.has(name);
+}
+
+/** 是否为预设可配置的有效工具（宿主目录登记工具 ∪ 核心内置工具，对齐 isHostManagedTool）。 */
+export function isConfigurableAgentTool(name: string): boolean {
+	return isHostManagedTool(name);
 }
 
 /** 根据禁用名单计算出当前系统中真正启用的可用工具列表（只取当前系统可用的配置）。 */
@@ -509,11 +519,17 @@ export function setAgentToolsEnabled(session: ActiveToolSet, names: readonly str
 }
 
 /**
- * 全量重放（创建会话 / reload 后 / 设置变更后调）：按禁用名单把目录内工具与
- * 核心内置工具（bash/read/edit/write，禁用名单接受它们）逐个加回或剔除；
- * 基线之外的工具（插件工具等）原样不动。
- * 支持传入 preset（预设 id），按预设白名单做二次过滤。
- * 复原基线取 session.getAllTools()（全集，含被禁用的）——基线里没有的工具不会凭空发明。
+ * 全量重放（创建会话 / reload 后 / 设置变更后调）：
+ *
+ * 采用管辖权差异化门控模型（Authority Boundary Gating）：
+ * 1. 宿主受管工具（Host-Managed Tools，即核心内置工具 + AGENT_TOOL_CATALOG 工具）：
+ *    由 Web UI 的 disabledAgentTools 开关、模式硬闸门与预设白名单完全掌控状态。
+ * 2. 扩展自主工具（Extension-Owned Tools，如 pi-web-search 的 url_context 等）：
+ *    Web UI 默认信任其在活跃集中的既有状态（getActiveToolNames），绝不擅自重新启用
+ *    已被扩展主动关闭的外部工具，避免破坏模型的 Prompt 缓存前缀。
+ * 3. 预设安全过滤：预设（Preset）只对最终候选集做安全收缩（例如 ask 纯对话清空所有工具，
+ *    minimal 仅保留 bash+read 等）。
+ *
  * Session 未就绪时静默跳过（下次创建/reload 会再应用）。
  */
 export function applyAgentToolsGating(
@@ -530,10 +546,19 @@ export function applyAgentToolsGating(
 		const off = new Set(disabled);
 		const allNames = session.getAllTools().map((t) => t.name);
 		const initialActiveNames = new Set(session.getActiveToolNames());
-		// issue #777: 扩展主动禁用的工具（在 getAllTools 全集里，但不在初始活跃集里，
-		// 且不是本项目统一管理的 AGENT_TOOL_CATALOG 工具或核心内置工具）原样保持禁用，
-		// 避免会话恢复重放门控时意外重新启用，破坏模型 Prompt 缓存。
-		const names = new Set(allNames.filter((name) => initialActiveNames.has(name) || isConfigurableAgentTool(name)));
+
+		// 明确管辖权分界：
+		// - 宿主受管工具：以全集为基线，依据 disabled 名单全量重放；
+		// - 扩展自主工具：以 session.getActiveToolNames() 为准继承当前活跃态，未激活的绝不自动开启。
+		const names = new Set<string>();
+		for (const name of allNames) {
+			if (isHostManagedTool(name)) {
+				names.add(name);
+			} else if (initialActiveNames.has(name)) {
+				names.add(name);
+			}
+		}
+
 		for (const t of AGENT_TOOL_CATALOG) {
 			if (off.has(t.name)) {
 				// issue #481: 若第三方扩展注册了同名工具（如 nicobailon/pi-subagents 的 subagent），
