@@ -363,7 +363,10 @@ export function TemplateProvider({
 				const data = await response.json();
 				if (!response.ok) throw new Error(data.error || response.statusText);
 				if (!Array.isArray(data.templates)) throw new Error("Invalid prompt templates response");
-				if (!disposed && !pendingWrite.current && generation === storageGeneration.current) setStored(data.templates);
+				if (!disposed && !pendingWrite.current && generation === storageGeneration.current) {
+					setStored(data.templates);
+					setStorageError("");
+				}
 			} catch (error) {
 				if (!disposed) setStorageError(String(error));
 			}
