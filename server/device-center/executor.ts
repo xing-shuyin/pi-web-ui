@@ -235,6 +235,13 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 					if (settled) return;
 					settled = true;
 					capability.revoke();
+					// 锁的语义是「这个 origin 上还有一条任务在跑」，而 run 一旦 settle（capability 已撤销、
+					// 不再有任何写入路径），它就不再是在跑。旧实现只在连接 close 时才放锁：
+					// ① 用户/守护重试一条刚结束的任务，在 close 到达前一律被判「本地执行器忙」；
+					// ② 单测里上一条 run 的 close 尚未派发，下一条就被误判 busy（CI 随机红）。
+					// 这里在 settle 时就放锁（幂等，后面 confirmStopped 的 delete 变成 no-op）；
+					// 同工作区并发写的护栏仍然是 capability.revoke() + 新的 bot lease。
+					busyOrigins.delete(origin.origin);
 					try {
 						if (sessionBound) options.onSession?.(task.id, undefined);
 					} catch {
