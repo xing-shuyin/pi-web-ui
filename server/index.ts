@@ -1128,6 +1128,10 @@ const deviceCenter = await installLocalDeviceCenter({
 	app,
 	dataDir: DATA_DIR,
 	bots: deviceBots,
+	// Reverse-proxied deployments reach the device center (groups) through a real
+	// domain: accept the operator-declared hostnames there too, otherwise every
+	// /api/device-center call is 403 LOCAL_ONLY behind nginx/Caddy.
+	allowHosts: ALLOW_HOSTS,
 	botCatalog: {
 		defaultCwd: CWD,
 		dataDir: DATA_DIR,

@@ -4,11 +4,11 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getLocalBotOptions, type BotCatalogSources } from "./bot-catalog.js";
-import { isIP } from "node:net";
 import { installHubSetupRoutes } from "./hub-setup.js";
 import { DeviceWorkspaceError } from "./workspaces.js";
 import { createLocalDeviceHub } from "./local-hub.js";
 import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } from "./bots.js";
+import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 
 export interface LocalDeviceConfig {
 	hubUrl: string;
@@ -28,6 +28,8 @@ interface Options {
 	connect(config: LocalDeviceConfig, syncBots: () => Promise<void>): Connection | Promise<Connection>;
 	bots?: LocalBotRegistry;
 	botCatalog?: BotCatalogSources;
+	/** Legitimate external hostnames (PI_WEB_ALLOW_HOSTS) — reverse-proxy deployments. */
+	allowHosts?: readonly string[];
 }
 
 /** Hub enrollment accepts HTTP(S) origins, including public IP addresses. */
@@ -46,34 +48,44 @@ export function normalizeHubUrl(input: unknown): string {
 	return url.origin;
 }
 
-function localOnly(req: Request, res: Response, next: NextFunction): void {
-	const peer = req.socket.remoteAddress?.replace(/^::ffff:/, "");
-	if (!(peer === "::1" || peer?.startsWith("127."))) {
-		res.status(403).json({ code: "LOCAL_ONLY", error: "Configure devices from this computer's loopback address" });
-		return;
-	}
-	let host: string;
-	try {
-		host = new URL(`http://${req.headers.host}`).hostname.replace(/^\[|\]$/g, "");
-	} catch {
-		res.status(403).json({ code: "LOCAL_ONLY", error: "Invalid host" });
-		return;
-	}
-	if (!(host === "localhost" || host === "::1" || (isIP(host) === 4 && host.startsWith("127.")))) {
-		res.status(403).json({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
-		return;
-	}
-	if (!["GET", "HEAD"].includes(req.method)) {
-		try {
-			const origin = new URL(req.headers.origin ?? "");
-			if (!["http:", "https:"].includes(origin.protocol) || origin.host !== req.headers.host) throw new Error();
-		} catch {
-			res.status(403).json({ code: "LOCAL_ONLY", error: "Same-origin request required" });
+/**
+ * Local-only guard for the device center API: the peer must be loopback, and the
+ * Host must be loopback too — except for hostnames the operator explicitly declared
+ * in PI_WEB_ALLOW_HOSTS. Those domains are the ones a reverse proxy forwards; the
+ * global host guard already trusts them (and is in strict-whitelist mode once the
+ * list is non-empty), so extending that decision here keeps a proxied deployment
+ * usable without weakening DNS-rebinding protection.
+ */
+function localOnly(allowHosts: ReadonlySet<string>) {
+	return (req: Request, res: Response, next: NextFunction): void => {
+		const peer = req.socket.remoteAddress?.replace(/^::ffff:/, "");
+		if (!(peer === "::1" || peer?.startsWith("127."))) {
+			res.status(403).json({ code: "LOCAL_ONLY", error: "Configure devices from this computer's loopback address" });
 			return;
 		}
-	}
-	res.setHeader("Cache-Control", "no-store");
-	next();
+		let host: string;
+		try {
+			host = new URL(`http://${req.headers.host}`).hostname.replace(/^\[|\]$/g, "");
+		} catch {
+			res.status(403).json({ code: "LOCAL_ONLY", error: "Invalid host" });
+			return;
+		}
+		if (!isLoopbackHost(host) && !allowHosts.has(host)) {
+			res.status(403).json({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
+			return;
+		}
+		if (!["GET", "HEAD"].includes(req.method)) {
+			try {
+				const origin = new URL(req.headers.origin ?? "");
+				if (!["http:", "https:"].includes(origin.protocol) || origin.host !== req.headers.host) throw new Error();
+			} catch {
+				res.status(403).json({ code: "LOCAL_ONLY", error: "Same-origin request required" });
+				return;
+			}
+		}
+		res.setHeader("Cache-Control", "no-store");
+		next();
+	};
 }
 
 export async function installLocalDeviceCenter(options: Options) {
@@ -207,11 +219,15 @@ export async function installLocalDeviceCenter(options: Options) {
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
+	// Hostnames the operator declared as legitimate entry points (reverse proxy);
+	// entries are normalised exactly like the global guard does.
+	const allowHosts = new Set((options.allowHosts ?? []).map((entry) => hostWithoutPort(String(entry))).filter(Boolean));
+	const guard = localOnly(allowHosts);
 	// Existing bookmarks now enter the native application view.
-	options.app.get("/devices", localOnly, (_req, res) => {
+	options.app.get("/devices", guard, (_req, res) => {
 		res.redirect("./?view=devices");
 	});
-	options.app.use("/api/device-center", localOnly);
+	options.app.use("/api/device-center", guard);
 	const hubSetup = installHubSetupRoutes(options.app, options.dataDir);
 	options.app.get("/api/device-center/status", (_req, res) => {
 		res.json({
