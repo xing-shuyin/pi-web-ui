@@ -18,7 +18,7 @@
  */
 
 import { ENDPOINTS, HTTP_BASE } from "./constants.mjs";
-import { DeepSeekTtsError, ErrorCode, protocolError, transportError, usageError } from "./errors.mjs";
+import { DeepSeekTtsError, protocolError, transportError, usageError } from "./errors.mjs";
 import { assertToken, jsonHeaders } from "./http.mjs";
 import { POW_TARGET_COMPLETION, obtainPowHeader } from "./pow.mjs";
 import { redactUrl, synthesize } from "./tts.mjs";

@@ -39,7 +39,7 @@ async function syncDoubaoCookies() {
 			signal: controller.signal,
 		});
 		clearTimeout(timeoutId);
-	} catch (err) {
+	} catch  {
 		// 本地服务未开时静默忽略
 	}
 }

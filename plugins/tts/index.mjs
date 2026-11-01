@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { exec } from "node:child_process";
 
 // 导入 DeepSeek 模块
-import { createSession, deleteSession, postCompletion, buildRepeatPrompt } from "./lib/session.mjs";
+import { createSession, postCompletion, buildRepeatPrompt } from "./lib/session.mjs";
 import { obtainPowHeader, POW_TARGET_COMPLETION } from "./lib/pow.mjs";
 import { synthesizeToWavBuffer } from "./lib/tts.mjs";
 
