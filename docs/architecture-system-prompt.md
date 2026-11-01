@@ -43,9 +43,26 @@
         2. 全局级：<agentDir>/SYSTEM.md
         3. 都没有 → undefined → SDK 默认分支拼出内置模板（persona + tools +
            guidelines + pi_docs）
-    组合模式下 systemPromptOverride 恒返回 undefined → 强制默认分支（自动段齐全）；
-    SYSTEM.md 内容仅在 override 回调里捕获（lastBaseSystemPrompt）作为 {{soul}}
-    自动内容，不整体顶替模板。
+    组合模式下 systemPromptOverride 恒返回 base（= SYSTEM.md 原文，没有就 undefined）
+    → 组合模板激活时 before_agent_start 整体换掉提示词（`{{soul}}` 用同一份 base），
+    组合模板未激活时 SDK 默认分支据此保留 .pi/SYSTEM.md（TUI 同语义；旧实现恒返回
+    undefined，于是在「全默认 + 有 SYSTEM.md」的会话里这份文件被静默丢弃）。
+
+    base 的归属（issue #812，红线）：
+        override 是**回调**，它推给宿主的 base 必须落在 **loader / session** 名下
+        （`server/prompt-base-store.ts`，key = resourceLoader 对象），**禁止**存成
+        ClientSession（= 一个浏览器客户端）上的「最近一次观察到的值」字段。
+        历史事故：`lastBaseSystemPrompt` 只在 base 非空时更新，切到没有 SYSTEM.md 的
+        项目时没人清旧值 → 上一个项目的系统提示词漏进本项目的设置预览与新建对话，
+        只有恰好访问一个「空白 SYSTEM.md」的项目才会被意外重置。
+        口径：
+        - 记录：每次 reload **无条件覆盖**（base 缺失即写空），没文件的项目永远是空记录；
+        - 读取：`readPromptBase(目标会话的 session.resourceLoader)` —— 预览算哪个
+          会话就读哪个会话（回顾「拿活跃会话算后台会话」的同类串账）；
+        - 过户：搬的是 session 本体，记录跟着走；session 销毁后 WeakMap 自动回收；
+        - 空白语义与 SDK 对齐：空串 / undefined = 没文件（用内置默认），纯空白文件
+          = 空提示词（`{{soul}}` 保留原文，不做 trim 回退）。
+        守卫：tests/unit/prompt-base-{store,scope,isolation}.test.ts。
     项目上下文（loadProjectContextFiles）：候选 AGENTS.override.md > AGENTS.md >
         AGENTS.MD > CLAUDE.md > CLAUDE.MD；全局 agentDir 一份 + cwd 逐级向上，
         包装成 <project_context><project_instructions path="…">…</project_instructions></project_context>。

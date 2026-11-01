@@ -374,6 +374,7 @@ import {
 	resolveSectionTexts,
 	type PromptComposerInputs,
 } from "./prompt-composer.js";
+import { createPromptBaseObservers, readPromptBase } from "./prompt-base-store.js";
 import type {
 	BgServer,
 	CommandDef,
@@ -2420,13 +2421,15 @@ export class ClientSession {
 	 * a question doesn't re-burn tokens on re-transcribing identical screenshots.
 	 */
 
-	/** SYSTEM.md 文件内容（最近一次 loader reload 观察到的 base；组合模板下仅作
-	 *  {{soul}} 自动内容，SDK 默认分支不受影响）。非空 = 用户有系统提示词文件。 */
-	private lastBaseSystemPrompt = "";
-
-	/** SDK APPEND_SYSTEM.md 内容（appendSystemPromptOverride 收到的 base）——
-	 *  composer 的 {{append}} 自动内容。仅主会话（无模板）记录。 */
-	private lastSdkAppendFiles: string[] = [];
+	/**
+	 * SYSTEM.md / APPEND_SYSTEM.md 的 base **不存这里**——见 prompt-base-store.ts。
+	 *
+	 * 归属必须是「哪个 loader / 哪个 session」，不是「哪个浏览器客户端」：曾经是
+	 * `lastBaseSystemPrompt` 字段（本类 = 一个浏览器客户端），切项目时新会话没有
+	 * SYSTEM.md → base 为 undefined → 旧值没人清 → 上一个项目的提示词泄漏到本项目
+	 * 的预览与新建对话（issue #812）。任何「最近一次看到的值」形态的客户端级字段都
+	 * 会复发这个 bug，读取一律走 readPromptBase(conv.session.resourceLoader)。
+	 */
 
 	/**
 	 * 延迟加载（工具按需加载）模式下，按 session 对象存「已加载」工具集。
@@ -2806,8 +2809,15 @@ export class ClientSession {
 		lazy?: boolean;
 		/** 延迟加载：工具目录（全部可用工具，顺序稳定）。 */
 		catalogTools?: string[];
+		/**
+		 * 这份提示词归属的会话（**不是**活跃会话）。SYSTEM.md / APPEND_SYSTEM.md 的
+		 * base 从这里读（loader 归属，见 prompt-base-store.ts）：预览算的是哪个会话就
+		 * 必须传哪个会话，否则又回到「拿活跃会话的账算后台会话」的老坑。
+		 */
+		session?: AgentSession;
 	}): PromptComposerInputs {
-		const preset = src.preset ?? this.conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+		const preset = src.preset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+		const promptBase = readPromptBase(src.session?.resourceLoader);
 		// 技能名录指纹观测（只打日志，不干预组装；预览与 run 共用此入口，
 		// 变化才记一行，首轮静默）。用未注文的目录（fill 前），全文注入不影响指纹。
 		this.noteSkillCatalogDigest(src.skills);
@@ -2817,7 +2827,8 @@ export class ClientSession {
 		const isRemote = isRemoteWorkspaceUri(realCwd);
 		return {
 			cwd: formatCwdForPrompt(realCwd),
-			systemPromptFile: this.lastBaseSystemPrompt || undefined,
+			// 空串 = 没有 SYSTEM.md（loader 记录的 base 原文，绝不沿用别的会话）。
+			systemPromptFile: promptBase.system || undefined,
 			builtinSoul: BUILTIN_SOUL,
 			selectedTools: src.selectedTools,
 			toolSnippets: src.toolSnippets,
@@ -2828,7 +2839,7 @@ export class ClientSession {
 			piReadme: PI_DOC_PATHS.readme,
 			piDocs: PI_DOC_PATHS.docs,
 			piExamples: PI_DOC_PATHS.examples,
-			appendFiles: this.lastSdkAppendFiles,
+			appendFiles: [...promptBase.append],
 			windowsPersona: isRemote
 				? buildRemoteWorkspacePersona(realCwd)
 				: process.platform === "win32"
@@ -2872,8 +2883,10 @@ export class ClientSession {
 		lazy?: boolean;
 		/** 延迟加载：工具目录（全部可用工具，顺序稳定）。 */
 		catalogTools?: string[];
+		/** 这份提示词归属的会话（见 composeInputs 同名参数）。 */
+		session?: AgentSession;
 	}): string | undefined {
-		const preset = src.preset ?? this.conv?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+		const preset = src.preset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
 		const showSkills = presetShowsSkillCatalog(preset);
 		const effectiveSkills = showSkills ? this.fillSkillContents(src.skills) : [];
 		return renderMainCompose(this.composeInputs(src), {
@@ -2960,6 +2973,8 @@ export class ClientSession {
 						filePath: (s as { filePath?: string }).filePath ?? "",
 					})),
 					preset,
+					// base（SYSTEM.md / APPEND_SYSTEM.md）跟着 loader 走：算哪个会话就读哪个会话。
+					session: sess,
 				}),
 			);
 			// 模板/覆盖渲染（无自定义模板时用默认模板渲染完整提示词，确保与真实 run 规则一致且包含预设过滤）。
@@ -4001,95 +4016,99 @@ export class ClientSession {
 					() => this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity),
 					effectiveCwd,
 				);
+				// 本次 runtime 的提示词 base（SYSTEM.md / APPEND_SYSTEM.md 原文）—— 由
+				// prompt-base-store 登记到**本 loader**（session 本体）名下，而不是本客户端：
+				// base 缺失就写空、每次 reload 覆盖，所以切项目不可能沿用上一个项目的内容，
+				// 过户搬 session 时记录也跟着走（issue #812）。
+				const promptBase = createPromptBaseObservers({
+					// 返回给 SDK 的值：主会话原样返回 base —— 默认分支据此保留 .pi/SYSTEM.md
+					// （TUI 同语义）；以前恒返回 undefined，组合模板未激活时 SYSTEM.md 被静默
+					// 丢弃。组合模板激活时 before_agent_start 整体换掉提示词，二者不叠加。
+					// 子代理模板 replace：有 base 时整体替换（无 base 时留给下方 persona
+					// 扩展做灵魂段替换，保留工具/文档自动段）。
+					system: (base) =>
+						base && apply && apply.promptMode === "replace" && this.templatePrompt(apply).trim()
+							? this.templatePrompt(apply)
+							: base,
+					// APPEND_SYSTEM.md 之上再叠运行时段（模板 append / 计划模式 / 审查者 / 沙箱 /
+					// 平台 persona / 终端引导 / 标记工具引导）。base 已由工厂登记给 loader，
+					// {{append}} 用的就是那份原文 —— 这里 push 的额外段不会回灌到 composer。
+					append: (base) => {
+						const out = [...base];
+						if (apply && apply.promptMode === "append" && this.templatePrompt(apply).trim()) {
+							out.push(this.templatePrompt(apply));
+						}
+						// 主会话自定义「追加」已并入组合模板的 {{append}} 覆盖，不再在此注入。
+						// 计划模式：只规划不实施 —— 硬闸门（server/plan-mode.ts 拒写类/旁路
+						// 工具与非常规 bash）之外再补一段软约束，每轮重建提示词时读当前
+						// 会话状态，切换后下一次 reload 生效。提示词正文可在设置面板改
+						// （追加/替换内置默认，见 buildPlanModePrompt）。
+						// ⚠️ 这一段与平台无关（曾在 win32 分支里被误嵌套，导致非 Windows
+						// 上计划模式的软约束从来没进过提示词，只有硬闸门在挡）。
+						if (this.planModeOf(ownerId)) {
+							const planPrefs = this.settingsSvc.current;
+							out.push(buildPlanModePrompt(planPrefs.planModePromptMode, planPrefs.planModePrompt));
+						}
+						// 审查者模式（自动委派）：本对话只审阅，活由服务端派给常驻执行对话。
+						// 与计划模式**互斥优先级**：计划模式开着时以计划模式为准，不派活。
+						if (this.delegateModeOf(ownerId) && !this.planModeOf(ownerId)) {
+							out.push(DELEGATION_SYSTEM_PROMPT);
+						}
+						const activeSandbox = this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity);
+						if (activeSandbox) {
+							out.push(
+								`[Sandbox Isolation Mode] You are operating inside an isolated sandbox workspace "${activeSandbox.name}" at "${activeSandbox.path}".` +
+									(activeSandbox.sourcePath
+										? ` This sandbox is an isolated copy of "${activeSandbox.sourcePath}". NEVER read from or modify "${activeSandbox.sourcePath}" directly; make all changes exclusively within the current sandbox directory "${activeSandbox.path}".`
+										: ` Keep all file operations strictly inside "${activeSandbox.path}".`) +
+									" Only restricted local file editing is supported. Shell commands, scripts, terminals, evaluation, and unknown tools are unavailable without an OS isolation backend.",
+							);
+						}
+						const realCwd = restoreWorkspaceUriFromSessionDir(effectiveCwd);
+						if (isRemoteWorkspaceUri(realCwd)) {
+							// 远程 SSH 工作区：明确告知 AI 当前处于远程主机以及所有工具已透明桥接至远端，
+							// 绝不注入本地 WINDOWS_PERSONA 以免误导模型以为在本地 Windows 环境。
+							out.push(buildRemoteWorkspacePersona(realCwd));
+						} else if (process.platform === "win32") {
+							// Windows 专属 persona：bash 工具跑 Git Bash 且无默认超时、终端
+							// 是交互式 TTY——注入约束避免 heredoc/交互/长驻命令挂死整个会话；
+							// GBK 老中文文件让模型改用终端按正确编码读（iconv/chcp/Get-Content）。
+							out.push(WINDOWS_PERSONA);
+						}
+						// 终端引导只教「开关开着且预设下仍可用」的工具（见 tool-manager.ts 语义总表）。
+						const presetForGuidance =
+							this.convs.get(ownerId ?? "")?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
+						if (isTerminalGuidanceOn(effectiveDisabledAgentTools(this.settingsSvc.current), presetForGuidance)) {
+							// 终端工具使用引导（全平台）：告诉模型什么场景该用持久终端
+							// 而不是一次性 bash——没有这段模型几乎从不主动选终端工具。
+							// 组内工具全关时不注入（不教 AI 用不存在的工具）。
+							out.push(TERMINAL_TOOLS_GUIDANCE);
+						}
+						// bash 管道限制已并入 bash 工具自身的 description，不再作为独立提示段注入。
+						// 内置标记工具引导（按总开关/分组开关过滤）
+						const markerGuidance = this.markerSvc.buildGuidance();
+						if (markerGuidance) out.push(markerGuidance);
+						return out;
+					},
+				});
 				const services = await createAgentSessionServices({
 					cwd: effectiveCwd,
 					modelRuntime: this.sharedModelRuntime,
-					// 设置面板钩子（官方 SDK 的 resourceLoader overrides）：三个 override
-					// 在每次 resourceLoader.reload() 时重放，且读取 this.settings 的当前
-					// 值——因此 session.reload() 即可让系统提示词 / 技能 / 插件开关生效，
-					// 新对话（新 runtime）也会自动带上当前设置。
-					// 子代理带模板（apply）时：prompt/skills/extensions 改读模板视图——
-					// replace 模式：无 SYSTEM.md 时把灵魂段替换为模板提示词（见下方
-					// pi-webui-persona 内联扩展）；有 SYSTEM.md 时仍由 systemPromptOverride
-					// 整体替换 base。append 模式把模板提示词追加到
-					// 末尾（此时主会话的自定义 prompt 不再叠加，角色由模板定义）；非空
+					// 设置面板钩子（官方 SDK 的 resourceLoader overrides）：override 在每次
+					// resourceLoader.reload() 时重放，且读取 this.settings 的当前值——因此
+					// session.reload() 即可让系统提示词 / 技能 / 插件开关生效，新对话（新 runtime）
+					// 也会自动带上当前设置。
+					// 子代理带模板（apply）时：prompt/skills/extensions 改读模板视图——replace 模式
+					// 把基座换成模板提示词（无 SYSTEM.md 时由下方 pi-webui-persona 内联扩展换掉
+					// 灵魂段），append 模式把模板提示词追加到末尾（此时角色由模板定义）；非空
 					// 白名单取代主会话开关（只启用这些），空白名单 = 跟随主会话。
 					resourceLoaderOptions: {
 						// Filter before import: extensionsOverride runs after arbitrary module initialization.
 						...sandboxExtensionOptions(Boolean(sandboxIdentity) || Boolean(this.botExecution)),
-						// 系统提示词 base：主会话（组合模板）恒返回 undefined → SDK 走默认分支，
-						// 工具列表/Guidelines/文档指引等自动段照常拼装；SYSTEM.md 内容仅在
-						// 此处捕获（lastBaseSystemPrompt）作 {{soul}} 自动内容。子代理模板
-						// replace 在存在 SYSTEM.md base 时整体替换该 base。
-						systemPromptOverride: (base?: string) => {
-							if (typeof base === "string" && base) {
-								this.lastBaseSystemPrompt = base;
-								if (apply && apply.promptMode === "replace" && this.templatePrompt(apply).trim()) {
-									return this.templatePrompt(apply);
-								}
-							}
-							return undefined;
-						},
-						appendSystemPromptOverride: (base: string[]) => {
-							// 记录 SDK APPEND_SYSTEM.md base（composer {{append}} 自动内容）。
-							if (!apply) this.lastSdkAppendFiles = base.slice();
-							const out = [...base];
-							if (this.botExecution?.bot.systemPrompt) out.push(this.botExecution.bot.systemPrompt);
-							if (apply && apply.promptMode === "append" && this.templatePrompt(apply).trim()) {
-								out.push(this.templatePrompt(apply));
-							}
-							// 主会话自定义「追加」已并入组合模板的 {{append}} 覆盖，不再在此注入。
-							// 计划模式：只规划不实施 —— 硬闸门（server/plan-mode.ts 拒写类/旁路
-							// 工具与非常规 bash）之外再补一段软约束，每轮重建提示词时读当前
-							// 会话状态，切换后下一次 reload 生效。提示词正文可在设置面板改
-							// （追加/替换内置默认，见 buildPlanModePrompt）。
-							// ⚠️ 这一段与平台无关（曾在 win32 分支里被误嵌套，导致非 Windows
-							// 上计划模式的软约束从来没进过提示词，只有硬闸门在挡）。
-							if (this.planModeOf(ownerId)) {
-								const planPrefs = this.settingsSvc.current;
-								out.push(buildPlanModePrompt(planPrefs.planModePromptMode, planPrefs.planModePrompt));
-							}
-							// 审查者模式（自动委派）：本对话只审阅，活由服务端派给常驻执行对话。
-							// 与计划模式**互斥优先级**：计划模式开着时以计划模式为准，不派活。
-							if (this.delegateModeOf(ownerId) && !this.planModeOf(ownerId)) {
-								out.push(DELEGATION_SYSTEM_PROMPT);
-							}
-							const activeSandbox = this.sandboxes.getExecutionIdentity(effectiveCwd, sandboxIdentity);
-							if (activeSandbox) {
-								out.push(
-									`[Sandbox Isolation Mode] You are operating inside an isolated sandbox workspace "${activeSandbox.name}" at "${activeSandbox.path}".` +
-										(activeSandbox.sourcePath
-											? ` This sandbox is an isolated copy of "${activeSandbox.sourcePath}". NEVER read from or modify "${activeSandbox.sourcePath}" directly; make all changes exclusively within the current sandbox directory "${activeSandbox.path}".`
-											: ` Keep all file operations strictly inside "${activeSandbox.path}".`) +
-										" Only restricted local file editing is supported. Shell commands, scripts, terminals, evaluation, and unknown tools are unavailable without an OS isolation backend.",
-								);
-							}
-							const realCwd = restoreWorkspaceUriFromSessionDir(effectiveCwd);
-							if (isRemoteWorkspaceUri(realCwd)) {
-								// 远程 SSH 工作区：明确告知 AI 当前处于远程主机以及所有工具已透明桥接至远端，
-								// 绝不注入本地 WINDOWS_PERSONA 以免误导模型以为在本地 Windows 环境。
-								out.push(buildRemoteWorkspacePersona(realCwd));
-							} else if (process.platform === "win32") {
-								// Windows 专属 persona：bash 工具跑 Git Bash 且无默认超时、终端
-								// 是交互式 TTY——注入约束避免 heredoc/交互/长驻命令挂死整个会话；
-								// GBK 老中文文件让模型改用终端按正确编码读（iconv/chcp/Get-Content）。
-								out.push(WINDOWS_PERSONA);
-							}
-							// 终端引导只教「开关开着且预设下仍可用」的工具（见 tool-manager.ts 语义总表）。
-							const presetForGuidance =
-								this.convs.get(ownerId ?? "")?.agentPreset ?? this.settingsSvc.current.defaultAgentPreset ?? "standard";
-							if (isTerminalGuidanceOn(effectiveDisabledAgentTools(this.settingsSvc.current), presetForGuidance)) {
-								// 终端工具使用引导（全平台）：告诉模型什么场景该用持久终端
-								// 而不是一次性 bash——没有这段模型几乎从不主动选终端工具。
-								// 组内工具全关时不注入（不教 AI 用不存在的工具）。
-								out.push(TERMINAL_TOOLS_GUIDANCE);
-							}
-							// bash 管道限制已并入 bash 工具自身的 description，不再作为独立提示段注入。
-							// 内置标记工具引导（按总开关/分组开关过滤）
-							const markerGuidance = this.markerSvc.buildGuidance();
-							if (markerGuidance) out.push(markerGuidance);
-							return out;
-						},
+						// 提示词基座（SYSTEM.md / APPEND_SYSTEM.md）：登记归属 + 决定返回给 SDK 的值，
+						// 见 prompt-base-store.ts（issue #812）。
+						systemPromptOverride: promptBase.systemPromptOverride,
+						appendSystemPromptOverride: promptBase.appendSystemPromptOverride,
 						// 技能：模板非空白名单时只启用白名单里的（显式配置优先于预设）；
 						// 否则按主会话禁用集过滤。预设拿掉 skill 加载器时（minimal/code/ask）
 						// 名录同步隐藏——列出来但调不动只是噪音（见 tool-manager.ts 语义总表）。
@@ -4250,6 +4269,9 @@ export class ClientSession {
 												filePath: s.filePath ?? "",
 											})),
 											preset: currentPreset,
+											// SYSTEM.md / APPEND_SYSTEM.md 的 base 取自**本会话**的 loader，不是
+											// 「最近一次 reload 观察到」的客户端级字段（issue #812）。
+											session: sess ?? undefined,
 										});
 										if (rendered) {
 											return { systemPrompt: rewrap(rendered) };
@@ -4271,6 +4293,9 @@ export class ClientSession {
 						],
 					},
 				});
+				// override 的首次重放发生在 createAgentSessionServices 内部（那时还没有加载器
+				// 句柄）：拿到 loader 后补登记一次，后续 session.reload() 直接按 loader 写。
+				promptBase.bind(services.resourceLoader);
 				// 桥接工具目标（问卷 / 页面）：每次调用都解析「现在谁持有这条对话」，
 				// 而不是认这个 runtime 是在哪个 ClientSession 里建出来的（过户会换主）。
 				// anchor 在拿到 created.session 后回填（SDK 的 runtime.session 就是它）。

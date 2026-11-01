@@ -89,7 +89,12 @@ export function overrideOf(overrides: Record<string, string> | undefined, token:
 export interface PromptComposerInputs {
 	/** 当前工作目录（反斜杠会转正斜杠）。 */
 	cwd: string;
-	/** SYSTEM.md 文件内容（项目/全局），存在时作为 {{soul}} 默认；缺省用内置默认。 */
+	/** SYSTEM.md 文件内容（项目/全局，**原文**：不做 trim），存在时作为 {{soul}} 默认；
+	 *  缺省用内置默认。语义与 SDK 一致（issue #812）：
+	 *  - `undefined` / `""`（无文件、0 字节）→ 内置默认；
+	 *  - 纯空白文件（`" \n"`）→ **保留原文**（正文就等于空白，TUI 同语义）。
+	 *    旧实现的 `.trim()` 判定把纯空白文件当成「无文件」，既与 TUI 不一致，
+	 *    也是「SWITCH 到空白项目就意外重置」假象的来源。 */
 	systemPromptFile?: string;
 	/** 内置灵魂段落（无 SYSTEM.md 时 {{soul}} 的自动内容）。 */
 	builtinSoul: string;
@@ -400,8 +405,11 @@ export function buildToolsSchemaText(tools: ToolSchemaEntry[]): string {
 export function resolveSectionTexts(inputs: PromptComposerInputs): Record<PromptToken, string> {
 	const cwd = inputs.cwd.replace(/\\/g, "/");
 	const lang: ServerLang = inputs.lang ?? "en";
-	// soul：用户 SYSTEM.md 优先；无则按 lang 选内置默认（调用方自定义的 builtinSoul 原样保留）。
-	let soul = inputs.systemPromptFile?.trim() ? inputs.systemPromptFile : inputs.builtinSoul;
+	// soul：用户 SYSTEM.md 优先（真值判定，与 SDK `if (customPrompt)` 同语义：
+	// 纯空白文件 = 空提示词，不是「没文件」）；无则按 lang 选内置默认（调用方
+	// 自定义的 builtinSoul 原样保留）。
+	const soulSource = inputs.systemPromptFile;
+	let soul = soulSource ? soulSource : inputs.builtinSoul;
 	if (lang === "zh" && soul === BUILTIN_SOUL) soul = BUILTIN_SOUL_ZH;
 	else if (soul === BUILTIN_SOUL)
 		soul = getServerBlock(lang, "prompt.soul", BUILTIN_SOUL_ZH.split("\n"), BUILTIN_SOUL.split("\n")).join("\n");

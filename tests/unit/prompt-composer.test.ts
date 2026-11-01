@@ -16,7 +16,6 @@ import {
 	resolveSectionTexts,
 	splitExtensionWrap,
 	type PromptComposerInputs,
-	type PromptToken,
 } from "../../server/prompt-composer.js";
 
 const AGENTS_CONTENT = "# AGENTS.md — pi-web-ui 项目指南\n\n详细文档按主题分拆在 docs/ 目录下。";
@@ -85,6 +84,18 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		const withFile = resolveSectionTexts(inputs({ systemPromptFile: custom }));
 		expect(withFile.soul.startsWith(custom)).toBe(true);
 		expect(withFile.soul).toContain("Be concise in your responses");
+	});
+
+	it("soul：纯空白 SYSTEM.md 原样保留（= 空提示词，TUI 同语义）", () => {
+		// issue #812：SDK 用 `if (customPrompt)`（真值）判定，所以 " \n" 是「空提示词」
+		// 而不是「没文件」。旧实现的 .trim() 会让它回落内置默认，既与 TUI 不一致，
+		// 也把「切到空白项目就意外重置」伪装成 Bug。
+		const blank = resolveSectionTexts(inputs({ systemPromptFile: " \n" }));
+		expect(blank.soul.startsWith(" \n")).toBe(true);
+		expect(blank.soul.startsWith(BUILTIN_SOUL)).toBe(false);
+		// 0 字节 / undefined 才是「没文件」→ 内置默认。
+		expect(resolveSectionTexts(inputs({ systemPromptFile: "" })).soul.startsWith(BUILTIN_SOUL)).toBe(true);
+		expect(resolveSectionTexts(inputs({ systemPromptFile: undefined })).soul.startsWith(BUILTIN_SOUL)).toBe(true);
 	});
 
 	it("tools：非懒加载且无 snippet 覆盖时返回空串（全量 schema 已下发，目录不重复）", () => {
