@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { createDeviceHub } from "./hub.js";
 import { createDeviceRelay } from "./relay.js";
+import { installDeviceTransfers } from "./transfers.js";
 import { hashSecret } from "./store.js";
 import type { LocalDeviceConfig } from "./local.js";
 
@@ -56,14 +57,29 @@ export async function createLocalDeviceHub(dataDir: string) {
 			authenticateDevice: (id, token) => hub!.store.authenticateDevice(id, token),
 			ownsDevice: (owner, id) => hub!.store.getDeviceOwner(id) === owner,
 			getDeviceName: (id) => hub!.store.getDevice(id)?.name,
+			onTaskProgress: (id, event) => hub!.acceptTaskProgress(id, event),
+			onTaskToolLifecycle: (id, frame) => hub!.acceptTaskToolLifecycle(id, frame),
+			onTaskPlanReady: (id, frame) => hub!.acceptTaskPlanReady(id, frame),
+			onTaskInteractions: (id, event) => hub!.acceptInteractions(id, event),
 			onTaskEvent: async (id, event) => {
 				await hub!.acceptTaskEvent(id, event);
 			},
+			onTaskClaim: (id, claim) => hub!.claimTask(id, claim),
+			onTaskLeaseRenew: (id, renew) => hub!.renewTaskLease(id, renew),
+			onTaskDisconnect: (id, taskId, attemptId) => hub!.onTaskDisconnect(id, taskId, attemptId),
 		});
 		hub.setRelay({
 			onTask: relay.sendTask,
+			answerInteraction: relay.answerInteraction,
 			onRevoke: relay.revoke,
 			handleRequest: relay.handleRequest,
+			callDevice: relay.callDevice,
+		});
+		const transfers = await installDeviceTransfers({
+			app: hub.app,
+			hub,
+			dataDir: join(dataDir, "local-device-hub"),
+			relay,
 		});
 		const config: LocalDeviceConfig = {
 			hubUrl,
@@ -76,6 +92,7 @@ export async function createLocalDeviceHub(dataDir: string) {
 		return {
 			config,
 			async close() {
+				await transfers.close();
 				relay?.close();
 				await hub?.close();
 			},

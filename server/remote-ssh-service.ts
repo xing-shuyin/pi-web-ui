@@ -1504,7 +1504,11 @@ fi
 			const stream = sftp.createWriteStream(remoteAbsPath, opts?.flag ? { flags: opts.flag as any } : undefined);
 			// ssh2 disables Node's close emission and omits its own close on errors.
 			// Restore it so even failed _destroy callbacks signal resource release.
-			const state = (stream as typeof stream & { _writableState?: { emitClose: boolean } })._writableState;
+			const state = (
+				stream as typeof stream & {
+					_writableState?: { emitClose: boolean; finalCalled?: boolean };
+				}
+			)._writableState;
 			if (state) state.emitClose = true;
 			let failure: unknown;
 			let failed = false;
@@ -1520,21 +1524,32 @@ fi
 				stream.destroy();
 			};
 			const abort = () => stop(signal?.reason ?? new Error("SFTP write aborted"));
+			// ssh2's SFTP WriteStream calls `destroy()` from inside `_final`, so Writable never emits
+			// `finish` (proved by instrumenting the real stream: only `close` arrives, after the SFTP
+			// CLOSE acknowledgement). Completion is therefore decided by `close` _after_ `_final` ran:
+			// `_final` only runs once every WRITE has been acknowledged, so `finalCalled` means flushed.
+			const flushed = () => !!state?.finalCalled || stream.writableFinished;
+			const settle = (error?: unknown) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", abort);
+				if (failed) reject(failure);
+				else if (error) reject(error);
+				else resolve();
+			};
 			// Keep this listener after close as ssh2 may still report a late error.
 			stream.on("error", stop);
+			// Recorded only: `close` stays the completion signal, since a bare `finish` does not prove
+			// the SFTP CLOSE acknowledgement (durable flush) ever arrived.
 			stream.on("finish", () => {
 				finished = true;
 			});
 			stream.on("close", () => {
-				// ssh2 may close synchronously inside _final, before finish is emitted.
 				queueMicrotask(() => {
 					if (settled) return;
-					settled = true;
-					clearTimeout(timer);
-					signal?.removeEventListener("abort", abort);
-					if (failed) reject(failure);
-					else if (finished || stream.writableFinished) resolve();
-					else reject(new Error("SFTP write closed before finishing"));
+					if (failed) return settle();
+					settle(finished || flushed() ? undefined : new Error("SFTP write closed before finishing"));
 				});
 			});
 			signal?.addEventListener("abort", abort, { once: true });

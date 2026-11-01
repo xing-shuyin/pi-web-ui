@@ -6,6 +6,7 @@ import { isSafeGraphId, listCanvasGraphs, loadCanvasGraph, saveCanvasGraph } fro
 import { deleteCustomCard, listCustomCards } from "./canvas-cards.js";
 import type { CanvasOrchestrator } from "./canvas-orchestrator.js";
 import { assertCanvasGraph } from "./canvas-validation.js";
+import { validateDeviceProject } from "../device-center/workspaces.js";
 
 export function handleCanvasMessage(
 	msg: ClientMessage,
@@ -118,7 +119,17 @@ export function handleCanvasMessage(
 			try {
 				const graph = loadCanvasGraph(dataDir, msg.graphId);
 				assertCanvasGraph(graph);
-				void orchestrator.runAll(graph, msg.initialPrompt, opts?.runBase).catch((error) => fail(error, msg.graphId));
+				if (msg.cwd !== undefined) {
+					void validateDeviceProject(msg.cwd, dataDir)
+						.then((cwd) => {
+							const current = loadCanvasGraph(dataDir, msg.graphId);
+							assertCanvasGraph(current);
+							return orchestrator.runAll(current, msg.initialPrompt, cwd);
+						})
+						.catch((error) => fail(error, msg.graphId));
+				} else {
+					void orchestrator.runAll(graph, msg.initialPrompt, opts?.runBase).catch((error) => fail(error, msg.graphId));
+				}
 			} catch (error) {
 				fail(error, msg.graphId);
 			}

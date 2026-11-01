@@ -522,8 +522,21 @@ export class AgentService {
 		return false;
 	}
 
-	/** issue #145：跨客户端同会话查重 —— 找持有某 session 文件的别处对话。
-	 *  调用方在 SessionManager.open() 之前问这一句，就造不出第二个 writer。 */
+	/** Dispose confirmed-stopped Bot owners before reopening their authorized transcript. */
+	async prepareBotSessionResume(targetPath: string, excludeClientId: string): Promise<void> {
+		for (const [ownerId, owner] of this.clients) {
+			if (ownerId === excludeClientId || !ownerId.startsWith("device-task-") || isBotExecutionRegistered(ownerId))
+				continue;
+			const conv = owner.findConversationBySessionFile(targetPath);
+			if (!conv || owner.conversationStreaming(conv)) continue;
+			// Registration is released only after confirmed stop. Retire the old
+			// runtime before reopening, even if its socket close is still in flight.
+			this.clients.delete(ownerId);
+			await owner.dispose();
+		}
+	}
+
+	/** issue #145：打开转录前查重，禁止同一文件出现第二个 writer。 */
 	findSessionOwner(targetPath: string, excludeClientId: string): SessionOwnerInfo | null {
 		for (const [clientId, cs] of this.clients) {
 			if (clientId === excludeClientId) continue;
@@ -1364,6 +1377,7 @@ export class AgentService {
 			this.sharedInteractionSinks.set(cs, relay);
 			cs.attachSink(relay);
 		}
+		cs.prepareBotSessionResume = (targetPath) => this.prepareBotSessionResume(targetPath, clientId);
 		cs.findSessionOwner = (targetPath) => this.findSessionOwner(targetPath, clientId);
 		cs.takeOverConversationElsewhere = (ownerId, convId) => this.takeOverConversation(clientId, ownerId, convId);
 		cs.hasStreamingElsewhere = () => this.hasStreamingElsewhere(clientId);

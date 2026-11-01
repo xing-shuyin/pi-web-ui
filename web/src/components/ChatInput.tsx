@@ -89,9 +89,15 @@ function getComposerSafeMaxH(): number {
 interface ChatInputProps {
 	groupDevices?: readonly import("../device-group-messages").GroupDevice[];
 	groupReady?: boolean;
+	groupPrimaryBotName?: string;
 	groupConversationError?: string;
 	groupConversations?: readonly import("../device-group-messages").GroupBotConversation[];
-	onGroupSend?: (text: string, targets: string[], conversationId?: string) => Promise<boolean>;
+	onGroupSend?: (
+		text: string,
+		targets: string[],
+		conversationId?: string,
+		options?: { planOnly?: boolean },
+	) => Promise<boolean>;
 	/** 输入框前置区条目（composer.leading 槽位：纯插件，无内置条目；渲染在文件上传按钮左侧）。 */
 	composerLeading?: import("../ui-slots").UiSlotEntry[];
 	/** 输入框动作区条目（composer.actions 槽位：内置 + 插件的最终结果）。 */
@@ -197,6 +203,7 @@ interface ChatInputProps {
 export const ChatInput = memo(function ChatInput({
 	groupDevices,
 	groupReady,
+	groupPrimaryBotName,
 	groupConversationError,
 	groupConversations = [],
 	onGroupSend,
@@ -308,6 +315,7 @@ export const ChatInput = memo(function ChatInput({
 	/** 全局 prompt 历史导航状态（issue #68）：-1 = 未在历史中，>=0 = 历史下标。 */
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
+	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
 
 	// 撤回的排队/插队消息 → 按序合并回输入框（空则填入、非空追加，见 composer-draft.ts）。
 	// 用 lastRecallSeqRef 去重：已消费的 seq 不再应用（StrictMode/重复渲染下不会重复追加）；
@@ -1287,6 +1295,7 @@ export const ChatInput = memo(function ChatInput({
 					]),
 				],
 				destination,
+				{ planOnly: groupPlanOnly },
 			)
 				.then((ok) => {
 					if (ok && textMirrorRef.current.trim() === trimmed) {
@@ -2053,9 +2062,13 @@ export const ChatInput = memo(function ChatInput({
 					rows={1}
 					placeholder={
 						groupDevices
-							? isZhLocale(locale)
-								? "输入 @，选择 Bot 开始新对话或继续之前的对话"
-								: "Type @ to start or continue a Bot conversation"
+							? groupPrimaryBotName
+								? isZhLocale(locale)
+									? `直接发送给 ${groupPrimaryBotName}，或 @ 其他 Bot`
+									: `Message ${groupPrimaryBotName}, or @ another Bot`
+								: isZhLocale(locale)
+									? "输入 @，选择 Bot 开始新对话或继续之前的对话"
+									: "Type @ to start or continue a Bot conversation"
 							: connected
 								? streaming
 									? isDsh
@@ -2110,11 +2123,64 @@ export const ChatInput = memo(function ChatInput({
 						📋 {t("planModeBadge")} <span style={{ marginLeft: 2, opacity: 0.7 }}>✕</span>
 					</button>
 				)}
+				{groupDevices && groupPlanOnly && (
+					<button
+						type="button"
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 4,
+							fontSize: 11,
+							color: "var(--accent, #38bdf8)",
+							background: "var(--accent-soft, rgba(56, 189, 248, 0.1))",
+							padding: "2px 8px",
+							borderRadius: 12,
+							position: "absolute",
+							right: 12,
+							top: 8,
+							cursor: "pointer",
+							border: "1px solid var(--border, rgba(255, 255, 255, 0.1))",
+							zIndex: 2,
+						}}
+						onClick={() => setGroupPlanOnly(false)}
+						title={isZhLocale(locale) ? "群计划模式（只规划，不实施写操作）" : "Group plan mode (planning only)"}
+					>
+						📋 {isZhLocale(locale) ? "群计划模式" : "Group Plan Mode"}{" "}
+						<span style={{ marginLeft: 2, opacity: 0.7 }}>✕</span>
+					</button>
+				)}
 				{/* 底部工具条（ChatGPT 风格）：附件 / 模型 / 思考强度 在左，
 				    发送 / 停止 在右，全部收进输入框容器内。 */}
 				<div className="composer-tools">
 					{groupDevices ? (
-						<div className="composer-tools-right">{renderActions()}</div>
+						<>
+							<div className="composer-tools-left">
+								<button
+									type="button"
+									className="btn group-at-btn"
+									title={isZhLocale(locale) ? "选择或 @ 群成员 Bot" : "Mention a Bot (@)"}
+									onClick={() => {
+										const ta = taRef.current;
+										const cur = ta ? ta.selectionStart : text.length;
+										const next = text.slice(0, cur) + "@" + text.slice(cur);
+										handleTextChange(next, cur + 1);
+										ta?.focus();
+									}}
+								>
+									@
+								</button>
+								<button
+									type="button"
+									className={`btn group-plan-toggle ${groupPlanOnly ? "active" : ""}`}
+									title={isZhLocale(locale) ? "群任务计划模式（只规划不实施）" : "Group task plan mode (plan only)"}
+									onClick={() => setGroupPlanOnly((prev) => !prev)}
+								>
+									<span className="group-plan-icon">📋</span>
+									<span className="group-plan-label">{isZhLocale(locale) ? "只规划" : "Plan Only"}</span>
+								</button>
+							</div>
+							<div className="composer-tools-right">{renderActions()}</div>
+						</>
 					) : composerWired ? (
 						<>
 							<div className="composer-tools-left">

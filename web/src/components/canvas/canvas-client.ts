@@ -11,6 +11,7 @@ import { randomUuid } from "../../uuid";
 type CanvasMessageListener = (msg: ServerMessage) => void;
 
 export class CanvasClient {
+	constructor(private readonly options: { loadGraphOnConnect?: boolean } = {}) {}
 	private ws: WebSocket | null = null;
 	private readonly clientId = `canvas:${randomUuid().slice(0, 8)}`;
 	private readonly listeners = new Set<CanvasMessageListener>();
@@ -74,9 +75,11 @@ export class CanvasClient {
 				});
 				this.send({ type: "canvas_list" });
 				this.send({ type: "canvas_cards" });
-				const request = { type: "canvas_load" as const, id: this.currentGraphId, requestId: randomUuid() };
-				this.onLoadRequest?.(request);
-				this.send(request);
+				if (this.options.loadGraphOnConnect !== false) {
+					const request = { type: "canvas_load" as const, id: this.currentGraphId, requestId: randomUuid() };
+					this.onLoadRequest?.(request);
+					this.send(request);
+				}
 			};
 
 			ws.onmessage = (ev) => {

@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { parseReportMetadata } from "./report-metadata.js";
+import { integrationErrorFromCode } from "./integration-errors.js";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
@@ -107,12 +109,12 @@ export function safePath(path: unknown, method = "GET"): path is string {
 		if (normalized === "/api/device-center" || normalized.startsWith("/api/device-center/")) {
 			// Only account-scoped chat routes may cross a device portal.
 			if (method === "GET") {
-				return /^\/api\/device-center\/(chat-status|devices|bots|rooms(?:\/[^/]+(?:\/conversations(?:\/[^/]+)?)?)?)$/.test(
+				return /^\/api\/device-center\/(chat-status|devices|bots|rooms(?:\/[^/]+(?:\/(?:events|interactions|conversations(?:\/[^/]+)?))?)?)$/.test(
 					normalized,
 				);
 			}
 			if (method === "POST")
-				return /^\/api\/device-center\/rooms(?:\/[^/]+\/(messages|rename|members|clear|delete|conversations(?:\/[^/]+\/(messages|stop))?))?$/.test(
+				return /^\/api\/device-center\/rooms(?:\/[^/]+\/(messages|rename|members|clear|delete|interactions|conversations(?:\/[^/]+\/(messages|stop|deliveries|reviews))?))?$/.test(
 					normalized,
 				);
 			return false;
@@ -125,7 +127,22 @@ export function safePath(path: unknown, method = "GET"): path is string {
 	}
 }
 
-export const COMMANDS = ["transfer_stage", "transfer_preview", "transfer_apply"] as const;
+export const COMMANDS = [
+	"transfer_stage",
+	"transfer_preview",
+	"transfer_apply",
+	"transfer_init",
+	"transfer_chunk",
+	"transfer_status",
+	"transfer_abort",
+	"transfer_prepare_export",
+	"transfer_read_chunk",
+	"transfer_fence",
+	"integration_prepare",
+	"integration_verify",
+	"integration_confirm",
+	"integration_cancel",
+] as const;
 export type DeviceCommand = (typeof COMMANDS)[number];
 const RPC_BYTES = 12 * 1024 * 1024;
 /** Bounded chunked RPC, scoped to exactly one authenticated connection. */
@@ -140,6 +157,7 @@ export function createCommandChannel(
 			bytes: number;
 			incoming: boolean;
 			executing?: boolean;
+			cancelling?: boolean;
 			action?: DeviceCommand;
 			controller: AbortController;
 			timer: NodeJS.Timeout;
@@ -162,7 +180,8 @@ export function createCommandChannel(
 		if (ended || pending.size >= 4 || pending.has(id)) throw new Error("Command capacity exceeded");
 		const timer = setTimeout(() => {
 			sendFrame(ws, { type: "rpc_cancel", id });
-			remove(id, new Error("Command timed out"));
+			const err = Object.assign(new Error("Command timed out"), { stopUnconfirmed: true });
+			remove(id, err);
 		}, 60_000);
 		timer.unref();
 		const item = {
@@ -216,9 +235,19 @@ export function createCommandChannel(
 				}
 				item.resolve = resolve;
 				item.reject = reject;
+				item.action = action;
 				const abort = () => {
+					if (item.cancelling) return;
+					item.cancelling = true;
 					sendFrame(ws, { type: "rpc_cancel", id });
-					remove(id, new Error("Command cancelled"));
+					clearTimeout(item.timer);
+					item.timer = setTimeout(() => {
+						const err = Object.assign(new Error("Command cancellation unconfirmed: timeout"), {
+							stopUnconfirmed: true,
+						});
+						remove(id, err);
+					}, 30_000);
+					item.timer.unref();
 				};
 				options.signal?.addEventListener("abort", abort, { once: true });
 				item.detach = () => options.signal?.removeEventListener("abort", abort);
@@ -227,8 +256,10 @@ export function createCommandChannel(
 					return;
 				}
 				void transmit(id, "rpc_request", payload, item.controller.signal).catch((error) => {
-					sendFrame(ws, { type: "rpc_cancel", id });
-					remove(id, error);
+					if (!item.cancelling) {
+						sendFrame(ws, { type: "rpc_cancel", id });
+						remove(id, error);
+					}
 				});
 			});
 		},
@@ -248,8 +279,21 @@ export function createCommandChannel(
 			}
 			const item = pending.get(id);
 			if (!item) return true;
-			if (frame.type === "rpc_cancel" || frame.type === "rpc_error") {
+			if (frame.type === "rpc_cancel") {
+				if (item.incoming && item.executing) {
+					item.controller.abort();
+					return true;
+				}
 				remove(id, new Error("Remote command rejected"));
+				return true;
+			}
+			if (frame.type === "rpc_cancel_ack") {
+				remove(id, new Error("Remote command cancelled"));
+				return true;
+			}
+			if (frame.type === "rpc_error") {
+				const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(frame.code) : undefined;
+				remove(id, safeError ?? new Error("Remote command rejected"));
 				return true;
 			}
 			if (item.executing) throw new Error("Command already executing");
@@ -273,13 +317,27 @@ export function createCommandChannel(
 			}
 			item.executing = true;
 			const run = async () => {
+				let wasAborted = false;
+				const onAbort = () => {
+					wasAborted = true;
+				};
+				item.controller.signal.addEventListener("abort", onAbort, { once: true });
 				try {
 					const result = await handler!(item.action!, value, item.controller.signal);
 					if (pending.get(id) !== item) return;
+					if (wasAborted || item.controller.signal.aborted) return;
 					await transmit(id, "rpc_response", result, item.controller.signal);
-				} catch {
-					if (pending.get(id) === item) sendFrame(ws, { type: "rpc_error", id });
+				} catch (error) {
+					if (!wasAborted && !item.controller.signal.aborted && pending.get(id) === item) {
+						const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+						const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(code) : undefined;
+						sendFrame(ws, { type: "rpc_error", id, ...(safeError ? { code } : {}) });
+					}
 				} finally {
+					item.controller.signal.removeEventListener("abort", onAbort);
+					if (wasAborted || item.controller.signal.aborted) {
+						sendFrame(ws, { type: "rpc_cancel_ack", id });
+					}
 					remove(id);
 				}
 			};
@@ -288,7 +346,17 @@ export function createCommandChannel(
 		},
 		close() {
 			ended = true;
-			for (const id of pending.keys()) remove(id, new Error("Device disconnected"));
+			for (const [id, item] of pending.entries()) {
+				const err = Object.assign(
+					new Error(
+						item.cancelling
+							? "Command cancellation unconfirmed: device disconnected"
+							: "Device disconnected before command completed",
+					),
+					{ stopUnconfirmed: true },
+				);
+				remove(id, err);
+			}
 		},
 	};
 }
@@ -417,7 +485,32 @@ export interface DeviceRelayOptions {
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
 	onTaskEvent?: (deviceId: string, event: any) => void | Promise<void>;
+	onTaskProgress?: (deviceId: string, event: any) => void | Promise<void>;
+	onTaskInteractions?: (deviceId: string, event: any) => void | Promise<void>;
+	onTaskClaim?: (
+		deviceId: string,
+		claim: import("../protocol.js").DeviceTaskClaim,
+	) => Promise<import("../protocol.js").DeviceTaskClaimResult> | import("../protocol.js").DeviceTaskClaimResult;
+	onTaskLeaseRenew?: (
+		deviceId: string,
+		renew: import("../protocol.js").DeviceTaskLeaseRenew,
+	) => Promise<import("../protocol.js").DeviceTaskLeaseResult> | import("../protocol.js").DeviceTaskLeaseResult;
+	onTaskToolLifecycle?: (
+		deviceId: string,
+		lifecycle: import("../protocol.js").DeviceTaskToolLifecycleFrame,
+	) => Promise<void> | void;
+	onTaskPlanReady?: (
+		deviceId: string,
+		frame: import("../protocol.js").DeviceTaskPlanReadyFrame,
+	) => Promise<boolean> | boolean;
+	onTaskDisconnect?: (deviceId: string, taskId: string, attemptId: string) => void | Promise<void>;
 }
+export interface RelayTaskBinding {
+	attemptId: string;
+	botId: string;
+	hasLease?: boolean;
+}
+
 export function createDeviceRelay(options: DeviceRelayOptions) {
 	const hub = checkedUrl(options.publicUrl);
 	const domain = options.deviceDomain?.toLowerCase();
@@ -435,9 +528,12 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	}
 	if (!["http:", "https:"].includes(hub.protocol) || hub.pathname !== "/" || hub.search)
 		throw new Error("publicUrl must be an HTTP(S) root origin");
+	const interactionAcks = new Map<string, { ws: WebSocket; finish: (ok: boolean) => void }>();
+	const deviceGenerations = new Map<string, number>();
 	const devices = new Map<
 		string,
 		{
+			generation: number;
 			ws: WebSocket;
 			streams: Map<
 				string,
@@ -449,7 +545,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					timer: NodeJS.Timeout;
 				}
 			>;
-			tasks: Map<string, { attemptId: string; botId: string }>;
+			tasks: Map<string, RelayTaskBinding>;
 			cancellations: Map<string, { taskId: string; attemptId: string; finish: (stopped: boolean) => void }>;
 			rpc: ReturnType<typeof createCommandChannel>;
 			messages: ReturnType<typeof createWsMessageChannel>;
@@ -533,22 +629,36 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		if (!["GET", "HEAD", "OPTIONS"].includes(req.method || "GET") && req.headers.origin !== origin(id)) return false;
 		return true;
 	}
-	function drop(id: string, entry: typeof devices extends Map<string, infer T> ? T : never) {
+	function drop(
+		id: string,
+		entry: typeof devices extends Map<string, infer T> ? T : never,
+		optionsDrop?: { isRevoke?: boolean },
+	) {
+		for (const pending of interactionAcks.values()) if (pending.ws === entry.ws) pending.finish(false);
 		for (const pending of entry.cancellations.values()) pending.finish(false);
 		entry.rpc.close();
 		entry.messages.close();
-		for (const [taskId, { attemptId, botId }] of entry.tasks) {
-			Promise.resolve()
-				.then(() =>
-					options.onTaskEvent?.(id, {
-						taskId,
-						botId,
-						attemptId,
-						status: "interrupted",
-						report: "Device connection lost; task is not replayed",
-					}),
-				)
-				.catch(() => {});
+		for (const [taskId, { attemptId, botId, hasLease }] of entry.tasks) {
+			if (optionsDrop?.isRevoke || !hasLease) {
+				Promise.resolve()
+					.then(() =>
+						options.onTaskEvent?.(id, {
+							taskId,
+							botId,
+							attemptId,
+							status: "interrupted",
+							report: optionsDrop?.isRevoke
+								? "Device revoked; task interrupted."
+								: "Device connection lost; task is not replayed",
+						}),
+					)
+					.catch(() => {});
+			} else {
+				// Retain recovery grace window on Hub for tasks with active lease!
+				Promise.resolve()
+					.then(() => options.onTaskDisconnect?.(id, taskId, attemptId))
+					.catch(() => {});
+			}
 		}
 		entry.tasks.clear();
 		for (const stream of entry.streams.values()) {
@@ -895,10 +1005,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					drop(device, old);
 					old.ws.terminate();
 				}
+				const gen = (deviceGenerations.get(device) ?? 0) + 1;
+				deviceGenerations.set(device, gen);
 				const entry = {
+					generation: gen,
 					ws,
 					streams: new Map(),
-					tasks: new Map<string, { attemptId: string; botId: string }>(),
+					tasks: new Map<string, RelayTaskBinding>(),
 					cancellations: new Map<string, { taskId: string; attemptId: string; finish: (stopped: boolean) => void }>(),
 					rpc: createCommandChannel(ws),
 					messages: createWsMessageChannel(ws),
@@ -923,21 +1036,184 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 							pending.finish(frame.stopped);
 							return;
 						}
+						if (frame.type === "task_interaction_result") {
+							const pending = typeof frame.id === "string" ? interactionAcks.get(frame.id) : undefined;
+							if (pending?.ws === ws) pending.finish(frame.accepted === true);
+							return;
+						}
+						if (frame.type === "task_interactions") {
+							if (typeof frame.taskId !== "string") return;
+							const task = entry.tasks.get(frame.taskId);
+							if (!task || task.attemptId !== frame.attemptId || task.botId !== frame.botId) return;
+							Promise.resolve()
+								.then(() => options.onTaskInteractions?.(device, frame))
+								.catch(() => {});
+							return;
+						}
+						if (frame.type === "task_tool_lifecycle") {
+							if (typeof frame.taskId !== "string") return;
+							const task = entry.tasks.get(frame.taskId);
+							if (!task || task.attemptId !== frame.attemptId || task.botId !== frame.botId) return;
+							Promise.resolve()
+								.then(() =>
+									options.onTaskToolLifecycle?.(
+										device,
+										frame as unknown as import("../protocol.js").DeviceTaskToolLifecycleFrame,
+									),
+								)
+								.catch(() => {});
+							return;
+						}
+						if (frame.type === "task_plan_ready") {
+							if (typeof frame.taskId !== "string") return;
+							const task = entry.tasks.get(frame.taskId);
+							const authorized = task && task.attemptId === frame.attemptId && task.botId === frame.botId;
+							Promise.resolve()
+								.then(() =>
+									authorized
+										? options.onTaskPlanReady?.(
+												device,
+												frame as unknown as import("../protocol.js").DeviceTaskPlanReadyFrame,
+											)
+										: false,
+								)
+								.catch(() => false)
+								.then((accepted) => {
+									if (ws.readyState === WebSocket.OPEN)
+										sendFrame(ws, {
+											type: "task_plan_ack",
+											taskId: frame.taskId,
+											botId: frame.botId,
+											attemptId: frame.attemptId,
+											accepted: accepted === true,
+										});
+								});
+							return;
+						}
+						if (frame.type === "task_progress") {
+							if (typeof frame.taskId !== "string") return;
+							const task = entry.tasks.get(frame.taskId);
+							if (!task || task.attemptId !== frame.attemptId || task.botId !== frame.botId) return;
+							Promise.resolve()
+								.then(() => options.onTaskProgress?.(device, frame))
+								.catch(() => {});
+							return;
+						}
 						if (frame.type === "task_event") {
+							const taskId = frame.taskId;
+							const botId = frame.botId;
+							const attemptId = frame.attemptId;
 							if (
-								typeof frame.taskId !== "string" ||
-								typeof frame.botId !== "string" ||
-								entry.tasks.get(frame.taskId)?.attemptId !== frame.attemptId ||
-								entry.tasks.get(frame.taskId)?.botId !== frame.botId ||
-								!["running", "completed", "failed"].includes(String(frame.status))
+								typeof taskId !== "string" ||
+								typeof botId !== "string" ||
+								typeof attemptId !== "string" ||
+								!["running", "completed", "failed", "interrupted"].includes(String(frame.status))
 							)
 								throw new Error("Unknown task");
-							if (frame.status === "completed" || frame.status === "failed") entry.tasks.delete(frame.taskId);
+							if (frame.reportMetadata !== undefined) frame.reportMetadata = parseReportMetadata(frame.reportMetadata);
+							const current = entry.tasks.get(taskId);
+							if (current && (current.attemptId !== attemptId || current.botId !== botId))
+								throw new Error("Unknown task");
 							Promise.resolve()
 								.then(() => options.onTaskEvent?.(device, frame))
+								.then(() => {
+									if (devices.get(device) === entry) {
+										const postCheck = entry.tasks.get(taskId);
+										if (postCheck && postCheck.attemptId === attemptId && postCheck.botId === botId) {
+											if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
+												entry.tasks.delete(taskId);
+											}
+										}
+										if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
+											sendFrame(ws, {
+												type: "task_result_ack",
+												taskId: frame.taskId,
+												attemptId: frame.attemptId,
+												status: frame.status,
+												...(typeof frame.fingerprint === "string" ? { fingerprint: frame.fingerprint } : {}),
+											});
+										}
+									}
+								})
 								.catch(() => ws.terminate());
 							return;
 						}
+						// === Task Recovery / Reconnect Claim / Lease Renewal ===
+						if (frame.type === "task_claim") {
+							const rawClaim = (frame as { claim?: unknown }).claim ?? frame;
+							if (
+								!rawClaim ||
+								typeof rawClaim !== "object" ||
+								typeof (rawClaim as Record<string, unknown>).taskId !== "string" ||
+								((rawClaim as Record<string, unknown>).taskId as string).length > 128 ||
+								typeof (rawClaim as Record<string, unknown>).attemptId !== "string" ||
+								((rawClaim as Record<string, unknown>).attemptId as string).length > 128 ||
+								typeof (rawClaim as Record<string, unknown>).botId !== "string" ||
+								((rawClaim as Record<string, unknown>).botId as string).length > 128
+							)
+								return;
+							const claim = rawClaim as import("../protocol.js").DeviceTaskClaim;
+							Promise.resolve()
+								.then(() => options.onTaskClaim?.(device, claim))
+								.then((result) => {
+									if (devices.get(device) !== entry) return;
+									const accepted = result?.accepted === true;
+									if (accepted) {
+										entry.tasks.set(claim.taskId, {
+											attemptId: claim.attemptId,
+											botId: claim.botId,
+											hasLease: true,
+										});
+									}
+									sendFrame(ws, {
+										type: "task_claim_result",
+										taskId: claim.taskId,
+										attemptId: claim.attemptId,
+										accepted,
+										reason: result?.reason,
+									});
+								})
+								.catch(() => {
+									if (devices.get(device) === entry) {
+										sendFrame(ws, {
+											type: "task_claim_result",
+											taskId: claim.taskId,
+											attemptId: claim.attemptId,
+											accepted: false,
+											reason: "Claim rejected",
+										});
+									}
+								});
+							return;
+						}
+						if (frame.type === "task_lease_renew") {
+							const rawRenew = (frame as { renew?: unknown }).renew;
+							if (
+								!rawRenew ||
+								typeof rawRenew !== "object" ||
+								typeof (rawRenew as Record<string, unknown>).taskId !== "string" ||
+								((rawRenew as Record<string, unknown>).taskId as string).length > 128 ||
+								typeof (rawRenew as Record<string, unknown>).attemptId !== "string" ||
+								((rawRenew as Record<string, unknown>).attemptId as string).length > 128
+							)
+								return;
+							const renew = rawRenew as import("../protocol.js").DeviceTaskLeaseRenew;
+							Promise.resolve()
+								.then(() => options.onTaskLeaseRenew?.(device, renew))
+								.then((result) => {
+									if (devices.get(device) !== entry) return;
+									sendFrame(ws, {
+										type: "task_lease_result",
+										taskId: renew.taskId,
+										attemptId: renew.attemptId,
+										accepted: result?.accepted === true,
+										reason: result?.reason,
+									});
+								})
+								.catch(() => {});
+							return;
+						}
+						// ========================================================
 						const item = entry.streams.get(frame.id);
 						if (!item) return;
 						if (frame.type === "response") {
@@ -1008,6 +1284,28 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	}, 15_000);
 	heartbeat.unref();
 	return {
+		async answerInteraction(deviceId: string, answer: import("../protocol.js").DeviceTaskInteractionAnswer) {
+			const entry = devices.get(deviceId);
+			if (
+				!entry ||
+				entry.ws.readyState !== WebSocket.OPEN ||
+				entry.tasks.get(answer.taskId)?.attemptId !== answer.attemptId
+			)
+				return false;
+			if (interactionAcks.size >= 128) return false;
+			const id = randomUUID();
+			return new Promise<boolean>((resolve) => {
+				const finish = (ok: boolean) => {
+					if (!interactionAcks.delete(id)) return;
+					clearTimeout(timer);
+					resolve(ok);
+				};
+				const timer = setTimeout(() => finish(false), 5000);
+				timer.unref();
+				interactionAcks.set(id, { ws: entry.ws, finish });
+				if (!sendFrame(entry.ws, { type: "task_interaction_answer", id, answer })) finish(false);
+			});
+		},
 		cancelTask(deviceId: string, taskId: string, attemptId: string): Promise<{ stopped: boolean }> {
 			const entry = devices.get(deviceId);
 			if (
@@ -1048,6 +1346,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		isDeviceRequest: (req: IncomingMessage) =>
 			!!deviceId(req) || !!(domain && req.headers.host?.toLowerCase().endsWith(`.${domain}`)),
 		isOnline: (id: string) => devices.get(id)?.ws.readyState === WebSocket.OPEN,
+		getDeviceGeneration: (id: string) => devices.get(id)?.generation,
 		sendTask(id: string, task: any) {
 			const entry = devices.get(id);
 			if (
@@ -1063,7 +1362,11 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				entry.tasks.size >= RELAY_LIMITS.streams
 			)
 				return false;
-			entry.tasks.set(task.id, { attemptId: task.attemptId, botId: task.botId });
+			entry.tasks.set(task.id, {
+				attemptId: task.attemptId,
+				botId: task.botId,
+				hasLease: typeof task.leaseToken === "string" && !!task.leaseToken,
+			});
 			if (!sendFrame(entry.ws, { type: "task", task })) {
 				entry.tasks.delete(task.id);
 				return false;
@@ -1076,7 +1379,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				for (const [key, value] of map) if (value.deviceId === id) map.delete(key);
 			const entry = devices.get(id);
 			if (entry) {
-				drop(id, entry);
+				drop(id, entry, { isRevoke: true });
 				entry.ws.terminate();
 			}
 		},

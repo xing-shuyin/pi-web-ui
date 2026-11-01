@@ -1,9 +1,30 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import {
+	createChunkedTransferReceiver,
+	prepareChunkedTransfer,
+	readChunkFromSource,
+	CHUNKED_TRANSFER_LIMITS,
+	type ChunkedFileEntry,
+	type ChunkedTransferManifest,
+	type TransferChunkPayload,
+	type TransferProgressState,
+} from "./transfer-stream.js";
+
+export {
+	CHUNKED_TRANSFER_LIMITS,
+	createChunkedTransferReceiver,
+	prepareChunkedTransfer,
+	readChunkFromSource,
+	type ChunkedFileEntry,
+	type ChunkedTransferManifest,
+	type TransferChunkPayload,
+	type TransferProgressState,
+};
 
 export const DEVICE_FILE_SYNC_LIMITS = Object.freeze({
 	bytes: 8 * 1024 * 1024,
@@ -46,85 +67,20 @@ export interface DeviceFileApplyReport {
 	cleanupError?: string;
 }
 type Options = { signal?: AbortSignal };
-type Snapshot = { hash: string; identity: string } | null;
-const hash = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
+import {
+	hash,
+	missing,
+	same,
+	identity,
+	checkSignal,
+	deniedPart,
+	safePath,
+	within,
+	checkChain,
+	type FileSnapshot,
+} from "./file-sync-paths.js";
+type Snapshot = FileSnapshot;
 const run = promisify(execFile);
-const missing = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";
-const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b);
-const identity = (s: Awaited<ReturnType<typeof lstat>>) =>
-	`${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}:${s.nlink}`;
-function checkSignal(signal?: AbortSignal) {
-	signal?.throwIfAborted();
-}
-
-/** Portable paths only. Case-fold duplicates even on case-sensitive hosts so a
- * bundle retains the same meaning when sent to Windows/macOS. */
-function deniedPart(part: string): DeviceFileExclusion["reason"] | undefined {
-	if (/^(\.git|node_modules)$/i.test(part)) return "ignored";
-	if (
-		/^(\.env.*|\.ssh|\.aws|\.azure|\.gnupg|\.kube|\.npmrc|\.pypirc|\.netrc|_netrc|\.git-credentials|credentials(?:\..*)?|secrets?(?:\..*)?|tokens?(?:\..*)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|authorized_keys|known_hosts)$/i.test(
-			part,
-		) ||
-		/\.(?:pem|key|p12|pfx|keystore)$/i.test(part)
-	)
-		return "sensitive";
-	return undefined;
-}
-function safePath(value: unknown, allowDenied = false): string {
-	if (
-		typeof value !== "string" ||
-		!value ||
-		Buffer.byteLength(value, "utf8") > 1024 ||
-		Buffer.from(value, "utf8").toString("utf8") !== value ||
-		value.normalize("NFC") !== value ||
-		isAbsolute(value) ||
-		/[\\:\x00-\x1f\x7f]/.test(value)
-	)
-		throw new Error("Unsafe file path");
-	const parts = value.split("/");
-	if (parts.length > 32) throw new Error("File path is too deep");
-	for (const part of parts) {
-		if (
-			!part ||
-			part === "." ||
-			part === ".." ||
-			/[. ]$/.test(part) ||
-			Buffer.byteLength(part) > 255 ||
-			/[<>"|?*]/.test(part) ||
-			/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part)
-		)
-			throw new Error("Unsafe file path component");
-		if (!allowDenied && deniedPart(part)) throw new Error("Sensitive file path is denied");
-	}
-	return value;
-}
-function within(root: string, path: string) {
-	const rel = relative(root, path);
-	return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
-}
-/** Reject symlinks/junctions at every existing component, including ancestors. */
-async function checkChain(path: string, allowMissing = false, signal?: AbortSignal) {
-	checkSignal(signal);
-	const absolute = resolve(path);
-	let current = parse(absolute).root;
-	const parts = absolute.slice(current.length).split(sep).filter(Boolean);
-	for (let i = 0; i < parts.length; i++) {
-		current = join(current, parts[i]);
-		let s;
-		try {
-			s = await lstat(current);
-			checkSignal(signal);
-		} catch (e) {
-			if (allowMissing && missing(e)) return;
-			throw e;
-		}
-		if (s.isSymbolicLink()) throw new Error("Symlink paths are denied");
-		if (i < parts.length - 1 && !s.isDirectory()) throw new Error("Path ancestor is not a directory");
-		const canonical = await realpath(current);
-		checkSignal(signal);
-		if (relative(resolve(current), canonical) !== "") throw new Error("Real path changed");
-	}
-}
 
 /** Local capability: root never comes from an incoming bundle. No execution,
  * deletion or implicit directory traversal (recursive export is opt-in). Staged transfers are process-local;
@@ -137,6 +93,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 	const storage = join(dataDir, "device-transfers");
 	if (within(root, dataDir) || within(root, storage))
 		throw new Error("File sync dataDir and transfer storage must be outside the project root");
+	const chunkedReceiver = createChunkedTransferReceiver(config);
 	const transfers = new Map<
 		string,
 		{ bundle: DeviceFileBundle; preview: DeviceFilePreview; baselines: Snapshot[]; dir: string; bytes: number }
@@ -669,9 +626,49 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 				await drop(id);
 			});
 		},
+		prepareChunked({
+			paths,
+			signal,
+			recursive = false,
+			chunkSize,
+			transferId,
+		}: {
+			paths: string[];
+			signal?: AbortSignal;
+			recursive?: boolean;
+			chunkSize?: number;
+			transferId?: string;
+		}) {
+			return prepareChunkedTransfer({ root, paths, recursive, chunkSize, transferId, signal });
+		},
+		readChunk({
+			path,
+			offset,
+			size,
+			expectedFileSize,
+			expectedChunkSha256,
+			signal,
+		}: {
+			path: string;
+			offset: number;
+			size: number;
+			expectedFileSize?: number;
+			expectedChunkSha256?: string;
+			signal?: AbortSignal;
+		}) {
+			return readChunkFromSource({ root, path, offset, size, expectedFileSize, expectedChunkSha256, signal });
+		},
+		initChunkedTransfer: chunkedReceiver.initTransfer,
+		writeTransferChunk: chunkedReceiver.writeChunk,
+		getTransferStatus: chunkedReceiver.getStatus,
+		abortChunkedTransfer: chunkedReceiver.abortTransfer,
+		getChunkedFilePage: chunkedReceiver.getFilePage,
+		previewChunked: chunkedReceiver.preview,
+		applyChunked: chunkedReceiver.apply,
 		close(): Promise<void> {
 			closed = true;
 			return serialized(async () => {
+				await chunkedReceiver.close();
 				for (const id of transfers.keys()) await drop(id);
 			});
 		},

@@ -1,12 +1,441 @@
 /**
  * Wire protocol between the browser client and the pi-web-ui server.
- * Pure JSON over WebSocket. The web frontend mirrors these types in
- * web/src/types.ts (kept in sync by hand — types only, no shared runtime code).
+ * Pure JSON over WebSocket. The web frontend re-exports these types from
+ * web/src/types.ts (types only, no shared runtime code).
  */
 
 // ---------------------------------------------------------------------------
 // Serialized messages (server -> client snapshot)
 // ---------------------------------------------------------------------------
+
+export interface DeviceTaskActivity {
+	phase: "model" | "tool" | "waiting";
+	text?: string;
+	toolName?: string;
+}
+export interface DeviceTaskProgress extends DeviceTaskActivity {
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	sequence: number;
+}
+
+export interface DeviceTaskPlanReadyFrame {
+	type: "task_plan_ready";
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	plan: {
+		state: "ready";
+		steps: PlanStep[];
+		summary?: string;
+	};
+}
+
+export interface DeviceTaskPlanAckFrame {
+	type: "task_plan_ack";
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	accepted: boolean;
+}
+
+export type DeviceTaskEventKind =
+	| "user_message"
+	| "bot_request"
+	| "bot_reply"
+	| "worker_result"
+	| "execution_started"
+	| "execution_completed"
+	| "execution_failed"
+	| "execution_interrupted"
+	| "attention_requested"
+	| "attention_resolved"
+	| "delivery_recorded"
+	| "review_recorded"
+	| "conversation_closed"
+	| "task_updated";
+export interface DeviceTaskEvent {
+	id: string;
+	sequence: number;
+	type: DeviceTaskEventKind;
+	taskId?: string;
+	sourceId: string;
+	createdAt: number;
+	text?: string;
+}
+/** Bot claims are separate from the authoritative objective, phase and human decisions. */
+export interface DeviceTaskReportedProgress {
+	taskId: string;
+	botId: string;
+	updatedAt: number;
+	provenance: "bot_reported";
+	constraints: string[];
+	progress: string;
+	blockers: string[];
+	nextSteps: string[];
+}
+export interface DeviceTaskState {
+	revision: number;
+	objective: string;
+	currentTaskId: string;
+	phase: "queued" | "running" | "waiting" | "completed" | "failed" | "interrupted" | "closed";
+	latestRequest?: { taskId: string; sourceId: string; text: string };
+	blocker?: { attentionId: string; taskId: string; question: string };
+	lastOutcome?: { taskId: string; status: "completed" | "failed" | "interrupted"; text?: string };
+	decisions: {
+		attentionId: string;
+		messageId: string;
+		taskId: string;
+		question?: string;
+		answer?: string;
+		questionTruncated?: boolean;
+		answerTruncated?: boolean;
+	}[];
+	artifacts: { deliveryId: string; taskId: string }[];
+	reported?: DeviceTaskReportedProgress;
+}
+export interface DeviceTaskUpdateRequest {
+	sourceBotId: string;
+	parentTaskId: string;
+	expectedRevision: number;
+	constraints?: string[];
+	progress?: string;
+	blockers?: string[];
+	nextSteps?: string[];
+}
+export interface DeviceTaskStateResponse {
+	taskState: DeviceTaskState;
+	events: DeviceTaskEvent[];
+}
+
+export interface DeviceTaskClaim {
+	taskId: string;
+	attemptId: string;
+	botId: string;
+	leaseToken?: string;
+	leaseGeneration?: number;
+}
+export interface DeviceTaskClaimResult {
+	taskId: string;
+	attemptId: string;
+	accepted: boolean;
+	reason?: string;
+}
+export interface DeviceTaskLeaseRenew {
+	taskId: string;
+	attemptId: string;
+	botId: string;
+	leaseToken?: string;
+	leaseGeneration?: number;
+	activitySequence?: number;
+	hasActivity: boolean;
+}
+export interface DeviceTaskLeaseResult {
+	taskId: string;
+	attemptId: string;
+	accepted: boolean;
+	reason?: string;
+}
+export interface DeviceTaskResultAck {
+	taskId: string;
+	attemptId: string;
+	status: "completed" | "failed" | "interrupted";
+	fingerprint?: string;
+}
+
+export type DeviceDeliveryCheckInput = {
+	command: string;
+	status: "passed" | "failed" | "not_run";
+	result?: string;
+	exitCode?: number;
+};
+export type DeviceDeliveryCheck = DeviceDeliveryCheckInput & { source: "bot_reported" };
+export interface DeviceDeliveryRequest {
+	sourceBotId: string;
+	parentTaskId: string;
+	idempotencyKey: string;
+	repository: string;
+	baseCommit: string;
+	commit: string;
+	branch?: string;
+	summary: string;
+	checks: DeviceDeliveryCheckInput[];
+	limitations?: string[];
+}
+export interface DeviceDelivery extends Omit<
+	DeviceDeliveryRequest,
+	"sourceBotId" | "parentTaskId" | "idempotencyKey" | "checks" | "limitations"
+> {
+	id: string;
+	conversationId: string;
+	accountId: string;
+	roomId: string;
+	botId: string;
+	taskId: string;
+	checks: DeviceDeliveryCheck[];
+	limitations: string[];
+	createdAt: number;
+}
+export interface DeviceReviewRequest {
+	sourceBotId?: string;
+	parentTaskId?: string;
+	idempotencyKey: string;
+	deliveryId: string;
+	commit: string;
+	verdict: "accepted" | "changes_requested";
+	summary: string;
+}
+export interface DeviceReview extends Pick<DeviceReviewRequest, "deliveryId" | "commit" | "verdict" | "summary"> {
+	id: string;
+	conversationId: string;
+	accountId: string;
+	roomId: string;
+	reviewer: { type: "human" | "bot"; id: string };
+	createdAt: number;
+}
+export interface DeviceHumanAttention {
+	id: string;
+	taskId: string;
+	kind: "answer" | "decision";
+	question: string;
+	createdAt: number;
+}
+export interface DeviceConversation {
+	taskState?: DeviceTaskState;
+	attention?: DeviceHumanAttention;
+	closed?: boolean;
+	/** Immutable origin of a delegated conversation; later continuations do not reassign ownership. */
+	sourceBotId?: string;
+	sourceConversationId?: string;
+	parentTaskId?: string;
+	id: string;
+	accountId: string;
+	roomId: string;
+	botId: string;
+	deviceId: string;
+	botRevision: number;
+	name: string;
+	rootTaskId: string;
+	dispatchDepth: number;
+	latestTaskId: string;
+	createdAt: number;
+	updatedAt: number;
+	status: "queued" | "running" | "completed" | "failed" | "interrupted" | "closed";
+	latestDelivery?: DeviceDelivery;
+	latestReview?: DeviceReview;
+	deliveryCount: number;
+	reviewCount: number;
+	deliverySummaryTruncated?: boolean;
+	latestIntegration?: DeviceIntegration;
+	integrationCount?: number;
+}
+export interface DeviceConversationListResponse {
+	conversations: DeviceConversation[];
+}
+export interface DeviceConversationDetailResponse {
+	conversation: DeviceConversation;
+	deliveries: DeviceDelivery[];
+	reviews: DeviceReview[];
+	integrations?: DeviceIntegration[];
+}
+export interface DeviceDeliveryResponse {
+	delivery: DeviceDelivery;
+}
+export interface DeviceReviewResponse {
+	review: DeviceReview;
+}
+
+// ===========================================================================
+// Device Group Task Details, Journal, and Reports
+// ===========================================================================
+
+export interface DeviceTaskToolLifecycleFrame {
+	type: "task_tool_lifecycle";
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	sequence?: number;
+	toolName: string;
+	phase: "start" | "progress" | "end" | "failed";
+	callId?: string;
+	summary?: string;
+	parametersPreview?: Record<string, unknown>;
+	outputSnippet?: string;
+	durationMs?: number;
+}
+
+export interface DeviceTaskJournalEntry {
+	id: string;
+	sequence: number;
+	timestamp: number;
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	type: "progress" | "tool_start" | "tool_progress" | "tool_end" | "tool_failed" | "status" | "error";
+	phase?: "queued" | "running" | "waiting" | "completed" | "failed" | "interrupted";
+	toolName?: string;
+	toolCallId?: string;
+	summary?: string;
+	output?: string;
+	parametersPreview?: Record<string, unknown>;
+	reason?: string;
+	metadata?: Record<string, string | number | boolean>;
+}
+
+export interface DeviceTaskJournalPage {
+	taskId: string;
+	items: DeviceTaskJournalEntry[];
+	nextCursor?: string;
+	hasMore: boolean;
+	totalEvents: number;
+	truncated: boolean;
+	droppedCount: number;
+	cursorExpired?: boolean;
+	corrupted?: boolean;
+	journalUnavailable?: boolean;
+}
+
+export interface DeviceTaskReportLocation {
+	role: "hub" | "device";
+	reportRef: string;
+}
+
+export interface DeviceTaskReportMetadata {
+	sha256?: string;
+	totalBytes: number;
+	missing: boolean;
+	rejected: boolean;
+	uploadPending: boolean;
+	publicError?: "report_quota_exceeded" | "report_missing" | "report_upload_pending";
+}
+
+export interface DeviceTaskReportMeta {
+	taskId: string;
+	attemptId: string;
+	roomId: string;
+	accountId: string;
+	createdAt: number;
+	updatedAt: number;
+	totalBytes: number;
+	totalChunks: number;
+	receivedChunks: number;
+	storageLocation: DeviceTaskReportLocation;
+	quotaLimit: number;
+	quotaExceeded: boolean;
+	rejected: boolean;
+	complete: boolean;
+	sha256?: string;
+	uploadPending?: boolean;
+	missing?: boolean;
+	publicError?: DeviceTaskReportMetadata["publicError"];
+}
+
+export interface DeviceTaskDetails {
+	task: {
+		id: string;
+		roomId: string;
+		accountId: string;
+		deviceId: string;
+		botId: string;
+		botName?: string;
+		deviceName?: string;
+		text: string;
+		status: "queued" | "running" | "completed" | "failed" | "interrupted";
+		createdAt: number;
+		updatedAt: number;
+		attemptId: string;
+		parentTaskId?: string;
+		conversationId?: string;
+		queuedReason?: string;
+		interruptedReason?: string;
+		report?: string;
+	};
+	reportMeta?: DeviceTaskReportMeta;
+	latestProgress?: DeviceTaskProgress;
+	interactionCount: number;
+	interactions: {
+		id: string;
+		kind: string;
+		question?: string;
+		resolved: boolean;
+		decision?: string;
+	}[];
+	deliveries: {
+		id: string;
+		commit: string;
+		branch?: string;
+		summary: string;
+		passed: boolean;
+	}[];
+	journalUnavailable?: boolean;
+}
+
+export type DeviceIntegrationStatus =
+	| "preparing"
+	| "prepared"
+	| "conflict"
+	| "verifying"
+	| "verified"
+	| "applying"
+	| "applied"
+	| "cancelling"
+	| "failed"
+	| "cancelled";
+
+export interface DeviceIntegrationValidationCommand {
+	command: string;
+	status: "pending" | "running" | "passed" | "failed";
+	exitCode?: number;
+	output?: string;
+}
+
+export interface DeviceIntegration {
+	id: string;
+	accountId: string;
+	roomId: string;
+	conversationId: string;
+	deliveryId: string;
+	commit: string;
+	reviewId: string;
+	targetBotId: string;
+	targetBotRevision: number;
+	targetBranch: string;
+	expectedTargetSha: string;
+	newCommitSha?: string;
+	status: DeviceIntegrationStatus;
+	conflicts?: string[];
+	diff?: string;
+	validationCommands: DeviceIntegrationValidationCommand[];
+	error?: string;
+	cleanupPending?: boolean;
+	currentOpId?: string;
+	createdAt: number;
+	updatedAt: number;
+}
+
+export interface DeviceIntegrationPrepareRequest {
+	deliveryId: string;
+	targetBotId: string;
+	targetBranch?: string;
+	idempotencyKey?: string;
+}
+
+export interface DeviceIntegrationVerifyRequest {
+	commands: string[];
+}
+
+export interface DeviceIntegrationApplyRequest {
+	expectedTargetSha: string;
+}
+
+export interface DeviceIntegrationResponse {
+	integration: DeviceIntegration;
+}
+
+export interface DeviceIntegrationListResponse {
+	integrations: DeviceIntegration[];
+}
 
 export type QueueMode = "all" | "one-at-a-time";
 
@@ -690,7 +1119,7 @@ export type ClientMessage =
 	| { type: "canvas_load"; id: string; requestId?: string }
 	| { type: "canvas_save"; graph: CanvasGraph; baseRev?: number; requestId?: string }
 	| { type: "canvas_delete"; id: string }
-	| { type: "canvas_run_all"; graphId: string; initialPrompt?: string }
+	| { type: "canvas_run_all"; graphId: string; initialPrompt?: string; cwd?: string }
 	| { type: "canvas_run_node"; graphId: string; nodeId: string; prompt?: string }
 	| { type: "canvas_stop_node"; graphId: string; nodeId: string }
 	| { type: "canvas_stop_all"; graphId: string }
@@ -1956,6 +2385,33 @@ export interface UiQuestion {
 
 /** 一道题的用户回答（question_answer 回传）。selected 为选中的选项 label
  *  列表；custom 为用户在「Type something」里填的额外文本（可选）。 */
+/** Short-lived native group interaction; native request IDs remain on the executor. */
+export interface DeviceTaskInteractionBinding {
+	taskId: string;
+	attemptId: string;
+	roomId: string;
+	botId: string;
+	deviceId: string;
+}
+export interface DeviceTaskInteraction extends DeviceTaskInteractionBinding {
+	id: string;
+	kind: "question" | "approval";
+	createdAt: number;
+	deadline?: number;
+	questions?: UiQuestion[];
+	toolName?: string;
+	paramsPreview?: string;
+	reason?: string;
+}
+export interface DeviceTaskInteractionAnswer {
+	taskId: string;
+	attemptId: string;
+	interactionId: string;
+	answers?: QuestionAnswer[];
+	cancelled?: boolean;
+	decision?: "approve" | "deny";
+}
+
 export interface QuestionAnswer {
 	id: string;
 	selected: string[];
@@ -2747,7 +3203,13 @@ export type UiSlotId =
 	/** 左侧边缘悬浮工具条。 */
 	| "sidebar.left"
 	/** 右侧边缘悬浮工具条。 */
-	| "sidebar.right";
+	| "sidebar.right"
+	/** 设备中心群聊头部工具条。 */
+	| "device.group.header"
+	/** 设备中心群聊生态动作区。 */
+	| "device.group.actions"
+	/** 设备中心群聊任务工作区扩展区。 */
+	| "device.group.workspace";
 
 /** 插件 UI 挂载点的组合语义。list 允许多个条目并列；single 只允许一个可见条目。 */
 export type UiSlotCardinality = "list" | "single";
@@ -4580,3 +5042,82 @@ export type ServerMessage =
 			previewMessages?: UiMessage[];
 	  }
 	| { type: "sandbox_diff"; diff: SandboxDiffView };
+
+// ---------------------------------------------------------------------------
+// Device Center Execution Scheduling & Observability
+
+export interface DeviceExecutionSettings {
+	maxActiveTasks: number;
+	maxWaitingTasks: number;
+}
+
+export type DeviceTaskBlockReason =
+	"none" | "max_concurrency_reached" | "bot_busy" | "workspace_conflict" | "workspace_blocked" | "room_fairness_yield";
+
+export type DeviceBlockedTaskReason = "unconfirmed_stop" | "workspace_blocked";
+
+export interface DeviceWaitingTaskSnapshot {
+	taskId: string;
+	attemptId: string;
+	roomId: string;
+	botId: string;
+	queuedAt: number;
+	queuePosition: number;
+	blockReason: DeviceTaskBlockReason;
+	blockReasonDetail: string;
+	cancelable: boolean;
+}
+
+export interface DeviceRunningTaskSnapshot {
+	taskId: string;
+	attemptId: string;
+	roomId: string;
+	botId: string;
+	startedAt: number;
+}
+
+export interface DeviceBlockedTaskSnapshot {
+	taskId: string;
+	attemptId: string;
+	roomId: string;
+	botId: string;
+	reason: DeviceBlockedTaskReason;
+}
+
+export interface DeviceTaskSchedulerSnapshot {
+	settings: DeviceExecutionSettings;
+	activeCount: number;
+	waitingCount: number;
+	blockedCount: number;
+	running: DeviceRunningTaskSnapshot[];
+	waiting: DeviceWaitingTaskSnapshot[];
+	blocked: DeviceBlockedTaskSnapshot[];
+}
+
+/* ==========================================================================
+   Device File Transfer & Chunked Streaming Types
+   ========================================================================== */
+
+export interface DeviceFileTransferProgress {
+	transferId: string;
+	roomId: string;
+	sourceBotId: string;
+	targetBotId: string;
+	status: "staging" | "staged" | "applied" | "cancelled" | "failed";
+	totalBytes: number;
+	transferredBytes: number;
+	totalFiles: number;
+	completedFiles: number;
+	totalChunks: number;
+	receivedChunks: number[];
+	percent: number;
+	error?: string;
+}
+
+export interface DeviceFileTransferPreviewItem {
+	path: string;
+	size: number;
+	sha256: string;
+	baseline: string | null;
+	status: "create" | "identical" | "conflict";
+}

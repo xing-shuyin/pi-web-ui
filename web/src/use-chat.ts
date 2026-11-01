@@ -2071,6 +2071,18 @@ export function useChat() {
 				before: msg.before ?? curState.historyStart,
 			};
 		}
+		// Every conversation entry point must leave group/auxiliary views, including
+		// Bot conversations owned by another client and the already-active local one.
+		if (
+			msg.type === "new_chat" ||
+			(msg.type === "switch_session" && (msg.path || msg.sessionId)) ||
+			((msg.type === "switch_conversation" ||
+				msg.type === "open_shared_conversation" ||
+				msg.type === "take_over_conversation") &&
+				msg.id)
+		) {
+			notifySessionSwitch();
+		}
 		if (msg.type === "set_cwd" && msg.path) {
 			const cur = (curState?.cwd ?? "")
 				.trim()
@@ -2091,7 +2103,6 @@ export function useChat() {
 				});
 			}
 		} else if (msg.type === "switch_session" && (msg.path || msg.sessionId)) {
-			notifySessionSwitch();
 			const norm = (s?: string) => (s ?? "").trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 			const cur = norm(curState?.sessionFile);
 			const curSid = norm(curState?.sessionId);
@@ -2108,7 +2119,6 @@ export function useChat() {
 				});
 			}
 		} else if (msg.type === "new_chat") {
-			notifySessionSwitch();
 			if (curState && (curState.messages.length > 0 || curState.isStreaming)) {
 				dispatch({
 					type: "transition_start",
@@ -2120,7 +2130,6 @@ export function useChat() {
 				});
 			}
 		} else if (msg.type === "switch_conversation" && msg.id) {
-			notifySessionSwitch();
 			if (curState && msg.id !== curState.conversationId) {
 				dispatch({
 					type: "transition_start",

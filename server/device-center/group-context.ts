@@ -23,6 +23,7 @@ export interface GroupHistoryPage {
 }
 export interface GroupTaskContext extends GroupHistoryPage {
 	roomName: string;
+	primaryBotId?: string;
 	members: { id: string; name: string }[];
 	throughMessageId: string | null;
 }
@@ -129,6 +130,7 @@ export function groupTaskContext(room: Room, bots: readonly Bot[], messages: rea
 	const members = room.botIds.map((id) => ({ id, name: bots.find((bot) => bot.id === id)?.name ?? id }));
 	const metadata = {
 		roomName: room.name,
+		...(room.primaryBotId && room.botIds.includes(room.primaryBotId) ? { primaryBotId: room.primaryBotId } : {}),
 		members,
 		throughMessageId: messages.filter((message) => message.roomId === room.id).at(-1)?.id ?? null,
 	};
