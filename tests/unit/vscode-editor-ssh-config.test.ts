@@ -1,12 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os, { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockHost } from "../../plugin-sdk/index.mjs";
 import plugin, {
 	expandSshInclude,
 	loadSshConfigBlocks,
-	parseSshConfig,
 	parseSshConfigBlocks,
 	resolveSshAlias,
 	sshBlockMatches,

@@ -5,7 +5,7 @@
  * 只有显式 PI_WEB_SDK=bundled（或 0/off/false/no）才强制自带。
  */
 import { describe, expect, it } from "vitest";
-import { findBundledCopy, pickGlobalSdk } from "../../server/resolve-global-sdk.js";
+import { pickGlobalSdk } from "../../server/resolve-global-sdk.js";
 import type { SdkCopy } from "../../server/sdk-origin.js";
 
 const bundled: SdkCopy = { path: "/app/node_modules/pi-coding-agent/package.json", version: "0.85.1" };

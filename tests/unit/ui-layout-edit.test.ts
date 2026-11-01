@@ -11,7 +11,6 @@ import { describe, expect, it } from "vitest";
 import type { UiAlign, UiLayoutPrefs, UiSlotId } from "../../web/src/types.js";
 import type { UiSlotEntry } from "../../web/src/ui-slots.js";
 import {
-	ICON_EDIT_ALIGNS,
 	ICON_EDIT_TRAY,
 	ICON_EDIT_ZONES,
 	applyIconDrop,

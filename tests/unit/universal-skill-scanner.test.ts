@@ -20,7 +20,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	discoverDiskSkills,
-	getMultiAgentSkillCandidateDirs,
 	isSkillStillOnDisk,
 	mergeSkillCollections,
 	parseSkillFrontmatter,

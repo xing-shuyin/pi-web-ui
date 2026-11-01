@@ -1,6 +1,13 @@
 import { mkdir, readFile, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import type { DeviceConversation, DeviceDelivery, DeviceIntegration, DeviceReview } from "../protocol.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+	projectConversationState,
+	reconcileConversationState,
+	type ConversationTaskState,
+	type ConversationEvent,
+} from "./task-state.js";
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed" | "interrupted";
 export interface Handoff {
@@ -24,6 +31,8 @@ export interface Device {
 	createdAt: number;
 }
 export interface Bot {
+	/** Public tool names only; authorization remains enforced by the device lease. */
+	tools?: string[];
 	id: string;
 	deviceId: string;
 	accountId: string;
@@ -34,20 +43,19 @@ export interface Bot {
 	createdAt: number;
 	updatedAt: number;
 }
-export interface HubConversation {
-	closed?: boolean;
-	id: string;
-	accountId: string;
-	roomId: string;
-	botId: string;
-	deviceId: string;
-	botRevision: number;
-	name: string;
-	rootTaskId: string;
-	dispatchDepth: number;
-	latestTaskId: string;
-	createdAt: number;
-	updatedAt: number;
+export type HubConversation = Omit<
+	DeviceConversation,
+	"status" | "latestDelivery" | "latestReview" | "deliveryCount" | "reviewCount"
+> & {
+	taskState?: ConversationTaskState;
+	events?: ConversationEvent[];
+};
+export interface DeliveryReceipt {
+	conversationId: string;
+	kind: "delivery" | "review";
+	key: string;
+	fingerprint: string;
+	recordId: string;
 }
 export interface ConversationMessage {
 	id: string;
@@ -62,6 +70,7 @@ export interface ConversationMessage {
 	createdAt: number;
 }
 export interface HubTask {
+	reportMetadata?: import("../protocol.js").DeviceTaskReportMetadata;
 	cancelRequested?: boolean;
 	stopConfirmed?: boolean;
 	sourceConversationId?: string;
@@ -88,12 +97,20 @@ export interface HubTask {
 	dispatchCount?: number;
 	handoff?: Handoff;
 	report?: string;
+	leaseToken?: string;
+	leaseGeneration?: number;
+	lastHeartbeatAt?: number;
+	recoveryUntil?: number;
+	planOnly?: boolean;
+	plan?: import("./group-plan-guard.js").GroupTaskPlanRecord;
 }
 export interface Room {
 	id: string;
 	accountId: string;
 	name: string;
 	botIds: string[];
+	primaryBotId?: string;
+	canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
 	createdAt: number;
 }
 export interface RoomMessage {
@@ -112,6 +129,10 @@ export interface HubState {
 	version: 2;
 	conversations: HubConversation[];
 	conversationMessages: ConversationMessage[];
+	deliveries: DeviceDelivery[];
+	reviews: DeviceReview[];
+	deliveryReceipts: DeliveryReceipt[];
+	integrations: DeviceIntegration[];
 	accounts: Account[];
 	devices: Device[];
 	bots: Bot[];
@@ -134,10 +155,21 @@ export function publicDevice(device: Device) {
 	const { credentialHash: _hash, uiCredentialHash: _uiHash, ...visible } = device;
 	return visible;
 }
+export function publicTask<T extends object>(task: T): Omit<T, "leaseToken"> {
+	const { leaseToken: _token, ...visible } = task as Record<string, unknown>;
+	return visible as Omit<T, "leaseToken">;
+}
 
 /** A single process owns a data directory. Transactions publish only after atomic replacement. */
 export class DeviceHubStore {
 	private state: HubState;
+	private readonly listeners = new Set<() => void>();
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
 	private tail: Promise<unknown> = Promise.resolve();
 	readonly path: string;
 	private constructor(dataDir: string, state: HubState) {
@@ -170,6 +202,10 @@ export class DeviceHubStore {
 				version: 2,
 				conversations: [],
 				conversationMessages: [],
+				deliveries: [],
+				reviews: [],
+				deliveryReceipts: [],
+				integrations: [],
 				accounts: [],
 				devices: [],
 				bots: [],
@@ -182,16 +218,40 @@ export class DeviceHubStore {
 		}
 		state.conversations ??= [];
 		state.conversationMessages ??= [];
-		if (!Array.isArray(state.conversations) || !Array.isArray(state.conversationMessages))
+		state.deliveries ??= [];
+		state.reviews ??= [];
+		state.deliveryReceipts ??= [];
+		state.integrations ??= [];
+		if (
+			![
+				state.conversations,
+				state.conversationMessages,
+				state.deliveries,
+				state.reviews,
+				state.deliveryReceipts,
+				state.integrations,
+			].every(Array.isArray)
+		)
 			throw new Error("Invalid conversation store");
+		// Legacy state is a baseline, not evidence that historical transitions were observed.
+		for (const conversation of state.conversations) {
+			conversation.taskState = projectConversationState(state, conversation);
+			conversation.events ??= [];
+		}
 		const store = new DeviceHubStore(dataDir, state);
 		if (state.tasks.some((task) => !isTerminal(task.status))) {
+			const now = Date.now();
+			const recoveryGraceMs = 60_000;
 			await store.transact((draft) => {
 				for (const task of draft.tasks)
 					if (!isTerminal(task.status)) {
 						task.status = "interrupted";
 						task.report = "Hub restarted before execution was confirmed; submit a new turn to retry.";
-						task.updatedAt = Date.now();
+						task.updatedAt = now;
+						if (task.leaseToken) {
+							// Retain recovery grace window for active leases to claim on reconnect!
+							task.recoveryUntil = now + recoveryGraceMs;
+						}
 					}
 			});
 		}
@@ -216,12 +276,28 @@ export class DeviceHubStore {
 			secretMatches(credential, device.credentialHash)
 		);
 	}
-	async transact<T>(update: (draft: HubState) => T): Promise<T> {
+	async transact<T>(update: (draft: HubState) => T extends PromiseLike<unknown> ? never : T): Promise<T> {
 		const operation = this.tail.then(async () => {
 			const draft = structuredClone(this.state);
 			const result = update(draft);
+			if (result && (typeof result === "object" || typeof result === "function") && "then" in result) {
+				// Transactions only reserve/commit state. External work runs between transactions.
+				// Drain a rejected accidental async callback without publishing its detached draft.
+				void Promise.resolve(result).catch(() => {});
+				throw new Error("Hub transactions require a synchronous update");
+			}
+			if (typeof reconcileConversationState === "function") {
+				reconcileConversationState(this.state, draft);
+			}
 			await this.persist(draft);
 			this.state = draft;
+			for (const listener of this.listeners) {
+				try {
+					listener();
+				} catch {
+					/* notification cannot roll back a committed transaction */
+				}
+			}
 			return structuredClone(result);
 		});
 		this.tail = operation.catch(() => {});

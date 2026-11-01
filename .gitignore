@@ -92,3 +92,7 @@ capsule-palettes.html
 # 本地流水线实跑产物（画布 demo 任务与 AI 生成的 output，不入库）
 /pipelines/
 
+# 本地临时目录与调试产物（交付前就地清除，不入库）
+/.temp/
+/artifacts/
+/group-followup-*.log

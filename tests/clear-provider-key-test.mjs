@@ -7,7 +7,7 @@
 //
 // Usage: npm run build && node tests/clear-provider-key-test.mjs [port]
 import WebSocket from "ws";
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";

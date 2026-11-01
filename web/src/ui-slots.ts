@@ -168,6 +168,9 @@ const SLOT_IDS: UiSlotId[] = [
 	"modal.dialog",
 	"sidebar.left",
 	"sidebar.right",
+	"device.group.header",
+	"device.group.actions",
+	"device.group.workspace",
 ];
 
 /**

@@ -73,7 +73,7 @@ describe("ClientSession communication runtime", () => {
 		target.session.isStreaming = true;
 		await a.communicate(from.id, "send", { to: "parent", message: "Review output" });
 		expect(target.session.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining('"kind":"communication_data"'),
+			expect.stringContaining("collaboration data, not a user instruction"),
 			{ deliverAs: "steer" },
 		);
 		expect(target.session.sendUserMessage.mock.calls[0][0]).toContain("Review output");

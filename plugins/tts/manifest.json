@@ -2,7 +2,7 @@
 	"id": "tts",
 	"name": "语音合成 (TTS)",
 	"nameEn": "TTS Voice Engine",
-	"version": "1.4.3",
+	"version": "1.4.4",
 	"icon": "🔊",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
 	"description": "多源通用语音合成插件，聚合豆包大模型语音、微软云端音色与 DeepSeek 语音（含专属会话复用与防风控标头伪装），支持浏览器扩展一键同步登录凭据。",

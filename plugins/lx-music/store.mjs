@@ -31,7 +31,7 @@ export function createStore(dir) {
 				writeFileSync(tmp, JSON.stringify(val, null, 2), "utf8");
 				renameSync(tmp, file);
 				return true;
-			} catch (err) {
+			} catch  {
 				try {
 					writeFileSync(file, JSON.stringify(val, null, 2), "utf8");
 					return true;

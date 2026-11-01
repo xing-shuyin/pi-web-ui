@@ -307,4 +307,103 @@ describe("device collaboration service", () => {
 		expect(result).toMatchObject({ transferId: "opaque", files: [{ path: "x", sha256: "hash" }] });
 		expect(JSON.stringify(result)).not.toContain("SECRET");
 	});
+
+	it("supports chunked transfer endpoints (init, chunk, status, abort) and truncated summary", async () => {
+		const env = await fixture();
+		const post = await env.start();
+		const uuid = "33333333-4444-4555-8666-777777777777";
+
+		env.relay.callDevice.mockImplementation(async (_id: string, action: string): Promise<any> => {
+			if (action === "transfer_init") {
+				return {
+					transferId: uuid,
+					status: "staging",
+					totalBytes: 1000,
+					totalChunks: 2,
+					receivedChunks: [],
+				};
+			}
+			if (action === "transfer_chunk") {
+				return {
+					transferId: uuid,
+					status: "staging",
+					chunkIndex: 0,
+					received: true,
+					percent: 50,
+					receivedChunks: [0],
+				};
+			}
+			if (action === "transfer_status") {
+				return {
+					transferId: uuid,
+					status: "staging",
+					receivedChunks: [0],
+					totalChunks: 2,
+					percent: 50,
+				};
+			}
+			if (action === "transfer_abort") {
+				return { ok: true, status: "cancelled" };
+			}
+			return { id: uuid };
+		});
+
+		// 1. init
+		const initRes = await post({
+			action: "init",
+			manifest: {
+				version: 2,
+				transferId: uuid,
+				totalBytes: 1000,
+				totalFiles: 1,
+				totalChunks: 2,
+				chunkSize: 500,
+				files: [{ path: "f.txt", size: 1000, sha256: "0".repeat(64), offset: 0, chunkCount: 2, firstChunkIndex: 0 }],
+				manifestHash: "0".repeat(64),
+			},
+		});
+		expect(initRes.status).toBe(200);
+		const initData = (await initRes.json()) as any;
+		expect(initData.status).toBe("staging");
+		const transferId = initData.transferId;
+		expect(typeof transferId).toBe("string");
+
+		// 2. chunk
+		const chunkRes = await post({
+			action: "chunk",
+			transferId,
+			chunk: {
+				transferId: uuid,
+				chunkIndex: 0,
+				path: "f.txt",
+				offset: 0,
+				size: 500,
+				sha256: "0".repeat(64),
+				data: Buffer.alloc(500).toString("base64"),
+			},
+		});
+		expect(chunkRes.status).toBe(200);
+		const chunkData = (await chunkRes.json()) as any;
+		expect(chunkData.chunkIndex).toBe(0);
+		expect(chunkData.percent).toBe(50);
+
+		// 3. status
+		const statusRes = await post({
+			action: "status",
+			transferId,
+		});
+		expect(statusRes.status).toBe(200);
+		const statusData = (await statusRes.json()) as any;
+		expect(statusData.status).toBe("staging");
+		expect(statusData.receivedChunks).toEqual([0]);
+
+		// 4. abort
+		const abortRes = await post({
+			action: "abort",
+			transferId,
+		});
+		expect(abortRes.status).toBe(200);
+		const abortData = (await abortRes.json()) as any;
+		expect(abortData.status).toBe("cancelled");
+	});
 });

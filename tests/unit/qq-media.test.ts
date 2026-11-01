@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { QqBotBridge } from "../../plugins/qq/index.mjs";

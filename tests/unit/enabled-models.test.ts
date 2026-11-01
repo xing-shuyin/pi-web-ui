@@ -7,7 +7,7 @@
  *   supports "show all" toggle, and updates provider counts accordingly.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ModelInfo } from "../../server/protocol.js";
 
 describe("enabledModels (Issue #646)", () => {

@@ -13,14 +13,10 @@
 import * as S from "./store.mjs";
 import {
 	fromLocalInput,
-	isSupportedEvery,
 	occurrencesBetween,
-	MAX_EVERY_MINUTES,
 	MIN_EVERY_MINUTES,
-	toLocalInput,
 } from "./cron.mjs";
 import { el } from "./dom.mjs";
-import { createSettings } from "./settings-form.mjs";
 import { hostApi } from "@pi-web-ui/plugin-sdk/client";
 
 const pad2 = (n) => String(n).padStart(2, "0");

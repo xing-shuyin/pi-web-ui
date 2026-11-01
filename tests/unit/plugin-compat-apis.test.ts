@@ -6,7 +6,7 @@
  * 2. onClientMessage(handler) 客户端上行 RPC 定向 reply；
  * 3. registerTool(tool) 单参 execute(args) 自动适配并注册为标准 AgentTool。
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

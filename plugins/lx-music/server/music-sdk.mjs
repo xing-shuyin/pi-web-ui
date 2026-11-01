@@ -1,7 +1,6 @@
 /**
  * 音乐聚合 SDK —— 聚合酷我、酷狗、网易云、咪咕等多平台检索、歌词与音源解析
  */
-import http from "node:http";
 import https from "node:https";
 
 const DEFAULT_UA =

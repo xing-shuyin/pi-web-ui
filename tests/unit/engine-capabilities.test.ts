@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_DSH_CAPABILITIES,
 	DEFAULT_PI_CAPABILITIES,
-	DEFAULT_UNIVERSAL_CAPABILITIES,
 	resolveEngineCapabilities,
 } from "../../server/engine-capabilities.js";
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink } from "../../server/universal/driver-base.js";

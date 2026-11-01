@@ -11,7 +11,7 @@ import { makeCanvasTool } from "../../server/canvas/canvas-agent-tool.js";
 import { createDefaultCanvasGraph, saveCanvasGraph } from "../../server/canvas/canvas-store.js";
 import { ROLE_METAS, ROLE_FIELDS, ROLE_IO_HELP } from "../../web/src/components/canvas/CanvasTypes.js";
 import { SQUAD_TEMPLATES } from "../../web/src/components/canvas/CanvasTemplates.js";
-import type { CanvasGraph, CanvasNode, ServerMessage } from "../../server/protocol.js";
+import type { CanvasGraph, ServerMessage } from "../../server/protocol.js";
 
 describe("Pstack 58 Skills Catalog", () => {
 	it("应完整收录来自官方 cursor/plugins/pstack/skills 的 58 个技能", () => {

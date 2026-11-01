@@ -160,6 +160,24 @@ describe("device group management", () => {
 			window.removeEventListener("pi-web-ui:device-group-open", opened);
 		}
 	});
+	it("saves the primary Bot selected from group members", async () => {
+		mockApi((path, init) =>
+			path === "rooms/one/members" && init.method === "POST"
+				? response({ room: { ...rooms[0], primaryBotId: "beta" } })
+				: undefined,
+		);
+		await render({ revision: 1, roomId: "one", manage: true });
+		const select = host.querySelector<HTMLSelectElement>("#device-group-primary-bot")!;
+		expect([...select.options].map((option) => option.value)).toEqual(["", "alpha", "beta"]);
+		await act(async () => {
+			select.value = "beta";
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+		});
+		await submit();
+		expect(bodies("/rooms/one/members")).toEqual([{ botIds: ["alpha", "beta"], primaryBotId: "beta" }]);
+		expect(host.textContent).toContain("Members and primary Bot settings saved.");
+		expect(host.querySelector("form")).not.toBeNull();
+	});
 	it("opens member management through navigation and saves the selected stable IDs", async () => {
 		mockApi((path, init) =>
 			path === "rooms/one/members" && init.method === "POST"
@@ -174,7 +192,22 @@ describe("device group management", () => {
 		await act(async () => boxes[0].click());
 		await submit();
 		expect(bodies("/rooms/one/members")).toEqual([{ botIds: ["beta"] }]);
-		expect(host.querySelector("form")).toBeNull();
+		expect(host.querySelector("form")).not.toBeNull();
+	});
+	it("keeps edits and reports an older Hub ignoring the primary Bot setting", async () => {
+		mockApi((path, init) =>
+			path === "rooms/one/members" && init.method === "POST" ? response({ room: rooms[0] }) : undefined,
+		);
+		await render({ revision: 1, roomId: "one", manage: true });
+		const select = host.querySelector<HTMLSelectElement>("#device-group-primary-bot")!;
+		await act(async () => {
+			select.value = "beta";
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+		});
+		await submit();
+		expect(host.textContent).toContain("The Hub did not save the primary Bot setting");
+		expect(select.value).toBe("beta");
+		expect(host.querySelector("form")).not.toBeNull();
 	});
 	it("ignores stale room details after navigation changes, including on reactivation", async () => {
 		let resolveOld!: (value: Response) => void;

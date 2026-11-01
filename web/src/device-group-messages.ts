@@ -8,8 +8,20 @@ export type GroupDevice = {
 	deviceName?: string;
 	enabled?: boolean;
 	online?: boolean;
+	revision?: number;
+	tools?: string[];
 };
-export type GroupBotConversation = { id: string; botId: string; name: string; status: string };
+export type GroupBotConversation = Pick<import("./types").DeviceConversation, "id" | "botId" | "name"> & {
+	status: string;
+} & Partial<
+		Pick<
+			import("./types").DeviceConversation,
+			"latestDelivery" | "latestReview" | "deliveryCount" | "reviewCount" | "deliverySummaryTruncated" | "attention"
+		>
+	> & {
+		deliveries?: import("./types").DeviceDelivery[];
+		reviews?: import("./types").DeviceReview[];
+	};
 
 export function groupConversationHits(
 	devices: readonly GroupDevice[],
@@ -51,6 +63,8 @@ export type GroupMessage = {
 	targetBotIds?: string[];
 };
 export type GroupTask = {
+	progress?: import("../../server/protocol").DeviceTaskProgress;
+	attemptId?: string;
 	id: string;
 	deviceId: string;
 	botId: string;
@@ -58,9 +72,19 @@ export type GroupTask = {
 	report?: string;
 	status: "queued" | "running" | "completed" | "failed" | "interrupted";
 	createdAt: number;
+	botRevision?: number;
+	planOnly?: boolean;
+	plan?: import("./group-capabilities").GroupTaskPlan;
+	canvasRef?: import("./group-capabilities").GroupCanvasRef;
 };
 export type GroupDetail = {
-	room: { id: string; name: string; botIds: string[] };
+	room: {
+		id: string;
+		name: string;
+		botIds: string[];
+		primaryBotId?: string;
+		canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
+	};
 	bots: GroupDevice[];
 	messages: GroupMessage[];
 	tasks: GroupTask[];
@@ -135,7 +159,14 @@ export function groupConversationState(
 			id,
 			role: "assistant",
 			timestamp: task.createdAt,
-			content: [{ type: "text", text: task.report || `${statuses[task.status]}\n\n${task.text}` }],
+			content: [
+				{
+					type: "text",
+					text:
+						task.report ||
+						`${statuses[task.status]}\n\n${task.text}${task.status === "running" && task.progress ? `\n\n${task.progress.phase === "tool" ? task.progress.toolName || "tool" : task.progress.phase}\n${task.progress.text || ""}` : ""}`,
+				},
+			],
 		});
 	}
 	entries.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { createDeviceHub } from "../../server/device-center/hub.js";
-import { DeviceHubStore, hashSecret } from "../../server/device-center/store.js";
+import { DeviceHubStore } from "../../server/device-center/store.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -113,6 +113,144 @@ async function fixture(
 }
 
 describe("durable hub conversations", () => {
+	it("publishes task state atomically and accepts only current Bot progress with revision checks", async () => {
+		const { hub, request, register, pair, onTask } = await fixture();
+		const cookie = await register();
+		const bot = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "state", botIds: [bot.botId] }, cookie)).body.room;
+		const first = (
+			await request(
+				`/api/rooms/${room.id}/conversations`,
+				{ targetBotId: bot.botId, text: "Implement original goal" },
+				cookie,
+			)
+		).body;
+		const path = `/api/rooms/${room.id}/conversations/${first.conversation.id}/task-state`;
+		const agentPath = path.replace("/api/", "/api/agent/");
+		const headers = { Authorization: `Bearer ${bot.credential}`, "X-Device-Id": bot.deviceId };
+		const initial = await request(path, undefined, cookie);
+		expect(initial.status).toBe(200);
+		expect(initial.body.taskState.objective).toContain("original goal");
+		expect(initial.body.taskState.phase).toBe("queued");
+		expect(onTask.mock.calls[0][1].taskState.objective).toContain("original goal");
+		expect((await request(agentPath, undefined, "", headers)).status).toBe(404);
+		expect((await request(`${agentPath}?sourceBotId=${bot.botId}`, undefined, "", headers)).status).toBe(200);
+		await hub.acceptTaskEvent(bot.deviceId, {
+			taskId: first.task.id,
+			attemptId: first.task.attemptId,
+			botId: bot.botId,
+			status: "running",
+		});
+		const active = (await request(path, undefined, cookie)).body;
+		const update = {
+			parentTaskId: first.task.id,
+			expectedRevision: active.taskState.revision,
+			progress: "Implemented parser",
+			constraints: ["Keep API compatibility"],
+			blockers: [],
+			nextSteps: ["Run tests"],
+		};
+		expect((await request(path, update, cookie)).status).toBe(403);
+		expect((await request(agentPath, { ...update, parentTaskId: "spoof" }, "", headers)).status).toBe(409);
+		expect((await request(agentPath, { ...update, objective: "Overwrite user goal" }, "", headers)).status).toBe(400);
+		const saved = await request(agentPath, update, "", headers);
+		expect(saved.status).toBe(200);
+		expect(saved.body.taskState.reported).toMatchObject({
+			taskId: first.task.id,
+			botId: bot.botId,
+			progress: update.progress,
+		});
+		expect(saved.body.taskState.objective).toBe(initial.body.taskState.objective);
+		expect(saved.body.taskState.revision).toBeGreaterThan(active.taskState.revision);
+		expect(saved.body.events.at(-1).type).toBe("task_updated");
+		expect((await request(agentPath, update, "", headers)).status).toBe(409);
+		const noop = await request(agentPath, { ...update, expectedRevision: saved.body.taskState.revision }, "", headers);
+		expect(noop.status).toBe(200);
+		expect(noop.body.taskState.revision).toBe(saved.body.taskState.revision);
+		await hub.acceptTaskEvent(bot.deviceId, {
+			taskId: first.task.id,
+			attemptId: first.task.attemptId,
+			botId: bot.botId,
+			status: "completed",
+			report: "Done",
+		});
+		const done = (await request(path, undefined, cookie)).body;
+		expect(done.taskState.phase).toBe("completed");
+		expect(
+			(await request(agentPath, { ...update, expectedRevision: done.taskState.revision }, "", headers)).status,
+		).toBe(409);
+	});
+	it("persists a Bot question and atomically resumes its original conversation on a human answer", async () => {
+		const { hub, request, register, pair, dataDir, onTask } = await fixture();
+		const cookie = await register();
+		const bot = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "team", botIds: [bot.botId] }, cookie)).body.room;
+		const base = `/api/rooms/${room.id}/conversations`;
+		const first = (await request(base, { targetBotId: bot.botId, text: "start" }, cookie)).body;
+		await hub.acceptTaskEvent(bot.deviceId, {
+			taskId: first.task.id,
+			attemptId: first.task.attemptId,
+			botId: bot.botId,
+			status: "running",
+		});
+		const path = `${base}/${first.conversation.id}`;
+		const agentPath = `/api/agent/rooms/${room.id}/conversations/${first.conversation.id}/attention`;
+		const headers = { Authorization: `Bearer ${bot.credential}`, "X-Device-Id": bot.deviceId };
+		const question = { parentTaskId: first.task.id, question: "Which option?", kind: "decision" };
+		expect((await request(`${path}/attention`, question, cookie)).status).toBe(403);
+		const asked = await request(agentPath, question, "", headers);
+		expect(asked.status).toBe(200);
+		expect((await request(agentPath, question, "", headers)).body.attention.id).toBe(asked.body.attention.id);
+		const body = { text: "Option A", attentionId: asked.body.attention.id, idempotencyKey: "answer" };
+		const answered = await request(`${path}/messages`, body, cookie);
+		expect(answered.status).toBe(200);
+		expect(onTask).toHaveBeenCalledTimes(1);
+		const queued = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		expect(queued.conversations[0].latestTaskId).toBe(first.task.id);
+		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).status).toBe("queued");
+		expect(queued.conversations[0].taskState.decisions[0].answer).toBe("Option A");
+		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).rootTaskId).toBe(answered.body.task.id);
+		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).parentTaskId).toBeUndefined();
+		const followup = (await request(`${path}/messages`, { text: "Follow up", idempotencyKey: "follow-up" }, cookie))
+			.body.task;
+		expect(onTask).toHaveBeenCalledTimes(1);
+		const runningState = (await request(`${path}/task-state`, undefined, cookie)).body.taskState;
+		expect(runningState.currentTaskId).toBe(first.task.id);
+		expect(runningState.phase).toBe("running");
+		await hub.acceptTaskEvent(bot.deviceId, {
+			taskId: first.task.id,
+			attemptId: first.task.attemptId,
+			botId: bot.botId,
+			status: "completed",
+			report: "Waiting for a decision",
+		});
+		const saved = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		expect(saved.conversations[0].attention).toBeUndefined();
+		expect(onTask).toHaveBeenCalledTimes(2);
+		expect(onTask.mock.calls[1][1].id).toBe(answered.body.task.id);
+		expect(answered.body.task.conversationId).toBe(first.conversation.id);
+		expect(answered.body.task.resume).toBe(true);
+		expect((await request(`${path}/messages`, body, cookie)).body.task.id).toBe(answered.body.task.id);
+		expect((await request(`${path}/messages`, { ...body, text: "Option B" }, cookie)).status).toBe(409);
+		expect((await request(`${path}/messages`, { ...body, idempotencyKey: "stale" }, cookie)).status).toBe(409);
+		expect(onTask).toHaveBeenCalledTimes(2);
+		expect((await request(path, undefined, cookie)).body.conversation.attention).toBeUndefined();
+		await hub.acceptTaskEvent(bot.deviceId, {
+			...answered.body.task,
+			taskId: answered.body.task.id,
+			status: "running",
+		});
+		const done = {
+			...answered.body.task,
+			taskId: answered.body.task.id,
+			status: "completed",
+			report: "Answer consumed",
+		};
+		await hub.acceptTaskEvent(bot.deviceId, done);
+		await hub.acceptTaskEvent(bot.deviceId, done);
+		expect(onTask).toHaveBeenCalledTimes(3);
+		expect(onTask.mock.calls[2][1].id).toBe(followup.id);
+	});
 	it("persists addresses, queues continuation once and rejects changed identity", async () => {
 		const { hub, request, register, pair, onTask, dataDir } = await fixture();
 		const cookie = await register();
@@ -134,8 +272,22 @@ describe("durable hub conversations", () => {
 			cookie,
 		);
 		expect(duplicate.body.task.id).toBe(turn.body.task.id);
+		expect(onTask).toHaveBeenCalledTimes(1);
+		await hub.acceptTaskEvent(device.deviceId, {
+			taskId: first.body.task.id,
+			attemptId: first.body.task.attemptId,
+			botId: device.botId,
+			status: "running",
+		});
+		await hub.acceptTaskEvent(device.deviceId, {
+			taskId: first.body.task.id,
+			attemptId: first.body.task.attemptId,
+			botId: device.botId,
+			status: "completed",
+			report: "done",
+		});
 		expect(onTask).toHaveBeenCalledTimes(2);
-		expect((await request(base + "/" + cid, undefined, cookie)).body.messages).toHaveLength(2);
+		expect((await request(base + "/" + cid, undefined, cookie)).body.messages).toHaveLength(3);
 		expect((await request("/api/rooms/" + room.id + "/clear", {}, cookie)).status).toBe(409);
 		const persisted = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
 		expect(persisted.conversations[0].id).toBe(cid);
@@ -197,6 +349,14 @@ describe("durable hub conversations", () => {
 		expect(wake.conversationId).toBe(parent.conversationId);
 		expect(wake.resume).toBe(true);
 		expect(wake.rootTaskId).toBe(parent.id);
+		expect(onTask).toHaveBeenCalledTimes(2);
+		await hub.acceptTaskEvent(a.deviceId, {
+			taskId: parent.id,
+			attemptId: parent.attemptId,
+			botId: a.botId,
+			status: "completed",
+			report: "delegated",
+		});
 		expect(onTask).toHaveBeenCalledTimes(3);
 		expect(hub.store.snapshot().tasks.find((t) => t.id === parent.id)?.dispatchCount).toBe(3);
 	});
@@ -226,6 +386,17 @@ describe("durable hub conversations", () => {
 			ah,
 		);
 		expect(asked.status).toBe(200);
+		expect(asked.body.conversation).toMatchObject({
+			sourceBotId: a.botId,
+			sourceConversationId: initial.conversation.id,
+			parentTaskId: initial.task.id,
+		});
+		const listed = await request(`/api/rooms/${room.id}/conversations`, undefined, cookie);
+		expect(listed.body.conversations.find((entry: any) => entry.id === asked.body.conversation.id)).toMatchObject({
+			sourceBotId: a.botId,
+			sourceConversationId: initial.conversation.id,
+			parentTaskId: initial.task.id,
+		});
 		await hub.acceptTaskEvent(b.deviceId, {
 			taskId: asked.body.task.id,
 			attemptId: asked.body.task.attemptId,
@@ -289,6 +460,13 @@ describe("durable hub conversations", () => {
 		});
 		expect(hub.store.snapshot().tasks.some((t) => t.resultOfTaskId === asked.body.task.id)).toBe(false);
 		await hub.acceptTaskEvent(a.deviceId, {
+			taskId: initial.task.id,
+			attemptId: initial.task.attemptId,
+			botId: a.botId,
+			status: "completed",
+			report: "ready for reply",
+		});
+		await hub.acceptTaskEvent(a.deviceId, {
 			taskId: answer.body.task.id,
 			attemptId: answer.body.task.attemptId,
 			botId: a.botId,
@@ -350,6 +528,14 @@ describe("durable hub conversations", () => {
 		await hub.acceptTaskEvent(b.deviceId, interrupted);
 		await hub.acceptTaskEvent(b.deviceId, interrupted);
 		expect(hub.store.snapshot().tasks.find((t) => t.resultOfTaskId === child.id)?.text).toContain("interrupted");
+		expect(onTask).toHaveBeenCalledTimes(2);
+		await hub.acceptTaskEvent(a.deviceId, {
+			taskId: parent.id,
+			attemptId: parent.attemptId,
+			botId: a.botId,
+			status: "completed",
+			report: "delegated",
+		});
 		expect(onTask).toHaveBeenCalledTimes(3);
 	});
 	it("closes admission before cancel and keeps unconfirmed work pending", async () => {
@@ -360,7 +546,13 @@ describe("durable hub conversations", () => {
 		const base = "/api/rooms/" + room.id + "/conversations";
 		const created = (await request(base, { targetBotId: bot.botId, text: "start" }, cookie)).body;
 		const path = base + "/" + created.conversation.id;
+		const queued = (await request(path + "/messages", { text: "queued answer" }, cookie)).body.task;
 		expect((await request(path + "/stop", {}, cookie)).body).toEqual({ stopped: false, pending: 1 });
+		expect(hub.store.snapshot().tasks.find((task) => task.id === queued.id)).toMatchObject({
+			status: "interrupted",
+			cancelRequested: true,
+			stopConfirmed: true,
+		});
 		await hub.acceptTaskEvent(bot.deviceId, {
 			botId: bot.botId,
 			taskId: created.task.id,

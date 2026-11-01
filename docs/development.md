@@ -63,6 +63,16 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 - 新增协议消息 → 只改 server/protocol.ts（见 `docs/architecture-core.md`「协议单源」），再在两端 dispatch/onmessage switch 各加分支。
 - **宿主提供的包只能声明在 `peerDependencies`（`"*"`）**：pi 扩展加载器（`resource-loader.js` 的 `collectExtensionPackageWarnings`）只扫 `dependencies` —— 命中 `@earendil-works/pi-coding-agent` / `typebox` 就警告「装下的嵌套副本会绕开扩展加载器、搞出重复运行时模块」。本包同时是「pi 扩展」与「独立服务端/CLI」，服务端子进程真的要这两个包（`server/` 下 typebox 20+ 处引用、SDK 遍布全仓），`PI_WEB_SDK=bundled` 也需要自带副本 → 它们落在 `optionalDependencies`（npm 默认照装，加载器不看这个字段；见 `package.json`）。守卫：`tests/unit/extension-host-packages.test.ts`（谁搬回 `dependencies` 就红）。
 
+## 文档约定：AGENTS.md 只做索引
+
+`AGENTS.md` 是「关键功能 → 事实源文件 → 文档」的映射表，**不承载细则**（细则写进对应 `docs/`）；`docs/README.md` 是文档总索引（每份文档的主题、权重 ★★★/★★/★/○ 与「按场景阅读路线」）。新增做法：
+
+1. 细则写进 `docs/agent-rules.md`（协议/工具提示词/UI 样式/运行态红线）或对应主题文档；
+2. 在 `docs/README.md` 对应权重组补一行，并在 `AGENTS.md` 的映射表补一行（功能 / 事实源文件 / 文档链接），必要时在 §3 红线表补一行 + 守卫测试名；
+3. 跑 `npx vitest run tests/unit/agents-md.test.ts tests/unit/docs-index.test.ts`：前者守卫 `AGENTS.md` 体量（≤150 行 / ≤20KB）、`docs/` 链接与锚点存活、关键文档仍在索引中、§3 点名的守卫测试文件存在、映射里点名的源文件存在；后者守卫 `docs/README.md` 覆盖全部 `docs/*.md`、链接与锚点存活、每份文档都登记在带权重的分组里。
+
+历史上它曾因把设备中心/群组、画布、环境变量全表、UI 红线抄成正文而胀到 51KB / 281 行，每个会话都在为细则付费且细节逐渐与 `docs/` 走样，故改为索引形态（全文备份 `AGENTS.md.bak`）。
+
 ## 斜杠命令目录
 
 服务端 `pushSlashCommands()` 收集当前活动会话的扩展命令（`session.extensionRunner.getRegisteredCommands()`）+ 模板（`promptTemplates`）+ 技能（`resourceLoader.getSkills()` → `skill:<name>`）加上 11 个内置命令（NATIVE_COMMANDS：/new /name /model /compact /cwd /thinking /resume /reload /help /copy /pi-web-ui:quit），经 `slash_commands` 消息推送（attach / set_cwd / new_chat / switch_conversation / switch_session / get_commands 时刷新）；内置命令在 `prompt()` 里拦截（`execNativeCommand`，含 /model 模糊匹配、/thinking 中英别名、`/reload` 调 `session.reload()` 重新发现扩展/技能/模板后重推目录），其余透传 SDK（SDK 会展开扩展/技能/模板命令）。

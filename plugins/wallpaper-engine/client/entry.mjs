@@ -1,7 +1,7 @@
 /**
  * wallpaper-engine 客户端入口 (v0.3.13) —— 视频/WebGL2 Scene/Web 全能渲染、多套专属主题热切换、音频联动与自动轮播。
  */
-import { DRAWER_CSS, getGlassThemeCss, WALLPAPER_THEMES } from "./styles.mjs?v=0.3.65";
+import { DRAWER_CSS, getGlassThemeCss } from "./styles.mjs?v=0.3.65";
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 
 const RUNTIME_KEY = "__piWallpaperEngineRuntime";

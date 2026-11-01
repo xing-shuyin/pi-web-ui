@@ -67,7 +67,6 @@ import {
 	formatPresetFieldValue,
 	normalizePresetFieldSelection,
 	presetFieldGroup,
-	presetFieldHint,
 	presetFieldLabel,
 	PRESET_FIELD_GROUPS,
 	PRESET_FIELD_META,

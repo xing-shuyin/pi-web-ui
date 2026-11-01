@@ -7,7 +7,6 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { SessionRoutes, accountKey, identityKey, scopeKey } from "./session-routes.mjs";
 
 export const SECRET_CORP_SECRET = "wecom.corpSecret";

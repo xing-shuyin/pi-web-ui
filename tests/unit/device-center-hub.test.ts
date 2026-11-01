@@ -17,7 +17,17 @@ async function fixture(
 	extra: Partial<Parameters<typeof createDeviceHub>[0]> = {},
 ) {
 	const dataDir = await mkdtemp(join(tmpdir(), "device-hub-test-"));
-	cleanups.push(() => rm(dataDir, { recursive: true, force: true }));
+	cleanups.push(async () => {
+		for (let i = 0; i < 5; i++) {
+			try {
+				await rm(dataDir, { recursive: true, force: true });
+				break;
+			} catch (e: any) {
+				if (e?.code !== "EBUSY" && e?.code !== "EPERM") throw e;
+				await new Promise((r) => setTimeout(r, 60));
+			}
+		}
+	});
 	const onTask = vi.fn();
 	const onRevoke = vi.fn();
 	const hub = await createDeviceHub({
@@ -113,6 +123,51 @@ async function fixture(
 }
 
 describe("device center hub", () => {
+	it("routes unmentioned human messages to the primary Bot while preserving explicit targets and retries", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const first = await pair(cookie, "Primary");
+		const second = await pair(cookie, "Other");
+		const botIds = [first.botId, second.botId];
+		expect((await request("/api/rooms", { name: "Invalid", botIds, primaryBotId: "outsider" }, cookie)).status).toBe(
+			400,
+		);
+		const created = await request("/api/rooms", { name: "Team", botIds, primaryBotId: first.botId }, cookie);
+		expect(created.status).toBe(201);
+		const path = `/api/rooms/${created.body.room.id}`;
+		expect((await request(path, undefined, cookie)).body.room.primaryBotId).toBe(first.botId);
+		const body = { text: "Hello", idempotencyKey: "implicit" };
+		const implicit = await request(`${path}/messages`, body, cookie);
+		expect(implicit.status).toBe(200);
+		expect(implicit.body.tasks.map((t: any) => t.botId)).toEqual([first.botId]);
+		const followup = await request(`${path}/messages`, { text: "Follow up" }, cookie);
+		expect(followup.body.tasks[0].conversationId).toBe(implicit.body.tasks[0].conversationId);
+		expect(followup.body.tasks[0].resume).toBe(true);
+		const explicit = await request(`${path}/messages`, { text: "Other", targetBotIds: [second.botId] }, cookie);
+		expect(explicit.body.tasks.map((t: any) => t.botId)).toEqual([second.botId]);
+		const botReply = await request(`/api/agent/rooms/${created.body.room.id}/messages`, { text: "Public reply" }, "", {
+			Authorization: `Bearer ${first.credential}`,
+			"X-Device-Id": first.deviceId,
+		});
+		expect(botReply.status).toBe(200);
+		expect(botReply.body.tasks).toEqual([]);
+		expect((await request(`${path}/members`, { botIds, primaryBotId: "outsider" }, cookie)).status).toBe(400);
+		expect((await request(`${path}/members`, { botIds, primaryBotId: second.botId }, cookie)).status).toBe(200);
+		const replay = await request(`${path}/messages`, body, cookie);
+		expect(replay.status).toBe(200);
+		expect(replay.body.message.id).toBe(implicit.body.message.id);
+		expect(replay.body.tasks[0].id).toBe(implicit.body.tasks[0].id);
+		expect(replay.body.tasks.map((t: any) => t.botId)).toEqual([first.botId]);
+		expect((await request(`${path}/members`, { botIds, primaryBotId: null }, cookie)).status).toBe(200);
+		expect((await request(`${path}/messages`, { text: "Public only" }, cookie)).body.tasks).toEqual([]);
+		await hub.store.transact((draft) => {
+			for (const task of draft.tasks) task.status = "completed";
+		});
+		await request(`${path}/members`, { botIds, primaryBotId: second.botId }, cookie);
+		expect(
+			(await request(`${path}/members`, { botIds: [first.botId] }, cookie)).body.room.primaryBotId,
+		).toBeUndefined();
+	});
 	it("clears only the authorized room history atomically, preserves membership and rejects active tasks", async () => {
 		const { hub, request, register, pair, dataDir } = await fixture();
 		const cookie = await register();
@@ -398,6 +453,111 @@ describe("device center hub", () => {
 		expect((await request(`/api/devices/${device.deviceId}/revoke`, {}, cookie)).status).toBe(200);
 		expect(await hub.store.authenticateDevice(device.deviceId, device.credential)).toBe(false);
 		expect(onRevoke).toHaveBeenCalledWith(device.deviceId);
+	});
+	it("persists rejected and failed report metadata without fabricating a full report", async () => {
+		const { hub, request, register, pair, dataDir } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "Report states", botIds: [device.botId] }, cookie)).body.room;
+		const send = async (text: string) =>
+			(await request(`/api/rooms/${room.id}/messages`, { text, targetBotIds: [device.botId] }, cookie)).body.tasks[0];
+		const task = await send("quota report");
+		const running = { botId: device.botId, taskId: task.id, attemptId: task.attemptId, status: "running" as const };
+		await hub.acceptTaskEvent(device.deviceId, running);
+		const reportMetadata = {
+			sha256: "a".repeat(64),
+			totalBytes: 4 * 1024 * 1024 + 1,
+			missing: true,
+			rejected: true,
+			uploadPending: false,
+			publicError: "report_quota_exceeded" as const,
+		};
+		await hub.acceptTaskEvent(device.deviceId, {
+			...running,
+			status: "completed",
+			report: "Execution succeeded; full report exceeded quota",
+			reportMetadata,
+		});
+		const response = await request(`/api/rooms/${room.id}/tasks/${task.id}/report`, undefined, cookie);
+		expect(response.status).toBe(200);
+		expect(response.body.meta).toMatchObject({ ...reportMetadata, complete: false, quotaExceeded: true });
+		expect(response.body.text).toBeUndefined();
+		const reopened = await DeviceHubStore.open(dataDir);
+		expect(reopened.snapshot().tasks.find((entry) => entry.id === task.id)?.reportMetadata).toEqual(reportMetadata);
+		await reopened.close();
+		const failedTask = await send("failed report");
+		await hub.acceptTaskEvent(device.deviceId, { ...running, taskId: failedTask.id, attemptId: failedTask.attemptId });
+		await hub.acceptTaskEvent(device.deviceId, {
+			...running,
+			taskId: failedTask.id,
+			attemptId: failedTask.attemptId,
+			status: "failed",
+			report: "Execution interrupted",
+		});
+		const missing = await request(`/api/rooms/${room.id}/tasks/${failedTask.id}/report`, undefined, cookie);
+		expect(missing.body.meta).toMatchObject({
+			complete: false,
+			missing: true,
+			uploadPending: false,
+			rejected: false,
+			publicError: "report_missing",
+		});
+		expect(missing.body.text).toBeUndefined();
+		await expect(
+			hub.acceptTaskEvent(device.deviceId, {
+				...running,
+				taskId: failedTask.id,
+				attemptId: failedTask.attemptId,
+				status: "failed",
+				reportMetadata: { ...reportMetadata, publicError: "private token" } as any,
+			}),
+		).rejects.toThrow("Invalid report metadata");
+	});
+	it("serves an empty journal page instead of 404 for tasks that never wrote audit events", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "Audit", botIds: [device.botId] }, cookie)).body.room;
+		const task = (
+			await request(`/api/rooms/${room.id}/messages`, { text: "audit", targetBotIds: [device.botId] }, cookie)
+		).body.tasks[0];
+		const empty = await request(`/api/rooms/${room.id}/tasks/${task.id}/journal`, undefined, cookie);
+		expect(empty.status).toBe(200);
+		expect(empty.body).toEqual({
+			taskId: task.id,
+			items: [],
+			hasMore: false,
+			totalEvents: 0,
+			truncated: false,
+			droppedCount: 0,
+			journalUnavailable: false,
+		});
+		// Unknown tasks and foreign rooms stay 404 — the empty page never widens access.
+		expect((await request(`/api/rooms/${room.id}/tasks/unknown-task/journal`, undefined, cookie)).status).toBe(404);
+		expect((await request(`/api/rooms/foreign-room/tasks/${task.id}/journal`, undefined, cookie)).status).toBe(404);
+		// Real progress turns the same empty page into a populated one.
+		await hub.acceptTaskEvent(device.deviceId, {
+			botId: device.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			status: "running",
+		});
+		hub.acceptTaskProgress(device.deviceId, {
+			taskId: task.id,
+			botId: device.botId,
+			attemptId: task.attemptId,
+			sequence: 1,
+			phase: "tool",
+			toolName: "read",
+			text: "reading files",
+		});
+		const populated = await vi.waitFor(async () => {
+			const page = await request(`/api/rooms/${room.id}/tasks/${task.id}/journal`, undefined, cookie);
+			if (page.body.items.length === 0) throw new Error("journal not appended yet");
+			return page;
+		});
+		expect(populated.body.items.map((item: { type: string }) => item.type)).toEqual(["status", "progress"]);
+		expect(populated.body.items[1]).toMatchObject({ type: "progress", toolName: "read" });
 	});
 	it("dispatches only explicit room targets, enforces attempts and transitions, persists trusted reports", async () => {
 		const { hub, request, register, pair, onTask, dataDir } = await fixture();

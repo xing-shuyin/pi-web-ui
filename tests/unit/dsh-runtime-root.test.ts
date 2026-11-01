@@ -5,13 +5,11 @@ import { join, resolve } from "node:path";
 import {
 	runtimeBaseFor,
 	getDshFamily,
-	getRuntimeDshVersion,
 	getExpectedDshVersion,
 	checkDshRuntimeCompatibility,
 	parseNpmrcPrefix,
 	findLocalPackageRoot,
 	resolveRuntimeBaseWithDetails,
-	FALLBACK_DSH_VERSION,
 } from "../../server/dsh/runtime/runtime-root.mjs";
 
 describe("runtime-root resolution and version compatibility", () => {

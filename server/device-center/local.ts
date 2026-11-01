@@ -4,11 +4,14 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getLocalBotOptions, type BotCatalogSources } from "./bot-catalog.js";
+import { applyLocalBotPreset } from "./bot-presets.js";
 import { isIP } from "node:net";
 import { installHubSetupRoutes } from "./hub-setup.js";
 import { DeviceWorkspaceError } from "./workspaces.js";
 import { createLocalDeviceHub } from "./local-hub.js";
 import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } from "./bots.js";
+import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
+import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 
 export interface LocalDeviceConfig {
 	hubUrl: string;
@@ -21,6 +24,11 @@ export interface LocalDeviceConfig {
 interface Connection {
 	close(): void | Promise<void>;
 	isConnected?(): boolean;
+	runtime?: {
+		getSchedulerSnapshot(): TaskSchedulerSnapshot;
+		updateExecutionSettings(next: unknown): DeviceExecutionSettings;
+		cancelScheduledTask(taskId: string, attemptId?: string): boolean;
+	};
 }
 interface Options {
 	app: Express;
@@ -44,6 +52,24 @@ export function normalizeHubUrl(input: unknown): string {
 	)
 		throw new Error("Hub must use HTTP(S), without a path, query, fragment or credentials");
 	return url.origin;
+}
+
+/**
+ * Hub failures reach the browser as a cause the user can act on, but never verbatim: the raw message
+ * may echo configured credentials or opaque tokens. Redact known secrets plus token-shaped runs.
+ */
+export function scrubHubMessage(message: string, secrets: (string | undefined)[]): string {
+	let safe = message;
+	for (const secret of secrets) if (secret && secret.length >= 6) safe = safe.split(secret).join("[REDACTED]");
+	safe = safe
+		.replace(
+			/((?:bearer|token|api[-_]?key|secret|password|passwd|credential|authorization)[\s:="']{1,4})[A-Za-z0-9_\-./+=]{8,}/gi,
+			"$1[REDACTED]",
+		)
+		.replace(/[A-Za-z0-9_\-./+=]{32,}/g, (token) =>
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token) ? token : "[REDACTED]",
+		);
+	return safe.trim().slice(0, 300);
 }
 
 function localOnly(req: Request, res: Response, next: NextFunction): void {
@@ -151,9 +177,14 @@ export async function installLocalDeviceCenter(options: Options) {
 				Authorization: `Bearer ${captured.credential}`,
 			},
 			body: JSON.stringify({
-				bots: bots
-					.list()
-					.map(({ id, name, description, enabled, revision }) => ({ id, name, description, enabled, revision })),
+				bots: bots.list().map(({ id, name, description, enabled, revision, tools }) => ({
+					id,
+					name,
+					description,
+					enabled,
+					revision,
+					tools,
+				})),
 			}),
 		});
 		await response.body?.cancel();
@@ -222,6 +253,35 @@ export async function installLocalDeviceCenter(options: Options) {
 			connected: connection?.isConnected?.() ?? false,
 		});
 	});
+	options.app.get("/api/device-center/execution-settings", (_req, res) => {
+		try {
+			const settings = loadExecutionSettings(options.dataDir);
+			res.json({ settings });
+		} catch (error) {
+			res.status(500).json({ error: (error as Error).message });
+		}
+	});
+	options.app.get("/api/device-center/execution-queue", (_req, res) => {
+		try {
+			const currentRuntime = connection?.runtime;
+			if (currentRuntime) {
+				res.json(currentRuntime.getSchedulerSnapshot());
+			} else {
+				const settings = loadExecutionSettings(options.dataDir);
+				res.json({
+					settings,
+					activeCount: 0,
+					waitingCount: 0,
+					blockedCount: 0,
+					running: [],
+					waiting: [],
+					blocked: [],
+				});
+			}
+		} catch (error) {
+			res.status(500).json({ error: (error as Error).message });
+		}
+	});
 	// Account chat discovery is safe to relay; local settings remain device-only.
 	options.app.get("/api/device-center/chat-status", async (_req, res) => {
 		try {
@@ -234,6 +294,76 @@ export async function installLocalDeviceCenter(options: Options) {
 	});
 	const activeRequests = new Set<AbortController>();
 	let inFlight = 0;
+	let eventStreams = 0;
+	options.app.get("/api/device-center/rooms/:id/events", async (req, res) => {
+		try {
+			await serialize(ensureLocalHub);
+		} catch {
+			res.sendStatus(503);
+			return;
+		}
+		const captured = activeConfig();
+		const capturedGeneration = generation;
+		if (!captured?.uiCredential) {
+			res.sendStatus(409);
+			return;
+		}
+		if (closed || eventStreams >= 8) {
+			res.sendStatus(429);
+			return;
+		}
+		const controller = new AbortController();
+		activeRequests.add(controller);
+		eventStreams++;
+		const cancel = () => controller.abort();
+		res.once("close", cancel);
+		req.once("aborted", cancel);
+		try {
+			const upstream = await fetch(
+				`${captured.hubUrl}/api/device-user/rooms/${encodeURIComponent(String(req.params.id))}/events`,
+				{
+					redirect: "error",
+					signal: controller.signal,
+					headers: { "X-Device-Id": captured.deviceId, Authorization: `Bearer ${captured.uiCredential}` },
+				},
+			);
+			if (!upstream.ok || !upstream.body || !upstream.headers.get("content-type")?.startsWith("text/event-stream")) {
+				await upstream.body?.cancel();
+				res.sendStatus(502);
+				return;
+			}
+			if (closed || generation !== capturedGeneration || activeConfig() !== captured) return;
+			res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+			res.flushHeaders();
+			const reader = upstream.body.getReader();
+			try {
+				for (;;) {
+					const chunk = await reader.read();
+					if (chunk.done) break;
+					if (
+						closed ||
+						controller.signal.aborted ||
+						generation !== capturedGeneration ||
+						activeConfig() !== captured ||
+						chunk.value.byteLength > 65536 ||
+						!res.write(chunk.value)
+					)
+						break;
+				}
+			} finally {
+				await reader.cancel();
+			}
+		} catch {
+			if (!res.headersSent && !res.destroyed) res.sendStatus(502);
+		} finally {
+			controller.abort();
+			activeRequests.delete(controller);
+			eventStreams--;
+			res.off("close", cancel);
+			req.off("aborted", cancel);
+			res.end();
+		}
+	});
 	function userRoute(method: "get" | "post", path: string, fields: string[]) {
 		options.app[method](`/api/device-center/${path}`, async (req, res) => {
 			try {
@@ -271,7 +401,9 @@ export async function installLocalDeviceCenter(options: Options) {
 				const suffix = path.replace(/:([A-Za-z]+)/g, (_match, key: string) =>
 					encodeURIComponent(String((req.params as Record<string, string>)[key])),
 				);
-				const response = await fetch(`${captured.hubUrl}/api/device-user/${suffix}`, {
+				const queryIndex = req.url.indexOf("?");
+				const queryStr = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
+				const response = await fetch(`${captured.hubUrl}/api/device-user/${suffix}${queryStr}`, {
 					method: method.toUpperCase(),
 					redirect: "error",
 					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
@@ -300,8 +432,20 @@ export async function installLocalDeviceCenter(options: Options) {
 				if (closed || activeConfig() !== captured || generation !== capturedGeneration)
 					return res.status(409).json({ code: "DEVICE_CHANGED", error: "Device binding changed; refresh" });
 				if (!response.ok) {
-					const failure = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-					if (response.status === 409 && failure?.code === "ACTIVE_TASKS")
+					let failure: { code?: unknown; error?: unknown } | null = null;
+					try {
+						const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+						if (parsed && typeof parsed === "object") failure = parsed;
+					} catch {
+						failure = null;
+					}
+					const hubCode =
+						typeof failure?.code === "string" && /^[A-Z0-9_]{1,40}$/.test(failure.code) ? failure.code : undefined;
+					const hubMessage =
+						typeof failure?.error === "string" && failure.error.trim()
+							? scrubHubMessage(failure.error, [captured.uiCredential, captured.credential]) || undefined
+							: undefined;
+					if (response.status === 409 && (hubCode === "ACTIVE_TASKS" || hubMessage === "ACTIVE_TASKS"))
 						return res.status(409).json({
 							code: "ACTIVE_TASKS",
 							error: "Stop active tasks before removing members, clearing messages or deleting this group",
@@ -309,7 +453,11 @@ export async function installLocalDeviceCenter(options: Options) {
 					const status = [400, 401, 403, 404, 409, 429].includes(response.status) ? response.status : 502;
 					return res.status(status === 401 ? 409 : status).json({
 						code: status === 401 ? "REPAIR_REQUIRED" : status === 403 ? "HUB_FORBIDDEN" : "HUB_REJECTED",
-						error: status === 401 ? "Pair this computer again" : "Hub rejected group request",
+						// Forward the hub's own diagnosis: a fixed "rejected" string erases the real cause
+						// ("Task missing", "Plan conversation unavailable", …) and makes the UI undebuggable.
+						error: status === 401 ? "Pair this computer again" : (hubMessage ?? "Hub rejected group request"),
+						hubStatus: response.status,
+						...(hubCode ? { hubCode } : {}),
 					});
 				}
 				const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -329,6 +477,68 @@ export async function installLocalDeviceCenter(options: Options) {
 	}
 	options.app.get("/api/device-center/local-bots", (_req, res) => {
 		res.json({ bots: bots.list() });
+	});
+	options.app.get("/api/device-center/local-bots/:id", (req, res) => {
+		res.setHeader("Cache-Control", "no-store");
+		const bot = bots.get(String(req.params.id));
+		if (!bot) {
+			res.status(404).json({ code: "BOT_MISSING", error: "Bot is not configured on this device" });
+			return;
+		}
+		res.json({ bot });
+	});
+	options.app.post("/api/device-center/local-bots/:id/preset", (req, res) => {
+		const controller = new AbortController();
+		const cancel = () => {
+			if (!res.writableEnded) controller.abort();
+		};
+		req.once("aborted", cancel);
+		res.once("close", cancel);
+		void serialize(async () => {
+			if (closed) throw new DeviceWorkspaceError(409, "CLOSED", "Device center is shutting down");
+			const input = req.body;
+			if (
+				!input ||
+				typeof input !== "object" ||
+				Array.isArray(input) ||
+				Object.keys(input).some((key) => !["revision", "preset"].includes(key))
+			)
+				throw new DeviceWorkspaceError(400, "BOT_PRESET_INVALID", "Expected revision and preset");
+			const bot = bots.get(String(req.params.id));
+			if (!bot) throw new DeviceWorkspaceError(404, "BOT_MISSING", "Bot is not configured on this device");
+			if (input.revision !== bot.revision)
+				throw new DeviceWorkspaceError(409, "BOT_STALE", "Reload the current Bot revision before saving");
+			const catalog = await getLocalBotOptions(
+				options.botCatalog ?? { defaultCwd: process.cwd(), dataDir: options.dataDir },
+				bot.cwd,
+				controller.signal,
+			);
+			const next = applyLocalBotPreset(bot, input.preset, catalog);
+			controller.signal.throwIfAborted();
+			const saved = await bots.upsert(next);
+			try {
+				await syncBots();
+				return { bot: saved, synced: true };
+			} catch {
+				return { bot: saved, synced: false };
+			}
+		})
+			.then(
+				(data) => {
+					if (!controller.signal.aborted) res.json(data);
+				},
+				(error) => {
+					if (controller.signal.aborted) return;
+					const known = error instanceof DeviceWorkspaceError;
+					res
+						.status(known ? error.status : 500)
+						.json({ code: known ? error.code : "BOT_FAILED", error: known ? error.message : "Bot preset save failed" });
+				},
+			)
+			.finally(() => {
+				req.off("aborted", cancel);
+				res.off("close", cancel);
+			});
 	});
 	function botMutation(remove: boolean) {
 		return (req: Request, res: Response) => {
@@ -422,18 +632,85 @@ export async function installLocalDeviceCenter(options: Options) {
 	userRoute("post", "devices/:id/open", []);
 	userRoute("get", "rooms", []);
 	userRoute("get", "rooms/:id", []);
+	userRoute("post", "rooms/:id/canvas", ["binding"]);
+	userRoute("get", "rooms/:id/tasks/:taskId", []);
+	userRoute("get", "rooms/:id/tasks/:taskId/journal", []);
+	userRoute("get", "rooms/:id/tasks/:taskId/report", []);
+	userRoute("post", "rooms/:id/tasks/:taskId/report", [
+		"chunkIndex",
+		"totalChunks",
+		"text",
+		"attemptId",
+		"isFinal",
+		"sha256",
+	]);
+	userRoute("post", "rooms/:id/tasks/:taskId/approve-plan", []);
+	userRoute("get", "rooms/:id/interactions", []);
+	userRoute("post", "rooms/:id/interactions", [
+		"taskId",
+		"attemptId",
+		"interactionId",
+		"answers",
+		"cancelled",
+		"decision",
+	]);
 	userRoute("get", "rooms/:id/conversations", []);
 	userRoute("get", "rooms/:id/conversations/:conversationId", []);
-	userRoute("post", "rooms/:id/conversations", ["name", "targetBotId", "text", "idempotencyKey"]);
+	userRoute("post", "rooms/:id/conversations", ["name", "targetBotId", "text", "idempotencyKey", "planOnly"]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/messages", [
 		"text",
 		"kind",
 		"requestId",
+		"attentionId",
+		"idempotencyKey",
+		"planOnly",
+	]);
+	userRoute("post", "rooms/:id/conversations/:conversationId/deliveries", [
+		"repository",
+		"baseCommit",
+		"commit",
+		"branch",
+		"summary",
+		"checks",
+		"limitations",
 		"idempotencyKey",
 	]);
-	userRoute("post", "rooms", ["name", "botIds"]);
+	userRoute("post", "rooms/:id/conversations/:conversationId/reviews", [
+		"deliveryId",
+		"commit",
+		"verdict",
+		"summary",
+		"idempotencyKey",
+	]);
+	userRoute("get", "rooms/:id/conversations/:conversationId/integrations", []);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations", [
+		"deliveryId",
+		"targetBotId",
+		"targetBranch",
+		"idempotencyKey",
+	]);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/verify", ["commands"]);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/apply", ["expectedTargetSha"]);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/cancel", []);
+	userRoute("get", "rooms/:id/transfers", []);
+	userRoute("post", "rooms/:id/transfers/start", [
+		"sourceBotId",
+		"targetBotId",
+		"paths",
+		"recursive",
+		"idempotencyKey",
+	]);
+	userRoute("get", "rooms/:id/transfers/:transferId/preview", []);
+	userRoute("post", "rooms/:id/transfers/:transferId/resume", [
+		"manifestHash",
+		"sourceBotRevision",
+		"targetBotRevision",
+	]);
+	userRoute("post", "rooms/:id/transfers/:transferId/apply", ["revision", "overwritePaths"]);
+	userRoute("post", "rooms/:id/transfers/:transferId/abort", []);
+	userRoute("post", "rooms", ["name", "botIds", "primaryBotId"]);
 	userRoute("post", "rooms/:id/rename", ["name"]);
-	userRoute("post", "rooms/:id/members", ["botIds"]);
+	userRoute("post", "rooms/:id/members", ["botIds", "primaryBotId"]);
 	userRoute("post", "rooms/:id/clear", []);
 	userRoute("post", "rooms/:id/delete", []);
 	userRoute("post", "rooms/:id/messages", [
@@ -443,6 +720,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		"idempotencyKey",
 		"handoff",
 		"parentTaskId",
+		"planOnly",
 	]);
 	function route(path: string, work: (req: Request) => Promise<unknown>) {
 		options.app.post(`/api/device-center/${path}`, (req, res) => {
@@ -508,6 +786,28 @@ export async function installLocalDeviceCenter(options: Options) {
 		config = next;
 		await reconnect();
 		return { saved: true };
+	});
+	route("execution-settings", async (req) => {
+		const boundConnection = connection;
+		// Persist first, then apply to captured active runtime
+		const saved = saveExecutionSettings(options.dataDir, req.body);
+		if (boundConnection?.runtime) {
+			boundConnection.runtime.updateExecutionSettings(saved);
+		}
+		return { settings: saved };
+	});
+	route("execution-queue/cancel", async (req) => {
+		const boundConnection = connection;
+		const taskId = req.body?.taskId;
+		const attemptId = req.body?.attemptId;
+		if (typeof taskId !== "string" || !taskId) {
+			throw new Error("taskId is required");
+		}
+		if (attemptId !== undefined && (typeof attemptId !== "string" || !attemptId)) {
+			throw new Error("attemptId must be a string");
+		}
+		const cancelled = boundConnection?.runtime?.cancelScheduledTask(taskId, attemptId) ?? false;
+		return { cancelled };
 	});
 	route("disconnect", async () => {
 		await persist(undefined);

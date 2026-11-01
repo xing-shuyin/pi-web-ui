@@ -9,7 +9,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import * as toolManager from "../../server/tool-manager.js";
 import { AGENT_TOOL_CATALOG, SUBAGENT_TOOL_NAMES, TERMINAL_TOOL_NAMES } from "../../server/tool-manager.js";
 import { zh } from "../../web/src/i18n.js";
 

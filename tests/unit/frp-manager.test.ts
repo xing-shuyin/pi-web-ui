@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_FRP_VERSION,
-	DEFAULT_LOCAL_PORT,
 	DEFAULT_REMOTE_PORT,
 	DEFAULT_SERVER_PORT,
 	generateFrpcToml,

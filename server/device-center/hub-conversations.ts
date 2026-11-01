@@ -53,6 +53,22 @@ export function conversationPage(state: HubState, conversationId: string, before
 	};
 }
 
+/** Persisted insertion order is the FIFO; timestamps can collide and latestTaskId is not a queue. */
+export function nextConversationTask(state: HubState, conversationId: string): HubTask | undefined {
+	const conversation = state.conversations.find((entry) => entry.id === conversationId);
+	if (!conversation || conversation.closed) return;
+	const pending = state.tasks.filter((task) => task.conversationId === conversationId && taskPending(task));
+	if (pending.some((task) => task.status !== "queued" || task.cancelRequested)) return;
+	return pending[0];
+}
+
+/** A queued continuation must not replace the identity of the turn still executing. */
+export function advanceConversationTask(state: HubState, conversation: HubConversation, task: HubTask) {
+	const current = state.tasks.find((entry) => entry.id === conversation.latestTaskId);
+	if (current && current.id !== task.id && taskPending(current)) return;
+	conversation.latestTaskId = task.id;
+}
+
 export function conversationStatus(state: HubState, conversation: HubConversation) {
 	if (conversation.closed) return "closed";
 	return state.tasks.find((task) => task.id === conversation.latestTaskId)?.status ?? "interrupted";
@@ -67,6 +83,9 @@ export function establishConversation(state: HubState, task: HubTask): HubConver
 		botId: task.botId,
 		deviceId: task.deviceId,
 		botRevision: task.botRevision,
+		...(task.sourceBotId ? { sourceBotId: task.sourceBotId } : {}),
+		...(task.sourceConversationId ? { sourceConversationId: task.sourceConversationId } : {}),
+		...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
 		name: task.text.slice(0, 80),
 		rootTaskId: task.rootTaskId ?? task.id,
 		dispatchDepth: task.dispatchDepth ?? 0,
@@ -159,7 +178,7 @@ export function queueParentResult(state: HubState, child: HubTask): HubTask | un
 		updatedAt: now,
 	};
 	state.tasks.push(task);
-	conversation.latestTaskId = task.id;
+	advanceConversationTask(state, conversation, task);
 	conversation.updatedAt = now;
 	recordConversationTurn(state, task);
 	return task;

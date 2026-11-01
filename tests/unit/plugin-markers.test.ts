@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,13 +8,11 @@ import {
 	getMarker,
 	stripMarkers,
 	isKnownMarkerTool,
-	allMarkers,
 	collectGuidance,
-	parseMarkers,
 } from "../../server/markers/index.js";
 import { MarkerService, type MarkerHost } from "../../server/marker-service.js";
 import type { ClientStateStore, MarkerSettings } from "../../server/client-state.js";
-import type { MarkerContext, MarkerTool, ParsedToken } from "../../server/markers/marker.js";
+import type { MarkerTool } from "../../server/markers/marker.js";
 import { stripInlineMarkers, syncKnownInlineMarkers } from "../../web/src/components/Message.js";
 import { PluginManager } from "../../server/plugins.js";
 

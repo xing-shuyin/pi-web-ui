@@ -4,7 +4,7 @@ import { useT, type Translate } from "../i18n";
 import { randomUuid } from "../uuid";
 import { appUrl } from "../base-url";
 import { normalizeTemplateCommand, validTemplateCommand } from "../template-commands";
-import { appSend } from "../app-globals";
+import { appSend, useAppField } from "../app-globals";
 import { recordModelUsage } from "../model-usage";
 
 /* ------------------------------------------------------------------ */
@@ -313,6 +313,7 @@ export function TemplateProvider({
 	currentModelId: string | null;
 }) {
 	const t = useT();
+	const connectionStatus = useAppField("status");
 	/** 服务端持久化的自定义 / 内置覆盖 / 内置移出标记。 */
 	const [stored, setStored] = useState<StoredTemplate[]>([]);
 	const [storageError, setStorageError] = useState("");
@@ -354,6 +355,7 @@ export function TemplateProvider({
 
 	// Server file is authoritative; legacy browser data is removed only after import succeeds.
 	useEffect(() => {
+		if (connectionStatus !== "open") return;
 		let disposed = false;
 		const refresh = async () => {
 			if (pendingWrite.current) return;
@@ -363,9 +365,14 @@ export function TemplateProvider({
 				const data = await response.json();
 				if (!response.ok) throw new Error(data.error || response.statusText);
 				if (!Array.isArray(data.templates)) throw new Error("Invalid prompt templates response");
-				if (!disposed && !pendingWrite.current && generation === storageGeneration.current) setStored(data.templates);
+				if (!disposed && !pendingWrite.current && generation === storageGeneration.current) {
+					setStored(data.templates);
+					setStorageError("");
+				}
 			} catch (error) {
-				if (!disposed) setStorageError(String(error));
+				if (!disposed && !pendingWrite.current && generation === storageGeneration.current) {
+					setStorageError(String(error));
+				}
 			}
 		};
 		void (async () => {
@@ -380,11 +387,13 @@ export function TemplateProvider({
 			await refresh();
 		})();
 		window.addEventListener("focus", refresh);
+		window.addEventListener("online", refresh);
 		return () => {
 			disposed = true;
 			window.removeEventListener("focus", refresh);
+			window.removeEventListener("online", refresh);
 		};
-	}, [mutateStored]);
+	}, [mutateStored, connectionStatus]);
 
 	// 有效模板 = 内置（未移出，应用覆盖） + 自定义。
 	const templates = useMemo(() => {

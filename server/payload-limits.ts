@@ -1,5 +1,7 @@
 /** Shared upload and WebSocket limits. Keep this module free of runtime dependencies. */
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+/** Authenticated report chunks: 16 KiB UTF-8, worst-case JSON escaping plus envelope. */
+export const TASK_REPORT_UPLOAD_JSON_BYTES = 128 * 1024;
 export interface UploadLimits {
 	chatUploadMaxMb?: number;
 	workspaceUploadMaxMb?: number;

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
-import { useCopyFeedback, copyTextToClipboard, fallbackCopyText } from "../../web/src/use-copy-feedback.js";
+import { useCopyFeedback, copyTextToClipboard } from "../../web/src/use-copy-feedback.js";
 
 let root: Root | null = null;
 

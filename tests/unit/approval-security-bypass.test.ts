@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { resolve, sep } from "node:path";
 import {
 	evaluateApprovalRules,
 	isPathInsideRoot,

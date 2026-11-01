@@ -3,7 +3,6 @@ import {
 	removeFirstOccurrence,
 	removeQueuedByIndexOrText,
 	removeQueuedEntry,
-	removeQueuedEntryByIndexOrText,
 	rollbackQueuedEntry,
 	reconcileQueuedEntries,
 	createQueuedEntry,

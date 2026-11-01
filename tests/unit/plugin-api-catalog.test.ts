@@ -16,7 +16,7 @@ import {
 	HOST_METHODS,
 	buildPluginApiCatalog,
 } from "../../server/plugin-api-catalog.js";
-import { PluginManager, UI_SLOTS, UI_SLOT_ALIASES, UI_KINDS, type PluginHost } from "../../server/plugins.js";
+import { PluginManager, UI_SLOTS, UI_SLOT_ALIASES, type PluginHost } from "../../server/plugins.js";
 import { KNOWN_PERMISSION_FAMILIES } from "../../server/plugin-manifest-validate.js";
 
 // ---------------------------------------------------------------------------

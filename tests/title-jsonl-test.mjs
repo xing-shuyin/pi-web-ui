@@ -7,7 +7,7 @@
  *   session — nothing is lost when a conversation leaves the running list,
  *   and titles never leak between projects.
  */
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";

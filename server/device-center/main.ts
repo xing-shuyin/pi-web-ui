@@ -51,9 +51,16 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		ownsDevice: (accountId, id) => hub.store.getDeviceOwner(id) === accountId,
 		getDeviceName: (id) => hub.store.getDevice(id)?.name,
 		onTaskEvent: (id, event) => hub.acceptTaskEvent(id, event).then(() => undefined),
+		onTaskInteractions: (id, event) => hub.acceptInteractions(id, event),
+		onTaskProgress: (id, event) => hub.acceptTaskProgress(id, event),
+		onTaskToolLifecycle: (id, frame) => hub.acceptTaskToolLifecycle(id, frame),
+		onTaskPlanReady: (id, frame) => hub.acceptTaskPlanReady(id, frame),
+		onTaskClaim: (id, claim) => hub.claimTask(id, claim),
+		onTaskLeaseRenew: (id, renew) => hub.renewTaskLease(id, renew),
+		onTaskDisconnect: (id, taskId, attemptId) => hub.onTaskDisconnect(id, taskId, attemptId),
 	});
 	hub.setRelay(relay);
-	await installDeviceTransfers({
+	const transfers = await installDeviceTransfers({
 		app: hub.app,
 		hub,
 		dataDir: resolve(env.PI_DEVICE_HUB_DATA_DIR ?? join(homedir(), ".pi-device-hub")),
@@ -102,6 +109,7 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		}
 		await listen(hub.server, port);
 	} catch (error) {
+		await transfers.close();
 		relay.close();
 		await closePortals();
 		await hub.close();
@@ -123,6 +131,7 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		...hub,
 		portals,
 		async close() {
+			await transfers.close();
 			relay?.close();
 			await closePortals();
 			await hub.close();

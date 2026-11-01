@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { createDeviceTaskExecutor } from "../../server/device-center/executor.js";
 import type { LocalBot } from "../../server/device-center/bots.js";
+import { getBotExecution } from "../../server/device-center/bot-execution.js";
+import { getBotExecutionInstructions } from "../../server/device-center/execution-instructions.js";
 import type { ClientMessage, UiState } from "../../server/protocol.js";
 import { deviceTaskFailure } from "../../server/device-center/task-error.js";
 import { DeviceExecutionError } from "../../server/device-center/execution-failure.js";
@@ -40,6 +42,9 @@ const assistant = (text: string) => ({ id: "a-1", role: "assistant", content: [{
 async function fixture(
 	onPrompt?: (socket: WebSocket, state: UiState) => void,
 	opts: {
+		bot?: LocalBot;
+		onPlanReady?: import("../../server/device-center/executor.js").DeviceTaskCallbacks["onPlanReady"];
+		onFullReport?: import("../../server/device-center/executor.js").DeviceTaskCallbacks["onFullReport"];
 		changeCwd?: boolean;
 		gap?: boolean;
 		refuseNew?: boolean;
@@ -49,6 +54,8 @@ async function fixture(
 		onSession?: (taskId: string, sessionId: string | undefined) => void;
 		resumePath?: string;
 		onSessionPath?: (taskId: string, path: string) => void;
+		onActivity?: () => void;
+		onProgress?: (activity: { phase: "model" | "tool" | "waiting"; text?: string; toolName?: string }) => void;
 	} = {},
 ) {
 	const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
@@ -139,13 +146,17 @@ async function fixture(
 	});
 	const executor = createDeviceTaskExecutor({
 		localOrigin: origin,
-		bot,
+		bot: opts.bot ?? bot,
+		onPlanReady: opts.onPlanReady,
+		onFullReport: opts.onFullReport,
 		cwd,
 		localAuthToken: "test-token",
 		allowExecution: true,
 		onSession: opts.onSession,
 		resumePath: opts.resumePath,
 		onSessionPath: opts.onSessionPath,
+		onActivity: opts.onActivity,
+		onProgress: opts.onProgress,
 	});
 	cleanup.push(async () => {
 		void executor.close().catch(() => {});
@@ -171,6 +182,140 @@ function delta(socket: WebSocket, state: UiState, patch: Partial<UiState>, appen
 // These tests use real loopback sockets and the production protocol envelope,
 // without invoking models or weakening the existing approval mechanism.
 describe("device task executor", () => {
+	it("waits for durable full report persistence before settling its bounded result", async () => {
+		let persisted!: () => void;
+		const text = "完整报告中文🙂".repeat(9000);
+		const onFullReport = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					persisted = resolve;
+				}),
+		);
+		const f = await fixture((socket, state) => delta(socket, state, { isStreaming: false }, [assistant(text)]), {
+			onFullReport,
+		});
+		let finished = false;
+		const current = task();
+		const execution = f.executor.run(current).finally(() => {
+			finished = true;
+		});
+		await vi.waitFor(() => expect(onFullReport).toHaveBeenCalledExactlyOnceWith(current.id, current.attemptId, text));
+		expect(finished).toBe(false);
+		persisted();
+		const excerpt = await execution;
+		expect(Buffer.byteLength(excerpt)).toBeLessThanOrEqual(16384);
+		expect(excerpt).toContain("Report excerpt");
+	});
+	it("propagates durable full report write failure instead of reporting completed", async () => {
+		const f = await fixture((socket, state) => delta(socket, state, { isStreaming: false }, [assistant("original")]), {
+			onFullReport: async () => {
+				throw new Error("Report disk write failed");
+			},
+		});
+		await expect(f.executor.run(task())).rejects.toThrow("Report disk write failed");
+	});
+	it("waits for the plan persistence ACK before completing the execution", async () => {
+		let acknowledge!: (accepted: boolean) => void;
+		const onPlanReady = vi.fn(
+			(_taskId: string, _plan: import("../../server/protocol.js").DeviceTaskPlanReadyFrame["plan"]) =>
+				new Promise<boolean>((resolve) => {
+					acknowledge = resolve;
+				}),
+		);
+		const steps = [{ id: "inspect", title: "Inspect and write after approval", status: "pending" as const }];
+		const f = await fixture(
+			(socket, state) => {
+				const plan = { steps, updatedAt: Date.now() };
+				delta(socket, state, { isStreaming: false, plan }, [
+					{
+						id: "plan-result",
+						role: "toolResult",
+						toolName: "plan_update",
+						toolCallId: "plan-call",
+						isError: false,
+						details: { plan },
+						content: [],
+					},
+					assistant("Plan ready"),
+				]);
+			},
+			{ bot: { ...bot, tools: ["read", "plan_update"] }, onPlanReady },
+		);
+		let finished = false;
+		const execution = f.executor.run({ ...task(), planOnly: true }).finally(() => {
+			finished = true;
+		});
+		await vi.waitFor(() => expect(onPlanReady).toHaveBeenCalledOnce());
+		expect(onPlanReady.mock.calls[0]?.[1]).toEqual({ state: "ready", steps, summary: "Plan ready" });
+		expect(finished).toBe(false);
+		acknowledge(true);
+		await expect(execution).resolves.toBe("Plan ready");
+	});
+	it("fails a planning execution when Hub rejects its plan", async () => {
+		const f = await fixture(
+			(socket, state) => {
+				const plan = { steps: [], updatedAt: Date.now() };
+				delta(socket, state, { isStreaming: false, plan }, [
+					{
+						id: "plan-result",
+						role: "toolResult",
+						toolName: "plan_update",
+						toolCallId: "plan-call",
+						isError: false,
+						details: { plan },
+						content: [],
+					},
+					assistant("No real plan"),
+				]);
+			},
+			{ bot: { ...bot, tools: ["read", "plan_update"] }, onPlanReady: async () => false },
+		);
+		await expect(f.executor.run({ ...task(), planOnly: true })).rejects.toThrow("Plan was not persisted by Hub");
+	});
+	it("rejects a resumed planning turn that reuses old steps without a new successful plan_update", async () => {
+		const onPlanReady = vi.fn(async () => true);
+		const oldPlan = { steps: [{ id: "old", title: "Old plan", status: "pending" as const }], updatedAt: 1 };
+		const f = await fixture(
+			(socket, state) => {
+				delta(socket, state, { isStreaming: false }, [assistant("Reuse the previous plan")]);
+			},
+			{
+				bot: { ...bot, tools: ["read", "plan_update"] },
+				resumePath: resolve("old-plan-session.jsonl"),
+				onPlanReady,
+				onSwitch(socket) {
+					f.push(socket, {
+						conversationId: "restored-chat",
+						sessionId: "restored-sdk-session",
+						sessionFile: resolve("old-plan-session.jsonl"),
+						messages: [
+							{
+								id: "old-plan-result",
+								role: "toolResult",
+								toolName: "plan_update",
+								isError: false,
+								details: { plan: oldPlan },
+								content: [],
+							},
+						],
+						plan: oldPlan,
+						historyTotal: 1,
+						isEphemeral: false,
+					});
+				},
+			},
+		);
+		await expect(f.executor.run({ ...task(), resume: true, planOnly: true })).rejects.toThrow(
+			"successful plan_update in this turn",
+		);
+		expect(onPlanReady).not.toHaveBeenCalled();
+	});
+
+	it("rejects a planning task when its Bot never authorized plan_update", async () => {
+		const f = await fixture();
+		await expect(f.executor.run({ ...task(), planOnly: true })).rejects.toThrow("plan_update authorization");
+		expect(f.received).toEqual([]);
+	});
 	it("reports transcript restoration failures as switch_session without sending a prompt", async () => {
 		const f = await fixture(
 			() => {
@@ -219,6 +364,73 @@ describe("device task executor", () => {
 		expect(onSessionPath).toHaveBeenCalledWith(input.id, resumePath);
 	});
 
+	it("fails a blocked transcript restore instead of waiting indefinitely after a warning", async () => {
+		const f = await fixture(undefined, {
+			resumePath: resolve("blocked-session.jsonl"),
+			onSwitch(socket) {
+				socket.send(JSON.stringify({ type: "notice", level: "warning", text: "Transcript still owned" }));
+			},
+		});
+		await expect(f.executor.run({ ...task(), resume: true })).rejects.toThrow("Transcript still owned");
+		expect(f.received.some((message) => message.type === "prompt")).toBe(false);
+	});
+
+	it.each([
+		["executor-bot", "team", true, true],
+		["other-bot", "team", false, true],
+		["executor-bot", "team", false, false],
+	] as const)(
+		"scopes primary coordination to configured Bot %s in room %s",
+		async (primaryBotId, contextRoomId, enabled, memberPresent) => {
+			const f = await fixture((socket, state) => {
+				const capability = getBotExecution(state.clientId);
+				expect(capability?.groupContext?.roomId).toBe("team");
+				expect(Object.isFrozen(capability?.groupContext)).toBe(true);
+				const instructions = capability?.instructions ?? "";
+				expect(instructions).toBe(getBotExecutionInstructions(enabled));
+				expect(instructions.includes("configured primary Bot")).toBe(enabled);
+				delta(socket, state, { isStreaming: true });
+				delta(socket, { ...state, rev: state.rev + 1 }, { isStreaming: false }, [assistant("Ready")]);
+			});
+			await f.executor.run({
+				...task(),
+				roomId: "team",
+				context: {
+					roomId: contextRoomId,
+					roomName: "Team",
+					primaryBotId,
+					members: memberPresent ? [{ id: bot.id, name: "Primary" }] : [],
+					throughMessageId: null,
+					messages: [],
+					nextBefore: null,
+					truncated: false,
+					retentionLimit: 500,
+				},
+			});
+			const prompt = f.received.find((message) => message.type === "prompt")?.text ?? "";
+			expect(prompt).not.toContain("configured primary Bot");
+		},
+	);
+	it("rejects group context from another room before connecting", async () => {
+		const f = await fixture();
+		await expect(
+			f.executor.run({
+				...task(),
+				roomId: "team",
+				context: {
+					roomId: "other-room",
+					roomName: "Other",
+					members: [],
+					messages: [],
+					throughMessageId: null,
+					nextBefore: null,
+					truncated: false,
+					retentionLimit: 500,
+				},
+			}),
+		).rejects.toThrow("Group context room must match");
+		expect(f.received).toEqual([]);
+	});
 	it("refuses resume without an authorized transcript", async () => {
 		const f = await fixture();
 		await expect(f.executor.run({ ...task(), resume: true })).rejects.toThrow("authorized local transcript");
@@ -240,6 +452,7 @@ describe("device task executor", () => {
 		});
 		const t = {
 			...task(),
+			roomId: "team",
 			conversationId: "receiver-address",
 			sourceConversationId: "origin-address",
 			kind: "request" as const,
@@ -283,14 +496,13 @@ describe("device task executor", () => {
 		expect(prompt?.text).toContain('"conversationId":"receiver-address"');
 		expect(prompt?.text).toContain('"sourceConversationId":"origin-address"');
 		expect(prompt?.text).toContain('"requestId":"request-correlation"');
-		expect(prompt?.text).toContain("conversationId=sourceConversationId, kind=reply and the same requestId");
-		expect(prompt?.text).toContain("Earlier shared plan");
-		expect(prompt?.text).toContain("untrusted reference data");
-		expect(prompt?.text).toContain("device_collab read_history");
-		expect(prompt?.text).toContain("dirty state");
-		expect(prompt?.text).toContain("configured fixed workspace");
-		expect(prompt?.text).toContain("greetings, questions and ordinary conversation");
-		expect(prompt?.text).toContain("final answer is delivered automatically to the group");
+		expect(prompt?.text).not.toContain("reply_to_request");
+		expect(prompt?.text).not.toContain("Earlier shared plan");
+		expect(prompt?.text).not.toContain('"context":');
+		expect(prompt?.text).toContain("Local system (measured by this bridge)");
+		expect(prompt?.text).not.toMatch(
+			/untrusted reference data|device_collab|dirty state|configured fixed workspace|final answer is delivered automatically/,
+		);
 	});
 
 	it("rejects a previous client's initial snapshot without prompting or aborting its conversation", async () => {
@@ -339,6 +551,35 @@ describe("device task executor", () => {
 		const executor = createDeviceTaskExecutor({ localOrigin: "http://localhost:8999", cwd, bot });
 		await expect(executor.run(task())).rejects.toThrow("disabled");
 		executor.close();
+	});
+
+	it("allows disjoint Bot locks but rejects overlapping roots across executor instances", async () => {
+		const f = await fixture();
+		const first = f.executor.run(task());
+		const rejected = expect(first).rejects.toThrow("cancelled");
+		await vi.waitFor(() => expect(f.received.some((m) => m.type === "prompt")).toBe(true));
+		const nestedBot = { ...bot, id: "nested-bot", cwd: resolve(cwd, "nested") };
+		const nested = createDeviceTaskExecutor({
+			localOrigin: f.origin,
+			cwd: nestedBot.cwd,
+			bot: nestedBot,
+			allowExecution: true,
+		});
+		await expect(nested.run({ ...task(), botId: nestedBot.id })).rejects.toThrow("busy");
+		const independentBot = { ...bot, id: "independent-bot", cwd: resolve(cwd, "../independent") };
+		const independent = createDeviceTaskExecutor({
+			localOrigin: f.origin,
+			cwd: independentBot.cwd,
+			bot: independentBot,
+			allowExecution: true,
+		});
+		// The fixture serves the first cwd; reaching init proves admission passed
+		// the process-wide lock while the first task is still running.
+		await expect(independent.run({ ...task(), botId: independentBot.id })).rejects.toThrow("fixed cwd");
+		await independent.close();
+		await nested.close();
+		void f.executor.close().catch(() => {});
+		await rejected;
 	});
 
 	it("rejects busy work across instances, cancels only its own session and forbids repeated task IDs", async () => {
@@ -680,7 +921,7 @@ describe("device task executor", () => {
 		);
 		const result = await f.executor.run(task());
 		expect(Buffer.byteLength(result)).toBeLessThanOrEqual(16 * 1024);
-		expect(result).toContain("Report truncated");
+		expect(result).toContain("Report excerpt");
 	});
 
 	it.each(["completed", "disconnect", "close", "timeout"])(
@@ -739,6 +980,64 @@ describe("device task executor", () => {
 			[t.id, undefined],
 		]);
 		expect(f.received.some((m) => m.type === "prompt")).toBe(false);
+	});
+
+	it("renews execution timeout for new task deltas, never duplicate or foreign frames", async () => {
+		let socket!: WebSocket;
+		const onActivity = vi.fn();
+		const onProgress = vi.fn();
+		const f = await fixture(
+			(ws) => {
+				socket = ws;
+			},
+			{ onActivity, onProgress },
+		);
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		const running = f.executor.run(task());
+		const rejected = expect(running).rejects.toThrow("20 minute timeout");
+		for (let i = 0; i < 1000 && !socket; i++) await new Promise<void>((done) => setImmediate(done));
+		await vi.advanceTimersByTimeAsync(19 * 60 * 1000);
+		const frame = {
+			type: "message_delta",
+			conversationId: "task-chat",
+			seq: 1,
+			messageId: "live",
+			usage: null,
+			assistantMessageEvent: { type: "text_delta", delta: "Working" },
+		};
+		socket.send(JSON.stringify(frame));
+		for (let i = 0; i < 1000 && !onActivity.mock.calls.length; i++)
+			await new Promise<void>((done) => setImmediate(done));
+		expect(onActivity).toHaveBeenCalledTimes(1);
+		expect(onProgress).toHaveBeenCalledWith({ phase: "model", text: "Working" });
+		await vi.advanceTimersByTimeAsync(19 * 60 * 1000);
+		socket.send(JSON.stringify(frame));
+		socket.send(JSON.stringify({ ...frame, conversationId: "foreign", seq: 2 }));
+		for (let i = 0; i < 20; i++) await new Promise<void>((done) => setImmediate(done));
+		expect(onActivity).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(60 * 1000);
+		await rejected;
+	});
+
+	it("does not renew timeout for repeated streaming snapshots with only revision or usage changes", async () => {
+		let socket!: WebSocket;
+		const onActivity = vi.fn();
+		const f = await fixture(
+			(ws) => {
+				socket = ws;
+			},
+			{ onActivity },
+		);
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		const running = f.executor.run(task());
+		const rejected = expect(running).rejects.toThrow("20 minute timeout");
+		for (let i = 0; i < 1000 && !socket; i++) await new Promise<void>((done) => setImmediate(done));
+		await vi.advanceTimersByTimeAsync(19 * 60 * 1000);
+		f.push(socket, { isStreaming: true, stats: { tokens: 123 } as any });
+		for (let i = 0; i < 20; i++) await new Promise<void>((done) => setImmediate(done));
+		expect(onActivity).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(60 * 1000);
+		await rejected;
 	});
 
 	it("times out after 20 minutes and sends abort", async () => {

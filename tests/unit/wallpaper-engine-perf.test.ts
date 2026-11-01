@@ -12,7 +12,15 @@ describe("wallpaper-engine 性能优化与画质分级守卫测试", () => {
 	it("manifest.json 版本递增且提供 qualityPreset、antiAliasing 与 lightWallpaperMode 设置", () => {
 		const raw = readFileSync(manifestPath, "utf8");
 		const manifest = JSON.parse(raw);
-		expect(manifest.version).toBe("0.3.68");
+		// 不钉死具体版本号（每次发版都要改）：这里只锁「是合法 semver 且不低于引入
+		// qualityPreset 的那一版」；版本必须**递增**由 plugin-version-bump-guard 守。
+		expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
+		const atLeast = (value: string, floor: string) => {
+			const [a, b, c] = value.split(".").map(Number);
+			const [x, y, z] = floor.split(".").map(Number);
+			return a !== x ? a > x : b !== y ? b > y : c >= z;
+		};
+		expect(atLeast(manifest.version, "0.3.68")).toBe(true);
 
 		const keys = manifest.settings.map((s: { key: string }) => s.key);
 		expect(keys).toContain("qualityPreset");

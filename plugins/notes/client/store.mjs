@@ -20,7 +20,7 @@
  * 时间字段一律「本地时区的 'YYYY-MM-DDTHH:MM' 串或 ISO 串」（字符串比较即可排序，
  * 与 datetime-local 输入框同形）；`repeat` 是 'none'|'daily'|'weekly'|'monthly'。
  */
-import { isSupportedEvery, MAX_EVERY_MINUTES, MIN_EVERY_MINUTES, nextScheduleFire, scheduleText } from "./cron.mjs";
+import { isSupportedEvery, MIN_EVERY_MINUTES, nextScheduleFire, scheduleText } from "./cron.mjs";
 
 export const STORE_VERSION = 1;
 

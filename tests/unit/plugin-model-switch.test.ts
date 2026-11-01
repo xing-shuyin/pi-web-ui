@@ -7,7 +7,7 @@
  * 的 catch 永不触发 —— 模型 ID 打错或没配密钥时，会静默按旧模型跑完整轮次。
  * switchModelOrThrow 用「复核当前模型」把这条路径变成响亮失败。
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 
 /** 伪造 this：只用到 setModel 与 session.model 两处。 */

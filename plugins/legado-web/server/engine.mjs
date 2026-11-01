@@ -658,7 +658,7 @@ var require_safer = __commonJS({
     if (!safer.kStringMaxLength) {
       try {
         safer.kStringMaxLength = process.binding("buffer").kStringMaxLength;
-      } catch (e) {
+      } catch  {
       }
     }
     if (!safer.constants) {
@@ -4155,7 +4155,7 @@ var require_lib = __commonJS({
       try {
         iconv2.getCodec(enc);
         return true;
-      } catch (e) {
+      } catch  {
         return false;
       }
     };
@@ -4226,7 +4226,7 @@ var require_lib = __commonJS({
     var stream_module;
     try {
       stream_module = __require("stream");
-    } catch (e) {
+    } catch  {
     }
     if (stream_module && stream_module.Transform) {
       iconv2.enableStreamingAPI(stream_module);
@@ -30896,7 +30896,7 @@ var require_mime_type = __commonJS({
       static parse(string) {
         try {
           return new this(string);
-        } catch (e) {
+        } catch  {
           return null;
         }
       }
@@ -32775,7 +32775,7 @@ var require_xpath = __commonJS({
           if (n.selectSingleNode) {
             return n.selectSingleNode("..");
           }
-        } catch (e) {
+        } catch  {
         }
         var doc = n.nodeType == 9 ? n : n.ownerDocument;
         var elts = doc.getElementsByTagName("*");
@@ -34273,7 +34273,7 @@ var require_xpath = __commonJS({
         var doc = XPathExpression.getOwnerDocument(n);
         try {
           return doc.implementation.hasFeature("HTML", "2.0");
-        } catch (e) {
+        } catch  {
           return true;
         }
       };
@@ -34408,12 +34408,12 @@ var require_xpath = __commonJS({
           if (document.implementation && document.implementation.hasFeature && document.implementation.hasFeature("XPath", null)) {
             shouldInstall = false;
           }
-        } catch (e) {
+        } catch  {
         }
         if (shouldInstall) {
           installDOM3XPathSupport(document, new XPathParser());
         }
-      } catch (e) {
+      } catch  {
       }
       installDOM3XPathSupport(exports2, new XPathParser());
       (function() {
@@ -35041,7 +35041,7 @@ var require_grammar = __commonJS({
         }
         var match = new RegExpImpl("\u{1D306}", "u").exec("\u{1D306}");
         return !!match && match[0].length === 2;
-      } catch (error) {
+      } catch  {
       }
       return false;
     }
@@ -35415,7 +35415,7 @@ var require_dom = __commonJS({
         var opts;
         if (typeof options === "function") {
           opts = { requireWellFormed: false, splitCDATASections: true, nodeFilter: options };
-        } else if (!!options) {
+        } else if (options) {
           opts = {
             requireWellFormed: !!options.requireWellFormed,
             splitCDATASections: options.splitCDATASections !== false,
@@ -37878,7 +37878,7 @@ var require_dom = __commonJS({
           object["$$" + key] = value;
         };
       }
-    } catch (e) {
+    } catch  {
     }
     exports._updateLiveList = _updateLiveList;
     exports.Attr = Attr;

@@ -1163,7 +1163,10 @@ const deviceCenter = await installLocalDeviceCenter({
 			credential: config.credential,
 			localOrigin,
 			localAuthToken: AUTH_TOKEN,
+			recovery: runtime.recovery,
+			reportOutbox: runtime.reportOutbox,
 			onTask: runtime.onTask,
+			onInteractionAnswer: (answer) => runtime.answerTaskInteraction(answer.taskId, answer.attemptId, answer),
 			onConnect: syncBots,
 			onCommand: runtime.onCommand,
 			onDisconnect: () => {
@@ -1174,6 +1177,7 @@ const deviceCenter = await installLocalDeviceCenter({
 		});
 		return {
 			isConnected: connector.isOnline,
+			runtime,
 			async close() {
 				setDeviceCollabService(undefined);
 				connector.close();

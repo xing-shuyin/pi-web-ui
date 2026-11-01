@@ -30,7 +30,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { basename, extname, join, normalize, resolve, sep } from "node:path";
 
 /** Wallpaper Engine App ID */
 const WE_APPID = "431960";

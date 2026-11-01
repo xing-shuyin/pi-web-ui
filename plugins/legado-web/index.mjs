@@ -20,7 +20,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeFetchError, proxyFetch } from "./net.mjs";
 import { KEY_RE, createStore } from "./store.mjs";

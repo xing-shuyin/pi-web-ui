@@ -21,7 +21,7 @@
  * Node 里 Buffer.from(json,'utf8').toString('base64') 等价。
  */
 
-import { ENDPOINTS, HTTP_BASE } from "./constants.mjs";
+import { HTTP_BASE } from "./constants.mjs";
 import { DeepSeekTtsError, protocolError, transportError, usageError } from "./errors.mjs";
 import { DEEPSEEK_HASH_NAME, deepseekHashHex } from "./deepseek-hash.mjs";
 import { jsonHeaders } from "./http.mjs";

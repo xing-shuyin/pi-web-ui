@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-	DEFAULT_HEAD_LINES,
 	DEFAULT_TAIL_LINES,
 	estimateMessagesTotalTokens,
 	estimateMessageTokens,

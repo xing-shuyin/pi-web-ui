@@ -45,7 +45,8 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("canvas workspace isolation", () => {
+// Real Git worktrees need a separate budget when parallel suites contend for disk I/O.
+describe("canvas workspace isolation", { timeout: 20_000 }, () => {
 	it("uses detached graph/run/node paths, preserves subdirectories, and never resets existing worktrees", async () => {
 		const options = await fixture();
 		const branch = await git(options.baseCwd, "branch", "--show-current");

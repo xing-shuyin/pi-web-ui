@@ -248,14 +248,14 @@ window.__ModuleLoader__.load({
           { id: '2', text: '点击右侧按钮可直接将笔记填入输入框', done: false }
         ];
         return JSON.parse(raw);
-      } catch (e) {
+      } catch  {
         return [];
       }
     }
     function saveNotes(notes) {
       try {
         localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-      } catch (e) {}
+      } catch  {}
     }
 
     // Default Quick Actions

@@ -18,6 +18,7 @@ import { LocalBots } from "./LocalBots";
 import { HubLink } from "./HubLink";
 import { DeviceCenterSetup } from "./DeviceCenterSetup";
 import { DeviceDirectory } from "./DeviceDirectory";
+import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
 import { useDeviceGroupNavigation } from "../device-group-navigation";
 
 type DeviceStatus = { name: string; hubUrl?: string; deviceId?: string; allowExecution: boolean; connected: boolean };
@@ -786,6 +787,9 @@ export function DeviceCenter({
 							key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`}
 							pathCompletions={pathCompletions}
 						/>
+					)}
+					{view === "settings" && (
+						<DeviceExecutionSettings hubUrl={status?.hubUrl} deviceId={status?.deviceId} onNotice={setNotice} />
 					)}
 					{view === "groups" && <DeviceGroups navigation={navigation} />}
 					<aside className="dc-help">

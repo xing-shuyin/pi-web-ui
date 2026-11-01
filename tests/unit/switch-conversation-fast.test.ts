@@ -1,9 +1,43 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("switchConversation 性能与快速切换优化 (#switch-conv-perf)", () => {
-	it("源码保证 switchConversation 先 flushSnapshot 和 transition_progress done，后 pushSettings", () => {
+	it("行为验证 switchConversation 先 flushSnapshot 和 transition_progress done，后 pushSettings", async () => {
+		const calls: string[] = [];
+		const conv1 = { id: "c1", cwd: "/test" } as any;
+		const conv2 = { id: "c2", cwd: "/test" } as any;
+		const cs: any = fakeClientSession();
+		cs.activeId = "c1";
+		cs.cwd = "/test";
+		cs.convs = new Map([
+			["c1", conv1],
+			["c2", conv2],
+		]);
+		Object.defineProperty(cs, "conv", { get: () => cs.convs.get(cs.activeId) });
+		cs.displaceActive = vi.fn().mockReturnValue(null);
+		cs.webUi = { refresh: vi.fn() };
+		cs.emitConversations = vi.fn();
+		cs.goalSvc = { emitGoalStatus: vi.fn() };
+		cs.pushTerminals = vi.fn();
+		cs.flushSnapshot = vi.fn(() => calls.push("flushSnapshot"));
+		cs.emit = vi.fn((msg: any) => {
+			if (msg.type === "transition_progress" && msg.phase === "done") {
+				calls.push("transition_done");
+			}
+		});
+		cs.pushSlashCommands = vi.fn();
+		cs.notifyConversationChanged = vi.fn();
+		cs.pushSettings = vi.fn(() => calls.push("pushSettings"));
+
+		await cs.switchConversation("c2");
+
+		expect(calls).toEqual(["flushSnapshot", "transition_done", "pushSettings"]);
+	});
+
+	it("静态保障：遇到不存在的对话发送 transition_progress error 提示且释放旧 Git watcher", () => {
 		const src = readFileSync(join(__dirname, "../../server/agent-service.ts"), "utf-8");
 		const switchConvStart = src.indexOf("async switchConversation(id: string): Promise<void> {");
 		expect(switchConvStart).toBeGreaterThan(0);
@@ -16,16 +50,7 @@ describe("switchConversation 性能与快速切换优化 (#switch-conv-perf)", (
 		expect(switchConvBody).toContain('type: "transition_progress"');
 		expect(switchConvBody).toContain('phase: "error"');
 
-		// 检查 2: 快照优先，先 flushSnapshot，再 transition_progress done，最后才 pushSettings
-		const flushIdx = switchConvBody.indexOf("this.flushSnapshot();");
-		const doneIdx = switchConvBody.indexOf('phase: "done"');
-		const pushSettingsIdx = switchConvBody.indexOf("this.pushSettings();");
-
-		expect(flushIdx).toBeGreaterThan(0);
-		expect(doneIdx).toBeGreaterThan(flushIdx);
-		expect(pushSettingsIdx).toBeGreaterThan(doneIdx);
-
-		// 检查 3: 跨项目切换时调用 unwatchGit 释放旧工作区 Git watcher
+		// 检查 2: 跨项目切换时调用 unwatchGit 释放旧工作区 Git watcher
 		expect(switchConvBody).toContain("this.files.unwatchGit()");
 	});
 

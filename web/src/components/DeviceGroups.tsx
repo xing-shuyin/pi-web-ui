@@ -2,20 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeKey } from "../shortcut-stack";
 import { LocalBots } from "./LocalBots";
-import { FiUsers, FiPlus, FiMessageSquare, FiMonitor } from "react-icons/fi";
+import { FiUsers, FiPlus, FiMessageSquare, FiMonitor, FiSearch } from "react-icons/fi";
 import type { DeviceGroupNavigation } from "../device-group-navigation";
+import { searchGroupRoomsAndTasks, GroupNotificationManager, type SearchableGroupTask } from "../group-view-state";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
 
 type Device = { id: string; deviceId?: string; name: string; enabled: boolean; online?: boolean };
-type Room = { id: string; name: string; botIds: string[] };
+type Room = { id: string; name: string; botIds: string[]; primaryBotId?: string };
 type Detail = { room: Room };
 const words = {
 	zh: {
 		groups: "群聊",
 		manage: "管理成员",
-		save: "保存成员",
+		save: "保存设置",
 		create: "建群",
 		name: "群名称",
 		devices: "选择 Bot（设备仅承载 Bot）",
@@ -29,11 +30,14 @@ const words = {
 		rebind: "设备绑定已失效或已解除，请在设备设置中重新绑定。",
 		forbidden: "本机访问被拒绝，请检查本机登录状态与访问权限。",
 		failed: "请求失败",
+		searchPlaceholder: "搜索群或任务…",
+		matchedBot: "Bot: ",
+		matchedTask: "任务: ",
 	},
 	en: {
 		groups: "Groups",
 		manage: "Manage members",
-		save: "Save members",
+		save: "Save settings",
 		create: "Create group",
 		name: "Group name",
 		devices: "Select Bots (devices host Bots)",
@@ -47,6 +51,9 @@ const words = {
 		rebind: "The device binding has expired or was removed. Bind again in device settings.",
 		forbidden: "Local access denied. Check your local sign-in and access permissions.",
 		failed: "Request failed",
+		searchPlaceholder: "Search groups or tasks…",
+		matchedBot: "Bot: ",
+		matchedTask: "Task: ",
 	},
 };
 class RequestError extends Error {
@@ -119,13 +126,18 @@ export function DeviceGroups({
 	const [detail, setDetail] = useState<Detail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
+	const [saved, setSaved] = useState(false);
 	const [creating, setCreating] = useState(createOnly);
 	const [managing, setManaging] = useState(false);
 	const [creatingBot, setCreatingBot] = useState(false);
 	const [name, setName] = useState("");
 	const [selected, setSelected] = useState<string[]>([]);
+	const [primaryBotId, setPrimaryBotId] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [refresh, setRefresh] = useState(0);
+	const [searchQuery, setSearchQuery] = useState("");
+	const [tasks, setTasks] = useState<SearchableGroupTask[]>([]);
+	const notificationManager = useRef(new GroupNotificationManager());
 	const pendingManage = useRef<string | null>(null);
 	const navigationRevision = useRef<number | undefined>(undefined);
 	const generation = useRef(0);
@@ -156,6 +168,8 @@ export function DeviceGroups({
 		setDetail(null);
 		setCreating(false);
 		setManaging(manage);
+		setSaved(false);
+		setPrimaryBotId("");
 		pendingManage.current = manage ? id : null;
 		setSelected([]);
 		setLoading(true);
@@ -166,6 +180,8 @@ export function DeviceGroups({
 		++generation.current;
 		cancelMutation();
 		setCreating(true);
+		setSaved(false);
+		setPrimaryBotId("");
 		setManaging(false);
 		pendingManage.current = null;
 		setDetail(null);
@@ -189,16 +205,24 @@ export function DeviceGroups({
 					request<{ bots: Device[] }>("bots", current.signal),
 					request<{ rooms: Room[] }>("rooms", current.signal),
 					managing && roomId
-						? request<Detail>(`rooms/${encodeURIComponent(roomId)}`, current.signal)
+						? request<Detail & { tasks?: SearchableGroupTask[] }>(`rooms/${encodeURIComponent(roomId)}`, current.signal)
 						: Promise.resolve(null),
 				]);
 				if (!valid() || current.signal.aborted) return;
 				setDevices(deviceData.bots);
 				setRooms(roomData.rooms);
 				setDetail(next);
+				if (next?.tasks) {
+					setTasks(next.tasks);
+					for (const t of next.tasks) {
+						if (t.status === "completed") notificationManager.current.onTaskCompleted(t.roomId, t.id);
+						else if (t.status === "failed") notificationManager.current.onTaskFailed(t.roomId, t.id);
+					}
+				}
 				if (next && pendingManage.current === next.room.id) {
 					pendingManage.current = null;
 					setSelected(next.room.botIds);
+					setPrimaryBotId(next.room.primaryBotId ?? "");
 				}
 				setError("");
 			} catch (cause) {
@@ -243,22 +267,41 @@ export function DeviceGroups({
 		mutation.current = controller;
 		setBusy(true);
 		setError("");
+		setSaved(false);
+		const expectedPrimary = selected.includes(primaryBotId) ? primaryBotId : "";
 		const isCreate = creating;
 		const id = detail?.room.id;
 		try {
 			const { room } = await request<{ room: Room }>(
 				isCreate ? "rooms" : `rooms/${encodeURIComponent(id!)}/members`,
 				controller.signal,
-				isCreate ? { name: name.trim(), botIds: selected } : { botIds: selected },
+				{
+					...(isCreate ? { name: name.trim() } : {}),
+					botIds: selected,
+					...(primaryBotId && selected.includes(primaryBotId)
+						? { primaryBotId }
+						: !isCreate && detail?.room.primaryBotId
+							? { primaryBotId: null }
+							: {}),
+				},
 			);
 			if (controller.signal.aborted || mutation.current !== controller) return;
+			if ((room.primaryBotId ?? "") !== expectedPrimary) {
+				throw new Error(
+					isZhLocale(locale)
+						? "中心未保存主 Bot 设置，请更新群组所属的设备中心（Hub）后重试。"
+						: "The Hub did not save the primary Bot setting. Update the group's Hub and retry.",
+				);
+			}
+			setSaved(true);
 			setRooms((old) => [...old.filter((item) => item.id !== room.id), room]);
 			setRoomId(room.id);
 			setDetail({ room });
 			setCreating(false);
-			setManaging(false);
+			setManaging(!isCreate);
 			setName("");
-			setSelected([]);
+			setSelected(isCreate ? [] : room.botIds);
+			setPrimaryBotId(room.primaryBotId ?? "");
 			setRefresh((value) => value + 1);
 			window.dispatchEvent(new CustomEvent("pi-web-ui:device-groups-changed"));
 			if (isCreate) {
@@ -287,27 +330,108 @@ export function DeviceGroups({
 							<FiPlus /> {w.create}
 						</button>
 					</div>
-					<div className="dg-rooms">
-						{rooms.map((room) => (
-							<button
-								className="dc-button dg-room"
-								type="button"
-								key={room.id}
-								aria-current={room.id === roomId ? "page" : undefined}
-								disabled={!active}
-								onClick={() => {
-									selectRoom(room.id);
-									openChat(room.id);
+					<div className="dg-search-bar" style={{ padding: "0 10px 8px 10px" }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: "6px",
+								background: "var(--bg)",
+								border: "1px solid var(--border)",
+								borderRadius: "6px",
+								padding: "4px 8px",
+							}}
+						>
+							<FiSearch style={{ color: "var(--text-dim)", flex: "none" }} />
+							<input
+								type="search"
+								value={searchQuery}
+								onChange={(e) => setSearchQuery(e.target.value)}
+								placeholder={w.searchPlaceholder}
+								style={{
+									border: "none",
+									background: "transparent",
+									color: "var(--text)",
+									width: "100%",
+									fontSize: "12px",
+									outline: "none",
 								}}
-							>
-								<FiMessageSquare /> {room.name}
-							</button>
-						))}
+							/>
+						</div>
+					</div>
+					<div className="dg-rooms">
+						{searchGroupRoomsAndTasks(searchQuery, rooms, tasks).map((result) => {
+							const room = rooms.find((r) => r.id === result.roomId);
+							if (!room) return null;
+							const pendingCount = notificationManager.current.getPendingInteractionsCount(room.id);
+							return (
+								<button
+									className="dc-button dg-room"
+									type="button"
+									key={result.matchedTask ? `${room.id}:${result.matchedTask.id}` : room.id}
+									aria-current={room.id === roomId ? "page" : undefined}
+									disabled={!active}
+									onClick={() => {
+										selectRoom(room.id);
+										openChat(room.id);
+									}}
+								>
+									<FiMessageSquare />
+									<span
+										style={{
+											flex: 1,
+											minWidth: 0,
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap",
+											textAlign: "left",
+										}}
+									>
+										{room.name}
+										{result.matchedBy === "bot_id" && (
+											<small style={{ display: "block", color: "var(--text-dim)", fontSize: "11px" }}>
+												{w.matchedBot} {searchQuery}
+											</small>
+										)}
+										{result.matchedBy === "task_title" && result.matchedTask && (
+											<small style={{ display: "block", color: "var(--accent)", fontSize: "11px" }}>
+												{w.matchedTask} {result.matchedTask.title}
+											</small>
+										)}
+										{result.matchedBy === "task_id" && result.matchedTask && (
+											<small style={{ display: "block", color: "var(--text-dim)", fontSize: "11px" }}>
+												ID: {result.matchedTask.id.slice(0, 8)}
+											</small>
+										)}
+									</span>
+									{pendingCount > 0 && (
+										<span
+											style={{
+												flex: "none",
+												background: "var(--accent)",
+												color: "var(--accent-contrast, #fff)",
+												borderRadius: "10px",
+												padding: "1px 6px",
+												fontSize: "11px",
+												fontWeight: "bold",
+											}}
+										>
+											{pendingCount}
+										</span>
+									)}
+								</button>
+							);
+						})}
 					</div>
 					{!loading && !rooms.length && <p className="dg-empty">{w.empty}</p>}
 				</div>
 			)}
 			<div className="dc-card dg-chat">
+				{saved && (
+					<p role="status">
+						{isZhLocale(locale) ? "已保存成员和主 Bot 设置。" : "Members and primary Bot settings saved."}
+					</p>
+				)}
 				{error && (
 					<p className="dc-error" role="alert">
 						{error}
@@ -355,6 +479,29 @@ export function DeviceGroups({
 								</label>
 							))}
 						</fieldset>
+						<div className="dc-field">
+							<label htmlFor="device-group-primary-bot">{isZhLocale(locale) ? "主 Bot" : "Primary Bot"}</label>
+							<select
+								id="device-group-primary-bot"
+								value={selected.includes(primaryBotId) ? primaryBotId : ""}
+								disabled={busy || !active || (managing && !detail)}
+								onChange={(event) => setPrimaryBotId(event.target.value)}
+							>
+								<option value="">{isZhLocale(locale) ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+								{devices
+									.filter((bot) => bot.enabled && selected.includes(bot.id))
+									.map((bot) => (
+										<option key={bot.id} value={bot.id}>
+											{bot.name} · {bot.id}
+										</option>
+									))}
+							</select>
+							<p>
+								{isZhLocale(locale)
+									? "未 @ Bot 的消息自动发送给主 Bot。"
+									: "Messages without a Bot mention go to the primary Bot."}
+							</p>
+						</div>
 						<div className="dc-actions">
 							<button
 								className="dc-button"
