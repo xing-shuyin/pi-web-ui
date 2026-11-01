@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 /* #579：用户显式 ✕ 移出「刚聊过、现已空闲」的对话不得被 promptedSinceActive
  * 拦下（那是 displaceActive 自动置换的保留依据，不是移出意图的否决）。
@@ -10,7 +11,9 @@ type AnySession = Record<string, (...args: unknown[]) => unknown>;
 function fakeCs(conv: Record<string, unknown>) {
 	const emitted: Array<{ type?: string; text?: string }> = [];
 	const convs = new Map<string, Record<string, unknown>>([[conv.id as string, conv]]);
-	const cs = {
+	// 实例字段（parentExecutionKey 之类）由 fake-session 从生产源码推导 + 原型真方法继承；
+	// 这里只覆写这条用例关心的行为。
+	const cs = fakeClientSession({
 		convs,
 		activeId: "some-other-conv",
 		emit: (msg: { type?: string; text?: string }) => emitted.push(msg),
@@ -21,7 +24,7 @@ function fakeCs(conv: Record<string, unknown>) {
 		removeConversation: vi.fn((id: string) => {
 			convs.delete(id);
 		}),
-	};
+	});
 	return { cs, emitted };
 }
 

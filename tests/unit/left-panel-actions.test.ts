@@ -144,7 +144,7 @@ describe("LeftPanel 标题栏操作与项目管理", () => {
 
 		// 按 Escape 键关闭
 		act(() => {
-			window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+			document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 		});
 		expect(document.querySelector("[role=dialog]")).toBeNull();
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ClientSession } from "../../server/agent-service.js";
 import { makeSubagentTool, withSubagentOwner } from "../../server/subagents.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const sdk = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
@@ -33,10 +34,9 @@ function conversation(id: string): any {
 	};
 }
 function client(): any {
-	return Object.assign(Object.create(ClientSession.prototype), {
+	// 集合/计数类实例字段由 fake-session 从生产源码推导，这里只列本用例关心的钩子。
+	return fakeClientSession({
 		activeId: "parent",
-		convs: new Map(),
-		creatingConversations: new Map(),
 		spawningSubagents: 0,
 		settingsSvc: { current: {} },
 		sandboxes: {
@@ -137,7 +137,11 @@ describe("spawn cancellation and stable runtime identity", () => {
 	});
 	it("propagates the exact tool signal through the owner host", async () => {
 		const controller = new AbortController();
-		const host: any = { spawnSubagent: vi.fn().mockResolvedValue("child"), isTemplateUsable: () => false };
+		const host: any = {
+			spawnSubagent: vi.fn().mockResolvedValue("child"),
+			isTemplateUsable: () => false,
+			getSubagent: () => undefined,
+		};
 		const tool = makeSubagentTool(withSubagentOwner(host, "parent"), () => "en");
 		await tool.execute!(
 			"call",
@@ -396,12 +400,12 @@ describe("approval stable request settlement", () => {
 			target.insertTakeoverConvs(result.payload);
 			source.findConversationHome.mockReturnValue({ session: target, convId: conv.id });
 			if (!inTransit) {
-				expect(conv.pendingApprovals.get("appr-51")).toBe(request);
+				expect(conv.pendingApprovals.get(request.id)).toBe(request);
 				controller.abort();
 			}
 			await expect(waiting).resolves.toMatchObject({ decision: "deny" });
 			expect(conv.pendingApprovals.size).toBe(0);
-			expect(target.resolveToolApproval("appr-51", "approve")).toBe(false);
+			expect(target.resolveToolApproval(request.id, "approve")).toBe(false);
 		},
 	);
 	it("cancels a renumbered request once while preserving a colliding old ID", async () => {

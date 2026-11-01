@@ -23,10 +23,14 @@ describe("顶栏/底栏角标徽标对比度与样式防护", () => {
 			const css = readThemeCss(join(THEMES_DIR, file));
 			const isPureWhiteAccent = /--accent\s*:\s*#ffffff\b/i.test(css);
 			if (isPureWhiteAccent) {
-				const hasBadgeContrastRule = /\.bar-item-badge[^}]*color:\s*#000000/i.test(css);
+				const hasDirectContrast = /\.bar-item-badge[^}]*color:\s*#000(?:000)?\b/i.test(css);
+				const usesAccentContrast = /\.bar-item-badge[^}]*color:\s*var\(--accent-contrast\b/i.test(css);
+				const hasValidAccentContrast =
+					usesAccentContrast && /--accent-contrast\s*:\s*(?:#000(?:000)?|#1[a-f0-9]{5})\b/i.test(css);
+				const hasBadgeContrastRule = hasDirectContrast || hasValidAccentContrast;
 				expect(
 					hasBadgeContrastRule,
-					`${file} 将 --accent 设为纯白色，但未对 .bar-item-badge 显式设置深色文字，会导致徽标白底白字隐形`,
+					`${file} 将 --accent 设为纯白色，但未对 .bar-item-badge 显式设置深色文字或有效的深色 --accent-contrast，会导致徽标白底白字隐形`,
 				).toBe(true);
 			}
 		}

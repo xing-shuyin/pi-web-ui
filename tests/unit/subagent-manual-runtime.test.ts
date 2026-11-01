@@ -1,29 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 import { countActiveSubagents, toSubagentSnapshot } from "../../server/subagent-helpers.js";
 import { createSubagentTask } from "../../server/subagent-task.js";
 import { UniversalSession } from "../../server/universal/universal-session.js";
 
 const proto = ClientSession.prototype as any;
 function harness() {
-	const owner: any = {
-		convs: new Map(),
+	// 原型方法（subagentCurrentId / conversationStreaming / completionPending …）由
+	// fake-session 继承真实现，集合类字段（convs / pendingQuestions /
+	// conversationSettingsTargets …）由源码推导自动带上——这里只列本用例覆写的钩子。
+	const owner = fakeClientSession({
 		conv: { id: "active-elsewhere" },
-		pendingQuestions: new Map(),
-		pendingSubagentNotices: new Map(),
-		deliveringSubagentNotices: new Map(),
 		communicationPending: () => false,
 		allSubagentSessions: () => [],
 		subagentOwnerOf: () => owner,
-		subagentCurrentId: proto.subagentCurrentId,
-		conversationStreaming: proto.conversationStreaming,
-		assertSubagentWorktreeAdmission: proto.assertSubagentWorktreeAdmission,
-		subagentWorktreeHasHolders: proto.subagentWorktreeHasHolders,
-		subagentTaskPending: proto.subagentTaskPending,
-		completionPending: proto.completionPending,
-		scheduleSubagentCompletionNotice: proto.scheduleSubagentCompletionNotice,
-		flushSubagentCompletionNotice: proto.flushSubagentCompletionNotice,
-		deliverSubagentCompletionNotice: proto.deliverSubagentCompletionNotice,
 		refreshCompletionState: vi.fn(),
 		emitConversations: vi.fn(),
 		checkSubagentWakeCircuitBreaker: () => null,
@@ -31,8 +22,7 @@ function harness() {
 		emit: vi.fn(),
 		flushSnapshot: vi.fn(),
 		finalizeSubagentWorktree: vi.fn(),
-	};
-	Object.setPrototypeOf(owner, ClientSession.prototype);
+	}) as any;
 	return owner;
 }
 function child(owner: any, id: string, parentId: string, manual = true): any {
@@ -76,7 +66,7 @@ describe("manual task runtime", () => {
 			subagentRunOutcome: proto.subagentRunOutcome,
 			notifyTurnEnd: vi.fn(),
 			goalSvc: { onAgentEnd: vi.fn() },
-			settingsSvc: { hasPendingReload: () => false },
+			settingsSvc: { hasPendingReload: () => false, consumePendingReload: () => false },
 			disposed: true,
 		});
 		a.queueSteering = [];

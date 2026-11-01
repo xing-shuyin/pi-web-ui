@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentService, ClientSession } from "../../server/agent-service.js";
 import { resolve } from "node:path";
+import { fakeAgentService } from "../helpers/fake-session.js";
 
 describe("elsewhere（「另一处」）排重与过户生命周期防护", () => {
 	it("streamingSummariesAll: 同一 ClientSession 内多条会话具有相同 sessionFile 时去重", () => {
@@ -186,11 +187,9 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 	});
 
 	it("pendingDetaches: 当连接在 attach 异步创建期间断开时，记录并在后续阻止 sink 泄漏", () => {
-		const svc = Object.create(AgentService.prototype) as any;
-		svc.clients = new Map();
-		svc.pending = new Map();
-		svc.pendingDetaches = new Map();
-		svc.pokeExternalRunning = vi.fn();
+		// 集合字段（pending / pendingDetaches / sharedViewers …）由 fake-session 从生产
+		// 源码推导，新增字段自动跟上，不再逐个手补。
+		const svc = fakeAgentService({ clients: new Map(), pokeExternalRunning: vi.fn() }) as any;
 
 		const sendMock = vi.fn();
 		const clientId = "client-racing";

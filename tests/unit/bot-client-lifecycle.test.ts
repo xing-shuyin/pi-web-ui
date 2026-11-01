@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
-import { AgentService } from "../../server/agent-service-daemon.js";
 import { registerBotExecution, isBotExecutionRegistered } from "../../server/device-center/bot-execution.js";
+import { fakeAgentService, fakeClientSession } from "../helpers/fake-session.js";
 
 function binding() {
 	return registerBotExecution({
@@ -18,17 +18,17 @@ function binding() {
 
 function daemon(clientId: string) {
 	const sink = vi.fn();
-	const sinks = new Set([sink]);
-	const cs = {
-		detachSink: vi.fn((send) => sinks.delete(send)),
+	const sinks = new Set<unknown>([sink]);
+	// 实例字段（pending / sharedViewers / offlineSince …）由 fake-session 从生产源码
+	// 推导，新增字段自动带上默认值——不靠每个文件手补一行。
+	const cs = fakeClientSession({
+		detachSink: vi.fn((send: unknown) => sinks.delete(send)),
 		sinkCount: () => sinks.size,
 		dispose: vi.fn(async () => {}),
 		refreshPluginTools: vi.fn(),
-	};
-	const service = Object.assign(Object.create(AgentService.prototype), {
+	});
+	const service = fakeAgentService({
 		clients: new Map([[clientId, cs]]),
-		pending: new Map(),
-		offlineSince: new Map(),
 		pokeExternalRunning: vi.fn(),
 		armOfflineRowExpiry: vi.fn(),
 	});

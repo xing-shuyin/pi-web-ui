@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClientSession } from "../../server/agent-service.js";
 import { ClientStateStore } from "../../server/client-state.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 /* 钉住（常驻运行列表）只走两处接线：setConversationPinned 改标记，
  * displaceActive 把标记喂给 shouldRetainActive。决策真值由
@@ -34,10 +35,7 @@ function priv(name: string): (this: unknown, ...args: unknown[]) => unknown {
 describe("钉住（pinned）会话", () => {
 	it("空闲、无终端、未继续对话：未钉住 → 可置换；钉住 → 保留并置 listed", () => {
 		const conv = fakeConv();
-		const cs = {
-			conv,
-			convs: new Map([["c1", conv]]),
-		} as unknown as ClientSession;
+		const cs = fakeClientSession({ conv, convs: new Map([["c1", conv]]) });
 
 		// 未钉住：全部保留判据都不命中 → 返回待移除对象。
 		const displaced = priv("displaceActive").call(cs);
@@ -51,7 +49,7 @@ describe("钉住（pinned）会话", () => {
 
 	it("displaceActive 把 pinned 喂进决策：子代理行不受钉住影响（本来就保留）", () => {
 		const conv = fakeConv({ isSubagent: true, pinned: true });
-		const cs = { conv, convs: new Map([["c1", conv]]) } as unknown as ClientSession;
+		const cs = fakeClientSession({ conv, convs: new Map([["c1", conv]]) });
 		expect(priv("displaceActive").call(cs)).toBeNull();
 		expect(conv.listed).toBe(true);
 	});

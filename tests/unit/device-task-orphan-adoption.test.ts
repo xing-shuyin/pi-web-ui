@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { AgentService } from "../../server/agent-service-daemon.js";
 import { ClientSession } from "../../server/agent-service.js";
 import { ClientStateStore } from "../../server/client-state.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 import {
 	isDeviceTaskClientId,
 	isOrphanAdoptionExcludedClientId,
@@ -17,18 +18,20 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function session(id: string) {
-	return {
+	// 原型真方法（sharedPendingMessages 之类）+ 源码推导的实例字段，只覆写行为钩子。
+	return fakeClientSession({
 		clientId: id,
 		cwd: resolve("."),
 		workspaceRoots: [],
 		sinkCount: () => 0,
+		sharedPendingMessages: () => [],
 		activeConversations: () => 0,
 		hasAdoptableContent: () => true,
 		latestActivity: () => 10,
 		attachSink: vi.fn(),
 		noteAdopted: vi.fn(),
 		resumeInterrupted: vi.fn().mockResolvedValue(undefined),
-	} as unknown as ClientSession;
+	}) as unknown as ClientSession;
 }
 function serviceWith(oldId: string) {
 	const root = mkdtempSync(join(tmpdir(), "bot-adoption-"));
