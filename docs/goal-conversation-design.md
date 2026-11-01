@@ -80,7 +80,7 @@ GoalBar 设目标
 | 目标模式总开关 `goalModeEnabled` 默认 true；`reviewPrompt` / `reviewDisabledSkills` 在 client-state（每客户端）                                                                            | `client-state.ts:758, 246-248`、`settings-service.ts:122`      | 回滚开关与审查配置面的现状                                                                                                                                            |
 | ❗ 过户（takeover）：**子代理随父对话一起搬**（`collectSubagentDescendantIds`），但 `goal` 状态**不搬**                                                                                    | `agent-service.ts:12415`（搬）、`:12369-12440`（无 goal 处理） | 角色循环跨页/过户会断 → §4.6 失效矩阵；反之 `persist=false` 的角色对话能跟着主对话走，是加分项                                                                        |
 | `PlanManager.describePlan(convId)` 已存在（带步骤序号/状态/当前步），`UiState.plan` 已在全量快照里                                                                                         | `plan-manager.ts:110-131`、`protocol.ts:208`                   | 审查契约可零成本带上计划进度（#389 Phase 1 的合流点）                                                                                                                 |
-| 通配符事实：新对话三连 / i18n / 协议单源 / UI 扩展点三规则等硬约束见 `AGENTS.md §9`                                                                                                        | —                                                              | 本设计的改动清单（§7）逐条对齐这些约束                                                                                                                                |
+| 通配符事实：新对话三连 / i18n / 协议单源 / UI 扩展点三规则等硬约束见 `docs/agent-rules.md`                                                                                                 | —                                                              | 本设计的改动清单（§7）逐条对齐这些约束                                                                                                                                |
 
 ---
 
@@ -359,12 +359,12 @@ export interface GoalStatus {
 
 ### 7.3 前端 / 设置面 / i18n
 
-| 文件                                   | 改动                                                                                                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `web/src/components/GoalBar.tsx`       | 活跃行增：`phase` 文案、`👁 打开执行/审查对话`；两个新宿主 id 必须进 `GOAL_DEFAULT_ORDER`（slot 顺序驱动，见 AGENTS §9「UI 扩展点三规则」②） |
-| `web/src/components/SettingsModal.tsx` | 「目标审查」区（`:3718` 一带）增三档 `reviewMode` 单选 + 执行模型下拉 + 留档开关                                                            |
-| `web/src/i18n.tsx` + `locales/*.json`  | 新文案两边都加（`tests/unit/locales.test.ts` 锁对齐）；改完跑 `npm run changelog:i18n`；**value 只许字符串字面量**（i18n-diff 手写解析器）  |
-| 服务端 i18n (`pick`)                   | 新 key `goal.role.*` 全局唯一；多行走 `getServerBlock`；notice 用 `text`+`textEn`                                                           |
+| 文件                                   | 改动                                                                                                                                                       |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `web/src/components/GoalBar.tsx`       | 活跃行增：`phase` 文案、`👁 打开执行/审查对话`；两个新宿主 id 必须进 `GOAL_DEFAULT_ORDER`（slot 顺序驱动，见 `docs/agent-rules.md`「UI 扩展点与浮层规则」） |
+| `web/src/components/SettingsModal.tsx` | 「目标审查」区（`:3718` 一带）增三档 `reviewMode` 单选 + 执行模型下拉 + 留档开关                                                                           |
+| `web/src/i18n.tsx` + `locales/*.json`  | 新文案两边都加（`tests/unit/locales.test.ts` 锁对齐）；改完跑 `npm run changelog:i18n`；**value 只许字符串字面量**（i18n-diff 手写解析器）                 |
+| 服务端 i18n (`pick`)                   | 新 key `goal.role.*` 全局唯一；多行走 `getServerBlock`；notice 用 `text`+`textEn`                                                                          |
 
 ### 7.4 测试
 
@@ -414,7 +414,7 @@ export interface GoalStatus {
 - 协议：`server/protocol.ts`（目标消息族 `:729-745`、`switch_conversation:533`、`dismiss_conversation:1048`、`GoalStatus:1382`、`PlanStep:1220`、`UiState.plan:208`）
 - 前端：`web/src/components/GoalBar.tsx`（`GOAL_DEFAULT_ORDER` + slot 合并）、`web/src/components/SettingsModal.tsx:3718`、`web/src/i18n.tsx`
 - Issue：#385（AI 提炼超时，PR #386 待合）、#389（Goal & Plan）
-- 主题文档：`docs/architecture-core.md`（快照驱动 / 协议单源）、`docs/architecture-plugins.md`（UI 扩展点与 slot 兼容）、`AGENTS.md §9`（禁令清单）
+- 主题文档：`docs/architecture-core.md`（快照驱动 / 协议单源）、`docs/architecture-plugins.md`（UI 扩展点与 slot 兼容）、`docs/agent-rules.md`（禁令清单）
 
 ---
 

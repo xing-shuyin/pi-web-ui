@@ -40,8 +40,9 @@ pi-web-ui/
 ├── Dockerfile / docker-compose.yml
 ├── docs/                       # 详细文档（architecture-core / architecture-attachments / architecture-terminal /
 │                               #   architecture-plugins / architecture-system-prompt / goal-conversation-design /
-│                               #   tool-context-budget / development / release /
-│                               #   deployment / dsh-engine / antigravity-proxy / env-vars ＋ 本文件）
+│                               #   tool-context-budget / agent-rules（编码红线细则）/
+│                               #   device-center / device-collaboration / architecture-canvas / architecture-sandbox /
+│                               #   development / release / deployment / dsh-engine / antigravity-proxy / env-vars ＋ 本文件）
 └── tsconfig.server.json / tsconfig.extensions.json / tsconfig.tests.json / web/tsconfig.json
 ```
 
@@ -170,7 +171,7 @@ web/src/
 ├── app-globals.ts      # ★ 全局运行态 store（engine/managed/tabs/版本号 + 全局发送器 appSend）
 ├── types.ts            # ★ wire 协议 re-export shim（export type * from "../../server/protocol"）
 ├── protocol-version.ts # 协议版本常量
-├── i18n.tsx            # ★ 多语文案（核心 zh/en；新 key 两处都加；value 只许字符串字面量，见 AGENTS.md §9）
+├── i18n.tsx            # ★ 多语文案（核心 zh/en；新 key 两处都加；value 只许字符串字面量，见 docs/agent-rules.md「三、UI 布局与样式规范」）
 ├── pick-locale.ts      # 语言选择辅助
 ├── styles.css          # ★ 全部样式（按组件分区，带注释分隔线）；也是默认深色主题本体
 ├── model-management.css # 模型管理页专用样式（唯一的第二个 css）
