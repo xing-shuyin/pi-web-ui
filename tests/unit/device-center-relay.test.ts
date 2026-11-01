@@ -396,7 +396,7 @@ describe("device reverse relay", () => {
 		);
 		f.relay.revoke("dev1");
 		await vi.waitFor(() => expect(aborted).toBe(true));
-		expect(onDisconnect).toHaveBeenCalled();
+		await vi.waitFor(() => expect(onDisconnect).toHaveBeenCalled());
 		expect(f.events).toHaveBeenCalledWith(
 			"dev1",
 			expect.objectContaining({
@@ -516,6 +516,7 @@ describe("device reverse relay", () => {
 			"/api/device-center/devices",
 			"/api/device-center/rooms",
 			"/api/device-center/rooms/team",
+			"/api/device-center/rooms/team/events",
 		])
 			expect(safePath(path, "GET"), path).toBe(true);
 		for (const path of [
@@ -524,6 +525,8 @@ describe("device reverse relay", () => {
 			"/api/device-center/rooms/team/members",
 			"/api/device-center/rooms/team/rename",
 			"/api/device-center/rooms/team/delete",
+			"/api/device-center/rooms/team/conversations/thread/deliveries",
+			"/api/device-center/rooms/team/conversations/thread/reviews",
 		])
 			expect(safePath(path, "POST"), path).toBe(true);
 		for (const method of ["GET", "POST", "WS", "DELETE"]) {

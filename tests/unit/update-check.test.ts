@@ -3,7 +3,7 @@
  * 结果 shape、并发 checkAll 的优雅降级（单个失败不影响整体）、顺序保持。
  * 全程注入 fake fetcher，零网络。
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -57,18 +57,25 @@ function lastBackground(fragment: string): string | null {
 	return last;
 }
 
-/** 动态生成当前上下文（文件/片段）中的 accent 变量匹配正则。
- * 包含原生 --accent、插件自定义命名空间别名（如 --nt-accent）以及任何带有 accent 的主题变量。 */
-function makeAccentSolidRegex(text?: string): RegExp {
+/**
+ * 文件里所有「等同于 accent 实底」的自定义属性名（`--x: var(--accent)` 的派生令牌，
+ * 以及 `var(--*accent*)` 的引用）。**每个文件算一次** —— 早先的实现把它放在
+ * `accentBackgroundKind()` 里按片段重算，等于 4500 个片段 × 2 次全文件正则扫描：
+ * styles.css 涨到 700KB 后单条用例撞上 5s 默认超时（CI 表现成「红」，其实是慢）。
+ */
+function accentNames(text: string): Set<string> {
 	const names = new Set<string>(["accent"]);
-	if (text) {
-		for (const m of text.matchAll(/--([a-zA-Z0-9_-]+)\s*:\s*var\(--accent\b/gi)) {
-			names.add(m[1]!);
-		}
-		for (const m of text.matchAll(/var\(--([a-zA-Z0-9_-]*accent[a-zA-Z0-9_-]*)\b/gi)) {
-			names.add(m[1]!);
-		}
+	for (const m of text.matchAll(/--([a-zA-Z0-9_-]+)\s*:\s*var\(--accent\b/gi)) {
+		names.add(m[1]!);
 	}
+	for (const m of text.matchAll(/var\(--([a-zA-Z0-9_-]*accent[a-zA-Z0-9_-]*)\b/gi)) {
+		names.add(m[1]!);
+	}
+	return names;
+}
+
+/** 动态生成 accent 变量匹配正则（包含原生 --accent、插件命名空间别名与派生令牌）。 */
+function makeAccentSolidRegex(names: Set<string>): RegExp {
 	const pattern = Array.from(names)
 		.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
 		.join("|");
@@ -76,11 +83,10 @@ function makeAccentSolidRegex(text?: string): RegExp {
 }
 
 /** 该片段的 accent 底色种类：solid = 实底（需要反色令牌）；tint = 半透明染色（需要 --text）。 */
-function accentBackgroundKind(fragment: string, fileContext?: string): "solid" | "tint" | null {
+function accentBackgroundKind(fragment: string, accentSolid: RegExp): "solid" | "tint" | null {
 	const bg = lastBackground(fragment);
 	if (!bg || ACCENT_SOFT.test(bg)) return null;
-	const accentSolidRegex = makeAccentSolidRegex(fileContext ?? fragment);
-	if (!accentSolidRegex.test(bg)) return null;
+	if (!accentSolid.test(bg)) return null;
 	if (/color-mix\(/i.test(bg)) {
 		const pct = /var\(--[a-zA-Z0-9_-]*accent\b[^)]*\)\s*(\d+(?:\.\d+)?)%/.exec(bg);
 		if (pct && Number(pct[1]) < 100) return "tint";
@@ -111,8 +117,9 @@ function styleFragments(text: string): { where: string; body: string }[] {
 /** 返回违规描述（accent 实底/染色底上的硬编码白字）。 */
 function findAccentWhiteViolations(text: string): string[] {
 	const bad: string[] = [];
+	const accentSolid = makeAccentSolidRegex(accentNames(text));
 	for (const { where, body } of styleFragments(text)) {
-		const kind = accentBackgroundKind(body, text);
+		const kind = accentBackgroundKind(body, accentSolid);
 		if (!kind) continue;
 		const decl = /(?:^|[\s;])color\s*:\s*(#fff(?:fff)?|white)\s*(?:!important)?\s*(?=;|$)/i.exec(body);
 		if (!decl) continue;

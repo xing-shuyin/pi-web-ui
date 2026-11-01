@@ -2,7 +2,7 @@
  * commands protocol over WebSocket (no browser needed).
  * Run:  npm run build:server && node terminal-smoke-test.mjs */
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, realpathSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";

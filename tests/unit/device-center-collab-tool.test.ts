@@ -5,6 +5,7 @@ import {
 	setDeviceCollabService,
 	type DeviceCollabInput,
 } from "../../server/device-center/collab-tool.js";
+import { createDeviceCollabService } from "../../server/device-center/collab-service.js";
 import { readOnlyToolCallAllowed, planModeDenial } from "../../server/plan-mode.js";
 import { delegationDenial } from "../../server/delegate-mode.js";
 import { evaluateSandboxJail } from "../../server/sandbox-service.js";
@@ -15,7 +16,119 @@ const invoke = (input: unknown, signal?: AbortSignal, ctx = context()) =>
 	makeDeviceCollabTool().execute("call", input as DeviceCollabInput, signal, undefined, ctx);
 afterEach(() => setDeviceCollabService(undefined));
 
+const deliveryInput = {
+	action: "conversation_deliver",
+	roomId: "r",
+	sourceBotId: "local",
+	conversationId: "cid",
+	repository: "owner/repo",
+	baseCommit: "a".repeat(40),
+	commit: "b".repeat(64),
+	summary: "Implemented fix",
+	checks: [{ command: "npm test", status: "passed", exitCode: 0 }],
+	limitations: ["Linux not checked"],
+};
+
 describe("device_collab", () => {
+	it("accepts structured delivery evidence and reviews without executing checks", async () => {
+		const execute = vi.fn().mockResolvedValue({});
+		setDeviceCollabService({ execute });
+		await invoke(deliveryInput);
+		await invoke({
+			action: "conversation_review",
+			roomId: "r",
+			sourceBotId: "reviewer",
+			conversationId: "cid",
+			deliveryId: "delivery",
+			commit: "b".repeat(64),
+			verdict: "accepted",
+			summary: "Reviewed exact commit",
+		});
+		expect(execute).toHaveBeenCalledTimes(2);
+		expect(execute.mock.calls[0][1].checks).toEqual(deliveryInput.checks);
+	});
+	it.each([
+		{ checks: "npm test" },
+		{ checks: [{}] },
+		{ checks: [null] },
+		{ checks: [{ command: "test", status: "verified" }] },
+		{ checks: [{ command: "test", status: "passed", source: "host_verified" }] },
+		{ checks: [{ command: "test", status: "passed", exitCode: 0.5 }] },
+		{ limitations: "none" },
+		{ limitations: [false] },
+		{ commit: "deadbeef" },
+		{ baseCommit: "g".repeat(40) },
+		{ checks: undefined },
+	])("rejects malformed delivery evidence %j before service calls", async (patch) => {
+		const execute = vi.fn();
+		setDeviceCollabService({ execute });
+		await expect(invoke({ ...deliveryInput, ...patch })).rejects.toThrow();
+		expect(execute).not.toHaveBeenCalled();
+	});
+	it("projects deliveries and review state without private fields and bounds large evidence", async () => {
+		const delivery = {
+			...deliveryInput,
+			id: "delivery",
+			botId: "author",
+			checks: [{ ...deliveryInput.checks[0], result: "observed", token: "secret" }],
+			root: "secret",
+		};
+		const review = {
+			id: "review",
+			deliveryId: "delivery",
+			commit: delivery.commit,
+			verdict: "accepted",
+			summary: "checked",
+			reviewer: { type: "bot", id: "reviewer", credential: "secret" },
+		};
+		setDeviceCollabService({
+			execute: vi.fn().mockResolvedValue({
+				delivery,
+				review,
+				conversation: { id: "cid", latestDelivery: delivery, latestReview: review, deliveryCount: 1, reviewCount: 1 },
+				conversations: [{ id: "cid", latestDelivery: delivery, latestReview: review }],
+				deliveries: [delivery],
+				reviews: [review],
+			}),
+		});
+		const output = await invoke(deliveryInput);
+		const text = JSON.stringify(output.details);
+		expect(text).not.toContain("secret");
+		expect(text).toContain("bot_reported");
+		expect(text).toContain("not verified or executed by the host");
+		expect((output.details as { summary: unknown }).summary).toMatchObject({
+			delivery: { id: "delivery", commit: delivery.commit },
+			review: { verdict: "accepted" },
+			conversation: { deliveryCount: 1, latestDelivery: { id: "delivery" }, latestReview: { verdict: "accepted" } },
+			deliveries: [{ id: "delivery" }],
+			reviews: [{ id: "review" }],
+		});
+		setDeviceCollabService({
+			execute: vi.fn().mockResolvedValue({
+				deliveries: Array.from({ length: 100 }, () => ({
+					...delivery,
+					checks: Array.from({ length: 50 }, () => ({
+						command: "中".repeat(2000),
+						result: "文".repeat(4000),
+						status: "failed",
+					})),
+				})),
+			}),
+		});
+		const bounded = await invoke({
+			action: "conversation_read",
+			roomId: "r",
+			sourceBotId: "local",
+			conversationId: "cid",
+		});
+		expect(Buffer.byteLength(JSON.stringify(bounded.details))).toBeLessThan(64000);
+		expect(bounded.details).toMatchObject({
+			summary: {
+				truncated: true,
+				deliveries: expect.arrayContaining([expect.objectContaining({ id: "delivery", commit: delivery.commit })]),
+			},
+		});
+	});
 	it("fails clearly without a bound service", async () => {
 		await expect(invoke({ action: "list_bots" })).rejects.toThrow("not bound");
 	});
@@ -36,6 +149,23 @@ describe("device_collab", () => {
 			parentTaskId: "parent",
 		},
 		{ action: "conversation_create", roomId: "r", sourceBotId: "local", targetBotId: "remote", prompt: "start" },
+		{
+			action: "conversation_create",
+			roomId: "r",
+			sourceBotId: "local",
+			targetBotId: "remote",
+			prompt: "review",
+			kind: "request",
+			requestId: "req",
+		},
+		{
+			action: "conversation_attention",
+			roomId: "r",
+			sourceBotId: "local",
+			conversationId: "c",
+			question: "Choose? ".repeat(200),
+			attentionKind: "decision",
+		},
 		{ action: "conversation_list", roomId: "r", sourceBotId: "local" },
 		{ action: "conversation_read", roomId: "r", sourceBotId: "local", conversationId: "cid" },
 		{ action: "conversation_send", roomId: "r", sourceBotId: "local", conversationId: "cid", message: "continue" },
@@ -95,7 +225,23 @@ describe("device_collab", () => {
 		{ action: "create_room", name: "Build" },
 		{ action: "unknown" },
 		{ action: "conversation_create", roomId: "r", sourceBotId: "local", prompt: "missing target" },
-		{ action: "conversation_list", roomId: "r" },
+		{
+			action: "conversation_create",
+			roomId: "r",
+			sourceBotId: "local",
+			targetBotId: "remote",
+			prompt: "bad",
+			kind: "reply",
+			requestId: "req",
+		},
+		{
+			action: "conversation_create",
+			roomId: "r",
+			sourceBotId: "local",
+			targetBotId: "remote",
+			prompt: "bad",
+			requestId: "req",
+		},
 		{ action: "conversation_read", roomId: "r", sourceBotId: "local" },
 		{
 			action: "conversation_send",
@@ -121,8 +267,6 @@ describe("device_collab", () => {
 			paths: ["src"],
 			recursive: "true",
 		},
-		{ action: "read_history", roomId: "r" },
-		{ action: "read_history", sourceBotId: "local" },
 		{ action: "read_history", roomId: "r", sourceBotId: "local", before: "x".repeat(257) },
 		{ action: "read_history", roomId: "r", sourceBotId: "local", before: 123 },
 		{ action: "read_history", roomId: "r", sourceBotId: "local", targetBotId: "remote" },
@@ -131,6 +275,28 @@ describe("device_collab", () => {
 		setDeviceCollabService({ execute });
 		await expect(invoke(input)).rejects.toThrow();
 		expect(execute).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ action: "conversation_list", roomId: "r" },
+		{ action: "read_history", roomId: "r" },
+		{ action: "read_history", sourceBotId: "local" },
+	])("defers omitted identity to the service and rejects unbound calls: %j", async (input) => {
+		const request = vi.fn();
+		setDeviceCollabService(
+			createDeviceCollabService({
+				root: "/project",
+				getConfig: () => ({
+					hubUrl: "https://hub.example",
+					deviceId: "device",
+					credential: "secret",
+					allowExecution: true,
+				}),
+				fetch: request,
+			}),
+		);
+		await expect(invoke(input)).rejects.toThrow("request failed");
+		expect(request).not.toHaveBeenCalled();
 	});
 	it.each(["../secret", "/absolute", "C:/secret", "a\\b", "a/../b", "./a", "a//b", "a\u0000b", ""])(
 		"rejects unsafe relative path %s",

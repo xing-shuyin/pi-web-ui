@@ -9,7 +9,7 @@
  *   - 生图产物与图像处理工具链的无缝流转协同（image_generate → image_transform → image_compress → references 图生图）；
  *   - 反激活注销。
  */
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";

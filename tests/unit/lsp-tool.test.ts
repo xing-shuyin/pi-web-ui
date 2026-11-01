@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import {
 	makeLspTool,
 	LSP_TOOL_NAME,

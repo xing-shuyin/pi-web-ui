@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { extractSubagentConclusion, formatSubagentsCompletionNotice } from "../../server/subagent-notify.js";
 import { ClientSession, type Conversation } from "../../server/agent-service.js";
 import { defaultSubagentAutoWakeMaxTurns, normalizeSubagentAutoWakeMaxTurns } from "../../server/client-state.js";

@@ -5,6 +5,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { DeviceCenter } from "../../web/src/components/DeviceCenter.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
+import type { DeviceTaskSchedulerSnapshot } from "../../server/protocol.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -16,6 +17,38 @@ afterEach(() => {
 });
 function response(body: unknown, status = 200) {
 	return { ok: status < 400, status, json: async () => body } as Response;
+}
+function mockApi(status: object, handler?: (path: string, init: RequestInit) => Response | undefined) {
+	return vi.fn(async (url: string, init: RequestInit = {}) => {
+		const path = new URL(url, window.location.href).pathname;
+		const custom = handler?.(path, init);
+		if (custom) return custom;
+		switch (path) {
+			case "/api/device-center/status":
+				return response(status);
+			case "/api/device-center/devices":
+				return response({ devices: [{ id: "mac", name: "Mac", online: true }] });
+			case "/api/device-center/local-bots":
+			case "/api/device-center/bots":
+				return response({ bots: [] });
+			case "/api/device-center/rooms":
+				return response({ rooms: [] });
+			case "/api/device-center/execution-queue":
+				return response({
+					settings: { maxActiveTasks: 4, maxWaitingTasks: 32 },
+					activeCount: 0,
+					waitingCount: 0,
+					blockedCount: 0,
+					running: [],
+					waiting: [],
+					blocked: [],
+				} satisfies DeviceTaskSchedulerSnapshot);
+			case "/api/device-desktop/local/status":
+				return response({ os: "win32", enabled: false, environmentEnabled: false, supported: true });
+			default:
+				throw new Error(`Unexpected device request: ${path}`);
+		}
+	});
 }
 async function mount() {
 	localStorage.setItem("pi-web-ui:lang", "zh");
@@ -33,10 +66,7 @@ async function mount() {
 }
 describe("native device workspace", () => {
 	it("hides permission and disconnect actions until paired", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => response({ name: "Windows", allowExecution: false, connected: false })),
-		);
+		vi.stubGlobal("fetch", mockApi({ name: "Windows", allowExecution: false, connected: false }));
 		const page = await mount();
 		expect(page.querySelector(".dc-form")).toBeNull();
 		expect(page.querySelector(".dc-onboarding")?.textContent).toContain("连接已有中心");
@@ -52,22 +82,24 @@ describe("native device workspace", () => {
 	it("rolls back execution permission when persistence fails", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (_url, init) =>
-				init?.method === "POST"
-					? response({ error: "save failed" }, 500)
-					: response({
-							name: "Mac",
-							deviceId: "mac",
-							hubUrl: "https://hub.example.com",
-							allowExecution: false,
-							connected: true,
-						}),
+			mockApi(
+				{
+					name: "Mac",
+					deviceId: "mac",
+					hubUrl: "https://hub.example.com",
+					allowExecution: false,
+					connected: true,
+				},
+				(path, init) =>
+					path === "/api/device-center/execution" && init.method === "POST"
+						? response({ error: "save failed" }, 500)
+						: undefined,
 			),
 		);
 		const page = await mount();
 		expect(page.querySelector('[role="switch"]')).toBeNull();
 		await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());
-		const toggle = page.querySelector<HTMLButtonElement>('[role="switch"]')!;
+		const toggle = page.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="dc-permission-label"]')!;
 		expect(toggle.getAttribute("aria-checked")).toBe("false");
 		await act(async () => toggle.click());
 		expect(toggle.getAttribute("aria-checked")).toBe("false");
@@ -76,19 +108,12 @@ describe("native device workspace", () => {
 	it("keeps a single device directory when alternating settings and groups", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url) => {
-				const path = String(url).split("?")[0];
-				if (path.endsWith("/devices")) return response({ devices: [{ id: "mac", name: "Mac", online: true }] });
-				if (path.endsWith("/local-bots")) return response({ bots: [] });
-				if (path.endsWith("/rooms")) return response({ rooms: [] });
-				if (path.endsWith("/bots")) return response({ bots: [] });
-				return response({
-					name: "Mac",
-					deviceId: "mac",
-					hubUrl: "https://hub.example.com",
-					allowExecution: false,
-					connected: true,
-				});
+			mockApi({
+				name: "Mac",
+				deviceId: "mac",
+				hubUrl: "https://hub.example.com",
+				allowExecution: false,
+				connected: true,
 			}),
 		);
 		const page = await mount();
@@ -111,14 +136,13 @@ describe("native device workspace", () => {
 		const tab = { opener: window, location: { replace }, close: vi.fn() };
 		vi.spyOn(window, "open").mockReturnValue(tab as any);
 		cleanups.push(() => vi.restoreAllMocks());
-		const fetch = vi.fn(async (url) => {
-			const path = String(url).split("?")[0];
-			if (path.endsWith("/devices/mac/open"))
-				return response({ url: "https://hub.example.com/device/mac/__open?ticket=access" });
-			if (path.endsWith("/devices")) return response({ devices: [{ id: "mac", name: "Mac", online: true }] });
-			if (path.endsWith("/local-bots")) return response({ bots: [] });
-			return response({ name: "Mac", deviceId: "mac", hubUrl: "https://hub.example.com", connected: true });
-		});
+		const fetch = mockApi(
+			{ name: "Mac", deviceId: "mac", hubUrl: "https://hub.example.com", connected: true },
+			(path, init) =>
+				path === "/api/device-center/devices/mac/open" && init.method === "POST"
+					? response({ url: "https://hub.example.com/device/mac/__open?ticket=access" })
+					: undefined,
+		);
 		vi.stubGlobal("fetch", fetch);
 		const page = await mount();
 		await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());

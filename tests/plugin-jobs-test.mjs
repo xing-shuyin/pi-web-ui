@@ -16,7 +16,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { freePort } from "./lib/port-utils.mjs";
 
 const PORT = 20000 + Math.floor(Math.random() * 10000);
 const workdir = mkdtempSync(join(tmpdir(), "piweb-pjob-"));

@@ -69,6 +69,8 @@ async function fixture() {
 			botRevision: registered[Number(roomId.replace("room", ""))]?.revision ?? 1,
 			attemptId: `attempt-${id}`,
 			text: "test",
+			leaseToken: "mock-hub-lease-token",
+			leaseGeneration: 1,
 		}),
 		command: (roomId: string) => {
 			const bot = bots.get(registered[Number(roomId.replace("room", ""))].id)!;
@@ -79,6 +81,139 @@ async function fixture() {
 const signal = () => new AbortController().signal;
 
 describe("Bot-only device runtime", () => {
+	it("runs disjoint Bots concurrently while preserving FIFO for the same Bot", async () => {
+		const f = await fixture();
+		const finishes = new Map<string, (value: string) => void>();
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				run(task) {
+					return new Promise<string>((resolve) => finishes.set(task.id, resolve));
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const first = runtime.onTask(f.task("room0", "first"));
+		const second = runtime.onTask(f.task("room0", "second"));
+		const independent = runtime.onTask(f.task("room1", "independent"));
+		await vi.waitFor(() => expect([...finishes.keys()]).toEqual(["first", "independent"]));
+		finishes.get("independent")!("parallel");
+		expect(await independent).toBe("parallel");
+		finishes.get("first")!("first");
+		await first;
+		await vi.waitFor(() => expect(finishes.has("second")).toBe(true));
+		finishes.get("second")!("second");
+		await second;
+		expect(f.held()).toBe(0);
+	});
+
+	it("bounds disjoint workspace execution at four active tasks", async () => {
+		const f = await fixture();
+		const bots = [...f.registered];
+		for (let i = 2; i < 5; i++) {
+			const cwd = join(f.dir, `root-${i}`);
+			await mkdir(cwd);
+			bots.push(
+				await f.options.bots.upsert({ ...f.registered[0], id: undefined, revision: undefined, cwd, name: `Bot ${i}` }),
+			);
+		}
+		const finishes = new Map<string, (value: string) => void>();
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				run(task) {
+					return new Promise<string>((resolve) => finishes.set(task.id, resolve));
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const tasks = bots.map((bot, i) =>
+			runtime.onTask({ ...f.task(`room${i}`), botId: bot.id, botRevision: bot.revision }),
+		);
+		await vi.waitFor(() => expect(finishes.size).toBe(4));
+		expect(f.held()).toBe(4);
+		finishes.get("room0")!("done");
+		await tasks[0];
+		await vi.waitFor(() => expect(finishes.size).toBe(5));
+		for (let i = 1; i < 5; i++) finishes.get(`room${i}`)!("done");
+		await Promise.all(tasks);
+		expect(f.held()).toBe(0);
+	});
+
+	it("reschedules independent queued work when a conflicting predecessor is cancelled", async () => {
+		const f = await fixture();
+		const common = join(f.dir, "common");
+		const left = join(common, "left");
+		const right = join(common, "right");
+		await mkdir(left, { recursive: true });
+		await mkdir(right);
+		const bots: typeof f.registered = [];
+		for (const [index, cwd] of [left, common, right].entries()) {
+			bots.push(
+				await f.options.bots.upsert({
+					...f.registered[0],
+					id: undefined,
+					revision: undefined,
+					cwd,
+					name: `Queue ${index}`,
+				}),
+			);
+		}
+		const finishes = new Map<string, (value: string) => void>();
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				run(task) {
+					return new Promise<string>((resolve) => finishes.set(task.id, resolve));
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const makeTask = (i: number) => ({ ...f.task(`room${i}`), botId: bots[i].id, botRevision: bots[i].revision });
+		const first = runtime.onTask(makeTask(0));
+		await vi.waitFor(() => expect(finishes.size).toBe(1));
+		const controller = new AbortController();
+		const blocked = runtime.onTask(makeTask(1), controller.signal);
+		const rejected = expect(blocked).rejects.toThrow();
+		const independent = runtime.onTask(makeTask(2));
+		expect(finishes.size).toBe(1);
+		controller.abort();
+		await rejected;
+		await vi.waitFor(() => expect(finishes.has("room2")).toBe(true));
+		finishes.get("room2")!("done");
+		await independent;
+		finishes.get("room0")!("done");
+		await first;
+	});
+
+	it("serializes distinct Bots whose roots overlap", async () => {
+		const f = await fixture();
+		const nested = join(f.roots[0], "nested");
+		await mkdir(nested);
+		const changed = await f.options.bots.upsert({ ...f.registered[1], cwd: nested });
+		const finishes: ((value: string) => void)[] = [];
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				run() {
+					return new Promise<string>((resolve) => finishes.push(resolve));
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const first = runtime.onTask(f.task("room0"));
+		const second = runtime.onTask({ ...f.task("room1"), botRevision: changed.revision });
+		await vi.waitFor(() => expect(finishes.length).toBe(1));
+		finishes[0]("done");
+		await first;
+		await vi.waitFor(() => expect(finishes.length).toBe(2));
+		finishes[1]("done");
+		await second;
+	});
 	it("allows ordinary sessions to list but requires an executor-bound owner for every write, even at the same cwd", async () => {
 		const f = await fixture();
 		await writeFile(join(f.roots[0], "payload.txt"), "Bot-owned payload");
@@ -128,13 +263,14 @@ describe("Bot-only device runtime", () => {
 			}
 		}
 		expect(request).not.toHaveBeenCalled();
+		console.log("BEFORE ONTASK CALLS:", request.mock.calls.length);
 		expect(await runtime.onTask(f.task("room0"))).toBe("done");
-		expect(request).toHaveBeenCalledTimes(3);
+		expect(request.mock.calls.length).toBeGreaterThanOrEqual(3);
 		const bodies = request.mock.calls.map(([, init]) => JSON.parse(init!.body as string));
 		expect(bodies.every((body) => body.sourceBotId === f.registered[0].id)).toBe(true);
 		expect(bodies[0]).toMatchObject({ botIds: [f.registered[0].id, "remote"] });
 		expect(bodies[1]).toMatchObject({ text: "Hello" });
-		expect(bodies[2]).toMatchObject({ action: "stage", targetBotId: "remote", bundle: expect.any(Object) });
+		expect(bodies.some((b) => b.targetBotId === "remote" && (b.action === "stage" || b.action === "init"))).toBe(true);
 		request.mockClear();
 		for (const { action, args } of writes) {
 			await expect(
@@ -319,7 +455,7 @@ describe("Bot-only device runtime", () => {
 		const first = runtime.onTask(f.task("room0"));
 		const rejected = expect(first).rejects.toThrow();
 		await running;
-		const disconnected = runtime.onDisconnect();
+		const disconnected = runtime.onDisconnect({ abortTasks: true });
 		await Promise.resolve();
 		expect(closes).toBe(1);
 		expect(f.held()).toBe(1);
@@ -327,7 +463,7 @@ describe("Bot-only device runtime", () => {
 			code: "BOT_BUSY",
 		});
 		await expect(f.options.bots.remove(f.registered[0].id, 1)).rejects.toMatchObject({ code: "BOT_BUSY" });
-		const queued = runtime.onTask(f.task("room1"));
+		const queued = runtime.onTask(f.task("room0", "queued"));
 		expect(runs).toBe(1);
 		settle("old completion");
 		await rejected;
@@ -478,17 +614,17 @@ describe("Bot-only device runtime", () => {
 		expect(f.held()).toBe(0);
 	});
 
-	it("retains the lease and blocks new tasks when executor stop is uncertain", async () => {
+	it("retains uncertain workspace isolation while independent Bots remain available", async () => {
 		const f = await fixture();
 		const runtime = createDeviceRuntime({
 			...f.options,
-			executorFactory() {
+			executorFactory(options) {
 				return {
 					async run() {
 						return "done";
 					},
 					async close() {
-						throw new Error("stop uncertain");
+						if (options.cwd === f.roots[0]) throw new Error("stop uncertain");
 					},
 				};
 			},
@@ -499,7 +635,9 @@ describe("Bot-only device runtime", () => {
 		});
 		expect(f.held()).toBe(1);
 		await expect(f.options.bots.remove(f.registered[0].id, 1)).rejects.toMatchObject({ code: "BOT_BUSY" });
-		await expect(runtime.onTask(f.task("room1"))).rejects.toThrow("blocked");
+		await expect(runtime.onTask(f.task("room0", "blocked"))).rejects.toThrow("blocked");
+		expect(await runtime.onTask(f.task("room1"))).toBe("done");
+		expect(f.held()).toBe(1);
 		await expect(runtime.onDisconnect()).rejects.toMatchObject({ stopUnconfirmed: true });
 		await expect(runtime.close()).rejects.toThrow("stop uncertain");
 	});

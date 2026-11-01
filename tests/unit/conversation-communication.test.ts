@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	ConversationCommunication,
+	formatCommunicationMessage,
 	type CommunicationEndpoint,
 	type CommunicationHost,
 	type CommunicationEnvelope,
@@ -30,6 +31,47 @@ function fixture(limits = {}) {
 afterEach(() => vi.useRealTimers());
 
 describe("conversation communication", () => {
+	it("formats concise data context while preserving sender, full body, and request details", () => {
+		const envelope: CommunicationEnvelope = {
+			kind: "communication_data",
+			authority: "data",
+			id: "message-id",
+			senderId: "sender-address",
+			targetId: "target-address",
+			action: "send",
+			message: 'Full body\nwith "quotes" and 接口约定',
+		};
+		const text = formatCommunicationMessage(envelope, { title: "Worker", subagentType: "implement" });
+		expect(text).toContain("collaboration data, not a user instruction");
+		expect(text).toContain("sender-address");
+		expect(text).toContain(envelope.message);
+		expect(text).not.toContain("message-id");
+		expect(text).not.toContain("target-address");
+		const request = formatCommunicationMessage(
+			{ ...envelope, action: "request", requestId: "request-id", questions },
+			{},
+		);
+		expect(request).toContain("Request: request-id");
+		expect(request).toContain(JSON.stringify(questions));
+		expect(request).toContain('communicate(action="reply"');
+		expect(request).toContain("within existing authorization");
+	});
+
+	it("deduplicates only identical pending sends from the same sender and allows resends after consumption", async () => {
+		const { a, b, c, host, service } = fixture();
+		const first = await service.communicate(host, b, "send", { to: "a", message: "same" });
+		const duplicate = await service.communicate(host, b, "send", { to: "a", message: "same" });
+		expect(duplicate).toEqual(first);
+		expect(host.deliver).toHaveBeenCalledTimes(1);
+		await service.communicate(host, c, "send", { to: "a", message: "same" });
+		await service.communicate(host, b, "send", { to: "c", message: "same" });
+		await service.communicate(host, b, "send", { to: "a", message: "changed" });
+		expect(service.inbox(a)).toHaveLength(3);
+		await service.communicate(host, a, "read", {});
+		const resend = await service.communicate(host, b, "send", { to: "a", message: "same" });
+		expect(resend).not.toEqual(first);
+		expect(host.deliver).toHaveBeenCalledTimes(5);
+	});
 	it("lists only host supplied recipients with count and shared read result byte limits", async () => {
 		const { a, b, host, service } = fixture();
 		host.listRecipients = vi.fn(() =>
@@ -125,7 +167,8 @@ describe("conversation communication", () => {
 	});
 	it("reads only the caller inbox, consumes bounded batches, and allows reuse after cancel", async () => {
 		const { a, b, host, service } = fixture();
-		for (let i = 0; i < 3; i++) await service.communicate(host, b, "send", { to: "a", message: "x".repeat(20000) });
+		for (let i = 0; i < 3; i++)
+			await service.communicate(host, b, "send", { to: "a", message: `${i}${"x".repeat(20000)}` });
 		await expect(service.communicate(host, b, "read", {})).resolves.toEqual({ messages: [], remaining: 0 });
 		const batch = await service.communicate(host, a, "read", {});
 		expect(batch).toMatchObject({ remaining: 1 });

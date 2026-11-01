@@ -44,6 +44,14 @@ describe("group shared context", () => {
 		expect(() => groupHistoryPage("other", rows, first.nextBefore!)).toThrow(/invalid/);
 		expect(() => groupHistoryPage("room", rows, "bad-cursor")).toThrow();
 	});
+	it("captures primary Bot membership at dispatch and excludes stale primary IDs", () => {
+		const room = { id: "room", name: "Team", accountId: "account", botIds: ["bot"], primaryBotId: "bot", createdAt: 1 };
+		const context = groupTaskContext(room, [], []);
+		expect(context.primaryBotId).toBe("bot");
+		room.primaryBotId = "removed";
+		expect(context.primaryBotId).toBe("bot");
+		expect(groupTaskContext(room, [], []).primaryBotId).toBeUndefined();
+	});
 	it("keeps recent discussion chronological, bounded, and independent of subsequent mutation", () => {
 		const rows = Array.from({ length: 100 }, (_, index) => message(String(index), "内容".repeat(1000)));
 		const context = groupTaskContext(

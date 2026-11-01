@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clusterMessages, estimateClusterHeight, isPureToolMessage } from "../../web/src/components/MessageList.js";
+import { clusterMessages, estimateClusterHeight } from "../../web/src/components/MessageList.js";
 import type { UiMessage } from "../../web/src/types.js";
 
 describe("回合工具流聚类与隔离机制 (Turn Tool Trail)", () => {

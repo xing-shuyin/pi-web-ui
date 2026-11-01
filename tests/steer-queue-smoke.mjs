@@ -1,8 +1,8 @@
 // 协议冒烟：prompt.queue 字段从 dispatch → AgentService.prompt() 无损传递。
 // 无 token：不真正触发模型；只验证带 queue 的 prompt 消息能被接收、参数不炸
 // （签名不匹配会抛 TypeError → 服务端发"提示发送失败"notice 也会带 crash 特征）。
-import { portUp, freePort } from "./lib/port-utils.mjs";
-import { spawn, execSync } from "node:child_process";
+import { portUp } from "./lib/port-utils.mjs";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

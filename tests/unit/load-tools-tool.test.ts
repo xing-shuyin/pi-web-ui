@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeLoadToolsTool, type LoadToolsHost } from "../../server/load-tools-tool.js";
-import { LAZY_CORE_TOOL_NAMES, LOAD_TOOLS_TOOL_NAME } from "../../server/tool-manager.js";
+import { LOAD_TOOLS_TOOL_NAME } from "../../server/tool-manager.js";
 
 describe("makeLoadToolsTool", () => {
 	it("提示词与 guidelines 准确阐明累积语义且严禁重载核心工具", () => {

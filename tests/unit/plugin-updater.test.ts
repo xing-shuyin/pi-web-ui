@@ -12,7 +12,6 @@ import {
 	ensureBackup,
 	listBackups,
 	restoreBackup,
-	pruneBackups,
 	resolveRemoteSha,
 	checkPluginUpdates,
 	isBuiltinPlugin,

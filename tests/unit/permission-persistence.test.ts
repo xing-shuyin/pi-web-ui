@@ -15,7 +15,7 @@ describe("Conversation Permission Persistence", () => {
 	afterEach(() => {
 		try {
 			rmSync(tempDir, { recursive: true, force: true });
-		} catch (_err) {
+		} catch {
 			// ignore cleanup error
 		}
 	});

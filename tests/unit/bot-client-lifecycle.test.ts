@@ -47,6 +47,32 @@ describe("Bot execution client lifetime", () => {
 		expect(cs.refreshPluginTools).not.toHaveBeenCalled();
 	});
 
+	it("retires a stopped transcript owner before its socket close arrives", async () => {
+		const task = binding();
+		const { service, cs } = daemon(task.clientId);
+		Object.assign(cs, {
+			findConversationBySessionFile: vi.fn(() => ({ id: "c1" })),
+			conversationStreaming: vi.fn(() => false),
+		});
+		task.release();
+		await service.prepareBotSessionResume(resolve("transcript.jsonl"), "next-bot-client");
+		expect(service.clients.has(task.clientId)).toBe(false);
+		expect(cs.dispose).toHaveBeenCalledOnce();
+	});
+
+	it("does not release a registered Bot during transcript resume", async () => {
+		const task = binding();
+		try {
+			const { service, cs } = daemon(task.clientId);
+			task.capability.revoke();
+			await service.prepareBotSessionResume(resolve("transcript.jsonl"), "next-bot-client");
+			expect(service.clients.get(task.clientId)).toBe(cs);
+			expect(cs.dispose).not.toHaveBeenCalled();
+		} finally {
+			task.release();
+		}
+	});
+
 	it("retains ownership when capability was revoked but stop is unconfirmed", () => {
 		const task = binding();
 		try {

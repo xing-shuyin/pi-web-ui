@@ -7,11 +7,10 @@
  * Robust harness: server-startup check + WebSocket open/error/close handled,
  * so it can never hang forever — every await has a bounded timeout.
  */
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { spawn } from "node:child_process";
-import { execSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

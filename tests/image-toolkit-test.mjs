@@ -11,7 +11,6 @@
  *
  * 运行：先 npm run build:server，再 node tests/image-toolkit-test.mjs
  */
-import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import {
 	existsSync,

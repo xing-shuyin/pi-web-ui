@@ -1,7 +1,7 @@
 // Issue #567 回归：跨设备打开历史会话自动过户（单 runtime）与陈旧元数据侧枝纠偏
 // Usage: node tests/cross-device-switch-session-test.mjs [port]
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, writeFileSync, realpathSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";

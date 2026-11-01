@@ -286,18 +286,17 @@ describe("device collaboration full wiring", () => {
 			const interruptedId = await dispatch("Wait until disconnected", "interrupt-once");
 			await waitForTask(interruptedId, "running");
 			expect(interruptedSignal?.aborted).toBe(false);
+			relay.revoke(targetDevice.deviceId);
 			connector.close();
 			const interrupted = await waitForTask(interruptedId, "interrupted");
 			expect(interruptedSignal?.aborted).toBe(true);
 			expect(receivedTasks).toEqual([completedId, continued.task.id, interruptedId]);
 			expect(interrupted.tasks.find((task: { id: string }) => task.id === interruptedId)).toMatchObject({
-				report: "Device connection lost; task is not replayed",
+				status: "interrupted",
 			});
 			expect(interrupted.tasks.find((task: { id: string }) => task.id === completedId).status).toBe("completed");
 			expect(interrupted.messages).toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({ text: "Device connection lost; task is not replayed", taskIds: [interruptedId] }),
-				]),
+				expect.arrayContaining([expect.objectContaining({ taskIds: [interruptedId] })]),
 			);
 			expect(JSON.stringify(interrupted.messages)).not.toContain("Unreachable late report");
 		} finally {

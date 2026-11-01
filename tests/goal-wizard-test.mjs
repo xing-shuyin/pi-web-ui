@@ -6,11 +6,10 @@
  * `dialog_response`, and verifies the refined goal gets auto-set.
  * Requires a working model (real LLM calls, small cost).
  */
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { spawn } from "node:child_process";
-import { execSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

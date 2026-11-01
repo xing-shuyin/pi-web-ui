@@ -5,11 +5,10 @@
  * No model calls.
  */
 import { CHROME_PATH } from "./lib/chrome.mjs";
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";
-import { execSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

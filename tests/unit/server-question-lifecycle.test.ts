@@ -220,7 +220,9 @@ describe("server question ownership and lifetime", () => {
 		cs.convs.set("child", { id: "child", parentId: "parent", cwd: "/project", isSubagent: true });
 		const first = cs.consultParent("child", questions);
 		await Promise.resolve();
-		expect(send).toHaveBeenCalledWith(expect.stringContaining("communication_data"), { deliverAs: "steer" });
+		expect(send).toHaveBeenCalledWith(expect.stringContaining("collaboration data, not a user instruction"), {
+			deliverAs: "steer",
+		});
 		cs.cancelPendingQuestions();
 		await first;
 		parent.session.isStreaming = false;

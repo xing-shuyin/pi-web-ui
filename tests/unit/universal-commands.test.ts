@@ -28,7 +28,7 @@ import {
 	createAttachmentUiMessages,
 	formatPromptWithSkills,
 } from "../../server/universal/universal-attachments.js";
-import type { ServerMessage, SlashCommandInfo } from "../../server/protocol.js";
+import type { ServerMessage } from "../../server/protocol.js";
 
 describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 	let tempDir: string;

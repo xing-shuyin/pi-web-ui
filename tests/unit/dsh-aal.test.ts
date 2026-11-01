@@ -5,7 +5,7 @@
  * searchForPlugins / steerForPlugins / abortForPlugins / listModelsForPlugins。
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DshClientSession, DshAgentService } from "../../server/dsh/dsh-agent-service.js";

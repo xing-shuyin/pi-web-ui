@@ -7,7 +7,7 @@
  *   between projects, the running-conversation list stays empty (nothing was
  *   ever displaced while streaming), and the file tree follows the project.
  */
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";

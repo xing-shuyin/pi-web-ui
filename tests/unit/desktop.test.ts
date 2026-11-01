@@ -8,7 +8,6 @@ import {
 	getDesktopPlatform,
 	getDesktopWindowBridge,
 	isDesktopShell,
-	setupDesktopWindowDecorations,
 	syncDesktopTitleBarTheme,
 } from "../../web/src/desktop.js";
 

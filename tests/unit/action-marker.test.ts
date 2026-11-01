@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	actionMarker,
-	suggestMarker,
-	initActionState,
-	ACTION_NAMESPACE,
-} from "../../server/markers/builtins/action.js";
+import { actionMarker, suggestMarker, initActionState } from "../../server/markers/builtins/action.js";
 import { MarkerService, type MarkerHost } from "../../server/marker-service.js";
 import type { ClientStateStore, MarkerSettings } from "../../server/client-state.js";
 import type { MarkerContext, ParsedToken } from "../../server/markers/marker.js";

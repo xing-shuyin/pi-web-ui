@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
-import type { GoalConversation } from "../../server/goal-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
 function makeFakeSession() {

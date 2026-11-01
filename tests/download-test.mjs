@@ -11,7 +11,7 @@
  */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { spawn } from "node:child_process";

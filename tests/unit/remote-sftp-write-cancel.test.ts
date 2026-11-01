@@ -10,6 +10,7 @@ function setup() {
 		end: vi.fn(),
 		destroy: vi.fn(),
 		writableFinished: false,
+		_writableState: { emitClose: false, finalCalled: false } as { emitClose: boolean; finalCalled?: boolean },
 	});
 	const sftp = { createWriteStream: vi.fn(() => stream), end: vi.fn() };
 	const client = { end: vi.fn() };
@@ -87,6 +88,17 @@ describe("SFTP write cancellation and resource release", () => {
 		const { result } = await s.start();
 		s.stream.emit("close");
 		s.stream.emit("finish");
+		await expect(result).resolves.toBeUndefined();
+	});
+	it("resolves when ssh2 closes after _final without ever emitting finish", async () => {
+		// Real ssh2 SFTP WriteStream: `_final` calls destroy(), so Writable emits no `finish` —
+		// only `close`, right after the SFTP CLOSE acknowledgement.
+		const s = setup();
+		Object.defineProperty(s.stream, "_writableState", { value: { emitClose: false, finalCalled: false } });
+		const { result } = await s.start();
+		expect(s.stream.writableFinished).toBe(false);
+		s.stream._writableState.finalCalled = true;
+		s.stream.emit("close");
 		await expect(result).resolves.toBeUndefined();
 	});
 	it("rejects an unfinished close", async () => {

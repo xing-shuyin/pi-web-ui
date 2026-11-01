@@ -14,7 +14,6 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import WebSocket from "ws";
 import { freePort, portUp } from "./lib/port-utils.mjs";

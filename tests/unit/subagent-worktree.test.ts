@@ -9,7 +9,6 @@ import {
 	createSubagentWorktree,
 	finalizeSubagentWorktree,
 	withRepoLock,
-	ensureWorktreeExcluded,
 	normalizeWirePath,
 } from "../../server/worktree-service.js";
 

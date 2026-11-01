@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installLocalDeviceCenter, normalizeHubUrl } from "../../server/device-center/local.js";
@@ -84,5 +84,132 @@ describe("local device enrollment", () => {
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8")).allowExecution).toBe(true);
 		expect((await post("disconnect", {})).status).toBe(200);
 		expect(JSON.parse(await readFile(join(dir, "device-center.json"), "utf8"))).toBeNull();
+	});
+
+	it("manages execution settings and queue snapshot with persistence-first semantics", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "device-local-settings-"));
+		cleanup.push(() => rm(dir, { recursive: true, force: true }));
+
+		// Initialize with paired device config so connection is created on boot
+		await writeFile(
+			join(dir, "device-center.json"),
+			JSON.stringify({
+				hubUrl: "http://127.0.0.1:8790",
+				name: "Test",
+				deviceId: "dev-1",
+				credential: "cred",
+				uiCredential: "ui",
+				allowExecution: true,
+			}),
+		);
+
+		const app = express();
+		app.use(express.json());
+
+		let runtimeSettings = { maxActiveTasks: 4, maxWaitingTasks: 32 };
+		let cancelledTask: string | undefined;
+
+		const mockRuntime = {
+			getSchedulerSnapshot: () => ({
+				settings: runtimeSettings,
+				activeCount: 1,
+				waitingCount: 1,
+				blockedCount: 0,
+				running: [
+					{
+						taskId: "run-1",
+						attemptId: "att-1",
+						roomId: "room-1",
+						botId: "bot-1",
+						startedAt: Date.now(),
+					},
+				],
+				waiting: [
+					{
+						taskId: "wait-1",
+						attemptId: "att-2",
+						roomId: "room-2",
+						botId: "bot-2",
+						queuedAt: Date.now(),
+						queuePosition: 1,
+						blockReason: "workspace_conflict" as const,
+						blockReasonDetail: "Workspace is currently in use by an active task",
+						cancelable: true,
+					},
+				],
+				blocked: [],
+			}),
+			updateExecutionSettings: (next: any) => {
+				runtimeSettings = next;
+				return runtimeSettings;
+			},
+			cancelScheduledTask: (id: string) => {
+				cancelledTask = id;
+				return true;
+			},
+		};
+
+		const local = await installLocalDeviceCenter({
+			app,
+			dataDir: dir,
+			connect: () => ({
+				close() {},
+				isConnected: () => true,
+				runtime: mockRuntime,
+			}),
+		});
+		cleanup.push(() => local.close());
+
+		const base = await listen(createServer(app));
+		const post = (path: string, body: unknown) =>
+			fetch(`${base}/api/device-center/${path}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", Origin: base },
+				body: JSON.stringify(body),
+			});
+
+		// 1. Initial GET settings
+		const initialRes = await fetch(`${base}/api/device-center/execution-settings`);
+		expect(initialRes.status).toBe(200);
+		const initialData = await initialRes.json();
+		expect(initialData.settings).toEqual({ maxActiveTasks: 4, maxWaitingTasks: 32 });
+
+		// 2. Successful POST update settings
+		const updateRes = await post("execution-settings", { maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(updateRes.status).toBe(200);
+		const updateData = await updateRes.json();
+		expect(updateData.settings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(runtimeSettings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+
+		// Verify persisted file content
+		const savedContent = JSON.parse(await readFile(join(dir, "execution-settings.json"), "utf8"));
+		expect(savedContent).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+
+		// 3. Failed POST with unknown field returns 400 and preserves existing settings
+		const badRes = await post("execution-settings", {
+			maxActiveTasks: 8,
+			maxWaitingTasks: 40,
+			extra: "illegal",
+		});
+		expect(badRes.status).toBe(400);
+		expect(runtimeSettings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+
+		// 4. GET execution queue snapshot
+		const queueRes = await fetch(`${base}/api/device-center/execution-queue`);
+		expect(queueRes.status).toBe(200);
+		const queueData = await queueRes.json();
+		expect(queueData.activeCount).toBe(1);
+		expect(queueData.waitingCount).toBe(1);
+		expect(queueData.waiting[0]?.blockReason).toBe("workspace_conflict");
+		// Ensure no root path in snapshot
+		expect(queueData.waiting[0]?.root).toBeUndefined();
+		expect(queueData.running[0]?.root).toBeUndefined();
+
+		// 5. POST cancel queue task
+		const cancelRes = await post("execution-queue/cancel", { taskId: "wait-1" });
+		expect(cancelRes.status).toBe(200);
+		const cancelData = await cancelRes.json();
+		expect(cancelData.cancelled).toBe(true);
+		expect(cancelledTask).toBe("wait-1");
 	});
 });

@@ -6,6 +6,7 @@ import { GroupConversation } from "../../web/src/components/GroupConversation";
 import { TemplateProvider } from "../../web/src/components/PromptTemplates";
 import { LanguageProvider } from "../../web/src/i18n";
 import { resetAppGlobals, setAppSend } from "../../web/src/app-globals";
+import type { LocalBot } from "../../server/device-center/bots";
 vi.mock("../../web/src/components/MessageList", () => ({
 	MessageList: (props: any) =>
 		createElement(
@@ -25,6 +26,39 @@ const detail = {
 	tasks: [],
 };
 const response = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data }) as Response;
+function mockApi(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
+	return vi.fn(async (url: string, init: RequestInit = {}) => {
+		const path = new URL(url, window.location.href).pathname;
+		if (path === "/api/prompt-templates") return response({ templates: [] });
+		if (path === "/api/device-center/chat-status") return response({ deviceId: "host", connected: true });
+		if (path === "/api/device-center/local-bots/alpha")
+			return response({
+				bot: {
+					id: "alpha",
+					name: "Twin",
+					revision: 1,
+					cwd: "/project",
+					description: "",
+					systemPrompt: "",
+					tools: [],
+					skills: [],
+					mcpServers: [],
+					enabled: true,
+				} satisfies LocalBot,
+			});
+		return handler(url, init);
+	});
+}
+function expectMentionComposer() {
+	const composer = host.querySelector(".inputbar");
+	expect(composer).not.toBeNull();
+	expect(composer!.querySelector("textarea")).not.toBeNull();
+	expect(composer!.querySelector("select")).toBeNull();
+	const panels = host.querySelectorAll(".group-ecosystem-panel");
+	expect(panels).toHaveLength(2);
+	expect(panels[0].querySelector("select")?.textContent).toMatch(/Select canvas|选择画布/);
+	expect(panels[1].querySelector('option[value="alpha"]')?.textContent).toBe("Twin");
+}
 async function mount(roomId = "one") {
 	await act(async () =>
 		root.render(
@@ -40,7 +74,7 @@ async function mount(roomId = "one") {
 	);
 }
 async function type(text: string) {
-	const input = host.querySelector("textarea")!;
+	const input = host.querySelector<HTMLTextAreaElement>(".inputbar textarea")!;
 	await act(async () => {
 		Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
 		input.selectionStart = text.length;
@@ -88,14 +122,14 @@ async function selectConversation(_value: string) {
 	await act(async () => host.querySelectorAll<HTMLButtonElement>(".slash-item")[1].click());
 }
 async function append(text: string) {
-	await type(host.querySelector("textarea")!.value + text);
+	await type(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")!.value + text);
 }
 describe("group stream lifecycle", () => {
 	it("routes new and continued Bot mentions without a separate dropdown", async () => {
 		const posts: { url: string; body: any }[] = [];
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (init.method === "POST") {
 					posts.push({ url, body: JSON.parse(init.body as string) });
 					return response({});
@@ -104,7 +138,7 @@ describe("group stream lifecycle", () => {
 			}),
 		);
 		await mount();
-		expect(host.querySelector("select")).toBeNull();
+		expectMentionComposer();
 		await type("@");
 		expect(host.querySelector(".slash-menu")?.textContent).toContain("Design review");
 		expect(host.querySelector(".slash-menu")?.textContent).not.toContain("persistent-a");
@@ -119,11 +153,61 @@ describe("group stream lifecycle", () => {
 		expect(posts[1].url).toMatch(/conversations\/persistent-a\/messages$/);
 		expect(posts[1].body.text).toBe("@Twin(alpha) follow up");
 	});
+	it.each([false, true])(
+		"keeps one pending send with ecosystem panels mounted (continuation: %s)",
+		async (continued) => {
+			let release!: (value: Response) => void;
+			const posts: { url: string; body: any }[] = [];
+			vi.stubGlobal(
+				"fetch",
+				mockApi(async (url, init) => {
+					if (init.method === "POST") {
+						posts.push({ url, body: JSON.parse(init.body as string) });
+						return new Promise<Response>((resolve) => {
+							release = resolve;
+						});
+					}
+					return response(url.endsWith("/conversations") ? { conversations: [conversation] } : detail);
+				}),
+			);
+			await mount();
+			expectMentionComposer();
+			if (continued) await selectConversation(conversation.id);
+			await append("work");
+			await send();
+			await send();
+			expect(posts).toHaveLength(1);
+			expect(posts[0].url).toMatch(continued ? /conversations\/persistent-a\/messages$/ : /rooms\/one\/messages$/);
+			expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toContain("work");
+			await act(async () => release(response({})));
+			expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toBe("");
+			expect(localSend).not.toHaveBeenCalled();
+		},
+	);
+	it("aborts auxiliary ecosystem reads on unmount without posting or sending locally", async () => {
+		const signals: AbortSignal[] = [];
+		const fetcher = vi.fn(async (url: string, init: RequestInit = {}) => {
+			if (url.endsWith("/chat-status")) {
+				signals.push(init.signal as AbortSignal);
+				return new Promise<Response>(() => {});
+			}
+			if (url.endsWith("/api/prompt-templates")) return response({ templates: [] });
+			return response(url.endsWith("/conversations") ? { conversations: [] } : detail);
+		});
+		vi.stubGlobal("fetch", fetcher);
+		await mount();
+		expectMentionComposer();
+		expect(signals.filter((signal) => !signal.aborted)).toHaveLength(2);
+		act(() => root.unmount());
+		expect(signals.every((signal) => signal.aborted)).toBe(true);
+		expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+		expect(localSend).not.toHaveBeenCalled();
+	});
 	it("rejects mixed new and continued mentions before sending", async () => {
 		const posts: string[] = [];
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (init.method === "POST") posts.push(url);
 				return response(url.endsWith("/conversations") ? { conversations: [conversation] } : detail);
 			}),
@@ -142,7 +226,7 @@ describe("group stream lifecycle", () => {
 		const posts: string[] = [];
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (init.method === "POST") {
 					posts.push(url);
 					return response({ error: "missing" }, 404);
@@ -168,7 +252,7 @@ describe("group stream lifecycle", () => {
 		let signal!: AbortSignal;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (init.method === "POST") {
 					signal = init.signal as AbortSignal;
 					return new Promise<Response>((resolve) => {
@@ -186,8 +270,8 @@ describe("group stream lifecycle", () => {
 		await type("new draft");
 		expect(signal.aborted).toBe(true);
 		await act(async () => release(response({})));
-		expect(host.querySelector("textarea")?.value).toBe("new draft");
-		expect(host.querySelector("select")).toBeNull();
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toBe("new draft");
+		expectMentionComposer();
 	});
 	it("bounds conversation polling and ignores an aborted list from the old room", async () => {
 		let release!: (value: Response) => void;
@@ -195,7 +279,7 @@ describe("group stream lifecycle", () => {
 		let requests = 0;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (url.endsWith("one/conversations")) {
 					requests++;
 					oldSignal = init.signal as AbortSignal;
@@ -218,13 +302,13 @@ describe("group stream lifecycle", () => {
 	it("keeps the device picker open across repeated Hub refreshes", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string) => response(url.includes("/devices") ? { devices: [{ ...device }] } : { ...detail })),
+			mockApi(async (url: string) => response(url.includes("/devices") ? { devices: [{ ...device }] } : { ...detail })),
 		);
 		await mount();
 		await type("@");
 		expect(host.querySelector(".slash-menu")).not.toBeNull();
 		await act(async () => vi.advanceTimersByTimeAsync(6000));
-		expect(host.querySelector("textarea")?.value).toBe("@");
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toBe("@");
 		expect(host.querySelector(".slash-menu")).not.toBeNull();
 		expect(host.querySelector(".slash-menu")?.textContent).toContain("Twin");
 	});
@@ -232,7 +316,7 @@ describe("group stream lifecycle", () => {
 		let repair = false;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string) =>
+			mockApi(async (url: string) =>
 				response(
 					url.includes("/devices")
 						? { devices: [device] }
@@ -255,7 +339,7 @@ describe("group stream lifecycle", () => {
 		let oldSignal: AbortSignal | undefined;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (url.includes("/devices")) return response({ devices: [device] });
 				if (url.includes("rooms/one")) {
 					oldSignal = init.signal as AbortSignal;
@@ -270,7 +354,7 @@ describe("group stream lifecycle", () => {
 		await type("draft one");
 		await mount("two");
 		expect(oldSignal?.aborted).toBe(true);
-		expect(host.querySelector("textarea")?.value).toBe("");
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toBe("");
 		await act(async () => release(response(detail)));
 		expect(host.textContent).not.toContain("old message");
 	});
@@ -279,7 +363,7 @@ describe("group stream lifecycle", () => {
 		const bodies: any[] = [];
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				if (init.method === "POST") {
 					bodies.push(JSON.parse(init.body as string));
 					return response({ error: "Hub offline" }, 503);
@@ -296,7 +380,7 @@ describe("group stream lifecycle", () => {
 		expect(bodies).toHaveLength(2);
 		expect(bodies[0].targetBotIds).toEqual([]);
 		expect(bodies[0].idempotencyKey).toBe(bodies[1].idempotencyKey);
-		expect(host.querySelector("textarea")?.value).toBe("/help ordinary group chat");
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.value).toBe("/help ordinary group chat");
 		expect(bodies[0].idempotencyKey).toMatch(/^[a-f0-9-]{36}$/);
 		await type("@Twin");
 		await send();
@@ -317,7 +401,7 @@ describe("group stream lifecycle", () => {
 		const signals: AbortSignal[] = [];
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (url: string, init: RequestInit) => {
+			mockApi(async (url: string, init: RequestInit) => {
 				signals.push(init.signal as AbortSignal);
 				return response(
 					url.includes("/devices") ? { devices: [device] } : removed ? { error: "missing" } : detail,

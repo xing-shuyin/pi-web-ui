@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { makeAskUserQuestionTool } from "../../server/ask-user-question-tool";
-import type { UiQuestion } from "../../server/protocol";
 
 describe("ask-user-question-tool", () => {
 	it("正常回答：格式化多题选项与自定义附言，并保留 details.answers", async () => {

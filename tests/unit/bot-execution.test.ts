@@ -81,6 +81,42 @@ describe("Bot execution capabilities", () => {
 		}
 	});
 
+	it("consumes exact native replies authorized by the local bridge once per capability", () => {
+		const binding = registerBotExecution(bot());
+		try {
+			const answer = { type: "question_answer" as const, id: "question-1", answers: [{ id: "q", selected: ["yes"] }] };
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, answer)).toBe(false);
+			binding.authorizeInteractionReply(answer);
+			const other = registerBotExecution({ ...bot(), id: "other" });
+			try {
+				expect(botExecutionMessageAllowed(other.clientId, answer.type, answer)).toBe(false);
+			} finally {
+				other.release();
+			}
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, { ...answer, id: "question-2" })).toBe(false);
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, { ...answer, answers: [] })).toBe(false);
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, answer)).toBe(true);
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, answer)).toBe(false);
+			const approval = {
+				type: "tool_approval_response" as const,
+				id: "approval-1",
+				decision: "approve" as const,
+				scope: "once" as const,
+			};
+			expect(() => binding.authorizeInteractionReply({ ...approval, scope: "all" } as any)).toThrow();
+			binding.authorizeInteractionReply(approval);
+			expect(botExecutionMessageAllowed(binding.clientId, approval.type, { ...approval, scope: "all" })).toBe(false);
+			expect(botExecutionMessageAllowed(binding.clientId, approval.type, approval)).toBe(true);
+			expect(botExecutionMessageAllowed(binding.clientId, approval.type, approval)).toBe(false);
+			binding.authorizeInteractionReply(answer);
+			binding.capability.revoke();
+			expect(botExecutionMessageAllowed(binding.clientId, answer.type, answer)).toBe(false);
+			expect(() => binding.authorizeInteractionReply(answer)).toThrow(/revoked/);
+		} finally {
+			binding.release();
+		}
+	});
+
 	it("denies settings, history, engine and execution bypass commands", () => {
 		const binding = registerBotExecution(bot());
 		try {

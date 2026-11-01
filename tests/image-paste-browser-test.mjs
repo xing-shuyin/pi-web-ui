@@ -9,7 +9,6 @@
  * Works with system Chrome; no pi model auth needed (the image aside renders
  * even when the model call fails).
  * Run:  npm run build && node image-paste-browser-test.mjs */
-import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

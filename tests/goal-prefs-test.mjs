@@ -4,11 +4,10 @@
  * reflects it, then reconnects with the SAME clientId (simulating a reload) and
  * checks the prefs are restored. Also verifies maxRounds 0 → unlimited default.
  */
-import { portUp, freePort } from "./lib/port-utils.mjs";
+import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { spawn } from "node:child_process";
-import { execSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

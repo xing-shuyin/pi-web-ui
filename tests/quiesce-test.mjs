@@ -8,7 +8,7 @@
  * Run: node quiesce-test.mjs  (after npm run build)
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, existsSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WebSocket } from "ws";

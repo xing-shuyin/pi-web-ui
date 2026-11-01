@@ -6,7 +6,7 @@ import { DEFAULT_DURABLE_CAPABILITIES, resolveEngineCapabilities } from "../../s
 import { ENGINE_PACKAGES, probeDurable } from "../../server/engine-probe.js";
 import { DurableAgentService } from "../../server/durable/durable-agent-service.js";
 import { DurableAgentDriver } from "../../server/durable/durable-driver.js";
-import { calculateSupportedThinkingLevels, resolveDurableThinkingLevels } from "../../server/durable/durable-models.js";
+import { calculateSupportedThinkingLevels } from "../../server/durable/durable-models.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 describe("Pi Durable 独立引擎接入规范", () => {

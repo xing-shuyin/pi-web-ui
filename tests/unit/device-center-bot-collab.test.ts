@@ -28,6 +28,85 @@ function fixture(boundBot?: string) {
 }
 
 describe("Bot collaboration identity", () => {
+	it.each(["conversation_deliver", "conversation_review"] as const)(
+		"posts %s with trusted identity, evidence and stable retry key",
+		async (action) => {
+			const f = fixture("local");
+			const args = {
+				roomId: "room/a",
+				sourceBotId: "local",
+				conversationId: "cid/a",
+				parentTaskId: "trusted-parent",
+				idempotencyKey: "retry",
+				commit: "b".repeat(40),
+				summary: "Evidence",
+				...(action === "conversation_deliver"
+					? {
+							repository: "owner/repo",
+							baseCommit: "a".repeat(40),
+							checks: [{ command: "npm test", status: "not_run" as const }],
+						}
+					: { deliveryId: "delivery", verdict: "changes_requested" as const }),
+			};
+			await f.service.execute(action, args, undefined, f.context);
+			const [url, init] = f.request.mock.calls[0] as unknown as [URL, RequestInit];
+			expect(url.pathname).toBe(
+				`/base/api/agent/rooms/room%2Fa/conversations/cid%2Fa/${action === "conversation_deliver" ? "deliveries" : "reviews"}`,
+			);
+			expect(init.method).toBe("POST");
+			const body = JSON.parse(init.body as string);
+			expect(body).toMatchObject({
+				sourceBotId: "local",
+				parentTaskId: "trusted-parent",
+				idempotencyKey: "retry",
+				commit: args.commit,
+			});
+			if (action === "conversation_deliver") {
+				expect(body.checks).toEqual([{ command: "npm test", status: "not_run" }]);
+				expect(body.limitations).toEqual([]);
+			} else expect(body).toMatchObject({ deliveryId: "delivery", verdict: "changes_requested" });
+			expect(f.release).toHaveBeenCalledOnce();
+			f.request.mockClear();
+			await expect(
+				f.service.execute(action, { ...args, parentTaskId: "spoof" }, undefined, f.context),
+			).rejects.toThrow();
+			expect(f.request).not.toHaveBeenCalled();
+		},
+	);
+	it("requires a trusted task for delivery and review", async () => {
+		const request = vi.fn();
+		const service = createDeviceCollabService({
+			root: process.cwd(),
+			getConfig: () => ({
+				hubUrl: "https://hub.example",
+				deviceId: "device",
+				credential: "secret",
+				allowExecution: true,
+			}),
+			fetch: request,
+		});
+		for (const action of ["conversation_deliver", "conversation_review"] as const)
+			await expect(
+				service.execute(
+					action,
+					{
+						roomId: "r",
+						sourceBotId: "local",
+						conversationId: "cid",
+						commit: "a".repeat(40),
+						summary: "test",
+						deliveryId: "d",
+						verdict: "accepted",
+						repository: "repo",
+						baseCommit: "b".repeat(40),
+						checks: [],
+					},
+					undefined,
+					{ cwd: process.cwd() },
+				),
+			).rejects.toThrow();
+		expect(request).not.toHaveBeenCalled();
+	});
 	it("reads history via GET with an encoded cursor and the verified source Bot", async () => {
 		const f = fixture("local");
 		const controller = new AbortController();
@@ -158,7 +237,8 @@ describe("Bot collaboration identity", () => {
 			),
 		).rejects.toThrow("request failed");
 		expect(f.request).not.toHaveBeenCalled();
-		expect(f.release).toHaveBeenCalledOnce();
+		expect(f.workspaceResolver).not.toHaveBeenCalled();
+		expect(f.release).not.toHaveBeenCalled();
 	});
 	it("binds task sender and target to Bots and uses the trusted parent", async () => {
 		const f = fixture("local");
@@ -264,6 +344,30 @@ describe("Bot collaboration identity", () => {
 			);
 		},
 	);
+	it("creates a correlated request with the trusted task parent", async () => {
+		const f = fixture("local");
+		await f.service.execute(
+			"conversation_create",
+			{
+				roomId: "room",
+				sourceBotId: "local",
+				targetBotId: "remote",
+				prompt: "Review this task",
+				kind: "request",
+				requestId: "review-request",
+				idempotencyKey: "request-retry",
+			},
+			undefined,
+			f.context,
+		);
+		const [, init] = f.request.mock.calls[0] as unknown as [URL, RequestInit];
+		expect(JSON.parse(init.body as string)).toMatchObject({
+			kind: "request",
+			requestId: "review-request",
+			parentTaskId: "trusted-parent",
+			idempotencyKey: "request-retry",
+		});
+	});
 	it.each(["send_task", "conversation_create", "conversation_send"] as const)(
 		"rejects caller parent spoof for %s",
 		async (action) => {
@@ -285,7 +389,8 @@ describe("Bot collaboration identity", () => {
 				),
 			).rejects.toThrow("request failed");
 			expect(f.request).not.toHaveBeenCalled();
-			expect(f.release).toHaveBeenCalledOnce();
+			expect(f.workspaceResolver).not.toHaveBeenCalled();
+			expect(f.release).not.toHaveBeenCalled();
 		},
 	);
 	it("passes recursive intent and bounded omissions through file staging", async () => {
