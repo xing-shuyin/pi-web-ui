@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentService } from "../../server/agent-service-daemon.js";
+import { fakeAgentService } from "../helpers/fake-session.js";
 
 function setup() {
 	const target = {
@@ -9,7 +10,7 @@ function setup() {
 		sendNotice: vi.fn(),
 	};
 	const source = { getQuestionNavigation: vi.fn() };
-	const service = Object.create(AgentService.prototype) as any;
+	const service = fakeAgentService() as any;
 	service.clients = new Map([
 		["target", target],
 		["source", source],

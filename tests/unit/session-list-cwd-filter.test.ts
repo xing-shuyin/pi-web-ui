@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import { ClientSession } from "../../server/agent-service.js";
 import { normalizePathKey } from "../../server/client-state.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 // private static 缓存：测试间必须隔离（30s TTL 缓存 + 文件缓存 + in-flight 去重）。
 const caches = ClientSession as unknown as {
@@ -31,7 +32,7 @@ const loadSessionInfos = (
 	ClientSession.prototype as unknown as Record<string, (this: unknown) => Promise<SessionInfo[]>>
 ).loadSessionInfos;
 
-const fakeThis = (cwd: string) => Object.assign(Object.create(ClientSession.prototype), { cwd });
+const fakeThis = (cwd: string) => Object.assign(fakeClientSession(), { cwd });
 
 const envOriginal = {
 	PI_CODING_AGENT_SESSION_DIR: process.env.PI_CODING_AGENT_SESSION_DIR,

@@ -6,6 +6,7 @@ import { makeEditSoftTool } from "../../server/edit-soft-tool.js";
 import { makeSandboxTool } from "../../server/sandbox-tool.js";
 import { ClientSession } from "../../server/agent-service.js";
 import { SandboxManager, withSandboxJailGate } from "../../server/sandbox-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const dirs: string[] = [];
 function manager() {
@@ -18,7 +19,7 @@ afterEach(() => {
 });
 
 function client(mgr: SandboxManager): any {
-	return Object.assign(Object.create(ClientSession.prototype), {
+	return Object.assign(fakeClientSession(), {
 		sandboxes: mgr,
 		convs: new Map(),
 		activeId: "",

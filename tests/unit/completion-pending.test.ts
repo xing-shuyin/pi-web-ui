@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { conversationIdentity } from "../../server/conversation-identity.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function host() {
-	const client: any = Object.create(ClientSession.prototype);
+	const client: any = fakeClientSession();
 	Object.assign(client, {
 		convs: new Map(),
 		pendingSubagentNotices: new Map(),

@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolve } from "node:path";
 import { AgentService } from "../../server/agent-service-daemon.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession, fakeAgentService } from "../helpers/fake-session.js";
 
 function fixture() {
 	const conversation = { id: "c1", independent: false, cwd: process.cwd() };
-	const owner = Object.create(ClientSession.prototype) as any;
+	const owner = fakeClientSession() as any;
 	owner.convs = new Map([[conversation.id, conversation]]);
 	owner.activeId = "other";
 	owner.conversationViewers = new Map();
@@ -23,7 +24,7 @@ function fixture() {
 	owner.prompt = vi.fn().mockResolvedValue(undefined);
 	owner.abortConversation = vi.fn().mockResolvedValue(undefined);
 	owner.readConversationForPlugins = () => ({ conversationId: owner.activeId });
-	const service = Object.create(AgentService.prototype) as any;
+	const service = fakeAgentService() as any;
 	service.clients = new Map([
 		["owner", owner],
 		["viewer", {}],
@@ -217,7 +218,7 @@ describe("shared conversation identity", () => {
 		expect(emitSharedInteraction).toHaveBeenCalledWith({ type: "global_interactions", questions: [], approvals: [] });
 	});
 	it("persists an explicit shared restore before reusing an already-open runtime", async () => {
-		const session = Object.create(ClientSession.prototype) as any;
+		const session = fakeClientSession() as any;
 		const sessionFile = resolve(process.cwd(), "sessions", "restore.jsonl");
 		session.agentDir = process.cwd();
 		session.convs = new Map([["c1", { id: "c1", session: { sessionFile } }]]);
@@ -233,7 +234,7 @@ describe("shared conversation identity", () => {
 		);
 	});
 	it("persists the flag before publishing and restores legacy ordinary and pseudo defaults", () => {
-		const session = Object.create(ClientSession.prototype) as any;
+		const session = fakeClientSession() as any;
 		const entries: any[] = [];
 		const sdk = {
 			sessionManager: {

@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { parseSessionInfoFast } from "../../server/session-parser.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("workspace & session streaming transition", () => {
 	it("extractTranscriptPreview extracts tail non-system messages and total count before runtime mounts", () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		const branchEntries = [
 			{
 				type: "message",
@@ -56,7 +57,7 @@ describe("workspace & session streaming transition", () => {
 	});
 
 	it("openManagerAndRuntime streams transcript callback before awaiting runtime creation", async () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		const order: string[] = [];
 		const fakeManager = {
 			getEntries: () => [],

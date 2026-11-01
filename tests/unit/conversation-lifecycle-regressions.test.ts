@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ClientSession } from "../../server/agent-service.js";
 import type { ApprovalRule } from "../../server/approval-rules.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	const sdk = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
@@ -22,7 +23,7 @@ function deferred<T>() {
 // Exercise real private methods and getters without starting the server or model runtime.
 // Only external side effects and operations beyond the behavior under test are replaced.
 function client(): any {
-	return Object.assign(Object.create(ClientSession.prototype), {
+	return Object.assign(fakeClientSession(), {
 		activeId: "A",
 		convs: new Map(),
 		creatingConversations: new Map(),

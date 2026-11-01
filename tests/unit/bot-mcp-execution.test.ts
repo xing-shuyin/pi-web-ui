@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { McpBridge, getMcpToolServer } from "../../server/mcp-bridge.js";
 import { registerBotExecution } from "../../server/device-center/bot-execution.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const fixture = fileURLToPath(new URL("../fixtures/mcp-echo-server.mjs", import.meta.url));
 
@@ -31,7 +32,7 @@ describe("Bot MCP execution", () => {
 			enabled: true,
 			revision: 1,
 		});
-		const client = Object.create(ClientSession.prototype) as any;
+		const client = fakeClientSession() as any;
 		Object.assign(client, {
 			botExecution: binding.capability,
 			botMcpBridge: bridge,

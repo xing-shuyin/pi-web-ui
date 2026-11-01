@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("editMessage 纯附件提问支持（#443）", () => {
 	it("空文本且无附件：发出 warning notice 并提前返回", async () => {
 		const emitted: unknown[] = [];
-		const session = Object.create(ClientSession.prototype) as any;
+		const session = fakeClientSession() as any;
 		session.quiesceBlocked = () => false;
 		session.emit = (msg: unknown) => emitted.push(msg);
 		session.flushSnapshot = vi.fn();
@@ -21,7 +22,7 @@ describe("editMessage 纯附件提问支持（#443）", () => {
 
 	it("空文本但带附件：放行通过空检查并尝试 resolve 消息（不静默拦截）", async () => {
 		const emitted: unknown[] = [];
-		const session = Object.create(ClientSession.prototype) as any;
+		const session = fakeClientSession() as any;
 		session.quiesceBlocked = () => false;
 		session.emit = (msg: unknown) => emitted.push(msg);
 		session.flushSnapshot = vi.fn();

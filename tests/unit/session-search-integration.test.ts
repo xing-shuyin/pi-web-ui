@@ -5,6 +5,7 @@ import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import * as transcriptSearch from "../../server/session-search.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -50,7 +51,7 @@ async function transcript(index: number, text: string): Promise<SessionInfo> {
 }
 
 function fakeThis() {
-	return Object.assign(Object.create(ClientSession.prototype), {
+	return Object.assign(fakeClientSession(), {
 		cwd: dir,
 		emit: vi.fn(),
 		loadSessionInfos: vi.fn<(cwd: string) => Promise<SessionInfo[]>>(),

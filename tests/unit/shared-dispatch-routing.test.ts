@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { AgentService } from "../../server/agent-service-daemon.js";
 import { ClientSession } from "../../server/agent-service.js";
 import type { ClientMessage } from "../../server/protocol.js";
+import { fakeClientSession, fakeAgentService } from "../helpers/fake-session.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -14,7 +15,7 @@ function fixture() {
 	const cwd = mkdtempSync(join(tmpdir(), "shared-route-"));
 	cleanups.push(() => rmSync(cwd, { recursive: true, force: true }));
 	const conv = { id: "shared", cwd, independent: false };
-	const owner = Object.create(ClientSession.prototype) as any;
+	const owner = fakeClientSession() as any;
 	owner.convs = new Map([[conv.id, conv]]);
 	owner.activeId = "other";
 	owner.cwd = join(cwd, "other");
@@ -23,7 +24,7 @@ function fixture() {
 	owner.disposed = false;
 	const send = vi.fn();
 	const binding = { owner, conversation: conv, send, close: vi.fn() };
-	const service = Object.create(AgentService.prototype) as any;
+	const service = fakeAgentService() as any;
 	service.sharedConversationTarget = () => binding;
 	cleanups.push(() => binding.close());
 	const dispatch = (message: ClientMessage) => service.dispatchSharedConversationMessage("viewer", message);

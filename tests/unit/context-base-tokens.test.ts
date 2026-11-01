@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 /** 构造用于测试 buildLightState 的假 ClientSession 上下文 */
 function createFakeSessionContext(conv: any, baseTokensVal = 10000) {
-	const svc = Object.create(ClientSession.prototype) as any;
+	const svc = fakeClientSession() as any;
 	svc.convs = new Map([[conv.id, conv]]);
 	svc.activeId = conv.id;
 	svc.settingsSvc = { current: { softCapTokens: 0, softCapByModel: {} } };

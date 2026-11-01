@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentService } from "../../server/agent-service-daemon.js";
+import { fakeAgentService } from "../helpers/fake-session.js";
 
 function fixture() {
 	const conv = { id: "c1", cwd: process.cwd(), session: { sessionId: "sdk-session-peer" } };
@@ -12,7 +13,7 @@ function fixture() {
 		setThinking: vi.fn(),
 		setConversationIndependent: vi.fn(),
 	};
-	const svc = Object.create(AgentService.prototype) as any;
+	const svc = fakeAgentService() as any;
 	svc.clients = new Map([["plugin:telegram:peer", owner]]);
 	svc.attach = vi.fn().mockResolvedValue(owner);
 	return { svc, owner, conv };

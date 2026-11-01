@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 let dir: string;
 let file: string;
@@ -33,7 +34,7 @@ function fixture(persisted = true, sessionFile: string | undefined = file) {
 		session: { sessionFile: sessionFile as string | undefined, sessionManager: manager },
 		compactionState: { reason: "manual", startedAt: 1234 },
 	};
-	const session = Object.assign(Object.create(ClientSession.prototype), {
+	const session = Object.assign(fakeClientSession(), {
 		emit: vi.fn(),
 		sinks: new Set(),
 		pendingNotices: [],

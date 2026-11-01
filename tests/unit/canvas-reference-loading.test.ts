@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("canvas reference tool loading", () => {
 	it("loads on the captured session and conversation when lazy loading is enabled", () => {
 		const session = { getActiveToolNames: () => ["canvas"] };
 		const conv = { id: "captured" };
-		const host = Object.create(ClientSession.prototype) as any;
+		const host = fakeClientSession() as any;
 		host.lazyLoadingOn = () => true;
 		host.loadLazyTools = vi.fn();
 		host.emit = vi.fn();
@@ -14,7 +15,7 @@ describe("canvas reference tool loading", () => {
 		expect(host.emit).not.toHaveBeenCalled();
 	});
 	it("reports a gated tool without overriding settings or permissions", () => {
-		const host = Object.create(ClientSession.prototype) as any;
+		const host = fakeClientSession() as any;
 		host.lazyLoadingOn = () => false;
 		host.loadLazyTools = vi.fn();
 		host.emit = vi.fn();

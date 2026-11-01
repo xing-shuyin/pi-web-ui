@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 type AnySession = Record<string, (...args: unknown[]) => unknown>;
 
@@ -29,7 +30,7 @@ function fakeConv(overrides: Record<string, unknown> = {}): Record<string, unkno
 }
 
 function makeCs(props: Record<string, unknown>): ClientSession {
-	const cs = Object.create(ClientSession.prototype);
+	const cs = fakeClientSession();
 	for (const [k, v] of Object.entries(props)) {
 		Object.defineProperty(cs, k, { value: v, writable: true, configurable: true });
 	}

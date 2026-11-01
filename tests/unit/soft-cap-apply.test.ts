@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { ClientSession } from "../../server/agent-service.js";
 import { DEFAULT_COMPACTION_RESERVE_TOKENS } from "../../server/soft-cap.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 /** 不起 server：伪造 settingsSvc + convs，直接调原型方法验逻辑。 */
 function serviceWith(settings: { softCapTokens: number; softCapByModel: Record<string, number> }, sessions: unknown[]) {
-	const svc = Object.create(ClientSession.prototype) as {
+	const svc = fakeClientSession() as {
 		settingsSvc: { current: typeof settings };
 		convs: Map<string, unknown>;
 	};

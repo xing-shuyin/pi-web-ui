@@ -3,6 +3,7 @@ import { _chatReducerForTest, type ChatState } from "../../web/src/use-chat.js";
 import { handleTerminalMessage } from "../../server/dispatch-domain-handlers.js";
 import type { DispatchSession, TerminalManagerLike } from "../../server/index.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("用户直接创建的终端始终显示且不受对话影响和过滤", () => {
 	const createInitialState = (): ChatState =>
@@ -287,7 +288,7 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 
 	it("5. 服务端 ClientSession.pushTerminals：始终合并下发 userTerminals 与当前对话 terminals", () => {
 		const emitted: any[] = [];
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.emit = (msg: any) => emitted.push(msg);
 
 		cs.userTerminals = {

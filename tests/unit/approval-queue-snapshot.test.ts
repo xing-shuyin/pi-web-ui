@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 it("collects background conversation approvals in creation order without leaking execution callbacks", () => {
-	const session = Object.create(ClientSession.prototype) as any;
+	const session = fakeClientSession() as any;
 	const entry = (id: string, conversationId: string, createdAt: number) => ({
 		id,
 		conversationId,

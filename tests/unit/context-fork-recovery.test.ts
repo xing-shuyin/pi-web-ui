@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { persistContextEvidence } from "../../server/context-evidence.js";
 import { calibrateSessionLeaf } from "../../server/session-branch.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -42,7 +43,7 @@ async function fixture(first: boolean) {
 		msgIds: new Map(),
 		userSeqByTs: new Map(),
 	};
-	const client: any = Object.assign(Object.create(ClientSession.prototype), {
+	const client: any = Object.assign(fakeClientSession(), {
 		activeId: target.id,
 		convs: new Map([[target.id, target]]),
 		sharedModelRuntime: {},

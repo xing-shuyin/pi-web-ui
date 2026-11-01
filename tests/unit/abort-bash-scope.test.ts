@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { makeKillableBashTool } from "../../server/bash-tool.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function client(): any {
-	return Object.assign(Object.create(ClientSession.prototype), {
+	return Object.assign(fakeClientSession(), {
 		activeId: "A",
 		convs: new Map(),
 		settingsSvc: { current: {} },

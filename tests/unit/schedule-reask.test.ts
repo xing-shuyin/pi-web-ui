@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { makeScheduleTool } from "../../server/schedule-agent-tool.js";
 import { SchedulerStore } from "../../server/scheduler-tasks.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -58,7 +59,7 @@ function fixture() {
 		msgIds: new Map(),
 		userSeqByTs: new Map(),
 	};
-	const client: any = Object.assign(Object.create(ClientSession.prototype), {
+	const client: any = Object.assign(fakeClientSession(), {
 		cwd: dir,
 		activeId: "A",
 		convs: new Map([["A", target]]),

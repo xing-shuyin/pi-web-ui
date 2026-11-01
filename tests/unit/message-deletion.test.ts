@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { messageDeletionTargets } from "../../server/message-deletion.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function fixture(manager = SessionManager.inMemory()) {
 	const user = manager.appendMessage({ role: "user", content: "question", timestamp: 1 });
@@ -73,7 +74,7 @@ describe("message deletion", () => {
 			lastMessagesSig: "old",
 			lastMessagesArray: [{}],
 		};
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		Object.defineProperty(cs, "conv", { value: target });
 		cs.quiesceBlocked = () => false;
 		cs.resolveMessageEntry = () => manager.getEntry(user);
@@ -100,7 +101,7 @@ describe("message deletion", () => {
 	});
 
 	it("rejects deletion during generation and does not fall back from an unknown conversation", async () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.quiesceBlocked = () => false;
 		cs.emit = vi.fn();
 		cs.flushSnapshot = vi.fn();

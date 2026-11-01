@@ -6,7 +6,7 @@
  * 对未知 id 静默忽略、cancelPendingPageCalls、tool-manager 目录登记。
  *
  * 取舍说明：ClientSession 的构造函数要真起 SDK/文件监视/PTY，单测里造不出（也不
- * 该造）。这里改用 `Object.create(ClientSession.prototype)` 只补上 pageCall 用到的
+ * 该造）。这里改用 `fakeClientSession()` 只补上 pageCall 用到的
  * 那几个私有字段（disposed / sinks / pendingPageCalls / pageSeq），跑的是**真实**
  * 的 pageCall / resolvePageCall / cancelPendingPageCalls 实现，不是假替身。
  */
@@ -22,10 +22,11 @@ import {
 	type PageCallResult,
 } from "../../server/agent-service.js";
 import { AGENT_TOOL_CATALOG, BROWSER_PAGE_TOOL_NAME, defaultDisabledAgentTools } from "../../server/tool-manager.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 /** 页面调用桥的真实实现 + 只补最小私有字段（见文件头取舍说明）。 */
 function pageBridge(opts: { sinks?: number; disposed?: boolean } = {}) {
-	const cs = Object.create(ClientSession.prototype) as unknown as Record<string, unknown>;
+	const cs = fakeClientSession() as unknown as Record<string, unknown>;
 	cs.disposed = opts.disposed ?? false;
 	cs.sinks = new Set(Array.from({ length: opts.sinks ?? 1 }, () => () => {}));
 	cs.pendingPageCalls = new Map();

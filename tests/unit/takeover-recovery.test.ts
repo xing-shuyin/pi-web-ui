@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("过户后会话状态与自愈防护 (Takeover recovery and activeId self-healing)", () => {
 	it("当 activeId 悬空时，get conv 自动自愈回退到现存合法会话", () => {
 		const c1 = { id: "c1", title: "Chat 1", isSubagent: false } as any;
 		const c2 = { id: "c2", title: "Chat 2", isSubagent: false } as any;
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.convs = new Map([
 			["c1", c1],
 			["c2", c2],
@@ -20,7 +21,7 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 	});
 
 	it("newChat 绝不复用标记为 transferring 的空白对话", async () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.quiesceBlocked = () => false;
 		cs.convs = new Map();
 		cs.planManager = { getPlan: () => null };
@@ -78,7 +79,7 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 	});
 
 	it("detachTakeoverConversations 保证删除后源会话 activeId 绝对不悬空", async () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		const c1 = {
 			id: "c1",
 			title: "Moving Chat",
@@ -115,7 +116,7 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 	});
 
 	it("emitSnapshotNow 在没有任何会话 (convs 为空) 时安全返回并触发自愈", () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.disposed = false;
 		cs.convs = new Map();
 		cs.activeId = "c_none";

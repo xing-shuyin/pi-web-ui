@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { AgentService } from "../../server/agent-service-daemon.js";
+import { fakeClientSession, fakeAgentService } from "../helpers/fake-session.js";
 
 describe("MCP runtime consumers", () => {
 	it("refreshes management UI for every client viewing the changed project", () => {
@@ -8,7 +9,7 @@ describe("MCP runtime consumers", () => {
 		const a = client("/project/a"),
 			a2 = client("/project/a"),
 			b = client("/project/b");
-		const service = Object.create(AgentService.prototype) as any;
+		const service = fakeAgentService() as any;
 		service.clients = new Map([
 			["a", a],
 			["a2", a2],
@@ -23,7 +24,7 @@ describe("MCP runtime consumers", () => {
 	});
 
 	it("hot tool refresh reapplies gating to all stable conversation sessions", () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		const a = { session: {}, cwd: "/project/a", agentPreset: "standard" };
 		const b = { session: {}, cwd: "/project/b", agentPreset: "ask" };
 		cs.convs = new Map([
@@ -37,7 +38,7 @@ describe("MCP runtime consumers", () => {
 	});
 
 	it("plugin definitions use the passed conversation cwd rather than the current UI project", () => {
-		const cs = Object.create(ClientSession.prototype) as any;
+		const cs = fakeClientSession() as any;
 		cs.cwd = "/ui/project";
 		cs.settingsSvc = { current: {} };
 		cs.pluginToolsProvider = vi.fn(() => []);

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { conversationIdentity } from "../../server/conversation-identity.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function setup() {
 	let resolve!: () => void;
@@ -25,7 +26,7 @@ function setup() {
 		},
 	};
 	const parent: any = { id: "parent", suspendedSubagents: new Set([child]) };
-	const host: any = Object.assign(Object.create(ClientSession.prototype), {
+	const host: any = Object.assign(fakeClientSession(), {
 		convs: new Map([
 			[child.id, child],
 			[parent.id, parent],

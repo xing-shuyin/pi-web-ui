@@ -6,6 +6,7 @@ import { ClientSession } from "../../server/agent-service.js";
 import { ClientStateStore } from "../../server/client-state.js";
 import { filterForkedParentSessions } from "../../server/session-parser.js";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 interface MockSessionInfo {
 	path: string;
@@ -156,7 +157,7 @@ describe("showForkedParentSessions 设置持久化与联动（#621）", () => {
 	it("editMessage 在原会话重问，提示不受 showForkedParentSessions 影响，并刷新会话缓存", async () => {
 		const runEdit = async (showForkedParentSessions: boolean) => {
 			const emitted: unknown[] = [];
-			const session = Object.create(ClientSession.prototype) as any;
+			const session = fakeClientSession() as any;
 			session.quiesceBlocked = () => false;
 			session.emit = (msg: unknown) => emitted.push(msg);
 			session.flushSnapshot = vi.fn();

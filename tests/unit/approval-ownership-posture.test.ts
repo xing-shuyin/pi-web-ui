@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import approvalGatePlugin from "../../plugins/approval-gate/index.mjs";
 import { isLoopbackHost } from "../../server/host-guard.js";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("审批归属、部署姿态与拍板插件安全加固 (Issue #723 方案 1+2)", () => {
 	describe("1. 部署姿态：非回环主机判定与零信任自愈 (host-guard / zero-trust)", () => {
@@ -192,7 +193,7 @@ describe("审批归属、部署姿态与拍板插件安全加固 (Issue #723 方
 
 	describe("3. 方案 1：审批状态下沉至 Conversation 隔离验证", () => {
 		function createFakeClientSession() {
-			const cs = Object.create(ClientSession.prototype) as any;
+			const cs = fakeClientSession() as any;
 			cs.convs = new Map();
 			cs.activeId = "conv-main";
 			cs.auditLogger = { record: vi.fn() };

@@ -6,13 +6,14 @@ import { searchSessions } from "../../server/session-search.js";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 // 私有静态字段/方法：运行时都挂在 class 上，经 cast 访问（同 fake-this 思路）
 const CS = ClientSession as unknown as Record<string, any>;
 
 /** fake this：loadSessionInfos / invalidateSessionInfos 只触静态缓存与 this.cwd。 */
 function svcWith(cwd: string) {
-	const svc = Object.create(ClientSession.prototype) as { cwd: string };
+	const svc = fakeClientSession() as { cwd: string };
 	svc.cwd = cwd;
 	return svc;
 }

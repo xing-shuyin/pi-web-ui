@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentService } from "../../server/agent-service-daemon.js";
+import { fakeAgentService } from "../helpers/fake-session.js";
 
 function pendingOwner(id: string) {
 	return {
@@ -24,7 +25,7 @@ function pendingOwner(id: string) {
 
 describe("global shared interaction authority", () => {
 	it("answers an explicitly shared browser conversation at the captured owner", () => {
-		const service = Object.create(AgentService.prototype) as any;
+		const service = fakeAgentService() as any;
 		const owner = {
 			...pendingOwner("browser-owner"),
 			resolveQuestion: vi.fn(() => true),
@@ -41,7 +42,7 @@ describe("global shared interaction authority", () => {
 		expect(owner.resolveToolApproval).toHaveBeenCalledWith("browser-owner-approval", "approve");
 	});
 	it("includes Bot and channel requests with original owner identity despite identical local conversation IDs", () => {
-		const service = Object.create(AgentService.prototype) as any;
+		const service = fakeAgentService() as any;
 		service.clients = new Map([
 			["device-task-bot", pendingOwner("bot")],
 			["plugin:wechat:alice", pendingOwner("wechat")],
@@ -57,7 +58,7 @@ describe("global shared interaction authority", () => {
 	});
 
 	it("publishes an empty authoritative set after pending requests settle", () => {
-		const service = Object.create(AgentService.prototype) as any;
+		const service = fakeAgentService() as any;
 		const owner = pendingOwner("bot");
 		service.clients = new Map([["device-task-bot", owner]]);
 		expect(service.globalInteractions().questions).toHaveLength(1);

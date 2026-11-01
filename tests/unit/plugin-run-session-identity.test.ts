@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 describe("plugin run stable session identity", () => {
 	it("identifies a browser continuation without a channel run token and survives transfer", () => {
-		const holder = Object.create(ClientSession.prototype) as any;
+		const holder = fakeClientSession() as any;
 		holder.clientId = "plugin:wechat-ilink:peer";
 		holder.onRunEvent = vi.fn();
 		const conv = { id: "c1", session: { sessionId: "sdk-wechat-session" } };
