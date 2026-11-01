@@ -376,6 +376,41 @@ function commandExists(cmd) {
 		expect(patchExecutableLookupSource(unrelatedPathScan, "shell").status).toBe("unsupported");
 	});
 
+	it("does not mistake the Windows `where` probe for the POSIX lookup still forking", () => {
+		// SDK shape with the POSIX branch already replaced by a PATH scan (a local patch, or
+		// upstream fixing it): the win32 early return keeps its `where` child process, which
+		// never runs on Android/Termux. That must read as fork-free, not as a warning.
+		const patchedPosix = SHELL_SOURCE.replace(
+			/ {4}\/\/ Unix: Use 'which'[\s\S]*?\n {4}catch \{\n {8}\/\/ Ignore errors\n {4}\}/,
+			`    // Unix: resolved from PATH (no child process)
+    try {
+        for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+            if (!directory) continue;
+            const candidate = join(directory, executable);
+            if (existsSync(candidate)) {
+                return candidate;
+            }
+        }
+    }
+    catch {
+        // Ignore errors
+    }`,
+		);
+		expect(patchedPosix).not.toContain('spawnSync("which"');
+		expect(patchedPosix).toContain('spawnSync("where"');
+		expect(patchExecutableLookupSource(patchedPosix, "shell")).toEqual({
+			code: patchedPosix,
+			status: "already",
+		});
+
+		// A fork in the POSIX part is still caught, however.
+		const stillForking = patchedPosix.replace(
+			"const candidate = join(directory, executable);",
+			'const candidate = spawnSync("which", [executable]);',
+		);
+		expect(patchExecutableLookupSource(stillForking, "shell").status).toBe("unsupported");
+	});
+
 	it("never applies twice", () => {
 		const once = patchExecutableLookupSource(SHELL_SOURCE, "shell");
 		const twice = patchExecutableLookupSource(once.code, "shell");

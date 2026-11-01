@@ -160,6 +160,27 @@ const ANCHORS: Record<ExecutableLookupTarget, string> = {
 /** Any child process a lookup could still be forking through, however it is spelled. */
 const FORKING_CALL = /\b(?:spawnSync|execSync|execFileSync)\s*\(/;
 
+/** Index just past the comment or quoted literal starting at `i`, or null when it is code. */
+function skipNonCode(source: string, i: number): number | null {
+	const char = source[i];
+	if (char === "/" && source[i + 1] === "/") {
+		const end = source.indexOf("\n", i);
+		return end < 0 ? source.length : end;
+	}
+	if (char === "/" && source[i + 1] === "*") {
+		const end = source.indexOf("*/", i + 2);
+		return end < 0 ? null : end + 1;
+	}
+	if (char === '"' || char === "'" || char === "`") {
+		for (let j = i + 1; j < source.length; j++) {
+			if (source[j] === "\\") j++;
+			else if (source[j] === char) return j;
+		}
+		return null;
+	}
+	return null;
+}
+
 /**
  * Body of the function starting at `anchor`, or null when it is not there.
  * Skips comments and string/template contents so braces inside them cannot unbalance it.
@@ -171,30 +192,12 @@ export function functionBody(source: string, anchor: string): string | null {
 	if (open < 0) return null;
 	let depth = 0;
 	for (let i = open; i < source.length; i++) {
+		const skip = skipNonCode(source, i);
+		if (skip !== null) {
+			i = skip;
+			continue;
+		}
 		const char = source[i];
-		if (char === "/" && source[i + 1] === "/") {
-			const end = source.indexOf("\n", i);
-			if (end < 0) break;
-			i = end;
-			continue;
-		}
-		if (char === "/" && source[i + 1] === "*") {
-			const end = source.indexOf("*/", i + 2);
-			if (end < 0) break;
-			i = end + 1;
-			continue;
-		}
-		if (char === '"' || char === "'" || char === "`") {
-			const quote = char;
-			for (i++; i < source.length; i++) {
-				if (source[i] === "\\") {
-					i++;
-					continue;
-				}
-				if (source[i] === quote) break;
-			}
-			continue;
-		}
 		if (char === "{") depth++;
 		else if (char === "}") {
 			// Only a brace that ends the line can close the function. A `}` inside a regex
@@ -206,6 +209,36 @@ export function functionBody(source: string, anchor: string): string | null {
 		}
 	}
 	return null;
+}
+
+/** Index of the `}` matching the `{` at `open`, or null when the block is unbalanced. */
+function bracedBlockEnd(source: string, open: number): number | null {
+	let depth = 0;
+	for (let i = open; i < source.length; i++) {
+		const skip = skipNonCode(source, i);
+		if (skip !== null) {
+			i = skip;
+			continue;
+		}
+		if (source[i] === "{") depth++;
+		else if (source[i] === "}" && --depth === 0) return i;
+	}
+	return null;
+}
+
+/**
+ * What actually runs on POSIX: the body without the `if (process.platform === "win32")`
+ * early return. The shell lookup keeps a `where` child process in that branch on every SDK
+ * version, and it never runs on Android/Termux — counting it as a fork would report a
+ * fork-free POSIX lookup as unrecognized and warn on every start.
+ */
+export function posixPortion(body: string): string {
+	const guard = body.search(/if \(process\.platform === "win32"\)\s*\{/);
+	if (guard < 0) return body;
+	const open = body.indexOf("{", guard);
+	const close = bracedBlockEnd(body, open);
+	if (close === null) return body;
+	return body.slice(0, guard) + body.slice(close + 1).replace(/^\s*return null;\s*/, "");
 }
 
 /** Whitespace (and an optional `;`) up to the end of the line — a statement boundary. */
@@ -222,7 +255,8 @@ function isStatementEnd(source: string, at: number): boolean {
 function isForkFreeLookup(source: string, anchor: string): boolean {
 	const body = functionBody(source, anchor);
 	if (body === null) return false;
-	return !FORKING_CALL.test(body) && body.includes("process.env.PATH");
+	const posix = posixPortion(body);
+	return !FORKING_CALL.test(posix) && posix.includes("process.env.PATH");
 }
 
 export function patchExecutableLookupSource(
