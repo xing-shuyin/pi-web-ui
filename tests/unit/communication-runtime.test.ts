@@ -2,12 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { withSubagentOwner, makeSubagentTools } from "../../server/subagents.js";
 import { conversationIdentity, bindConversationParent } from "../../server/conversation-identity.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const questions = [{ id: "choice", question: "Proceed?" }];
 const answers = [{ id: "choice", selected: ["yes"] }];
 const owners: any[] = [];
 function holder(id: string) {
-	const cs = Object.create(ClientSession.prototype) as any;
+	const cs = fakeClientSession() as any;
 	Object.assign(cs, {
 		clientId: id,
 		cwd: "/project",

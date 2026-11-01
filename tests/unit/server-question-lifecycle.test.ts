@@ -4,10 +4,11 @@ import { conversationIdentity } from "../../server/conversation-identity.js";
 import { PendingQuestion } from "../../server/pending-question.js";
 import { makeAskUserQuestionTool } from "../../server/ask-user-question-tool.js";
 import type { UiQuestion } from "../../server/protocol.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const questions: UiQuestion[] = [{ id: "decision", question: "Proceed?" }];
 function holder(id: string, cwd = "/project") {
-	const cs = Object.create(ClientSession.prototype) as any;
+	const cs = fakeClientSession() as any;
 	Object.assign(cs, {
 		clientId: id,
 		cwd,

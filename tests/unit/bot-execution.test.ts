@@ -7,6 +7,7 @@ import {
 import type { LocalBot } from "../../server/device-center/bots.js";
 import { resolve } from "node:path";
 import { ClientSession } from "../../server/agent-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 const bot = (): LocalBot => ({
 	id: "bot",
@@ -109,7 +110,7 @@ describe("Bot execution capabilities", () => {
 
 	it("refuses transfer before touching source or destination runtime state", async () => {
 		const binding = registerBotExecution(bot());
-		const client = Object.create(ClientSession.prototype) as ClientSession;
+		const client = fakeClientSession() as ClientSession;
 		Object.assign(client, { botExecution: binding.capability });
 		try {
 			await expect(client.detachTakeoverConversations(["c1"])).resolves.toEqual({ ok: false, reason: "missing" });

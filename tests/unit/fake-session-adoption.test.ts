@@ -7,12 +7,11 @@
  * （一次复盘里 5 个新成员打红 9 个文件的 15 个用例）。`tests/helpers/fake-session.ts`
  * 从生产源码推导字段默认值，根治了这类漂移。
  *
- * 本测试只做一件事：**不许再新增手搓假体**。存量名单 `LEGACY_HAND_ROLLED` 是迁移
- * 进度表——迁移完一个文件就删掉对应的一行（评审时看得到名单在变短）。
+ * 本测试只做一件事：**不许再手搓假体**。存量已全部迁移完成（名单为空），所以现在
+ * 任何测试文件手搓 `Object.create(ClientSession.prototype)` 都会直接红。
  *
- * 为什么不断言「名单里的文件必须还在手搓」：名单里有一部分文件属于别的工作线的未提交
- * 改动，工作区与提交树的内容并不一致；对「过期条目」报错会在两边来回假红。名单只管
- * 上限，不追进度。
+ * 真需要例外时（例如某个文件暂时不能改）把相对路径加进 `LEGACY_HAND_ROLLED`，
+ * 并在 PR 里说明原因——这是降级通道，不是默认姿势。
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -25,16 +24,7 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
  * 存量迁移名单（只删不加）。每迁完一个文件，就把对应行删掉。
  * 这些文件当时正被另一条工作线改动，为避免互相覆盖暂留。
  */
-const LEGACY_HAND_ROLLED = [
-	"tests/unit/bot-client-lifecycle.test.ts",
-	"tests/unit/bot-execution.test.ts",
-	"tests/unit/communication-runtime.test.ts",
-	"tests/unit/conversation-switch-ack.test.ts",
-	"tests/unit/elsewhere-dedup.test.ts",
-	"tests/unit/goal-executor-dispatch.test.ts",
-	"tests/unit/server-question-lifecycle.test.ts",
-	"tests/unit/switch-conversation-fast.test.ts",
-];
+const LEGACY_HAND_ROLLED: string[] = [];
 
 /** 手搓假体的特征：绕过 constructor 造实例（字段丢失的根源）。 */
 const HAND_ROLLED = /Object\.create\(\s*(?:ClientSession|AgentService)\.prototype\s*\)/;

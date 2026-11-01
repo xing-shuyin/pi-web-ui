@@ -73,7 +73,7 @@ describe("Bot execution client lifetime", () => {
 		const task = binding();
 		try {
 			const applyToolGating = vi.fn(() => task.capability.assertActive());
-			const cs = Object.assign(Object.create(ClientSession.prototype), {
+			const cs = Object.assign(fakeClientSession(), {
 				botExecution: task.capability,
 				disposed: false,
 				convs: new Map([["c1", { session: {}, agentPreset: "standard" }]]),

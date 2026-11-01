@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import type { GoalConversation } from "../../server/goal-service.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
 
 function makeFakeSession() {
 	const sentMessages: { text: string; options?: { deliverAs?: string } }[] = [];
@@ -21,7 +22,7 @@ function makeFakeSession() {
 		prompt: vi.fn(async () => {}),
 	};
 
-	const cs = Object.create(ClientSession.prototype) as any;
+	const cs = fakeClientSession() as any;
 	cs.convs = new Map<string, any>();
 	cs.emit = (msg: any) => emitted.push(msg);
 	cs.flushSnapshot = vi.fn();
