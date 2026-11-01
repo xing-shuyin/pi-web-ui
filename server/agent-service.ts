@@ -14009,32 +14009,46 @@ export class ClientSession {
 				if (next) await this.switchSession(next.path);
 				else await this.newChat();
 				// displaceActive() may have RETAINED the old conversation as a
-				// background run (streaming, open terminals, pending wake
-				// subscription, conversation cap) — in every such case the file is
-				// still held, so abort instead of yanking it from a live runtime.
-				// Only a conversation that is genuinely still running in the
-				// background (streaming / listed) keeps the "wait for it" notice;
-				// a retained-but-idle hold means the switch itself failed (cap,
-				// quiesce, runtime creation) — say that instead.
+				// background run — the file is still held, so we cannot yank it from a
+				// live runtime. What counts as "live" here is **runtime activity**
+				// (streaming / compacting), not `listed`: `listed` is the left-panel
+				// listing rule, and once displacement started retaining idle chats in
+				// the running list, treating it as "still running" made deleting the
+				// ONLY session fail forever with a bogus "still running in the
+				// background" notice (smoke left-panel-delete has been red since
+				// 2026-10-31 — hidden because a unit failure skipped the smoke step).
+				// A retained-but-idle holder is released instead: deleting an explicit
+				// transcript is user intent, and an idle runtime holding it has no
+				// more work to do.
 				const stillHeld = [...this.convs.values()].find(holdsTarget);
 				if (stillHeld) {
-					let stillRunning = stillHeld.listed;
+					let stillRunning: boolean;
 					try {
-						stillRunning = stillHeld.session.isStreaming || stillRunning;
+						stillRunning = stillHeld.session.isStreaming || stillHeld.session.isCompacting;
 					} catch {
-						// session being replaced — keep the listed-flag fallback
+						stillRunning = true; // 会话正在替换 —— 保守地等它
 					}
-					this.emit({
-						type: "notice",
-						level: "warning",
-						text: stillRunning
-							? "对话仍在后台运行，已停止删除；请等待其结束后再删除"
-							: "未能切换到其他对话，已取消删除本次操作",
-						textEn: stillRunning
-							? "Conversation is still running in the background; delete aborted — wait for it to finish and retry"
-							: "Could not switch to another conversation; delete cancelled",
-					});
-					return;
+					if (stillRunning) {
+						this.emit({
+							type: "notice",
+							level: "warning",
+							text: "对话仍在后台运行，已停止删除；请等待其结束后再删除",
+							textEn:
+								"Conversation is still running in the background; delete aborted — wait for it to finish and retry",
+						});
+						return;
+					}
+					// 空闲但被持有（后台保留 / 置换未释放）→ 放掉它占用的运行时再删文件。
+					this.removeConversation(stillHeld.id);
+					if ([...this.convs.values()].some(holdsTarget)) {
+						this.emit({
+							type: "notice",
+							level: "warning",
+							text: "该对话仍被占用，无法删除；请先关闭它再重试",
+							textEn: "The conversation is still held; close it and retry the delete",
+						});
+						return;
+					}
 				}
 			}
 			// #145 同款守卫：删之前查一遍其他客户端是否持有这份转录 ——

@@ -389,12 +389,16 @@ try {
 	const waitLines_now = readLines(WAIT_LOG);
 	const r1 = waitLines_now[0];
 	const r2 = waitLines_now[1];
+	// wait_all 回执指名子代理用的是 **runtime 身份**（`exec-<uuid>`，见
+	// server/conversation-identity.ts）；`sa-…` / `conv-…` 是显示 id，只在 UI 侧。
+	// 断言只要求「指名了某个子代理」——锁死前缀会被一次身份格式调整打红（历史如此）。
+	const NAMES_SUBAGENT = /(?:exec|sa|conv)-[0-9a-z]+/i;
 	const c1EndTs = tsOf(readLines(EVENT_LOG), "CHILD1_END");
 	const r1Ts = r1 ? Number(r1.split("\t")[0]) : 0;
 
 	check(
 		"wait_all#1 不把搬走的子代理误判成已移出（无『已移出/不存在』且含子代理 id）",
-		Boolean(r1 && /sa-[0-9a-f]+/.test(r1) && !/已移出|不存在/.test(r1) && /收口|collected/.test(r1)),
+		Boolean(r1 && NAMES_SUBAGENT.test(r1) && !/已移出|不存在/.test(r1) && /收口|collected/.test(r1)),
 		r1 ? r1.slice(0, 200) : "(no r1)",
 	);
 	check(
@@ -404,7 +408,7 @@ try {
 	);
 	check(
 		"过户后的无参 wait_all#2 跨会话看到新子代理并收口（不是『没有需要等待』）",
-		Boolean(r2 && /sa-[0-9a-f]+/.test(r2) && !/没有需要等待|已移出|不存在/.test(r2) && /收口|collected/.test(r2)),
+		Boolean(r2 && NAMES_SUBAGENT.test(r2) && !/没有需要等待|已移出|不存在/.test(r2) && /收口|collected/.test(r2)),
 		r2 ? r2.slice(0, 200) : "(no r2)",
 	);
 
