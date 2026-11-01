@@ -27,9 +27,9 @@
  */
 import { registerHooks } from "node:module";
 
-export const SENTINEL = "// pi-web-ui: fork-free executable lookup v1";
-export const PREAMBLE_START = "/* pi-web-ui: fork-free executable lookup v1 (preamble) */";
-export const PREAMBLE_END = "/* pi-web-ui: fork-free executable lookup v1 (/preamble) */";
+export const SENTINEL = "// pi-web-ui #810: fork-free executable lookup v1";
+export const PREAMBLE_START = "/* pi-web-ui #810: fork-free executable lookup v1 (preamble) */";
+export const PREAMBLE_END = "/* pi-web-ui #810: fork-free executable lookup v1 (/preamble) */";
 
 export type ExecutableLookupTarget = "shell" | "tools-manager";
 export type PatchStatus = "patched" | "already" | "unsupported";
@@ -128,8 +128,12 @@ const TOOLS_LOOKUP_NEW = `function commandExists(cmd) {
     // Android/Termux: resolve from PATH instead of forking \`cmd --version\` — the fork can
     // stall before exec, so the probe hung instead of answering.
     try {
+        // A name given as a path is resolved as that path, not searched for on PATH.
+        if (cmd.includes("/") || cmd.includes("\\\\")) return __piWebExecProgram(cmd);
         const win = process.platform === "win32";
-        const extensions = win ? [".exe", ".cmd", ".bat", ""] : [""];
+        // CreateProcess itself only appends \`.exe\` (a .cmd/.bat needs a shell, which we must
+        // not spawn here); claiming those would be the same false positive this patch removes.
+        const extensions = win ? [".exe", ""] : [""];
         return (process.env.PATH ?? "")
             .split(win ? ";" : __piWebExecDelimiter)
             .some((directory) => !!directory && extensions.some((ext) => __piWebExecProgram(__piWebExecJoin(directory, cmd + ext))));
@@ -192,9 +196,21 @@ export function functionBody(source: string, anchor: string): string | null {
 			continue;
 		}
 		if (char === "{") depth++;
-		else if (char === "}" && --depth === 0) return source.slice(open, i + 1);
+		else if (char === "}") {
+			// Only a brace that ends the line can close the function. A `}` inside a regex
+			// literal sits mid-statement, and treating it as the end would truncate the body —
+			// hiding a child process that comes later and reporting the lookup as fixed.
+			if (depth === 1) {
+				if (isStatementEnd(source, i + 1)) return source.slice(open, i + 1);
+			} else depth--;
+		}
 	}
 	return null;
+}
+
+/** Whitespace (and an optional `;`) up to the end of the line — a statement boundary. */
+function isStatementEnd(source: string, at: number): boolean {
+	return /^[ \t]*;?[ \t]*(?:\r?\n|$)/.test(source.slice(at, at + 8));
 }
 
 /**
@@ -262,6 +278,11 @@ function report(target: ExecutableLookupTarget, status: PatchStatus, url: string
 	else console.log(message);
 }
 
+/** Only ES modules can take the preamble; everything else keeps the SDK's own lookup. */
+export function isPatchableFormat(format: string | null | undefined): boolean {
+	return format === "module" || format === "module-typescript";
+}
+
 /* SDK sources are transformed in memory before compilation, never on disk. */
 export function registerExecutableLookupPatch(
 	platform: string = process.platform,
@@ -279,6 +300,15 @@ export function registerExecutableLookupPatch(
 			if (!target) return nextLoad(url, context);
 			const loaded = nextLoad(url, context);
 			if (loaded.source == null) return loaded;
+			// The preamble is an ES module head; injecting it into CommonJS would break the
+			// load instead of falling back to the lookup we were trying to improve.
+			if (!isPatchableFormat(loaded.format)) {
+				console.warn(
+					`${LOG_PREFIX} ${target}: NOT patched — loaded as ${loaded.format ?? "an unknown format"}, ` +
+						`the patch only rewrites ES modules (${url})`,
+				);
+				return loaded;
+			}
 			const source = typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source);
 			const result = patchExecutableLookupSource(source, target);
 			report(target, result.status, url);

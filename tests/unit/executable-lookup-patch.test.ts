@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,6 +17,7 @@ import {
 	describeLookupResult,
 	executableLookupTarget,
 	functionBody,
+	isPatchableFormat,
 	patchExecutableLookupSource,
 	PREAMBLE_END,
 	PREAMBLE_START,
@@ -236,31 +246,90 @@ describe("fork-free executable lookup patch", () => {
 		expect(run.status).toBe(0);
 	});
 
-	it("keeps the Windows extension rules and still refuses a directory named like a tool", async () => {
+	it("keeps CreateProcess' Windows rules and still refuses a directory named like a tool", async () => {
 		const patched = patchExecutableLookupSource(TOOLS_SOURCE, "tools-manager");
 		const root = tempDir();
 		const asDirectory = directoryEntry(root, "rg.exe");
-		const inert = join(root, "rg-cmd");
-		mkdirSync(inert);
-		writeFileSync(join(inert, "rg.cmd"), "@echo off\r\n");
+		const scriptOnly = join(root, "rg-cmd");
+		mkdirSync(scriptOnly);
+		writeFileSync(join(scriptOnly, "rg.cmd"), "@echo off\r\n");
+		const rimraf = join(root, "rg-exe");
+		mkdirSync(rimraf);
+		writeFileSync(join(rimraf, "rg.exe"), "MZ");
 
 		// `process.platform` is shadowed inside the imported module: the Windows branch of
 		// the lookup runs against the real filesystem, without needing a Windows machine.
 		const winPrelude = (path: string) =>
 			`const process = { platform: "win32", env: { PATH: ${JSON.stringify(path)} } };`;
+		const lookup = (path: string) =>
+			runPatched<{ commandExists: (cmd: string) => boolean }>(patched.code, "commandExists", winPrelude(path));
+
+		// A directory named rg.exe is not a program.
+		expect((await lookup(asDirectory)).commandExists("rg")).toBe(false);
+
+		// A `.cmd` needs a shell to run; CreateProcess does not start it, so claiming it
+		// would be the very false positive this patch removes.
+		expect((await lookup(scriptOnly)).commandExists("rg")).toBe(false);
+
+		// The plain executable is found, on a later PATH entry as well.
+		expect((await lookup(`${asDirectory};${scriptOnly};${rimraf}`)).commandExists("rg")).toBe(true);
+	});
+
+	POSIX_ONLY("resolves a name given as a path as that path, not through PATH", async () => {
+		const patched = patchExecutableLookupSource(TOOLS_SOURCE, "tools-manager");
 		const { commandExists } = await runPatched<{ commandExists: (cmd: string) => boolean }>(
 			patched.code,
 			"commandExists",
-			winPrelude(asDirectory),
 		);
-		expect(commandExists("rg")).toBe(false);
+		const root = tempDir();
+		const program = join(programDir(root, "mytool"), "mytool");
+		const inert = join(inertEntry(root, "othertool"), "othertool");
 
-		const withExtensionFile = await runPatched<{ commandExists: (cmd: string) => boolean }>(
-			patched.code,
-			"commandExists",
-			winPrelude(`${asDirectory};${inert}`),
-		);
-		expect(withExtensionFile.commandExists("rg")).toBe(true);
+		// An absolute path is answered by that path, whatever PATH says.
+		expect(withPath(inertEntry(root, "unrelated"), () => commandExists(program))).toBe(true);
+		expect(withPath(programDir(root, "unrelated"), () => commandExists(inert))).toBe(false);
+	});
+
+	it("does not let a regex literal hide a child process from the fork-free check", () => {
+		// A `}` inside a regex used to close the brace scan early, so the later spawnSync
+		// fell outside the extracted body and the lookup passed for fork-free.
+		const withRegex = `import { spawnSync } from "child_process";
+function commandExists(cmd) {
+    if (process.env.PATH && /\\}/.test(cmd)) return false;
+    try {
+        const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+        return result.error === undefined || result.error === null;
+    }
+    catch {
+        return false;
+    }
+}`;
+		expect(functionBody(withRegex, "function commandExists")).toContain("spawnSync");
+		expect(patchExecutableLookupSource(withRegex, "tools-manager")).toEqual({
+			code: withRegex,
+			status: "unsupported",
+		});
+	});
+
+	it("only rewrites ES modules, so a CommonJS copy is left alone", () => {
+		expect(isPatchableFormat("module")).toBe(true);
+		expect(isPatchableFormat("module-typescript")).toBe(true);
+		expect(isPatchableFormat("commonjs")).toBe(false);
+		expect(isPatchableFormat(undefined)).toBe(false);
+	});
+
+	it("recognizes the bundled SDK's own source, if it is installed", () => {
+		const sdk = join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent/dist/utils");
+		for (const [target, file] of [
+			["shell", "shell.js"],
+			["tools-manager", "tools-manager.js"],
+		] as const) {
+			if (!existsSync(join(sdk, file))) continue;
+			const status = patchExecutableLookupSource(readFileSync(join(sdk, file), "utf8"), target).status;
+			// A pristine copy patches; a copy a local patch script already made fork-free is a
+			// no-op. Anything unrecognized is exactly what the warning exists for.
+			expect([target, status === "unsupported" ? "unrecognized" : "recognized"]).toEqual([target, "recognized"]);
+		}
 	});
 
 	it("never reports an unrecognized rewrite as already fixed", () => {
