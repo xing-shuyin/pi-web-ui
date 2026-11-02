@@ -10,15 +10,37 @@
 
 ## [Unreleased]
 
+<!-- auto-i18n:start -->
+<!-- auto-i18n:end -->
+
+## [0.115.0] — 2026-11-02
+
 ### Added
 
+- **技能正文上限可在设置里调**（#819）：新增「技能单文件上限」与「技能全文注入预算」两项设置（默认 8KB / 32KB，0 表示不设限）。全文注入与 `skill` 工具共用同一个单文件口径，模型上下文窗口够大时不再被硬编码卡住；两项均可进预设分享。同时修正预算口径 —— 以前按 JavaScript 字符数扣预算，中文技能被低估约 3 倍，现在统一按 UTF-8 字节计。
+- **反代域名下设备中心可用**（#825）：`PI_WEB_ALLOW_HOSTS` 里声明的域名可以访问 `/api/device-center`（群组、设备配对等），不再整棵 403 `LOCAL_ONLY`。回环访问与同源写校验保持原样；白名单域名仍然只在显式声明时放行，DNS-rebinding 防护不受影响。
 - **左栏群组分区可在布局页隐藏 / 调序**：左侧栏「群组」分区登记为第 4 个宿主分区（`host:lp-groups`），与项目 / 运行 / 历史同一套规则 —— 设置 → 界面布局里可勾选隐藏 / ↑↓ 调序 / 换图标，插件 arrange 可隐藏不能挪走；旧快照仍兑底常显。
+
+### Fixed
+
+- **扩展 `ctx.ui.theme` 变 `undefined`**（#823）：`WebUIContext` 的 `theme` 是类原型 getter，SDK 用 `{...ui}` 包装 UI 上下文时丢了它，pi-rewind-hook 等扩展在 `session_start` / `agent_end` 调 `theme.fg()` 直接崩、日志刷屏。改自有可枚举 getter，spread 后仍拿到主题。
+- **`/webui` 抢跑打开浏览器**（#814）：spawn 服务后立即开浏览器，服务还没 listen，首屏请求全是 `ERR_CONNECTION_REFUSED`，只能手动刷新。现在轮询 `/api/health` 应答后再打开；服务已退出则不开。
+- **主题列表 / 样式表不重试**（#814）：首屏那次请求失败后，主题只是默认深色且下拉为空。现在 WS 连接建立/重连时补拉主题列表并重挂样式表（换新版本戳），`<link>` 另有有限次退避重试。
+- **升级插件丢数据库连接**（#813）：`install --force` 升级前清空插件目录、只保留固定名单，db-client 的 `db-connections.json` 每次升级都被删。改为安装时记录随包文件清单（`.pi-files.json`），升级只删清单内的旧代码文件，插件自己写进目录的数据保持不动。
+- **executable-lookup 补丁的判定更保守**（#815 及后续）：未识别的 SDK 源码不再被误报成「已打补丁」；只读 POSIX 分支判断、非 ES 模块不注入、正则字面量在任意层级都被跳过。
+
+### Changed
+
+- 设备中心后台同步：无随包清单的旧插件首次升级不再清理旧文件（残留文件不会被加载，但也不会被删）。
 
 <!-- auto-i18n:start -->
 ### i18n
 
-- 前端新增 key（16）：`leftPanelGroups`、`questionAutoSubmitLast`、`questionPickSubmits`、`worktreeViewTitle`、`worktreeEntryTip`、`worktreeBackToChat`、`worktreeRefresh`、`worktreeViewHint`、`worktreeEmpty`、`worktreeDetached`、`worktreeCurrent`、`worktreeMain`、`worktreeHasChanges`、`worktreeClean`、`worktreeSwitch`、`worktreeManage`
-- 前端删除 key（12）：`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemoveTip`、`worktreeActionCollapse`、`worktreeActionMore`、`worktreeActionDismiss`、`worktreeActionDismissTip`
+- 前端新增 key（55）：`leftPanelGroups`、`questionAutoSubmitLast`、`questionPickSubmits`、`localBotToolHighPrivilege`、`localBotToolUnsupportedPlatform`、`deviceExecTitle`、`deviceExecSubtitle`、`deviceExecRefresh`、`deviceExecRunning`、`deviceExecQueued`、`deviceExecBlocked`、`deviceExecQuotaTitle`、`deviceExecMaxActive`、`deviceExecMaxActiveHint`、`deviceExecMaxWaiting`、`deviceExecMaxWaitingHint`、`deviceExecReset`、`deviceExecSave`、`deviceExecSaving`、`deviceExecSavedNotice`、`deviceExecBlockedTitle`、`deviceExecBlockedDesc`、`deviceExecActiveTasks`、`deviceExecNoActive`、`deviceExecWaitingQueue`、`deviceExecNoWaiting`、`deviceExecPosition`、`deviceExecReason`、`deviceExecQueuedTime`、`deviceExecActions`、`deviceExecCancel`、`deviceExecCancelling`、`deviceExecTaskCancelled`、`deviceExecReasonMaxConcurrency`、`deviceExecReasonBotBusy`、`deviceExecReasonWorkspaceConflict`、`deviceExecReasonWorkspaceBlocked`、`deviceExecReasonFairness`、`skillsMaxFileBytes`、`skillsMaxFileBytesTip`、`skillsFullTextMaxBytes`、`skillsFullTextMaxBytesTip`、`worktreeViewTitle`、`worktreeEntryTip`、`worktreeBackToChat`、`worktreeRefresh`、`worktreeViewHint`、`worktreeEmpty`、`worktreeDetached`、`worktreeCurrent`、`worktreeMain`、`worktreeHasChanges`、`worktreeClean`、`worktreeSwitch`、`worktreeManage`
+- 前端删除 key（13）：`worktreeBadgeDirtyCount`、`worktreeBannerActiveTitle`、`worktreeBannerActiveDesc`、`worktreeBannerUncleanedTitle`、`worktreeBannerUncleanedDesc`、`worktreeActionSwitchMainTip`、`worktreeActionSwitchTo`、`worktreeActionSwitchToTip`、`worktreeActionRemoveTip`、`worktreeActionCollapse`、`worktreeActionMore`、`worktreeActionDismiss`、`worktreeActionDismissTip`
+- 前端中文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
+- 前端英文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
+- 服务端文案变更（1）：`subagents.spawn.started`
 <!-- auto-i18n:end -->
 
 ## [0.114.3] — 2026-10-31
@@ -2138,6 +2160,7 @@ when?, children?}`，也收 `topbar` / `settings` 这类简写别名）；宿主
 - 0.29.0（2026-08-23）：全局搜索弹窗（Ctrl+K）+ 消息列表惰性窗口化。
 
 [Unreleased]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.114.0...main
+[0.115.0]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.114.3...v0.115.0
 [0.114.1]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.114.0...v0.114.1
 [0.114.0]: https://github.com/xing-shuyin/pi-web-ui/compare/v0.113.1...v0.114.0
 [0.113.0]: https://github.com/xing-shuyin/pi-web-ui/releases/tag/v0.113.0
