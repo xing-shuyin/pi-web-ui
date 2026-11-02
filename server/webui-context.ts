@@ -97,12 +97,33 @@ interface WidgetEntry {
  * 两种实例：挂浏览器的（构造时给真 emitter）与 headless 的（`WebUIContext.headless()`，
  * 子代理会话用——见该方法的说明）。
  */
+/**
+ * `theme` must be an *own, enumerable* accessor, not a class-prototype getter.
+ *
+ * The SDK hands extensions `{ ...ui }` (ExtensionRunner.wrapUIPromptContext), and
+ * object spread only copies own enumerable properties — a prototype getter is
+ * dropped, so `ctx.ui.theme` became `undefined` and every extension that formats
+ * text through it (pi-rewind-hook's `theme.fg`) threw on session_start/agent_end.
+ * The TUI host never hit this because its UI context is an object literal.
+ *
+ * Kept as a live getter (not a copied value) so a theme switch is still visible
+ * through the spread clone that extensions hold. Declared via `declare` below so
+ * the field type stays `Theme` without emitting a shadowing class field.
+ */
+function defineThemeAccessor(context: object): void {
+	Object.defineProperty(context, "theme", {
+		get(): Theme {
+			const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
+			const current = (globalThis as Record<symbol, unknown>)[key];
+			return (current as Theme) ?? mockThemeProxy;
+		},
+		enumerable: true,
+		configurable: true,
+	});
+}
+
 export class WebUIContext {
-	get theme(): Theme {
-		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
-		const current = (globalThis as Record<symbol, unknown>)[key];
-		return (current as Theme) ?? mockThemeProxy;
-	}
+	declare readonly theme: Theme;
 	private widgets = new Map<string, WidgetEntry>();
 	private lastLines = new Map<string, string[]>();
 	private emit: (msg: ServerMessage) => void;
@@ -113,6 +134,7 @@ export class WebUIContext {
 	private activeTuiOverlays = new Map<number, VirtualTuiBridge<unknown>>();
 
 	constructor(emit: (msg: ServerMessage) => void, options: { headless?: boolean } = {}) {
+		defineThemeAccessor(this);
 		this.headless = options.headless === true;
 		this.emit = this.headless ? () => {} : emit;
 	}
