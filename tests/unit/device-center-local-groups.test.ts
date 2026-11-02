@@ -499,3 +499,103 @@ describe("device user group authority", () => {
 		expect((await response.json()).code).toBe("REPAIR_REQUIRED");
 	});
 });
+
+describe("local-only device center behind a reverse proxy (PI_WEB_ALLOW_HOSTS)", () => {
+	async function boot(allowHosts?: readonly string[]) {
+		const dataDir = await directory();
+		const app = express();
+		app.use(express.json());
+		const local = await installLocalDeviceCenter({ app, dataDir, allowHosts, connect: () => ({ close() {} }) });
+		cleanup.push(() => local.close());
+		return listen(createServer(app));
+	}
+	// fetch() refuses to override Host, so talk to the server directly.
+	function call(
+		base: string,
+		options: { path: string; host: string; method?: string; origin?: string; body?: unknown },
+	) {
+		return new Promise<{ status: number; body: any }>((resolve, reject) => {
+			const payload = options.body === undefined ? undefined : JSON.stringify(options.body);
+			const outgoing = httpRequest(
+				`${base}/api/device-center/${options.path}`,
+				{
+					method: options.method ?? "GET",
+					headers: {
+						Host: options.host,
+						...(options.origin === undefined ? {} : { Origin: options.origin }),
+						...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+					},
+				},
+				(incoming) => {
+					let data = "";
+					incoming.setEncoding("utf8");
+					incoming.on("data", (chunk) => {
+						data += chunk;
+					});
+					incoming.on("end", () => {
+						let parsed: any = data;
+						try {
+							parsed = JSON.parse(data);
+						} catch {}
+						resolve({ status: incoming.statusCode ?? 0, body: parsed });
+					});
+				},
+			);
+			outgoing.on("error", reject);
+			if (payload !== undefined) outgoing.write(payload);
+			outgoing.end();
+		});
+	}
+
+	it("serves a reverse-proxy host declared in the allowlist, and keeps loopback working", async () => {
+		const base = await boot(["chat.example.com"]);
+		// The proxied deployment: Host is a real domain, the peer is still loopback.
+		expect((await call(base, { path: "status", host: "chat.example.com" })).status).toBe(200);
+		// Allowlist entries are normalised (lowercase) like the global host guard does.
+		expect((await call(base, { path: "status", host: "CHAT.EXAMPLE.COM" })).status).toBe(200);
+		// Loopback keeps working exactly as before.
+		expect((await call(base, { path: "status", host: "127.0.0.1" })).status).toBe(200);
+		// *.localhost resolves to loopback in browsers; the global guard already allows it.
+		expect((await call(base, { path: "status", host: "pi.localhost" })).status).toBe(200);
+		// Anything else is still local-only (DNS rebinding target).
+		const denied = await call(base, { path: "status", host: "evil.example.com" });
+		expect(denied.status).toBe(403);
+		expect(denied.body).toMatchObject({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
+	});
+
+	it("still requires same-origin writes on an allowlisted host", async () => {
+		const base = await boot(["chat.example.com"]);
+		// Passing the host guard reaches the route (which rejects the empty body with 400).
+		const sameOrigin = await call(base, {
+			path: "pair",
+			host: "chat.example.com",
+			method: "POST",
+			origin: "https://chat.example.com",
+			body: {},
+		});
+		expect(sameOrigin.status).toBe(400);
+		expect(sameOrigin.body.error).toBe("Invalid hub URL");
+		const crossOrigin = await call(base, {
+			path: "pair",
+			host: "chat.example.com",
+			method: "POST",
+			origin: "http://evil.test",
+			body: {},
+		});
+		expect(crossOrigin.status).toBe(403);
+		expect(crossOrigin.body).toMatchObject({ code: "LOCAL_ONLY", error: "Same-origin request required" });
+	});
+
+	it("keeps today's behaviour when no allowlist is configured", async () => {
+		const base = await boot();
+		const loopback = new URL(base).host;
+		expect((await call(base, { path: "status", host: loopback })).status).toBe(200);
+		const denied = await call(base, { path: "status", host: "chat.example.com" });
+		expect(denied.status).toBe(403);
+		expect(denied.body).toMatchObject({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
+		// Same-origin writes still pass, so the change only widens the hostname check.
+		const write = await call(base, { path: "pair", host: loopback, method: "POST", origin: base, body: {} });
+		expect(write.status).toBe(400);
+		expect(write.body.error).toBe("Invalid hub URL");
+	});
+});
