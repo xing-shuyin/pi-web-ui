@@ -64,6 +64,7 @@ pi 编码智能体（`@earendil-works/pi-coding-agent` SDK）的 Web 聊天界�
 | 插件 `arrange.label` 改名必须落到渲染层                                                                                  | `bar-item-unified`                        |
 | 会话/守护假体一律走 `tests/helpers/fake-session.ts`（字段默认值从生产源码推导），禁手搓 `Object.create(原型)` 逐个补字段 | `fake-session-sync`                       |
 | 存量手搓会话假体只许变短（名单外新增即红，迁移完成须删名单行）                                                           | `fake-session-adoption`                   |
+| 服务端禁同步子进程调用（`spawnSync`/`execSync`/`execFileSync`），热路径改异步 spawn 或静态推导                           | `sync-child-process-guard`                |
 
 ## 4. 提交前三连验（CI 硬门禁）
 
