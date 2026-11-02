@@ -27,9 +27,9 @@
  */
 import { registerHooks } from "node:module";
 
-export const SENTINEL = "// pi-web-ui: fork-free executable lookup v1";
-export const PREAMBLE_START = "/* pi-web-ui: fork-free executable lookup v1 (preamble) */";
-export const PREAMBLE_END = "/* pi-web-ui: fork-free executable lookup v1 (/preamble) */";
+export const SENTINEL = "// pi-web-ui #810: fork-free executable lookup v1";
+export const PREAMBLE_START = "/* pi-web-ui #810: fork-free executable lookup v1 (preamble) */";
+export const PREAMBLE_END = "/* pi-web-ui #810: fork-free executable lookup v1 (/preamble) */";
 
 export type ExecutableLookupTarget = "shell" | "tools-manager";
 export type PatchStatus = "patched" | "already" | "unsupported";
@@ -128,8 +128,12 @@ const TOOLS_LOOKUP_NEW = `function commandExists(cmd) {
     // Android/Termux: resolve from PATH instead of forking \`cmd --version\` — the fork can
     // stall before exec, so the probe hung instead of answering.
     try {
+        // A name given as a path is resolved as that path, not searched for on PATH.
+        if (cmd.includes("/") || cmd.includes("\\\\")) return __piWebExecProgram(cmd);
         const win = process.platform === "win32";
-        const extensions = win ? [".exe", ".cmd", ".bat", ""] : [""];
+        // CreateProcess itself only appends \`.exe\` (a .cmd/.bat needs a shell, which we must
+        // not spawn here); claiming those would be the same false positive this patch removes.
+        const extensions = win ? [".exe", ""] : [""];
         return (process.env.PATH ?? "")
             .split(win ? ";" : __piWebExecDelimiter)
             .some((directory) => !!directory && extensions.some((ext) => __piWebExecProgram(__piWebExecJoin(directory, cmd + ext))));
@@ -156,6 +160,27 @@ const ANCHORS: Record<ExecutableLookupTarget, string> = {
 /** Any child process a lookup could still be forking through, however it is spelled. */
 const FORKING_CALL = /\b(?:spawnSync|execSync|execFileSync)\s*\(/;
 
+/** Index just past the comment or quoted literal starting at `i`, or null when it is code. */
+function skipNonCode(source: string, i: number): number | null {
+	const char = source[i];
+	if (char === "/" && source[i + 1] === "/") {
+		const end = source.indexOf("\n", i);
+		return end < 0 ? source.length : end;
+	}
+	if (char === "/" && source[i + 1] === "*") {
+		const end = source.indexOf("*/", i + 2);
+		return end < 0 ? null : end + 1;
+	}
+	if (char === '"' || char === "'" || char === "`") {
+		for (let j = i + 1; j < source.length; j++) {
+			if (source[j] === "\\") j++;
+			else if (source[j] === char) return j;
+		}
+		return null;
+	}
+	return null;
+}
+
 /**
  * Body of the function starting at `anchor`, or null when it is not there.
  * Skips comments and string/template contents so braces inside them cannot unbalance it.
@@ -167,34 +192,58 @@ export function functionBody(source: string, anchor: string): string | null {
 	if (open < 0) return null;
 	let depth = 0;
 	for (let i = open; i < source.length; i++) {
+		const skip = skipNonCode(source, i);
+		if (skip !== null) {
+			i = skip;
+			continue;
+		}
 		const char = source[i];
-		if (char === "/" && source[i + 1] === "/") {
-			const end = source.indexOf("\n", i);
-			if (end < 0) break;
-			i = end;
-			continue;
-		}
-		if (char === "/" && source[i + 1] === "*") {
-			const end = source.indexOf("*/", i + 2);
-			if (end < 0) break;
-			i = end + 1;
-			continue;
-		}
-		if (char === '"' || char === "'" || char === "`") {
-			const quote = char;
-			for (i++; i < source.length; i++) {
-				if (source[i] === "\\") {
-					i++;
-					continue;
-				}
-				if (source[i] === quote) break;
-			}
-			continue;
-		}
 		if (char === "{") depth++;
-		else if (char === "}" && --depth === 0) return source.slice(open, i + 1);
+		else if (char === "}") {
+			// Only a brace that ends the line can close the function. A `}` inside a regex
+			// literal sits mid-statement, and treating it as the end would truncate the body —
+			// hiding a child process that comes later and reporting the lookup as fixed.
+			if (depth === 1) {
+				if (isStatementEnd(source, i + 1)) return source.slice(open, i + 1);
+			} else depth--;
+		}
 	}
 	return null;
+}
+
+/** Index of the `}` matching the `{` at `open`, or null when the block is unbalanced. */
+function bracedBlockEnd(source: string, open: number): number | null {
+	let depth = 0;
+	for (let i = open; i < source.length; i++) {
+		const skip = skipNonCode(source, i);
+		if (skip !== null) {
+			i = skip;
+			continue;
+		}
+		if (source[i] === "{") depth++;
+		else if (source[i] === "}" && --depth === 0) return i;
+	}
+	return null;
+}
+
+/**
+ * What actually runs on POSIX: the body without the `if (process.platform === "win32")`
+ * early return. The shell lookup keeps a `where` child process in that branch on every SDK
+ * version, and it never runs on Android/Termux — counting it as a fork would report a
+ * fork-free POSIX lookup as unrecognized and warn on every start.
+ */
+export function posixPortion(body: string): string {
+	const guard = body.search(/if \(process\.platform === "win32"\)\s*\{/);
+	if (guard < 0) return body;
+	const open = body.indexOf("{", guard);
+	const close = bracedBlockEnd(body, open);
+	if (close === null) return body;
+	return body.slice(0, guard) + body.slice(close + 1).replace(/^\s*return null;\s*/, "");
+}
+
+/** Whitespace (and an optional `;`) up to the end of the line — a statement boundary. */
+function isStatementEnd(source: string, at: number): boolean {
+	return /^[ \t]*;?[ \t]*(?:\r?\n|$)/.test(source.slice(at, at + 8));
 }
 
 /**
@@ -206,7 +255,8 @@ export function functionBody(source: string, anchor: string): string | null {
 function isForkFreeLookup(source: string, anchor: string): boolean {
 	const body = functionBody(source, anchor);
 	if (body === null) return false;
-	return !FORKING_CALL.test(body) && body.includes("process.env.PATH");
+	const posix = posixPortion(body);
+	return !FORKING_CALL.test(posix) && posix.includes("process.env.PATH");
 }
 
 export function patchExecutableLookupSource(
@@ -262,6 +312,11 @@ function report(target: ExecutableLookupTarget, status: PatchStatus, url: string
 	else console.log(message);
 }
 
+/** Only ES modules can take the preamble; everything else keeps the SDK's own lookup. */
+export function isPatchableFormat(format: string | null | undefined): boolean {
+	return format === "module" || format === "module-typescript";
+}
+
 /* SDK sources are transformed in memory before compilation, never on disk. */
 export function registerExecutableLookupPatch(
 	platform: string = process.platform,
@@ -279,6 +334,15 @@ export function registerExecutableLookupPatch(
 			if (!target) return nextLoad(url, context);
 			const loaded = nextLoad(url, context);
 			if (loaded.source == null) return loaded;
+			// The preamble is an ES module head; injecting it into CommonJS would break the
+			// load instead of falling back to the lookup we were trying to improve.
+			if (!isPatchableFormat(loaded.format)) {
+				console.warn(
+					`${LOG_PREFIX} ${target}: NOT patched — loaded as ${loaded.format ?? "an unknown format"}, ` +
+						`the patch only rewrites ES modules (${url})`,
+				);
+				return loaded;
+			}
 			const source = typeof loaded.source === "string" ? loaded.source : new TextDecoder().decode(loaded.source);
 			const result = patchExecutableLookupSource(source, target);
 			report(target, result.status, url);
