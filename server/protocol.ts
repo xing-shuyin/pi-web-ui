@@ -1697,6 +1697,10 @@ export type ClientMessage =
 			skillsCatalogShowLocation?: boolean;
 			/** 技能名录总字符预算（默认 20000，超限自动降级为紧凑 names-only 模式；0 = 不设限）。 */
 			skillsCatalogBudget?: number;
+			/** 单个技能正文上限（字节，默认 8192；0 = 不设单文件上限）。全文注入与 skill 工具同口径。 */
+			skillsMaxFileBytes?: number;
+			/** {{skills}} 全文注入的总字节预算（默认 32768；0 = 不设总量上限）。 */
+			skillsFullTextMaxBytes?: number;
 			/** 子代理默认模型（"provider/id"；null/未设 = 子代理跟随主对话当前模型）。
 			 * 不改主会话模型，只在派生子代理时生效。 */
 			subagentDefaultModel?: string | null;
@@ -3981,6 +3985,10 @@ export interface UiSettingsState {
 	skillsCatalogShowLocation: boolean;
 	/** 技能名录总字符预算（默认 20000，超限自动降级为紧凑 names-only 模式；0 = 不设限）。 */
 	skillsCatalogBudget: number;
+	/** 单个技能正文上限（字节，默认 8192；0 = 不设单文件上限）。全文注入与 skill 工具同口径。 */
+	skillsMaxFileBytes: number;
+	/** {{skills}} 全文注入的总字节预算（默认 32768；0 = 不设总量上限）。 */
+	skillsFullTextMaxBytes: number;
 	/** Vision bridge on/off (default on). Off → images are sent as-is. */
 	chatUploadMaxMb?: number;
 	workspaceUploadMaxMb?: number;

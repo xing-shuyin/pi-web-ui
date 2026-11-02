@@ -155,6 +155,8 @@ function makeCtx(opts: {
 			skillsCatalogMaxDesc: 250,
 			skillsCatalogShowLocation: false,
 			skillsCatalogBudget: 20000,
+			skillsMaxFileBytes: 8192,
+			skillsFullTextMaxBytes: 32768,
 			quickPhrases: [],
 			quickPhrasesEnabled: true,
 			minimalNewChat: false,

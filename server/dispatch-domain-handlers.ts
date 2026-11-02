@@ -727,6 +727,8 @@ export function handleSettingsMessage(
 				skillsCatalogMaxDesc: msg.skillsCatalogMaxDesc,
 				skillsCatalogShowLocation: msg.skillsCatalogShowLocation,
 				skillsCatalogBudget: msg.skillsCatalogBudget,
+				skillsMaxFileBytes: msg.skillsMaxFileBytes,
+				skillsFullTextMaxBytes: msg.skillsFullTextMaxBytes,
 				codemodeMode: msg.codemodeMode,
 				codemodeInlineBudget: msg.codemodeInlineBudget,
 				visionBridgeEnabled: msg.visionBridgeEnabled,

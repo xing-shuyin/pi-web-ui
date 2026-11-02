@@ -4189,6 +4189,9 @@ export class DshClientSession {
 			skillsCatalogMaxDesc: 250,
 			skillsCatalogShowLocation: false,
 			skillsCatalogBudget: 20000,
+			// DSH 不注入技能正文，但协议字段要齐全（设置页读快照）。
+			skillsMaxFileBytes: 8192,
+			skillsFullTextMaxBytes: 32768,
 			chatUploadMaxMb: this.stateStore.getSettingsSnapshot(this.clientId).chatUploadMaxMb ?? 20,
 			workspaceUploadMaxMb: this.stateStore.getSettingsSnapshot(this.clientId).workspaceUploadMaxMb ?? 100,
 			folderUploadMaxMb: this.stateStore.getSettingsSnapshot(this.clientId).folderUploadMaxMb ?? 32,

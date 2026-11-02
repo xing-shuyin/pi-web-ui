@@ -2391,6 +2391,8 @@ export class UniversalSession implements DispatchSession {
 			skillsCatalogMaxDesc: 250,
 			skillsCatalogShowLocation: false,
 			skillsCatalogBudget: 20000,
+			skillsMaxFileBytes: 8192,
+			skillsFullTextMaxBytes: 32768,
 			chatUploadMaxMb: s?.chatUploadMaxMb ?? 20,
 			workspaceUploadMaxMb: s?.workspaceUploadMaxMb ?? 100,
 			folderUploadMaxMb: s?.folderUploadMaxMb ?? 32,

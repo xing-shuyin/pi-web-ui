@@ -103,3 +103,36 @@ describe("makeSkillTool execute", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 });
+
+describe("makeSkillTool 单文件上限跟随设置 (#819)", () => {
+	const dir = mkdtempSync(join(tmpdir(), "skill-tool-cap-"));
+	// 20KB 正文：默认 8KB 上限读不到，调大上限后可以读到。
+	const fp = join(dir, "SKILL.md");
+	writeFileSync(fp, `# Big\n\n${"x".repeat(20 * 1024)}\n`, "utf8");
+	const entry: SkillCatalogEntry = { name: "big", description: "Big skill", filePath: fp };
+	const textOf = (res: unknown): string =>
+		(res as { content: { type: string; text: string }[] }).content.map((b) => b.text).join("\n");
+
+	afterAll(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("默认仍是 8KB 上限（老行为不变）", async () => {
+		const tool = makeSkillTool({ listSkills: () => [entry] }, () => "en");
+		const out = textOf(await (tool.execute as any)("x", { name: "big" }));
+		expect(out).toContain("over the 8KB cap");
+	});
+
+	it("host 提供较大上限时读得到全文", async () => {
+		const tool = makeSkillTool({ listSkills: () => [entry], maxFileBytes: () => 32 * 1024 }, () => "en");
+		const out = textOf(await (tool.execute as any)("x", { name: "big" }));
+		expect(out).toContain('<skill name="big"');
+		expect(out.length).toBeGreaterThan(20 * 1024);
+	});
+
+	it("0 = 不设单文件上限", async () => {
+		const tool = makeSkillTool({ listSkills: () => [entry], maxFileBytes: () => 0 }, () => "en");
+		const out = textOf(await (tool.execute as any)("x", { name: "big" }));
+		expect(out).toContain('<skill name="big"');
+	});
+});

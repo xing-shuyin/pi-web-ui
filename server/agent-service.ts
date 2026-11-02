@@ -2873,7 +2873,10 @@ export class ClientSession {
 	private fillSkillContents(
 		skills: { name: string; description: string; filePath: string }[],
 	): { name: string; description: string; filePath: string; content?: string }[] {
-		return fillSkillContents(skills, this.settingsSvc.current.skillsFullText);
+		return fillSkillContents(skills, this.settingsSvc.current.skillsFullText, {
+			maxFileBytes: this.settingsSvc.current.skillsMaxFileBytes,
+			maxTotalBytes: this.settingsSvc.current.skillsFullTextMaxBytes,
+		});
 	}
 
 	/** 渲染当前组合模板。当存在自定义模板/覆盖，或者当前会话预设非 standard（如 code/minimal/ask/reader），
@@ -3359,6 +3362,8 @@ export class ClientSession {
 		return createSkillToolHost({
 			resolveTarget: (oid) => ((oid ?? "").trim() !== "" ? this.convs.get(oid!.trim()) : this.convs.get(this.activeId)),
 			getDisabledSkills: () => this.settingsSvc.current.disabledSkills,
+			// 单文件上限跟随设置（与全文注入同口径）；每次调用实时读，改设置不必重建工具。
+			getMaxFileBytes: () => this.settingsSvc.current.skillsMaxFileBytes,
 			ownerId,
 		});
 	}
@@ -9325,6 +9330,8 @@ export class ClientSession {
 		skillsCatalogMaxDesc?: number;
 		skillsCatalogShowLocation?: boolean;
 		skillsCatalogBudget?: number;
+		skillsMaxFileBytes?: number;
+		skillsFullTextMaxBytes?: number;
 		chatUploadMaxMb?: number;
 		workspaceUploadMaxMb?: number;
 		folderUploadMaxMb?: number;

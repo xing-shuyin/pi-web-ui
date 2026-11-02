@@ -170,8 +170,11 @@
         before_agent_start 主会话分支 — SDK 拼好的提示词（或组合模板渲染结果）
         delegate 六段拼装 + 校验打回（见 server/delegate-task.ts 的 validateDelegation）。
         composeInputs — skillsFullText 名单非空时 fillSkillContents() 最好努力读名单里
-            技能的 SKILL.md 正文（单文件 8KB、总量 32KB 封顶，GBK 回退经 decodeText），
+            技能的 SKILL.md 正文（单文件 skillsMaxFileBytes、总量 skillsFullTextMaxBytes
+            封顶，默认 8KB / 32KB，按 UTF-8 字节计，GBK 回退经 decodeText），
             填进 PromptComposerInputs.skills[].content；{{skills}} 对名单技能按全文格式展开。
+            skill 工具读正文用同一个单文件上限（skill-tool.ts 从宿主实时取），
+            两个设置项 0 = 显式不设限（issue #819）。
     名单由 before_agent_start 逐 run 实时读取：改完下一轮即生效，不走
     session.reload()（settings-service needsReload 不含它们）；设置预览
     （sessionPromptSnapshot）走同一逻辑。DSH 引擎只透传存储值（切回 pi 生效）。

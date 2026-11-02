@@ -33,6 +33,8 @@ import {
 	normalizeSkillList,
 	normalizeSkillsCatalogBudget,
 	normalizeSkillsCatalogMaxDesc,
+	normalizeSkillsFullTextMaxBytes,
+	normalizeSkillsMaxFileBytes,
 	normalizeToolWatchdogTimeoutMs,
 	normalizeUiLayout,
 	defaultSubagentAutoWakeMaxTurns,
@@ -599,6 +601,8 @@ export class SettingsService {
 				skillsCatalogMaxDesc: this.settings.skillsCatalogMaxDesc,
 				skillsCatalogShowLocation: this.settings.skillsCatalogShowLocation,
 				skillsCatalogBudget: this.settings.skillsCatalogBudget,
+				skillsMaxFileBytes: this.settings.skillsMaxFileBytes,
+				skillsFullTextMaxBytes: this.settings.skillsFullTextMaxBytes,
 				// The composed system prompt actually in effect (read-only view).
 				effectiveSystemPrompt: promptSnap.full,
 				// 每个来源未覆盖时的默认（自动）内容（「各来源」行预览用）。
@@ -746,6 +750,8 @@ export class SettingsService {
 		skillsCatalogMaxDesc?: number;
 		skillsCatalogShowLocation?: boolean;
 		skillsCatalogBudget?: number;
+		skillsMaxFileBytes?: number;
+		skillsFullTextMaxBytes?: number;
 		chatUploadMaxMb?: number;
 		workspaceUploadMaxMb?: number;
 		folderUploadMaxMb?: number;
@@ -963,6 +969,12 @@ export class SettingsService {
 		}
 		if (partial.skillsCatalogBudget !== undefined) {
 			next.skillsCatalogBudget = normalizeSkillsCatalogBudget(partial.skillsCatalogBudget);
+		}
+		if (partial.skillsMaxFileBytes !== undefined) {
+			next.skillsMaxFileBytes = normalizeSkillsMaxFileBytes(partial.skillsMaxFileBytes);
+		}
+		if (partial.skillsFullTextMaxBytes !== undefined) {
+			next.skillsFullTextMaxBytes = normalizeSkillsFullTextMaxBytes(partial.skillsFullTextMaxBytes);
 		}
 		for (const key of ["chatUploadMaxMb", "workspaceUploadMaxMb", "folderUploadMaxMb"] as const) {
 			if (partial[key] !== undefined) next[key] = partial[key];

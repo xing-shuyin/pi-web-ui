@@ -2526,6 +2526,12 @@ export const zh = {
 	skillsCatalogMaxDescTip: "名录中单条技能描述字符上限（默认 250，设为 0 表示不截断，截断后追加 ...）",
 	skillsCatalogShowLocation: "名录中包含物理文件路径",
 	skillsCatalogShowLocationTip: "默认关闭以节省 Token 并避免暴露本地路径。模型通过 skill 工具可按需自动定位加载。",
+	skillsMaxFileBytes: "技能单文件上限（KB）",
+	skillsMaxFileBytesTip:
+		"单个技能正文上限，默认 8KB。全文注入与 skill 工具共用这一口径；设为 0 表示不设单文件上限（仍受下面的总预算约束）。",
+	skillsFullTextMaxBytes: "技能全文注入预算（KB）",
+	skillsFullTextMaxBytesTip:
+		"{{skills}} 全文注入所有技能正文的总预算，默认 32KB，按 UTF-8 字节计（中文技能约 3 倍于字符数）。设为 0 表示不设总量上限。",
 	/* 派单卡片（delegate_task 专用渲染） */
 	delegateOpenSubagent: "查看子代理",
 	delegateSecTask: "任务",
@@ -5326,6 +5332,12 @@ export const en: Record<keyof typeof zh, string> = {
 	skillsCatalogShowLocation: "Include File Path in Catalog",
 	skillsCatalogShowLocationTip:
 		"Disabled by default to save tokens and avoid leaking local paths. Models can resolve and load skills automatically via the skill tool.",
+	skillsMaxFileBytes: "Skill File Limit (KB)",
+	skillsMaxFileBytesTip:
+		"Per-skill full-text limit, default 8KB. Shared by full-text injection and the skill tool; 0 disables the per-file cap (the total budget below still applies).",
+	skillsFullTextMaxBytes: "Skill Full-Text Budget (KB)",
+	skillsFullTextMaxBytesTip:
+		"Total budget for {{skills}} full-text injection, default 32KB, counted in UTF-8 bytes (about 3x the character count for CJK). 0 disables the total cap.",
 	/* Delegate card (delegate_task dedicated rendering) */
 	delegateOpenSubagent: "Open subagent",
 	delegateSecTask: "Task",

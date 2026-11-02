@@ -264,9 +264,12 @@ export function createCompactContextHost(ctx: {
 export function createSkillToolHost(ctx: {
 	resolveTarget: (ownerId?: string) => Conversation | undefined;
 	getDisabledSkills: () => string[];
+	/** 单文件正文上限（字节）的实时读取：跟随设置，未提供用工具默认。 */
+	getMaxFileBytes?: () => number;
 	ownerId?: string;
 }): SkillToolHost {
 	return {
+		maxFileBytes: ctx.getMaxFileBytes,
 		listSkills: () => {
 			try {
 				const target = ctx.resolveTarget(ctx.ownerId);
