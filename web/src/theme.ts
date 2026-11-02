@@ -10,6 +10,7 @@
  * persists in localStorage per browser.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useAppField } from "./app-globals";
 import { withToken } from "./auth-token";
 import { appUrl } from "./base-url";
 
@@ -33,6 +34,11 @@ const LINK_ID = "theme-stylesheet";
  * 切主题仍可复用同一份。
  */
 const THEME_ASSET_REV = Date.now().toString(36);
+/** 同一页面内重挂样式表的计数：URL 不变时浏览器不会重发请求，重试必须换 URL。 */
+let assetReload = 0;
+/** 样式表加载失败的退避重试上限（服务启动中 / 重启窗口）。 */
+const MAX_LINK_RETRIES = 3;
+let linkRetries = 0;
 /** Broadcast when the active theme changes (after the <link> has loaded). */
 export const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 
@@ -54,9 +60,24 @@ function saveTheme(id: string | null): void {
 		// ignore storage errors
 	}
 }
+function themeHref(id: string): string {
+	return `${appUrl(`/themes/${encodeURIComponent(id)}.css`)}?v=${THEME_ASSET_REV}.${assetReload}`;
+}
 
-/** Inject/replace the theme <link>. null = bundled default (dark). */
-export function applyTheme(id: string | null): void {
+/**
+ * 挂/换主题样式表。
+ *
+ * `reload` 会换一个带新版本戳的 URL：页面可能在服务端开始监听之前就加载了
+ * （`/webui` 抢跑、服务重启），此时 `theme.css` / `/api/themes` 全是
+ * ERR_CONNECTION_REFUSED；等连接真正建立后必须**重新发请求**，否则只会留一个
+ * 没有主题样式的页面等用户手动刷新（issue #814）。`onerror` 另带有限次退避重试，
+ * 覆盖「连接已建立但样式表这次没拿到」的瞬时失败。
+ */
+export function applyTheme(id: string | null, options: { reload?: boolean } = {}): void {
+	if (options.reload) {
+		assetReload++;
+		linkRetries = 0;
+	}
 	if (typeof document !== "undefined") {
 		if (id) {
 			document.documentElement.dataset.theme = id;
@@ -76,10 +97,24 @@ export function applyTheme(id: string | null): void {
 		link.rel = "stylesheet";
 		document.head.appendChild(link);
 	}
-	link.href = `${appUrl(`/themes/${encodeURIComponent(id)}.css`)}?v=${THEME_ASSET_REV}`;
+	const el = link;
+	el.href = themeHref(id);
 	// The xterm canvas needs to re-theme once the new stylesheet has applied
 	// (its colors are read from the CSS variables via buildTermTheme).
-	link.onload = () => window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT));
+	el.onload = () => {
+		linkRetries = 0;
+		window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT));
+	};
+	el.onerror = () => {
+		if (linkRetries >= MAX_LINK_RETRIES) return;
+		const delay = 400 * 2 ** linkRetries++;
+		window.setTimeout(() => {
+			// 主题在重试窗口内又被切走 / 清掉时不要回挂旧样式表。
+			if (document.getElementById(LINK_ID) !== el) return;
+			assetReload++;
+			el.href = themeHref(id);
+		}, delay);
+	};
 }
 
 async function fetchThemes(): Promise<ThemeInfo[]> {
@@ -97,6 +132,10 @@ async function fetchThemes(): Promise<ThemeInfo[]> {
 export function useTheme() {
 	const [themes, setThemes] = useState<ThemeInfo[]>([]);
 	const [theme, setTheme] = useState<string | null>(() => loadTheme());
+	// 「服务端已经应答」的唯一可靠信号：WS 连上了。首屏请求可能抢在 listen 之前
+	// （/webui 立即开浏览器、服务重启），连接建立/重连时必须补拉一次，否则主题列表
+	// 永远是空、样式表永远不重发（issue #814）。
+	const connected = useAppField("status") === "open";
 
 	useEffect(() => {
 		let cancelled = false;
@@ -106,7 +145,7 @@ export function useTheme() {
 		return () => {
 			cancelled = true;
 		};
-	}, []);
+	}, [connected]);
 
 	/** 按需重拉列表：挂载那次若撞上服务端重启（升级/更新）会扑空，而平时不再拉，
 	 *  不补一次就永远只剩默认深色。下拉打开时调一次即可（React 18 下已卸载的
@@ -115,10 +154,11 @@ export function useTheme() {
 		fetchThemes().then(setThemes);
 	}, []);
 
+	// 连接建立（首连或重连）时重挂样式表：URL 带新版本戳，浏览器会真的重新请求。
 	useEffect(() => {
-		applyTheme(theme);
+		applyTheme(theme, { reload: connected });
 		saveTheme(theme);
-	}, [theme]);
+	}, [theme, connected]);
 
 	const switchTheme = (id: string | null) => setTheme(id === DEFAULT_THEME_ID ? null : id);
 
