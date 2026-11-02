@@ -13,38 +13,101 @@
  * 4. 基于 file:// URL 协议跨环境穿透动态导入 ESM 模块（dynamicImportGlobalPackage）。
  */
 
-import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-let cachedNpmRootG: string | null = null;
+// undefined = 尚未解析；null = 已解析但系统里没有 npm 全局 root
+let cachedNpmRootG: string | null | undefined;
 let cachedCandidateRoots: string[] | null = null;
 let candidateRootsCachedAt = 0;
 const CANDIDATE_CACHE_TTL_MS = 5000;
 const packageRootCache = new Map<string, string | null>();
 
 /**
- * 安全且带缓存地获取系统 npm 全局 root 目录。
+ * 从 npmrc 里读取 `prefix=`（纯解析，不执行 npm 本体）。
+ * 位置顺序沿用 npm：用户配置在前，系统配置在后。
  */
-export function getSystemNpmRootG(): string | null {
-	if (cachedNpmRootG !== null) return cachedNpmRootG;
+function readNpmrcPrefixes(): string[] {
+	const env = process.env;
+	const home = env.HOME || env.USERPROFILE || homedir();
+	const isWin = process.platform === "win32";
+	const locations = [
+		join(home, ".npmrc"),
+		env.PREFIX ? join(env.PREFIX, "etc", "npmrc") : "/usr/local/etc/npmrc",
+		isWin ? (env.APPDATA ? join(env.APPDATA, "npm", "etc", "npmrc") : null) : "/etc/npmrc",
+		isWin && env.ProgramFiles ? join(env.ProgramFiles, "nodejs", "etc", "npmrc") : null,
+		isWin ? null : "/usr/etc/npmrc",
+	].filter((loc): loc is string => !!loc);
 
-	try {
-		const out = execSync("npm root -g", {
-			timeout: 2500,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-			shell: process.platform === "win32" ? "cmd.exe" : undefined,
-			windowsHide: true,
-		}).trim();
-		if (out && existsSync(out)) {
-			cachedNpmRootG = resolve(out);
-			return cachedNpmRootG;
+	const prefixes: string[] = [];
+	for (const loc of locations) {
+		try {
+			if (!existsSync(loc)) continue;
+			for (const line of readFileSync(loc, "utf8").split(/\r?\n/)) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) continue;
+				const m = trimmed.match(/^prefix\s*=\s*(.+)$/);
+				if (!m) continue;
+				let value = m[1].trim();
+				if (
+					(value.startsWith('"') && value.endsWith('"')) ||
+					(value.startsWith("'") && value.endsWith("'"))
+				) {
+					value = value.slice(1, -1).trim();
+				}
+				if (value.startsWith("~")) value = join(home, value.slice(1));
+				if (value && isAbsolute(value)) prefixes.push(resolve(value));
+			}
+		} catch {
+			/* 配置不可读就跳过，继续下一个位置 */
 		}
+	}
+	return prefixes;
+}
+
+/**
+ * npm 全局 prefix 候选，优先级同 npm 自身：环境变量 > npmrc 的 prefix= > 运行中 node 的安装位置。
+ */
+function npmPrefixCandidates(): string[] {
+	const raw: string[] = [];
+	for (const p of [process.env.npm_config_prefix, process.env.NPM_CONFIG_PREFIX]) {
+		if (p) raw.push(p);
+	}
+	raw.push(...readNpmrcPrefixes());
+	try {
+		const nodeDir = dirname(process.execPath);
+		raw.push(join(nodeDir, ".."), nodeDir);
 	} catch {
 		/* ignore */
+	}
+	return [...new Set(raw.filter(Boolean).map((p) => resolve(p)))];
+}
+
+/**
+ * 安全且带缓存地获取系统 npm 全局 root 目录。
+ *
+ * 纯计算，不再同步执行 `npm root -g`。此前的实现用 execSync 跑这条 npm 命令，而它在
+ * 引擎探测的热路径上（probeAllEngines → probeGlobalPackage → getCandidateNodeModulesRoots，
+ * 客户端每次请求都可能触发）。同步 spawn 在主线程上做 fork+exec，一旦子进程卡在 exec 之前，
+ * 主线程就会永远阻塞在 spawn 错误管道的 read 上，整个事件循环定格（Termux/libuv 上实测的假死）。
+ * prefix 完全可以静态推导，代价只有几次 existsSync。
+ */
+export function getSystemNpmRootG(): string | null {
+	if (cachedNpmRootG !== undefined) return cachedNpmRootG;
+
+	// npm 在 POSIX 上装进 <prefix>/lib/node_modules，在 Windows 上装进 <prefix>/node_modules
+	const layouts =
+		process.platform === "win32" ? ["node_modules", join("lib", "node_modules")] : [join("lib", "node_modules"), "node_modules"];
+	for (const prefix of npmPrefixCandidates()) {
+		for (const layout of layouts) {
+			const root = join(prefix, layout);
+			if (existsSync(root)) {
+				cachedNpmRootG = resolve(root);
+				return cachedNpmRootG;
+			}
+		}
 	}
 
 	cachedNpmRootG = null;
@@ -63,8 +126,8 @@ export function getCandidateNodeModulesRoots(options?: { refresh?: boolean }): s
 	) {
 		return cachedCandidateRoots;
 	}
-	// A refreshed discovery must also re-query npm when its prefix changed.
-	cachedNpmRootG = null;
+	// 重新发现时也要重新推导 npm 全局 root（prefix 可能被改过）
+	cachedNpmRootG = undefined;
 
 	const candidates = new Set<string>();
 

@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
 	getCandidateNodeModulesRoots,
+	getSystemNpmRootG,
 	probeGlobalPackage,
 	resolvePackageEntryFile,
 	resolvePackageRoot,
@@ -182,6 +183,43 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			const sqliteMod = await dynamicImportGlobalPackage("@earendil-works/pi-durable", "storage/sqlite/node");
 			expect(sqliteMod).toBeDefined();
 			expect(typeof sqliteMod.openNodeSqliteStorage).toBe("function");
+		});
+	});
+
+	describe("npm 全局 root 的静态推导（不再 fork `npm root -g`）", () => {
+		it("npm_config_prefix 生效，且无需 npm 可执行文件", () => {
+			const prefix = mkdtempSync(join(tmpdir(), "engine-npm-prefix-"));
+			const globalRoot = join(prefix, "lib", "node_modules");
+			mkdirSync(globalRoot, { recursive: true });
+			try {
+				vi.stubEnv("npm_config_prefix", prefix);
+				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				getCandidateNodeModulesRoots({ refresh: true });
+				expect(getSystemNpmRootG()).toBe(resolve(globalRoot));
+				// 结果进缓存：第二次调用不再重新推导
+				expect(getSystemNpmRootG()).toBe(resolve(globalRoot));
+				// 推导出的目录确实作为候选根被收集
+				expect(getCandidateNodeModulesRoots()).toContain(resolve(globalRoot));
+			} finally {
+				vi.unstubAllEnvs();
+				rmSync(prefix, { recursive: true, force: true });
+				getCandidateNodeModulesRoots({ refresh: true });
+			}
+		});
+
+		it("没有 prefix 指向候选时安全返回 null", () => {
+			vi.stubEnv("npm_config_prefix", "");
+			vi.stubEnv("NPM_CONFIG_PREFIX", "");
+			vi.stubEnv("HOME", mkdtempSync(join(tmpdir(), "engine-npm-nohome-")));
+			try {
+				getCandidateNodeModulesRoots({ refresh: true });
+				const resolved = getSystemNpmRootG();
+				// 有值的唯一合法来源是运行中 node 自带的安装前缀，且必须真实存在
+				if (resolved !== null) expect(existsSync(resolved)).toBe(true);
+			} finally {
+				vi.unstubAllEnvs();
+				getCandidateNodeModulesRoots({ refresh: true });
+			}
 		});
 	});
 });
