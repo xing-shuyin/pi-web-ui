@@ -262,7 +262,7 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			}
 		});
 
-		it("没有 npmrc/prefix 指向候选时安全回退（且不残留临时 HOME）", () => {
+		it("没有任何候选时不会抛错（且不残留临时 HOME）", () => {
 			const home = mkdtempSync(join(tmpdir(), "engine-npm-empty-"));
 			try {
 				vi.stubEnv("HOME", home);

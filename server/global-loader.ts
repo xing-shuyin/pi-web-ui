@@ -47,13 +47,14 @@ function envPrefixes(): string[] {
  */
 function defaultPrefixes(): string[] {
 	const out: string[] = [];
+	// Windows：npm 的全局 prefix 是 %APPDATA%\npm，跟 node 的安装目录无关，所以排在前面
+	if (process.platform === "win32" && process.env.APPDATA) out.push(join(process.env.APPDATA, "npm"));
 	try {
 		const nodeDir = dirname(process.execPath);
 		out.push(join(nodeDir, ".."), nodeDir);
 	} catch {
 		/* ignore */
 	}
-	if (process.platform === "win32" && process.env.APPDATA) out.push(join(process.env.APPDATA, "npm"));
 	return out;
 }
 
