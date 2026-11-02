@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ExtensionRunner } from "@earendil-works/pi-coding-agent";
 import { mockThemeProxy, WebUIContext } from "../../server/webui-context.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
@@ -17,6 +18,82 @@ describe("WebUIContext SDK wrap", () => {
 		const wrapped = wrapLikeSdk(ui);
 		expect(typeof wrapped.setStatus).toBe("function");
 		expect(typeof wrapped.notify).toBe("function");
+	});
+
+	// Regression (#823): `theme` used to be a class-prototype getter, so the SDK's
+	// `{ ...ui }` wrap dropped it — extensions then read `ctx.ui.theme === undefined`
+	// and threw on `theme.fg(...)` during session_start/agent_end.
+	it("keeps ctx.ui.theme defined through the SDK spread", () => {
+		const wrapped = wrapLikeSdk(new WebUIContext(() => {}));
+		expect(typeof wrapped.theme).toBe("object");
+		expect(typeof (wrapped.theme as { fg?: unknown }).fg).toBe("function");
+	});
+
+	it("spread copy keeps a live theme accessor, not a frozen value", () => {
+		// The clone gets the *value* spread copies (same as the TUI's object-literal UI
+		// context); what matters is that the source exposes theme as an own, enumerable
+		// accessor, so there is something to copy at all.
+		const ui = new WebUIContext(() => {});
+		const source = Object.getOwnPropertyDescriptor(ui, "theme");
+		expect(typeof source?.get).toBe("function");
+		expect(source?.enumerable).toBe(true);
+		const wrapped = wrapLikeSdk(ui);
+		expect(wrapped.theme).toBe(
+			(globalThis as Record<symbol, unknown>)[Symbol.for("@earendil-works/pi-coding-agent:theme")],
+		);
+	});
+
+	it("every extension-facing member survives the spread", () => {
+		const wrapped = wrapLikeSdk(new WebUIContext(() => {})) as Record<string, unknown>;
+		const members = [
+			"select",
+			"confirm",
+			"input",
+			"custom",
+			"notify",
+			"onTerminalInput",
+			"setStatus",
+			"setWorkingMessage",
+			"setWorkingVisible",
+			"setWorkingIndicator",
+			"setHiddenThinkingLabel",
+			"setWidget",
+			"setFooter",
+			"setHeader",
+			"setTitle",
+			"pasteToEditor",
+			"setEditorText",
+			"getEditorText",
+			"editor",
+			"addAutocompleteProvider",
+			"setEditorComponent",
+			"getEditorComponent",
+			"getAllThemes",
+			"getTheme",
+			"setTheme",
+			"getToolsExpanded",
+			"setToolsExpanded",
+		];
+		for (const member of members) expect([member, typeof wrapped[member]]).not.toEqual([member, "undefined"]);
+		expect(wrapped.theme).toBeDefined();
+	});
+
+	it("survives the real SDK wrapper, not just the shape we mimic", () => {
+		// Guards the actual failure mode of #823: ExtensionRunner.wrapUIPromptContext
+		// spreads the host context. Called with a stub `this` so no runner setup is needed.
+		const proto = ExtensionRunner.prototype as unknown as {
+			wrapUIPromptContext?: (ui: unknown) => unknown;
+		};
+		const wrap = proto.wrapUIPromptContext;
+		if (typeof wrap !== "function") return; // SDK reshaped its internals — nothing to pin here
+		const wrapped = wrap.call(
+			{ withUIPrompt: (_k: string, _t: unknown, run: () => unknown) => run() },
+			new WebUIContext(() => {}),
+		) as {
+			theme?: { fg?: unknown };
+		};
+		expect(typeof wrapped.theme).toBe("object");
+		expect(typeof wrapped.theme?.fg).toBe("function");
 	});
 
 	it("spread copy still emits statuses and notice", () => {

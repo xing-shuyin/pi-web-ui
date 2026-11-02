@@ -160,6 +160,65 @@ const ANCHORS: Record<ExecutableLookupTarget, string> = {
 /** Any child process a lookup could still be forking through, however it is spelled. */
 const FORKING_CALL = /\b(?:spawnSync|execSync|execFileSync)\s*\(/;
 
+/** 在这些字符之后出现的 `/` 是正则字面量的开头，而不是除号。 */
+const REGEX_PREFIX_CHARS = new Set("(,=:[!&|?{};+-*%<>~^".split(""));
+/** 这些关键字之后同理（`return /…/` vs `a / b`）。 */
+const REGEX_PREFIX_WORDS = new Set([
+	"return",
+	"typeof",
+	"instanceof",
+	"in",
+	"of",
+	"new",
+	"delete",
+	"void",
+	"throw",
+	"case",
+	"do",
+	"else",
+	"yield",
+	"await",
+]);
+
+/** `/` 在这里是正则字面量而不是除号（只看前一个 token）。 */
+function isRegexStart(source: string, i: number): boolean {
+	let j = i - 1;
+	while (j >= 0 && /\s/.test(source[j])) j--;
+	if (j < 0) return true;
+	if (REGEX_PREFIX_CHARS.has(source[j])) return true;
+	if (!/[A-Za-z0-9_$]/.test(source[j])) return false;
+	let k = j;
+	while (k >= 0 && /[A-Za-z0-9_$]/.test(source[k])) k--;
+	return REGEX_PREFIX_WORDS.has(source.slice(k + 1, j + 1));
+}
+
+/**
+ * `}` / `{` 在正则字面量里不是括号。不认正则的话，`/^}$/` 这种只带一个右花括号的
+ * 字面量会把深度算错：接着那个嵌套块自己的 `}` 就被当成「函数结束」，于是后面的
+ * `spawnSync` 落在被截断的 body 之外，已经打过叉的源码会被判成 `already` —— 正是
+ * 上游改写后最危险的那种误判（Android 上依然会卡死，却不报警）。
+ * 解析错方向的代价很低：误把代码当成字符串只会让 body 取不出来 → `unsupported`。
+ */
+function skipRegex(source: string, i: number): number | null {
+	let inClass = false;
+	for (let j = i + 1; j < source.length; j++) {
+		const char = source[j];
+		if (char === "\\") {
+			j++;
+			continue;
+		}
+		// 正则字面量不跨行：跑到行尾说明这是个除号，交给调用方按代码处理。
+		if (char === "\n") return null;
+		if (inClass) {
+			if (char === "]") inClass = false;
+			continue;
+		}
+		if (char === "[") inClass = true;
+		else if (char === "/") return j;
+	}
+	return null;
+}
+
 /** Index just past the comment or quoted literal starting at `i`, or null when it is code. */
 function skipNonCode(source: string, i: number): number | null {
 	const char = source[i];
@@ -171,6 +230,7 @@ function skipNonCode(source: string, i: number): number | null {
 		const end = source.indexOf("*/", i + 2);
 		return end < 0 ? null : end + 1;
 	}
+	if (char === "/" && isRegexStart(source, i)) return skipRegex(source, i);
 	if (char === '"' || char === "'" || char === "`") {
 		for (let j = i + 1; j < source.length; j++) {
 			if (source[j] === "\\") j++;

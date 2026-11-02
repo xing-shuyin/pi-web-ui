@@ -54,7 +54,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir, networkInterfaces, tmpdir, userInfo } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 
@@ -2460,6 +2460,39 @@ function resolveBuildPlan(pluginRoot, manifest) {
 /** 拷贝插件树时的过滤：不带 .git / node_modules（与安装同一套）。 */
 const PLUGIN_COPY_FILTER = (s) => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(s);
 
+/** 插件目录里「属于随包代码」的清单文件：升级时只删清单里的路径，插件自己的
+ *  数据（db-connections.json 之类）不在清单里，因此不会被删（issue #813）。 */
+const SHIPPED_LIST = ".pi-files.json";
+/** 这些顶层目录就地保留：既免重下几百 MB 模型，也规避 Windows 下已加载的
+ *  .node/.dll 被 rmSync 触发 EBUSY 导致更新失败。 */
+const PRESERVED_DIRS = new Set(["whisper-cache", "node_modules"]);
+
+/** 列出将要随包安装的相对路径（与 cpSync 同过滤）。 */
+function listShippedFiles(root) {
+	const out = [];
+	const walk = (dir, prefix) => {
+		let entries;
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			const full = join(dir, entry.name);
+			if (!PLUGIN_COPY_FILTER(full)) continue;
+			const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+			if (entry.isDirectory()) {
+				out.push(`${rel}/`);
+				walk(full, rel);
+			} else if (entry.name !== SHIPPED_LIST) {
+				out.push(rel);
+			}
+		}
+	};
+	walk(root, "");
+	return out.sort();
+}
+
 /** 在给定目录跑一条外部命令（shell 执行，继承 stdio 让用户看到进度）。失败抛错。 */
 function runBuildCommand(cmd, cwd, label) {
 	console.log(`· ${label}: ${cmd}`);
@@ -2737,7 +2770,6 @@ async function installOnePlugin({
 		const target = join(pluginsDir, id);
 		let backupTs = null;
 		const PRESERVED_FILES = ["config.json", "secrets.bin", "storage.json", "package.json", "package-lock.json"];
-		const PRESERVED_DIRS = new Set(["whisper-cache", "node_modules"]);
 		const preservedData = new Map();
 		if (existsSync(target)) {
 			if (!force)
@@ -2757,11 +2789,31 @@ async function installOnePlugin({
 					/* 无该文件 */
 				}
 			}
-			// 清理旧代码文件，但原地保留 node_modules 与 whisper-cache（既免重下几百 MB 模型，
-			// 也规避 Windows 下已加载 .node/.dll 被 rmSync 触发 EBUSY 导致更新失败）。
-			for (const entry of readdirSync(target)) {
-				if (PRESERVED_DIRS.has(entry)) continue;
-				rmSync(join(target, entry), { recursive: true, force: true });
+			// 只删上一版**随包安装**的文件：插件把自己的数据写在插件目录里
+			// （db-client 的 db-connections.json、聊天记录、索引……）时，整目录清空会
+			// 把它们一起删掉（issue #813）。没有清单的老安装不敢猜，宁可少删：
+			// 残留的旧代码文件不会被加载，而删错的数据找不回来。
+			let previous = null;
+			try {
+				const raw = JSON.parse(readFileSync(join(target, SHIPPED_LIST), "utf8"));
+				if (Array.isArray(raw?.files)) previous = raw.files.filter((f) => typeof f === "string" && f);
+			} catch {
+				/* 老版本安装没留清单 */
+			}
+			if (previous) {
+				for (const rel of previous) {
+					const full = resolve(target, rel);
+					// 清单来自磁盘，越界路径一律忽略（不支持插件把文件删到目录外）。
+					if (!full.startsWith(target + sep)) continue;
+					if (PRESERVED_DIRS.has(relative(target, full).split(sep)[0])) continue;
+					rmSync(full, { recursive: true, force: true });
+				}
+			} else {
+				console.log(
+					ZH
+						? "· 旧安装没有随包文件清单：本次不清理旧文件（只覆盖同名文件），插件数据保持不动"
+						: "· No shipped-file list from the previous install: leaving old files in place (only overwriting same-named ones); plugin data untouched",
+				);
 			}
 		}
 		mkdirSync(target, { recursive: true });
@@ -2786,6 +2838,16 @@ async function installOnePlugin({
 			if (!existsSync(join(target, fname))) {
 				writeFileSync(join(target, fname), buf);
 			}
+		}
+		// 记录来源 / 远端 sha / 随包文件清单。清单是下一次升级的删除依据：只删它，
+		// 插件自己写进目录的数据就不会被清空。
+		try {
+			writeFileSync(
+				join(target, SHIPPED_LIST),
+				JSON.stringify({ files: listShippedFiles(installRoot) }, null, 2) + "\n",
+			);
+		} catch {
+			/* 尽力而为：没有清单时下次升级退化为「不清理旧文件」 */
 		}
 		// 记录安装来源：设置面板「更新」按钮据此重跑同一条安装命令（--force 覆盖）。
 		try {

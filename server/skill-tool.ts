@@ -37,10 +37,19 @@ export interface SkillCatalogEntry {
 /** 由 ClientSession 实现的数据宿主（已按 disabledSkills 过滤）。 */
 export interface SkillToolHost {
 	listSkills(): SkillCatalogEntry[];
+	/** 单文件正文上限（字节）；缺省用 SKILL_TOOL_FILE_CAP。每次调用实时读，便于跟随设置。 */
+	maxFileBytes?(): number | undefined;
 }
 
-/** 单文件正文上限（与 agent-service fillSkillContents 同口径：8KB）。 */
+/** 单文件正文上限的出厂默认（= 设置项 skillsMaxFileBytes 的默认值，8KB）。 */
 export const SKILL_TOOL_FILE_CAP = 8192;
+
+/** 实际生效的单文件上限：非负整数，非法/未设置回退出厂默认。0 = 不设单文件上限。 */
+function effectiveFileCap(host: SkillToolHost): number {
+	const raw = host.maxFileBytes?.();
+	if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+	return SKILL_TOOL_FILE_CAP;
+}
 
 /** 精确名匹配（大小写敏感，与 skillsFullText 名单语义一致）。 */
 export function findSkill(skills: SkillCatalogEntry[], name: string): SkillCatalogEntry | undefined {
@@ -175,8 +184,10 @@ export function makeSkillTool(host: SkillToolHost, lang?: () => ServerLang): Too
 			}
 			try {
 				const st = statSync(found.filePath);
-				const kb = SKILL_TOOL_FILE_CAP / 1024;
-				if (!st.isFile() || st.size <= 0 || st.size > SKILL_TOOL_FILE_CAP) {
+				const cap = effectiveFileCap(host);
+				// 0 = 不设单文件上限（设置项显式打开）；否则超限回落可读错误，不截断正文。
+				const kb = Math.max(1, Math.round(cap / 1024));
+				if (!st.isFile() || st.size <= 0 || (cap > 0 && st.size > cap)) {
 					return text(
 						pick(
 							L,

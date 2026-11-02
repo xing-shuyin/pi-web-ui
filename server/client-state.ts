@@ -271,6 +271,29 @@ export function normalizeSkillList(v: unknown): string[] {
 
 export const DEFAULT_SKILLS_CATALOG_MAX_DESC = 250;
 export const DEFAULT_SKILLS_CATALOG_BUDGET = 20000;
+/** 技能正文上限（与 #819 的设置项同口径）：单文件 8KB、全文注入总量 32KB。
+ *  默认值 = 历史硬编码值，老用户升级后行为不变。 */
+export const DEFAULT_SKILLS_MAX_FILE_BYTES = 8192;
+export const DEFAULT_SKILLS_FULL_TEXT_MAX_BYTES = 32768;
+/** 上限的硬边界：设置可调但不能把上下文预算彻底关掉（1MB / 4MB）。 */
+export const MAX_SKILLS_MAX_FILE_BYTES = 1024 * 1024;
+export const MAX_SKILLS_FULL_TEXT_MAX_BYTES = 4 * 1024 * 1024;
+
+/** 归一化单文件技能正文上限：0..1MB 的整数，非法/未设置回退 8192。0 = 不设单文件上限。 */
+export function normalizeSkillsMaxFileBytes(v: unknown): number {
+	if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+		return Math.min(Math.floor(v), MAX_SKILLS_MAX_FILE_BYTES);
+	}
+	return DEFAULT_SKILLS_MAX_FILE_BYTES;
+}
+
+/** 归一化全文注入总量上限：0..4MB 的整数，非法/未设置回退 32768。0 = 不设总量上限。 */
+export function normalizeSkillsFullTextMaxBytes(v: unknown): number {
+	if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+		return Math.min(Math.floor(v), MAX_SKILLS_FULL_TEXT_MAX_BYTES);
+	}
+	return DEFAULT_SKILLS_FULL_TEXT_MAX_BYTES;
+}
 
 /** 归一化技能名录单描述字符数截断：>=0 整数，非法/未设置回退 250。0 为不截断。 */
 export function normalizeSkillsCatalogMaxDesc(v: unknown): number {
@@ -445,6 +468,10 @@ export interface ClientSettings {
 	skillsCatalogShowLocation: boolean;
 	/** 技能名录总字符预算（默认 20000，超限自动降级为紧凑 names-only 模式；0 = 不设限）。 */
 	skillsCatalogBudget: number;
+	/** 单个技能正文上限（字节，默认 8192 = 历史硬编码；0 = 不设单文件上限）。 */
+	skillsMaxFileBytes: number;
+	/** {{skills}} 全文注入的总字节预算（默认 32768 = 历史硬编码；0 = 不设总量上限）。 */
+	skillsFullTextMaxBytes: number;
 	/** 子代理默认模型 ("provider/id")；null/未设 = 跟随主对话当前模型。不改会话右侧栏的模型。 */
 	subagentDefaultModel?: string | null;
 	/** 子代理最大嵌套层数（主对话下的子代理层数；0 = 不限制，默认）。到达上限那层的内存子代理不注入 subagent / delegate_task。 */
@@ -1244,6 +1271,8 @@ export class ClientStateStore {
 			skillsCatalogMaxDesc: normalizeSkillsCatalogMaxDesc(stored?.skillsCatalogMaxDesc),
 			skillsCatalogShowLocation: Boolean(stored?.skillsCatalogShowLocation ?? false),
 			skillsCatalogBudget: normalizeSkillsCatalogBudget(stored?.skillsCatalogBudget),
+			skillsMaxFileBytes: normalizeSkillsMaxFileBytes(stored?.skillsMaxFileBytes),
+			skillsFullTextMaxBytes: normalizeSkillsFullTextMaxBytes(stored?.skillsFullTextMaxBytes),
 			chatUploadMaxMb: normalizeUploadMaxMb(stored?.chatUploadMaxMb, 20),
 			workspaceUploadMaxMb: normalizeUploadMaxMb(stored?.workspaceUploadMaxMb, 100),
 			folderUploadMaxMb: normalizeUploadMaxMb(stored?.folderUploadMaxMb, 32),
@@ -1344,6 +1373,12 @@ export class ClientStateStore {
 					: (cur.skillsCatalogShowLocation ?? false),
 			skillsCatalogBudget: normalizeSkillsCatalogBudget(
 				settings.skillsCatalogBudget ?? cur.skillsCatalogBudget ?? DEFAULT_SKILLS_CATALOG_BUDGET,
+			),
+			skillsMaxFileBytes: normalizeSkillsMaxFileBytes(
+				settings.skillsMaxFileBytes ?? cur.skillsMaxFileBytes ?? DEFAULT_SKILLS_MAX_FILE_BYTES,
+			),
+			skillsFullTextMaxBytes: normalizeSkillsFullTextMaxBytes(
+				settings.skillsFullTextMaxBytes ?? cur.skillsFullTextMaxBytes ?? DEFAULT_SKILLS_FULL_TEXT_MAX_BYTES,
 			),
 			chatUploadMaxMb: normalizeUploadMaxMb(settings.chatUploadMaxMb ?? cur.chatUploadMaxMb, 20),
 			workspaceUploadMaxMb: normalizeUploadMaxMb(settings.workspaceUploadMaxMb ?? cur.workspaceUploadMaxMb, 100),

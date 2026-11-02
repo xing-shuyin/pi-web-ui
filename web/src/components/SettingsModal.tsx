@@ -679,6 +679,10 @@ interface SettingsPatch {
 	skillsCatalogMaxDesc?: number;
 	skillsCatalogShowLocation?: boolean;
 	skillsCatalogBudget?: number;
+	/** 单个技能正文上限（字节，默认 8192；0 = 不设单文件上限）。 */
+	skillsMaxFileBytes?: number;
+	/** {{skills}} 全文注入总字节预算（默认 32768；0 = 不设总量上限）。 */
+	skillsFullTextMaxBytes?: number;
 	quickPhrases?: string[];
 	quickPhrasesEnabled?: boolean;
 	minimalNewChat?: boolean;
@@ -1170,6 +1174,18 @@ export function SettingsModal({
 	useEffect(() => {
 		setSkillsMaxDescDraft(String(settings?.skillsCatalogMaxDesc ?? 250));
 	}, [settings?.skillsCatalogMaxDesc]);
+	// 技能正文上限按 KB 编辑（落库仍是字节）：min 0 = 不限。
+	const kbDraft = (bytes: number | undefined, fallback: number) => String(Math.round((bytes ?? fallback) / 1024));
+	const [skillsFileLimitDraft, setSkillsFileLimitDraft] = useState<string>(kbDraft(settings?.skillsMaxFileBytes, 8192));
+	useEffect(() => {
+		setSkillsFileLimitDraft(kbDraft(settings?.skillsMaxFileBytes, 8192));
+	}, [settings?.skillsMaxFileBytes]);
+	const [skillsFullTextBudgetDraft, setSkillsFullTextBudgetDraft] = useState<string>(
+		kbDraft(settings?.skillsFullTextMaxBytes, 32768),
+	);
+	useEffect(() => {
+		setSkillsFullTextBudgetDraft(kbDraft(settings?.skillsFullTextMaxBytes, 32768));
+	}, [settings?.skillsFullTextMaxBytes]);
 	// 压缩软上限：本地草稿（空 = 关闭；失焦/回车提交）。
 	const [softCapDraft, setSoftCapDraft] = useState<string>(
 		settings?.softCapTokens && settings.softCapTokens > 0 ? formatTokenDraft(settings.softCapTokens) : "",
@@ -4679,6 +4695,60 @@ export function SettingsModal({
 														setSkillsMaxDescDraft(String(n));
 														if (n !== settings.skillsCatalogMaxDesc) {
 															setPartial({ skillsCatalogMaxDesc: n });
+														}
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+													}}
+												/>
+											</FieldRow>
+											<FieldRow
+												label={t("skillsMaxFileBytes")}
+												tip={t("skillsMaxFileBytesTip")}
+												htmlFor="skills-file-limit"
+											>
+												<input
+													id="skills-file-limit"
+													className="set-input"
+													type="number"
+													min={0}
+													max={1024}
+													step={1}
+													value={skillsFileLimitDraft}
+													onChange={(e) => setSkillsFileLimitDraft(e.target.value)}
+													onBlur={() => {
+														const kb = Math.floor(Number(skillsFileLimitDraft));
+														const n = Number.isFinite(kb) && kb >= 0 ? kb : 8;
+														setSkillsFileLimitDraft(String(n));
+														if (n * 1024 !== settings.skillsMaxFileBytes) {
+															setPartial({ skillsMaxFileBytes: n * 1024 });
+														}
+													}}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+													}}
+												/>
+											</FieldRow>
+											<FieldRow
+												label={t("skillsFullTextMaxBytes")}
+												tip={t("skillsFullTextMaxBytesTip")}
+												htmlFor="skills-fulltext-budget"
+											>
+												<input
+													id="skills-fulltext-budget"
+													className="set-input"
+													type="number"
+													min={0}
+													max={4096}
+													step={4}
+													value={skillsFullTextBudgetDraft}
+													onChange={(e) => setSkillsFullTextBudgetDraft(e.target.value)}
+													onBlur={() => {
+														const kb = Math.floor(Number(skillsFullTextBudgetDraft));
+														const n = Number.isFinite(kb) && kb >= 0 ? kb : 32;
+														setSkillsFullTextBudgetDraft(String(n));
+														if (n * 1024 !== settings.skillsFullTextMaxBytes) {
+															setPartial({ skillsFullTextMaxBytes: n * 1024 });
 														}
 													}}
 													onKeyDown={(e) => {

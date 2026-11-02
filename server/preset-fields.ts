@@ -66,6 +66,8 @@ export const PRESET_FIELD_GROUPS = {
 		"skillsCatalogMaxDesc",
 		"skillsCatalogShowLocation",
 		"skillsCatalogBudget",
+		"skillsMaxFileBytes",
+		"skillsFullTextMaxBytes",
 	],
 	// 模型侧行为与各专用提示词
 	ai: [
@@ -375,6 +377,20 @@ export const PRESET_FIELD_META = {
 		labelEn: "Skill Catalog Budget",
 		hintZh: "技能名录字符上限（默认 20000），超限自动降级为紧凑名称索引",
 		hintEn: "Total catalog character limit (default 20000), falls back to compact name index when exceeded",
+	},
+	skillsMaxFileBytes: {
+		labelZh: "技能单文件上限",
+		labelEn: "Skill File Limit",
+		hintZh: "单个技能正文上限（字节，默认 8192）；全文注入与 skill 工具同口径，0 表示不设单文件上限",
+		hintEn:
+			"Per-skill file size limit in bytes (default 8192), shared by full-text injection and the skill tool; 0 disables the per-file cap",
+	},
+	skillsFullTextMaxBytes: {
+		labelZh: "技能全文注入预算",
+		labelEn: "Skill Full-Text Budget",
+		hintZh: "{{skills}} 全文注入的总字节预算（默认 32768，按 UTF-8 字节计），0 表示不设总量上限",
+		hintEn:
+			"Total byte budget for {{skills}} full-text injection (default 32768, counted in UTF-8 bytes); 0 disables the total cap",
 	},
 	// ai
 	steeringMode: {
@@ -748,6 +764,17 @@ export function formatPresetFieldValue(
 		const n = Number(value);
 		const zeroText = isZh ? "不限" : "No limit";
 		const valText = n === 0 ? zeroText : isZh ? `${n} 字符` : `${n} chars`;
+		return { summary: valText };
+	}
+	if (field === "skillsMaxFileBytes" || field === "skillsFullTextMaxBytes") {
+		const n = Number(value);
+		const zeroText = isZh ? "不限" : "No limit";
+		const valText =
+			n === 0
+				? zeroText
+				: isZh
+					? `${(n / 1024).toFixed(n % 1024 === 0 ? 0 : 1)} KB`
+					: `${(n / 1024).toFixed(n % 1024 === 0 ? 0 : 1)} KB`;
 		return { summary: valText };
 	}
 	if (field === "skillsCatalogShowLocation") {

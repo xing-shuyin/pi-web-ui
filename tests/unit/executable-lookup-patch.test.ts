@@ -311,6 +311,58 @@ function commandExists(cmd) {
 		});
 	});
 
+	it("catches a `}`-only regex literal nested inside a block, not just at the top level", () => {
+		// The line-end rule alone only saves a `}` at depth 1. One level deeper the regex
+		// brace still shifted the depth, so the *nested* block's own `}` looked like the end
+		// of the function: the fork below fell outside the body and the lookup was reported
+		// as already fork-free (the one direction that must never happen).
+		const nestedRegex = `function commandExists(cmd) {
+    const dirs = (process.env.PATH ?? "").split(":");
+    if (dirs.length > 0) {
+        const re = /^}$/;
+        void re;
+    }
+    try {
+        const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+        return result.error === undefined || result.error === null;
+    }
+    catch {
+        return false;
+    }
+}`;
+		expect(functionBody(nestedRegex, "function commandExists")).toContain("spawnSync");
+		expect(patchExecutableLookupSource(nestedRegex, "tools-manager")).toEqual({
+			code: nestedRegex,
+			status: "unsupported",
+		});
+	});
+
+	it("still reads the whole body across division, character classes and keyword-led regexes", () => {
+		const mixed = `function commandExists(cmd) {
+    const ratio = cmd.length / 2;
+    if (/[}]/.test(cmd) && ratio > 1) {
+        const trimmed = cmd.replace(/\s+/g, "");
+        if (trimmed === "x") return /[{}]/.test(trimmed);
+    }
+    try {
+        const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+        return result.error === undefined || result.error === null;
+    }
+    catch {
+        return false;
+    }
+}`;
+		expect(functionBody(mixed, "function commandExists")).toContain("spawnSync");
+		expect(patchExecutableLookupSource(mixed, "tools-manager").status).toBe("unsupported");
+		// Fork-free counterpart: the same shapes must not stop the positive verdict.
+		const forkFree = mixed.replace(
+			`const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+        return result.error === undefined || result.error === null;`,
+			`return (process.env.PATH ?? "").split(":").some((directory) => directory !== "");`,
+		);
+		expect(patchExecutableLookupSource(forkFree, "tools-manager").status).toBe("already");
+	});
+
 	it("only rewrites ES modules, so a CommonJS copy is left alone", () => {
 		expect(isPatchableFormat("module")).toBe(true);
 		expect(isPatchableFormat("module-typescript")).toBe(true);

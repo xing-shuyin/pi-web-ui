@@ -168,6 +168,45 @@ async function openBrowser(url: string): Promise<void> {
 		.unref();
 }
 
+/** 就绪探针：/api/health 无需鉴权（server/index.ts），有应答就说明已经 listen。 */
+const READY_HEALTH_PATH = "/api/health";
+const READY_TIMEOUT_MS = 30_000;
+const READY_POLL_MS = 250;
+
+/**
+ * 等到服务端真的应答再打开浏览器。
+ *
+ * spawn 之后服务还要激活插件、连 MCP 才 listen；当场 openBrowser 会打开一个所有
+ * 请求都 ERR_CONNECTION_REFUSED 的页面（主题样式表、提示模板全拉不到，只能手动刷新
+ * 才能恢复，issue #814）。bin/pi-web-ui.mjs 的前台启动一直用同样的轮询
+ * （openBrowserWhenUp），扩展路径当初漏了这一步。
+ *
+ * `isAlive` 为假（子进程已退出/被 /webui stop）时直接放弃：开一个注定打不开的页面
+ * 只会误导用户。超时也开（之前的行为），但先告警一次。
+ */
+export async function openBrowserWhenUp(
+	url: string,
+	port: number,
+	options: { isAlive: () => boolean; open?: (target: string) => Promise<void> },
+): Promise<void> {
+	const { isAlive, open = openBrowser } = options;
+	const deadline = Date.now() + READY_TIMEOUT_MS;
+	let ready = false;
+	while (Date.now() < deadline) {
+		if (!isAlive()) return;
+		try {
+			// 127.0.0.1 而非 localhost：服务默认只 bind IPv4 回环，localhost 可能先解析到 ::1。
+			await fetch(`http://127.0.0.1:${port}${READY_HEALTH_PATH}`, { signal: AbortSignal.timeout(1500) });
+			ready = true;
+			break;
+		} catch {
+			await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
+		}
+	}
+	if (!ready) console.warn(`[webui] 等待服务端就绪超时（${READY_TIMEOUT_MS / 1000}s），仍尝试打开 ${url}`);
+	await open(url);
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("webui", {
 		description: "启动本机 pi-web-ui Web 界面（/webui [--port N] [--cwd PATH] [--no-browser] | stop | status）",
@@ -319,7 +358,10 @@ export default function (pi: ExtensionAPI): void {
 
 			ctx.ui.notify(`pi-web-ui 启动中 → ${url}\n端口 ${port} · cwd ${cwd}\n(几秒后可用，/webui status 查看)`);
 
-			if (!opts.noBrowser) await openBrowser(url);
+			if (!opts.noBrowser)
+				void openBrowserWhenUp(url, port, {
+					isAlive: () => !stoppedManually && proc.exitCode === null && proc.signalCode === null,
+				});
 		},
 	});
 

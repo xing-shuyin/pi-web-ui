@@ -111,6 +111,9 @@ const ALL = [
 	"plugin-settings-test",
 	"plugin-test",
 	"plugin-update-test",
+	// #813：install --force 升级不得清空插件目录里的插件数据（db-connections.json 同款），
+	// 只删上一版随包清单内的文件；无清单的老安装降级为「不清理」。
+	"plugin-upgrade-data-preserve-test",
 	// --build 自动推断 + --no-build + install --catalog（issue #165，零网络本地目录源）。
 	"plugin-catalog-cli-test",
 	"preview-test",

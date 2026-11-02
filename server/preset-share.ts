@@ -342,6 +342,8 @@ const PRESET_FIELD_KINDS = {
 	skillsCatalogMaxDesc: "number",
 	skillsCatalogShowLocation: "bool",
 	skillsCatalogBudget: "number",
+	skillsMaxFileBytes: "number",
+	skillsFullTextMaxBytes: "number",
 	// -- ai --------------------------------------------------------------
 	steeringMode: "queueMode",
 	followUpMode: "queueMode",
