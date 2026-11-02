@@ -25,22 +25,63 @@ let candidateRootsCachedAt = 0;
 const CANDIDATE_CACHE_TTL_MS = 5000;
 const packageRootCache = new Map<string, string | null>();
 
+/** npm 显式指定的配置文件（npm 自己也认这两个环境变量）。 */
+function npmrcOverrides(): { user: string | null; global: string | null } {
+	const env = process.env;
+	const user = env.npm_config_userconfig || env.NPM_CONFIG_USERCONFIG || null;
+	const globalConfig = env.npm_config_globalconfig || env.NPM_CONFIG_GLOBALCONFIG || null;
+	return { user, global: globalConfig };
+}
+
+/** prefix 候选（不含 npmrc）：环境变量优先，其余来自运行中的 node 二分进制。 */
+function envPrefixes(): string[] {
+	const out: string[] = [];
+	for (const p of [process.env.npm_config_prefix, process.env.NPM_CONFIG_PREFIX]) {
+		if (p) out.push(p);
+	}
+	return out;
+}
+
 /**
- * 从 npmrc 里读取 `prefix=`（纯解析，不执行 npm 本体）。
- * 位置顺序沿用 npm：用户配置在前，系统配置在后。
+ * 默认 prefix：npm 在 POSIX 上取 node 可执行文件的安装前缀，在 Windows 上取 %APPDATA%\npm。
  */
-function readNpmrcPrefixes(): string[] {
+function defaultPrefixes(): string[] {
+	const out: string[] = [];
+	try {
+		const nodeDir = dirname(process.execPath);
+		out.push(join(nodeDir, ".."), nodeDir);
+	} catch {
+		/* ignore */
+	}
+	if (process.platform === "win32" && process.env.APPDATA) out.push(join(process.env.APPDATA, "npm"));
+	return out;
+}
+
+/**
+ * npmrc 候选位置：显式覆盖 > 用户级 > 各 prefix 的 etc/npmrc > 平台固定路径（顺序同 npm）。
+ */
+function npmrcLocations(prefixes: string[]): string[] {
 	const env = process.env;
 	const home = env.HOME || env.USERPROFILE || homedir();
 	const isWin = process.platform === "win32";
-	const locations = [
-		join(home, ".npmrc"),
-		env.PREFIX ? join(env.PREFIX, "etc", "npmrc") : "/usr/local/etc/npmrc",
-		isWin ? (env.APPDATA ? join(env.APPDATA, "npm", "etc", "npmrc") : null) : "/etc/npmrc",
-		isWin && env.ProgramFiles ? join(env.ProgramFiles, "nodejs", "etc", "npmrc") : null,
-		isWin ? null : "/usr/etc/npmrc",
-	].filter((loc): loc is string => !!loc);
+	const { user, global } = npmrcOverrides();
 
+	const locations: string[] = [];
+	if (user) locations.push(user);
+	locations.push(join(home, ".npmrc"));
+	if (global) locations.push(global);
+	for (const prefix of prefixes) locations.push(join(prefix, "etc", "npmrc"));
+	// 包管理器/系统的固定位置（Homebrew 在 Apple Silicon 上走 /opt/homebrew）
+	locations.push("/etc/npmrc", "/usr/etc/npmrc", "/usr/local/etc/npmrc", "/opt/homebrew/etc/npmrc");
+	if (isWin && env.APPDATA) locations.push(join(env.APPDATA, "npm", "etc", "npmrc"));
+	if (isWin && env.ProgramFiles) locations.push(join(env.ProgramFiles, "nodejs", "etc", "npmrc"));
+
+	return [...new Set(locations.map((loc) => resolve(loc)))];
+}
+
+/** 从给定位置读取 npmrc 里的 `prefix=`（纯解析，不执行 npm 本体）。 */
+function readNpmrcPrefixes(locations: string[]): string[] {
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
 	const prefixes: string[] = [];
 	for (const loc of locations) {
 		try {
@@ -51,10 +92,7 @@ function readNpmrcPrefixes(): string[] {
 				const m = trimmed.match(/^prefix\s*=\s*(.+)$/);
 				if (!m) continue;
 				let value = m[1].trim();
-				if (
-					(value.startsWith('"') && value.endsWith('"')) ||
-					(value.startsWith("'") && value.endsWith("'"))
-				) {
+				if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
 					value = value.slice(1, -1).trim();
 				}
 				if (value.startsWith("~")) value = join(home, value.slice(1));
@@ -68,21 +106,13 @@ function readNpmrcPrefixes(): string[] {
 }
 
 /**
- * npm 全局 prefix 候选，优先级同 npm 自身：环境变量 > npmrc 的 prefix= > 运行中 node 的安装位置。
+ * npm 全局 prefix 候选，优先级同 npm 自身：环境变量 > npmrc 的 prefix= > 默认安装位置。
  */
 function npmPrefixCandidates(): string[] {
-	const raw: string[] = [];
-	for (const p of [process.env.npm_config_prefix, process.env.NPM_CONFIG_PREFIX]) {
-		if (p) raw.push(p);
-	}
-	raw.push(...readNpmrcPrefixes());
-	try {
-		const nodeDir = dirname(process.execPath);
-		raw.push(join(nodeDir, ".."), nodeDir);
-	} catch {
-		/* ignore */
-	}
-	return [...new Set(raw.filter(Boolean).map((p) => resolve(p)))];
+	const env = envPrefixes();
+	const defaults = defaultPrefixes();
+	const fromNpmrc = readNpmrcPrefixes(npmrcLocations([...env, ...defaults]));
+	return [...new Set([...env, ...fromNpmrc, ...defaults].filter(Boolean).map((p) => resolve(p)))];
 }
 
 /**
@@ -99,7 +129,9 @@ export function getSystemNpmRootG(): string | null {
 
 	// npm 在 POSIX 上装进 <prefix>/lib/node_modules，在 Windows 上装进 <prefix>/node_modules
 	const layouts =
-		process.platform === "win32" ? ["node_modules", join("lib", "node_modules")] : [join("lib", "node_modules"), "node_modules"];
+		process.platform === "win32"
+			? ["node_modules", join("lib", "node_modules")]
+			: [join("lib", "node_modules"), "node_modules"];
 	for (const prefix of npmPrefixCandidates()) {
 		for (const layout of layouts) {
 			const root = join(prefix, layout);

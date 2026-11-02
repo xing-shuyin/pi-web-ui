@@ -2,6 +2,18 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+// 测试级 tripwire：任何 `*Sync` 子进程调用都会抛错（#830 —— 服务端热路径禁止同步 spawn）
+vi.mock("node:child_process", () => ({
+	spawnSync: vi.fn(() => {
+		throw new Error("sync child-process call is forbidden here");
+	}),
+	execSync: vi.fn(() => {
+		throw new Error("sync child-process call is forbidden here");
+	}),
+	execFileSync: vi.fn(() => {
+		throw new Error("sync child-process call is forbidden here");
+	}),
+}));
 import {
 	getCandidateNodeModulesRoots,
 	getSystemNpmRootG,
@@ -207,17 +219,62 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			}
 		});
 
-		it("没有 prefix 指向候选时安全返回 null", () => {
-			vi.stubEnv("npm_config_prefix", "");
-			vi.stubEnv("NPM_CONFIG_PREFIX", "");
-			vi.stubEnv("HOME", mkdtempSync(join(tmpdir(), "engine-npm-nohome-")));
+		it("有子进程 API 可用也绝不调用（spawn 禁令）", () => {
+			const prefix = mkdtempSync(join(tmpdir(), "engine-npm-nospawn-"));
+			mkdirSync(join(prefix, "lib", "node_modules"), { recursive: true });
 			try {
+				vi.stubEnv("npm_config_prefix", prefix);
+				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				getCandidateNodeModulesRoots({ refresh: true });
+				// node:child_process 在本文件里被 mock 成「一调用就抛」：旧实现会吞掉异常返回 null
+				expect(getSystemNpmRootG()).toBe(resolve(prefix, "lib", "node_modules"));
+			} finally {
+				vi.unstubAllEnvs();
+				rmSync(prefix, { recursive: true, force: true });
+				getCandidateNodeModulesRoots({ refresh: true });
+			}
+		});
+
+		it("读取 ~/.npmrc 的 prefix=（引号、~ 展开、跳过注释与相对值）", () => {
+			const home = mkdtempSync(join(tmpdir(), "engine-npm-rc-"));
+			const target = join(home, "npm-global");
+			mkdirSync(join(target, "lib", "node_modules"), { recursive: true });
+			writeFileSync(
+				join(home, ".npmrc"),
+				[
+					"# comment",
+					"; another comment",
+					`prefix="~/npm-global"`,
+					"prefix=relative/ignored",
+					"registry=https://registry.npmjs.org/",
+				].join("\n"),
+			);
+			try {
+				vi.stubEnv("HOME", home);
+				vi.stubEnv("npm_config_prefix", "");
+				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				getCandidateNodeModulesRoots({ refresh: true });
+				expect(getSystemNpmRootG()).toBe(resolve(target, "lib", "node_modules"));
+			} finally {
+				vi.unstubAllEnvs();
+				rmSync(home, { recursive: true, force: true });
+				getCandidateNodeModulesRoots({ refresh: true });
+			}
+		});
+
+		it("没有 npmrc/prefix 指向候选时安全回退（且不残留临时 HOME）", () => {
+			const home = mkdtempSync(join(tmpdir(), "engine-npm-empty-"));
+			try {
+				vi.stubEnv("HOME", home);
+				vi.stubEnv("npm_config_prefix", "");
+				vi.stubEnv("NPM_CONFIG_PREFIX", "");
 				getCandidateNodeModulesRoots({ refresh: true });
 				const resolved = getSystemNpmRootG();
 				// 有值的唯一合法来源是运行中 node 自带的安装前缀，且必须真实存在
 				if (resolved !== null) expect(existsSync(resolved)).toBe(true);
 			} finally {
 				vi.unstubAllEnvs();
+				rmSync(home, { recursive: true, force: true });
 				getCandidateNodeModulesRoots({ refresh: true });
 			}
 		});
