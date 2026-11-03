@@ -205,7 +205,7 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			mkdirSync(globalRoot, { recursive: true });
 			try {
 				vi.stubEnv("npm_config_prefix", prefix);
-				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				if (process.platform !== "win32") vi.stubEnv("NPM_CONFIG_PREFIX", "");
 				getCandidateNodeModulesRoots({ refresh: true });
 				expect(getSystemNpmRootG()).toBe(resolve(globalRoot));
 				// 结果进缓存：第二次调用不再重新推导
@@ -224,7 +224,7 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			mkdirSync(join(prefix, "lib", "node_modules"), { recursive: true });
 			try {
 				vi.stubEnv("npm_config_prefix", prefix);
-				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				if (process.platform !== "win32") vi.stubEnv("NPM_CONFIG_PREFIX", "");
 				getCandidateNodeModulesRoots({ refresh: true });
 				// node:child_process 在本文件里被 mock 成「一调用就抛」：旧实现会吞掉异常返回 null
 				expect(getSystemNpmRootG()).toBe(resolve(prefix, "lib", "node_modules"));
@@ -252,7 +252,7 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			try {
 				vi.stubEnv("HOME", home);
 				vi.stubEnv("npm_config_prefix", "");
-				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				if (process.platform !== "win32") vi.stubEnv("NPM_CONFIG_PREFIX", "");
 				getCandidateNodeModulesRoots({ refresh: true });
 				expect(getSystemNpmRootG()).toBe(resolve(target, "lib", "node_modules"));
 			} finally {
@@ -267,7 +267,7 @@ describe("通用全局环境动态解析与穿透加载器（Universal Global Pa
 			try {
 				vi.stubEnv("HOME", home);
 				vi.stubEnv("npm_config_prefix", "");
-				vi.stubEnv("NPM_CONFIG_PREFIX", "");
+				if (process.platform !== "win32") vi.stubEnv("NPM_CONFIG_PREFIX", "");
 				getCandidateNodeModulesRoots({ refresh: true });
 				const resolved = getSystemNpmRootG();
 				// 有值的唯一合法来源是运行中 node 自带的安装前缀，且必须真实存在
