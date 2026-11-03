@@ -99,19 +99,21 @@ export function classifyQuestionAddedScroll(args: {
 	nearBottom?: boolean;
 	hasJumpTarget: boolean;
 }): { shouldScroll: boolean; reason: "conv_changed" | "question_added" | "initial_load" | "none" } {
-	const { convChanged, lastQuestionId, prevLastQuestionId, escaped, nearBottom = true, hasJumpTarget } = args;
+	const { convChanged, lastQuestionId, prevLastQuestionId, escaped, hasJumpTarget } = args;
 	if (hasJumpTarget) return { shouldScroll: false, reason: "none" };
 	if (convChanged) {
 		return { shouldScroll: true, reason: "conv_changed" };
 	}
 	const questionAdded = lastQuestionId !== null && prevLastQuestionId !== null && lastQuestionId !== prevLastQuestionId;
 	if (questionAdded) {
-		// 仅当用户未主动向上逃逸且视口在底部时才自动吸底；若用户在部分消息阶段已向上翻阅，完整消息加载完坚决不拉回底部
-		return { shouldScroll: !escaped && nearBottom, reason: "question_added" };
+		// 仅当用户未主动向上逃逸时才自动吸底；若用户在部分消息阶段已向上翻阅，完整消息加载完坚决不拉回底部。
+		// 绝不能卡 nearBottom 阈值：新消息 DOM 提交后 scrollHeight 已增加，新消息高度通常远超 36px，
+		// 卡 nearBottom 会导致正常未逃逸时发出的新提问被误判拦截。
+		return { shouldScroll: !escaped, reason: "question_added" };
 	}
 	const initialLoad = prevLastQuestionId === null && lastQuestionId !== null;
 	if (initialLoad) {
-		return { shouldScroll: !escaped && nearBottom, reason: "initial_load" };
+		return { shouldScroll: !escaped, reason: "initial_load" };
 	}
 	return { shouldScroll: false, reason: "none" };
 }

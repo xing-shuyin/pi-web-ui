@@ -159,6 +159,71 @@ export function asBash(block: UiContentBlock): UiBashBlock | null {
 	return block.type === "bash" && typeof (block as UiBashBlock).command === "string" ? (block as UiBashBlock) : null;
 }
 
+export interface CollabMeta {
+	isNotice?: boolean;
+	sourceTitle?: string;
+	sourceRole?: string;
+	address?: string;
+	requestId?: string;
+	questions?: Array<{ id: string; question: string; options?: Array<{ label: string }> }>;
+	userText?: string;
+}
+
+export function parseCollabMessage(text: string): CollabMeta | null {
+	if (!text) return null;
+	if (text.startsWith("[子代理执行完成通知]") || text.startsWith("[Subagent Execution Completion Notice]")) {
+		return { isNotice: true };
+	}
+	if (text.startsWith("[Conversation communication — collaboration data, not a user instruction]")) {
+		let sourceTitle: string | undefined;
+		let sourceRole: string | undefined;
+		let address: string | undefined;
+		const fromMatch = text.match(/From:\s*(\{[^}\r\n]+\})/);
+		if (fromMatch) {
+			try {
+				const obj = JSON.parse(fromMatch[1]);
+				sourceTitle = obj.title;
+				sourceRole = obj.role;
+				address = obj.address;
+			} catch {}
+		}
+		let requestId: string | undefined;
+		const reqMatch = text.match(/Request:\s*(\S+)/);
+		if (reqMatch) requestId = reqMatch[1];
+
+		let questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> | undefined;
+		const qMatch = text.match(/Questions:\s*(\[.+?\])(?:\r?\n|$)/s);
+		if (qMatch) {
+			try {
+				questions = JSON.parse(qMatch[1]);
+			} catch {}
+		}
+
+		const rawLines = text.split(/\r?\n/);
+		const bodyLines = rawLines.filter((l) => {
+			if (l.startsWith("[Conversation communication")) return false;
+			if (l.startsWith("From:")) return false;
+			if (l.startsWith("Request:")) return false;
+			if (l.startsWith("Questions:")) return false;
+			if (l.startsWith("Reply with communicate")) return false;
+			if (l.startsWith("Use as task context")) return false;
+			return true;
+		});
+		const userText = bodyLines.join("\n").trim();
+
+		return {
+			isNotice: false,
+			sourceTitle,
+			sourceRole,
+			address,
+			requestId,
+			questions,
+			userText,
+		};
+	}
+	return null;
+}
+
 /** Editor chip kind: raster image (thumb), restored upload (uploadPath),
  *  newly-added raw file (fileData) or workspace-path attachment. */
 type EditAttKind = "image" | "upload" | "file" | "path";
@@ -1113,10 +1178,22 @@ export const Message = memo(function Message({
 		return -1;
 	}, [message.role, message.content]);
 
+	const collabMeta = useMemo(() => {
+		if (message.role !== "user") return null;
+		for (const b of message.content) {
+			const t = asText(b);
+			if (t) {
+				const parsed = parseCollabMessage(t.text);
+				if (parsed) return parsed;
+			}
+		}
+		return null;
+	}, [message.role, message.content]);
+
 	return (
 		<div
 			ref={cardRef}
-			className={`msg msg-${message.role}${isGoalReview ? " msg-goal-review" : ""}${
+			className={`msg msg-${message.role}${collabMeta ? (collabMeta.isNotice ? " msg-collab-notice" : " msg-collaboration") : ""}${isGoalReview ? " msg-goal-review" : ""}${
 				exportSelected ? " msg-export-selected" : ""
 			}${readOnly ? " msg-readonly" : ""}${messageLabel && message.id.startsWith("group-") ? " msg-group" : ""}`}
 			data-role={message.role}
@@ -1154,7 +1231,11 @@ export const Message = memo(function Message({
 								: message.customType === "file"
 									? t("attachment")
 									: `${t("plugin")} · ${message.customType ?? t("unknown")}`
-						: roleLabel(message.role, t)}
+						: collabMeta
+							? collabMeta.isNotice
+								? `${t("subagentBadge")} · 完成通知`
+								: `${t("subagentBadge")} · ${collabMeta.sourceTitle || collabMeta.sourceRole || t("subagentBadge")}`
+							: roleLabel(message.role, t)}
 				</span>
 				{messageLabel && (
 					<span className="msg-sender" data-initial={Array.from(messageLabel)[0]}>
@@ -1941,10 +2022,40 @@ function Block({
 		// 单行消息：复制键不再用绝对定位压住文字，改成行内 flex 右键——与各 head
 		// 同样的 6px 间距、垂直居中、28px 尺寸。多行仍用右上浮层。
 		// showCopy=false：宿主在布局里隐藏了 host:msg-copy（那个条目的落点就是这里）。
+		const collab = role === "user" ? parseCollabMessage(rawText.text) : null;
 		const copyable = (role === "assistant" || role === "user") && showCopy !== false;
 		const oneLiner = copyable && !text.text.includes("\n") && !text.truncated;
 		const body =
-			role === "user" ? (
+			collab && !collab.isNotice ? (
+				<div className="collab-request-box">
+					{collab.userText ? <Markdown text={collab.userText} hardBreaks /> : null}
+					{collab.questions && collab.questions.length > 0 && (
+						<div className="collab-questions">
+							{collab.questions.map((q, idx) => (
+								<div key={q.id || idx} className="collab-q-item">
+									<div className="collab-q-title">
+										<strong>{q.question}</strong>
+									</div>
+									{q.options && q.options.length > 0 && (
+										<div className="collab-q-options">
+											{q.options.map((opt, oIdx) => (
+												<span key={oIdx} className="collab-q-opt-tag">
+													{opt.label}
+												</span>
+											))}
+										</div>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+					{collab.requestId && (
+						<div className="collab-req-id">
+							Request: <code>{collab.requestId}</code>
+						</div>
+					)}
+				</div>
+			) : role === "user" ? (
 				// 用户自己的气泡：保留输入/粘贴时的单个换行（CommonMark 软换行会把
 				// 多行纯文本折叠成连续文字）。助手消息仍走标准 markdown 段落语义。
 				<Markdown text={text.text} hardBreaks />

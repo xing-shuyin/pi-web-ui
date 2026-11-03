@@ -153,12 +153,16 @@ export function DeviceGroupSection({
 	selectedRoomId,
 	flex,
 	onCollapsedChange,
+	hideHeader = false,
+	onRoomCountChange,
 }: {
 	active?: boolean;
 	entry?: UiSlotEntry;
 	selectedRoomId?: string | null;
 	flex?: number;
 	onCollapsedChange?: (collapsed: boolean) => void;
+	hideHeader?: boolean;
+	onRoomCountChange?: (count: number) => void;
 }) {
 	const { locale } = useI18n();
 	const w = words[isZhLocale(locale) ? "zh" : "en"];
@@ -201,6 +205,7 @@ export function DeviceGroupSection({
 			(next) => {
 				setBound(confirmedBound);
 				setRooms(next);
+				onRoomCountChange?.(next.length);
 				setError(null);
 				setLoading(false);
 			},
@@ -290,6 +295,117 @@ export function DeviceGroupSection({
 
 	if (bound === false || (bound === null && loading)) return null;
 
+	const body = (
+		<div className="lp-section-body dg-side-body">
+			{error && (
+				<div className="dg-side-error" role="status">
+					{w[error]}
+					{error === "bind" ? (
+						<button type="button" className="dc-button" onClick={() => openGroup({})}>
+							{w.settings}
+						</button>
+					) : (
+						<button type="button" className="dc-button" onClick={() => refreshRef.current?.refresh()}>
+							{w.retry}
+						</button>
+					)}
+				</div>
+			)}
+			{!error && rooms.length === 0 && <div className="dg-side-empty">{loading ? w.loading : w.empty}</div>}
+			{rooms.map((room) => (
+				<div key={room.id} className="dg-side-item">
+					<div className="dg-side-heading">
+						<button
+							type="button"
+							className="dg-side-toggle"
+							aria-expanded={expandedRooms.has(room.id)}
+							aria-label={`${room.name} · ${isZhLocale(locale) ? "成员" : "Members"}`}
+							onClick={() =>
+								setExpandedRooms((previous) => {
+									const next = new Set(previous);
+									if (next.has(room.id)) next.delete(room.id);
+									else next.add(room.id);
+									return next;
+								})
+							}
+						>
+							{expandedRooms.has(room.id) ? <FiChevronUp /> : <FiChevronDown />}
+						</button>
+						<div
+							role="button"
+							tabIndex={0}
+							className={`dg-side-row${selectedRoomId === room.id ? " is-selected" : ""}`}
+							aria-current={selectedRoomId === room.id ? "page" : undefined}
+							title={room.name}
+							onClick={() => openGroup({ roomId: room.id })}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									openGroup({ roomId: room.id });
+								}
+							}}
+							onContextMenu={(event) => menu(event, room)}
+						>
+							<FiUsers />
+							<span className="dg-side-name">{room.name}</span>
+						</div>
+						<button
+							type="button"
+							className="dg-side-toggle"
+							aria-label={`${room.name} · ${isZhLocale(locale) ? "添加 Bot" : "Add Bot"}`}
+							title={isZhLocale(locale) ? "添加或新建 Bot" : "Add or create Bot"}
+							onClick={() => setAddingBots(room)}
+						>
+							<FiPlus />
+						</button>
+					</div>
+					{expandedRooms.has(room.id) && <DeviceGroupMembers botIds={room.botIds} roomId={room.id} />}
+					{renaming === room.id && (
+						<form
+							className="dg-side-rename"
+							onSubmit={(event) => {
+								event.preventDefault();
+								if (name.trim()) void mutate(room, "rename");
+							}}
+						>
+							<input
+								className="dc-input"
+								aria-label={w.name}
+								value={name}
+								maxLength={120}
+								autoFocus
+								disabled={busy}
+								onChange={(event) => setName(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === "Escape") setRenaming(null);
+								}}
+							/>
+							<button type="submit" className="dc-button" disabled={busy || !name.trim()}>
+								{w.save}
+							</button>
+							<button type="button" className="dc-button" disabled={busy} onClick={() => setRenaming(null)}>
+								{w.cancel}
+							</button>
+						</form>
+					)}
+				</div>
+			))}
+		</div>
+	);
+
+	if (hideHeader) {
+		return (
+			<section
+				className="lp-section dg-side-section"
+				aria-label={title}
+				style={flex !== undefined ? { flex: `${flex} 1 0px` } : undefined}
+			>
+				{body}
+				{addingBots && <DeviceGroupBotDialog room={addingBots} onClose={() => setAddingBots(null)} />}
+			</section>
+		);
+	}
+
 	return (
 		<section
 			className={`lp-section dg-side-section ${collapsed ? "collapsed" : ""}`}
@@ -321,103 +437,7 @@ export function DeviceGroupSection({
 					</button>
 				</div>
 			</div>
-			{!collapsed && (
-				<div className="lp-section-body dg-side-body">
-					{error && (
-						<div className="dg-side-error" role="status">
-							{w[error]}
-							{error === "bind" ? (
-								<button type="button" className="dc-button" onClick={() => openGroup({})}>
-									{w.settings}
-								</button>
-							) : (
-								<button type="button" className="dc-button" onClick={() => refreshRef.current?.refresh()}>
-									{w.retry}
-								</button>
-							)}
-						</div>
-					)}
-					{!error && rooms.length === 0 && <div className="dg-side-empty">{loading ? w.loading : w.empty}</div>}
-					{rooms.map((room) => (
-						<div key={room.id} className="dg-side-item">
-							<div className="dg-side-heading">
-								<button
-									type="button"
-									className="dg-side-toggle"
-									aria-expanded={expandedRooms.has(room.id)}
-									aria-label={`${room.name} · ${isZhLocale(locale) ? "成员" : "Members"}`}
-									onClick={() =>
-										setExpandedRooms((previous) => {
-											const next = new Set(previous);
-											if (next.has(room.id)) next.delete(room.id);
-											else next.add(room.id);
-											return next;
-										})
-									}
-								>
-									{expandedRooms.has(room.id) ? <FiChevronUp /> : <FiChevronDown />}
-								</button>
-								<div
-									role="button"
-									tabIndex={0}
-									className={`dg-side-row${selectedRoomId === room.id ? " is-selected" : ""}`}
-									aria-current={selectedRoomId === room.id ? "page" : undefined}
-									title={room.name}
-									onClick={() => openGroup({ roomId: room.id })}
-									onKeyDown={(event) => {
-										if (event.key === "Enter" || event.key === " ") {
-											event.preventDefault();
-											openGroup({ roomId: room.id });
-										}
-									}}
-									onContextMenu={(event) => menu(event, room)}
-								>
-									<FiUsers />
-									<span className="dg-side-name">{room.name}</span>
-								</div>
-								<button
-									type="button"
-									className="dg-side-toggle"
-									aria-label={`${room.name} · ${isZhLocale(locale) ? "添加 Bot" : "Add Bot"}`}
-									title={isZhLocale(locale) ? "添加或新建 Bot" : "Add or create Bot"}
-									onClick={() => setAddingBots(room)}
-								>
-									<FiPlus />
-								</button>
-							</div>
-							{expandedRooms.has(room.id) && <DeviceGroupMembers botIds={room.botIds} roomId={room.id} />}
-							{renaming === room.id && (
-								<form
-									className="dg-side-rename"
-									onSubmit={(event) => {
-										event.preventDefault();
-										if (name.trim()) void mutate(room, "rename");
-									}}
-								>
-									<input
-										className="dc-input"
-										aria-label={w.name}
-										value={name}
-										maxLength={120}
-										autoFocus
-										disabled={busy}
-										onChange={(event) => setName(event.target.value)}
-										onKeyDown={(event) => {
-											if (event.key === "Escape") setRenaming(null);
-										}}
-									/>
-									<button type="submit" className="dc-button" disabled={busy || !name.trim()}>
-										{w.save}
-									</button>
-									<button type="button" className="dc-button" disabled={busy} onClick={() => setRenaming(null)}>
-										{w.cancel}
-									</button>
-								</form>
-							)}
-						</div>
-					))}
-				</div>
-			)}
+			{!collapsed && body}
 			{addingBots && <DeviceGroupBotDialog room={addingBots} onClose={() => setAddingBots(null)} />}
 		</section>
 	);

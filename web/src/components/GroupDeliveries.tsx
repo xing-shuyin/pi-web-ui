@@ -100,6 +100,8 @@ function ConversationDelivery({
 	const attention = groupAttention(conversation);
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState("");
+	const [stopping, setStopping] = useState(false);
+	const [stopError, setStopError] = useState("");
 	const [history, setHistory] = useState<{ deliveries: DeviceDelivery[]; reviews: DeviceReview[] } | null>(null);
 	const [historyError, setHistoryError] = useState("");
 	const [historyOpen, setHistoryOpen] = useState(false);
@@ -167,6 +169,35 @@ function ConversationDelivery({
 						? "Bot 配置已变更（revision/设备/成员），此会话无法继续；请新建对话。"
 						: "This Bot's configuration changed (revision, device or membership); start a new conversation."}
 				</p>
+			)}
+			{conversation.status !== "closed" && !conversation.stale && (
+				<>
+					<button
+						type="button"
+						className="btn"
+						disabled={disabled || stopping}
+						onClick={async () => {
+							if (disabled || stopping) return;
+							setStopping(true);
+							setStopError("");
+							try {
+								await request(
+									`rooms/${encodeURIComponent(roomId)}/conversations/${encodeURIComponent(conversation.id)}/stop`,
+									AbortSignal.timeout(15000),
+									{},
+								);
+								onRefresh?.();
+							} catch (cause) {
+								setStopError(cause instanceof Error ? cause.message : String(cause));
+							} finally {
+								setStopping(false);
+							}
+						}}
+					>
+						{zh ? "关闭会话" : "Close conversation"}
+					</button>
+					{stopError && <p role="alert">{stopError}</p>}
+				</>
 			)}
 			{(conversation.status === "closed" || conversation.stale) && !conversation.deliveryCount && (
 				<>

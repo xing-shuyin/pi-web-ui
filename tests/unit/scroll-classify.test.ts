@@ -204,6 +204,19 @@ describe("classifyQuestionAddedScroll — 提问到达与首次载入吸底决�
 		expect(res.reason).toBe("question_added");
 	});
 
+	it("[修复] 用户发出的新消息较长导致 DOM 渲染后视口暂未在底部（nearBottom=false），只要未逃逸就必须吸底跟随", () => {
+		const res = classifyQuestionAddedScroll({
+			convChanged: false,
+			lastQuestionId: "q-2",
+			prevLastQuestionId: "q-1",
+			escaped: false,
+			nearBottom: false,
+			hasJumpTarget: false,
+		});
+		expect(res.shouldScroll).toBe(true);
+		expect(res.reason).toBe("question_added");
+	});
+
 	it("[核心防护] 会话完整数据后置加载到位导致提问ID变更，用户已在部分消息阶段向上滚动逃逸 → 坚决不拉回底部", () => {
 		const res = classifyQuestionAddedScroll({
 			convChanged: false,
@@ -235,6 +248,19 @@ describe("classifyQuestionAddedScroll — 提问到达与首次载入吸底决�
 			lastQuestionId: "q-1",
 			prevLastQuestionId: null,
 			escaped: false,
+			hasJumpTarget: false,
+		});
+		expect(res.shouldScroll).toBe(true);
+		expect(res.reason).toBe("initial_load");
+	});
+
+	it("[修复] 首次载入或刷新时首批提问内容较多超过首屏高度（nearBottom=false），只要未逃逸就正常吸底", () => {
+		const res = classifyQuestionAddedScroll({
+			convChanged: false,
+			lastQuestionId: "q-1",
+			prevLastQuestionId: null,
+			escaped: false,
+			nearBottom: false,
 			hasJumpTarget: false,
 		});
 		expect(res.shouldScroll).toBe(true);

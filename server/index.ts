@@ -1491,6 +1491,8 @@ import {
 	getCachedEngineStatuses,
 	updateEngineBackground,
 	isEngineUpdating,
+	uninstallEngineBackground,
+	isEngineUninstalling,
 	ENGINE_PACKAGES,
 } from "./engine-probe.js";
 import type { EngineId, EngineStatus } from "./protocol.js";
@@ -1875,6 +1877,10 @@ export interface EngineService {
 		viewerId: string,
 	): { conversationId: string; owner: DispatchSession; ownerClientId: string } | undefined;
 	dispatchSharedConversationMessage?(viewerId: string, msg: ClientMessage): boolean;
+	dismissConversation?(
+		clientId: string,
+		msg: { id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string },
+	): Promise<boolean>;
 	resolveSharedQuestion?(
 		viewerId: string,
 		id: string,
@@ -2421,6 +2427,7 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 			const svc = ensureEngine("pi") as unknown as {
 				chatFromScheduler?: (t: {
 					id: string;
+					name?: string;
 					cwd: string;
 					prompt: string;
 					model?: string;
@@ -2456,6 +2463,7 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 				const runHeadless = (): Promise<{ ok: boolean; conversationId?: string; error?: string }> =>
 					svc.chatFromScheduler!({
 						id: task.id,
+						name: task.name,
 						cwd: task.cwd,
 						prompt: task.prompt,
 						model: task.model,
@@ -3237,6 +3245,112 @@ wss.on("connection", (ws) => {
 		}
 	};
 
+	const handleUninstallEngine = async (msg: Extract<ClientMessage, { type: "uninstall_engine" }>): Promise<void> => {
+		const targetEngine = String(msg.engineId || "").trim();
+		if (targetEngine === "pi") {
+			send({
+				type: "notice",
+				level: "error",
+				text: "Pi 为内置核心引擎，不支持卸载",
+				textEn: "Pi is the built-in core engine and cannot be uninstalled",
+			});
+			return;
+		}
+
+		const meta = ENGINE_PACKAGES[targetEngine];
+		if (!meta || !meta.packageName) {
+			send({
+				type: "notice",
+				level: "error",
+				text: `不支持或未知的引擎「${targetEngine}」`,
+				textEn: `Unsupported or unknown engine "${targetEngine}"`,
+			});
+			return;
+		}
+
+		const refusal = managedRefusal("uninstall_engine", MANAGED);
+		if (refusal) {
+			send({ type: "notice", level: "error", text: refusal });
+			return;
+		}
+
+		if (isEngineUpdating(targetEngine)) {
+			send({
+				type: "notice",
+				level: "warning",
+				text: `引擎「${targetEngine.toUpperCase()}」正在后台更新中，请稍候再试`,
+				textEn: `Engine "${targetEngine.toUpperCase()}" is currently updating, please wait…`,
+			});
+			return;
+		}
+
+		if (isEngineUninstalling(targetEngine)) {
+			send({
+				type: "notice",
+				level: "warning",
+				text: `引擎「${targetEngine.toUpperCase()}」正在后台卸载中，请稍候…`,
+				textEn: `Engine "${targetEngine.toUpperCase()}" is already uninstalling, please wait…`,
+			});
+			return;
+		}
+
+		const engineDisplayNames: Record<string, { zh: string; en: string }> = {
+			pi: { zh: "Pi", en: "Pi" },
+			dsh: { zh: "DSH", en: "DSH" },
+			claude: { zh: "Claude Code", en: "Claude Code" },
+			codex: { zh: "Codex", en: "Codex" },
+			durable: { zh: "Pi Durable", en: "Pi Durable" },
+		};
+		const displayName = engineDisplayNames[targetEngine] ?? {
+			zh: targetEngine.toUpperCase(),
+			en: targetEngine.toUpperCase(),
+		};
+
+		const broadcastStatuses = (list: EngineStatus[]) => {
+			const payload = JSON.stringify({ type: "engines_status", engines: list });
+			for (const c of wss.clients) {
+				if (c.readyState === WebSocket.OPEN) {
+					try {
+						c.send(payload);
+					} catch {
+						/* ignore */
+					}
+				}
+			}
+		};
+
+		send({
+			type: "notice",
+			level: "info",
+			text: `正在后台卸载 ${displayName.zh} 引擎（npm uninstall -g ${meta.packageName}）…`,
+			textEn: `Uninstalling ${displayName.en} engine in background (npm uninstall -g ${meta.packageName})…`,
+		});
+
+		const uninstallPromise = uninstallEngineBackground(targetEngine);
+		broadcastStatuses(getCachedEngineStatuses());
+
+		const res = await uninstallPromise;
+		const freshEngines = await probeAllEngines(true);
+		broadcastStatuses(freshEngines);
+
+		if (res.ok) {
+			send({
+				type: "notice",
+				level: "info",
+				text: `✅ ${displayName.zh} 引擎卸载完成`,
+				textEn: `✅ ${displayName.en} engine uninstalled successfully`,
+			});
+		} else {
+			const detail = res.error || (res.output ? res.output.slice(-200) : "");
+			send({
+				type: "notice",
+				level: "error",
+				text: `❌ ${displayName.zh} 引擎卸载失败${detail ? `：${detail}` : ""}`,
+				textEn: `❌ Failed to uninstall ${displayName.en} engine${detail ? `: ${detail}` : ""}`,
+			});
+		}
+	};
+
 	const dispatch = (msg: ClientMessage, wireBytes?: number): void => {
 		if (!clientId) {
 			if (!pending.push(msg, wireBytes)) ws.close(1009, "Pending command budget exceeded");
@@ -3251,6 +3365,11 @@ wss.on("connection", (ws) => {
 
 		if (msg.type === "update_engine") {
 			void handleUpdateEngine(msg);
+			return;
+		}
+
+		if (msg.type === "uninstall_engine") {
+			void handleUninstallEngine(msg);
 			return;
 		}
 
@@ -3329,7 +3448,7 @@ wss.on("connection", (ws) => {
 			if (handlePresetAndDshMessage(msg, cs)) return;
 			if (handleModelAndProviderMessage(msg, cs)) return;
 			if (handleTerminalMessage(msg, cs)) return;
-			if (handleSessionLifecycleMessage(msg, cs, send)) return;
+			if (handleSessionLifecycleMessage(msg, cs, send, service, clientId)) return;
 			if (handlePlanAndGoalMessage(msg, cs)) return;
 			if (handleScheduleMessage(msg, scheduler, send)) return;
 			if (handleRemoteSshMessage(msg, remoteSshService, send)) return;

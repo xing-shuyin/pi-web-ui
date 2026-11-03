@@ -6,12 +6,14 @@ import {
 	enrichWithUpdateInfo,
 	getCachedEngineStatuses,
 	isEngineUpdating,
+	isEngineUninstalling,
 	probeAllEngines,
 	probeClaude,
 	probeDsh,
 	probeEngine,
 	probePi,
 	updateEngineBackground,
+	uninstallEngineBackground,
 } from "../../server/engine-probe.js";
 import type { EngineStatus } from "../../server/protocol.js";
 
@@ -139,6 +141,28 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 		const initialStatuses = getCachedEngineStatuses();
 		for (const s of initialStatuses) {
 			expect(s.updating).toBeFalsy();
+		}
+	});
+
+	it("uninstallEngineBackground() 拒绝卸载内置核心引擎 pi 与未知引擎，且正确维护 isEngineUninstalling 状态", async () => {
+		// pi 为内置核心引擎，拒绝卸载
+		expect(isEngineUninstalling("pi")).toBe(false);
+		const piRes = await uninstallEngineBackground("pi");
+		expect(piRes.ok).toBe(false);
+		expect(piRes.error).toContain("内置核心引擎");
+
+		// 未知引擎直接返回失败
+		expect(isEngineUninstalling("unknown-engine")).toBe(false);
+		const unknownRes = await uninstallEngineBackground("unknown-engine");
+		expect(unknownRes.ok).toBe(false);
+		expect(unknownRes.error).toContain("unknown-engine");
+
+		// 默认状态下所有引擎均为非卸载中
+		expect(isEngineUninstalling("dsh")).toBe(false);
+		expect(isEngineUninstalling("claude")).toBe(false);
+		const initialStatuses = getCachedEngineStatuses();
+		for (const s of initialStatuses) {
+			expect(s.uninstalling).toBeFalsy();
 		}
 	});
 

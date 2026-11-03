@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 import { parseSessionInfoFast } from "../../server/session-parser.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import { _chatReducerForTest } from "../../web/src/use-chat.js";
+import { createOptimisticQueueTracker } from "../../web/src/optimistic-queue.js";
 
 describe("workspace & session streaming transition", () => {
 	it("extractTranscriptPreview extracts tail non-system messages and total count before runtime mounts", () => {
@@ -155,5 +157,61 @@ describe("workspace & session streaming transition", () => {
 		expect(previewState.historyTotal).toBe(2);
 		expect(previewState.sessionFile).toBeUndefined();
 		expect(previewState.messages).toHaveLength(2);
+	});
+
+	it("snapshot reconciles session transition even when target is a substring or trimmed sessionId", () => {
+		const targetSid = "1a07a-32d0-7208-b133-cf7870ab850e";
+		const fullSid = "0191a07a-32d0-7208-b133-cf7870ab850e";
+		const prevState = {
+			ready: true,
+			state: null,
+			transition: {
+				kind: "session" as const,
+				target: targetSid,
+				phase: "start" as const,
+				progress: 26,
+				startedAt: Date.now(),
+			},
+			optimisticQueue: createOptimisticQueueTracker(),
+			sessions: [],
+			liveOutputs: new Map(),
+			toolStatuses: new Map(),
+		} as any;
+
+		const nextState = _chatReducerForTest(prevState, {
+			type: "snapshot",
+			state: {
+				cwd: "/test",
+				conversationId: "c1",
+				sessionId: fullSid,
+				sessionFile: `/test/.sessions/2026-04-18_${fullSid}.jsonl`,
+				messages: [],
+			} as any,
+		});
+
+		expect(nextState.transition).toBeNull();
+	});
+
+	it("switchSession emits done transition_progress when target session is already in convs", async () => {
+		const cs = fakeClientSession() as any;
+		const emitted: any[] = [];
+		cs.emit = (msg: any) => emitted.push(msg);
+		cs.quiesceBlocked = () => false;
+		cs.switchConversation = vi.fn(async () => {});
+		const targetSid = "0191a07a-32d0-7208-b133-cf7870ab850e";
+		const conv = {
+			id: "c2",
+			session: { sessionId: targetSid, sessionFile: `/path/${targetSid}.jsonl` },
+		};
+		cs.convs.set("c2", conv);
+
+		await cs.switchSession("", targetSid);
+
+		expect(cs.switchConversation).toHaveBeenCalledWith("c2");
+		const doneProgress = emitted.find((m) => m.type === "transition_progress" && m.phase === "done");
+		expect(doneProgress).toBeDefined();
+		expect(doneProgress.kind).toBe("session");
+		expect(doneProgress.target).toBe(targetSid);
+		expect(doneProgress.progress).toBe(100);
 	});
 });

@@ -89,7 +89,14 @@ export class AgentService {
 		const viewer = this.clients.get(viewerClientId);
 		const owner = this.clients.get(ownerClientId);
 		const conversation = owner?.getConversation(convId);
-		if (!viewer || !owner || !conversation || conversation.independent !== false || conversation.isSubagent)
+		const isScheduler = ownerClientId.startsWith("scheduler:");
+		if (
+			!viewer ||
+			!owner ||
+			!conversation ||
+			(conversation.independent !== false && !isScheduler) ||
+			conversation.isSubagent
+		)
 			return false;
 		this.closeSharedConversation(viewerClientId);
 		const binding = { owner, conversation, ownerClientId, conversationId: convId, close: () => {}, send };
@@ -162,7 +169,7 @@ export class AgentService {
 			binding &&
 			this.clients.get(binding.ownerClientId) === binding.owner &&
 			binding.owner.getConversation(binding.conversationId) === binding.conversation &&
-			binding.conversation.independent === false
+			(binding.conversation.independent === false || binding.ownerClientId.startsWith("scheduler:"))
 		)
 			return binding;
 		if (binding) this.closeSharedConversation(viewerClientId);
@@ -416,6 +423,87 @@ export class AgentService {
 			default:
 				return false;
 		}
+	}
+
+	/**
+	 * 关闭对话（支持本端自身会话，或跨端关闭群组 Bot / 共享执行 / 离线残骸 / elsewhere 会话）。
+	 */
+	async dismissConversation(
+		requesterClientId: string,
+		msg: { id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string },
+	): Promise<boolean> {
+		const requester = this.clients.get(requesterClientId);
+		// 1. 本客户端自己持有该会话：走当前客户端正常流程
+		if (requester?.getConversation(msg.id)) {
+			await requester.dismissConversation(msg.id, msg.withFinishedSubagents, msg.force);
+			return true;
+		}
+
+		// 2. 跨客户端定位持有该会话的 owner
+		let ownerId = msg.owner;
+		let owner = ownerId ? this.clients.get(ownerId) : undefined;
+		let conv = owner?.getConversation(msg.id);
+
+		if (!owner || !conv) {
+			for (const [cid, c] of this.clients) {
+				const found = c.getConversation(msg.id);
+				if (found) {
+					ownerId = cid;
+					owner = c;
+					conv = found;
+					break;
+				}
+			}
+		}
+
+		if (!owner || !conv || !ownerId) {
+			requester?.sendNotice({
+				type: "notice",
+				level: "warning",
+				text: "该对话不存在或已关闭",
+				textEn: "This conversation does not exist or is already closed",
+			});
+			return false;
+		}
+
+		// 3. 针对共享执行客户端（如群组 Bot device-task-、定时任务、无头残骸）
+		const isSharedExecution = isSharedExecutionClientId(ownerId);
+		const isOffline = owner.sinkCount() === 0;
+
+		if (isSharedExecution || isOffline) {
+			if (owner.conversationStreaming(conv) && !msg.force) {
+				requester?.sendNotice({
+					type: "notice",
+					level: "warning",
+					text: `对话「${conv.title}」仍在运行中，请先等待结束或点击强行关闭`,
+					textEn: `Conversation "${conv.title}" is still running. Wait for it to finish or force dismiss.`,
+				});
+				return false;
+			}
+			if (owner.conversationStreaming(conv)) {
+				await owner.abortConversation(conv);
+			}
+			for (const [viewerId, binding] of this.sharedViewers) {
+				if (binding.owner === owner || binding.ownerClientId === ownerId) {
+					this.closeSharedConversation(viewerId);
+				}
+			}
+			this.clients.delete(ownerId);
+			await owner.dispose().catch(() => {});
+			this.pokeExternalRunning(ownerId);
+			requester?.sendNotice({
+				type: "notice",
+				level: "info",
+				text: `已关闭并移出对话「${conv.title}」`,
+				textEn: `Closed and dismissed conversation "${conv.title}"`,
+			});
+			return true;
+		}
+
+		// 4. 普通在线客户端持有的 shared/可过户会话
+		await owner.dismissConversation(conv.id, msg.withFinishedSubagents, msg.force);
+		this.pokeExternalRunning(ownerId);
+		return true;
 	}
 
 	/** 客户端 -> 最后一个浏览器断开的时刻（离线行宽限期起点；重连/认领即删）。 */
@@ -1165,6 +1253,7 @@ export class AgentService {
 	 *  不中止，继续在后台跑完）。 */
 	async chatFromScheduler(task: {
 		id: string;
+		name?: string;
 		cwd: string;
 		prompt: string;
 		model?: string;
@@ -1201,6 +1290,10 @@ export class AgentService {
 				}
 			}
 			const conversationId = cs.readConversationForPlugins()?.conversationId ?? "";
+			const taskTitle = (task.name || "").trim() || (text.length > 30 ? text.slice(0, 30) : text);
+			if (conversationId && taskTitle) {
+				void cs.renameConversation(conversationId, taskTitle);
+			}
 			void cs.prompt(`[定时任务] ${text}`);
 			// 等待运行结束：每 2s 轮询，最长 10 分钟。超时按失败记录（运行继续）。
 			const deadline = Date.now() + 10 * 60 * 1000;
@@ -1765,6 +1858,7 @@ export class AgentService {
 			if (clientId.startsWith("device-task-") && !isBotExecutionRegistered(clientId) && cs.sinkCount() === 0) {
 				this.clients.delete(clientId);
 				await cs.dispose();
+				this.pokeExternalRunning(clientId);
 				return cs;
 			}
 		} else {
@@ -1869,6 +1963,7 @@ export class AgentService {
 					// Keep uncertain/disconnected executions owned until that confirmation.
 					this.clients.delete(clientId);
 					void cs.dispose().catch(() => {});
+					this.pokeExternalRunning(clientId);
 					return;
 				}
 				// 最后一个 sink 断开 = 该客户端不再在线 → 它的行从「另一处」变成「另一处

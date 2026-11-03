@@ -9,10 +9,12 @@ import {
 	FiPlus,
 	FiRefreshCw,
 	FiSearch,
+	FiSliders,
 	FiTrash2,
 	FiX,
 	FiZap,
 } from "react-icons/fi";
+import { THINKING_VALUES, THINKING_PRESET_PROFILES, THINKING_FORMAT_OPTIONS, PRESET_BUDGETS } from "../thinking-levels";
 import type {
 	ProviderKeyInfo,
 	ProviderOAuthFlowState,
@@ -311,6 +313,48 @@ function getPresetTagLabel(tag: string, t: (k: any) => string): string {
 	}
 }
 
+const CUSTOM_THINKING_PRESETS_KEY = "pi_web_ui_thinking_custom_presets";
+
+export interface CustomThinkingPreset {
+	id: string;
+	name: string;
+	thinkingFormat?: string;
+	customExtraBody?: string;
+	map: UiThinkingLevelMap;
+}
+
+function loadCustomThinkingPresets(): CustomThinkingPreset[] {
+	if (typeof localStorage === "undefined") return [];
+	try {
+		const raw = localStorage.getItem(CUSTOM_THINKING_PRESETS_KEY);
+		return raw ? JSON.parse(raw) : [];
+	} catch {
+		return [];
+	}
+}
+
+function saveCustomThinkingPresets(presets: CustomThinkingPreset[]): void {
+	if (typeof localStorage === "undefined") return;
+	try {
+		localStorage.setItem(CUSTOM_THINKING_PRESETS_KEY, JSON.stringify(presets));
+	} catch {
+		// ignore
+	}
+}
+
+function validateJsonString(str: string): { valid: boolean; error?: string } {
+	if (!str.trim()) return { valid: true };
+	try {
+		const parsed = JSON.parse(str.trim());
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return { valid: false, error: "必须是 JSON 对象 (以 { 开头)" };
+		}
+		return { valid: true };
+	} catch (e) {
+		return { valid: false, error: (e as Error).message };
+	}
+}
+
 interface DraftModel {
 	id: string;
 	name: string;
@@ -321,6 +365,8 @@ interface DraftModel {
 	/** 模型级思考档位映射：前端不编辑，但必须原样带着往返（见 issue #771），
 	 *  否则「刷新 → 保存」会把网关自报的 xhigh/max 档位抹掉。 */
 	thinkingLevelMap?: UiThinkingLevelMap;
+	compat?: Record<string, unknown>;
+	customExtraBody?: string;
 	src?: string;
 }
 
@@ -374,6 +420,8 @@ function toDraft(p: UiProviderConfig): Draft {
 			contextWindow: m.contextWindow ? String(m.contextWindow) : "",
 			maxTokens: m.maxTokens ? String(m.maxTokens) : "",
 			...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+			...(m.compat ? { compat: m.compat } : {}),
+			...(m.customExtraBody ? { customExtraBody: m.customExtraBody } : {}),
 		})),
 	};
 }
@@ -667,6 +715,38 @@ export function ModelConfigModal({
 	const [hintText] = useState("");
 	const handledEnrichReq = useRef(0);
 
+	// 思考强度配置抽屉展开行索引
+	const [expandedThinkingIdx, setExpandedThinkingIdx] = useState<number | null>(null);
+	const [userPresets, setUserPresets] = useState<CustomThinkingPreset[]>(loadCustomThinkingPresets);
+	const [presetNameInput, setPresetNameInput] = useState("");
+	const [savingPresetForIdx, setSavingPresetForIdx] = useState<number | null>(null);
+
+	const handleSaveAsUserPreset = (idx: number) => {
+		const name = presetNameInput.trim();
+		if (!name || !editing) return;
+		const m = editing.models[idx];
+		if (!m) return;
+		const newPreset: CustomThinkingPreset = {
+			id: `preset-${Date.now()}`,
+			name,
+			thinkingFormat: (m.compat?.thinkingFormat as string) || undefined,
+			customExtraBody: m.customExtraBody?.trim() || undefined,
+			map: m.thinkingLevelMap ?? {},
+		};
+		const updated = [...userPresets, newPreset];
+		setUserPresets(updated);
+		saveCustomThinkingPresets(updated);
+		setPresetNameInput("");
+		setSavingPresetForIdx(null);
+	};
+
+	const handleDeleteUserPreset = (id: string, e: React.MouseEvent) => {
+		e.stopPropagation();
+		const updated = userPresets.filter((p) => p.id !== id);
+		setUserPresets(updated);
+		saveCustomThinkingPresets(updated);
+	};
+
 	// 刷新官方内置目录
 	const [builtinBusy, setBuiltinBusy] = useState(false);
 	const [builtinReqId, setBuiltinReqId] = useState(0);
@@ -783,6 +863,7 @@ export function ModelConfigModal({
 							maxTokens: m.maxTokens || (match.maxTokens ? String(match.maxTokens) : ""),
 							input: m.input === "text" && match.input?.includes("image") ? "text-image" : m.input,
 							reasoning: m.reasoning || (match.reasoning ?? false),
+							thinkingLevelMap: m.thinkingLevelMap || match.thinkingLevelMap,
 							src: match.source,
 						};
 					}),
@@ -984,6 +1065,8 @@ export function ModelConfigModal({
 				// 原样带回：服务端合并时「没带 = 保留磁盘值」，但草稿里带着更精确
 				// （编辑浏览器期间被刷新的档位不会丢）。
 				...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+				...(m.compat ? { compat: m.compat } : {}),
+				...(m.customExtraBody?.trim() ? { customExtraBody: m.customExtraBody.trim() } : {}),
 			}));
 		const config: UiProviderConfig = {
 			providerId,
@@ -1537,6 +1620,17 @@ export function ModelConfigModal({
 														>
 															{t("reasoningCheckboxLabel")}
 														</button>
+														{m.reasoning && (
+															<button
+																type="button"
+																className={`matrix-toggle-tag ${expandedThinkingIdx === idx ? "active thinking-config" : ""}`}
+																onClick={() => setExpandedThinkingIdx(expandedThinkingIdx === idx ? null : idx)}
+																title={t("thinkingConfigTitle")}
+															>
+																<FiSliders /> {t("thinkingConfigBtn")}{" "}
+																{m.thinkingLevelMap ? `(${t("thinkingCustomized")})` : ""}
+															</button>
+														)}
 														{defaultModel !== undefined &&
 															m.id.trim() &&
 															(() => {
@@ -1652,6 +1746,263 @@ export function ModelConfigModal({
 														})}
 													</div>
 												</div>
+
+												{/* 展开的思考强度配置抽屉 */}
+												{m.reasoning && expandedThinkingIdx === idx && (
+													<div className="matrix-thinking-config-drawer">
+														<div className="thinking-drawer-header">
+															<div className="thinking-drawer-title">
+																<FiSliders />
+																<span>{t("thinkingConfigBtn") || "思考配置"}</span>
+															</div>
+															<div className="thinking-drawer-actions">
+																<button
+																	type="button"
+																	className="btn xs text-btn"
+																	style={{ whiteSpace: "nowrap" }}
+																	onClick={() =>
+																		setModelRow(idx, {
+																			thinkingLevelMap: undefined,
+																			compat: undefined,
+																			customExtraBody: "",
+																		})
+																	}
+																	title={t("thinkingResetDefault")}
+																>
+																	{t("thinkingResetDefault")}
+																</button>
+															</div>
+														</div>
+
+														{/* 常见预设快捷套用 */}
+														<div className="thinking-presets-row">
+															<span className="thinking-presets-label">{t("thinkingQuickApply")}</span>
+															<div className="thinking-preset-pills">
+																{THINKING_PRESET_PROFILES.map((profile) => (
+																	<button
+																		key={profile.id}
+																		type="button"
+																		className="param-pill"
+																		onClick={() => {
+																			const currentCompat = { ...(m.compat ?? {}) };
+																			if (profile.thinkingFormat) {
+																				currentCompat.thinkingFormat = profile.thinkingFormat;
+																			} else if (profile.id === "fixed-deepseek" || profile.id === "claude-budget") {
+																				delete currentCompat.thinkingFormat;
+																			}
+																			setModelRow(idx, {
+																				thinkingLevelMap: profile.map,
+																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
+																			});
+																		}}
+																		title={profile.desc}
+																	>
+																		{profile.name}
+																	</button>
+																))}
+
+																{/* 用户自建命名预设 */}
+																{userPresets.map((preset) => (
+																	<span key={preset.id} className="param-pill user-preset-pill">
+																		<button
+																			type="button"
+																			className="user-preset-btn"
+																			onClick={() => {
+																				const currentCompat = { ...(m.compat ?? {}) };
+																				if (preset.thinkingFormat) {
+																					currentCompat.thinkingFormat = preset.thinkingFormat;
+																				} else {
+																					delete currentCompat.thinkingFormat;
+																				}
+																				setModelRow(idx, {
+																					thinkingLevelMap: preset.map,
+																					compat: Object.keys(currentCompat).length ? currentCompat : undefined,
+																					customExtraBody: preset.customExtraBody ?? "",
+																				});
+																			}}
+																			title={`套用自定义预设：${preset.name}`}
+																		>
+																			🏷️ {preset.name}
+																		</button>
+																		<button
+																			type="button"
+																			className="user-preset-del"
+																			onClick={(e) => handleDeleteUserPreset(preset.id, e)}
+																			title="删除此预设"
+																		>
+																			×
+																		</button>
+																	</span>
+																))}
+
+																{/* 存为新预设按钮已移至下方传输协议右侧，保持此行纯粹为预设选项 */}
+															</div>
+														</div>
+
+														{/* 进阶协议与参数透传 */}
+														<div className="thinking-advanced-row">
+															<div className="thinking-advanced-head">
+																<div className="thinking-format-selector">
+																	<span className="spec-combobox-label">{t("thinkingFormatLabel")}</span>
+																	<select
+																		className="spec-combobox-select"
+																		value={(m.compat?.thinkingFormat as string) ?? ""}
+																		onChange={(e) => {
+																			const fmt = e.target.value.trim();
+																			const currentCompat = { ...(m.compat ?? {}) };
+																			if (fmt) {
+																				currentCompat.thinkingFormat = fmt;
+																			} else {
+																				delete currentCompat.thinkingFormat;
+																			}
+																			setModelRow(idx, {
+																				compat: Object.keys(currentCompat).length ? currentCompat : undefined,
+																			});
+																		}}
+																	>
+																		{THINKING_FORMAT_OPTIONS.map((opt) => (
+																			<option key={opt.value} value={opt.value}>
+																				{opt.label}
+																			</option>
+																		))}
+																	</select>
+																</div>
+
+																{/* 存为新预设操作区（右侧对齐） */}
+																{savingPresetForIdx === idx ? (
+																	<div className="save-preset-inline">
+																		<input
+																			type="text"
+																			className="spec-combobox-custom-input"
+																			style={{ width: 130, textAlign: "left" }}
+																			placeholder="预设名称 (如: 16K模版)"
+																			value={presetNameInput}
+																			onChange={(e) => setPresetNameInput(e.target.value)}
+																			onKeyDown={(e) => {
+																				if (e.key === "Enter") handleSaveAsUserPreset(idx);
+																			}}
+																		/>
+																		<button
+																			type="button"
+																			className="btn xs"
+																			onClick={() => handleSaveAsUserPreset(idx)}
+																		>
+																			保存
+																		</button>
+																		<button
+																			type="button"
+																			className="btn xs text-btn"
+																			onClick={() => setSavingPresetForIdx(null)}
+																		>
+																			取消
+																		</button>
+																	</div>
+																) : (
+																	<button
+																		type="button"
+																		className="btn xs"
+																		onClick={() => {
+																			setSavingPresetForIdx(idx);
+																			setPresetNameInput("");
+																		}}
+																		title="将当前模型的思考配置、协议与 JSON 存为一个命名的预设模板"
+																	>
+																		<FiPlus /> 存为我的预设
+																	</button>
+																)}
+															</div>
+
+															<div className="thinking-raw-body-block">
+																<div
+																	style={{
+																		display: "flex",
+																		justifyContent: "space-between",
+																		alignItems: "center",
+																	}}
+																>
+																	<span className="spec-combobox-label">{t("thinkingRawBodyLabel")}</span>
+																	{m.customExtraBody && (
+																		<span
+																			style={{
+																				fontSize: "10.5px",
+																				color: validateJsonString(m.customExtraBody).valid
+																					? "var(--green, #22c55e)"
+																					: "var(--red, #ef4444)",
+																			}}
+																		>
+																			{validateJsonString(m.customExtraBody).valid
+																				? "✓ JSON语法有效（保存后自动无损合入请求 body）"
+																				: `✕ ${validateJsonString(m.customExtraBody).error}`}
+																		</span>
+																	)}
+																</div>
+																<textarea
+																	className="thinking-raw-body-textarea"
+																	placeholder='{"thinking": {"type": "enabled", "budget_tokens": 16000}}'
+																	rows={2}
+																	value={m.customExtraBody ?? ""}
+																	onChange={(e) => setModelRow(idx, { customExtraBody: e.target.value })}
+																/>
+															</div>
+														</div>
+
+														{/* 7 档细粒度多选与数值自定义 */}
+														<div className="thinking-levels-grid">
+															{THINKING_VALUES.map((lvl) => {
+																const map = m.thinkingLevelMap;
+																const isNull = map && map[lvl] === null;
+																const isEnabled = !isNull;
+																const customVal =
+																	map && map[lvl] !== null && map[lvl] !== undefined ? String(map[lvl]) : "";
+																const defaultBudget = PRESET_BUDGETS[lvl];
+																const placeholder =
+																	defaultBudget !== undefined && defaultBudget !== null ? String(defaultBudget) : lvl;
+
+																return (
+																	<div key={lvl} className={`thinking-level-col ${isEnabled ? "enabled" : "disabled"}`}>
+																		<div className="level-col-head">
+																			<label className="level-check-label">
+																				<input
+																					type="checkbox"
+																					checked={isEnabled}
+																					onChange={(e) => {
+																						const currentMap = { ...(m.thinkingLevelMap ?? {}) };
+																						if (e.target.checked) {
+																							delete currentMap[lvl];
+																						} else {
+																							currentMap[lvl] = null;
+																						}
+																						setModelRow(idx, { thinkingLevelMap: currentMap });
+																					}}
+																				/>
+																				<span className="level-name">{t(`thinking.${lvl}`) || lvl}</span>
+																			</label>
+																		</div>
+																		{isEnabled && (
+																			<input
+																				type="text"
+																				className="level-val-input"
+																				value={customVal}
+																				placeholder={placeholder}
+																				title="自定义发送给模型/网关的字面量或 Token 数（留空为默认）"
+																				onChange={(e) => {
+																					const currentMap = { ...(m.thinkingLevelMap ?? {}) };
+																					const val = e.target.value.trim();
+																					if (!val) {
+																						delete currentMap[lvl];
+																					} else {
+																						currentMap[lvl] = val;
+																					}
+																					setModelRow(idx, { thinkingLevelMap: currentMap });
+																				}}
+																			/>
+																		)}
+																	</div>
+																);
+															})}
+														</div>
+													</div>
+												)}
 											</div>
 										))}
 

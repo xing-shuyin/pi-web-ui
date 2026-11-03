@@ -1156,7 +1156,13 @@ export function App() {
 				pendingHashSessionRef.current = parsed.sessionId;
 				return;
 			}
-			if (activeSessionIdRef.current !== parsed.sessionId) {
+			const isAlreadyActive =
+				activeSessionIdRef.current === parsed.sessionId ||
+				(activeSessionIdRef.current &&
+					parsed.sessionId &&
+					(activeSessionIdRef.current.includes(parsed.sessionId) ||
+						parsed.sessionId.includes(activeSessionIdRef.current)));
+			if (!isAlreadyActive) {
 				awaitingHashSessionRef.current = parsed.sessionId;
 				setView("chat");
 				send({ type: "switch_session", path: "", sessionId: parsed.sessionId });
@@ -1196,7 +1202,10 @@ export function App() {
 		if (pendingHashSessionRef.current) {
 			const wantSid = pendingHashSessionRef.current;
 			pendingHashSessionRef.current = null;
-			if (wantSid !== activeSessionId) {
+			const isAlreadyActive =
+				wantSid === activeSessionId ||
+				(wantSid && activeSessionId && (wantSid.includes(activeSessionId) || activeSessionId.includes(wantSid)));
+			if (!isAlreadyActive) {
 				awaitingHashSessionRef.current = wantSid;
 				setView("chat");
 				send({ type: "switch_session", path: "", sessionId: wantSid });
@@ -1204,7 +1213,13 @@ export function App() {
 			}
 		}
 		if (awaitingHashSessionRef.current) {
-			if (activeSessionId === awaitingHashSessionRef.current) {
+			const matchesAwaiting =
+				activeSessionId === awaitingHashSessionRef.current ||
+				(activeSessionId &&
+					awaitingHashSessionRef.current &&
+					(activeSessionId.includes(awaitingHashSessionRef.current) ||
+						awaitingHashSessionRef.current.includes(activeSessionId)));
+			if (matchesAwaiting) {
 				awaitingHashSessionRef.current = null;
 			} else {
 				return;
@@ -2032,6 +2047,51 @@ export function App() {
 	// would break their shallow prop comparison every render).
 	const openManageModels = useCallback(() => setManageModelsOpen(true), []);
 	const clearAttachments = useCallback(() => setAttachments([]), []);
+	const [userPromptNonce, setUserPromptNonce] = useState(0);
+	const handleSent = useCallback(() => {
+		clearAttachments();
+		setUserPromptNonce((n) => n + 1);
+	}, [clearAttachments]);
+	const handleAbort = useCallback(() => {
+		// 停止时先取回所有排队/插队消息，放回输入框草稿中，防止排队消息丢失（issue #834）
+		const queuedSteer = chat.state?.queue?.steering ?? [];
+		const queuedFollow = chat.state?.queue?.followUp ?? [];
+		const allQueued = [...queuedSteer, ...queuedFollow];
+		for (const q of allQueued) {
+			recallSeqRef.current += 1;
+			const parsed = splitQuotedPrompt(q);
+			if (parsed.quotes?.length) {
+				setAttachments((prev) =>
+					appendDraftAttachments(
+						prev,
+						parsed.quotes.map((quote) => ({ path: "", name: "", mode: "quote", quote, key: randomUuid() })),
+					),
+				);
+			}
+			if (parsed.attachments?.length) {
+				const restored = parsed.attachments
+					.filter((att) => att.type !== "vision-bridge")
+					.map((att) => ({
+						path: att.path || att.url || "",
+						name: att.name,
+						mode: (att.type === "page"
+							? "page"
+							: att.type === "canvas"
+								? "canvas"
+								: att.type === "conversation"
+									? "conversation"
+									: att.lines
+										? "lines"
+										: "reference") as PromptAttachment["mode"],
+						lines: att.lines,
+						key: randomUuid(),
+					}));
+				if (restored.length) setAttachments((prev) => appendDraftAttachments(prev, restored));
+			}
+			setRecallDrafts((prev) => [...prev.slice(-9), { text: parsed.text, seq: recallSeqRef.current }]);
+		}
+		send({ type: "abort" });
+	}, [chat.state?.queue?.steering, chat.state?.queue?.followUp, send]);
 	// 待发附件跟会话走：会话身份一变（新建对话 / 切对话 / 过户 / 切项目）就清空，
 	// 与正文草稿同口径 —— 正文是按 sessionId 存的（切会话即清空再恢复该会话的草稿），
 	// 附件只在内存里；不清就会「正文已被新对话清掉、chips 还挂着旧对话的文件」，
@@ -2107,6 +2167,22 @@ export function App() {
 		if (createShell()) terminalOpenRequested.current = false;
 	}, [chat.terminals.length, createShell, view]);
 
+	const handleViewChange = useCallback(
+		(v: ViewName, opts?: { skipAutoCreate?: boolean }) => {
+			if (opts?.skipAutoCreate) {
+				terminalOpenRequested.current = false;
+			} else {
+				terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
+				if (terminalOpenRequested.current && createShell()) {
+					terminalOpenRequested.current = false;
+				}
+			}
+			setView(v);
+			setDrawer(null);
+		},
+		[chat.terminals.length, createShell],
+	);
+
 	return (
 		// Whole window is a drop target (issue #19): dragover highlights + any
 		// drop attaches. The plain preventDefault used to merely stop the browser
@@ -2169,16 +2245,7 @@ export function App() {
 				onUiAction={onUiAction}
 				zenMode={zenMode}
 				onToggleZenMode={toggleZenMode}
-				onViewChange={(v: ViewName) => {
-					// The terminal panel stays mounted while hidden. Create the first
-					// shell on the user's terminal-view click, not on initial mount.
-					terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
-					if (terminalOpenRequested.current && createShell()) {
-						terminalOpenRequested.current = false;
-					}
-					setView(v);
-					setDrawer(null);
-				}}
+				onViewChange={handleViewChange}
 				onOpenPanel={setDrawer}
 				onOpenSettings={() => {
 					setSettingsInitialSection(undefined);
@@ -2321,14 +2388,7 @@ export function App() {
 							onThemeChange: switchTheme,
 							reloadThemes,
 						}}
-						onViewChange={(v: ViewName) => {
-							terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
-							if (terminalOpenRequested.current && createShell()) {
-								terminalOpenRequested.current = false;
-							}
-							setView(v);
-							setDrawer(null);
-						}}
+						onViewChange={handleViewChange}
 						onOpenPanel={setDrawer}
 						onOpenSettings={(sec) => {
 							setSettingsInitialSection(sec as any);
@@ -2583,6 +2643,7 @@ export function App() {
 													urlJump && urlJump.sessionId === chat.state.sessionId ? urlJump.messageId : null
 												}
 												onUrlJumpDone={() => setUrlJump(null)}
+												userPromptNonce={userPromptNonce}
 											/>
 										</>
 									) : (
@@ -2828,6 +2889,7 @@ export function App() {
 										composerActions={uiSlots["composer.actions"]}
 										onUiAction={onUiAction}
 										streaming={chat.state?.isStreaming ?? false}
+										onAbort={handleAbort}
 										planMode={chat.state?.planMode ?? false}
 										messages={chat.state?.messages ?? EMPTY_MESSAGES}
 										slashCommands={chat.slashCommands}
@@ -2845,7 +2907,7 @@ export function App() {
 										onSearchFiles={searchFilesCb}
 										onNotice={pushNotice}
 										onManageModels={openManageModels}
-										onSent={clearAttachments}
+										onSent={handleSent}
 										quickPhrases={chat.settings?.quickPhrases ?? []}
 										quickPhrasesEnabled={
 											zenMode
@@ -2992,14 +3054,7 @@ export function App() {
 							onThemeChange: switchTheme,
 							reloadThemes,
 						}}
-						onViewChange={(v: ViewName) => {
-							terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
-							if (terminalOpenRequested.current && createShell()) {
-								terminalOpenRequested.current = false;
-							}
-							setView(v);
-							setDrawer(null);
-						}}
+						onViewChange={handleViewChange}
 						onOpenPanel={setDrawer}
 						onOpenSettings={(sec) => {
 							setSettingsInitialSection(sec as any);
@@ -3024,14 +3079,7 @@ export function App() {
 					setSettingsInitialSection(undefined);
 					setSettingsOpen(true);
 				}}
-				onViewChange={(v: ViewName) => {
-					terminalOpenRequested.current = v === "terminal" && chat.terminals.length === 0;
-					if (terminalOpenRequested.current && createShell()) {
-						terminalOpenRequested.current = false;
-					}
-					setView(v);
-					setDrawer(null);
-				}}
+				onViewChange={handleViewChange}
 				onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
 				onOpenBgTasks={() => setBgTasksOpen(true)}
 			/>

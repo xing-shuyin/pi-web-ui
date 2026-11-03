@@ -1,7 +1,9 @@
 /**
- * CanvasNodeDrawer.tsx — 数字员工审查门禁与深度控制台抽屉 (Review Gate & Steer Console)。
+ * CanvasNodeDrawer.tsx — 数字员工审查门禁与深度控制台弹窗 (Review Gate & Workspace Console)。
+ * 方案 1: 工作台场景选项卡 (Workspace Tabs) 架构，彻底消除视域拥挤，每个场景独享 100% 宽幅空间。
  */
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useCopyFeedback } from "../../use-copy-feedback";
 import type { CanvasNode, CanvasEdge, CanvasNodeLogEntry, ModelInfo, ProjectSummary, UiMessage } from "../../types";
 import type { ThinkingValue } from "../../thinking-levels";
 import type { RoleField } from "./CanvasTypes";
@@ -9,7 +11,6 @@ import type { ReactNode } from "react";
 import {
 	ENGINE_METAS,
 	ROLE_METAS,
-	roleNeedsInstruction,
 	IN_PORT_DEFS,
 	outPortsForRole,
 	inPortLabel,
@@ -32,9 +33,17 @@ import {
 	FiTrash2,
 	FiMessageSquare,
 	FiActivity,
+	FiMaximize2,
+	FiMinimize2,
+	FiCopy,
+	FiCheck,
+	FiFileText,
+	FiSliders,
 } from "react-icons/fi";
 import { Message } from "../Message";
-import { PSTACK_SKILLS_MAP, PSTACK_CATEGORIES } from "./pstack-skills-data";
+import { PSTACK_SKILLS_MAP } from "./pstack-skills-data";
+
+export type CanvasDrawerTab = "console" | "prompts" | "contracts" | "env";
 
 export interface CanvasNodeDrawerProps {
 	node: CanvasNode | null;
@@ -92,12 +101,55 @@ export function CanvasNodeDrawer({
 	const [steerInput, setSteerInput] = useState("");
 	const [logTab, setLogTab] = useState<"chat" | "events">("chat");
 	const [showSkillDoc, setShowSkillDoc] = useState(false);
+	const [isMaximized, setIsMaximized] = useState(false);
+	const { copied: copiedSummary, copy: copySummary } = useCopyFeedback({ duration: 2000 });
 	const logScrollRef = useRef<HTMLDivElement | null>(null);
 
-	// 支持按 Escape 键关闭抽屉（必须放在顶部，保证 Hook 调用数量恒定）
+	// 根据当前节点状态智能感知默认激活的场景选项卡
+	const initialTab: CanvasDrawerTab = useMemo(() => {
+		if (node?.status === "waiting_approval") return "contracts";
+		if (
+			node?.status === "running" ||
+			(logMessages && logMessages.length > 0) ||
+			(logEntries && logEntries.length > 0)
+		) {
+			return "console";
+		}
+		return "prompts";
+	}, [node?.id]);
+
+	const [activeTab, setActiveTab] = useState<CanvasDrawerTab>(initialTab);
+
+	// 节点状态变更时（例如转入待审批或运行），智能自动跳转到对应关键 Tab
+	useEffect(() => {
+		if (!node) return;
+		if (node.status === "waiting_approval") {
+			setActiveTab("contracts");
+		} else if (node.status === "running") {
+			setActiveTab("console");
+		}
+	}, [node?.id, node?.status]);
+
+	// 支持按 Escape 键退出全屏或关闭弹窗
+	useEffect(() => {
+		if (!node) return;
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				if (isMaximized) {
+					setIsMaximized(false);
+				} else {
+					onClose();
+				}
+			}
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [node, onClose, isMaximized]);
+
 	const emptyMap: ReadonlyMap<string, never> = new Map<string, never>();
 	const emptyToolStatuses: ReadonlyMap<string, any> = new Map();
 	const drawerCfg = ((node?.config ?? {}) as Record<string, string | number | boolean | undefined>) || {};
+
 	/** 专属参数单字段（抽屉样式）：全走 ROLE_FIELDS 总表，与卡片同构 */
 	const renderDrawerField = (f: RoleField) => {
 		const strVal = String(drawerCfg[f.key] ?? f.default ?? "");
@@ -177,12 +229,13 @@ export function CanvasNodeDrawer({
 		}
 		return (
 			<label key={f.key} className="canvas-config-row">
-				<span>{f.kind === "hint" ? f.labelZh : f.labelZh}</span>
+				<span>{f.labelZh}</span>
 				{control}
 				{f.hint && <span className="canvas-muted-note">{f.hint}</span>}
 			</label>
 		);
 	};
+
 	const logKindLabel = (e: CanvasNodeLogEntry) =>
 		e.kind === "tool"
 			? "🔧 " + (e.toolName || "tool")
@@ -199,19 +252,10 @@ export function CanvasNodeDrawer({
 								: e.kind === "done"
 									? "✅ done"
 									: "ℹ️ system";
+
 	useEffect(() => {
 		logScrollRef.current?.scrollTo({ top: logScrollRef.current.scrollHeight });
 	}, [logMessages.length, logEntries.length, logTab]);
-	useEffect(() => {
-		if (!node) return;
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				onClose();
-			}
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [node, onClose]);
 
 	// 解析出与 ModelThinking 兼容的当前模型对象：绝不杜撰，不存在时回退到全局默认/列表第一个
 	const selectedModelObj = useMemo(() => {
@@ -261,7 +305,7 @@ export function CanvasNodeDrawer({
 
 	return (
 		<div
-			className="canvas-drawer-overlay"
+			className={`canvas-drawer-overlay ${isMaximized ? "is-maximized" : ""}`}
 			onPointerDown={(e) => {
 				if (e.target === e.currentTarget) {
 					e.stopPropagation();
@@ -275,18 +319,30 @@ export function CanvasNodeDrawer({
 			}}
 		>
 			<div
-				className="canvas-drawer-panel"
+				className={`canvas-drawer-panel ${isMaximized ? "is-maximized" : ""}`}
 				onPointerDown={(e) => e.stopPropagation()}
 				onMouseDown={(e) => e.stopPropagation()}
 				onWheel={(e) => e.stopPropagation()}
 				onClick={(e) => e.stopPropagation()}
 			>
-				{/* 抽屉头部 */}
-				<div className="canvas-drawer-header">
+				{/* 弹窗头部：支持双击切换全屏 */}
+				<div
+					className="canvas-drawer-header"
+					onDoubleClick={(e) => {
+						const target = e.target as HTMLElement;
+						if (target.closest("button, input, select, textarea, a")) return;
+						setIsMaximized((v) => !v);
+					}}
+				>
 					<div className="canvas-drawer-title-group">
 						<span className="canvas-drawer-role-icon">{roleMeta.icon}</span>
 						<div>
-							<h3 className="canvas-drawer-title">{node.title}</h3>
+							<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+								<h3 className="canvas-drawer-title">{node.title}</h3>
+								<span className={`status-badge status-${node.status}`} style={{ fontSize: 11, padding: "1px 6px" }}>
+									{node.status.toUpperCase()}
+								</span>
+							</div>
 							<div className="canvas-drawer-subtitle">
 								<span
 									className="canvas-engine-chip"
@@ -303,39 +359,563 @@ export function CanvasNodeDrawer({
 						</div>
 					</div>
 
-					<button type="button" className="canvas-drawer-close" onClick={onClose} title="关闭抽屉">
-						<FiX />
+					<div className="canvas-drawer-actions">
+						<button
+							type="button"
+							className="canvas-drawer-action-btn"
+							onClick={() => setIsMaximized((v) => !v)}
+							title={isMaximized ? t("还原窗口 (Esc)", "Restore window (Esc)") : t("全屏查看", "Fullscreen view")}
+							aria-label={isMaximized ? "Restore window" : "Fullscreen view"}
+						>
+							{isMaximized ? <FiMinimize2 /> : <FiMaximize2 />}
+						</button>
+						<button
+							type="button"
+							className="canvas-drawer-action-btn canvas-drawer-close"
+							onClick={onClose}
+							title={t("关闭 (Esc)", "Close (Esc)")}
+							aria-label="Close"
+						>
+							<FiX />
+						</button>
+					</div>
+				</div>
+
+				{/* 场景选项卡导航栏 (Workspace Tabs) */}
+				<div className="canvas-drawer-tabs-bar">
+					<button
+						type="button"
+						className={`canvas-drawer-tab ${activeTab === "console" ? "active" : ""}`}
+						onClick={() => setActiveTab("console")}
+					>
+						<FiActivity />
+						<span>{t("实时运行与实录", "Live Console & Stream")}</span>
+						{node.status === "running" ? (
+							<span className="canvas-tab-badge pulse">{t("执行中", "Running")}</span>
+						) : logMessages.length > 0 || logEntries.length > 0 ? (
+							<span className="canvas-tab-badge">
+								{logMessages.length ? `${logMessages.length}` : `${logEntries.length}`}
+							</span>
+						) : null}
+					</button>
+
+					<button
+						type="button"
+						className={`canvas-drawer-tab ${activeTab === "prompts" ? "active" : ""}`}
+						onClick={() => setActiveTab("prompts")}
+					>
+						<FiFileText />
+						<span>{t("AI 任务指令与人设", "Prompts & Instructions")}</span>
+					</button>
+
+					<button
+						type="button"
+						className={`canvas-drawer-tab ${activeTab === "contracts" ? "active" : ""}`}
+						onClick={() => setActiveTab("contracts")}
+					>
+						<FiCheckCircle />
+						<span>{t("契约与审查门禁", "Contracts & Review")}</span>
+						{node.status === "waiting_approval" ? (
+							<span className="canvas-tab-badge warning">{t("待审批", "Needs Review")}</span>
+						) : incomingEdges.length > 0 || outgoingEdges.length > 0 ? (
+							<span className="canvas-tab-badge">{incomingEdges.length + outgoingEdges.length}</span>
+						) : null}
+					</button>
+
+					<button
+						type="button"
+						className={`canvas-drawer-tab ${activeTab === "env" ? "active" : ""}`}
+						onClick={() => setActiveTab("env")}
+					>
+						<FiSliders />
+						<span>{t("沙箱与物理环境", "Sandbox & Environment")}</span>
 					</button>
 				</div>
 
-				{/* 抽屉内容区 */}
+				{/* 弹窗内容区：四大场景选项卡各自独占 100% 宽幅视域 */}
 				<div className="canvas-drawer-body">
-					{roleCapabilityNotice(node.role) && (
-						<p
-							className="canvas-muted-note"
-							role="alert"
-							style={{
-								color: "var(--amber-text)",
-								fontWeight: 600,
-								border: "1px solid var(--amber)",
-								padding: 8,
-								borderRadius: 6,
-							}}
-						>
-							{!isRoleImplemented(node.role) && (
-								<strong>
-									{t("未实现 · 禁止运行", "Not implemented · Run disabled")}
-									<br />
-								</strong>
-							)}
-							{roleCapabilityNotice(node.role, t("zh", "en") === "en")}
-						</p>
+					{/* Tab 1: 实时运行与控制台 (Live Console) */}
+					{activeTab === "console" && (
+						<div className="canvas-tab-panel canvas-tab-panel-console">
+							<div className="canvas-log-section">
+								<div className="canvas-log-header">
+									<div className="canvas-log-tabs">
+										<button
+											type="button"
+											className={"canvas-log-tab " + (logTab === "chat" ? "active" : "")}
+											onClick={() => setLogTab("chat")}
+											title="复用主对话流的消息"
+										>
+											<FiMessageSquare /> 对话 {logMessages.length ? "(" + logMessages.length + ")" : ""}
+										</button>
+										<button
+											type="button"
+											className={"canvas-log-tab " + (logTab === "events" ? "active" : "")}
+											onClick={() => setLogTab("events")}
+											title="调用/错误/协同事件"
+										>
+											<FiActivity /> 事件 {logEntries.length ? "(" + logEntries.length + ")" : ""}
+										</button>
+										{(logEntries.length > 0 || logMessages.length > 0) && onClearLog && (
+											<button
+												type="button"
+												className="canvas-log-clear"
+												onClick={() => onClearLog(node.id)}
+												title="清空对话实录"
+											>
+												<FiTrash2 /> {t("清空实录", "Clear")}
+											</button>
+										)}
+									</div>
+									<div className="canvas-console-status-note">
+										{node.status === "running" ? (
+											<span style={{ color: "var(--accent)", display: "flex", alignItems: "center", gap: 6 }}>
+												<span className="canvas-pulse-dot" /> {t("正在执行任务中...", "Agent is running...")}
+											</span>
+										) : (
+											<span style={{ color: "var(--text-faint)" }}>
+												{t("已就绪 · 工具调用与交互均实时呈现", "Ready · Stream updates live")}
+											</span>
+										)}
+									</div>
+								</div>
+								<div className="canvas-log-body" ref={logScrollRef}>
+									{logTab === "chat" ? (
+										logMessages.length === 0 ? (
+											<div className="canvas-log-empty">
+												<FiMessageSquare style={{ fontSize: 32, opacity: 0.3 }} />
+												<p>
+													{t(
+														"暂无对话消息：启动节点后，这里复用主对话流实时显示每一轮调用、终端输出与回复。",
+														"No messages yet: after running, chat flow and bash outputs will stream live here.",
+													)}
+												</p>
+											</div>
+										) : (
+											logMessages.slice(-100).map((m) => (
+												<div key={m.id} className="canvas-log-msg">
+													<Message
+														message={m}
+														readOnly
+														toolResults={emptyMap as ReadonlyMap<string, UiMessage>}
+														liveOutputs={emptyMap as ReadonlyMap<string, { toolName: string; text: string }>}
+														toolStatuses={emptyToolStatuses as ReadonlyMap<string, never>}
+														streaming={false}
+														isLast={false}
+													/>
+												</div>
+											))
+										)
+									) : logEntries.length === 0 ? (
+										<div className="canvas-log-empty">
+											<FiActivity style={{ fontSize: 32, opacity: 0.3 }} />
+											<p>
+												{t(
+													"暂无协同事件：工具调用、报错、插话与交接都会记在这里。",
+													"No events yet: tool calls, errors, steer and handoffs will be recorded here.",
+												)}
+											</p>
+										</div>
+									) : (
+										logEntries.slice(-200).map((e) => (
+											<div key={e.id} className={"canvas-log-entry kind-" + e.kind}>
+												<span className="canvas-log-kind">{logKindLabel(e)}</span>
+												<span className="canvas-log-time">{new Date(e.ts).toLocaleTimeString()}</span>
+												<div className="canvas-log-text">{e.text}</div>
+											</div>
+										))
+									)}
+								</div>
+							</div>
+
+							{/* 实时插话纠偏控制栏 */}
+							<div className="canvas-steer-section">
+								<div className="canvas-steer-bar">
+									<input
+										type="text"
+										className="canvas-steer-input"
+										placeholder={t(
+											"输入实时纠偏意见 (如: 别修改 styles.css，只在组件内局部改动)...",
+											"Input steer instruction to adjust agent behavior...",
+										)}
+										value={steerInput}
+										onChange={(e) => setSteerInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") handleSendSteer();
+										}}
+									/>
+									<button type="button" className="canvas-steer-btn" onClick={handleSendSteer} title="发送插话">
+										<FiSend /> {t("发送插话", "Steer")}
+									</button>
+								</div>
+							</div>
+						</div>
 					)}
-					{roleNeedsInstruction(node.role) && (
-						<>
+
+					{/* Tab 2: AI 任务指令与人设 (Prompts & Instructions) */}
+					{activeTab === "prompts" && (
+						<div className="canvas-tab-panel canvas-tab-panel-prompts">
+							{roleCapabilityNotice(node.role) && (
+								<p
+									className="canvas-muted-note"
+									role="alert"
+									style={{
+										color: "var(--amber-text)",
+										fontWeight: 600,
+										border: "1px solid var(--amber)",
+										padding: "8px 12px",
+										borderRadius: 6,
+										margin: 0,
+									}}
+								>
+									{!isRoleImplemented(node.role) && (
+										<strong>
+											{t("未实现 · 禁止运行", "Not implemented · Run disabled")}
+											<br />
+										</strong>
+									)}
+									{roleCapabilityNotice(node.role, t("zh", "en") === "en")}
+								</p>
+							)}
+
+							<div className="canvas-prompts-grid">
+								{/* 左卡片：角色人设 System Prompt */}
+								<div className="canvas-prompt-card">
+									<div className="canvas-prompt-card-header">
+										<h4 className="canvas-section-title">
+											🎭 {t("角色指令规约 (System Prompt 基座人设)", "System Prompt")}
+										</h4>
+										<small style={{ color: "var(--text-faint)" }}>{t("决定“是谁”", "Defines identity")}</small>
+									</div>
+									<textarea
+										className="canvas-drawer-textarea canvas-prompt-textarea"
+										value={node.systemPromptOverride || ""}
+										onChange={(e) => onUpdate(node.id, { systemPromptOverride: e.target.value })}
+										placeholder={t(
+											"输入该数字员工的专属职责人设（基座），与「任务指令」配合使用…",
+											"Enter system prompt identity for this digital worker...",
+										)}
+									/>
+									<p className="canvas-tip">
+										{t(
+											"基座人设×任务指令双轨制：人设决定“是谁”，任务指令决定“做什么”。启动优先级：本次手动输入 > 节点 AI 指令 > 角色规约。",
+											"Identity defines who it is; instruction defines what to do.",
+										)}
+									</p>
+								</div>
+
+								{/* 右卡片：AI 任务指令 Instruction */}
+								<div className="canvas-prompt-card">
+									<div className="canvas-prompt-card-header">
+										<h4 className="canvas-section-title">
+											🎯 {t("AI 任务指令 (可输入·随图保存)", "AI Instruction (Saved with graph)")}
+										</h4>
+										<small style={{ color: "var(--text-faint)" }}>{t("决定“做什么”", "Defines task")}</small>
+									</div>
+									<div className="canvas-variable-chips">
+										<span style={{ fontSize: 11, color: "var(--text-faint)" }}>
+											{t("快捷变量插入：", "Insert variable:")}
+										</span>
+										<button
+											type="button"
+											className="canvas-var-chip"
+											onClick={() => {
+												const cur = node.instruction || "";
+												onUpdate(node.id, { instruction: cur ? `${cur} {{input}}` : "{{input}}" });
+											}}
+											title="引用上游所有输入合流内容"
+										>
+											+ &#123;&#123;input&#125;&#125;
+										</button>
+										<button
+											type="button"
+											className="canvas-var-chip"
+											onClick={() => {
+												const cur = node.instruction || "";
+												onUpdate(node.id, { instruction: cur ? `${cur} {{上游摘要}}` : "{{上游摘要}}" });
+											}}
+											title="引用上游交付物摘要"
+										>
+											+ &#123;&#123;上游摘要&#125;&#125;
+										</button>
+										<button
+											type="button"
+											className="canvas-var-chip"
+											onClick={() => {
+												const cur = node.instruction || "";
+												onUpdate(node.id, { instruction: cur ? `${cur} {{upstream}}` : "{{upstream}}" });
+											}}
+											title="英文 alias 引用上游输入"
+										>
+											+ &#123;&#123;upstream&#125;&#125;
+										</button>
+									</div>
+									<textarea
+										className="canvas-drawer-textarea canvas-prompt-textarea canvas-instruction-textarea"
+										value={node.instruction || ""}
+										onChange={(e) => onUpdate(node.id, { instruction: e.target.value })}
+										placeholder={t(
+											"留空=直接使用输入；或例：按照 PRD 完成登录页 {{input}}…",
+											"Empty = use upstream input directly; or e.g. Implement login page based on {{input}}...",
+										)}
+									/>
+									<p className="canvas-tip">
+										{t(
+											"支持变量：{{input}} / {{上游摘要}} / {{upstream}} 引用上游输入；留空 = 直接使用输入。",
+											"Variables supported: {{input}}, {{upstream}}; empty = direct pass-through.",
+										)}
+									</p>
+								</div>
+							</div>
+
+							{/* 通用工作流控制参数：条件 / 循环 / 审批 / 工具 / API 等 */}
+							{visibleRoleFields(node.role, drawerCfg).length > 0 && (
+								<div className="canvas-drawer-section" style={{ marginTop: 8 }}>
+									<h4 className="canvas-section-title">⚙️ {t("节点专属控制参数", "Node Control Parameters")}</h4>
+									<div className="canvas-role-fields-grid">
+										{visibleRoleFields(node.role, drawerCfg).map((f) => renderDrawerField(f))}
+									</div>
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* Tab 3: 上下游契约与审查门禁 (Contracts & Review) */}
+					{activeTab === "contracts" && (
+						<div className="canvas-tab-panel canvas-tab-panel-contracts">
+							{/* 任务交付物与审查门禁 (Review Gate) */}
+							<div className="canvas-review-gate-card">
+								<div className="canvas-summary-header">
+									<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+										<h4 className="canvas-section-title" style={{ fontSize: 14 }}>
+											🔍 {t("任务交付物与审查门禁 (Review Gate)", "Review Gate & Deliverable")}
+										</h4>
+										<span className={`status-badge status-${node.status}`}>{node.status.toUpperCase()}</span>
+									</div>
+									{node.lastOutputSummary && (
+										<button
+											type="button"
+											className="canvas-btn small"
+											onClick={() => {
+												void copySummary(node.lastOutputSummary || "");
+											}}
+											title="复制交付物摘要文本"
+										>
+											{copiedSummary ? <FiCheck style={{ color: "var(--green)" }} /> : <FiCopy />}
+											{copiedSummary ? t("已复制", "Copied") : t("复制摘要", "Copy Summary")}
+										</button>
+									)}
+								</div>
+
+								{node.status === "error" && node.error ? (
+									<div className="canvas-summary-error-box">
+										<p className="canvas-summary-text canvas-summary-error">
+											❌ {t("执行失败：", "Execution failed: ")}
+											{node.error}
+										</p>
+										<div className="canvas-review-actions">
+											<button type="button" className="canvas-btn green" onClick={() => onRun(node.id)}>
+												<FiPlay /> {t("重跑本节点", "Rerun Node")}
+											</button>
+										</div>
+									</div>
+								) : node.lastOutputSummary ? (
+									<div>
+										{node.status === "running" ? (
+											<div
+												style={{
+													marginBottom: 10,
+													padding: "8px 12px",
+													borderRadius: 6,
+													fontSize: 12,
+													backgroundColor: "color-mix(in srgb, var(--amber, #f59e0b) 12%, transparent)",
+													color: "var(--amber-text, #f59e0b)",
+													border: "1px solid color-mix(in srgb, var(--amber, #f59e0b) 30%, transparent)",
+												}}
+											>
+												⚠️{" "}
+												{t(
+													"节点正在执行新任务中，以下为上一轮产出摘要。执行完成前不可裁决。",
+													"Node is executing a new task. Above is previous summary. Cannot review until done.",
+												)}
+											</div>
+										) : null}
+										<div className="canvas-summary-text">{node.lastOutputSummary}</div>
+										<div className="canvas-review-actions">
+											<button
+												type="button"
+												className="canvas-btn green"
+												disabled={node.status === "running"}
+												style={node.status === "running" ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+												onClick={() => {
+													if (node.status === "running") return;
+													if (onReview) onReview(node.id, "approve");
+													else onUpdate(node.id, { status: "done", currentAction: "人工审查批准合流" });
+												}}
+											>
+												<FiCheckCircle /> {t("审查通过并批准合流", "Approve & Merge")}
+											</button>
+											<button
+												type="button"
+												className="canvas-btn orange"
+												disabled={node.status === "running"}
+												style={node.status === "running" ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+												onClick={() => {
+													if (node.status === "running") return;
+													if (onReview) onReview(node.id, "reject");
+													else
+														onUpdate(node.id, {
+															status: "waiting_approval",
+															currentAction: "人工驳回：需补充完善测试与注释",
+														});
+												}}
+											>
+												<FiAlertCircle /> {t("驳回修改", "Reject & Revise")}
+											</button>
+										</div>
+									</div>
+								) : (
+									<div className="canvas-empty-contract-hint">
+										<p className="canvas-text-muted">
+											{t("暂无交付物产出，等待节点执行完成。", "No deliverables yet. Waiting for node completion.")}
+										</p>
+									</div>
+								)}
+							</div>
+
+							{/* 双列展示上游输入契约与下游去向交接 */}
+							<div className="canvas-contracts-grid">
+								{/* 上游前置契约 */}
+								<div className="canvas-contract-col">
+									<h4 className="canvas-section-title">
+										📥 {t("上游前置契约 (Incoming Contracts)", "Incoming Contracts")}
+										<span className="canvas-section-badge">{incomingEdges.length}</span>
+									</h4>
+									{incomingEdges.length === 0 ? (
+										<div className="canvas-empty-contract-card">
+											<span>{t("本节点作为工作流源头，暂无上游连线输入", "Root node without incoming contracts")}</span>
+										</div>
+									) : (
+										<div className="canvas-contract-list">
+											{incomingEdges.map((edge) => {
+												const sourceNode = nodeMap.get(edge.sourceNodeId);
+												return (
+													<div key={edge.id} className="canvas-contract-card">
+														<div className="canvas-contract-header">
+															<span>
+																{t("来源：", "Source: ")}
+																<b>{sourceNode?.title || edge.sourceNodeId}</b>
+															</span>
+															<span className="canvas-contract-type">{edge.type}</span>
+														</div>
+														<div className="canvas-contract-ports">
+															<span className="canvas-port-tag">
+																{outPortLabel(edge.sourcePort)} → {inPortLabel(edge.targetPort)}
+															</span>
+															<label>
+																{t("接入端子：", "Port: ")}
+																<select
+																	className="canvas-select"
+																	value={edge.targetPort || "contract"}
+																	onChange={(e) => onUpdateEdge?.(edge.id, { targetPort: e.target.value })}
+																>
+																	{IN_PORT_DEFS.map((d) => (
+																		<option key={d.key} value={d.key}>
+																			{d.labelZh} — {d.desc}
+																		</option>
+																	))}
+																</select>
+															</label>
+														</div>
+														<div className="canvas-contract-content">
+															{edge.lastHandoffSummary ||
+																t("（等待上游完成交付后自动注入）", "(Waiting for upstream handoff)")}
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									)}
+								</div>
+
+								{/* 下游交接 */}
+								<div className="canvas-contract-col">
+									<h4 className="canvas-section-title">
+										📤 {t("下游交接 (Outgoing Handoffs)", "Outgoing Handoffs")}
+										<span className="canvas-section-badge">{outgoingEdges.length}</span>
+									</h4>
+									{outgoingEdges.length === 0 ? (
+										<div className="canvas-empty-contract-card">
+											<span>{t("本节点暂无连向后续员工的下游交接连线", "No outgoing edges connected yet")}</span>
+										</div>
+									) : (
+										<div className="canvas-contract-list">
+											{outgoingEdges.map((edge) => {
+												const targetNode = nodeMap.get(edge.targetNodeId);
+												return (
+													<div key={edge.id} className="canvas-contract-card">
+														<div className="canvas-contract-header">
+															<span>
+																{t("去向：", "Target: ")}
+																<b>{targetNode?.title || edge.targetNodeId}</b>
+															</span>
+															<span className="canvas-contract-type">{edge.type}</span>
+														</div>
+														<div className="canvas-contract-ports">
+															<label>
+																{t("连线输出端子：", "Out Port: ")}
+																<select
+																	className="canvas-select"
+																	value={edge.sourcePort || "contract"}
+																	onChange={(e) => {
+																		const v = e.target.value;
+																		onUpdateEdge?.(edge.id, {
+																			sourcePort: v,
+																			type:
+																				v === "true"
+																					? "condition_true"
+																					: v === "false"
+																						? "condition_false"
+																						: v === "approve"
+																							? "approve"
+																							: v === "reject"
+																								? "reject"
+																								: edge.type,
+																		});
+																	}}
+																>
+																	{outPortsForRole(node.role).map((d) => (
+																		<option key={d.key} value={d.key}>
+																			{d.labelZh} — {d.desc}
+																		</option>
+																	))}
+																</select>
+															</label>
+														</div>
+													</div>
+												);
+											})}
+										</div>
+									)}
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* Tab 4: 沙箱与物理环境 (Sandbox & Environment) */}
+					{activeTab === "env" && (
+						<div className="canvas-tab-panel canvas-tab-panel-env">
 							{/* 模型与思考强度配置（通用 ModelThinking 控件） */}
-							<div className="canvas-drawer-section">
-								<h4 className="canvas-section-title">模型选择与思考强度 (Model & Thinking)</h4>
+							<div className="canvas-env-section-card">
+								<h4 className="canvas-section-title">
+									🧠 {t("模型选择与思考强度 (Model & Thinking)", "Model & Thinking Budget")}
+								</h4>
+								<p className="canvas-tip" style={{ marginBottom: 10 }}>
+									{t(
+										"为该数字员工绑定专门的执行大模型。支持独立设置思考深度与上下文预算。",
+										"Bind a specific LLM model and thinking level for this worker.",
+									)}
+								</p>
 								<ModelThinking
 									state={{
 										model: selectedModelObj,
@@ -354,8 +934,16 @@ export function CanvasNodeDrawer({
 							</div>
 
 							{/* 环境与物理目录（通用 UniversalPathPicker 控件） */}
-							<div className="canvas-drawer-section">
-								<h4 className="canvas-section-title">工作区沙箱环境</h4>
+							<div className="canvas-env-section-card">
+								<h4 className="canvas-section-title">
+									📂 {t("工作区沙箱环境与物理隔离", "Workspace Sandbox & Isolation")}
+								</h4>
+								<p className="canvas-tip" style={{ marginBottom: 10 }}>
+									{t(
+										"数字员工执行工具（bash、文件读写、git 操作）时的基准物理路径。",
+										"Base working directory for bash and file operations.",
+									)}
+								</p>
 								<UniversalPathPicker
 									cwd={node.cwd}
 									onSelectCwd={(c) => onUpdate(node.id, { cwd: c })}
@@ -378,7 +966,7 @@ export function CanvasNodeDrawer({
 									return (
 										<label
 											className={`canvas-checkbox-row ${isRemote ? "disabled" : ""}`}
-											style={{ marginTop: "8px" }}
+											style={{ marginTop: "12px" }}
 											title={
 												isRemote
 													? "远程 SSH 工作区项目直接在目标远端执行，不走本地 Git Worktree"
@@ -400,472 +988,128 @@ export function CanvasNodeDrawer({
 								})()}
 							</div>
 
-							{/* 角色职责与 System Prompt（基座人设） */}
-							<div className="canvas-drawer-section">
-								<h4 className="canvas-section-title">角色指令规约 (System Prompt)</h4>
-								<textarea
-									className="canvas-drawer-textarea"
-									rows={5}
-									value={node.systemPromptOverride || ""}
-									onChange={(e) => onUpdate(node.id, { systemPromptOverride: e.target.value })}
-									placeholder="输入该数字员工的专属职责人设（基座），与下方「任务指令」配合使用…"
-								/>
-								<p className="canvas-tip">
-									基座人设×任务指令双轨制：人设决定“是谁”，任务指令决定“做什么”。启动优先级：本次手动输入 &gt; 节点 AI
-									指令 &gt; 角色规约。
-								</p>
-							</div>
-						</>
-					)}
-
-					{/* AI 任务指令（可输入）：LLM 型节点显示 */}
-					{roleNeedsInstruction(node.role) && (
-						<div className="canvas-drawer-section">
-							<h4 className="canvas-section-title canvas-instruction-title">AI 任务指令 (可输入·随图保存)</h4>
-							<textarea
-								className="canvas-drawer-textarea canvas-instruction-textarea"
-								rows={6}
-								value={node.instruction || ""}
-								onChange={(e) => onUpdate(node.id, { instruction: e.target.value })}
-								placeholder="留空=直接使用输入；或例：按照 PRD 完成登录页 {{input}}…"
-							/>
-							<p className="canvas-tip">
-								{"支持变量：{{input}} / {{上游摘要}} / {{upstream}} 引用上游输入；留空 = 直接使用输入。"}
-							</p>
-						</div>
-					)}
-
-					{/* 通用工作流控制参数：条件 / 循环 / 审批 / 工具 / API 等 */}
-					{visibleRoleFields(node.role, drawerCfg).length > 0 && (
-						<div className="canvas-drawer-section">
-							<h4 className="canvas-section-title">节点控制参数</h4>
-							{visibleRoleFields(node.role, drawerCfg).map((f) => renderDrawerField(f))}
-						</div>
-					)}
-
-					{/* Pstack 专项规约与工作依据详情 */}
-					{node.role === "pstack" &&
-						(() => {
-							const curSkillKey = String(drawerCfg.skill || "poteto-mode");
-							const skillItem = PSTACK_SKILLS_MAP[curSkillKey] || PSTACK_SKILLS_MAP["poteto-mode"];
-							if (!skillItem) return null;
-							return (
-								<div
-									className="canvas-drawer-section"
-									style={{
-										background: "var(--bg-elev)",
-										border: "1px solid var(--border)",
-										borderRadius: "8px",
-										padding: "12px",
-									}}
-								>
-									<div
-										style={{
-											display: "flex",
-											alignItems: "center",
-											justifyContent: "space-between",
-											marginBottom: "8px",
-										}}
-									>
-										<h4
-											className="canvas-section-title"
-											style={{ margin: 0, display: "flex", alignItems: "center", gap: "6px" }}
-										>
-											<span>{skillItem.icon}</span>
-											<span>{skillItem.nameZh}</span>
-											<code style={{ fontSize: "11px", opacity: 0.7 }}>({skillItem.id})</code>
-										</h4>
-										<span className="canvas-port-tag">
-											{PSTACK_CATEGORIES[skillItem.category]?.zh || skillItem.category}
-										</span>
-									</div>
-									<p
-										style={{
-											fontSize: "12px",
-											color: "var(--text-muted)",
-											lineHeight: 1.5,
-											margin: "0 0 10px 0",
-										}}
-									>
-										{skillItem.description}
-									</p>
-									<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
-										<button
-											type="button"
-											className="btn small"
-											title="将此 Skill 的工作依据规范追加/同步到 AI 指令输入框"
-											onClick={() => {
-												const snippet = `【Pstack ${skillItem.nameZh} (${skillItem.id}) 准则】\n${skillItem.description}\n\n请严格践行此准则开展本节点工作，给出实证交付。`;
-												onUpdate(node.id, {
-													instruction: node.instruction ? `${node.instruction}\n\n${snippet}` : snippet,
-												});
-											}}
-										>
-											📝 载入此 Skill 到任务指令
-										</button>
-										<button type="button" className="btn small" onClick={() => setShowSkillDoc((prev) => !prev)}>
-											{showSkillDoc ? "收起规约" : "📖 查看完整规约 (SKILL.md)"}
-										</button>
-									</div>
-									{showSkillDoc && (
-										<pre
-											style={{
-												maxHeight: "260px",
-												overflowY: "auto",
-												background: "var(--bg-elev2)",
-												padding: "10px",
-												borderRadius: "6px",
-												fontSize: "11.5px",
-												lineHeight: 1.45,
-												whiteSpace: "pre-wrap",
-												wordBreak: "break-word",
-												border: "1px solid var(--border)",
-												marginTop: "8px",
-											}}
-										>
-											{skillItem.content}
-										</pre>
-									)}
-								</div>
-							);
-						})()}
-
-					{/* Skill 角色：已安装与公开技能灵魂选择 */}
-					{node.role === "skill" &&
-						(() => {
-							const curSkill = String(drawerCfg.skillName || "");
-							return (
-								<div
-									className="canvas-drawer-section"
-									style={{
-										background: "var(--bg-elev)",
-										border: "1px solid var(--border)",
-										borderRadius: "8px",
-										padding: "12px",
-									}}
-								>
-									<h4 className="canvas-section-title" style={{ marginTop: 0, marginBottom: "8px" }}>
-										✨ 注入已安装技能作为智能体灵魂
-									</h4>
-									<p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "0 0 10px 0" }}>
-										点击下列已安装的技能，快速注入为该节点的执行灵魂：
-									</p>
-									<div
-										style={{
-											display: "flex",
-											flexWrap: "wrap",
-											gap: "6px",
-											maxHeight: "140px",
-											overflowY: "auto",
-										}}
-									>
-										{installedSkills && installedSkills.length > 0 ? (
-											installedSkills.map((s: { name: string; description: string }) => (
-												<button
-													key={s.name}
-													type="button"
-													className={`btn small ${curSkill === s.name ? "primary" : ""}`}
-													onClick={() => onUpdate(node.id, { config: { ...node.config, skillName: s.name } })}
-													title={s.description}
-												>
-													📦 {s.name}
-												</button>
-											))
-										) : (
-											<span style={{ fontSize: "12px", color: "var(--text-faint)" }}>
-												暂未检测到已安装技能，可在系统设置中添加。
-											</span>
-										)}
-									</div>
-								</div>
-							);
-						})()}
-
-					{/* 上游任务契约 (Incoming Contracts) */}
-					{incomingEdges.length > 0 && (
-						<div className="canvas-drawer-section">
-							<h4 className="canvas-section-title">上游前置契约 (Incoming Contracts)</h4>
-							<div className="canvas-contract-list">
-								{incomingEdges.map((edge) => {
-									const sourceNode = nodeMap.get(edge.sourceNodeId);
+							{/* Pstack 专项规约与工作依据详情 */}
+							{node.role === "pstack" &&
+								(() => {
+									const curSkillKey = String(drawerCfg.skill || "poteto-mode");
+									const skillItem = PSTACK_SKILLS_MAP[curSkillKey] || PSTACK_SKILLS_MAP["poteto-mode"];
+									if (!skillItem) return null;
 									return (
-										<div key={edge.id} className="canvas-contract-card">
-											<div className="canvas-contract-header">
-												<span>
-													来源: <b>{sourceNode?.title || edge.sourceNodeId}</b>
-												</span>
-												<span className="canvas-contract-type">{edge.type}</span>
-											</div>
-											<div className="canvas-contract-ports">
-												<span className="canvas-port-tag">
-													{outPortLabel(edge.sourcePort)} → {inPortLabel(edge.targetPort)}
-												</span>
-												<label>
-													接入本节点端子
-													<select
-														className="canvas-select"
-														value={edge.targetPort || "contract"}
-														onChange={(e) => onUpdateEdge?.(edge.id, { targetPort: e.target.value })}
-													>
-														{IN_PORT_DEFS.map((d) => (
-															<option key={d.key} value={d.key}>
-																{d.labelZh} — {d.desc}
-															</option>
-														))}
-													</select>
-												</label>
-											</div>
-											<div className="canvas-contract-content">
-												{edge.lastHandoffSummary || "（等待上游完成交付后自动注入）"}
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					)}
-
-					{/* 下游交接 (Outgoing Handoffs)：本节点各输出端子的连线 */}
-					{outgoingEdges.length > 0 && (
-						<div className="canvas-drawer-section">
-							<h4 className="canvas-section-title">下游交接 (Outgoing Handoffs)</h4>
-							<div className="canvas-contract-list">
-								{outgoingEdges.map((edge) => {
-									const targetNode = nodeMap.get(edge.targetNodeId);
-									return (
-										<div key={edge.id} className="canvas-contract-card">
-											<div className="canvas-contract-header">
-												<span>
-													去向: <b>{targetNode?.title || edge.targetNodeId}</b>
-													<small className="canvas-port-tag">
-														{outPortLabel(edge.sourcePort)} → {inPortLabel(edge.targetPort)}
-													</small>
-												</span>
-												<span className="canvas-contract-type">{edge.type}</span>
-											</div>
-											<div className="canvas-contract-ports">
-												<label>
-													本节点输出端子
-													<select
-														className="canvas-select"
-														value={edge.sourcePort || "result"}
-														onChange={(e) => {
-															const v = e.target.value;
-															onUpdateEdge?.(edge.id, {
-																sourcePort: v,
-																type:
-																	v === "true"
-																		? "condition_true"
-																		: v === "false"
-																			? "condition_false"
-																			: v === "approve"
-																				? "approve"
-																				: v === "reject"
-																					? "reject"
-																					: edge.type,
-															});
-														}}
-													>
-														{outPortsForRole(node.role).map((d) => (
-															<option key={d.key} value={d.key}>
-																{d.labelZh} — {d.desc}
-															</option>
-														))}
-													</select>
-												</label>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					)}
-
-					{/* 任务交付物与审查门禁 (Review Gate) */}
-					<div className="canvas-drawer-section">
-						<h4 className="canvas-section-title">任务交付与审查门禁 (Review Gate)</h4>
-						<div className="canvas-review-gate-box">
-							<div className="canvas-review-status-row">
-								<span>当前状态：</span>
-								<b className={`status-badge status-${node.status}`}>{node.status.toUpperCase()}</b>
-							</div>
-							<div className="canvas-summary-box">
-								{node.status === "error" && node.error ? (
-									<div>
-										<p className="canvas-summary-text canvas-summary-error">执行失败：{node.error}</p>
-										<div className="canvas-review-actions">
-											<button type="button" className="canvas-btn green" onClick={() => onRun(node.id)}>
-												<FiPlay /> 重跑本节点
-											</button>
-										</div>
-									</div>
-								) : node.lastOutputSummary ? (
-									<div>
-										{node.status === "running" ? (
+										<div className="canvas-env-section-card">
 											<div
 												style={{
-													marginBottom: 8,
-													padding: "6px 10px",
-													borderRadius: 4,
-													fontSize: 12,
-													backgroundColor: "color-mix(in srgb, var(--amber, #f59e0b) 12%, transparent)",
-													color: "var(--amber-text, #f59e0b)",
-													border: "1px solid color-mix(in srgb, var(--amber, #f59e0b) 30%, transparent)",
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "space-between",
+													marginBottom: "8px",
 												}}
 											>
-												⚠️ 节点正在执行新任务中，以下为上一轮产出摘要。执行完成前不可裁决。
+												<h4 className="canvas-section-title" style={{ margin: 0 }}>
+													📖 Pstack 专项规约与工作依据: {skillItem.nameZh}
+												</h4>
+												<button
+													type="button"
+													className="canvas-btn small"
+													onClick={() => setShowSkillDoc(!showSkillDoc)}
+												>
+													{showSkillDoc ? "收起" : "展开详情"}
+												</button>
 											</div>
-										) : null}
-										<p className="canvas-summary-text">{node.lastOutputSummary}</p>
-										<div className="canvas-review-actions">
-											<button
-												type="button"
-												className="canvas-btn green"
-												disabled={node.status === "running"}
-												style={node.status === "running" ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
-												onClick={() => {
-													if (node.status === "running") return;
-													if (onReview) onReview(node.id, "approve");
-													else onUpdate(node.id, { status: "done", currentAction: "人工审查批准合流" });
-												}}
-											>
-												<FiCheckCircle /> 审查通过并批准
-											</button>
-											<button
-												type="button"
-												className="canvas-btn orange"
-												disabled={node.status === "running"}
-												style={node.status === "running" ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
-												onClick={() => {
-													if (node.status === "running") return;
-													if (onReview) onReview(node.id, "reject");
-													else
-														onUpdate(node.id, {
-															status: "waiting_approval",
-															currentAction: "人工驳回：需补充完善测试与注释",
-														});
-												}}
-											>
-												<FiAlertCircle /> 驳回修改
-											</button>
+											<p style={{ fontSize: "12px", color: "var(--text-faint)", margin: 0 }}>{skillItem.description}</p>
+											{showSkillDoc && (
+												<pre
+													style={{
+														maxHeight: "240px",
+														overflowY: "auto",
+														background: "var(--bg)",
+														padding: "10px",
+														borderRadius: "6px",
+														fontSize: "12px",
+														whiteSpace: "pre-wrap",
+														wordBreak: "break-word",
+														border: "1px solid var(--border)",
+														marginTop: "8px",
+													}}
+												>
+													{skillItem.content}
+												</pre>
+											)}
 										</div>
-									</div>
-								) : (
-									<span className="canvas-text-muted">暂无交付物产出，等待节点执行完成。</span>
-								)}
-							</div>
-						</div>
-					</div>
+									);
+								})()}
 
-					{/* 运行中实时插话干预 (Steer Console) */}
-					<div className="canvas-drawer-section">
-						<h4 className="canvas-section-title">实时插话干预 (Steer)</h4>
-						<p className="canvas-tip">数字员工在后台干活时，你随时可以敲字发指令插话纠偏，信息会直接投递进当前会话。</p>
-						{/* 对话实录：复用主对话流 + 协同事件，调用/错误/协同清晰可见 */}
-						<div className="canvas-drawer-section canvas-log-section">
-							<div className="canvas-log-header">
-								<h4 className="canvas-section-title">对话实录</h4>
-								<div className="canvas-log-tabs">
-									<button
-										type="button"
-										className={"canvas-log-tab " + (logTab === "chat" ? "active" : "")}
-										onClick={() => setLogTab("chat")}
-										title="复用主对话流的消息"
-									>
-										<FiMessageSquare /> 对话 {logMessages.length ? "(" + logMessages.length + ")" : ""}
-									</button>
-									<button
-										type="button"
-										className={"canvas-log-tab " + (logTab === "events" ? "active" : "")}
-										onClick={() => setLogTab("events")}
-										title="调用/错误/协同事件"
-									>
-										<FiActivity /> 事件 {logEntries.length ? "(" + logEntries.length + ")" : ""}
-									</button>
-									{(logEntries.length > 0 || logMessages.length > 0) && onClearLog && (
-										<button
-											type="button"
-											className="canvas-log-clear"
-											onClick={() => onClearLog(node.id)}
-											title="清空对话实录"
-										>
-											<FiTrash2 />
-										</button>
-									)}
-								</div>
-							</div>
-							<div className="canvas-log-body" ref={logScrollRef}>
-								{logTab === "chat" ? (
-									logMessages.length === 0 ? (
-										<span className="canvas-text-muted">
-											暂无对话消息：启动节点后，这里复用主对话流实时显示每一轮调用与回复。
-										</span>
-									) : (
-										logMessages.slice(-100).map((m) => (
-											<div key={m.id} className="canvas-log-msg">
-												<Message
-													message={m}
-													readOnly
-													toolResults={emptyMap as ReadonlyMap<string, UiMessage>}
-													liveOutputs={emptyMap as ReadonlyMap<string, { toolName: string; text: string }>}
-													toolStatuses={emptyToolStatuses as ReadonlyMap<string, never>}
-													streaming={false}
-													isLast={false}
-												/>
+							{/* Skill 角色：已安装与公开技能灵魂选择 */}
+							{node.role === "skill" &&
+								(() => {
+									const curSkill = String(drawerCfg.skillName || "");
+									return (
+										<div className="canvas-env-section-card">
+											<h4 className="canvas-section-title" style={{ marginTop: 0, marginBottom: "8px" }}>
+												✨ 注入已安装技能作为智能体灵魂
+											</h4>
+											<p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "0 0 10px 0" }}>
+												点击下列已安装的技能，快速注入为该节点的执行灵魂：
+											</p>
+											<div
+												style={{
+													display: "flex",
+													flexWrap: "wrap",
+													gap: "6px",
+													maxHeight: "140px",
+													overflowY: "auto",
+												}}
+											>
+												{installedSkills && installedSkills.length > 0 ? (
+													installedSkills.map((s: { name: string; description: string }) => (
+														<button
+															key={s.name}
+															type="button"
+															className={`btn small ${curSkill === s.name ? "primary" : ""}`}
+															onClick={() => onUpdate(node.id, { config: { ...node.config, skillName: s.name } })}
+															title={s.description}
+														>
+															📦 {s.name}
+														</button>
+													))
+												) : (
+													<span style={{ fontSize: "12px", color: "var(--text-faint)" }}>
+														暂未检测到已安装技能，可在系统设置中添加。
+													</span>
+												)}
 											</div>
-										))
-									)
-								) : logEntries.length === 0 ? (
-									<span className="canvas-text-muted">暂无协同事件：工具调用、报错、插话与交接都会记在这里。</span>
-								) : (
-									logEntries.slice(-200).map((e) => (
-										<div key={e.id} className={"canvas-log-entry kind-" + e.kind}>
-											<span className="canvas-log-kind">{logKindLabel(e)}</span>
-											<span className="canvas-log-time">{new Date(e.ts).toLocaleTimeString()}</span>
-											<div className="canvas-log-text">{e.text}</div>
 										</div>
-									))
-								)}
-							</div>
+									);
+								})()}
 						</div>
-
-						<div className="canvas-steer-bar">
-							<input
-								type="text"
-								className="canvas-steer-input"
-								placeholder="输入实时纠偏意见 (如: 别修改 styles.css，只在组件内局部改动)..."
-								value={steerInput}
-								onChange={(e) => setSteerInput(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") handleSendSteer();
-								}}
-							/>
-							<button type="button" className="canvas-steer-btn" onClick={handleSendSteer} title="发送插话">
-								<FiSend />
-							</button>
-						</div>
-					</div>
+					)}
 				</div>
 
-				{/* 抽屉底部控制 */}
+				{/* 弹窗底部控制 */}
 				<div className="canvas-drawer-footer">
-					{node.status === "running" ? (
-						<button type="button" className="canvas-btn stop" onClick={() => onStop(node.id)}>
-							<FiSquare /> 停止当前任务
+					<div className="canvas-drawer-footer-info">
+						<span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>
+							📁 {node.cwd || "."} {node.useWorktree ? "· 独立 Worktree 沙箱" : ""}
+						</span>
+					</div>
+					<div className="canvas-drawer-footer-actions">
+						{node.status === "running" ? (
+							<button type="button" className="canvas-btn stop" onClick={() => onStop(node.id)}>
+								<FiSquare /> {t("停止当前任务", "Stop Task")}
+							</button>
+						) : (
+							<button
+								type="button"
+								className="canvas-btn run"
+								disabled={!isRoleImplemented(node.role)}
+								onClick={() => onRun(node.id)}
+							>
+								<FiPlay /> {t("启动该节点", "Run Node")}
+							</button>
+						)}
+						<button type="button" className="canvas-btn" onClick={onClose}>
+							{t("关闭", "Close")}
 						</button>
-					) : (
-						<button
-							type="button"
-							className="canvas-btn run"
-							disabled={!isRoleImplemented(node.role)}
-							onClick={() => onRun(node.id)}
-						>
-							<FiPlay /> 启动该节点
-						</button>
-					)}
-					<button type="button" className="canvas-btn" onClick={onClose}>
-						关闭
-					</button>
+					</div>
 				</div>
 			</div>
 		</div>

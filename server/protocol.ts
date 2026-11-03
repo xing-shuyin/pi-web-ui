@@ -249,10 +249,6 @@ export interface DeviceReviewResponse {
 // ---------------------------------------------------------------------------
 // Global Resource Leases & Room Lock Info
 
-export const RESOURCE_LOCK_KEY_PATTERN = /^[a-zA-Z0-9_.:/-]+$/;
-export const MAX_RESOURCE_LOCKS_PER_TASK = 10;
-export const MAX_RESOURCE_LOCK_KEY_LENGTH = 256;
-
 export interface RoomActiveLock {
 	lockKey: string;
 	roomId: string;
@@ -708,6 +704,8 @@ export interface EngineStatus {
 	hasUpdate?: boolean;
 	/** 是否正在后台子进程执行更新 */
 	updating?: boolean;
+	/** 是否正在后台子进程执行卸载 */
+	uninstalling?: boolean;
 }
 
 export interface UiState {
@@ -1540,6 +1538,8 @@ export type ClientMessage =
 	| { type: "check_engines"; force?: boolean }
 	/** Update an agent engine to its latest version via background child process (npm i -g <pkg>@latest). */
 	| { type: "update_engine"; engineId: string }
+	/** Uninstall an agent engine via background child process (npm uninstall -g <pkg>). */
+	| { type: "uninstall_engine"; engineId: string }
 	// -- pi agent setup ------------------------------------------------------
 	/** Auto-install the pi agent (mkdir config dir + npm i -g the CLI). */
 	| { type: "install_pi_agent" }
@@ -2232,7 +2232,7 @@ export type ClientMessage =
 	 *  force = 强行关闭：中止自身运行（如在跑）+ 中止全部子代理后代
 	 *  （运行中的也停）再整体移出；终端/审查/后台唤醒等保留态一并放行。
 	 *  active 对话也可关闭（后端自动切到其他对话或新建后再移）。 */
-	| { type: "dismiss_conversation"; id: string; withFinishedSubagents?: boolean; force?: boolean }
+	| { type: "dismiss_conversation"; id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string }
 	/** 将一个内存子代理（inMemory）固化为普通持久化对话：写入磁盘 .jsonl 文件，
 	 *  清除 isSubagent 标记，使其进入历史会话列表并长久保留。 */
 	| { type: "persist_conversation"; id: string }
@@ -2922,6 +2922,8 @@ export interface UiEnrichResult {
 	maxTokens?: number;
 	input?: string[];
 	reasoning?: boolean;
+	thinkingLevelMap?: UiThinkingLevelMap;
+	reasoningType?: "budget" | "effort" | "fixed";
 	name?: string;
 	source?: string;
 	matchType?: "exact" | "normalized" | "family" | "hint" | "hint-url";
@@ -2930,12 +2932,12 @@ export interface UiEnrichResult {
 	/** Why unmatched / low-confidence note. */
 	note?: string;
 }
-/** 模型级思考档位映射（pi-ai `ThinkingLevelMap`）：值 = 发给该档的供应方字面值，
+/** 模型级思考档位映射（pi-ai `ThinkingLevelMap`）：值 = 发给该档的供应方字面值（字符串或 Token 数），
  *  `null` = 该档不支持，缺键 = 走供应方默认。pi-ai 只看 `xhigh` / `max` 是否有
  *  显式映射来决定这两档是否出现在「思考强度」下拉里，所以自定义服务商的路由器
  *  网关报的 `reasoning_levels` 会被推导成这个字段存进 models.json。 */
 export type UiThinkingLevelMap = Partial<
-	Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>
+	Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | number | null>
 >;
 /** One model definition inside a custom provider. */
 export interface UiModelConfigEntry {
@@ -2947,6 +2949,12 @@ export interface UiModelConfigEntry {
 	maxTokens?: number;
 	/** 模型级思考档位映射（手写或经刷新从网关元数据推导），保存/合并/下发均原样保留。 */
 	thinkingLevelMap?: UiThinkingLevelMap;
+	/** 协议兼容性选项（如 thinkingFormat: "openai" | "qwen" | "deepseek" | "zai" 等） */
+	compat?: Record<string, unknown>;
+	/** 原始请求透传参数（用于 Extra Body / 自定义参数无损透传） */
+	samplingParams?: Record<string, unknown>;
+	/** 用户手填的 Raw Extra Body JSON 字符串（UI 编辑用） */
+	customExtraBody?: string;
 	/** Per-model override (rarely needed): api type (openai-completions /
 	 *  openai-responses / anthropic-messages / google-generative-ai) and/or
 	 *  baseUrl. When absent they are inherited from sibling models of the

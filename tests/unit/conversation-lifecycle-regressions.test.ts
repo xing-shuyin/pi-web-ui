@@ -699,7 +699,7 @@ describe("initial subagent kickoff settlement", () => {
 				owner.onEvent(child, { type: "agent_settled" });
 				expect(owner.scheduleSubagentCompletionNotice).toHaveBeenCalledTimes(2);
 			}
-			if (ordering === "canceled") expect(child.session.abort).toHaveBeenCalledOnce();
+			if (ordering === "canceled") expect(child.session.abort).not.toHaveBeenCalled();
 		} finally {
 			rmSync(agentDir, { recursive: true, force: true });
 		}

@@ -322,4 +322,152 @@ describe("引擎列表元数据与安装检测 (SUPPORTED_ENGINES & EnginePicker
 		// container 内部不包含流内菜单，脱离了 statusbar-left 的 overflow: hidden 截断
 		expect(container.querySelector(".engine-picker-menu")).toBeNull();
 	});
+
+	it("已安装的第三方引擎显示「卸载」按钮，首次点击提示二次确认「确认卸载？」，再次点击发送 uninstall_engine 消息", () => {
+		setAppGlobals({
+			engine: "pi",
+			engines: [
+				{ id: "pi", installed: true, packageName: "@earendil-works/pi-coding-agent" },
+				{ id: "dsh", installed: true, packageName: "@deepseek-ai/dsh", version: "0.1.0" },
+			],
+		});
+
+		const root = createRoot(container);
+		act(() => {
+			root.render(createElement(LanguageProvider, null, createElement(EnginePicker, null)));
+		});
+
+		const triggerBtn = container.querySelector(".engine-picker-btn") as HTMLElement;
+		act(() => {
+			triggerBtn.click();
+		});
+
+		const dshItem = container.querySelector(".engine-picker-item.engine-dsh") as HTMLElement;
+		expect(dshItem).toBeTruthy();
+
+		// 显示「卸载」按钮
+		const uninstallBtn = dshItem.querySelector(".engine-picker-uninstall-btn") as HTMLButtonElement;
+		expect(uninstallBtn).toBeTruthy();
+		expect(uninstallBtn.textContent).toContain("卸载");
+		expect(uninstallBtn.disabled).toBe(false);
+
+		// 第一次点击：进入确认状态「确认卸载？」
+		sentMessages = [];
+		act(() => {
+			uninstallBtn.click();
+		});
+		expect(sentMessages).toHaveLength(0);
+		expect(uninstallBtn.classList.contains("confirm")).toBe(true);
+		expect(uninstallBtn.textContent).toContain("确认卸载？");
+
+		// 第二次点击：发送 uninstall_engine
+		act(() => {
+			uninstallBtn.click();
+		});
+		expect(sentMessages).toContainEqual({ type: "uninstall_engine", engineId: "dsh" });
+	});
+
+	it("内置核心引擎 pi 不显示卸载按钮", () => {
+		setAppGlobals({
+			engine: "dsh",
+			engines: [
+				{ id: "pi", installed: true, packageName: "@earendil-works/pi-coding-agent" },
+				{ id: "dsh", installed: true, packageName: "@deepseek-ai/dsh", version: "0.1.0" },
+			],
+		});
+
+		const root = createRoot(container);
+		act(() => {
+			root.render(createElement(LanguageProvider, null, createElement(EnginePicker, null)));
+		});
+
+		const triggerBtn = container.querySelector(".engine-picker-btn") as HTMLElement;
+		act(() => {
+			triggerBtn.click();
+		});
+
+		const piItem = container.querySelector(".engine-picker-item.engine-pi") as HTMLElement;
+		expect(piItem).toBeTruthy();
+		expect(piItem.querySelector(".engine-picker-uninstall-btn")).toBeNull();
+	});
+
+	it("当前激活选中的第三方引擎卸载按钮处于禁用态，不可触发卸载", () => {
+		// 当前激活引擎是 dsh
+		setAppGlobals({
+			engine: "dsh",
+			engines: [
+				{ id: "pi", installed: true, packageName: "@earendil-works/pi-coding-agent" },
+				{ id: "dsh", installed: true, packageName: "@deepseek-ai/dsh", version: "0.1.0" },
+			],
+		});
+
+		const root = createRoot(container);
+		act(() => {
+			root.render(createElement(LanguageProvider, null, createElement(EnginePicker, null)));
+		});
+
+		const triggerBtn = container.querySelector(".engine-picker-btn") as HTMLElement;
+		act(() => {
+			triggerBtn.click();
+		});
+
+		const dshItem = container.querySelector(".engine-picker-item.engine-dsh") as HTMLElement;
+		expect(dshItem).toBeTruthy();
+
+		const uninstallBtn = dshItem.querySelector(".engine-picker-uninstall-btn") as HTMLButtonElement;
+		expect(uninstallBtn).toBeTruthy();
+		expect(uninstallBtn.disabled).toBe(true);
+
+		sentMessages = [];
+		act(() => {
+			uninstallBtn.click();
+		});
+		expect(sentMessages).toHaveLength(0);
+	});
+
+	it("正在执行后台卸载的引擎显示「卸载中…」标签与禁用按钮，不重复发送卸载消息", () => {
+		setAppGlobals({
+			engine: "pi",
+			engines: [
+				{ id: "pi", installed: true, packageName: "@earendil-works/pi-coding-agent" },
+				{
+					id: "dsh",
+					installed: true,
+					packageName: "@deepseek-ai/dsh",
+					version: "0.1.0",
+					uninstalling: true,
+				},
+			],
+		});
+
+		const root = createRoot(container);
+		act(() => {
+			root.render(createElement(LanguageProvider, null, createElement(EnginePicker, null)));
+		});
+
+		const triggerBtn = container.querySelector(".engine-picker-btn") as HTMLElement;
+		act(() => {
+			triggerBtn.click();
+		});
+
+		const dshItem = container.querySelector(".engine-picker-item.engine-dsh") as HTMLElement;
+		expect(dshItem).toBeTruthy();
+
+		// 显示「卸载中…」标签
+		const uninstallTag = dshItem.querySelector(".engine-picker-item-tag.uninstalling");
+		expect(uninstallTag).toBeTruthy();
+		expect(uninstallTag?.textContent).toBe("卸载中…");
+
+		// 显示「卸载中…」禁用态按钮
+		const uninstallBtn = dshItem.querySelector(".engine-picker-uninstall-btn") as HTMLButtonElement;
+		expect(uninstallBtn).toBeTruthy();
+		expect(uninstallBtn.disabled).toBe(true);
+		expect(uninstallBtn.textContent).toContain("卸载中…");
+
+		sentMessages = [];
+		act(() => {
+			uninstallBtn.click();
+		});
+		expect(sentMessages.filter((m) => m.type === "uninstall_engine")).toHaveLength(0);
+	});
 });

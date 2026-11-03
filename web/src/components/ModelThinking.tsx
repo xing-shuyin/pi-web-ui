@@ -3,7 +3,7 @@ import { FiCpu, FiZap } from "react-icons/fi";
 import type { ModelInfo, ProviderKeyInfo, UiState } from "../types";
 import { Dropdown, DropdownItem } from "./Dropdown";
 import { useT } from "../i18n";
-import { THINKING_VALUES } from "../thinking-levels";
+import { THINKING_VALUES, formatThinkingLevelText } from "../thinking-levels";
 import { appSend } from "../app-globals";
 import { UniversalModelPicker } from "./UniversalModelPicker";
 
@@ -83,6 +83,18 @@ export const ModelThinking = memo(function ModelThinking({
 	// Local loading flag for the model dropdown (list arrives via props.models).
 	const [reqLoading, setReqLoading] = useState(false);
 
+	// 判断当前模型是否为 Token 预算型（Claude / Gemini / vLLM）
+	const modelIdLower = (model?.id ?? "").toLowerCase();
+	const isTokenBudget =
+		modelIdLower.includes("claude") ||
+		modelIdLower.includes("gemini") ||
+		modelIdLower.includes("sonnet") ||
+		model?.provider === "anthropic" ||
+		model?.provider === "google";
+
+	const isFixedReasoning =
+		modelIdLower.includes("r1") || modelIdLower.includes("reasoner") || modelIdLower.includes("qwq");
+
 	// Model-supported thinking levels (snapshot). The SDK clamps any request
 	// outside this set — unsupported levels must be disabled, not silently
 	// snapped (that's what made the level look "impossible to change").
@@ -97,10 +109,49 @@ export const ModelThinking = memo(function ModelThinking({
 		supported: boolean;
 	}[] = THINKING_VALUES.map((v) => ({
 		value: v,
-		label: t(`thinking.${v}`),
+		label: formatThinkingLevelText(v, t(`thinking.${v}`), undefined, isTokenBudget),
 		supported: supportedThinking ? supportedThinking.has(v) : true,
 	}));
-	const thinkingLabel = (level: string): string => thinkingLevels.find((l) => l.value === level)?.label ?? level;
+
+	const [customBudgetInput, setCustomBudgetInput] = useState("");
+	const [activeCustomBudget, setActiveCustomBudget] = useState<number | null>(null);
+
+	const handleApplyCustomBudget = () => {
+		const num = parseInt(customBudgetInput.trim(), 10);
+		if (!Number.isFinite(num) || num <= 0) return;
+		setActiveCustomBudget(num);
+		const targets: { lvl: string; budget: number }[] = [
+			{ lvl: "minimal", budget: 1024 },
+			{ lvl: "low", budget: 2048 },
+			{ lvl: "medium", budget: 8192 },
+			{ lvl: "high", budget: 16384 },
+			{ lvl: "xhigh", budget: 32000 },
+			{ lvl: "max", budget: 64000 },
+		];
+		const available = targets.filter((tg) => !supportedThinking || supportedThinking.has(tg.lvl));
+		let best = available[0]?.lvl ?? "medium";
+		let minDiff = Infinity;
+		for (const tg of available) {
+			const diff = Math.abs(tg.budget - num);
+			if (diff < minDiff) {
+				minDiff = diff;
+				best = tg.lvl;
+			}
+		}
+		if (onSelectThinking) {
+			onSelectThinking(best);
+		} else {
+			appSend({ type: "set_thinking", level: best });
+		}
+		setThinkingOpen(false);
+	};
+
+	const thinkingLabel = (level: string): string => {
+		if (activeCustomBudget && level !== "off") {
+			return `${t("thinkingCustomized")} (${activeCustomBudget.toLocaleString()} tokens)`;
+		}
+		return thinkingLevels.find((l) => l.value === level)?.label ?? level;
+	};
 
 	// Lazily fetch the model list when the dropdown opens for the first time.
 	// 审查 #4：发不出去（未连接/未装配发送器）立即复位 reqLoading，否则下拉永远
@@ -190,27 +241,57 @@ export const ModelThinking = memo(function ModelThinking({
 	const thinkingMenuContent = (
 		<>
 			<div className="dd-header">{t("thinkingLevel")}</div>
-			{thinkingLevels.map((l) => (
-				<DropdownItem
-					key={l.value}
-					active={state?.thinkingLevel === l.value}
-					disabled={!l.supported}
-					title={l.supported ? undefined : t("thinkingUnsupported")}
-					onClick={() => {
-						if (onSelectThinking) {
-							onSelectThinking(l.value);
+			{isFixedReasoning && (
+				<div className="dd-item-notice" style={{ padding: "4px 10px", fontSize: "11px", opacity: 0.7 }}>
+					🧠 {t("thinkingFixedNotice")}
+				</div>
+			)}
+			{thinkingLevels
+				.filter((l) => l.supported)
+				.map((l) => (
+					<DropdownItem
+						key={l.value}
+						active={state?.thinkingLevel === l.value && !activeCustomBudget}
+						onClick={() => {
+							setActiveCustomBudget(null);
+							if (onSelectThinking) {
+								onSelectThinking(l.value);
+								setThinkingOpen(false);
+								return;
+							}
+							if (state?.thinkingLevel !== l.value) {
+								appSend({ type: "set_thinking", level: l.value });
+							}
 							setThinkingOpen(false);
-							return;
-						}
-						if (state?.thinkingLevel !== l.value) {
-							appSend({ type: "set_thinking", level: l.value });
-						}
-						setThinkingOpen(false);
-					}}
-				>
-					{l.label}
-				</DropdownItem>
-			))}
+						}}
+					>
+						{l.label}
+					</DropdownItem>
+				))}
+			{!isFixedReasoning && (
+				<div className="dd-custom-token-row">
+					<div className="dd-custom-token-label">
+						<span>{t("thinkingCustomBudgetTitle")}</span>
+					</div>
+					<div className="dd-custom-token-group">
+						<input
+							type="number"
+							className="dd-custom-token-input"
+							placeholder={t("thinkingCustomBudgetPlaceholder")}
+							value={customBudgetInput}
+							onChange={(e) => setCustomBudgetInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") {
+									handleApplyCustomBudget();
+								}
+							}}
+						/>
+						<button type="button" className="dd-custom-token-btn" onClick={handleApplyCustomBudget}>
+							{t("thinkingCustomBudgetBtn")}
+						</button>
+					</div>
+				</div>
+			)}
 		</>
 	);
 

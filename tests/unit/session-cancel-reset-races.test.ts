@@ -122,18 +122,28 @@ describe("spawn cancellation and stable runtime identity", () => {
 		expect(child.parentId).toBe(parent.id);
 		expect(child.session.sendUserMessage).toHaveBeenCalledOnce();
 	});
-	it("cancels a first prompt in progress through the captured child and detaches the listener", async () => {
+	it("does not abort running child subagent when parent aborts after spawn returns (#833)", async () => {
 		const { child, controller, spawn } = spawnFixture();
 		const gate = deferred<void>();
 		child.session.sendUserMessage.mockReturnValue(gate.promise);
 		vi.mocked(createAgentSessionRuntime).mockResolvedValue(child.runtime);
 		const remove = vi.spyOn(controller.signal, "removeEventListener");
 		await spawn();
+		// Spawn has returned: parent aborting must NOT abort the dispatched child
 		controller.abort();
-		expect(child.session.abort).toHaveBeenCalledOnce();
+		expect(child.session.abort).not.toHaveBeenCalled();
 		gate.resolve();
 		await child.kickoff;
-		expect(remove).toHaveBeenCalledOnce();
+		expect(remove).toHaveBeenCalled();
+	});
+	it("cancels subagent creation when parent aborts during runtime creation", async () => {
+		const { child, controller, spawn } = spawnFixture();
+		const gate = deferred<any>();
+		vi.mocked(createAgentSessionRuntime).mockReturnValue(gate.promise);
+		const pending = spawn();
+		controller.abort();
+		gate.resolve(child.runtime);
+		await expect(pending).rejects.toThrow();
 	});
 	it("propagates the exact tool signal through the owner host", async () => {
 		const controller = new AbortController();

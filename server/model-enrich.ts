@@ -9,6 +9,7 @@
  * 纯函数 + 可注入的抓取层（fetchFn/pageFetch），单测覆盖零网络。
  */
 import type { UiEnrichResult } from "./protocol.js";
+import { resolveModelReasoningSpec } from "./reasoning-registry.js";
 
 /** 目录里归一化后的一个模型（已抹平两源字段差异）。 */
 export interface CatalogModel {
@@ -335,13 +336,17 @@ function toResult(
 	source: string,
 	matchType: "exact" | "normalized" | "hint" | "hint-url",
 ): UiEnrichResult {
+	const reasoningSpec = resolveModelReasoningSpec(id) ?? resolveModelReasoningSpec(model.id);
+	const isReasoning = Boolean(model.reasoning || reasoningSpec);
 	return {
 		id,
 		status: "matched",
 		...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
 		...(model.maxTokens ? { maxTokens: model.maxTokens } : {}),
 		...(model.vision ? { input: ["text", "image"] } : {}),
-		...(model.reasoning ? { reasoning: true } : {}),
+		...(isReasoning ? { reasoning: true } : {}),
+		...(reasoningSpec?.thinkingLevelMap ? { thinkingLevelMap: reasoningSpec.thinkingLevelMap } : {}),
+		...(reasoningSpec?.type ? { reasoningType: reasoningSpec.type } : {}),
 		...(model.name && model.name.toLowerCase() !== id.toLowerCase() ? { name: model.name } : {}),
 		source: `${source}${matchType === "exact" || matchType === "hint" ? "" : t(lang, "（别名）", " (alias)")}`,
 		matchType,
@@ -536,9 +541,13 @@ export async function enrichBatch(
 			continue;
 		}
 		const suggestions = familySuggestions(norm, indexes());
+		const reasoningSpec = resolveModelReasoningSpec(id);
 		results.push({
 			id,
 			status: suggestions.length ? "suggested" : "unmatched",
+			...(reasoningSpec
+				? { reasoning: true, thinkingLevelMap: reasoningSpec.thinkingLevelMap, reasoningType: reasoningSpec.type }
+				: {}),
 			...(suggestions.length ? { suggestions, matchType: "family" as const } : {}),
 			note: suggestions.length
 				? t(lang, "家族相近，可用其 id 作依据重试", "Close family match — retry with its id as evidence")

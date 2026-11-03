@@ -434,6 +434,8 @@ interface MessageListProps {
 	onUrlJumpDone?: () => void;
 	/** 切换会话过渡预览态（纯展示模式，禁用一切翻页网络请求与历史条渲染）。 */
 	preview?: boolean;
+	/** 用户主动发送消息的触发信号（每次发送递增），用于零延迟吸底恢复跟随。 */
+	userPromptNonce?: number;
 }
 
 export function MessageList({
@@ -456,6 +458,7 @@ export function MessageList({
 	urlJumpMessageId,
 	onUrlJumpDone,
 	preview = false,
+	userPromptNonce,
 	messageLabels,
 	readOnly = false,
 	uiMessageActions,
@@ -1436,6 +1439,7 @@ export function MessageList({
 		loadEarlier,
 		scheduleActiveFromScroll,
 		scheduleSweep,
+		userPromptNonce,
 	});
 
 	// Observe the actual rail, including composer/panel changes without a window resize.

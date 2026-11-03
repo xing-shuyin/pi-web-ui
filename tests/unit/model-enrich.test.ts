@@ -32,6 +32,22 @@ const OR_FIXTURE = {
 			top_provider: { max_completion_tokens: 65536 },
 			supported_parameters: [],
 		},
+		{
+			id: "anthropic/claude-3-7-sonnet",
+			name: "Claude 3.7 Sonnet",
+			context_length: 200000,
+			architecture: { input_modalities: ["text", "image"] },
+			top_provider: { max_completion_tokens: 64000 },
+			supported_parameters: ["max_tokens", "thinking"],
+		},
+		{
+			id: "openai/o3-mini",
+			name: "o3-mini",
+			context_length: 200000,
+			architecture: { input_modalities: ["text"] },
+			top_provider: { max_completion_tokens: 100000 },
+			supported_parameters: ["reasoning_effort"],
+		},
 	],
 };
 
@@ -219,5 +235,30 @@ describe("signal 中断与 onProgress 进度", () => {
 			expect(err.partialResults.length).toBe(1);
 			expect(err.partialResults[0].id).toBe("claude-sonnet-4-5");
 		}
+	});
+
+	it("补参数时自动获取模型的权威思考强度配置（Token预算/档位/类型）", async () => {
+		const res = await enrichBatch(
+			["claude-3-7-sonnet", "o3-mini", "deepseek-r1"],
+			{},
+			{
+				catalogs: fixtures(),
+				lang: "zh",
+			},
+		);
+		const claude = res.find((r) => r.id === "claude-3-7-sonnet");
+		expect(claude?.reasoning).toBe(true);
+		expect(claude?.reasoningType).toBe("budget");
+		expect(claude?.thinkingLevelMap?.medium).toBe("8192");
+		expect(claude?.thinkingLevelMap?.xhigh).toBe("32000");
+
+		const o3 = res.find((r) => r.id === "o3-mini");
+		expect(o3?.reasoning).toBe(true);
+		expect(o3?.reasoningType).toBe("effort");
+		expect(o3?.thinkingLevelMap?.high).toBe("high");
+
+		const r1 = res.find((r) => r.id === "deepseek-r1");
+		expect(r1?.reasoning).toBe(true);
+		expect(r1?.reasoningType).toBe("fixed");
 	});
 });

@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>定时任务创建/编辑弹窗重构方案 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1a1d26;
+      --bg-elev3: #222634;
+      --border: #262a35;
+      --border-soft: #1e2230;
+      --border-focus: #8b5cf6;
+      --text: #e6e8ef;
+      --text-dim: #9aa1b4;
+      --text-faint: #6b7284;
+      --accent: #8b5cf6;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-hover: #9d74f7;
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.12);
+      --green-border: rgba(52, 211, 153, 0.28);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.12);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.12);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.12);
+      --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 顶部 Hero */
+    .hero {
+      background: linear-gradient(180deg, #161821 0%, var(--bg) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 36px 48px 28px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .hero h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      max-width: 820px;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+
+    /* 问题诊断条目 */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+    .audit-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+    }
+    .audit-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    .audit-tag.fix {
+      color: var(--green);
+    }
+    .audit-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .audit-detail {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    /* 方案切换 Tab 栏 */
+    .tab-bar-wrap {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(13, 14, 18, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .tab-group {
+      display: inline-flex;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .tab-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      padding: 7px 18px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+    }
+    .tab-pill {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.18);
+    }
+    .tab-btn:not(.active) .tab-pill {
+      background: var(--bg-elev2);
+      color: var(--text-faint);
+    }
+    .meta-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-toggle-contrast {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-toggle-contrast:hover {
+      color: var(--text);
+      border-color: var(--text-dim);
+    }
+
+    /* 内容容器 */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 36px 48px;
+    }
+    .proposal-panel {
+      display: none;
+    }
+    .proposal-panel.active {
+      display: block;
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 方案简介卡 */
+    .proposal-header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .proposal-header h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .proposal-tag {
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .tag-primary { background: var(--accent-soft); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.3); }
+    .tag-geek { background: var(--blue-soft); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .tag-wizard { background: var(--green-soft); color: #86efac; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .proposal-bullets {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 6px;
+      line-height: 1.6;
+    }
+
+    /* 模拟弹窗容器包装 */
+    .modal-preview-stage {
+      background: radial-gradient(circle at 50% 30%, #1e2230 0%, #0d0f14 85%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 680px;
+      position: relative;
+      box-shadow: inset 0 2px 12px rgba(0,0,0,0.4);
+    }
+
+    /* ==========================================================================
+       通用弹窗组件库设计系统
+       ========================================================================== */
+    .demo-modal {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-modal);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .demo-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(26, 29, 38, 0.7);
+    }
+    .demo-head-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .demo-head-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: #c4b5fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .demo-head-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .demo-head-sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 1px;
+    }
+    .demo-modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.15s ease;
+    }
+    .demo-modal-close:hover {
+      background: var(--bg-elev3);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .demo-modal-body {
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      max-height: calc(85vh - 120px);
+    }
+    .demo-modal-foot {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .foot-left-info {
+      font-size: 12px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .foot-btns {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 按钮组 */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      background: var(--bg-elev3);
+      border-color: var(--text-faint);
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-color: var(--accent);
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35);
+    }
+    .btn.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn.subtle {
+      border-color: transparent;
+      background: transparent;
+      color: var(--text-dim);
+    }
+    .btn.subtle:hover {
+      background: var(--bg-elev);
+      color: var(--text);
+    }
+    .btn.sm {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    /* 模块卡片 Card Block */
+    .section-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.2s ease;
+    }
+    .section-card:focus-within {
+      border-color: rgba(139, 92, 246, 0.4);
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title svg {
+      color: var(--accent);
+    }
+    .section-title .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 表单组件 */
+    .field-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .field-hint {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .input-text, .select-box, .textarea-box {
+      width: 100%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      padding: 8px 12px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    .input-text:focus, .select-box:focus, .textarea-box:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .input-text::placeholder, .textarea-box::placeholder {
+      color: var(--text-faint);
+    }
+    .textarea-box {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+      resize: vertical;
+    }
+
+    /* 快捷胶囊 Pill Buttons */
+    .pill-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pill-btn {
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .pill-btn:hover {
+      border-color: var(--text-dim);
+      color: var(--text);
+    }
+    .pill-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #d8b4fe;
+      font-weight: 600;
+    }
+
+    /* 自然语言调度预览徽标 */
+    .schedule-preview-banner {
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid var(--green-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .preview-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+      flex-shrink: 0;
+    }
+    .preview-text {
+      font-size: 12.5px;
+      color: #a7f3d0;
+      font-weight: 500;
+    }
+    .preview-next-times {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+    .time-chip {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-soft);
+    }
+
+    /* 优雅 Switch 开关 */
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .switch-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .switch-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .switch-desc {
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .switch-toggle {
+      width: 36px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--bg-elev3);
+      border: 1px solid var(--border);
+      position: relative;
+      transition: background 0.2s ease;
+      flex-shrink: 0;
+    }
+    .switch-toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .switch-row.on .switch-toggle {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .switch-row.on .switch-toggle::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    /* Prompt 模板快捷标签 */
+    .prompt-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .template-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .tpl-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tpl-chip:hover {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      border-color: var(--accent);
+    }
+
+
+    /* ==========================================================================
+       方案 A 专属样式 (720px 卡片编排式)
+       ========================================================================== */
+    .modal-plan-a {
+      width: 720px;
+      max-width: 95vw;
+    }
+    .plan-a-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .plan-a-grid-3 {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+
+    /* ==========================================================================
+       方案 B 专属样式 (880px 双栏驾驶台)
+       ========================================================================== */
+    .modal-plan-b {
+      width: 880px;
+      max-width: 95vw;
+    }
+    .plan-b-workbench {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 18px;
+    }
+    .plan-b-left {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .plan-b-right {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-left: 12px;
+      border-left: 2px solid var(--border);
+      margin: 6px 4px;
+    }
+    .timeline-item {
+      position: relative;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: -17px;
+      top: 5px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 2px solid var(--bg-elev);
+    }
+    .timeline-item.next {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .timeline-item.next::before {
+      background: var(--green);
+      box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
+    }
+
+
+    /* ==========================================================================
+       方案 C 专属样式 (640px 步骤引导式)
+       ========================================================================== */
+    .modal-plan-c {
+      width: 650px;
+      max-width: 95vw;
+    }
+    .step-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-faint);
+      cursor: pointer;
+    }
+    .step-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .step-item.done {
+      color: var(--green);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+    }
+    .step-item.active .step-num {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .step-item.done .step-num {
+      background: var(--green);
+      color: #0b0d12;
+      border-color: var(--green);
+      font-weight: 700;
+    }
+    .step-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border-soft);
+      margin: 0 12px;
+    }
+
+
+    /* 原版对比弹窗 */
+    .old-modal-replica {
+      width: 440px;
+      background: #1a1d26;
+      border: 1px solid #262a35;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+    }
+    .old-modal-replica input, .old-modal-replica select, .old-modal-replica textarea {
+      background: #14161c;
+      border: 1px solid #262a35;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #e6e8ef;
+      font-size: 12px;
+      width: 100%;
+    }
+    .old-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部英雄区 -->
+  <header class="hero">
+    <div class="hero-badge">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      UI / UX 提案 · 任务调度模块
+    </div>
+    <h1>定时任务创建/编辑弹窗重构方案</h1>
+    <p class="hero-desc">
+      针对现有定时任务弹窗「宽度仅 460px、单列单行罗列、Prompt 区域局促、调度无自然语义翻译与触发预览」的问题，提供三套经过深思熟虑的高保真重构方案。
+    </p>
+
+    <!-- 诊断矩阵 -->
+    <div class="audit-grid">
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛点 1 · 视觉逼仄
+        </div>
+        <div class="audit-title">460px 宽度单列堆叠</div>
+        <div class="audit-detail">沿用基础弹窗尺寸，10 项字段垂直平铺，像一张毫无呼吸感的信息表格，小家子气。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛点 2 · Prompt 残疾
+        </div>
+        <div class="audit-title">核心指令区仅 4 行高度</div>
+        <div class="audit-detail">定时任务的核心是给智能体的具体指令（Prompt），狭小输入框极难书写多步骤巡检脚本。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          原版痛点 3 · 调度无心智反馈
+        </div>
+        <div class="audit-title">纯生硬 Cron / 预设</div>
+        <div class="audit-detail">选了或写了 Cron 后，缺少中文自然语言解读与「接下来执行时间」预演，用户心里没底。</div>
+      </div>
+      <div class="audit-card">
+        <div class="audit-tag fix">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          改进抓手 · 根本解决
+        </div>
+        <div class="audit-title">结构分区 + 宽屏 + 调度智能翻译</div>
+        <div class="audit-detail">分卡片/分栏布局，大 Prompt 空间 + 预设场景模板，可视化 Cron 预演，高级项收纳。</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 粘性 Tab 切换栏 -->
+  <div class="tab-bar-wrap">
+    <div class="tab-group">
+      <button class="tab-btn active" onclick="switchPlan('plan-a')">
+        <span>方案 A：现代分块卡片式</span>
+        <span class="tab-pill">推荐 ⭐⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-b')">
+        <span>方案 B：双栏工程驾驶台</span>
+        <span class="tab-pill">极客专业 ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-c')">
+        <span>方案 C：分步聚焦流式</span>
+        <span class="tab-pill">轻量沉浸 ⭐⭐⭐⭐</span>
+      </button>
+      <button class="tab-btn" onclick="switchPlan('plan-compare')">
+        <span>对照组：新旧实景对比</span>
+        <span class="tab-pill">1:1 直观体验</span>
+      </button>
+    </div>
+    <div class="meta-actions">
+      <span style="font-size: 12px; color: var(--text-faint);">💡 点击方案内的预设胶囊或模板，可实时交互体验！</span>
+    </div>
+  </div>
+
+  <main class="container">
+
+    <!-- ====================================================================
+         方案 A：现代分块卡片式 (Modern Sectioned Cards) - 主推推荐
+         ==================================================================== -->
+    <section id="plan-a" class="proposal-panel active">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 A：现代分块卡片式 (Modern Sectioned Cards)
+            <span class="proposal-tag tag-primary">强烈推荐 · 大气稳健</span>
+          </h2>
+          <p class="proposal-bullets">
+            宽度拓展至 <strong>720px</strong>。采用现代 Cloud / DevOps 面板标准规范，划分为 <strong>「任务目标与指令」</strong>、<strong>「调度周期与执行预演」</strong>、<strong>「运行时与模型环境」</strong> 三大逻辑卡片，主次清晰，Prompt 拥有极大自由度。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 弹窗本体 -->
+        <div class="demo-modal modal-plan-a">
+          <!-- 头部 -->
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">新建定时任务</div>
+                <div class="demo-head-sub">配置自动化周期性巡检、代码审查或画布流程</div>
+              </div>
+            </div>
+            <button class="demo-modal-close" title="关闭 (Esc)">✕</button>
+          </div>
+
+          <!-- 主体 -->
+          <div class="demo-modal-body">
+
+            <!-- 1. 基本信息与目标 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  任务身份与目标项目
+                </span>
+                <span class="badge">必填</span>
+              </div>
+              
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">任务名称</label>
+                  <input class="input-text" id="a-task-name" value="每日依赖升级与安全巡检" placeholder="如：每日依赖与代码健康检查..." />
+                </div>
+                <div>
+                  <label class="field-label">任务说明 <span class="field-hint">(可选)</span></label>
+                  <input class="input-text" value="每天早晨审查 npm outdated 并检查潜在构建安全隐患" placeholder="描述此任务的职责与目的..." />
+                </div>
+              </div>
+
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">执行目标项目 (CWD)</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input class="input-text" id="a-task-cwd" value="E:\pi-web-ui" />
+                    <button class="btn sm" onclick="document.getElementById('a-task-cwd').value='E:\\pi-web-ui'">用当前项目</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="field-label">任务目标类型</label>
+                  <div class="pill-group" style="padding-top: 3px;">
+                    <button class="pill-btn active" id="a-tgt-conv" onclick="setTargetA('conversation')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      智能体对话 (Agent)
+                    </button>
+                    <button class="pill-btn" id="a-tgt-canvas" onclick="setTargetA('canvas')">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                      画布工作流 (Canvas)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 画布选择（仅当切为 canvas 时显示） -->
+              <div id="a-canvas-select-row" style="display: none; padding-top: 4px;">
+                <label class="field-label">绑定画布工作流</label>
+                <select class="select-box">
+                  <option value="daily-ai-maintainer">日常 AI 维护流 · daily-ai-maintainer</option>
+                  <option value="code-review-flow">全量代码审查流水线 · code-review-flow</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 2. 调度策略与时间预演 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  调度策略与时间预演
+                </span>
+                <span class="badge" id="a-cron-raw-badge">0 9 * * 1-5</span>
+              </div>
+
+              <!-- 快捷周期胶囊 -->
+              <div>
+                <label class="field-label">常用频次快捷选择</label>
+                <div class="pill-group">
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * *', '每天早上 09:00', this)">每天 9:00</button>
+                  <button class="pill-btn active" onclick="selectPresetA('0 9 * * 1-5', '每个工作日 (周一至周五) 上午 09:00', this)">工作日 9:00</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 * * * *', '每小时整点执行一次', this)">每小时</button>
+                  <button class="pill-btn" onclick="selectPresetA('*/30 * * * *', '每 30 分钟周期执行', this)">每 30 分钟</button>
+                  <button class="pill-btn" onclick="selectPresetA('0 9 * * 1', '每周一上午 09:00', this)">周一早报</button>
+                  <button class="pill-btn" onclick="selectPresetA('custom', '自定义 Cron 表达式', this)">自定义 Cron ⚙️</button>
+                  <button class="pill-btn" onclick="selectPresetA('interval', '固定间隔时长执行', this)">固定分钟间隔 ⏱️</button>
+                </div>
+              </div>
+
+              <!-- 自定义输入行（点击自定义时展开） -->
+              <div id="a-custom-cron-row" style="display: none; padding: 10px; background: var(--bg-elev2); border-radius: 8px; border: 1px solid var(--border);">
+                <div class="plan-a-grid-2">
+                  <div>
+                    <label class="field-label">标准 5 段式 Cron 表达式</label>
+                    <input class="input-text" id="a-custom-cron-input" value="0 9 * * 1-5" oninput="updateCronCustomA(this.value)" />
+                  </div>
+                  <div>
+                    <label class="field-label">表达式说明</label>
+                    <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 6px;">
+                      格式：分 时 日 月 周（如 <code>0 2 * * *</code> 表示每天凌晨 2 点）
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 自然语言与时间预演条 -->
+              <div class="schedule-preview-banner">
+                <div class="preview-left">
+                  <span class="status-dot"></span>
+                  <span class="preview-text" id="a-preview-text">每个工作日 (周一至周五) 上午 09:00 执行</span>
+                </div>
+                <div class="preview-next-times">
+                  <span>下次触发:</span>
+                  <span class="time-chip" id="a-next-time-1">明天 09:00</span>
+                  <span class="time-chip" id="a-next-time-2">后天 09:00</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. 执行内容 (Prompt 指令) -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  给智能体的具体任务 (Prompt 指令)
+                </span>
+                <span style="font-size: 11px; color: var(--text-faint);">支持 Markdown 与工作区命令</span>
+              </div>
+
+              <div>
+                <div class="prompt-toolbar">
+                  <span class="field-label" style="margin: 0;">点击快捷填入巡检模板：</span>
+                  <div class="template-chips">
+                    <button class="tpl-chip" onclick="applyTemplateA('health')">🔍 代码与依赖体检</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('test')">🧪 运行测试与诊断</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('git')">🌿 未合分支与 PR 梳理</button>
+                    <button class="tpl-chip" onclick="applyTemplateA('clean')">🧹 构建缓存清理</button>
+                  </div>
+                </div>
+                <textarea class="textarea-box" id="a-prompt-area" rows="6" placeholder="给 Agent 的具体任务，如：审计依赖并报告可升级项、运行全量测试套件、梳理未提交修改等..."></textarea>
+              </div>
+            </div>
+
+            <!-- 4. 模型与高级运行策略 -->
+            <div class="section-card">
+              <div class="section-head">
+                <span class="section-title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  运行环境与容灾配置
+                </span>
+              </div>
+
+              <div class="plan-a-grid-3">
+                <div>
+                  <label class="field-label">执行模型</label>
+                  <select class="select-box">
+                    <option value="">跟随主对话当前模型 (默认)</option>
+                    <option value="anthropic/claude-3-7-sonnet">Claude 3.7 Sonnet</option>
+                    <option value="openai/gpt-4o">GPT-4o (Omni)</option>
+                    <option value="deepseek/deepseek-chat">DeepSeek V3</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">思考强度 (Reasoning)</label>
+                  <select class="select-box">
+                    <option value="">跟随主对话当前思考强度</option>
+                    <option value="off">关闭 (off)</option>
+                    <option value="low">低 (low)</option>
+                    <option value="medium" selected>中 (medium)</option>
+                    <option value="high">高 (high)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">服务补跑机制</label>
+                  <div class="switch-row on" id="a-catchup-switch" onclick="this.classList.toggle('on')" style="margin-top: 0; height: 38px;">
+                    <span class="switch-title" style="font-size: 11.5px;">重启后补跑漏掉</span>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 底部动作条 -->
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span>定时任务将在后台静默调度执行，可在历史记录查看执行日志</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                保存并启用任务
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         方案 B：双栏工程驾驶台 (Split Workbench Studio)
+         ==================================================================== -->
+    <section id="plan-b" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 B：双栏工程驾驶台 (Split Workbench Studio)
+            <span class="proposal-tag tag-geek">重度开发者 · 驾驶舱视野</span>
+          </h2>
+          <p class="proposal-bullets">
+            宽度拓展至 <strong>880px</strong>。采用类似现代 IDE 与流水线编排器（如 GitHub Actions / Temporal）的 <strong>左工作区（60%）+ 右检视区（40%）</strong> 结构。左侧专注于任务指令编写与目标，右侧拥有完整的触发流水线时间轴预演。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 弹窗本体 -->
+        <div class="demo-modal modal-plan-b">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--blue-soft); border-color: rgba(59, 130, 246, 0.3); color: #93c5fd;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">配置自动化任务流水线</div>
+                <div class="demo-head-sub">工作区指令与触发器全景驾驶台</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <div class="demo-modal-body">
+            <div class="plan-b-workbench">
+              <!-- 左侧：主要指令工作区 -->
+              <div class="plan-b-left">
+                <div class="section-card">
+                  <div>
+                    <label class="field-label">任务名称</label>
+                    <input class="input-text" value="深夜代码全量测试与安全审计" />
+                  </div>
+                  <div style="margin-top: 10px;">
+                    <label class="field-label">执行目录与目标</label>
+                    <div style="display: flex; gap: 8px;">
+                      <input class="input-text" value="E:\pi-web-ui" style="flex: 1;" />
+                      <select class="select-box" style="width: 140px;">
+                        <option>智能体对话</option>
+                        <option>画布工作流</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card" style="flex: 1;">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                      智能体任务指令 (Agent Prompt)
+                    </span>
+                    <span class="field-hint">大屏沉浸式工作区</span>
+                  </div>
+
+                  <div class="prompt-toolbar">
+                    <div class="template-chips">
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='执行 npm run test 并定位所有失败用例，生成简短测试报告。'">🧪 测试诊断</button>
+                      <button class="tpl-chip" onclick="document.getElementById('b-prompt-area').value='检查 git status 与 git log，汇总今日完成的特性与待合分支。'">📋 每日摘要</button>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-faint);">支持多行/代码块</span>
+                  </div>
+
+                  <textarea class="textarea-box" id="b-prompt-area" rows="11" style="height: 240px;" placeholder="在此输入给智能体的执行指令...">请执行以下例行维护：
+1. 运行 git fetch 并检查当前分支是否落后于远程 main；
+2. 运行 npm audit 检查高危依赖漏洞；
+3. 如果发现异常，请整理出受影响的包名并提出升级建议；
+4. 运行一次快速类型检查 npm run typecheck 并汇报状态。</textarea>
+                </div>
+              </div>
+
+              <!-- 右侧：检视板与触发策略 -->
+              <div class="plan-b-right">
+                <!-- 调度触发器卡片 -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      触发策略 (Trigger)
+                    </span>
+                    <span class="badge" style="color: var(--green);">0 2 * * *</span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">周期预设</label>
+                    <select class="select-box">
+                      <option>每天凌晨 02:00 (0 2 * * *)</option>
+                      <option>每个工作日 09:00 (0 9 * * 1-5)</option>
+                      <option>每小时一次 (0 * * * *)</option>
+                      <option>自定义 Cron 表达式</option>
+                    </select>
+                  </div>
+
+                  <!-- 触发时间轴预演 -->
+                  <div style="background: var(--bg-elev2); border-radius: 8px; padding: 10px; border: 1px solid var(--border-soft);">
+                    <div style="font-size: 11.5px; font-weight: 600; color: var(--text); margin-bottom: 8px;">未来执行流水线</div>
+                    <div class="timeline-list">
+                      <div class="timeline-item next">
+                        <div>今天深夜 02:00 (预计 11 小时后)</div>
+                        <div style="font-size: 10.5px; color: var(--green);">● 下次将触发</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>明天深夜 02:00</div>
+                      </div>
+                      <div class="timeline-item">
+                        <div>后天深夜 02:00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 运行模型与环境 -->
+                <div class="section-card">
+                  <div class="section-head">
+                    <span class="section-title">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+                      执行环境与算力
+                    </span>
+                  </div>
+
+                  <div>
+                    <label class="field-label">指定智能体模型</label>
+                    <select class="select-box">
+                      <option>跟随主对话当前模型</option>
+                      <option selected>Claude 3.7 Sonnet (推荐)</option>
+                      <option>GPT-4o</option>
+                      <option>DeepSeek V3</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="field-label">思考预算</label>
+                    <select class="select-box">
+                      <option>默认级别</option>
+                      <option selected>中等思考 (Medium)</option>
+                      <option>高强度思考 (High)</option>
+                    </select>
+                  </div>
+
+                  <div class="switch-row on" onclick="this.classList.toggle('on')">
+                    <div class="switch-label-wrap">
+                      <span class="switch-title">停机补跑机制</span>
+                      <span class="switch-desc">服务断开重启后自动补跑</span>
+                    </div>
+                    <span class="switch-toggle"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <span>状态：就绪 · 触发后自动创建独立子对话</span>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary">保存并激活任务</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         方案 C：分步聚焦流式 (Step Flow Modal)
+         ==================================================================== -->
+    <section id="plan-c" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            方案 C：分步聚焦向导式 (Step Flow Wizard)
+            <span class="proposal-tag tag-wizard">低心智负担 · 渐进聚焦</span>
+          </h2>
+          <p class="proposal-bullets">
+            宽度 <strong>650px</strong>。将原本臃肿的表单拆解为 <strong>① 任务与调度</strong>、<strong>② 指令编写</strong>、<strong>③ 运行环境</strong> 三个平滑步骤。每一步仅关注核心输入项，清晰不压抑，适合绝大多数常规任务创建。
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-preview-stage">
+        <!-- 弹窗本体 -->
+        <div class="demo-modal modal-plan-c">
+          <div class="demo-modal-head">
+            <div class="demo-head-title-wrap">
+              <div class="demo-head-icon" style="background: var(--green-soft); border-color: rgba(52, 211, 153, 0.3); color: #86efac;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </div>
+              <div>
+                <div class="demo-head-title">向导式新建任务</div>
+                <div class="demo-head-sub">按步骤快速引导创建定时调度工作</div>
+              </div>
+            </div>
+            <button class="demo-modal-close">✕</button>
+          </div>
+
+          <!-- 步骤条 -->
+          <div class="step-stepper">
+            <div class="step-item done" id="c-step-tab-1" onclick="jumpStepC(1)">
+              <div class="step-num">✓</div>
+              <span>1. 目标与调度</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item active" id="c-step-tab-2" onclick="jumpStepC(2)">
+              <div class="step-num">2</div>
+              <span>2. 智能体指令</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-item" id="c-step-tab-3" onclick="jumpStepC(3)">
+              <div class="step-num">3</div>
+              <span>3. 模型与高级</span>
+            </div>
+          </div>
+
+          <div class="demo-modal-body">
+            <!-- 步骤 1 容器 -->
+            <div id="c-step-content-1" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">第一步：定义任务与调度周期</span></div>
+              <div>
+                <label class="field-label">任务名称</label>
+                <input class="input-text" value="每日代码健康巡检" />
+              </div>
+              <div>
+                <label class="field-label">项目目录</label>
+                <input class="input-text" value="E:\pi-web-ui" />
+              </div>
+              <div>
+                <label class="field-label">执行频率</label>
+                <div class="pill-group">
+                  <button class="pill-btn active">每个工作日 09:00</button>
+                  <button class="pill-btn">每天 09:00</button>
+                  <button class="pill-btn">每小时</button>
+                  <button class="pill-btn">自定义 Cron</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 步骤 2 容器 (默认展示) -->
+            <div id="c-step-content-2" class="section-card">
+              <div class="section-head">
+                <span class="section-title">第二步：编写智能体执行指令 (Prompt)</span>
+                <span class="badge">最核心内容</span>
+              </div>
+              <div class="prompt-toolbar">
+                <span class="field-label" style="margin: 0;">一键套用模板：</span>
+                <div class="template-chips">
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='运行 npm audit 检查安全漏洞并生成更新清单。'">🔍 安全巡检</button>
+                  <button class="tpl-chip" onclick="document.getElementById('c-prompt-text').value='梳理未合并的 Git 分支并检查是否有遗留未提代码。'">🌿 Git 分支梳理</button>
+                </div>
+              </div>
+              <textarea class="textarea-box" id="c-prompt-text" rows="8" placeholder="请详细输入希望智能体定时执行的具体动作...">审查当前项目的依赖版本，运行 npm outdated，并针对次版本（Minor）与补丁版本（Patch）分析是否有推荐升级的无破坏性依赖，列出更新清单与风险预估。</textarea>
+            </div>
+
+            <!-- 步骤 3 容器 -->
+            <div id="c-step-content-3" style="display: none;" class="section-card">
+              <div class="section-head"><span class="section-title">第三步：模型与高级策略</span></div>
+              <div class="plan-a-grid-2">
+                <div>
+                  <label class="field-label">模型选择</label>
+                  <select class="select-box">
+                    <option>跟随主对话当前模型</option>
+                    <option>Claude 3.7 Sonnet</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label">思考强度</label>
+                  <select class="select-box">
+                    <option>中等思考 (Medium)</option>
+                    <option>关闭思考</option>
+                  </select>
+                </div>
+              </div>
+              <div class="switch-row on" onclick="this.classList.toggle('on')" style="margin-top: 10px;">
+                <div class="switch-label-wrap">
+                  <span class="switch-title">重启后补跑</span>
+                  <span class="switch-desc">服务重启后补跑在掉线期间漏掉的一次</span>
+                </div>
+                <span class="switch-toggle"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-modal-foot">
+            <div class="foot-left-info">
+              <button class="btn sm subtle" id="c-prev-btn" onclick="nextStepC(-1)">← 上一步</button>
+            </div>
+            <div class="foot-btns">
+              <button class="btn subtle">取消</button>
+              <button class="btn primary" id="c-next-btn" onclick="nextStepC(1)">下一步：环境配置 →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         对照组：新旧 1:1 直观对比
+         ==================================================================== -->
+    <section id="plan-compare" class="proposal-panel">
+      <div class="proposal-header">
+        <div>
+          <h2>
+            新旧视觉实景横向对比
+            <span class="proposal-tag tag-primary">一眼见高下</span>
+          </h2>
+          <p class="proposal-bullets">
+            左侧为目前线上版本（460px 宽度，单列无分组），右侧为方案 A（720px 宽屏，分组卡片，自然语言预演）。
+          </p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 24px; align-items: start;">
+        <!-- 原版复刻 -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--red); display: flex; align-items: center; gap: 6px;">
+            <span>❌ 现有版本 (当前线上)</span>
+            <span style="font-size: 11px; background: var(--red-soft); padding: 1px 6px; border-radius: 4px;">460px 窄窄一根</span>
+          </div>
+          <div class="old-modal-replica">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid #262a35;">
+              <span>🕒 新建任务</span>
+              <span style="color: #6b7284;">✕</span>
+            </div>
+            <input placeholder="如：每日依赖与代码健康检查..." value="每日代码健康巡检" />
+            <input placeholder="说明（可选）：这个任务是干什么的..." />
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">执行目标项目</span>
+              <input value="E:\pi-web-ui" style="flex: 1;" />
+              <button class="btn sm">用当前项目</button>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">任务目标</span>
+              <select style="flex: 1;"><option>智能体对话</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">调度周期</span>
+              <select style="flex: 1;"><option>Cron 表达式</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">Cron 表达式</span>
+              <select style="flex: 1;"><option>每天 9:00 - 0 9 * * *</option></select>
+            </div>
+            <textarea rows="4" placeholder="给 Agent 的具体任务，如：审计依赖并报告可升级项…" style="font-family: monospace;">审查依赖并汇报健康状况</textarea>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">模型</span>
+              <select style="flex: 1;"><option>跟随主对话当前模型</option></select>
+            </div>
+            <div class="old-row">
+              <span style="color: #9aa1b4; width: 80px;">思考强度</span>
+              <select style="flex: 1;"><option>跟随主对话当前思考强度</option></select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa1b4;">
+              <input type="checkbox" style="width: 14px; height: 14px;" />
+              <span>服务重启后补跑漏掉的一次 ⓘ</span>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+              <button class="btn sm">取消编辑</button>
+              <button class="btn sm primary">保存任务</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 重构方案优势解析卡 -->
+        <div>
+          <div style="margin-bottom: 10px; font-weight: 600; color: var(--green); display: flex; align-items: center; gap: 6px;">
+            <span>✨ 为什么重构后更专业更开阔？</span>
+          </div>
+          <div class="section-card" style="padding: 24px;">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; font-weight: 700;">1</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">宽度从 460px 提升至 720px ~ 880px</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    不再挤牙膏。控件之间有足够的呼吸空间，双列并排与卡片分组让视觉重心平衡。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--green-soft); color: var(--green); display: flex; align-items: center; justify-content: center; font-weight: 700;">2</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">Prompt 尊享一级公民待遇</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    将单薄的 4 行框扩展为带快捷模板（体检、测试、安全、汇总）的代码风格大编辑区，编写巡检指令行云流水。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-weight: 700;">3</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">直观的自然语义与「未来执行时间」预演</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    点选或输入 Cron 后，下方立即用绿色高亮条翻译为白话文，并动态展示接下来 2~3 次的具体执行时间戳，心里极踏实。
+                  </div>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px;">
+                <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); display: flex; align-items: center; justify-content: center; font-weight: 700;">4</div>
+                <div>
+                  <div style="font-size: 14px; font-weight: 600; color: var(--text);">高级项优雅收纳，开关动效丝滑</div>
+                  <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 2px;">
+                    模型、思考等级、停机补偿采用并排网格与 iOS 风格 Switch，取代突兀的原生单选框。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 交互脚本 -->
+  <script>
+    // 方案面板切换
+    function switchPlan(planId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.querySelectorAll('.proposal-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById(planId).classList.add('active');
+    }
+
+    // 方案 A 交互：切换任务目标 (conversation vs canvas)
+    function setTargetA(target) {
+      const btnConv = document.getElementById('a-tgt-conv');
+      const btnCanvas = document.getElementById('a-tgt-canvas');
+      const canvasRow = document.getElementById('a-canvas-select-row');
+      if (target === 'conversation') {
+        btnConv.classList.add('active');
+        btnCanvas.classList.remove('active');
+        canvasRow.style.display = 'none';
+      } else {
+        btnCanvas.classList.add('active');
+        btnConv.classList.remove('active');
+        canvasRow.style.display = 'block';
+      }
+    }
+
+    // 方案 A 交互：选择调度预设
+    function selectPresetA(cron, desc, btn) {
+      btn.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const customRow = document.getElementById('a-custom-cron-row');
+      const badge = document.getElementById('a-cron-raw-badge');
+      const previewText = document.getElementById('a-preview-text');
+      const time1 = document.getElementById('a-next-time-1');
+      const time2 = document.getElementById('a-next-time-2');
+
+      if (cron === 'custom') {
+        customRow.style.display = 'block';
+        badge.innerText = '自定义 Cron';
+        previewText.innerText = '请在上方输入合法 Cron 表达式';
+        time1.innerText = '实时计算中...';
+        time2.innerText = '—';
+      } else if (cron === 'interval') {
+        customRow.style.display = 'none';
+        badge.innerText = '固定 60 分钟';
+        previewText.innerText = '每隔 60 分钟触发一次';
+        time1.innerText = '1 小时后';
+        time2.innerText = '2 小时后';
+      } else {
+        customRow.style.display = 'none';
+        badge.innerText = cron;
+        previewText.innerText = desc + ' 执行';
+        if (cron.includes('1-5')) {
+          time1.innerText = '明天 09:00';
+          time2.innerText = '后天 09:00';
+        } else if (cron.includes('*/30')) {
+          time1.innerText = '14:30';
+          time2.innerText = '15:00';
+        } else if (cron.includes('0 * * * *')) {
+          time1.innerText = '15:00';
+          time2.innerText = '16:00';
+        } else {
+          time1.innerText = '明天 09:00';
+          time2.innerText = '后天 09:00';
+        }
+      }
+    }
+
+    function updateCronCustomA(val) {
+      document.getElementById('a-cron-raw-badge').innerText = val || '* * * * *';
+      document.getElementById('a-preview-text').innerText = '表达式: ' + (val || '—');
+    }
+
+    // 方案 A 交互：套用 Prompt 模板
+    const TEMPLATES = {
+      health: '请对当前项目进行健康与安全性巡检：\n1. 检查 package.json 依赖是否有高危漏洞；\n2. 检查是否有未解决的构建告警；\n3. 输出一份简洁的健康总结并给出升级建议。',
+      test: '执行测试套件与异常排查：\n1. 运行当前项目的自动化测试套件；\n2. 若有失败用例，读取相关代码并定位根因；\n3. 生成测试失败报告并提出修复补丁建议。',
+      git: '日常 Git 仓库状态审计：\n1. 检查是否存在未提交的代码修改或冲突标记；\n2. 查看近 3 天本地分支与远程 main 的差异；\n3. 提示需要清理的废弃分支。',
+      clean: '维护与清理任务：\n1. 检查 node_modules、dist、.cache 等临时目录大小；\n2. 清理过期的构建缓存与临时日志文件；\n3. 报告清理后节省的磁盘空间。'
+    };
+
+    function applyTemplateA(key) {
+      const area = document.getElementById('a-prompt-area');
+      area.value = TEMPLATES[key] || '';
+      area.focus();
+    }
+
+    // 方案 C 交互：步骤跳转
+    let currentStepC = 2;
+    function jumpStepC(step) {
+      currentStepC = step;
+      updateStepUI();
+    }
+    function nextStepC(delta) {
+      currentStepC = Math.max(1, Math.min(3, currentStepC + delta));
+      updateStepUI();
+    }
+    function updateStepUI() {
+      for (let i = 1; i <= 3; i++) {
+        const tab = document.getElementById('c-step-tab-' + i);
+        const content = document.getElementById('c-step-content-' + i);
+        if (i === currentStepC) {
+          tab.className = 'step-item active';
+          content.style.display = 'block';
+        } else if (i < currentStepC) {
+          tab.className = 'step-item done';
+          content.style.display = 'none';
+        } else {
+          tab.className = 'step-item';
+          content.style.display = 'none';
+        }
+      }
+      const prevBtn = document.getElementById('c-prev-btn');
+      const nextBtn = document.getElementById('c-next-btn');
+      prevBtn.style.visibility = currentStepC === 1 ? 'hidden' : 'visible';
+      if (currentStepC === 3) {
+        nextBtn.innerText = '立即保存任务 ✓';
+        nextBtn.className = 'btn primary';
+      } else {
+        nextBtn.innerText = '下一步 →';
+      }
+    }
+  </script>
+</body>
+</html>

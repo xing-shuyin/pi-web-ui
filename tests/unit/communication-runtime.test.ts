@@ -166,6 +166,26 @@ describe("ClientSession communication runtime", () => {
 			status: "queued",
 		});
 	});
+	it("authorizes communication when parent is in parent directory of repo and child uses isolation worktree (#829)", async () => {
+		const a = holder("a"),
+			b = holder("b");
+		const parent = endpoint(a, "parent");
+		parent.cwd = "C:/work";
+		const child = endpoint(b, "child", parent.id);
+		child.cwd = "C:/work/app/.worktrees/sa-test";
+		child.subagentWorktree = {
+			worktreePath: "C:/work/app/.worktrees/sa-test",
+			mainRepoPath: "C:/work/app",
+		};
+		// Child communicates with parent
+		await expect(b.communicate(child.id, "send", { to: "parent", message: "ping" })).resolves.toMatchObject({
+			status: "queued",
+		});
+		// Parent communicates with child
+		await expect(a.communicate(parent.id, "send", { to: child.id, message: "pong" })).resolves.toMatchObject({
+			status: "queued",
+		});
+	});
 	it("keeps queued inbox pending until read, and read consumes it once", async () => {
 		const a = holder("a"),
 			b = holder("b");

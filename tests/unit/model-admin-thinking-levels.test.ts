@@ -189,4 +189,36 @@ describe("mergeProviderConfigEntry / 保存 / 下发往返", () => {
 			rmSync(agentDir, { recursive: true, force: true });
 		}
 	});
+
+	it("支持保存 compat (thinkingFormat) 与 customExtraBody (自动解析进 samplingParams)", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "pi-web-ui-thinking-compat-"));
+		const configPath = join(agentDir, "models.json");
+		const notices: ServerMessage[] = [];
+		try {
+			const service = new ModelAdminService(makeHost(agentDir, notices));
+			const customConfig: UiProviderConfig = {
+				providerId: "my-custom-provider",
+				api: "openai-completions",
+				models: [
+					{
+						id: "qwen-special",
+						reasoning: true,
+						compat: { thinkingFormat: "qwen" },
+						customExtraBody: JSON.stringify({ chat_template_kwargs: { enable_thinking: true } }),
+					},
+				],
+			};
+			await service.saveModelConfig("my-custom-provider", customConfig);
+
+			const written = JSON.parse(readFileSync(configPath, "utf8")) as {
+				providers: Record<string, { models: Record<string, any>[] }>;
+			};
+			const savedModel = written.providers["my-custom-provider"].models[0];
+			expect(savedModel.compat?.thinkingFormat).toBe("qwen");
+			expect(savedModel.customExtraBody).toBeDefined();
+			expect(savedModel.samplingParams?.chat_template_kwargs?.enable_thinking).toBe(true);
+		} finally {
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
 });

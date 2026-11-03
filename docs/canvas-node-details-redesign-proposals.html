@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画布节点详情弹窗交互与布局重构方案全景 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1b1e28;
+      --bg-card: #171a23;
+      --border: #262a36;
+      --border-soft: #1e2230;
+      --border-highlight: #3b4254;
+      --text: #e6e8ef;
+      --text-dim: #9aa1b4;
+      --text-faint: #6b7284;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.15);
+      --accent-glow: rgba(139, 92, 246, 0.3);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --green-contrast: #ffffff;
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.15);
+      --amber-contrast: #ffffff;
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.15);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.15);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #08090c;
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      font-size: 13px;
+      overflow-x: hidden;
+    }
+
+    /* 顶部导航与控制器 */
+    header.top-header {
+      background: rgba(13, 14, 18, 0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+      font-size: 16px;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+    .brand-subtitle {
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    .proposal-switch-bar {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+    .switch-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 15px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.16s ease;
+      white-space: nowrap;
+    }
+    .switch-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .switch-btn.active {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.4);
+    }
+    .switch-btn .badge {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .header-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .state-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .state-selector select {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    .toggle-fullscreen-btn {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .toggle-fullscreen-btn:hover {
+      color: #fff;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* 方案导读 Banner */
+    .proposal-banner {
+      max-width: 1400px;
+      margin: 18px auto 0;
+      padding: 0 24px;
+    }
+    .banner-card {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.05));
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: var(--radius-lg);
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+    }
+    .banner-content h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .banner-content p {
+      font-size: 12.5px;
+      color: var(--text-dim);
+      margin-top: 5px;
+      line-height: 1.5;
+    }
+    .banner-tags {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .banner-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+    .banner-tag.highlight {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+      border-color: rgba(139, 92, 246, 0.35);
+    }
+
+    /* 模拟画布背景视口 */
+    .canvas-viewport-stage {
+      position: relative;
+      max-width: 1540px;
+      min-height: 780px;
+      margin: 20px auto 40px;
+      padding: 0 24px;
+    }
+    .mock-canvas-bg {
+      position: absolute;
+      inset: 0 24px;
+      border-radius: 16px;
+      background-color: #0b0c10;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+      background-size: 24px 24px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 模拟节点背板 */
+    .bg-node-phantom {
+      position: absolute;
+      background: #14161c;
+      border: 1px solid #262a36;
+      border-radius: 10px;
+      padding: 12px;
+      opacity: 0.35;
+      width: 220px;
+      pointer-events: none;
+    }
+
+    /* 弹窗遮罩 */
+    .mock-modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(5px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 10;
+      transition: padding 0.2s ease;
+    }
+    .mock-modal-overlay.is-fullscreen {
+      padding: 0;
+      border-radius: 16px;
+    }
+
+    /* 弹窗面板基础 */
+    .modal-frame {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .modal-frame.size-default {
+      width: 1260px;
+      max-width: 100%;
+      height: 820px;
+      max-height: 90vh;
+    }
+    .modal-frame.size-fullscreen {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      border-radius: 0 !important;
+      border: none !important;
+    }
+
+    /* 弹窗公共头部 */
+    .modal-header {
+      padding: 12px 20px;
+      background: var(--bg-elev2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .modal-title-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .node-icon-avatar {
+      width: 32px;
+      height: 32px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+    .node-title-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .node-title-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .node-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .node-status-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .node-status-badge.running {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+    .node-status-badge.waiting {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+    .node-status-badge.done {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .node-subline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .chip {
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .chip.engine {
+      color: #c084fc;
+      border-color: rgba(192, 132, 252, 0.3);
+    }
+
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .action-icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+    .action-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .action-icon-btn.close:hover {
+      background: rgba(239, 68, 68, 0.18);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    /* 弹窗底部操作条 */
+    .modal-footer {
+      padding: 12px 20px;
+      background: var(--bg-elev2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .footer-hints {
+      font-size: 12px;
+      color: var(--text-faint);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .footer-btns {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--border-highlight);
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .btn.primary:hover {
+      background: var(--accent-hover);
+    }
+    .btn.danger {
+      background: var(--red);
+      color: #fff;
+      border-color: var(--red);
+    }
+    .btn.success {
+      background: var(--green);
+      color: #fff;
+      border-color: var(--green);
+    }
+
+    /* ==========================================================================
+       方案 1：工作台场景选项卡 (Workspace Tabs)
+       ========================================================================== */
+    .p1-nav-bar {
+      display: flex;
+      background: #111319;
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .p1-nav-tab {
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s;
+    }
+    .p1-nav-tab:hover {
+      color: var(--text);
+    }
+    .p1-nav-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .p1-nav-tab .tab-badge {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+    }
+    .p1-nav-tab.active .tab-badge {
+      background: var(--accent-soft);
+      color: #c4b5fd;
+    }
+
+    /* 方案 1 主视区 */
+    .p1-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* Tab: 控制台 (Live Console) */
+    .p1-console-view {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+    }
+    .p1-step-sidebar {
+      width: 280px;
+      border-right: 1px solid var(--border);
+      background: var(--bg-elev);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .p1-step-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+    }
+    .p1-step-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .p1-step-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      cursor: pointer;
+      font-size: 11.5px;
+    }
+    .p1-step-item.active {
+      background: var(--accent-soft);
+      border-color: rgba(139, 92, 246, 0.4);
+    }
+    .p1-step-title {
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .p1-step-time {
+      font-size: 10.5px;
+      color: var(--text-faint);
+    }
+
+    .p1-console-stream {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: #0d0f14;
+    }
+    .p1-log-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      font-family: var(--font-sans);
+    }
+    .mock-chat-bubble {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      max-width: 92%;
+    }
+    .mock-chat-bubble.assistant {
+      border-left: 3px solid var(--accent);
+    }
+    .mock-chat-bubble.user {
+      align-self: flex-end;
+      background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
+      border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    }
+    .mock-code-box {
+      margin-top: 10px;
+      background: #090a0e;
+      border: 1px solid #1f2330;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      color: #93c5fd;
+      overflow-x: auto;
+    }
+    .mock-code-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-faint);
+      font-size: 11px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #1a1e2a;
+      padding-bottom: 4px;
+    }
+
+    .p1-steer-bar {
+      padding: 12px 20px;
+      background: var(--bg-elev);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .p1-steer-input {
+      flex: 1;
+      background: #0b0d12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 14px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .p1-steer-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+
+    /* Tab: 任务指令与提示词 */
+    .p1-prompt-view {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .prompt-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .prompt-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .prompt-card-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .prompt-textarea {
+      flex: 1;
+      min-height: 240px;
+      background: #0b0d12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--text);
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+    }
+
+    /* Tab: 交付审查 (Review Gate) */
+    .p1-review-view {
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      max-width: 1000px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .review-status-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .diff-preview-box {
+      background: #08090d;
+      border: 1px solid #202432;
+      border-radius: 8px;
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #e2e8f0;
+      max-height: 380px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .diff-line-add { color: #34d399; background: rgba(16, 185, 129, 0.08); }
+    .diff-line-del { color: #f87171; background: rgba(239, 68, 68, 0.08); }
+
+    /* ==========================================================================
+       方案 2：IDE 左右双窗格 + 侧栏折叠 (IDE Split Pane)
+       ========================================================================== */
+    .p2-container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .p2-sidebar {
+      width: 320px;
+      border-right: 1px solid var(--border);
+      background: var(--bg-elev);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width 0.2s ease;
+    }
+    .p2-sidebar.collapsed {
+      width: 52px;
+    }
+    .p2-sidebar-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .p2-sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .p2-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #0b0d13;
+    }
+    .p2-main-toolbar {
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elev2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .p2-split-views {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 0;
+    }
+    .p2-pane-left {
+      border-right: 1px solid var(--border);
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: var(--bg);
+    }
+    .p2-pane-right {
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      background: #090a0f;
+      min-width: 0;
+    }
+
+    /* ==========================================================================
+       方案 3：流式紧凑手风琴 (Smart Accordion Stream)
+       ========================================================================== */
+    .p3-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 32px;
+      background: #0a0b10;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 1100px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .accordion-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s ease;
+    }
+    .accordion-card.active {
+      border-color: rgba(139, 92, 246, 0.45);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+    .accordion-header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .accordion-header:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .accordion-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .accordion-badge-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-dim);
+    }
+    .accordion-body {
+      padding: 16px 18px;
+      border-top: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #0c0e14;
+    }
+
+    /* ==========================================================================
+       方案 4：三栏协同座舱 (Three-Column Cockpit)
+       ========================================================================== */
+    .p4-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 310px 1.1fr 1.3fr;
+      min-height: 0;
+      background: #090a0e;
+    }
+    .p4-col {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      min-width: 0;
+    }
+    .p4-col:last-child {
+      border-right: none;
+    }
+    .p4-col-header {
+      padding: 11px 16px;
+      background: var(--bg-elev2);
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .p4-col-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 方案对比与总结面板 */
+    .comparison-section {
+      max-width: 1400px;
+      margin: 40px auto 60px;
+      padding: 0 24px;
+    }
+    .comp-table-wrap {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    .comp-table th {
+      background: var(--bg-elev2);
+      padding: 14px 18px;
+      font-weight: 700;
+      color: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+    .comp-table td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      vertical-align: top;
+      color: var(--text-dim);
+    }
+    .comp-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .comp-table .score-star {
+      color: #fbbf24;
+      font-weight: 700;
+    }
+
+    /* 通用小型控件 */
+    .mini-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mini-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .mini-input, .mini-select {
+      background: #090b10;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--text);
+      font-size: 12.5px;
+      outline: none;
+    }
+    .mini-input:focus, .mini-select:focus {
+      border-color: var(--accent);
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- 顶栏控制器 -->
+  <header class="top-header">
+    <div class="brand-wrap">
+      <div class="brand-icon">🎨</div>
+      <div>
+        <div class="brand-title">画布节点详情交互与布局重构方案</div>
+        <div class="brand-subtitle">彻底解决长指令、代码、终端日志排版拥挤与信息过载痛点</div>
+      </div>
+    </div>
+
+    <!-- 方案切换器 -->
+    <div class="proposal-switch-bar">
+      <button class="switch-btn active" onclick="switchProposal(1)">
+        <span>方案 1: 工作台选项卡</span>
+        <span class="badge" style="background:#8b5cf6; color:#fff;">推荐首选</span>
+      </button>
+      <button class="switch-btn" onclick="switchProposal(2)">
+        <span>方案 2: IDE 分屏与侧栏折叠</span>
+      </button>
+      <button class="switch-btn" onclick="switchProposal(3)">
+        <span>方案 3: 场景自适应手风琴</span>
+      </button>
+      <button class="switch-btn" onclick="switchProposal(4)">
+        <span>方案 4: 全景三栏协同座舱</span>
+      </button>
+    </div>
+
+    <!-- 交互调试工具 -->
+    <div class="header-tools">
+      <div class="state-selector">
+        <span>节点状态：</span>
+        <select id="simStateSelect" onchange="changeNodeState(this.value)">
+          <option value="running">RUNNING 运行中 (工具调用/代码流)</option>
+          <option value="waiting">WAITING 待审查 (有交付物产出)</option>
+          <option value="idle">IDLE 空闲待启动</option>
+        </select>
+      </div>
+      <button class="toggle-fullscreen-btn" onclick="toggleSimFullscreen()">
+        <span id="fsIcon">⛶</span> <span id="fsText">模拟全屏</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 方案导读说明条 -->
+  <div class="proposal-banner">
+    <div class="banner-card" id="bannerCard">
+      <!-- 动态填充 -->
+    </div>
+  </div>
+
+  <!-- 主交互视口（模拟画布弹窗） -->
+  <div class="canvas-viewport-stage">
+    <div class="mock-canvas-bg">
+      <div class="bg-node-phantom" style="top: 80px; left: 100px;">
+        <b style="color:#aaa;">PR-01 依赖分析</b><br><small style="color:#666;">已完成交付</small>
+      </div>
+      <div class="bg-node-phantom" style="top: 260px; left: 140px;">
+        <b style="color:#aaa;">PR-02 静态检查与实现</b><br><small style="color:#666;">选中聚焦中...</small>
+      </div>
+
+      <!-- 居中模态遮罩 -->
+      <div class="mock-modal-overlay" id="mockOverlay">
+        <div class="modal-frame size-default" id="mockModalFrame">
+          
+          <!-- 弹窗公共头部 -->
+          <div class="modal-header">
+            <div class="modal-title-left">
+              <div class="node-icon-avatar">💻</div>
+              <div class="node-title-meta">
+                <div class="node-title-line">
+                  <span class="node-name">PR-02 静态检查与实现</span>
+                  <span class="node-status-badge running" id="headerStatusBadge">RUNNING</span>
+                </div>
+                <div class="node-subline">
+                  <span class="chip engine">PI 原生</span>
+                  <span class="chip">deepseek-flash</span>
+                  <span style="color:var(--text-faint);">工作区: /code/git/yth-operation</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-actions">
+              <button class="action-icon-btn" title="双击标题栏或点击此处全屏" onclick="toggleSimFullscreen()">⛶</button>
+              <button class="action-icon-btn close" title="关闭弹窗 (Esc)">✕</button>
+            </div>
+          </div>
+
+          <!-- 方案动态内容容器 -->
+          <div id="proposalDynamicMount" style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;">
+            <!-- 方案 HTML 注入点 -->
+          </div>
+
+          <!-- 弹窗公共底部 -->
+          <div class="modal-footer">
+            <div class="footer-hints">
+              <span>💡 提示：支持快捷键 <kbd style="background:#222; padding:1px 5px; border-radius:3px;">Esc</kbd> 退出全屏或关闭；点击遮罩外部也可关闭。</span>
+            </div>
+            <div class="footer-btns" id="footerActionBtns">
+              <button class="btn danger" id="btnStopRun">⏹ 停止当前任务</button>
+              <button class="btn">关闭</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 方案横向对比与分析表 -->
+  <section class="comparison-section">
+    <div class="comp-table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th style="width: 18%;">方案架构</th>
+            <th style="width: 25%;">设计核心思想</th>
+            <th style="width: 22%;">解决“拥挤”的关键手段</th>
+            <th style="width: 18%;">适用工作场景</th>
+            <th style="width: 17%;">综合推荐度</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-weight:700; color:#fff;">
+              方案 1: 工作台场景选项卡<br>
+              <span style="font-size:11px; color:#a78bfa;">(Workspace Tabs)</span>
+            </td>
+            <td>
+              <b>信息分层与专注</b>。顶层将“实录与插话”、“任务指令”、“契约审查”、“环境参数”解耦为独立 Tab。
+            </td>
+            <td>
+              <b>独享 100% 宽度</b>。长代码/终端输出不再被左栏 500px 挤压；看指令时也不受空日志干扰。
+            </td>
+            <td>
+              深耕重度开发、多轮审查、终端命令排错的综合协作流。
+            </td>
+            <td>
+              <span class="score-star">★★★★★</span> (强烈推荐·体验最清爽)
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:#fff;">
+              方案 2: IDE 分屏与侧栏折叠<br>
+              <span style="font-size:11px; color:#60a5fa;">(IDE Split Pane)</span>
+            </td>
+            <td>
+              类似 VS Code 工作区。左侧极窄参数大纲（可一键收拢），右侧双窗格或全宽。
+            </td>
+            <td>
+              <b>参数微缩 + 弹性收缩</b>。折叠后中央区域独享 ~95% 视域，适合需要随时对照配置的用户。
+            </td>
+            <td>
+              既要频繁对照人设/契约、又要时刻盯着终端日志的高频调试场景。
+            </td>
+            <td>
+              <span class="score-star">★★★★☆</span> (操作习惯类似 IDE)
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:#fff;">
+              方案 3: 场景自适应手风琴<br>
+              <span style="font-size:11px; color:#34d399;">(Smart Accordion)</span>
+            </td>
+            <td>
+              单列自上而下顺畅流式布局，各个模块采用智能折叠手风琴卡片。
+            </td>
+            <td>
+              <b>智能感知状态折叠</b>。运行态自动收起繁琐配置只留 1 行摘要，自动撑大日志区。
+            </td>
+            <td>
+              追求极简线性交互、不想频繁点选 Tab 的用户。
+            </td>
+            <td>
+              <span class="score-star">★★★★☆</span> (单列自然顺畅)
+            </td>
+          </tr>
+          <tr>
+            <td style="font-weight:700; color:#fff;">
+              方案 4: 全景三栏协同座舱<br>
+              <span style="font-size:11px; color:#f59e0b;">(3-Col Cockpit)</span>
+            </td>
+            <td>
+              三联画布局：[1. 输入契约] ➔ [2. 指令与交付] ➔ [3. 实录与插话]。
+            </td>
+            <td>
+              <b>横向三维拉伸</b>。充分利用全屏与 2K/4K 宽屏空间，全链路一览无余无需滚动寻找。
+            </td>
+            <td>
+              大屏多任务、重度依赖上游输入比对的高阶工作流。
+            </td>
+            <td>
+              <span class="score-star">★★★☆☆</span> (小屏幕需换行适应)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    // 状态模拟数据
+    let currentProposal = 1;
+    let currentNodeState = "running"; // running | waiting | idle
+    let isFullscreen = false;
+    let p1CurrentTab = "console"; // console | prompt | review | config
+
+    // 方案元信息
+    const PROPOSAL_METAS = {
+      1: {
+        title: "方案 1: 工作台场景选项卡 (Workspace Tabs) —— 极致专注，彻底解决空间割裂",
+        desc: "将原本堆在左侧的「人设指令、参数、契约、交付物」与右侧的「运行日志、插话」按工作场景解耦。每个 Tab 享受弹窗 100% 的宽裕空间，无论几十行 git diff 还是长代码均不折行！",
+        tags: ["首推方案", "代码阅读极佳", "零拥挤感", "信息架构清晰"]
+      },
+      2: {
+        title: "方案 2: IDE 分屏与侧栏折叠 (IDE Split Pane) —— 专业编码体验，左右自由伸缩",
+        desc: "左侧作为参数导航（可一键折叠为极细图标栏），右侧为开阔的主编辑与日志视区，支持在单屏与分屏对比模式自由切换。",
+        tags: ["类 VS Code 习惯", "侧栏可收缩", "双窗格对照"]
+      },
+      3: {
+        title: "方案 3: 场景自适应手风琴 (Smart Accordion Stream) —— 智能折叠无用项，聚焦当前动作",
+        desc: "保持上下顺畅的单列流动阅读，但根据节点状态（运行中 / 待审查 / 编辑中）自动展开最核心区域，把已定型的参数收缩为一行胶囊摘要。",
+        tags: ["单列流畅", "状态自适应", "按需展开"]
+      },
+      4: {
+        title: "方案 4: 全景三栏协同座舱 (Three-Column Cockpit) —— 一眼看透「输入 ➔ 处理 ➔ 输出」全链路",
+        desc: "在宽屏与全屏下，把工作流切为三等分：左侧上游契约、中间当前人设与产出、右侧控制台日志。适合 2K/大屏重度工作流协作。",
+        tags: ["全景沉浸", "高阶座舱感", "契约链路清晰"]
+      }
+    };
+
+    function updateBanner() {
+      const meta = PROPOSAL_METAS[currentProposal];
+      const banner = document.getElementById("bannerCard");
+      banner.innerHTML = `
+        <div class="banner-content">
+          <h2>${meta.title}</h2>
+          <p>${meta.desc}</p>
+          <div class="banner-tags">
+            ${meta.tags.map((t, idx) => `<span class="banner-tag ${idx === 0 ? 'highlight' : ''}">${t}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function switchProposal(id) {
+      currentProposal = id;
+      document.querySelectorAll(".switch-btn").forEach((btn, idx) => {
+        btn.classList.toggle("active", idx + 1 === id);
+      });
+      updateBanner();
+      renderProposalView();
+    }
+
+    function changeNodeState(st) {
+      currentNodeState = st;
+      const badge = document.getElementById("headerStatusBadge");
+      const btnStop = document.getElementById("btnStopRun");
+      if (st === "running") {
+        badge.className = "node-status-badge running";
+        badge.innerText = "RUNNING";
+        btnStop.style.display = "inline-flex";
+        btnStop.innerText = "⏹ 停止当前任务";
+        btnStop.className = "btn danger";
+      } else if (st === "waiting") {
+        badge.className = "node-status-badge waiting";
+        badge.innerText = "WAITING APPROVAL";
+        btnStop.style.display = "inline-flex";
+        btnStop.innerText = "✅ 审查批准合流";
+        btnStop.className = "btn success";
+      } else {
+        badge.className = "node-status-badge done";
+        badge.innerText = "IDLE (READY)";
+        btnStop.style.display = "inline-flex";
+        btnStop.innerText = "▶ 启动该节点";
+        btnStop.className = "btn primary";
+      }
+      renderProposalView();
+    }
+
+    function toggleSimFullscreen() {
+      isFullscreen = !isFullscreen;
+      const overlay = document.getElementById("mockOverlay");
+      const frame = document.getElementById("mockModalFrame");
+      const fsIcon = document.getElementById("fsIcon");
+      const fsText = document.getElementById("fsText");
+      if (isFullscreen) {
+        overlay.classList.add("is-fullscreen");
+        frame.className = "modal-frame size-fullscreen";
+        fsIcon.innerText = "🗗";
+        fsText.innerText = "退出全屏";
+      } else {
+        overlay.classList.remove("is-fullscreen");
+        frame.className = "modal-frame size-default";
+        fsIcon.innerText = "⛶";
+        fsText.innerText = "模拟全屏";
+      }
+    }
+
+    // 渲染各个方案的内部 DOM
+    function renderProposalView() {
+      const mount = document.getElementById("proposalDynamicMount");
+      if (currentProposal === 1) {
+        renderProposal1(mount);
+      } else if (currentProposal === 2) {
+        renderProposal2(mount);
+      } else if (currentProposal === 3) {
+        renderProposal3(mount);
+      } else if (currentProposal === 4) {
+        renderProposal4(mount);
+      }
+    }
+
+    /* -------------------------------------------------------------
+       渲染方案 1: 工作台场景选项卡
+       ------------------------------------------------------------- */
+    function setP1Tab(tabKey) {
+      p1CurrentTab = tabKey;
+      renderProposalView();
+    }
+
+    function renderProposal1(container) {
+      container.innerHTML = `
+        <!-- 选项卡导航栏 -->
+        <div class="p1-nav-bar">
+          <button class="p1-nav-tab ${p1CurrentTab === 'console' ? 'active' : ''}" onclick="setP1Tab('console')">
+            <span>⚡ 实时运行与控制台</span>
+            <span class="tab-badge">${currentNodeState === 'running' ? '执行中...' : '24 消息'}</span>
+          </button>
+          <button class="p1-nav-tab ${p1CurrentTab === 'prompt' ? 'active' : ''}" onclick="setP1Tab('prompt')">
+            <span>📝 AI 任务指令与人设</span>
+          </button>
+          <button class="p1-nav-tab ${p1CurrentTab === 'review' ? 'active' : ''}" onclick="setP1Tab('review')">
+            <span>🔍 上下游契约与审查门禁</span>
+            ${currentNodeState === 'waiting' ? '<span class="tab-badge" style="background:#f59e0b; color:#fff;">待审批</span>' : ''}
+          </button>
+          <button class="p1-nav-tab ${p1CurrentTab === 'config' ? 'active' : ''}" onclick="setP1Tab('config')">
+            <span>⚙️ 沙箱与物理环境</span>
+          </button>
+        </div>
+
+        <!-- 主体展示区 -->
+        <div class="p1-body">
+          ${p1CurrentTab === 'console' ? `
+            <div class="p1-console-view">
+              <!-- 左侧小工具调用时间轴 -->
+              <div class="p1-step-sidebar">
+                <div class="p1-step-header">
+                  <span>协同事件与步骤 (18)</span>
+                  <span style="cursor:pointer; color:var(--text-faint);">清空</span>
+                </div>
+                <div class="p1-step-list">
+                  <div class="p1-step-item active">
+                    <div class="p1-step-title"><span style="color:#60a5fa;">🔧 bash</span> grep -n 'updateFortStatus'</div>
+                    <div class="p1-step-time">16:22:15 · 耗时 420ms</div>
+                  </div>
+                  <div class="p1-step-item">
+                    <div class="p1-step-title"><span style="color:#60a5fa;">🔧 read</span> ServiceStateManager.java</div>
+                    <div class="p1-step-time">16:22:08 · 耗时 120ms</div>
+                  </div>
+                  <div class="p1-step-item">
+                    <div class="p1-step-title"><span style="color:#34d399;">🔗 handoff</span> 接收环境勘察输出</div>
+                    <div class="p1-step-time">16:21:40 · 合流通过</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 右侧宽敞无比的实录对话流与插话输入 -->
+              <div class="p1-console-stream">
+                <div class="p1-log-scroll">
+                  <div class="mock-chat-bubble user">
+                    <b>上游合流任务输入：</b><br>
+                    请完成静态检查，核对 14 组运维脚本状态，并在 .worktrees/canvas-01 中完成代码抽样。
+                  </div>
+
+                  <div class="mock-chat-bubble assistant">
+                    <p style="margin-bottom:8px;">正在定位目标服务状态监听实现，已在工程核心代码中执行全局文本检索：</p>
+                    <div class="mock-code-box">
+                      <div class="mock-code-header">
+                        <span>Terminal Output (bash)</span>
+                        <span>cd /code/git/yth-operation</span>
+                      </div>
+cd /code/git/yth-operation && grep -n 'updateFortStatus\' -r yth-operation-agent/src/main/java/com/zd/ccp/task/client/core/monitor/MonitoringAgent.java | head -70<br>
+65:    public void updateFortStatus(String fortId, FortReport report) {<br>
+66:        ServiceStateManager.getInstance().notifyListeners(fortId, report);<br>
+67:    }
+                    </div>
+                    <p style="margin-top:10px; color:#a7f3d0;">
+                      ✅ 检索到核心监听器逻辑，所有 30 个改动文件与 2056 行修改已在独立沙箱内对齐。
+                    </p>
+                  </div>
+                </div>
+
+                <!-- 底部插话 -->
+                <div class="p1-steer-bar">
+                  <input type="text" class="p1-steer-input" placeholder="输入实时纠偏意见 (如: 别修改 styles.css，只在组件内局部改动)..." />
+                  <button class="btn primary">💬 发送插话</button>
+                </div>
+              </div>
+            </div>
+          ` : p1CurrentTab === 'prompt' ? `
+            <div class="p1-prompt-view">
+              <div class="prompt-card">
+                <div class="prompt-card-header">
+                  <span class="prompt-card-title">🎭 角色指令规约 (System Prompt 基座人设)</span>
+                  <small style="color:var(--text-faint);">决定“是谁”</small>
+                </div>
+                <textarea class="prompt-textarea" placeholder="输入专属职责人设...">你是一个资深的研发工程师 (Coder)，精通分布式高并发架构与 Java/TypeScript 栈。在编写代码时遵循单元测试先行的严谨规范。</textarea>
+                <div style="font-size:11.5px; color:var(--text-faint);">
+                  启动优先级：本次手动输入 &gt; 节点 AI 指令 &gt; 角色规约
+                </div>
+              </div>
+
+              <div class="prompt-card">
+                <div class="prompt-card-header">
+                  <span class="prompt-card-title">🎯 AI 任务指令 (Instruction 可输入·随图保存)</span>
+                  <small style="color:var(--text-faint);">决定“做什么”</small>
+                </div>
+                <textarea class="prompt-textarea" placeholder="输入任务指令...">按照上游交付的勘察报告 {{上游摘要}}，对 14 组组件的健康探针进行逐行审查。如果发现未处理异常，直接在代码中补充容错降级逻辑。</textarea>
+                <div style="font-size:11.5px; color:var(--text-faint);">
+                  支持模板变量：{{input}}、{{上游摘要}}、{{upstream}}
+                </div>
+              </div>
+            </div>
+          ` : p1CurrentTab === 'review' ? `
+            <div class="p1-review-view">
+              <div class="review-status-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <h3 style="color:#fff; font-size:15px;">当前节点交付物产出 (Review Gate)</h3>
+                  <span class="node-status-badge ${currentNodeState === 'waiting' ? 'waiting' : 'running'}">
+                    ${currentNodeState.toUpperCase()}
+                  </span>
+                </div>
+                <p style="font-size:12.5px; color:var(--text-dim);">
+                  以下为本轮执行生成的物理 Git Diff 与测试摘要，审查批准后下游节点方可接收契约并启动：
+                </p>
+                <div class="diff-preview-box">
+                  <div style="color:#94a3b8; margin-bottom:8px;">// Git diff stat: 30 files changed, 2056 insertions(+), 895 deletions(-)</div>
+                  <div class="diff-line-del">-    ServiceStateManager.updateSync(oldState);</div>
+                  <div class="diff-line-add">+    ServiceStateManager.updateAsyncWithRetry(newState, 3 /* maxRetry */);</div>
+                  <div class="diff-line-add">+    MonitoringLogger.info("Fort health recovered: " + fortId);</div>
+                </div>
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                  <button class="btn success" style="padding:8px 18px;">✔ 审查通过并批准合流</button>
+                  <button class="btn" style="color:#f87171;">✖ 驳回修改</button>
+                </div>
+              </div>
+            </div>
+          ` : `
+            <div style="padding:24px; max-width:800px; margin:0 auto; width:100%; display:flex; flex-direction:column; gap:16px;">
+              <div class="mini-field">
+                <label class="mini-label">基座模型与思考强度</label>
+                <select class="mini-select">
+                  <option>deepseek-flash (高思考模式)</option>
+                  <option>claude-3-5-sonnet</option>
+                  <option>gpt-4o</option>
+                </select>
+              </div>
+              <div class="mini-field">
+                <label class="mini-label">工作区沙箱目录 (CWD)</label>
+                <input type="text" class="mini-input" value="/code/git/yth-operation" />
+              </div>
+              <label style="display:flex; align-items:center; gap:8px; font-size:12.5px;">
+                <input type="checkbox" checked /> 启用独立 Git Worktree 物理隔离 (.worktrees/canvas-01)
+              </label>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    /* -------------------------------------------------------------
+       渲染方案 2: IDE 分屏与侧栏折叠
+       ------------------------------------------------------------- */
+    let p2SidebarCollapsed = false;
+    function toggleP2Sidebar() {
+      p2SidebarCollapsed = !p2SidebarCollapsed;
+      renderProposalView();
+    }
+
+    function renderProposal2(container) {
+      container.innerHTML = `
+        <div class="p2-container">
+          <!-- 可折叠侧栏 -->
+          <div class="p2-sidebar ${p2SidebarCollapsed ? 'collapsed' : ''}">
+            <div class="p2-sidebar-header">
+              <span style="font-weight:700; font-size:12px; ${p2SidebarCollapsed ? 'display:none;' : ''}">📋 配置导航与参数</span>
+              <button class="action-icon-btn" onclick="toggleP2Sidebar()" title="展开/折叠侧栏">
+                ${p2SidebarCollapsed ? '▶' : '◀'}
+              </button>
+            </div>
+            ${!p2SidebarCollapsed ? `
+              <div class="p2-sidebar-scroll">
+                <div class="mini-field">
+                  <label class="mini-label">模型选择</label>
+                  <select class="mini-select"><option>deepseek-flash</option></select>
+                </div>
+                <div class="mini-field">
+                  <label class="mini-label">工作区目录</label>
+                  <input class="mini-input" value="/code/git/yth-operation" />
+                </div>
+                <div style="border-top:1px solid var(--border); padding-top:10px;">
+                  <div class="mini-label" style="margin-bottom:6px;">上游依赖</div>
+                  <div style="font-size:11.5px; color:#c084fc; background:rgba(192,132,252,0.1); padding:4px 8px; border-radius:4px;">
+                    ⬅ 依赖: 环境勘察 (只读)
+                  </div>
+                </div>
+                <div style="border-top:1px solid var(--border); padding-top:10px;">
+                  <div class="mini-label" style="margin-bottom:6px;">下游接驳</div>
+                  <div style="font-size:11.5px; color:#34d399; background:rgba(52,211,153,0.1); padding:4px 8px; border-radius:4px;">
+                    ➡ 输出至: 脚本就绪核对
+                  </div>
+                </div>
+              </div>
+            ` : `
+              <div style="display:flex; flex-direction:column; align-items:center; gap:12px; padding-top:14px; color:var(--text-faint);">
+                <span>⚙</span><span>📁</span><span>🔗</span>
+              </div>
+            `}
+          </div>
+
+          <!-- 主编辑与实录双窗格 -->
+          <div class="p2-main">
+            <div class="p2-main-toolbar">
+              <span style="font-size:12px; color:var(--text-dim);">左右对比视图：左侧查看任务指令与交付物，右侧查看实时终端实录</span>
+              <div style="display:flex; gap:6px;">
+                <button class="btn" style="padding:3px 8px; font-size:11px;">单屏最大化</button>
+                <button class="btn primary" style="padding:3px 8px; font-size:11px;">双屏分屏</button>
+              </div>
+            </div>
+
+            <div class="p2-split-views">
+              <!-- 左窗格：任务定义与交付审核 -->
+              <div class="p2-pane-left">
+                <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+                  <h4 style="font-size:12.5px; color:#fff; margin-bottom:6px;">🎯 AI 任务指令</h4>
+                  <p style="font-size:12px; color:var(--text-dim); line-height:1.5;">
+                    按照脚本执行抽样结果，修复 ServiceStateManager 的异步重试逻辑，确保健康检查探针在 30 秒内恢复。
+                  </p>
+                </div>
+
+                <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px; flex:1; display:flex; flex-direction:column;">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <h4 style="font-size:12.5px; color:#fff;">📦 交付物摘要</h4>
+                    <span style="color:#34d399; font-size:11px; font-weight:600;">已生成 30 个改动</span>
+                  </div>
+                  <div class="diff-preview-box" style="flex:1; max-height:none;">
+                    diff --git a/MonitoringAgent.java<br>
+                    + public void updateFortStatus(...) {<br>
+                    +     ServiceStateManager.getInstance().notify(...);<br>
+                    + }
+                  </div>
+                </div>
+              </div>
+
+              <!-- 右窗格：实录流与插话 -->
+              <div class="p2-pane-right">
+                <div class="p1-log-scroll" style="flex:1;">
+                  <div class="mock-chat-bubble assistant">
+                    <p>正在后台启动 Maven 测试以验证代码修改：</p>
+                    <div class="mock-code-box">
+                      mvn test -Dtest=MonitoringAgentTest<br>
+                      [INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0<br>
+                      [INFO] BUILD SUCCESS
+                    </div>
+                  </div>
+                </div>
+                <div class="p1-steer-bar">
+                  <input type="text" class="p1-steer-input" placeholder="输入插话纠偏..." />
+                  <button class="btn primary">插话</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    /* -------------------------------------------------------------
+       渲染方案 3: 场景自适应手风琴
+       ------------------------------------------------------------- */
+    let p3OpenSection = "console"; // prompt | review | console | config
+    function toggleP3(sec) {
+      p3OpenSection = p3OpenSection === sec ? "" : sec;
+      renderProposalView();
+    }
+
+    function renderProposal3(container) {
+      container.innerHTML = `
+        <div class="p3-container">
+          
+          <!-- 手风琴 1: 运行实录 (运行中默认高优先级展开) -->
+          <div class="accordion-card ${p3OpenSection === 'console' ? 'active' : ''}">
+            <div class="accordion-header" onclick="toggleP3('console')">
+              <div class="accordion-header-left">
+                <span style="font-size:16px;">⚡</span>
+                <span style="font-weight:700; color:#fff;">实时运行与对话实录 (Console & Stream)</span>
+                <span class="accordion-badge-pill" style="background:rgba(59,130,246,0.2); color:#60a5fa;">24 条交互</span>
+              </div>
+              <span>${p3OpenSection === 'console' ? '▲ 收起' : '▼ 展开'}</span>
+            </div>
+            ${p3OpenSection === 'console' ? `
+              <div class="accordion-body" style="padding:0;">
+                <div class="p1-log-scroll" style="max-height:360px;">
+                  <div class="mock-chat-bubble assistant">
+                    <p>检测到 14 组运维脚本状态探针已完成抽样：</p>
+                    <div class="mock-code-box">
+                      grep -n 'updateFortStatus' MonitoringAgent.java<br>
+                      65:    public void updateFortStatus(String fortId, FortReport report)
+                    </div>
+                  </div>
+                </div>
+                <div class="p1-steer-bar">
+                  <input type="text" class="p1-steer-input" placeholder="输入插话纠偏意见..." />
+                  <button class="btn primary">发送插话</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 手风琴 2: 任务交付物与审查门禁 -->
+          <div class="accordion-card ${p3OpenSection === 'review' ? 'active' : ''}">
+            <div class="accordion-header" onclick="toggleP3('review')">
+              <div class="accordion-header-left">
+                <span style="font-size:16px;">🔍</span>
+                <span style="font-weight:700; color:#fff;">交付物产出与审查门禁 (Review Gate)</span>
+                <span class="accordion-badge-pill" style="background:rgba(16,185,129,0.2); color:#34d399;">30 files changed</span>
+              </div>
+              <span>${p3OpenSection === 'review' ? '▲ 收起' : '▼ 展开'}</span>
+            </div>
+            ${p3OpenSection === 'review' ? `
+              <div class="accordion-body">
+                <div class="diff-preview-box">
+                  +    ServiceStateManager.updateAsyncWithRetry(newState, 3);
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                  <button class="btn success">审查通过并批准</button>
+                  <button class="btn">驳回修改</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 手风琴 3: AI 任务指令与提示词 -->
+          <div class="accordion-card ${p3OpenSection === 'prompt' ? 'active' : ''}">
+            <div class="accordion-header" onclick="toggleP3('prompt')">
+              <div class="accordion-header-left">
+                <span style="font-size:16px;">📝</span>
+                <span style="font-weight:700; color:#fff;">AI 任务指令与基座人设</span>
+                <span class="accordion-badge-pill">随图保存</span>
+              </div>
+              <span>${p3OpenSection === 'prompt' ? '▲ 收起' : '▼ 展开'}</span>
+            </div>
+            ${p3OpenSection === 'prompt' ? `
+              <div class="accordion-body">
+                <div class="mini-field">
+                  <label class="mini-label">AI 任务指令</label>
+                  <textarea class="mini-input" style="height:90px;">按照 PRD 完成登录页健康探针容错逻辑 {{input}}...</textarea>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <!-- 手风琴 4: 物理环境与参数 -->
+          <div class="accordion-card ${p3OpenSection === 'config' ? 'active' : ''}">
+            <div class="accordion-header" onclick="toggleP3('config')">
+              <div class="accordion-header-left">
+                <span style="font-size:16px;">⚙️</span>
+                <span style="font-weight:700; color:#fff;">模型与沙箱环境</span>
+                <span class="accordion-badge-pill">deepseek-flash · Git Worktree</span>
+              </div>
+              <span>${p3OpenSection === 'config' ? '▲ 收起' : '▼ 展开'}</span>
+            </div>
+            ${p3OpenSection === 'config' ? `
+              <div class="accordion-body">
+                <div class="mini-field">
+                  <label class="mini-label">沙箱目录</label>
+                  <input class="mini-input" value="/code/git/yth-operation" />
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+        </div>
+      `;
+    }
+
+    /* -------------------------------------------------------------
+       渲染方案 4: 全景三栏协同座舱
+       ------------------------------------------------------------- */
+    function renderProposal4(container) {
+      container.innerHTML = `
+        <div class="p4-container">
+          
+          <!-- 第 1 栏：契约与沙箱 -->
+          <div class="p4-col">
+            <div class="p4-col-header">
+              <span>1. 输入契约与环境</span>
+              <span class="chip">INCOMING</span>
+            </div>
+            <div class="p4-col-body">
+              <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+                <b style="color:#c084fc; font-size:12px;">上游契约输入：</b>
+                <p style="font-size:11.5px; color:var(--text-dim); margin-top:6px; line-height:1.45;">
+                  来源: <b>环境勘察 (只读)</b><br>
+                  产出: 已确认 14 组运维探针基线，等待本节点介入静态检查。
+                </p>
+              </div>
+
+              <div class="mini-field">
+                <label class="mini-label">基座模型</label>
+                <select class="mini-select"><option>deepseek-flash</option></select>
+              </div>
+
+              <div class="mini-field">
+                <label class="mini-label">沙箱目录与 Worktree</label>
+                <input class="mini-input" value="/code/git/yth-operation" />
+                <label style="font-size:11.5px; margin-top:4px;"><input type="checkbox" checked /> 启用独立 Worktree 隔离</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 第 2 栏：指令与审查产出 -->
+          <div class="p4-col">
+            <div class="p4-col-header">
+              <span>2. 任务指令与审查交付</span>
+              <span class="chip" style="color:#34d399;">REVIEW GATE</span>
+            </div>
+            <div class="p4-col-body">
+              <div class="mini-field">
+                <label class="mini-label">AI 任务指令 (随图保存)</label>
+                <textarea class="mini-input" style="height:120px; font-size:12px;">按照探针基线进行逐行静态代码审查，并修复所有并发挂死隐患。</textarea>
+              </div>
+
+              <div style="flex:1; display:flex; flex-direction:column; background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+                <b style="color:#fff; font-size:12px; margin-bottom:8px;">本轮生成交付物：</b>
+                <div class="diff-preview-box" style="flex:1; max-height:none;">
+                  + ServiceStateManager.updateAsyncWithRetry(...);
+                </div>
+                <div style="display:flex; gap:6px; margin-top:10px;">
+                  <button class="btn success" style="flex:1; font-size:11.5px;">通过批准</button>
+                  <button class="btn" style="color:#f87171; font-size:11.5px;">驳回</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 第 3 栏：执行实录与插话 -->
+          <div class="p4-col">
+            <div class="p4-col-header">
+              <span>3. 协同实录与实时插话</span>
+              <span class="chip" style="color:#60a5fa;">STEER & LOG</span>
+            </div>
+            <div class="p4-col-body" style="padding:0; display:flex; flex-direction:column;">
+              <div class="p1-log-scroll" style="flex:1; padding:14px;">
+                <div class="mock-chat-bubble assistant">
+                  <p style="font-size:12px;">执行全局类依赖关系验证：</p>
+                  <div class="mock-code-box" style="font-size:11.5px;">
+                    grep -n 'updateFortStatus' ...<br>
+                    65: public void updateFortStatus(...)
+                  </div>
+                </div>
+              </div>
+              <div class="p1-steer-bar">
+                <input type="text" class="p1-steer-input" placeholder="输入插话纠偏..." />
+                <button class="btn primary">插话</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      `;
+    }
+
+    // 初始化
+    updateBanner();
+    renderProposalView();
+
+  </script>
+</body>
+</html>

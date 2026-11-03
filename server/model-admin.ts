@@ -25,6 +25,7 @@ import type {
 	ProviderKeyInfo,
 } from "./protocol.js";
 import { enrichBatch, type EnrichLang } from "./model-enrich.js";
+import { resolveModelReasoningSpec } from "./reasoning-registry.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { ProviderOAuthFlowManager } from "./provider-oauth-flow.js";
 
@@ -159,6 +160,26 @@ export function mergeProviderConfigEntry(
 		// models.json 里手写的 xhigh/max 映射抹掉，档位又会退回 off…high。
 		const thinkingLevelMap = sanitizeThinkingLevelMap(model.thinkingLevelMap);
 		if (thinkingLevelMap) merged.thinkingLevelMap = thinkingLevelMap;
+		if (model.compat && typeof model.compat === "object") merged.compat = model.compat;
+		if (model.samplingParams && typeof model.samplingParams === "object") merged.samplingParams = model.samplingParams;
+		if (typeof model.customExtraBody === "string") {
+			if (model.customExtraBody.trim()) {
+				merged.customExtraBody = model.customExtraBody.trim();
+				try {
+					const parsed = JSON.parse(model.customExtraBody.trim());
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+						merged.samplingParams = {
+							...((merged.samplingParams as Record<string, unknown>) ?? {}),
+							...parsed,
+						};
+					}
+				} catch {
+					// 忽略非合法 JSON
+				}
+			} else {
+				delete merged.customExtraBody;
+			}
+		}
 		return merged;
 	});
 
@@ -409,12 +430,13 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		boolMeta(r.supports_vision) === true ||
 		boolMeta(r.vision) === true ||
 		strArrMeta(r.input)?.includes("image") === true;
-	// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征推断。
+	// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征或权威知识库推断。
 	// 只增不减：取消勾选靠手填（编辑页/刷新合并都只补缺）。
 	// 网关自报推理档位同样是「这是推理模型」的铁证（如聚合网关的 glm-5.3，
 	// 名字认不出来，但 reasoning_levels 报了 low/high/max）。
-	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r);
-	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined;
+	const knownSpec = resolveModelReasoningSpec(id, r);
+	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r) ?? knownSpec?.thinkingLevelMap;
+	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined || Boolean(knownSpec);
 	const contextWindow =
 		numMeta(r.context_window) ?? numMeta(r.context_length) ?? numMeta(r.max_model_len) ?? numMeta(r.max_context_length);
 	const maxTokens = numMeta(r.max_tokens) ?? numMeta(r.max_output_tokens) ?? numMeta(r.max_completion_tokens);
@@ -437,9 +459,10 @@ function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	const rawName = typeof r.name === "string" ? r.name : "";
 	const id = rawName.replace(/^models\//, "");
 	const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
-	// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability）。
-	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r);
-	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined;
+	// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability 与 resolveModelReasoningSpec）。
+	const knownGoogleSpec = resolveModelReasoningSpec(id, r);
+	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r) ?? knownGoogleSpec?.thinkingLevelMap;
+	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined || Boolean(knownGoogleSpec);
 	return {
 		id,
 		...(displayName && displayName !== id ? { name: displayName } : {}),
@@ -1943,11 +1966,25 @@ export class ModelAdminService {
 	 *  from sibling models at compose time. */
 	private static toModelRow(m: UiModelConfigEntry): UiModelConfigEntry {
 		const thinkingLevelMap = sanitizeThinkingLevelMap(m.thinkingLevelMap);
+		let samplingParams = m.samplingParams;
+		if (typeof m.customExtraBody === "string" && m.customExtraBody.trim()) {
+			try {
+				const parsed = JSON.parse(m.customExtraBody.trim());
+				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+					samplingParams = { ...(samplingParams ?? {}), ...parsed };
+				}
+			} catch {
+				// 忽略格式错误，保留原样
+			}
+		}
 		return {
 			id: m.id.trim(),
 			...(m.name?.trim() ? { name: m.name.trim() } : {}),
 			...(m.reasoning ? { reasoning: true } : {}),
 			...(thinkingLevelMap ? { thinkingLevelMap } : {}),
+			...(m.compat && typeof m.compat === "object" ? { compat: m.compat } : {}),
+			...(samplingParams && typeof samplingParams === "object" ? { samplingParams } : {}),
+			...(m.customExtraBody?.trim() ? { customExtraBody: m.customExtraBody.trim() } : {}),
 			...(m.input?.length ? { input: m.input } : {}),
 			...(m.contextWindow ? { contextWindow: Number(m.contextWindow) } : {}),
 			...(m.maxTokens ? { maxTokens: Number(m.maxTokens) } : {}),

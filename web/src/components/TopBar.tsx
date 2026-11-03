@@ -163,9 +163,10 @@ interface TopBarProps {
 			command?: CommandDef;
 		}) => void;
 		restart: (id: string) => void;
+		select?: (id: string) => void;
 	};
 	view: ViewName;
-	onViewChange: (view: ViewName) => void;
+	onViewChange: (view: ViewName, opts?: { skipAutoCreate?: boolean }) => void;
 	/** Installed optional plugins (<dataDir>/plugins) — one view tab each
 	 *  (view:false renderer-only plugins are filtered out by the caller). */
 	plugins: {
@@ -596,6 +597,7 @@ export function TopBar({
 			cwd: "${pwd}",
 		};
 		const existing = chat.terminals.find((tm) => tm.title === title);
+		const targetId = existing ? existing.id : randomUuid();
 		if (existing) {
 			updateTermIdsRef.current.add(existing.id);
 			terminal.restart(existing.id);
@@ -608,10 +610,9 @@ export function TopBar({
 				rows: 24,
 			});
 		} else {
-			const tid = randomUuid();
-			updateTermIdsRef.current.add(tid);
+			updateTermIdsRef.current.add(targetId);
 			terminal.create({
-				id: tid,
+				id: targetId,
 				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
@@ -623,7 +624,8 @@ export function TopBar({
 			});
 		}
 		setUpdateOpen(false);
-		onViewChange("terminal");
+		terminal.select?.(targetId);
+		onViewChange("terminal", { skipAutoCreate: true });
 	};
 
 	/** Run the right update command for one or more components in a visible
@@ -640,6 +642,7 @@ export function TopBar({
 			cwd: "${pwd}",
 		};
 		const existing = chat.terminals.find((tm) => tm.title === title);
+		const targetId = existing ? existing.id : randomUuid();
 		if (existing) {
 			updateTermIdsRef.current.add(existing.id);
 			terminal.restart(existing.id);
@@ -652,10 +655,9 @@ export function TopBar({
 				rows: 24,
 			});
 		} else {
-			const tid = randomUuid();
-			updateTermIdsRef.current.add(tid);
+			updateTermIdsRef.current.add(targetId);
 			terminal.create({
-				id: tid,
+				id: targetId,
 				conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 				title,
 				cwd: chat.state?.cwd ?? "",
@@ -667,7 +669,8 @@ export function TopBar({
 			});
 		}
 		setUpdateOpen(false);
-		onViewChange("terminal");
+		terminal.select?.(targetId);
+		onViewChange("terminal", { skipAutoCreate: true });
 	};
 
 	// Shared by the desktop update dropdown and the mobile "⋯" panel.
