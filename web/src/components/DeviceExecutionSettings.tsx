@@ -44,6 +44,9 @@ const DEFAULT_SETTINGS: SettingsType = {
 	fileSyncStagedBytes: 33554432,
 	resourceLockDefaultTtlMs: 600000,
 	blackboardMaxBytes: 32768,
+	taskReportExcerptBytes: 65536,
+	maxResourceLocksPerTask: 64,
+	botMentionBudgetPerTurn: 3,
 };
 
 function clampNumber(val: unknown, min: number, max: number, fallback: number): number {
@@ -94,8 +97,8 @@ function normalizeSnapshot(raw: unknown): SnapshotType {
 			: {};
 
 	const normalizedSettings: SettingsType = {
-		maxActiveTasks: clampNumber(rawSettings.maxActiveTasks, 1, 32, DEFAULT_SETTINGS.maxActiveTasks),
-		maxWaitingTasks: clampNumber(rawSettings.maxWaitingTasks, 0, 256, DEFAULT_SETTINGS.maxWaitingTasks),
+		maxActiveTasks: clampNumber(rawSettings.maxActiveTasks, 1, 64, DEFAULT_SETTINGS.maxActiveTasks),
+		maxWaitingTasks: clampNumber(rawSettings.maxWaitingTasks, 0, 1024, DEFAULT_SETTINGS.maxWaitingTasks),
 		starvationThresholdMs: clampNumber(
 			rawSettings.starvationThresholdMs,
 			1000,
@@ -108,29 +111,43 @@ function normalizeSnapshot(raw: unknown): SnapshotType {
 			20,
 			DEFAULT_SETTINGS.maxSkipsBeforeStarvation,
 		),
-		maxDispatchDepth: clampNumber(rawSettings.maxDispatchDepth, 1, 32, DEFAULT_SETTINGS.maxDispatchDepth),
-		maxDispatchBudget: clampNumber(rawSettings.maxDispatchBudget, 1, 64, DEFAULT_SETTINGS.maxDispatchBudget),
+		maxDispatchDepth: clampNumber(rawSettings.maxDispatchDepth, 1, 64, DEFAULT_SETTINGS.maxDispatchDepth),
+		maxDispatchBudget: clampNumber(rawSettings.maxDispatchBudget, 1, 256, DEFAULT_SETTINGS.maxDispatchBudget),
 		allowBotMentions:
 			typeof rawSettings.allowBotMentions === "boolean"
 				? rawSettings.allowBotMentions
 				: DEFAULT_SETTINGS.allowBotMentions,
-		groupContextBytes: clampNumber(rawSettings.groupContextBytes, 4096, 262144, DEFAULT_SETTINGS.groupContextBytes),
-		groupRetentionLimit: clampNumber(rawSettings.groupRetentionLimit, 50, 2000, DEFAULT_SETTINGS.groupRetentionLimit),
-		fileSyncMaxBytes: clampNumber(rawSettings.fileSyncMaxBytes, 1048576, 104857600, DEFAULT_SETTINGS.fileSyncMaxBytes),
-		fileSyncMaxFiles: clampNumber(rawSettings.fileSyncMaxFiles, 10, 1000, DEFAULT_SETTINGS.fileSyncMaxFiles),
+		groupContextBytes: clampNumber(rawSettings.groupContextBytes, 4096, 2097152, DEFAULT_SETTINGS.groupContextBytes),
+		groupRetentionLimit: clampNumber(rawSettings.groupRetentionLimit, 50, 20000, DEFAULT_SETTINGS.groupRetentionLimit),
+		fileSyncMaxBytes: clampNumber(
+			rawSettings.fileSyncMaxBytes,
+			1048576,
+			10737418240,
+			DEFAULT_SETTINGS.fileSyncMaxBytes,
+		),
+		fileSyncMaxFiles: clampNumber(rawSettings.fileSyncMaxFiles, 10, 10000, DEFAULT_SETTINGS.fileSyncMaxFiles),
 		fileSyncStagedBytes: clampNumber(
 			rawSettings.fileSyncStagedBytes,
 			4194304,
-			536870912,
+			53687091200,
 			DEFAULT_SETTINGS.fileSyncStagedBytes,
 		),
 		resourceLockDefaultTtlMs: clampNumber(
 			rawSettings.resourceLockDefaultTtlMs,
 			60000,
-			3600000,
+			86400000,
 			DEFAULT_SETTINGS.resourceLockDefaultTtlMs,
 		),
-		blackboardMaxBytes: clampNumber(rawSettings.blackboardMaxBytes, 4096, 262144, DEFAULT_SETTINGS.blackboardMaxBytes),
+		blackboardMaxBytes: clampNumber(rawSettings.blackboardMaxBytes, 4096, 4194304, DEFAULT_SETTINGS.blackboardMaxBytes),
+		...(typeof rawSettings.taskReportExcerptBytes === "number"
+			? { taskReportExcerptBytes: rawSettings.taskReportExcerptBytes }
+			: {}),
+		...(typeof rawSettings.maxResourceLocksPerTask === "number"
+			? { maxResourceLocksPerTask: rawSettings.maxResourceLocksPerTask }
+			: {}),
+		...(typeof rawSettings.botMentionBudgetPerTurn === "number"
+			? { botMentionBudgetPerTurn: rawSettings.botMentionBudgetPerTurn }
+			: {}),
 	};
 
 	const running = Array.isArray(d.running) ? (d.running as SnapshotType["running"]) : [];
@@ -282,8 +299,8 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 		setSuccessMsg(null);
 
 		const payload: SettingsType = {
-			maxActiveTasks: clampNumber(draft.maxActiveTasks, 1, 32, DEFAULT_SETTINGS.maxActiveTasks),
-			maxWaitingTasks: clampNumber(draft.maxWaitingTasks, 0, 256, DEFAULT_SETTINGS.maxWaitingTasks),
+			maxActiveTasks: clampNumber(draft.maxActiveTasks, 1, 64, DEFAULT_SETTINGS.maxActiveTasks),
+			maxWaitingTasks: clampNumber(draft.maxWaitingTasks, 0, 1024, DEFAULT_SETTINGS.maxWaitingTasks),
 			starvationThresholdMs: clampNumber(
 				draft.starvationThresholdMs,
 				1000,
@@ -296,26 +313,33 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				20,
 				DEFAULT_SETTINGS.maxSkipsBeforeStarvation,
 			),
-			maxDispatchDepth: clampNumber(draft.maxDispatchDepth, 1, 32, DEFAULT_SETTINGS.maxDispatchDepth),
-			maxDispatchBudget: clampNumber(draft.maxDispatchBudget, 1, 64, DEFAULT_SETTINGS.maxDispatchBudget),
+			maxDispatchDepth: clampNumber(draft.maxDispatchDepth, 1, 64, DEFAULT_SETTINGS.maxDispatchDepth),
+			maxDispatchBudget: clampNumber(draft.maxDispatchBudget, 1, 256, DEFAULT_SETTINGS.maxDispatchBudget),
 			allowBotMentions: Boolean(draft.allowBotMentions),
-			groupContextBytes: clampNumber(draft.groupContextBytes, 4096, 262144, DEFAULT_SETTINGS.groupContextBytes),
-			groupRetentionLimit: clampNumber(draft.groupRetentionLimit, 50, 2000, DEFAULT_SETTINGS.groupRetentionLimit),
-			fileSyncMaxBytes: clampNumber(draft.fileSyncMaxBytes, 1048576, 104857600, DEFAULT_SETTINGS.fileSyncMaxBytes),
-			fileSyncMaxFiles: clampNumber(draft.fileSyncMaxFiles, 10, 1000, DEFAULT_SETTINGS.fileSyncMaxFiles),
+			groupContextBytes: clampNumber(draft.groupContextBytes, 4096, 2097152, DEFAULT_SETTINGS.groupContextBytes),
+			groupRetentionLimit: clampNumber(draft.groupRetentionLimit, 50, 20000, DEFAULT_SETTINGS.groupRetentionLimit),
+			fileSyncMaxBytes: clampNumber(draft.fileSyncMaxBytes, 1048576, 10737418240, DEFAULT_SETTINGS.fileSyncMaxBytes),
+			fileSyncMaxFiles: clampNumber(draft.fileSyncMaxFiles, 10, 10000, DEFAULT_SETTINGS.fileSyncMaxFiles),
 			fileSyncStagedBytes: clampNumber(
 				draft.fileSyncStagedBytes,
 				4194304,
-				536870912,
+				53687091200,
 				DEFAULT_SETTINGS.fileSyncStagedBytes,
 			),
 			resourceLockDefaultTtlMs: clampNumber(
 				draft.resourceLockDefaultTtlMs,
 				60000,
-				3600000,
+				86400000,
 				DEFAULT_SETTINGS.resourceLockDefaultTtlMs,
 			),
-			blackboardMaxBytes: clampNumber(draft.blackboardMaxBytes, 4096, 262144, DEFAULT_SETTINGS.blackboardMaxBytes),
+			blackboardMaxBytes: clampNumber(draft.blackboardMaxBytes, 4096, 4194304, DEFAULT_SETTINGS.blackboardMaxBytes),
+			...(draft.taskReportExcerptBytes !== undefined ? { taskReportExcerptBytes: draft.taskReportExcerptBytes } : {}),
+			...(draft.maxResourceLocksPerTask !== undefined
+				? { maxResourceLocksPerTask: draft.maxResourceLocksPerTask }
+				: {}),
+			...(draft.botMentionBudgetPerTurn !== undefined
+				? { botMentionBudgetPerTurn: draft.botMentionBudgetPerTurn }
+				: {}),
 		};
 
 		try {
@@ -481,7 +505,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-max-active"
 								type="number"
 								min={1}
-								max={32}
+								max={64}
 								step={1}
 								className="des-input"
 								value={draft.maxActiveTasks}
@@ -499,7 +523,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-max-waiting"
 								type="number"
 								min={0}
-								max={256}
+								max={1024}
 								step={1}
 								className="des-input"
 								value={draft.maxWaitingTasks}
@@ -565,7 +589,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-max-depth"
 								type="number"
 								min={1}
-								max={32}
+								max={64}
 								step={1}
 								className="des-input"
 								value={draft.maxDispatchDepth}
@@ -583,7 +607,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-max-budget"
 								type="number"
 								min={1}
-								max={64}
+								max={256}
 								step={1}
 								className="des-input"
 								value={draft.maxDispatchBudget}
@@ -625,7 +649,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 									id="des-group-context-bytes"
 									type="number"
 									min={4096}
-									max={262144}
+									max={2097152}
 									step={1024}
 									className="des-input"
 									value={draft.groupContextBytes}
@@ -645,7 +669,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-group-retention"
 								type="number"
 								min={50}
-								max={2000}
+								max={20000}
 								step={10}
 								className="des-input"
 								value={draft.groupRetentionLimit}
@@ -673,7 +697,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 									id="des-file-sync-bytes"
 									type="number"
 									min={1048576}
-									max={104857600}
+									max={10737418240}
 									step={1048576}
 									className="des-input"
 									value={draft.fileSyncMaxBytes}
@@ -693,7 +717,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 								id="des-file-sync-files"
 								type="number"
 								min={10}
-								max={1000}
+								max={10000}
 								step={1}
 								className="des-input"
 								value={draft.fileSyncMaxFiles}
@@ -712,7 +736,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 									id="des-file-sync-staged-bytes"
 									type="number"
 									min={4194304}
-									max={536870912}
+									max={53687091200}
 									step={1048576}
 									className="des-input"
 									value={draft.fileSyncStagedBytes}
@@ -742,7 +766,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 									id="des-resource-lock-ttl"
 									type="number"
 									min={60000}
-									max={3600000}
+									max={86400000}
 									step={60000}
 									className="des-input"
 									value={draft.resourceLockDefaultTtlMs}
@@ -763,7 +787,7 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 									id="des-blackboard-bytes"
 									type="number"
 									min={4096}
-									max={262144}
+									max={4194304}
 									step={1024}
 									className="des-input"
 									value={draft.blackboardMaxBytes}

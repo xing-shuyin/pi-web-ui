@@ -139,6 +139,7 @@ import {
 import { QUICK_PHRASE_DEFAULTS } from "../quick-phrases";
 import {
 	DEFAULT_PROMPT_TEMPLATE,
+	DEFAULT_PROMPT_DISABLED,
 	PROMPT_TOKENS,
 	estimatePromptTokens,
 	isReadonlyPromptSource,
@@ -2216,7 +2217,11 @@ export function SettingsModal({
 		promptTemplateDraftRef.current = DEFAULT_PROMPT_TEMPLATE;
 		setPromptOverridesDraft({});
 		promptOverridesDraftRef.current = {};
-		setPartial({ promptTemplate: DEFAULT_PROMPT_TEMPLATE, promptOverrides: {}, promptDisabled: [] });
+		setPartial({
+			promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+			promptOverrides: {},
+			promptDisabled: [...DEFAULT_PROMPT_DISABLED],
+		});
 	};
 
 	/** 点击 token 芯片追加：立即更新草稿并立即提交保存，不依赖后续失焦。 */

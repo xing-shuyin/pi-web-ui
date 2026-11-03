@@ -299,6 +299,28 @@ function GroupRoom({
 		[roomId, conversations, zh],
 	);
 
+	const handleSteerTask = useCallback(
+		async (task: import("../device-group-messages").GroupTask) => {
+			const promptText = window.prompt(
+				zh
+					? `向正在运行的 @${task.botId} 注入飞行中实时转向指令 (In-flight Steering)：`
+					: `Inject in-flight steering instruction to running @${task.botId}:`,
+			);
+			if (!promptText || !promptText.trim()) return;
+			try {
+				await request(
+					`rooms/${encodeURIComponent(roomId)}/tasks/${encodeURIComponent(task.id)}/steer`,
+					new AbortController().signal,
+					{ text: promptText.trim() },
+				);
+				setRefresh((n) => n + 1);
+			} catch (err: any) {
+				setError(err?.message || (zh ? "转向注入失败" : "Failed to steer task"));
+			}
+		},
+		[roomId, zh],
+	);
+
 	useEffect(() => {
 		setActiveGroupRoomData({
 			roomId,
@@ -435,6 +457,18 @@ function GroupRoom({
 				<div className="dg-head-nav">
 					<button
 						type="button"
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "blackboard" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("blackboard")}
+						title={zh ? "打开群组共享共识黑板" : "Open Group Blackboard"}
+					>
+						<span className="dg-nav-icon">📋</span>
+						<span className="dg-nav-text">{zh ? "群黑板" : "Blackboard"}</span>
+						{detail?.room.blackboard?.version ? (
+							<span className="dg-nav-badge">v{detail.room.blackboard.version}</span>
+						) : null}
+					</button>
+					<button
+						type="button"
 						className={`dg-nav-tab ${drawerOpen && drawerTab === "deliveries" ? "active" : ""} ${attentionCount > 0 ? "has-attention" : ""}`}
 						onClick={() => handleOpenDrawer("deliveries")}
 						title={zh ? "打开交付与待办审查抽屉" : "Open Deliveries & Reviews"}
@@ -567,6 +601,16 @@ function GroupRoom({
 									<button type="button" className="btn dg-task-detail-btn" onClick={() => setViewTaskId(task.id)}>
 										{zh ? "详情" : "Details"}
 									</button>
+									{task.status === "running" && (
+										<button
+											type="button"
+											className="btn dg-task-detail-btn"
+											title={zh ? "飞行中实时注入转向纠偏" : "Inject in-flight steering"}
+											onClick={() => handleSteerTask(task)}
+										>
+											{zh ? "转向" : "Steer"}
+										</button>
+									)}
 									{(task.status === "running" || task.status === "queued") && (
 										<button
 											type="button"

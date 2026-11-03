@@ -30,6 +30,7 @@ export const PROMPT_TOKENS = [
 	"persona", // Windows persona（仅 win32）
 	"terminal", // 终端工具使用引导（「终端工具」开关开时）
 	"markers", // 内置标记工具引导（markers 开启时）
+	"plugin_dev", // 插件开发指南（指导编写与定位 WebUI 插件，默认禁用）
 	"context", // 项目上下文 <project_context>（AGENTS.md 等）
 	"skills", // 技能段 <available_skills>
 	"cwd", // Current working directory 行
@@ -43,6 +44,7 @@ export const PROMPT_TOKENS = [
 export const READONLY_PROMPT_SOURCES = [
 	"tools", // 工具列表（运行时时按已注册工具动态生成）
 	"pi_docs", // Pi 文档指引（指向已安装 pi 包路径，由安装位置决定）
+	"plugin_dev", // 插件开发指南（指向宿主插件目录、SDK 与文档物理路径）
 	"persona", // Windows persona（仅 win32，平台固定）
 	"terminal", // 终端工具使用引导（随「终端工具」开关）
 	"markers", // 内置标记工具引导（随 markers 开关）
@@ -52,6 +54,9 @@ export const READONLY_PROMPT_SOURCES = [
 ] as const;
 
 export type PromptToken = (typeof PROMPT_TOKENS)[number];
+
+/** 默认不开启（需用户在设置中显式启用）的提示词 token 列表。 */
+export const DEFAULT_PROMPT_DISABLED: string[] = ["plugin_dev"];
 
 /** 仅当 token 是只读来源时返回 true（设置面板用于判断是否展示覆盖输入框）。 */
 export function isReadonlyPromptSource(token: string): boolean {
@@ -117,6 +122,12 @@ export interface PromptComposerInputs {
 	piReadme: string;
 	piDocs: string;
 	piExamples: string;
+	/** 插件开发指南与文档路径（提示词 plugin_dev 段落用）。 */
+	pluginDocs?: string;
+	/** 插件 SDK 目录路径（plugin-sdk/）。 */
+	pluginSdk?: string;
+	/** 插件存放物理目录（<dataDir>/plugins）。 */
+	pluginsDir?: string;
 	/** APPEND_SYSTEM.md 文件内容（SDK 追加段的 base；{{append}} 自动内容）。 */
 	appendFiles: string[];
 	/** Windows persona（非 win32 传空串 → {{persona}} 自动为空）。 */
@@ -183,6 +194,41 @@ export function buildPiDocsText(readme: string, docs: string, examples: string, 
 		"- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)",
 		"- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing",
 		"- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
+	].join("\n");
+}
+
+/** pi-web-ui 插件开发指南提示词段落（默认通过 promptDisabled 禁用，仅在用户显式开启时注入）。 */
+export function buildPluginDevText(inputs: PromptComposerInputs, lang: ServerLang = "en"): string {
+	const docsPath = inputs.pluginDocs || "docs/architecture-plugins.md";
+	const sdkPath = inputs.pluginSdk || "plugin-sdk";
+	const targetDir = inputs.pluginsDir || "<dataDir>/plugins";
+	if (lang === "zh") {
+		return [
+			"pi-web-ui 插件开发指南（仅当用户明确要求编写、修改或调试 pi-web-ui 插件时遵循）：",
+			`- 架构与 API 详细文档：${docsPath}（包含 Manifest 规范、生命周期、34 个 UI Slots、宿主方法表与权限声明，写代码前请先用 read 查阅此文档）`,
+			`- 插件 SDK 源码与类型：${sdkPath}（含 index.mjs、client-utils.mjs、index.d.ts）`,
+			`- 插件唯一落盘目录：${targetDir}/<plugin-id>/（插件必须创建在此数据目录下，绝不可写在当前工作区 cwd 或程序只读安装目录）`,
+			"- 双 SDK 副本关键规则：宿主对浏览器只暴露 /plugins/<id>/client/* 静态文件；服务端入口从 <plugin>/sdk/index.mjs 导入，客户端入口（client/entry.mjs）必须从 <plugin>/client/sdk/index.mjs 导入且仅能使用 ./sdk/index.mjs 相对导入，禁止相对路径越出 client/",
+			"- 基础文件结构：",
+			"  1. manifest.json（定义 id, name, version, capabilities, permissions, ui 贡献点）",
+			'  2. index.mjs（服务端入口：import { definePlugin } from "./sdk/index.mjs"; export default definePlugin({ async activate(host) { ... } })）',
+			'  3. client/entry.mjs（若声明了界面视图：import { defineView } from "./sdk/index.mjs"; export default defineView({ mount(el, ctx) { ... } })）',
+			"- 生成脚手架：若环境有 pi-web-ui CLI 可运行 `pi-web-ui plugin create <id> --template <minimal|ui-slot|agent-tool|renderer>`；若无 CLI（如桌面端）请直接用 write 在目标目录写入上述文件结构并从 SDK 复制必要模块",
+			"- 生效方式：写入文件后，提示用户在「设置 - 插件」面板点击重扫刷新，或重启应用即可加载新插件",
+		].join("\n");
+	}
+	return [
+		"pi-web-ui Plugin Development Guide (follow only when asked to create, modify, or debug pi-web-ui plugins):",
+		`- Architecture & API Docs: ${docsPath} (defines Manifest schema, lifecycles, 34 UI Slots, host methods; read before writing code)`,
+		`- Plugin SDK Source & Types: ${sdkPath} (contains index.mjs, client-utils.mjs, index.d.ts)`,
+		`- Target Plugin Directory: ${targetDir}/<plugin-id>/ (MUST be written under the host data directory, NEVER in project cwd or app install dir)`,
+		"- Dual SDK Copy Rule: The host exposes only /plugins/<id>/client/* to the browser; server imports from <plugin>/sdk/index.mjs, while client entry (client/entry.mjs) MUST import from <plugin>/client/sdk/index.mjs and cannot cross outside client/",
+		"- Minimal Structure:",
+		"  1. manifest.json (declares id, name, version, capabilities, permissions, ui contributions)",
+		'  2. index.mjs (server entry: import { definePlugin } from "./sdk/index.mjs"; export default definePlugin({ async activate(host) { ... } }))',
+		'  3. client/entry.mjs (view entry: import { defineView } from "./sdk/index.mjs"; export default defineView({ mount(el, ctx) { ... } }))',
+		"- Scaffolding: Use `pi-web-ui plugin create <id> --template <minimal|ui-slot|agent-tool|renderer>` if the CLI is available; otherwise write files directly to the target directory and copy SDK files",
+		"- Activation: Once files are written, advise the user to click Rescan in Settings -> Plugins or restart the app",
 	].join("\n");
 }
 
@@ -425,6 +471,7 @@ export function resolveSectionTexts(inputs: PromptComposerInputs): Record<Prompt
 		persona: inputs.windowsPersona,
 		terminal: inputs.terminalGuidance,
 		markers: inputs.markersGuidance,
+		plugin_dev: buildPluginDevText(inputs, lang),
 		context: buildContextText(inputs.contextFiles, lang),
 		skills: buildSkillsText(inputs.skills, lang, inputs.skillsFullText ?? false, {
 			maxDesc: inputs.skillsCatalogMaxDesc,

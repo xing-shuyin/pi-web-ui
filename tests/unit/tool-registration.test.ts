@@ -28,6 +28,7 @@ import {
 	DEVICE_COLLAB_TOOL_NAME,
 	EDIT_SOFT_TOOL_NAME,
 	EVAL_TOOL_NAME,
+	GROUP_BOT_TOOL_CATALOG,
 	LSP_TOOL_NAME,
 	MCP_MANAGE_TOOL_NAME,
 	SANDBOX_TOOL_NAME,
@@ -64,6 +65,10 @@ const INTRINSIC = new Set(["bash", "read"]);
 /** 常驻脚手架工具（不入目录、不可单独关掉）：它们是机制的入口，关掉机制就断了。
  *  load_tools = 延迟加载模式的唯一拉取入口（见 server/load-tools-tool.ts）。 */
 const HARNESS = new Set([LOAD_TOOLS_TOOL_NAME]);
+
+/** 群组/设备运行态专用工具（不入普通用户设置目录、仅在群任务 Bot 执行环境中由 bot.tools 动态注入与授权）：
+ *  device_collab = 设备中心群任务协作工具。 */
+const BOT_ONLY = new Set(GROUP_BOT_TOOL_CATALOG.map((t) => t.name));
 
 /** 工厂 → 它注册的工具名（与各工厂的 name: 对齐；makeSubagentTools 产出 7 个子代理工具，见 subagents.ts）。 */
 const FACTORY_TOOLS: Record<string, string[]> = {
@@ -121,18 +126,29 @@ describe("注册→目录", () => {
 		).toEqual([]);
 	});
 
-	it("每个产出的工具名都有归属：目录 或 内核白名单", () => {
+	it("每个产出的工具名都有归属：目录、内核白名单或群组运行态专用", () => {
 		const known = new Set(AGENT_TOOL_CATALOG.map((t) => t.name));
 		const homeless: string[] = [];
 		for (const [factory, tools] of Object.entries(FACTORY_TOOLS)) {
 			for (const name of tools) {
-				if (!known.has(name) && !INTRINSIC.has(name) && !HARNESS.has(name)) homeless.push(`${name}（来自 ${factory}）`);
+				if (!known.has(name) && !INTRINSIC.has(name) && !HARNESS.has(name) && !BOT_ONLY.has(name)) {
+					homeless.push(`${name}（来自 ${factory}）`);
+				}
 			}
 		}
 		expect(
 			homeless,
-			`以下工具注册了却无处可去：${homeless.join("、")}（进 AGENT_TOOL_CATALOG 或 INTRINSIC，二选一）`,
+			`以下工具注册了却无处可去：${homeless.join("、")}（进 AGENT_TOOL_CATALOG、INTRINSIC 或 GROUP_BOT_TOOL_CATALOG）`,
 		).toEqual([]);
+	});
+
+	it("device_collab 作为群组专用运行时工具，不进普通用户 Web 设置目录", () => {
+		expect(AGENT_TOOL_CATALOG.some((tool) => tool.name === DEVICE_COLLAB_TOOL_NAME)).toBe(false);
+		expect(GROUP_BOT_TOOL_CATALOG.some((tool) => tool.name === DEVICE_COLLAB_TOOL_NAME)).toBe(true);
+	});
+
+	it("agent-service 仅在 botExecution 存在时才条件注入 makeDeviceCollabTool", () => {
+		expect(AGENT_SERVICE_SRC).toMatch(/\.\.\.\(this\.botExecution\s*\?\s*\[makeDeviceCollabTool\(\)\]\s*:\s*\[\]\)/);
 	});
 
 	it("目录里的每个工具都被某个工厂注册（反向：有目录无注册 = 开关摆设）", () => {

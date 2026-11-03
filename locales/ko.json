@@ -1599,6 +1599,8 @@
 		"promptTok_terminal_desc": "지속 터미널 사용 안내 (“터미널 도구”가 켜져 있을 때 삽입돼요)",
 		"promptTok_markers": "마커 도구 안내",
 		"promptTok_markers_desc": "내장 마커 도구 사용 설명 (markers가 켜져 있을 때 삽입돼요)",
+		"promptTok_plugin_dev": "Plugin dev guide",
+		"promptTok_plugin_dev_desc": "pi-web-ui plugin development guidelines and doc pointers (disabled by default; injects paths and docs when enabled)",
 		"promptTok_context": "프로젝트 컨텍스트",
 		"promptTok_context_desc": "<project_context>: AGENTS.md/CLAUDE.md 수집 결과",
 		"promptTok_skills": "스킬 부분",

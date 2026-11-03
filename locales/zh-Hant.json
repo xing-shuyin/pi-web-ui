@@ -1599,6 +1599,8 @@
 		"promptTok_terminal_desc": "持久終端使用引導（「終端工具」開時注入）",
 		"promptTok_markers": "標記工具引導",
 		"promptTok_markers_desc": "內置標記工具使用說明（markers 開時注入）",
+		"promptTok_plugin_dev": "外掛开发指南",
+		"promptTok_plugin_dev_desc": "pi-web-ui 外掛开发规范与文档指引（預設關閉；开启后向模型注入外掛开发路径与文档）",
 		"promptTok_context": "項目上下文",
 		"promptTok_context_desc": "<project_context>：AGENTS.md/CLAUDE.md 收集結果",
 		"promptTok_skills": "技能段",

@@ -1599,6 +1599,8 @@
 		"promptTok_terminal_desc": "永続ターミナルの使用案内です（「ターミナルツール」がオンのときに挿入されます）",
 		"promptTok_markers": "マーカーツール案内",
 		"promptTok_markers_desc": "内蔵マーカーツールの使用説明です（markersがオンのときに挿入されます）",
+		"promptTok_plugin_dev": "Plugin dev guide",
+		"promptTok_plugin_dev_desc": "pi-web-ui plugin development guidelines and doc pointers (disabled by default; injects paths and docs when enabled)",
 		"promptTok_context": "プロジェクトコンテキスト",
 		"promptTok_context_desc": "<project_context>：AGENTS.md・CLAUDE.md の収集結果です",
 		"promptTok_skills": "スキル段",

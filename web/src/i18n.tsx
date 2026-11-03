@@ -1763,6 +1763,8 @@ export const zh = {
 	promptTok_terminal_desc: "持久终端使用引导（「终端工具」开时注入）",
 	promptTok_markers: "标记工具引导",
 	promptTok_markers_desc: "内置标记工具使用说明（markers 开时注入）",
+	promptTok_plugin_dev: "插件开发指南",
+	promptTok_plugin_dev_desc: "pi-web-ui 插件开发规范与文档指引（默认关闭；开启后向模型注入插件开发路径与文档）",
 	promptTok_context: "项目上下文",
 	promptTok_context_desc: "<project_context>：AGENTS.md/CLAUDE.md 收集结果",
 	promptTok_skills: "技能段",
@@ -4560,6 +4562,9 @@ export const en: Record<keyof typeof zh, string> = {
 	promptTok_terminal_desc: "persistent-terminal usage guide (injected when terminal tools are on)",
 	promptTok_markers: "Markers guidance",
 	promptTok_markers_desc: "built-in marker tools usage (injected when markers are on)",
+	promptTok_plugin_dev: "Plugin dev guide",
+	promptTok_plugin_dev_desc:
+		"pi-web-ui plugin development guidelines and doc pointers (disabled by default; injects paths and docs when enabled)",
 	promptTok_context: "Project context",
 	promptTok_context_desc: "<project_context>: AGENTS.md / CLAUDE.md collection",
 	promptTok_skills: "Skills",

@@ -214,6 +214,72 @@ describe("group conversation adapter", () => {
 		detail.messages.pop();
 		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(2);
 	});
+	it("renders subagent worker tasks as structured cards with collapsible reports and coordinator tags", () => {
+		const detail: GroupDetail = {
+			room: { id: "room", name: "Room", botIds: ["coord", "worker"], primaryBotId: "coord" },
+			bots: [
+				{ id: "coord", name: "Architect", deviceId: "host" },
+				{ id: "worker", name: "Coder", deviceId: "worker-pc" },
+			],
+			messages: [
+				{
+					id: "m1",
+					text: "Please build feature",
+					createdAt: 1,
+					sender: { type: "human", id: "user", name: "Alice" },
+				},
+				{
+					id: "m2",
+					text: "I have assigned the work to Coder.",
+					createdAt: 2,
+					sender: { type: "bot", id: "coord", name: "Architect" },
+				},
+			],
+			tasks: [
+				{
+					id: "child-task",
+					parentTaskId: "root-task",
+					sourceBotId: "coord",
+					deviceId: "worker-pc",
+					botId: "worker",
+					text: "implement backend API",
+					createdAt: 3,
+					status: "completed",
+					report: "API implementation complete with 5 endpoints.",
+				},
+				{
+					id: "internal-result",
+					kind: "result",
+					resultOfTaskId: "child-task",
+					deviceId: "host",
+					botId: "coord",
+					text: "API implementation complete with 5 endpoints.",
+					createdAt: 4,
+					status: "completed",
+					report: "API implementation complete with 5 endpoints.",
+				},
+			],
+		};
+		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
+
+		// Coordinator tag in message label
+		expect(labels.get("group-message:m2")).toBe("Architect · host [群组主管]");
+
+		// Internal result task should be suppressed to avoid duplicate message bubbles
+		expect(state.messages.some((m) => m.id === "group-task:internal-result")).toBe(false);
+
+		// Worker task should have subagent label and collapsible details
+		expect(labels.get("group-task:child-task")).toBe("Coder · worker-pc [协同子代理] · 已完成");
+		const childMsg = state.messages.find((m) => m.id === "group-task:child-task");
+		expect(childMsg).toBeDefined();
+		const body = (childMsg!.content[0] as { text: string }).text;
+		expect(body).toContain("协同子代理交付完成");
+		expect(body).toContain("@Coder");
+		expect(body).toContain("implement backend API");
+		expect(body).toContain("<details>");
+		expect(body).toContain("展开查看工作内容与交付详情");
+		expect(body).toContain("API implementation complete with 5 endpoints.");
+	});
 	it("retries the same request with the same key and rotates for changed room/body/targets", () => {
 		let n = 0;
 		const key = () => String(++n);

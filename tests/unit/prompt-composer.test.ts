@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	BUILTIN_SOUL,
+	DEFAULT_PROMPT_DISABLED,
 	DEFAULT_PROMPT_TEMPLATE,
 	PROMPT_TOKENS,
 	READONLY_PROMPT_SOURCES,
 	buildPiDocsText,
+	buildPluginDevText,
 	buildSkillsText,
 	buildToolsSchemaText,
 	collectTemplateTokens,
@@ -355,11 +357,12 @@ describe("buildSkillsText 全文/名单模式", () => {
 });
 
 describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判定", () => {
-	it("只读集合为 8 个，且不含 soul / guidelines / append", () => {
-		expect(READONLY_PROMPT_SOURCES).toHaveLength(8);
+	it("只读集合为 9 个，且不含 soul / guidelines / append", () => {
+		expect(READONLY_PROMPT_SOURCES).toHaveLength(9);
 		expect(READONLY_PROMPT_SOURCES).toEqual([
 			"tools",
 			"pi_docs",
+			"plugin_dev",
 			"persona",
 			"terminal",
 			"markers",
@@ -374,11 +377,66 @@ describe("READONLY_PROMPT_SOURCES / isReadonlyPromptSource — 只读来源判�
 
 	it("isReadonlyPromptSource 判定正确", () => {
 		expect(isReadonlyPromptSource("tools")).toBe(true);
+		expect(isReadonlyPromptSource("plugin_dev")).toBe(true);
 		expect(isReadonlyPromptSource("cwd")).toBe(true);
 		expect(isReadonlyPromptSource("soul")).toBe(false);
 		expect(isReadonlyPromptSource("guidelines")).toBe(false);
 		expect(isReadonlyPromptSource("append")).toBe(false);
 		expect(isReadonlyPromptSource("typo")).toBe(false);
+	});
+});
+
+describe("plugin_dev — 插件开发指南提示词段落", () => {
+	it("DEFAULT_PROMPT_DISABLED 默认包含 plugin_dev", () => {
+		expect(DEFAULT_PROMPT_DISABLED).toContain("plugin_dev");
+	});
+
+	it("默认模板配合 DEFAULT_PROMPT_DISABLED 渲染时，plugin_dev 自动被剔除（默认关闭）", () => {
+		const autoTexts = resolveSectionTexts(
+			inputs({
+				pluginDocs: "E:/pi-web-ui/docs/architecture-plugins.md",
+				pluginSdk: "E:/pi-web-ui/plugin-sdk",
+				pluginsDir: "C:/Users/test/.pi-web/plugins",
+			}),
+		);
+		const defaultRendered = renderDefaultPrompt(autoTexts, DEFAULT_PROMPT_DISABLED);
+		expect(defaultRendered).not.toContain("插件开发指南");
+		expect(defaultRendered).not.toContain("Plugin Development Guide");
+		expect(defaultRendered).not.toContain("architecture-plugins.md");
+
+		// 显式开启时（传入空 disabled 列表），指南被正确包含
+		const enabledRendered = renderDefaultPrompt(autoTexts, []);
+		expect(enabledRendered).toContain("Plugin Development Guide");
+		expect(enabledRendered).toContain("E:/pi-web-ui/docs/architecture-plugins.md");
+		expect(enabledRendered).toContain("C:/Users/test/.pi-web/plugins");
+	});
+
+	it("buildPluginDevText 中英文文案均包含双 SDK 副本规则和关键路径", () => {
+		const zh = buildPluginDevText(
+			inputs({
+				pluginDocs: "/custom/docs/architecture-plugins.md",
+				pluginSdk: "/custom/plugin-sdk",
+				pluginsDir: "/custom/data/plugins",
+			}),
+			"zh",
+		);
+		expect(zh).toContain("pi-web-ui 插件开发指南");
+		expect(zh).toContain("/custom/docs/architecture-plugins.md");
+		expect(zh).toContain("/custom/plugin-sdk");
+		expect(zh).toContain("/custom/data/plugins");
+		expect(zh).toContain("双 SDK 副本");
+
+		const en = buildPluginDevText(
+			inputs({
+				pluginDocs: "/custom/docs/architecture-plugins.md",
+				pluginSdk: "/custom/plugin-sdk",
+				pluginsDir: "/custom/data/plugins",
+			}),
+			"en",
+		);
+		expect(en).toContain("Plugin Development Guide");
+		expect(en).toContain("/custom/docs/architecture-plugins.md");
+		expect(en).toContain("Dual SDK Copy Rule");
 	});
 });
 

@@ -1,0 +1,1508 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>设备群组 (Device Group) 架构重构与上限调高方案全景</title>
+		<style>
+			:root {
+				--bg: #0f141c;
+				--surface: #18202c;
+				--surface-hover: #212c3d;
+				--card: #1c2636;
+				--card-border: #2a3a52;
+				--primary: #3b82f6;
+				--primary-light: #60a5fa;
+				--primary-glow: rgba(59, 130, 246, 0.25);
+				--success: #10b981;
+				--warning: #f59e0b;
+				--danger: #ef4444;
+				--purple: #8b5cf6;
+				--cyan: #06b6d4;
+				--text: #f1f5f9;
+				--text-muted: #94a3b8;
+				--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+				--radius: 12px;
+				--transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+			}
+
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				line-height: 1.6;
+				padding-bottom: 80px;
+			}
+
+			/* 顶部导航与 Header */
+			header {
+				background: rgba(24, 32, 44, 0.85);
+				backdrop-filter: blur(16px);
+				border-bottom: 1px solid var(--card-border);
+				position: sticky;
+				top: 0;
+				z-index: 100;
+				padding: 16px 32px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				font-size: 1.25rem;
+				font-weight: 700;
+				letter-spacing: -0.02em;
+			}
+			.brand-badge {
+				font-size: 0.75rem;
+				padding: 4px 8px;
+				background: var(--primary-glow);
+				color: var(--primary-light);
+				border: 1px solid var(--primary);
+				border-radius: 999px;
+				font-weight: 600;
+			}
+			nav.nav-links {
+				display: flex;
+				gap: 8px;
+			}
+			nav.nav-links a {
+				color: var(--text-muted);
+				text-decoration: none;
+				padding: 8px 16px;
+				border-radius: 8px;
+				font-size: 0.9rem;
+				font-weight: 500;
+				transition: var(--transition);
+			}
+			nav.nav-links a:hover,
+			nav.nav-links a.active {
+				color: var(--text);
+				background: var(--surface-hover);
+			}
+
+			.container {
+				max-width: 1280px;
+				margin: 0 auto;
+				padding: 32px 24px;
+			}
+
+			/* Hero Banner */
+			.hero {
+				background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 40px;
+				margin-bottom: 40px;
+				position: relative;
+				overflow: hidden;
+			}
+			.hero::before {
+				content: "";
+				position: absolute;
+				top: -100px;
+				right: -100px;
+				width: 300px;
+				height: 300px;
+				background: radial-gradient(circle, var(--primary-glow) 0%, transparent 70%);
+				border-radius: 50%;
+				pointer-events: none;
+			}
+			.hero h1 {
+				font-size: 2.2rem;
+				font-weight: 800;
+				line-height: 1.25;
+				margin-bottom: 16px;
+				background: linear-gradient(to right, #ffffff, #94a3b8);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+			}
+			.hero p {
+				font-size: 1.1rem;
+				color: var(--text-muted);
+				max-width: 860px;
+				margin-bottom: 24px;
+			}
+			.hero-stats {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 16px;
+				margin-top: 24px;
+			}
+			.stat-card {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+			}
+			.stat-label {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.stat-value {
+				font-size: 1.5rem;
+				font-weight: 700;
+				color: var(--primary-light);
+				margin-top: 4px;
+			}
+
+			/* Section Styling */
+			section {
+				margin-bottom: 56px;
+				scroll-margin-top: 80px;
+			}
+			.section-title {
+				font-size: 1.6rem;
+				font-weight: 700;
+				margin-bottom: 8px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+			.section-desc {
+				color: var(--text-muted);
+				margin-bottom: 24px;
+				font-size: 0.95rem;
+			}
+
+			/* 缺陷分析卡片 */
+			.grid-2 {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+				gap: 20px;
+			}
+			.flaw-card {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 24px;
+				position: relative;
+				transition: var(--transition);
+			}
+			.flaw-card:hover {
+				border-color: var(--primary);
+				transform: translateY(-2px);
+				box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.4);
+			}
+			.flaw-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				margin-bottom: 12px;
+			}
+			.flaw-badge {
+				font-size: 0.75rem;
+				font-weight: 600;
+				padding: 2px 8px;
+				border-radius: 6px;
+				background: rgba(239, 68, 68, 0.15);
+				color: #fca5a5;
+				border: 1px solid rgba(239, 68, 68, 0.3);
+			}
+			.flaw-card h3 {
+				font-size: 1.15rem;
+				font-weight: 600;
+				margin-bottom: 10px;
+			}
+			.flaw-card p {
+				color: var(--text-muted);
+				font-size: 0.9rem;
+				margin-bottom: 14px;
+			}
+			.flaw-impact {
+				background: var(--surface);
+				border-radius: 6px;
+				padding: 10px 14px;
+				font-size: 0.85rem;
+				border-left: 3px solid var(--danger);
+			}
+			.flaw-impact strong {
+				color: #fca5a5;
+			}
+
+			/* 表格样式 */
+			.table-wrapper {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				overflow-x: auto;
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				text-align: left;
+				font-size: 0.9rem;
+			}
+			th {
+				background: var(--surface);
+				color: var(--text-muted);
+				font-weight: 600;
+				padding: 14px 20px;
+				border-bottom: 1px solid var(--card-border);
+				font-size: 0.8rem;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			td {
+				padding: 14px 20px;
+				border-bottom: 1px solid var(--card-border);
+			}
+			tr:last-child td {
+				border-bottom: none;
+			}
+			tr:hover td {
+				background: var(--surface-hover);
+			}
+			.badge-old {
+				color: #94a3b8;
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				background: rgba(148, 163, 184, 0.1);
+				padding: 2px 6px;
+				border-radius: 4px;
+			}
+			.badge-new {
+				color: var(--success);
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				background: rgba(16, 185, 129, 0.15);
+				border: 1px solid rgba(16, 185, 129, 0.3);
+				padding: 2px 6px;
+				border-radius: 4px;
+				font-weight: 600;
+			}
+			.scope-tag {
+				font-size: 0.75rem;
+				padding: 2px 8px;
+				border-radius: 4px;
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				color: var(--cyan);
+			}
+
+			/* 方案选项卡 */
+			.plan-tabs {
+				display: flex;
+				gap: 12px;
+				margin-bottom: 24px;
+			}
+			.plan-tab-btn {
+				flex: 1;
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 16px 20px;
+				color: var(--text-muted);
+				cursor: pointer;
+				text-align: left;
+				transition: var(--transition);
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.plan-tab-btn:hover {
+				background: var(--surface-hover);
+				color: var(--text);
+			}
+			.plan-tab-btn.active {
+				background: var(--card);
+				border-color: var(--primary);
+				box-shadow: 0 0 0 2px var(--primary-glow);
+				color: var(--text);
+			}
+			.plan-tab-title {
+				font-size: 1.1rem;
+				font-weight: 700;
+				color: var(--text);
+			}
+			.plan-tab-badge {
+				font-size: 0.75rem;
+				width: fit-content;
+				padding: 2px 8px;
+				border-radius: 999px;
+				font-weight: 600;
+			}
+			.badge-a {
+				background: rgba(59, 130, 246, 0.2);
+				color: #93c5fd;
+			}
+			.badge-b {
+				background: rgba(139, 92, 246, 0.2);
+				color: #c4b5fd;
+			}
+			.badge-c {
+				background: rgba(16, 185, 129, 0.2);
+				color: #6ee7b7;
+			}
+
+			.plan-content {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				display: none;
+				animation: fadeIn 0.3s ease;
+			}
+			.plan-content.active {
+				display: block;
+			}
+			@keyframes fadeIn {
+				from {
+					opacity: 0;
+					transform: translateY(8px);
+				}
+				to {
+					opacity: 1;
+					transform: translateY(0);
+				}
+			}
+
+			/* 方案内部结构 */
+			.plan-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				margin-bottom: 24px;
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 20px;
+			}
+			.plan-meta {
+				max-width: 70%;
+			}
+			.plan-meta h2 {
+				font-size: 1.5rem;
+				font-weight: 700;
+				margin-bottom: 8px;
+			}
+			.plan-meta p {
+				color: var(--text-muted);
+			}
+			.plan-ratings {
+				display: flex;
+				gap: 16px;
+			}
+			.rating-item {
+				text-align: right;
+			}
+			.rating-label {
+				font-size: 0.75rem;
+				color: var(--text-muted);
+			}
+			.rating-val {
+				font-size: 1.1rem;
+				font-weight: 700;
+				color: var(--primary-light);
+			}
+
+			/* 架构图容器 */
+			.arch-diagram {
+				background: #0a0e14;
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 24px;
+				margin: 24px 0;
+				overflow-x: auto;
+				font-family: var(--font-mono);
+				font-size: 0.85rem;
+				color: #94a3b8;
+			}
+			.arch-diagram svg {
+				width: 100%;
+				height: auto;
+				display: block;
+			}
+
+			.feature-list {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 16px;
+				margin-top: 24px;
+			}
+			.feature-item {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+			}
+			.feature-item h4 {
+				font-size: 0.95rem;
+				font-weight: 600;
+				margin-bottom: 6px;
+				color: var(--text);
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.feature-item p {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+			}
+
+			/* 交互式模拟器 */
+			.simulator-box {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 32px;
+			}
+			.slider-group {
+				margin-bottom: 20px;
+			}
+			.slider-header {
+				display: flex;
+				justify-content: space-between;
+				margin-bottom: 8px;
+				font-size: 0.9rem;
+			}
+			.slider-header span:first-child {
+				font-weight: 600;
+			}
+			.slider-header span:last-child {
+				font-family: var(--font-mono);
+				color: var(--primary-light);
+				font-weight: 600;
+			}
+			input[type="range"] {
+				width: 100%;
+				height: 6px;
+				background: var(--surface-hover);
+				border-radius: 3px;
+				outline: none;
+				-webkit-appearance: none;
+			}
+			input[type="range"]::-webkit-slider-thumb {
+				-webkit-appearance: none;
+				width: 18px;
+				height: 18px;
+				border-radius: 50%;
+				background: var(--primary);
+				cursor: pointer;
+				box-shadow: 0 0 10px var(--primary);
+			}
+
+			.sim-results {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 24px;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				gap: 20px;
+			}
+			.sim-card {
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 12px;
+			}
+			.sim-card:last-child {
+				border-bottom: none;
+				padding-bottom: 0;
+			}
+			.sim-card-title {
+				font-size: 0.85rem;
+				color: var(--text-muted);
+			}
+			.sim-card-value {
+				font-size: 1.8rem;
+				font-weight: 800;
+				color: var(--cyan);
+				font-family: var(--font-mono);
+				margin-top: 4px;
+			}
+			.sim-card-desc {
+				font-size: 0.8rem;
+				color: var(--text-muted);
+				margin-top: 4px;
+			}
+
+			/* UI 原型卡片 */
+			.mockup-container {
+				background: var(--card);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				overflow: hidden;
+				margin-top: 24px;
+			}
+			.mockup-header {
+				background: var(--surface);
+				border-bottom: 1px solid var(--card-border);
+				padding: 12px 20px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.mockup-dot {
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				display: inline-block;
+			}
+			.mockup-body {
+				padding: 24px;
+				display: grid;
+				grid-template-columns: 2fr 1fr;
+				gap: 20px;
+				min-height: 380px;
+				background: #0d121a;
+			}
+			.mock-chat-pane {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+			}
+			.mock-bubble {
+				padding: 10px 14px;
+				border-radius: 8px;
+				font-size: 0.85rem;
+				max-width: 85%;
+			}
+			.mock-bubble.human {
+				align-self: flex-end;
+				background: #1e3a8a;
+				color: #bfdbfe;
+			}
+			.mock-bubble.bot {
+				align-self: flex-start;
+				background: #1e293b;
+				color: #cbd5e1;
+				border: 1px solid #334155;
+			}
+			.mock-side-pane {
+				background: var(--surface);
+				border: 1px solid var(--card-border);
+				border-radius: 8px;
+				padding: 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+			}
+			.mock-side-title {
+				font-size: 0.9rem;
+				font-weight: 700;
+				color: var(--primary-light);
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				border-bottom: 1px solid var(--card-border);
+				padding-bottom: 8px;
+			}
+			.blackboard-preview {
+				font-family: var(--font-mono);
+				font-size: 0.8rem;
+				background: #090d13;
+				padding: 12px;
+				border-radius: 6px;
+				color: #a5f3fc;
+				line-height: 1.5;
+				overflow-y: auto;
+				flex: 1;
+			}
+
+			/* 底部操作区 */
+			.cta-bar {
+				margin-top: 48px;
+				background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+				border: 1px solid var(--card-border);
+				border-radius: var(--radius);
+				padding: 32px;
+				text-align: center;
+			}
+			.cta-bar h3 {
+				font-size: 1.4rem;
+				font-weight: 700;
+				margin-bottom: 12px;
+			}
+			.cta-bar p {
+				color: var(--text-muted);
+				margin-bottom: 24px;
+				max-width: 600px;
+				margin-left: auto;
+				margin-right: auto;
+			}
+			.btn-group {
+				display: flex;
+				justify-content: center;
+				gap: 16px;
+				flex-wrap: wrap;
+			}
+			.btn {
+				padding: 12px 24px;
+				border-radius: 8px;
+				font-size: 0.95rem;
+				font-weight: 600;
+				cursor: pointer;
+				border: none;
+				transition: var(--transition);
+				text-decoration: none;
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.btn-primary {
+				background: var(--primary);
+				color: white;
+				box-shadow: 0 4px 14px var(--primary-glow);
+			}
+			.btn-primary:hover {
+				background: #2563eb;
+				transform: translateY(-1px);
+			}
+			.btn-secondary {
+				background: var(--surface);
+				color: var(--text);
+				border: 1px solid var(--card-border);
+			}
+			.btn-secondary:hover {
+				background: var(--surface-hover);
+			}
+
+			@media (max-width: 900px) {
+				.simulator-box {
+					grid-template-columns: 1fr;
+				}
+				.mockup-body {
+					grid-template-columns: 1fr;
+				}
+				.plan-tabs {
+					flex-direction: column;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<div class="brand">
+				<span>⚡</span>
+				<span>pi-web-ui 设备群组架构重构设计</span>
+				<span class="brand-badge">RFC / 架构评审</span>
+			</div>
+			<nav class="nav-links">
+				<a href="#flaws" class="active">诊断与缺陷</a>
+				<a href="#limits">指标上限矩阵</a>
+				<a href="#proposals">重构方案对比</a>
+				<a href="#simulator">容量模拟器</a>
+				<a href="#mockup">交互原型</a>
+			</nav>
+		</header>
+
+		<div class="container">
+			<!-- Hero Banner -->
+			<div class="hero">
+				<h1>群组协作架构级演进与全面上限重构</h1>
+				<p>
+					跳出局部表象修补，面向复杂多机协同工程场景，解决“伪群聊孤岛派发”、“双轨消息割裂”、“隐形黑板”与“内存锁丢失”等核心缺陷；
+					全面调高系统吞吐、历史回溯、记忆容量及大文件上限，并构建支持分级覆盖的运行时动态配置中枢。
+				</p>
+				<div class="hero-stats">
+					<div class="stat-card">
+						<div class="stat-label">群上下文上限</div>
+						<div class="stat-value">24 KiB → 2 MiB</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">群日志持久化保留</div>
+						<div class="stat-value">500 → 20,000 条</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">群黑板共识容量</div>
+						<div class="stat-value">32 KiB → 4 MiB</div>
+					</div>
+					<div class="stat-card">
+						<div class="stat-label">文件同步上限</div>
+						<div class="stat-value">8 MiB → 10 GiB</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- 1. 现状与缺陷诊断 -->
+			<section id="flaws">
+				<div class="section-title">
+					<span>🔍</span>
+					<h2>当前群组系统性设计缺陷全景诊断</h2>
+				</div>
+				<p class="section-desc">基于代码实测与深层调用链路审计，当前群组协同存在的 6 大核心瓶颈：</p>
+
+				<div class="grid-2">
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">拓扑模型割裂</span>
+							<span style="color: var(--danger)">#FLAW-01</span>
+						</div>
+						<h3>“多头派发 (Fork-and-Forget)” 导致协同孤岛</h3>
+						<p>
+							人类发消息同时 @ 多个 Bot 时，Hub 直接通过 <code>targets.map</code> 并发派生多个独立 Task。每个 Task
+							执行前被冻结在当前 24 KiB 快照中，并发执行的 Bot 互不可见对方思考与中间产物，缺乏流水线 (Pipeline) 与汇聚
+							(Join) 编排。
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 无法处理“Bot A 编写接口，Bot B
+							同时根据接口编写测试”的依赖协同，各自闭门造车导致产物严重冲突。
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">概念与存储双轨</span>
+							<span style="color: var(--danger)">#FLAW-02</span>
+						</div>
+						<h3>群公开消息流 vs 点对点私有会话脱节</h3>
+						<p>
+							底层同时维护 <code>RoomMessage</code>（最多 500 条）和 <code>HubConversation</code>。Bot 间调用
+							<code>send_task</code> /
+							<code>reply</code>
+							被封装在私有会话中，群聊天流不得不通过拼接伪假消息（<code>group-task:${id}</code>）强塞状态卡片。
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 群聊主视图被机械的“协同子代理排队中/执行中”卡片严重刷屏，人类对话与多 Bot
+							业务讨论上下文断层。
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">记忆断层</span>
+							<span style="color: var(--danger)">#FLAW-03</span>
+						</div>
+						<h3>24 KiB 机械硬上限与“隐形黑板”</h3>
+						<p>
+							任务上下文 <code>groupTaskContext</code> 硬上限仅 24 KiB，稍有长日志即暴力截断旧历史；而服务端虽已设计了
+							<code>GroupBlackboard</code
+							>（带版本号乐观锁），但前端群组抽屉与聊天主界面<strong>完全没有展示与编辑黑板的入口</strong>！
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 长期业务背景与技术约束几轮即丢失；Bot 共识只能盲人摸象，人类完全无法在 UI
+							上查看或纠偏黑板内容。
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">分布式一致性</span>
+							<span style="color: var(--danger)">#FLAW-04</span>
+						</div>
+						<h3>资源锁全内存态，重启即失且对人隐形</h3>
+						<p>
+							单机调度器依靠物理路径重叠互斥，但跨设备完全依赖 Hub 的
+							<code>HubLockManager</code>。该管理器纯内存存储，Hub 重启后锁全丢；且前端聊天框无任何声明资源锁入口，多机
+							Bot 并发修改同一远程 Git 仓库时处于无保护状态。
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 极易引发并发 Git push 强制覆盖冲突与文件破坏，断网恢复后无分布式事务补偿机制。
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">人机交互闭环</span>
+							<span style="color: var(--danger)">#FLAW-05</span>
+						</div>
+						<h3>缺失执行中动态转向 (In-flight Steering)</h3>
+						<p>
+							普通单会话支持实时输入 Steering 纠偏执行；而在群组中，<code>queue: { steering: [], followUp: [] }</code>
+							被硬编码置空。运行中的 Bot 若理解偏离，人类只能眼睁睁看其执行完或直接粗暴调用
+							<code>/stop</code> 终止，无法半途介入修正。
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 长任务容错率极低，单点失误导致整条协作链崩塌，人机协同缺乏灵活性。
+						</div>
+					</div>
+
+					<div class="flaw-card">
+						<div class="flaw-header">
+							<span class="flaw-badge">硬编码锁死</span>
+							<span style="color: var(--danger)">#FLAW-06</span>
+						</div>
+						<h3>核心配置未解耦，常量写死绕过设置</h3>
+						<p>
+							代码中散落大量如 <code>const HISTORY = 500</code>、<code>GROUP_CONTEXT_BYTES = 24 * 1024</code>、<code
+								>allowBotMentions: false</code
+							>
+							等写死常量。甚至在 <code>execution-settings.json</code> 调高参数后，Hub
+							代码多处仍然读取固定常量，配置无法生效。
+						</p>
+						<div class="flaw-impact">
+							<strong>根本后果：</strong> 即使硬件算力与网络条件允许，群组性能与规模仍被底层写死的“小水管”死死锁死。
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 2. 指标上限调高与全可配置化矩阵 -->
+			<section id="limits">
+				<div class="section-title">
+					<span>📊</span>
+					<h2>所有上限调高与全配置化规格矩阵</h2>
+				</div>
+				<p class="section-desc">
+					将所有硬编码解耦为“全局默认值 + 作用域覆盖（Hub全局 / Room群组 / Device本地）”，默认值大幅升级：
+				</p>
+
+				<div class="table-wrapper">
+					<table>
+						<thead>
+							<tr>
+								<th>领域分类</th>
+								<th>配置参数 (Key)</th>
+								<th>原默认值</th>
+								<th>原硬顶</th>
+								<th>新默认标准</th>
+								<th>新系统上限</th>
+								<th>配置覆盖作用域</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td rowspan="4"><strong>上下文与记忆</strong></td>
+								<td><code>groupContextBytes</code></td>
+								<td><span class="badge-old">24 KiB</span></td>
+								<td>256 KiB</td>
+								<td><span class="badge-new">128 KiB</span></td>
+								<td><strong>2 MiB</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>groupRetentionLimit</code></td>
+								<td><span class="badge-old">500 条</span></td>
+								<td>2,000 条</td>
+								<td><span class="badge-new">2,000 条</span></td>
+								<td><strong>20,000 条</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>blackboardMaxBytes</code></td>
+								<td><span class="badge-old">32 KiB</span></td>
+								<td>256 KiB</td>
+								<td><span class="badge-new">256 KiB</span></td>
+								<td><strong>4 MiB</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>taskReportExcerptBytes</code></td>
+								<td><span class="badge-old">16 KiB (写死)</span></td>
+								<td>16 KiB</td>
+								<td><span class="badge-new">64 KiB</span></td>
+								<td><strong>512 KiB</strong></td>
+								<td><span class="scope-tag">Device / Room</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="5"><strong>并发与任务调度</strong></td>
+								<td><code>maxActiveTasks</code></td>
+								<td><span class="badge-old">4</span></td>
+								<td>32</td>
+								<td><span class="badge-new">8</span></td>
+								<td><strong>64</strong></td>
+								<td><span class="scope-tag">Device Agent</span></td>
+							</tr>
+							<tr>
+								<td><code>maxWaitingTasks</code></td>
+								<td><span class="badge-old">32</span></td>
+								<td>256</td>
+								<td><span class="badge-new">128</span></td>
+								<td><strong>1,024</strong></td>
+								<td><span class="scope-tag">Device Agent</span></td>
+							</tr>
+							<tr>
+								<td><code>maxDispatchBudget</code></td>
+								<td><span class="badge-old">16</span></td>
+								<td>64</td>
+								<td><span class="badge-new">64</span></td>
+								<td><strong>256</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>maxDispatchDepth</code></td>
+								<td><span class="badge-old">8</span></td>
+								<td>32</td>
+								<td><span class="badge-new">16</span></td>
+								<td><strong>64</strong></td>
+								<td><span class="scope-tag">Room / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>allowBotMentions</code></td>
+								<td><span class="badge-old">false (写死)</span></td>
+								<td>Boolean</td>
+								<td><span class="badge-new">true</span></td>
+								<td><strong>true / 阈值熔断</strong></td>
+								<td><span class="scope-tag">Room Policy</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="2"><strong>分布式资源锁</strong></td>
+								<td><code>resourceLockDefaultTtlMs</code></td>
+								<td><span class="badge-old">10 分钟</span></td>
+								<td>60 分钟</td>
+								<td><span class="badge-new">30 分钟</span></td>
+								<td><strong>24 小时</strong></td>
+								<td><span class="scope-tag">Hub / Room</span></td>
+							</tr>
+							<tr>
+								<td><code>maxResourceLocksPerTask</code></td>
+								<td><span class="badge-old">16 (写死)</span></td>
+								<td>16</td>
+								<td><span class="badge-new">64</span></td>
+								<td><strong>256</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+
+							<tr>
+								<td rowspan="4"><strong>文件同步与证据链</strong></td>
+								<td><code>fileSyncMaxBytes</code></td>
+								<td><span class="badge-old">8 MiB</span></td>
+								<td>100 MiB</td>
+								<td><span class="badge-new">100 MiB</span></td>
+								<td><strong>10 GiB</strong></td>
+								<td><span class="scope-tag">Hub / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>fileSyncMaxFiles</code></td>
+								<td><span class="badge-old">128</span></td>
+								<td>1,000</td>
+								<td><span class="badge-new">1,000</span></td>
+								<td><strong>10,000</strong></td>
+								<td><span class="scope-tag">Hub / Device</span></td>
+							</tr>
+							<tr>
+								<td><code>fileSyncStagedBytes</code></td>
+								<td><span class="badge-old">32 MiB</span></td>
+								<td>512 MiB</td>
+								<td><span class="badge-new">1 GiB</span></td>
+								<td><strong>50 GiB</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+							<tr>
+								<td><code>taskReportMaxBytes</code></td>
+								<td><span class="badge-old">4 MiB (写死)</span></td>
+								<td>4 MiB</td>
+								<td><span class="badge-new">16 MiB</span></td>
+								<td><strong>128 MiB</strong></td>
+								<td><span class="scope-tag">Hub Settings</span></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<!-- 3. 三大架构级重构方案深度对比 -->
+			<section id="proposals">
+				<div class="section-title">
+					<span>🏗️</span>
+					<h2>三大架构级重构方案深度对比</h2>
+				</div>
+				<p class="section-desc">从工程可行性、系统健壮性与前瞻性出发，提供三套阶梯式演进架构方案：</p>
+
+				<div class="plan-tabs">
+					<button class="plan-tab-btn active" onclick="switchPlan(0)">
+						<div class="plan-tab-title">方案 A：渐进增强型</div>
+						<span class="plan-tab-badge badge-a">稳健落地 · 黑板优先 · 动态配置中枢</span>
+					</button>
+					<button class="plan-tab-btn" onclick="switchPlan(1)">
+						<div class="plan-tab-title">方案 B：协同总线型 (推荐)</div>
+						<span class="plan-tab-badge badge-b">全流归一 · 编排工作流 · 实时 Steering</span>
+					</button>
+					<button class="plan-tab-btn" onclick="switchPlan(2)">
+						<div class="plan-tab-title">方案 C：自治网格型</div>
+						<span class="plan-tab-badge badge-c">分布式 Mesh · 向量检索 · 沙盒快照回滚</span>
+					</button>
+				</div>
+
+				<!-- 方案 A 内容 -->
+				<div class="plan-content active" id="plan-0">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>方案 A：渐进增强型 —— “黑板共识中枢 + 全参数动态外置”</h2>
+							<p>
+								保留现有 Hub-Device 主从拓扑与日志模型，聚焦解决关键断层：黑板 UI 原生化、解耦写死常量、放开群内 @
+								交互与决策回填。
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">改造风险</div>
+								<div class="rating-val" style="color: var(--success)">低 (Low)</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">研发周期</div>
+								<div class="rating-val" style="color: var(--primary-light)">1.5 周</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="arch-diagram">
+						<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg">
+							<rect x="20" y="20" width="860" height="180" rx="10" fill="#131b26" stroke="#2a3a52" />
+
+							<!-- Human & UI -->
+							<rect x="50" y="50" width="140" height="120" rx="8" fill="#1e293b" stroke="#3b82f6" />
+							<text x="120" y="80" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								群聊前端界面
+							</text>
+							<text x="120" y="105" fill="#94a3b8" font-size="11" text-anchor="middle">原生黑板侧边栏</text>
+							<text x="120" y="125" fill="#94a3b8" font-size="11" text-anchor="middle">多参数调优面板</text>
+							<text x="120" y="145" fill="#38bdf8" font-size="11" text-anchor="middle">@Bot 快捷路由</text>
+
+							<path d="M 190 110 L 260 110" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrow)" />
+
+							<!-- Hub Server -->
+							<rect x="260" y="40" width="340" height="140" rx="8" fill="#1e293b" stroke="#8b5cf6" />
+							<text x="430" y="65" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								Hub 协调中枢 (升级)
+							</text>
+
+							<rect x="280" y="80" width="140" height="40" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="350" y="105" fill="#38bdf8" font-size="11" text-anchor="middle">动态配置管理 (WAL)</text>
+
+							<rect x="440" y="80" width="140" height="40" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="510" y="105" fill="#a7f3d0" font-size="11" text-anchor="middle">黑板优先注入引擎</text>
+
+							<rect x="280" y="130" width="300" height="35" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="430" y="152" fill="#cbd5e1" font-size="11" text-anchor="middle">
+								受控 Bot-to-Bot Mention 解析器 (防死循环)
+							</text>
+
+							<path d="M 600 110 L 670 110" stroke="#8b5cf6" stroke-width="2" />
+
+							<!-- Execution Devices -->
+							<rect x="670" y="50" width="180" height="120" rx="8" fill="#1e293b" stroke="#10b981" />
+							<text x="760" y="80" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								执行设备集群
+							</text>
+							<text x="760" y="105" fill="#94a3b8" font-size="11" text-anchor="middle">Bot 1 (大上下文 128K)</text>
+							<text x="760" y="125" fill="#94a3b8" font-size="11" text-anchor="middle">Bot 2 (大文件同步 10G)</text>
+							<text x="760" y="145" fill="#6ee7b7" font-size="11" text-anchor="middle">自动决策回填确认</text>
+						</svg>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>📌 1. 全局与群级配置中枢 (Execution Settings 2.0)</h4>
+							<p>
+								将所有写死常量重构为三级继承模型。支持群级
+								<code>RoomSettings</code>，在前端群设置中即可随意拖拽调整群历史与上下文大小。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>📋 2. 原生黑板常驻面板 (First-Class Blackboard)</h4>
+							<p>
+								在群聊主界面右上侧增加“群组黑板”交互抽屉，支持实时 Markdown
+								编辑与版本历史展示。任务上下文优先打包全量黑板，彻底根除长期记忆丢失。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>💬 3. 受控自发协同 (Safe Bot Mentions)</h4>
+							<p>
+								开启 <code>allowBotMentions: true</code>，并在 Hub 层引入每轮最多派发 3 次的限流熔断计数，Bot 在群里 @
+								同伴即可自动触发派发。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🔔 4. 决策自动公报 (Attention Auto-Broadcast)</h4>
+							<p>
+								人类回答 Bot 问卷或审批后，系统自动在公开群消息流广播格式化公报，同时增量回写黑板，消除多 Bot
+								间的认知信息孤岛。
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- 方案 B 内容 -->
+				<div class="plan-content" id="plan-1">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>方案 B：协同总线型 (推荐) —— “全流归一 + 声明式工作流 + 实时转向”</h2>
+							<p>
+								彻底解决消息与会话双轨制；引入拓扑编排（Pipeline / Fan-in / Fan-out）与分布式 Steering
+								协议，构建工业级多智能体协同流水线。
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">架构完备度</div>
+								<div class="rating-val" style="color: var(--purple)">优秀 (9.5/10)</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">推荐指数</div>
+								<div class="rating-val" style="color: var(--success)">★★★★★</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="arch-diagram">
+						<svg viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg">
+							<rect x="20" y="20" width="860" height="200" rx="10" fill="#131b26" stroke="#2a3a52" />
+
+							<!-- Unified Bus -->
+							<rect x="50" y="45" width="220" height="150" rx="8" fill="#1e293b" stroke="#3b82f6" />
+							<text x="160" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								统一事件与消息总线
+							</text>
+							<text x="160" y="100" fill="#94a3b8" font-size="11" text-anchor="middle">消灭 Room vs Conv 双轨</text>
+							<text x="160" y="125" fill="#38bdf8" font-size="11" text-anchor="middle">树状 Thread 派生模型</text>
+							<text x="160" y="150" fill="#cbd5e1" font-size="11" text-anchor="middle">实时双向流 (SSE/WS)</text>
+							<text x="160" y="175" fill="#a7f3d0" font-size="11" text-anchor="middle">飞行中转向通道 (Steering)</text>
+
+							<!-- Orchestrator -->
+							<rect x="310" y="45" width="260" height="150" rx="8" fill="#1e293b" stroke="#8b5cf6" />
+							<text x="440" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								群工作流编排器 (Workflow DSL)
+							</text>
+							<rect x="330" y="90" width="220" height="30" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="110" fill="#c4b5fd" font-size="11" text-anchor="middle">
+								串行管道: BotA → BotB → BotC
+							</text>
+							<rect x="330" y="125" width="220" height="30" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="145" fill="#67e8f9" font-size="11" text-anchor="middle">
+								扇出汇聚: [A, B 并行] → C 汇总
+							</text>
+							<rect x="330" y="160" width="220" height="25" rx="4" fill="#0f172a" stroke="#64748b" />
+							<text x="440" y="177" fill="#fbbf24" font-size="10" text-anchor="middle">
+								持久化资源锁管理器 (WAL 存储)
+							</text>
+
+							<!-- Execution Nodes -->
+							<rect x="610" y="45" width="240" height="150" rx="8" fill="#1e293b" stroke="#10b981" />
+							<text x="730" y="75" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">
+								分布式执行网元
+							</text>
+							<text x="730" y="100" fill="#94a3b8" font-size="11" text-anchor="middle">
+								Pty In-flight Steering 接收器
+							</text>
+							<text x="730" y="125" fill="#a7f3d0" font-size="11" text-anchor="middle">流式 Token 实时广播</text>
+							<text x="730" y="150" fill="#94a3b8" font-size="11" text-anchor="middle">共享虚拟工作区租约</text>
+							<text x="730" y="175" fill="#cbd5e1" font-size="11" text-anchor="middle">断网补偿事务 (Saga)</text>
+						</svg>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>🌿 1. 统一树状会话模型 (Unified Tree Stream)</h4>
+							<p>
+								废除双轨制，所有消息均为同一树状流中的节点。Bot 间委派成为主消息下的子分支
+								(Thread)，前端支持折叠与直观下钻，彻底解决卡片刷屏。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🎯 2. 声明式协同工作流 (Pipeline / Fan-in / Fan-out)</h4>
+							<p>
+								人类可在群内直接下发工作流指令（如
+								<code>@BotA 调研 并转交给 @BotB 实现，最后由 @BotC 汇总</code
+								>），编排器自动按拓扑图推进状态，上一节点的产物自动成为下一节点的精确输入。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🕹️ 3. 飞行中实时转向 (In-flight Steering Protocol)</h4>
+							<p>
+								打通跨设备 Steering 协议。当 Bot 执行长任务时，人类在群内直接打字纠偏，Hub 实时投递到目标设备 Agent
+								的执行队列中动态影响后续工具选择，无需硬中断。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🔒 4. 分布式锁持久化与意图锁 (Persistent Resource Locks)</h4>
+							<p>
+								<code>HubLockManager</code> 改由追加日志 (WAL) 持久化，支持 Shared Read / Exclusive Write
+								分级意图锁，群聊输入框支持自动根据 @Bot 涉及的项目根路径推导资源锁。
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<!-- 方案 C 内容 -->
+				<div class="plan-content" id="plan-2">
+					<div class="plan-header">
+						<div class="plan-meta">
+							<h2>方案 C：自治智能体网格型 —— “数字研发室 + 分布式知识库 + 沙盒回滚”</h2>
+							<p>
+								前瞻性架构，将群组升级为全自主运行的虚拟团队。引入向量化语义分层记忆、细粒度 Capability 权限衰减与 Git
+								工作树快照回滚。
+							</p>
+						</div>
+						<div class="plan-ratings">
+							<div class="rating-item">
+								<div class="rating-label">前瞻性</div>
+								<div class="rating-val" style="color: var(--cyan)">极高 (Cutting-edge)</div>
+							</div>
+							<div class="rating-item">
+								<div class="rating-label">研发周期</div>
+								<div class="rating-val" style="color: var(--warning)">4 - 6 周</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="feature-list">
+						<div class="feature-item">
+							<h4>🧠 1. 分层记忆矩阵 (Hierarchical Memory Matrix)</h4>
+							<p>
+								突破所有纯文本上下文上限：L1 黑板共识 (全局状态) + L2 嵌入式向量知识库 (20,000+ 群历史语义检索按需回填)
+								+ L3 任务快照证据链。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>🛡️ 2. Git 物理工作树隔离与崩溃快照回滚 (Worktree Sandbox)</h4>
+							<p>
+								每个多机任务派发自动拉取独立 Git
+								临时分支。发生断网脑裂、崩溃或人类拒绝交付时，自动一键回滚物理目录，零污染主分支代码。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>👥 3. 多账号跨设备联邦 (Multi-Tenant Group Collaboration)</h4>
+							<p>
+								重构单一 <code>accountId</code> 架构，支持不同团队成员携带自己的电脑和 Bot
+								加入同一个分布式项目群组，建立基于公私钥签名的群成员身份链。
+							</p>
+						</div>
+						<div class="feature-item">
+							<h4>📺 4. 多机流式全景看板 (Live Streaming Multiplexing)</h4>
+							<p>
+								前端原生支持多通道实时 Token 流分发，多个 Bot 并发运行时，可像作战指挥室一样分屏实时查看每一个 Agent
+								的思考与终端执行全貌。
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 4. 交互式容量与资源模拟器 -->
+			<section id="simulator">
+				<div class="section-title">
+					<span>🧮</span>
+					<h2>群组运行容量与资源消耗模拟器 (Interactive Simulator)</h2>
+				</div>
+				<p class="section-desc">
+					调整下方滑块，实时观察调高上限后群组在极端并发场景下的内存消耗、上下文吞吐与网络负载计算：
+				</p>
+
+				<div class="simulator-box">
+					<div class="sim-controls">
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>群成员 Bot 数量</span>
+								<span id="val-bots">6 个</span>
+							</div>
+							<input type="range" id="input-bots" min="2" max="32" value="6" oninput="updateSim()" />
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>群任务上下文上限 (groupContextBytes)</span>
+								<span id="val-context">256 KiB</span>
+							</div>
+							<input type="range" id="input-context" min="24" max="2048" step="32" value="256" oninput="updateSim()" />
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>群黑板最大容量 (blackboardMaxBytes)</span>
+								<span id="val-blackboard">512 KiB</span>
+							</div>
+							<input
+								type="range"
+								id="input-blackboard"
+								min="32"
+								max="4096"
+								step="64"
+								value="512"
+								oninput="updateSim()"
+							/>
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>群持久历史保留上限 (groupRetentionLimit)</span>
+								<span id="val-retention">5,000 条</span>
+							</div>
+							<input
+								type="range"
+								id="input-retention"
+								min="500"
+								max="20000"
+								step="500"
+								value="5000"
+								oninput="updateSim()"
+							/>
+						</div>
+
+						<div class="slider-group">
+							<div class="slider-header">
+								<span>设备并发活跃任务数 (maxActiveTasks)</span>
+								<span id="val-tasks">12 个</span>
+							</div>
+							<input type="range" id="input-tasks" min="4" max="64" value="12" oninput="updateSim()" />
+						</div>
+					</div>
+
+					<div class="sim-results">
+						<div class="sim-card">
+							<div class="sim-card-title">单个派发任务上下文承载能力</div>
+							<div class="sim-card-value" id="res-tokens">~85,000 Tokens</div>
+							<div class="sim-card-desc">
+								对比原先 24KB 仅 ~8,000 Tokens，容量提升 <strong>10.6x</strong>，完整支持现代大模型长上下文输入
+							</div>
+						</div>
+
+						<div class="sim-card">
+							<div class="sim-card-title">Hub 内存常驻与历史索引开销</div>
+							<div class="sim-card-value" id="res-ram">~18.4 MiB</div>
+							<div class="sim-card-desc">
+								采用 PartitionedAppendLog 分片存储，高并发运行对 Node.js 进程内存负担微乎其微
+							</div>
+						</div>
+
+						<div class="sim-card">
+							<div class="sim-card-title">极端扇出峰值网络吞吐 (Fan-out Peak)</div>
+							<div class="sim-card-value" id="res-bandwidth">~3.0 MiB/s</div>
+							<div class="sim-card-desc">全员广播并分发任务时的瞬时数据流，完全在局域网与标准宽带承受范围内</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 5. 核心交互原型预览 -->
+			<section id="mockup">
+				<div class="section-title">
+					<span>🖥️</span>
+					<h2>新架构核心交互体验原型预览 (UI Mockup)</h2>
+				</div>
+				<p class="section-desc">直观预览方案 B 中的“群聊主时间线 + 常驻共识黑板 + 飞行中动态转向”双栏协同界面：</p>
+
+				<div class="mockup-container">
+					<div class="mockup-header">
+						<span class="mockup-dot" style="background: #ef4444"></span>
+						<span class="mockup-dot" style="background: #f59e0b"></span>
+						<span class="mockup-dot" style="background: #10b981"></span>
+						<span style="font-size: 0.85rem; color: var(--text-muted); margin-left: 12px; font-weight: 600"
+							>pi-web-ui 群组协同工作台 · 全局黑板与多 Bot 实时转向</span
+						>
+					</div>
+					<div class="mockup-body">
+						<div class="mock-chat-pane">
+							<div
+								style="
+									font-size: 0.85rem;
+									color: var(--text-muted);
+									border-bottom: 1px solid var(--card-border);
+									padding-bottom: 6px;
+								"
+							>
+								💬 联合架构重构群 (Room #104) · 4 位 Bot 在线 · 活跃任务: 2
+							</div>
+							<div class="mock-bubble human">
+								@ArchitectBot @CoderBot 请开始重构数据层，先确立接口定义，并保持黑板更新。
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>ArchitectBot</strong>: 架构方案已草拟并写入 <strong>[群组黑板]</strong>（版本 v4）。已为
+								<code>CoderBot</code> 生成接口契约。<br />
+								<span style="color: #6ee7b7; font-size: 0.75rem"
+									>⚡ 触发流水线编排: 已将抽象契约自动流水给 CoderBot</span
+								>
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>CoderBot</strong>: 正在根据黑板契约在
+								<code>server/store.ts</code> 中实现原子分片写入...<br />
+								<span style="color: #38bdf8; font-size: 0.75rem"
+									>⏳ 任务执行中 (Running) · 锁已持有: [repo:store.ts]</span
+								>
+							</div>
+							<div class="mock-bubble human" style="background: #0f766e; color: #ccfbf1">
+								🕹️ <strong>[飞行中即时转向 Steering]</strong> CoderBot 先别改动老版本读取兼容层，只做增量追加！
+							</div>
+							<div class="mock-bubble bot">
+								🤖 <strong>CoderBot</strong>: 收到实时转向！已动态跳过兼容层破坏性重写，改为独立命名空间追加。
+							</div>
+						</div>
+
+						<div class="mock-side-pane">
+							<div class="mock-side-title">
+								<span>📋</span>
+								<span>群组共识黑板 (Blackboard v4)</span>
+							</div>
+							<div class="blackboard-preview">
+								# 统一架构共识 (RFC-089) - 更新者: ArchitectBot - 时间: 14:32:05 - 锁状态: store.ts (CoderBot 持有) ##
+								核心契约 1. 废除双轨制，所有消息接入 TreeStream 2. groupContextBytes 调高至 256KB 3.
+								锁超时时间默认提升至 30 分钟 ## 待办流水线 (Pipeline) - [x] ArchitectBot: 接口契约定义 - [ ] CoderBot:
+								实现原子写入 (执行中 60%) - [ ] ReviewerBot: 执行测试用例集
+							</div>
+							<div style="font-size: 0.75rem; color: var(--text-muted); text-align: center">
+								✨ 人类可随时点击任意行在线编辑纠偏
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- 底部确认操作条 -->
+			<div class="cta-bar">
+				<h3>准备开启设备群组架构重构</h3>
+				<p>
+					推荐采纳 <strong>方案 B（协同总线型）</strong>，全面调高系统上限，打通前端黑板与
+					Steering，从根本上终结打地鼠式的小修小补。
+				</p>
+				<div class="btn-group">
+					<button class="btn btn-primary" onclick="alert('已确认首选方案 B：准备进入编码与架构落地阶段！')">
+						🚀 确认采纳方案 B（协同总线与黑板落地）
+					</button>
+					<button class="btn btn-secondary" onclick="alert('已记录方案 A 倾向：将以渐进增强方式先放开上限与黑板 UI！')">
+						📦 采纳方案 A（渐进平滑过渡）
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			function switchPlan(index) {
+				const tabs = document.querySelectorAll(".plan-tab-btn");
+				const contents = document.querySelectorAll(".plan-content");
+				tabs.forEach((tab, i) => {
+					tab.classList.toggle("active", i === index);
+				});
+				contents.forEach((content, i) => {
+					content.classList.toggle("active", i === index);
+				});
+			}
+
+			function updateSim() {
+				const bots = parseInt(document.getElementById("input-bots").value, 10);
+				const contextKb = parseInt(document.getElementById("input-context").value, 10);
+				const blackboardKb = parseInt(document.getElementById("input-blackboard").value, 10);
+				const retention = parseInt(document.getElementById("input-retention").value, 10);
+				const tasks = parseInt(document.getElementById("input-tasks").value, 10);
+
+				document.getElementById("val-bots").textContent = bots + " 个";
+				document.getElementById("val-context").textContent =
+					contextKb >= 1024 ? (contextKb / 1024).toFixed(1) + " MiB" : contextKb + " KiB";
+				document.getElementById("val-blackboard").textContent =
+					blackboardKb >= 1024 ? (blackboardKb / 1024).toFixed(1) + " MiB" : blackboardKb + " KiB";
+				document.getElementById("val-retention").textContent = retention.toLocaleString() + " 条";
+				document.getElementById("val-tasks").textContent = tasks + " 个";
+
+				// 计算
+				const tokensEst = Math.round((contextKb * 1024) / 3.2);
+				document.getElementById("res-tokens").textContent = "~" + tokensEst.toLocaleString() + " Tokens";
+
+				const memMb = ((retention * 1.5) / 1024 + blackboardKb / 1024 + tasks * 0.8).toFixed(1);
+				document.getElementById("res-ram").textContent = "~" + memMb + " MiB";
+
+				const bwMb = ((bots * contextKb) / 1024 / 2).toFixed(1);
+				document.getElementById("res-bandwidth").textContent = "~" + bwMb + " MiB/s";
+			}
+
+			// 初始化模拟器计算
+			updateSim();
+		</script>
+	</body>
+</html>

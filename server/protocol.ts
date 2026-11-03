@@ -5171,6 +5171,9 @@ export interface DeviceExecutionSettings {
 	fileSyncStagedBytes: number;
 	resourceLockDefaultTtlMs: number;
 	blackboardMaxBytes: number;
+	taskReportExcerptBytes?: number;
+	maxResourceLocksPerTask?: number;
+	botMentionBudgetPerTurn?: number;
 }
 
 export type DeviceTaskBlockReason =
@@ -5180,7 +5183,8 @@ export type DeviceTaskBlockReason =
 	| "workspace_conflict"
 	| "workspace_blocked"
 	| "room_fairness_yield"
-	| "resource_locked";
+	| "resource_locked"
+	| "dependency_waiting";
 
 export type DeviceBlockedTaskReason = "unconfirmed_stop" | "workspace_blocked";
 

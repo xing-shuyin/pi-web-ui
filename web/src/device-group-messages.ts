@@ -81,6 +81,13 @@ export type GroupTask = {
 	planOnly?: boolean;
 	plan?: import("./group-capabilities").GroupTaskPlan;
 	canvasRef?: import("./group-capabilities").GroupCanvasRef;
+	parentTaskId?: string;
+	rootTaskId?: string;
+	sourceBotId?: string;
+	sourceConversationId?: string;
+	kind?: "message" | "request" | "reply" | "result";
+	resultOfTaskId?: string;
+	dispatchDepth?: number;
 };
 export type GroupDetail = {
 	room: {
@@ -89,6 +96,7 @@ export type GroupDetail = {
 		botIds: string[];
 		primaryBotId?: string;
 		canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
+		blackboard?: import("../../server/device-center/store.js").GroupBlackboard;
 	};
 	bots: GroupDevice[];
 	messages: GroupMessage[];
@@ -232,28 +240,60 @@ export function groupConversationState(
 			.filter((task): task is GroupTask => !!task && task.botId === message.sender.id);
 		for (const task of linkedTasks) if (task.report) reportedTasks.add(task.id);
 		const status = [...new Set(linkedTasks.map((task) => statuses[task.status]))].join(" · ");
-		const sender = botLabel(message.sender.id, message.sender.name, message.sender.sourceDeviceId);
+		const isPrimary = Boolean(detail?.room.primaryBotId && message.sender.id === detail.room.primaryBotId);
+		const coordinatorTag = isPrimary ? ` [${zh ? "群组主管" : "Coordinator"}]` : "";
+		const sender = `${botLabel(message.sender.id, message.sender.name, message.sender.sourceDeviceId)}${coordinatorTag}`;
 		labels.set(id, status ? `${sender} · ${status}` : sender);
 	}
 	for (const task of detail?.tasks ?? []) {
-		if (reportedTasks.has(task.id)) continue;
+		if (reportedTasks.has(task.id) || task.kind === "result") continue;
 		const id = `group-task:${task.id}`;
 		const bot = bots.get(task.botId);
-		labels.set(id, `${botLabel(task.botId, bot?.name ?? task.botId, task.deviceId)} · ${statuses[task.status]}`);
+		const isSubagentTask = Boolean(task.parentTaskId || (task.sourceBotId && task.sourceBotId !== task.botId));
+		const subagentTag = zh ? "协同子代理" : "Worker Subagent";
+		const labelPrefix = botLabel(task.botId, bot?.name ?? task.botId, task.deviceId);
+		labels.set(
+			id,
+			isSubagentTask
+				? `${labelPrefix} [${subagentTag}] · ${statuses[task.status]}`
+				: `${labelPrefix} · ${statuses[task.status]}`,
+		);
 		const rawReport = task.report;
 		const taskText = formatGroupDisplayText(task.text);
 		let body: string;
 		if (rawReport) {
-			body = formatDeviceFailureReport(rawReport, zh);
+			if (isSubagentTask) {
+				const summaryTitle = zh ? "📋 展开查看工作内容与交付详情" : "📋 View Detailed Delivery & Evidence";
+				body = [
+					`> 🤖 **${zh ? "协同子代理交付完成" : "Worker Subagent Completed"}** · \`@${bot?.name ?? task.botId}\``,
+					`>`,
+					`> 🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
+					``,
+					`<details>`,
+					`<summary>${summaryTitle}</summary>`,
+					``,
+					formatDeviceFailureReport(rawReport, zh),
+					``,
+					`</details>`,
+				].join("\n");
+			} else {
+				body = formatDeviceFailureReport(rawReport, zh);
+			}
 		} else if (task.status === "running") {
-			const phaseLabel = zh ? "任务执行中" : "Task Running";
+			const phaseLabel = isSubagentTask
+				? zh
+					? "协同子代理执行中"
+					: "Worker Subagent Running"
+				: zh
+					? "任务执行中"
+					: "Task Running";
 			const progressPhase = task.progress?.phase;
 			const toolName = task.progress?.toolName;
 			const progressText = task.progress?.text?.trim();
 			body = [
-				`> ⏳ **${phaseLabel}**`,
+				`> ⏳ **${phaseLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
 				`>`,
-				`> **${zh ? "目标指令" : "Instruction"}**：${taskText}`,
+				`> **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : isSubagentTask ? "Instruction" : "Instruction"}**：${taskText}`,
 				...(progressPhase
 					? [
 							`> **${zh ? "执行阶段" : "Phase"}**：\`${progressPhase}\`${toolName ? ` · ${zh ? "工具" : "Tool"}: \`${toolName}\`` : ""}`,
@@ -262,10 +302,24 @@ export function groupConversationState(
 				...(progressText ? [`>`, `> ${progressText}`] : []),
 			].join("\n");
 		} else if (task.status === "queued") {
+			const queueLabel = isSubagentTask
+				? zh
+					? "协同子代理排队等待调度"
+					: "Worker Subagent Queued"
+				: zh
+					? "任务排队等待调度"
+					: "Task Queued";
 			body = [
-				`> ⏱️ **${zh ? "任务排队等待调度" : "Task Queued"}**`,
+				`> ⏱️ **${queueLabel}**${isSubagentTask ? ` · \`@${bot?.name ?? task.botId}\`` : ""}`,
 				`>`,
-				`> **${zh ? "目标指令" : "Instruction"}**：${taskText}`,
+				`> **${zh ? (isSubagentTask ? "分配指令" : "目标指令") : isSubagentTask ? "Instruction" : "Instruction"}**：${taskText}`,
+			].join("\n");
+		} else if (task.status === "failed" && isSubagentTask) {
+			body = [
+				`> ❌ **${zh ? "协同子代理执行失败" : "Worker Subagent Failed"}** · \`@${bot?.name ?? task.botId}\``,
+				`>`,
+				`> 🎯 **${zh ? "分配指令" : "Instruction"}**：${taskText}`,
+				...(rawReport ? [``, formatDeviceFailureReport(rawReport, zh)] : []),
 			].join("\n");
 		} else {
 			body = `${statuses[task.status]}\n\n${taskText}`;

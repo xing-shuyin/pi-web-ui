@@ -111,6 +111,7 @@ export interface HubTask {
 	blockReason?: import("../protocol.js").DeviceTaskBlockReason;
 	blockReasonDetail?: string;
 	attenuatedTools?: string[];
+	dependsOnTaskId?: string;
 }
 export interface GroupBlackboard {
 	version: number; // 严格自增版本号（从 1 开始）

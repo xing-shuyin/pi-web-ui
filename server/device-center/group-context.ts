@@ -136,7 +136,7 @@ const MENTION = /@([^\s()@]+)(?:\(([A-Za-z0-9-]{8,})\))?/g;
  * send explicit target ids, but a message that only names Bots in its text must not silently fall back to
  * the primary Bot. Ambiguous names (two members sharing one) are ignored rather than guessed.
  */
-export function groupMentionTargets(text: string, room: Room, bots: readonly Bot[]): string[] {
+export function groupMentionTargets(text: string, room: Room, bots: readonly Bot[], limit?: number): string[] {
 	const members = room.botIds
 		.map((id) => ({ id, name: bots.find((bot) => bot.id === id)?.name?.trim() ?? "" }))
 		.filter((member) => member.name.length > 0);
@@ -154,7 +154,8 @@ export function groupMentionTargets(text: string, room: Room, bots: readonly Bot
 		if (resolved && !hits.some((hit) => hit.id === resolved.id))
 			hits.push({ index: match.index ?? 0, id: resolved.id });
 	}
-	return hits.sort((a, b) => a.index - b.index).map((hit) => hit.id);
+	const sorted = hits.sort((a, b) => a.index - b.index).map((hit) => hit.id);
+	return limit && limit > 0 ? sorted.slice(0, limit) : sorted;
 }
 
 /**

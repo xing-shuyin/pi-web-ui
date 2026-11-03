@@ -5,9 +5,10 @@ import { GroupDeliveries } from "./GroupDeliveries";
 import { DeviceFileTransfer } from "./DeviceFileTransfer";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
+import { GroupBlackboardView } from "./GroupBlackboardView";
 import { isZhLocale, useI18n } from "../i18n";
 
-export type GroupDrawerTab = "deliveries" | "transfers" | "canvas" | "presets" | "bots";
+export type GroupDrawerTab = "blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots";
 
 interface GroupDrawerProps {
 	isOpen: boolean;
@@ -58,6 +59,11 @@ export const GroupDrawer = memo(function GroupDrawer({
 	if (!isOpen) return null;
 
 	const titleMap: Record<GroupDrawerTab, { icon: string; title: string; badge?: number }> = {
+		blackboard: {
+			icon: "📋",
+			title: zh ? "群组共享共识黑板" : "Group Shared Blackboard",
+			badge: detail?.room.blackboard?.version,
+		},
 		deliveries: {
 			icon: "📦",
 			title: zh ? "交付与待办事项" : "Deliveries & Attention",
@@ -111,6 +117,17 @@ export const GroupDrawer = memo(function GroupDrawer({
 				</div>
 
 				<div className="group-drawer-body">
+					{activeTab === "blackboard" && (
+						<div className="group-drawer-pane">
+							<GroupBlackboardView
+								roomId={roomId}
+								blackboard={detail?.room.blackboard}
+								disabled={disabled}
+								onSaved={onRefreshGroup ?? noop}
+							/>
+						</div>
+					)}
+
 					{activeTab === "deliveries" && (
 						<div className="group-drawer-pane">
 							<GroupDeliveries

@@ -1599,6 +1599,8 @@
 		"promptTok_terminal_desc": "Руководство по использованию постоянных терминалов (вставляется, когда включены «инструменты терминала»)",
 		"promptTok_markers": "Руководство по маркерам",
 		"promptTok_markers_desc": "Описание использования встроенных инструментов-маркеров (вставляется, когда включены markers)",
+		"promptTok_plugin_dev": "Plugin dev guide",
+		"promptTok_plugin_dev_desc": "pi-web-ui plugin development guidelines and doc pointers (disabled by default; injects paths and docs when enabled)",
 		"promptTok_context": "Контекст проекта",
 		"promptTok_context_desc": "<project_context>: результаты сбора AGENTS.md/CLAUDE.md",
 		"promptTok_skills": "Блок навыков",

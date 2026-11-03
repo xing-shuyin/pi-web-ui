@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import express from "express";
 import { validInteractionAnswer, validInteractionProjection } from "./human-interaction.js";
 import type { DeviceTaskInteraction } from "../protocol.js";
@@ -154,6 +155,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	function currentSettings(): DeviceExecutionSettings {
 		return options.getSettings?.() ?? options.settings ?? DEFAULT_EXECUTION_SETTINGS;
 	}
+	const getHistoryLimit = () => currentSettings().groupRetentionLimit ?? GROUP_RETENTION_LIMIT;
 	const origin = new URL(options.publicUrl);
 	if (
 		!["http:", "https:"].includes(origin.protocol) ||
@@ -326,6 +328,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	const lockManager = createHubLockManager({
 		autoCleanupIntervalMs: 60000,
 		defaultTtlMs: currentSettings().resourceLockDefaultTtlMs,
+		persistPath: options.dataDir ? join(options.dataDir, "hub-locks.json") : undefined,
 	});
 	const ip = (req: Request) => req.socket.remoteAddress ?? "unknown";
 	const visibleDevice = (device: ReturnType<typeof publicDevice>) => ({
@@ -1067,6 +1070,53 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		void drainConversation(nextTask.conversationId).catch(() => {});
 	});
 
+	app.post("/api/rooms/:id/tasks/:taskId/steer", async (req, res) => {
+		const acc = account(req);
+		const roomId = String(req.params.id);
+		const taskId = String(req.params.taskId);
+		const instruction = text(req.body?.text);
+		if (!instruction) fail(400, "Steering instruction required");
+		const snapshot = store.snapshot();
+		const room = snapshot.rooms.find((r) => r.id === roomId && r.accountId === acc.id);
+		if (!room) fail(404, "Room missing");
+		const task = snapshot.tasks.find((t) => t.id === taskId && t.roomId === roomId && t.accountId === acc.id);
+		if (!task) fail(404, "Task missing");
+		if (task.status !== "running") fail(409, "Steering is only allowed on running tasks");
+
+		await taskJournalManager
+			.append(
+				task.id,
+				{
+					botId: task.botId,
+					attemptId: task.attemptId,
+					type: "progress",
+					phase: "running",
+					summary: `In-flight steering: ${instruction.slice(0, 100)}`,
+					output: instruction,
+				},
+				{ roomId: task.roomId, accountId: task.accountId },
+			)
+			.catch(() => {});
+
+		await store.transact((draft) => {
+			draft.messages.push({
+				id: randomUUID(),
+				roomId,
+				accountId: acc.id,
+				text: `🕹️ **[飞行中即时转向 / In-flight Steering]** @${task.botId}:\n> ${instruction}`,
+				sender: { type: "human", id: acc.id, name: acc.username },
+				createdAt: Date.now(),
+				taskIds: [task.id],
+			});
+		});
+
+		const steerRelay = (options as any).onSteer ?? (options as any).relay?.onSteer;
+		if (steerRelay) {
+			await steerRelay(task.deviceId, { taskId: task.id, botId: task.botId, text: instruction }).catch(() => {});
+		}
+		res.json({ success: true, taskId: task.id, steered: true });
+	});
+
 	app.get("/api/rooms/:id/tasks/:taskId/journal", async (req, res) => {
 		const acc = account(req);
 		const state = store.snapshot();
@@ -1784,6 +1834,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const planOnly = req.body?.planOnly === true;
 			const replyToMessageId =
 				req.body?.replyToMessageId === undefined ? undefined : text(req.body.replyToMessageId, 128);
+			const dependsOnTaskId = req.body?.dependsOnTaskId === undefined ? undefined : text(req.body.dependsOnTaskId, 128);
 			let resourceLocks: string[] | undefined;
 			try {
 				if (req.body?.resourceLocks !== undefined) {
@@ -1829,11 +1880,16 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				if (source && !room.botIds.includes(source.id)) fail(403, "Source Bot is not a room member");
 				if (replyToMessageId && !draft.messages.some((m) => m.id === replyToMessageId && m.roomId === room.id))
 					fail(400, "Reply target message is not in this room");
+				if (dependsOnTaskId && !draft.tasks.some((m) => m.id === dependsOnTaskId && m.roomId === room.id))
+					fail(400, "Dependency target task is not in this room");
+				const depTask = dependsOnTaskId ? draft.tasks.find((t) => t.id === dependsOnTaskId) : undefined;
+				const dependencyActive = Boolean(depTask && !isTerminal(depTask.status));
 				// The Hub owns dispatch semantics: a human message that only names Bots in its text must not
 				// silently fall back to the primary Bot just because a client did not pre-resolve the mentions.
 				const canParseMentions =
 					(!source || settings.allowBotMentions) && !conversationApi && !conversation && !targets.length;
-				if (canParseMentions) targets.push(...groupMentionTargets(content, room, draft.bots));
+				if (canParseMentions)
+					targets.push(...groupMentionTargets(content, room, draft.bots, settings.botMentionBudgetPerTurn));
 				if (targets.some((id) => !room.botIds.includes(id) || !validBot(draft, id, owner.id)))
 					fail(400, "Invalid target Bot");
 				if (
@@ -1968,11 +2024,15 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				if (targets.length && (root?.dispatchCount ?? 0) + targets.length > settings.maxDispatchBudget)
 					fail(409, "Dispatch budget exhausted");
 				if (root && targets.length) root.dispatchCount = (root.dispatchCount ?? 0) + targets.length;
-				if (draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length > HISTORY)
+				if (
+					draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length >
+					getHistoryLimit()
+				)
 					fail(409, "Too many active tasks");
 				if (
 					!conversation &&
-					draft.conversations.filter((c) => c.roomId === room.id && !c.closed).length + targets.length > HISTORY
+					draft.conversations.filter((c) => c.roomId === room.id && !c.closed).length + targets.length >
+						getHistoryLimit()
 				)
 					fail(409, "Too many open conversations; stop or delete conversations to free capacity");
 				const now = Date.now();
@@ -2003,7 +2063,16 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						botRevision: targetBot.revision,
 						...(source ? { sourceBotId: source.id } : {}),
 						text: content,
-						status: "queued",
+						status: dependencyActive ? ("waiting" as const) : ("queued" as const),
+						...(dependencyActive
+							? {
+									blockReason: "dependency_waiting" as const,
+									blockReasonDetail: `Waiting for dependency task ${dependsOnTaskId}`,
+									dependsOnTaskId,
+								}
+							: dependsOnTaskId
+								? { dependsOnTaskId }
+								: {}),
 						createdAt: now,
 						updatedAt: now,
 						...(resourceLocks && resourceLocks.length ? { resourceLocks } : {}),
@@ -2077,7 +2146,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					messageId: message.id,
 					createdAt: message.createdAt,
 				});
-				const oldMessages = draft.messages.filter((m) => m.roomId === room.id).slice(0, -HISTORY);
+				const oldMessages = draft.messages.filter((m) => m.roomId === room.id).slice(0, -getHistoryLimit());
 				const removed = new Set(oldMessages.map((m) => m.id));
 				// Retention evicts messages, never the replay guard: a retry must not re-dispatch evicted work.
 				draft.messages = draft.messages.filter((m) => !removed.has(m.id));
@@ -2090,7 +2159,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 								isTerminal(t.status) &&
 								!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
 						)
-						.slice(0, -HISTORY)
+						.slice(0, -getHistoryLimit())
 						.map((t) => t.id),
 				);
 				draft.tasks = draft.tasks.filter((t) => !oldTasks.has(t.id));
@@ -2098,7 +2167,10 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				trimClosedConversations(draft, room.id);
 				return { message, tasks, duplicate: false, context };
 			});
-			if (!result.duplicate) for (const task of result.tasks) await deliverTask(task, result.context);
+			if (!result.duplicate)
+				for (const task of result.tasks) {
+					if (task.status !== "waiting") await deliverTask(task, result.context);
+				}
 			const state = store.snapshot();
 			res.json({
 				...(conversationApi
@@ -2249,6 +2321,38 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			room ? groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes) : undefined,
 		);
 	}
+
+	async function wakeDependentTasks(roomId: string, completedTaskId: string, report?: string) {
+		const dependentTaskIds: string[] = [];
+		await store.transact((draft) => {
+			for (const t of draft.tasks) {
+				if (t.roomId === roomId && t.status === "waiting" && t.dependsOnTaskId === completedTaskId) {
+					t.status = "queued";
+					delete t.blockReason;
+					delete t.blockReasonDetail;
+					t.updatedAt = Date.now();
+					if (report) {
+						const excerpt = report.length > 2000 ? report.slice(0, 2000) + "..." : report;
+						t.text = `[前序任务输出：\n${excerpt}\n]\n\n${t.text}`;
+					}
+					dependentTaskIds.push(t.id);
+				}
+			}
+		});
+		if (dependentTaskIds.length > 0) {
+			const state = store.snapshot();
+			const room = state.rooms.find((r) => r.id === roomId);
+			const context = room
+				? groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes)
+				: undefined;
+			for (const id of dependentTaskIds) {
+				const task = state.tasks.find((t) => t.id === id);
+				if (task) {
+					await deliverTask(task, context);
+				}
+			}
+		}
+	}
 	async function deliverTask(task: HubTask, context?: GroupTaskContext) {
 		if (deliveredTasks.has(task.id)) return;
 		if (task.conversationId && nextConversationTask(store.snapshot(), task.conversationId)?.id !== task.id) return;
@@ -2360,7 +2464,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				const remove = new Set(
 					draft.messages
 						.filter((message) => message.roomId === current.roomId)
-						.slice(0, -HISTORY)
+						.slice(0, -getHistoryLimit())
 						.map((message) => message.id),
 				);
 				draft.messages = draft.messages.filter((message) => !remove.has(message.id));
@@ -2475,7 +2579,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				const remove = new Set(
 					draft.messages
 						.filter((m) => m.roomId === task.roomId)
-						.slice(0, -HISTORY)
+						.slice(0, -getHistoryLimit())
 						.map((m) => m.id),
 				);
 				draft.messages = draft.messages.filter((m) => !remove.has(m.id));
@@ -2508,6 +2612,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (isTerminal(result.task.status)) {
 			deliveredTasks.delete(result.task.id);
 			await releaseLocksAndWake(result.task.roomId, result.task.id);
+			if (result.task.status === "completed") {
+				await wakeDependentTasks(result.task.roomId, result.task.id, report);
+			}
 		}
 		if (result.wake) await deliverTask(result.wake, result.context);
 		await drainConversation(result.task.conversationId);

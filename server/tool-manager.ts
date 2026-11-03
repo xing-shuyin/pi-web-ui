@@ -323,14 +323,6 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "toolsWorktreeOffHint",
 	},
 	{
-		name: DEVICE_COLLAB_TOOL_NAME,
-		group: "other",
-		defaultOn: false,
-		dshVisible: false,
-		descKey: "toolsDeviceCollabDesc",
-		offHintKey: "toolsDeviceCollabOffHint",
-	},
-	{
 		name: CANVAS_TOOL_NAME,
 		group: "other",
 		defaultOn: true,
@@ -339,6 +331,22 @@ export const AGENT_TOOL_CATALOG: AgentToolEntry[] = [
 		offHintKey: "canvasToolOffHint",
 	},
 ];
+
+/**
+ * 群组/设备中心专有工具目录（不进普通用户 Web 设置页，仅供群任务 Bot 白名单配置与运行时按需挂载）。
+ * 普通会话在底层不挂载此工具，避免 Token 浪费与非群组调用报错；其授权由设备中心 Bot 的 tools 白名单完全掌控。
+ */
+export const GROUP_BOT_TOOL_CATALOG: readonly AgentToolEntry[] = [
+	{
+		name: DEVICE_COLLAB_TOOL_NAME,
+		group: "other",
+		defaultOn: false,
+		allowAgentToggle: false,
+		dshVisible: false,
+		descKey: "toolsDeviceCollabDesc",
+		offHintKey: "toolsDeviceCollabOffHint",
+	},
+] as const;
 
 /** SDK 核心内置工具名（可被门控显式禁用或被预设白名单过滤）。 */
 export const CORE_BUILTIN_TOOL_NAMES = ["bash", "read", "edit", "write", "powershell", "ls", "grep", "find"] as const;
@@ -377,7 +385,7 @@ export const CORE_TOOL_CATALOG: readonly CoreToolEntry[] = [
 	{ name: "find", group: "core", defaultOn: true, allowAgentToggle: false, descKey: "toolCoreFindDesc" },
 ] as const;
 
-/** 系统全部已知可开关工具的统一声明式条目集合（核心内置 8 个 ∪ 宿主扩展 28 个，共 36 个）。 */
+/** 系统全部已知可开关工具的统一声明式条目集合（核心内置 8 个 ∪ 宿主扩展 27 个 ∪ 群组专有 1 个，共 36 个）。 */
 export const ALL_AGENT_TOOL_ENTRIES: readonly AgentToolEntry[] = [
 	...CORE_TOOL_CATALOG.map((c): AgentToolEntry => ({
 		name: c.name,
@@ -389,6 +397,7 @@ export const ALL_AGENT_TOOL_ENTRIES: readonly AgentToolEntry[] = [
 		descKey: c.descKey,
 	})),
 	...AGENT_TOOL_CATALOG,
+	...GROUP_BOT_TOOL_CATALOG,
 ];
 
 const ALL_AGENT_TOOL_MAP = new Map<string, AgentToolEntry>(ALL_AGENT_TOOL_ENTRIES.map((t) => [t.name, t]));

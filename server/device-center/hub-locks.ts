@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { writeJsonAtomicSync } from "../atomic-file.js";
 import {
 	MAX_RESOURCE_LOCK_KEY_LENGTH,
 	MAX_RESOURCE_LOCKS_PER_TASK,
@@ -17,13 +19,13 @@ export function isValidLockKey(key: unknown): boolean {
 	return RESOURCE_LOCK_KEY_PATTERN.test(key);
 }
 
-export function validateResourceLocks(locks: unknown): string[] {
+export function validateResourceLocks(locks: unknown, maxLocks = MAX_RESOURCE_LOCKS_PER_TASK): string[] {
 	if (locks === undefined || locks === null) return [];
 	if (!Array.isArray(locks)) {
 		throw new Error("resourceLocks must be an array of strings");
 	}
-	if (locks.length > MAX_RESOURCE_LOCKS_PER_TASK) {
-		throw new Error(`resourceLocks cannot exceed ${MAX_RESOURCE_LOCKS_PER_TASK} items`);
+	if (locks.length > maxLocks) {
+		throw new Error(`resourceLocks cannot exceed ${maxLocks} items`);
 	}
 	const result: string[] = [];
 	const seen = new Set<string>();
@@ -66,15 +68,21 @@ interface RoomLockState {
 export interface HubLockManagerOptions {
 	defaultTtlMs?: number;
 	autoCleanupIntervalMs?: number;
+	persistPath?: string;
 }
 
 export class HubLockManager {
 	private readonly rooms = new Map<string, RoomLockState>();
 	private readonly defaultTtlMs: number;
+	private readonly persistPath?: string;
 	private timer?: NodeJS.Timeout;
 
 	constructor(options: HubLockManagerOptions = {}) {
 		this.defaultTtlMs = options.defaultTtlMs ?? DEFAULT_RESOURCE_LOCK_TTL_MS;
+		this.persistPath = options.persistPath;
+		if (this.persistPath) {
+			this.loadFromDisk();
+		}
 		if (options.autoCleanupIntervalMs && options.autoCleanupIntervalMs > 0) {
 			this.timer = setInterval(() => {
 				this.cleanupExpiredLocks();
@@ -82,6 +90,60 @@ export class HubLockManager {
 			if (typeof this.timer.unref === "function") {
 				this.timer.unref();
 			}
+		}
+	}
+
+	private loadFromDisk(): void {
+		if (!this.persistPath) return;
+		try {
+			const raw = readFileSync(this.persistPath, "utf8");
+			const parsed = JSON.parse(raw);
+			if (parsed && typeof parsed === "object" && parsed.rooms) {
+				const now = Date.now();
+				for (const [roomId, serialized] of Object.entries(parsed.rooms) as [string, any][]) {
+					const roomState: RoomLockState = {
+						activeLocks: new Map(),
+						taskLocks: new Map(),
+						waitingQueue: Array.isArray(serialized.waitingQueue) ? serialized.waitingQueue : [],
+					};
+					if (Array.isArray(serialized.activeLocks)) {
+						for (const lock of serialized.activeLocks) {
+							if (lock && lock.lockKey && lock.expiresAt > now) {
+								roomState.activeLocks.set(lock.lockKey, lock);
+								let taskHeld = roomState.taskLocks.get(lock.taskId);
+								if (!taskHeld) {
+									taskHeld = new Set<string>();
+									roomState.taskLocks.set(lock.taskId, taskHeld);
+								}
+								taskHeld.add(lock.lockKey);
+							}
+						}
+					}
+					this.rooms.set(roomId, roomState);
+				}
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				// Ignore parse error on corrupt file, start fresh
+			}
+		}
+	}
+
+	private saveToDisk(): void {
+		if (!this.persistPath) return;
+		try {
+			const serializedRooms: Record<string, { activeLocks: RoomActiveLock[]; waitingQueue: RoomLockWaiter[] }> = {};
+			for (const [roomId, state] of this.rooms.entries()) {
+				if (state.activeLocks.size > 0 || state.waitingQueue.length > 0) {
+					serializedRooms[roomId] = {
+						activeLocks: Array.from(state.activeLocks.values()),
+						waitingQueue: [...state.waitingQueue],
+					};
+				}
+			}
+			writeJsonAtomicSync(this.persistPath, { version: 1, updatedAt: Date.now(), rooms: serializedRooms });
+		} catch {
+			// Best-effort atomic persist
 		}
 	}
 
@@ -134,6 +196,7 @@ export class HubLockManager {
 					queuedAt: now,
 				});
 			}
+			this.saveToDisk();
 			return {
 				success: false,
 				conflictingLocks,
@@ -167,6 +230,7 @@ export class HubLockManager {
 			taskHeld.add(key);
 		}
 
+		this.saveToDisk();
 		return { success: true, conflictingLocks: [], holderTaskIds: [] };
 	}
 
@@ -190,7 +254,9 @@ export class HubLockManager {
 			roomState.waitingQueue.splice(waiterIndex, 1);
 		}
 
-		return this.promoteWaitingTasks(roomId, now);
+		const promoted = this.promoteWaitingTasks(roomId, now);
+		this.saveToDisk();
+		return promoted;
 	}
 
 	removeWaiter(roomId: string, taskId: string): boolean {
@@ -283,6 +349,7 @@ export class HubLockManager {
 
 	clearRoom(roomId: string): void {
 		this.rooms.delete(roomId);
+		this.saveToDisk();
 	}
 
 	getRoomLockInfo(roomId: string, now = Date.now()): RoomLockInfo {

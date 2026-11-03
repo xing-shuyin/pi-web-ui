@@ -1599,6 +1599,8 @@
 		"promptTok_terminal_desc": "Guide d'usage du terminal persistant (injecté quand les « outils terminal » sont actifs)",
 		"promptTok_markers": "Guide des marqueurs",
 		"promptTok_markers_desc": "Mode d'emploi des marqueurs intégrés (injecté quand markers est actif)",
+		"promptTok_plugin_dev": "Plugin dev guide",
+		"promptTok_plugin_dev_desc": "pi-web-ui plugin development guidelines and doc pointers (disabled by default; injects paths and docs when enabled)",
 		"promptTok_context": "Contexte projet",
 		"promptTok_context_desc": "<project_context> : résultats collectés de AGENTS.md/CLAUDE.md",
 		"promptTok_skills": "Section compétences",

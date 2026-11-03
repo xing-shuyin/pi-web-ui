@@ -82,7 +82,7 @@ import type { ClientSettings } from "../../server/client-state.js";
  */
 type Assert<T extends true> = T;
 export type PresetFieldsCoverClientSettings = Assert<
-	Exclude<keyof ClientSettings, PresetFieldName> extends never ? true : false
+	Exclude<keyof ClientSettings, PresetFieldName | "_promptPluginDevConfigured"> extends never ? true : false
 >;
 
 const SETTINGS = {
