@@ -81,7 +81,7 @@
 - **修改测试插件一定要及时更新本地插件**：本地实际运行加载的插件位于数据目录（`<dataDir>/plugins/<id>/`，如 `~/.pi-web/plugins/<id>/`）。修改或测试工作区内置插件时，除递增版本号外，必须及时将最新源码同步覆盖至本地数据目录的对应插件中，防止开发调试时因旧代码缓存导致行为脱节。
 - **国际化字面量要求**：`i18n.tsx` 的词条值必须使用字符串字面量（仅允许 `+` 拼接），确保 `scripts/i18n-diff.mjs` 静态解析器正常运行。
 
-- **服务端禁同步子进程调用（`spawnSync` / `execSync` / `execFileSync`）**：这三个 API 在事件循环线程上 fork+exec，并**一直阻塞到子进程结束**。子进程如果卡在 `exec()` 之前（Termux/Android 上实测能稳定复现），主线程就永远停在 spawn 错误管道的 `read()` 上——定时器、socket、`/api/health` 全部停摆，只能靠外部 watchdog 杀进程。异步 `spawn` / `execFile` 不会被拖到子进程结束，`timeout` 也只对异步版有意义（同步版根本回不到超时处理）。两条可行路线：换成异步 spawn + 超时；或者把答案**静态推导**出来（`server/global-loader.ts` 的 npm prefix、`server/dsh/runtime/runtime-root.mjs` 的计算式前缀都是这么改的）。存量登记在守卫的**只减不增**名单里，清新代码请直接走异步或静态推导（守卫：`tests/unit/sync-child-process-guard.test.ts`，来源 `#830`）。
+- **服务端禁同步子进程调用（`spawnSync` / `execSync` / `execFileSync`）**：这三个 API 在事件循环线程上 fork+exec，并**一直阻塞到子进程结束**。子进程如果卡在 `exec()` 之前（Termux/Android 上实测能稳定复现），主线程就永远停在 spawn 错误管道的 `read()` 上——定时器、socket、`/api/health` 全部停摆，只能靠外部 watchdog 杀进程。异步 `spawn` / `execFile` 不会被拖到子进程结束，`timeout` 也只对异步版有意义（同步版根本回不到超时处理）。两条可行路线：换成异步 spawn + 超时；或者把答案**静态推导**出来（`server/global-loader.ts` 的 npm prefix、`server/dsh/runtime/runtime-root.mjs` 的计算式前缀都是这么改的）。扫描范围包含**插件主进程代码**（`server/plugins.ts` 用 `import()` 把 `plugins/<id>/index.mjs` 载进主进程，与服务器共用事件循环；`bin/`、`assets/`、`build.mjs` 这类独立进程的东西除外）。存量按**次数**登记在守卫的只减不增名单里，新代码请直接走异步或静态推导（守卫：`tests/unit/sync-child-process-guard.test.ts`，来源 `#830`）。
 
 ## 五、其余边界（只在别处维护，见链接）
 
