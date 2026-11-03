@@ -65,9 +65,10 @@ interface EngineEntry {
 	status: EngineStatus;
 	probedAt: number;
 	updating: boolean;
+	uninstalling: boolean;
 }
 
-/** 引擎状态原子字典：单一事实源，收敛 status / probedAt / updating 三元组，杜绝独立状态撕裂 */
+/** 引擎状态原子字典：单一事实源，收敛 status / probedAt / updating / uninstalling，杜绝独立状态撕裂 */
 const engineRegistry = new Map<string, EngineEntry>([
 	[
 		"pi",
@@ -75,6 +76,7 @@ const engineRegistry = new Map<string, EngineEntry>([
 			status: { id: "pi", installed: true, packageName: ENGINE_PACKAGES.pi.packageName, version: VERSION },
 			probedAt: 0,
 			updating: false,
+			uninstalling: false,
 		},
 	],
 	[
@@ -83,6 +85,7 @@ const engineRegistry = new Map<string, EngineEntry>([
 			status: { id: "dsh", installed: false, packageName: ENGINE_PACKAGES.dsh.packageName },
 			probedAt: 0,
 			updating: false,
+			uninstalling: false,
 		},
 	],
 	[
@@ -91,6 +94,7 @@ const engineRegistry = new Map<string, EngineEntry>([
 			status: { id: "claude", installed: false, packageName: ENGINE_PACKAGES.claude.packageName },
 			probedAt: 0,
 			updating: false,
+			uninstalling: false,
 		},
 	],
 	[
@@ -99,6 +103,7 @@ const engineRegistry = new Map<string, EngineEntry>([
 			status: { id: "codex", installed: false, packageName: ENGINE_PACKAGES.codex.packageName },
 			probedAt: 0,
 			updating: false,
+			uninstalling: false,
 		},
 	],
 	[
@@ -107,6 +112,7 @@ const engineRegistry = new Map<string, EngineEntry>([
 			status: { id: "durable", installed: false, packageName: ENGINE_PACKAGES.durable.packageName },
 			probedAt: 0,
 			updating: false,
+			uninstalling: false,
 		},
 	],
 ]);
@@ -115,6 +121,7 @@ function toPublicStatus(entry: EngineEntry): EngineStatus {
 	return {
 		...entry.status,
 		...(entry.updating ? { updating: true } : {}),
+		...(entry.uninstalling ? { uninstalling: true } : {}),
 	};
 }
 
@@ -362,6 +369,7 @@ export async function probeEngine(id: string, force = false): Promise<EngineStat
 		status: result,
 		probedAt: Date.now(),
 		updating: entry?.updating ?? false,
+		uninstalling: entry?.uninstalling ?? false,
 	};
 	engineRegistry.set(id, updatedEntry);
 	return toPublicStatus(updatedEntry);
@@ -404,6 +412,7 @@ export async function probeAllEngines(force = false): Promise<EngineStatus[]> {
 			status: res,
 			probedAt: timestamp,
 			updating: existing?.updating ?? false,
+			uninstalling: existing?.uninstalling ?? false,
 		});
 	}
 	return Array.from(engineRegistry.values()).map(toPublicStatus);
@@ -421,6 +430,113 @@ export function getCachedEngineStatuses(): EngineStatus[] {
  */
 export function isEngineUpdating(engineId: string): boolean {
 	return engineRegistry.get(engineId)?.updating ?? false;
+}
+
+/**
+ * 查询指定引擎是否正在执行后台卸载子进程。
+ */
+export function isEngineUninstalling(engineId: string): boolean {
+	return engineRegistry.get(engineId)?.uninstalling ?? false;
+}
+
+/**
+ * 在后台子进程中执行引擎全局包卸载（npm uninstall -g <pkg>）。
+ */
+export async function uninstallEngineBackground(
+	engineId: string,
+	options?: { timeoutMs?: number },
+): Promise<{ ok: boolean; error?: string; output?: string }> {
+	if (engineId === "pi") {
+		return { ok: false, error: "Pi 为内置核心引擎，不支持卸载" };
+	}
+	const meta = ENGINE_PACKAGES[engineId];
+	if (!meta || !meta.packageName) {
+		return { ok: false, error: `不支持或未知的引擎「${engineId}」` };
+	}
+	const currentEntry = engineRegistry.get(engineId);
+	if (currentEntry?.uninstalling) {
+		return { ok: false, error: `引擎「${engineId}」正在后台卸载中，请勿重复操作` };
+	}
+	if (currentEntry?.updating) {
+		return { ok: false, error: `引擎「${engineId}」正在后台更新中，请稍候再试` };
+	}
+
+	if (currentEntry) currentEntry.uninstalling = true;
+	const pkg = meta.packageName;
+	const timeoutMs = Math.max(10_000, Number(options?.timeoutMs ?? 180_000));
+	const isWin = process.platform === "win32";
+	const spawnCmd = isWin ? process.env.ComSpec || "cmd.exe" : "npm";
+	const spawnArgs = isWin ? ["/d", "/s", "/c", "npm", "uninstall", "-g", pkg] : ["uninstall", "-g", pkg];
+
+	try {
+		const child = spawn(spawnCmd, spawnArgs, {
+			windowsHide: true,
+			detached: !isWin,
+			stdio: ["ignore", "pipe", "pipe"],
+			env: {
+				...process.env,
+				NO_COLOR: "1",
+			},
+		});
+
+		let out = "";
+		const appendOut = (chunk: Buffer | string) => {
+			out = (out + chunk.toString()).slice(-8000);
+		};
+		child.stdout?.on("data", appendOut);
+		child.stderr?.on("data", appendOut);
+
+		const res = await new Promise<{ ok: boolean; code: number | null; error?: string }>((resolve) => {
+			let done = false;
+			const timer = setTimeout(() => {
+				if (done) return;
+				done = true;
+				if (child.pid) void killPidTree(child.pid);
+				resolve({ ok: false, code: null, error: `卸载超时（超过 ${Math.round(timeoutMs / 1000)} 秒）` });
+			}, timeoutMs);
+
+			child.on("error", (err) => {
+				if (done) return;
+				done = true;
+				clearTimeout(timer);
+				resolve({ ok: false, code: null, error: err.message });
+			});
+
+			child.on("close", (code) => {
+				if (done) return;
+				done = true;
+				clearTimeout(timer);
+				resolve({
+					ok: code === 0,
+					code,
+					error: code === 0 ? undefined : `npm 退出码 ${code}`,
+				});
+			});
+		});
+
+		if (res.ok) {
+			registryCache.delete(pkg);
+			try {
+				await probeAllEngines(true);
+			} catch {
+				/* best effort */
+			}
+		}
+
+		return {
+			ok: res.ok,
+			error: res.error,
+			output: out.trim(),
+		};
+	} catch (err) {
+		return {
+			ok: false,
+			error: (err as Error).message,
+		};
+	} finally {
+		const finalEntry = engineRegistry.get(engineId);
+		if (finalEntry) finalEntry.uninstalling = false;
+	}
 }
 
 /**

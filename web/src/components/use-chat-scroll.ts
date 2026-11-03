@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
 import type { ToolStatus, UiMessage, UiState } from "../types";
+import { isEchoMessageId } from "../optimistic-queue";
 import {
 	classifyQuestionAddedScroll,
 	classifyScroll,
@@ -33,6 +34,8 @@ export interface UseChatScrollOptions {
 	loadEarlier: () => void;
 	scheduleActiveFromScroll: () => void;
 	scheduleSweep: () => void;
+	/** 用户主动发送消息的触发信号（每次发送递增），用于零延迟吸底恢复跟随。 */
+	userPromptNonce?: number;
 	/** 可选注入外部已有的 scrollRef。若不提供则内部自动创建。 */
 	scrollRef?: React.RefObject<HTMLDivElement | null>;
 	/** 可选注入外部已有的 stickRef。若不提供则内部自动创建。 */
@@ -83,6 +86,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		loadEarlier,
 		scheduleActiveFromScroll,
 		scheduleSweep,
+		userPromptNonce,
 	} = opts;
 
 	const internalScrollRef = useRef<HTMLDivElement | null>(null);
@@ -390,6 +394,7 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		const convChanged = convKey !== prevConvKeyRef.current;
 		const el = scrollRef.current;
 		const nearBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 36 : true;
+		const isOptimisticEcho = Boolean(lastQuestionId && isEchoMessageId(lastQuestionId));
 		const { shouldScroll } = classifyQuestionAddedScroll({
 			convChanged,
 			lastQuestionId,
@@ -400,17 +405,27 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		});
 		prevConvKeyRef.current = convKey;
 		prevLastQuestionIdRef.current = lastQuestionId;
-		if (shouldScroll) {
+		// 本地用户主动发送的新提问（isOptimisticEcho）或判定需要吸底时，立即执行滚动并恢复跟随
+		if (shouldScroll || isOptimisticEcho) {
 			scrollToBottom();
 		}
 	}, [conversationId, sessionFile, lastQuestionId, jumpTarget, urlJumpMessageId, scrollToBottom]);
 
-	// 渲染 Paint 前同步贴底（消除微颤；仅当视口物理上就在底部且未逃逸时）
+	// 用户显式发送新消息时（输入框按回车/点发送/点快捷短语）立刻无条件吸底并恢复贴底跟随
+	const prevUserPromptNonceRef = useRef(userPromptNonce ?? 0);
+	useEffect(() => {
+		const nonce = userPromptNonce ?? 0;
+		if (nonce > prevUserPromptNonceRef.current) {
+			prevUserPromptNonceRef.current = nonce;
+			scrollToBottom();
+		}
+	}, [userPromptNonce, scrollToBottom]);
+
+	// 渲染 Paint 前同步贴底（消除微颤；保持吸底跟随态）
 	useLayoutEffect(() => {
 		const el = scrollRef.current;
 		if (!el) return;
-		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 36;
-		if (stickRef.current && !escapedRef.current && nearBottom) {
+		if (stickRef.current && !escapedRef.current) {
 			pinToBottom();
 		}
 	}, [messages, isStreaming, liveOutputs, toolStatuses, pinToBottom, scrollRef]);

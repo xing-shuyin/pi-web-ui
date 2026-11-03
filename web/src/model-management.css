@@ -1531,3 +1531,268 @@
 	align-items: center;
 	gap: 4px;
 }
+
+/* 思考强度档位与预算自定义抽屉 */
+.matrix-thinking-config-drawer {
+	margin-top: 8px;
+	padding: 10px 12px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border-soft);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.thinking-drawer-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.thinking-drawer-title {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.thinking-drawer-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.thinking-presets-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.thinking-presets-label {
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+.thinking-preset-pills {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+
+.thinking-levels-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+	gap: 8px;
+}
+
+.thinking-level-col {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 8px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	transition: all 0.12s ease;
+}
+
+.thinking-level-col.disabled {
+	opacity: 0.5;
+	border-style: dashed;
+}
+
+.level-col-head {
+	display: flex;
+	align-items: center;
+}
+
+.level-check-label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11.5px;
+	font-weight: 500;
+	cursor: pointer;
+	user-select: none;
+}
+
+.level-val-input {
+	width: 100%;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border-soft);
+	border-radius: 4px;
+	color: var(--text);
+	font-family: var(--mono);
+	font-size: 11px;
+	padding: 2px 6px;
+	outline: none;
+	box-sizing: border-box;
+}
+
+.level-val-input:focus {
+	border-color: var(--accent);
+}
+
+/* 高级协议与原始参数透传 */
+.thinking-advanced-row {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 8px 10px;
+	background: var(--bg);
+	border: 1px solid var(--border-soft);
+	border-radius: 6px;
+}
+
+.thinking-advanced-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.thinking-format-selector {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.thinking-raw-body-block {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.thinking-raw-body-textarea {
+	width: 100%;
+	background: var(--bg-elev2);
+	border: 1px solid var(--border-soft);
+	border-radius: 4px;
+	color: var(--text);
+	font-family: var(--mono);
+	font-size: 11px;
+	padding: 4px 6px;
+	outline: none;
+	resize: vertical;
+	box-sizing: border-box;
+}
+
+.thinking-raw-body-textarea:focus {
+	border-color: var(--accent);
+}
+
+.user-preset-pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 4px;
+	gap: 2px;
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.user-preset-btn {
+	background: transparent;
+	border: none;
+	color: var(--text);
+	font-size: 11px;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+
+.user-preset-del {
+	background: transparent;
+	border: none;
+	color: var(--text-faint);
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 2px;
+	opacity: 0.6;
+}
+
+.user-preset-del:hover {
+	opacity: 1;
+	color: var(--red, #ef4444);
+}
+
+.save-preset-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* 聊天输入框内联自定义 Token 预算输入行 */
+.dd-custom-token-row {
+	padding: 8px 10px;
+	border-top: 1px solid var(--border-soft);
+	margin-top: 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.dd-custom-token-label {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-weight: 500;
+	user-select: none;
+}
+
+.dd-custom-token-group {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.dd-custom-token-input {
+	flex: 1;
+	height: 28px;
+	box-sizing: border-box;
+	line-height: 26px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text);
+	font-family: var(--mono);
+	font-size: 12px;
+	padding: 0 8px;
+	outline: none;
+	transition: border-color 0.12s ease;
+}
+
+.dd-custom-token-input:focus {
+	border-color: var(--accent);
+}
+
+.dd-custom-token-btn {
+	height: 28px;
+	box-sizing: border-box;
+	line-height: 26px;
+	border-radius: 6px;
+	padding: 0 12px;
+	font-size: 12px;
+	font-weight: 500;
+	background: var(--button-bg);
+	color: var(--button-fg);
+	border: 1px solid var(--button-border);
+	cursor: pointer;
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition:
+		background 0.12s,
+		border-color 0.12s;
+}
+
+.dd-custom-token-btn:hover {
+	background: var(--button-hover-bg);
+	border-color: var(--button-hover-border);
+}

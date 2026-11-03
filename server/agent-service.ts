@@ -651,6 +651,8 @@ export interface Conversation {
 	subagentRunGeneration?: number;
 	/** 是否已被父对话通过 wait_all 或 get_result 消费过（消费后跳过自动通知）。 */
 	subagentConsumedByParent?: boolean;
+	/** 当前在父对话 steering 队列中排队等待交付的请求 ID 集合（避免 wait_all 重复返回，issue #828）。 */
+	queuedSteeringRequestIds?: Set<string>;
 	/** 派发时指定的思考强度（未指定为空）。 */
 	subagentThinking?: string;
 	/** 连续由子代理唤醒且未发生人类交互的轮次（防多代理死循环熔断）。 */
@@ -1621,6 +1623,8 @@ export class ClientSession {
 					if (conv.isSubagent) owner.scheduleSubagentCompletionNotice(conv);
 					owner.emitConversations();
 				});
+			// spawn 成功派发后解除与父工具信号的绑定；后续父对话停止不连带中止已派出的子代理（issue #833）
+			signal?.removeEventListener("abort", onSpawnAbort);
 			if (persist) {
 				holder.pushProjects().catch(() => {});
 			}
@@ -2257,6 +2261,25 @@ export class ClientSession {
 					});
 					void this.flushSubagentCompletionNotice(parentId, retryCount + 1);
 				}, 800);
+				this.pendingSubagentNotices.set(parentId, { timer: retryTimer, subagents: new Set(toNotify) });
+				return;
+			}
+		}
+
+		// 若父对话正在 wait_all 等待中，完成通知暂不投递进 steering 队列，避免与 wait_all 返回重复（issue #828）
+		if (consultWaitingParents.has(targetConv)) {
+			if (retryCount < 60) {
+				const retryTimer = setTimeout(() => {
+					const current = toNotify.filter(isCurrent);
+					if (current.length === 0) return;
+					const pending = this.pendingSubagentNotices.get(parentId);
+					if (pending?.timer) clearTimeout(pending.timer);
+					this.pendingSubagentNotices.set(parentId, {
+						timer: retryTimer,
+						subagents: new Set([...(pending?.subagents ?? []), ...current]),
+					});
+					void this.flushSubagentCompletionNotice(parentId, retryCount + 1);
+				}, 400);
 				this.pendingSubagentNotices.set(parentId, { timer: retryTimer, subagents: new Set(toNotify) });
 				return;
 			}
@@ -3128,6 +3151,11 @@ export class ClientSession {
 				if (waiting) consultWaitingParents.add(parent);
 				else consultWaitingParents.delete(parent);
 			}
+		},
+		isRequestSteering: (parentId, requestId) => {
+			const owner = this.subagentOwnerOf(parentId);
+			const parent = owner.convs.get(this.subagentCurrentId(parentId));
+			return !!parent?.queuedSteeringRequestIds?.has(requestId);
 		},
 		spawnSubagent: (
 			prompt,
@@ -4964,10 +4992,16 @@ export class ClientSession {
 	async abortConversation(conv: Conversation): Promise<void> {
 		if (this.convs.get(conv.id) !== conv) return;
 		conv.goalGeneration++;
+		try {
+			(conv.session as unknown as { clearQueue?: () => { steering: string[]; followUp: string[] } }).clearQueue?.();
+		} catch (err) {
+			console.error("[agent-service] clearQueue failed during abortConversation:", err);
+		}
 		conv.queueSteering = [];
 		conv.queueFollowUp = [];
 		conv.queuedSteeringEntries = [];
 		conv.queuedFollowUpEntries = [];
+		conv.queuedSteeringRequestIds?.clear();
 		await this.interruptRun(conv, "已停止");
 		for (const push of this.conversationViewers?.get(conv) ?? []) push();
 	}
@@ -7157,13 +7191,13 @@ export class ClientSession {
 		const seen = new Set<Conversation>();
 		while (!seen.has(conv)) {
 			seen.add(conv);
-			if (conv.subagentWorktree && isSameOrSubpath(conv.cwd, conv.subagentWorktree.worktreePath))
-				return normalizePathKey(conv.subagentWorktree.mainRepoPath);
 			if (!conv.parentId) break;
 			const parent = this.parentExecution(conv)?.conv;
 			if (!parent) break;
 			conv = parent;
 		}
+		if (conv.subagentWorktree && isSameOrSubpath(conv.cwd, conv.subagentWorktree.worktreePath))
+			return normalizePathKey(conv.subagentWorktree.mainRepoPath);
 		// A child may execute in an independent checkout. Its registered ancestry,
 		// rather than that checkout's path, determines the collaboration project.
 		return normalizePathKey(conv.cwd);
@@ -7303,8 +7337,15 @@ export class ClientSession {
 			conv.wakeReason = "other";
 			conv.wakeTurnHadAction = false;
 		}
+		if (busy && envelope.requestId) {
+			conv.queuedSteeringRequestIds = conv.queuedSteeringRequestIds ?? new Set<string>();
+			conv.queuedSteeringRequestIds.add(envelope.requestId);
+		}
 		// SDK queue acceptance is delivery to this conversation, not proof that the model read it.
 		const delivery = conv.session.sendUserMessage(text, busy ? { deliverAs: "steer" } : undefined);
+		void delivery.finally(() => {
+			if (envelope.requestId) conv.queuedSteeringRequestIds?.delete(envelope.requestId);
+		});
 		void delivery.catch((error) => {
 			owner.sendNotice({
 				type: "notice",
@@ -12000,6 +12041,19 @@ export class ClientSession {
 		) {
 			(this.conv.session as unknown as { _pendingNextTurnMessages: unknown[] })._pendingNextTurnMessages = [];
 		}
+		// 停止时先清空 SDK 队列与本地排队镜像，防止 agent-loop 工具结束后消费排队消息导致写入对话却被中止丢消息（issue #834）
+		try {
+			(
+				this.conv.session as unknown as { clearQueue?: () => { steering: string[]; followUp: string[] } }
+			).clearQueue?.();
+		} catch (err) {
+			console.error("[agent-service] clearQueue failed during abort:", err);
+		}
+		this.conv.queueSteering = [];
+		this.conv.queueFollowUp = [];
+		this.conv.queuedSteeringEntries = [];
+		this.conv.queuedFollowUpEntries = [];
+		this.conv.queuedSteeringRequestIds?.clear();
 		const isRunning = this.conversationStreaming(this.conv) || !this.conv.session.isIdle;
 		if (!isRunning) {
 			this.flushSnapshot();
@@ -14922,8 +14976,18 @@ export class ClientSession {
 						/* ignore */
 					}
 					if (sid === wantSid || conv.id === wantSid) {
+						if (independent !== undefined) this.setConversationIndependent(conv.id, independent);
 						await this.switchConversation(conv.id);
 						outcome = "reused";
+						this.emit({
+							type: "transition_progress",
+							kind: "session",
+							target: wantSid,
+							phase: "done",
+							progress: 100,
+							text: "会话加载完成",
+							textEn: "Session loaded",
+						});
 						return;
 					}
 				}

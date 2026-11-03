@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { FiAperture, FiCheck, FiDownload, FiRefreshCw } from "react-icons/fi";
+import { FiAperture, FiCheck, FiDownload, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import { appSend, useAppGlobals, useEngineStatuses } from "../app-globals";
 import { useI18n } from "../i18n";
 import type { EngineId } from "../types";
@@ -115,6 +115,7 @@ export function EnginePicker({ direction, align, className, label, caret = false
 	const engines = useEngineStatuses();
 	const { t } = useI18n();
 	const [open, setOpen] = useState(false);
+	const [confirmUninstallId, setConfirmUninstallId] = useState<string | null>(null);
 	const wrapRef = useRef<HTMLDivElement>(null);
 
 	// 侧边栏向视口内侧弹出：左侧栏向右、右侧栏向左；底栏向上；顶栏向下
@@ -127,6 +128,8 @@ export function EnginePicker({ direction, align, className, label, caret = false
 		if (nextOpen) {
 			// 展开下拉时自动请求服务端复查引擎安装状态，确保后台最新安装秒级感知
 			appSend({ type: "check_engines" });
+		} else {
+			setConfirmUninstallId(null);
 		}
 		setOpen(nextOpen);
 	};
@@ -189,8 +192,10 @@ export function EnginePicker({ direction, align, className, label, caret = false
 						// pi 原生捆绑引擎恒可用，其余引擎按服务端探测结果判断是否安装
 						const isInstalled = item.id === "pi" || (status ? status.installed : false);
 						const isUpdating = Boolean(status?.updating);
+						const isUninstalling = Boolean(status?.uninstalling);
 						const hasUpdate = Boolean(isInstalled && status?.hasUpdate && status?.latestVersion);
 						const showUpdate = hasUpdate || isUpdating;
+						const canUninstall = item.id !== "pi" && isInstalled;
 
 						const handleInstall = (e: React.MouseEvent) => {
 							e.stopPropagation();
@@ -209,9 +214,21 @@ export function EnginePicker({ direction, align, className, label, caret = false
 
 						const handleUpdate = (e: React.MouseEvent) => {
 							e.stopPropagation();
-							if (isUpdating) return;
+							if (isUpdating || isUninstalling) return;
 							setOpen(false);
 							appSend({ type: "update_engine", engineId: item.id });
+						};
+
+						const handleUninstall = (e: React.MouseEvent) => {
+							e.stopPropagation();
+							if (isUninstalling || isUpdating) return;
+							if (isSelected) return;
+							if (confirmUninstallId === item.id) {
+								setConfirmUninstallId(null);
+								appSend({ type: "uninstall_engine", engineId: item.id });
+							} else {
+								setConfirmUninstallId(item.id);
+							}
 						};
 
 						const handleSelect = () => {
@@ -258,7 +275,15 @@ export function EnginePicker({ direction, align, className, label, caret = false
 										<span className="engine-picker-item-name">{t(item.titleKey)}</span>
 									)}
 									<span
-										className={`engine-picker-item-tag${!isInstalled ? " uninstalled" : isUpdating || hasUpdate ? " update-available" : ""}`}
+										className={`engine-picker-item-tag${
+											!isInstalled
+												? " uninstalled"
+												: isUninstalling
+													? " uninstalling"
+													: isUpdating || hasUpdate
+														? " update-available"
+														: ""
+										}`}
 										title={
 											hasUpdate
 												? t("engineUpdateTip", {
@@ -270,11 +295,13 @@ export function EnginePicker({ direction, align, className, label, caret = false
 									>
 										{!isInstalled
 											? t("engineNotInstalled")
-											: isUpdating
-												? t("engineUpdating")
-												: hasUpdate
-													? t("engineUpdateAvailable")
-													: t(item.tagKey)}
+											: isUninstalling
+												? t("engineUninstalling")
+												: isUpdating
+													? t("engineUpdating")
+													: hasUpdate
+														? t("engineUpdateAvailable")
+														: t(item.tagKey)}
 									</span>
 									{!isInstalled && item.installCommand && (
 										<button
@@ -291,7 +318,7 @@ export function EnginePicker({ direction, align, className, label, caret = false
 										<button
 											type="button"
 											className="engine-picker-update-btn"
-											disabled={isUpdating}
+											disabled={isUpdating || isUninstalling}
 											title={
 												isUpdating
 													? t("engineUpdating")
@@ -304,6 +331,33 @@ export function EnginePicker({ direction, align, className, label, caret = false
 										>
 											<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
 											<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
+										</button>
+									)}
+									{canUninstall && (
+										<button
+											type="button"
+											data-testid={`engine-uninstall-${item.id}`}
+											className={`engine-picker-uninstall-btn${confirmUninstallId === item.id ? " confirm" : ""}`}
+											disabled={isUninstalling || isUpdating || isSelected}
+											title={
+												isSelected
+													? t("engineActiveNoUninstall")
+													: isUninstalling
+														? t("engineUninstalling")
+														: confirmUninstallId === item.id
+															? t("engineUninstallConfirm")
+															: t("engineUninstallTip")
+											}
+											onClick={handleUninstall}
+										>
+											<FiTrash2 className="engine-uninstall-icon" />
+											<span>
+												{isUninstalling
+													? t("engineUninstalling")
+													: confirmUninstallId === item.id
+														? t("engineUninstallConfirm")
+														: t("engineUninstall")}
+											</span>
 										</button>
 									)}
 									{isSelected && <FiCheck className="engine-picker-check" />}

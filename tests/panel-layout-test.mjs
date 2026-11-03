@@ -99,7 +99,7 @@ await sleep(800);
 const histTitles = await page.locator(".panel-sessions .panel-section-title").allTextContents();
 check(
 	"history title present",
-	histTitles.some((t) => t.includes("历史对话")),
+	histTitles.some((t) => t.includes("历史")),
 );
 check("no convs section yet", (await page.locator(".panel-left .panel-convs").count()) === 0);
 

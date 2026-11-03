@@ -1,0 +1,1821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>左侧会话与运行项目展示重构方案全景 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1a1d26;
+      --border: #262a35;
+      --border-soft: #1e2230;
+      --text: #e6e8ef;
+      --text-dim: #9aa1b4;
+      --text-faint: #6b7284;
+      --accent: #8b5cf6;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --accent-glow: rgba(139, 92, 246, 0.28);
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.14);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.14);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.14);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.14);
+      --cyan: #22d3ee;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --sidebar-w: 280px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090a0d;
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      font-size: 13px;
+      overflow-x: hidden;
+    }
+
+    /* 顶栏控制台 */
+    header.top-header {
+      background: rgba(13, 14, 18, 0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+      font-size: 15px;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .brand-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .proposal-switch-bar {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+    .switch-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .switch-btn:hover {
+      color: var(--text);
+      background: var(--bg-elev2);
+    }
+    .switch-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+    .tag-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.16);
+      font-weight: 500;
+    }
+
+    /* 主视区布局：左侧仿真侧边栏 + 右侧方案解析与对比 */
+    .app-workspace {
+      display: flex;
+      min-height: calc(100vh - 65px);
+    }
+
+    /* 模拟主界面左栏外框 */
+    .mock-sidebar-container {
+      width: 320px;
+      min-width: 320px;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      height: calc(100vh - 65px);
+      position: sticky;
+      top: 65px;
+    }
+
+    /* 侧边栏内部基础结构 */
+    .mock-sb-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .project-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg-elev);
+      padding: 5px 9px;
+      border-radius: 7px;
+      border: 1px solid var(--border-soft);
+      cursor: pointer;
+    }
+    .project-selector svg { stroke: var(--accent); }
+    .sb-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .icon-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .icon-btn:hover {
+      background: var(--bg-elev2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .icon-btn.primary {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(139, 92, 246, 0.3);
+    }
+
+    /* 通用会话卡片项 */
+    .sess-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 11px;
+      margin: 2px 8px;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .sess-card:hover {
+      background: var(--bg-elev);
+      color: var(--text);
+    }
+    .sess-card.active {
+      background: var(--accent-soft);
+      border-color: rgba(139, 92, 246, 0.32);
+      color: #fff;
+    }
+    .sess-card.streaming {
+      box-shadow: inset 2px 0 0 var(--green);
+    }
+    .sess-card.need-answer {
+      box-shadow: inset 2px 0 0 var(--amber);
+      background: rgba(251, 191, 36, 0.05);
+    }
+    .card-icon {
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      flex-shrink: 0;
+      color: var(--text-faint);
+    }
+    .sess-card.active .card-icon { color: var(--accent); }
+    .card-content {
+      flex: 1;
+      min-width: 0;
+    }
+    .card-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-meta {
+      font-size: 11px;
+      color: var(--text-faint);
+      margin-top: 3px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    /* 彻底告别呼吸灯，采用现代克制、高信息密度的静止呈现形式 */
+    .badge-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      line-height: 1.4;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .tag-running {
+      background: rgba(52, 211, 153, 0.12);
+      color: #34d399;
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+    .tag-question {
+      background: rgba(251, 191, 36, 0.14);
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+    }
+    .tag-idle {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .tag-tool {
+      background: rgba(139, 92, 246, 0.12);
+      color: #c4b5fd;
+      border: 1px solid rgba(139, 92, 246, 0.28);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+    }
+
+    /* 形式 B：静态侧边细线 (VS Code 风格，无任何动画) */
+    .sess-card.stripe-running {
+      border-left: 3px solid var(--green) !important;
+      background: rgba(52, 211, 153, 0.03);
+    }
+    .sess-card.stripe-question {
+      border-left: 3px solid var(--amber) !important;
+      background: rgba(251, 191, 36, 0.04);
+    }
+
+    /* 形式 C：极简静态单色图标键位 (JetBrains 风格) */
+    .static-sym-badge {
+      font-size: 10px;
+      font-weight: 700;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .static-sym-badge.sym-running {
+      color: var(--green);
+      border-color: rgba(52, 211, 153, 0.4);
+    }
+    .static-sym-badge.sym-question {
+      color: var(--amber);
+      border-color: rgba(251, 191, 36, 0.4);
+    }
+
+    /* 右侧解析面板 */
+    .detail-container {
+      flex: 1;
+      padding: 28px 36px 60px;
+      overflow-y: auto;
+      max-width: 1040px;
+    }
+    .pain-points-card {
+      background: rgba(248, 113, 113, 0.06);
+      border: 1px solid rgba(248, 113, 113, 0.22);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+    .pain-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--red);
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .pain-item {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #cbd5e1;
+      border-left: 3px solid var(--red);
+    }
+    .pain-item strong { color: #fff; display: block; margin-bottom: 3px; }
+
+    .scheme-view { display: none; }
+    .scheme-view.active { display: block; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .hero-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .hero-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .hero-desc {
+      font-size: 13.5px;
+      color: var(--text-dim);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .feature-card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+    }
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-desc {
+      color: var(--text-dim);
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    /* 方案 1 专用组件：分段 Tab 视窗 */
+    .p1-tabs-bar {
+      display: flex;
+      padding: 8px 10px;
+      gap: 6px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .p1-tab {
+      flex: 1;
+      padding: 6px 4px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg-elev);
+      color: var(--text-dim);
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .p1-tab:hover { background: var(--bg-elev2); color: var(--text); }
+    .p1-tab.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 2px 6px rgba(139, 92, 246, 0.35);
+    }
+    .p1-search-box {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .p1-search-input {
+      width: 100%;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-soft);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #fff;
+      font-size: 12px;
+      outline: none;
+    }
+    .p1-search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .time-group-label {
+      padding: 10px 14px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-faint);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 方案 2 专用组件：顶置微型监控坞 (Live Island) */
+    .p2-dock {
+      background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(20, 22, 28, 0.4) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 10px;
+    }
+    .p2-dock-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .p2-pill-strip {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .p2-live-pill {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .p2-live-pill:hover {
+      border-color: var(--border);
+      transform: translateY(-1px);
+    }
+    .p2-live-pill.running {
+      border-color: rgba(52, 211, 153, 0.4);
+      background: rgba(52, 211, 153, 0.05);
+    }
+    .p2-live-pill.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .p2-pill-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .p2-pill-text {
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text);
+    }
+    .p2-pill-step {
+      font-size: 10px;
+      color: var(--green);
+      font-family: var(--font-mono);
+    }
+
+    /* 方案 3 专用组件：智能融合流 + 过滤胶囊 */
+    .p3-filter-chips {
+      display: flex;
+      padding: 8px 10px;
+      gap: 6px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border-soft);
+      scrollbar-width: none;
+    }
+    .p3-chip {
+      padding: 4px 10px;
+      border-radius: 99px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-soft);
+      color: var(--text-dim);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+    .p3-chip:hover {
+      background: var(--bg-elev2);
+      color: var(--text);
+    }
+    .p3-chip.active {
+      background: rgba(139, 92, 246, 0.18);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* 方案 4 专用组件：项目/树状聚合 */
+    .p4-proj-node {
+      margin-bottom: 4px;
+    }
+    .p4-proj-header {
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 2px 6px;
+    }
+    .p4-proj-header:hover {
+      background: var(--bg-elev);
+    }
+    .p4-sub-list {
+      padding-left: 12px;
+      border-left: 1px solid var(--border-soft);
+      margin-left: 16px;
+      margin-top: 2px;
+    }
+
+    /* 综合对比表格 */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      background: var(--bg-elev);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      font-size: 12.5px;
+    }
+    .compare-table th {
+      background: var(--bg-elev2);
+      color: var(--text);
+      font-weight: 600;
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      color: var(--text-dim);
+    }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .compare-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .badge-win {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--green);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    .badge-mid {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--amber);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    /* 滚动条美化 */
+    .custom-scroll {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .custom-scroll::-webkit-scrollbar { width: 5px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+    /* 模拟交互预览卡 */
+    .preview-flyout {
+      position: absolute;
+      right: -240px;
+      top: 140px;
+      width: 230px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+    }
+    .preview-flyout.show { display: block; animation: flyin 0.15s ease; }
+    @keyframes flyin { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部控制台 -->
+  <header class="top-header">
+    <div class="brand-wrap">
+      <div class="brand-icon">π</div>
+      <div>
+        <div class="brand-title">左侧栏「运行中 + 历史会话」重构方案全景</div>
+        <div class="brand-subtitle">解决双滚动条挤压 · 解决当前项重复 · 提升 Agent 监控感知</div>
+      </div>
+    </div>
+
+    <!-- 方案切换器 -->
+    <div class="proposal-switch-bar">
+      <button class="switch-btn active" onclick="switchScheme('zero')">
+        <span style="font-weight:700;">👑 极致零占地方案 (Zero-Overhead)</span>
+        <span class="tag-badge" style="background:#10b981; color:#fff;">无呼吸灯 · 0额外像素</span>
+      </button>
+      <button class="switch-btn" onclick="switchScheme('combo')">
+        <span>Tabs + 胶囊版</span>
+      </button>
+      <button class="switch-btn" onclick="switchScheme('before')">
+        <span style="color:var(--red);">⚠️ 当前现状 (问题复现)</span>
+      </button>
+      <button class="switch-btn" onclick="switchScheme('p1')">
+        <span>方案 1：纯 Tabs</span>
+      </button>
+      <button class="switch-btn" onclick="switchScheme('p3')">
+        <span>方案 3：纯时间流</span>
+      </button>
+      <button class="switch-btn" onclick="switchScheme('p2')">
+        <span>方案 2：监控坞</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-workspace">
+    <!-- 左侧可交互的仿真 Sidebar -->
+    <aside class="mock-sidebar-container" id="mockSidebar">
+      <!-- 固定的项目头 -->
+      <div class="mock-sb-header">
+        <div class="project-selector" title="当前项目目录">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>pi-web-ui</span>
+        </div>
+        <div class="sb-actions">
+          <button class="icon-btn primary" title="新建会话 (Ctrl+N)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 动态填充区域：由下方 JS 根据选中的方案注入 HTML -->
+      <div id="dynamicSidebarBody" style="display: flex; flex-direction: column; flex: 1; min-height: 0;"></div>
+    </aside>
+
+    <!-- 右侧方案详情与分析 -->
+    <main class="detail-container">
+
+      <!-- 现状痛点定位 -->
+      <div class="pain-points-card">
+        <div class="pain-header">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>用户截图暴露的四大视觉与体验痛点</span>
+        </div>
+        <div class="pain-grid">
+          <div class="pain-item">
+            <strong>1. 双滚动条垂直“硬割裂”</strong>
+            上面 5 个运行中占用一截高度并出滚动条，下面 200 条历史又出滚动条，互相挤压抢高度，两边都看不完整。
+          </div>
+          <div class="pain-item">
+            <strong>2. “当前会话”在两个列表里同时重复</strong>
+            「我想测试下群组...」在上面运行列表中出现一次（标当前），在历史列表中又出现一次，凭空浪费两倍高度。
+          </div>
+          <div class="pain-item">
+            <strong>3. “运行中”无实时感知</strong>
+            既然是并发后台运行的 Agent，无法直观知道谁在流式输出、谁在等待用户决策(Question)、谁在报错，视觉全是一样的灰色卡片。
+          </div>
+          <div class="pain-item">
+            <strong>4. 历史 200 条无法快速检索</strong>
+            一马平川的长列表没有「今天/昨天/本周」时间维度分割，也没有即时搜索框，找历史对话如大海捞针。
+          </div>
+        </div>
+      </div>
+
+      <!-- 👑 极致零占地方案详情 -->
+      <div class="scheme-view active" id="view-zero">
+        <div class="hero-title">
+          <span>👑 极致零占地方案：原位替换架构 (In-place Replacement)</span>
+          <span class="hero-badge" style="background:#10b981; color:#fff; border-color:#10b981;">不占1像素空间 · 无呼吸灯 · 状态一目了然</span>
+        </div>
+        <div class="hero-desc">
+          <strong>跳出“做加法（加标签、加边条、加区域）”的思维误区，改做“原位替换（In-place Reuse）”！</strong><br>
+          利用现有卡片本就存在的「左侧 16px 图标位」和「第二行辅助信息位」，在不同状态下无感切换，<strong>标题享受 100% 原始横向空间，绝无半点压迫感</strong>。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card" style="border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(16, 185, 129, 0.05) 100%);">
+            <div class="feature-title" style="color:#fff;">
+              <span style="color:var(--green)">1️⃣</span> 左侧已有图标位「原位替换」
+            </div>
+            <div class="feature-desc">
+              原本的灰色气泡纯属占位。现在：<br>
+              • <strong>执行中</strong>：原位变为纯单色静态闪电 <span style="color:var(--green); font-weight:700;">⚡</span>（无任何闪烁/呼吸）；<br>
+              • <strong>待用户确认</strong>：原位变为单色琥珀问号 <span style="color:var(--amber); font-weight:700;">?</span>；<br>
+              • <strong>空闲/历史</strong>：保持微弱灰色气泡。<br>
+              <strong>横向 0 额外像素！</strong>
+            </div>
+          </div>
+
+          <div class="feature-card" style="border-color: rgba(59, 130, 246, 0.4); background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(59, 130, 246, 0.05) 100%);">
+            <div class="feature-title" style="color:#fff;">
+              <span style="color:var(--blue)">2️⃣</span> 现有第二行文本「原位替换」
+            </div>
+            <div class="feature-desc">
+              卡片第二行本来就写着 <code>443 条消息</code> 或时间。<br>
+              • 执行时直接原位显示高亮绿字：<code>执行中 · 38s</code>；<br>
+              • 待答复时直接原位显示暖金字：<code>等待你的确认</code>；<br>
+              • 历史保持显示消息数与时间。<br>
+              <strong>纵向 0 额外行高，不撑大卡片！</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空间对比专区 -->
+        <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius-md); padding:16px 20px; margin-bottom:20px;">
+          <h4 style="font-size:13.5px; color:#fff; margin-bottom:8px;">📐 两种设计方式对横向标题空间的巨大影响：</h4>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; font-size:12px;">
+            <div style="background:rgba(248,113,113,0.06); border:1px dashed rgba(248,113,113,0.3); border-radius:6px; padding:10px;">
+              <strong style="color:var(--red);">❌ 传统加标签（压缩标题）</strong>
+              <div style="color:var(--text-dim); margin-top:4px;">
+                标题后挂上 <code>[执行中]</code> 或 <code>[待确认]</code> 徽标，导致标题横向空间被硬削掉 60px，原本能完整显示的标题被提前截断为：<br>
+                <code style="color:#cbd5e1;">「我想测试下群组... [执行中]」</code>
+              </div>
+            </div>
+            <div style="background:rgba(52,211,153,0.06); border:1px dashed rgba(52,211,153,0.3); border-radius:6px; padding:10px;">
+              <strong style="color:var(--green);">✅ 零占地原位替换（完整标题）</strong>
+              <div style="color:var(--text-dim); margin-top:4px;">
+                标题享用 100% 完整可用宽度，状态由左侧图标和第二行自然表达，标题完整舒展：<br>
+                <code style="color:#fff;">⚡ 「我想测试下群组的功能,但是不知道出个什么合适」</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 1 + 3 终极融合详情 -->
+      <div class="scheme-view" id="view-combo">
+        <div class="hero-title">
+          <span>⭐ 终极融合方案：分段选项卡 (Tabs) + 智能状态胶囊 (Filter Chips)</span>
+          <span class="hero-badge" style="background:var(--accent); color:#fff; border-color:var(--accent);">用户选定方案 · 体验天花板</span>
+        </div>
+        <div class="hero-desc">
+          集方案 1 的「100% 全高独占视窗 + 彻底消灭双滚动条」与方案 3 的「微状态胶囊过滤 + 智能去重 + 运行态高密度感知」于一体。<br>
+          在【⚡ 运行中】专注多 Agent 状态调度与即时干预；在【🕒 全部历史】专注精准检索、时间线归纳与零重复展示。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card" style="border-color: rgba(139, 92, 246, 0.4); background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(139, 92, 246, 0.05) 100%);">
+            <div class="feature-title" style="color:#fff;">
+              <span style="color:var(--accent)">⚡</span> 【运行中】专属：状态胶囊过滤 + 实时任务监控
+            </div>
+            <div class="feature-desc">
+              顶部提供横向状态过滤胶囊：<code>[ 全部 5 ]</code> <code>[ 执行中 2 ]</code> <code>[ 待答复 1 ]</code> <code>[ 空闲 2 ]</code>。<br>
+              每个卡片呈现高密度实时反馈：当前调用的工具名、耗时、快捷一键直达与中断。
+            </div>
+          </div>
+          <div class="feature-card" style="border-color: rgba(52, 211, 153, 0.4); background: linear-gradient(180deg, var(--bg-elev) 0%, rgba(52, 211, 153, 0.05) 100%);">
+            <div class="feature-title" style="color:#fff;">
+              <span style="color:var(--green)">🕒</span> 【全部历史】专属：即时检索 + 智能去重 + 时间线归纳
+            </div>
+            <div class="feature-desc">
+              顶部集成实时搜索输入框，支持拼音与关键词快速过滤。<br>
+              <strong>智能去重机制</strong>：当前活跃会话在历史列表中以轻量提示呈现，不再生成双份大卡片；按「今天」「昨天」「更早」分组折叠，200 条会话井然有序。
+            </div>
+        </div>
+
+        <!-- 针对用户提出的「不要呼吸灯」的 3 种静止替换设计 -->
+        <h4 style="font-size: 14px; margin: 20px 0 10px; color:#fff; display:flex; align-items:center; gap:8px;">
+          <span style="color:var(--amber);">🛡️</span> 彻底告别呼吸灯 · 3 种高质感静止表达形式（左栏可即时切换预览）
+        </h4>
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:20px;">
+          <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+            <div style="font-weight:600; color:#fff; font-size:12.5px; margin-bottom:6px;">形式 A：静止微标签 (默认)</div>
+            <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5;">
+              采用类似 Linear/GitHub PR 的微型文本徽标：<span class="badge-tag tag-running">执行中</span> <span class="badge-tag tag-question">待确认 ?</span>，信息明确，零动态闪烁打扰。
+            </div>
+          </div>
+          <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+            <div style="font-weight:600; color:#fff; font-size:12.5px; margin-bottom:6px;">形式 B：侧边细色条</div>
+            <div style="font-size:11.5px; color:var(--text-dim); line-height:1.5;">
+              采用类似 VS Code 的卡片左侧 2.5px 静态强调线（执行中为翠绿、待确认为琥珀金），最适合极简主义者。
+            </div>
+          </div>
+          <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; padding:12px;">
+            <div style="font-weight:600; color:#fff; font-size:12.5px; margin-bottom:6px;">形式 C：极简语义字符</div>
+            <div style="font-weight:600; font-size:11.5px; color:var(--text-dim); line-height:1.5;">
+              采用类似 JetBrains / 键盘键帽的静态微字符：<span class="static-sym-badge sym-running">▶</span> <span class="static-sym-badge sym-question">?</span> <span class="static-sym-badge">✓</span>，极客感强。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 现状问题复现详情 -->
+      <div class="scheme-view" id="view-before">
+        <div class="hero-title">
+          <span style="color:var(--red);">⚠️ 当前现状：双重滚动条与空间撕裂</span>
+          <span class="hero-badge" style="background:var(--red-soft); color:var(--red); border-color:rgba(248,113,113,0.3);">痛点显微镜</span>
+        </div>
+        <div class="hero-desc">
+          当前实现将侧边栏纵向硬生生切成了两半（sash 拖拽分割）。当并发任务多于 3 个且历史积累达到 200 条时，两个独立的内嵌滚动条同时出现，空间支离破碎。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card" style="border-color: rgba(248,113,113,0.3);">
+            <div class="feature-title" style="color:var(--red);">
+              <span>↕️</span> 两个滚动条互相打架
+            </div>
+            <div class="feature-desc">
+              在日常鼠标滚轮操作中，指针稍有偏移就会滚错区域。上半部分被硬截断，最底部仅能露出文字的半截（如用户截图中的 xz）。
+            </div>
+          </div>
+          <div class="feature-card" style="border-color: rgba(248,113,113,0.3);">
+            <div class="feature-title" style="color:var(--red);">
+              <span>🔄</span> 同一会话上下重复占位
+            </div>
+            <div class="feature-desc">
+              当前正在聊天的会话，既在顶部的「运行的对话」里占一个卡片，又在底部的「历史对话」顶部占一个卡片，逻辑混乱且浪费宝贵的垂直视线。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 1 详情 -->
+      <div class="scheme-view" id="view-p1">
+        <div class="hero-title">
+          <span>方案 1：分段选项卡架构 (Segmented Tabs + 单一全高主画布)</span>
+          <span class="hero-badge">体验最优解 · 彻底根除滚动条打架</span>
+        </div>
+        <div class="hero-desc">
+          借鉴 Linear、Arc 浏览器与现代 IDE 视窗设计。将「纵向拆分双滚动条」升级为「水平分段透视」。
+          侧边栏在任意时刻都拥有 <strong>100% 完整的垂直高度</strong>，再也不会被截断或露出半截文字。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--green)">⚡</span> 运行中专属「任务中控 (Mission Control)」
+            </div>
+            <div class="feature-desc">
+              切到【⚡ 运行中 (5)】时，列表不再是冷冰冰的标题，而是高信息密度的任务卡：显示绿灯呼吸动画、正在调用的工具名（如 <code>patch-bash-process</code>）、耗时和快速中断按钮。
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--accent)">🕒</span> 历史记录具备时间分段与秒级过滤
+            </div>
+            <div class="feature-desc">
+              切到【历史】时拥有顶部即时搜索框。长达 200 条的历史自动按照「今天 (4)」、「昨天 (7)」、「上周 (18)」进行视觉分段，条理极其清晰。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 2 详情 -->
+      <div class="scheme-view" id="view-p2">
+        <div class="hero-title">
+          <span>方案 2：顶置微型监控坞 (Live Activity Dock) + 历史主轴</span>
+          <span class="hero-badge">极客监控感 · 类似 iOS 灵动岛 / VS Code Debugger</span>
+        </div>
+        <div class="hero-desc">
+          运行中的 Agent 本质上是“正在进行的短期活动”，不需要占据和历史列表等高的并列大窗。
+          通过将其收拢为顶部的紧凑胶囊（Live Pill），让历史会话保持自上而下的自然大单流。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--amber)">🔔</span> 待审批/问答优先浮起
+            </div>
+            <div class="feature-desc">
+              如果有会话正在等待用户答复（例如 <code>ask_user_question</code> 或执行授权），胶囊卡片呈现琥珀色呼吸灯，并置顶于监控坞第一位，一键直达处理。
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--blue)">📐</span> 极低空间占用
+            </div>
+            <div class="feature-desc">
+              常态下只占用顶部 60px~100px 高度；空闲或没有运行任务时自动隐去，历史会话自动顶格展示。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 3 详情 -->
+      <div class="scheme-view" id="view-p3">
+        <div class="hero-title">
+          <span>方案 3：智能融合时间流 + 活跃置顶 (Smart Stream & Auto-Pin)</span>
+          <span class="hero-badge">自然直觉 · Slack / Telegram / Raycast 风格</span>
+        </div>
+        <div class="hero-desc">
+          打破「运行」与「历史」的物理二元隔阂！所有会话在一个单一列表中，按照活跃时间智能排布。
+          当前正在运行的会话通过<strong>流光边框、发光徽标自动置顶在最上方</strong>，结束后平滑沉降至历史区，绝不重复出现两遍。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--cyan)">🏷️</span> 快捷胶囊过滤器 (Filter Chips)
+            </div>
+            <div class="feature-desc">
+              顶部提供横向滑动胶囊：<code>全部 205</code>、<code>⚡ 活跃 5</code>、<code>❓ 待决策 1</code>、<code>⭐ 星标 3</code>。点击瞬间筛选，无需切页。
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--green)">🔄</span> 状态平滑过渡，零认知负担
+            </div>
+            <div class="feature-desc">
+              用户无需思考“我现在是在找运行中的还是找历史的”，所有东西都在一个时间轴上，符合人类大脑最自然的记忆规律。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 4 详情 -->
+      <div class="scheme-view" id="view-p4">
+        <div class="hero-title">
+          <span>方案 4：项目/工作区聚合树 (Workspace Tree & Multi-Agent Matrix)</span>
+          <span class="hero-badge">大型多仓库开发 · 多端协同首选</span>
+        </div>
+        <div class="hero-desc">
+          在多项目或使用设备中心（跨端同步/群组协同）时，会话很容易出现同名混淆（如截图中的两条“架构重构”）。
+          以「项目/工作区」为第一层级聚合，内部再分设运行中与归档。
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--purple)">🌿</span> 会话归属感清晰，杜绝同名混淆
+            </div>
+            <div class="feature-desc">
+              清晰看出每个项目各自正在跑几个任务。即使在不同分支或子模块跑同名任务，也井井有条。
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-title">
+              <span style="color:var(--accent)">👁️</span> 悬停预览穿透 (Hover Peek)
+            </div>
+            <div class="feature-desc">
+              鼠标悬停在卡片上，右侧弹出轻量气泡预览最后一轮对话结论，无需点击切换打断当前工作流。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 四套方案横向对比表格 -->
+      <h3 style="font-size: 16px; margin: 32px 0 12px; color:#fff;">四大重构方案全维度对比</h3>
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>评估维度</th>
+            <th>方案 1：分段选项卡 (Tabs)</th>
+            <th>方案 2：顶置监控坞 (Dock)</th>
+            <th>方案 3：智能时间轴 (Stream)</th>
+            <th>方案 4：工作区树 (Tree)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>空间利用率</strong></td>
+            <td><span class="badge-win">100% 全高独占</span> (最舒展)</td>
+            <td><span class="badge-win">90% 全高</span> (顶部极紧凑)</td>
+            <td><span class="badge-win">100% 单流</span> (自然)</td>
+            <td><span class="badge-mid">80%</span> (有层级缩进)</td>
+          </tr>
+          <tr>
+            <td><strong>彻底消灭双滚动条</strong></td>
+            <td><span class="badge-win">完全消灭</span> (单容器)</td>
+            <td><span class="badge-win">完全消灭</span> (单容器)</td>
+            <td><span class="badge-win">完全消灭</span> (单容器)</td>
+            <td><span class="badge-win">完全消灭</span> (单容器)</td>
+          </tr>
+          <tr>
+            <td><strong>并发运行态感知</strong></td>
+            <td>极强 (卡片包含步骤/耗时)</td>
+            <td>强 (胶囊指示灯/紧凑)</td>
+            <td>中等 (发光置顶行)</td>
+            <td>极强 (按项目/设备分类)</td>
+          </tr>
+          <tr>
+            <td><strong>200条历史检索效率</strong></td>
+            <td><span class="badge-win">极快 (搜索+时间分组)</span></td>
+            <td>快 (时间分组)</td>
+            <td>快 (标签过滤+搜索)</td>
+            <td>精准 (按项目归类定位)</td>
+          </tr>
+          <tr>
+            <td><strong>落地改造成本</strong></td>
+            <td><span class="badge-win">低</span> (仅需改 LeftPanel 视图切换)</td>
+            <td>中等 (需提取 LiveDock 组件)</td>
+            <td>中等 (重构列表排序与流光样式)</td>
+            <td>偏高 (需重组项目与会话树)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 推荐实施路径与代码建议 -->
+      <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius-md); padding:20px; margin-top:20px;">
+        <h4 style="font-size:14px; color:#fff; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+          <span style="color:var(--accent)">🚀</span> 推荐落地路线（建议采纳方案 1 或方案 1+3 的融合版）
+        </h4>
+        <ol style="padding-left: 20px; color: var(--text-dim); line-height: 1.8; font-size: 13px;">
+          <li><strong>第一阶段（立竿见影）：改垂直分割为 Segmented Tabs</strong>。在 <code>LeftPanel.tsx</code> 顶部加入 <code>[ ⚡ 运行中 (5) ]</code> 和 <code>[ 🕒 历史记录 (200) ]</code> 的药丸切换，彻底去掉 sash 拖拽条和双独立滚动条。</li>
+          <li><strong>第二阶段（解决重复）：消除当前会话的冗余展示</strong>。历史列表中如果该会话已经在「运行中」展开，历史中自动标记或默认不重复堆叠。</li>
+          <li><strong>第三阶段（体验升级）：引入时间段分组与轻量搜索框</strong>。200 条历史根据 <code>lastModified</code> 自动划分「今天 / 昨天 / 7天内 / 更早」，并在列表顶部放置轻量 filter input。</li>
+        </ol>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // 当前方案状态
+    let currentScheme = 'zero';
+    let comboTab = 'running'; // 'running' | 'history'
+    let comboFilter = 'all'; // 'all' | 'streaming' | 'question' | 'idle'
+    let comboHistFilter = 'all'; // 'all' | 'pinned' | 'project'
+    let statusStyle = 'tag'; // 'tag' (形式A) | 'stripe' (形式B) | 'icon' (形式C)
+    let p1CurrentTab = 'running'; // 'running' | 'history'
+    let p3ActiveFilter = 'all';
+
+    // 模拟数据源
+    const runningList = [
+      { id: 'c1', title: '设备群组架构重构与上限调高方案', status: 'streaming', step: '正在调用 tools.edit...', msgs: 443, time: '2m 14s' },
+      { id: 'c2', title: '设备群组架构重构与上限调高方案 (设备2)', status: 'idle', step: '等待新指令', msgs: 443, time: '12m 前' },
+      { id: 'c3', title: '我想测试下群组的功能,但是不知道出个什么合适', status: 'streaming', step: '生成中 (84 tokens/s)', msgs: 6, time: '38s', current: true },
+      { id: 'c4', title: 'xz 压缩算法优化与测试', status: 'question', step: '等待用户确认 (3个选项)', msgs: 18, time: '1m 前' },
+      { id: 'c5', title: '跨设备协同通信协议验证', status: 'idle', step: '已完成', msgs: 54, time: '18m 前' },
+    ];
+
+    const historyToday = [
+      { id: 'h1', title: '我想测试下群组的功能,但是不知道出个什么合适', msgs: 6, time: '16:11', current: true },
+      { id: 'h2', title: '上传 github 并配置 CI release 流程', msgs: 91, time: '15:13' },
+      { id: 'h3', title: '更新中心 Hub 部署与证书配置', msgs: 42, time: '14:51' },
+      { id: 'h4', title: '目前本项目的 npm 用户和依赖体检', msgs: 28, time: '12:20' },
+    ];
+
+    const historyYesterday = [
+      { id: 'h5', title: '重构 terminal 终端 PTY 桥接模块', msgs: 112, time: '昨天 21:05' },
+      { id: 'h6', title: '修复黑暗主题下对比度不达标的边框问题', msgs: 15, time: '昨天 17:40' },
+      { id: 'h7', title: '为 prompt-composer 增加会话上下文裁剪', msgs: 83, time: '昨天 11:15' },
+    ];
+
+    const historyEarlier = [
+      { id: 'h8', title: '初始化设备中心 WebSocket 同步协议', msgs: 260, time: '3天前' },
+      { id: 'h9', title: '修复 subagents 状态流转死锁', msgs: 34, time: '5天前' },
+      { id: 'h10', title: '支持画布模式的 SVG 节点实时联动', msgs: 175, time: '上周' },
+    ];
+
+    // 方案切换
+    function switchScheme(schemeId) {
+      currentScheme = schemeId;
+      document.querySelectorAll('.switch-btn').forEach((b, i) => {
+        b.classList.toggle('active', b.getAttribute('onclick').includes(schemeId));
+      });
+      document.querySelectorAll('.scheme-view').forEach(v => v.classList.remove('active'));
+      const activeView = document.getElementById('view-' + schemeId);
+      if (activeView) activeView.classList.add('active');
+
+      renderMockSidebar();
+    }
+
+    // 渲染左侧模拟侧边栏
+    function renderMockSidebar() {
+      const container = document.getElementById('dynamicSidebarBody');
+      if (!container) return;
+
+      if (currentScheme === 'zero') {
+        renderZero(container);
+      } else if (currentScheme === 'combo') {
+        renderCombo(container);
+      } else if (currentScheme === 'before') {
+        renderBefore(container);
+      } else if (currentScheme === 'p1') {
+        renderScheme1(container);
+      } else if (currentScheme === 'p2') {
+        renderScheme2(container);
+      } else if (currentScheme === 'p3') {
+        renderScheme3(container);
+      } else if (currentScheme === 'p4') {
+        renderScheme4(container);
+      }
+    }
+
+    // --- 👑 极致零占地方案渲染逻辑 (In-place Swap) ---
+    function renderZero(container) {
+      container.innerHTML = `
+        <!-- 顶部轻量搜索 (快捷 Ctrl+K) -->
+        <div style="padding: 8px 10px 4px;">
+          <input type="text" class="p1-search-input" placeholder="🔍 搜索所有会话 (Ctrl+K)..." oninput="handleZeroSearch(this.value)">
+        </div>
+
+        <!-- 纯单流容器 (仅有这一个滚动条，完全不抢占高度) -->
+        <div class="custom-scroll" id="zeroMainScroll" style="padding: 4px 0;">
+          <!-- 活跃区 (自动浮在最上层，无多余大标题，仅占必要高度) -->
+          <div style="padding: 6px 14px 2px; font-size: 11px; font-weight: 700; color: var(--green); display:flex; justify-content:space-between; align-items:center;">
+            <span>⚡ 活跃进行中 (5)</span>
+            <span style="font-size: 10px; color: var(--text-faint); font-weight: 400;">单滚动容器 · 0重复</span>
+          </div>
+
+          <!-- 活跃卡片：原位替换，标题无任何Badge，横向全展开 -->
+          ${renderZeroActiveCards()}
+
+          <!-- 极轻极简的单行分界，不占多余高度 -->
+          <div style="margin: 10px 14px 4px; padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 11px; font-weight: 600; color: var(--text-faint); display:flex; justify-content:space-between;">
+            <span>🕒 历史会话 (200)</span>
+            <span>按修改时间</span>
+          </div>
+
+          <!-- 历史卡片：自然平铺，当前会话不重复显示 -->
+          ${renderZeroHistoryCards()}
+        </div>
+      `;
+    }
+
+    function renderZeroActiveCards() {
+      return runningList.map(item => {
+        // 原位图标替换 (0 额外像素)
+        let iconHtml = '';
+        if (item.status === 'streaming') {
+          // 静态单色闪电 (翠绿，无动效，原位替换气泡)
+          iconHtml = `
+            <svg class="card-icon" style="color:var(--green);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          `;
+        } else if (item.status === 'question') {
+          // 静态琥珀小问号 (原位替换气泡)
+          iconHtml = `
+            <span style="width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; color:var(--amber); font-weight:800; font-size:11px; border:1.5px solid var(--amber); border-radius:4px; margin-top:2px; flex-shrink:0;">?</span>
+          `;
+        } else {
+          // 静态气泡
+          iconHtml = `
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          `;
+        }
+
+        return `
+          <div class="sess-card ${item.current ? 'active' : ''}" style="${item.status === 'streaming' ? 'background: rgba(52,211,153,0.03);' : item.status === 'question' ? 'background: rgba(251,191,36,0.04);' : ''}" onclick="selectItem('${item.id}')">
+            ${iconHtml}
+            <div class="card-content">
+              <!-- 标题完全无 Badge 压缩，100% 原始横向空间 -->
+              <div class="card-title" style="${item.status === 'streaming' ? 'color:#fff; font-weight:600;' : ''}">
+                ${item.title}
+              </div>
+              <!-- 第二行原位复用：执行时直接变成绿色步骤/耗时，纵向 0 额外行 -->
+              <div class="card-meta">
+                <span style="color: ${item.status === 'question' ? 'var(--amber)' : item.status === 'streaming' ? 'var(--green)' : 'var(--text-faint)'}; font-family:${item.status === 'streaming' ? 'var(--font-mono)' : 'inherit'};">
+                  ${item.step}
+                </span>
+                <span>${item.time}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderZeroHistoryCards(query = '') {
+      const filterFn = item => !query || item.title.toLowerCase().includes(query.toLowerCase());
+      // 过滤掉已经在上方活跃区展开的「当前会话」，彻底消除重复！
+      const gToday = historyToday.filter(h => !h.current && filterFn(h));
+      const gYest = historyYesterday.filter(filterFn);
+      const gEarl = historyEarlier.filter(filterFn);
+
+      return `
+        ${gToday.map(h => renderZeroHistoryRow(h)).join('')}
+        ${gYest.map(h => renderZeroHistoryRow(h)).join('')}
+        ${gEarl.map(h => renderZeroHistoryRow(h)).join('')}
+      `;
+    }
+
+    function renderZeroHistoryRow(item) {
+      return `
+        <div class="sess-card" onclick="selectItem('${item.id}')">
+          <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <div class="card-content">
+            <div class="card-title">${item.title}</div>
+            <div class="card-meta">
+              <span>${item.msgs} 条消息</span>
+              <span>${item.time}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function handleZeroSearch(val) {
+      const el = document.getElementById('zeroMainScroll');
+      if (el) {
+        // 搜索时实时更新历史列表
+        el.innerHTML = `
+          <div style="padding: 6px 14px 2px; font-size: 11px; font-weight: 700; color: var(--green);">
+            <span>⚡ 活跃进行中 (5)</span>
+          </div>
+          ${renderZeroActiveCards()}
+          <div style="margin: 10px 14px 4px; padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 11px; font-weight: 600; color: var(--text-faint);">
+            <span>🔍 搜索匹配结果</span>
+          </div>
+          ${renderZeroHistoryCards(val)}
+        `;
+      }
+    }
+
+    // --- 方案 1 + 3 终极融合渲染逻辑 ---
+    function renderCombo(container) {
+      container.innerHTML = `
+        <!-- 顶部分段选项卡 (Tab Segmented Bar) -->
+        <div class="p1-tabs-bar" style="padding: 8px 10px; background: var(--bg); border-bottom: 1px solid var(--border-soft);">
+          <button class="p1-tab ${comboTab === 'running' ? 'active' : ''}" onclick="setComboTab('running')">
+            <span style="font-weight:700;">⚡ 运行中</span>
+            <span style="opacity:0.85; font-size:10px; font-weight:700;">(5)</span>
+          </button>
+          <button class="p1-tab ${comboTab === 'history' ? 'active' : ''}" onclick="setComboTab('history')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>全部历史</span>
+            <span style="opacity:0.85; font-size:10px; font-weight:700;">(200)</span>
+          </button>
+        </div>
+
+        <!-- 形式切换栏 (无动效纯静止) -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding: 5px 10px; background: var(--bg-elev); border-bottom: 1px solid var(--border-soft); font-size: 11px;">
+          <span style="color:var(--text-faint);">状态形式:</span>
+          <div style="display:flex; gap:3px;">
+            <button class="icon-btn ${statusStyle === 'tag' ? 'primary' : ''}" style="width:auto; padding:2px 7px; font-size:10.5px; height:22px;" onclick="setStatusStyle('tag')" title="纯文字静止微胶囊标签 (Linear风格)">文字标签</button>
+            <button class="icon-btn ${statusStyle === 'stripe' ? 'primary' : ''}" style="width:auto; padding:2px 7px; font-size:10.5px; height:22px;" onclick="setStatusStyle('stripe')" title="静止左侧细色条 (VS Code风格)">侧边色条</button>
+            <button class="icon-btn ${statusStyle === 'icon' ? 'primary' : ''}" style="width:auto; padding:2px 7px; font-size:10.5px; height:22px;" onclick="setStatusStyle('icon')" title="极简静态单色字符 (JetBrains风格)">语义图标</button>
+          </div>
+        </div>
+
+        ${comboTab === 'running' ? `
+          <!-- 运行专属：快捷微状态胶囊 (Chips) -->
+          <div class="p3-filter-chips" style="background: rgba(0,0,0,0.15);">
+            <div class="p3-chip ${comboFilter === 'all' ? 'active' : ''}" onclick="setComboFilter('all')">
+              全部 (5)
+            </div>
+            <div class="p3-chip ${comboFilter === 'streaming' ? 'active' : ''}" onclick="setComboFilter('streaming')">
+              <span class="badge-tag tag-running" style="padding:0 4px; font-size:9.5px;">执行中</span>
+              <span>(2)</span>
+            </div>
+            <div class="p3-chip ${comboFilter === 'question' ? 'active' : ''}" onclick="setComboFilter('question')">
+              <span class="badge-tag tag-question" style="padding:0 4px; font-size:9.5px;">待答复</span>
+              <span>(1)</span>
+            </div>
+            <div class="p3-chip ${comboFilter === 'idle' ? 'active' : ''}" onclick="setComboFilter('idle')">
+              <span>空闲 (2)</span>
+            </div>
+          </div>
+          <!-- 运行专属卡片列表 (单容器滚动) -->
+          <div class="custom-scroll" style="padding: 6px 0;">
+            ${renderComboRunningCards()}
+          </div>
+        ` : `
+          <!-- 历史专属：即时检索输入框 -->
+          <div class="p1-search-box">
+            <input type="text" class="p1-search-input" placeholder="🔍 快速过滤 200 个历史会话..." oninput="handleComboSearch(this.value)">
+          </div>
+          <!-- 历史专属过滤胶囊 -->
+          <div class="p3-filter-chips" style="background: rgba(0,0,0,0.15); padding: 6px 10px;">
+            <div class="p3-chip ${comboHistFilter === 'all' ? 'active' : ''}" onclick="setComboHistFilter('all')">全部</div>
+            <div class="p3-chip ${comboHistFilter === 'pinned' ? 'active' : ''}" onclick="setComboHistFilter('pinned')">📌 星标 (2)</div>
+            <div class="p3-chip ${comboHistFilter === 'project' ? 'active' : ''}" onclick="setComboHistFilter('project')">📦 仅当前目录</div>
+          </div>
+          <!-- 历史专属去重时间线列表 (单容器滚动) -->
+          <div class="custom-scroll" id="comboHistoryScroll" style="padding: 6px 0;">
+            ${renderComboHistoryCards()}
+          </div>
+        `}
+      `;
+    }
+
+    function setStatusStyle(style) {
+      statusStyle = style;
+      renderCombo(document.getElementById('dynamicSidebarBody'));
+    }
+
+    function setComboTab(tab) {
+      comboTab = tab;
+      renderCombo(document.getElementById('dynamicSidebarBody'));
+    }
+
+    function setComboFilter(filter) {
+      comboFilter = filter;
+      renderCombo(document.getElementById('dynamicSidebarBody'));
+    }
+
+    function setComboHistFilter(filter) {
+      comboHistFilter = filter;
+      renderCombo(document.getElementById('dynamicSidebarBody'));
+    }
+
+    function renderComboRunningCards() {
+      const filtered = runningList.filter(item => {
+        if (comboFilter === 'all') return true;
+        return item.status === comboFilter;
+      });
+
+      if (filtered.length === 0) {
+        return '<div style="padding: 24px 16px; text-align: center; color: var(--text-faint); font-size: 12px;">无此状态的运行对话</div>';
+      }
+
+      return filtered.map(item => {
+        // 根据当前选定的静态形式生成 HTML
+        let stripeClass = '';
+        let badgeHtml = '';
+        let prefixIcon = '';
+
+        if (statusStyle === 'tag') {
+          // 形式 A：静止微标签
+          if (item.status === 'streaming') {
+            badgeHtml = '<span class="badge-tag tag-running">执行中</span>';
+          } else if (item.status === 'question') {
+            badgeHtml = '<span class="badge-tag tag-question">待确认 ?</span>';
+          } else {
+            badgeHtml = '<span class="badge-tag tag-idle">就绪</span>';
+          }
+        } else if (statusStyle === 'stripe') {
+          // 形式 B：静止侧边细条
+          if (item.status === 'streaming') stripeClass = 'stripe-running';
+          else if (item.status === 'question') stripeClass = 'stripe-question';
+        } else if (statusStyle === 'icon') {
+          // 形式 C：极简静态字符
+          if (item.status === 'streaming') {
+            prefixIcon = '<span class="static-sym-badge sym-running" title="正在运行">▶</span>';
+          } else if (item.status === 'question') {
+            prefixIcon = '<span class="static-sym-badge sym-question" title="等待问答决策">?</span>';
+          } else {
+            prefixIcon = '<span class="static-sym-badge" title="就绪">✓</span>';
+          }
+        }
+
+        return `
+          <div class="sess-card ${item.current ? 'active' : ''} ${stripeClass}" onclick="selectItem('${item.id}')">
+            ${statusStyle === 'icon' ? prefixIcon : `
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            `}
+            <div class="card-content">
+              <div class="card-title">
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${item.title}</span>
+                ${badgeHtml}
+              </div>
+              <div class="card-meta">
+                <span style="font-family: var(--font-mono); font-size: 10.5px; color: ${item.status === 'question' ? 'var(--amber)' : item.status === 'streaming' ? 'var(--text)' : 'var(--text-faint)'};">
+                  ${item.step}
+                </span>
+                <span>${item.time}</span>
+              </div>
+            </div>
+            <!-- 悬停操作按钮 -->
+            <div style="display:flex; align-items:center; gap:4px; opacity:0.6;">
+              ${item.status === 'streaming' ? `
+                <span title="中止生成" style="font-size:11px; color:var(--red); padding:2px;">⏹</span>
+              ` : ''}
+              <span title="移出列表" style="font-size:12px; color:var(--text-faint); padding:2px;">✕</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderComboHistoryCards(query = '') {
+      const filterFn = item => !query || item.title.toLowerCase().includes(query.toLowerCase());
+      const gToday = historyToday.filter(filterFn);
+      const gYest = historyYesterday.filter(filterFn);
+      const gEarl = historyEarlier.filter(filterFn);
+
+      return `
+        <!-- 智能去重条 (告别重复占位) -->
+        <div style="margin: 4px 8px 8px; padding: 6px 10px; background: rgba(139, 92, 246, 0.08); border: 1px dashed rgba(139, 92, 246, 0.25); border-radius: 6px; font-size: 11px; color: var(--accent); display:flex; justify-content:space-between; align-items:center;">
+          <span>⚡ 当前对话正在【运行中】高亮</span>
+          <span style="cursor:pointer; text-decoration:underline;" onclick="setComboTab('running')">查看运行态 ➔</span>
+        </div>
+
+        ${gToday.length ? `
+          <div class="time-group-label">今天 <span>${gToday.length}</span></div>
+          ${gToday.filter(h => !h.current).map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+        ${gYest.length ? `
+          <div class="time-group-label">昨天 <span>${gYest.length}</span></div>
+          ${gYest.map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+        ${gEarl.length ? `
+          <div class="time-group-label">更早之前 <span>189</span></div>
+          ${gEarl.map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+      `;
+    }
+
+    function handleComboSearch(val) {
+      const el = document.getElementById('comboHistoryScroll');
+      if (el) {
+        el.innerHTML = renderComboHistoryCards(val);
+      }
+    }
+
+    // --- 现状复现渲染逻辑 ---
+    function renderBefore(container) {
+      container.innerHTML = `
+        <div style="display:flex; flex-direction:column; height:100%; position:relative;">
+          <!-- 运行的对话分区 (高度截断 + 独立滚动条) -->
+          <div style="flex: 1 1 0; min-height: 140px; max-height: 220px; display:flex; flex-direction:column; border-bottom: 1px solid var(--border);">
+            <div style="padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--text-dim); display:flex; justify-content:space-between; align-items:center; background: rgba(0,0,0,0.15);">
+              <span>运行的对话 (5)</span>
+              <span style="font-size: 10px;">▲</span>
+            </div>
+            <div class="custom-scroll" style="overflow-y: scroll; padding: 4px 0; border: 1px dashed rgba(248,113,113,0.3); margin: 2px;">
+              <div class="sess-card">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">设备群组架构重构与上限调高方案</div>
+                  <div class="card-meta"><span>443 条消息</span></div>
+                </div>
+              </div>
+              <div class="sess-card">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">设备群组架构重构与上限调高方案</div>
+                  <div class="card-meta"><span>443 条消息</span></div>
+                </div>
+              </div>
+              <div class="sess-card active" style="outline: 1.5px dashed var(--red); outline-offset: -1px;">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">我想测试下群组的功能,但是不知道...</div>
+                  <div class="card-meta"><span style="color:var(--accent);">当前 (位置1)</span></div>
+                </div>
+              </div>
+              <!-- 截断的半截文字模拟 -->
+              <div style="padding: 2px 14px; font-size:11px; color:var(--text-faint); height: 16px; overflow: hidden; opacity: 0.6;">
+                xz 压缩算法优化... (被下边缘裁切)
+              </div>
+            </div>
+            <div style="font-size:10px; color:var(--red); padding:2px 8px; text-align:right; background:rgba(248,113,113,0.1);">
+              ⚠ 滚动条 1 (仅展示 3 条半)
+            </div>
+          </div>
+
+          <!-- sash 拖拽分割条 -->
+          <div style="height: 4px; background: var(--border); cursor: row-resize; display:flex; align-items:center; justify-content:center;">
+            <div style="width: 20px; height: 2px; background: var(--text-faint); border-radius: 2px;"></div>
+          </div>
+
+          <!-- 历史对话分区 (高度再次受限 + 独立滚动条) -->
+          <div style="flex: 1 1 0; display:flex; flex-direction:column; min-height: 0;">
+            <div style="padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--text-dim); display:flex; justify-content:space-between; align-items:center; background: rgba(0,0,0,0.15);">
+              <span>历史对话 (200)</span>
+              <div style="display:flex; gap:6px;"><span>▲</span><span>+</span></div>
+            </div>
+            <div class="custom-scroll" style="overflow-y: scroll; padding: 4px 0; border: 1px dashed rgba(248,113,113,0.3); margin: 2px;">
+              <div class="sess-card active" style="outline: 1.5px dashed var(--red); outline-offset: -1px;">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">我想测试下群组的功能,但是...</div>
+                  <div class="card-meta"><span style="color:var(--red); font-weight:600;">⚠ 重复出现 (位置2)</span><span>16:11</span></div>
+                </div>
+              </div>
+              <div class="sess-card">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">上传 github</div>
+                  <div class="card-meta"><span>91 条消息</span><span>15:13</span></div>
+                </div>
+              </div>
+              <div class="sess-card">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">更新中心 Hub 部署</div>
+                  <div class="card-meta"><span>42 条消息</span><span>14:51</span></div>
+                </div>
+              </div>
+              <div class="sess-card">
+                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <div class="card-content">
+                  <div class="card-title">目前本项目的 npm 用户和...</div>
+                  <div class="card-meta"><span>28 条消息</span><span>12:20</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:10px; color:var(--red); padding:2px 8px; text-align:right; background:rgba(248,113,113,0.1);">
+              ⚠ 滚动条 2 (无搜索/无时间归组)
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // --- 方案 1 渲染逻辑 ---
+    function renderScheme1(container) {
+      container.innerHTML = `
+        <div class="p1-tabs-bar">
+          <button class="p1-tab ${p1CurrentTab === 'running' ? 'active' : ''}" onclick="setP1Tab('running')">
+            <span class="status-pulse pulse-green" style="width:6px; height:6px;"></span>
+            <span>运行中</span>
+            <span style="opacity:0.8; font-size:10px;">(5)</span>
+          </button>
+          <button class="p1-tab ${p1CurrentTab === 'history' ? 'active' : ''}" onclick="setP1Tab('history')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>全部历史</span>
+            <span style="opacity:0.8; font-size:10px;">(200)</span>
+          </button>
+        </div>
+        ${p1CurrentTab === 'history' ? `
+          <div class="p1-search-box">
+            <input type="text" class="p1-search-input" placeholder="🔍 快速搜索 200 个历史会话..." oninput="handleSearch(this.value)">
+          </div>
+        ` : ''}
+        <div class="custom-scroll" style="padding: 6px 0;">
+          ${p1CurrentTab === 'running' ? renderRunningCards() : renderHistoryCardsWithTimeGroups()}
+        </div>
+      `;
+    }
+
+    function setP1Tab(tab) {
+      p1CurrentTab = tab;
+      renderScheme1(document.getElementById('dynamicSidebarBody'));
+    }
+
+    function renderRunningCards() {
+      return runningList.map(item => `
+        <div class="sess-card ${item.current ? 'active' : ''} ${item.status === 'streaming' ? 'streaming' : ''} ${item.status === 'question' ? 'need-answer' : ''}" onclick="selectItem('${item.id}')">
+          <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <div class="card-content">
+            <div class="card-title">
+              ${item.status === 'streaming' ? '<span class="status-pulse pulse-green"></span>' : ''}
+              ${item.status === 'question' ? '<span class="status-pulse pulse-amber"></span>' : ''}
+              <span>${item.title}</span>
+            </div>
+            <div class="card-meta">
+              <span style="color: ${item.status === 'question' ? 'var(--amber)' : item.status === 'streaming' ? 'var(--green)' : 'var(--text-faint)'};">
+                ${item.step}
+              </span>
+              <span>${item.time}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderHistoryCardsWithTimeGroups(query = '') {
+      const filterFn = item => !query || item.title.toLowerCase().includes(query.toLowerCase());
+      const gToday = historyToday.filter(filterFn);
+      const gYest = historyYesterday.filter(filterFn);
+      const gEarl = historyEarlier.filter(filterFn);
+
+      return `
+        ${gToday.length ? `
+          <div class="time-group-label">今天 <span>${gToday.length}</span></div>
+          ${gToday.map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+        ${gYest.length ? `
+          <div class="time-group-label">昨天 <span>${gYest.length}</span></div>
+          ${gYest.map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+        ${gEarl.length ? `
+          <div class="time-group-label">更早之前 <span>189</span></div>
+          ${gEarl.map(h => renderHistoryRow(h)).join('')}
+        ` : ''}
+      `;
+    }
+
+    function renderHistoryRow(item) {
+      return `
+        <div class="sess-card ${item.current ? 'active' : ''}" onclick="selectItem('${item.id}')">
+          <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <div class="card-content">
+            <div class="card-title">${item.title}</div>
+            <div class="card-meta">
+              <span>${item.current ? '当前会话' : item.msgs + ' 条消息'}</span>
+              <span>${item.time}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // --- 方案 2 渲染逻辑 (Dock) ---
+    function renderScheme2(container) {
+      container.innerHTML = `
+        <!-- 顶置微型监控坞 -->
+        <div class="p2-dock">
+          <div class="p2-dock-title">
+            <span style="display:flex; align-items:center; gap:5px;">
+              <span class="status-pulse pulse-green" style="width:6px; height:6px;"></span>
+              <span>活动监控坞 (5 并发)</span>
+            </span>
+            <span style="font-size:10px; color:var(--text-faint); cursor:pointer;">全部收起 ▾</span>
+          </div>
+          <div class="p2-pill-strip">
+            <div class="p2-live-pill running active">
+              <div class="p2-pill-left">
+                <span class="status-pulse pulse-green"></span>
+                <span class="p2-pill-text">我想测试下群组的功能...</span>
+              </div>
+              <span class="p2-pill-step">生成中</span>
+            </div>
+            <div class="p2-live-pill" style="border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.04);">
+              <div class="p2-pill-left">
+                <span class="status-pulse pulse-amber"></span>
+                <span class="p2-pill-text">xz 压缩算法优化</span>
+              </div>
+              <span class="p2-pill-step" style="color:var(--amber);">待确认 ?</span>
+            </div>
+            <div class="p2-live-pill">
+              <div class="p2-pill-left">
+                <span class="status-pulse pulse-idle"></span>
+                <span class="p2-pill-text">设备群组架构重构...</span>
+              </div>
+              <span class="p2-pill-step" style="color:var(--text-faint);">已完成</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 下方全高度历史列表 -->
+        <div style="padding: 10px 14px 4px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11px; font-weight:700; color:var(--text-faint);">历史会话 (200)</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-faint); cursor:pointer;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </div>
+        <div class="custom-scroll">
+          ${renderHistoryCardsWithTimeGroups()}
+        </div>
+      `;
+    }
+
+    // --- 方案 3 渲染逻辑 (Stream) ---
+    function renderScheme3(container) {
+      container.innerHTML = `
+        <!-- 快捷过滤器胶囊 -->
+        <div class="p3-filter-chips">
+          <div class="p3-chip ${p3ActiveFilter === 'all' ? 'active' : ''}" onclick="setP3Filter('all')">全部 (205)</div>
+          <div class="p3-chip ${p3ActiveFilter === 'active' ? 'active' : ''}" onclick="setP3Filter('active')">
+            <span class="status-pulse pulse-green" style="width:5px; height:5px;"></span>
+            <span>活跃中 (5)</span>
+          </div>
+          <div class="p3-chip ${p3ActiveFilter === 'waiting' ? 'active' : ''}" onclick="setP3Filter('waiting')">
+            <span class="status-pulse pulse-amber" style="width:5px; height:5px;"></span>
+            <span>待审批 (1)</span>
+          </div>
+          <div class="p3-chip ${p3ActiveFilter === 'pinned' ? 'active' : ''}" onclick="setP3Filter('pinned')">📌 星标 (2)</div>
+        </div>
+
+        <!-- 统一主时间轴单容器 -->
+        <div class="custom-scroll" style="padding-top:6px;">
+          ${p3ActiveFilter === 'all' || p3ActiveFilter === 'active' ? `
+            <div class="time-group-label" style="color:var(--accent);">⚡ 活跃与运行中 (5)</div>
+            ${renderRunningCards()}
+          ` : ''}
+
+          ${p3ActiveFilter !== 'active' ? `
+            <div class="time-group-label">历史归档</div>
+            ${renderHistoryCardsWithTimeGroups()}
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function setP3Filter(filter) {
+      p3ActiveFilter = filter;
+      renderScheme3(document.getElementById('dynamicSidebarBody'));
+    }
+
+    // --- 方案 4 渲染逻辑 (Tree) ---
+    function renderScheme4(container) {
+      container.innerHTML = `
+        <div class="custom-scroll" style="padding: 10px 0;">
+          <!-- 项目 1 -->
+          <div class="p4-proj-node">
+            <div class="p4-proj-header" style="color:#fff;">
+              <span style="display:flex; align-items:center; gap:6px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
+                <span>📦 pi-web-ui</span>
+              </span>
+              <span style="font-size:10px; background:var(--accent-soft); color:var(--accent); padding:1px 6px; border-radius:99px;">3 运行中</span>
+            </div>
+            <div class="p4-sub-list">
+              <div class="time-group-label" style="padding-left:4px;">运行中</div>
+              ${renderHistoryRow(historyToday[0])}
+              ${renderHistoryRow(historyToday[1])}
+              <div class="time-group-label" style="padding-left:4px; margin-top:8px;">最近记录</div>
+              ${renderHistoryRow(historyToday[2])}
+              ${renderHistoryRow(historyToday[3])}
+            </div>
+          </div>
+
+          <!-- 项目 2 -->
+          <div class="p4-proj-node" style="margin-top:10px;">
+            <div class="p4-proj-header">
+              <span style="display:flex; align-items:center; gap:6px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"></path></svg>
+                <span>🌐 device-center-hub</span>
+              </span>
+              <span style="font-size:10px; color:var(--text-faint);">1 运行中 · 18 历史</span>
+            </div>
+          </div>
+
+          <!-- 设备 3 -->
+          <div class="p4-proj-node">
+            <div class="p4-proj-header">
+              <span style="display:flex; align-items:center; gap:6px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"></path></svg>
+                <span>💻 远程设备 (MacBook M2)</span>
+              </span>
+              <span style="font-size:10px; color:var(--green);">在线</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function selectItem(id) {
+      // 模拟点击卡片高亮
+      document.querySelectorAll('.sess-card').forEach(c => c.classList.remove('active'));
+      const target = event.currentTarget;
+      if (target) target.classList.add('active');
+    }
+
+    function handleSearch(val) {
+      const scrollEl = document.querySelector('.custom-scroll');
+      if (scrollEl) {
+        scrollEl.innerHTML = renderHistoryCardsWithTimeGroups(val);
+      }
+    }
+
+    // 初始化渲染方案 1
+    renderMockSidebar();
+  </script>
+</body>
+</html>

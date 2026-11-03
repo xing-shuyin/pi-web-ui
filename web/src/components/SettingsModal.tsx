@@ -1055,6 +1055,8 @@ export function SettingsModal({
 	}, [phClearConfirm]);
 	// Two-step uninstall confirm: which extension id is awaiting confirmation.
 	const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+	// Two-step uninstall confirm for agent engines (dsh, claude, codex, durable).
+	const [confirmEngineUninstallId, setConfirmEngineUninstallId] = useState<string | null>(null);
 	// Two-step uninstall confirm for UI plugins (<dataDir>/plugins).
 	const [confirmUiUninstall, setConfirmUiUninstall] = useState<string | null>(null);
 	/** 界面插件诊断展开态（插件 id → 展开；一次只展开一行）。 */
@@ -2433,8 +2435,10 @@ export function SettingsModal({
 										const status = engines.find((e) => e.id === item.id);
 										const isInstalled = item.id === "pi" || (status ? status.installed : false);
 										const isUpdating = Boolean(status?.updating);
+										const isUninstalling = Boolean(status?.uninstalling);
 										const hasUpdate = Boolean(isInstalled && status?.hasUpdate && status?.latestVersion);
 										const showUpdate = hasUpdate || isUpdating;
+										const canUninstall = item.id !== "pi" && isInstalled;
 
 										const handleInstall = (e: React.MouseEvent) => {
 											e.stopPropagation();
@@ -2445,8 +2449,20 @@ export function SettingsModal({
 
 										const handleUpdate = (e: React.MouseEvent) => {
 											e.stopPropagation();
-											if (isUpdating) return;
+											if (isUpdating || isUninstalling) return;
 											appSend({ type: "update_engine", engineId: item.id });
+										};
+
+										const handleUninstall = (e: React.MouseEvent) => {
+											e.stopPropagation();
+											if (isUninstalling || isUpdating) return;
+											if (isSelected) return;
+											if (confirmEngineUninstallId === item.id) {
+												setConfirmEngineUninstallId(null);
+												appSend({ type: "uninstall_engine", engineId: item.id });
+											} else {
+												setConfirmEngineUninstallId(item.id);
+											}
 										};
 
 										return (
@@ -2485,6 +2501,10 @@ export function SettingsModal({
 															<span className="engine-picker-item-tag uninstalled" style={{ marginLeft: 4 }}>
 																{t("engineNotInstalled")}
 															</span>
+														) : isUninstalling ? (
+															<span className="engine-picker-item-tag uninstalling" style={{ marginLeft: 4 }}>
+																{t("engineUninstalling")}
+															</span>
 														) : isUpdating ? (
 															<span className="engine-picker-item-tag update-available" style={{ marginLeft: 4 }}>
 																{t("engineUpdating")}
@@ -2502,36 +2522,65 @@ export function SettingsModal({
 															</span>
 														) : null}
 													</div>
-													{!isInstalled && item.installCommand && (
-														<button
-															type="button"
-															className="engine-picker-install-btn"
-															title={t("engineInstallTip")}
-															onClick={handleInstall}
-														>
-															<FiDownload className="engine-install-icon" />
-															<span>{t("engineInstall")}</span>
-														</button>
-													)}
-													{showUpdate && (
-														<button
-															type="button"
-															className="engine-picker-update-btn"
-															disabled={isUpdating}
-															title={
-																isUpdating
-																	? t("engineUpdating")
-																	: t("engineUpdateTip", {
-																			current: status?.version ?? "",
-																			latest: status?.latestVersion ?? "",
-																		})
-															}
-															onClick={handleUpdate}
-														>
-															<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
-															<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
-														</button>
-													)}
+													<div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+														{!isInstalled && item.installCommand && (
+															<button
+																type="button"
+																className="engine-picker-install-btn"
+																title={t("engineInstallTip")}
+																onClick={handleInstall}
+															>
+																<FiDownload className="engine-install-icon" />
+																<span>{t("engineInstall")}</span>
+															</button>
+														)}
+														{showUpdate && (
+															<button
+																type="button"
+																className="engine-picker-update-btn"
+																disabled={isUpdating || isUninstalling}
+																title={
+																	isUpdating
+																		? t("engineUpdating")
+																		: t("engineUpdateTip", {
+																				current: status?.version ?? "",
+																				latest: status?.latestVersion ?? "",
+																			})
+																}
+																onClick={handleUpdate}
+															>
+																<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
+																<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
+															</button>
+														)}
+														{canUninstall && (
+															<button
+																type="button"
+																data-testid={`settings-engine-uninstall-${item.id}`}
+																className={`engine-picker-uninstall-btn${confirmEngineUninstallId === item.id ? " confirm" : ""}`}
+																disabled={isUninstalling || isUpdating || isSelected}
+																title={
+																	isSelected
+																		? t("engineActiveNoUninstall")
+																		: isUninstalling
+																			? t("engineUninstalling")
+																			: confirmEngineUninstallId === item.id
+																				? t("engineUninstallConfirm")
+																				: t("engineUninstallTip")
+																}
+																onClick={handleUninstall}
+															>
+																<FiTrash2 className="engine-uninstall-icon" />
+																<span>
+																	{isUninstalling
+																		? t("engineUninstalling")
+																		: confirmEngineUninstallId === item.id
+																			? t("engineUninstallConfirm")
+																			: t("engineUninstall")}
+																</span>
+															</button>
+														)}
+													</div>
 												</div>
 												<div className="set-mode-desc">{t(item.descKey)}</div>
 											</button>
@@ -2596,8 +2645,10 @@ export function SettingsModal({
 										const status = engines.find((e) => e.id === item.id);
 										const isInstalled = item.id === "pi" || (status ? status.installed : false);
 										const isUpdating = Boolean(status?.updating);
+										const isUninstalling = Boolean(status?.uninstalling);
 										const hasUpdate = Boolean(isInstalled && status?.hasUpdate && status?.latestVersion);
 										const showUpdate = hasUpdate || isUpdating;
+										const canUninstall = item.id !== "pi" && isInstalled;
 
 										const handleInstall = (e: React.MouseEvent) => {
 											e.stopPropagation();
@@ -2608,8 +2659,20 @@ export function SettingsModal({
 
 										const handleUpdate = (e: React.MouseEvent) => {
 											e.stopPropagation();
-											if (isUpdating) return;
+											if (isUpdating || isUninstalling) return;
 											appSend({ type: "update_engine", engineId: item.id });
+										};
+
+										const handleUninstall = (e: React.MouseEvent) => {
+											e.stopPropagation();
+											if (isUninstalling || isUpdating) return;
+											if (isSelected) return;
+											if (confirmEngineUninstallId === item.id) {
+												setConfirmEngineUninstallId(null);
+												appSend({ type: "uninstall_engine", engineId: item.id });
+											} else {
+												setConfirmEngineUninstallId(item.id);
+											}
 										};
 
 										return (
@@ -2648,6 +2711,10 @@ export function SettingsModal({
 															<span className="engine-picker-item-tag uninstalled" style={{ marginLeft: 4 }}>
 																{t("engineNotInstalled")}
 															</span>
+														) : isUninstalling ? (
+															<span className="engine-picker-item-tag uninstalling" style={{ marginLeft: 4 }}>
+																{t("engineUninstalling")}
+															</span>
 														) : isUpdating ? (
 															<span className="engine-picker-item-tag update-available" style={{ marginLeft: 4 }}>
 																{t("engineUpdating")}
@@ -2665,36 +2732,65 @@ export function SettingsModal({
 															</span>
 														) : null}
 													</div>
-													{!isInstalled && item.installCommand && (
-														<button
-															type="button"
-															className="engine-picker-install-btn"
-															title={t("engineInstallTip")}
-															onClick={handleInstall}
-														>
-															<FiDownload className="engine-install-icon" />
-															<span>{t("engineInstall")}</span>
-														</button>
-													)}
-													{showUpdate && (
-														<button
-															type="button"
-															className="engine-picker-update-btn"
-															disabled={isUpdating}
-															title={
-																isUpdating
-																	? t("engineUpdating")
-																	: t("engineUpdateTip", {
-																			current: status?.version ?? "",
-																			latest: status?.latestVersion ?? "",
-																		})
-															}
-															onClick={handleUpdate}
-														>
-															<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
-															<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
-														</button>
-													)}
+													<div style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+														{!isInstalled && item.installCommand && (
+															<button
+																type="button"
+																className="engine-picker-install-btn"
+																title={t("engineInstallTip")}
+																onClick={handleInstall}
+															>
+																<FiDownload className="engine-install-icon" />
+																<span>{t("engineInstall")}</span>
+															</button>
+														)}
+														{showUpdate && (
+															<button
+																type="button"
+																className="engine-picker-update-btn"
+																disabled={isUpdating || isUninstalling}
+																title={
+																	isUpdating
+																		? t("engineUpdating")
+																		: t("engineUpdateTip", {
+																				current: status?.version ?? "",
+																				latest: status?.latestVersion ?? "",
+																			})
+																}
+																onClick={handleUpdate}
+															>
+																<FiRefreshCw className={`engine-update-icon${isUpdating ? " spinning" : ""}`} />
+																<span>{isUpdating ? t("engineUpdating") : t("engineUpdate")}</span>
+															</button>
+														)}
+														{canUninstall && (
+															<button
+																type="button"
+																data-testid={`settings-engine-uninstall-${item.id}`}
+																className={`engine-picker-uninstall-btn${confirmEngineUninstallId === item.id ? " confirm" : ""}`}
+																disabled={isUninstalling || isUpdating || isSelected}
+																title={
+																	isSelected
+																		? t("engineActiveNoUninstall")
+																		: isUninstalling
+																			? t("engineUninstalling")
+																			: confirmEngineUninstallId === item.id
+																				? t("engineUninstallConfirm")
+																				: t("engineUninstallTip")
+																}
+																onClick={handleUninstall}
+															>
+																<FiTrash2 className="engine-uninstall-icon" />
+																<span>
+																	{isUninstalling
+																		? t("engineUninstalling")
+																		: confirmEngineUninstallId === item.id
+																			? t("engineUninstallConfirm")
+																			: t("engineUninstall")}
+																</span>
+															</button>
+														)}
+													</div>
 												</div>
 												<div className="set-mode-desc">{t(item.descKey)}</div>
 											</button>

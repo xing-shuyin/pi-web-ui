@@ -132,6 +132,8 @@ export interface SubagentToolHost {
 	getPendingConsults?(parentId: string): Array<{ runId: string; requestId: string; questions: UiQuestion[] }>;
 	/** Track active polling by stable conversation identity across ownership transfers. */
 	setConsultWaiting?(parentId: string, waiting: boolean): void;
+	/** Whether a request is already queued as a steering message in parent conversation (#828). */
+	isRequestSteering?(parentId: string, requestId: string): boolean;
 	/** 创建子代理 conversation 并触发 prompt。`templateName` 可选：设置面板配置
 	 *  的子代理模板（角色 prompt + 技能/扩展白名单 + 可选模型 + 可选思考强度）；
 	 *  不传 = 按主会话默认配置。`model` 可选："provider/id"，显式指定本次子代理模型
@@ -1048,7 +1050,11 @@ export function makeSubagentTool(
 						for (const key of deliveredConsults) {
 							if (!liveKeys.has(key)) deliveredConsults.delete(key);
 						}
-						const requests = pending.filter((r) => !deliveredConsults.has(consultKey(parentId, r.runId, r.requestId)));
+						const requests = pending.filter(
+							(r) =>
+								!deliveredConsults.has(consultKey(parentId, r.runId, r.requestId)) &&
+								!host.isRequestSteering?.(parentId, r.requestId),
+						);
 						if (requests.length === 0) return;
 						for (const r of requests) deliveredConsults.add(consultKey(parentId, r.runId, r.requestId));
 						const result = { status: "needs_input", requests };

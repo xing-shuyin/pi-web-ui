@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { writeJsonAtomicSync } from "../atomic-file.js";
 import {
-	MAX_RESOURCE_LOCK_KEY_LENGTH,
-	MAX_RESOURCE_LOCKS_PER_TASK,
-	RESOURCE_LOCK_KEY_PATTERN,
 	type RoomActiveLock,
 	type RoomLockInfo,
 	type RoomLockWaiter,
 } from "../protocol.js";
 
+export const RESOURCE_LOCK_KEY_PATTERN = /^[a-zA-Z0-9_.:/-]+$/;
+export const MAX_RESOURCE_LOCKS_PER_TASK = 10;
+export const MAX_RESOURCE_LOCK_KEY_LENGTH = 256;
 export const DEFAULT_RESOURCE_LOCK_TTL_MS = 10 * 60 * 1000;
 
 export function isValidLockKey(key: unknown): boolean {

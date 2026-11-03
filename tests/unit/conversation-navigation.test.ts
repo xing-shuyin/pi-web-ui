@@ -9,6 +9,10 @@ const begin = source.indexOf("\t\t// Every conversation entry point");
 const end = source.indexOf('\t\tif (msg.type === "set_cwd" && msg.path)', begin);
 const navigation = source.slice(begin, end);
 
+const transitionBegin = source.indexOf('\t\tif (msg.type === "set_cwd" && msg.path)');
+const transitionEnd = source.indexOf("\t\tif (isWsOpen(ws)) {", transitionBegin);
+const transitionLogic = source.slice(transitionBegin, transitionEnd).replace(/\(s\?:\s*string\)/g, "(s)");
+
 afterEach(resetComposerSinks);
 
 describe("conversation navigation from group view", () => {
@@ -40,5 +44,44 @@ describe("conversation navigation from group view", () => {
 		registerSessionSwitchSink(leaveGroup);
 		runInNewContext(navigation, { msg, curState: null, notifySessionSwitch, dispatch: vi.fn() });
 		expect(leaveGroup).not.toHaveBeenCalled();
+	});
+
+	it("suppresses transition_start when target session matches currently active session (exact or substring)", () => {
+		const dispatch = vi.fn();
+		const curState = {
+			sessionId: "0191a07a-32d0-7208-b133-cf7870ab850e",
+			sessionFile: "E:/pi-web-ui/.sessions/--E--pi-web-ui--/2026-04-18_0191a07a-32d0-7208-b133-cf7870ab850e.jsonl",
+			conversationId: "c1",
+		};
+
+		// 1. 目标正是当前 sessionId
+		runInNewContext(transitionLogic, {
+			msg: { type: "switch_session", sessionId: "0191a07a-32d0-7208-b133-cf7870ab850e" },
+			curState,
+			dispatch,
+		});
+		expect(dispatch).not.toHaveBeenCalled();
+
+		// 2. 目标是截断的前缀/短 UUID 子串
+		runInNewContext(transitionLogic, {
+			msg: { type: "switch_session", sessionId: "1a07a-32d0-7208-b133-cf7870ab850e" },
+			curState,
+			dispatch,
+		});
+		expect(dispatch).not.toHaveBeenCalled();
+
+		// 3. 目标是不同会话时正常触发 transition_start
+		runInNewContext(transitionLogic, {
+			msg: { type: "switch_session", sessionId: "other-session-uuid" },
+			curState,
+			dispatch,
+		});
+		expect(dispatch).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "transition_start",
+				kind: "session",
+				target: "other-session-uuid",
+			}),
+		);
 	});
 });

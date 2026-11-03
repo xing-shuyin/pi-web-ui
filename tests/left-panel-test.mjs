@@ -90,7 +90,7 @@ if (
 let titles = await page.locator(".panel-left .panel-section-title").allTextContents();
 check(
 	"history title present in fresh state",
-	titles.some((t) => t.includes("历史对话")),
+	titles.some((t) => t.includes("历史")),
 	titles.join("|"),
 );
 check(

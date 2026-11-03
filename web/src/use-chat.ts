@@ -1054,8 +1054,11 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					(normSessionFile === normTarget ||
 						normSessionId === normTarget ||
 						normConvId === normTarget ||
+						(normSessionId && (normSessionId.includes(normTarget) || normTarget.includes(normSessionId))) ||
 						(normSessionFile &&
-							(normSessionFile.endsWith("/" + normTarget) || normTarget.endsWith("/" + normSessionFile))))
+							(normSessionFile.includes(normTarget) ||
+								normSessionFile.endsWith("/" + normTarget) ||
+								normTarget.endsWith("/" + normSessionFile))))
 				) {
 					nextTransition = null;
 				} else if (nextTransition.kind === "conversation" && normConvId === normTarget) {
@@ -2038,6 +2041,26 @@ export function useChat() {
 			const t = setTimeout(() => dispatch({ type: "transition_clear" }), 180);
 			return () => clearTimeout(t);
 		}
+		// 自愈守卫：若当前会话快照已到达且就绪，其会话标识（sessionId/sessionFile/conversationId）已与当前 transition.target 吻合，
+		// 说明内容早已完整上屏渲染，此 transition 为滞留孤儿状态，立即清除，绝不卡住界面。
+		const cur = chat.state;
+		if (cur && chat.ready) {
+			const normTarget = (chat.transition.target ?? "").trim().replace(/\\/g, "/").toLowerCase();
+			const normSid = (cur.sessionId ?? "").trim().replace(/\\/g, "/").toLowerCase();
+			const normFile = (cur.sessionFile ?? "").trim().replace(/\\/g, "/").toLowerCase();
+			const normCid = (cur.conversationId ?? "").trim().replace(/\\/g, "/").toLowerCase();
+			if (
+				normTarget &&
+				(normSid === normTarget ||
+					normFile === normTarget ||
+					normCid === normTarget ||
+					(normSid && (normSid.includes(normTarget) || normTarget.includes(normSid))) ||
+					(normFile && (normFile.includes(normTarget) || normTarget.includes(normFile))))
+			) {
+				dispatch({ type: "transition_clear" });
+				return;
+			}
+		}
 		const iv = setInterval(() => {
 			if (Date.now() - (chat.transition?.startedAt ?? 0) > 20_000) {
 				dispatch({ type: "transition_clear" });
@@ -2046,7 +2069,7 @@ export function useChat() {
 			dispatch({ type: "transition_tick" });
 		}, 160);
 		return () => clearInterval(iv);
-	}, [chat.transition]);
+	}, [chat.transition, chat.state, chat.ready]);
 
 	const send = useCallback((msg: ClientMessage) => {
 		const ws = wsRef.current;
@@ -2118,7 +2141,13 @@ export function useChat() {
 			const curSid = norm(curState?.sessionId);
 			const curCid = norm(curState?.conversationId);
 			const tgt = norm(msg.path || msg.sessionId);
-			if (tgt && tgt !== cur && tgt !== curSid && tgt !== curCid) {
+			const matchesCurrent =
+				tgt === cur ||
+				tgt === curSid ||
+				tgt === curCid ||
+				(curSid && (curSid.includes(tgt) || tgt.includes(curSid))) ||
+				(cur && (cur.includes(tgt) || tgt.includes(cur)));
+			if (tgt && !matchesCurrent) {
 				dispatch({
 					type: "transition_start",
 					kind: "session",

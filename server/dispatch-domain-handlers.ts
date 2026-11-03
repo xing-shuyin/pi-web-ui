@@ -447,6 +447,13 @@ export function handleSessionLifecycleMessage(
 	msg: ClientMessage,
 	cs: DispatchSession,
 	send?: (message: ServerMessage) => void,
+	daemon?: {
+		dismissConversation?: (
+			clientId: string,
+			msg: { id: string; withFinishedSubagents?: boolean; force?: boolean; owner?: string },
+		) => Promise<boolean>;
+	},
+	clientId?: string,
 ): boolean {
 	switch (msg.type) {
 		case "new_chat": {
@@ -505,7 +512,11 @@ export function handleSessionLifecycleMessage(
 			void cs.renameConversation(msg.id, msg.name);
 			return true;
 		case "dismiss_conversation":
-			void cs.dismissConversation(msg.id, msg.withFinishedSubagents, msg.force);
+			if (clientId && daemon?.dismissConversation) {
+				void daemon.dismissConversation(clientId, msg);
+			} else {
+				void cs.dismissConversation(msg.id, msg.withFinishedSubagents, msg.force);
+			}
 			return true;
 		case "persist_conversation":
 			void cs.persistConversation?.(msg.id);
