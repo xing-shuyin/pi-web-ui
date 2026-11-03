@@ -27,6 +27,7 @@ import {
 	deriveLegacy,
 	effectiveDisabledAgentTools,
 	EVAL_TOOL_NAME,
+	GROUP_BOT_TOOL_CATALOG,
 	foldLegacyIntoDisabled,
 	isAgentToolEnabled,
 	isKnownAgentTool,
@@ -82,9 +83,9 @@ describe("catalog", () => {
 		expect(CORE_TOOL_CATALOG.filter((c) => c.name !== "powershell").every((c) => c.defaultOn)).toBe(true);
 	});
 
-	it("ALL_AGENT_TOOL_ENTRIES 汇总核心与可开关目录，默认禁用声明式派生", () => {
+	it("ALL_AGENT_TOOL_ENTRIES 汇总核心、可开关与群组目录，默认禁用声明式派生", () => {
 		expect(ALL_AGENT_TOOL_ENTRIES.map((tool) => tool.name)).toEqual(
-			[...CORE_TOOL_CATALOG, ...AGENT_TOOL_CATALOG].map((tool) => tool.name),
+			[...CORE_TOOL_CATALOG, ...AGENT_TOOL_CATALOG, ...GROUP_BOT_TOOL_CATALOG].map((tool) => tool.name),
 		);
 		const expectedOff = ALL_AGENT_TOOL_ENTRIES.filter((t) => !t.defaultOn).map((t) => t.name);
 		expect(defaultDisabledAgentTools()).toEqual(expectedOff);

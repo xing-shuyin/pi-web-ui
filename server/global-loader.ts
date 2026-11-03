@@ -13,38 +13,134 @@
  * 4. 基于 file:// URL 协议跨环境穿透动态导入 ESM 模块（dynamicImportGlobalPackage）。
  */
 
-import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-let cachedNpmRootG: string | null = null;
+// undefined = 尚未解析；null = 已解析但系统里没有 npm 全局 root
+let cachedNpmRootG: string | null | undefined;
 let cachedCandidateRoots: string[] | null = null;
 let candidateRootsCachedAt = 0;
 const CANDIDATE_CACHE_TTL_MS = 5000;
 const packageRootCache = new Map<string, string | null>();
 
-/**
- * 安全且带缓存地获取系统 npm 全局 root 目录。
- */
-export function getSystemNpmRootG(): string | null {
-	if (cachedNpmRootG !== null) return cachedNpmRootG;
+/** npm 显式指定的配置文件（npm 自己也认这两个环境变量）。 */
+function npmrcOverrides(): { user: string | null; global: string | null } {
+	const env = process.env;
+	const user = env.npm_config_userconfig || env.NPM_CONFIG_USERCONFIG || null;
+	const globalConfig = env.npm_config_globalconfig || env.NPM_CONFIG_GLOBALCONFIG || null;
+	return { user, global: globalConfig };
+}
 
+/** prefix 候选（不含 npmrc）：环境变量优先，其余来自运行中的 node 二分进制。 */
+function envPrefixes(): string[] {
+	const out: string[] = [];
+	for (const p of [process.env.npm_config_prefix, process.env.NPM_CONFIG_PREFIX]) {
+		if (p) out.push(p);
+	}
+	return out;
+}
+
+/**
+ * 默认 prefix：npm 在 POSIX 上取 node 可执行文件的安装前缀，在 Windows 上取 %APPDATA%\npm。
+ */
+function defaultPrefixes(): string[] {
+	const out: string[] = [];
+	// Windows：npm 的全局 prefix 是 %APPDATA%\npm，跟 node 的安装目录无关，所以排在前面
+	if (process.platform === "win32" && process.env.APPDATA) out.push(join(process.env.APPDATA, "npm"));
 	try {
-		const out = execSync("npm root -g", {
-			timeout: 2500,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-			shell: process.platform === "win32" ? "cmd.exe" : undefined,
-			windowsHide: true,
-		}).trim();
-		if (out && existsSync(out)) {
-			cachedNpmRootG = resolve(out);
-			return cachedNpmRootG;
-		}
+		const nodeDir = dirname(process.execPath);
+		out.push(join(nodeDir, ".."), nodeDir);
 	} catch {
 		/* ignore */
+	}
+	return out;
+}
+
+/**
+ * npmrc 候选位置：显式覆盖 > 用户级 > 各 prefix 的 etc/npmrc > 平台固定路径（顺序同 npm）。
+ */
+function npmrcLocations(prefixes: string[]): string[] {
+	const env = process.env;
+	const home = env.HOME || env.USERPROFILE || homedir();
+	const isWin = process.platform === "win32";
+	const { user, global } = npmrcOverrides();
+
+	const locations: string[] = [];
+	if (user) locations.push(user);
+	locations.push(join(home, ".npmrc"));
+	if (global) locations.push(global);
+	for (const prefix of prefixes) locations.push(join(prefix, "etc", "npmrc"));
+	// 包管理器/系统的固定位置（Homebrew 在 Apple Silicon 上走 /opt/homebrew）
+	locations.push("/etc/npmrc", "/usr/etc/npmrc", "/usr/local/etc/npmrc", "/opt/homebrew/etc/npmrc");
+	if (isWin && env.APPDATA) locations.push(join(env.APPDATA, "npm", "etc", "npmrc"));
+	if (isWin && env.ProgramFiles) locations.push(join(env.ProgramFiles, "nodejs", "etc", "npmrc"));
+
+	return [...new Set(locations.map((loc) => resolve(loc)))];
+}
+
+/** 从给定位置读取 npmrc 里的 `prefix=`（纯解析，不执行 npm 本体）。 */
+function readNpmrcPrefixes(locations: string[]): string[] {
+	const home = process.env.HOME || process.env.USERPROFILE || homedir();
+	const prefixes: string[] = [];
+	for (const loc of locations) {
+		try {
+			if (!existsSync(loc)) continue;
+			for (const line of readFileSync(loc, "utf8").split(/\r?\n/)) {
+				const trimmed = line.trim();
+				if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) continue;
+				const m = trimmed.match(/^prefix\s*=\s*(.+)$/);
+				if (!m) continue;
+				let value = m[1].trim();
+				if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+					value = value.slice(1, -1).trim();
+				}
+				if (value.startsWith("~")) value = join(home, value.slice(1));
+				if (value && isAbsolute(value)) prefixes.push(resolve(value));
+			}
+		} catch {
+			/* 配置不可读就跳过，继续下一个位置 */
+		}
+	}
+	return prefixes;
+}
+
+/**
+ * npm 全局 prefix 候选，优先级同 npm 自身：环境变量 > npmrc 的 prefix= > 默认安装位置。
+ */
+function npmPrefixCandidates(): string[] {
+	const env = envPrefixes();
+	const defaults = defaultPrefixes();
+	const fromNpmrc = readNpmrcPrefixes(npmrcLocations([...env, ...defaults]));
+	return [...new Set([...env, ...fromNpmrc, ...defaults].filter(Boolean).map((p) => resolve(p)))];
+}
+
+/**
+ * 安全且带缓存地获取系统 npm 全局 root 目录。
+ *
+ * 纯计算，不再同步执行 `npm root -g`。此前的实现用 execSync 跑这条 npm 命令，而它在
+ * 引擎探测的热路径上（probeAllEngines → probeGlobalPackage → getCandidateNodeModulesRoots，
+ * 客户端每次请求都可能触发）。同步 spawn 在主线程上做 fork+exec，一旦子进程卡在 exec 之前，
+ * 主线程就会永远阻塞在 spawn 错误管道的 read 上，整个事件循环定格（Termux/libuv 上实测的假死）。
+ * prefix 完全可以静态推导，代价只有几次 existsSync。
+ */
+export function getSystemNpmRootG(): string | null {
+	if (cachedNpmRootG !== undefined) return cachedNpmRootG;
+
+	// npm 在 POSIX 上装进 <prefix>/lib/node_modules，在 Windows 上装进 <prefix>/node_modules
+	const layouts =
+		process.platform === "win32"
+			? ["node_modules", join("lib", "node_modules")]
+			: [join("lib", "node_modules"), "node_modules"];
+	for (const prefix of npmPrefixCandidates()) {
+		for (const layout of layouts) {
+			const root = join(prefix, layout);
+			if (existsSync(root)) {
+				cachedNpmRootG = resolve(root);
+				return cachedNpmRootG;
+			}
+		}
 	}
 
 	cachedNpmRootG = null;
@@ -63,8 +159,8 @@ export function getCandidateNodeModulesRoots(options?: { refresh?: boolean }): s
 	) {
 		return cachedCandidateRoots;
 	}
-	// A refreshed discovery must also re-query npm when its prefix changed.
-	cachedNpmRootG = null;
+	// 重新发现时也要重新推导 npm 全局 root（prefix 可能被改过）
+	cachedNpmRootG = undefined;
 
 	const candidates = new Set<string>();
 

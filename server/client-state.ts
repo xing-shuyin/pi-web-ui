@@ -15,6 +15,7 @@ import { normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
 import { deriveLegacy, legacyToDisabled, normalizeDisabledAgentTools } from "./tool-manager.js";
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
+import { DEFAULT_PROMPT_DISABLED } from "./prompt-composer.js";
 import type { EngineId, QueueMode, UiAlign, UiLayoutPrefs, UiSlotId } from "./protocol.js";
 
 /** System-prompt mode: append the custom text to the built prompt, or replace
@@ -25,6 +26,19 @@ export type PromptMode = "append" | "replace";
 /** Persisted queue modes fall back to processing all queued messages. */
 export function normalizeQueueMode(value: unknown): QueueMode {
 	return value === "one-at-a-time" ? value : "all";
+}
+
+export function normalizePromptDisabled(
+	stored?: { promptDisabled?: string[]; _promptPluginDevConfigured?: boolean } | null,
+): string[] {
+	if (!stored || stored.promptDisabled === undefined) {
+		return [...DEFAULT_PROMPT_DISABLED];
+	}
+	const list = [...stored.promptDisabled];
+	if (!stored._promptPluginDevConfigured && !list.includes("plugin_dev")) {
+		list.push("plugin_dev");
+	}
+	return list;
 }
 
 /** 大模型 API 出错自动重试次数的默认值（SDK 默认 3）。 */
@@ -345,6 +359,8 @@ export interface ClientSettings {
 	promptOverrides: Record<string, string>;
 	/** 禁用的提示词分段 token（模板命中直接展开为空串，覆盖也不生效）。 */
 	promptDisabled: string[];
+	/** 标记用户是否已显式配置过 plugin_dev 提示词段落，防止存量存档无感知开启。 */
+	_promptPluginDevConfigured?: boolean;
 	/** 逐工具文案覆盖（工具名 → description/promptSnippet/promptGuidelines；
 	 *  缺省 = 全部默认，见 server/tool-prompt-overrides.ts）。 */
 	toolPromptOverrides: ToolPromptOverrideMap;
@@ -1214,7 +1230,8 @@ export class ClientStateStore {
 			customSystemPrompt: stored?.customSystemPrompt ?? "",
 			promptTemplate,
 			promptOverrides,
-			promptDisabled: stored?.promptDisabled ?? [],
+			promptDisabled: normalizePromptDisabled(stored),
+			_promptPluginDevConfigured: stored?._promptPluginDevConfigured,
 			toolPromptOverrides: normalizeToolPromptOverrides(stored?.toolPromptOverrides),
 			disabledSkills: stored?.disabledSkills ?? [],
 			disabledExtensions: stored?.disabledExtensions ?? [],
@@ -1322,7 +1339,12 @@ export class ClientStateStore {
 			customSystemPrompt: settings.customSystemPrompt ?? cur.customSystemPrompt ?? "",
 			promptTemplate: settings.promptTemplate ?? cur.promptTemplate ?? "",
 			promptOverrides: { ...(settings.promptOverrides ?? cur.promptOverrides) },
-			promptDisabled: settings.promptDisabled ?? cur.promptDisabled ?? [],
+			promptDisabled:
+				settings.promptDisabled !== undefined
+					? [...settings.promptDisabled]
+					: (cur.promptDisabled ?? [...DEFAULT_PROMPT_DISABLED]),
+			_promptPluginDevConfigured:
+				settings.promptDisabled !== undefined ? true : (cur._promptPluginDevConfigured ?? false),
 			toolPromptOverrides: normalizeToolPromptOverrides(settings.toolPromptOverrides ?? cur.toolPromptOverrides),
 			disabledSkills: settings.disabledSkills ?? cur.disabledSkills ?? [],
 			disabledExtensions: settings.disabledExtensions ?? cur.disabledExtensions ?? [],

@@ -21,6 +21,7 @@ import {
 	loadExecutionSettings,
 	saveExecutionSettings,
 	validateExecutionSettings,
+	DEFAULT_EXECUTION_SETTINGS,
 	DeviceExecutionSettingsError,
 } from "../../server/device-center/execution-settings.js";
 import { DeviceTaskScheduler } from "../../server/device-center/task-scheduler.js";
@@ -212,13 +213,13 @@ describe("device-collaboration-boundaries", () => {
 
 		it("saveExecutionSettings writes atomically and loadExecutionSettings restores cleanly", () => {
 			const saved = saveExecutionSettings(dataDir, { maxActiveTasks: 8, maxWaitingTasks: 64 });
-			expect(saved).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 64 });
+			expect(saved).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 64 });
 
 			const loaded = loadExecutionSettings(dataDir);
-			expect(loaded).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 64 });
+			expect(loaded).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 64 });
 
 			const onDisk = JSON.parse(readFileSync(join(dataDir, "execution-settings.json"), "utf8"));
-			expect(onDisk).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 64 });
+			expect(onDisk).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 64 });
 		});
 
 		it("runtime.updateExecutionSettings persists to disk before applying to scheduler", () => {
@@ -240,18 +241,34 @@ describe("device-collaboration-boundaries", () => {
 
 			// 合法更新
 			const updated = runtime.updateExecutionSettings({ maxActiveTasks: 6, maxWaitingTasks: 20 });
-			expect(updated).toEqual({ maxActiveTasks: 6, maxWaitingTasks: 20 });
-			expect(runtime.getSchedulerSnapshot().settings).toEqual({ maxActiveTasks: 6, maxWaitingTasks: 20 });
+			expect(updated).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 6, maxWaitingTasks: 20 });
+			expect(runtime.getSchedulerSnapshot().settings).toEqual({
+				...DEFAULT_EXECUTION_SETTINGS,
+				maxActiveTasks: 6,
+				maxWaitingTasks: 20,
+			});
 
 			// 检查磁盘也已同步
-			expect(loadExecutionSettings(dataDir)).toEqual({ maxActiveTasks: 6, maxWaitingTasks: 20 });
+			expect(loadExecutionSettings(dataDir)).toEqual({
+				...DEFAULT_EXECUTION_SETTINGS,
+				maxActiveTasks: 6,
+				maxWaitingTasks: 20,
+			});
 
 			// 传入非法配置必须被抛错拦截，且内存和磁盘维持原样
 			expect(() => runtime.updateExecutionSettings({ maxActiveTasks: 9999, maxWaitingTasks: 20 })).toThrow(
 				DeviceExecutionSettingsError,
 			);
-			expect(runtime.getSchedulerSnapshot().settings).toEqual({ maxActiveTasks: 6, maxWaitingTasks: 20 });
-			expect(loadExecutionSettings(dataDir)).toEqual({ maxActiveTasks: 6, maxWaitingTasks: 20 });
+			expect(runtime.getSchedulerSnapshot().settings).toEqual({
+				...DEFAULT_EXECUTION_SETTINGS,
+				maxActiveTasks: 6,
+				maxWaitingTasks: 20,
+			});
+			expect(loadExecutionSettings(dataDir)).toEqual({
+				...DEFAULT_EXECUTION_SETTINGS,
+				maxActiveTasks: 6,
+				maxWaitingTasks: 20,
+			});
 		});
 	});
 

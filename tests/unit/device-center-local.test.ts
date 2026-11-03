@@ -5,6 +5,7 @@ import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installLocalDeviceCenter, normalizeHubUrl } from "../../server/device-center/local.js";
+import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -106,7 +107,7 @@ describe("local device enrollment", () => {
 		const app = express();
 		app.use(express.json());
 
-		let runtimeSettings = { maxActiveTasks: 4, maxWaitingTasks: 32 };
+		let runtimeSettings = { ...DEFAULT_EXECUTION_SETTINGS };
 		let cancelledTask: string | undefined;
 
 		const mockRuntime = {
@@ -172,18 +173,18 @@ describe("local device enrollment", () => {
 		const initialRes = await fetch(`${base}/api/device-center/execution-settings`);
 		expect(initialRes.status).toBe(200);
 		const initialData = await initialRes.json();
-		expect(initialData.settings).toEqual({ maxActiveTasks: 4, maxWaitingTasks: 32 });
+		expect(initialData.settings).toEqual(DEFAULT_EXECUTION_SETTINGS);
 
 		// 2. Successful POST update settings
 		const updateRes = await post("execution-settings", { maxActiveTasks: 8, maxWaitingTasks: 40 });
 		expect(updateRes.status).toBe(200);
 		const updateData = await updateRes.json();
-		expect(updateData.settings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
-		expect(runtimeSettings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(updateData.settings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(runtimeSettings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
 		// Verify persisted file content
 		const savedContent = JSON.parse(await readFile(join(dir, "execution-settings.json"), "utf8"));
-		expect(savedContent).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(savedContent).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
 		// 3. Failed POST with unknown field returns 400 and preserves existing settings
 		const badRes = await post("execution-settings", {
@@ -192,7 +193,7 @@ describe("local device enrollment", () => {
 			extra: "illegal",
 		});
 		expect(badRes.status).toBe(400);
-		expect(runtimeSettings).toEqual({ maxActiveTasks: 8, maxWaitingTasks: 40 });
+		expect(runtimeSettings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
 		// 4. GET execution queue snapshot
 		const queueRes = await fetch(`${base}/api/device-center/execution-queue`);

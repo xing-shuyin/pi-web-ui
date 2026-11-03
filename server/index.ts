@@ -273,6 +273,10 @@ const LOCALE_BASE_URL =
 function appVersion(): string {
 	return getAppVersion();
 }
+/** 本次服务进程的运行实例 id（ready 帧的 runId）：
+ *  重启即变，同一进程内所有连接共享。客户端用它区分「断线重连」与「新实例」，
+ *  决定问卷的已答 id 缓存 / 未确认答案能否保留（否则已答问卷会被在途旧快照复活）。 */
+const SERVER_RUN_ID = randomUUID();
 /** On-disk web-build id: the main JS bundle hash from the built index.html.
  *  Changes on every rebuild — stale pages compare and reload themselves.
  *  Declared near use (below webDist), not here: webDist is a const further
@@ -3554,6 +3558,9 @@ wss.on("connection", (ws) => {
 		// which a managed instance never runs.
 		appVersion: appVersion(),
 		buildId: buildId(),
+		// 本进程运行实例 id：客户端靠它区分「断线重连」与「换了新服务」，
+		// 决定已答问卷 id / 未确认答案能否跨连接保留（issue: 问卷无限重生）。
+		runId: SERVER_RUN_ID,
 		managed: MANAGED,
 		tabs: TABS ? [...TABS] : undefined,
 		service: SERVICE_INFO ?? undefined,

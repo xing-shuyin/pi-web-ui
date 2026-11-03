@@ -77,8 +77,41 @@ export function createDeviceRuntime(options: {
 		hubUrl: config.hubUrl,
 	});
 	const reportOutbox = createTaskReportOutbox(options.dataDir, config.deviceId, config.hubUrl);
+	const schedulerFile = options.dataDir ? join(options.dataDir, "task-scheduler-state.json") : undefined;
+	let schedulerSaveTimer: ReturnType<typeof setTimeout> | undefined;
+	let schedulerStatePending = false;
+	function loadSchedulerState(): unknown {
+		if (!schedulerFile) return undefined;
+		try {
+			return JSON.parse(readFileSync(schedulerFile, "utf8"));
+		} catch {
+			// Corrupt or missing fairness state only means a restart starts with neutral fairness.
+			return undefined;
+		}
+	}
+	function flushSchedulerState() {
+		if (!schedulerFile || !schedulerStatePending) return;
+		schedulerStatePending = false;
+		try {
+			writeJsonAtomicSync(schedulerFile, scheduler.snapshotState());
+		} catch {
+			/* fairness state is best-effort; never fail dispatch on persistence */
+		}
+	}
+	function scheduleSchedulerStateSave() {
+		if (!schedulerFile) return;
+		schedulerStatePending = true;
+		if (schedulerSaveTimer) return;
+		schedulerSaveTimer = setTimeout(() => {
+			schedulerSaveTimer = undefined;
+			flushSchedulerState();
+		}, 250);
+		schedulerSaveTimer.unref?.();
+	}
 	const scheduler = new DeviceTaskScheduler({
 		initialSettings: loadExecutionSettings(options.dataDir),
+		persistedState: loadSchedulerState(),
+		onChange: scheduleSchedulerStateSave,
 	});
 	const conflicts = (a: { botId: string; root: string }, b: { botId: string; root: string }) =>
 		a.botId === b.botId || executionRootsOverlap(a.root, b.root);
@@ -155,6 +188,7 @@ export function createDeviceRuntime(options: {
 				.digest("hex")
 				.slice(0, 32);
 			const scopedDataDir = join(options.dataDir, "scoped-transfers", scopeToken);
+			const currentSettings = scheduler.getSettings();
 			entry = {
 				roomId,
 				botId,
@@ -163,6 +197,11 @@ export function createDeviceRuntime(options: {
 					root: lease.root,
 					dataDir: scopedDataDir,
 					allowReceive: config.allowExecution,
+					limits: {
+						bytes: currentSettings.fileSyncMaxBytes,
+						files: currentSettings.fileSyncMaxFiles,
+						stagedBytes: currentSettings.fileSyncStagedBytes,
+					},
 				}),
 			};
 			files.set(key, entry);
@@ -810,6 +849,9 @@ export function createDeviceRuntime(options: {
 		onDisconnect,
 		async close() {
 			closed = true;
+			if (schedulerSaveTimer) clearTimeout(schedulerSaveTimer);
+			schedulerSaveTimer = undefined;
+			flushSchedulerState();
 			await onDisconnect({ abortTasks: true });
 			await Promise.allSettled([...files.values()].map((entry) => entry.files.close()));
 			files.clear();

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { createDeviceHub } from "../../server/device-center/hub.js";
-import { DeviceHubStore } from "../../server/device-center/store.js";
+import { queueParentResult } from "../../server/device-center/hub-conversations.js";
+import { DeviceHubStore, readPersistedHub } from "../../server/device-center/store.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -205,12 +206,12 @@ describe("durable hub conversations", () => {
 		const answered = await request(`${path}/messages`, body, cookie);
 		expect(answered.status).toBe(200);
 		expect(onTask).toHaveBeenCalledTimes(1);
-		const queued = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		const queued = await readPersistedHub(dataDir);
 		expect(queued.conversations[0].latestTaskId).toBe(first.task.id);
-		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).status).toBe("queued");
-		expect(queued.conversations[0].taskState.decisions[0].answer).toBe("Option A");
-		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).rootTaskId).toBe(answered.body.task.id);
-		expect(queued.tasks.find((task: any) => task.id === answered.body.task.id).parentTaskId).toBeUndefined();
+		expect(queued.tasks.find((task) => task.id === answered.body.task.id)!.status).toBe("queued");
+		expect(queued.conversations[0].taskState!.decisions[0].answer).toBe("Option A");
+		expect(queued.tasks.find((task) => task.id === answered.body.task.id)!.rootTaskId).toBe(answered.body.task.id);
+		expect(queued.tasks.find((task) => task.id === answered.body.task.id)!.parentTaskId).toBeUndefined();
 		const followup = (await request(`${path}/messages`, { text: "Follow up", idempotencyKey: "follow-up" }, cookie))
 			.body.task;
 		expect(onTask).toHaveBeenCalledTimes(1);
@@ -224,7 +225,7 @@ describe("durable hub conversations", () => {
 			status: "completed",
 			report: "Waiting for a decision",
 		});
-		const saved = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		const saved = await readPersistedHub(dataDir);
 		expect(saved.conversations[0].attention).toBeUndefined();
 		expect(onTask).toHaveBeenCalledTimes(2);
 		expect(onTask.mock.calls[1][1].id).toBe(answered.body.task.id);
@@ -289,9 +290,9 @@ describe("durable hub conversations", () => {
 		expect(onTask).toHaveBeenCalledTimes(2);
 		expect((await request(base + "/" + cid, undefined, cookie)).body.messages).toHaveLength(3);
 		expect((await request("/api/rooms/" + room.id + "/clear", {}, cookie)).status).toBe(409);
-		const persisted = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		const persisted = await readPersistedHub(dataDir);
 		expect(persisted.conversations[0].id).toBe(cid);
-		expect(persisted.tasks.every((t: any) => !("context" in t))).toBe(true);
+		expect(persisted.tasks.every((t) => !("context" in t))).toBe(true);
 		await hub.store.transact((d) => {
 			d.bots[0].revision++;
 		});
@@ -582,5 +583,33 @@ describe("durable hub conversations", () => {
 		const reopened = await DeviceHubStore.open(dataDir);
 		expect(reopened.snapshot().tasks[0].status).toBe("interrupted");
 		expect(reopened.snapshot().conversations).toHaveLength(1);
+	});
+	it("respects custom limits for maxDispatchDepth and maxDispatchBudget in queueParentResult", () => {
+		const state: any = {
+			tasks: [
+				{ id: "parent-1", conversationId: "c-1" },
+				{ id: "root-1", dispatchCount: 2 },
+			],
+			conversations: [{ id: "c-1", botId: "bot-1", deviceId: "dev-1", botRevision: 1, closed: false }],
+			bots: [{ id: "bot-1", deviceId: "dev-1", revision: 1, enabled: true, accountId: "acc-1" }],
+			rooms: [{ id: "room-1", botIds: ["bot-1"] }],
+			conversationMessages: [],
+		};
+		const child: any = {
+			id: "child-1",
+			status: "completed",
+			parentTaskId: "parent-1",
+			rootTaskId: "root-1",
+			roomId: "room-1",
+			accountId: "acc-1",
+			botId: "bot-2",
+			report: "done",
+			dispatchDepth: 2,
+		};
+		expect(queueParentResult(state, { ...child, dispatchDepth: 2 }, { maxDispatchDepth: 2 })).toBeUndefined();
+		expect(queueParentResult(state, child, { maxDispatchBudget: 2 })).toBeUndefined();
+		const res = queueParentResult(state, child, { maxDispatchBudget: 5, maxDispatchDepth: 5 });
+		expect(res).toBeDefined();
+		expect(res?.kind).toBe("result");
 	});
 });

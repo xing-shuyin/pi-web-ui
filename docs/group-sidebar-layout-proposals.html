@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>侧栏与文件列表空间关系方案演示</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-elev: #14161c;
+    --bg-elev2: #1a1d26;
+    --bg-elev3: #222634;
+    --border: #262a35;
+    --border-soft: #1e2230;
+    --text: #e6e8ef;
+    --text-dim: #9aa1b4;
+    --text-faint: #6b7284;
+    --accent: #8b5cf6;
+    --accent-hover: #7c3aed;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(139, 92, 246, 0.15);
+    --green: #10b981;
+    --red: #ef4444;
+    --red-soft: rgba(239, 68, 68, 0.15);
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.15);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #060709;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 顶部全局方案控制器 */
+  .control-bar {
+    background: #111318;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  .control-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .control-title {
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .control-title span {
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .scheme-tabs {
+    display: flex;
+    background: var(--bg-elev);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    gap: 4px;
+  }
+  .scheme-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .scheme-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .scheme-btn.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+  }
+  .badge-rec {
+    background: #ff5e5e;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  /* 解释横幅 */
+  .explain-banner {
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-elev));
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    padding: 8px 20px;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .explain-banner strong { color: #fff; }
+  .explain-desc { color: var(--text-dim); }
+  .explain-tag {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #e2e8f0;
+  }
+
+  /* 完整 App 仿真容器 */
+  .app-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg);
+  }
+
+  /* 1. 左侧栏 (LeftPanel 仿真) */
+  .left-panel {
+    width: 240px;
+    background: var(--bg-elev);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .left-head {
+    padding: 12px 14px;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .left-list {
+    flex: 1;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .left-item {
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .left-item:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+  .left-item.active {
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-elev2));
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: #fff;
+    font-weight: 500;
+  }
+  .left-item-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* 2. 中间主区域 (main) */
+  .center-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* 群聊 Header */
+  .dg-head {
+    height: 44px;
+    padding: 0 18px;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 12px;
+  }
+  .dg-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dg-pill {
+    font-size: 11px;
+    background: var(--bg-elev2);
+    border: 1px solid var(--border-soft);
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .dg-pill-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+  /* 顶部药丸导航 */
+  .dg-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dg-tab-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dg-tab-btn:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+  .dg-tab-btn.active {
+    background: var(--bg-elev2);
+    color: #fff;
+    border-color: var(--border);
+  }
+  .dg-tab-btn.attention {
+    background: var(--amber-soft);
+    color: var(--amber);
+    border-color: color-mix(in srgb, var(--amber) 40%, transparent);
+  }
+  .badge-num {
+    padding: 1px 5px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--amber);
+    color: #000;
+  }
+
+  /* 任务轻量条 */
+  .dg-tasks-strip {
+    background: #11141a;
+    border-bottom: 1px solid var(--border);
+    padding: 5px 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    flex-shrink: 0;
+  }
+  .task-tag {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* 对话流区域 */
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .chat-container {
+    width: 100%;
+    max-width: 820px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* 消息卡片 */
+  .msg-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+  }
+  .msg-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .msg-avatar.user { background: #334155; color: #fff; }
+  .msg-avatar.bot { background: color-mix(in srgb, var(--accent) 25%, #181924); border: 1px solid var(--accent); color: #c4b5fd; }
+  .msg-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .msg-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .msg-meta strong { color: var(--text); }
+  .msg-bubble {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .mention-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    color: #c4b5fd;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .error-card {
+    background: var(--red-soft);
+    border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .error-title {
+    color: #f87171;
+    font-weight: 600;
+    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .error-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .btn-sm-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .btn-sm-secondary {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
+  /* 输入区 */
+  .chat-composer {
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+    flex-shrink: 0;
+  }
+  .composer-input-box {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-faint);
+    font-size: 12.5px;
+  }
+
+  /* =========================================================================
+     3. 方案 A：右栏融合 (RightPanel Tab 切换)
+     ========================================================================= */
+  .right-panel-a {
+    width: 380px;
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .rp-tabs-header {
+    height: 44px;
+    padding: 0 10px;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rp-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+  }
+  .rp-tab:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+  .rp-tab.active {
+    background: var(--bg-elev2);
+    color: #fff;
+    border-color: var(--border);
+    font-weight: 500;
+  }
+  .rp-tab .dot-ind {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+  .rp-content-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* 文件树内容卡片 */
+  .tree-node {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .tree-node:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+  .tree-node.file { padding-left: 20px; }
+
+  /* 待办交付卡片 */
+  .delivery-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .delivery-card strong { color: var(--text); font-size: 12.5px; }
+  .delivery-card p { color: var(--text-dim); font-size: 11.5px; }
+
+  /* Bot 状态卡片 */
+  .bot-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bot-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* =========================================================================
+     4. 方案 B：吃掉对话区黑边 (main 内部自划分栏 + 互斥)
+     ========================================================================= */
+  .scheme-b-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  .scheme-b-main-dialog {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .scheme-b-side-embedded {
+    width: 320px;
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.2s ease, opacity 0.2s ease;
+  }
+  .scheme-b-side-embedded.collapsed {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    border-left: none;
+  }
+  .global-file-panel-b {
+    width: 280px;
+    background: #0f1117;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.2s ease;
+  }
+  .global-file-panel-b.collapsed {
+    width: 0;
+    overflow: hidden;
+    border-left: none;
+  }
+
+  /* =========================================================================
+     5. 方案 C：右侧轻量浮层抽屉 (Drawer Overlay)
+     ========================================================================= */
+  .overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 200;
+    display: none;
+    animation: fadeIn 0.15s ease;
+  }
+  .overlay-backdrop.open {
+    display: block;
+  }
+  .drawer-panel-c {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 380px;
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.6);
+    z-index: 210;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .drawer-panel-c.open {
+    transform: translateX(0);
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* 提示与高亮标记 */
+  .interaction-hint-box {
+    background: #032b43;
+    border: 1px solid #0284c7;
+    color: #bae6fd;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 8px 14px 0 14px;
+  }
+
+  /* 动效与指示 */
+  .click-indicator {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    margin-left: 4px;
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 顶部方案切换器 -->
+<header class="control-bar">
+  <div class="control-left">
+    <div class="control-title">
+      <span>空间关系方案</span> 侧栏 vs 文件列表 vs 对话空间
+    </div>
+    <div class="scheme-tabs">
+      <button class="scheme-btn active" onclick="setScheme('A')" id="btn-scheme-A">
+        方案 A：整合进全局右栏 Tab <span class="badge-rec">最推荐</span>
+      </button>
+      <button class="scheme-btn" onclick="setScheme('B')" id="btn-scheme-B">
+        方案 B：吃掉对话区黑边 (互斥分栏)
+      </button>
+      <button class="scheme-btn" onclick="setScheme('C')" id="btn-scheme-C">
+        方案 C：右滑轻量浮层抽屉 (零挤压)
+      </button>
+    </div>
+  </div>
+  <div style="font-size:12px; color:var(--text-faint);">
+    点击上方方案可实时交互体验布局变换
+  </div>
+</header>
+
+<!-- 方案说明横幅 -->
+<div class="explain-banner" id="explain-banner">
+  <div>
+    <strong>方案 A 核心逻辑：</strong>
+    <span class="explain-desc">既不覆盖也不挤压对话！直接将群组专有的「👥 Bot 状态 / 📦 交付待办」作为平级 Tab 融入右侧全局面板（与「📁 文件列表」无缝切换）。</span>
+  </div>
+  <span class="explain-tag">绝不产生第 4 栏 · 屏幕零挤压</span>
+</div>
+
+<!-- 完整 App 三栏结构仿真 -->
+<div class="app-container" id="app-root">
+
+  <!-- ==================== 1. 左侧面板 (全局会话列表) ==================== -->
+  <aside class="left-panel">
+    <div class="left-head">
+      <span>会话与群组</span>
+      <span>+</span>
+    </div>
+    <div class="left-list">
+      <div class="left-item active">
+        <span class="left-item-dot"></span>
+        <span>联合开发 (当前群)</span>
+      </div>
+      <div class="left-item">
+        <span style="opacity:0.6;">💬</span>
+        <span>优化后端鉴权逻辑</span>
+      </div>
+      <div class="left-item">
+        <span style="opacity:0.6;">💬</span>
+        <span>前端样式回归验证</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== 2. 中间主区域 (main) ==================== -->
+  <main class="center-main" id="center-main-box">
+
+    <!-- 群聊 Header -->
+    <div class="dg-head">
+      <div class="dg-title">
+        <span>联合开发</span>
+        <span class="dg-pill"><span class="dg-pill-dot"></span> 2 台设备</span>
+      </div>
+      <div class="dg-nav" id="dg-head-nav-group">
+        <!-- 导航按钮在各方案中表现不同 -->
+        <button class="dg-tab-btn" id="head-btn-bots" onclick="handleHeadNav('bots')">
+          <span>👥 Bot 状态</span>
+        </button>
+        <button class="dg-tab-btn attention" id="head-btn-deliveries" onclick="handleHeadNav('deliveries')">
+          <span>📦 交付待办</span>
+          <span class="badge-num">1</span>
+        </button>
+        <button class="dg-tab-btn" id="head-btn-transfers" onclick="handleHeadNav('transfers')">
+          <span>📁 文件传输</span>
+        </button>
+      </div>
+      <div>
+        <button class="dg-tab-btn" style="border: 1px solid var(--border);">返回对话</button>
+      </div>
+    </div>
+
+    <!-- 方案 B 下的内部嵌入容器包装 -->
+    <div class="scheme-b-container" id="scheme-b-wrap">
+      
+      <!-- 主聊天流 -->
+      <div class="scheme-b-main-dialog">
+        <!-- 任务状态提示 -->
+        <div class="dg-tasks-strip">
+          <span style="color:var(--text-faint);">任务状态:</span>
+          <div class="task-tag">
+            <span style="width:6px; height:6px; border-radius:50%; background:var(--red);"></span>
+            <strong style="color:var(--accent);">@win</strong>
+            <span style="color:var(--text-dim);">优化代码 (模型异常中断)</span>
+          </div>
+        </div>
+
+        <!-- 聊天流 -->
+        <div class="chat-scroll">
+          <div class="chat-container">
+            
+            <div class="msg-row">
+              <div class="msg-avatar user">X</div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <strong>xingshuyin</strong> · DESKTOP-S1QKEI6 · 本地工作站
+                </div>
+                <div class="msg-bubble">
+                  <span class="mention-chip">🤖 @win · 远程机</span> 优化代码
+                </div>
+              </div>
+            </div>
+
+            <div class="msg-row">
+              <div class="msg-avatar bot">🤖</div>
+              <div class="msg-body">
+                <div class="msg-meta">
+                  <strong>win</strong> · Windows 11 远程工作机
+                </div>
+                <div class="error-card">
+                  <div class="error-title">
+                    <span>✕ 任务执行中断 (Execution Failed)</span>
+                    <span style="font-size:11px; color:var(--text-faint);">Phase: model</span>
+                  </div>
+                  <div style="font-size:12px; color:var(--text);">
+                    目标设备上的 Agent 运行时未获取到模型返回。远端任务上下文已安全留存。
+                  </div>
+                  <div class="error-actions">
+                    <button class="btn-sm-primary">🔄 重新运行</button>
+                    <button class="btn-sm-secondary">📋 查看诊断日志</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 底部输入框 -->
+        <div class="chat-composer">
+          <div class="composer-input-box">
+            <span>输入消息或 @ 目标 Bot...</span>
+            <span style="color:var(--accent);">↑</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 B 专属：吃掉主聊区右侧黑边的群侧栏 -->
+      <aside class="scheme-b-side-embedded collapsed" id="scheme-b-sidebar">
+        <div class="rp-tabs-header">
+          <span style="font-weight:600; font-size:12px; color:var(--text);">群协作工作台 (吃掉黑边)</span>
+          <button style="margin-left:auto; background:transparent; border:none; color:var(--text-faint); cursor:pointer;" onclick="toggleSchemeBSidebar()">✕</button>
+        </div>
+        <div class="rp-content-area">
+          <div class="interaction-hint-box">
+            💡 当前正利用中间主区右侧原本留白的区域，未压缩对话气泡。
+          </div>
+          <div class="delivery-card">
+            <strong>📦 待办：模块依赖重构方案</strong>
+            <p>由 @win 交付，包含 3 个新补丁文件，等待用户代码审查。</p>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+              <button class="btn-sm-primary">审查 Diff</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+  </main>
+
+  <!-- ==================== 3. 方案 A 视图：全局右栏 (RightPanel) 仿真 ==================== -->
+  <aside class="right-panel-a" id="panel-scheme-a">
+    <div class="rp-tabs-header">
+      <button class="rp-tab" id="rp-tab-files" onclick="switchRightTab('files')">
+        <span>📁 文件列表</span>
+      </button>
+      <button class="rp-tab active" id="rp-tab-deliveries" onclick="switchRightTab('deliveries')">
+        <span>📦 交付待办</span>
+        <span class="dot-ind"></span>
+      </button>
+      <button class="rp-tab" id="rp-tab-bots" onclick="switchRightTab('bots')">
+        <span>👥 Bot 协作 (2)</span>
+      </button>
+    </div>
+
+    <!-- 交互提示 -->
+    <div class="interaction-hint-box">
+      <span>👈 请点击上方 Tab：在「文件列表」与「交付待办」之间平滑切换！</span>
+    </div>
+
+    <!-- 右栏内容区 -->
+    <div class="rp-content-area" id="rp-content-a">
+      
+      <!-- 交付待办 Tab -->
+      <div id="view-deliveries">
+        <div style="font-size:11.5px; font-weight:600; color:var(--text-faint); margin-bottom:8px; text-transform:uppercase;">
+          待确认交付物 (1)
+        </div>
+        <div class="delivery-card">
+          <strong>接口重构补丁 (PR #102)</strong>
+          <p>提交者: @win · 远程工作机</p>
+          <p>修改了 src/protocol.ts 与 client.ts，等待主工程师确认。</p>
+          <div style="display:flex; gap:6px; margin-top:6px;">
+            <button class="btn-sm-primary">✓ 批准交付</button>
+            <button class="btn-sm-secondary">查看变更</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 文件列表 Tab -->
+      <div id="view-files" style="display:none;">
+        <div style="font-size:11.5px; font-weight:600; color:var(--text-faint); margin-bottom:8px; text-transform:uppercase;">
+          工作区文件树 (Files)
+        </div>
+        <div class="tree-node">📁 src/</div>
+        <div class="tree-node file">📄 protocol.ts</div>
+        <div class="tree-node file">📄 agent-service.ts</div>
+        <div class="tree-node file">📄 GroupConversation.tsx</div>
+        <div class="tree-node">📁 docs/</div>
+        <div class="tree-node file">📄 architecture-core.md</div>
+        <div class="tree-node">📄 package.json</div>
+      </div>
+
+      <!-- Bot 状态 Tab -->
+      <div id="view-bots" style="display:none;">
+        <div style="font-size:11.5px; font-weight:600; color:var(--text-faint); margin-bottom:8px; text-transform:uppercase;">
+          在线协作 Bot (2)
+        </div>
+        <div class="bot-card">
+          <div class="bot-card-head">
+            <strong style="color:var(--text);">@win (远程开发)</strong>
+            <span style="color:var(--red); font-size:11px;">执行异常</span>
+          </div>
+          <p style="color:var(--text-dim); font-size:11.5px;">设备: DESKTOP-S1QKEI6 · 工具: 9 项</p>
+        </div>
+        <div class="bot-card">
+          <div class="bot-card-head">
+            <strong style="color:var(--text);">@sol (测试节点)</strong>
+            <span style="color:var(--green); font-size:11px;">空闲待命</span>
+          </div>
+          <p style="color:var(--text-dim); font-size:11.5px;">设备: Linux-Node01 · 工具: 5 项</p>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ==================== 4. 方案 B 专属：右侧全局文件树 (可展开互斥) ==================== -->
+  <aside class="global-file-panel-b collapsed" id="panel-scheme-b-global-files">
+    <div class="rp-tabs-header">
+      <span style="font-weight:600; font-size:12px; color:var(--text);">📁 全局文件树</span>
+      <button style="margin-left:auto; background:transparent; border:none; color:var(--text-faint); cursor:pointer;" onclick="toggleSchemeBGlobalFiles()">✕</button>
+    </div>
+    <div class="rp-content-area">
+      <div class="interaction-hint-box" style="background:#2e1065; border-color:#7c3aed; color:#e9d5ff;">
+        ⚡ 文件树打开时，左侧群侧栏自动折叠，绝不挤压中间对话！
+      </div>
+      <div class="tree-node">📁 src/</div>
+      <div class="tree-node file">📄 protocol.ts</div>
+      <div class="tree-node file">📄 agent-service.ts</div>
+      <div class="tree-node">📄 package.json</div>
+    </div>
+  </aside>
+
+  <!-- ==================== 5. 方案 C 专属：右滑抽屉与背景遮罩 ==================== -->
+  <div class="overlay-backdrop" id="drawer-backdrop-c" onclick="closeDrawerC()"></div>
+  <aside class="drawer-panel-c" id="drawer-panel-c">
+    <div class="rp-tabs-header">
+      <span style="font-weight:600; font-size:13px; color:var(--text);">📦 交付与待办事项 (浮层抽屉)</span>
+      <button style="margin-left:auto; background:transparent; border:none; color:var(--text-faint); font-size:16px; cursor:pointer;" onclick="closeDrawerC()">✕</button>
+    </div>
+    <div class="rp-content-area">
+      <div class="interaction-hint-box">
+        ✨ 浮在所有内容上方（带轻度背景暗化），完全不改变任何底层的 DOM 布局！
+      </div>
+      <div class="delivery-card">
+        <strong>接口重构补丁 (PR #102)</strong>
+        <p>提交者: @win · 远程工作机</p>
+        <p>状态: 待用户审查后合并</p>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button class="btn-sm-primary">✓ 批准交付</button>
+          <button class="btn-sm-secondary">查看 Diff</button>
+        </div>
+      </div>
+      <div style="margin-top:10px; font-size:12px; color:var(--text-faint);">
+        点击左侧暗色空白区或右上角 ✕ 即可收缩抽屉。
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  let currentScheme = 'A';
+
+  function setScheme(scheme) {
+    currentScheme = scheme;
+    document.getElementById('btn-scheme-A').classList.toggle('active', scheme === 'A');
+    document.getElementById('btn-scheme-B').classList.toggle('active', scheme === 'B');
+    document.getElementById('btn-scheme-C').classList.toggle('active', scheme === 'C');
+
+    const banner = document.getElementById('explain-banner');
+    const panelA = document.getElementById('panel-scheme-a');
+    const sideB = document.getElementById('scheme-b-sidebar');
+    const globalFilesB = document.getElementById('panel-scheme-b-global-files');
+    const drawerC = document.getElementById('drawer-panel-c');
+    const backdropC = document.getElementById('drawer-backdrop-c');
+
+    if (scheme === 'A') {
+      banner.innerHTML = `
+        <div>
+          <strong>方案 A 核心逻辑：</strong>
+          <span class="explain-desc">既不覆盖也不挤压对话！直接将群组专有的「👥 Bot 状态 / 📦 交付待办」作为平级 Tab 融入右侧全局面板（与「📁 文件列表」无缝切换）。</span>
+        </div>
+        <span class="explain-tag">绝不产生第 4 栏 · 屏幕零挤压</span>
+      `;
+      panelA.style.display = 'flex';
+      sideB.classList.add('collapsed');
+      globalFilesB.classList.add('collapsed');
+      drawerC.classList.remove('open');
+      backdropC.classList.remove('open');
+    } else if (scheme === 'B') {
+      banner.innerHTML = `
+        <div>
+          <strong>方案 B 核心逻辑：</strong>
+          <span class="explain-desc">占用 main 对话区原本浪费的两侧大黑边；当打开全局文件树时，群侧栏自动折叠互斥，保持极佳宽度。</span>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-sm-secondary" onclick="toggleSchemeBSidebar()">切换群侧栏</button>
+          <button class="btn-sm-primary" onclick="toggleSchemeBGlobalFiles()">展开文件树(看互斥)</button>
+        </div>
+      `;
+      panelA.style.display = 'none';
+      sideB.classList.remove('collapsed');
+      globalFilesB.classList.add('collapsed');
+      drawerC.classList.remove('open');
+      backdropC.classList.remove('open');
+    } else if (scheme === 'C') {
+      banner.innerHTML = `
+        <div>
+          <strong>方案 C 核心逻辑：</strong>
+          <span class="explain-desc">右滑轻量浮层（Drawer Overlay）！点击顶部药丸按钮滑出，完全不改动底部的任何宽度，点空白即关。</span>
+        </div>
+        <button class="btn-sm-primary" onclick="openDrawerC()">打开浮层抽屉 ↗</button>
+      `;
+      panelA.style.display = 'none';
+      sideB.classList.add('collapsed');
+      globalFilesB.classList.add('collapsed');
+      openDrawerC();
+    }
+  }
+
+  // 方案 A：右栏 Tab 切换
+  function switchRightTab(tab) {
+    document.getElementById('rp-tab-files').classList.toggle('active', tab === 'files');
+    document.getElementById('rp-tab-deliveries').classList.toggle('active', tab === 'deliveries');
+    document.getElementById('rp-tab-bots').classList.toggle('active', tab === 'bots');
+
+    document.getElementById('view-files').style.display = tab === 'files' ? 'block' : 'none';
+    document.getElementById('view-deliveries').style.display = tab === 'deliveries' ? 'block' : 'none';
+    document.getElementById('view-bots').style.display = tab === 'bots' ? 'block' : 'none';
+  }
+
+  // 顶部药丸导航处理
+  function handleHeadNav(action) {
+    if (currentScheme === 'A') {
+      switchRightTab(action === 'bots' ? 'bots' : 'deliveries');
+    } else if (currentScheme === 'B') {
+      const sideB = document.getElementById('scheme-b-sidebar');
+      sideB.classList.remove('collapsed');
+      document.getElementById('panel-scheme-b-global-files').classList.add('collapsed');
+    } else if (currentScheme === 'C') {
+      openDrawerC();
+    }
+  }
+
+  // 方案 B 互斥切换
+  function toggleSchemeBSidebar() {
+    const sideB = document.getElementById('scheme-b-sidebar');
+    sideB.classList.toggle('collapsed');
+  }
+  function toggleSchemeBGlobalFiles() {
+    const filesB = document.getElementById('panel-scheme-b-global-files');
+    const sideB = document.getElementById('scheme-b-sidebar');
+    const willOpen = filesB.classList.contains('collapsed');
+    if (willOpen) {
+      filesB.classList.remove('collapsed');
+      // 互斥：文件树打开时，自动收起群侧栏，防止挤压对话
+      sideB.classList.add('collapsed');
+    } else {
+      filesB.classList.add('collapsed');
+      sideB.classList.remove('collapsed');
+    }
+  }
+
+  // 方案 C 抽屉开闭
+  function openDrawerC() {
+    document.getElementById('drawer-panel-c').classList.add('open');
+    document.getElementById('drawer-backdrop-c').classList.add('open');
+  }
+  function closeDrawerC() {
+    document.getElementById('drawer-panel-c').classList.remove('open');
+    document.getElementById('drawer-backdrop-c').classList.remove('open');
+  }
+</script>
+</body>
+</html>

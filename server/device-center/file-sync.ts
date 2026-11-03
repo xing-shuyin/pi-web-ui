@@ -26,7 +26,17 @@ export {
 	type TransferProgressState,
 };
 
-export const DEVICE_FILE_SYNC_LIMITS = Object.freeze({
+export interface DeviceFileSyncLimits {
+	bytes: number;
+	files: number;
+	staged: number;
+	stagedBytes: number;
+	visitedEntries: number;
+	exclusions: number;
+	exclusionBytes: number;
+}
+
+export const DEVICE_FILE_SYNC_LIMITS: DeviceFileSyncLimits = Object.freeze({
 	bytes: 8 * 1024 * 1024,
 	files: 128,
 	staged: 16,
@@ -86,7 +96,13 @@ const run = promisify(execFile);
  * deletion or implicit directory traversal (recursive export is opt-in). Staged transfers are process-local;
  * close/cancel remove only this instance's private transfer directories. Node
  * path checks cannot exclude a hostile OS user racing filesystem operations. */
-export function createDeviceFileSync(config: { root: string; dataDir: string; allowReceive: boolean }) {
+export function createDeviceFileSync(config: {
+	root: string;
+	dataDir: string;
+	allowReceive: boolean;
+	limits?: Partial<typeof DEVICE_FILE_SYNC_LIMITS>;
+}) {
+	const effectiveLimits = { ...DEVICE_FILE_SYNC_LIMITS, ...config.limits };
 	const root = resolve(config.root);
 	const dataDir = resolve(config.dataDir);
 	const allowReceive = config.allowReceive === true;
@@ -135,7 +151,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 	async function readFile(
 		path: string,
 		signal?: AbortSignal,
-		remainingBytes = DEVICE_FILE_SYNC_LIMITS.bytes,
+		remainingBytes = effectiveLimits.bytes,
 	): Promise<{ bytes: Buffer; snapshot: NonNullable<Snapshot> } | null> {
 		active(signal);
 		const full = await target(path, signal);
@@ -188,7 +204,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 			!Array.isArray(bundle.manifest.files) ||
 			!Array.isArray(bundle.files) ||
 			!bundle.files.length ||
-			bundle.files.length > DEVICE_FILE_SYNC_LIMITS.files ||
+			bundle.files.length > effectiveLimits.files ||
 			bundle.files.length !== bundle.manifest.files.length
 		)
 			throw new Error("Invalid bundle manifest");
@@ -206,7 +222,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 			if (
 				!Number.isSafeInteger(entry.size) ||
 				entry.size < 0 ||
-				(size += entry.size) > DEVICE_FILE_SYNC_LIMITS.bytes ||
+				(size += entry.size) > effectiveLimits.bytes ||
 				typeof entry.sha256 !== "string" ||
 				!/^[a-f0-9]{64}$/.test(entry.sha256) ||
 				file?.path !== path ||
@@ -228,7 +244,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 			const { exclusions, totalExcluded } = bundle.manifest;
 			if (
 				!Array.isArray(exclusions) ||
-				exclusions.length > DEVICE_FILE_SYNC_LIMITS.exclusions ||
+				exclusions.length > effectiveLimits.exclusions ||
 				!Number.isSafeInteger(totalExcluded) ||
 				totalExcluded! < exclusions.length ||
 				totalExcluded! < 1
@@ -239,7 +255,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 				if (item.reason !== "ignored" && item.reason !== "sensitive") throw new Error("Invalid exclusion reason");
 				return { path, reason: item.reason };
 			});
-			if (Buffer.byteLength(JSON.stringify(sanitized)) > DEVICE_FILE_SYNC_LIMITS.exclusionBytes)
+			if (Buffer.byteLength(JSON.stringify(sanitized)) > effectiveLimits.exclusionBytes)
 				throw new Error("Exclusions summary exceeds budget");
 			summary = { exclusions: sanitized, totalExcluded };
 		}
@@ -384,7 +400,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 		}): Promise<DeviceFileBundle> {
 			return serialized(async () => {
 				active(signal);
-				if (!Array.isArray(paths) || !paths.length || paths.length > DEVICE_FILE_SYNC_LIMITS.files)
+				if (!Array.isArray(paths) || !paths.length || paths.length > effectiveLimits.files)
 					throw new Error("Invalid file count");
 				if (typeof recursive !== "boolean") throw new Error("Invalid recursive option");
 				const selected = paths.map((path) => safePath(path)).sort();
@@ -408,8 +424,7 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 				const seen = new Set<string>();
 				const countVisit = () => {
 					active(signal);
-					if (++visited > DEVICE_FILE_SYNC_LIMITS.visitedEntries)
-						throw new Error("Directory scan entry budget exceeded");
+					if (++visited > effectiveLimits.visitedEntries) throw new Error("Directory scan entry budget exceeded");
 				};
 				const visit = async (path: string, selectedPath = false): Promise<void> => {
 					active(signal);
@@ -426,8 +441,8 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 						const item = { path, reason };
 						if (
 							!summaryFull &&
-							exclusions.length < DEVICE_FILE_SYNC_LIMITS.exclusions &&
-							Buffer.byteLength(JSON.stringify([...exclusions, item])) <= DEVICE_FILE_SYNC_LIMITS.exclusionBytes
+							exclusions.length < effectiveLimits.exclusions &&
+							Buffer.byteLength(JSON.stringify([...exclusions, item])) <= effectiveLimits.exclusionBytes
 						)
 							exclusions.push(item);
 						else summaryFull = true;
@@ -472,8 +487,8 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 						if (identity(after) !== identity(before)) throw new Error("Directory changed while scanning");
 						return;
 					}
-					if (++discoveredFiles > DEVICE_FILE_SYNC_LIMITS.files) throw new Error("Bundle exceeds file count budget");
-					const file = await readFile(path, signal, DEVICE_FILE_SYNC_LIMITS.bytes - bytes);
+					if (++discoveredFiles > effectiveLimits.files) throw new Error("Bundle exceeds file count budget");
+					const file = await readFile(path, signal, effectiveLimits.bytes - bytes);
 					active(signal);
 					if (!file) throw new Error("Source file does not exist");
 					bytes += file.bytes.length;
@@ -504,8 +519,8 @@ export function createDeviceFileSync(config: { root: string; dataDir: string; al
 				if (!allowReceive) throw new Error("Receiving files is disabled");
 				const bundle = validate(input);
 				if (
-					transfers.size >= DEVICE_FILE_SYNC_LIMITS.staged ||
-					total + bundle.manifest.totalBytes > DEVICE_FILE_SYNC_LIMITS.stagedBytes
+					transfers.size >= effectiveLimits.staged ||
+					total + bundle.manifest.totalBytes > effectiveLimits.stagedBytes
 				)
 					throw new Error("Staging budget exceeded");
 				const id = randomUUID();

@@ -50,6 +50,7 @@ import { PluginPage } from "./PluginPage";
 import { PluginSettingsForm } from "./PluginSettingsForm";
 import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
+import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
 import { SKILL_MARKETS, type SkillMarketCategory } from "../skill-catalog";
 import { SUPPORTED_ENGINES } from "./EnginePicker";
 import { Markdown } from "./Markdown";
@@ -138,6 +139,7 @@ import {
 import { QUICK_PHRASE_DEFAULTS } from "../quick-phrases";
 import {
 	DEFAULT_PROMPT_TEMPLATE,
+	DEFAULT_PROMPT_DISABLED,
 	PROMPT_TOKENS,
 	estimatePromptTokens,
 	isReadonlyPromptSource,
@@ -615,6 +617,7 @@ type SettingsTab =
 	| "presets"
 	| "dsh-presets"
 	| "subagent-templates"
+	| "device-collab"
 	| `plugin-page:${string}`;
 
 /** set_settings 允许的字段（原 setPartial 内联类型提出为具名类型，供乐观合并层复用）。 */
@@ -1434,6 +1437,17 @@ export function SettingsModal({
 					},
 				]
 			: []),
+		// 群组协作与执行（仅 Pi 引擎支持）
+		...(isPi
+			? [
+					{
+						id: "device-collab" as const,
+						icon: <FiShare2 />,
+						label: t("settingsDeviceCollab"),
+						hint: t("settingsDeviceCollabHint"),
+					},
+				]
+			: []),
 		// 插件自定义设置页（全引擎通用）
 		...pluginPages.map((p) => ({
 			id: pluginPageTabId(p.entry.id),
@@ -1511,6 +1525,7 @@ export function SettingsModal({
 		"prompt-history": "advanced",
 		scheduler: "advanced",
 		review: "advanced",
+		"device-collab": "advanced",
 	};
 
 	// 穿透搜索语义词库（输入 TTS、宽屏、软上限、延迟加载、只读等具体参数可穿透定位到所属 Tab）
@@ -1583,6 +1598,32 @@ export function SettingsModal({
 		presets: ["预设", "presets", "分享", "导出", "导入", "社区预设"],
 		"dsh-presets": ["dsh", "预设", "权限", "ptc", "极简模式"],
 		"subagent-templates": ["子代理", "subagent", "templates", "模板", "并发", "角色模板"],
+		"device-collab": [
+			"群组",
+			"群任务",
+			"设备",
+			"协作",
+			"并发",
+			"调度",
+			"派发",
+			"配额",
+			"限制",
+			"文件同步",
+			"上下文",
+			"黑板",
+			"锁",
+			"bot",
+			"mention",
+			"device",
+			"group",
+			"collaboration",
+			"scheduler",
+			"dispatch",
+			"quota",
+			"sync",
+			"blackboard",
+			"lock",
+		],
 	};
 
 	const GROUP_LABELS = {
@@ -2176,7 +2217,11 @@ export function SettingsModal({
 		promptTemplateDraftRef.current = DEFAULT_PROMPT_TEMPLATE;
 		setPromptOverridesDraft({});
 		promptOverridesDraftRef.current = {};
-		setPartial({ promptTemplate: DEFAULT_PROMPT_TEMPLATE, promptOverrides: {}, promptDisabled: [] });
+		setPartial({
+			promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+			promptOverrides: {},
+			promptDisabled: [...DEFAULT_PROMPT_DISABLED],
+		});
 	};
 
 	/** 点击 token 芯片追加：立即更新草稿并立即提交保存，不依赖后续失焦。 */
@@ -6514,18 +6559,17 @@ export function SettingsModal({
 																	<FiTrash2 />
 																</button>
 															)}
-															<label
-																className="smart-switch"
+															<button
+																type="button"
+																role="switch"
+																aria-checked={!isDisabled && !p.error}
+																disabled={Boolean(p.error)}
+																className={`set-switch${!isDisabled && !p.error ? " on" : ""}`}
 																title={!isDisabled ? t("pluginPhaseActive") : t("pluginPhaseDisabled")}
+																onClick={() => !p.error && togglePlugin(p)}
 															>
-																<input
-																	type="checkbox"
-																	checked={!isDisabled && !p.error}
-																	disabled={Boolean(p.error)}
-																	onChange={() => !p.error && togglePlugin(p)}
-																/>
-																<span className="smart-switch-slider" />
-															</label>
+																<span className="set-switch-knob" />
+															</button>
 														</div>
 													</div>
 
@@ -7314,6 +7358,9 @@ export function SettingsModal({
 								)}
 							</div>
 						)}
+
+						{/* ---- 群组协作与执行调度（仅 Pi 引擎支持） ---------- */}
+						{tab === "device-collab" && isPi && <DeviceExecutionSettings onNotice={() => triggerSyncState()} />}
 
 						{/* ---- approval rules（全局共享；DSH 引擎隐藏该分区） ---------- */}
 						{tab === "approval-rules" && !isDsh && (

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { createDeviceHub } from "../../server/device-center/hub.js";
+import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 import { DeviceHubStore, hashSecret } from "../../server/device-center/store.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
@@ -559,13 +560,14 @@ describe("device center hub", () => {
 		expect(populated.body.items.map((item: { type: string }) => item.type)).toEqual(["status", "progress"]);
 		expect(populated.body.items[1]).toMatchObject({ type: "progress", toolName: "read" });
 	});
-	it("dispatches only explicit room targets, enforces attempts and transitions, persists trusted reports", async () => {
+	it("dispatches explicit or server-resolved room mentions, enforces attempts and transitions, persists trusted reports", async () => {
 		const { hub, request, register, pair, onTask, dataDir } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Win Mac Linux", botIds: [device.botId] }, cookie)).body.room;
 		const path = `/api/rooms/${room.id}/messages`;
-		await request(path, { text: "@Windows hello", sender: "fake" }, cookie);
+		// The Hub resolves mentions against real room membership: names outside the room never dispatch.
+		await request(path, { text: "@Unknown hello", sender: "fake" }, cookie);
 		expect(onTask).not.toHaveBeenCalled();
 		const payload = {
 			text: "test on Mac",
@@ -763,10 +765,203 @@ describe("device center hub", () => {
 		expect((await request(`/api/devices/${id}/open`, {}, cookie)).body.url).toBe("https://device.test");
 		expect(handleOpen).toHaveBeenCalledTimes(1);
 	});
+	it("bounds group capacity by open conversations and frees it by deleting a stopped conversation", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "capacity", botIds: [device.botId] }, cookie)).body.room;
+		const send = (text: string, key: string) =>
+			request(`/api/rooms/${room.id}/messages`, { text, targetBotIds: [device.botId], idempotencyKey: key }, cookie);
+		const first = await send("first", "capacity-1");
+		expect(first.status).toBe(200);
+		const conversationId = first.body.tasks[0].conversationId;
+		// A long-lived room keeps a large closed archive; only open conversations may consume the budget.
+		await hub.store.transact((draft) => {
+			const template = draft.conversations.find((entry) => entry.id === conversationId)!;
+			for (let i = 0; i < 500; i++)
+				draft.conversations.push({
+					...template,
+					id: `closed-${i}`,
+					closed: true,
+					closedReason: "stopped",
+					updatedAt: i + 1,
+				});
+		});
+		expect((await send("second", "capacity-2")).status).toBe(200);
+		await hub.store.transact((draft) => {
+			const template = draft.conversations.find((entry) => entry.id === conversationId)!;
+			for (let i = 0; i < 500; i++)
+				draft.conversations.push({
+					...template,
+					id: `open-${i}`,
+					closed: false,
+					closedReason: undefined,
+					updatedAt: i + 1,
+				});
+		});
+		const full = await send("third", "capacity-3");
+		expect(full.status).toBe(409);
+		expect(full.body.error).toMatch(/open conversations/i);
+		// Stopping then deleting a conversation returns its capacity instead of forcing a room wipe.
+		await hub.store.transact((draft) => {
+			draft.conversations = draft.conversations.filter((entry) => !entry.id.startsWith("open-"));
+		});
+		// Complete the first turn so the conversation has no pending task when it is stopped and deleted.
+		const firstTask = first.body.tasks[0];
+		await hub.acceptTaskEvent(device.deviceId, {
+			botId: device.botId,
+			taskId: firstTask.id,
+			attemptId: firstTask.attemptId,
+			status: "running",
+		});
+		await hub.acceptTaskEvent(device.deviceId, {
+			botId: device.botId,
+			taskId: firstTask.id,
+			attemptId: firstTask.attemptId,
+			status: "completed",
+			report: "done",
+		});
+		hub.setRelay({ cancelTask: async () => ({ stopped: true }) });
+		expect((await request(`/api/rooms/${room.id}/conversations/${conversationId}/stop`, {}, cookie)).status).toBe(200);
+		const removed = await request(`/api/rooms/${room.id}/conversations/${conversationId}/delete`, {}, cookie);
+		expect(removed.status).toBe(200);
+		expect(hub.store.snapshot().conversations.some((entry) => entry.id === conversationId)).toBe(false);
+	});
+	it("keeps replay receipts after message retention evicts the message", async () => {
+		const { hub, request, register, pair, onTask } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "replay", botIds: [device.botId] }, cookie)).body.room;
+		const send = () =>
+			request(
+				`/api/rooms/${room.id}/messages`,
+				{ text: "retained work", targetBotIds: [device.botId], idempotencyKey: "replay-1" },
+				cookie,
+			);
+		expect((await send()).status).toBe(200);
+		// Retention removes the message row; the replay guard must survive it.
+		await hub.store.transact((draft) => {
+			draft.messages = draft.messages.filter((message) => message.roomId !== room.id);
+		});
+		expect((await send()).status).toBe(200);
+		expect(onTask).toHaveBeenCalledTimes(1);
+		expect(hub.store.snapshot().tasks.filter((task) => task.roomId === room.id)).toHaveLength(1);
+	});
+	it("resolves @mentions against room membership on the Hub", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const other = await pair(cookie, "Mac");
+		const room = (await request("/api/rooms", { name: "mentions", botIds: [device.botId, other.botId] }, cookie)).body
+			.room;
+		const path = `/api/rooms/${room.id}/messages`;
+		expect((await request(path, { text: "@Mac please build" }, cookie)).status).toBe(200);
+		expect(hub.store.snapshot().tasks[0].botId).toBe(other.botId);
+		// The composer sends @Name(<uuid>); the canonical id must resolve too.
+		expect((await request(path, { text: `@Windows(${device.botId}) run` }, cookie)).status).toBe(200);
+		expect(hub.store.snapshot().tasks[1].botId).toBe(device.botId);
+		await request(path, { text: "@Nobody hello" }, cookie);
+		expect(hub.store.snapshot().tasks).toHaveLength(2);
+	});
+	it("anchors replies to an existing room message and rejects foreign anchors", async () => {
+		const { request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "anchors", botIds: [device.botId] }, cookie)).body.room;
+		const path = `/api/rooms/${room.id}/messages`;
+		const parent = await request(path, { text: "parent", targetBotIds: [device.botId] }, cookie);
+		const messageId = parent.body.message.id;
+		const reply = await request(
+			path,
+			{ text: "child", targetBotIds: [device.botId], replyToMessageId: messageId },
+			cookie,
+		);
+		expect(reply.status).toBe(200);
+		expect(reply.body.message.replyToMessageId).toBe(messageId);
+		expect(
+			(await request(path, { text: "bad", targetBotIds: [device.botId], replyToMessageId: "missing" }, cookie)).status,
+		).toBe(400);
+	});
+	it("flags stale Bot revisions and closes conversations when their device is revoked", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "lifecycle", botIds: [device.botId] }, cookie)).body.room;
+		const sent = await request(
+			`/api/rooms/${room.id}/messages`,
+			{ text: "@Windows hello", targetBotIds: [device.botId] },
+			cookie,
+		);
+		const task = sent.body.tasks[0];
+		await hub.acceptTaskEvent(device.deviceId, {
+			botId: device.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			status: "running",
+		});
+		await hub.acceptTaskEvent(device.deviceId, {
+			botId: device.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			status: "completed",
+			report: "done",
+		});
+		const registered = await request(
+			"/api/agent/bots",
+			{ bots: [{ id: device.botId, name: "Windows", description: "test Bot", enabled: true, revision: 2 }] },
+			"",
+			{ Authorization: `Bearer ${device.credential}`, "X-Device-Id": device.deviceId },
+			"PUT",
+		);
+		expect(registered.status).toBe(200);
+		const conversations = (await request(`/api/rooms/${room.id}/conversations`, undefined, cookie)).body.conversations;
+		expect(conversations.find((entry: { id: string }) => entry.id === task.conversationId).stale).toBe(true);
+		await request(`/api/devices/${device.deviceId}/revoke`, {}, cookie);
+		const closed = (await request(`/api/rooms/${room.id}/conversations`, undefined, cookie)).body.conversations;
+		expect(closed.find((entry: { id: string }) => entry.id === task.conversationId)).toMatchObject({
+			closed: true,
+			closedReason: "device_revoked",
+		});
+	});
 	it("limits login attempts and JSON payload size", async () => {
 		const { request } = await fixture();
 		for (let i = 0; i < 10; i++) await request("/api/auth/login", { username: "missing", password: "wrong-password" });
 		expect((await request("/api/auth/login", { username: "missing", password: "wrong-password" })).status).toBe(429);
 		expect((await request("/api/pair/start", { name: "x".repeat(33000) })).status).toBe(413);
+	});
+	it("respects dynamic execution settings for blackboard limit and dispatch budget", async () => {
+		const currentSettings = {
+			...DEFAULT_EXECUTION_SETTINGS,
+			blackboardMaxBytes: 4096,
+			maxDispatchBudget: 2,
+		};
+		const { request, register, pair } = await fixture("https://hub.test", "devices.test", {
+			getSettings: () => currentSettings,
+		});
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "Limits Room", botIds: [device.botId] }, cookie)).body.room;
+
+		// Blackboard test: 5000 bytes exceeds 4096 bytes limit
+		const oversized = "a".repeat(5000);
+		const bbRes = await request(
+			`/api/rooms/${room.id}/blackboard`,
+			{ content: oversized, expectedVersion: 0 },
+			cookie,
+			undefined,
+			"PUT",
+		);
+		expect(bbRes.status).toBe(400);
+		expect(bbRes.body.error).toMatch(/exceeds/);
+
+		// Within custom blackboard limit
+		const validBb = await request(
+			`/api/rooms/${room.id}/blackboard`,
+			{ content: "hello world", expectedVersion: 0 },
+			cookie,
+			undefined,
+			"PUT",
+		);
+		expect(validBb.status).toBe(200);
 	});
 });

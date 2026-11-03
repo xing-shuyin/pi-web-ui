@@ -66,4 +66,32 @@ describe("group shared context", () => {
 		rows[99].text = "changed";
 		expect(context.messages.at(-1)?.text).not.toBe("changed");
 	});
+	it("compacts technical noise and stack traces cleanly", async () => {
+		const { compactHistoryNoise } = await import("../../server/device-center/group-context.js");
+		const rawFail =
+			"Device task failed [phase=model; category=timeout]. Remote inference timed out after 60s\n    at Timeout._onTimeout (node:internal/timers:571:17)\n    at listOnTimeout (node:internal/timers:528:9)";
+		const compacted = compactHistoryNoise(rawFail);
+		expect(compacted).toContain("[Device task failed: phase=model, category=timeout]");
+		expect(compacted).toContain("Remote inference timed out after 60s");
+		expect(compacted).not.toContain("node:internal/timers");
+	});
+	it("preserves blackboard consensus while strictly bounding total task context budget", () => {
+		const rows = Array.from({ length: 50 }, (_, index) => message(String(index), "对话内容".repeat(200)));
+		const blackboard = {
+			version: 1,
+			updatedAt: Date.now(),
+			updatedBy: { type: "human" as const, id: "u1", name: "Alice" },
+			content: "# 全局架构共识\n- 模块A使用接口v2\n- 统一错误返回格式",
+		};
+		const budget = 4096;
+		const context = groupTaskContext(
+			{ id: "room", name: "Team", accountId: "account", botIds: ["bot"], blackboard, createdAt: 1 },
+			[],
+			rows,
+			budget,
+		);
+		expect(context.blackboard).toBeDefined();
+		expect(context.blackboard?.content).toContain("全局架构共识");
+		expect(Buffer.byteLength(JSON.stringify(context))).toBeLessThanOrEqual(budget);
+	});
 });

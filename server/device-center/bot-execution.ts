@@ -13,6 +13,7 @@ export interface BotExecutionCapability {
 	readonly groupContext?: Readonly<GroupTaskContext>;
 	readonly authorizedResumePath?: string;
 	readonly planOnly?: boolean;
+	readonly attenuatedTools?: readonly string[];
 	assertActive(): void;
 	allowsToolRegistration(name: string): boolean;
 	allowsTool(name: string, params?: unknown): boolean;
@@ -25,6 +26,9 @@ const bindings = new Map<string, BotExecutionCapability>();
 const interactionReplies = new Map<string, string>();
 // Advisory only: these tools can create execution contexts or mutate host policy.
 const highPrivilegeTools = new Set([
+	"bash",
+	"powershell",
+	"terminal",
 	"conversation",
 	"subagent",
 	"worktree",
@@ -47,10 +51,25 @@ export function isBotToolHighPrivilege(name: string): boolean {
 	return highPrivilegeTools.has(name) || name.startsWith("subagent_") || name.startsWith("team_");
 }
 
+/** Compute tools that must be stripped due to capability attenuation when a task is dispatched cross-bot. */
+export function computeAttenuatedTools(
+	sourceTools: readonly string[] | string[],
+	targetTools: readonly string[] | string[],
+): string[] {
+	const sourceSet = new Set(sourceTools);
+	return targetTools.filter((tool) => isBotToolHighPrivilege(tool) && !sourceSet.has(tool));
+}
+
 export function registerBotExecution(
 	bot: LocalBot,
 	authorizedResumePath?: string,
-	context?: { primary: boolean; groupContext?: GroupTaskContext; planOnly?: boolean },
+	context?: {
+		primary?: boolean;
+		groupContext?: GroupTaskContext;
+		planOnly?: boolean;
+		attenuatedTools?: string[];
+		sourceBotId?: string;
+	},
 ): {
 	clientId: string;
 	capability: BotExecutionCapability;
@@ -79,30 +98,49 @@ export function registerBotExecution(
 		}
 		Object.freeze(groupContext.members);
 		Object.freeze(groupContext.messages);
+		if (groupContext.blackboard) {
+			Object.freeze(groupContext.blackboard.updatedBy);
+			Object.freeze(groupContext.blackboard);
+		}
 		Object.freeze(groupContext);
 	}
 	let active = true;
 	let model = snapshot.model;
 	const tools = new Set(snapshot.tools);
 	const skills = new Set(snapshot.skills);
+	const attenuatedList = context?.attenuatedTools ? Array.from(new Set(context.attenuatedTools)) : undefined;
+	const attenuatedSet = attenuatedList && attenuatedList.length > 0 ? new Set(attenuatedList) : undefined;
+	const sourceBotLabel = context?.sourceBotId ?? "unknown";
+	const attenuationWarning =
+		attenuatedList && attenuatedList.length > 0
+			? `\n\n[SECURITY ATTENUATION] This task originated from bot '${sourceBotLabel}' without privileges for [${attenuatedList.join(", ")}]. Those tools have been strictly disabled for this execution.`
+			: "";
+	const blackboardBlock = context?.groupContext?.blackboard
+		? `\n\n[GROUP BLACKBOARD v${context.groupContext.blackboard.version}]${context.groupContext.blackboard.title ? ` ${context.groupContext.blackboard.title}` : ""}\n${context.groupContext.blackboard.content}`
+		: "";
 	const capability: BotExecutionCapability = {
 		bot: snapshot,
 		instructions:
 			getBotExecutionInstructions(context?.primary === true) +
 			(context?.planOnly
 				? "\n\n[PLAN MODE HARD ENFORCEMENT]\nThis task is strictly PLAN ONLY. You are prohibited from mutating files, creating files, running state-changing terminal commands, or dispatching tasks. You must only read, inspect, and draft an executable plan via plan_update. Provide 1–32 steps with unique IDs, nonempty titles (max 200 characters), explicit pending/in_progress/done/failed status, and optional descriptions (max 1000 characters)."
-				: ""),
+				: "") +
+			attenuationWarning +
+			blackboardBlock,
 		groupContext,
 		authorizedResumePath,
 		planOnly: context?.planOnly === true,
+		attenuatedTools: attenuatedList ? Object.freeze([...attenuatedList]) : undefined,
 		assertActive() {
 			if (!active) throw new Error("Bot execution capability has been revoked");
 		},
 		allowsToolRegistration(name) {
+			if (attenuatedSet?.has(name)) return false;
 			return active && tools.has(name) && !isGroupToolForbiddenInPlanCatalog(name, context?.planOnly === true);
 		},
 		allowsTool(name, params) {
 			if (!active) return false;
+			if (attenuatedSet?.has(name)) return false;
 			if (context?.planOnly) {
 				if (name === "plan_update") return tools.has(name) && !checkGroupTaskPlanGuard(name, params, true);
 				const denial = checkGroupTaskPlanGuard(name, params, true);

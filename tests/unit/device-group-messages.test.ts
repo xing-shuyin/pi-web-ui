@@ -4,6 +4,9 @@ import {
 	groupDeviceHits,
 	groupMessageTargets,
 	groupSendAttempt,
+	formatGroupDisplayText,
+	formatGroupTaskChip,
+	formatDeviceFailureReport,
 	type GroupDetail,
 	type GroupTask,
 } from "../../web/src/device-group-messages";
@@ -67,8 +70,71 @@ describe("group conversation adapter", () => {
 		expect(state.messages[1].content).toEqual([{ type: "text", text: "**done**" }]);
 		expect(labels.get("group-message:m")).toBe("Human");
 		expect(labels.get("group-task:q")).toBe("Twin · host · Queued");
-		expect(state.messages[2].content).toEqual([{ type: "text", text: "Queued\n\nnext" }]);
+		expect(state.messages[2].content[0].type).toBe("text");
+		expect((state.messages[2].content[0] as { text: string }).text).toContain("Task Queued");
+		expect((state.messages[2].content[0] as { text: string }).text).toContain("next");
 		expect(groupConversationState("other", null, devices).state.messages).toEqual([]);
+	});
+
+	it("renders running task with active progress as structured card", () => {
+		const devices = [{ id: "a", name: "Coder", deviceId: "host", deviceName: "host", enabled: true }];
+		const { state } = groupConversationState(
+			"room",
+			{
+				room: { id: "room", name: "Room", botIds: ["a"] },
+				bots: devices,
+				messages: [],
+				tasks: [
+					{
+						id: "t1",
+						deviceId: "host",
+						botId: "a",
+						text: "build project",
+						createdAt: 10,
+						status: "running",
+						progress: {
+							phase: "tool",
+							toolName: "bash",
+							text: "running npm test",
+							taskId: "t1",
+							attemptId: "att1",
+						} as any,
+					},
+				],
+			},
+			devices,
+			true,
+		);
+		const content = (state.messages[0].content[0] as { text: string }).text;
+		expect(content).toContain("任务执行中");
+		expect(content).toContain("build project");
+		expect(content).toContain("bash");
+		expect(content).toContain("running npm test");
+	});
+
+	it("sanitizes long UUID mention tokens for clean display", () => {
+		const raw = "@win(fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a) 优化代码";
+		expect(formatGroupDisplayText(raw)).toBe("@win 优化代码");
+	});
+
+	it("extracts bot prefix and summary text cleanly for task chips", () => {
+		const raw = "@win(fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a) 优化代码";
+		const chip = formatGroupTaskChip(raw, "win");
+		expect(chip.botPrefix).toBe("@win");
+		expect(chip.summary).toBe("优化代码");
+	});
+
+	it("formats technical device execution failures into readable markdown quotes", () => {
+		const failure =
+			"Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.";
+		const formattedZh = formatDeviceFailureReport(failure, true);
+		expect(formattedZh).toContain("任务执行中断 · 模型推理阶段");
+		expect(formattedZh).toContain("模型推理阶段");
+		expect(formattedZh).toContain("execution_failed");
+
+		const formattedEn = formatDeviceFailureReport(failure, false);
+		expect(formattedEn).toContain("Task Interrupted · Model Execution");
+		expect(formattedEn).toContain("execution_failed");
 	});
 	it.each(["completed", "failed", "interrupted"] as const)(
 		"shows a linked %s report once with Bot, device and status",
@@ -147,6 +213,72 @@ describe("group conversation adapter", () => {
 		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(3);
 		detail.messages.pop();
 		expect(groupConversationState("room", detail, devices).state.messages).toHaveLength(2);
+	});
+	it("renders subagent worker tasks as structured cards with collapsible reports and coordinator tags", () => {
+		const detail: GroupDetail = {
+			room: { id: "room", name: "Room", botIds: ["coord", "worker"], primaryBotId: "coord" },
+			bots: [
+				{ id: "coord", name: "Architect", deviceId: "host" },
+				{ id: "worker", name: "Coder", deviceId: "worker-pc" },
+			],
+			messages: [
+				{
+					id: "m1",
+					text: "Please build feature",
+					createdAt: 1,
+					sender: { type: "human", id: "user", name: "Alice" },
+				},
+				{
+					id: "m2",
+					text: "I have assigned the work to Coder.",
+					createdAt: 2,
+					sender: { type: "bot", id: "coord", name: "Architect" },
+				},
+			],
+			tasks: [
+				{
+					id: "child-task",
+					parentTaskId: "root-task",
+					sourceBotId: "coord",
+					deviceId: "worker-pc",
+					botId: "worker",
+					text: "implement backend API",
+					createdAt: 3,
+					status: "completed",
+					report: "API implementation complete with 5 endpoints.",
+				},
+				{
+					id: "internal-result",
+					kind: "result",
+					resultOfTaskId: "child-task",
+					deviceId: "host",
+					botId: "coord",
+					text: "API implementation complete with 5 endpoints.",
+					createdAt: 4,
+					status: "completed",
+					report: "API implementation complete with 5 endpoints.",
+				},
+			],
+		};
+		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
+
+		// Coordinator tag in message label
+		expect(labels.get("group-message:m2")).toBe("Architect · host [群组主管]");
+
+		// Internal result task should be suppressed to avoid duplicate message bubbles
+		expect(state.messages.some((m) => m.id === "group-task:internal-result")).toBe(false);
+
+		// Worker task should have subagent label and collapsible details
+		expect(labels.get("group-task:child-task")).toBe("Coder · worker-pc [协同子代理] · 已完成");
+		const childMsg = state.messages.find((m) => m.id === "group-task:child-task");
+		expect(childMsg).toBeDefined();
+		const body = (childMsg!.content[0] as { text: string }).text;
+		expect(body).toContain("协同子代理交付完成");
+		expect(body).toContain("@Coder");
+		expect(body).toContain("implement backend API");
+		expect(body).toContain("<details>");
+		expect(body).toContain("展开查看工作内容与交付详情");
+		expect(body).toContain("API implementation complete with 5 endpoints.");
 	});
 	it("retries the same request with the same key and rotates for changed room/body/targets", () => {
 		let n = 0;

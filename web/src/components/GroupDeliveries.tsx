@@ -26,12 +26,14 @@ export function GroupDeliveries({
 	bots,
 	disabled,
 	error,
+	onRefresh,
 }: {
 	roomId: string;
 	conversations: GroupBotConversation[];
 	bots: GroupDevice[];
 	disabled?: boolean;
 	error?: string;
+	onRefresh?: () => void;
 }) {
 	const { locale } = useI18n();
 	const zh = isZhLocale(locale);
@@ -69,6 +71,7 @@ export function GroupDeliveries({
 						bot={bots.find((bot) => bot.id === conversation.botId)?.name ?? conversation.botId}
 						bots={bots}
 						disabled={disabled || !!error}
+						onRefresh={onRefresh}
 						zh={zh}
 					/>
 				))}
@@ -83,6 +86,7 @@ function ConversationDelivery({
 	bot,
 	bots = [],
 	disabled,
+	onRefresh,
 	zh,
 }: {
 	roomId: string;
@@ -90,9 +94,12 @@ function ConversationDelivery({
 	bot: string;
 	bots?: GroupDevice[];
 	disabled?: boolean;
+	onRefresh?: () => void;
 	zh: boolean;
 }) {
 	const attention = groupAttention(conversation);
+	const [deleting, setDeleting] = useState(false);
+	const [deleteError, setDeleteError] = useState("");
 	const [history, setHistory] = useState<{ deliveries: DeviceDelivery[]; reviews: DeviceReview[] } | null>(null);
 	const [historyError, setHistoryError] = useState("");
 	const [historyOpen, setHistoryOpen] = useState(false);
@@ -143,6 +150,53 @@ function ConversationDelivery({
 			<p>
 				{zh ? "执行状态" : "Execution status"}: {conversation.status}
 			</p>
+			{conversation.closedReason && (
+				<p role="status">
+					{conversation.closedReason === "device_revoked"
+						? zh
+							? "承载 Bot 的设备已解绑，此会话已停止。"
+							: "The device hosting this Bot was revoked, so the conversation stopped."
+						: zh
+							? "此会话已停止。"
+							: "This conversation was stopped."}
+				</p>
+			)}
+			{conversation.stale && (
+				<p role="status">
+					{zh
+						? "Bot 配置已变更（revision/设备/成员），此会话无法继续；请新建对话。"
+						: "This Bot's configuration changed (revision, device or membership); start a new conversation."}
+				</p>
+			)}
+			{(conversation.status === "closed" || conversation.stale) && !conversation.deliveryCount && (
+				<>
+					<button
+						type="button"
+						className="btn"
+						disabled={disabled || deleting}
+						onClick={async () => {
+							if (disabled || deleting) return;
+							setDeleting(true);
+							setDeleteError("");
+							try {
+								await request(
+									`rooms/${encodeURIComponent(roomId)}/conversations/${encodeURIComponent(conversation.id)}/delete`,
+									AbortSignal.timeout(15000),
+									{},
+								);
+								onRefresh?.();
+							} catch (cause) {
+								setDeleteError(cause instanceof Error ? cause.message : String(cause));
+							} finally {
+								setDeleting(false);
+							}
+						}}
+					>
+						{zh ? "删除会话（释放容量）" : "Delete conversation (free capacity)"}
+					</button>
+					{deleteError && <p role="alert">{deleteError}</p>}
+				</>
+			)}
 			{attention && <p role="status">{groupAttentionLabel(attention, zh)}</p>}
 			{conversation.attention && (
 				<HumanAnswer

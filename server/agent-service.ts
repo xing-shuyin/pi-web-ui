@@ -59,7 +59,7 @@ import {
 } from "./update-check.js";
 import { collectInstalledEngineTargets } from "./engine-probe.js";
 import { checkPluginUpdates } from "./plugin-updater.js";
-import { getAppVersion } from "./pkg-info.js";
+import { getAppVersion, getPkgRoot } from "./pkg-info.js";
 import { isBundledInUse, sdkCopies } from "./sdk-origin.js";
 import {
 	hasActiveSubagentRun,
@@ -2848,6 +2848,9 @@ export class ClientSession {
 			piReadme: PI_DOC_PATHS.readme,
 			piDocs: PI_DOC_PATHS.docs,
 			piExamples: PI_DOC_PATHS.examples,
+			pluginDocs: join(getPkgRoot(), "docs", "architecture-plugins.md"),
+			pluginSdk: join(getPkgRoot(), "plugin-sdk"),
+			pluginsDir: join(this.stateStore.dataDir, "plugins"),
 			appendFiles: [...promptBase.append],
 			windowsPersona: isRemote
 				? buildRemoteWorkspacePersona(realCwd)
@@ -4751,7 +4754,8 @@ export class ClientSession {
 							},
 							() => this.getLang(),
 						),
-						makeDeviceCollabTool(),
+						// 设备中心群任务协作工具（仅在群任务 Bot 执行上下文注入；普通单聊完全不挂载）。
+						...(this.botExecution ? [makeDeviceCollabTool()] : []),
 						// Git 工作树管理工具（worktree：list/create/switch/remove）。
 						makeWorktreeTool(
 							{

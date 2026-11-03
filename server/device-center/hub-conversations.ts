@@ -1,6 +1,72 @@
 import { randomUUID } from "node:crypto";
 import { isTerminal, taskPending, type HubState, type HubTask, type HubConversation } from "./store.js";
 
+/** Closed conversations kept per room for reading history; open ones are capacity, closed ones are archive. */
+export const CLOSED_CONVERSATION_RETENTION = 200;
+/** Idempotency receipts outlive message retention; replay must never re-dispatch evicted messages. */
+export const ROOM_RECEIPT_RETENTION = 2000;
+export const RECEIPT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A conversation whose Bot registration no longer matches cannot continue; report it instead of a late 409. */
+export function conversationStale(state: HubState, conversation: HubConversation): boolean {
+	const bot = state.bots.find((b) => b.id === conversation.botId && b.accountId === conversation.accountId);
+	if (!bot || !bot.enabled || bot.revision !== conversation.botRevision || bot.deviceId !== conversation.deviceId)
+		return true;
+	const room = state.rooms.find((r) => r.id === conversation.roomId && r.accountId === conversation.accountId);
+	return !room || !room.botIds.includes(bot.id);
+}
+
+/** Delivery/review records are the audit trail; a conversation carrying them is never silently dropped. */
+export function conversationHasAuditRecords(state: HubState, conversationId: string): boolean {
+	return (
+		state.deliveries.some((delivery) => delivery.conversationId === conversationId) ||
+		state.reviews.some((review) => review.conversationId === conversationId) ||
+		state.integrations.some((integration) => integration.conversationId === conversationId)
+	);
+}
+
+/** Delete every record scoped to one conversation. Never called for conversations with audit records. */
+export function dropConversationRecords(state: HubState, conversationId: string): void {
+	const taskIds = new Set(state.tasks.filter((task) => task.conversationId === conversationId).map((task) => task.id));
+	state.conversations = state.conversations.filter((conversation) => conversation.id !== conversationId);
+	state.tasks = state.tasks.filter((task) => !taskIds.has(task.id));
+	state.conversationMessages = state.conversationMessages.filter(
+		(message) => message.conversationId !== conversationId,
+	);
+	state.deliveryReceipts = state.deliveryReceipts.filter((receipt) => receipt.conversationId !== conversationId);
+	state.integrations = state.integrations.filter((integration) => integration.conversationId !== conversationId);
+}
+
+/** Bound the closed-conversation archive per room without touching auditable or still-running work. */
+export function trimClosedConversations(state: HubState, roomId: string, limit = CLOSED_CONVERSATION_RETENTION): void {
+	const closed = state.conversations
+		.filter((conversation) => conversation.roomId === roomId && conversation.closed)
+		.sort((a, b) => a.updatedAt - b.updatedAt);
+	if (closed.length <= limit) return;
+	for (const conversation of closed.slice(0, closed.length - limit))
+		if (
+			!conversationHasAuditRecords(state, conversation.id) &&
+			!state.tasks.some((task) => task.conversationId === conversation.id && taskPending(task))
+		)
+			dropConversationRecords(state, conversation.id);
+}
+
+/** Receipts are the replay guard, so they must not be evicted by message retention. */
+export function trimRoomReceipts(state: HubState, roomId: string, limit = ROOM_RECEIPT_RETENTION): void {
+	const cutoff = Date.now() - RECEIPT_TTL_MS;
+	const stale = new Set(
+		state.receipts
+			.filter((receipt) => receipt.roomId === roomId && receipt.createdAt !== undefined && receipt.createdAt < cutoff)
+			.map((receipt) => receipt.key),
+	);
+	if (stale.size)
+		state.receipts = state.receipts.filter((receipt) => !(receipt.roomId === roomId && stale.has(receipt.key)));
+	const room = state.receipts.filter((receipt) => receipt.roomId === roomId);
+	if (room.length <= limit) return;
+	const drop = new Set(room.slice(0, room.length - limit));
+	state.receipts = state.receipts.filter((receipt) => !drop.has(receipt));
+}
+
 export function trimConversationHistory(state: HubState, roomId: string, limit = 500) {
 	const protectedIds = new Set<string>();
 	for (const task of state.tasks.filter((t) => t.roomId === roomId && taskPending(t))) {
@@ -116,7 +182,11 @@ export function recordConversationTurn(state: HubState, task: HubTask, key?: str
 }
 
 /** A terminal child result creates one durable continuation. Its task is the delivery receipt. */
-export function queueParentResult(state: HubState, child: HubTask): HubTask | undefined {
+export function queueParentResult(
+	state: HubState,
+	child: HubTask,
+	limits?: { maxDispatchDepth?: number; maxDispatchBudget?: number },
+): HubTask | undefined {
 	if (
 		child.cancelRequested ||
 		!isTerminal(child.status) ||
@@ -149,8 +219,8 @@ export function queueParentResult(state: HubState, child: HubTask): HubTask | un
 		bot.deviceId !== conversation.deviceId ||
 		bot.revision !== conversation.botRevision ||
 		!state.rooms.some((room) => room.id === child.roomId && room.botIds.includes(bot.id)) ||
-		(root.dispatchCount ?? 0) >= 16 ||
-		(child.dispatchDepth ?? 0) >= 8
+		(root.dispatchCount ?? 0) >= (limits?.maxDispatchBudget ?? 16) ||
+		(child.dispatchDepth ?? 0) >= (limits?.maxDispatchDepth ?? 8)
 	)
 		return;
 	root.dispatchCount = (root.dispatchCount ?? 0) + 1;
@@ -176,6 +246,7 @@ export function queueParentResult(state: HubState, child: HubTask): HubTask | un
 		status: "queued",
 		createdAt: now,
 		updatedAt: now,
+		...(parent.attenuatedTools ? { attenuatedTools: [...parent.attenuatedTools] } : {}),
 	};
 	state.tasks.push(task);
 	advanceConversationTask(state, conversation, task);

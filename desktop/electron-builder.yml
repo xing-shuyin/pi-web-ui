@@ -11,6 +11,7 @@ files:
   - themes
   - plugin-sdk
   - plugins/catalog.json
+  - docs/architecture-plugins.md
   - package.json
 # 仓库 package.json 的 main 是 CLI（bin/pi-web-ui.mjs，供插件安装器等子进程调用）：
 # 桌面壳主进程入口必须是 dist/desktop/main.js，故通过 extraMetadata 覆写 main。

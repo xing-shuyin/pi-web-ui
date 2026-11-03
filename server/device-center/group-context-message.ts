@@ -113,6 +113,8 @@ function historyMessage(value: unknown): value is GroupHistoryMessage {
 		Number.isFinite(value.createdAt) &&
 		(value.targetBotIds === undefined ||
 			(Array.isArray(value.targetBotIds) && value.targetBotIds.every((id) => typeof id === "string"))) &&
+		(value.replyToMessageId === undefined ||
+			(typeof value.replyToMessageId === "string" && value.replyToMessageId.length > 0)) &&
 		position(value.textStart) &&
 		position(value.textEnd) &&
 		position(value.fullTextLength) &&

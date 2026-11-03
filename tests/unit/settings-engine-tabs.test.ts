@@ -69,6 +69,9 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 
 		// 子代理模板：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"subagent-templates"/);
+
+		// 群组协作与执行：仅 isPi 可见
+		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"device-collab"/);
 	});
 
 	it("全引擎通用呈现「模型与服务商」分区并提供引擎切换与管理入口", () => {
@@ -80,5 +83,14 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 		expect(SETTINGS_SRC).toContain('{tab === "models" && (');
 		expect(SETTINGS_SRC).toContain('t("manageModelsAndProviders")');
 		expect(SETTINGS_SRC).toContain("onClick={onOpenManageModels}");
+	});
+
+	it("群组协作与执行设置（device-collab）集成到统一设置弹窗", () => {
+		expect(SETTINGS_SRC).toContain('import { DeviceExecutionSettings } from "./DeviceExecutionSettings";');
+		expect(SETTINGS_SRC).toContain('| "device-collab"');
+		expect(SETTINGS_SRC).toContain('"device-collab": "advanced"');
+		expect(SETTINGS_SRC).toContain('"device-collab": [');
+		expect(SETTINGS_SRC).toMatch(/tab === "device-collab"\s*&&\s*isPi[\s\S]*?<DeviceExecutionSettings/);
+		expect(SETTINGS_SRC).toContain("onNotice={() => triggerSyncState()}");
 	});
 });

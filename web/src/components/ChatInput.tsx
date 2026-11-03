@@ -98,6 +98,8 @@ interface ChatInputProps {
 		conversationId?: string,
 		options?: { planOnly?: boolean },
 	) => Promise<boolean>;
+	/** 可选的自定义任务中止回调；群聊模式下用于中止在途远程任务 */
+	onAbort?: () => void;
 	/** 输入框前置区条目（composer.leading 槽位：纯插件，无内置条目；渲染在文件上传按钮左侧）。 */
 	composerLeading?: import("../ui-slots").UiSlotEntry[];
 	/** 输入框动作区条目（composer.actions 槽位：内置 + 插件的最终结果）。 */
@@ -207,6 +209,7 @@ export const ChatInput = memo(function ChatInput({
 	groupConversationError,
 	groupConversations = [],
 	onGroupSend,
+	onAbort,
 	streaming,
 	planMode,
 	messages,
@@ -1684,7 +1687,12 @@ export const ChatInput = memo(function ChatInput({
 						)}
 					</div>
 				) : (
-					<button type="button" className="btn stop" title={t("stopAgent")} onClick={() => appSend({ type: "abort" })}>
+					<button
+						type="button"
+						className="btn stop"
+						title={t("stopAgent")}
+						onClick={() => (onAbort ? onAbort() : appSend({ type: "abort" }))}
+					>
 						<FiSquare />
 					</button>
 				)

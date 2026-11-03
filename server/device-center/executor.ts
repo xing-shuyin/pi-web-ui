@@ -29,6 +29,7 @@ export interface DeviceExecutorTask {
 	/** Stable Hub address; never a local transcript path. */
 	conversationId?: string;
 	sourceConversationId?: string;
+	sourceBotId?: string;
 	resume?: boolean;
 	kind?: "message" | "request" | "reply" | "result";
 	requestId?: string;
@@ -38,6 +39,7 @@ export interface DeviceExecutorTask {
 	planOnly?: boolean;
 	canvasRef?: { graphId: string; title?: string };
 	presetRevision?: number;
+	attenuatedTools?: string[];
 }
 
 export interface DeviceTaskExecutorOptions {
@@ -101,7 +103,7 @@ export function taskPrompt(task: DeviceExecutorTask): string {
 			taskState: context?.state,
 			taskStateSelection: context?.selection,
 			roomId: task.roomId ?? null,
-			sourceBotId: task.botId,
+			sourceBotId: task.sourceBotId ?? task.botId,
 			conversationId: task.conversationId,
 			sourceConversationId: task.sourceConversationId,
 			kind: task.kind,
@@ -109,6 +111,7 @@ export function taskPrompt(task: DeviceExecutorTask): string {
 			parentTaskId: task.parentTaskId,
 			resultOfTaskId: task.resultOfTaskId,
 			handoff: task.handoff ?? null,
+			...(task.attenuatedTools && task.attenuatedTools.length ? { attenuatedTools: task.attenuatedTools } : {}),
 		}),
 	].join("\n\n");
 }
@@ -181,6 +184,8 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				primary,
 				groupContext: task.context,
 				planOnly: Boolean(task.planOnly),
+				attenuatedTools: task.attenuatedTools,
+				sourceBotId: task.sourceBotId,
 			});
 			attempted.add(key);
 			const lock = { origin: origin.origin, botId: task.botId, root };

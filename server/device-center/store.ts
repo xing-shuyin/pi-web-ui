@@ -1,5 +1,6 @@
 import { mkdir, readFile, open, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { PartitionedAppendLog } from "./partition-log.js";
 import type { DeviceConversation, DeviceDelivery, DeviceIntegration, DeviceReview } from "../protocol.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
@@ -9,7 +10,7 @@ import {
 	type ConversationEvent,
 } from "./task-state.js";
 
-export type TaskStatus = "queued" | "running" | "completed" | "failed" | "interrupted";
+export type TaskStatus = "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
 export interface Handoff {
 	repository: string;
 	commit: string;
@@ -43,12 +44,15 @@ export interface Bot {
 	createdAt: number;
 	updatedAt: number;
 }
+export type ConversationClosedReason = "stopped" | "device_revoked";
 export type HubConversation = Omit<
 	DeviceConversation,
 	"status" | "latestDelivery" | "latestReview" | "deliveryCount" | "reviewCount"
 > & {
 	taskState?: ConversationTaskState;
 	events?: ConversationEvent[];
+	/** Why the conversation can no longer continue; surfaced instead of a late 409 on the next turn. */
+	closedReason?: ConversationClosedReason;
 };
 export interface DeliveryReceipt {
 	conversationId: string;
@@ -103,7 +107,20 @@ export interface HubTask {
 	recoveryUntil?: number;
 	planOnly?: boolean;
 	plan?: import("./group-plan-guard.js").GroupTaskPlanRecord;
+	resourceLocks?: string[];
+	blockReason?: import("../protocol.js").DeviceTaskBlockReason;
+	blockReasonDetail?: string;
+	attenuatedTools?: string[];
+	dependsOnTaskId?: string;
 }
+export interface GroupBlackboard {
+	version: number; // 严格自增版本号（从 1 开始）
+	updatedAt: number;
+	updatedBy: { type: "human" | "bot"; id: string; name: string };
+	title?: string;
+	content: string; // Markdown 格式结构化共识，最大 32KB
+}
+
 export interface Room {
 	id: string;
 	accountId: string;
@@ -111,6 +128,7 @@ export interface Room {
 	botIds: string[];
 	primaryBotId?: string;
 	canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
+	blackboard?: GroupBlackboard;
 	createdAt: number;
 }
 export interface RoomMessage {
@@ -122,6 +140,8 @@ export interface RoomMessage {
 	createdAt: number;
 	taskIds: string[];
 	targetBotIds?: string[];
+	/** Stable anchor to the message this one answers; survives retention only while both are retained. */
+	replyToMessageId?: string;
 	conversationId?: string;
 	conversationIds?: string[];
 }
@@ -140,7 +160,15 @@ export interface HubState {
 	rooms: Room[];
 	messages: RoomMessage[];
 	tasks: HubTask[];
-	receipts: { accountId: string; roomId: string; key: string; fingerprint: string; messageId: string }[];
+	receipts: {
+		accountId: string;
+		roomId: string;
+		key: string;
+		fingerprint: string;
+		messageId: string;
+		/** Optional for state written before receipts were decoupled from message retention. */
+		createdAt?: number;
+	}[];
 }
 export const taskPending = (task: HubTask) =>
 	!isTerminal(task.status) || !!(task.cancelRequested && !task.stopConfirmed);
@@ -160,7 +188,148 @@ export function publicTask<T extends object>(task: T): Omit<T, "leaseToken"> {
 	return visible as Omit<T, "leaseToken">;
 }
 
-/** A single process owns a data directory. Transactions publish only after atomic replacement. */
+/** Rows kept per room when replaying append logs; mirrors the group retention the Hub enforces. */
+export const HUB_LOG_RETENTION = 500;
+
+interface HubLogs {
+	messages: PartitionedAppendLog<RoomMessage>;
+	tasks: PartitionedAppendLog<HubTask>;
+	conversationMessages: PartitionedAppendLog<ConversationMessage>;
+}
+
+function createHubLogs(dataDir: string): HubLogs {
+	const root = join(dataDir, "hub-log");
+	return {
+		messages: new PartitionedAppendLog<RoomMessage>({
+			dir: join(root, "messages"),
+			partition: (message) => message.roomId,
+			id: (message) => message.id,
+			retention: HUB_LOG_RETENTION,
+		}),
+		tasks: new PartitionedAppendLog<HubTask>({
+			dir: join(root, "tasks"),
+			partition: (task) => task.roomId,
+			id: (task) => task.id,
+			retention: HUB_LOG_RETENTION,
+			// Load-time retention must never drop work that is still queued, running or awaiting a stop.
+			protect: (task) => taskPending(task),
+		}),
+		conversationMessages: new PartitionedAppendLog<ConversationMessage>({
+			dir: join(root, "conversation-messages"),
+			partition: (message) => message.conversationId,
+			id: (message) => message.id,
+		}),
+	};
+}
+
+function emptyHubState(): HubState {
+	return {
+		version: 2,
+		conversations: [],
+		conversationMessages: [],
+		deliveries: [],
+		reviews: [],
+		deliveryReceipts: [],
+		integrations: [],
+		accounts: [],
+		devices: [],
+		bots: [],
+		sessions: [],
+		rooms: [],
+		messages: [],
+		tasks: [],
+		receipts: [],
+	};
+}
+
+/** Tasks/messages are partitioned by room; conversations may reference a room row that no longer exists. */
+function roomPartitionsOf(state: HubState): Set<string> {
+	return new Set([
+		...state.rooms.map((room) => room.id),
+		...state.conversations.map((conversation) => conversation.roomId),
+	]);
+}
+
+/** Merge log rows with rows still inlined by an older Hub; inline rows win (they are the older baseline). */
+function mergeRows<T extends { id: string }>(stored: readonly T[], inline: readonly T[]): T[] {
+	if (!inline.length) return [...stored];
+	if (!stored.length) return [...inline];
+	const merged = new Map<string, T>();
+	for (const row of inline) merged.set(row.id, row);
+	for (const row of stored) if (!merged.has(row.id)) merged.set(row.id, row);
+	return [...merged.values()];
+}
+
+async function loadHubFiles(
+	dataDir: string,
+	options: { sweep?: boolean } = {},
+): Promise<{ state: HubState; logs: HubLogs; legacy: boolean }> {
+	await mkdir(dataDir, { recursive: true, mode: 0o700 });
+	let state: HubState;
+	try {
+		state = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		if (
+			state.version !== 2 ||
+			![
+				state.accounts,
+				state.devices,
+				state.bots,
+				state.sessions,
+				state.rooms,
+				state.messages,
+				state.tasks,
+				state.receipts,
+			].every(Array.isArray)
+		) {
+			throw new Error("Invalid device hub store");
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		state = emptyHubState();
+	}
+	state.conversations ??= [];
+	state.conversationMessages ??= [];
+	state.deliveries ??= [];
+	state.reviews ??= [];
+	state.deliveryReceipts ??= [];
+	state.integrations ??= [];
+	if (
+		![
+			state.conversations,
+			state.conversationMessages,
+			state.deliveries,
+			state.reviews,
+			state.deliveryReceipts,
+			state.integrations,
+		].every(Array.isArray)
+	)
+		throw new Error("Invalid conversation store");
+	const logs = createHubLogs(dataDir);
+	const roomPartitions = roomPartitionsOf(state);
+	const conversations = new Set(state.conversations.map((conversation) => conversation.id));
+	// Logs are the authority; inline rows only exist in files written before the split (or by an older Hub).
+	const storedMessages = await logs.messages.load(roomPartitions, options);
+	const storedTasks = await logs.tasks.load(roomPartitions, options);
+	const storedConversationMessages = await logs.conversationMessages.load(conversations, options);
+	const legacy = state.messages.length > 0 || state.tasks.length > 0 || state.conversationMessages.length > 0;
+	state.messages = mergeRows(storedMessages, state.messages);
+	state.tasks = mergeRows(storedTasks, state.tasks);
+	state.conversationMessages = mergeRows(storedConversationMessages, state.conversationMessages);
+	// Legacy state is a baseline, not evidence that historical transitions were observed.
+	for (const conversation of state.conversations) {
+		conversation.taskState = projectConversationState(state, conversation);
+		conversation.events ??= [];
+	}
+	return { state, logs, legacy };
+}
+
+/** Read the durable state without open() side effects (no interrupt marking); used by tests and tooling. */
+export async function readPersistedHub(dataDir: string): Promise<HubState> {
+	// Read-only: never sweep orphan files or repair tails from an inspection path.
+	return (await loadHubFiles(dataDir, { sweep: false })).state;
+}
+
+/** A single process owns a data directory. Transactions publish only after the index replacement. */
 export class DeviceHubStore {
 	private state: HubState;
 	private readonly listeners = new Set<() => void>();
@@ -172,73 +341,20 @@ export class DeviceHubStore {
 	}
 	private tail: Promise<unknown> = Promise.resolve();
 	readonly path: string;
-	private constructor(dataDir: string, state: HubState) {
+	private readonly logs: HubLogs;
+	readonly logDir: string;
+	private constructor(dataDir: string, state: HubState, logs: HubLogs) {
 		this.path = join(dataDir, "device-hub.json");
+		this.logDir = join(dataDir, "hub-log");
 		this.state = state;
+		this.logs = logs;
 	}
 	static async open(dataDir: string): Promise<DeviceHubStore> {
-		await mkdir(dataDir, { recursive: true, mode: 0o700 });
-		let state: HubState;
-		try {
-			state = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
-			if (
-				state.version !== 2 ||
-				![
-					state.accounts,
-					state.devices,
-					state.bots,
-					state.sessions,
-					state.rooms,
-					state.messages,
-					state.tasks,
-					state.receipts,
-				].every(Array.isArray)
-			) {
-				throw new Error("Invalid device hub store");
-			}
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			state = {
-				version: 2,
-				conversations: [],
-				conversationMessages: [],
-				deliveries: [],
-				reviews: [],
-				deliveryReceipts: [],
-				integrations: [],
-				accounts: [],
-				devices: [],
-				bots: [],
-				sessions: [],
-				rooms: [],
-				messages: [],
-				tasks: [],
-				receipts: [],
-			};
-		}
-		state.conversations ??= [];
-		state.conversationMessages ??= [];
-		state.deliveries ??= [];
-		state.reviews ??= [];
-		state.deliveryReceipts ??= [];
-		state.integrations ??= [];
-		if (
-			![
-				state.conversations,
-				state.conversationMessages,
-				state.deliveries,
-				state.reviews,
-				state.deliveryReceipts,
-				state.integrations,
-			].every(Array.isArray)
-		)
-			throw new Error("Invalid conversation store");
-		// Legacy state is a baseline, not evidence that historical transitions were observed.
-		for (const conversation of state.conversations) {
-			conversation.taskState = projectConversationState(state, conversation);
-			conversation.events ??= [];
-		}
-		const store = new DeviceHubStore(dataDir, state);
+		const { state, logs, legacy } = await loadHubFiles(dataDir);
+		const store = new DeviceHubStore(dataDir, state, logs);
+		// Move collections that older Hubs kept inline into their append logs. Logs are written first so
+		// an interrupted migration can be retried from the still-inline index without losing rows.
+		if (legacy) await store.migrateInlineCollections();
 		if (state.tasks.some((task) => !isTerminal(task.status))) {
 			const now = Date.now();
 			const recoveryGraceMs = 60_000;
@@ -303,13 +419,33 @@ export class DeviceHubStore {
 		this.tail = operation.catch(() => {});
 		return operation;
 	}
-	/** Kept as a method so I/O failures can be injected without replacing transaction semantics. */
+	/**
+	 * Kept as a method so I/O failures can be injected without replacing transaction semantics.
+	 * The index is replaced first, then the append logs: a log row always describes durable index state.
+	 */
 	async persist(state: HubState): Promise<void> {
+		await this.persistIndex(state);
+		await this.commitLogs(state);
+	}
+	private async commitLogs(state: HubState): Promise<void> {
+		const rooms = roomPartitionsOf(state);
+		const conversations = new Set(state.conversations.map((conversation) => conversation.id));
+		await this.logs.messages.commit(state.messages, rooms);
+		await this.logs.tasks.commit(state.tasks, rooms);
+		await this.logs.conversationMessages.commit(state.conversationMessages, conversations);
+	}
+	/** One-time upgrade from Hubs that inlined messages/tasks/transcripts in the index file. */
+	private async migrateInlineCollections(): Promise<void> {
+		await this.commitLogs(this.state);
+		await this.persistIndex(this.state);
+	}
+	private async persistIndex(state: HubState): Promise<void> {
 		const temporary = `${this.path}.${randomUUID()}.tmp`;
+		const index: HubState = { ...state, messages: [], tasks: [], conversationMessages: [] };
 		try {
 			const file = await open(temporary, "wx", 0o600);
 			try {
-				await file.writeFile(JSON.stringify(state));
+				await file.writeFile(JSON.stringify(index));
 				await file.sync();
 			} finally {
 				await file.close();
