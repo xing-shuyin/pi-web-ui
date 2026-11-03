@@ -126,7 +126,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		if (config || localHub || closed) return;
 		if (!localStarting) {
 			localStarting = (async () => {
-				const hub = await createLocalDeviceHub(options.dataDir);
+				const hub = await createLocalDeviceHub(options.dataDir, () => loadExecutionSettings(options.dataDir));
 				try {
 					const { uiCredential: _uiCredential, ...agentConfig } = hub.config;
 					localHub = hub;

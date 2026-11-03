@@ -8,6 +8,7 @@ import { GroupTaskDetails } from "./GroupTaskDetails";
 import { GroupWorkspaceActions } from "./GroupWorkspaceActions";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
+import { GroupDrawer, type GroupDrawerTab } from "./GroupDrawer";
 import { appUrl } from "../base-url";
 import { openGroupEventStream, taskProgressMatches, acceptTaskProgress } from "../group-event-stream";
 import { randomUuid } from "../uuid";
@@ -15,7 +16,14 @@ import { withToken } from "../auth-token";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { groupAttention } from "../group-attention";
 import { buildUiSlots, type UiSlotEntry } from "../ui-slots";
-import { groupConversationState, groupSendAttempt, type GroupDetail, type GroupDevice } from "../device-group-messages";
+import {
+	groupConversationState,
+	groupSendAttempt,
+	formatGroupTaskChip,
+	type GroupDetail,
+	type GroupDevice,
+} from "../device-group-messages";
+import { setActiveGroupRoomData } from "../group-active-context";
 
 type PersistentConversation = import("../device-group-messages").GroupBotConversation;
 
@@ -91,7 +99,15 @@ function GroupRoom({
 	const [eventsConnected, setEventsConnected] = useState(false);
 	const [conversations, setConversations] = useState<PersistentConversation[]>([]);
 	const [conversationError, setConversationError] = useState("");
-	const [activeToolTab, setActiveToolTab] = useState<"deliveries" | "transfers" | "canvas" | "presets" | null>(null);
+	const [drawerOpen, setDrawerOpen] = useState(false);
+	const [drawerTab, setDrawerTab] = useState<GroupDrawerTab>("deliveries");
+	const handleOpenDrawer = useCallback((tab: GroupDrawerTab) => {
+		setDrawerTab(tab);
+		setDrawerOpen(true);
+	}, []);
+	const handleCloseDrawer = useCallback(() => {
+		setDrawerOpen(false);
+	}, []);
 	const [viewTaskId, setViewTaskId] = useState<string | null>(null);
 	const handleCloseDetails = useCallback(() => setViewTaskId(null), []);
 	function invalidatesRoom(cause: unknown): boolean {
@@ -259,6 +275,48 @@ function GroupRoom({
 		() => conversations.filter((conversation) => Boolean(groupAttention(conversation))).length,
 		[conversations],
 	);
+	const runningTasks = useMemo(
+		() => (detail?.tasks ?? []).filter((task) => task.status === "running" || task.status === "queued"),
+		[detail?.tasks],
+	);
+
+	const handleStopTask = useCallback(
+		async (task: import("../device-group-messages").GroupTask) => {
+			const convId =
+				task.conversationId || conversations.find((c) => c.botId === task.botId && c.status !== "closed")?.id;
+			if (!convId) return;
+			try {
+				await request(
+					`rooms/${encodeURIComponent(roomId)}/conversations/${encodeURIComponent(convId)}/stop`,
+					new AbortController().signal,
+					{},
+				);
+				setRefresh((n) => n + 1);
+			} catch (err: any) {
+				setError(err?.message || (zh ? "中止任务失败" : "Failed to stop task"));
+			}
+		},
+		[roomId, conversations, zh],
+	);
+
+	useEffect(() => {
+		setActiveGroupRoomData({
+			roomId,
+			detail,
+			devices,
+			members,
+			conversations,
+			attentionCount,
+			disabled: !active || unavailable,
+			conversationError,
+		});
+	}, [roomId, detail, devices, members, conversations, attentionCount, active, unavailable, conversationError]);
+
+	useEffect(() => {
+		return () => {
+			setActiveGroupRoomData(null);
+		};
+	}, []);
 	async function send(
 		text: string,
 		targets: string[],
@@ -356,25 +414,30 @@ function GroupRoom({
 		<>
 			<div className="dg-head">
 				<div className="dg-head-info">
-					<strong className="dg-head-title">{detail?.room.name ?? (zh ? "群聊" : "Group")}</strong>
+					<div className="dg-head-brand">
+						<span className="dg-brand-icon">⚡</span>
+						<strong className="dg-head-title">{detail?.room.name ?? (zh ? "联合开发群" : "Group Chat")}</strong>
+					</div>
 					{members.length > 0 && (
-						<span
+						<button
+							type="button"
 							className="dg-head-pill"
-							title={members.map((m) => (m.deviceId ? `${m.name} (${m.deviceId})` : m.name)).join(", ")}
+							onClick={() => handleOpenDrawer("bots")}
+							title={zh ? "点击查看协作 Bot 成员详情" : "Click to view collaborating Bots"}
 						>
 							<span className="dg-head-pill-dot" />
 							<span>
 								{members.length} {zh ? "位协作 Bot" : "Bots"}
 							</span>
-						</span>
+						</button>
 					)}
 				</div>
 				<div className="dg-head-nav">
 					<button
 						type="button"
-						className={`dg-nav-tab ${activeToolTab === "deliveries" ? "active" : ""} ${attentionCount > 0 ? "has-attention" : ""}`}
-						onClick={() => setActiveToolTab((cur) => (cur === "deliveries" ? null : "deliveries"))}
-						title={zh ? "交付与审查" : "Deliveries & Reviews"}
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "deliveries" ? "active" : ""} ${attentionCount > 0 ? "has-attention" : ""}`}
+						onClick={() => handleOpenDrawer("deliveries")}
+						title={zh ? "打开交付与待办审查抽屉" : "Open Deliveries & Reviews"}
 					>
 						<span className="dg-nav-icon">📦</span>
 						<span className="dg-nav-text">{zh ? "交付与待办" : "Deliveries"}</span>
@@ -386,18 +449,18 @@ function GroupRoom({
 					</button>
 					<button
 						type="button"
-						className={`dg-nav-tab ${activeToolTab === "transfers" ? "active" : ""}`}
-						onClick={() => setActiveToolTab((cur) => (cur === "transfers" ? null : "transfers"))}
-						title={zh ? "跨机大文件传输与断点续传" : "File Transfers"}
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "transfers" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("transfers")}
+						title={zh ? "打开跨机大文件传输抽屉" : "Open Cross-Device File Transfers"}
 					>
 						<span className="dg-nav-icon">📁</span>
 						<span className="dg-nav-text">{zh ? "文件传输" : "Transfers"}</span>
 					</button>
 					<button
 						type="button"
-						className={`dg-nav-tab ${activeToolTab === "canvas" ? "active" : ""}`}
-						onClick={() => setActiveToolTab((cur) => (cur === "canvas" ? null : "canvas"))}
-						title={zh ? "群画布引用" : "Group Canvas"}
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "canvas" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("canvas")}
+						title={zh ? "打开群画布工作流抽屉" : "Open Group Canvas"}
 					>
 						<span className="dg-nav-icon">🎨</span>
 						<span className="dg-nav-text">{zh ? "群画布" : "Canvas"}</span>
@@ -405,12 +468,21 @@ function GroupRoom({
 					</button>
 					<button
 						type="button"
-						className={`dg-nav-tab ${activeToolTab === "presets" ? "active" : ""}`}
-						onClick={() => setActiveToolTab((cur) => (cur === "presets" ? null : "presets"))}
-						title={zh ? "Bot 配置与预设" : "Bot Presets"}
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "presets" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("presets")}
+						title={zh ? "打开 Bot 预设与规则配置抽屉" : "Open Bot Presets"}
 					>
 						<span className="dg-nav-icon">🤖</span>
 						<span className="dg-nav-text">{zh ? "Bot 预设" : "Presets"}</span>
+					</button>
+					<button
+						type="button"
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "bots" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("bots")}
+						title={zh ? "查看成员运行状态与授权工具" : "View Bot Status"}
+					>
+						<span className="dg-nav-icon">👥</span>
+						<span className="dg-nav-text">{zh ? "成员状态" : "Bots"}</span>
 					</button>
 				</div>
 				<div className="dg-head-actions">
@@ -420,8 +492,13 @@ function GroupRoom({
 						</button>
 					))}
 					{onBack && (
-						<button type="button" className="btn dg-back-btn" onClick={onBack}>
-							{zh ? "返回对话" : "Back to chat"}
+						<button
+							type="button"
+							className="btn dg-back-btn"
+							onClick={onBack}
+							title={zh ? "返回普通对话" : "Back to single chat"}
+						>
+							← {zh ? "返回对话" : "Back to chat"}
 						</button>
 					)}
 				</div>
@@ -436,25 +513,9 @@ function GroupRoom({
 						: null}
 				</div>
 			)}
-			<div className={`dg-tools-shelf ${activeToolTab ? "open" : "collapsed"}`}>
-				<div className="dg-tools-shelf-header">
-					<span className="dg-tools-shelf-title">
-						{activeToolTab === "deliveries" && (zh ? "📦 交付与待办事项" : "📦 Deliveries & Attention")}
-						{activeToolTab === "transfers" && (zh ? "📁 跨机大文件传输与断点续传" : "📁 Cross-Device File Transfers")}
-						{activeToolTab === "canvas" && (zh ? "🎨 群画布工作流" : "🎨 Group Canvas Workflow")}
-						{activeToolTab === "presets" && (zh ? "🤖 Bot 配置与预设" : "🤖 Bot Configuration & Presets")}
-					</span>
-					<button
-						type="button"
-						className="btn dg-tools-close-btn"
-						onClick={() => setActiveToolTab(null)}
-						title={zh ? "收起面板" : "Collapse panel"}
-					>
-						✕ {zh ? "收起" : "Close"}
-					</button>
-				</div>
+			<div className="dg-tools-shelf collapsed" aria-hidden="true" style={{ display: "none" }}>
 				<div className="dg-tools-shelf-content">
-					<div className={`dg-tool-pane ${activeToolTab === "deliveries" ? "active" : ""}`}>
+					<div className="dg-tool-pane">
 						<GroupDeliveries
 							roomId={roomId}
 							conversations={conversations}
@@ -463,17 +524,17 @@ function GroupRoom({
 							error={conversationError}
 						/>
 					</div>
-					<div className={`dg-tool-pane ${activeToolTab === "transfers" ? "active" : ""}`}>
+					<div className="dg-tool-pane">
 						<DeviceFileTransfer roomId={roomId} bots={devices} disabled={!active || unavailable} />
 					</div>
-					<div className={`dg-tool-pane ${activeToolTab === "canvas" ? "active" : ""}`}>
+					<div className="dg-tool-pane">
 						<GroupCanvasBinding
 							roomId={roomId}
 							binding={detail?.room.canvasBinding}
 							onSaved={() => setRefresh((n) => n + 1)}
 						/>
 					</div>
-					<div className={`dg-tool-pane ${activeToolTab === "presets" ? "active" : ""}`}>
+					<div className="dg-tool-pane">
 						<GroupBotPresets bots={members} onSaved={() => setRefresh((n) => n + 1)} />
 					</div>
 				</div>
@@ -483,9 +544,9 @@ function GroupRoom({
 					{attentionCount > 0 && (
 						<button
 							type="button"
-							className={`dg-task-chip dg-attention-chip ${activeToolTab === "deliveries" ? "active" : ""}`}
-							onClick={() => setActiveToolTab((cur) => (cur === "deliveries" ? null : "deliveries"))}
-							title={zh ? "查看需要处理的交付与事项" : "View items needing attention"}
+							className={`dg-task-chip dg-attention-chip ${drawerOpen && drawerTab === "deliveries" ? "active" : ""}`}
+							onClick={() => handleOpenDrawer("deliveries")}
+							title={zh ? "点击在协同抽屉中查看需要处理的交付与事项" : "View items needing attention in drawer"}
 						>
 							<span className="dg-attention-dot" />
 							<span className="dg-attention-text">
@@ -494,17 +555,31 @@ function GroupRoom({
 						</button>
 					)}
 					{detail?.tasks &&
-						detail.tasks.slice(0, 4).map((task) => (
-							<div key={task.id} className="dg-task-chip">
-								<span className={`dg-task-status-dot status-${task.status}`} />
-								<span className="dg-task-title" title={task.text}>
-									{task.text.length > 28 ? task.text.slice(0, 28) + "..." : task.text}
-								</span>
-								<button type="button" className="btn dg-task-detail-btn" onClick={() => setViewTaskId(task.id)}>
-									{zh ? "详情" : "Details"}
-								</button>
-							</div>
-						))}
+						detail.tasks.slice(0, 4).map((task) => {
+							const { botPrefix, summary } = formatGroupTaskChip(task.text);
+							return (
+								<div key={task.id} className="dg-task-chip">
+									<span className={`dg-task-status-dot status-${task.status}`} />
+									{botPrefix && <strong className="dg-task-bot-prefix">{botPrefix}</strong>}
+									<span className="dg-task-title" title={task.text}>
+										{summary.length > 24 ? summary.slice(0, 24) + "..." : summary}
+									</span>
+									<button type="button" className="btn dg-task-detail-btn" onClick={() => setViewTaskId(task.id)}>
+										{zh ? "详情" : "Details"}
+									</button>
+									{(task.status === "running" || task.status === "queued") && (
+										<button
+											type="button"
+											className="btn dg-task-detail-btn dg-task-stop-action"
+											title={zh ? "中止此任务" : "Stop task"}
+											onClick={() => handleStopTask(task)}
+										>
+											{zh ? "中止" : "Stop"}
+										</button>
+									)}
+								</div>
+							);
+						})}
 				</div>
 			)}
 			<GroupNativeInteractions
@@ -542,13 +617,30 @@ function GroupRoom({
 			})()}
 			<MessageList state={state} liveOutputs={emptyMap} toolStatuses={emptyMap} messageLabels={labels} readOnly />
 			{viewTaskId && <GroupTaskDetails roomId={roomId} taskId={viewTaskId} onClose={handleCloseDetails} />}
+			<GroupDrawer
+				isOpen={drawerOpen}
+				activeTab={drawerTab}
+				onClose={handleCloseDrawer}
+				onSelectTab={setDrawerTab}
+				roomId={roomId}
+				detail={detail}
+				devices={devices}
+				members={members}
+				conversations={conversations}
+				attentionCount={attentionCount}
+				disabled={!active || unavailable}
+				conversationError={conversationError}
+				onRefreshGroup={() => setRefresh((n) => n + 1)}
+				onRefreshConversations={() => setRefresh((n) => n + 1)}
+			/>
 			<ChatInput
 				groupDevices={members}
 				groupPrimaryBotName={members.find((bot) => bot.id === detail?.room.primaryBotId)?.name}
 				groupConversations={conversations}
 				groupConversationError={conversationError}
 				onGroupSend={send}
-				streaming={false}
+				streaming={runningTasks.length > 0}
+				onAbort={runningTasks.length > 0 ? () => handleStopTask(runningTasks[0]) : undefined}
 				messages={state.messages}
 				slashCommands={[]}
 				modelState={null}

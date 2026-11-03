@@ -1,6 +1,7 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import type { DeviceTaskState } from "../protocol.js";
+import { isValidLockKey } from "./hub-locks.js";
 import { DEVICE_COLLAB_TOOL_NAME } from "../tool-manager.js";
 import { EXECUTION_GUIDE_TOPICS, getExecutionGuide, type ExecutionGuideTopic } from "./execution-guides.js";
 
@@ -31,6 +32,8 @@ export const DEVICE_COLLAB_ACTIONS = [
 	"transfer_apply",
 	"transfer_status",
 	"transfer_abort",
+	"blackboard_read",
+	"blackboard_update",
 ] as const;
 export type DeviceCollabAction = (typeof DEVICE_COLLAB_ACTIONS)[number];
 
@@ -39,6 +42,9 @@ const parameters = Type.Object(
 		action: Type.Unsafe<DeviceCollabAction>({ type: "string", enum: [...DEVICE_COLLAB_ACTIONS] }),
 		topic: Type.Optional(Type.Unsafe<ExecutionGuideTopic>({ type: "string", enum: [...EXECUTION_GUIDE_TOPICS] })),
 		expectedRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+		expectedVersion: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+		content: Type.Optional(Type.String({ minLength: 1, maxLength: 32768 })),
+		title: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
 		constraints: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 })),
 		progress: Type.Optional(Type.String({ maxLength: 2000 })),
 		blockers: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 20 })),
@@ -100,6 +106,20 @@ const parameters = Type.Object(
 				maxItems: 200,
 				description: "Project-relative paths explicitly approved for overwrite.",
 			}),
+		),
+		resourceLocks: Type.Optional(
+			Type.Array(
+				Type.String({
+					minLength: 1,
+					maxLength: 256,
+					pattern: "^[a-zA-Z0-9_.:/-]+$",
+					description: "Global resource lock key, e.g. git:owner/repo:branch or fs:/path",
+				}),
+				{
+					maxItems: 10,
+					description: "Optional global resource locks to prevent concurrent conflicts across devices.",
+				},
+			),
 		),
 	},
 	{ additionalProperties: false },
@@ -175,7 +195,7 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 	read_history: ["roomId", "sourceBotId", "before"],
 	create_room: ["name", "sourceBotId", "targetBotId"],
 	send_message: ["roomId", "sourceBotId", "message"],
-	send_task: ["roomId", "sourceBotId", "targetBotId", "prompt", "parentTaskId"],
+	send_task: ["roomId", "sourceBotId", "targetBotId", "prompt", "parentTaskId", "resourceLocks"],
 	conversation_create: [
 		"roomId",
 		"sourceBotId",
@@ -199,6 +219,7 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 		"requestId",
 		"parentTaskId",
 		"idempotencyKey",
+		"resourceLocks",
 	],
 	conversation_deliver: [
 		"roomId",
@@ -230,9 +251,13 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 	transfer_apply: ["roomId", "sourceBotId", "targetBotId", "transferId", "revision", "overwritePaths"],
 	transfer_status: ["roomId", "sourceBotId", "targetBotId", "transferId"],
 	transfer_abort: ["roomId", "sourceBotId", "targetBotId", "transferId"],
+	blackboard_read: ["roomId", "sourceBotId"],
+	blackboard_update: ["roomId", "sourceBotId", "content", "expectedVersion", "title"],
 };
 const required: Record<DeviceCollabAction, string[]> = {
 	...allowed,
+	blackboard_read: ["roomId", "sourceBotId"],
+	blackboard_update: ["roomId", "sourceBotId", "content", "expectedVersion"],
 	task_state: [],
 	task_update: ["expectedRevision"],
 	task_evidence: [],
@@ -264,7 +289,18 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 	for (const [key, value] of Object.entries(input)) {
 		if (key === "action") continue;
 		if (!fields.includes(key)) throw new Error("Unsupported device_collab argument.");
-		if (["expectedRevision", "progress", "constraints", "blockers", "nextSteps"].includes(key)) {
+		if (
+			[
+				"expectedRevision",
+				"progress",
+				"constraints",
+				"blockers",
+				"nextSteps",
+				"expectedVersion",
+				"content",
+				"title",
+			].includes(key)
+		) {
 			// Validated together below, including required revision and at least one report field.
 			continue;
 		}
@@ -312,6 +348,15 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 					path.split("/").some((s) => !s || s === "." || s === "..")
 				)
 					throw new Error("File paths must be project-relative without traversal.");
+			}
+		} else if (key === "resourceLocks") {
+			if (!Array.isArray(value) || value.length > 10) throw new Error("Invalid resourceLocks.");
+			for (const lockKey of value) {
+				if (typeof lockKey !== "string" || !isValidLockKey(lockKey)) {
+					throw new Error(
+						`Invalid resource lock key: "${typeof lockKey === "string" ? lockKey : String(lockKey)}". Lock key must be 1-256 characters matching ^[a-zA-Z0-9_.:/-]+$`,
+					);
+				}
 			}
 		} else if (
 			typeof value !== "string" ||
@@ -361,6 +406,26 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 		if (input.kind === "reply" && !input.requestId) throw new Error("Reply requires requestId.");
 		if (input.requestId && input.kind !== "reply" && input.kind !== "request")
 			throw new Error("requestId requires request or reply kind.");
+	}
+	if (input.action === "blackboard_update") {
+		if (typeof input.content !== "string" || !input.content.trim())
+			throw new Error("Content must be a nonempty string.");
+		if (Buffer.byteLength(input.content, "utf8") > 32768) throw new Error("Content exceeds 32KB limit.");
+		if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input.content))
+			throw new Error("Content must not contain control characters.");
+		if (
+			typeof input.expectedVersion !== "number" ||
+			!Number.isSafeInteger(input.expectedVersion) ||
+			input.expectedVersion < 0
+		)
+			throw new Error("expectedVersion must be a non-negative safe integer.");
+		if (
+			input.title !== undefined &&
+			(typeof input.title !== "string" ||
+				input.title.length > 200 ||
+				/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input.title))
+		)
+			throw new Error("Invalid title.");
 	}
 	for (const key of required[input.action]) {
 		if (key === "roomId" || key === "sourceBotId") continue;
@@ -430,6 +495,7 @@ const summaryKeys = new Set([
 	"transferredBytes",
 	"totalFiles",
 	"completedFiles",
+	"resourceLocks",
 ]);
 function summarize(value: unknown, depth = 0): unknown {
 	if (depth > 4) return undefined;
@@ -443,6 +509,31 @@ function summarize(value: unknown, depth = 0): unknown {
 	}
 	return undefined;
 }
+export function projectBlackboard(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return { blackboard: null };
+	const raw = value as { blackboard?: unknown };
+	const bb = raw.blackboard;
+	if (!bb || typeof bb !== "object" || Array.isArray(bb)) return { blackboard: null };
+	const b = bb as Record<string, unknown>;
+	const updatedBy =
+		b.updatedBy && typeof b.updatedBy === "object" && !Array.isArray(b.updatedBy)
+			? {
+					type: (b.updatedBy as any).type === "human" ? "human" : "bot",
+					id: String((b.updatedBy as any).id ?? ""),
+					name: String((b.updatedBy as any).name ?? ""),
+				}
+			: { type: "bot", id: "", name: "" };
+	return {
+		blackboard: {
+			version: typeof b.version === "number" ? b.version : 1,
+			updatedAt: typeof b.updatedAt === "number" ? b.updatedAt : Date.now(),
+			updatedBy,
+			...(typeof b.title === "string" ? { title: b.title } : {}),
+			content: typeof b.content === "string" ? b.content : "",
+		},
+	};
+}
+
 // Explicit schema projection prevents arbitrary Hub fields from leaking into tool results.
 export function projectTaskState(value: unknown): Record<string, unknown> {
 	const record = (v: unknown): Record<string, unknown> =>
@@ -846,6 +937,8 @@ function projectHistory(value: unknown): Record<string, unknown> {
 		};
 		for (const key of ["textStart", "textEnd", "fullTextLength"])
 			if (Number.isSafeInteger(message[key]) && (message[key] as number) >= 0) projected[key] = message[key];
+		if (typeof message.replyToMessageId === "string" && message.replyToMessageId)
+			projected.replyToMessageId = string(message.replyToMessageId);
 		bytes += Buffer.byteLength(JSON.stringify(projected)) + 1;
 		if (bytes > 46000) {
 			summary.truncated = true;
@@ -902,9 +995,11 @@ export function makeDeviceCollabTool() {
 									? projectConversations(response)
 									: action === "read_history"
 										? projectHistory(response)
-										: response && typeof response === "object"
-											? (summarize(response) ?? {})
-											: {};
+										: action === "blackboard_read" || action === "blackboard_update"
+											? projectBlackboard(response)
+											: response && typeof response === "object"
+												? (summarize(response) ?? {})
+												: {};
 			if (Buffer.byteLength(JSON.stringify(summary), "utf8") > 48000) summary = { truncated: true };
 			const details = { action, summary };
 			return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };

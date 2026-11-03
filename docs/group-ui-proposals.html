@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-web-ui 群组 UI 优化方案交互预览</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --bg-elev: #14161c;
+    --bg-elev2: #1a1d26;
+    --bg-elev3: #222634;
+    --border: #262a35;
+    --border-soft: #1e2230;
+    --border-focus: #4f46e5;
+    --text: #e6e8ef;
+    --text-dim: #9aa1b4;
+    --text-faint: #6b7284;
+    --accent: #8b5cf6;
+    --accent-hover: #7c3aed;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(139, 92, 246, 0.15);
+    --green: #10b981;
+    --green-soft: rgba(16, 185, 129, 0.15);
+    --red: #ef4444;
+    --red-soft: rgba(239, 68, 68, 0.12);
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.15);
+    --blue: #3b82f6;
+    --blue-soft: rgba(59, 130, 246, 0.15);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #08090c;
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.5;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 顶部全局方案切换器 */
+  .demo-toolbar {
+    background: #111318;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-shrink: 0;
+    z-index: 50;
+  }
+  .demo-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .demo-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .demo-logo span {
+    background: var(--accent);
+    color: #fff;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .demo-tabs {
+    display: flex;
+    background: var(--bg-elev);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    gap: 4px;
+  }
+  .demo-tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .demo-tab-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .demo-tab-btn.active {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+  }
+  .demo-tab-btn .badge-rec {
+    background: #ff5e5e;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-left: 2px;
+  }
+  .demo-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .toggle-highlight-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-highlight-label input {
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  /* 方案视口容器 */
+  .workspace-viewport {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .plan-view {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .plan-view.active {
+    display: flex;
+  }
+
+  /* 方案亮点与说明横条 */
+  .plan-summary-bar {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    padding: 8px 18px;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .plan-summary-bar strong {
+    color: var(--text);
+  }
+  .highlight-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  /* 通用群聊顶部 Header (基于真实风格增强) */
+  .dg-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elev);
+    flex-shrink: 0;
+    gap: 12px;
+  }
+  .dg-head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .dg-head-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .dg-head-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    background: var(--bg-elev2);
+    border: 1px solid var(--border-soft);
+    color: var(--text-dim);
+  }
+  .dg-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+  .dg-head-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dg-nav-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .dg-nav-tab:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border-color: var(--border-soft);
+  }
+  .dg-nav-tab.active {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border-color: var(--border);
+    font-weight: 500;
+  }
+  .dg-nav-tab.attention {
+    border-color: color-mix(in srgb, var(--amber) 50%, transparent);
+    color: var(--amber);
+    background: color-mix(in srgb, var(--amber) 10%, transparent);
+  }
+  .dg-badge {
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    background: var(--border);
+    color: var(--text);
+  }
+  .dg-badge.amber {
+    background: var(--amber);
+    color: #000;
+  }
+  .btn-back {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-back:hover {
+    background: var(--bg-elev2);
+    color: var(--text);
+  }
+
+  /* 顶部次级任务/状态条 */
+  .dg-task-strip {
+    background: #11141a;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .strip-label {
+    font-size: 11px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .task-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .task-pill:hover {
+    border-color: var(--accent);
+  }
+  .task-pill .status-icon {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .status-icon.running { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.5s infinite; }
+  .status-icon.failed { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .status-icon.completed { background: var(--green); }
+  .task-pill .bot-tag {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .task-pill .task-content {
+    color: var(--text-dim);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-pill .detail-link {
+    color: var(--text-faint);
+    font-size: 10.5px;
+    margin-left: 2px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.2); }
+  }
+
+  /* 方案一专属：居中单栏沉浸流 */
+  .chat-stream-single {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .chat-stream-container {
+    width: 100%;
+    max-width: 860px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* 消息卡片通用结构 */
+  .msg-item {
+    display: flex;
+    gap: 14px;
+    width: 100%;
+  }
+  .msg-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .msg-avatar.user {
+    background: #334155;
+    color: #e2e8f0;
+  }
+  .msg-avatar.bot {
+    background: color-mix(in srgb, var(--accent) 25%, #1e1e2d);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: #c4b5fd;
+  }
+  .msg-avatar.bot-warn {
+    background: color-mix(in srgb, var(--red) 20%, #1e1e2d);
+    border: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+    color: #fca5a5;
+  }
+  .msg-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .msg-name {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .msg-device-chip {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg-elev2);
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border-soft);
+  }
+  .msg-time {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-left: auto;
+  }
+  .msg-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+    position: relative;
+  }
+  .msg-item.user .msg-card {
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-elev));
+    border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+  }
+
+  /* Mention 标签优化 */
+  .mention-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    color: #c4b5fd;
+    padding: 1px 7px;
+    border-radius: 5px;
+    font-weight: 500;
+    font-size: 12px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: all 0.15s;
+  }
+  .mention-chip:hover {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: #fff;
+  }
+  .mention-chip .bot-icon {
+    font-size: 11px;
+  }
+  .mention-chip .device-sub {
+    font-size: 10px;
+    opacity: 0.75;
+  }
+
+  /* 结构化 Agent 异常/失败卡片 (彻底告别裸错误) */
+  .bot-error-card {
+    background: color-mix(in srgb, var(--red) 7%, var(--bg-elev));
+    border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .bot-error-header {
+    background: color-mix(in srgb, var(--red) 12%, var(--bg-elev2));
+    border-bottom: 1px solid color-mix(in srgb, var(--red) 25%, var(--border));
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .error-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #f87171;
+  }
+  .error-phase-badge {
+    font-size: 10.5px;
+    background: color-mix(in srgb, var(--red) 20%, transparent);
+    color: #fca5a5;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+  }
+  .bot-error-body {
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .error-human-desc {
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .error-details-box {
+    background: #090a0d;
+    border: 1px solid var(--border-soft);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    overflow-x: auto;
+  }
+  .bot-error-actions {
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--border-soft);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .btn-action-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s;
+  }
+  .btn-action-primary:hover {
+    background: var(--accent-hover);
+  }
+  .btn-action-secondary {
+    background: var(--bg-elev2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-action-secondary:hover {
+    background: var(--bg-elev3);
+  }
+
+  /* 通用底部输入区 */
+  .composer-wrapper {
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .composer-target-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .target-badge {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  .target-badge.active {
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-elev2));
+    border-color: var(--accent);
+    color: #c4b5fd;
+    font-weight: 500;
+  }
+  .composer-box {
+    background: var(--bg-elev2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .composer-box:focus-within {
+    border-color: var(--accent);
+  }
+  .composer-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    resize: none;
+    min-height: 48px;
+  }
+  .composer-input::placeholder {
+    color: var(--text-faint);
+  }
+  .composer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 6px;
+  }
+  .composer-tools-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-comp-tool {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn-comp-tool:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+  }
+  .btn-send {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-send:hover {
+    background: var(--accent-hover);
+  }
+
+  /* 方案二专属：双栏多智能体协作工作台 */
+  .workspace-dual-layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+  .dual-main-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .dual-side-col {
+    width: 360px;
+    background: var(--bg-elev);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.2s ease;
+  }
+  .dual-side-col.collapsed {
+    width: 0;
+    border-left: none;
+    overflow: hidden;
+  }
+  .side-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-elev);
+  }
+  .side-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg);
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+  }
+  .side-tab-item {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    padding: 4px 9px;
+    font-size: 11.5px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .side-tab-item.active {
+    background: var(--bg-elev2);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .side-tab-item .dot-badge {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+  .side-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* 侧栏卡片：协作 Bot 列表 */
+  .bot-status-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .bot-status-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  }
+  .bot-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .bot-identity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bot-name-text {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 13px;
+  }
+  .bot-role-tag {
+    font-size: 10.5px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .bot-card-meta {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .bot-tools-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .tool-micro-tag {
+    font-size: 10px;
+    background: var(--bg-elev2);
+    border: 1px solid var(--border-soft);
+    color: var(--text-faint);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+  }
+
+  /* 侧栏卡片：待办与交付事项 */
+  .delivery-item-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .delivery-item-card.needs-review {
+    border-left: 3px solid var(--amber);
+  }
+  .delivery-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .delivery-title {
+    font-weight: 500;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .delivery-desc {
+    color: var(--text-dim);
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .delivery-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  /* 方案三专属：任务流水线看板 */
+  .pipeline-header-bar {
+    background: #11141c;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pipeline-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .pipeline-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .pipeline-node.done {
+    border-color: color-mix(in srgb, var(--green) 40%, var(--border));
+  }
+  .pipeline-node.failed {
+    border-color: color-mix(in srgb, var(--red) 50%, var(--border));
+    background: color-mix(in srgb, var(--red) 8%, var(--bg-elev));
+  }
+  .pipeline-node.waiting {
+    opacity: 0.6;
+    border-style: dashed;
+  }
+  .pipeline-arrow {
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  /* 标注模式提示标记 */
+  .diff-mark {
+    position: relative;
+  }
+  .diff-highlight {
+    outline: 2px dashed #38bdf8 !important;
+    outline-offset: 3px;
+    position: relative;
+  }
+  .diff-tag {
+    position: absolute;
+    top: -12px;
+    right: 0;
+    background: #0284c7;
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    display: none;
+  }
+  body.show-highlights .diff-tag {
+    display: inline-block;
+  }
+
+  /* 方案底部对比卡 */
+  .plans-footer-note {
+    background: #090b0e;
+    border-top: 1px solid var(--border);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body class="show-highlights">
+
+<!-- 顶部方案切换导航 -->
+<header class="demo-toolbar">
+  <div class="demo-title-group">
+    <div class="demo-logo">
+      <span>pi-web-ui</span> 群组 UI 改造提案
+    </div>
+    <nav class="demo-tabs" role="tablist">
+      <button class="demo-tab-btn" onclick="switchPlan(1)" id="tab-btn-1">
+        方案 1：流式精修
+      </button>
+      <button class="demo-tab-btn active" onclick="switchPlan(2)" id="tab-btn-2">
+        方案 2：双栏协作工作台 <span class="badge-rec">推荐</span>
+      </button>
+      <button class="demo-tab-btn" onclick="switchPlan(3)" id="tab-btn-3">
+        方案 3：流水线看板
+      </button>
+    </nav>
+  </div>
+  <div class="demo-controls">
+    <label class="toggle-highlight-label">
+      <input type="checkbox" id="toggleHighlights" checked onchange="toggleHighlights(this.checked)">
+      显示改进标注 (Diff Highlights)
+    </label>
+  </div>
+</header>
+
+<!-- 主视图区 -->
+<main class="workspace-viewport">
+
+  <!-- ========================================================================= -->
+  <!-- 方案 1：轻量流式精修 (保持单栏聚焦，去除长ID，错误卡片化) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view" id="plan-1">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>方案 1 核心策略：</strong> 轻量流式精修 · 保持现有单栏架构不变 · 彻底净化长 UUID 文本 · 错误信息结构化卡片与一键自愈
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag">低改动风险</span>
+        <span class="highlight-tag">聚焦阅读流</span>
+      </div>
+    </div>
+
+    <!-- 顶部状态栏 -->
+    <div class="dg-head">
+      <div class="dg-head-left">
+        <span class="dg-head-title">联合开发</span>
+        <span class="dg-head-pill">
+          <span class="dg-dot"></span>
+          <span>2 位协作 Bot 在线</span>
+        </span>
+      </div>
+      <div class="dg-head-nav">
+        <button class="dg-nav-tab attention">
+          <span>📦 交付与待办</span>
+          <span class="dg-badge amber">1</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>📁 文件传输</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>🎨 群画布</span>
+        </button>
+        <button class="dg-nav-tab">
+          <span>🤖 Bot 预设</span>
+        </button>
+      </div>
+      <div>
+        <button class="btn-back">返回对话</button>
+      </div>
+    </div>
+
+    <!-- 任务横条 (去除了截断长ID) -->
+    <div class="dg-task-strip diff-mark diff-highlight">
+      <span class="diff-tag">优化 1：任务状态条提取纯净指令，不再显示截断 UUID</span>
+      <span class="strip-label">任务进行中:</span>
+      <div class="task-pill">
+        <span class="status-icon failed"></span>
+        <span class="bot-tag">@win</span>
+        <span class="task-content">优化代码 (执行异常)</span>
+        <span class="detail-link">详情 ↗</span>
+      </div>
+      <div class="task-pill" style="opacity: 0.85;">
+        <span class="status-icon completed"></span>
+        <span class="bot-tag">@sol</span>
+        <span class="task-content">环境与依赖静态检查</span>
+      </div>
+    </div>
+
+    <!-- 消息对话流 -->
+    <div class="chat-stream-single">
+      <div class="chat-stream-container">
+        
+        <!-- 用户消息 -->
+        <div class="msg-item user">
+          <div class="msg-avatar user">X</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">xingshuyin</span>
+              <span class="msg-device-chip">DESKTOP-S1QKEI6 · 本地工作站</span>
+              <span class="msg-time">19:13</span>
+            </div>
+            <div class="msg-card diff-mark diff-highlight">
+              <span class="diff-tag">优化 2：Mention 胶囊化，悬浮显示完整设备与 ID</span>
+              <span class="mention-chip" title="设备ID: fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a&#10;设备: Windows 11 开发机">
+                <span class="bot-icon">🤖</span>
+                <span>@win</span>
+                <span class="device-sub">· 远程机</span>
+              </span>
+              <span>优化代码</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bot 失败回复：重构为交互卡片 -->
+        <div class="msg-item bot">
+          <div class="msg-avatar bot-warn">🤖</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">win</span>
+              <span class="msg-device-chip">DESKTOP-S1QKEI6 · 远程协作机</span>
+              <span class="msg-time">19:13</span>
+            </div>
+
+            <!-- 结构化错误卡片代替裸文本 -->
+            <div class="bot-error-card diff-mark diff-highlight">
+              <span class="diff-tag">优化 3：底层错误解析为人性化卡片 + 一键重试/诊断行动点</span>
+              <div class="bot-error-header">
+                <div class="error-title">
+                  <span>✕ 任务执行中断 (Execution Failed)</span>
+                  <span class="error-phase-badge">Phase: model</span>
+                </div>
+                <span style="font-size: 11px; color: var(--text-dim);">已保留设备现场</span>
+              </div>
+              <div class="bot-error-body">
+                <div class="error-human-desc">
+                  目标设备上的 Agent 运行时未能获取模型响应或执行失败。远端设备的工作区与任务会话已被保留，无需担心数据丢失。
+                </div>
+                <div class="error-details-box">
+                  Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.
+                </div>
+              </div>
+              <div class="bot-error-actions">
+                <button class="btn-action-primary" onclick="alert('触发在 win 上重试')">🔄 重新运行</button>
+                <button class="btn-action-secondary" onclick="alert('打开远端任务详情')">📋 查看远端诊断日志</button>
+                <button class="btn-action-secondary" onclick="alert('转交')">🔀 转派其他空闲 Bot</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 底部输入框 -->
+    <div class="composer-wrapper">
+      <div class="composer-target-selector">
+        <span style="color: var(--text-faint);">发送目标:</span>
+        <span class="target-badge active">🤖 @win (默认目标)</span>
+        <span class="target-badge">👥 广播给全群</span>
+      </div>
+      <div class="composer-box">
+        <textarea class="composer-input" placeholder="输入消息，或输入 @ 选择指定 Bot 分派工作..."></textarea>
+        <div class="composer-toolbar">
+          <div class="composer-tools-left">
+            <button class="btn-comp-tool">@ 提及成员</button>
+            <button class="btn-comp-tool">📝 只规划 (Plan Only)</button>
+            <button class="btn-comp-tool">📎 发送文件</button>
+          </div>
+          <button class="btn-send">↑</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- 方案 2：专业双栏多智能体协作工作台 (强烈推荐) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view active" id="plan-2">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>方案 2 核心策略：</strong> 双栏协作工作台 · 解决宽屏极度空旷 · 顶部抽屉右移为常驻侧栏 · 实时感知 Bot 负载与交付看板
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag" style="background:var(--accent); color:#fff;">强烈推荐</span>
+        <span class="highlight-tag">空间充分利用</span>
+        <span class="highlight-tag">零布局跳动</span>
+      </div>
+    </div>
+
+    <!-- 顶部 Header -->
+    <div class="dg-head">
+      <div class="dg-head-left">
+        <span class="dg-head-title">联合开发工作空间</span>
+        <span class="dg-head-pill">
+          <span class="dg-dot"></span>
+          <span>2 台设备在线</span>
+        </span>
+      </div>
+      <div class="dg-head-nav">
+        <!-- 工具按钮改为切换右侧面板 -->
+        <button class="dg-nav-tab" onclick="switchSideTab('bots')" id="nav-btn-bots">
+          <span>👥 Bot 状态 (2)</span>
+        </button>
+        <button class="dg-nav-tab attention active" onclick="switchSideTab('deliveries')" id="nav-btn-deliveries">
+          <span>📦 交付待办</span>
+          <span class="dg-badge amber">1</span>
+        </button>
+        <button class="dg-nav-tab" onclick="switchSideTab('transfers')" id="nav-btn-transfers">
+          <span>📁 文件传输</span>
+        </button>
+        <button class="dg-nav-tab" onclick="switchSideTab('canvas')" id="nav-btn-canvas">
+          <span>🎨 群画布</span>
+        </button>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-back" onclick="toggleSidebar()" id="btn-toggle-side" title="折叠/展开右侧协同面板">
+          ◫ 侧栏切换
+        </button>
+        <button class="btn-back">返回</button>
+      </div>
+    </div>
+
+    <!-- 双栏主体容器 -->
+    <div class="workspace-dual-layout">
+
+      <!-- 左侧：消息主对话流 -->
+      <div class="dual-main-col">
+
+        <!-- 任务轻量状态提示 -->
+        <div class="dg-task-strip">
+          <span class="strip-label">正在进行:</span>
+          <div class="task-pill">
+            <span class="status-icon failed"></span>
+            <span class="bot-tag">@win</span>
+            <span class="task-content">优化代码 (执行异常)</span>
+            <span class="detail-link">详情 ↗</span>
+          </div>
+        </div>
+
+        <!-- 消息列表 -->
+        <div class="chat-stream-single" style="padding: 18px 24px;">
+          <div class="chat-stream-container" style="max-width: 900px;">
+            
+            <!-- 用户消息 -->
+            <div class="msg-item user">
+              <div class="msg-avatar user">X</div>
+              <div class="msg-main">
+                <div class="msg-header">
+                  <span class="msg-name">xingshuyin</span>
+                  <span class="msg-device-chip">DESKTOP-S1QKEI6 · 本地</span>
+                  <span class="msg-time">19:13</span>
+                </div>
+                <div class="msg-card">
+                  <span class="mention-chip" title="目标 Bot: win (fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a)">
+                    <span class="bot-icon">🤖</span>
+                    <span>@win</span>
+                    <span class="device-sub">· 远程机</span>
+                  </span>
+                  <span>优化代码</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bot 错误回复 -->
+            <div class="msg-item bot">
+              <div class="msg-avatar bot-warn">🤖</div>
+              <div class="msg-main">
+                <div class="msg-header">
+                  <span class="msg-name">win</span>
+                  <span class="msg-device-chip">Windows 11 远程工作机</span>
+                  <span class="msg-time">19:13</span>
+                </div>
+
+                <div class="bot-error-card">
+                  <div class="bot-error-header">
+                    <div class="error-title">
+                      <span>✕ 任务执行中断 (Execution Failed)</span>
+                      <span class="error-phase-badge">Phase: model</span>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-dim);">设备会话安全保留</span>
+                  </div>
+                  <div class="bot-error-body">
+                    <div class="error-human-desc">
+                      目标设备执行失败（模型推理阶段异常退出）。现场上下文已保留在目标设备的独立会话中。
+                    </div>
+                    <div class="error-details-box">
+                      Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.
+                    </div>
+                  </div>
+                  <div class="bot-error-actions">
+                    <button class="btn-action-primary">🔄 重新运行此步骤</button>
+                    <button class="btn-action-secondary">📋 查看目标机日志</button>
+                    <button class="btn-action-secondary">🔀 改派给 @sol 测试机</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- 底部输入区 -->
+        <div class="composer-wrapper">
+          <div class="composer-target-selector">
+            <span style="color: var(--text-faint);">指定执行者:</span>
+            <span class="target-badge active" title="点击切换目标">🤖 @win (远程开发)</span>
+            <span class="target-badge" title="点击切换目标">🤖 @sol (测试机)</span>
+            <span class="target-badge">👥 全体广播</span>
+          </div>
+          <div class="composer-box">
+            <textarea class="composer-input" placeholder="输入任务需求或代码指令，Enter 发送..."></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-tools-left">
+                <button class="btn-comp-tool">@ 快捷选择</button>
+                <button class="btn-comp-tool">📝 只规划</button>
+                <button class="btn-comp-tool">📎 上传大文件</button>
+              </div>
+              <button class="btn-send">↑</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 右侧：协作面板 (右侧常驻/抽屉切换，不挤压主聊天流) -->
+      <aside class="dual-side-col diff-mark diff-highlight" id="side-col">
+        <span class="diff-tag">优化 4：右侧协同栏代替顶部下拉抽屉，视线平滑不跳变</span>
+
+        <!-- 侧栏头部 -->
+        <div class="side-header">
+          <div class="side-tabs">
+            <button class="side-tab-item" onclick="switchSideTab('bots')" id="sub-tab-bots">
+              👥 Bot 状态
+            </button>
+            <button class="side-tab-item active" onclick="switchSideTab('deliveries')" id="sub-tab-deliveries">
+              📦 待办交付
+              <span class="dot-badge"></span>
+            </button>
+            <button class="side-tab-item" onclick="switchSideTab('transfers')" id="sub-tab-transfers">
+              📁 传输
+            </button>
+          </div>
+          <button style="background:transparent; border:none; color:var(--text-faint); cursor:pointer;" onclick="toggleSidebar()">✕</button>
+        </div>
+
+        <!-- 侧栏内容容器 -->
+        <div class="side-content" id="side-content-area">
+
+          <!-- 待办交付内容 (默认显示) -->
+          <div id="pane-deliveries">
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase;">
+              待人工确认的交付物 (1)
+            </div>
+            
+            <div class="delivery-item-card needs-review">
+              <div class="delivery-header">
+                <span class="delivery-title">模块依赖重构方案草案</span>
+                <span style="font-size:10px; background:var(--amber-soft); color:var(--amber); padding:1px 5px; border-radius:3px;">待审查</span>
+              </div>
+              <div class="delivery-desc">
+                由 <strong>@win</strong> 提交 · 生成了 3 个待确认的接口适配补丁，包含 TypeScript 类型声明改动。
+              </div>
+              <div class="delivery-actions">
+                <button class="btn-action-primary" style="font-size:11px; padding:3px 8px;">✓ 批准并合并</button>
+                <button class="btn-action-secondary" style="font-size:11px; padding:3px 8px;">查看变更 Diff</button>
+              </div>
+            </div>
+
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-top:16px; margin-bottom:8px; text-transform:uppercase;">
+              历史已结算任务 (2)
+            </div>
+            <div class="delivery-item-card" style="opacity:0.8;">
+              <div class="delivery-header">
+                <span class="delivery-title">静态 ESLint 规范扫描</span>
+                <span style="font-size:10px; color:var(--green);">已通过</span>
+              </div>
+              <div class="delivery-desc">
+                由 @sol 执行，零警告通过。
+              </div>
+            </div>
+          </div>
+
+          <!-- Bot 列表内容 (切换展示) -->
+          <div id="pane-bots" style="display:none;">
+            <div style="font-size:11.5px; font-weight:600; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase;">
+              在线成员与执行能力 (2)
+            </div>
+
+            <!-- Bot 1 -->
+            <div class="bot-status-card">
+              <div class="bot-card-top">
+                <div class="bot-identity">
+                  <span class="status-icon running"></span>
+                  <span class="bot-name-text">win</span>
+                  <span class="bot-role-tag">主执行 Bot</span>
+                </div>
+                <span style="font-size:11px; color:#f87171;">任务异常</span>
+              </div>
+              <div class="bot-card-meta">
+                <div>🖥 远程设备: DESKTOP-S1QKEI6</div>
+                <div>📍 状态: 异常中断，等待用户重试</div>
+                <div class="bot-tools-row">
+                  <span class="tool-micro-tag">bash</span>
+                  <span class="tool-micro-tag">edit</span>
+                  <span class="tool-micro-tag">plan_update</span>
+                  <span class="tool-micro-tag">+6 工具</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bot 2 -->
+            <div class="bot-status-card">
+              <div class="bot-card-top">
+                <div class="bot-identity">
+                  <span class="status-icon completed"></span>
+                  <span class="bot-name-text">sol</span>
+                  <span class="bot-role-tag">辅助/测试</span>
+                </div>
+                <span style="font-size:11px; color:var(--green);">空闲待命</span>
+              </div>
+              <div class="bot-card-meta">
+                <div>🖥 设备: Linux-Worker-Node01</div>
+                <div>📍 状态: 就绪，随时可接收派工</div>
+                <div class="bot-tools-row">
+                  <span class="tool-micro-tag">browser_search</span>
+                  <span class="tool-micro-tag">node-eval</span>
+                  <span class="tool-micro-tag">+4 工具</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- 方案 3：任务流水线看板 (流程驱动，节点状态串联) -->
+  <!-- ========================================================================= -->
+  <section class="plan-view" id="plan-3">
+    <div class="plan-summary-bar">
+      <div>
+        <strong>方案 3 核心策略：</strong> 任务流水线看板 · 将多 Agent 协作提升为可视化的串联流程（Pipeline）· 支持断点续跑与智能改派
+      </div>
+      <div style="display:flex; gap:6px;">
+        <span class="highlight-tag">强流程规范</span>
+        <span class="highlight-tag">适合长任务链</span>
+      </div>
+    </div>
+
+    <!-- 流水线横幅 -->
+    <div class="pipeline-header-bar diff-mark diff-highlight">
+      <span class="diff-tag">优化 5：多 Bot 协作流程可视化，哪个节点卡住一目了然</span>
+      <div class="pipeline-title-row">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <strong style="font-size:13px; color:var(--text);">流水线 #T102: 代码自动化优化与集成验证</strong>
+          <span style="font-size:11px; color:var(--red); background:var(--red-soft); padding:1px 6px; border-radius:4px;">节点 2 阻塞</span>
+        </div>
+        <button class="btn-action-secondary" style="font-size:11px; padding:2px 8px;">重置流水线</button>
+      </div>
+
+      <div class="pipeline-flow">
+        <div class="pipeline-node done">
+          <span class="status-icon completed"></span>
+          <span>1. 依赖与环境扫描 (@sol)</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node failed">
+          <span class="status-icon failed"></span>
+          <span>2. 代码重构与优化 (@win) ✕</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node waiting">
+          <span>3. 单元测试与构建 (@sol)</span>
+        </div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-node waiting">
+          <span>4. 交付物归档与审查</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 消息对话流 -->
+    <div class="chat-stream-single">
+      <div class="chat-stream-container">
+        
+        <div class="msg-item user">
+          <div class="msg-avatar user">X</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">xingshuyin</span>
+              <span class="msg-time">19:13</span>
+            </div>
+            <div class="msg-card">
+              <span class="mention-chip">🤖 @win</span> 优化代码
+            </div>
+          </div>
+        </div>
+
+        <div class="msg-item bot">
+          <div class="msg-avatar bot-warn">🤖</div>
+          <div class="msg-main">
+            <div class="msg-header">
+              <span class="msg-name">流水线调度器 · Hub</span>
+              <span class="msg-time">19:13</span>
+            </div>
+
+            <div class="bot-error-card">
+              <div class="bot-error-header">
+                <div class="error-title">
+                  <span>节点 2 [代码优化] 运行中断</span>
+                  <span class="error-phase-badge">Bot: win (fe2dfb80)</span>
+                </div>
+              </div>
+              <div class="bot-error-body">
+                <p>目标机执行失败 (phase=model; execution_failed)。流水线已在此处暂停。</p>
+              </div>
+              <div class="bot-error-actions">
+                <button class="btn-action-primary">🔄 在当前节点重试</button>
+                <button class="btn-action-secondary">🔀 改派给 @sol 跳过重构</button>
+                <button class="btn-action-secondary">⏭ 跳过此节点继续</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 底部输入 -->
+    <div class="composer-wrapper">
+      <div class="composer-box">
+        <textarea class="composer-input" placeholder="输入下一步指令或流水线干预参数..."></textarea>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 底部对比说明栏 -->
+<footer class="plans-footer-note">
+  <div>
+    <strong>方案建议：</strong> 日常推荐使用 <strong>方案 2（双栏工作台）</strong>：将原本遮挡主对话的顶部抽屉整合为右侧折叠面板，大屏不空旷，且消除长 ID 噪音与裸文本错误。
+  </div>
+  <div style="color:var(--text-faint);">
+    pi-web-ui 群组协同架构设计提案
+  </div>
+</footer>
+
+<script>
+  function switchPlan(index) {
+    document.querySelectorAll('.demo-tab-btn').forEach((btn, i) => {
+      btn.classList.toggle('active', i + 1 === index);
+    });
+    document.querySelectorAll('.plan-view').forEach((view, i) => {
+      view.classList.toggle('active', i + 1 === index);
+    });
+  }
+
+  function toggleHighlights(show) {
+    document.body.classList.toggle('show-highlights', show);
+  }
+
+  function toggleSidebar() {
+    const side = document.getElementById('side-col');
+    if (side) {
+      side.classList.toggle('collapsed');
+    }
+  }
+
+  function switchSideTab(tab) {
+    const paneDeliveries = document.getElementById('pane-deliveries');
+    const paneBots = document.getElementById('pane-bots');
+    const tabBots = document.getElementById('sub-tab-bots');
+    const tabDeliveries = document.getElementById('sub-tab-deliveries');
+    const navBots = document.getElementById('nav-btn-bots');
+    const navDeliveries = document.getElementById('nav-btn-deliveries');
+
+    // 确保侧栏展开
+    const side = document.getElementById('side-col');
+    if (side) side.classList.remove('collapsed');
+
+    if (tab === 'bots') {
+      if (paneDeliveries) paneDeliveries.style.display = 'none';
+      if (paneBots) paneBots.style.display = 'block';
+      if (tabBots) tabBots.classList.add('active');
+      if (tabDeliveries) tabDeliveries.classList.remove('active');
+      if (navBots) navBots.classList.add('active');
+      if (navDeliveries) navDeliveries.classList.remove('active');
+    } else {
+      if (paneDeliveries) paneDeliveries.style.display = 'block';
+      if (paneBots) paneBots.style.display = 'none';
+      if (tabBots) tabBots.classList.remove('active');
+      if (tabDeliveries) tabDeliveries.classList.add('active');
+      if (navBots) navBots.classList.remove('active');
+      if (navDeliveries) navDeliveries.classList.add('active');
+    }
+  }
+</script>
+</body>
+</html>

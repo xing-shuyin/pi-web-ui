@@ -10,6 +10,7 @@ export interface GroupHistoryMessage {
 	sender: { type: "human" | "bot"; id: string; name: string };
 	createdAt: number;
 	targetBotIds?: string[];
+	replyToMessageId?: string;
 	textStart: number;
 	textEnd: number;
 	fullTextLength: number;
@@ -26,6 +27,7 @@ export interface GroupTaskContext extends GroupHistoryPage {
 	primaryBotId?: string;
 	members: { id: string; name: string }[];
 	throughMessageId: string | null;
+	blackboard?: import("./store.js").GroupBlackboard;
 }
 
 function project(message: RoomMessage, start = 0, end = message.text.length): GroupHistoryMessage {
@@ -35,6 +37,7 @@ function project(message: RoomMessage, start = 0, end = message.text.length): Gr
 		sender: { type: message.sender.type, id: message.sender.id, name: message.sender.name },
 		createdAt: message.createdAt,
 		...(message.targetBotIds ? { targetBotIds: message.targetBotIds } : {}),
+		...(message.replyToMessageId ? { replyToMessageId: message.replyToMessageId } : {}),
 		textStart: start,
 		textEnd: end,
 		fullTextLength: message.text.length,
@@ -125,8 +128,73 @@ export function groupHistoryPage(
 	return page;
 }
 
+/** Mention tokens look like `@Name` or `@Name(<uuid>)`; the canonical id form wins over a bare name. */
+const MENTION = /@([^\s()@]+)(?:\(([A-Za-z0-9-]{8,})\))?/g;
+
+/**
+ * Resolve human @mentions against current room membership. The Hub owns dispatch semantics: clients may
+ * send explicit target ids, but a message that only names Bots in its text must not silently fall back to
+ * the primary Bot. Ambiguous names (two members sharing one) are ignored rather than guessed.
+ */
+export function groupMentionTargets(text: string, room: Room, bots: readonly Bot[]): string[] {
+	const members = room.botIds
+		.map((id) => ({ id, name: bots.find((bot) => bot.id === id)?.name?.trim() ?? "" }))
+		.filter((member) => member.name.length > 0);
+	if (!members.length) return [];
+	const hits: { index: number; id: string }[] = [];
+	for (const match of text.matchAll(MENTION)) {
+		const id = match[2];
+		const name = match[1];
+		const resolved = id
+			? members.find((member) => member.id === id)
+			: (() => {
+					const named = members.filter((member) => member.name === name);
+					return named.length === 1 ? named[0] : undefined;
+				})();
+		if (resolved && !hits.some((hit) => hit.id === resolved.id))
+			hits.push({ index: match.index ?? 0, id: resolved.id });
+	}
+	return hits.sort((a, b) => a.index - b.index).map((hit) => hit.id);
+}
+
+/**
+ * Compact verbose technical execution errors and internal stack traces to free up valuable context budget.
+ */
+export function compactHistoryNoise(text: string): string {
+	if (!text.includes("Device task failed") && !text.includes("Error:") && !text.includes("    at ")) {
+		return text;
+	}
+	// Extract structured summary from Device task failed reports, stripping giant Node/V8 stack traces
+	const failMatch = text.match(/Device task failed\s*\[phase=([^;]+);\s*category=([^\]]+)\]\.\s*(.*)/s);
+	if (failMatch) {
+		const [, phase, category, detail] = failMatch;
+		// Keep up to first 300 chars of detail, stripping stack frames
+		const cleanDetail = detail
+			.split("\n")
+			.filter((line) => !line.trim().startsWith("at ") && !line.includes("node:internal"))
+			.join(" ")
+			.trim()
+			.slice(0, 300);
+		return `[Device task failed: phase=${phase}, category=${category}] ${cleanDetail || "Remote execution failed."}`;
+	}
+	// Strip giant stack frames from generic error logs in context
+	if (text.includes("    at ")) {
+		const lines = text.split("\n");
+		const filtered = lines.filter((l) => !l.trim().startsWith("at ") && !l.includes("node:internal"));
+		if (filtered.length < lines.length) {
+			return filtered.join("\n").trim();
+		}
+	}
+	return text;
+}
+
 /** Captured at dispatch, before any parallel recipient can publish a response. */
-export function groupTaskContext(room: Room, bots: readonly Bot[], messages: readonly RoomMessage[]): GroupTaskContext {
+export function groupTaskContext(
+	room: Room,
+	bots: readonly Bot[],
+	messages: readonly RoomMessage[],
+	budget = GROUP_CONTEXT_BYTES,
+): GroupTaskContext {
 	const members = room.botIds.map((id) => ({ id, name: bots.find((bot) => bot.id === id)?.name ?? id }));
 	const metadata = {
 		roomName: room.name,
@@ -134,11 +202,17 @@ export function groupTaskContext(room: Room, bots: readonly Bot[], messages: rea
 		members,
 		throughMessageId: messages.filter((message) => message.roomId === room.id).at(-1)?.id ?? null,
 	};
-	const page = groupHistoryPage(
-		room.id,
-		messages,
-		undefined,
-		GROUP_CONTEXT_BYTES - Buffer.byteLength(JSON.stringify(metadata)) - 64,
-	);
-	return { ...page, ...metadata };
+	const blackboardPayload = room.blackboard ? { blackboard: room.blackboard } : {};
+	// Allocate budget hierarchically: reserve space for metadata and blackboard consensus first.
+	const nonHistoryBytes = Buffer.byteLength(JSON.stringify({ ...metadata, ...blackboardPayload })) + 64;
+	const historyBudget = Math.max(512, budget - nonHistoryBytes);
+	let page = groupHistoryPage(room.id, messages, undefined, historyBudget);
+
+	let result: GroupTaskContext = { ...page, ...metadata, ...blackboardPayload };
+	// Ensure absolute compliance with the total budget ceiling even with JSON structure serialization overhead
+	while (Buffer.byteLength(JSON.stringify(result)) > budget && page.messages.length > 0) {
+		page = { ...page, messages: page.messages.slice(1), truncated: true };
+		result = { ...page, ...metadata, ...blackboardPayload };
+	}
+	return result;
 }

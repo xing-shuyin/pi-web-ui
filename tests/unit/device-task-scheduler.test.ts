@@ -26,6 +26,29 @@ describe("DeviceTaskScheduler", () => {
 		expect(s.getSettings().maxActiveTasks).toBe(4);
 	});
 
+	it("persists fairness history across restarts and ignores corrupt state", () => {
+		const changes = vi.fn();
+		const first = new DeviceTaskScheduler({ onChange: changes });
+		first.enqueue(
+			{ id: "p1", attemptId: "a1", roomId: "room-persist", botId: "bot3", root: workspaces.bot3 },
+			{ start: vi.fn(), reject: vi.fn(), cancel: vi.fn() },
+		);
+		expect(changes).toHaveBeenCalled();
+		const state = first.snapshotState();
+		expect(state.rooms).toEqual([
+			expect.objectContaining({ roomId: "room-persist", count: 1, lastDispatchedAt: expect.any(Number) }),
+		]);
+		expect(new DeviceTaskScheduler({ persistedState: state }).snapshotState()).toEqual(state);
+		for (const corrupt of [
+			null,
+			{},
+			{ version: 2, rooms: [] },
+			{ version: 1, rooms: [{ roomId: 42, lastDispatchedAt: 1, count: 1 }] },
+			{ version: 1, rooms: [{ roomId: "ok", lastDispatchedAt: -1, count: 1 }] },
+		])
+			expect(new DeviceTaskScheduler({ persistedState: corrupt }).snapshotState().rooms).toEqual([]);
+	});
+
 	it("dispatches independent tasks up to concurrency limit", () => {
 		const started: string[] = [];
 
@@ -501,5 +524,19 @@ describe("DeviceTaskScheduler", () => {
 		expect(started).toEqual(["t1", "t2", "t3"]);
 		expect(s.getActiveCount()).toBe(2);
 		expect(s.getWaitingCount()).toBe(0);
+	});
+
+	it("updates starvationThresholdMs and maxSkipsBeforeStarvation dynamically with updateSettings", () => {
+		const s = new DeviceTaskScheduler({
+			initialSettings: { starvationThresholdMs: 5000, maxSkipsBeforeStarvation: 4 },
+		});
+		expect(s.getSettings().starvationThresholdMs).toBe(5000);
+		expect(s.getSettings().maxSkipsBeforeStarvation).toBe(4);
+
+		const updated = s.updateSettings({ starvationThresholdMs: 2000, maxSkipsBeforeStarvation: 1 });
+		expect(updated.starvationThresholdMs).toBe(2000);
+		expect(updated.maxSkipsBeforeStarvation).toBe(1);
+		expect(s.getSettings().starvationThresholdMs).toBe(2000);
+		expect(s.getSettings().maxSkipsBeforeStarvation).toBe(1);
 	});
 });

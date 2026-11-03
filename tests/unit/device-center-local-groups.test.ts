@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDeviceHub } from "../../server/device-center/hub.js";
-import { hashSecret } from "../../server/device-center/store.js";
+import { hashSecret, readPersistedHub } from "../../server/device-center/store.js";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -187,7 +187,7 @@ describe("device user group authority", () => {
 		const state = hub.store.snapshot();
 		expect(state.messages.filter((message) => message.text.startsWith("Task delivery failed"))).toHaveLength(2);
 		expect(JSON.stringify(state.messages)).not.toContain("private transport failure");
-		const persisted = JSON.parse(await readFile(join(dataDir, "device-hub.json"), "utf8"));
+		const persisted = await readPersistedHub(dataDir);
 		expect(persisted.tasks.filter((task: { status: string }) => task.status === "failed")).toHaveLength(2);
 		const duplicate = await request("messages", body);
 		expect(duplicate.status).toBe(200);
@@ -468,6 +468,90 @@ describe("device user group authority", () => {
 		expect(staleResponse.status).toBe(409);
 		expect((await staleResponse.json()).code).toBe("DEVICE_CHANGED");
 		await remoteCancelled;
+	});
+	it("automatically resumes active conversation for mentioned bot and creates new on request", async () => {
+		const port = await new Promise<number>((resolve) => {
+			const s = createServer();
+			s.listen(0, "127.0.0.1", () => {
+				const p = (s.address() as { port: number }).port;
+				s.close(() => resolve(p));
+			});
+		});
+		const publicUrl = `http://127.0.0.1:${port}`;
+		const hub = await createDeviceHub({ dataDir: await directory(), publicUrl });
+		cleanup.push(() => hub.close());
+		await new Promise<void>((resolve) => hub.server.listen(port, "127.0.0.1", resolve));
+		cleanup.push(async () => {
+			hub.server.closeAllConnections();
+			await new Promise<void>((resolve) => hub.server.close(() => resolve()));
+		});
+		const base = publicUrl;
+		await hub.store.transact((state) => {
+			state.accounts.push({ id: "owner", username: "owner", passwordHash: "unused", createdAt: 1 });
+			state.devices.push({
+				id: "dev-1",
+				accountId: "owner",
+				name: "dev-1",
+				createdAt: 1,
+				credentialHash: hashSecret("agent-secret"),
+				uiCredentialHash: hashSecret("ui-secret"),
+			});
+			state.bots.push({
+				id: "bot-1",
+				deviceId: "dev-1",
+				accountId: "owner",
+				name: "BotOne",
+				description: "Worker",
+				enabled: true,
+				revision: 1,
+				createdAt: 1,
+				updatedAt: 1,
+			});
+			state.rooms.push({
+				id: "room-1",
+				accountId: "owner",
+				name: "Collab Room",
+				botIds: ["bot-1"],
+				createdAt: 1,
+			});
+		});
+		async function send(text: string, newConversation = false) {
+			const res = await fetch(`${base}/api/device-user/rooms/room-1/messages`, {
+				method: "POST",
+				headers: {
+					Origin: base,
+					Authorization: "Bearer ui-secret",
+					"X-Device-Id": "dev-1",
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					text,
+					targetBotIds: ["bot-1"],
+					...(newConversation ? { newConversation: true } : {}),
+				}),
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(`${res.status}: ${JSON.stringify(body)}`);
+			return body as { tasks: Array<{ conversationId: string; resume?: boolean }> };
+		}
+
+		// First message: establishes conversation
+		const r1 = await send("Task 1");
+		const convId1 = r1.tasks[0]?.conversationId;
+		expect(convId1).toBeDefined();
+		expect(r1.tasks[0]?.resume).toBeFalsy();
+
+		// Second message: automatically resumes active conversation
+		const r2 = await send("Task 2");
+		expect(r2.tasks[0]?.conversationId).toBe(convId1);
+		expect(r2.tasks[0]?.resume).toBe(true);
+
+		// Third message: explicitly requests new conversation
+		const r3 = await send("Task 3", true);
+		const convId2 = r3.tasks[0]?.conversationId;
+		expect(convId2).toBeDefined();
+		expect(convId2).not.toBe(convId1);
+		expect(r3.tasks[0]?.resume).toBeFalsy();
 	});
 	it("requires old devices to re-pair while retaining their agent connection", async () => {
 		const dataDir = await directory();

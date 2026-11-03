@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { DeviceExecutionSettings } from "../../web/src/components/DeviceExecutionSettings.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { DeviceTaskSchedulerSnapshot } from "../../server/protocol.js";
+import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -16,7 +17,7 @@ afterEach(() => {
 });
 
 const mockSnapshot: DeviceTaskSchedulerSnapshot = {
-	settings: { maxActiveTasks: 4, maxWaitingTasks: 32 },
+	settings: { ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 4, maxWaitingTasks: 32 },
 	activeCount: 1,
 	waitingCount: 1,
 	blockedCount: 1,
@@ -146,7 +147,10 @@ describe("DeviceExecutionSettings Component", () => {
 			expect.objectContaining({
 				method: "POST",
 				credentials: "same-origin",
-				body: JSON.stringify({ maxActiveTasks: 8, maxWaitingTasks: 32 }),
+				body: JSON.stringify({
+					...mockSnapshot.settings,
+					maxActiveTasks: 8,
+				}),
 			}),
 		);
 
@@ -230,5 +234,91 @@ describe("DeviceExecutionSettings Component", () => {
 		expect(signals[0]!.aborted).toBe(true);
 		expect(signals.length).toBe(2);
 		expect(signals[1]!.aborted).toBe(false);
+	});
+
+	it("renders all 5 feature groups and 14 execution parameters", async () => {
+		const fetchMock = vi.fn(async (url: string | URL | Request) => {
+			const str = String(url);
+			if (str.includes("execution-queue")) {
+				return response(mockSnapshot);
+			}
+			return response({});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const { container } = await mount({ deviceId: "device-1" });
+
+		// 5 feature groups
+		expect(container.textContent).toContain("调度并发");
+		expect(container.textContent).toContain("任务派发与协作");
+		expect(container.textContent).toContain("群上下文与历史");
+		expect(container.textContent).toContain("文件同步配额");
+		expect(container.textContent).toContain("资源锁与黑板");
+
+		// All 14 inputs
+		const ids = [
+			"#des-max-active",
+			"#des-max-waiting",
+			"#des-starvation-ms",
+			"#des-max-skips",
+			"#des-max-depth",
+			"#des-max-budget",
+			"#des-allow-bot-mentions",
+			"#des-group-context-bytes",
+			"#des-group-retention",
+			"#des-file-sync-bytes",
+			"#des-file-sync-files",
+			"#des-file-sync-staged-bytes",
+			"#des-resource-lock-ttl",
+			"#des-blackboard-bytes",
+		];
+		for (const id of ids) {
+			const el = container.querySelector(id);
+			expect(el, `Input ${id} should exist`).not.toBeNull();
+		}
+	});
+
+	it("resets drafts to default settings via reset defaults button", async () => {
+		const customSnapshot: DeviceTaskSchedulerSnapshot = {
+			...mockSnapshot,
+			settings: {
+				...DEFAULT_EXECUTION_SETTINGS,
+				maxActiveTasks: 12,
+				maxWaitingTasks: 64,
+				starvationThresholdMs: 15000,
+				allowBotMentions: true,
+			},
+		};
+		const fetchMock = vi.fn(async (url: string | URL | Request) => {
+			const str = String(url);
+			if (str.includes("execution-queue")) {
+				return response(customSnapshot);
+			}
+			return response({});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const { container } = await mount({ deviceId: "device-1" });
+
+		const activeInput = container.querySelector<HTMLInputElement>("#des-max-active")!;
+		const waitingInput = container.querySelector<HTMLInputElement>("#des-max-waiting")!;
+		const mentionsInput = container.querySelector<HTMLInputElement>("#des-allow-bot-mentions")!;
+
+		expect(activeInput.value).toBe("12");
+		expect(waitingInput.value).toBe("64");
+		expect(mentionsInput.checked).toBe(true);
+
+		// Find and click the Reset Defaults button
+		const resetButtons = Array.from(container.querySelectorAll<HTMLButtonElement>("button"));
+		const resetDefaultsBtn = resetButtons.find((b) => b.textContent?.includes("恢复默认值"));
+		expect(resetDefaultsBtn).toBeDefined();
+
+		await act(async () => {
+			resetDefaultsBtn!.click();
+		});
+
+		expect(activeInput.value).toBe(String(DEFAULT_EXECUTION_SETTINGS.maxActiveTasks));
+		expect(waitingInput.value).toBe(String(DEFAULT_EXECUTION_SETTINGS.maxWaitingTasks));
+		expect(mentionsInput.checked).toBe(DEFAULT_EXECUTION_SETTINGS.allowBotMentions);
 	});
 });

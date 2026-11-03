@@ -83,14 +83,24 @@ export interface TaskSchedulerOptions {
 	initialSettings?: unknown;
 	starvationThresholdMs?: number; // 默认 8000ms
 	maxSkipsBeforeStarvation?: number; // 默认 3 次跳过
+	/** Bounded fairness state from a previous process; invalid entries are ignored. */
+	persistedState?: unknown;
+	/** Called after fairness state changes so callers can persist it without blocking dispatch. */
+	onChange?: () => void;
+}
+
+export interface TaskSchedulerPersistedState {
+	version: 1;
+	rooms: { roomId: string; lastDispatchedAt: number; count: number }[];
 }
 
 export class DeviceTaskScheduler {
 	public static readonly MAX_ROOM_HISTORY = 256;
 
 	private settings: DeviceExecutionSettings;
-	private readonly starvationThresholdMs: number;
-	private readonly maxSkipsBeforeStarvation: number;
+	private starvationThresholdMs: number;
+	private maxSkipsBeforeStarvation: number;
+	private readonly onChange?: () => void;
 
 	private readonly queue: QueuedTaskItem[] = [];
 	private readonly active = new Set<ActiveTaskItem>();
@@ -99,8 +109,44 @@ export class DeviceTaskScheduler {
 	constructor(options?: TaskSchedulerOptions) {
 		const validated = validateExecutionSettings(options?.initialSettings);
 		this.settings = validated.valid ? { ...validated.value } : { ...DEFAULT_EXECUTION_SETTINGS };
-		this.starvationThresholdMs = options?.starvationThresholdMs ?? 8000;
-		this.maxSkipsBeforeStarvation = options?.maxSkipsBeforeStarvation ?? 3;
+		this.starvationThresholdMs = options?.starvationThresholdMs ?? this.settings.starvationThresholdMs ?? 8000;
+		this.maxSkipsBeforeStarvation = options?.maxSkipsBeforeStarvation ?? this.settings.maxSkipsBeforeStarvation ?? 3;
+		this.onChange = options?.onChange;
+		this.restoreState(options?.persistedState);
+	}
+
+	/** Fairness history is in-memory scheduling state; persist it so a restart cannot reset room fairness. */
+	snapshotState(): TaskSchedulerPersistedState {
+		return {
+			version: 1,
+			rooms: [...this.roomDispatchHistory].map(([roomId, history]) => ({
+				roomId,
+				lastDispatchedAt: history.lastDispatchedAt,
+				count: history.count,
+			})),
+		};
+	}
+
+	restoreState(value: unknown): void {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return;
+		const state = value as Partial<TaskSchedulerPersistedState>;
+		if (state.version !== 1 || !Array.isArray(state.rooms)) return;
+		for (const entry of state.rooms.slice(0, DeviceTaskScheduler.MAX_ROOM_HISTORY)) {
+			if (!entry || typeof entry !== "object") continue;
+			const { roomId, lastDispatchedAt, count } = entry as TaskSchedulerPersistedState["rooms"][number];
+			if (typeof roomId !== "string" || !roomId || roomId.length > 128) continue;
+			if (!Number.isSafeInteger(lastDispatchedAt) || lastDispatchedAt < 0) continue;
+			if (!Number.isSafeInteger(count) || count < 0) continue;
+			this.roomDispatchHistory.set(roomId, { lastDispatchedAt, count });
+		}
+	}
+
+	private changed(): void {
+		try {
+			this.onChange?.();
+		} catch {
+			/* persistence scheduling must never break dispatch */
+		}
 	}
 
 	public getSettings(): DeviceExecutionSettings {
@@ -113,6 +159,8 @@ export class DeviceTaskScheduler {
 			throw new Error(validation.error);
 		}
 		this.settings = { ...validation.value };
+		this.starvationThresholdMs = this.settings.starvationThresholdMs ?? 8000;
+		this.maxSkipsBeforeStarvation = this.settings.maxSkipsBeforeStarvation ?? 3;
 		this.drain();
 		return { ...this.settings };
 	}
@@ -163,10 +211,11 @@ export class DeviceTaskScheduler {
 		history.lastDispatchedAt = Date.now();
 		history.count++;
 		this.roomDispatchHistory.set(roomId, history);
+		this.changed();
 	}
 
 	public clearRoomHistory(roomId: string): void {
-		this.roomDispatchHistory.delete(roomId);
+		if (this.roomDispatchHistory.delete(roomId)) this.changed();
 	}
 
 	public enqueue(

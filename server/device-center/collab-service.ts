@@ -34,7 +34,17 @@ export function createDeviceCollabService(options: {
 				if (!context) throw new Error("Invalid workspace");
 				const bound = options.getExecutionContext?.(context);
 				// Resolve authority before workspace acquisition; never mutate caller arguments.
-				if (["task_state", "task_update", "task_evidence", "execution_guide", "context_metrics"].includes(action))
+				if (
+					[
+						"task_state",
+						"task_update",
+						"task_evidence",
+						"execution_guide",
+						"context_metrics",
+						"blackboard_read",
+						"blackboard_update",
+					].includes(action)
+				)
 					validateDeviceCollabInput({ ...args, action });
 				args = { ...args };
 				const boundBot = bound?.botId ?? options.getSourceBot?.(context);
@@ -122,13 +132,18 @@ export function createDeviceCollabService(options: {
 					workspace = await options.workspaceResolver({ roomId: "", sourceBotId: args.sourceBotId!, context, signal });
 					if (resolve(context.cwd) !== resolve(workspace.root)) throw new Error("Invalid workspace");
 				}
-				const request = async (path: string, body?: unknown, query?: URLSearchParams) => {
+				const request = async (
+					path: string,
+					body?: unknown,
+					query?: URLSearchParams,
+					method?: "GET" | "POST" | "PUT",
+				) => {
 					signal?.throwIfAborted();
 					const url = new URL(base.href);
 					url.pathname = `${url.pathname.replace(/\/$/, "")}/api/agent/${path}`;
 					if (query) url.search = query.toString();
 					const response = await (options.fetch ?? fetch)(url, {
-						method: body === undefined ? "GET" : "POST",
+						method: method ?? (body === undefined ? "GET" : "POST"),
 						headers: {
 							authorization: `Bearer ${config.credential}`,
 							"X-Device-Id": config.deviceId,
@@ -138,7 +153,16 @@ export function createDeviceCollabService(options: {
 						signal,
 						redirect: "error",
 					});
-					if (!response.ok) throw new Error("Hub request failed");
+					if (!response.ok) {
+						let detail = "";
+						try {
+							const errBody = (await response.json()) as { error?: string };
+							detail = errBody?.error ? `: ${errBody.error}` : "";
+						} catch {}
+						throw Object.assign(new Error(`Hub request failed (${response.status}${detail})`), {
+							status: response.status,
+						});
+					}
 					const result: unknown = await response.json();
 					signal?.throwIfAborted();
 					return result;
@@ -185,6 +209,23 @@ export function createDeviceCollabService(options: {
 					}
 					case "list_rooms":
 						return await request("rooms");
+					case "blackboard_read": {
+						const query = new URLSearchParams({ sourceBotId: args.sourceBotId! });
+						return await request(`${room()}/blackboard`, undefined, query);
+					}
+					case "blackboard_update": {
+						return await request(
+							`${room()}/blackboard`,
+							{
+								sourceBotId: args.sourceBotId!,
+								content: args.content!,
+								expectedVersion: args.expectedVersion!,
+								...(args.title !== undefined ? { title: args.title } : {}),
+							},
+							undefined,
+							"PUT",
+						);
+					}
 					case "read_history": {
 						if (
 							args.before !== undefined &&
@@ -212,6 +253,7 @@ export function createDeviceCollabService(options: {
 							targetBotIds: [args.targetBotId],
 							idempotencyKey: randomUUID(),
 							...(parentTaskId ? { parentTaskId } : {}),
+							...(args.resourceLocks?.length ? { resourceLocks: args.resourceLocks } : {}),
 						});
 					case "conversation_list":
 					case "conversation_read": {
@@ -322,6 +364,7 @@ export function createDeviceCollabService(options: {
 							kind: args.kind ?? "message",
 							requestId: args.requestId,
 							idempotencyKey: args.idempotencyKey ?? randomUUID(),
+							...(args.resourceLocks?.length ? { resourceLocks: args.resourceLocks } : {}),
 						});
 					case "sync_files": {
 						if (!args.targetBotId || !args.roomId || !args.sourceBotId || !args.paths?.length)

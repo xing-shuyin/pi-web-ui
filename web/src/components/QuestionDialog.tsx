@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
 import { useT } from "../i18n";
-import { appSend } from "../app-globals";
+import { sendQuestionAnswer } from "../question-answer-relay";
 import { useEscapeKey } from "../shortcut-stack";
 import { useImeCompositionGuard } from "../use-ime-composition-guard";
 import { hoverCapable } from "../tip-position";
@@ -89,6 +89,8 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 	);
 	/** 已结算标记：提交或取消后禁止 effect 再次回写草稿 */
 	const submittedRef = useRef(false);
+	/** 答案已登记但没送出去（连接正断开）：告诉用户会自动补发，而非让对话框假装已生效。 */
+	const [queuedNotice, setQueuedNotice] = useState(false);
 
 	useEffect(() => {
 		submittedRef.current = false;
@@ -128,7 +130,7 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 		(reason?: string) => {
 			submittedRef.current = true;
 			clearQuestionDraft(draftId);
-			appSend({
+			sendQuestionAnswer({
 				type: "question_answer",
 				id: question.id,
 				answers: [],
@@ -165,7 +167,7 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 	useEffect(() => {
 		if (question.questions.length === 0 || total > 0) return;
 		const id = setTimeout(() => {
-			appSend({
+			sendQuestionAnswer({
 				type: "question_answer",
 				id: question.id,
 				answers: [],
@@ -229,13 +231,16 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 				const custom = (customs[qq.id] ?? "").trim();
 				return { id: qq.id, selected, ...(custom ? { custom } : {}) };
 			});
-		appSend({
+		// 投递结果不是「发出去就算完」：连接未开时答案进登记簿，重连后自动补发，
+		// 不再出现「点了没反应、等一下又弹一张」的现象（见 question-answer-relay.ts）。
+		const delivered = sendQuestionAnswer({
 			type: "question_answer",
 			id: question.id,
 			answers,
 			...(question.global ? { global: true } : {}),
 			...(owner ? { owner } : {}),
 		});
+		if (!delivered) setQueuedNotice(true);
 	};
 
 	const toggleOption = (qid: string, label: string) => {
@@ -351,6 +356,11 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 					</span>
 				)}
 				{total > 1 && <span className="question-progress">{t("questionStep", { cur: currentStep + 1, total })}</span>}
+				{queuedNotice && (
+					<span className="question-timer" title="connection lost">
+						{t("questionQueuedOffline")}
+					</span>
+				)}
 				{remainSec >= 0 && (
 					<span className="question-timer">
 						{remainSec > 0 ? t("questionTimeout", { s: remainSec }) : t("questionTimeoutExpired")}

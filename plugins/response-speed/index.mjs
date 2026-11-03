@@ -183,8 +183,8 @@ export default {
 
 			const hintEn =
 				stats.count > 0
-					? `⚡ AI Response Speed (Current conversation)\n• Latest response: ${latestStr} (TTFT)\n• Average speed: ${avgStr}\n• Fastest: ${formatDuration(stats.minMs)} · Slowest: ${formatDuration(stats.maxMs)}\n• Total requests: ${stats.count}\n(Format: Latest / Avg in seconds, click to view details)`
-					: "⚡ AI Response Speed (Current conversation)\nNo latency records for this conversation yet. Tracking starts on next query or self-loop turn.\nFormat: Latest/Avg (seconds)";
+					? `⚡ AI Response Speed (Current conv)\n• Latest: ${latestStr} (TTFT) · Avg: ${avgStr}\n• Range: ${formatDuration(stats.minMs)} - ${formatDuration(stats.maxMs)} · Requests: ${stats.count}\n(Format: Latest/Avg, click for details)`
+					: "⚡ AI Response Speed (Current conv)\nNo latency records yet. Tracking starts on next turn.\nFormat: Latest/Avg (seconds)";
 
 			host.ui?.update("response-speed-badge", {
 				label: compactLabel,

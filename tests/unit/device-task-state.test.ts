@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeviceHubStore, type HubState, type HubTask } from "../../server/device-center/store.js";
+import { DeviceHubStore, readPersistedHub, type HubState, type HubTask } from "../../server/device-center/store.js";
 import { CONVERSATION_EVENT_LIMIT, reconcileConversationState } from "../../server/device-center/task-state.js";
 
 const dirs: string[] = [];
@@ -146,7 +146,7 @@ describe("transactional conversation task projection", () => {
 	});
 
 	it("does not publish task, event, or state on persistence failure and recovers the transaction queue", async () => {
-		const { store, conversation } = await fixture();
+		const { store, dir, conversation } = await fixture();
 		const before = store.snapshot();
 		vi.spyOn(store, "persist").mockRejectedValueOnce(new Error("disk full"));
 		await expect(
@@ -156,7 +156,7 @@ describe("transactional conversation task projection", () => {
 			}),
 		).rejects.toThrow("disk full");
 		expect(store.snapshot()).toEqual(before);
-		expect(JSON.parse(await readFile(store.path, "utf8"))).toEqual(before);
+		expect(await readPersistedHub(dir)).toEqual(before);
 		await store.transact((s) => {
 			s.tasks[0].status = "failed";
 			s.tasks[0].report = "failure";
@@ -208,9 +208,13 @@ describe("transactional conversation task projection", () => {
 			taskState: { revision: 0, phase: "completed" },
 			events: [],
 		});
-		expect(JSON.parse(await readFile(store.path, "utf8"))).toEqual(legacy);
+		// The index no longer carries the task collection; durable state is index + append logs.
+		const durable = await readPersistedHub(dir);
+		expect(durable.tasks).toEqual(legacy.tasks);
+		expect(durable.conversations[0].taskState).toMatchObject({ revision: 0, phase: "completed" });
+		expect(durable.conversations[0].events).toEqual([]);
 		await migrated.transact(() => {});
-		expect(JSON.parse(await readFile(store.path, "utf8"))).toEqual(migrated.snapshot());
+		expect(await readPersistedHub(dir)).toEqual(migrated.snapshot());
 	});
 
 	it("records only an unambiguous human attention answer as a decision, never a bot result", async () => {

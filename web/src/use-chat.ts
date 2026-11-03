@@ -71,6 +71,12 @@ import {
 	type OptimisticQueueTracker,
 } from "./optimistic-queue";
 import { resolvePendingQuestion, type QuestionSource } from "./pending-question";
+import {
+	confirmQuestionAnswer,
+	hasUnconfirmedAnswer,
+	resendUnconfirmedAnswers,
+	resetUnconfirmedAnswers,
+} from "./question-answer-relay";
 import { emitTuiOverlayRender, resetTuiOverlayRender } from "./tui-overlay-bridge";
 import { setAppGlobals, setAppSend } from "./app-globals";
 import { currentUiLocale, UI_LOCALE_EVENT } from "./ui-locale.js";
@@ -1987,6 +1993,10 @@ export function useChat() {
 	 *  恢复（重连/刷新）。在同一会话内，只有 snapshot 来源的才接受快照收起（切换会话
 	 *  时无论来源一律收起，见 resolvePendingQuestion 规则 2）。 */
 	const questionSourceRef = useRef<QuestionSource>("live");
+	/** 已连上的服务进程 runId（ready 帧下发）。null = 还不知道。
+	 *  用它区分「同一实例断线重连」（保留已答缓存 + 重投未确认答案）
+	 *  与「换了新服务」（必须清空：新实例的 q-1 是另一张问卷）。 */
+	const serverRunIdRef = useRef<string | null>(null);
 
 	/** Debounced authoritative resync: get_state always returns a FULL snapshot.
 	 *  Shared by delta-seq gap detection and snapshot_delta rev mismatch. */
@@ -2223,6 +2233,8 @@ export function useChat() {
 			snapshot: p,
 			answered: answeredQuestionsRef.current,
 			activeConversationId,
+			// 已提交但未确认的答案：不在快照里复活弹窗，而是重投（幂等）。
+			pendingDelivery: hasUnconfirmedAnswer,
 		});
 		if (!decision.changed) return;
 		questionSourceRef.current = decision.source;
@@ -2350,10 +2362,22 @@ export function useChat() {
 						latencyMs: initialLatencyMs,
 						engines: msg.engines,
 					});
-					// Reconnect/attach: clear answered questions cache and stale dialog so
-					// freshly started server runs don't collide on restarted question counters (e.g. q-1).
-					answeredQuestionsRef.current.clear();
-					dispatch({ type: "question", question: null });
+					// 重连/attach：只在「换了服务实例」时清空已答缓存与旧对话框。
+					// 同一实例的断线重连必须保留：否则在途旧快照里还没删掉的问卷会被
+					// 重新弹出来（用户已答过 → 重连又冒出来 → 再答再断 → 无限循环）。
+					// runId 缺失（旧服务）退化成旧行为，保证兼容。
+					const runChanged = msg.runId !== undefined && msg.runId !== serverRunIdRef.current;
+					if (runChanged || msg.runId === undefined) {
+						serverRunIdRef.current = msg.runId ?? null;
+						answeredQuestionsRef.current.clear();
+						resetUnconfirmedAnswers();
+						dispatch({ type: "question", question: null });
+					} else {
+						// 同一实例重连：已答过的 id 继续保留（快照恢复时跳过），
+						// 并把断线期间没送出去的答案重投。
+						dispatch({ type: "question", question: null });
+						resendUnconfirmedAnswers();
+					}
 					// Ensure a fresh snapshot on (re)connect.
 					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
 					// Sessions + recent projects are LAZY: LeftPanel requests them
@@ -2746,6 +2770,9 @@ export function useChat() {
 					dispatch({ type: "tool_approval", approval: null, resolvedId: msg.id });
 					break;
 				case "question_retracted": {
+					// 服务端 settle 即投递确认：从「未确认答案」登记簿里移除（见
+					// question-answer-relay.ts）。否则重连时会反复重投。
+					confirmQuestionAnswer(msg.id, msg.owner);
 					if (msg.global) {
 						dispatch({ type: "global_question", id: msg.id, owner: msg.owner });
 						break;

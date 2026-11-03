@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLocalBotRegistry } from "../../server/device-center/bots.js";
+import { readPersistedHub } from "../../server/device-center/store.js";
 import { createDeviceConnector } from "../../server/device-center/connector.js";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
 
@@ -123,7 +124,7 @@ describe("unpaired local Bot groups", () => {
 		expect(result.rooms).toHaveLength(1);
 		expect(result.rooms[0].id).toBe(room.id);
 		expect(restarted.bots.list().map((bot) => bot.id)).toEqual(botIds);
-		const saved = JSON.parse(await readFile(join(dataDir, "local-device-hub", "device-hub.json"), "utf8"));
+		const saved = await readPersistedHub(join(dataDir, "local-device-hub"));
 		expect(saved.devices[0]).not.toHaveProperty("credential");
 		expect(saved.messages.some((message: { sender: { type: string } }) => message.sender.type === "bot")).toBe(true);
 	});

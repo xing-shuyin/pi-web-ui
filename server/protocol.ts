@@ -221,7 +221,7 @@ export interface DeviceConversation {
 	latestTaskId: string;
 	createdAt: number;
 	updatedAt: number;
-	status: "queued" | "running" | "completed" | "failed" | "interrupted" | "closed";
+	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted" | "closed";
 	latestDelivery?: DeviceDelivery;
 	latestReview?: DeviceReview;
 	deliveryCount: number;
@@ -244,6 +244,58 @@ export interface DeviceDeliveryResponse {
 }
 export interface DeviceReviewResponse {
 	review: DeviceReview;
+}
+
+// ---------------------------------------------------------------------------
+// Global Resource Leases & Room Lock Info
+
+export const RESOURCE_LOCK_KEY_PATTERN = /^[a-zA-Z0-9_.:/-]+$/;
+export const MAX_RESOURCE_LOCKS_PER_TASK = 10;
+export const MAX_RESOURCE_LOCK_KEY_LENGTH = 256;
+
+export interface RoomActiveLock {
+	lockKey: string;
+	roomId: string;
+	taskId: string;
+	botId: string;
+	deviceId?: string;
+	acquiredAt: number;
+	expiresAt: number;
+}
+
+export interface RoomLockWaiter {
+	taskId: string;
+	roomId: string;
+	botId: string;
+	lockKeys: string[];
+	queuedAt: number;
+}
+
+export interface RoomLockInfo {
+	roomId: string;
+	activeLocks: RoomActiveLock[];
+	waitingQueue: RoomLockWaiter[];
+}
+
+export interface RoomTaskCreateInput {
+	text?: string;
+	targetBotId?: string;
+	targetBotIds?: string[];
+	resourceLocks?: string[];
+	kind?: "message" | "request" | "reply";
+	requestId?: string;
+	parentTaskId?: string;
+	idempotencyKey?: string;
+	planOnly?: boolean;
+	replyToMessageId?: string;
+}
+
+export interface GroupBlackboard {
+	version: number; // 严格自增版本号（从 1 开始）
+	updatedAt: number;
+	updatedBy: { type: "human" | "bot"; id: string; name: string };
+	title?: string;
+	content: string; // Markdown 格式结构化共识，最大 32KB
 }
 
 // ===========================================================================
@@ -331,26 +383,71 @@ export interface DeviceTaskReportMeta {
 	publicError?: DeviceTaskReportMetadata["publicError"];
 }
 
+export interface DeviceTask {
+	id: string;
+	roomId: string;
+	accountId: string;
+	deviceId: string;
+	botId: string;
+	botName?: string;
+	deviceName?: string;
+	text: string;
+	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	resourceLocks?: string[];
+	blockReason?: DeviceTaskBlockReason;
+	blockReasonDetail?: string;
+	createdAt: number;
+	updatedAt: number;
+	attemptId: string;
+	parentTaskId?: string;
+	conversationId?: string;
+	queuedReason?: string;
+	interruptedReason?: string;
+	report?: string;
+	attenuatedTools?: string[];
+}
+
+export interface HubTask {
+	id: string;
+	attemptId: string;
+	roomId: string;
+	accountId: string;
+	deviceId: string;
+	botId: string;
+	botRevision: number;
+	text: string;
+	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	createdAt: number;
+	updatedAt: number;
+	sourceBotId?: string;
+	sourceConversationId?: string;
+	conversationId?: string;
+	parentTaskId?: string;
+	rootTaskId?: string;
+	dispatchDepth?: number;
+	dispatchCount?: number;
+	kind?: "message" | "request" | "reply" | "result";
+	requestId?: string;
+	resultOfTaskId?: string;
+	resume?: boolean;
+	planOnly?: boolean;
+	resourceLocks?: string[];
+	blockReason?: DeviceTaskBlockReason;
+	blockReasonDetail?: string;
+	report?: string;
+	reportMetadata?: DeviceTaskReportMetadata;
+	cancelRequested?: boolean;
+	stopConfirmed?: boolean;
+	leaseToken?: string;
+	leaseGeneration?: number;
+	lastHeartbeatAt?: number;
+	recoveryUntil?: number;
+	attenuatedTools?: string[];
+	[key: string]: unknown;
+}
+
 export interface DeviceTaskDetails {
-	task: {
-		id: string;
-		roomId: string;
-		accountId: string;
-		deviceId: string;
-		botId: string;
-		botName?: string;
-		deviceName?: string;
-		text: string;
-		status: "queued" | "running" | "completed" | "failed" | "interrupted";
-		createdAt: number;
-		updatedAt: number;
-		attemptId: string;
-		parentTaskId?: string;
-		conversationId?: string;
-		queuedReason?: string;
-		interruptedReason?: string;
-		report?: string;
-	};
+	task: DeviceTask;
 	reportMeta?: DeviceTaskReportMeta;
 	latestProgress?: DeviceTaskProgress;
 	interactionCount: number;
@@ -4236,6 +4333,11 @@ export type ServerMessage =
 			 *  its own baked-in id — a mismatch means the server rebuilt since
 			 *  this page loaded and the page should reload itself. */
 			buildId?: string;
+			/** 本次服务进程的运行实例 id（每次启动重新生成）。
+			 *  客户端据此区分「同一实例的断线重连」与「换了新服务」：
+			 *  前者保留已答问卷 id 与待投答案（否则重连后已答的问卷会被
+			 *  在途旧快照复活、重复弹出），后者必须清空（新实例的 q-1 是另一张问卷）。 */
+			runId?: string;
 			/** PI_WEB_MANAGED=1 — updates come from outside, so the client hides
 			 *  the update badge, the UPDATE panel and the plugin market. The
 			 *  server refuses those messages anyway (server/managed.ts). */
@@ -5057,10 +5159,28 @@ export type ServerMessage =
 export interface DeviceExecutionSettings {
 	maxActiveTasks: number;
 	maxWaitingTasks: number;
+	starvationThresholdMs: number;
+	maxSkipsBeforeStarvation: number;
+	maxDispatchDepth: number;
+	maxDispatchBudget: number;
+	allowBotMentions: boolean;
+	groupContextBytes: number;
+	groupRetentionLimit: number;
+	fileSyncMaxBytes: number;
+	fileSyncMaxFiles: number;
+	fileSyncStagedBytes: number;
+	resourceLockDefaultTtlMs: number;
+	blackboardMaxBytes: number;
 }
 
 export type DeviceTaskBlockReason =
-	"none" | "max_concurrency_reached" | "bot_busy" | "workspace_conflict" | "workspace_blocked" | "room_fairness_yield";
+	| "none"
+	| "max_concurrency_reached"
+	| "bot_busy"
+	| "workspace_conflict"
+	| "workspace_blocked"
+	| "room_fairness_yield"
+	| "resource_locked";
 
 export type DeviceBlockedTaskReason = "unconfirmed_stop" | "workspace_blocked";
 

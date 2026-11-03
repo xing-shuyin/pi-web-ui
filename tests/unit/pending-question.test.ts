@@ -198,4 +198,28 @@ describe("resolvePendingQuestion", () => {
 		expect(d.changed).toBe(true);
 		expect(d.question).toBeNull();
 	});
+
+	it("快照里的问卷已有待投答案 → 不恢复成弹窗（答案在路上，否则「答了又弹」）", () => {
+		const d = resolvePendingQuestion({
+			current: null,
+			source: "live",
+			snapshot: q("q-1"),
+			answered: none,
+			pendingDelivery: (id) => id === "q-1",
+		});
+		expect(d.changed).toBe(false);
+		expect(d.question).toBeNull();
+	});
+
+	it("待投答案只挡它自己那张：别的问卷照常恢复", () => {
+		const d = resolvePendingQuestion({
+			current: null,
+			source: "live",
+			snapshot: q("q-2"),
+			answered: none,
+			pendingDelivery: (id) => id === "q-1",
+		});
+		expect(d.changed).toBe(true);
+		expect(d.question?.id).toBe("q-2");
+	});
 });

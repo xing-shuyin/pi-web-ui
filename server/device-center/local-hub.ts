@@ -7,9 +7,10 @@ import { createDeviceRelay } from "./relay.js";
 import { installDeviceTransfers } from "./transfers.js";
 import { hashSecret } from "./store.js";
 import type { LocalDeviceConfig } from "./local.js";
+import type { DeviceExecutionSettings } from "./execution-settings.js";
 
 /** Private loopback Hub: uses the same authenticated Bot, room and task paths as a remote Hub. */
-export async function createLocalDeviceHub(dataDir: string) {
+export async function createLocalDeviceHub(dataDir: string, getSettings?: () => DeviceExecutionSettings) {
 	const server = createServer();
 	await new Promise<void>((resolve, reject) => {
 		server.once("error", reject);
@@ -29,6 +30,7 @@ export async function createLocalDeviceHub(dataDir: string) {
 			publicUrl: hubUrl,
 			server,
 			isOnline: (id) => relay?.isOnline(id) ?? false,
+			getSettings,
 		});
 		const credential = randomBytes(32).toString("hex");
 		const uiCredential = randomBytes(32).toString("hex");

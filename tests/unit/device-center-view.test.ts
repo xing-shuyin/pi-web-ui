@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { DeviceCenter } from "../../web/src/components/DeviceCenter.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { DeviceTaskSchedulerSnapshot } from "../../server/protocol.js";
+import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -35,7 +36,7 @@ function mockApi(status: object, handler?: (path: string, init: RequestInit) => 
 				return response({ rooms: [] });
 			case "/api/device-center/execution-queue":
 				return response({
-					settings: { maxActiveTasks: 4, maxWaitingTasks: 32 },
+					settings: { ...DEFAULT_EXECUTION_SETTINGS },
 					activeCount: 0,
 					waitingCount: 0,
 					blockedCount: 0,

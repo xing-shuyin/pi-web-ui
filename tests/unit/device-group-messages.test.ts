@@ -4,6 +4,9 @@ import {
 	groupDeviceHits,
 	groupMessageTargets,
 	groupSendAttempt,
+	formatGroupDisplayText,
+	formatGroupTaskChip,
+	formatDeviceFailureReport,
 	type GroupDetail,
 	type GroupTask,
 } from "../../web/src/device-group-messages";
@@ -67,8 +70,71 @@ describe("group conversation adapter", () => {
 		expect(state.messages[1].content).toEqual([{ type: "text", text: "**done**" }]);
 		expect(labels.get("group-message:m")).toBe("Human");
 		expect(labels.get("group-task:q")).toBe("Twin · host · Queued");
-		expect(state.messages[2].content).toEqual([{ type: "text", text: "Queued\n\nnext" }]);
+		expect(state.messages[2].content[0].type).toBe("text");
+		expect((state.messages[2].content[0] as { text: string }).text).toContain("Task Queued");
+		expect((state.messages[2].content[0] as { text: string }).text).toContain("next");
 		expect(groupConversationState("other", null, devices).state.messages).toEqual([]);
+	});
+
+	it("renders running task with active progress as structured card", () => {
+		const devices = [{ id: "a", name: "Coder", deviceId: "host", deviceName: "host", enabled: true }];
+		const { state } = groupConversationState(
+			"room",
+			{
+				room: { id: "room", name: "Room", botIds: ["a"] },
+				bots: devices,
+				messages: [],
+				tasks: [
+					{
+						id: "t1",
+						deviceId: "host",
+						botId: "a",
+						text: "build project",
+						createdAt: 10,
+						status: "running",
+						progress: {
+							phase: "tool",
+							toolName: "bash",
+							text: "running npm test",
+							taskId: "t1",
+							attemptId: "att1",
+						} as any,
+					},
+				],
+			},
+			devices,
+			true,
+		);
+		const content = (state.messages[0].content[0] as { text: string }).text;
+		expect(content).toContain("任务执行中");
+		expect(content).toContain("build project");
+		expect(content).toContain("bash");
+		expect(content).toContain("running npm test");
+	});
+
+	it("sanitizes long UUID mention tokens for clean display", () => {
+		const raw = "@win(fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a) 优化代码";
+		expect(formatGroupDisplayText(raw)).toBe("@win 优化代码");
+	});
+
+	it("extracts bot prefix and summary text cleanly for task chips", () => {
+		const raw = "@win(fe2dfb80-efe8-46a7-acb1-fe0f24b1c43a) 优化代码";
+		const chip = formatGroupTaskChip(raw, "win");
+		expect(chip.botPrefix).toBe("@win");
+		expect(chip.summary).toBe("优化代码");
+	});
+
+	it("formats technical device execution failures into readable markdown quotes", () => {
+		const failure =
+			"Device task failed [phase=model; category=execution_failed]. Local agent execution failed; inspect the retained task conversation on the target device.";
+		const formattedZh = formatDeviceFailureReport(failure, true);
+		expect(formattedZh).toContain("任务执行中断 · 模型推理阶段");
+		expect(formattedZh).toContain("模型推理阶段");
+		expect(formattedZh).toContain("execution_failed");
+
+		const formattedEn = formatDeviceFailureReport(failure, false);
+		expect(formattedEn).toContain("Task Interrupted · Model Execution");
+		expect(formattedEn).toContain("execution_failed");
 	});
 	it.each(["completed", "failed", "interrupted"] as const)(
 		"shows a linked %s report once with Bot, device and status",

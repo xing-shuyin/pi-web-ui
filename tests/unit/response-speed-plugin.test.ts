@@ -90,7 +90,7 @@ describe("response-speed 插件测试", () => {
 
 			expect(validation.errors).toEqual([]);
 			expect(validation.apiVersion).toBe(2);
-			expect(raw.version).toBe("0.3.2");
+			expect(raw.version).toBe("0.3.3");
 			expect(validation.permissions).toContain("ui");
 			expect(validation.permissions).toContain("http");
 			expect(validation.permissions).toContain("storage");
@@ -133,11 +133,13 @@ describe("response-speed 插件测试", () => {
 			const cleanup = responseSpeedPlugin.activate(mockHost as any);
 			expect(typeof cleanup).toBe("function");
 
-			// 初始底栏应为 --/--
+			// 初始底栏应为 --/--，且提示文案严格遵守宿主 ≤200 字符限制（避免触发诊断警告）
 			const initialBadge = uiUpdates.get("response-speed-badge");
 			expect(initialBadge).toBeDefined();
 			expect(initialBadge.label).toBe("--/--");
 			expect(initialBadge.labelEn).toBe("--/--");
+			expect(initialBadge.hint?.length).toBeLessThanOrEqual(200);
+			expect(initialBadge.hintEn?.length).toBeLessThanOrEqual(200);
 
 			// 测试 GET /stats 路由
 			const getStats = routes.get("GET /stats");
@@ -173,10 +175,12 @@ describe("response-speed 插件测试", () => {
 			expect(recordJson.stats.count).toBe(1);
 			expect(recordJson.stats.avgMs).toBe(650);
 
-			// 底栏应已刷新为 0.7/0.7（650ms 换算为秒，一位小数）
+			// 底栏应已刷新为 0.7/0.7（650ms 换算为秒，一位小数），且更新后的提示文案严格 ≤200 字符
 			const updatedBadge = uiUpdates.get("response-speed-badge");
 			expect(updatedBadge.label).toBe("0.7/0.7");
 			expect(updatedBadge.labelEn).toBe("0.7/0.7");
+			expect(updatedBadge.hint?.length).toBeLessThanOrEqual(200);
+			expect(updatedBadge.hintEn?.length).toBeLessThanOrEqual(200);
 
 			// 上报非法数据应返回 400
 			let errorStatus = 0;
