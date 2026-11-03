@@ -37,8 +37,6 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
 	"server/device-center/desktop-native.ts": { count: 1, reason: "`xcrun` 探测，仅 macOS" },
 	// 插件主进程代码：uv 探测在事件处理里被 await，同样能冻住事件循环
 	"plugins/bili-scroll/lib/uvfetch.mjs": { count: 6, reason: "插件里探测 `uv` 版本，迁移到异步 spawn 待办" },
-	// #830 把这条 `npm root -g` 换成静态推导；那个 PR 合并后删掉这一行（棘轮会点名提醒）
-	"server/global-loader.ts": { count: 1, reason: "#830 已改为静态推导，等合并后从名单移除" },
 };
 
 /**
