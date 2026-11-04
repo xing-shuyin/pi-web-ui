@@ -28,6 +28,8 @@ const SKIP = [
 	"/dist/",
 	"/web/dist/",
 	"/.git/",
+	"/.worktrees/",
+	"/.pi/",
 	"/locales/",
 	"/tests/scratch/",
 	// 插件自带的大 bundle / 扩展产物：由各自的 src 生成，扫了也没意义

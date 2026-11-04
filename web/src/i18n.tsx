@@ -98,7 +98,6 @@ export const zh = {
 	newChatEphemeralTip: "临时对话（仅内存，关闭即销毁，不进历史记录）",
 	newSandbox: "启动沙盒",
 	newSandboxTip: "启动沙盒项目（安全隔离实验工作区）",
-	ephemeralBadge: "临时",
 	ephemeralBannerText: "当前为临时对话：消息仅保存在内存中，关闭后自动销毁，不进入历史记录。",
 	more: "更多",
 	brand: "品牌",
@@ -110,8 +109,6 @@ export const zh = {
 	"thinking.high": "高",
 	"thinking.xhigh": "极高",
 	"thinking.max": "最大",
-	thinkingUnsupported: "当前模型不支持该级别，已按模型能力就近生效",
-
 	/* footerbar */
 	context: "上下文",
 	contextUsage: "上下文用量",
@@ -170,7 +167,6 @@ export const zh = {
 	queued: "排队",
 	enterPath: "输入路径，Enter 切换",
 	cwdTip: "工作目录：{path}（点击切换）",
-	manageProjects: "管理项目和工作目录",
 	projectPickerTitle: "选择工作目录",
 	invalidProjectName: "请输入不含路径分隔符的文件夹名称",
 	cwdGoUp: "上级目录",
@@ -305,7 +301,6 @@ export const zh = {
 	scheduledTaskBadge: "定时任务",
 	schedulerViewTip: "点击直接查看此定时任务的实时对话",
 	elsewhereTip: "在其他标签页 / 设备上打开的对话（运行中或已结束未关闭，右键可过户到本页查看）",
-	elsewherePseudoTip: "定时任务/插件正在后台会话中执行，报告会自动落回绑定的对话；不支持过户到当前页面",
 	elsewhereActions: "操作（过户到本页 / 复制 id…）",
 	takeoverConversation: "过户到当前页面",
 	takeoverConfirm: "确认过户到当前页面？",
@@ -325,12 +320,6 @@ export const zh = {
 	subagentBadge: "子代理",
 	collapseSubagents: "折叠子代理",
 	expandSubagents: "展开子代理",
-	subagentBadgeCount: "{n} 个子代理",
-	subagentsStreamingTip: "{n} 个子代理（有子代理运行中）",
-	subagentsQuestionTip: "{n} 个子代理（等待问卷答复）",
-	subagentsErrorTip: "{n} 个子代理（存在错误）",
-	subagentsCountTip: "{n} 个子代理",
-	convErrorBadge: "子代理运行报错：{error}",
 	subagentTitle: "子代理 · {title}",
 	historySessions: "历史",
 	openHistory: "历史",
@@ -340,9 +329,6 @@ export const zh = {
 	noHistory: "还没有历史对话",
 	current: "当前",
 	messageCount: "{n} 条消息",
-	tuiTip: "pi 终端（TUI）中的对话",
-	forkedSessionBadge: "分支",
-	forkedSessionTip: "分支自：{parent}",
 	deleteProject: "从最近项目移出",
 	deleteProjectConfirm: "确认移出",
 	deleteSession: "删除该对话记录（不可恢复）",
@@ -358,7 +344,6 @@ export const zh = {
 	dismissFinishedSubagents: "关闭已结束的子代理（{n} 个）",
 	dismissFinishedSubagentsScoped: "关闭该对话下已结束的子代理（含嵌套，{n} 个）",
 	dismissStreamingConfirm: "仍在运行，确认强行关闭？（运行将被中止）",
-	dismissFinishedOnly: "关闭已结束",
 	dismissForceAll: "强制全关",
 	forceDismissTitle: "强行关闭本对话及全部 {n} 个子代理（运行中的 {m} 个将被中止）",
 	forceDismissConversation: "强行关闭对话（含全部子代理）",
@@ -578,8 +563,6 @@ export const zh = {
 	planModeBadge: "只读规划中",
 	clear: "清空",
 	confirm: "确定",
-	forkBadge: "分支",
-	forkBadgeTip: "派生自",
 	reaskFromHere: "从此处重新提问",
 	editPlaceholder: "修改问题内容…",
 	editAttachmentHint: "原附件已保留，可粘贴/拖入新图片或文件 · ⌘/Ctrl+Enter 提交 · Esc 取消",
@@ -1128,10 +1111,7 @@ export const zh = {
 	"tpl.resetConfirm": "确认恢复默认？",
 	"tpl.builtin": "内置",
 	"tpl.custom": "自定义",
-	"tpl.newTitle": "新建提示词模板",
-	"tpl.editTitle": "编辑提示词模板",
 	"tpl.fieldIcon": "图标",
-	"tpl.fieldTitle": "标题",
 	"tpl.fieldTitlePh": "卡片上显示的短标题",
 	"tpl.fieldDesc": "说明",
 	"tpl.fieldDescPh": "一句话说明，显示在卡片上",
@@ -1165,23 +1145,6 @@ export const zh = {
 	"tpl.sk.toplan.desc": "输出结构化方案与可执行步骤",
 	"tpl.sk.toplan.prompt":
 		"请将我们要解决的问题整理为严谨的实施计划与工单：\n\n1. 架构与设计概要：受影响模块、核心接口定义及数据流变化。\n2. 风险与回退：潜在冲突点、破坏性变更与迁移方案。\n3. 任务拆解：拆分成若干小粒度、可独立验证的执行步骤（Step-by-step tickets）。\n4. 每个步骤明确列出：目标、需修改的文件、验收用例。先输出计划供我确认。",
-	"tpl.sk.setup": "仓库初始化",
-	"tpl.sk.setup.desc": "让仓库了解它的构建与约定",
-	"tpl.sk.setup.prompt":
-		"请先扫描这个仓库，建立「其他工作流都能用」的基础上下文，输出一份简明报告：\n\n1. 项目类型、技术栈与目录结构\n2. 构建 / 测试 / 运行 / 格式化的具体命令\n3. 代码约定与命名规范\n4. 任务 / issue 的存放位置与格式\n5. 目前已知的坑或遗留问题\n\n先只报告，不修改任何文件。",
-	"tpl.sk.ask": "技能导航",
-	"tpl.sk.ask.desc": "告诉我该用哪个流程",
-	"tpl.sk.ask.prompt":
-		"我先描述当前要解决的情况，你先判断最适合的工作流（需求澄清 / 拆解计划 / 测试驱动 / 排错 / 架构 / 审查 / 交接等），说明为什么推荐它、会怎么做，等我确认后按它执行。",
-	"tpl.sk.grilldocs": "需求拷问·落档",
-	"tpl.sk.grilldocs.desc": "边盘问需求边记录决策",
-	"tpl.sk.grilldocs.prompt":
-		"动手前，请用拷问的方式向我盘问这个计划（一次一个问题），直到达成共识。同时把过程中的关键术语和已定决策记录下来（例如写入 CONTEXT.md 或 ADR 文件），让后续所有工作都基于同一套「共享语言」。每个问题先给出你的推荐答案。",
-	"tpl.sk.tospec": "转规格说明",
-	"tpl.sk.tospec.desc": "把讨论结果整理成规格书",
-	"tpl.sk.tospec.prompt":
-		"请把我们在对话中已经达成的共识，整理成一份结构化的规格说明书：\n\n1. 背景与目标\n2. 明确的目标与非目标\n3. 用户与使用场景\n4. 边界条件与失败场景\n5. 验收标准（怎样算完成）\n6. 接口 / 数据结构概要\n\n先输出规格让我评审，确认后再继续。",
-	"tpl.sk.totickets": "拆工单",
 	"tpl.sk.totickets.desc": "把规格拆成可构建的小任务",
 	"tpl.sk.totickets.prompt":
 		"请把这份规格说明拆成一组小工单，供逐个构建：\n\n1. 每个工单足够小、可独立验收\n2. 标注依赖顺序（哪些必须先做）\n3. 每个工单含：做什么、验收标准、涉及文件\n4. 识别出可并行的工单\n\n先输出工单列表，我确认顺序后再执行。",
@@ -1193,10 +1156,6 @@ export const zh = {
 	"tpl.sk.codeview.desc": "对照规范与深模块原则审查 diff",
 	"tpl.sk.codeview.prompt":
 		"请对当前工作区的所有未提交改动（git diff）或指定模块进行全面审查：\n\n1. 正确性与边界：是否存在空指针、资源泄漏、竞态条件或未处理的异常。\n2. 架构与深模块：接口是否比实现简单？是否有复杂度泄漏？职责是否单一？\n3. 性能与安全：有无 N+1 查询、不必要的同步等待、安全漏洞或过度渲染。\n4. 测试完备度：关键逻辑是否有对应单测覆盖。按「严重 / 建议 / 提示」分级列出改动意见。",
-	"tpl.sk.wayfinder": "大任务地图",
-	"tpl.sk.wayfinder.desc": "把大工程画成决策地图",
-	"tpl.sk.wayfinder.prompt":
-		"这是一个大型任务。请先把它画成一张「决策地图」：\n\n1. 拆出所有需要做出的决策点及其依赖关系\n2. 为每个决策点列出选项、权衡与你的推荐\n3. 标注哪些可以并行推进、哪些必须串行\n4. 输出一份路径规划，我逐项确认后再动手。",
 	"tpl.sk.prototype": "快速原型",
 	"tpl.sk.prototype.desc": "用一次性代码验证设计假设",
 	"tpl.sk.prototype.prompt":
@@ -1205,10 +1164,6 @@ export const zh = {
 	"tpl.sk.research.desc": "读一手来源给出带引用的答案",
 	"tpl.sk.research.prompt":
 		"请对该技术问题展开深入、客观且有据可查的调研：\n\n1. 优先查阅官方权威文档、RFC 规范、语言标准或开源仓库源码，避免二手加工资料。\n2. 严格区分「确凿事实（附来源或版本）」、「合理推断」与「不确定风险」。\n3. 对比不同技术路线的优缺点、适用场景与维护成本（Trade-off 对比表）。\n4. 给出贴合当前项目技术栈的落地选型建议。",
-	"tpl.sk.arch": "架构体检",
-	"tpl.sk.arch.desc": "找出值得重构的模块（报告）",
-	"tpl.sk.arch.prompt":
-		"对整个代码库做一次架构体检：\n\n1. 找出「深模块被破坏」的迹象：过长的函数与类、明显的重复、命名混乱、隐藏的耦合\n2. 按严重程度与影响范围分级，输出一份可视化改进报告\n3. 对每一项给出最小可行的重构方案与理由\n4. 先报告再动手，重构前确认范围。",
 	"tpl.sk.debug": "系统化排错",
 	"tpl.sk.debug.desc": "从可复现的失败开始诊断",
 	"tpl.sk.debug.prompt":
@@ -1217,55 +1172,6 @@ export const zh = {
 	"tpl.sk.merge.desc": "逐个 hunk 完成合并/变基",
 	"tpl.sk.merge.prompt":
 		"请帮助解决当前的 Git 合并/变基冲突：\n\n1. 逐个冲突文件和冲突块（hunk），分析双方（ours 与 theirs）的真实业务意图。\n2. 结合上下文与调用方，给出保留双方正确语义的综合解决方案，而不是机械选一边。\n3. 清理所有冲突标记（<<<<<<<, =======, >>>>>>>）。\n4. 运行工程的类型检查与测试命令，确保解决冲突后构建完好、单测通过。",
-	"tpl.sk.triage": "工单分流",
-	"tpl.sk.triage.desc": "把原始 issue 整理成可领取的工作",
-	"tpl.sk.triage.prompt":
-		"请把这些原始 issue / 反馈整理成可执行的工作项：\n\n1. 去重、合并相关的条目\n2. 分类（bug / 功能 / 改进 / 问题）\n3. 按影响与紧急度标优先级\n4. 每个工作项补上：复现信息或期望、验收标准\n\n输出整理后的清单。",
-	"tpl.sk.wizard": "设置向导",
-	"tpl.sk.wizard.desc": "生成引导人类完成设置的脚本",
-	"tpl.sk.wizard.prompt":
-		"请为一个需要手动操作的设置流程生成一个引导向导（脚本或文档）：\n\n1. 一步步引导，每步说明为什么\n2. 每步带校验，输错给出可操作的提示\n3. 支持撤销 / 回退到上一步\n4. 结束时做一次自检并给出验证方法。",
-	"tpl.sk.grillme": "需求拷问",
-	"tpl.sk.grillme.desc": "动手前盘问对齐想法",
-	"tpl.sk.grillme.prompt":
-		"开始之前，请不遗余力地盘问我这个想法的每一个方面，直到我们达成共识（一次只问一个问题，每个问题先给推荐答案）：\n\n1. 目标与非目标\n2. 用户与场景\n3. 边界与失败模式\n4. 约束与依赖\n5. 验收标准\n\n达成共识后再给实现计划，等确认再写代码。",
-	"tpl.sk.handoff": "交接",
-	"tpl.sk.handoff.desc": "把长会话写成交接文档",
-	"tpl.sk.handoff.prompt":
-		"请把当前会话整理成一份交接文档，让另一个 agent / 同事能无缝继续：\n\n1. 背景与目标\n2. 已完成的工作与关键决策（附原因）\n3. 未完成项与下一步\n4. 已知风险与待确认问题\n5. 如何验证当前状态（命令等）\n\n输出为结构化文档。",
-	"tpl.sk.questionnaire": "转问卷",
-	"tpl.sk.questionnaire.desc": "把开放问题变成可填问卷",
-	"tpl.sk.questionnaire.prompt":
-		"请把需要别人提供的信息整理成一份可填写的问卷：\n\n1. 每个问题说明背景和用途\n2. 标注必填 / 选填\n3. 给出示例答案降低理解成本\n4. 分组排序，先简单后复杂\n\n输出一份文档，对方可以照着填。",
-	"tpl.sk.teach": "持续学习",
-	"tpl.sk.teach.desc": "跨多次会话循序渐进学习",
-	"tpl.sk.teach.prompt":
-		"请按循序渐进的方式教我：\n\n1. 先定学习路径和目标\n2. 一次只讲一小节，讲完给个小练习\n3. 基于上一节的内容递进，主动提问确认理解\n4. 每节结束总结要点\n\n适合跨多次会话推进。",
-	"tpl.sk.ww": "说人话",
-	"tpl.sk.ww.desc": "用大白话重讲刚才的解释",
-	"tpl.sk.ww.prompt":
-		"请把刚才的解释用最简单的语言重新讲一遍：\n\n1. 避免术语，必须用时先给一句话定义\n2. 用类比或具体例子说明\n3. 明确指出哪部分仍是猜测 / 不确定\n4. 用最短的话说完核心意思。",
-	"tpl.sk.wfa": "写给 agent 的文档",
-	"tpl.sk.wfa.desc": "按 agent 易读的原则写文档",
-	"tpl.sk.wfa.prompt":
-		"请按「写给 agent 阅读」的原则写这份文档 / 说明：\n\n1. 目标与使用场景写在最前\n2. 指令具体、可验证，避免歧义和空话\n3. 给正反例帮助理解\n4. 结构化：标题、步骤、清单\n5. 标注哪些是硬性要求、哪些是可选。",
-	"tpl.sk.codesign": "深模块设计",
-	"tpl.sk.codesign.desc": "用深模块原则审查与设计",
-	"tpl.sk.codesign.prompt":
-		"请用「深模块」设计原则审查 / 设计：\n\n1. 识别模块对外暴露的接口是否比内部实现更简单\n2. 找出把复杂度泄漏到外部的模块\n3. 给出每个模块的职责边界与改进方案\n4. 平衡内聚与复用，避免过度抽象\n\n输出审查结论与重构建议。",
-	"tpl.sk.domain": "领域建模",
-	"tpl.sk.domain.desc": "打磨项目用词并写下来",
-	"tpl.sk.domain.prompt":
-		"请帮我梳理这个项目的领域语言：\n\n1. 找出核心术语及当前叫法\n2. 识别同词异义 / 异词同义造成的混乱\n3. 统一推荐用词，写进术语表\n4. 说明每个术语的边界（不是什么）\n\n输出一份领域术语表。",
-	"tpl.sk.grilling": "拷问流程",
-	"tpl.sk.grilling.desc": "用拷问压测一个计划",
-	"tpl.sk.grilling.prompt":
-		"请对下面这个计划做压力测试（拷问）：\n\n1. 逐项检查假设：如果它是错的会怎样？\n2. 找漏洞：边界、失败模式、依赖、时序\n3. 质疑决策：为什么这样？有没有更简单的路？\n4. 每次只提出一个最尖锐的问题，等我回答\n\n直到这个计划经得起推敲。",
-	"tpl.sk.tdd": "测试驱动",
-	"tpl.sk.tdd.desc": "红-绿-重构的规则",
-	"tpl.sk.tdd.prompt":
-		"请用 TDD（红-绿-重构）完成：\n\n1. 先写会失败的测试，覆盖正常路径、边界与错误分支\n2. 用最小实现让测试通过\n3. 重构并保持测试通过\n\n避免三种反模式：与实现耦合的测试、空洞断言（永远为真）、横向切片（只测表面）。每步汇报并运行测试。",
-
 	/* tool call block */
 	error: "出错",
 	done: "完成",
@@ -1552,15 +1458,9 @@ export const zh = {
 	deviceSetupFailed: "操作失败。请检查环境后重试；安装中断后请先确认中心状态。",
 	deviceSetupSuccess: "安装完成，接下来创建账号并配对",
 	deviceSetupPair: "填入中心地址并开始配对",
-	deviceSetupNext: "接下来：创建 Bot → 创建群组",
-	deviceSetupNextHint: "设备已绑定。先为本机创建 Bot 并设置项目目录与权限，再创建群组并添加 Bot。离线时保留绑定。",
-	deviceSetupManage: "管理 Bot 与群组",
 	deviceSetupBusy: "已有安装正在进行，请等待后刷新安装状态。",
 	deviceHubTitle: "设备中心",
 	deviceHubSubtitle: "将这台电脑连接到协作中心，集中管理设备与群任务。",
-	deviceHubOverview: "概览",
-	deviceHubSettings: "连接设置",
-	deviceHubGroups: "群聊",
 	localBotSyncFailed: "已保存到本机，但 Hub 同步失败；请重新连接设备后重试。",
 	localBotSaved: "已保存。可在群的成员管理中添加 Bot。",
 	localBotTitle: "本机 Bot",
@@ -2718,7 +2618,6 @@ export const zh = {
 	elsewhereOfflineTip:
 		"持有这条对话的页面已断开（标签页/浏览器关了），对话仍在服务端 —— 点本行两次即可接管到当前页面继续看",
 	/* sandbox projects */
-	sandboxNewBtn: "启动沙盒项目（安全隔离实验工作区）",
 	sandboxNewShort: "新建沙盒",
 	sandboxModalTitle: "启动沙盒项目",
 	sandboxModalSubtitle: "沙盒提供受限文件编辑：宿主 bash、eval 和不受控工具禁用；不支持这些限制的引擎会拒绝启动。",
@@ -2887,7 +2786,6 @@ export const en: Record<keyof typeof zh, string> = {
 	newChatEphemeralTip: "Ephemeral chat (in-memory only, auto-discarded on close, not saved to history)",
 	newSandbox: "Launch sandbox",
 	newSandboxTip: "Launch sandbox project (isolated workspace)",
-	ephemeralBadge: "Ephemeral",
 	ephemeralBannerText: "Ephemeral session: messages are in-memory only, discarded on close, not saved to history.",
 	more: "More",
 	brand: "Brand",
@@ -2899,8 +2797,6 @@ export const en: Record<keyof typeof zh, string> = {
 	"thinking.high": "High",
 	"thinking.xhigh": "Extra high",
 	"thinking.max": "Max",
-	thinkingUnsupported: "Not supported by this model — snapped to the nearest supported level",
-
 	/* footerbar */
 	context: "Context",
 	contextUsage: "Context usage",
@@ -2963,7 +2859,6 @@ export const en: Record<keyof typeof zh, string> = {
 	queued: "queued",
 	enterPath: "Type a path, Enter to switch",
 	cwdTip: "Working directory: {path} (click to switch)",
-	manageProjects: "Manage projects and working directories",
 	projectPickerTitle: "Choose a working directory",
 	invalidProjectName: "Enter a folder name without path separators",
 	cwdGoUp: "Up one level",
@@ -3106,8 +3001,6 @@ export const en: Record<keyof typeof zh, string> = {
 	schedulerViewTip: "Click to view this scheduled task conversation directly",
 	elsewhereTip:
 		"Conversation open in another tab / device (running, or finished but still held there; right-click to take over and view it here)",
-	elsewherePseudoTip:
-		"A scheduler/plugin background task is running here. Reports are saved to the bound conversation automatically; this session cannot be taken over",
 	elsewhereActions: "Actions (take over here, copy id…)",
 	takeoverConversation: "Take over to this page",
 	takeoverConfirm: "Confirm take over to this page?",
@@ -3127,12 +3020,6 @@ export const en: Record<keyof typeof zh, string> = {
 	subagentBadge: "Subagent",
 	collapseSubagents: "Collapse subagents",
 	expandSubagents: "Expand subagents",
-	subagentBadgeCount: "{n} subagent(s)",
-	subagentsStreamingTip: "{n} subagent(s) (streaming in background)",
-	subagentsQuestionTip: "{n} subagent(s) (awaiting input)",
-	subagentsErrorTip: "{n} subagent(s) (has errors)",
-	subagentsCountTip: "{n} subagent(s)",
-	convErrorBadge: "Subagent failed: {error}",
 	subagentTitle: "Subagent · {title}",
 	historySessions: "History",
 	openHistory: "History",
@@ -3142,9 +3029,6 @@ export const en: Record<keyof typeof zh, string> = {
 	noHistory: "No previous chats",
 	current: "Current",
 	messageCount: "{n} messages",
-	tuiTip: "Chat in the pi terminal (TUI)",
-	forkedSessionBadge: "Fork",
-	forkedSessionTip: "Forked from: {parent}",
 	deleteProject: "Remove from recent projects",
 	deleteProjectConfirm: "Confirm remove",
 	deleteSession: "Delete this chat transcript permanently",
@@ -3160,7 +3044,6 @@ export const en: Record<keyof typeof zh, string> = {
 	dismissFinishedSubagents: "Dismiss finished subagents ({n})",
 	dismissFinishedSubagentsScoped: "Dismiss finished subagents under this chat, incl. nested ({n})",
 	dismissStreamingConfirm: "Still running — confirm force-dismiss? (The run will be aborted)",
-	dismissFinishedOnly: "Close finished",
 	dismissForceAll: "Force close all",
 	forceDismissTitle: "Force-dismiss this conversation and all {n} subagent(s) ({m} running will be aborted)",
 	forceDismissConversation: "Force-dismiss conversation (incl. all subagents)",
@@ -3386,8 +3269,6 @@ export const en: Record<keyof typeof zh, string> = {
 	planModeBadge: "Planning Only",
 	clear: "Clear",
 	confirm: "Confirm",
-	forkBadge: "Branch",
-	forkBadgeTip: "Forked from",
 	reaskFromHere: "Re-ask from here",
 	editPlaceholder: "Edit the question…",
 	editAttachmentHint: "Original attachments kept — paste/drop images or files · ⌘/Ctrl+Enter to submit · Esc to cancel",
@@ -3941,10 +3822,7 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.resetConfirm": "Restore defaults?",
 	"tpl.builtin": "Built-in",
 	"tpl.custom": "Custom",
-	"tpl.newTitle": "New prompt template",
-	"tpl.editTitle": "Edit prompt template",
 	"tpl.fieldIcon": "Icon",
-	"tpl.fieldTitle": "Title",
 	"tpl.fieldTitlePh": "Short title shown on the card",
 	"tpl.fieldDesc": "Description",
 	"tpl.fieldDescPh": "One-liner shown on the card",
@@ -3978,23 +3856,6 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.sk.toplan.desc": "Turn requirements into structured spec and buildable tasks",
 	"tpl.sk.toplan.prompt":
 		"Organize the solution into a disciplined implementation plan and actionable tickets:\n\n1. Architecture & design summary: affected modules, core interfaces, and data flow.\n2. Risks & rollback: potential conflicts, breaking changes, and migration steps.\n3. Ticket breakdown: split into small, independently verifiable tasks.\n4. For each task specify: objective, files to modify, and verification test. Present the plan for confirmation before executing.",
-	"tpl.sk.setup": "Repo setup",
-	"tpl.sk.setup.desc": "Give the repo a baseline that other workflows can use",
-	"tpl.sk.setup.prompt":
-		"Scan this repository and build the baseline context other workflows rely on, then report concisely:\n\n1. Project type, tech stack and directory layout\n2. Concrete commands for build / test / run / format\n3. Code conventions and naming rules\n4. Where tasks / issues live and their format\n5. Known pitfalls or leftover issues\n\nReport only — do not modify any files.",
-	"tpl.sk.ask": "Skill navigator",
-	"tpl.sk.ask.desc": "Tell me which workflow to use",
-	"tpl.sk.ask.prompt":
-		"I'll describe the situation I'm in; you decide the best workflow (clarify requirements / plan & execute / TDD / debugging / architecture / review / handoff, etc.), explain why you recommend it and how you'd run it, then execute it after I confirm.",
-	"tpl.sk.grilldocs": "Grill & record",
-	"tpl.sk.grilldocs.desc": "Interview the plan and record decisions",
-	"tpl.sk.grilldocs.prompt":
-		"Before starting, grill me about this plan (one question at a time) until we reach shared understanding. Record key terms and settled decisions as you go (e.g. into CONTEXT.md or an ADR file) so all later work shares one vocabulary. Give your recommended answer with each question.",
-	"tpl.sk.tospec": "To spec",
-	"tpl.sk.tospec.desc": "Turn the agreed discussion into a written spec",
-	"tpl.sk.tospec.prompt":
-		"Turn the consensus we reached into a structured specification:\n\n1. Background and goals\n2. Explicit goals and non-goals\n3. Users and usage scenarios\n4. Edge cases and failure modes\n5. Acceptance criteria (what counts as done)\n6. Interface / data-shape overview\n\nOutput the spec for my review first, then continue only after I confirm.",
-	"tpl.sk.totickets": "To tickets",
 	"tpl.sk.totickets.desc": "Split the spec into small buildable tickets",
 	"tpl.sk.totickets.prompt":
 		"Split this spec into a set of small tickets an agent can build one by one:\n\n1. Each ticket small enough to be independently accepted\n2. Annotate dependency order (what must come first)\n3. Each ticket has: what to do, acceptance criteria, files involved\n4. Flag which tickets can run in parallel\n\nOutput the ticket list; I'll confirm the order before you execute.",
@@ -4006,10 +3867,6 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.sk.codeview.desc": "Review the diff against specs and deep-module principles",
 	"tpl.sk.codeview.prompt":
 		"Review the recently changed diff:\n\n1. Correctness & edge cases: null pointers, resource leaks, race conditions, or unhandled errors\n2. Modularity & architecture: is interface simpler than implementation? Any complexity leakage?\n3. Performance & security: unnecessary sync waiting, vulnerabilities, or redundant work\n4. Tests: are critical paths and regression cases covered?\n\nList issues by severity (Critical / Suggestion / Nit), each with concrete code advice.",
-	"tpl.sk.wayfinder": "Wayfinder",
-	"tpl.sk.wayfinder.desc": "Chart a large effort as a map of decisions",
-	"tpl.sk.wayfinder.prompt":
-		"This is a large task. First chart it as a decision map:\n\n1. List every decision point and its dependencies\n2. For each decision give options, trade-offs and your recommendation\n3. Mark what can run in parallel vs. what must be sequential\n4. Output a path plan; I'll confirm each item before you start.",
 	"tpl.sk.prototype": "Prototype",
 	"tpl.sk.prototype.desc": "Answer a design question with throwaway code",
 	"tpl.sk.prototype.prompt":
@@ -4018,10 +3875,6 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.sk.research.desc": "Get a cited answer from primary sources",
 	"tpl.sk.research.prompt":
 		"Research this question, preferring primary sources (official docs / source / specs):\n\n1. Give an answer with source links\n2. Distinguish facts, reasonable inference, and what's still uncertain\n3. List the main options and their trade-offs\n4. Don't stitch together secondary content; say so if you can't find it.",
-	"tpl.sk.arch": "Architecture review",
-	"tpl.sk.arch.desc": "Find the modules worth refactoring (report)",
-	"tpl.sk.arch.prompt":
-		"Do an architecture review of the whole codebase:\n\n1. Find signs of broken deep modules: oversized functions/classes, duplication, poor naming, hidden coupling\n2. Prioritize improvements by severity and blast radius; produce a visual report\n3. For each item give the minimal viable refactor with rationale\n4. Report before changing anything; confirm scope before refactoring.",
 	"tpl.sk.debug": "Systematic Debugging",
 	"tpl.sk.debug.desc": "Reproduce first, isolate root causes, no blind guessing",
 	"tpl.sk.debug.prompt":
@@ -4030,55 +3883,6 @@ export const en: Record<keyof typeof zh, string> = {
 	"tpl.sk.merge.desc": "Understand intent of both sides, merge hunks and verify",
 	"tpl.sk.merge.prompt":
 		"Help me resolve this merge / rebase conflict:\n\n1. Analyze every conflicted file and hunk to understand the true intent of both branches\n2. Synthesize a clean resolution preserving correct semantics rather than blindly picking one side\n3. Clean all conflict markers (<<<<<<<, =======, >>>>>>>)\n4. Run tests and build afterwards to confirm clean integration.",
-	"tpl.sk.triage": "Triage",
-	"tpl.sk.triage.desc": "Sort raw issues into work someone can pick up",
-	"tpl.sk.triage.prompt":
-		"Turn these raw issues / feedback into actionable work items:\n\n1. Deduplicate and merge related entries\n2. Categorize (bug / feature / improvement / question)\n3. Prioritize by impact and urgency\n4. For each item add: repro info or expectation, acceptance criteria\n\nOutput the cleaned list.",
-	"tpl.sk.wizard": "Setup wizard",
-	"tpl.sk.wizard.desc": "Generate a script that walks a human through setup",
-	"tpl.sk.wizard.prompt":
-		"Create a guided wizard (script or doc) for a manual setup flow:\n\n1. Guide step by step, explaining why at each step\n2. Validate each step; on wrong input give actionable hints\n3. Support undo / going back a step\n4. End with a self-check and how to verify.",
-	"tpl.sk.grillme": "Grill me",
-	"tpl.sk.grillme.desc": "Align on an idea before committing",
-	"tpl.sk.grillme.prompt":
-		"Before starting, interview me relentlessly about every aspect of this idea until we reach shared understanding (one question at a time, each with your recommended answer):\n\n1. Goals and non-goals\n2. Users and scenarios\n3. Edge cases and failure modes\n4. Constraints and dependencies\n5. Acceptance criteria\n\nThen give an implementation plan and wait for my confirmation before writing code.",
-	"tpl.sk.handoff": "Handoff",
-	"tpl.sk.handoff.desc": "Write up a long session so another agent can continue",
-	"tpl.sk.handoff.prompt":
-		"Turn this session into a handoff doc so another agent / teammate can continue seamlessly:\n\n1. Background and goals\n2. Work done and key decisions (with reasons)\n3. Outstanding items and next steps\n4. Known risks and open questions\n5. How to verify current state (commands, etc.)\n\nOutput as a structured document.",
-	"tpl.sk.questionnaire": "To questionnaire",
-	"tpl.sk.questionnaire.desc": "Turn open questions into a doc someone fills in",
-	"tpl.sk.questionnaire.prompt":
-		"Turn the info you need from someone into a fillable questionnaire:\n\n1. Explain the background and purpose of each question\n2. Mark required / optional\n3. Give example answers to lower friction\n4. Group and order: easy first, hard later\n\nOutput a doc they can fill in directly.",
-	"tpl.sk.teach": "Teach",
-	"tpl.sk.teach.desc": "Learn a topic across sessions that build on each other",
-	"tpl.sk.teach.prompt":
-		"Teach me this topic incrementally:\n\n1. First set a learning path and goal\n2. Teach one small section at a time, then a quick exercise\n3. Build on the previous section and ask questions to confirm understanding\n4. Summarize key points at the end of each section\n\nWorks well across multiple sessions.",
-	"tpl.sk.ww": "Wait, what?",
-	"tpl.sk.ww.desc": "Say the last explanation again in plain English",
-	"tpl.sk.ww.prompt":
-		"Re-explain what you just said in the simplest terms:\n\n1. Avoid jargon; define any term you must use in one sentence\n2. Use an analogy or concrete example\n3. Be clear about what is still guesswork / uncertain\n4. Keep the core point as short as possible.",
-	"tpl.sk.wfa": "Writing for agents",
-	"tpl.sk.wfa.desc": "Write docs that follow agent-friendly principles",
-	"tpl.sk.wfa.prompt":
-		"Write this doc / explanation following “written for agents to read” principles:\n\n1. Put the goal and usage up front\n2. Make instructions concrete and verifiable — no vagueness\n3. Give positive and negative examples\n4. Structure with headings, steps and checklists\n5. Mark what's required vs. optional.",
-	"tpl.sk.codesign": "Deep-module design",
-	"tpl.sk.codesign.desc": "Review & design with deep-module principles",
-	"tpl.sk.codesign.prompt":
-		"Review / design using the “deep module” principle:\n\n1. Check whether each module's public interface is simpler than its implementation\n2. Find modules that leak complexity outward\n3. Give responsibility boundaries and improvement plans\n4. Balance cohesion and reuse without over-abstracting\n\nOutput the review conclusions and refactor suggestions.",
-	"tpl.sk.domain": "Domain modeling",
-	"tpl.sk.domain.desc": "Sharpen the words a project uses and write them down",
-	"tpl.sk.domain.prompt":
-		"Help me clean up this project's domain language:\n\n1. Find the core terms and their current spellings\n2. Spot confusion from same-word-different-meaning / different-word-same-meaning\n3. Recommend one canonical term each, into a glossary\n4. State each term's boundary (what it is not)\n\nOutput a domain glossary.",
-	"tpl.sk.grilling": "Grilling",
-	"tpl.sk.grilling.desc": "Stress-test a plan with an interview",
-	"tpl.sk.grilling.prompt":
-		"Stress-test this plan with an interview:\n\n1. Check each assumption: what if it's wrong?\n2. Hunt for holes: edges, failure modes, dependencies, timing\n3. Challenge decisions: why this way? is there a simpler path?\n4. Ask one sharp question at a time and wait for my answer\n\nKeep going until the plan holds up.",
-	"tpl.sk.tdd": "Test-driven",
-	"tpl.sk.tdd.desc": "The rules of the red-green-refactor loop",
-	"tpl.sk.tdd.prompt":
-		"Implement using TDD (red-green-refactor):\n\n1. First write failing tests covering the happy path, edge cases and error branches\n2. Make them pass with the minimal implementation\n3. Refactor while keeping tests green\n\nAvoid three test anti-patterns: tests coupled to the implementation, tautological assertions (always true), and horizontal slicing (surface only). Report after each step and run the tests.",
-
 	/* tool call block */
 	error: "Error",
 	done: "Done",
@@ -4377,16 +4181,9 @@ export const en: Record<keyof typeof zh, string> = {
 		"The operation failed. Check the environment before retrying; after interruption, check the center status first.",
 	deviceSetupSuccess: "Installed: create an account and pair next",
 	deviceSetupPair: "Use this center URL to start pairing",
-	deviceSetupNext: "Next: create a Bot → create a group",
-	deviceSetupNextHint:
-		"This device is paired. Create a local Bot with a project directory and permissions, then create a group and add Bots. Pairing is retained while offline.",
-	deviceSetupManage: "Manage Bots and groups",
 	deviceSetupBusy: "An installation is already running. Wait, then reload installation status.",
 	deviceHubTitle: "Device center",
 	deviceHubSubtitle: "Connect this computer to your hub to manage devices and group tasks.",
-	deviceHubOverview: "Overview",
-	deviceHubSettings: "Connection settings",
-	deviceHubGroups: "Group chats",
 	localBotSyncFailed: "Saved locally, but Hub sync failed. Reconnect this device to retry.",
 	localBotSaved: "Saved. Add the Bot through group member management.",
 	localBotTitle: "Local Bots",
@@ -5613,7 +5410,6 @@ export const en: Record<keyof typeof zh, string> = {
 	elsewhereOfflineTip:
 		"The page holding this conversation is gone (tab or browser closed) but the run is still on the server — click this row twice to take it over here",
 	/* sandbox projects */
-	sandboxNewBtn: "Launch Sandbox Project (isolated workspace)",
 	sandboxNewShort: "New Sandbox",
 	sandboxModalTitle: "Launch Sandbox Project",
 	sandboxModalSubtitle:
