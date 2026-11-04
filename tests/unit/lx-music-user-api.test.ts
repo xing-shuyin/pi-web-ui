@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { UserApiEngine } from "../../plugins/lx-music/server/user-api-vm.mjs";
 import { findCrossSourceMusicUrl } from "../../plugins/lx-music/server/music-sdk.mjs";
 
@@ -25,9 +25,13 @@ send(EVENT_NAMES.inited, { name: "测试高音质源" });
 	});
 
 	it("smoothly falls back through quality ladder when requested tier is unavailable", async () => {
-		const engine = new UserApiEngine({ log: () => {} });
-		// 模拟一个仅支持 128k 和 320k 的音源
-		const script = `
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+			return new Response("audio data", { status: 200, headers: { "content-type": "audio/mpeg" } });
+		});
+		try {
+			const engine = new UserApiEngine({ log: () => {} });
+			// 模拟一个仅支持 128k 和 320k 的音源
+			const script = `
 const { EVENT_NAMES, on } = globalThis.lx;
 on(EVENT_NAMES.request, async ({ action, source, info }) => {
   if (info.type === 'flac' || info.type === 'hires') {
@@ -39,34 +43,44 @@ on(EVENT_NAMES.request, async ({ action, source, info }) => {
   return "https://mock.cdn.com/song_128k.mp3";
 });
 `;
-		engine.importScript("mock_source", script);
-		engine.setActive("mock_source");
+			engine.importScript("mock_source", script);
+			engine.setActive("mock_source");
 
-		// 请求 flac，应该自动降级获取 320k
-		const result = await engine.resolveUrl("wy", { id: "1001", name: "海阔天空", singer: "Beyond" }, "flac");
-		expect(result).not.toBeNull();
-		expect(result!.quality).toBe("320k");
-		expect(result!.url).toBe("https://mock.cdn.com/song_320k.mp3");
+			// 请求 flac，应该自动降级获取 320k
+			const result = await engine.resolveUrl("wy", { id: "1001", name: "海阔天空", singer: "Beyond" }, "flac");
+			expect(result).not.toBeNull();
+			expect(result!.quality).toBe("320k");
+			expect(result!.url).toBe("https://mock.cdn.com/song_320k.mp3");
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	it("rejects dead URLs (like changqing 404) and reports probe diagnostics", async () => {
-		const engine = new UserApiEngine({ log: () => {} });
-		// 模拟长青音源返回 404 地址
-		const script = `
+		const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+			return new Response("Not Found", { status: 404, statusText: "Not Found" });
+		});
+		try {
+			const engine = new UserApiEngine({ log: () => {} });
+			// 模拟长青音源返回 404 地址
+			const script = `
 const { EVENT_NAMES, on } = globalThis.lx;
 on(EVENT_NAMES.request, async () => {
   return "http://yinyue.haitangw.net/wy/wy.php?type=mp3&id=186016&level=standard";
 });
 `;
-		engine.importScript("mock_dead", script);
-		engine.setActive("mock_dead");
+			engine.importScript("mock_dead", script);
+			engine.setActive("mock_dead");
 
-		const probe = await engine.probeApi("mock_dead");
-		expect(probe.ok).toBe(false);
-		expect(probe.error).toContain("失效");
+			const probe = await engine.probeApi("mock_dead");
+			expect(probe.ok).toBe(false);
+			expect(probe.error).toContain("失效");
 
-		const resolved = await engine.resolveUrl("wy", { id: "186016", name: "晴天", singer: "周杰伦" }, "128k");
-		expect(resolved).toBeNull();
+			const resolved = await engine.resolveUrl("wy", { id: "186016", name: "晴天", singer: "周杰伦" }, "128k");
+			expect(resolved).toBeNull();
+		} finally {
+			fetchSpy.mockRestore();
+		}
 	});
 
 	it("cleans up active timers when removing or re-importing scripts", () => {
