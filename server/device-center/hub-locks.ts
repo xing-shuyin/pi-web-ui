@@ -1,10 +1,6 @@
 import { readFileSync } from "node:fs";
 import { writeJsonAtomicSync } from "../atomic-file.js";
-import {
-	type RoomActiveLock,
-	type RoomLockInfo,
-	type RoomLockWaiter,
-} from "../protocol.js";
+import { type RoomActiveLock, type RoomLockInfo, type RoomLockWaiter } from "../protocol.js";
 
 export const RESOURCE_LOCK_KEY_PATTERN = /^[a-zA-Z0-9_.:/-]+$/;
 export const MAX_RESOURCE_LOCKS_PER_TASK = 10;
