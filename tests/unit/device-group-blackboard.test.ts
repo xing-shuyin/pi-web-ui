@@ -7,6 +7,7 @@ import { createDeviceHub } from "../../server/device-center/hub.js";
 import { createDeviceCollabService } from "../../server/device-center/collab-service.js";
 import { groupTaskContext } from "../../server/device-center/group-context.js";
 import { registerBotExecution } from "../../server/device-center/bot-execution.js";
+import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 import type { LocalBot } from "../../server/device-center/bots.js";
 import type { Room } from "../../server/device-center/store.js";
 
@@ -294,8 +295,8 @@ describe("Group Blackboard Architecture", () => {
 		);
 		expect(outsiderWriteRes.status).toBe(403);
 
-		// 7) 超限内容（> 32KB）被拦截
-		const hugeContent = "x".repeat(32 * 1024 + 1);
+		// 7) 超限内容被拦截
+		const hugeContent = "x".repeat(DEFAULT_EXECUTION_SETTINGS.blackboardMaxBytes + 1);
 		const oversizedRes = await request(
 			`/api/rooms/${roomId}/blackboard`,
 			{

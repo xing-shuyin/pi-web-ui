@@ -22,6 +22,7 @@ export function initAuthToken(): void {
 		if (t) {
 			localStorage.setItem(KEY, t.trim());
 			url.searchParams.delete("token");
+			url.searchParams.delete("__tried_cached_token");
 			window.history.replaceState(null, "", url.toString());
 		}
 	} catch {

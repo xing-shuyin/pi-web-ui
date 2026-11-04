@@ -44,15 +44,15 @@ export function PendingQueue<T>({
 		return () => clearInterval(timer);
 	}, [hasTimedItems]);
 	if (!items.length) return null;
+	const queuedItems = items.filter((item) => item !== selected);
 	return (
 		<section className="question-queue" aria-label={title}>
-			<div className="question-queue-list">
-				<div>
-					{title} · {items.length}
-				</div>
-				{items
-					.filter((item) => item !== selected)
-					.map((item) => (
+			{queuedItems.length > 0 && (
+				<div className="question-queue-list">
+					<div>
+						{title} · {items.length}
+					</div>
+					{queuedItems.map((item) => (
 						<div className="question-queue-item" key={itemKey(item)}>
 							<div className="question-queue-summary">{summary(item)}</div>
 							{questionWaitTime(createdAt(item), now) && (
@@ -70,12 +70,10 @@ export function PendingQueue<T>({
 							</div>
 						</div>
 					))}
-			</div>
+				</div>
+			)}
 			{selected && (
 				<div className="question-queue-dialog" key={selectedKey}>
-					{questionWaitTime(createdAt(selected), now) && (
-						<span className="question-queue-wait">⏱ {questionWaitTime(createdAt(selected), now)}</span>
-					)}
 					{children(selected, () => {
 						setDeferred((prev) => new Set(prev).add(itemKey(selected)));
 						setOpened(null);

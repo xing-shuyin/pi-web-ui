@@ -7,6 +7,7 @@ const windows: { window: { close(): void } }[] = [];
 const flush = async () => {
 	for (let i = 0; i < 80; i++) await Promise.resolve();
 };
+
 function fixture(origin = "https://hub.example") {
 	const devices = [
 		{ id: "device-win-11111111", name: "Work", online: true, url: "https://win.example/" },
@@ -25,31 +26,19 @@ function fixture(origin = "https://hub.example") {
 		{ id: "one", name: "Room one", botIds: bots.map((b) => b.id) },
 		{ id: "two", name: "Room two", botIds: [bots[1].id] },
 	];
-	const task = {
-		id: "task-one",
-		deviceId: devices[0].id,
-		botId: bots[0].id,
-		text: "Continue",
-		status: "failed",
-		report: "<img src=x onerror=alert(1)>",
-		handoff: { repository: "repo", commit: "abc", branch: "main", instructions: "Continue work" },
-	};
+
 	const fetch = vi.fn(async (path: string, options: any) => {
 		let data: any = {};
 		if (path === "/api/me") data = { account: { id: "owner", username: "<script>bad</script>" } };
 		else if (path === "/api/bots") data = { bots };
 		else if (path === "/api/devices") data = { devices };
 		else if (path === "/api/rooms") data = { rooms };
-		else if (path.endsWith("/messages")) data = { message: {}, tasks: [] };
 		else if (path.endsWith("/open")) data = { url: "https://win.example/once?ticket=secret" };
-		else if (path.startsWith("/api/rooms/"))
-			data = {
-				room: rooms.find((r) => path.endsWith(r.id)),
-				messages: [{ sender: { name: "<svg onload=alert(1)>" }, text: "<script>bad</script>", createdAt: 0 }],
-				tasks: [task],
-			};
+		else if (path.endsWith("/revoke")) data = { ok: true };
+		else if (path.endsWith("/approve")) data = { ok: true };
 		return { ok: true, status: 200, json: async () => data };
 	});
+
 	const dom = new JSDOM(renderDeviceHubPage(), {
 		url: origin,
 		runScripts: "dangerously",
@@ -57,175 +46,57 @@ function fixture(origin = "https://hub.example") {
 			window.fetch = fetch as any;
 		},
 	});
+	const timer = vi.spyOn(dom.window, "setTimeout");
 	windows.push(dom);
 	const document = dom.window.document;
 	const click = (selector: string) => (document.querySelector(selector) as HTMLElement).click();
-	const input = (value: string) => {
-		const field = document.getElementById("message") as HTMLTextAreaElement;
-		field.value = value;
-		field.setSelectionRange(value.length, value.length);
-		field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-		return field;
-	};
-	const submit = () =>
-		document
-			.getElementById("message-form")!
-			.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-	return { dom, document, fetch, click, input, submit, devices, bots };
+
+	return { dom, document, fetch, click, timer, devices, bots, rooms };
 }
+
 afterEach(() => {
 	windows.splice(0).forEach((dom) => dom.window.close());
 	vi.restoreAllMocks();
 });
 
 describe("standalone device Hub", () => {
-	it("sends group messages on public HTTP without secure-context randomUUID", async () => {
+	it("renders public HTTP note on unencrypted connections", async () => {
 		const f = fixture("http://82.156.246.55:8790");
 		await flush();
-		f.click("#room-list button");
-		await flush();
-		Object.defineProperty(f.dom.window.crypto, "randomUUID", { value: undefined });
-		f.input("HTTP group message");
-		f.submit();
-		await flush();
-		const sent = f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"));
-		expect(sent).toBeDefined();
-		expect(JSON.parse(sent![1].body).idempotencyKey).toMatch(/^[0-9a-f]{32}$/);
 		expect(f.document.getElementById("transport-note")?.textContent).toContain("HTTP");
 	});
+
 	it("renders a self contained document with safe dynamic text and both languages", async () => {
 		const html = renderDeviceHubPage();
 		expect(html).not.toMatch(/\son\w+=|<script[^>]+src=|https:\/\/.*cdn/i);
 		const f = fixture();
 		await flush();
-		f.click("#room-list button");
-		await flush();
+
 		expect(f.document.querySelector("#account script")).toBeNull();
-		expect(f.document.querySelector("#messages svg")).toBeNull();
-		expect(f.document.querySelector("#tasks img")).toBeNull();
-		expect(f.document.getElementById("tasks")!.textContent).toContain("<img src=x");
+		expect(f.document.querySelector("#room-list script, #room-list svg script")).toBeNull();
+		expect(f.document.querySelector("#devices script, #devices svg script")).toBeNull();
+
 		f.click("#language");
 		expect(f.document.documentElement.lang).toBe("en");
 		expect(f.document.querySelector("h1")!.textContent).toBe("Device Hub");
+		expect(f.document.getElementById("language")!.textContent).toBe("中文");
 	});
-	it("selects duplicate names by ID using keyboard and mouse, dispatches multiple mentions", async () => {
+
+	it("renders devices and groups without chat panels or task dispatch forms", async () => {
 		const f = fixture();
 		await flush();
-		f.click("#room-list button");
-		await flush();
-		const field = f.input("@Wo");
-		expect(f.document.getElementById("suggestions")!.textContent).toContain("22222222");
-		field.dispatchEvent(new f.dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-		field.dispatchEvent(new f.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-		f.input(field.value + "and @Wo");
-		f.click("#suggestions button");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(2);
-		f.submit();
-		await flush();
-		const sent = f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"))!;
-		expect(JSON.parse(sent[1].body).targetBotIds).toEqual([f.bots[1].id, f.bots[0].id]);
-		expect(sent[1]).toMatchObject({
-			credentials: "same-origin",
-			mode: "same-origin",
-			headers: { "Content-Type": "application/json" },
-		});
+
+		expect(f.document.querySelector(".chat-panel")).toBeNull();
+		expect(f.document.getElementById("message-form")).toBeNull();
+		expect(f.document.getElementById("messages")).toBeNull();
+		expect(f.document.getElementById("tasks")).toBeNull();
+		expect(f.document.getElementById("suggestions")).toBeNull();
+		expect(f.document.getElementById("handoff")).toBeNull();
+
+		expect(f.document.querySelectorAll("#devices .card")).toHaveLength(2);
+		expect(f.document.querySelectorAll("#room-list .room-card")).toHaveLength(2);
 	});
-	it("removes selected targets when the visible mention is replaced with plain text", async () => {
-		const f = fixture();
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		f.input("@Wo");
-		f.click("#suggestions button");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(1);
-		f.input("ordinary replacement text");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(0);
-		expect(f.document.getElementById("send-hint")!.textContent).toContain("不派发任务");
-		f.submit();
-		await flush();
-		expect(JSON.parse(f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"))![1].body).targetBotIds).toEqual(
-			[],
-		);
-	});
-	it("keeps duplicate-name IDs while tokens remain, then clears ambiguous chips when a token is removed", async () => {
-		const f = fixture();
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		const field = f.input("@Wo");
-		f.click("#suggestions button");
-		f.input(field.value + "and @Wo");
-		f.click("#suggestions button");
-		f.input("@Work and @Work updated task");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(2);
-		f.input("@Work updated task");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(0);
-		f.submit();
-		await flush();
-		expect(f.fetch.mock.calls.some(([path]) => path.endsWith("/messages"))).toBe(false);
-		expect(f.document.getElementById("mention-warning")!.hidden).toBe(false);
-		// The surviving text cannot pick one of two same-name IDs: explicitly choose again.
-		f.input("@Wo");
-		f.click("#suggestions button:nth-child(2)");
-		f.submit();
-		await flush();
-		expect(JSON.parse(f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"))![1].body).targetBotIds).toEqual([
-			f.bots[1].id,
-		]);
-	});
-	it("does not treat an edited name prefix as the original selected token", async () => {
-		const f = fixture();
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		f.input("@Wo");
-		f.click("#suggestions button");
-		f.input("@Workstation do something");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(0);
-		f.submit();
-		await flush();
-		expect(f.fetch.mock.calls.some(([path]) => path.endsWith("/messages"))).toBe(false);
-	});
-	it("blocks unselected @ text and clears mentions on room change", async () => {
-		const f = fixture();
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		f.input("@Work do something");
-		f.submit();
-		await flush();
-		expect(f.fetch.mock.calls.some(([path]) => path.endsWith("/messages"))).toBe(false);
-		expect(f.document.getElementById("mention-warning")!.hidden).toBe(false);
-		f.input("@Wo");
-		f.click("#suggestions button");
-		f.click("#room-list button:nth-child(2)");
-		await flush();
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(0);
-		f.input("ordinary chat");
-		f.submit();
-		await flush();
-		expect(JSON.parse(f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"))![1].body).targetBotIds).toEqual(
-			[],
-		);
-	});
-	it("prepares handoff without dispatch, then sends parent and repository evidence", async () => {
-		const f = fixture();
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		(f.document.querySelector("#tasks select") as HTMLSelectElement).value = f.bots[1].id;
-		f.click("#tasks button");
-		await flush();
-		expect(f.fetch.mock.calls.some(([path]) => path.endsWith("/messages"))).toBe(false);
-		f.submit();
-		await flush();
-		const sent = JSON.parse(f.fetch.mock.calls.find(([path]) => path.endsWith("/messages"))![1].body);
-		expect(sent).toMatchObject({
-			parentTaskId: "task-one",
-			targetBotIds: [f.bots[1].id],
-			handoff: { repository: "repo", commit: "abc", branch: "main", instructions: "Continue work" },
-		});
-	});
+
 	it("authorizes device access before navigating a new tab and rejects unsafe links", async () => {
 		const f = fixture();
 		await flush();
@@ -248,6 +119,7 @@ describe("standalone device Hub", () => {
 		expect(tab.opener).toBeNull();
 		expect(replace).toHaveBeenCalledWith("https://win.example/once?ticket=secret");
 	});
+
 	it("opens remote desktop with the same authorization ticket and a fixed next path", async () => {
 		const f = fixture();
 		await flush();
@@ -268,13 +140,57 @@ describe("standalone device Hub", () => {
 		f.click("#language");
 		expect(f.document.querySelector('#devices a[data-action="desktop-open"]')?.textContent).toBe("Remote desktop");
 	});
-	it("requires target confirmation for revoke and clears selected IDs even if refreshed data is stale", async () => {
+
+	it("renders groups with member bots and allows creating new groups", async () => {
 		const f = fixture();
 		await flush();
-		f.click("#room-list button");
+
+		const roomCards = f.document.querySelectorAll("#room-list .room-card");
+		expect(roomCards).toHaveLength(2);
+		expect(roomCards[0].querySelector(".room-name")!.textContent).toBe("Room one");
+		expect(roomCards[0].querySelectorAll(".member-chip")).toHaveLength(2);
+
+		const nameInput = f.document.getElementById("room-name") as HTMLInputElement;
+		nameInput.value = "New Alpha Room";
+
+		const checkboxes = f.document.querySelectorAll("#members input[type=checkbox]") as NodeListOf<HTMLInputElement>;
+		expect(checkboxes.length).toBeGreaterThan(0);
+		checkboxes[0].checked = true;
+
+		const form = f.document.getElementById("room-form") as HTMLFormElement;
+		form.dispatchEvent(new f.dom.window.Event("submit", { bubbles: true, cancelable: true }));
 		await flush();
-		f.input("@Wo");
-		f.click("#suggestions button");
+
+		const createCall = f.fetch.mock.calls.find(
+			([path, options]) => path === "/api/rooms" && options?.method === "POST",
+		);
+		expect(createCall).toBeDefined();
+		const body = JSON.parse(createCall![1].body);
+		expect(body.name).toBe("New Alpha Room");
+		expect(body.botIds).toContain(f.bots[0].id);
+	});
+
+	it("approves device pairing code from pair form", async () => {
+		const f = fixture();
+		await flush();
+
+		const pairInput = f.document.getElementById("pair-code") as HTMLInputElement;
+		pairInput.value = "PAIR-8888";
+
+		const form = f.document.getElementById("pair-form") as HTMLFormElement;
+		form.dispatchEvent(new f.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+		await flush();
+
+		const approveCall = f.fetch.mock.calls.find(([path]) => path === "/api/pair/approve");
+		expect(approveCall).toBeDefined();
+		expect(JSON.parse(approveCall![1].body)).toEqual({ code: "PAIR-8888" });
+		expect(pairInput.value).toBe("");
+	});
+
+	it("requires target confirmation for revoke and clears device entry", async () => {
+		const f = fixture();
+		await flush();
+
 		const confirm = vi.fn((_message?: string) => false);
 		f.dom.window.confirm = confirm;
 		f.click("#devices .card button[data-action=revoke]");
@@ -282,27 +198,20 @@ describe("standalone device Hub", () => {
 		expect(confirm).toHaveBeenCalledWith(expect.stringContaining(f.devices[0].id));
 		expect(confirm.mock.calls[0][0]).toContain(f.devices[0].name);
 		expect(f.fetch.mock.calls.some(([path]) => path.endsWith("/revoke"))).toBe(false);
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(1);
+
 		confirm.mockReturnValue(true);
 		f.click("#devices .card button[data-action=revoke]");
 		await flush();
 		const call = f.fetch.mock.calls.find(([path]) => path.endsWith("/revoke"))!;
 		expect(call[0]).toBe("/api/devices/" + f.devices[0].id + "/revoke");
 		expect(call[1]).toMatchObject({ method: "POST", body: "{}", mode: "same-origin" });
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(0);
 		expect(f.document.getElementById("devices")!.textContent).not.toContain(f.devices[0].id);
-		expect(f.document.querySelector('#tasks option[value="' + f.bots[0].id + '"]')).toBeNull();
-		f.input("@Wo");
-		expect(f.document.getElementById("suggestions")!.textContent).not.toContain("11111111");
-		expect(f.document.getElementById("suggestions")!.textContent).toContain("22222222");
 	});
+
 	it("keeps device selections and reports real revoke errors when revocation fails", async () => {
 		const f = fixture();
 		await flush();
-		f.click("#room-list button");
-		await flush();
-		f.input("@Wo");
-		f.click("#suggestions button");
+
 		f.dom.window.confirm = vi.fn(() => true);
 		const original = f.fetch.getMockImplementation()!;
 		f.fetch.mockImplementation(async (path, options) =>
@@ -313,89 +222,39 @@ describe("standalone device Hub", () => {
 		f.click("#devices .card button[data-action=revoke]");
 		await flush();
 		expect(f.document.getElementById("error")!.textContent).toBe("Revoke unavailable");
-		expect(f.document.querySelectorAll("#mentions .chip")).toHaveLength(1);
+		expect(f.document.getElementById("devices")!.textContent).toContain(f.devices[0].id);
 	});
-	it("ignores stale room responses and polls on a three second schedule", async () => {
+
+	it("polls on a three second schedule to refresh devices and groups", async () => {
 		const f = fixture();
 		await flush();
-		let resolve: (data: any) => void = () => {};
-		const original = f.fetch.getMockImplementation()!;
-		f.fetch.mockImplementation(async (path, options) =>
-			path === "/api/rooms/one"
-				? await new Promise<any>((done) => {
-						resolve = done;
-					})
-				: original(path, options),
-		);
-		f.click("#room-list button");
-		await flush();
-		const signal = f.fetch.mock.calls.find(([path]) => path === "/api/rooms/one")![1].signal;
-		f.click("#room-list button:nth-child(2)");
-		await flush();
-		expect(signal.aborted).toBe(true);
-		resolve({
-			ok: true,
-			json: async () => ({ room: { id: "one", name: "STALE", botIds: [] }, messages: [], tasks: [] }),
-		});
-		await flush();
-		expect(f.document.getElementById("room-title")!.textContent).toBe("Room two");
 		expect(renderDeviceHubPage()).toContain("setTimeout(refresh,3000)");
-	});
-	it.each([
-		{ position: 1600, expected: 2800 },
-		{ position: 1570, expected: 2800 },
-		{ position: 700, expected: 700 },
-	])("preserves the chat viewport through polling at $position", async ({ position, expected }) => {
-		const f = fixture();
-		await flush();
-		const messages = f.document.getElementById("messages")!;
-		const tasks = f.document.getElementById("tasks")!;
-		const scroller = messages.parentElement!;
-		let top = 0;
-		Object.defineProperties(scroller, {
-			clientHeight: { get: () => 400 },
-			scrollHeight: { get: () => messages.childElementCount * 800 + tasks.childElementCount * 1200 },
-			scrollTop: {
-				get: () => top,
-				set: (value: number) => {
-					top = Math.max(0, Math.min(value, scroller.scrollHeight - 400));
-				},
-			},
-		});
-		// Model the browser clamping the viewport when polling clears its content.
-		const content = Object.getOwnPropertyDescriptor(f.dom.window.Node.prototype, "textContent")!;
-		for (const list of [messages, tasks]) {
-			Object.defineProperty(list, "textContent", {
-				get() {
-					return content.get!.call(this);
-				},
-				set(value) {
-					content.set!.call(this, value);
-					scroller.scrollTop = top;
-				},
-			});
-		}
-		const timer = vi.spyOn(f.dom.window, "setTimeout");
-		f.click("#room-list button");
-		await flush();
-		expect(scroller.scrollTop).toBe(1600);
-		scroller.scrollTop = position;
+
 		const original = f.fetch.getMockImplementation()!;
 		f.fetch.mockImplementation(async (path, options) => {
-			const response = await original(path, options);
-			if (path !== "/api/rooms/one") return response;
-			const data = await response.json();
-			return {
-				...response,
-				json: async () => ({ ...data, tasks: [...data.tasks, { ...data.tasks[0], id: "task-two" }] }),
-			};
+			if (path === "/api/devices") {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						devices: [
+							...f.devices,
+							{ id: "device-linux-33333333", name: "Linux Server", online: true, url: "https://linux.example/" },
+						],
+					}),
+				};
+			}
+			return original(path, options);
 		});
-		const poll = timer.mock.calls.find((call: any[]) => call[1] === 3000)!;
+
+		const poll = f.timer.mock.calls.filter((call: any[]) => call[1] === 3000).at(-1)!;
+		expect(poll).toBeDefined();
 		await (poll[0] as unknown as () => Promise<void>)();
 		await flush();
-		expect(tasks.childElementCount).toBe(2);
-		expect(scroller.scrollTop).toBe(expected);
+
+		expect(f.document.getElementById("devices")!.textContent).toContain("Linux Server");
 	});
+
 	it("keeps unsaved aliases, focus and management expansion through polling and language changes", async () => {
 		const f = fixture();
 		await flush();
@@ -407,83 +266,71 @@ describe("standalone device Hub", () => {
 		alias.focus();
 		alias.setSelectionRange(3, 7);
 		alias.dispatchEvent(new f.dom.window.Event("input", { bubbles: true }));
-		const timer = vi.spyOn(f.dom.window, "setTimeout");
-		f.click("#room-list button");
-		await flush();
-		const poll = timer.mock.calls.find((call: any[]) => call[1] === 3000)!;
+
+		const poll = f.timer.mock.calls.filter((call: any[]) => call[1] === 3000).at(-1)!;
 		expect(poll).toBeDefined();
 		await (poll[0] as unknown as () => Promise<void>)();
 		await flush();
+
 		let current = firstCard().querySelector("input")!;
 		expect(current.value).toBe("unfinished-alias");
 		expect(current).toBe(alias);
 		expect(f.document.activeElement).toBe(current);
 		expect([current.selectionStart, current.selectionEnd]).toEqual([3, 7]);
 		expect(firstCard().querySelector("details")!.open).toBe(true);
+
 		f.click("#language");
 		current = firstCard().querySelector("input")!;
 		expect(current.value).toBe("unfinished-alias");
 		expect(firstCard().querySelector("details")!.open).toBe(true);
 		expect(firstCard().querySelector("summary")!.textContent).toBe("Manage device");
 		expect(f.document.querySelectorAll("#devices details")[1].hasAttribute("open")).toBe(false);
+
 		firstCard().querySelector("details")!.open = false;
 		f.click("#language");
 		expect(firstCard().querySelector("details")!.open).toBe(false);
 	});
-	it("shows compact empty states, sender bubbles and timestamps while keeping creation forms collapsed", async () => {
+
+	it("shows compact empty states while keeping creation forms collapsed", async () => {
 		const f = fixture("http://hub.example:8790");
 		await flush();
-		expect(f.document.getElementById("chat-empty")!.hidden).toBe(false);
-		expect(f.document.querySelector("#chat-empty svg")).not.toBeNull();
+
 		expect(f.document.querySelector("#pair-details")!.hasAttribute("open")).toBe(false);
 		expect(f.document.querySelector("#room-details")!.hasAttribute("open")).toBe(false);
 		expect(f.document.querySelector("#devices .device-head .device-id")).toBeNull();
 		expect(f.document.querySelector("#devices .device-id")!.getAttribute("title")).toBe(f.devices[0].id);
-		expect(f.document.getElementById("transport-note")!.textContent).not.toContain("域");
+
 		const original = f.fetch.getMockImplementation()!;
-		let empty = false;
 		f.fetch.mockImplementation(async (path, options) => {
-			if (path === "/api/rooms/one")
-				return {
-					ok: true,
-					status: 200,
-					json: async () => ({
-						room: { id: "one", name: "Room one", botIds: [] },
-						tasks: [],
-						messages: empty
-							? []
-							: [
-									{ sender: { type: "human", name: "Owner <script>" }, text: "Hello", createdAt: 0 },
-									{ sender: { type: "device", name: "Work" }, text: "<svg onload=alert(1)>", createdAt: 1000 },
-								],
-					}),
-				};
+			if (path === "/api/rooms") return { ok: true, status: 200, json: async () => ({ rooms: [] }) };
+			if (path === "/api/devices") return { ok: true, status: 200, json: async () => ({ devices: [] }) };
 			return original(path, options);
 		});
-		f.click("#room-list button");
+
+		const poll = f.timer.mock.calls.filter((call: any[]) => call[1] === 3000).at(-1)!;
+		await (poll[0] as unknown as () => Promise<void>)();
 		await flush();
-		expect(f.document.getElementById("chat-empty")!.hidden).toBe(true);
-		expect(f.document.querySelectorAll("#messages .human")).toHaveLength(1);
-		expect(f.document.querySelectorAll("#messages .device")).toHaveLength(1);
-		expect(f.document.querySelectorAll("#messages time[datetime]")).toHaveLength(2);
-		expect(f.document.querySelector("#messages script, #messages svg")).toBeNull();
-		empty = true;
-		f.click("#room-list button:nth-child(2)");
-		await flush();
-		f.click("#room-list button");
-		await flush();
-		expect(f.document.getElementById("chat-empty")!.hidden).toBe(false);
-		expect(f.document.getElementById("empty-title")!.textContent).toBe("开始一段对话");
+
+		expect(f.document.getElementById("devices")!.textContent).toContain("暂无已绑定设备");
+		expect(f.document.getElementById("room-list")!.textContent).toContain("暂无群组");
+
 		f.click("#language");
-		expect(f.document.getElementById("empty-title")!.textContent).toBe("Start a conversation");
+		expect(f.document.getElementById("devices")!.textContent).toContain("No devices yet");
+		expect(f.document.getElementById("room-list")!.textContent).toContain("No groups yet");
 	});
+
 	it("surfaces connection failures instead of claiming online", async () => {
 		const f = fixture();
 		await flush();
-		f.fetch.mockRejectedValue(new Error("Connection refused"));
-		f.click("#room-list button");
+
+		f.fetch.mockRejectedValue(new Error("Network down"));
+
+		const poll = f.timer.mock.calls.filter((call: any[]) => call[1] === 3000).at(-1)!;
+		await (poll[0] as unknown as () => Promise<void>)();
 		await flush();
-		expect(f.document.getElementById("error")!.textContent).toContain("Connection refused");
+
 		expect(f.document.getElementById("connection")!.textContent).toBe("连接失败");
+		expect(f.document.getElementById("connection")!.className).toBe("error");
+		expect(f.document.getElementById("error")!.textContent).toBe("Network down");
 	});
 });

@@ -518,6 +518,18 @@ function GroupRoom({
 						<span className="dg-nav-icon">👥</span>
 						<span className="dg-nav-text">{zh ? "成员状态" : "Bots"}</span>
 					</button>
+					<button
+						type="button"
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "webhooks" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("webhooks")}
+						title={zh ? "配置入站与出站 Webhook" : "Configure Incoming and Outgoing Webhooks"}
+					>
+						<span className="dg-nav-icon">🔗</span>
+						<span className="dg-nav-text">{zh ? "Webhook" : "Webhooks"}</span>
+						{detail?.room.webhooks && detail.room.webhooks.filter((w) => w.enabled).length > 0 && (
+							<span className="dg-nav-badge">{detail.room.webhooks.filter((w) => w.enabled).length}</span>
+						)}
+					</button>
 				</div>
 				<div className="dg-head-actions">
 					{headerSlots.map((entry: UiSlotEntry) => (

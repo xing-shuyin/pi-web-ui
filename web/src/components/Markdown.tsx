@@ -11,6 +11,7 @@ import { getMathRenderer, loadMathRenderer, subscribeMathRenderer } from "../mar
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { CopyButton } from "./copy-button";
+import { RunInTerminalButton } from "./terminal-run-button";
 import { splitCodeLines } from "../code-lines";
 import { childrenText, fenceLanguage } from "./mermaid";
 import {
@@ -268,9 +269,13 @@ function PlainCodeBlock({ children, ...props }: JSX.IntrinsicElements["pre"]) {
 	const lines = splitCodeLines(inner);
 	const multi = lines.length > 1;
 	const numWidth = multi ? `${String(lines.length).length + 1}ch` : undefined;
+	const rawCode = codeText(children);
 	return (
 		<div className="codeblock">
-			<CopyButton text={codeText(children)} />
+			<div className="codeblock-actions">
+				<RunInTerminalButton code={rawCode} />
+				<CopyButton text={rawCode} />
+			</div>
 			<pre {...props}>
 				{lines.map((nodes, i) => (
 					<div className="code-line" key={i}>

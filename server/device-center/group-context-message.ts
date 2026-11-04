@@ -106,7 +106,7 @@ function historyMessage(value: unknown): value is GroupHistoryMessage {
 	return (
 		typeof value.id === "string" &&
 		typeof value.text === "string" &&
-		(value.sender.type === "human" || value.sender.type === "bot") &&
+		(value.sender.type === "human" || value.sender.type === "bot" || value.sender.type === "webhook") &&
 		typeof value.sender.id === "string" &&
 		typeof value.sender.name === "string" &&
 		typeof value.createdAt === "number" &&

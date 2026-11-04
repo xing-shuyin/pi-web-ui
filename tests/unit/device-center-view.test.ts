@@ -69,14 +69,9 @@ describe("native device workspace", () => {
 	it("hides permission and disconnect actions until paired", async () => {
 		vi.stubGlobal("fetch", mockApi({ name: "Windows", allowExecution: false, connected: false }));
 		const page = await mount();
-		expect(page.querySelector(".dc-form")).toBeNull();
-		expect(page.querySelector(".dc-onboarding")?.textContent).toContain("连接已有中心");
-		const settings = page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2];
-		await act(async () => settings.click());
 		expect(page.querySelector(".dc-form")).not.toBeNull();
-		await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[0].click());
-		expect(page.querySelector(".dc-form")).toBeNull();
-		expect(page.querySelector('[role="switch"]')).toBeNull();
+		expect(page.querySelector(".dc-onboarding")?.textContent).toContain("连接已有中心");
+		expect(page.querySelector('[role="switch"][aria-labelledby="dc-permission-label"]')).toBeNull();
 		expect(page.querySelector(".dc-danger-zone")).toBeNull();
 		expect(page.querySelector("iframe")).toBeNull();
 	});
@@ -98,15 +93,14 @@ describe("native device workspace", () => {
 			),
 		);
 		const page = await mount();
-		expect(page.querySelector('[role="switch"]')).toBeNull();
-		await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());
 		const toggle = page.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="dc-permission-label"]')!;
+		expect(toggle).not.toBeNull();
 		expect(toggle.getAttribute("aria-checked")).toBe("false");
 		await act(async () => toggle.click());
 		expect(toggle.getAttribute("aria-checked")).toBe("false");
 		expect(page.querySelector('[role="alert"]')?.textContent).toContain("权限保存失败");
 	});
-	it("keeps a single device directory when alternating settings and groups", async () => {
+	it("renders all sections cleanly in a single unified overview", async () => {
 		vi.stubGlobal(
 			"fetch",
 			mockApi({
@@ -118,21 +112,13 @@ describe("native device workspace", () => {
 			}),
 		);
 		const page = await mount();
-		const sections = () => page.querySelectorAll('section[aria-label="所有设备"]');
-		expect(sections()).toHaveLength(1);
-		for (let index = 0; index < 8; index++) {
-			await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());
-			expect(sections()).toHaveLength(1);
-			expect(page.querySelectorAll(".dc-bots")).toHaveLength(1);
-			await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[1].click());
-			expect(sections()).toHaveLength(0);
-			expect(page.querySelectorAll(".dc-bots")).toHaveLength(1);
-			await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[0].click());
-			expect(sections()).toHaveLength(1);
-			expect(page.querySelectorAll(".dc-bots")).toHaveLength(0);
-		}
+		expect(page.querySelectorAll('section[aria-label="所有设备"]')).toHaveLength(1);
+		expect(page.querySelectorAll(".dc-bots")).toHaveLength(1);
+		expect(page.querySelectorAll('section[aria-label="群聊列表"]')).toHaveLength(1);
+		expect(page.querySelectorAll('section[aria-label="本机远程桌面"]')).toHaveLength(1);
+		expect(page.querySelectorAll(".dc-danger-zone")).toHaveLength(1);
 	});
-	it("opens the connected Hub from settings and authorizes remote desktop access", async () => {
+	it("opens the connected Hub and authorizes remote desktop access", async () => {
 		const replace = vi.fn();
 		const tab = { opener: window, location: { replace }, close: vi.fn() };
 		vi.spyOn(window, "open").mockReturnValue(tab as any);
@@ -146,7 +132,6 @@ describe("native device workspace", () => {
 		);
 		vi.stubGlobal("fetch", fetch);
 		const page = await mount();
-		await act(async () => page.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());
 		const hub = page.querySelector<HTMLAnchorElement>(".dc-header a")!;
 		expect(hub.href).toBe("https://hub.example.com/");
 		expect(hub.target).toBe("_blank");

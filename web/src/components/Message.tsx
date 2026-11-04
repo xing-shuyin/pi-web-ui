@@ -10,6 +10,7 @@ import {
 	FiCode,
 	FiCopy,
 	FiEdit3,
+	FiEye,
 	FiFileText,
 	FiGitBranch,
 	FiImage,
@@ -48,6 +49,8 @@ import { fetchCompactedHistory, useCompactedHistory } from "../compacted-history
 import { parseSkillBlock, type SkillBlock } from "../skill-block";
 import { isRasterImage, fileToProcessedImage } from "../image-paste";
 import { contextMenuItems, openContextMenu } from "../context-menu-state";
+import { openImageLightbox } from "../image-lightbox-bridge";
+import { openFilePreview } from "../file-preview-bridge";
 import { messageMarkdown, messagePlainText } from "../copy-text";
 import { formatSize } from "../format-bytes";
 import { copyTextToClipboard, useCopyFeedback } from "../use-copy-feedback";
@@ -1302,6 +1305,14 @@ export const Message = memo(function Message({
 															: `data:${att.mimeType ?? "image/png"};base64,${att.imageData}`
 													}
 													alt={att.name}
+													className="msg-editor-img-clickable"
+													title={t("toolImageZoom")}
+													onClick={() => {
+														const src = (att as EditPromptAttachment).imageUrl
+															? appUrl((att as EditPromptAttachment).imageUrl!)
+															: `data:${att.mimeType ?? "image/png"};base64,${att.imageData}`;
+														openImageLightbox({ src, alt: att.name });
+													}}
 												/>
 											) : (
 												<span className="msg-editor-file">
@@ -1425,22 +1436,72 @@ export const Message = memo(function Message({
 						))}
 						{messageAttachments.length > 0 && (
 							<div className="msg-queued-atts-bar">
-								{messageAttachments.map((att, i) => (
-									<span key={`qatt-${i}`} className="queued-att-chip">
-										<span className="queued-att-icon">
-											{att.type === "image" || att.type === "vision-bridge"
-												? "🖼️"
-												: att.type === "folder"
-													? "📁"
-													: att.type === "page"
-														? "🌐"
-														: att.type === "conversation"
-															? "💬"
-															: "📎"}
+								{messageAttachments.map((att, i) => {
+									let previewImgSrc: string | undefined;
+									if (att.url) {
+										previewImgSrc = att.url.startsWith("/") ? appUrl(att.url) : att.url;
+									} else if (att.type === "image" || att.type === "vision-bridge") {
+										const match = questionAttachments?.find(
+											(qa) => qa.name === att.name || qa.imageData || (qa as EditPromptAttachment).imageUrl,
+										) as EditPromptAttachment | undefined;
+										if (match?.imageUrl) previewImgSrc = appUrl(match.imageUrl);
+										else if (match?.imageData)
+											previewImgSrc = `data:${match.mimeType ?? "image/png"};base64,${match.imageData}`;
+										else {
+											const imgB = message.content.find((b) => b.type === "image") as { dataUrl?: string } | undefined;
+											if (imgB?.dataUrl)
+												previewImgSrc = imgB.dataUrl.startsWith("/") ? appUrl(imgB.dataUrl) : imgB.dataUrl;
+										}
+									}
+									const hasPath = Boolean(
+										att.path && att.type !== "page" && att.type !== "conversation" && att.type !== "canvas",
+									);
+									const canPreview = Boolean(previewImgSrc || hasPath);
+									const handleChipClick = () => {
+										if (previewImgSrc) {
+											openImageLightbox({ src: previewImgSrc, alt: att.name });
+										} else if (hasPath && att.path) {
+											openFilePreview({ path: att.path, name: att.name });
+										}
+									};
+									return (
+										<span
+											key={`qatt-${i}`}
+											className={`queued-att-chip${canPreview ? " previewable" : ""}`}
+											title={
+												canPreview
+													? `${att.name} (${previewImgSrc ? t("toolImageZoom") : t("fileOpenPreview")})`
+													: att.name
+											}
+											onClick={canPreview ? handleChipClick : undefined}
+											role={canPreview ? "button" : undefined}
+											tabIndex={canPreview ? 0 : undefined}
+											onKeyDown={
+												canPreview
+													? (e) => {
+															if (e.key === "Enter" || e.key === " ") {
+																e.preventDefault();
+																handleChipClick();
+															}
+														}
+													: undefined
+											}
+										>
+											<span className="queued-att-icon">
+												{att.type === "image" || att.type === "vision-bridge"
+													? "🖼️"
+													: att.type === "folder"
+														? "📁"
+														: att.type === "page"
+															? "🌐"
+															: att.type === "conversation"
+																? "💬"
+																: "📎"}
+											</span>
+											<span className="queued-att-name">{att.name}</span>
 										</span>
-										<span className="queued-att-name">{att.name}</span>
-									</span>
-								))}
+									);
+								})}
 							</div>
 						)}
 						{fileQuote ? (
@@ -1618,6 +1679,17 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 								<a className="attachcard-path attachcard-link" href={safePageHref} target="_blank" rel="noreferrer">
 									{details.path}
 								</a>
+							) : !isPage && !isConversation && !isFolder ? (
+								<span
+									className="attachcard-path attachcard-path-clickable"
+									title={t("fileOpenPreview")}
+									onClick={(e) => {
+										e.stopPropagation();
+										openFilePreview({ path: details.path!, name });
+									}}
+								>
+									{details.path}
+								</span>
 							) : (
 								<span className="attachcard-path">{details.path}</span>
 							))}
@@ -1677,14 +1749,30 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 							<div className="attachcard-bridgenote">{t("bridgedVisionDetail")}</div>
 							{imgSrc && (
 								<div className="attachcard-image">
-									<img src={imgSrc} loading="lazy" decoding="async" alt={name} />
+									<img
+										src={imgSrc}
+										loading="lazy"
+										decoding="async"
+										alt={name}
+										className="attachcard-image-clickable"
+										title={t("toolImageZoom")}
+										onClick={() => openImageLightbox({ src: imgSrc, alt: name })}
+									/>
 								</div>
 							)}
 							{clean && <pre className="attachcard-content">{clean}</pre>}
 						</>
 					) : imgSrc ? (
 						<div className="attachcard-image">
-							<img src={imgSrc} loading="lazy" decoding="async" alt={name} />
+							<img
+								src={imgSrc}
+								loading="lazy"
+								decoding="async"
+								alt={name}
+								className="attachcard-image-clickable"
+								title={t("toolImageZoom")}
+								onClick={() => openImageLightbox({ src: imgSrc, alt: name })}
+							/>
 						</div>
 					) : (
 						<pre className="attachcard-content">{clean}</pre>
@@ -1692,7 +1780,16 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 				})()}
 			{isReference && (
 				<div className="attachcard-refnote">
-					{isFolder ? t("folderNotExpanded") : t("fileNotExpanded", { size: formatSize(details.size) })}
+					<span>{isFolder ? t("folderNotExpanded") : t("fileNotExpanded", { size: formatSize(details.size) })}</span>
+					{!isFolder && details.path && (
+						<button
+							type="button"
+							className="attachcard-ref-open"
+							onClick={() => openFilePreview({ path: details.path!, name })}
+						>
+							<FiEye /> {t("fileOpenPreview")}
+						</button>
+					)}
 				</div>
 			)}
 		</div>
@@ -2142,7 +2239,15 @@ function Block({
 		const src = image.dataUrl.startsWith("/") ? appUrl(image.dataUrl) : image.dataUrl;
 		return (
 			<div className="msg-image">
-				<img src={src} loading="lazy" decoding="async" alt="attachment" />
+				<img
+					src={src}
+					loading="lazy"
+					decoding="async"
+					alt="attachment"
+					className="msg-image-clickable"
+					title={t("toolImageZoom")}
+					onClick={() => openImageLightbox({ src, alt: "attachment" })}
+				/>
 			</div>
 		);
 	}

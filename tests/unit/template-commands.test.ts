@@ -17,6 +17,17 @@ describe("template commands", () => {
 		expect(expandTemplateCommand("/PR", [template])).toBe("Review . Target: ");
 		expect(expandTemplateCommand("/pr 798", [{ ...template, prompt: "Review" }])).toBe("Review\n\n798");
 	});
+	it("expands dynamic variables like date, time, and datetime", () => {
+		const fixedDate = new Date(2025, 4, 18, 14, 30, 45); // 2025-05-18 14:30:45
+		const timeTpl = {
+			id: "log",
+			command: "log",
+			prompt: "Log [{{date}} {{time}}] ({{datetime}} Y:{{year}}): {{input}}",
+		};
+		expect(expandTemplateCommand("/log Test note", [timeTpl], fixedDate)).toBe(
+			"Log [2025-05-18 14:30:45] (2025-05-18 14:30:45 Y:2025): Test note",
+		);
+	});
 	it("leaves unrelated messages intact and does not recursively expand", () => {
 		for (const text of ["/unknown 798", "hello /pr 798", "/pr-extra 798"]) {
 			expect(expandTemplateCommand(text, [template])).toBe(text);

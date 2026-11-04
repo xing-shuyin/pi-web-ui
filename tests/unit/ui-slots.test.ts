@@ -17,6 +17,7 @@ import {
 	applyUiSlotCardinality,
 	PLUGIN_VIEW_ITEM_ID,
 	buildUiSlots,
+	createHostSlotEntry,
 	isPluginViewItem,
 	pluginViewItemId,
 	restoreAllUi,
@@ -1408,5 +1409,29 @@ describe("左栏插件自定义分区（P4 · leftpanel.sections 接受 kind=vie
 		const slots = build([p]);
 		expect(slots["tool.card.footer"].map((e) => e.id)).toEqual(["custom-tool:btn"]);
 		expect(slots["tool.card.footer"][0]?.label).toBe("测试按钮");
+	});
+
+	it("createHostSlotEntry 构造规范完备的 UiSlotEntry", () => {
+		const entry = createHostSlotEntry({
+			id: "host:kill-bash",
+			slot: "contextmenu.toolcall",
+			label: "结束此 bash 命令",
+			icon: "■",
+			kind: "action",
+			order: -1,
+			when: ["disabled"],
+		});
+		expect(entry.id).toBe("host:kill-bash");
+		expect(entry.slot).toBe("contextmenu.toolcall");
+		expect(entry.source).toBe("host");
+		expect(entry.label).toBe("结束此 bash 命令");
+		expect(entry.icon).toBe("■");
+		expect(entry.kind).toBe("action");
+		expect(entry.order).toBe(-1);
+		expect(entry.align).toBe("start");
+		expect(entry.hidden).toBe(false);
+		expect(entry.userOverrides).toEqual([]);
+		expect(entry.arrangedBy).toEqual([]);
+		expect(entry.when).toEqual(["disabled"]);
 	});
 });

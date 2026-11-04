@@ -11,6 +11,7 @@ import type { ClientMessage, ServerMessage } from "./protocol.js";
 import type { DispatchSession } from "./index.js";
 import { SchedulerValidationError, type SchedulerStore } from "./scheduler-tasks.js";
 import type { RemoteSshService } from "./remote-ssh-service.js";
+import { normalizePathKey } from "./client-state.js";
 
 /** 文件与工作区相关操作 */
 export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): boolean {
@@ -494,7 +495,11 @@ export function handleSessionLifecycleMessage(
 			void cs.rollbackSession?.(msg.messageId, msg.conversationId, msg.restoreWorkspace);
 			return true;
 		case "list_sessions":
-			void cs.refreshSessions();
+			if (msg.path && normalizePathKey(msg.path) !== normalizePathKey(cs.cwd)) {
+				void cs.pushSessionsForCwd?.(msg.path);
+			} else {
+				void cs.refreshSessions();
+			}
 			return true;
 		case "list_projects":
 			void cs.pushProjects();

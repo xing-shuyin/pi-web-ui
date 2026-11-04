@@ -20,6 +20,7 @@ import {
 	FiMinimize2,
 	FiPackage,
 	FiSearch,
+	FiSquare,
 	FiTerminal,
 	FiUsers,
 	FiX,
@@ -27,6 +28,9 @@ import {
 } from "react-icons/fi";
 import { isZhLocale, useLocale, useT } from "../i18n";
 import { closeToolInspector, useToolInspectorState, type ToolInspectorState } from "../tool-inspector-state";
+import { openContextMenu } from "../context-menu-state";
+import { openToolInfo } from "../tool-info-state";
+import { createHostSlotEntry, type UiSlotEntry } from "../ui-slots";
 import {
 	parseCodemodeArgs,
 	parseDelegateArgs,
@@ -66,6 +70,48 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	ask_user_question: <FiHelpCircle />,
 	conversation_read: <FiMessageSquare />,
 };
+
+/**
+ * 统一收敛检查器弹窗的运行状态与文案，保证顶底栏单源一致，彻底杜绝「上面进行中、下面已完成」的矛盾。
+ */
+export function resolveInspectorStatus(
+	state: ToolInspectorState,
+	t: ReturnType<typeof useT>,
+	isZh: boolean,
+): {
+	isRunning: boolean;
+	badgeClass: "run" | "err" | "ok";
+	statusIcon: string;
+	badgeText: string;
+	footerText: string;
+} {
+	const isError = state.isError ?? false;
+	const isRunning = state.statusClass === "run" && !isError;
+	const badgeClass: "run" | "err" | "ok" = isError ? "err" : isRunning ? "run" : "ok";
+	const statusIcon = isError ? "✕" : isRunning ? "⟳" : "✓";
+
+	let badgeText: string;
+	if (isError) {
+		badgeText = state.duration ? `${t("error")} (${state.duration})` : t("error");
+	} else if (isRunning) {
+		badgeText = state.status || (isZh ? "执行中..." : "Running...");
+	} else if (state.duration) {
+		badgeText = `${t("done")} (${state.duration})`;
+	} else {
+		badgeText = state.status || t("done");
+	}
+
+	let footerText: string;
+	if (isError) {
+		footerText = state.exitHint || (isZh ? "命令执行失败" : "Execution failed");
+	} else if (isRunning) {
+		footerText = state.exitHint || (isZh ? "执行中..." : "Running...");
+	} else {
+		footerText = state.exitHint || (isZh ? "执行完成" : "Execution completed");
+	}
+
+	return { isRunning, badgeClass, statusIcon, badgeText, footerText };
+}
 
 export function ToolInspectorModal() {
 	const state = useToolInspectorState();
@@ -263,12 +309,95 @@ function BashInspectorDialog({
 		}
 	}, [details]);
 
-	const badgeText = isError ? t("error") : duration ? `${t("done")} (${duration})` : status || t("done");
-	const badgeClass = isError ? "err" : "ok";
+	const statusMeta = resolveInspectorStatus(state, t, isZh);
 
 	const lines = output ? output.split("\n").length : 0;
 	const detailsKeysCount =
 		details && typeof details === "object" ? Object.keys(details as Record<string, unknown>).length : 0;
+
+	const handleContextMenu = (e: React.MouseEvent) => {
+		const sel = window.getSelection?.()?.toString();
+		if (sel && sel.trim().length > 0) return;
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		const entries: UiSlotEntry[] = [];
+		if (state.onKillBash) {
+			entries.push(
+				createHostSlotEntry({
+					id: "host:kill-bash",
+					slot: "contextmenu.toolcall",
+					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					icon: "■",
+					kind: "action",
+					order: -1,
+					when: statusMeta.isRunning ? undefined : ["disabled"],
+				}),
+			);
+		}
+		if (command) {
+			entries.push(
+				createHostSlotEntry({
+					id: "host:copy-command",
+					slot: "contextmenu.toolcall",
+					label: isZh ? "复制执行命令" : "Copy command",
+					icon: "copy",
+					kind: "action",
+					order: 1,
+				}),
+			);
+		}
+		if (output) {
+			entries.push(
+				createHostSlotEntry({
+					id: "host:copy-output",
+					slot: "contextmenu.toolcall",
+					label: isZh ? "复制终端输出" : "Copy output",
+					icon: "copy",
+					kind: "action",
+					order: 2,
+				}),
+			);
+		}
+		entries.push(
+			createHostSlotEntry({
+				id: "host:tool-info",
+				slot: "contextmenu.toolcall",
+				label: isZh ? "工具详细信息" : "Tool Details",
+				icon: "info",
+				kind: "action",
+				order: 3,
+			}),
+		);
+
+		openContextMenu({
+			x: e.clientX,
+			y: e.clientY,
+			slot: "contextmenu.toolcall",
+			target: { id: state.toolCallId || "bash", kind: "toolcall", label: "bash" },
+			entries,
+			onHostAction: (entry) => {
+				if (entry.id === "host:kill-bash") {
+					state.onKillBash?.();
+					return undefined;
+				}
+				if (entry.id === "host:copy-command") {
+					void copyCmd.copy(command);
+					return undefined;
+				}
+				if (entry.id === "host:copy-output") {
+					void copyOut.copy(output);
+					return undefined;
+				}
+				if (entry.id === "host:tool-info") {
+					openToolInfo("bash");
+					return undefined;
+				}
+				return undefined;
+			},
+		});
+	};
 
 	return (
 		<div
@@ -290,10 +419,26 @@ function BashInspectorDialog({
 							{command ? `$ ${command}` : "bash"}
 						</span>
 						{exitHint && <span className="file-diff-lang">{exitHint}</span>}
-						<span className={`file-diff-status-pill ${badgeClass}`}>✓ {badgeText}</span>
+						<span className={`file-diff-status-pill ${statusMeta.badgeClass}`}>
+							{statusMeta.statusIcon} {statusMeta.badgeText}
+						</span>
 					</div>
 
 					<div className="file-diff-inspector-actions">
+						{statusMeta.isRunning && state.onKillBash && (
+							<button
+								type="button"
+								className="file-diff-action-btn kill-btn"
+								title={isZh ? "结束此 bash 命令 (Stop)" : "Stop bash command"}
+								onClick={(e) => {
+									e.stopPropagation();
+									state.onKillBash?.();
+								}}
+							>
+								<FiSquare />
+								<span className="kill-btn-label">{isZh ? "结束" : "Stop"}</span>
+							</button>
+						)}
 						<div className="btn-group-diff" role="group">
 							<button
 								type="button"
@@ -388,7 +533,7 @@ function BashInspectorDialog({
 							)}
 						</div>
 					) : (
-						<div className="bash-terminal-viewport">
+						<div className="bash-terminal-viewport" onContextMenu={handleContextMenu}>
 							{command && <TerminalCommand command={command} />}
 							<pre className="bash-output-pre">
 								{output ||
@@ -400,10 +545,12 @@ function BashInspectorDialog({
 
 				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
-					<div className={`file-diff-footer-status${isError ? " err" : ""}`}>
-						<span className="file-diff-status-icon">{isError ? "✕" : "✓"}</span>
+					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
+						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
+							{statusMeta.statusIcon}
+						</span>
 						<span className="file-diff-status-text">
-							{exitHint || (isError ? "命令执行失败" : "执行完成")} · {lines} 行输出 · {output.length} 字符
+							{statusMeta.footerText} · {lines} 行输出 · {output.length} 字符
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
@@ -493,8 +640,7 @@ function ReadInspectorDialog({
 		}
 	}, [details]);
 
-	const badgeText = isError ? t("error") : duration ? `${t("done")} (${duration})` : status || t("done");
-	const badgeClass = isError ? "err" : "ok";
+	const statusMeta = resolveInspectorStatus(state, t, isZh);
 
 	const lines = output ? output.split("\n").length : 0;
 	const detailsKeysCount =
@@ -542,7 +688,9 @@ function ReadInspectorDialog({
 								L{startLine}~L{startLine + lines - 1}
 							</span>
 						)}
-						<span className={`file-diff-status-pill ${badgeClass}`}>✓ {badgeText}</span>
+						<span className={`file-diff-status-pill ${statusMeta.badgeClass}`}>
+							{statusMeta.statusIcon} {statusMeta.badgeText}
+						</span>
 					</div>
 
 					<div className="file-diff-inspector-actions">
@@ -661,9 +809,13 @@ function ReadInspectorDialog({
 
 				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
-					<div className={`file-diff-footer-status${isError ? " err" : ""}`}>
-						<span className="file-diff-status-icon">{isError ? "✕" : "✓"}</span>
-						<span className="file-diff-status-text">{t("toolInspectorStats", { chars: output.length, lines })}</span>
+					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
+						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
+							{statusMeta.statusIcon}
+						</span>
+						<span className="file-diff-status-text">
+							{statusMeta.isRunning ? statusMeta.footerText : t("toolInspectorStats", { chars: output.length, lines })}
+						</span>
 					</div>
 					<div className="file-diff-footer-meta">
 						{detailsKeysCount > 0 && <span>details: {detailsKeysCount} keys</span>}
@@ -703,6 +855,7 @@ function FileDiffInspectorDialog({
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
 	const { name = "edit", args = "", details, output = "", isError = false, status, duration } = state;
+	const isEdit = name === "edit" || name === "edit_soft" || name === "patch";
 	const data = useMemo(() => parseFileMutationArgs(name, args, details, output), [name, args, details, output]);
 
 	const detailsKeysCount =
@@ -717,8 +870,7 @@ function FileDiffInspectorDialog({
 		}
 	}, [details]);
 
-	const badgeText = isError ? t("error") : duration ? `${t("done")} (${duration})` : status || t("done");
-	const badgeClass = isError ? "err" : "ok";
+	const statusMeta = resolveInspectorStatus(state, t, isZh);
 
 	const handleCopy = (e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -767,7 +919,9 @@ function FileDiffInspectorDialog({
 								</span>
 							)
 						)}
-						<span className={`file-diff-status-pill ${badgeClass}`}>✓ {badgeText}</span>
+						<span className={`file-diff-status-pill ${statusMeta.badgeClass}`}>
+							{statusMeta.statusIcon} {statusMeta.badgeText}
+						</span>
 					</div>
 
 					<div className="file-diff-inspector-actions">
@@ -885,11 +1039,14 @@ function FileDiffInspectorDialog({
 
 				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
-					<div className={`file-diff-footer-status${isError ? " err" : ""}`}>
-						<span className="file-diff-status-icon">{isError ? "✕" : "✓"}</span>
+					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
+						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
+							{statusMeta.statusIcon}
+						</span>
 						<span className="file-diff-status-text">
-							{output ||
-								(state.statusClass === "run" ? t("toolInspectorRunningOutput") : t("toolInspectorEmptyOutput"))}
+							{statusMeta.isRunning
+								? statusMeta.footerText
+								: output || (isEdit ? (isZh ? "补丁已应用" : "Patch applied") : isZh ? "文件已写入" : "File written")}
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">
@@ -943,8 +1100,7 @@ function GenericInspectorDialog({
 		}
 	}, [details]);
 
-	const badgeText = isError ? t("error") : duration ? `${t("done")} (${duration})` : status || t("done");
-	const badgeClass = isError ? "err" : "ok";
+	const statusMeta = resolveInspectorStatus(state, t, isZh);
 	const detailsKeysCount =
 		details && typeof details === "object" ? Object.keys(details as Record<string, unknown>).length : 0;
 
@@ -990,7 +1146,9 @@ function GenericInspectorDialog({
 						<span className="file-diff-path" title={displayTitle}>
 							{displayTitle}
 						</span>
-						<span className={`file-diff-status-pill ${badgeClass}`}>✓ {badgeText}</span>
+						<span className={`file-diff-status-pill ${statusMeta.badgeClass}`}>
+							{statusMeta.statusIcon} {statusMeta.badgeText}
+						</span>
 					</div>
 
 					<div className="file-diff-inspector-actions">
@@ -1135,10 +1293,16 @@ function GenericInspectorDialog({
 
 				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
-					<div className={`file-diff-footer-status${isError ? " err" : ""}`}>
-						<span className="file-diff-status-icon">{isError ? "✕" : "✓"}</span>
+					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
+						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
+							{statusMeta.statusIcon}
+						</span>
 						<span className="file-diff-status-text">
-							{output ? `${output.split("\n").length} 行输出 · ${output.length} 字符` : "执行完成"}
+							{statusMeta.isRunning
+								? statusMeta.footerText
+								: output
+									? `${output.split("\n").length} 行输出 · ${output.length} 字符`
+									: statusMeta.footerText}
 						</span>
 					</div>
 					<div className="file-diff-footer-meta">

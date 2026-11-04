@@ -5,7 +5,6 @@ import {
 	FiExternalLink,
 	FiHelpCircle,
 	FiLink,
-	FiMessageSquare,
 	FiMonitor,
 	FiRefreshCw,
 	FiShield,
@@ -13,15 +12,21 @@ import {
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { useLocale, useT } from "../i18n";
-import { DeviceGroups } from "./DeviceGroups";
 import { LocalBots } from "./LocalBots";
 import { HubLink } from "./HubLink";
 import { DeviceCenterSetup } from "./DeviceCenterSetup";
 import { DeviceDirectory } from "./DeviceDirectory";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
-import { useDeviceGroupNavigation } from "../device-group-navigation";
+import { DeviceGroupManager } from "./DeviceGroupManager";
 
-type DeviceStatus = { name: string; hubUrl?: string; deviceId?: string; allowExecution: boolean; connected: boolean };
+type DeviceStatus = {
+	name: string;
+	remark?: string;
+	hubUrl?: string;
+	deviceId?: string;
+	allowExecution: boolean;
+	connected: boolean;
+};
 type Pairing = { code: string; expiresAt: number; hubUrl: string };
 class DeviceRequestError extends Error {
 	constructor(
@@ -239,15 +244,11 @@ export function DeviceCenter({
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 }) {
 	const t = useT();
-	const navigation = useDeviceGroupNavigation();
-	const [view, setView] = useState<"overview" | "groups" | "settings">(navigation.revision ? "groups" : "overview");
-	useEffect(() => {
-		if (navigation.revision) setView("groups");
-	}, [navigation.revision]);
 	const [status, setStatus] = useState<DeviceStatus | null>(null);
 	const [hubUrl, setHubUrl] = useState("");
 	const [name, setName] = useState("");
 	const [pairing, setPairing] = useState<Pairing | null>(null);
+	const [showPairing, setShowPairing] = useState(false);
 	const [now, setNow] = useState(Date.now());
 	const [busy, setBusy] = useState<"pair" | "permission" | "disconnect" | null>(null);
 	const [error, setError] = useState("");
@@ -263,6 +264,18 @@ export function DeviceCenter({
 	const currentStatus = useRef<DeviceStatus | null>(null);
 	const translate = useRef(t);
 	translate.current = t;
+
+	useEffect(() => {
+		const handleRemark = (e: Event) => {
+			const custom = e as CustomEvent<{ deviceId?: string; remark?: string }>;
+			if (custom.detail?.deviceId && currentStatus.current?.deviceId === custom.detail.deviceId) {
+				setStatus((prev) => (prev ? { ...prev, remark: custom.detail.remark } : prev));
+				if (currentStatus.current) currentStatus.current.remark = custom.detail.remark;
+			}
+		};
+		window.addEventListener("pi-web-ui:device-remark-updated", handleRemark);
+		return () => window.removeEventListener("pi-web-ui:device-remark-updated", handleRemark);
+	}, []);
 
 	async function request<T>(path: string, body?: object): Promise<T> {
 		const controller = new AbortController();
@@ -495,36 +508,7 @@ export function DeviceCenter({
 					</span>
 				</div>
 			</header>
-			<div className="dc-layout">
-				<nav className="dc-sidebar" aria-label={t("deviceHubTitle")}>
-					<button
-						type="button"
-						className={`dc-nav-item${view === "overview" ? " is-active" : ""}`}
-						aria-current={view === "overview" ? "page" : undefined}
-						onClick={() => setView("overview")}
-					>
-						<FiMonitor aria-hidden />
-						{t("deviceHubOverview")}
-					</button>
-					<button
-						type="button"
-						className={`dc-nav-item${view === "groups" ? " is-active" : ""}`}
-						aria-current={view === "groups" ? "page" : undefined}
-						onClick={() => setView("groups")}
-					>
-						<FiMessageSquare aria-hidden />
-						{t("deviceHubGroups")}
-					</button>
-					<button
-						type="button"
-						className={`dc-nav-item${view === "settings" ? " is-active" : ""}`}
-						aria-current={view === "settings" ? "page" : undefined}
-						onClick={() => setView("settings")}
-					>
-						<FiLink aria-hidden />
-						{t("deviceHubSettings")}
-					</button>
-				</nav>
+			<div className="dc-layout" style={{ display: "block" }}>
 				<main className="dc-content">
 					{loading && (
 						<div className="dc-loading" role="status">
@@ -552,7 +536,7 @@ export function DeviceCenter({
 							{notice}
 						</div>
 					)}
-					{!bound && (status || localOnly) && view === "overview" && (
+					{!bound && (status || localOnly) && (
 						<DeviceCenterSetup
 							initialHubUrl={hubUrl}
 							onConnect={(url) => {
@@ -562,21 +546,11 @@ export function DeviceCenter({
 								}
 								dirty.current = true;
 								setHubUrl(url);
-								setView("settings");
+								setShowPairing(true);
 							}}
 						/>
 					)}
-					{!localOnly && view === "overview" && (
-						<section className="dc-card">
-							<h3>{t("deviceSetupNext")}</h3>
-							<p>{t("deviceSetupNextHint")}</p>
-							<button className="dc-button is-primary" onClick={() => setView("groups")}>
-								{t("deviceSetupManage")}
-							</button>
-						</section>
-					)}
-					{view === "settings" && <LocalDesktopSettings />}
-					{status && !localOnly && !bound && view === "settings" && (
+					{status && !localOnly && !bound && (
 						<section className="dc-card">
 							<div className="dc-card-header">
 								<span className="dc-icon">
@@ -693,105 +667,104 @@ export function DeviceCenter({
 						</section>
 					)}
 					{bound && status && !localOnly && (
-						<>
-							{view === "overview" && (
-								<section className="dc-card">
-									<div className="dc-device-summary">
-										<span className="dc-device-icon">
-											<FiMonitor aria-hidden />
-										</span>
-										<div>
-											<h2>{status.name}</h2>
-											<p>{t("deviceHubDeviceTitle")}</p>
-										</div>
-									</div>
-									<dl className="dc-details">
-										<div>
-											<dt>{t("deviceHubDeviceId")}</dt>
-											<dd>{status.deviceId}</dd>
-										</div>
-										<div>
-											<dt>{t("deviceHubHubUrl")}</dt>
-											<dd>{status.hubUrl}</dd>
-										</div>
-									</dl>
-								</section>
-							)}
-							{view === "settings" && (
-								<section className="dc-card">
-									<div className="dc-card-header">
-										<span className="dc-icon">
-											<FiShield aria-hidden />
-										</span>
-										<div>
-											<h2>{t("deviceHubPermissions")}</h2>
-										</div>
-									</div>
-									<div className="dc-permission-row">
-										<div>
-											<h3 id="dc-permission-label">{t("deviceHubPermissionLabel")}</h3>
-											<p id="dc-permission-hint">{t("deviceHubPermissionHint")}</p>
-										</div>
-										<button
-											type="button"
-											className={`dc-toggle${status.allowExecution ? " is-on" : ""}`}
-											role="switch"
-											aria-checked={status.allowExecution}
-											aria-labelledby="dc-permission-label"
-											aria-describedby="dc-permission-hint"
-											disabled={!!busy}
-											onClick={() => void togglePermission()}
-										>
-											<span className="dc-toggle-thumb" />
-										</button>
-									</div>
-									<p className="dc-permission-state" role="status">
-										{t(
-											busy === "permission"
-												? "deviceHubSaving"
-												: status.allowExecution
-													? "deviceHubEnabled"
-													: "deviceHubReadOnly",
-										)}
+						<section className="dc-card">
+							<div className="dc-device-summary">
+								<span className="dc-device-icon">
+									<FiMonitor aria-hidden />
+								</span>
+								<div>
+									<h2>{status.remark?.trim() || status.name}</h2>
+									<p>
+										{status.remark?.trim()
+											? `${status.name} · ${t("deviceHubDeviceTitle")}`
+											: t("deviceHubDeviceTitle")}
 									</p>
-								</section>
-							)}
-							{view === "settings" && (
-								<details className="dc-advanced">
-									<summary>{t("deviceHubAdvanced")}</summary>
-									<div className="dc-danger-zone">
-										<h3>{t("deviceHubDisconnect")}</h3>
-										<p>{t("deviceHubDisconnectHint")}</p>
-										<button
-											type="button"
-											className="dc-button is-danger"
-											disabled={!!busy}
-											onClick={() => void disconnect()}
-										>
-											{t(busy === "disconnect" ? "deviceHubWorking" : "deviceHubDisconnect")}
-										</button>
-									</div>
-								</details>
-							)}
-						</>
+								</div>
+							</div>
+							<dl className="dc-details">
+								<div>
+									<dt>{t("deviceHubDeviceId")}</dt>
+									<dd>{status.deviceId}</dd>
+								</div>
+								<div>
+									<dt>{t("deviceHubHubUrl")}</dt>
+									<dd>{status.hubUrl}</dd>
+								</div>
+							</dl>
+						</section>
 					)}
-					{bound && status?.hubUrl && status.deviceId && !localOnly && view !== "groups" && (
+					{bound && status?.hubUrl && status.deviceId && !localOnly && (
 						<DeviceDirectory
 							key={`directory:${status.hubUrl}:${status.deviceId}`}
 							hubUrl={status.hubUrl}
 							currentDeviceId={status.deviceId}
 						/>
 					)}
-					{!localOnly && (view === "settings" || view === "groups") && (
+					{!localOnly && (
 						<LocalBots
 							key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`}
 							pathCompletions={pathCompletions}
 						/>
 					)}
-					{view === "settings" && (
-						<DeviceExecutionSettings hubUrl={status?.hubUrl} deviceId={status?.deviceId} onNotice={setNotice} />
+					{bound && !localOnly && <DeviceGroupManager />}
+					<LocalDesktopSettings />
+					{bound && status && !localOnly && (
+						<>
+							<section className="dc-card">
+								<div className="dc-card-header">
+									<span className="dc-icon">
+										<FiShield aria-hidden />
+									</span>
+									<div>
+										<h2>{t("deviceHubPermissions")}</h2>
+									</div>
+								</div>
+								<div className="dc-permission-row">
+									<div>
+										<h3 id="dc-permission-label">{t("deviceHubPermissionLabel")}</h3>
+										<p id="dc-permission-hint">{t("deviceHubPermissionHint")}</p>
+									</div>
+									<button
+										type="button"
+										className={`dc-toggle${status.allowExecution ? " is-on" : ""}`}
+										role="switch"
+										aria-checked={status.allowExecution}
+										aria-labelledby="dc-permission-label"
+										aria-describedby="dc-permission-hint"
+										disabled={!!busy}
+										onClick={() => void togglePermission()}
+									>
+										<span className="dc-toggle-thumb" />
+									</button>
+								</div>
+								<p className="dc-permission-state" role="status">
+									{t(
+										busy === "permission"
+											? "deviceHubSaving"
+											: status.allowExecution
+												? "deviceHubEnabled"
+												: "deviceHubReadOnly",
+									)}
+								</p>
+							</section>
+							<DeviceExecutionSettings hubUrl={status?.hubUrl} deviceId={status?.deviceId} onNotice={setNotice} />
+							<details className="dc-advanced">
+								<summary>{t("deviceHubAdvanced")}</summary>
+								<div className="dc-danger-zone">
+									<h3>{t("deviceHubDisconnect")}</h3>
+									<p>{t("deviceHubDisconnectHint")}</p>
+									<button
+										type="button"
+										className="dc-button is-danger"
+										disabled={!!busy}
+										onClick={() => void disconnect()}
+									>
+										{t(busy === "disconnect" ? "deviceHubWorking" : "deviceHubDisconnect")}
+									</button>
+								</div>
+							</details>
+						</>
 					)}
-					{view === "groups" && <DeviceGroups navigation={navigation} />}
 					<aside className="dc-help">
 						<FiHelpCircle className="dc-help-icon" aria-hidden />
 						<div>

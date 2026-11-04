@@ -443,6 +443,24 @@ function openBrowserWhenUp(url) {
 	attempt();
 }
 
+function loadStoredFileToken(dataDir) {
+	try {
+		const raw = readFileSync(join(dataDir, "server-config.json"), "utf8");
+		const parsed = JSON.parse(raw);
+		if (typeof parsed?.token === "string" && parsed.token.trim()) return parsed.token.trim();
+	} catch {
+		/* ignore */
+	}
+	return "";
+}
+
+function resolveCliAuthToken(opts) {
+	const envToken = (process.env.PI_WEB_TOKEN || "").trim();
+	if (envToken) return envToken;
+	const dataDir = resolve(opts?.dataDir ?? process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
+	return loadStoredFileToken(dataDir);
+}
+
 async function startForeground(opts) {
 	if (opts.port) process.env.PI_WEB_PORT = opts.port;
 	if (opts.cwd) process.env.PI_WEB_CWD = resolve(opts.cwd);
@@ -458,7 +476,9 @@ async function startForeground(opts) {
 	}
 	if (opts.host) process.env.PI_WEB_HOST = opts.host;
 	if (opts.agentDir) process.env.PI_CODING_AGENT_DIR = resolve(opts.agentDir);
-	const url = `http://localhost:${effectivePort(opts)}`;
+	const token = resolveCliAuthToken(opts);
+	const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+	const url = `http://localhost:${effectivePort(opts)}${tokenQuery}`;
 	if (HAS_SDK_HOOK) await import(pathToFileURL(SDK_HOOK).href);
 	try {
 		await import(pathToFileURL(SERVER_ENTRY).href);

@@ -1,7 +1,7 @@
 /**
  * 供 AI 智能体调用的点歌与音乐播控工具
  */
-import { getTopList, searchMusics } from "./music-sdk.mjs";
+import { getTopListSongs, getPlaylistDetail, searchMusics } from "./music-sdk.mjs";
 
 export function createMusicTool(host, userApi) {
 	return {
@@ -23,18 +23,22 @@ export function createMusicTool(host, userApi) {
 				},
 				source: {
 					type: "string",
-					enum: ["wy", "kw", "kg", "mg"],
-					description: "Music platform source (wy: Netease, kw: Kuwo, kg: Kugou, mg: Migu). Defaults to wy.",
+					enum: ["wy", "tx", "kw", "kg", "mg"],
+					description:
+						"Music platform source (wy: Netease, tx: QQ Music, kw: Kuwo, kg: Kugou, mg: Migu). Defaults to wy.",
 				},
 				chart: {
 					type: "string",
-					enum: ["hot", "soar", "new"],
-					description: "Chart type when action is play_all (hot: hot songs, soar: soaring, new: new releases).",
+					description: "Chart type or ID when action is play_all (e.g. hot, soar, new, or specific chart ID).",
+				},
+				playlistId: {
+					type: "string",
+					description: "Playlist ID when action is play_all to play an entire online playlist.",
 				},
 			},
 			required: ["action"],
 		},
-		execute: async ({ action, keyword, source = "wy", chart = "hot" }) => {
+		execute: async ({ action, keyword, source = "wy", chart = "hot", playlistId }) => {
 			if (action === "search") {
 				if (!keyword) return { error: "Keyword is required for search" };
 				try {
@@ -82,10 +86,13 @@ export function createMusicTool(host, userApi) {
 			if (action === "play_all") {
 				try {
 					let songs = [];
-					if (keyword) {
+					if (playlistId) {
+						const pl = await getPlaylistDetail(source, playlistId);
+						songs = pl.songs || [];
+					} else if (keyword) {
 						songs = await searchMusics(source, keyword, 1, 20);
 					} else {
-						songs = await getTopList(chart, 30);
+						songs = await getTopListSongs(source, chart, 1, 30);
 					}
 
 					if (!songs || songs.length === 0) {

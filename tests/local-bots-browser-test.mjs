@@ -210,7 +210,9 @@ async function main() {
 		await page.goto(`${origin}/?view=devices`);
 		await page.locator("#root .app").waitFor();
 		await page.locator(".status-conn.ok").waitFor();
-		await page.locator(".dc-nav-item").filter({ hasText: "Connection settings" }).click();
+		if (await page.locator(".dc-nav-item").filter({ hasText: "Connection settings" }).count()) {
+			await page.locator(".dc-nav-item").filter({ hasText: "Connection settings" }).click();
+		}
 		const bots = page.locator(".dc-bots");
 		await bots.getByRole("button", { name: "New Bot", exact: true }).click();
 		const form = bots.locator(".dc-bot-editor");

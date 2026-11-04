@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { validatePluginManifest, KNOWN_PERMISSION_FAMILIES } from "../../server/plugin-manifest-validate.js";
+import { parseUiContributions, parseUiItem } from "../../server/plugins.js";
 
 const PLUGINS_DIR = fileURLToPath(new URL("../../plugins", import.meta.url));
 
@@ -131,5 +132,101 @@ describe("P1-6 manifest 校验失败即拒", () => {
 				}
 			}
 		}
+	});
+
+	it("所有内置官方插件 manifest.ui 解析不得产生任何诊断警告（零未知 slot group / 丢弃）", () => {
+		const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory());
+		for (const dir of entries) {
+			const manifestPath = join(PLUGINS_DIR, dir.name, "manifest.json");
+			if (!existsSync(manifestPath)) continue;
+			const raw = JSON.parse(readFileSync(manifestPath, "utf8")) as { ui?: unknown };
+			if (!raw.ui) continue;
+			const diags: string[] = [];
+			parseUiContributions(raw.ui, diags);
+			expect(diags, `plugins/${dir.name}/manifest.json ui diagnostics`).toEqual([]);
+		}
+	});
+
+	it("UI slot 别名支持 statusBar/statusbar/footer/bottom 映射至 bottombar", () => {
+		const diags: string[] = [];
+		const res = parseUiContributions(
+			{
+				statusBar: [{ id: "test-status", label: "Status" }],
+				footer: [{ id: "test-footer", label: "Footer" }],
+			},
+			diags,
+		);
+		expect(diags).toEqual([]);
+		expect(res?.items.every((it) => it.slot === "bottombar")).toBe(true);
+	});
+
+	it("UI 条目解析兼容 title 回落为 hint，且兼容 action={type:'view',viewId} 形式", () => {
+		const diags: string[] = [];
+		const item = parseUiItem(
+			{
+				id: "sample",
+				label: "Sample",
+				title: "Sample Title",
+				action: { type: "view", viewId: "my-plugin" },
+			},
+			"bottombar",
+			diags,
+		);
+		expect(diags).toEqual([]);
+		expect(item).toBeDefined();
+		expect(item?.hint).toBe("Sample Title");
+		expect(item?.kind).toBe("view");
+		expect(item?.view).toBe("plugin:my-plugin");
+	});
+
+	it("存量历史插件含 views/commands/statusBar 结构时零诊断警告且能正确解析（向后全兼容）", () => {
+		const legacyUi = {
+			views: [{ id: "discord", label: "Discord", icon: "🎮" }],
+			topbar: [
+				{
+					id: "discord-open",
+					label: "Discord",
+					icon: "🎮",
+					action: { type: "view", viewId: "discord" },
+					order: 60,
+				},
+			],
+			statusBar: [
+				{
+					id: "discord-status",
+					label: "🎮 Discord",
+					title: "点击打开 Discord 工作台",
+					action: { type: "view", viewId: "discord" },
+					order: 50,
+				},
+			],
+			commands: [
+				{
+					id: "open",
+					label: "打开 Discord 工作台",
+					icon: "🎮",
+					action: { type: "view", viewId: "discord" },
+				},
+			],
+		};
+		const diags: string[] = [];
+		const res = parseUiContributions(legacyUi, diags);
+
+		// 彻底消除未知 slot group 报警
+		expect(diags).toEqual([]);
+		expect(res?.items.length).toBe(2);
+
+		const topbarItem = res?.items.find((it) => it.id === "discord-open");
+		expect(topbarItem).toBeDefined();
+		expect(topbarItem?.slot).toBe("topbar.primary");
+		expect(topbarItem?.kind).toBe("view");
+		expect(topbarItem?.view).toBe("plugin:discord");
+
+		const statusItem = res?.items.find((it) => it.id === "discord-status");
+		expect(statusItem).toBeDefined();
+		expect(statusItem?.slot).toBe("bottombar");
+		expect(statusItem?.kind).toBe("view");
+		expect(statusItem?.view).toBe("plugin:discord");
+		expect(statusItem?.hint).toBe("点击打开 Discord 工作台");
 	});
 });

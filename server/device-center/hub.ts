@@ -33,6 +33,16 @@ import { atomicApproveGroupPlan } from "./group-plan-guard.js";
 import { computeAttenuatedTools } from "./bot-execution.js";
 import { validateTaskPlan } from "./task-plan.js";
 import {
+	ALLOWED_WEBHOOK_EVENTS,
+	createWebhookToken,
+	dispatchGroupWebhook,
+	isIncomingWebhookRequest,
+	secureCompareTokens,
+	testOutgoingWebhook,
+	validateWebhookInput,
+} from "./hub-webhooks.js";
+import type { GroupWebhook, RoomMessage } from "./store.js";
+import {
 	GROUP_RETENTION_LIMIT,
 	groupHistoryPage,
 	groupMentionTargets,
@@ -230,10 +240,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				suffix,
 			);
 		const taskRoute = /^\/rooms\/[^/]+\/tasks\/[^/]+(?:\/(?:journal|report))?$/.test(suffix);
+		const webhookRoute =
+			/^\/rooms\/[^/]+\/(?:webhooks(?:\/[^/]+(?:\/(?:delete|regenerate-token|test))?)?|hub-relay)$/.test(suffix);
 		if (!(
 			(req.method === "GET" &&
 				(conversationRoute ||
 					taskRoute ||
+					webhookRoute ||
 					/^\/rooms\/[^/]+\/(?:events|interactions|transfers|locks|blackboard)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers\/[^/]+\/preview$/.test(suffix) ||
 					["/devices", "/bots", "/rooms"].includes(suffix) ||
@@ -241,10 +254,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(["POST", "PUT"].includes(req.method) &&
 				(suffix === "/rooms" ||
 					conversationRoute ||
+					webhookRoute ||
 					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/tasks\/[^/]+\/approve-plan$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers(?:\/start|\/[^/]+(?:\/(?:apply|abort|resume))?)?$/.test(suffix) ||
-					/^\/devices\/[^/]+\/open$/.test(suffix)))
+					/^\/devices\/[^/]+\/(open|remark)$/.test(suffix)))
 		))
 			fail(404, "User route missing");
 		users.set(req, { device, account: { id: owner.id, username: owner.username } });
@@ -279,8 +293,10 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		next();
 	});
 	app.use((req, res, next) => {
-		if (req.headers.host !== origin.host) return res.status(421).json({ error: "Host rejected" });
+		if (!isIncomingWebhookRequest(req) && req.headers.host !== origin.host)
+			return res.status(421).json({ error: "Host rejected" });
 		if (
+			!isIncomingWebhookRequest(req) &&
 			!agents.has(req) &&
 			!users.has(req) &&
 			!["GET", "HEAD", "OPTIONS"].includes(req.method) &&
@@ -335,6 +351,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		id: device.id,
 		accountId: device.accountId,
 		name: device.name,
+		remark: device.remark ?? null,
 		createdAt: device.createdAt,
 		online: options.isOnline?.(device.id) ?? false,
 		url:
@@ -912,6 +929,353 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.put("/api/rooms/:id/blackboard", handleBlackboardUpdate);
 	app.post("/api/rooms/:id/blackboard", handleBlackboardUpdate);
 
+	// === Group Webhooks ===
+	app.get("/api/rooms/:id/webhooks", (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		const state = store.snapshot();
+		const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+		if (!room) fail(404, "Room missing");
+		res.setHeader("Cache-Control", "no-store");
+		res.json({ webhooks: room.webhooks ?? [] });
+	});
+
+	app.post("/api/rooms/:id/webhooks", async (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		const validated = validateWebhookInput(req.body, false);
+		let created: GroupWebhook | undefined;
+		await store.transact((state) => {
+			const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			if (!room.webhooks) room.webhooks = [];
+			if (room.webhooks.length >= 32) fail(409, "Maximum webhooks limit reached");
+			const now = Date.now();
+			created = {
+				id: randomUUID(),
+				roomId: room.id,
+				name: validated.name!,
+				type: validated.type!,
+				enabled: validated.enabled ?? true,
+				createdAt: now,
+				updatedAt: now,
+				...(validated.type === "incoming"
+					? {
+							token: createWebhookToken(),
+							allowBotTrigger: validated.allowBotTrigger ?? true,
+						}
+					: {
+							url: validated.url,
+							secret: validated.secret,
+							events: validated.events ?? [...ALLOWED_WEBHOOK_EVENTS],
+							relayViaHub: validated.relayViaHub ?? true,
+						}),
+			};
+			room.webhooks.push(created);
+		});
+		groupEvents.invalidate(String(req.params.id));
+		res.json({ webhook: created });
+	});
+
+	const handleWebhookUpdate = async (req: Request, res: Response) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		const validated = validateWebhookInput(req.body, true);
+		let updated: GroupWebhook | undefined;
+		await store.transact((state) => {
+			const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			const hook = room.webhooks?.find((w) => w.id === req.params.webhookId);
+			if (!hook) fail(404, "Webhook missing");
+			if (validated.name !== undefined) hook.name = validated.name;
+			if (validated.enabled !== undefined) hook.enabled = validated.enabled;
+			if (hook.type === "incoming") {
+				if (validated.allowBotTrigger !== undefined) hook.allowBotTrigger = validated.allowBotTrigger;
+			} else {
+				if (validated.url !== undefined) hook.url = validated.url;
+				if (validated.secret !== undefined) hook.secret = validated.secret;
+				if (validated.events !== undefined) hook.events = validated.events;
+				if (validated.relayViaHub !== undefined) hook.relayViaHub = validated.relayViaHub;
+			}
+			hook.updatedAt = Date.now();
+			updated = hook;
+		});
+		groupEvents.invalidate(String(req.params.id));
+		res.json({ webhook: updated });
+	};
+
+	app.put("/api/rooms/:id/webhooks/:webhookId", handleWebhookUpdate);
+	app.post("/api/rooms/:id/webhooks/:webhookId", handleWebhookUpdate);
+
+	app.post("/api/rooms/:id/webhooks/:webhookId/regenerate-token", async (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		let updated: GroupWebhook | undefined;
+		await store.transact((state) => {
+			const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			const hook = room.webhooks?.find((w) => w.id === req.params.webhookId);
+			if (!hook) fail(404, "Webhook missing");
+			if (hook.type !== "incoming") fail(400, "Only incoming webhooks have tokens");
+			hook.token = createWebhookToken();
+			hook.updatedAt = Date.now();
+			updated = hook;
+		});
+		groupEvents.invalidate(String(req.params.id));
+		res.json({ webhook: updated });
+	});
+
+	const handleWebhookDelete = async (req: Request, res: Response) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		await store.transact((state) => {
+			const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			if (!room.webhooks?.some((w) => w.id === req.params.webhookId)) fail(404, "Webhook missing");
+			room.webhooks = room.webhooks.filter((w) => w.id !== req.params.webhookId);
+		});
+		groupEvents.invalidate(String(req.params.id));
+		res.json({ deleted: true });
+	};
+
+	app.delete("/api/rooms/:id/webhooks/:webhookId", handleWebhookDelete);
+	app.post("/api/rooms/:id/webhooks/:webhookId/delete", handleWebhookDelete);
+
+	app.post("/api/rooms/:id/hub-relay", async (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		const rawUrl = req.body?.hubRelayBaseUrl;
+		let baseUrl: string | undefined;
+		if (rawUrl !== undefined && rawUrl !== null && rawUrl !== "") {
+			if (typeof rawUrl !== "string") fail(400, "Invalid hubRelayBaseUrl");
+			try {
+				const parsed = new URL(rawUrl.trim());
+				if (parsed.protocol !== "http:" && parsed.protocol !== "https:") fail(400, "Invalid protocol");
+				baseUrl = parsed.origin;
+			} catch {
+				fail(400, "hubRelayBaseUrl must be a valid HTTP(S) URL");
+			}
+		}
+		await store.transact((state) => {
+			const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			room.hubRelayBaseUrl = baseUrl;
+		});
+		groupEvents.invalidate(String(req.params.id));
+		res.json({ hubRelayBaseUrl: baseUrl });
+	});
+
+	app.post("/api/rooms/:id/webhooks/:webhookId/test", async (req, res) => {
+		const owner = account(req);
+		if (agents.has(req)) fail(403, "Webhook management requires a user session");
+		const state = store.snapshot();
+		const room = state.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+		if (!room) fail(404, "Room missing");
+		const hook = room.webhooks?.find((w) => w.id === req.params.webhookId);
+		if (!hook) fail(404, "Webhook missing");
+		if (hook.type !== "outgoing") {
+			return res.json({ success: true, message: "Incoming webhook is active" });
+		}
+		if (!hook.url) fail(400, "Webhook URL missing");
+		const result = await testOutgoingWebhook({ url: hook.url, secret: hook.secret });
+		res.json(result);
+	});
+
+	app.post("/api/rooms/:id/webhooks/incoming/:webhookId", async (req, res) => {
+		const roomId = String(req.params.id);
+		const webhookId = String(req.params.webhookId);
+		const snapshot = store.snapshot();
+		const room = snapshot.rooms.find((r) => r.id === roomId);
+		if (!room) return res.status(404).json({ error: "Room missing" });
+		const webhook = room.webhooks?.find((w) => w.id === webhookId && w.type === "incoming");
+		if (!webhook || webhook.enabled === false) return res.status(404).json({ error: "Webhook not found or disabled" });
+
+		const bearer = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : undefined;
+		const queryToken = typeof req.query?.token === "string" ? req.query.token : undefined;
+		const headerToken = typeof req.headers["x-webhook-token"] === "string" ? req.headers["x-webhook-token"] : undefined;
+		const bodyToken = typeof req.body?.token === "string" ? req.body.token : undefined;
+		const providedToken = queryToken ?? bearer ?? headerToken ?? bodyToken;
+		if (!providedToken || !webhook.token || !secureCompareTokens(providedToken, webhook.token)) {
+			return res.status(401).json({ error: "Invalid webhook token" });
+		}
+
+		const rawText = req.body?.text;
+		if (typeof rawText !== "string" || !rawText.trim()) {
+			return res.status(400).json({ error: "Missing or empty text" });
+		}
+		const content = text(rawText);
+		const senderName =
+			typeof req.body?.senderName === "string" && req.body.senderName.trim()
+				? text(req.body.senderName.trim(), 80)
+				: webhook.name;
+		const replyToMessageId =
+			typeof req.body?.replyToMessageId === "string" ? text(req.body.replyToMessageId, 128) : undefined;
+		const inputTargets = Array.isArray(req.body?.targetBotIds)
+			? req.body.targetBotIds.filter((id: unknown): id is string => typeof id === "string")
+			: [];
+
+		const settings = currentSettings();
+		const key = randomUUID();
+		const fingerprint = hashSecret(
+			JSON.stringify({
+				content,
+				senderName,
+				webhookId,
+				inputTargets,
+				replyToMessageId,
+			}),
+		);
+
+		const result = await store.transact((draft) => {
+			const activeRoom = draft.rooms.find((r) => r.id === roomId);
+			if (!activeRoom) fail(404, "Room missing");
+			const activeWebhook = activeRoom.webhooks?.find((w) => w.id === webhookId && w.type === "incoming");
+			if (!activeWebhook || activeWebhook.enabled === false) fail(404, "Webhook missing or disabled");
+			if (replyToMessageId && !draft.messages.some((m) => m.id === replyToMessageId && m.roomId === activeRoom.id)) {
+				fail(400, "Reply target message is not in this room");
+			}
+
+			const targets: string[] = [];
+			const allowTrigger = activeWebhook.allowBotTrigger !== false;
+			if (allowTrigger) {
+				if (inputTargets.length > 0) {
+					targets.push(...inputTargets);
+				} else {
+					if (settings.allowBotMentions) {
+						targets.push(...groupMentionTargets(content, activeRoom, draft.bots, settings.botMentionBudgetPerTurn));
+					}
+					if (!targets.length && activeRoom.primaryBotId) {
+						if (
+							activeRoom.botIds.includes(activeRoom.primaryBotId) &&
+							validBot(draft, activeRoom.primaryBotId, activeRoom.accountId)
+						) {
+							targets.push(activeRoom.primaryBotId);
+						}
+					}
+				}
+			}
+
+			if (targets.some((id) => !activeRoom.botIds.includes(id) || !validBot(draft, id, activeRoom.accountId))) {
+				fail(400, "Invalid target Bot");
+			}
+
+			const now = Date.now();
+			const rootId = randomUUID();
+			const tasks: HubTask[] = targets.map((botId, index) => {
+				const targetBot = validBot(draft, botId, activeRoom.accountId)!;
+				return {
+					id: index === 0 ? rootId : randomUUID(),
+					rootTaskId: rootId,
+					dispatchDepth: 0,
+					...(index === 0 ? { dispatchCount: targets.length } : {}),
+					attemptId: randomUUID(),
+					roomId: activeRoom.id,
+					accountId: activeRoom.accountId,
+					botId,
+					deviceId: targetBot.deviceId,
+					botRevision: targetBot.revision,
+					text: content,
+					status: "queued" as const,
+					createdAt: now,
+					updatedAt: now,
+				};
+			});
+
+			for (const task of tasks) {
+				task.kind = "message";
+				const targetConv = draft.conversations
+					.filter(
+						(entry) =>
+							entry.roomId === activeRoom.id &&
+							entry.accountId === activeRoom.accountId &&
+							entry.botId === task.botId &&
+							!entry.closed &&
+							entry.botRevision === task.botRevision &&
+							entry.deviceId === task.deviceId,
+					)
+					.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+				if (targetConv) {
+					task.conversationId = targetConv.id;
+					task.resume = true;
+					advanceConversationTask(draft, targetConv, task);
+					targetConv.rootTaskId = task.rootTaskId!;
+					targetConv.updatedAt = now;
+					targetConv.dispatchDepth = 0;
+				} else {
+					establishConversation(draft, task);
+				}
+				recordConversationTurn(draft, task, key, fingerprint);
+			}
+
+			const message: RoomMessage = {
+				id: randomUUID(),
+				roomId: activeRoom.id,
+				accountId: activeRoom.accountId,
+				text: content,
+				sender: {
+					type: "webhook",
+					id: activeWebhook.id,
+					name: senderName,
+				},
+				createdAt: now,
+				taskIds: tasks.map((t) => t.id),
+				...(targets.length ? { targetBotIds: targets } : {}),
+				...(replyToMessageId ? { replyToMessageId } : {}),
+				...(tasks.length === 1 ? { conversationId: tasks[0].conversationId } : {}),
+				...(tasks.length ? { conversationIds: tasks.map((task) => task.conversationId!) } : {}),
+			};
+
+			const context = tasks.length
+				? groupTaskContext(activeRoom, draft.bots, draft.messages, settings.groupContextBytes)
+				: undefined;
+
+			draft.tasks.push(...tasks);
+			draft.messages.push(message);
+			draft.receipts.push({
+				accountId: activeRoom.accountId,
+				roomId: activeRoom.id,
+				key,
+				fingerprint,
+				messageId: message.id,
+				createdAt: message.createdAt,
+			});
+
+			const oldMessages = draft.messages.filter((m) => m.roomId === activeRoom.id).slice(0, -getHistoryLimit());
+			const removed = new Set(oldMessages.map((m) => m.id));
+			draft.messages = draft.messages.filter((m) => !removed.has(m.id));
+			trimRoomReceipts(draft, activeRoom.id);
+
+			const oldTasks = new Set(
+				draft.tasks
+					.filter(
+						(t) =>
+							t.roomId === activeRoom.id &&
+							isTerminal(t.status) &&
+							!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
+					)
+					.slice(0, -getHistoryLimit())
+					.map((t) => t.id),
+			);
+			draft.tasks = draft.tasks.filter((t) => !oldTasks.has(t.id));
+			trimConversationHistory(draft, activeRoom.id);
+			trimClosedConversations(draft, activeRoom.id);
+
+			return { message, tasks, context, roomId: activeRoom.id };
+		});
+
+		for (const task of result.tasks) {
+			if (task.status !== "waiting") await deliverTask(task, result.context);
+		}
+		groupEvents.invalidate(result.roomId);
+		dispatchGroupWebhook(store, result.roomId, "message", result.message);
+
+		res.json({
+			success: true,
+			message: result.message,
+			tasks: result.tasks.map(publicTask),
+		});
+	});
+
 	// === Task Details, Journal, and Reports ===
 	app.get("/api/rooms/:id/tasks/:taskId", (req, res) => {
 		const acc = account(req);
@@ -1326,6 +1690,9 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					req.body,
 				);
 			});
+			if (kind === "deliveries") {
+				dispatchGroupWebhook(store, req.params.id as string, "delivery", record);
+			}
 			res.json(kind === "deliveries" ? { delivery: record } : { review: record });
 		});
 	}
@@ -2167,10 +2534,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				trimClosedConversations(draft, room.id);
 				return { message, tasks, duplicate: false, context };
 			});
-			if (!result.duplicate)
+			if (!result.duplicate) {
 				for (const task of result.tasks) {
 					if (task.status !== "waiting") await deliverTask(task, result.context);
 				}
+				if (result.message) {
+					dispatchGroupWebhook(store, req.params.id as string, "message", result.message);
+				}
+			}
 			const state = store.snapshot();
 			res.json({
 				...(conversationApi
@@ -2186,6 +2557,26 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			});
 		},
 	);
+	app.post("/api/devices/:id/remark", async (req, res) => {
+		const owner = account(req);
+		const id = String(req.params.id);
+		const rawRemark = req.body?.remark;
+		if (rawRemark !== null && rawRemark !== undefined && typeof rawRemark !== "string") {
+			fail(400, "Invalid remark");
+		}
+		const remark = typeof rawRemark === "string" ? rawRemark.trim().slice(0, 80) : "";
+		const updated = await store.transact((draft) => {
+			const target = draft.devices.find((d) => d.id === id && d.accountId === owner.id);
+			if (!target) fail(404, "Device missing");
+			if (remark) {
+				target.remark = remark;
+			} else {
+				delete target.remark;
+			}
+			return target;
+		});
+		res.json({ device: visibleDevice(publicDevice(updated)) });
+	});
 	for (const action of ["alias", "portal"])
 		app.post(`/api/devices/:id/${action}`, async (req, res) => {
 			const owner = account(req);
@@ -2614,6 +3005,28 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			await releaseLocksAndWake(result.task.roomId, result.task.id);
 			if (result.task.status === "completed") {
 				await wakeDependentTasks(result.task.roomId, result.task.id, report);
+				dispatchGroupWebhook(store, result.task.roomId, "task_completed", {
+					taskId: result.task.id,
+					botId: result.task.botId,
+					status: "completed",
+					report: result.task.report,
+					text: result.task.text,
+				});
+			} else if (result.task.status === "failed") {
+				dispatchGroupWebhook(store, result.task.roomId, "task_failed", {
+					taskId: result.task.id,
+					botId: result.task.botId,
+					status: "failed",
+					report: result.task.report,
+					text: result.task.text,
+				});
+			}
+			if (report) {
+				const state = store.snapshot();
+				const msg = state.messages.find((m) => m.taskIds.includes(result.task.id) && m.sender.id === result.task.botId);
+				if (msg) {
+					dispatchGroupWebhook(store, result.task.roomId, "message", msg);
+				}
 			}
 		}
 		if (result.wake) await deliverTask(result.wake, result.context);

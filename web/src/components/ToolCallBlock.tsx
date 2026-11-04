@@ -43,11 +43,11 @@ import { isZhLocale, useLocale, useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
 // 工具定义说明弹窗（模块级 store：卡片只负责发打开请求，弹窗挂在 App 上）。
 import { openToolInfo } from "../tool-info-state";
-import { isFlowMode, openToolInspector } from "../tool-inspector-state";
+import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
 import { CollapsibleHead } from "./CollapsibleHead";
 import { HalfRingSpinner } from "./HalfRingSpinner";
 import { slotIcon } from "./Message";
-import type { UiSlotEntry } from "../ui-slots";
+import { createHostSlotEntry, type UiSlotEntry } from "../ui-slots";
 import {
 	parseCodemodeArgs,
 	parseDelegateArgs,
@@ -199,16 +199,101 @@ function tryOpenPresentPreview(argumentsText: string | undefined, details: unkno
 	return openFilePreview({ path: target.target, name: target.name });
 }
 
+/**
+ * 实时同步/流式响应检查器弹窗 Hook：
+ * 若当前工具调用正在检查器弹窗（ToolInspectorModal）中打开，随增量输出与完成状态自动平滑更新，
+ * 避免弹窗定格在点击那一刻的旧快照。
+ */
+function useToolInspectorLiveSync({
+	blockId,
+	view,
+	statusClass,
+	statusLabel,
+	duration,
+	durationMs,
+	exitHint,
+	isError,
+	isBash,
+	onKillBash,
+	t,
+}: {
+	blockId: string;
+	view: ToolView;
+	statusClass: "ok" | "run" | "err" | "idle";
+	statusLabel: string;
+	duration: string;
+	durationMs?: number;
+	exitHint: string;
+	isError: boolean;
+	isBash: boolean;
+	onKillBash?: KillBashHandler;
+	t: ReturnType<typeof useT>;
+}) {
+	useEffect(() => {
+		const cur = getToolInspectorState();
+		const myToolCallId = view.result?.toolCallId ?? blockId;
+		if (!cur || cur.isThinking || (cur.toolCallId !== blockId && cur.toolCallId !== myToolCallId)) {
+			return;
+		}
+
+		const currentRaw = view.result
+			? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
+			: (view.liveOutput ?? "");
+		const currentOutput = currentRaw.replace(/…\[LIVE_OMIT:(\d+)\]…\n/, (_, n) => t("liveOutputOmitted", { n }));
+
+		const currentImages = (view.result?.content ?? [])
+			.filter(
+				(b): b is UiImageBlock =>
+					b.type === "image" &&
+					typeof (b as UiImageBlock).dataUrl === "string" &&
+					(((b as UiImageBlock).dataUrl as string).startsWith("data:") ||
+						((b as UiImageBlock).dataUrl as string).startsWith("/")),
+			)
+			.map((b) => b.dataUrl as string);
+
+		updateToolInspectorLive(cur.toolCallId!, {
+			status: statusLabel,
+			statusClass,
+			duration,
+			durationMs,
+			exitHint,
+			rawOutput: currentRaw,
+			output: currentOutput,
+			details: view.result?.details,
+			images: currentImages,
+			isError,
+			resultTimestamp: view.result?.timestamp,
+			onKillBash: isBash ? onKillBash : undefined,
+		});
+	}, [
+		blockId,
+		view.liveOutput,
+		view.result,
+		view.status,
+		statusClass,
+		statusLabel,
+		duration,
+		durationMs,
+		exitHint,
+		isError,
+		isBash,
+		onKillBash,
+		t,
+	]);
+}
+
 /** 极简行文模式（Flow 模式）纯净轻量微胶囊外壳：零多余 DOM，点击按需提取数据并弹出居中检查器 */
 const ToolCallCapsule = memo(function ToolCallCapsule({
 	block,
 	view,
+	onKillBash,
 	uiContextToolCall,
 	onUiAction,
 	rootRef,
 }: {
 	block: UiToolCallBlock;
 	view: ToolView;
+	onKillBash?: KillBashHandler;
 	uiContextToolCall?: UiSlotEntry[];
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 	rootRef: React.RefObject<HTMLDivElement | null>;
@@ -216,8 +301,10 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	const t = useT();
 	const isZh = isZhLocale(useLocale());
 	const isPresent = block.name === PRESENT_FILES_TOOL_NAME;
+	const isBash = block.name === "bash";
 
 	const running = !view.result && view.streaming && !view.status;
+	const isBashRunning = isBash && (running || !view.result);
 	const done = view.result !== undefined;
 	const waitingModel = !view.result && !!view.status;
 	const isError = view.result?.isError ?? view.status?.isError ?? false;
@@ -244,6 +331,21 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	const headline = resolveToolHeadline({ name: block.name, argumentsText: block.argumentsText, hints });
 	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
+	// 弹窗实时流式响应：若当前微胶囊正在检查器弹窗中打开，实时同步增量输出与状态平滑切换
+	useToolInspectorLiveSync({
+		blockId: block.id,
+		view,
+		statusClass,
+		statusLabel,
+		duration,
+		durationMs,
+		exitHint,
+		isError,
+		isBash,
+		onKillBash,
+		t,
+	});
+
 	// 轻量检查输出类型（图片/Markdown），无需在每帧拼接和正则数万字的长文本
 	const hasImages = useMemo(() => {
 		const content = view.result?.content;
@@ -263,10 +365,25 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 		return false;
 	}, [view.result?.content]);
 
-	const ctxMenuAvailable = (uiContextToolCall ?? []).some((e) => e && e.hidden !== true && e.kind !== "divider");
-
 	const onHeadContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
-		if (!ctxMenuAvailable) return;
+		const baseEntries = uiContextToolCall ?? [];
+		const entries: UiSlotEntry[] = [];
+		if (isBash && onKillBash) {
+			entries.push(
+				createHostSlotEntry({
+					id: "host:kill-bash",
+					slot: "contextmenu.toolcall",
+					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					icon: "■",
+					kind: "action",
+					order: -1,
+					when: isBashRunning ? undefined : ["disabled"],
+				}),
+			);
+		}
+		entries.push(...baseEntries);
+		if (entries.length === 0) return;
+
 		e.preventDefault();
 		e.stopPropagation();
 		openContextMenu({
@@ -274,8 +391,12 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			y: e.clientY,
 			slot: "contextmenu.toolcall",
 			target: { id: block.id, kind: "toolcall", label: block.name },
-			entries: uiContextToolCall ?? [],
+			entries,
 			onHostAction: (entry) => {
+				if (entry.id === "host:kill-bash") {
+					onKillBash?.();
+					return undefined;
+				}
 				if (entry.id === "host:tool-info") {
 					openToolInfo(block.name);
 					return undefined;
@@ -323,6 +444,7 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 			isError,
 			toolCallId: view.result?.toolCallId ?? block.id,
 			resultTimestamp: view.result?.timestamp,
+			onKillBash: isBash ? onKillBash : undefined,
 			presentData:
 				isPresent && currentPresentArgs
 					? {
@@ -419,7 +541,8 @@ const ToolCallCard = memo(function ToolCallCard({
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
 	const running = !view.result && view.streaming && !view.status;
-	const isBashRunning = block.name === "bash" && running;
+	const isBash = block.name === "bash";
+	const isBashRunning = isBash && (running || !view.result);
 	const done = view.result !== undefined;
 	/** Command finished (tool_status fired) but the authoritative toolResult
 	 *  message hasn't landed in a snapshot yet — the model is still chewing on
@@ -580,6 +703,21 @@ const ToolCallCard = memo(function ToolCallCard({
 	});
 	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
+	// 弹窗实时流式响应：若当前卡片正在检查器弹窗中打开，实时同步增量输出与状态平滑切换
+	useToolInspectorLiveSync({
+		blockId: block.id,
+		view,
+		statusClass,
+		statusLabel,
+		duration,
+		durationMs,
+		exitHint,
+		isError,
+		isBash,
+		onKillBash,
+		t,
+	});
+
 	const copyArgs = () => {
 		if (block.argumentsText) {
 			void copy(block.argumentsText);
@@ -603,11 +741,29 @@ const ToolCallCard = memo(function ToolCallCard({
 	 * 整条消息的右键处理上（否则会又弹一个消息菜单把它顶掉）。
 	 */
 	const onHeadContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
-		if (!ctxMenuAvailable) return;
 		const el = e.target;
 		if (el instanceof Element && el.closest("pre, code, a, input, textarea, [contenteditable='true']")) return;
 		const sel = window.getSelection?.();
 		if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return;
+
+		const baseEntries = uiContextToolCall ?? [];
+		const entries: UiSlotEntry[] = [];
+		if (isBash && onKillBash) {
+			entries.push(
+				createHostSlotEntry({
+					id: "host:kill-bash",
+					slot: "contextmenu.toolcall",
+					label: isZh ? "结束此 bash 命令" : "Stop bash command",
+					icon: "■",
+					kind: "action",
+					order: -1,
+					when: isBashRunning ? undefined : ["disabled"],
+				}),
+			);
+		}
+		entries.push(...baseEntries);
+		if (entries.length === 0) return;
+
 		e.preventDefault();
 		e.stopPropagation();
 		openContextMenu({
@@ -616,9 +772,13 @@ const ToolCallCard = memo(function ToolCallCard({
 			slot: "contextmenu.toolcall",
 			// target.id = 本次工具调用的 toolCallId（菜单条目的分派要靠它认工具）。
 			target: { id: block.id, kind: "toolcall", label: block.name },
-			entries: uiContextToolCall ?? [],
+			entries,
 			// 宿主内置条目的分派器：工具名只有本组件知道，App 只知道插件动作。
 			onHostAction: (entry) => {
+				if (entry.id === "host:kill-bash") {
+					onKillBash?.();
+					return undefined;
+				}
 				if (entry.id === "host:tool-info") {
 					openToolInfo(block.name);
 					return undefined;
@@ -668,6 +828,7 @@ const ToolCallCard = memo(function ToolCallCard({
 			isError,
 			toolCallId: view.result?.toolCallId ?? block.id,
 			resultTimestamp: view.result?.timestamp,
+			onKillBash: isBash ? onKillBash : undefined,
 			presentData:
 				isPresent && currentPresentArgs
 					? {
@@ -989,6 +1150,7 @@ export const ToolCallBlock = memo(function ToolCallBlock(props: ToolCallBlockPro
 			<ToolCallCapsule
 				block={props.block}
 				view={props.view}
+				onKillBash={props.onKillBash}
 				uiContextToolCall={props.uiContextToolCall}
 				onUiAction={props.onUiAction}
 				rootRef={rootRef}

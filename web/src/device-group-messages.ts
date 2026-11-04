@@ -57,11 +57,14 @@ export function groupConversationHits(
 	});
 }
 
+export type GroupWebhook = import("../../server/device-center/store.js").GroupWebhook;
+export type GroupWebhookEventType = import("../../server/device-center/store.js").GroupWebhookEventType;
+
 export type GroupMessage = {
 	id: string;
 	text: string;
 	createdAt: number;
-	sender: { name: string; type?: "human" | "bot"; id?: string; sourceDeviceId?: string };
+	sender: { name: string; type?: "human" | "bot" | "webhook"; id?: string; sourceDeviceId?: string };
 	taskIds?: string[];
 	targetBotIds?: string[];
 	replyToMessageId?: string;
@@ -97,6 +100,8 @@ export type GroupDetail = {
 		primaryBotId?: string;
 		canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
 		blackboard?: import("../../server/device-center/store.js").GroupBlackboard;
+		webhooks?: GroupWebhook[];
+		hubRelayBaseUrl?: string;
 	};
 	bots: GroupDevice[];
 	messages: GroupMessage[];
@@ -230,7 +235,8 @@ export function groupConversationState(
 			content: [{ type: "text", text }],
 		});
 		if (!isBot) {
-			labels.set(id, message.sender.name);
+			const tag = message.sender.type === "webhook" ? " [Webhook]" : "";
+			labels.set(id, `${message.sender.name}${tag}`);
 			continue;
 		}
 		// Hub report messages link to tasks; human dispatch messages also carry taskIds.

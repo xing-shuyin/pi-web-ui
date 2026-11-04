@@ -58,7 +58,6 @@ async function mount() {
 		container.remove();
 	});
 	await act(async () => root.render(createElement(LanguageProvider, null, createElement(DeviceCenter))));
-	await act(async () => container.querySelectorAll<HTMLButtonElement>(".dc-nav-item")[2].click());
 	return {
 		container,
 		unmount,

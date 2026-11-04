@@ -1737,6 +1737,32 @@ export interface UiSlotEntry {
 	movedFrom?: UiSlotId;
 }
 
+/** 构造一条合规的宿主内置 UI 挂载点条目（常用于动态上下文菜单构造）。 */
+export function createHostSlotEntry(entry: {
+	id: string;
+	slot: UiSlotId;
+	label: string;
+	icon?: string;
+	kind?: UiItemKind;
+	order?: number;
+	when?: string[];
+}): UiSlotEntry {
+	return {
+		id: entry.id,
+		slot: entry.slot,
+		source: "host",
+		label: entry.label,
+		icon: entry.icon,
+		kind: entry.kind ?? "action",
+		order: entry.order ?? 100,
+		align: "start",
+		hidden: false,
+		userOverrides: [],
+		arrangedBy: [],
+		when: entry.when,
+	};
+}
+
 /** 合并过程中的可变条目：多一个 seq（声明序号）用来做稳定排序。 */
 interface WorkingEntry extends UiSlotEntry {
 	seq: number;

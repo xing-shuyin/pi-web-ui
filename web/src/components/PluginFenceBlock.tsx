@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { renderFence } from "../plugin-fence";
 import { THEME_CHANGE_EVENT } from "../theme";
 import { CopyButton } from "./copy-button";
+import { RunInTerminalButton } from "./terminal-run-button";
 
 /**
  * fenced-code 渲染插件宿主：把 ```lang 围栏交给认领它的插件渲染成自定义 DOM
@@ -74,7 +75,10 @@ export function PluginFenceBlock({ lang, code }: { lang: string; code: string })
 		// 加载中 / 无认领 / 失败：普通代码块（与无插件时展示一致，不空白）。
 		return (
 			<div className="codeblock">
-				<CopyButton text={code} />
+				<div className="codeblock-actions">
+					<RunInTerminalButton code={code} />
+					<CopyButton text={code} />
+				</div>
 				<pre>
 					<code>{code}</code>
 				</pre>

@@ -40,3 +40,11 @@ Hub 默认单端口 `/device/<id>/` 路径访问设备，以 CSP sandbox（禁�
 ## 9. 远程桌面
 
 设备中心远程桌面由 `desktop.ts` 经既有 WebSocket 传输原生 JPEG，`desktop-native.ts` 管 Windows/macOS 助手，`desktop-linux.ts` 管 Linux X11（ffmpeg/xdotool）；不再依赖 VNC/noVNC。只读由服务端按连接强制，浏览器绘制 ACK 限制跨设备待确认帧，断开须释放输入。macOS 14+ 需屏幕录制/辅助功能权限，授权申请仅由设备本机「设备中心 → 本机远程桌面」按钮发起，远端连接只检查；`/api/device-desktop/local/*` 禁止经过 Hub/connector 中继。Wayland 尚不支持；启用状态保存在 `desktop-settings.json`。详见 [`device-desktop.md`](device-desktop.md)。
+
+## 10. 群组 Webhook 集成
+
+群组支持入站（Incoming）与出站（Outgoing）双向 Webhook：
+
+- **入站 Webhook**：每个群组可创建多个入站端点，生成独立的安全 Token。外部系统（如 CI/CD、报警、脚本）向 `/api/rooms/:id/webhooks/incoming/:webhookId?token=...` 发送 HTTP POST JSON 请求（支持 `text`、`senderName`、`targetBotIds`、`replyToMessageId`）。若开启 `allowBotTrigger`（默认），外部消息按群规则自动分发给显式提及或主 Bot（`primaryBotId`），唤醒 Bot 执行任务并在群内协作。
+- **出站 Webhook**：群组可配置多个外部通知地址，订阅群事件（`message`、`task_completed`、`task_failed`、`delivery`）。事件产生时异步向外部发送 JSON 载荷；支持配置 `secret`，通过 `X-Pi-Signature: sha256=...` 附带 HMAC-SHA256 签名校验。出站请求带 5 秒超时保护与异常隔离，不阻断主流程。
+- **Hub 中转支持**：入站支持切换或配置公共 Hub 中转地址（`hubRelayBaseUrl`），外部请求由公网 Hub 集中接收并调度给内网设备上的 Bot；出站 Webhook 支持可选开关 `relayViaHub`，开启时由 Hub 服务器作为出口代理代发，关闭时供局域网内网直连模式使用。

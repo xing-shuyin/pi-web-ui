@@ -1,0 +1,1948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>提示词模板弹窗优化方案 · pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #0d0e12;
+      --bg-elev: #14161c;
+      --bg-elev2: #1b1e28;
+      --bg-elev3: #232736;
+      --border: #262a36;
+      --border-soft: #1e222e;
+      --border-focus: #8b5cf6;
+      --text: #e6e8f0;
+      --text-dim: #9aa1b5;
+      --text-faint: #656d82;
+      --accent: #8b5cf6;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(139, 92, 246, 0.15);
+      --accent-hover: #9d74f7;
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.12);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.12);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.12);
+      --blue: #38bdf8;
+      --blue-soft: rgba(56, 189, 248, 0.12);
+      --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    [data-theme="light"] {
+      --bg: #f5f6fa;
+      --bg-elev: #ffffff;
+      --bg-elev2: #f0f2f7;
+      --bg-elev3: #e6e9f0;
+      --border: #dcdfe8;
+      --border-soft: #eaecef;
+      --border-focus: #7c3aed;
+      --text: #171923;
+      --text-dim: #4a5568;
+      --text-faint: #718096;
+      --accent: #7c3aed;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(124, 58, 237, 0.1);
+      --accent-hover: #6d28d9;
+      --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.5;
+      font-size: 13px;
+      padding-bottom: 80px;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* 顶部导航与操作条 */
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: color-mix(in srgb, var(--bg) 85%, transparent);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .nav-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 16px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      white-space: nowrap;
+    }
+    .brand-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .theme-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /* 方案切换 Tab 栏 */
+    .view-tabs {
+      display: flex;
+      align-items: center;
+      background: var(--bg-elev);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      gap: 3px;
+      overflow-x: auto;
+      max-width: 100%;
+      flex-shrink: 0;
+    }
+    .view-tab {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .view-tab:hover {
+      color: var(--text);
+    }
+    .view-tab.active {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+    }
+
+    /* 内容容器 */
+    .main-wrap {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* Hero 说明区 */
+    .hero-banner {
+      background: linear-gradient(180deg, var(--bg-elev) 0%, color-mix(in srgb, var(--bg-elev) 60%, var(--bg)) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 24px 28px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .hero-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .hero-desc {
+      color: var(--text-dim);
+      font-size: 13px;
+      max-width: 780px;
+      line-height: 1.6;
+    }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .hero-tag {
+      font-size: 11.5px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* 方案展示卡片区 */
+    .proposal-section {
+      display: none;
+      animation: fadeIn 0.25s ease-out;
+    }
+    .proposal-section.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .proposal-header {
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .proposal-heading {
+      font-size: 17px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .proposal-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .meta-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .meta-badge.recommended {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+    .meta-badge.neutral {
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    /* 模拟弹窗容器舞台 */
+    .modal-stage {
+      background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--accent) 7%, transparent) 0%, transparent 70%), var(--bg-elev2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 48px 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+      min-height: 640px;
+    }
+    .stage-watermark {
+      position: absolute;
+      top: 14px;
+      left: 18px;
+      font-size: 11.5px;
+      color: var(--text-faint);
+      font-family: var(--mono);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* =====================================================================
+       通用基础组件样式（用于模拟真实 pi-web-ui 弹窗）
+       ===================================================================== */
+    .modal-mock {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-modal);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      width: 100%;
+    }
+
+    .btn-mock {
+      border: 1px solid var(--border);
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-mock:hover {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      color: var(--text);
+    }
+    .btn-mock.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-contrast);
+      font-weight: 600;
+    }
+    .btn-mock.primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .btn-mock.fill-accent {
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .btn-mock.fill-accent:hover {
+      filter: brightness(1.1);
+    }
+    .btn-mock.danger-ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--red);
+    }
+    .btn-mock.danger-ghost:hover {
+      background: var(--red-soft);
+      border-color: var(--red);
+    }
+    .btn-mock.close-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-mock.close-circle:hover {
+      background: var(--bg-elev2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* 快捷键键帽样式 */
+    .kbd-chip {
+      font-size: 10px;
+      font-family: var(--mono);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--text-dim);
+    }
+    .btn-mock.primary .kbd-chip {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+    }
+
+    /* =====================================================================
+       方案 0：原版现状还原与痛点剖析
+       ===================================================================== */
+    .orig-modal {
+      max-width: 620px;
+      border-radius: 12px;
+      padding: 16px 20px 20px;
+      position: relative;
+    }
+    .orig-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .orig-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+    .orig-title {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 650;
+    }
+    .orig-body {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 16px 0;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    .orig-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .orig-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+    .orig-input {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 13px;
+      padding: 8px 12px;
+      outline: none;
+    }
+    .orig-input.icon {
+      width: 72px;
+      text-align: center;
+      font-size: 18px;
+    }
+    .orig-textarea {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--mono);
+      line-height: 1.55;
+      padding: 10px 12px;
+      height: 180px;
+      resize: vertical;
+      outline: none;
+    }
+    .orig-hint {
+      font-size: 11.5px;
+      color: var(--text-faint);
+      line-height: 1.4;
+    }
+    .orig-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* 痛点批注红圈 */
+    .spotlight-mark {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #ef4444;
+      color: white;
+      font-weight: 700;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35);
+      cursor: pointer;
+      z-index: 10;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+
+    /* =====================================================================
+       方案 1：现代流线型 · 紧凑一体化（Modern Integrated Flow - 推荐）
+       ===================================================================== */
+    .v1-modal {
+      max-width: 660px;
+      border-radius: var(--radius-lg);
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 方案1 Header：图标与标题自然整合 */
+    .v1-head {
+      padding: 16px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: color-mix(in srgb, var(--bg-elev2) 50%, var(--bg-elev));
+    }
+    .v1-head-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* 智能表情切换触发器 */
+    .v1-icon-picker-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--bg-elev2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .v1-icon-picker-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      transform: scale(1.04);
+    }
+    .v1-icon-picker-dropdown {
+      position: absolute;
+      top: 44px;
+      left: 0;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+      padding: 8px;
+      display: none;
+      grid-template-columns: repeat(6, 32px);
+      gap: 6px;
+      z-index: 50;
+    }
+    .v1-icon-picker-dropdown.open {
+      display: grid;
+    }
+    .emoji-opt {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      transition: background 0.1s;
+    }
+    .emoji-opt:hover {
+      background: var(--bg-elev2);
+    }
+
+    .v1-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .v1-title-input {
+      font-size: 16px;
+      font-weight: 650;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 4px 8px;
+      outline: none;
+      width: 100%;
+      transition: all 0.15s;
+    }
+    .v1-title-input:hover {
+      border-color: var(--border);
+      background: var(--bg-elev2);
+    }
+    .v1-title-input:focus {
+      border-color: var(--accent);
+      background: var(--bg-elev2);
+    }
+
+    .v1-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      white-space: nowrap;
+    }
+
+    /* 方案1 Body：紧凑两列 + 结构化区块 */
+    .v1-body {
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-height: 520px;
+      overflow-y: auto;
+    }
+
+    /* 两列网格：快捷命令 + 描述说明 */
+    .v1-grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .v1-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .v1-field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .v1-field-hint {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-weight: normal;
+    }
+
+    .v1-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .v1-cmd-prefix {
+      position: absolute;
+      left: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      font-family: var(--mono);
+      pointer-events: none;
+    }
+    .v1-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elev2);
+      color: var(--text);
+      font-size: 13px;
+      padding: 8px 12px;
+      outline: none;
+      transition: all 0.15s;
+    }
+    .v1-input.has-prefix {
+      padding-left: 26px;
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+    .v1-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+      background: var(--bg-elev);
+    }
+
+    /* 方案1 Prompt 编辑器增强面板 */
+    .v1-prompt-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-elev2);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.15s;
+    }
+    .v1-prompt-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .v1-prompt-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: color-mix(in srgb, var(--bg-elev3) 60%, var(--bg-elev2));
+      border-bottom: 1px solid var(--border);
+      font-size: 11.5px;
+    }
+    .v1-vars-list {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .v1-var-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s;
+    }
+    .v1-var-tag:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .v1-prompt-stats {
+      color: var(--text-faint);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--mono);
+    }
+
+    .v1-textarea {
+      width: 100%;
+      min-height: 200px;
+      max-height: 380px;
+      padding: 12px 14px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--mono);
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+    }
+
+    /* 方案1 底部操作栏 */
+    .v1-actions {
+      padding: 12px 20px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: color-mix(in srgb, var(--bg-elev2) 40%, var(--bg-elev));
+    }
+    .v1-actions-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .v1-actions-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* =====================================================================
+       方案 2：双栏工作台 · 专业生产力（Studio Split Pro）
+       ===================================================================== */
+    .v2-modal {
+      width: 940px;
+      max-width: 95vw;
+      border-radius: var(--radius-lg);
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .v2-head {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-elev2);
+    }
+    .v2-head-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .v2-split-container {
+      display: grid;
+      grid-template-columns: 310px 1fr;
+      min-height: 480px;
+    }
+
+    /* 左栏：参数与配置 */
+    .v2-left-pane {
+      background: color-mix(in srgb, var(--bg-elev2) 50%, var(--bg-elev));
+      border-right: 1px solid var(--border);
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .v2-pane-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-faint);
+      margin-bottom: 4px;
+    }
+    .v2-var-simulator-box {
+      background: var(--bg-elev2);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 右栏：沉浸式编辑器 + 实时渲染预览 */
+    .v2-right-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-elev);
+    }
+    .v2-right-tabs {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elev2);
+    }
+    .v2-tab-btn-group {
+      display: flex;
+      gap: 6px;
+    }
+    .v2-tab-btn {
+      padding: 4px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .v2-tab-btn.active {
+      background: var(--bg-elev);
+      border-color: var(--border);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .v2-editor-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .v2-textarea {
+      flex: 1;
+      width: 100%;
+      min-height: 380px;
+      border: none;
+      padding: 16px 20px;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.65;
+      resize: none;
+      outline: none;
+    }
+    .v2-preview-area {
+      flex: 1;
+      padding: 20px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      overflow-y: auto;
+      display: none;
+      background: color-mix(in srgb, var(--bg-elev2) 30%, var(--bg-elev));
+    }
+    .v2-preview-area.active {
+      display: block;
+    }
+    .v2-preview-rendered mark {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-weight: 600;
+    }
+
+    .v2-foot {
+      padding: 12px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-elev2);
+    }
+
+    /* =====================================================================
+       方案 3：极简命令流 · Raycast 风格（Command Palette Style）
+       ===================================================================== */
+    .v3-modal {
+      max-width: 620px;
+      border-radius: var(--radius-lg);
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .v3-title-row {
+      padding: 16px 20px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .v3-slash-pill {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .v3-main-title {
+      font-size: 18px;
+      font-weight: 700;
+      flex: 1;
+      border: none;
+      background: transparent;
+      outline: none;
+      color: var(--text);
+    }
+    .v3-meta-strip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .v3-meta-input {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 12px;
+      outline: none;
+      flex: 1;
+    }
+    .v3-meta-input::placeholder {
+      color: var(--text-faint);
+    }
+
+    .v3-body-area {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .v3-editor {
+      width: 100%;
+      min-height: 240px;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+    }
+    .v3-bottom-shortcuts {
+      padding: 10px 18px;
+      background: var(--bg-elev2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 11px;
+      color: var(--text-faint);
+    }
+    .v3-shortcut-items {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 14px;
+    }
+    .v3-shortcut-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+
+    /* 对比表格 */
+    .compare-table-wrap {
+      margin-top: 36px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    .compare-table th, .compare-table td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .compare-table th {
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .compare-table tr:last-child td {
+      border-bottom: none;
+    }
+    .compare-score {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 600;
+    }
+    .score-high { color: var(--green); }
+    .score-mid { color: var(--amber); }
+
+    /* 全屏蒙层演示 */
+    .demo-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .demo-backdrop.open {
+      display: flex;
+      animation: fadeIn 0.15s ease-out;
+    }
+    .demo-backdrop-content {
+      width: 100%;
+      max-width: 940px;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Toast 提示浮层 */
+    .toast-box {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 10px 18px;
+      background: var(--bg-elev3);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-md);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      z-index: 999;
+      animation: slideUp 0.2s ease-out;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* 代码实现要点卡 */
+    .code-guide-card {
+      margin-top: 24px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+    }
+    .code-guide-card h4 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .code-guide-card ul {
+      padding-left: 18px;
+      color: var(--text-dim);
+      line-height: 1.8;
+      font-size: 12.5px;
+    }
+
+    @media (max-width: 900px) {
+      .top-nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 10px 16px;
+      }
+      .nav-top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+      .view-tabs {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .v1-grid-2col {
+        grid-template-columns: 1fr;
+      }
+      .v2-split-container {
+        grid-template-columns: 1fr;
+      }
+      .modal-stage {
+        padding: 20px 8px;
+        min-height: auto;
+      }
+      .main-wrap {
+        padding: 16px 12px;
+      }
+      .v1-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .v1-actions-right {
+        justify-content: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部导航 -->
+  <header class="top-nav">
+    <div class="nav-top-row">
+      <div class="nav-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-title">提示词模板弹窗重构方案评审</div>
+        <span class="brand-badge">pi-web-ui RFC</span>
+      </div>
+
+      <div class="nav-actions">
+        <button class="theme-toggle-btn" onclick="toggleTheme()">
+          <span id="theme-icon">🌙</span> <span id="theme-text">深色模式</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 方案快速切换 Tab -->
+    <div class="view-tabs">
+      <button class="view-tab active" onclick="switchView('v1', event)">🚀 方案一：现代流线型 (推荐)</button>
+      <button class="view-tab" onclick="switchView('v2', event)">⚡ 方案二：双栏工作台 (Studio)</button>
+      <button class="view-tab" onclick="switchView('v3', event)">🎯 方案三：极简命令流 (Raycast)</button>
+      <button class="view-tab" onclick="switchView('orig', event)">🔍 原版对比与痛点</button>
+    </div>
+  </header>
+
+  <div class="main-wrap">
+
+    <!-- Hero 引导区 -->
+    <section class="hero-banner">
+      <div>
+        <h2 class="hero-title">💡 提示词模板（Prompt Template）UI 交互升级</h2>
+        <p class="hero-desc">
+          针对当前提示词模板弹窗存在的<strong>“垂直堆叠臃肿”、“Emoji 选择不便”、“命令与变量指引割裂”、“编辑器缺乏参数高亮与辅助”</strong>等痛点，提供 3 版不同维度的现代化改进方案。页面支持真实交互、变量点击注入、双栏实时预览与全套主题变量测试。
+        </p>
+        <div class="hero-tags">
+          <span class="hero-tag">✨ 图标/标题行一体化</span>
+          <span class="hero-tag">⚡ 快捷命令与说明 2 列栅格</span>
+          <span class="hero-tag">🧩 动态参数 `{{input}}` 快捷插入</span>
+          <span class="hero-tag">🎨 沉浸式 Markdown 编辑器</span>
+          <span class="hero-tag">⌨️ 快捷键清晰映射</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         方案一：现代流线型 · 紧凑一体化（推荐）
+         ===================================================================== -->
+    <section id="section-v1" class="proposal-section active">
+      <div class="proposal-header">
+        <div>
+          <h3 class="proposal-heading">🚀 方案一：现代流线型 · 紧凑一体化 (Modern Integrated Flow)</h3>
+          <p style="color:var(--text-dim); font-size:12.5px; margin-top:4px;">
+            在保持弹窗轻便度的前提下，将垂直空间利用率提升 40% 以上，图标选择更友好，并引入变量药丸胶囊。
+          </p>
+        </div>
+        <div class="proposal-meta">
+          <button class="btn-mock fill-accent" onclick="openOverlayDemo('v1')">🖥️ 居中真机弹窗体验</button>
+          <span class="meta-badge recommended">★ 综合最优选</span>
+          <span class="meta-badge neutral">最小代码变动成本</span>
+        </div>
+      </div>
+
+      <!-- 弹窗舞台 -->
+      <div class="modal-stage">
+        <span class="stage-watermark">PREVIEW · PROPOSAL 1</span>
+
+        <div class="modal-mock v1-modal">
+          <!-- 头部 Header -->
+          <div class="v1-head">
+            <div class="v1-head-left">
+              <!-- 图标选择器按钮 -->
+              <div class="v1-icon-picker-btn" id="v1-icon-trigger" onclick="toggleEmojiPicker('v1')" title="点击更换图标">
+                <span id="v1-current-icon">📌</span>
+                <!-- 下拉选择 -->
+                <div class="v1-icon-picker-dropdown" id="v1-emoji-dropdown">
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '📌', event)">📌</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🚀', event)">🚀</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '⚡', event)">⚡</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '📝', event)">📝</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🔍', event)">🔍</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🛠️', event)">🛠️</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🎯', event)">🎯</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '💡', event)">💡</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🤖', event)">🤖</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '📦', event)">📦</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '🎨', event)">🎨</div>
+                  <div class="emoji-opt" onclick="selectEmoji('v1', '✨', event)">✨</div>
+                </div>
+              </div>
+
+              <!-- 标题输入框 -->
+              <div class="v1-title-group">
+                <input class="v1-title-input" value="发布" placeholder="输入模板标题..." />
+                <span class="v1-badge">自定义</span>
+              </div>
+            </div>
+
+            <!-- 关闭按钮 -->
+            <button class="btn-mock close-circle" onclick="showToast('点击关闭')">✕</button>
+          </div>
+
+          <!-- 内容主体 -->
+          <div class="v1-body">
+            <!-- 2列网格：快捷命令 & 模板说明 -->
+            <div class="v1-grid-2col">
+              <!-- 快捷命令 -->
+              <div class="v1-field">
+                <label class="v1-field-label">
+                  <span>快捷命令 <span style="font-weight:normal; color:var(--text-faint);">(可选)</span></span>
+                  <span class="v1-field-hint">直接输名称即可</span>
+                </label>
+                <div class="v1-input-wrap">
+                  <span class="v1-cmd-prefix">/</span>
+                  <input class="v1-input has-prefix" value="pb" placeholder="pb" />
+                </div>
+              </div>
+
+              <!-- 说明 -->
+              <div class="v1-field">
+                <label class="v1-field-label">
+                  <span>说明描述</span>
+                  <span class="v1-field-hint">简短描述用途</span>
+                </label>
+                <input class="v1-input" value="执行发布流程与 CI 监控检查" placeholder="模板说明..." />
+              </div>
+            </div>
+
+            <!-- 提示词编辑器 -->
+            <div class="v1-field">
+              <div class="v1-field-label">
+                <span>提示词内容 (Markdown)</span>
+                <span style="font-weight:normal; color:var(--text-faint);">支持 {{input}} 动态插入</span>
+              </div>
+
+              <div class="v1-prompt-box">
+                <!-- 工具小条：动态变量注入 + 统计信息 -->
+                <div class="v1-prompt-toolbar">
+                  <div class="v1-vars-list">
+                    <span style="color:var(--text-faint); margin-right:4px;">插入占位符:</span>
+                    <span class="v1-var-tag" onclick="insertVariable('v1-prompt', '{{input}}')" title="用户输入参数替换点">+ {{input}} 参数</span>
+                    <span class="v1-var-tag" onclick="insertVariable('v1-prompt', '{{clipboard}}')" title="系统剪贴板内容">+ {{clipboard}} 剪贴板</span>
+                    <span class="v1-var-tag" onclick="insertVariable('v1-prompt', '{{date}}')" title="当前日期时间">+ {{date}} 日期</span>
+                  </div>
+                  <div class="v1-prompt-stats">
+                    <span id="v1-char-count">486 字符</span>
+                  </div>
+                </div>
+
+                <textarea id="v1-prompt" class="v1-textarea" oninput="updateStats('v1')" placeholder="输入提示词模板，使用 {{input}} 接收调用参数...">- 若有内置插件修改，同步更新对应插件的 `manifest.json`。
+4. 日志生成：
+   - 运行 `npm run changelog:i18n`。
+   - 在 `CHANGELOG.md` 顶部生成新版本小节，将 Unreleased 内容并入并清空。
+5. 本地基础自检：`npm run typecheck`、`npm run build`。
+
+### 阶段二：推送 main 分支触发 CI
+1. 格式化代码：`npx prettier --write <改动文件>`。
+2. Git 提交并推送：
+   - 提交信息采用 Conventional Commits（如 `chore(release): bump to {{input}}`）。
+   - **严格禁止**在 commit message 中携带 `Co-authored-by`。</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="v1-actions">
+            <div class="v1-actions-left">
+              <button class="btn-mock danger-ghost" onclick="showToast('已删除模板')">
+                <span>🗑️</span> 删除模板
+              </button>
+            </div>
+            <div class="v1-actions-right">
+              <button class="btn-mock" onclick="showToast('已保存修改')">
+                保存修改
+              </button>
+              <button class="btn-mock fill-accent" onclick="showToast('已填入输入框')">
+                填入输入框
+              </button>
+              <button class="btn-mock primary" onclick="showToast('直接发送中...')">
+                <span>✈️</span> 直接发送 <span class="kbd-chip">Ctrl+↵</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 特点详解 -->
+      <div class="code-guide-card">
+        <h4>✨ 方案一核心改进点</h4>
+        <ul>
+          <li><strong>图标与标题合二为一</strong>：头部由原先「图标一行、标题一行」的呆板排版，升级为现代 App 标配的复合头栏。点击左侧图标可直接弹窗点选常用 Emoji，无需手动复制粘贴。</li>
+          <li><strong>快捷命令带胶囊前缀 <code>/</code></strong>：内置前置斜杠视觉锚点，自动合并命令与说明为双列，纵向压缩高度约 110px，让首屏焦点完整停留在提示词上。</li>
+          <li><strong>动态占位符一键插入工具条</strong>：在输入框顶栏直观列出 <code>{{input}}</code> / <code>{{clipboard}}</code> 胶囊，点击光标位置直接注入，避免用户记不住语法。</li>
+          <li><strong>三级操作层次分明</strong>：次要「保存修改」为柔和色；中频「填入输入框」采用 Accent-Soft 主色背景；核心「直接发送」为主实色按钮并标注键盘快捷键。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         方案二：双栏工作台 · 专业生产力（Studio Split Pro）
+         ===================================================================== -->
+    <section id="section-v2" class="proposal-section">
+      <div class="proposal-header">
+        <div>
+          <h3 class="proposal-heading">⚡ 方案二：双栏工作台 · 专业生产力 (Studio Split Pro)</h3>
+          <p style="color:var(--text-dim); font-size:12.5px; margin-top:4px;">
+            专为复杂工程提示词、系统指令配置与重度创作者打造。左侧管控参数与测试用例，右侧沉浸式编写与变量实时预览。
+          </p>
+        </div>
+        <div class="proposal-meta">
+          <button class="btn-mock fill-accent" onclick="openOverlayDemo('v2')">🖥️ 居中真机弹窗体验</button>
+          <span class="meta-badge recommended">适合长指令与专业工作流</span>
+        </div>
+      </div>
+
+      <div class="modal-stage">
+        <span class="stage-watermark">PREVIEW · PROPOSAL 2 (STUDIO SPLIT)</span>
+
+        <div class="modal-mock v2-modal">
+          <!-- 顶栏 -->
+          <div class="v2-head">
+            <div class="v2-head-info">
+              <span style="font-size: 22px;">📌</span>
+              <div>
+                <div style="font-size:15px; font-weight:700;">发布流程工作流模板</div>
+                <div style="font-size:11.5px; color:var(--text-dim);">快捷命令: <code style="font-family:var(--mono); color:var(--accent);">/pb [version]</code></div>
+              </div>
+            </div>
+            <button class="btn-mock close-circle" onclick="showToast('点击关闭')">✕</button>
+          </div>
+
+          <!-- 双栏主体 -->
+          <div class="v2-split-container">
+            <!-- 左侧面板：元数据与参数仿真 -->
+            <div class="v2-left-pane">
+              <div>
+                <div class="v2-pane-title">基础属性</div>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div class="v1-field">
+                    <label class="v1-field-label">标题</label>
+                    <input class="v1-input" value="发布" />
+                  </div>
+                  <div class="v1-field">
+                    <label class="v1-field-label">快捷指令 (Slash)</label>
+                    <input class="v1-input" value="/pb" style="font-family:var(--mono);" />
+                  </div>
+                  <div class="v1-field">
+                    <label class="v1-field-label">用途说明</label>
+                    <input class="v1-input" value="版本发布与自动化 CI 校验" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 变量解析与仿真测试 -->
+              <div>
+                <div class="v2-pane-title">变量实时调试器</div>
+                <div class="v2-var-simulator-box">
+                  <div style="font-size:11.5px; color:var(--text-dim); display:flex; justify-content:space-between;">
+                    <span>检测到 1 个参数变量</span>
+                    <span style="color:var(--green); font-family:var(--mono);">{{input}}</span>
+                  </div>
+                  <div>
+                    <label style="font-size:11px; color:var(--text-faint); display:block; margin-bottom:4px;">测试替换值 (例如传参 v1.2.0):</label>
+                    <input id="v2-test-input" class="v1-input" value="v1.2.0" oninput="updateV2Preview()" style="font-size:12px; padding:6px 10px;" />
+                  </div>
+                  <span style="font-size:11px; color:var(--text-faint); line-height:1.4;">
+                    在右侧切换到「渲染预览」可实时查看变量替换后的最终 Prompt 效果。
+                  </span>
+                </div>
+              </div>
+
+              <!-- 快速插入变量 -->
+              <div style="margin-top:auto;">
+                <div class="v2-pane-title">可用语法</div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <div class="v1-var-tag" style="justify-content:space-between; padding:5px 8px;" onclick="insertVariable('v2-prompt', '{{input}}')">
+                    <span>{{input}}</span>
+                    <span style="font-size:10px; opacity:0.8;">命令传入参数</span>
+                  </div>
+                  <div class="v1-var-tag" style="justify-content:space-between; padding:5px 8px;" onclick="insertVariable('v2-prompt', '{{clipboard}}')">
+                    <span>{{clipboard}}</span>
+                    <span style="font-size:10px; opacity:0.8;">剪贴板内容</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右侧面板：编辑器与预览 -->
+            <div class="v2-right-pane">
+              <div class="v2-right-tabs">
+                <div class="v2-tab-btn-group">
+                  <button id="v2-tab-edit" class="v2-tab-btn active" onclick="switchV2Tab('edit')">
+                    <span>✏️</span> 源码编辑
+                  </button>
+                  <button id="v2-tab-preview" class="v2-tab-btn" onclick="switchV2Tab('preview')">
+                    <span>👁️</span> 渲染预览 (Preview)
+                  </button>
+                </div>
+                <div style="font-size:11.5px; color:var(--text-faint); font-family:var(--mono);">
+                  Markdown 模式
+                </div>
+              </div>
+
+              <div class="v2-editor-area">
+                <!-- 编辑模式 -->
+                <textarea id="v2-prompt" class="v2-textarea" oninput="updateV2Preview()">- 若有内置插件修改，同步更新对应插件的 `manifest.json`。
+4. 日志生成：
+   - 运行 `npm run changelog:i18n`。
+   - 在 `CHANGELOG.md` 顶部生成新版本小节，将 Unreleased 内容并入并清空。
+5. 本地基础自检：`npm run typecheck`、`npm run build`。
+
+### 阶段二：推送 main 分支触发 CI
+1. 格式化代码：`npx prettier --write <改动文件>`。
+2. Git 提交并推送：
+   - 提交信息采用 Conventional Commits（如 `chore(release): bump to {{input}}`）。
+   - **严格禁止**在 commit message 中携带 `Co-authored-by`。</textarea>
+
+                <!-- 预览模式 -->
+                <div id="v2-preview" class="v2-preview-area">
+                  <!-- JS 动态注入 -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="v2-foot">
+            <button class="btn-mock danger-ghost" onclick="showToast('已删除模板')">删除此模板</button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="btn-mock" onclick="showToast('保存成功')">保存模板</button>
+              <button class="btn-mock fill-accent" onclick="showToast('已填入输入框')">填入 Composer</button>
+              <button class="btn-mock primary" onclick="showToast('直接发送成功')">立即执行发送</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-guide-card">
+        <h4>✨ 方案二核心优势</h4>
+        <ul>
+          <li><strong>沉浸式长文本编辑</strong>：宽度扩展至 940px，提示词区域拥有接近全屏的编辑体验，不再拥挤在 300px 的矮小区域内。</li>
+          <li><strong>首创变量实时调试器 (Variable Simulator)</strong>：当输入 <code>{{input}}</code> 时，左侧自动解析出参数输入框，右侧一键切换「渲染预览」，所见即所得。</li>
+          <li><strong>专业工程感</strong>：非常适合需要编写结构化 System Prompt、复杂 CI 发布工作流、格式约束模板的高级用户与工程师。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         方案三：极简命令流 · Raycast 风格（Command Palette Style）
+         ===================================================================== -->
+    <section id="section-v3" class="proposal-section">
+      <div class="proposal-header">
+        <div>
+          <h3 class="proposal-heading">🎯 方案三：极简命令流 · Raycast 风格 (Command Palette Style)</h3>
+          <p style="color:var(--text-dim); font-size:12.5px; margin-top:4px;">
+            极致键盘驱动，去除非必要边框与卡片层级，突出 Slash Command 命令快捷感与极简极客体验。
+          </p>
+        </div>
+        <div class="proposal-meta">
+          <button class="btn-mock fill-accent" onclick="openOverlayDemo('v3')">🖥️ 居中真机弹窗体验</button>
+          <span class="meta-badge neutral">键盘优先 · 极致轻量</span>
+        </div>
+      </div>
+
+      <div class="modal-stage">
+        <span class="stage-watermark">PREVIEW · PROPOSAL 3 (COMMAND MINIMAL)</span>
+
+        <div class="modal-mock v3-modal">
+          <!-- 标题与命令行 -->
+          <div class="v3-title-row">
+            <span style="font-size:22px;">📌</span>
+            <div class="v3-slash-pill">
+              <span>/</span><input value="pb" style="background:transparent; border:none; color:inherit; font-weight:700; font-family:var(--mono); width:40px; outline:none;" />
+            </div>
+            <input class="v3-main-title" value="发布流程模板" placeholder="模板标题..." />
+            <button class="btn-mock close-circle" onclick="showToast('点击关闭')">✕</button>
+          </div>
+
+          <!-- 说明行 -->
+          <div class="v3-meta-strip">
+            <span style="color:var(--text-faint);">说明:</span>
+            <input class="v3-meta-input" value="自动化执行本地规范自检与推送到远程触发 CI" placeholder="添加简要说明..." />
+          </div>
+
+          <!-- 正文编辑区 -->
+          <div class="v3-body-area">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11px; color:var(--text-faint); font-family:var(--mono);">PROMPT BODY (MARKDOWN)</span>
+              <span class="v1-var-tag" onclick="insertVariable('v3-prompt', '{{input}}')">+ {{input}}</span>
+            </div>
+            <textarea id="v3-prompt" class="v3-editor" placeholder="输入提示词内容...">- 若有内置插件修改，同步更新对应插件的 `manifest.json`。
+4. 日志生成：
+   - 运行 `npm run changelog:i18n`。
+   - 在 `CHANGELOG.md` 顶部生成新版本小节，将 Unreleased 内容并入并清空。
+5. 本地基础自检：`npm run typecheck`、`npm run build`。
+
+### 阶段二：推送 main 分支触发 CI
+1. 格式化代码：`npx prettier --write <改动文件>`。
+2. Git 提交并推送：
+   - 提交信息采用 Conventional Commits（如 `chore(release): bump to {{input}}`）。
+   - **严格禁止**在 commit message 中携带 `Co-authored-by`。</textarea>
+          </div>
+
+          <!-- 底部键盘快捷键状态条 -->
+          <div class="v3-bottom-shortcuts">
+            <div class="v3-shortcut-items">
+              <span class="v3-shortcut-item"><kbd class="kbd-chip">Ctrl</kbd>+<kbd class="kbd-chip">Enter</kbd> 直接发送</span>
+              <span class="v3-shortcut-item"><kbd class="kbd-chip">Ctrl</kbd>+<kbd class="kbd-chip">S</kbd> 保存</span>
+              <span class="v3-shortcut-item"><kbd class="kbd-chip">Tab</kbd> 填入输入框</span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn-mock" style="padding:4px 10px; font-size:11.5px;" onclick="showToast('已保存')">保存</button>
+              <button class="btn-mock primary" style="padding:4px 12px; font-size:11.5px;" onclick="showToast('已直接发送')">发送</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-guide-card">
+        <h4>✨ 方案三核心特点</h4>
+        <ul>
+          <li><strong>无缝 Command 融合</strong>：将快捷指令作为视觉一级焦点，输入 <code>/pb</code> 直接作为标题前导标签，符合工程师直觉。</li>
+          <li><strong>去除视觉噪音</strong>：去掉沉重的 Label/Input 外框，用一体化的大字号与轻柔虚线/下边框，更轻快、更现代化。</li>
+          <li><strong>状态栏式底部</strong>：仿照 Raycast / VSCode 的快捷键状态栏，让高频操作尽在指尖。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         原版现状还原与痛点对照
+         ===================================================================== -->
+    <section id="section-orig" class="proposal-section">
+      <div class="proposal-header">
+        <div>
+          <h3 class="proposal-heading">🔍 原版弹窗现状与痛点标注 (Current Reality & Issues)</h3>
+          <p style="color:var(--text-dim); font-size:12.5px; margin-top:4px;">
+            点击界面上的红色数字圆圈，查看针对当前设计的深度诊断与重构方向。
+          </p>
+        </div>
+        <div class="proposal-meta">
+          <span class="meta-badge neutral">当前线上实现</span>
+        </div>
+      </div>
+
+      <div class="modal-stage">
+        <span class="stage-watermark">CURRENT IMPLEMENTATION · ORIGINAL</span>
+
+        <!-- 原版模拟 -->
+        <div class="modal-mock orig-modal" style="width:580px;">
+          <!-- 痛点 1：图标单占一行 -->
+          <div class="spotlight-mark" style="top: 86px; left: 110px;" onclick="alert('痛点 1：图标独立成行且输入方式原始\n\n图标输入框宽度仅 72px，却霸占了整整一行空间！而且用户需要手动打字或粘贴 Emoji，缺少常用的 Emoji 快捷选择器。')">1</div>
+
+          <!-- 痛点 2：单列垂直堆叠过度膨胀 -->
+          <div class="spotlight-mark" style="top: 175px; right: 28px;" onclick="alert('痛点 2：表单字段纵向无节制堆叠\n\n标题、说明、快捷命令连续 3 行纵向排列，导致弹窗首屏被大量元数据占据，核心的提示词编辑区被压缩至仅 300px 高度。')">2</div>
+
+          <!-- 痛点 3：快捷命令说明冗长割裂 -->
+          <div class="spotlight-mark" style="top: 295px; left: 180px;" onclick="alert('痛点 3：变量机制与说明割裂\n\n下方说明文字很长（“输入 /pr 798 后发送，798 会替换正文中的 {{input}}”），不仅阅读负担重，且在提示词输入框中没有任何变量可点插入或高亮指引。')">3</div>
+
+          <!-- 痛点 4：按钮层级均一，缺乏清晰引导 -->
+          <div class="spotlight-mark" style="bottom: 18px; right: 80px;" onclick="alert('痛点 4：底部操作按钮层级混淆\n\n“保存修改”、“填入输入框”、“直接发送”全平铺在右侧，色彩层次相近，用户容易混淆“保存为模板”与“本次立即消费（发送/填入）”两个动作维度。')">4</div>
+
+          <!-- 头部 -->
+          <div class="orig-head">
+            <span style="font-size:20px;">📌</span>
+            <span class="orig-badge">自定义</span>
+            <span class="orig-title">新建提示词模板</span>
+            <button class="btn-mock close-circle">✕</button>
+          </div>
+
+          <!-- 身体 -->
+          <div class="orig-body">
+            <div class="orig-field">
+              <span class="orig-label">图标</span>
+              <input class="orig-input icon" value="📌" />
+            </div>
+
+            <div class="orig-field">
+              <span class="orig-label">标题</span>
+              <input class="orig-input" value="发布" />
+            </div>
+
+            <div class="orig-field">
+              <span class="orig-label">说明</span>
+              <input class="orig-input" value="发布" />
+            </div>
+
+            <div class="orig-field">
+              <span class="orig-label">快捷命令（可选）</span>
+              <input class="orig-input" value="/pb" />
+              <span class="orig-hint">例如 /pr: 输入 /pr 798 后发送，798 会替换正文中的 {{input}}；没有占位符时追加到末尾。已有系统或技能命令优先。模板保存在服务端本地文件。</span>
+            </div>
+
+            <div class="orig-field">
+              <span class="orig-label">提示词</span>
+              <textarea class="orig-textarea">- 若有内置插件修改，同步更新对应插件的 `manifest.json`。
+4. 日志生成：
+   - 运行 `npm run changelog:i18n`。
+   - 在 `CHANGELOG.md` 顶部生成新版本小节，将 Unreleased 内容并入并清空。
+5. 本地基础自检：`npm run typecheck`、`npm run build`。
+
+### 阶段二：推送 main 分支触发 CI
+1. 格式化代码：`npx prettier --write <改动文件>`。
+2. Git 提交并推送：
+   - 提交信息采用 Conventional Commits（如 `chore(release): bump to {{input}}`）。
+   - **严格禁止**在 commit message 中携带 `Co-authored-by`。</textarea>
+            </div>
+          </div>
+
+          <!-- 底部操作 -->
+          <div class="orig-actions">
+            <button class="btn-mock">保存修改</button>
+            <button class="btn-mock" style="border-color:var(--border);">填入输入框</button>
+            <button class="btn-mock" style="background:#fff; color:#000; font-weight:600;"><span>✈️</span> 直接发送</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         多维度对比选型矩阵
+         ===================================================================== -->
+    <div class="compare-table-wrap">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th style="width:20%;">对比维度</th>
+            <th style="width:20%;">当前原版</th>
+            <th style="width:20%;">🚀 方案一：现代流线型 (推荐)</th>
+            <th style="width:20%;">⚡ 方案二：双栏 Studio Pro</th>
+            <th style="width:20%;">🎯 方案三：极简命令流</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>空间利用率</strong></td>
+            <td>垂直堆叠 5 行，极易触发滚动</td>
+            <td><span class="compare-score score-high">★★★★★</span> 图标标题合一、2列栅格</td>
+            <td><span class="compare-score score-high">★★★★★</span> 左右 940px 展开，充分利用大屏</td>
+            <td><span class="compare-score score-high">★★★★☆</span> 极高，去除外包围框</td>
+          </tr>
+          <tr>
+            <td><strong>变量指引便捷度</strong></td>
+            <td>无直观指引，纯靠说明文段</td>
+            <td><span class="compare-score score-high">★★★★★</span> 工具条一键点击注入变量</td>
+            <td><span class="compare-score score-high">★★★★★</span> 变量自动提取 + 实时效果预览</td>
+            <td><span class="compare-score score-mid">★★★☆☆</span> 极简胶囊快捷键插入</td>
+          </tr>
+          <tr>
+            <td><strong>长提示词编写体验</strong></td>
+            <td>上限被锁死在 300px，滚轮受限</td>
+            <td><span class="compare-score score-high">★★★★☆</span> 最大可展开 380px，支持全宽</td>
+            <td><span class="compare-score score-high">★★★★★</span> 接近全尺寸编辑器，带行号与预览</td>
+            <td><span class="compare-score score-high">★★★★☆</span> 自由垂直拉伸</td>
+          </tr>
+          <tr>
+            <td><strong>快捷操作与键盘流</strong></td>
+            <td>仅能鼠标点击底部按钮</td>
+            <td><span class="compare-score score-high">★★★★☆</span> 标注 <code>Ctrl+Enter</code> 快捷发送</td>
+            <td><span class="compare-score score-mid">★★★☆☆</span> 侧重于调试与编辑</td>
+            <td><span class="compare-score score-high">★★★★★</span> 全套底部按键提示，键盘优先</td>
+          </tr>
+          <tr>
+            <td><strong>代码改造与回归风险</strong></td>
+            <td>— (基线)</td>
+            <td><span class="compare-score score-high">极低</span>（仅微调 Modal JSX 与 CSS）</td>
+            <td><span class="compare-score score-mid">中等</span>（需引入双栏布局与预览 Tab）</td>
+            <td><span class="compare-score score-high">低</span>（主要为样式调整）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- 全屏蒙层演示 -->
+  <div id="demo-modal-overlay" class="demo-backdrop" onclick="closeOverlayDemo(event)">
+    <div class="demo-backdrop-content" onclick="event.stopPropagation()">
+      <div id="overlay-inner-slot" style="width:100%; display:flex; justify-content:center;"></div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast-box">
+    <span>💡</span>
+    <span id="toast-msg">操作成功</span>
+  </div>
+
+  <script>
+    // 切换方案视图
+    function switchView(tabKey, evt) {
+      const e = evt || window.event;
+      document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.proposal-section').forEach(s => s.classList.remove('active'));
+
+      if (e && e.currentTarget) {
+        e.currentTarget.classList.add('active');
+      } else {
+        const idx = ['v1', 'v2', 'v3', 'orig'].indexOf(tabKey);
+        const tabs = document.querySelectorAll('.view-tab');
+        if (tabs[idx]) tabs[idx].classList.add('active');
+      }
+      const targetSec = document.getElementById('section-' + tabKey);
+      if (targetSec) targetSec.classList.add('active');
+
+      if (tabKey === 'v2') {
+        updateV2Preview();
+      }
+    }
+
+    // 主题切换
+    let currentTheme = 'dark';
+    function toggleTheme() {
+      currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', currentTheme);
+      document.getElementById('theme-icon').textContent = currentTheme === 'dark' ? '🌙' : '☀️';
+      document.getElementById('theme-text').textContent = currentTheme === 'dark' ? '深色模式' : '浅色模式';
+    }
+
+    // Toast 提示
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      toast.style.display = 'inline-flex';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.style.display = 'none';
+      }, 2200);
+    }
+
+    // Emoji 选择器开关
+    function toggleEmojiPicker(prefix) {
+      const dropdown = document.getElementById(prefix + '-emoji-dropdown');
+      dropdown.classList.toggle('open');
+    }
+    function selectEmoji(prefix, emoji, evt) {
+      evt.stopPropagation();
+      document.getElementById(prefix + '-current-icon').textContent = emoji;
+      document.getElementById(prefix + '-emoji-dropdown').classList.remove('open');
+      showToast('已更换图标为 ' + emoji);
+    }
+
+    // 在文本框中插入变量
+    function insertVariable(textareaId, varText) {
+      const ta = document.getElementById(textareaId);
+      if (!ta) return;
+      const start = ta.selectionStart || ta.value.length;
+      const end = ta.selectionEnd || ta.value.length;
+      const text = ta.value;
+      ta.value = text.substring(0, start) + varText + text.substring(end);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + varText.length;
+      showToast('已插入 ' + varText);
+      updateStats('v1');
+      if (textareaId === 'v2-prompt') updateV2Preview();
+    }
+
+    // 字数统计
+    function updateStats(prefix) {
+      const ta = document.getElementById(prefix + '-prompt');
+      if (!ta) return;
+      const countEl = document.getElementById(prefix + '-char-count');
+      if (countEl) countEl.textContent = `${ta.value.length} 字符`;
+    }
+
+    // 方案二双栏 Tab 切换
+    function switchV2Tab(tab) {
+      const editBtn = document.getElementById('v2-tab-edit');
+      const prevBtn = document.getElementById('v2-tab-preview');
+      const ta = document.getElementById('v2-prompt');
+      const prev = document.getElementById('v2-preview');
+
+      if (tab === 'edit') {
+        editBtn.classList.add('active');
+        prevBtn.classList.remove('active');
+        ta.style.display = 'block';
+        prev.classList.remove('active');
+      } else {
+        editBtn.classList.remove('active');
+        prevBtn.classList.add('active');
+        ta.style.display = 'none';
+        prev.classList.add('active');
+        updateV2Preview();
+      }
+    }
+
+    // 方案二预览渲染
+    function updateV2Preview() {
+      const promptText = document.getElementById('v2-prompt').value;
+      const testVal = document.getElementById('v2-test-input').value || 'v1.2.0';
+      const previewEl = document.getElementById('v2-preview');
+
+      // 简单模拟替换 {{input}} 并转换换行
+      let rendered = promptText.replace(/\{\{input\}\}/g, `<mark title="已由测试参数替换">${testVal}</mark>`);
+      rendered = rendered.replace(/\n/g, '<br/>');
+      previewEl.innerHTML = `<div class="v2-preview-rendered" style="white-space: pre-wrap; font-family:var(--mono);">${rendered}</div>`;
+    }
+
+    // 全屏真机弹窗演示
+    let currentOverlayModalId = null;
+    function openOverlayDemo(version) {
+      const overlay = document.getElementById('demo-modal-overlay');
+      const slot = document.getElementById('overlay-inner-slot');
+      const targetModal = document.querySelector(`.${version}-modal`);
+      if (!targetModal) return;
+
+      currentOverlayModalId = version;
+      // 深度克隆弹窗节点展示
+      slot.innerHTML = targetModal.outerHTML;
+      overlay.classList.add('open');
+      showToast('按 ESC 或点击外部背景可关闭');
+    }
+
+    function closeOverlayDemo(e) {
+      const overlay = document.getElementById('demo-modal-overlay');
+      overlay.classList.remove('open');
+      document.getElementById('overlay-inner-slot').innerHTML = '';
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeOverlayDemo();
+      }
+    });
+
+    // 点击页面其他区域关闭下拉菜单
+    window.addEventListener('click', (e) => {
+      if (!e.target.closest('#v1-icon-trigger')) {
+        const dd = document.getElementById('v1-emoji-dropdown');
+        if (dd) dd.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>

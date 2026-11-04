@@ -16,6 +16,9 @@ import { FiArrowDown } from "react-icons/fi";
 import type { ClientMessage, PromptAttachment, ToolStatus, UiMessage, UiState } from "../types";
 import { Message, asText } from "./Message";
 import { Markdown } from "./Markdown";
+import { appUrl } from "../base-url";
+import { openImageLightbox } from "../image-lightbox-bridge";
+import { openFilePreview } from "../file-preview-bridge";
 
 import { collectQuestionAttachments } from "../question-attachments";
 import { questionNavLayout } from "../question-nav";
@@ -142,22 +145,57 @@ function QueuedMessage({
 					))}
 					{parsed.attachments && parsed.attachments.length > 0 && (
 						<div className="queued-attachments">
-							{parsed.attachments.map((att, i) => (
-								<span key={`att-${i}`} className="queued-att-chip">
-									<span className="queued-att-icon">
-										{att.type === "image" || att.type === "vision-bridge"
-											? "🖼️"
-											: att.type === "folder"
-												? "📁"
-												: att.type === "page"
-													? "🌐"
-													: att.type === "conversation"
-														? "💬"
-														: "📎"}
+							{parsed.attachments.map((att, i) => {
+								const hasPath = Boolean(
+									att.path && att.type !== "page" && att.type !== "conversation" && att.type !== "canvas",
+								);
+								const canPreview = Boolean(att.url || hasPath);
+								const handleClick = () => {
+									if (att.url) {
+										openImageLightbox({
+											src: att.url.startsWith("/") ? appUrl(att.url) : att.url,
+											alt: att.name,
+										});
+									} else if (hasPath && att.path) {
+										openFilePreview({ path: att.path, name: att.name });
+									}
+								};
+								return (
+									<span
+										key={`att-${i}`}
+										className={`queued-att-chip${canPreview ? " previewable" : ""}`}
+										title={
+											canPreview ? `${att.name} (${att.url ? t("toolImageZoom") : t("fileOpenPreview")})` : att.name
+										}
+										onClick={canPreview ? handleClick : undefined}
+										role={canPreview ? "button" : undefined}
+										tabIndex={canPreview ? 0 : undefined}
+										onKeyDown={
+											canPreview
+												? (e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.preventDefault();
+															handleClick();
+														}
+													}
+												: undefined
+										}
+									>
+										<span className="queued-att-icon">
+											{att.type === "image" || att.type === "vision-bridge"
+												? "🖼️"
+												: att.type === "folder"
+													? "📁"
+													: att.type === "page"
+														? "🌐"
+														: att.type === "conversation"
+															? "💬"
+															: "📎"}
+										</span>
+										<span className="queued-att-name">{att.name}</span>
 									</span>
-									<span className="queued-att-name">{att.name}</span>
-								</span>
-							))}
+								);
+							})}
 						</div>
 					)}
 					{parsed.text ? <Markdown text={parsed.text} hardBreaks /> : null}

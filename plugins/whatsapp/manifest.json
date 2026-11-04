@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "whatsapp",
 	"nameEn": "WhatsApp",
-	"version": "0.2.5",
+	"version": "0.2.6",
 	"description": "WhatsApp 机器人与工作台：WhatsApp Cloud API 与双工对话（智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI whatsapp 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "WhatsApp workspace & Bot: WhatsApp Cloud API & duplex chat (structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI whatsapp tool.",
 	"author": "pi-web-ui",
@@ -13,46 +13,24 @@
 	"client": "client/entry.mjs",
 	"permissions": ["ui", "tools", "notify", "storage", "secrets", "fs", "http", "llm", "chat"],
 	"ui": {
-		"views": [
-			{
-				"id": "whatsapp",
-				"label": "WhatsApp",
-				"icon": "🟢"
-			}
-		],
 		"topbar": [
 			{
 				"id": "whatsapp-open",
 				"label": "WhatsApp",
 				"icon": "🟢",
-				"action": {
-					"type": "view",
-					"viewId": "whatsapp"
-				},
+				"kind": "view",
+				"view": "plugin:whatsapp",
 				"order": 61
 			}
 		],
-		"statusBar": [
+		"bottombar": [
 			{
 				"id": "whatsapp-status",
 				"label": "🟢 WhatsApp",
-				"title": "点击打开 WhatsApp 工作台",
-				"action": {
-					"type": "view",
-					"viewId": "whatsapp"
-				},
+				"hint": "点击打开 WhatsApp 工作台",
+				"kind": "view",
+				"view": "plugin:whatsapp",
 				"order": 51
-			}
-		],
-		"commands": [
-			{
-				"id": "open",
-				"label": "打开 WhatsApp 工作台",
-				"icon": "🟢",
-				"action": {
-					"type": "view",
-					"viewId": "whatsapp"
-				}
 			}
 		]
 	}

@@ -441,6 +441,24 @@ describe("device center hub", () => {
 		expect((await request("/api/auth/logout", {}, alice)).status).toBe(200);
 		expect((await request("/api/me", undefined, alice)).status).toBe(401);
 	});
+	it("allows setting device remark and reflects it in device listing", async () => {
+		const { request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const list1 = await request("/api/devices", undefined, cookie);
+		expect(list1.body.devices[0].remark).toBeNull();
+
+		const updateRes = await request(`/api/devices/${device.deviceId}/remark`, { remark: "我的工作站" }, cookie);
+		expect(updateRes.status).toBe(200);
+		expect(updateRes.body.device.remark).toBe("我的工作站");
+
+		const list2 = await request("/api/devices", undefined, cookie);
+		expect(list2.body.devices[0].remark).toBe("我的工作站");
+
+		const clearRes = await request(`/api/devices/${device.deviceId}/remark`, { remark: "  " }, cookie);
+		expect(clearRes.status).toBe(200);
+		expect(clearRes.body.device.remark).toBeNull();
+	});
 	it("expires pair grants, consumes them once and revokes credentials and callbacks", async () => {
 		const { hub, request, register, pair, onRevoke } = await fixture();
 		const cookie = await register();
@@ -790,7 +808,7 @@ describe("device center hub", () => {
 		expect((await send("second", "capacity-2")).status).toBe(200);
 		await hub.store.transact((draft) => {
 			const template = draft.conversations.find((entry) => entry.id === conversationId)!;
-			for (let i = 0; i < 500; i++)
+			for (let i = 0; i < DEFAULT_EXECUTION_SETTINGS.groupRetentionLimit; i++)
 				draft.conversations.push({
 					...template,
 					id: `open-${i}`,

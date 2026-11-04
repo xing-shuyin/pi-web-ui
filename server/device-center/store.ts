@@ -27,6 +27,7 @@ export interface Device {
 	id: string;
 	accountId: string;
 	name: string;
+	remark?: string;
 	credentialHash: string;
 	uiCredentialHash?: string;
 	createdAt: number;
@@ -121,6 +122,26 @@ export interface GroupBlackboard {
 	content: string; // Markdown 格式结构化共识，最大 32KB
 }
 
+export type GroupWebhookEventType = "message" | "task_completed" | "task_failed" | "delivery";
+
+export interface GroupWebhook {
+	id: string;
+	roomId: string;
+	name: string;
+	type: "incoming" | "outgoing";
+	enabled: boolean;
+	createdAt: number;
+	updatedAt: number;
+	// Incoming exclusive
+	token?: string;
+	allowBotTrigger?: boolean;
+	// Outgoing exclusive
+	url?: string;
+	secret?: string;
+	events?: GroupWebhookEventType[];
+	relayViaHub?: boolean;
+}
+
 export interface Room {
 	id: string;
 	accountId: string;
@@ -129,6 +150,8 @@ export interface Room {
 	primaryBotId?: string;
 	canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
 	blackboard?: GroupBlackboard;
+	webhooks?: GroupWebhook[];
+	hubRelayBaseUrl?: string;
 	createdAt: number;
 }
 export interface RoomMessage {
@@ -136,7 +159,7 @@ export interface RoomMessage {
 	roomId: string;
 	accountId: string;
 	text: string;
-	sender: { type: "human" | "bot"; id: string; name: string; sourceDeviceId?: string };
+	sender: { type: "human" | "bot" | "webhook"; id: string; name: string; sourceDeviceId?: string };
 	createdAt: number;
 	taskIds: string[];
 	targetBotIds?: string[];

@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新建 Webhook 弹窗设计方案对比 - pi-web-ui</title>
+  <style>
+    :root {
+      --bg: #121316;
+      --bg-elev: #1a1b20;
+      --bg-elev2: #22242c;
+      --bg-input: #18191f;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-hover: rgba(255, 255, 255, 0.2);
+      --border-active: #4f46e5;
+      --accent: #6366f1;
+      --accent-soft: rgba(99, 102, 241, 0.15);
+      --accent-contrast: #ffffff;
+      --text: #f3f4f6;
+      --text-dim: #9ca3af;
+      --text-faint: #6b7280;
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.15);
+      --mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--sans);
+      background: #090a0c;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Proposal Switcher Toolbar */
+    .proposal-nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      background: rgba(18, 19, 22, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .proposal-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .proposal-title span {
+      color: var(--text-dim);
+      font-weight: normal;
+      font-size: 13px;
+    }
+
+    .proposal-buttons {
+      display: flex;
+      background: var(--bg-elev);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+
+    .proposal-btn {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .proposal-btn:hover {
+      color: var(--text);
+    }
+
+    .proposal-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Canvas Stage */
+    .stage {
+      flex: 1;
+      width: 100%;
+      max-width: 1100px;
+      padding: 32px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .view-container {
+      display: none;
+      width: 100%;
+      animation: fadeIn 0.25s ease-out;
+    }
+    .view-container.active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .proposal-meta {
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-dim);
+    }
+    .proposal-meta strong {
+      color: var(--accent);
+    }
+
+    /* Common Modal Simulation Backdrop */
+    .mock-backdrop {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      background: radial-gradient(circle at top, rgba(99, 102, 241, 0.08) 0%, transparent 60%);
+      padding: 10px;
+    }
+
+    .modal-box {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .m-head {
+      padding: 18px 22px 14px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .m-head-title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .m-head-title h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .m-head-title p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .m-close-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .m-close-btn:hover {
+      background: var(--bg-elev2);
+      color: var(--text);
+    }
+
+    .m-body {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .m-foot {
+      padding: 14px 22px;
+      background: rgba(0, 0, 0, 0.18);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-secondary {
+      background: var(--bg-elev2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover {
+      background: #2b2e38;
+      border-color: var(--border-hover);
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    .btn-primary:hover {
+      background: #4f46e5;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-label {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .input-text {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+    }
+    .input-text:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .form-hint {
+      font-size: 11.5px;
+      color: var(--text-faint);
+      line-height: 1.45;
+    }
+
+    /* Switch Component */
+    .switch-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      gap: 12px;
+    }
+    .switch-row:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .switch-text {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .switch-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .switch-desc {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+    .ui-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: var(--switch-bg-off, #424754);
+      border: 1px solid var(--switch-border-off, #8791a3);
+      border-radius: 20px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+    .ui-switch.on {
+      background: var(--switch-bg-on, var(--accent));
+      border-color: var(--switch-border-on, var(--accent));
+    }
+    .ui-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: var(--switch-knob, #ffffff);
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .ui-switch.on::after {
+      background: var(--switch-knob-on, var(--accent-contrast));
+      transform: translateX(16px);
+    }
+
+    /* ========================================================
+       方案 1：Linear 风格卡片单选（清晰、大气、层次分明）
+       ======================================================== */
+    .p1-box {
+      width: 540px;
+    }
+    .type-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .type-card {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 14px 14px 12px 14px;
+      cursor: pointer;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .type-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-1px);
+    }
+    .type-card.selected {
+      border-color: var(--accent);
+      background: linear-gradient(180deg, var(--accent-soft) 0%, rgba(99, 102, 241, 0.04) 100%);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .type-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .type-card-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    .type-card.selected .type-card-icon.incoming {
+      background: var(--blue-soft);
+      color: #60a5fa;
+    }
+    .type-card.selected .type-card-icon.outgoing {
+      background: var(--green-soft);
+      color: #34d399;
+    }
+    .type-card:not(.selected) .type-card-icon {
+      background: var(--bg-elev2);
+      color: var(--text-dim);
+    }
+    .type-card-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .type-card-check {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: transparent;
+      transition: all 0.15s;
+    }
+    .type-card.selected .type-card-check {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .type-card-desc {
+      font-size: 11.5px;
+      color: var(--text-dim);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* ========================================================
+       方案 2：分段胶囊 Tab 切换（紧凑、专注、无冗余）
+       ======================================================== */
+    .p2-box {
+      width: 500px;
+    }
+    .p2-segmented {
+      display: flex;
+      background: var(--bg);
+      padding: 4px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+    .p2-seg-item {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-dim);
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .p2-seg-item:hover {
+      color: var(--text);
+    }
+    .p2-seg-item.active {
+      background: var(--bg-elev2);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
+    .events-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .event-chip {
+      padding: 8px 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text-dim);
+      transition: all 0.15s;
+    }
+    .event-chip:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+    .event-chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #fff;
+    }
+    .chip-box {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+    }
+    .event-chip.active .chip-box {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ========================================================
+       方案 3：双栏实时预览（极客、透明、所见即所得）
+       ======================================================== */
+    .p3-box {
+      width: 780px;
+    }
+    .p3-split {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .p3-left {
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .p3-right {
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+    .preview-code {
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.5;
+      color: #a5b4fc;
+      background: #0d0e12;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+      flex: 1;
+      margin: 0;
+      white-space: pre;
+    }
+    .preview-tag {
+      font-size: 10px;
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Proposal Switcher Toolbar -->
+  <header class="proposal-nav">
+    <div class="proposal-title">
+      🎨 新建 Webhook 弹窗设计方案
+      <span>(点击右侧按钮切换对比)</span>
+    </div>
+    <div class="proposal-buttons">
+      <button class="proposal-btn active" onclick="switchView('p1')">方案 A：Linear 卡片流 (推荐)</button>
+      <button class="proposal-btn" onclick="switchView('p2')">方案 B：分段胶囊 Tab 式</button>
+      <button class="proposal-btn" onclick="switchView('p3')">方案 C：双栏实时预览式</button>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <!-- ==================== 方案 A ==================== -->
+    <div id="view-p1" class="view-container active">
+      <div class="proposal-meta">
+        <strong>方案 A 特色：Linear 质感卡片流</strong><br>
+        采用现代 SaaS 标准设计语言。类型选择使用细腻的卡片网格，选中状态带发光微光边框与对勾；表单采用优雅的开关组件（Switch）替代传统复选框；层级分明，视觉舒适，信息密度恰到好处。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p1-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3><span>🔗</span> 新建 Webhook</h3>
+              <p>配置入站自动化触发或出站事件广播通知</p>
+            </div>
+            <button class="m-close-btn" title="关闭">✕</button>
+          </div>
+
+          <div class="m-body">
+            <!-- Webhook 类型选择 -->
+            <div class="form-group">
+              <label class="form-label">集成类型</label>
+              <div class="type-cards">
+                <div class="type-card selected" id="p1-card-in" onclick="selectP1Type('incoming')">
+                  <span class="type-card-check">✓</span>
+                  <div class="type-card-head">
+                    <span class="type-card-icon incoming">📥</span>
+                    <span class="type-card-name">入站 Webhook</span>
+                  </div>
+                  <p class="type-card-desc">外部系统推送消息进群，可自动指派或唤醒群内 Bot 执行任务</p>
+                </div>
+
+                <div class="type-card" id="p1-card-out" onclick="selectP1Type('outgoing')">
+                  <span class="type-card-check">✓</span>
+                  <div class="type-card-head">
+                    <span class="type-card-icon outgoing">📤</span>
+                    <span class="type-card-name">出站 Webhook</span>
+                  </div>
+                  <p class="type-card-desc">将新消息、任务完成、失败或交付等事件实时推送至外部服务</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Webhook 名称 -->
+            <div class="form-group">
+              <label class="form-label">Webhook 名称</label>
+              <input type="text" class="input-text" placeholder="例如：GitHub Actions CI、监控告警、飞书群通知" value="GitHub Actions CI">
+            </div>
+
+            <!-- 入站模式动态项 -->
+            <div id="p1-fields-in">
+              <div class="switch-row" onclick="toggleSwitch('p1-sw-bot')">
+                <div class="switch-text">
+                  <span class="switch-title">收到推送时唤醒 Bot 执行任务</span>
+                  <span class="switch-desc">检测到消息包含 @Bot 或群组设有群主管时，自动生成任务派发</span>
+                </div>
+                <div class="ui-switch on" id="p1-sw-bot"></div>
+              </div>
+            </div>
+
+            <!-- 出站模式动态项 -->
+            <div id="p1-fields-out" style="display: none; flex-direction: column; gap: 14px;">
+              <div class="form-group">
+                <label class="form-label">目标接收 URL</label>
+                <input type="url" class="input-text" placeholder="https://example.com/webhook">
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p1-sw-relay')">
+                <div class="switch-text">
+                  <span class="switch-title">通过 Hub 服务器中转代发</span>
+                  <span class="switch-desc">由 Hub 作为出口代发（固定 IP）；若目标是局域网私有地址请关闭</span>
+                </div>
+                <div class="ui-switch on" id="p1-sw-relay"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">签名密钥 Secret (可选)</label>
+                <input type="text" class="input-text" placeholder="用于 X-Pi-Signature HMAC 校验">
+              </div>
+            </div>
+
+            <!-- 启用状态开关 -->
+            <div class="switch-row" onclick="toggleSwitch('p1-sw-enable')">
+              <div class="switch-text">
+                <span class="switch-title">立即启用该 Webhook</span>
+                <span class="switch-desc">创建完成后立即生效并接受请求</span>
+              </div>
+              <div class="ui-switch on" id="p1-sw-enable"></div>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">创建 Webhook</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ==================== 方案 B ==================== -->
+    <div id="view-p2" class="view-container">
+      <div class="proposal-meta">
+        <strong>方案 B 特色：分段胶囊 Tab 切换</strong><br>
+        极致紧凑，适合追求操作效率的高阶场景。顶部将“类型选择”简化为胶囊式 Segmented Control，无需滚动屏幕；出站事件订阅使用点击即选的多彩标签徽章（Chips），高度集约。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p2-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3>新建 Webhook 集成</h3>
+            </div>
+            <button class="m-close-btn" title="关闭">✕</button>
+          </div>
+
+          <div class="m-body">
+            <!-- 胶囊切换 -->
+            <div class="p2-segmented">
+              <div class="p2-seg-item active" id="p2-tab-in" onclick="selectP2Type('incoming')">📥 入站推送 (Incoming)</div>
+              <div class="p2-seg-item" id="p2-tab-out" onclick="selectP2Type('outgoing')">📤 出站广播 (Outgoing)</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">标识名称</label>
+              <input type="text" class="input-text" placeholder="给此 Webhook 起一个名字" value="Sentry Error Reporter">
+            </div>
+
+            <!-- 入站专属表单 -->
+            <div id="p2-fields-in" style="display: flex; flex-direction: column; gap: 14px;">
+              <div class="switch-row" onclick="toggleSwitch('p2-sw-bot')">
+                <div class="switch-text">
+                  <span class="switch-title">自动派发群 Bot</span>
+                  <span class="switch-desc">允许消息触发群主管或被 @ 提及的协作 Bot</span>
+                </div>
+                <div class="ui-switch on" id="p2-sw-bot"></div>
+              </div>
+            </div>
+
+            <!-- 出站专属表单 -->
+            <div id="p2-fields-out" style="display: none; flex-direction: column; gap: 14px;">
+              <div class="form-group">
+                <label class="form-label">推送端点</label>
+                <input type="url" class="input-text" placeholder="https://api.example.com/hooks" value="https://oapi.dingtalk.com/robot/send">
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">订阅事件</label>
+                <div class="events-grid">
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> 💬 新群聊消息
+                  </div>
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> ✅ 任务成功完成
+                  </div>
+                  <div class="event-chip active" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> ❌ 任务执行失败
+                  </div>
+                  <div class="event-chip" onclick="this.classList.toggle('active')">
+                    <span class="chip-box">✓</span> 📦 代码交付提交
+                  </div>
+                </div>
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p2-sw-relay')">
+                <div class="switch-text">
+                  <span class="switch-title">经由 Hub 服务端中转</span>
+                  <span class="switch-desc">公网集中代理出网</span>
+                </div>
+                <div class="ui-switch on" id="p2-sw-relay"></div>
+              </div>
+            </div>
+
+            <div class="switch-row" onclick="toggleSwitch('p2-sw-enable')">
+              <div class="switch-text">
+                <span class="switch-title">启用状态</span>
+              </div>
+              <div class="ui-switch on" id="p2-sw-enable"></div>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">保存配置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ==================== 方案 C ==================== -->
+    <div id="view-p3" class="view-container">
+      <div class="proposal-meta">
+        <strong>方案 C 特色：双栏实时预览式（所见即所得）</strong><br>
+        左侧为配置表单，右侧是深色代码窗，实时生成 cURL 示例（入站模式）或推送 Payload 结构（出站模式）。用户边输入边能明确知道它将如何工作，开发者体验极其优异。
+      </div>
+
+      <div class="mock-backdrop">
+        <div class="modal-box p3-box">
+          <div class="m-head">
+            <div class="m-head-title">
+              <h3><span>⚡</span> 创建 Webhook 集成</h3>
+              <p>配置并实时预览调用命令与载荷结构</p>
+            </div>
+            <button class="m-close-btn" title="关闭">✕</button>
+          </div>
+
+          <div class="p3-split">
+            <!-- Left Config -->
+            <div class="p3-left">
+              <div class="p2-segmented">
+                <div class="p2-seg-item active" id="p3-tab-in" onclick="selectP3Type('incoming')">📥 入站模式</div>
+                <div class="p2-seg-item" id="p3-tab-out" onclick="selectP3Type('outgoing')">📤 出站模式</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">集成名称</label>
+                <input type="text" class="input-text" id="p3-name-input" oninput="updateP3Preview()" value="CI Build Bot">
+              </div>
+
+              <div id="p3-fields-in">
+                <div class="switch-row" onclick="toggleSwitch('p3-sw-bot')">
+                  <div class="switch-text">
+                    <span class="switch-title">触发群主管 / Bot 执行</span>
+                    <span class="switch-desc">自动将消息转为执行任务</span>
+                  </div>
+                  <div class="ui-switch on" id="p3-sw-bot"></div>
+                </div>
+              </div>
+
+              <div id="p3-fields-out" style="display: none; flex-direction: column; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">推送 URL</label>
+                  <input type="url" class="input-text" value="https://corp.com/hooks/alert">
+                </div>
+                <div class="switch-row" onclick="toggleSwitch('p3-sw-relay')">
+                  <div class="switch-text">
+                    <span class="switch-title">Hub 中转外发</span>
+                  </div>
+                  <div class="ui-switch on" id="p3-sw-relay"></div>
+                </div>
+              </div>
+
+              <div class="switch-row" onclick="toggleSwitch('p3-sw-enable')">
+                <div class="switch-text">
+                  <span class="switch-title">启用 Webhook</span>
+                </div>
+                <div class="ui-switch on" id="p3-sw-enable"></div>
+              </div>
+            </div>
+
+            <!-- Right Preview -->
+            <div class="p3-right">
+              <div class="preview-header">
+                <span id="p3-preview-title">实时调用命令 (cURL)</span>
+                <span class="preview-tag">LIVE PREVIEW</span>
+              </div>
+              <pre class="preview-code" id="p3-preview-code">curl -X POST "https://hub.example.com/api/rooms/r-101/webhooks/incoming/hook-preview?token=abc..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "任务构建成功",
+    "senderName": "CI Build Bot"
+  }'</pre>
+            </div>
+          </div>
+
+          <div class="m-foot">
+            <button class="btn btn-secondary">取消</button>
+            <button class="btn btn-primary">确认并生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function switchView(id) {
+      document.querySelectorAll('.proposal-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-container').forEach(view => view.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      document.getElementById('view-' + id).classList.add('active');
+    }
+
+    function toggleSwitch(id) {
+      const sw = document.getElementById(id);
+      if (sw) sw.classList.toggle('on');
+    }
+
+    // Proposal 1 logic
+    function selectP1Type(type) {
+      const cardIn = document.getElementById('p1-card-in');
+      const cardOut = document.getElementById('p1-card-out');
+      const fIn = document.getElementById('p1-fields-in');
+      const fOut = document.getElementById('p1-fields-out');
+
+      if (type === 'incoming') {
+        cardIn.classList.add('selected');
+        cardOut.classList.remove('selected');
+        fIn.style.display = 'block';
+        fOut.style.display = 'none';
+      } else {
+        cardOut.classList.add('selected');
+        cardIn.classList.remove('selected');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+    }
+
+    // Proposal 2 logic
+    function selectP2Type(type) {
+      const tabIn = document.getElementById('p2-tab-in');
+      const tabOut = document.getElementById('p2-tab-out');
+      const fIn = document.getElementById('p2-fields-in');
+      const fOut = document.getElementById('p2-fields-out');
+
+      if (type === 'incoming') {
+        tabIn.classList.add('active');
+        tabOut.classList.remove('active');
+        fIn.style.display = 'flex';
+        fOut.style.display = 'none';
+      } else {
+        tabOut.classList.add('active');
+        tabIn.classList.remove('active');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+    }
+
+    // Proposal 3 logic
+    let p3CurrentType = 'incoming';
+    function selectP3Type(type) {
+      p3CurrentType = type;
+      const tabIn = document.getElementById('p3-tab-in');
+      const tabOut = document.getElementById('p3-tab-out');
+      const fIn = document.getElementById('p3-fields-in');
+      const fOut = document.getElementById('p3-fields-out');
+
+      if (type === 'incoming') {
+        tabIn.classList.add('active');
+        tabOut.classList.remove('active');
+        fIn.style.display = 'block';
+        fOut.style.display = 'none';
+      } else {
+        tabOut.classList.add('active');
+        tabIn.classList.remove('active');
+        fIn.style.display = 'none';
+        fOut.style.display = 'flex';
+      }
+      updateP3Preview();
+    }
+
+    function updateP3Preview() {
+      const name = document.getElementById('p3-name-input').value || 'My Webhook';
+      const code = document.getElementById('p3-preview-code');
+      const title = document.getElementById('p3-preview-title');
+
+      if (p3CurrentType === 'incoming') {
+        title.textContent = '实时调用命令 (cURL)';
+        code.textContent = `curl -X POST "https://hub.example.com/api/rooms/r-101/webhooks/incoming/hook-preview?token=abc..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "text": "任务构建成功",
+    "senderName": "${name}"
+  }'`;
+      } else {
+        title.textContent = '出站推送 Payload (JSON)';
+        code.textContent = `{
+  "event": "task_completed",
+  "roomId": "room-101",
+  "roomName": "研发协同组",
+  "timestamp": ${Date.now()},
+  "data": {
+    "taskId": "t-808",
+    "botId": "bot-frontend",
+    "status": "completed",
+    "report": "已完成代码编译与打包",
+    "webhook": "${name}"
+  }
+}`;
+      }
+    }
+  </script>
+</body>
+</html>

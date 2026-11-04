@@ -172,6 +172,16 @@ describe("question queue compatibility and modes", () => {
 		expect(questionWaitTime(0, Date.now())).toBeUndefined();
 		expect(questionWaitTime(200_000, 100_000)).toBe("0:00");
 		expect(questionWaitTime(1000, 3_662_000)).toBe("1:01:01");
+
+		// When opened as a dialog, wait time renders inside dialog-head rather than outside the card
+		act(() => root!.render(createElement(QuestionQueue, { questions: [request({ createdAt: 10_000 })], mode: "all" })));
+		expect(container.querySelector(".question-queue-list")).toBeNull();
+		const headWait = container.querySelector(".dialog-head .question-queue-wait");
+		expect(headWait).not.toBeNull();
+		expect(headWait?.textContent).toContain("1:32");
+		expect(container.querySelector(".question-queue-dialog > .question-queue-wait")).toBeNull();
+		act(() => vi.advanceTimersByTime(3000));
+		expect(container.querySelector(".dialog-head .question-queue-wait")?.textContent).toContain("1:35");
 	});
 	it("expired and ticking deadlines never send cancellation or clear drafts", () => {
 		vi.useFakeTimers();

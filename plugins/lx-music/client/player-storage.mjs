@@ -4,8 +4,8 @@ const lists = ["queue", "history", "favorites", "searchResults", "topChartSongs"
 const choices = {
 	playMode: ["loop", "random", "single"],
 	quality: ["128k", "320k", "flac"],
-	source: ["wy", "kw", "kg", "mg"],
-	activeViewTab: ["search", "top", "favorites", "queue", "history"],
+	source: ["wy", "tx", "kw", "kg", "mg"],
+	activeViewTab: ["search", "top", "playlist", "favorites", "queue", "history"],
 	topChartType: ["hot", "soar", "new"],
 };
 function cleanSong(song) {

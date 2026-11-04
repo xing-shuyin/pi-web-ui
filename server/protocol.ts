@@ -1453,7 +1453,7 @@ export type ClientMessage =
 	/** 设置页逐工具编辑文案时取「默认值 + 当前覆盖」（同 get_tool_info，但不弹工具定义弹窗）。
 	 *  应答 `tool_prompt`。 */
 	| { type: "get_tool_prompt"; name: string }
-	| { type: "list_sessions" }
+	| { type: "list_sessions"; path?: string }
 	| { type: "switch_session"; path: string; sessionId?: string; independent?: boolean }
 	| { type: "switch_conversation"; id: string }
 	/** 手动过户：把另一处（elsewhere 行，owner/convId 标识）的对话整体搬到本页
@@ -4472,7 +4472,7 @@ export type ServerMessage =
 	| { type: "scm_changed" }
 	/** Sent every ~2s so clients can detect half-open connections and display host metrics / network latency. */
 	| { type: "heartbeat"; hostMetrics?: UiHostMetrics; latencyMs?: number }
-	| { type: "sessions"; sessions: SessionSummary[] }
+	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string }
 	/** Filename matches for the global search panel (reqId echo). Always sent
 	 *  in reply to a search_files request — ok:false means the walk failed. */
 	| {

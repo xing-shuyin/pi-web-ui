@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "imessage",
 	"nameEn": "iMessage",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"description": "iMessage 机器人与工作台：Apple macOS 原生 iMessage 通道（零公网 IP / 苹果生态随身触达 / 多轮会话隔离）/ 用户白名单准入 / AI imessage 工具",
 	"descriptionEn": "iMessage workspace & Bot: Apple macOS native iMessage bridge (zero public IP, Apple ecosystem companion, isolated multi-turn sessions), access control whitelist, and AI imessage tool.",
 	"author": "pi-web-ui",
@@ -13,46 +13,24 @@
 	"client": "client/entry.mjs",
 	"permissions": ["ui", "tools", "notify", "storage", "secrets", "llm", "chat"],
 	"ui": {
-		"views": [
-			{
-				"id": "imessage",
-				"label": "iMessage",
-				"icon": "💬"
-			}
-		],
 		"topbar": [
 			{
 				"id": "imessage-open",
 				"label": "iMessage",
 				"icon": "💬",
-				"action": {
-					"type": "view",
-					"viewId": "imessage"
-				},
+				"kind": "view",
+				"view": "plugin:imessage",
 				"order": 64
 			}
 		],
-		"statusBar": [
+		"bottombar": [
 			{
 				"id": "imessage-status",
 				"label": "💬 iMessage",
-				"title": "点击打开 iMessage 工作台",
-				"action": {
-					"type": "view",
-					"viewId": "imessage"
-				},
+				"hint": "点击打开 iMessage 工作台",
+				"kind": "view",
+				"view": "plugin:imessage",
 				"order": 54
-			}
-		],
-		"commands": [
-			{
-				"id": "open",
-				"label": "打开 iMessage 工作台",
-				"icon": "💬",
-				"action": {
-					"type": "view",
-					"viewId": "imessage"
-				}
 			}
 		]
 	}

@@ -61,6 +61,8 @@ import type { DshPermissionOption, UiAgentPreset } from "../types";
 import { useTemplates } from "./PromptTemplates";
 import { availableTemplateCommands, expandTemplateCommand, normalizeTemplateCommand } from "../template-commands";
 import { TextQuoteCard } from "./TextQuoteCard";
+import { openImageLightbox } from "../image-lightbox-bridge";
+import { openFilePreview } from "../file-preview-bridge";
 
 /** True on touch-first devices (phones / tablets driven by a soft keyboard) —
  *  see `touch-device.ts` for the detection rules (Windows 触屏笔记本不算触屏，
@@ -1806,10 +1808,49 @@ export const ChatInput = memo(function ChatInput({
 		>
 			{attachments.length > 0 && (
 				<div className="attach-row" ref={attachRowRef}>
-					{attachments.map((a) =>
-						a.mode === "quote" && a.quote ? (
-							<TextQuoteCard key={a.key} quote={a.quote} onRemove={() => onRemoveAttachment(a.key ?? "")} />
-						) : (
+					{attachments.map((a) => {
+						if (a.mode === "quote" && a.quote) {
+							return <TextQuoteCard key={a.key} quote={a.quote} onRemove={() => onRemoveAttachment(a.key ?? "")} />;
+						}
+						const isImage = Boolean(a.imageData || (a.path && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path)));
+						const isFile = Boolean(
+							a.path && !a.isDir && a.mode !== "conversation" && a.mode !== "page" && a.mode !== "canvas",
+						);
+						const isPreviewable = Boolean(a.imageData || isFile);
+						const imgSrc = a.imageData
+							? a.imageData.startsWith("data:")
+								? a.imageData
+								: `data:${a.mimeType ?? "image/png"};base64,${a.imageData}`
+							: undefined;
+						const handlePreview = () => {
+							if (imgSrc) {
+								openImageLightbox({ src: imgSrc, alt: a.name });
+							} else if (isFile && a.path) {
+								openFilePreview({ path: a.path, name: a.name });
+							}
+						};
+						const baseTitle = a.imageData
+							? t("attachImage", { name: a.name })
+							: a.fileData
+								? t("attachFile", { name: a.name })
+								: a.isDir
+									? t("folderRef", { path: a.path })
+									: a.mode === "page"
+										? t("attachPage", { name: a.name })
+										: a.mode === "canvas"
+											? `${t("canvasTab")} · ${a.name}`
+											: a.mode === "conversation"
+												? t("attachConversation", { name: a.name })
+												: a.mode === "reference"
+													? t("refOnly", { path: a.path })
+													: a.mode === "lines" && a.lines
+														? t("attachLines", {
+																path: a.path,
+																start: a.lines.start,
+																end: a.lines.end,
+															})
+														: t("attachContent", { path: a.path });
+						return (
 							<span
 								key={
 									a.key ??
@@ -1817,46 +1858,39 @@ export const ChatInput = memo(function ChatInput({
 										? `conv|${a.conversationId ?? ""}|${a.sessionPath ?? ""}`
 										: `${a.path}|${a.mode}|${a.lines ? `${a.lines.start}-${a.lines.end}` : ""}`)
 								}
-								className={`attach-chip ${a.imageData ? "image" : a.fileData ? "file" : a.mode}`}
-								title={
-									a.imageData
-										? t("attachImage", { name: a.name })
-										: a.fileData
-											? t("attachFile", { name: a.name })
-											: a.isDir
-												? t("folderRef", { path: a.path })
-												: a.mode === "page"
-													? t("attachPage", { name: a.name })
-													: a.mode === "canvas"
-														? `${t("canvasTab")} · ${a.name}`
-														: a.mode === "conversation"
-															? t("attachConversation", { name: a.name })
-															: a.mode === "reference"
-																? t("refOnly", { path: a.path })
-																: a.mode === "lines" && a.lines
-																	? t("attachLines", {
-																			path: a.path,
-																			start: a.lines.start,
-																			end: a.lines.end,
-																		})
-																	: t("attachContent", { path: a.path })
+								className={`attach-chip ${a.imageData ? "image" : a.fileData ? "file" : a.mode}${isPreviewable ? " previewable" : ""}`}
+								title={baseTitle + (isPreviewable ? ` (${isImage ? t("toolImageZoom") : t("fileOpenPreview")})` : "")}
+								onClick={isPreviewable ? handlePreview : undefined}
+								role={isPreviewable ? "button" : undefined}
+								tabIndex={isPreviewable ? 0 : undefined}
+								onKeyDown={
+									isPreviewable
+										? (e) => {
+												if (e.key === "Enter" || e.key === " ") {
+													e.preventDefault();
+													handlePreview();
+												}
+											}
+										: undefined
 								}
 							>
-								{a.imageData
-									? "🖼"
-									: a.fileData
-										? "📄"
-										: a.isDir
-											? "📁"
-											: a.mode === "page"
-												? "🌐"
-												: a.mode === "canvas"
-													? "◇"
-													: a.mode === "conversation"
-														? "💬"
-														: a.mode === "reference"
-															? "🔗"
-															: "📎"}
+								{imgSrc ? (
+									<img src={imgSrc} alt={a.name} className="attach-thumb" />
+								) : a.fileData ? (
+									"📄"
+								) : a.isDir ? (
+									"📁"
+								) : a.mode === "page" ? (
+									"🌐"
+								) : a.mode === "canvas" ? (
+									"◇"
+								) : a.mode === "conversation" ? (
+									"💬"
+								) : a.mode === "reference" ? (
+									"🔗"
+								) : (
+									"📎"
+								)}
 								{a.name}
 								{a.mode === "lines" && a.lines && (
 									<span className="attach-range">
@@ -1867,18 +1901,19 @@ export const ChatInput = memo(function ChatInput({
 									type="button"
 									className="attach-remove"
 									title={t("removeAttachment")}
-									onClick={() =>
+									onClick={(e) => {
+										e.stopPropagation();
 										onRemoveAttachment(
 											a.key ??
 												(a.mode === "conversation" ? `conv|${a.conversationId ?? ""}|${a.sessionPath ?? ""}` : a.path),
-										)
-									}
+										);
+									}}
 								>
 									×
 								</button>
 							</span>
-						),
-					)}
+						);
+					})}
 					<span className="attach-hint">{t("attachHint")}</span>
 				</div>
 			)}

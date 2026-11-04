@@ -398,17 +398,21 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 				createPortal(
 					<div className="modal-backdrop scheduler-modal-backdrop" onClick={() => setDraft(null)}>
 						<div className="modal scheduler-modal" onClick={(e) => e.stopPropagation()}>
-							<button type="button" className="modal-close" aria-label={t("close")} onClick={() => setDraft(null)}>
-								<FiX />
-							</button>
 							<div className="modal-head">
 								<div className="scheduler-head-icon">
 									<FiClock />
 								</div>
 								<div className="scheduler-head-titles">
 									<h2>{isNew ? t("schedulerNew") : `${t("schedulerEdit")} · ${draft.name || ""}`}</h2>
-									<p className="scheduler-head-desc">{t("schedulerDesc")}</p>
 								</div>
+								<button
+									type="button"
+									className="modal-close scheduler-modal-close"
+									aria-label={t("close")}
+									onClick={() => setDraft(null)}
+								>
+									<FiX />
+								</button>
 							</div>
 							<div className="modal-body">
 								{/* 卡片 1：任务身份与执行目标 */}

@@ -104,10 +104,10 @@ async function main() {
 	// -- 1. built-in template cards render in the empty state ---------------
 	await page.waitForSelector(".empty-state", { timeout: 10000 });
 	const cardTexts = await page.locator(".empty-template").allTextContents();
-	check(`all 25 aihero skills + "new template" card shown (got ${cardTexts.length})`, cardTexts.length === 26);
+	check(`all 8 core workflows + "new template" card shown (got ${cardTexts.length})`, cardTexts.length === 9);
 	check(
-		`card titles are engineering workflows (has 需求拷问)`,
-		cardTexts.some((t) => t.includes("需求拷问")),
+		`card titles are engineering workflows (has 需求对齐 or 系统化排错)`,
+		cardTexts.some((t) => t.includes("需求对齐") || t.includes("系统化排错")),
 	);
 	check(
 		`has 新建模板 card`,

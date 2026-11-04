@@ -3,7 +3,12 @@ import { FiEdit2, FiPlus, FiRotateCcw, FiSend, FiTrash2, FiX } from "react-icons
 import { useT, type Translate } from "../i18n";
 import { randomUuid } from "../uuid";
 import { appUrl } from "../base-url";
-import { normalizeTemplateCommand, validTemplateCommand } from "../template-commands";
+import {
+	COMMON_TEMPLATE_VARIABLES,
+	normalizeTemplateCommand,
+	resolveDynamicTemplateVariables,
+	validTemplateCommand,
+} from "../template-commands";
 import { appSend, useAppField } from "../app-globals";
 import { recordModelUsage } from "../model-usage";
 
@@ -53,99 +58,54 @@ type I18nKey = Parameters<Translate>[0];
 
 interface BuiltinDef {
 	id: string;
+	command?: string;
 	icon: string;
 	titleKey: I18nKey;
 	descKey: I18nKey;
 	promptKey: I18nKey;
 }
 
-/** 内置模板：覆盖 https://www.aihero.dev/skills 的全部 25 个 skill ——
- *  做真实工程而非「氛围编程」的常用工作流。每个模板是一段可复用的复杂
- *  提示词，模拟对应 skill 的流程（点卡片填入输入框，✏️ 可编辑/删除）。 */
+/** 内置工程模板：收敛为研发主干与专项保障的 8 个核心黄金工作流。
+ *  涵盖需求对齐、任务规划、TDD 实现、代码审查、根因排错、合并冲突、原型验证与一手调研。
+ *  用户在本地新增或定制的模板 100% 完好保留，始终追加展示或优先覆盖。 */
 const BUILTIN_DEFS: BuiltinDef[] = [
-	/* Getting Started */
+	/* 核心研发主干（The Core Loop） */
 	{
-		id: "setup-matt-pocock-skills",
-		icon: "🛠",
-		titleKey: "tpl.sk.setup",
-		descKey: "tpl.sk.setup.desc",
-		promptKey: "tpl.sk.setup.prompt",
+		id: "clarify",
+		command: "clarify",
+		icon: "🎯",
+		titleKey: "tpl.sk.clarify",
+		descKey: "tpl.sk.clarify.desc",
+		promptKey: "tpl.sk.clarify.prompt",
 	},
 	{
-		id: "ask-matt",
-		icon: "🧭",
-		titleKey: "tpl.sk.ask",
-		descKey: "tpl.sk.ask.desc",
-		promptKey: "tpl.sk.ask.prompt",
-	},
-	/* The Main Flow */
-	{
-		id: "grill-with-docs",
-		icon: "🗣",
-		titleKey: "tpl.sk.grilldocs",
-		descKey: "tpl.sk.grilldocs.desc",
-		promptKey: "tpl.sk.grilldocs.prompt",
-	},
-	{
-		id: "to-spec",
-		icon: "📝",
-		titleKey: "tpl.sk.tospec",
-		descKey: "tpl.sk.tospec.desc",
-		promptKey: "tpl.sk.tospec.prompt",
-	},
-	{
-		id: "to-tickets",
-		icon: "🎫",
-		titleKey: "tpl.sk.totickets",
-		descKey: "tpl.sk.totickets.desc",
-		promptKey: "tpl.sk.totickets.prompt",
+		id: "to-plan",
+		command: "plan",
+		icon: "📋",
+		titleKey: "tpl.sk.toplan",
+		descKey: "tpl.sk.toplan.desc",
+		promptKey: "tpl.sk.toplan.prompt",
 	},
 	{
 		id: "implement",
-		icon: "🏗",
+		command: "tdd",
+		icon: "🧪",
 		titleKey: "tpl.sk.implement",
 		descKey: "tpl.sk.implement.desc",
 		promptKey: "tpl.sk.implement.prompt",
 	},
 	{
 		id: "code-review",
+		command: "review",
 		icon: "🧹",
 		titleKey: "tpl.sk.codeview",
 		descKey: "tpl.sk.codeview.desc",
 		promptKey: "tpl.sk.codeview.prompt",
 	},
-	/* Shaping */
-	{
-		id: "wayfinder",
-		icon: "🗺",
-		titleKey: "tpl.sk.wayfinder",
-		descKey: "tpl.sk.wayfinder.desc",
-		promptKey: "tpl.sk.wayfinder.prompt",
-	},
-	{
-		id: "prototype",
-		icon: "🔬",
-		titleKey: "tpl.sk.prototype",
-		descKey: "tpl.sk.prototype.desc",
-		promptKey: "tpl.sk.prototype.prompt",
-	},
-	{
-		id: "research",
-		icon: "📚",
-		titleKey: "tpl.sk.research",
-		descKey: "tpl.sk.research.desc",
-		promptKey: "tpl.sk.research.prompt",
-	},
-	/* Upkeep */
-	{
-		id: "improve-codebase-architecture",
-		icon: "🏛",
-		titleKey: "tpl.sk.arch",
-		descKey: "tpl.sk.arch.desc",
-		promptKey: "tpl.sk.arch.prompt",
-	},
+	/* 专项高频保障（Specialized Operations） */
 	{
 		id: "diagnosing-bugs",
+		command: "debug",
 		icon: "🐛",
 		titleKey: "tpl.sk.debug",
 		descKey: "tpl.sk.debug.desc",
@@ -153,96 +113,27 @@ const BUILTIN_DEFS: BuiltinDef[] = [
 	},
 	{
 		id: "resolving-merge-conflicts",
+		command: "merge",
 		icon: "🔀",
 		titleKey: "tpl.sk.merge",
 		descKey: "tpl.sk.merge.desc",
 		promptKey: "tpl.sk.merge.prompt",
 	},
 	{
-		id: "triage",
-		icon: "🗂",
-		titleKey: "tpl.sk.triage",
-		descKey: "tpl.sk.triage.desc",
-		promptKey: "tpl.sk.triage.prompt",
+		id: "prototype",
+		command: "spike",
+		icon: "🔬",
+		titleKey: "tpl.sk.prototype",
+		descKey: "tpl.sk.prototype.desc",
+		promptKey: "tpl.sk.prototype.prompt",
 	},
 	{
-		id: "wizard",
-		icon: "✨",
-		titleKey: "tpl.sk.wizard",
-		descKey: "tpl.sk.wizard.desc",
-		promptKey: "tpl.sk.wizard.prompt",
-	},
-	/* Productivity */
-	{
-		id: "grill-me",
-		icon: "🔍",
-		titleKey: "tpl.sk.grillme",
-		descKey: "tpl.sk.grillme.desc",
-		promptKey: "tpl.sk.grillme.prompt",
-	},
-	{
-		id: "handoff",
-		icon: "🤝",
-		titleKey: "tpl.sk.handoff",
-		descKey: "tpl.sk.handoff.desc",
-		promptKey: "tpl.sk.handoff.prompt",
-	},
-	{
-		id: "to-questionnaire",
-		icon: "📋",
-		titleKey: "tpl.sk.questionnaire",
-		descKey: "tpl.sk.questionnaire.desc",
-		promptKey: "tpl.sk.questionnaire.prompt",
-	},
-	{
-		id: "teach",
-		icon: "🎓",
-		titleKey: "tpl.sk.teach",
-		descKey: "tpl.sk.teach.desc",
-		promptKey: "tpl.sk.teach.prompt",
-	},
-	{
-		id: "wait-what",
-		icon: "💬",
-		titleKey: "tpl.sk.ww",
-		descKey: "tpl.sk.ww.desc",
-		promptKey: "tpl.sk.ww.prompt",
-	},
-	{
-		id: "writing-for-agents",
-		icon: "📄",
-		titleKey: "tpl.sk.wfa",
-		descKey: "tpl.sk.wfa.desc",
-		promptKey: "tpl.sk.wfa.prompt",
-	},
-	/* Reference */
-	{
-		id: "codebase-design",
-		icon: "🧱",
-		titleKey: "tpl.sk.codesign",
-		descKey: "tpl.sk.codesign.desc",
-		promptKey: "tpl.sk.codesign.prompt",
-	},
-	{
-		id: "domain-modeling",
-		icon: "🏷",
-		titleKey: "tpl.sk.domain",
-		descKey: "tpl.sk.domain.desc",
-		promptKey: "tpl.sk.domain.prompt",
-	},
-	{
-		id: "grilling",
-		icon: "🔥",
-		titleKey: "tpl.sk.grilling",
-		descKey: "tpl.sk.grilling.desc",
-		promptKey: "tpl.sk.grilling.prompt",
-	},
-	{
-		id: "tdd",
-		icon: "🧪",
-		titleKey: "tpl.sk.tdd",
-		descKey: "tpl.sk.tdd.desc",
-		promptKey: "tpl.sk.tdd.prompt",
+		id: "research",
+		command: "research",
+		icon: "📚",
+		titleKey: "tpl.sk.research",
+		descKey: "tpl.sk.research.desc",
+		promptKey: "tpl.sk.research.prompt",
 	},
 ];
 
@@ -411,7 +302,7 @@ export function TemplateProvider({
 				icon: o?.icon ?? d.icon,
 				title: o?.title ?? t(d.titleKey),
 				desc: o?.desc ?? t(d.descKey),
-				command: typeof o?.command === "string" ? o.command : "",
+				command: typeof o?.command === "string" ? o.command : (d.command ?? ""),
 				prompt: o?.prompt ?? t(d.promptKey),
 				builtin: true,
 			};
@@ -584,7 +475,8 @@ export function TemplateProvider({
 						closeAll();
 					}}
 					onSend={() => {
-						const text = editing.prompt.trim();
+						const raw = editing.prompt.trim();
+						const text = resolveDynamicTemplateVariables(raw);
 						// 模板直发同样算一次当前模型的使用（下拉按次数排序）。
 						if (text && appSend({ type: "prompt", text, queue: false })) {
 							if (currentModelId) recordModelUsage(currentModelId);
@@ -764,6 +656,24 @@ function PickerModal({
 /* 编辑弹窗                                                             */
 /* ------------------------------------------------------------------ */
 
+const COMMON_TEMPLATE_ICONS = [
+	"📌",
+	"🚀",
+	"⚡",
+	"📝",
+	"🔍",
+	"🛠️",
+	"🎯",
+	"💡",
+	"🤖",
+	"🌐",
+	"📦",
+	"🎨",
+	"🐛",
+	"🧪",
+	"✨",
+];
+
 function EditModal({
 	storageError,
 	templates,
@@ -793,27 +703,10 @@ function EditModal({
 }) {
 	const t = useT();
 	const taRef = useRef<HTMLTextAreaElement>(null);
+	const iconPickerRef = useRef<HTMLDivElement>(null);
+	const [showIconPicker, setShowIconPicker] = useState(false);
 
-	// Esc 关闭。
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [onClose]);
-
-	// modal 里提示词 textarea 的自适应高度（复用输入框同款逻辑）。
-	useEffect(() => {
-		const ta = taRef.current;
-		if (!ta) return;
-		ta.style.height = "auto";
-		const capped = ta.scrollHeight > 300;
-		ta.style.height = `${Math.min(ta.scrollHeight, 300)}px`;
-		ta.style.overflowY = capped ? "auto" : "hidden";
-	}, [editing.prompt]);
-
-	const save = () => {
+	const save = useCallback(() => {
 		const title = editing.title.trim();
 		const prompt = editing.prompt.trim();
 		if (!title || !prompt) {
@@ -840,6 +733,66 @@ function EditModal({
 			desc: editing.desc.trim(),
 			prompt,
 		});
+	}, [editing, onDraft, onSave, t, templates]);
+
+	// Esc 关闭，Ctrl/Cmd+Enter 保存。
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				if (showIconPicker) {
+					setShowIconPicker(false);
+					e.stopPropagation();
+					return;
+				}
+				onClose();
+			} else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+				e.preventDefault();
+				save();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [onClose, showIconPicker, save]);
+
+	// 点击外部关闭 Emoji 选择下拉
+	useEffect(() => {
+		if (!showIconPicker) return;
+		const onClickOutside = (e: MouseEvent) => {
+			if (iconPickerRef.current && !iconPickerRef.current.contains(e.target as Node)) {
+				setShowIconPicker(false);
+			}
+		};
+		window.addEventListener("mousedown", onClickOutside);
+		return () => window.removeEventListener("mousedown", onClickOutside);
+	}, [showIconPicker]);
+
+	// modal 里提示词 textarea 的自适应高度（复用输入框同款逻辑）。
+	useEffect(() => {
+		const ta = taRef.current;
+		if (!ta) return;
+		ta.style.height = "auto";
+		const maxHeight = 340;
+		const capped = ta.scrollHeight > maxHeight;
+		ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
+		ta.style.overflowY = capped ? "auto" : "hidden";
+	}, [editing.prompt]);
+
+	const insertVariable = (varKey: string) => {
+		const ta = taRef.current;
+		if (!ta) {
+			onDraft({ ...editing, prompt: editing.prompt + varKey });
+			return;
+		}
+		const start = ta.selectionStart ?? editing.prompt.length;
+		const end = ta.selectionEnd ?? editing.prompt.length;
+		const text = editing.prompt;
+		const nextPrompt = text.slice(0, start) + varKey + text.slice(end);
+		onDraft({ ...editing, prompt: nextPrompt });
+		requestAnimationFrame(() => {
+			ta.focus();
+			const nextCursor = start + varKey.length;
+			ta.setSelectionRange(nextCursor, nextCursor);
+		});
 	};
 
 	const isBuiltin = !!editing.builtin && !isNew;
@@ -847,10 +800,56 @@ function EditModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal template-modal" onClick={(e) => e.stopPropagation()}>
+				{/* 顶栏：图标选择 + 标题输入 + 状态 Badge + 关闭 */}
 				<div className="template-modal-head">
-					<span className="template-modal-icon">{editing.icon}</span>
-					<span className="template-modal-badge">{isBuiltin ? t("tpl.builtin") : t("tpl.custom")}</span>
-					<span className="template-modal-title">{isNew ? t("tpl.newTitle") : t("tpl.editTitle")}</span>
+					<div className="template-head-left" ref={iconPickerRef}>
+						<button
+							type="button"
+							className="btn template-icon-btn"
+							title={t("tpl.fieldIcon")}
+							onClick={() => setShowIconPicker((prev) => !prev)}
+						>
+							<span className="template-modal-icon">{editing.icon || "📌"}</span>
+						</button>
+
+						{showIconPicker && (
+							<div className="template-icon-dropdown">
+								<div className="template-icon-grid">
+									{COMMON_TEMPLATE_ICONS.map((emoji) => (
+										<button
+											key={emoji}
+											type="button"
+											className={`template-icon-opt ${editing.icon === emoji ? "active" : ""}`}
+											onClick={() => {
+												onDraft({ ...editing, icon: emoji });
+												setShowIconPicker(false);
+											}}
+										>
+											{emoji}
+										</button>
+									))}
+								</div>
+								<div className="template-icon-custom">
+									<input
+										className="template-icon-custom-input"
+										value={editing.icon}
+										maxLength={4}
+										placeholder="Emoji"
+										onChange={(e) => onDraft({ ...editing, icon: e.target.value })}
+									/>
+								</div>
+							</div>
+						)}
+
+						<input
+							className="template-head-title-input"
+							value={editing.title}
+							placeholder={t("tpl.fieldTitlePh")}
+							onChange={(e) => onDraft({ ...editing, title: e.target.value })}
+						/>
+						<span className="template-modal-badge">{isBuiltin ? t("tpl.builtin") : t("tpl.custom")}</span>
+					</div>
+
 					<button type="button" className="btn template-modal-close" title={t("close")} onClick={onClose}>
 						<FiX />
 					</button>
@@ -858,57 +857,73 @@ function EditModal({
 
 				{/* 字段区可滚动，头（标题）/ 尾（操作）固定 */}
 				<div className="template-modal-body">
-					<label className="template-field">
-						<span className="template-field-label">{t("tpl.fieldIcon")}</span>
-						<input
-							className="template-field-input icon"
-							value={editing.icon}
-							maxLength={4}
-							onChange={(e) => onDraft({ ...editing, icon: e.target.value })}
-						/>
-					</label>
+					{/* 2 列紧凑网格：快捷命令 + 说明 */}
+					<div className="template-grid-2col">
+						<label className="template-field">
+							<div className="template-field-label-row">
+								<span className="template-field-label">{t("tpl.fieldCommand")}</span>
+							</div>
+							<div className="template-cmd-input-wrap">
+								<span className="template-cmd-prefix">/</span>
+								<input
+									className="template-field-input template-cmd-input"
+									value={editing.command ? editing.command.replace(/^\//, "") : ""}
+									placeholder="pr"
+									onChange={(e) =>
+										onDraft({ ...editing, command: e.target.value.replace(/^\//, ""), error: undefined })
+									}
+								/>
+							</div>
+						</label>
 
-					<label className="template-field">
-						<span className="template-field-label">{t("tpl.fieldTitle")}</span>
-						<input
-							className="template-field-input"
-							value={editing.title}
-							placeholder={t("tpl.fieldTitlePh")}
-							onChange={(e) => onDraft({ ...editing, title: e.target.value })}
-						/>
-					</label>
+						<label className="template-field">
+							<div className="template-field-label-row">
+								<span className="template-field-label">{t("tpl.fieldDesc")}</span>
+							</div>
+							<input
+								className="template-field-input"
+								value={editing.desc}
+								placeholder={t("tpl.fieldDescPh")}
+								onChange={(e) => onDraft({ ...editing, desc: e.target.value })}
+							/>
+						</label>
+					</div>
 
-					<label className="template-field">
-						<span className="template-field-label">{t("tpl.fieldDesc")}</span>
-						<input
-							className="template-field-input"
-							value={editing.desc}
-							placeholder={t("tpl.fieldDescPh")}
-							onChange={(e) => onDraft({ ...editing, desc: e.target.value })}
-						/>
-					</label>
+					{/* 提示词编辑区：工具条与常用变量快捷插入 */}
+					<div className="template-field template-prompt-field">
+						<div className="template-field-label-row">
+							<span className="template-field-label">{t("tpl.fieldPrompt")}</span>
+							<span className="template-field-subhint">{editing.prompt.length} 字符</span>
+						</div>
 
-					<label className="template-field">
-						<span className="template-field-label">{t("tpl.fieldCommand")}</span>
-						<input
-							className="template-field-input"
-							value={editing.command ?? ""}
-							placeholder="/pr"
-							onChange={(e) => onDraft({ ...editing, command: e.target.value, error: undefined })}
-						/>
+						<div className="template-prompt-container">
+							<div className="template-prompt-toolbar">
+								<span className="template-vars-label">插入变量:</span>
+								<div className="template-vars-chips">
+									{COMMON_TEMPLATE_VARIABLES.map((v) => (
+										<button
+											key={v.key}
+											type="button"
+											className="template-var-chip"
+											title={v.desc}
+											onClick={() => insertVariable(v.key)}
+										>
+											+ {v.label}
+										</button>
+									))}
+								</div>
+							</div>
+
+							<textarea
+								ref={taRef}
+								className="template-field-prompt"
+								value={editing.prompt}
+								placeholder={t("tpl.fieldPromptPh")}
+								onChange={(e) => onDraft({ ...editing, prompt: e.target.value })}
+							/>
+						</div>
 						<span className="template-picker-hint">{t("tpl.commandHint")}</span>
-					</label>
-
-					<label className="template-field">
-						<span className="template-field-label">{t("tpl.fieldPrompt")}</span>
-						<textarea
-							ref={taRef}
-							className="template-field-prompt"
-							value={editing.prompt}
-							placeholder={t("tpl.fieldPromptPh")}
-							onChange={(e) => onDraft({ ...editing, prompt: e.target.value })}
-						/>
-					</label>
+					</div>
 				</div>
 
 				{(editing.error || storageError) && (

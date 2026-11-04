@@ -7,7 +7,6 @@
 	"id": "session-migrate",
 	"name": "会话迁移",
 	"permissions": ["ui", "tools", "fs", "http"],
-	"ui": { "views": [{ "id": "main", "label": "会话迁移", "labelEn": "Session Migrate", "icon": "🔄" }] },
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"view": true
 }

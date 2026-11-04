@@ -2,12 +2,12 @@
 	"id": "lx-music",
 	"name": "洛雪音乐",
 	"nameEn": "LX Music",
-	"version": "0.1.6",
+	"version": "0.1.11",
 	"apiVersion": 2,
 	"icon": "🎵",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 18V5l12-2v13\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><circle cx=\"18\" cy=\"16\" r=\"3\"/></svg>",
-	"description": "洛雪音乐播放器：多源聚合搜索（酷我/酷狗/网易云/咪咕）、高品质音乐流式试听、动态滚动歌词、歌单持久化，支持六音等自定义音源脚本导入，并支持 AI 在对话中直接点歌控制播放。",
-	"descriptionEn": "LX Music player: multi-source search (Kuwo/Kugou/Netease/Migu), audio stream playback, synchronized lyrics, playlist management, custom user API scripts, and AI agent playback tools.",
+	"description": "洛雪音乐播放器：多源聚合搜索（酷我/酷狗/网易云/QQ音乐/咪咕）、各平台独立官方排行榜、精选与分类歌单浏览、歌单链接导入解析、高品质音乐流式试听、动态滚动歌词，支持六音等自定义音源脚本导入，并支持 AI 在对话中直接点歌控制播放。",
+	"descriptionEn": "LX Music player: multi-source search (Kuwo/Kugou/Netease/QQ Music/Migu), independent platform leaderboards, curated playlists exploration, playlist URL import, audio streaming, synchronized lyrics, custom user API scripts, and AI agent playback tools.",
 	"view": true,
 	"permissions": ["http", "net", "tools", "storage", "ui"],
 	"settings": [
@@ -18,9 +18,10 @@
 			"labelEn": "Default Search Source",
 			"default": "kw",
 			"options": [
+				{ "value": "wy", "label": "网易云音乐" },
+				{ "value": "tx", "label": "QQ音乐" },
 				{ "value": "kw", "label": "酷我音乐" },
 				{ "value": "kg", "label": "酷狗音乐" },
-				{ "value": "wy", "label": "网易云音乐" },
 				{ "value": "mg", "label": "咪咕音乐" }
 			],
 			"hint": "打开音乐搜索时的默认音源渠道"

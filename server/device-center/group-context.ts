@@ -7,7 +7,7 @@ const PAGE_BYTES = 24 * 1024;
 export interface GroupHistoryMessage {
 	id: string;
 	text: string;
-	sender: { type: "human" | "bot"; id: string; name: string };
+	sender: { type: "human" | "bot" | "webhook"; id: string; name: string };
 	createdAt: number;
 	targetBotIds?: string[];
 	replyToMessageId?: string;

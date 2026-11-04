@@ -41,6 +41,8 @@ export interface ToolInspectorState {
 	// 思考流专属
 	thinking?: string;
 	streaming?: boolean;
+	/** 终止运行中的 bash 命令 */
+	onKillBash?: () => void;
 }
 
 let activeState: ToolInspectorState | null = null;
@@ -59,6 +61,28 @@ export function closeToolInspector(): void {
 	if (activeState === null) return;
 	activeState = null;
 	notify();
+}
+
+/**
+ * 实时同步更新当前检查器弹窗数据（仅当当前打开的检查器对应相同 toolCallId 且非思考流时更新）。
+ * 用于工具执行过程中的流式增量输出与状态平滑切换，避免弹窗定格在旧快照。
+ */
+export function updateToolInspectorLive(toolCallId: string, patch: Partial<ToolInspectorState>): void {
+	if (!activeState || activeState.isThinking || activeState.toolCallId !== toolCallId) {
+		return;
+	}
+	let changed = false;
+	const record = activeState as unknown as Record<string, unknown>;
+	for (const [k, v] of Object.entries(patch)) {
+		if (record[k] !== v) {
+			changed = true;
+			break;
+		}
+	}
+	if (changed) {
+		activeState = { ...activeState, ...patch };
+		notify();
+	}
 }
 
 export function getToolInspectorState(): ToolInspectorState | null {

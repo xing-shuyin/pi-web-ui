@@ -309,6 +309,8 @@ export interface ChatState {
 	activeConversationId: string;
 	/** Recent workspaces this client opened (left panel project picker). */
 	projects: ProjectSummary[];
+	/** 按工作区规范化路径缓存的会话列表（支持跨项目按需拉取）。 */
+	projectSessions?: Record<string, SessionSummary[]>;
 	/** Workspace file listing for the right panel. */
 	files: FileListing | null;
 	/** Latest file content fetched for the preview panel (path-matched in the modal). */
@@ -632,7 +634,7 @@ type Action =
 			engines?: EngineStatus[];
 	  }
 	| { type: "engines_status"; engines: EngineStatus[] }
-	| { type: "sessions"; sessions: SessionSummary[] }
+	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string }
 	| {
 			type: "conversations";
 			conversations: ConversationSummary[];
@@ -1243,9 +1245,23 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			};
 		case "engines_status":
 			return { ...state, engines: action.engines };
-		case "sessions":
-			writeCachedSessions(state.state?.cwd, action.sessions, state.engine);
-			return { ...state, sessions: action.sessions };
+		case "sessions": {
+			const targetCwd = action.cwd;
+			const isCurrent = !targetCwd || normalizeSessionPathKey(targetCwd) === normalizeSessionPathKey(state.state?.cwd);
+			if (isCurrent) {
+				writeCachedSessions(state.state?.cwd, action.sessions, state.engine);
+				return { ...state, sessions: action.sessions };
+			}
+			writeCachedSessions(targetCwd, action.sessions, state.engine);
+			const normTarget = normalizeSessionPathKey(targetCwd);
+			return {
+				...state,
+				projectSessions: {
+					...(state.projectSessions ?? {}),
+					[normTarget]: action.sessions,
+				},
+			};
+		}
 		case "conversations":
 			return {
 				...state,
@@ -1812,34 +1828,99 @@ export function clearCachedProject(path: string): void {
 	}
 }
 
+export const normalizeSessionPathKey = (p?: string | null): string => {
+	if (!p) return "";
+	return p.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+};
+
 const RECENT_SESSIONS_PREFIX = "pi-web-recent-sessions:";
 
 export function sessionsStorageKey(cwd?: string | null, engine?: string): string {
 	const eng = engine ?? "pi";
 	if (!cwd) return `pi-web-recent-sessions:${eng}:default`;
-	return `${RECENT_SESSIONS_PREFIX}${eng}:${cwd
-		.trim()
-		.replace(/[\\/]+$/, "")
-		.toLowerCase()}`;
+	return `${RECENT_SESSIONS_PREFIX}${eng}:${normalizeSessionPathKey(cwd)}`;
 }
 
 /** 读取前端缓存的当前工作区历史会话列表（刷新时首帧立即可见，避免空白）。 */
 export function readCachedSessions(cwd?: string | null, engine?: string): SessionSummary[] {
 	try {
-		const key = sessionsStorageKey(cwd ?? readLastCwd(), engine);
-		const raw = localStorage.getItem(key);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed : [];
+		const targetCwd = cwd ?? readLastCwd();
+		const primaryKey = sessionsStorageKey(targetCwd, engine);
+		const raw = localStorage.getItem(primaryKey);
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+		}
+
+		// 降级回退：若主 key 未命中，尝试常用 engine ("pi", "default")
+		if (targetCwd) {
+			for (const fallbackEng of ["pi", "default"]) {
+				if (fallbackEng === (engine ?? "pi")) continue;
+				const fbKey = sessionsStorageKey(targetCwd, fallbackEng);
+				const fbRaw = localStorage.getItem(fbKey);
+				if (fbRaw) {
+					const parsed = JSON.parse(fbRaw);
+					if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+				}
+			}
+
+			// 进一步降级：扫描 localStorage 中匹配该 cwd 规范化后缀的任意 engine 缓存
+			const normCwd = normalizeSessionPathKey(targetCwd);
+			const suffix = `:${normCwd}`;
+			for (let i = 0; i < localStorage.length; i++) {
+				const k = localStorage.key(i);
+				if (k && k.startsWith(RECENT_SESSIONS_PREFIX) && k.endsWith(suffix)) {
+					const anyRaw = localStorage.getItem(k);
+					if (anyRaw) {
+						const parsed = JSON.parse(anyRaw);
+						if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+					}
+				}
+			}
+		}
+
+		return [];
 	} catch {
 		return [];
 	}
 }
 
+/**
+ * 物理路径确定性工作区归属校验（最佳落地实践 · 彻底根除跨项目会话串味）：
+ * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
+ */
+export function isSessionMatchingProject(sessionPath?: string | null, projectPath?: string | null): boolean {
+	if (!sessionPath || !projectPath) return true;
+	if (sessionPath.startsWith("conv:") || sessionPath.startsWith("virtual:")) return true;
+
+	const normS = sessionPath.toLowerCase().replace(/\\/g, "/");
+	const normP = projectPath.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+
+	// 纯文件名（不含任何目录斜杠，常见于测试 mock 数据）：直接放行
+	if (!normS.includes("/")) return true;
+
+	if (normS.startsWith(normP + "/")) return true;
+
+	// SDK session slug 完整匹配：如 "--e--t--" 或 "--c--users-c-desktop--"
+	const fullSlug = normP.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+	if (normS.includes(`--${fullSlug}--`)) return true;
+
+	const folderName = normP.split("/").filter(Boolean).pop();
+	if (folderName) {
+		const slugPattern = new RegExp(`[-_/]${folderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[-_/]`, "i");
+		if (slugPattern.test(normS)) return true;
+	}
+
+	return false;
+}
+
 function writeCachedSessions(cwd: string | undefined | null, sessions: SessionSummary[], engine?: string): void {
 	try {
-		const key = sessionsStorageKey(cwd ?? readLastCwd(), engine);
-		localStorage.setItem(key, JSON.stringify(sessions.slice(0, 50)));
+		const safeCwd = cwd ?? readLastCwd();
+		// 缓存写入前置验真：只将真正物理归属于目标工作区的会话写入缓存，杜绝切换时脏数据污染
+		const valid = safeCwd ? sessions.filter((s) => isSessionMatchingProject(s.path, safeCwd)) : sessions;
+		const key = sessionsStorageKey(safeCwd, engine);
+		localStorage.setItem(key, JSON.stringify(valid.slice(0, 50)));
 	} catch {
 		/* ignore */
 	}

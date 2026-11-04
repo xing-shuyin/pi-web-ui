@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("双击项目名字与运行的对话空白处新建对话", () => {
-	it("双击运行对话列表空白处（convs-scroll）触发 new_chat", () => {
+	it("双击运行对话列表空白处（projects-scroll）触发 new_chat", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
@@ -74,10 +74,10 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			root!.render(createElement(LanguageProvider, null, createElement(LeftPanel as any, props)));
 		});
 
-		const convsScroll = container!.querySelector(".convs-scroll");
+		const convsScroll = container!.querySelector(".projects-scroll");
 		expect(convsScroll).not.toBeNull();
 
-		// 双击 convs-scroll 空白区域
+		// 双击 projects-scroll 空白区域
 		act(() => {
 			convsScroll!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
@@ -117,7 +117,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			root!.render(createElement(LanguageProvider, null, createElement(LeftPanel as any, props)));
 		});
 
-		const sessionItem = container!.querySelector(".convs-scroll .session-item");
+		const sessionItem = container!.querySelector(".projects-scroll .session-item");
 		expect(sessionItem).not.toBeNull();
 
 		act(() => {
@@ -205,7 +205,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		expect(sent).toContainEqual({ type: "new_chat" });
 	});
 
-	it("双击跨项目的分组标题（.panel-conv-group-title）触发 set_cwd 与 new_chat", () => {
+	it("双击跨项目的项目标题（.project-item）触发 set_cwd 与 new_chat", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
@@ -244,12 +244,12 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			root!.render(createElement(LanguageProvider, null, createElement(LeftPanel as any, props)));
 		});
 
-		const groupTitle = container!.querySelector(".panel-conv-group-title");
-		expect(groupTitle).not.toBeNull();
-		expect(groupTitle!.textContent).toContain("proj-other");
+		const projButtons = container!.querySelectorAll(".projects-scroll .project-item");
+		expect(projButtons.length).toBe(2);
+		expect(projButtons[1].textContent).toContain("proj-other");
 
 		act(() => {
-			groupTitle!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+			projButtons[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
 
 		expect(sent).toContainEqual({ type: "set_cwd", path: "/workspace/proj-other" });
@@ -313,12 +313,14 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		expect(pickerOpened).toBe(false);
 	});
 
-	it("双击历史会话列表空白处（sessions-scroll）触发 new_chat", () => {
+	it("双击历史会话列表空白处（projects-scroll）触发 new_chat", () => {
 		const sent: unknown[] = [];
 		const panelSend = (msg: unknown) => {
 			sent.push(msg);
 			return true;
 		};
+
+		setAppGlobals({ cwd: "/workspace/proj-a" });
 
 		const props = {
 			active: true,
@@ -334,7 +336,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 					messageCount: 1,
 				},
 			],
-			projects: [],
+			projects: [{ path: "/workspace/proj-a", lastUsed: Date.now() }],
 			activeConversationId: "",
 			panelSend,
 		};
@@ -343,7 +345,7 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			root!.render(createElement(LanguageProvider, null, createElement(LeftPanel as any, props)));
 		});
 
-		const sessionsScroll = container!.querySelector(".sessions-scroll");
+		const sessionsScroll = container!.querySelector(".projects-scroll");
 		expect(sessionsScroll).not.toBeNull();
 
 		act(() => {

@@ -4,6 +4,7 @@ import { FiAlertTriangle, FiCheck, FiCheckCircle, FiEdit3, FiLayers, FiX } from 
 import { appSend } from "../app-globals";
 import { isZhLocale, useI18n, useT } from "../i18n";
 import { renderHighlightedCommand } from "../bash-danger";
+import { questionWaitTime } from "../question-queue";
 import type { UiToolApproval } from "../types";
 import { PendingQueue } from "./PendingQueue";
 
@@ -74,6 +75,14 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 	// 本地编辑的参数文本（JSON 字符串）
 	const [paramsText, setParamsText] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
+	const [now, setNow] = useState(Date.now);
+
+	useEffect(() => {
+		if (!approval?.createdAt) return;
+		setNow(Date.now());
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, [approval?.id, approval?.createdAt]);
 
 	useEffect(() => {
 		if (approval) {
@@ -179,6 +188,11 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 						</span>
 					)}
 					{approval.conversationTitle && <span className="tool-info-label">{approval.conversationTitle}</span>}
+					{approval.createdAt && questionWaitTime(approval.createdAt, now) && (
+						<span className="question-queue-wait" style={{ marginLeft: "auto" }}>
+							⏱ {questionWaitTime(approval.createdAt, now)}
+						</span>
+					)}
 					<button type="button" className="btn" onClick={onDefer}>
 						{t("pendingQueueDefer")}
 					</button>

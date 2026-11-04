@@ -34,6 +34,7 @@ export interface TransferItem {
 		| "cancelling"
 		| "cancelled"
 		| "failed";
+	applyStarted?: boolean;
 	manifestHash?: string;
 	sourceBotRevision: number;
 	targetBotRevision: number;
@@ -520,16 +521,16 @@ export function DeviceFileTransfer({
 									<div className="dft-metrics">
 										<span>
 											{zh ? "文件: " : "Files: "}
-											<strong>{item.totalFiles}</strong>
+											<strong>{item.totalFiles != null ? item.totalFiles : "-"}</strong>
 										</span>
 										<span>
 											{zh ? "大小: " : "Size: "}
-											<strong>{formatBytes(item.totalBytes)}</strong>
+											<strong>{item.totalBytes != null ? formatBytes(item.totalBytes) : "-"}</strong>
 										</span>
 										<span>
 											{zh ? "分块: " : "Chunks: "}
 											<strong>
-												{item.receivedChunks?.length ?? 0} / {item.totalChunks}
+												{item.totalChunks != null ? `${item.receivedChunks?.length ?? 0} / ${item.totalChunks}` : "-"}
 											</strong>
 										</span>
 									</div>
@@ -545,11 +546,29 @@ export function DeviceFileTransfer({
 												? zh
 													? "✓ SHA256 完整校验通过"
 													: "✓ SHA256 Verified"
-												: zh
-													? "32KiB 有界分块传输与断点校验中"
-													: "32KiB Bounded Chunk Streaming"}
+												: item.status === "cancelled"
+													? zh
+														? "传输已取消"
+														: "Transfer cancelled"
+													: item.status === "failed"
+														? zh
+															? "传输失败"
+															: "Transfer failed"
+														: item.status === "interrupted"
+															? zh
+																? "传输已中断"
+																: "Transfer interrupted"
+															: zh
+																? "32KiB 有界分块传输与断点校验中"
+																: "32KiB Bounded Chunk Streaming"}
 										</span>
 									</div>
+
+									{item.error && (
+										<div className="dft-item-error" title={item.error}>
+											{item.error}
+										</div>
+									)}
 
 									{/* Staged Preview Section */}
 									{previewFiles.length > 0 && (
@@ -591,16 +610,17 @@ export function DeviceFileTransfer({
 												{zh ? "按原版本续传" : "Resume saved version"}
 											</button>
 										)}
-										{["queued", "staging", "ready", "interrupted", "failed"].includes(item.status) && (
-											<button
-												type="button"
-												className="btn dft-btn-abort"
-												onClick={() => handleAbort(item)}
-												disabled={disabled}
-											>
-												{zh ? "取消传输" : "Abort Transfer"}
-											</button>
-										)}
+										{!item.applyStarted &&
+											["queued", "staging", "ready", "interrupted", "failed"].includes(item.status) && (
+												<button
+													type="button"
+													className="btn dft-btn-abort"
+													onClick={() => handleAbort(item)}
+													disabled={disabled}
+												>
+													{zh ? "取消传输" : "Abort Transfer"}
+												</button>
+											)}
 										{(item.status === "staged" || item.status === "ready") && (
 											<button
 												type="button"

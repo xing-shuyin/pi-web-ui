@@ -61,6 +61,7 @@ async function fixture() {
 			store,
 			dataDir: dir,
 			relay,
+			getAccount: () => ({ id: "a" }),
 			authenticateAgent: async () => {
 				const device = store.snapshot().devices.find((d) => d.id === caller);
 				return device ? { device, account: { id: "a" } } : undefined;
@@ -74,12 +75,18 @@ async function fixture() {
 		cleanup.push(() => new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))));
 		const address = server.address();
 		if (!address || typeof address === "string") throw new Error("No port");
-		return async (body: object) =>
+		const post = async (body: object) =>
 			fetch(`http://127.0.0.1:${address.port}/api/agent/transfers`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ roomId: "room", sourceBotId: "source-bot", targetBotId: "target-bot", ...body }),
 			});
+		post.userAbort = async (transferId: string, roomId = "room") =>
+			fetch(`http://127.0.0.1:${address.port}/api/rooms/${roomId}/transfers/${transferId}/abort`, {
+				method: "POST",
+			});
+		post.userList = async (roomId = "room") => fetch(`http://127.0.0.1:${address.port}/api/rooms/${roomId}/transfers`);
+		return post;
 	}
 	return {
 		store,
@@ -405,5 +412,76 @@ describe("device collaboration service", () => {
 		expect(abortRes.status).toBe(200);
 		const abortData = (await abortRes.json()) as any;
 		expect(abortData.status).toBe("cancelled");
+	});
+
+	it("allows user to abort agent-created transfers without sender job", async () => {
+		const f = await fixture();
+		const post = await f.start();
+
+		f.relay.callDevice.mockImplementation((async (_id: string, action: string) => {
+			if (action === "transfer_init") return { transferId: "device-chunk-id" };
+			if (action === "transfer_status") return { status: "interrupted", percent: 0 };
+			if (action === "transfer_abort") return { ok: true, status: "cancelled" };
+			return { id: "remote" };
+		}) as any);
+
+		// 1. Agent initializes chunked transfer (receipt created without row.job)
+		const initRes = await post({
+			action: "init",
+			manifest: {
+				version: 2,
+				transferId: "device-chunk-id",
+				totalBytes: 2048,
+				totalFiles: 1,
+				totalChunks: 1,
+				chunkSize: 2048,
+				files: [{ path: "data.bin", size: 2048, sha256: "0".repeat(64), offset: 0, chunkCount: 1, firstChunkIndex: 0 }],
+				manifestHash: "0".repeat(64),
+			},
+		});
+		expect(initRes.status).toBe(200);
+		const { transferId } = (await initRes.json()) as { transferId: string };
+		expect(typeof transferId).toBe("string");
+
+		// 2. User lists transfers
+		const listRes = await post.userList();
+		expect(listRes.status).toBe(200);
+		const listData = (await listRes.json()) as { transfers: any[] };
+		const item = listData.transfers.find((t) => t.transferId === transferId);
+		expect(item).toBeDefined();
+		expect(item.applyStarted).toBe(false);
+		expect(item.status).toBe("interrupted");
+
+		// 3. User aborts this transfer via Web UI user route
+		const abortRes = await post.userAbort(transferId);
+		expect(abortRes.status).toBe(200);
+		const abortData = (await abortRes.json()) as any;
+		expect(abortData.status).toBe("cancelled");
+		expect(abortData.transferId).toBe(transferId);
+
+		// 4. Verify remote device received transfer_abort RPC
+		expect(f.relay.callDevice).toHaveBeenCalledWith(
+			"target",
+			"transfer_abort",
+			expect.objectContaining({
+				roomId: "room",
+				sourceBotId: "source-bot",
+				targetBotId: "target-bot",
+				transferId: "device-chunk-id",
+			}),
+			expect.anything(),
+		);
+
+		// 5. Subsequent user abort call is idempotent
+		const repeatRes = await post.userAbort(transferId);
+		expect(repeatRes.status).toBe(200);
+		const repeatData = (await repeatRes.json()) as any;
+		expect(repeatData.status).toBe("cancelled");
+
+		// 6. User listing confirms status is cancelled
+		const listAfterRes = await post.userList();
+		const listAfterData = (await listAfterRes.json()) as { transfers: any[] };
+		const itemAfter = listAfterData.transfers.find((t) => t.transferId === transferId);
+		expect(itemAfter.status).toBe("cancelled");
 	});
 });

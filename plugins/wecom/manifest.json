@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "wecom",
 	"nameEn": "WeCom",
-	"version": "0.1.10",
+	"version": "0.1.11",
 	"description": "企业微信工作台：群机器人 Webhook 推送、自建应用连接检查、内部会话桥接（双向对话需额外回调适配器），密钥加密存储。",
 	"descriptionEn": "WeCom workspace: group Webhook delivery, internal app connection checks, and scoped chat bridge (inbound chat requires a separate callback adapter). Encrypted secrets.",
 	"author": "pi-web-ui",
@@ -13,46 +13,24 @@
 	"client": "client/entry.mjs",
 	"permissions": ["ui", "tools", "notify", "storage", "secrets", "llm", "chat"],
 	"ui": {
-		"views": [
-			{
-				"id": "wecom",
-				"label": "企业微信",
-				"icon": "💼"
-			}
-		],
 		"topbar": [
 			{
 				"id": "wecom-open",
 				"label": "企业微信",
 				"icon": "💼",
-				"action": {
-					"type": "view",
-					"viewId": "wecom"
-				},
+				"kind": "view",
+				"view": "plugin:wecom",
 				"order": 59
 			}
 		],
-		"statusBar": [
+		"bottombar": [
 			{
 				"id": "wecom-status",
 				"label": "💼 企微",
-				"title": "点击打开企业微信工作台",
-				"action": {
-					"type": "view",
-					"viewId": "wecom"
-				},
+				"hint": "点击打开企业微信工作台",
+				"kind": "view",
+				"view": "plugin:wecom",
 				"order": 49
-			}
-		],
-		"commands": [
-			{
-				"id": "open",
-				"label": "打开企业微信工作台",
-				"icon": "💼",
-				"action": {
-					"type": "view",
-					"viewId": "wecom"
-				}
 			}
 		]
 	}

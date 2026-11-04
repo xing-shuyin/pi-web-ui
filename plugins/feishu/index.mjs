@@ -822,7 +822,7 @@ export default async function activate(host) {
 			title = unread > 0 ? `飞书有 ${unread} 条新消息` : "飞书消息已全部读完";
 		}
 
-		await host.ui?.patch?.("statusBar", "feishu-unread", { label, title });
+		host.ui?.update?.("feishu-unread", { label, hint: title });
 	}
 
 	async function pollNewMessages() {

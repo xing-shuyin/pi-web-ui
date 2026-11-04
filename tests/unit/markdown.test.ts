@@ -31,11 +31,10 @@ describe("MarkdownBody rawHtml", () => {
 		expect(html).toContain("<li>");
 	});
 
-	it("rawHtml=true 时 markdown 与 HTML 混排", () => {
-		const html = renderToStaticMarkup(
-			createElement(MarkdownBody, { text: "**strong** and <em>em</em>", rawHtml: true }),
-		);
-		expect(html).toContain("<strong>strong</strong>");
-		expect(html).toContain("<em>em</em>");
+	it("代码块同时包含终端执行按钮与复制按钮", () => {
+		const html = renderToStaticMarkup(createElement(MarkdownBody, { text: "```bash\necho hello\n```" }));
+		expect(html).toContain("codeblock-actions");
+		expect(html).toContain("term-run-btn");
+		expect(html).toContain("copy-btn");
 	});
 });

@@ -162,6 +162,17 @@ try {
 	const api = await httpGet("/api/themes");
 	check("GET /api/themes without token → 401", api.status === 401);
 
+	// 2a. browser HTML navigation without token returns 401 HTML prompt page
+	const rHtml = await httpGet("/", { accept: "text/html,application/xhtml+xml" });
+	check("GET / with Accept: text/html → 401", rHtml.status === 401);
+	const htmlText = await rHtml.text();
+	check(
+		"401 HTML page contains title and token self-healing script",
+		htmlText.includes("需要访问口令") && htmlText.includes("pi-web-ui:token"),
+		htmlText.slice(0, 200),
+	);
+	check("401 HTML page on loopback contains /setup link", htmlText.includes('href="/setup"'), htmlText.slice(0, 200));
+
 	// 2b. existing-cookie-but-wrong-token requests also clear the stale cookie
 	const r2b = await httpGet("/", { cookie: `pi_web_token=${encodeURIComponent("nope")}` });
 	check("GET / with stale cookie value → 401", r2b.status === 401);

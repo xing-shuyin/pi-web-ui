@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "qq",
 	"nameEn": "QQ",
-	"version": "0.1.18",
+	"version": "0.1.19",
 	"description": "QQ 机器人：腾讯官方开放平台 QQBot 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 图片语音视频文件双向富媒体（本地文件自动上传）/ 用户白名单准入 / AI qq 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "QQ Bot: official Tencent QQBot outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), two-way image/voice/video/file media with automatic local-file upload, access control whitelist, and AI qq tool.",
 	"author": "pi-web-ui",
@@ -13,13 +13,6 @@
 	"client": "client/entry.mjs",
 	"permissions": ["ui", "tools", "notify", "storage", "secrets", "llm", "chat"],
 	"ui": {
-		"views": [
-			{
-				"id": "qq",
-				"label": "QQ",
-				"icon": "🐧"
-			}
-		],
 		"topbar": [
 			{
 				"id": "__view",
@@ -34,27 +27,14 @@
 				"hintEn": "Open QQ bot workspace"
 			}
 		],
-		"statusBar": [
+		"bottombar": [
 			{
 				"id": "qq-status",
 				"label": "🐧 QQ",
-				"title": "点击打开 QQ 机器人工作台",
-				"action": {
-					"type": "view",
-					"viewId": "qq"
-				},
+				"hint": "点击打开 QQ 机器人工作台",
+				"kind": "view",
+				"view": "plugin:qq",
 				"order": 53
-			}
-		],
-		"commands": [
-			{
-				"id": "open",
-				"label": "打开 QQ 机器人工作台",
-				"icon": "🐧",
-				"action": {
-					"type": "view",
-					"viewId": "qq"
-				}
 			}
 		],
 		"contextmenu.project": [

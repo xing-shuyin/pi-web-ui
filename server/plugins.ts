@@ -595,6 +595,8 @@ export interface PluginHost {
 		arrange(ops: unknown[] | unknown): void;
 		/** 当前生效的贡献快照（调试 / 自查用）。 */
 		list(): UiPluginUi;
+		/** 兼容历史/异形调用的条目更新方法（底层转发至 update）。 */
+		patch?(arg1: unknown, arg2?: unknown, arg3?: unknown): void;
 	};
 	/** 插件私有 KV 存储（<pluginDir>/storage.json，原子写、卸载即删除）。 */
 	storage: {
@@ -1147,7 +1149,22 @@ export const UI_SLOT_ALIASES: Readonly<Record<string, string>> = {
 	leftbar: "sidebar.left",
 	rightbar: "sidebar.right",
 	"tool.footer": "tool.card.footer",
+	statusbar: "bottombar",
+	statusBar: "bottombar",
+	"status.bar": "bottombar",
+	bottom: "bottombar",
+	footer: "bottombar",
 };
+
+/**
+ * 宿主在 manifest.ui 下认识的结构性元数据扩展键（非挂载点 Slot，不作为未知 slot 报警丢弃）：
+ * - items: 平铺声明项列表
+ * - arrange: 槽位整理与排序意图
+ * - views: 插件自定义视图元信息声明
+ * - commands: 插件动作与命令元信息声明
+ * - menus: 插件菜单声明
+ */
+export const UI_STRUCTURAL_KEYS: ReadonlySet<string> = new Set(["items", "arrange", "views", "commands", "menus"]);
 
 /** 合法的条目种类（缺省 action；settings.pages 缺省 page）。 */
 export const UI_KINDS: ReadonlySet<string> = new Set([
@@ -1209,6 +1226,23 @@ export function parseUiItem(raw: unknown, slot: string, diagnostics?: string[]):
 	if (wasTruncated(o.label, 60)) diag(`ui item "${id}": label truncated to 60 chars`);
 	const kindRaw = trimStr(o.kind, 16);
 	let kind: UiContribution["kind"] = kindRaw && UI_KINDS.has(kindRaw) ? (kindRaw as UiContribution["kind"]) : undefined;
+
+	// 兼容 action 字段写成 { type: "view", viewId: ... } 的历史/异形结构（推断 kind="view"）
+	let actionStr: string | undefined;
+	let viewFromAction: string | undefined;
+	if (typeof o.action === "string") {
+		actionStr = trimStr(o.action, 64);
+	} else if (o.action && typeof o.action === "object" && !Array.isArray(o.action)) {
+		const actObj = o.action as Record<string, unknown>;
+		if (actObj.type === "view") {
+			if (!kindRaw && !kind) kind = "view";
+			if (typeof actObj.viewId === "string" && actObj.viewId.trim()) {
+				const vid = actObj.viewId.trim();
+				viewFromAction = vid.startsWith("plugin:") ? vid : `plugin:${vid}`;
+			}
+		}
+	}
+
 	if (kindRaw && !kind) diag(`ui item "${id}": unknown kind "${kindRaw}", fallback to default`);
 	if (!kind) kind = slot === "settings.pages" ? "page" : "action";
 	const children: UiContribution[] = [];
@@ -1280,13 +1314,15 @@ export function parseUiItem(raw: unknown, slot: string, diagnostics?: string[]):
 			diag(`ui item "${id}": options all invalid, ignored`);
 		}
 	}
+	const hintRaw = o.hint ?? o.title;
+	const view = trimStr(o.view, 64) ?? viewFromAction;
 	if (wasTruncated(o.labelEn, 60)) diag(`ui item "${id}": labelEn truncated to 60 chars`);
 	if (wasTruncated(o.icon, 16)) diag(`ui item "${id}": icon truncated to 16 chars`);
-	if (wasTruncated(o.hint, 200)) diag(`ui item "${id}": hint truncated to 200 chars`);
+	if (wasTruncated(hintRaw, 200)) diag(`ui item "${id}": hint truncated to 200 chars`);
 	if (wasTruncated(o.hintEn, 200)) diag(`ui item "${id}": hintEn truncated to 200 chars`);
 	if (wasTruncated(o.group, 40)) diag(`ui item "${id}": group truncated to 40 chars`);
-	if (wasTruncated(o.action, 64)) diag(`ui item "${id}": action truncated to 64 chars`);
-	if (wasTruncated(o.view, 64)) diag(`ui item "${id}": view truncated to 64 chars`);
+	if (wasTruncated(actionStr, 64)) diag(`ui item "${id}": action truncated to 64 chars`);
+	if (wasTruncated(view, 64)) diag(`ui item "${id}": view truncated to 64 chars`);
 	if (wasTruncated(o.badge, 24)) diag(`ui item "${id}": badge truncated to 24 chars`);
 	if (typeof o.value === "string" && o.value.length > 500) diag(`ui item "${id}": value truncated to 500 chars`);
 	if (typeof o.progress === "number" && Number.isFinite(o.progress) && (o.progress < 0 || o.progress > 100))
@@ -1301,15 +1337,15 @@ export function parseUiItem(raw: unknown, slot: string, diagnostics?: string[]):
 		...(normalizeIconSvg((o as { iconSvg?: unknown }).iconSvg)
 			? { iconSvg: normalizeIconSvg((o as { iconSvg?: unknown }).iconSvg) }
 			: {}),
-		...(trimStr(o.hint, 200) ? { hint: trimStr(o.hint, 200) } : {}),
+		...(trimStr(hintRaw, 200) ? { hint: trimStr(hintRaw, 200) } : {}),
 		...(trimStr(o.hintEn, 200) ? { hintEn: trimStr(o.hintEn, 200) } : {}),
 		kind,
 		...(children.length ? { children } : {}),
 		...(Number.isFinite(num) ? { order: num } : {}),
 		...(trimStr(o.group, 40) ? { group: trimStr(o.group, 40) } : {}),
 		...(o.hidden === true ? { hidden: true } : {}),
-		...(trimStr(o.action, 64) ? { action: trimStr(o.action, 64) } : {}),
-		...(trimStr(o.view, 64) ? { view: trimStr(o.view, 64) } : {}),
+		...(actionStr ? { action: actionStr } : {}),
+		...(view ? { view } : {}),
 		...(when?.length ? { when } : {}),
 		...(trimStr(o.badge, 24) ? { badge: trimStr(o.badge, 24) } : {}),
 		...(typeof o.checked === "boolean" ? { checked: o.checked } : {}),
@@ -1372,7 +1408,7 @@ export function parseUiContributions(raw: unknown, diagnostics?: string[]): UiPl
 		}
 	}
 	for (const [rawKey, val] of Object.entries(o)) {
-		if (rawKey === "items" || rawKey === "arrange") continue;
+		if (UI_STRUCTURAL_KEYS.has(rawKey)) continue;
 		const key = UI_SLOT_ALIASES[rawKey] ?? rawKey;
 		if (!UI_SLOTS.has(key)) {
 			const n = Array.isArray(val) ? val.length : 1;
@@ -4860,6 +4896,28 @@ export class PluginManager {
 						return;
 					}
 					self.uiRuntimeFor(info.id).items.set(id, parsed);
+					void self.pushToAll().catch(() => {});
+				},
+				patch: (arg1: unknown, arg2?: unknown, arg3?: unknown) => {
+					if (!can("ui")) return;
+					const targetId = typeof arg3 === "object" && arg3 !== null ? String(arg2) : String(arg1);
+					const patchObj = (typeof arg3 === "object" && arg3 !== null ? arg3 : arg2) as
+						Record<string, unknown> | undefined;
+					if (!patchObj || typeof patchObj !== "object" || Array.isArray(patchObj)) return;
+					const base = self.uiOf(info.id)?.items.find((x) => x.id === targetId);
+					if (!base) {
+						self.pushRuntimeDiag(info.id, `ui.patch: unknown id "${String(targetId).slice(0, 32)}", ignored`);
+						return;
+					}
+					const diags: string[] = [];
+					const mergedRaw = { ...base, ...patchObj, id: targetId, slot: base.slot };
+					const parsed = parseUiItem(mergedRaw, base.slot, diags);
+					for (const m of diags) self.pushRuntimeDiag(info.id, `ui.patch: ${m}`);
+					if (!parsed) {
+						self.pushRuntimeDiag(info.id, `ui.patch: merged item invalid, patch ignored`);
+						return;
+					}
+					self.uiRuntimeFor(info.id).items.set(targetId, parsed);
 					void self.pushToAll().catch(() => {});
 				},
 				remove: (id) => {

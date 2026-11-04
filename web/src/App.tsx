@@ -153,10 +153,13 @@ import {
 import { shouldSuppressNotify, currentPresence } from "./notify";
 import { useWideChat, useHideModelRow } from "./chat-width-settings";
 import { registerFilePreviewHost } from "./file-preview-bridge";
+import { registerImageLightboxHost, type ImageLightboxTarget } from "./image-lightbox-bridge";
+import { ImageLightbox } from "./components/ImageLightbox";
 import { projectNameFromCwd, useProjectTitle } from "./title-settings";
 import { useFaviconSettings, resolveInstanceName, syncServerFaviconConfig } from "./favicon-settings";
 import { notify } from "./notify";
 import { diffStreamingCues } from "./streaming-cues";
+import { markConversationsUnread, clearConversationUnread, useUnreadConversationKeys } from "./unread-conversations";
 import { getNoticeDurationMs } from "./notice-policy";
 import { useTheme } from "./theme";
 import { useWallpaperEffect } from "./wallpaper";
@@ -441,6 +444,19 @@ export function App() {
 		});
 		return () => registerFilePreviewHost(null);
 	}, [openFile]);
+	const [lightboxImage, setLightboxImage] = useState<ImageLightboxTarget | null>(null);
+	const lightboxOpenRef = useRef(false);
+	useEffect(() => {
+		lightboxOpenRef.current = lightboxImage !== null;
+	}, [lightboxImage]);
+	useEffect(() => {
+		registerImageLightboxHost({
+			open: (target) => setLightboxImage(target),
+			close: () => setLightboxImage(null),
+			isOpen: () => lightboxOpenRef.current,
+		});
+		return () => registerImageLightboxHost(null);
+	}, []);
 	/** Full-window file drag in progress (issue #19) — shows the app-wide
 	 *  drop overlay; drop anywhere attaches, the input bar keeps priority via
 	 *  its own stopPropagation handlers. */
@@ -1018,6 +1034,7 @@ export function App() {
 	}, []);
 	// Mobile: which side panel is open as a drawer (null = both closed).
 	const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
+	const unreadConvKeys = useUnreadConversationKeys();
 	// 抽屉手势的监听容器（移动端 `.layout` 整屏）。
 	const layoutRef = useRef<HTMLDivElement | null>(null);
 	// Viewport class: ≤768px turns the side panels into sliding drawers
@@ -1246,6 +1263,7 @@ export function App() {
 			if (!command || !chat.ready) return;
 			const def: CommandDef = { name: title, command, cwd: "${pwd}" };
 			const existing = chat.terminals.find((tm) => tm.title === title);
+			let targetId: string;
 			if (existing) {
 				terminal.restart(existing.id);
 				send({
@@ -1256,10 +1274,11 @@ export function App() {
 					cols: 80,
 					rows: 24,
 				});
+				targetId = existing.id;
 			} else {
-				const id = randomUuid();
+				targetId = randomUuid();
 				terminal.create({
-					id,
+					id: targetId,
 					conversationId: chat.activeConversationId || chat.state?.conversationId || "",
 					title,
 					cwd: chat.state?.cwd ?? "",
@@ -1270,9 +1289,11 @@ export function App() {
 					command: def,
 				});
 			}
+			terminal.select(targetId);
 			setView("terminal");
 		};
 		window.addEventListener("pi-web-ui:plugin-run-command", onPluginRunCommand);
+		window.addEventListener("pi-web-ui:run-command", onPluginRunCommand);
 		// 派单卡片的「查看子代理」按钮：切到对应的子代理对话（与左栏点击同效果）。
 		const onSwitchConversation = (e: Event) => {
 			const id = (e as CustomEvent<string>).detail;
@@ -1285,6 +1306,7 @@ export function App() {
 		window.addEventListener("pi-web-ui:switch-conversation", onSwitchConversation);
 		return () => {
 			window.removeEventListener("pi-web-ui:plugin-run-command", onPluginRunCommand);
+			window.removeEventListener("pi-web-ui:run-command", onPluginRunCommand);
 			window.removeEventListener("pi-web-ui:switch-conversation", onSwitchConversation);
 		};
 	}, [chat, terminal, send]);
@@ -1490,12 +1512,34 @@ export function App() {
 		prevStreamingMapRef.current = cues.nextMap;
 		prevActiveIdRef.current = activeId;
 
+		for (const [id, isStreaming] of cues.nextMap.entries()) {
+			if (isStreaming) {
+				clearConversationUnread(id);
+			}
+		}
+
 		if (cues.startCue) {
 			playSound("start", sound);
 			void notify(t("notifyStartTitle"), t("notifyStartBody"), "start");
 		}
 
 		if (cues.finishedConvs.length > 0) {
+			const isWindowFocused = typeof document !== "undefined" && document.hasFocus ? document.hasFocus() : true;
+			const toMarkUnread: Array<{ id: string; sessionId?: string; sessionFile?: string }> = [];
+			for (const finished of cues.finishedConvs) {
+				if (!finished.isActive || !isWindowFocused) {
+					const conv = chat.conversations.find((c) => c.id === finished.id);
+					toMarkUnread.push({
+						id: finished.id,
+						sessionId: conv?.sessionId,
+						sessionFile: conv?.sessionFile,
+					});
+				}
+			}
+			if (toMarkUnread.length > 0) {
+				markConversationsUnread(toMarkUnread);
+			}
+
 			if (cues.finishedConvs.some((c) => !c.isSubagent && sound.done)) {
 				playSound("done", sound);
 			} else if (cues.finishedConvs.some((c) => c.isSubagent)) {
@@ -1540,6 +1584,29 @@ export function App() {
 		tts,
 		t,
 	]);
+
+	// 当活动会话切换或窗口重新聚焦时，清除当前可见会话的「未查看」状态
+	useEffect(() => {
+		const activeId = chat.state?.conversationId ?? null;
+		if (activeId) {
+			clearConversationUnread(activeId);
+			if (chat.state?.sessionId) clearConversationUnread(chat.state.sessionId);
+			if (chat.state?.sessionFile) clearConversationUnread(chat.state.sessionFile);
+		}
+	}, [chat.state?.conversationId, chat.state?.sessionId, chat.state?.sessionFile]);
+
+	useEffect(() => {
+		const onFocus = () => {
+			const activeId = chat.state?.conversationId;
+			if (activeId) {
+				clearConversationUnread(activeId);
+				if (chat.state?.sessionId) clearConversationUnread(chat.state.sessionId);
+				if (chat.state?.sessionFile) clearConversationUnread(chat.state.sessionFile);
+			}
+		};
+		window.addEventListener("focus", onFocus);
+		return () => window.removeEventListener("focus", onFocus);
+	}, [chat.state?.conversationId, chat.state?.sessionId, chat.state?.sessionFile]);
 
 	// ── 流式边打字边开口说话管道（Token-to-Speech Streaming Pipeline） ──
 	const streamSpeechQueueRef = useRef<StreamSpeechQueue | null>(null);
@@ -2415,11 +2482,14 @@ export function App() {
 								onToggleCollapse={toggleLeft}
 								panelSend={panelSend}
 								active={!isMobile || drawer === "left"}
+								unreadConvKeys={unreadConvKeys}
 								sessionFile={activeGroupId ? null : (chat.state?.sessionFile ?? null)}
 								conversations={chat.conversations}
 								elsewhere={chat.elsewhere}
 								sessions={chat.sessions}
 								projects={chat.projects}
+								projectSessions={chat.projectSessions}
+								engine={chat.engine}
 								pathCompletions={chat.pathCompletions}
 								activeConversationId={activeGroupId ? "" : chat.activeConversationId}
 								sharedConversationOwner={chat.state?.sharedConversation?.owner}
@@ -3109,6 +3179,9 @@ export function App() {
 						setPreviewFile(pluginFile.file);
 					}}
 				/>
+			)}
+			{lightboxImage && (
+				<ImageLightbox src={lightboxImage.src} alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} />
 			)}
 			{chat.ready &&
 				chat.state &&

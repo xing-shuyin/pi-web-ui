@@ -14051,6 +14051,30 @@ export class ClientSession {
 		if (this.sessionsRequested) void this.refreshSessions();
 	}
 
+	private buildSessionSummaries(targetCwd: string, infos: SessionInfo[]): SessionSummary[] {
+		const showForkedParents = this.settingsSvc.current.showForkedParentSessions === true;
+		const visibleInfos = filterForkedParentSessions(infos, showForkedParents);
+
+		const sessions = new Map<string, SessionSummary>();
+		for (const s of visibleInfos) {
+			const isPinned = this.stateStore?.isSessionPinned(targetCwd, s.path);
+			const displayName = s.name?.trim() || (s.firstMessage ? s.firstMessage.trim().replace(/\s+/g, " ") : undefined);
+			sessions.set(s.path, {
+				path: s.path,
+				...(s.id ? { sessionId: s.id } : {}),
+				name: s.name,
+				displayName,
+				firstMessage: s.firstMessage,
+				messageCount: s.messageCount,
+				modified: s.modified.getTime(),
+				source: "web",
+				...(isPinned ? { pinned: true } : {}),
+				...(s.parentSessionPath ? { parentSessionPath: s.parentSessionPath } : {}),
+			});
+		}
+		return [...sessions.values()].sort((a, b) => b.modified - a.modified).slice(0, 200);
+	}
+
 	private async pushSessions(): Promise<void> {
 		if (!this.sessionsRequested) return;
 		try {
@@ -14058,33 +14082,21 @@ export class ClientSession {
 			// (<agentDir>/sessions/--<cwd>--/), the same files the pi CLI/TUI
 			// use — one listing covers every conversation of the current folder.
 			const infos = await this.loadSessionInfos();
-
-			// 默认隐藏「被 fork 掉的父会话」（仅保留每条 fork 链最新的链尾会话）；
-			// 开启 showForkedParentSessions 时保留全部会话（全文搜索 searchSessions 始终保留全部）。
-			const showForkedParents = this.settingsSvc.current.showForkedParentSessions === true;
-			const visibleInfos = filterForkedParentSessions(infos, showForkedParents);
-
-			const sessions = new Map<string, SessionSummary>();
-			for (const s of visibleInfos) {
-				const isPinned = this.stateStore?.isSessionPinned(this.cwd, s.path);
-				const displayName = s.name?.trim() || (s.firstMessage ? s.firstMessage.trim().replace(/\s+/g, " ") : undefined);
-				sessions.set(s.path, {
-					path: s.path,
-					...(s.id ? { sessionId: s.id } : {}),
-					name: s.name,
-					displayName,
-					firstMessage: s.firstMessage,
-					messageCount: s.messageCount,
-					modified: s.modified.getTime(),
-					source: "web",
-					...(isPinned ? { pinned: true } : {}),
-					...(s.parentSessionPath ? { parentSessionPath: s.parentSessionPath } : {}),
-				});
-			}
-			const sorted = [...sessions.values()].sort((a, b) => b.modified - a.modified).slice(0, 200); // newest first — the panel shows recent history
+			const sorted = this.buildSessionSummaries(this.cwd, infos);
 			this.emit({ type: "sessions", sessions: sorted });
 		} catch {
 			this.emit({ type: "sessions", sessions: [] });
+		}
+	}
+
+	/** Push the persisted session list for a specific project directory (on demand, e.g. expanding an unopened project). */
+	async pushSessionsForCwd(targetCwd: string): Promise<void> {
+		try {
+			const infos = await this.loadSessionInfos(targetCwd);
+			const sorted = this.buildSessionSummaries(targetCwd, infos);
+			this.emit({ type: "sessions", sessions: sorted, cwd: targetCwd });
+		} catch {
+			this.emit({ type: "sessions", sessions: [], cwd: targetCwd });
 		}
 	}
 

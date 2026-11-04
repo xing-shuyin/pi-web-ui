@@ -13,6 +13,34 @@
 <!-- auto-i18n:start -->
 <!-- auto-i18n:end -->
 
+## [0.116.0] — 2026-11-05
+
+### Added
+
+- **群组出站 Webhook 支持**：设备中心群组新增 Webhook 外部通知支持，可订阅群消息（`message`）、任务完成（`task_completed`）、任务失败（`task_failed`）与投递事件；支持配置 HMAC-SHA256 签名密钥（`X-Pi-Signature`），并提供连通性测试与 5 秒隔离超时保护。
+- **对话图片高清灯箱（Image Lightbox）**：点击聊天消息中的图片可一键唤起独立灯箱浮层，支持原图缩放、平移浏览、自适应居中与下载，大幅提升大图细节审阅体验。
+- **代码块快捷运行到终端**：在助手生成的 Shell/可执行代码块右上角新增「在终端运行」按钮，点击可直接发送至内置交互终端执行，简化复制执行链路。
+- **会话时间分组与未读标记**：左侧栏历史会话按今天、昨天、过去一周及更早进行时间聚类；后台完成任务的会话提供醒目的未读徽标与状态追踪，多任务并行不迷路。
+- **LX-Music 音乐插件全面重构**：升级流媒体代理与 User API 脚本虚拟机，支持载入外部音源脚本、高品质音频代理试听、排行榜单检索与播放控制。
+
+### Fixed
+
+- **禁止服务端热路径同步子进程**（#830）：全量清理服务端热路径上的 `spawnSync`/`execSync` 调用，解决 Windows 全局 npm 根目录探测阻塞事件循环的问题，新增严格的门禁回归守卫。
+- **并发通信与连带生命周期修复**（#828、#829、#832、#833、#834）：修复组件终端通信更新、worktree 状态同步、中断时连带停止子代理、排队消息防丢以及设备中心协作去重展示。
+- **未授权访问与启动引导优化**：新增格式化启动横幅与未授权访问友好说明页，提升多宿主反代与外网访问配置体验。
+
+### Changed
+
+- 设备中心协作策略配置升级：支持细粒度调整饿死防范时间、任务调度深度、工作区文件同步字节上限与资源锁默认 TTL。
+
+<!-- auto-i18n:start -->
+### i18n
+
+- 前端新增 key（76）：`runInTerminal`、`executedInTerminal`、`engineUninstall`、`engineUninstalling`、`engineUninstallConfirm`、`engineUninstallTip`、`engineActiveNoUninstall`、`scheduledTaskBadge`、`schedulerViewTip`、`waitingQuestionShort`、`tabRunning`、`completedUnreadBadge`、`completedUnreadTooltip`、`tabProjects`、`deviceGroups`、`createGroup`、`timeGroupToday`、`timeGroupYesterday`、`timeGroupPastWeek`、`timeGroupEarlier`、`questionQueuedOffline`、`thinkingConfigTitle`、`thinkingConfigBtn`、`thinkingCustomized`、`thinkingQuickApply`、`thinkingResetDefault`、`thinkingFixedNotice`、`thinkingFormatLabel`、`thinkingRawBodyLabel`、`thinkingCustomBudgetBtn`、`thinkingCustomBudgetPlaceholder`、`thinkingCustomBudgetTitle`、`tpl.sk.clarify`、`tpl.sk.clarify.desc`、`tpl.sk.clarify.prompt`、`tpl.sk.toplan`、`tpl.sk.toplan.desc`、`tpl.sk.toplan.prompt`、`loadingSessions`、`noSessionsYet`、`deviceExecSchedulingTitle`、`deviceExecStarvationMs`、`deviceExecStarvationMsHint`、`deviceExecMaxSkips`、`deviceExecMaxSkipsHint`、`deviceExecDispatchTitle`、`deviceExecMaxDepth`、`deviceExecMaxDepthHint`、`deviceExecMaxBudget`、`deviceExecMaxBudgetHint`、`deviceExecAllowBotMentions`、`deviceExecAllowBotMentionsHint`、`deviceExecContextTitle`、`deviceExecContextBytes`、`deviceExecContextBytesHint`、`deviceExecRetention`、`deviceExecRetentionHint`、`deviceExecFileSyncTitle`、`deviceExecFileSyncBytes`、`deviceExecFileSyncBytesHint`、`deviceExecFileSyncFiles`、`deviceExecFileSyncFilesHint`、`deviceExecFileSyncStagedBytes`、`deviceExecFileSyncStagedBytesHint`、`deviceExecLocksTitle`、`deviceExecLockTtl`、`deviceExecLockTtlHint`、`deviceExecBlackboardBytes`、`deviceExecBlackboardBytesHint`、`deviceExecResetDefaults`、`deviceExecResetDefaultsTip`、`promptTok_plugin_dev`、`promptTok_plugin_dev_desc`、`settingsDeviceCollab`、`settingsDeviceCollabHint`、`sandboxNewShort`
+- 前端中文变更（13）：`historySessions`、`openHistory`、`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.prototype.prompt`、`tpl.sk.research.prompt`、`tpl.sk.debug.prompt`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
+- 前端英文变更（12）：`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.debug`、`tpl.sk.debug.desc`、`tpl.sk.debug.prompt`、`tpl.sk.merge.desc`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
+<!-- auto-i18n:end -->
+
 ## [0.115.0] — 2026-11-02
 
 ### Added

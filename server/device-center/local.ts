@@ -16,6 +16,7 @@ import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 export interface LocalDeviceConfig {
 	hubUrl: string;
 	name: string;
+	remark?: string;
 	deviceId: string;
 	credential: string;
 	uiCredential?: string;
@@ -240,6 +241,7 @@ export async function installLocalDeviceCenter(options: Options) {
 				typeof value.deviceId !== "string" ||
 				typeof value.credential !== "string" ||
 				typeof value.name !== "string" ||
+				(value.remark !== undefined && typeof value.remark !== "string") ||
 				typeof value.allowExecution !== "boolean" ||
 				(value.uiCredential !== undefined && typeof value.uiCredential !== "string")
 			)
@@ -254,6 +256,30 @@ export async function installLocalDeviceCenter(options: Options) {
 	// entries are normalised exactly like the global guard does.
 	const allowHosts = new Set((options.allowHosts ?? []).map((entry) => hostWithoutPort(String(entry))).filter(Boolean));
 	const guard = localOnly(allowHosts);
+	// Public incoming webhook forwarding (authenticates via webhook token inside hub)
+	options.app.post("/api/rooms/:id/webhooks/incoming/:webhookId", async (req, res) => {
+		const captured = activeConfig();
+		if (!captured) return res.status(503).json({ error: "Device hub not paired" });
+		try {
+			const queryIndex = req.url.indexOf("?");
+			const queryStr = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
+			const forwardUrl = `${captured.hubUrl}/api/rooms/${encodeURIComponent(String(req.params.id))}/webhooks/incoming/${encodeURIComponent(String(req.params.webhookId))}${queryStr}`;
+			const response = await fetch(forwardUrl, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+					...(req.headers["x-webhook-token"] ? { "x-webhook-token": String(req.headers["x-webhook-token"]) } : {}),
+				},
+				body: JSON.stringify(req.body ?? {}),
+				signal: AbortSignal.timeout(15000),
+			});
+			const data = await response.json().catch(() => ({}));
+			res.status(response.status).json(data);
+		} catch (err: any) {
+			res.status(502).json({ error: err?.message ?? "Failed to forward webhook to hub" });
+		}
+	});
 	// Existing bookmarks now enter the native application view.
 	options.app.get("/devices", guard, (_req, res) => {
 		res.redirect("./?view=devices");
@@ -263,6 +289,7 @@ export async function installLocalDeviceCenter(options: Options) {
 	options.app.get("/api/device-center/status", (_req, res) => {
 		res.json({
 			name: config?.name ?? hostname(),
+			remark: config?.remark,
 			hubUrl: config?.hubUrl,
 			deviceId: config?.deviceId,
 			allowExecution: config?.allowExecution ?? false,
@@ -477,6 +504,16 @@ export async function installLocalDeviceCenter(options: Options) {
 					});
 				}
 				const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+				if (
+					path === "devices/:id/remark" &&
+					String((req.params as Record<string, string>).id) === captured.deviceId &&
+					config
+				) {
+					const rawRemark = req.body?.remark;
+					const remark = typeof rawRemark === "string" ? rawRemark.trim().slice(0, 80) : "";
+					config = { ...config, remark: remark || undefined };
+					void persist(config);
+				}
 				res.status(response.status).json(data);
 			} catch {
 				if (!res.destroyed && (closed || activeConfig() !== captured || generation !== capturedGeneration))
@@ -646,6 +683,7 @@ export async function installLocalDeviceCenter(options: Options) {
 	userRoute("get", "bots", []);
 	userRoute("get", "devices", []);
 	userRoute("post", "devices/:id/open", []);
+	userRoute("post", "devices/:id/remark", ["remark"]);
 	userRoute("get", "rooms", []);
 	userRoute("get", "rooms/:id", []);
 	userRoute("post", "rooms/:id/canvas", ["binding"]);
@@ -738,6 +776,30 @@ export async function installLocalDeviceCenter(options: Options) {
 		"parentTaskId",
 		"planOnly",
 	]);
+	userRoute("get", "rooms/:id/webhooks", []);
+	userRoute("post", "rooms/:id/webhooks", [
+		"name",
+		"type",
+		"enabled",
+		"allowBotTrigger",
+		"url",
+		"secret",
+		"events",
+		"relayViaHub",
+	]);
+	userRoute("post", "rooms/:id/webhooks/:webhookId", [
+		"name",
+		"enabled",
+		"allowBotTrigger",
+		"url",
+		"secret",
+		"events",
+		"relayViaHub",
+	]);
+	userRoute("post", "rooms/:id/webhooks/:webhookId/regenerate-token", []);
+	userRoute("post", "rooms/:id/webhooks/:webhookId/delete", []);
+	userRoute("post", "rooms/:id/webhooks/:webhookId/test", []);
+	userRoute("post", "rooms/:id/hub-relay", ["hubRelayBaseUrl"]);
 	function route(path: string, work: (req: Request) => Promise<unknown>) {
 		options.app.post(`/api/device-center/${path}`, (req, res) => {
 			void serialize(async () => {
@@ -802,6 +864,17 @@ export async function installLocalDeviceCenter(options: Options) {
 		config = next;
 		await reconnect();
 		return { saved: true };
+	});
+	route("remark", async (req) => {
+		if (!config) throw new Error("Pair this computer first");
+		const rawRemark = req.body?.remark;
+		if (rawRemark !== null && rawRemark !== undefined && typeof rawRemark !== "string")
+			throw new Error("Invalid remark");
+		const remark = typeof rawRemark === "string" ? rawRemark.trim().slice(0, 80) : "";
+		const next = { ...config, remark: remark || undefined };
+		await persist(next);
+		config = next;
+		return { saved: true, remark: next.remark };
 	});
 	route("execution-settings", async (req) => {
 		const boundConnection = connection;

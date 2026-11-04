@@ -8,6 +8,7 @@ import { hoverCapable } from "../tip-position";
 import { HoverDetail } from "./HoverDetail";
 import { Markdown } from "./Markdown";
 import { loadQuestionDraft, saveQuestionDraft, clearQuestionDraft } from "../question-draft";
+import { questionWaitTime } from "../question-queue";
 
 interface QuestionItem {
 	id: string;
@@ -34,6 +35,7 @@ interface QuestionDialogProps {
 		conversationId?: string;
 		conversationTitle?: string;
 		questions: QuestionItem[];
+		createdAt?: number;
 	};
 	/** 跨页作答时持有方会话 id：答案转交过去（question_answer 带 owner）。 */
 	owner?: string;
@@ -87,6 +89,7 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 	const [remainSec, setRemainSec] = useState<number>(() =>
 		question.deadline ? Math.max(0, Math.ceil((question.deadline - Date.now()) / 1000)) : -1,
 	);
+	const [now, setNow] = useState(Date.now);
 	/** 已结算标记：提交或取消后禁止 effect 再次回写草稿 */
 	const submittedRef = useRef(false);
 	/** 答案已登记但没送出去（连接正断开）：告诉用户会自动补发，而非让对话框假装已生效。 */
@@ -108,7 +111,8 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 		setCollapsed(false);
 		const remain = question.deadline ? Math.max(0, Math.ceil((question.deadline - Date.now()) / 1000)) : -1;
 		setRemainSec(remain);
-	}, [question.id, question.deadline, owner]);
+		setNow(Date.now());
+	}, [question.id, question.deadline, question.createdAt, owner]);
 
 	// 草稿自动暂存：作答状态变更时即时同步到持久化存储（切会话/刷新防丢）
 	useEffect(() => {
@@ -117,13 +121,18 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 	}, [question.id, selections, customs, step]);
 
 	useEffect(() => {
-		if (!question.deadline) return;
+		if (!question.deadline && !question.createdAt) return;
+		setNow(Date.now());
 		const id = setInterval(() => {
-			setRemainSec(Math.max(0, Math.ceil((question.deadline! - Date.now()) / 1000)));
+			const currentNow = Date.now();
+			setNow(currentNow);
+			if (question.deadline) {
+				setRemainSec(Math.max(0, Math.ceil((question.deadline - currentNow) / 1000)));
+			}
 		}, 1000);
 		return () => clearInterval(id);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [question.id, question.deadline]);
+	}, [question.id, question.deadline, question.createdAt]);
 
 	/** Explicit cancellation clears the draft; queue dismissal uses onDefer instead. */
 	const cancel = useCallback(
@@ -361,11 +370,13 @@ export function QuestionDialog({ question, owner, conversationTitle, onDefer, on
 						{t("questionQueuedOffline")}
 					</span>
 				)}
-				{remainSec >= 0 && (
+				{remainSec >= 0 ? (
 					<span className="question-timer">
 						{remainSec > 0 ? t("questionTimeout", { s: remainSec }) : t("questionTimeoutExpired")}
 					</span>
-				)}
+				) : questionWaitTime(question.createdAt ?? 0, now) ? (
+					<span className="question-timer question-queue-wait">⏱ {questionWaitTime(question.createdAt ?? 0, now)}</span>
+				) : null}
 				{collapsed && (
 					<span className="question-collapsed-preview" title={questionPreview}>
 						{questionPreview}

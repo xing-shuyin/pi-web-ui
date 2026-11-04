@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>超越局部修补：4 个更高维度的侧边栏终极交互架构</title>
+  <style>
+    :root {
+      --bg-page: #0a0b0e;
+      --bg-sidebar: #111218;
+      --bg-hover: rgba(255, 255, 255, 0.05);
+      --bg-active: rgba(255, 255, 255, 0.08);
+      --border: #1a1c26;
+      --border-light: rgba(255, 255, 255, 0.06);
+      --text: #e6e8f2;
+      --text-dim: #9098ac;
+      --text-faint: #52596d;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.14);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.14);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f4f5f8;
+      --bg-sidebar: #ffffff;
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --bg-active: rgba(0, 0, 0, 0.07);
+      --border: #e2e5ec;
+      --border-light: rgba(0, 0, 0, 0.05);
+      --text: #191c24;
+      --text-dim: #5c6475;
+      --text-faint: #98a0b3;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --green: #059669;
+      --green-soft: rgba(5, 150, 105, 0.1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    header.nav-header {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-super {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .solution-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-page);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--bg-sidebar);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .theme-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .main-wrap {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .mock-frame {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      position: relative;
+    }
+
+    .panel-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      flex-shrink: 0;
+    }
+    .tab-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .tab-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .tab-pill.active {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .tab-pill:not(.active) { color: var(--text-dim); }
+
+    .tree-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* 样式通用规则 */
+    .chat-item {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding-left: 24px;
+      padding-right: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      position: relative;
+      font-size: 12.5px;
+      color: var(--text);
+      transition: background 0.1s;
+    }
+    .chat-item:hover { background: var(--bg-hover); }
+    .chat-item.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+    .chat-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 6px;
+      line-height: 1;
+      padding-top: 1px;
+    }
+    .meta-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .time-text {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .badge-pill {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .badge-pill.wechat { background: var(--green-soft); color: var(--green); }
+    .badge-pill.running { background: var(--green-soft); color: var(--green); border-radius: 99px; display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; }
+    .spinner-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.6s infinite ease-in-out;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+    /* 方案 1: 手风琴单开聚焦 */
+    .sol-1 .proj-row {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px 0 4px;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .sol-1 .proj-row:hover { background: var(--bg-hover); }
+    .sol-1 .proj-row.current-active {
+      color: var(--text);
+    }
+    .sol-1 .proj-chevron {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      margin-right: 4px;
+    }
+    .sol-1 .proj-chevron.collapsed { transform: rotate(-90deg); }
+
+    /* 方案 2: Cursor 式顶栏工作区胶囊快切 */
+    .sol-2 .workspace-capsule {
+      margin: 8px 10px 4px 10px;
+      padding: 7px 10px;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+    .sol-2 .workspace-capsule:hover {
+      background: var(--bg-active);
+      border-color: var(--accent);
+    }
+    .sol-2 .chat-item {
+      padding-left: 10px; /* 无树状缩进，纯平直展！横向空间极其宽广 */
+    }
+
+    /* 方案 3: 双轨微双栏（Slack / Discord 工作区列） */
+    .sol-3 .dual-rail-wrap {
+      display: flex;
+      height: 100%;
+    }
+    .sol-3 .left-rail {
+      width: 44px;
+      background: rgba(0,0,0,0.15);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 10px;
+    }
+    .sol-3 .rail-item {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--bg-hover);
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.15s;
+    }
+    .sol-3 .rail-item:hover {
+      background: var(--bg-active);
+      color: var(--text);
+    }
+    .sol-3 .rail-item.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .sol-3 .rail-item.has-running::after {
+      content: "";
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .sol-3 .right-stream {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .sol-3 .chat-item {
+      padding-left: 10px;
+    }
+
+    /* 方案 4: 全局时间线 + 项目来源徽标（统一信息流） */
+    .sol-4 .timeline-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-faint);
+      padding: 8px 10px 4px 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .sol-4 .chat-item {
+      padding-left: 10px;
+    }
+    .sol-4 .proj-tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-dim);
+    }
+
+    .doc-col {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .card {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.65;
+      margin-bottom: 16px;
+    }
+    .adv-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .adv-item {
+      display: flex;
+      gap: 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .adv-icon {
+      color: var(--accent);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="nav-header">
+    <div class="nav-title">
+      <span>更高维度的交互架构全景</span>
+      <span class="badge-super">架构级对比</span>
+    </div>
+    <div class="solution-tabs">
+      <button class="tab-btn active" onclick="switchSol(1)">形态 1：智能手风琴（单项目展开·超多项目不长滚）</button>
+      <button class="tab-btn" onclick="switchSol(2)">形态 2：Cursor 式顶栏工作区胶囊快切</button>
+      <button class="tab-btn" onclick="switchSol(3)">形态 3：双轨极窄微双栏（Slack 流）</button>
+      <button class="tab-btn" onclick="switchSol(4)">形态 4：全局时间线流（带项目徽标）</button>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()">🌓 切换深浅主题</button>
+  </header>
+
+  <main class="main-wrap">
+    
+    <!-- 模拟侧栏容器 -->
+    <div class="mock-frame" id="mockContainer"></div>
+
+    <!-- 右侧解析 -->
+    <div class="doc-col">
+      <div class="card">
+        <h2 id="cardTitle">形态 1：智能手风琴（单项目展开·超多项目不长滚）</h2>
+        <p id="cardDesc"></p>
+        <ul class="adv-list" id="cardList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>💡 深度架构反思：为什么单列大树嵌套会让人感觉“差点意思”？</h2>
+        <div class="adv-item">
+          <span class="adv-icon">1</span>
+          <div>
+            <strong>空间膨胀问题</strong>：25 个项目如果同时展开 2~3 个，侧栏滚动条会极其细长，每次要在几千像素里上下翻找；
+          </div>
+        </div>
+        <div class="adv-item" style="margin-top: 10px;">
+          <span class="adv-icon">2</span>
+          <div>
+            <strong>横向宽度损耗</strong>：树状嵌套不可避免有左侧 padding 和折线，使得小屏幕或窄侧栏时标题文字极易被截断；
+          </div>
+        </div>
+        <div class="adv-item" style="margin-top: 10px;">
+          <span class="adv-icon">3</span>
+          <div>
+            <strong>心智聚焦理论</strong>：绝大多数开发者在实际工作时，同一时间只会深耕在一个项目里（当前工作区）。形态 1 与形态 2 正是顺应了这一规律，将噪音降到最低。
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let currentSol = 1;
+    let activeId = 'c1';
+    let currentProjId = 'p1';
+
+    const mockProjects = [
+      {
+        id: 'p1',
+        name: 'pi-web-ui',
+        shortName: 'PW',
+        runningCount: 1,
+        convs: [
+          { id: 'c1', title: '你好', running: false, time: '16:11' },
+          { id: 'c1-sub', title: '这是一次保留会话的复测任务。请查看项目', isSub: true, running: false, time: '16:12' },
+          { id: 'c2', title: '给代码块加个终端执行按钮', running: true, time: '16:22' },
+          { id: 'c3', title: '如果左侧的项目 运行中和历史合并为一个对话标签', running: true, time: '16:21' },
+          { id: 'c4', title: '这些对话平台都有这个报错', category: 'wechat', label: '微信', running: false, time: '14:56' },
+          { id: 'c5', title: '@plugins/lx-music 双击播放逻辑重构', running: false, time: '11:09' }
+        ],
+        more: 42
+      },
+      {
+        id: 'p2',
+        name: 'ai-browser',
+        shortName: 'AB',
+        runningCount: 0,
+        convs: [
+          { id: 'c6', title: '清理无用文件', running: false, time: '12:08' },
+          { id: 'c7', title: 'Playwright 代理池配置与会话保持', category: 'wechat', label: '微信', running: false, time: '昨天' }
+        ]
+      },
+      {
+        id: 'p3',
+        name: 'yth-operation',
+        shortName: 'YO',
+        runningCount: 0,
+        convs: [
+          { id: 'c8', title: 'Kafka 与 Canvas 故障状态误报修复', running: false, time: '3天前' }
+        ]
+      },
+      {
+        id: 'p4',
+        name: 'stay-alive',
+        shortName: 'SA',
+        runningCount: 0,
+        convs: [
+          { id: 'c9', title: '后台守护进程心跳探活', running: false, time: '10/9' }
+        ]
+      }
+    ];
+
+    const docs = {
+      1: {
+        title: '形态 1：智能手风琴（单项目展开 · 25+项目永不长滚）',
+        desc: '<strong>解决多项目长滚动的最克制方案</strong>：永远只展开当前激活的项目！当你点击展开 <code>ai-browser</code> 时，<code>pi-web-ui</code> 的历史自动收拢为单行（但正在运行的任务依然常驻悬挂露在外面）。侧栏滚动条高度永远控制在一屏以内！',
+        list: [
+          '高度永远不超长：无论你有 25 个还是 100 个项目，侧栏永远轻量，不需要疯狂滚屏找项目。',
+          '严格遵守运行常驻：即使项目收起，只要里面有在跑的 Agent，依然稳稳露在外面。',
+          '心智极度聚焦：视线 100% 聚焦当前工作区，告别干扰。'
+        ]
+      },
+      2: {
+        title: '形态 2：Cursor 式顶栏工作区胶囊快切（极致纯平流）',
+        desc: '<strong>彻底砍掉文件夹折叠树！</strong><br>把项目作为顶栏的工作区胶囊 <code>[ 📁 pi-web-ui ▾ ]</code>，整个左侧栏 100% 呈现当前项目的扁平会话流。没有树状缩进、没有多层三角，会话标题享有最大横向宽度！',
+        list: [
+          '没有树状缩进损耗：会话标题不用缩进 24px，文字展示宽度最大化。',
+          '像原生聊天软件一样流畅：类似 ChatGPT / Cursor / Claude，极其干脆。',
+          '切工作区极速：点击顶部胶囊弹出最近 25 个项目秒切面板。'
+        ]
+      },
+      3: {
+        title: '形态 3：双轨极窄微双栏（Slack / Discord 工作区流）',
+        desc: '<strong>物理层级解耦！</strong><br>最左侧只用一条 44px 的极窄栏放置项目徽标（如 <code>PW</code>、<code>AB</code>），右侧直接呈现该项目的纯平会话列表。点击左侧图标秒切项目！',
+        list: [
+          '左轨切仓库，右轨看对话：两套维度完全分离，绝不互相干扰。',
+          '状态光晕感知：后台项目有任务在跑时，左侧该项目的微徽标亮起呼吸小绿点。',
+          '零折叠交互负担：不需要点展开/收拢箭头。'
+        ]
+      },
+      4: {
+        title: '形态 4：全局时间线流（带项目徽标）',
+        desc: '<strong>打破项目墙，按活跃时间自然顺排！</strong><br>所有对话按今天、昨天、上周排成一条平整的信息流，每条会话右侧带一个极微弱的项目名小徽标（如 <code>pi-web-ui</code>）。',
+        list: [
+          '跨项目全景一览：一眼看到你今天在所有项目里干了什么。',
+          '极适合任务驱动型工作：以“我今天做了哪些任务”为核心认知。'
+        ]
+      }
+    };
+
+    function switchSol(num) {
+      currentSol = num;
+      document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i + 1 === num));
+      const doc = docs[num];
+      document.getElementById('cardTitle').innerHTML = doc.title;
+      document.getElementById('cardDesc').innerHTML = doc.desc;
+      document.getElementById('cardList').innerHTML = doc.list.map(item => `
+        <li class="adv-item">
+          <span class="adv-icon">✓</span>
+          <span>${item}</span>
+        </li>
+      `).join('');
+
+      render();
+    }
+
+    function render() {
+      const container = document.getElementById('mockContainer');
+      container.innerHTML = '';
+
+      if (currentSol === 1) {
+        // 形态 1：手风琴
+        container.innerHTML = `
+          <div class="panel-header">
+            <div class="tab-pills">
+              <div class="tab-pill active">📁 项目 (25)</div>
+              <div class="tab-pill">👥 群组</div>
+            </div>
+            <button style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;">+</button>
+          </div>
+          <div class="tree-scroll-area sol-1">
+            ${mockProjects.map(p => {
+              const isCurrent = p.id === currentProjId;
+              const runningConvs = p.convs.filter(c => c.running);
+              const idleConvs = p.convs.filter(c => !c.running);
+              return `
+                <div class="tree-project-group">
+                  <div class="proj-row ${isCurrent ? 'current-active' : ''}" onclick="currentProjId='${p.id}'; render();">
+                    <span class="proj-chevron ${!isCurrent ? 'collapsed' : ''}">▼</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+                    ${p.runningCount > 0 ? `<span class="badge-pill running"><span class="spinner-dot"></span> ${p.runningCount}</span>` : ''}
+                  </div>
+                  <div class="proj-children">
+                    ${(isCurrent ? p.convs : runningConvs).map(c => `
+                      <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();" style="${c.isSub ? 'padding-left: 24px;' : ''}">
+                        <span class="chat-title">${c.title}</span>
+                        <span class="meta-right">
+                          ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                          ${c.label ? `<span class="badge-pill wechat">${c.label}</span>` : ''}
+                          <span class="time-text">${c.time}</span>
+                        </span>
+                      </div>
+                    `).join('')}
+                    ${!isCurrent && idleConvs.length > 0 ? `
+                      <div style="padding: 4px 8px 4px 24px; font-size: 11px; color: var(--text-faint); cursor: pointer;" onclick="currentProjId='${p.id}'; render();">
+                        + 已收起 ${idleConvs.length} 条历史 ›
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else if (currentSol === 2) {
+        // 形态 2：Cursor 式顶栏胶囊
+        const curProj = mockProjects.find(p => p.id === currentProjId) || mockProjects[0];
+        container.innerHTML = `
+          <div class="sol-2" style="display:flex; flex-direction:column; height:100%;">
+            <div class="workspace-capsule" onclick="alert('弹出 25 个项目秒切面板（支持拼音与关键词搜索）')">
+              <span style="font-size:13px;">📁</span>
+              <strong style="flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${curProj.name}</strong>
+              <span style="font-size:10.5px; color:var(--text-faint);">▼ 切换</span>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:8px;">
+              ${curProj.convs.map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                    ${c.label ? `<span class="badge-pill wechat">${c.label}</span>` : ''}
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (currentSol === 3) {
+        // 形态 3：双轨极窄微双栏
+        const curProj = mockProjects.find(p => p.id === currentProjId) || mockProjects[0];
+        container.innerHTML = `
+          <div class="sol-3" style="height:100%;">
+            <div class="dual-rail-wrap">
+              <div class="left-rail">
+                ${mockProjects.map(p => `
+                  <div class="rail-item ${p.id === currentProjId ? 'active' : ''} ${p.runningCount > 0 ? 'has-running' : ''}" title="${p.name}" onclick="currentProjId='${p.id}'; render();">
+                    ${p.shortName}
+                  </div>
+                `).join('')}
+              </div>
+              <div class="right-stream">
+                <div style="font-size:13px; font-weight:700; padding:6px 10px; border-bottom:1px solid var(--border-light); margin-bottom:6px;">
+                  ${curProj.name}
+                </div>
+                ${curProj.convs.map(c => `
+                  <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                    <span class="chat-title">${c.title}</span>
+                    <span class="meta-right">
+                      ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                      <span class="time-text">${c.time}</span>
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (currentSol === 4) {
+        // 形态 4：全局时间线
+        const allConvs = mockProjects.flatMap(p => p.convs.map(c => ({ ...c, projName: p.name })));
+        container.innerHTML = `
+          <div class="sol-4" style="height:100%; display:flex; flex-direction:column;">
+            <div class="panel-header">
+              <div class="tab-pills"><div class="tab-pill active">🕒 全局会话时间线</div></div>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:8px;">
+              <div class="timeline-group-title">今天</div>
+              ${allConvs.slice(0, 5).map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    <span class="proj-tag">${c.projName}</span>
+                    ${c.running ? `<span class="spinner-dot"></span>` : ''}
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+              <div class="timeline-group-title">更早</div>
+              ${allConvs.slice(5).map(c => `
+                <div class="chat-item ${c.id === activeId ? 'active' : ''}" onclick="activeId='${c.id}'; render();">
+                  <span class="chat-title">${c.title}</span>
+                  <span class="meta-right">
+                    <span class="proj-tag">${c.projName}</span>
+                    <span class="time-text">${c.time}</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    render();
+  </script>
+</body>
+</html>

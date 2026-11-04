@@ -725,6 +725,7 @@ export async function installDeviceTransfers(options: Options) {
 			targetBotRevision: row.targetBotRevision,
 			manifestHash: row.job?.manifestHash,
 			status: row.job?.status ?? (row.applyStarted ? "applied" : "interrupted"),
+			applyStarted: !!row.applyStarted,
 			error: row.job?.error,
 		};
 	}
@@ -1180,23 +1181,47 @@ export async function installDeviceTransfers(options: Options) {
 		let row: Receipt | undefined;
 		try {
 			row = findUser(req);
-			if (!row.job || row.applyStarted) fail(409, "Cannot abort an applied or applying transfer");
-			if (row.job.status === "cancelled") return res.json(view(row));
+			if (row.applyStarted || row.job?.status === "applying" || row.job?.status === "applied")
+				fail(409, "Cannot abort an applied or applying transfer");
+			if (row.job?.status === "cancelled") return res.json(view(row));
 			if (aborting.has(row.id)) fail(409, "Transfer cancellation already running");
 			aborting.add(row.id);
 			ownsAbort = true;
 			await confirmStopped(row);
 			authorize(row);
-			const active = running.get(row.id);
-			row = await updateJob(row.id, (j) => {
-				j.status = "cancelling";
-			});
-			authorize(row);
-			active?.controller.abort(new Error("Transfer cancelled"));
-			if (active) await active.done;
-			if (active?.blocked) fail(409, "Sender stop unconfirmed; device recovery required");
-			authorize(row);
-			if (active && running.get(row.id) === active) releaseSlot(row.id);
+			if (!row.job) {
+				const id = row.id;
+				row = await transact((draft) => {
+					const current = draft.find((r) => r.id === id)!;
+					if (current.applyStarted || current.job?.status === "applying" || current.job?.status === "applied")
+						fail(409, "Cannot abort an applied or applying transfer");
+					if (!current.job) {
+						current.job = {
+							idempotencyKey: `agent:${id}`,
+							fingerprint: id,
+							paths: [],
+							recursive: false,
+							status: "cancelling",
+							summary: {},
+						};
+					} else {
+						current.job.status = "cancelling";
+					}
+					return current;
+				});
+				authorize(row);
+			} else {
+				const active = running.get(row.id);
+				row = await updateJob(row.id, (j) => {
+					j.status = "cancelling";
+				});
+				authorize(row);
+				active?.controller.abort(new Error("Transfer cancelled"));
+				if (active) await active.done;
+				if (active?.blocked) fail(409, "Sender stop unconfirmed; device recovery required");
+				authorize(row);
+				if (active && running.get(row.id) === active) releaseSlot(row.id);
+			}
 			slot = reserve(row);
 			const activeRow = row;
 			slot.done = (async () => {

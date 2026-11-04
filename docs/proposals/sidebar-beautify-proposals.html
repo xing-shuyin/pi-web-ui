@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>项目头图标方案对比 · 去掉 vs 精致替换</title>
+  <style>
+    :root {
+      --bg-page: #0d0f14;
+      --bg-sidebar: #13151b;
+      --bg-hover: rgba(255, 255, 255, 0.05);
+      --bg-active: rgba(255, 255, 255, 0.08);
+      --border: #1e222d;
+      --border-light: rgba(255, 255, 255, 0.06);
+      --text: #e6e8f0;
+      --text-dim: #9aa1b2;
+      --text-faint: #5a6173;
+      --accent: #8b5cf6;
+      --accent-soft: rgba(139, 92, 246, 0.12);
+      --accent-indicator: #a78bfa;
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.12);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.12);
+      --blue: #3b82f6;
+      --blue-soft: rgba(59, 130, 246, 0.12);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --radius-sm: 4px;
+      --radius-md: 6px;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f5f6f9;
+      --bg-sidebar: #ffffff;
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --bg-active: rgba(0, 0, 0, 0.06);
+      --border: #e6e8f0;
+      --border-light: rgba(0, 0, 0, 0.05);
+      --text: #191c24;
+      --text-dim: #5e6677;
+      --text-faint: #98a0b3;
+      --accent: #6d28d9;
+      --accent-soft: rgba(109, 40, 217, 0.08);
+      --accent-indicator: #6d28d9;
+      --green: #059669;
+      --green-soft: rgba(5, 150, 105, 0.1);
+      --amber: #d97706;
+      --amber-soft: rgba(217, 119, 6, 0.1);
+      --blue: #2563eb;
+      --blue-soft: rgba(37, 99, 235, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-page);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    header.top-bar {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .top-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+    .style-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-page);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--bg-sidebar);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .theme-toggle {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .workspace {
+      max-width: 1400px;
+      margin: 24px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .sidebar-shell {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      height: 720px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
+
+    .sb-header {
+      height: 44px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-light);
+      flex-shrink: 0;
+    }
+    .sb-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .sb-tab-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .sb-tab-item.active {
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .sb-tab-item:not(.active) { color: var(--text-dim); }
+
+    .sb-scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 8px 16px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* 树形结构根节点 */
+    .tree-project-group {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 3px;
+    }
+    .tree-project-head {
+      display: flex;
+      align-items: center;
+      padding: 5px 6px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.12s ease;
+      position: relative;
+    }
+    .tree-project-head:hover {
+      background: var(--bg-hover);
+    }
+    .tree-chevron {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      margin-right: 4px;
+      transition: transform 0.15s ease;
+      font-size: 9px;
+      flex-shrink: 0;
+    }
+    .tree-chevron.collapsed { transform: rotate(-90deg); }
+
+    /* 图标插槽变化（核心对比项） */
+    .custom-proj-icon {
+      margin-right: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .tree-project-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.1px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .running-badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 99px;
+      background: var(--green-soft);
+      color: var(--green);
+      margin-left: 6px;
+      margin-right: 4px;
+    }
+    .pulse-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.8s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.85); }
+    }
+    .project-hover-actions {
+      display: none;
+      align-items: center;
+      gap: 2px;
+      margin-left: auto;
+    }
+    .tree-project-head:hover .project-hover-actions { display: flex; }
+    .project-head-time {
+      font-size: 11px;
+      color: var(--text-faint);
+      margin-left: auto;
+    }
+    .tree-project-head:hover .project-head-time { display: none; }
+    .head-btn {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    .head-btn:hover {
+      background: var(--bg-active);
+      color: var(--text);
+    }
+
+    /* 子会话容器：文字绝对平整对齐 */
+    .tree-children {
+      display: flex;
+      flex-direction: column;
+      padding-left: 20px;
+      margin-top: 1px;
+      margin-bottom: 4px;
+      position: relative;
+    }
+
+    .conv-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      position: relative;
+      font-size: 12.5px;
+      color: var(--text);
+      transition: background 0.1s ease;
+      margin-bottom: 1px;
+    }
+    .conv-row:hover { background: var(--bg-hover); }
+
+    .conv-row.active {
+      background: var(--bg-active);
+      font-weight: 600;
+    }
+    .conv-row.active::before {
+      content: "";
+      position: absolute;
+      left: 1px;
+      top: 5px;
+      bottom: 5px;
+      width: 3px;
+      background: var(--accent-indicator);
+      border-radius: 2px;
+    }
+
+    .conv-main-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 8px;
+    }
+    .conv-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conv-meta-zone {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .conv-time {
+      font-size: 11px;
+      color: var(--text-faint);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .conv-more-btn {
+      display: none;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-left: 2px;
+    }
+    .conv-row:hover .conv-time { display: none; }
+    .conv-row:hover .conv-more-btn { display: inline-block; }
+
+    .status-spinner-right {
+      width: 10px;
+      height: 10px;
+      border: 1.8px solid var(--accent-indicator);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    .category-badge-right {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .category-badge-right.wechat {
+      background: rgba(34, 197, 94, 0.12);
+      color: #10b981;
+    }
+    .category-badge-right.subagent {
+      background: rgba(139, 92, 246, 0.12);
+      color: #a78bfa;
+    }
+
+    .collapsed-tip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: var(--text-faint);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      user-select: none;
+      margin-top: 2px;
+    }
+    .collapsed-tip:hover {
+      color: var(--accent-indicator);
+      background: var(--accent-soft);
+    }
+    .show-more-row {
+      padding: 5px 8px;
+      font-size: 11px;
+      color: var(--text-faint);
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      user-select: none;
+    }
+    .show-more-row:hover {
+      color: var(--accent-indicator);
+      background: var(--bg-hover);
+    }
+
+    .sb-footer {
+      border-top: 1px solid var(--border-light);
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sb-foot-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .sb-foot-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+    .analysis-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .card {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 26px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .feature-item {
+      display: flex;
+      gap: 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .feature-icon {
+      color: var(--accent-indicator);
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="top-bar">
+    <div class="top-left">
+      <span class="top-title">项目头图标方案选择</span>
+      <div class="style-tabs">
+        <button class="tab-btn active" onclick="switchIconMode('none')">方案 1：彻底去掉（1:1 还原首图 · 最纯粹）</button>
+        <button class="tab-btn" onclick="switchIconMode('repo')">方案 2：换成极细 Repo 仓库符号</button>
+        <button class="tab-btn" onclick="switchIconMode('slash')">方案 3：代码路径前缀（~/）</button>
+      </div>
+    </div>
+    <button class="theme-toggle" onclick="toggleTheme()">🌓 切换深浅主题</button>
+  </header>
+
+  <main class="workspace">
+    
+    <div class="sidebar-shell">
+      <div class="sb-header">
+        <div class="sb-tabs">
+          <div class="sb-tab-item active">
+            <span>📁 项目 (25)</span>
+          </div>
+          <div class="sb-tab-item">
+            <span>👥 群组</span>
+          </div>
+        </div>
+        <div class="sb-actions">
+          <button class="sb-btn-icon" title="新建项目或对话">+</button>
+          <button class="sb-btn-icon" title="收起面板">‹</button>
+        </div>
+      </div>
+
+      <div class="sb-scroll-body" id="treeList"></div>
+
+      <div class="sb-footer">
+        <div class="sb-foot-btn">
+          <span>📁</span>
+          <span>打开其他项目...</span>
+        </div>
+        <div class="sb-foot-btn">
+          <span>🗄️</span>
+          <span>已归档 · 16</span>
+          <span style="margin-left: auto; color: var(--text-faint);">›</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="analysis-panel">
+      <div class="card">
+        <h2 id="planTitle">方案 1：彻底去掉文件夹图标（极力推荐）</h2>
+        <p id="planDesc">
+          完全还原你第一张截图中那种<strong>大纲式纯净感</strong>：
+          只有折叠箭头 <code>v</code>，紧接着就是项目名 <code>pi-web-ui</code>！
+          没有任何黄黄黑黑的厚重文件夹图标打扰视野，文字更大气、更现代，类似 Linear、Notion、大纲笔记。
+        </p>
+        <ul class="feature-list" id="planFeatures"></ul>
+      </div>
+
+      <div class="card">
+        <h2>🔍 为什么去掉文件夹图标更好看？</h2>
+        <div class="feature-item">
+          <span class="feature-icon">✨</span>
+          <div>
+            <strong>消除拟物化笨重感</strong>：
+            在暗色主题下，传统的文件夹图标像 Windows 98 时代的残留，不仅占了 16px 宽度，而且让排版变笨拙；
+          </div>
+        </div>
+        <div class="feature-item" style="margin-top: 8px;">
+          <span class="feature-icon">✨</span>
+          <div>
+            <strong>强化 Chevron 箭头的导向性</strong>：
+            去掉文件夹后，折叠箭头（展开向下 <code>▼</code>，收起向右 <code>▶</code>）变成了唯一的视觉焦点，层级认知更加纯粹清晰；
+          </div>
+        </div>
+        <div class="feature-item" style="margin-top: 8px;">
+          <span class="feature-icon">✨</span>
+          <div>
+            <strong>100% 吻合你最初发的设计图</strong>：
+            你发的第一张图之所以看起来最舒服，正是因为项目头没有加任何杂乱的图标！
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let currentIconMode = 'none'; // 'none' | 'repo' | 'slash'
+    let activeConvId = 'c-p1-2';
+    let collapsedState = { 'p2': false, 'p3': true };
+
+    const mockData = [
+      {
+        id: 'p1',
+        name: 'pi-web-ui',
+        runningCount: 1,
+        time: '13:18',
+        convs: [
+          { id: 'c-p1-1', title: '如果左侧的项目 运行中和历史合并为一个这样的对话标签替代项目的位置如何', category: 'subagent', categoryLabel: '子代理', status: 'running', time: '12:56' },
+          { id: 'c-p1-2', title: '在干嘛', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '11:29' },
+          { id: 'c-p1-3', title: '音频 SDK 逻辑修复与热重载', category: 'fork', categoryLabel: '分支', status: 'idle', time: '11:09' },
+          { id: 'c-p1-4', title: '定时任务顶部去掉多余按钮与布局紧凑化', category: null, status: 'idle', time: '10:56' }
+        ],
+        moreCount: 42
+      },
+      {
+        id: 'p2',
+        name: 'ai-browser',
+        runningCount: 0,
+        time: '13:12',
+        convs: [
+          { id: 'c-p2-1', title: '清理无用文件与临时构建目录', category: null, status: 'idle', time: '12:08' },
+          { id: 'c-p2-2', title: 'Playwright 会话保持与代理池配置', category: 'wechat', categoryLabel: '微信', status: 'idle', time: '昨天' }
+        ]
+      },
+      {
+        id: 'p3',
+        name: 'yth-operation',
+        runningCount: 0,
+        time: '10/11',
+        convs: [
+          { id: 'c-p3-1', title: 'Kafka 与 Canvas 故障状态误报修复', category: 'subagent', categoryLabel: '子代理', status: 'idle', time: '3天前' }
+        ]
+      }
+    ];
+
+    const iconDocs = {
+      'none': {
+        title: '方案 1：彻底去掉图标（纯文字 + Chevron · 最推荐）',
+        desc: '完全还原你第一张截图中那种<strong>大纲式纯净感</strong>：只有折叠箭头 <code>▼</code>，紧接着就是项目名 <code>pi-web-ui</code>！没有任何厚重拟物图标打扰视野，文字更大气、更现代。',
+        features: [
+          '首图 1:1 纯净质感：文字拥有最开阔的空间，视觉干脆利落。',
+          '与下级文字自然呼应：父级粗体，子级常规体，不靠图标也能清晰分明。',
+          '代码体积最小、DOM 节点最精简。'
+        ]
+      },
+      'repo': {
+        title: '方案 2：换成极细 Repo 仓库符号（严谨工程感）',
+        desc: '使用类似 GitHub / VS Code 的<strong>极细代码仓库微缩图标（Outline Repo）</strong>，仅 12px 大小，灰淡通透，带有专业的开发工具质感。',
+        features: [
+          '工程工具属性：一眼识别出这是一个 Git 代码仓库。',
+          '极细线框质感：采用 1.5px 极细描边，绝不臃肿笨重。'
+        ]
+      },
+      'slash': {
+        title: '方案 3：代码路径前缀（~/ 或 /）',
+        desc: '使用终端风格的路径前缀 <code>~/</code> 或 <code>/</code>，轻巧现代，带有浓郁的 Hacker / Terminal 美感。',
+        features: [
+          'Terminal 极简美学：适合喜欢命令行风格的高级用户。',
+          '字符级轻量：不引入 SVG 图标，纯文字排版。'
+        ]
+      }
+    };
+
+    function switchIconMode(mode) {
+      currentIconMode = mode;
+      document.querySelectorAll('.tab-btn').forEach((b, i) => {
+        const modes = ['none', 'repo', 'slash'];
+        b.classList.toggle('active', modes[i] === mode);
+      });
+
+      const doc = iconDocs[mode];
+      document.getElementById('planTitle').innerHTML = doc.title;
+      document.getElementById('planDesc').innerHTML = doc.desc;
+      document.getElementById('planFeatures').innerHTML = doc.features.map(f => `
+        <li class="feature-item">
+          <span class="feature-icon">●</span>
+          <span>${f}</span>
+        </li>
+      `).join('');
+
+      renderTree();
+    }
+
+    function toggleProject(pid) {
+      collapsedState[pid] = !collapsedState[pid];
+      renderTree();
+    }
+
+    function selectConv(cid) {
+      activeConvId = cid;
+      renderTree();
+    }
+
+    function renderTree() {
+      const container = document.getElementById('treeList');
+      container.innerHTML = '';
+
+      mockData.forEach(p => {
+        const isCollapsed = Boolean(collapsedState[p.id]);
+        const groupEl = document.createElement('div');
+        groupEl.className = 'tree-project-group';
+
+        const head = document.createElement('div');
+        head.className = 'tree-project-head';
+        head.onclick = () => toggleProject(p.id);
+
+        const chevron = document.createElement('span');
+        chevron.className = `tree-chevron ${isCollapsed ? 'collapsed' : ''}`;
+        chevron.textContent = '▼';
+        head.appendChild(chevron);
+
+        // 图标插槽根据选中的模式渲染
+        if (currentIconMode === 'repo') {
+          const repoIcon = document.createElement('span');
+          repoIcon.className = 'custom-proj-icon';
+          repoIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+          head.appendChild(repoIcon);
+        } else if (currentIconMode === 'slash') {
+          const slash = document.createElement('span');
+          slash.className = 'custom-proj-icon';
+          slash.style.fontSize = '12px';
+          slash.style.color = 'var(--text-faint)';
+          slash.style.fontFamily = 'var(--font-mono)';
+          slash.textContent = '~/';
+          head.appendChild(slash);
+        }
+        // 如果是 'none'，则什么图标都不加，直接接项目名！
+
+        const name = document.createElement('span');
+        name.className = 'tree-project-name';
+        name.textContent = p.name;
+        head.appendChild(name);
+
+        if (p.runningCount > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'running-badge-pill';
+          badge.innerHTML = `<span class="pulse-dot"></span> ${p.runningCount}`;
+          head.appendChild(badge);
+        }
+
+        const time = document.createElement('span');
+        time.className = 'project-head-time';
+        time.textContent = p.time;
+        head.appendChild(time);
+
+        const actions = document.createElement('div');
+        actions.className = 'project-hover-actions';
+        actions.innerHTML = `
+          <button class="head-btn" title="新建对话" onclick="event.stopPropagation(); alert('新建对话')">+</button>
+          <button class="head-btn" title="项目菜单" onclick="event.stopPropagation(); alert('项目菜单')">···</button>
+        `;
+        head.appendChild(actions);
+
+        groupEl.appendChild(head);
+
+        // 子项
+        const children = document.createElement('div');
+        children.className = 'tree-children';
+
+        const visibleList = isCollapsed ? p.convs.filter(c => c.status === 'running') : p.convs;
+
+        visibleList.forEach(conv => {
+          const row = document.createElement('div');
+          row.className = `conv-row ${conv.id === activeConvId ? 'active' : ''}`;
+          row.onclick = () => selectConv(conv.id);
+
+          const textWrap = document.createElement('div');
+          textWrap.className = 'conv-main-text';
+          const titleEl = document.createElement('span');
+          titleEl.className = 'conv-title';
+          titleEl.textContent = conv.title;
+          textWrap.appendChild(titleEl);
+          row.appendChild(textWrap);
+
+          const metaZone = document.createElement('div');
+          metaZone.className = 'conv-meta-zone';
+
+          if (conv.status === 'running') {
+            const sp = document.createElement('div');
+            sp.className = 'status-spinner-right';
+            metaZone.appendChild(sp);
+          }
+
+          if (conv.category) {
+            const badge = document.createElement('span');
+            badge.className = `category-badge-right ${conv.category}`;
+            badge.textContent = conv.categoryLabel;
+            metaZone.appendChild(badge);
+          }
+
+          const cTime = document.createElement('span');
+          cTime.className = 'conv-time';
+          cTime.textContent = conv.time;
+          metaZone.appendChild(cTime);
+
+          const more = document.createElement('span');
+          more.className = 'conv-more-btn';
+          more.textContent = '···';
+          metaZone.appendChild(more);
+
+          row.appendChild(metaZone);
+          children.appendChild(row);
+        });
+
+        if (isCollapsed && p.convs.some(c => c.status !== 'running')) {
+          const count = p.convs.filter(c => c.status !== 'running').length;
+          const tip = document.createElement('div');
+          tip.className = 'collapsed-tip';
+          tip.innerHTML = `<span>+ 已收起 ${count} 条历史</span> <span>›</span>`;
+          tip.onclick = (e) => {
+            e.stopPropagation();
+            toggleProject(p.id);
+          };
+          children.appendChild(tip);
+        } else if (!isCollapsed && p.moreCount) {
+          const more = document.createElement('div');
+          more.className = 'show-more-row';
+          more.textContent = `显示更多 · ${p.moreCount}`;
+          more.onclick = () => alert('加载更多历史');
+          children.appendChild(more);
+        }
+
+        if (visibleList.length > 0 || (isCollapsed && p.convs.some(c => c.status !== 'running'))) {
+          groupEl.appendChild(children);
+        }
+
+        container.appendChild(groupEl);
+      });
+    }
+
+    function toggleTheme() {
+      const cur = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+    }
+
+    switchIconMode('none');
+  </script>
+</body>
+</html>

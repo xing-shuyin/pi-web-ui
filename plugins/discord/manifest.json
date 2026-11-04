@@ -2,7 +2,7 @@
 	"apiVersion": 2,
 	"name": "discord",
 	"nameEn": "Discord",
-	"version": "0.1.9",
+	"version": "0.1.10",
 	"description": "Discord 机器人：官方 Gateway 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI discord 工具（密钥加密存储，零外部依赖）",
 	"descriptionEn": "Discord Bot: official Gateway outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI discord tool.",
 	"author": "pi-web-ui",
@@ -13,46 +13,24 @@
 	"client": "client/entry.mjs",
 	"permissions": ["ui", "tools", "notify", "storage", "secrets", "llm", "chat", "fs"],
 	"ui": {
-		"views": [
-			{
-				"id": "discord",
-				"label": "Discord",
-				"icon": "🎮"
-			}
-		],
 		"topbar": [
 			{
 				"id": "discord-open",
 				"label": "Discord",
 				"icon": "🎮",
-				"action": {
-					"type": "view",
-					"viewId": "discord"
-				},
+				"kind": "view",
+				"view": "plugin:discord",
 				"order": 60
 			}
 		],
-		"statusBar": [
+		"bottombar": [
 			{
 				"id": "discord-status",
 				"label": "🎮 Discord",
-				"title": "点击打开 Discord 工作台",
-				"action": {
-					"type": "view",
-					"viewId": "discord"
-				},
+				"hint": "点击打开 Discord 工作台",
+				"kind": "view",
+				"view": "plugin:discord",
 				"order": 50
-			}
-		],
-		"commands": [
-			{
-				"id": "open",
-				"label": "打开 Discord 工作台",
-				"icon": "🎮",
-				"action": {
-					"type": "view",
-					"viewId": "discord"
-				}
 			}
 		]
 	}

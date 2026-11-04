@@ -6,9 +6,10 @@ import { DeviceFileTransfer } from "./DeviceFileTransfer";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
 import { GroupBlackboardView } from "./GroupBlackboardView";
+import { GroupWebhooks } from "./GroupWebhooks";
 import { isZhLocale, useI18n } from "../i18n";
 
-export type GroupDrawerTab = "blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots";
+export type GroupDrawerTab = "blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots" | "webhooks";
 
 interface GroupDrawerProps {
 	isOpen: boolean;
@@ -86,6 +87,11 @@ export const GroupDrawer = memo(function GroupDrawer({
 			title: zh ? "群协作 Bot 成员清单" : "Collaborating Bots",
 			badge: members.length,
 		},
+		webhooks: {
+			icon: "🔗",
+			title: zh ? "群组 Webhook 集成" : "Group Webhooks",
+			badge: detail?.room.webhooks?.filter((w) => w.enabled).length,
+		},
 	};
 	const currentTitle = titleMap[activeTab] || { icon: "📦", title: zh ? "群协同" : "Collaboration" };
 
@@ -160,6 +166,12 @@ export const GroupDrawer = memo(function GroupDrawer({
 					{activeTab === "presets" && (
 						<div className="group-drawer-pane">
 							<GroupBotPresets bots={members} onSaved={onRefreshGroup ?? noop} />
+						</div>
+					)}
+
+					{activeTab === "webhooks" && (
+						<div className="group-drawer-pane">
+							<GroupWebhooks roomId={roomId} disabled={disabled} />
 						</div>
 					)}
 

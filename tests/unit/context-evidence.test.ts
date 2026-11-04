@@ -349,8 +349,12 @@ describe("persistent context evidence", () => {
 			}
 			return info;
 		});
-		await expect(copyContextEvidence(first, second)).rejects.toThrow("changed while opening");
-		expect(replaced).toBe(true);
+		try {
+			await expect(copyContextEvidence(first, second)).rejects.toThrow("changed while opening");
+			expect(replaced).toBe(true);
+		} finally {
+			vi.restoreAllMocks();
+		}
 	});
 
 	it("detects growth after fstat without consuming the enlarged file", async () => {
