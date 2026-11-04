@@ -13,7 +13,7 @@ async function fetchJson(url, headers = {}) {
 			"User-Agent": DEFAULT_UA,
 			...headers,
 		},
-		signal: AbortSignal.timeout(10000),
+		signal: AbortSignal.timeout(3500),
 	});
 	if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
 	return await res.json();
@@ -73,15 +73,26 @@ export const wy = {
 	},
 
 	async getTopLists() {
-		const json = await fetchJson("https://music.163.com/api/toplist", { Referer: "https://music.163.com/" });
-		const list = json?.list || [];
-		return list.map((item) => ({
-			id: String(item.id),
-			name: item.name,
-			pic: item.coverImgUrl,
-			updateFrequency: item.updateFrequency,
-			source: "wy",
-		}));
+		const fallback = [
+			{ id: "3778678", name: "热歌榜", pic: "", source: "wy" },
+			{ id: "19723756", name: "飙升榜", pic: "", source: "wy" },
+			{ id: "3779629", name: "新歌榜", pic: "", source: "wy" },
+			{ id: "2884035", name: "原创榜", pic: "", source: "wy" },
+		];
+		try {
+			const json = await fetchJson("https://music.163.com/api/toplist", { Referer: "https://music.163.com/" });
+			const list = json?.list || [];
+			if (list.length === 0) return fallback;
+			return list.map((item) => ({
+				id: String(item.id),
+				name: item.name,
+				pic: item.coverImgUrl,
+				updateFrequency: item.updateFrequency,
+				source: "wy",
+			}));
+		} catch {
+			return fallback;
+		}
 	},
 
 	async getPlaylistSongs(playlistId, limit = 50) {
@@ -360,15 +371,26 @@ export const kg = {
 	},
 
 	async getTopLists() {
-		const url = "http://mobilecdnbj.kugou.com/api/v5/rank/list?version=9108&plat=0&showtype=2&parentid=0";
-		const json = await fetchJson(url, { Referer: "http://www.kugou.com/" });
-		const list = json?.data?.info || [];
-		return list.map((item) => ({
-			id: String(item.rankid),
-			name: item.rankname,
-			pic: item.bannerurl || item.imgurl || "",
-			source: "kg",
-		}));
+		const fallback = [
+			{ id: "8888", name: "酷狗TOP500", pic: "", source: "kg" },
+			{ id: "6666", name: "酷狗飙升榜", pic: "", source: "kg" },
+			{ id: "31308", name: "华语新歌榜", pic: "", source: "kg" },
+			{ id: "24971", name: "DJ热歌榜", pic: "", source: "kg" },
+		];
+		try {
+			const url = "http://mobilecdnbj.kugou.com/api/v5/rank/list?version=9108&plat=0&showtype=2&parentid=0";
+			const json = await fetchJson(url, { Referer: "http://www.kugou.com/" });
+			const list = json?.data?.info || [];
+			if (list.length === 0) return fallback;
+			return list.map((item) => ({
+				id: String(item.rankid),
+				name: item.rankname,
+				pic: item.bannerurl || item.imgurl || "",
+				source: "kg",
+			}));
+		} catch {
+			return fallback;
+		}
 	},
 
 	async getTopList(type = "hot", limit = 50) {
@@ -536,16 +558,27 @@ export const tx = {
 	},
 
 	async getTopLists() {
-		const url =
-			"https://c.y.qq.com/v8/fcg-bin/fcg_myqq_toplist.fcg?g_tk=5381&uin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=h5&needNewCode=1";
-		const json = await fetchJson(url, { Referer: "https://y.qq.com/" });
-		const list = json?.data?.topList || [];
-		return list.map((item) => ({
-			id: String(item.id),
-			name: item.topTitle,
-			pic: item.pic_v12 || item.pic_h5 || "",
-			source: "tx",
-		}));
+		const fallback = [
+			{ id: "26", name: "热歌榜", pic: "", source: "tx" },
+			{ id: "62", name: "飙升榜", pic: "", source: "tx" },
+			{ id: "27", name: "新歌榜", pic: "", source: "tx" },
+			{ id: "58", name: "说唱榜", pic: "", source: "tx" },
+		];
+		try {
+			const url =
+				"https://c.y.qq.com/v8/fcg-bin/fcg_myqq_toplist.fcg?g_tk=5381&uin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=h5&needNewCode=1";
+			const json = await fetchJson(url, { Referer: "https://y.qq.com/" });
+			const list = json?.data?.topList || [];
+			if (list.length === 0) return fallback;
+			return list.map((item) => ({
+				id: String(item.id),
+				name: item.topTitle,
+				pic: item.pic_v12 || item.pic_h5 || "",
+				source: "tx",
+			}));
+		} catch {
+			return fallback;
+		}
 	},
 
 	async getTopList(type = "hot", limit = 50) {

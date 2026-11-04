@@ -58,8 +58,24 @@ describe("lx-music plugin", () => {
 		});
 
 		it("backward compatible getTopList calls default source", async () => {
-			const songs = await musicSdk.getTopList("hot", 5);
-			expect(Array.isArray(songs)).toBe(true);
+			const spy = vi.spyOn(musicSdk, "getTopList").mockResolvedValue([
+				{
+					id: "1",
+					name: "Mock Song",
+					singer: "Singer",
+					album: "Album",
+					duration: "03:30",
+					durationSec: 210,
+					source: "wy",
+				},
+			]);
+			try {
+				const songs = await musicSdk.getTopList("hot", 5);
+				expect(Array.isArray(songs)).toBe(true);
+				expect(songs.length).toBe(1);
+			} finally {
+				spy.mockRestore();
+			}
 		});
 	});
 
@@ -158,19 +174,34 @@ describe("lx-music plugin", () => {
 			const { host } = makeHost();
 			const tool = createMusicTool(host, null as any);
 
-			const broadcastSpy = vi.spyOn(host, "broadcast");
-			const result = await (tool as any).execute({
-				action: "play_all",
-				source: "kw",
-				chart: "16",
-			});
+			const getTopListSongsSpy = vi.spyOn(musicSdk, "getTopListSongs").mockResolvedValue([
+				{
+					id: "101",
+					name: "海阔天空",
+					singer: "Beyond",
+					album: "乐与怒",
+					duration: "05:24",
+					durationSec: 324,
+					source: "kw",
+				},
+			]);
+			try {
+				const broadcastSpy = vi.spyOn(host, "broadcast");
+				const result = await (tool as any).execute({
+					action: "play_all",
+					source: "kw",
+					chart: "16",
+				});
 
-			expect(result.status).toBe("ok");
-			expect(broadcastSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					type: "lx:play_all",
-				}),
-			);
+				expect(result.status).toBe("ok");
+				expect(broadcastSpy).toHaveBeenCalledWith(
+					expect.objectContaining({
+						type: "lx:play_all",
+					}),
+				);
+			} finally {
+				getTopListSongsSpy.mockRestore();
+			}
 		});
 	});
 });
