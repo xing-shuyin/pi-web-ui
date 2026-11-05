@@ -2791,6 +2791,7 @@ export class DshClientSession {
 					summaries.push({
 						path: file,
 						sessionId,
+						cwd: this.cwd,
 						name: explicitTitle,
 						displayName,
 						firstMessage: firstMsg,

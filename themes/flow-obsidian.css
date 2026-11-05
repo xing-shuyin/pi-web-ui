@@ -1,0 +1,169 @@
+/* theme-name: 极简行文 · 黑曜星芒 */
+/* theme-name-en: Pure Flow · Obsidian Starfall */
+/* theme-group: builtin */
+/*
+ * 极简行文 · 黑曜星芒（Obsidian Starfall）
+ * 灵感源自 Linear / Raycast 顶奢工程美学：
+ * 采用深海冷黑曜石基底搭配视线焦点多光谱极光微散光，
+ * 配合电光曜蓝作为灵魂点睛与 0.5px 极光流线双层描边，
+ * 兼具极简行文的流态无界排版与震撼的顶级极客质感。
+ */
+:root {
+	color-scheme: dark;
+	--flow-shadow: #000000;
+	--bg: #0b0d13;
+	--bg-elev: #12151f;
+	--bg-elev2: #191e2b;
+	--border: rgba(147, 163, 217, 0.12);
+	--border-soft: rgba(147, 163, 217, 0.06);
+	--text: #f8fafc;
+	--text-dim: #94a3b8;
+	--text-faint: #7c8ba1;
+	--accent: #6366f1;
+	--accent-contrast: #ffffff;
+	--accent-soft: rgba(99, 102, 241, 0.15);
+	--green: #34d399;
+	--green-soft: rgba(52, 211, 153, 0.14);
+	--red: #f87171;
+	--on-red: #1a1a1a;
+	--red-soft: rgba(248, 113, 113, 0.14);
+	--amber: #fbbf24;
+	--blue: #818cf8;
+	--on-blue: #0f172a;
+	--blue-soft: rgba(129, 140, 248, 0.16);
+
+	--term-bg: #0b0d13;
+	--term-fg: #f8fafc;
+	--term-cursor: #818cf8;
+	--term-cursor-accent: #0b0d13;
+	--term-selection: rgba(99, 102, 241, 0.28);
+	--term-black: #12151f;
+	--term-red: #f87171;
+	--term-green: #34d399;
+	--term-yellow: #fbbf24;
+	--term-blue: #818cf8;
+	--term-magenta: #c084fc;
+	--term-cyan: #38bdf8;
+	--term-white: #f8fafc;
+	--term-bright-black: #64748b;
+	--term-bright-red: #fca5a5;
+	--term-bright-green: #6ee7b7;
+	--term-bright-yellow: #fde68a;
+	--term-bright-blue: #a5b4fc;
+	--term-bright-magenta: #e9d5ff;
+	--term-bright-cyan: #7dd3fc;
+	--term-bright-white: #ffffff;
+
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #191e2b;
+	--code-bg: #0e111a;
+	--code-text: #f8fafc;
+	--code-border: rgba(99, 102, 241, 0.15);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #f87171;
+	--red-text: #f87171;
+	--amber-text: #fbbf24;
+	--info-blue: #818cf8;
+	--link: #818cf8;
+	--link-hover: #a5b4fc;
+	--link-soft: #818cf8;
+	--md-strong: #ffffff;
+	--skill-blue: #818cf8;
+	--plugin-purple: #c084fc;
+	--auth-green: #34d399;
+	--scroll-thumb: rgba(147, 163, 217, 0.2);
+	--scroll-thumb-hover: rgba(147, 163, 217, 0.38);
+	--notice-err-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--red));
+	--notice-warn-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--amber));
+	--notice-info-bg: color-mix(in srgb, var(--bg) 92%, var(--blue));
+	--notice-err-border: var(--red);
+	--notice-warn-border: var(--amber);
+	--notice-info-border: var(--blue);
+	--send-blue: #6366f1;
+	--on-send-blue: #ffffff;
+	--send-blue-hover: #4f46e5;
+	--stop-red: #ef4444;
+	--stop-red-hover: #dc2626;
+	--brand-grad-a: #ffffff;
+	--brand-grad-b: #818cf8;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #ffffff;
+	--switch-bg-off: #272f42;
+	--switch-border-off: #475569;
+	--switch-knob: #f8fafc;
+	--switch-bg-on: #6366f1;
+	--switch-border-on: #6366f1;
+	--switch-knob-on: #ffffff;
+	--bg-elev3: rgba(147, 163, 217, 0.08);
+	--sunken-bg: rgba(0, 0, 0, 0.5);
+	--glow-015: rgba(99, 102, 241, 0.04);
+	--glow-025: rgba(99, 102, 241, 0.07);
+	--glow-03: rgba(99, 102, 241, 0.09);
+	--glow-04: rgba(99, 102, 241, 0.12);
+	--glow-05: rgba(99, 102, 241, 0.15);
+	--glow-12: rgba(99, 102, 241, 0.22);
+	--glow-18: rgba(99, 102, 241, 0.28);
+	--glow-22: rgba(99, 102, 241, 0.35);
+	--glow-38: rgba(99, 102, 241, 0.45);
+	--control-fg: #e2e8f0;
+	--control-bg: #12151f;
+	--control-border: rgba(147, 163, 217, 0.14);
+	--bg-image: none;
+	--bg-image-dim: 0.85;
+	--bg-image-blur: 0px;
+
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #0e1017;
+	--statusbar-bg: #0e1017;
+	--panel-bg: #0e1017;
+	--card-bg: #12151f;
+	--chip-bg: rgba(255, 255, 255, 0.04);
+
+	--msgs-bg: #0b0d13;
+	--inputbox-bg: #12151f;
+	--menu-bg: #151926;
+}
+
+@import "./bases/flow-base.css";
+
+/* ========================================================
+   代码语法高亮（hljs）—— 极客黑曜星芒调
+   ======================================================== */
+.hljs {
+	color: #f8fafc;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #f472b6;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #38bdf8;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fbbf24;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #34d399;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #c084fc;
+}
+.hljs-comment,
+.hljs-code {
+	color: #64748b;
+	font-style: italic;
+}
+.hljs-tag,
+.hljs-name {
+	color: #818cf8;
+}

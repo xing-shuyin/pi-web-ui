@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useCallback, useRef, useMemo, Fragment } from "react";
+import { memo, useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect, Fragment } from "react";
 import { DeviceGroupSection } from "./DeviceGroupSection";
 import {
 	FiAlertCircle,
@@ -11,6 +11,7 @@ import {
 	FiFolder,
 	FiFolderPlus,
 	FiGitBranch,
+	FiMessageSquare,
 	FiMoreVertical,
 	FiPlus,
 	FiSearch,
@@ -586,6 +587,124 @@ export const LeftPanel = memo(function LeftPanel({
 		setVisibleSessionCount(60);
 	}, [currentCwd]);
 
+	// 记录会话行在滚动容器内的几何位置与所处区域（历史区 vs 活动区），用于在历史对话开始对话并提升到顶部时驱动平滑 FLIP 动画
+	const sessionPositionsRef = useRef<Map<string, { top: number; isRunning: boolean }>>(new Map());
+	const projectScrollRef = useRef<HTMLDivElement | null>(null);
+	const everExpandedRef = useRef<Set<string>>(new Set());
+
+	useLayoutEffect(() => {
+		const container = projectScrollRef.current;
+		if (!container) return;
+
+		const rows = container.querySelectorAll<HTMLElement>(".lp-row[data-session-key]");
+		const currentPositions = new Map<string, { top: number; isRunning: boolean; el: HTMLElement }>();
+		const prevPositions = sessionPositionsRef.current;
+
+		rows.forEach((row) => {
+			const key = row.getAttribute("data-session-key");
+			if (!key) return;
+			const isRunning = !row.closest(".lp-history-collapsible");
+			const rect = row.getBoundingClientRect();
+			currentPositions.set(key, { top: rect.top, isRunning, el: row });
+		});
+
+		// 检查是否有历史会话开始对话并提升到顶部
+		let promotedKey: string | null = null;
+		let promotedDeltaY = 0;
+
+		for (const [key, curr] of currentPositions.entries()) {
+			const prev = prevPositions.get(key);
+			if (prev && !prev.isRunning && curr.isRunning) {
+				const deltaY = prev.top - curr.top;
+				if (deltaY > 4) {
+					promotedKey = key;
+					promotedDeltaY = deltaY;
+					break;
+				}
+			}
+		}
+
+		if (promotedKey) {
+			const target = currentPositions.get(promotedKey);
+			if (target) {
+				const el = target.el;
+				el.style.transform = `translateY(${promotedDeltaY}px)`;
+				el.style.transition = "none";
+				el.style.zIndex = "10";
+				el.style.willChange = "transform";
+				el.classList.add("session-row-promoting");
+
+				void el.offsetHeight;
+
+				requestAnimationFrame(() => {
+					el.style.transition = "transform 0.38s cubic-bezier(0.16, 1, 0.3, 1)";
+					el.style.transform = "translateY(0)";
+
+					const onEnd = () => {
+						el.style.transform = "";
+						el.style.transition = "";
+						el.style.zIndex = "";
+						el.style.willChange = "";
+						el.classList.remove("session-row-promoting");
+						el.removeEventListener("transitionend", onEnd);
+					};
+					el.addEventListener("transitionend", onEnd, { once: true });
+					setTimeout(onEnd, 420);
+				});
+			}
+
+			// 历史列表中受影响向上平移填补空缺的项与其他活动项平移让位
+			for (const [key, curr] of currentPositions.entries()) {
+				if (key === promotedKey) continue;
+				const prev = prevPositions.get(key);
+				if (prev && !prev.isRunning && !curr.isRunning) {
+					const deltaY = prev.top - curr.top;
+					if (deltaY > 4 && deltaY < 80) {
+						const el = curr.el;
+						el.style.transform = `translateY(${deltaY}px)`;
+						el.style.transition = "none";
+						void el.offsetHeight;
+						requestAnimationFrame(() => {
+							el.style.transition = "transform 0.32s cubic-bezier(0.16, 1, 0.3, 1)";
+							el.style.transform = "translateY(0)";
+							const onEnd = () => {
+								el.style.transform = "";
+								el.style.transition = "";
+							};
+							el.addEventListener("transitionend", onEnd, { once: true });
+							setTimeout(onEnd, 360);
+						});
+					}
+				} else if (prev && prev.isRunning && curr.isRunning) {
+					const deltaY = prev.top - curr.top;
+					if (Math.abs(deltaY) > 4 && Math.abs(deltaY) < 120) {
+						const el = curr.el;
+						el.style.transform = `translateY(${deltaY}px)`;
+						el.style.transition = "none";
+						void el.offsetHeight;
+						requestAnimationFrame(() => {
+							el.style.transition = "transform 0.32s cubic-bezier(0.16, 1, 0.3, 1)";
+							el.style.transform = "translateY(0)";
+							const onEnd = () => {
+								el.style.transform = "";
+								el.style.transition = "";
+							};
+							el.addEventListener("transitionend", onEnd, { once: true });
+							setTimeout(onEnd, 360);
+						});
+					}
+				}
+			}
+		}
+
+		// 保存最新状态
+		const nextMap = new Map<string, { top: number; isRunning: boolean }>();
+		for (const [key, val] of currentPositions.entries()) {
+			nextMap.set(key, { top: val.top, isRunning: val.isRunning });
+		}
+		sessionPositionsRef.current = nextMap;
+	});
+
 	// 1. 物理级去重：按 normalizeSessionPathKey 确保每个项目唯一，杜绝重复项
 	const deduplicatedProjects = useMemo(() => {
 		const seen = new Set<string>();
@@ -797,6 +916,22 @@ export const LeftPanel = memo(function LeftPanel({
 		},
 		[panelSend, expandedProjects, serverListLimit],
 	);
+
+	const initialRequestedRef = useRef<Set<string>>(new Set());
+	useEffect(() => {
+		if (effectiveProjects.length === 0) return;
+		const curNorm = normalizeSessionPathKey(currentCwd);
+		for (const p of effectiveProjects) {
+			const pNorm = normalizeSessionPathKey(p.path);
+			if (pNorm === curNorm) continue;
+			if (expandedProjects.has(pNorm) && !initialRequestedRef.current.has(pNorm)) {
+				initialRequestedRef.current.add(pNorm);
+				const limit = serverListLimit(p.path);
+				panelSend(limit ? { type: "list_sessions", path: p.path, limit } : { type: "list_sessions", path: p.path });
+				setLoadingProjects((lp) => (lp.has(pNorm) ? lp : new Set(lp).add(pNorm)));
+			}
+		}
+	}, [effectiveProjects, expandedProjects, currentCwd, panelSend, serverListLimit]);
 
 	/** 智能去重：当且仅当 split 模式下运行列表展开且有内容时，已在上方运行列表中展示的本地会话不重复占用下方历史列表视线。 */
 	const activeRunningFiles = useMemo(() => {
@@ -1444,9 +1579,16 @@ export const LeftPanel = memo(function LeftPanel({
 			// 1. 归属于该项目的全部活动对话候选
 			const pConvsAll = convsByProject.get(pNorm) ?? [];
 
-			// 2. 基础磁盘历史会话列表（当前项目用 sessions，其他项目优先读 projectSessions 或本地缓存）
+			// 2. 基础磁盘历史会话列表：智能判定当前 props 中的 sessions 是否真实属于该项目
+			// 切换工作区时，如果新项目的后端推送尚未到达，优先保持该项目的本地缓存或已拉取会话，杜绝会话列表闪烁清空
 			const pStateSessions = projectSessions?.[pNorm];
-			const pRawSessions = active ? sessions : (pStateSessions ?? readCachedSessions(p.path, engine) ?? []);
+			const propSessionsMatch = Boolean(
+				sessions && sessions.length > 0 && isSessionMatchingProject(sessions[0].path, p.path),
+			);
+			const pCached = readCachedSessions(p.path, engine);
+			const pRawSessions = propSessionsMatch
+				? sessions
+				: (pStateSessions ?? (pCached && pCached.length > 0 ? pCached : undefined) ?? (active ? sessions : []));
 			// 只有在非当前项目、且后端响应尚未到达、且正处于 loading 集合中且无任何缓存时，才显示“正在读取会话…”
 			const isLoadingSessions =
 				!active && pStateSessions === undefined && loadingProjects.has(pNorm) && pRawSessions.length === 0;
@@ -1478,10 +1620,8 @@ export const LeftPanel = memo(function LeftPanel({
 				return false;
 			});
 
-			// 对活动对话进行排序：当前正在交互的会话或最新活动的排在顶部
+			// 对活动对话进行排序：正在运行中的排在顶部，同状态按最后活跃/修改时间排序（打开查看绝不移动位置或置顶，只有发新消息产生最新修改/流式时才置顶）
 			pRunningRaw.sort((a, b) => {
-				if (a.id === activeConversationId) return -1;
-				if (b.id === activeConversationId) return 1;
 				const aRunning = Boolean(a.isStreaming || a.completionPending || a.hasQuestion);
 				const bRunning = Boolean(b.isStreaming || b.completionPending || b.hasQuestion);
 				if (aRunning && !bRunning) return -1;
@@ -1496,7 +1636,7 @@ export const LeftPanel = memo(function LeftPanel({
 				if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
 			}
 
-			// 3. 物理路径确定性归属过滤 + 全局排他去重
+			// 3. 物理路径确定性归属过滤 + 全局排他去重（权威 s.cwd 优先）
 			const idleSessions = pRawSessions.filter((s) => {
 				if (!isSessionMatchingProject(s.path, p.path)) return false;
 				const sNorm = normalizeSessionPathKey(s.path);
@@ -1939,10 +2079,13 @@ export const LeftPanel = memo(function LeftPanel({
 			t,
 		);
 
+		const sessionKey = normPath || normalizeSessionPathKey(s.sessionId) || s.path;
+
 		return (
 			<div
 				className="lp-row"
 				key={s.path}
+				data-session-key={sessionKey}
 				onMouseLeave={() => setConfirmDel((k) => (k === `sess:${s.path}` ? null : k))}
 				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle })}
 			>
@@ -1987,22 +2130,22 @@ export const LeftPanel = memo(function LeftPanel({
 						/>
 					) : (
 						<span className="conv-title-text" title={rawTitle}>
-							{s.pinned && (
-								<span className="pin-badge" title={t("pinnedConversation")}>
-									📌
-								</span>
-							)}
-							{runInfo?.conv?.isEphemeral && (
-								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-									{t("newChatEphemeral") || "临时"}
-								</span>
-							)}
 							{cleanTitle}
 						</span>
 					)}
 
 					{/* 形态 A：右侧元数据区（运行态指示器 + 类别微胶囊 + 时间戳全部右置） */}
 					<span className="conv-meta-zone">
+						{s.pinned && (
+							<span className="pin-badge" title={t("pinnedConversation")}>
+								📌
+							</span>
+						)}
+						{runInfo?.conv?.isEphemeral && (
+							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+								{t("newChatEphemeral") || "临时"}
+							</span>
+						)}
 						{/* 1. 运行态状态指示器 */}
 						{switching ? (
 							<HalfRingSpinner className="status-spinner-right" />
@@ -2027,10 +2170,12 @@ export const LeftPanel = memo(function LeftPanel({
 						{/* 2. 对话类别微徽标 */}
 						{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
 
-						{/* 3. 时间戳 */}
-						<span className={`conv-time ${switching ? "switching-pct" : ""}`}>
-							{switching ? `${transition.progress}%` : formatModified(s.modified)}
-						</span>
+						{/* 3. 时间戳（运行中对话统一不显示时间，杜绝圆圈与时间参差错位） */}
+						{!isActuallyRunning && !isStreaming && (
+							<span className={`conv-time ${switching ? "switching-pct" : ""}`}>
+								{switching ? `${transition.progress}%` : formatModified(s.modified)}
+							</span>
+						)}
 					</span>
 				</RowMain>
 				{confirmDel !== `sess:${s.path}` && (
@@ -2099,6 +2244,7 @@ export const LeftPanel = memo(function LeftPanel({
 		{ c, depth, hasKids, isCollapsed, descendantCount, hasStreaming, hasError, hasQuestion }: ConvRowItem,
 		projectPath?: string,
 	) => {
+		const convSessionKey = normalizeSessionPathKey(c.sessionFile || c.sessionId || c.id);
 		const matchSess = projectPath
 			? (
 					projectSessions?.[normalizeSessionPathKey(projectPath)] ??
@@ -2154,6 +2300,7 @@ export const LeftPanel = memo(function LeftPanel({
 				<div
 					className={`lp-row${depth > 0 ? " lp-sub" : ""}${hasKids ? " lp-has-kids" : ""}`}
 					key={c.id}
+					data-session-key={convSessionKey}
 					style={depth > 0 ? ({ "--depth": Math.min(depth, 4) } as React.CSSProperties) : undefined}
 					onMouseLeave={() => {
 						setConfirmTakeover((k) => (k === c.id ? null : k));
@@ -2225,6 +2372,11 @@ export const LeftPanel = memo(function LeftPanel({
 					>
 						{/* 形态 A：左侧纯文字绝对垂直对齐 */}
 						<span className="conv-title-text" title={c.title}>
+							{confirming ? t("takeoverConfirm") : cleanTitle}
+						</span>
+
+						{/* 形态 A：右侧元数据区（运行态指示器 + 类别微胶囊 + 另一处徽标全部右置） */}
+						<span className="conv-meta-zone">
 							{c.pinned && (
 								<span className="pin-badge" title={t("pinnedConversation")}>
 									📌
@@ -2235,11 +2387,6 @@ export const LeftPanel = memo(function LeftPanel({
 									{t("newChatEphemeral") || "临时"}
 								</span>
 							)}
-							{confirming ? t("takeoverConfirm") : cleanTitle}
-						</span>
-
-						{/* 形态 A：右侧元数据区（运行态指示器 + 类别微胶囊 + 另一处徽标全部右置） */}
-						<span className="conv-meta-zone">
 							{c.hasQuestion ? (
 								<span
 									className={`status-question-right${elseOwner && elseConvId && !isPseudo ? " clickable" : ""}`}
@@ -2294,7 +2441,9 @@ export const LeftPanel = memo(function LeftPanel({
 								</span>
 							)}
 
-							{Boolean(convTime) && <span className="conv-time">{formatModified(convTime!)}</span>}
+							{Boolean(convTime) && !isActuallyRunning && (
+								<span className="conv-time">{formatModified(convTime!)}</span>
+							)}
 						</span>
 					</button>
 					{sessionMenuAvailable && confirmDel !== `else:${c.id}` && (
@@ -2362,6 +2511,7 @@ export const LeftPanel = memo(function LeftPanel({
 			<div
 				className={`lp-row${depth > 0 ? " lp-sub" : ""}${hasKids ? " lp-has-kids" : ""}`}
 				key={c.id}
+				data-session-key={convSessionKey}
 				style={depth > 0 ? ({ "--depth": Math.min(depth, 4) } as React.CSSProperties) : undefined}
 				onMouseLeave={() => setConfirmDel((k) => (k === convKey ? null : k))}
 				onContextMenu={(e) => openSessionMenu(e, { id: c.id, kind: "running", label: c.title })}
@@ -2416,22 +2566,22 @@ export const LeftPanel = memo(function LeftPanel({
 						/>
 					) : (
 						<span className="conv-title-text" title={c.title}>
-							{c.pinned && (
-								<span className="pin-badge" title={t("pinnedConversation")}>
-									📌
-								</span>
-							)}
-							{c.isEphemeral && (
-								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
-									{t("newChatEphemeral") || "临时"}
-								</span>
-							)}
 							{cleanTitle}
 						</span>
 					)}
 
 					{/* 形态 A：右侧元数据区（运行态指示器 + 类别微胶囊全部右置） */}
 					<span className="conv-meta-zone">
+						{c.pinned && (
+							<span className="pin-badge" title={t("pinnedConversation")}>
+								📌
+							</span>
+						)}
+						{c.isEphemeral && (
+							<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+								{t("newChatEphemeral") || "临时"}
+							</span>
+						)}
 						{hasQuestion || c.hasQuestion ? (
 							<span className="status-question-right" title={t("waitingQuestionBadge")}>
 								?
@@ -2456,7 +2606,7 @@ export const LeftPanel = memo(function LeftPanel({
 							</span>
 						)}
 
-						{Boolean(convTime) && <span className="conv-time">{formatModified(convTime!)}</span>}
+						{Boolean(convTime) && !isActuallyRunning && <span className="conv-time">{formatModified(convTime!)}</span>}
 					</span>
 				</RowMain>
 				{!isArmed && (
@@ -2680,6 +2830,19 @@ export const LeftPanel = memo(function LeftPanel({
 								<div className="lp-workspace-menu" role="menu" onClick={(e) => e.stopPropagation()}>
 									<button
 										type="button"
+										className="lp-workspace-menu-item lp-new-chat-btn"
+										title={t("newChatInCurrentProjectTip")}
+										onClick={() => {
+											setWorkspaceMenuOpen(false);
+											panelSend({ type: "new_chat" });
+											focusComposer();
+										}}
+									>
+										<FiMessageSquare style={{ fontSize: "13px" }} />
+										<span>{t("newChatAction")}</span>
+									</button>
+									<button
+										type="button"
 										className="lp-workspace-menu-item lp-manage-projects-btn"
 										onClick={() => {
 											setWorkspaceMenuOpen(false);
@@ -2732,6 +2895,7 @@ export const LeftPanel = memo(function LeftPanel({
 						) : effectiveProjects.length > 0 ? (
 							<div
 								className="lp-section-body projects-scroll"
+								ref={projectScrollRef}
 								onDoubleClick={handleBlankDoubleClick}
 								role="tree"
 								aria-label={t("lpProjectsTree")}
@@ -2821,6 +2985,16 @@ export const LeftPanel = memo(function LeftPanel({
 										const hasHistory = idleSessions.length > 0;
 										const hasUnread = unreadCount > 0;
 
+										if (!isCollapsed) {
+											everExpandedRef.current.add(pNorm);
+										}
+										const shouldMountChildren =
+											!isCollapsed ||
+											pRunningRows.length > 0 ||
+											hasUnread ||
+											active ||
+											everExpandedRef.current.has(pNorm);
+
 										const dropClass =
 											dropHint?.path === p.path && dragProject && dragProject !== p.path
 												? dropHint.after
@@ -2869,7 +3043,7 @@ export const LeftPanel = memo(function LeftPanel({
 												>
 													<button
 														type="button"
-														className={`lp-project-header-item ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+														className={`lp-project-header-item project-item ${active ? "active" : ""} ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
 														title={`${
 															sbx?.sourcePath
 																? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`
@@ -2930,11 +3104,7 @@ export const LeftPanel = memo(function LeftPanel({
 																<path d="M2.5 4h7l-3.5 5z" />
 															</svg>
 														</span>
-														{switching ? (
-															<HalfRingSpinner className="project-icon spin" />
-														) : sbx ? (
-															<LuFlaskConical className="project-icon sandbox-icon" />
-														) : null}
+														{sbx && <LuFlaskConical className="project-icon sandbox-icon" />}
 														<span className="lp-project-name" title={dispName}>
 															{dispName}
 														</span>
@@ -2943,20 +3113,23 @@ export const LeftPanel = memo(function LeftPanel({
 																{sbx.ephemeral ? t("sandboxBadgeEphemeral") : t("sandboxBadgePermanent")}
 															</span>
 														)}
-														{hasRunning && (
-															<span className="lp-project-running-badge" title={t("tabRunning")}>
-																<span className="lp-project-running-dot" />
-																<span>{actuallyRunningCount}</span>
+														<span className="conv-meta-zone">
+															{switching && <HalfRingSpinner className="status-spinner-right" />}
+															{hasRunning && (
+																<span className="lp-project-running-badge" title={t("tabRunning")}>
+																	<span className="lp-project-running-dot" />
+																	<span>{actuallyRunningCount}</span>
+																</span>
+															)}
+															{hasUnread && (
+																<span className="lp-project-unread-badge" title={t("completedUnreadBadge")}>
+																	<span className="lp-project-unread-dot" />
+																	<span>{unreadCount}</span>
+																</span>
+															)}
+															<span className={`project-time ${switching ? "switching-pct" : ""}`}>
+																{switching ? `${transition?.progress ?? 0}%` : formatModified(p.lastUsed)}
 															</span>
-														)}
-														{hasUnread && (
-															<span className="lp-project-unread-badge" title={t("completedUnreadBadge")}>
-																<span className="lp-project-unread-dot" />
-																<span>{unreadCount}</span>
-															</span>
-														)}
-														<span className={`project-time ${switching ? "switching-pct" : ""}`}>
-															{switching ? `${transition?.progress ?? 0}%` : formatModified(p.lastUsed)}
 														</span>
 													</button>
 
@@ -3012,9 +3185,11 @@ export const LeftPanel = memo(function LeftPanel({
 													</div>
 												</div>
 
-												{/* 智能半折叠：折叠时仅隐藏历史（有正在运行或完成未查看则常驻可见），展开时始终呈现 */}
-												{((isCollapsed && (pRunningRows.length > 0 || hasUnread)) || !isCollapsed) && (
-													<div className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}`}>
+												{/* 智能半折叠：折叠时平滑收起历史（有正在运行或完成未查看则常驻可见），展开与折叠全量平滑过渡 */}
+												{shouldMountChildren && (
+													<div
+														className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}${pRunningRows.length > 0 ? " has-running-rows" : ""}`}
+													>
 														{/* 1. 活动对话与完整子代理层级树（带折叠实心三角、深度缩进、子代理徽标） */}
 														{pRunningRows.map((row) => renderSingleConvRow(row, p.path))}
 
@@ -3073,8 +3248,8 @@ export const LeftPanel = memo(function LeftPanel({
 															</div>
 														</div>
 
-														{/* 4. 折叠提示（仅在折叠态且有历史时展示） */}
-														{isCollapsed && hasHistory && (
+														{/* 4. 折叠提示（仅在折叠态且有历史且上方有活动会话时展示，杜绝无运行任务折叠时的多余行留白） */}
+														{isCollapsed && hasHistory && (pRunningRows.length > 0 || hasUnread) && (
 															<button
 																type="button"
 																className="lp-collapsed-history-tip"

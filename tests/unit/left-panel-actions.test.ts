@@ -826,4 +826,114 @@ describe("LeftPanel 会话行删除确认与重命名按钮互斥", () => {
 		expect(emptyTip).not.toBeNull();
 		expect(emptyTip!.textContent).toBeTruthy();
 	});
+
+	it("同前缀项目展开与切换时，会话列表严格按物理项目归属隔离，杜绝会话串味与覆盖", () => {
+		setAppGlobals({ cwd: "E:/pi-web-ui", ready: true, status: "open", workspaceRoots: [] });
+		const piWebUiSessions = [
+			{ path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui--/s1.jsonl", name: "pi-chat-1", modified: Date.now() },
+			{
+				path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui--/s2.jsonl",
+				name: "pi-chat-2",
+				modified: Date.now() - 1000,
+			},
+		];
+		const piWebUiSiteSessions = [
+			{
+				path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui-site--/site-1.jsonl",
+				name: "你好",
+				modified: Date.now() - 500,
+			},
+		];
+
+		const { container } = mountLeftPanel({
+			projects: [
+				{ path: "E:/pi-web-ui", lastUsed: Date.now() },
+				{ path: "E:/pi-web-ui-site", lastUsed: Date.now() - 1000 },
+			],
+			conversations: [],
+			sessions: piWebUiSessions,
+			projectSessions: {
+				"e:/pi-web-ui": piWebUiSessions,
+				"e:/pi-web-ui-site": piWebUiSiteSessions,
+			},
+		});
+
+		const projectNodes = container.querySelectorAll<HTMLElement>(".lp-project-node");
+		expect(projectNodes.length).toBe(2);
+
+		const piNode = projectNodes[0]!;
+		const siteNode = projectNodes[1]!;
+
+		// 展开 site 项目
+		const siteChevron = siteNode.querySelector<HTMLElement>(".lp-project-chevron");
+		expect(siteChevron).not.toBeNull();
+		act(() => siteChevron!.click());
+
+		// 验证 pi-web-ui 项目下的会话：必须包含自己的两条，绝不包含 site 的"你好"
+		const piChildren = piNode.querySelector<HTMLElement>(".lp-project-tree-children");
+		expect(piChildren).not.toBeNull();
+		expect(piChildren!.textContent).toContain("pi-chat-1");
+		expect(piChildren!.textContent).toContain("pi-chat-2");
+		expect(piChildren!.textContent).not.toContain("你好");
+
+		// 验证 pi-web-ui-site 项目下的会话：必须包含自己的"你好"，绝不包含 pi-web-ui 的会话
+		const siteChildren = siteNode.querySelector<HTMLElement>(".lp-project-tree-children");
+		expect(siteChildren).not.toBeNull();
+		expect(siteChildren!.textContent).toContain("你好");
+		expect(siteChildren!.textContent).not.toContain("pi-chat-1");
+	});
+
+	it("切换激活项目到同前缀项目时，原项目的会话列表依然完好，绝不被新激活项目的会话覆盖", () => {
+		// 模拟用户切换到 pi-web-ui-site：此时当前激活工作区是 site，props.sessions 只有 site 的"你好"
+		setAppGlobals({ cwd: "E:/pi-web-ui-site", ready: true, status: "open", workspaceRoots: [] });
+		const piWebUiSessions = [
+			{ path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui--/s1.jsonl", name: "pi-chat-1", modified: Date.now() },
+			{
+				path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui--/s2.jsonl",
+				name: "pi-chat-2",
+				modified: Date.now() - 1000,
+			},
+		];
+		const piWebUiSiteSessions = [
+			{
+				path: "C:/Users/c/.pi/agent/sessions/--e--pi-web-ui-site--/site-1.jsonl",
+				name: "你好",
+				modified: Date.now() - 500,
+			},
+		];
+
+		const { container } = mountLeftPanel({
+			projects: [
+				{ path: "E:/pi-web-ui", lastUsed: Date.now() },
+				{ path: "E:/pi-web-ui-site", lastUsed: Date.now() - 1000 },
+			],
+			conversations: [],
+			sessions: piWebUiSiteSessions, // 当前 props.sessions 属于激活项目 pi-web-ui-site
+			projectSessions: {
+				"e:/pi-web-ui": piWebUiSessions,
+				"e:/pi-web-ui-site": piWebUiSiteSessions,
+			},
+		});
+
+		const projectNodes = container.querySelectorAll<HTMLElement>(".lp-project-node");
+		const piNode = projectNodes[0]!;
+		const siteNode = projectNodes[1]!;
+
+		// 展开非激活的 pi-web-ui 项目
+		const piChevron = piNode.querySelector<HTMLElement>(".lp-project-chevron");
+		expect(piChevron).not.toBeNull();
+		act(() => piChevron!.click());
+
+		// 验证非激活的 pi-web-ui 绝不能被当前 props.sessions 污染，必须保留自己的两条会话
+		const piChildren = piNode.querySelector<HTMLElement>(".lp-project-tree-children");
+		expect(piChildren).not.toBeNull();
+		expect(piChildren!.textContent).toContain("pi-chat-1");
+		expect(piChildren!.textContent).toContain("pi-chat-2");
+		expect(piChildren!.textContent).not.toContain("你好");
+
+		// 激活的 pi-web-ui-site 显示自己的"你好"
+		const siteChildren = siteNode.querySelector<HTMLElement>(".lp-project-tree-children");
+		expect(siteChildren).not.toBeNull();
+		expect(siteChildren!.textContent).toContain("你好");
+	});
 });

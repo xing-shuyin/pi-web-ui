@@ -1,0 +1,168 @@
+/* theme-name: 极简行文 · 深空微晶 */
+/* theme-name-en: Pure Flow · Cristallo Space */
+/* theme-group: builtin */
+/*
+ * 极简行文 · 深空微晶（Deep Space Cristallo）
+ * 灵感源自 Apple VisionOS 空间流体与亚克力晶体微光：
+ * 采用深邃外太空深黑蓝夜底色，辅以微晶玻璃倒角折射光与冰川幻蓝状态点睛，
+ * 输入岛与微流排版如悬浮于深空星系之中，通透、轻盈、充满未来感。
+ */
+:root {
+	color-scheme: dark;
+	--flow-shadow: #000000;
+	--bg: #07090e;
+	--bg-elev: #121621;
+	--bg-elev2: #1c2232;
+	--border: rgba(56, 189, 248, 0.16);
+	--border-soft: rgba(56, 189, 248, 0.08);
+	--text: #ffffff;
+	--text-dim: #94a3b8;
+	--text-faint: #7c8ba1;
+	--accent: #38bdf8;
+	--accent-contrast: #082f49;
+	--accent-soft: rgba(56, 189, 248, 0.16);
+	--green: #34d399;
+	--green-soft: rgba(52, 211, 153, 0.14);
+	--red: #f87171;
+	--on-red: #1a1a1a;
+	--red-soft: rgba(248, 113, 113, 0.14);
+	--amber: #fbbf24;
+	--blue: #38bdf8;
+	--on-blue: #082f49;
+	--blue-soft: rgba(56, 189, 248, 0.18);
+
+	--term-bg: #07090e;
+	--term-fg: #ffffff;
+	--term-cursor: #38bdf8;
+	--term-cursor-accent: #07090e;
+	--term-selection: rgba(56, 189, 248, 0.28);
+	--term-black: #121621;
+	--term-red: #f87171;
+	--term-green: #34d399;
+	--term-yellow: #fbbf24;
+	--term-blue: #38bdf8;
+	--term-magenta: #c084fc;
+	--term-cyan: #7dd3fc;
+	--term-white: #ffffff;
+	--term-bright-black: #64748b;
+	--term-bright-red: #fca5a5;
+	--term-bright-green: #6ee7b7;
+	--term-bright-yellow: #fde68a;
+	--term-bright-blue: #7dd3fc;
+	--term-bright-magenta: #e9d5ff;
+	--term-bright-cyan: #bae6fd;
+	--term-bright-white: #ffffff;
+
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #1c2232;
+	--code-bg: #0b0f19;
+	--code-text: #ffffff;
+	--code-border: rgba(56, 189, 248, 0.2);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #f87171;
+	--red-text: #f87171;
+	--amber-text: #fbbf24;
+	--info-blue: #38bdf8;
+	--link: #38bdf8;
+	--link-hover: #7dd3fc;
+	--link-soft: #38bdf8;
+	--md-strong: #ffffff;
+	--skill-blue: #38bdf8;
+	--plugin-purple: #c084fc;
+	--auth-green: #34d399;
+	--scroll-thumb: rgba(56, 189, 248, 0.22);
+	--scroll-thumb-hover: rgba(56, 189, 248, 0.42);
+	--notice-err-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--red));
+	--notice-warn-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--amber));
+	--notice-info-bg: color-mix(in srgb, var(--bg) 92%, var(--blue));
+	--notice-err-border: var(--red);
+	--notice-warn-border: var(--amber);
+	--notice-info-border: var(--blue);
+	--send-blue: #38bdf8;
+	--on-send-blue: #082f49;
+	--send-blue-hover: #0284c7;
+	--stop-red: #ef4444;
+	--stop-red-hover: #dc2626;
+	--brand-grad-a: #ffffff;
+	--brand-grad-b: #38bdf8;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #ffffff;
+	--switch-bg-off: #1e293b;
+	--switch-border-off: #334155;
+	--switch-knob: #ffffff;
+	--switch-bg-on: #38bdf8;
+	--switch-border-on: #38bdf8;
+	--switch-knob-on: #082f49;
+	--bg-elev3: rgba(56, 189, 248, 0.08);
+	--sunken-bg: rgba(0, 0, 0, 0.55);
+	--glow-015: rgba(56, 189, 248, 0.04);
+	--glow-025: rgba(56, 189, 248, 0.07);
+	--glow-03: rgba(56, 189, 248, 0.09);
+	--glow-04: rgba(56, 189, 248, 0.12);
+	--glow-05: rgba(56, 189, 248, 0.16);
+	--glow-12: rgba(56, 189, 248, 0.24);
+	--glow-18: rgba(56, 189, 248, 0.32);
+	--glow-22: rgba(56, 189, 248, 0.4);
+	--glow-38: rgba(56, 189, 248, 0.52);
+	--control-fg: #ffffff;
+	--control-bg: #121621;
+	--control-border: rgba(56, 189, 248, 0.18);
+	--bg-image: none;
+	--bg-image-dim: 0.85;
+	--bg-image-blur: 0px;
+
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #090c13;
+	--statusbar-bg: #090c13;
+	--panel-bg: #090c13;
+	--card-bg: #121621;
+	--chip-bg: rgba(255, 255, 255, 0.05);
+
+	--msgs-bg: #07090e;
+	--inputbox-bg: #121621;
+	--menu-bg: #151b2a;
+}
+
+@import "./bases/flow-base.css";
+
+/* ========================================================
+   代码语法高亮（hljs）—— 深空微晶流光调
+   ======================================================== */
+.hljs {
+	color: #ffffff;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #f472b6;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #38bdf8;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fbbf24;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #34d399;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #c084fc;
+}
+.hljs-comment,
+.hljs-code {
+	color: #64748b;
+	font-style: italic;
+}
+.hljs-tag,
+.hljs-name {
+	color: #38bdf8;
+}

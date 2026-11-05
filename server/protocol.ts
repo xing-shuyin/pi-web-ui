@@ -2359,6 +2359,8 @@ export interface SessionSummary {
 	path: string;
 	/** 稳定会话 UUID（转录头 `id` 或目录名，供 `#s=<sessionId>` URL 深链与跨重启定位，issue #587）。 */
 	sessionId?: string;
+	/** 会话所属工作区路径（权威单源，前端据此严格按项目归属分类展示，绝无跨项目串味）。 */
+	cwd?: string;
 	name?: string;
 	/** 引擎权威计算的最终前端展示名称（由引擎自身的回调或解析逻辑定制生成）。 */
 	displayName?: string;

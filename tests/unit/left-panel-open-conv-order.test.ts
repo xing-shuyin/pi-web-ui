@@ -181,11 +181,66 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(titles[0]).toBe("历史会话");
 		expect(titles[1]).toBe("最新会话");
 
-		// 并且第一行正在运行，带有流式 spinner 指示器
+		// 并且第一行正在运行，带有流式 spinner 指示器，且运行中不显示时间戳（确保与无时间的新建会话圆圈对齐）
 		expect(sessionRows[0].querySelector(".status-spinner-right")).toBeTruthy();
+		expect(sessionRows[0].querySelector(".conv-time")).toBeNull();
+		// 第二行未运行的历史会话正常显示时间戳
+		expect(sessionRows[1].querySelector(".conv-time")).toBeTruthy();
 	});
 
-	it("临时对话应当带有明确的临时徽标（.ephemeral-badge）", () => {
+	it("所有运行中的对话（包括无修改时间的新建对话和有修改时间的老对话）均不显示时间，确保右侧圆圈完全对齐", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = [
+			{ path: "/test/session-old.jsonl", sessionId: "s-old", name: "老对话", modified: Date.now() - 3600000 },
+			{ path: "/test/session-idle.jsonl", sessionId: "s-idle", name: "闲置对话", modified: Date.now() - 7200000 },
+		];
+		const conversations = [
+			// 新建对话：无 sessionFile，无 modified 时间，正在运行
+			{
+				id: "c-new",
+				cwd: "/test",
+				title: "新建对话",
+				messageCount: 1,
+				isStreaming: true,
+				isSubagent: false,
+			},
+			// 老对话：有 sessionFile，有 modified 时间，正在运行
+			{
+				id: "c-old",
+				sessionId: "s-old",
+				sessionFile: "/test/session-old.jsonl",
+				cwd: "/test",
+				title: "老对话",
+				modified: Date.now() - 3600000,
+				messageCount: 5,
+				isStreaming: true,
+				isSubagent: false,
+			},
+		];
+
+		const { container } = mountLeftPanel({
+			sessions,
+			conversations,
+			activeConversationId: "c-new",
+		});
+
+		const rows = container.querySelectorAll(".lp-project-tree-children .lp-row");
+		// 正在运行的两个对话（c-new 和 c-old）带有 spinner
+		const runningSpinners = container.querySelectorAll(".lp-project-tree-children .status-spinner-right");
+		expect(runningSpinners.length).toBe(2);
+
+		// 所有运行中的对话都不显示时间，圆圈位于最右侧统一对齐
+		const newConvTime = rows[0].querySelector(".conv-time");
+		const oldConvTime = rows[1].querySelector(".conv-time");
+		expect(newConvTime).toBeNull();
+		expect(oldConvTime).toBeNull();
+
+		// 闲置的历史会话正常显示时间戳
+		const idleConvTime = rows[2].querySelector(".conv-time");
+		expect(idleConvTime).toBeTruthy();
+	});
+
+	it("临时对话应当带有明确的临时徽标（.ephemeral-badge）且统一放置在右侧元数据区", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const conversations = [
 			{
@@ -196,6 +251,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 				isStreaming: false,
 				isSubagent: false,
 				isEphemeral: true,
+				pinned: true,
 			},
 		];
 
@@ -207,6 +263,16 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const badge = container.querySelector(".ephemeral-badge");
 		expect(badge).toBeTruthy();
 		expect(badge?.textContent).toContain("临时");
+
+		// 标志统一放置在右侧元数据区（.conv-meta-zone），左侧标题区（.conv-title-text）不残留任何前置标志
+		expect(badge?.closest(".conv-meta-zone")).toBeTruthy();
+		expect(container.querySelector(".conv-title-text .ephemeral-badge")).toBeNull();
+
+		// 置顶标志也统一放置在右侧元数据区
+		const pin = container.querySelector(".pin-badge");
+		expect(pin).toBeTruthy();
+		expect(pin?.closest(".conv-meta-zone")).toBeTruthy();
+		expect(container.querySelector(".conv-title-text .pin-badge")).toBeNull();
 	});
 
 	it("项目内层按钮为纯透明背景，杜绝双层背景叠加", () => {
@@ -223,7 +289,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 
 		const chevronMatch = CSS.match(/\.lp-project-header-item \.lp-project-chevron\s*\{([^}]*)\}/);
 		expect(chevronMatch).toBeTruthy();
-		expect(chevronMatch![1]).toContain("transition: transform");
+		expect(chevronMatch![1]).toMatch(/transition:[\s\S]*?transform/);
 	});
 
 	it("打开新项目时不会自动折叠已展开的其他项目", () => {
@@ -256,5 +322,144 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const head2 = nodes[1].querySelector(".lp-project-head-row");
 		expect(head1?.classList.contains("is-expanded")).toBe(true);
 		expect(head2?.classList.contains("is-expanded")).toBe(true);
+	});
+
+	it("打开项目的加载圆圈与运行对话一致放置在右侧元数据区相同位置，左侧不残留 spinner", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container } = mountLeftPanel({
+			projects: [{ path: "/test", lastUsed: Date.now() }],
+			transition: { kind: "cwd", target: "/test", progress: 45 },
+		});
+
+		const projectHeader = container.querySelector(".lp-project-header-item");
+		expect(projectHeader).toBeTruthy();
+
+		// 左侧不应该再出现 project-icon spin 元素挤占项目名
+		const leftSpinner = projectHeader!.querySelector(".project-icon.spin");
+		expect(leftSpinner).toBeNull();
+
+		// 右侧 conv-meta-zone 内部必须包含与会话状态完全相同的 status-spinner-right 等待圆圈
+		const metaZone = projectHeader!.querySelector(".conv-meta-zone");
+		expect(metaZone).toBeTruthy();
+		const rightSpinner = metaZone!.querySelector(".status-spinner-right");
+		expect(rightSpinner).toBeTruthy();
+
+		// 进度百分比必须在右侧元数据区内与 spinner 协同展示
+		const timeEl = metaZone!.querySelector(".project-time.switching-pct");
+		expect(timeEl).toBeTruthy();
+		expect(timeEl?.textContent).toContain("45%");
+	});
+
+	it("打开的项目折叠历史对话时子树保持挂载，容器平滑收拢（collapsed），杜绝瞬间卸载消失", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = [{ path: "/test/s1.jsonl", sessionId: "s1", name: "对话 1", modified: Date.now() }];
+		const { container } = mountLeftPanel({
+			projects: [{ path: "/test", lastUsed: Date.now() }],
+			sessions,
+		});
+
+		const chevron = container.querySelector<HTMLElement>(".lp-project-chevron");
+		expect(chevron).toBeTruthy();
+
+		// 初始展开状态下包含 expanded
+		const collapsible = container.querySelector(".lp-history-collapsible");
+		expect(collapsible).toBeTruthy();
+		expect(collapsible?.classList.contains("expanded")).toBe(true);
+
+		// 点击折叠
+		act(() => chevron!.click());
+
+		// 折叠后，子节点仍然驻留 DOM，但带有 collapsed 类以执行 CSS Grid 平滑收缩过渡，杜绝瞬间卸载
+		const treeChildren = container.querySelector(".lp-project-tree-children");
+		expect(treeChildren).toBeTruthy();
+		expect(treeChildren?.classList.contains("is-collapsed")).toBe(true);
+
+		const collapsibleAfter = container.querySelector(".lp-history-collapsible");
+		expect(collapsibleAfter).toBeTruthy();
+		expect(collapsibleAfter?.classList.contains("collapsed")).toBe(true);
+	});
+
+	it("会话行包含稳定的 data-session-key 用于支撑移动到顶部的 FLIP 平滑补间过渡动画", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = [{ path: "/test/session-a.jsonl", sessionId: "s-a", name: "会话 A", modified: Date.now() }];
+		const { container } = mountLeftPanel({
+			sessions,
+			conversations: [],
+		});
+
+		const row = container.querySelector<HTMLElement>(".lp-row[data-session-key]");
+		expect(row).toBeTruthy();
+		expect(row?.getAttribute("data-session-key")).toContain("session-a.jsonl");
+	});
+
+	it("样式守卫：.lp-history-collapsible-inner 包含 min-height: 0，svg.status-spinner-right 去除 border", () => {
+		expect(CSS).toMatch(/\.lp-history-collapsible-inner\s*\{[^}]*min-height:\s*0/);
+		expect(CSS).toMatch(/svg\.status-spinner-right\s*\{[^}]*border:\s*none/);
+		expect(CSS).toMatch(/\.session-row-promoting\s*\{/);
+	});
+
+	it("打开运行中的对话时，不改变运行对话的原有顺序，绝不因为查看/激活而随意置顶移动", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const now = Date.now();
+		// 两个都在运行中的会话，c-1 的最后修改时间比 c-2 新
+		const conversations = [
+			{
+				id: "c-1",
+				cwd: "/test",
+				title: "任务 1（较新）",
+				messageCount: 3,
+				isStreaming: true,
+				isSubagent: false,
+				modified: now,
+			},
+			{
+				id: "c-2",
+				cwd: "/test",
+				title: "任务 2（较旧）",
+				messageCount: 2,
+				isStreaming: true,
+				isSubagent: false,
+				modified: now - 10000,
+			},
+		];
+
+		// 用户点击打开任务 2（activeConversationId 变为 c-2）
+		const { container } = mountLeftPanel({
+			conversations,
+			activeConversationId: "c-2",
+		});
+
+		const rows = container.querySelectorAll(".lp-project-tree-children .lp-row");
+		expect(rows.length).toBe(2);
+
+		// 虽然 c-2 是激活状态，但因为没有发送新消息产生更新的时间戳，列表不应颠倒移动，c-1 依然排第一位
+		const titles = Array.from(rows).map((r) => r.querySelector(".conv-title-text")?.textContent?.trim());
+		expect(titles[0]).toBe("任务 1（较新）");
+		expect(titles[1]).toBe("任务 2（较旧）");
+	});
+
+	it("工作区加号下拉菜单中包含新建当前项目对话选项，点击后发送 new_chat", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container, sent } = mountLeftPanel();
+
+		// 打开加号菜单
+		const plusBtn = container.querySelector<HTMLButtonElement>(".lp-section-actions .lp-project-action");
+		expect(plusBtn).toBeTruthy();
+		act(() => {
+			plusBtn!.click();
+		});
+
+		// 检查菜单内的新建对话按钮
+		const menu = container.querySelector(".lp-workspace-menu");
+		expect(menu).toBeTruthy();
+		const newChatBtn = menu?.querySelector<HTMLButtonElement>(".lp-new-chat-btn");
+		expect(newChatBtn).toBeTruthy();
+		expect(newChatBtn?.textContent).toContain("新建对话");
+
+		// 点击新建对话
+		act(() => {
+			newChatBtn!.click();
+		});
+		expect(sent).toContainEqual({ type: "new_chat" });
 	});
 });

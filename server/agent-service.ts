@@ -14430,6 +14430,7 @@ export class ClientSession {
 			sessions.set(s.path, {
 				path: s.path,
 				...(s.id ? { sessionId: s.id } : {}),
+				cwd: targetCwd,
 				name: s.name,
 				displayName,
 				firstMessage,
@@ -16613,7 +16614,7 @@ export class ClientSession {
 				if (displaced) this.removeConversation(displaced.id);
 			} else {
 				// 冷切换的 runtime 创建要 1~2s（扫技能/扩展）—— 先回一条 ack +
-				// 流式进度 + 快照，点击立即呈现阶段进度与转录预览；落地后再推完整全量。
+				// 流式进度，点击立即呈现阶段进度与转录预览；落地后再推完整全量。
 				this.emit({
 					type: "transition_progress",
 					kind: "cwd",
@@ -16623,7 +16624,6 @@ export class ClientSession {
 					text: openRecent ? `正在同步目录与检查最近会话：${abs}` : `正在切换工作目录：${abs}`,
 					textEn: openRecent ? `Validating workspace & checking recent session: ${abs}` : `Switching workspace: ${abs}`,
 				});
-				this.flushSnapshot();
 				// 让出事件循环，确保首帧进度在同步磁盘扫描前真正发往浏览器
 				await new Promise<void>((r) => setImmediate(r));
 				// 在耗时的 runtime 初始化期间，并行预热目标项目的会话列表缓存

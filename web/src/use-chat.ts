@@ -1927,55 +1927,83 @@ export function readCachedSessions(cwd?: string | null, engine?: string): Sessio
  * 物理路径确定性工作区归属校验（最佳落地实践 · 彻底根除跨项目会话串味）：
  * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
  */
+/**
+ * 物理路径确定性工作区归属校验（彻底根除跨项目会话串味与前缀包含污染）：
+ * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
+ * 必须全字精确匹配目录段，绝对不能进行部分模糊匹配（杜绝 pi-web-ui 误匹配 pi-web-ui-site、foo 误匹配 foo-bar）。
+ */
 interface ProjectMatcher {
 	normP: string;
-	fullSlug: string;
-	slugPattern: RegExp | null;
+	sdkSlug1: string;
+	sdkSlugRoot: string;
+	sdkSlug2: string;
 }
 
-/** 项目侧的规范化结果与正则只依赖 projectPath：左栏每次渲染要对每个会话调用一次，
- *  按项目缓存可避免逐会话重建 RegExp 与重复的字符串替换。 */
+/** 项目侧的规范化结果与 slug 推导只依赖 projectPath：左栏每次渲染要对每个会话调用一次，
+ *  按项目缓存可避免逐会话重复字符串替换与切分。 */
 const projectMatcherCache = new Map<string, ProjectMatcher>();
 function projectMatcher(projectPath: string): ProjectMatcher {
 	let m = projectMatcherCache.get(projectPath);
 	if (m) return m;
 	const normP = projectPath.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
-	// SDK session slug 完整匹配：如 "--e--t--" 或 "--c--users-c-desktop--"
-	const fullSlug = normP.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-	const folderName = normP.split("/").filter(Boolean).pop();
-	const slugPattern = folderName
-		? new RegExp(`[-_/]${folderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[-_/]`, "i")
-		: null;
-	m = { normP, fullSlug, slugPattern };
+	const cleanP = normP.replace(/^\/+/, "");
+	const sdkSlug1 = `--${cleanP.replace(/[/:]/g, "-")}--`;
+	const sdkSlugRoot = cleanP.endsWith(":") ? `--${cleanP.replace(/[/:]/g, "-")}----` : "";
+	const sdkSlug2 = `--${cleanP.replace(/[^a-zA-Z0-9]/g, "-")}--`;
+	m = { normP, sdkSlug1, sdkSlugRoot, sdkSlug2 };
 	if (projectMatcherCache.size >= 256) projectMatcherCache.clear();
 	projectMatcherCache.set(projectPath, m);
 	return m;
 }
 
-export function isSessionMatchingProject(sessionPath?: string | null, projectPath?: string | null): boolean {
-	if (!sessionPath || !projectPath) return true;
+export function isSessionMatchingProject(
+	sessionOrPath?: SessionSummary | string | null,
+	projectPath?: string | null,
+): boolean {
+	if (!sessionOrPath || !projectPath) return true;
+
+	// 1. 协议级权威单源优先：若会话对象自身带有服务端声明的 cwd，直接做 O(1) 绝对路径比对
+	if (typeof sessionOrPath === "object" && sessionOrPath.cwd) {
+		return normalizeSessionPathKey(sessionOrPath.cwd) === normalizeSessionPathKey(projectPath);
+	}
+
+	const sessionPath = typeof sessionOrPath === "object" ? sessionOrPath.path : sessionOrPath;
+	if (!sessionPath) return true;
 	if (sessionPath.startsWith("conv:") || sessionPath.startsWith("virtual:")) return true;
 
 	const normS = sessionPath.toLowerCase().replace(/\\/g, "/");
-	const { normP, fullSlug, slugPattern } = projectMatcher(projectPath);
+	const { normP, sdkSlug1, sdkSlugRoot, sdkSlug2 } = projectMatcher(projectPath);
 
 	// 纯文件名（不含任何目录斜杠，常见于测试 mock 数据）：直接放行
 	if (!normS.includes("/")) return true;
 
+	// 若落盘文件直接在工作区目录或其子目录下
 	if (normS.startsWith(normP + "/")) return true;
 
-	if (normS.includes(`--${fullSlug}--`)) return true;
+	// 解析 sessionPath 路径中的所有目录段
+	const segments = normS.split("/").filter(Boolean);
+	// 找到 SDK session 专用的 slug 目录段（形如 "--<slug>--"）
+	// 注意排除最后的文件名（仅检查父级目录段）
+	const dirSegments = segments.slice(0, -1);
+	const sessionSlugSeg = dirSegments.find((seg) => seg.startsWith("--") && seg.endsWith("--"));
 
-	if (slugPattern && slugPattern.test(normS)) return true;
+	if (sessionSlugSeg) {
+		// 必须全字精确匹配目录段，绝对不能进行部分模糊匹配（杜绝 pi-web-ui 误匹配 pi-web-ui-site、foo 误匹配 foo-bar）
+		return (
+			sessionSlugSeg === sdkSlug1 ||
+			(Boolean(sdkSlugRoot) && sessionSlugSeg === sdkSlugRoot) ||
+			sessionSlugSeg === sdkSlug2
+		);
+	}
 
-	return false;
+	return true;
 }
 
 function writeCachedSessions(cwd: string | undefined | null, sessions: SessionSummary[], engine?: string): void {
 	try {
 		const safeCwd = cwd ?? readLastCwd();
 		// 缓存写入前置验真：只将真正物理归属于目标工作区的会话写入缓存，杜绝切换时脏数据污染
-		const valid = safeCwd ? sessions.filter((s) => isSessionMatchingProject(s.path, safeCwd)) : sessions;
+		const valid = safeCwd ? sessions.filter((s) => isSessionMatchingProject(s, safeCwd)) : sessions;
 		const key = sessionsStorageKey(safeCwd, engine);
 		localStorage.setItem(key, JSON.stringify(valid.slice(0, 50)));
 	} catch {

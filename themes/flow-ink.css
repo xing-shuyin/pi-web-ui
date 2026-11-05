@@ -1,0 +1,169 @@
+/* theme-name: 极简行文 · 天青墨韵 */
+/* theme-name-en: Pure Flow · Cyan Ink Zen */
+/* theme-group: builtin */
+/*
+ * 极简行文 · 天青墨韵（Cyan Ink & Cyber Zen）
+ * 灵感源自中国传统水墨书法“计白当黑，墨分五色”与极客极简暗调：
+ * 采用徽墨松烟炭黑（#0a0e11）为基底，浸润如宣纸洇染般的天青玉色（#14b8a6），
+ * 正文字体如金石银钩般温润舒缓，交互微键如翡翠玉石，
+ * 气韵生动、温润护眼、久看不累。
+ */
+:root {
+	color-scheme: dark;
+	--flow-shadow: #04080b;
+	--bg: #0a0e11;
+	--bg-elev: #11171d;
+	--bg-elev2: #172129;
+	--border: rgba(45, 212, 191, 0.13);
+	--border-soft: rgba(45, 212, 191, 0.06);
+	--text: #f0fdfa;
+	--text-dim: #99f6e4;
+	--text-faint: #5eead4;
+	--accent: #14b8a6;
+	--accent-contrast: #042f2e;
+	--accent-soft: rgba(20, 184, 166, 0.16);
+	--green: #34d399;
+	--green-soft: rgba(52, 211, 153, 0.14);
+	--red: #f87171;
+	--on-red: #1a1a1a;
+	--red-soft: rgba(248, 113, 113, 0.14);
+	--amber: #fbbf24;
+	--blue: #2dd4bf;
+	--on-blue: #042f2e;
+	--blue-soft: rgba(45, 212, 191, 0.16);
+
+	--term-bg: #0a0e11;
+	--term-fg: #f0fdfa;
+	--term-cursor: #2dd4bf;
+	--term-cursor-accent: #0a0e11;
+	--term-selection: rgba(20, 184, 166, 0.28);
+	--term-black: #11171d;
+	--term-red: #f87171;
+	--term-green: #34d399;
+	--term-yellow: #fbbf24;
+	--term-blue: #2dd4bf;
+	--term-magenta: #c084fc;
+	--term-cyan: #5eead4;
+	--term-white: #f0fdfa;
+	--term-bright-black: #52636f;
+	--term-bright-red: #fca5a5;
+	--term-bright-green: #6ee7b7;
+	--term-bright-yellow: #fde68a;
+	--term-bright-blue: #99f6e4;
+	--term-bright-magenta: #e9d5ff;
+	--term-bright-cyan: #a7f3d0;
+	--term-bright-white: #ffffff;
+
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #172129;
+	--code-bg: #080d12;
+	--code-text: #f0fdfa;
+	--code-border: rgba(20, 184, 166, 0.18);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #f87171;
+	--red-text: #f87171;
+	--amber-text: #fbbf24;
+	--info-blue: #2dd4bf;
+	--link: #2dd4bf;
+	--link-hover: #5eead4;
+	--link-soft: #2dd4bf;
+	--md-strong: #ffffff;
+	--skill-blue: #2dd4bf;
+	--plugin-purple: #c084fc;
+	--auth-green: #34d399;
+	--scroll-thumb: rgba(45, 212, 191, 0.22);
+	--scroll-thumb-hover: rgba(45, 212, 191, 0.42);
+	--notice-err-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--red));
+	--notice-warn-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--amber));
+	--notice-info-bg: color-mix(in srgb, var(--bg) 92%, var(--blue));
+	--notice-err-border: var(--red);
+	--notice-warn-border: var(--amber);
+	--notice-info-border: var(--blue);
+	--send-blue: #14b8a6;
+	--on-send-blue: #042f2e;
+	--send-blue-hover: #0d9488;
+	--stop-red: #ef4444;
+	--stop-red-hover: #dc2626;
+	--brand-grad-a: #ffffff;
+	--brand-grad-b: #2dd4bf;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #ffffff;
+	--switch-bg-off: #1e293b;
+	--switch-border-off: #334155;
+	--switch-knob: #f0fdfa;
+	--switch-bg-on: #14b8a6;
+	--switch-border-on: #14b8a6;
+	--switch-knob-on: #042f2e;
+	--bg-elev3: rgba(45, 212, 191, 0.08);
+	--sunken-bg: rgba(0, 0, 0, 0.55);
+	--glow-015: rgba(20, 184, 166, 0.04);
+	--glow-025: rgba(20, 184, 166, 0.07);
+	--glow-03: rgba(20, 184, 166, 0.09);
+	--glow-04: rgba(20, 184, 166, 0.12);
+	--glow-05: rgba(20, 184, 166, 0.15);
+	--glow-12: rgba(20, 184, 166, 0.22);
+	--glow-18: rgba(20, 184, 166, 0.28);
+	--glow-22: rgba(20, 184, 166, 0.35);
+	--glow-38: rgba(20, 184, 166, 0.48);
+	--control-fg: #f0fdfa;
+	--control-bg: #11171d;
+	--control-border: rgba(45, 212, 191, 0.16);
+	--bg-image: none;
+	--bg-image-dim: 0.85;
+	--bg-image-blur: 0px;
+
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #080c0f;
+	--statusbar-bg: #080c0f;
+	--panel-bg: #080c0f;
+	--card-bg: #11171d;
+	--chip-bg: rgba(255, 255, 255, 0.03);
+
+	--msgs-bg: #0a0e11;
+	--inputbox-bg: #11171d;
+	--menu-bg: #141c24;
+}
+
+@import "./bases/flow-base.css";
+
+/* ========================================================
+   代码语法高亮（hljs）—— 东方赛博天青水墨调
+   ======================================================== */
+.hljs {
+	color: #f0fdfa;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #f472b6;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #38bdf8;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fbbf24;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #34d399;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #c084fc;
+}
+.hljs-comment,
+.hljs-code {
+	color: #52636f;
+	font-style: italic;
+}
+.hljs-tag,
+.hljs-name {
+	color: #2dd4bf;
+}

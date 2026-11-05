@@ -1,0 +1,169 @@
+/* theme-name: 极简行文 · 苏黎世纯黑 */
+/* theme-name-en: Pure Flow · Zurich Monochrome Pro */
+/* theme-group: builtin */
+/*
+ * 极简行文 · 苏黎世纯黑（Zurich Monochrome Pro）
+ * 灵感源自瑞士国际主义排版与绝对纯黑艺术：
+ * 基于 OLED 纯黑实体画布，通过精密纯粹的单色灰阶与微内阴影雕刻，
+ * 搭配极简钛白高对比主控按键与 0.5px 精密微线，
+ * 打造如艺术画廊与顶配 Pro 硬件般的极致冷峻高级感。
+ */
+:root {
+	color-scheme: dark;
+	--flow-shadow: #000000;
+	--bg: #000000;
+	--bg-elev: #0a0a0a;
+	--bg-elev2: #141414;
+	--border: rgba(255, 255, 255, 0.14);
+	--border-soft: rgba(255, 255, 255, 0.07);
+	--text: #ffffff;
+	--text-dim: #a1a1aa;
+	--text-faint: #71717a;
+	--accent: #f4f4f5;
+	--accent-contrast: #000000;
+	--accent-soft: rgba(255, 255, 255, 0.12);
+	--green: #34d399;
+	--green-soft: rgba(52, 211, 153, 0.14);
+	--red: #f87171;
+	--on-red: #1a1a1a;
+	--red-soft: rgba(248, 113, 113, 0.14);
+	--amber: #fbbf24;
+	--blue: #60a5fa;
+	--on-blue: #0f172a;
+	--blue-soft: rgba(96, 165, 250, 0.15);
+
+	--term-bg: #000000;
+	--term-fg: #ffffff;
+	--term-cursor: #ffffff;
+	--term-cursor-accent: #000000;
+	--term-selection: rgba(255, 255, 255, 0.25);
+	--term-black: #0a0a0a;
+	--term-red: #f87171;
+	--term-green: #34d399;
+	--term-yellow: #fbbf24;
+	--term-blue: #60a5fa;
+	--term-magenta: #c084fc;
+	--term-cyan: #38bdf8;
+	--term-white: #ffffff;
+	--term-bright-black: #71717a;
+	--term-bright-red: #fca5a5;
+	--term-bright-green: #6ee7b7;
+	--term-bright-yellow: #fde68a;
+	--term-bright-blue: #93c5fd;
+	--term-bright-magenta: #e9d5ff;
+	--term-bright-cyan: #7dd3fc;
+	--term-bright-white: #ffffff;
+
+	--mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+	--mermaid-font-size: 12px;
+	--tooltip-bg: #18181b;
+	--code-bg: #09090b;
+	--code-text: #ffffff;
+	--code-border: rgba(255, 255, 255, 0.12);
+	--code-pad: 8px 10px;
+	--card-body-pad: 4px 14px 12px;
+	--err-text: #f87171;
+	--red-text: #f87171;
+	--amber-text: #fbbf24;
+	--info-blue: #60a5fa;
+	--link: #60a5fa;
+	--link-hover: #93c5fd;
+	--link-soft: #60a5fa;
+	--md-strong: #ffffff;
+	--skill-blue: #60a5fa;
+	--plugin-purple: #c084fc;
+	--auth-green: #34d399;
+	--scroll-thumb: rgba(255, 255, 255, 0.22);
+	--scroll-thumb-hover: rgba(255, 255, 255, 0.42);
+	--notice-err-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--red));
+	--notice-warn-bg: color-mix(in srgb, var(--bg-elev) 88%, var(--amber));
+	--notice-info-bg: color-mix(in srgb, var(--bg) 92%, var(--blue));
+	--notice-err-border: var(--red);
+	--notice-warn-border: var(--amber);
+	--notice-info-border: var(--blue);
+	--send-blue: #f4f4f5;
+	--on-send-blue: #000000;
+	--send-blue-hover: #e4e4e7;
+	--stop-red: #ef4444;
+	--stop-red-hover: #dc2626;
+	--brand-grad-a: #ffffff;
+	--brand-grad-b: #a1a1aa;
+	--on-amber: #1a1a1a;
+	--search-active-fg: #ffffff;
+	--switch-bg-off: #27272a;
+	--switch-border-off: #52525b;
+	--switch-knob: #ffffff;
+	--switch-bg-on: #ffffff;
+	--switch-border-on: #ffffff;
+	--switch-knob-on: #000000;
+	--bg-elev3: rgba(255, 255, 255, 0.08);
+	--sunken-bg: rgba(0, 0, 0, 0.7);
+	--glow-015: rgba(255, 255, 255, 0.02);
+	--glow-025: rgba(255, 255, 255, 0.04);
+	--glow-03: rgba(255, 255, 255, 0.05);
+	--glow-04: rgba(255, 255, 255, 0.07);
+	--glow-05: rgba(255, 255, 255, 0.09);
+	--glow-12: rgba(255, 255, 255, 0.16);
+	--glow-18: rgba(255, 255, 255, 0.22);
+	--glow-22: rgba(255, 255, 255, 0.28);
+	--glow-38: rgba(255, 255, 255, 0.45);
+	--control-fg: #f4f4f5;
+	--control-bg: #0e0e10;
+	--control-border: rgba(255, 255, 255, 0.14);
+	--bg-image: none;
+	--bg-image-dim: 0.85;
+	--bg-image-blur: 0px;
+
+	--wallpaper-panel-alpha: 100%;
+	--topbar-bg: #050505;
+	--statusbar-bg: #050505;
+	--panel-bg: #050505;
+	--card-bg: #0a0a0a;
+	--chip-bg: #121214;
+
+	--msgs-bg: #000000;
+	--inputbox-bg: #0a0a0a;
+	--menu-bg: #121212;
+}
+
+@import "./bases/flow-base.css";
+
+/* ========================================================
+   代码语法高亮（hljs）—— 瑞士单色与克制微光
+   ======================================================== */
+.hljs {
+	color: #ffffff;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword {
+	color: #f472b6;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+	color: #38bdf8;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-number {
+	color: #fbbf24;
+}
+.hljs-string,
+.hljs-regexp {
+	color: #34d399;
+}
+.hljs-built_in,
+.hljs-type {
+	color: #c084fc;
+}
+.hljs-comment,
+.hljs-code {
+	color: #71717a;
+	font-style: italic;
+}
+.hljs-tag,
+.hljs-name {
+	color: #60a5fa;
+}
