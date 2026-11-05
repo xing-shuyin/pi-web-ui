@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **插件 SDK 在浏览器里加载不了**：`plugin-sdk/index.mjs` 顶格 `import { resolve, sep } from "node:path"`，而脚手架把同一份 `index.mjs` 拷进 `<插件>/client/sdk/`，宿主只暴露 `/plugins/<id>/client/*` —— 浏览器解到 `node:path` 直接拒收模块（控制台：`Failed to fetch dynamically imported module /plugins/<id>/client/entry.mjs` + `Access to script at 'node:path' … blocked by CORS`）。难查在服务端全绿：插件 `active:true`、日志正常、`/plugins-api/*` 路由通，只有插件视图整块空白。现改为零依赖路径解析（语义对齐 `path.resolve`，盖 POSIX / Windows 盘符 / UNC），`createMockHost().resolveInWorkspace()` 行为不变（区内放行 / 越界 403）。新增 `tests/unit/plugin-sdk-browser-safe.test.ts`：守「拷进 `client/sdk/` 的文件零静态 `node:` import」与「客户端可达依赖闭包不出 `plugin-sdk/`」，并用服务端专用的 `ssh-host-trust.mjs` 做阳性对照防扫描器空转。SDK 版本 `0.1.0 → 0.2.0`，已装插件用 `pi-web-ui plugin upgrade-sdk` 刷新。
+
 <!-- auto-i18n:start -->
 <!-- auto-i18n:end -->
 
@@ -34,12 +38,14 @@
 - 设备中心协作策略配置升级：支持细粒度调整饿死防范时间、任务调度深度、工作区文件同步字节上限与资源锁默认 TTL。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（76）：`runInTerminal`、`executedInTerminal`、`engineUninstall`、`engineUninstalling`、`engineUninstallConfirm`、`engineUninstallTip`、`engineActiveNoUninstall`、`scheduledTaskBadge`、`schedulerViewTip`、`waitingQuestionShort`、`tabRunning`、`completedUnreadBadge`、`completedUnreadTooltip`、`tabProjects`、`deviceGroups`、`createGroup`、`timeGroupToday`、`timeGroupYesterday`、`timeGroupPastWeek`、`timeGroupEarlier`、`questionQueuedOffline`、`thinkingConfigTitle`、`thinkingConfigBtn`、`thinkingCustomized`、`thinkingQuickApply`、`thinkingResetDefault`、`thinkingFixedNotice`、`thinkingFormatLabel`、`thinkingRawBodyLabel`、`thinkingCustomBudgetBtn`、`thinkingCustomBudgetPlaceholder`、`thinkingCustomBudgetTitle`、`tpl.sk.clarify`、`tpl.sk.clarify.desc`、`tpl.sk.clarify.prompt`、`tpl.sk.toplan`、`tpl.sk.toplan.desc`、`tpl.sk.toplan.prompt`、`loadingSessions`、`noSessionsYet`、`deviceExecSchedulingTitle`、`deviceExecStarvationMs`、`deviceExecStarvationMsHint`、`deviceExecMaxSkips`、`deviceExecMaxSkipsHint`、`deviceExecDispatchTitle`、`deviceExecMaxDepth`、`deviceExecMaxDepthHint`、`deviceExecMaxBudget`、`deviceExecMaxBudgetHint`、`deviceExecAllowBotMentions`、`deviceExecAllowBotMentionsHint`、`deviceExecContextTitle`、`deviceExecContextBytes`、`deviceExecContextBytesHint`、`deviceExecRetention`、`deviceExecRetentionHint`、`deviceExecFileSyncTitle`、`deviceExecFileSyncBytes`、`deviceExecFileSyncBytesHint`、`deviceExecFileSyncFiles`、`deviceExecFileSyncFilesHint`、`deviceExecFileSyncStagedBytes`、`deviceExecFileSyncStagedBytesHint`、`deviceExecLocksTitle`、`deviceExecLockTtl`、`deviceExecLockTtlHint`、`deviceExecBlackboardBytes`、`deviceExecBlackboardBytesHint`、`deviceExecResetDefaults`、`deviceExecResetDefaultsTip`、`promptTok_plugin_dev`、`promptTok_plugin_dev_desc`、`settingsDeviceCollab`、`settingsDeviceCollabHint`、`sandboxNewShort`
 - 前端删除 key（81）：`ephemeralBadge`、`thinkingUnsupported`、`manageProjects`、`elsewherePseudoTip`、`subagentBadgeCount`、`subagentsStreamingTip`、`subagentsQuestionTip`、`subagentsErrorTip`、`subagentsCountTip`、`convErrorBadge`、`tuiTip`、`forkedSessionBadge`、`forkedSessionTip`、`dismissFinishedOnly`、`forkBadge`、`forkBadgeTip`、`tpl.newTitle`、`tpl.editTitle`、`tpl.fieldTitle`、`tpl.sk.setup`、`tpl.sk.setup.desc`、`tpl.sk.setup.prompt`、`tpl.sk.ask`、`tpl.sk.ask.desc`、`tpl.sk.ask.prompt`、`tpl.sk.grilldocs`、`tpl.sk.grilldocs.desc`、`tpl.sk.grilldocs.prompt`、`tpl.sk.tospec`、`tpl.sk.tospec.desc`、`tpl.sk.tospec.prompt`、`tpl.sk.totickets`、`tpl.sk.wayfinder`、`tpl.sk.wayfinder.desc`、`tpl.sk.wayfinder.prompt`、`tpl.sk.arch`、`tpl.sk.arch.desc`、`tpl.sk.arch.prompt`、`tpl.sk.triage`、`tpl.sk.triage.desc`、`tpl.sk.triage.prompt`、`tpl.sk.wizard`、`tpl.sk.wizard.desc`、`tpl.sk.wizard.prompt`、`tpl.sk.grillme`、`tpl.sk.grillme.desc`、`tpl.sk.grillme.prompt`、`tpl.sk.handoff`、`tpl.sk.handoff.desc`、`tpl.sk.handoff.prompt`、`tpl.sk.questionnaire`、`tpl.sk.questionnaire.desc`、`tpl.sk.questionnaire.prompt`、`tpl.sk.teach`、`tpl.sk.teach.desc`、`tpl.sk.teach.prompt`、`tpl.sk.ww`、`tpl.sk.ww.desc`、`tpl.sk.ww.prompt`、`tpl.sk.wfa`、`tpl.sk.wfa.desc`、`tpl.sk.wfa.prompt`、`tpl.sk.codesign`、`tpl.sk.codesign.desc`、`tpl.sk.codesign.prompt`、`tpl.sk.domain`、`tpl.sk.domain.desc`、`tpl.sk.domain.prompt`、`tpl.sk.grilling`、`tpl.sk.grilling.desc`、`tpl.sk.grilling.prompt`、`tpl.sk.tdd`、`tpl.sk.tdd.desc`、`tpl.sk.tdd.prompt`、`deviceSetupNext`、`deviceSetupNextHint`、`deviceSetupManage`、`deviceHubOverview`、`deviceHubSettings`、`deviceHubGroups`、`sandboxNewBtn`
 - 前端中文变更（13）：`historySessions`、`openHistory`、`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.prototype.prompt`、`tpl.sk.research.prompt`、`tpl.sk.debug.prompt`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
 - 前端英文变更（12）：`tpl.sk.implement`、`tpl.sk.implement.desc`、`tpl.sk.implement.prompt`、`tpl.sk.codeview.desc`、`tpl.sk.codeview.prompt`、`tpl.sk.debug`、`tpl.sk.debug.desc`、`tpl.sk.debug.prompt`、`tpl.sk.merge.desc`、`tpl.sk.merge.prompt`、`deviceExecMaxActive`、`deviceExecMaxWaiting`
+
 <!-- auto-i18n:end -->
 
 ## [0.115.0] — 2026-11-02
@@ -63,6 +69,7 @@
 - 设备中心后台同步：无随包清单的旧插件首次升级不再清理旧文件（残留文件不会被加载，但也不会被删）。
 
 <!-- auto-i18n:start -->
+
 ### i18n
 
 - 前端新增 key（55）：`leftPanelGroups`、`questionAutoSubmitLast`、`questionPickSubmits`、`localBotToolHighPrivilege`、`localBotToolUnsupportedPlatform`、`deviceExecTitle`、`deviceExecSubtitle`、`deviceExecRefresh`、`deviceExecRunning`、`deviceExecQueued`、`deviceExecBlocked`、`deviceExecQuotaTitle`、`deviceExecMaxActive`、`deviceExecMaxActiveHint`、`deviceExecMaxWaiting`、`deviceExecMaxWaitingHint`、`deviceExecReset`、`deviceExecSave`、`deviceExecSaving`、`deviceExecSavedNotice`、`deviceExecBlockedTitle`、`deviceExecBlockedDesc`、`deviceExecActiveTasks`、`deviceExecNoActive`、`deviceExecWaitingQueue`、`deviceExecNoWaiting`、`deviceExecPosition`、`deviceExecReason`、`deviceExecQueuedTime`、`deviceExecActions`、`deviceExecCancel`、`deviceExecCancelling`、`deviceExecTaskCancelled`、`deviceExecReasonMaxConcurrency`、`deviceExecReasonBotBusy`、`deviceExecReasonWorkspaceConflict`、`deviceExecReasonWorkspaceBlocked`、`deviceExecReasonFairness`、`skillsMaxFileBytes`、`skillsMaxFileBytesTip`、`skillsFullTextMaxBytes`、`skillsFullTextMaxBytesTip`、`worktreeViewTitle`、`worktreeEntryTip`、`worktreeBackToChat`、`worktreeRefresh`、`worktreeViewHint`、`worktreeEmpty`、`worktreeDetached`、`worktreeCurrent`、`worktreeMain`、`worktreeHasChanges`、`worktreeClean`、`worktreeSwitch`、`worktreeManage`
@@ -70,6 +77,7 @@
 - 前端中文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
 - 前端英文变更（2）：`dismissFinishedOnly`、`dismissForceAll`
 - 服务端文案变更（1）：`subagents.spawn.started`
+
 <!-- auto-i18n:end -->
 
 ## [0.114.3] — 2026-10-31

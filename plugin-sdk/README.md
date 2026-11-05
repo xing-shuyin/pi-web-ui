@@ -14,6 +14,8 @@ pi-web-ui plugin create my-plugin --template renderer   # view:false + renderers
 常用选项：`--dir <插件父目录>`（默认 `<dataDir>/plugins`，也可用 `--data-dir` 指定数据目录）、`--force`（目标已存在时覆盖）。生成后会自动做一次 manifest 基础校验 + 生成文件的 `node --check` + **静态 import 自检**，有 warning 会直接打印；生效只需刷新浏览器（或发 `plugins_reload`），未运行则下次启动生效。
 
 > **为什么 SDK 拷两份**：宿主**只暴露 `/plugins/<id>/client/*`**（`server/plugins.ts` 的 `resolvePluginClientFile` 把根钉在 `client/`）—— 客户端 bundle 与它的依赖必须都在 `client/` 内，越界的相对 import 会让浏览器报 `Failed to fetch dynamically imported module` 且**整个 bundle 都不执行**（插件页空白，而服务端一切正常、`active:true`）。服务端入口则是同进程 `import()`，不受暴露面限制。所以：服务端用 `<plugin>/sdk/`、客户端用 `<plugin>/client/sdk/`，`client/entry.mjs` 里只能写 `import … from "./sdk/index.mjs"`。两份都拷 `index.mjs` + `client-utils.mjs`（前者末尾 `export * from "./client-utils.mjs"`，少一份连服务端都加载不了）。
+>
+> **由此推出硬约束**：`index.mjs` 与 `client-utils.mjs` **不得静态 import 任何 `node:` 内置模块**。浏览器解到 `node:path` 会直接拒收模块（控制台报 `Access to script at 'node:path' … blocked by CORS`），整份客户端 bundle 一行都不跑 —— 服务端 `active:true`、日志正常、路由通，只有插件视图空白。需要 node 能力：在函数体里 `await import("node:…")`（调用方天然在服务端），或把工具放进只在服务端加载的模块（如 `ssh-host-trust.mjs`）。守卫：`tests/unit/plugin-sdk-browser-safe.test.ts`。
 
 ---
 
