@@ -45,11 +45,7 @@ import {
 	type ClientSettings,
 	type PromptMode,
 } from "./client-state.js";
-import {
-	normalizeAutoCompactionInstructions,
-	normalizeSoftCapByModel,
-	normalizeSoftCapTokens,
-} from "./soft-cap.js";
+import { normalizeAutoCompactionInstructions, normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
 import { findVisionModels, SYSTEM_PROMPT } from "./vision-bridge.js";
 import { COMMITMSG_SYSTEM_PROMPT } from "./scm-commitmsg.js";
 import { PLAN_MODE_SYSTEM_PROMPT } from "./plan-mode.js";
@@ -1056,9 +1052,7 @@ export class SettingsService {
 		}
 		if (partial.autoCompactionInstructions !== undefined) {
 			// 自动压缩附加指令：只影响软上限自动压缩（下一轮触发的 session.compact 即读到）。
-			next.autoCompactionInstructions = normalizeAutoCompactionInstructions(
-				partial.autoCompactionInstructions,
-			);
+			next.autoCompactionInstructions = normalizeAutoCompactionInstructions(partial.autoCompactionInstructions);
 		}
 		if (partial.softCapTokens !== undefined || partial.softCapByModel !== undefined) {
 			// 压缩软上限：持久化 + 即时重算各会话的 compaction reserveTokens

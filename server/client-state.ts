@@ -11,11 +11,7 @@ import { normalizeUploadMaxMb } from "./payload-limits.js";
 import * as fsPromises from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
-import {
-	normalizeAutoCompactionInstructions,
-	normalizeSoftCapByModel,
-	normalizeSoftCapTokens,
-} from "./soft-cap.js";
+import { normalizeAutoCompactionInstructions, normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
 import { deriveLegacy, legacyToDisabled, normalizeDisabledAgentTools } from "./tool-manager.js";
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";

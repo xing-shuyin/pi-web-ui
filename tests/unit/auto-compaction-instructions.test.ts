@@ -13,9 +13,7 @@ describe("normalizeAutoCompactionInstructions", () => {
 
 	it("字符串原样返回，并截断到 2000 字符上限", () => {
 		expect(normalizeAutoCompactionInstructions("")).toBe("");
-		expect(normalizeAutoCompactionInstructions("[[custom-compact:v3:local]]")).toBe(
-			"[[custom-compact:v3:local]]",
-		);
+		expect(normalizeAutoCompactionInstructions("[[custom-compact:v3:local]]")).toBe("[[custom-compact:v3:local]]");
 		const long = "x".repeat(5000);
 		expect(normalizeAutoCompactionInstructions(long)).toHaveLength(2000);
 	});
