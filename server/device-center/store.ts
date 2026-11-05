@@ -123,6 +123,12 @@ export interface HubTask {
 	outcomeFingerprint?: string;
 	outcomeCanonicalFingerprint?: string;
 	terminalAcceptedLeaseGeneration?: number;
+	executionMode?: import("../protocol.js").DeviceExecutionMode;
+	contract?: import("../protocol.js").DeviceWorkContract;
+	contextManifest?: import("../protocol.js").ContextManifest;
+	artifact?: import("../protocol.js").DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 }
 export interface GroupBlackboard {
 	version: number; // 严格自增版本号（从 1 开始）
@@ -208,6 +214,12 @@ export const taskPending = (task: HubTask) =>
 	!isTerminal(task.status) ||
 	!!(task.cancelRequested && !task.stopConfirmed) ||
 	(task.recoveryUntil !== undefined && task.recoveryUntil > Date.now());
+/** Contract authority and captured evidence survive automatic retention until explicit room data reset. */
+export const taskHasImmutableEvidence = (task: HubTask) =>
+	!!task.contract ||
+	!!task.artifact ||
+	task.artifactProduced === true ||
+	(task.executionMode === "code" && task.executionCompleted === true);
 export const isTerminal = (status: TaskStatus) => ["completed", "failed", "interrupted"].includes(status);
 export const hashSecret = (secret: string) => createHash("sha256").update(secret).digest("hex");
 export function secretMatches(secret: string, hash: string): boolean {
@@ -247,8 +259,8 @@ function createHubLogs(dataDir: string): HubLogs {
 			partition: (task) => task.roomId,
 			id: (task) => task.id,
 			retention: HUB_LOG_RETENTION,
-			// Load-time retention must never drop work that is still queued, running or awaiting a stop.
-			protect: (task) => taskPending(task),
+			// Retain live work and immutable code evidence across checkpoint compaction and restarts.
+			protect: (task) => taskPending(task) || taskHasImmutableEvidence(task),
 		}),
 		conversationMessages: new PartitionedAppendLog<ConversationMessage>({
 			dir: join(root, "conversation-messages"),
@@ -621,6 +633,10 @@ export class DeviceHubStore {
 	 * WAL append is the commit point. Projection failures retain WAL for retry/recovery and cannot reject a commit.
 	 */
 	async persist(state: HubState, checkpointSeq: number = this.lastSeq, diff?: HubTransactionDiff): Promise<void> {
+		// Detach accepted evidence before the first asynchronous write. A caller may
+		// retain its transaction inputs, but cannot subsequently rewrite durable facts.
+		state = structuredClone(state);
+		if (diff) diff = structuredClone(diff);
 		if (this.projectionFailed) {
 			this.logs.messages.invalidateCache();
 			this.logs.tasks.invalidateCache();

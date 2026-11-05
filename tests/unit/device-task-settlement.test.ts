@@ -7,6 +7,12 @@ import type { HubState, HubTask } from "../../server/device-center/store.js";
 import { DeviceHubStore, hashSecret } from "../../server/device-center/store.js";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { once } from "node:events";
+import { createHash } from "node:crypto";
+import {
+	createWorkContract,
+	createContextManifest,
+	computeArtifactDigest,
+} from "../../server/device-center/work-contract.js";
 import { WebSocket } from "ws";
 import { createDeviceRelay, type DeviceRelayOptions } from "../../server/device-center/relay.js";
 import { createDeviceConnector, type DeviceConnectorOptions } from "../../server/device-center/connector.js";
@@ -93,6 +99,38 @@ function event(t: HubTask, fields: Partial<DeviceTaskEventFrame> = {}): DeviceTa
 }
 
 describe("device task settlement fault boundaries", () => {
+	it("marks deleted attempts permanent only for the authenticated local Bot route", () => {
+		const t = task("deleted");
+		expect(settleTaskTerminalOutcome(state([]), "device", event(t), ctx)).toMatchObject({
+			accepted: false,
+			permanent: true,
+			reasonCode: "attempt_expired",
+		});
+		for (const [deviceId, frame, tasks] of [
+			["unknown-device", event(t), []],
+			["device", event(t, { botId: "unknown-bot" }), []],
+			["device", event(t), [task(t.id, { accountId: "other-account" })]],
+			["device", event(t), [task(t.id, { deviceId: "other-device" })]],
+		] as const) {
+			const result = settleTaskTerminalOutcome(state([...tasks]), deviceId, frame, ctx);
+			expect(result.accepted).toBe(false);
+			expect(result.permanent).not.toBe(true);
+		}
+	});
+
+	it("positively ACKs identical committed evidence even after a later stop flag", () => {
+		const t = task("already-committed", { leaseToken: "lease", leaseGeneration: 1 });
+		const draft = state([t]);
+		const frame = event(t, { executionCompleted: true, artifactProduced: false });
+		expect(settleTaskTerminalOutcome(draft, "device", frame, ctx).accepted).toBe(true);
+		t.stopConfirmed = true;
+		expect(settleTaskTerminalOutcome(draft, "device", frame, ctx)).toMatchObject({
+			accepted: true,
+			duplicate: true,
+			fingerprint: t.outcomeFingerprint,
+		});
+	});
+
 	it.each([
 		{ leaseToken: undefined },
 		{ leaseGeneration: undefined },
@@ -469,7 +507,125 @@ function expectWireOutcome(frame: DeviceTaskEventFrame, entry: ReturnType<TaskRe
 	expect(frame.reportMetadata).toEqual(entry.reportMetadata);
 }
 
+function codeOutcomeTask(id: string) {
+	const contract = createWorkContract({
+		executionMode: "code",
+		goal: "Produce evidence",
+		baseline: { repositoryId: "repo", commit: "a".repeat(40) },
+	});
+	const contextManifest = createContextManifest({ contract, context: null });
+	const t = task(id, {
+		leaseToken: "code-lease",
+		leaseGeneration: 2,
+		executionMode: "code",
+		contract,
+		contextManifest,
+	});
+	const artifact = {
+		id: `artifact-${id}`,
+		digest: "",
+		producer: {
+			deviceId: t.deviceId,
+			botId: t.botId,
+			taskId: t.id,
+			attemptId: t.attemptId,
+			contractDigest: contract.digest,
+			manifestDigest: contextManifest.digest,
+		},
+		baseline: contract.baseline!,
+		inputTree: "b".repeat(40),
+		outputTree: "b".repeat(40),
+		patchBase64: "",
+		patchSha256: createHash("sha256").update("").digest("hex"),
+		createdAt: 1,
+	};
+	artifact.digest = computeArtifactDigest(artifact);
+	return { t, artifact };
+}
+
 describe("connector durable terminal wire outcomes", () => {
+	it("replays identical code evidence after disconnect and only clears it on the committed duplicate ACK", async () => {
+		const { t, artifact } = codeOutcomeTask("artifact-replay");
+		const { hub } = await persistedHub([t]);
+		const recovery = new TaskRecoveryManager({ deviceId: "device" });
+		const entry = recovery.recordTaskFinish(t, {
+			status: "completed",
+			report: "code report",
+			artifact,
+			executionCompleted: true,
+			artifactProduced: true,
+		});
+		const first = await transport({ recovery }, async (device, frame) => {
+			const committed = await hub.acceptTaskEvent(device, frame);
+			return { ...committed, outcomeFingerprint: "lost-ack" };
+		});
+		await vi.waitFor(() => expect(first.events).toHaveLength(1));
+		await vi.waitFor(() => expect(hub.store.snapshot().tasks[0].status).toBe("completed"));
+		expect(recovery.getPendingOutboxEntry(t.id, t.attemptId)).toBeDefined();
+		await first.connector.close();
+		const second = await transport({ recovery }, (device, frame) => hub.acceptTaskEvent(device, frame));
+		await vi.waitFor(() => expect(recovery.getPendingOutbox()).toEqual([]));
+		expect(first.events[0].artifact).toEqual(artifact);
+		expect(second.events[0]).toMatchObject({
+			fingerprint: entry.fingerprint,
+			artifact,
+			executionCompleted: true,
+			artifactProduced: true,
+		});
+		expect(hub.store.snapshot().messages).toHaveLength(1);
+		expect(hub.store.snapshot().tasks[0].artifact).toEqual(artifact);
+	});
+
+	it.each(["terminal_conflict", "attempt_expired"] as const)(
+		"durably quarantines %s replay without disconnecting or discarding code evidence",
+		async (reasonCode) => {
+			const { t, artifact } = codeOutcomeTask(`quarantine-${reasonCode}`);
+			const fixture = await persistedHub([t]);
+			let hub = fixture.hub;
+			if (reasonCode === "terminal_conflict") {
+				await hub.acceptTaskEvent(
+					"device",
+					event(t, {
+						status: "interrupted",
+						report: "Hub already stopped",
+						executionCompleted: false,
+						artifactProduced: false,
+					}),
+				);
+				await hub.store.transact((draft) => {
+					draft.tasks[0].stopConfirmed = true;
+				});
+			} else
+				await hub.store.transact((draft) => {
+					draft.tasks = [];
+				});
+			const dataDir = await mkdtemp(join(tmpdir(), "quarantine-wire-"));
+			cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+			const options = { dataDir, deviceId: "device" };
+			const recovery = new TaskRecoveryManager(options);
+			const entry = recovery.recordTaskFinish(t, {
+				status: "completed",
+				report: "durable completed",
+				artifact,
+				executionCompleted: true,
+				artifactProduced: true,
+			});
+			const wire = await transport({ recovery }, (device, frame) => hub.acceptTaskEvent(device, frame));
+			await vi.waitFor(() => expect(recovery.getQuarantinedOutcomes()).toHaveLength(1));
+			expect(wire.relay.isOnline("device")).toBe(true);
+			expect(wire.events).toHaveLength(1);
+			expect(recovery.getPendingOutbox()).toEqual([]);
+			const archive = new TaskRecoveryManager(options).getQuarantinedOutcomes();
+			expect(archive[0]).toMatchObject({
+				reasonCode,
+				outcome: { fingerprint: entry.fingerprint, artifact, report: "durable completed", status: "completed" },
+			});
+			hub = await fixture.restart();
+			if (reasonCode === "terminal_conflict") expect(hub.store.snapshot().tasks[0].status).toBe("interrupted");
+			else expect(hub.store.snapshot().tasks).toEqual([]);
+		},
+	);
+
 	it("sends the persisted failure verbatim instead of deriving a completed/failed payload", async () => {
 		const recovery = new TaskRecoveryManager({ deviceId: "device" });
 		let entry: ReturnType<TaskRecoveryManager["recordTaskFinish"]>;

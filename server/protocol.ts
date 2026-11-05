@@ -137,6 +137,74 @@ export interface DeviceTaskLeaseResult {
 	accepted: boolean;
 	reason?: string;
 }
+
+export type DeviceExecutionMode = "chat" | "code";
+
+export interface DeviceArtifactProducer {
+	deviceId: string;
+	botId: string;
+	taskId: string;
+	attemptId: string;
+	contractDigest?: string;
+	manifestDigest?: string;
+}
+
+export interface DeviceArtifactBaseline {
+	repositoryId: string;
+	commit: string;
+}
+
+export interface DeviceArtifact {
+	id: string;
+	digest: string;
+	producer: DeviceArtifactProducer;
+	baseline?: DeviceArtifactBaseline;
+	inputTree?: string;
+	outputTree?: string;
+	patchBase64?: string;
+	patchSha256?: string;
+	createdAt: number;
+}
+
+export interface DeviceWorkContractInput {
+	id?: string;
+	revision?: number;
+	executionMode?: DeviceExecutionMode;
+	goal?: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+}
+
+export interface DeviceWorkContract {
+	id: string;
+	revision: number;
+	digest: string;
+	executionMode: DeviceExecutionMode;
+	goal: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+	createdAt?: number;
+}
+
+export interface ContextManifest {
+	version: 1;
+	digest: string;
+	contractId: string;
+	contractRevision: number;
+	contractDigest: string;
+	executionPolicy?: { deviceId: string; botId: string; botRevision: number };
+	context: unknown;
+	taskState?: unknown;
+	inputs?: unknown;
+	policyRef?: string;
+	truncationBudget?: number;
+	createdAt: number;
+}
+
 export interface DeviceTaskEventFrame {
 	type: "task_event";
 	taskId: string;
@@ -149,13 +217,24 @@ export interface DeviceTaskEventFrame {
 	error?: string;
 	reportMetadata?: DeviceTaskReportMetadata;
 	fingerprint?: string;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 }
+export type DeviceTaskResultRejectReasonCode = "terminal_conflict" | "attempt_expired";
 export interface DeviceTaskResultAck {
 	taskId: string;
 	attemptId: string;
 	status: "completed" | "failed" | "interrupted";
 	fingerprint?: string;
 	accepted: boolean;
+	reason?: string;
+	/** A durable, immutable rejection of this incoming task/attempt/fingerprint. */
+	permanent?: boolean;
+	reasonCode?: DeviceTaskResultRejectReasonCode;
+	contractDigest?: string;
+	manifestDigest?: string;
+	artifactDigest?: string;
 }
 export interface DeviceTaskResultAckFrame extends DeviceTaskResultAck {
 	type: "task_result_ack";
@@ -301,6 +380,15 @@ export interface RoomTaskCreateInput {
 	idempotencyKey?: string;
 	planOnly?: boolean;
 	replyToMessageId?: string;
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContractInput | DeviceWorkContract;
+	goal?: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+	policyRef?: string;
+	truncationBudget?: number;
 }
 
 export interface GroupBlackboard {
@@ -406,6 +494,12 @@ export interface DeviceTask {
 	deviceName?: string;
 	text: string;
 	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContract;
+	contextManifest?: ContextManifest;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 	resourceLocks?: string[];
 	blockReason?: DeviceTaskBlockReason;
 	blockReasonDetail?: string;
@@ -432,6 +526,12 @@ export interface HubTask {
 	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
 	createdAt: number;
 	updatedAt: number;
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContract;
+	contextManifest?: ContextManifest;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 	sourceBotId?: string;
 	sourceConversationId?: string;
 	conversationId?: string;

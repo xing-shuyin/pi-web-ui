@@ -11,6 +11,29 @@ describe("task outcome fingerprints", () => {
 		);
 	});
 
+	it("distinguishes unknown proof facts from explicit false in the ACK digest", () => {
+		expect(
+			computeOutcomeFingerprint("task", "attempt", "failed", "result", undefined, undefined, undefined, true),
+		).not.toBe(
+			computeOutcomeFingerprint("task", "attempt", "failed", "result", undefined, undefined, undefined, true, false),
+		);
+		expect(
+			computeOutcomeFingerprint(
+				"task",
+				"attempt",
+				"failed",
+				"result",
+				undefined,
+				undefined,
+				"artifact",
+				undefined,
+				false,
+			),
+		).not.toBe(
+			computeOutcomeFingerprint("task", "attempt", "failed", "result", undefined, undefined, "artifact", false, false),
+		);
+	});
+
 	it("uses the same digest when metadata property order changes in transit", () => {
 		const metadata = { totalBytes: 0, missing: true, rejected: false, uploadPending: false };
 		const reordered = { uploadPending: false, rejected: false, missing: true, totalBytes: 0 };

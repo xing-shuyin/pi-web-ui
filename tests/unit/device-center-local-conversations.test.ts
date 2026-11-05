@@ -5,6 +5,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
+import { createHash } from "node:crypto";
+import { computeArtifactDigest } from "../../server/device-center/work-contract.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -122,6 +124,84 @@ describe("local persistent conversation proxy", () => {
 		).toBe(403);
 		expect(received).toHaveLength(4);
 	});
+	it("forwards bounded artifact contracts through all task creation routes while keeping ordinary requests small", async () => {
+		const received: unknown[] = [];
+		const upstream = express();
+		upstream.use(express.json({ limit: "1mb" }));
+		upstream.use((req, res) => {
+			received.push(req.body);
+			res.json({ ok: true });
+		});
+		const hubUrl = await listen(createServer(upstream));
+		const dataDir = await mkdtemp(join(tmpdir(), "local-contract-capacity-"));
+		cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+		await writeFile(
+			join(dataDir, "device-center.json"),
+			JSON.stringify({
+				hubUrl,
+				deviceId: "source",
+				name: "Source",
+				credential: "agent-secret",
+				uiCredential: "ui-secret",
+				allowExecution: false,
+			}),
+		);
+		const app = express();
+		app.use(express.json({ limit: "1mb" }));
+		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
+		cleanup.push(() => local.close());
+		const base = await listen(createServer(app));
+		const patch = Buffer.alloc(64 * 1024, 7);
+		const inputArtifact = {
+			id: "artifact-1",
+			digest: "",
+			producer: {
+				deviceId: "producer-device",
+				botId: "producer-bot",
+				taskId: "producer-task",
+				attemptId: "producer-attempt",
+				contractDigest: "b".repeat(64),
+				manifestDigest: "c".repeat(64),
+			},
+			baseline: { repositoryId: "repo-1", commit: "a".repeat(40) },
+			inputTree: "d".repeat(40),
+			outputTree: "e".repeat(40),
+			patchBase64: patch.toString("base64"),
+			patchSha256: createHash("sha256").update(patch).digest("hex"),
+			createdAt: 1,
+		};
+		inputArtifact.digest = computeArtifactDigest(inputArtifact);
+		const contract = {
+			id: "contract-1",
+			revision: 1,
+			executionMode: "code",
+			baseline: inputArtifact.baseline,
+			inputArtifacts: [inputArtifact],
+		};
+		const post = (path: string, body: unknown) =>
+			fetch(`${base}/api/device-center/${path}`, {
+				method: "POST",
+				headers: { Origin: base, "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		for (const path of [
+			"rooms/team/messages",
+			"rooms/team/conversations",
+			"rooms/team/conversations/thread/messages",
+		]) {
+			const response = await post(path, { text: "Code task", executionMode: "code", contract });
+			expect(response.status).toBe(200);
+		}
+		expect(received).toHaveLength(3);
+		for (const body of received) expect(body).toMatchObject({ executionMode: "code", contract });
+		expect((await post("rooms/team/messages", { text: "x".repeat(40 * 1024) })).status).toBe(400);
+		expect(
+			(await post("rooms/team/messages", { text: "Code", contract: { ...contract, goal: "x".repeat(384 * 1024) } }))
+				.status,
+		).toBe(400);
+		expect(received).toHaveLength(3);
+	});
+
 	describe("error forwarding", () => {
 		it("keeps the hub status, message and code for every allowed failure class", async () => {
 			let reply: { status: number; body: unknown } = { status: 404, body: { error: "Task missing" } };

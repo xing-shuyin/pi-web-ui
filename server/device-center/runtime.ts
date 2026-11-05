@@ -1,25 +1,38 @@
-import { isAbsolute, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { writeJsonAtomicSync } from "../atomic-file.js";
+import type { DeviceArtifact } from "../protocol.js";
+import { computeCanonicalRepositoryId, git } from "../workspace-handle.js";
+import type { LocalBotRegistry } from "./bots.js";
 import { createDeviceCollabService } from "./collab-service.js";
+import type { DeviceCollabExecutionContext } from "./collab-tool.js";
+import {
+	deviceCancelIntegration,
+	deviceConfirmIntegration,
+	devicePrepareIntegration,
+	deviceVerifyIntegration,
+} from "./device-integration.js";
+import { executionRoot, executionRootsOverlap } from "./execution-workspace.js";
 import { createDeviceTaskExecutor, type DeviceExecutorTask, type DeviceTaskExecutorOptions } from "./executor.js";
+import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import { createDeviceFileSync } from "./file-sync.js";
+import { reportUploadMetadata } from "./report-metadata.js";
 import { DeviceTaskError } from "./task-error.js";
 import { TaskRecoveryManager } from "./task-recovery.js";
 import { createTaskReportOutbox } from "./task-report-outbox.js";
-import { reportUploadMetadata } from "./report-metadata.js";
 import { DeviceTaskScheduler, type TaskSchedulerSnapshot } from "./task-scheduler.js";
-import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
-import type { LocalBotRegistry } from "./bots.js";
-import type { DeviceCollabExecutionContext } from "./collab-tool.js";
-import { executionRoot, executionRootsOverlap } from "./execution-workspace.js";
 import {
-	devicePrepareIntegration,
-	deviceVerifyIntegration,
-	deviceConfirmIntegration,
-	deviceCancelIntegration,
-} from "./device-integration.js";
+	cleanupTaskWorkspace,
+	captureTaskArtifact,
+	prepareTaskWorkspace,
+	resolveTrustedTaskWorkspace,
+	getTaskWorkspaceCapability,
+	type TaskWorkspaceCapability,
+	type TaskWorkspaceBinding,
+	type TaskWorkspaceHandle,
+} from "./task-workspace.js";
+import { canonicalizeJson, validateContextManifest, validateWorkContract } from "./work-contract.js";
 
 type Config = { hubUrl: string; deviceId: string; credential: string; allowExecution: boolean };
 type Files = ReturnType<typeof createDeviceFileSync>;
@@ -325,6 +338,8 @@ export function createDeviceRuntime(options: {
 			return Promise.reject(error);
 		}
 
+		// Detach all task data before the first await; wire objects must never remain mutable inputs.
+		task = structuredClone(task);
 		if (typeof task.leaseToken !== "string" || !task.leaseToken) {
 			return Promise.reject(new DeviceTaskError("Hub task lease grant required"));
 		}
@@ -332,6 +347,82 @@ export function createDeviceRuntime(options: {
 		const capacityCheck = recovery.hasOutboxCapacity();
 		if (!capacityCheck.available) {
 			return Promise.reject(new DeviceTaskError(capacityCheck.reason ?? "Recovery outbox capacity reached"));
+		}
+
+		const isCode = task.executionMode === "code" || task.contract?.executionMode === "code";
+		let contract = task.contract;
+		let contextManifest = task.contextManifest;
+		if (contract) {
+			const cCheck = validateWorkContract(contract);
+			if (!cCheck.valid) {
+				return Promise.reject(new DeviceTaskError(`Invalid work contract: ${cCheck.reason}`));
+			}
+			contract = cCheck.contract;
+		}
+		if (contextManifest) {
+			const mCheck = validateContextManifest(contextManifest, contract);
+			if (!mCheck.valid) {
+				return Promise.reject(new DeviceTaskError(`Invalid context manifest: ${mCheck.reason}`));
+			}
+			contextManifest = mCheck.manifest;
+		}
+
+		if (contextManifest?.executionPolicy) {
+			const policy = contextManifest.executionPolicy;
+			if (
+				policy.deviceId !== config.deviceId ||
+				policy.botId !== task.botId ||
+				policy.botRevision !== task.botRevision
+			) {
+				return Promise.reject(
+					new DeviceTaskError(
+						`Context manifest execution policy mismatch: expected device=${config.deviceId}, bot=${task.botId}@${task.botRevision}; manifest specifies device=${policy.deviceId}, bot=${policy.botId}@${policy.botRevision}`,
+					),
+				);
+			}
+		}
+
+		let effectiveContext = task.context;
+		let effectiveTaskState = task.taskState;
+		if (contextManifest) {
+			if (contextManifest.context !== null && contextManifest.context !== undefined) {
+				if (
+					task.context !== undefined &&
+					canonicalizeJson(task.context) !== canonicalizeJson(contextManifest.context)
+				) {
+					return Promise.reject(new DeviceTaskError("Task wire context does not match sealed contextManifest"));
+				}
+				effectiveContext = contextManifest.context as import("./group-context.js").GroupTaskContext;
+			} else {
+				if (task.context !== undefined && task.context !== null)
+					return Promise.reject(new DeviceTaskError("Task wire context does not match sealed contextManifest"));
+				effectiveContext = undefined;
+			}
+			if (contextManifest.taskState !== null && contextManifest.taskState !== undefined) {
+				if (
+					task.taskState !== undefined &&
+					canonicalizeJson(task.taskState) !== canonicalizeJson(contextManifest.taskState)
+				) {
+					return Promise.reject(new DeviceTaskError("Task wire taskState does not match sealed contextManifest"));
+				}
+				effectiveTaskState = contextManifest.taskState as import("../protocol.js").DeviceTaskState;
+			} else {
+				if (task.taskState !== undefined && task.taskState !== null)
+					return Promise.reject(new DeviceTaskError("Task wire taskState does not match sealed contextManifest"));
+				effectiveTaskState = undefined;
+			}
+		}
+
+		if (isCode) {
+			if (task.resume) {
+				return Promise.reject(new DeviceTaskError("Code execution mode refuses resuming old sessions in first slice"));
+			}
+			if (!contract || contract.executionMode !== "code") {
+				return Promise.reject(new DeviceTaskError("Code task requires a valid code work contract"));
+			}
+			if (!contextManifest) {
+				return Promise.reject(new DeviceTaskError("Code task requires sealed contextManifest"));
+			}
 		}
 
 		const owner: TaskOwner = {
@@ -356,6 +447,9 @@ export function createDeviceRuntime(options: {
 				leaseToken: task.leaseToken,
 				leaseGeneration: task.leaseGeneration ?? 1,
 				conversationId: task.conversationId,
+				contractDigest: contract?.digest,
+				manifestDigest: contextManifest?.digest,
+				executionMode: isCode ? "code" : "chat",
 			});
 			leaseRecorded = true;
 
@@ -390,8 +484,17 @@ export function createDeviceRuntime(options: {
 				roomId: task.roomId,
 				leaseToken: task.leaseToken,
 				leaseGeneration: task.leaseGeneration ?? 1,
+				contractDigest: contract?.digest,
+				manifestDigest: contextManifest?.digest,
 			};
 			let lease: Awaited<ReturnType<typeof acquire>> | undefined;
+			let workspaceHandle: TaskWorkspaceHandle | undefined;
+			let workspaceCapability: TaskWorkspaceCapability | undefined;
+			let workspaceBinding: TaskWorkspaceBinding | undefined;
+			let executionCwd = root;
+			let executionCompleted = false;
+			let artifactProduced = false;
+			let capturedArtifact: DeviceArtifact | undefined;
 			let stopping: Promise<void> | undefined;
 			const stop = () => {
 				if (!stopping) stopping = Promise.resolve().then(() => owner.executor?.close());
@@ -416,9 +519,61 @@ export function createDeviceRuntime(options: {
 					lease = await acquire(task.botId, taskSignal);
 					if (task.botRevision !== lease.bot.revision || executionRoot(lease.root) !== root)
 						throw new Error("Task Bot revision or workspace mismatch");
+					const policy = contextManifest?.executionPolicy;
+					if (
+						policy &&
+						(policy.deviceId !== config.deviceId ||
+							policy.botId !== lease.bot.id ||
+							policy.botRevision !== lease.bot.revision)
+					)
+						throw new Error("Context manifest execution policy mismatch with acquired lease");
 				} catch (error) {
 					if (taskSignal.aborted) throw error;
 					throw new DeviceTaskError("目标 Bot 不可用、配置已变更或正在忙碌。 / Target Bot unavailable or busy.");
+				}
+				executionCwd = lease.root;
+				if (isCode) {
+					if (contract?.baseline) {
+						const canonicalRepoId = await computeCanonicalRepositoryId(lease.root, taskSignal);
+						const expectedRepoId = contract.baseline.repositoryId.trim();
+						if (expectedRepoId !== canonicalRepoId && expectedRepoId !== "default" && expectedRepoId !== "local") {
+							let matchesRoot = false;
+							try {
+								const roots = (await git(lease.root, ["rev-list", "--max-parents=0", "HEAD"], taskSignal))
+									.trim()
+									.split("\n")
+									.map((c) => c.trim().toLowerCase());
+								matchesRoot = roots.includes(expectedRepoId.toLowerCase());
+							} catch {}
+							if (!matchesRoot) {
+								throw new DeviceTaskError(
+									`Repository identity mismatch: baseline specifies '${expectedRepoId}', local repository is '${canonicalRepoId}'`,
+								);
+							}
+						}
+					}
+					workspaceBinding = {
+						deviceId: config.deviceId,
+						botId: task.botId,
+						botRevision: lease.bot.revision,
+						taskId: task.id,
+						attemptId: task.attemptId,
+					};
+					workspaceHandle = await prepareTaskWorkspace({
+						dataDir: options.dataDir ?? process.cwd(),
+						deviceId: config.deviceId,
+						botId: task.botId,
+						botRevision: lease.bot.revision,
+						taskId: task.id,
+						attemptId: task.attemptId,
+						repoRoot: lease.root,
+						contract: contract!,
+						contextManifest: contextManifest!,
+						signal: taskSignal,
+					});
+					workspaceCapability = getTaskWorkspaceCapability(workspaceHandle, workspaceBinding);
+					const resolved = await resolveTrustedTaskWorkspace(workspaceCapability, workspaceBinding);
+					executionCwd = resolved.cwd;
 				}
 				let binding: string | undefined;
 				let resumePath: string | undefined;
@@ -427,7 +582,8 @@ export function createDeviceRuntime(options: {
 				if (task.resume !== undefined && typeof task.resume !== "boolean")
 					throw new DeviceTaskError("Invalid resume flag");
 				if (task.resume && !task.conversationId) throw new DeviceTaskError("Resume conversation address required");
-				if (task.conversationId !== undefined) {
+				// Code turns always use fresh sessions and never read or overwrite chat resume ownership.
+				if (!isCode && task.conversationId !== undefined) {
 					if (!UUID.test(task.conversationId) || !transcriptFile || transcriptLoadError)
 						throw new DeviceTaskError("Persistent conversation storage unavailable or invalid address");
 					binding = createHash("sha256")
@@ -491,6 +647,10 @@ export function createDeviceRuntime(options: {
 					localOrigin: options.localOrigin,
 					localAuthToken: options.localAuthToken,
 					cwd: lease.root,
+					executionCwd,
+					executionMode: isCode ? "code" : "chat",
+					workspaceHandleId: workspaceHandle?.handleId,
+					workspaceCapability,
 					bot: lease.bot,
 					allowExecution: config.allowExecution,
 					resumePath,
@@ -504,7 +664,7 @@ export function createDeviceRuntime(options: {
 							(resumePath && !samePath(path, resumePath))
 						)
 							throw new Error("Transcript ownership mismatch");
-						if (task.conversationId) {
+						if (!isCode && task.conversationId) {
 							const currentBot = bots.get(task.botId);
 							if (
 								!binding ||
@@ -535,9 +695,9 @@ export function createDeviceRuntime(options: {
 						if (sessionId && !taskSignal.aborted)
 							sessions.set(sessionId, {
 								taskId,
-								...(task.taskState ? { taskState: structuredClone(task.taskState) } : {}),
+								...(effectiveTaskState ? { taskState: structuredClone(effectiveTaskState) } : {}),
 								roomId: task.roomId,
-								root: lease!.root,
+								root: executionCwd,
 								botId: task.botId,
 								conversationId: task.conversationId,
 								sourceConversationId: task.sourceConversationId,
@@ -548,10 +708,36 @@ export function createDeviceRuntime(options: {
 				});
 				taskSignal.addEventListener("abort", stop, { once: true });
 				taskSignal.throwIfAborted();
-				const result = await owner.executor.run(task);
+				const result = await owner.executor.run({
+					...task,
+					context: effectiveContext,
+					taskState: effectiveTaskState,
+					executionMode: isCode ? "code" : "chat",
+					contract,
+					contextManifest,
+					workspaceHandleId: workspaceHandle?.handleId,
+					executionCwd,
+				});
 				await confirmStop();
 				taskSignal.throwIfAborted();
-				if (task.conversationId) {
+				executionCompleted = true;
+
+				if (isCode && workspaceHandle && workspaceBinding) {
+					try {
+						capturedArtifact = await captureTaskArtifact(workspaceHandle, workspaceBinding, taskSignal);
+						artifactProduced = true;
+					} catch (captureErr) {
+						// capture 失败不报 completed！
+						// 执行完成与 artifactProduced 是独立 facts（executionCompleted 可以 true artifact 不存在导致终态 failed）
+						const msg =
+							captureErr instanceof Error
+								? `Task artifact capture failed: ${captureErr.message}`
+								: "Task artifact capture failed";
+						throw new DeviceTaskError(msg, msg);
+					}
+				}
+
+				if (!isCode && task.conversationId) {
 					const currentBot = bots.get(task.botId);
 					if (
 						!transcriptPath ||
@@ -573,6 +759,9 @@ export function createDeviceRuntime(options: {
 					status: "completed",
 					report: result,
 					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+					artifact: capturedArtifact,
+					executionCompleted,
+					artifactProduced,
 				});
 				return result;
 			} catch (error) {
@@ -583,11 +772,18 @@ export function createDeviceRuntime(options: {
 				} catch (stopError) {
 					failure = stopError;
 				}
-				const interrupted = taskSignal.aborted || !!owner.blocked || failure instanceof DeviceTaskStopUnconfirmedError;
+				// 若无法确认任务已停止，必须保留 active lease 和 blocked owner，绝不能持久化终态，破坏确认停止不变量
+				if (owner.blocked || failure instanceof DeviceTaskStopUnconfirmedError) {
+					throw failure;
+				}
+				const interrupted = taskSignal.aborted;
 				recovery.recordTaskFinish(outcomeTask, {
 					status: interrupted ? "interrupted" : "failed",
 					error: failure,
 					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+					artifact: capturedArtifact,
+					executionCompleted,
+					artifactProduced,
 				});
 				throw failure;
 			} finally {
@@ -599,6 +795,13 @@ export function createDeviceRuntime(options: {
 				} catch {}
 				for (const [id, bound] of sessions)
 					if (bound.taskId === task.id && bound.roomId === task.roomId) sessions.delete(id);
+				// 只能在 stoppedCleanly && !owner.blocked 时保守清理（无 force，dirty/额外commit会被保留）
+				// 若 stop 未确认，绝不能清理工作区，保留现场！
+				if (stoppedCleanly && !owner.blocked && workspaceHandle && workspaceBinding) {
+					try {
+						await cleanupTaskWorkspace(workspaceHandle, workspaceBinding, { force: false });
+					} catch {}
+				}
 				if (!owner.blocked && stoppedCleanly) {
 					lease?.release();
 					if (activeItem) scheduler.releaseActive(activeItem);

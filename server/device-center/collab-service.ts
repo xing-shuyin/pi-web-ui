@@ -56,6 +56,8 @@ export function createDeviceCollabService(options: {
 					throw new Error("Parent task spoofing denied");
 				args.sourceBotId ??= bound?.botId;
 				args.roomId ??= bound?.roomId;
+				if (args.executionMode !== undefined || args.contract !== undefined)
+					validateDeviceCollabInput({ ...args, action });
 				if (
 					action === "conversation_attention" ||
 					action === "conversation_deliver" ||
@@ -201,6 +203,7 @@ export function createDeviceCollabService(options: {
 						if (args.offset !== undefined) query.set("offset", String(args.offset));
 						if (args.limit !== undefined) query.set("limit", String(args.limit));
 						if (args.expectedDigest !== undefined) query.set("expectedDigest", args.expectedDigest);
+						if (args.evidenceKind !== undefined) query.set("evidenceKind", args.evidenceKind);
 						return await request(path, undefined, query);
 					}
 					case "list_bots": {
@@ -251,7 +254,9 @@ export function createDeviceCollabService(options: {
 							text: args.prompt,
 							sourceBotId: args.sourceBotId,
 							targetBotIds: [args.targetBotId],
-							idempotencyKey: randomUUID(),
+							idempotencyKey: args.idempotencyKey ?? randomUUID(),
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							...(parentTaskId ? { parentTaskId } : {}),
 							...(args.resourceLocks?.length ? { resourceLocks: args.resourceLocks } : {}),
 						});
@@ -343,6 +348,8 @@ export function createDeviceCollabService(options: {
 						return await request(`${room()}/conversations`, {
 							targetBotId: args.targetBotId,
 							text: args.prompt,
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							...(args.kind ? { kind: args.kind } : {}),
 							...(args.requestId ? { requestId: args.requestId } : {}),
 							sourceBotId: args.sourceBotId,
@@ -359,6 +366,8 @@ export function createDeviceCollabService(options: {
 							throw new Error("Conversation fields required");
 						return await request(`${room()}/conversations/${encodeURIComponent(args.conversationId)}/messages`, {
 							text: args.message,
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							sourceBotId: args.sourceBotId,
 							parentTaskId,
 							kind: args.kind ?? "message",

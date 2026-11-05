@@ -40,6 +40,13 @@ export interface DeviceExecutorTask {
 	canvasRef?: { graphId: string; title?: string };
 	presetRevision?: number;
 	attenuatedTools?: string[];
+	executionMode?: "chat" | "code";
+	contract?: import("../protocol.js").DeviceWorkContract;
+	contextManifest?: import("../protocol.js").ContextManifest;
+	workspaceHandleId?: string;
+	executionCwd?: string;
+	leaseToken?: string;
+	leaseGeneration?: number;
 }
 
 export interface DeviceTaskExecutorOptions {
@@ -47,6 +54,11 @@ export interface DeviceTaskExecutorOptions {
 	localOrigin: string;
 	localAuthToken?: string;
 	cwd: string;
+	executionCwd?: string;
+	workspaceHandleId?: string;
+	/** Process-local authority, never read from the wire task. */
+	workspaceCapability?: import("./task-workspace.js").TaskWorkspaceCapability;
+	executionMode?: "chat" | "code";
 	allowExecution?: boolean;
 	/** SDK sessionManager.getSessionId(), never the UI conversationId. */
 	onSession?: (taskId: string, sessionId: string | undefined) => void;
@@ -95,11 +107,26 @@ function samePath(a?: string, b?: string): boolean {
 
 export function taskPrompt(task: DeviceExecutorTask): string {
 	const context = task.taskState ? selectTaskContext(task.taskState) : undefined;
+	const isCode = (task.executionMode ?? task.contract?.executionMode) === "code";
+	// In code mode, contract.goal is the authoritative executable instruction binding
+	const effectiveText = isCode && task.contract?.goal ? task.contract.goal : task.text;
+	const contractInfo = task.contract
+		? {
+				contractId: task.contract.id,
+				contractRevision: task.contract.revision,
+				contractDigest: task.contract.digest,
+				executionMode: task.contract.executionMode,
+				goal: task.contract.goal,
+				constraints: task.contract.constraints,
+				acceptanceCriteria: task.contract.acceptanceCriteria,
+				baseline: task.contract.baseline,
+			}
+		: undefined;
 	return [
 		`Device task ${JSON.stringify(task.id)}, attempt ${JSON.stringify(task.attemptId)}.`,
 		`Local system (measured by this bridge): ${os.platform()} / ${os.arch()}.`,
 		JSON.stringify({
-			text: task.text,
+			text: effectiveText,
 			taskState: context?.state,
 			taskStateSelection: context?.selection,
 			roomId: task.roomId ?? null,
@@ -110,7 +137,9 @@ export function taskPrompt(task: DeviceExecutorTask): string {
 			requestId: task.requestId,
 			parentTaskId: task.parentTaskId,
 			resultOfTaskId: task.resultOfTaskId,
-			handoff: task.handoff ?? null,
+			handoff: isCode ? null : (task.handoff ?? null),
+			contract: contractInfo,
+			executionMode: isCode ? "code" : "chat",
 			...(task.attenuatedTools && task.attenuatedTools.length ? { attenuatedTools: task.attenuatedTools } : {}),
 		}),
 	].join("\n\n");
@@ -125,7 +154,11 @@ export function taskPrompt(task: DeviceExecutorTask): string {
 export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 	const origin = originUrl(options.localOrigin);
 	if (!isAbsolute(options.cwd)) throw new Error("cwd must be an absolute local path");
+	if (options.executionCwd !== undefined && !isAbsolute(options.executionCwd)) {
+		throw new Error("executionCwd must be an absolute local path");
+	}
 	const cwd = resolve(options.cwd);
+	const effectiveCwd = options.executionCwd ? resolve(options.executionCwd) : cwd;
 	const root = executionRoot(cwd);
 	let closed = false;
 	let cancel: (() => void) | undefined;
@@ -142,6 +175,10 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 					),
 				);
 			if (!task.id || !task.attemptId || !task.text?.trim()) return Promise.reject(new Error("Invalid task"));
+			const isCodeMode = (task.executionMode ?? options.executionMode ?? task.contract?.executionMode) === "code";
+			if (isCodeMode && task.resume) {
+				return Promise.reject(new DeviceTaskError("Code execution mode refuses resuming old sessions in first slice"));
+			}
 			if (
 				[...busyExecutions].some(
 					(entry) =>
@@ -186,6 +223,13 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				planOnly: Boolean(task.planOnly),
 				attenuatedTools: task.attenuatedTools,
 				sourceBotId: task.sourceBotId,
+				executionCwd: effectiveCwd,
+				executionMode: isCodeMode ? "code" : "chat",
+				workspaceHandleId: options.workspaceHandleId,
+				workspaceCapability: options.workspaceCapability,
+				deviceId: task.deviceId,
+				taskId: task.id,
+				attemptId: task.attemptId,
 			});
 			attempted.add(key);
 			const lock = { origin: origin.origin, botId: task.botId, root };
@@ -548,7 +592,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 						return;
 					}
 					if (phase === "initial" || (phase === "cwd" && cwdDone)) {
-						if (resolve(state.cwd) !== cwd) {
+						if (resolve(state.cwd) !== effectiveCwd) {
 							if (phase === "cwd") {
 								finish("Workspace switch did not reach requested cwd");
 								return;
@@ -567,7 +611,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 						if (options.resumePath) {
 							if (!samePath(state.sessionFile, options.resumePath)) return;
 						} else if (state.messages.length || state.historyTotal) return;
-						if (state.isEphemeral || resolve(state.cwd) !== cwd) {
+						if (state.isEphemeral || resolve(state.cwd) !== effectiveCwd) {
 							finish("Task session is not persistent in requested cwd");
 							return;
 						}
@@ -639,7 +683,7 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 						return;
 					}
 					if (
-						resolve(state.cwd) !== cwd ||
+						resolve(state.cwd) !== effectiveCwd ||
 						state.isEphemeral ||
 						(options.resumePath && !samePath(state.sessionFile, options.resumePath))
 					) {

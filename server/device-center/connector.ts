@@ -102,6 +102,9 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			leaseToken: item.leaseToken,
 			leaseGeneration: item.leaseGeneration,
 			fingerprint: item.fingerprint,
+			artifact: item.artifact,
+			executionCompleted: item.executionCompleted,
+			artifactProduced: item.artifactProduced,
 		});
 	}
 	function stopTasks(forceAll = false) {
@@ -300,9 +303,49 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 					return;
 				}
 				if (frame.type === "task_result_ack") {
-					if (frame.accepted === true && typeof frame.taskId === "string" && typeof frame.attemptId === "string") {
+					if (
+						[frame.fingerprint, frame.artifactDigest, frame.contractDigest, frame.manifestDigest].some(
+							(value) => value !== undefined && typeof value !== "string",
+						)
+					)
+						return;
+					const pending =
+						typeof frame.taskId === "string" && typeof frame.attemptId === "string"
+							? options.recovery?.getPendingOutboxEntry(frame.taskId, frame.attemptId)
+							: undefined;
+					if (
+						(frame.contractDigest !== undefined && frame.contractDigest !== pending?.contractDigest) ||
+						(frame.manifestDigest !== undefined && frame.manifestDigest !== pending?.manifestDigest)
+					)
+						return;
+					if (
+						frame.accepted === false &&
+						frame.permanent === true &&
+						typeof frame.taskId === "string" &&
+						typeof frame.attemptId === "string"
+					) {
+						options.recovery?.quarantineOutbox(
+							frame.taskId,
+							frame.attemptId,
+							frame.fingerprint,
+							frame.reasonCode,
+							frame.status,
+							frame.artifactDigest,
+						);
+					}
+					if (
+						frame.accepted === true &&
+						typeof frame.taskId === "string" &&
+						typeof frame.attemptId === "string" &&
+						typeof frame.status === "string"
+					) {
 						const fp = typeof frame.fingerprint === "string" ? frame.fingerprint : undefined;
-						options.recovery?.ackOutbox(frame.taskId, frame.attemptId, fp);
+						options.recovery?.ackOutbox(frame.taskId, frame.attemptId, fp, {
+							status: frame.status,
+							artifactDigest: typeof frame.artifactDigest === "string" ? frame.artifactDigest : undefined,
+							contractDigest: typeof frame.contractDigest === "string" ? frame.contractDigest : undefined,
+							manifestDigest: typeof frame.manifestDigest === "string" ? frame.manifestDigest : undefined,
+						});
 					}
 					return;
 				}
