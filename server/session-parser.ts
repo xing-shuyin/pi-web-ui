@@ -9,6 +9,7 @@
  */
 import { existsSync } from "node:fs";
 import { sessionLines } from "./session-scan.js";
+import { scanSessionListInfo } from "./session-list-scan.js";
 import * as fsPromises from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
@@ -159,6 +160,8 @@ export async function parseSessionInfoFast(
 	fileMtime: number,
 	withAllMessagesText = false,
 ): Promise<SessionInfo | null> {
+	// 列表模式：字节级扫描（长行不解码、不过 base64 过滤器），规则与下方原实现一致。
+	if (!withAllMessagesText) return (await scanSessionListInfo(filePath, fileMtime))?.info ?? null;
 	try {
 		let id = "";
 		let cwd = "";

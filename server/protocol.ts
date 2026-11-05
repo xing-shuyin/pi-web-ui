@@ -1453,7 +1453,9 @@ export type ClientMessage =
 	/** 设置页逐工具编辑文案时取「默认值 + 当前覆盖」（同 get_tool_info，但不弹工具定义弹窗）。
 	 *  应答 `tool_prompt`。 */
 	| { type: "get_tool_prompt"; name: string }
-	| { type: "list_sessions"; path?: string }
+	/** limit：希望拿到的会话总条数（左栏「显示更多」超出已下发部分时按页加大；缺省 200）。
+	 *  服务端会记住每个项目的 limit，之后的自动刷新沿用它，已展开的列表不会被缩回。 */
+	| { type: "list_sessions"; path?: string; limit?: number }
 	| { type: "switch_session"; path: string; sessionId?: string; independent?: boolean }
 	| { type: "switch_conversation"; id: string }
 	/** 手动过户：把另一处（elsewhere 行，owner/convId 标识）的对话整体搬到本页
@@ -4474,7 +4476,8 @@ export type ServerMessage =
 	| { type: "scm_changed" }
 	/** Sent every ~2s so clients can detect half-open connections and display host metrics / network latency. */
 	| { type: "heartbeat"; hostMetrics?: UiHostMetrics; latencyMs?: number }
-	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string }
+	/** hasMore：服务端还有更多（更旧的）会话未下发，客户端可用更大的 limit 再请求。 */
+	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string; hasMore?: boolean }
 	/** Filename matches for the global search panel (reqId echo). Always sent
 	 *  in reply to a search_files request — ok:false means the walk failed. */
 	| {
@@ -5160,6 +5163,10 @@ export type ServerMessage =
 			textEn: string;
 			totalMessages?: number;
 			previewMessages?: UiMessage[];
+			/** 预览消息 id 与首个快照一致时下发：即将创建的对话 id 与会话文件。浏览器用它们
+			 *  组成与快照相同的会话键，预览→快照沿用同一个消息列表实例（不重挂载）。 */
+			conversationId?: string;
+			sessionFile?: string;
 	  }
 	| { type: "sandbox_diff"; diff: SandboxDiffView };
 

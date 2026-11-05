@@ -41,7 +41,12 @@ import {
 	normalizeToolWatchdogTimeoutMs,
 	settingsPresetToUi,
 } from "../client-state.js";
-import { normalizeUiLayout, normalizeKeepRecentMessages, DEFAULT_KEEP_RECENT_MESSAGES } from "../client-state.js";
+import {
+	normalizeUiLayout,
+	normalizeKeepRecentMessages,
+	DEFAULT_KEEP_RECENT_MESSAGES,
+	RECENT_PROJECTS_MAX,
+} from "../client-state.js";
 import { PLAN_MODE_SYSTEM_PROMPT } from "../plan-mode.js";
 import { buildToolsSchemaText, type ToolSchemaEntry } from "../prompt-composer.js";
 import { FilesService, workspacePath, desktopDirWire } from "../files-service.js";
@@ -3372,7 +3377,7 @@ export class DshClientSession {
 				return sbx ? { path, lastUsed, sandbox: sbx } : { path, lastUsed };
 			})
 			.sort((a, b) => b.lastUsed - a.lastUsed)
-			.slice(0, 30);
+			.slice(0, RECENT_PROJECTS_MAX);
 		this.emit({ type: "projects", projects: list });
 	}
 

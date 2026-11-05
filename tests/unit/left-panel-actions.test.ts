@@ -338,7 +338,9 @@ describe("LeftPanel P1：分区标题栏 / 项目行 / 项目右键插件位", (
 			uiLeftProject: [entry("leftpanel.project", "pj", "PJ")],
 			onUiAction,
 		});
-		const btn = container.querySelector<HTMLButtonElement>(".lp-row .lp-slot-project .lp-slot-btn");
+		// 项目按最近使用排序：当前工作区 /test（注入的 lastUsed=now）排在最前，按路径定位 /test/p1 那一行
+		const p1Row = container.querySelector('[data-project-path="/test/p1"]')?.closest(".lp-row");
+		const btn = p1Row?.querySelector<HTMLButtonElement>(".lp-slot-project .lp-slot-btn");
 		expect(btn?.getAttribute("aria-label")).toBe("PJ");
 		act(() => btn!.click());
 		expect(onUiAction).toHaveBeenCalledTimes(1);
@@ -360,7 +362,7 @@ describe("LeftPanel P1：分区标题栏 / 项目行 / 项目右键插件位", (
 			projects: oneProject,
 			uiContextProject: [entry("contextmenu.project", "pm", "项目菜单")],
 		});
-		const row = container.querySelector<HTMLElement>(".lp-row");
+		const row = container.querySelector('[data-project-path="/test/p1"]')?.closest<HTMLElement>(".lp-row");
 		act(() => {
 			row!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 20 }));
 		});

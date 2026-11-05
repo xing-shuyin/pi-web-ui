@@ -495,6 +495,8 @@ export function handleSessionLifecycleMessage(
 			void cs.rollbackSession?.(msg.messageId, msg.conversationId, msg.restoreWorkspace);
 			return true;
 		case "list_sessions":
+			// B5：带 limit 的请求（左栏「显示更多」翻页）先记住该项目的条数，之后的自动刷新沿用它
+			if (typeof msg.limit === "number") cs.setSessionListLimit?.(msg.path ?? cs.cwd, msg.limit);
 			if (msg.path && normalizePathKey(msg.path) !== normalizePathKey(cs.cwd)) {
 				void cs.pushSessionsForCwd?.(msg.path);
 			} else {

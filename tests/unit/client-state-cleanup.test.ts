@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CLIENT_STATE_RETENTION_MS, ClientStateStore, MAX_TRACKED_CLIENTS } from "../../server/client-state.js";
+import {
+	CLIENT_STATE_RETENTION_MS,
+	ClientStateStore,
+	MAX_TRACKED_CLIENTS,
+	RECENT_PROJECTS_MAX,
+} from "../../server/client-state.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -116,16 +121,17 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		expect(clientKeys.length).toBe(MAX_TRACKED_CLIENTS);
 	});
 
-	it("getRecentProjects 先截断后探测：探测次数封顶 30 且返回最近的 30 条", async () => {
+	it("getRecentProjects 先截断后探测：探测次数封顶 RECENT_PROJECTS_MAX 且返回最近的那些", async () => {
 		const now = Date.now();
-		const paths = Array.from({ length: 40 }, (_, i) => `/p/${i}`);
+		const total = RECENT_PROJECTS_MAX + 10;
+		const paths = Array.from({ length: total }, (_, i) => `/p/${i}`);
 		writeFileSync(
 			file,
 			JSON.stringify(
 				{
 					__settings__: { projects: [] },
 					c1: {
-						projects: paths.map((path, i) => ({ path, lastUsed: now - (40 - i) * 60_000 })),
+						projects: paths.map((path, i) => ({ path, lastUsed: now - (total - i) * 60_000 })),
 					},
 				},
 				null,
@@ -136,11 +142,11 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		const store = new CountingStore(file, new Set(paths));
 		const recent = await store.getRecentProjects("c1");
 
-		// 40 条候选只探测前 30（旧实现会对全部 40 条逐个探测后再截断）
-		expect(store.probes).toBe(30);
-		expect(recent.length).toBe(30);
-		// 返回的是最近的 30 条（lastUsed 降序），最旧的 10 条从未被探测
-		expect(recent[0].path).toBe("/p/39");
+		// 多出的 10 条候选不探测（旧实现会对全部候选逐个探测后再截断）
+		expect(store.probes).toBe(RECENT_PROJECTS_MAX);
+		expect(recent.length).toBe(RECENT_PROJECTS_MAX);
+		// 返回的是最近的那些（lastUsed 降序），最旧的 10 条从未被探测
+		expect(recent[0].path).toBe(`/p/${total - 1}`);
 		expect(recent.map((p) => p.path)).not.toContain("/p/0");
 	});
 

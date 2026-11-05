@@ -67,6 +67,9 @@ import {
 	shouldRetainActive,
 } from "./wait-subscription-scan.js";
 import { looksLikeChainCorruption, repairSessionFile, type SessionFileRepair } from "./compaction-markers.js";
+import { prepareTranscriptForOpen, type PreparedTranscript } from "./transcript-prepare.js";
+import { scanSessionListInfo, type SessionListScanState } from "./session-list-scan.js";
+import { openSessionManagerAsync } from "./session-open.js";
 import { calibrateSessionLeaf } from "./session-branch.js";
 import { startLoadTiming } from "./load-timing.js";
 import {
@@ -137,6 +140,7 @@ import {
 	normalizeSkillList,
 	type PromptMode,
 	ClientStateStore,
+	RECENT_PROJECTS_MAX,
 } from "./client-state.js";
 import { isTraditionalLocale, pick, resolveServerLang, type ServerLang } from "./i18n.js";
 import {
@@ -698,6 +702,10 @@ export interface Conversation {
 	 *  with this still false counts as "opened but not continued" and is
 	 *  dismissed from the list. */
 	promptedSinceActive: boolean;
+	/** 从历史列表打开、之后从未发过消息（只是查看）。项目运行对话达上限时，
+	 *  这类对话按 lastActiveAt 从旧到新被自动移出腾位（转录已在磁盘，可从历史重新打开），
+	 *  而不是直接拒绝打开新的对话。发送 / 重试时清除。 */
+	viewOnly?: boolean;
 	/** Last time this conversation became active — set_cwd picks the target
 	 *  project's most recently active conversation. */
 	lastActiveAt: number;
@@ -951,6 +959,32 @@ export function isAbortedTurnBoundaryError(err: unknown): boolean {
 }
 
 export { processTreeKillPlan, resolveCwdTarget };
+
+/** 会话列表单文件元信息缓存条目；scan 为可续扫状态（追加写入时只解析新增字节）。 */
+interface SessionFileCacheEntry {
+	mtime: number;
+	size: number;
+	info: SessionInfo;
+	scan?: SessionListScanState;
+}
+
+/** 打开历史会话时预览阶段算出的消息 id 状态，建好对话后写入，使首个快照的 id 与预览一致。 */
+interface PreviewIdSeed {
+	msgIds: Map<string, number>;
+	nextMsgId: number;
+	uiMessageCache: Map<string, UiMessage>;
+}
+
+/** 会话列表展示字段上限（字符）：左栏标题单行省略号显示，搜索弹窗副标题两行即止。 */
+const LIST_TEXT_MAX = 300;
+export function clipListText(text: string): string {
+	if (text.length <= LIST_TEXT_MAX) return text;
+	// 避免截在 UTF-16 代理对中间留下孤立高位代理
+	let end = LIST_TEXT_MAX;
+	const code = text.charCodeAt(end - 1);
+	if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+	return `${text.slice(0, end)}…`;
+}
 
 export class ClientSession {
 	static mcpProjects: McpProjectRuntimeRegistry | null = null;
@@ -4004,7 +4038,7 @@ export class ClientSession {
 			try {
 				const targetPath = resolve(p);
 				if (!existsSync(targetPath)) continue;
-				cs.repairTranscriptFileBeforeOpen(targetPath);
+				await cs.repairTranscriptFileBeforeOpen(targetPath);
 				const sm = SessionManager.open(targetPath);
 				const convId = cs.nextConversationId();
 				const terms = cs.makeTerminalManager(convId, cwd);
@@ -5631,7 +5665,7 @@ export class ClientSession {
 		limit = 50,
 	): Promise<{ id: string; title: string; cwd: string; kind: "history"; isStreaming: false }[]> {
 		try {
-			const infos = await this.loadSessionInfos();
+			const infos = await this.loadSessionInfos(undefined, { listOnly: limit <= 200 });
 			return infos.slice(0, Math.max(0, limit)).map((s) => ({
 				id: s.path,
 				title: (s.name?.trim() || s.firstMessage.trim() || basename(s.path)).slice(0, 60),
@@ -6546,7 +6580,10 @@ export class ClientSession {
 	 *
 	 *  messagesOf 一次扫描里同时要 key（建 live 集合）与 n（算 user seq），所以
 	 *  两者一起返回、只算一次；单独调用的路径不传 key，按需现算。 */
-	private uiMessageKey(conv: Conversation, m: AgentMessage): { cacheKey: string; n: number } {
+	private uiMessageKey(
+		conv: Pick<Conversation, "msgIds" | "nextMsgId">,
+		m: AgentMessage,
+	): { cacheKey: string; n: number } {
 		// toolResult messages are keyed by toolCallId; everything else by
 		// role+timestamp. A single prompt can emit several same-role messages
 		// within the SAME millisecond (multiple attachment asides), so the
@@ -6603,41 +6640,10 @@ export class ClientSession {
 		// pruneMessageCache 精确回收死条目）与各自的序列化结果。
 		const live = new Set<string>();
 
-		let agentMessages = conv.session.agent.state.messages;
-		// issue #448: 多次压缩后 SDK state.messages 只保留最后一次压缩卡片。
-		// 从当前分支祖先链中提取前序未展示的历史 compaction 并正序置前，
-		// 使前端能逐段回溯展开历史折叠内容。
-		if (conv.session.sessionManager?.getBranch) {
-			try {
-				const branch = conv.session.sessionManager.getBranch();
-				const compEntries = branch.filter((e) => e.type === "compaction");
-				if (compEntries.length > 1) {
-					const existingCompKeys = new Set(
-						agentMessages
-							.filter((m) => m.role === "compactionSummary")
-							.map((m) => `${m.timestamp}:${(m as { summary?: string }).summary ?? ""}`),
-					);
-					const missingComps: AgentMessage[] = [];
-					for (const ce of compEntries) {
-						const ts = ce.timestamp ? new Date(ce.timestamp).getTime() : 0;
-						const key = `${ts}:${ce.summary ?? ""}`;
-						if (!existingCompKeys.has(key)) {
-							missingComps.push({
-								role: "compactionSummary",
-								summary: ce.summary ?? "",
-								tokensBefore: ce.tokensBefore,
-								timestamp: ts,
-							} as AgentMessage);
-						}
-					}
-					if (missingComps.length > 0) {
-						agentMessages = [...missingComps, ...agentMessages];
-					}
-				}
-			} catch {
-				// 获取分支异常不影响当前渲染
-			}
-		}
+		const agentMessages = this.withHistoricalCompactions(
+			conv.session.agent.state.messages,
+			conv.session.sessionManager,
+		);
 
 		let rawMessages = agentMessages
 			.map((m) => {
@@ -6659,6 +6665,47 @@ export class ClientSession {
 		conv.lastMessagesSig = sig;
 		conv.lastMessagesArray = rawMessages;
 		return messages;
+	}
+
+	/**
+	 * issue #448: 多次压缩后 SDK state.messages 只保留最后一次压缩卡片。
+	 * 从当前分支祖先链中提取前序未展示的历史 compaction 并正序置前，
+	 * 使前端能逐段回溯展开历史折叠内容。（messagesOf 与打开历史时的预览共用，
+	 * 两边得到同一份消息序列，预览消息 id 才能与首个快照一致。）
+	 */
+	private withHistoricalCompactions(
+		agentMessages: AgentMessage[],
+		sessionManager: Pick<SessionManager, "getBranch"> | undefined,
+	): AgentMessage[] {
+		if (!sessionManager?.getBranch) return agentMessages;
+		try {
+			const branch = sessionManager.getBranch();
+			const compEntries = branch.filter((e) => e.type === "compaction");
+			if (compEntries.length > 1) {
+				const existingCompKeys = new Set(
+					agentMessages
+						.filter((m) => m.role === "compactionSummary")
+						.map((m) => `${m.timestamp}:${(m as { summary?: string }).summary ?? ""}`),
+				);
+				const missingComps: AgentMessage[] = [];
+				for (const ce of compEntries) {
+					const ts = ce.timestamp ? new Date(ce.timestamp).getTime() : 0;
+					const key = `${ts}:${ce.summary ?? ""}`;
+					if (!existingCompKeys.has(key)) {
+						missingComps.push({
+							role: "compactionSummary",
+							summary: ce.summary ?? "",
+							tokensBefore: ce.tokensBefore,
+							timestamp: ts,
+						} as AgentMessage);
+					}
+				}
+				if (missingComps.length > 0) return [...missingComps, ...agentMessages];
+			}
+		} catch {
+			// 获取分支异常不影响当前渲染
+		}
+		return agentMessages;
 	}
 
 	/** 序列化缓存上界：**先按「还在转写里」淘汰，绝不为省内存淘汰仍在转写里的条目**。
@@ -11831,6 +11878,8 @@ export class ClientSession {
 			// 立即切换会话，若提前置位会被 displaceActive 误判为有消息投递而报错通知。
 			startTurnTiming(conv);
 			conv.promptInFlight = true;
+			// 用户开始在这条对话里发言：不再是「只是查看」的历史对话，达上限时不得自动移出。
+			conv.viewOnly = false;
 			this.flushSnapshot();
 			// Attach files as independent nextTurn context messages (asides) so the
 			// user message stays clean; they render as separate attachment cards.
@@ -12022,6 +12071,7 @@ export class ClientSession {
 		// switches away. (Also bumps the per-project "most recently active"
 		// order used by set_cwd.)
 		conv.promptedSinceActive = true;
+		conv.viewOnly = false;
 		conv.lastActiveAt = Date.now();
 		// Fresh run — restart the stall watchdog window.
 		conv.lastSdkEventAt = Date.now();
@@ -12157,6 +12207,7 @@ export class ClientSession {
 			);
 			if (!current()) return;
 			conv.promptedSinceActive = true;
+			conv.viewOnly = false;
 			conv.lastActiveAt = Date.now();
 			conv.lastSdkEventAt = Date.now();
 			conv.stallNoticed = false;
@@ -12750,6 +12801,8 @@ export class ClientSession {
 		// lists and don't consume this project's slots. Subagents don't count
 		// (inMemory 后台任务，不占位）。临时会话也不占名额。
 		if (!ephemeral) {
+			// 达上限时先按 LRU 收起只查看过的历史对话（不计当前对话的释放：沿用原口径，保守）。
+			this.makeRoomForConversation(this.cwd, 1);
 			const openInProject = [...this.convs.values()].filter(
 				(c) => c.cwd === this.cwd && !c.isSubagent && !c.isEphemeral,
 			).length;
@@ -13032,22 +13085,19 @@ export class ClientSession {
 	 * 返回 null = 文件健康或无需处理；返回 repair = 修过，调用方弹提示。
 	 * #280：顺带修悬空 toolCall（强制重置/崩溃残留的有调用无结果），修过同样弹提示。
 	 */
-	private repairTranscriptFileBeforeOpen(filePath: string): SessionFileRepair | null {
-		let repair: SessionFileRepair | null = null;
+	private async repairTranscriptFileBeforeOpen(filePath: string): Promise<SessionFileRepair | null> {
+		let prepared: PreparedTranscript;
 		try {
-			repair = repairSessionFile(filePath);
+			// 链修复与悬空调用修复共用一次异步读盘；两项健康指纹都命中时不读盘（transcript-prepare.ts）。
+			prepared = await prepareTranscriptForOpen(filePath, this.danglingCauseFor(filePath));
 		} catch {
 			return null;
 		}
-		if (!repair?.changed) {
+		const repair = prepared.repair;
+		if (!repair) return null;
+		if (!repair.changed) {
 			// #280：压缩链健康时仍要查悬空 toolCall（崩溃/强制重置残留）。
-			let healed = 0;
-			try {
-				const n = healDanglingToolCallFile(filePath, this.danglingCauseFor(filePath));
-				if (n > 0) healed = n;
-			} catch {
-				// best-effort
-			}
+			const healed = prepared.healed > 0 ? prepared.healed : 0;
 			if (healed <= 0) return null;
 			this.emit({
 				type: "notice",
@@ -13069,7 +13119,7 @@ export class ClientSession {
 	private extractTranscriptPreview(
 		manager: SessionManager,
 		maxPreview = 16,
-	): { totalMessages: number; previewMessages: UiMessage[] } {
+	): { totalMessages: number; previewMessages: UiMessage[]; idSeed?: PreviewIdSeed } {
 		try {
 			const branch = manager.getBranch();
 			const msgEntries: AgentMessage[] = [];
@@ -13082,6 +13132,8 @@ export class ClientSession {
 				}
 			}
 			const totalMessages = msgEntries.length;
+			const seeded = this.previewWithSnapshotIds(manager, maxPreview);
+			if (seeded) return { totalMessages, previewMessages: seeded.previewMessages, idSeed: seeded.idSeed };
 			const tail = msgEntries.slice(-maxPreview);
 			const startOffset = totalMessages - tail.length;
 			const previewMessages: UiMessage[] = [];
@@ -13093,6 +13145,59 @@ export class ClientSession {
 		} catch {
 			return { totalMessages: 0, previewMessages: [] };
 		}
+	}
+
+	/**
+	 * 用首个快照将会使用的同一套 id 规则生成预览（C4：预览→快照不再整列重挂载）。
+	 *
+	 * 新建对话的 agent.state.messages 由 SDK 以 `sessionManager.buildSessionContext().messages`
+	 * 初始化（sdk.js），messagesOf 再经 withHistoricalCompactions 补历史压缩卡；这里对同一序列
+	 * 走同一个 uiMessageKey（内容键 → 序号 n），只序列化尾部若干条。用户消息的 seq 是「同时间戳
+	 * 用户消息的 1-based 序」：首个快照里尾部条目命中缓存不再计数、更早条目按序 miss 计数，
+	 * 所以 userSeqByTs 种子留空、尾部按全序列精确计算，两者结果一致。
+	 * 种子随后交给 seedConversationIds 写入新对话：msgIds 按内容键映射，即便扩展在 bind 时
+	 * 追加消息，已有键的序号也不变。返回 null = 管理器不支持（回退旧预览，id 不保证一致）。
+	 */
+	private previewWithSnapshotIds(
+		manager: SessionManager,
+		maxPreview: number,
+	): { previewMessages: UiMessage[]; idSeed: PreviewIdSeed } | null {
+		if (typeof (manager as { buildSessionContext?: unknown }).buildSessionContext !== "function") return null;
+		const all = this.withHistoricalCompactions(manager.buildSessionContext().messages, manager);
+		const ids: Pick<Conversation, "msgIds" | "nextMsgId"> = { msgIds: new Map(), nextMsgId: 1 };
+		const keys = all.map((m) => this.uiMessageKey(ids, m));
+		// 从尾部找出最后 maxPreview 条会渲染的（非 system）消息
+		let start = all.length;
+		for (let shown = 0; start > 0 && shown < maxPreview;) {
+			start--;
+			if ((all[start] as { role?: string }).role !== "system") shown++;
+		}
+		const userSeen = new Map<number, number>();
+		const uiMessageCache = new Map<string, UiMessage>();
+		const previewMessages: UiMessage[] = [];
+		for (let i = 0; i < all.length; i++) {
+			const m = all[i];
+			let seq = keys[i].n;
+			if (m.role === "user") {
+				const ts = m.timestamp ?? 0;
+				seq = (userSeen.get(ts) ?? 0) + 1;
+				userSeen.set(ts, seq);
+			}
+			if (i < start) continue;
+			const ui = serializeMessage(m, seq);
+			if (!ui) continue;
+			uiMessageCache.set(keys[i].cacheKey, ui);
+			previewMessages.push(ui);
+		}
+		return { previewMessages, idSeed: { msgIds: ids.msgIds, nextMsgId: ids.nextMsgId, uiMessageCache } };
+	}
+
+	/** 把预览阶段的 id 状态交给刚建好的对话（仅当对话尚未产生任何 id 时）。 */
+	private seedConversationIds(conv: Conversation, seed: PreviewIdSeed | undefined): void {
+		if (!seed || conv.msgIds.size > 0 || conv.uiMessageCache.size > 0) return;
+		conv.msgIds = seed.msgIds;
+		conv.nextMsgId = seed.nextMsgId;
+		for (const [k, v] of seed.uiMessageCache) conv.uiMessageCache.set(k, v);
 	}
 
 	/**
@@ -13135,6 +13240,27 @@ export class ClientSession {
 		} catch {
 			return false;
 		}
+	}
+
+	/** 打开历史会话因名额不足失败：结束切换进度条并给出移出指引。 */
+	private emitMaxOpenConversationsReached(targetPath: string): void {
+		const maxOpenConversations = getMaxOpenConversations();
+		this.emit({
+			type: "transition_progress",
+			kind: "session",
+			target: targetPath,
+			phase: "error",
+			progress: 100,
+			text: `当前项目运行的对话已达上限（${maxOpenConversations} 个）`,
+			textEn: `Max open conversations (${maxOpenConversations}) reached`,
+		});
+		const notice = this.maxOpenConversationsNotice(maxOpenConversations);
+		this.emit({
+			type: "notice",
+			level: "warning",
+			text: notice.text,
+			textEn: notice.textEn,
+		});
 	}
 
 	private maxOpenConversationsNotice(limit: number): { text: string; textEn: string } {
@@ -13181,15 +13307,38 @@ export class ClientSession {
 		// Also retain a parent while any live first-party subagent conversation
 		// points at it: dropping an idle in-memory parent orphans the child row
 		// (the child vanishes from Running Chats with no result available).
-		const hasLiveChild = [...new Set([this, ...(this.allSubagentSessions?.() ?? [])])].some((owner) =>
+		const retained = this.isRetainedOnDisplace(conv);
+		if (retained) {
+			conv.listed = true;
+			if (conv.promptInFlight && !conv.session.isStreaming) {
+				this.emit({
+					type: "notice",
+					level: "info",
+					text: `「${conv.title}」的消息正在投递，已为你保留该对话`,
+					textEn: `"${conv.title}" is still sending your message — kept in the running list`,
+				});
+			}
+			return null;
+		}
+		return conv;
+	}
+
+	/** 有存活的一方子代理对话指向它（丢掉父对话会让子代理行成为孤儿）。 */
+	private hasLiveSubagentChild(conv: Conversation): boolean {
+		return [...new Set([this, ...(this.allSubagentSessions?.() ?? [])])].some((owner) =>
 			[...owner.convs.values()].some((child) => owner.parentExecution(child)?.conv === conv),
 		);
+	}
+
+	/** displaceActive 的保留判定（无副作用，可用于预测切走时是否会释放当前对话）。 */
+	private isRetainedOnDisplace(conv: Conversation): boolean {
+		const hasLiveChild = this.hasLiveSubagentChild(conv);
 		// Ephemeral transcripts have no history fallback: once started, only an
 		// explicit close may discard them, even after revisiting without a prompt.
 		const retainFinished =
 			(Boolean(conv.isEphemeral) || Boolean(this.settingsSvc?.current.retainFinishedConversations)) &&
 			this.isConversationStarted(conv);
-		const retained =
+		return (
 			hasLiveChild ||
 			retainFinished ||
 			shouldRetainActive({
@@ -13209,20 +13358,94 @@ export class ClientSession {
 				hasPendingWake: () => hasPendingWaitSubscription({ sessionId: conv.session.sessionFile }),
 				hasRunningBackgroundTask: () =>
 					hasRunningBackgroundTask({ cwd: conv.cwd, sessionFile: conv.session.sessionFile }),
-			});
-		if (retained) {
-			conv.listed = true;
-			if (conv.promptInFlight && !conv.session.isStreaming) {
-				this.emit({
-					type: "notice",
-					level: "info",
-					text: `「${conv.title}」的消息正在投递，已为你保留该对话`,
-					textEn: `"${conv.title}" is still sending your message — kept in the running list`,
-				});
-			}
-			return null;
+			})
+		);
+	}
+
+	/** 现在切走的话，当前对话会不会被 displaceActive 释放（无副作用的预测）。 */
+	private wouldDisplaceActive(): boolean {
+		if (this.convs.size === 0) return false;
+		const conv = this.conv;
+		if (conv.transferring || conv.isSubagent) return false;
+		return !this.isRetainedOnDisplace(conv);
+	}
+
+	/** 占项目运行对话名额的对话数（子代理、临时对话不占位；含创建中的预留）。 */
+	private countProjectSlots(cwd: string): number {
+		let open = 0;
+		for (const c of this.convs.values()) if (c.cwd === cwd && !c.isSubagent && !c.isEphemeral) open++;
+		return open + (this.creatingConversations.get(cwd) ?? 0);
+	}
+
+	/**
+	 * 可自动移出的「只查看过」历史对话：从历史打开后从未发言、不是当前对话、未钉住、
+	 * 不在过户中、无流式/压缩/投递中、无用户终端、无审查/向导、无后台 run/唤醒订阅/后台任务、
+	 * 无存活子代理。移出只释放内存中的 runtime——转录早已在磁盘，可从历史列表重新打开。
+	 */
+	private isEvictableViewedConversation(c: Conversation): boolean {
+		if (!c.viewOnly || c.id === this.activeId || c.pinned || c.transferring) return false;
+		if (c.isSubagent || c.isEphemeral || c.promptInFlight) return false;
+		try {
+			if (c.session.isStreaming || c.session.isCompacting) return false;
+		} catch {
+			return false;
 		}
-		return conv;
+		if (c.terminals.countBlockingLive() > 0) return false;
+		if (this.hasLiveSubagentChild(c)) return false;
+		return !shouldRetainActive({
+			reviewing: c.goal.reviewing,
+			wizardRunning: c.wizardRunning,
+			streaming: false,
+			openTerminals: 0,
+			listed: false,
+			promptedSinceActive: false,
+			promptInFlight: false,
+			pinned: false,
+			hasActiveSubagentRun: () => hasActiveSubagentRun({ sessionId: c.session.sessionFile }),
+			hasPendingWake: () => hasPendingWaitSubscription({ sessionId: c.session.sessionFile }),
+			hasRunningBackgroundTask: () => hasRunningBackgroundTask({ cwd: c.cwd, sessionFile: c.session.sessionFile }),
+		});
+	}
+
+	/**
+	 * 为 cwd 腾出名额，使「已占用 + needed」不超过上限：按 lastActiveAt 从旧到新移出只查看过的
+	 * 历史对话（LRU）。`activeWillBeFreed`：调用方随后的切换会释放当前对话（它也占本项目一个名额）。
+	 * 返回是否腾出成功；成功时发一条提示，告知哪些对话被收起。
+	 */
+	private makeRoomForConversation(
+		cwd: string,
+		needed: number,
+		activeWillBeFreed: boolean | (() => boolean) = false,
+	): boolean {
+		const max = getMaxOpenConversations();
+		if (this.countProjectSlots(cwd) + needed <= max) return true;
+		// 只有确实超额时才评估（可能涉及磁盘探测的）当前对话释放预测
+		const active = this.convs.size > 0 ? this.conv : null;
+		const freed = typeof activeWillBeFreed === "function" ? activeWillBeFreed() : activeWillBeFreed;
+		const activeCredit = freed && active && active.cwd === cwd && !active.isSubagent && !active.isEphemeral ? 1 : 0;
+		const over = () => this.countProjectSlots(cwd) + needed - activeCredit > max;
+		if (!over()) return true;
+		const candidates = [...this.convs.values()]
+			.filter((c) => c.cwd === cwd)
+			.sort((a, b) => a.lastActiveAt - b.lastActiveAt);
+		const evicted: string[] = [];
+		for (const c of candidates) {
+			if (!over()) break;
+			if (!this.isEvictableViewedConversation(c)) continue;
+			evicted.push(c.title || basename(c.session.sessionFile ?? "") || c.id);
+			this.removeConversation(c.id);
+		}
+		if (evicted.length > 0) {
+			const names = evicted.map((t) => `「${t}」`).join("、");
+			this.emit({
+				type: "notice",
+				level: "info",
+				text: `运行的对话已达上限（${max} 个），已自动收起较早仅查看过的对话 ${names}，可在历史对话中重新打开`,
+				textEn: `Running chats reached the limit (${max}); closed ${evicted.length} earlier view-only chat(s) to make room. Reopen them from history anytime.`,
+			});
+			this.emitConversations();
+		}
+		return !over();
 	}
 
 	/** Remove a conversation from the running list and free its runtime. The
@@ -13750,6 +13973,28 @@ export class ClientSession {
 	 *  workspace stays visible; clicking one switches both the conversation and
 	 *  its project (see switchConversation). The client groups the list by cwd.
 	 *  推什么见 shownInRunningList（listed + 当前对话有内容时）。 */
+	/** 运行列表行的会话文件 mtime 短时缓存：emitConversations 有约 40 个调用点、
+	 *  流式期间频繁触发，原先每次对每条对话做 existsSync + statSync 两次同步系统调用。 */
+	private static convFileMtimeCache = new Map<string, { at: number; mtime: number | undefined }>();
+	private static readonly CONV_FILE_MTIME_TTL = 2_000;
+
+	/** 语义同原实现：文件不存在 → undefined；列表元信息缓存里有 → 用它的 mtime；否则 stat。 */
+	private static conversationFileMtime(f: string): number | undefined {
+		const now = Date.now();
+		const hit = ClientSession.convFileMtimeCache.get(f);
+		if (hit && now - hit.at < ClientSession.CONV_FILE_MTIME_TTL) return hit.mtime;
+		let mtime: number | undefined;
+		try {
+			const statMtime = statSync(f).mtimeMs; // 一次 stat 同时完成存在性判断
+			mtime = ClientSession.sessionFileCacheLookup(f)?.mtime ?? statMtime;
+		} catch {
+			mtime = undefined;
+		}
+		if (ClientSession.convFileMtimeCache.size >= 1024) ClientSession.convFileMtimeCache.clear();
+		ClientSession.convFileMtimeCache.set(f, { at: now, mtime });
+		return mtime;
+	}
+
 	private emitConversations(): void {
 		const conversations: ConversationSummary[] = [];
 		// Active parents are normally absent from Running. Keep them visible while
@@ -13785,11 +14030,7 @@ export class ClientSession {
 					try {
 						const sid = conv.session.sessionId;
 						const f = conv.session.sessionFile;
-						let modified: number | undefined;
-						if (f && existsSync(f)) {
-							const cached = ClientSession.sessionFileCacheLookup(f);
-							modified = cached?.mtime ?? statSync(f).mtimeMs;
-						}
+						const modified = f ? ClientSession.conversationFileMtime(f) : undefined;
 						return {
 							...(sid ? { sessionId: sid } : {}),
 							...(f ? { sessionFile: f } : {}),
@@ -13882,11 +14123,12 @@ export class ClientSession {
 	 * 到最新端，写入超上限从最旧端淘汰。mtime/size 未变的条目命中即复用（行为与原先
 	 * 一致），变化的条目由调用方重新解析后经 store 覆盖（也落到最新端）。
 	 */
-	private static sessionFileCache = new Map<string, { mtime: number; size: number; info: SessionInfo }>();
-	private static readonly SESSION_FILE_CACHE_MAX = 512;
+	private static sessionFileCache = new Map<string, SessionFileCacheEntry>();
+	// 2048：列表模式每项目约 260 个热条目，512 只够两三个项目，来回展开多个项目时会互相挤出、反复全文重解析。
+	private static readonly SESSION_FILE_CACHE_MAX = 2048;
 
 	/** sessionFileCache LRU 读取：命中即重插到最新端（续期），未命中返回 undefined。 */
-	private static sessionFileCacheLookup(key: string): { mtime: number; size: number; info: SessionInfo } | undefined {
+	private static sessionFileCacheLookup(key: string): SessionFileCacheEntry | undefined {
 		const entry = ClientSession.sessionFileCache.get(key);
 		if (!entry) return undefined;
 		ClientSession.sessionFileCache.delete(key);
@@ -13895,7 +14137,7 @@ export class ClientSession {
 	}
 
 	/** sessionFileCache LRU 写入：新/更新条目放最新端，超上限从最旧端淘汰。 */
-	private static sessionFileCacheStore(key: string, entry: { mtime: number; size: number; info: SessionInfo }): void {
+	private static sessionFileCacheStore(key: string, entry: SessionFileCacheEntry): void {
 		ClientSession.sessionFileCache.delete(key);
 		ClientSession.sessionFileCache.set(key, entry);
 		while (ClientSession.sessionFileCache.size > ClientSession.SESSION_FILE_CACHE_MAX) {
@@ -13906,20 +14148,58 @@ export class ClientSession {
 	}
 
 	/** 会话列表缓存（按 cwdKey 隔离，30s TTL）。 */
-	private static sessionInfosCache = new Map<string, { infos: SessionInfo[]; at: number }>();
+	/** complete=false：列表模式只解析了 mtime 最新的一部分文件（见 SESSION_LIST_PARSE_LIMIT），
+	 *  搜索 / 按 id 定位等需要全集的调用不能复用它。 */
+	private static sessionInfosCache = new Map<
+		string,
+		{ infos: SessionInfo[]; at: number; complete: boolean; /** 不完整时：按多少条的需求解析的 */ parsedFor?: number }
+	>();
 	private static sessionInfosInFlight = new Map<string, Promise<SessionInfo[]>>();
 	private static readonly SESSION_INFO_CACHE_TTL = 30_000;
+	/** 左栏列表展示的条数之外多解析一些，给 fork 父会话过滤留余量。 */
+	private static readonly SESSION_LIST_PARSE_EXTRA = 60;
+	/** 默认列表条数（buildSessionSummaries）；B5 起客户端可按页请求更多。 */
+	static readonly SESSION_LIST_DEFAULT = 200;
+	static readonly SESSION_LIST_MAX = 5000;
+	/** 兼容既有测试/调用：默认列表的解析上限（= 200 + 余量）。 */
+	private static SESSION_LIST_PARSE_LIMIT = ClientSession.SESSION_LIST_DEFAULT + ClientSession.SESSION_LIST_PARSE_EXTRA;
 
-	private async loadSessionInfos(forCwd?: string): Promise<SessionInfo[]> {
+	/**
+	 * @param opts.listOnly 左栏列表用：按 mtime 从新到旧解析，凑够所需条数的本项目会话即停，
+	 *   不再对项目里成百上千个旧转录逐字节流式扫描（冷启动列表耗时从 O(项目全部字节) 降到 O(最新 N 个文件)）。
+	 *   缓存命中的文件不计解析成本，照常纳入。
+	 * @param opts.listLimit 列表模式下需要的条数（缺省 200，左栏「显示更多」翻页时加大）。
+	 */
+	private async loadSessionInfos(
+		forCwd?: string,
+		opts?: { listOnly?: boolean; listLimit?: number },
+	): Promise<SessionInfo[]> {
 		const targetCwd = forCwd ?? this.cwd;
+		const listOnly = opts?.listOnly === true;
+		const listLimit = Math.max(
+			ClientSession.SESSION_LIST_DEFAULT,
+			opts?.listLimit ?? ClientSession.SESSION_LIST_DEFAULT,
+		);
+		const parseNeed = listOnly
+			? ClientSession.SESSION_LIST_PARSE_LIMIT + (listLimit - ClientSession.SESSION_LIST_DEFAULT)
+			: Number.POSITIVE_INFINITY;
 		const now = Date.now();
 		const cwdKey = normalizePathKey(targetCwd);
 		const c = ClientSession.sessionInfosCache.get(cwdKey);
-		if (c && now - c.at < ClientSession.SESSION_INFO_CACHE_TTL) {
+		if (
+			c &&
+			now - c.at < ClientSession.SESSION_INFO_CACHE_TTL &&
+			(c.complete || (listOnly && (c.parsedFor ?? ClientSession.SESSION_LIST_PARSE_LIMIT) >= parseNeed))
+		) {
 			return c.infos;
 		}
 
-		const inFlight = ClientSession.sessionInfosInFlight.get(cwdKey);
+		const fullFlightKey = `${cwdKey}\0full`;
+		const flightKey = listOnly ? `${cwdKey}\0list:${parseNeed}` : fullFlightKey;
+		// 全量扫描进行中时列表请求直接复用它（全集 ⊇ 列表）
+		const inFlight =
+			ClientSession.sessionInfosInFlight.get(flightKey) ??
+			(listOnly ? ClientSession.sessionInfosInFlight.get(fullFlightKey) : undefined);
 		if (inFlight) return inFlight;
 
 		const sessionBaseDir = resolveWorkspaceSessionDir(this.stateStore?.dataDir, targetCwd);
@@ -13977,29 +14257,42 @@ export class ClientSession {
 				const validStats = stats.filter((s): s is { path: string; mtime: number; size: number } => s !== null);
 				validStats.sort((a, b) => b.mtime - a.mtime);
 
+				const baseDirKey = normalizePathKey(sessionBaseDir);
+				const isOwn = (info: SessionInfo): boolean =>
+					info.cwd !== "" && (normalizePathKey(info.cwd) === cwdKey || normalizePathKey(info.cwd) === baseDirKey);
+				const parseLimit = parseNeed;
+				let ownCount = 0;
+				let truncated = false;
+
 				const results = await mapSessionsConcurrent(validStats, async (file) => {
 					const cached = ClientSession.sessionFileCacheLookup(file.path);
 					if (cached && cached.mtime === file.mtime && cached.size === file.size) {
+						if (isOwn(cached.info)) ownCount++;
 						return cached.info;
 					}
-					// 列表路径不收集转录全文（issue #440）——全文只在搜索时按需加载
-					const info = await parseSessionInfoFast(file.path, file.mtime);
-					if (info) {
+					if (ownCount >= parseLimit) {
+						// 已凑够列表所需条数：更旧的未缓存文件不再解析（工作者按 mtime 新→旧取任务）
+						truncated = true;
+						return null;
+					}
+					// 列表路径不收集转录全文（issue #440）——全文只在搜索时按需加载。
+					// 文件只是被追加（活跃会话每轮都会）：带上次的扫描状态，只解析新增字节。
+					const scanned = await scanSessionListInfo(file.path, file.mtime, cached?.scan);
+					const info = scanned?.info ?? null;
+					if (info && scanned) {
 						ClientSession.sessionFileCacheStore(file.path, {
 							mtime: file.mtime,
 							size: file.size,
 							info,
+							scan: scanned.state,
 						});
+						if (isOwn(info)) ownCount++;
 					}
 					return info;
 				});
 
 				const validInfos = results.filter((info): info is SessionInfo => info !== null);
-				const baseDirKey = normalizePathKey(sessionBaseDir);
-				const ownInfos = validInfos.filter(
-					(info) =>
-						info.cwd !== "" && (normalizePathKey(info.cwd) === cwdKey || normalizePathKey(info.cwd) === baseDirKey),
-				);
+				const ownInfos = validInfos.filter(isOwn);
 				const seenIds = new Set<string>();
 				const dedupedOwnInfos: SessionInfo[] = [];
 				for (const info of ownInfos) {
@@ -14011,7 +14304,19 @@ export class ClientSession {
 				}
 				const candidates = dedupedOwnInfos;
 				candidates.sort((a, b) => b.modified.getTime() - a.modified.getTime());
-				ClientSession.sessionInfosCache.set(cwdKey, { infos: candidates, at: Date.now() });
+				// 列表模式提前停下时缓存标记为不完整；不覆盖仍新鲜的完整缓存
+				const prev = ClientSession.sessionInfosCache.get(cwdKey);
+				const prevFresh = prev && Date.now() - prev.at < ClientSession.SESSION_INFO_CACHE_TTL;
+				// 不覆盖仍新鲜、且覆盖面更大的缓存（完整集，或按更大需求解析过的）
+				const prevCovers = prevFresh && (prev.complete || (truncated && (prev.parsedFor ?? 0) >= parseNeed));
+				if (!prevCovers) {
+					ClientSession.sessionInfosCache.set(cwdKey, {
+						infos: candidates,
+						at: Date.now(),
+						complete: !truncated,
+						...(truncated ? { parsedFor: parseNeed } : {}),
+					});
+				}
 				return candidates;
 			} catch {
 				try {
@@ -14034,17 +14339,17 @@ export class ClientSession {
 						combined.push({ ...s, allMessagesText: "" });
 					}
 					combined.sort((a, b) => b.modified.getTime() - a.modified.getTime());
-					ClientSession.sessionInfosCache.set(cwdKey, { infos: combined, at: Date.now() });
+					ClientSession.sessionInfosCache.set(cwdKey, { infos: combined, at: Date.now(), complete: true });
 					return combined;
 				} catch {
 					return [];
 				}
 			} finally {
-				ClientSession.sessionInfosInFlight.delete(cwdKey);
+				ClientSession.sessionInfosInFlight.delete(flightKey);
 			}
 		})();
 
-		ClientSession.sessionInfosInFlight.set(cwdKey, run);
+		ClientSession.sessionInfosInFlight.set(flightKey, run);
 		return run;
 	}
 
@@ -14077,20 +14382,57 @@ export class ClientSession {
 		if (this.sessionsRequested) void this.refreshSessions();
 	}
 
-	private buildSessionSummaries(targetCwd: string, infos: SessionInfo[]): SessionSummary[] {
+	/** 左栏按项目请求的列表条数（B5「显示更多」翻页后，自动刷新沿用它，已展开的列表不被缩回）。 */
+	private sessionListLimits = new Map<string, number>();
+
+	/** 记录并返回某项目的列表条数；limit 缺省时沿用此前记录的值。 */
+	setSessionListLimit(cwd: string, limit?: number): number {
+		const key = normalizePathKey(cwd);
+		if (typeof limit === "number" && Number.isFinite(limit)) {
+			const clamped = Math.min(
+				ClientSession.SESSION_LIST_MAX,
+				Math.max(ClientSession.SESSION_LIST_DEFAULT, Math.floor(limit)),
+			);
+			this.sessionListLimits.set(key, clamped);
+			return clamped;
+		}
+		return this.sessionListLimits.get(key) ?? ClientSession.SESSION_LIST_DEFAULT;
+	}
+
+	/** 列表推送：取该项目记住的条数，返回摘要与「服务端还有更多」标记。 */
+	private async sessionListPayload(targetCwd: string): Promise<{ sessions: SessionSummary[]; hasMore: boolean }> {
+		const limit = this.setSessionListLimit(targetCwd);
+		const infos = await this.loadSessionInfos(targetCwd, { listOnly: true, listLimit: limit });
+		const all = this.buildSessionSummaries(targetCwd, infos, Number.POSITIVE_INFINITY);
+		// 解析提前停下（还有未解析的更旧文件）或摘要超过条数，都说明还有更多
+		const cached = ClientSession.sessionInfosCache.get(normalizePathKey(targetCwd));
+		const hasMore = all.length > limit || (cached ? !cached.complete : false);
+		return { sessions: all.slice(0, limit), hasMore };
+	}
+
+	private buildSessionSummaries(
+		targetCwd: string,
+		infos: SessionInfo[],
+		limit = ClientSession.SESSION_LIST_DEFAULT,
+	): SessionSummary[] {
 		const showForkedParents = this.settingsSvc.current.showForkedParentSessions === true;
 		const visibleInfos = filterForkedParentSessions(infos, showForkedParents);
 
 		const sessions = new Map<string, SessionSummary>();
 		for (const s of visibleInfos) {
 			const isPinned = this.stateStore?.isSessionPinned(targetCwd, s.path);
-			const displayName = s.name?.trim() || (s.firstMessage ? s.firstMessage.trim().replace(/\s+/g, " ") : undefined);
+			// 列表只用于标题与副标题展示：首条消息可能是整段粘贴的大文本（数十 KB），
+			// 每次推送 ×200 行 ×2 份（firstMessage + displayName）会显著放大 WS 负载与客户端 localStorage 缓存。
+			// 全文检索走 search_sessions，不依赖这里的字段。
+			const firstMessage = s.firstMessage ? clipListText(s.firstMessage) : s.firstMessage;
+			const displayName =
+				s.name?.trim() || (firstMessage ? clipListText(firstMessage.trim().replace(/\s+/g, " ")) : undefined);
 			sessions.set(s.path, {
 				path: s.path,
 				...(s.id ? { sessionId: s.id } : {}),
 				name: s.name,
 				displayName,
-				firstMessage: s.firstMessage,
+				firstMessage,
 				messageCount: s.messageCount,
 				modified: s.modified.getTime(),
 				source: "web",
@@ -14098,29 +14440,29 @@ export class ClientSession {
 				...(s.parentSessionPath ? { parentSessionPath: s.parentSessionPath } : {}),
 			});
 		}
-		return [...sessions.values()].sort((a, b) => b.modified - a.modified).slice(0, 200);
+		const sorted = [...sessions.values()].sort((a, b) => b.modified - a.modified);
+		return Number.isFinite(limit) ? sorted.slice(0, limit) : sorted;
 	}
 
 	private async pushSessions(): Promise<void> {
 		if (!this.sessionsRequested) return;
+		const cwd = this.cwd;
 		try {
 			// Sessions live in the SDK default per-project dir
 			// (<agentDir>/sessions/--<cwd>--/), the same files the pi CLI/TUI
 			// use — one listing covers every conversation of the current folder.
-			const infos = await this.loadSessionInfos();
-			const sorted = this.buildSessionSummaries(this.cwd, infos);
-			this.emit({ type: "sessions", sessions: sorted, cwd: this.cwd });
+			const { sessions, hasMore } = await this.sessionListPayload(cwd);
+			this.emit({ type: "sessions", sessions, cwd, ...(hasMore ? { hasMore: true } : {}) });
 		} catch {
-			this.emit({ type: "sessions", sessions: [], cwd: this.cwd });
+			this.emit({ type: "sessions", sessions: [], cwd });
 		}
 	}
 
 	/** Push the persisted session list for a specific project directory (on demand, e.g. expanding an unopened project). */
 	async pushSessionsForCwd(targetCwd: string): Promise<void> {
 		try {
-			const infos = await this.loadSessionInfos(targetCwd);
-			const sorted = this.buildSessionSummaries(targetCwd, infos);
-			this.emit({ type: "sessions", sessions: sorted, cwd: targetCwd });
+			const { sessions, hasMore } = await this.sessionListPayload(targetCwd);
+			this.emit({ type: "sessions", sessions, cwd: targetCwd, ...(hasMore ? { hasMore: true } : {}) });
 		} catch {
 			this.emit({ type: "sessions", sessions: [], cwd: targetCwd });
 		}
@@ -14181,7 +14523,7 @@ export class ClientSession {
 			}
 			if (holder) {
 				// Same source the history panel uses (refreshSessions): newest first.
-				const infos = await this.loadSessionInfos();
+				const infos = await this.loadSessionInfos(undefined, { listOnly: true });
 				const next = infos
 					.filter((s) => resolve(s.path) !== abs)
 					.sort((a, b) => b.modified.getTime() - a.modified.getTime())[0];
@@ -15131,14 +15473,20 @@ export class ClientSession {
 			});
 			await new Promise<void>((r) => setImmediate(r));
 			timing.mark("resolve-and-ownership");
-			this.repairTranscriptFileBeforeOpen(targetPath);
+			await this.repairTranscriptFileBeforeOpen(targetPath);
 			timing.mark("repair");
-			const sessionManager = SessionManager.open(targetPath);
+			// 异步读盘 + 分时片解析，不再同步阻塞事件循环（session-open.ts，失败回退 SessionManager.open）
+			const sessionManager = await openSessionManagerAsync(targetPath);
 			timing.mark("sdk-open");
 			calibrateSessionLeaf(sessionManager);
 			timing.mark("branch-calibration");
+			// 预先分配对话 id 并随预览下发：浏览器用它 + 会话文件组成与首个快照相同的会话键，
+			// 预览→快照只替换数据、不重挂载消息列表（C4）。打开失败时 id 作废，无副作用。
+			const conversationId = this.nextConversationId();
+			let previewIdSeed: PreviewIdSeed | undefined;
 			{
-				const { totalMessages, previewMessages } = this.extractTranscriptPreview(sessionManager, 16);
+				const { totalMessages, previewMessages, idSeed } = this.extractTranscriptPreview(sessionManager, 16);
+				previewIdSeed = idSeed;
 				this.emit({
 					type: "transition_progress",
 					kind: "session",
@@ -15155,6 +15503,8 @@ export class ClientSession {
 							: "Transcript ready, mounting agent runtime…",
 					totalMessages,
 					...(previewMessages.length > 0 ? { previewMessages } : {}),
+					// 仅当预览 id 与快照一致时才下发：浏览器据此决定是否沿用同一个消息列表实例
+					...(idSeed ? { conversationId, sessionFile: targetPath } : {}),
 				});
 				await new Promise<void>((r) => setImmediate(r));
 			}
@@ -15162,7 +15512,13 @@ export class ClientSession {
 			const rawSessionCwd = sessionManager.getCwd();
 			const targetCwd = restoreWorkspaceUriFromSessionDir(rawSessionCwd);
 			const runtimeCwd = resolveWorkspaceSessionDir(this.stateStore?.dataDir, targetCwd);
-			const conversationId = this.nextConversationId();
+			// 名额预检放在构建 runtime 之前：原先达上限时要先完整构建 runtime（扩展/技能/MCP）
+			// 再发现超额并 dispose，白白耗时；现在超额时先按 LRU 收起只查看过的历史对话，
+			// 仍腾不出才拒绝。
+			if (!this.makeRoomForConversation(targetCwd, 1, () => this.wouldDisplaceActive())) {
+				this.emitMaxOpenConversationsReached(targetPath);
+				return;
+			}
 			openedTerminals = this.makeTerminalManager(conversationId, targetCwd);
 			openedRuntime = await createAgentSessionRuntime(
 				this.makeRuntimeFactory(openedTerminals, undefined, conversationId),
@@ -15185,7 +15541,12 @@ export class ClientSession {
 				1 -
 				(displaced?.cwd === targetCwd && !displaced?.isSubagent && !displaced?.isEphemeral ? 1 : 0);
 			const maxOpenConversations = getMaxOpenConversations();
-			if (openInProject > maxOpenConversations) {
+			// 兜底复检：runtime 构建期间（await）别处可能新开了对话。仍超额时先尝试 LRU 收起，
+			// 依然不行才放弃。displaced 此刻仍是 active（尚未移除），不会被收起。
+			if (
+				openInProject > maxOpenConversations &&
+				!this.makeRoomForConversation(targetCwd, 1, displaced?.cwd === targetCwd && !displaced?.isSubagent)
+			) {
 				// displaceActive() may have promoted a streaming conversation into the
 				// running list. Roll that presentation-only mutation back because no
 				// switch will take place.
@@ -15194,26 +15555,12 @@ export class ClientSession {
 				await openedRuntime.dispose();
 				openedRuntime = null;
 				openedTerminals = null;
-				this.emit({
-					type: "transition_progress",
-					kind: "session",
-					target: targetPath,
-					phase: "error",
-					progress: 100,
-					text: `当前项目运行的对话已达上限（${maxOpenConversations} 个）`,
-					textEn: `Max open conversations (${maxOpenConversations}) reached`,
-				});
-				const notice = this.maxOpenConversationsNotice(maxOpenConversations);
-				this.emit({
-					type: "notice",
-					level: "warning",
-					text: notice.text,
-					textEn: notice.textEn,
-				});
+				this.emitMaxOpenConversationsReached(targetPath);
 				return;
 			}
 
 			const conv = this.makeConversation(openedRuntime, conversationId, openedTerminals);
+			this.seedConversationIds(conv, previewIdSeed);
 			if (independent !== undefined) {
 				conv.session.sessionManager.appendCustomEntry("webui/independent", { independent });
 				conv.independent = independent;
@@ -15222,9 +15569,12 @@ export class ClientSession {
 			// switches away without sending a new message.
 			conv.listed = true;
 			conv.promptedSinceActive = true;
+			// 只是打开查看：达上限时可按 LRU 自动收起（发言即清除，见 prompt 路径）。
+			conv.viewOnly = true;
 			if (this.stateStore?.isSessionPinned(targetCwd, targetPath)) {
 				conv.pinned = true;
 				conv.listed = true;
+				conv.viewOnly = false;
 			}
 			this.noticeInterruptedCompaction(conv);
 			this.convs.set(conv.id, conv);
@@ -15943,7 +16293,7 @@ export class ClientSession {
 				normalizePathKey(p.path) === currentKey ? { ...p, lastUsed: Math.max(p.lastUsed, now) } : p,
 			);
 		} else {
-			list = [{ path: this.cwd, lastUsed: now }, ...validProjects].slice(0, 30);
+			list = [{ path: this.cwd, lastUsed: now }, ...validProjects].slice(0, RECENT_PROJECTS_MAX);
 		}
 
 		// 确保所有仍存活的注册沙盒也出现在列表里，并附带 sandbox 元数据
@@ -15956,12 +16306,15 @@ export class ClientSession {
 			}
 		}
 
-		return list
-			.map((p) => {
-				const sbx = this.sandboxes.getByCwd(p.path);
-				return sbx ? { ...p, sandbox: sbx } : p;
-			})
-			.slice(0, 35);
+		return (
+			list
+				.map((p) => {
+					const sbx = this.sandboxes.getByCwd(p.path);
+					return sbx ? { ...p, sandbox: sbx } : p;
+				})
+				// 额外 5 个名额留给注册沙盒（原 30 + 5 口径）
+				.slice(0, RECENT_PROJECTS_MAX + 5)
+		);
 	}
 
 	/** 最近项目缓存失效（用户显式移除项目后，下一次推送必须重扫）。 */
@@ -16276,7 +16629,7 @@ export class ClientSession {
 				// 在耗时的 runtime 初始化期间，并行预热目标项目的会话列表缓存
 				if (this.sessionsRequested) {
 					ClientSession.sessionInfosCache.delete(normalizePathKey(abs));
-					void this.loadSessionInfos(abs).catch(() => {});
+					void this.loadSessionInfos(abs, { listOnly: true }).catch(() => {});
 				}
 				// First visit to this project: resume its most recent session —
 				// unless that transcript is still held on another client (#145):

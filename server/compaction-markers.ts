@@ -372,16 +372,20 @@ const HEALTHY_TRANSCRIPT_CACHE_MAX = 512;
 function rememberHealthyTranscript(filePath: string): void {
 	try {
 		const st = statSync(filePath);
-		const sig = `${st.mtimeMs}:${st.size}`;
-		healthyTranscriptCache.delete(filePath);
-		healthyTranscriptCache.set(filePath, sig);
-		while (healthyTranscriptCache.size > HEALTHY_TRANSCRIPT_CACHE_MAX) {
-			const oldest = healthyTranscriptCache.keys().next();
-			if (oldest.done) break;
-			healthyTranscriptCache.delete(oldest.value);
-		}
+		rememberHealthyTranscriptSig(filePath, `${st.mtimeMs}:${st.size}`);
 	} catch {
 		/* best effort */
+	}
+}
+
+/** 以给定指纹记住健康文件（调用方已 stat；用于打开流程在悬空调用修复追加后统一刷新指纹）。 */
+export function rememberHealthyTranscriptSig(filePath: string, sig: string): void {
+	healthyTranscriptCache.delete(filePath);
+	healthyTranscriptCache.set(filePath, sig);
+	while (healthyTranscriptCache.size > HEALTHY_TRANSCRIPT_CACHE_MAX) {
+		const oldest = healthyTranscriptCache.keys().next();
+		if (oldest.done) break;
+		healthyTranscriptCache.delete(oldest.value);
 	}
 }
 
@@ -393,21 +397,7 @@ export function repairSessionFile(filePath: string): SessionFileRepair | null {
 	try {
 		const st = statSync(filePath);
 		const sig = `${st.mtimeMs}:${st.size}`;
-		if (healthyTranscriptCache.get(filePath) === sig) {
-			healthyTranscriptCache.delete(filePath);
-			healthyTranscriptCache.set(filePath, sig);
-			return {
-				text: "",
-				changed: false,
-				removedPending: 0,
-				renamedIds: 0,
-				rewiredParents: 0,
-				cyclesBroken: 0,
-				interrupted: false,
-				file: filePath,
-				backup: null,
-			};
-		}
+		if (isTranscriptHealthyCached(filePath, sig)) return healthyRepairResult(filePath);
 	} catch {
 		return null;
 	}
@@ -417,6 +407,37 @@ export function repairSessionFile(filePath: string): SessionFileRepair | null {
 	} catch {
 		return null;
 	}
+	return repairSessionFileFromText(filePath, raw);
+}
+
+/** 健康指纹命中即续期（LRU）。sig = `${mtimeMs}:${size}`。 */
+export function isTranscriptHealthyCached(filePath: string, sig: string): boolean {
+	if (healthyTranscriptCache.get(filePath) !== sig) return false;
+	healthyTranscriptCache.delete(filePath);
+	healthyTranscriptCache.set(filePath, sig);
+	return true;
+}
+
+/** 无需修复时的统一返回值（text 为空：调用方不读它）。 */
+export function healthyRepairResult(filePath: string): SessionFileRepair {
+	return {
+		text: "",
+		changed: false,
+		removedPending: 0,
+		renamedIds: 0,
+		rewiredParents: 0,
+		cyclesBroken: 0,
+		interrupted: false,
+		file: filePath,
+		backup: null,
+	};
+}
+
+/**
+ * 与 repairSessionFile 相同，但使用调用方已读入的文本（打开会话时与悬空调用检查共用一次读盘）。
+ * 健康：记住指纹并返回 changed=false；有坏：写 .bak 与修复文本（同步写，仅坏文件才发生）。
+ */
+export function repairSessionFileFromText(filePath: string, raw: string): SessionFileRepair | null {
 	const r = repairSessionTranscript(raw);
 	if (!r.changed) {
 		rememberHealthyTranscript(filePath);

@@ -23,7 +23,7 @@
  * - healDanglingToolCallFile：落盘版，仅针对当前分支尾部生效的悬空调用追加合成 toolResult；
  * - 合成结果文案：danglingToolResultText(cause)（按成因归因，中英各一，toolResult content 只带一条文本）。
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -196,31 +196,191 @@ export function tailAssistantToolCallIds(entries: unknown[], lastId: string | nu
  * 返回追加条数（0 = 健康，无需处理；-1 = 文件不可读/不可写）。
  */
 export function healDanglingToolCallFile(filePath: string, cause: DanglingCause = "generic"): number {
+	// 健康指纹命中：文件自上次判定"无悬空调用"后 mtime/size 未变，结果必然仍为 0，
+	// 跳过整文件同步读取（打开大转录时这是阻塞事件循环的主要来源之一）。
+	let sig: string | null = null;
+	try {
+		const st = statSync(filePath);
+		sig = `${st.mtimeMs}:${st.size}`;
+		if (isDanglingHealthyCached(filePath, sig)) return 0;
+	} catch {
+		return -1;
+	}
 	let raw: string;
 	try {
 		raw = readFileSync(filePath, "utf8");
 	} catch {
 		return -1;
 	}
-	const lines = raw.split("\n");
-	const entries: unknown[] = [];
-	let lastId: string | null = null;
-	for (const line of lines) {
-		if (!line.trim()) continue;
-		try {
-			const parsed: unknown = JSON.parse(line);
-			entries.push(parsed);
-			if (typeof parsed === "object" && parsed !== null && typeof (parsed as { id?: unknown }).id === "string") {
-				lastId = (parsed as { id: string }).id;
+	const result = healDanglingToolCallsInText(filePath, raw, cause);
+	if (result === 0 && sig) rememberHealthyDangling(filePath, sig);
+	else healthyDanglingCache.delete(filePath);
+	return result;
+}
+
+/** 已判定无悬空调用的文件指纹（filePath -> `${mtimeMs}:${size}`，LRU）。 */
+const healthyDanglingCache = new Map<string, string>();
+const HEALTHY_DANGLING_CACHE_MAX = 512;
+
+/** 指纹命中即续期（LRU）。 */
+export function isDanglingHealthyCached(filePath: string, sig: string): boolean {
+	if (healthyDanglingCache.get(filePath) !== sig) return false;
+	healthyDanglingCache.delete(filePath);
+	healthyDanglingCache.set(filePath, sig);
+	return true;
+}
+
+export function rememberHealthyDangling(filePath: string, sig: string): void {
+	healthyDanglingCache.delete(filePath);
+	healthyDanglingCache.set(filePath, sig);
+	while (healthyDanglingCache.size > HEALTHY_DANGLING_CACHE_MAX) {
+		const oldest = healthyDanglingCache.keys().next();
+		if (oldest.done) break;
+		healthyDanglingCache.delete(oldest.value);
+	}
+}
+
+export function forgetHealthyDangling(filePath: string): void {
+	healthyDanglingCache.delete(filePath);
+}
+
+/** 测试用：清空健康指纹缓存。 */
+export function resetHealthyDanglingCacheForTest(): void {
+	healthyDanglingCache.clear();
+}
+
+/** 长行只取开头的这段做头字段提取（type/id/parentId 在 SDK 落盘格式里总是最前面几个键）。 */
+const HEADER_SCAN_CHARS = 260;
+/** 不超过此长度的行直接完整解析（成本可忽略）。 */
+const FULL_PARSE_MAX_LINE = 512;
+
+interface LineHeader {
+	id: string | null;
+	parentId: string | null;
+	/** 已完整解析的条目（短行或头字段提取失败时）；null = 仅提取了头字段。 */
+	entry: Record<string, unknown> | null;
+}
+
+function parseLineFully(line: string): Record<string, unknown> | null {
+	try {
+		const parsed: unknown = JSON.parse(line);
+		return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 取一行的 id / parentId。长行（数十 KB~数 MB 的工具输出、图片）只扫开头一小段：
+ * 要求 id 与 parentId 都出现在第一个嵌套 `{` 之前，确保匹配的是顶层键；否则回退完整解析。
+ * 返回 null = 该行不是合法 JSON 对象（脏行，SDK 加载时同样跳过）。
+ */
+function lineHeader(line: string): LineHeader | null {
+	if (line.length > FULL_PARSE_MAX_LINE) {
+		const head = line.slice(0, HEADER_SCAN_CHARS);
+		const brace = head.indexOf("{", 1);
+		const topLevel = brace === -1 ? head : head.slice(0, brace);
+		if (topLevel.startsWith("{")) {
+			const idMatch = /"id"\s*:\s*"([^"\\]+)"/.exec(topLevel);
+			const parentStr = /"parentId"\s*:\s*"([^"\\]*)"/.exec(topLevel);
+			const parentNull = !parentStr && /"parentId"\s*:\s*null/.test(topLevel);
+			if (idMatch && (parentStr || parentNull)) {
+				return { id: idMatch[1], parentId: parentStr ? parentStr[1] : null, entry: null };
 			}
-		} catch {
-			// 脏行：SDK 加载时同样跳过，这里忽略。
 		}
 	}
-	if (entries.length === 0 || !lastId) return 0;
-	const tailIds = tailAssistantToolCallIds(entries, lastId);
-	if (tailIds.size === 0) return 0;
-	const dangling = findDanglingToolCalls(entries).filter((d) => tailIds.has(d.toolCallId));
+	const entry = parseLineFully(line);
+	if (!entry) return null;
+	return {
+		id: typeof entry.id === "string" ? entry.id : null,
+		parentId: typeof entry.parentId === "string" ? entry.parentId : null,
+		entry,
+	};
+}
+
+/**
+ * 在转录文本上检测并落盘修复当前分支尾部的悬空 toolCall（语义同原全量版本）。
+ *
+ * 按需解析：先只取每行的 id/parentId（长行只扫行首），再沿 parentId 从尾部回溯，
+ * 只完整解析回溯经过的行与尾部 assistant 之后的行。健康长转录（最常见：尾部是
+ * 没有工具调用的 assistant 或 user）因此只需完整解析末尾几行，而不是逐行 JSON.parse
+ * 整个文件。
+ *
+ * 与全量版本等价性：某个 toolCallId 悬空 ⇔ 存在一次出现之后没有对应结果。尾部
+ * assistant 之前的同名调用若缺后继结果，尾部那次必然也缺，所以只看尾部 assistant
+ * 及其之后的行即可得到相同集合。
+ *
+ * 返回追加条数（0 = 健康；-1 = 写入失败）。
+ */
+export function healDanglingToolCallsInText(filePath: string, raw: string, cause: DanglingCause = "generic"): number {
+	const lines = raw.split("\n");
+	const headers: (LineHeader | null)[] = new Array(lines.length).fill(null);
+	const byId = new Map<string, number>();
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (!line.trim()) continue;
+		const h = lineHeader(line);
+		headers[i] = h;
+		// 同名 id：后出现者覆盖（与全量版本 Map.set 语义一致）
+		if (h?.id) byId.set(h.id, i);
+	}
+	const fullEntry = (i: number): Record<string, unknown> | null => {
+		const h = headers[i];
+		if (!h) return null;
+		if (!h.entry) h.entry = parseLineFully(lines[i]);
+		return h.entry;
+	};
+
+	// lastId = 文件里最后一条「能解析且带字符串 id」的条目。头字段提取不验证整行 JSON，
+	// 崩溃残留的半截尾行可能被误认，所以这里从尾部往前逐行完整解析确认。
+	let lastId: string | null = null;
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (!headers[i]) continue;
+		const e = fullEntry(i);
+		if (!e) {
+			headers[i] = null;
+			continue;
+		}
+		if (typeof e.id === "string") {
+			lastId = e.id;
+			break;
+		}
+	}
+	if (!lastId) return 0;
+
+	// 沿当前分支回溯，定位尾部生效 assistant（规则同 tailAssistantToolCallIds）。
+	let tailIndex = -1;
+	let tailIds = new Set<string>();
+	const seen = new Set<string>();
+	let cursor: string | null = lastId;
+	while (cursor && !seen.has(cursor)) {
+		seen.add(cursor);
+		const idx = byId.get(cursor);
+		if (idx === undefined) break;
+		const entry = fullEntry(idx);
+		if (!entry) break;
+		const msg = typeof entry.message === "object" && entry.message !== null ? entry.message : null;
+		if (msg && "role" in msg) {
+			const m = msg as { role?: unknown; stopReason?: unknown };
+			if (m.role === "user") break;
+			if (m.role === "assistant") {
+				if (m.stopReason !== "error" && m.stopReason !== "aborted") {
+					tailIds = new Set(toolCallsOfMessage(m).map((c) => c.toolCallId));
+					tailIndex = idx;
+				}
+				break;
+			}
+		}
+		cursor = typeof entry.parentId === "string" ? entry.parentId : null;
+	}
+	if (tailIds.size === 0 || tailIndex < 0) return 0;
+
+	const after: unknown[] = [];
+	for (let i = tailIndex; i < lines.length; i++) {
+		const e = fullEntry(i);
+		if (e) after.push(e);
+	}
+	const dangling = findDanglingToolCalls(after).filter((d) => tailIds.has(d.toolCallId));
 	if (dangling.length === 0) return 0;
 	try {
 		let parentId = lastId;

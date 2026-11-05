@@ -13,6 +13,7 @@ import {
 	FiGitBranch,
 	FiMoreVertical,
 	FiPlus,
+	FiSearch,
 	FiTrash2,
 	FiUsers,
 	FiX,
@@ -26,7 +27,7 @@ import type {
 	ProjectSummary,
 	SessionSummary,
 } from "../types";
-import { useT } from "../i18n";
+import { useT, type Translate } from "../i18n";
 import { useAppField, useEngineCapabilities } from "../app-globals";
 import { useUnreadConversationKeys, clearConversationUnread } from "../unread-conversations";
 import { applySashDrag } from "../panel-sash";
@@ -72,13 +73,15 @@ interface LeftPanelProps {
 	sharedConversationOwner?: string;
 	activeGroupId?: string | null;
 	projectSessions?: Record<string, SessionSummary[]>;
+	/** B5：服务端还有更多（更旧）会话未下发的项目（规范化路径 → true）。 */
+	projectSessionsHasMore?: Record<string, boolean>;
 	engine?: string;
 	/** 已完成但尚未查看的会话键集合（含 id / sessionId / sessionFile / path）。 */
 	unreadConvKeys?: ReadonlySet<string>;
 	panelSend: (
 		msg:
 			| { type: "new_chat" }
-			| { type: "list_sessions"; path?: string }
+			| { type: "list_sessions"; path?: string; limit?: number }
 			| { type: "list_projects" }
 			| { type: "switch_session"; path: string }
 			| { type: "switch_conversation"; id: string }
@@ -145,9 +148,62 @@ interface LeftPanelProps {
 	/** 路径补全（用于项目管理面板的目录浏览与补全）。 */
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	/** 工作区/历史会话/对话的流式切换状态（用于目标行实时转圈与百分比展示）。 */
-	transition?: WorkspaceTransitionState | null;
+	transition?: Pick<WorkspaceTransitionState, "kind" | "target" | "progress"> | null;
 	/** 打开启动沙盒项目弹窗。 */
 	onOpenSandboxModal?: () => void;
+}
+
+/** 会话行主体：重命名时渲染为 div（input 不能嵌在 button 里——非法交互嵌套，读屏与键盘
+ *  行为都不可预期），平时为 button。切换元素类型会重挂子树，输入框的 autoFocus 正常生效。 */
+function RowMain({
+	editing,
+	children,
+	className,
+	title,
+	...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { editing: boolean }) {
+	if (editing)
+		return (
+			<div className={`${className ?? ""} renaming`} title={title}>
+				{children}
+			</div>
+		);
+	return (
+		<button type="button" className={className} title={title} {...rest}>
+			{children}
+		</button>
+	);
+}
+
+type CategoryTag = { key: string; label: string };
+const CHANNEL_PREFIX_RE = /^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i;
+
+/**
+ * 形态 A 标题清洗与类别微胶囊（三种会话行共用）：外部渠道前缀 `[微信…]` 剥离为徽标，
+ * 其次是分支 / 定时调度 / TUI。徽标文案走 i18n（原先三处各自硬编码中文）。
+ */
+function categorizeTitle(
+	rawTitle: string,
+	flags: { fork?: boolean; scheduler?: boolean; tui?: boolean },
+	t: Translate,
+): { cleanTitle: string; categoryTag: CategoryTag | null } {
+	const m = rawTitle.match(CHANNEL_PREFIX_RE);
+	if (m) {
+		const rawCh = m[1]!.toLowerCase();
+		const label =
+			rawCh.includes("微信") || rawCh === "wechat"
+				? t("lpChannelWechat")
+				: rawCh.includes("飞书") || rawCh === "feishu"
+					? t("lpChannelFeishu")
+					: rawCh.includes("钉钉") || rawCh === "dingtalk"
+						? t("lpChannelDingtalk")
+						: rawCh.toUpperCase();
+		return { cleanTitle: m[2]?.trim() || rawTitle, categoryTag: { key: "wechat", label } };
+	}
+	if (flags.fork) return { cleanTitle: rawTitle, categoryTag: { key: "fork", label: t("lpBadgeFork") } };
+	if (flags.scheduler) return { cleanTitle: rawTitle, categoryTag: { key: "scheduler", label: t("lpBadgeScheduler") } };
+	if (flags.tui) return { cleanTitle: rawTitle, categoryTag: { key: "tui", label: "TUI" } };
+	return { cleanTitle: rawTitle, categoryTag: null };
 }
 
 function formatModified(ts: number): string {
@@ -254,25 +310,16 @@ function usePluginSectionCollapse(): [ReadonlySet<string>, (key: string) => void
 	}, []);
 	return [collapsed, toggle];
 }
+const LS_VISIBLE_COUNTS = "pi-web-ui:lp-visible-counts";
+/** 服务端每页默认会话条数（与 server ClientSession.SESSION_LIST_DEFAULT 一致）。 */
+const SESSION_LIST_DEFAULT = 200;
+
+/** 旧版持久化项目排位（已废弃：现按每次加载时的最近使用排序）。加载时清理残留。 */
 const LS_PROJECTS_ORDER_KEY = "pi-web-ui:projects-order";
-
-function loadPersistedProjectOrder(): string[] {
-	try {
-		const raw = localStorage.getItem(LS_PROJECTS_ORDER_KEY);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
-}
-
-function savePersistedProjectOrder(order: string[]): void {
-	try {
-		localStorage.setItem(LS_PROJECTS_ORDER_KEY, JSON.stringify(order.slice(0, 100)));
-	} catch {
-		/* ignore */
-	}
+try {
+	if (typeof localStorage !== "undefined") localStorage.removeItem(LS_PROJECTS_ORDER_KEY);
+} catch {
+	/* ignore */
 }
 
 const LS_LP_SIZES = "pi-web-ui:lp-sizes";
@@ -377,6 +424,7 @@ export const LeftPanel = memo(function LeftPanel({
 	sharedConversationOwner,
 	activeGroupId,
 	projectSessions,
+	projectSessionsHasMore,
 	engine,
 	unreadConvKeys,
 	panelSend,
@@ -442,6 +490,66 @@ export const LeftPanel = memo(function LeftPanel({
 	const [confirmTakeover, setConfirmTakeover] = useState<string | null>(null);
 	const [renaming, setRenaming] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
+	/** 乐观改名：提交后立即显示新名字，直到服务端推送的列表里出现该名字（或 10s 兜底过期）。
+	 *  key = 历史会话路径 / 运行对话 id。 */
+	const [renameOverrides, setRenameOverrides] = useState<Record<string, string>>({});
+	/** 左栏过滤框（项目名 / 路径 / 已加载的对话标题）。 */
+	const [filterText, setFilterText] = useState("");
+	/** 当前编辑中的行（renaming 的同步镜像）：Enter 提交后输入框卸载可能再触发一次 blur，
+	 *  靠它保证只提交一次；Escape 取消后的 blur 也不会误提交。 */
+	const renameActiveRef = useRef<string | null>(null);
+	renameActiveRef.current = renaming;
+	const cancelRename = () => {
+		renameActiveRef.current = null;
+		setRenaming(null);
+	};
+	const commitRename = (
+		rowKey: string,
+		msg: { type: "rename_session"; path: string } | { type: "rename_conversation"; id: string },
+		overrideKey: string,
+		currentTitle: string,
+	) => {
+		if (renameActiveRef.current !== rowKey) return;
+		renameActiveRef.current = null;
+		setRenaming(null);
+		const name = renameDraft.trim();
+		if (!name || name === currentTitle) return;
+		panelSend({ ...msg, name });
+		setRenameOverrides((prev) => ({ ...prev, [overrideKey]: name }));
+		setTimeout(() => {
+			setRenameOverrides((prev) => {
+				if (prev[overrideKey] !== name) return prev;
+				const next = { ...prev };
+				delete next[overrideKey];
+				return next;
+			});
+		}, 10_000);
+	};
+	// 服务端列表已体现新名字的乐观条目即可撤掉（之后按服务端数据显示）
+	useEffect(() => {
+		setRenameOverrides((prev) => {
+			const keys = Object.keys(prev);
+			if (keys.length === 0) return prev;
+			const next = { ...prev };
+			let changed = false;
+			const sessionName = (path: string): string | undefined => {
+				const hit =
+					sessions.find((s) => s.path === path) ??
+					Object.values(projectSessions ?? {})
+						.flat()
+						.find((s) => s.path === path);
+				return hit?.name;
+			};
+			for (const k of keys) {
+				const conv = conversations.find((c) => c.id === k);
+				if ((conv && conv.title === prev[k]) || sessionName(k) === prev[k]) {
+					delete next[k];
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [sessions, projectSessions, conversations]);
 	const [collapseProjects, toggleProjects] = useCollapsed(LS_COLLAPSE_PROJECTS, false);
 	const [collapseConvs, toggleConvs] = useCollapsed(LS_COLLAPSE_CONVS, false);
 	const [collapseSessions, toggleSessions] = useCollapsed(LS_COLLAPSE_SESSIONS, false);
@@ -516,50 +624,49 @@ export const LeftPanel = memo(function LeftPanel({
 		return list;
 	}, [projects, currentCwd, conversations, elsewhere]);
 
-	// 2. 方案 A++（对齐 deepseek-harness 稳定空间记忆）：持久化项目稳定排位
-	// 无论用户如何切换工作区、刷新页面，既有项目的相对垂直排位绝对锁定不变（零跳动、空间记忆恒定）
-	const projectRankMapRef = useRef<Map<string, number> | null>(null);
-	if (!projectRankMapRef.current) {
-		const saved = loadPersistedProjectOrder();
-		const map = new Map<string, number>();
-		saved.forEach((key, idx) => map.set(normalizeSessionPathKey(key), idx));
-		projectRankMapRef.current = map;
-	}
+	// 2. 项目排位：页面打开期间稳定（切换工作区不跳动，保留空间记忆），每次重新加载按最近使用排序。
+	// - 首次出现的一批项目按 lastUsed 新→旧分配排位（刷新页面 = 按最近使用重排）；
+	// - 会话期间新出现的项目追加到末尾，既有项目相对次序绝不自动改变；
+	// - 用户可拖拽（或 Alt+↑/↓）调整本次会话内的顺序（moveProject）。
+	const projectRankMapRef = useRef<Map<string, number>>(new Map());
+	const [projectOrderVersion, setProjectOrderVersion] = useState(0);
 
 	const stableProjects = useMemo(() => {
-		const rankMap = projectRankMapRef.current!;
-		let changed = false;
-
-		// 计算当前已分配的最大 rank
+		const rankMap = projectRankMapRef.current;
 		let maxRank = 0;
-		for (const r of rankMap.values()) {
-			if (r > maxRank) maxRank = r;
-		}
+		for (const r of rankMap.values()) if (r > maxRank) maxRank = r;
+		const newcomers = deduplicatedProjects.filter((p) => !rankMap.has(normalizeSessionPathKey(p.path)));
+		newcomers.sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
+		for (const p of newcomers) rankMap.set(normalizeSessionPathKey(p.path), ++maxRank);
+		return [...deduplicatedProjects].sort(
+			(a, b) =>
+				(rankMap.get(normalizeSessionPathKey(a.path)) ?? 0) - (rankMap.get(normalizeSessionPathKey(b.path)) ?? 0),
+		);
+		// projectOrderVersion：拖拽调整后强制按新排位重排
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [deduplicatedProjects, projectOrderVersion]);
 
-		// 为新出现的项目追加分配稳定 Rank，绝不改变既有项目的相对次序
-		deduplicatedProjects.forEach((p) => {
-			const key = normalizeSessionPathKey(p.path);
-			if (!rankMap.has(key)) {
-				maxRank += 1;
-				rankMap.set(key, maxRank);
-				changed = true;
-			}
-		});
-
-		if (changed) {
-			const orderedKeys = [...rankMap.entries()].sort((a, b) => a[1] - b[1]).map(([k]) => k);
-			savePersistedProjectOrder(orderedKeys);
-		}
-
-		// 按照锁定的物理排位渲染，在项目之间来回切换时零视觉抖动、绝对不跳动
-		return [...deduplicatedProjects].sort((a, b) => {
-			const keyA = normalizeSessionPathKey(a.path);
-			const keyB = normalizeSessionPathKey(b.path);
-			const rankA = rankMap.get(keyA) ?? 0;
-			const rankB = rankMap.get(keyB) ?? 0;
-			return rankA - rankB;
-		});
-	}, [deduplicatedProjects]);
+	/** 把 fromPath 项目移动到 toPath 项目之前/之后（本次页面会话内有效）。 */
+	const moveProject = useCallback(
+		(fromPath: string, toPath: string, after: boolean) => {
+			const from = normalizeSessionPathKey(fromPath);
+			const to = normalizeSessionPathKey(toPath);
+			if (from === to) return;
+			const keys = stableProjects.map((p) => normalizeSessionPathKey(p.path)).filter((k) => k !== from);
+			const idx = keys.indexOf(to);
+			if (idx < 0) return;
+			keys.splice(after ? idx + 1 : idx, 0, from);
+			const rankMap = projectRankMapRef.current;
+			// 不在当前列表里的旧排位条目（已移除的项目）保持在后面
+			let r = 0;
+			for (const k of keys) rankMap.set(k, ++r);
+			for (const [k, v] of rankMap) if (!keys.includes(k)) rankMap.set(k, r + v);
+			setProjectOrderVersion((v) => v + 1);
+		},
+		[stableProjects],
+	);
+	const [dragProject, setDragProject] = useState<string | null>(null);
+	const [dropHint, setDropHint] = useState<{ path: string; after: boolean } | null>(null);
 
 	const effectiveProjects = stableProjects;
 
@@ -590,7 +697,39 @@ export const LeftPanel = memo(function LeftPanel({
 		} catch {}
 	}, [expandedProjects]);
 
-	const [projectVisibleCounts, setProjectVisibleCounts] = useState<Record<string, number>>({});
+	/** 每个项目「显示更多」展开到的条数：持久化，刷新页面后保持。 */
+	const [projectVisibleCounts, setProjectVisibleCounts] = useState<Record<string, number>>(() => {
+		try {
+			const raw = localStorage.getItem(LS_VISIBLE_COUNTS);
+			const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+			if (parsed && typeof parsed === "object") {
+				const out: Record<string, number> = {};
+				for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+					if (typeof v === "number" && v > 8) out[k] = Math.min(v, 5000);
+				}
+				return out;
+			}
+		} catch {}
+		return {};
+	});
+	useEffect(() => {
+		try {
+			localStorage.setItem(LS_VISIBLE_COUNTS, JSON.stringify(projectVisibleCounts));
+		} catch {}
+	}, [projectVisibleCounts]);
+	/** 左栏要从服务端拉的条数：已展开条数超过默认 200 时按需加大（B5）。 */
+	const serverListLimit = useCallback(
+		(projectPath: string): number | undefined => {
+			const n = projectVisibleCounts[normalizeSessionPathKey(projectPath)];
+			return n && n > SESSION_LIST_DEFAULT ? Math.ceil(n / SESSION_LIST_DEFAULT) * SESSION_LIST_DEFAULT : undefined;
+		},
+		[projectVisibleCounts],
+	);
+	/** 正在向服务端要更多会话的项目（显示更多行的加载态）。 */
+	const [loadingMore, setLoadingMore] = useState<Set<string>>(() => new Set());
+	useEffect(() => {
+		setLoadingMore((prev) => (prev.size === 0 ? prev : new Set()));
+	}, [projectSessions, sessions]);
 	const [loadingProjects, setLoadingProjects] = useState<Set<string>>(() => new Set());
 
 	// 当非当前项目的会话列表加载完成（已写入 projectSessions，即使是空数组 []）时，立即移出 loading 集合
@@ -629,38 +768,34 @@ export const LeftPanel = memo(function LeftPanel({
 		}
 	}, [currentCwd]);
 
-	const isProjectExpanded = useCallback(
-		(projectPath: string) => {
-			const normP = normalizeSessionPathKey(projectPath);
-			return expandedProjects.has(normP);
-		},
-		[expandedProjects],
-	);
-
 	const toggleProjectExpand = useCallback(
 		(projectPath: string) => {
 			const normP = normalizeSessionPathKey(projectPath);
+			// 副作用（发请求）放在 state updater 之外：updater 在 StrictMode 下会被调用两次。
+			const willExpand = !expandedProjects.has(normP);
 			setExpandedProjects((prev) => {
 				const next = new Set(prev);
-				const willExpand = !next.has(normP);
-				if (willExpand) {
-					next.add(normP);
-					// 展开非当前项目时：主动向后端请求该项目的历史会话列表
-					panelSend({ type: "list_sessions", path: projectPath });
-					setLoadingProjects((lp) => new Set(lp).add(normP));
-				} else {
-					next.delete(normP);
-					setLoadingProjects((lp) => {
-						if (!lp.has(normP)) return lp;
-						const copy = new Set(lp);
-						copy.delete(normP);
-						return copy;
-					});
-				}
+				if (willExpand) next.add(normP);
+				else next.delete(normP);
 				return next;
 			});
+			if (willExpand) {
+				// 展开非当前项目时：主动向后端请求该项目的历史会话列表（按此前展开到的条数）
+				const limit = serverListLimit(projectPath);
+				panelSend(
+					limit ? { type: "list_sessions", path: projectPath, limit } : { type: "list_sessions", path: projectPath },
+				);
+				setLoadingProjects((lp) => new Set(lp).add(normP));
+			} else {
+				setLoadingProjects((lp) => {
+					if (!lp.has(normP)) return lp;
+					const copy = new Set(lp);
+					copy.delete(normP);
+					return copy;
+				});
+			}
 		},
-		[panelSend],
+		[panelSend, expandedProjects, serverListLimit],
 	);
 
 	/** 智能去重：当且仅当 split 模式下运行列表展开且有内容时，已在上方运行列表中展示的本地会话不重复占用下方历史列表视线。 */
@@ -1280,6 +1415,148 @@ export const LeftPanel = memo(function LeftPanel({
 		},
 		[runningInfoBySession],
 	);
+
+	/**
+	 * 项目树数据模型（纯计算，与渲染分离）：原先每次渲染都在 JSX IIFE 内逐项目重算，
+	 * 含 O(对话×会话) 的嵌套 some 与逐会话正则匹配；现在仅在数据真正变化时重算一次。
+	 * 切换进度（transition）不进依赖——它只影响行内转圈，由渲染阶段读取。
+	 */
+	const projectTreeModel = useMemo(() => {
+		const curNorm = normalizeSessionPathKey(currentCwd);
+		// 按项目分桶运行中对话 + 父子索引，一次遍历代替每项目 filter / 每对话 some。
+		const convsByProject = new Map<string, RowConv[]>();
+		const parentIds = new Set<string>();
+		for (const c of runningAll) {
+			const key = normalizeSessionPathKey(c.cwd);
+			const arr = convsByProject.get(key);
+			if (arr) arr.push(c);
+			else convsByProject.set(key, [c]);
+			if (c.parentId) parentIds.add(c.parentId);
+		}
+		// 全局跨项目排他认领集合：保证同一个会话文件在整个侧栏中只能且最多归属于一个项目
+		const claimedSessionPaths = new Set<string>();
+		const claimedSessionIds = new Set<string>();
+		return effectiveProjects.map((p) => {
+			const pNorm = normalizeSessionPathKey(p.path);
+			const active = pNorm === curNorm;
+			const isCollapsed = !expandedProjects.has(pNorm);
+
+			// 1. 归属于该项目的全部活动对话候选
+			const pConvsAll = convsByProject.get(pNorm) ?? [];
+
+			// 2. 基础磁盘历史会话列表（当前项目用 sessions，其他项目优先读 projectSessions 或本地缓存）
+			const pStateSessions = projectSessions?.[pNorm];
+			const pRawSessions = active ? sessions : (pStateSessions ?? readCachedSessions(p.path, engine) ?? []);
+			// 只有在非当前项目、且后端响应尚未到达、且正处于 loading 集合中且无任何缓存时，才显示“正在读取会话…”
+			const isLoadingSessions =
+				!active && pStateSessions === undefined && loadingProjects.has(pNorm) && pRawSessions.length === 0;
+
+			// 磁盘会话 sessionId 索引（替代逐对话 pRawSessions.some 的 O(N×M) 扫描；
+			// 原判定只在对话无 sessionFile 时生效，此时仅 sessionId 能匹配，故只索引 id）
+			let diskIds: Set<string> | null = null;
+			const getDiskIds = (): Set<string> => {
+				if (diskIds) return diskIds;
+				const ids = new Set<string>();
+				for (const s of pRawSessions) if (s.sessionId) ids.add(s.sessionId.trim().toLowerCase());
+				diskIds = ids;
+				return ids;
+			};
+
+			// 1.1 判断一个会话是否确实属于“顶部进行中的活动任务”
+			// 核心原则：打开历史对话仅仅是查看，位置不可改变、右侧时间戳不可丢失！
+			const pRunningRaw = pConvsAll.filter((c) => {
+				if (c.isStreaming || c.completionPending || c.hasQuestion) return true;
+				if (c.isSubagent || Boolean(c.parentId)) return true;
+				if (parentIds.has(c.id)) return true;
+				if (c.elsewhere) return true;
+				if (c.pinned) return true;
+				// 没有对应磁盘落盘文件的纯内存新对话（例如刚建还没落盘）
+				if (!c.sessionFile) {
+					const matchesDisk = Boolean(c.sessionId && getDiskIds().has(c.sessionId.trim().toLowerCase()));
+					if (!matchesDisk) return true;
+				}
+				return false;
+			});
+
+			// 对活动对话进行排序：当前正在交互的会话或最新活动的排在顶部
+			pRunningRaw.sort((a, b) => {
+				if (a.id === activeConversationId) return -1;
+				if (b.id === activeConversationId) return 1;
+				const aRunning = Boolean(a.isStreaming || a.completionPending || a.hasQuestion);
+				const bRunning = Boolean(b.isStreaming || b.completionPending || b.hasQuestion);
+				if (aRunning && !bRunning) return -1;
+				if (!aRunning && bRunning) return 1;
+				return (b.modified ?? 0) - (a.modified ?? 0);
+			});
+
+			const pRunningRows = buildConversationRows(pRunningRaw, collapsedSubagents);
+
+			for (const c of pRunningRaw) {
+				if (c.sessionFile) claimedSessionPaths.add(normalizeSessionPathKey(c.sessionFile));
+				if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
+			}
+
+			// 3. 物理路径确定性归属过滤 + 全局排他去重
+			const idleSessions = pRawSessions.filter((s) => {
+				if (!isSessionMatchingProject(s.path, p.path)) return false;
+				const sNorm = normalizeSessionPathKey(s.path);
+				if (sNorm && claimedSessionPaths.has(sNorm)) return false;
+				const sId = s.sessionId?.trim().toLowerCase() || extractSessionIdFromPath(s.path)?.toLowerCase();
+				if (sId && claimedSessionIds.has(sId)) return false;
+				if (sNorm) claimedSessionPaths.add(sNorm);
+				if (sId) claimedSessionIds.add(sId);
+				return true;
+			});
+
+			// 4. 真正在跑的任务数量（项目头徽标，纯点开的不计入）与已完成未查看数量
+			const actuallyRunningCount = pRunningRaw.filter(
+				(c) => c.isStreaming || c.hasQuestion || c.completionPending,
+			).length;
+			const unreadRunningCount = pRunningRaw.filter(
+				(c) =>
+					!c.isStreaming &&
+					!c.completionPending &&
+					checkUnread({ id: c.id, sessionId: c.sessionId, sessionFile: c.sessionFile }),
+			).length;
+			const unreadHistoryCount = idleSessions.filter((s) =>
+				checkUnread({ sessionId: s.sessionId, sessionFile: s.path, path: s.path }),
+			).length;
+
+			// 5. 数量截断与分页展开（本地截断之外，服务端还有更旧的会话时同样提供「显示更多」）
+			const maxVisible = projectVisibleCounts[pNorm] ?? 8;
+			const serverHasMore = Boolean(projectSessionsHasMore?.[pNorm]);
+			return {
+				serverHasMore,
+				loadedCount: pRawSessions.length,
+				p,
+				pNorm,
+				active,
+				isCollapsed,
+				isLoadingSessions,
+				pRunningRows,
+				idleSessions,
+				visibleIdleSessions: idleSessions.slice(0, maxVisible),
+				maxVisible,
+				hasMore: !isCollapsed && (idleSessions.length > maxVisible || serverHasMore),
+				actuallyRunningCount,
+				unreadCount: unreadRunningCount + unreadHistoryCount,
+			};
+		});
+	}, [
+		effectiveProjects,
+		currentCwd,
+		runningAll,
+		expandedProjects,
+		projectSessions,
+		sessions,
+		engine,
+		loadingProjects,
+		activeConversationId,
+		collapsedSubagents,
+		checkUnread,
+		projectVisibleCounts,
+		projectSessionsHasMore,
+	]);
 	// P2：分区顺序与显隐（宏观来自宿主 leftpanel.sections 的合并结果；布局页可隐藏 / 调序）。
 	const sectionPlan = withDeviceGroupSection(planLeftSections(uiSections));
 	const shownPlan = sectionPlan.filter((p) => p.shown);
@@ -1421,8 +1698,11 @@ export const LeftPanel = memo(function LeftPanel({
 	useEffect(() => {
 		if (!active || !ready || status !== "open") return;
 		if (!cwd) return;
-		panelSend({ type: "list_sessions" });
+		const limit = serverListLimit(cwd);
+		panelSend(limit ? { type: "list_sessions", limit } : { type: "list_sessions" });
 		panelSend({ type: "list_projects" });
+		// serverListLimit 只在挂载/切换时读取：用户翻页时由「显示更多」自己发请求
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [active, ready, status, cwd, panelSend]);
 
 	const displayName = (s: SessionSummary): string => {
@@ -1431,6 +1711,82 @@ export const LeftPanel = memo(function LeftPanel({
 	};
 
 	const projectName = (path: string): string => path.split(/[\\/]/).pop() || path;
+
+	/** 键盘导航：树内所有可聚焦行（项目头、会话行、显示更多）按 DOM 顺序；跳过折叠区里的行。 */
+	const treeNavItems = (from: HTMLElement): HTMLElement[] => {
+		const tree = from.closest<HTMLElement>('[role="tree"]');
+		if (!tree) return [];
+		return [...tree.querySelectorAll<HTMLElement>("[data-lp-nav]")].filter(
+			(el) => !el.closest(".lp-history-collapsible.collapsed") && !(el as HTMLButtonElement).disabled,
+		);
+	};
+	const focusTreeItem = (from: HTMLElement, delta: number | "first" | "last") => {
+		const items = treeNavItems(from);
+		if (items.length === 0) return;
+		const idx = items.indexOf(from);
+		const next =
+			delta === "first"
+				? 0
+				: delta === "last"
+					? items.length - 1
+					: idx < 0
+						? delta > 0
+							? 0
+							: items.length - 1
+						: Math.min(items.length - 1, Math.max(0, idx + delta));
+		items[next]?.focus();
+	};
+	/**
+	 * ↑/↓ 在行间移动，Home/End 跳到首尾；项目头上 →/← 展开/收起，会话行上 ← 回到所属项目；
+	 * 项目头上 Alt+↑/↓ 调整项目顺序（与拖拽等价）。输入框（过滤、重命名）里的按键不拦截。
+	 */
+	const handleTreeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+		const el = e.target as HTMLElement;
+		if (!el.hasAttribute("data-lp-nav")) return;
+		const projectPath = el.getAttribute("data-project-path");
+		switch (e.key) {
+			case "ArrowDown":
+			case "ArrowUp": {
+				e.preventDefault();
+				if (e.altKey && projectPath) {
+					const order = stableProjects.map((p) => p.path);
+					const i = order.indexOf(projectPath);
+					const j = e.key === "ArrowDown" ? i + 1 : i - 1;
+					if (i < 0 || j < 0 || j >= order.length) return;
+					moveProject(projectPath, order[j]!, e.key === "ArrowDown");
+					// 重排后焦点留在被移动的项目上
+					requestAnimationFrame(() => {
+						const tree = el.closest('[role="tree"]') ?? document;
+						for (const h of tree.querySelectorAll<HTMLElement>("[data-project-path]")) {
+							if (h.getAttribute("data-project-path") === projectPath) h.focus();
+						}
+					});
+					return;
+				}
+				focusTreeItem(el, e.key === "ArrowDown" ? 1 : -1);
+				return;
+			}
+			case "Home":
+			case "End":
+				e.preventDefault();
+				focusTreeItem(el, e.key === "Home" ? "first" : "last");
+				return;
+			case "ArrowRight":
+				if (projectPath && !expandedProjects.has(normalizeSessionPathKey(projectPath))) {
+					e.preventDefault();
+					toggleProjectExpand(projectPath);
+				}
+				return;
+			case "ArrowLeft":
+				e.preventDefault();
+				if (projectPath) {
+					if (expandedProjects.has(normalizeSessionPathKey(projectPath))) toggleProjectExpand(projectPath);
+				} else {
+					el.closest(".lp-project-node")?.querySelector<HTMLElement>("[data-project-path]")?.focus();
+				}
+				return;
+		}
+	};
 
 	/** `contextmenu.project`：项目行右键（纯插件位，宿主无内置条目）。与会话菜单同口径：
 	 *  输入类元素让给浏览器；槽位没有可见条目时不抢右键，交回浏览器（检查元素 / 复制照常）。 */
@@ -1572,32 +1928,16 @@ export const LeftPanel = memo(function LeftPanel({
 			});
 
 		// 识别类别信息与清洗标题（形态 A 核心：左侧纯文字对齐，属性在右侧以微胶囊呈现）
-		const rawTitle = displayName(s);
-		let cleanTitle = rawTitle;
-		let categoryTag: { key: string; label: string } | null = null;
-
-		const channelMatch = cleanTitle.match(/^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i);
-		if (channelMatch) {
-			const rawCh = channelMatch[1]!.toLowerCase();
-			const chLabel =
-				rawCh.includes("微信") || rawCh === "wechat"
-					? "微信"
-					: rawCh.includes("飞书") || rawCh === "feishu"
-						? "飞书"
-						: rawCh.includes("钉钉") || rawCh === "dingtalk"
-							? "钉钉"
-							: rawCh.toUpperCase();
-			categoryTag = { key: "wechat", label: chLabel };
-			if (channelMatch[2]?.trim()) {
-				cleanTitle = channelMatch[2].trim();
-			}
-		} else if (s.parentSessionPath || runInfo?.conv?.forkFrom) {
-			categoryTag = { key: "fork", label: "🌿分支" };
-		} else if (runInfo?.conv?.elsewhere && runInfo.conv.owner?.startsWith("scheduler:")) {
-			categoryTag = { key: "scheduler", label: "调度" };
-		} else if (s.source === "tui") {
-			categoryTag = { key: "tui", label: "TUI" };
-		}
+		const rawTitle = renameOverrides[s.path] ?? displayName(s);
+		const { cleanTitle, categoryTag } = categorizeTitle(
+			rawTitle,
+			{
+				fork: Boolean(s.parentSessionPath || runInfo?.conv?.forkFrom),
+				scheduler: Boolean(runInfo?.conv?.elsewhere && runInfo.conv.owner?.startsWith("scheduler:")),
+				tui: s.source === "tui",
+			},
+			t,
+		);
 
 		return (
 			<div
@@ -1606,11 +1946,13 @@ export const LeftPanel = memo(function LeftPanel({
 				onMouseLeave={() => setConfirmDel((k) => (k === `sess:${s.path}` ? null : k))}
 				onContextMenu={(e) => openSessionMenu(e, { id: s.path, kind: "history", label: rawTitle })}
 			>
-				<button
-					type="button"
+				<RowMain
+					editing={renaming === s.path}
 					className={`session-item lp-tree-session-item ${active ? "active" : ""} ${switching ? "switching" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
 					title={s.path}
 					disabled={switching}
+					aria-current={active ? "true" : undefined}
+					data-lp-nav=""
 					onClick={() => {
 						if (renaming || switching) return;
 						clearConversationUnread(s.path);
@@ -1635,14 +1977,13 @@ export const LeftPanel = memo(function LeftPanel({
 							onKeyDown={(e) => {
 								e.stopPropagation();
 								if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-									const name = renameDraft.trim();
-									if (name) panelSend({ type: "rename_session", path: s.path, name });
-									setRenaming(null);
+									commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle);
 								} else if (e.key === "Escape") {
-									setRenaming(null);
+									cancelRename();
 								}
 							}}
-							onBlur={() => setRenaming(null)}
+							// 失焦即提交（原先失焦直接丢弃输入，点别处时改名悄悄失效）
+							onBlur={() => commitRename(s.path, { type: "rename_session", path: s.path }, s.path, rawTitle)}
 						/>
 					) : (
 						<span className="conv-title-text" title={rawTitle}>
@@ -1691,7 +2032,7 @@ export const LeftPanel = memo(function LeftPanel({
 							{switching ? `${transition.progress}%` : formatModified(s.modified)}
 						</span>
 					</span>
-				</button>
+				</RowMain>
 				{confirmDel !== `sess:${s.path}` && (
 					<button
 						type="button"
@@ -1799,30 +2140,15 @@ export const LeftPanel = memo(function LeftPanel({
 					: confirming
 						? t("takeoverConfirm")
 						: isPseudo
-							? `点击直接在电脑端打开此对话\n${c.cwd}`
+							? `${t("lpOpenOnDesktopTip")}\n${c.cwd}`
 							: `${t(isOffline ? "elsewhereOfflineTip" : "elsewhereTip")}\n${c.cwd}`;
 
 			// 形态 A：标题清洗与类别微胶囊提取（左侧纯文字绝对对齐，元数据全部右置）
-			let cleanTitle = c.title;
-			let categoryTag: { key: string; label: string } | null = null;
-			const channelMatch = cleanTitle.match(/^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i);
-			if (channelMatch) {
-				const rawCh = channelMatch[1]!.toLowerCase();
-				const chLabel =
-					rawCh.includes("微信") || rawCh === "wechat"
-						? "微信"
-						: rawCh.includes("飞书") || rawCh === "feishu"
-							? "飞书"
-							: rawCh.includes("钉钉") || rawCh === "dingtalk"
-								? "钉钉"
-								: rawCh.toUpperCase();
-				categoryTag = { key: "wechat", label: chLabel };
-				if (channelMatch[2]?.trim()) cleanTitle = channelMatch[2].trim();
-			} else if (c.forkFrom) {
-				categoryTag = { key: "fork", label: "🌿分支" };
-			} else if (isScheduler) {
-				categoryTag = { key: "scheduler", label: "调度" };
-			}
+			const { cleanTitle, categoryTag } = categorizeTitle(
+				c.title,
+				{ fork: Boolean(c.forkFrom), scheduler: isScheduler },
+				t,
+			);
 
 			return (
 				<div
@@ -2023,26 +2349,14 @@ export const LeftPanel = memo(function LeftPanel({
 		const isArmed = confirmDel === convKey;
 
 		// 形态 A：标题清洗与类别微胶囊提取（左侧纯文字绝对对齐，元数据全部右置）
-		let cleanTitle = c.title;
-		let categoryTag: { key: string; label: string } | null = null;
-		const channelMatch = cleanTitle.match(/^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i);
-		if (channelMatch) {
-			const rawCh = channelMatch[1]!.toLowerCase();
-			const chLabel =
-				rawCh.includes("微信") || rawCh === "wechat"
-					? "微信"
-					: rawCh.includes("飞书") || rawCh === "feishu"
-						? "飞书"
-						: rawCh.includes("钉钉") || rawCh === "dingtalk"
-							? "钉钉"
-							: rawCh.toUpperCase();
-			categoryTag = { key: "wechat", label: chLabel };
-			if (channelMatch[2]?.trim()) cleanTitle = channelMatch[2].trim();
-		} else if (c.forkFrom) {
-			categoryTag = { key: "fork", label: "🌿分支" };
-		} else if ((c as RowConv).elsewhere && (c as RowConv).owner?.startsWith("scheduler:")) {
-			categoryTag = { key: "scheduler", label: "调度" };
-		}
+		const { cleanTitle, categoryTag } = categorizeTitle(
+			renameOverrides[c.id] ?? c.title,
+			{
+				fork: Boolean(c.forkFrom),
+				scheduler: Boolean((c as RowConv).elsewhere && (c as RowConv).owner?.startsWith("scheduler:")),
+			},
+			t,
+		);
 
 		return (
 			<div
@@ -2068,10 +2382,12 @@ export const LeftPanel = memo(function LeftPanel({
 						</svg>
 					</button>
 				)}
-				<button
-					type="button"
+				<RowMain
+					editing={renaming === `conv:${c.id}`}
 					className={`session-item lp-tree-session-item ${active ? "active" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
 					title={`${c.title}${projectPath ? "" : ` — ${c.cwd}`}`}
+					aria-current={active ? "true" : undefined}
+					data-lp-nav=""
 					onClick={() => {
 						clearConversationUnread(c.id);
 						if (c.sessionId) clearConversationUnread(c.sessionId);
@@ -2091,14 +2407,12 @@ export const LeftPanel = memo(function LeftPanel({
 							onKeyDown={(e) => {
 								e.stopPropagation();
 								if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-									const name = renameDraft.trim();
-									if (name) panelSend({ type: "rename_conversation", id: c.id, name });
-									setRenaming(null);
+									commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title);
 								} else if (e.key === "Escape") {
-									setRenaming(null);
+									cancelRename();
 								}
 							}}
-							onBlur={() => setRenaming(null)}
+							onBlur={() => commitRename(`conv:${c.id}`, { type: "rename_conversation", id: c.id }, c.id, c.title)}
 						/>
 					) : (
 						<span className="conv-title-text" title={c.title}>
@@ -2144,7 +2458,7 @@ export const LeftPanel = memo(function LeftPanel({
 
 						{Boolean(convTime) && <span className="conv-time">{formatModified(convTime!)}</span>}
 					</span>
-				</button>
+				</RowMain>
 				{!isArmed && (
 					<button
 						type="button"
@@ -2416,145 +2730,161 @@ export const LeftPanel = memo(function LeftPanel({
 								onRoomCountChange={setGroupCount}
 							/>
 						) : effectiveProjects.length > 0 ? (
-							<div className="lp-section-body projects-scroll" onDoubleClick={handleBlankDoubleClick}>
+							<div
+								className="lp-section-body projects-scroll"
+								onDoubleClick={handleBlankDoubleClick}
+								role="tree"
+								aria-label={t("lpProjectsTree")}
+								onKeyDown={handleTreeKeyDown}
+							>
+								<div className="lp-filter">
+									<FiSearch aria-hidden="true" />
+									<input
+										type="search"
+										value={filterText}
+										placeholder={t("lpFilterPlaceholder")}
+										aria-label={t("lpFilterPlaceholder")}
+										onChange={(e) => setFilterText(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Escape" && filterText) {
+												e.stopPropagation();
+												setFilterText("");
+											} else if (e.key === "ArrowDown") {
+												e.preventDefault();
+												focusTreeItem(e.currentTarget, 1);
+											}
+										}}
+									/>
+									{filterText && (
+										<button
+											type="button"
+											className="lp-filter-clear"
+											title={t("lpFilterClear")}
+											aria-label={t("lpFilterClear")}
+											onClick={() => setFilterText("")}
+										>
+											<FiX />
+										</button>
+									)}
+								</div>
 								{(() => {
-									// 全局跨项目排他认领集合：保证同一个会话文件在整个侧栏中只能且最多归属于一个项目
-									const claimedSessionPaths = new Set<string>();
-									const claimedSessionIds = new Set<string>();
-									return effectiveProjects.map((p) => {
-										const pNorm = normalizeSessionPathKey(p.path);
-										const curNorm = normalizeSessionPathKey(currentCwd);
-										const active = pNorm === curNorm;
-										const isExpanded = isProjectExpanded(p.path);
-										const isCollapsed = !isExpanded;
-										const switching =
-											transition?.kind === "cwd" && normalizeSessionPathKey(transition.target) === pNorm;
+									const transitionCwdNorm =
+										transition?.kind === "cwd" ? normalizeSessionPathKey(transition.target) : null;
+									const q = filterText.trim().toLowerCase();
+									/** 过滤视图：项目名/路径命中 → 项目照常显示；否则只显示标题命中的对话并强制展开。
+									 *  只在已加载的会话列表里过滤（当前项目、已展开或有缓存的项目）。 */
+									const views = projectTreeModel.map((m) => {
+										if (!q) return m;
+										const sbxName = m.p.sandbox?.name;
+										const name = (sbxName ?? projectName(m.p.path)).toLowerCase();
+										if (name.includes(q) || m.p.path.toLowerCase().includes(q)) return m;
+										const runRows = m.pRunningRows.filter((r) => (r.c.title ?? "").toLowerCase().includes(q));
+										const idle = m.idleSessions.filter((s) =>
+											(renameOverrides[s.path] ?? displayName(s)).toLowerCase().includes(q),
+										);
+										if (runRows.length === 0 && idle.length === 0) return null;
+										return {
+											...m,
+											isCollapsed: false,
+											pRunningRows: runRows,
+											idleSessions: idle,
+											visibleIdleSessions: idle.slice(0, 50),
+											maxVisible: 50,
+											hasMore: false,
+										};
+									});
+									if (q && views.every((v) => v === null)) {
+										return <div className="lp-filter-empty">{t("lpFilterNoMatch")}</div>;
+									}
+									return views.map((m) => {
+										if (!m) return null;
+										const {
+											p,
+											pNorm,
+											active,
+											isCollapsed,
+											isLoadingSessions,
+											pRunningRows,
+											idleSessions,
+											visibleIdleSessions,
+											maxVisible,
+											hasMore,
+											actuallyRunningCount,
+											unreadCount,
+											serverHasMore,
+											loadedCount,
+										} = m;
+										const switching = transitionCwdNorm !== null && transitionCwdNorm === pNorm;
 										const sbx = p.sandbox;
 										const dispName = sbx ? sbx.name : projectName(p.path);
-
-										// 1. 归属于该项目的全部活动对话候选
-										const pConvsAll = runningAll.filter((c) => normalizeSessionPathKey(c.cwd) === pNorm);
-
-										// 2. 基础磁盘历史会话列表（当前项目用 sessions，其他项目优先读 projectSessions 或本地缓存）
-										const pStateSessions = projectSessions?.[pNorm];
-										const pRawSessions = active
-											? sessions
-											: (pStateSessions ?? readCachedSessions(p.path, engine) ?? []);
-										// 只有在非当前项目、且后端响应尚未到达（pStateSessions 为 undefined）、且正处于 loading 集合中且无任何缓存时，才显示“正在读取会话…”
-										const isLoadingSessions =
-											!active &&
-											pStateSessions === undefined &&
-											loadingProjects.has(pNorm) &&
-											pRawSessions.length === 0;
-
-										// 1.1 判断一个会话是否确实属于“顶部进行中的活动任务”
-										// 核心原则：打开历史对话仅仅是查看，位置不可改变、右侧时间戳不可丢失！
-										// 只有正在进行中的任务（流式中、等待问卷、补全排队、子代理树、跨端运行、无落盘文件的新建对话）或用户钉住的会话，才提取到顶部活动列表。
-										const pRunningRaw = pConvsAll.filter((c) => {
-											// 实实在在正在跑的任务：流式、等待交互问卷、排队补全中
-											if (c.isStreaming || c.completionPending || c.hasQuestion) return true;
-											// 属于子代理树（本身是子代理，或名下挂有子代理）
-											if (c.isSubagent || Boolean(c.parentId)) return true;
-											if (pConvsAll.some((other) => other.parentId === c.id)) return true;
-											// 跨设备/调度伪会话
-											if ((c as RowConv).elsewhere) return true;
-											// 用户显式钉在运行列表中的对话
-											if (c.pinned) return true;
-											// 没有对应磁盘落盘文件的纯内存新对话（例如刚建还没落盘）
-											const matchesDiskSession = pRawSessions.some((s) => {
-												if (c.sessionFile && normalizeSessionPathKey(s.path) === normalizeSessionPathKey(c.sessionFile))
-													return true;
-												if (
-													c.sessionId &&
-													s.sessionId &&
-													s.sessionId.trim().toLowerCase() === c.sessionId.trim().toLowerCase()
-												)
-													return true;
-												return false;
-											});
-											if (!matchesDiskSession && !c.sessionFile) return true;
-
-											return false;
-										});
-
-										// 对活动对话进行排序：当前正在交互的会话（activeConversationId）或最新活动的排在顶部
-										pRunningRaw.sort((a, b) => {
-											if (a.id === activeConversationId) return -1;
-											if (b.id === activeConversationId) return 1;
-											const aRunning = Boolean(a.isStreaming || a.completionPending || a.hasQuestion);
-											const bRunning = Boolean(b.isStreaming || b.completionPending || b.hasQuestion);
-											if (aRunning && !bRunning) return -1;
-											if (!aRunning && bRunning) return 1;
-											return (b.modified ?? 0) - (a.modified ?? 0);
-										});
-
-										const pRunningRows = buildConversationRows(pRunningRaw, collapsedSubagents);
-
-										// 登记活动会话到全局排他集合（只有真正在顶部活动区渲染的才认领，未被认领的闲置会话正常保留在历史列表中）
-										for (const c of pRunningRaw) {
-											if (c.sessionFile) claimedSessionPaths.add(normalizeSessionPathKey(c.sessionFile));
-											if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
-										}
-
-										// 3. 最佳落地实践：物理路径确定性归属过滤 + 全局排他去重
-										// 任何物理路径不属于当前项目的会话，一律在物理层被拒收，绝不可能跨项目窜门
-										const idleSessions = pRawSessions.filter((s) => {
-											if (!isSessionMatchingProject(s.path, p.path)) return false;
-											const sNorm = normalizeSessionPathKey(s.path);
-											if (sNorm && claimedSessionPaths.has(sNorm)) return false;
-											const sId = s.sessionId?.trim().toLowerCase() || extractSessionIdFromPath(s.path)?.toLowerCase();
-											if (sId && claimedSessionIds.has(sId)) return false;
-											if (sNorm) claimedSessionPaths.add(sNorm);
-											if (sId) claimedSessionIds.add(sId);
-											return true;
-										});
-
-										// 4. 统计真正在跑的任务数量（用于项目头徽标，纯点开的不计入）
-										const actuallyRunningCount = pRunningRaw.filter(
-											(c) => c.isStreaming || c.hasQuestion || c.completionPending,
-										).length;
 										const hasRunning = actuallyRunningCount > 0;
 										const hasHistory = idleSessions.length > 0;
-
-										// 4.1 统计当前项目下已完成未查看的任务数量
-										const unreadRunningCount = pRunningRaw.filter(
-											(c) =>
-												!c.isStreaming &&
-												!c.completionPending &&
-												checkUnread({ id: c.id, sessionId: c.sessionId, sessionFile: c.sessionFile }),
-										).length;
-										const unreadHistoryCount = idleSessions.filter((s) =>
-											checkUnread({ sessionId: s.sessionId, sessionFile: s.path, path: s.path }),
-										).length;
-										const unreadCount = unreadRunningCount + unreadHistoryCount;
 										const hasUnread = unreadCount > 0;
 
-										// 5. 数量截断与分页展开
-										const maxVisible = projectVisibleCounts[pNorm] ?? 8;
-										const visibleIdleSessions = idleSessions.slice(0, maxVisible);
-										const hasMore = !isCollapsed && idleSessions.length > maxVisible;
-
+										const dropClass =
+											dropHint?.path === p.path && dragProject && dragProject !== p.path
+												? dropHint.after
+													? " drop-after"
+													: " drop-before"
+												: "";
 										return (
-											<div className="lp-project-node" key={p.path}>
+											<div
+												className={`lp-project-node${dragProject === p.path ? " dragging" : ""}${dropClass}`}
+												key={p.path}
+												role="treeitem"
+												aria-expanded={!isCollapsed}
+												aria-selected={active}
+												onDragOver={(e) => {
+													if (!dragProject || dragProject === p.path) return;
+													e.preventDefault();
+													e.dataTransfer.dropEffect = "move";
+													const r = e.currentTarget.getBoundingClientRect();
+													const after = e.clientY > r.top + Math.min(r.height, 32) / 2;
+													if (dropHint?.path !== p.path || dropHint.after !== after)
+														setDropHint({ path: p.path, after });
+												}}
+												onDrop={(e) => {
+													if (!dragProject) return;
+													e.preventDefault();
+													const r = e.currentTarget.getBoundingClientRect();
+													moveProject(dragProject, p.path, e.clientY > r.top + Math.min(r.height, 32) / 2);
+													setDragProject(null);
+													setDropHint(null);
+												}}
+											>
 												<div
 													className={`lp-row lp-project-head-row${active ? " active" : ""}${switching ? " switching" : ""}${isCollapsed ? " is-collapsed" : " is-expanded"}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+													draggable={!switching}
+													onDragStart={(e) => {
+														e.dataTransfer.effectAllowed = "move";
+														e.dataTransfer.setData("text/plain", p.path);
+														setDragProject(p.path);
+													}}
+													onDragEnd={() => {
+														setDragProject(null);
+														setDropHint(null);
+													}}
 													onMouseLeave={() => setConfirmDel((k) => (k === `proj:${p.path}` ? null : k))}
 													onContextMenu={(e) => openProjectMenu(e, p)}
 												>
 													<button
 														type="button"
 														className={`lp-project-header-item ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
-														title={
+														title={`${
 															sbx?.sourcePath
 																? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`
 																: p.path
-														}
+														}\n${t("lpDragToReorder")}`}
 														disabled={switching}
+														data-lp-nav=""
+														data-project-path={p.path}
+														aria-current={active ? "true" : undefined}
+														aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
 														onClick={() => {
 															if (!switching) {
 																if (!active) {
 																	panelSend({ type: "set_cwd", path: p.path });
-																	panelSend({ type: "list_sessions", path: p.path });
+																	// set_cwd 的服务端副作用（refreshSessionsOnSwitch）会推送该项目会话列表，不再重复请求。
 																	setExpandedProjects((prev) => {
 																		const norm = normalizeSessionPathKey(p.path);
 																		if (prev.has(norm)) return prev;
@@ -2581,6 +2911,9 @@ export const LeftPanel = memo(function LeftPanel({
 													>
 														<span
 															className="lp-project-chevron"
+															/* 鼠标专用的展开小三角（嵌在按钮内，不能再做成可聚焦控件）：键盘用 →/← 展开收起，
+															   读屏由 treeitem 的 aria-expanded 表达状态。 */
+															aria-hidden="true"
 															onClick={(e) => {
 																e.stopPropagation();
 																toggleProjectExpand(p.path);
@@ -2623,7 +2956,7 @@ export const LeftPanel = memo(function LeftPanel({
 															</span>
 														)}
 														<span className={`project-time ${switching ? "switching-pct" : ""}`}>
-															{switching ? `${transition.progress}%` : formatModified(p.lastUsed)}
+															{switching ? `${transition?.progress ?? 0}%` : formatModified(p.lastUsed)}
 														</span>
 													</button>
 
@@ -2703,35 +3036,58 @@ export const LeftPanel = memo(function LeftPanel({
 
 																{/* 5. 显示更多 */}
 																{hasMore && (
-																	<div
+																	<button
+																		type="button"
 																		className="lp-show-more-row"
+																		data-lp-nav=""
+																		disabled={loadingMore.has(pNorm)}
 																		onClick={(e) => {
 																			e.stopPropagation();
+																			const nextVisible = maxVisible + 20;
 																			setProjectVisibleCounts((prev) => ({
 																				...prev,
-																				[pNorm]: (prev[pNorm] ?? 8) + 20,
+																				[pNorm]: nextVisible,
 																			}));
+																			// 本地已下发的快用完、服务端还有更旧的：按页再要一批（B5）
+																			if (serverHasMore && nextVisible >= idleSessions.length) {
+																				const limit =
+																					Math.ceil((loadedCount + 1) / SESSION_LIST_DEFAULT) * SESSION_LIST_DEFAULT +
+																					SESSION_LIST_DEFAULT;
+																				panelSend({ type: "list_sessions", path: p.path, limit });
+																				setLoadingMore((prev) => new Set(prev).add(pNorm));
+																			}
 																		}}
 																	>
-																		<span>显示更多 · {idleSessions.length - maxVisible}</span>
-																	</div>
+																		<span>
+																			{loadingMore.has(pNorm)
+																				? t("loadingSessions")
+																				: t("lpShowMore", {
+																						n:
+																							idleSessions.length > maxVisible
+																								? `${idleSessions.length - maxVisible}${serverHasMore ? "+" : ""}`
+																								: "…",
+																					})}
+																		</span>
+																	</button>
 																)}
 															</div>
 														</div>
 
 														{/* 4. 折叠提示（仅在折叠态且有历史时展示） */}
 														{isCollapsed && hasHistory && (
-															<div
+															<button
+																type="button"
 																className="lp-collapsed-history-tip"
+																data-lp-nav=""
 																onClick={(e) => {
 																	e.stopPropagation();
 																	toggleProjectExpand(p.path);
 																}}
 																title={t("expandSection")}
 															>
-																<span>+ 已收起 {idleSessions.length} 条历史</span>
-																<span>›</span>
-															</div>
+																<span>{t("lpCollapsedHistory", { n: idleSessions.length })}</span>
+																<span aria-hidden="true">›</span>
+															</button>
 														)}
 													</div>
 												)}

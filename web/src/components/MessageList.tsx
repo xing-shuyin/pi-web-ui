@@ -631,6 +631,15 @@ export function MessageList({
 	const firstPaintSize = Math.min(defaultPageSize, FIRST_PAINT_COUNT);
 	const [visibleCount, setVisibleCount] = useState<number>(() => firstPaintSize);
 	const convKey = `${state.conversationId ?? ""}:${state.sessionFile ?? ""}`;
+	/**
+	 * 预览→快照交接（打开历史会话）：App 在服务端预分配了对话 id 时保持同一实例，
+	 * 预览里的尾部消息与快照同 id，原地复用；快照带来的更早消息要按「会话首帧」口径
+	 * 预置占位、重置分页窗口，否则会一次性全量挂载几百条。用「渲染期派生 state」
+	 * 而非 ref 判定，StrictMode 双渲染下同样只触发一次。
+	 */
+	const [lastPreview, setLastPreview] = useState(preview);
+	const previewHandoff = lastPreview && !preview;
+	if (lastPreview !== preview) setLastPreview(preview);
 	const prevPagingConvKeyRef = useRef(convKey);
 	const prevMsgLenRef = useRef(messages.length);
 	const prevFirstMsgIdRef = useRef(messages[0]?.id);
@@ -789,10 +798,13 @@ export function MessageList({
 		};
 		settleRafRef.current = requestAnimationFrame(step);
 	}, [cancelSettle, findTopAnchor, restorePrependAnchor, setAnchorLockBoth]);
-	if (prevPagingConvKeyRef.current !== convKey) {
+	if (prevPagingConvKeyRef.current !== convKey || previewHandoff) {
 		prevPagingConvKeyRef.current = convKey;
 		initialPreloadConvRef.current = null;
-		setVisibleCount(firstPaintSize);
+		// 交接时预览里已画出的尾部消息（≤ 预览条数）保持可见，不先缩回首帧条数再长回来
+		setVisibleCount(
+			previewHandoff ? Math.max(firstPaintSize, Math.min(visibleCount, prevMsgLenRef.current)) : firstPaintSize,
+		);
 		prevMsgLenRef.current = messages.length;
 		prevFirstMsgIdRef.current = messages[0]?.id;
 		pendingAnchorRef.current = null;
@@ -1016,17 +1028,33 @@ export function MessageList({
 	const hiddenRef = useRef(hidden);
 	let effectiveHidden = hidden;
 	const prevLazyConvKeyRef = useRef(convKey);
-	if (prevLazyConvKeyRef.current !== convKey) {
+	if (prevLazyConvKeyRef.current !== convKey || previewHandoff) {
 		prevLazyConvKeyRef.current = convKey;
-		elsRef.current.clear();
+		// 只剔除新会话里不存在的受管元素：同 id 的消息节点会原地保留（预览交接），
+		// 其 ref 回调是稳定的 useCallback、不会再次触发注册——整表清空会让它们永远脱离测量。
+		{
+			const keep = new Set(state.messages.map((m) => m.id));
+			for (const it of clusterMessages(state.messages, clusterOptions)) {
+				if (it.type === "tool_cluster") keep.add(it.id);
+			}
+			for (const id of elsRef.current.keys()) if (!keep.has(id)) elsRef.current.delete(id);
+		}
 		if (!reversePagination && state.messages.length > VIRTUAL_MIN) {
 			const newAlways = pickAlways(state.messages, heightsRef.current, Math.max(ALWAYS_BUDGET, keepRecentCount * 120));
+			// 交接时预览里已真实挂载的消息保持挂载：预览条数低于窗口化阈值、从未实测高度，
+			// 按估算预算会把其中较早几条判为占位，造成「卸载→sweep 实测后又挂回」的闪烁。
+			// 留给随后的 sweep 按真实布局与实测高度决定是否收起（占位高度精确，无跳动）。
+			const mountedNow = previewHandoff ? new Set(elsRef.current.keys()) : null;
 			const nextHidden = new Set<string>();
 			for (const m of state.messages) {
-				if (!newAlways.has(m.id)) nextHidden.add(m.id);
+				if (!newAlways.has(m.id) && !mountedNow?.has(m.id)) nextHidden.add(m.id);
 			}
 			for (const it of clusterMessages(state.messages, clusterOptions)) {
-				if (it.type === "tool_cluster" && it.messages.every((m) => !newAlways.has(m.id))) {
+				if (
+					it.type === "tool_cluster" &&
+					!mountedNow?.has(it.id) &&
+					it.messages.every((m) => !newAlways.has(m.id) && !mountedNow?.has(m.id))
+				) {
 					nextHidden.add(it.id);
 				}
 			}

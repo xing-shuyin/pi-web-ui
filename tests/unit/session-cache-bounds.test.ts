@@ -87,7 +87,59 @@ beforeEach(() => {
 
 afterEach(() => {
 	// 防止用例内对上限常量的临时改写泄漏
-	CS.SESSION_FILE_CACHE_MAX = 512;
+	CS.SESSION_FILE_CACHE_MAX = 2048;
+	CS.SESSION_LIST_PARSE_LIMIT = 260;
+});
+
+describe("列表模式提前停止解析（listOnly）", () => {
+	it("只解析 mtime 最新的一批；需要全集的调用不复用不完整缓存", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "piwui-session-listonly-"));
+		const prevEnv = process.env.PI_CODING_AGENT_SESSION_DIR;
+		process.env.PI_CODING_AGENT_SESSION_DIR = dir;
+		try {
+			const base = Date.now() - 100_000;
+			for (let i = 0; i < 12; i++) {
+				const p = join(dir, `s${i}.jsonl`);
+				writeFileSync(
+					p,
+					[
+						JSON.stringify({ type: "session", id: `id-${i}`, cwd: dir, timestamp: "2026-01-01T00:00:00.000Z" }),
+						JSON.stringify({
+							type: "message",
+							message: { role: "user", timestamp: base + i * 1000, content: `msg ${i}` },
+						}),
+					].join("\n"),
+				);
+				// s11 最新，s0 最旧
+				const t = new Date(base + i * 1000);
+				utimesSync(p, t, t);
+			}
+			CS.SESSION_LIST_PARSE_LIMIT = 2;
+			const proto = ClientSession.prototype as unknown as {
+				loadSessionInfos: (cwd?: string, opts?: { listOnly?: boolean }) => Promise<SessionInfo[]>;
+			};
+			const listed = await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true });
+			const ids = listed.map((i) => i.id);
+			// 并发 4 的工作池最多多解析 3 个；无论如何不会扫完 12 个，且最新的两条一定在内
+			expect(ids.length).toBeGreaterThanOrEqual(2);
+			expect(ids.length).toBeLessThan(12);
+			expect(ids.slice(0, 2)).toEqual(["id-11", "id-10"]);
+			expect(CS.sessionInfosCache.get([...CS.sessionInfosCache.keys()][0]).complete).toBe(false);
+
+			// 再次列表请求：命中（不完整）缓存
+			expect(await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true })).toBe(listed);
+			// 全集请求（搜索 / 按 id 定位）：不得复用不完整缓存
+			const full = await proto.loadSessionInfos.call(svcWith(dir));
+			expect(full).toHaveLength(12);
+			expect(CS.sessionInfosCache.get([...CS.sessionInfosCache.keys()][0]).complete).toBe(true);
+			// 完整缓存可服务后续列表请求
+			expect(await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true })).toBe(full);
+		} finally {
+			if (prevEnv === undefined) delete process.env.PI_CODING_AGENT_SESSION_DIR;
+			else process.env.PI_CODING_AGENT_SESSION_DIR = prevEnv;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("sessionFileCache LRU（issue #440）", () => {

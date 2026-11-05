@@ -311,6 +311,8 @@ export interface ChatState {
 	projects: ProjectSummary[];
 	/** 按工作区规范化路径缓存的会话列表（支持跨项目按需拉取）。 */
 	projectSessions?: Record<string, SessionSummary[]>;
+	/** B5：服务端还有更多（更旧）会话未下发的项目（规范化路径 → true）。 */
+	projectSessionsHasMore?: Record<string, boolean>;
 	/** Workspace file listing for the right panel. */
 	files: FileListing | null;
 	/** Latest file content fetched for the preview panel (path-matched in the modal). */
@@ -606,6 +608,10 @@ export interface WorkspaceTransitionState {
 	textEn: string;
 	totalMessages?: number;
 	previewMessages?: UiMessage[];
+	/** 服务端预分配的对话 id 与会话文件（预览消息 id 与首个快照一致时才有）：
+	 *  预览态用它们组成与快照相同的会话键，消息列表在预览→快照之间不重挂载。 */
+	previewConversationId?: string;
+	previewSessionFile?: string;
 	startedAt: number;
 }
 
@@ -634,7 +640,7 @@ type Action =
 			engines?: EngineStatus[];
 	  }
 	| { type: "engines_status"; engines: EngineStatus[] }
-	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string }
+	| { type: "sessions"; sessions: SessionSummary[]; cwd?: string; hasMore?: boolean }
 	| {
 			type: "conversations";
 			conversations: ConversationSummary[];
@@ -1248,6 +1254,14 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "sessions": {
 			const targetCwd = action.cwd ?? (action as any).targetCwd;
 			const isCurrent = !targetCwd || normalizeSessionPathKey(targetCwd) === normalizeSessionPathKey(state.state?.cwd);
+			const withHasMore = (key: string) => {
+				const prev = state.projectSessionsHasMore ?? {};
+				if (Boolean(prev[key]) === Boolean(action.hasMore)) return state.projectSessionsHasMore;
+				const next = { ...prev };
+				if (action.hasMore) next[key] = true;
+				else delete next[key];
+				return next;
+			};
 			if (isCurrent) {
 				writeCachedSessions(state.state?.cwd, action.sessions, state.engine);
 				const normCurrent = normalizeSessionPathKey(state.state?.cwd);
@@ -1260,6 +1274,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 								[normCurrent]: action.sessions,
 							}
 						: state.projectSessions,
+					projectSessionsHasMore: normCurrent ? withHasMore(normCurrent) : state.projectSessionsHasMore,
 				};
 			}
 			writeCachedSessions(targetCwd, action.sessions, state.engine);
@@ -1270,6 +1285,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					...(state.projectSessions ?? {}),
 					[normTarget]: action.sessions,
 				},
+				projectSessionsHasMore: withHasMore(normTarget),
 			};
 		}
 		case "conversations":
@@ -1642,6 +1658,9 @@ export function reducer(state: ChatState, action: Action): ChatState {
 					textEn: m.textEn,
 					totalMessages: m.totalMessages ?? prev?.totalMessages,
 					previewMessages: m.previewMessages ?? prev?.previewMessages,
+					previewConversationId:
+						m.conversationId ?? (prev?.target === m.target ? prev.previewConversationId : undefined),
+					previewSessionFile: m.sessionFile ?? (prev?.target === m.target ? prev.previewSessionFile : undefined),
 					startedAt: prev?.startedAt ?? Date.now(),
 				},
 			};
@@ -1908,27 +1927,46 @@ export function readCachedSessions(cwd?: string | null, engine?: string): Sessio
  * 物理路径确定性工作区归属校验（最佳落地实践 · 彻底根除跨项目会话串味）：
  * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
  */
+interface ProjectMatcher {
+	normP: string;
+	fullSlug: string;
+	slugPattern: RegExp | null;
+}
+
+/** 项目侧的规范化结果与正则只依赖 projectPath：左栏每次渲染要对每个会话调用一次，
+ *  按项目缓存可避免逐会话重建 RegExp 与重复的字符串替换。 */
+const projectMatcherCache = new Map<string, ProjectMatcher>();
+function projectMatcher(projectPath: string): ProjectMatcher {
+	let m = projectMatcherCache.get(projectPath);
+	if (m) return m;
+	const normP = projectPath.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+	// SDK session slug 完整匹配：如 "--e--t--" 或 "--c--users-c-desktop--"
+	const fullSlug = normP.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+	const folderName = normP.split("/").filter(Boolean).pop();
+	const slugPattern = folderName
+		? new RegExp(`[-_/]${folderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[-_/]`, "i")
+		: null;
+	m = { normP, fullSlug, slugPattern };
+	if (projectMatcherCache.size >= 256) projectMatcherCache.clear();
+	projectMatcherCache.set(projectPath, m);
+	return m;
+}
+
 export function isSessionMatchingProject(sessionPath?: string | null, projectPath?: string | null): boolean {
 	if (!sessionPath || !projectPath) return true;
 	if (sessionPath.startsWith("conv:") || sessionPath.startsWith("virtual:")) return true;
 
 	const normS = sessionPath.toLowerCase().replace(/\\/g, "/");
-	const normP = projectPath.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+	const { normP, fullSlug, slugPattern } = projectMatcher(projectPath);
 
 	// 纯文件名（不含任何目录斜杠，常见于测试 mock 数据）：直接放行
 	if (!normS.includes("/")) return true;
 
 	if (normS.startsWith(normP + "/")) return true;
 
-	// SDK session slug 完整匹配：如 "--e--t--" 或 "--c--users-c-desktop--"
-	const fullSlug = normP.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
 	if (normS.includes(`--${fullSlug}--`)) return true;
 
-	const folderName = normP.split("/").filter(Boolean).pop();
-	if (folderName) {
-		const slugPattern = new RegExp(`[-_/]${folderName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[-_/]`, "i");
-		if (slugPattern.test(normS)) return true;
-	}
+	if (slugPattern && slugPattern.test(normS)) return true;
 
 	return false;
 }
@@ -2603,7 +2641,7 @@ export function useChat() {
 					dispatch({ type: "engines_status", engines: msg.engines });
 					break;
 				case "sessions":
-					dispatch({ type: "sessions", sessions: msg.sessions, cwd: (msg as any).cwd });
+					dispatch({ type: "sessions", sessions: msg.sessions, cwd: msg.cwd, hasMore: msg.hasMore });
 					break;
 				case "conversations":
 					dispatch({

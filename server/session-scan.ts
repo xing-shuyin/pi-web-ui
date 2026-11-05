@@ -3,10 +3,28 @@
 import { createReadStream } from "node:fs";
 import { setImmediate } from "node:timers/promises";
 
+/** 字符串内的特殊字符（引号 / 转义 / 换行）与字符串外的「非空白或换行」：sticky 扫描用。 */
+const STRING_SPECIAL = /["\\\n]/g;
+const NON_WS_OR_NL = /[^\s]|\n/g;
+
+function tokenIsData(token: string): boolean {
+	if (token === "data") return true;
+	if (token.length < 4 || !token.includes("\\")) return false;
+	try {
+		return JSON.parse('"' + token + '"') === "data";
+	} catch {
+		return false;
+	}
+}
+
 /** Discard JSON string values of `data` properties (embedded image/base64 payloads)
  * before assembling lines. Preserve the empty string so JSON syntax stays valid.
- * Text/content strings remain intact, including escaped quotes and newlines. */
-class BinaryStringFilter {
+ * Text/content strings remain intact, including escaped quotes and newlines.
+ *
+ * 状态机与原逐字符实现完全一致（差分测试见 tests/unit/session-scan-filter.test.ts），
+ * 但不再逐字符 push + 正则：字符串内用正则跳到下一个引号/转义/换行，字符串外跳到下一个
+ * 非空白字符，普通字符整段切片输出。大转录的流式扫描吞吐因此提升一个数量级。 */
+export class BinaryStringFilter {
 	private inString = false;
 	private escaped = false;
 	private token = "";
@@ -14,52 +32,87 @@ class BinaryStringFilter {
 	private awaitingValue = false;
 	private discard = false;
 
+	private addToken(seg: string): void {
+		if (this.token.length < 16) this.token += seg.slice(0, 16 - this.token.length);
+	}
+
 	push(chunk: string): string {
-		const output: string[] = [];
-		for (const char of chunk) {
-			if (char === "\n") {
-				this.inString = false;
-				this.escaped = false;
-				this.discard = false;
-			}
+		const out: string[] = [];
+		const n = chunk.length;
+		let i = 0;
+		while (i < n) {
 			if (this.inString) {
-				if (!this.discard) output.push(char);
 				if (this.escaped) {
-					this.escaped = false;
-					if (this.token.length < 16) this.token += char;
-				} else if (char === "\\") {
-					this.escaped = true;
-					if (this.token.length < 16) this.token += char;
-				} else if (char === '"') {
-					this.inString = false;
-					if (this.discard) output.push(char);
-					try {
-						this.dataKey = JSON.parse('"' + this.token + '"') === "data";
-					} catch {
-						this.dataKey = false;
+					const ch = chunk[i]!;
+					if (ch === "\n") {
+						// 换行重置行内状态，换行符本身按字符串外处理
+						this.inString = false;
+						this.escaped = false;
+						this.discard = false;
+						continue;
 					}
+					if (!this.discard) out.push(ch);
+					this.escaped = false;
+					this.addToken(ch);
+					i++;
+					continue;
+				}
+				STRING_SPECIAL.lastIndex = i;
+				const m = STRING_SPECIAL.exec(chunk);
+				const j = m ? m.index : n;
+				if (j > i) {
+					const seg = chunk.slice(i, j);
+					if (!this.discard) out.push(seg);
+					this.addToken(seg);
+				}
+				if (!m) break;
+				const ch = chunk[j]!;
+				if (ch === "\n") {
+					this.inString = false;
+					this.escaped = false;
 					this.discard = false;
-				} else if (this.token.length < 16) this.token += char;
+					i = j;
+					continue;
+				}
+				if (ch === "\\") {
+					if (!this.discard) out.push(ch);
+					this.escaped = true;
+					this.addToken(ch);
+					i = j + 1;
+					continue;
+				}
+				// 收尾引号：无论是否丢弃都输出（保持 JSON 语法完整）
+				out.push('"');
+				this.inString = false;
+				this.dataKey = tokenIsData(this.token);
+				this.discard = false;
+				i = j + 1;
 				continue;
 			}
-			output.push(char);
-			if (char === '"') {
+			NON_WS_OR_NL.lastIndex = i;
+			const m = NON_WS_OR_NL.exec(chunk);
+			const j = m ? m.index : n;
+			if (j > i) out.push(chunk.slice(i, j)); // 纯空白：不改变状态
+			if (!m) break;
+			const ch = chunk[j]!;
+			out.push(ch);
+			if (ch === "\n") {
+				// JSONL records are independent, including after malformed lines.
+				this.dataKey = false;
+				this.awaitingValue = false;
+			} else if (ch === '"') {
 				this.inString = true;
 				this.token = "";
 				this.discard = this.awaitingValue;
 				this.awaitingValue = false;
 				this.dataKey = false;
-			} else if (!/\s/.test(char)) {
-				this.awaitingValue = char === ":" && this.dataKey;
+			} else {
+				this.awaitingValue = ch === ":" && this.dataKey;
 				this.dataKey = false;
 			}
-			// JSONL records are independent, including after malformed lines.
-			if (char === "\n") {
-				this.dataKey = false;
-				this.awaitingValue = false;
-			}
+			i = j + 1;
 		}
-		return output.join("");
+		return out.join("");
 	}
 }
 

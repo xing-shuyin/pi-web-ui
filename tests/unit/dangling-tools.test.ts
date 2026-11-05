@@ -126,6 +126,36 @@ describe("tailAssistantToolCallIds (issue #332)", () => {
 });
 
 describe("healDanglingToolCallFile", () => {
+	it("healthy-signature cache skips re-reading unchanged files but re-checks after a change", () => {
+		const dir = mkdtempSync(join(tmpdir(), "dangling-cache-"));
+		const file = join(dir, "s.jsonl");
+		const header = JSON.stringify({ type: "session", id: "s1", cwd: "/tmp" });
+		const u = JSON.stringify({
+			type: "message",
+			id: "u1",
+			parentId: null,
+			timestamp: new Date().toISOString(),
+			message: { role: "user", content: [{ type: "text", text: "hi" }] },
+		});
+		writeFileSync(file, `${header}\n${u}\n`, "utf8");
+		expect(healDanglingToolCallFile(file)).toBe(0);
+		// 命中缓存：即使把文件内容换成"读不出"的状态也不会重读（这里用同签名验证不改写文件）
+		const before = readFileSync(file, "utf8");
+		expect(healDanglingToolCallFile(file)).toBe(0);
+		expect(readFileSync(file, "utf8")).toBe(before);
+		// 追加一条带悬空调用的 assistant：签名变化 → 必须重新检查并修复
+		const a = JSON.stringify({
+			type: "message",
+			id: "a1",
+			parentId: "u1",
+			timestamp: new Date().toISOString(),
+			message: assistantWithCalls(["call-x"]),
+		});
+		writeFileSync(file, `${before}${a}\n`, "utf8");
+		expect(healDanglingToolCallFile(file)).toBe(1);
+		expect(healDanglingToolCallFile(file)).toBe(0);
+	});
+
 	it("appends one synthetic toolResult per dangling call, chained", () => {
 		const dir = mkdtempSync(join(tmpdir(), "dangling-"));
 		const file = join(dir, "s.jsonl");

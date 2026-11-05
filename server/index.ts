@@ -1581,6 +1581,8 @@ export interface DispatchSession {
 	getCompactedMessages?(compactionMessageId: string, targetConvId?: string): void | Promise<void>;
 	refreshSessions(): Promise<void>;
 	pushSessionsForCwd?(targetCwd: string): Promise<void>;
+	/** B5：记录某项目左栏请求的会话列表条数（可选：其它引擎不支持时忽略 limit）。 */
+	setSessionListLimit?(cwd: string, limit?: number): number;
 	pushProjects(): Promise<void>;
 	removeProject(path: string): Promise<void>;
 	createSandbox?(opts: { name?: string; sourcePath?: string; ephemeral?: boolean }): Promise<void>;

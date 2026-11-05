@@ -1081,6 +1081,19 @@ export function App() {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [settingsInitialSection, setSettingsInitialSection] = useState<"plugins" | undefined>();
 	const [sandboxModalMode, setSandboxModalMode] = useState<"create" | "promote" | "apply" | null>(null);
+	// 稳定引用：LeftPanel 是 memo 组件，内联箭头会让它在每个流式 token 上整树重渲染。
+	const openSandboxCreateModal = useCallback(() => setSandboxModalMode("create"), []);
+	// 左栏只关心切换目标与进度；预览消息、阶段文案等字段的变化不该触发左栏重渲染。
+	const transitionKind = chat.transition?.kind;
+	const transitionTarget = chat.transition?.target;
+	const transitionProgress = chat.transition?.progress;
+	const leftPanelTransition = useMemo(
+		() =>
+			transitionKind && transitionTarget !== undefined
+				? { kind: transitionKind, target: transitionTarget, progress: transitionProgress ?? 0 }
+				: null,
+		[transitionKind, transitionTarget, transitionProgress],
+	);
 	// 插件请求目录授权时的确认（host.openSession，issue #146）——非模态 inline 面板。
 	const [pluginPathConfirm, setPluginPathConfirm] = useState<{ path: string; resolve: (ok: boolean) => void } | null>(
 		null,
@@ -2489,6 +2502,7 @@ export function App() {
 								sessions={chat.sessions}
 								projects={chat.projects}
 								projectSessions={chat.projectSessions}
+								projectSessionsHasMore={chat.projectSessionsHasMore}
 								engine={chat.engine}
 								pathCompletions={chat.pathCompletions}
 								activeConversationId={activeGroupId ? "" : chat.activeConversationId}
@@ -2511,8 +2525,8 @@ export function App() {
 								onPluginRunningAction={onPluginRunningAction}
 								onUiAction={onUiAction}
 								presetNames={presetNames}
-								transition={chat.transition}
-								onOpenSandboxModal={() => setSandboxModalMode("create")}
+								transition={leftPanelTransition}
+								onOpenSandboxModal={openSandboxCreateModal}
 							/>
 						</div>
 						{!isMobile && !leftCollapsed && <ResizeHandle side="left" width={leftWidth} onResize={resizeLeft} />}
@@ -2663,9 +2677,11 @@ export function App() {
 												uiToolCardFooter={uiSlots["tool.card.footer"]}
 												uiChatEmpty={uiChatEmpty}
 												onUiAction={onUiAction}
+												/* 预览带服务端预分配的对话 id 时，key 与首个快照相同：预览→快照
+												   只替换数据（同 id 的消息节点原地复用），不再整列卸载重挂。 */
 												key={
 													chat.transition?.previewMessages?.length
-														? chat.transition.target
+														? (chat.transition.previewConversationId ?? chat.transition.target)
 														: (chat.state.conversationId ?? "boot")
 												}
 												preview={Boolean(chat.transition?.previewMessages?.length)}
@@ -2673,8 +2689,8 @@ export function App() {
 													chat.transition?.previewMessages?.length
 														? {
 																...chat.state,
-																conversationId: chat.transition.target,
-																sessionFile: undefined,
+																conversationId: chat.transition.previewConversationId ?? chat.transition.target,
+																sessionFile: chat.transition.previewSessionFile,
 																historyStart: 0,
 																historyTotal: chat.transition.previewMessages.length,
 																messages: chat.transition.previewMessages,

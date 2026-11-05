@@ -773,6 +773,9 @@ export const CLIENT_STATE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
  *  淘汰最旧的。兜底上限：完全无时间戳可推断的存量键不按年龄淘汰，靠它保证
  *  client-state.json 不随时间无界膨胀。 */
 export const MAX_TRACKED_CLIENTS = 50;
+/** 最近项目上限（记录、合并读取、推送给左栏共用）。原为 30：项目多的用户有一部分永远出现不了。
+ *  读取时每个候选做一次异步 fs.access 探测（并发），100 次探测的开销可忽略。 */
+export const RECENT_PROJECTS_MAX = 100;
 
 /** 死键清理扫描的最小间隔：load() 是所有读写的高频入口，扫描按 1 小时节流，
  *  首次加载必扫。 */
@@ -962,13 +965,13 @@ export class ClientStateStore {
 		state.projects = [
 			{ path: cwd, lastUsed: now },
 			...state.projects.filter((p) => normalizePathKey(p.path) !== targetKey),
-		].slice(0, 30);
+		].slice(0, RECENT_PROJECTS_MAX);
 		// Also persist in global settings so new tabs and sessions inherit it immediately
 		const globalState = (all[ClientStateStore.GLOBAL_SETTINGS_KEY] ??= { projects: [] });
 		globalState.projects = [
 			{ path: cwd, lastUsed: now },
 			...(globalState.projects ?? []).filter((p) => normalizePathKey(p.path) !== targetKey),
-		].slice(0, 50);
+		].slice(0, RECENT_PROJECTS_MAX);
 		// Opening the workspace again clears its removal tombstone across all clients and global settings.
 		for (const cState of Object.values(all)) {
 			if (cState.removedProjects?.length) {
@@ -1067,7 +1070,7 @@ export class ClientStateStore {
 		}
 
 		// 先截断后探测：探测次数 ≤ 30，且并发执行（Promise.allSettled 吸收单点失败）。
-		const candidates = [...map.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 30);
+		const candidates = [...map.values()].sort((a, b) => b.lastUsed - a.lastUsed).slice(0, RECENT_PROJECTS_MAX);
 		const probes = await Promise.allSettled(candidates.map((p) => this.pathExists(p.path)));
 		return candidates.filter((_, i) => {
 			const probe = probes[i];

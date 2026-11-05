@@ -1612,6 +1612,74 @@
 		flex-direction: column;
 		margin-bottom: 2px;
 	}
+	/* 项目拖拽排序：被拖项半透明，落点用上/下边线提示 */
+	.lp-project-node.dragging {
+		opacity: 0.45;
+	}
+	.lp-project-node.drop-before {
+		box-shadow: inset 0 2px 0 var(--accent);
+	}
+	.lp-project-node.drop-after {
+		box-shadow: inset 0 -2px 0 var(--accent);
+	}
+	.lp-project-head-row[draggable="true"] {
+		cursor: default;
+	}
+	/* 左栏过滤框 */
+	.lp-filter {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 2px 6px 6px;
+		padding: 0 8px;
+		height: 26px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg);
+		color: var(--text-faint);
+	}
+	.lp-filter:focus-within {
+		border-color: var(--accent);
+		color: var(--text-dim);
+	}
+	.lp-filter input {
+		flex: 1;
+		min-width: 0;
+		border: 0;
+		outline: none;
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		font-size: 12px;
+	}
+	.lp-filter-clear {
+		appearance: none;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		padding: 0;
+		display: inline-flex;
+	}
+	.lp-filter-empty {
+		padding: 8px 12px;
+		font-size: 11.5px;
+		color: var(--text-faint);
+	}
+	/* 原 div 改为 button（可聚焦、可回车）：去掉按钮默认外观，沿用原样式 */
+	button.lp-show-more-row,
+	button.lp-collapsed-history-tip {
+		appearance: none;
+		border: 0;
+		background: transparent;
+		width: 100%;
+		font-family: inherit;
+		text-align: left;
+	}
+	.lp-panel :is(.session-item, .lp-project-header-item, .lp-show-more-row, .lp-collapsed-history-tip):focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
 	.lp-project-head-row {
 		display: flex;
 		align-items: center;
@@ -1808,7 +1876,9 @@
 		gap: 4px;
 		z-index: 2;
 	}
-	.lp-project-head-row:hover .lp-project-actions {
+	/* 仅悬停可见的行内操作：键盘聚焦到该行时同样显示 */
+	.lp-project-head-row:hover .lp-project-actions,
+	.lp-project-head-row:focus-within .lp-project-actions {
 		display: inline-flex;
 	}
 	.lp-project-head-row:hover .project-time {
@@ -2464,7 +2534,8 @@
 		width: 12px;
 		height: 12px;
 	}
-	.lp-row:hover .lp-del {
+	.lp-row:hover .lp-del,
+	.lp-row:focus-within .lp-del {
 		display: inline-flex;
 	}
 	/* 触屏没有 hover，也没有可靠的右键：elsewhere 行的操作钮在无悬停设备上常驻可见
