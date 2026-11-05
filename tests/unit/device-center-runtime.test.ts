@@ -81,6 +81,58 @@ async function fixture() {
 const signal = () => new AbortController().signal;
 
 describe("Bot-only device runtime", () => {
+	it("does not report completion when the durable outcome cannot be saved", async () => {
+		const f = await fixture();
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				async run() {
+					return "verified output";
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const failure = new Error("outcome storage unavailable");
+		const save = vi.spyOn(runtime.recovery, "recordTaskFinish").mockImplementation(() => {
+			throw failure;
+		});
+		try {
+			await expect(runtime.onTask(f.task("room0"))).rejects.toBe(failure);
+			expect(save).toHaveBeenCalledTimes(1);
+			expect(runtime.recovery.getPendingOutbox()).toEqual([]);
+			expect(runtime.recovery.getActiveLeases()).toHaveLength(1);
+			expect(f.held()).toBe(0);
+		} finally {
+			save.mockRestore();
+		}
+	});
+
+	it("keeps the dispatch lease identity in the durable outcome", async () => {
+		const f = await fixture();
+		const runtime = createDeviceRuntime({
+			...f.options,
+			executorFactory: () => ({
+				async run() {
+					return "completed output";
+				},
+				close() {},
+			}),
+		});
+		cleanups.push(() => runtime.close());
+		const task = { ...f.task("room0"), leaseToken: "dispatch-lease", leaseGeneration: 7 };
+		await expect(runtime.onTask(task)).resolves.toBe("completed output");
+		expect(runtime.recovery.getPendingOutbox()).toEqual([
+			expect.objectContaining({
+				taskId: task.id,
+				attemptId: task.attemptId,
+				status: "completed",
+				leaseToken: "dispatch-lease",
+				leaseGeneration: 7,
+			}),
+		]);
+	});
+
 	it("runs disjoint Bots concurrently while preserving FIFO for the same Bot", async () => {
 		const f = await fixture();
 		const finishes = new Map<string, (value: string) => void>();
@@ -315,9 +367,13 @@ describe("Bot-only device runtime", () => {
 		await expect(runtime.onTask(f.task("room0"))).rejects.toThrow();
 		expect(f.held()).toBe(0);
 		expect(executions).toBe(0);
-		expect(await runtime.onTask({ ...f.task("room0"), botRevision: revised.revision })).toBe("done");
+		expect(await runtime.onTask({ ...f.task("room0", "current-revision"), botRevision: revised.revision })).toBe(
+			"done",
+		);
 		await f.options.bots.upsert({ ...revised, enabled: false });
-		await expect(runtime.onTask({ ...f.task("room0"), botRevision: revised.revision + 1 })).rejects.toThrow();
+		await expect(
+			runtime.onTask({ ...f.task("room0", "disabled"), botRevision: revised.revision + 1 }),
+		).rejects.toThrow();
 		expect(executions).toBe(1);
 		expect(f.held()).toBe(0);
 	});
@@ -497,14 +553,20 @@ describe("Bot-only device runtime", () => {
 			executorFactory,
 		});
 		cleanups.push(() => second.close());
-		expect(await second.onTask({ ...f.task("room0"), conversationId, resume: true })).toBe("continued");
+		expect(await second.onTask({ ...f.task("room0", "resume"), conversationId, resume: true })).toBe("continued");
 		expect(seen).toEqual([undefined, path]);
-		await expect(second.onTask({ ...f.task("room0"), conversationId })).rejects.toThrow("explicit resume");
+		await expect(second.onTask({ ...f.task("room0", "duplicate-create"), conversationId })).rejects.toThrow(
+			"explicit resume",
+		);
 		await expect(second.onTask({ ...f.task("room1"), conversationId, resume: true })).rejects.toThrow(
 			"configuration changed",
 		);
 		await expect(
-			second.onTask({ ...f.task("room0"), conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", resume: true }),
+			second.onTask({
+				...f.task("room0", "missing-conversation"),
+				conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+				resume: true,
+			}),
 		).rejects.toThrow("unavailable");
 		expect(seen).toHaveLength(2);
 		const changed = createDeviceRuntime({
@@ -513,7 +575,7 @@ describe("Bot-only device runtime", () => {
 			executorFactory,
 		});
 		cleanups.push(() => changed.close());
-		await expect(changed.onTask({ ...f.task("room0"), conversationId, resume: true })).rejects.toThrow(
+		await expect(changed.onTask({ ...f.task("room0", "changed-hub"), conversationId, resume: true })).rejects.toThrow(
 			"configuration changed",
 		);
 	});
@@ -549,7 +611,7 @@ describe("Bot-only device runtime", () => {
 			}),
 		});
 		cleanups.push(() => recovered.close());
-		expect(await recovered.onTask({ ...f.task("room0"), conversationId, resume: true })).toBe("recovered");
+		expect(await recovered.onTask({ ...f.task("room0", "recovered"), conversationId, resume: true })).toBe("recovered");
 	});
 
 	it("rejects completion and resume when a newly bound transcript never materializes", async () => {
@@ -572,9 +634,9 @@ describe("Bot-only device runtime", () => {
 		await expect(runtime.onTask({ ...f.task("room0"), conversationId })).rejects.toThrow(
 			"transcript unavailable after execution",
 		);
-		await expect(runtime.onTask({ ...f.task("room0"), conversationId, resume: true })).rejects.toThrow(
-			"Conversation transcript unavailable",
-		);
+		await expect(
+			runtime.onTask({ ...f.task("room0", "resume-missing-transcript"), conversationId, resume: true }),
+		).rejects.toThrow("Conversation transcript unavailable");
 		expect(runs).toBe(1);
 	});
 

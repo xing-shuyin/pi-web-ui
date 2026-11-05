@@ -484,7 +484,10 @@ export interface DeviceRelayOptions {
 	) => string | { id: string } | null | undefined | Promise<string | { id: string } | null | undefined>;
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
-	onTaskEvent?: (deviceId: string, event: any) => void | Promise<void>;
+	onTaskEvent?: (
+		deviceId: string,
+		event: any,
+	) => void | import("./store.js").HubTask | Promise<void | import("./store.js").HubTask>;
 	onTaskProgress?: (deviceId: string, event: any) => void | Promise<void>;
 	onTaskInteractions?: (deviceId: string, event: any) => void | Promise<void>;
 	onTaskClaim?: (
@@ -504,11 +507,14 @@ export interface DeviceRelayOptions {
 		frame: import("../protocol.js").DeviceTaskPlanReadyFrame,
 	) => Promise<boolean> | boolean;
 	onTaskDisconnect?: (deviceId: string, taskId: string, attemptId: string) => void | Promise<void>;
+	onDeviceConnect?: (deviceId: string) => void | Promise<void>;
 }
 export interface RelayTaskBinding {
 	attemptId: string;
 	botId: string;
 	hasLease?: boolean;
+	leaseToken?: string;
+	leaseGeneration?: number;
 }
 
 export function createDeviceRelay(options: DeviceRelayOptions) {
@@ -638,7 +644,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		for (const pending of entry.cancellations.values()) pending.finish(false);
 		entry.rpc.close();
 		entry.messages.close();
-		for (const [taskId, { attemptId, botId, hasLease }] of entry.tasks) {
+		for (const [taskId, { attemptId, botId, hasLease, leaseToken, leaseGeneration }] of entry.tasks) {
 			if (optionsDrop?.isRevoke || !hasLease) {
 				Promise.resolve()
 					.then(() =>
@@ -646,6 +652,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 							taskId,
 							botId,
 							attemptId,
+							leaseToken,
+							leaseGeneration,
 							status: "interrupted",
 							report: optionsDrop?.isRevoke
 								? "Device revoked; task interrupted."
@@ -1116,23 +1124,26 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 								throw new Error("Unknown task");
 							Promise.resolve()
 								.then(() => options.onTaskEvent?.(device, frame))
-								.then(() => {
-									if (devices.get(device) === entry) {
+								.then((committed) => {
+									if (devices.get(device) !== entry) return;
+									if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
 										const postCheck = entry.tasks.get(taskId);
-										if (postCheck && postCheck.attemptId === attemptId && postCheck.botId === botId) {
-											if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
-												entry.tasks.delete(taskId);
-											}
-										}
-										if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
+										if (postCheck?.attemptId === attemptId && postCheck.botId === botId) entry.tasks.delete(taskId);
+										if (
+											committed?.outcomeFingerprint &&
+											committed.id === taskId &&
+											committed.attemptId === attemptId &&
+											committed.botId === botId &&
+											committed.status === frame.status
+										)
 											sendFrame(ws, {
 												type: "task_result_ack",
-												taskId: frame.taskId,
-												attemptId: frame.attemptId,
-												status: frame.status,
-												...(typeof frame.fingerprint === "string" ? { fingerprint: frame.fingerprint } : {}),
+												taskId,
+												attemptId,
+												accepted: true,
+												status: committed.status,
+												fingerprint: committed.outcomeFingerprint,
 											});
-										}
 									}
 								})
 								.catch(() => ws.terminate());
@@ -1163,6 +1174,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 											attemptId: claim.attemptId,
 											botId: claim.botId,
 											hasLease: true,
+											leaseToken: claim.leaseToken,
+											leaseGeneration: claim.leaseGeneration,
 										});
 									}
 									sendFrame(ws, {
@@ -1257,6 +1270,9 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					}
 				});
 				ws.on("close", () => drop(device, entry));
+				void Promise.resolve()
+					.then(() => options.onDeviceConnect?.(device))
+					.catch((cause) => console.warn("[DeviceRelay] Queued task recovery failed", cause));
 				ws.on("error", () => ws.terminate());
 			});
 		} catch {
@@ -1366,6 +1382,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				attemptId: task.attemptId,
 				botId: task.botId,
 				hasLease: typeof task.leaseToken === "string" && !!task.leaseToken,
+				leaseToken: task.leaseToken,
+				leaseGeneration: task.leaseGeneration,
 			});
 			if (!sendFrame(entry.ws, { type: "task", task })) {
 				entry.tasks.delete(task.id);

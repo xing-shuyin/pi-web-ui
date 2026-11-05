@@ -63,15 +63,15 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 			onTaskToolLifecycle: (id, frame) => hub!.acceptTaskToolLifecycle(id, frame),
 			onTaskPlanReady: (id, frame) => hub!.acceptTaskPlanReady(id, frame),
 			onTaskInteractions: (id, event) => hub!.acceptInteractions(id, event),
-			onTaskEvent: async (id, event) => {
-				await hub!.acceptTaskEvent(id, event);
-			},
+			onTaskEvent: (id, event) => hub!.acceptTaskEvent(id, event),
+			onDeviceConnect: (id) => hub!.resumeQueuedTasks(id),
 			onTaskClaim: (id, claim) => hub!.claimTask(id, claim),
 			onTaskLeaseRenew: (id, renew) => hub!.renewTaskLease(id, renew),
 			onTaskDisconnect: (id, taskId, attemptId) => hub!.onTaskDisconnect(id, taskId, attemptId),
 		});
 		hub.setRelay({
 			onTask: relay.sendTask,
+			cancelTask: relay.cancelTask,
 			answerInteraction: relay.answerInteraction,
 			onRevoke: relay.revoke,
 			handleRequest: relay.handleRequest,

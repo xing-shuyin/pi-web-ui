@@ -121,12 +121,16 @@ describe("device user group authority", () => {
 					throw new Error("stale attempt");
 				}
 				await hub.acceptTaskEvent(deviceId, {
+					leaseToken: task.leaseToken,
+					leaseGeneration: task.leaseGeneration,
 					taskId: task.id,
 					attemptId: task.attemptId,
 					botId: task.botId,
 					status: "running",
 				});
 				await hub.acceptTaskEvent(deviceId, {
+					leaseToken: task.leaseToken,
+					leaseGeneration: task.leaseGeneration,
 					taskId: task.id,
 					attemptId: task.attemptId,
 					botId: task.botId,

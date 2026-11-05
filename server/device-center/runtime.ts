@@ -254,6 +254,15 @@ export function createDeviceRuntime(options: {
 	): Promise<string> {
 		try {
 			enabled(signal);
+			if (
+				task.deviceId !== config.deviceId ||
+				![task.id, task.attemptId, task.botId, task.roomId].every(
+					(value) => typeof value === "string" && value.length > 0 && value.length <= 128,
+				) ||
+				!Number.isSafeInteger(task.botRevision) ||
+				task.botRevision < 1
+			)
+				throw new DeviceTaskError("Invalid task route or execution identity");
 		} catch (error) {
 			return Promise.reject(error);
 		}
@@ -372,6 +381,16 @@ export function createDeviceRuntime(options: {
 		callbacks?.onStarted?.();
 		const taskSignal = AbortSignal.any([owner.controller.signal, ...(signal ? [signal] : [])]);
 		const operation = (async () => {
+			let publishingOutcome = false;
+			const outcomeTask = {
+				id: task.id,
+				attemptId: task.attemptId,
+				botId: task.botId,
+				deviceId: config.deviceId,
+				roomId: task.roomId,
+				leaseToken: task.leaseToken,
+				leaseGeneration: task.leaseGeneration ?? 1,
+			};
 			let lease: Awaited<ReturnType<typeof acquire>> | undefined;
 			let stopping: Promise<void> | undefined;
 			const stop = () => {
@@ -548,44 +567,29 @@ export function createDeviceRuntime(options: {
 						throw new DeviceTaskError("Conversation transcript unavailable after execution");
 					}
 				}
-				// Commit to durable outbox ONLY after all outcomes and transcripts are verified
-				recovery.recordTaskFinish(
-					{
-						id: task.id,
-						attemptId: task.attemptId,
-						botId: task.botId,
-						deviceId: config.deviceId,
-						roomId: task.roomId,
-					},
-					{
-						status: "completed",
-						report: result,
-						reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
-					},
-				);
+				// A failed durable commit must retain the lease, never manufacture a second outcome.
+				publishingOutcome = true;
+				recovery.recordTaskFinish(outcomeTask, {
+					status: "completed",
+					report: result,
+					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+				});
 				return result;
 			} catch (error) {
-				const isUnconfirmed =
-					!!owner.blocked ||
-					error instanceof DeviceTaskStopUnconfirmedError ||
-					(error && typeof error === "object" && (error as any).stopUnconfirmed === true);
+				if (publishingOutcome) throw error;
+				let failure = error;
 				try {
-					recovery.recordTaskFinish(
-						{
-							id: task.id,
-							attemptId: task.attemptId,
-							botId: task.botId,
-							deviceId: config.deviceId,
-							roomId: task.roomId,
-						},
-						{
-							status: isUnconfirmed ? "interrupted" : "failed",
-							error,
-							reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
-						},
-					);
-				} catch {}
-				throw error;
+					await confirmStop();
+				} catch (stopError) {
+					failure = stopError;
+				}
+				const interrupted = taskSignal.aborted || !!owner.blocked || failure instanceof DeviceTaskStopUnconfirmedError;
+				recovery.recordTaskFinish(outcomeTask, {
+					status: interrupted ? "interrupted" : "failed",
+					error: failure,
+					reportMetadata: reportUploadMetadata(reportOutbox.get(task) ?? reportOutbox.markMissing(task)),
+				});
+				throw failure;
 			} finally {
 				taskSignal.removeEventListener("abort", stop);
 				let stoppedCleanly = false;

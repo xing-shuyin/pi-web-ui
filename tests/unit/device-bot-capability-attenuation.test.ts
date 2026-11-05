@@ -202,8 +202,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			const rootTask = rootRes.body.tasks[0];
 
 			// LowBot accepts root task to running state
+			const rootTaskLease = hub.store.snapshot().tasks.find((task) => task.id === rootTask.id)!;
 			await hub.acceptTaskEvent(lowBot.deviceId, {
 				botId: lowBot.botId,
+				leaseToken: rootTaskLease.leaseToken,
+				leaseGeneration: rootTaskLease.leaseGeneration,
 				taskId: rootTask.id,
 				attemptId: rootTask.attemptId,
 				status: "running",
@@ -285,8 +288,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			);
 			const rootTask = rootRes.body.tasks[0];
 
+			const rootTaskLease = hub.store.snapshot().tasks.find((task) => task.id === rootTask.id)!;
 			await hub.acceptTaskEvent(botA.deviceId, {
 				botId: botA.botId,
+				leaseToken: rootTaskLease.leaseToken,
+				leaseGeneration: rootTaskLease.leaseGeneration,
 				taskId: rootTask.id,
 				attemptId: rootTask.attemptId,
 				status: "running",
@@ -351,8 +357,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			);
 			const rootTask = rootRes.body.tasks[0];
 
+			const rootTaskLease = hub.store.snapshot().tasks.find((task) => task.id === rootTask.id)!;
 			await hub.acceptTaskEvent(lowBot.deviceId, {
 				botId: lowBot.botId,
+				leaseToken: rootTaskLease.leaseToken,
+				leaseGeneration: rootTaskLease.leaseGeneration,
 				taskId: rootTask.id,
 				attemptId: rootTask.attemptId,
 				status: "running",
@@ -423,8 +432,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				cookie,
 			);
 			const t1 = r1.body.tasks[0];
+			const t1Lease = hub.store.snapshot().tasks.find((task) => task.id === t1.id)!;
 			await hub.acceptTaskEvent(bot1.deviceId, {
 				botId: bot1.botId,
+				leaseToken: t1Lease.leaseToken,
+				leaseGeneration: t1Lease.leaseGeneration,
 				taskId: t1.id,
 				attemptId: t1.attemptId,
 				status: "running",
@@ -439,8 +451,11 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			);
 			const t2 = r2.body.tasks[0];
 			expect(t2.attenuatedTools).toContain("bash");
+			const t2Lease = hub.store.snapshot().tasks.find((task) => task.id === t2.id)!;
 			await hub.acceptTaskEvent(bot2.deviceId, {
 				botId: bot2.botId,
+				leaseToken: t2Lease.leaseToken,
+				leaseGeneration: t2Lease.leaseGeneration,
 				taskId: t2.id,
 				attemptId: t2.attemptId,
 				status: "running",
