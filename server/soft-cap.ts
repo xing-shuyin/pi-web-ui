@@ -80,6 +80,12 @@ export function normalizeSoftCapByModel(v: unknown): Record<string, number> {
 	return out;
 }
 
+/** 自动压缩附加指令：字符串、≤2000 字（空串 = 不传，保持 SDK 默认摘要）。
+ *  只用于软上限触发的自动压缩；手动 `/compact` 与 AI 的 `compact_context` 不受影响。 */
+export function normalizeAutoCompactionInstructions(v: unknown): string {
+	return typeof v === "string" ? v.slice(0, 2000) : "";
+}
+
 /** 当前模型的生效软上限（0 = 关闭）：按模型覆盖优先于全局。 */
 export function effectiveSoftCap(
 	globalCap: number,

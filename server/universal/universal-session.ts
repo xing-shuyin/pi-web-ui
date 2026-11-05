@@ -2374,6 +2374,7 @@ export class UniversalSession implements DispatchSession {
 			retryMaxAttempts: 0,
 			softCapTokens: 0,
 			softCapByModel: {},
+			autoCompactionInstructions: "",
 			questionnaireEnabled: false,
 			toolApprovalEnabled: true,
 			approvalPolicy: { allowAll: false, categories: [] },
@@ -2632,6 +2633,7 @@ export class UniversalSession implements DispatchSession {
 			retryMaxAttempts: s.retryMaxAttempts,
 			softCapTokens: s.softCapTokens,
 			softCapByModel: s.softCapByModel,
+			autoCompactionInstructions: s.autoCompactionInstructions ?? "",
 		});
 		this.stateStore.savePresets(this.clientId, filtered);
 		this.pushSettings();
