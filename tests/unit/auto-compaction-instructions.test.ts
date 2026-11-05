@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeAutoCompactionInstructions } from "../../server/soft-cap.js";
 import { PRESET_FIELD_GROUPS, PRESET_FIELD_META } from "../../server/preset-fields.js";
+import { handleSettingsMessage } from "../../server/dispatch-domain-handlers.js";
+import { fakeClientSession } from "../helpers/fake-session.js";
+import { ClientStateStore } from "../../server/client-state.js";
+import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
+import type { DispatchSession } from "../../server/index.js";
+import type { ClientMessage } from "../../server/protocol.js";
+import type { SubagentTemplatesStore } from "../../server/subagent-templates.js";
 
 describe("normalizeAutoCompactionInstructions", () => {
 	it("非字符串输入归一化为空串（不传指令，保持 SDK 默认摘要）", () => {
@@ -31,5 +41,146 @@ describe("自动压缩指令可随预设分享", () => {
 		];
 		expect(meta?.labelZh).toBeTruthy();
 		expect(meta?.labelEn).toBeTruthy();
+	});
+});
+
+describe("dispatch -> SettingsService -> 持久化/读取回归", () => {
+	let testDir: string;
+	let stateFile: string;
+
+	beforeEach(() => {
+		testDir = mkdtempSync(join(tmpdir(), "pi-auto-compaction-test-"));
+		stateFile = join(testDir, "client-state.json");
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		rmSync(testDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+	});
+
+	function createFixture(clientId = "test-client") {
+		const stateStore = new ClientStateStore(stateFile);
+		const emitted: unknown[] = [];
+		const host: SettingsHost = {
+			clientId,
+			stateStore,
+			emit: (msg) => {
+				emitted.push(msg);
+			},
+			flushSnapshot: () => {},
+			isDisposed: () => false,
+			getSession: () => {
+				throw new Error("no session");
+			},
+			cwd: () => testDir,
+			agentDir: () => testDir,
+			isStreaming: () => false,
+			reloadSession: async () => {},
+			applyRetryOverrides: () => {},
+			applyCompactionOverrides: () => {},
+			applyToolGating: () => {},
+			promptSnapshot: () => ({ full: "", texts: {}, toolsSchema: "" }),
+		};
+		const templates = { list: () => [] } as unknown as SubagentTemplatesStore;
+		const settingsSvc = new SettingsService(host, templates);
+
+		const cs = fakeClientSession({
+			clientId,
+			stateStore,
+			settingsSvc,
+			emit: (msg: unknown) => {
+				emitted.push(msg);
+			},
+			flushSnapshot: () => {},
+		});
+
+		return { cs, settingsSvc, stateStore, host, emitted, clientId };
+	}
+
+	it("通过 dispatch set_settings 传递 autoCompactionInstructions，真实经由 fakeClientSession -> SettingsService 写入并持久化落盘，且可重新读回", async () => {
+		const { cs, settingsSvc, stateStore, clientId, emitted } = createFixture();
+		const setSpy = vi.spyOn(settingsSvc, "set");
+
+		const customInstructions = "Keep focus on regression tests and architecture guidelines.";
+		const msg: ClientMessage = {
+			type: "set_settings",
+			autoCompactionInstructions: customInstructions,
+		};
+
+		const handled = handleSettingsMessage(msg, cs as unknown as DispatchSession);
+		expect(handled).toBe(true);
+
+		expect(setSpy).toHaveBeenCalledTimes(1);
+		expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ autoCompactionInstructions: customInstructions }));
+		await setSpy.mock.results[0]?.value;
+
+		// 1. SettingsService 当前内存状态已更新
+		expect(settingsSvc.current.autoCompactionInstructions).toBe(customInstructions);
+
+		// 2. 当前 ClientStateStore 实例读取得到更新后的指令
+		expect(stateStore.getSettings(clientId).autoCompactionInstructions).toBe(customInstructions);
+
+		// 3. 重新实例化 ClientStateStore 从磁盘读取，验证持久化落盘保真
+		const reloadedStore = new ClientStateStore(stateFile);
+		expect(reloadedStore.getSettings(clientId).autoCompactionInstructions).toBe(customInstructions);
+
+		// 4. 下发的 settings_state 也携带了 autoCompactionInstructions
+		const lastState = emitted.filter((m) => (m as { type?: string }).type === "settings_state").pop() as
+			{ settings: { autoCompactionInstructions?: string } } | undefined;
+		expect(lastState?.settings.autoCompactionInstructions).toBe(customInstructions);
+	});
+
+	it("dispatch set_settings 未传 autoCompactionInstructions 时不覆盖已有指令（partial 合并语义）", async () => {
+		const { cs, settingsSvc, stateStore, clientId } = createFixture();
+		const setSpy = vi.spyOn(settingsSvc, "set");
+
+		const initialMsg: ClientMessage = {
+			type: "set_settings",
+			autoCompactionInstructions: "Keep existing instructions",
+		};
+		handleSettingsMessage(initialMsg, cs as unknown as DispatchSession);
+		await setSpy.mock.results[0]?.value;
+		expect(settingsSvc.current.autoCompactionInstructions).toBe("Keep existing instructions");
+
+		// 发送不带 autoCompactionInstructions 的设置变更
+		const partialMsg: ClientMessage = {
+			type: "set_settings",
+			thinkingWrap: true,
+		};
+		handleSettingsMessage(partialMsg, cs as unknown as DispatchSession);
+		await setSpy.mock.results[1]?.value;
+
+		// autoCompactionInstructions 依然保持原值
+		expect(settingsSvc.current.autoCompactionInstructions).toBe("Keep existing instructions");
+		const reloadedStore = new ClientStateStore(stateFile);
+		expect(reloadedStore.getSettings(clientId).autoCompactionInstructions).toBe("Keep existing instructions");
+	});
+
+	it("通过 dispatch set_settings 传入空串可清空自定义指令", async () => {
+		const { cs, settingsSvc, stateStore, clientId } = createFixture();
+		const setSpy = vi.spyOn(settingsSvc, "set");
+
+		handleSettingsMessage(
+			{
+				type: "set_settings",
+				autoCompactionInstructions: "Custom text to be cleared",
+			},
+			cs as unknown as DispatchSession,
+		);
+		await setSpy.mock.results[0]?.value;
+		expect(settingsSvc.current.autoCompactionInstructions).toBe("Custom text to be cleared");
+
+		// 清空指令
+		handleSettingsMessage(
+			{
+				type: "set_settings",
+				autoCompactionInstructions: "",
+			},
+			cs as unknown as DispatchSession,
+		);
+		await setSpy.mock.results[1]?.value;
+		expect(settingsSvc.current.autoCompactionInstructions).toBe("");
+		const reloadedStore = new ClientStateStore(stateFile);
+		expect(reloadedStore.getSettings(clientId).autoCompactionInstructions).toBe("");
 	});
 });
