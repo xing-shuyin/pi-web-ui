@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolve, join } from "node:path";
+import { resolve, join, posix } from "node:path";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createMockHost } from "../../plugin-sdk/index.mjs";
@@ -42,18 +42,32 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 		const escapes = ["..", "../../..", "../../secret.txt", "/etc/passwd", "//etc/passwd", "/workspace-2/x.txt"];
 		for (const root of ["/workspace", "/workspace/", resolve(tmpdir(), "pi-parity")]) {
 			const host = createMockHost({ cwd: root });
+			const resolver = root.startsWith("/") ? posix.resolve : resolve;
 			for (const c of inside) {
-				expect(host.resolveInWorkspace(c)).toBe(resolve(root, c));
+				expect(host.resolveInWorkspace(c)).toBe(resolver(root, c));
 			}
-			expect(host.resolveInWorkspace(".")).toBe(resolve(root));
+			expect(host.resolveInWorkspace(".")).toBe(resolver(root));
 			for (const c of escapes) {
 				expect(() => host.resolveInWorkspace(c)).toThrowError(/工作区/);
 			}
 			// resolve(root,"..") 等于根时不能当「区内」放行：同级目录不是自己
-			if (resolve(root, "..") !== resolve(root)) {
+			if (resolver(root, "..") !== resolver(root)) {
 				expect(() => host.resolveInWorkspace("..")).toThrowError(/工作区/);
 			}
 		}
+	});
+
+	it("工作区根设为系统根（POSIX / 或 Windows 盘符根）时正常放行区内文件", () => {
+		const posixRoot = createMockHost({ cwd: "/" });
+		expect(posixRoot.resolveInWorkspace("a.txt")).toBe("/a.txt");
+		expect(posixRoot.resolveInWorkspace("src/index.ts")).toBe("/src/index.ts");
+		expect(posixRoot.resolveInWorkspace(".")).toBe("/");
+
+		const winRoot = createMockHost({ cwd: "C:\\" });
+		expect(winRoot.resolveInWorkspace("a.txt")).toBe("C:\\a.txt");
+		expect(winRoot.resolveInWorkspace("src\\index.ts")).toBe("C:\\src\\index.ts");
+		expect(winRoot.resolveInWorkspace(".")).toBe("C:\\");
+		expect(() => winRoot.resolveInWorkspace("D:\\other.txt")).toThrowError(/工作区/);
 	});
 
 	// 越出工作区（POSIX / 盘符 / UNC）一律 403，分隔符保持根风格。

@@ -594,7 +594,9 @@ export function createMockHost(overrides) {
 			const cwdValue = typeof overrides.cwd === "string" ? overrides.cwd : "/mock-workspace";
 			const target = resolvePath(cwdValue, String(relOrAbsPath ?? ""));
 			const root = resolvePath(cwdValue, ".");
-			if (target !== root && !target.startsWith(root + pathSep(pathStyle(root)))) {
+			const sep = pathSep(pathStyle(root));
+			const rootPrefix = root.endsWith(sep) ? root : root + sep;
+			if (target !== root && !target.startsWith(rootPrefix)) {
 				const err = new Error("路径超出工作区范围");
 				err.statusCode = 403;
 				throw err;

@@ -73,7 +73,9 @@ describe("插件 SDK 客户端可加载性 (PluginSDK Browser Safe)", () => {
 			for (const spec of staticSpecifiers(readFileSync(file, "utf8"))) {
 				if (!spec.startsWith(".")) continue; // 裸包名 / node: 由上一条守
 				const next = resolve(dirname(file), spec);
-				expect(next.startsWith(rootDir + "/"), `${file} 的相对依赖越出 plugin-sdk/：${spec}`).toBe(true);
+				const normNext = next.replace(/\\/g, "/");
+				const normRoot = rootDir.replace(/\\/g, "/");
+				expect(normNext.startsWith(normRoot + "/"), `${file} 的相对依赖越出 plugin-sdk/：${spec}`).toBe(true);
 				queue.push(next);
 			}
 		}
