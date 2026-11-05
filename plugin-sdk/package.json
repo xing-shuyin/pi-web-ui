@@ -1,13 +1,24 @@
 {
 	"name": "@pi-web-ui/plugin-sdk",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
-	"description": "Starter helpers + types for pi-web-ui plugins (copy this dir into your plugin, or vendor index.mjs/index.d.ts).",
+	"description": "Server, browser, and test helpers + types for pi-web-ui plugins.",
 	"main": "index.mjs",
 	"types": "index.d.ts",
 	"exports": {
-		".": "./index.mjs",
-		"./client": "./client-utils.mjs"
+		".": {
+			"types": "./index.d.ts",
+			"default": "./index.mjs"
+		},
+		"./client": {
+			"types": "./client.d.ts",
+			"default": "./client.mjs"
+		},
+		"./testing": {
+			"types": "./testing.d.ts",
+			"default": "./testing.mjs"
+		},
+		"./client-utils": "./client-utils.mjs"
 	}
 }

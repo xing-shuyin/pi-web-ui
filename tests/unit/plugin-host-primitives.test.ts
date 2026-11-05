@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolve, join, posix } from "node:path";
+import { resolve, join, parse, sep } from "node:path";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createMockHost } from "../../plugin-sdk/index.mjs";
+import { createMockHost } from "../../plugin-sdk/testing.mjs";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
 
 describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
@@ -35,53 +35,46 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 		}
 	});
 
-	// mock 的 resolveInWorkspace 用零依赖解析实现（SDK 得能在浏览器 import，不能顶格 import
-	// node:path）——这组断言把重写的解析器钉在 node:path 的语义上。
-	it("mock 的 resolveInWorkspace 与 node:path resolve 语义一致", () => {
+	it("mock 使用平台原生路径解析，并拒绝同名前缀的兄弟目录", () => {
 		const inside = ["a.txt", "./a.txt", "src/index.ts", "deep/nested/x.md", "a/../b.txt", "sub/./../b.txt", "sub/", ""];
-		const escapes = ["..", "../../..", "../../secret.txt", "/etc/passwd", "//etc/passwd", "/workspace-2/x.txt"];
-		for (const root of ["/workspace", "/workspace/", resolve(tmpdir(), "pi-parity")]) {
+		const workspace = resolve(tmpdir(), "pi-parity");
+		for (const root of [workspace, workspace + sep, "./relative-workspace"]) {
 			const host = createMockHost({ cwd: root });
-			const resolver = root.startsWith("/") ? posix.resolve : resolve;
-			for (const c of inside) {
-				expect(host.resolveInWorkspace(c)).toBe(resolver(root, c));
+			for (const candidate of [...inside, resolve(root, "absolute.txt")]) {
+				expect(host.resolveInWorkspace(candidate)).toBe(resolve(root, candidate));
 			}
-			expect(host.resolveInWorkspace(".")).toBe(resolver(root));
-			for (const c of escapes) {
-				expect(() => host.resolveInWorkspace(c)).toThrowError(/工作区/);
-			}
-			// resolve(root,"..") 等于根时不能当「区内」放行：同级目录不是自己
-			if (resolver(root, "..") !== resolver(root)) {
-				expect(() => host.resolveInWorkspace("..")).toThrowError(/工作区/);
+			expect(host.resolveInWorkspace(".")).toBe(resolve(root));
+			for (const candidate of ["..", "../../..", "../../secret.txt", resolve(resolve(root) + "-other", "x.txt")]) {
+				expect(() => host.resolveInWorkspace(candidate)).toThrowError(expect.objectContaining({ statusCode: 403 }));
 			}
 		}
 	});
 
-	it("工作区根设为系统根（POSIX / 或 Windows 盘符根）时正常放行区内文件", () => {
-		const posixRoot = createMockHost({ cwd: "/" });
-		expect(posixRoot.resolveInWorkspace("a.txt")).toBe("/a.txt");
-		expect(posixRoot.resolveInWorkspace("src/index.ts")).toBe("/src/index.ts");
-		expect(posixRoot.resolveInWorkspace(".")).toBe("/");
-
-		const winRoot = createMockHost({ cwd: "C:\\" });
-		expect(winRoot.resolveInWorkspace("a.txt")).toBe("C:\\a.txt");
-		expect(winRoot.resolveInWorkspace("src\\index.ts")).toBe("C:\\src\\index.ts");
-		expect(winRoot.resolveInWorkspace(".")).toBe("C:\\");
-		expect(() => winRoot.resolveInWorkspace("D:\\other.txt")).toThrowError(/工作区/);
+	it("工作区根设为本机系统根时正常放行区内文件", () => {
+		const root = parse(resolve(tmpdir())).root;
+		const host = createMockHost({ cwd: root });
+		for (const candidate of ["a.txt", "src/index.ts", ".", "..", ""]) {
+			expect(host.resolveInWorkspace(candidate)).toBe(resolve(root, candidate));
+		}
 	});
 
-	// 越出工作区（POSIX / 盘符 / UNC）一律 403，分隔符保持根风格。
-	it("Windows 盘符与 UNC 根保持分隔符且拦越界", () => {
-		const drive = createMockHost({ cwd: "C:\\work\\proj" });
-		expect(drive.resolveInWorkspace("src\\a.ts")).toBe("C:\\work\\proj\\src\\a.ts");
-		// 根内的 `..` 归一放行，跨出根则拦（与 node:path 的 resolve + 越界 403 同语义）
-		expect(drive.resolveInWorkspace("C:\\work\\proj\\src\\..\\a.ts")).toBe("C:\\work\\proj\\a.ts");
-		expect(() => drive.resolveInWorkspace("C:\\work\\proj\\..\\other\\b.ts")).toThrowError(/工作区/);
-		expect(drive.resolveInWorkspace(".")).toBe("C:\\work\\proj");
-		expect(() => drive.resolveInWorkspace("C:\\other\\secret.txt")).toThrowError(/工作区/);
+	it.skipIf(process.platform === "win32")("POSIX 反斜杠是文件名字符，遵守原生路径语义", () => {
+		const host = createMockHost({ cwd: "/work/proj" });
+		for (const candidate of ["src\\a.ts", "..\\outside.txt", "C:notes.txt", "C:\\notes.txt"]) {
+			expect(host.resolveInWorkspace(candidate)).toBe(resolve("/work/proj", candidate));
+		}
+	});
 
+	it.skipIf(process.platform !== "win32")("Windows 盘符、盘符相对路径与 UNC 使用原生解析且拦越界", () => {
+		const drive = createMockHost({ cwd: "C:\\work\\proj" });
+		for (const candidate of ["src\\a.ts", "C:src\\a.ts", "C:\\work\\proj\\src\\..\\a.ts", "."]) {
+			expect(drive.resolveInWorkspace(candidate)).toBe(resolve("C:\\work\\proj", candidate));
+		}
+		for (const candidate of ["C:\\work\\proj\\..\\other\\b.ts", "C:\\other\\secret.txt", "D:\\other.txt"]) {
+			expect(() => drive.resolveInWorkspace(candidate)).toThrowError(expect.objectContaining({ statusCode: 403 }));
+		}
 		const unc = createMockHost({ cwd: "\\\\nas\\share\\proj" });
-		expect(unc.resolveInWorkspace("doc.md")).toBe("\\\\nas\\share\\proj\\doc.md");
+		expect(unc.resolveInWorkspace("doc.md")).toBe(resolve("\\\\nas\\share\\proj", "doc.md"));
 		expect(() => unc.resolveInWorkspace("..\\..\\escape.txt")).toThrowError(/工作区/);
 	});
 

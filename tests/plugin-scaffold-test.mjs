@@ -111,19 +111,37 @@ try {
 				.join(" "),
 		);
 		const dir = dirOf(t);
-		for (const f of ["manifest.json", "index.mjs", "client/entry.mjs", "sdk/index.mjs", "sdk/client-utils.mjs"])
+		for (const f of [
+			"manifest.json",
+			"index.mjs",
+			"client/entry.mjs",
+			"sdk/index.mjs",
+			"sdk/client.mjs",
+			"sdk/client-utils.mjs",
+			"sdk/testing.mjs",
+		])
 			check(`${t}：${f} 已生成`, existsSync(join(dir, f)));
 		const usesClientSdk = SDK_TEMPLATES.includes(t);
 		check(
 			`${t}：client/sdk/${usesClientSdk ? "已拷（客户端要用）" : "不白拷（客户端不用 SDK）"}`,
 			existsSync(join(dir, "client", "sdk", "index.mjs")) === usesClientSdk &&
-				existsSync(join(dir, "client", "sdk", "client-utils.mjs")) === usesClientSdk,
+				existsSync(join(dir, "client", "sdk", "client.mjs")) === usesClientSdk &&
+				existsSync(join(dir, "client", "sdk", "client-utils.mjs")) === usesClientSdk &&
+				!existsSync(join(dir, "client", "sdk", "testing.mjs")),
 		);
+		if (usesClientSdk) {
+			check(
+				`${t}：client/sdk/index.mjs 是兼容入口`,
+				readFileSync(join(dir, "client", "sdk", "index.mjs"), "utf8").trim() === 'export * from "./client.mjs";',
+			);
+		}
 		const clientSrc = readFileSync(join(dir, "client/entry.mjs"), "utf8");
 		check(
-			`${t}：客户端 import 落在 client/ 内`,
-			usesClientSdk ? clientSrc.includes('from "./sdk/index.mjs"') : !clientSrc.includes("sdk/index.mjs"),
+			`${t}：客户端 import 落在 client/ 内并使用 client.mjs`,
+			usesClientSdk ? clientSrc.includes('from "./sdk/client.mjs"') : !clientSrc.includes("sdk/"),
 		);
+		const readmeSrc = readFileSync(join(dir, "README.md"), "utf8");
+		check(`${t}：README 说明包含 sdk/`, readmeSrc.includes("sdk/"));
 		const scan = checkPluginImports(dir);
 		check(`${t}：import 自检零问题`, scan.problems.length === 0, JSON.stringify(scan.problems));
 	}
@@ -138,6 +156,18 @@ try {
 		readFileSync(join(dirOf("renderer"), "client/entry.mjs"), "utf8").includes("renderers:"),
 	);
 
+	// 验证 --with-test 模板
+	console.log("▶ with-test 模板单测验证");
+	const testId = "scaffold-with-test";
+	const testDir = join(pluginsDir, testId);
+	const testGen = cli(["plugin", "create", testId, "--template", "minimal", "--with-test", "--data-dir", dataDir]);
+	check("with-test：CLI 退出码 0", testGen.status === 0, testGen.stdout.trim());
+	check("with-test：index.test.mjs 存在", existsSync(join(testDir, "index.test.mjs")));
+	const testSrc = readFileSync(join(testDir, "index.test.mjs"), "utf8");
+	check("with-test：从 ./sdk/testing.mjs 导入 createMockHost", testSrc.includes('from "./sdk/testing.mjs"'));
+	const testRun = spawnSync(NODE, ["--test", "index.test.mjs"], { cwd: testDir, encoding: "utf8" });
+	check("with-test：node --test 单测通过", testRun.status === 0, testRun.stdout.trim());
+
 	// ---- 2. upgrade-sdk 把缺的拷贝补齐 --------------------------------------
 	console.log("▶ plugin upgrade-sdk：补齐两处拷贝");
 	const healDir = dirOf("ui-slot");
@@ -146,21 +176,98 @@ try {
 	const up = cli(["plugin", "upgrade-sdk", idOf("ui-slot"), "--dir", pluginsDir]);
 	check("upgrade-sdk：退出码 0", up.status === 0, up.stdout.trim());
 	check(
-		"upgrade-sdk：服务端副本补齐 client-utils.mjs",
-		existsSync(join(healDir, "sdk", "client-utils.mjs")) && existsSync(join(healDir, "sdk", "index.mjs")),
+		"upgrade-sdk：服务端副本补齐 client-utils.mjs 与 testing.mjs",
+		existsSync(join(healDir, "sdk", "client-utils.mjs")) &&
+			existsSync(join(healDir, "sdk", "index.mjs")) &&
+			existsSync(join(healDir, "sdk", "testing.mjs")) &&
+			existsSync(join(healDir, "sdk", "client.mjs")),
 	);
 	check(
 		"upgrade-sdk：客户端副本补建（代码 import ./sdk/ 但目录曾被删）",
 		existsSync(join(healDir, "client", "sdk", "index.mjs")) &&
-			existsSync(join(healDir, "client", "sdk", "client-utils.mjs")),
+			existsSync(join(healDir, "client", "sdk", "client.mjs")) &&
+			existsSync(join(healDir, "client", "sdk", "client-utils.mjs")) &&
+			!existsSync(join(healDir, "client", "sdk", "testing.mjs")),
 		up.stdout.trim(),
 	);
+
+	// 旧 testing.mjs 残留清理与兼容入口刷新
+	console.log("▶ plugin upgrade-sdk：旧 testing.mjs 清理与兼容入口刷新");
+	const dirtyDir = dirOf("minimal");
+	writeFileSync(join(dirtyDir, "client", "sdk", "testing.mjs"), "import 'node:path';\n");
+	writeFileSync(join(dirtyDir, "client", "sdk", "index.mjs"), "// old content\n");
+	const cleanUp = cli(["plugin", "upgrade-sdk", idOf("minimal"), "--dir", pluginsDir]);
+	check("upgrade-sdk 清理：退出码 0", cleanUp.status === 0, cleanUp.stdout.trim());
+	check("upgrade-sdk 清理：client/sdk/testing.mjs 被移除", !existsSync(join(dirtyDir, "client", "sdk", "testing.mjs")));
+	check(
+		"upgrade-sdk 清理：client/sdk/index.mjs 刷新为兼容入口",
+		readFileSync(join(dirtyDir, "client", "sdk", "index.mjs"), "utf8").trim() === 'export * from "./client.mjs";',
+	);
+
+	// 升级幂等性
+	console.log("▶ plugin upgrade-sdk：升级幂等性");
+	const idem = cli(["plugin", "upgrade-sdk", "--dir", pluginsDir]);
+	check("upgrade-sdk 幂等：退出码 0", idem.status === 0, idem.stdout.trim());
+	check(
+		"upgrade-sdk 幂等：全部已是最新（刷新 0 个）",
+		idem.stdout.includes("刷新 0 个") || idem.stdout.includes("refreshed 0"),
+		idem.stdout.trim(),
+	);
+
+	// 旧导入迁移兼容性
+	console.log("▶ 旧导入迁移兼容性");
+	const legacyMigrateDir = join(pluginsDir, "legacy-migrated");
+	cli(["plugin", "create", "legacy-migrated", "--template", "minimal", "--data-dir", dataDir]);
+	const oldClientFile = join(legacyMigrateDir, "client", "entry.mjs");
+	writeFileSync(oldClientFile, readFileSync(oldClientFile, "utf8").replace('"./sdk/client.mjs"', '"./sdk/index.mjs"'));
+	// 模拟分包前的实际布局：版本在 index.mjs，无 client.mjs / testing.mjs。
+	const legacyIndex = 'export const SDK_VERSION = "0.2.0";\n';
+	for (const sdkDir of [join(legacyMigrateDir, "sdk"), join(legacyMigrateDir, "client", "sdk")]) {
+		writeFileSync(join(sdkDir, "index.mjs"), legacyIndex);
+		rmSync(join(sdkDir, "client.mjs"), { force: true });
+		rmSync(join(sdkDir, "testing.mjs"), { force: true });
+	}
+	const migrate = cli(["plugin", "upgrade-sdk", "legacy-migrated", "--dir", pluginsDir]);
+	check("旧版本升级：CLI 退出码 0", migrate.status === 0, migrate.stdout.trim());
+	check("旧版本升级：识别 index.mjs 中的 0.2.0", migrate.stdout.includes("0.2.0 →"), migrate.stdout.trim());
+	check(
+		"旧版本升级：服务端入口恢复且可加载",
+		typeof (await import(pathToFileURL(join(legacyMigrateDir, "index.mjs")).href)).default?.activate === "function",
+	);
+	const legacyScan = checkPluginImports(legacyMigrateDir);
+	check("旧导入兼容：import 自检零问题", legacyScan.problems.length === 0, JSON.stringify(legacyScan.problems));
+	const legacyClientMod = await import(pathToFileURL(oldClientFile).href);
+	check("旧导入兼容：客户端模块可加载并成功执行", typeof legacyClientMod.default?.mount === "function");
+
+	// 客户端零 Node 模块（浏览器安全）
+	console.log("▶ 客户端零 Node 模块守卫");
+	let anyNodeImport = false;
+	let anyTestingMjs = false;
+	for (const id of [...TEMPLATES.map(idOf), testId, "legacy-migrated"]) {
+		const cSdk = join(pluginsDir, id, "client", "sdk");
+		if (!existsSync(cSdk)) continue;
+		if (existsSync(join(cSdk, "testing.mjs"))) anyTestingMjs = true;
+		for (const f of ["index.mjs", "client.mjs", "client-utils.mjs"]) {
+			const fp = join(cSdk, f);
+			if (!existsSync(fp)) continue;
+			const src = readFileSync(fp, "utf8");
+			for (const spec of staticImportSpecifiers(src)) {
+				if (spec.startsWith("node:")) anyNodeImport = true;
+			}
+		}
+	}
+	check("客户端不含 testing.mjs", !anyTestingMjs);
+	check("客户端 SDK 零 node: 依赖", !anyNodeImport);
+
 	// 修好之前生成的坏骨架（客户端 import 越界）→ upgrade-sdk 要点名告警而不是静默
 	const oldBad = join(pluginsDir, "legacy-broken");
 	cli(["plugin", "create", "legacy-broken", "--template", "minimal", "--data-dir", dataDir]);
+	const badClient = join(oldBad, "client", "entry.mjs");
 	writeFileSync(
-		join(oldBad, "client/entry.mjs"),
-		readFileSync(join(oldBad, "client/entry.mjs"), "utf8").replace('"./sdk/index.mjs"', '"../sdk/index.mjs"'),
+		badClient,
+		readFileSync(badClient, "utf8")
+			.replace('"./sdk/client.mjs"', '"../sdk/client.mjs"')
+			.replace('"./sdk/index.mjs"', '"../sdk/index.mjs"'),
 	);
 	rmSync(join(oldBad, "client", "sdk"), { recursive: true, force: true });
 	const legacy = cli(["plugin", "upgrade-sdk", "legacy-broken", "--dir", pluginsDir]);
@@ -233,12 +340,23 @@ try {
 		check(`${t}：客户端 import 图全部可加载`, problems.length === 0, problems.join(" | "));
 		if (SDK_TEMPLATES.includes(t)) {
 			check(
-				`${t}：import 图包含 client/sdk/（index + client-utils）`,
-				seen.has("client/sdk/index.mjs") &&
+				`${t}：import 图包含 client/sdk/（client + client-utils）`,
+				seen.has("client/sdk/client.mjs") &&
 					seen.has("client/sdk/client-utils.mjs") &&
 					[...seen.values()].every((v) => /javascript/i.test(v.contentType)),
 			);
 		}
+	}
+	{
+		const { seen, problems } = await crawlClientGraph("legacy-migrated");
+		check("legacy-migrated：客户端 import 图全部可加载", problems.length === 0, problems.join(" | "));
+		check(
+			"legacy-migrated：通过兼容入口加载（index + client + client-utils）",
+			seen.has("client/sdk/index.mjs") &&
+				seen.has("client/sdk/client.mjs") &&
+				seen.has("client/sdk/client-utils.mjs") &&
+				[...seen.values()].every((v) => /javascript/i.test(v.contentType)),
+		);
 	}
 	// 暴露面边界：判据是宿主只服务 client/*，所以同级 sdk/ 不是 JS（越界 import 必然拿到 HTML）
 	{

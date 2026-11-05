@@ -34,9 +34,23 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 `client/entry.mjs` 的相对 import 一旦解析到 `client/` 之外（典型：写成了 `../sdk/index.mjs`），
 浏览器会报 `Failed to fetch dynamically imported module` 并**整个 bundle 都不执行**（插件页空白，
 而服务端毫无异常：manifest 校验通过、`active:true`、`error:null`）。`plugin create` 生成的骨架
-因此把 plugin-sdk 拷**两份**（服务端 `sdk/`、客户端 `client/sdk/`，各含 `index.mjs` +
-`client-utils.mjs`），生成后还跑一遍 `plugin-sdk/import-check.mjs` 把越界/缺失直接报成警告
+因此按运行环境复制 SDK：服务端 `sdk/` 含 `index.mjs`、`client.mjs`、`client-utils.mjs`、
+`testing.mjs`；客户端 `client/sdk/` 只复制 `client.mjs` 和 `client-utils.mjs`，另生成仅转导出
+`./client.mjs` 的兼容 `index.mjs`，保留既有客户端导入路径。新模板直接导入 `./sdk/client.mjs`，
+测试模板导入 `./sdk/testing.mjs`。生成后还跑一遍 `plugin-sdk/import-check.mjs` 报告越界/缺失
 （回归：`tests/plugin-scaffold-test.mjs` + `tests/unit/plugin-import-check.test.ts`）。
+
+`plugin-sdk/client.mjs` 是浏览器入口，导出 `defineView`、`defineRenderer`、UI 辅助并转导出
+`client-utils.mjs`；这两个文件及完整依赖闭包禁止任何 Node 内置模块导入，也不包含测试 Harness。
+`testing.mjs` 只供 Node 测试，导出 `createMockHost`，直接使用 `node:path` 的 `resolve` / `sep`
+解析本平台路径，不模拟其他平台。服务端/兼容总入口 `index.mjs` 导出 `definePlugin`，同时转导出
+客户端及测试入口，因此旧服务端脚本仍可全量导入。类型入口为 `index.d.ts`、`client.d.ts`、
+`testing.d.ts`（共用 `index.d.ts` 的接口声明）；包子路径为 `/client`、`/testing`。
+守卫：`tests/unit/plugin-sdk-browser-safe.test.ts`、`plugin-host-primitives.test.ts`、`plugin-sdk-mock.test.ts`。
+
+`SDK_VERSION` 定义在 `client.mjs`，与 SDK `package.json` 版本同步。`plugin upgrade-sdk` 分别按
+服务端与客户端清单补齐/刷新文件，支持旧版本从 `index.mjs` 读版本，补建被客户端引用但缺失的
+`client/sdk/`，移除客户端误拷的 `testing.mjs` 并保留客户端兼容入口；重复升级应保持幂等。
 
 **不装即不存在**——目录不在就没有任何协议/UI 痕迹；attach 时重扫目录，新丢进来的插件无需重启服务即出现在顶栏视图 tab（import 每进程一次并缓存；删除目录 → 下次 attach 反激活）。
 
@@ -160,9 +174,8 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
   ≤720px 上下堆叠），样式全在 `web/src/styles.css` 的 `.plugin-settings-*` 段；渲染在
   `web/src/components/PluginSettingsForm.tsx`。字段行带 `data-key`（= schema 的 `key`），
   便于按字段定位/调试。
-- `plugin-sdk/` 起手包：`index.mjs`（`definePlugin` / `defineView` / `defineRenderer` /
-  `actionHandler` / `getSetting` / `selectOptions`，零依赖纯 ESM，直接拷进插件目录）+
-  `index.d.ts`（宿主接口精简类型，编辑器补全用）+ `README.md`（含 P0 新能力速览）。
+- `plugin-sdk/` 起手包：服务端总入口 `index.mjs`、浏览器入口 `client.mjs`、Node 测试入口
+  `testing.mjs` 与各自类型入口；运行环境和复制边界见上文「形态」，示例见 `plugin-sdk/README.md`。
 
 ### 插件样式与统一色彩契约（Plugin Style & Theme Contract）
 
