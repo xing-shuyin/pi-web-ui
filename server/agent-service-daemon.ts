@@ -1294,11 +1294,24 @@ export class AgentService {
 			if (conversationId && taskTitle) {
 				void cs.renameConversation(conversationId, taskTitle);
 			}
-			void cs.prompt(`[定时任务] ${text}`);
-			// 等待运行结束：每 2s 轮询，最长 10 分钟。超时按失败记录（运行继续）。
+			if (cs.readConversationForPlugins()?.isStreaming === true) {
+				return {
+					ok: false,
+					conversationId: conversationId || undefined,
+					error: "上一轮后台任务仍在执行中，跳过本次触发",
+				};
+			}
+			let promptError: string | undefined;
+			void cs.prompt(`[定时任务] ${text}`).catch((err) => {
+				promptError = String((err as Error)?.message ?? err);
+			});
+			// 等待运行结束：每 2s 轮询，最长 10 分钟。超时按失败记录并中止运行（避免后台成为僵尸任务）。
 			const deadline = Date.now() + 10 * 60 * 1000;
 			for (;;) {
 				await new Promise((r) => setTimeout(r, 2000));
+				if (promptError) {
+					return { ok: false, conversationId: conversationId || undefined, error: promptError };
+				}
 				let streaming = false;
 				let lastError: string | undefined;
 				try {
@@ -1320,8 +1333,18 @@ export class AgentService {
 					if (lastError) return { ok: false, conversationId: conversationId || undefined, error: lastError };
 					return { ok: true, conversationId: conversationId || undefined };
 				}
-				if (Date.now() >= deadline)
-					return { ok: false, conversationId: conversationId || undefined, error: "运行超时（10 分钟），仍在后台继续" };
+				if (Date.now() >= deadline) {
+					try {
+						await cs.abort();
+					} catch {
+						/* best-effort */
+					}
+					return {
+						ok: false,
+						conversationId: conversationId || undefined,
+						error: "运行超时（10 分钟），已中止后台会话",
+					};
+				}
 			}
 		} catch (err) {
 			return { ok: false, error: (err as Error).message };

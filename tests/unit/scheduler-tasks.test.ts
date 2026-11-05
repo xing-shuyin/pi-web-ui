@@ -3,7 +3,7 @@
  * Store 的 CRUD + 开关 + 持久化往返。执行器（Agent 无头调用）与 ticker
  * 时序不进单测，覆盖靠 tests/run-smoke 聚合里的协议冒烟。
  */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -341,5 +341,155 @@ describe("SchedulerStore", () => {
 		expect(second.ok).toBe(false);
 		release();
 		await first;
+	});
+
+	it("issue #836: 定时任务触发瞬间立即推进 nextFire 到下一周期（面板不显示过期时间）", async () => {
+		vi.useFakeTimers();
+		try {
+			let finishRun!: () => void;
+			const gate = new Promise<void>((r) => (finishRun = r));
+			const s = new SchedulerStore(dir, {
+				executor: async () => {
+					await gate;
+					return { ok: true };
+				},
+			});
+			// 间隔 5 分钟
+			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
+			const next0 = s.list().find((t) => t.id === "t1")!.nextFire!;
+			expect(next0).toBeDefined();
+
+			// 首次 tick 触发
+			vi.setSystemTime(next0);
+			await s.tick(next0);
+			const viewWhileRunning = s.list().find((t) => t.id === "t1")!;
+			expect(viewWhileRunning.running).toBe(true);
+			// nextFire 必须已推进到下个周期，而不是停留在当前触发时间
+			expect(viewWhileRunning.nextFire).toBe(next0 + 300000);
+
+			finishRun();
+			// 等待微任务消费完成
+			await vi.advanceTimersByTimeAsync(0);
+			const viewAfterRun = s.list().find((t) => t.id === "t1")!;
+			expect(viewAfterRun.running).toBe(false);
+			expect(viewAfterRun.nextFire).toBe(next0 + 300000);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("issue #836: 单次执行耗时超过任务间隔时，顺延下次触发且任务完成后继续正常调度", async () => {
+		vi.useFakeTimers();
+		try {
+			let finishRun!: () => void;
+			const gate = new Promise<void>((r) => (finishRun = r));
+			const s = new SchedulerStore(dir, {
+				executor: async () => {
+					await gate;
+					return { ok: true };
+				},
+			});
+			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
+			const next0 = s.list()[0]!.nextFire!;
+
+			// 第一次触发
+			vi.setSystemTime(next0);
+			await s.tick(next0);
+			expect(s.list()[0]!.running).toBe(true);
+			expect(s.list()[0]!.nextFire).toBe(next0 + 300000);
+
+			// 下一周期已到达，但第一次执行仍未结束（耗时 > 间隔）
+			vi.setSystemTime(next0 + 300000);
+			await s.tick(next0 + 300000);
+			const viewDelayed = s.list()[0]!;
+			expect(viewDelayed.running).toBe(true);
+			// 顺延至第三个周期，而不是卡死在第二个周期
+			expect(viewDelayed.nextFire).toBe(next0 + 600000);
+
+			// 第一次运行在 400s 处结束
+			vi.setSystemTime(next0 + 400000);
+			finishRun();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(s.list()[0]!.running).toBe(false);
+			// 此时任务完成，nextFire 按完成时间顺延到 next0 + 700000
+			expect(s.list()[0]!.nextFire).toBe(next0 + 700000);
+
+			// 下次到达时第二次正常触发
+			let secondRunStarted = false;
+			(s as any).opts.executor = async () => {
+				secondRunStarted = true;
+				return { ok: true };
+			};
+			vi.setSystemTime(next0 + 700000);
+			await s.tick(next0 + 700000);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(secondRunStarted).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("issue #836: 耗时任务在 tick 循环中不阻塞同批其他定时任务的触发", async () => {
+		let finishA!: () => void;
+		const gateA = new Promise<void>((r) => (finishA = r));
+		let runBCount = 0;
+		const s = new SchedulerStore(dir, {
+			executor: async (task) => {
+				if (task.id === "task-a") {
+					await gateA;
+					return { ok: true };
+				}
+				runBCount++;
+				return { ok: true };
+			},
+		});
+		s.upsert({ ...BASE, id: "task-a", kind: "interval", spec: "300000" });
+		s.upsert({ ...BASE, id: "task-b", kind: "interval", spec: "300000" });
+		const nextA = s.list().find((t) => t.id === "task-a")!.nextFire!;
+		const nextB = s.list().find((t) => t.id === "task-b")!.nextFire!;
+
+		// 触发两个任务
+		await s.tick(Math.max(nextA, nextB));
+		await new Promise((r) => setTimeout(r, 20));
+
+		// task-a 正在运行，但 task-b 已成功执行完成，未被 task-a 阻塞
+		expect(s.list().find((t) => t.id === "task-a")!.running).toBe(true);
+		expect(runBCount).toBe(1);
+
+		finishA();
+		await new Promise((r) => setTimeout(r, 20));
+		expect(s.list().find((t) => t.id === "task-a")!.running).toBe(false);
+	});
+
+	it("issue #836: cron 任务触发瞬间推进 nextFire 且超长执行顺延时不损坏后续 cron 排期", async () => {
+		let finishRun!: () => void;
+		const gate = new Promise<void>((r) => (finishRun = r));
+		const s = new SchedulerStore(dir, {
+			executor: async () => {
+				await gate;
+				return { ok: true };
+			},
+		});
+		// 每 15 分钟触发一次
+		s.upsert({ ...BASE, id: "cron-1", kind: "cron", spec: "*/15 * * * *" });
+		const next0 = s.list()[0]!.nextFire!;
+		expect(next0).toBeDefined();
+
+		// 触发
+		await s.tick(next0);
+		expect(s.list()[0]!.running).toBe(true);
+		// 下一次触发时间必须是下一个 15 分钟节点（next0 + 15 分钟）
+		expect(s.list()[0]!.nextFire).toBe(next0 + 15 * 60 * 1000);
+
+		// 15 分钟后下一轮已到达，但本轮仍在执行
+		await s.tick(next0 + 15 * 60 * 1000);
+		// 顺延至下下个 15 分钟节点（next0 + 30 分钟）
+		expect(s.list()[0]!.nextFire).toBe(next0 + 30 * 60 * 1000);
+
+		// 本轮完成
+		finishRun();
+		await new Promise((r) => setTimeout(r, 10));
+		expect(s.list()[0]!.running).toBe(false);
+		expect(s.list()[0]!.nextFire).toBe(next0 + 30 * 60 * 1000);
 	});
 });

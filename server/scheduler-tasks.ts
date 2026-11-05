@@ -673,16 +673,31 @@ export class SchedulerStore {
 		return true;
 	}
 
-	private async tick(): Promise<void> {
-		const now = Date.now();
+	async tick(now = Date.now()): Promise<void> {
 		for (const task of this.tasks.values()) {
-			if (!task.enabled || this.running.has(task.id)) continue;
+			if (!task.enabled) continue;
 			let next = this.nextFire.get(task.id);
 			if (next === undefined) {
 				next = computeNextFire(task, Math.max(now, task.updatedAt)) ?? now + TICK_MS;
 				this.nextFire.set(task.id, next);
 			}
-			if (next <= now) await this.fire(task.id, false);
+			if (this.running.has(task.id)) {
+				if (next <= now) {
+					// 任务已在执行中（单次执行耗时超过周期）：顺延本次计划触发至下个周期，防同一任务并发重叠（issue #836）
+					const nextSlot = computeNextFire(task, now) ?? now + TICK_MS;
+					this.nextFire.set(task.id, nextSlot);
+					this.changed();
+					this.notify(
+						"info",
+						`定时任务「${task.name}」上一轮仍在执行中，本次定时触发已顺延至下个周期（${new Date(nextSlot).toLocaleTimeString()}）。`,
+						`Scheduled task "${task.name}" is still running from previous turn; postponed to next interval (${new Date(nextSlot).toLocaleTimeString()}).`,
+					);
+				}
+				continue;
+			}
+			if (next <= now) {
+				void this.fire(task.id, false, now).catch((err) => this.reportFailure(err));
+			}
 		}
 	}
 
@@ -694,7 +709,7 @@ export class SchedulerStore {
 		return this.fire(id, true);
 	}
 
-	private async fire(id: string, manual: boolean): Promise<SchedulerExecutorResult> {
+	private async fire(id: string, manual: boolean, triggerAt?: number): Promise<SchedulerExecutorResult> {
 		const task = this.tasks.get(id);
 		if (!task) return { ok: false, error: "任务不存在" };
 		const executor = this.opts.executor;
@@ -708,8 +723,15 @@ export class SchedulerStore {
 			}
 		}
 		this.running.add(id);
-		this.changed();
 		const startedAt = Date.now();
+		const scheduleBase = triggerAt !== undefined ? Math.max(triggerAt, startedAt) : startedAt;
+		// issue #836：定时触发瞬间即刻推进 nextFire 到下一周期：
+		// 1. 面板在长任务执行期间不会停留在已过期的历史时间戳；
+		// 2. 执行时长 ≥ 任务间隔时，调度器不会停摆或遗漏后续排期。
+		if (!task.oneShot && !manual) {
+			this.nextFire.set(id, computeNextFire(task, scheduleBase) ?? scheduleBase + TICK_MS);
+		}
+		this.changed();
 		let result: SchedulerExecutorResult;
 		try {
 			result = executor
@@ -748,7 +770,16 @@ export class SchedulerStore {
 				this.tasks.set(id, { ...cur, enabled: false });
 				this.nextFire.delete(id);
 			} else if (cur && cur.enabled && !manual) {
-				this.nextFire.set(id, computeNextFire(cur, Date.now()) ?? Date.now() + TICK_MS);
+				if (cur.kind === "interval") {
+					// 间隔任务完成时按下一次周期排期（自执行结束起算，与既有单测契约对齐）
+					this.nextFire.set(id, computeNextFire(cur, Date.now()) ?? Date.now() + TICK_MS);
+				} else {
+					// cron 任务若执行耗时超过原定时刻，顺延至下一个有效 cron 时间点（issue #836）
+					const currentNext = this.nextFire.get(id);
+					if (currentNext === undefined || currentNext <= Date.now()) {
+						this.nextFire.set(id, computeNextFire(cur, Date.now()) ?? Date.now() + TICK_MS);
+					}
+				}
 			}
 			this.running.delete(id);
 			this.changed();
