@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { spawn } from "node:child_process";
 import { isIP } from "node:net";
 import { join } from "node:path";
-import { getPkgRoot } from "../pkg-info.js";
+import { getPkgRoot, getAppVersion } from "../pkg-info.js";
 
 export interface HubSetupInput {
 	host: string;
@@ -163,6 +163,7 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 				res.json({
 					platform: process.platform,
 					nodeVersion: process.version,
+					version: getAppVersion(),
 					defaultPort: 8790,
 					defaultPublicUrl: "http://127.0.0.1:8790",
 					dataDir: hubDataDir,
@@ -181,6 +182,26 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 				statusOperations.delete(operation);
 			});
 		statusOperations.add(operation);
+	});
+	app.post("/api/device-center/setup/update", (_req, res) => {
+		if (closed || active) {
+			res.status(409).json({ error: closed ? "Device center is shutting down" : "Hub operation is already running" });
+			return;
+		}
+		const controller = new AbortController();
+		active = controller;
+		pending = run(["hub", "update"], controller.signal)
+			.then((output) => {
+				if (closed || controller.signal.aborted)
+					throw new Error("Update interrupted; check hub status before retrying");
+				res.json({ success: true, output });
+			})
+			.catch((error: unknown) => {
+				res.status(500).json({ error: error instanceof Error ? error.message : "Hub update failed" });
+			})
+			.finally(() => {
+				if (active === controller) active = undefined;
+			});
 	});
 	app.post("/api/device-center/setup", (req, res) => {
 		if (closed || active) {

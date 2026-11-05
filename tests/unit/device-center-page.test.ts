@@ -333,4 +333,25 @@ describe("standalone device Hub", () => {
 		expect(f.document.getElementById("connection")!.className).toBe("error");
 		expect(f.document.getElementById("error")!.textContent).toBe("Network down");
 	});
+
+	it("shows upgrade button for authenticated users and triggers system upgrade on confirmation", async () => {
+		const f = fixture();
+		await flush();
+
+		const upgradeBtn = f.document.getElementById("upgrade") as HTMLButtonElement;
+		expect(upgradeBtn).not.toBeNull();
+		expect(upgradeBtn.hidden).toBe(false);
+		expect(upgradeBtn.textContent).toBe("一键升级");
+
+		f.click("#language");
+		expect(upgradeBtn.textContent).toBe("One-click upgrade");
+		f.click("#language");
+
+		f.dom.window.confirm = vi.fn().mockReturnValue(true);
+		upgradeBtn.click();
+		await flush();
+
+		expect(f.dom.window.confirm).toHaveBeenCalled();
+		expect(f.fetch).toHaveBeenCalledWith("/api/system/upgrade", expect.objectContaining({ method: "POST" }));
+	});
 });

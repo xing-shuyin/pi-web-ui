@@ -379,5 +379,44 @@ describe("Claude 引擎模型切换与状态联动", () => {
 			const dummyPath = process.cwd();
 			expect(resolveClaudeExecutable(dummyPath)).toBe(dummyPath);
 		});
+
+		it("官方模型保证原生纯净环境变量，严禁注入 models.json 的代理与凭据", () => {
+			// 在 models.json 与 auth.json 中配置第三方代理与密钥
+			writeFileSync(
+				join(testAgentDir, "models.json"),
+				JSON.stringify({
+					providers: {
+						anthropic: {
+							baseUrl: "https://tainted-proxy.example.com",
+							apiKey: "sk-tainted-key",
+						},
+					},
+				}),
+				"utf8",
+			);
+			writeFileSync(
+				join(testAgentDir, "auth.json"),
+				JSON.stringify({
+					anthropic: "sk-auth-tainted-key",
+				}),
+				"utf8",
+			);
+
+			const driver = new ClaudeCodeDriver(process.cwd(), { agentDir: testAgentDir });
+
+			// 1. 针对官方模型（isOfficial = true），即便 models.json 存在 anthropic 配置，也绝不注入
+			const officialEnv = driver.buildSpawnEnv(true, null);
+			expect(officialEnv.ANTHROPIC_BASE_URL).toBeUndefined();
+			expect(officialEnv.ANTHROPIC_API_KEY).toBeUndefined();
+			expect(officialEnv.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+			expect(officialEnv.NO_COLOR).toBe("1");
+
+			// 2. 针对显式自定义代理模型（isOfficial = false, targetProvider = "anthropic"），正常注入
+			const proxyEnv = driver.buildSpawnEnv(false, "anthropic");
+			expect(proxyEnv.ANTHROPIC_BASE_URL).toBe("https://tainted-proxy.example.com");
+			expect(proxyEnv.ANTHROPIC_API_KEY).toBe("sk-tainted-key");
+
+			driver.dispose();
+		});
 	});
 });

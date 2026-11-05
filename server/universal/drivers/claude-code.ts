@@ -191,6 +191,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 	private turnCompleteEmitted = false;
 	private lastTurnMeta?: AgentTurnMeta;
 	private currentThinkingLevel: string = "medium";
+	private readonly seenToolStarts = new Set<string>();
+	private readonly seenToolEnds = new Set<string>();
 
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
@@ -228,6 +230,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.lastErrorHint = "";
 		this.turnHadText = false;
 		this.turnCompleteEmitted = false;
+		this.seenToolStarts.clear();
+		this.seenToolEnds.clear();
 
 		// 格式化用户附件上下文
 		let finalPrompt = prompt;
@@ -262,16 +266,20 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		// 解析目标模型与对应服务商凭据
 		let targetModel = this.currentModel;
-		let targetProvider = "anthropic";
+		let targetProvider: string | null = null;
+		let isOfficial = false;
+
 		if (this.currentModel.includes("/")) {
 			const parts = this.currentModel.split("/");
 			if (parts[0] === "claude-code") {
-				targetProvider = "anthropic";
+				isOfficial = true;
 				targetModel = parts.slice(1).join("/");
 			} else {
 				targetProvider = parts[0];
 				targetModel = parts.slice(1).join("/");
 			}
+		} else {
+			isOfficial = true;
 		}
 
 		if (targetModel) {
@@ -286,30 +294,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			args.push("--resume", this.activeSessionId);
 		}
 
-		// 动态从模型配置基础层解析凭据与 BaseURL，实现类似 cc-switch 的零侵入环境注入
-		const cred = this.agentDir
-			? resolveProviderCredential(this.agentDir, targetProvider)
-			: { providerId: targetProvider };
-
-		const spawnEnv: NodeJS.ProcessEnv = {
-			...process.env,
-			NO_COLOR: "1",
-			CI: "1",
-		};
-
-		if (cred.baseUrl) {
-			spawnEnv.ANTHROPIC_BASE_URL = cred.baseUrl;
-		}
-		if (cred.apiKey) {
-			spawnEnv.ANTHROPIC_API_KEY = cred.apiKey;
-		}
-		if (cred.headers) {
-			for (const [hk, hv] of Object.entries(cred.headers)) {
-				if (hk.toLowerCase() === "authorization" && hv) {
-					spawnEnv.ANTHROPIC_AUTH_TOKEN = hv.replace(/^Bearer\s+/i, "");
-				}
-			}
-		}
+		const spawnEnv = this.buildSpawnEnv(isOfficial, targetProvider);
 
 		let proc: ChildProcess;
 		try {
@@ -403,6 +388,12 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		sink: AgentEventSink,
 		activeToolJson: Map<string, string>,
 	): void {
+		// 0. 支持解包 stream_event 包裹层（Claude Code 启用流式事件或内部代理时的标准结构）
+		if (event.type === "stream_event" && event.event && typeof event.event === "object") {
+			this.handleClaudeEvent(event.event as Record<string, unknown>, sink, activeToolJson);
+			return;
+		}
+
 		const type = String(event.type ?? "");
 
 		// 1. 会话建立或恢复事件
@@ -410,7 +401,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			this.activeSessionId = event.session_id;
 		}
 
-		// 1.1 assistant 完整消息（含思考、正文、错误或合成响应）
+		// 1.1 assistant 完整消息（含思考、正文、工具调用、错误或合成响应）
 		if (type === "assistant") {
 			const msg = event.message as Record<string, unknown> | undefined;
 			if (msg && Array.isArray(msg.content)) {
@@ -422,6 +413,14 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 						} else if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
 							sink.onTextDelta(block.text);
 							this.turnHadText = true;
+						} else if (block.type === "tool_use") {
+							const callId = String(block.id ?? `tool_${Date.now()}`);
+							if (!this.seenToolStarts.has(callId)) {
+								this.seenToolStarts.add(callId);
+								const toolName = String(block.name ?? "tool");
+								const input = (block.input as Record<string, unknown>) ?? {};
+								sink.onToolStart(callId, toolName, input);
+							}
 						}
 					}
 				}
@@ -429,6 +428,27 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			if (event.error) {
 				const errMsg = typeof event.error === "string" ? event.error : JSON.stringify(event.error);
 				this.lastErrorHint = errMsg;
+			}
+		}
+
+		// 1.2 user 完整消息（Claude Code 执行工具后将 tool_result 以 user role 反馈）
+		if (type === "user") {
+			const msg = event.message as Record<string, unknown> | undefined;
+			if (msg && Array.isArray(msg.content)) {
+				for (const item of msg.content) {
+					if (item && typeof item === "object") {
+						const block = item as Record<string, unknown>;
+						if (block.type === "tool_result") {
+							const toolId = String(block.tool_use_id ?? block.id ?? "");
+							if (toolId && !this.seenToolEnds.has(toolId)) {
+								this.seenToolEnds.add(toolId);
+								const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? "");
+								const isError = Boolean(block.is_error);
+								sink.onToolEnd(toolId, isError ? { error: content } : { output: content });
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -453,26 +473,35 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			const block = event.content_block as Record<string, unknown> | undefined;
 			if (block && block.type === "tool_use") {
 				const callId = String(block.id ?? `tool_${Date.now()}`);
-				const toolName = String(block.name ?? "tool");
-				const input = (block.input as Record<string, unknown>) ?? {};
-				sink.onToolStart(callId, toolName, input);
+				if (!this.seenToolStarts.has(callId)) {
+					this.seenToolStarts.add(callId);
+					const toolName = String(block.name ?? "tool");
+					const input = (block.input as Record<string, unknown>) ?? {};
+					sink.onToolStart(callId, toolName, input);
+				}
 			}
 		}
 
 		// 4. 工具调用直接触发 (完整块)
 		if (type === "tool_use") {
 			const callId = String(event.id ?? `tool_${Date.now()}`);
-			const toolName = String(event.name ?? "tool");
-			const input = (event.input as Record<string, unknown>) ?? {};
-			sink.onToolStart(callId, toolName, input);
+			if (!this.seenToolStarts.has(callId)) {
+				this.seenToolStarts.add(callId);
+				const toolName = String(event.name ?? "tool");
+				const input = (event.input as Record<string, unknown>) ?? {};
+				sink.onToolStart(callId, toolName, input);
+			}
 		}
 
 		// 5. 工具执行结果
 		if (type === "tool_result") {
 			const toolId = String(event.tool_use_id ?? event.id ?? "");
-			const content = typeof event.content === "string" ? event.content : JSON.stringify(event.content ?? "");
-			const isError = Boolean(event.is_error);
-			sink.onToolEnd(toolId, isError ? { error: content } : { output: content });
+			if (toolId && !this.seenToolEnds.has(toolId)) {
+				this.seenToolEnds.add(toolId);
+				const content = typeof event.content === "string" ? event.content : JSON.stringify(event.content ?? "");
+				const isError = Boolean(event.is_error);
+				sink.onToolEnd(toolId, isError ? { error: content } : { output: content });
+			}
 		}
 
 		// 6. 最终完成统计
@@ -508,6 +537,44 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			this.lastTurnMeta = turnMeta;
 			sink.onTurnComplete(turnMeta);
 		}
+	}
+
+	/**
+	 * 构建子进程环境变量。
+	 * 关键安全防线：原生环境隔离与防封号保障：
+	 * 1. 若为官方内置 Claude 模型（isOfficial）：严禁注入 models.json / auth.json / provider-keys.json
+	 *    中的任何 BaseURL、API Key 或 Auth Token，保证 100% 保持官方原生环境，完全交由 Claude Code
+	 *    自身的官方登录态（claude login OAuth 凭据，~/.claude.json）直接与 api.anthropic.com 通信；
+	 * 2. 仅当用户显式选择第三方自定义 Provider（!isOfficial 且 targetProvider 存在）时，
+	 *    才动态从配置解析中转 BaseURL 与 Key 注入环境变量。
+	 */
+	buildSpawnEnv(isOfficial: boolean, targetProvider: string | null): NodeJS.ProcessEnv {
+		const spawnEnv: NodeJS.ProcessEnv = {
+			...process.env,
+			NO_COLOR: "1",
+		};
+
+		if (!isOfficial && targetProvider) {
+			const cred = this.agentDir
+				? resolveProviderCredential(this.agentDir, targetProvider)
+				: { providerId: targetProvider };
+
+			if (cred.baseUrl) {
+				spawnEnv.ANTHROPIC_BASE_URL = cred.baseUrl;
+			}
+			if (cred.apiKey) {
+				spawnEnv.ANTHROPIC_API_KEY = cred.apiKey;
+			}
+			if (cred.headers) {
+				for (const [hk, hv] of Object.entries(cred.headers)) {
+					if (hk.toLowerCase() === "authorization" && hv) {
+						spawnEnv.ANTHROPIC_AUTH_TOKEN = hv.replace(/^Bearer\s+/i, "");
+					}
+				}
+			}
+		}
+
+		return spawnEnv;
 	}
 
 	async abort(): Promise<void> {

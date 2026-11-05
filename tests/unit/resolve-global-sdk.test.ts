@@ -5,8 +5,11 @@
  * 只有显式 PI_WEB_SDK=bundled（或 0/off/false/no）才强制自带。
  */
 import { describe, expect, it } from "vitest";
-import { pickGlobalSdk } from "../../server/resolve-global-sdk.js";
+import { isSdkCopyUsable, pickGlobalSdk } from "../../server/resolve-global-sdk.js";
 import type { SdkCopy } from "../../server/sdk-origin.js";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const bundled: SdkCopy = { path: "/app/node_modules/pi-coding-agent/package.json", version: "0.85.1" };
 const globalNewer: SdkCopy = { path: "/global/node_modules/pi-coding-agent/package.json", version: "0.86.1" };
@@ -84,5 +87,47 @@ describe("pickGlobalSdk：缺少自带副本时选用可用全局副本（issue 
 
 	it("无自带副本且无任何全局副本 → 返回 null", () => {
 		expect(pickGlobalSdk([], undefined, null)).toBeNull();
+	});
+});
+
+describe("pickGlobalSdk：损坏/截断副本健全性防护", () => {
+	it("跳过损坏的全局高版本副本，安全回退到自带副本", () => {
+		const damagedGlobal: SdkCopy = { path: "/global/node_modules/pi-coding-agent/package.json", version: "0.89.0" };
+		const isUsable = (c: SdkCopy) => c.path !== damagedGlobal.path;
+		expect(pickGlobalSdk([bundled, damagedGlobal], undefined, bundled, isUsable)).toBeNull();
+	});
+
+	it("无自带副本时，跳过损坏副本选用次优健康副本", () => {
+		const damagedGlobal: SdkCopy = { path: "/global2/node_modules/pi-coding-agent/package.json", version: "0.89.0" };
+		const isUsable = (c: SdkCopy) => c.path !== damagedGlobal.path;
+		expect(pickGlobalSdk([globalOlder, damagedGlobal], undefined, null, isUsable)).toBe(globalOlder);
+	});
+
+	it("isSdkCopyUsable：准确识别截断或损坏的 SDK 目录", () => {
+		const testDir = join(tmpdir(), `pi-sdk-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+		try {
+			mkdirSync(join(testDir, "dist", "core"), { recursive: true });
+			const pkgJson = join(testDir, "package.json");
+			writeFileSync(pkgJson, JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "1.5.0" }));
+			writeFileSync(join(testDir, "dist", "index.js"), "export const VERSION = '1.5.0';");
+
+			// 损坏且截断在非闭合代码行（如 'tr'）
+			const sessionFile = join(testDir, "dist", "core", "agent-session.js");
+			writeFileSync(
+				sessionFile,
+				"class Session {\n  async run() {\n    let ok = false;\n    tr".padEnd(12000, " ") + "\n    tr",
+			);
+			expect(isSdkCopyUsable({ path: pkgJson, version: "1.5.0" })).toBe(false);
+
+			// 修复为带有 sourceMappingURL 的正常结尾（且大小正常）
+			writeFileSync(
+				sessionFile,
+				"class Session {\n  async run() {\n    return true;\n  }\n}\n".padEnd(12000, " ") +
+					"\n//# sourceMappingURL=agent-session.js.map",
+			);
+			expect(isSdkCopyUsable({ path: pkgJson, version: "1.5.0" })).toBe(true);
+		} finally {
+			rmSync(testDir, { recursive: true, force: true });
+		}
 	});
 });

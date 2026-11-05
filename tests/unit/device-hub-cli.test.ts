@@ -480,4 +480,71 @@ try {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+	it("parses update command and updates installed service definition without losing configuration", async () => {
+		expect(parseHubArgs(["update"])).toEqual({ command: "update" });
+		const root = mkdtempSync(join(tmpdir(), "hub-cli-update-"));
+		const plan = {
+			...hubServicePlan({ platform: "linux", home: root }),
+			root,
+			config: join(root, "service.json"),
+			file: join(root, "service.unit"),
+		};
+		// Not installed -> throws
+		await expect(
+			runHubCli(["update"], {
+				plan,
+				env,
+				log: () => {},
+			}),
+		).rejects.toThrow("Hub service is not installed");
+
+		// Seed installed config
+		const initialSettings = {
+			PI_DEVICE_HUB_HOST: "127.0.0.1",
+			PI_DEVICE_HUB_PORT: "8790",
+			PI_DEVICE_HUB_PUBLIC_URL: "http://127.0.0.1:8790",
+			PI_DEVICE_HUB_DATA_DIR: root,
+			PI_DEVICE_HUB_INSTANCE_ID: "inst-123",
+			PI_DEVICE_HUB_ALLOW_REGISTRATION: "0",
+		};
+		mkdirSync(root, { recursive: true });
+		writeFileSync(plan.config, JSON.stringify(initialSettings));
+
+		const managerCommands: string[][] = [];
+		const server = createServer((_req, res) => {
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(
+				JSON.stringify({
+					service: "pi-device-hub",
+					status: "ok",
+					instanceId: "inst-123",
+					allowRegistration: false,
+				}),
+			);
+		});
+		await new Promise<void>((done) => server.listen(8790, "127.0.0.1", () => done()));
+		try {
+			await runHubCli(["update"], {
+				plan,
+				env,
+				run: (_mgr: string, args: string[]) => {
+					managerCommands.push(args);
+					return "ok";
+				},
+				log: () => {},
+			});
+			// Service file written
+			expect(existsSync(plan.file)).toBe(true);
+			// Manager update commands executed (daemon-reload & restart)
+			expect(managerCommands).toEqual([
+				["--user", "daemon-reload"],
+				["--user", "restart", "pi-device-hub.service"],
+			]);
+			// Original config preserved
+			expect(JSON.parse(readFileSync(plan.config, "utf8"))).toEqual(initialSettings);
+		} finally {
+			await new Promise<void>((done) => server.close(() => done()));
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

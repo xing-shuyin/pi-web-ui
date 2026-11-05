@@ -39,7 +39,7 @@ export function resolvePendingQuestion(args: {
 	answered: ReadonlySet<string>;
 	/** 已有待投答案的问卷 id（提交了但还没被服务端确认，见 question-answer-relay）。
 	 *  这类问卷不能从快照恢复成弹窗：否则就是「答了又弹」的死循环。 */
-	pendingDelivery?: (id: string) => boolean;
+	pendingDelivery?: (id: string, owner?: string) => boolean;
 	/** 当前激活的会话 id（用于跨会话切换时收起不属于当前会话的面板）。 */
 	activeConversationId?: string;
 }): PendingQuestionDecision {
@@ -48,8 +48,17 @@ export function resolvePendingQuestion(args: {
 	const isForeignSnapshot = Boolean(
 		snapshot?.conversationId && activeConversationId && snapshot.conversationId !== activeConversationId,
 	);
+	// 0. 铁律守卫：已作答或已有待投答案的问卷，坚决收起、严禁在屏幕上保留或复活！
+	const isCurrentAnswered = Boolean(current?.id && (answered.has(current.id) || pendingDelivery?.(current.id)));
+	const isSnapshotAnswered = Boolean(
+		snapshot?.id &&
+		(answered.has(snapshot.id) || pendingDelivery?.(snapshot.id, (snapshot as { owner?: string }).owner)),
+	);
+	if (isCurrentAnswered || (isSnapshotAnswered && current?.id === snapshot?.id)) {
+		return { changed: true, question: null, source: "live" };
+	}
 	// 1. 快照有待答问卷 → 恢复（已答过的、已有待投答案的不恢复；同一张已经在展示则不动；跨会话快照不恢复）。
-	if (snapshot && snapshot.id && !answered.has(snapshot.id) && !pendingDelivery?.(snapshot.id) && !isForeignSnapshot) {
+	if (snapshot && snapshot.id && !isSnapshotAnswered && !isForeignSnapshot) {
 		if (current?.id === snapshot.id) return { changed: false, question: current, source };
 		return { changed: true, question: snapshot, source: "snapshot" };
 	}

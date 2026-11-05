@@ -410,6 +410,33 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		res.setHeader("Set-Cookie", auth.cookie("", true));
 		res.json({ ok: true });
 	});
+	app.post("/api/system/upgrade", async (req, res) => {
+		let current: { id: string; username: string } | undefined;
+		try {
+			current = account(req);
+		} catch {
+			const agent = await authenticateAgent(req);
+			if (agent) current = agent.account;
+		}
+		if (!current) fail(401, "Unauthorized");
+		res.json({ ok: true, message: "Hub upgrade initiated" });
+		setTimeout(async () => {
+			try {
+				const { spawn } = await import("node:child_process");
+				const { join } = await import("node:path");
+				const { getPkgRoot } = await import("../pkg-info.js");
+				const cliPath = join(getPkgRoot(), "bin", "pi-web-ui.mjs");
+				const child = spawn(process.execPath, [cliPath, "hub", "update"], {
+					detached: true,
+					stdio: "ignore",
+					windowsHide: true,
+				});
+				child.unref();
+			} catch {
+				/* ignore */
+			}
+		}, 500);
+	});
 	app.post("/api/pair/start", (req, res) => {
 		if (!pairLimit.allow(ip(req))) fail(429, "Too many attempts");
 		sweepPairs();

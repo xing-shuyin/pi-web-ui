@@ -158,6 +158,21 @@ describe("Hub guided installation", () => {
 		expect(await failed.json()).toEqual({ error: "Port in use" });
 		expect((await post(input)).status).toBe(200);
 	});
+	it("supports updating existing Hub service via setup/update endpoint", async () => {
+		const app = express();
+		app.use(express.json());
+		const runner = vi.fn().mockResolvedValue("Hub update completed.");
+		const setup = installHubSetupRoutes(app, "/isolated", runner);
+		cleanup.push(() => setup.close());
+		const { base } = await serve(app);
+		const res = await fetch(`${base}/api/device-center/setup/update`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+		});
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ success: true, output: "Hub update completed." });
+		expect(runner).toHaveBeenCalledWith(["hub", "update"], expect.any(AbortSignal));
+	});
 	it("cancels in-flight work on shutdown and rejects subsequent installs", async () => {
 		const app = express();
 		app.use(express.json());

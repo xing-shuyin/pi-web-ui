@@ -27,7 +27,7 @@
  */
 import { registerBashProcessPatch } from "./patch-bash-process.js";
 import { registerExecutableLookupPatch } from "./patch-executable-lookup.js";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -69,6 +69,46 @@ export function findBundledCopy(copies: SdkCopy[], fromFile: string = import.met
 }
 
 /**
+ * 健全性检查：外部 SDK 副本是否完整可用（防止因中断安装/文件截断导致 SyntaxError 搞崩服务）。
+ * 纯内存虚拟测试（文件在磁盘上不存在）默认视为可用，避免破坏单测。
+ */
+export function isSdkCopyUsable(copy: SdkCopy): boolean {
+	if (!existsSync(copy.path)) return true;
+	try {
+		const pkgDir = dirname(copy.path);
+		const raw = readFileSync(copy.path, "utf8");
+		const info = JSON.parse(raw);
+		if (info?.name && info.name !== PKG) return false;
+
+		// 检查入口文件是否存在且非空
+		const mainRel = typeof info?.main === "string" ? info.main : "dist/index.js";
+		const mainFile = join(pkgDir, mainRel);
+		if (!existsSync(mainFile) || statSync(mainFile).size === 0) return false;
+
+		// 检查核心 agent-session.js（若存在则防截断）
+		const sessionFile = join(pkgDir, "dist", "core", "agent-session.js");
+		if (existsSync(sessionFile)) {
+			const stat = statSync(sessionFile);
+			if (stat.size < 10000) return false;
+			const fd = openSync(sessionFile, "r");
+			try {
+				const buf = Buffer.alloc(Math.min(2048, stat.size));
+				readSync(fd, buf, 0, buf.length, Math.max(0, stat.size - buf.length));
+				const tail = buf.toString("utf8").trim();
+				if (!tail.includes("sourceMappingURL") && !tail.endsWith("}") && !tail.endsWith("};")) {
+					return false;
+				}
+			} finally {
+				closeSync(fd);
+			}
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * 该用哪一份对外解析（纯函数，便于单测）。
  * `copies` 按 Node 的解析顺序，`bundledCopy` 为识别到的随包自带副本（null = 无自带副本）。
  * 返回 null = 保持默认（用自带副本兜底）。
@@ -77,23 +117,27 @@ export function pickGlobalSdk(
 	copies: SdkCopy[],
 	mode: string | undefined,
 	bundledCopy: SdkCopy | null = copies[0] ?? null,
+	isUsable: (copy: SdkCopy) => boolean = isSdkCopyUsable,
 ): SdkCopy | null {
 	if (BUNDLED_MODES.has((mode ?? "global").trim().toLowerCase())) return null;
 
+	const validCopies = copies.filter(isUsable);
+	const validBundled = bundledCopy && isUsable(bundledCopy) ? bundledCopy : null;
+
 	// 显式透传的宿主 SDK 路径（如 extensions/webui.ts 宿主传递，issue #482）：若不降级优先选用
 	if (process.env.PI_WEB_SDK_DIR) {
-		const hostCopy = copies.find((c) => dirname(c.path) === process.env.PI_WEB_SDK_DIR);
-		if (hostCopy && (!bundledCopy || compareVersions(hostCopy.version, bundledCopy.version) >= 0)) {
+		const hostCopy = validCopies.find((c) => dirname(c.path) === process.env.PI_WEB_SDK_DIR);
+		if (hostCopy && (!validBundled || compareVersions(hostCopy.version, validBundled.version) >= 0)) {
 			return hostCopy;
 		}
 	}
 
 	// 如果没有随包自带副本（例如 pnpm 隔离安装未包含可选依赖，或轻量部署，issue #562）：
 	// 机器上只要发现可用副本就必须选用，否则 Node 无法导入 SDK 会报错崩溃。
-	if (!bundledCopy) {
-		if (copies.length === 0) return null;
-		let best: SdkCopy = copies[0];
-		for (const copy of copies.slice(1)) {
+	if (!validBundled) {
+		if (validCopies.length === 0) return null;
+		let best: SdkCopy = validCopies[0];
+		for (const copy of validCopies.slice(1)) {
 			if (compareVersions(copy.version, best.version) > 0) {
 				best = copy;
 			}
@@ -103,10 +147,10 @@ export function pickGlobalSdk(
 
 	// 存在自带副本：只考虑比自带副本**严格更新**的外部副本，多份取版本最高的（旧的/同版本的都不折腾）。
 	let best: SdkCopy | null = null;
-	for (const copy of copies) {
-		if (copy.path === bundledCopy.path) continue;
+	for (const copy of validCopies) {
+		if (copy.path === validBundled.path) continue;
 		if (
-			compareVersions(copy.version, bundledCopy.version) > 0 &&
+			compareVersions(copy.version, validBundled.version) > 0 &&
 			(!best || compareVersions(copy.version, best.version) > 0)
 		) {
 			best = copy;
@@ -119,6 +163,13 @@ export function pickGlobalSdk(
 export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromFile = import.meta.url): SdkCopy | null {
 	try {
 		const copies = sdkCopies(fromFile);
+		for (const copy of copies) {
+			if (existsSync(copy.path) && !isSdkCopyUsable(copy)) {
+				console.warn(
+					`[pi-web-ui] SDK copy at ${copy.path} (v${copy.version}) appears incomplete or damaged, skipping.`,
+				);
+			}
+		}
 		const bundled = findBundledCopy(copies, fromFile);
 		const chosen = pickGlobalSdk(copies, mode, bundled);
 		if (!chosen) return null;

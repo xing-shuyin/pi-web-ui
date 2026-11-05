@@ -91,8 +91,8 @@ afterEach(() => {
 
 describe("LeftPanel 标题栏操作与项目管理", () => {
 	it("projects=[] 时仍渲染“最近项目”标题栏和项目管理按钮，且不渲染项目滚动区", () => {
-		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
-		const { container } = mountLeftPanel({ projects: [] });
+		setAppGlobals({ cwd: "", ready: true, status: "open", workspaceRoots: [] });
+		const { container } = mountLeftPanel({ projects: [], sessions: [] });
 
 		// 标题栏存在
 		const projectsSection = container.querySelector(".panel-projects");

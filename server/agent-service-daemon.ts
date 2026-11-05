@@ -797,6 +797,19 @@ export class AgentService {
 		return false;
 	}
 
+	/**
+	 * 全局问卷直决：直接通过全局随机 UUID 定位持有问卷的会话并 resolve。
+	 * 无需强依赖临时变更的 ownerId，跨页、重连认领与代理穿透均可直接命中。
+	 */
+	resolveGlobalQuestion(id: string, answers: QuestionAnswer[], cancelled?: boolean, cancelReason?: string): boolean {
+		for (const client of this.clients.values()) {
+			if (client.resolveQuestion(id, answers, cancelled, cancelReason)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	resolveSharedToolApproval(viewerId: string, ...args: Parameters<ClientSession["resolveToolApproval"]>): boolean {
 		if (!this.clients.has(viewerId) || isSharedExecutionClientId(viewerId)) return false;
 		const shared = this.sharedConversationTarget(viewerId);
@@ -1728,8 +1741,17 @@ export class AgentService {
 	): Promise<void> {
 		const target = this.clients.get(targetId);
 		if (!target) return;
-		const source = this.clients.get(ownerId);
-		const ok = source ? source.resolveQuestion(id, answers, cancelled, cancelReason) : false;
+		let source = ownerId ? this.clients.get(ownerId) : undefined;
+		let ok = source ? source.resolveQuestion(id, answers, cancelled, cancelReason) : false;
+		if (!ok) {
+			// 若指定的 owner 未命中或未持有该问卷（重连认领/过户导致 ownerId 变动），遍历所有 clients 寻找持有该 id 的会话
+			for (const candidate of this.clients.values()) {
+				if (candidate !== source && candidate.resolveQuestion(id, answers, cancelled, cancelReason)) {
+					ok = true;
+					break;
+				}
+			}
+		}
 		if (!ok) {
 			target.sendNotice({
 				type: "notice",
@@ -1791,6 +1813,7 @@ export class AgentService {
 					this.clearOfflineRows(orphan.oldId);
 					this.clients.set(clientId, orphan.cs);
 					cs = orphan.cs;
+					orphan.cs.updateClientId?.(clientId);
 					// 先按新 id 重接（首帧 attachSink 的 elsewhere/self-exclusion 依赖它）。
 					this.wireClient(cs, clientId);
 					cs.noteAdopted();

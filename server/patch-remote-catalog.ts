@@ -21,7 +21,8 @@
  * default union semantics — never a crash). MUST be imported before the SDK
  * modules are first loaded (agent-service.ts imports this first).
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeAtomicSync } from "./atomic-file.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -68,7 +69,7 @@ function applyPatch(): void {
 			}
 		}
 		if (changed) {
-			writeFileSync(file, src, "utf8");
+			writeAtomicSync(file, src);
 		}
 	} catch {
 		// best-effort — without the patch the SDK keeps its default union merge

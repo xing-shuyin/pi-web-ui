@@ -20,7 +20,6 @@ import { botExecutionMessageAllowed } from "./device-center/bot-execution.js";
 import { ALL_AGENT_TOOL_ENTRIES, effectiveDisabledAgentTools, isToolSupportedOnPlatform } from "./tool-manager.js";
 // MUST be imported before the SDK is loaded so on-disk patches apply cleanly.
 import "./patch-remote-catalog.js";
-import "./patch-turn-end-boundary.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerPromptTemplateRoutes } from "./prompt-templates.js";
 import { readFile, stat } from "node:fs/promises";
@@ -1767,6 +1766,13 @@ export interface DispatchSession {
 		cancelled?: boolean,
 		cancelReason?: string,
 	): Promise<void>;
+	/** 同步解决模型提问（返回是否成功 resolve 挂起的问卷）。 */
+	resolveQuestion?(
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): boolean;
 	/** 浏览器页面调用回包（browser_page 工具，pi 引擎专有；DSH 无页面桥，
 	 *  方法缺失时 dispatch 侧的 `?.` 直接忽略这条消息）。 */
 	resolvePageCall?(id: string, ok: boolean, result?: unknown, error?: string): void;
@@ -1895,6 +1901,13 @@ export interface EngineService {
 	): Promise<boolean>;
 	resolveSharedQuestion?(
 		viewerId: string,
+		id: string,
+		answers: { id: string; selected: string[]; custom?: string }[],
+		cancelled?: boolean,
+		cancelReason?: string,
+	): boolean;
+	/** 全局问卷直决：无需依赖 ownerId，根据问卷 UUID 直接查找命中并 resolve。 */
+	resolveGlobalQuestion?(
 		id: string,
 		answers: { id: string; selected: string[]; custom?: string }[],
 		cancelled?: boolean,
@@ -2169,6 +2182,12 @@ const service: EngineService = {
 				cancelReason,
 			) ?? false
 		);
+	},
+	resolveGlobalQuestion(id, answers, cancelled, cancelReason) {
+		for (const s of activeEngines()) {
+			if (s.resolveGlobalQuestion?.(id, answers, cancelled, cancelReason)) return true;
+		}
+		return false;
 	},
 	resolveSharedToolApproval(viewerId, ...args) {
 		return ensureEngine(resolveClientEngine(viewerId)).resolveSharedToolApproval?.(viewerId, ...args) ?? false;
@@ -3836,6 +3855,8 @@ wss.on("connection", (ws) => {
 							// 新连接/新客户端 attach 首次快照必须强制全量（forceFull=true），
 							// 保证新标签页/刷新页能立刻拿到完整的会话基线，绝不因增量 delta 而卡在加载中。
 							cs.flushSnapshot(true);
+							void cs.pushProjects();
+							void cs.refreshSessions();
 							// 内置定时任务列表随附推一次（后续变更经 pushSchedulerTasks 广播）。
 							try {
 								send({ type: "scheduler_tasks", tasks: scheduler.list() });
@@ -3849,6 +3870,8 @@ wss.on("connection", (ws) => {
 							// ensureLoaded 失败（如磁盘读错）不能卡死快照——前端 30s 无消息
 							// 会重连，重连又失败会陷入循环。至少把状态推下去（同样强制全量）。
 							cs.flushSnapshot(true);
+							void cs.pushProjects();
+							void cs.refreshSessions();
 							replayQueued();
 						});
 					// hello may carry the UI locale — persist it before replaying

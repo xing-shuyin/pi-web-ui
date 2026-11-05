@@ -254,6 +254,7 @@ export function DeviceCenter({
 	const [error, setError] = useState("");
 	const [statusError, setStatusError] = useState("");
 	const [notice, setNotice] = useState("");
+	const [hubUpgrading, setHubUpgrading] = useState(false);
 	const [localOnly, setLocalOnly] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const alive = useRef(false);
@@ -466,6 +467,26 @@ export function DeviceCenter({
 				action.current = false;
 				setBusy(null);
 			}
+		}
+	}
+	async function handleUpgradeHub() {
+		if (hubUpgrading || busy || !bound || !status?.hubUrl) return;
+		if (!window.confirm(t("deviceHubConfirmUpgrade"))) return;
+		setHubUpgrading(true);
+		setError("");
+		setNotice("");
+		try {
+			const res = await request<{ ok: boolean; message?: string }>("upgrade-hub", {});
+			if (res.ok) {
+				setNotice(t("deviceHubUpgradeSuccess"));
+				await refresh();
+			} else {
+				throw new Error(res.message || "Upgrade failed");
+			}
+		} catch (cause) {
+			setError(explain(cause));
+		} finally {
+			setHubUpgrading(false);
 		}
 	}
 	async function copyCode() {
@@ -691,6 +712,17 @@ export function DeviceCenter({
 									<dd>{status.hubUrl}</dd>
 								</div>
 							</dl>
+							<div className="dc-actions" style={{ marginTop: "1rem" }}>
+								<button
+									type="button"
+									className="dc-button"
+									disabled={hubUpgrading || !!busy}
+									onClick={() => void handleUpgradeHub()}
+								>
+									<FiRefreshCw className={hubUpgrading ? "spin" : ""} aria-hidden />
+									{t(hubUpgrading ? "deviceHubUpgrading" : "deviceHubUpgradeAction")}
+								</button>
+							</div>
 						</section>
 					)}
 					{bound && status?.hubUrl && status.deviceId && !localOnly && (

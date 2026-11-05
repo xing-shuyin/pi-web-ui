@@ -15,7 +15,6 @@
 // wholesale (no union merge / no stale built-in leftovers).
 import "./patch-remote-catalog.js";
 import { applyQueueModesToSession } from "./queue-modes.js";
-import "./patch-turn-end-boundary.js";
 import { startTurnTiming, finishTurnTiming } from "./turn-timing.js";
 import { PendingQuestion, type QuestionResult } from "./pending-question.js";
 import { formatSubagentsCompletionNotice } from "./subagent-notify.js";
@@ -937,11 +936,30 @@ export function cleanupOrphanedSessionDirs(agentDir: string, maxAgeMs = 24 * 360
 
 let ephemeralCleanupScheduled = false;
 
+/**
+ * 识别 SDK 在中止回合（未持久化助理消息）时误报的 turn_end 扩展伪错误（issue #411；earendil-works/pi#10149）。
+ * 纯函数，应用层静默丢弃，无需改写底层 SDK 源码或拦截文件系统。
+ */
+export function isAbortedTurnBoundaryError(err: unknown): boolean {
+	if (!err || typeof err !== "object") return false;
+	const e = err as { extensionPath?: unknown; event?: unknown; error?: unknown };
+	if (e.extensionPath === "<boundary>" && e.event === "turn_end") return true;
+	if (typeof e.error === "string" && e.error.includes("turn_end could not resolve the persisted assistant entry ID")) {
+		return true;
+	}
+	return false;
+}
+
 export { processTreeKillPlan, resolveCwdTarget };
 
 export class ClientSession {
 	static mcpProjects: McpProjectRuntimeRegistry | null = null;
-	readonly clientId: string;
+	clientId: string;
+
+	/** 残骸被新连接认领时更新 clientId，保持与 Daemon 映射和所有队列推送一致 */
+	updateClientId(newClientId: string): void {
+		this.clientId = newClientId;
+	}
 	/** Set by AgentService.attach: reflects the SERVICE-wide quiesce flag
 	 *  (server draining — new work rejected). Default false for direct use. */
 	isQuiesced: () => boolean = () => false;
@@ -5307,6 +5325,7 @@ export class ClientSession {
 	private makeExtensionErrorReporter(prefix?: { text: string; textEn: string }): (err: ExtensionError) => void {
 		const seen = new Set<string>();
 		return (err) => {
+			if (isAbortedTurnBoundaryError(err)) return;
 			const message = err?.error ?? String(err);
 			const where = [err?.extensionPath, err?.event].filter(Boolean).join(" · ");
 			console.error(
@@ -6952,7 +6971,7 @@ export class ClientSession {
 		this.pendingQuestions.set(request.id, request);
 		request.onSettled = () => {
 			this.pendingQuestions.delete(request.id);
-			this.emit({ type: "question_retracted", id: request.id });
+			this.emit({ type: "question_retracted", id: request.id, owner: this.clientId });
 			this.questionsChanged();
 			const source = this.convs.get(request.conversationId);
 			if (source?.notifyOnDone === "manual") this.scheduleSubagentCompletionNotice(source);
@@ -13598,6 +13617,7 @@ export class ClientSession {
 		}
 		// Remember the new workspace (restore target + recent-project entry).
 		this.stateStore.remember(this.clientId, abs);
+		this.invalidateProjectsCache();
 		void this.pushProjects();
 		this.refreshSessionsOnSwitch();
 		void this.listFiles(undefined);
@@ -13765,9 +13785,15 @@ export class ClientSession {
 					try {
 						const sid = conv.session.sessionId;
 						const f = conv.session.sessionFile;
+						let modified: number | undefined;
+						if (f && existsSync(f)) {
+							const cached = ClientSession.sessionFileCacheLookup(f);
+							modified = cached?.mtime ?? statSync(f).mtimeMs;
+						}
 						return {
 							...(sid ? { sessionId: sid } : {}),
 							...(f ? { sessionFile: f } : {}),
+							...(modified ? { modified } : {}),
 						};
 					} catch {
 						return {};
@@ -14083,9 +14109,9 @@ export class ClientSession {
 			// use — one listing covers every conversation of the current folder.
 			const infos = await this.loadSessionInfos();
 			const sorted = this.buildSessionSummaries(this.cwd, infos);
-			this.emit({ type: "sessions", sessions: sorted });
+			this.emit({ type: "sessions", sessions: sorted, cwd: this.cwd });
 		} catch {
-			this.emit({ type: "sessions", sessions: [] });
+			this.emit({ type: "sessions", sessions: [], cwd: this.cwd });
 		}
 	}
 
@@ -15840,19 +15866,12 @@ export class ClientSession {
 	 */
 	async pushProjects(): Promise<void> {
 		const now = Date.now();
-		const cached = ClientSession.projectsCache;
-		// TTL 命中（或已建立过项目缓存）：直接把当前 cwd 合并重排并续期，
-		// 避免切换工作区时因为刚好跨过 60s TTL 而触发全盘 30 个会话子目录重扫。
-		// 已建立过缓存：emit 本客户端的派生视图即可，**绝不把派生结果写回静态缓存**
-		// ——withCurrentCwd 注入了本客户端的 cwd/lastUsed/removedKeys 过滤与沙盒
-		// 元数据，写回会把 A 客户端的视图固化给 B（静态缓存跨客户端共享）；
-		// 底层超过 TTL 后后台重扫一次，磁盘上新工作区不会被永久挡在列表外。
-		if (cached) {
-			this.emit({ type: "projects", projects: this.withCurrentCwd(cached.projects, now) });
-			if (now - cached.at >= ClientSession.PROJECTS_CACHE_TTL) void this.ensureProjectsCache(false);
-			return;
+		try {
+			const recent = await this.stateStore.getRecentProjects(this.clientId);
+			this.emit({ type: "projects", projects: this.withCurrentCwd(recent, now) });
+		} catch {
+			this.emit({ type: "projects", projects: this.withCurrentCwd([], now) });
 		}
-		await this.ensureProjectsCache(true);
 	}
 
 	/**
@@ -15920,11 +15939,11 @@ export class ClientSession {
 		if (removedKeys.has(currentKey)) {
 			list = validProjects;
 		} else if (validProjects.some((p) => normalizePathKey(p.path) === currentKey)) {
-			list = validProjects
-				.map((p) => (normalizePathKey(p.path) === currentKey && p.lastUsed < now ? { ...p, lastUsed: now } : p))
-				.sort((a, b) => b.lastUsed - a.lastUsed);
+			list = validProjects.map((p) =>
+				normalizePathKey(p.path) === currentKey ? { ...p, lastUsed: Math.max(p.lastUsed, now) } : p,
+			);
 		} else {
-			list = [{ path: this.cwd, lastUsed: now }, ...validProjects].slice(0, 20);
+			list = [{ path: this.cwd, lastUsed: now }, ...validProjects].slice(0, 30);
 		}
 
 		// 确保所有仍存活的注册沙盒也出现在列表里，并附带 sandbox 元数据
@@ -15942,8 +15961,7 @@ export class ClientSession {
 				const sbx = this.sandboxes.getByCwd(p.path);
 				return sbx ? { ...p, sandbox: sbx } : p;
 			})
-			.sort((a, b) => b.lastUsed - a.lastUsed)
-			.slice(0, 25);
+			.slice(0, 35);
 	}
 
 	/** 最近项目缓存失效（用户显式移除项目后，下一次推送必须重扫）。 */

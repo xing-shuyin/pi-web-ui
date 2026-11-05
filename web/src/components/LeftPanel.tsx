@@ -7,18 +7,15 @@ import {
 	FiChevronLeft,
 	FiChevronRight,
 	FiChevronUp,
-	FiClock,
 	FiEdit2,
 	FiFolder,
 	FiFolderPlus,
 	FiGitBranch,
-	FiMessageSquare,
 	FiMoreVertical,
 	FiPlus,
 	FiTrash2,
 	FiUsers,
 	FiX,
-	FiZap,
 } from "react-icons/fi";
 import { LuFlaskConical } from "react-icons/lu";
 import type {
@@ -257,6 +254,27 @@ function usePluginSectionCollapse(): [ReadonlySet<string>, (key: string) => void
 	}, []);
 	return [collapsed, toggle];
 }
+const LS_PROJECTS_ORDER_KEY = "pi-web-ui:projects-order";
+
+function loadPersistedProjectOrder(): string[] {
+	try {
+		const raw = localStorage.getItem(LS_PROJECTS_ORDER_KEY);
+		if (!raw) return [];
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
+function savePersistedProjectOrder(order: string[]): void {
+	try {
+		localStorage.setItem(LS_PROJECTS_ORDER_KEY, JSON.stringify(order.slice(0, 100)));
+	} catch {
+		/* ignore */
+	}
+}
+
 const LS_LP_SIZES = "pi-web-ui:lp-sizes";
 /** 分区权重：宿主三键 + 插件自定义分区键（`plugin:…`，缺省 1）。 */
 type LpWeights = Record<string, number>;
@@ -470,6 +488,14 @@ export const LeftPanel = memo(function LeftPanel({
 			seen.add(normP);
 			list.push(p);
 		}
+		// 确保当前激活的工作区绝对不会因为后端延迟推送或缓存过滤而在左栏消失
+		if (currentCwd && currentCwd !== "@root" && currentCwd !== "machine-root") {
+			const normCur = normalizeSessionPathKey(currentCwd);
+			if (!seen.has(normCur)) {
+				seen.add(normCur);
+				list.push({ path: currentCwd, lastUsed: Date.now() });
+			}
+		}
 		// 仅当项目未被登记但存在活跃会话时，作为活动项目安全补入列表末尾，保证运行中对话不丢失，且不扰乱既有项目排序
 		for (const c of conversations) {
 			if (!c.cwd) continue;
@@ -488,24 +514,44 @@ export const LeftPanel = memo(function LeftPanel({
 			}
 		}
 		return list;
-	}, [projects, conversations, elsewhere]);
+	}, [projects, currentCwd, conversations, elsewhere]);
 
-	// 2. 方案 A：会话内位置锁定（Deferred MRU · 稳定空间记忆）
-	// 按项目初次呈现时的 Rank 锁定相对排位，用户在当前窗口点击切换时绝对在原地展开，不发生动态瞬移
-	const projectRankMapRef = useRef<Map<string, number>>(new Map());
+	// 2. 方案 A++（对齐 deepseek-harness 稳定空间记忆）：持久化项目稳定排位
+	// 无论用户如何切换工作区、刷新页面，既有项目的相对垂直排位绝对锁定不变（零跳动、空间记忆恒定）
+	const projectRankMapRef = useRef<Map<string, number> | null>(null);
+	if (!projectRankMapRef.current) {
+		const saved = loadPersistedProjectOrder();
+		const map = new Map<string, number>();
+		saved.forEach((key, idx) => map.set(normalizeSessionPathKey(key), idx));
+		projectRankMapRef.current = map;
+	}
 
 	const stableProjects = useMemo(() => {
-		const rankMap = projectRankMapRef.current;
+		const rankMap = projectRankMapRef.current!;
+		let changed = false;
 
-		// 按照服务端推送给出的天然顺序分配初始 Rank（初次到达的项目保持服务端的最近时间排位）
-		deduplicatedProjects.forEach((p, index) => {
+		// 计算当前已分配的最大 rank
+		let maxRank = 0;
+		for (const r of rankMap.values()) {
+			if (r > maxRank) maxRank = r;
+		}
+
+		// 为新出现的项目追加分配稳定 Rank，绝不改变既有项目的相对次序
+		deduplicatedProjects.forEach((p) => {
 			const key = normalizeSessionPathKey(p.path);
 			if (!rankMap.has(key)) {
-				rankMap.set(key, index);
+				maxRank += 1;
+				rankMap.set(key, maxRank);
+				changed = true;
 			}
 		});
 
-		// 按照锁定的物理排位渲染，操作期间零视觉抖动
+		if (changed) {
+			const orderedKeys = [...rankMap.entries()].sort((a, b) => a[1] - b[1]).map(([k]) => k);
+			savePersistedProjectOrder(orderedKeys);
+		}
+
+		// 按照锁定的物理排位渲染，在项目之间来回切换时零视觉抖动、绝对不跳动
 		return [...deduplicatedProjects].sort((a, b) => {
 			const keyA = normalizeSessionPathKey(a.path);
 			const keyB = normalizeSessionPathKey(b.path);
@@ -517,53 +563,104 @@ export const LeftPanel = memo(function LeftPanel({
 
 	const effectiveProjects = stableProjects;
 
-	const [expandedOtherProjects, setExpandedOtherProjects] = useState<Set<string>>(() => new Set());
-	const [collapsedCurrentProjects, setCollapsedCurrentProjects] = useState<Set<string>>(() => new Set());
+	// 展开项目集合：独立记忆每个项目的展开状态，切换或打开新项目时绝对不折叠其他已展开的项目
+	const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
+		try {
+			const raw = localStorage.getItem("pi-web-ui:lp-expanded-projects");
+			if (raw) {
+				const arr = JSON.parse(raw);
+				if (Array.isArray(arr)) {
+					const s = new Set<string>(arr);
+					const norm = normalizeSessionPathKey(currentCwd);
+					if (norm) s.add(norm);
+					return s;
+				}
+			}
+		} catch {}
+		const s = new Set<string>();
+		const norm = normalizeSessionPathKey(currentCwd);
+		if (norm) s.add(norm);
+		return s;
+	});
+
+	// 持久化展开的项目集合
+	useEffect(() => {
+		try {
+			localStorage.setItem("pi-web-ui:lp-expanded-projects", JSON.stringify([...expandedProjects]));
+		} catch {}
+	}, [expandedProjects]);
+
 	const [projectVisibleCounts, setProjectVisibleCounts] = useState<Record<string, number>>({});
 	const [loadingProjects, setLoadingProjects] = useState<Set<string>>(() => new Set());
+
+	// 当非当前项目的会话列表加载完成（已写入 projectSessions，即使是空数组 []）时，立即移出 loading 集合
+	useEffect(() => {
+		if (!projectSessions) return;
+		setLoadingProjects((prev) => {
+			if (prev.size === 0) return prev;
+			let changed = false;
+			const next = new Set(prev);
+			for (const key of prev) {
+				if (projectSessions[key] !== undefined) {
+					next.delete(key);
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [projectSessions]);
+
+	// 当前工作区切换时，当前项目自动确保展开，绝不折叠其他已展开的项目
+	useEffect(() => {
+		const normCur = normalizeSessionPathKey(currentCwd);
+		if (normCur) {
+			setExpandedProjects((prev) => {
+				if (prev.has(normCur)) return prev;
+				const next = new Set(prev);
+				next.add(normCur);
+				return next;
+			});
+			setLoadingProjects((prev) => {
+				if (!prev.has(normCur)) return prev;
+				const next = new Set(prev);
+				next.delete(normCur);
+				return next;
+			});
+		}
+	}, [currentCwd]);
 
 	const isProjectExpanded = useCallback(
 		(projectPath: string) => {
 			const normP = normalizeSessionPathKey(projectPath);
-			const normCur = normalizeSessionPathKey(currentCwd);
-			const isCurrent = normP === normCur;
-			if (isCurrent) {
-				return !collapsedCurrentProjects.has(normP);
-			}
-			return expandedOtherProjects.has(normP);
+			return expandedProjects.has(normP);
 		},
-		[currentCwd, collapsedCurrentProjects, expandedOtherProjects],
+		[expandedProjects],
 	);
 
 	const toggleProjectExpand = useCallback(
 		(projectPath: string) => {
 			const normP = normalizeSessionPathKey(projectPath);
-			const normCur = normalizeSessionPathKey(currentCwd);
-			const isCurrent = normP === normCur;
-			if (isCurrent) {
-				setCollapsedCurrentProjects((prev) => {
-					const next = new Set(prev);
-					if (next.has(normP)) next.delete(normP);
-					else next.add(normP);
-					return next;
-				});
-			} else {
-				setExpandedOtherProjects((prev) => {
-					const next = new Set(prev);
-					const willExpand = !next.has(normP);
-					if (willExpand) {
-						next.add(normP);
-						// 展开非当前项目时：主动向后端请求该项目的历史会话列表
-						panelSend({ type: "list_sessions", path: projectPath });
-						setLoadingProjects((lp) => new Set(lp).add(normP));
-					} else {
-						next.delete(normP);
-					}
-					return next;
-				});
-			}
+			setExpandedProjects((prev) => {
+				const next = new Set(prev);
+				const willExpand = !next.has(normP);
+				if (willExpand) {
+					next.add(normP);
+					// 展开非当前项目时：主动向后端请求该项目的历史会话列表
+					panelSend({ type: "list_sessions", path: projectPath });
+					setLoadingProjects((lp) => new Set(lp).add(normP));
+				} else {
+					next.delete(normP);
+					setLoadingProjects((lp) => {
+						if (!lp.has(normP)) return lp;
+						const copy = new Set(lp);
+						copy.delete(normP);
+						return copy;
+					});
+				}
+				return next;
+			});
 		},
-		[currentCwd, panelSend],
+		[panelSend],
 	);
 
 	/** 智能去重：当且仅当 split 模式下运行列表展开且有内容时，已在上方运行列表中展示的本地会话不重复占用下方历史列表视线。 */
@@ -1451,9 +1548,12 @@ export const LeftPanel = memo(function LeftPanel({
 	const renderHistorySessionRow = (s: SessionSummary, projectPath?: string) => {
 		const normCur = normalizeSessionPathKey(currentFile);
 		const normPath = normalizeSessionPathKey(s.path);
-		const active = Boolean(normCur && normCur === normPath);
-		const switching = transition?.kind === "session" && normalizeSessionPathKey(transition.target) === normPath;
 		const runInfo = getHistoryRunningInfo(s);
+		const active = Boolean(
+			(normCur && normCur === normPath) ||
+			(!sharedConversationOwner && activeConversationId && runInfo?.conv?.id === activeConversationId),
+		);
+		const switching = transition?.kind === "session" && normalizeSessionPathKey(transition.target) === normPath;
 		const isStreaming = Boolean(runInfo?.isStreaming);
 		const hasQuestion = Boolean(runInfo?.hasQuestion);
 		const hasError = Boolean(runInfo?.hasError || runInfo?.error);
@@ -1549,6 +1649,11 @@ export const LeftPanel = memo(function LeftPanel({
 							{s.pinned && (
 								<span className="pin-badge" title={t("pinnedConversation")}>
 									📌
+								</span>
+							)}
+							{runInfo?.conv?.isEphemeral && (
+								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+									{t("newChatEphemeral") || "临时"}
 								</span>
 							)}
 							{cleanTitle}
@@ -1653,6 +1758,19 @@ export const LeftPanel = memo(function LeftPanel({
 		{ c, depth, hasKids, isCollapsed, descendantCount, hasStreaming, hasError, hasQuestion }: ConvRowItem,
 		projectPath?: string,
 	) => {
+		const matchSess = projectPath
+			? (
+					projectSessions?.[normalizeSessionPathKey(projectPath)] ??
+					(normalizeSessionPathKey(projectPath) === normalizeSessionPathKey(currentCwd) ? sessions : undefined)
+				)?.find((s) => {
+					if (c.sessionFile && normalizeSessionPathKey(s.path) === normalizeSessionPathKey(c.sessionFile)) return true;
+					if (c.sessionId && s.sessionId && s.sessionId.trim().toLowerCase() === c.sessionId.trim().toLowerCase())
+						return true;
+					return false;
+				})
+			: undefined;
+		const convTime = c.modified ?? matchSess?.modified;
+
 		if ((c as RowConv).elsewhere) {
 			const elseOwner = (c as RowConv).owner;
 			const elseConvId = (c as RowConv).convId;
@@ -1683,10 +1801,34 @@ export const LeftPanel = memo(function LeftPanel({
 						: isPseudo
 							? `点击直接在电脑端打开此对话\n${c.cwd}`
 							: `${t(isOffline ? "elsewhereOfflineTip" : "elsewhereTip")}\n${c.cwd}`;
+
+			// 形态 A：标题清洗与类别微胶囊提取（左侧纯文字绝对对齐，元数据全部右置）
+			let cleanTitle = c.title;
+			let categoryTag: { key: string; label: string } | null = null;
+			const channelMatch = cleanTitle.match(/^\[(微信|feishu|飞书|dingtalk|钉钉|wechat|qq|telegram)[^\]]*\]\s*(.*)$/i);
+			if (channelMatch) {
+				const rawCh = channelMatch[1]!.toLowerCase();
+				const chLabel =
+					rawCh.includes("微信") || rawCh === "wechat"
+						? "微信"
+						: rawCh.includes("飞书") || rawCh === "feishu"
+							? "飞书"
+							: rawCh.includes("钉钉") || rawCh === "dingtalk"
+								? "钉钉"
+								: rawCh.toUpperCase();
+				categoryTag = { key: "wechat", label: chLabel };
+				if (channelMatch[2]?.trim()) cleanTitle = channelMatch[2].trim();
+			} else if (c.forkFrom) {
+				categoryTag = { key: "fork", label: "🌿分支" };
+			} else if (isScheduler) {
+				categoryTag = { key: "scheduler", label: "调度" };
+			}
+
 			return (
 				<div
-					className="lp-row"
+					className={`lp-row${depth > 0 ? " lp-sub" : ""}${hasKids ? " lp-has-kids" : ""}`}
 					key={c.id}
+					style={depth > 0 ? ({ "--depth": Math.min(depth, 4) } as React.CSSProperties) : undefined}
 					onMouseLeave={() => {
 						setConfirmTakeover((k) => (k === c.id ? null : k));
 						setConfirmDel((k) => (k === `else:${c.id}` ? null : k));
@@ -1701,9 +1843,25 @@ export const LeftPanel = memo(function LeftPanel({
 						})
 					}
 				>
+					{hasKids && (
+						<button
+							type="button"
+							className="lp-tree-caret"
+							title={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
+							aria-label={isCollapsed ? t("expandSubagents") : t("collapseSubagents")}
+							onClick={(e) => {
+								e.stopPropagation();
+								toggleSubagents(c.id);
+							}}
+						>
+							<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" style={{ display: "block" }}>
+								<path d={isCollapsed ? "M4 2.5v7l5-3.5z" : "M2.5 4h7l-3.5 5z"} />
+							</svg>
+						</button>
+					)}
 					<button
 						type="button"
-						className={`session-item elsewhere-item${active ? " active" : ""}${canClick ? "" : " elsewhere-static"}${confirming ? " confirm" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
+						className={`session-item lp-tree-session-item elsewhere-item${active ? " active" : ""}${canClick ? "" : " elsewhere-static"}${confirming ? " confirm" : ""}${isActuallyRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
 						title={tooltip}
 						tabIndex={canClick ? 0 : -1}
 						onClick={
@@ -1739,72 +1897,78 @@ export const LeftPanel = memo(function LeftPanel({
 								: undefined
 						}
 					>
-						<span className="session-icon-wrap">
+						{/* 形态 A：左侧纯文字绝对垂直对齐 */}
+						<span className="conv-title-text" title={c.title}>
+							{c.pinned && (
+								<span className="pin-badge" title={t("pinnedConversation")}>
+									📌
+								</span>
+							)}
+							{c.isEphemeral && (
+								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+									{t("newChatEphemeral") || "临时"}
+								</span>
+							)}
+							{confirming ? t("takeoverConfirm") : cleanTitle}
+						</span>
+
+						{/* 形态 A：右侧元数据区（运行态指示器 + 类别微胶囊 + 另一处徽标全部右置） */}
+						<span className="conv-meta-zone">
 							{c.hasQuestion ? (
 								<span
-									className="session-icon"
-									style={{
-										color: "var(--amber)",
-										fontWeight: 800,
-										fontSize: "12px",
-										display: "inline-flex",
-										alignItems: "center",
-										justifyContent: "center",
-									}}
+									className={`status-question-right${elseOwner && elseConvId && !isPseudo ? " clickable" : ""}`}
+									style={elseOwner && elseConvId && !isPseudo ? { cursor: "pointer" } : undefined}
 									title={t("takeoverHasQuestion")}
+									onClick={
+										elseOwner && elseConvId && !isPseudo
+											? (e) => {
+													e.stopPropagation();
+													panelSend({
+														type: "peek_elsewhere_question",
+														owner: elseOwner as string,
+														id: elseConvId as string,
+													});
+												}
+											: undefined
+									}
 								>
 									?
 								</span>
-							) : c.isStreaming || hasStreaming ? (
-								<FiZap
-									className="session-icon streaming-pulse"
-									style={{ color: "var(--green)" }}
-									title={t("streaming")}
-								/>
-							) : isScheduler ? (
-								<FiClock className="session-icon" title={t("scheduledTaskBadge")} />
-							) : (
-								<FiMessageSquare className="session-icon" />
+							) : isActuallyRunning ? (
+								<div className="status-spinner-right" title={t("streaming")} />
+							) : c.error ? (
+								<span className="status-error-right" title={c.error}>
+									!
+								</span>
+							) : isUnread ? (
+								<span className="status-unread-right" title={t("completedUnreadTooltip")}>
+									<span className="status-unread-dot" />
+								</span>
+							) : null}
+
+							{categoryTag && <span className={`category-badge-pill ${categoryTag.key}`}>{categoryTag.label}</span>}
+
+							{isScheduler ? (
+								<span className="category-badge-pill scheduler">{t("scheduledTaskBadge")}</span>
+							) : !isShared ? (
+								<span className="category-badge-pill elsewhere">
+									{isPseudo ? t("elsewherePseudoBadge") : t("elsewhereBadge")}
+								</span>
+							) : null}
+
+							{isOffline && (
+								<span className="category-badge-pill elsewhere offline" title={t("elsewhereOfflineTip")}>
+									{t("elsewhereOfflineBadge")}
+								</span>
 							)}
-						</span>
-						<span className="session-info">
-							<span className="session-title">
-								{isScheduler ? (
-									<span className="elsewhere-badge scheduled-badge">{t("scheduledTaskBadge")}</span>
-								) : !isShared ? (
-									<span className="elsewhere-badge">{isPseudo ? t("elsewherePseudoBadge") : t("elsewhereBadge")}</span>
-								) : null}
-								{isOffline && (
-									<span className="elsewhere-badge offline" title={t("elsewhereOfflineTip")}>
-										{t("elsewhereOfflineBadge")}
-									</span>
-								)}
-								{c.hasQuestion && elseOwner && elseConvId && !isPseudo && (
-									<span
-										className="question-badge clickable"
-										title={t("takeoverHasQuestion")}
-										onClick={(e) => {
-											e.stopPropagation();
-											panelSend({
-												type: "peek_elsewhere_question",
-												owner: elseOwner,
-												id: elseConvId,
-											});
-										}}
-									>
-										?
-									</span>
-								)}
-								{confirming ? t("takeoverConfirm") : c.title}
-							</span>
-							<span className="session-sub">
-								{c.hasQuestion ? (
-									<span style={{ color: "var(--amber)", fontWeight: 600 }}>{t("waitingQuestionShort")} · </span>
-								) : c.isStreaming || hasStreaming ? (
-									<span style={{ color: "var(--green)", fontWeight: 500 }}>{t("streaming")} · </span>
-								) : null}
-								{projectName(c.cwd)}
-							</span>
+
+							{c.agentPreset && c.agentPreset !== "standard" && (
+								<span className="category-badge-pill subagent" title={c.agentPreset}>
+									{presetNames?.[c.agentPreset] ?? c.agentPreset}
+								</span>
+							)}
+
+							{Boolean(convTime) && <span className="conv-time">{formatModified(convTime!)}</span>}
 						</span>
 					</button>
 					{sessionMenuAvailable && confirmDel !== `else:${c.id}` && (
@@ -1943,6 +2107,11 @@ export const LeftPanel = memo(function LeftPanel({
 									📌
 								</span>
 							)}
+							{c.isEphemeral && (
+								<span className="ephemeral-badge" title={t("newChatEphemeralTip")}>
+									{t("newChatEphemeral") || "临时"}
+								</span>
+							)}
 							{cleanTitle}
 						</span>
 					)}
@@ -1972,6 +2141,8 @@ export const LeftPanel = memo(function LeftPanel({
 								{presetNames?.[c.agentPreset] ?? c.agentPreset}
 							</span>
 						)}
+
+						{Boolean(convTime) && <span className="conv-time">{formatModified(convTime!)}</span>}
 					</span>
 				</button>
 				{!isArmed && (
@@ -2261,22 +2432,69 @@ export const LeftPanel = memo(function LeftPanel({
 										const sbx = p.sandbox;
 										const dispName = sbx ? sbx.name : projectName(p.path);
 
-										// 1. 归属于该项目的全部活动对话（含主会话与完整子代理树，支持展开/折叠与缩进）
-										const pRunningRaw = runningAll.filter((c) => normalizeSessionPathKey(c.cwd) === pNorm);
-										const pRunningRows = buildConversationRows(pRunningRaw, collapsedSubagents);
-
-										// 登记活动会话到全局排他集合
-										for (const c of pRunningRaw) {
-											if (c.sessionFile) claimedSessionPaths.add(normalizeSessionPathKey(c.sessionFile));
-											if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
-										}
+										// 1. 归属于该项目的全部活动对话候选
+										const pConvsAll = runningAll.filter((c) => normalizeSessionPathKey(c.cwd) === pNorm);
 
 										// 2. 基础磁盘历史会话列表（当前项目用 sessions，其他项目优先读 projectSessions 或本地缓存）
 										const pStateSessions = projectSessions?.[pNorm];
 										const pRawSessions = active
 											? sessions
 											: (pStateSessions ?? readCachedSessions(p.path, engine) ?? []);
-										const isLoadingSessions = loadingProjects.has(pNorm) && pRawSessions.length === 0;
+										// 只有在非当前项目、且后端响应尚未到达（pStateSessions 为 undefined）、且正处于 loading 集合中且无任何缓存时，才显示“正在读取会话…”
+										const isLoadingSessions =
+											!active &&
+											pStateSessions === undefined &&
+											loadingProjects.has(pNorm) &&
+											pRawSessions.length === 0;
+
+										// 1.1 判断一个会话是否确实属于“顶部进行中的活动任务”
+										// 核心原则：打开历史对话仅仅是查看，位置不可改变、右侧时间戳不可丢失！
+										// 只有正在进行中的任务（流式中、等待问卷、补全排队、子代理树、跨端运行、无落盘文件的新建对话）或用户钉住的会话，才提取到顶部活动列表。
+										const pRunningRaw = pConvsAll.filter((c) => {
+											// 实实在在正在跑的任务：流式、等待交互问卷、排队补全中
+											if (c.isStreaming || c.completionPending || c.hasQuestion) return true;
+											// 属于子代理树（本身是子代理，或名下挂有子代理）
+											if (c.isSubagent || Boolean(c.parentId)) return true;
+											if (pConvsAll.some((other) => other.parentId === c.id)) return true;
+											// 跨设备/调度伪会话
+											if ((c as RowConv).elsewhere) return true;
+											// 用户显式钉在运行列表中的对话
+											if (c.pinned) return true;
+											// 没有对应磁盘落盘文件的纯内存新对话（例如刚建还没落盘）
+											const matchesDiskSession = pRawSessions.some((s) => {
+												if (c.sessionFile && normalizeSessionPathKey(s.path) === normalizeSessionPathKey(c.sessionFile))
+													return true;
+												if (
+													c.sessionId &&
+													s.sessionId &&
+													s.sessionId.trim().toLowerCase() === c.sessionId.trim().toLowerCase()
+												)
+													return true;
+												return false;
+											});
+											if (!matchesDiskSession && !c.sessionFile) return true;
+
+											return false;
+										});
+
+										// 对活动对话进行排序：当前正在交互的会话（activeConversationId）或最新活动的排在顶部
+										pRunningRaw.sort((a, b) => {
+											if (a.id === activeConversationId) return -1;
+											if (b.id === activeConversationId) return 1;
+											const aRunning = Boolean(a.isStreaming || a.completionPending || a.hasQuestion);
+											const bRunning = Boolean(b.isStreaming || b.completionPending || b.hasQuestion);
+											if (aRunning && !bRunning) return -1;
+											if (!aRunning && bRunning) return 1;
+											return (b.modified ?? 0) - (a.modified ?? 0);
+										});
+
+										const pRunningRows = buildConversationRows(pRunningRaw, collapsedSubagents);
+
+										// 登记活动会话到全局排他集合（只有真正在顶部活动区渲染的才认领，未被认领的闲置会话正常保留在历史列表中）
+										for (const c of pRunningRaw) {
+											if (c.sessionFile) claimedSessionPaths.add(normalizeSessionPathKey(c.sessionFile));
+											if (c.sessionId) claimedSessionIds.add(c.sessionId.trim().toLowerCase());
+										}
 
 										// 3. 最佳落地实践：物理路径确定性归属过滤 + 全局排他去重
 										// 任何物理路径不属于当前项目的会话，一律在物理层被拒收，绝不可能跨项目窜门
@@ -2319,13 +2537,13 @@ export const LeftPanel = memo(function LeftPanel({
 										return (
 											<div className="lp-project-node" key={p.path}>
 												<div
-													className={`lp-row lp-project-head-row${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+													className={`lp-row lp-project-head-row${active ? " active" : ""}${switching ? " switching" : ""}${isCollapsed ? " is-collapsed" : " is-expanded"}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
 													onMouseLeave={() => setConfirmDel((k) => (k === `proj:${p.path}` ? null : k))}
 													onContextMenu={(e) => openProjectMenu(e, p)}
 												>
 													<button
 														type="button"
-														className={`lp-project-header-item project-item ${active ? "active" : ""} ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+														className={`lp-project-header-item ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
 														title={
 															sbx?.sourcePath
 																? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`
@@ -2334,8 +2552,19 @@ export const LeftPanel = memo(function LeftPanel({
 														disabled={switching}
 														onClick={() => {
 															if (!switching) {
-																if (!active) panelSend({ type: "set_cwd", path: p.path });
-																toggleProjectExpand(p.path);
+																if (!active) {
+																	panelSend({ type: "set_cwd", path: p.path });
+																	panelSend({ type: "list_sessions", path: p.path });
+																	setExpandedProjects((prev) => {
+																		const norm = normalizeSessionPathKey(p.path);
+																		if (prev.has(norm)) return prev;
+																		const next = new Set(prev);
+																		next.add(norm);
+																		return next;
+																	});
+																} else {
+																	toggleProjectExpand(p.path);
+																}
 															}
 														}}
 														onDoubleClick={(e) => {
@@ -2365,7 +2594,7 @@ export const LeftPanel = memo(function LeftPanel({
 																fill="currentColor"
 																style={{ display: "block" }}
 															>
-																<path d={isCollapsed ? "M4 2.5v7l5-3.5z" : "M2.5 4h7l-3.5 5z"} />
+																<path d="M2.5 4h7l-3.5 5z" />
 															</svg>
 														</span>
 														{switching ? (
@@ -2452,23 +2681,43 @@ export const LeftPanel = memo(function LeftPanel({
 
 												{/* 智能半折叠：折叠时仅隐藏历史（有正在运行或完成未查看则常驻可见），展开时始终呈现 */}
 												{((isCollapsed && (pRunningRows.length > 0 || hasUnread)) || !isCollapsed) && (
-													<div className="lp-project-tree-children">
+													<div className={`lp-project-tree-children${isCollapsed ? " is-collapsed" : " is-expanded"}`}>
 														{/* 1. 活动对话与完整子代理层级树（带折叠实心三角、深度缩进、子代理徽标） */}
 														{pRunningRows.map((row) => renderSingleConvRow(row, p.path))}
 
-														{/* 2. 静态历史记录（仅在项目展开态展示，不与上方活动会话重复） */}
-														{!isCollapsed && visibleIdleSessions.map((s) => renderHistorySessionRow(s, p.path))}
+														{/* 2. 静态历史记录容器（带平滑展开/折叠过渡动画） */}
+														<div className={`lp-history-collapsible${isCollapsed ? " collapsed" : " expanded"}`}>
+															<div className="lp-history-collapsible-inner">
+																{visibleIdleSessions.map((s) => renderHistorySessionRow(s, p.path))}
 
-														{/* 3. 展开态且无任何会话时的空态/加载提示 */}
-														{!isCollapsed && pRunningRows.length === 0 && idleSessions.length === 0 && (
-															<div className="lp-project-empty-tip">
-																{isLoadingSessions ? (
-																	<span>{t("loadingSessions") || "正在读取会话…"}</span>
-																) : (
-																	<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																{/* 展开态且无任何会话时的空态/加载提示 */}
+																{pRunningRows.length === 0 && idleSessions.length === 0 && (
+																	<div className="lp-project-empty-tip">
+																		{isLoadingSessions ? (
+																			<span>{t("loadingSessions") || "正在读取会话…"}</span>
+																		) : (
+																			<span>{t("noSessionsYet") || "暂无历史会话"}</span>
+																		)}
+																	</div>
+																)}
+
+																{/* 5. 显示更多 */}
+																{hasMore && (
+																	<div
+																		className="lp-show-more-row"
+																		onClick={(e) => {
+																			e.stopPropagation();
+																			setProjectVisibleCounts((prev) => ({
+																				...prev,
+																				[pNorm]: (prev[pNorm] ?? 8) + 20,
+																			}));
+																		}}
+																	>
+																		<span>显示更多 · {idleSessions.length - maxVisible}</span>
+																	</div>
 																)}
 															</div>
-														)}
+														</div>
 
 														{/* 4. 折叠提示（仅在折叠态且有历史时展示） */}
 														{isCollapsed && hasHistory && (
@@ -2482,22 +2731,6 @@ export const LeftPanel = memo(function LeftPanel({
 															>
 																<span>+ 已收起 {idleSessions.length} 条历史</span>
 																<span>›</span>
-															</div>
-														)}
-
-														{/* 5. 显示更多 */}
-														{!isCollapsed && hasMore && (
-															<div
-																className="lp-show-more-row"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	setProjectVisibleCounts((prev) => ({
-																		...prev,
-																		[pNorm]: (prev[pNorm] ?? 8) + 20,
-																	}));
-																}}
-															>
-																<span>显示更多 · {idleSessions.length - maxVisible}</span>
 															</div>
 														)}
 													</div>

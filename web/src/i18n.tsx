@@ -1452,6 +1452,9 @@ export const zh = {
 
 	deviceSetupInstalling: "正在安装，请等待…",
 	deviceSetupInstall: "一键安装并连接",
+	deviceSetupUpdate: "一键升级 Hub 服务",
+	deviceSetupUpdating: "正在升级，请等待…",
+	deviceSetupUpdateSuccess: "Hub 服务已成功升级并重新启动！",
 	deviceSetupAi: "让 AI 辅助部署",
 	deviceSetupAiHint:
 		"新建部署对话并发送配置与当前服务环境，保留原对话。不发送密码，不自动 SSH；AI 将先确认环境与步骤。",
@@ -1461,6 +1464,10 @@ export const zh = {
 	deviceSetupBusy: "已有安装正在进行，请等待后刷新安装状态。",
 	deviceHubTitle: "设备中心",
 	deviceHubSubtitle: "将这台电脑连接到协作中心，集中管理设备与群任务。",
+	deviceHubUpgradeAction: "更新已连接的 Hub",
+	deviceHubUpgrading: "正在更新 Hub 服务…",
+	deviceHubConfirmUpgrade: "确定要从当前客户端更新已连接的 Hub 服务吗？更新期间连接将短暂中断并自动重连。",
+	deviceHubUpgradeSuccess: "Hub 服务已成功更新并重新连接！",
 	localBotSyncFailed: "已保存到本机，但 Hub 同步失败；请重新连接设备后重试。",
 	localBotSaved: "已保存。可在群的成员管理中添加 Bot。",
 	localBotTitle: "本机 Bot",
@@ -4174,6 +4181,9 @@ export const en: Record<keyof typeof zh, string> = {
 
 	deviceSetupInstalling: "Installing, please wait…",
 	deviceSetupInstall: "Install and connect",
+	deviceSetupUpdate: "One-click update Hub service",
+	deviceSetupUpdating: "Updating, please wait…",
+	deviceSetupUpdateSuccess: "Hub service updated and restarted successfully!",
 	deviceSetupAi: "Ask AI to help deploy",
 	deviceSetupAiHint:
 		"Opens a new deployment conversation with the settings and current service environment, preserving the previous conversation. No passwords are sent and no automatic SSH is performed. AI will first confirm the environment and steps.",
@@ -4184,6 +4194,10 @@ export const en: Record<keyof typeof zh, string> = {
 	deviceSetupBusy: "An installation is already running. Wait, then reload installation status.",
 	deviceHubTitle: "Device center",
 	deviceHubSubtitle: "Connect this computer to your hub to manage devices and group tasks.",
+	deviceHubUpgradeAction: "Update Connected Hub",
+	deviceHubUpgrading: "Updating Hub service…",
+	deviceHubConfirmUpgrade: "Are you sure you want to update the connected Hub service from this client? Connection will briefly drop and reconnect.",
+	deviceHubUpgradeSuccess: "Hub service updated and reconnected successfully!",
 	localBotSyncFailed: "Saved locally, but Hub sync failed. Reconnect this device to retry.",
 	localBotSaved: "Saved. Add the Bot through group member management.",
 	localBotTitle: "Local Bots",

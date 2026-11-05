@@ -18,11 +18,12 @@ import { setTimeout as delay, setImmediate as yieldImmediate } from "node:timers
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall] [options]
+export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall|update] [options]
 Without a command, run in the foreground (Ctrl+C to stop).
 Options: --host HOST --port PORT --public-url URL --data-dir PATH
          --allow-registration[=true|false] --help
 install saves configuration, enables login autostart and starts the Hub.
+update updates the service definition with current paths and restarts the Hub.
 Other lifecycle commands use the saved configuration; status accepts --json.
 Close registration after the first account: hub restart --allow-registration=false
 Only that saved setting changes; all other settings are retained.
@@ -40,7 +41,7 @@ const optionalEnv = ["DEVICE_DOMAIN", "PATH_ACCESS", "PORTAL_PORTS"];
 export function parseHubArgs(argv, env = process.env) {
 	const args = [...argv];
 	const command = args[0] && !args[0].startsWith("-") ? args.shift() : "foreground";
-	if (!["foreground", "install", "start", "stop", "restart", "status", "uninstall"].includes(command))
+	if (!["foreground", "install", "start", "stop", "restart", "status", "uninstall", "update"].includes(command))
 		throw new Error(`Unknown Hub command: ${command}`);
 	const values = {};
 	if (command === "status" && args.length === 1 && args[0] === "--json") return { command, json: true };
@@ -138,6 +139,10 @@ export function hubServicePlan({
 				start: [["--user", "start", UNIT]],
 				stop: [["--user", "stop", UNIT]],
 				restart: [["--user", "restart", UNIT]],
+				update: [
+					["--user", "daemon-reload"],
+					["--user", "restart", UNIT],
+				],
 				status: [["--user", "show", UNIT, "--property=ActiveState,SubState,UnitFileState"]],
 				uninstall: [["--user", "disable", "--now", UNIT]],
 			},
@@ -156,6 +161,10 @@ export function hubServicePlan({
 				start: [["bootstrap", `gui/${uid}`, file]],
 				stop: [["bootout", target]],
 				restart: [
+					["bootout", target],
+					["bootstrap", `gui/${uid}`, file],
+				],
+				update: [
 					["bootout", target],
 					["bootstrap", `gui/${uid}`, file],
 				],
@@ -182,6 +191,11 @@ export function hubServicePlan({
 				stop: [["/End", "/TN", TASK]],
 				restart: [
 					["/End", "/TN", TASK],
+					["/Run", "/TN", TASK],
+				],
+				update: [
+					["/End", "/TN", TASK],
+					["/Create", "/TN", TASK, "/XML", join(root, "task.xml"), "/F"],
 					["/Run", "/TN", TASK],
 				],
 				status: [["/Query", "/TN", TASK, "/V", "/FO", "LIST"]],
@@ -499,6 +513,15 @@ export async function runHubCli(
 			);
 		} else if (!existsSync(plan.config))
 			throw new Error("Hub service is not installed. Run pi-web-ui hub install first.");
+		if (command === "update") {
+			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
+			validateSettings(settings);
+			mkdirSync(resolve(plan.file, ".."), { recursive: true });
+			atomicWrite(
+				plan.file,
+				process.platform === "win32" ? Buffer.from(`\uFEFF${plan.content}`, "utf16le") : plan.content,
+			);
+		}
 		signal?.throwIfAborted();
 		if (parsed.registration !== undefined) {
 			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
@@ -531,7 +554,7 @@ export async function runHubCli(
 			if (plan.manager === "systemctl") run(plan.manager, ["--user", "daemon-reload"]);
 			unlinkSync(plan.config);
 		}
-		if (["install", "start", "restart"].includes(command)) {
+		if (["install", "start", "restart", "update"].includes(command)) {
 			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
 			await waitForHub(settings, signal);
 		}

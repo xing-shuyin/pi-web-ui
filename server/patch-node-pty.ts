@@ -27,7 +27,8 @@
  * read-only node_modules or a different node-pty version just skips the patch
  * (the runtime console.warn filter in terminals.ts still guards the flood).
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeAtomicSync } from "./atomic-file.js";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
@@ -51,7 +52,7 @@ function patchFile(pkgDir: string, rel: string, find: string, replace: string): 
 		const src = readFileSync(file, "utf8");
 		if (src.includes(replace)) return; // already patched
 		if (!src.includes(find)) return; // unexpected content — leave alone
-		writeFileSync(file, src.replace(find, replace), "utf8");
+		writeAtomicSync(file, src.replace(find, replace));
 	} catch {
 		// best-effort — the runtime console.warn filter still guards the flood
 	}

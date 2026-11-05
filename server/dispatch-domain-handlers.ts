@@ -834,6 +834,12 @@ export function handleInteractiveResponseMessage(
 			viewerId: string,
 			...args: Parameters<NonNullable<DispatchSession["resolveToolApproval"]>>
 		) => boolean;
+		resolveGlobalQuestion?: (
+			id: string,
+			answers: { id: string; selected: string[]; custom?: string }[],
+			cancelled?: boolean,
+			cancelReason?: string,
+		) => boolean;
 		answerElsewhereQuestion?: (
 			clientId: string,
 			owner: string,
@@ -862,6 +868,10 @@ export function handleInteractiveResponseMessage(
 		case "question_answer":
 			if (clientId && service.resolveSharedQuestion?.(clientId, msg.id, msg.answers, msg.cancelled, msg.cancelReason))
 				return true;
+			// 1. 优先尝试由当前会话直接解决（若当前客户端直接持有该问卷，即使携带了旧 owner 也能直接消费，防止因 orphan 认领/过户等导致 owner 不匹配）
+			if (cs.resolveQuestion?.(msg.id, msg.answers, msg.cancelled, msg.cancelReason)) return true;
+			// 2. 全局问卷直决：无需依赖 ownerId，全局根据唯一问卷 UUID 查找命中目标会话并 resolve
+			if (service.resolveGlobalQuestion?.(msg.id, msg.answers, msg.cancelled, msg.cancelReason)) return true;
 			if (msg.owner) {
 				// 跨页作答：答案转交持有方会话（本页不持有该问卷）。
 				if (typeof service.answerElsewhereQuestion === "function" && clientId) {

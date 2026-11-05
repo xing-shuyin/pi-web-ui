@@ -1,6 +1,7 @@
 export interface DeviceCenterSetupInfo {
 	platform: string;
 	nodeVersion: string;
+	version?: string;
 	defaultPort: number;
 	defaultPublicUrl: string;
 	dataDir: string;

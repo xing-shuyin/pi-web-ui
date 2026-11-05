@@ -41,12 +41,29 @@ export function sendQuestionAnswer(msg: ClientMessage & { type: "question_answer
 
 /** 服务端确认（question_retracted）后清理。 */
 export function confirmQuestionAnswer(id: string, owner?: string): void {
-	unconfirmed.delete(keyOf(id, owner));
+	if (owner) {
+		unconfirmed.delete(keyOf(id, owner));
+		return;
+	}
+	unconfirmed.delete(id);
+	// 服务端回包未带 owner 时兜底：清理以该 id 结尾的条目
+	for (const key of unconfirmed.keys()) {
+		if (key.endsWith(`\u0000${id}`)) {
+			unconfirmed.delete(key);
+		}
+	}
 }
 
 /** 该问卷是否已有待投答案（有 → 不要再从快照恢复成弹窗）。 */
 export function hasUnconfirmedAnswer(id: string, owner?: string): boolean {
-	return unconfirmed.has(keyOf(id, owner));
+	if (unconfirmed.has(keyOf(id, owner))) return true;
+	// 未指定 owner 时兜底检查：是否有任意持有方登记过该 id 的待投答案
+	if (!owner) {
+		for (const key of unconfirmed.keys()) {
+			if (key === id || key.endsWith(`\u0000${id}`)) return true;
+		}
+	}
+	return false;
 }
 
 /** (重)连后重投全部未确认答案；幂等，服务端对已 settle 的 id 静默忽略。 */

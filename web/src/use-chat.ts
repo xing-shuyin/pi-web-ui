@@ -1246,11 +1246,21 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "engines_status":
 			return { ...state, engines: action.engines };
 		case "sessions": {
-			const targetCwd = action.cwd;
+			const targetCwd = action.cwd ?? (action as any).targetCwd;
 			const isCurrent = !targetCwd || normalizeSessionPathKey(targetCwd) === normalizeSessionPathKey(state.state?.cwd);
 			if (isCurrent) {
 				writeCachedSessions(state.state?.cwd, action.sessions, state.engine);
-				return { ...state, sessions: action.sessions };
+				const normCurrent = normalizeSessionPathKey(state.state?.cwd);
+				return {
+					...state,
+					sessions: action.sessions,
+					projectSessions: normCurrent
+						? {
+								...(state.projectSessions ?? {}),
+								[normCurrent]: action.sessions,
+							}
+						: state.projectSessions,
+				};
 			}
 			writeCachedSessions(targetCwd, action.sessions, state.engine);
 			const normTarget = normalizeSessionPathKey(targetCwd);
@@ -1269,9 +1279,18 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				elsewhere: action.elsewhere ?? [],
 				activeConversationId: action.activeId,
 			};
-		case "projects":
-			writeCachedProjects(action.projects);
-			return { ...state, projects: action.projects };
+		case "projects": {
+			let nextProjects = action.projects;
+			const curCwd = state.state?.cwd;
+			if (curCwd && curCwd !== "@root" && curCwd !== "machine-root") {
+				const curNorm = normalizeSessionPathKey(curCwd);
+				if (!nextProjects.some((p) => normalizeSessionPathKey(p.path) === curNorm)) {
+					nextProjects = [{ path: curCwd, lastUsed: Date.now() }, ...nextProjects];
+				}
+			}
+			writeCachedProjects(nextProjects);
+			return { ...state, projects: nextProjects };
+		}
 		case "sandbox_diff":
 			return { ...state, sandboxDiff: action.diff };
 		case "files":
@@ -1362,7 +1381,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "question_queue_answered":
 			return {
 				...state,
-				questionQueue: state.questionQueue?.filter((q) => q.id !== action.id || q.owner !== action.owner) ?? null,
+				questionQueue: state.questionQueue?.filter((q) => q.id !== action.id) ?? null,
 			};
 		case "commands":
 			return {
@@ -2299,28 +2318,23 @@ export function useChat() {
 				dispatch({ type: "global_question", id: msg.id, owner: msg.owner });
 			} else if (msg.type === "question_answer") {
 				dispatch({ type: "question_queue_answered", id: msg.id, owner: msg.owner });
+				// 记住这个 id：快照恢复时跳过它（回答消息与快照在途时会交错，服务端
+				// 删除 pending 之前生成的快照仍带着这张问卷）。
+				answeredQuestionsRef.current.add(msg.id);
+				if (answeredQuestionsRef.current.size > 64) {
+					const oldest = answeredQuestionsRef.current.values().next().value;
+					if (oldest !== undefined) answeredQuestionsRef.current.delete(oldest);
+				}
 				if (msg.owner) {
-					// Queued pi requests use stable UUIDs, including the local pending mirror.
-					if (
-						chatApi.current.chat.question?.id === msg.id &&
-						chatApi.current.chat.questionQueue?.some((q) => q.id === msg.id && q.owner === msg.owner)
-					) {
-						answeredQuestionsRef.current.add(msg.id);
+					// 无论来源，当前若正显示该问卷立即收起
+					if (chatApi.current.chat.question?.id === msg.id) {
 						dispatch({ type: "question", question: null });
 					}
-					// 跨页作答：只收跨页对话框。id 是对方会话作用域，绝不进 answered
-					// 集合 —— 否则会误杀本会话未来同号问卷（两边计数器都从 q1 起）。
+					// 跨页作答：只收跨页对话框。
 					const cur = chatApi.current.chat.remoteQuestion;
 					if (cur && cur.id === msg.id && cur.owner === msg.owner)
 						dispatch({ type: "remote_question", question: null });
 				} else {
-					// 记住这个 id：快照恢复时跳过它（回答消息与快照在途时会交错，服务端
-					// 删除 pending 之前生成的快照仍带着这张问卷）。
-					answeredQuestionsRef.current.add(msg.id);
-					if (answeredQuestionsRef.current.size > 64) {
-						const oldest = answeredQuestionsRef.current.values().next().value;
-						if (oldest !== undefined) answeredQuestionsRef.current.delete(oldest);
-					}
 					questionSourceRef.current = "live";
 					dispatch({ type: "question", question: null });
 				}
@@ -2589,7 +2603,7 @@ export function useChat() {
 					dispatch({ type: "engines_status", engines: msg.engines });
 					break;
 				case "sessions":
-					dispatch({ type: "sessions", sessions: msg.sessions });
+					dispatch({ type: "sessions", sessions: msg.sessions, cwd: (msg as any).cwd });
 					break;
 				case "conversations":
 					dispatch({
@@ -2883,6 +2897,8 @@ export function useChat() {
 					// 服务端 settle 即投递确认：从「未确认答案」登记簿里移除（见
 					// question-answer-relay.ts）。否则重连时会反复重投。
 					confirmQuestionAnswer(msg.id, msg.owner);
+					// 队列中的问卷被撤回时，立即从 questionQueue 中移除
+					dispatch({ type: "question_queue_answered", id: msg.id, owner: msg.owner });
 					if (msg.global) {
 						dispatch({ type: "global_question", id: msg.id, owner: msg.owner });
 						break;
@@ -3378,6 +3394,15 @@ export function useChat() {
 		if (lastCwdRef.current !== cwd) {
 			lastCwdRef.current = cwd;
 			writeLastCwd(cwd);
+			if (cwd && cwd !== "@root" && cwd !== "machine-root") {
+				const cached = readCachedProjects();
+				const normTarget = normalizeSessionPathKey(cwd);
+				const next = [
+					{ path: cwd, lastUsed: Date.now() },
+					...cached.filter((p) => normalizeSessionPathKey(p.path) !== normTarget),
+				];
+				writeCachedProjects(next);
+			}
 		}
 	}, [chat.state?.cwd, send]);
 

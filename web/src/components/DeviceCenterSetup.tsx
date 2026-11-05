@@ -51,6 +51,8 @@ export function DeviceCenterSetup({
 	});
 	const remoteInput = remoteHubSetup(remote);
 	const [busy, setBusy] = useState(false);
+	const [updating, setUpdating] = useState(false);
+	const [updateResult, setUpdateResult] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [loaded, setLoaded] = useState(false);
 	const [metadataError, setMetadataError] = useState(false);
@@ -154,6 +156,43 @@ export function DeviceCenterSetup({
 		} finally {
 			locked.current = false;
 			if (!request.signal.aborted) setBusy(false);
+		}
+	};
+	const updateHub = async () => {
+		if (locked.current || !local || !info || !loaded || metadataError || info.busy || busy || updating)
+			return;
+		locked.current = true;
+		controller.current?.abort();
+		setUpdating(true);
+		setError(false);
+		setDetail("");
+		setUpdateResult(null);
+		const request = new AbortController();
+		controller.current = request;
+		try {
+			const response = await fetch(withToken(appUrl("/api/device-center/setup/update")), {
+				credentials: "same-origin",
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				signal: request.signal,
+			});
+			if (!response.ok) {
+				const failure = await response.json().catch(() => ({}));
+				throw new Error(typeof failure.error === "string" ? failure.error.slice(0, 4096) : `HTTP ${response.status}`);
+			}
+			const data = (await response.json()) as { success: boolean; output: string };
+			if (!request.signal.aborted) {
+				setUpdateResult(data.output || t("deviceSetupUpdateSuccess"));
+				await load();
+			}
+		} catch (cause) {
+			if (!request.signal.aborted) {
+				setError(true);
+				setDetail(cause instanceof Error ? cause.message.slice(0, 4096) : "");
+			}
+		} finally {
+			locked.current = false;
+			if (!request.signal.aborted) setUpdating(false);
 		}
 	};
 	const installation = info?.installation;
@@ -276,13 +315,32 @@ export function DeviceCenterSetup({
 												<button className="dc-button" onClick={() => onConnect(installation.publicUrl!)}>
 													{t("deviceSetupPair")}
 												</button>
+												{local && (
+													<button
+														className="dc-button"
+														disabled={busy || updating}
+														onClick={() => void updateHub()}
+													>
+														{t(updating ? "deviceSetupUpdating" : "deviceSetupUpdate")}
+													</button>
+												)}
 											</div>
 										) : (
 											<>
 												<p>{t("deviceSetupRecovery")}</p>
 												<pre className="dc-setup-output">{"pi-web-ui hub status --json\npi-web-ui hub --help"}</pre>
+												{local && (
+													<button
+														className="dc-button is-primary"
+														disabled={busy || updating}
+														onClick={() => void updateHub()}
+													>
+														{t(updating ? "deviceSetupUpdating" : "deviceSetupUpdate")}
+													</button>
+												)}
 											</>
 										)}
+										{updateResult && <pre className="dc-setup-output">{updateResult.slice(0, 16000)}</pre>}
 									</div>
 								)}
 								{info?.busy && <p role="status">{t("deviceSetupBusy")}</p>}

@@ -213,4 +213,81 @@ describe("local device enrollment", () => {
 		expect(cancelData.cancelled).toBe(true);
 		expect(cancelledTask).toBe("wait-1");
 	});
+
+	it("supports upgrading connected Hub service from client", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "device-hub-client-upg-"));
+		cleanup.push(() => rm(dir, { recursive: true, force: true }));
+		const app = express();
+		app.use(express.json());
+
+		// 1. Unpaired returns 400
+		const localUnpaired = await installLocalDeviceCenter({
+			app,
+			dataDir: dir,
+			connect: () => ({ close() {} }),
+		});
+		cleanup.push(() => localUnpaired.close());
+		const base = await listen(createServer(app));
+
+		const unpRes = await fetch(`${base}/api/device-center/upgrade-hub`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: base },
+			body: JSON.stringify({}),
+		});
+		expect(unpRes.status).toBe(400);
+		expect(await unpRes.json()).toEqual({ error: "Device hub not paired" });
+		await localUnpaired.close();
+
+		// 2. Mock Hub Server
+		let upgradeHeaders: Record<string, string | string[] | undefined> = {};
+		const mockHub = createServer((req, res) => {
+			if (req.url === "/api/system/upgrade" && req.method === "POST") {
+				upgradeHeaders = req.headers;
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ ok: true, message: "Hub upgrade initiated" }));
+				return;
+			}
+			if (req.url === "/health") {
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ service: "pi-device-hub", status: "ok" }));
+				return;
+			}
+			res.writeHead(404).end();
+		});
+		const hubBase = await listen(mockHub);
+
+		// Seed paired config
+		await writeFile(
+			join(dir, "device-center.json"),
+			JSON.stringify({
+				deviceId: "dev-test-1",
+				credential: "cred-secret-123",
+				name: "MyClient",
+				allowExecution: true,
+				hubUrl: hubBase,
+			}),
+		);
+
+		const app2 = express();
+		app2.use(express.json());
+		const localPaired = await installLocalDeviceCenter({
+			app: app2,
+			dataDir: dir,
+			connect: () => ({ close() {}, isConnected: () => true }),
+		});
+		cleanup.push(() => localPaired.close());
+		const base2 = await listen(createServer(app2));
+
+		const upgRes = await fetch(`${base2}/api/device-center/upgrade-hub`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: base2 },
+			body: JSON.stringify({}),
+		});
+		expect(upgRes.status).toBe(200);
+		const upgData = await upgRes.json();
+		expect(upgData.ok).toBe(true);
+		expect(upgData.healthy).toBe(true);
+		expect(upgradeHeaders["x-device-id"]).toBe("dev-test-1");
+		expect(upgradeHeaders["authorization"]).toBe("Bearer cred-secret-123");
+	});
 });

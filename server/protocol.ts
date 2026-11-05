@@ -3686,6 +3686,8 @@ export interface ConversationSummary {
 		messageId?: string;
 		title?: string;
 	};
+	/** 会话最后活跃或文件修改时间戳（毫秒）。 */
+	modified?: number;
 }
 
 /** A conversation open on ANOTHER client (different tab / device) —

@@ -376,4 +376,97 @@ describe("Universal Agent 底座体系单测", () => {
 			await service.disposeAll();
 		});
 	});
+
+	describe("6. ClaudeCodeDriver 事件流与工具调用解析", () => {
+		it("正确解析 assistant 消息中的 thinking 与 tool_use，以及 user 消息中的 tool_result", () => {
+			const driver = new ClaudeCodeDriver(tempDir);
+			const starts: Array<{ id: string; name: string; input: unknown }> = [];
+			const ends: Array<{ id: string; result: unknown }> = [];
+			const deltas: string[] = [];
+			const thinkings: string[] = [];
+
+			const sink = {
+				onTextDelta: (delta: string) => deltas.push(delta),
+				onThinkingDelta: (th: string) => thinkings.push(th),
+				onToolStart: (id: string, name: string, input: unknown) => starts.push({ id, name, input }),
+				onToolEnd: (id: string, result: unknown) => ends.push({ id, result }),
+				onTurnComplete: () => {},
+				onError: () => {},
+			};
+
+			const activeToolJson = new Map<string, string>();
+
+			// 1. 思考块
+			(driver as any).handleClaudeEvent(
+				{
+					type: "assistant",
+					message: {
+						role: "assistant",
+						content: [{ type: "thinking", thinking: "正在构思方案..." }],
+					},
+				},
+				sink,
+				activeToolJson,
+			);
+			expect(thinkings).toEqual(["正在构思方案..."]);
+
+			// 2. 工具调用（assistant 完整消息结构，防死锁核心修复）
+			(driver as any).handleClaudeEvent(
+				{
+					type: "assistant",
+					message: {
+						role: "assistant",
+						content: [{ type: "tool_use", id: "call_read_1", name: "Read", input: { file_path: "a.ts" } }],
+					},
+				},
+				sink,
+				activeToolJson,
+			);
+			expect(starts).toHaveLength(1);
+			expect(starts[0]).toEqual({ id: "call_read_1", name: "Read", input: { file_path: "a.ts" } });
+
+			// 重复同名 tool_use 不应二次发射
+			(driver as any).handleClaudeEvent(
+				{
+					type: "assistant",
+					message: {
+						role: "assistant",
+						content: [{ type: "tool_use", id: "call_read_1", name: "Read", input: { file_path: "a.ts" } }],
+					},
+				},
+				sink,
+				activeToolJson,
+			);
+			expect(starts).toHaveLength(1);
+
+			// 3. 工具执行反馈（user role 的 tool_result）
+			(driver as any).handleClaudeEvent(
+				{
+					type: "user",
+					message: {
+						role: "user",
+						content: [{ type: "tool_result", tool_use_id: "call_read_1", content: "file content" }],
+					},
+				},
+				sink,
+				activeToolJson,
+			);
+			expect(ends).toHaveLength(1);
+			expect(ends[0]).toEqual({ id: "call_read_1", result: { output: "file content" } });
+
+			// 4. stream_event 嵌套事件解包支持
+			(driver as any).handleClaudeEvent(
+				{
+					type: "stream_event",
+					event: {
+						type: "content_block_delta",
+						delta: { type: "text_delta", text: "最终结果" },
+					},
+				},
+				sink,
+				activeToolJson,
+			);
+			expect(deltas).toEqual(["最终结果"]);
+		});
+	});
 });

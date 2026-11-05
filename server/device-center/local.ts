@@ -296,6 +296,47 @@ export async function installLocalDeviceCenter(options: Options) {
 			connected: connection?.isConnected?.() ?? false,
 		});
 	});
+	options.app.post("/api/device-center/upgrade-hub", async (_req, res) => {
+		const captured = activeConfig();
+		if (!captured) return res.status(400).json({ error: "Device hub not paired" });
+		try {
+			const hubUrl = captured.hubUrl;
+			const forwardUrl = `${hubUrl}/api/system/upgrade`;
+			const response = await fetch(forwardUrl, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-device-id": captured.deviceId,
+					authorization: `Bearer ${captured.credential}`,
+				},
+				signal: AbortSignal.timeout(15_000),
+			});
+			if (!response.ok) {
+				const errData = (await response.json().catch(() => ({}))) as { error?: string };
+				throw new Error(errData.error || `Hub returned HTTP ${response.status}`);
+			}
+			const deadline = Date.now() + 60_000;
+			let healthy = false;
+			await new Promise((r) => setTimeout(r, 1500));
+			while (Date.now() < deadline) {
+				try {
+					const probe = await fetch(`${hubUrl}/health`, { signal: AbortSignal.timeout(2000) });
+					if (probe.ok) {
+						const data = (await probe.json().catch(() => ({}))) as { status?: string };
+						if (data && data.status === "ok") {
+							healthy = true;
+							break;
+						}
+					}
+				} catch {}
+				await new Promise((r) => setTimeout(r, 1500));
+			}
+			await reconnect().catch(() => {});
+			res.json({ ok: true, healthy, message: healthy ? "Hub updated successfully" : "Hub update triggered" });
+		} catch (error: any) {
+			res.status(500).json({ error: error?.message || "Failed to upgrade hub" });
+		}
+	});
 	options.app.get("/api/device-center/execution-settings", (_req, res) => {
 		try {
 			const settings = loadExecutionSettings(options.dataDir);
