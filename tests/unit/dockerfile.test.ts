@@ -8,29 +8,19 @@ const root = join(here, "..", "..");
 const dockerfilePath = join(root, "Dockerfile");
 const dockerfile = readFileSync(dockerfilePath, "utf8");
 
-describe("Dockerfile structure and runtime guard", () => {
-	it("uses relative or absolute path for --import in CMD to prevent bare package resolution (issue #837)", () => {
-		// Bare specifiers like "dist/server/..." cause Node ESM loader to treat "dist" as an npm package:
-		// Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dist' imported from /app/
-		const cmdMatch = dockerfile.match(/CMD\s*\[(.*)\]/s);
-		expect(cmdMatch).toBeTruthy();
-		const cmdContent = cmdMatch![1];
-		expect(cmdContent).toMatch(/--import['"],\s*['"]\.\//);
-		expect(cmdContent).not.toMatch(/--import['"],\s*['"]dist\//);
+describe("Dockerfile structure and hermetic packaging guard", () => {
+	it("uses hermetic npm pack in build stage as the SSOT delivery artifact", () => {
+		expect(dockerfile).toMatch(/npm pack\s+--pack-destination/);
 	});
 
-	it("copies package.json and required runtime assets to /app in the runtime stage", () => {
-		const stages = dockerfile.split(/FROM\s+/i);
-		const runtimeStage = stages[stages.length - 1];
+	it("installs packaged tarball in installer stage and copies /usr/local to runtime", () => {
+		expect(dockerfile).toMatch(/npm install -g \/tmp\/app\.tgz/);
+		expect(dockerfile).toMatch(/COPY --from=installer \/usr\/local \/usr\/local/);
+	});
 
-		// package.json is required for ESM module detection and getPkgRoot() resolution
-		expect(runtimeStage).toMatch(/COPY.*package\.json/);
-
-		// Core assets required by server endpoints (/api/themes, plugin SDK, CLI installer, etc.)
-		expect(runtimeStage).toMatch(/COPY.*themes/);
-		expect(runtimeStage).toMatch(/COPY.*bin/);
-		expect(runtimeStage).toMatch(/COPY.*plugin-sdk/);
-		expect(runtimeStage).toMatch(/COPY.*plugins/);
+	it("uses standard global CLI ENTRYPOINT and --no-browser CMD (no fragile relative paths)", () => {
+		expect(dockerfile).toMatch(/ENTRYPOINT\s*\["pi-web-ui"\]/);
+		expect(dockerfile).toMatch(/CMD\s*\["--no-browser"\]/);
 	});
 
 	it("initializes data directory permissions before USER node to avoid EACCES", () => {

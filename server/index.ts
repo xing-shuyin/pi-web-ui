@@ -2555,6 +2555,14 @@ const scheduler = new SchedulerStore(DATA_DIR, {
 								`定时任务「${task.name}」原对话不在、同项目也无存活对话，已转后台执行（无头）。报告在后台任务面板的调度历史中查看。`,
 								`Scheduled task "${task.name}" found no live conversation and runs headless; see its report in the background-tasks panel history.`,
 							);
+							// 周期任务解绑已失效对话（issue #836），转为标准无头模式，避免每轮触发重复探测与广播警告
+							if (!task.oneShot) {
+								try {
+									scheduler.rebind(task.id, { conversationId: "", sessionFile: "" });
+								} catch {
+									// 解绑失败不影响本次无头执行
+								}
+							}
 							result = await runHeadless();
 						}
 					} else {
