@@ -2543,7 +2543,7 @@ export const LeftPanel = memo(function LeftPanel({
 												>
 													<button
 														type="button"
-														className={`lp-project-header-item ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
+														className={`project-item lp-project-header-item ${switching ? "switching" : ""}${hasRunning ? " has-running" : ""}${hasUnread ? " has-unread" : ""}`}
 														title={
 															sbx?.sourcePath
 																? `${dispName}\n${t("sandboxSourceLabel")}: ${sbx.sourcePath}\n${p.path}`

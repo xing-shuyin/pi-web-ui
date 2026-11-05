@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { THINKING_VALUES } from "../../web/src/thinking-levels.js";
 import { PROMPT_TOKENS } from "../../server/prompt-composer.js";
@@ -51,7 +51,8 @@ function collectFiles(dir: string, out: string[] = []): string[] {
 	}
 	for (const e of entries) {
 		const p = join(dir, e.name);
-		const norm = p.replace(/\\/g, "/");
+		// Exclude paths within this checkout, not a managed worktree's parent directory.
+		const norm = `/${relative(ROOT, p).replace(/\\/g, "/")}`;
 		if (SKIP.some((s) => norm.includes(s))) continue;
 		if (e.isDirectory()) collectFiles(p, out);
 		else if (/\.(tsx?|mjs|js|json)$/.test(e.name)) out.push(p);
