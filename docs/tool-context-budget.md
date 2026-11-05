@@ -27,7 +27,9 @@
 
 摘要生成后、持久化前确定性附加证据索引，最多列 32 个稳定引用，完整列表可通过 `read({path:"context-evidence:index"})` 获取。索引只含文件名，不注入正文，避免压缩时模型看不到请求投影中的引用而遗忘证据。
 
-SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 `installCompactionInstructions` 和 `installEvidenceToolHooks` 的私有接口适配器，检查结构与参数个数，幂等安装；SDK 不兼容时保留默认行为。这些适配器需要随 SDK 升级回归验证。证据目录仍需随转录迁移，旧绝对路径不自动改写。
+SDK 没有自动压缩指令及权限前别名解析的公开接口，分别用 `installCompactionInstructions` 和 `installEvidenceToolHooks` 的私有接口适配器，检查结构与参数个数，幂等安装；SDK 不兼容时保留默认行为。这些适配器需要随 SDK 升级回归验证。
+
+软上限自动压缩的自定义指令可通过设置项 `autoCompactionInstructions` 传入（空 = 不传，保持 SDK 默认摘要）：扩展可借此让 `session_before_compact` 钩子接管自动压缩的摘要生成，无需修改宿主源码。只影响自动压缩；手动 `/compact` 与 AI 的 `compact_context` 仍各自传自己的指令。证据目录仍需随转录迁移，旧绝对路径不自动改写。
 
 验证：`tests/unit/request-context.test.ts`、`context-evidence.test.ts`、`compaction-instructions.test.ts`、`evidence-tool-hooks.test.ts`、`context-integration.test.ts`。
 

@@ -9318,7 +9318,11 @@ export class ClientSession {
 			const currentTokens = this.getEffectiveContextTokens(conv);
 			if (currentTokens < cap) return false;
 
-			await session.compact();
+			// 自动压缩也可携带自定义指令：扩展可用它接管摘要生成方式
+			// （例如传暗号让 session_before_compact 钩子返回自建摘要）。
+			// 手动 /compact 与 AI 的 compact_context 各自传自己的指令，不受影响。
+			const instructions = this.settingsSvc.current.autoCompactionInstructions?.trim() || undefined;
+			await session.compact(instructions);
 			return true;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);

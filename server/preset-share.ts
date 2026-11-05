@@ -350,6 +350,7 @@ const PRESET_FIELD_KINDS = {
 	retryMaxAttempts: "retry",
 	softCapTokens: "softCap",
 	softCapByModel: "softCapByModel",
+	autoCompactionInstructions: "text",
 	subagentDefaultModel: "nullableString",
 	subagentMaxDepth: "number",
 	subagentAutoWakeMaxTurns: "number",

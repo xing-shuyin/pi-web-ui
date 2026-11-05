@@ -11,7 +11,11 @@ import { normalizeUploadMaxMb } from "./payload-limits.js";
 import * as fsPromises from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
-import { normalizeSoftCapByModel, normalizeSoftCapTokens } from "./soft-cap.js";
+import {
+	normalizeAutoCompactionInstructions,
+	normalizeSoftCapByModel,
+	normalizeSoftCapTokens,
+} from "./soft-cap.js";
 import { deriveLegacy, legacyToDisabled, normalizeDisabledAgentTools } from "./tool-manager.js";
 import { normalizeToolPromptOverrides, type ToolPromptOverrideMap } from "./tool-prompt-overrides.js";
 import { UI_SLOTS } from "./plugin-ui-slots.js";
@@ -510,6 +514,11 @@ export interface ClientSettings {
 	softCapTokens: number;
 	/** 按模型覆盖软上限（key = "provider/id"，value > 0 才生效，缺省用全局）。 */
 	softCapByModel: Record<string, number>;
+	/** 软上限自动压缩时传给 SDK `session.compact()` 的自定义指令（空 = 不传，保持 SDK 默认摘要）。
+	 *  只影响**自动**压缩；手动 `/compact` 与 AI 的 `compact_context` 不受影响。
+	 *  扩展可用它接管自动压缩的摘要生成（例如传暗号，让 `session_before_compact`
+	 *  钩子返回自建摘要），从而无需修改 pi-web-ui 源码。 */
+	autoCompactionInstructions?: string;
 	/** 输入框上方的快捷短语（点击即发送）。纯 UI 偏好，不进预设、不需 reload。 */
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
@@ -1309,6 +1318,7 @@ export class ClientStateStore {
 			retryMaxAttempts: normalizeRetryMaxAttempts(stored?.retryMaxAttempts),
 			softCapTokens: normalizeSoftCapTokens(stored?.softCapTokens),
 			softCapByModel: normalizeSoftCapByModel(stored?.softCapByModel),
+			autoCompactionInstructions: normalizeAutoCompactionInstructions(stored?.autoCompactionInstructions),
 			quickPhrases: stored?.quickPhrases ?? [],
 			quickPhrasesEnabled: stored?.quickPhrasesEnabled ?? true,
 			minimalNewChat: stored?.minimalNewChat ?? false,
@@ -1426,6 +1436,9 @@ export class ClientStateStore {
 			),
 			softCapTokens: normalizeSoftCapTokens(settings.softCapTokens ?? cur.softCapTokens ?? 0),
 			softCapByModel: normalizeSoftCapByModel(settings.softCapByModel ?? cur.softCapByModel ?? {}),
+			autoCompactionInstructions: normalizeAutoCompactionInstructions(
+				settings.autoCompactionInstructions ?? cur.autoCompactionInstructions ?? "",
+			),
 			visionBridgePromptMode: settings.visionBridgePromptMode ?? cur.visionBridgePromptMode ?? "append",
 			visionBridgePrompt: settings.visionBridgePrompt ?? cur.visionBridgePrompt ?? "",
 			scmCommitMsgPromptMode: settings.scmCommitMsgPromptMode ?? cur.scmCommitMsgPromptMode ?? "append",
@@ -1484,6 +1497,8 @@ export class ClientStateStore {
 				preset.subagentAutoWakeMaxTurns = normalizeSubagentAutoWakeMaxTurns(p.subagentAutoWakeMaxTurns);
 			}
 			if (Object.hasOwn(p, "softCapByModel")) preset.softCapByModel = normalizeSoftCapByModel(p.softCapByModel);
+			if (Object.hasOwn(p, "autoCompactionInstructions"))
+				preset.autoCompactionInstructions = normalizeAutoCompactionInstructions(p.autoCompactionInstructions);
 			return preset;
 		});
 	}

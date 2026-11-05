@@ -1835,6 +1835,8 @@ export type ClientMessage =
 			 *  即时生效（compaction reserveTokens 覆盖），无需 reload。 */
 			softCapTokens?: number;
 			softCapByModel?: Record<string, number>;
+			/** 自动压缩附加指令（空 = 不传，保持 SDK 默认摘要）。只影响软上限自动压缩。 */
+			autoCompactionInstructions?: string;
 			/** 内置标记总开关 + 按 marker 禁用（markersEnabled=false 时全部停用）。 */
 			markersEnabled?: boolean;
 			disabledMarkers?: string[];
@@ -4174,6 +4176,8 @@ export interface UiSettingsState {
 	softCapTokens: number;
 	/** 按模型覆盖软上限（key = "provider/id"）。 */
 	softCapByModel: Record<string, number>;
+	/** 自动压缩附加指令（空 = 不传，保持 SDK 默认摘要；手动 /compact 不受影响）。 */
+	autoCompactionInstructions: string;
 	/** 输入框上方的快捷短语（点击即发送；空 = 不显示）。 */
 	quickPhrases: string[];
 	/** 快捷短语总开关（默认开；关 = 输入框上方不显示）。 */

@@ -76,6 +76,7 @@ export const PRESET_FIELD_GROUPS = {
 		"retryMaxAttempts",
 		"softCapTokens",
 		"softCapByModel",
+		"autoCompactionInstructions",
 		"subagentDefaultModel",
 		"subagentMaxDepth",
 		"subagentAutoWakeMaxTurns",
@@ -422,6 +423,12 @@ export const PRESET_FIELD_META = {
 		labelEn: "Per-Model Soft-Cap",
 		hintZh: "针对不同模型单独设置的上下文压缩阈值",
 		hintEn: "Custom soft-cap thresholds configured per model",
+	},
+	autoCompactionInstructions: {
+		labelZh: "自动压缩附加指令",
+		labelEn: "Auto-Compaction Instructions",
+		hintZh: "软上限自动压缩时传给 SDK 的自定义指令（留空 = SDK 默认摘要；不影响手动 /compact）",
+		hintEn: "Custom instructions passed to automatic soft-cap compaction (empty = SDK default; does not affect manual /compact)",
 	},
 	subagentDefaultModel: {
 		labelZh: "子代理默认模型",
