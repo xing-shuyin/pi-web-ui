@@ -278,7 +278,6 @@
 		"takeoverConfirm": "このページに引き継いでよろしいですか？",
 		"takeoverHasQuestion": "回答待ちの質問あり — クリックでここで回答",
 		"waitingQuestionBadge": "回答待ちの質問 — クリックで表示",
-		"waitingQuestionShort": "Pending answer",
 		"tabRunning": "Running",
 		"completedUnreadBadge": "Completed (unread)",
 		"completedUnreadTooltip": "Run finished, not yet viewed",

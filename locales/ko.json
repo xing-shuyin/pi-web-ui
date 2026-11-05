@@ -278,7 +278,6 @@
 		"takeoverConfirm": "이 페이지로 가져올까요?",
 		"takeoverHasQuestion": "대기 중인 질문 있음 — 클릭하여 여기서 답변",
 		"waitingQuestionBadge": "대기 중인 질문 — 클릭하여 보기",
-		"waitingQuestionShort": "Pending answer",
 		"tabRunning": "Running",
 		"completedUnreadBadge": "Completed (unread)",
 		"completedUnreadTooltip": "Run finished, not yet viewed",
