@@ -36,16 +36,79 @@
  *   });
  *
  * 零依赖、纯 ESM，直接拷走就能用（renderer 插件的裸 ESM 约束同样满足）。
+ *
+ * 硬性约束：本文件（含末尾 `export *` 的 client-utils.mjs）**不得静态 import 任何 `node:`
+ * 内置模块**。脚手架把同一份 index.mjs 拷进 `<插件>/client/sdk/`，而宿主只暴露
+ * `/plugins/<id>/client/*`：浏览器解到 `node:path` 会直接拒收模块 ——
+ *   Failed to fetch dynamically imported module /plugins/<id>/client/entry.mjs
+ * 症状是整个插件视图空白，服务端却 `active:true`、日志一切正常（客户端 bundle 一行都没跑）。
+ * 守卫：tests/unit/plugin-sdk-browser-safe.test.ts。真要 node 能力，在函数体内
+ * `await import("node:…")`（调用方天然在服务端），或把该工具挪进只在服务端加载的模块。
  */
 
-import { resolve, sep } from "node:path";
+/* ── 零依赖路径解析（浏览器可 import）────────────────────────────────────────
+   只服务 createMockHost().resolveInWorkspace：单测里模拟「工作区内放行 / 越界 403」。
+   覆盖 POSIX 绝对路径、Windows 盘符与 UNC，语义对齐 path.resolve（`.`/`..` 归一、
+   越过根不逃逸、保持根风格的分隔符）。 */
+const WIN32_ABS = /^[A-Za-z]:[\\/]/;
+const UNC_ABS = /^\\\\[^\\/]/;
+
+function isAbsolutePath(p) {
+	return p.startsWith("/") || p.startsWith("\\") || WIN32_ABS.test(p);
+}
+
+/** 根风格：POSIX / Windows 盘符 / UNC，决定输出与比较用的分隔符。 */
+function pathStyle(p) {
+	if (UNC_ABS.test(p)) return "unc";
+	return WIN32_ABS.test(p) ? "win32" : "posix";
+}
+
+function pathSep(style) {
+	return style === "posix" ? "/" : "\\";
+}
+
+/** `path.resolve(cwd, target)` 的零依赖版；根风格决定返回串的分隔符。 */
+function resolvePath(cwd, target) {
+	const t = String(target ?? "");
+	const base = isAbsolutePath(t) ? t : String(cwd ?? "");
+	const style = pathStyle(base);
+	const sepOut = pathSep(style);
+	// 分隔符逐字转 "/"（不能 [\\/]+ 合并：那会把 UNC 开头的 "\\\\" 吹成单个 "/"，根就认不出了）；
+	// 多余的连续斜杠由下面的分段循环自然吃掉。
+	const joined = (isAbsolutePath(t) ? t : `${base}/${t}`).replace(/\\/g, "/");
+	let root = "";
+	let rest = joined;
+	if (style === "unc") {
+		const m = joined.match(/^\/\/[^/]+\/[^/]+/);
+		root = m ? m[0] : "//";
+		rest = joined.slice(root.length);
+	} else if (style === "win32") {
+		root = joined.slice(0, 2);
+		rest = joined.slice(2);
+	} else if (joined.startsWith("/")) {
+		root = "/";
+	}
+	const segs = [];
+	for (const seg of rest.split("/")) {
+		if (!seg || seg === ".") continue;
+		if (seg === "..") {
+			if (segs.length) segs.pop();
+			continue;
+		}
+		segs.push(seg);
+	}
+	const body = segs.join(sepOut);
+	if (style === "unc") return `${root.replace(/\//g, "\\")}${body ? sepOut + body : ""}`;
+	if (style === "win32") return root + sepOut + body;
+	return root === "/" ? `/${body}` : body;
+}
 
 /**
  * SDK 版本（单源：与 plugin-sdk/package.json 的 version 保持一致，
  * tests/unit/plugin-sdk-mock.test.ts 锁定）。脚手架拷贝 sdk/index.mjs 时连版本号
  * 一起带走；已装插件用 `pi-web-ui plugin upgrade-sdk` 刷新拷贝。
  */
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.0";
 
 /** 服务端入口校验 + 原样返回（拼错 activate / 忘写 deactivate 在加载期就报错）。 */
 export function definePlugin(def) {
@@ -529,9 +592,9 @@ export function createMockHost(overrides) {
 		resolveInWorkspace: (relOrAbsPath) => {
 			record("resolveInWorkspace", [relOrAbsPath]);
 			const cwdValue = typeof overrides.cwd === "string" ? overrides.cwd : "/mock-workspace";
-			const target = resolve(cwdValue, String(relOrAbsPath ?? ""));
-			const root = resolve(cwdValue);
-			if (target !== root && !target.startsWith(root + sep)) {
+			const target = resolvePath(cwdValue, String(relOrAbsPath ?? ""));
+			const root = resolvePath(cwdValue, ".");
+			if (target !== root && !target.startsWith(root + pathSep(pathStyle(root)))) {
 				const err = new Error("路径超出工作区范围");
 				err.statusCode = 403;
 				throw err;

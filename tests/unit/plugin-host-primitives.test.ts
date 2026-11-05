@@ -35,6 +35,42 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 		}
 	});
 
+	// mock 的 resolveInWorkspace 用零依赖解析实现（SDK 得能在浏览器 import，不能顶格 import
+	// node:path）——这组断言把重写的解析器钉在 node:path 的语义上。
+	it("mock 的 resolveInWorkspace 与 node:path resolve 语义一致", () => {
+		const inside = ["a.txt", "./a.txt", "src/index.ts", "deep/nested/x.md", "a/../b.txt", "sub/./../b.txt", "sub/", ""];
+		const escapes = ["..", "../../..", "../../secret.txt", "/etc/passwd", "//etc/passwd", "/workspace-2/x.txt"];
+		for (const root of ["/workspace", "/workspace/", resolve(tmpdir(), "pi-parity")]) {
+			const host = createMockHost({ cwd: root });
+			for (const c of inside) {
+				expect(host.resolveInWorkspace(c)).toBe(resolve(root, c));
+			}
+			expect(host.resolveInWorkspace(".")).toBe(resolve(root));
+			for (const c of escapes) {
+				expect(() => host.resolveInWorkspace(c)).toThrowError(/工作区/);
+			}
+			// resolve(root,"..") 等于根时不能当「区内」放行：同级目录不是自己
+			if (resolve(root, "..") !== resolve(root)) {
+				expect(() => host.resolveInWorkspace("..")).toThrowError(/工作区/);
+			}
+		}
+	});
+
+	// 越出工作区（POSIX / 盘符 / UNC）一律 403，分隔符保持根风格。
+	it("Windows 盘符与 UNC 根保持分隔符且拦越界", () => {
+		const drive = createMockHost({ cwd: "C:\\work\\proj" });
+		expect(drive.resolveInWorkspace("src\\a.ts")).toBe("C:\\work\\proj\\src\\a.ts");
+		// 根内的 `..` 归一放行，跨出根则拦（与 node:path 的 resolve + 越界 403 同语义）
+		expect(drive.resolveInWorkspace("C:\\work\\proj\\src\\..\\a.ts")).toBe("C:\\work\\proj\\a.ts");
+		expect(() => drive.resolveInWorkspace("C:\\work\\proj\\..\\other\\b.ts")).toThrowError(/工作区/);
+		expect(drive.resolveInWorkspace(".")).toBe("C:\\work\\proj");
+		expect(() => drive.resolveInWorkspace("C:\\other\\secret.txt")).toThrowError(/工作区/);
+
+		const unc = createMockHost({ cwd: "\\\\nas\\share\\proj" });
+		expect(unc.resolveInWorkspace("doc.md")).toBe("\\\\nas\\share\\proj\\doc.md");
+		expect(() => unc.resolveInWorkspace("..\\..\\escape.txt")).toThrowError(/工作区/);
+	});
+
 	it("真实 PluginManager 宿主：resolveInWorkspace 支持多根工作区且越界 403", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-real-host-test-"));
 		const extraRoot = join(tempDir, "extra-root");
