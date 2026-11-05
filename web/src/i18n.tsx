@@ -4196,7 +4196,8 @@ export const en: Record<keyof typeof zh, string> = {
 	deviceHubSubtitle: "Connect this computer to your hub to manage devices and group tasks.",
 	deviceHubUpgradeAction: "Update Connected Hub",
 	deviceHubUpgrading: "Updating Hub service…",
-	deviceHubConfirmUpgrade: "Are you sure you want to update the connected Hub service from this client? Connection will briefly drop and reconnect.",
+	deviceHubConfirmUpgrade:
+		"Are you sure you want to update the connected Hub service from this client? Connection will briefly drop and reconnect.",
 	deviceHubUpgradeSuccess: "Hub service updated and reconnected successfully!",
 	localBotSyncFailed: "Saved locally, but Hub sync failed. Reconnect this device to retry.",
 	localBotSaved: "Saved. Add the Bot through group member management.",
