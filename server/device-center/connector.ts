@@ -4,7 +4,7 @@ import { projectTaskActivity } from "./task-progress.js";
 import https from "node:https";
 import { WebSocket } from "ws";
 import { deviceTaskFailure } from "./task-error.js";
-import type { TaskRecoveryManager } from "./task-recovery.js";
+import type { TaskRecoveryManager, TaskOutboxEntry } from "./task-recovery.js";
 import type { TaskReportOutbox, TaskReportUploadEntry } from "./task-report-outbox.js";
 import { uploadTaskReport } from "./report-upload.js";
 import { reportUploadMetadata } from "./report-metadata.js";
@@ -88,6 +88,22 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			stopUnconfirmed: boolean;
 		}
 	>();
+	function sendOutboxEntry(ws: WebSocket, item: TaskOutboxEntry) {
+		options.recovery?.markOutboxAttempt(item.id);
+		sendFrame(ws, {
+			type: "task_event",
+			taskId: item.taskId,
+			botId: item.botId,
+			attemptId: item.attemptId,
+			status: item.status,
+			report: item.report,
+			error: item.error,
+			reportMetadata: item.reportMetadata,
+			leaseToken: item.leaseToken,
+			leaseGeneration: item.leaseGeneration,
+			fingerprint: item.fingerprint,
+		});
+	}
 	function stopTasks(forceAll = false) {
 		for (const pending of planAcks.values()) pending.settle(false);
 		if (forceAll) {
@@ -235,20 +251,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 				});
 			}
 			if (options.recovery) {
-				for (const item of options.recovery.getPendingOutbox()) {
-					options.recovery.markOutboxAttempt(item.id);
-					sendFrame(ws, {
-						type: "task_event",
-						taskId: item.taskId,
-						botId: item.botId,
-						attemptId: item.attemptId,
-						status: item.status,
-						...(item.report ? { report: item.report } : {}),
-						...(item.error ? { error: item.error } : {}),
-						...(item.reportMetadata ? { reportMetadata: item.reportMetadata } : {}),
-						...(item.fingerprint ? { fingerprint: item.fingerprint } : {}),
-					});
-				}
+				for (const item of options.recovery.getPendingOutbox()) sendOutboxEntry(ws, item);
 			}
 			// =======================================================
 
@@ -297,7 +300,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 					return;
 				}
 				if (frame.type === "task_result_ack") {
-					if (typeof frame.taskId === "string" && typeof frame.attemptId === "string") {
+					if (frame.accepted === true && typeof frame.taskId === "string" && typeof frame.attemptId === "string") {
 						const fp = typeof frame.fingerprint === "string" ? frame.fingerprint : undefined;
 						options.recovery?.ackOutbox(frame.taskId, frame.attemptId, fp);
 					}
@@ -416,28 +419,31 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 					const emit = (status: string, report?: string) => {
 						const activeWs = execution.ws;
 						if (
-							activeWs &&
-							activeWs.readyState === WebSocket.OPEN &&
-							!closed &&
-							!controller.signal.aborted &&
-							runningTasks.get(task.id) === execution
-						) {
-							const outboxItem = options.recovery
-								?.getPendingOutbox()
-								.find((e) => e.taskId === task.id && e.attemptId === task.attemptId);
-							sendFrame(activeWs, {
-								type: "task_event",
-								taskId: task.id,
-								botId: task.botId,
-								attemptId: task.attemptId,
-								status,
-								...(report ? { report } : {}),
-								...(status !== "running"
-									? { reportMetadata: reportUploadMetadata(options.reportOutbox?.get(task)) }
-									: {}),
-								...(outboxItem?.fingerprint ? { fingerprint: outboxItem.fingerprint } : {}),
-							});
+							!activeWs ||
+							activeWs.readyState !== WebSocket.OPEN ||
+							closed ||
+							runningTasks.get(task.id) !== execution
+						)
+							return;
+						if (status !== "running" && options.recovery) {
+							const item = options.recovery.getPendingOutboxEntry(task.id, task.attemptId);
+							if (item) sendOutboxEntry(activeWs, item);
+							return;
 						}
+						if (controller.signal.aborted) return;
+						sendFrame(activeWs, {
+							type: "task_event",
+							taskId: task.id,
+							botId: task.botId,
+							attemptId: task.attemptId,
+							leaseToken: task.leaseToken,
+							leaseGeneration: task.leaseGeneration,
+							status,
+							...(report ? { report } : {}),
+							...(status !== "running"
+								? { reportMetadata: reportUploadMetadata(options.reportOutbox?.get(task)) }
+								: {}),
+						});
 					};
 					emit("running");
 
@@ -534,7 +540,11 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 						})
 						.then(
 							async (result) => {
-								if (controller.signal.aborted) return;
+								if (options.recovery) {
+									emit("completed");
+									retryReports();
+									return;
+								}
 								const safeReport = typeof result === "string" ? result : undefined;
 								const reportEntry = options.reportOutbox?.get(task) ?? options.reportOutbox?.markMissing(task);
 								if (reportEntry) await uploadReport(reportEntry);

@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceHubStore, readPersistedHub, type HubState } from "../../server/device-center/store.js";
+import { PartitionedAppendLog } from "../../server/device-center/partition-log.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
+	vi.restoreAllMocks();
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -93,6 +95,201 @@ async function logLines(dir: string, kind: string, partition: string): Promise<s
 }
 
 describe("hub append-log storage", () => {
+	it.each(["messages", "tasks", "conversationMessages"] as const)(
+		"does not resurrect cleared %s after a projection failure invalidates caches",
+		async (collection) => {
+			const dir = await dataDir();
+			await writeFile(join(dir, "device-hub.json"), JSON.stringify(legacyState()));
+			const store = await DeviceHubStore.open(dir);
+			const logs = (store as unknown as { logs: { tasks: { commit: () => Promise<void> } } }).logs;
+			vi.spyOn(logs.tasks, "commit").mockRejectedValueOnce(new Error("projection offline"));
+			await store.transact((draft) => {
+				draft.rooms[0].name = "Changed";
+			});
+			expect(store.lastProjectionError).toBeDefined();
+			await store.transact((draft) => {
+				draft[collection] = [];
+			});
+			expect(store.lastProjectionError).toBeUndefined();
+			expect(store.snapshot()[collection]).toEqual([]);
+			await store.close();
+			const reopened = await DeviceHubStore.open(dir);
+			expect(reopened.snapshot()[collection]).toEqual([]);
+			await reopened.close();
+		},
+	);
+
+	it("deletes disk partitions after cache invalidation and can replay a crash during deletion", async () => {
+		const dir = await dataDir();
+		await writeFile(join(dir, "device-hub.json"), JSON.stringify(legacyState()));
+		const store = await DeviceHubStore.open(dir);
+		const logs = (store as unknown as { logs: { tasks: { commit: () => Promise<void> } } }).logs;
+		const commit = vi.spyOn(logs.tasks, "commit").mockRejectedValueOnce(new Error("first failure"));
+		await store.transact((draft) => {
+			draft.rooms[0].name = "Changed";
+		});
+		commit.mockRejectedValueOnce(new Error("crash after deleting messages"));
+		await store.transact((draft) => {
+			draft.rooms = [];
+			draft.conversations = [];
+			draft.messages = [];
+			draft.tasks = [];
+			draft.conversationMessages = [];
+		});
+		expect(await readdir(join(dir, "hub-log", "messages"))).not.toContain("room-legacy.jsonl");
+		expect((await stat(store.wal.walPath)).size).toBeGreaterThan(0);
+		await store.close();
+		const reopened = await DeviceHubStore.open(dir);
+		expect(reopened.snapshot()).toMatchObject({
+			rooms: [],
+			conversations: [],
+			messages: [],
+			tasks: [],
+			conversationMessages: [],
+		});
+		for (const kind of ["messages", "tasks", "conversation-messages"]) {
+			expect((await readdir(join(dir, "hub-log", kind))).filter((file) => file.endsWith(".jsonl"))).toEqual([]);
+		}
+		await reopened.close();
+	});
+
+	it("repairs a partial partition append even when its rollback also failed before the next checkpoint", async () => {
+		const dir = await dataDir();
+		await writeFile(join(dir, "device-hub.json"), JSON.stringify(legacyState()));
+		const store = await DeviceHubStore.open(dir);
+		const file = join(dir, "hub-log", "messages", "room-legacy.jsonl");
+		const handle = await open(file, "r");
+		const prototype = Object.getPrototypeOf(handle) as FileHandle;
+		await handle.close();
+		const write = prototype.writeFile;
+		let injected = false;
+		vi.spyOn(prototype, "writeFile").mockImplementation(async function (this: FileHandle, data, options) {
+			const payload = String(data);
+			if (!injected && payload.startsWith('{"v":1,"op":"upsert"') && payload.includes('"message-short"')) {
+				injected = true;
+				await write.call(this, payload.slice(0, 41), options);
+				throw new Error("partial partition write");
+			}
+			return write.call(this, data, options);
+		});
+		vi.spyOn(prototype, "truncate").mockRejectedValueOnce(new Error("partition rollback failed"));
+		await expect(
+			store.transact((draft) => {
+				draft.messages.push(message("room-legacy", "message-short", "committed despite projection failure"));
+			}),
+		).resolves.toBeUndefined();
+		expect(injected).toBe(true);
+		expect(store.lastProjectionError).toEqual(new Error("partial partition write"));
+		expect((await readFile(file, "utf8")).endsWith("\n")).toBe(false);
+		await store.transact((draft) => {
+			draft.messages.push(message("room-legacy", "message-after", "after repair"));
+		});
+		expect(store.lastProjectionError).toBeUndefined();
+		for (const line of await logLines(dir, "messages", "room-legacy")) expect(() => JSON.parse(line)).not.toThrow();
+		expect((await stat(store.wal.walPath)).size).toBe(0);
+		vi.restoreAllMocks();
+		await store.close();
+		const reopened = await DeviceHubStore.open(dir);
+		expect(reopened.snapshot().messages.map((row) => row.id)).toEqual([
+			"message-legacy",
+			"message-short",
+			"message-after",
+		]);
+		await reopened.close();
+	});
+
+	it("repairs retention on a cache miss before clearing all retained rows", async () => {
+		const dir = await dataDir();
+		const log = new PartitionedAppendLog<{ id: string; room: string }>({
+			dir,
+			partition: (row) => row.room,
+			id: (row) => row.id,
+			retention: 1,
+		});
+		await writeFile(
+			join(dir, "room.jsonl"),
+			["old", "new"].map((id) => JSON.stringify({ v: 1, op: "upsert", value: { id, room: "room" } }) + "\n").join(""),
+		);
+		await log.commit([], new Set(["room"]));
+		log.invalidateCache();
+		expect(await log.load(["room"], { readOnly: true })).toEqual([]);
+	});
+
+	it("resets compaction counters after replacing a partition", async () => {
+		const dir = await dataDir();
+		const log = new PartitionedAppendLog<{ id: string; room: string }>({
+			dir,
+			partition: (row) => row.room,
+			id: (row) => row.id,
+			maxDeletes: 1,
+		});
+		const parents = new Set(["room"]);
+		const internals = log as unknown as {
+			rewrite: (partition: string, rows: readonly { id: string; room: string }[]) => Promise<void>;
+		};
+		const rewrite = vi.spyOn(internals, "rewrite");
+		await log.commit(
+			[
+				{ id: "a", room: "room" },
+				{ id: "b", room: "room" },
+			],
+			parents,
+		);
+		await log.commit([{ id: "b", room: "room" }], parents);
+		expect(rewrite).toHaveBeenCalledTimes(1);
+		expect((await readFile(join(dir, "room.jsonl"), "utf8")).split("\n").filter(Boolean)).toHaveLength(1);
+		await log.commit(
+			[
+				{ id: "b", room: "room" },
+				{ id: "c", room: "room" },
+			],
+			parents,
+		);
+		expect(rewrite).toHaveBeenCalledTimes(1);
+		expect((await readFile(join(dir, "room.jsonl"), "utf8")).split("\n").filter(Boolean)).toHaveLength(2);
+	});
+
+	it("never truncates a replaced snapshot to an obsolete append offset on a later failure", async () => {
+		const dir = await dataDir();
+		type Row = { id: string; room: string; text: string };
+		const log = new PartitionedAppendLog<Row>({
+			dir,
+			partition: (row) => row.room,
+			id: (row) => row.id,
+			maxDeletes: 1,
+		});
+		const parents = new Set(["a", "z"]);
+		const kept = { id: "kept", room: "a", text: "kept" };
+		await log.commit(
+			[{ id: "removed", room: "a", text: "x".repeat(2000) }, kept, { id: "last", room: "z", text: "before" }],
+			parents,
+		);
+		const internals = log as unknown as {
+			rewrite: (partition: string, rows: readonly Row[]) => Promise<void>;
+			size: (file: string) => Promise<number>;
+		};
+		const rewrite = internals.rewrite.bind(log);
+		const size = internals.size.bind(log);
+		let replaced = false;
+		vi.spyOn(internals, "rewrite").mockImplementation(async (partition, rows) => {
+			await rewrite(partition, rows);
+			replaced = true;
+		});
+		vi.spyOn(internals, "size").mockImplementation(async (file) => {
+			if (replaced) throw new Error("disk failure after snapshot replacement");
+			return size(file);
+		});
+		const next = [kept, { id: "last", room: "z", text: "after" }];
+		await expect(log.commit(next, parents)).rejects.toThrow("disk failure after snapshot replacement");
+		expect(await readFile(join(dir, "a.jsonl"), "utf8")).toBe(
+			JSON.stringify({ v: 1, op: "upsert", value: kept }) + "\n",
+		);
+		vi.restoreAllMocks();
+		await log.commit(next, parents);
+		log.invalidateCache();
+		expect(await log.load(parents, { readOnly: true })).toEqual(next);
+	});
+
 	it("migrates inline collections out of the index without losing rows", async () => {
 		const dir = await dataDir();
 		await writeFile(join(dir, "device-hub.json"), JSON.stringify(legacyState()));
@@ -280,27 +477,37 @@ describe("hub append-log storage", () => {
 		await reopened.close();
 	});
 
-	it("does not commit log rows when the index replacement fails", async () => {
+	it("does not publish a failed WAL append and can reopen after its path is repaired", async () => {
 		const dir = await dataDir();
 		const store = await DeviceHubStore.open(dir);
 		await store.transact((draft) => {
 			draft.rooms.push({ id: "room-fail", accountId: "account-1", name: "Fail", botIds: [], createdAt: 1 });
 		});
-		// Make the index path a directory: the atomic rename must fail before any log row is written.
-		await rm(store.path);
-		await mkdir(store.path);
+		// A directory blocks WAL append before any projection can publish.
+		// Depending on the platform, open itself fails or write/rollback fail after open.
+		const walPath = store.wal.walPath;
+		await rm(walPath).catch(() => {});
+		await mkdir(walPath);
 		await expect(
 			store.transact((draft) => {
 				draft.messages.push(message("room-fail", "message-fail", "never acked"));
 			}),
 		).rejects.toThrow();
 		expect(store.snapshot().messages).toEqual([]);
-		await rm(store.path, { recursive: true });
-		await store.transact((draft) => {
+		expect(
+			await logLines(dir, "messages", "room-fail").catch((error: NodeJS.ErrnoException) => {
+				if (error.code === "ENOENT") return [];
+				throw error;
+			}),
+		).toEqual([]);
+		await store.close();
+		await rm(walPath, { recursive: true });
+		const reopened = await DeviceHubStore.open(dir);
+		await reopened.transact((draft) => {
 			draft.messages.push(message("room-fail", "message-ok", "acked"));
 		});
-		expect(store.snapshot().messages.map((entry) => entry.id)).toEqual(["message-ok"]);
+		expect(reopened.snapshot().messages.map((entry) => entry.id)).toEqual(["message-ok"]);
 		expect(await readPersistedHub(dir)).toMatchObject({ messages: [expect.objectContaining({ id: "message-ok" })] });
-		await store.close();
+		await reopened.close();
 	});
 });

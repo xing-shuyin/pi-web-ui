@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
-import { DeviceHubStore, hashSecret } from "../../server/device-center/store.js";
+import { DeviceHubStore, hashSecret, readPersistedHub } from "../../server/device-center/store.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -29,7 +29,17 @@ async function fixture(
 			}
 		}
 	});
-	const onTask = vi.fn();
+	// Keep the first issued lease: later attempts must not refresh stale event fixtures.
+	const issuedLeases = new Map<string, { leaseToken: string | undefined; leaseGeneration: number | undefined }>();
+	const onTask = vi.fn<NonNullable<Parameters<typeof createDeviceHub>[0]["onTask"]>>((_deviceId, task) => {
+		if (!issuedLeases.has(task.id))
+			issuedLeases.set(task.id, { leaseToken: task.leaseToken, leaseGeneration: task.leaseGeneration });
+	});
+	function initialLease(taskId: string) {
+		const lease = issuedLeases.get(taskId);
+		expect(lease).toEqual({ leaseToken: expect.any(String), leaseGeneration: expect.any(Number) });
+		return lease!;
+	}
 	const onRevoke = vi.fn();
 	const hub = await createDeviceHub({
 		dataDir,
@@ -120,7 +130,7 @@ async function fixture(
 			start: { code: string; pollToken: string };
 		};
 	}
-	return { hub, request, register, pair, dataDir, onTask, onRevoke };
+	return { hub, request, register, pair, dataDir, onTask, onRevoke, initialLease };
 }
 
 describe("device center hub", () => {
@@ -252,7 +262,7 @@ describe("device center hub", () => {
 			.room;
 		await request(`/api/rooms/${room.id}/messages`, { text: "Shared requirements" }, cookie);
 		onTask.mockImplementation(async (_deviceId, task) => {
-			expect(task.context.messages.map((message: { text: string }) => message.text)).toEqual(["Shared requirements"]);
+			expect(task.context!.messages.map((message: { text: string }) => message.text)).toEqual(["Shared requirements"]);
 			if (task.botId === first.botId)
 				await hub.store.transact((state) => {
 					state.messages.push({
@@ -274,7 +284,7 @@ describe("device center hub", () => {
 		);
 		expect(onTask).toHaveBeenCalledTimes(2);
 		expect(onTask.mock.calls[0][1].context).toEqual(onTask.mock.calls[1][1].context);
-		expect(onTask.mock.calls[1][1].context.messages.map((message: { text: string }) => message.text)).toEqual([
+		expect(onTask.mock.calls[1][1].context!.messages.map((message: { text: string }) => message.text)).toEqual([
 			"Shared requirements",
 		]);
 		for (const task of hub.store.snapshot().tasks) expect(task).not.toHaveProperty("context");
@@ -283,11 +293,11 @@ describe("device center hub", () => {
 		});
 		expect((await request(`/api/rooms/${room.id}/clear`, {}, cookie)).status).toBe(200);
 		onTask.mockImplementation(async (_deviceId, task) => {
-			expect(task.context.messages).toEqual([]);
+			expect(task.context!.messages).toEqual([]);
 			return true;
 		});
 		await request(`/api/rooms/${room.id}/messages`, { text: "Fresh start", targetBotIds: [first.botId] }, cookie);
-		expect(onTask.mock.calls.at(-1)![1].context.messages).toEqual([]);
+		expect(onTask.mock.calls.at(-1)![1].context!.messages).toEqual([]);
 	});
 	it("shares pre-dispatch context and permits history reads only from an enabled member Bot", async () => {
 		const { hub, request, register, pair, onTask } = await fixture();
@@ -297,10 +307,10 @@ describe("device center hub", () => {
 		const room = (await request("/api/rooms", { name: "Discussion", botIds: [member.botId] }, cookie)).body.room;
 		await request(`/api/rooms/${room.id}/messages`, { text: "Earlier plan: use SQLite" }, cookie);
 		onTask.mockImplementation(async (_deviceId, task) => {
-			expect(task.context.messages.map((message: { text: string }) => message.text)).toEqual([
+			expect(task.context!.messages.map((message: { text: string }) => message.text)).toEqual([
 				"Earlier plan: use SQLite",
 			]);
-			expect(task.context.members).toEqual([{ id: member.botId, name: "Windows" }]);
+			expect(task.context!.members).toEqual([{ id: member.botId, name: "Windows" }]);
 			return true;
 		});
 		await request(`/api/rooms/${room.id}/messages`, { text: "Review that plan", targetBotIds: [member.botId] }, cookie);
@@ -357,6 +367,7 @@ describe("device center hub", () => {
 		).body.tasks[0];
 		await expect(
 			f.hub.acceptTaskEvent(first.deviceId, {
+				...f.initialLease(task.id),
 				taskId: task.id,
 				attemptId: task.attemptId,
 				botId: second.botId,
@@ -369,6 +380,7 @@ describe("device center hub", () => {
 		expect((await sync(first, [{ ...bot, revision: 3 }])).status).toBe(409);
 		await expect(
 			f.hub.acceptTaskEvent(first.deviceId, {
+				...f.initialLease(task.id),
 				taskId: task.id,
 				attemptId: task.attemptId,
 				botId: first.botId,
@@ -474,14 +486,20 @@ describe("device center hub", () => {
 		expect(onRevoke).toHaveBeenCalledWith(device.deviceId);
 	});
 	it("persists rejected and failed report metadata without fabricating a full report", async () => {
-		const { hub, request, register, pair, dataDir } = await fixture();
+		const { hub, initialLease, request, register, pair, dataDir } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Report states", botIds: [device.botId] }, cookie)).body.room;
 		const send = async (text: string) =>
 			(await request(`/api/rooms/${room.id}/messages`, { text, targetBotIds: [device.botId] }, cookie)).body.tasks[0];
 		const task = await send("quota report");
-		const running = { botId: device.botId, taskId: task.id, attemptId: task.attemptId, status: "running" as const };
+		const running = {
+			...initialLease(task.id),
+			botId: device.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			status: "running" as const,
+		};
 		await hub.acceptTaskEvent(device.deviceId, running);
 		const reportMetadata = {
 			sha256: "a".repeat(64),
@@ -505,9 +523,15 @@ describe("device center hub", () => {
 		expect(reopened.snapshot().tasks.find((entry) => entry.id === task.id)?.reportMetadata).toEqual(reportMetadata);
 		await reopened.close();
 		const failedTask = await send("failed report");
-		await hub.acceptTaskEvent(device.deviceId, { ...running, taskId: failedTask.id, attemptId: failedTask.attemptId });
 		await hub.acceptTaskEvent(device.deviceId, {
 			...running,
+			...initialLease(failedTask.id),
+			taskId: failedTask.id,
+			attemptId: failedTask.attemptId,
+		});
+		await hub.acceptTaskEvent(device.deviceId, {
+			...running,
+			...initialLease(failedTask.id),
 			taskId: failedTask.id,
 			attemptId: failedTask.attemptId,
 			status: "failed",
@@ -525,6 +549,7 @@ describe("device center hub", () => {
 		await expect(
 			hub.acceptTaskEvent(device.deviceId, {
 				...running,
+				...initialLease(failedTask.id),
 				taskId: failedTask.id,
 				attemptId: failedTask.attemptId,
 				status: "failed",
@@ -533,7 +558,7 @@ describe("device center hub", () => {
 		).rejects.toThrow("Invalid report metadata");
 	});
 	it("serves an empty journal page instead of 404 for tasks that never wrote audit events", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Audit", botIds: [device.botId] }, cookie)).body.room;
@@ -557,6 +582,7 @@ describe("device center hub", () => {
 		// Real progress turns the same empty page into a populated one.
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(task.id),
 			taskId: task.id,
 			attemptId: task.attemptId,
 			status: "running",
@@ -578,8 +604,8 @@ describe("device center hub", () => {
 		expect(populated.body.items.map((item: { type: string }) => item.type)).toEqual(["status", "progress"]);
 		expect(populated.body.items[1]).toMatchObject({ type: "progress", toolName: "read" });
 	});
-	it("dispatches explicit or server-resolved room mentions, enforces attempts and transitions, persists trusted reports", async () => {
-		const { hub, request, register, pair, onTask, dataDir } = await fixture();
+	it("dispatches explicit or server-resolved room mentions, fences attempts and generations, persists trusted reports", async () => {
+		const { hub, initialLease, request, register, pair, onTask, dataDir } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Win Mac Linux", botIds: [device.botId] }, cookie)).body.room;
@@ -603,23 +629,46 @@ describe("device center hub", () => {
 		await expect(
 			hub.acceptTaskEvent(device.deviceId, {
 				botId: device.botId,
+				...initialLease(task.id),
 				taskId: task.id,
 				attemptId: "wrong",
 				status: "running",
 			}),
-		).rejects.toThrow("Task missing");
+		).rejects.toThrow("Attempt or lease mismatch");
+		const originalLease = initialLease(task.id);
 		await expect(
 			hub.acceptTaskEvent(device.deviceId, {
 				botId: device.botId,
+				...originalLease,
+				leaseGeneration: originalLease.leaseGeneration! + 1,
 				taskId: task.id,
 				attemptId: task.attemptId,
 				status: "completed",
-				report: "fake",
+				report: "Unissued generation result",
 			}),
-		).rejects.toThrow("Invalid task transition");
-		const running = { botId: device.botId, taskId: task.id, attemptId: task.attemptId, status: "running" as const };
+		).rejects.toThrow("Lease token or generation mismatch");
+		expect(hub.store.snapshot().tasks.find((entry) => entry.id === task.id)).toMatchObject({ status: "queued" });
+		const running = {
+			...initialLease(task.id),
+			botId: device.botId,
+			taskId: task.id,
+			attemptId: task.attemptId,
+			status: "running" as const,
+		};
 		await hub.acceptTaskEvent(device.deviceId, running);
 		await hub.acceptTaskEvent(device.deviceId, running);
+		await expect(
+			hub.acceptTaskEvent(device.deviceId, {
+				...running,
+				attemptId: "wrong",
+				status: "completed",
+				report: "Stale attempt result",
+			}),
+		).rejects.toThrow("Attempt mismatch");
+		const afterStaleResult = hub.store.snapshot().tasks.find((entry) => entry.id === task.id)!;
+		expect(afterStaleResult.status).toBe("running");
+		expect(afterStaleResult.report).toBeUndefined();
+		expect(afterStaleResult.outcomeFingerprint).toBeUndefined();
 		await expect(hub.acceptTaskEvent(device.deviceId, { ...running, status: "completed" })).rejects.toThrow(
 			"requires agent report",
 		);
@@ -641,6 +690,7 @@ describe("device center hub", () => {
 		const task2 = hub.store.snapshot().tasks[1];
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(task2.id),
 			taskId: task2.id,
 			attemptId: task2.attemptId,
 			status: "running",
@@ -696,7 +746,7 @@ describe("device center hub", () => {
 		expect(hub.store.getDeviceOwner(device.deviceId)).toBeUndefined();
 	});
 	it("bounds device handoff chains by trusted parent, persistent root budget and depth", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const other = await pair(cookie, "Mac");
@@ -715,6 +765,7 @@ describe("device center hub", () => {
 		).toBe(400);
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(root.id),
 			taskId: root.id,
 			attemptId: root.attemptId,
 			status: "running",
@@ -753,16 +804,22 @@ describe("device center hub", () => {
 			(await request(path, { text: "depth", targetBotIds: [other.botId], parentTaskId: root.id }, "", headers)).status,
 		).toBe(409);
 	});
-	it("does not publish when atomic rename fails and recovers the transaction queue", async () => {
-		const { hub, register, request, pair } = await fixture();
+	it("recovers a WAL-committed room when atomic index rename fails", async () => {
+		const { hub, register, request, pair, dataDir } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
-		const before = hub.store.snapshot();
+		const checkpoint = await readFile(hub.store.path);
 		await rm(hub.store.path);
 		await mkdir(hub.store.path);
-		expect((await request("/api/rooms", { name: "rename fails", botIds: [device.botId] }, cookie)).status).toBe(500);
-		expect(hub.store.snapshot()).toEqual(before);
+		await writeFile(join(hub.store.path, "block-rename"), "occupied");
+		expect((await request("/api/rooms", { name: "rename fails", botIds: [device.botId] }, cookie)).status).toBe(201);
+		const committed = hub.store.snapshot();
+		expect(committed.rooms.map((room) => room.name)).toContain("rename fails");
+		expect(await readFile(join(dataDir, "hub-wal.jsonl"), "utf8")).not.toBe("");
 		await rm(hub.store.path, { recursive: true });
+		await writeFile(hub.store.path, checkpoint);
+		// Replay against the old index must restore the whole committed transaction.
+		expect(await readPersistedHub(dataDir)).toEqual(committed);
 		expect((await request("/api/rooms", { name: "recovered", botIds: [device.botId] }, cookie)).status).toBe(201);
 	});
 	it("approves concurrent pair requests at most once and exposes the relay open route", async () => {
@@ -784,7 +841,7 @@ describe("device center hub", () => {
 		expect(handleOpen).toHaveBeenCalledTimes(1);
 	});
 	it("bounds group capacity by open conversations and frees it by deleting a stopped conversation", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "capacity", botIds: [device.botId] }, cookie)).body.room;
@@ -828,12 +885,14 @@ describe("device center hub", () => {
 		const firstTask = first.body.tasks[0];
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(firstTask.id),
 			taskId: firstTask.id,
 			attemptId: firstTask.attemptId,
 			status: "running",
 		});
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(firstTask.id),
 			taskId: firstTask.id,
 			attemptId: firstTask.attemptId,
 			status: "completed",
@@ -901,7 +960,7 @@ describe("device center hub", () => {
 		).toBe(400);
 	});
 	it("flags stale Bot revisions and closes conversations when their device is revoked", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "lifecycle", botIds: [device.botId] }, cookie)).body.room;
@@ -913,12 +972,14 @@ describe("device center hub", () => {
 		const task = sent.body.tasks[0];
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(task.id),
 			taskId: task.id,
 			attemptId: task.attemptId,
 			status: "running",
 		});
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
+			...initialLease(task.id),
 			taskId: task.id,
 			attemptId: task.attemptId,
 			status: "completed",

@@ -223,7 +223,7 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 
 		const chevronMatch = CSS.match(/\.lp-project-header-item \.lp-project-chevron\s*\{([^}]*)\}/);
 		expect(chevronMatch).toBeTruthy();
-		expect(chevronMatch![1]).toContain("transition: transform");
+		expect(chevronMatch![1]).toMatch(/transition:\s*transform\s+0\.22s\s+cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/);
 	});
 
 	it("打开新项目时不会自动折叠已展开的其他项目", () => {

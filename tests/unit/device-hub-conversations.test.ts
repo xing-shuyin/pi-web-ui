@@ -19,7 +19,17 @@ async function fixture(
 ) {
 	const dataDir = await mkdtemp(join(tmpdir(), "device-hub-test-"));
 	cleanups.push(() => rm(dataDir, { recursive: true, force: true }));
-	const onTask = vi.fn();
+	// Keep the first issued lease: later attempts must not refresh stale event fixtures.
+	const issuedLeases = new Map<string, { leaseToken: string | undefined; leaseGeneration: number | undefined }>();
+	const onTask = vi.fn<NonNullable<Parameters<typeof createDeviceHub>[0]["onTask"]>>((_deviceId, task) => {
+		if (!issuedLeases.has(task.id))
+			issuedLeases.set(task.id, { leaseToken: task.leaseToken, leaseGeneration: task.leaseGeneration });
+	});
+	function initialLease(taskId: string) {
+		const lease = issuedLeases.get(taskId);
+		expect(lease).toEqual({ leaseToken: expect.any(String), leaseGeneration: expect.any(Number) });
+		return lease!;
+	}
 	const onRevoke = vi.fn();
 	const hub = await createDeviceHub({
 		dataDir,
@@ -110,12 +120,12 @@ async function fixture(
 			start: { code: string; pollToken: string };
 		};
 	}
-	return { hub, request, register, pair, dataDir, onTask, onRevoke };
+	return { hub, request, register, pair, dataDir, onTask, onRevoke, initialLease };
 }
 
 describe("durable hub conversations", () => {
 	it("publishes task state atomically and accepts only current Bot progress with revision checks", async () => {
-		const { hub, request, register, pair, onTask } = await fixture();
+		const { hub, initialLease, request, register, pair, onTask } = await fixture();
 		const cookie = await register();
 		const bot = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "state", botIds: [bot.botId] }, cookie)).body.room;
@@ -133,10 +143,11 @@ describe("durable hub conversations", () => {
 		expect(initial.status).toBe(200);
 		expect(initial.body.taskState.objective).toContain("original goal");
 		expect(initial.body.taskState.phase).toBe("queued");
-		expect(onTask.mock.calls[0][1].taskState.objective).toContain("original goal");
+		expect(onTask.mock.calls[0][1].taskState!.objective).toContain("original goal");
 		expect((await request(agentPath, undefined, "", headers)).status).toBe(404);
 		expect((await request(`${agentPath}?sourceBotId=${bot.botId}`, undefined, "", headers)).status).toBe(200);
 		await hub.acceptTaskEvent(bot.deviceId, {
+			...initialLease(first.task.id),
 			taskId: first.task.id,
 			attemptId: first.task.attemptId,
 			botId: bot.botId,
@@ -169,6 +180,7 @@ describe("durable hub conversations", () => {
 		expect(noop.status).toBe(200);
 		expect(noop.body.taskState.revision).toBe(saved.body.taskState.revision);
 		await hub.acceptTaskEvent(bot.deviceId, {
+			...initialLease(first.task.id),
 			taskId: first.task.id,
 			attemptId: first.task.attemptId,
 			botId: bot.botId,
@@ -182,13 +194,14 @@ describe("durable hub conversations", () => {
 		).toBe(409);
 	});
 	it("persists a Bot question and atomically resumes its original conversation on a human answer", async () => {
-		const { hub, request, register, pair, dataDir, onTask } = await fixture();
+		const { hub, initialLease, request, register, pair, dataDir, onTask } = await fixture();
 		const cookie = await register();
 		const bot = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "team", botIds: [bot.botId] }, cookie)).body.room;
 		const base = `/api/rooms/${room.id}/conversations`;
 		const first = (await request(base, { targetBotId: bot.botId, text: "start" }, cookie)).body;
 		await hub.acceptTaskEvent(bot.deviceId, {
+			...initialLease(first.task.id),
 			taskId: first.task.id,
 			attemptId: first.task.attemptId,
 			botId: bot.botId,
@@ -219,6 +232,7 @@ describe("durable hub conversations", () => {
 		expect(runningState.currentTaskId).toBe(first.task.id);
 		expect(runningState.phase).toBe("running");
 		await hub.acceptTaskEvent(bot.deviceId, {
+			...initialLease(first.task.id),
 			taskId: first.task.id,
 			attemptId: first.task.attemptId,
 			botId: bot.botId,
@@ -238,11 +252,13 @@ describe("durable hub conversations", () => {
 		expect((await request(path, undefined, cookie)).body.conversation.attention).toBeUndefined();
 		await hub.acceptTaskEvent(bot.deviceId, {
 			...answered.body.task,
+			...initialLease(answered.body.task.id),
 			taskId: answered.body.task.id,
 			status: "running",
 		});
 		const done = {
 			...answered.body.task,
+			...initialLease(answered.body.task.id),
 			taskId: answered.body.task.id,
 			status: "completed",
 			report: "Answer consumed",
@@ -253,7 +269,7 @@ describe("durable hub conversations", () => {
 		expect(onTask.mock.calls[2][1].id).toBe(followup.id);
 	});
 	it("persists addresses, queues continuation once and rejects changed identity", async () => {
-		const { hub, request, register, pair, onTask, dataDir } = await fixture();
+		const { hub, initialLease, request, register, pair, onTask, dataDir } = await fixture();
 		const cookie = await register();
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "team", botIds: [device.botId] }, cookie)).body.room;
@@ -275,12 +291,14 @@ describe("durable hub conversations", () => {
 		expect(duplicate.body.task.id).toBe(turn.body.task.id);
 		expect(onTask).toHaveBeenCalledTimes(1);
 		await hub.acceptTaskEvent(device.deviceId, {
+			...initialLease(first.body.task.id),
 			taskId: first.body.task.id,
 			attemptId: first.body.task.attemptId,
 			botId: device.botId,
 			status: "running",
 		});
 		await hub.acceptTaskEvent(device.deviceId, {
+			...initialLease(first.body.task.id),
 			taskId: first.body.task.id,
 			attemptId: first.body.task.attemptId,
 			botId: device.botId,
@@ -299,7 +317,7 @@ describe("durable hub conversations", () => {
 		expect((await request(base + "/" + cid + "/messages", { text: "stale" }, cookie)).status).toBe(409);
 	});
 	it("wakes the parent exactly once under its shared root budget", async () => {
-		const { hub, request, register, pair, onTask } = await fixture();
+		const { hub, initialLease, request, register, pair, onTask } = await fixture();
 		const cookie = await register();
 		const a = await pair(cookie, "a"),
 			b = await pair(cookie, "b");
@@ -307,6 +325,7 @@ describe("durable hub conversations", () => {
 		const base = "/api/rooms/" + room.id + "/conversations";
 		const parent = (await request(base, { targetBotId: a.botId, text: "parent" }, cookie)).body.task;
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(parent.id),
 			taskId: parent.id,
 			attemptId: parent.attemptId,
 			botId: a.botId,
@@ -332,12 +351,14 @@ describe("durable hub conversations", () => {
 			)
 		).body.task;
 		await hub.acceptTaskEvent(b.deviceId, {
+			...initialLease(child.id),
 			taskId: child.id,
 			attemptId: child.attemptId,
 			botId: b.botId,
 			status: "running",
 		});
 		const done = {
+			...initialLease(child.id),
 			taskId: child.id,
 			attemptId: child.attemptId,
 			botId: b.botId,
@@ -352,6 +373,7 @@ describe("durable hub conversations", () => {
 		expect(wake.rootTaskId).toBe(parent.id);
 		expect(onTask).toHaveBeenCalledTimes(2);
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(parent.id),
 			taskId: parent.id,
 			attemptId: parent.attemptId,
 			botId: a.botId,
@@ -362,7 +384,7 @@ describe("durable hub conversations", () => {
 		expect(hub.store.snapshot().tasks.find((t) => t.id === parent.id)?.dispatchCount).toBe(3);
 	});
 	it("keeps continuation budget finite and validates reply correlation", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const a = await pair(cookie, "a"),
 			b = await pair(cookie, "b");
@@ -372,6 +394,7 @@ describe("durable hub conversations", () => {
 			.body;
 		const cid = initial.conversation.id;
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(initial.task.id),
 			taskId: initial.task.id,
 			attemptId: initial.task.attemptId,
 			botId: a.botId,
@@ -399,6 +422,7 @@ describe("durable hub conversations", () => {
 			parentTaskId: initial.task.id,
 		});
 		await hub.acceptTaskEvent(b.deviceId, {
+			...initialLease(asked.body.task.id),
 			taskId: asked.body.task.id,
 			attemptId: asked.body.task.attemptId,
 			botId: b.botId,
@@ -453,6 +477,7 @@ describe("durable hub conversations", () => {
 		).toBe(409);
 		expect(hub.store.snapshot().conversationMessages.filter((m) => m.kind === "reply")).toHaveLength(1);
 		await hub.acceptTaskEvent(b.deviceId, {
+			...initialLease(asked.body.task.id),
 			taskId: asked.body.task.id,
 			attemptId: asked.body.task.attemptId,
 			botId: b.botId,
@@ -461,6 +486,7 @@ describe("durable hub conversations", () => {
 		});
 		expect(hub.store.snapshot().tasks.some((t) => t.resultOfTaskId === asked.body.task.id)).toBe(false);
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(initial.task.id),
 			taskId: initial.task.id,
 			attemptId: initial.task.attemptId,
 			botId: a.botId,
@@ -468,12 +494,14 @@ describe("durable hub conversations", () => {
 			report: "ready for reply",
 		});
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(answer.body.task.id),
 			taskId: answer.body.task.id,
 			attemptId: answer.body.task.attemptId,
 			botId: a.botId,
 			status: "running",
 		});
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(answer.body.task.id),
 			taskId: answer.body.task.id,
 			attemptId: answer.body.task.attemptId,
 			botId: a.botId,
@@ -498,7 +526,7 @@ describe("durable hub conversations", () => {
 		expect(onTask).toHaveBeenCalledTimes(2);
 	});
 	it("notifies the parent for reportless terminal failures exactly once", async () => {
-		const { hub, request, register, pair, onTask } = await fixture();
+		const { hub, initialLease, request, register, pair, onTask } = await fixture();
 		const cookie = await register();
 		const a = await pair(cookie, "a"),
 			b = await pair(cookie, "b");
@@ -508,6 +536,7 @@ describe("durable hub conversations", () => {
 		).body.task;
 		await hub.acceptTaskEvent(a.deviceId, {
 			botId: a.botId,
+			...initialLease(parent.id),
 			taskId: parent.id,
 			attemptId: parent.attemptId,
 			status: "running",
@@ -522,6 +551,7 @@ describe("durable hub conversations", () => {
 		).body.task;
 		const interrupted = {
 			botId: b.botId,
+			...initialLease(child.id),
 			taskId: child.id,
 			attemptId: child.attemptId,
 			status: "interrupted" as const,
@@ -531,6 +561,7 @@ describe("durable hub conversations", () => {
 		expect(hub.store.snapshot().tasks.find((t) => t.resultOfTaskId === child.id)?.text).toContain("interrupted");
 		expect(onTask).toHaveBeenCalledTimes(2);
 		await hub.acceptTaskEvent(a.deviceId, {
+			...initialLease(parent.id),
 			taskId: parent.id,
 			attemptId: parent.attemptId,
 			botId: a.botId,
@@ -540,7 +571,7 @@ describe("durable hub conversations", () => {
 		expect(onTask).toHaveBeenCalledTimes(3);
 	});
 	it("closes admission before cancel and keeps unconfirmed work pending", async () => {
-		const { hub, request, register, pair } = await fixture();
+		const { hub, initialLease, request, register, pair } = await fixture();
 		const cookie = await register();
 		const bot = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "r", botIds: [bot.botId] }, cookie)).body.room;
@@ -554,24 +585,35 @@ describe("durable hub conversations", () => {
 			cancelRequested: true,
 			stopConfirmed: true,
 		});
+		await expect(
+			hub.acceptTaskEvent(bot.deviceId, {
+				botId: bot.botId,
+				...initialLease(created.task.id),
+				taskId: created.task.id,
+				attemptId: created.task.attemptId,
+				status: "running",
+			}),
+		).rejects.toThrow("Task unavailable");
 		await hub.acceptTaskEvent(bot.deviceId, {
 			botId: bot.botId,
-			taskId: created.task.id,
-			attemptId: created.task.attemptId,
-			status: "running",
-		});
-		await hub.acceptTaskEvent(bot.deviceId, {
-			botId: bot.botId,
+			...initialLease(created.task.id),
 			taskId: created.task.id,
 			attemptId: created.task.attemptId,
 			status: "failed",
 		});
+		const acceptedFailure = hub.store.snapshot().tasks.find((task) => task.id === created.task.id)!;
+		expect(acceptedFailure.status).toBe("failed");
+		expect(acceptedFailure.outcomeFingerprint).toEqual(expect.any(String));
 		expect((await request(path + "/stop", {}, cookie)).body).toEqual({ stopped: false, pending: 1 });
 		expect((await request(path + "/messages", { text: "too late" }, cookie)).status).toBe(409);
 		expect((await request("/api/rooms/" + room.id + "/clear", {}, cookie)).status).toBe(409);
 		hub.setRelay({ cancelTask: async () => ({ stopped: true }) });
 		expect((await request(path + "/stop", {}, cookie)).body).toEqual({ stopped: true, pending: 0 });
-		expect(hub.store.snapshot().tasks[0].status).toBe("interrupted");
+		expect(hub.store.snapshot().tasks.find((task) => task.id === created.task.id)).toMatchObject({
+			status: "failed",
+			stopConfirmed: true,
+			outcomeFingerprint: acceptedFailure.outcomeFingerprint,
+		});
 		expect((await request("/api/rooms/" + room.id + "/clear", {}, cookie)).status).toBe(200);
 	});
 	it("interrupts pending and uncertain tasks after restart without executing again", async () => {

@@ -6,7 +6,7 @@ import { createGroupEvents } from "./group-events.js";
 import { createTaskJournalManager } from "./task-journal.js";
 import { createTaskReportStore, MAX_TASK_FULL_REPORT_BYTES } from "./task-report.js";
 import { TASK_REPORT_UPLOAD_JSON_BYTES } from "../payload-limits.js";
-import { parseReportMetadata, mergeTaskReportMetadata, reportUploadMetadata } from "./report-metadata.js";
+import { parseReportMetadata, mergeTaskReportMetadata } from "./report-metadata.js";
 import { buildDeterministicTaskSummary, queryTaskReportChunk, type TaskReportEvidence } from "./task-state.js";
 import { addDelivery, addReview, deliveryHistory, deliverySummary } from "./hub-deliveries.js";
 import {
@@ -58,17 +58,15 @@ import type {
 	DeviceTaskUpdateRequest,
 } from "../protocol.js";
 type DeliveryTask = HubTask & { context?: GroupTaskContext; taskState?: DeviceTaskState };
-import type { HubTask, Handoff, TaskStatus, HubState } from "./store.js";
+import type { HubTask, Handoff, HubState } from "./store.js";
 import { createHubLockManager, validateResourceLocks } from "./hub-locks.js";
 import { createAccountAuth, hashPassword, verifyPassword, SESSION_TTL, HubRateLimiter } from "./hub-auth.js";
 import type { DevicePortals } from "./device-portals.js";
 import {
 	establishConversation,
 	advanceConversationTask,
-	nextConversationTask,
 	recordConversationTurn,
 	conversationStatus,
-	queueParentResult,
 	conversationPage,
 	trimConversationHistory,
 	conversationStale,
@@ -78,15 +76,19 @@ import {
 	trimRoomReceipts,
 } from "./hub-conversations.js";
 import { DEFAULT_EXECUTION_SETTINGS, type DeviceExecutionSettings } from "./execution-settings.js";
+import {
+	hasTaskLease,
+	isRecoveringTask,
+	recordTaskOutcome,
+	settleTaskDependencies,
+	settleTaskTerminalOutcome,
+	rescanReadyTasksOnRecovery,
+	sweepExpiredRecoveryLeases,
+	type TaskSettlementEffects,
+} from "./task-settlement.js";
+import type { DeviceTaskEventFrame } from "../protocol.js";
 
-export interface HubTaskEvent {
-	reportMetadata?: import("../protocol.js").DeviceTaskReportMetadata;
-	botId: string;
-	taskId: string;
-	attemptId: string;
-	status: TaskStatus;
-	report?: string;
-}
+export interface HubTaskEvent extends Omit<DeviceTaskEventFrame, "type"> {}
 export interface HubRelay {
 	callDevice?: (
 		deviceId: string,
@@ -192,7 +194,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		)
 			throw new Error("Device domain must be independent of hub domain");
 	}
-	const store = await DeviceHubStore.open(options.dataDir);
+	const store = await DeviceHubStore.open(options.dataDir, { retainUnleasedQueued: true });
 	const taskJournalManager = createTaskJournalManager(options.dataDir);
 	const taskReportStore = createTaskReportStore(options.dataDir, "hub");
 	const groupEvents = createGroupEvents(store, taskJournalManager);
@@ -515,7 +517,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.post("/api/devices/:id/revoke", async (req, res) => {
 		const owner = account(req);
 		const id = String(req.params.id);
-		await store.transact((draft) => {
+		const settlement = await store.transact((draft) => {
 			if (!draft.devices.some((device) => device.id === id && device.accountId === owner.id))
 				fail(404, "Device missing");
 			draft.devices = draft.devices.filter((device) => device.id !== id);
@@ -533,12 +535,23 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					conversation.closedReason = "device_revoked";
 					conversation.updatedAt = Date.now();
 				}
-			for (const task of draft.tasks)
-				if (task.deviceId === id && !isTerminal(task.status)) {
-					task.status = "interrupted";
-					task.updatedAt = Date.now();
-				}
+			const notices = [];
+			for (const task of [...draft.tasks]) {
+				if (task.deviceId !== id || (isTerminal(task.status) && !task.recoveryUntil)) continue;
+				task.cancelRequested = true;
+				const notice = recordTaskOutcome(
+					draft,
+					task,
+					{ status: "interrupted", report: "Device revoked; task interrupted." },
+					settlementContext(),
+				);
+				if (notice) notices.push(notice);
+			}
+			const result = settleTaskDependencies(draft, settlementContext());
+			result.settledWakes.unshift(...notices);
+			return result;
 		});
+		await publishSettlementEffects(settlement);
 		for (const [key, pair] of pairs) if (pair.deviceId === id) pairs.delete(key);
 		await (options.onRevoke ?? options.relay?.onRevoke)?.(id);
 		await options.portals?.retire(id);
@@ -1819,35 +1832,55 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				fail(403, "Bot may stop only its own conversation");
 			conversation.closed = true;
 			conversation.closedReason = "stopped";
-			const tasks = draft.tasks.filter((t) => t.conversationId === conversation.id && taskPending(t));
+			const tasks = draft.tasks.filter(
+				(t) =>
+					t.conversationId === conversation.id &&
+					(taskPending(t) || (!t.outcomeFingerprint && t.recoveryUntil !== undefined)),
+			);
+			const notices = [];
 			for (const task of tasks) {
 				task.cancelRequested = true;
-				if ((task.status === "queued" || task.status === "waiting") && !deliveredTasks.has(task.id)) {
+				if (
+					(task.status === "queued" || task.status === "waiting") &&
+					!hasTaskLease(task) &&
+					!deliveredTasks.has(task.id)
+				) {
 					task.stopConfirmed = true;
-					task.status = "interrupted";
-					task.updatedAt = Date.now();
-					task.report = "Conversation stopped before delivery.";
+					const notice = recordTaskOutcome(
+						draft,
+						task,
+						{ status: "interrupted", report: "Conversation stopped before delivery." },
+						settlementContext(),
+					);
+					if (notice) notices.push(notice);
 				}
 			}
-			return tasks;
+			const settlement = settleTaskDependencies(draft, settlementContext());
+			settlement.settledWakes.unshift(...notices);
+			return { tasks, settlement };
 		});
-		for (const task of pending) {
-			if (task.stopConfirmed) {
-				await releaseLocksAndWake(String(req.params.id), task.id);
-				continue;
-			}
+		await publishSettlementEffects(pending.settlement);
+		for (const task of pending.tasks) {
+			if (task.stopConfirmed) continue;
 			const confirmed = await options.relay
 				?.cancelTask?.(task.deviceId, task.id, task.attemptId)
 				.catch(() => ({ stopped: false }));
 			if (!confirmed?.stopped) continue;
-			await store.transact((draft) => {
+			const settlement = await store.transact((draft) => {
 				const current = draft.tasks.find((t) => t.id === task.id && t.attemptId === task.attemptId);
 				if (!current) return;
 				current.stopConfirmed = true;
-				current.status = "interrupted";
-				current.updatedAt = Date.now();
-				current.report = "Conversation stopped.";
+				const notice = recordTaskOutcome(
+					draft,
+					current,
+					{ status: "interrupted", report: "Conversation stopped." },
+					settlementContext(),
+				);
+				const result = settleTaskDependencies(draft, settlementContext());
+				if (notice) result.settledWakes.unshift(notice);
+				return result;
 			});
+			if (settlement) await publishSettlementEffects(settlement);
 			await releaseLocksAndWake(String(req.params.id), task.id);
 		}
 		const remaining = store
@@ -2277,7 +2310,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				if (dependsOnTaskId && !draft.tasks.some((m) => m.id === dependsOnTaskId && m.roomId === room.id))
 					fail(400, "Dependency target task is not in this room");
 				const depTask = dependsOnTaskId ? draft.tasks.find((t) => t.id === dependsOnTaskId) : undefined;
-				const dependencyActive = Boolean(depTask && !isTerminal(depTask.status));
+				const dependencyActive = Boolean(depTask);
 				// The Hub owns dispatch semantics: a human message that only names Bots in its text must not
 				// silently fall back to the primary Bot just because a client did not pre-resolve the mentions.
 				const canParseMentions =
@@ -2559,11 +2592,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				draft.tasks = draft.tasks.filter((t) => !oldTasks.has(t.id));
 				trimConversationHistory(draft, room.id);
 				trimClosedConversations(draft, room.id);
-				return { message, tasks, duplicate: false, context };
+				const settlement = settleTaskDependencies(draft, settlementContext());
+				return { message, tasks, duplicate: false, context, settlement };
 			});
 			if (!result.duplicate) {
+				if (result.settlement) await publishSettlementEffects(result.settlement);
 				for (const task of result.tasks) {
-					if (task.status !== "waiting") await deliverTask(task, result.context);
+					if (task.status === "queued") await deliverTask(task, result.context);
 				}
 				if (result.message) {
 					dispatchGroupWebhook(store, req.params.id as string, "message", result.message);
@@ -2710,7 +2745,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			}
 			await store.transact((draft) => {
 				const current = draft.tasks.find((t) => t.id === taskId);
-				if (current && current.status === "waiting") {
+				if (current && current.status === "waiting" && current.blockReason === "resource_locked") {
 					current.status = "queued";
 					delete current.blockReason;
 					delete current.blockReasonDetail;
@@ -2731,7 +2766,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	async function drainConversation(conversationId?: string) {
 		if (!conversationId) return;
 		const state = store.snapshot();
-		const next = nextConversationTask(state, conversationId);
+		const next = nextReadyConversationTask(state, conversationId);
 		if (!next || deliveredTasks.has(next.id)) return;
 		const room = state.rooms.find((entry) => entry.id === next.roomId);
 		await deliverTask(
@@ -2740,40 +2775,100 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		);
 	}
 
-	async function wakeDependentTasks(roomId: string, completedTaskId: string, report?: string) {
-		const dependentTaskIds: string[] = [];
-		await store.transact((draft) => {
-			for (const t of draft.tasks) {
-				if (t.roomId === roomId && t.status === "waiting" && t.dependsOnTaskId === completedTaskId) {
-					t.status = "queued";
-					delete t.blockReason;
-					delete t.blockReasonDetail;
-					t.updatedAt = Date.now();
-					if (report) {
-						const excerpt = report.length > 2000 ? report.slice(0, 2000) + "..." : report;
-						t.text = `[前序任务输出：\n${excerpt}\n]\n\n${t.text}`;
-					}
-					dependentTaskIds.push(t.id);
-				}
-			}
-		});
-		if (dependentTaskIds.length > 0) {
+	function settlementContext() {
+		return { settings: currentSettings(), getHistoryLimit };
+	}
+
+	function nextReadyConversationTask(state: HubState, conversationId: string) {
+		const conversation = state.conversations.find((entry) => entry.id === conversationId);
+		if (!conversation || conversation.closed) return;
+		const pending = state.tasks.filter(
+			(entry) =>
+				entry.conversationId === conversationId &&
+				(taskPending(entry) || (!entry.outcomeFingerprint && entry.recoveryUntil !== undefined)),
+		);
+		if (
+			pending.some(
+				(entry) =>
+					entry.status === "running" ||
+					entry.cancelRequested ||
+					hasTaskLease(entry) ||
+					entry.recoveryUntil !== undefined,
+			)
+		)
+			return;
+		return pending[0]?.status === "queued" ? pending[0] : undefined;
+	}
+
+	async function publishSettlementEffects(result: TaskSettlementEffects, dispatch = true) {
+		for (const item of result.settledWakes) {
 			const state = store.snapshot();
-			const room = state.rooms.find((r) => r.id === roomId);
-			const context = room
-				? groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes)
-				: undefined;
-			for (const id of dependentTaskIds) {
-				const task = state.tasks.find((t) => t.id === id);
-				if (task) {
-					await deliverTask(task, context);
-				}
+			const task = state.tasks.find((entry) => entry.id === item.taskId);
+			if (!task) continue;
+			deliveredTasks.delete(task.id);
+			await releaseLocksAndWake(task.roomId, task.id);
+			void taskJournalManager
+				.append(
+					task.id,
+					{
+						botId: task.botId,
+						attemptId: task.attemptId,
+						type: "status",
+						phase: task.status,
+						summary: `Task ${task.status}`,
+						output: task.report,
+					},
+					{ roomId: task.roomId, accountId: task.accountId },
+				)
+				.catch((cause) => console.warn(`[TaskJournal] Journal append failed for task ${task.id}:`, cause));
+			dispatchGroupWebhook(store, task.roomId, task.status === "completed" ? "task_completed" : "task_failed", {
+				taskId: task.id,
+				botId: task.botId,
+				status: task.status,
+				report: task.report,
+				text: task.text,
+			});
+			const message = state.messages.find((entry) => entry.taskIds.includes(task.id) && entry.sender.id === task.botId);
+			if (message) dispatchGroupWebhook(store, task.roomId, "message", message);
+			if (dispatch) {
+				if (item.wake) await deliverTask(item.wake, item.context);
+				await drainConversation(task.conversationId);
 			}
+		}
+		if (!dispatch) return;
+		for (const taskId of result.readyTaskIds) {
+			const state = store.snapshot();
+			const task = state.tasks.find((entry) => entry.id === taskId);
+			const room = state.rooms.find((entry) => entry.id === task?.roomId);
+			if (task)
+				await deliverTask(
+					task,
+					room ? groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes) : undefined,
+				);
 		}
 	}
 	async function deliverTask(task: HubTask, context?: GroupTaskContext) {
-		if (deliveredTasks.has(task.id)) return;
-		if (task.conversationId && nextConversationTask(store.snapshot(), task.conversationId)?.id !== task.id) return;
+		const state = store.snapshot();
+		const current = state.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId);
+		if (
+			!current ||
+			current.status !== "queued" ||
+			hasTaskLease(current) ||
+			current.recoveryUntil !== undefined ||
+			current.cancelRequested ||
+			current.stopConfirmed ||
+			deliveredTasks.has(task.id)
+		)
+			return;
+		task = current;
+		if (task.dependsOnTaskId) {
+			const pred = state.tasks.find(
+				(entry) =>
+					entry.id === task.dependsOnTaskId && entry.roomId === task.roomId && entry.accountId === task.accountId,
+			);
+			if (!pred || pred.status !== "completed" || pred.cancelRequested || pred.stopConfirmed) return;
+		}
+		if (task.conversationId && nextReadyConversationTask(state, task.conversationId)?.id !== task.id) return;
 
 		if (task.resourceLocks && task.resourceLocks.length > 0) {
 			const acquired = lockManager.acquireLocks({
@@ -2845,52 +2940,17 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const failure = await store.transact((draft) => {
 				const current = draft.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId);
 				if (!current || isTerminal(current.status) || current.cancelRequested) return;
-				const report = "Task delivery failed; submit a new request to retry.";
-				current.status = "failed";
-				current.updatedAt = Date.now();
-				current.report = report;
-				if (current.conversationId)
-					draft.conversationMessages.push({
-						id: randomUUID(),
-						conversationId: current.conversationId,
-						taskId: current.id,
-						kind: "result",
-						text: report,
-						sourceBotId: current.botId,
-						requestId: current.requestId,
-						createdAt: current.updatedAt,
-					});
-				const room = draft.rooms.find((r) => r.id === current.roomId);
-				const context = room
-					? groupTaskContext(room, draft.bots, draft.messages, currentSettings().groupContextBytes)
-					: undefined;
-				const wake = queueParentResult(draft, current, currentSettings());
-				draft.messages.push({
-					id: randomUUID(),
-					roomId: current.roomId,
-					accountId: current.accountId,
-					text: report,
-					sender: {
-						type: "bot",
-						id: current.botId,
-						name: draft.bots.find((bot) => bot.id === current.botId)?.name ?? current.botId,
-						sourceDeviceId: current.deviceId,
-					},
-					createdAt: current.updatedAt,
-					taskIds: [current.id],
-				});
-				const remove = new Set(
-					draft.messages
-						.filter((message) => message.roomId === current.roomId)
-						.slice(0, -getHistoryLimit())
-						.map((message) => message.id),
+				const notice = recordTaskOutcome(
+					draft,
+					current,
+					{ status: "failed", report: "Task delivery failed; submit a new request to retry." },
+					settlementContext(),
 				);
-				draft.messages = draft.messages.filter((message) => !remove.has(message.id));
-				trimRoomReceipts(draft, current.roomId);
-				trimConversationHistory(draft, current.roomId);
-				return { wake, context };
+				const result = settleTaskDependencies(draft, settlementContext());
+				if (notice) result.settledWakes.unshift(notice);
+				return result;
 			});
-			if (failure?.wake) await deliverTask(failure.wake, failure.context);
+			if (failure) await publishSettlementEffects(failure);
 		} finally {
 			if (isTerminal(store.snapshot().tasks.find((entry) => entry.id === task.id)?.status ?? "interrupted")) {
 				deliveredTasks.delete(task.id);
@@ -2908,15 +2968,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			!["running", "completed", "failed", "interrupted"].includes(event.status)
 		)
 			fail(400, "Invalid task event");
-		const report =
-			event.report === undefined
-				? event.status === "failed"
-					? "Task execution failed without a report."
-					: event.status === "interrupted"
-						? "Task execution was interrupted without a report."
-						: undefined
-				: text(event.report);
-		if (event.status === "completed" && !report) fail(400, "Completed task requires agent report");
+		if (
+			(event.report !== undefined &&
+				(typeof event.report !== "string" || Buffer.byteLength(event.report) > 64 * 1024)) ||
+			(event.error !== undefined && (typeof event.error !== "string" || event.error.length > 4096))
+		)
+			fail(400, "Invalid task outcome");
 		let reportMetadata: import("../protocol.js").DeviceTaskReportMetadata | undefined;
 		try {
 			if (event.reportMetadata !== undefined) reportMetadata = parseReportMetadata(event.reportMetadata);
@@ -2924,226 +2981,123 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			fail(400, "Invalid report metadata");
 		}
 		const result = await store.transact((draft) => {
-			const device = draft.devices.find((d) => d.id === deviceId);
+			if (event.status !== "running") {
+				const settled = settleTaskTerminalOutcome(
+					draft,
+					deviceId,
+					{ ...event, type: "task_event", reportMetadata } as DeviceTaskEventFrame,
+					settlementContext(),
+				);
+				if (!settled.accepted) fail(settled.statusCode ?? 409, settled.reason ?? "Outcome rejected");
+				return settled;
+			}
+			const device = draft.devices.find((entry) => entry.id === deviceId);
 			const task = draft.tasks.find(
-				(t) =>
-					t.id === event.taskId &&
-					t.deviceId === deviceId &&
-					t.botId === event.botId &&
-					t.attemptId === event.attemptId &&
-					t.accountId === device?.accountId,
+				(entry) =>
+					entry.id === event.taskId &&
+					entry.deviceId === deviceId &&
+					entry.botId === event.botId &&
+					entry.accountId === device?.accountId,
 			);
 			const bot = draft.bots.find(
-				(b) => b.id === event.botId && b.deviceId === deviceId && b.accountId === device?.accountId,
+				(entry) => entry.id === event.botId && entry.deviceId === deviceId && entry.accountId === device?.accountId,
 			);
-			if (!task || !device || !bot || !draft.rooms.some((r) => r.id === task.roomId && r.botIds.includes(bot.id)))
+			if (
+				!task ||
+				!device ||
+				!bot ||
+				!draft.rooms.some((room) => room.id === task.roomId && room.botIds.includes(bot.id))
+			)
 				fail(404, "Task missing");
-			if (event.status !== "interrupted" && (!bot.enabled || bot.revision !== task.botRevision))
-				fail(409, "Bot configuration changed");
-			if (isTerminal(event.status)) {
-				const stored = taskReportStore.getReportMeta(task.id, task.attemptId, task.accountId, task.roomId);
-				task.reportMetadata = stored?.complete
-					? {
-							sha256: stored.sha256,
-							totalBytes: stored.totalBytes,
-							missing: false,
-							rejected: false,
-							uploadPending: false,
-						}
-					: (reportMetadata ?? task.reportMetadata ?? reportUploadMetadata());
+			if (
+				task.attemptId !== event.attemptId ||
+				task.leaseToken !== event.leaseToken ||
+				task.leaseGeneration !== event.leaseGeneration
+			)
+				fail(409, "Attempt or lease mismatch");
+			if (!bot.enabled || bot.revision !== task.botRevision || task.cancelRequested || task.stopConfirmed)
+				fail(409, "Task unavailable");
+			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil) fail(409, "Recovery window expired");
+			if (task.status === "running") {
+				delete task.recoveryUntil;
+				return { task, duplicate: true };
 			}
-			if (task.status === event.status) {
-				if (task.report && report && task.report !== report) fail(409, "Conflicting duplicate event");
-				return { task };
-			}
-			// Allow safe outbox replay or recovery adoption if task was marked interrupted during restart/disconnect
-			const inRecovery = typeof task.recoveryUntil === "number" && Date.now() <= task.recoveryUntil;
-			const canAdoptInterrupted =
-				(inRecovery || task.status === "interrupted") && (event.status === "completed" || event.status === "failed");
-			if (!canAdoptInterrupted) {
-				if (
-					isTerminal(task.status) ||
-					(task.status === "queued" && event.status !== "running" && event.status !== "interrupted") ||
-					(task.status === "running" && !isTerminal(event.status))
-				)
-					fail(409, "Invalid task transition");
-			}
+			if (task.status !== "queued" && !isRecoveringTask(task, Date.now())) fail(409, "Invalid task transition");
 			delete task.recoveryUntil;
-			task.status = event.status;
+			task.status = "running";
 			task.updatedAt = Date.now();
-			if (report) task.report = report;
-			if (report) {
-				draft.messages.push({
-					id: randomUUID(),
-					roomId: task.roomId,
-					accountId: task.accountId,
-					text: report,
-					sender: { type: "bot", id: bot.id, name: bot.name, sourceDeviceId: deviceId },
-					createdAt: Date.now(),
-					taskIds: [task.id],
-					conversationId: task.conversationId,
-				});
-				if (task.conversationId)
-					draft.conversationMessages.push({
-						id: randomUUID(),
-						conversationId: task.conversationId,
-						taskId: task.id,
-						kind: "result",
-						text: report,
-						sourceBotId: bot.id,
-						requestId: task.requestId,
-						createdAt: Date.now(),
-					});
-				const remove = new Set(
-					draft.messages
-						.filter((m) => m.roomId === task.roomId)
-						.slice(0, -getHistoryLimit())
-						.map((m) => m.id),
-				);
-				draft.messages = draft.messages.filter((m) => !remove.has(m.id));
-				trimRoomReceipts(draft, task.roomId);
-			}
-			const room = draft.rooms.find((r) => r.id === task.roomId)!;
-			const context = groupTaskContext(room, draft.bots, draft.messages, currentSettings().groupContextBytes);
-			const wake = queueParentResult(draft, task, currentSettings());
-			trimConversationHistory(draft, task.roomId);
-			return { task, wake, context };
+			return { task, duplicate: false };
 		});
-		if (result?.task) {
-			taskJournalManager
+		if (!result.duplicate && "settledWakes" in result)
+			await publishSettlementEffects({
+				settledWakes: result.settledWakes ?? [],
+				readyTaskIds: result.readyTaskIds ?? [],
+				cascadedFailedTaskIds: result.cascadedFailedTaskIds ?? [],
+			});
+		if (!result.duplicate && event.status === "running") {
+			const task = result.task!;
+			void taskJournalManager
 				.append(
-					result.task.id,
-					{
-						botId: result.task.botId,
-						attemptId: result.task.attemptId,
-						type: "status",
-						phase: event.status,
-						summary: `Task ${event.status}${report ? ": " + report.slice(0, 100) : ""}`,
-						output: report,
-					},
-					{ roomId: result.task.roomId, accountId: result.task.accountId },
+					task.id,
+					{ botId: task.botId, attemptId: task.attemptId, type: "status", phase: "running", summary: "Task running" },
+					{ roomId: task.roomId, accountId: task.accountId },
 				)
-				.catch((cause) => {
-					console.warn(`[TaskJournal] Journal append failed for task ${result.task.id}:`, cause);
-				});
+				.catch((cause) => console.warn(`[TaskJournal] Journal append failed for task ${task.id}:`, cause));
 		}
-		if (isTerminal(result.task.status)) {
-			deliveredTasks.delete(result.task.id);
-			await releaseLocksAndWake(result.task.roomId, result.task.id);
-			if (result.task.status === "completed") {
-				await wakeDependentTasks(result.task.roomId, result.task.id, report);
-				dispatchGroupWebhook(store, result.task.roomId, "task_completed", {
-					taskId: result.task.id,
-					botId: result.task.botId,
-					status: "completed",
-					report: result.task.report,
-					text: result.task.text,
-				});
-			} else if (result.task.status === "failed") {
-				dispatchGroupWebhook(store, result.task.roomId, "task_failed", {
-					taskId: result.task.id,
-					botId: result.task.botId,
-					status: "failed",
-					report: result.task.report,
-					text: result.task.text,
-				});
-			}
-			if (report) {
-				const state = store.snapshot();
-				const msg = state.messages.find((m) => m.taskIds.includes(result.task.id) && m.sender.id === result.task.botId);
-				if (msg) {
-					dispatchGroupWebhook(store, result.task.roomId, "message", msg);
-				}
-			}
-		}
-		if (result.wake) await deliverTask(result.wake, result.context);
-		await drainConversation(result.task.conversationId);
-		return result.task;
+		return result.task!;
 	}
 
-	// === Hub Restart Recovery Window ===
-	const nowInit = Date.now();
-	const recoveryGraceMs = 60_000;
-	try {
-		await store.transact((draft) => {
-			for (const task of draft.tasks) {
-				if (task.status === "running") {
-					task.recoveryUntil = nowInit + recoveryGraceMs;
-				}
-			}
-		});
-	} catch (err) {
-		console.error("DEBUG store.transact failed:", err);
-	}
+	// Recover unissued work; outstanding leases must first claim within the recovery window.
+	const recovery = await store.transact((draft) =>
+		rescanReadyTasksOnRecovery(draft, Date.now(), 60_000, settlementContext()),
+	);
+	await publishSettlementEffects(recovery, false);
 
+	async function resumeQueuedTasks(deviceId?: string) {
+		for (const task of store.snapshot().tasks) {
+			if (
+				(deviceId && task.deviceId !== deviceId) ||
+				task.status !== "queued" ||
+				hasTaskLease(task) ||
+				task.recoveryUntil !== undefined
+			)
+				continue;
+			const state = store.snapshot();
+			const room = state.rooms.find((entry) => entry.id === task.roomId);
+			await deliverTask(
+				task,
+				room ? groupTaskContext(room, state.bots, state.messages, currentSettings().groupContextBytes) : undefined,
+			);
+		}
+	}
 	let sweepInflight = false;
 	const recoverySweepTimer = setInterval(() => {
 		if (sweepInflight) return;
-		const sweepNow = Date.now();
-		const snapshot = store.snapshot();
-		const hasDue = snapshot.tasks.some(
-			(t) =>
-				(t.recoveryUntil && sweepNow > t.recoveryUntil) ||
-				(t.status === "running" && t.lastHeartbeatAt && sweepNow - t.lastHeartbeatAt > 30 * 60_000),
-		);
-		if (!hasDue) return;
-
+		const now = Date.now();
+		if (
+			!store
+				.snapshot()
+				.tasks.some(
+					(task) =>
+						!task.outcomeFingerprint &&
+						((task.recoveryUntil !== undefined && now > task.recoveryUntil) ||
+							((task.status === "running" || (task.status === "queued" && hasTaskLease(task))) &&
+								task.lastHeartbeatAt !== undefined &&
+								now - task.lastHeartbeatAt > 30 * 60_000)),
+				)
+		)
+			return;
 		sweepInflight = true;
 		void (async () => {
 			try {
-				const settledWakes: {
-					wake?: HubTask;
-					context?: GroupTaskContext;
-					conversationId?: string;
-					taskId: string;
-					roomId: string;
-				}[] = [];
-				await store.transact((draft) => {
-					for (const task of draft.tasks) {
-						const windowExpired = task.recoveryUntil && sweepNow > task.recoveryUntil;
-						const leaseExpired =
-							task.status === "running" && task.lastHeartbeatAt && sweepNow - task.lastHeartbeatAt > 30 * 60_000;
-						if (windowExpired || leaseExpired) {
-							delete task.recoveryUntil;
-							if (task.status === "running") {
-								task.status = "interrupted";
-								task.updatedAt = sweepNow;
-								const report = windowExpired
-									? "Hub restarted; recovery window expired without reconnect claim."
-									: "Task lease expired due to prolonged inactivity.";
-								task.report = report;
-								const room = draft.rooms.find((r) => r.id === task.roomId);
-								const context = room
-									? groupTaskContext(room, draft.bots, draft.messages, currentSettings().groupContextBytes)
-									: undefined;
-								const wake = queueParentResult(draft, task, currentSettings());
-								trimConversationHistory(draft, task.roomId);
-								settledWakes.push({
-									wake,
-									context,
-									conversationId: task.conversationId,
-									taskId: task.id,
-									roomId: task.roomId,
-								});
-							}
-						}
-					}
-				});
-				for (const item of settledWakes) {
-					deliveredTasks.delete(item.taskId);
-					await releaseLocksAndWake(item.roomId, item.taskId);
-					if (item.wake) await deliverTask(item.wake, item.context);
-					await drainConversation(item.conversationId);
+				const settled = await store.transact((draft) => sweepExpiredRecoveryLeases(draft, now, settlementContext()));
+				await publishSettlementEffects(settled);
+				for (const taskId of lockManager.cleanupExpiredLocks()) {
+					const task = store.snapshot().tasks.find((entry) => entry.id === taskId);
+					if (task) await handlePromotedTasks(task.roomId, [taskId]);
 				}
-				const expiredPromoted = lockManager.cleanupExpiredLocks();
-				for (const pTaskId of expiredPromoted) {
-					const pTask = store.snapshot().tasks.find((t) => t.id === pTaskId);
-					if (pTask) {
-						await handlePromotedTasks(pTask.roomId, [pTaskId]);
-					}
-				}
-			} catch {
-				console.warn("[HubRecovery] Sweep transaction failed");
+			} catch (cause) {
+				console.warn("[HubRecovery] Sweep transaction failed", cause);
 			} finally {
 				sweepInflight = false;
 			}
@@ -3180,14 +3134,10 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (!task || !device) {
 				return { taskId: claim.taskId, attemptId: claim.attemptId, accepted: false, reason: "Task not found" };
 			}
-			const inRecovery = typeof task.recoveryUntil === "number" && Date.now() <= task.recoveryUntil;
-			const isDisconnectInterrupted =
-				task.status === "interrupted" &&
-				!task.cancelRequested &&
-				!task.stopConfirmed &&
-				Date.now() - task.updatedAt <= 60_000;
-
-			if (isTerminal(task.status) && !inRecovery && !isDisconnectInterrupted) {
+			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil)
+				return { taskId: claim.taskId, attemptId: claim.attemptId, accepted: false, reason: "Recovery window expired" };
+			const inRecovery = isRecoveringTask(task, Date.now());
+			if (task.outcomeFingerprint || (isTerminal(task.status) && !inRecovery)) {
 				return {
 					taskId: claim.taskId,
 					attemptId: claim.attemptId,
@@ -3230,7 +3180,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				};
 			}
 
-			if (task.status !== "running" && !inRecovery && !isDisconnectInterrupted) {
+			if (task.status !== "running" && !(task.status === "queued" && hasTaskLease(task)) && !inRecovery) {
 				return {
 					taskId: claim.taskId,
 					attemptId: claim.attemptId,
@@ -3279,6 +3229,8 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			if (task.cancelRequested || task.stopConfirmed) {
 				return { taskId: renew.taskId, attemptId: renew.attemptId, accepted: false, reason: "Task stop requested" };
 			}
+			if (task.recoveryUntil !== undefined && Date.now() > task.recoveryUntil)
+				return { taskId: renew.taskId, attemptId: renew.attemptId, accepted: false, reason: "Recovery window expired" };
 			if (task.leaseToken !== renew.leaseToken) {
 				return { taskId: renew.taskId, attemptId: renew.attemptId, accepted: false, reason: "Lease token mismatch" };
 			}
@@ -3429,8 +3381,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const recoveryGraceMs = 60_000;
 		await store.transact((draft) => {
 			const task = draft.tasks.find((t) => t.id === taskId && t.deviceId === deviceId && t.attemptId === attemptId);
-			if (task && task.status === "running") {
-				task.recoveryUntil = now + recoveryGraceMs;
+			if (
+				task &&
+				!task.outcomeFingerprint &&
+				(task.status === "running" || (task.status === "queued" && hasTaskLease(task)))
+			) {
+				task.recoveryUntil ??= now + recoveryGraceMs;
 				task.updatedAt = now;
 			}
 		});
@@ -3443,6 +3399,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		claimTask,
 		renewTaskLease,
 		onTaskDisconnect,
+		resumeQueuedTasks,
 		getAccount,
 		getRelayAccount: (req: IncomingMessage) => users.get(req as Request)?.account ?? getAccount(req) ?? undefined,
 		authenticateAgent,

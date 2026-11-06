@@ -106,7 +106,7 @@ Bot 的稳定 ID 与承载设备分离。群使用 `botIds`，可选 `primaryBot
 
 会话容量按「未停止会话」计数：已停止会话进入有界归档（每群保留 200 条，无交付/审查/集成记录的可淘汰），归档不占用新建会话名额；`POST /api/rooms/:id/conversations/:conversationId/delete` 仅允许无在途任务、无交付/审查/集成记录的会话，用于释放容量，禁止用清空群组代替。撤销承载 Bot 的设备会关闭其会话并标记 `closedReason=device_revoked`；Bot 版本、设备或成员变化后会话以 `stale` 返回，界面禁止继续并提示新建。群消息支持 `replyToMessageId`（必须指向同群消息）作为回复锚点，并随群上下文与 `read_history` 投影给 Bot。人类消息未显式给出 `targetBotIds` 时由 Hub 解析正文 `@Name` / `@Name(<id>)`：同名多成员不猜、非成员不派发，正文提及不再因客户端未解析而静默回落到主 Bot。幂等收据与消息保留解耦（每群 2000 条、7 天），消息淘汰不再削弱重放保护。
 
-Hub 状态分两层持久化：`device-hub.json` 仍是唯一的**索引**（`version: 2`，同一 schema，账号/设备/Bot/群/会话/交付/收据都在其中，`messages`、`tasks`、`conversationMessages` 固定为空数组），大集合落入 `hub-log/` 下的追加日志：`hub-log/messages/<roomId>.jsonl`、`hub-log/tasks/<roomId>.jsonl`、`hub-log/conversation-messages/<conversationId>.jsonl`。每行是 `{"v":1,"op":"upsert","value":…}` 或 `{"v":1,"op":"del","ids":[…]}`；写入顺序固定为**先索引后日志**，因此日志行只描述已持久化的索引状态；反过来索引可能领先日志一个未 ACK 的事务（崩溃时该事务不投递、下次成功提交会覆盖索引），不会出现“已确认但仅存在于日志”的行。删除以墓碑追加，墓碑数达到 200 或行数超过保留上限两倍时按存活行重写文件（临时文件 + fsync + rename）；加载时按群保留 500 条并修复崩溃留下的半行（截断到最后一个换行）。旧版本内联的 `messages`/`tasks`/`conversationMessages` 在 `open()` 时先写入日志再清空索引（可重跑、不丢行）；`readPersistedHub(dataDir)` 供工具与测试在不触发中断标记的前提下重建完整状态。**兼容边界**：索引 schema 与旧数据文件均可加载，但旧版 Hub 直接读 `device-hub.json` 只能看到空集合，回退旧版本前必须先导出完整状态。
+Hub 状态分两层持久化：`device-hub.json` 仍是唯一的**索引**（`version: 2`，同一 schema，账号/设备/Bot/群/会话/交付/收据都在其中，`messages`、`tasks`、`conversationMessages` 固定为空数组），大集合落入 `hub-log/` 下的追加日志：`hub-log/messages/<roomId>.jsonl`、`hub-log/tasks/<roomId>.jsonl`、`hub-log/conversation-messages/<conversationId>.jsonl`。每行是 `{"v":1,"op":"upsert","value":…}` 或 `{"v":1,"op":"del","ids":[…]}`；协同事务以 `hub-wal.jsonl` 为单一提交点：将索引与三个集合的增删差量、递增序号和校验和写入并 fsync 后才确认提交；日志与索引随后作为可恢复投影更新，索引最后保存 `checkpointSeq`。投影失败仍保留已经提交的内存状态与 WAL，下一笔写入或重启重放后再补 checkpoint，不能用相同序号覆盖旧事务或返回普通提交失败。只有投影完成才清理 WAL。删除以墓碑追加，墓碑数达到 200 或行数超过保留上限两倍时按存活行重写文件（临时文件 + fsync + rename）；加载时按群保留 500 条并修复崩溃留下的半行（截断到最后一个换行）。旧版本内联的 `messages`/`tasks`/`conversationMessages` 在 `open()` 时先写入日志再清空索引（可重跑、不丢行）；`readPersistedHub(dataDir)` 供工具与测试在不触发中断标记、不创建目录或修写文件的前提下，在内存重放 WAL 并重建完整状态。**兼容边界**：索引 schema 与旧数据文件均可加载，但旧版 Hub 直接读 `device-hub.json` 只能看到空集合，回退旧版本前必须先导出完整状态。
 
 设备调度器的房间公平历史（最近派发时间与次数）持久化在数据目录 `task-scheduler-state.json`，250ms 防抖 + 原子写入，重启后恢复；状态损坏或缺失时按中性公平性启动，不阻塞派发。
 
@@ -116,7 +116,7 @@ Hub 状态分两层持久化：`device-hub.json` 仍是唯一的**索引**（`ve
 
 原生 `ask_user_question` 与工具审批通过独立交互桥展示在群内；回复绑定当前任务与 attempt，审批仅支持本次批准或拒绝，不允许远端修改持久授权规则。群专属 `conversation_attention` 可在当前任务仍运行时接收人类回答；回答先持久保存，后续轮次等待原执行结束再进入同一会话，避免并发写入转录。
 
-执行超时使用 20 分钟无实际活动窗口，人工等待期间暂停。真实模型输出和工具活动续约；状态查询与网络心跳不代表执行进展。网络断开保留已获租约的本机执行，重连后用 task/attempt/lease 认领，旧代次或已撤销权限不能恢复。Hub 重启提供有界认领窗口；设备进程重启不能证明旧执行仍在时，记录中断并要求显式继续，不自动重放副作用。终态结果先写本机 outbox，Hub 持久确认后才清除；完整报告另有独立 outbox，终态确认不会误删尚未上传的报告。
+执行超时使用 20 分钟无实际活动窗口，人工等待期间暂停。真实模型输出和工具活动续约；状态查询与网络心跳不代表执行进展。网络断开保留已获租约的本机执行，重连后用 task/attempt/lease 认领，旧代次或已撤销权限不能恢复。Hub 重启提供有界认领窗口；设备进程重启不能证明旧执行仍在时，记录中断并要求显式继续，不自动重放副作用。活跃租约与终态结果统一写本机 `task-recovery-state.json`，在同一次原子替换中保存结果并移除租约；旧的两个恢复文件在迁移成功后清理。Hub 按 attempt 与租约代次接纳不可变结果，ACK 必须携带已提交的匹配摘要后才清除设备 outbox；完整报告另有独立 outbox，终态确认不会误删尚未上传的报告。旧版不能读取新的统一恢复文件，回退前须备份并转换恢复状态，不能直接删除新文件。
 
 消息内报告仍保持 16 KiB 摘录预算，完整原文在执行设备持久保存并分块上传 Hub，每报告上限 4 MiB，超限明确标记 rejected；设备报告 outbox 总预算 64 MiB、最多 128 条，并清理已确认的有限历史。任务详情与 `task_evidence` 按分片、完整哈希和版本读取，上传未完成、缺失或拒绝不冒充完整报告。上下文摘要保留约束来源、决策和证据引用，截断处明确提示查询完整记录。
 

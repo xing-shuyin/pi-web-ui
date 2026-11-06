@@ -137,11 +137,28 @@ export interface DeviceTaskLeaseResult {
 	accepted: boolean;
 	reason?: string;
 }
+export interface DeviceTaskEventFrame {
+	type: "task_event";
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	status: "running" | "completed" | "failed" | "interrupted";
+	leaseToken?: string;
+	leaseGeneration?: number;
+	report?: string;
+	error?: string;
+	reportMetadata?: DeviceTaskReportMetadata;
+	fingerprint?: string;
+}
 export interface DeviceTaskResultAck {
 	taskId: string;
 	attemptId: string;
 	status: "completed" | "failed" | "interrupted";
 	fingerprint?: string;
+	accepted: boolean;
+}
+export interface DeviceTaskResultAckFrame extends DeviceTaskResultAck {
+	type: "task_result_ack";
 }
 
 export type DeviceDeliveryCheckInput = {
@@ -431,9 +448,15 @@ export interface HubTask {
 	blockReason?: DeviceTaskBlockReason;
 	blockReasonDetail?: string;
 	report?: string;
+	error?: string;
 	reportMetadata?: DeviceTaskReportMetadata;
 	cancelRequested?: boolean;
 	stopConfirmed?: boolean;
+	/** Immutable digest of the terminal outcome accepted by the Hub. */
+	outcomeFingerprint?: string;
+	/** Canonical wire content, independent of subsequently hydrated report metadata. */
+	outcomeCanonicalFingerprint?: string;
+	terminalAcceptedLeaseGeneration?: number;
 	leaseToken?: string;
 	leaseGeneration?: number;
 	lastHeartbeatAt?: number;

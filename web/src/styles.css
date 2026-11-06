@@ -1630,6 +1630,7 @@
 		gap: 0;
 		flex: 1;
 		min-width: 0;
+		margin-bottom: 0;
 		padding: 0 8px 0 4px;
 		border: none;
 		border-radius: 6px;
@@ -1644,9 +1645,8 @@
 	.lp-project-head-row.active {
 		background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
 		color: var(--text);
-		border: none !important;
-		box-shadow: none !important;
-		outline: none !important;
+		border: none;
+		box-shadow: none;
 	}
 	.lp-project-head-row.active:hover {
 		background: color-mix(in srgb, var(--blue, #3b82f6) 19%, transparent);
@@ -1654,19 +1654,17 @@
 	.lp-project-head-row.switching {
 		background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
 		color: var(--text);
-		border: none !important;
-		box-shadow: none !important;
-		outline: none !important;
+		border: none;
+		box-shadow: none;
 		cursor: progress;
 		animation: switching-row-pulse 1.2s ease-in-out infinite;
 	}
 	.lp-project-head-row .lp-project-header-item,
 	.lp-project-head-row .lp-project-header-item.active,
 	.lp-project-head-row .lp-project-header-item.switching {
-		background: transparent !important;
-		border: none !important;
-		box-shadow: none !important;
-		outline: none !important;
+		background: transparent;
+		border: none;
+		box-shadow: none;
 		padding: 0 8px 0 4px;
 	}
 	.lp-project-header-item .lp-project-chevron {
@@ -36881,6 +36879,7 @@
 .lp-row .lp-project-header-item.active,
 .lp-row .lp-project-header-item.switching {
 	height: 28px;
+	flex: 1;
 	padding-left: 4px;
 	padding-right: 8px;
 	padding-top: 0;
@@ -36894,9 +36893,8 @@
 .lp-project-head-row.active {
 	background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
 	color: var(--text);
-	border: none !important;
-	box-shadow: none !important;
-	outline: none !important;
+	border: none;
+	box-shadow: none;
 }
 
 .lp-project-head-row.active:hover {
@@ -36906,9 +36904,8 @@
 .lp-project-head-row.switching {
 	background: color-mix(in srgb, var(--blue, #3b82f6) 13%, transparent);
 	color: var(--text);
-	border: none !important;
-	box-shadow: none !important;
-	outline: none !important;
+	border: none;
+	box-shadow: none;
 }
 
 .lp-project-head-row .lp-project-header-item,
@@ -36919,8 +36916,7 @@
 .lp-row .lp-project-header-item,
 .lp-row .lp-project-header-item.active,
 .lp-row .lp-project-header-item.switching {
-	background: transparent !important;
-	border: none !important;
-	box-shadow: none !important;
-	outline: none !important;
+	background: transparent;
+	border: none;
+	box-shadow: none;
 }
