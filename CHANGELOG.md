@@ -37,14 +37,10 @@
 - 插件 SDK 升级至 0.3.0，脚手架与 SDK 升级工具同步适配入口拆分；SFTP 插件及页面选择扩展的文档示例完成脱敏并递增版本。
 - 随手问收起后保留当前页面的内存上下文，刷新后清空；群组工作区与进程监督用于协作隔离，不提供操作系统安全沙盒。
 
-<!-- auto-i18n:start -->
-
 ### i18n
 
-- 前端新增 key（57）：`newChatAction`、`newChatInCurrentProjectTip`、`deviceSetupUpdate`、`deviceSetupUpdating`、`deviceSetupUpdateSuccess`、`deviceHubUpgradeAction`、`deviceHubUpgrading`、`deviceHubConfirmUpgrade`、`deviceHubUpgradeSuccess`、`lpShowMore`、`lpCollapsedHistory`、`lpBadgeFork`、`lpBadgeScheduler`、`lpChannelWechat`、`lpChannelFeishu`、`lpChannelDingtalk`、`lpOpenOnDesktopTip`、`lpFilterPlaceholder`、`lpFilterNoMatch`、`lpFilterClear`、`lpProjectsTree`、`lpDragToReorder`、`quickAskSettingsTitle`、`quickAskSettingsDesc`、`quickAskEnabled`、`quickAskEnabledHint`、`quickAskModel`、`quickAskFollowModel`、`quickAskThinking`、`quickAskSystemPrompt`、`quickAskSystemPromptHint`、`quickAskExplainPrompt`、`quickAskExplainPromptHint`、`quickAskResetExplainPrompt`、`quickAskOpen`、`quickAskTitle`、`quickAskPlaceholder`、`quickAskSend`、`quickAskNewTopic`、`quickAskEmpty`、`quickAskStop`、`quickAskStopped`、`quickAskClose`、`quickAskLoading`、`quickAskError`、`quickAskRetry`、`quickAskInputLabel`、`explainSelection`、`selectionExplainTitle`、`selectionExplainLoading`、`selectionExplainError`、`selectionExplainRetry`、`selectionExplainCancel`、`selectionExplainStopped`、`selectionExplainEmpty`、`selectionExplainSelection`、`selectionExplainClose`
+- 前端新增 key（49）：`newChatAction`、`newChatInCurrentProjectTip`、`deviceSetupUpdate`、`deviceSetupUpdating`、`deviceSetupUpdateSuccess`、`deviceHubUpgradeAction`、`deviceHubUpgrading`、`deviceHubConfirmUpgrade`、`deviceHubUpgradeSuccess`、`lpShowMore`、`lpCollapsedHistory`、`lpBadgeFork`、`lpBadgeScheduler`、`lpChannelWechat`、`lpChannelFeishu`、`lpChannelDingtalk`、`lpOpenOnDesktopTip`、`lpFilterPlaceholder`、`lpFilterNoMatch`、`lpFilterClear`、`lpProjectsTree`、`lpDragToReorder`、`quickAskSettingsTitle`、`quickAskSettingsDesc`、`quickAskEnabled`、`quickAskEnabledHint`、`quickAskModel`、`quickAskFollowModel`、`quickAskThinking`、`quickAskSystemPrompt`、`quickAskSystemPromptHint`、`quickAskExplainPrompt`、`quickAskExplainPromptHint`、`quickAskResetExplainPrompt`、`quickAskOpen`、`quickAskTitle`、`quickAskPlaceholder`、`quickAskSend`、`quickAskNewTopic`、`quickAskEmpty`、`quickAskStop`、`quickAskStopped`、`quickAskClose`、`quickAskLoading`、`quickAskError`、`quickAskRetry`、`quickAskInputLabel`、`explainSelection`、`selectionExplainEmpty`
 - 前端删除 key（1）：`waitingQuestionShort`
-
-<!-- auto-i18n:end -->
 
 ## [0.116.0] — 2026-11-05
 
