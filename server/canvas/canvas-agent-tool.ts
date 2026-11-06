@@ -223,7 +223,10 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`画布工程 ${graphs.length} 个：${graphs.map((g) => `${g.name}(${g.id}, ${g.nodeCount}节点/${g.edgeCount}边)`).join("；")}`,
 							`Canvas graphs (${graphs.length}): ${graphs.map((g) => `${g.name} (${g.id}, ${g.nodeCount} nodes/${g.edgeCount} edges)`).join("; ")}`,
 							"canvas.listed",
-							{},
+							{
+								count: graphs.length,
+								graphs: graphs.map((g) => `${g.name} (${g.id}, ${g.nodeCount} nodes/${g.edgeCount} edges)`).join("; "),
+							},
 						),
 						{ graphs },
 					);
@@ -247,7 +250,10 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`自定义卡片 ${cards.length} 张：${cards.map((c) => `${c.title}(${c.id}, ${c.role})`).join("；") || "（空）"}`,
 							`Custom cards (${cards.length}): ${cards.map((c) => `${c.title} (${c.id}, ${c.role})`).join("; ") || "(empty)"}`,
 							"canvas.cards.listed",
-							{},
+							{
+								count: cards.length,
+								cards: cards.map((c) => `${c.title} (${c.id}, ${c.role})`).join("; ") || "(empty)",
+							},
 						),
 						{ cards },
 					);
@@ -261,7 +267,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已保存自定义卡片 ${card.title}(${card.id})，已同步到画布工具栏。`,
 							`Saved custom card ${card.title} (${card.id}); toolbar updated.`,
 							"canvas.card.added",
-							{},
+							{ "card.title": card.title, "card.id": card.id },
 						),
 						{ card },
 					);
@@ -281,7 +287,9 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					const card = updateCustomCard(dataDir, cardId, cardInput, isCardRole);
 					pushCards(dataDir);
 					return text(
-						pick(getLang(), `已更新卡片 ${card.title}。`, `Updated card ${card.title}.`, "canvas.card.updated", {}),
+						pick(getLang(), `已更新卡片 ${card.title}。`, `Updated card ${card.title}.`, "canvas.card.updated", {
+							"card.title": card.title,
+						}),
 						{ card },
 					);
 				}
@@ -305,7 +313,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							ok ? `已删除卡片 ${cardId}。` : `卡片不存在：${cardId}。`,
 							ok ? `Deleted card ${cardId}.` : `Card not found: ${cardId}.`,
 							"canvas.card.deleted",
-							{},
+							{ cardId },
 						),
 						{ ok },
 					);
@@ -368,7 +376,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已新建工程 ${name}(${id})，含触发器→结束初始链。`,
 							`Created graph ${name} (${id}) with trigger->end starter chain.`,
 							"canvas.graph.created",
-							{},
+							{ name, id },
 						),
 						{ graph },
 					);
@@ -404,7 +412,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							ok ? `已删除工程 ${graphId}。` : `工程不存在：${graphId}。`,
 							ok ? `Deleted graph ${graphId}.` : `Graph not found: ${graphId}.`,
 							"canvas.graph.deleted",
-							{},
+							{ graphId },
 						),
 						{ ok },
 					);
@@ -441,7 +449,9 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					const card = listCustomCards(dataDir).find((c) => c.id === cardId);
 					if (!card)
 						return text(
-							pick(getLang(), `卡片不存在：${cardId}。`, `Card not found: ${cardId}.`, "canvas.card.missing", {}),
+							pick(getLang(), `卡片不存在：${cardId}。`, `Card not found: ${cardId}.`, "canvas.card.not_found", {
+								cardId,
+							}),
 							{ ok: false },
 						);
 					const role = VALID_ROLES.has(card.role) ? card.role : "coder";
@@ -480,7 +490,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已落卡片 ${card.title} → 节点 ${node.id}，画布实时可见。`,
 							`Placed card ${card.title} as node ${node.id}.`,
 							"canvas.card.placed",
-							{},
+							{ "card.title": card.title, "node.id": node.id },
 						),
 						{ node },
 					);
@@ -509,7 +519,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已加节点 ${node.title}(${node.id})，画布刷新可见。`,
 							`Added node ${node.title} (${node.id}).`,
 							"canvas.node.added",
-							{},
+							{ "node.title": node.title, "node.id": node.id },
 						),
 						{ node },
 					);
@@ -519,7 +529,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					const n = graph.nodes.find((x) => x.id === nodeId);
 					if (!n)
 						return text(
-							pick(getLang(), `节点不存在：${nodeId}`, `Node not found: ${nodeId}`, "canvas.node.missing", {}),
+							pick(getLang(), `节点不存在：${nodeId}`, `Node not found: ${nodeId}`, "canvas.node.missing", { nodeId }),
 							{ ok: false },
 						);
 					const patch = (p.patch ?? {}) as Record<string, unknown>;
@@ -548,7 +558,9 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					}
 					saveAndPush(dataDir, graph);
 					return text(
-						pick(getLang(), `已更新节点 ${n.title}。`, `Updated node ${n.title}.`, "canvas.node.updated", {}),
+						pick(getLang(), `已更新节点 ${n.title}。`, `Updated node ${n.title}.`, "canvas.node.updated", {
+							"n.title": n.title,
+						}),
 						{ node: n },
 					);
 				}
@@ -563,7 +575,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已删节点 ${nodeId}（连带边）。`,
 							`Deleted node ${nodeId} with its edges.`,
 							"canvas.node.deleted",
-							{},
+							{ nodeId },
 						),
 						{ ok: true },
 					);
@@ -602,7 +614,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`两节点间已存在连接（${s} → ${t}）。`,
 								`Edge already exists between ${s} and ${t}.`,
 								"canvas.edge.duplicate",
-								{},
+								{ s, t },
 							),
 							{ ok: false },
 						);
@@ -615,17 +627,23 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					};
 					graph.edges.push(edge);
 					saveAndPush(dataDir, graph);
-					return text(pick(getLang(), `已连边 ${s} → ${t}。`, `Connected ${s} -> ${t}.`, "canvas.edge.added", {}), {
-						edge,
-					});
+					return text(
+						pick(getLang(), `已连边 ${s} → ${t}。`, `Connected ${s} -> ${t}.`, "canvas.edge.added", { s, t }),
+						{
+							edge,
+						},
+					);
 				}
 				if (action === "delete_edge") {
 					const edgeId = p.edgeId as string;
 					graph.edges = graph.edges.filter((e) => e.id !== edgeId);
 					saveAndPush(dataDir, graph);
-					return text(pick(getLang(), `已删边 ${edgeId}。`, `Deleted edge ${edgeId}.`, "canvas.edge.deleted", {}), {
-						ok: true,
-					});
+					return text(
+						pick(getLang(), `已删边 ${edgeId}。`, `Deleted edge ${edgeId}.`, "canvas.edge.deleted", { edgeId }),
+						{
+							ok: true,
+						},
+					);
 				}
 				if (action === "apply_dag") {
 					const rawNodes = (p.nodes ?? []) as Record<string, unknown>[];
@@ -642,7 +660,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 									`非法节点 role：${String(n.role)}`,
 									`Invalid node role: ${String(n.role)}`,
 									"canvas.dag.role",
-									{},
+									{ "String(n.role)": String(n.role) },
 								),
 								{ ok: false },
 							);
@@ -698,7 +716,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							`已替换整图：${nodes.length} 节点 / ${edges.length} 边。`,
 							`Replaced graph: ${nodes.length} nodes / ${edges.length} edges.`,
 							"canvas.dag.applied",
-							{},
+							{ "nodes.length": nodes.length, "edges.length": edges.length },
 						),
 						{ graph: next },
 					);
@@ -745,14 +763,14 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`已启动整图运行：${graph.name}，进度在 Canvas Studio 看直播。`,
 								`Started run-all for ${graph.name}; watch progress in Canvas Studio.`,
 								"canvas.run.started",
-								{},
+								{ "graph.name": graph.name },
 							),
 							{ ok: true, graphId },
 						);
 					}
 					if (action === "run_node") {
 						if (!nodeId)
-							return text(pick(getLang(), "缺少 nodeId。", "Missing nodeId.", "canvas.node.missing", {}), {
+							return text(pick(getLang(), "缺少 nodeId。", "Missing nodeId.", "canvas.node.id_missing", {}), {
 								ok: false,
 							});
 						void canvasRuntime
@@ -771,7 +789,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`已启动节点 ${nodeId}，日志可用 get_log 查看。`,
 								`Started node ${nodeId}; use get_log to inspect.`,
 								"canvas.node.started",
-								{},
+								{ nodeId },
 							),
 							{ ok: true, graphId, nodeId },
 						);
@@ -779,7 +797,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					if (action === "stop_node") {
 						canvasRuntime.stopNode(graphId, nodeId);
 						return text(
-							pick(getLang(), `已停止节点 ${nodeId}。`, `Stopped node ${nodeId}.`, "canvas.node.stopped", {}),
+							pick(getLang(), `已停止节点 ${nodeId}。`, `Stopped node ${nodeId}.`, "canvas.node.stopped", { nodeId }),
 							{ ok: true },
 						);
 					}
@@ -804,7 +822,9 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 							);
 						await canvasRuntime.steerNode(graphId, nodeId, message);
 						return text(
-							pick(getLang(), `已向节点 ${nodeId} 追问/转向。`, `Steered node ${nodeId}.`, "canvas.steered", {}),
+							pick(getLang(), `已向节点 ${nodeId} 追问/转向。`, `Steered node ${nodeId}.`, "canvas.steered", {
+								nodeId,
+							}),
 							{ ok: true },
 						);
 					}
@@ -817,7 +837,11 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`已${decision === "approve" ? "批准" : "驳回"}节点 ${nodeId}。`,
 								`${decision === "approve" ? "Approved" : "Rejected"} node ${nodeId}.`,
 								"canvas.reviewed",
-								{},
+								{
+									nodeId,
+									decision,
+									verdict: decision === "approve" ? "Approved" : "Rejected",
+								},
 							),
 							{ ok: true },
 						);
@@ -831,7 +855,12 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`节点 ${nodeId} 日志 ${entries.length} 条（尾部 ${tail.length}）：\n${tail.join("\n") || "（空）"}`,
 								`Node ${nodeId} logs (${entries.length}, last ${tail.length}):\n${tail.join("\n") || "(empty)"}`,
 								"canvas.log",
-								{},
+								{
+									nodeId,
+									count: entries.length,
+									shown: tail.length,
+									logs: tail.join("\n") || "(empty)",
+								},
 							),
 							{ entries: tail, count: entries.length },
 						);
@@ -898,7 +927,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								`已重排 ${graph.nodes.length} 个节点（按连线分层，卡片不再叠）。`,
 								`Rearranged ${graph.nodes.length} nodes into layers; no more overlap.`,
 								"canvas.layout.done",
-								{},
+								{ "graph.nodes.length": graph.nodes.length },
 							),
 							{ ok: true },
 						);
@@ -908,13 +937,13 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						return text(pick(getLang(), "已重置整图状态。", "Reset graph status.", "canvas.reset", {}), { ok: true });
 					}
 				}
-				return text(pick(getLang(), `未知动作：${action}`, `Unknown action: ${action}`, "canvas.unknown", {}), {
+				return text(pick(getLang(), `未知动作：${action}`, `Unknown action: ${action}`, "canvas.unknown", { action }), {
 					ok: false,
 				});
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				return text(
-					pick(getLang(), `画布操作失败：${msg}`, `Canvas op failed: ${msg}`, "canvas.failed", { error: msg }),
+					pick(getLang(), `画布操作失败：${msg}`, `Canvas op failed: ${msg}`, "canvas.failed", { msg, error: msg }),
 					{ ok: false },
 				);
 			}

@@ -784,6 +784,7 @@ export function makeSubagentTool(
 								kindLabel: kindLabelEn,
 								kindLabelEn,
 								kindLabelZh,
+								addressLine,
 							},
 						),
 						{

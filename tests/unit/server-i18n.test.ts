@@ -17,6 +17,89 @@ import {
 	unregisterServerStrings,
 } from "../../server/i18n.js";
 
+describe("Russian server pack (PR #846)", () => {
+	it("renders runtime values and preserves actionable subagent guidance", async () => {
+		const fs = await import("node:fs");
+		const pack = JSON.parse(fs.readFileSync(new URL("../../locales/ru.json", import.meta.url), "utf8"));
+		const extracted = extractServerStrings(pack);
+		expect(extracted).not.toBeNull();
+		if (!extracted) throw new Error("Russian server strings are missing");
+		registerServerStrings("ru", extracted.table);
+		try {
+			const cases: [string, Record<string, unknown>, string[]][] = [
+				[
+					"worktree.create.success",
+					{ path: "wt/task", branch: "feat/task", switched: ", switched" },
+					["wt/task", "feat/task"],
+				],
+				[
+					"mcp_manage.install.ok",
+					{ name: "my-mcp", scope: "project", status: "running", toolHint: " tools: 3" },
+					["my-mcp", "project", "running", "tools: 3"],
+				],
+				["plugincatalog.sync.http", { status: "503" }, ["503"]],
+				[
+					"plugins.manifest.invalid",
+					{ name: "broken-plugin", path: "version", message: "must be a string" },
+					["broken-plugin", "must be a string"],
+				],
+				[
+					"subagents.get.done",
+					{
+						doneId: "c1",
+						"r.type": "explore",
+						modelTag: "",
+						verdict: "done",
+						doneDetail: "finished",
+						doneOutput: "answer\nworktree: wt/task",
+					},
+					["answer", "wt/task"],
+				],
+			];
+			for (const [key, vars, values] of cases) {
+				const result = pick("ru", "", "", key, vars);
+				for (const value of values) expect(result, key).toContain(value);
+				expect(result, key).not.toMatch(/\{[\w.]+\}/);
+			}
+			const delegated = pick("ru", "", "", "delegate.started", {
+				convId: "c1",
+				agent: "explore",
+				title: "Review",
+				modelLineEn: "",
+				toolsLineEn: "\nTools: read",
+				securityLineEn: "\nSecurity: readonly",
+			});
+			expect(delegated).toContain('subagent(action="wait_all")');
+			expect(delegated).toContain('subagent(action="steer")');
+			const spawned = pick("ru", "", "", "subagents.spawn.started", {
+				kindLabelEn: "Subagent",
+				convId: "c1",
+				subagentType: "explore",
+				subagentTitleText: "Review",
+				templateLineEn: "",
+				modelLineEn: "",
+				thinkingLineEn: "",
+				notifyLineEn: "",
+				isolationLineEn: "",
+				addressLine: "\naddress: exec-test",
+			});
+			expect(spawned).toContain('subagent(action="wait_all")');
+			expect(spawned).toContain("exec-test");
+			expect(spawned).not.toMatch(/\{[\w.]+\}/);
+			const limit = pick("ru", "", "", "agent.subagent.limit.reached", { limit: 3 });
+			expect(limit).toContain('subagent(action="wait_all")');
+			expect(limit).toContain('subagent(action="stop")');
+			const wait = pick("ru", "", "", "terminals.wait.no.pending", { "p.terminalId": "term-test" });
+			expect(wait).toContain("terminal(action='read', terminalId=\"term-test\"");
+			expect(pick("ru", "", "", "subagents.notify.footer")).toMatch(/^\n/);
+			expect(pick("ru", "", "", "subagents.get.worktree.cleaned")).toMatch(/^\n\n/);
+			expect(pick("ru", "", "", "subagents.get.worktree.preserved")).toMatch(/^\n\n/);
+		} finally {
+			unregisterServerStrings("ru");
+		}
+	});
+});
+
 describe("resolveServerLang", () => {
 	it("zh variants → zh", () => {
 		expect(resolveServerLang("zh")).toBe("zh");

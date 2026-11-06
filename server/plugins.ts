@@ -3576,7 +3576,7 @@ export class PluginManager {
 						`manifest 校验失败：${first.message}（${name}/）—— 修复后点“重新扫描”`,
 						`manifest validation failed: ${first.messageEn} (${name}/) — fix it, then hit Rescan`,
 						"plugins.manifest.invalid",
-						{ name, path: first.path },
+						{ name, path: first.path, message: first.messageEn },
 					);
 					console.error(`[plugin:${name}] ${msg}`);
 					this.manifestDiags.set(name, uiDiags);
@@ -3875,7 +3875,7 @@ export class PluginManager {
 					`manifest 校验失败：${first.message} —— 修复后点“重新扫描”`,
 					`manifest validation failed: ${first.messageEn} — fix it, then hit Rescan`,
 					"plugins.manifest.invalid",
-					{ name: info.id, path: first.path },
+					{ name: info.id, path: first.path, message: first.messageEn },
 				);
 				console.error(`[plugin:${info.id}] ${msg}`);
 				for (const e of mvActivate.errors) this.pushRuntimeDiag(info.id, formatManifestIssue(e));

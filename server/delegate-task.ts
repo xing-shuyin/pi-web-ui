@@ -269,6 +269,8 @@ export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => Server
 						modelLine: modelLineEn,
 						modelLineZh,
 						modelLineEn,
+						toolsLineEn,
+						securityLineEn,
 					},
 				),
 				{ convId, agent: input.agent, template: input.agent, model: input.model },

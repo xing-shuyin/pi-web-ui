@@ -111,10 +111,11 @@ export function getServerString(lang: ServerLang, key: string): string | undefin
  *   pick(lang, "当前没有子代理。", "No subagents running.", "subagents.list.empty")
  * zh → inline Chinese; other → table hit or inline English.
  *
- * Interpolated strings pass `vars` (5th arg). Table values use `{expr}`
- * slots where `expr` is the EXACT text inside the call site's `${...}`
- * (translators copy it verbatim; complex sub-expressions should be hoisted
- * to a named const at the call site first):
+ * Interpolated strings pass `vars` (5th arg). Table values use `{name}`
+ * slots matching the keys of `vars`, not necessarily the expressions in
+ * the inline English template. For example, `${rows.length}` paired with
+ * `{ count: rows.length }` requires `{count}` in the translation. Dotted
+ * keys such as `"p.terminalId"` work when explicitly provided in `vars`:
  *   pick(lang, `剩${n}个`, `${n} left`, "k.items.left", { n })
  *   → table: `"残り{n}件"`. Slots missing from `vars` stay literal.
  */
