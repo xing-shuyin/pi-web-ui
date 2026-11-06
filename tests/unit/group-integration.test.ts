@@ -98,6 +98,75 @@ const accepted: DeviceReview = {
 	reviewer: { type: "human", id: "account" },
 	createdAt: 5,
 };
+const publishIntent: NonNullable<DeviceIntegration["publishIntent"]> = {
+	version: 1,
+	id: "intent",
+	digest: "intent-digest",
+	candidateSha: "c".repeat(40),
+	accountId: "account",
+	roomId: "room",
+	conversationId: "conversation",
+	integrationId: verified.id,
+	targetDeviceId: "device",
+	targetBotId: "bot",
+	targetBotRevision: 1,
+	actor: { accountId: "account" },
+	repositoryId: "repository",
+	objectFormat: "sha1",
+	targetRef: "refs/heads/main",
+	expectedOld: delivery.baseCommit,
+	preparedTree: verified.preparedTree!,
+	materializedCommit: verified.materializedCommit!,
+	createdAt: 6,
+	delivery: { id: delivery.id, artifactRef: delivery.artifactRef },
+	review: accepted,
+	verificationPlan: verified.verificationPlan!,
+	verification: verified.verification!,
+};
+const observation: NonNullable<DeviceIntegration["publishObservation"]> = {
+	intentId: publishIntent.id,
+	intentDigest: publishIntent.digest,
+	candidateSha: publishIntent.candidateSha,
+	observedAt: 7,
+	target: "expected_old",
+	phase: "prepared",
+	retryable: true,
+};
+const publishing: DeviceIntegration = {
+	...verified,
+	status: "applying",
+	publishIntent,
+	publishObservation: observation,
+};
+const stopped: NonNullable<DeviceIntegration["publishStop"]> = {
+	intentId: publishIntent.id,
+	intentDigest: publishIntent.digest,
+	candidateSha: publishIntent.candidateSha,
+	closed: true,
+	stopConfirmed: true,
+	pastEffect: "unknown",
+	fencedAt: 8,
+	stoppedAt: 9,
+};
+const published: DeviceIntegration = {
+	...publishing,
+	status: "applied",
+	publishReceipt: {
+		intentId: publishIntent.id,
+		intentDigest: publishIntent.digest,
+		candidateSha: publishIntent.candidateSha,
+		outcome: "applied",
+		proof: "cas_exit",
+		observedAt: 8,
+	},
+	publishObservation: {
+		...observation,
+		target: "other",
+		targetSha: "d".repeat(40),
+		phase: "applied",
+		retryable: false,
+	},
+};
 const response = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data }) as Response;
 let host: HTMLDivElement;
 let root: Root;
@@ -161,6 +230,252 @@ afterEach(() => {
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+});
+
+describe("durable publication recovery", () => {
+	it("reopens and polls an unknown publication through observation only, without apply or resume", async () => {
+		vi.useFakeTimers();
+		const fetcher = vi.fn(async (url: string) =>
+			url.endsWith("/reconcile")
+				? response({ integration: publishing })
+				: response({ integrations: [publishing], canResumePublication: true }),
+		);
+		vi.stubGlobal("fetch", fetcher);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).toContain("Publication outcome unknown");
+		await act(async () => vi.advanceTimersByTimeAsync(5000));
+		expect(fetcher.mock.calls.some(([url]) => url.endsWith("/reconcile"))).toBe(true);
+		await act(async () => {
+			const details = host.querySelector<HTMLDetailsElement>(".gi-panel")!;
+			details.open = false;
+			details.dispatchEvent(new Event("toggle"));
+		});
+		await open();
+		expect(fetcher.mock.calls.every(([url]) => !/\/(apply|resume|cancel)$/.test(url))).toBe(true);
+	});
+
+	it("exhausts the publication observation budget without ever dispatching a write", async () => {
+		vi.useFakeTimers();
+		const fetcher = vi.fn(async (url: string) =>
+			url.endsWith("/reconcile") ? response({ integration: publishing }) : response({ integrations: [publishing] }),
+		);
+		vi.stubGlobal("fetch", fetcher);
+		await renderIntegration();
+		await open();
+		await act(async () => vi.advanceTimersByTimeAsync(INTEGRATION_UI_TIMEOUT_MS + 15000));
+		const attempts = fetcher.mock.calls.length;
+		expect(attempts).toBeGreaterThan(1);
+		expect(attempts).toBeLessThanOrEqual(1 + Math.ceil(INTEGRATION_UI_TIMEOUT_MS / 5000));
+		await act(async () => vi.advanceTimersByTimeAsync(INTEGRATION_UI_TIMEOUT_MS));
+		expect(fetcher.mock.calls).toHaveLength(attempts);
+		expect(fetcher.mock.calls.every(([url]) => !/\/(apply|resume|cancel)$/.test(url))).toBe(true);
+		expect(host.textContent).toContain("writes are never retried automatically");
+	});
+
+	it("aborts reconciliation on delivery change and ignores a late receipt", async () => {
+		let resolveReconcile!: (value: Response) => void;
+		let signal!: AbortSignal;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, options: RequestInit) => {
+				if (url.endsWith("/reconcile")) {
+					signal = options.signal!;
+					return new Promise<Response>((resolve) => {
+						resolveReconcile = resolve;
+					});
+				}
+				return response({ integrations: [publishing] });
+			}),
+		);
+		await renderIntegration();
+		await open();
+		await press("Reconcile publication");
+		await renderIntegration({ ...delivery, id: "next-delivery" });
+		expect(signal.aborted).toBe(true);
+		await act(async () => resolveReconcile(response({ integration: published })));
+		expect(host.textContent).not.toContain("Publication effect recorded");
+		expect(host.textContent).not.toContain("Resume same publication intent");
+	});
+
+	it("requires an explicit resume click and sends the original intent identity exactly once after a lost reply", async () => {
+		const fetcher = vi.fn(async (url: string, _options: RequestInit) => {
+			if (url.endsWith("/resume")) throw new DOMException("Reply lost", "TimeoutError");
+			return response({ integrations: [publishing], canResumePublication: true });
+		});
+		vi.stubGlobal("fetch", fetcher);
+		await renderIntegration();
+		await open();
+		expect(fetcher.mock.calls).toHaveLength(1);
+		await press("Resume same publication intent");
+		const resumes = fetcher.mock.calls.filter(([url]) => url.endsWith("/resume"));
+		expect(resumes).toHaveLength(1);
+		expect(JSON.parse(resumes[0][1].body as string)).toEqual({
+			intentId: publishIntent.id,
+			intentDigest: publishIntent.digest,
+			candidateSha: publishIntent.candidateSha,
+		});
+		expect(fetcher.mock.calls.filter(([, options]) => options.method === "POST")).toHaveLength(1);
+		expect(host.textContent).toContain("Publication outcome unknown");
+	});
+
+	it.each([
+		{ name: "missing owner capability", capability: undefined, integration: publishing },
+		{ name: "non-owner credentials", capability: false, integration: publishing },
+		{
+			name: "non-retryable observation",
+			capability: true,
+			integration: { ...publishing, publishObservation: { ...observation, retryable: false } },
+		},
+		{
+			name: "different intent observation",
+			capability: true,
+			integration: { ...publishing, publishObservation: { ...observation, intentDigest: "different" } },
+		},
+		{
+			name: "different intent ID",
+			capability: true,
+			integration: { ...publishing, publishObservation: { ...observation, intentId: "different" } },
+		},
+		{
+			name: "different candidate SHA",
+			capability: true,
+			integration: { ...publishing, publishObservation: { ...observation, candidateSha: "f".repeat(40) } },
+		},
+		{
+			name: "unknown CAS despite retryable flag",
+			capability: true,
+			integration: { ...publishing, publishObservation: { ...observation, phase: "cas_started" } },
+		},
+		{ name: "closed intent", capability: true, integration: { ...publishing, publishStop: stopped } },
+		{ name: "confirmed receipt", capability: true, integration: published },
+	])("does not offer resume for $name", async ({ capability, integration }) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response({ integrations: [integration], canResumePublication: capability })),
+		);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).not.toContain("Resume same publication intent");
+	});
+
+	it("clears prior owner capability while reopening history", async () => {
+		let finishReload!: (value: Response) => void;
+		let loads = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				if (++loads === 1) return response({ integrations: [publishing], canResumePublication: true });
+				return new Promise<Response>((resolve) => {
+					finishReload = resolve;
+				});
+			}),
+		);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).toContain("Resume same publication intent");
+		await act(async () => {
+			const details = host.querySelector<HTMLDetailsElement>(".gi-panel")!;
+			details.open = false;
+			details.dispatchEvent(new Event("toggle"));
+		});
+		await open();
+		expect(host.textContent).not.toContain("Resume same publication intent");
+		await act(async () => finishReload(response({ integrations: [publishing], canResumePublication: false })));
+		expect(host.textContent).not.toContain("Resume same publication intent");
+	});
+
+	it("does not treat a cancelled status alone as proof of publication cancellation", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response({ integrations: [{ ...publishing, status: "cancelled" }] })),
+		);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).not.toContain("Cancellation before publication is confirmed");
+		expect(host.textContent).toContain("Publication outcome unknown");
+		expect(host.textContent).not.toContain("Prepare isolated integration");
+	});
+
+	it("shows an explicit unknown target observation without publication evidence", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response({ integrations: [{ ...publishing, publishObservation: undefined }] })),
+		);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).toContain("Current target observation: Unknown (not yet observed)");
+		expect(host.textContent).not.toContain("Resume same publication intent");
+	});
+
+	it("keeps the durable receipt separate from a subsequently moved target", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response({ integrations: [published] })),
+		);
+		await renderIntegration();
+		await open();
+		expect(host.textContent).toContain("Publication effect recorded (proof: cas_exit)");
+		expect(host.textContent).toContain("Current target observation: other");
+		expect(host.textContent).toContain("d".repeat(40));
+	});
+
+	it("keeps cancellation unknown and blocked until process stop is confirmed", async () => {
+		const cancelling: DeviceIntegration = {
+			...publishing,
+			status: "cancelling",
+			publishStop: { ...stopped, stopConfirmed: false, stoppedAt: undefined },
+		};
+		const fetcher = vi.fn(async (url: string) =>
+			url.endsWith("/cancel")
+				? response({ integration: cancelling })
+				: response({ integrations: [publishing], canResumePublication: true }),
+		);
+		vi.stubGlobal("fetch", fetcher);
+		await renderIntegration();
+		await open();
+		await press("Cancel");
+		expect(host.textContent).toContain("has not been confirmed stopped");
+		expect(host.textContent).toContain("Publication outcome unknown");
+		expect(host.textContent).not.toContain("Cancellation before publication is confirmed");
+		expect(host.textContent).not.toContain("Resume same publication intent");
+		expect(host.textContent).not.toContain("Start a new integration & verification");
+	});
+
+	it("stops polling a closed confirmed unknown publication but retains manual reconciliation and a new integration", async () => {
+		vi.useFakeTimers();
+		const closed: DeviceIntegration = { ...publishing, status: "cancelling", publishStop: stopped };
+		const fetcher = vi.fn(async (url: string) =>
+			url.endsWith("/reconcile")
+				? response({ integration: closed })
+				: response({ integrations: [closed], canResumePublication: true }),
+		);
+		vi.stubGlobal("fetch", fetcher);
+		await renderIntegration();
+		await open();
+		await act(async () => vi.advanceTimersByTimeAsync(INTEGRATION_UI_TIMEOUT_MS + 5000));
+		expect(fetcher.mock.calls).toHaveLength(1);
+		expect(host.textContent).toContain("historical publication outcome remains unknown");
+		expect(host.textContent).toContain("Start a new integration & verification");
+		await press("Reconcile publication");
+		expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/reconcile"))).toHaveLength(1);
+	});
+
+	it("allows legacy history to load without accepted review and does not invent a receipt", async () => {
+		const legacy = { ...delivery, artifactRef: undefined, commit: "c".repeat(40) };
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				response({ integrations: [{ ...prepared, artifactRef: undefined, commit: legacy.commit, status: "applied" }] }),
+			),
+		);
+		await renderDeliveries(legacy);
+		expect(host.querySelector(".gi-panel")).not.toBeNull();
+		await open();
+		expect(host.textContent).toContain("Legacy applied record; no durable publication receipt");
+		expect(host.textContent).not.toContain("Publication effect recorded");
+		expect(host.textContent).not.toContain("Confirm & Merge");
+	});
 });
 
 describe("artifact delivery verification and review", () => {

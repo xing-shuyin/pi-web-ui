@@ -102,6 +102,7 @@ export function GroupIntegration({
 		controllerRef.current = ctrl;
 
 		setError("");
+		setCanResumePublication(false);
 
 		async function load() {
 			try {
@@ -144,8 +145,9 @@ export function GroupIntegration({
 		const generation = generationRef.current;
 		const ctrl = new AbortController();
 		const intervalMs = 5000;
-		const deadline = Date.now() + VERIFICATION_UI_TIMEOUT_MS;
-		const maxAttempts = Math.ceil(VERIFICATION_UI_TIMEOUT_MS / intervalMs);
+		const budgetMs = pendingPublication ? INTEGRATION_UI_TIMEOUT_MS : VERIFICATION_UI_TIMEOUT_MS;
+		const deadline = Date.now() + budgetMs;
+		const maxAttempts = Math.ceil(budgetMs / intervalMs);
 		let attempts = 0;
 		let timer: ReturnType<typeof setTimeout>;
 		const current = () => !ctrl.signal.aborted && generation === generationRef.current;
@@ -449,7 +451,12 @@ export function GroupIntegration({
 			legacyUnknown);
 	const canResume =
 		canResumePublication &&
-		activeIntegration?.publishObservation?.retryable === true &&
+		!!activeIntegration?.publishIntent &&
+		activeIntegration.publishObservation?.intentId === activeIntegration.publishIntent.id &&
+		activeIntegration.publishObservation?.intentDigest === activeIntegration.publishIntent.digest &&
+		activeIntegration.publishObservation?.candidateSha === activeIntegration.publishIntent.candidateSha &&
+		activeIntegration.publishObservation?.retryable === true &&
+		["prepared", "cas_rejected"].includes(activeIntegration.publishObservation.phase) &&
 		!activeIntegration.publishStop?.closed &&
 		!activeIntegration.publishReceipt &&
 		activeIntegration.status !== "cancelling";
@@ -458,7 +465,10 @@ export function GroupIntegration({
 		return review?.verdict === "accepted" && deliveryReviewMatches(delivery, review);
 	}
 	const isConflict = activeIntegration?.status === "conflict";
-	const isCancelled = activeIntegration?.status === "cancelled";
+	const isCancelled =
+		activeIntegration?.status === "cancelled" &&
+		(!activeIntegration.publishIntent ||
+			(closedPublication && activeIntegration.publishStop?.pastEffect === "not_applied"));
 	const canVerify =
 		!activeIntegration?.verification &&
 		!activeIntegration?.publishIntent &&
@@ -542,13 +552,19 @@ export function GroupIntegration({
 							{zh ? "候选提交：" : "Candidate: "}
 							<code>{activeIntegration.publishIntent.candidateSha}</code>
 						</div>
-						{activeIntegration.publishObservation && (
-							<p>
-								{zh ? "当前目标观察：" : "Current target observation: "}
-								{activeIntegration.publishObservation.target}{" "}
-								<code>{activeIntegration.publishObservation.targetSha}</code>
-							</p>
-						)}
+						<p>
+							{zh ? "当前目标观察：" : "Current target observation: "}
+							{activeIntegration.publishObservation ? (
+								<>
+									{activeIntegration.publishObservation.target} · {activeIntegration.publishObservation.phase}{" "}
+									<code>{activeIntegration.publishObservation.targetSha}</code>
+								</>
+							) : zh ? (
+								"未知（尚未观察）"
+							) : (
+								"Unknown (not yet observed)"
+							)}
+						</p>
 						{activeIntegration.publishStop && (
 							<p>
 								{!activeIntegration.publishStop.stopConfirmed
@@ -583,6 +599,11 @@ export function GroupIntegration({
 							</button>
 						)}
 					</div>
+				)}
+				{isApplied && !activeIntegration?.publishReceipt && (
+					<p role="status">
+						{zh ? "旧记录标记已应用；没有持久发布回执。" : "Legacy applied record; no durable publication receipt."}
+					</p>
 				)}
 				{legacyUnknown && (
 					<p role="status">
