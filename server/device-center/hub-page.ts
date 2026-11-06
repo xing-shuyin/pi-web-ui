@@ -43,7 +43,7 @@ if(upgradeActive||account?.canUpgradeHub!==true||!window.confirm(t('confirmUpgra
 invalidate();const epoch=generation,btn=$('upgrade');upgradeActive=true;btn.disabled=true;$('connection').textContent=t('upgrading');$('connection').className='';
 const failed=error=>{if(epoch!==generation)return;upgradeActive=false;btn.disabled=false;$('connection').textContent=t('upgradeFailed');$('connection').className='error';fail(error);pollTimer=setTimeout(refresh,3000);};
 let initial;try{const response=await api('/api/system/upgrade',{},AbortSignal.timeout(45000));initial=response.job;if(!response.ok||!initial||typeof initial.id!=='string'||typeof initial.fromBootId!=='string')throw new Error(t('upgradeFailed'));}catch(error){failed(error);return;}
-if(epoch!==generation)return;const deadline=Date.now()+20*60*1000;
+if(epoch!==generation)return;const deadline=Date.now()+30*60*1000;
 const check=async()=>{
 if(epoch!==generation)return;if(Date.now()>=deadline){failed(new Error(t('upgradeFailed')));return;}
 let job;try{const response=await api('/api/system/upgrade?id='+encodeURIComponent(initial.id),undefined,AbortSignal.timeout(10000));job=response.job;}catch(error){if(epoch!==generation)return;if(error.status&&error.status<500){failed(error);return;}upgradeTimer=setTimeout(check,1500);return;}

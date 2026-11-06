@@ -59,14 +59,272 @@ function fixture(platform: NodeJS.Platform = process.platform) {
 		version: "2.0.0",
 	});
 	const run = vi.fn();
-	return { root, plan, settings, path, job, health, probe, install, run };
+	const portQuery = vi.fn().mockResolvedValue([]);
+	return { root, plan, settings, path, job, health, probe, install, run, portQuery };
 }
+describe("Windows Hub TCP handoff", () => {
+	function clock() {
+		let time = 0;
+		return {
+			now: () => time,
+			sleep: vi.fn(async (ms: number) => {
+				time += ms;
+			}),
+		};
+	}
+	it("orders preflight, TaskStop, kernel drain, Create/Run and unchanged health verification", async () => {
+		const f = fixture("win32");
+		const events: string[] = [];
+		const snapshots = [[{ state: 2, pid: 42 }], [{ state: 11, pid: 0 }], [{ state: 100, pid: 0 }], []];
+		f.portQuery.mockImplementation(async () => {
+			const rows = snapshots.shift()!;
+			events.push(`tcp:${rows.map((r) => r.state).join(",")}`);
+			return rows;
+		});
+		f.run.mockImplementation((_file: string, args: string[]) => {
+			events.push(args[0]);
+		});
+		const wait = vi.fn(async () => {
+			events.push("health");
+			return { ...f.health, version: "2.0.0", bootId: "new" };
+		});
+		await runtime.runUpgradeJob(f.path, { ...f, ...clock(), wait, log: () => {} });
+		expect(events).toEqual(["tcp:2", "/End", "tcp:11", "tcp:100", "tcp:", "/Create", "/Run", "health"]);
+		expect(wait).toHaveBeenCalledWith(f.settings, { version: "2.0.0", fromBootId: "old", probe: f.probe });
+	});
+	it("fails query preflight before replacing the definition or stopping the task", async () => {
+		const f = fixture("win32");
+		f.portQuery.mockRejectedValue(new Error("query unavailable"));
+		await expect(runtime.runUpgradeJob(f.path, { ...f })).rejects.toThrow("query unavailable");
+		expect(f.run).not.toHaveBeenCalled();
+		expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
+	});
+	it.each(["listener", "query", "cancel"])(
+		"rolls back a %s failure with a separate port drain and no cancelled signal",
+		async (failure) => {
+			const f = fixture("win32");
+			const controller = new AbortController();
+			const events: string[] = [];
+			let count = 0;
+			f.portQuery.mockImplementation(async (_settings, options) => {
+				events.push("query");
+				count++;
+				if (count === 2) {
+					if (failure === "listener") return [{ state: 2, pid: 42 }];
+					if (failure === "query") throw new Error("query unavailable");
+					controller.abort();
+					return [{ state: 11, pid: 0 }];
+				}
+				if (count >= 3) {
+					expect(options.signal).toBeUndefined();
+					expect(readFileSync(f.plan.file, "utf8")).toBe("original service");
+				}
+				return count === 3 ? [{ state: 11, pid: 0 }] : [];
+			});
+			f.run.mockImplementation((file: string, args: string[]) => {
+				if (file === f.plan.manager) events.push(args[0]);
+			});
+			const wait = vi.fn().mockResolvedValue(f.health);
+			await expect(
+				runtime.runUpgradeJob(f.path, { ...f, ...clock(), signal: controller.signal, wait }),
+			).rejects.toThrow("previous Hub service restored");
+			expect(events).toEqual(["query", "/End", "query", "/End", "query", "query", "/Create", "/Run"]);
+			expect(wait).toHaveBeenCalledExactlyOnceWith(f.settings, expect.objectContaining({ version: "1.0.0" }));
+		},
+	);
+	it("waits again before restoring the exact legacy 0.117 service definition", async () => {
+		const f = fixture("win32");
+		runtime.writeUpgradeJob(f.path, { ...f.job, fromVersion: "legacy", fromBootId: "legacy" });
+		f.probe.mockResolvedValue({ ...f.health, bootId: undefined, version: undefined });
+		const original = Buffer.from("\uFEFFlegacy 0.117 task definition", "utf16le");
+		writeFileSync(f.plan.file, original);
+		const rows = [[], [], [{ state: 11, pid: 0 }], []];
+		f.portQuery.mockImplementation(async () => {
+			if (rows.length <= 2) expect(readFileSync(f.plan.file)).toEqual(original);
+			return rows.shift();
+		});
+		const wait = vi.fn().mockRejectedValueOnce(new Error("new runtime unhealthy")).mockResolvedValueOnce(f.health);
+		await expect(runtime.runUpgradeJob(f.path, { ...f, ...clock(), wait })).rejects.toThrow(
+			"previous Hub service restored",
+		);
+		expect(f.portQuery).toHaveBeenCalledTimes(4);
+		expect(readFileSync(f.plan.file)).toEqual(original);
+		expect(wait.mock.calls[1][1]).toMatchObject({ version: "legacy", fromBootId: "legacy", legacy: true });
+	});
+	it("gives each update/rollback drain four minutes and never starts while resources remain", async () => {
+		const f = fixture("win32");
+		const time = clock();
+		f.portQuery.mockResolvedValue([{ state: 11, pid: 0 }]);
+		const wait = vi.fn();
+		await expect(runtime.runUpgradeJob(f.path, { ...f, ...time, wait })).rejects.toThrow("rollback failed");
+		expect(time.now()).toBe(480_000);
+		expect(wait).not.toHaveBeenCalled();
+		expect(f.run.mock.calls.filter(([file]) => file === f.plan.manager).map(([, args]) => args[0])).toEqual([
+			"/End",
+			"/End",
+		]);
+		expect(runtime.readUpgradeJob(f.path).error).toContain("did not drain within 4 minutes");
+	});
+	it("bounds the last native query by the remaining drain budget", async () => {
+		const time = clock();
+		const query = vi.fn(async (_settings, { timeout }) => {
+			await time.sleep(timeout);
+			return [{ state: 100, pid: 0 }];
+		});
+		await expect(runtime.waitForWindowsHubPort(fixture().settings, { ...time, query })).rejects.toThrow("4 minutes");
+		expect(time.now()).toBe(240_000);
+		expect(query.mock.calls.at(-1)![1].timeout).toBe(9000);
+	});
+	it("retains the thirty second version/boot/instance health deadline", async () => {
+		vi.useFakeTimers();
+		try {
+			const f = fixture();
+			await expect(
+				runtime.waitForRelease(f.settings, {
+					version: "2.0.0",
+					fromBootId: "old",
+					probe: f.probe,
+					sleep: async (ms: number) => {
+						vi.setSystemTime(Date.now() + ms);
+					},
+				}),
+			).rejects.toThrow("expected version");
+			expect(f.probe).toHaveBeenCalledTimes(120);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+	it.each(["null", "{}", '[{"state":0,"pid":0}]', '[{"state":11}]', '[{"state":11,"pid":-1}]', "private-value"])(
+		"fails closed for malformed native output %s",
+		async (output) => {
+			await expect(
+				runtime.queryWindowsHubTcp(fixture().settings, { run: vi.fn().mockResolvedValue(output) }),
+			).rejects.toThrow("Could not query Windows Hub TCP resources");
+		},
+	);
+	it("redacts native errors and returns only state/pid including unknown states", async () => {
+		const f = fixture();
+		await expect(
+			runtime.queryWindowsHubTcp(f.settings, { run: vi.fn().mockRejectedValue(new Error("private-value IP/env/cmd")) }),
+		).rejects.toThrow(/^Could not query Windows Hub TCP resources$/);
+		const run = vi.fn().mockResolvedValue('[{"state":100,"pid":0,"remoteIP":"private-value"}]');
+		await expect(runtime.queryWindowsHubTcp(f.settings, { run, timeout: 123 })).resolves.toEqual([
+			{ state: 100, pid: 0 },
+		]);
+		expect(run).toHaveBeenCalledWith("powershell.exe", expect.any(Array), { timeout: 123, signal: undefined });
+	});
+	it("times out a stuck native execution", async () => {
+		await expect(
+			runtime.execute(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeout: 50 }),
+		).rejects.toThrow("timed out");
+	});
+	it("cancels a native execution", async () => {
+		const controller = new AbortController();
+		const operation = runtime.execute(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+			signal: controller.signal,
+		});
+		const rejected = expect(operation).rejects.toThrow();
+		controller.abort();
+		await rejected;
+	});
+});
+
+describe.skipIf(process.platform !== "win32")(
+	"Windows TCP native query contract (mock CIM, no service changes)",
+	() => {
+		it.each([
+			["127.0.0.1", [11, 2, 100]],
+			["localhost", [11, 2, 100, 5]],
+			["0.0.0.0", [11, 8, 2, 100]],
+			["::1", [100, 5]],
+			["::", [11, 8, 2, 100, 5, 9]],
+		])(
+			"filters %s by local interface and retains wildcard conflicts",
+			async (host, states) => {
+				const f = fixture();
+				const addresses = ["127.0.0.1", "192.0.2.1", "0.0.0.0", "::", "::1", "2001:db8::1"];
+				const rows = addresses.map((LocalAddress, i) => ({
+					LocalAddress,
+					State: [11, 8, 2, 100, 5, 9][i],
+					OwningProcess: 0,
+					RemoteAddress: "private-value",
+				}));
+				const run = async (file: string, args: string[], options: any) =>
+					runtime.execute(
+						file,
+						[
+							...args.slice(0, -1),
+							`function Get-CimInstance { param($Namespace,$ClassName,$Filter,$ErrorAction) if ($Namespace -ne 'root/StandardCimv2' -or $ClassName -ne 'MSFT_NetTCPConnection' -or $Filter -ne 'LocalPort = 8790' -or $ErrorAction -ne 'Stop') { throw 'Invalid query' }; $mockRows='${JSON.stringify(rows)}' | ConvertFrom-Json; foreach ($row in $mockRows) { $row } }; ${args.at(-1)}`,
+						],
+						options,
+					);
+				const result = await runtime.queryWindowsHubTcp({ ...f.settings, PI_DEVICE_HUB_HOST: host }, { run });
+				expect(result).toEqual((states as number[]).map((state) => ({ state, pid: 0 })));
+			},
+			15_000,
+		);
+		it("distinguishes empty CIM results from provider failure", async () => {
+			const f = fixture();
+			for (const fail of [false, true]) {
+				const run = (file: string, args: string[], options: any) =>
+					runtime.execute(
+						file,
+						[
+							...args.slice(0, -1),
+							`function Get-CimInstance { ${fail ? "throw 'private-value'" : "return @()"} }; ${args.at(-1)}`,
+						],
+						options,
+					);
+				const operation = runtime.queryWindowsHubTcp(f.settings, { run });
+				if (fail) await expect(operation).rejects.toThrow(/^Could not query Windows Hub TCP resources$/);
+				else await expect(operation).resolves.toEqual([]);
+			}
+		}, 15_000);
+		it("parses hostile host text as one literal PowerShell argument", async () => {
+			const host = "x'); throw 'private-value'; #\n$(Get-Process)";
+			let script = "";
+			await runtime.queryWindowsHubTcp(
+				{ ...fixture().settings, PI_DEVICE_HUB_HOST: host },
+				{
+					run: async (_file: string, args: string[]) => {
+						script = args.at(-1)!;
+						return "[]";
+					},
+				},
+			);
+			const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+			const result = await runtime.execute("powershell.exe", [
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				`$tokens=$null; $errors=$null; $ast=[Management.Automation.Language.Parser]::ParseInput(${quote(script)},[ref]$tokens,[ref]$errors); if ($errors.Count) { throw 'Invalid PowerShell' }; $values=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst]},$true) | ForEach-Object { $_.Value }); ConvertTo-Json -InputObject $values -Compress`,
+			]);
+			expect(JSON.parse(result)).toContain(host);
+		}, 15_000);
+	},
+);
+
 describe("Hub release updater", () => {
+	it("does not replace an active upgrade during the extended handoff budget", async () => {
+		const f = fixture();
+		runtime.writeUpgradeJob(f.path, { ...f.job, createdAt: Date.now() - 21 * 60_000 });
+		f.install.mockRejectedValue(new Error("unexpected upgrade takeover"));
+		await expect(runtime.updateInstalledHub({ ...f, log: () => {} })).rejects.toThrow("already in progress");
+		expect(f.install).not.toHaveBeenCalled();
+		expect(runtime.readUpgradeJob(f.path).id).toBe(f.job.id);
+	});
 	it("uses the saved service configuration when an independent worker has a different HOME/APPDATA", async () => {
 		const f = fixture();
 		runtime.writeUpgradeJob(f.path, { ...f.job, serviceConfigPath: f.plan.config });
 		const wait = vi.fn().mockResolvedValue({ ...f.health, version: "2.0.0", bootId: "new" });
-		await runtime.runUpgradeJob(f.path, { install: f.install, probe: f.probe, run: f.run, wait, log: () => {} });
+		await runtime.runUpgradeJob(f.path, {
+			install: f.install,
+			probe: f.probe,
+			run: f.run,
+			portQuery: f.portQuery,
+			wait,
+			log: () => {},
+		});
 		expect(f.install).toHaveBeenCalledWith(f.plan.root, expect.any(Object));
 		expect(wait).toHaveBeenCalledWith(f.settings, expect.objectContaining({ version: "2.0.0" }));
 		expect(runtime.readUpgradeJob(f.path).state).toBe("succeeded");

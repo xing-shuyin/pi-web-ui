@@ -108,18 +108,51 @@ describe("durable Hub upgrade submission", () => {
 		});
 		expect(f.launch).not.toHaveBeenCalled();
 	});
-	it("does not let an abandoned job stay running forever", async () => {
+	it("keeps an active handoff protected after twenty minutes", async () => {
 		const f = await fixture();
 		const job = await f.manager.start("owner");
 		await writeFile(
 			join(f.dataDir, "hub-upgrade.json"),
 			JSON.stringify({ ...job, createdAt: Date.now() - 21 * 60_000 }),
 		);
+		expect(await f.manager.status(job.id)).toMatchObject({ id: job.id, state: "queued" });
+		await expect(f.manager.start("owner")).rejects.toMatchObject({ status: 409 });
+		expect(f.launch).toHaveBeenCalledOnce();
+	});
+	it("does not let an abandoned job stay running forever", async () => {
+		const f = await fixture();
+		const job = await f.manager.start("owner");
+		await writeFile(
+			join(f.dataDir, "hub-upgrade.json"),
+			JSON.stringify({ ...job, createdAt: Date.now() - 31 * 60_000 }),
+		);
 		expect(await f.manager.status(job.id)).toMatchObject({ state: "failed" });
 	});
 });
 describe("upgrade completion shown to users", () => {
 	const initial = { id: "job", state: "queued" as const, fromBootId: "old" };
+	it("continues observing a valid handoff after twenty minutes", async () => {
+		let now = 1000;
+		let sleeps = 0;
+		const date = vi.spyOn(Date, "now").mockImplementation(() => now);
+		const poll = vi
+			.fn()
+			.mockResolvedValueOnce(initial)
+			.mockResolvedValueOnce({ ...initial, state: "succeeded", targetVersion: "2", version: "2", bootId: "new" });
+		try {
+			await expect(
+				waitForHubUpgrade(initial, {
+					poll,
+					sleep: async () => {
+						now += sleeps++ === 0 ? 21 * 60_000 : 1500;
+					},
+				}),
+			).resolves.toMatchObject({ state: "succeeded", bootId: "new" });
+			expect(poll).toHaveBeenCalledTimes(2);
+		} finally {
+			date.mockRestore();
+		}
+	});
 	it("waits through a service restart and accepts the verified job only", async () => {
 		const poll = vi
 			.fn()

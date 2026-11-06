@@ -17,7 +17,7 @@ export async function waitForHubUpgrade(
 	},
 ) {
 	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-	const deadline = Date.now() + (options.timeoutMs ?? 20 * 60_000);
+	const deadline = Date.now() + (options.timeoutMs ?? 30 * 60_000);
 	let job = initial;
 	if (!job || typeof job.id !== "string" || typeof job.fromBootId !== "string")
 		throw new Error("Invalid Hub upgrade response");

@@ -58,7 +58,7 @@ export class HubUpgradeError extends Error {
 		super(message);
 	}
 }
-const MAX_AGE = 20 * 60_000;
+const MAX_AGE = 30 * 60_000;
 export function createHubUpgradeManager(options: {
 	dataDir: string;
 	instanceId?: string;

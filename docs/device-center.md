@@ -80,7 +80,7 @@ Hub 的首个账号是部署所有者，只有该账号可升级或查询升级�
 
 升级请求返回 HTTP 202 和持久任务 ID，受理不表示成功。`<Hub 数据目录>/hub-upgrade.json` 记录 `queued/running/succeeded/failed`、阶段、版本、启动标识和失败原因；`hub-upgrade.log` 保存本次 npm/预检日志。页面按任务 ID 查询结果，只有目标版本与健康检查版本一致、实例和注册配置匹配、启动标识改变时显示成功。旧进程仍健康、升级 API 报错或查询超时均不算成功。任务和生命周期分别使用跨进程锁，阻止网页、命令行同时提交或执行升级。
 
-执行器由独立服务管理任务启动：Linux 使用 `systemd-run --user`，macOS 使用 GUI 域中的一次性 launchd 作业，Windows 使用单独的临时计划任务，避免 Hub 停止时结束自己的升级进程。升级任务沿用安装服务时已验证的配置位置，并再次核对实例和数据目录，不依赖后台进程重新推断 HOME 或 APPDATA；配置路径不通过升级 API 公开。Windows 会等待计划任务及其实例停止，macOS 会确认旧 launchd 作业已移除，再启动新服务。Node 旁必须带有 npm。升级依赖安装关闭生命周期脚本及可选依赖，独立 Hub 不加载 Agent SDK 或本机终端模块。服务安装时可通过可信环境变量 `PI_DEVICE_HUB_UPDATE_SOURCE` 保存内网 registry 包标识或本地候选 `.tgz`；HTTP 请求不能指定包来源。`PI_DEVICE_HUB_SERVICE_NAME=pi-device-hub-<名称>` 可安装隔离命名实例，默认名称兼容既有部署。
+执行器由独立服务管理任务启动：Linux 使用 `systemd-run --user`，macOS 使用 GUI 域中的一次性 launchd 作业，Windows 使用单独的临时计划任务，避免 Hub 停止时结束自己的升级进程。升级任务沿用安装服务时已验证的配置位置，并再次核对实例和数据目录，不依赖后台进程重新推断 HOME 或 APPDATA；配置路径不通过升级 API 公开。Windows 会等待计划任务及其实例停止，并核对配置监听地址的 TCP 资源已释放，再启动新服务；资源释放检查最多等待四分钟。若有其他程序继续监听或无法核实资源状态，升级明确失败，不会终止端口占用者。macOS 会确认旧 launchd 作业已移除，再启动新服务。Node 旁必须带有 npm。升级依赖安装关闭生命周期脚本及可选依赖，独立 Hub 不加载 Agent SDK 或本机终端模块。服务安装时可通过可信环境变量 `PI_DEVICE_HUB_UPDATE_SOURCE` 保存内网 registry 包标识或本地候选 `.tgz`；HTTP 请求不能指定包来源。`PI_DEVICE_HUB_SERVICE_NAME=pi-device-hub-<名称>` 可安装隔离命名实例，默认名称兼容既有部署。
 
 旧公开版本没有版本化健康信息时，可以安装新的全局 CLI 后执行 `pi-web-ui hub update` 完成首次引导；后续可直接在 Hub 网页操作。发布前的真实服务验证、候选包校验和与跨平台矩阵见 [Hub 发布包升级验收](hub-upgrade-release-testing.md)。
 

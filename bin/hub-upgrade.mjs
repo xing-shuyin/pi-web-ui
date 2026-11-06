@@ -19,7 +19,7 @@ import { acquireHubLock, hubServicePlan, runManager, probeHub, windowsArg } from
 
 const SELF = fileURLToPath(import.meta.url);
 const PACKAGE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-export const UPGRADE_TIMEOUT_MS = 20 * 60_000;
+export const UPGRADE_TIMEOUT_MS = 30 * 60_000;
 export const jobPathFor = (dataDir) => join(resolve(dataDir), "hub-upgrade.json");
 export function readUpgradeJob(path) {
 	if (!existsSync(path)) return undefined;
@@ -69,13 +69,13 @@ function installedSettings(plan, job) {
 	return settings;
 }
 
-export function execute(file, args, { timeout = 10 * 60_000, logPath, env = process.env } = {}) {
+export function execute(file, args, { timeout = 10 * 60_000, logPath, env = process.env, signal } = {}) {
 	return new Promise((resolveCommand, reject) => {
 		let output = "";
 		const fd = logPath ? openSync(logPath, "a", 0o600) : undefined;
 		let child;
 		try {
-			child = spawn(file, args, { env, windowsHide: true, stdio: ["ignore", fd ?? "pipe", fd ?? "pipe"] });
+			child = spawn(file, args, { env, signal, windowsHide: true, stdio: ["ignore", fd ?? "pipe", fd ?? "pipe"] });
 		} catch (error) {
 			if (fd !== undefined) closeSync(fd);
 			return reject(error);
@@ -146,7 +146,7 @@ export function independentWorkerPlan(
 		const task = `pi-device-hub-update-${id}`;
 		const quote = (s) => `'${s.replace(/'/g, "''")}'`;
 		const winArg = (s) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
-		const script = `$ErrorActionPreference='Stop'; $a=New-ScheduledTaskAction -Execute ${quote(node)} -Argument ${quote(args.map(winArg).join(" "))}; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 20) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; Register-ScheduledTask -TaskName ${quote(task)} -Action $a -Settings $s -User $u -RunLevel Limited -Force | Out-Null; Start-ScheduledTask -TaskName ${quote(task)};`;
+		const script = `$ErrorActionPreference='Stop'; $a=New-ScheduledTaskAction -Execute ${quote(node)} -Argument ${quote(args.map(winArg).join(" "))}; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; Register-ScheduledTask -TaskName ${quote(task)} -Action $a -Settings $s -User $u -RunLevel Limited -Force | Out-Null; Start-ScheduledTask -TaskName ${quote(task)};`;
 		return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", script], task };
 	}
 	throw new Error(`Hub updates are unsupported on ${platform}`);
@@ -271,6 +271,66 @@ export async function waitForRelease(
 		`Updated Hub did not start with expected version ${version}; old healthy processes do not count as a successful upgrade; last health: ${observed}`,
 	);
 }
+export async function queryWindowsHubTcp(settings, { run = execute, timeout = 10_000, signal } = {}) {
+	const port = Number(settings.PI_DEVICE_HUB_PORT);
+	const host = settings.PI_DEVICE_HUB_HOST;
+	if (!Number.isInteger(port) || port < 1 || port > 65535 || typeof host !== "string" || !host)
+		throw new Error("Invalid Windows Hub TCP endpoint");
+	const quote = (s) => `'${s.replace(/'/g, "''")}'`;
+	try {
+		if (signal?.aborted) throw new Error("Cancelled");
+		// CIM returns an empty array for no matches and throws on provider/query failures.
+		const output = await run(
+			"powershell.exe",
+			[
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				`$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $literal=$null; if ([Net.IPAddress]::TryParse(${quote(host)}, [ref]$literal)) { $addresses=@($literal) } else { $addresses=@([Net.Dns]::GetHostAddresses(${quote(host)})) }; if ($addresses.Count -eq 0) { throw 'Hub host has no addresses' }; $keys=@($addresses | ForEach-Object { if ($_.IsIPv4MappedToIPv6) { $_.MapToIPv4().ToString() } else { $_.ToString() } }); $has4=@($keys | Where-Object { $_ -notmatch ':' }).Count -gt 0; $any4=$keys -contains '0.0.0.0'; $any6=$keys -contains '::'; $rows=@(Get-CimInstance -Namespace root/StandardCimv2 -ClassName MSFT_NetTCPConnection -Filter 'LocalPort = ${port}' -ErrorAction Stop | Where-Object { $ip=[Net.IPAddress]::Parse($_.LocalAddress); if ($ip.IsIPv4MappedToIPv6) { $ip=$ip.MapToIPv4() }; $key=$ip.ToString(); $any6 -or ($any4 -and $ip.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork) -or ($keys -contains $key) -or $key -eq '::' -or ($has4 -and $key -eq '0.0.0.0') } | Select-Object -First 32 | ForEach-Object { if ($null -eq $_.State -or $null -eq $_.OwningProcess) { throw 'Invalid TCP resource' }; [pscustomobject]@{state=[int]$_.State;pid=[long]$_.OwningProcess} }); ConvertTo-Json -InputObject $rows -Compress`,
+			],
+			{ timeout, signal },
+		);
+		if (signal?.aborted) throw new Error("Cancelled");
+		const rows = JSON.parse(output);
+		if (
+			!Array.isArray(rows) ||
+			rows.some(
+				(row) =>
+					!row || !Number.isSafeInteger(row.state) || row.state < 1 || !Number.isSafeInteger(row.pid) || row.pid < 0,
+			)
+		)
+			throw new Error("Invalid TCP resource result");
+		return rows.map(({ state, pid }) => ({ state, pid }));
+	} catch {
+		throw new Error(
+			signal?.aborted ? "Windows Hub TCP handoff cancelled" : "Could not query Windows Hub TCP resources",
+		);
+	}
+}
+export async function waitForWindowsHubPort(
+	settings,
+	{ query = queryWindowsHubTcp, now = () => performance.now(), sleep = delay, signal } = {},
+) {
+	const deadline = now() + 4 * 60_000;
+	let rows = [];
+	while (now() < deadline) {
+		if (signal?.aborted) throw new Error("Windows Hub TCP handoff cancelled");
+		const remaining = deadline - now();
+		if (remaining <= 0) break;
+		rows = await query(settings, { timeout: Math.min(10_000, remaining), signal });
+		if (signal?.aborted) throw new Error("Windows Hub TCP handoff cancelled");
+		if (now() >= deadline) break;
+		if (rows.some(({ state }) => state === 2))
+			throw new Error("Windows Hub TCP port still has a live listener; refusing service start");
+		if (rows.length === 0) return;
+		const remainingSleep = deadline - now();
+		if (remainingSleep <= 0) break;
+		await sleep(Math.min(1000, remainingSleep), undefined, { signal });
+	}
+	throw new Error(
+		`Windows Hub TCP resources did not drain within 4 minutes; state/pid=${JSON.stringify(rows.slice(0, 32))}`,
+	);
+}
 function recordWindowsServiceFailure(plan, candidate, logPath, run) {
 	if (plan.manager !== "schtasks.exe") return;
 	try {
@@ -326,6 +386,10 @@ export async function runUpgradeJob(
 		run = runManager,
 		probe = probeHub,
 		wait = waitForRelease,
+		portQuery = queryWindowsHubTcp,
+		now = () => performance.now(),
+		sleep = delay,
+		signal,
 		source = process.env.PI_DEVICE_HUB_UPDATE_SOURCE,
 		log = console.log,
 	} = {},
@@ -344,6 +408,13 @@ export async function runUpgradeJob(
 	let changed = false;
 	let candidate;
 	const logPath = join(dirname(path), "hub-upgrade.log");
+	const restart = async (settings, signal) => {
+		for (const args of plan.commands.update) {
+			await run(plan.manager, args);
+			if (plan.manager === "schtasks.exe" && args[0] === "/End")
+				await waitForWindowsHubPort(settings, { query: portQuery, now, sleep, signal });
+		}
+	};
 	try {
 		const settings = installedSettings(plan, { ...job, path });
 		releaseLock = acquireHubLock(plan.root);
@@ -355,6 +426,7 @@ export async function runUpgradeJob(
 		writeFileSync(join(plan.root, "service.previous"), previousFile, { mode: 0o600 });
 		writeFileSync(logPath, `Hub upgrade ${job.id}\n`, { mode: 0o600 });
 		candidate = await install(plan.root, { source: settings.PI_DEVICE_HUB_UPDATE_SOURCE ?? source, logPath });
+		if (plan.manager === "schtasks.exe") await portQuery(settings, { timeout: 10_000, signal });
 		update({ phase: "restarting", targetVersion: candidate.version });
 		const next = hubServicePlan({ ...plan.serviceOptions, entry: candidate.entry });
 		const temp = `${plan.file}.${job.id}.tmp`;
@@ -363,7 +435,7 @@ export async function runUpgradeJob(
 		});
 		renameSync(temp, plan.file);
 		changed = true;
-		for (const args of plan.commands.update) run(plan.manager, args);
+		await restart(settings, signal);
 		const health = await wait(settings, { version: candidate.version, fromBootId: job.fromBootId, probe });
 		try {
 			retainWorkingReleases(plan, candidate, previousFile);
@@ -382,8 +454,8 @@ export async function runUpgradeJob(
 				const restore = `${plan.file}.${job.id}.rollback`;
 				writeFileSync(restore, previousFile, { mode: 0o600 });
 				renameSync(restore, plan.file);
-				for (const args of plan.commands.update) run(plan.manager, args);
 				const settings = installedSettings(plan, { ...job, path });
+				await restart(settings);
 				await wait(settings, {
 					version: job.fromVersion,
 					fromBootId: job.fromBootId,
