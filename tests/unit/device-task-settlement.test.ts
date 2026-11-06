@@ -98,8 +98,6 @@ function event(t: HubTask, fields: Partial<DeviceTaskEventFrame> = {}): DeviceTa
 	};
 }
 
-// Exact v0.116.0 recordTaskFinish disk shape and digest (aaab2581): no lease
-// fields, no proof fields, and task-active-leases.json is empty after finish.
 function legacyOutbox(t: HubTask, fields: Partial<TaskOutboxEntry> = {}): TaskOutboxEntry {
 	const entry: TaskOutboxEntry = {
 		id: `${t.id}:${t.attemptId}`,

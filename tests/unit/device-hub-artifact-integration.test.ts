@@ -335,7 +335,7 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 		expect(applied.status).toBe(200);
 		expect(applied.body.integration.status).toBe("applied");
 		expect(await git(repo, ["show", "main:file.txt"])).toContain("artifact");
-		await review(verified); // Exact idempotent review replay still works after apply.
+		await review(verified);
 		const persisted = await readPersistedHub(dataDir);
 		expect(persisted.integrations[0].verification!.digest).toBe(verified.verification.digest);
 		expect(persisted.tasks.find((t) => t.id === "code-task")!.artifact!.digest).toBe(
@@ -674,7 +674,6 @@ describe("artifact delivery verification authority through Hub HTTP and WAL", { 
 				old.status = status;
 				delete old.targetDeviceId;
 			});
-			// A v46 local session has no durable positive-stop marker. Modern prepares explicitly do.
 			const sessionsPath = join(dataDir, "integration-sessions.json");
 			const sessions = JSON.parse(await readFile(sessionsPath, "utf8"));
 			delete sessions.find((session: any) => session.integrationId === prep.id).verificationStopConfirmed;

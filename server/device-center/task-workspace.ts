@@ -27,7 +27,6 @@ import {
 } from "./work-contract.js";
 import { validateDeviceProject } from "./workspaces.js";
 
-/** Maximum allowed raw bytes for artifact patches (128 KiB). */
 export const MAX_TASK_ARTIFACT_PATCH_BYTES = 128 * 1024;
 
 export interface TaskWorkspaceBinding {
@@ -108,7 +107,6 @@ interface TaskWorkspaceRecord {
 	closing?: boolean;
 }
 
-/** In-memory private registration table preventing forged JSON or unverified paths */
 const workspaceRegistry = new Map<string, TaskWorkspaceRecord>();
 const preparingBindings = new Set<string>();
 const trustedCapabilities = new WeakMap<object, { handleId: string; binding: TaskWorkspaceBinding }>();
@@ -119,7 +117,6 @@ function bindingKey(binding: TaskWorkspaceBinding): string {
 		.digest("hex");
 }
 
-/** Only capabilities issued by this module and still registered are trusted. Never duck-type resolve(). */
 export function isTrustedTaskWorkspaceCapability(value: unknown): value is TaskWorkspaceCapability {
 	if (!value || typeof value !== "object") return false;
 	const trusted = trustedCapabilities.get(value);
@@ -161,15 +158,6 @@ function getRegisteredRecord(handle: TaskWorkspaceHandle | string, binding: Task
 	return record;
 }
 
-/**
- * Prepares an isolated Git worktree for device bot task execution.
- * - Verifies repoRoot is clean and matches baseline with strict repositoryId check
- * - Binds contract & contextManifest
- * - Validates input artifacts with scratch index to prove outputTree === patch applied to base
- * - Composes non-empty inputArtifacts safely in ordered sequence
- * - Detaches HEAD and records canonical worktree + gitdir in private registry
- * - Entire flow wrapped in try/catch to ensure unmanaged worktrees are cleaned up on abort/failure
- */
 export async function prepareTaskWorkspace(options: PrepareTaskWorkspaceOptions): Promise<TaskWorkspaceHandle> {
 	checkSignal(options.signal);
 	options = { ...options };
@@ -210,7 +198,6 @@ async function prepareRegisteredWorkspace(
 	}
 	const contextManifest = manifestCheck.manifest;
 
-	// Validate repository admission and verify it is a valid Git repo
 	const validatedProjectRoot = await validateDeviceProject(options.repoRoot, options.dataDir);
 	const { repoRoot } = await verifyRepoRoot(validatedProjectRoot, options.signal);
 	if (validatedProjectRoot !== repoRoot) {
@@ -219,7 +206,6 @@ async function prepareRegisteredWorkspace(
 		);
 	}
 
-	// Ensure clean baseline in repoRoot before worktree creation
 	const baselineStatus = (
 		await git(repoRoot, ["status", "--porcelain", "--untracked-files=all"], options.signal)
 	).trim();
@@ -227,7 +213,6 @@ async function prepareRegisteredWorkspace(
 		throw new Error("Device task workspace requires a clean baseline repository; commit or stash changes first");
 	}
 
-	// Determine and verify transportable identity even for callers without a baseline.
 	const canonicalRepoId = await computeCanonicalRepositoryId(repoRoot, options.signal);
 	let baseCommit: string;
 	if (contract.baseline) {
@@ -243,7 +228,6 @@ async function prepareRegisteredWorkspace(
 			});
 		}
 
-		// Strictly verify repository identity against canonical repository identity (no aliases)
 		const expectedRepoId = contract.baseline.repositoryId.trim();
 		if (expectedRepoId !== canonicalRepoId) {
 			throw new Error(
@@ -254,7 +238,6 @@ async function prepareRegisteredWorkspace(
 		baseCommit = (await git(repoRoot, ["rev-parse", "HEAD"], options.signal)).trim();
 	}
 
-	// Both the binding hash and a fresh handle are part of every owned path/ref.
 	const handleId = randomUUID();
 	const refNamespace = `${key}/${handleId}`;
 	const resolvedDataDir = resolve(options.dataDir);
@@ -276,7 +259,6 @@ async function prepareRegisteredWorkspace(
 	const artifactRef = `refs/pi-tasks/artifacts/${refNamespace}`;
 
 	try {
-		// Create detached worktree
 		creationAttempted = true;
 		await createDetachedWorktree(repoRoot, worktreeDir, baseCommit, options.signal);
 
@@ -286,7 +268,6 @@ async function prepareRegisteredWorkspace(
 
 		let inputTree = (await git(repoRoot, ["rev-parse", `${baseCommit}^{tree}`], options.signal)).trim();
 
-		// Process inputArtifacts (safe ordered composition with independent outputTree verification)
 		if (contract.inputArtifacts && contract.inputArtifacts.length > 0) {
 			const synthCheck = validateInputArtifacts(contract.inputArtifacts, contract.baseline, contract.executionMode);
 			if (!synthCheck.valid) {
@@ -316,7 +297,6 @@ async function prepareRegisteredWorkspace(
 					throw new Error(`Input artifact ${artifact.id} patchSha256 checksum mismatch`);
 				}
 
-				// Independent proof: verify using scratch index that applying patchBytes to baseCommit yields artifact.outputTree
 				await verifyPatchProducesTree(
 					repoRoot,
 					baseCommit,
@@ -355,11 +335,9 @@ async function prepareRegisteredWorkspace(
 					touched.add(path);
 				}
 
-				// Apply patch to the isolated worktree for ordered composition
 				await applyBinaryPatch(worktreeDir, patchBytes, options.signal);
 			}
 
-			// Snapshot composite inputTree after applying all input artifacts
 			inputTree = await snapshotTree(
 				worktreeDir,
 				options.dataDir,
@@ -368,12 +346,10 @@ async function prepareRegisteredWorkspace(
 			);
 		}
 
-		// A commit retains both the composite input tree and the original baseline.
 		workspaceCommit = (
 			await git(repoRoot, ["commit-tree", inputTree, "-p", baseCommit, "-m", "pi-task-workspace"], options.signal)
 		).trim();
 		checkSignal(options.signal);
-		// Publication is one non-cancellable CAS; cleanup knows its exact expected value.
 		await git(repoRoot, ["update-ref", workspaceRef, workspaceCommit, "0".repeat(baseCommit.length)]);
 		const record: TaskWorkspaceRecord = {
 			handleId,
@@ -404,8 +380,6 @@ async function prepareRegisteredWorkspace(
 
 		return Object.freeze({ handleId, deviceId, botId, taskId, attemptId });
 	} catch (error) {
-		// An abort can land after `worktree add` completed. Verify ownership on disk
-		// before removing anything, without reusing the aborted signal.
 		const failures: unknown[] = [];
 		if (creationAttempted && existsSync(worktreeDir)) {
 			try {
@@ -434,9 +408,6 @@ async function prepareRegisteredWorkspace(
 	}
 }
 
-/**
- * Resolves a previously registered workspace handle against caller binding and on-disk verification.
- */
 export async function resolveTaskWorkspace(
 	handle: TaskWorkspaceHandle | string,
 	binding: TaskWorkspaceBinding,
@@ -470,9 +441,6 @@ export async function resolveTaskWorkspace(
 	};
 }
 
-/**
- * Returns an execution capability wrapper around a verified task workspace.
- */
 export function getTaskWorkspaceCapability(
 	handle: TaskWorkspaceHandle | string,
 	binding: TaskWorkspaceBinding,
@@ -499,14 +467,6 @@ export function getTaskWorkspaceCapability(
 	return capability;
 }
 
-/**
- * Captures task output artifact:
- * - If already captured, returns the cached immutable artifact
- * - Generates snapshot outputTree without altering user index
- * - Produces cumulative binary patch from baseCommit to outputTree (bounded <=128 KiB raw)
- * - Retains inputTree for audit
- * - Anchors git object GC retention ref
- */
 export async function captureTaskArtifact(
 	handle: TaskWorkspaceHandle | string,
 	binding: TaskWorkspaceBinding,
@@ -558,7 +518,6 @@ async function captureRegisteredArtifact(record: TaskWorkspaceRecord, signal?: A
 		record.canonicalCommonDir,
 	);
 
-	// Cumulative patch semantics: diff from baseCommit^{tree} to outputTree
 	const baseTree = (await git(record.repoRoot, ["rev-parse", `${record.baseCommit}^{tree}`], signal)).trim();
 	const patchStr = await git(
 		record.worktreePath,
@@ -576,7 +535,6 @@ async function captureRegisteredArtifact(record: TaskWorkspaceRecord, signal?: A
 	const patchSha256 = createHash("sha256").update(patchBytes).digest("hex");
 	const patchBase64 = patchBytes.toString("base64");
 
-	// Git object GC retention commit and ref
 	const retentionCommit = (
 		await git(
 			record.repoRoot,
@@ -625,11 +583,6 @@ async function captureRegisteredArtifact(record: TaskWorkspaceRecord, signal?: A
 	return immutable;
 }
 
-/**
- * Conservative task workspace cleanup:
- * - Refuses deletion if dirty uncommitted changes or additional commits exist (unless force=true)
- * - Removes worktree cleanly and clears in-memory handle
- */
 export async function cleanupTaskWorkspace(
 	handle: TaskWorkspaceHandle | string,
 	binding: TaskWorkspaceBinding,
@@ -682,7 +635,6 @@ async function cleanupRegisteredWorkspace(
 	}
 
 	checkSignal(options.signal);
-	// Once deletion begins, finish bookkeeping without an abort between disk and registry.
 	await removeDetachedWorktree(record.repoRoot, record.worktreePath, { force: options.force });
 	try {
 		await git(record.repoRoot, ["update-ref", "-d", record.workspaceRef, record.workspaceCommit]);
@@ -691,12 +643,10 @@ async function cleanupRegisteredWorkspace(
 	}
 }
 
-/** Test inspection helper */
 export function getRegisteredWorkspaceCount(): number {
 	return workspaceRegistry.size;
 }
 
-/** Test cleanup helper */
 export function clearTaskWorkspaceRegistry(): void {
 	workspaceRegistry.clear();
 }

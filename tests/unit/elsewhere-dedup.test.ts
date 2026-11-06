@@ -69,7 +69,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 		svc.clients.set("client-current", currentClient);
 		svc.clients.set("client-other", otherClient);
 
-		// 当前客户端请求 elsewhere 列表：因为本机已经持有 sharedFile，不应返回
 		const elsewhere = svc.listExternalRunning("client-current");
 		expect(elsewhere.length).toBe(0);
 	});
@@ -84,7 +83,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 
 		const sharedFile = resolve("/fake/work/sessions/conv-dup.json");
 
-		// 客户端 A：空闲无问卷
 		const clientA = fakeClientSession() as any;
 		clientA.sinkCount = vi.fn().mockReturnValue(1);
 		clientA.streamingSummariesAll = vi.fn().mockReturnValue([
@@ -98,7 +96,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 			},
 		]);
 
-		// 客户端 B：正在流式运行 (streaming: true)
 		const clientB = fakeClientSession() as any;
 		clientB.sinkCount = vi.fn().mockReturnValue(1);
 		clientB.streamingSummariesAll = vi.fn().mockReturnValue([
@@ -112,7 +109,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 			},
 		]);
 
-		// 客户端 C：空闲无问卷
 		const clientC = fakeClientSession() as any;
 		clientC.sinkCount = vi.fn().mockReturnValue(1);
 		clientC.streamingSummariesAll = vi.fn().mockReturnValue([
@@ -131,7 +127,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 		svc.clients.set("client-c", clientC);
 
 		const elsewhere = svc.listExternalRunning("client-current");
-		// 3 个客户端持有同一个文件，必须去重为 1 条，并且胜出者必须是 streaming 的 clientB
 		expect(elsewhere.length).toBe(1);
 		expect(elsewhere[0].owner).toBe("client-b");
 		expect(elsewhere[0].isStreaming).toBe(true);
@@ -147,7 +142,6 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 
 		const sharedFile = resolve("/fake/work/sessions/conv-takeover.json");
 
-		// target 本地已有旧实例 c_stale（不是 active）
 		const staleConv = {
 			id: "c_stale",
 			title: "旧对话实例",
@@ -180,27 +174,21 @@ describe("elsewhere（「另一处」）排重与过户生命周期防护", () =
 
 		cs.insertTakeoverConvs(payload);
 
-		// 旧实例已被清理，新实例已插入
 		expect(cs.removeConversation).toHaveBeenCalledWith("c_stale");
 		expect(cs.convs.has("c_stale")).toBe(false);
 		expect(cs.convs.has("c_incoming")).toBe(true);
 	});
 
 	it("pendingDetaches: 当连接在 attach 异步创建期间断开时，记录并在后续阻止 sink 泄漏", () => {
-		// 集合字段（pending / pendingDetaches / sharedViewers …）由 fake-session 从生产
-		// 源码推导，新增字段自动跟上，不再逐个手补。
 		const svc = fakeAgentService({ clients: new Map(), pokeExternalRunning: vi.fn() }) as any;
 
 		const sendMock = vi.fn();
 		const clientId = "client-racing";
 
-		// 模拟正在异步创建中
 		svc.pending.set(clientId, Promise.resolve({} as any));
 
-		// 连接中断，调用 detach
 		svc.detach(clientId, sendMock);
 
-		// pendingDetaches 中应记录该 send
 		expect(svc.pendingDetaches.has(clientId)).toBe(true);
 		expect(svc.pendingDetaches.get(clientId)?.has(sendMock)).toBe(true);
 	});

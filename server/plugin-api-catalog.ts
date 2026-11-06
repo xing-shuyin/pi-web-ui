@@ -1,24 +1,7 @@
-/**
- * 机器可读的注册面目录（DSH 对照 P2-7）。
- *
- * DSH 用词法扫描生成 CLIENT_SLOT_API（slot 的 key/kind/occupants/example…），
- * 供只读 inspect 给模型查 —— 能力发现与执行分离，先查真实 API 再写码。
- * pi-web-ui 之前只有手写 `plugin-sdk/index.d.ts` + README，没有运行时可查的目录。
- *
- * 本模块 = 目录的纯装配层（类型唯一事实源在 server/protocol.ts）：
- * - 静态部分（slot 例子、宿主方法表）写死在这里，与源码同仓、单测锁住
- *   （别名目标必须存在、每个 slot 必须有例子、方法 needs 必须是已知族）；
- * - 动态部分（occupants：谁占着哪个 slot）由 PluginManager 现算传入。
- *
- * 下发方式：WS 只读查询 `plugin_api_catalog` → `plugin_api_catalog_result`
- * （不进快照、不进清单，按需拉）。给将来「AI 写插件」铺路；当前消费方是
- * 插件作者（浏览器 devtools 发一条 WS 即可查）与后面的设置面板目录页。
- */
 import type { CatalogHostMethod, CatalogSlotEntry, CatalogSlotOccupant, PluginApiCatalog } from "./protocol.js";
 
 export const PLUGIN_API_CATALOG_VERSION = 1 as const;
 
-/** 每个 slot 的 manifest 最小例子（与 parseUiContributions 同口径，别名已展开写法也收）。 */
 export const SLOT_EXAMPLES: Readonly<Record<string, string>> = {
 	"topbar.primary": `{ "topbar": [{ "id": "inbox", "label": "收件箱", "kind": "action", "action": "my:open" }] }`,
 	"topbar.overflow": `{ "topbar.more": [{ "id": "about", "label": "关于", "kind": "action", "action": "my:about" }] }`,
@@ -56,8 +39,6 @@ export const SLOT_EXAMPLES: Readonly<Record<string, string>> = {
 	"sidebar.right": `{ "sidebar.right": [{ "id": "m", "label": "右侧悬浮", "kind": "action", "action": "my:m" }] }`,
 };
 
-/** 宿主方法表（与 server/plugins.ts#PluginHost 同语义的精简版：只收发现用的注册/调用面）。
- *  needs="-" = 观察/基础设施类（无需能力声明）；其余走 can() 门控。 */
 export const HOST_METHODS: ReadonlyArray<CatalogHostMethod> = [
 	{
 		name: "leftPanel.setRunning",
@@ -247,6 +228,12 @@ export const HOST_METHODS: ReadonlyArray<CatalogHostMethod> = [
 	},
 	{ name: "secrets", needs: "-", summary: "加密 secrets（明文永不落盘/下发）", example: `host.secrets.get("token")` },
 	{
+		name: "tts",
+		needs: "-",
+		summary: "统一 TTS：注册引擎、列出引擎与音色、合成音频",
+		example: `await host.tts.synthesize({ text: "你好", engine: "builtin" })`,
+	},
+	{
 		name: "ensureDeps",
 		needs: "-",
 		summary: "依赖自动补装（单飞，npm 包）",
@@ -343,7 +330,6 @@ export const HOST_METHODS: ReadonlyArray<CatalogHostMethod> = [
 	{ name: "abortRun", needs: "-", summary: "中止指定对话的运行", example: `await host.abortRun(convId)` },
 ];
 
-/** 装配目录：静态表（本模块）+ 动态占用（调用方现算）。调用方保证入参即真相（别名/枚举与解析层同源）。 */
 export function buildPluginApiCatalog(opts: {
 	slots: string[];
 	aliases: Record<string, string>;

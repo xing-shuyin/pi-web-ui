@@ -1,9 +1,3 @@
-/**
- * image-gen 协议形状适配器单测（零网络：fetch 替身）。
- *
- * 覆盖 5 种形状的请求构造与响应解析 + 统一入口 generateImage 的分支
- * （n 并发合并、部分失败、错误透传、能力校验）+ probeService 的连通性探测。
- */
 import { describe, expect, it } from "vitest";
 import {
 	ProviderError,
@@ -16,7 +10,6 @@ import {
 } from "../../plugins/image-toolkit/core/gen-providers.mjs";
 import { normalizeService } from "../../plugins/image-toolkit/core/gen-config.mjs";
 
-/** 构造一个「像图片」的字节串（只满足文件头嗅探，不需要真解码）。 */
 function pngBytes(n = 96) {
 	return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(n, 7)]);
 }
@@ -25,7 +18,6 @@ function jpegBytes(n = 96) {
 }
 const b64 = (b: Buffer) => b.toString("base64");
 
-/** JSON 响应替身（要过 readResponse 的 content-type / 首字符判定）。 */
 function jsonRes(obj: unknown, status = 200) {
 	const text = JSON.stringify(obj);
 	return {
@@ -36,7 +28,6 @@ function jsonRes(obj: unknown, status = 200) {
 		arrayBuffer: async () => Uint8Array.from(Buffer.from(text, "utf8")).buffer,
 	};
 }
-/** 二进制响应替身。 */
 function binRes(buf: Buffer, mime = "image/png", status = 200) {
 	return {
 		ok: status >= 200 && status < 300,
@@ -47,7 +38,6 @@ function binRes(buf: Buffer, mime = "image/png", status = 200) {
 	};
 }
 
-/** fetch 替身：按 url 子串认路由，记录每次调用。 */
 function makeFetch(routes: Array<[string | RegExp, (url: string, init: any) => unknown]>) {
 	const calls: Array<{ url: string; init: any }> = [];
 	const fetchImpl = async (url: string, init: any) => {
@@ -472,7 +462,6 @@ describe("comfyui 形状", () => {
 		);
 		expect(out.images).toHaveLength(1);
 		expect(out.images[0].mimeType).toBe("image/png");
-		// 上传的图名替换进了 workflow
 		const promptBody = JSON.parse(String(calls.find((c) => c.url.endsWith("/prompt"))!.init.body));
 		expect(promptBody.prompt["1"].inputs.image).toBe("ref_0001.png");
 		expect(promptBody.prompt["1"].inputs.text).toBe("a cat");
@@ -558,8 +547,6 @@ describe("generateImage 统一入口", () => {
 	it("空 prompt / 不支持参考图的形状 / 无图返回都会报错", async () => {
 		await expect(generateImage(AGY, { prompt: "  " }, {})).rejects.toThrow(/prompt/);
 		const or = normalizeService({ shape: "openrouter-chat", baseUrl: "https://o.test/v1" });
-		// openrouter-chat 声明支持参考图，换个声明不支持的：stability 只吃第一张不报错 —— 用 gemini 的 caps 也支持
-		// 所以这里直接验 unknown shape 回落 openai + 无图报错
 		await expect(
 			generateImage(
 				or,

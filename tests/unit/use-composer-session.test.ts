@@ -5,11 +5,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { useComposerSessionReset } from "../../web/src/use-composer-session.js";
 
-/**
- * 待发附件的「会话闸门」接线（App 用它清空输入框上方的 chips）：
- * 新建对话 / 切对话 / 过户 / 切项目（sessionId 变）→ 清；同一会话的快照刷新、
- * 断线重连时 sessionId 短暂为空 → 不清。
- */
 let root: Root | null = null;
 
 afterEach(() => {
@@ -18,7 +13,6 @@ afterEach(() => {
 	document.body.innerHTML = "";
 });
 
-/** 挂一个只跑 hook 的探针组件；返回「改 sessionId 并重渲染」的驱动器。 */
 function mountProbe(initial: string) {
 	const onSessionChange = vi.fn();
 	let setSession: (s: string) => void = () => {};
@@ -62,7 +56,6 @@ describe("useComposerSessionReset", () => {
 		const p = mountProbe("s1");
 		p.switchTo("s2");
 		expect(p.onSessionChange).toHaveBeenCalledTimes(1);
-		// 再换到第三个会话 → 再清一次
 		p.switchTo("s3");
 		expect(p.onSessionChange).toHaveBeenCalledTimes(2);
 	});

@@ -1,17 +1,8 @@
-/**
- * plugins/qq/index.mjs
- * QQ Bot (腾讯开放平台 QQBot) integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto + native WebSocket).
- * Inspired by dsh-im & wechat-ilink: outbound WebSocket duplex chat (zero public IP),
- * structure-aware Markdown chunks, isolated multi-turn sessions,
- * access control whitelist, slash commands, model & thinkingLevel switches,
- * and workspace cwd binding.
- */
-
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
+import { createQqVoiceRenderer, speechReplyText } from "./voice.mjs";
 import {
 	QQ_INBOUND_MAX,
 	formatInboundMediaLines,
@@ -27,7 +18,6 @@ export const SECRET_CLIENT_SECRET = "qq.clientSecret";
 const QQ_AUTH_URL = "https://bots.qq.com/app/getAppAccessToken";
 const QQ_API_BASE = "https://api.sgroup.qq.com";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -36,7 +26,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** 校验工作目录合法性（防路径不存在或越界，Windows 下防 SystemRoot）。 */
 export function checkCwdValid(cwd) {
 	const trimmed = String(cwd ?? "").trim();
 	if (!trimmed) return { ok: false, error: "工作目录不能为空" };
@@ -68,7 +57,6 @@ export function checkCwdValid(cwd) {
 	return { ok: true, abs };
 }
 
-/** Generates a stable, privacy-preserving accountId from QQ user OpenID or user ID and session seq. */
 export function peerAccountId(userId, seq = 0, prefix = "qq") {
 	const base = String(userId ?? "").trim();
 	const raw = seq ? `${base}:${seq}` : base;
@@ -77,7 +65,6 @@ export function peerAccountId(userId, seq = 0, prefix = "qq") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and strip bot mention tags (<@!botId> or <@botId>) from QQ message. */
 export function extractQqText(content = "", botId = "") {
 	let text = String(content || "").trim();
 	if (!text) return "";
@@ -88,9 +75,6 @@ export function extractQqText(content = "", botId = "") {
 	return text.replace(/<@!\d+>/g, "").trim();
 }
 
-/**
- * Obtain QQBot Access Token from Tencent Open Platform.
- */
 export async function getQqAccessToken(appId, clientSecret, { timeoutMs = 15000 } = {}) {
 	if (!appId || !clientSecret) throw new Error("QQ AppID and ClientSecret are required.");
 	const res = await fetch(QQ_AUTH_URL, {
@@ -117,9 +101,6 @@ export async function getQqAccessToken(appId, clientSecret, { timeoutMs = 15000 
 	};
 }
 
-/**
- * QQ OpenAPI request helper.
- */
 export async function qqApi(
 	accessToken,
 	method,
@@ -173,10 +154,6 @@ export async function downloadInbound(url, declaredSize, maxBytes = QQ_INBOUND_M
 	return buf;
 }
 
-/**
- * 发媒体时的来源解析：http(s) URL 交给平台自己转存（最省事）；本地文件读成字节，
- * 由 uploadQqMedia 走 base64（≤50MB）或分片上传。相对路径按工作区解析。
- */
 export function resolveMediaSpec(spec, workspace) {
 	const raw = String(spec ?? "").trim();
 	if (!raw) return null;
@@ -190,17 +167,12 @@ export function resolveMediaSpec(spec, workspace) {
 	return { buffer: readFileSync(abs), fileName: basename(abs), size, kind: mediaKindOfContentType(mimeOfPath(abs)) };
 }
 
-/**
- * 向频道/群聊/单聊发一条媒体（图片/视频/语音/文件）。
- * - 频道（channel_id）：官方只收公网 URL 的 image 字段，本地文件无上传通道；
- * - 单聊 / 群聊：先传 files 拿 file_info，再 msg_type=7 发（本地文件自动 base64/分片上传）。
- */
-export async function sendMediaToTarget({ cfg, target, media, content = "" }) {
+export async function sendMediaToTarget({ cfg, target, media, content = "", canDeliver = () => true }) {
+	if (!canDeliver()) return;
 	if (!cfg?.appId || !cfg?.clientSecret) throw new Error("QQBot AppID 或 ClientSecret 未配置");
 	const caption = String(content ?? "");
 	const channelId = String(target?.channelId ?? "").trim();
 	const isGuild = Boolean(channelId) && !target?.groupOpenid && !target?.userOpenid;
-	// 先校验再取 token：能本地报错就别发请求（频道只收公网 URL，本地文件没有上传通道）。
 	if (isGuild && !media?.url) throw new Error("QQ 频道只支持公网 http(s) 媒体 URL（本地文件请走单聊/群聊）");
 	if (!isGuild && !target?.groupOpenid && !target?.userOpenid) {
 		throw new Error("缺少目标：channel_id / group_openid / user_openid 至少填一个");
@@ -209,6 +181,7 @@ export async function sendMediaToTarget({ cfg, target, media, content = "" }) {
 	const apiBase = cfg.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
 	const token = await getQqAccessToken(cfg.appId, cfg.clientSecret).then((r) => r.accessToken);
 
+	if (!canDeliver()) return;
 	if (isGuild) {
 		const payload = { content: caption || " ", image: media.url };
 		return qqApi(token, "POST", `/channels/${channelId}/messages`, payload, { apiBase });
@@ -228,6 +201,7 @@ export async function sendMediaToTarget({ cfg, target, media, content = "" }) {
 		fileName: media?.fileName ?? "media",
 		kind: media?.kind ?? "file",
 	});
+	if (!canDeliver()) return;
 	return sendQqMediaMessage({
 		api,
 		scope,
@@ -238,9 +212,6 @@ export async function sendMediaToTarget({ cfg, target, media, content = "" }) {
 	});
 }
 
-/**
- * QqBotBridge manages outbound WebSocket duplex exchange with Tencent QQ Open Platform.
- */
 export class QqBotBridge {
 	/**
 	 * @param {object} options
@@ -255,6 +226,8 @@ export class QqBotBridge {
 
 		this.running = false;
 		this.stopGeneration = 0;
+		this.voiceController = new AbortController();
+		this.renderVoice = createQqVoiceRenderer(host);
 		this.ws = null;
 		this.heartbeatTimer = null;
 		this.lastSequence = null;
@@ -267,8 +240,6 @@ export class QqBotBridge {
 		this.seenMessageIds = new Set();
 		this.pendingRuns = new Map();
 		this.earlyRuns = new Map();
-		/** host.chat 回执的稳定 runId → pendingRuns 的 key（对话被过户 / 撞 id 改名后
-		 *  conversationId 会变，只有 runId 不变；QQ 靠它认领自己那一轮的回包）。 */
 		this.runIdIndex = new Map();
 		this.inFlightConvs = new Set();
 		this.lastInFlightStartedAt = 0;
@@ -280,30 +251,31 @@ export class QqBotBridge {
 		this.userModels = new Map();
 		this.userThinkingLevels = new Map();
 		this.userPlanMode = new Map();
-		this.userActiveConvs = new Map(); // authorId -> conversationId (真实会话ID)
+		this.userActiveConvs = new Map();
 		this.peerSessionSeq = new Map();
 		this.userActiveSeq = new Map();
 
-		this.conversationBindings = new Map(); // convId -> { authorId, replyTarget, updatedAt }
-		this.recentChats = []; // Array<{ conversationId, authorId, lastUserText, lastAssistantText, updatedAt }>
-		this.webRunTexts = new Map(); // convId -> accumulatedText (电脑网页发起的双向同步累积)
+		this.conversationBindings = new Map();
+		this.recentChats = [];
+		this.webRunTexts = new Map();
 
-		this.notifiedToolCalls = new Set(); // 防止同一 toolCallId 重复触发广播通知
-		this.runStartTimes = new Map(); // convId -> timestamp (耗时统计)
-		this.runTasks = new Map(); // convId -> task (触发词/任务说明)
-		this.recentAssistantTexts = new Map(); // convId -> 最新文本输出 (用于完成广播摘要)
+		this.notifiedToolCalls = new Set();
+		this.runStartTimes = new Map();
+		this.runTasks = new Map();
+		this.recentAssistantTexts = new Map();
 
-		this.currentIntents = (1 << 30) | (1 << 25); // PUBLIC_GUILD_MESSAGES | GROUP_AND_C2C
+		this.currentIntents = (1 << 30) | (1 << 25);
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			botUsername: "",
 			messagesReceived: 0,
 			messagesReplied: 0,
 			lastMessageAt: null,
 			lastReplyAt: null,
 			lastError: null,
+			lastVoiceError: null,
 		};
 	}
 
@@ -317,7 +289,6 @@ export class QqBotBridge {
 
 	recordRecentChat(conversationId, authorId, { userText, assistantText } = {}) {
 		if (!conversationId) return;
-		// 严防非 QQ 会话写入：必须属于 QQ 绑定或当前排队任务
 		const recordKey = `peer:${authorId}:${this.peerSessionSeq.get(authorId) || 0}`;
 		const pending = this.pendingRuns.get(conversationId);
 		if (
@@ -420,6 +391,8 @@ export class QqBotBridge {
 	}
 
 	async stop() {
+		this.voiceController.abort();
+		this.voiceController = new AbortController();
 		this.stopGeneration++;
 		this.running = false;
 		this.status.enabled = false;
@@ -561,7 +534,6 @@ export class QqBotBridge {
 		const { op, d, s, t } = packet;
 		if (typeof s === "number") this.lastSequence = s;
 
-		// Opcode 10: Hello -> start heartbeat and send Identify
 		if (op === 10) {
 			const interval = d?.heartbeat_interval || 30000;
 			if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
@@ -589,10 +561,8 @@ export class QqBotBridge {
 			return;
 		}
 
-		// Opcode 11: Heartbeat ACK
 		if (op === 11) return;
 
-		// Opcode 0: Dispatch
 		if (op === 0) {
 			if (t === "READY") {
 				this.botUser = d?.user || {};
@@ -628,13 +598,11 @@ export class QqBotBridge {
 			}
 		}
 
-		// Extract author ID
 		const authorId = data.author?.id || data.author?.user_openid || "";
 		if (data.author?.bot) return;
 
 		const cfg = this.getConfig();
 
-		// Access control whitelist check
 		const allowedUsers = Array.isArray(cfg.allowedUsers)
 			? cfg.allowedUsers.map((u) => String(u).trim()).filter(Boolean)
 			: [];
@@ -659,14 +627,11 @@ export class QqBotBridge {
 
 		const botId = this.botUser?.id || "";
 		const cleanText = extractQqText(data.content, botId);
-		// Keep direct messages compatible; scope group/channel sessions to their actual destination.
 		const sessionPeer = this.sessionPeer(authorId, replyTarget);
-		// Commands must run before media downloads, especially cancellation.
 		const commandText = cleanText.replace(/[！-～]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0));
 		if (commandText.startsWith("/") || /^\d+\/.+/.test(commandText) || /^\d+(?:\s|$)/.test(commandText)) {
 			if (await this.handleSlashCommand(cleanText, { authorId: sessionPeer, replyTarget, cfg })) return;
 		}
-		// 图片/语音/视频/文件（QQ 走 attachments，带腾讯 CDN url，有时效）
 		const attachments = Array.isArray(data.attachments) ? data.attachments : [];
 		const media =
 			attachments.length > 0
@@ -687,11 +652,6 @@ export class QqBotBridge {
 		await this.driveAuthor(sessionPeer, promptText, replyTarget, media.attachments);
 	}
 
-	/**
-	 * 收图/收文件落地：QQ 附件的 `url` 是腾讯 CDN（有时效），收到必须立刻下载。
-	 * 落盘到 `<工作区>/.pi-qq-media/`，正文里给绝对路径让 agent 用 read 直接看；
-	 * 关掉 `inboundMedia`（或下载失败/超限）就只给占位文字，绝不吞消息。
-	 */
 	async collectInboundMedia(attachments, { authorId, cfg }) {
 		const items = [];
 		const hostAttachments = [];
@@ -783,7 +743,6 @@ export class QqBotBridge {
 		const dispatchKey = `peer:${authorId}:${seq}`;
 		let bindCid = null;
 
-		// An explicit reset owns its new context; never bind it back to the web context.
 		if (cfg.bindActive === true && seq === 0) {
 			try {
 				const active = this.host.getActiveConversation?.()?.conversationId;
@@ -817,7 +776,6 @@ export class QqBotBridge {
 			noticed: false,
 		};
 		this.pendingRuns.set(dispatchKey, dispatchedRun);
-		// Both the epoch and object identity must survive reset, abort and bridge stop.
 		const ownsDispatch = () =>
 			(this.peerSessionSeq.get(authorId) || 0) === seq && this.pendingRuns.get(dispatchKey) === dispatchedRun;
 
@@ -887,12 +845,42 @@ export class QqBotBridge {
 		}
 	}
 
+	async deliverReply(target, text, canDeliver) {
+		const cfg = { ...this.getConfig() };
+		let sendText = true;
+		if (["voice", "both"].includes(cfg.replyMode) && !target.channelId) {
+			const speech = speechReplyText(text, Math.round(140 * Math.max(0.5, Math.min(2, Number(cfg.voiceRate) || 1))));
+			if (speech.text && canDeliver()) {
+				try {
+					const media = await this.renderVoice(speech.text, cfg, { signal: this.voiceController.signal });
+					if (!canDeliver()) return false;
+					const msgSeq = (target.__nextSeq = (target.__nextSeq || 0) + 1);
+					await sendMediaToTarget({ cfg, target: { ...target, msgSeq }, media, canDeliver });
+					if (!canDeliver()) return false;
+					sendText = cfg.replyMode === "both" || speech.truncated;
+					this.status.lastVoiceError = null;
+				} catch (error) {
+					if (!canDeliver()) return false;
+					this.status.lastVoiceError = error.message;
+					this.log("warn", `QQ voice reply failed; delivering text: ${error.message}`);
+				}
+			}
+		}
+		if (sendText) {
+			for (const chunk of chunkMarkdownText(text, 3000)) {
+				if (!canDeliver()) return false;
+				const seq = (target.__nextSeq = (target.__nextSeq || 0) + 1);
+				await this.replyMessage(target, chunk, seq);
+			}
+		}
+		return canDeliver();
+	}
+
 	async replyMessage(target, text, explicitSeq = null) {
 		const cfg = this.getConfig();
 		const apiBase = cfg.useSandbox ? "https://sandbox.api.sgroup.qq.com" : QQ_API_BASE;
 		const token = await this.ensureAccessToken();
 
-		// 同一 target 维护单调自增序号，绝不重复发送相同的 msg_seq 避免腾讯 304026 冲突
 		if (!target.__nextSeq || typeof target.__nextSeq !== "number") {
 			target.__nextSeq = 1;
 		}
@@ -925,10 +913,8 @@ export class QqBotBridge {
 				errMsg.includes("40040003") ||
 				errMsg.includes("50006");
 
-			// 遇到被动回复过期或 seq 冲突时降级重试：
 			if (isExpiredOrSeq) {
 				if (target.channelId) {
-					// QQ 频道：去掉 msg_id/msg_seq 作为普通频道消息发送，100% 成功送达
 					try {
 						await qqApi(token, "POST", `/channels/${target.channelId}/messages`, { content: text }, { apiBase });
 						this.log("info", "QQ channel passive reply expired, fallback to active channel message succeeded");
@@ -937,7 +923,6 @@ export class QqBotBridge {
 						this.log("warn", `QQ channel active fallback failed: ${fallbackErr.message}`);
 					}
 				} else if (target.groupOpenid || target.userOpenid) {
-					// QQ 群/单聊：尝试作为主动消息重发
 					try {
 						const activePayload = { content: text };
 						const path = target.groupOpenid
@@ -979,7 +964,6 @@ export class QqBotBridge {
 	}
 
 	async handleSlashCommand(cmdText, { authorId, replyTarget, cfg }) {
-		// Normalize only the command token: paths and prompts must retain their exact text.
 		const normalized = cmdText
 			.trim()
 			.replace(/^\S+/, (token) =>
@@ -1248,7 +1232,6 @@ export class QqBotBridge {
 		}
 	}
 
-	/** 记住某个对话「本轮」的稳定 runId（host.chat 回执给出；旧宿主没有就跳过）。 */
 	rememberRunId(conversationId, runId) {
 		const rid = typeof runId === "string" ? runId.trim() : "";
 		if (!rid || !conversationId || !this.pendingRuns.has(conversationId)) return;
@@ -1256,11 +1239,9 @@ export class QqBotBridge {
 		this.runIdIndex.set(rid, conversationId);
 	}
 
-	/** 事件归属的 pendingRuns key：优先稳定 runId（过户改名后 conversationId 已对不上）。 */
 	resolveRunKey(ev) {
 		const rid = typeof ev?.runId === "string" ? ev.runId.trim() : "";
 		const mapped = rid ? this.runIdIndex.get(rid) : undefined;
-		// Unknown run IDs never borrow a session or a local conversation alias.
 		if (rid) return mapped && this.pendingRuns.has(mapped) ? mapped : undefined;
 		const identity = this.sessionKey(ev);
 		if (identity && this.pendingRuns.has(identity)) return identity;
@@ -1276,7 +1257,6 @@ export class QqBotBridge {
 		return new Set(matches.map(([, run]) => run)).size === 1 ? matches[0][0] : undefined;
 	}
 
-	/** 某轮收尾/作废：连同 runId 索引一起清，防陈旧映射把后续运行认错。 */
 	forgetRun(key, ...aliasKeys) {
 		const run = this.pendingRuns.get(key);
 		const keys = [key, ...aliasKeys].filter((k) => k && (!run || this.pendingRuns.get(k) === run));
@@ -1364,7 +1344,6 @@ export class QqBotBridge {
 		let convId = this.resolveRunKey(ev);
 		let pending = this.pendingRuns.get(convId);
 		if (pending?.runId && ev.runId && pending.runId !== ev.runId) return;
-		// A receipt is the only authority for a run whose canonical ID is not known yet.
 		if (ev.runId && !this.runIdIndex.has(ev.runId) && this.inFlightConvs.size && (!pending || !pending.runId)) {
 			if (!this.earlyRunEvents.has(ev.runId) && this.earlyRunEvents.size >= 64)
 				this.earlyRunEvents.delete(this.earlyRunEvents.keys().next().value);
@@ -1414,7 +1393,6 @@ export class QqBotBridge {
 
 		convId ||= `unbound:${this.sessionKey(ev) || ev.conversationId}`;
 
-		// 1. 全局运行轨迹监听：用于频道广播通知与统计
 		if (ev.type === "run_start") {
 			this.runStartTimes.set(convId, ev.at || Date.now());
 			if (ev.task) {
@@ -1437,7 +1415,6 @@ export class QqBotBridge {
 			}
 		}
 
-		// 2. 收集助手消息文本，供广播摘要与同步使用
 		if (ev.type === "message" && ev.message) {
 			const m = ev.message;
 			let content = "";
@@ -1479,13 +1456,11 @@ export class QqBotBridge {
 			return;
 		}
 
-		// 3. 关键安全守卫（与微信通道同级）：区分 QQ 自身会话 与 宿主普通网页会话
 		const isPending = this.pendingRuns.has(convId);
 		const isBound = this.conversationBindings.has(convId);
 		const isInFlight = this.inFlightConvs.has(convId);
 
 		if (!isPending && !isBound && !isInFlight) {
-			// 普通网页端会话结束：检查是否开启了任务完成广播通知
 			if (ev.type === "run_end") {
 				const cfg = this.getConfig?.() || {};
 				if (cfg.notifyOnRunEnd === true) {
@@ -1506,7 +1481,7 @@ export class QqBotBridge {
 				this.runTasks.delete(convId);
 				this.recentAssistantTexts.delete(convId);
 			}
-			return; // 绝不让网页端普通对话进入 earlyRuns 或 recentChats！
+			return;
 		}
 
 		if (ev.type === "run_end") {
@@ -1529,7 +1504,6 @@ export class QqBotBridge {
 				const targetConvId = run.canonicalId || convId;
 				this.recordRecentChat(targetConvId, run.authorId, { assistantText: finalText });
 
-				const chunks = chunkMarkdownText(finalText, 3000);
 				const epochGuard = this.createDeliveryGuard(run.authorId);
 				const canDeliver = () =>
 					epochGuard() &&
@@ -1537,11 +1511,7 @@ export class QqBotBridge {
 						(this.validSessionRoute(run.route) && this.sessionRoutes.get(this.sessionKey(run)) === run.route));
 
 				try {
-					for (let i = 0; i < chunks.length; i++) {
-						if (!canDeliver()) return;
-						const seq = (run.replyTarget.__nextSeq = (run.replyTarget.__nextSeq || 0) + 1);
-						await this.replyMessage(run.replyTarget, chunks[i], seq);
-					}
+					if (!(await this.deliverReply(run.replyTarget, finalText, canDeliver))) return;
 					if (!canDeliver()) return;
 					this.saveSessionRoutes();
 					this.status.lastError = null;
@@ -1556,7 +1526,6 @@ export class QqBotBridge {
 				return;
 			}
 
-			// 电脑网页端发起的运行 -> 双向同步给 QQ
 			const binding = this.conversationBindings.get(convId);
 			if (binding && this.webRunTexts.has(convId)) {
 				const webRaw = this.webRunTexts.get(convId) || "";
@@ -1569,14 +1538,9 @@ export class QqBotBridge {
 				const cfg = this.getConfig();
 				if (cfg.bindActive !== false && binding.replyTarget) {
 					const syncText = `💻 [来自电脑网页端同步]\n${cleanText}`;
-					const chunks = chunkMarkdownText(syncText, 3000);
 					const canDeliver = this.createDeliveryGuard(binding.authorId, convId, binding);
 					try {
-						for (let i = 0; i < chunks.length; i++) {
-							if (!canDeliver()) return;
-							const seq = (binding.replyTarget.__nextSeq = (binding.replyTarget.__nextSeq || 0) + 1);
-							await this.replyMessage(binding.replyTarget, chunks[i], seq);
-						}
+						if (!(await this.deliverReply(binding.replyTarget, syncText, canDeliver))) return;
 						if (!canDeliver()) return;
 						this.status.messagesReplied++;
 						this.status.lastReplyAt = Date.now();
@@ -1588,10 +1552,6 @@ export class QqBotBridge {
 			}
 		}
 	}
-	/**
-	 * Send proactive notification message to a QQ guild channel.
-	 * Used for broadcast notifications (e.g. AI ask_user_question or run_end).
-	 */
 	async broadcastToChannel(text) {
 		const clean = stripInternalMarkers(text);
 		if (!clean) return false;
@@ -1678,7 +1638,6 @@ export class QqBotBridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.clientSecret;
@@ -1686,7 +1645,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingSecret = savedSecrets[SECRET_CLIENT_SECRET] || prev.clientSecret || "";
@@ -1739,7 +1697,6 @@ export default async function activate(host) {
 		}
 	}
 
-	// Register project right-click context menu action
 	host.onUiAction?.("qq:set-workspace", (_itemId, _val, target) => {
 		const path = target?.id !== undefined && target?.id !== null ? String(target.id).trim() : "";
 		if (!path) return;
@@ -1751,7 +1708,6 @@ export default async function activate(host) {
 		}
 	});
 
-	// Register AI tool "qq" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "qq",
 		description:
@@ -1809,7 +1765,6 @@ export default async function activate(host) {
 					if (!localConfig.appId || !localConfig.clientSecret) {
 						throw new Error("QQBot AppID or ClientSecret is not configured.");
 					}
-					// 带媒体就先走富媒体链路（本地文件自动上传）；否则保持原来的纯文本行为。
 					const mediaSpec = String(args.image || args.file || "").trim();
 					if (mediaSpec) {
 						const workspace = String(localConfig.workspace || host.cwd || "").trim();
@@ -1848,9 +1803,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
-	// 回包回显请求里的 __rid：宿主为「上行 send / 下行 onData」，
-	// 客户端按 __rid 将回包精确配对到发起请求，保证 Promise 正常 resolve。
 	host.onClientMessage?.(async (msg, replyRaw) => {
 		const __rid = msg && msg.__rid;
 		const reply = (payload) =>
@@ -1859,6 +1811,16 @@ export default async function activate(host) {
 				: replyRaw(payload && typeof payload === "object" && !Array.isArray(payload) ? { ...payload, __rid } : payload);
 		try {
 			switch (msg.type) {
+				case "get_voice_options": {
+					const engine = String(msg.engine || "builtin");
+					reply({
+						type: "voice_options",
+						engine,
+						engines: host.tts.listEngines(),
+						voices: await host.tts.listVoices(engine),
+					});
+					break;
+				}
 				case "get_state": {
 					const secrets = (await host.secrets?.getAll?.()) || {};
 					reply({
@@ -1878,8 +1840,13 @@ export default async function activate(host) {
 							botEnabled: Boolean(localConfig.botEnabled),
 							allowedUsers: localConfig.allowedUsers || [],
 							inboundMedia: localConfig.inboundMedia !== false,
+							replyMode: localConfig.replyMode || "text",
+							voiceEngine: localConfig.voiceEngine || "builtin",
+							voiceSpeaker: localConfig.voiceSpeaker || "",
+							voiceRate: Number(localConfig.voiceRate) || 1,
 							hasClientSecret: Boolean(secrets[SECRET_CLIENT_SECRET] || localConfig.clientSecret),
 						},
+						ttsEngines: host.tts?.listEngines() || [],
 						botStatus: botBridge.getStatus(),
 						recentChats: botBridge.getRecentChats(),
 						hostCwd: String(host.cwd ?? "").trim(),
@@ -2002,7 +1969,6 @@ export default async function activate(host) {
 						throw new Error("QQBot AppID or ClientSecret is not configured.");
 					}
 					if (mediaSpec) {
-						// 富媒体：频道只收公网 URL；单聊/群聊支持本地文件（自动 base64/分片上传）。
 						const workspace = String(localConfig.workspace || host.cwd || "").trim();
 						const media = resolveMediaSpec(mediaSpec, workspace);
 						const res = await sendMediaToTarget({

@@ -3,7 +3,6 @@ import type { GroupBotConversation } from "./device-group-messages";
 
 export type GroupAttention = "failed" | "interrupted" | "changes_requested" | "awaiting_review" | "answer" | "decision";
 
-/** Derive actionable state from execution and exact-version reviews; never parse report text. */
 export function groupAttention(conversation: GroupBotConversation): GroupAttention | null {
 	if (conversation.status === "closed") return null;
 	if (conversation.attention) return conversation.attention.kind;

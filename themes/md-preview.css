@@ -13,7 +13,6 @@
 	--switch-knob-on: #ffffff;
 }
 
-/* ---- ambient gradient（镜像 .fp-markdown 预览底色，覆盖整个窗口）---- */
 :root {
 	--bg: #0a0b10;
 }
@@ -22,7 +21,7 @@ body {
 		radial-gradient(circle at 10% 0%, rgba(139, 92, 246, 0.14), transparent 38%),
 		radial-gradient(circle at 88% 100%, rgba(139, 92, 246, 0.07), transparent 44%), #0a0b10;
 }
-/* 让渐变直接成为整个窗口的底色：铬件全部透明，只留边框定结构 */
+
 .topbar,
 .panel,
 .statusbar {

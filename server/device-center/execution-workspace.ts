@@ -1,14 +1,11 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
-/** Canonical roots prevent symlink aliases from bypassing execution isolation. */
 export function executionRoot(path: string): string {
 	let root = resolve(path);
 	try {
 		root = realpathSync.native(root);
-	} catch {
-		/* Admission validates missing roots separately. */
-	}
+	} catch {}
 	return process.platform === "win32" ? root.toLowerCase() : root;
 }
 

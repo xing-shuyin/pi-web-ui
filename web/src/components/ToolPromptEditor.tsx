@@ -5,29 +5,14 @@ import { invalidateToolPrompt, requestToolPrompt, useToolPromptView } from "../t
 import type { UiToolPromptOverride } from "../types";
 import { Modal } from "./Modal";
 
-/**
- * 逐工具文案编辑器（设置页「工具」区每个工具行的「编辑文案」入口）。
- *
- * 三个字段对应模型能看到的三处工具文案（见 server/tool-prompt-overrides.ts）：
- *  - 描述        → tool schema 的 `description`（这是什么 / 有什么副作用）；
- *  - 提示词摘要  → 系统提示词 Available tools 列表里的一行；
- *  - 行为要点    → 系统提示词 Guidelines 段（每行一条）。
- * 留空 = 用工具自带默认（默认值从服务端 `get_tool_prompt` 取，展示在输入框下方）。
- *
- * 保存直接走 `set_settings.toolPromptOverrides`（服务端逐工具合并 + 持久化 + 即时生效），
- * 不需要单独协议。
- */
 export function ToolPromptEditor({
 	name,
 	override,
 	onApply,
 	onClose,
 }: {
-	/** 正在编辑的工具名（同名工具覆盖对全局生效）。 */
 	name: string;
-	/** 当前设置里的覆盖（来自 settings_state；缺省 = 没覆盖）。 */
 	override: UiToolPromptOverride | null;
-	/** 保存：override 为 null = 清除覆盖（恢复默认）。 */
 	onApply: (name: string, override: UiToolPromptOverride | null) => void;
 	onClose: () => void;
 }) {
@@ -37,7 +22,6 @@ export function ToolPromptEditor({
 	const [snippet, setSnippet] = useState(() => override?.promptSnippet ?? "");
 	const [guidelines, setGuidelines] = useState(() => (override?.promptGuidelines ?? []).join("\n"));
 
-	// 打开（或切换到另一个工具）时拉一次默认值 + 当前覆盖。
 	useEffect(() => {
 		requestToolPrompt(name);
 	}, [name]);

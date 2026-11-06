@@ -1,15 +1,3 @@
-// 过户夭折回滚（issue #556「幽灵会话」回归，零 token）：
-// 对话在接进目标页面失败时，绝不能两头不挂 —— 源侧已摘除（map 删了、订阅断了），
-// 目标侧没接上，runtime 还在跑 = 谁的列表里都没有的幽灵，只有重启服务才靠落盘恢复。
-//
-// 这里用仅测试用的故障注入（PI_WEB_TEST_TAKEOVER_FAIL_INSERT=1）把错打在
-// 「源侧已摘除、目标侧还没接上」这个唯一空档期，验证：
-//   1. B 收到诚实的失败回执（明说对话已退回原页面，不是静默失败）；
-//   2. A 的运行列表里那条对话又回来了（active + listed，能直接点开）；
-//   3. 对话没在 B 手里（不双持），但 B 的「另一处」行重新指向它（可达，不是幽灵）；
-//   4. run 没被打断：失败之后流式还在继续，服务也还活着。
-//
-// Usage: npm run build && node tests/takeover-rollback-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +21,6 @@ mkdirSync(agentDir, { recursive: true });
 
 const MODEL_ID = "rollback-mock";
 
-/** 慢速流：过户尝试发生在 run 还在 streaming 的时候（幽灵只在跑动中出现）。 */
 const mock = createServer(async (req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${MOCK_PORT}`);
 	if (url.pathname.endsWith("/models")) {
@@ -97,7 +84,6 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		PI_WEB_CWD: workdir,
 		PI_CODING_AGENT_DIR: agentDir,
 		PI_WEB_TOKEN: "",
-		// 故障注入：接进目标的那一步必错，逼出「源侧已摘、目标侧没接」的空档期。
 		PI_WEB_TEST_TAKEOVER_FAIL_INSERT: "1",
 	},
 	stdio: "ignore",
@@ -109,9 +95,7 @@ const waitForPort = async (port, timeout = 30000) => {
 	while (Date.now() - started < timeout) {
 		try {
 			if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -170,7 +154,6 @@ class Client {
 		}
 		throw new Error(`[${this.name}] timeout waiting for ${what}`);
 	}
-	/** 当前转写文本（判「run 还在推进」用）：落盘消息 + 正在流的那条。 */
 	text() {
 		const settled = (this.messages ?? [])
 			.filter((m) => m.role === "assistant")
@@ -220,7 +203,6 @@ try {
 	const row = clientB.elsewhere.find((w) => w.isStreaming && w.owner && w.convId);
 	check("B 看到 A 正在跑的对话（另一处行）", row?.owner === clientA.clientId, `owner=${row?.owner}`);
 
-	// 过户：服务端会在「源侧已摘除、目标侧没接上」的空档期按注入失败。
 	clientB.send({ type: "take_over_conversation", owner: row.owner, id: row.convId });
 	const noticeB = await clientB.waitForType("notice", (m) => /过户失败|Takeover failed/.test(m.text ?? ""), 20000);
 	check(
@@ -229,7 +211,6 @@ try {
 		noticeB.text,
 	);
 
-	// 1) 对话回到 A：既在 A 的运行列表里（listed），也是 A 的当前对话（active）。
 	await clientA.waitFor((c) => c.conversations.some((x) => x.id === convA), "A running row back");
 	check(
 		"A 的运行列表里那条对话回来了",
@@ -241,7 +222,6 @@ try {
 		`now=${clientA.state?.conversationId}`,
 	);
 
-	// 2) 不在 B 手里（不双持），B 的 elsewhere 行重新指向它（可达 = 不是幽灵）。
 	check("B 没有把这条对话留在自己手里", !clientB.conversations.some((x) => x.title === "慢慢写"));
 	await clientB.waitFor((c) => c.elsewhere.some((w) => w.convId), "elsewhere row again");
 	check(
@@ -250,7 +230,6 @@ try {
 		JSON.stringify(clientB.elsewhere.map((w) => ({ id: w.convId, owner: w.owner }))),
 	);
 
-	// 3) run 没被打断：失败之后 A 这边还在收流。
 	const before = clientA.text();
 	await clientA.waitFor((c) => c.text().length > before.length, "A keeps streaming");
 	check("过户夭折没有打断正在跑的 run（A 仍在收流）", clientA.text().length > before.length);

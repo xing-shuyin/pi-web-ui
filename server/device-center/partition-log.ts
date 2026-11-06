@@ -2,18 +2,6 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-/**
- * Append-only partitioned log for collections that dominate Hub state size.
- *
- * One file per partition (room or conversation), one JSON object per line:
- *   {"v":1,"op":"upsert","value":{...}}
- *   {"v":1,"op":"del","ids":["..."]}
- *
- * The owner commits its WAL before projecting collections here. Failed projections can be replayed
- * from that WAL. Deletions use tombstones; compaction atomically replaces a partition with live rows.
- * Cache misses reload and repair disk state before any further append.
- */
-
 const PARTITION = /^[A-Za-z0-9_-]{1,128}$/;
 const PARTITION_SUFFIX = ".jsonl";
 
@@ -31,14 +19,10 @@ type Line<T> = UpsertLine<T> | DeleteLine;
 
 export interface PartitionedLogOptions<T> {
 	dir: string;
-	/** Partition key for a value (roomId for messages, conversationId for transcripts). */
 	partition: (value: T) => string;
 	id: (value: T) => string;
-	/** Rows kept per partition when loading; older rows are dropped even if a tombstone was lost. */
 	retention?: number;
-	/** Rows that must survive retention (pending work), even when they are older than the window. */
 	protect?: (value: T) => boolean;
-	/** Tombstones tolerated before a partition file is rewritten from live rows. */
 	maxDeletes?: number;
 }
 
@@ -51,7 +35,6 @@ export class PartitionedAppendLog<T> {
 	private readonly retention?: number;
 	private readonly protect?: (value: T) => boolean;
 	private readonly maxDeletes: number;
-	/** Digest of the rows already written, so a commit only serializes what changed. */
 	private cache = new Map<string, Map<string, string>>();
 	private deletes = new Map<string, number>();
 	private lines = new Map<string, number>();
@@ -73,17 +56,12 @@ export class PartitionedAppendLog<T> {
 		return createHash("sha1").update(JSON.stringify(value)).digest("hex");
 	}
 
-	/**
-	 * Load every existing partition in the given parent set; rows of removed parents are ignored.
-	 * `sweep` removes log files whose parent no longer exists (crash leftovers); read-only callers skip it.
-	 */
 	async load(partitions: Iterable<string>, options: { sweep?: boolean; readOnly?: boolean } = {}): Promise<T[]> {
 		if (!options.readOnly) {
 			await mkdir(this.dir, { recursive: true, mode: 0o700 });
 		}
 		const existing = new Set<string>();
 		for (const partition of partitions) if (PARTITION.test(partition)) existing.add(partition);
-		// Files whose parent was removed by a committed transaction (crash between the two writes).
 		const shouldSweep = options.sweep !== false && !options.readOnly;
 		if (shouldSweep) {
 			let entries: string[] = [];
@@ -103,7 +81,6 @@ export class PartitionedAppendLog<T> {
 			const loaded = await this.readPartition(partition);
 			if (!loaded) continue;
 			rows.push(...loaded.values);
-			// Repair a partition left oversized by a lost tombstone/compaction (skip if read-only).
 			const overRetention = this.retention !== undefined && loaded.rawRows > this.retention;
 			if (!options.readOnly && (loaded.needsRepair || overRetention || loaded.deletes > this.maxDeletes))
 				await this.rewrite(partition, loaded.values);
@@ -118,7 +95,6 @@ export class PartitionedAppendLog<T> {
 		for (const row of protectedRows) kept.add(this.idOf(row));
 		const rest = values.filter((value) => !kept.has(this.idOf(value)));
 		const remaining = Math.max(0, this.retention - kept.size);
-		// slice(-0) would return the whole array, so only take a window when there is room left.
 		for (const row of remaining > 0 ? rest.slice(-remaining) : []) kept.add(this.idOf(row));
 		return values.filter((value) => kept.has(this.idOf(value)));
 	}
@@ -137,7 +113,6 @@ export class PartitionedAppendLog<T> {
 		}
 		let complete = raw;
 		let needsRepair = false;
-		// A crash during append can leave a partial last line; ignore and truncate it before appending.
 		if (raw.length && !raw.endsWith("\n")) {
 			const cut = raw.lastIndexOf("\n");
 			complete = cut >= 0 ? raw.slice(0, cut + 1) : "";
@@ -153,7 +128,6 @@ export class PartitionedAppendLog<T> {
 			try {
 				parsed = JSON.parse(line) as Line<T>;
 			} catch {
-				// Only a torn tail is expected; anything else is corruption and is skipped explicitly.
 				needsRepair = true;
 				continue;
 			}
@@ -187,11 +161,6 @@ export class PartitionedAppendLog<T> {
 		return { values, rawRows: rawValues.length, deletes, needsRepair };
 	}
 
-	/**
-	 * Apply the diff between what is on disk (cache) and `next`. Partitions that no longer exist are
-	 * removed. Failed appends are rolled back where possible; completed deletes/rewrites are retained
-	 * because the owner's committed WAL can replay them. A retry reloads and repairs actual disk state.
-	 */
 	async commit(next: readonly T[], partitions: ReadonlySet<string>): Promise<void> {
 		await mkdir(this.dir, { recursive: true, mode: 0o700 });
 		const grouped = new Map<string, { value: T; digest: string }[]>();
@@ -202,7 +171,6 @@ export class PartitionedAppendLog<T> {
 			bucket.push({ value, digest: this.digest(value) });
 			grouped.set(partition, bucket);
 		}
-		// Cache invalidation must not hide existing files, including parents removed by this transaction.
 		const knownPartitions = new Set(this.cache.keys());
 		for (const entry of await readdir(this.dir)) {
 			if (entry.endsWith(PARTITION_SUFFIX)) {
@@ -211,9 +179,7 @@ export class PartitionedAppendLog<T> {
 			}
 		}
 		const removedPartitions = new Set([...knownPartitions].filter((partition) => !partitions.has(partition)));
-		// Empty retained parents also need a disk reload and tombstones after cache invalidation.
 		const touched = new Set<string>([...partitions, ...knownPartitions]);
-		// Only append offsets are safe to roll back; never truncate an atomically replaced snapshot.
 		const rollback = new Map<string, number>();
 		try {
 			for (const partition of removedPartitions) {
@@ -325,7 +291,6 @@ export class PartitionedAppendLog<T> {
 		this.lines.set(partition, values.length);
 	}
 
-	/** Re-read a partition after an external change (used by tests and failure recovery). */
 	async reload(partitions: Iterable<string>): Promise<void> {
 		for (const partition of partitions) {
 			this.cache.delete(partition);
@@ -334,7 +299,6 @@ export class PartitionedAppendLog<T> {
 		}
 	}
 
-	/** Invalidate all in-memory caches so subsequent commits reload actual disk state. */
 	invalidateCache(): void {
 		this.cache.clear();
 		this.deletes.clear();

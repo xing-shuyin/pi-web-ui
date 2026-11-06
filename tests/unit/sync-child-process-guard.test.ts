@@ -1,20 +1,3 @@
-/**
- * 服务端禁同步子进程调用守卫（对应 `docs/agent-rules.md` §四「服务端禁同步子进程调用」）。
- *
- * 背景：`spawnSync` / `execSync` / `execFileSync` 在事件循环线程上 fork+exec，并**阻塞到
- * 子进程结束**。子进程若卡在 `exec()` 之前，主线程就永远停在 spawn 错误管道的 `read()` 上，
- * 定时器、socket、`/api/health` 全部停摆 —— 只能靠外部 watchdog 杀进程（2026-11-02 在
- * Termux/Android 上一天之内复现三次，见 `#830`）。异步 `spawn` / `execFile` 不会被拖到子进程
- * 结束，所以修复方向是「换异步」或「静态推导」，而不是加超时。
- *
- * **扫描范围包含插件运行时**：`server/plugins.ts` 用 `import()` 把 `plugins/<id>/index.mjs`
- * 载进主进程，插件代码与服务器共用同一个事件循环，所以插件里的一次同步 spawn 同样能把
- * pi-web 冻住。`bin/`、`assets/`、`build.mjs` 这类**在自己进程里**跑的东西才排除。
- *
- * 本测试锁两件事：
- *   1. 范围里不得**新增**同步子进程调用（存量登记在 ALLOWED 里，按**次数**记账）；
- *   2. ALLOWED 只许变短：某条命中变少要下调次数，归零则整行删除。
- */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,40 +8,20 @@ const root = join(here, "..", "..");
 
 const SYNC_APIS = /\b(spawnSync|execSync|execFileSync)\s*\(/g;
 
-/**
- * 存量名单：file → { count, reason }。次数是**天花板**，只许下调或整行删除。
- * 新代码请直接用异步 spawn 或静态推导，不要往这里加。
- */
 const ALLOWED: Record<string, { count: number; reason: string }> = {
 	"server/plugin-facilities.ts": { count: 1, reason: "插件设施开关的同步调用，迁移到异步 spawn 待办" },
 	"server/eval-tool.ts": { count: 2, reason: "`taskkill` / `--version` 探测，工具调用路径，迁移待办" },
 	"server/plugin-assets.ts": { count: 1, reason: "`tar` 解包整段阻塞事件循环，最该优先迁移的一个" },
 	"server/device-center/desktop-linux.ts": { count: 2, reason: "`xrandr` / `xdpyinfo` 探测，LAN 客户端可触发" },
 	"server/device-center/desktop-native.ts": { count: 1, reason: "`xcrun` 探测，仅 macOS" },
-	// 插件主进程代码：uv 探测在事件处理里被 await，同样能冻住事件循环
 	"plugins/bili-scroll/lib/uvfetch.mjs": { count: 6, reason: "插件里探测 `uv` 版本，迁移到异步 spawn 待办" },
 };
 
-/**
- * 扫描范围内的排除项：这些文件在**自己的进程**里运行，不阻塞服务端事件循环。
- */
-const OUT_OF_SCOPE = [
-	/\/bin\//, // 插件命令行入口，独立进程
-	/\/assets\//, // 随包资产（CLI 包装），不经服务端 import
-	/\/build\.mjs$/, // 构建脚本
-	/\/scripts?\//, // 工具脚本
-	/\/web\//, // 前端代码，跑在浏览器里
-];
+const OUT_OF_SCOPE = [/\/bin\//, /\/assets\//, /\/build\.mjs$/, /\/scripts?\//, /\/web\//];
 
 const REGEX_PRECEDER_CHARS = "([{,;:=!&|?+-*%<>^~";
 const REGEX_PRECEDER_WORDS = /(?:^|[^\w$])(?:return|typeof|case|in|of|delete|void|instanceof|new|do|else|yield|await)$/;
 
-/**
- * 把注释、字符串、模板文本、正则字面量的内容抹成空格（保留换行与代码骨架，行号不变）。
- *
- * 模板的 `${...}` 里是**真实代码**，会照常扫描；`\`\` ` 文本、`//`、`/* *\/`、`/re/`
- * 里的文本不会。宁可多报也不漏报 —— 漏报的守卫等于没有守卫。
- */
 function blankNonCode(src: string): string {
 	const chars = [...src];
 	const n = chars.length;
@@ -198,7 +161,6 @@ interface Hit {
 	api: string;
 }
 
-/** 扫一段源码里的同步子进程调用（行号 1 起）。 */
 function findSyncChildProcessCalls(source: string, file = "inline"): Hit[] {
 	const hits: Hit[] = [];
 	blankNonCode(source)
@@ -209,7 +171,6 @@ function findSyncChildProcessCalls(source: string, file = "inline"): Hit[] {
 	return hits;
 }
 
-/** 收集扫描范围内的文件（server/ 全部 + 插件主进程代码）。 */
 function walk(dir: string, out: string[] = []): string[] {
 	let entries: string[] = [];
 	try {

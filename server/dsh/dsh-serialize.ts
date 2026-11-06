@@ -1,37 +1,7 @@
-/**
- * dsh-serialize.ts — DSH 会话事件/消息 → pi-web-ui 协议的 UiMessage[]。
- *
- * 事件面 ground truth（dsh 0.1.1-rc.2，实测 dump，见 docs/dsh-engine.md §2.1）：
- *   session.event 通知 params = { sessionId, event: { type, seq, time, data } }
- *     持久事件类型（全量 append-only，按 seq 排序）：
- *       user/message        data: { content[], source, role, id }
- *       assistant/message   data: { turn, step, message: { role, content[], id, time } }
- *       tool/result         data: { turn, step, message: { role:"user",
- *                             content:[{type:"tool-result", toolCallId, content[], isError}] },
- *                             meta, sourceEventSeqs, surfaceOp }
- *       assistant/chunk     data: { turn, step, chunk: {…} }
- *         chunk: block-start {index, blockType: reasoning|text|tool-call}
- *                reasoning-delta {index, text}      text-delta {index, text}
- *                tool-call-delta {index, id, name, argumentsDelta}
- *                block-end {index, block}           usage {usage}  finish {reason}
- *       turn/start step/start step/end turn/end session/title …
- *   session.status 通知    params = { sessionId, status: running|idle }
- *
- * 序列化策略（对齐 pi 引擎 serialize.ts 的 UiMessage 形状）：
- *   - 持久消息：user/message、assistant/message、tool/result 三个事件各产一条；
- *     id 稳定：u-<msgId> / a-<msgId> / t-<toolCallId>（前端 React key 稳定）。
- *   - streamingMessage：由 assistant/chunk 增量累积（reasoning→thinking、
- *     text→text、tool-call→toolCall），id 用 stream-<会话seq> 稳定跨快照。
- */
-
 import type { TextQuote, UiContentBlock, UiMessage } from "../protocol.js";
 import { parseTextQuote } from "../text-quote.js";
 import { ARGS_CAP, TEXT_CAP, TOOL_OUTPUT_CAP, truncate } from "../serialize.js";
 import { stripMarkers } from "../markers/index.js";
-
-// ---------------------------------------------------------------------------
-// 消息内容块序列化
-// ---------------------------------------------------------------------------
 
 interface DshContentBlock {
 	type: string;
@@ -45,7 +15,6 @@ interface DshContentBlock {
 	[key: string]: unknown;
 }
 
-/** DSH user-role content blocks → UiContentBlock[]。 */
 function serializeUserBlocks(blocks: DshContentBlock[]): UiContentBlock[] {
 	if (!Array.isArray(blocks) || blocks.length === 0) {
 		return [{ type: "text", text: "" }];
@@ -59,8 +28,6 @@ function serializeUserBlocks(blocks: DshContentBlock[]): UiContentBlock[] {
 	});
 }
 
-/** 提取 DSH assistant 事件中的原始未剥离文本（供 MarkerService 解析内联标记）。
- * 同时包含正文 (text) 与思考链 (reasoning)，确保模型在思考开头输出的 marker 也被捕获执行。 */
 export function extractDshAssistantRawText(data: { message?: { content?: DshContentBlock[] } }): string {
 	const blocks = data.message?.content;
 	if (!Array.isArray(blocks)) return "";
@@ -70,7 +37,6 @@ export function extractDshAssistantRawText(data: { message?: { content?: DshCont
 		.join("\n");
 }
 
-/** DSH assistant-role content blocks → UiContentBlock[]。 */
 export function serializeAssistantBlocks(blocks: DshContentBlock[]): UiContentBlock[] {
 	if (!Array.isArray(blocks)) return [];
 	return blocks.map((b) => {
@@ -104,11 +70,6 @@ export function serializeAssistantBlocks(blocks: DshContentBlock[]): UiContentBl
 	});
 }
 
-// ---------------------------------------------------------------------------
-// 事件 → UiMessage
-// ---------------------------------------------------------------------------
-
-/** tool/result 事件 data → UiMessage（role toolResult）。 */
 export function toolResultEventToUiMessage(data: {
 	message?: {
 		content?: DshContentBlock[];
@@ -139,7 +100,6 @@ export function toolResultEventToUiMessage(data: {
 	};
 }
 
-/** user/message 事件 data → UiMessage。 */
 export function userMessageEventToUiMessage(data: {
 	content?: DshContentBlock[];
 	id?: string;
@@ -161,7 +121,6 @@ export function userMessageEventToUiMessage(data: {
 	};
 }
 
-/** assistant/message 事件 data → UiMessage。 */
 export function assistantMessageEventToUiMessage(data: {
 	message?: {
 		content?: DshContentBlock[];
@@ -187,18 +146,7 @@ export function assistantMessageEventToUiMessage(data: {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// streaming 累积
-// ---------------------------------------------------------------------------
-
-/**
- * assistant/chunk 增量累积器：reasoning/text/tool-call 三轨按 chunk.index
- * 归位，产出与持久 assistant 消息同构的 content[]。
- * id 必须跨快照稳定 —— 用会话级单调 seq 作时间戳锚（chunk 事件按 seq 到达，
- * 首个 chunk 的 seq 恒定）。
- */
 export class DshStreamAccumulator {
-	/** 稳定 id（stream-<首个 chunk seq>）。 */
 	readonly id: string;
 	private readonly blocks = new Map<number, UiContentBlock>();
 	private started = false;
@@ -214,7 +162,6 @@ export class DshStreamAccumulator {
 		return this.blocks.size === 0;
 	}
 
-	/** 处理一个 chunk，返回是否产生了内容变化。 */
 	apply(chunk: Record<string, unknown>): boolean {
 		switch (chunk.type) {
 			case "block-start": {
@@ -259,7 +206,6 @@ export class DshStreamAccumulator {
 				return false;
 			}
 			case "block-end": {
-				// 完整 block 到达：直接替换（内容与 delta 拼接一致，且带截断语义）。
 				const block = chunk.block as DshContentBlock | undefined;
 				if (block) {
 					const index = chunk.index as number;
@@ -283,12 +229,10 @@ export class DshStreamAccumulator {
 				return false;
 			}
 			default:
-				// usage / finish 等不改变内容。
 				return false;
 		}
 	}
 
-	/** 按 index 升序输出 content[]（toolCall 空参数时省略 argumentsText）。 */
 	content(): UiContentBlock[] {
 		const out: UiContentBlock[] = [];
 		for (const index of [...this.blocks.keys()].sort((a, b) => a - b)) {

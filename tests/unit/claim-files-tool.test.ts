@@ -1,7 +1,3 @@
-/**
- * claim_files 工具单测（零 token）：claim/release/list/conflict/逃逸/坏参。
- * stub host + 真 ClaimStore（mkdtemp 隔离文件），execute 直调（ask 工具同款）。
- */
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,12 +62,9 @@ describe("claim_files", () => {
 			const l = await runA({ action: "list" });
 			expect(l).toContain("a.ts");
 			expect(l).toContain("对话A");
-			// B 抢同一文件 → 先到先得，不抢占。
 			const grab = await runB({ action: "claim", paths: ["a.ts"] });
 			expect(grab).toContain("已被别人认领");
-			// B 放 A 的文件 → 动不了。
 			expect(await runB({ action: "release", paths: ["a.ts"] })).toContain("没有你名下");
-			// A 全放 → 空表。
 			expect(await runA({ action: "release" })).toContain("已释放");
 			expect(await runA({ action: "list" })).toContain("暂无认领");
 		} finally {

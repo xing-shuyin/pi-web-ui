@@ -1,13 +1,9 @@
-/**
- * `desktop/external-url.ts` allowlist 单测：放行 `http/https/mailto/tel`，
- * 拦截 `file/javascript/data/ftp/自定义协议/非法串`。
- */
 import { describe, expect, it } from "vitest";
 import { hubBrowserOrigin, isAllowedExternalUrl } from "../../desktop/external-url.js";
 
 describe("Hub browser destinations", () => {
 	it("normalizes origins while rejecting credentials and non-web protocols", () => {
-		expect(hubBrowserOrigin("http://82.156.246.55:50001/")).toBe("http://82.156.246.55:50001");
+		expect(hubBrowserOrigin("http://198.51.100.10:50001/")).toBe("http://198.51.100.10:50001");
 		expect(hubBrowserOrigin("https://hub.example.com/pair")).toBe("https://hub.example.com");
 		for (const url of [
 			null,

@@ -1,11 +1,3 @@
-/**
- * plugins/whatsapp/index.mjs
- * WhatsApp integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto).
- * Inspired by dsh-im: duplex bot chat, structure-aware Markdown chunks,
- * isolated multi-turn sessions, access control whitelist, and Meta Cloud API.
- */
-
 import { createHash } from "node:crypto";
 import { WhatsappBotBridge as Bridge } from "./bridge.mjs";
 import { sendMedia } from "./media.mjs";
@@ -13,7 +5,6 @@ import { sendMedia } from "./media.mjs";
 export const SECRET_ACCESS_TOKEN = "whatsapp.accessToken";
 const GRAPH_API_BASE = "https://graph.facebook.com/v20.0";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -22,7 +13,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from WhatsApp sender phone number or JID. */
 export function peerAccountId(senderId, prefix = "wa") {
 	const raw = String(senderId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -30,7 +20,6 @@ export function peerAccountId(senderId, prefix = "wa") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content from WhatsApp inbound message webhook object. */
 export function extractWhatsappText(message) {
 	if (!message) return "";
 	if (message.type === "text" && message.text?.body) {
@@ -43,9 +32,6 @@ export function extractWhatsappText(message) {
 	return String(message.body || "").trim();
 }
 
-/**
- * Builds standard WhatsApp Cloud API JSON payload.
- */
 export function buildWhatsappPayload(to, text) {
 	return {
 		messaging_product: "whatsapp",
@@ -59,9 +45,6 @@ export function buildWhatsappPayload(to, text) {
 	};
 }
 
-/**
- * WhatsApp Cloud API request helper.
- */
 export async function whatsappApi(
 	accessToken,
 	phoneNumberId,
@@ -95,9 +78,6 @@ export async function whatsappApi(
 	return await res.json();
 }
 
-/**
- * WhatsappBotBridge manages duplex message exchange between WhatsApp and pi-web-ui agent host.
- */
 export class WhatsappBotBridge extends Bridge {
 	constructor(options = {}) {
 		super({
@@ -111,7 +91,6 @@ export class WhatsappBotBridge extends Bridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.accessToken;
@@ -119,7 +98,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingToken = savedSecrets[SECRET_ACCESS_TOKEN] || prev.accessToken || "";
@@ -154,7 +132,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "whatsapp" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "whatsapp",
 		description: "Send text, images, audio, documents or videos to WhatsApp phone numbers via WhatsApp Cloud API.",
@@ -223,7 +200,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Authenticated host route: configure the provider relay to POST Meta webhook JSON here.
 	host.route?.("POST", "/inbox", async (req, res) => {
 		if (!botBridge.running || !localConfig.botEnabled) return res.status(503).json({ error: "Bot is stopped" });
 		const messages =
@@ -233,7 +209,6 @@ export default async function activate(host) {
 		res.json({ ok: true });
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

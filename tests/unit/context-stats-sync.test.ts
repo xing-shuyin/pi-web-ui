@@ -46,7 +46,6 @@ describe("上下文统计与工具门控同步", () => {
 			getAllTools: () => fullToolSet.map((name) => ({ name })),
 		};
 
-		// 显式禁用 bash, ls 与 powershell
 		applyAgentToolsGating(fakeSession, ["bash", "ls", "powershell"]);
 		expect(active).not.toContain("bash");
 		expect(active).not.toContain("ls");
@@ -57,7 +56,6 @@ describe("上下文统计与工具门控同步", () => {
 		expect(active).toContain("grep");
 		expect(active).toContain("find");
 
-		// 恢复启用全部
 		applyAgentToolsGating(fakeSession, []);
 		expect(active).toContain("bash");
 		expect(active).toContain("ls");
@@ -68,16 +66,12 @@ describe("上下文统计与工具门控同步", () => {
 	it("预设模式正确裁减内置工具与扩展工具", () => {
 		const allTools = ["bash", "read", "edit", "write", "edit_soft", "delegate_task", "plugin_foo"];
 
-		// ask 纯对话：全部工具清空
 		expect(filterToolsByPreset(allTools, "ask")).toEqual([]);
 
-		// minimal 极简模式：只保留 bash 和 read
 		expect(filterToolsByPreset(allTools, "minimal")).toEqual(["bash", "read"]);
 
-		// code 代码模式：只保留 bash, read, edit, write, edit_soft
 		expect(filterToolsByPreset(allTools, "code")).toEqual(["bash", "read", "edit", "write", "edit_soft"]);
 
-		// reader 只读模式：移除写操作工具 (write, edit, edit_soft, bash)
 		const readerTools = filterToolsByPreset(allTools, "reader");
 		expect(readerTools).toContain("read");
 		expect(readerTools).toContain("delegate_task");

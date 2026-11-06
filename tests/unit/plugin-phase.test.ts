@@ -1,6 +1,3 @@
-/**
- * plugin-phase 单测：三源合成相位 + 计数（纯函数，零依赖）。
- */
 import { describe, expect, it } from "vitest";
 import { countPluginPhases, pluginPhase } from "../../web/src/plugin-phase.js";
 

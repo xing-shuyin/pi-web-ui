@@ -114,7 +114,6 @@ Host ea-gpu
 
 		const blocks = await loadSshConfigBlocks({ configFile: mainConfig });
 		const patterns = blocks.flatMap((b) => b.patterns);
-		// 顺序就地插入：jump -> ea-cpu -> ea-gpu -> fallback
 		expect(patterns).toEqual(["jump", "ea-cpu", "ea-gpu", "fallback"]);
 	});
 
@@ -125,7 +124,6 @@ Host ea-gpu
 		const fileA = join(dir, "configA");
 		const fileB = join(dir, "configB");
 
-		// A 包含 B，B 包含 A
 		writeFileSync(
 			fileA,
 			`
@@ -146,7 +144,6 @@ Include configA
 			"utf8",
 		);
 
-		// 不应死循环挂起，且两个文件各只被读入一次
 		const blocks = await loadSshConfigBlocks({ configFile: fileA });
 		const patterns = blocks.flatMap((b) => b.patterns);
 		expect(patterns).toEqual(["host-a", "host-b"]);
@@ -210,7 +207,6 @@ Host ea-gpu
 		mkdirSync(sshDir, { recursive: true });
 		cleanups.push(() => rmSync(homeDir, { recursive: true, force: true }));
 
-		// 模拟 ~/.ssh/config
 		const sshConfigFile = join(sshDir, "config");
 		writeFileSync(
 			sshConfigFile,
@@ -228,7 +224,6 @@ Host ea-gpu
 			"utf8",
 		);
 
-		// 通过修改 process.env.HOME / USERPROFILE 或注入 mock
 		const homeSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
 		cleanups.push(() => homeSpy.mockRestore());
 		const prevHome = process.env.HOME;
@@ -272,7 +267,6 @@ Host ea-gpu
 		expect(gpu.username).toBe("lishengjie1");
 		expect(gpu.proxyCommand).toBe("wsCli -a gpu -t token-gpu");
 
-		// 测试 state action 自动带上 configHosts
 		sent.length = 0;
 		await (host as any).mock.emitAsync("onMessage", { action: "state", reqId: "r2" }, "c1");
 		expect(sent).toHaveLength(1);
@@ -316,7 +310,6 @@ Host ea-gpu
 		mkdirSync(sshDir, { recursive: true });
 		cleanups.push(() => rmSync(homeDir, { recursive: true, force: true }));
 
-		// 将 config 建为目录，触发 readFile EISDIR 错误
 		mkdirSync(join(sshDir, "config"), { recursive: true });
 
 		const prevHome = process.env.HOME;

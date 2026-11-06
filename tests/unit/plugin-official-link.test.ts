@@ -22,28 +22,24 @@ describe("plugin official link helper", () => {
 	});
 
 	it("resolves GitHub source when homepage is omitted", () => {
-		// owner/repo
 		expect(
 			pluginOfficialUrl({
 				source: "modelcontextprotocol/servers",
 			}),
 		).toBe("https://github.com/modelcontextprotocol/servers");
 
-		// owner/repo/subdir
 		expect(
 			pluginOfficialUrl({
 				source: "xing-shuyin/pi-web-ui/plugins/webmail",
 			}),
 		).toBe("https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/webmail");
 
-		// full https url
 		expect(
 			pluginOfficialUrl({
 				source: "https://github.com/custom-org/my-plugin",
 			}),
 		).toBe("https://github.com/custom-org/my-plugin");
 
-		// git@github.com format
 		expect(
 			pluginOfficialUrl({
 				source: "git@github.com:foo/bar.git",

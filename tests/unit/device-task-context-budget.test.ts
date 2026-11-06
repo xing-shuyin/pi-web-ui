@@ -136,7 +136,6 @@ describe("bounded task context", () => {
 			taskState: source,
 		};
 		const before = structuredClone(task);
-		// Use the actual executor envelope builder; the handoff shape is irrelevant to selection.
 		const prompt = taskPrompt(task as unknown as Parameters<typeof taskPrompt>[0]);
 		const envelope = JSON.parse(prompt.split("\n\n").at(-1)!);
 		expect(envelope.text).toBe(text);

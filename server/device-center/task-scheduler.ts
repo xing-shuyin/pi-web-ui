@@ -81,11 +81,9 @@ export interface TaskSchedulerSnapshot {
 
 export interface TaskSchedulerOptions {
 	initialSettings?: unknown;
-	starvationThresholdMs?: number; // 默认 8000ms
-	maxSkipsBeforeStarvation?: number; // 默认 3 次跳过
-	/** Bounded fairness state from a previous process; invalid entries are ignored. */
+	starvationThresholdMs?: number;
+	maxSkipsBeforeStarvation?: number;
 	persistedState?: unknown;
-	/** Called after fairness state changes so callers can persist it without blocking dispatch. */
 	onChange?: () => void;
 }
 
@@ -115,7 +113,6 @@ export class DeviceTaskScheduler {
 		this.restoreState(options?.persistedState);
 	}
 
-	/** Fairness history is in-memory scheduling state; persist it so a restart cannot reset room fairness. */
 	snapshotState(): TaskSchedulerPersistedState {
 		return {
 			version: 1,
@@ -144,9 +141,7 @@ export class DeviceTaskScheduler {
 	private changed(): void {
 		try {
 			this.onChange?.();
-		} catch {
-			/* persistence scheduling must never break dispatch */
-		}
+		} catch {}
 	}
 
 	public getSettings(): DeviceExecutionSettings {
@@ -194,7 +189,6 @@ export class DeviceTaskScheduler {
 	private recordRoomDispatch(roomId: string): void {
 		let history = this.roomDispatchHistory.get(roomId);
 		if (!history) {
-			// Bounded LRU eviction
 			if (this.roomDispatchHistory.size >= DeviceTaskScheduler.MAX_ROOM_HISTORY) {
 				let oldestKey: string | undefined;
 				let oldestTime = Infinity;
@@ -237,14 +231,11 @@ export class DeviceTaskScheduler {
 		const canonicalRoot = executionRoot(task.root);
 		const candidate = { botId: task.botId, root: canonicalRoot };
 
-		// Check if active items have unconfirmed stop blocks
 		const blockedBlocker = [...this.active].find((owner) => owner.blocked && this.checkConflict(candidate, owner));
 		if (blockedBlocker) {
 			throw new DeviceTaskError("Task stop unconfirmed; workspace blocked until service restart");
 		}
 
-		// If queue is empty, slots available, and no conflict with active tasks,
-		// task can start immediately even if maxWaitingTasks is 0.
 		const canStartImmediately =
 			this.queue.length === 0 &&
 			this.active.size < this.settings.maxActiveTasks &&
@@ -260,7 +251,6 @@ export class DeviceTaskScheduler {
 			return null;
 		}
 
-		// Needs to queue, check queue capacity
 		if (this.queue.length >= this.settings.maxWaitingTasks) {
 			throw new DeviceTaskError("Local task queue full");
 		}
@@ -296,7 +286,6 @@ export class DeviceTaskScheduler {
 	}
 
 	public cancelTask(taskId: string, attemptId?: string): boolean {
-		// 1. Check waiting queue
 		const waitingIndex = this.queue.findIndex((q) => q.taskId === taskId && (!attemptId || q.attemptId === attemptId));
 		if (waitingIndex >= 0) {
 			const [item] = this.queue.splice(waitingIndex, 1);
@@ -305,7 +294,6 @@ export class DeviceTaskScheduler {
 			return true;
 		}
 
-		// 2. Check active running tasks
 		const activeItem = [...this.active].find((a) => a.taskId === taskId && (!attemptId || a.attemptId === attemptId));
 		if (activeItem && activeItem.controller && !activeItem.controller.signal.aborted) {
 			activeItem.controller.abort(new DeviceTaskError("Task cancelled by user"));
@@ -328,7 +316,6 @@ export class DeviceTaskScheduler {
 	): ActiveTaskItem {
 		const canonicalRoot = executionRoot(task.root);
 
-		// Guard against duplicate task ID
 		const duplicate = [...this.active].find((item) => item.taskId === task.id);
 		if (duplicate) {
 			throw new DeviceTaskError("Task is already running");
@@ -336,12 +323,10 @@ export class DeviceTaskScheduler {
 
 		const candidate = { botId: task.botId, root: canonicalRoot };
 
-		// Guard against capacity breach
 		if (this.active.size >= this.settings.maxActiveTasks) {
 			throw new DeviceTaskError("Active task capacity exceeded");
 		}
 
-		// Guard against active conflict
 		const conflict = [...this.active].find((item) => this.checkConflict(candidate, item));
 		if (conflict) {
 			throw new DeviceTaskError(
@@ -383,7 +368,6 @@ export class DeviceTaskScheduler {
 
 		const now = Date.now();
 
-		// Reject tasks blocked by unconfirmed stops
 		const toReject: { entry: QueuedTaskItem; error: DeviceTaskError }[] = [];
 		for (let i = this.queue.length - 1; i >= 0; i--) {
 			const entry = this.queue[i]!;
@@ -405,10 +389,6 @@ export class DeviceTaskScheduler {
 		let availableSlots = this.settings.maxActiveTasks - this.active.size;
 		if (availableSlots <= 0) return;
 
-		// Identify schedulable candidates
-		// A candidate can physically start if:
-		// 1. No active task conflicts with it.
-		// 2. No earlier queued task conflicts with it (strict FIFO for the same bot/workspace).
 		const schedulable: { entry: QueuedTaskItem; isStarved: boolean }[] = [];
 
 		for (let i = 0; i < this.queue.length; i++) {
@@ -427,10 +407,6 @@ export class DeviceTaskScheduler {
 
 		if (schedulable.length === 0) return;
 
-		// Sort schedulable candidates:
-		// 1. Starved tasks come first (anti-starvation guarantee, oldest starved first).
-		// 2. For non-starved tasks: Room fair share (fewer active tasks in room first, then room last dispatched).
-		// 3. FIFO within same priority.
 		schedulable.sort((a, b) => {
 			if (a.isStarved && !b.isStarved) return -1;
 			if (!a.isStarved && b.isStarved) return 1;
@@ -438,12 +414,10 @@ export class DeviceTaskScheduler {
 				return a.entry.queuedAt - b.entry.queuedAt;
 			}
 
-			// Room active task count
 			const activeA = [...this.active].filter((item) => item.roomId === a.entry.roomId).length;
 			const activeB = [...this.active].filter((item) => item.roomId === b.entry.roomId).length;
 			if (activeA !== activeB) return activeA - activeB;
 
-			// Room dispatch history
 			const histA = this.roomDispatchHistory.get(a.entry.roomId);
 			const histB = this.roomDispatchHistory.get(b.entry.roomId);
 			const countA = histA?.count ?? 0;
@@ -457,11 +431,9 @@ export class DeviceTaskScheduler {
 			return a.entry.queuedAt - b.entry.queuedAt;
 		});
 
-		// Select up to availableSlots
 		const toDispatch: QueuedTaskItem[] = [];
 		for (const cand of schedulable) {
 			if (availableSlots <= 0) break;
-			// Ensure candidates chosen in this batch do not conflict with each other
 			const conflictsWithSelected = toDispatch.some((selected) => this.checkConflict(cand.entry, selected));
 			if (conflictsWithSelected) continue;
 
@@ -469,14 +441,12 @@ export class DeviceTaskScheduler {
 			availableSlots--;
 		}
 
-		// Update skip counts for schedulable candidates that were passed over
 		for (const cand of schedulable) {
 			if (!toDispatch.includes(cand.entry)) {
 				cand.entry.skipCount++;
 			}
 		}
 
-		// Dispatch selected entries with try/catch error isolation
 		for (const entry of toDispatch) {
 			const index = this.queue.indexOf(entry);
 			if (index >= 0) {
@@ -500,7 +470,6 @@ export class DeviceTaskScheduler {
 		reason: TaskBlockReason;
 		detail: string;
 	} {
-		// Check workspace blocked by unconfirmed stop
 		const blockedBlocker = [...this.active].find((owner) => owner.blocked && this.checkConflict(entry, owner));
 		if (blockedBlocker) {
 			return {
@@ -509,7 +478,6 @@ export class DeviceTaskScheduler {
 			};
 		}
 
-		// Check bot busy in active
 		const botActive = [...this.active].find((owner) => owner.botId === entry.botId);
 		if (botActive) {
 			return {
@@ -518,7 +486,6 @@ export class DeviceTaskScheduler {
 			};
 		}
 
-		// Check workspace conflict in active
 		const workspaceActive = [...this.active].find((owner) => executionRootsOverlap(entry.root, owner.root));
 		if (workspaceActive) {
 			return {
@@ -527,7 +494,6 @@ export class DeviceTaskScheduler {
 			};
 		}
 
-		// Check prior queue item conflicts (FIFO constraint)
 		const priorBotQueue = this.queue.slice(0, queueIndex).find((prior) => prior.botId === entry.botId);
 		if (priorBotQueue) {
 			return {
@@ -546,7 +512,6 @@ export class DeviceTaskScheduler {
 			};
 		}
 
-		// Check concurrency limit
 		if (this.active.size >= this.settings.maxActiveTasks) {
 			return {
 				reason: "max_concurrency_reached",
@@ -554,7 +519,6 @@ export class DeviceTaskScheduler {
 			};
 		}
 
-		// Otherwise waiting for room fairness round
 		return {
 			reason: "room_fairness_yield",
 			detail: "Waiting for fair scheduling turn across rooms",

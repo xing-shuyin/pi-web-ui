@@ -1,18 +1,8 @@
-/**
- * plugins/feishu/bot-bridge.mjs
- * Feishu (Lark) Bot duplex bridge for pi-web-ui.
- * Connects inbound Feishu messages (via outbound WebSocket / polling) to host.chat,
- * and delivers structure-aware Markdown responses back to Feishu chats.
- * Inspired by dsh-im architecture: zero inbound port opening, safe access control,
- * multi-turn conversation isolation, slash commands, and emoji feedback.
- */
-
 import { createHash } from "node:crypto";
 import { routes } from "./session-routes.mjs";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { runtime, scopeKey, inboundResources, receiveAttachments, parseCommand } from "./runtime.mjs";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -21,7 +11,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from sender's Open ID. */
 export function peerAccountId(openId, prefix = "fs") {
 	const raw = String(openId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -29,7 +18,6 @@ export function peerAccountId(openId, prefix = "fs") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and mentions from Feishu inbound message payload. */
 export function extractInboundText(contentRaw, msgType = "text") {
 	let parsed = {};
 	if (typeof contentRaw === "string") {
@@ -67,16 +55,12 @@ export function extractInboundText(contentRaw, msgType = "text") {
 	return "";
 }
 
-/** Strips @mention tags (e.g. "@_user_1", "@BotName") from incoming text. */
 export function stripMentions(text) {
 	return String(text ?? "")
 		.replace(/@\S+/g, "")
 		.trim();
 }
 
-/**
- * FeishuBotBridge manages duplex message exchange between Feishu and pi-web-ui agent host.
- */
 export class FeishuBotBridge {
 	/**
 	 * @param {object} options
@@ -101,29 +85,21 @@ export class FeishuBotBridge {
 		this.pollTimer = null;
 		this.offRunEvent = null;
 
-		// Deduplication cache for message IDs (max 500)
 		this.seenMessageIds = new Set();
 
-		// Active runs tracking: conversationId -> run context
 		this.pendingRuns = new Map();
 		this.sessionRoutes = new Map();
 		Object.assign(this, routes);
-		// Early arriving runs (microtask edge case protection)
 		this.earlyRuns = new Map();
-		// host.chat 回执的稳定 runId -> pendingRuns 的 key（对话被过户 / 撞 id 改名后
-		// conversationId 会变，只有 runId 不变；飞书靠它认领自己那一轮的回包）
 		this.runIdIndex = new Map();
 
-		// User to active conversationId mapping: openId -> conversationId
 		this.userConversations = new Map();
-		// User custom workspace root mapping: openId -> cwd path
 		this.userWorkspaces = new Map();
 
-		// Metrics and runtime status
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			messagesReceived: 0,
 			messagesReplied: 0,
 			lastMessageAt: null,
@@ -148,19 +124,16 @@ export class FeishuBotBridge {
 		return { ...this.status };
 	}
 
-	/** Resolve active workspace directory for user or fallback to config/host cwd. */
 	resolveWorkspace(openId, cfg) {
 		return String(this.userWorkspaces.get(openId) || cfg?.workspace || this.host?.cwd || "").trim();
 	}
 
-	/** Start bot duplex bridge service. */
 	async start() {
 		if (this.running) return;
 		this.running = true;
 		this.status.enabled = true;
 		this.status.state = "connecting";
 
-		// Subscribe to host run events to stream/capture agent responses
 		if (this.host.onRunEvent) {
 			this.offRunEvent = this.host.onRunEvent((ev) => this.handleRunEvent(ev));
 		}
@@ -174,7 +147,6 @@ export class FeishuBotBridge {
 		}
 	}
 
-	/** Stop bot duplex bridge service. */
 	async stop() {
 		this.running = false;
 		this.generation = (this.generation || 0) + 1;
@@ -205,18 +177,10 @@ export class FeishuBotBridge {
 		}
 	}
 
-	/**
-	 * 加载官方 @larksuiteoapi/node-sdk。
-	 * 飞书长连接的帧是二进制 protobuf（pbbp2.Frame），必须交给官方 SDK 解析——
-	 * 旧实现把它当 JSON（TextDecoder + JSON.parse）并静默吞掉解析异常，所以永远
-	 * 收不到 im.message.receive_v1。SDK 已 vendor 在插件 node_modules 下；若被插件
-	 * 更新清掉，则请宿主（host.ensureDeps）npm 补装一次后重试。
-	 */
 	async loadSdk() {
 		if (FeishuBotBridge._sdk) return FeishuBotBridge._sdk;
 		const load = async () => {
 			const mod = await import("@larksuiteoapi/node-sdk");
-			// CJS bundle：node 下具名导出不一定齐全，兜底取 default
 			return mod?.WSClient ? mod : (mod?.default ?? mod);
 		};
 		try {
@@ -230,7 +194,6 @@ export class FeishuBotBridge {
 		return FeishuBotBridge._sdk;
 	}
 
-	/** 配置里的 preset / baseUrl → SDK domain（枚举或私有化 URL 字符串）。 */
 	resolveDomain(Lark, cfg) {
 		const custom = String(cfg?.baseUrl ?? "").trim();
 		if (custom && !/open\.(feishu\.cn|larksuite\.com)\/?$/i.test(custom)) return custom;
@@ -240,11 +203,6 @@ export class FeishuBotBridge {
 		return Lark.Domain?.Feishu ?? "https://open.feishu.cn";
 	}
 
-	/**
-	 * 通过官方 SDK 建立飞书长连接（出站 WebSocket，无需公网 IP / 回调地址）。
-	 * 事件由 EventDispatcher 分发；连接状态由 SDK 的 onReady/onError 等回调驱动，
-	 * 面板上的「在线/离线」从此反映真实链路状态。
-	 */
 	async connect() {
 		const cfg = this.getConfig();
 		if (!cfg?.appId || !cfg?.appSecret) {
@@ -260,7 +218,6 @@ export class FeishuBotBridge {
 
 		const appId = cfg.appId.trim();
 		if (!/^cli_[0-9a-fA-F]{16}$/.test(appId)) {
-			// SDK 对 appId 格式有强校验，格式不符时它会直接 return（不报错），这里显式提示
 			this.log("warn", `Feishu App ID 格式可疑：${appId}（SDK 期望 cli_ + 16 位十六进制）`);
 		}
 
@@ -328,7 +285,6 @@ export class FeishuBotBridge {
 		this.status.state = "connecting";
 
 		try {
-			// start() 只负责拉起连接（内部异步重连），不等待握手完成
 			await wsClient.start({ eventDispatcher: dispatcher });
 		} catch (err) {
 			this.status.connected = false;
@@ -338,17 +294,12 @@ export class FeishuBotBridge {
 		}
 	}
 
-	/**
-	 * Main inbound message processor.
-	 * Invoked when an 'im.message.receive_v1' event arrives.
-	 */
 	async onInboundMessage(event) {
 		if (!event || !event.message) return;
 		const msg = event.message;
 		const sender = event.sender || {};
 		const messageId = msg.message_id;
 
-		// Deduplicate
 		if (messageId) {
 			if (this.seenMessageIds.has(messageId)) return;
 			this.seenMessageIds.add(messageId);
@@ -358,16 +309,14 @@ export class FeishuBotBridge {
 			}
 		}
 
-		// Only process user messages (skip bot loops)
 		if (sender.sender_type && sender.sender_type !== "user") return;
 
 		const openId = sender.sender_id?.open_id || sender.sender_id?.user_id || "";
 		const chatId = msg.chat_id || "";
-		const chatType = msg.chat_type || "p2p"; // 'p2p' or 'group'
+		const chatType = msg.chat_type || "p2p";
 
 		const cfg = this.getConfig();
 
-		// Access Control: check allowed senders whitelist if configured
 		const allowedSenders = Array.isArray(cfg.allowedSenders)
 			? cfg.allowedSenders.map((s) => String(s).trim()).filter(Boolean)
 			: [];
@@ -380,12 +329,10 @@ export class FeishuBotBridge {
 			return;
 		}
 
-		// Group response mode check
-		const groupResponseMode = cfg.groupResponseMode || "mention"; // 'mention' | 'all' | 'none'
+		const groupResponseMode = cfg.groupResponseMode || "mention";
 		if (chatType === "group") {
 			if (groupResponseMode === "none") return;
 			if (groupResponseMode === "mention") {
-				// Must contain bot mention
 				const mentions = Array.isArray(msg.mentions) ? msg.mentions : [];
 				const hasMention = mentions.length > 0;
 				if (!hasMention) return;
@@ -399,7 +346,6 @@ export class FeishuBotBridge {
 		const ctx = { messageId, openId, chatId, threadId, cfg, scope, replyInThread: Boolean(threadId) };
 		try {
 			const inboundText = extractInboundText(msg.content, msg.message_type);
-			// Strip only actual Feishu mention placeholders so command prompts keep literal @text.
 			const commandText = (msg.mentions || [])
 				.reduce((text, mention) => (mention.key ? text.replaceAll(mention.key, "") : text), inboundText)
 				.trim();
@@ -433,7 +379,6 @@ export class FeishuBotBridge {
 		}
 	}
 
-	/** 把一次运行累积的文本分块回发到飞书（run_end，或「回执前已结束」的补发）。 */
 	async deliverReply(run) {
 		this.syncRouteAccount();
 		const cfg = run.cfg || this.getConfig();
@@ -441,7 +386,6 @@ export class FeishuBotBridge {
 		const cleanText = stripInternalMarkers(rawText);
 		const finalText = cleanText || "任务未返回可显示内容。";
 
-		// Use structure-aware chunking to protect code fences and respect Feishu char limits
 		const chunks = chunkMarkdownText(finalText, 3800);
 		const isCurrent = () =>
 			(run.epoch === undefined || run.epoch === (this.epochs?.get(run.scope) || 0)) &&
@@ -453,7 +397,6 @@ export class FeishuBotBridge {
 				if (!isCurrent()) return;
 				const chunk = chunks[i];
 				if (run.messageId) {
-					// Reply to initial message
 					await this.replyMessage(cfg, {
 						messageId: run.messageId,
 						msgType: "interactive",
@@ -463,7 +406,6 @@ export class FeishuBotBridge {
 						replyInThread: Boolean(run.replyInThread),
 					});
 				} else {
-					// Follow-up chunks sent to same chat
 					await this.sendMessage(cfg, {
 						receiveId: run.chatId,
 						receiveIdType: "chat_id",
@@ -478,7 +420,6 @@ export class FeishuBotBridge {
 			this.status.messagesReplied++;
 			this.status.lastReplyAt = Date.now();
 
-			// Add DONE reaction
 			if (run.messageId) {
 				try {
 					await this.reactMessage(cfg, run.messageId, "DONE");

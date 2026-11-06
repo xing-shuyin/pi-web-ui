@@ -1,7 +1,3 @@
-/**
- * 全局运行态单测：默认值、合并写入、无变化不通知、订阅/退订、重置。
- * 只测数据面（hook 需要 React 运行时，e2e 覆盖）。
- */
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	appSend,
@@ -54,13 +50,13 @@ describe("app-globals", () => {
 		const a = getAppGlobals();
 		expect(hits).toBe(1);
 
-		setAppGlobals({ cwd: "/w/b" }); // 切项目：ready/status 保持不变
+		setAppGlobals({ cwd: "/w/b" });
 		expect(getAppGlobals()).not.toBe(a);
 		expect(getAppGlobals().ready).toBe(true);
 		expect(getAppGlobals().cwd).toBe("/w/b");
 		expect(hits).toBe(2);
 
-		setAppGlobals({ cwd: "/w/b", ready: true }); // 同值重写：静默
+		setAppGlobals({ cwd: "/w/b", ready: true });
 		expect(hits).toBe(2);
 		off();
 	});
@@ -75,7 +71,7 @@ describe("app-globals", () => {
 		setAppGlobals({ managed: true });
 		const b = getAppGlobals();
 		expect(b).not.toBe(a);
-		expect(b.engine).toBe("dsh"); // 未传的字段保留
+		expect(b.engine).toBe("dsh");
 		expect(b.managed).toBe(true);
 	});
 
@@ -87,23 +83,22 @@ describe("app-globals", () => {
 		const a = getAppGlobals();
 		expect(hits).toBe(1);
 
-		setAppGlobals({ engine: "dsh", tabs: ["chat", "terminal"] }); // 等价的新数组
+		setAppGlobals({ engine: "dsh", tabs: ["chat", "terminal"] });
 		expect(getAppGlobals()).toBe(a);
 		expect(hits).toBe(1);
 
-		setAppGlobals({ tabs: ["chat"] }); // 元素不同才算变化
+		setAppGlobals({ tabs: ["chat"] });
 		expect(getAppGlobals()).not.toBe(a);
 		expect(hits).toBe(2);
 
 		off();
 		setAppGlobals({ engine: "pi" });
-		expect(hits).toBe(2); // 退订后不再收到
+		expect(hits).toBe(2);
 	});
 
 	it("引擎缺省回落到 pi（老服务端不发 engine 字段）", () => {
 		setAppGlobals({ engine: "pi" });
 		expect(getAppGlobals().engine).toBe("pi");
-		// 同 use-chat 的 ready 处理：msg.engine 缺失时传 "pi"
 		const ready: { engine?: string } = {};
 		setAppGlobals({ engine: ready.engine ?? "pi" });
 		expect(getAppGlobals().engine).toBe("pi");
@@ -134,7 +129,6 @@ describe("app-globals", () => {
 		setAppGlobals({ engines: [{ ...base }] });
 		expect(hits).toBe(1);
 
-		// 同版本、仅 updating 翻转：曾经被 sameEngines 的 4 字段白名单判为「没变」而丢弃
 		setAppGlobals({ engines: [{ ...base, updating: true }] });
 		expect(getAppGlobals().engines?.[0].updating).toBe(true);
 		expect(hits).toBe(2);
@@ -143,7 +137,6 @@ describe("app-globals", () => {
 		expect(getAppGlobals().engines?.[0].hasUpdate).toBe(true);
 		expect(hits).toBe(3);
 
-		// 完全等价的新对象：不白刷
 		setAppGlobals({ engines: [{ ...base, latestVersion: "1.1.0", hasUpdate: true }] });
 		expect(hits).toBe(3);
 		off();
@@ -168,6 +161,22 @@ describe("appSend（全局发送器）", () => {
 		expect(appSend({ type: "get_state" })).toBe(false);
 	});
 
+	it("界面发送 prompt 显式标记用户意图，程序化调用可以关闭该标记且不污染协议消息", () => {
+		const seen: unknown[] = [];
+		setAppSend((message, context) => {
+			seen.push({ message, context });
+			return true;
+		});
+		const message = { type: "prompt", text: "hello" } as const;
+		expect(appSend(message)).toBe(true);
+		expect(appSend(message, { userInitiated: false })).toBe(true);
+		expect(seen).toEqual([
+			{ message, context: { userInitiated: true } },
+			{ message, context: { userInitiated: false } },
+		]);
+		expect(message).toEqual({ type: "prompt", text: "hello" });
+	});
+
 	it("装配后原样转发，并回传实现的结果", () => {
 		const seen: unknown[] = [];
 		setAppSend((msg) => {
@@ -177,7 +186,7 @@ describe("appSend（全局发送器）", () => {
 		expect(appSend({ type: "abort" })).toBe(true);
 		expect(seen).toEqual([{ type: "abort" }]);
 
-		setAppSend(() => false); // 连接已断：组件据此决定不清理草稿
+		setAppSend(() => false);
 		expect(appSend({ type: "abort" })).toBe(false);
 	});
 });

@@ -1,20 +1,12 @@
-/**
- * ask_user_question customTool：人机协作提问问卷工具。
- *
- * 模型需要澄清歧义需求、做重大技术路线决策时调用，向客户端弹出结构化问卷卡片。
- * 从 agent-service.ts 抽出为独立模块。
- */
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 import type { QuestionResult } from "./pending-question.js";
 
-/** Forward the live signal so cancellation also settles an already pending request. */
 export function makeAskUserQuestionTool(
 	clientSession: {
 		askUser: (q: UiQuestion[], sig: AbortSignal, conversationId?: string) => Promise<QuestionResult>;
 	},
-	/** 本 runtime 所属会话：提问跟着对话走，快照只把当前对话的问卷推给客户端。 */
 	ownerId?: string,
 ): ToolDefinition {
 	const QuestionOptionSchema = Type.Object({
@@ -109,7 +101,6 @@ export function makeAskUserQuestionTool(
 				throw new Error(`User cancelled the question.${note}\n用户取消了提问。${noteZh}`);
 			}
 			const answers = res as QuestionAnswer[];
-			// 工具结果：把每道题的回答拼成简洁文本给模型，同时留 details 供 UI 展示。
 			const lines = answers.map((a) => {
 				const q = qs.find((q) => q.id === a.id);
 				const label = a.selected.join(", ");
@@ -124,7 +115,6 @@ export function makeAskUserQuestionTool(
 	} as unknown as ToolDefinition;
 }
 
-/** 判定是否应当即时向前端推送问卷弹窗（只推给当前前台会话，未指定会话按全局放行）。 */
 export function shouldPopQuestion(conversationId: string | undefined, activeId: string): boolean {
 	return conversationId === undefined || conversationId === activeId;
 }

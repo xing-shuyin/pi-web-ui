@@ -41,7 +41,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 	const [journalError, setJournalError] = useState("");
 	const [activeTab, setActiveTab] = useState<"journal" | "tools" | "report">("journal");
 
-	// Full report slices state
 	const [reportMeta, setReportMeta] = useState<DeviceTaskReportMeta | null>(null);
 	const [fullReportText, setFullReportText] = useState<string>("");
 	const [reportHasMore, setReportHasMore] = useState(false);
@@ -49,14 +48,12 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 	const [loadingReport, setLoadingReport] = useState(false);
 	const [copied, setCopied] = useState(false);
 
-	// Managed lifecycle controllers and timers
 	const lifecycleAbortRef = useRef<AbortController | null>(null);
 	const copyTimeoutRef = useRef<number | null>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
 	const onCloseRef = useRef(onClose);
 	onCloseRef.current = onClose;
 
-	// Escape key listener and auto focus
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") onCloseRef.current();
@@ -68,7 +65,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 		};
 	}, []);
 
-	// Reset state and fetch initial data only when task or room identity changes
 	useEffect(() => {
 		lifecycleAbortRef.current?.abort();
 		const controller = new AbortController();
@@ -87,8 +83,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 		setLoading(true);
 
 		async function loadInitial() {
-			// Details and journal are independent resources: an empty/missing audit trail must not
-			// blank out the task overview (and vice versa).
 			const [detailsResult, journalResult] = await Promise.allSettled([
 				fetchJson<DeviceTaskDetails>(
 					`rooms/${encodeURIComponent(roomId)}/tasks/${encodeURIComponent(taskId)}`,
@@ -235,7 +229,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 					<div className="gtd-loading">{zh ? "加载任务详情中..." : "Loading task details..."}</div>
 				) : (
 					<div className="gtd-body">
-						{/* Overview Card */}
 						{task && (
 							<div className="gtd-overview-card">
 								<div className="gtd-field">
@@ -272,7 +265,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</div>
 						)}
 
-						{/* Associated Interactions */}
 						{details && details.interactions.length > 0 && (
 							<div className="gtd-section">
 								<h4>{zh ? "关联人工审批与问卷" : "Associated Human Interactions"}</h4>
@@ -297,7 +289,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</div>
 						)}
 
-						{/* Associated Deliveries */}
 						{details && details.deliveries.length > 0 && (
 							<div className="gtd-section">
 								<h4>{zh ? "关联代码交付" : "Associated Code Deliveries"}</h4>
@@ -360,7 +351,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</div>
 						)}
 
-						{/* Tabs navigation */}
 						<div className="gtd-tabs">
 							<button
 								type="button"
@@ -391,7 +381,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</button>
 						</div>
 
-						{/* Tab 1: Journal Events */}
 						{activeTab === "journal" && (
 							<div className="gtd-tab-content">
 								{journalPage?.truncated && (
@@ -466,7 +455,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</div>
 						)}
 
-						{/* Tab 2: Tool Lifecycle Cards */}
 						{activeTab === "tools" && (
 							<div className="gtd-tab-content">
 								{journalError && (
@@ -503,7 +491,6 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 							</div>
 						)}
 
-						{/* Tab 3: Full Report */}
 						{activeTab === "report" && (
 							<div className="gtd-tab-content">
 								{reportMeta && (

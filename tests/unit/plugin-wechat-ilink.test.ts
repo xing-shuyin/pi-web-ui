@@ -153,7 +153,6 @@ describe("wechat-ilink: 完整入站、隔离与无竞态回包（issue #345）"
 			if (urlStr.includes("getupdates")) {
 				pollCount++;
 				if (pollCount === 1) {
-					// 第一轮长轮询模拟推一条来自 peer_alice 的入站消息
 					return {
 						ok: true,
 						json: async () => ({
@@ -169,7 +168,6 @@ describe("wechat-ilink: 完整入站、隔离与无竞态回包（issue #345）"
 						}),
 					} as Response;
 				}
-				// 模拟长轮询挂起，防止单测无限自旋
 				await new Promise((r) => setTimeout(r, 5000));
 				return { ok: true, json: async () => ({ ret: 0, msgs: [] }) } as Response;
 			}
@@ -216,20 +214,16 @@ describe("wechat-ilink: 完整入站、隔离与无竞态回包（issue #345）"
 
 			const cleanup = wechatPlugin.activate(host as never);
 
-			// 等待 pollOnce 执行并调用 host.chat
 			await vi.waitFor(() => {
 				expect(hostChatSpy).toHaveBeenCalledTimes(1);
 			});
 
-			// 验证 accountId 隔离性：必须是基于 peer_alice 的 wx_${hash}，而不是硬编码的 "wx"
 			const firstCall = hostChatSpy.mock.calls[0] as unknown[] | undefined;
 			const req = (firstCall?.[0] ?? {}) as { accountId?: string; text?: string };
 			expect(req.accountId).toBe(peerAccountId("peer_alice"));
 			expect(req.accountId).not.toBe("wx");
 			expect(req.text).toContain("[微信:peer_alice]");
 
-			// 模拟微任务时序竞态：在 host.chat() 的 Promise resolve 之前，
-			// 底层 agent 已经极快触发了 message 与 run_end 事件！
 			const targetConvId = "conv_quick_test";
 			expect(runHandler).toBeDefined();
 
@@ -256,26 +250,21 @@ describe("wechat-ilink: 完整入站、隔离与无竞态回包（issue #345）"
 				at: Date.now(),
 			});
 
-			// 此时尚未回包（因为 host.chat 的 Promise 还没返回 conversationId）
 			expect(sentPayload).toBeNull();
 
-			// 随后 host.chat 完成，返回该 conversationId
 			chatResolve({
 				conversationId: targetConvId,
 				clientId: `plugin:wechat-ilink:${req.accountId}`,
 			});
 
-			// 等待 trackRun 消费 earlyRuns 并发送回包
 			await vi.waitFor(() => {
 				expect(sentPayload).not.toBeNull();
 			});
 
-			// 验证回包内容与收件人
 			const payload = sentPayload as unknown as SendMessagePayload;
 			expect(payload?.msg?.to_user_id).toBe("peer_alice");
 			const outText = payload?.msg?.item_list?.[0]?.text_item?.text ?? "";
 
-			// 验证内部 marker 已被彻底剥离
 			expect(outText).not.toContain("[[plan:");
 			expect(outText).not.toContain("[[todo:");
 			expect(outText).toBe("计划已就绪：\n\n请查阅方案详情。");
@@ -418,7 +407,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 		const cleanup = wechatPlugin.activate(host as never);
 
 		try {
-			// 1. 测试 /help 指令及单独一个 "/" 或全角 "／" 或 "/?" 或 "/h" 作为 /help 别名，且包含精简序号
 			enqueueMsg("/help");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(1));
 			const lastHelp = replies[replies.length - 1];
@@ -448,7 +436,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(5));
 			expect(replies[replies.length - 1]).toContain("1/cwd : 查看或切换当前项目根目录");
 
-			// 2. 测试全角 ／status 指令
 			enqueueMsg("／status");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(6));
 			const lastStatus = replies[replies.length - 1];
@@ -457,22 +444,18 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			expect(lastStatus).toContain("已接收消息：");
 			expect(hostChatSpy).not.toHaveBeenCalled();
 
-			// 3. 测试 /cwd 查询
 			enqueueMsg("/cwd");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(7));
 			expect(replies[replies.length - 1]).toContain("当前项目根目录：");
 
-			// 4. 测试 /cwd 切换为有效目录
 			enqueueMsg(`/cwd ${process.cwd()}`);
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(8));
 			expect(replies[replies.length - 1]).toContain("已将项目根目录切换为：");
 
-			// 5. 测试 /cwd default 恢复默认
 			enqueueMsg("/cwd default");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(9));
 			expect(replies[replies.length - 1]).toContain("已恢复跟随全局根目录");
 
-			// 6. 测试 /model 查看与切换
 			enqueueMsg("/model");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(10));
 			expect(replies[replies.length - 1]).toContain("当前模型：");
@@ -481,29 +464,24 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(11));
 			expect(replies[replies.length - 1]).toContain("已将模型切换为：deepseek/deepseek-chat");
 
-			// 7. 测试 /clear 清空上下文
 			enqueueMsg("/clear");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(12));
 			expect(replies[replies.length - 1]).toContain("对话上下文已清空，已为您开启全新会话！");
 
-			// 8. 测试 /new 带 prompt 参数
 			enqueueMsg("/new 请帮我写一段测试代码");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(13));
 			expect(replies[replies.length - 1]).toContain("已为您开启全新会话，正在执行指令…");
-			// 此时应该调用了 host.chat
 			await vi.waitFor(() => expect(hostChatSpy).toHaveBeenCalled());
 			const firstChatCall = hostChatSpy.mock.calls[0] as unknown[] | undefined;
 			const chatArgs = (firstChatCall?.[0] ?? {}) as { text?: string; model?: string };
 			expect(chatArgs.text).toContain("请帮我写一段测试代码");
 			expect(chatArgs.model).toBe("deepseek/deepseek-chat");
 
-			// 9. 测试 /stop 中止正在进行的任务
 			enqueueMsg("/stop");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(14));
 			expect(replies[replies.length - 1]).toContain("已中止当前正在执行的任务");
 			expect(hostAbortSpy).toHaveBeenCalledWith("pr-wechat-stop");
 
-			// 10. 测试未知斜杠指令不被拦截，透传给 agent 执行
 			hostChatSpy.mockClear();
 			enqueueMsg("/unknown_magic_cmd 参数测试");
 			await vi.waitFor(() => expect(hostChatSpy).toHaveBeenCalled());
@@ -511,59 +489,47 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			const unknownChatArgs = (unknownChatCall?.[0] ?? {}) as { text?: string };
 			expect(unknownChatArgs.text).toContain("/unknown_magic_cmd 参数测试");
 
-			// 11. 测试数字序号快捷指令 (/1 ~ /6 及 /一 别名)
-			// /1 等同于 /cwd
 			enqueueMsg("/1");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(15));
 			expect(replies[replies.length - 1]).toContain("当前项目根目录：");
 
-			// /一 也等同于 /cwd
 			enqueueMsg("/一");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(16));
 			expect(replies[replies.length - 1]).toContain("当前项目根目录：");
 
-			// /2 等同于 /new
 			enqueueMsg("/2");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(17));
 			expect(replies[replies.length - 1]).toContain("对话上下文已清空，已为您开启全新会话！");
 
-			// /3 等同于 /status
 			enqueueMsg("/3");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(18));
 			expect(replies[replies.length - 1]).toContain("微信通道运行状态");
 
-			// /4 查看模型
 			enqueueMsg("/4");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(19));
 			expect(replies[replies.length - 1]).toContain("当前模型：");
 
-			// 1/cwd 格式直接触发
 			enqueueMsg("1/cwd");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(20));
 			expect(replies[replies.length - 1]).toContain("当前项目根目录：");
 
-			// /5 设置思考强度
 			enqueueMsg("/5 high");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(21));
 			expect(replies[replies.length - 1]).toContain("已将思考强度设置为：high");
 
-			// /6 开启计划模式
 			enqueueMsg("/6 on");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(22));
 			expect(replies[replies.length - 1]).toContain("计划模式已开启");
 
-			// /9 重载
 			enqueueMsg("/9");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(23));
 			expect(replies[replies.length - 1]).toContain("已重新加载扩展、技能与提示模板");
 			expect(hostReloadSpy).toHaveBeenCalled();
 
-			// /10 查看帮助
 			enqueueMsg("/10");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(24));
 			expect(replies[replies.length - 1]).toContain("1/cwd : 查看或切换当前项目根目录");
 
-			// 12. 测试第三方插件命令执行 (/todo 及序号 /11)
 			enqueueMsg("/todo 买菜 明天18:00");
 			await vi.waitFor(() => expect(replies.length).toBeGreaterThanOrEqual(25));
 			expect(replies[replies.length - 1]).toBe("✅ 已加入待办：买菜 明天18:00");
@@ -643,7 +609,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 
 		try {
 			expect(messageHandler).toBeDefined();
-			// 模拟在视图中点击“允许配对”
 			messageHandler!({ action: "allow", peer: "new_user_charlie" });
 
 			await vi.waitFor(() => {
@@ -718,7 +683,7 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 		});
 
 		try {
-			const targetConvId = "c1"; // 网页端与微信端均分配了局部同名 ID "c1"
+			const targetConvId = "c1";
 			const wechatClientId = `plugin:wechat-ilink:${peerAccountId("peer_bob")}`;
 			const browserClientId = "client_browser_tab1";
 
@@ -749,14 +714,12 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 
 			const cleanup = wechatPlugin.activate(host as never);
 
-			// 等待微信入站调用 host.chat 完成登记
 			await vi.waitFor(() => {
 				expect(hostChatSpy).toHaveBeenCalledTimes(1);
 			});
 
 			expect(runHandler).toBeDefined();
 
-			// 模拟同时运行的网页端会话（同为 c1，但属于 client_browser_tab1）产生了大段新功能代码输出
 			runHandler!({
 				type: "message",
 				conversationId: targetConvId,
@@ -774,11 +737,9 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 				at: Date.now(),
 			});
 
-			// 等待微任务处理，断言微信此时绝不能把网页端的新功能消息发出去！
 			await new Promise((r) => setTimeout(r, 50));
 			expect(sentMessages.length).toBe(0);
 
-			// 现在模拟微信会话自己的真实回复到达（属于 wechatClientId）
 			runHandler!({
 				type: "message",
 				conversationId: targetConvId,
@@ -796,12 +757,10 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 				at: Date.now(),
 			});
 
-			// 等待微信发出回复
 			await vi.waitFor(() => {
 				expect(sentMessages.length).toBe(1);
 			});
 
-			// 验证发出的内容是微信自己的回复，绝对没有网页端新功能的任何内容
 			expect(sentMessages[0]).toBe("你好！我是微信助手，请问有什么可以帮您？");
 			expect(sentMessages[0]).not.toContain("项目新功能");
 
@@ -812,10 +771,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 	});
 
 	it("对话被过户到网页端（clientId 变 + 撞 id 改名）后仍按 runId 认领回包", async () => {
-		// 真实链路：微信无头会话 c1 跑到一半，用户在网页左栏点开这条 running 对话
-		// → take_over_conversation 把对话搬到浏览器会话（clientId 变成对方的），
-		// 目标会话已有同名 c1 → 对话被就地改名 c7。此时 clientId 与 conversationId
-		// 双双失效，只有 host.chat 回执里的 runId 不变 —— 插件必须按它回包。
 		let runHandler: ((ev: unknown) => void) | undefined;
 		const storageMap = new Map<string, unknown>();
 		storageMap.set("account", { base: "https://ilinkai.weixin.qq.com", botId: "bot1", loginAt: Date.now() });
@@ -902,7 +857,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			});
 			expect(runHandler).toBeDefined();
 
-			// 过户之后：持有方换成浏览器标签页，对话 id 因撞车被改名 c1 → c7。
 			runHandler!({
 				type: "turn_end",
 				conversationId: "c7",
@@ -938,10 +892,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 	});
 
 	it("bindActive 连发两条指令时只回传末条正文（run_end 只来一次）", async () => {
-		// 实测反馈（issue #770）：投递到网页活跃会话模式下来回聊几句后就没回包了。
-		// 连发场景下宿主把第二条消息 steer 进**同一个**在跑的 run（run_end 只来一次，runId
-		// 是最新的那条）；旧实现在投递第二条前用 dropRunByConv 把该会话的登记与已累积正文
-		// 一起清掉，于是最终回包只剩「任务完成（无文本输出）」。
 		let runHandler: ((ev: unknown) => void) | undefined;
 		const storageMap = new Map<string, unknown>();
 		storageMap.set("account", { base: "https://ilinkai.weixin.qq.com", botId: "bot1", loginAt: Date.now() });
@@ -958,7 +908,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 		};
 
 		const sentMessages: string[] = [];
-		// 第二条消息要等第一轮正文落地后再投（模拟真人一来一回，不是同 tick 连抷）
 		let firstTextEmitted = false;
 		let delivered = 0;
 
@@ -1027,7 +976,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 
 			const cleanup = wechatPlugin.activate(host as never);
 
-			// 第一条投递并被 steer 进同一轮
 			await vi.waitFor(() => {
 				expect(hostChatSpy).toHaveBeenCalledTimes(1);
 			});
@@ -1042,7 +990,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			});
 			firstTextEmitted = true;
 
-			// 第二条消息进来（同一会话、同一轮仍在跑）
 			await vi.waitFor(() => {
 				expect(hostChatSpy).toHaveBeenCalledTimes(2);
 			});
@@ -1054,7 +1001,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 				at: Date.now(),
 				message: { role: "assistant", content: [{ type: "text", text: "答复第二条" }] },
 			});
-			// 整轮只结算一次，runId 是最新那条
 			runHandler!({
 				type: "run_end",
 				conversationId: "c1",
@@ -1066,7 +1012,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			await vi.waitFor(() => {
 				expect(sentMessages.length).toBe(1);
 			});
-			// 两轮正文都在：先前那一轮的产出绝不能被新消息清掉
 			expect(sentMessages[0]).not.toContain("答复第一条");
 			expect(sentMessages[0]).toContain("答复第二条");
 
@@ -1160,7 +1105,6 @@ describe("wechat-ilink: 斜杠快捷指令 (Slash Commands)", () => {
 			});
 			expect(runHandler).toBeDefined();
 
-			// 同一客户端/会话的另一运行仍不能认领。
 			runHandler!({
 				type: "message",
 				conversationId: "c1",
@@ -1646,13 +1590,9 @@ describe("wechat-ilink: 媒体收发纯函数", () => {
 	it("parseAesKey 兼容 hex 裸串 / base64(16 字节) / base64(hex 串) / 非法输入", () => {
 		const key = randomBytes(16);
 		const hex = key.toString("hex");
-		// 裸 hex
 		expect(parseAesKey(hex)?.equals(key)).toBe(true);
-		// base64(16 字节原钥)
 		expect(parseAesKey(key.toString("base64"))?.equals(key)).toBe(true);
-		// base64(hex 串) —— upstream 发送侧口径
 		expect(parseAesKey(Buffer.from(hex).toString("base64"))?.equals(key)).toBe(true);
-		// 空 / 垃圾值不抛错，回 null（按明文处理）
 		expect(parseAesKey("")).toBeNull();
 		expect(parseAesKey("!!!")).toBeNull();
 	});
@@ -1728,7 +1668,6 @@ describe("wechat-ilink: 媒体双向链路（CDN 上传/下载）", () => {
 		const { join } = await import("node:path");
 		const workdir = mkdtempSync(join(tmpdir(), "wx-media-"));
 
-		// 一张 1x1 PNG（魔数正确即可）
 		const png = Buffer.from(
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
 			"base64",
@@ -1831,12 +1770,10 @@ describe("wechat-ilink: 媒体双向链路（CDN 上传/下载）", () => {
 		try {
 			await vi.waitFor(() => expect(registeredTools.length).toBeGreaterThan(0));
 
-			// ---- 出站：AI 调 wechat_send 发图 ----
 			const res = await registeredTools[0]!.execute("t1", { to: "peer_zed", text: "看猫", image: imgPath });
 			expect(res).toContain("已发送给 peer_zed");
 
 			expect(uploadCalls.length).toBe(1);
-			// 上传体是 AES 密文：长度 = 填充后长度，且不等于明文
 			expect(uploadCalls[0]!.raw.length).toBe(aesEcbPaddedSize(png.length));
 			expect(uploadCalls[0]!.raw.equals(png)).toBe(false);
 
@@ -1845,13 +1782,11 @@ describe("wechat-ilink: 媒体双向链路（CDN 上传/下载）", () => {
 				{ image_item: { media: { encrypt_query_param: string; aes_key: string }; mid_size: number } } | undefined;
 			expect(imageItem).toBeTruthy();
 			expect(imageItem!.image_item.media.encrypt_query_param).toBe("dp-out-1");
-			// aes_key 是 hex 密钥串的 base64（32 字符 base64 → 解码后 32 字符 hex）
 			const decodedKey = Buffer.from(imageItem!.image_item.media.aes_key, "base64").toString("latin1");
 			expect(decodedKey).toMatch(/^[0-9a-f]{32}$/);
 			expect(decryptAesEcb(uploadCalls[0]!.raw, Buffer.from(decodedKey, "hex")).equals(png)).toBe(true);
 			expect(imageItem!.image_item.mid_size).toBe(aesEcbPaddedSize(png.length));
 
-			// ---- 入站：微信发来图片 → 解密落地 → 提示里给路径 ----
 			inboundQueue.push({
 				message_type: 1,
 				from_user_id: "peer_zed",
@@ -1881,7 +1816,6 @@ describe("wechat-ilink: 媒体双向链路（CDN 上传/下载）", () => {
 					],
 				}),
 			);
-			// 相同一秒内图片/文件/视频都交付真实附件，文件名不能碰撞覆盖。
 			for (const [type, kind] of [
 				[4, "file"],
 				[5, "video"],

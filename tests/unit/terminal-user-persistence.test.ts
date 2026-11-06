@@ -52,7 +52,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 	it("1. 前端 Reducer：空权威 terminal_list 移除本地残留的用户终端", () => {
 		const state0 = createInitialState();
 
-		// 用户创建了一个终端
 		const state1 = _chatReducerForTest(state0, {
 			type: "terminal_add",
 			meta: {
@@ -71,7 +70,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 		expect(state1.terminals).toHaveLength(1);
 		expect(state1.terminals[0].id).toBe("user-term-1");
 
-		// 模拟用户切换到了另一个对话 conv-2，服务端推来了 conv-2 的 terminal_list（为空，无任何终端）
 		const state2 = _chatReducerForTest(
 			{ ...state1, activeConversationId: "conv-2" },
 			{
@@ -81,14 +79,12 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			},
 		);
 
-		// 每份权威列表都包含全部用户终端；空列表意味着服务端已无此终端。
 		expect(state2.terminals).toEqual([]);
 	});
 
 	it("2. 前端 Reducer：新对话推来的 terminal_list 包含 AI 终端时，用户终端与新对话 AI 终端正确合并，旧对话 AI 终端不残留", () => {
 		const state0 = createInitialState();
 
-		// 用户终端 + conv-1 的 AI 终端
 		const state1: ChatState = {
 			...state0,
 			activeConversationId: "conv-1",
@@ -118,7 +114,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			],
 		};
 
-		// 切换到 conv-2，服务端推来 conv-2 的 terminal_list：含一个用户终端与 conv-2 的 AI bash
 		const state2 = _chatReducerForTest(
 			{ ...state1, activeConversationId: "conv-2" },
 			{
@@ -149,7 +144,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			},
 		);
 
-		// 用户终端保留，conv-1 的 AI 终端被替换为 conv-2 的 AI 终端
 		expect(state2.terminals).toHaveLength(2);
 		expect(state2.terminals.find((t) => t.id === "user-term-1")).toBeDefined();
 		expect(state2.terminals.find((t) => t.id === "ai-bash-conv1")).toBeUndefined();
@@ -160,7 +154,7 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 		const state0 = createInitialState();
 		const state1: ChatState = {
 			...state0,
-			activeConversationId: "conv-2", // 当前处于 conv-2
+			activeConversationId: "conv-2",
 			terminals: [
 				{
 					id: "user-term-1",
@@ -170,13 +164,12 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 					rows: 24,
 					running: true,
 					exitCode: null,
-					conversationId: "conv-1", // 原本在 conv-1 创建
+					conversationId: "conv-1",
 					agentBash: false,
 				},
 			],
 		};
 
-		// 收到带 conversationId="conv-1"（或空）的 terminal_exit 事件
 		const state2 = _chatReducerForTest(state1, {
 			type: "terminal_exit",
 			terminalId: "user-term-1",
@@ -216,7 +209,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			getTerminalCwd: vi.fn(() => "/test"),
 		} as unknown as DispatchSession;
 
-		// 用户普通创建终端
 		handleTerminalMessage(
 			{
 				type: "terminal_create",
@@ -235,7 +227,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 		});
 		expect(convTm.create).not.toHaveBeenCalled();
 
-		// AI 终端（agentBash: true）
 		handleTerminalMessage(
 			{
 				type: "terminal_create",
@@ -253,7 +244,6 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			agentBash: true,
 		});
 
-		// 用户运行命令
 		handleTerminalMessage(
 			{
 				type: "run_command",
@@ -273,17 +263,56 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 			"/test",
 		);
 
-		// 输入重定向走 findTerminalManager
 		handleTerminalMessage(
 			{
 				type: "terminal_input",
 				terminalId: "user-term",
 				data: "ls\r",
-				conversationId: "conv-99", // 即使传了别的会话 ID
+				conversationId: "conv-99",
 			},
 			cs,
 		);
 		expect(userTm.input).toHaveBeenCalledWith("user-term", "ls\r");
+	});
+
+	it("retains client PTYs and both conversation identities when a list arrives before its snapshot", () => {
+		const state = createInitialState();
+		const base = { title: "Terminal", cwd: "/test", cols: 80, rows: 24, running: true, exitCode: null };
+		state.terminals = [{ ...base, id: "active-ai", ownerKind: "conversation", conversationId: "conv-1" }];
+		const next = _chatReducerForTest(state, {
+			type: "terminal_list",
+			conversationId: "conv-2",
+			terminals: [
+				{ ...base, id: "native", ownerKind: "client", nativeCli: { preset: "claude" } },
+				{ ...base, id: "next-ai", ownerKind: "conversation" },
+			],
+		});
+		expect(next.terminals.find((item) => item.id === "native")?.nativeCli?.preset).toBe("claude");
+		expect(next.terminals.find((item) => item.id === "active-ai")?.conversationId).toBe("conv-1");
+		expect(next.terminals.find((item) => item.id === "next-ai")?.conversationId).toBe("conv-2");
+		expect(next.activeConversationId).toBe("conv-1");
+	});
+
+	it("never broadcasts a conversation-only empty list over live client CLI metadata", () => {
+		const emitted: any[] = [];
+		const cs = fakeClientSession() as any;
+		cs.emit = (message: any) => emitted.push(message);
+		cs.activeId = "active";
+		cs.convs = new Map([["active", { id: "active", terminals: { list: () => [], replay: () => [] } }]]);
+		cs.userTerminals = {
+			list: () => [{ id: "native", ownerKind: "client", nativeCli: { preset: "claude" } }],
+			replay: () => [],
+		};
+		cs.emitTerminal("active", { type: "terminal_list", terminals: [] });
+		expect(emitted).toEqual([
+			{
+				type: "terminal_list",
+				conversationId: "active",
+				terminals: [{ id: "native", ownerKind: "client", nativeCli: { preset: "claude" } }],
+			},
+		]);
+		cs.emitTerminal("background", { type: "terminal_list", terminals: [] });
+		expect(emitted).toHaveLength(1);
 	});
 
 	it("5. 服务端 ClientSession.pushTerminals：始终合并下发 userTerminals 与当前对话 terminals", () => {
@@ -331,12 +360,10 @@ describe("用户直接创建的终端始终显示且不受对话影响和过滤"
 		const listMsg = emitted.find((m) => m.type === "terminal_list");
 		expect(listMsg).toBeDefined();
 		expect(listMsg.conversationId).toBe("conv-1");
-		// 必须同时包含用户终端与当前对话 AI 终端
 		expect(listMsg.terminals).toHaveLength(2);
 		expect(listMsg.terminals[0].id).toBe("user-term-1");
 		expect(listMsg.terminals[1].id).toBe("ai-bash-1");
 
-		// 输出回放也同时包含用户终端与当前对话 AI 终端
 		const outputMsgs = emitted.filter((m) => m.type === "terminal_output");
 		expect(outputMsgs).toHaveLength(2);
 		expect(outputMsgs.map((m) => m.terminalId)).toEqual(["user-term-1", "ai-bash-1"]);

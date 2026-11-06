@@ -29,17 +29,17 @@ describe("remote-workbench workspace uri & path normalization", () => {
 	it("组装完整的远程工作区 URI 并兼容后端的 isRemoteWorkspaceUri / parseRemoteWorkspaceUri", () => {
 		const host = {
 			username: "ubuntu",
-			host: "82.156.246.55",
+			host: "198.51.100.10",
 			port: 22,
 		};
 		const uri = buildRemoteWorkspaceUri(host, "~/my-project");
-		expect(uri).toBe("ssh://ubuntu@82.156.246.55:22/home/ubuntu/my-project");
+		expect(uri).toBe("ssh://ubuntu@198.51.100.10:22/home/ubuntu/my-project");
 		expect(isRemoteWorkspaceUri(uri)).toBe(true);
 
 		const parsed = parseRemoteWorkspaceUri(uri);
 		expect(parsed).not.toBeNull();
 		expect(parsed?.username).toBe("ubuntu");
-		expect(parsed?.host).toBe("82.156.246.55");
+		expect(parsed?.host).toBe("198.51.100.10");
 		expect(parsed?.port).toBe(22);
 		expect(parsed?.remotePath).toBe("/home/ubuntu/my-project");
 	});
@@ -47,15 +47,15 @@ describe("remote-workbench workspace uri & path normalization", () => {
 	it("处理未指定端口及根目录边界情况", () => {
 		const host = {
 			username: "root",
-			host: "39.99.235.208",
+			host: "203.0.113.10",
 		};
 		const uri = buildRemoteWorkspaceUri(host, "/");
-		expect(uri).toBe("ssh://root@39.99.235.208:22/");
+		expect(uri).toBe("ssh://root@203.0.113.10:22/");
 		expect(isRemoteWorkspaceUri(uri)).toBe(true);
 
 		const parsed = parseRemoteWorkspaceUri(uri);
 		expect(parsed?.username).toBe("root");
-		expect(parsed?.host).toBe("39.99.235.208");
+		expect(parsed?.host).toBe("203.0.113.10");
 		expect(parsed?.port).toBe(22);
 		expect(parsed?.remotePath).toBe("/");
 	});

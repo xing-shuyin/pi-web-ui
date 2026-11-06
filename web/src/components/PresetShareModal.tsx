@@ -38,7 +38,6 @@ import type {
 } from "../use-chat";
 
 interface PresetShareModalProps {
-	/** 本地预设名（设置状态里的预设列表视图）。 */
 	presets: UiSettingsPreset[];
 	plugins: ChatState["plugins"];
 	pluginCatalog: ChatState["pluginCatalog"];
@@ -48,24 +47,19 @@ interface PresetShareModalProps {
 	presetImport: (PresetImportState & { applyError?: string }) | null;
 	presetCatalog: PresetCatalogState | null;
 	presetShare: PresetShareState | null;
-	/** 打开时预选的预设名（"" = 当前设置）。 */
 	initialPreset?: string;
-	/** 打开时先落在哪个页签（默认导出/分享）。 */
 	initialTab?: PresetShareTab;
 	onClose: () => void;
 }
 
 export type PresetShareTab = "export" | "import" | "browse";
 type Tab = PresetShareTab;
-/** 导入来源（编进 requestId 前缀，服务端回执时前端据此提示“粘贴/文件/网址”）。 */
 type ImportSource = "paste" | "file" | "url";
 
-/** 导入请求的 requestId 前缀（use-chat 按前缀还原来源，见那里的 preset_import_result）。 */
 function reqId(source: ImportSource): string {
 	return `${source === "paste" ? "paste" : source}:${randomUuid()}`;
 }
 
-/** 目录条目的时间戳 → 本地短日期（空/坏值返回 ""）。 */
 function shortDate(iso: string): string {
 	if (!iso) return "";
 	const d = new Date(iso);
@@ -73,7 +67,6 @@ function shortDate(iso: string): string {
 	return d.toLocaleDateString();
 }
 
-/** 分组 → i18n key（字面量分支，is18n 死 key 守卫才认得出）。 */
 function presetGroupLabelKey(g: PresetFieldGroup): string {
 	switch (g) {
 		case "prompt":
@@ -94,17 +87,6 @@ function presetGroupLabelKey(g: PresetFieldGroup): string {
 	return "presetGroupOther";
 }
 
-/**
- * 预设分享面板（设置 → 预设 → 分享/导入/浏览分享）。
- *
- * 三个页签对应三条真实路径：
- *   导出/分享 — 导成 JSON（复制/下载），或一键发到社区共享仓库（服务端 gh issue）；
- *   导入      — 粘贴 / 选文件 / 网址，先预览（dryRun）再确认导入，可选导入后立即应用；
- *   浏览      — 拉社区仓库 index.json，搜索 + 一键导入（走网址导入预览）。
- *
- * 全部动作都经服务端（server/preset-share.ts）：下发的是裁剪视图，完整字段只在服务端，
- * 且抓取必须绕开浏览器 CORS。回执通过 use-chat 的 reducer 落到 chat.preset*。
- */
 export function PresetShareModal({
 	presets,
 	plugins,
@@ -123,7 +105,6 @@ export function PresetShareModal({
 	const { locale } = useI18n();
 	const [tab, setTab] = useState<Tab>(initialTab);
 
-	// ---- 导出/分享页签 -----------------------------------------------------
 	const [shareName, setShareName] = useState(initialPreset);
 	const [description, setDescription] = useState("");
 	const [tags, setTags] = useState("");
@@ -149,15 +130,11 @@ export function PresetShareModal({
 	const presetImport = importReceipt?.requestId === requests.import ? importReceipt : null;
 	const presetCatalog = catalogReceipt?.requestId === requests.catalog ? catalogReceipt : null;
 
-	// ---- 导入页签 ----------------------------------------------------------
 	const [text, setText] = useState("");
 	const [url, setUrl] = useState("");
-	/** 最后一次预览请求的来源载荷（确认导入时原样重发）。 */
 	const [pending, setPending] = useState<{ source: ImportSource; json?: string; url?: string } | null>(null);
 	const [applyAfter, setApplyAfter] = useState(false);
-	/** 可选导入：勾选的字段名；null = 跟随预览全选（新预览到达时重置）。 */
 	const [picked, setPicked] = useState<Set<string> | null>(null);
-	/** 字段详情展开状态。 */
 	const [expandedFields, setExpandedFields] = useState<Set<string>>(new Set());
 	const fileRef = useRef<HTMLInputElement | null>(null);
 	const importGeneration = useRef(0);
@@ -168,16 +145,13 @@ export function PresetShareModal({
 		[],
 	);
 
-	// ---- 浏览页签 ----------------------------------------------------------
 	const [query, setQuery] = useState("");
 	const [browsing, setBrowsing] = useState(false);
 
-	// 打开时先把目录拉一遍（列表是这一页的主内容，早拉早显示）。
 	useEffect(() => {
 		appSend({ type: "preset_catalog", requestId: request("catalog", `catalog:${randomUuid()}`) });
 	}, []);
 
-	// 目录回执到达 = 不再加载中。
 	const lastCatalog = useRef<PresetCatalogState | null>(null);
 	useEffect(() => {
 		if (!presetCatalog || presetCatalog === lastCatalog.current) return;
@@ -185,7 +159,6 @@ export function PresetShareModal({
 		setBrowsing(false);
 	}, [presetCatalog]);
 
-	// A receipt updates status only; opening links and copying require an explicit click.
 	const lastShare = useRef<PresetShareState | null>(null);
 	useEffect(() => {
 		if (!presetShare || presetShare === lastShare.current) return;
@@ -194,12 +167,10 @@ export function PresetShareModal({
 		requestLocks.current.delete("share");
 	}, [presetShare]);
 
-	// 导入回执：非 dryRun 成功 = 这一单已经落盘（清掉预览，避免重复点）。
 	const lastImport = useRef<PresetImportState | null>(null);
 	useEffect(() => {
 		if (!presetImport || presetImport === lastImport.current) return;
 		lastImport.current = presetImport;
-		// 新预览到达（dryRun）时把「可选导入」重置成全选，避免上一次的勾选残留误事。
 		setImporting(false);
 		requestLocks.current.delete("import");
 		if (presetImport.dryRun && presetImport.preview) {
@@ -263,7 +234,6 @@ export function PresetShareModal({
 		void copyFeedback.copy(presetExport.json);
 	};
 
-	/** 发一次 dryRun 预览（粘贴/文件 → preset_import；网址 → preset_import_url）。 */
 	const previewText = (json: string, src: ImportSource) => {
 		if (!json.trim() || requestLocks.current.has("import")) return;
 		requestLocks.current.add("import");
@@ -279,8 +249,6 @@ export function PresetShareModal({
 		appSend({ type: "preset_import_url", url: target, dryRun: true, requestId: request("import", reqId(src)) });
 	};
 
-	/** 确认导入：把预览用的载荷原样重发（dryRun:false），可选导入后立即应用；
-	 *  同时带上**勾选的字段**（可选导入 —— 只写用户要的那部分）。 */
 	const confirmImport = () => {
 		if (!pending || chosen.size === 0 || !importName.trim() || requestLocks.current.has("import")) return;
 		requestLocks.current.add("import");
@@ -351,10 +319,8 @@ export function PresetShareModal({
 	const preview = presetImport?.dryRun ? presetImport.preview : undefined;
 	const dependencyPreview = preview ?? (presetImport?.ok ? presetImport.preview : undefined);
 	const importDone = presetImport?.ok && !presetImport.dryRun ? presetImport.preview : undefined;
-	// 按界面语言判断（中文系含 zh-TW；旧做法比对 t("ok") 的简中译文，繁中会被误判为英文）
 	const isZh = isZhLocale(locale);
 	const lang = isZh ? ("zh" as const) : ("en" as const);
-	// 可选导入：按分组拆分预览里的字段，默认全选（picked === null 时视作全选）。
 	const previewFields = preview?.fields ?? [];
 	const chosen = picked ?? new Set(previewFields);
 	const previewGroups = groupPresetFields(previewFields);
@@ -661,8 +627,6 @@ export function PresetShareModal({
 									{preview.fields.includes("promptTemplate") && (
 										<p className="preset-share-warn">{t("presetImportTemplateWarning")}</p>
 									)}
-									{/* 可选导入：按分组/按字段勾选（默认全选）。字段名用原始键名，
-								    与设置页/文档一一对应，不另建 47 条翻译。 */}
 									{previewFields.length > 0 && (
 										<div className="preset-share-pick">
 											<div className="preset-share-pick-head">

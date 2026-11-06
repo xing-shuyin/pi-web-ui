@@ -15,7 +15,6 @@ interface ProjectRuntime {
 	busy: number;
 }
 
-/** Bridges never change cwd. Only unreferenced, idle entries may be automatically evicted. */
 export class McpProjectRuntimeRegistry {
 	private projects = new Map<string, ProjectRuntime>();
 	private pendingDisposals = new Set<Promise<void>>();
@@ -37,7 +36,6 @@ export class McpProjectRuntimeRegistry {
 		private readonly options: {
 			dataDir: string;
 			agentDir?: string;
-			/** Missing/failed ownership checks conservatively retain every project. */
 			isProjectInUse?: (cwd: string) => boolean;
 			idleTimeoutMs?: number;
 			idleCheckIntervalMs?: number;
@@ -45,7 +43,6 @@ export class McpProjectRuntimeRegistry {
 			onToolsChanged?: (cwd: string) => void;
 			onNotice?: (cwd: string, level: "info" | "warning", text: string, textEn: string) => void;
 			log?: (...args: unknown[]) => void;
-			/** Test seam: production always constructs an immutable-cwd McpBridge. */
 			createBridge?: (cwd: string, onToolsChanged: () => void) => Bridge;
 		},
 	) {
@@ -59,7 +56,6 @@ export class McpProjectRuntimeRegistry {
 		return this.options.now?.() ?? Date.now();
 	}
 
-	/** Operations retain entries across awaits even before a conversation is published. */
 	retain(cwd: string): () => void {
 		const entry = this.entry(cwd);
 		entry.busy++;
@@ -89,7 +85,6 @@ export class McpProjectRuntimeRegistry {
 		}
 	}
 
-	/** Read an already active bridge without creating a runtime or starting processes. */
 	peekBridge(cwd: string): McpBridge | undefined {
 		return this.projects.get(this.key(cwd))?.bridge as McpBridge | undefined;
 	}
@@ -140,7 +135,6 @@ export class McpProjectRuntimeRegistry {
 			busy: 1,
 		};
 		this.projects.set(key, entry);
-		// Seed before load; apply afterwards catches edits made while servers were starting.
 		watcher.start();
 		entry.ready = Promise.resolve().then(async () => {
 			if (!current()) return;

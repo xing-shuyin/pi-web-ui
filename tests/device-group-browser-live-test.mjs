@@ -1,7 +1,3 @@
-/** Real server/SDK/Hub/Chrome E2E. HTTP model is a deterministic model double, not a real LLM.
- * Run: node tests/device-group-browser-live-test.mjs
- * PI_WEB_SMOKE_PREBUILT=1 reuses a previously built dist.
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";

@@ -2,7 +2,10 @@
 
 // src/client.js
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  return String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  );
 }
 var reqSeq = 0;
 var client_default = {
@@ -603,7 +606,8 @@ var client_default = {
         work.tables = [];
       } else work.tables = r.tables;
       renderTables();
-      if (!work.curTable && work.tables.length && work.kind !== "redis") selectTable(work.tables[0].name, work.tables[0].kind);
+      if (!work.curTable && work.tables.length && work.kind !== "redis")
+        selectTable(work.tables[0].name, work.tables[0].kind);
     }
     function renderTables() {
       const kw = filterInput.value.trim().toLowerCase();
@@ -716,7 +720,9 @@ var client_default = {
       const tbl = document.createElement("table");
       tbl.className = "dgrid";
       const canSort = kind !== "mongodb" && kind !== "redis";
-      tbl.innerHTML = "<thead><tr>" + columns.map((c) => `<th class="${canSort ? "sortable" : ""}" data-col="${esc(c)}">${esc(c)}${work?.orderBy === c ? work.dir === "desc" ? " ↓" : " ↑" : ""}</th>`).join("") + (canDel ? '<th class="ops-th"></th>' : "") + "</tr></thead>";
+      tbl.innerHTML = "<thead><tr>" + columns.map(
+        (c) => `<th class="${canSort ? "sortable" : ""}" data-col="${esc(c)}">${esc(c)}${work?.orderBy === c ? work.dir === "desc" ? " ↓" : " ↑" : ""}</th>`
+      ).join("") + (canDel ? '<th class="ops-th"></th>' : "") + "</tr></thead>";
       if (canSort) {
         tbl.querySelector("thead").addEventListener("click", (ev) => {
           const th = ev.target.closest("th[data-col]");
@@ -736,7 +742,10 @@ var client_default = {
         const tr = document.createElement("tr");
         tr.innerHTML = row.map((v, ci) => {
           const base = v === null ? '<td class="isnull">NULL</td>' : `<td title="${esc(v)}">${esc(v)}</td>`;
-          return canEditCell && ci !== pkIdx ? base.replace("<td", `<td data-edit="1" data-col="${esc(columns[ci])}" data-pk="${esc(String(row[pkIdx] ?? ""))}"`) : base;
+          return canEditCell && ci !== pkIdx ? base.replace(
+            "<td",
+            `<td data-edit="1" data-col="${esc(columns[ci])}" data-pk="${esc(String(row[pkIdx] ?? ""))}"`
+          ) : base;
         }).join("") + (canDel ? '<td class="ops-cell">' + (kind === "mongodb" ? '<button data-op="docedit" title="编辑文档">✎</button>' : "") + '<button data-op="del" title="删除">🗑</button></td>' : "");
         tb.appendChild(tr);
       });
@@ -805,7 +814,13 @@ var client_default = {
       if (work.kind === "mongodb") {
         const idx = [...tr.parentNode.children].indexOf(tr);
         if (!confirm("删除该文档？直接写库，不可撤销")) return;
-        r = await request({ action: "doc_delete", connId: work.connId, db: work.curDb, table: work.curTable, id: work.docs?.[idx]?._id });
+        r = await request({
+          action: "doc_delete",
+          connId: work.connId,
+          db: work.curDb,
+          table: work.curTable,
+          id: work.docs?.[idx]?._id
+        });
       } else {
         const pkCell = tr.querySelector("td[data-pk]");
         if (!pkCell) {
@@ -813,7 +828,13 @@ var client_default = {
           return;
         }
         if (!confirm("删除这一行？直接写库，不可撤销")) return;
-        r = await request({ action: "row_delete", connId: work.connId, db: work.curDb, table: work.curTable, pk: { col: work.pkCol, val: pkCell.dataset.pk } });
+        r = await request({
+          action: "row_delete",
+          connId: work.connId,
+          db: work.curDb,
+          table: work.curTable,
+          pk: { col: work.pkCol, val: pkCell.dataset.pk }
+        });
       }
       r.ok ? void loadData() : toast(`删除失败：${r.error}`, true);
     }
@@ -834,8 +855,12 @@ var client_default = {
       }
       rowTitle.textContent = `新增行 · ${work.curTable}`;
       rowHint.classList.remove("hidden");
-      const cols = work.schema.columns.filter((c) => !(c.key === "PRI" && /int|serial/i.test(c.type)) && !(c.def && /nextval/i.test(c.def)));
-      rowBody.innerHTML = `<div class="flds">${cols.map((c) => `<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : " · 非空"}</small></label><input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? "留空=默认值" : "必填"}" />`).join("")}</div>`;
+      const cols = work.schema.columns.filter(
+        (c) => !(c.key === "PRI" && /int|serial/i.test(c.type)) && !(c.def && /nextval/i.test(c.def))
+      );
+      rowBody.innerHTML = `<div class="flds">${cols.map(
+        (c) => `<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : " · 非空"}</small></label><input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? "留空=默认值" : "必填"}" />`
+      ).join("")}</div>`;
       rowModalBg.classList.remove("hidden");
       rowBody.querySelector("input")?.focus();
     }
@@ -859,14 +884,33 @@ var client_default = {
         if (work.kind === "mongodb") {
           const json = rowBody.querySelector(".jsonbox").value;
           const mode = rowModalBg.dataset.mode || "insert";
-          r = mode === "edit" ? await request({ action: "doc_save", connId: work.connId, db: work.curDb, table: work.curTable, id: work.docs?.[Number(rowModalBg.dataset.idx)]?._id, docJson: json }) : await request({ action: "doc_insert", connId: work.connId, db: work.curDb, table: work.curTable, docJson: json });
+          r = mode === "edit" ? await request({
+            action: "doc_save",
+            connId: work.connId,
+            db: work.curDb,
+            table: work.curTable,
+            id: work.docs?.[Number(rowModalBg.dataset.idx)]?._id,
+            docJson: json
+          }) : await request({
+            action: "doc_insert",
+            connId: work.connId,
+            db: work.curDb,
+            table: work.curTable,
+            docJson: json
+          });
         } else {
           const values = {};
           for (const inp of rowBody.querySelectorAll("input[data-col]")) {
             const v = inp.value.trim();
             if (v !== "") values[inp.dataset.col] = v === "NULL" ? null : v;
           }
-          r = await request({ action: "row_insert", connId: work.connId, db: work.curDb, table: work.curTable, values });
+          r = await request({
+            action: "row_insert",
+            connId: work.connId,
+            db: work.curDb,
+            table: work.curTable,
+            values
+          });
         }
         if (!r.ok) {
           rowErr.textContent = r.error ?? "保存失败";
@@ -932,7 +976,9 @@ var client_default = {
       if (d.columns.length) {
         const t = document.createElement("table");
         t.className = "mtable";
-        t.innerHTML = "<thead><tr><th>#</th><th>列名</th><th>类型</th><th>空</th><th>键</th><th>默认值</th><th>备注</th></tr></thead><tbody>" + d.columns.map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.name)}</td><td>${esc(c.type)}</td><td>${c.nullable ? "YES" : "NO"}</td><td>${c.key ? `<span class="keytag">${esc(c.key)}</span>` : ""}</td><td>${esc(c.def ?? "")}</td><td>${esc(c.comment || "")}</td></tr>`).join("") + "</tbody>";
+        t.innerHTML = "<thead><tr><th>#</th><th>列名</th><th>类型</th><th>空</th><th>键</th><th>默认值</th><th>备注</th></tr></thead><tbody>" + d.columns.map(
+          (c, i) => `<tr><td>${i + 1}</td><td>${esc(c.name)}</td><td>${esc(c.type)}</td><td>${c.nullable ? "YES" : "NO"}</td><td>${c.key ? `<span class="keytag">${esc(c.key)}</span>` : ""}</td><td>${esc(c.def ?? "")}</td><td>${esc(c.comment || "")}</td></tr>`
+        ).join("") + "</tbody>";
         colsHost.appendChild(t);
       } else colsHost.innerHTML = "<div class='grid-empty'>无固定列信息</div>";
       idxHost.textContent = "";

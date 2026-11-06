@@ -77,7 +77,6 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		const convsScroll = container!.querySelector(".projects-scroll");
 		expect(convsScroll).not.toBeNull();
 
-		// 双击 projects-scroll 空白区域
 		act(() => {
 			convsScroll!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
@@ -124,7 +123,6 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 			sessionItem!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
 
-		// 不应触发 new_chat
 		expect(sent.filter((m: any) => m.type === "new_chat")).toHaveLength(0);
 	});
 
@@ -158,7 +156,6 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		const projButtons = container!.querySelectorAll(".projects-scroll .project-item");
 		expect(projButtons.length).toBe(2);
 
-		// 第一个是当前项目 proj-a
 		act(() => {
 			projButtons[0].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
@@ -196,7 +193,6 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		const projButtons = container!.querySelectorAll(".projects-scroll .project-item");
 		expect(projButtons.length).toBe(2);
 
-		// 第二个是非当前项目 proj-b
 		act(() => {
 			projButtons[1].dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
@@ -304,7 +300,6 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		const btn = container!.querySelector("button[data-bar-item='host:cwd']");
 		expect(btn).not.toBeNull();
 
-		// 双击
 		act(() => {
 			btn!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 		});
@@ -438,14 +433,12 @@ describe("双击项目名字与运行的对话空白处新建对话", () => {
 		const btn = container!.querySelector("button[data-bar-item='host:cwd']");
 		expect(btn).not.toBeNull();
 
-		// 单击
 		act(() => {
 			btn!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 		});
 
 		expect(pickerOpened).toBe(false);
 
-		// 快进 230ms
 		act(() => {
 			vi.advanceTimersByTime(230);
 		});

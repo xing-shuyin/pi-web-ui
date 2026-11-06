@@ -1,17 +1,3 @@
-/**
- * universal-tui-bridge.test.ts — 通用底座（Universal Base）TUI 终端交互桥接体系单测。
- *
- * 验证：
- *   1. WebUIContext 在 UniversalSession 中正确初始化并与 WebSocket 消息通道双向绑定；
- *   2. resolveDialog：将浏览器对 dialog 的选择（select / confirm / input）恢复给等待中的 Promise；
- *   3. custom TUI 浮层桥接：向前端下发 tui_overlay_open 消息并格式化 ANSI 初始帧；
- *   4. handleTuiOverlayInput：将前端 xterm.js 键盘输入实时喂入虚拟终端与 TUI 组件；
- *   5. handleTuiOverlayResize：支持前端终端尺寸自适应更新；
- *   6. handleTuiOverlayCancel：用户取消时安全清理组件并下发 tui_overlay_close；
- *   7. pluginCommands 上下文注入：插件命令执行时无缝获取 uiContext 桥接对象；
- *   8. 会话清理与异常防护：dispose 时安全注销与解除监听。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -67,9 +53,7 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 		if (existsSync(tempDir)) {
 			try {
 				rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-			} catch {
-				// 静默忽略 Windows 延迟释放
-			}
+			} catch {}
 		}
 	});
 
@@ -82,19 +66,16 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 	});
 
 	it("2. resolveDialog：能够正常桥接 select / confirm / input 弹窗交互", async () => {
-		// 发起 select
 		const selectPromise = session.webUi.select("请选择模式", ["模式 A", "模式 B"]);
 
 		const selectMsg = outbox.find((m) => m.type === "dialog" && m.kind === "select") as any;
 		expect(selectMsg).toBeDefined();
 		expect(selectMsg.title).toBe("请选择模式");
 
-		// 前端回复选择
 		session.resolveDialog(selectMsg.id, "模式 A");
 		const selected = await selectPromise;
 		expect(selected).toBe("模式 A");
 
-		// 发起 confirm
 		outbox.length = 0;
 		const confirmPromise = session.webUi.confirm("危险操作", "确定删除该分支吗？");
 		const confirmMsg = outbox.find((m) => m.type === "dialog" && m.kind === "confirm") as any;
@@ -104,7 +85,6 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 		const confirmed = await confirmPromise;
 		expect(confirmed).toBe(true);
 
-		// 发起 input
 		outbox.length = 0;
 		const inputPromise = session.webUi.input("请输入新名称", "默认名");
 		const inputMsg = outbox.find((m) => m.type === "dialog" && m.kind === "input") as any;
@@ -127,7 +107,6 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 		};
 
 		const customPromise = session.webUi.custom((_tui, _theme, _keybindings, done) => {
-			// 模拟几百毫秒后由组件调用 done 结束
 			setTimeout(() => done("TUI_DONE"), 50);
 			return dummyComponent;
 		});
@@ -168,11 +147,9 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 		const overlayId = openMsg.id;
 
 		outbox.length = 0;
-		// 前端输入按键
 		session.handleTuiOverlayInput(overlayId, "hello-key");
 		expect(receivedInput).toBe("hello-key");
 
-		// 等待微任务下发重新渲染消息
 		await new Promise((r) => setTimeout(r, 20));
 		const renderMsg = outbox.find((m) => m.type === "tui_overlay_render" && m.id === overlayId) as any;
 		expect(renderMsg).toBeDefined();
@@ -197,10 +174,8 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 		const openMsg = outbox.find((m) => m.type === "tui_overlay_open") as any;
 		const overlayId = openMsg.id;
 
-		// 触发尺寸变更
 		session.handleTuiOverlayResize(overlayId, 120, 40);
 
-		// 触发取消
 		session.handleTuiOverlayCancel(overlayId);
 
 		const result = await customPromise;
@@ -214,11 +189,9 @@ describe("通用底座（Universal Base）TUI 终端交互桥接体系单测", (
 	it("6. pluginCommands 上下文注入：插件命令可以调用 TUI 交互并收到应答", async () => {
 		outbox.length = 0;
 
-		// 异步触发插件命令执行
 		const cmdPromise = (session as any).slash.exec("test-tui-cmd", "");
 		await new Promise((r) => setTimeout(r, 20));
 
-		// 应该触发了 confirm dialog
 		const confirmMsg = outbox.find((m) => m.type === "dialog" && m.kind === "confirm") as any;
 		expect(confirmMsg).toBeDefined();
 		expect(confirmMsg.title).toBe("插件确认");

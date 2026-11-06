@@ -1,17 +1,3 @@
-/**
- * sftp 两条快通道的单测 —— 纯本地，零端口零 token：
- *
- *   1. **远端快扫**（`scanRemoteViaFind`）：用一次 `find` 抵掉 N 次 readdir。快的代价是
- *      「解析别人给的文本」，所以这里重点钉的是**不确定就整批放弃**：
- *      退出码非 0 / 输出被截断 / 字段对不上 / 名字不合法 → 一律 `ok: false`，
- *      让调用方回落逐目录扫描 —— 错误解析可能凭空造出一个远端条目，
- *      删除策略是 both 时那就是「删错东西」。
- *   2. **批量打包传输**（`tarStream` / `tarHeader` / `readTarStream`）：自己写、自己读 ustar
- *      （不依赖本机 tar，Windows 上不一定有），而且**两头都是流**：上行边读边发、下行边收边落盘。
- *      这里用**独立的** tar 读取器校验上行产出，再把下行按 100 字节碎块喂给真解包器
- *      （逼它跨块拼头与正文），逐项校验 checksum / 名字 / 大小 / 内容 / 补齐；
- *      长路径塞不进 prefix+name 时必须退回逐文件（而不是静默丢文件）。
- */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +23,6 @@ function tempDir(): string {
 	return dir;
 }
 
-/** 把异步生成器/流里的 chunk 收成一个 Buffer（顺带记最大 chunk，用来断言「没有整包进内存」）。 */
 async function collect(source: AsyncIterable<Buffer>) {
 	const parts: Buffer[] = [];
 	let maxChunk = 0;
@@ -48,12 +33,10 @@ async function collect(source: AsyncIterable<Buffer>) {
 	return { buffer: Buffer.concat(parts), maxChunk };
 }
 
-/** 把一段 Buffer 按 size 切开喂给流式解析器（逼它跨块拼头与正文）。 */
 async function* chunksOf(buf: Buffer, size: number) {
 	for (let i = 0; i < buf.length; i += size) yield buf.subarray(i, i + size);
 }
 
-/** 用流式解析器收成员（sink 收到内存里方便断言）；`skip` 里的成员会被读掉但不落盘。 */
 async function streamEntries(source: AsyncIterable<Buffer>, opts: { skip?: string[]; maxBytes?: number } = {}) {
 	const out = new Map<string, Buffer>();
 	const res = await readTarStream(source, {
@@ -70,7 +53,6 @@ async function streamEntries(source: AsyncIterable<Buffer>, opts: { skip?: strin
 	return { res, out };
 }
 
-/** 独立的 ustar 读取器（校验 checksum，不复用被测代码）。 */
 function readTar(buf: Buffer) {
 	const out: { name: string; size: number; data: Buffer }[] = [];
 	let off = 0;
@@ -117,7 +99,6 @@ describe("readTarStream（流式解包）", () => {
 				{ rel: "sub/big.bin", abs: join(dir, "big.bin"), size: big.length, mtime: 0 },
 			]),
 		);
-		// 故意用 100 字节的碎块：逼它跨块拼 512 的头与成员正文
 		const { res, out } = await streamEntries(chunksOf(buffer, 100));
 		expect(res.ok).toBe(true);
 		expect([...out.keys()]).toEqual(["a.txt", "sub/big.bin"]);
@@ -149,7 +130,7 @@ describe("readTarStream（流式解包）", () => {
 		writeFileSync(join(dir, "a.txt"), "hi");
 		const { buffer } = await collect(tarStream([{ rel: "a.txt", abs: join(dir, "a.txt"), size: 2, mtime: 0 }]));
 		const bad = Buffer.from(buffer);
-		bad[0] = 0x62; // 改成员名但不重算 checksum
+		bad[0] = 0x62;
 		const { res } = await streamEntries(chunksOf(bad, 100));
 		expect(res.ok).toBe(false);
 	});
@@ -199,7 +180,7 @@ describe("tarHeader / tarStream（流式打包）", () => {
 	it("产出的是**流**：没有一个 chunk 是整包；内容能被独立读取器解回", async () => {
 		const dir = tempDir();
 		const small = Buffer.from("hello");
-		const big = Buffer.alloc(1200, 0x61); // 跨两个数据块，尾部要补齐
+		const big = Buffer.alloc(1200, 0x61);
 		writeFileSync(join(dir, "a.txt"), small);
 		writeFileSync(join(dir, "big.bin"), big);
 		const { buffer, maxChunk } = await collect(
@@ -211,7 +192,6 @@ describe("tarHeader / tarStream（流式打包）", () => {
 				{ chunkSize: 512 },
 			),
 		);
-		// 512 的读块 + 512 的头/补齐块 + 收尾的两个全零块（1024）：没有一个 chunk 是「整包」
 		expect(maxChunk).toBeLessThanOrEqual(1024);
 		expect(maxChunk).toBeLessThan(buffer.length);
 		const { entries, zeroBlocks } = readTar(buffer);
@@ -219,7 +199,7 @@ describe("tarHeader / tarStream（流式打包）", () => {
 		expect(entries[0]?.data.toString("utf8")).toBe("hello");
 		expect(entries[1]?.size).toBe(1200);
 		expect(entries[1]?.data.equals(big)).toBe(true);
-		expect(zeroBlocks).toBe(2); // 两块全零收尾
+		expect(zeroBlocks).toBe(2);
 	});
 
 	it("打包期间被改动（字节数与计划不符）→ 抛错，让整批回落逐文件", async () => {
@@ -239,7 +219,6 @@ describe("tarHeader / tarStream（流式打包）", () => {
 		const parsed = readTar(Buffer.concat([head as Buffer, Buffer.from("x"), Buffer.alloc(511), Buffer.alloc(1024)]));
 		expect(parsed.entries[0]?.name).toBe(rel);
 
-		// 单段就超 100 字节、没有 / 可切 → 返回 null（调用方据此退回逐文件）
 		expect(tarHeader({ name: "x".repeat(120), size: 1, mtime: 0 })).toBeNull();
 		expect(BATCH_MIN_FILES).toBeGreaterThan(1);
 	});
@@ -265,7 +244,6 @@ describe("parseFindOutput", () => {
 });
 
 describe("scanRemoteViaFind", () => {
-	/** 假 exec：只认 find，按给定 stdout/退出码返回。 */
 	function fakeExec(stdout: string, { code = 0, truncated = false, stderr = "" } = {}) {
 		const calls: { cmd: string; opts: unknown }[] = [];
 		const exec = async (cmd: string, opts: unknown) => {
@@ -284,7 +262,7 @@ describe("scanRemoteViaFind", () => {
 		expect(cmd).toContain("-name '.sftp-trash'");
 		expect(cmd).toContain("-name '.sftp-tmp*'");
 		expect(cmd).toContain("-name 'node_modules'");
-		expect(cmd).not.toContain("*.log"); // 带通配符的规则不交给 find，留给 JS 判定
+		expect(cmd).not.toContain("*.log");
 		expect(cmd).toContain("-printf");
 		expect(cmd.endsWith("'")).toBe(true);
 	});

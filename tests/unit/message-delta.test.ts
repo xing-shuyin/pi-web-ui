@@ -40,13 +40,10 @@ describe("applyMessageDelta", () => {
 		const first = applyMessageDelta(makeUi(), delta({ assistantMessageEvent: { type: "text_delta", delta: "a" } }));
 		const second = applyMessageDelta(first, delta({ assistantMessageEvent: { type: "text_delta", delta: "b" } }));
 		expect(second.streamingMessage?.content).toEqual([{ type: "text", text: "ab" }]);
-		// StrictMode double-invokes reducers with the same input — replaying must
-		// be idempotent (this is exactly what in-place mutation would break).
 		expect(
 			applyMessageDelta(first, delta({ assistantMessageEvent: { type: "text_delta", delta: "b" } })).streamingMessage
 				?.content,
 		).toEqual([{ type: "text", text: "ab" }]);
-		// Original untouched.
 		expect(first.streamingMessage?.content).toEqual([{ type: "text", text: "a" }]);
 	});
 
@@ -67,7 +64,6 @@ describe("applyMessageDelta", () => {
 		let ui = makeUi();
 		ui = applyMessageDelta(ui, delta({ assistantMessageEvent: { type: "thinking_delta", delta: "t1" } }));
 		ui = applyMessageDelta(ui, delta({ assistantMessageEvent: { type: "text_delta", delta: "x" } }));
-		// contentIndex 0 → thinking block even though text is last.
 		ui = applyMessageDelta(
 			ui,
 			delta({ assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "+2" } }),

@@ -35,7 +35,6 @@ describe("context-budget", () => {
 			{ role: "assistant", content: [{ type: "text", text: "reply 3" }] },
 		] as unknown as AgentMessage[];
 
-		// 保留 2 轮：最近两个 user 消息是 index 2 和 index 4，cutoff 应为 index 2
 		const cutoff = findRecentCutoffIndex(messages, 2);
 		expect(cutoff).toBe(2);
 	});
@@ -57,7 +56,6 @@ describe("context-budget", () => {
 				details: { path: "test.txt" },
 				timestamp: 1001,
 			},
-			// 近期交互 1
 			{
 				role: "user",
 				content: "recent 1",
@@ -68,7 +66,6 @@ describe("context-budget", () => {
 				content: [{ type: "text", text: "ok" }],
 				timestamp: 2001,
 			},
-			// 近期交互 2
 			{
 				role: "user",
 				content: "recent 2",
@@ -97,7 +94,6 @@ describe("context-budget", () => {
 		expect(textBlock.text).toContain("[Tool output trimmed:");
 		expect(textBlock.text).toContain("44 lines");
 
-		// 幂等性测试：再次裁剪不会重复裁剪
 		const res2 = trimDistantToolOutputs(res.messages, { keepRecentTurns: 2 });
 		expect(res2.trimmedCount).toBe(0);
 	});
@@ -119,7 +115,6 @@ describe("context-budget", () => {
 			},
 		] as unknown as AgentMessage[];
 
-		// 只有 1 轮，且 keepRecentTurns = 1，因此不应被裁剪
 		const res = trimDistantToolOutputs(messages, { keepRecentTurns: 1 });
 		expect(res.trimmedCount).toBe(0);
 		expect(res.messages[1]).toBe(messages[1]);
@@ -141,7 +136,6 @@ describe("context-budget", () => {
 				],
 				timestamp: 1001,
 			},
-			// 近期轮次
 			{
 				role: "user",
 				content: "recent step",
@@ -181,7 +175,6 @@ describe("context-budget", () => {
 
 		const totalTokens = estimateMessagesTotalTokens(messages);
 
-		// 场景 A：设置很大的 contextWindow，占用未达 70% 水位，不应裁剪
 		const resSafe = pruneContextHierarchically(messages, {
 			contextWindow: 100_000,
 			reserveTokens: 10_000,
@@ -190,19 +183,16 @@ describe("context-budget", () => {
 		expect(resSafe.tier1.trimmedCount).toBe(0);
 		expect(resSafe.needsCompaction).toBe(false);
 
-		// 场景 B：contextWindow 较紧凑，达到 70% 预警水位，但裁剪后低于有效上限
 		const resTrimmed = pruneContextHierarchically(messages, {
-			contextWindow: Math.floor(totalTokens * 1.3), // 让当前 token 占比约 77%
+			contextWindow: Math.floor(totalTokens * 1.3),
 			reserveTokens: 100,
 			tier1Watermark: 0.7,
 		});
 		expect(resTrimmed.reachedTier1).toBe(true);
 		expect(resTrimmed.tier1.trimmedCount).toBe(1);
 		expect(resTrimmed.tokensAfter).toBeLessThan(resTrimmed.tokensBefore);
-		// 裁剪后 token 降下来，不需要调用昂贵的 LLM 全文摘要
 		expect(resTrimmed.needsCompaction).toBe(false);
 
-		// 场景 C：强制执行或者超标无法挽回时，最终标记 needsCompaction = true
 		const resCompacting = pruneContextHierarchically(messages, {
 			contextWindow: 50,
 			reserveTokens: 10,
@@ -218,7 +208,6 @@ describe("context-budget", () => {
 		] as unknown as AgentMessage[];
 		const res = pruneContextHierarchically(messages, {
 			contextWindow: 128_000,
-			// 1_000_000 - 256_000，按大窗口换算后泄漏到 128K 窗口。
 			reserveTokens: 744_000,
 			softCap: 256_000,
 		});

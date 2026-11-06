@@ -7,7 +7,6 @@ import {
 	type ApprovalPolicy,
 } from "../../server/tool-approval.js";
 
-/** 造一个策略（允许同类时给出档位 id）。 */
 function policy(allowAll: boolean, ids: string[] = []): ApprovalPolicy {
 	return {
 		allowAll,
@@ -146,7 +145,6 @@ describe("高危操作识别与人机协同拦截 (Tool Approval / Human-in-the-
 			const p = policy(false, ["bash.rm-rf"]);
 			expect(approvalSuppressionReason(p, true, "bash.rm-rf")).toBe("category");
 			expect(approvalSuppressionReason(p, true, "bash.git-destructive")).toBeNull();
-			// 无档位的拦截（如自定义 reason）不会被同类记忆误放行
 			expect(approvalSuppressionReason(p, true, undefined)).toBeNull();
 		});
 

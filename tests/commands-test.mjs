@@ -1,6 +1,3 @@
-/* Smoke test: commands.json is per-project (follows the current cwd).
- * Server on PORT=8791 with temp work dirs; each dir has its own .pi/commands.json.
- */
 import { WebSocket } from "ws";
 
 const WS = "ws://localhost:8791/ws";
@@ -58,7 +55,6 @@ async function main() {
 	c.send({ type: "hello", clientId: CLIENT_ID });
 	await c.wait((m) => m.type === "ready");
 
-	// Project A commands first (server default cwd = work dir A).
 	c.send({ type: "list_commands" });
 	const ca = await c.wait((m) => m.type === "commands");
 	console.log("[1] cwd A commands:", JSON.stringify(ca.commands.map((x) => x.name)), "→", ca.path);
@@ -66,7 +62,6 @@ async function main() {
 		throw new Error("FAIL: expected project A command");
 	}
 
-	// Switch to project B — commands must auto-switch to B's file.
 	c.send({ type: "set_cwd", path: "/tmp/cmdtest/proj-b" });
 	await c.wait((m) => m.type === "snapshot" && m.state.cwd === "/tmp/cmdtest/proj-b");
 	const cb = await c.wait((m) => m.type === "commands");

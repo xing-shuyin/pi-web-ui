@@ -14,21 +14,17 @@ describe("临时会话（Ephemeral Session）临时会话目录隔离与扩展�
 		mkdirSync(agentDir, { recursive: true });
 
 		try {
-			// 模拟 AgentService.newChat(..., ephemeral=true) 的目录注入逻辑
 			const sessionManager = SessionManager.inMemory(cwd);
 			const ephemeralDir = join(agentDir, "ephemeral-sessions", convId);
 			mkdirSync(ephemeralDir, { recursive: true });
 			(sessionManager as unknown as { sessionDir: string }).sessionDir = ephemeralDir;
 
-			// 验证 SoL-Pi / 第三方扩展依赖的 sessionDir 接口
 			expect(sessionManager.getSessionDir()).toBe(ephemeralDir);
 			expect(sessionManager.getSessionDir()).not.toBe("");
 			expect(existsSync(sessionManager.getSessionDir())).toBe(true);
 
-			// 验证纯内存属性：未持久化，不污染磁盘历史
 			expect(sessionManager.isPersisted()).toBe(false);
 
-			// 模拟会话销毁（disposeConversation）时的清理
 			rmSync(ephemeralDir, { recursive: true, force: true });
 			expect(existsSync(ephemeralDir)).toBe(false);
 		} finally {
@@ -45,7 +41,6 @@ describe("临时会话（Ephemeral Session）临时会话目录隔离与扩展�
 			const sm = SessionManager.inMemory(base);
 			(sm as unknown as { sessionDir: string }).sessionDir = ephemeralDir;
 
-			// 模拟 SoL-Pi src/sol-pi/runtime-paths.ts 的判定规则
 			const sessionDir = sm.getSessionDir();
 			if (!sessionDir) throw new Error("SoL-Pi requires a persistent Pi session directory");
 			const sessionId = sm.getSessionId();

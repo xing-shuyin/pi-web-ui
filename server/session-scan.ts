@@ -1,9 +1,6 @@
-/** Shared streaming transcript reader. Memory scales with textual JSONL records,
- * not the file or embedded binary `data` strings. */
 import { createReadStream } from "node:fs";
 import { setImmediate } from "node:timers/promises";
 
-/** 字符串内的特殊字符（引号 / 转义 / 换行）与字符串外的「非空白或换行」：sticky 扫描用。 */
 const STRING_SPECIAL = /["\\\n]/g;
 const NON_WS_OR_NL = /[^\s]|\n/g;
 
@@ -17,13 +14,6 @@ function tokenIsData(token: string): boolean {
 	}
 }
 
-/** Discard JSON string values of `data` properties (embedded image/base64 payloads)
- * before assembling lines. Preserve the empty string so JSON syntax stays valid.
- * Text/content strings remain intact, including escaped quotes and newlines.
- *
- * 状态机与原逐字符实现完全一致（差分测试见 tests/unit/session-scan-filter.test.ts），
- * 但不再逐字符 push + 正则：字符串内用正则跳到下一个引号/转义/换行，字符串外跳到下一个
- * 非空白字符，普通字符整段切片输出。大转录的流式扫描吞吐因此提升一个数量级。 */
 export class BinaryStringFilter {
 	private inString = false;
 	private escaped = false;
@@ -45,7 +35,6 @@ export class BinaryStringFilter {
 				if (this.escaped) {
 					const ch = chunk[i]!;
 					if (ch === "\n") {
-						// 换行重置行内状态，换行符本身按字符串外处理
 						this.inString = false;
 						this.escaped = false;
 						this.discard = false;
@@ -81,7 +70,6 @@ export class BinaryStringFilter {
 					i = j + 1;
 					continue;
 				}
-				// 收尾引号：无论是否丢弃都输出（保持 JSON 语法完整）
 				out.push('"');
 				this.inString = false;
 				this.dataKey = tokenIsData(this.token);
@@ -92,12 +80,11 @@ export class BinaryStringFilter {
 			NON_WS_OR_NL.lastIndex = i;
 			const m = NON_WS_OR_NL.exec(chunk);
 			const j = m ? m.index : n;
-			if (j > i) out.push(chunk.slice(i, j)); // 纯空白：不改变状态
+			if (j > i) out.push(chunk.slice(i, j));
 			if (!m) break;
 			const ch = chunk[j]!;
 			out.push(ch);
 			if (ch === "\n") {
-				// JSONL records are independent, including after malformed lines.
 				this.dataKey = false;
 				this.awaitingValue = false;
 			} else if (ch === '"') {
@@ -116,8 +103,6 @@ export class BinaryStringFilter {
 	}
 }
 
-/** Early return and errors close the file. Non-binary text records are not capped:
- * an exceptionally large single text message still requires one record in memory. */
 export async function* sessionLines(filePath: string, signal?: AbortSignal): AsyncGenerator<string> {
 	signal?.throwIfAborted();
 	const input = createReadStream(filePath, { encoding: "utf8", highWaterMark: 64 * 1024, signal });
@@ -152,7 +137,6 @@ export async function* sessionLines(filePath: string, signal?: AbortSignal): Asy
 	}
 }
 
-/** Bounded worker pool; results retain input order. No implicit list/result limit. */
 export async function mapSessionsConcurrent<T, R>(
 	items: readonly T[],
 	visit: (item: T, index: number) => Promise<R>,

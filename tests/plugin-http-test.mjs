@@ -1,12 +1,3 @@
-/**
- * 插件 HTTP 路由协议测试（零 token、自包含）。
- *
- * host.route("GET"/"POST", path, handler) 实际暴露为 /plugins-api/<id><path>：
- * 覆盖 GET/POST 命中、未知插件 404、未注册路径 404、handler 抛错 500、
- * 注销后路由消失。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-http-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -90,16 +81,13 @@ try {
 		void ping();
 	});
 
-	// WS attach 触发插件激活（路由随之挂载）
 	const sock = await connectWs();
 	await new Promise((r) => setTimeout(r, 800));
 
-	// -- GET 命中 + query ------------------------------------------------------
 	let r = await fetch(`${BASE}/plugins-api/api/ping?echo=hi`);
 	if (r.status !== 200 || (await r.json()).pong !== true) fail(`GET /ping 异常：${r.status}`);
 	else console.log('✓ GET /plugins-api/api/ping → {"pong":true}');
 
-	// -- POST + express.json body ---------------------------------------------
 	r = await fetch(`${BASE}/plugins-api/api/submit`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -108,26 +96,22 @@ try {
 	if (r.status !== 200 || (await r.json()).got?.x !== 42) fail(`POST /submit 异常：${r.status}`);
 	else console.log("✓ POST body 解析并透传 handler");
 
-	// -- 多段子路径路由（issue #225） --------------------------------------------
 	r = await fetch(`${BASE}/plugins-api/api/deep/nested`);
 	if (r.status !== 200 || (await r.json()).deep !== true) fail(`多段子路径应 200，实际 ${r.status}`);
 	else console.log("✓ GET /plugins-api/api/deep/nested → 多段 splat 正常");
 
-	// -- 未注册路径 404 / 注销后的路由 404 --------------------------------------
 	r = await fetch(`${BASE}/plugins-api/api/nope`);
 	if (r.status !== 404) fail(`未注册路径应 404，实际 ${r.status}`);
 	r = await fetch(`${BASE}/plugins-api/api/gone`);
 	if (r.status !== 404) fail(`注销后的路由应 404，实际 ${r.status}`);
 	console.log("✓ 未注册/已注销路由 → 404");
 
-	// -- 未知插件 404 / handler 抛错 500 ----------------------------------------
 	r = await fetch(`${BASE}/plugins-api/nosuch/ping`);
 	if (r.status !== 404) fail(`未知插件应 404，实际 ${r.status}`);
 	r = await fetch(`${BASE}/plugins-api/api/boom`);
 	if (r.status !== 500) fail(`handler 抛错应 500，实际 ${r.status}`);
 	r = await fetch(`${BASE}/plugins-api/api/boom-async`);
 	if (r.status !== 500) fail(`异步 handler 抛错应 500，实际 ${r.status}`);
-	// 关键：进程必须还活着（旧实现会因 unhandledRejection 直接退出）
 	const alive = await fetch(`${BASE}/api/health`)
 		.then((x) => x.ok)
 		.catch(() => false);

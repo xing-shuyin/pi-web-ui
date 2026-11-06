@@ -23,7 +23,6 @@ describe("abort queued messages restore & server drain (#834)", () => {
 			},
 		};
 
-		// Emulate AgentService.prototype.abort() logic
 		const abort = async () => {
 			try {
 				conv.session.clearQueue?.();
@@ -38,7 +37,6 @@ describe("abort queued messages restore & server drain (#834)", () => {
 
 		await abort();
 
-		// clearQueue MUST be called BEFORE interruptRun so agent-loop sees an empty queue
 		expect(clearQueue).toHaveBeenCalledOnce();
 		expect(interruptRun).toHaveBeenCalledWith(conv, "已停止");
 		expect(conv.queueSteering).toEqual([]);
@@ -74,7 +72,6 @@ describe("abort queued messages restore & server drain (#834)", () => {
 			{ text: "顺便跑一下测试", seq: 2 },
 		]);
 
-		// Verify mergeRecalledDraft preserves existing input without overwriting
 		let composerText = "已有的未发送内容";
 		for (const item of recallDrafts) {
 			composerText = mergeRecalledDraft(composerText, item.text);

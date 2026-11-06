@@ -1,5 +1,11 @@
 # 插件 SDK（starter）
 
+## 统一 TTS 引擎中心
+
+所有语音引擎在服务端通过 `host.tts.registerEngine({ id, label, getVoices, synthesize })` 注册。宿主提供系统 `builtin` 引擎；插件卸载自动撤销注册并取消合成。浏览器不再提供 `ttsProviders.register()`。
+
+调用方使用 `host.tts.listEngines()`、`await host.tts.listVoices(engineId)`、`await host.tts.synthesize({ text, engine, voice, rate, signal })`，取得 `{ buffer, format }` 音频。固定语速引擎声明 `supportsRate: false`。引擎和音色 ID 来自同一个中心目录，QQ、网页播报与 AI 工具共享。完整接口、限制和迁移见 [`docs/architecture-tts.md`](../docs/architecture-tts.md)。
+
 ## 脚手架：`pi-web-ui plugin create`
 
 不用手拷文件，一条命令生成最小可跑骨架（`manifest.json` + `index.mjs` + `client/entry.mjs` + `README.md`，SDK 自动拷进 `sdk/` 与 `client/sdk/`）：

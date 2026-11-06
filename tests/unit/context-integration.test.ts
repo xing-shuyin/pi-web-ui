@@ -43,7 +43,6 @@ function messages(): any[] {
 	];
 }
 
-/** Only the summarizer and extension policy are mocks; never construct a model or call prompt/compact. */
 function harness(file: string) {
 	const session: any = Object.create(AgentSession.prototype);
 	let currentFile = file;
@@ -57,7 +56,6 @@ function harness(file: string) {
 		_signal: any,
 		_reason: any,
 	) {
-		// Deliberately omits refs: the real adapter must append the actual filesystem index.
 		return {
 			summary: "## Goal\nRetain verified output.\n## Next Steps\nRead evidence to verify details.",
 			tokensBefore: 20000,
@@ -209,7 +207,6 @@ describe("zero-token context evidence integration", () => {
 		await expect(compact()).rejects.toThrow();
 		expect(publish).not.toHaveBeenCalled();
 		expect((await h.defaultCompaction.mock.results[0].value).summary).not.toContain("context-evidence:");
-		// Repair from the retained output, then retry: never accept the failed checkpoint.
 		await rm(`${file}.evidence`);
 		await mkdir(`${file}.evidence`);
 		await writeFile(join(`${file}.evidence`, artifactName), artifact);
@@ -280,6 +277,5 @@ it.each(["fallback", "composeWith"])(
 
 it("guards the dynamic evidenceSession argument without mirroring the implementation", async () => {
 	const source = await readFile(new URL("../../server/agent-service.ts", import.meta.url), "utf8");
-	// Whitespace independent, checking only the session argument contract; execution is covered above.
 	expect(source).toMatch(/\.toolOverrideSpecs\([^)]*,\s*undefined,\s*anchor\.session\s*\)/);
 });

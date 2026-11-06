@@ -1,19 +1,3 @@
-/**
- * MCP 工具桥 —— 把外部 Model Context Protocol（stdio）服务器暴露的工具接入
- * pi 会话，让 AI 能调用真实的第三方工具（文件、数据库、GitHub…）。
- *
- * 约定（MCP 规范流式子集）：
- *  - stdio 传输 = stdin/stdout 上换行分隔的 JSON-RPC 2.0（NDJSON），不依赖任何
- *    第三方包；stderr 是自由日志通道。
- *  - 握手：initialize（带 protocolVersion）→ notifications/initialized →
- *    tools/list → tools/call。
- *  - 工具工具入会：本模块把每个远端工具适配成 PluginAgentTool，经
- *    pluginToolsProvider 走与插件工具完全相同的 customTools 管线。
- *
- * 配置：<PI_WEB_DATA_DIR>/mcp.json，形如
- *   { "servers": { "gitserv": { "command": "node", "args": ["mcp.js"], "cwd": "/x" } } }
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -22,12 +6,10 @@ import { getMcpAccessToken, refreshMcpAccessToken } from "./mcp-oauth.js";
 import type { PluginAgentTool } from "./plugins.js";
 import type { UiMcpToolInfo } from "./protocol.js";
 
-/** 展开字符串中的 ${VAR_NAME} 环境变量占位符。 */
 export function expandEnvVars(val: string): string {
 	return val.replace(/\$\{([^}]+)\}/g, (_, k) => process.env[k] ?? "");
 }
 
-/** 获取全局 MCP 配置文件路径 */
 export function getGlobalMcpPath(agentDir?: string, dataDir?: string): string {
 	if (agentDir) {
 		const agentPath = join(agentDir, "mcp.json");
@@ -48,13 +30,11 @@ export function getGlobalMcpPath(agentDir?: string, dataDir?: string): string {
 	return join(defaultAgentDir, "mcp.json");
 }
 
-/** 获取项目级 MCP 配置文件路径 */
 export function getProjectMcpPath(cwd?: string): string {
 	const activeCwd = cwd || process.cwd();
 	return join(activeCwd, ".pi", "mcp.json");
 }
 
-/** JSON-RPC 2.0 over stdio 或 HTTP：配置规格。 */
 export interface McpServerSpec {
 	command?: string;
 	args?: string[];
@@ -64,7 +44,6 @@ export interface McpServerSpec {
 	headers?: Record<string, string>;
 	type?: "stdio" | "http" | "streamable-http";
 	timeout?: number;
-	// 预设的 MCP 协议版本（缺省用最新已知）。
 	protocolVersion?: string;
 	enabled?: boolean;
 	description?: string;
@@ -78,7 +57,6 @@ interface RpcIncoming {
 	error?: { code: number; message: string; data?: unknown };
 }
 
-/** MCP 服务器返回的内容块（规范子集：text / image / resource / audio…）。 */
 interface McpContentBlock {
 	type?: string;
 	text?: string;
@@ -87,15 +65,11 @@ interface McpContentBlock {
 	resource?: { uri?: string; mimeType?: string; text?: string; blob?: string } | string;
 }
 
-/** 桥透传给会话的内容块：text 原样；image 字段与 SDK 的 ImageContent（type/data/mimeType）一致。 */
 type McpToolResultBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 
-const PROTOCOL_VERSION = "2025-03-26"; // 广泛支持的工具版本
+const PROTOCOL_VERSION = "2025-03-26";
 
-/** 单行（一条 JSON-RPC 消息）的长度上限（1MB）：失控服务器一行永不换行会顶爆内存。 */
 const MCP_MAX_LINE_CHARS = 1024 * 1024;
-/** 未换行数据的总缓冲上限（4MB）：服务器只吐垃圾不吐换行时按协议错误杀进程。
- *  上限按 JS 字符串长度计（UTF-16 码元 ≤ UTF-8 字节），内存放大有界。 */
 const MCP_MAX_BUFFER_CHARS = 4 * 1024 * 1024;
 
 let rpcSeq = 0;
@@ -110,43 +84,25 @@ interface PendingRequest {
 	abortController?: AbortController;
 }
 
-/**
- * 单个 MCP 服务器的客户端：管理子进程或 HTTP 传输、请求/响应按 id 关联、握手与工具调用。
- * 传输支持：
- *  - stdio：通过 child_process.spawn 与 NDJSON 交互
- *  - streamable-http / http：通过原生 fetch 发送 JSON-RPC POST 请求，支持 Mcp-Session-Id 与 SSE 流式响应
- * 线程模型：无需并发控制（MCP 允许乱序 + 我们按请求 id 匹配响应）。
- * 自愈：子进程意外退出（崩溃/被杀）或 HTTP 会话失效后不永久失效 —— 下一次工具调用会惰性重启并
- * 重新握手、重新拉取工具列表；显式 close() 之后才永久停用。
- */
 export class McpClient {
 	private child: ChildProcess | null = null;
 	private buffer = "";
 	private pending = new Map<string, PendingRequest>();
 	private log: (...a: unknown[]) => void;
 	readonly name: string;
-	/** 已握手的工具列表（tools/list 结果缓存）。 */
 	private tools: McpToolDefinition[] = [];
 	private shuttingDown = false;
-	/** 进行中的启动/重启（并发调用共享同一次重连）。 */
 	private starting: Promise<void> | null = null;
-	/** 已启动次数（含自愈重启；诊断/测试用）。 */
 	private startedCount = 0;
-	/** HTTP 会话 ID（服务端返回 Mcp-Session-Id 时记录）。 */
 	private sessionId: string | null = null;
-	/** 是否已成功握手（HTTP 模式无 child，以 initialized 标志为准）。 */
 	private initialized = false;
-	/** 工具列表动态更新回调（收到 notifications/tools/list_changed 时触发）。 */
 	onToolsChanged?: () => void;
-	/** HTTP notifications have no pending RPC response, but still belong to this client. */
 	private notificationControllers = new Set<AbortController>();
 
 	constructor(
 		name: string,
-		/** 启动规格；热加载按它判断「这个服务器要不要重启」（见 McpBridge.reload）。 */
 		readonly spec: McpServerSpec,
 		log?: (...a: unknown[]) => void,
-		/** OAuth：`agentDir` 指向 pi 的凭据库（`mcp-auth.json`），见 mcp-oauth.ts 与 Issue #786。 */
 		private readonly clientOpts: McpClientOptions = {},
 	) {
 		this.name = name;
@@ -157,16 +113,11 @@ export class McpClient {
 		return !this.spec.command && !!this.spec.url;
 	}
 
-	/** 显式配置了 Authorization 头 → 用配置的静态凭据，不碰 OAuth 凭据库。 */
 	private hasStaticAuthorization(): boolean {
 		const headers = this.spec.headers ?? {};
 		return Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
 	}
 
-	/**
-	 * 该服务器要发的 `Authorization` 值（OAuth 保护的远端服务器用），没有凭据时返回 null。
-	 * `isRetry` = 上一次请求收到 401：强制刷新一次（凭据库里的 access token 可能没过期但已被吊销）。
-	 */
 	private async resolveAuthHeader(isRetry: boolean, signal?: AbortSignal, staleToken?: string): Promise<string | null> {
 		if (!this.isHttp || !this.spec.url || this.hasStaticAuthorization()) return null;
 		const options = { agentDir: this.clientOpts.agentDir, name: this.name, serverUrl: this.spec.url, signal };
@@ -178,20 +129,17 @@ export class McpClient {
 			return `Bearer ${token}`;
 		} catch (err) {
 			signal?.throwIfAborted();
-			// 刷新失败不该让请求烂在这里：照旧发出去，由服务端的 401 给出最终结论（或失败原因）。
 			this.log(`[mcp:${this.name}] oauth:`, err instanceof Error ? err.message : err);
 			return null;
 		}
 	}
 
-	/** 401 的可操作错误：告诉用户这一台服务器需要登录，以及怎么登录。 */
 	private signInRequiredError(detail: string): Error {
 		return new Error(
 			`MCP_OAUTH_SIGN_IN_REQUIRED: HTTP 401: ${detail || "unauthorized"} — OAuth sign-in is missing or has expired; run \`pi mcp login ${this.name}\` and try again`,
 		);
 	}
 
-	/** 启动子进程或 HTTP 连接 + 握手 + 拉取工具列表。可安全重入：退出后再次调用即全新启动。 */
 	async start(timeoutMs = 8000): Promise<void> {
 		if (this.isHttp) {
 			if (this.initialized) return;
@@ -222,7 +170,6 @@ export class McpClient {
 			windowsHide: true,
 		});
 		this.child = child;
-		// 进程退出后向 stdin 写请求会触发 EPIPE —— 静默忽略（send 也会判 child 存活）。
 		child.stdin?.on("error", () => {});
 		child.stderr.on("data", (d) => this.log(`[mcp:${this.name}] stderr:`, d.toString().trimEnd()));
 		child.on("error", (err) => this.rejectAll(new Error(`[mcp:${this.name}] spawn error: ${err.message}`)));
@@ -239,7 +186,6 @@ export class McpClient {
 		this.startedCount++;
 
 		try {
-			// 握手
 			const handshake = await this.request(
 				"initialize",
 				{
@@ -251,31 +197,23 @@ export class McpClient {
 			);
 			const version =
 				(handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
-			// 通知 initialized（无 id 的 notification）
 			this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
-			// 仍以协商协议版本调用 tools（多数服务器对新版本容忍，这里用协商结果）
 			void version;
 			const listed = ((await this.request("tools/list", {}, timeoutMs)) ?? {}) as {
 				tools?: McpToolDefinition[];
 			};
 			this.tools = Array.isArray(listed.tools) ? listed.tools : [];
 			this.log(`[mcp:${this.name}] ready, ${this.tools.length} tools`);
-			// 若重启过程中被显式 close()，趁机回收刚启动的子进程，不留孤儿。
 			if (this.shuttingDown) {
 				try {
 					child.kill();
-				} catch {
-					/* 已退出 */
-				}
+				} catch {}
 				if (this.child === child) this.child = null;
 			}
 		} catch (err) {
-			// 启动/握手失败：回收本次子进程，避免泄漏；调用方可安全重试（自愈会再试）。
 			try {
 				child.kill();
-			} catch {
-				/* 已退出 */
-			}
+			} catch {}
 			if (this.child === child) this.child = null;
 			throw err;
 		}
@@ -303,7 +241,6 @@ export class McpClient {
 				(handshake as { protocolVersion?: string })?.protocolVersion ?? this.spec.protocolVersion ?? PROTOCOL_VERSION;
 			void version;
 
-			// 通知 initialized（无 id 的 notification）
 			await this.sendHttpNotification("notifications/initialized", {});
 
 			const listed = ((await this.requestHttp("tools/list", {}, timeoutMs)) ?? {}) as {
@@ -319,15 +256,10 @@ export class McpClient {
 		}
 	}
 
-	/** 已启动次数（含自愈重启；诊断/测试用）。 */
 	get startCount(): number {
 		return this.startedCount;
 	}
 
-	/**
-	 * 保活：连接存活就直接返回；已意外退出则惰性重启（并发调用共享同一次重连）。
-	 * 显式 close() 后抛错，绝不复活。
-	 */
 	private async ensureStarted(timeoutMs: number): Promise<void> {
 		if (this.shuttingDown) throw new Error(`[mcp:${this.name}] 客户端已关闭，不会重启`);
 		if (this.starting) return this.starting;
@@ -342,14 +274,10 @@ export class McpClient {
 		await this.starting;
 	}
 
-	/** 已发现工具。 */
 	getTools(): McpToolDefinition[] {
 		return this.tools.map((t) => ({ ...t }));
 	}
 
-	/**
-	 * 刷新工具列表（收到 notifications/tools/list_changed 或手动刷新用）。
-	 */
 	async refreshTools(timeoutMs = 8000): Promise<McpToolDefinition[]> {
 		const listed = ((await this.request("tools/list", {}, timeoutMs)) ?? {}) as {
 			tools?: McpToolDefinition[];
@@ -360,18 +288,12 @@ export class McpClient {
 		return this.tools;
 	}
 
-	/**
-	 * 调用一个工具，返回其结果。
-	 * 纯文本块拼接成字符串（向后兼容）；出现非文本块（image/resource/audio 等）时按序透传或退化提示，不再静默丢弃。
-	 * 超时遵循 spec.timeout（秒，默认 60s），收到 progress 通知会自动重置超时计时器。
-	 */
 	async call(name: string, args: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
 		if (this.shuttingDown) throw new Error(`[mcp:${this.name}] 客户端已关闭，不会重启`);
 		const effectiveTimeoutMs =
 			timeoutMs ?? (this.spec.timeout && this.spec.timeout > 0 ? this.spec.timeout * 1000 : 60000);
 
 		try {
-			// 自愈：已断开或退出（非主动关闭）→ 先惰性重启/重新握手；失败给出明确错误。
 			await this.ensureStarted(8000);
 		} catch (err) {
 			const detail = err instanceof Error ? err.message : String(err);
@@ -381,7 +303,6 @@ export class McpClient {
 		try {
 			return await this.executeCall(name, args, effectiveTimeoutMs, signal);
 		} catch (err) {
-			// HTTP 模式下的会话失效自愈：若远端提示会话过期，重新握手并重试一次
 			if (this.isHttp && err instanceof Error && err.message.includes("MCP_SESSION_EXPIRED")) {
 				this.log(`[mcp:${this.name}] 会话已失效，重新握手重试调用...`);
 				this.sessionId = null;
@@ -417,29 +338,21 @@ export class McpClient {
 					.trim() || "MCP 工具错误";
 			throw new Error(msg);
 		}
-		// 结构化结果优先，其次内容块。
 		if (res?.structuredContent !== undefined) return res.structuredContent;
 		const blocks: McpToolResultBlock[] = [];
 		let hasNonText = false;
 		for (const c of res.content ?? []) {
 			if (c.type === "image" && typeof c.data === "string" && c.data) {
-				// MCP image 块字段（type/data/mimeType）与 SDK 的 ImageContent 完全一致，原样透传；
-				// 超大图由 SDK 的 normalizeToolResultImages 统一缩放（afterToolCall 钩子，默认 autoResize）。
 				blocks.push({ type: "image", data: c.data, mimeType: c.mimeType?.trim() || "image/png" });
 				hasNonText = true;
 				continue;
 			}
 			if (c.type && c.type !== "text") {
 				const r = typeof c.resource === "object" && c.resource !== null ? c.resource : {};
-				// MCP 的 EmbeddedResource 有两种承载：TextResourceContents（resource.text）与
-				// BlobResourceContents（resource.blob）。文本型带真实正文（filesystem 类 MCP 的
-				// read_text_file 就走这条），当文本透传 —— 退化成「已跳过」等于把文件内容吞掉。
 				if (typeof r.text === "string" && r.text) {
 					blocks.push({ type: "text", text: r.text });
 					continue;
 				}
-				// resource(blob)/audio 等块在 SDK 内容联合里没有载体（只有 text|image|thinking|toolCall），
-				// 退化为文本提示，让模型至少知道工具返回了什么，而不是看到一个空串。
 				const mime = (c.mimeType ?? r.mimeType ?? "").trim();
 				const blob = typeof r.blob === "string" && r.blob ? r.blob : c.data;
 				const size =
@@ -455,13 +368,11 @@ export class McpClient {
 			if (text) blocks.push({ type: "text", text });
 		}
 		if (!hasNonText) {
-			// 纯文本结果保持旧形状（拼接字符串），不破坏既有调用方。
 			return { content: blocks.map((b) => (b.type === "text" ? b.text : "")).join("\n"), isError: !!res.isError };
 		}
 		return { content: blocks, isError: !!res.isError };
 	}
 
-	/** 关闭：kill 子进程或注销 HTTP 会话，拒绝所有在途请求。 */
 	close(): void {
 		this.shuttingDown = true;
 		this.initialized = false;
@@ -470,9 +381,7 @@ export class McpClient {
 		if (this.child) {
 			try {
 				this.child.kill();
-			} catch {
-				/* 已退出 */
-			}
+			} catch {}
 			this.child = null;
 		}
 		if (this.isHttp && this.sessionId && this.spec.url) {
@@ -486,7 +395,6 @@ export class McpClient {
 		}
 	}
 
-	// -- 内部 -------------------------------------------------------------
 	private send(msg: unknown): void {
 		const stdin = this.child?.stdin;
 		if (!stdin || !stdin.writable) return;
@@ -621,7 +529,6 @@ export class McpClient {
 			abortController,
 		});
 
-		// Return the result promise immediately: timeout/close must settle even during auth.
 		void (async () => {
 			try {
 				const authHeader = await this.resolveAuthHeader(false, abortController.signal);
@@ -637,7 +544,6 @@ export class McpClient {
 
 				abortController.signal.throwIfAborted();
 
-				// 401 → 凭据库里的 token 可能已被吊销/轮换：强制刷新一次再重试同一请求（OAuth 保护的服务器）。
 				if (res.status === 401 && !this.hasStaticAuthorization()) {
 					const retriedHeader = await this.resolveAuthHeader(
 						true,
@@ -826,8 +732,6 @@ export class McpClient {
 
 	private onData(chunk: string): void {
 		this.buffer += chunk;
-		// 总缓冲上限：服务器一直输出却不换行（或极慢地换行）时，缓冲会无限涨，
-		// 宿主内存被一个失控子进程吃光。超限按协议错误处理：杀进程 + 拒绝在途请求。
 		if (this.buffer.length > MCP_MAX_BUFFER_CHARS) {
 			this.killForProtocolError(
 				new Error(
@@ -860,9 +764,6 @@ export class McpClient {
 		}
 	}
 
-	/** 协议错误（stdout 缓冲超限）：杀掉子进程、拒绝全部在途请求、清空缓冲。
-	 *  与进程自然退出共用自愈语义 —— 下一次工具调用会重新拉起并重新握手
-	 *  （失控服务器重启后再次超限就再次杀，不会永久占用宿主内存）。 */
 	private killForProtocolError(err: Error): void {
 		this.log(err.message);
 		this.buffer = "";
@@ -872,9 +773,7 @@ export class McpClient {
 		if (child) {
 			try {
 				child.kill();
-			} catch {
-				/* 已退出 */
-			}
+			} catch {}
 		}
 	}
 
@@ -911,7 +810,6 @@ export class McpClient {
 			else pending.resolve(msg.result);
 			return;
 		}
-		// 服务端主动通知（progress / tools/list_changed / message 等）
 		if (msg.method === "notifications/progress") {
 			this.handleProgress(msg.params as { progressToken?: number | string; progress?: number; total?: number });
 			return;
@@ -944,11 +842,6 @@ export interface McpToolDefinition {
 	inputSchema?: Record<string, unknown>;
 }
 
-/**
- * 解析 <dataDir>/mcp.json 的文本 → 规范化服务器清单。
- * `null` = 不是合法 JSON 对象（**与「没有服务器」区分开**：热加载遇到坏配置要保留在跑的
- * 服务器，而 `{ "servers": {} }` 或删掉文件是「确实没有服务器」的明确意图）。
- */
 export function parseMcpConfig(text: string): { servers: Record<string, McpServerSpec> } | null {
 	let parsed: unknown;
 	try {
@@ -986,7 +879,6 @@ export function parseMcpConfig(text: string): { servers: Record<string, McpServe
 	return { servers };
 }
 
-/** 读取 <dataDir>/mcp.json 里的服务器清单（尽力而为）。 */
 export function readMcpConfig(dataDir: string): { servers: Record<string, McpServerSpec> } {
 	try {
 		return parseMcpConfig(readFileSync(join(dataDir, "mcp.json"), "utf8")) ?? { servers: {} };
@@ -995,11 +887,6 @@ export function readMcpConfig(dataDir: string): { servers: Record<string, McpSer
 	}
 }
 
-/**
- * 服务器的规范化快照：只保留影响行为的字段，env 键序无关。
- * 热加载的「配置变了吗」与「这个服务器要不要重启」都按它比较 —— 改缩进、重排键名、加尾随
- * 换行都不算变更，不该重启任何子进程。
- */
 export function mcpServerSnapshot(spec: McpServerSpec): Record<string, unknown> {
 	const env: Record<string, string> = {};
 	for (const k of Object.keys(spec.env ?? {}).sort()) env[k] = (spec.env as Record<string, string>)[k];
@@ -1020,17 +907,11 @@ export function mcpServerSnapshot(spec: McpServerSpec): Record<string, unknown> 
 	};
 }
 
-/** 两个规格是否等价（等价 = 该服务器的子进程不必重启）。 */
 function sameMcpSpec(a: McpServerSpec, b: McpServerSpec): boolean {
 	return JSON.stringify(mcpServerSnapshot(a)) === JSON.stringify(mcpServerSnapshot(b));
 }
 
-/**
- * 整个 MCP 管理器的工具适配：把每个 MCP 工具变成 PluginAgentTool。
- * getAllToolsTool(name, callFn) 生成 execute → 转发到对应 McpClient.call。
- */
 const mcpToolServers = new WeakMap<object, string>();
-/** Trusted provenance keyed by the bridge-owned tool object, never by its label. */
 export function getMcpToolServer(tool: object): string | undefined {
 	return mcpToolServers.get(tool);
 }
@@ -1041,9 +922,6 @@ function adaptMcpTool(serverName: string, mcpTool: McpToolDefinition, client: Mc
 		name,
 		label: `${serverName} · ${mcpTool.name}`,
 		description: mcpTool.description ?? `Tool ${mcpTool.name} provided by MCP server "${serverName}"`,
-		// 无 snippet 的工具不会进系统提示词的「Available tools」清单（SDK 只列有
-		// snippet 的工具），MCP 工具会变成 schema-only：模型读清单以为自己没有
-		// 这个能力（#403）。这里从 description 提取首句做极简 snippet。
 		promptSnippet: firstSentenceSnippet(mcpTool.description) ?? `MCP tool ${mcpTool.name} (server: ${serverName})`,
 		parameters: mcpTool.inputSchema ?? {},
 		execute: async (_toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal) => {
@@ -1054,7 +932,6 @@ function adaptMcpTool(serverName: string, mcpTool: McpToolDefinition, client: Mc
 	return adapted;
 }
 
-/** 从 MCP 工具 description 提取首句做 promptSnippet（≤100 字符）；空描述返回 undefined。 */
 function firstSentenceSnippet(description: string | undefined): string | undefined {
 	const text = (description ?? "").replace(/\s+/g, " ").trim();
 	if (!text) return undefined;
@@ -1063,30 +940,21 @@ function firstSentenceSnippet(description: string | undefined): string | undefin
 	return head.length > 100 ? `${head.slice(0, 99)}…` : head;
 }
 
-/** 工具名必须是 [A-Za-z0-9_-]+（与插件工具同规则），MCP 可能含冒号/斜杠 — 归一化。 */
 function sanitizeToolName(name: string): string {
 	const cleaned = (name || "").replace(/[^A-Za-z0-9_-]/g, "_");
 	return cleaned || "mcp_tool";
 }
 
-/** 一次热替换的结果：给日志/提示用，也是热加载回归测试的断言面。 */
 export interface McpReloadSummary {
-	/** 沿用原实例的服务器数（规格没变，或新规格启动失败后回退）—— 这部分没有重启进程。 */
 	kept: number;
-	/** 本次新启动成功的服务器数。 */
 	started: number;
-	/** 被关掉的旧实例数（配置里移除，或被新实例替换）。 */
 	stopped: number;
-	/** 新规格启动失败的服务器数。 */
 	failed: number;
-	/** 换入后的服务器数与工具总数。 */
 	servers: number;
 	tools: number;
 }
 
-/** McpClient 的可选项（OAuth 凭据库位置，见 Issue #786）。 */
 export interface McpClientOptions {
-	/** pi 的 agent 目录（含 `mcp-auth.json`）；缺省按 `PI_CODING_AGENT_DIR` / `~/.pi/agent` 解析。 */
 	agentDir?: string;
 }
 
@@ -1098,14 +966,12 @@ export interface McpBridgeOptions {
 	onToolsChanged?: () => void;
 }
 
-/** MCP 服务器管理器：自管多服务器生命周期 + 聚合工具。 */
 export class McpBridge {
 	private clients: McpClient[] = [];
 	private pendingClients = new Set<McpClient>();
 	private disposed = false;
 	private tools: PluginAgentTool[] = [];
 	private serverErrors = new Map<string, string>();
-	/** reload 串行化链：重入的 reload 排在前一个之后，杜绝交叠留下的孤儿进程。 */
 	private reloadChain: Promise<unknown> = Promise.resolve();
 	private agentDir?: string;
 	private cwd?: string;
@@ -1156,7 +1022,6 @@ export class McpBridge {
 		return { status: "stopped", tools: [] };
 	}
 
-	/** 读取配置并启动全部服务器（顺序 fail-fast：单个失败记日志不拖垮其它）。 */
 	async load(): Promise<void> {
 		if (this.disposed) return;
 		this.serverErrors.clear();
@@ -1176,7 +1041,6 @@ export class McpBridge {
 		);
 	}
 
-	/** 启动单个服务器：失败只记日志并返回 null（load / reload 共用）。 */
 	private async startOne(name: string, spec: McpServerSpec): Promise<McpClient | null> {
 		if (this.disposed) return null;
 		const client = new McpClient(name, spec, this.log, { agentDir: this.agentDir });
@@ -1214,13 +1078,10 @@ export class McpBridge {
 		this.opts.onToolsChanged?.();
 	}
 
-	/**
-	 * 按磁盘上的最新配置**整体换入**服务器集合（`mcp.json` 热加载用），可重复调用。
-	 */
 	async reload(): Promise<McpReloadSummary> {
 		const run = this.reloadChain.then(
 			() => this.reloadOnce(),
-			() => this.reloadOnce(), // 前一个失败也放行下一个（失败不堵队列）
+			() => this.reloadOnce(),
 		);
 		this.reloadChain = run.then(
 			() => undefined,
@@ -1255,7 +1116,6 @@ export class McpBridge {
 						return;
 					}
 					failed++;
-					// 新规格没起来：留住旧实例，别把还能用的服务器一起下线。
 					if (previous) {
 						next.set(name, previous);
 						kept++;
@@ -1324,7 +1184,6 @@ function optsOverrideOrRead(
 		return { servers };
 	}
 
-	// 1. 全局配置：agentDir 或 dataDir 兜底
 	const globalPath = getGlobalMcpPath(opts?.agentDir, dataDir);
 	let globalCfg = readMcpConfigByPath(globalPath);
 	if (Object.keys(globalCfg.servers).length === 0 && dataDir) {
@@ -1334,14 +1193,12 @@ function optsOverrideOrRead(
 		}
 	}
 
-	// 2. 项目级配置：cwd/.pi/mcp.json
 	let projectCfg: { servers: Record<string, McpServerSpec> } = { servers: {} };
 	if (opts?.cwd) {
 		const projectPath = getProjectMcpPath(opts.cwd);
 		projectCfg = readMcpConfigByPath(projectPath);
 	}
 
-	// 3. 项目级覆盖全局
 	const merged: Record<string, McpServerSpec> = { ...globalCfg.servers };
 	for (const [name, projSpec] of Object.entries(projectCfg.servers)) {
 		if (!projSpec.command && !projSpec.url && projSpec.enabled !== undefined && merged[name]) {

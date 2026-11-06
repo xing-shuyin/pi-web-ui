@@ -1,19 +1,4 @@
 /// <reference lib="dom" />
-/**
- * 拾取浮条里的「预设 + 逐项勾选」控件（content script 的 DOM 部件）。
- *
- * 为什么要有它：**六个预设原来只能在扩展选项页里点** —— 而「这次只要源码位置」「这次只看样式」
- * 这种判断，恰恰是站在页面上看着元素时才有的，为了改一个勾选去开 chrome://extensions 太远。
- * 现在浮条上直接切：chip 一键套预设，展开还能像选项页那样逐项勾。
- *
- * 三条纪律（都是会踩的坑）：
- * 1. **状态由外面给**：控件自己不藏状态，长什么样完全由 `render(state)` 决定 —— 否则
- *    「浮条显示标准、实际发出去的是精简」这种不一致迟早出现；
- * 2. **不允许勾到一项不剩**：空列表在契约里会回落成标准组合，用户会看到「我明明全取消了
- *    它还敢发」。取消最后一项直接拒绝 + 提示，比事后悄悄回落可预期；
- * 3. 交互全走回调（不碰 chrome.*、不碰采集器）—— 这样它能在 jsdom 里被完整单测
- *    （tests/unit/page-picker-preset-ui.test.ts）。
- */
 
 import {
 	DETAIL_LABELS,
@@ -28,27 +13,19 @@ import {
 import { getMessage } from "../shared/i18n.js";
 
 export interface PresetControlsState {
-	/** 采集深浅（由预设决定；逐项勾选不改它）。 */
 	detail: DetailLevel;
-	/** 当前要发的信息项（规范顺序，非空）。 */
 	sections: PickSection[];
-	/** 可选告警（比如「没同步到扩展设置」）—— 挂在摘要行尾，不用 toast 遮住浮条。 */
 	notice?: string;
 }
 
 export interface PresetControlsHandlers {
-	/** 点了某个预设 chip（id 来自 SECTION_PRESETS）。 */
 	onPreset: (id: string) => void;
-	/** 勾 / 取消某一项（只在这份组合合法时回调）。 */
 	onToggleSection: (key: PickSection, on: boolean) => void;
-	/** 想取消最后一项被拒：不改状态，提示一句就行。 */
 	onRefuseEmpty?: (key: PickSection) => void;
 }
 
 export interface PresetControls {
-	/** 塞进浮条：预设行 + 可折叠的勾选面板 + 一行摘要。 */
 	root: HTMLElement;
-	/** 展开 / 收起逐项勾选面板（默认收起：六个 chip 能解决绝大多数情况）。 */
 	setPanelOpen: (open: boolean) => void;
 	render: (state: PresetControlsState) => void;
 }
@@ -68,10 +45,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
 	return node;
 }
 
-/**
- * 造一套控件。返回的 `root` 由调用方插进浮条；所有状态变化都会回调出去，
- * 控件自己只负责「画」和「把点击翻译成回调」。
- */
 export function createPresetControls(handlers: PresetControlsHandlers): PresetControls {
 	let current: PresetControlsState = { detail: "standard", sections: [...PICK_SECTIONS] };
 	let open = false;
@@ -92,13 +65,11 @@ export function createPresetControls(handlers: PresetControlsHandlers): PresetCo
 		return { preset, chip };
 	});
 
-	// 当前组合谁也匹配不上时露个脸：让用户知道「你现在不是任何预设」
 	const customChip = el("span", {
 		class: "chip custom",
 		title: getMessage("preset_customHint", undefined, "当前是自己勾的组合（点上面的 chip 可套预设）"),
 		text: getMessage("preset_custom", undefined, "自定义"),
 	});
-	// 「调整项」放右边，点开才是逐项勾选（浮条默认只占一行）
 	const panelBtn = el("button", { class: "link", type: "button" });
 	const setPanelOpen = (next: boolean): void => {
 		open = next;
@@ -118,7 +89,7 @@ export function createPresetControls(handlers: PresetControlsHandlers): PresetCo
 		const box = el("input", { type: "checkbox", id: `pp-sec-${key}`, title: info.hint });
 		box.addEventListener("change", () => {
 			if (!box.checked && current.sections.length <= 1) {
-				box.checked = true; // 拒绝 → 把 UI 拨回去，不留「看起来取消了」的假状态
+				box.checked = true;
 				handlers.onRefuseEmpty?.(key);
 				return;
 			}
@@ -143,11 +114,27 @@ export function createPresetControls(handlers: PresetControlsHandlers): PresetCo
 		customChip.classList.toggle("hidden", Boolean(matched));
 		customChip.classList.toggle("active", !matched);
 		for (const [key, box] of boxes) box.checked = current.sections.includes(key);
-		const depth = getMessage("preset_depthLabel", [DETAIL_LABELS[current.detail]], `采集深浅：${DETAIL_LABELS[current.detail]}`);
-		const hotkey = getMessage("preset_hotkeyLabel", [String(SECTION_PRESETS.length)], `Alt+1~${SECTION_PRESETS.length} 切换`);
+		const depth = getMessage(
+			"preset_depthLabel",
+			[DETAIL_LABELS[current.detail]],
+			`采集深浅：${DETAIL_LABELS[current.detail]}`,
+		);
+		const hotkey = getMessage(
+			"preset_hotkeyLabel",
+			[String(SECTION_PRESETS.length)],
+			`Alt+1~${SECTION_PRESETS.length} 切换`,
+		);
 		const base = matched
-			? getMessage("preset_summaryPreset", [matched.label, depth, hotkey], `预设：${matched.label}｜${depth}｜${hotkey}`)
-			: getMessage("preset_summaryCustom", [describeSections(current.sections), depth, hotkey], `${describeSections(current.sections)}｜${depth}｜${hotkey}`);
+			? getMessage(
+					"preset_summaryPreset",
+					[matched.label, depth, hotkey],
+					`预设：${matched.label}｜${depth}｜${hotkey}`,
+				)
+			: getMessage(
+					"preset_summaryCustom",
+					[describeSections(current.sections), depth, hotkey],
+					`${describeSections(current.sections)}｜${depth}｜${hotkey}`,
+				);
 		summary.textContent = state.notice ? `${base}｜⚠ ${state.notice}` : base;
 	};
 

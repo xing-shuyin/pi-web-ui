@@ -35,13 +35,8 @@ import { compareVersions, sdkCopies, type SdkCopy } from "./sdk-origin.js";
 
 const PKG = "@earendil-works/pi-coding-agent";
 
-/** 显式强制自带副本的取值（旧默认；可复现、CI 覆盖的那份）。 */
 const BUNDLED_MODES = new Set(["bundled", "0", "off", "false", "no"]);
 
-/**
- * 找出传入副本列表中的随包自带副本（如果有的话）。
- * 自带副本必须位于 pi-web-ui 自身包根下的 node_modules/@earendil-works/pi-coding-agent/package.json。
- */
 export function findBundledCopy(copies: SdkCopy[], fromFile: string = import.meta.url): SdkCopy | null {
 	const filePath = fromFile.startsWith("file:") ? fileURLToPath(fromFile) : fromFile;
 	let cur = dirname(filePath);
@@ -68,10 +63,6 @@ export function findBundledCopy(copies: SdkCopy[], fromFile: string = import.met
 	return copies.find((c) => c.path.replace(/\\/g, "/") === expectedBundledPath) ?? null;
 }
 
-/**
- * 健全性检查：外部 SDK 副本是否完整可用（防止因中断安装/文件截断导致 SyntaxError 搞崩服务）。
- * 纯内存虚拟测试（文件在磁盘上不存在）默认视为可用，避免破坏单测。
- */
 export function isSdkCopyUsable(copy: SdkCopy): boolean {
 	if (!existsSync(copy.path)) return true;
 	try {
@@ -80,12 +71,10 @@ export function isSdkCopyUsable(copy: SdkCopy): boolean {
 		const info = JSON.parse(raw);
 		if (info?.name && info.name !== PKG) return false;
 
-		// 检查入口文件是否存在且非空
 		const mainRel = typeof info?.main === "string" ? info.main : "dist/index.js";
 		const mainFile = join(pkgDir, mainRel);
 		if (!existsSync(mainFile) || statSync(mainFile).size === 0) return false;
 
-		// 检查核心 agent-session.js（若存在则防截断）
 		const sessionFile = join(pkgDir, "dist", "core", "agent-session.js");
 		if (existsSync(sessionFile)) {
 			const stat = statSync(sessionFile);
@@ -108,11 +97,6 @@ export function isSdkCopyUsable(copy: SdkCopy): boolean {
 	}
 }
 
-/**
- * 该用哪一份对外解析（纯函数，便于单测）。
- * `copies` 按 Node 的解析顺序，`bundledCopy` 为识别到的随包自带副本（null = 无自带副本）。
- * 返回 null = 保持默认（用自带副本兜底）。
- */
 export function pickGlobalSdk(
 	copies: SdkCopy[],
 	mode: string | undefined,
@@ -124,7 +108,6 @@ export function pickGlobalSdk(
 	const validCopies = copies.filter(isUsable);
 	const validBundled = bundledCopy && isUsable(bundledCopy) ? bundledCopy : null;
 
-	// 显式透传的宿主 SDK 路径（如 extensions/webui.ts 宿主传递，issue #482）：若不降级优先选用
 	if (process.env.PI_WEB_SDK_DIR) {
 		const hostCopy = validCopies.find((c) => dirname(c.path) === process.env.PI_WEB_SDK_DIR);
 		if (hostCopy && (!validBundled || compareVersions(hostCopy.version, validBundled.version) >= 0)) {
@@ -132,8 +115,6 @@ export function pickGlobalSdk(
 		}
 	}
 
-	// 如果没有随包自带副本（例如 pnpm 隔离安装未包含可选依赖，或轻量部署，issue #562）：
-	// 机器上只要发现可用副本就必须选用，否则 Node 无法导入 SDK 会报错崩溃。
 	if (!validBundled) {
 		if (validCopies.length === 0) return null;
 		let best: SdkCopy = validCopies[0];
@@ -145,7 +126,6 @@ export function pickGlobalSdk(
 		return best;
 	}
 
-	// 存在自带副本：只考虑比自带副本**严格更新**的外部副本，多份取版本最高的（旧的/同版本的都不折腾）。
 	let best: SdkCopy | null = null;
 	for (const copy of validCopies) {
 		if (copy.path === validBundled.path) continue;
@@ -159,7 +139,6 @@ export function pickGlobalSdk(
 	return best;
 }
 
-/** 注册钩子；返回实际选中的副本（null = 用自带副本）。 */
 export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromFile = import.meta.url): SdkCopy | null {
 	try {
 		const copies = sdkCopies(fromFile);
@@ -176,8 +155,6 @@ export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromF
 		registerHooks({
 			resolve(specifier, context, nextResolve) {
 				if (specifier === PKG) {
-					// 以目标副本的 package.json 为父重新解析：Node 从那里往上找，
-					// 第一个命中的就是它自己 —— 等价于「从那个包内部 import 自己」。
 					try {
 						return nextResolve(specifier, { ...context, parentURL: pathToFileURL(chosen.path).href });
 					} catch {
@@ -188,7 +165,6 @@ export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromF
 					try {
 						return nextResolve(specifier, context);
 					} catch {
-						// 本地缺少 typebox（如 pnpm 隔离安装）时，从已选中的 pi SDK 目录解析（issue #562）
 						try {
 							return nextResolve(specifier, { ...context, parentURL: pathToFileURL(chosen.path).href });
 						} catch {
@@ -201,12 +177,10 @@ export function registerGlobalSdkPreference(mode = process.env.PI_WEB_SDK, fromF
 		});
 		return chosen;
 	} catch {
-		// 钩子注册失败（Node 太老 / 环境怪异）→ 静默退回默认解析，绝不影响启动。
 		return null;
 	}
 }
 
-// ---- 副作用：被 `--import` 加载时立刻生效 --------------------------------
 registerBashProcessPatch();
 registerExecutableLookupPatch();
 const used = registerGlobalSdkPreference();

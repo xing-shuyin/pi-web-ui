@@ -1,22 +1,9 @@
-/**
- * model-enrich — 用公开模型目录给自定义供应商的模型行补参数。
- *
- * 背景：很多反代（如 Antigravity-Manager 的 /v1/models）只返回模型 id，没有
- * 任何元数据；id 又是别名（gemini-3-pro-high），不能直接用。本模块做三件事：
- * 规范化 id → 目录模糊匹配 → 只返回目录真实给出的字段（绝不编造）。
- * 数据源：OpenRouter 主（轻量，上下文/识图/输出上限），models.dev 辅
- * （全字段 + reasoning 布尔值，4.7MB，懒加载 + 24h 缓存）。
- * 纯函数 + 可注入的抓取层（fetchFn/pageFetch），单测覆盖零网络。
- */
 import type { UiEnrichResult } from "./protocol.js";
 import { resolveModelReasoningSpec } from "./reasoning-registry.js";
 
-/** 目录里归一化后的一个模型（已抹平两源字段差异）。 */
 export interface CatalogModel {
-	/** 去掉 provider 前缀的小写 id，如 "gemini-3.8-flash"。 */
 	id: string;
 	provider: string;
-	/** 目录原始 id（含前缀），展示/建议用。 */
 	rawId: string;
 	name: string;
 	family?: string;
@@ -37,11 +24,8 @@ export interface EnrichProgress {
 
 const t = (lang: EnrichLang, zh: string, en: string): string => (lang === "zh" ? zh : en);
 
-/** 反代路由档位后缀（只在精确匹配失败后剥离；-pro/-flash/-lite 等真实
- *  家族区分绝不在此列）。 */
 const TIER_SUFFIXES = ["-thinking", "-high", "-low", "-max", "-preview", "-latest", "-exp"];
 
-/** 小写 + 下划线转横线 + 去 provider 前缀（a/b → b）。 */
 export function normalizeModelId(id: string): string {
 	let s = id.trim().toLowerCase().replace(/_/g, "-");
 	const slash = s.lastIndexOf("/");
@@ -49,7 +33,6 @@ export function normalizeModelId(id: string): string {
 	return s;
 }
 
-/** 剥离路由档位与日期后缀（-0813 / -20250929），精确匹配失败后的回退用。 */
 export function stripTierSuffix(id: string): string {
 	let s = normalizeModelId(id);
 	for (let i = 0; i < 3; i++) {
@@ -92,7 +75,6 @@ export function buildIndex(models: CatalogModel[]): CatalogIndex {
 	return { byId, byName, all: models };
 }
 
-/** OpenRouter /api/v1/models → CatalogModel[]（缺字段即缺席，不编造）。 */
 export function parseOpenRouterCatalog(json: unknown): CatalogModel[] {
 	const data = (json as { data?: unknown })?.data;
 	if (!Array.isArray(data)) return [];
@@ -102,8 +84,6 @@ export function parseOpenRouterCatalog(json: unknown): CatalogModel[] {
 		if (typeof r.id !== "string" || !r.id.trim()) continue;
 		const norm = normalizeModelId(r.id);
 		const slash = norm.lastIndexOf("/");
-		// OpenRouter id 形如 anthropic/claude-sonnet-4-5（normalize 已去前缀，
-		// provider 从原始 id 取）。
 		const raw = r.id.trim();
 		const rawSlash = raw.lastIndexOf("/");
 		const provider = rawSlash >= 0 ? raw.slice(0, rawSlash).toLowerCase() : "";
@@ -132,7 +112,6 @@ export function parseOpenRouterCatalog(json: unknown): CatalogModel[] {
 	return out;
 }
 
-/** models.dev /api.json → CatalogModel[]（{ provider: { models: {...} } }）。 */
 export function parseModelsDevCatalog(json: unknown): CatalogModel[] {
 	const root = (json ?? {}) as Record<string, Record<string, unknown>>;
 	const out: CatalogModel[] = [];
@@ -202,9 +181,6 @@ async function fetchJson(
 	}
 }
 
-// 手写 TTL 缓存而非通用 memoize：双键（openrouter/modelsdev）共享一个 Map，
-// 且 compute 是 async fetch——单值同步的 memoizeWithTtl 覆盖不了（issue #470 处置说明）。
-/** 目录抓取缓存（24h TTL，进程内；首跑后无感）。 */
 const catalogCache = new Map<string, { at: number; data: CatalogModel[] }>();
 const CATALOG_TTL_MS = 24 * 3600 * 1000;
 
@@ -228,7 +204,6 @@ export async function getModelsDevCatalog(fetchFn: FetchFn = fetch, signal?: Abo
 	return data;
 }
 
-/** 从网页正文提取参数（hint URL 兜底；只认上下文/输出上限/识图，不认推理）。 */
 export function extractParamsFromHtml(html: string): {
 	contextWindow?: number;
 	maxTokens?: number;
@@ -293,7 +268,6 @@ async function fetchPageText(fetchFn: FetchFn, url: string, signal?: AbortSignal
 	}
 }
 
-/** 单个 id 在给定索引里的精确/别名命中（exact → normalized）。 */
 function lookupIndex(
 	norm: string,
 	index: CatalogIndex,
@@ -310,7 +284,6 @@ function lookupIndex(
 	return null;
 }
 
-/** 家族候选（只做建议，不自动填）：family 字符串与 id 互含。 */
 function familySuggestions(norm: string, indexes: CatalogIndex[], cap = 6): string[] {
 	const seen = new Set<string>();
 	const out: string[] = [];
@@ -355,10 +328,8 @@ function toResult(
 
 export interface EnrichBatchOpts {
 	fetchFn?: FetchFn;
-	/** 预置目录（单测注入；线上走抓取 + 缓存）。 */
 	catalogs?: { openrouter: CatalogModel[]; modelsdev: CatalogModel[] };
 	lang?: EnrichLang;
-	/** hint URL 抓取（单测注入；默认走 fetchFn）。 */
 	pageFetch?: (url: string) => Promise<string>;
 	signal?: AbortSignal;
 	onProgress?: (progress: EnrichProgress) => void;
@@ -368,7 +339,6 @@ function isUrl(s: string): boolean {
 	return /^https?:\/\//i.test(s.trim());
 }
 
-/** 批量补参数：hint（目录 id / URL）优先，否则 OpenRouter → models.dev 自动匹配。 */
 export async function enrichBatch(
 	ids: string[],
 	hints: Record<string, string>,
@@ -430,7 +400,6 @@ export async function enrichBatch(
 	const indexes = (): CatalogIndex[] => (mdIndex ? [orIndex as CatalogIndex, mdIndex] : [orIndex as CatalogIndex]);
 
 	if (!opts.catalogs && orModels.length === 0) {
-		// 主源不可达时仍试一次辅源；都空才报错。
 		await ensureMd();
 		if ((mdModels ?? []).length === 0) {
 			throw new Error(
@@ -455,7 +424,6 @@ export async function enrichBatch(
 		});
 		const norm = normalizeModelId(id);
 		const hint = (hints[id] ?? hints[norm] ?? "").trim();
-		// -- 依据分支 ---------------------------------------------------------
 		if (hint) {
 			if (isUrl(hint)) {
 				opts.onProgress?.({
@@ -521,11 +489,9 @@ export async function enrichBatch(
 			});
 			continue;
 		}
-		// -- 自动匹配分支 -----------------------------------------------------
 		const orHit = lookupIndex(norm, orIndex as CatalogIndex);
 		if (orHit) {
 			const r = toResult(lang, id, orHit.model, "OpenRouter", orHit.matchType);
-			// OpenRouter 的推理信号弱；models.dev 有明确布尔值时补上。
 			if (!orHit.model.reasoning) {
 				const md = await ensureMd();
 				const mdHit = md.byId.get(normalizeModelId(orHit.model.id))?.[0];

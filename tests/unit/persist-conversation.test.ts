@@ -21,7 +21,6 @@ describe("persist conversation / solidify subagent", () => {
 			expect(sm.isPersisted()).toBe(false);
 			expect(sm.getSessionFile()).toBeUndefined();
 
-			// 模拟子代理运行产生消息
 			sm.appendMessage({
 				role: "user",
 				content: [{ type: "text", text: "请分析代码" }],
@@ -33,18 +32,15 @@ describe("persist conversation / solidify subagent", () => {
 				timestamp: new Date().toISOString(),
 			} as never);
 
-			// 执行固化操作
 			const sessionDir = join(tmp, ".pi", "sessions");
 			const sessionFile = join(sessionDir, "persisted-session.jsonl");
 
-			// 提取所有 entries 写盘
 			const entries = (sm as unknown as { fileEntries: unknown[] }).fileEntries;
 			const lines = entries.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
 			const fs = require("node:fs");
 			fs.mkdirSync(sessionDir, { recursive: true });
 			fs.writeFileSync(sessionFile, lines, "utf8");
 
-			// 切换 SessionManager 内部属性
 			sm.setSessionFile(sessionFile);
 			(sm as unknown as { sessionDir: string }).sessionDir = sessionDir;
 			(sm as unknown as { persist: boolean }).persist = true;
@@ -54,7 +50,6 @@ describe("persist conversation / solidify subagent", () => {
 			expect(sm.getSessionFile()).toBe(sessionFile);
 			expect(existsSync(sessionFile)).toBe(true);
 
-			// 固化后用户继续对话，追加新消息
 			sm.appendMessage({
 				role: "user",
 				content: [{ type: "text", text: "继续深入第二步" }],
@@ -66,13 +61,12 @@ describe("persist conversation / solidify subagent", () => {
 				timestamp: new Date().toISOString(),
 			} as never);
 
-			// 验证磁盘文件内容包含了全部 4 条消息 + session header
 			const content = readFileSync(sessionFile, "utf8");
 			const parsedLines = content
 				.trim()
 				.split("\n")
 				.map((l) => JSON.parse(l));
-			expect(parsedLines.length).toBe(5); // 1 header + 4 messages
+			expect(parsedLines.length).toBe(5);
 			expect(parsedLines[0].type).toBe("session");
 			expect(parsedLines[1].message.content[0].text).toBe("请分析代码");
 			expect(parsedLines[2].message.content[0].text).toBe("分析结果如下...");

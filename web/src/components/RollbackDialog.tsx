@@ -5,32 +5,22 @@ import { useT } from "../i18n";
 import { useEscapeKey } from "../shortcut-stack";
 import { closeRollbackDialog, confirmRollback, useRollbackState } from "../rollback-state";
 
-/**
- * 会话检查点回滚确认弹窗（Dual-State Rollback）。
- *
- * 提供「同时还原工作区文件」勾选项，服务端联动将工作区物理文件还原到该检查点时刻。
- */
 export function RollbackDialog() {
 	const t = useT();
 	const req = useRollbackState();
 	const [restoreWorkspace, setRestoreWorkspace] = useState(true);
 	const dialogRef = useRef<HTMLDivElement>(null);
 
-	// 弹窗打开时重置默认勾选态
 	useEffect(() => {
 		if (req) {
 			setRestoreWorkspace(true);
 		}
 	}, [req]);
 
-	// 审查 #12：Esc 走 shortcut-stack 分层栈（与 Modal 同一调度）。
 	useEscapeKey(() => {
 		if (req) closeRollbackDialog();
 	}, Boolean(req));
 
-	// 审查 #11：Enter 确认仅当焦点在弹窗内（target 是 body —— 无聚焦元素兜底 ——
-	// 或弹窗包含 target）。document 级裸监听会把「在输入框里打回车发消息」
-	// 误触成破坏性回滚。
 	useEffect(() => {
 		if (!req) return;
 		const onKeyDown = (e: KeyboardEvent) => {

@@ -8,12 +8,6 @@ import { TemplateProvider } from "../../web/src/components/PromptTemplates.js";
 import { resetAppGlobals, setAppGlobals, setAppSend } from "../../web/src/app-globals.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 
-/**
- * TODO 9 回归：`/help` 与 `/copy` 是客户端直执行（不走 server prompt()），
- * 同样消费输入框内容。必须与正常发送同一口径清草稿（L1/定时器/镜像/水位），
- * 否则旧文本经 L1 或防抖 timer 复活，看起来与发送后残字一模一样。
- */
-
 let root: Root | null = null;
 const SID = "slash-clear-session";
 
@@ -22,9 +16,7 @@ function mount() {
 	setAppSend(() => true);
 	try {
 		localStorage.setItem("pi-web-ui:lang", "zh");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	root = createRoot(container);
@@ -88,9 +80,7 @@ afterEach(() => {
 	document.body.innerHTML = "";
 	try {
 		localStorage.clear();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	vi.restoreAllMocks();
 	vi.useRealTimers();
 });

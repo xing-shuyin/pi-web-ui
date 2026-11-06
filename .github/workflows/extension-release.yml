@@ -1,13 +1,5 @@
 name: Browser extension (page-picker)
 
-# 打 tag 后构建「网页元素拾取」浏览器扩展并挂到该 tag 的 GitHub Release 上
-# （Release 本体由 release-notes.yml 创建；两者同时被 tag 触发，这里会等它出现）。
-#
-# 为什么不用 `zip` 命令：扩展的 zip 由 `plugins/page-picker/extension/pack.mjs` 自己拼字节
-# （store 模式 + CRC32 自校验，见 zip.mjs），所以 CI 与本地（Windows 用户）产出的包一致，
-# 不需要额外装工具。
-#
-# 手动跑（只出 workflow artifact、不动 Release 资产）：Actions → Browser extension → Run workflow
 on:
   push:
     tags:
@@ -32,16 +24,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 扩展的 tsc 也在根 typecheck 里（npm run typecheck 已覆盖），这里单独跑一遍让失败更直观
       - name: Typecheck extension
         run: npx tsc -p plugins/page-picker/extension/tsconfig.json --noEmit
 
       - name: Build extension (esbuild → dist/)
         run: npm run build:extension
 
-      # 产物落在 release/（gitignore），含两个文件名：
-      #   page-picker-extension-<版本>.zip  ← 带版本，便于归档/回退
-      #   page-picker-extension.zip         ← 无版本，README 用它做「永远指向最新」的稳定链接
       - name: Pack distributable zip
         run: npm run pack:extension
 

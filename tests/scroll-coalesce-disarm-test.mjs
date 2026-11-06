@@ -1,18 +1,3 @@
-/* Scroll-stick E2E: growth-coalescence disarm regression (live-dump verified).
- * Reproduces the hawkeye event chain captured on instrumented build efbf289:
- * while pinned at the bottom, streaming growth (~94px/100ms) coalesces TWO
- * flushes into the SAME scroll event as a user wheel-down tick (~93.6px):
- * dSh≈188 but dSt=+93.6 → gap≈94 → nearBottom=false. At HEAD the onScroll
- * stick assignment reads "not near bottom" as leaving intent and disarms the
- * stick (esc:false, dSt>0 — NO upward gesture happened), so the MO/RO
- * re-pins go dead and the gap locks open while the user keeps wheeling DOWN
- * toward the bottom — unreachable until Back-to-bottom. The identical event
- * inside the post-BtB grace window survives; outside it kills the stick.
- * Assert: (a) stick never disarms on downward scrolls (chip stays hidden);
- * (b) every coalescence gap closes to <80 within 1s; (c) over a sustained
- * ~30s run the gap is ≥80 for <8% of samples (no ~94px lock); (d) upward
- * wheel still escapes (existing semantics intact).
- * Run: npm run build && node tests/scroll-coalesce-disarm-test.mjs */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -84,7 +69,6 @@ async function waitServer() {
 	throw new Error("server did not start");
 }
 
-/** Seed a long chat via WS (same pattern as scroll-attr-collapse-test). */
 function seedChat(want) {
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
@@ -119,8 +103,6 @@ function seedChat(want) {
 	});
 }
 
-/* Streaming growth: a 94px spacer every 100ms, like the hawkeye stream's
- * per-tick growth (~94px). Runs continuously through the down-phase. */
 const GROW_FN = `
 	window.__growStart = () => {
 		window.__growTimer = setInterval(() => {
@@ -132,10 +114,6 @@ const GROW_FN = `
 	};
 	window.__growStop = () => clearInterval(window.__growTimer);
 `;
-/* Coalescence arm: on the NEXT wheel event, synchronously append TWO 94px
- * flushes inside the wheel listener (before the browser applies the wheel
- * scroll). The resulting scroll event carries dSh≈188 against dSt≈93.6 and
- * opens a ~94px gap — the exact dump geometry, deterministic per cycle. */
 const COALESCE_FN = `
 	window.__coalesced = 0;
 	window.__coalesceArm = false;
@@ -152,8 +130,6 @@ const COALESCE_FN = `
 		window.__coalesced++;
 	}, { passive: true });
 `;
-/* 50ms gap sampler + exact chip watcher (MutationObserver on the wrap that
- * hosts .scroll-bottom — no polling round-trips, no missed appearances). */
 const PROBE_FN = `
 	window.__samples = [];
 	window.__chipSeen = false;
@@ -193,9 +169,6 @@ async function main() {
 	await page.addScriptTag({ content: COALESCE_FN });
 	await page.addScriptTag({ content: PROBE_FN });
 
-	// Arm the stick via Back-to-bottom, then let ALL backstops expire (600ms
-	// re-assert + ~850ms effective grace) — everything that follows is pure
-	// user-downward input + streaming growth, fully OUTSIDE the grace window.
 	await page.evaluate(() => {
 		document.querySelector(".messages").scrollTop = 0;
 	});
@@ -208,33 +181,26 @@ async function main() {
 	});
 	check(`setup: pinned before the run (gap ${gap}px < 80)`, gap < 80);
 
-	// ---- ~30s sustained: growth 94px/100ms + wheel-down 93.6px/100ms, with a
-	// forced two-flush coalescence every 12th tick (dSh≈188 vs dSt≈93.6) — the
-	// dump's gap-opening event, ~25 times, while the stick is armed.
 	await page.mouse.move(700, 450);
 	await page.evaluate(() => window.__probeStart());
 	await page.evaluate(() => window.__growStart());
-	const CYCLES = 300; // 300 × ~100ms ≈ 30s
+	const CYCLES = 300;
 	for (let i = 0; i < CYCLES; i++) {
 		if (i % 12 === 3) await page.evaluate(() => window.__armCoalesce());
 		await page.mouse.wheel(0, 93.6);
 		await sleep(100);
 	}
-	await sleep(800); // let the final re-pin land before judging
+	await sleep(800);
 	const [coalesced, samples, chipSeen] = await page.evaluate(() => {
 		clearInterval(window.__probeTimer);
 		window.__growStop();
 		return [window.__coalesced, window.__samples, window.__chipSeen];
 	});
 
-	// Harness validity: the dump geometry actually fired.
 	check(`harness: ${coalesced} coalesced (dSh≈188 vs dSt≈93.6) events fired`, coalesced >= 20);
 
-	// (a) Stick must never disarm on downward scrolls: at HEAD the first
-	// coalesced event flips stickRef and the chip pops immediately.
 	check("(a) downward phase: stick never disarms (chip hidden whole run)", !chipSeen);
 
-	// (b) Every gap excursion ≥80px must close to <80px within 1s.
 	let excStart = null;
 	let worst = 0;
 	let stillOpen = false;
@@ -252,13 +218,10 @@ async function main() {
 		!stillOpen && worst < 1000,
 	);
 
-	// (c) Sustained ~30s: the gap is ≥80px for <8% of samples — no ~94px lock.
 	const hot = samples.filter((s) => s.gap >= 80).length;
 	const hotPct = (100 * hot) / samples.length;
 	check(`(c) sustained: gap ≥80 for ${hotPct.toFixed(1)}% of samples (< 8%, no lock)`, hotPct < 8);
 
-	// (d) Existing behavior intact: an upward wheel still escapes and stays
-	// escaped (growth already stopped; nothing may drag the viewport back).
 	await page.mouse.move(700, 450);
 	await page.mouse.wheel(0, -600);
 	await sleep(400);

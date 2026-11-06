@@ -1,4 +1,3 @@
-/** 运行对话名额 LRU：达上限时按 lastActiveAt 收起「只查看过」的历史对话，而不是直接拒绝打开。 */
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeClientSession } from "../helpers/fake-session.js";
@@ -16,7 +15,6 @@ function client(): any {
 		parentExecution: vi.fn(() => undefined),
 		allSubagentSessions: () => [],
 	});
-	// 真正的移出涉及 runtime dispose 等外部副作用；这里只验证选择与顺序。
 	cs.removeConversation = vi.fn((id: string) => {
 		if (id !== cs.activeId) cs.convs.delete(id);
 	});
@@ -48,12 +46,25 @@ afterEach(() => {
 });
 
 describe("makeRoomForConversation", () => {
+	it("默认超过 8 个驻留对话仍可打开历史，不自动收起已有对话", () => {
+		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", undefined);
+		const cs = client();
+		add(cs, conv("A"), ...Array.from({ length: 16 }, (_, i) => conv(`history-${i}`)));
+		const predict = vi.fn(() => false);
+
+		expect(cs.makeRoomForConversation(CWD, 1, predict)).toBe(true);
+		expect(cs.convs.size).toBe(17);
+		expect(cs.removeConversation).not.toHaveBeenCalled();
+		expect(predict).not.toHaveBeenCalled();
+		expect(cs.emit).not.toHaveBeenCalled();
+	});
+
 	it("按 lastActiveAt 从旧到新收起只查看过的对话，跳过钉住 / 流式 / 当前 / 已发言的", () => {
 		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", "4");
 		const cs = client();
 		add(
 			cs,
-			conv("A", { lastActiveAt: 1, viewOnly: true }), // 当前对话：永不收起
+			conv("A", { lastActiveAt: 1, viewOnly: true }),
 			conv("pinned", { lastActiveAt: 2, pinned: true }),
 			conv("streaming", { lastActiveAt: 3, session: { isStreaming: true, isCompacting: false } }),
 			conv("chatted", { lastActiveAt: 4, viewOnly: false }),
@@ -61,7 +72,6 @@ describe("makeRoomForConversation", () => {
 			conv("newer", { lastActiveAt: 6 }),
 			conv("newest", { lastActiveAt: 7 }),
 		);
-		// 已占 7 个，再开 1 个、上限 4 → 需腾出 4 个；可收起的只有 old/newer/newest 三个
 		expect(cs.makeRoomForConversation(CWD, 1)).toBe(false);
 		expect(cs.removeConversation.mock.calls.map((c: unknown[]) => c[0])).toEqual(["old", "newer", "newest"]);
 	});

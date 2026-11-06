@@ -1,4 +1,3 @@
-/** Standalone Hub lifecycle. Only Node built-ins; never imports the main CLI or agent SDK. */
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
@@ -15,7 +14,7 @@ import {
 } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { setTimeout as delay, setImmediate as yieldImmediate } from "node:timers/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const HUB_HELP = `Usage: pi-web-ui hub [install|start|stop|restart|status|uninstall|update] [options]
@@ -23,7 +22,8 @@ Without a command, run in the foreground (Ctrl+C to stop).
 Options: --host HOST --port PORT --public-url URL --data-dir PATH
          --allow-registration[=true|false] --help
 install saves configuration, enables login autostart and starts the Hub.
-update updates the service definition with current paths and restarts the Hub.
+update installs the latest Hub package in a managed release directory, restarts and verifies it.
+If the new release cannot start, the previous service definition is restored.
 Other lifecycle commands use the saved configuration; status accepts --json.
 Close registration after the first account: hub restart --allow-registration=false
 Only that saved setting changes; all other settings are retained.
@@ -32,11 +32,10 @@ Service: systemd --user (Linux), launchd user agent (macOS), logon scheduled tas
 Linux boot without login requires an administrator to enable linger for your user.
 uninstall stops and removes the service; Hub account/device data is retained.`;
 const ENTRY = fileURLToPath(new URL("./pi-device-hub.mjs", import.meta.url));
-const LABEL = "com.xingshuyin.pi-device-hub";
 const TASK = "pi-device-hub";
 const UNIT = "pi-device-hub.service";
 const flags = { "--host": "HOST", "--port": "PORT", "--public-url": "PUBLIC_URL", "--data-dir": "DATA_DIR" };
-const optionalEnv = ["DEVICE_DOMAIN", "PATH_ACCESS", "PORTAL_PORTS"];
+const optionalEnv = ["DEVICE_DOMAIN", "PATH_ACCESS", "PORTAL_PORTS", "UPDATE_SOURCE", "SERVICE_NAME"];
 
 export function parseHubArgs(argv, env = process.env) {
 	const args = [...argv];
@@ -71,7 +70,6 @@ export function parseHubArgs(argv, env = process.env) {
 	settings.PI_DEVICE_HUB_HOST ??= "127.0.0.1";
 	settings.PI_DEVICE_HUB_PORT ??= "8790";
 	settings.PI_DEVICE_HUB_DATA_DIR = resolve(settings.PI_DEVICE_HUB_DATA_DIR ?? join(homedir(), ".pi-device-hub"));
-	// Installing must not inherit an accidentally enabled registration environment variable.
 	settings.PI_DEVICE_HUB_ALLOW_REGISTRATION =
 		values.ALLOW_REGISTRATION ?? (command === "foreground" && env.PI_DEVICE_HUB_ALLOW_REGISTRATION === "1" ? "1" : "0");
 	validateSettings(settings);
@@ -97,7 +95,6 @@ function validateSettings(settings) {
 
 const xml = (s) =>
 	String(s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]);
-// CommandLineToArgvW quoting, not shell quoting. Every argument is passed directly to node.exe.
 export const windowsArg = (s) =>
 	`"${String(s)
 		.replace(/(\\*)"/g, '$1$1\\"')
@@ -118,16 +115,26 @@ export function hubServicePlan({
 	uid = process.getuid?.(),
 	user = env.USERNAME,
 } = {}) {
+	const serviceName = env.PI_DEVICE_HUB_SERVICE_NAME || "pi-device-hub";
+	if (!/^pi-device-hub(?:-[a-z0-9-]{1,48})?$/.test(serviceName)) throw new Error("Invalid Hub service name");
+	const taskName = serviceName;
+	const unitName = `${serviceName}.service`;
+	const labelName = `com.xingshuyin.${serviceName}`;
 	const root =
 		platform === "win32"
-			? join(env.APPDATA || join(home, "AppData", "Roaming"), "pi-device-hub-cli")
-			: join(home, ".config", "pi-device-hub-cli");
+			? join(env.APPDATA || join(home, "AppData", "Roaming"), `${serviceName}-cli`)
+			: join(home, ".config", `${serviceName}-cli`);
 	const config = join(root, "service.json");
 	const args = [entry, "--service-config", config];
+	const serviceOptions = { platform, home, env, node, uid, user };
+	const UNIT = unitName,
+		TASK = taskName,
+		LABEL = labelName;
 	if (platform === "linux")
 		return {
 			root,
 			config,
+			serviceOptions,
 			file: join(home, ".config", "systemd", "user", UNIT),
 			content: `[Unit]\nDescription=pi device Hub\nAfter=network.target\n\n[Service]\nExecStart=${[node, ...args].map(systemdArg).join(" ")}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
 			manager: "systemctl",
@@ -154,6 +161,7 @@ export function hubServicePlan({
 			root,
 			config,
 			file,
+			serviceOptions,
 			content: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${LABEL}</string><key>ProgramArguments</key><array>${[node, ...args].map((s) => `<string>${xml(s)}</string>`).join("")}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>StandardOutPath</key><string>${xml(join(root, "stdout.log"))}</string><key>StandardErrorPath</key><string>${xml(join(root, "stderr.log"))}</string></dict></plist>\n`,
 			manager: "launchctl",
 			commands: {
@@ -179,6 +187,7 @@ export function hubServicePlan({
 		return {
 			root,
 			config,
+			serviceOptions,
 			file: join(root, "task.xml"),
 			content: `<?xml version="1.0" encoding="UTF-16"?>\n<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Triggers><LogonTrigger><Enabled>true</Enabled><UserId>${xml(identity)}</UserId></LogonTrigger></Triggers><Principals><Principal id="Author"><UserId>${xml(identity)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure></Settings><Actions Context="Author"><Exec><Command>${xml(node)}</Command><Arguments>${xml(args.map(windowsArg).join(" "))}</Arguments></Exec></Actions></Task>`,
 			manager: "schtasks.exe",
@@ -209,8 +218,6 @@ export function hubServicePlan({
 	throw new Error(`Unsupported Hub service platform: ${platform}`);
 }
 
-// One budget per composite native phase, rather than a fresh timeout per subprocess.
-// SIGKILL prevents a timed-out native command from extending the runner's 45s grace.
 function nativePhase(inspect, now) {
 	const deadline = now() + 30000;
 	return (file, args) => {
@@ -231,15 +238,16 @@ export function assertServiceAbsent(plan, inspect = spawnSync, now = () => perfo
 	const result = native(
 		plan.manager,
 		plan.manager === "systemctl"
-			? ["--user", "show", UNIT, "--property=LoadState", "--value"]
+			? ["--user", "show", plan.commands.status?.[0]?.[2] ?? UNIT, "--property=LoadState", "--value"]
 			: plan.commands.status[0],
 	);
 	if (result.error) throw result.error;
 	if (plan.manager === "systemctl" && result.status === 0 && result.stdout.trim() === "not-found") return;
 	if (plan.manager === "launchctl" && result.status !== 0 && /Could not find service/i.test(result.stderr)) return;
 	if (plan.manager === "schtasks.exe") {
-		// Locale-independent absence check: query the scheduler COM API and accept only file-not-found.
-		const script = `$s=New-Object -ComObject Schedule.Service; $s.Connect(); try { $null=$s.GetFolder('\\').GetTask('${TASK}'); exit 0 } catch { if ($_.Exception.HResult -eq -2147024894) { exit 3 }; exit 4 }`;
+		const statusArgs = plan.commands.status?.[0];
+		const taskName = (statusArgs ? statusArgs[statusArgs.indexOf("/TN") + 1] : TASK).replace(/'/g, "''");
+		const script = `$s=New-Object -ComObject Schedule.Service; $s.Connect(); try { $null=$s.GetFolder('\\').GetTask('${taskName}'); exit 0 } catch { if ($_.Exception.HResult -eq -2147024894) { exit 3 }; exit 4 }`;
 		const check = native("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
 		if (!check.error && check.status === 3) return;
 	}
@@ -322,7 +330,7 @@ async function waitForHub(settings, signal) {
 export function runManager(file, args, inspect = spawnSync, now = () => performance.now()) {
 	const native = nativePhase(inspect, now);
 	if (file === "launchctl" && ["bootout", "bootstrap"].includes(args[0])) {
-		const target = args[0] === "bootout" ? args[1] : `${args[1]}/${LABEL}`;
+		const target = args[0] === "bootout" ? args[1] : `${args[1]}/${basename(args[2], ".plist")}`;
 		const state = native(file, ["print", target]);
 		if (state.error) throw state.error;
 		if (state.status === 0 && args[0] === "bootstrap") return "Hub is already loaded";
@@ -332,14 +340,14 @@ export function runManager(file, args, inspect = spawnSync, now = () => performa
 			if (args[0] === "bootout") return "Hub is already stopped";
 		}
 	}
-	// Ending an already stopped task is successful; scheduler errors still propagate.
 	if (file === "schtasks.exe" && args[0] === "/End") {
+		const taskName = args[args.indexOf("/TN") + 1].replace(/'/g, "''");
 		file = "powershell.exe";
 		args = [
 			"-NoProfile",
 			"-NonInteractive",
 			"-Command",
-			`$ErrorActionPreference='Stop'; $s=New-Object -ComObject Schedule.Service; $s.Connect(); $t=$s.GetFolder('\\').GetTask('${TASK}'); if ($t.State -eq 4) { $t.Stop(0) }`,
+			`$ErrorActionPreference='Stop'; $s=New-Object -ComObject Schedule.Service; $s.Connect(); $t=$s.GetFolder('\\').GetTask('${taskName}'); if ($t.State -eq 4) { $t.Stop(0) }`,
 		];
 	}
 	const result = native(file, args);
@@ -384,7 +392,6 @@ export function acquireHubLock(
 			alive(previous.pid)
 		)
 			throw new Error(`Hub lifecycle operation is locked by PID ${previous.pid}: ${lock}`);
-		// Remove only the observed unique owner file. Competing recovery cannot delete a new owner's file.
 		unlinkSync(previousPath);
 		rmdirSync(lock);
 		mkdirSync(lock);
@@ -405,14 +412,11 @@ export function acquireHubLock(
 	};
 }
 
-/** Cancel orchestration without killing a native service manager or the installed service. */
 export async function runHubCliEntry(argv = process.argv.slice(2), options = {}) {
 	if (!["install", "start", "stop", "restart", "status", "uninstall"].includes(argv[0]))
 		return runHubCli(argv, options);
 	const controller = new AbortController();
 	const abort = () => controller.abort(new Error("Hub CLI cancelled; installed configuration is retained"));
-	// The runner uses IPC on Windows, where kill(SIGTERM) terminates the process immediately.
-	// A queued message is handled after spawnSync returns and the orchestration yields.
 	const onMessage = (message) => {
 		if (message && typeof message === "object" && !Array.isArray(message) && message.type === "cancel-hub-operation")
 			abort();
@@ -448,22 +452,26 @@ export async function runHubCli(
 		inspect = spawnSync,
 		log = console.log,
 		foreground = runForeground,
+		upgrade,
 		signal,
 	} = {},
 ) {
 	signal?.throwIfAborted();
-	// Internal service entry uses an explicit saved environment, never ambient Hub overrides.
 	if (argv[0] === "--service-config") {
 		if (argv.length !== 2) throw new Error("Invalid service configuration arguments");
 		const settings = JSON.parse(readFileSync(argv[1], "utf8"));
 		validateSettings(settings);
-		return foreground(settings);
+		return foreground({ ...settings, PI_DEVICE_HUB_SERVICE_CONFIG: resolve(argv[1]) });
 	}
 	const parsed = parseHubArgs(argv, env);
 	if (parsed.help) return log(HUB_HELP);
 	if (parsed.command === "foreground") return foreground(parsed.settings);
 	const plan = suppliedPlan ?? hubServicePlan({ env });
 	const command = parsed.command;
+	if (command === "update") {
+		const performUpgrade = upgrade ?? (await import("./hub-upgrade.mjs")).updateInstalledHub;
+		return performUpgrade({ plan, env, log, signal });
+	}
 	if (command === "status") {
 		const installed = existsSync(plan.config);
 		const settings = installed ? JSON.parse(readFileSync(plan.config, "utf8")) : undefined;
@@ -499,7 +507,6 @@ export async function runHubCli(
 				throw new Error(
 					`Hub service configuration already exists at ${plan.config}. Inspect with 'hub status --json'; recover with 'hub start' or 'hub restart'. To replace configuration, 'hub uninstall' first (data retained).`,
 				);
-			// A failed query is not proof of absence unless the native manager says so.
 			assertServiceAbsent(plan, inspect);
 			await yieldForCancellation(signal);
 			await assertPortAvailable(parsed.settings);
@@ -513,15 +520,6 @@ export async function runHubCli(
 			);
 		} else if (!existsSync(plan.config))
 			throw new Error("Hub service is not installed. Run pi-web-ui hub install first.");
-		if (command === "update") {
-			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
-			validateSettings(settings);
-			mkdirSync(resolve(plan.file, ".."), { recursive: true });
-			atomicWrite(
-				plan.file,
-				process.platform === "win32" ? Buffer.from(`\uFEFF${plan.content}`, "utf16le") : plan.content,
-			);
-		}
 		signal?.throwIfAborted();
 		if (parsed.registration !== undefined) {
 			const settings = JSON.parse(readFileSync(plan.config, "utf8"));
@@ -534,17 +532,12 @@ export async function runHubCli(
 			try {
 				assertServiceAbsent(plan, inspect);
 				serviceMissing = true;
-			} catch {
-				/* Native commands must still report failures for an existing or inaccessible service. */
-			}
+			} catch {}
 		}
-		// Absence checks are native phases too: drain pending IPC before another phase.
 		await yieldForCancellation(signal);
 		for (const args of serviceMissing ? [] : plan.commands[command]) {
 			signal?.throwIfAborted();
 			const output = run(plan.manager, args);
-			// Timer callbacks can precede IPC polling. Cross a full poll/check cycle before
-			// starting another native command, including when entered outside an I/O callback.
 			await yieldForCancellation(signal);
 			signal?.throwIfAborted();
 			if (output) log(output);
@@ -570,13 +563,21 @@ export async function runHubCli(
 
 async function runForeground(settings) {
 	const { startDeviceHub } = await import("../dist/server/device-center/main.js");
-	const hub = await startDeviceHub(settings);
+	const bootId = randomUUID();
+	const version = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+	const hub = await startDeviceHub({
+		...settings,
+		PI_DEVICE_HUB_BOOT_ID: bootId,
+		PI_DEVICE_HUB_PACKAGE_ROOT: fileURLToPath(new URL("../", import.meta.url)),
+	});
 	hub.app.get("/health", (_req, res) => {
 		res.setHeader("Cache-Control", "no-store");
 		res.json({
 			schemaVersion: 1,
 			service: "pi-device-hub",
 			status: "ok",
+			version,
+			bootId,
 			instanceId: settings.PI_DEVICE_HUB_INSTANCE_ID ?? null,
 			publicUrl: settings.PI_DEVICE_HUB_PUBLIC_URL,
 			port: Number(settings.PI_DEVICE_HUB_PORT),

@@ -71,17 +71,17 @@ it("lists account devices and links each stable ID through the configured hub", 
 				createElement(
 					LanguageProvider,
 					null,
-					createElement(DeviceDirectory, { hubUrl: "http://82.156.246.55:50001", currentDeviceId: "win" }),
+					createElement(DeviceDirectory, { hubUrl: "http://198.51.100.10:50001", currentDeviceId: "win" }),
 				),
 			),
 		);
 		expect(host.querySelectorAll(".dd-device")).toHaveLength(2);
 		const links = [...host.querySelectorAll<HTMLAnchorElement>(".dd-device a")];
 		expect(links.map((link) => link.href)).toEqual([
-			"http://82.156.246.55:50001/device/win",
-			"http://82.156.246.55:50001/device/win/desktop",
-			"http://82.156.246.55:50001/device/mac",
-			"http://82.156.246.55:50001/device/mac/desktop",
+			"http://198.51.100.10:50001/device/win",
+			"http://198.51.100.10:50001/device/win/desktop",
+			"http://198.51.100.10:50001/device/mac",
+			"http://198.51.100.10:50001/device/mac/desktop",
 		]);
 		expect(links.every((link) => link.rel.includes("noopener"))).toBe(true);
 		expect(host.querySelectorAll(".is-online")).toHaveLength(1);

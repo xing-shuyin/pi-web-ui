@@ -14,7 +14,7 @@ function extract(from: string, until: string) {
 	const start = source.indexOf(from);
 	return source.slice(start, source.indexOf(until, start));
 }
-const code = stripTypeScriptTypes(extract("function livePreviewCapability(", "// 常挂载："));
+const code = stripTypeScriptTypes(extract("function livePreviewCapability(", "\napp.use("));
 const routes = new Map<string, { prefix: string; pluginId: string; host: string; port: number }>();
 const pluginMgr = {
 	findProxy(path: string) {
@@ -49,7 +49,6 @@ let base: string;
 let cap: string;
 let privateReads = 0;
 const app = express();
-// Same TOKEN gate order as index.ts; actual capability and proxy functions run above.
 app.use((req, res, next) => {
 	const preview = livePreviewCapability(req);
 	if (preview) {

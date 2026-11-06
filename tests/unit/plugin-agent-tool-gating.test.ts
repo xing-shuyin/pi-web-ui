@@ -1,11 +1,3 @@
-/**
- * 插件 AI 工具展示与开关单测（issue：设置里可见 + 可开关）：
- *  - normalizeDisabledPluginTools：归一化（去重/截断/上限；未知名保留，重装仍关闭）；
- *  - agentToolsSnapshot / getAgentToolsGrouped：展示快照（排序/只含展示字段）；
- *  - scan / ensureLoaded：UiPluginInfo.agentTools 随清单下发；
- *  - 禁用语义：被禁用的工具名经 syncPluginToolsIntoSession 从会话移除（机制层面）。
- * 零 token、零网络，毫秒级。
- */
 import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,7 +113,6 @@ describe("禁用语义（会话同步层面）", () => {
 			_customTools: [{ name: "bash" }, { name: "fixture_alpha" }] as Array<{ name: string } & Record<string, unknown>>,
 			_refreshToolRegistry() {},
 		};
-		// provider 快照按禁用名单过滤后只剩空 → 已注入的 fixture_alpha 被移除，bash 不动。
 		const next = syncPluginToolsIntoSession(
 			session as never,
 			[] as never,

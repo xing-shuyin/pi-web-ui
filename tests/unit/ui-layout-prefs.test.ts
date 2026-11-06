@@ -1,10 +1,3 @@
-/** normalizeUiLayout（server/client-state.ts）单测。
- *
- * 锁一条曾经真实发生的回归：归一化只保留 hidden/shown/order/groups/labels，
- * 把 `align` 整段丢掉 —— 布局页改对齐当时看着生效（本地 state），下一次快照
- * 回来就被洗掉（issue：所有 align 都无法修改）。align 是 UiLayoutPrefs 的一等
- * 字段（见 server/protocol.ts），归一化只做校验（start/center/end），不剪枝。
- */
 import { describe, expect, it } from "vitest";
 import { normalizeUiLayout } from "../../server/client-state.js";
 
@@ -94,7 +87,6 @@ describe("normalizeUiLayout", () => {
 		expect(normalizeUiLayout({ order: ["host:brand-name", "host:brand-logo", "host:chat"] })).toEqual({
 			order: ["host:brand", "host:chat"],
 		});
-		// 新 id 已有显式值时不覆盖（显式新值赢）。
 		expect(normalizeUiLayout({ order: ["host:brand", "host:brand-logo"] })).toEqual({ order: ["host:brand"] });
 	});
 
@@ -108,7 +100,6 @@ describe("normalizeUiLayout", () => {
 		expect(normalizeUiLayout({ labels: { "host:brand-logo": "L", "host:brand-name": "N" } })).toEqual({
 			labels: { "host:brand": "N" },
 		});
-		// 显式新值赢：新旧同时出现时保留新 id 的值。
 		expect(normalizeUiLayout({ labels: { "host:brand": "New", "host:brand-name": "Old" } })).toEqual({
 			labels: { "host:brand": "New" },
 		});

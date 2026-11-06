@@ -1,19 +1,3 @@
-/**
- * voice-input 插件单测 —— 走真实源码路径，不 mock 被测逻辑。
- *
- * 覆盖：
- *   - manifest.json：view:false（无独立视图 tab）+ apiVersion 2 + permissions
- *     含 ui/http/fs:read/tools（严格模式下 composer 条目、host.route、host.fs.read 与
- *     host.registerAgentTool 缺一不可）。
- *   - manifest "ui" 经服务端真实 `parseUiContributions` 解析：恰好一条，
- *     落在 composer.actions，kind=action，action=voice-input:toggle。
- *   - settings schema：lang 默认 zh-CN、serverFallback 默认开、转写三件套齐全、
- *     engine 默认 auto、localModel 默认 base。
- *   - 服务端纯函数：whisperLang（远端 ISO-639-1）、whisperFullLang（本地英文全名）、
- *     joinUrl、resolveLocalModel（白名单）、resampleLinear、decodeWav16k。
- *   - 客户端 encodeWavPCM（entry.mjs 纯函数导出）→ 服务端 decodeWav16k 往返 +
- *     srExplain 错误码映射。
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -59,10 +43,7 @@ describe("voice-input manifest", () => {
 		expect(manifest.apiVersion).toBe(2);
 		expect(manifest.permissions).toContain("ui");
 		expect(manifest.permissions).toContain("http");
-		// fs:read 是 transcribe_audio 读工作区文件的前提（缺它 host.fs.read 直接拒）。
 		expect(manifest.permissions).toContain("fs:read");
-		// tools 是 host.registerAgentTool 的硬门控（缺它注册点直接 return，transcribe_audio
-		// 永远不注册）。这条以前没断言，所以缺声明时测试是绿的（issue #146 收口时补的断言）。
 		expect(manifest.permissions).toContain("tools");
 	});
 
@@ -81,8 +62,6 @@ describe("voice-input manifest", () => {
 		expect(cam.id).toBe("camera");
 		expect(cam.label).toBeTruthy();
 		expect(cam.labelEn).toBeTruthy();
-		// icon 必须是宿主图标词表名（ChatInput 只认 mic/camera 两个词），
-		// 写别的会被当文字直接画在按钮上。
 		expect([mic.icon, cam.icon].sort()).toEqual(["camera", "mic"]);
 	});
 
@@ -93,8 +72,6 @@ describe("voice-input manifest", () => {
 		expect(byKey.transcribeUrl.default).toBe("");
 		expect(byKey.transcribeKey.type).toBe("password");
 		expect(byKey.transcribeModel.default).toBe("whisper-1");
-		// 给 AI 的转写工具：默认开，可在设置里下架（插件工具不进 AGENT_TOOL_CATALOG，
-		// 设置里也没有它的独立开关，所以这个插件设置就是它唯一的「下架」入口）。
 		expect(byKey.transcribeTool.type).toBe("boolean");
 		expect(byKey.transcribeTool.default).toBe(true);
 	});
@@ -107,15 +84,10 @@ describe("voice-input manifest", () => {
 		expect(byKey.localModel.type).toBe("select");
 		expect(byKey.localModel.default).toBe("base");
 		expect(byKey.localModel.options).toEqual(expect.arrayContaining(["base", "tiny"]));
-		// 模型下载源（issue #383）：国内直连 huggingface.co 会超时，留空 = 官方源。
 		expect(byKey.hfEndpoint.type).toBe("text");
 		expect(byKey.hfEndpoint.default).toBe("");
 	});
 });
-
-/* ------------------------------------------------------------------ */
-/* 引擎分流（issue #383：不再「先试浏览器联网、失败才降级」）              */
-/* ------------------------------------------------------------------ */
 
 describe("pickEngineRoute", () => {
 	it("local：已装直接录服务端，没装直接给安装入口（不等联网失败）", () => {
@@ -137,7 +109,6 @@ describe("pickEngineRoute", () => {
 		expect(pickEngineRoute("auto", { srSupported: false, localReady: false, serverReady: false })).toBe(
 			"install-generic",
 		);
-		// 服务端就绪但降级开关关着：说清楚是开关的事，不弹安装。
 		expect(pickEngineRoute("auto", { srSupported: false, localReady: true, serverFallback: false })).toBe(
 			"fallback-off",
 		);
@@ -151,10 +122,9 @@ describe("pickEngineRoute", () => {
 		const src = readFileSync(join(pluginDir, "client", "entry.mjs"), "utf8");
 		const toggle = src.slice(
 			src.indexOf("async function toggle()"),
-			src.indexOf("/* ---", src.indexOf("async function toggle()")),
+			src.indexOf("const CAMERA_ACTION =", src.indexOf("async function toggle()")),
 		);
 		expect(toggle).toContain("startByEngine(cfg)");
-		// 旧写法「先试 srSupported() 再降级」不许回潮。
 		expect(toggle).not.toContain("srSupported()");
 	});
 });
@@ -174,7 +144,6 @@ describe("pkgEntryCandidates", () => {
 		]);
 	});
 	it("exports 是字符串 / 只有 module / 只有 main 都认", () => {
-		// 相对路径原样保留（join 吃得下 "./" 前缀），不在这里做形状归一。
 		expect(pkgEntryCandidates({ exports: { ".": "./dist/transformers.js" } })[0]).toBe("./dist/transformers.js");
 		expect(pkgEntryCandidates({ module: "esm.js", main: "cjs.js" }).slice(0, 2)).toEqual(["esm.js", "cjs.js"]);
 	});
@@ -303,7 +272,6 @@ describe("resampleLinear", () => {
 });
 
 describe("decodeWav16k", () => {
-	/** 手拼 16-bit PCM WAV（声道数/采样率可调，含一个 JUNK 块考验跳块）。 */
 	function buildWav(frames: number[][], sampleRate: number) {
 		const channels = frames.length;
 		const n = frames[0]!.length;
@@ -421,7 +389,6 @@ describe("resolveActiveEngine & engineBadgeText (issue #548)", () => {
 	it("resolveActiveEngine: rec 模式下根据显式配置与就绪状态解析", () => {
 		expect(resolveActiveEngine({ engine: "remote" }, "rec")).toBe("remote");
 		expect(resolveActiveEngine({ engine: "local" }, "rec")).toBe("local");
-		// auto 模式录音时，本地就绪优先
 		expect(resolveActiveEngine({ engine: "auto", localReady: true }, "rec")).toBe("local");
 		expect(resolveActiveEngine({ engine: "auto", localReady: false, serverReady: true }, "rec")).toBe("remote");
 	});
@@ -450,7 +417,6 @@ describe("录音电平计算 (issue #550)", () => {
 	});
 
 	it("computeAudioRms & audioLevelFromRms: 正常振幅计算并平滑映射", () => {
-		// 常数 0.1 采样，RMS 应为 0.1
 		const frames = new Float32Array([0.1, -0.1, 0.1, -0.1]);
 		const rms = computeAudioRms(frames);
 		expect(rms).toBeCloseTo(0.1, 5);
@@ -466,7 +432,6 @@ describe("录音电平计算 (issue #550)", () => {
 });
 
 describe("引擎切换路由（POST /engine）", () => {
-	/** 抓插件注册的真路由处理器（走 activate 真路径，不 mock 被测逻辑）。 */
 	function route(
 		host: { mock: { routes: { method: string; path: string; handler: (req: unknown, res: unknown) => unknown }[] } },
 		method: string,
@@ -502,7 +467,6 @@ describe("引擎切换路由（POST /engine）", () => {
 		await route(host, "POST", "/engine")({ body: { engine: "local" } }, res);
 		expect(res.statusCode).toBe(200);
 		expect(res.body).toMatchObject({ ok: true, engine: "local" });
-		// 其它设置项不能被抹掉（也不该把合并后的默认值固化成存值）。
 		expect(host.storage.get("settings")).toEqual({ lang: "en-US", engine: "local" });
 	});
 
@@ -534,20 +498,14 @@ describe("joinUrl", () => {
 	});
 });
 
-/* ------------------------------------------------------------------ */
-/* transcribe_audio（本次新增的 AI 工具）                                 */
-/* ------------------------------------------------------------------ */
-
 const cleanups: (() => void)[] = [];
 afterEach(() => {
 	while (cleanups.length) cleanups.pop()?.();
 	vi.restoreAllMocks();
 });
 
-/** 16k 单声道 WAV：直接用客户端那支真编码器，别再手搓 header。 */
 const makeWav = (samples = 16000) => encodeWavPCM(new Float32Array(samples), 16000);
 
-/** 起一个激活态插件；files 决定 host.fs.read / readPath 的行为。 */
 function boot(settings: Record<string, unknown> = {}, files: Record<string, Uint8Array> = {}) {
 	const host = createMockHost({
 		settings,
@@ -572,7 +530,6 @@ function boot(settings: Record<string, unknown> = {}, files: Record<string, Uint
 
 const REMOTE_CFG = { transcribeUrl: "https://example.test/v1", transcribeKey: "sk-test", engine: "remote" };
 
-/** 远端接口打桩：成功回一段文本，并记录调用参数。 */
 function stubRemote(text = "会议纪要内容") {
 	const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ text }) }));
 	vi.stubGlobal("fetch", fetchSpy);
@@ -585,7 +542,6 @@ describe("transcribe_audio 注册与下架", () => {
 		const t = tool();
 		expect(t).toBeTruthy();
 		expect(t.description).toContain("workspace");
-		// 不说这句模型不会想到用它。
 		expect(t.description).toContain("cannot listen");
 		expect(t.parameters.required).toEqual(["path"]);
 		expect(t.parameters.properties.path.type).toBe("string");
@@ -599,7 +555,6 @@ describe("transcribe_audio 注册与下架", () => {
 		expect(tool()).toBeUndefined();
 		host.mock.emitSettings({ transcribeTool: true });
 		expect(tool()).toBeTruthy();
-		// 反复打开不应留下重复注册（重名会被宿主拒掉，但那时按钮已经下架过）。
 		host.mock.emitSettings({ transcribeTool: true });
 		expect(host.mock.agentTools.filter((t: { name: string }) => t.name === "transcribe_audio")).toHaveLength(1);
 	});
@@ -649,7 +604,6 @@ describe("transcribe_audio 执行路径", () => {
 		const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, { body: FormData }];
 		expect(url).toBe("https://example.test/v1/audio/transcriptions");
 		expect(init.body.get("model")).toBe("whisper-1");
-		// 文件部件要带 .wav 后缀：远端接口按它判容器格式。
 		expect((init.body.get("file") as File).name).toBe("voice.wav");
 		expect(out.content[0].text).toBe("会议纪要内容");
 		expect(out.details).toMatchObject({ engine: "remote", path: "meeting.wav", chars: 6 });
@@ -658,7 +612,6 @@ describe("transcribe_audio 执行路径", () => {
 	it("非 WAV + 配了远端 → 直接走远端，不让本地白撞一次「只要 WAV」", async () => {
 		const fetchSpy = stubRemote("转写好了");
 		const { host, tool } = boot(REMOTE_CFG, { "memo.m4a": new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3]) });
-		// 本地也装着：这正是最容易写错的组合（auto 档会先挑本地，而本地只吃 WAV）。
 		host.storage.set("whisperModels", { [LOCAL_MODELS.base]: true });
 		const out = await tool().execute("id", { path: "memo.m4a" });
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -709,7 +662,6 @@ describe("ensureSharpStub & hasCachedModelOnDisk", () => {
 		const loaded = req("sharp");
 		expect(typeof loaded).toBe("function");
 		expect(() => loaded()).toThrow("unavailable");
-		// 再次调用幂等（命中已注入的 stub，不再抛加载异常）
 		expect(ensureSharpStub(entry)).toBe(false);
 	});
 
@@ -722,13 +674,11 @@ describe("ensureSharpStub & hasCachedModelOnDisk", () => {
 		const modelDir = join(cacheDir, "Xenova", "whisper-base");
 		mkdirSync(join(modelDir, "onnx"), { recursive: true });
 		writeFileSync(join(modelDir, "config.json"), "{}");
-		// 只有 config.json 没有 .onnx 权重 → false
 		expect(hasCachedModelOnDisk(cacheDir, LOCAL_MODELS.base)).toBe(false);
 
 		writeFileSync(join(modelDir, "onnx", "encoder_model_quantized.onnx"), "onnx");
 		expect(hasCachedModelOnDisk(cacheDir, LOCAL_MODELS.base)).toBe(true);
 
-		// 模拟插件重装/storage 重置后 whisperModels 丢失但磁盘缓存仍在：GET /local-status 应自动自愈为 ready=true 并回写 storage
 		const host = createMockHost({ dir: tmp, settings: { engine: "local", localModel: "base" } });
 		const off = voiceInput.activate(host);
 		cleanups.push(() => off());

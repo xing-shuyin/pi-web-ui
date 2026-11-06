@@ -1,20 +1,3 @@
-/**
- * image-toolkit 的文件头/元数据探针：只读头部字节，不解码像素。
- *
- * 用途：上传前给用户看「多大、什么格式、有没有透明通道」，以及 AI 工具在不解码的前提下
- * 拿到图片基本信息；EXIF 用于读取拍摄参数（相机/镜头/光圈/快门/ISO/GPS）。
- *
- * 解析到哪一层：
- *   - PNG：IHDR（宽高/位深/颜色类型）+ tRNS 判透明 + acTL 判 APNG 动图；
- *   - JPEG：顺序扫 marker 找 SOFn 拿宽高/精度；
- *   - GIF：逻辑屏幕描述符 + 走文件块统计帧数与 GCE 透明标记；
- *   - WEBP：VP8X/VP8/VP8L 三种头各解析一次（保留字段含义里的 alpha / animation 位）；
- *   - BMP：BITMAPINFOHEADER（宽高/位深，负 height = top-down）；
- *   - AVIF：ftyp 品牌 + ispe 盒（取面积最大的那个，避免命中缩略图）；
- *   - SVG：文本里解析 width/height 标签属性，缺失时回退 viewBox，仍缺失为 null。
- * 无法识别：format: "unknown"、width/height 为 null、mime 用 octet-stream。
- */
-
 import { Buffer } from "node:buffer";
 import { mimeForFormat, sniffFormat } from "./codec.mjs";
 
@@ -25,7 +8,6 @@ function asBytes(buf) {
 	throw new Error("图片数据必须是 Buffer / Uint8Array");
 }
 
-/** 拼装最终返回值：宽度/高度可能为 null（SVG 缺属性、无法识别）。 */
 function result(format, width, height, bytes, extra = {}) {
 	const known = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
 	const megapixels = known ? (width * height) / 1e6 : null;
@@ -41,10 +23,6 @@ function result(format, width, height, bytes, extra = {}) {
 		...extra,
 	};
 }
-
-// ---------------------------------------------------------------------------
-// PNG
-// ---------------------------------------------------------------------------
 
 function probePng(buf, bytes) {
 	let pos = 8;
@@ -73,10 +51,6 @@ function probePng(buf, bytes) {
 	const hasAlpha = colorType === 4 || colorType === 6 || (colorType === 3 && trns);
 	return result("png", width, height, bytes, { hasAlpha, bitDepth, animated });
 }
-
-// ---------------------------------------------------------------------------
-// JPEG
-// ---------------------------------------------------------------------------
 
 function probeJpeg(buf, bytes) {
 	let pos = 2;
@@ -113,22 +87,17 @@ function probeJpeg(buf, bytes) {
 	return result("jpeg", width, height, bytes, { hasAlpha: false, bitDepth });
 }
 
-// ---------------------------------------------------------------------------
-// GIF
-// ---------------------------------------------------------------------------
-
-/** 走 GIF 块结构：统计图形控制扩展里的透明标记与图像描述符数量（≥2 视为动图）。 */
 function probeGif(buf, bytes) {
 	const width = buf.readUInt16LE(6);
 	const height = buf.readUInt16LE(8);
 	const flags = buf[10];
 	let pos = 13;
-	if (flags & 0x80) pos += 3 * (1 << ((flags & 0x07) + 1)); // 全局颜色表
+	if (flags & 0x80) pos += 3 * (1 << ((flags & 0x07) + 1));
 	let hasAlpha = false;
 	let frames = 0;
 	while (pos < buf.length) {
 		const marker = buf[pos];
-		if (marker === 0x3b) break; // trailer
+		if (marker === 0x3b) break;
 		if (marker === 0x21) {
 			const label = buf[pos + 1];
 			if (label === 0xf9 && pos + 3 < buf.length && buf[pos + 3] & 0x01) hasAlpha = true;
@@ -143,7 +112,7 @@ function probeGif(buf, bytes) {
 			const localFlags = buf[pos + 9];
 			pos += 10;
 			if (localFlags & 0x80) pos += 3 * (1 << ((localFlags & 0x07) + 1));
-			pos += 1; // LZW 最小码长
+			pos += 1;
 			while (pos < buf.length) {
 				const size = buf[pos];
 				pos += 1 + size;
@@ -155,10 +124,6 @@ function probeGif(buf, bytes) {
 	}
 	return result("gif", width, height, bytes, { hasAlpha, bitDepth: 8, animated: frames > 1 });
 }
-
-// ---------------------------------------------------------------------------
-// WEBP
-// ---------------------------------------------------------------------------
 
 function probeWebp(buf, bytes) {
 	const chunk = buf.toString("latin1", 12, 16);
@@ -173,11 +138,9 @@ function probeWebp(buf, bytes) {
 		width = (buf[24] | (buf[25] << 8) | (buf[26] << 16)) + 1;
 		height = (buf[27] | (buf[28] << 8) | (buf[29] << 16)) + 1;
 	} else if (chunk === "VP8 " && buf.length >= 30) {
-		// 有损：跳过 3 字节 frame tag 与 3 字节起始码，再读 14 位宽高
 		width = buf.readUInt16LE(26) & 0x3fff;
 		height = buf.readUInt16LE(28) & 0x3fff;
 	} else if (chunk === "VP8L" && buf.length >= 25) {
-		// 无损：1 字节签名 0x2f + 4 字节位域（14 位宽、14 位高、1 位 alpha）
 		const bits = buf.readUInt32LE(21);
 		width = (bits & 0x3fff) + 1;
 		height = ((bits >> 14) & 0x3fff) + 1;
@@ -185,10 +148,6 @@ function probeWebp(buf, bytes) {
 	}
 	return result("webp", width, height, bytes, { hasAlpha, animated });
 }
-
-// ---------------------------------------------------------------------------
-// BMP
-// ---------------------------------------------------------------------------
 
 function probeBmp(buf, bytes) {
 	const dibSize = buf.readUInt32LE(14);
@@ -199,11 +158,6 @@ function probeBmp(buf, bytes) {
 	return result("bmp", Math.abs(width), Math.abs(rawHeight), bytes, { hasAlpha: bitDepth === 32, bitDepth });
 }
 
-// ---------------------------------------------------------------------------
-// AVIF
-// ---------------------------------------------------------------------------
-
-/** 在 ISOBMFF 里找 ispe 盒（限定前 256KB），取面积最大的一个作为图像尺寸。 */
 function probeAvif(buf, bytes) {
 	const limit = Math.min(buf.length, 256 * 1024);
 	let width = null;
@@ -218,16 +172,10 @@ function probeAvif(buf, bytes) {
 		}
 	}
 	const major = buf.toString("latin1", 8, 12);
-	// AVIF 的透明通道是独立辅助轨道，靠关键字粗判（无法只凭头部 100% 确定）
 	const hasAlpha = buf.subarray(0, Math.min(buf.length, 64 * 1024)).includes("alpha");
 	return result("avif", width, height, bytes, { hasAlpha, animated: major === "avis" });
 }
 
-// ---------------------------------------------------------------------------
-// SVG
-// ---------------------------------------------------------------------------
-
-/** SVG 尺寸：优先 width/height 数字属性（带 % 的视为未知），否则回退 viewBox 后两位。 */
 function svgSize(text) {
 	const tag = /<svg\b[^>]*>/i.exec(text)?.[0] ?? "";
 	const num = (name) => {
@@ -256,11 +204,6 @@ function probeSvg(buf, bytes) {
 	return result("svg", width, height, bytes, { hasAlpha: true });
 }
 
-// ---------------------------------------------------------------------------
-// 对外：probeImage
-// ---------------------------------------------------------------------------
-
-/** 只读文件头，不解码像素。无法识别时 format:"unknown" 且 width/height 为 null。 */
 export function probeImage(buf) {
 	const bytes8 = asBytes(buf);
 	const bytes = bytes8.length;
@@ -285,11 +228,6 @@ export function probeImage(buf) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// EXIF
-// ---------------------------------------------------------------------------
-
-/** EXIF 标签号 → 人类可读字段。 */
 const TAG = {
 	MAKE: 0x010f,
 	MODEL: 0x0110,
@@ -310,7 +248,6 @@ const GPS = { LAT_REF: 0x0001, LAT: 0x0002, LON_REF: 0x0003, LON: 0x0004, ALT_RE
 
 const TYPE_SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
 
-/** 建立 TIFF 读取器（大端小端都支持），base 是 TIFF 头在 buf 里的偏移。 */
 function tiffReader(buf, base) {
 	const order = buf.toString("latin1", base, base + 2);
 	const le = order === "II";
@@ -320,7 +257,6 @@ function tiffReader(buf, base) {
 	const i32 = (o) => (le ? buf.readInt32LE(o) : buf.readInt32BE(o));
 	if (u16(base + 2) !== 42) return null;
 
-	/** 读一个 IFD：返回 Map<tag, {type, count, values, text}>。 */
 	const readIfd = (ifdOffset) => {
 		const map = new Map();
 		if (!ifdOffset || ifdOffset + 2 > buf.length) return map;
@@ -380,7 +316,6 @@ function dms(values, ref) {
 	return Math.round(deg * 1e6) / 1e6;
 }
 
-/** GPS 方向引用：ASCII 型取文本首字符，字节型取数值转字符。 */
 function refChar(entry) {
 	if (!entry) return "";
 	if (entry.text) return entry.text.slice(0, 1);
@@ -388,13 +323,11 @@ function refChar(entry) {
 	return typeof v === "number" ? String.fromCharCode(v) : "";
 }
 
-/** EXIF 日期 "2024:05:01 12:00:00" → "2024-05-01 12:00:00"（给人看的统一形式）。 */
 function fmtDateTime(s) {
 	if (!s) return null;
 	return s.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3").trim() || null;
 }
 
-/** 从 TIFF 结构里抽字段；全都没有时返回 null。 */
 function extractExif(buf, tiffBase) {
 	const reader = tiffReader(buf, tiffBase);
 	if (!reader) return null;
@@ -449,7 +382,6 @@ function extractExif(buf, tiffBase) {
 	return Object.keys(out).length > 0 ? out : null;
 }
 
-/** 取 JPEG 的 APP1(Exif) 段偏移；没有返回 null。 */
 function findJpegExif(buf) {
 	let pos = 2;
 	while (pos + 4 <= buf.length) {
@@ -478,11 +410,6 @@ function findJpegExif(buf) {
 	return null;
 }
 
-/**
- * 解析 EXIF：JPEG 的 APP1（Exif\0\0 + TIFF）与 PNG 的 eXIf 块，大端小端都支持，
- * 覆盖 IFD0 / ExifIFD / GPS IFD。没有 EXIF 返回 null。
- * exposureTime / fNumber / focalLength 是给人看的字符串（"1/250"、"f/2.8"、"35mm"）。
- */
 export function parseExif(buf) {
 	const bytes = asBytes(buf);
 	const format = sniffFormat(bytes);

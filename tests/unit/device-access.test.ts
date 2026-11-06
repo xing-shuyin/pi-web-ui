@@ -123,3 +123,72 @@ it("does not let an old detach completion close a newer desktop", async () => {
 	expect(getDesktopAccess()).not.toBe(previous);
 	expect(getDesktopAccess()).not.toBeNull();
 });
+it("requests LAN access and opens the local opaque desktop portal", async () => {
+	const url = `/device-lan/mac/__open?ticket=${"a".repeat(64)}`;
+	const fetcher = vi.fn(async (_input: unknown, _options: RequestInit) => ({
+		ok: true,
+		json: async () => ({ url, transport: "lan" }),
+	}));
+	vi.stubGlobal("fetch", fetcher);
+	await mount();
+	expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toMatchObject({
+		preferLan: true,
+		desktop: true,
+		basePath: "/",
+	});
+	expect(getDesktopAccess()?.transport).toBe("lan");
+	expect(document.querySelector("iframe")?.src).toBe(`${window.location.origin}${url}&next=%2Fdesktop`);
+	expect(document.querySelector("iframe")?.getAttribute("sandbox")).toBe(
+		"allow-scripts allow-forms allow-pointer-lock",
+	);
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("LAN");
+	const frame = document.querySelector("iframe")!;
+	await act(async () => {
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				source: window,
+				origin: "null",
+				data: { type: "device-access-transport", transport: "hub" },
+			}),
+		);
+	});
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).toContain("LAN");
+	await act(async () => {
+		window.dispatchEvent(
+			new MessageEvent("message", {
+				source: frame.contentWindow,
+				origin: "null",
+				data: { type: "device-access-transport", transport: "hub" },
+			}),
+		);
+	});
+	expect(document.querySelector(".remote-desktop-titlebar")?.textContent).not.toContain("LAN");
+});
+it("opens the entire device UI through the same LAN portal", async () => {
+	const url = `/device-lan/mac/__open?ticket=${"a".repeat(64)}`;
+	const fetcher = vi.fn(async (_input: unknown, _options: RequestInit) => ({
+		ok: true,
+		json: async () => ({ url, transport: "lan" }),
+	}));
+	vi.stubGlobal("fetch", fetcher);
+	const replace = vi.fn();
+	vi.spyOn(window, "open").mockReturnValue({
+		opener: null,
+		location: { replace },
+		close: vi.fn(),
+	} as unknown as Window);
+	await openDeviceAccess("mac", hub, false, false);
+	expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toMatchObject({ preferLan: true, desktop: false });
+	expect(replace).toHaveBeenCalledWith(`${window.location.origin}${url}`);
+});
+it.each([
+	"https://evil.example/device-lan/mac/__open?ticket=" + "a".repeat(64),
+	"/device-lan/other/__open?ticket=" + "a".repeat(64),
+	"/api/setup?ticket=" + "a".repeat(64),
+])("rejects a forged LAN access URL %s", async (url) => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => ({ ok: true, json: async () => ({ url, transport: "lan" }) })),
+	);
+	await expect(openDeviceAccess("mac", hub, true, false)).rejects.toThrow("Invalid device access URL");
+});

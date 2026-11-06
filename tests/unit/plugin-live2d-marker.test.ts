@@ -1,6 +1,3 @@
-/**
- * Live2D 看板娘心声 Marker 单元测试
- */
 import { describe, expect, it } from "vitest";
 import { registerMarker, unregisterMarker } from "../../server/markers/registry.js";
 import { stripMarkers } from "../../server/markers/marker.js";
@@ -37,24 +34,20 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 		expect(registeredMarker.label).toContain("Live2D");
 		expect(registeredMarker.guidance.length).toBeGreaterThan(0);
 
-		// 检查中英文 guidance
 		const zhGuidance = registeredMarker.getGuidance("zh");
 		const enGuidance = registeredMarker.getGuidance("en");
 		expect(zhGuidance[0]).toContain("心声");
 		expect(enGuidance[0]).toContain("inner voice");
 
-		// 测试 stripMarkers 能够识别并剥离 [[live2d:thought:...]]
 		const replyWithMarker = "主人好厉害！[[live2d:thought:写代码速度真快呀,emotion=happy]] 任务已经完成。";
 		const stripped = stripMarkers(replyWithMarker);
 		expect(stripped).toBe("主人好厉害！ 任务已经完成。");
 
-		// 测试心声 apply
 		const mockCtx = {
 			conversationId: "c1",
 			notify: () => {},
 		};
 
-		// 1) 基础心声
 		const res1 = await registeredMarker.apply(
 			{
 				tool: "live2d",
@@ -77,7 +70,6 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 			thought: true,
 		});
 
-		// 2) 携带表情与自定义时长的心声
 		const res2 = await registeredMarker.apply(
 			{
 				tool: "live2d",
@@ -100,7 +92,6 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 			thought: true,
 		});
 
-		// 3) heart/mind op 别名识别为心声
 		const res3 = await registeredMarker.apply(
 			{
 				tool: "live2d",
@@ -117,7 +108,6 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 		expect(broadcastMessages[broadcastMessages.length - 1].thought).toBe(true);
 		expect(broadcastMessages[broadcastMessages.length - 1].action).toBe("thought");
 
-		// 4) say op 别名识别为普通气泡
 		const res4 = await registeredMarker.apply(
 			{
 				tool: "live2d",
@@ -134,7 +124,6 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 		expect(broadcastMessages[broadcastMessages.length - 1].thought).toBe(false);
 		expect(broadcastMessages[broadcastMessages.length - 1].action).toBe("bubble");
 
-		// 5) 缺少内容时拒绝
 		const res5 = await registeredMarker.apply(
 			{
 				tool: "live2d",
@@ -150,7 +139,6 @@ describe("Live2D 看板娘心声 Inline Marker", () => {
 		expect(res5.applied).toBe(false);
 		expect(res5.error).toContain("缺少心声内容");
 
-		// 反激活清理
 		deactivate();
 		expect(stripMarkers("测试 [[live2d:thought:abc]] 文本")).toBe("测试 [[live2d:thought:abc]] 文本");
 	});

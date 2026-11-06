@@ -83,11 +83,8 @@ describe("group-capabilities: Bot Preset Snapshot & Isolation", () => {
 	});
 
 	it("isSnapshotApplicableToTask protects active running tasks from hot reload", () => {
-		// New task with no snapshot revision yet is applicable
 		expect(isSnapshotApplicableToTask(undefined, 2)).toBe(true);
-		// In-flight task locked to revision 1 rejects revision 2
 		expect(isSnapshotApplicableToTask(1, 2)).toBe(false);
-		// Matching revision is allowed
 		expect(isSnapshotApplicableToTask(2, 2)).toBe(true);
 	});
 });
@@ -106,12 +103,10 @@ describe("group-capabilities: Stable Notification Tracker", () => {
 		expect(tracker.checkAndRecord("interaction", "r1", "t1", "req1")).toBe(false);
 		expect(tracker.hasSeen("interaction", "r1", "t1", "req1")).toBe(true);
 
-		// Fill capacity
 		tracker.checkAndRecord("completed", "r1", "t2");
 		tracker.checkAndRecord("failed", "r1", "t3");
 		expect(tracker.size()).toBe(3);
 
-		// Adding 4th item evicts the oldest (LRU / FIFO eviction)
 		tracker.checkAndRecord("completed", "r1", "t4");
 		expect(tracker.size()).toBe(3);
 		expect(tracker.hasSeen("interaction", "r1", "t1", "req1")).toBe(false);

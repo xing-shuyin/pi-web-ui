@@ -11,7 +11,6 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** 计数探针：覆写存活性探测，统计探测次数并按白名单返回存活（不碰真实 fs）。 */
 class CountingStore extends ClientStateStore {
 	probes = 0;
 	constructor(
@@ -40,9 +39,7 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		vi.restoreAllMocks();
 		try {
 			rmSync(dir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	it("超过保留期的死 clientId 被淘汰，最近活跃的保留，全局键与墓碑不受影响", () => {
@@ -61,9 +58,7 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 						lastActive: now - 60 * 60 * 1000,
 						projects: [{ path: "/fresh/p", lastUsed: now - 60 * 60 * 1000 }],
 					},
-					// 旧存档：无 lastActive，但 projects.lastUsed 可推断出同样陈旧
 					legacy: { projects: [{ path: "/legacy/p", lastUsed: now - CLIENT_STATE_RETENTION_MS - DAY }] },
-					// 完全无时间戳可推断：不按年龄淘汰，仅受键数上限约束
 					noTs: { projects: [], workspaceRoots: { "/x": ["/x/root"] } },
 				},
 				null,
@@ -73,19 +68,13 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 
 		const store = new ClientStateStore(file);
 
-		// 死键：显式 lastActive 超期 → 淘汰
 		expect(store.get("stale")).toEqual({ projects: [] });
-		// 死键：旧存档按 projects.lastUsed 推断超期 → 同样淘汰
 		expect(store.get("legacy")).toEqual({ projects: [] });
-		// 最近活跃的保留，数据完好
 		expect(store.get("fresh").projects.map((p) => p.path)).toEqual(["/fresh/p"]);
-		// 无时间戳可推断的保留（保守：不按年龄淘汰）
 		expect(store.get("noTs").workspaceRoots).toEqual({ "/x": ["/x/root"] });
 
-		// 全局键不受清理影响；各死 client 的墓碑已在淘汰前并入全局键，不丢失
 		expect(store.getRemovedProjects("someone")).toEqual(expect.arrayContaining(["/gone/a", "/gone/b"]));
 
-		// 清理只动内存态，任意写路径触发 save 后自然落盘
 		store.remember("fresh", join(dir, "some-project"));
 		const persisted = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 		expect(Object.keys(persisted)).not.toContain("stale");
@@ -116,7 +105,6 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		expect(store.get("legacy")).toEqual({ projects: [] });
 		expect(store.get("stale")).toEqual({ projects: [] });
 
-		// 加载迁移本身必须落盘，不依赖 remember 等后续写操作。
 		const persisted = JSON.parse(readFileSync(file, "utf8"));
 		expect(Object.keys(persisted)).toEqual(["__settings__"]);
 		expect(persisted.__settings__.projects).toEqual(expected);
@@ -137,14 +125,11 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 
 		const store = new ClientStateStore(file);
 
-		// 最旧的 5 个（c00..c04）被上限淘汰
 		for (let i = 0; i < 5; i++) {
 			expect(store.get(`c${String(i).padStart(2, "0")}`).locale).toBeUndefined();
 		}
-		// 最近活跃的 50 个保留
 		expect(store.get("c05").locale).toBe("c05");
 		expect(store.get(`c${String(MAX_TRACKED_CLIENTS + 4).padStart(2, "0")}`).locale).toBe("c54");
-		// 数量上限淘汰前也先保留项目，包括来自最旧 5 个 client 的项目。
 		expect(store.get("__settings__").projects).toHaveLength(MAX_TRACKED_CLIENTS + 5);
 		expect(store.get("__settings__").projects.map((p) => p.path)).toContain("/p/0");
 
@@ -175,10 +160,8 @@ describe("ClientStateStore 死 clientId 清理（issue #441）", () => {
 		const store = new CountingStore(file, new Set(paths));
 		const recent = await store.getRecentProjects("c1");
 
-		// 多出的 10 条候选不探测（旧实现会对全部候选逐个探测后再截断）
 		expect(store.probes).toBe(RECENT_PROJECTS_MAX);
 		expect(recent.length).toBe(RECENT_PROJECTS_MAX);
-		// 返回的是最近的那些（lastUsed 降序），最旧的 10 条从未被探测
 		expect(recent[0].path).toBe(`/p/${total - 1}`);
 		expect(recent.map((p) => p.path)).not.toContain("/p/0");
 	});

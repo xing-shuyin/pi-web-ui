@@ -1,7 +1,3 @@
-/**
- * SCM「AI 生成提交信息」纯函数：提示词组装（buildCommitMsgInput）与
- * 模型输出清洗（sanitizeCommitMessage）。git 采集与模型调用不在此测。
- */
 import { describe, expect, it } from "vitest";
 import {
 	buildCommitMsgInput,
@@ -47,7 +43,6 @@ describe("buildCommitMsgInput", () => {
 		);
 		expect(input).toContain("feat(scm): 增加面板");
 		expect(input).toContain("fix(ui): 对齐");
-		// 有风格参考时不再注入空仓库语言指令
 		expect(input).not.toContain("no commits yet");
 	});
 

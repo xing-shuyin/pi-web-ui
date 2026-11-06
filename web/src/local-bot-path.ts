@@ -1,4 +1,3 @@
-/** Resolve picker recommendations against the server's project root, independent of browser OS. */
 export function resolveBotCwd(value: string, base: string): string {
 	const path = value.trim().replace(/\\/g, "/");
 	if (!path) return "";

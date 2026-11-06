@@ -1,10 +1,3 @@
-/**
- * 会话搜索标题与品牌徽标样式测试（issue #644）。
- *
- * 覆盖：
- * 1. 标题回退链：displayName > name > firstMessage > basename 无 .jsonl 后缀，未命名会话不应暴露裸文件名。
- * 2. 静态检查 styles.css 中 .bar-item-brand-logo 的样式，确保其具有纯白前景色且不被 var(--accent) 覆盖。
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,9 +7,6 @@ import { UniversalSession } from "../../server/universal/universal-session";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/**
- * 前端 GlobalSearchModal / LeftPanel 统一采用的标题解析逻辑
- */
 function resolveDisplayTitle(s: Partial<SessionSummary> & { path: string }): string {
 	return (
 		s.displayName ||
@@ -109,12 +99,9 @@ describe("品牌徽标固定样式与全主题/纯图标模式守护", () => {
 	});
 
 	it("纯图标模式（.topbar.no-labels）下品牌徽标保持展示且不被塑形为 28px 圆形", () => {
-		// styles.css 已整体并入 `@layer base { ... }`（内容多缩进一格）：去掉最外层那一格 Tab
-		// 还原成「顶层」口径再断言。
 		const css = readFileSync(join(ROOT, "web/src/styles.css"), "utf8").replace(/^\t/gm, "");
 		expect(css).toContain(".topbar.no-labels .bar-item.brand");
 		expect(css).toContain(".topbar.no-labels .bar-item-brand");
-		// 徽标保持 inline-flex 展示（!important 已随分层重构移除，声明值一字未改）
 		expect(css).toContain(
 			".topbar.no-labels .bar-item-brand > .brand-logo,\n.topbar.no-labels .bar-item-brand > .bar-item-brand-logo {\n\tdisplay: inline-flex;\n}",
 		);

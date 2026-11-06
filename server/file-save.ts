@@ -8,13 +8,8 @@ const run = promisify(execFile);
 const timeout = 30_000;
 const attributes = "--preserve=mode,ownership,timestamps,xattr";
 
-/** Save an existing regular file without truncating it or silently discarding
- * platform metadata. All preparation happens on the target volume. Native
- * metadata/replace failures are fatal; there is no direct-write fallback.
- * This provides atomic visibility, not a guarantee against power loss.
- */
 export async function saveFilePreservingMetadata(path: string, text: string): Promise<void> {
-	const target = await realpath(path); // Keep symlinks, replace their actual target.
+	const target = await realpath(path);
 	const before = await stat(target);
 	if (!before.isFile()) throw new Error("Save target is not a regular file");
 	if (before.nlink > 1) throw new Error("Cannot atomically save a file with multiple hard links");
@@ -41,8 +36,6 @@ export async function saveFilePreservingMetadata(path: string, text: string): Pr
 			await handle.close();
 		}
 		if (process.platform === "linux") {
-			// Writing can clear security xattrs/set-id bits. Reapply explicitly:
-			// unlike --preserve=all, failure to preserve a named attribute is fatal.
 			await run("cp", ["--attributes-only", attributes, "--", target, staged], { timeout });
 			const metadataHandle = await open(staged, "r");
 			try {
@@ -62,8 +55,6 @@ export async function saveFilePreservingMetadata(path: string, text: string): Pr
 		)
 			throw new Error("Save target changed while preparing replacement; retry saving");
 		if (process.platform === "win32") {
-			// Constant script + environment paths: filenames never become PowerShell
-			// code. Start one process per explicit save, without a shell/profile.
 			const script =
 				"$ErrorActionPreference='Stop'; try { [IO.File]::Replace($env:PI_SAVE_SOURCE,$env:PI_SAVE_TARGET,$env:PI_SAVE_BACKUP,$false) } catch { [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }";
 			await run(
@@ -84,8 +75,6 @@ export async function saveFilePreservingMetadata(path: string, text: string): Pr
 		} else await rename(staged, target);
 		committed = true;
 	} catch (error) {
-		// ReplaceFile can fail part-way through a metadata merge. Never delete
-		// its recovery backup on error; expose its stable path to the caller.
 		if (
 			await stat(backup).then(
 				() => true,

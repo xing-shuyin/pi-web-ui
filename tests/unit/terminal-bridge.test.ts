@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeTerminalBridge } from "../../web/src/terminal-bridge";
+import { isClientTerminalStream, makeTerminalBridge } from "../../web/src/terminal-bridge";
 
 function display() {
 	let text = "";
@@ -18,6 +18,15 @@ function display() {
 }
 
 describe("terminal history bridge", () => {
+	it("keeps client streams and merged lists outside the conversation envelope gate", () => {
+		expect(isClientTerminalStream({ type: "terminal_list" })).toBe(true);
+		for (const type of ["terminal_output", "terminal_exit"]) {
+			expect(isClientTerminalStream({ type, ownerKind: "client" })).toBe(true);
+			expect(isClientTerminalStream({ type, ownerKind: "conversation" })).toBe(false);
+			expect(isClientTerminalStream({ type })).toBe(false);
+		}
+		expect(isClientTerminalStream({ type: "message_delta" })).toBe(false);
+	});
 	it("replaces mounted displays on repeated replay and appends subsequent live output", () => {
 		const bridge = makeTerminalBridge();
 		const first = display();

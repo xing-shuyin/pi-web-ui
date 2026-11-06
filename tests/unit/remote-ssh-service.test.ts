@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -109,7 +110,6 @@ apk
 		try {
 			const svc = new RemoteSshService(testDataDir);
 
-			// 保存 profile，包含明文密码
 			await svc.saveProfile("test-server", {
 				host: "1.2.3.4",
 				port: 2222,
@@ -120,7 +120,6 @@ apk
 				},
 			});
 
-			// 检查 profiles 列表
 			const profiles = await svc.listProfiles();
 			expect(profiles).toHaveLength(1);
 			expect(profiles[0].name).toBe("test-server");
@@ -128,15 +127,12 @@ apk
 			expect(profiles[0].port).toBe(2222);
 			expect(profiles[0].username).toBe("developer");
 			expect(profiles[0].authType).toBe("password");
-			// 密码绝对不能在 Summary 中返回
 			expect((profiles[0] as any).password).toBeUndefined();
 
-			// 检查磁盘落盘文件（global-hosts.json），必须是加密的密文，绝对不能包含明文密码
 			const diskRaw = await fs.readFile(path.join(testDataDir, "global-hosts.json"), "utf8");
 			expect(diskRaw).not.toContain("super-secret-password-12345");
 			expect(diskRaw).toContain("encryptedPassword");
 
-			// 删除 profile
 			await svc.deleteProfile("test-server");
 			const profilesAfter = await svc.listProfiles();
 			expect(profilesAfter).toHaveLength(0);
@@ -152,7 +148,6 @@ apk
 		);
 		await fs.mkdir(testDataDir, { recursive: true });
 		try {
-			// 先用旧路径写一份测试 profile
 			const legacyContent = {
 				version: 1,
 				profiles: {
@@ -174,7 +169,6 @@ apk
 			expect(profiles).toHaveLength(1);
 			expect(profiles[0].name).toBe("legacy-host");
 
-			// 检查新 global-hosts.json 是否已生成
 			const migratedRaw = await fs.readFile(path.join(testDataDir, "global-hosts.json"), "utf8");
 			expect(migratedRaw).toContain("legacy-host");
 		} finally {
@@ -244,7 +238,6 @@ describe("listDir 软链接目录识别与 ~ 路径展开", () => {
 			},
 		};
 
-		// 注入模拟存活连接
 		// @ts-expect-error testing internal connection map
 		svc.connections.set("conn-1", {
 			id: "conn-1",
@@ -326,7 +319,6 @@ describe("serveRemoteWorkspaceFile 与 present_files 远程工作区支持", () 
 			},
 		} as unknown as RemoteSshService;
 
-		// 1. 相对路径下载
 		const m1 = createMockRes();
 		await serveRemoteWorkspaceFile(
 			{ headers: {}, query: { download: "1" } },
@@ -340,7 +332,6 @@ describe("serveRemoteWorkspaceFile 与 present_files 远程工作区支持", () 
 		expect(m1.getHeaders()["content-disposition"]).toContain("report.md");
 		expect(m1.getBody()).toBe(fileContent);
 
-		// 2. 绝对路径下载
 		const m2 = createMockRes();
 		await serveRemoteWorkspaceFile(
 			{ headers: {}, query: { download: "1" } },
@@ -354,7 +345,6 @@ describe("serveRemoteWorkspaceFile 与 present_files 远程工作区支持", () 
 		expect(m2.getHeaders()["content-disposition"]).toContain("config.json");
 		expect(m2.getBody()).toBe(fileContent);
 
-		// 3. 越界相对路径拦截
 		const m3 = createMockRes();
 		await serveRemoteWorkspaceFile(
 			{ headers: {}, query: { download: "1" } },
@@ -367,7 +357,6 @@ describe("serveRemoteWorkspaceFile 与 present_files 远程工作区支持", () 
 		expect(m3.getStatus()).toBe(400);
 		expect(m3.getBody()).toBe("path outside workspace");
 
-		// 4. present_files 工具在远程工作区下正常探测文件与摘录
 		setGlobalRemoteSshService(mockSvc);
 		try {
 			const item = await probePresentItem({ path: "report.md" }, remoteUri, { left: 1000 });
@@ -381,24 +370,19 @@ describe("serveRemoteWorkspaceFile 与 present_files 远程工作区支持", () 
 
 	it("resolveRemoteWorkspacePath unwraps ssh:// URIs cleanly without nested prefixes", () => {
 		const root = "/root/workspace/ljz";
-		// 1. 完整的 ssh:// URI 指向工作区根
-		const res1 = resolveRemoteWorkspacePath(root, "ssh://root@39.99.235.208:22/root/workspace/ljz");
+		const res1 = resolveRemoteWorkspacePath(root, "ssh://root@203.0.113.10:22/root/workspace/ljz");
 		expect(res1).toEqual({ abs: "/root/workspace/ljz", rel: "" });
 
-		// 2. 完整的 ssh:// URI 指向子目录
-		const res2 = resolveRemoteWorkspacePath(root, "ssh://root@39.99.235.208:22/root/workspace/ljz/subfolder");
+		const res2 = resolveRemoteWorkspacePath(root, "ssh://root@203.0.113.10:22/root/workspace/ljz/subfolder");
 		expect(res2).toEqual({ abs: "/root/workspace/ljz/subfolder", rel: "subfolder" });
 
-		// 3. 相对路径
 		const res3 = resolveRemoteWorkspacePath(root, "nested/file.txt");
 		expect(res3).toEqual({ abs: "/root/workspace/ljz/nested/file.txt", rel: "nested/file.txt" });
 
-		// 4. 空字符串与点
 		expect(resolveRemoteWorkspacePath(root, "")).toEqual({ abs: "/root/workspace/ljz", rel: "" });
 		expect(resolveRemoteWorkspacePath(root, ".")).toEqual({ abs: "/root/workspace/ljz", rel: "" });
 
-		// 5. 跨界 ssh:// URI 拦截
-		const resOutside = resolveRemoteWorkspacePath(root, "ssh://root@39.99.235.208:22/etc/passwd");
+		const resOutside = resolveRemoteWorkspacePath(root, "ssh://root@203.0.113.10:22/etc/passwd");
 		expect(resOutside).toBeNull();
 	});
 });
@@ -455,7 +439,6 @@ apt-get
 			return `===SYSTEM===\nLinux\nx86_64\nhost\nroot\n/root\n4\n8192\n===GIT===\nNONE\n===NODE===\nNONE\n===BASH===\nNONE\n===PYTHON===\nNONE\n===PKG===\napt-get\n`;
 		};
 
-		// 模拟存活连接已注册
 		const fakeConn = {
 			id: "conn-active-1",
 			hostKey: "root@192.168.1.100:22",
@@ -489,5 +472,82 @@ apt-get
 		expect(res.ok).toBe(true);
 		expect(res.system?.cores).toBe(4);
 		expect(res.system?.totalMemMb).toBe(8192);
+	});
+});
+
+describe("pooled probe/install exec leases", () => {
+	it("protects active exec from idle reclamation and releases after completion or synchronous failure", async () => {
+		const dir = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-lease-"));
+		vi.useFakeTimers();
+		const service = new RemoteSshService(dir);
+		const channel = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), close: vi.fn() });
+		let callback: any;
+		const client = Object.assign(new EventEmitter(), {
+			exec: vi.fn((_command, cb) => {
+				callback = cb;
+			}),
+			end: vi.fn(),
+		});
+		const conn = (service as any).registerConnection(client, {
+			host: "mock.test",
+			username: "tester",
+			auth: { type: "agent" },
+		});
+		try {
+			const result = (service as any).execCommand(client, "long operation", 0);
+			callback(null, channel);
+			await vi.advanceTimersByTimeAsync(31 * 60_000);
+			expect(client.end).not.toHaveBeenCalled();
+			channel.emit("data", Buffer.from("done"));
+			channel.emit("close", 0);
+			await expect(result).resolves.toBe("done");
+			expect(conn.activeOperations).toBe(0);
+			client.exec.mockImplementation(() => {
+				throw new Error("cannot exec");
+			});
+			await expect((service as any).execCommand(client, "fail")).rejects.toThrow("cannot exec");
+			expect(conn.activeOperations).toBe(0);
+			await vi.advanceTimersByTimeAsync(30 * 60_000);
+			expect(client.end).toHaveBeenCalledOnce();
+		} finally {
+			service.closeConnection(conn.id);
+			vi.useRealTimers();
+			await fs.rm(dir, { recursive: true, force: true });
+		}
+	});
+	it("times out only its exec channel and releases on connection errors", async () => {
+		const dir = await fs.mkdtemp(path.join(process.platform === "win32" ? "E:/tmp" : os.tmpdir(), "remote-ssh-lease-"));
+		vi.useFakeTimers();
+		const service = new RemoteSshService(dir);
+		const channel = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), close: vi.fn() });
+		const client = Object.assign(new EventEmitter(), {
+			exec: vi.fn((_command, cb) => {
+				cb(null, channel);
+			}),
+			end: vi.fn(),
+		});
+		const conn = (service as any).registerConnection(client, {
+			host: "mock.test",
+			username: "tester",
+			auth: { type: "agent" },
+		});
+		try {
+			const timed = (service as any).execCommand(client, "wait", 10);
+			const rejected = expect(timed).rejects.toThrow("timed out");
+			await vi.advanceTimersByTimeAsync(10);
+			await rejected;
+			expect(channel.close).toHaveBeenCalledOnce();
+			expect(client.end).not.toHaveBeenCalled();
+			expect(conn.activeOperations).toBe(0);
+			const errored = (service as any).execCommand(client, "wait", 0);
+			const disconnected = expect(errored).rejects.toThrow("connection lost");
+			client.emit("error", new Error("lost"));
+			await disconnected;
+			expect(conn.activeOperations).toBe(0);
+		} finally {
+			service.closeConnection(conn.id);
+			vi.useRealTimers();
+			await fs.rm(dir, { recursive: true, force: true });
+		}
 	});
 });

@@ -73,7 +73,6 @@ describe("ws/upload cap alignment", () => {
 		await svc.uploadFile("", "empty.txt", "", "empty");
 		await svc.uploadFile("../outside", "escape.txt", data, "outside");
 		await svc.uploadFile("", "", data, "invalid-name");
-		// A length-only value proves the configured cap rejects before Buffer.from.
 		await svc.uploadFile("", "large.txt", { length: 5 } as unknown as string, "over-cap");
 		await svc.uploadFile("", "legacy.txt", data);
 
@@ -95,8 +94,6 @@ describe("ws/upload cap alignment", () => {
 		const cwd = mkdtempSync(join(tmpdir(), "piweb-ws-upload-test-"));
 		dirs.push(cwd);
 		const { svc, seen } = makeService(cwd);
-		// length getter 冒充超长文本：走快拒分支即返回，Buffer.from 永不执行，
-		// 单测无需分配 140MB 字符串。
 		const fake = { length: MAX_UPLOAD_BASE64_CHARS + 1 } as unknown as string;
 		await svc.uploadFile("", "big.txt", fake);
 		const errs = seen.filter((m) => m.type === "notice" && m.level === "error");

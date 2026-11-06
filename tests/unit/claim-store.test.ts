@@ -1,7 +1,3 @@
-/**
- * claim-store 单测：认领表（先到先得/释放/心跳/TTL/持久化）+ 路径匹配 + sidecar。
- * 纯逻辑零 token；持久化走 mkdtempSync 隔离目录；时间用显式 now 参数控制。
- */
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,13 +28,11 @@ describe("claim 先到先得", () => {
 		expect(r1.claimed).toHaveLength(1);
 		expect(r1.conflicts).toHaveLength(0);
 		expect(r1.claimed[0].path).toBe(resolve("/repo/proj/a.ts"));
-		// B 抢同一文件 → 冲突，原主不变。
 		const r2 = s.claim(CWD, OWNER_B, [{ path: "a.ts" }], 2000);
 		expect(r2.claimed).toHaveLength(0);
 		expect(r2.conflicts).toHaveLength(1);
 		expect(r2.conflicts[0].claim.ownerTitle).toBe("对话A");
 		expect(s.list(CWD, 2000)).toHaveLength(1);
-		// A 自己再认领 → 刷新（不算冲突，note 更新）。
 		const r3 = s.claim(CWD, OWNER_A, [{ path: "a.ts", note: "改登录v2" }], 3000);
 		expect(r3.conflicts).toHaveLength(0);
 		expect(s.list(CWD, 3000)[0].note).toBe("改登录v2");
@@ -56,7 +50,7 @@ describe("release / touch / TTL", () => {
 		const s = memStore();
 		s.claim(CWD, OWNER_A, [{ path: "a.ts" }, { path: "b.ts" }], 1000);
 		s.claim(CWD, OWNER_B, [{ path: "c.ts" }], 1000);
-		expect(s.release(CWD, OWNER_A.convId, ["a.ts", "c.ts"], 2000)).toBe(1); // c.ts 是 B 的，动不了
+		expect(s.release(CWD, OWNER_A.convId, ["a.ts", "c.ts"], 2000)).toBe(1);
 		expect(
 			s
 				.list(CWD, 2000)
@@ -73,7 +67,6 @@ describe("release / touch / TTL", () => {
 		expect(s.list(CWD, 1000 + CLAIM_TTL_MS + 1)).toEqual([]);
 		s.claim(CWD, OWNER_A, [{ path: "b.ts" }], 1000);
 		expect(s.touch(OWNER_A.convId, 1000 + CLAIM_TTL_MS - 1000)).toBe(1);
-		// 续期后：原过期点已过，但认领还在。
 		expect(s.list(CWD, 1000 + CLAIM_TTL_MS + 1).map((c) => c.path)).toEqual([resolve("/repo/proj/b.ts")]);
 	});
 });
@@ -130,7 +123,6 @@ describe("sidecar", () => {
 			const back = readTouchSidecar(session);
 			expect(back?.find((f) => f.path === "a.ts")).toEqual({ path: "a.ts", count: 5, lastTs: 10 });
 			expect(back?.find((f) => f.path === "b.ts")?.count).toBe(1);
-			// 空集不写、undefined 不写不读。
 			await mergeTouchSidecar(session, []);
 			await mergeTouchSidecar(undefined, [{ path: "x", count: 1, lastTs: 1 }]);
 			expect(readTouchSidecar(undefined)).toBeUndefined();

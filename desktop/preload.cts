@@ -1,14 +1,39 @@
-/**
- * desktop preload — 只暴露最小只读信息 + 更新通道。业务全部走 HTTP/WS，
- * 不走 IPC，避免和 web/ 现有协议分叉；唯独应用内自动更新（issue #180）是
- * 主进程（electron-updater）的事，server sidecar 够不着，所以单开这三个
- * invoke（check/download/quit-install）+ 一个 event 订阅。
- */
 import type { IpcRendererEvent } from "electron";
 import electron = require("electron");
 const { contextBridge, ipcRenderer } = electron;
 
-/** 与 desktop/main.ts 的 DesktopUpdaterEvent 同构（JSON 过 IPC，字段只增不改）。 */
+if (!process.argv.includes("--pi-browser-embedded")) {
+	contextBridge.exposeInMainWorld("piBrowserShell", {
+		call: (action: string, args?: Record<string, unknown>) => ipcRenderer.invoke("pi-browser:shell", action, args),
+		onFocusAddress: (callback: () => void) => {
+			const listener = () => callback();
+			ipcRenderer.on("pi-browser:focus-address", listener);
+			return () => ipcRenderer.removeListener("pi-browser:focus-address", listener);
+		},
+		onOpenOptions: (callback: () => void) => {
+			const listener = () => callback();
+			ipcRenderer.on("pi-browser:open-options", listener);
+			return () => ipcRenderer.removeListener("pi-browser:open-options", listener);
+		},
+		onState: (callback: (state: unknown) => void) => {
+			const listener = (_event: IpcRendererEvent, state: unknown) => callback(state);
+			ipcRenderer.on("pi-browser:state", listener);
+			return () => ipcRenderer.removeListener("pi-browser:state", listener);
+		},
+	});
+}
+
+void ipcRenderer
+	.invoke("pi-browser:trust")
+	.then((trust: { controller?: boolean }) => {
+		if (trust.controller)
+			contextBridge.exposeInMainWorld("__piBrowser", {
+				version: 1,
+				pageCall: (request: unknown) => ipcRenderer.invoke("pi-browser:page-call", request),
+			});
+	})
+	.catch(() => {});
+
 export interface DesktopUpdaterEvent {
 	state: "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error";
 	version?: string | null;
@@ -18,6 +43,7 @@ export interface DesktopUpdaterEvent {
 
 contextBridge.exposeInMainWorld("piDesktop", {
 	isDesktop: true as const,
+	embedded: process.argv.includes("--pi-browser-embedded"),
 	platform: process.platform,
 	openHub: (url: string): Promise<boolean> => ipcRenderer.invoke("pi-desktop:open-hub", url),
 	setTitleBarOverlay: (opts: { color?: string; symbolColor?: string }) =>

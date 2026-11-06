@@ -30,7 +30,6 @@ interface LoginAttempt {
 	timer: ReturnType<typeof setTimeout>;
 }
 
-/** Ephemeral PKCE state stays server-side; only a completed grant enters pi's shared store. */
 export async function startMcpOAuthLogin(
 	options: McpAuthStoreOptions & { name: string; serverUrl: string },
 ): Promise<{ id: string; authorizationUrl: string; redirectUrl: string }> {
@@ -132,7 +131,6 @@ export async function finishMcpOAuthLogin({ id, redirectUrl }: { id: string; red
 	const attempt = getAttempt(id);
 	if (attempt.status.status === "complete") return;
 	if (attempt.status.status === "error") throw new Error(attempt.status.error);
-	// Validate before changing state: a stray or forged callback must not consume the real login.
 	let callback: URL;
 	try {
 		callback = new URL(redirectUrl);

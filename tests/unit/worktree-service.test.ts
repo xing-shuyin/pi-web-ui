@@ -1,9 +1,3 @@
-/**
- * tests/unit/worktree-service.test.ts
- *
- * Git 工作树（Worktree）解析与工具单元测试。
- */
-
 import { describe, expect, it } from "vitest";
 import { parseWorktreePorcelain, normalizeWirePath } from "../../server/worktree-service.js";
 import { makeWorktreeTool, WORKTREE_TOOL_NAME } from "../../server/worktree-tool.js";

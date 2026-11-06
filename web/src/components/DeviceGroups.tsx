@@ -8,10 +8,25 @@ import { searchGroupRoomsAndTasks, GroupNotificationManager, type SearchableGrou
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
+import type { GroupRouterConfig } from "./GroupRouterSettings";
 
 type Device = { id: string; deviceId?: string; name: string; enabled: boolean; online?: boolean };
-type Room = { id: string; name: string; botIds: string[]; primaryBotId?: string };
-type Detail = { room: Room };
+type Room = { id: string; name: string; botIds: string[]; primaryBotId?: string; router?: GroupRouterConfig };
+type Detail = { room: Room; tasks?: SearchableGroupTask[] };
+function parseDetail(data: unknown, expectedRoomId?: string): Detail {
+	const room = (data as Detail | null)?.room;
+	if (
+		!room ||
+		typeof room.id !== "string" ||
+		!room.id ||
+		(expectedRoomId !== undefined && room.id !== expectedRoomId) ||
+		typeof room.name !== "string" ||
+		!Array.isArray(room.botIds) ||
+		room.botIds.some((id) => typeof id !== "string")
+	)
+		throw new Error("Invalid group detail response");
+	return data as Detail;
+}
 const words = {
 	zh: {
 		groups: "群聊",
@@ -205,7 +220,9 @@ export function DeviceGroups({
 					request<{ bots: Device[] }>("bots", current.signal),
 					request<{ rooms: Room[] }>("rooms", current.signal),
 					managing && roomId
-						? request<Detail & { tasks?: SearchableGroupTask[] }>(`rooms/${encodeURIComponent(roomId)}`, current.signal)
+						? request<unknown>(`rooms/${encodeURIComponent(roomId)}`, current.signal).then((data) =>
+								parseDetail(data, roomId),
+							)
 						: Promise.resolve(null),
 				]);
 				if (!valid() || current.signal.aborted) return;
@@ -256,8 +273,6 @@ export function DeviceGroups({
 		navigationRevision.current = navigation.revision;
 		if (navigation.create) beginCreate();
 		else if (navigation.roomId) {
-			// App already routes the open request. Consuming it must not emit it again:
-			// a new navigation revision would re-enter this effect indefinitely.
 			selectRoom(navigation.roomId, navigation.manage);
 		}
 	}, [active, navigation?.revision]);
@@ -272,7 +287,7 @@ export function DeviceGroups({
 		const isCreate = creating;
 		const id = detail?.room.id;
 		try {
-			const { room } = await request<{ room: Room }>(
+			const data = await request<unknown>(
 				isCreate ? "rooms" : `rooms/${encodeURIComponent(id!)}/members`,
 				controller.signal,
 				{
@@ -286,6 +301,7 @@ export function DeviceGroups({
 				},
 			);
 			if (controller.signal.aborted || mutation.current !== controller) return;
+			const { room } = parseDetail(data, isCreate ? undefined : id);
 			if ((room.primaryBotId ?? "") !== expectedPrimary) {
 				throw new Error(
 					isZhLocale(locale)
@@ -479,29 +495,39 @@ export function DeviceGroups({
 								</label>
 							))}
 						</fieldset>
-						<div className="dc-field">
-							<label htmlFor="device-group-primary-bot">{isZhLocale(locale) ? "主 Bot" : "Primary Bot"}</label>
-							<select
-								id="device-group-primary-bot"
-								value={selected.includes(primaryBotId) ? primaryBotId : ""}
-								disabled={busy || !active || (managing && !detail)}
-								onChange={(event) => setPrimaryBotId(event.target.value)}
-							>
-								<option value="">{isZhLocale(locale) ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
-								{devices
-									.filter((bot) => bot.enabled && selected.includes(bot.id))
-									.map((bot) => (
-										<option key={bot.id} value={bot.id}>
-											{bot.name} · {bot.id}
-										</option>
-									))}
-							</select>
+						{!detail?.room.router?.enabled && (
+							<div className="dc-field">
+								<label htmlFor="device-group-primary-bot">
+									{isZhLocale(locale) ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
+								</label>
+								<select
+									id="device-group-primary-bot"
+									value={selected.includes(primaryBotId) ? primaryBotId : ""}
+									disabled={busy || !active || (managing && !detail)}
+									onChange={(event) => setPrimaryBotId(event.target.value)}
+								>
+									<option value="">{isZhLocale(locale) ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+									{devices
+										.filter((bot) => bot.enabled && selected.includes(bot.id))
+										.map((bot) => (
+											<option key={bot.id} value={bot.id}>
+												{bot.name} · {bot.id}
+											</option>
+										))}
+								</select>
+								<p>
+									{isZhLocale(locale)
+										? "未启用 Router 时，未 @ Bot 的消息发送给原主 Bot。独立 AI Router 请在群聊顶部配置。"
+										: "When Router is disabled, messages without mentions go to the legacy primary Bot. Configure the independent AI Router from the group chat header."}
+								</p>
+							</div>
+						)}
+						{detail?.room.router?.enabled && (
 							<p>
-								{isZhLocale(locale)
-									? "未 @ Bot 的消息自动发送给主 Bot。"
-									: "Messages without a Bot mention go to the primary Bot."}
+								AI Router · {detail.room.router.deviceId} · {detail.room.router.model} ·{" "}
+								{detail.room.router.thinkingLevel}
 							</p>
-						</div>
+						)}
 						<div className="dc-actions">
 							<button
 								className="dc-button"

@@ -115,7 +115,6 @@ async function fixture() {
 	}
 	return { port, host, origin, cookie, localPort, sessions, authorized, client };
 }
-// Opaque synthetic JPEG bytes: this suite verifies exact transport; canvas decoding is tested separately.
 const jpeg = Buffer.alloc(8192, 0xab);
 jpeg.writeUInt16BE(0xffd8, 0);
 jpeg.writeUInt16BE(0xffd9, jpeg.length - 2);

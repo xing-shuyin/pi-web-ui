@@ -1,14 +1,3 @@
-/**
- * piSessionsRoot 单元测试（零 token、零 server）。
- *
- * 背景：设置了 PI_CODING_AGENT_SESSION_DIR 时，pi 把会话以扁平布局写在根目录
- * 顶层（cwd 是 jsonl 文件内字段）；未设置时走 SDK 默认的 <agentDir>/sessions/
- * --<cwd>--/ 子目录布局。
- *
- * 关键约束：env 未设置时必须返回 undefined（让 SDK list()/listAll() 落回默认
- * 子目录路径），**不能**回退到 <agentDir>/sessions——显式传入根目录会让 SDK 只扫
- * 根顶层，默认子目录布局下顶层为空，历史对话/最近项目全丢（0.84.4 实测回归）。
- */
 import { afterEach, describe, expect, it } from "vitest";
 import { isInsideSessionsDir, piSessionsRoot } from "../../server/agent-service.js";
 
@@ -73,8 +62,6 @@ describe("isInsideSessionsDir", () => {
 		expect(isInsideSessionsDir(agentDir, "/tmp/agent/sessions")).toBe(false);
 	});
 
-	// 额外会话根（PI_CODING_AGENT_SESSION_DIR）：历史列表就是从这个目录扫的，
-	// 打开/删除/改名必须与列表**同口径** —— 否则设了该变量的用户「列得出来、点不开」。
 	it("allows a transcript under the extra root when PI_CODING_AGENT_SESSION_DIR is set", () => {
 		process.env.PI_CODING_AGENT_SESSION_DIR = "/tmp/custom-sessions";
 		expect(isInsideSessionsDir(agentDir, "/tmp/custom-sessions/2026-01-01T00-00-00-000Z_a.jsonl")).toBe(true);

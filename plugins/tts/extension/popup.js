@@ -4,7 +4,6 @@ const btnSyncDoubao = document.getElementById("btn-sync-doubao");
 const btnSyncDeepseek = document.getElementById("btn-sync-deepseek");
 const msg = document.getElementById("msg");
 
-// 读取已保存的服务地址
 chrome.storage.local.get("serverUrl", (data) => {
 	if (data.serverUrl) {
 		inputUrl.value = data.serverUrl;
@@ -34,7 +33,6 @@ async function getDoubaoCookie() {
 
 async function getDeepSeekToken() {
 	try {
-		// 1. 尝试从已打开的 chat.deepseek.com 标签页的 localStorage 直接读取 userToken
 		const tabs = await chrome.tabs.query({ url: "*://chat.deepseek.com/*" });
 		for (const tab of tabs) {
 			if (tab.id) {
@@ -60,7 +58,6 @@ async function getDeepSeekToken() {
 			}
 		}
 
-		// 2. 尝试从 cookie 读取 userToken / d_token
 		const cookies = await chrome.cookies.getAll({ domain: "deepseek.com" });
 		for (const c of cookies) {
 			if (c.name.toLowerCase().includes("token") && c.value && c.value.length > 30) {

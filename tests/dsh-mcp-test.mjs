@@ -1,13 +1,3 @@
-/**
- * dsh 引擎 MCP 工具桥测试（真 key 门控）——<dataDir>/mcp.json 声明一个 stdio MCP
- * 服务器 → McpBridge 发现其工具 → 经 pluginToolsProvider 桥进 DSH（#15 的 tools
- * bridge）→ 模型真实调用 MCP 工具 → McpClient.call 转发给 MCP 服务器 → 结果回传模型。
- *
- * 需要一个最小 fake MCP 服务器（NDJSON JSON-RPC over stdio）。无 key / 无运行时树
- * / 无 node 时打印 SKIP 并退出 0。
- *
- * 用法：node tests/dsh-mcp-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -22,7 +12,6 @@ const PORT = 8942;
 const CLIENT_ID = "dsh-mcp-test";
 const MARKER = "MCP_MARKER_8642";
 
-// 真 key 门控。
 let key = process.env.DEEPSEEK_API_KEY;
 if (!key) {
 	try {
@@ -32,9 +21,7 @@ if (!key) {
 			const ds = auth.deepseek;
 			key = typeof ds === "string" ? ds : ds?.key;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 if (!key) {
 	console.log("⏭ SKIP：无 DeepSeek API key（需 ~/.pi/agent/auth.json 的 deepseek.key 或 DEEPSEEK_API_KEY）");
@@ -62,7 +49,6 @@ if (!rtAvailable) {
 	console.log(`⏭ SKIP：${skipReason}`);
 	process.exit(0);
 }
-// MCP 服务器用 node 跑（fake mcp server 用 node 内置 stdio）。
 if (process.execPath === "") {
 	console.log("⏭ SKIP：无 node");
 	process.exit(0);
@@ -74,7 +60,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// ---- 种 fake MCP 服务器 + mcp.json ----
 const dataDir = mkdtempSync(join(tmpdir(), "dsh-mcp-"));
 const mcpServerPath = join(dataDir, "mcp-server.mjs");
 writeFileSync(
@@ -125,9 +110,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -208,7 +191,6 @@ async function main() {
 	await c.wait((m) => m.type === "ready");
 	console.log("attached");
 
-	// 等 DSH 运行时启动 + 工具桥 sync，以及 McpBridge 发现 MCP 工具后 applyPluginAgentTools 重同步。
 	await sleep(6000);
 
 	c.send({
@@ -245,8 +227,6 @@ main().catch((err) => {
 	console.error("✗ dsh-mcp crashed:", err.message);
 	try {
 		server.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

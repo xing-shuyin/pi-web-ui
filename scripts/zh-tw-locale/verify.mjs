@@ -1,4 +1,3 @@
-// 驗證 zh-TW 輸出：key 完整與順序、佔位符、殘留簡體字、重複詞、禁用詞。
 import { readFileSync } from "node:fs";
 import { OpenCC } from "./opencc.mjs";
 import { extractPlaceholders as ph, readCatalog } from "../lib/i18n-catalog.mjs";
@@ -23,7 +22,6 @@ for (const k of zk) {
 	if (JSON.stringify(ph(v)) !== JSON.stringify(ph(zh[k])))
 		report(`${k}: 佔位符不一致 ${JSON.stringify(ph(zh[k]))} → ${JSON.stringify(ph(v))}`);
 }
-// 殘留簡體：把輸出再從「簡」轉一次，凡會變動的字元即為殘留簡體字（排除 twp 會把繁體再改的詞）
 const toTrad = OpenCC.Converter({ from: "cn", to: "tw" });
 const residual = new Map();
 for (const [k, v] of Object.entries(tw)) {
@@ -40,14 +38,12 @@ for (const [k, v] of Object.entries(tw)) {
 }
 for (const [pair, keys] of residual)
 	console.log(`  ? 可能殘留簡體 ${pair}  (${keys.length}) 例: ${keys.slice(0, 3).join(", ")}`);
-// 重複詞
 for (const [k, v] of Object.entries(tw)) {
 	const m = v.match(
 		/(設定設定|預設預設|平行平行|行程行程|範本範本|專案專案|核准核准|儲存庫庫|終端機機|工作階段工作階段|取得取得)/,
 	);
 	if (m) report(`${k}: 重複詞 ${m[0]}`);
 }
-// 禁用／可疑詞
 const banned = [
 	"幹",
 	"當前",
@@ -79,5 +75,4 @@ for (const w of banned) {
 	if (ks.length) report(`含 "${w}" ×${ks.length}: ${ks.slice(0, 4).join(", ")}`);
 }
 console.log(bad ? `\n共 ${bad} 項問題` : "\n通過基本驗證（key／佔位符／重複詞／禁用詞）");
-// 有問題必須非零退出：CI 里 verify 一直绿会让失效的繁中包悄悄发布。
 process.exit(bad > 0 ? 1 : 0);

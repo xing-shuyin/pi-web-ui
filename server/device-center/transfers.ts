@@ -89,7 +89,6 @@ function fail(status: number, message: string): never {
 function field(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
-/** Never forward opaque device responses (which could contain file data or credentials). */
 export function transferSummary(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 	const source = value as Record<string, unknown>;
@@ -139,7 +138,7 @@ export function transferSummary(value: unknown): Record<string, unknown> {
 		result.totalExcluded = source.totalExcluded;
 	if (Array.isArray(source.exclusions)) {
 		const exclusions: { path: string; reason: "ignored" | "sensitive" }[] = [];
-		let bytes = 2; // JSON array brackets, including UTF-8 path bytes and escaping.
+		let bytes = 2;
 		for (const item of source.exclusions.slice(0, DEVICE_FILE_SYNC_LIMITS.exclusions)) {
 			if (!item || typeof item !== "object") continue;
 			const { path, reason } = item;
@@ -178,7 +177,6 @@ export function transferSummary(value: unknown): Record<string, unknown> {
 	return result;
 }
 
-/** Await installation before serving requests: receipts are loaded before authorization is published. */
 export async function installDeviceTransfers(options: Options) {
 	const store = options.hub?.store ?? options.store;
 	const authenticate = options.hub?.authenticateAgent ?? options.authenticateAgent;
@@ -567,7 +565,6 @@ export async function installDeviceTransfers(options: Options) {
 							!body.overwritePaths.every((p: unknown) => typeof p === "string" && p.length > 0 && p.length <= 4096)
 						)
 							fail(400, "Explicit revision and overwrite paths required");
-						// Persist consumption before the side effect. A lost response must never replay apply.
 						await transact((draft) => {
 							const row = draft.find((r) => r.id === receipt.id);
 							if (!row || row.applyStarted) fail(409, "Apply already attempted; stage a new transfer");
@@ -630,7 +627,6 @@ export async function installDeviceTransfers(options: Options) {
 		return undefined;
 	}
 
-	// Human requests are persisted before scheduling; the Hub only coordinates fixed Bot RPCs.
 	const running = new Map<
 		string,
 		{
@@ -918,7 +914,6 @@ export async function installDeviceTransfers(options: Options) {
 					releaseSlot(row.id);
 			}
 		})();
-		// A storage failure is visible as an interrupted job after restart; never log raw RPC data.
 		void slot.done.catch(() => {});
 	}
 
@@ -942,7 +937,6 @@ export async function installDeviceTransfers(options: Options) {
 					return { ...view(r), status: "failed", error: "Transfer scope changed" };
 				}
 			});
-			// Older agent-created receipts have no sender job; query only their bounded tail.
 			for (const row of rows.filter((r) => !r.job && !r.applyStarted).slice(-10)) {
 				try {
 					const status = await rpc(row, "transfer_status", {}, AbortSignal.timeout(3000));
@@ -950,9 +944,7 @@ export async function installDeviceTransfers(options: Options) {
 						transfers.find((t) => t.transferId === row.id)!,
 						transferSummary(status),
 					);
-				} catch {
-					/* Keep interruption visible if the receiver cannot be inspected. */
-				}
+				} catch {}
 			}
 			res.json({ transfers });
 		} catch (error) {

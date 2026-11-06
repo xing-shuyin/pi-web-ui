@@ -12,38 +12,17 @@ import {
 import { appSend, useAppField } from "../app-globals";
 import { recordModelUsage } from "../model-usage";
 
-/* ------------------------------------------------------------------ */
-/* 提示词模板（prompt templates）                                        */
-/*                                                                     */
-/* 一套可复用的完整提示词，不只在「新对话空态」可用——通过 TemplateProvider    */
-/* 把数据与弹窗提升到全局：空态显示推荐卡片，对话中途也能随时从输入框工具条    */
-/* 打开同一个模板库。增删改在任意入口都可用：                               */
-/*   - 模板库卡片 hover 直接出现 🗑（内置模板=移出模板库，自定义=删除）        */
-/*   - 点卡片打开编辑弹窗：改内容→保存修改；内置可移出、自定义可删除；        */
-/*   - 保存/删除后自动回到模板库列表，能看到变化。                           */
-/* 持久化在服务端 <dataDir>/prompt-templates.json；旧浏览器数据自动迁移。 */
-/* 灵感来自 https://www.aihero.dev/skills（Matt Pocock 的工程纪律技能）：  */
-/* 需求澄清 → 拆解计划 → TDD → 排错 → 架构 → 代码审查。                    */
-/* ------------------------------------------------------------------ */
-
 interface Template {
 	id: string;
 	command?: string;
 	icon: string;
-	/** 卡片上显示的短标题。 */
 	title: string;
-	/** 卡片上的一句话说明。 */
 	desc: string;
-	/** 完整的复杂提示词（与按钮文字不同，比标题长得多）。 */
 	prompt: string;
-	/** 内置模板（本地化默认值，可被 localStorage 覆盖 / 移出）。 */
 	builtin?: boolean;
-	/** 表单校验错误（仅在 modal 内短暂存在）。 */
 	error?: string;
 }
 
-/** localStorage 里的一条：要么是完整模板（自定义 / 内置覆盖），要么是内置的
- *  移出标记 { id, hidden: true }。 */
 interface StoredTemplate {
 	id: string;
 	command?: string;
@@ -65,11 +44,7 @@ interface BuiltinDef {
 	promptKey: I18nKey;
 }
 
-/** 内置工程模板：收敛为研发主干与专项保障的 8 个核心黄金工作流。
- *  涵盖需求对齐、任务规划、TDD 实现、代码审查、根因排错、合并冲突、原型验证与一手调研。
- *  用户在本地新增或定制的模板 100% 完好保留，始终追加展示或优先覆盖。 */
 const BUILTIN_DEFS: BuiltinDef[] = [
-	/* 核心研发主干（The Core Loop） */
 	{
 		id: "clarify",
 		command: "clarify",
@@ -102,7 +77,6 @@ const BUILTIN_DEFS: BuiltinDef[] = [
 		descKey: "tpl.sk.codeview.desc",
 		promptKey: "tpl.sk.codeview.prompt",
 	},
-	/* 专项高频保障（Specialized Operations） */
 	{
 		id: "diagnosing-bugs",
 		command: "debug",
@@ -157,55 +131,30 @@ function isBuiltinId(id: string): boolean {
 	return BUILTIN_DEFS.some((b) => b.id === id);
 }
 
-/** 该 stored 条目是否为「完整模板」（区别于内置移出标记）。 */
 function isFullTemplate(s: StoredTemplate): s is StoredTemplate & { title: string } {
 	return typeof s.title === "string";
 }
 
-/* ------------------------------------------------------------------ */
-/* context                                                              */
-/* ------------------------------------------------------------------ */
-
 interface TemplateApi {
-	/** 有效模板：内置（未移出，应用覆盖）+ 自定义，按序排列。 */
 	templates: Template[];
-	/** 把一段提示词填入输入框（dispatch pi-web:fill）。 */
 	fill: (text: string) => void;
-	/** 打开模板库弹窗（对话中输入框按钮入口）。 */
 	openPicker: () => void;
-	/** 打开某个模板的编辑弹窗；无参 = 新建。 */
 	openEdit: (tpl?: Template) => void;
-	/** 「恢复默认模板」两步确认状态。 */
 	resetConfirm: boolean;
-	/** 「恢复默认模板」：第一次点进入确认态，确认态下再点清空自定义/覆盖/移出。 */
 	toggleReset: () => void;
 }
 
 const TemplateCtx = createContext<TemplateApi | null>(null);
 
-/** 在 TemplateProvider 内读取模板库能力。 */
 export function useTemplates(): TemplateApi {
 	const v = useContext(TemplateCtx);
 	if (!v) throw new Error("useTemplates must be used within TemplateProvider");
 	return v;
 }
 
-/* ------------------------------------------------------------------ */
-/* Provider：数据 + 选择器弹窗 + 编辑弹窗                                */
-/* ------------------------------------------------------------------ */
-
-export function TemplateProvider({
-	children,
-	currentModelId,
-}: {
-	/** 发送消息（来自 useChat；socket 未就绪时返回 false）。 */
-	children: ReactNode;
-	/** 当前模型的 "provider/id" 复合键（模板编辑弹窗直接发送时记一次使用次数）。 */
-	currentModelId: string | null;
-}) {
+export function TemplateProvider({ children, currentModelId }: { children: ReactNode; currentModelId: string | null }) {
 	const t = useT();
 	const connectionStatus = useAppField("status");
-	/** 服务端持久化的自定义 / 内置覆盖 / 内置移出标记。 */
 	const [stored, setStored] = useState<StoredTemplate[]>([]);
 	const [storageError, setStorageError] = useState("");
 	const pendingWrite = useRef(false);
@@ -233,18 +182,12 @@ export function TemplateProvider({
 			pendingWrite.current = false;
 		}
 	}, []);
-	/** 模板库（选择器）弹窗是否打开。 */
 	const [pickerOpen, setPickerOpen] = useState(false);
-	/** 正在编辑的模板（modal 工作副本）；null = 关闭。 */
 	const [editing, setEditing] = useState<Template | null>(null);
-	/** 是否「新建」模式（区别于编辑已有模板）。 */
 	const [isNew, setIsNew] = useState(false);
-	/** 「恢复默认模板」两步确认。 */
 	const [resetConfirm, setResetConfirm] = useState(false);
-	/** 编辑弹窗是否由模板库发起（保存/删除后应回到列表）。 */
 	const [fromPicker, setFromPicker] = useState(false);
 
-	// Server file is authoritative; legacy browser data is removed only after import succeeds.
 	useEffect(() => {
 		if (connectionStatus !== "open") return;
 		let disposed = false;
@@ -271,9 +214,7 @@ export function TemplateProvider({
 			if (legacy.length && (await mutateStored({ action: "migrate", templates: legacy }))) {
 				try {
 					localStorage.removeItem(STORAGE_KEY);
-				} catch {
-					/* import already committed */
-				}
+				} catch {}
 			}
 			await refresh();
 		})();
@@ -286,14 +227,13 @@ export function TemplateProvider({
 		};
 	}, [mutateStored, connectionStatus]);
 
-	// 有效模板 = 内置（未移出，应用覆盖） + 自定义。
 	const templates = useMemo(() => {
 		const overrides = new Map<string, StoredTemplate>();
 		const hiddenIds = new Set<string>();
 		for (const s of stored) {
 			if (s.hidden) hiddenIds.add(s.id);
 			else if (isFullTemplate(s) && !isBuiltinId(s.id)) overrides.set(s.id, s);
-			else if (isFullTemplate(s)) overrides.set(s.id, s); // 内置覆盖
+			else if (isFullTemplate(s)) overrides.set(s.id, s);
 		}
 		const builtins: Template[] = BUILTIN_DEFS.filter((d) => !hiddenIds.has(d.id)).map((d) => {
 			const o = overrides.get(d.id);
@@ -353,14 +293,12 @@ export function TemplateProvider({
 			setResetConfirm(true);
 		}
 	}, [resetConfirm, mutateStored]);
-	// 审查 #5：5s 复位走 effect（可在卸载/再次点击时清理，不再裸 setTimeout 悬挂）。
 	useEffect(() => {
 		if (!resetConfirm) return;
 		const id = setTimeout(() => setResetConfirm(false), 5000);
 		return () => clearTimeout(id);
 	}, [resetConfirm]);
 
-	// 选择器里：点卡片 = 直接填入输入框；点 ✏️ = 进编辑弹窗；点「新建」= 新建。
 	const pickFill = useCallback(
 		(tpl: Template) => {
 			setPickerOpen(false);
@@ -380,7 +318,6 @@ export function TemplateProvider({
 		openEdit(undefined, true);
 	}, [openEdit]);
 
-	// 保存：校验后的清理值写入 stored。
 	const saveEdit = useCallback(
 		async (cleaned: Template) => {
 			if (!(await mutateStored({ action: "upsert", template: cleaned }))) return;
@@ -393,7 +330,6 @@ export function TemplateProvider({
 		[fromPicker],
 	);
 
-	// 删除：自定义 = 移除；内置 = 移出模板库（打 hidden 标记，可在「恢复默认」找回）。
 	const removeTemplate = useCallback(
 		async (tpl: Template) => {
 			if (
@@ -411,7 +347,6 @@ export function TemplateProvider({
 		[fromPicker],
 	);
 
-	// 恢复默认：撤掉内置模板的覆盖（保留在列表，显示内置默认；不取消移出标记）。
 	const restoreOverride = useCallback(
 		async (tpl: Template) => {
 			if (!(await mutateStored({ action: "remove", id: tpl.id }))) return;
@@ -477,7 +412,6 @@ export function TemplateProvider({
 					onSend={() => {
 						const raw = editing.prompt.trim();
 						const text = resolveDynamicTemplateVariables(raw);
-						// 模板直发同样算一次当前模型的使用（下拉按次数排序）。
 						if (text && appSend({ type: "prompt", text, queue: false })) {
 							if (currentModelId) recordModelUsage(currentModelId);
 							closeAll();
@@ -489,10 +423,6 @@ export function TemplateProvider({
 		</TemplateCtx.Provider>
 	);
 }
-
-/* ------------------------------------------------------------------ */
-/* 空态推荐卡片（新对话 welcome 页）                                     */
-/* ------------------------------------------------------------------ */
 
 export function EmptyTemplateCards() {
 	const t = useT();
@@ -535,7 +465,6 @@ export function EmptyTemplateCards() {
 	);
 }
 
-/** 单张模板卡片（空态与选择器弹窗共用）：点卡片 = 填入输入框；✏️ = 编辑/删除。 */
 function TemplateCard({
 	tpl,
 	title,
@@ -572,10 +501,6 @@ function TemplateCard({
 	);
 }
 
-/* ------------------------------------------------------------------ */
-/* 模板库（选择器）弹窗                                                  */
-/* ------------------------------------------------------------------ */
-
 function PickerModal({
 	templates,
 	resetConfirm,
@@ -595,7 +520,6 @@ function PickerModal({
 }) {
 	const t = useT();
 
-	// Esc 关闭。
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") onClose();
@@ -607,7 +531,6 @@ function PickerModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal template-picker" onClick={(e) => e.stopPropagation()}>
-				{/* 顶栏（标题 + 关闭）固定，不随卡片列表滚动 */}
 				<div className="template-picker-top">
 					<div className="template-picker-head">
 						<span className="template-picker-title">{t("tpl.pickerTitle")}</span>
@@ -617,7 +540,6 @@ function PickerModal({
 					</div>
 					<div className="template-picker-hint">{t("tpl.pickerHint")}</div>
 				</div>
-				{/* 只有卡片列表滚动 */}
 				<div className="template-picker-scroll">
 					<div className="template-picker-grid">
 						{templates.map((tpl) => (
@@ -651,10 +573,6 @@ function PickerModal({
 		</div>
 	);
 }
-
-/* ------------------------------------------------------------------ */
-/* 编辑弹窗                                                             */
-/* ------------------------------------------------------------------ */
 
 const COMMON_TEMPLATE_ICONS = [
 	"📌",
@@ -735,7 +653,6 @@ function EditModal({
 		});
 	}, [editing, onDraft, onSave, t, templates]);
 
-	// Esc 关闭，Ctrl/Cmd+Enter 保存。
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
@@ -754,7 +671,6 @@ function EditModal({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [onClose, showIconPicker, save]);
 
-	// 点击外部关闭 Emoji 选择下拉
 	useEffect(() => {
 		if (!showIconPicker) return;
 		const onClickOutside = (e: MouseEvent) => {
@@ -766,7 +682,6 @@ function EditModal({
 		return () => window.removeEventListener("mousedown", onClickOutside);
 	}, [showIconPicker]);
 
-	// modal 里提示词 textarea 的自适应高度（复用输入框同款逻辑）。
 	useEffect(() => {
 		const ta = taRef.current;
 		if (!ta) return;
@@ -800,7 +715,6 @@ function EditModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal template-modal" onClick={(e) => e.stopPropagation()}>
-				{/* 顶栏：图标选择 + 标题输入 + 状态 Badge + 关闭 */}
 				<div className="template-modal-head">
 					<div className="template-head-left" ref={iconPickerRef}>
 						<button
@@ -855,9 +769,7 @@ function EditModal({
 					</button>
 				</div>
 
-				{/* 字段区可滚动，头（标题）/ 尾（操作）固定 */}
 				<div className="template-modal-body">
-					{/* 2 列紧凑网格：快捷命令 + 说明 */}
 					<div className="template-grid-2col">
 						<label className="template-field">
 							<div className="template-field-label-row">
@@ -889,7 +801,6 @@ function EditModal({
 						</label>
 					</div>
 
-					{/* 提示词编辑区：工具条与常用变量快捷插入 */}
 					<div className="template-field template-prompt-field">
 						<div className="template-field-label-row">
 							<span className="template-field-label">{t("tpl.fieldPrompt")}</span>

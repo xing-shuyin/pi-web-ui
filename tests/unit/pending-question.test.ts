@@ -1,11 +1,3 @@
-/**
- * pending-question.ts 单测：快照恢复待答问卷面板的去留判定。
- *
- * 重点覆盖三类边界（都会表现为「对话框乱弹/乱消」）：
- *  - 在途旧快照把用户刚答过的问卷重新弹出来；
- *  - 切到其他会话时未收起前一会话的面板；
- *  - 一张回答之前生成的旧快照把同一会话刚由即时通道弹出的面板闪掉。
- */
 import { describe, expect, it } from "vitest";
 import { resolvePendingQuestion } from "../../web/src/pending-question.js";
 
@@ -73,7 +65,6 @@ describe("resolvePendingQuestion", () => {
 		});
 		expect(d.changed).toBe(true);
 		expect(d.question).toBeNull();
-		// 收起后来源回到 live：下次同一会话即时通道弹出的面板仍受规则 3 保护。
 		expect(d.source).toBe("live");
 	});
 
@@ -175,7 +166,6 @@ describe("resolvePendingQuestion", () => {
 	});
 
 	it("异会话在途快照的待答问卷绝不恢复到当前会话（防串台）", () => {
-		// 当前在 conv-2，收到了 conv-1 晚到的快照
 		const d = resolvePendingQuestion({
 			current: null,
 			source: "live",

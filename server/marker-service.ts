@@ -1,7 +1,3 @@
-/**
- * marker-service.ts — 标记服务（内置版 pi-marker-tools）。
- */
-
 import type { ServerMessage, UiActionSuggestion, UiMarkerInfo } from "./protocol.js";
 import type { ClientStateStore, MarkerSettings } from "./client-state.js";
 import { pick, type ServerLang } from "./i18n.js";
@@ -34,11 +30,8 @@ export interface MarkerHost {
 		conversationId: string,
 	) => { getBranch: () => unknown[]; appendCustomEntry?: (t: string, d: unknown) => unknown } | undefined;
 	renameConversation: (conversationId: string, title: string) => void;
-	/** 触发一次标记 widget 重绘（宿主把它接到扩展 widget 合并里，跟随当前活动会话）。 */
 	refreshMarkers: () => void;
-	/** 建议操作变更回调（用于快照/增量同步到客户端）。 */
 	onActionsChange?: (conversationId: string) => void;
-	/** 面向模型/工具返回字符串的服务端语言（默认英文）；推给 UI 的 notice 仍走 text+textEn 双字段。 */
 	lang?: () => ServerLang;
 }
 
@@ -69,7 +62,6 @@ export class MarkerService {
 		return !this.settings.disabledMarkers.includes(name);
 	}
 
-	/** 当前服务端语言（英文默认，未接线前保持原有英文行为）。 */
 	private lang(): ServerLang {
 		return this.host.lang?.() ?? "en";
 	}
@@ -77,7 +69,6 @@ export class MarkerService {
 	buildGuidance(): string {
 		if (!this.settings.markersEnabled) return "";
 		const disabled = new Set(this.settings.disabledMarkers);
-		// AI guidance is strictly in concise English matching tool prompt guidelines.
 		const lines = collectGuidance(disabled, "en");
 		if (lines.length === 0) return "";
 		const linesText = lines.join("\n");
@@ -118,7 +109,6 @@ export class MarkerService {
 		this.host.stateStore.saveMarkerSettings(this.host.clientId, this.settings);
 	}
 
-	// -- state helpers --
 	private memFor(convId: string, ns: string): unknown | undefined {
 		return this.memStore.get(convId)?.get(ns);
 	}
@@ -142,9 +132,7 @@ export class MarkerService {
 					this.setMem(convId, namespace, fromBranch);
 					return structuredClone(fromBranch);
 				}
-			} catch {
-				// best-effort：分支不可读 → 回落 mem/init（快照损坏不阻断对话）。
-			}
+			} catch {}
 		}
 		const mem = this.memFor(convId, namespace) as T | undefined;
 		if (mem !== undefined) return structuredClone(mem);
@@ -161,14 +149,6 @@ export class MarkerService {
 		);
 	}
 
-	// -- parse & execute --
-	/**
-	 * 解析执行一条 assistant 终稿文本中的内联标记。
-	 *
-	 * 多个气泡（同一轮内前一段文本 + 后一段文本）的 message_end 事件会先后到达，
-	 * 而 apply 是异步的——若并发执行会同时读到旧快照、分配重叠 id、后存覆盖前存。
-	 * 因此按会话串行化：每个 conv 的处理链式排队，保证状态严格按文本顺序累积。
-	 */
 	private chains = new Map<string, Promise<void>>();
 
 	handleAssistantText(conversationId: string, text: string): Promise<void> {
@@ -244,7 +224,6 @@ export class MarkerService {
 				};
 			}
 			if (result.applied) {
-				// action 落库；notify/conv 即时生效（通知已发 / 对话已重命名），无需快照。
 				const canonicalTool = token.tool === "suggest" ? ACTION_NAMESPACE : token.tool;
 				if (canonicalTool !== "notify" && canonicalTool !== "conv") {
 					dirty.add(canonicalTool);
@@ -277,11 +256,9 @@ export class MarkerService {
 		const next = lines.length ? lines : [];
 		if (prev && prev.join("\n") === next.join("\n")) return;
 		this.overlayCache.set(key, next);
-		// 通过宿主的 widget 合并（跟随当前活动会话，不覆盖扩展 widget）。
 		this.host.refreshMarkers();
 	}
 
-	/** 计算某个会话的标记 overlay 行（供 UI widget 动态渲染当前活动会话）。 */
 	overlayLines(conversationId: string): string[] {
 		const lines: string[] = [];
 		for (const m of allMarkers()) {
@@ -331,8 +308,6 @@ export class MarkerService {
 		}
 	}
 
-	/** 供设置面板展示的 marker 目录（含启用状态）。 */
-	/** UI 过滤：rename/title 是 conv 的别名，suggest 是 action 的别名，不单独展示。 */
 	listForUi(): Array<UiMarkerInfo> {
 		const seen = new Set<string>();
 		const out: Array<UiMarkerInfo> = [];

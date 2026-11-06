@@ -1,4 +1,3 @@
-/** office-parse 纯函数单测：内存拼最小 zip，不碰文件系统。 */
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,7 +9,6 @@ import {
 	parseXlsxSheets,
 } from "../../server/office-parse.js";
 
-/** 最小 zip 写器（stored/deflate，带中央目录）。 */
 function makeZip(entries: { name: string; data: string; method?: number }[]): Buffer {
 	const chunks: Buffer[] = [];
 	const central: { nameBuf: Buffer; method: number; compLen: number; rawLen: number; offset: number }[] = [];
@@ -94,7 +92,6 @@ describe("parseXlsxSheets", () => {
 		'<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>' +
 		'<row r="2"><c r="A2" t="inlineStr"><is><t>张三</t></is></c><c r="B2"><v>30</v></c></row>' +
 		"</sheetData></worksheet>";
-	// 真文件（openpyxl/Excel）rels Target 是绝对路径 /xl/…，相对路径也要能解
 	it.each(["worksheets/sheet1.xml", "/xl/worksheets/sheet1.xml"])("Target=%s 都能定位 sheet", (target) => {
 		const wb =
 			'<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
@@ -229,7 +226,6 @@ describe("parsePptxSlides", () => {
 		expect(slides[0].title).toBe("");
 		expect(slides[0].paragraphs).toHaveLength(0);
 
-		// 无幻灯片内容抛错
 		expect(() => parsePptxSlides(makeZip([{ name: "other.xml", data: "x" }]))).toThrow(/未找到幻灯片内容/);
 	});
 });
@@ -250,7 +246,6 @@ describe("extractOfficeText", () => {
 			'<row r="1"><c r="A1" t="inlineStr"><is><t>品</t></is></c></row>' +
 			'<row r="2"><c r="A2"><v>10</v></c></row></sheetData></worksheet>';
 		const r = extractOfficeText("表.xlsx", makeZip([{ name: "xl/worksheets/sheet1.xml", data: sheet }]));
-		// 表头是合成的 A 列标（不拿第一行数据冒充），数据行原样在下面
 		expect(r?.text).toContain("| A |");
 		expect(r?.text).toContain("| 品 |");
 		expect(r?.text).toContain("| --- |");

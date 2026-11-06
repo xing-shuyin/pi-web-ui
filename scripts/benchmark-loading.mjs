@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/** Run: node --import tsx scripts/benchmark-loading.mjs
- * CPU microbenchmarks only; no server, network, credentials or user history.
- */
 import { performance } from "node:perf_hooks";
 import assert from "node:assert/strict";
 import { filterForkedParentSessions } from "../server/session-parser.ts";
@@ -18,8 +15,6 @@ function medianRun(fn, rounds = 7) {
 	return Number(samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)].toFixed(3));
 }
 
-// The former forward fixed-point propagation for a root-first linear fork chain.
-// Paths are already normalized, so this baseline conservatively excludes that cost.
 function previousForkPropagation(infos) {
 	const children = new Map();
 	for (const info of infos) if (info.parentSessionPath) children.set(info.parentSessionPath, info.path);
@@ -62,8 +57,6 @@ const message = {
 	],
 };
 const iterations = 100;
-// Former stream serialization did the persisted conversion, then replaced content
-// with another conversion. This marker-free fixture has identical conversion paths.
 const previousStream = () => {
 	const first = serializeMessage(message, 0);
 	return { ...first, id: "stream-123", content: serializeMessage(message, 0).content };

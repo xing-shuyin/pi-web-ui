@@ -1,12 +1,7 @@
 /* theme-name: 极简行文 */
 /* theme-name-en: Pure Flow */
 /* theme-group: builtin */
-/*
- * 极简行文（Pure Flow & Borderless Canvas）—— 现代炭黑/极简暗曜沉浸版：
- * 深度复刻新一代 AI 桌面工作区（OpenAI Codex / ChatGPT Desktop）标志性的中性深炭黑实体画布；
- * 搭配悬浮深炭灰双层输入岛、纯白高对比圆形动作按钮、经典电光蓝状态点睛与行书无外壳行内微胶囊流，
- * 温润护眼、纯净利落、无蓝绿偏色，回答如笔墨行书、一气呵成。
- */
+
 :root {
 	color-scheme: dark;
 	--flow-shadow: #000000;
@@ -125,9 +120,6 @@
 
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   代码语法高亮（hljs）—— 极简冷冽暗调
-   ======================================================== */
 .hljs {
 	color: #f2f2f2;
 }

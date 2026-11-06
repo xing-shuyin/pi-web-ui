@@ -78,8 +78,6 @@ describe("local persistent conversation proxy", () => {
 				body: JSON.stringify(body),
 			});
 			expect(result.status).toBe(409);
-			// The hub's own diagnosis must survive the proxy hop; a fixed "rejected" string made every
-			// hub-side failure indistinguishable in the UI.
 			expect(await result.json()).toEqual({
 				code: "HUB_REJECTED",
 				error: "busy",
@@ -262,7 +260,6 @@ describe("local persistent conversation proxy", () => {
 			400,
 		);
 		expect(received).toHaveLength(2);
-		// Real HTTP response exceeds the ordinary 15-second proxy deadline.
 		const verified = await post("integrations/integration/verify", { commands: ["node check.cjs"] });
 		expect(verified.status).toBe(200);
 		expect(await verified.json()).toMatchObject({ integration: { status: "verified" } });
@@ -328,7 +325,6 @@ describe("local persistent conversation proxy", () => {
 				status: 502,
 				body: { code: "HUB_REJECTED", error: "Hub rejected group request", hubStatus: 500 },
 			});
-			// The forwarded cause is scrubbed: the hub may echo configured credentials back.
 			reply = { status: 403, body: { error: "denied for ui-secret and agent-secret" } };
 			const scrubbed = await get();
 			expect(scrubbed.status).toBe(403);

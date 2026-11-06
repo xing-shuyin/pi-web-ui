@@ -1,5 +1,4 @@
-// ESM evaluates dependencies in source order; this dependency has no application imports.
-import { opaquePortalEnvironment } from "./portal-environment";
+import { opaquePortalEnvironment, restorePortalTheme } from "./portal-environment";
 import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -13,10 +12,11 @@ import { initAuthToken } from "./auth-token";
 import { installScrollbarGutterVar } from "./scrollbar-gutter";
 import { appBase } from "./base-url";
 import { installChunkRecovery } from "./chunk-recovery";
+import { isMobileRuntime } from "./mobile-runtime";
+import { syncMobileNotificationKinds } from "./notify";
 
-const recoverChunk = installChunkRecovery(__BUILD_ID__);
+const recoverChunk = isMobileRuntime() ? () => false : installChunkRecovery(__BUILD_ID__);
 
-/** 根级错误边界：防止渲染期 JS 异常导致整棵 React 树卸载为纯黑屏。 */
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
 	override state: { error: Error | null } = { error: null };
 
@@ -89,36 +89,36 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 	}
 }
 
-// 吸收地址栏 ?token=（PI_WEB_TOKEN 鉴权入口）并持久化，须在首次请求前执行
 initAuthToken();
 
-// Apply the persisted theme before first render so there's no flash of the
-// wrong palette. The full stylesheet swap happens via an injected <link>.
-applyTheme(loadTheme());
-// Issue #763: 首屏渲染前应用 Favicon 颜色，防止多机器标签页图标闪烁
+if (isMobileRuntime()) {
+	const syncKinds = () => {
+		void syncMobileNotificationKinds().catch((error) => console.warn("Push event settings failed:", error));
+	};
+	syncKinds();
+	window.addEventListener("pi-web-ui:sound-settings", syncKinds);
+}
+
+function renderApp() {
+	applyTheme(loadTheme());
+	createRoot(document.getElementById("root")!).render(
+		<StrictMode>
+			<RootErrorBoundary>
+				<LanguageProvider>
+					<App />
+				</LanguageProvider>
+			</RootErrorBoundary>
+		</StrictMode>,
+	);
+}
 applyFavicon();
-// 桌面端初始化沉浸式标题栏窗口装饰与避让
 setupDesktopWindowDecorations();
-// 首帧前实测滚动条宽（scrollbar-gutter 预留 gutter 的宽度）→ 宽屏消息列与
-// 输入列的对齐补偿变量 --msgs-gutter，见 scrollbar-gutter.ts。
 installScrollbarGutterVar();
 
-createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<RootErrorBoundary>
-			<LanguageProvider>
-				<App />
-			</LanguageProvider>
-		</RootErrorBoundary>
-	</StrictMode>,
-);
+if (opaquePortalEnvironment) void restorePortalTheme(window).then(renderApp);
+else renderApp();
 
-// PWA: register the service worker only in production builds so the Vite dev
-// server (live reload / HMR) is never intercepted or cached. The scope is
-// derived from the page URL (appBase), so sub-path deployments like /pi/ get
-// a worker scoped to the app root instead of the site root.
-if (import.meta.env.PROD && !opaquePortalEnvironment && "serviceWorker" in navigator) {
-	// Register after load so it never blocks first paint.
+if (import.meta.env.PROD && !isMobileRuntime() && !opaquePortalEnvironment && "serviceWorker" in navigator) {
 	window.addEventListener("load", () => {
 		const base = appBase();
 		navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch((err) => {

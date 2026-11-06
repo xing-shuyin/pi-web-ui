@@ -1,25 +1,3 @@
-// ---------------------------------------------------------------------------
-// conversation-read-tool.ts — 让 AI（含子代理）读取别的对话
-// ---------------------------------------------------------------------------
-// 背景：用户在左栏有「运行的对话」（含子代理）与「历史对话」，也常想让 AI
-// 「结合另一个对话的内容回答」。此前 AI 既不知道别的对话的 id，也没有干净的
-// 读取通道（只能用 read/bash 翻转录 jsonl，既难找路径又难解析）。
-//
-// 本工具提供只读双通道：
-//   action=list  → 运行中对话（本标签页的全部 conversation，含子代理）+
-//                  历史会话转录（scope=current 仅当前项目，all 跨全部项目）；
-//   action=read  → 按 id 读运行中对话的实时消息（含未落盘的），或按 path 读
-//                  历史转录（只接受会话列表里的路径，任意文件不给读）。
-//
-// 转录文本走 transcriptText/formatTranscript 纯函数（有单测）；文件解析走
-// parseTranscriptLines（jsonl 逐行，坏行跳过）。输出按条数 + 字符数双封顶，
-// 长对话分多次 offset 翻页。跨标签页的实时运行读不到——以落盘历史为准，
-// description 里会告诉模型这一点。
-//
-// 文案约定：工具 definition（description/promptSnippet/promptGuidelines）为纯英文；per-call
-// 返回文本按 lang 取 pick(lang, zh, en, key, vars)，缺表回落英文内联。
-// ---------------------------------------------------------------------------
-
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
@@ -34,7 +12,6 @@ import {
 } from "./conversation-touches.js";
 import type { ClaimView } from "./claim-store.js";
 
-/** 运行中对话的列表行（ClientSession.convs 的轻量视图）。 */
 export interface ConversationListEntry {
 	id: string;
 	title: string;
@@ -45,7 +22,6 @@ export interface ConversationListEntry {
 	parentId?: string;
 }
 
-/** 历史会话的列表行（SessionInfo 的轻量视图）。 */
 export interface HistorySessionEntry {
 	path: string;
 	name?: string;
@@ -55,7 +31,6 @@ export interface HistorySessionEntry {
 	cwd: string;
 }
 
-/** 转录消息的最小结构（实时 AgentMessage 与转录文件解析结果的公共面）。 */
 export interface TranscriptInputMessage {
 	role: string;
 	content?: unknown;
@@ -66,25 +41,16 @@ export interface TranscriptInputMessage {
 	summary?: string;
 	details?: unknown;
 	timestamp?: number;
-	/** 该消息里的工具调用参数（additive：一条消息可并列多个 toolCall，故为数组；
-	 *  格式化输出仍只看 content，本字段只给触碰集解析/status 摘要等内部消费用。
-	 *  content 里的 {type:"toolCall", name, arguments} 块一直都在，
-	 *  本字段只是它的便捷访问点，取不到时留空 —— 绝不伪造。） */
 	toolCalls?: { name: string; args?: unknown }[];
 }
 
-/** 由 ClientSession 实现的数据宿主（读它自己的 conversation 体系 + 会话目录）。 */
 export interface ConversationReadHost {
-	/** 触碰 sidecar（可选：压缩后旧消息被摘要替代，files 回落现算会丢历史；
-	 *  加方法的理由 —— sidecar 按会话文件存，解析路径与转录属同一宿主职责，
-	 *  另起通道反而分裂；缺省/读不到时调用方回落现算，不破坏既有实现）。 */
 	readTouchSidecar?(id?: string, path?: string): TouchedFile[] | undefined;
 	listRunningConversations(): ConversationListEntry[];
 	readRunningConversation(
 		id: string,
 	): { title: string; cwd: string; isSubagent: boolean; messages: TranscriptInputMessage[] } | undefined;
 	listHistorySessions(scope: "current" | "all", cwd: string): Promise<HistorySessionEntry[]>;
-	/** path 不在会话列表里（越界/手写脏路径）→ undefined，工具转报错。 */
 	readHistorySession(path: string): Promise<
 		| {
 				title: string;
@@ -96,13 +62,11 @@ export interface ConversationReadHost {
 	>;
 }
 
-/** 由 content 块提 toolCalls 字段（additive；格式化输出不受影响，见接口注释）。 */
 function fillToolCalls(target: TranscriptInputMessage, content: unknown): void {
 	const refs = toolCallRefsOfContent(content);
 	if (refs.length > 0) target.toolCalls = refs;
 }
 
-/** AgentMessage → 转录最小结构（角色原样保留，内容不动，格式化延后）。 */
 export function toTranscriptInput(m: AgentMessage): TranscriptInputMessage {
 	const role = (m as { role?: unknown }).role;
 	const r = typeof role === "string" ? role : "unknown";
@@ -122,7 +86,6 @@ export function toTranscriptInput(m: AgentMessage): TranscriptInputMessage {
 	return base;
 }
 
-/** 内容块 → 纯文本：text 拼接；图片占位；具名块（toolCall 等）留名；其余占位。 */
 function textOfContent(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -143,7 +106,6 @@ function textOfContent(content: unknown): string {
 	return parts.join("\n");
 }
 
-/** 附件 aside 的短名（details.name/path），非附件返回空。 */
 function attachmentName(details: unknown): string {
 	if (!details || typeof details !== "object") return "";
 	const d = details as { name?: unknown; path?: unknown };
@@ -152,7 +114,6 @@ function attachmentName(details: unknown): string {
 	return "";
 }
 
-/** 单条转录消息 → 可读文本行（角色标签 + 内容，不截断，截断由 format 统一做）。 */
 export function transcriptText(m: TranscriptInputMessage): string {
 	switch (m.role) {
 		case "bashExecution":
@@ -182,13 +143,11 @@ export function transcriptText(m: TranscriptInputMessage): string {
 	}
 }
 
-/** 角色标签（列表行里的序号前缀用）。 */
 function roleLabel(m: TranscriptInputMessage): string {
 	if (m.role === "toolResult") return `tool result${m.toolName ? ` (${m.toolName})` : ""}`;
 	return m.role;
 }
 
-/** 单条消息截断：超出部分标注剩余字符数（调用方一眼知道丢了多少）。 */
 export function truncateCounted(s: string, cap: number): string {
 	if (s.length <= cap) return s;
 	return `${s.slice(0, cap)}\n… +${s.length - cap} chars`;
@@ -199,13 +158,9 @@ function trunc(s: string, cap: number): string {
 }
 
 export interface FormatTranscriptOpts {
-	/** 起始下标（0-based， chronological）。缺省 0。 */
 	offset?: number;
-	/** 最多取多少条。缺省 50，上限 200。 */
 	limit?: number;
-	/** 单条消息字符封顶。缺省 2000。 */
 	perMsgCap?: number;
-	/** 全文字符封顶。缺省 20000。 */
 	maxChars?: number;
 }
 
@@ -214,11 +169,9 @@ export interface FormattedTranscript {
 	total: number;
 	from: number;
 	to: number;
-	/** 还有后文没给（to < total 或撞了 maxChars）。 */
 	truncated: boolean;
 }
 
-/** 转录分页格式化：序号形如 [12/135 user]，尾部带翻页提示位（调用方拼 header）。 */
 export function formatTranscript(messages: TranscriptInputMessage[], opts?: FormatTranscriptOpts): FormattedTranscript {
 	const total = messages.length;
 	const offset = Math.max(0, Math.floor(opts?.offset ?? 0));
@@ -242,10 +195,6 @@ export function formatTranscript(messages: TranscriptInputMessage[], opts?: Form
 	return { text, total, from, to, truncated };
 }
 
-/**
- * 转录 jsonl → 转录消息（message 条目取 message；compaction/branch_summary
- * 取 summary；坏行跳过）。纯函数：文件读取由宿主做，单测直接喂文本。
- */
 export function parseTranscriptLines(text: string): TranscriptInputMessage[] {
 	const out: TranscriptInputMessage[] = [];
 	for (const line of text.split("\n")) {
@@ -292,35 +241,24 @@ export function parseTranscriptLines(text: string): TranscriptInputMessage[] {
 	return out;
 }
 
-/** 大小写不敏感子串（空 query 全匹配）。 */
 function matchesHay(hay: string, q: string): boolean {
 	return q === "" || hay.toLowerCase().includes(q);
 }
 
-/** action=read 的视图：chat 只给 user/assistant 文本（默认，省 token），
- *  full 才含工具调用与结果（含 bash 输出、附件 aside、压缩摘要）。 */
 export type ReadView = "chat" | "full";
 
 export interface ReadSelectionOpts {
 	view?: ReadView;
-	/** 取最新 N 条（取代猜 offset；与 offset 同给时 last 先生效）。 */
 	last?: number;
-	/** 对话内搜索（大小写不敏感）：只回命中消息 ±1 条上下文。 */
 	query?: string;
 }
 
 export interface ReadSelection {
-	/** view/last/query 层层筛选后的消息（offset/limit 分页之前）。 */
 	selected: TranscriptInputMessage[];
-	/** view 过滤后的总数（last/query 之前；header 里报数用）。 */
 	totalInView: number;
-	/** query 模式：命中消息在 view 内选区的序号（0-based 排序，不含上下文；
-	 *  header 里报位置用 —— 与 offset 分页同一坐标系，都是选区相对位置。
-	 *  selected 是命中 ±1 上下文展开）。 */
 	hitIndices: number[];
 }
 
-/** read 选择器（纯函数）：view → query → last 的顺序固定，见注释。 */
 export function selectReadMessages(messages: TranscriptInputMessage[], opts?: ReadSelectionOpts): ReadSelection {
 	const list = Array.isArray(messages) ? messages : [];
 	const view: ReadView = opts?.view === "full" ? "full" : "chat";
@@ -329,8 +267,6 @@ export function selectReadMessages(messages: TranscriptInputMessage[], opts?: Re
 	let selected = inView;
 	let hitIndices: number[] = [];
 	if (q) {
-		// 在 view 内按转录文本搜：hitIndices 只记命中（报数/定位用），
-		// selected 是命中 ±1 条上下文展开（去重保序）。
 		const hits: number[] = [];
 		const keep = new Set<number>();
 		for (let i = 0; i < inView.length; i++) {
@@ -347,7 +283,6 @@ export function selectReadMessages(messages: TranscriptInputMessage[], opts?: Re
 		const n = Math.min(200, Math.max(1, Math.floor(last)));
 		if (selected.length > n) {
 			selected = selected.slice(selected.length - n);
-			// last 裁掉上下文外层时命中序号跟走（只留仍在选区内的）。
 			if (hitIndices.length > 0) {
 				const keep = new Set(selected);
 				hitIndices = hitIndices.filter((i) => keep.has(inView[i]));
@@ -357,7 +292,6 @@ export function selectReadMessages(messages: TranscriptInputMessage[], opts?: Re
 	return { selected, totalInView: inView.length, hitIndices };
 }
 
-/** 工具参数里的一句话提示（path/command，单行 ≤80 字符；拿不到就空串）。 */
 function toolHint(args: unknown): string {
 	if (!args || typeof args !== "object") return "";
 	const a = args as { path?: unknown; file_path?: unknown; filePath?: unknown; command?: unknown };
@@ -372,17 +306,11 @@ function toolHint(args: unknown): string {
 }
 
 export interface ConversationSummary {
-	/** 从尾往前第一条工具调用（含 bashExecution），没有则 undefined。 */
 	lastTool?: { name: string; hint: string };
-	/** 最后一条 assistant 消息的纯文本（文本块拼接），没有则 undefined。 */
 	lastAssistant?: string;
-	/** 是否在等用户回答问卷：最后一次 ask_user_question 调用之后没有同名
-	 *  toolResult（pi 引擎问卷走工具调用，可从转录推断；DSH 问卷不走工具，
-	 *  推断不出 —— 见 status 文案里的诚实说明，只报能确定的）。 */
 	waitingQuestion: boolean;
 }
 
-/** action=status 的摘要器（纯函数）：只读转录，不碰 host。 */
 export function summarizeConversation(messages: TranscriptInputMessage[]): ConversationSummary {
 	const list = Array.isArray(messages) ? messages : [];
 	let lastTool: ConversationSummary["lastTool"];
@@ -427,7 +355,6 @@ export function summarizeConversation(messages: TranscriptInputMessage[]): Conve
 	return { lastTool, lastAssistant, waitingQuestion: lastAskIdx >= 0 && lastAskResultIdx < lastAskIdx };
 }
 
-/** read 的附加说明行：query 命中位置 + chat 视图裁剪说明（纯函数）。 */
 export function readExtraLines(
 	L: ServerLang,
 	query: string,
@@ -464,8 +391,6 @@ export function readExtraLines(
 	return lines.length > 0 ? `\n${lines.join("\n")}` : "";
 }
 
-/** 认领行格式化（files/status 共用，纯函数；head 文案各调用方自己 pick）。
- *  style: bullets = 独立成行（files 块用）；inline = 行内逗分（status 一行用）。 */
 export function formatClaimLines(claims: ClaimView[], maxItems = 5, style: "bullets" | "inline" = "bullets"): string[] {
 	const list = Array.isArray(claims) ? claims : [];
 	const shown = list.slice(0, Math.max(1, Math.floor(maxItems)));
@@ -487,21 +412,14 @@ export function filterHistory(list: HistorySessionEntry[], query: string): Histo
 	return list.filter((s) => matchesHay(s.path, q) || matchesHay(s.name ?? "", q) || matchesHay(s.firstMessage, q));
 }
 
-/** 短 id/路径展示（列表行里路径太长只留尾部）。 */
 export function shortPath(p: string, keep = 48): string {
 	return p.length <= keep ? p : `…${p.slice(p.length - keep)}`;
 }
 
-/** action=list 的默认条数：历史默认 15（以前无上限，几百条一次吐完）；
- *  运行中默认不限但给上限（并发对话再多也不会撑爆 details 的 64KB）。 */
 export const HISTORY_LIST_DEFAULT = 15;
 export const RUNNING_LIST_CAP = 50;
-/** action=read 单条消息默认截断（约 600 字符，超出标 “… +N chars”；
- *  以前默认 2000，一条 bash 输出就能吃掉整个 maxChars 预算）。 */
 export const READ_PER_MSG_CAP = 600;
 
-/** conversation_read 的可选外挂（认领表住在 AgentService，不属 ConversationReadHost
- *  「读自己 conversation 体系」的职责，单独传；没有就跳过展示，不报错）。 */
 export interface ConversationReadExtras {
 	listClaims?: (cwd: string) => ClaimView[];
 }
@@ -604,7 +522,6 @@ export function makeConversationReadTool(
 					typeof p.limit === "number" && Number.isFinite(p.limit)
 						? Math.min(200, Math.max(1, Math.floor(p.limit)))
 						: undefined;
-				// kind 过滤掉的一整节直接不取不展（不为了它多一次 I/O）。
 				const running = kind === "history" ? [] : filterRunning(host.listRunningConversations(), query);
 				const history = kind === "running" ? [] : filterHistory(await host.listHistorySessions(scope, ctx.cwd), query);
 				const shownRunning = running.slice(0, cap ?? RUNNING_LIST_CAP);
@@ -622,7 +539,6 @@ export function makeConversationReadTool(
 							s.messageCount ? ` · ${s.messageCount} msgs` : ""
 						}`,
 				);
-				// 超出 cap 时给计数 + 收窄指引（静默丢弃是大忌：调用方会以为这就是全量）。
 				if (running.length > shownRunning.length) {
 					runLines.push(
 						pick(
@@ -683,8 +599,6 @@ export function makeConversationReadTool(
 						: kind === "running"
 							? `${head}\n${runHead}\n${runLines.join("\n") || empty}`
 							: `${head}\n${runHead}\n${runLines.join("\n") || empty}\n${histHead}\n${histLines.join("\n") || empty}`;
-				// details 同样有界：只带展示出的条目（历史的 firstMessage 再掐到 160
-				// 字符），以前整量 history 进 details 会撑爆 64KB 被整段丢弃。
 				return text(`${sections}\n${tail}`, {
 					scope,
 					kind,
@@ -845,7 +759,6 @@ export function makeConversationReadTool(
 						),
 					);
 				}
-				// 取数（错误复用 read 的 not found 文案：同一个“找不到”语义）。
 				let title = "";
 				let cwd = "";
 				let messages: TranscriptInputMessage[] = [];
@@ -886,7 +799,6 @@ export function makeConversationReadTool(
 				const where = id ? { id } : { path };
 				if (action === "files") {
 					const fq = (typeof p.query === "string" ? p.query : "").trim().toLowerCase();
-					// sidecar（压缩前的触碰）∪ 实时转录：union 语义，见 unionTouchLists。
 					const all = unionTouchLists(host.readTouchSidecar?.(id, path) ?? [], extractTouches(messages));
 					const filtered = fq ? all.filter((t) => t.path.toLowerCase().includes(fq)) : all;
 					const listedClaims = (() => {
@@ -957,7 +869,6 @@ export function makeConversationReadTool(
 						claims: listedClaims.map((c) => ({ path: c.path, ownerTitle: c.ownerTitle })),
 					});
 				}
-				// action === "status"：一两行摘要，读全文前的低成本侦察。
 				const sum = summarizeConversation(messages);
 				const touched = unionTouchLists(host.readTouchSidecar?.(id, path) ?? [], extractTouches(messages)).slice(0, 6);
 				let statusClaims: ClaimView[] = [];
@@ -1001,8 +912,6 @@ export function makeConversationReadTool(
 								{ files: formatTouchesCompact(touched, { maxItems: 5 }) },
 							)
 						: pick(L, `最近没动过文件。`, `No files touched recently.`, "convread.status.touched.none");
-				// 等问卷只能从转录推断（ask_user_question 调了没回）；DSH 问卷不走
-				// 工具调用，推断不出 —— 文案写“转录显示”，不夸大。
 				const waitLine = sum.waitingQuestion
 					? `\n${pick(
 							L,
@@ -1011,7 +920,6 @@ export function makeConversationReadTool(
 							"convread.status.waiting",
 						)}`
 					: "";
-				// 认领只在有的时候占一行（没有就不提，省 token）。
 				const linesZh = formatClaimLines(statusClaims, 3, "inline").join("、");
 				const linesEn = formatClaimLines(statusClaims, 3, "inline").join("; ");
 				const claimLine =

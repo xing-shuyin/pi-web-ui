@@ -131,15 +131,12 @@ describe("canvas deletion lifecycle", () => {
 				if (event.event === "started") starts.push(event.nodeId);
 				if (recreate && event.event === "done" && event.nodeId === graph.nodes[0].id) {
 					runtime.deleteGraph(graph.id);
-					// Even reusing the same in-memory object cannot admit the old generation.
 					saveCanvasGraph(dir, graph);
 					(runtime as any).runningGraphs.set(graph.id, graph);
 				}
 			});
 			await runtime.runNode(graph, graph.nodes[0].id);
-			// Downstream runNode starts synchronously before awaiting environment resolution.
 			expect(starts).toEqual(recreate ? [graph.nodes[0].id] : graph.nodes.map((node) => node.id));
-			// Drain the downstream asynchronous environment resolution before temp cleanup.
 			while ((runtime as any).activeExecutions.size) await new Promise((resolve) => setTimeout(resolve, 5));
 		},
 	);
@@ -200,7 +197,6 @@ describe("canvas deletion lifecycle", () => {
 		await firstEntered.promise;
 		runtime.stopNode(graph.id, graph.nodes[0].id);
 		const second = runtime.runNode(graph, graph.nodes[0].id);
-		// Keep the shared-directory lease until the cancelled prompt actually settles.
 		const execution = (runtime as any).activeExecutions.get(`${graph.id}:${graph.nodes[0].id}`);
 		firstRelease.resolve();
 		await first;

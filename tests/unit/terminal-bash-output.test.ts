@@ -9,30 +9,15 @@ import {
 	type TerminalManager,
 } from "../../server/terminals.js";
 
-/** 终端接管 bash 的输出清洗与退出码判定（#572 / #571）。
- *
- * 旧实现的缺陷：清洗假定「哨兵回显一定在真实输出之前」，按它截断。
- *  - Linux 上哨兵回显确实在输出之前，但readline 命令结束后又重绘一次，第二次把真实输出整段吃掉（#572 ①）；
- *  - Windows ConPTY（MINGW64 bash）实测：shell 读到哨兵行才回显它，哨兵回显排在真实输出之后，
- *    同样整段吃掉、只剩 [exit:0]（Windows 实测复现，tests/terminal-bash-test.mjs 也因此失败）；
- *  - 哨兵没有 nonce，真实输出里的 `[pi-exit:42]` 被当成真哨兵，提前返回假退出码（#572 ②）。
- * 修复：哨兵带每次调用随机 nonce；清洗只依赖与时序无关的两个锚点——含 nonce 的哨兵回显行整行删除，
- * 命令回显（首行）及其之前的提示符删除。 */
-
 const NONCE = "0123456789ab";
 
-/** 哨兵行的 shell 回显（与 buildTerminalBashLine 的 sentinel 同形）。字符串拼接，避免转义歧义。 */
 const sentinelEcho = (nonce: string): string =>
 	"__pi_rc=${PIPESTATUS:-$?}; printf '" + String.raw`\n[pi-exit-${nonce}:%s]\n` + `' "$__pi_rc"`;
 
-/** 哨兵输出（数字版）。 */
 const sentinelExit = (nonce: string, code = 0): string => `\r\n[pi-exit-${nonce}:${code}]\r\n`;
 
 const toCRLF = (s: string): string => s.replace(/\n/g, "\r\n");
 
-/** 假 PTY：按两种真实时序之一写入缓冲区。
- *  - linux：命令回显 → 哨兵回显 → 真实输出 → 哨兵重绘 → 哨兵输出；
- *  - conpty：提示符 + 命令回显 → 真实输出 → 提示符 + 哨兵回显（读到才回显）→ 哨兵输出。 */
 function fakePty(realOutput: string, timing: "linux" | "conpty"): TerminalManager {
 	let buf = "";
 	return {
@@ -155,7 +140,6 @@ describe("终端接管 bash 工具端到端（假 PTY，两种时序）", () => 
 	});
 });
 
-/** #571：语法不完整的命令直接拒绝（不建终端、不注入）；`#` 注释里的撇号不算未闭合引号。 */
 describe("语法不完整：直接拒绝，不注入、不建终端（#571）", () => {
 	function spyPty() {
 		const created: string[] = [];
@@ -202,7 +186,6 @@ describe("语法不完整：直接拒绝，不注入、不建终端（#571）", 
 		expect(sentinelUnsafeReason("echo hi # don't")).toBeNull();
 		expect(sentinelUnsafeReason('echo "a" # say "hi')).toBeNull();
 		expect(sentinelUnsafeReason("echo $# ${#arr[@]}")).toBeNull();
-		// 真残句仍然拦
 		expect(sentinelUnsafeReason("echo hi \\")).toBe("trailing_backslash");
 	});
 
@@ -213,8 +196,6 @@ describe("语法不完整：直接拒绝，不注入、不建终端（#571）", 
 
 describe("cleanBashOutput：真实 ConPTY wrapped eval 回显", () => {
 	it("read-with-answer：清除跨行 printf 尾部，保留输入回显和 ANSWER 正文", () => {
-		// artifacts/terminal-audit/results.json read-with-answer: actual 120-column
-		// ConPTY wrap between the literal \\n and printf's closing quote.
 		const nonce = "1794550003c0";
 		const command = 'read -r AUDIT_ANSWER; printf "ANSWER=%s\\n" "$AUDIT_ANSWER"';
 		const raw =
@@ -238,7 +219,6 @@ describe("cleanBashOutput：真实 ConPTY wrapped eval 回显", () => {
 		const injected = buildTerminalBashLine(command, undefined, NONCE);
 		for (let split = 1; split < injected.length; split++) {
 			const raw = `$ ${injected.slice(0, split)}\r\n${injected.slice(split)}\r\nhello\r\n` + sentinelExit(NONCE);
-			// A split inside the initial eval prefix is not a recognizable echo start.
 			if (split < "eval $'".length) continue;
 			expect(cleanBashOutput(raw, NONCE, command), `split ${split}`).toBe("hello");
 		}
@@ -277,7 +257,6 @@ describe("cleanBashOutput：真实 ConPTY wrapped eval 回显", () => {
 describe("cleanBashOutput：回显折行续行剥离与锚点失配回落（0.103 审计）", () => {
 	it("长命令折行回显：与命令逐字衔接的续行一并剥掉", () => {
 		const cmd = "echo " + "x".repeat(150);
-		// 终端 120 列：回显第一行 = 提示符(16 列) + 命令前 104 字符，其余折到第二行
 		const raw = `c@HOST MINGW64 /tmp$ ${cmd.slice(0, 104)}\r\n${cmd.slice(104)}\r\nOK\r\n` + sentinelExit(NONCE);
 		expect(cleanBashOutput(raw, NONCE, cmd)).toBe("OK");
 	});

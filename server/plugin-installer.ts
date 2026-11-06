@@ -1,30 +1,13 @@
-/**
- * plugin-installer — 插件的后台安装作业（安装 / 更新 / 卸载）。
- *
- * 设置面板里的插件操作原本开一个**可见终端 tab** 跑 CLI：过程看得见，但每次操作
- * 都切主视图 + 关掉设置弹窗 —— 连装几个插件就是「装一个、重开设置、再导航回市场」
- * （issue #152）。这里把同一件事搬到服务端后台：
- *
- *   - 真正执行者仍是 CLI（`pi-web-ui install|uninstall`，bin/pi-web-ui.mjs）——
- *     单一实现，界面与终端行为永不漂移（`--build` 之类新选项自动同步）；
- *   - 输出按行回传（`plugin_job` 的 log 段），结束时回 `done`（成功与否 + 输出尾部），
- *     前端就地显示，弹窗不关；
- *   - 完成后由调用方（index.ts）重扫插件 + 重推市场列表；
- *   - **同一时刻只跑一个作业**：安装要动 `<dataDir>/plugins/<id>`，两个作业写同一
- *     目录必出半装状态，所以第二个请求直接被拒（提示等它结束）；
- *   - 看门狗：超时杀掉整棵进程树，绝不留一个卡死的 install 占着锁。
- *
- * 它不决定「谁能装」：managed 实例与 tabs 闸门在 index.ts 的 dispatch 上做（见
- * managed.ts 的「服务端拒绝，客户端只是隐藏」）；这里只兜一层，防止别的调用路径绕过。
- */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { isBuiltinModule } from "./builtin-modules.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { isValidSource } from "./plugin-catalog.js";
 import {
 	inspectLocalInstallSpec,
 	manifestCandidateUrls,
+	parseInstallSpec,
 	readLocalManifest,
 	suggestPluginId,
 	type InstallInspect,
@@ -32,32 +15,37 @@ import {
 import { killPidTree } from "./process-utils.js";
 import type { ServerMessage } from "./protocol.js";
 
-/** 插件 id 字符集（与 server/plugins.ts、plugin-catalog.ts 一致，防路径穿越）。 */
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-/** 单个作业的墙钟上限（clone + 依赖安装 + 编译都可能很慢，给足 15 分钟）。 */
+function isBuiltinModulePath(path: string): boolean {
+	let canonical = resolve(path);
+	try {
+		canonical = realpathSync(canonical);
+	} catch {}
+	return isBuiltinModule(basename(canonical).toLowerCase());
+}
+
+function builtinModuleError(lang: ServerLang): string {
+	return pick(
+		lang,
+		"内置模块由宿主管理，不能通过插件入口安装、更新或卸载。",
+		"Built-in modules are managed by the host and cannot be installed, updated or uninstalled as plugins.",
+	);
+}
+
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
-/** 回传给前端的输出尾部上限（失败时展开排障用，别把整个 build 日志塞进消息）。 */
 const MAX_OUTPUT_CHARS = 8000;
-/** 单行上限：某些工具会吐超长单行（进度条），截断后再回传。 */
 const MAX_LINE_CHARS = 2000;
 
 export interface PluginJobSpec {
-	/** 客户端生成的作业 id（每次进度消息原样带回）。 */
 	jobId: string;
 	action: "install" | "update" | "uninstall";
-	/** 插件 id：install/update 的落盘目录名，uninstall 的目标。 */
 	id: string;
-	/** install/update：远程安装源 owner/repo[/subdir][#ref]。 */
 	source?: string;
-	/** install/update：先做隔离构建（等价 CLI `--build`）。 */
 	build?: boolean;
-	/** install/update：即使只有源码也不构建（等价 CLI `--no-build`，与 build 互斥）。 */
 	noBuild?: boolean;
 }
 
-/** 纯函数：把作业规格翻成 CLI argv（含安全校验），便于单测。
- *  返回 `{ args }` 或 `{ error }`（文案按 lang 本地化）。 */
 export function buildPluginJobArgs(
 	spec: PluginJobSpec,
 	dataDir: string,
@@ -75,6 +63,8 @@ export function buildPluginJobArgs(
 				{ id },
 			),
 		};
+	if (isBuiltinModule(id.toLowerCase()) || isBuiltinModulePath(join(dataDir, "plugins", id)))
+		return { error: builtinModuleError(l) };
 	if (spec.action === "uninstall") return { args: ["uninstall", id, "--data-dir", dataDir] };
 	const source = String(spec?.source ?? "").trim();
 	if (!isValidSource(source))
@@ -86,6 +76,7 @@ export function buildPluginJobArgs(
 				"plugininstaller.source.invalid",
 			),
 		};
+	if (isBuiltinModule(suggestPluginId(parseInstallSpec(source)).toLowerCase())) return { error: builtinModuleError(l) };
 	const args = ["install", source, "--name", id, "--data-dir", dataDir];
 	if (spec.action === "update") args.push("--force");
 	if (spec.build && spec.noBuild)
@@ -102,16 +93,6 @@ export function buildPluginJobArgs(
 	return { args };
 }
 
-/** 安装前的 spec 检查（DSH P0-3 引导式安装）。
- *
- * 三层：① 形状分类（parseInstallSpec）+ 本地已装判定（inspectLocalInstallSpec）；
- * ② 本地路径源：直接读它的 manifest.json；
- * ③ 远端 GitHub 源：一次 raw.githubusercontent 探测（超时 6s，失败不阻断）——
- *    拿到 manifest 就归到 not-found / not-a-package / not-a-bundle 之一，
- *    拿不到（网络/代理问题）回 network 但**不阻塞安装**（problem 只作提示）。
- *
- * 通一不联网：测试时传 fetchImpl 替身；生产走全局 fetch。
- */
 export async function inspectInstallSpec(
 	rawSpec: string,
 	deps: {
@@ -123,9 +104,17 @@ export async function inspectInstallSpec(
 	},
 ): Promise<InstallInspect> {
 	const local = inspectLocalInstallSpec(rawSpec, deps);
-	// 形状就不对 / 本地路径不存在 / 已装（且没 force）：本地已经能给出结论，不再联网。
+	const rejectBuiltin = (): InstallInspect => ({ ...local, problem: "invalid-spec", detail: builtinModuleError("en") });
+	const isBuiltinId = (id?: string): boolean => !!id && isBuiltinModule(id.trim().toLowerCase());
+	if (
+		isBuiltinId(deps.explicitId) ||
+		isBuiltinId(local.suggestedId) ||
+		isBuiltinId(suggestPluginId(local.spec)) ||
+		isBuiltinModulePath(join(deps.pluginsDir, local.suggestedId)) ||
+		(local.spec.kind === "path" && isBuiltinModulePath(local.spec.normalized))
+	)
+		return rejectBuiltin();
 	if (local.problem || local.spec.kind === "npm" || local.spec.kind === "url") {
-		// npm/url 不在本检查的覆盖范围（CLI/注册表自己会报）——原样返回，让 CLI 说话。
 		return local;
 	}
 	if (local.spec.kind === "path") {
@@ -136,9 +125,9 @@ export async function inspectInstallSpec(
 				problem: "not-a-package",
 				detail: `No manifest.json found in ${local.spec.normalized} — this is not a pi-web-ui plugin.`,
 			};
+		if (isBuiltinId(manifest.id)) return rejectBuiltin();
 		return { ...local, manifest, suggestedId: suggestPluginId(local.spec, deps.explicitId ?? manifest.id) };
 	}
-	// github 简写：远端探测 best-effort（失败只补一条提示，不挡安装）。
 	for (const url of manifestCandidateUrls(local.spec)) {
 		try {
 			const res = await (deps.fetchImpl ?? fetch)(url, { signal: AbortSignal.timeout(deps.timeoutMs ?? 6000) });
@@ -151,12 +140,12 @@ export async function inspectInstallSpec(
 					problem: "not-a-bundle",
 					detail: "The remote manifest.json is not a valid plugin manifest (missing id/name).",
 				};
+			if (isBuiltinId(manifest.id)) return rejectBuiltin();
 			return { ...local, manifest, suggestedId: suggestPluginId(local.spec, deps.explicitId ?? manifest.id) };
 		} catch {
 			return { ...local, problem: "network", detail: "Could not reach the remote repository to verify the plugin." };
 		}
 	}
-	// 连 manifest 都没探到 —— 仓库/子目录/分支不存在，或根本不是插件包。
 	return {
 		...local,
 		problem: "not-found",
@@ -181,22 +170,15 @@ function pickManifest(local: InstallInspect, raw: unknown): NonNullable<InstallI
 }
 
 export interface PluginJobHooks {
-	/** 推一条进度给**发起者**（index.ts 包装成只发该 socket）。 */
 	emit(msg: ServerMessage): void;
-	/** 作业结束（成功或失败）后调用：重扫插件 + 重推列表等。 */
 	done(ok: boolean, info: { error?: string; output: string }): void | Promise<void>;
-	/** 面向用户的文案语言。 */
 	lang?: () => ServerLang;
 }
 
 export interface PluginInstallerDeps {
-	/** 数据目录（插件落盘在 <dataDir>/plugins/<id>）。 */
 	dataDir: string;
-	/** 包根目录（CLI 位于 <pkgRoot>/bin/pi-web-ui.mjs）。 */
 	pkgRoot: string;
-	/** PI_WEB_MANAGED：托管实例拒绝一切安装/卸载。 */
 	managed: boolean;
-	/** 看门狗超时（测试可调小）。 */
 	timeoutMs?: number;
 }
 
@@ -206,12 +188,10 @@ export class PluginInstaller {
 
 	constructor(private readonly deps: PluginInstallerDeps) {}
 
-	/** 正在跑的作业 id（null = 空闲）。 */
 	get busyJobId(): string | null {
 		return this.currentJobId;
 	}
 
-	/** 启动一个作业；返回 `{ ok: true }` 或 `{ error }`（拒绝原因，已本地化）。 */
 	start(spec: PluginJobSpec, hooks: PluginJobHooks): { ok: boolean; error?: string } {
 		const l = hooks.lang?.() ?? "en";
 		if (this.deps.managed)
@@ -253,16 +233,10 @@ export class PluginInstaller {
 		const emit = (msg: ServerMessage) => {
 			try {
 				hooks.emit(msg);
-			} catch {
-				/* socket 已死：作业继续跑，只是没人看进度 */
-			}
+			} catch {}
 		};
 		const child = spawn(process.execPath, [binPath, ...built.args], {
 			windowsHide: true,
-			// POSIX 下自成进程组：取消/看门狗要杀的是整棵树，killPidTree 用 -pid
-			// 干活需要这一点（与 plugin-project.ts 同一写法）。缺了它，Linux/macOS
-			// 上 kill(-pid) 指向不存在的组而静默失败，作业杀不掉、锁一直占着
-			// （CI 的 busy 单测在 Linux 上 5 秒超时，Windows 走 taskkill 不受影响）。
 			detached: process.platform !== "win32",
 			env: {
 				...process.env,
@@ -327,9 +301,7 @@ export class PluginInstaller {
 				...(error ? { error } : {}),
 				output: out,
 			});
-			void Promise.resolve(hooks.done(ok, { error, output: out })).catch(() => {
-				/* 后处理（重扫/重推）失败不该影响已经结束的作业本身 */
-			});
+			void Promise.resolve(hooks.done(ok, { error, output: out })).catch(() => {});
 		};
 
 		child.stdout?.on("data", onChunk);
@@ -355,22 +327,14 @@ export class PluginInstaller {
 		});
 
 		emit({ type: "plugin_job", jobId, action, pluginId, phase: "start" });
-		// cancel 需要拿到 cancelled 标志：挂在实例上由 cancel() 设置。
 		this.cancelFlags.set(jobId, () => {
 			cancelled = true;
 		});
 		return { ok: true };
 	}
 
-	/** cancel 时置位的标志（jobId → setter），作业结束后清理。 */
 	private cancelFlags = new Map<string, () => void>();
 
-	/**
-	 * 同步跑一个作业并等它结束（目录同步的自动安装用，见 plugin-catalog-sync.ts）。
-	 *
-	 * 与 start() 同一条路径、同一把锁：只是把「结束后 resolve」包成 Promise。若已有
-	 * 别的作业在跑，会直接返回拒绝原因（不排队）——安装器不是队列，调用方自己决定重试。
-	 */
 	run(
 		spec: PluginJobSpec,
 		opts?: { onLine?: (line: string) => void; lang?: () => ServerLang },
@@ -387,7 +351,6 @@ export class PluginInstaller {
 		});
 	}
 
-	/** 取消指定作业（杀掉整棵进程树）。返回是否命中。 */
 	cancel(jobId: string): boolean {
 		if (!this.currentJobId || this.currentJobId !== jobId || !this.child) return false;
 		this.cancelFlags.get(jobId)?.();
@@ -395,7 +358,6 @@ export class PluginInstaller {
 		return true;
 	}
 
-	/** 杀进程树：Windows 走 taskkill /T，POSIX 走进程组（见 process-utils）。 */
 	private killTree(child: ChildProcess): void {
 		const pid = child.pid;
 		if (!pid) return;
@@ -404,13 +366,10 @@ export class PluginInstaller {
 		} catch {
 			try {
 				child.kill("SIGKILL");
-			} catch {
-				/* 已经退出了 */
-			}
+			} catch {}
 		}
 	}
 
-	/** 关机：杀掉在跑的作业（不留孤儿 install 进程）。 */
 	dispose(): void {
 		const child = this.child;
 		if (child) {
@@ -422,7 +381,6 @@ export class PluginInstaller {
 	}
 }
 
-/** 插件安装确认门参数依赖（便于单测与解耦）。 */
 export interface PluginInstallConfirmationDeps {
 	permGrants?: {
 		has: (pluginId: string, family: "net", scope?: { host?: string }) => boolean;
@@ -435,13 +393,6 @@ export interface PluginInstallConfirmationDeps {
 	onGrantsChanged?: () => void;
 }
 
-/**
- * 插件安装的用户确认门（P0）：plugin_catalog_sync 的 install:true 与 plugin_job
- * 的 install/update 在真正动安装器之前必须拿到用户确认。
- *
- * 用户若选择「记住并允许」，授权存入 plugin-permissions.json（后续同类操作自动放行，
- * 设置面板「能力授权」页可审计与撤销）。拒绝 / 超时 / 未接弹窗设施（无头 DSH）一律 fail-closed。
- */
 export async function confirmPluginInstall(
 	items: Array<{ id: string; source: string }>,
 	deps: PluginInstallConfirmationDeps,

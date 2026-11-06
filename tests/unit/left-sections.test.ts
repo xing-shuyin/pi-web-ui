@@ -1,11 +1,3 @@
-/**
- * 左栏分区计划（web/src/left-sections.ts，P2）的纯函数单测。
- *
- * 锁的是三条容易出错的规则：
- *   1. 顺序跟随宿主挂载点（合并引擎已排好的条目顺序），缺失的分区按缺省补齐；
- *   2. 隐藏的分区既不渲染、也不参与权重、也不画分隔条；
- *   3. 分隔条只连接「显示中且有内容 且 两端都展开」的相邻分区（隐藏一个后要重新配对）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	LP_SECTION_DEFAULT_ORDER,
@@ -67,7 +59,6 @@ describe("群组分区的拖动布局", () => {
 		expect(plan.find((item) => item.key === "groups")?.shown).toBe(false);
 		const shown = plan.filter((item) => item.shown).map((item) => item.key);
 		expect(shown).toEqual(["projects", "convs", "sessions"]);
-		// 隐藏后分隔条重新配对：projects 直接连 convs
 		expect(
 			sashPairs(
 				flexSectionKeys(plan, () => true),
@@ -138,7 +129,6 @@ describe("planLeftSections（顺序 + 显隐）", () => {
 describe("flexSectionKeys（参与权重的分区）", () => {
 	it("隐藏的分区与『无内容』的分区都不参与权重", () => {
 		const plan = planLeftSections([entry(LP_SECTION_ENTRY_ID.convs, true)]);
-		// 项目区无项目、运行区被隐藏 → 只剩历史
 		const keys = flexSectionKeys(plan, (k) => k === "sessions");
 		expect(keys).toEqual(["sessions"]);
 	});

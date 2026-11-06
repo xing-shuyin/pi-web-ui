@@ -1,7 +1,3 @@
-/**
- * server/universal/index.ts — 通用 Agent 底座统一导出。
- */
-
 export { BaseAgentDriver, type AgentCapabilities, type AgentEventSink } from "./driver-base.js";
 export { UniversalSessionStore } from "./session-store.js";
 export { UniversalSession } from "./universal-session.js";

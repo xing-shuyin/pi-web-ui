@@ -87,6 +87,80 @@ describe("server question ownership and lifetime", () => {
 		).toBe(true);
 	});
 
+	it("only advertises live user questions in conversation badges and external running summaries", () => {
+		const cs = holder("owner");
+		const conv = {
+			id: "parent",
+			title: "Root",
+			cwd: "/project",
+			listed: true,
+			session: { isStreaming: false, getSessionStats: () => ({ totalMessages: 1 }) },
+			terminals: { countUserBlockingLive: () => 0 },
+		};
+		cs.convs.set(conv.id, conv);
+		const internal = new PendingQuestion(questions, conv.id, "parent", 0);
+		cs.registerQuestion(internal);
+		const presentation = () => {
+			(ClientSession.prototype as any).emitConversations.call(cs);
+			const event = cs.emit.mock.calls.findLast((call: any[]) => call[0].type === "conversations")[0];
+			return {
+				badge: event.conversations[0],
+				external: cs.streamingSummariesAll()[0],
+				question: cs.pendingQuestionForSnapshot(conv),
+				remote: cs.peekPendingQuestion(conv.id),
+				waiting: cs.isWaitingOnUser(conv.id),
+			};
+		};
+
+		expect(presentation()).toEqual({
+			badge: expect.not.objectContaining({ hasQuestion: true }),
+			external: expect.objectContaining({ hasQuestion: false }),
+			question: null,
+			remote: undefined,
+			waiting: false,
+		});
+		internal.audience = "user";
+		expect(presentation()).toEqual({
+			badge: expect.objectContaining({ hasQuestion: true, questionId: internal.id, questionTitle: "Proceed?" }),
+			external: expect.objectContaining({ hasQuestion: true, questionTitle: "Proceed?" }),
+			question: expect.objectContaining({ id: internal.id }),
+			remote: expect.objectContaining({ id: internal.id }),
+			waiting: true,
+		});
+		cs.resolveQuestion(internal.id, []);
+		expect(presentation()).toEqual({
+			badge: expect.not.objectContaining({ hasQuestion: true }),
+			external: expect.objectContaining({ hasQuestion: false }),
+			question: null,
+			remote: undefined,
+			waiting: false,
+		});
+	});
+
+	it.each(["answer", "cancel", "timeout"] as const)(
+		"ignores a settled request retained during %s cleanup and finds the next live question",
+		async (outcome) => {
+			vi.useFakeTimers();
+			const cs = holder("owner");
+			cs.convs.set("parent", { id: "parent", title: "Root", cwd: "/project" });
+			const stale = new PendingQuestion(questions, "parent", "user", outcome === "timeout" ? 1 : 0);
+			cs.pendingQuestions.set(stale.id, stale);
+			if (outcome === "timeout") await vi.advanceTimersByTimeAsync(1000);
+			else stale.resolve(outcome === "answer" ? [] : null);
+			expect(cs.getPendingQuestionForConv("parent")).toBeUndefined();
+			expect(cs.isWaitingOnUser("parent")).toBe(false);
+
+			const internal = new PendingQuestion(questions, "parent", "parent", 0);
+			const unrelated = new PendingQuestion(questions, "other", "user", 0);
+			const live = new PendingQuestion([{ id: "next", header: "Next", question: "Continue?" }], "parent", "user", 0);
+			for (const request of [internal, unrelated, live]) cs.pendingQuestions.set(request.id, request);
+			expect(cs.getPendingQuestionForConv("parent")).toEqual({ id: live.id, title: "Next" });
+			expect(cs.pendingQuestionForSnapshot()).toEqual(expect.objectContaining({ id: live.id }));
+			expect(cs.peekPendingQuestion("parent")).toEqual(expect.objectContaining({ id: live.id }));
+			expect(cs.isWaitingOnUser("parent")).toBe(true);
+		},
+	);
+
 	it("keeps a deadline and cancellation valid after transferring the request, settling once", async () => {
 		vi.useFakeTimers();
 		const a = holder("a"),

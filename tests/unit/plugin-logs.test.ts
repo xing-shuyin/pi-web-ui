@@ -1,13 +1,3 @@
-/**
- * plugin-logs.ts 单测：宿主保留日志通道的前端侧。
- *
- * 覆盖：
- * - isPluginLogsResponse 只认 {__host:"logs", logs:[...]} 形状（坏负载一律 false，
- *   绝不能把插件自己的业务回包吞掉）
- * - 上行构造器（get/clear）的 plugin_message 形状
- * - ingestPluginLogsData 命中即存 store 并返回 true；未命中返回 false
- *   （调用方照常 emitPluginData，不干扰插件视图）
- */
 import { describe, expect, it } from "vitest";
 import {
 	getPluginLogs,

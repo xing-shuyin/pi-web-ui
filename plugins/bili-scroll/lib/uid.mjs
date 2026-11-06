@@ -1,8 +1,3 @@
-/**
- * plugins/bili-scroll/lib/uid.mjs
- * 用昵称查 B站 UID（私信默认化之后，用户只填「@ 谁」就得能发）
- * 策略：先精确匹配 uname，再退到第一个结果；结果缓存进 <家>/uid-cache.json，避免每轮都打接口
- */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -33,9 +28,7 @@ function readCache(stateDir) {
 function writeCache(stateDir, obj) {
 	try {
 		writeFileSync(join(stateDir, "uid-cache.json"), JSON.stringify(obj, null, 2), "utf8");
-	} catch {
-		// ignore
-	}
+	} catch {}
 }
 
 /** @returns {Promise<number>} 0 = 没查到 */

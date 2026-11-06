@@ -4,7 +4,11 @@ pi-web-ui 是纯 Web 服务（Node + Express + WebSocket）；另有 **Electron 
 
 ## CLI
 
+`pwu`、`piwebui`、`pi-web-ui` 是同一 CLI 的等价命令，所有子命令和选项通用。全局安装或更新后即可使用 `pwu`。前台启动可传一个已有目录（相对或绝对路径，含空格时加引号），与 `--cwd` 不能同时使用；目录参数优先于 `PI_WEB_CWD`。与子命令同名的目录请使用 `./目录名` 或 `--cwd`。
+
 ```bash
+pwu .                                    # 以当前目录启动
+pwu ./my-project --port 9000              # 以指定目录启动
 pi-web-ui --port 9000 --cwd /path          # 前台
 pi-web-ui install <源> [--name --force --data-dir]  # 安装 GitHub 界面插件到 <dataDir>/plugins/
 #                                源: owner/repo · https://github.com/o/r[/tree/分支/子目录] · #分支 · 本地目录；刷新浏览器即生效

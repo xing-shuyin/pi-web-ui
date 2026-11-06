@@ -8,7 +8,6 @@ import {
 	type DurableSinkLike,
 } from "../../server/durable/durable-event-projector.js";
 
-/** 录下所有投影结果的 sink（模拟宿主 AgentEventSink）。 */
 function recordingSink() {
 	const calls: Array<[string, ...unknown[]]> = [];
 	const sink: DurableSinkLike = {
@@ -21,7 +20,6 @@ function recordingSink() {
 	return { sink, calls };
 }
 
-/** 工具回执条目（`tool_execution_end.entry`，`model[0]` 为 ToolResultMessage）。 */
 function resultEntry(text: string, isError = false) {
 	return {
 		id: 18,
@@ -68,7 +66,6 @@ describe("DurableEventProjector — 事件流投影（issue #774）", () => {
 			],
 			failing.sink,
 		);
-		// 失败只带 error，宿主据其置 isError 并把文本落到结果正文
 		expect(failing.calls[1]).toEqual(["toolEnd", "c2", { error: "ENOENT" }]);
 	});
 
@@ -110,7 +107,6 @@ describe("DurableEventProjector — 事件流投影（issue #774）", () => {
 						{ type: "text_delta", contentIndex: 1, delta: "，世界" },
 					],
 				},
-				// 等到提交后的完整消息（含落盘补齐），尾部不应重复
 				{
 					type: "message_end",
 					entry: {
@@ -205,8 +201,6 @@ describe("DurableEventProjector — 事件流投影（issue #774）", () => {
 	});
 
 	it("1.4.0 translate 多批次顺序：流式提交、成功工具、失败工具与最终存储补齐", () => {
-		// events.js translate: streamed assistant omits committed start; each tool end precedes
-		// its result's non-assistant start/end. A new partial supplies the next assistant start.
 		const projector = new DurableEventProjector();
 		const { sink, calls } = recordingSink();
 		const assistant = (text: string) => ({

@@ -1,14 +1,3 @@
-/**
- * attachments — 附件构建：把 prompt.attachments（文件/目录路径引用、行范围引用、
- * 粘贴图片 imageData、上传 fileData、网页/对话引用）转成独立的 custom message（asides）。
- *
- * **一律只给路径引用**：工作区文件与上传文件都不把内容注入 prompt（小文件也不例外），
- * 只发 `<file path=… />`，模型用自己的 read 工具按需读（自带截断/分页）。
- * 只有图片走 image 内容块。视觉桥（纯文本主模型看图）也在这里接线：图片交给
- * 视觉模型转写成文字证据。
- *
- * 从 agent-service.ts 抽出，行为保持不变；上下文经 AttachmentContext 注入。
- */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { PromptAttachment, ServerMessage } from "./protocol.js";
 import { uploadLimitBytes, isUploadDataTooLong } from "./payload-limits.js";
@@ -30,7 +19,6 @@ import {
 	resolveRemoteWorkspacePath,
 } from "./remote-ssh-service.js";
 
-/** Resolve reference metadata without creating the store's implicit default graph. */
 export function getCanvasReference(graphId: string): { id: string; title: string } {
 	const dataDir = resolveDataDir();
 	if (!isSafeGraphId(graphId) || !existsSync(join(dataDir, "canvas", `${graphId}.json`))) {
@@ -41,23 +29,17 @@ export function getCanvasReference(graphId: string): { id: string; title: string
 	return { id: graphId, title: graph.name || graphId };
 }
 
-/** 跨快照的视觉转写缓存：批次 hash（名称 + base64 头 + 提示词）→ 转写文本。
- *  编辑重问重发相同图片不再重复耗视觉 token。进程级共享即可。
- *  长驻进程下无界 Map 会随图片种类缓慢吃内存（单条转写可达数十 KB），
- *  超过 VISION_BRIDGE_CACHE_MAX 按插入序 FIFO 淘汰最旧。 */
 const VISION_BRIDGE_CACHE_MAX = 256;
 const visionBridgeCache = new Map<string, string>();
 
 function cacheVisionTranscript(key: string, value: string): void {
 	visionBridgeCache.set(key, value);
 	if (visionBridgeCache.size > VISION_BRIDGE_CACHE_MAX) {
-		// Map 迭代序 = 插入序，第一个 key 即最旧。
 		const oldest = visionBridgeCache.keys().next().value;
 		if (oldest !== undefined) visionBridgeCache.delete(oldest);
 	}
 }
 
-/** "provider/id" 解析；非法格式返回 null。 */
 export function parseModelSpec(spec?: string | null): {
 	provider: string;
 	id: string;
@@ -69,24 +51,15 @@ export function parseModelSpec(spec?: string | null): {
 	return { provider: spec.slice(0, slash), id: spec.slice(slash + 1), spec };
 }
 
-/** buildAttachmentMessages 所需的会话侧上下文。 */
 export interface AttachmentContext {
-	/** 当前工作区（相对路径解析根）。 */
 	cwd: string;
-	/** 上传文件归属的浏览器客户端。 */
 	clientId: string;
 	emit: (msg: ServerMessage) => void;
 	settings: ClientSettings;
 	session: AgentSession;
-	/**
-	 * 服务端语言（issue #91，可选）：当前推 UI 的 notice 已全是 text+textEn
-	 * 双字段、无需 pick；此钩子为未来单字段返回文本预留，避免接口反复 churn。
-	 * 缺省英文。agent-service 接线 getLang: () => this.getLang()。
-	 */
 	getLang?: () => ServerLang;
 }
 
-/** XML attribute escaping — page titles can contain quotes/brackets. */
 function attr(value: string): string {
 	return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -144,11 +117,6 @@ export async function buildAttachmentMessages(
 
 	const out: { message: Parameters<AgentSession["sendCustomMessage"]>[0] }[] = [];
 
-	/** Push the aside for a raw uploaded file (fresh fileData or a restored
-	 *  uploadPath re-read from disk). Uploads are NEVER inlined: the model gets
-	 *  the persisted absolute path and reads it on demand with its read tool.
-	 *  `upload: true` marks the card as a restorable upload — the browser
-	 *  re-sends it by path when editing & re-asking a question. */
 	const pushUploadAside = (name: string, wirePath: string, buf: Buffer): void => {
 		out.push({
 			message: {
@@ -171,13 +139,6 @@ export async function buildAttachmentMessages(
 		});
 	};
 
-	// -- Vision bridge ------------------------------------------------------
-	// When the active model can't accept images (DeepSeek, GLM, …), pasted
-	// images are transcribed by a configured vision model first and the
-	// transcript is fed to the text-only model as text evidence (see
-	// vision-bridge.ts — any model in models.json whose input includes
-	// "image" works, zero extra config). Vision-capable main models keep
-	// the raw image-content path untouched.
 	const mainModel = ctx.session.model;
 	const mainSupportsVision = mainModel?.input?.includes("image") ?? false;
 	const bridgedImages: {
@@ -187,19 +148,13 @@ export async function buildAttachmentMessages(
 		mimeType: string;
 		bytes: number;
 	}[] = [];
-	/** Raw image bytes for path-referenced image files (idx → info), pre-read
-	 *  so the loop below doesn't re-read them. SVG stays a plain text file —
-	 *  the model reads its source, far more useful than a rasterized blob. */
 	const pathImageData = new Map<number, { raw: string; mimeType: string; bytes: number }>();
-	/** Cap for path images (fully read + base64'd); larger ones fall back to
-	 *  a plain path reference (the model can still attempt to read them). */
 	const MAX_PATH_IMAGE_BYTES = 5 * 1024 * 1024;
 	for (const [idx, att] of attachments.entries()) {
 		if (att.imageData) {
 			const raw = att.imageData.replace(/^data:[^;]*;base64,/, "");
 			const mimeType = att.mimeType?.startsWith("image/") ? att.mimeType : "image/png";
 			const bytes = Buffer.byteLength(raw, "base64");
-			// Only images that would actually be sent (non-empty, under the cap).
 			if (bytes > 0 && bytes <= 2 * 1024 * 1024) {
 				if (!mainSupportsVision) {
 					bridgedImages.push({ idx, att, raw, mimeType, bytes });
@@ -248,7 +203,6 @@ export async function buildAttachmentMessages(
 			bridgedImages.push({ idx, att, raw, mimeType: mime, bytes: st.size });
 		}
 	}
-	/** Transcript per attachment index (filled below, keyed by bridgedImages idx). */
 	const bridgeTranscripts = new Map<number, string>();
 	if (bridgedImages.length > 0) {
 		if (!ctx.settings.visionBridgeEnabled) {
@@ -260,8 +214,6 @@ export async function buildAttachmentMessages(
 			});
 		} else {
 			const visionModels = findVisionModels(ctx.session.modelRuntime);
-			// Preferred model from settings ("provider/id") — validated to exist
-			// and actually accept images; falls back to the first auto-detected.
 			let chosen = visionModels[0] ?? null;
 			const pref = ctx.settings.visionBridgeModel;
 			if (pref) {
@@ -285,13 +237,7 @@ export async function buildAttachmentMessages(
 					textEn: `Current model (${mainModel?.name ?? mainModel?.id ?? "unknown"}) cannot see images and no vision model is available: images will be sent as-is and may be ignored. Add any vision-capable model (e.g. qwen-vl, GLM-4V, Gemini) in model settings to enable vision-bridge transcription.`,
 				});
 			} else {
-				// Batch hash so re-sending identical images (edit & re-ask) reuses
-				// the transcript instead of re-burning tokens on the vision API.
-				// issue #91：转写提示词按客户端 UI 语言选用（英文默认），语言进缓存键。
 				const vLang = ctx.getLang?.() ?? "en";
-				// The active transcription prompt is part of the key: changing
-				// the custom prompt must invalidate cached transcripts made with
-				// the old prompt.
 				const batchHash =
 					bridgedImages.map((b) => `${b.att.name ?? "img"}:${b.raw.slice(0, 48)}`).join("|") +
 					"::" +
@@ -369,11 +315,6 @@ export async function buildAttachmentMessages(
 			});
 			continue;
 		}
-		// Quoted conversation (left-panel right-click / global-search quote):
-		// `path` is unused — the reference travels in conversationId (running
-		// conversation, incl. subagents) or sessionPath (history transcript).
-		// The transcript is NOT inlined here (it can be huge and goes stale);
-		// the model fetches it on demand with the conversation tool.
 		if ((att as { mode?: string }).mode === "conversation") {
 			const convId = (att as { conversationId?: unknown }).conversationId;
 			const sessPath = (att as { sessionPath?: unknown }).sessionPath;
@@ -408,7 +349,6 @@ export async function buildAttachmentMessages(
 			});
 			continue;
 		}
-		// Canvas identifiers are not filesystem paths. Resolve only through the canvas store.
 		if (att.mode === "canvas") {
 			const graphId = att.path;
 			try {
@@ -439,21 +379,12 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 			}
 			continue;
 		}
-		// Granted web page (page-picker extension): `path` is the page origin,
-		// NOT a workspace path — never stat/read it. The model gets the exact
-		// browser_page target plus the fact that this page is already granted,
-		// so it doesn't have to guess an origin out of the prose.
 		if (att.mode === "page") {
 			const url = att.path;
 			let target = url;
 			try {
-				// The extension matches pages by origin — keep the hint in the same
-				// shape as `browser_page`'s `target` (sub-paths are not part of it).
 				target = new URL(url).origin;
-			} catch {
-				// Not a full URL (hand-written string) → pass it through as-is and
-				// let the extension decide.
-			}
+			} catch {}
 			const pageTitle = att.name ?? url;
 			out.push({
 				message: {
@@ -461,7 +392,7 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 					content: [
 						{
 							type: "text",
-							text: `\n<browser-page url="${attr(url)}" title="${attr(pageTitle)}">\nThe user attached this web page; it is already granted to the AI through the browser extension. Use the browser_page tool with target="${attr(target)}" to read or act on it — do not fetch it over the network.\n</browser-page>`,
+							text: `\n<browser-page url="${attr(url)}" title="${attr(pageTitle)}">\nThe user attached this web page from the native browser or an authorized browser extension. Use the browser_page tool with target="${attr(target)}" to read or act on it — do not fetch it over the network.\n</browser-page>`,
 						},
 					],
 					display: true,
@@ -471,8 +402,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 			continue;
 		}
 
-		// Raw pasted/dropped/uploaded image — no workspace path involved (the
-		// browser downscales client-side; this guard only prevents abuse).
 		if (att.imageData) {
 			const raw = att.imageData.replace(/^data:[^;]*;base64,/, "");
 			const mimeType = att.mimeType?.startsWith("image/") ? att.mimeType : "image/png";
@@ -502,14 +431,9 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 				const rec = await saveAttachment(Buffer.from(raw, "base64"), mimeType);
 				attachmentUrl = rec.url;
 				attachmentHash = rec.hash;
-			} catch {
-				/* CAS 保存失败不阻断流程 */
-			}
+			} catch {}
 			const transcript = bridgeTranscripts.get(idx);
 			if (transcript) {
-				// Bridged: the text-only main model can't see images, so it gets the
-				// vision model's transcript as text evidence; the image block is
-				// kept so the card still shows the original thumbnail.
 				out.push({
 					message: {
 						customType: "file",
@@ -552,7 +476,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 					display: true,
 					details: {
 						name: att.name ?? "image.png",
-						// No workspace path — the card renders without the path line.
 						path: undefined,
 						mode: "image",
 						size: bytes,
@@ -564,10 +487,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 			continue;
 		}
 
-		// Raw uploaded file (base64) — no workspace path involved. The bytes are
-		// persisted under <dataDir>/uploads/<clientId>/ so the model can read
-		// them on demand with its read tool (absolute path, no traversal guard
-		// needed — the path is server-generated). Always a path reference.
 		if (att.fileData) {
 			const maxBytes = uploadLimitBytes(ctx.settings, "chat");
 			if (isUploadDataTooLong(att.fileData.length, maxBytes)) {
@@ -599,10 +518,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 				continue;
 			}
 			// Uploaded files live in a GLOBAL per-user dir (not inside the project
-			// or the per-client session store) so browsing a repo never picks up
-			// uploaded junk: <dataDir>/uploads/<clientId>/（保留期自动清理，见 uploads.ts）。
-			// saveUpload 对非法 clientId/displayName 抛错（消毒失败整条拒绝，绝不
-			// 落到别的目录）—— 这里报错跳过该附件，不让一条坏附件中断整条消息。
 			let saved: { abs: string; displayName: string };
 			try {
 				saved = saveUpload(ctx.clientId, att.name ?? "file", buf);
@@ -616,21 +531,11 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 				continue;
 			}
 			const { abs, displayName: safeName } = saved;
-			// Wire format: forward-slash absolute path (the read tool accepts
-			// absolute paths; Windows uses "C:/..." — safe inside the XML-ish tag).
 			const wirePath = abs.split(sep).join("/");
 			pushUploadAside(safeName, wirePath, buf);
 			continue;
 		}
 
-		// Restored upload from edit-and-re-ask: the browser re-sends the
-		// server-generated absolute path of a previously uploaded (fileData)
-		// file instead of the original base64 (the fork drops the original
-		// aside card, so the bytes must be re-read from the uploads dir).
-		// Validate the path stays inside THIS client's uploads/ folder, then
-		// re-read the persisted bytes and attach by the same path — no
-		// re-save (the file already exists; retention sweeping governs its
-		// lifetime, same as the original card).
 		if (att.uploadPath) {
 			const rootDir = uploadsRoot();
 			const abs = resolve(rootDir, att.uploadPath);
@@ -719,8 +624,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 
 		const name = att.path.split(/[\\/]/).pop() ?? att.path;
 
-		// Folders can't be inlined — always a path reference the model browses
-		// on demand with its own tools (ls/read).
 		if (stat.isDirectory()) {
 			out.push({
 				message: {
@@ -753,8 +656,6 @@ The user referenced this canvas. First use canvas(action="get", graphId="${attr(
 			const pathImg = pathImageData.get(idx);
 			const transcript = bridgeTranscripts.get(idx);
 			if (transcript) {
-				// Text-only main model: the vision bridge transcribed this image —
-				// the model gets the transcript as text evidence (+ thumbnail).
 				out.push({
 					message: {
 						customType: "file",
@@ -788,8 +689,6 @@ ${transcript}
 				continue;
 			}
 			if (pathImg) {
-				// Vision-capable main model (or bridge failed): send the raw image
-				// content straight from the pre-read bytes.
 				out.push({
 					message: {
 						customType: "file",
@@ -806,8 +705,6 @@ ${transcript}
 				});
 				continue;
 			}
-			// Pre-read failed (unsupported sniff / too large): fall back to the
-			// legacy inline-cap behavior.
 			if (stat.size > MAX_ATTACHMENT_BYTES) {
 				ctx.emit({
 					type: "notice",
@@ -836,7 +733,6 @@ ${transcript}
 			continue;
 		}
 
-		/** Path-only aside — no file content is read or injected. */
 		const makeReference = (): {
 			message: Parameters<AgentSession["sendCustomMessage"]>[0];
 		} => ({
@@ -852,12 +748,6 @@ ${transcript}
 				details: { name, path: rel, mode: "reference", size: stat.size },
 			},
 		});
-		// Everything else is a PATH REFERENCE: the file content is never injected
-		// into the prompt (small files included) — the model reads what it needs
-		// with its own read tool (built-in truncation/pagination).
-		// Line-range mode adds the `lines` attribute so the model knows which
-		// slice the user picked and only reads that part.
-		// A legacy `mode: "inline"` (old client / persisted draft) lands here too.
 		if (att.mode === "lines") {
 			const range = att.lines;
 			if (!range || range.start < 1 || range.end < range.start) {
@@ -898,10 +788,6 @@ ${transcript}
 	return out;
 }
 
-/**
- * 判断一个会话 entry 是否是提问前置注入的 aside 卡片（附件/并行提醒等）。
- * 这些消息由服务端的 prompt 前置阶段通过 sendCustomMessage 注入在用户提问消息之前。
- */
 export function isPromptAsideEntry(entry: unknown): boolean {
 	if (!entry || typeof entry !== "object") return false;
 	const e = entry as {
@@ -917,9 +803,6 @@ export function isPromptAsideEntry(entry: unknown): boolean {
 	);
 }
 
-/**
- * 判断一个 entry 是否为用户提问消息。
- */
 export function isUserMessageEntry(entry: unknown): boolean {
 	if (!entry || typeof entry !== "object") return false;
 	const e = entry as {
@@ -930,10 +813,6 @@ export function isUserMessageEntry(entry: unknown): boolean {
 	return (e.type === "message" && e.message?.role === "user") || e.type === "user" || e.role === "user";
 }
 
-/**
- * 判断一个 entry 是否为上一轮对话结束时的有效业务节点
- * （例如助手回复、工具返回、bash 执行、分支或压缩摘要，或者更早一轮的用户提问）。
- */
 export function isConversationTurnEntry(entry: unknown): boolean {
 	if (!entry || typeof entry !== "object") return false;
 	const e = entry as {
@@ -956,16 +835,9 @@ export function isConversationTurnEntry(entry: unknown): boolean {
 	return false;
 }
 
-/**
- * 从给定的 entry 节点开始，向上追溯跳过属于该轮提问的前置附件 aside 节点（customType === "file" 等）、
- * SDK 注入的系统截面（role === "system"）以及配置变更节点，
- * 返回该轮提问之前的基准 entry id（作为 fork/分支截断点）。
- * 如果追溯到会话根（即该提问是会话第一轮提问），返回 null。
- */
 export function findTurnBaseEntryId(sm: { getEntry(id: string): unknown }, entryId: string): string | null {
 	const target = sm.getEntry(entryId);
 	if (!target) return null;
-	// 只有针对用户消息，才需要向上跳过属于该提问的前置附件 aside 卡片和系统截面
 	if (!isUserMessageEntry(target)) {
 		const parentId = (target as { parentId?: string | null }).parentId;
 		return parentId ?? null;

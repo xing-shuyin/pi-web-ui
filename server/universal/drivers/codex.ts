@@ -1,11 +1,11 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink, type AgentTurnUsage } from "../driver-base.js";
 import type { PromptAttachment } from "../../protocol.js";
-import { probeGlobalPackage } from "../../global-loader.js";
+import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
 import { killPidTree } from "../../process-utils.js";
 import { formatUnavailableCanvasReference } from "../universal-attachments.js";
 
@@ -13,39 +13,13 @@ export interface CodexDriverOptions {
 	executablePath?: string;
 }
 
-/** Resolve the npm launcher before PATH so Windows does not require a command shell. */
-function codexCommand(executablePath?: string): { command: string; args: string[] } {
-	if (executablePath) return { command: executablePath, args: [] };
-	const pkg = probeGlobalPackage("@openai/codex");
-	if (pkg.packagePath) {
-		const launcher = join(pkg.packagePath, "bin", "codex.js");
-		if (existsSync(launcher)) return { command: process.execPath, args: [launcher] };
-	}
-	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-		const exe = join(dir, process.platform === "win32" ? "codex.exe" : "codex");
-		if (existsSync(exe)) return { command: exe, args: [] };
-	}
-	return { command: "codex", args: [] };
-}
-
 export async function probeCodex(
 	executablePath?: string,
 ): Promise<{ available: boolean; version?: string; error?: string }> {
-	const cmd = codexCommand(executablePath);
-	return new Promise((resolve) => {
-		execFile(
-			cmd.command,
-			[...cmd.args, "--version"],
-			{ timeout: 4000, windowsHide: true, maxBuffer: 8192 },
-			(err, stdout) => {
-				resolve(
-					err
-						? { available: false, error: err.message }
-						: { available: true, version: stdout.trim().replace(/^codex(?:-cli)?\s+/i, "") },
-				);
-			},
-		);
-	});
+	const result = await probeEngineCliVersion("codex", executablePath);
+	return result.available && result.version
+		? { ...result, version: result.version.replace(/^codex(?:-cli)?\s+/i, "") }
+		: result;
 }
 
 interface ActiveRun {
@@ -108,9 +82,7 @@ export class CodexDriver extends BaseAgentDriver {
 				if (typeof model.slug === "string" && !rows.some((row) => row.id === model.slug))
 					rows.push({ id: model.slug, name: model.display_name || model.slug });
 			}
-		} catch {
-			/* CLI populates the catalog after login. */
-		}
+		} catch {}
 		return rows;
 	}
 
@@ -146,9 +118,9 @@ export class CodexDriver extends BaseAgentDriver {
 				else
 					input += `\nFile reference: ${JSON.stringify(att.path)}${att.mode === "lines" ? ` (lines ${att.lines?.start ?? ""}-${att.lines?.end ?? ""})` : ""}`;
 			}
-			const cmd = codexCommand(this.options.executablePath);
+			const launch = resolveEngineCliLaunch("codex", { executablePath: this.options.executablePath, cwd });
 			const args = [
-				...cmd.args,
+				...launch.args,
 				"--ask-for-approval",
 				"never",
 				"exec",
@@ -164,7 +136,7 @@ export class CodexDriver extends BaseAgentDriver {
 			if (this.model !== "default") args.push("--model", this.model);
 			if (this.sessionId) args.push("resume", this.sessionId);
 			args.push(...imageArgs, "-");
-			const child = spawn(cmd.command, args, {
+			const child = spawn(launch.file, args, {
 				cwd,
 				windowsHide: true,
 				detached: process.platform !== "win32",

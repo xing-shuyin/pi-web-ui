@@ -69,7 +69,6 @@ describe("matchesModelId", () => {
 describe("UniversalModelPicker 通用模型菜单", () => {
 	it("默认只列启用模型；scope 开关展开后显示全部", () => {
 		renderPicker();
-		// openai 模型被 enabledModels 排除，默认隐藏
 		expect(rowNames()).toEqual(["Claude Sonnet", "Claude Opus"]);
 		const toggle = document.body.querySelector(".dd-scope-toggle") as HTMLButtonElement;
 		expect(toggle).toBeTruthy();
@@ -89,7 +88,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 		});
 		expect(rowNames()).toEqual(["Claude Opus"]);
 
-		// 清空搜索，展开全部后 side栏出现两个服务商，点 openai 只剩 GPT-5
 		act(() => {
 			const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
 			setter?.call(input, "");
@@ -99,7 +97,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 			(document.body.querySelector(".dd-scope-toggle") as HTMLButtonElement).click();
 		});
 		const sidebar = Array.from(document.body.querySelectorAll(".dd-provider-item"));
-		// 全部 + anthropic/keyA + anthropic/keyB + openai（多 key 服务商每个 key 一项）
 		expect(sidebar.length).toBe(4);
 		act(() => {
 			(sidebar[3] as HTMLButtonElement).click();
@@ -113,7 +110,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 			defaultModel: "anthropic/claude-sonnet",
 			onToggleDefault,
 		});
-		// 默认模型块与星标
 		expect(document.body.querySelector(".dd-header-default-name")?.textContent).toContain("claude-sonnet");
 		const star = document.body.querySelector(".dd-star-btn") as HTMLButtonElement;
 		expect(star.tagName).toBe("BUTTON");
@@ -122,7 +118,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 		});
 		expect(onToggleDefault).toHaveBeenCalledWith(models[0], true);
 
-		// 点第二行：multi-key provider 走 active key
 		act(() => {
 			(rows()[1] as HTMLElement).click();
 		});
@@ -153,7 +148,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 				),
 			);
 		});
-		// 非默认模型的星标是静态 span（弹窗旧口径：不可点）
 		const stars = Array.from(document.body.querySelectorAll(".dd-star-btn"));
 		expect(stars.length).toBeGreaterThan(0);
 		expect(stars.every((s) => s.tagName === "SPAN")).toBe(true);
@@ -183,7 +177,6 @@ describe("UniversalModelPicker 通用模型菜单", () => {
 			);
 		});
 		expect(onEnsureModels).toHaveBeenCalledTimes(1);
-		// 搜索过滤后关闭再打开，过滤被重置
 		const input = document.body.querySelector(".dd-search") as HTMLInputElement;
 		act(() => {
 			const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;

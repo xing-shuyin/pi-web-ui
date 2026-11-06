@@ -1,24 +1,6 @@
 /* theme-name: 全透明 */
 /* theme-name-en: Transparent */
-/*
- * 全透明主题——「半透明」的极致版（专配壁纸，issue #100）：
- * 调色板与默认暗色一致，但把壁纸机制里所有表面变量的透图率压到 0
- * （--wallpaper-panel-alpha: 0% → --topbar-bg / --statusbar-bg / --panel-bg /
- * --card-bg / --chip-bg / --inputbox-bg / --msgs-bg 全部变成 transparent），
- * 顶栏/底栏/左右面板/消息区/输入框/全部气泡/代码块/终端视图统统直接见壁纸，
- * 界面只剩边框与文字定结构。代价是文字全靠 --bg-image-dim 压暗撑着——
- * 这里压暗加重到 0.85（默认 0.78），亮区壁纸下文字仍可读。
- *
- * 全透后 hover/浮动反馈不能依赖容器色（已是 0%），本文件尾段把这些实色
- * hover 统一改成 70% 半透底（折叠摘要、展开条、折叠键、复制键、滚到底按钮、
- * 快捷短语芯片）；
- * 强调色 hover（accent-soft）与大部分语义按钮（发送/杀进程）不受影响；
- * 例外是 bash 工具卡的「停止」键（.toolcall-kill）：红底红字在全透下是一块脏红，
- * 改成描边式（透明底 + 半透红描边 + 亮红字）。
- * 下拉弹窗（声音/语言/主题/模型/思考强度等 .dd-menu）保持实色
- * （--menu-bg: var(--bg-elev2)），密集列表不随界面透图。
- * 配壁纸用最佳；不配壁纸时界面直接透出 --bg 纯色（= 默认暗色，无差别）。
- */
+
 :root {
 	--switch-bg-off: #424754;
 	--switch-border-off: #8791a3;
@@ -64,32 +46,20 @@
 	--term-bright-cyan: #22d3ee;
 	--term-bright-white: #ffffff;
 
-	/* ---- 全透明核心：0% 容器色 = 全部 color-mix 表面（三大区域 / 卡片 /
-	   控件 / 输入框 / 消息区）直接变 transparent；终端 --term-bg 上面已设
-	   transparent。想留一点点玻璃感就把这里提到 10~15%。---- */
 	--wallpaper-panel-alpha: 0%;
-	/* 工具参数 / 工具输出 / 终端行（.toolcall-args pre / .toolcall-output pre /
-	   .termline）：全透下这三处无容器色（--chip-bg = 0%），实色边框与外凸的
-	   内边距只会把文字推出对齐线并横向切断壁纸，这里一并去掉。
-	   markdown 围栏代码块 .codeblock pre 仍保留边框与内边距。 */
+
 	--code-border: transparent;
 	--code-pad: 0;
-	/* 下拉弹窗（声音/语言/主题/模型/思考强度）：实色底保密集列表可读 */
+
 	--menu-bg: var(--bg-elev2);
-	/* 压暗加重：全透后没有容器色兜底，文字只靠压暗保可读 */
+
 	--bg-image-dim: 0.85;
 }
 
-/* 全透：工具卡内部不再保留重复的终端图标。无容器色兜底时（--chip-bg = 0%），绿色
-   终端图标只剩视觉噪音（卡头已有工具图标）。卡片内边距仍走 --card-body-pad
-   （与思考块 .thinking-body 同值），文字左缘与思考块对齐。 */
 .termline-icon {
 	display: none;
 }
 
-/* hover / 浮动静置反馈：0% 容器色下这些实色 hover 必消失，统一给 70% 半透
-   底（仍透图、可辨反馈）。强调色 hover（accent-soft）与语义按钮不受影响；
-   下拉弹窗已在实色菜单内，其 hover 保留 styles.css 默认实色。 */
 .msg-collapsed:hover,
 .panel-rail:hover,
 .chead-toggle:hover,
@@ -99,10 +69,6 @@
 	background: color-mix(in srgb, var(--bg-elev) 70%, transparent);
 }
 
-/* bash 工具卡的「停止」键：全透下不做实底。容器色为 0% 时，--red-soft 底 +
-   实红描边在壁纸上是一块洗不干净的脏红，改成「透明底 + 半透红描边 + 亮红字」——
-   与卡片里其他描边元素同一种克制感；hover 才落一层 78% 半透红（仍透图，
-   不成为实色块）。 */
 .toolcall-kill {
 	background: transparent;
 	border-color: color-mix(in srgb, var(--red) 55%, transparent);
@@ -114,9 +80,6 @@
 	color: #fff;
 }
 
-/* 快捷短语芯片：styles.css 给的是实色 --bg-elev（它现在压在消息正文上，必须
-   压得住字），全透主题下改回与上面那组反馈同一档的半透底（仍透图、文字靠
-   压暗加重仍可读）。 */
 .quick-chip {
 	background: color-mix(in srgb, var(--bg-elev) 70%, transparent);
 }

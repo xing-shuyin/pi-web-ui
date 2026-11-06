@@ -55,7 +55,6 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		expect(stats.packedCount).toBe(1);
 		expect(stats.totalOriginalBytes).toBe(51200);
 		expect((stats.toolBreakdown as Record<string, number>).bash).toBe(1);
-		// 每次请求节省 (12000 - 80) = 11920，后续有 2 轮 assistant，共节省 11920 * 2 = 23840
 		expect(stats.totalSavedTokens).toBe(23840);
 	});
 
@@ -229,11 +228,9 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 
 		solSavingsPlugin(mockHost);
 
-		// 会话 1：有大输出截断，产生节省
 		let lastUpdate = updates[updates.length - 1];
 		expect(lastUpdate.patch.badge).toBe("省 23.8k");
 
-		// 切换至新开启的会话 2（干净会话，尚未触发截断）
 		activeConv = {
 			id: "conv-2",
 			title: "日常问答",
@@ -244,12 +241,10 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		};
 		onConvChangedCb?.();
 
-		// 会话 2：必须独立显示 "省 0"，绝对不能继承会话 1 的 23.8k
 		lastUpdate = updates[updates.length - 1];
 		expect(lastUpdate.patch.badge).toBe("省 0");
 		expect(lastUpdate.patch.hint).toContain("已节省 0 tokens");
 
-		// 再切回会话 1
 		activeConv = {
 			id: "conv-1",
 			title: "大任务分析",
@@ -276,7 +271,6 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		};
 		onConvChangedCb?.();
 
-		// 恢复会话 1 的数据
 		lastUpdate = updates[updates.length - 1];
 		expect(lastUpdate.patch.badge).toBe("省 23.8k");
 	});
@@ -312,7 +306,6 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 				originalTokens: 1200,
 				removedTokens: 1100,
 			}),
-			// 模拟混入损坏行或非 placeholder 事件，验证容错
 			"{ bad json",
 			JSON.stringify({ event: "archive", id: "obs_003" }),
 		].join("\n");
@@ -322,13 +315,12 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		try {
 			const ledgerStats = getSavingsFromLedger(convId, tempDir);
 			expect(ledgerStats).not.toBeNull();
-			expect(ledgerStats?.totalSavedTokens).toBe(3400); // 2300 + 1100
-			expect(ledgerStats?.totalOriginalBytes).toBe(24000); // 16000 + 8000
+			expect(ledgerStats?.totalSavedTokens).toBe(3400);
+			expect(ledgerStats?.totalOriginalBytes).toBe(24000);
 			expect(ledgerStats?.packedCount).toBe(2);
 			expect((ledgerStats?.toolBreakdown as Record<string, number>).read).toBe(1);
 			expect((ledgerStats?.toolBreakdown as Record<string, number>).grep).toBe(1);
 
-			// 测试 analyzeSolSavings 优先读取 ledger.jsonl 并合并 messages 中的 Plan
 			const mockMessagesWithPlan = [
 				{
 					role: "assistant",
@@ -380,11 +372,10 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 			},
 		];
 
-		// 不存在的 conversationId
 		const fallbackStats = analyzeSolSavings(mockMessages, "non-existent-conv-id");
 		expect(fallbackStats.packedCount).toBe(1);
 		expect(fallbackStats.totalOriginalBytes).toBe(4000);
-		expect(fallbackStats.totalSavedTokens).toBe(720); // (800 - 80) * 1
+		expect(fallbackStats.totalSavedTokens).toBe(720);
 		expect((fallbackStats.toolBreakdown as Record<string, number>).eval).toBe(1);
 	});
 
@@ -395,10 +386,9 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		const ledgerDir = join(projDir, "sol-pi", targetSid, "observation-pack");
 		mkdirSync(ledgerDir, { recursive: true });
 
-		const msgTsMs = Date.now() - 60 * 60 * 1000; // 相对时间，避免与 mtime 预筛产生时钟耦合
+		const msgTsMs = Date.now() - 60 * 60 * 1000;
 		const msgTsIso = new Date(msgTsMs).toISOString();
 
-		// 写入包含该时间戳的 session.jsonl 文件
 		const sessionFileName = `${msgTsIso.replace(/[:.]/g, "-")}_${targetSid}.jsonl`;
 		const sessionFileContent = [
 			JSON.stringify({ type: "session", id: targetSid }),
@@ -411,7 +401,6 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		].join("\n");
 		writeFileSync(join(projDir, sessionFileName), sessionFileContent, "utf8");
 
-		// 写入该会话的 ledger.jsonl
 		const ledgerContent = JSON.stringify({
 			timestamp: "2026-09-28T12:05:00.000Z",
 			event: "placeholder",
@@ -424,7 +413,6 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		writeFileSync(join(ledgerDir, "ledger.jsonl"), ledgerContent, "utf8");
 
 		try {
-			// 前端传来的 conv 只有 c12（内部序号）和携带时间戳的消息
 			const mockConvMessages = [
 				{
 					id: `u-${msgTsMs}-1`,
@@ -449,15 +437,13 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		const ledgerDir = join(projDir, "sol-pi", targetSid, "observation-pack");
 		mkdirSync(ledgerDir, { recursive: true });
 
-		const msgTsMs = Date.now() - 60 * 60 * 1000; // 1 小时前，确保 mtime 预筛不误伤
+		const msgTsMs = Date.now() - 60 * 60 * 1000;
 		const msgTsIso = new Date(msgTsMs).toISOString();
 		const msgs1 = [{ id: `u-${msgTsMs}-1`, role: "user", content: [{ type: "text", text: "探测" }] }];
 
 		try {
-			// 第一次扫描：尚无物理 session 文件 → 负结果
 			expect(resolveSessionId("c-memo", msgs1, tempDir)).toBeNull();
 
-			// 扫描之后才出现该会话的物理文件（含证据时间戳）与账本
 			writeFileSync(
 				join(projDir, `${msgTsIso.replace(/[:.]/g, "-")}_${targetSid}.jsonl`),
 				JSON.stringify({ type: "message", timestamp: msgTsIso, message: { role: "user", content: "探测" } }),
@@ -465,10 +451,8 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 			);
 			writeFileSync(join(ledgerDir, "ledger.jsonl"), JSON.stringify({ event: "archive" }), "utf8");
 
-			// 同一会话重复调用：命中负缓存不得重扫（重扫就会扫到刚写入的文件）
 			expect(resolveSessionId("c-memo", msgs1, tempDir)).toBeNull();
 
-			// 证据翻倍（消息量 ×2）后允许重扫 → 命中真实 sessionId
 			const msgs2 = [...msgs1, { id: `u-${msgTsMs + 1000}-2`, role: "assistant", content: [] }];
 			expect(resolveSessionId("c-memo", msgs2, tempDir)).toBe(targetSid);
 		} finally {
@@ -504,15 +488,12 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		solSavingsPlugin(mockHost);
 		const baseline = updates.length;
 
-		// 连发 5 个高频事件：同步阶段不得触发任何刷新
 		for (let i = 0; i < 5; i++) onRunCb?.({ type: "tool_end" });
 		expect(updates.length).toBe(baseline);
 
-		// 拖尾窗口结束后恰好补一次
 		await new Promise((r) => setTimeout(r, 600));
 		expect(updates.length).toBe(baseline + 1);
 
-		// 轮次/运行边界立即刷新，不受拖尾窗口影响
 		onRunCb?.({ type: "run_end" });
 		expect(updates.length).toBe(baseline + 2);
 	});
@@ -524,10 +505,8 @@ describe("SoL-Pi Savings 插件与底栏统计", () => {
 		process.env.PI_CODING_AGENT_DIR = tempDir;
 
 		try {
-			// 1. 初始化写入默认配置
 			writeSolPiConfig();
 
-			// 2. 模拟前端可视化表单关闭 onlineContextCompact 避免工具冲突，并配置专属 EPR 辅模型
 			const updated = saveSolPiConfig({
 				observationPack: true,
 				onlineContextCompact: false,

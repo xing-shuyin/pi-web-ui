@@ -74,11 +74,9 @@ function validEntry(value: unknown): value is TaskReportUploadEntry {
 	);
 }
 
-/** Separate from terminal-result ACKs: a result never acknowledges report bytes. */
 export function createTaskReportOutbox(dataDir: string | undefined, deviceId: string, hubUrl = "") {
 	const scope = { deviceId, hubUrl: hubUrl ? checkedUrl(hubUrl).href.replace(/\/$/, "") : "" };
 	const scopeKey = createHash("sha256").update(JSON.stringify(scope)).digest("hex").slice(0, 32);
-	// Scope both the queue and report bytes, so rebinding never replays another Hub's reports.
 	const scopedDir = dataDir ? join(dataDir, "task-report-outboxes", scopeKey) : undefined;
 	const store = scopedDir ? createTaskReportStore(scopedDir, "device") : undefined;
 	const file = scopedDir ? join(scopedDir, "outbox.json") : undefined;
@@ -122,7 +120,6 @@ export function createTaskReportOutbox(dataDir: string | undefined, deviceId: st
 		}
 		if (next.length > REPORT_OUTBOX_MAX_ENTRIES || bytes(next) > REPORT_OUTBOX_MAX_BYTES)
 			throw new Error("Report outbox capacity exceeded; pending reports retained");
-		// Delete bytes before dropping their registry entry; a failed cleanup stays discoverable.
 		for (const old of removed) {
 			store?.removeReport(old.id, old.attemptId, deviceId, old.roomId);
 			memory.delete(key(old));
@@ -157,7 +154,6 @@ export function createTaskReportOutbox(dataDir: string | undefined, deviceId: st
 					rejected: true,
 					lastError: "Report exceeds 4 MiB quota",
 				});
-			// Commit intent first; recovery can read the store if interrupted after its atomic write.
 			update({
 				...task,
 				reportRef: store

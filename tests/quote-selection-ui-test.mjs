@@ -1,4 +1,3 @@
-// 真实浏览器与本地模型服务：选区、引用卡片、发送、刷新、编辑重问；不访问真实模型。
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";

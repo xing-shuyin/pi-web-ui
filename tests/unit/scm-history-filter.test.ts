@@ -1,7 +1,3 @@
-/**
- * SCM 提交树过滤纯函数：关键字拆分、AND 语义、大小写不敏感、
- * 主题/作者/hash/decorations 多字段匹配、空查询原样返回。
- */
 import { describe, expect, it } from "vitest";
 import { filterScmCommits, type ScmCommitLike } from "../../web/src/scm-history-filter.js";
 
@@ -47,7 +43,6 @@ describe("filterScmCommits", () => {
 	});
 
 	it("空格分隔多关键字 AND 语义", () => {
-		// fix + def5678 同条命中；fix + bob 无交集 → 空
 		expect(filterScmCommits(history, "fix def5678")).toHaveLength(1);
 		expect(filterScmCommits(history, "fix bob")).toHaveLength(0);
 	});

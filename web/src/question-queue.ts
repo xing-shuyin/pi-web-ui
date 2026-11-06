@@ -10,7 +10,6 @@ export function questionNavigation(question: QueueQuestion): ClientMessage | und
 	return id ? { type: "switch_conversation", id } : undefined;
 }
 
-/** Legacy questionnaires have no creation time; omit their elapsed label. */
 export function questionWaitTime(createdAt: number, now: number): string | undefined {
 	if (!Number.isFinite(createdAt) || createdAt <= 0) return undefined;
 	const seconds = Math.max(0, Math.floor((now - createdAt) / 1000));
@@ -29,7 +28,6 @@ export type QueueQuestion = UiPendingQuestion & {
 
 type RemoteQuestion = UiPendingQuestion & { owner: string; convId: string };
 
-/** null means this connection has not received the queue protocol yet. */
 export function resolveQuestionQueue(
 	queue: UiQueuedQuestion[] | null,
 	question: UiPendingQuestion | null,
@@ -44,10 +42,8 @@ export function resolveQuestionQueue(
 		createdAt: q.createdAt ?? 0,
 	}));
 	const merge = (local: QueueQuestion[]) => mergeOwnedPending(local, global, sharedOwner);
-	// Once available, the entire queue is authoritative, including an empty queue.
 	if (queue !== null) return merge(queue.filter((q) => q.audience === "user"));
 	const result: QueueQuestion[] = [];
-	// Older engines without the queue protocol retain both legacy channels.
 	for (const fallback of [
 		question && { ...question, createdAt: 0, audience: "user" as const },
 		remoteQuestion && {
@@ -84,7 +80,6 @@ export function mergeOwnedPending<T extends { id: string; owner?: string; global
 	return [...merged.values()];
 }
 
-/** IDs are scoped to their owner; two engines may both issue q1. */
 export function questionQueueKey(question: QueueQuestion): string {
 	return JSON.stringify([question.owner ?? "", question.conversationId ?? "", question.id]);
 }

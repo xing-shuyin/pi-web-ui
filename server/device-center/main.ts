@@ -6,9 +6,14 @@ import { renderDeviceHubPage } from "./hub-page.js";
 import { installDeviceTransfers } from "./transfers.js";
 import { createServer, type Server } from "node:http";
 import { DevicePortals, parsePortalPorts } from "./device-portals.js";
+import { randomUUID } from "node:crypto";
+import { getPkgRoot } from "../pkg-info.js";
+import { readFile } from "node:fs/promises";
+import { createHubUpgradeManager } from "./hub-upgrade.js";
 
-/** Separate process: never shares a pi-web-ui data directory or SDK runtime. */
 export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
+	const pkgRoot = env.PI_DEVICE_HUB_PACKAGE_ROOT ?? getPkgRoot();
+	const version = (JSON.parse(await readFile(join(pkgRoot, "package.json"), "utf8")) as { version: string }).version;
 	const publicUrl = env.PI_DEVICE_HUB_PUBLIC_URL;
 	const deviceDomain = env.PI_DEVICE_HUB_DEVICE_DOMAIN || undefined;
 	const pathAccess = env.PI_DEVICE_HUB_PATH_ACCESS !== "0";
@@ -32,6 +37,14 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		pathAccess,
 		portals,
 		allowRegistration: env.PI_DEVICE_HUB_ALLOW_REGISTRATION === "1",
+		upgradeManager: createHubUpgradeManager({
+			dataDir,
+			instanceId: env.PI_DEVICE_HUB_INSTANCE_ID,
+			serviceConfigPath: env.PI_DEVICE_HUB_SERVICE_CONFIG,
+			version,
+			bootId: env.PI_DEVICE_HUB_BOOT_ID ?? randomUUID(),
+			workerPath: join(pkgRoot, "bin", "hub-upgrade.mjs"),
+		}),
 		isOnline: (id) => relay?.isOnline(id) ?? false,
 		onTask: (id, task) => {
 			if (!relay?.sendTask(id, task)) throw new Error("Device unavailable; task was not delivered");

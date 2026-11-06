@@ -153,9 +153,7 @@ export function dispatchGroupWebhook(
 				void postWebhook(webhook.url!, webhook.secret, event, payloadStr);
 			}
 		}
-	} catch {
-		// Suppress unexpected dispatch errors to prevent breaking core execution flows
-	}
+	} catch {}
 }
 
 async function postWebhook(

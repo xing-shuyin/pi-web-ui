@@ -29,7 +29,7 @@ npm run format       # prettier 全仓库格式化（.prettierrc.json：tabs + �
 npm run format:check # 只检查不改写（CI 跑这个）
 npm run build        # build:web (vite) + build:server (tsc) + build:dsh-runtime + build:mermaid-vendor + build:runtrace-vendor
 npm start            # 跑编译产物 dist/server/index.js（生产）
-npm test             # vitest 纯函数单测（tests/unit/，毫秒级零 token）
+npm test             # Vitest 单测与仓库守卫（tests/unit/，含部分浏览器/进程集成，零 token）
 npm run test:smoke   # 零 token 协议冒烟聚合跑器（tests/run-smoke.mjs，82 个自包含测试；--core 只跑 PR 快检子集；--no-build 跳过套件前的构建）
 npm run test:freeze  # 冻结/重连回归测试（Playwright，需要本机 chromium headless）
 ```
@@ -88,6 +88,15 @@ GitHub Actions ubuntu-latest（`.github/workflows/ci.yml`，push/PR → main 触
 
 ## 测试规范
 
+### 测试价值与精简
+
+- **行为测试接到生产代码**：调用真实导出、渲染真实组件或执行生产闭包；测试内复制算法再验证副本不算生产行为覆盖。类型声明、参数解构、局部变量名不单独立 case。
+- **源码守卫保留明确职责**：架构、安全、资源契约，以及暂时缺少行为验证的已知回归可以静态检查；同一约束集中到一个守卫，避免跨文件重复检查同一段源码。
+- **删除重复项先核对替代关系**：生产路径、输入范围和约束强度须被保留测试覆盖；解析器还须保留有效样本数断言，避免全部跳过后假通过。不同边界仍需独立覆盖，不能只为减少 case 数合并。
+- **复用只读输入，隔离可变状态**：同套件扫描源码一次，昂贵基础 fixture 可以复制到每例独立目录；Git 的 `.git`、索引、浏览器 context 等可变资源不跨用例共享。保留 Vitest 默认模块隔离。
+
+`tests/unit/` 是历史目录名，里面还包含仓库扫描、真实 Git/CLI 与 Chromium 测试，不能都按「毫秒级纯函数」估算成本。优化先减少重复扫描、进程启动和过大的导入链，再用定向报告比较耗时；全量 CI 门禁保持覆盖。
+
 ### 全局 vs 本地
 
 用户日常可能正用**全局安装**的 `pi-web-ui`（`npm root -g` 下的 `pi-web-ui`，默认端口 `8787`）跑着对话/工作。开发改造对象永远是**本地仓库**（clone 下来的 pi-web-ui 目录）。用户会在自己测试时手动关闭全局 dev、切到本地。
@@ -123,7 +132,7 @@ spawn 后记录 `server.pid`，测试收尾（含异常 catch 路径）用 `proc
 
 ### 验证项
 
-每改完一版，`npm run check:protocol` + `npm test` → 本地 server（隔离端口+独立 data-dir）→ 对应 `tests/*-test.mjs` 或 `npm run test:smoke` → `npm run typecheck` → 涉及 UI 再用 `playwright` 浏览器测试（chromium 由 `tests/lib/chrome.mjs` 逐平台探测，`PI_WEB_CHROME` 可覆盖）。
+本地迭代先运行与变更相关的 `npx vitest run <测试文件>`；涉及协议时运行 `npm run check:protocol` 和对应 `tests/*-test.mjs`，涉及真实 UI 交互时再跑相关浏览器测试。测试 server 使用隔离端口与独立 data-dir；Chromium 由 `tests/lib/chrome.mjs` 逐平台探测，`PI_WEB_CHROME` 可覆盖。提交前按 `AGENTS.md` 完成改动文件格式化、`npm run typecheck` 和相关单测；全量 `npm test` 与分层 `test:smoke` 继续由 CI 执行，共享基础设施变更时本地也应跑相应全量套件。
 
 ### 测试家族速查
 

@@ -1,12 +1,3 @@
-/**
- * #813 回归：`install --force` 升级插件时不得删掉插件自己写在插件目录里的数据。
- *
- * 旧行为是「清空目标目录，只保留一份固定名单」，db-client 的 db-connections.json
- * 因此每次升级都被删。现在安装时记录「随包文件清单」(.pi-files.json)，升级只删清单
- * 内的路径：旧代码文件照样被清掉（不留陈旧模块），插件数据保持不动。
- *
- * 走真实 CLI（node bin/pi-web-ui.mjs），本地目录源，零网络。
- */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -38,7 +29,6 @@ try {
 	writeFileSync(join(pluginDir, "index.mjs"), "// v1\n");
 	writeFileSync(join(pluginDir, "dropped.mjs"), "// shipped in v1 only\n");
 
-	// —— 1. 装 v1，然后插件把自己运行期的数据写进插件目录（db-connections.json 同款）——
 	cli(["install", pluginDir, "--name", "dbx"], env);
 	const data = JSON.stringify({ conns: [{ host: "db.example", port: 5432 }] });
 	writeFileSync(join(target, "db-connections.json"), data);
@@ -48,7 +38,6 @@ try {
 		"安装后应记录随包文件清单",
 	);
 
-	// —— 2. 装 v2：hyphen 删了 dropped.mjs、加了 added.mjs，并改版本号 ——
 	rmSync(join(pluginDir, "dropped.mjs"));
 	writeFileSync(join(pluginDir, "added.mjs"), "// new in v2\n");
 	writeFileSync(join(pluginDir, "manifest.json"), JSON.stringify({ id: "dbx", name: "DB", version: "2.0.0" }));
@@ -61,7 +50,6 @@ try {
 	assert(files.includes("added.mjs"), "新版本文件没装上");
 	assert(!files.includes("dropped.mjs"), `旧版本代码文件没被清理：${files.join(", ")}`);
 
-	// —— 3. 老安装（没有清单）：猜不出哪些是代码，宁可不删，数据必须还在 ——
 	rmSync(join(target, ".pi-files.json"));
 	writeFileSync(join(target, "legacy-stale.mjs"), "// left over from an old install\n");
 	writeFileSync(join(pluginDir, "manifest.json"), JSON.stringify({ id: "dbx", name: "DB", version: "3.0.0" }));

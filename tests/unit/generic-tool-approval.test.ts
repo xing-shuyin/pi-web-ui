@@ -84,7 +84,6 @@ describe("通用工具审批门禁 (withApprovalGate - Issue #722)", () => {
 			askApproval: askApprovalMock,
 		});
 
-		// 用户批准时
 		const res = (await guarded.execute(
 			"call-2",
 			{ sql: "DROP TABLE users;" },
@@ -106,7 +105,6 @@ describe("通用工具审批门禁 (withApprovalGate - Issue #722)", () => {
 		expect(executeMock).toHaveBeenCalledWith("call-2", { sql: "DROP TABLE users;" }, undefined, undefined, undefined);
 		expect(res.content[0].text).toBe("table dropped");
 
-		// 用户拒绝时
 		askApprovalMock.mockResolvedValueOnce({ decision: "deny", reason: "不允许删表" });
 		const denyRes = (await guarded.execute(
 			"call-3",

@@ -1,27 +1,7 @@
-/**
- * server/goal-review-gate.ts
- *
- * 目标审查回合的硬闸门（纯函数）：主对话在 `awaitingVerdict` 置位期间是审查者，
- * 只许只读核实 —— 写类工具 / 非常规 bash / 派发类工具 / 向用户提问一律拒。
- *
- * 为什么要硬闸门而不只靠契约：审查回合的提示词只写了「只读核实」，但主对话是
- * 用户自己的全功能会话，模型在长任务里「顺手改一下」是常态；且 D6 要求轮次由
- * 服务端控制，派生/等待/指挥别的对话必须拦。闸门是**无状态**的（每次执行只读
- * `awaitingVerdict` 是否置位），verdict 落定即自动恢复，不存在「钉死只读」。
- *
- * 判定全部是纯函数（无 IO），单测见 tests/unit/goal-review-gate.test.ts。
- * 包裹形态与 withPlanModeGate / withDelegationGate 同构，见 agent-service.ts。
- *
- * 已知局限（与计划/审查者闸门同口径）：创建时注册进 customTools 的插件工具
- * 同样被包裹；但之后经 refreshPluginTools 动态补入已有会话的不在覆盖面。
- * 自研插件若绕过 wrapper 直接写文件同样拦不住 —— 只读是硬闸门，不是安全边界。
- */
 import { bashCommandIsReadOnly, readOnlyToolCallAllowed, SESSION_DISPATCH_TOOLS } from "./plan-mode.js";
 import { isReadOnlyConversationAction, isConversationTool } from "./conversation-tool-names.js";
 
-/** 审查回合禁写的工具：与计划/审查者模式同名单（写 / 改 / 增删 / git 写 / 形态变换）。 */
 const WRITE_TOOLS = new Set([
-	// 文件写入与编辑（第一方 + SDK 内置 + 编辑器类扩展的常见名）
 	"write",
 	"create",
 	"create_file",
@@ -36,7 +16,6 @@ const WRITE_TOOLS = new Set([
 	"str_replace_editor",
 	"multi_edit",
 	"notebook_edit",
-	// 文件系统增删改
 	"mv",
 	"move",
 	"cp",
@@ -51,36 +30,21 @@ const WRITE_TOOLS = new Set([
 	"chown",
 	"truncate",
 	"rename",
-	// 版本控制写（git add/commit/checkout/reset…；只读子命令走 bash 白名单）
 	"git",
-	// 代码求值（eval 沙箱可写真实文件系统 —— 审查回合只读核实，#436）
 	"eval",
-	// QuickJS 沙箱代码执行（可嵌套调用写工具/命令；与 plan-mode/delegate-mode 同口径）
 	"codemode",
 	"mcp_manage",
 	"sandbox",
-	// 形态变换（会重写整个文件树）
 	"format",
 	"prettier",
 	"lint_fix",
 	"autofix",
 ]);
 
-/**
- * 审查回合禁掉的「派发类」工具：轮次由服务端控制（D6）—— 派生 / 等待 / 指挥
- * 别的对话、排程、改模式 / 开新目标都会绕开「一轮 = 派活 + 判定」的口径。
- * 名单 = 三闸门共用的真实注册派发工具（SESSION_DISPATCH_TOOLS，#436 前是一堆
- * 幽灵名）。subagent 不在此列：上面的按 action 判定已拦掉全部写向 action，
- * conversation 的只读操作（read/files/status/get_result/list/templates）放行 ——
- * 审查者可以按需看执行者的转录（契约要求看实际状态，而不是信描述）。
- */
 const DISPATCH_TOOLS = SESSION_DISPATCH_TOOLS;
 
-/** bash 家族（要逐条判命令是否只读；与审查者模式同名单）。 */
 const BASH_TOOLS = new Set(["bash", "shell", "sh", "zsh", "terminal_bash", "run_command", "exec"]);
 
-/** 引号感知的命令切分（按 | ; && || 换行拆段；含 $( / 反引号时整条视为一段交白名单判
- *  —— 白名单必拒，方向是 fail-closed，这里的拆分只会让判定更严不会放宽）。 */
 function splitReviewSegments(cmd: string): string[] {
 	if (/[`$]\(/.test(cmd)) return [cmd];
 	const out: string[] = [];
@@ -120,12 +84,6 @@ function splitReviewSegments(cmd: string): string[] {
 	return out.map((s) => s.trim()).filter((s) => s !== "");
 }
 
-/**
- * 审查回合额外放行的测试命令：契约承诺审查者可以「跑测试」验结论，而计划模式的
- * 保守白名单连 `npm test` 都没有（解释器只放 --version/--help）。只认「跑测试」
- * 的形状（test 脚本 / 各语言测试运行器），`npm run deploy` 这类一律不放；
- * 重定向 / 反引号沿白名单方向必拒。
- */
 function isTestRunnerChunk(chunk: string): boolean {
 	if (/[><`]/.test(chunk)) return false;
 	const tokens = chunk.split(/\s+/).filter(Boolean);
@@ -157,10 +115,6 @@ function isTestRunnerChunk(chunk: string): boolean {
 	}
 }
 
-/**
- * 审查回合的 bash 是否可放行：每段要么过计划模式只读白名单，要么是跑测试的形状。
- * 空命令返回 false（调用方另行处理无命令调用）。
- */
 export function goalReviewBashAllowed(cmd: string): boolean {
 	const text = (cmd ?? "").trim();
 	if (!text) return false;
@@ -169,7 +123,6 @@ export function goalReviewBashAllowed(cmd: string): boolean {
 	return chunks.every((c) => isTestRunnerChunk(c) || bashCommandIsReadOnly(c));
 }
 
-/** 从工具参数里取命令文本（各工具字段名不同）。 */
 function commandOf(params: unknown): string {
 	if (!params || typeof params !== "object") return "";
 	const p = params as Record<string, unknown>;
@@ -180,11 +133,6 @@ function commandOf(params: unknown): string {
 	return "";
 }
 
-/**
- * 审查回合中的用户插话是否顺延：纯文本 steer 会污染 verdict，必须排队到 verdict
- * 落定后；followUp（补充按钮）由 SDK 排在整轮结束后才送达，本来就安全；斜杠命令
- * 与带附件的不进顺延（前者直通，后者引用只在发送瞬间有效、调用方改响亮拒绝）。
- */
 export function shouldDeferPromptForReview(opts: {
 	queue: boolean;
 	text: string;
@@ -196,22 +144,15 @@ export function shouldDeferPromptForReview(opts: {
 	return true;
 }
 
-/** 目标审查闸门对一次工具调用的裁决：undefined = 放行。 */
 export interface GoalReviewDenial {
 	reason: string;
 	reasonEn: string;
-	/** 归类，写进 details 供前端与回归判读。 */
 	kind: "write-tool" | "bash" | "dispatch-tool" | "ask-user";
 }
 
-/**
- * 目标审查闸门（纯函数）：命中即拒绝，并把「该干什么」告诉模型 ——
- * 拒绝理由是模型在审查回合里唯一的纠偏机会（长任务里最容易「顺手改一下」）。
- */
 export function goalReviewDenial(toolName: string, params: unknown): GoalReviewDenial | undefined {
 	const name = (toolName ?? "").trim();
 	if (!name) return undefined;
-	// 向用户提问：审查回合禁弹窗（问了就没人应答，verdict 会超时拖成 blocked）。
 	if (name === "ask_user_question") {
 		return {
 			kind: "ask-user",
@@ -225,7 +166,6 @@ export function goalReviewDenial(toolName: string, params: unknown): GoalReviewD
 		const action =
 			typeof params === "object" && params !== null ? (params as Record<string, unknown>).action : undefined;
 		const act = typeof action === "string" ? action.trim().toLowerCase() : "";
-		// Transcript inspection and collaboration queries are read-only; mutations and missing actions are rejected.
 		if (isReadOnlyConversationAction(act)) {
 			return undefined;
 		}

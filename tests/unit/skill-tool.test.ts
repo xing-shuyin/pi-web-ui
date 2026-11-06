@@ -1,7 +1,3 @@
-/**
- * skill-tool 单测：名录匹配 / 纠错 / 名录文本 / 全文块格式 / execute 端到端
- * （临时技能文件 + 假 host，零 token）。
- */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -106,7 +102,6 @@ describe("makeSkillTool execute", () => {
 
 describe("makeSkillTool 单文件上限跟随设置 (#819)", () => {
 	const dir = mkdtempSync(join(tmpdir(), "skill-tool-cap-"));
-	// 20KB 正文：默认 8KB 上限读不到，调大上限后可以读到。
 	const fp = join(dir, "SKILL.md");
 	writeFileSync(fp, `# Big\n\n${"x".repeat(20 * 1024)}\n`, "utf8");
 	const entry: SkillCatalogEntry = { name: "big", description: "Big skill", filePath: fp };

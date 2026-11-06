@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * scripts/link-plugins.mjs
- *
- * 将当前仓库中的内置插件 (plugins/<id>) 通过符号链接 / Junction 软链接到用户数据目录 (<dataDir>/plugins/<id>)。
- * 解决「本地修改插件代码后必须手动复制到数据目录、AI/开发者容易遗漏」的痛点。
- *
- * 用法：
- *   node scripts/link-plugins.mjs                 # 链接全部内置插件
- *   node scripts/link-plugins.mjs legado-web      # 仅链接指定插件
- *   node scripts/link-plugins.mjs --unlink        # 恢复全部内置插件为独立目录
- *   node scripts/link-plugins.mjs legado-web -u   # 仅恢复指定插件
- */
 
 import {
 	cpSync,
@@ -37,7 +25,6 @@ const userPluginsDir = join(dataDir, "plugins");
 
 const isWin = process.platform === "win32";
 
-// 解析命令行参数
 const args = process.argv.slice(2);
 const isUnlink = args.includes("--unlink") || args.includes("-u");
 const targetPluginId = args.find((a) => !a.startsWith("-"));
@@ -71,13 +58,11 @@ export function linkPlugin(id, { repoDir = repoPluginsDir, targetDir = userPlugi
 			console.log(`[link-plugins] ✓ ${id} 已经是软链接，无需操作`);
 			return true;
 		}
-		// 普通目录：备份并替换
 		if (existsSync(bak)) rmSync(bak, { recursive: true, force: true });
 		renameSync(dest, bak);
 		console.log(`[link-plugins] 旧目录已备份至 ${id}.bak`);
 	}
 
-	// Windows 使用 junction，无需管理员权限；POSIX 使用 dir symlink
 	symlinkSync(src, dest, isWin ? "junction" : "dir");
 	console.log(`[link-plugins] ✓ 成功链接: ${id} → ${src}`);
 	return true;
@@ -99,15 +84,12 @@ export function unlinkPlugin(id, { repoDir = repoPluginsDir, targetDir = userPlu
 		return true;
 	}
 
-	// 移除软链接
 	rmSync(dest, { force: true });
 
-	// 如果有备份，优先恢复备份
 	if (existsSync(bak)) {
 		renameSync(bak, dest);
 		console.log(`[link-plugins] ✓ 已恢复备份目录: ${id}`);
 	} else if (existsSync(src)) {
-		// 没有备份但有源码，复制源码副本
 		cpSync(src, dest, { recursive: true });
 		console.log(`[link-plugins] ✓ 已从源码复制独立副本: ${id}`);
 	} else {
@@ -135,7 +117,6 @@ export function cleanBrokenSymlinks({ targetDir = userPluginsDir } = {}) {
 	return removed;
 }
 
-// 主流程执行（CLI 模式）
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
 	cleanBrokenSymlinks();
 	const ids = getBuiltinPluginIds();

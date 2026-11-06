@@ -22,7 +22,6 @@ PUT 1.=1:
 		const cwdA = "/workspace/projectA";
 		const cwdB = "/workspace/projectB";
 
-		// 两个项目中的修改分别应用
 		const reportA = applyHashlinePatch(patchTextA, {
 			cwd: cwdA,
 			snapshotStore: store,
@@ -40,7 +39,6 @@ PUT 1.=1:
 		expect(reportA.ok).toBe(true);
 		expect(reportB.ok).toBe(true);
 
-		// 验证快照在两个工作区独立存在，互不覆盖
 		const hashA = computeFileHash("console.log('Project A Modified');");
 		const hashB = computeFileHash("console.log('Project B Modified');");
 
@@ -73,7 +71,6 @@ MV new-sample.txt
 		});
 
 		expect(report.ok).toBe(true);
-		// 验证先写后删
 		expect(opsOrder).toEqual(["write:new-sample.txt", "delete:sample.txt"]);
 	});
 });

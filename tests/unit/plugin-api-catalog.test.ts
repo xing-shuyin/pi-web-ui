@@ -1,11 +1,3 @@
-/**
- * P2-7 注册面目录（机器可读）单测。
- *
- * A. 装配纯函数：排序/别名映射/占用者/例子回落/拷贝隔离。
- * B. 静态表锁：每个 slot 都有例子、别名目标都存在、方法表 needs 合法且无重名、
- *    关键方法都在（防与 PluginHost 脱节，加方法时记得来这里补一行）。
- * C. 接线（真实 PluginManager）：manifest 基线 + 运行时注册都计入 occupants。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,10 +10,6 @@ import {
 } from "../../server/plugin-api-catalog.js";
 import { PluginManager, UI_SLOTS, UI_SLOT_ALIASES, type PluginHost } from "../../server/plugins.js";
 import { KNOWN_PERMISSION_FAMILIES } from "../../server/plugin-manifest-validate.js";
-
-// ---------------------------------------------------------------------------
-// A. 装配
-// ---------------------------------------------------------------------------
 
 describe("buildPluginApiCatalog", () => {
 	it("slot 排序 + 别名映射 + kinds 透传", () => {
@@ -67,10 +55,6 @@ describe("buildPluginApiCatalog", () => {
 		expect(HOST_METHODS.some((m) => m.name === "fake")).toBe(false);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// B. 静态表锁（与解析层/宿主同源）
-// ---------------------------------------------------------------------------
 
 describe("静态表与源码同口径", () => {
 	it("34 个真实 slot 个个有例子；别名目标个个存在", () => {
@@ -140,10 +124,6 @@ describe("静态表与源码同口径", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// C. 接线（真实 PluginManager）
-// ---------------------------------------------------------------------------
-
 let dir: string;
 let mgr: PluginManager;
 
@@ -189,7 +169,6 @@ describe("getApiCatalog 接线", () => {
 		const c = mgr.getApiCatalog();
 		const top = c.slots.find((s) => s.slot === "topbar.primary");
 		expect(top?.occupants).toEqual([{ pluginId: "cat", items: 2 }]);
-		// 别名/kind 与解析层同源
 		expect(top?.aliases).toContain("topbar");
 		expect(top?.kinds).toContain("action");
 	});

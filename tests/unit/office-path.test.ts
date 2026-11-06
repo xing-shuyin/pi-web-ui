@@ -4,7 +4,6 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import office from "../../plugins/office/index.mjs";
 
-// Match the production host's lexical admission, including explicitly authorized extra roots.
 function lexicalResolver(roots: string[]) {
 	return vi.fn((input: string) => {
 		const target = resolve(roots[0], input);

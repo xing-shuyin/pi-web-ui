@@ -4,7 +4,6 @@ import type { QuestionAnswer, UiQuestion } from "./protocol.js";
 export type QuestionResult =
 	QuestionAnswer[] | { cancelled: true; reason?: string } | { status: "timed_out"; timed_out: true } | null;
 
-/** A request owns its clock and cancellation; holders may change during takeover. */
 export class PendingQuestion {
 	readonly id = `q-${randomUUID()}`;
 	readonly createdAt = Date.now();
@@ -44,8 +43,6 @@ export class PendingQuestion {
 		}
 	}
 
-	/** Independent of legacy onSettled, so holder migration cannot erase other owners' cleanup.
-	 * Late subscribers run immediately. Returned cleanup only unsubscribes this listener. */
 	subscribeSettled(listener: () => void): () => void {
 		if (this.settled) {
 			listener();
@@ -57,7 +54,6 @@ export class PendingQuestion {
 		};
 	}
 
-	/** Compatibility alias for integrations using listener naming. */
 	addSettledListener(listener: () => void): () => void {
 		return this.subscribeSettled(listener);
 	}
@@ -73,7 +69,6 @@ export class PendingQuestion {
 		this.onSettled = undefined;
 		const listeners = [...this.settledListeners];
 		this.settledListeners.clear();
-		// Every owner gets cleanup even if another subscriber throws. Preserve the first error.
 		let firstError: unknown;
 		let failed = false;
 		for (const listener of [...listeners, ...(onSettled ? [onSettled] : [])]) {

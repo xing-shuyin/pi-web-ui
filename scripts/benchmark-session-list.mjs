@@ -1,6 +1,3 @@
-// 会话列表元信息扫描基准：原实现（逐字符 base64 过滤 + 逐行字符串）对比字节级扫描与增量续扫。
-// 仅使用合成数据，不读取用户历史、不启动服务。
-// 用法：node --import tsx scripts/benchmark-session-list.mjs [MB]
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +5,6 @@ import { scanSessionListInfo } from "../server/session-list-scan.ts";
 
 const targetMb = Number(process.argv[2] ?? 10);
 
-// ---- 原实现（逐字符过滤器 + 列表模式解析），作为基准原样复刻 ----
 import { createReadStream } from "node:fs";
 class LegacyFilter {
 	inString = false;
@@ -172,7 +168,6 @@ try {
 		s = performance.now();
 		const r = await scanSessionListInfo(file, 0);
 		t.full.push(performance.now() - s);
-		// 模拟一轮对话后的追加（约 10 KB），再续扫
 		appendFileSync(file, `${turn(100000 + k)}\n`);
 		s = performance.now();
 		await scanSessionListInfo(file, 0, r.state);

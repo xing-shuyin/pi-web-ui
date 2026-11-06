@@ -6,7 +6,6 @@ import express from "express";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { findAttachment, initAttachmentStore, saveAttachmentSync } from "../../server/attachment-store.js";
 
-// Exercise the production handler without starting the full agent service.
 const source = readFileSync(new URL("../../server/index.ts", import.meta.url), "utf8");
 const start = source.indexOf('app.get("/api/attachment/:hash"');
 const handler = source.slice(start, source.indexOf("\n});", start) + 4);
@@ -18,7 +17,6 @@ new Function(
 )(app, findAttachment);
 const server = createServer(app);
 const tempDir = mkdtempSync(join(tmpdir(), "pi-attachment-route-"));
-// A dot directory is part of the default installation path on every OS.
 initAttachmentStore(join(tempDir, ".pi-web"));
 const image = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=",

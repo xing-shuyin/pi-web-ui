@@ -1,4 +1,3 @@
-/** Locally owned procedure text. Never interpolate task, history, configuration or remote content. */
 export const EXECUTION_GUIDE_TOPICS = ["coordination", "code", "delivery", "review"] as const;
 export type ExecutionGuideTopic = (typeof EXECUTION_GUIDE_TOPICS)[number];
 export const EXECUTION_GUIDE_MAX_BYTES = 8192;

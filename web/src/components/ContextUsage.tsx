@@ -15,7 +15,6 @@ const CATEGORY_LABELS = {
 	other: "contextOther",
 } as const satisfies Record<ContextCategory, string>;
 
-/** The same context entry works in the top, bottom and side bars. */
 export function ContextUsage({
 	context,
 	bar,
@@ -51,7 +50,6 @@ export function ContextUsage({
 	const hasCategories = categories.length > 0;
 	const rows = categories.map((row) => ({ ...row, label: t(CATEGORY_LABELS[row.category]) }));
 	if (!hasCategories && used > 0) rows.push({ category: "other", tokens: used, label: t("contextUsed") });
-	// Live usage can add rows; keep a bottom-bar panel above its trigger as it grows.
 	useLayoutEffect(() => {
 		if (open) measure();
 	});

@@ -1,6 +1,3 @@
-/* Smoke test: boots the real (compiled) server and exercises the terminal +
- * commands protocol over WebSocket (no browser needed).
- * Run:  npm run build:server && node terminal-smoke-test.mjs */
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,19 +12,15 @@ const dataDir = mkdtempSync(join(tmpdir(), "piweb-term-data-"));
 process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 process.env.PI_WEB_DATA_DIR = dataDir;
-// 工具按需加载自 #652 起**默认关**，这里仍显式钉住关闭态：本测试断言「持久终端开关打开后终端工具
-// 出现在活跃工具集里」，若哪天又把部署默认改回开，按需加载会把这些工具藏进目录里不加载
-// （同 takeover / subagent-* / question-bridge 等用例）。
 process.env.PI_WEB_TOOL_LAZY_LOADING = "0";
 
-// realpathSync: fnm multishell shim 路径可能失效；fileURLToPath: URL.pathname 在 Windows 下非法
 const NODE = realpathSync(process.execPath);
 const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const server = spawn(NODE, [join(REPO, "dist", "server", "index.js")], {
 	cwd: REPO,
 	stdio: ["ignore", "pipe", "pipe"],
-	detached: true, // own process group so we can kill the whole tree
+	detached: true,
 });
 server.on("error", (e) => console.error("[srv spawn error]", e));
 server.on("exit", (code) => console.error(`[srv exited early: ${code}]`));
@@ -35,9 +28,6 @@ server.stdout.on("data", (d) => process.stdout.write(`[srv] ${d}`));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-/** Poll until a predicate holds or the timeout elapses — beats fixed sleeps for
- *  spawn-time-sensitive assertions on slow CI runners (e.g. the shell banner
- *  arriving late). Returns the final predicate value. */
 async function waitFor(pred, ms = 5000, step = 100) {
 	const deadline = Date.now() + ms;
 	while (Date.now() < deadline) {
@@ -62,21 +52,19 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-const outputs = new Map(); // terminalId -> accumulated text
-const exits = new Map(); // terminalId -> exitCode
+const outputs = new Map();
+const exits = new Map();
 let commandsReply = null;
-let sessionsReply = null; // sessions list
+let sessionsReply = null;
 let snapshotReply = null;
-const notices = []; // notice texts from the server
-let lastTermList = null; // latest terminal_list snapshot (issue #147 settle signal)
+const notices = [];
+let lastTermList = null;
 
 async function main() {
 	await waitServer();
@@ -101,8 +89,6 @@ async function main() {
 		if (msg.type === "commands") commandsReply = msg;
 		if (msg.type === "sessions") sessionsReply = msg.sessions;
 		if (msg.type === "snapshot") snapshotReply = msg.state;
-		// snapshot_delta carries a LIGHT state (no messages) with the same
-		// top-level fields — tools/toggles refresh through it, keep it in sync.
 		if (msg.type === "snapshot_delta") snapshotReply = msg.state;
 		if (msg.type === "notice") notices.push(msg.text);
 		if (msg.type === "terminal_list") lastTermList = msg.terminals;
@@ -122,17 +108,11 @@ async function main() {
 					clearTimeout(timer);
 					res();
 				}
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 	});
 	console.log("ready received");
 	await sleep(300);
-	// Persistent-terminal tools are DEFAULT OFF in client settings (since the
-	// ask_user_question commit); enable them explicitly like a real user would,
-	// then wait for tool gating to surface them in the snapshot — reload is
-	// async, so poll instead of a fixed sleep (matches waitFor's design intent).
 	send({ type: "set_settings", terminalToolsEnabled: true });
 	const TERM_TOOL_EXPECT = ["terminal"];
 	await waitFor(() => TERM_TOOL_EXPECT.every((name) => snapshotReply?.tools?.includes(name)), 8000, 200);
@@ -141,7 +121,6 @@ async function main() {
 		TERM_TOOL_EXPECT.every((name) => snapshotReply?.tools?.includes(name)),
 	);
 
-	// -- commands: list (fresh dir -> empty), save, list again -----------------
 	send({ type: "list_commands" });
 	await sleep(400);
 	check("list_commands returns empty list", commandsReply?.commands?.length === 0);
@@ -169,10 +148,6 @@ async function main() {
 		onDisk !== null && Array.isArray(onDisk.commands) && onDisk.commands[0].name === "dev",
 	);
 
-	// -- folder attachment: a directory is accepted (not skipped as a non-file) --
-	// Full end-to-end (the <folder path> card in the transcript) requires a real
-	// model turn; here we verify the server takes the folder branch instead of
-	// the old "跳过非文件附件" skip path, and that no path error is emitted.
 	{
 		const { mkdirSync } = await import("node:fs");
 		mkdirSync(join(workdir, "subdir"), { recursive: true });
@@ -192,9 +167,6 @@ async function main() {
 		);
 	}
 
-	// -- persisted sessions: shared pi session files appear in the list --------
-	// The CLI stores sessions in <agentDir>/sessions/--<cwd-sanitized>--; fabricate
-	// one there and check list_sessions discovers the same persisted file.
 	{
 		const { homedir } = await import("node:os");
 		const { writeFileSync, mkdirSync } = await import("node:fs");
@@ -225,14 +197,11 @@ async function main() {
 				}),
 			].join("\n") + "\n",
 		);
-		// Clean up the fabricated session on exit (best effort).
 		process.on("exit", () => {
 			try {
 				rmSync(tuiFile, { force: true });
 				rmSync(tuiDir, { recursive: true, force: true });
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 		send({ type: "list_sessions" });
 		await sleep(1000);
@@ -242,7 +211,6 @@ async function main() {
 		);
 	}
 
-	// -- plain terminal --------------------------------------------------------
 	const t1 = "t-1";
 	send({
 		type: "terminal_create",
@@ -251,8 +219,6 @@ async function main() {
 		cols: 80,
 		rows: 24,
 	});
-	// The shell banner/prompt can take >600ms to arrive on a slow CI runner —
-	// poll instead of a fixed sleep so this never flakes (see b906a46 failure).
 	check("shell produced output", await waitFor(() => (outputs.get(t1) ?? "").length > 0));
 	check(
 		"terminal_list identifies the active conversation",
@@ -265,7 +231,6 @@ async function main() {
 	send({ type: "terminal_resize", terminalId: t1, cols: 100, rows: 40 });
 	await sleep(200);
 
-	// -- run_command with ${pwd} ----------------------------------------------
 	const t2 = "t-2";
 	send({
 		type: "run_command",
@@ -277,12 +242,10 @@ async function main() {
 	await sleep(1200);
 	check("run_command banner shown", (outputs.get(t2) ?? "").includes("WS_CMD_OK"));
 
-	// ${pwd} resolves to session cwd (= workspace root here)
 	send({ type: "terminal_input", terminalId: t2, data: "pwd\r" });
 	await sleep(600);
 	check("${pwd} resolved to session cwd", (outputs.get(t2) ?? "").includes(workdir));
 
-	// -- re-run: run_command on an existing terminal restarts it in place ------
 	send({
 		type: "run_command",
 		terminalId: t2,
@@ -294,7 +257,6 @@ async function main() {
 	const t2out = outputs.get(t2) ?? "";
 	check("re-run banner appears", t2out.includes("> echo WS_CMD_RERUN"));
 	check("re-run executed", t2out.includes("WS_CMD_RERUN"));
-	// The replacement shell must accept input (a live PTY, not the killed one).
 	send({
 		type: "terminal_input",
 		terminalId: t2,
@@ -303,7 +265,6 @@ async function main() {
 	await sleep(600);
 	check("restarted shell accepts input", (outputs.get(t2) ?? "").includes("WS_AFTER_RERUN"));
 
-	// Attach/replay must never repeat the side effect of an existing command.
 	const countPath = join(workdir, "attach-count.txt");
 	send({
 		type: "run_command",
@@ -326,7 +287,6 @@ async function main() {
 		lastTermList?.some((t) => t.id === t2 && t.running && t.ownerKind === "client"),
 	);
 
-	// -- kill / exit -----------------------------------------------------------
 	send({ type: "terminal_kill", terminalId: t1 });
 	await sleep(400);
 	check("terminal_kill emits exit", exits.has(t1));
@@ -334,8 +294,6 @@ async function main() {
 	send({ type: "terminal_input", terminalId: t2, data: "exit\r" });
 	await waitFor(() => exits.has(t2), 3000);
 	check("shell exit emits terminal_exit", exits.has(t2));
-	// Exited PTYs leave the live map: the same name can be created again and
-	// accepts input, proving exited entries do not consume the terminal limit.
 	send({
 		type: "terminal_create",
 		terminalId: t2,
@@ -348,8 +306,6 @@ async function main() {
 	const reused = await waitFor(() => (outputs.get(t2) ?? "").includes("REUSED_OK"), 3000);
 	check("exited terminal name can be reused", reused);
 
-	// The command-list spawn path must enforce the same live-terminal cap as
-	// terminal_create; otherwise unique browser IDs could bypass the limit.
 	const capIds = Array.from({ length: 15 }, (_, i) => `cap-${i}`);
 	for (const id of capIds) {
 		send({ type: "terminal_create", terminalId: id, cwd: workdir, cols: 40, rows: 12 });
@@ -376,10 +332,6 @@ async function main() {
 	);
 	for (const id of capIds) send({ type: "terminal_kill", terminalId: id });
 
-	// -- key encoding (pure + byte-exact) ------------------------------------
-	// Named keys must NEVER fall back to Ctrl+<first letter> — the old bug
-	// turned Ctrl+ArrowUp into Ctrl+A (0x01) and Ctrl+Enter into Ctrl+E (0x05).
-	// Pin the exact escape sequences so a regression fails loudly.
 	{
 		const { encodeTerminalKey } = await import("../dist/server/terminals.js");
 		const enc = (key, modifiers) => encodeTerminalKey(key, modifiers);
@@ -398,10 +350,6 @@ async function main() {
 		check("Ctrl on a non-letter reports an error", "error" in enc("ü", { ctrl: true }));
 	}
 
-	// -- id validation must apply to EVERY spawn path ------------------------
-	// Both the browser terminal panel (terminal_create) and the command list
-	// (run_command) share the same id rules — a bad id must be rejected with
-	// the standard error notice on either path.
 	{
 		const before = notices.length;
 		send({ type: "terminal_create", terminalId: "bad id!", cwd: workdir, cols: 40, rows: 12 });
@@ -419,21 +367,16 @@ async function main() {
 		);
 	}
 
-	// -- the cap also holds for history (exited) ids at run_command ----------
-	// 16 live terminals + an exited id in history: re-running the exited id must
-	// be rejected — history does not reserve a slot (spawning would create a
-	// 17th live PTY). This closes the "unique id spawns forever" hole on the
-	// command-list path.
 	{
 		const histIds = Array.from({ length: 16 }, (_, i) => `hist-${i}`);
 		for (const id of histIds) {
 			send({ type: "terminal_create", terminalId: id, cwd: workdir, cols: 40, rows: 12 });
 		}
 		await sleep(1200);
-		send({ type: "terminal_input", terminalId: "hist-0", data: "exit\r" }); // → history
+		send({ type: "terminal_input", terminalId: "hist-0", data: "exit\r" });
 		for (let i = 0; i < 30 && !exits.has("hist-0"); i++) await sleep(100);
 		check("hist-0 exited and moved to history", exits.has("hist-0"));
-		send({ type: "terminal_create", terminalId: "hist-fill", cwd: workdir, cols: 40, rows: 12 }); // back to 16 live
+		send({ type: "terminal_create", terminalId: "hist-fill", cwd: workdir, cols: 40, rows: 12 });
 		await sleep(500);
 		const before = notices.length;
 		send({
@@ -452,13 +395,6 @@ async function main() {
 		send({ type: "terminal_kill", terminalId: "hist-fill" });
 	}
 
-	// -- issue #147: terminal_create carries agentBash (browser rebuild path) ----
-	// At the full user cap, a create WITH agentBash:true must still succeed —
-	// this is how the frontend re-registers exited AI terminals after a remount.
-	// Earlier blocks' kills settle asynchronously: re-assert them and wait until
-	// the server reports zero live terminals. (Waiting on the exits map is NOT
-	// enough: fail() also emits terminal_exit, and a re-created id like t-2
-	// keeps its stale entry — but every death path emits a fresh terminal_list.)
 	{
 		const priorIds = [
 			"t-1",
@@ -477,15 +413,12 @@ async function main() {
 			send({ type: "terminal_create", terminalId: id, cwd: workdir, cols: 40, rows: 12 });
 		}
 		await waitFor(() => (lastTermList?.filter((t) => t.running).length ?? 0) >= 16, 5000);
-		// 先证明确实打满：再建一个用户终端必须被拒（否则后面的豁免断言无意义）。
 		send({ type: "terminal_create", terminalId: "b147-over", cwd: workdir, cols: 40, rows: 12 });
 		const capped = await waitFor(() => notices.slice(fillNotices).some((n) => n.includes("终端数量已达上限")), 3000);
 		check("issue #147 setup: user cap is full", capped);
 		if (capped) {
 			const before = notices.length;
 			send({ type: "terminal_create", terminalId: "b147-ai", cwd: workdir, cols: 40, rows: 12, agentBash: true });
-			// 输入即发可能撞上 shell 未就绪（Windows ConPTY 会丢首字节）：轮询补发，
-			// echo 幂等，多发无害。
 			let alive147 = false;
 			for (let i = 0; i < 10 && !alive147; i++) {
 				send({ type: "terminal_input", terminalId: "b147-ai", data: "echo B147_ALIVE\r" });
@@ -500,9 +433,6 @@ async function main() {
 		await sleep(400);
 	}
 
-	// Invoke the real agent-facing definitions as well as the WebSocket protocol.
-	// The SDK normally calls these from a model turn; this local tool harness keeps
-	// the smoke test deterministic while exercising create/list/read(wait)/key/close.
 	{
 		const { TerminalManager, makePersistentTerminalTools } = await import("../dist/server/terminals.js");
 		const toolManager = new TerminalManager(() => {}, workdir);
@@ -518,7 +448,6 @@ async function main() {
 				"agent terminal_create/list works",
 				JSON.parse(listed.content[0].text).some((t) => t.id === "agent-smoke"),
 			);
-			// 等待 shell 初始 prompt 就绪
 			let initialRead = { cursor: 0 };
 			for (let i = 0; i < 30; i++) {
 				const r = await invoke("terminal_read", { terminalId: "agent-smoke", cursor: 0, maxBytes: 2000 });
@@ -561,9 +490,6 @@ async function main() {
 			const afterClose = await invoke("terminal_list", {});
 			check("agent terminal_close releases the PTY", JSON.parse(afterClose.content[0].text).length === 0);
 
-			// Live-vs-retained regression: an exited terminal must NOT count as
-			// "open" for the running-conversation retention decision (countLive),
-			// even though its output stays readable in the list.
 			await invoke("terminal_create", { terminalId: "agent-live", cwd: ".", cols: 40, rows: 12 });
 			check("countLive counts a live PTY", toolManager.countLive() === 1);
 			await invoke("terminal_input", { terminalId: "agent-live", data: "exit\r" });
@@ -574,10 +500,6 @@ async function main() {
 				toolManager.list().some((t) => t.id === "agent-live" && !t.running) && toolManager.countLive() === 0,
 			);
 
-			// Pristine shells (never typed into / no command / not agent-touched —
-			// e.g. the shell auto-created when opening the terminal tab) must NOT
-			// count as "open" for the running-conversation retention / dismissal
-			// decision (countBlockingLive); any real use flips them to blocking.
 			toolManager.create("pristine-smoke", ".", 40, 12, ".", "pristine-smoke");
 			check(
 				"pristine shell is live but not blocking",
@@ -594,28 +516,20 @@ async function main() {
 				toolManager.countLive() === 0 && toolManager.countBlockingLive() === 0,
 			);
 
-			// issue #147: rebuilding an exited AI terminal must inherit agentBash.
-			// A browser remount re-sends terminal_create WITHOUT the flag for every
-			// history entry — demoting AI terminals to user ones fills the 16 slots
-			// and spams the limit notice.
 			for (let i = 0; i < 16; i++) toolManager.create(`u147-${i}`, ".", 40, 12, ".", `u147-${i}`);
 			toolManager.create("ai147", ".", 40, 12, ".", "ai147", { agentBash: true });
 			await invoke("terminal_input", { terminalId: "ai147", data: "exit\r" });
 			const aiExited = await waitFor(() => toolManager.list().some((t) => t.id === "ai147" && !t.running), 5000);
 			check("issue #147 setup: AI terminal exited into history", aiExited);
-			// Rebuild WITHOUT opts (old frontend message shape): identity comes
-			// from history, so the full user cap does not reject it.
 			const rebuilt = toolManager.create("ai147", ".", 40, 12, ".", "ai147");
 			check(
 				"rebuilt exited AI terminal inherits agentBash despite the full user cap",
 				rebuilt !== null && rebuilt.agentBash === true,
 			);
-			// …while an exited USER terminal at the cap is still rejected:
-			// history entries reserve no slot.
 			await invoke("terminal_input", { terminalId: "u147-0", data: "exit\r" });
 			const uExited = await waitFor(() => toolManager.list().some((t) => t.id === "u147-0" && !t.running), 5000);
 			check("issue #147 setup: user terminal exited into history", uExited);
-			toolManager.create("u147-new", ".", 40, 12, ".", "u147-new"); // back to 16 live
+			toolManager.create("u147-new", ".", 40, 12, ".", "u147-new");
 			const userRebuild = toolManager.create("u147-0", ".", 40, 12, ".", "u147-0");
 			check("exited user terminal is still rejected at the cap", userRebuild === null);
 			for (let i = 0; i < 16; i++) toolManager.kill(`u147-${i}`);
@@ -626,7 +540,6 @@ async function main() {
 		}
 	}
 
-	// unknown terminal input must not crash
 	send({ type: "terminal_input", terminalId: "nope", data: "x" });
 	send({ type: "terminal_resize", terminalId: "nope", cols: 10, rows: 10 });
 	await sleep(200);
@@ -656,7 +569,6 @@ main().catch((err) => {
 	process.exit(1);
 });
 
-// Stop our exact process tree before its root exits and leaves PTY children orphaned.
 let serverStopped = false;
 function stopServer() {
 	if (serverStopped) return;
@@ -677,7 +589,5 @@ process.on("exit", () => {
 	try {
 		rmSync(workdir, { recursive: true, force: true });
 		rmSync(dataDir, { recursive: true, force: true });
-	} catch {
-		/* best effort */
-	}
+	} catch {}
 });

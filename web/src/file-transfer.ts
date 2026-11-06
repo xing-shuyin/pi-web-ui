@@ -6,18 +6,15 @@ import { saveDownloadBlob } from "./download";
 export const isExtractableArchive = (name: string): boolean => /\.(zip|tar|tar\.gz|tgz|gz)$/i.test(name);
 export type ArchiveAction = "compress" | "extract" | "download";
 
-// Only same-origin application routes are allowed; file paths remain encoded query parameters.
 function url(endpoint: "archive" | "upload", extra: Record<string, string> = {}): URL {
 	const allowed = { archive: appUrl("/api/file-transfer/archive"), upload: appUrl("/api/file-transfer/upload") };
 	const result = new URL(
 		withToken(`${allowed[endpoint]}?${new URLSearchParams({ clientId: getClientId(), ...extra })}`),
 		window.location.href,
 	);
-	if (
-		result.origin !== window.location.origin ||
-		result.pathname !== new URL(allowed[endpoint], window.location.href).pathname
-	) {
-		throw new Error("File transfers must use an allowlisted same-origin endpoint");
+	const expected = new URL(allowed[endpoint], window.location.href);
+	if (result.origin !== expected.origin || result.pathname !== expected.pathname) {
+		throw new Error("File transfers must use an allowlisted service endpoint");
 	}
 	return result;
 }
@@ -58,7 +55,6 @@ interface PickedDirectory {
 	values(): AsyncIterableIterator<PickedDirectory | PickedFile>;
 }
 
-/** File System Access preserves empty directories; null requests the webkitdirectory fallback. */
 export async function pickFolder(): Promise<FolderEntry[] | null> {
 	const picker = (window as Window & { showDirectoryPicker?: () => Promise<PickedDirectory> }).showDirectoryPicker;
 	if (!picker) return null;
@@ -82,7 +78,6 @@ export interface FolderUploadProgress {
 	phase: "uploading" | "waiting" | "confirmed";
 }
 
-/** Sequential requests retain relative paths and keep memory bounded to one file. */
 export async function uploadFolder(
 	dir: string,
 	entries: FolderEntry[],
@@ -98,7 +93,6 @@ export async function uploadFolder(
 	let done = 0;
 	let confirmedBytes = 0;
 	for (const entry of entries) {
-		// url() validates the same-origin destination against the two fixed route names.
 		const endpoint = url("upload", { dir, name: entry.path, kind: entry.file ? "file" : "directory" });
 		const body = entry.file ?? new Blob();
 		await new Promise<void>((resolve, reject) => {

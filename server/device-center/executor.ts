@@ -24,9 +24,7 @@ export interface DeviceExecutorTask {
 	attemptId: string;
 	text: string;
 	context?: GroupTaskContext;
-	/** Bounded delivery-time observation; use task_state for authoritative current state. */
 	taskState?: DeviceTaskState;
-	/** Stable Hub address; never a local transcript path. */
 	conversationId?: string;
 	sourceConversationId?: string;
 	sourceBotId?: string;
@@ -56,11 +54,9 @@ export interface DeviceTaskExecutorOptions {
 	cwd: string;
 	executionCwd?: string;
 	workspaceHandleId?: string;
-	/** Process-local authority, never read from the wire task. */
 	workspaceCapability?: import("./task-workspace.js").TaskWorkspaceCapability;
 	executionMode?: "chat" | "code";
 	allowExecution?: boolean;
-	/** SDK sessionManager.getSessionId(), never the UI conversationId. */
 	onSession?: (taskId: string, sessionId: string | undefined) => void;
 	resumePath?: string;
 	onSessionPath?: (taskId: string, path: string) => void;
@@ -78,8 +74,6 @@ export type DeviceTaskCallbacks = Pick<
 	"onActivity" | "onProgress" | "onInteractions" | "onPlanReady" | "onFullReport" | "onToolLifecycle"
 > & { onStarted?: () => void };
 
-// Process-local guards survive executor replacement. They deliberately never retry an
-// uncertain attempt. Durable delivery must additionally deduplicate in its task store.
 const attempted = new Set<string>();
 const busyExecutions = new Set<{ origin: string; botId: string; root: string }>();
 const TIMEOUT_MS = 20 * 60 * 1000;
@@ -108,7 +102,6 @@ function samePath(a?: string, b?: string): boolean {
 export function taskPrompt(task: DeviceExecutorTask): string {
 	const context = task.taskState ? selectTaskContext(task.taskState) : undefined;
 	const isCode = (task.executionMode ?? task.contract?.executionMode) === "code";
-	// In code mode, contract.goal is the authoritative executable instruction binding
 	const effectiveText = isCode && task.contract?.goal ? task.contract.goal : task.text;
 	const contractInfo = task.contract
 		? {
@@ -145,12 +138,6 @@ export function taskPrompt(task: DeviceExecutorTask): string {
 	].join("\n\n");
 }
 
-/** Connects as an independent client; never changes approval settings or retries.
- * close() cancels only this client's locked task conversation. Failures reject with
- * a bounded report; completed sessions remain persisted for local inspection.
- * close() is permanent: after a disconnect, create a fresh executor and explicitly
- * create a new task. Reconnection does not resume or retry an interrupted task.
- */
 export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 	const origin = originUrl(options.localOrigin);
 	if (!isAbsolute(options.cwd)) throw new Error("cwd must be an absolute local path");
@@ -261,8 +248,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 				let idleConfirmed = false;
 				let stopUnconfirmed = false;
 				let interactions: ReturnType<typeof createHumanInteractionBridge> | undefined;
-				// Immediate notifications can precede snapshots. Keep them until an
-				// explicit resolution or a snapshot-observed wait has disappeared.
 				const humanWaits = new Set<string>();
 				let snapshotWaits = new Set<string>();
 				let queuedQuestions = new Set<string>();
@@ -331,12 +316,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 					options.registerInteractionAnswer?.(undefined);
 					activeSend = undefined;
 					capability.revoke();
-					// 锁的语义是「这个 bot/root 上还有一条任务在跑」，而 run 一旦 settle（capability
-					// 已撤销、不再有任何写入路径），它就不再是在跑。旧实现只在连接 close 时才放锁：
-					// ① 用户/守护重试一条刚结束的任务，在 close 到达前一律被判「本地执行器忙」；
-					// ② 单测里上一条 run 的 close 还没到，下一条就被误判 busy（CI 随机红）。
-					// 这里在 settle 时就放锁（幂等，后面 confirmStopped 的 delete 变成 no-op）；
-					// 同 workspace 并发写的护栏仍然是 capability.revoke() + 新的 bot lease。
 					busyExecutions.delete(lock);
 					try {
 						if (sessionBound) options.onSession?.(task.id, undefined);
@@ -346,8 +325,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 						sessionBound = false;
 					}
 					clearTimeout(timer);
-					// abort has no conversationId in the wire protocol. Only send while
-					// the private connection still points at the conversation we prompted.
 					cancel = undefined;
 					if (!prompted || idleConfirmed) confirmStopped();
 					else if (currentId !== conversationId || ws.readyState !== WebSocket.OPEN) uncertain();
@@ -587,8 +564,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 							confirmStopped();
 						return;
 					}
-					// Initialization/new_chat failures can arrive as snapshots before a
-					// task conversation exists. Do not wait for a successful transition.
 					const snapshotError: unknown = Reflect.get(state, "error");
 					if (state.errorMessage || (typeof snapshotError === "string" && snapshotError)) {
 						finish(state.errorMessage || (snapshotError as string));
@@ -623,8 +598,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 							finish("New session requires local human input");
 							return;
 						}
-						// AgentSession.sessionId delegates to sessionManager.getSessionId(),
-						// the same SDK identifier captured by device_collab tool context.
 						if (!state.sessionId) {
 							finish("Task session has no SDK session ID");
 							return;
@@ -641,7 +614,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 							finish("Task session ownership registration failed");
 							return;
 						}
-						// A callback may synchronously close the executor.
 						if (settled) return;
 						priorMessageIds = new Set(state.messages.map((m) => m.id));
 						promptRev = state.rev;
@@ -663,7 +635,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 									conversationId: conversationId!,
 									isCurrent: () => !settled && currentId === conversationId && state?.sessionId === sdkSessionId,
 									send: (message) => {
-										// The bridge has validated task/attempt/conversation and consumed the request ID.
 										binding.authorizeInteractionReply(message);
 										send(message);
 									},
@@ -702,8 +673,6 @@ export function createDeviceTaskExecutor(options: DeviceTaskExecutorOptions) {
 							return;
 						}
 					}
-					// Revisions, get_state responses, transport heartbeats and usage-only
-					// snapshots are not evidence that the task is making progress.
 					const fingerprint = createHash("sha256")
 						.update(JSON.stringify([state.messages.map((m) => [m.id, m.content]), state.streamingMessage?.content]))
 						.digest("hex");

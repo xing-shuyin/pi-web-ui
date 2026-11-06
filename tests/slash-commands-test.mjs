@@ -1,12 +1,3 @@
-/* Smoke test: chat-input slash commands.
- *   - slash_commands catalog arrives on attach and on get_commands (builtin +
- *     extension + prompt template + skill commands).
- *   - Native commands (/new /model /cwd /thinking /help …) are intercepted
- *     server-side in AgentService.prompt() and never hit the SDK.
- *   - Non-native slash text falls through to the SDK prompt (no interception).
- *
- * Run:  node slash-commands-test.mjs
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { spawn } from "node:child_process";
@@ -15,13 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = 8793;
 const WS_URL = `ws://localhost:${PORT}/ws`;
-// Unique per run — a persisted lastCwd from a previous run would restore /tmp
-// on attach and change the /cwd assertions.
 const CLIENT_ID = `slash-cmd-test-${Date.now()}`;
 const PROJ = REPO_ROOT;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -76,7 +64,6 @@ function connect() {
 }
 
 async function main() {
-	// Build + boot the server on a dedicated port.（套件内 run-smoke.mjs 已统一构建）
 	try {
 		ensureBuild(PROJ, "slash-commands-test");
 	} catch (err) {
@@ -85,20 +72,15 @@ async function main() {
 	}
 	try {
 		await freePort(PORT);
-	} catch {
-		/* port free */
-	}
+	} catch {}
 	await sleep(500);
 	const server = spawn("node", ["dist/server/index.js"], {
 		cwd: PROJ,
 		env: {
 			...process.env,
 			PI_WEB_PORT: String(PORT),
-			// 仓库根本身当工作区（跨平台）；隔离 client-state
 			PI_WEB_CWD: REPO_ROOT,
 			PI_WEB_DATA_DIR: mkdtempSync(join(tmpdir(), "piweb-slash-")),
-			// 隔离 agent 目录（无会话历史）——复现 CI 的空环境，防止本机
-			// 真实 ~/.pi/agent 里的历史会话掩盖 snapshot/delta 时序差异。
 			PI_CODING_AGENT_DIR: mkdtempSync(join(tmpdir(), "piweb-slash-agent-")),
 		},
 		stdio: "ignore",
@@ -113,7 +95,6 @@ async function main() {
 	c.send({ type: "hello", clientId: CLIENT_ID });
 	await c.wait((m) => m.type === "ready");
 
-	// --- 1. catalog arrives on attach ---
 	const cat = await c.wait((m) => m.type === "slash_commands");
 	const names = new Set(cat.commands.map((x) => x.name));
 	const missing = NATIVE_NAMES.filter((n) => !names.has(n));
@@ -129,7 +110,6 @@ async function main() {
 		throw new Error("FAIL: catalog smaller than the native set");
 	}
 
-	// --- 2. get_commands re-request works ---
 	c.send({ type: "get_commands" });
 	const cat2 = await c.wait((m) => m.type === "slash_commands");
 	if (cat2.commands.length !== cat.commands.length) {
@@ -137,12 +117,9 @@ async function main() {
 	}
 	console.log(`[2] get_commands re-request: ${cat2.commands.length} commands`);
 
-	// --- 3. native /cwd (valid + invalid) --- 跨平台：用临时目录而非 mac 专属的 /tmp
 	const TMP_CWD = mkdtempSync(join(tmpdir(), "slash-cwd-"));
 	const norm = (p) => p.replace(/\\/g, "/");
 	c.send({ type: "prompt", text: `/cwd ${TMP_CWD}` });
-	// 协议 v2：动作后的快照可能是全量 snapshot，也可能是 snapshot_delta
-	// （light state 同样携带 cwd）——两者都必须接受（见 conv-cwd-test 写法）。
 	await c.wait((m) => (m.type === "snapshot" || m.type === "snapshot_delta") && norm(m.state?.cwd) === norm(TMP_CWD));
 	const cwdSwitching = await c
 		.wait((m) => m.type === "transition_progress" && m.kind === "cwd" && m.phase !== "done", 6000)
@@ -165,7 +142,6 @@ async function main() {
 	}
 	console.log(`[4] /cwd invalid → ${cwdBad.text}`);
 
-	// --- 4. native /model with no match ---
 	c.send({ type: "prompt", text: "/model 这个模型必然不存在xyz" });
 	const modelBad = await c.wait(
 		(m) => m.type === "notice" && typeof m.text === "string" && m.text.includes("没有匹配到模型"),
@@ -176,7 +152,6 @@ async function main() {
 	}
 	console.log(`[5] /model no-match → ${modelBad.text}`);
 
-	// --- 5. native /help is swallowed (no prompt-send failure) ---
 	c.send({ type: "prompt", text: "/help" });
 	const leak = await c.wait((m) => m.type === "notice" && m.text.includes("提示发送失败"), 3000).catch(() => null);
 	if (leak) {
@@ -184,7 +159,6 @@ async function main() {
 	}
 	console.log("[6] /help intercepted, no SDK leak");
 
-	// --- 6. /new works (snapshot after new_chat, no error) ---
 	c.send({ type: "prompt", text: "/new" });
 	const newChat = await c.wait((m) => m.type === "conversations", 6000);
 	if (!newChat.activeId) {
@@ -192,9 +166,6 @@ async function main() {
 	}
 	console.log(`[7] /new → active conversation ${newChat.activeId.slice(0, 8)}…`);
 
-	// --- 7b. /new <prompt>：参数被当作新对话的首条提示投递 ---
-	// 首条用 `/cwd`（服务端拦截、零 token）当探针：参数若被丢掉（旧行为）就没有
-	// 任何回执，回执出现即证明首条真的进了新对话的 prompt 通道。
 	c.send({ type: "prompt", text: "/new /cwd" });
 	const firstNotice = await c
 		.wait((m) => m.type === "notice" && m.text.includes("当前工作目录"), 8000)
@@ -204,7 +175,6 @@ async function main() {
 	}
 	console.log(`[7b] /new /cwd → first prompt delivered (${firstNotice.text.split("。")[0]})`);
 
-	// --- 8. /reload re-discovers resources and re-pushes the catalog ---
 	c.send({ type: "prompt", text: "/reload" });
 	const catReloaded = await c.wait((m) => m.type === "slash_commands", 20000);
 	const reloadNotice = await c
@@ -229,8 +199,6 @@ main().catch(async (e) => {
 	console.error("❌", e.message);
 	try {
 		await freePort(PORT);
-	} catch {
-		/* */
-	}
+	} catch {}
 	process.exit(1);
 });

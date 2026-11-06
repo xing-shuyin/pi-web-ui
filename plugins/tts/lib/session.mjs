@@ -1,22 +1,3 @@
-/**
- * 「现场造一个一次性会话 + 消息」。
- *
- * 为什么需要这个：TTS 的合成请求里只有 chat_session_id + message_id，没有正文。
- * 想让服务端念任意文本，就得先把那段文字变成你会话里的一条消息。这个模块就是干这个的，
- * 用完把会话删掉，不留痕。
- *
- * 流程：
- *   1. POST /api/v0/chat_session/create            -> chat_session.id
- *   2. POST /api/v0/chat/create_pow_challenge      -> challenge（必须解，见 pow.mjs）
- *   3. POST /api/v0/chat/completion                -> 发一句"请复述下面这段话"（SSE 流）
- *   4. GET  /api/v0/chat/history_messages          -> 找到模型那条回复的 message_id
- *   5. 交给 synthesize() 去念
- *   6. POST /api/v0/chat_session/delete            -> 删掉会话
- *
- * 为什么不能直接把原文发进去念：服务端只念模型的消息，拿用户消息去合成会被
- * code=6 NO_CONTENT 顶回来。所以中间必须让模型复述一遍，念它复述出来的那条。
- */
-
 import { ENDPOINTS, HTTP_BASE } from "./constants.mjs";
 import { DeepSeekTtsError, protocolError, transportError, usageError } from "./errors.mjs";
 import { assertToken, jsonHeaders } from "./http.mjs";
@@ -35,13 +16,11 @@ const REPEAT_TEMPLATES = [
 	(t) => `请将下列内容原文字符完整复述输出：\n\n${t}`,
 ];
 
-/** 自然多样的复述 Prompt，避免固定机械模板被风控特征聚类命中。 */
 export function buildRepeatPrompt(text) {
 	const fn = REPEAT_TEMPLATES[Math.floor(Math.random() * REPEAT_TEMPLATES.length)] || REPEAT_TEMPLATES[0];
 	return fn(text);
 }
 
-/** 建一个空会话。 */
 export async function createSession({
 	token,
 	signal,
@@ -91,8 +70,6 @@ export async function createSession({
 			{ kind: "protocol", code: data.biz_code ?? json.code, details: json },
 		);
 	}
-	// 实测（2026-09-14，真账号）响应是 data.biz_data.id，不是 chat_session.id。
-	// 两种都认：官方前端不同版本包过一层。
 	const id = biz?.id ?? biz?.chat_session?.id;
 	if (!id) {
 		throw protocolError("建会话返回里没找到会话 id（试过 biz_data.id 和 biz_data.chat_session.id）", undefined, {
@@ -102,7 +79,6 @@ export async function createSession({
 	return { id, title: biz?.title ?? biz?.chat_session?.title ?? null, raw: json };
 }
 
-/** 删会话。失败不抛，返回 false —— 清理失败不该把主流程搞崩。 */
 export async function deleteSession({
 	sessionIds,
 	token,
@@ -130,7 +106,6 @@ export async function deleteSession({
 	}
 }
 
-/** 拉会话消息列表。 */
 export async function fetchMessages({
 	sessionId,
 	token,
@@ -181,7 +156,6 @@ export async function fetchMessages({
 	return { messages, cacheControl: data.biz_data.cache_control ?? null, raw: json };
 }
 
-/** 取消息的正文（服务端在最新版本中移入 fragments 数组）。 */
 export function messageText(m) {
 	if (Array.isArray(m?.fragments) && m.fragments.length > 0) {
 		const txt = m.fragments
@@ -196,12 +170,6 @@ export function messageText(m) {
 	return JSON.stringify(c);
 }
 
-/**
- * 从消息列表里挑出要念的那条 —— 模型的回复，不是我们发进去的那条。
- *
- * 判据是「正文非空、且不等于我发的内容」，或 role === 'ASSISTANT'。
- * 新会话里只有两条消息，够用。取最后一条，因为回复是后落库的那个。
- */
 export function pickMessage(messages, { prompt }) {
 	const list = messages.filter((m) => m && (m.message_id || m.id));
 	const wanted = String(prompt ?? "").trim();
@@ -217,7 +185,6 @@ export function messageIdOf(m) {
 	return m?.message_id ?? m?.id ?? null;
 }
 
-/** POST completion。返回未读的 Response，调用方自己决定drain 还是 abort。 */
 export async function postCompletion({
 	sessionId,
 	parentMessageId = null,
@@ -271,7 +238,6 @@ export async function postCompletion({
 	}
 }
 
-/** 把 SSE 流读干（读到结束就说明生成完了）。 */
 export async function drainSse(res, { onChunk, maxBytes = 8 * 1024 * 1024 } = {}) {
 	const out = { bytes: 0, chunks: 0, text: "", truncated: false, error: null };
 	if (!res?.body) return out;
@@ -294,13 +260,6 @@ export async function drainSse(res, { onChunk, maxBytes = 8 * 1024 * 1024 } = {}
 	return out;
 }
 
-/**
- * 把一段文本塞进一个新会话，返回它的 sessionId / messageId。
- * 调用方负责之后删会话（say() 会删）。
- *
- * 发进去的是「复述提示语」而不是原文：服务端不肯念用户消息（code=6 NO_CONTENT），
- * 得让模型先把话复述一遍，念它那条。
- */
 export async function putText({
 	text,
 	token,
@@ -364,7 +323,6 @@ export async function putText({
 			});
 		}
 
-		// 后台把流读着，别让连接闲着。等模型把话说完（或超时）。
 		const drainPromise = drainSse(res, {});
 
 		const deadline = Date.now() + waitTimeoutMs;
@@ -380,7 +338,6 @@ export async function putText({
 			}));
 			picked = pickMessage(messages, { prompt });
 			if (picked) {
-				// 还要等它别长了，否则可能念到半截
 				const textNow = messageText(picked).trim();
 				if (textNow) {
 					await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -427,7 +384,6 @@ export async function putText({
 		};
 	} catch (err) {
 		cleanupAbort();
-		// 会话是我们建的，失败了就得我们负责收尸，不然每失败一次就多留一个空会话。
 		if (!keepOnError) {
 			const del = await deleteSession({ sessionIds: sessionId, token: t, fetchImpl, ...(baseUrl ? { baseUrl } : {}) });
 			if (del.ok) {
@@ -441,12 +397,6 @@ export async function putText({
 	}
 }
 
-/**
- * 一条龙：造会话 -> 塞文本 -> 合成 -> 删会话。
- *
- * 没有别的路子可选：服务端只念模型的消息，念用户消息一律 code=6 NO_CONTENT。
- * 所以就是把文本让模型复述一遍再念。失败会把临时会话删掉，不留垃圾。
- */
 export async function say({
 	text,
 	format = "pcm",

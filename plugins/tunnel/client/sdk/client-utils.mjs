@@ -1,11 +1,4 @@
 /**
- * client-utils.mjs — pi-web-ui 插件客户端常用工具层。
- *
- * 供插件在 client/entry.mjs 或网页视图中复用，消除 HTML 转义与基础接口漂移面。
- * 纯 ESM，零依赖。
- */
-
-/**
  * 安全 HTML 实体转义。
  * @param {unknown} s 待转义内容
  * @returns {string} 转义后的 HTML 字符串
@@ -22,7 +15,7 @@ export function esc(s) {
  * @returns {any} 宿主 API 对象或 null
  */
 export function hostApi() {
-	return typeof window !== "undefined" ? window.__piWebUiHost ?? null : null;
+	return typeof window !== "undefined" ? (window.__piWebUiHost ?? null) : null;
 }
 
 /**
@@ -58,10 +51,7 @@ export function formatBytes(bytes, decimals = 1) {
  * @returns {Promise<T>}
  */
 export function withTimeout(promise, timeoutMs, errorMsg = "Operation timed out") {
-	return Promise.race([
-		promise,
-		new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), timeoutMs)),
-	]);
+	return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), timeoutMs))]);
 }
 
 /**

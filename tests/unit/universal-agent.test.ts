@@ -1,13 +1,3 @@
-/**
- * universal-agent.test.ts — 通用 Agent 底座核心单测
- *
- * 验证：
- *   1. UniversalSessionStore 会话落盘、读取、重命名、置顶、删除；
- *   2. BaseAgentDriver 与 MockAgentDriver 的事件交互；
- *   3. UniversalSession 的消息流式汇聚、UiMessage 生成、工具调用与中断生命周期；
- *   4. UniversalAgentService 的多客户端接入与状态监控。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,9 +24,7 @@ describe("Universal Agent 底座体系单测", () => {
 		if (existsSync(tempDir)) {
 			try {
 				rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-			} catch {
-				// Windows 下文件句柄释放可能有延迟，静默忽略清理异常
-			}
+			} catch {}
 		}
 	});
 
@@ -169,21 +157,18 @@ describe("Universal Agent 底座体系单测", () => {
 				(driver as any).handleClaudeEvent(evt, sink, activeJson);
 			};
 
-			// 1. Thinking delta
 			parse({
 				type: "content_block_delta",
 				delta: { type: "thinking_delta", thinking: "Pondering problem..." },
 			});
 			expect(received.thinking).toEqual(["Pondering problem..."]);
 
-			// 2. Text delta
 			parse({
 				type: "content_block_delta",
 				delta: { type: "text_delta", text: "I will list the files." },
 			});
 			expect(received.text).toEqual(["I will list the files."]);
 
-			// 3. Tool use
 			parse({
 				type: "tool_use",
 				id: "call_abc",
@@ -192,7 +177,6 @@ describe("Universal Agent 底座体系单测", () => {
 			});
 			expect(received.toolsStarted).toEqual([{ id: "call_abc", name: "Bash" }]);
 
-			// 4. Tool result
 			parse({
 				type: "tool_result",
 				tool_use_id: "call_abc",
@@ -201,7 +185,6 @@ describe("Universal Agent 底座体系单测", () => {
 			});
 			expect(received.toolsEnded).toEqual([{ id: "call_abc", output: "README.md\npackage.json" }]);
 
-			// 5. Result completion
 			parse({
 				type: "result",
 				usage: {
@@ -238,24 +221,19 @@ describe("Universal Agent 底座体系单测", () => {
 				driver,
 			});
 
-			// 验证初始状态下发了一次 snapshot
 			const initialSnapshots = sentMessages.filter((m) => m.type === "snapshot");
 			expect(initialSnapshots.length).toBeGreaterThanOrEqual(0);
 
-			// 发送包含 tool 的 prompt
 			await session.prompt("please run tool command");
 
-			// 检查是否有 message_delta 推送
 			const deltas = sentMessages.filter((m) => m.type === "message_delta");
 			expect(deltas.length).toBeGreaterThan(0);
 
-			// 获取最终快照
 			session.flushSnapshot();
 			const finalSnapshot = sentMessages.filter((m) => m.type === "snapshot").pop();
 			expect(finalSnapshot).toBeDefined();
 			if (finalSnapshot && finalSnapshot.type === "snapshot") {
 				const msgs = finalSnapshot.state.messages;
-				// 期望包含：User 消息、ToolResult 消息、Assistant 消息
 				expect(msgs.length).toBeGreaterThanOrEqual(3);
 
 				const userMsg = msgs.find((m) => m.role === "user");
@@ -264,7 +242,6 @@ describe("Universal Agent 底座体系单测", () => {
 
 				const assistantMsg = msgs.find((m) => m.role === "assistant");
 				expect(assistantMsg).toBeDefined();
-				// Assistant 消息应包含 thinking 块和 toolCall 块
 				const hasThinking = assistantMsg?.content.some((b) => b.type === "thinking");
 				const hasToolCall = assistantMsg?.content.some((b) => b.type === "toolCall");
 				expect(hasThinking).toBe(true);
@@ -353,23 +330,19 @@ describe("Universal Agent 底座体系单测", () => {
 				dataDir: tempDir,
 			});
 
-			// attach 客户端
 			const session = await service.attach("client-1", (msg) => sentMessages.push(msg));
 			expect(session).toBeDefined();
 			expect(service.get("client-1")).toBe(session);
 
-			// serviceStatus 检查
 			const status = service.serviceStatus();
 			expect(status.cwd).toBe(tempDir);
 			expect(status.quiesced).toBe(false);
 
-			// quiesce 流程
 			service.quiesce();
 			expect(service.isQuiesced()).toBe(true);
 			service.unquiesce();
 			expect(service.isQuiesced()).toBe(false);
 
-			// detach 客户端
 			service.detach("client-1");
 			expect(service.get("client-1")).toBeUndefined();
 
@@ -396,7 +369,6 @@ describe("Universal Agent 底座体系单测", () => {
 
 			const activeToolJson = new Map<string, string>();
 
-			// 1. 思考块
 			(driver as any).handleClaudeEvent(
 				{
 					type: "assistant",
@@ -410,7 +382,6 @@ describe("Universal Agent 底座体系单测", () => {
 			);
 			expect(thinkings).toEqual(["正在构思方案..."]);
 
-			// 2. 工具调用（assistant 完整消息结构，防死锁核心修复）
 			(driver as any).handleClaudeEvent(
 				{
 					type: "assistant",
@@ -425,7 +396,6 @@ describe("Universal Agent 底座体系单测", () => {
 			expect(starts).toHaveLength(1);
 			expect(starts[0]).toEqual({ id: "call_read_1", name: "Read", input: { file_path: "a.ts" } });
 
-			// 重复同名 tool_use 不应二次发射
 			(driver as any).handleClaudeEvent(
 				{
 					type: "assistant",
@@ -439,7 +409,6 @@ describe("Universal Agent 底座体系单测", () => {
 			);
 			expect(starts).toHaveLength(1);
 
-			// 3. 工具执行反馈（user role 的 tool_result）
 			(driver as any).handleClaudeEvent(
 				{
 					type: "user",
@@ -454,7 +423,6 @@ describe("Universal Agent 底座体系单测", () => {
 			expect(ends).toHaveLength(1);
 			expect(ends[0]).toEqual({ id: "call_read_1", result: { output: "file content" } });
 
-			// 4. stream_event 嵌套事件解包支持
 			(driver as any).handleClaudeEvent(
 				{
 					type: "stream_event",

@@ -1,45 +1,28 @@
-/**
- * preset-fields.ts — 预设能携带哪些设置字段 + 它们归到哪个分组（**零依赖**纯模块）。
- *
- * 为什么单独一个文件：字段清单要同时被
- *   - 服务端 `preset-share.ts`（白名单净化 / 交换文档）与 `settings-service.ts`（快照/应用）用，
- *   - 前端导入预览的「按分组勾选」用（`web/src/components/PresetShareModal.tsx`）。
- * 而 `preset-share.ts` 依赖 `node:child_process` / `node:fs`，浏览器里 import 会炸；
- * 本文件不 import 任何东西，两端都能安全引用（同 `prompt-composer.ts` / `tool-manager.ts` 的做法）。
- *
- * 纪律：
- *   1. 这里只描述**元数据**（字段名 / 分组 / 文案 key），净化与归一化仍在 preset-share 里；
- *   2. `PRESET_FIELD_NAMES` / `PRESET_EXCLUDED_KEYS` 必须覆盖 `ClientSettings` 的每个字段 —— 单测
- *      `tests/unit/preset-share.test.ts` 用类型 + 快照双重守卫，漏字段会红；
- *   3. 分组只影响 UI 折叠与「勾一组」，不影响写入逻辑（导入按字段名过滤）。
- */
-
 import { resolveEnabledAgentTools } from "./tool-manager.js";
 
-/** Internal flags and independent popup preferences are excluded from agent presets. */
 export const PRESET_EXCLUDED_KEYS = [
 	"_promptPluginDevConfigured",
+	"nativeCliInheritModel",
 	"quickAskEnabled",
 	"quickAskModel",
 	"quickAskThinking",
 	"quickAskSystemPrompt",
 	"quickAskExplainPrompt",
+	"quickAskTranslateEnabled",
+	"quickAskTranslateTarget",
+	"quickAskTranslateStyle",
+	"quickAskTranslatePrompt",
+	"quickAskShowOriginal",
+	"quickAskReferenceMenus",
+	"quickAskConversationScope",
+	"quickAskFolderScope",
 ] as const;
 export type PresetExcludedKey = (typeof PRESET_EXCLUDED_KEYS)[number];
 
-/** 预设字段分组（导入预览里的折叠块；顺序即展示顺序）。 */
 export const PRESET_GROUP_ORDER = ["prompt", "tools", "terminal", "skills", "ai", "ui", "engine"] as const;
 export type PresetFieldGroup = (typeof PRESET_GROUP_ORDER)[number];
 
-/**
- * 字段 → 分组。key 集合 = 预设可携带的全部设置字段名。
- * 前端按 `PRESET_GROUP_ORDER` 渲染勾选块，组的名字走 i18n `presetGroup<Xxx>`。
- *
- * 用 `as const` 保留字面量类型：`PresetFieldName` 由此导出，单测用它做
- * 「`ClientSettings` 的每个字段都在这里」的**编译期**守卫。
- */
 export const PRESET_FIELD_GROUPS = {
-	// 提示词（主会话 + 审查者）
 	prompt: [
 		"promptMode",
 		"customSystemPrompt",
@@ -49,7 +32,6 @@ export const PRESET_FIELD_GROUPS = {
 		"reviewPrompt",
 		"reviewDisabledSkills",
 	],
-	// 工具开关与模型可见文案
 	tools: [
 		"disabledAgentTools",
 		"disabledPluginTools",
@@ -67,9 +49,7 @@ export const PRESET_FIELD_GROUPS = {
 		"editSoftEnabled",
 		"terminalToolsEnabled",
 	],
-	// 终端接管
 	terminal: ["terminalBash", "terminalBashIdleMs", "terminalBashMaxForegroundMs"],
-	// 技能与扩展
 	skills: [
 		"disabledSkills",
 		"disabledExtensions",
@@ -80,7 +60,6 @@ export const PRESET_FIELD_GROUPS = {
 		"skillsMaxFileBytes",
 		"skillsFullTextMaxBytes",
 	],
-	// 模型侧行为与各专用提示词
 	ai: [
 		"steeringMode",
 		"followUpMode",
@@ -102,7 +81,6 @@ export const PRESET_FIELD_GROUPS = {
 		"goalModeEnabled",
 		"parallelReminderEnabled",
 	],
-	// 界面与交互偏好
 	ui: [
 		"uiLayout",
 		"disabledPlugins",
@@ -125,21 +103,17 @@ export const PRESET_FIELD_GROUPS = {
 		"devNoCache",
 		"autoReload",
 	],
-	// 引擎/多引擎默认（DSH 用）
 	engine: ["defaultAgentPreset", "defaultPermissionPreset"],
 } as const;
 
-/** 全部预设字段名（字面量联合）—— 编译期用它与 `keyof ClientSettings` 对账。 */
 export type PresetFieldName = (typeof PRESET_FIELD_GROUPS)[PresetFieldGroup][number];
 
-/** 全部字段名（组顺序 → 组内顺序；去重保护）。 */
 export const PRESET_FIELD_NAMES: readonly PresetFieldName[] = (() => {
 	const out: PresetFieldName[] = [];
 	for (const g of PRESET_GROUP_ORDER) for (const f of PRESET_FIELD_GROUPS[g]) if (!out.includes(f)) out.push(f);
 	return out;
 })();
 
-/** 某字段属于哪个分组（未知字段返回 undefined；前端过滤用）。 */
 export function presetFieldGroup(field: string): PresetFieldGroup | undefined {
 	for (const g of PRESET_GROUP_ORDER) {
 		if ((PRESET_FIELD_GROUPS[g] as readonly string[]).includes(field)) return g;
@@ -147,7 +121,6 @@ export function presetFieldGroup(field: string): PresetFieldGroup | undefined {
 	return undefined;
 }
 
-/** 按分组把一组字段名摊成「组 → 命中的字段」（空组不给；组顺序固定）。 */
 export function groupPresetFields(fields: readonly string[]): { group: PresetFieldGroup; fields: string[] }[] {
 	const set = new Set(fields);
 	const out: { group: PresetFieldGroup; fields: string[] }[] = [];
@@ -158,14 +131,12 @@ export function groupPresetFields(fields: readonly string[]): { group: PresetFie
 	return out;
 }
 
-/** 过滤出合法字段名（去重、保持 `PRESET_FIELD_NAMES` 顺序）——导入选择用。 */
 export function normalizePresetFieldSelection(v: unknown): string[] | undefined {
 	if (!Array.isArray(v)) return undefined;
 	const wanted = new Set(v.filter((x): x is string => typeof x === "string"));
 	return PRESET_FIELD_NAMES.filter((f) => wanted.has(f));
 }
 
-/** 字段元数据：中文名称、英文名称及简述。 */
 export interface PresetFieldInfo {
 	labelZh: string;
 	labelEn: string;
@@ -173,9 +144,7 @@ export interface PresetFieldInfo {
 	hintEn?: string;
 }
 
-/** 预设中 47 个设置项的人类可读元数据映射（支持 satisfies 编译期完整性校验）。 */
 export const PRESET_FIELD_META = {
-	// prompt
 	promptMode: {
 		labelZh: "提示词模式",
 		labelEn: "Prompt Mode",
@@ -218,7 +187,6 @@ export const PRESET_FIELD_META = {
 		hintZh: "组合模板中不渲染的提示词段（如 soul/skills）",
 		hintEn: "Prompt sections excluded from the composed template",
 	},
-	// tools
 	disabledAgentTools: {
 		labelZh: "禁用的内置工具",
 		labelEn: "Disabled Agent Tools",
@@ -334,7 +302,6 @@ export const PRESET_FIELD_META = {
 		hintZh: "向 AI 开放持久交互式 PTY 终端驱动工具",
 		hintEn: "Enable persistent PTY interactive terminal tools",
 	},
-	// terminal
 	terminalBash: {
 		labelZh: "终端接管 Bash",
 		labelEn: "Terminal Takes Over Bash",
@@ -353,7 +320,6 @@ export const PRESET_FIELD_META = {
 		hintZh: "前台命令超时未退出的强制截断时间",
 		hintEn: "Timeout before cutting off long foreground commands",
 	},
-	// skills
 	disabledSkills: {
 		labelZh: "禁用的技能",
 		labelEn: "Disabled Skills",
@@ -404,7 +370,6 @@ export const PRESET_FIELD_META = {
 		hintEn:
 			"Total byte budget for {{skills}} full-text injection (default 32768, counted in UTF-8 bytes); 0 disables the total cap",
 	},
-	// ai
 	steeringMode: {
 		labelZh: "插话队列模式",
 		labelEn: "Steering Queue Mode",
@@ -520,7 +485,6 @@ export const PRESET_FIELD_META = {
 		hintZh: "多个标签页同时编辑同一会话时的冲突告警",
 		hintEn: "Warn when multiple tabs edit the same session",
 	},
-	// ui
 	uiLayout: {
 		labelZh: "界面布局与图标排列",
 		labelEn: "UI Layout & Icons",
@@ -620,7 +584,6 @@ export const PRESET_FIELD_META = {
 		hintZh: "本地插件文件变更时自动刷新插件运行时",
 		hintEn: "Automatically reload plugins when files change",
 	},
-	// engine
 	defaultAgentPreset: {
 		labelZh: "默认智能体预设",
 		labelEn: "Default Agent Preset",
@@ -635,32 +598,23 @@ export const PRESET_FIELD_META = {
 	},
 } as const satisfies Record<PresetFieldName, PresetFieldInfo>;
 
-/** 获取字段的人类可读标签。 */
 export function presetFieldLabel(field: string, lang: "zh" | "en" = "zh"): string {
 	const meta = (PRESET_FIELD_META as Record<string, PresetFieldInfo>)[field];
 	if (!meta) return field;
 	return lang === "zh" ? meta.labelZh : meta.labelEn;
 }
 
-/** 获取字段的功能简述。 */
 export function presetFieldHint(field: string, lang: "zh" | "en" = "zh"): string {
 	const meta = (PRESET_FIELD_META as Record<string, PresetFieldInfo>)[field];
 	if (!meta) return "";
 	return (lang === "zh" ? meta.hintZh : meta.hintEn) || "";
 }
 
-/** 字段值格式化回执。 */
 export interface PresetFieldValueFormat {
-	/** 一行简短摘要（展示在勾选框右侧）。 */
 	summary: string;
-	/** 详细内容（可展开查看文本、覆盖明细等）。 */
 	detail?: string;
 }
 
-/**
- * 格式化预设中某字段的具体值：生成简要摘要 + 可展开的详细文本。
- * 解决「用户不知道预设开了哪些工具、改了哪些提示词」的透明度问题。
- */
 export function formatPresetFieldValue(
 	field: string,
 	value: unknown,
@@ -668,12 +622,10 @@ export function formatPresetFieldValue(
 ): PresetFieldValueFormat {
 	const isZh = lang === "zh";
 
-	// 1. 未定义或 null
 	if (value === undefined || value === null) {
 		return { summary: isZh ? "未配置（跟随当前值）" : "Not configured (keeps current)" };
 	}
 
-	// 2. 工具开关列表
 	if (field === "disabledAgentTools") {
 		const disabledList = Array.isArray(value)
 			? value.filter((x): x is string => typeof x === "string" && Boolean(x))
@@ -717,7 +669,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 3. 工具提示词覆盖
 	if (field === "toolPromptOverrides") {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {
 			return { summary: isZh ? "无覆盖" : "No overrides" };
@@ -746,7 +697,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 4. 技能 / 扩展禁用列表
 	if (
 		field === "disabledSkills" ||
 		field === "disabledExtensions" ||
@@ -765,7 +715,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 5. 技能全文常驻
 	if (field === "skillsFullText") {
 		const list = Array.isArray(value) ? value.filter((x): x is string => typeof x === "string" && Boolean(x)) : [];
 		if (list.length === 0) {
@@ -800,7 +749,6 @@ export function formatPresetFieldValue(
 		return { summary: value ? (isZh ? "开启" : "Enabled") : isZh ? "关闭" : "Disabled" };
 	}
 
-	// 6. 提示词文本
 	if (
 		field === "customSystemPrompt" ||
 		field === "promptTemplate" ||
@@ -822,7 +770,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 7. 逐段提示词覆盖 (promptOverrides)
 	if (field === "promptOverrides") {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {
 			return { summary: isZh ? "无覆盖" : "No overrides" };
@@ -846,7 +793,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 8. 模式类字段
 	if (field === "codemodeMode") {
 		return {
 			summary:
@@ -877,7 +823,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 9. 界面布局 (uiLayout)
 	if (field === "uiLayout") {
 		if (!value || typeof value !== "object") {
 			return { summary: isZh ? "默认布局" : "Default layout" };
@@ -887,7 +832,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 10. 布尔开关
 	if (typeof value === "boolean") {
 		if (field === "toolLazyLoading") {
 			return {
@@ -936,7 +880,6 @@ export function formatPresetFieldValue(
 		return { summary: value ? (isZh ? "开启" : "Enabled") : isZh ? "关闭" : "Disabled" };
 	}
 
-	// 11. 数字配置
 	if (typeof value === "number") {
 		if (field === "codemodeInlineBudget") {
 			return { summary: `${value} tokens` };
@@ -962,7 +905,6 @@ export function formatPresetFieldValue(
 		return { summary: String(value) };
 	}
 
-	// 12. 快捷短语列表
 	if (field === "quickPhrases") {
 		const list = Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : [];
 		return {
@@ -971,7 +913,6 @@ export function formatPresetFieldValue(
 		};
 	}
 
-	// 13. 模型选择
 	if (field === "subagentDefaultModel" || field === "visionBridgeModel") {
 		const s = typeof value === "string" ? value.trim() : "";
 		return {

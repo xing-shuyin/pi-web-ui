@@ -5,15 +5,12 @@ describe("resolveBase", () => {
 	it("根部署返回根", () => {
 		expect(resolveBase("/")).toBe("/");
 		expect(resolveBase("")).toBe("/");
-		// 无参（非浏览器环境）退回构建期 base，不 crash
 		expect(resolveBase(undefined)).toBe("/");
 	});
 
 	it("子路径返回带尾斜杠的应用根", () => {
 		expect(resolveBase("/pi/")).toBe("/pi/");
-		// 无尾斜杠（假设 nginx 未 301）也归一化
 		expect(resolveBase("/pi")).toBe("/pi/");
-		// 直接输入 index.html 的场景
 		expect(resolveBase("/pi/index.html")).toBe("/pi/");
 	});
 

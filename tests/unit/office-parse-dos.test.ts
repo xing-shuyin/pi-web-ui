@@ -19,15 +19,15 @@ function createMockZip(files: Record<string, Buffer>): Buffer {
 		const nameBuf = Buffer.from(name, "utf8");
 		const localHeader = Buffer.alloc(30 + nameBuf.length);
 
-		localHeader.writeUInt32LE(0x04034b50, 0); // local file header sig
-		localHeader.writeUInt16LE(20, 4); // version needed
-		localHeader.writeUInt16LE(0, 6); // flags
-		localHeader.writeUInt16LE(8, 8); // compression method (deflate)
-		localHeader.writeUInt16LE(0, 10); // mod time
-		localHeader.writeUInt16LE(0, 12); // mod date
-		localHeader.writeUInt32LE(0, 14); // crc32
-		localHeader.writeUInt32LE(compData.length, 18); // compSize
-		localHeader.writeUInt32LE(data.length, 22); // uncompSize
+		localHeader.writeUInt32LE(0x04034b50, 0);
+		localHeader.writeUInt16LE(20, 4);
+		localHeader.writeUInt16LE(0, 6);
+		localHeader.writeUInt16LE(8, 8);
+		localHeader.writeUInt16LE(0, 10);
+		localHeader.writeUInt16LE(0, 12);
+		localHeader.writeUInt32LE(0, 14);
+		localHeader.writeUInt32LE(compData.length, 18);
+		localHeader.writeUInt32LE(data.length, 22);
 		localHeader.writeUInt16LE(nameBuf.length, 26);
 		localHeader.writeUInt16LE(0, 28);
 		nameBuf.copy(localHeader, 30);
@@ -51,7 +51,7 @@ function createMockZip(files: Record<string, Buffer>): Buffer {
 		const nameBuf = Buffer.from(entry.name, "utf8");
 		const cdHeader = Buffer.alloc(46 + nameBuf.length);
 
-		cdHeader.writeUInt32LE(0x02014b50, 0); // CD header sig
+		cdHeader.writeUInt32LE(0x02014b50, 0);
 		cdHeader.writeUInt16LE(20, 4);
 		cdHeader.writeUInt16LE(20, 6);
 		cdHeader.writeUInt16LE(0, 8);
@@ -120,7 +120,6 @@ describe("Office Parse DoS & Zip Bomb Protection (#337)", () => {
 		expect(sheet.name).toBe("TestSheet");
 		expect(sheet.truncated).toBe(true);
 		expect(sheet.nRows).toBe(999999999);
-		// 验证内存中 rows 数组受到严格限制，绝未预分配 999999999 个空行
 		expect(sheet.rows.length).toBeLessThanOrEqual(500);
 	});
 
@@ -156,7 +155,6 @@ describe("Office Parse DoS & Zip Bomb Protection (#337)", () => {
 			"utf8",
 		);
 
-		// 模拟 550 页幻灯片
 		for (let i = 1; i <= 550; i++) {
 			presEntries.push(`<p:sldId id="${255 + i}" r:id="rId${i}"/>`);
 			relsEntries.push(

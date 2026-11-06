@@ -1,15 +1,3 @@
-// 审批三档放行 —— 协议层回归（零 token）。
-//
-// 覆盖：
-//   1. settings_state 带 toolApprovalEnabled（默认 true）+ approvalPolicy（当前对话的策略）；
-//   2. set_settings 关掉总开关 → 持久化到 client-state.json，重连（同 clientId）仍是关；
-//   3. set_approval_policy（本对话全部允许 / 撤销 / 同类保留名单）→ 推回 settings_state；
-//   4. 未知审批 id 的 tool_approval_response 是静默 no-op（不崩、服务仍可用）。
-//
-// 弹窗里的「允许同类 / 全部允许」→ 记忆 → 不再弹 的服务端门禁由
-// tests/unit/tool-approval.test.ts 的纯函数单测覆盖（真弹窗需要真模型跑高危工具）。
-//
-// Usage: node tests/approval-policy-test.mjs
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -40,7 +28,6 @@ async function startServer(dataDir) {
 			PI_WEB_PORT: String(PORT),
 			PI_WEB_DATA_DIR: dataDir,
 			PI_WEB_CWD: REPO_ROOT,
-			// 不联网拉插件市场清单（预同步的广播会打扰断言）
 			PI_WEB_PLUGIN_CATALOG_URL: "off",
 		},
 		stdio: ["ignore", "ignore", "pipe"],
@@ -106,7 +93,6 @@ async function main() {
 	await startServer(dataDir);
 	await sleep(300);
 
-	// ---- 1. 初始 settings_state ----
 	const c1 = await connect();
 	await c1.next((m) => m.type === "snapshot", "initial snapshot", 25000);
 	const s1 = await c1.next((m) => m.type === "settings_state", "initial settings_state", 25000);
@@ -120,7 +106,6 @@ async function main() {
 		JSON.stringify(s1.settings.approvalPolicy),
 	);
 
-	// ---- 2. 本对话策略：全部允许 → 撤销 ----
 	c1.send({ type: "set_approval_policy", allowAll: true });
 	const s2 = await c1.next(
 		(m) => m.type === "settings_state" && m.settings.approvalPolicy?.allowAll === true,
@@ -136,7 +121,6 @@ async function main() {
 	check("set_approval_policy allowAll=false 撤销", s3.settings.approvalPolicy.allowAll === false);
 	check("撤销后同类名单为空（没有凭空塞档位）", s3.settings.approvalPolicy.categories.length === 0);
 
-	// ---- 3. 未知审批 id / 缺字段消息：静默 no-op，服务仍可用 ----
 	c1.send({ type: "tool_approval_response", id: "appr-999", decision: "approve", scope: "category" });
 	c1.send({ type: "tool_approval_response", id: "appr-998", decision: "deny", reason: "nope" });
 	c1.send({ type: "set_approval_policy" });
@@ -144,7 +128,6 @@ async function main() {
 	const s4 = await c1.next((m) => m.type === "settings_state", "settings_state after junk messages", 10000);
 	check("未知审批 id / 空策略消息不崩，服务仍回 settings_state", !!s4.settings);
 
-	// ---- 4. 全局开关关 → 持久化 → 重连仍关 ----
 	c1.send({ type: "set_settings", toolApprovalEnabled: false });
 	const s5 = await c1.next(
 		(m) => m.type === "settings_state" && m.settings.toolApprovalEnabled === false,
@@ -155,8 +138,6 @@ async function main() {
 	await sleep(300);
 
 	const c2 = await connect();
-	// 同 clientId 重连：服务端走 re-attach，推的是 ready + 增量（snapshot_delta），
-	// 不是全量 snapshot —— 直接等 settings_state。
 	const s6 = await c2.next((m) => m.type === "settings_state", "reconnect settings_state（同 clientId）", 25000);
 	check("总开关随 client-state 持久化（重连仍是关）", s6.settings.toolApprovalEnabled === false);
 	c2.send({ type: "set_settings", toolApprovalEnabled: true });
@@ -175,9 +156,7 @@ try {
 } finally {
 	try {
 		server?.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);

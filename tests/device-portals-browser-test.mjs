@@ -1,5 +1,3 @@
-// Real browser regression for hub aliases, port portals, and the device connector.
-// Usage: node --import tsx tests/device-portals-browser-test.mjs
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -64,7 +62,6 @@ async function main() {
 	});
 	try {
 		const mockPort = await listen(mock);
-		// Hold both ports until selected, so they cannot accidentally be the same.
 		for (let i = 0; i < 2; i++) {
 			const server = createServer();
 			reservations.push(server);
@@ -211,7 +208,6 @@ async function main() {
 			}
 		}, hubOrigin);
 		assert.equal(crossPort, "blocked", "Browser must block the cross-origin hub response");
-		// Observe the server status directly as CORS deliberately hides it from page JS.
 		const rejected = await context.request.post(`${hubOrigin}/api/auth/logout`, { headers: { Origin: portalOrigin } });
 		assert.equal(rejected.status(), 403, "Hub must reject a write from its portal's different port");
 		await api("/api/me", undefined, ownerCookie);
@@ -235,7 +231,6 @@ async function main() {
 		assert.equal(new URL(otherPage.url()).origin, hubOrigin);
 		assert.deepEqual(pageErrors, []);
 		console.log("PASS: unauthenticated alias shows hub sign-in; another owner gets 404 without a redirect");
-		// Force failure after the first portal has started listening.
 		const rollbackReservations = [];
 		const rollbackDir = await mkdtemp(join(tmpdir(), "pi-device-portals-rollback-"));
 		try {

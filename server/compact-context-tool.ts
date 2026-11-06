@@ -1,62 +1,28 @@
-// ---------------------------------------------------------------------------
-// compact-context-tool.ts — 主动压缩上下文工具（compact_context）
-// ---------------------------------------------------------------------------
-// 让 AI 可以根据当前问题主动触发上下文压缩，自主决定保留和当前问题相关的内容，
-// 去除或深度压缩与当前问题无关、弱相关的历史探索与冗余输出。
-//
-// 执行时机：当 AI 在当前回合调用本工具后，本工具记录 pending 压缩请求并返回成功；
-// 在当前回合结束后（agent_settled 时会话处于完全 idle 状态），系统自动应用 AI
-// 指定的保留范围（keepRecentTokens）与关注点（focus / summary），执行 SDK 的
-// context compaction，使精炼后的上下文在后续交互中持续生效。
-// ---------------------------------------------------------------------------
-
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
 import { COMPACT_CONTEXT_TOOL_NAME } from "./tool-manager.js";
 import { appendCompactionInstructions } from "./compaction-instructions.js";
 
-/** 工具名（唯一登记在 tool-manager.ts，在此 re-export 供外部模块引用）。 */
 export { COMPACT_CONTEXT_TOOL_NAME };
 
-/** 待执行的主动压缩请求记录。 */
 export interface PendingCompaction {
-	/** 针对当前问题的压缩重点指示（保留什么、去除什么）。 */
 	focus: string;
-	/** 自主指定的近期保留 token 数（不压缩的近期上下文范围）。 */
 	keepRecentTokens?: number;
-	/** AI 自主编写的压缩摘要内容（若提供则作为总结核心）。 */
 	summary?: string;
-	/** 请求时间戳。 */
 	requestedAt: number;
 }
 
-/** 供 compact_context 工具调用的宿主接口（由 ClientSession / Conversation 桥接）。 */
 export interface CompactContextHost {
-	/** 获取当前会话 ID。 */
 	conversationId(): string;
-	/** 获取当前会话的上下文统计信息（消息条数、估算 tokens）。 */
 	getContextStats(): { messageCount: number; estimatedTokens: number };
-	/** 记录待在回合结算后执行的压缩请求。 */
 	scheduleCompaction(compaction: PendingCompaction): void;
 }
 
-/** 最小允许保留近期 tokens 下限。 */
 export const MIN_KEEP_RECENT_TOKENS = 1000;
-/** 最大允许保留近期 tokens 上限。 */
 export const MAX_KEEP_RECENT_TOKENS = 100000;
-/** SDK 默认的常规保留 tokens。 */
 export const DEFAULT_KEEP_RECENT_TOKENS = 20000;
 
-/**
- * 智能计算生效的 keepRecentTokens：
- * - 若 AI 显式指定，钳制到合法区间 [MIN_KEEP_RECENT_TOKENS, MAX_KEEP_RECENT_TOKENS]；
- * - 若未显式指定，根据当前会话估算 tokens 动态计算：
- *   会话较大时（>= 30000）保留默认 20000 tokens；
- *   会话中等或较小时（< 30000），保留最近约 35%（且不低于 1500 tokens），
- *   确保即便会话只有数千 tokens 时，也能成功切出前半段历史进行压缩，避免报 session too small。
- * 纯函数。
- */
 export function calculateEffectiveKeepRecentTokens(requestedTokens?: number, currentEstimatedTokens?: number): number {
 	if (typeof requestedTokens === "number" && Number.isFinite(requestedTokens)) {
 		return Math.min(MAX_KEEP_RECENT_TOKENS, Math.max(MIN_KEEP_RECENT_TOKENS, Math.floor(requestedTokens)));
@@ -66,17 +32,12 @@ export function calculateEffectiveKeepRecentTokens(requestedTokens?: number, cur
 		return DEFAULT_KEEP_RECENT_TOKENS;
 	}
 	if (current > 0) {
-		// 动态保留约 35%，至少保留 1500 tokens，上限不超过 DEFAULT_KEEP_RECENT_TOKENS
 		const dynamicTokens = Math.max(1500, Math.floor(current * 0.35));
 		return Math.min(DEFAULT_KEEP_RECENT_TOKENS, dynamicTokens);
 	}
 	return DEFAULT_KEEP_RECENT_TOKENS;
 }
 
-/**
- * 组装给 SDK compaction 的完整指示文本：
- * 融入 focus 指示与 AI 自主提炼的 customSummary。纯函数。
- */
 export function buildCompactionInstructions(focus: string, customSummary?: string): string {
 	const trimmedFocus = focus.trim();
 	const trimmedSummary = customSummary?.trim();
@@ -143,7 +104,6 @@ export function makeCompactContextTool(host: CompactContextHost, lang?: () => Se
 			}
 
 			const stats = host.getContextStats();
-			// 如果整个会话消息条数太少（< 4 条）且 token 极少（< 1200），无需压缩
 			if (stats.messageCount < 4 && stats.estimatedTokens < 1200) {
 				const msg = pick(
 					l,

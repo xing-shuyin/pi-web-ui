@@ -1,4 +1,3 @@
-// Shared validation for desktop actions. No desktop side effects.
 export async function tapKeys(keyboard, keys) {
 	try {
 		await keyboard.pressKey(...keys);

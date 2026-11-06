@@ -9,9 +9,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 vi.mock("node:fs", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs")>();
-	// Do not recursively spy on fs: Node 22's stream _construct checks the identity
-	// of ReadStream.prototype.open. Wrapping that no-op selects the legacy open()
-	// path, which never emits "open" and leaves every transcript read pending.
 	return { ...actual, createReadStream: vi.fn(actual.createReadStream) };
 });
 import { tmpdir } from "node:os";

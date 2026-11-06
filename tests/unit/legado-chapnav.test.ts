@@ -1,12 +1,3 @@
-/**
- * legado-web 阅读页「章末导航」纯逻辑单测（插件内嵌前端的核心判断，见
- * plugins/legado-web/app/src/core/chapnav.ts）。
- *
- * 背景：阅读页原来只有顶部工具栏有「上一章 / 下一章」，正文读到页面底部什么都没有，
- * 想把这一章看完接着往下读只能滚回顶部。现在正文末尾补一条章末导航（上一章 / 目录 /
- * 下一章），这里钉住它的边界：第一章不给上一章、最后一章不给下一章并明说「已是最后
- * 一章」、空目录给重拉提示。
- */
 import { describe, expect, it } from "vitest";
 import { chapterNavState } from "../../plugins/legado-web/app/src/core/chapnav";
 

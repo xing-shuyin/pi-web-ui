@@ -2,7 +2,6 @@ import { useId, useRef, useState, type ButtonHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { useFloatingPanel } from "../use-floating-panel";
 
-/** Message actions show their description immediately on hover or keyboard focus. */
 export function MessageActionButton({ title, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
 	const anchor = useRef<HTMLButtonElement>(null);
 	const [open, setOpen] = useState(false);

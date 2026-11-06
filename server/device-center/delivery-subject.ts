@@ -1,6 +1,5 @@
 import type { DeviceDelivery, DeviceDeliveryArtifactRef, DeviceReview } from "../protocol.js";
 
-/** Artifact identity is the complete immutable subject, never an absent commit. */
 export function artifactRefsMatch(
 	a: DeviceDeliveryArtifactRef | undefined,
 	b: DeviceDeliveryArtifactRef | undefined,

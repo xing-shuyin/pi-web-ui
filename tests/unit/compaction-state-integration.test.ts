@@ -13,7 +13,6 @@ const doneType = "pi-web-ui/compaction-done";
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "compaction-state-integration-"));
 	file = join(dir, "session.jsonl");
-	// Preserve even noncanonical whitespace: host recovery must never reserialize SDK entries.
 	writeFileSync(
 		file,
 		'{ "type": "session", "id": "original", "version": 3 }\n{"type":"message","message":{"role":"user","content":"keep me"}}\n',
@@ -65,7 +64,6 @@ describe("ClientSession compaction recovery integration", () => {
 		session.clearCompactionPending(conv, outcome);
 		expect(manager.appendCustomEntry).toHaveBeenCalledExactlyOnceWith(doneType, { reason: "manual", ...outcome });
 		expect(existsSync(sidecar)).toBe(false);
-		// A spy-only SDK deliberately writes nothing; the host must not append or rewrite for it.
 		expect(readFileSync(file)).toEqual(original);
 		expect(session.emit).not.toHaveBeenCalled();
 	});
@@ -124,7 +122,6 @@ describe("ClientSession compaction recovery integration", () => {
 				expect(restored.session.pendingNotices).toEqual([notice]);
 			}
 			expect(existsSync(`${file}.compaction-state.json`)).toBe(false);
-			// Rechecking recovery must not duplicate either emitted or queued notices.
 			restored.session.noticeInterruptedCompaction(restored.conv);
 			expect(restored.session.emit).toHaveBeenCalledTimes(hasSink ? 1 : 0);
 			expect(restored.session.pendingNotices).toEqual(hasSink ? [] : [notice]);
@@ -151,7 +148,6 @@ describe("ClientSession compaction recovery integration", () => {
 
 	it("reports sidecar creation I/O failure as a visible warning", () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
-		// A regular file cannot be used as a parent directory on any supported OS.
 		const { session, conv } = fixture(true, join(file, "nested.jsonl"));
 		expect(() => session.markCompactionPending(conv)).not.toThrow();
 		expectPersistenceWarning(session);
@@ -178,7 +174,6 @@ describe("ClientSession compaction recovery integration", () => {
 		(method) => {
 			vi.spyOn(console, "error").mockImplementation(() => {});
 			const { session, conv } = fixture();
-			// Reading/removing a directory as a state file fails without OS-specific permission tricks.
 			mkdirSync(`${file}.compaction-state.json`);
 			writeFileSync(join(`${file}.compaction-state.json`, "keep"), "occupied");
 			expect(() => session[method](conv)).not.toThrow();

@@ -1,4 +1,3 @@
-/** Real cascade/hover contrast regression for every shipped theme, without a server or build. */
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

@@ -312,7 +312,6 @@ describe("single-port device path portal", () => {
 		if (!CHROME_PATH) throw new Error("Chrome required: set PI_WEB_CHROME");
 		const f = await fixture();
 		const { ticketPath } = await f.open();
-		// open() consumed its ticket. Mint a fresh one for browser navigation.
 		const fresh = await f.request("/open", { cookie: "hub=secret", origin: f.origin }, "POST");
 		const browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ["--no-sandbox"] });
 		cleanup.push(() => browser.close());

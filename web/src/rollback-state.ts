@@ -1,8 +1,3 @@
-/**
- * web/src/rollback-state.ts
- *
- * 会话回滚确认对话框（含 Dual-State Rollback 工作区文件还原选项）的模块级状态 store。
- */
 import { useSyncExternalStore } from "react";
 import { appSend } from "./app-globals";
 

@@ -1,14 +1,3 @@
-/**
- * approval-gate —— 服务端入口。
- * 职责：
- *  1. host.route 暴露 HTTP API（/plugins-api/approval-gate/...）给通用 CLI：
- *     GET  /list       全量列表
- *     POST /register   登记拍板项 {task,title,summary?,project?,conversationId?}（当日同 task+title 幂等去重）
- *     POST /update     局部回填 {id, conversationId?}（--auto-session 流程：先登记拿 id，建会话后回填）
- *     POST /resolve    标记 {id, status: resolved|dismissed}
- *  2. host.storage 持久化台账（宿主管，升级/重装不丢）
- *  3. broadcast 推送变更给所有打开拍板页的客户端
- */
 import { definePlugin } from "./sdk/index.mjs";
 
 const MAX_ITEMS = 200;
@@ -31,12 +20,10 @@ function prune(items, now = Date.now()) {
 	});
 }
 
-/** 校验会话标识符格式及在宿主中的存在性。 */
 async function validateConversationId(host, convId) {
 	if (!convId) return true;
 	const cid = String(convId).trim();
 	if (!cid) return true;
-	// 基础格式与路径穿越防范
 	if (cid.length > 128 || /\.\./.test(cid) || !/^[a-zA-Z0-9_.:/\\-]+$/.test(cid)) {
 		return false;
 	}
@@ -53,9 +40,7 @@ async function validateConversationId(host, convId) {
 			if (found) return true;
 			return false;
 		}
-	} catch {
-		// 宿主调用异常时宽容降级，避免阻塞合法流程
-	}
+	} catch {}
 	return true;
 }
 
@@ -64,7 +49,6 @@ export default definePlugin({
 		host.log("approval-gate activated v2-code-marker");
 		const push = () => host.broadcast({ type: "approval:state", items: load(host) });
 
-		// 视图内 RPC（ctx.send / onData）
 		const offMsg = host.onClientMessage((msg, reply) => {
 			if (!msg || typeof msg !== "object") return;
 			if (msg.type === "approval:list") {
@@ -84,7 +68,6 @@ export default definePlugin({
 			}
 		});
 
-		// HTTP API（CLI 用；PI_WEB_TOKEN 未设时本机免鉴权）
 		const offList = host.route("GET", "/list", (_req, res) => {
 			res.json({ ok: true, items: load(host) });
 		});

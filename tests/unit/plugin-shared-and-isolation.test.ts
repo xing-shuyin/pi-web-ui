@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-/**
- * 阶段二单测：插件公共依赖共享（resolvePluginSharedFile）与客户端 Shadow DOM 样式隔离。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -94,16 +91,13 @@ describe("Phase 2: preparePluginMountContainer (Shadow DOM 样式隔离)", () =>
 		expect(res.container).not.toBe(hostEl);
 		expect(hostEl.shadowRoot).toBeTruthy();
 
-		// container 位于 shadowRoot 内部
 		expect(hostEl.shadowRoot!.contains(res.container)).toBe(true);
 		expect(res.container.className).toBe("plugin-isolated-root");
 
-		// 注入了基础样式表
 		const style = hostEl.shadowRoot!.querySelector("style");
 		expect(style).toBeTruthy();
 		expect(style!.textContent).toContain(":host");
 
-		// 清理时容器内容被清空
 		res.container.appendChild(document.createElement("button"));
 		expect(res.container.children.length).toBe(1);
 

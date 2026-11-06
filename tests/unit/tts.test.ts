@@ -1,8 +1,3 @@
-/**
- * tts.ts 单测（node 环境：localStorage / speechSynthesis 全部打桩）。
- * 覆盖：markdown 朗读净化、回复正文提取、设置持久化与越界矫正、
- * 语音选择解析、speak/stopSpeaking 与全局 speaking 状态跟踪。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_TTS_SETTINGS,
@@ -12,19 +7,15 @@ import {
 	isTtsAvailable,
 	loadTtsSettings,
 	onSpeakingChange,
-	resolveVoice,
 	speakingSourceId,
+	saveTtsSettings,
 	speak,
 	stopSpeaking,
 	stripMarkdownForSpeech,
 	type TtsSettings,
 } from "../../web/src/tts.js";
 
-// ---------------------------------------------------------------------------
-// stubs
-// ---------------------------------------------------------------------------
-
-function stubLocalStorage(): void {
+function stubLocalStorage(): Map<string, string> {
 	const store = new Map<string, string>();
 	vi.stubGlobal("localStorage", {
 		getItem: (k: string) => (store.has(k) ? (store.get(k) as string) : null),
@@ -38,58 +29,22 @@ function stubLocalStorage(): void {
 			store.clear();
 		},
 	});
+	return store;
 }
 
-type FakeUtterance = {
-	text: string;
-	rate: number;
-	voice: unknown;
-	onend: (() => void) | null;
-	onerror: (() => void) | null;
-};
-
-const spoken: FakeUtterance[] = [];
-
-function stubSpeechSynthesis(voices: { voiceURI: string; lang: string; name?: string }[] = []): void {
-	spoken.length = 0;
-	const synth = {
-		cancel: vi.fn(),
-		speak: vi.fn((u: FakeUtterance) => {
-			spoken.push(u);
-		}),
-		getVoices: vi.fn(() => voices),
-		addEventListener: vi.fn(),
-		removeEventListener: vi.fn(),
-	};
-	vi.stubGlobal("speechSynthesis", synth);
-	vi.stubGlobal("window", { speechSynthesis: synth });
-	vi.stubGlobal(
-		"SpeechSynthesisUtterance",
-		class {
-			text: string;
-			rate = 1;
-			voice: unknown = null;
-			onend: (() => void) | null = null;
-			onerror: (() => void) | null = null;
-			constructor(text: string) {
-				this.text = text;
-			}
-		},
-	);
-}
+const { providerPlay, providerStop } = vi.hoisted(() => ({ providerPlay: vi.fn(), providerStop: vi.fn() }));
+vi.mock("../../web/src/tts-client", () => ({ getPluginTtsProvider: (id: string) => ({ id, play: providerPlay }) }));
 
 beforeEach(() => {
 	stubLocalStorage();
+	providerPlay.mockReset().mockImplementation(() => providerStop);
+	providerStop.mockReset();
 });
 
 afterEach(() => {
 	vi.unstubAllGlobals();
 	stopSpeaking();
 });
-
-// ---------------------------------------------------------------------------
-// stripMarkdownForSpeech
-// ---------------------------------------------------------------------------
 
 describe("stripMarkdownForSpeech", () => {
 	it("drops fenced code blocks entirely and keeps surrounding prose", () => {
@@ -133,7 +88,7 @@ describe("stripMarkdownForSpeech", () => {
 	it("caps output at MAX_TTS_CHARS with an ellipsis", () => {
 		const long = "字".repeat(MAX_TTS_CHARS + 100);
 		const out = stripMarkdownForSpeech(long);
-		expect(out.length).toBe(MAX_TTS_CHARS + 1); // + ellipsis
+		expect(out.length).toBe(MAX_TTS_CHARS + 1);
 		expect(out.endsWith("…")).toBe(true);
 	});
 
@@ -142,10 +97,6 @@ describe("stripMarkdownForSpeech", () => {
 		expect(stripMarkdownForSpeech("```js\n```\n")).toBe("");
 	});
 });
-
-// ---------------------------------------------------------------------------
-// assistantPlainText
-// ---------------------------------------------------------------------------
 
 describe("assistantPlainText", () => {
 	it("takes the LAST assistant message and only its text blocks", () => {
@@ -175,11 +126,14 @@ describe("assistantPlainText", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// settings persistence
-// ---------------------------------------------------------------------------
-
 describe("tts settings persistence", () => {
+	it("clears browser-only system voice IDs while retaining plugin selections", () => {
+		const store = stubLocalStorage();
+		store.set("pi-web-tts", JSON.stringify({ engine: "builtin", voiceURI: "browser-voice", enabled: true, rate: 1.3 }));
+		expect(loadTtsSettings()).toMatchObject({ voiceURI: "", enabled: true, rate: 1.3 });
+		store.set("pi-web-tts", JSON.stringify({ engine: "doubao-tts", voiceURI: "taozi" }));
+		expect(loadTtsSettings()).toMatchObject({ voiceURI: "taozi", engine: "doubao-tts" });
+	});
 	it("returns defaults when nothing is stored", () => {
 		expect(loadTtsSettings()).toEqual(DEFAULT_TTS_SETTINGS);
 	});
@@ -192,10 +146,10 @@ describe("tts settings persistence", () => {
 	it("sanitizes out-of-range and wrong-typed values", () => {
 		localStorage.setItem("pi-web-tts", JSON.stringify({ enabled: "yes", rate: 99, voiceURI: 42, announce: false }));
 		const s = loadTtsSettings();
-		expect(s.enabled).toBe(DEFAULT_TTS_SETTINGS.enabled); // wrong type → default
-		expect(s.rate).toBe(2); // clamped
-		expect(s.voiceURI).toBe(""); // wrong type → default
-		expect(s.announce).toBe(false); // valid override kept
+		expect(s.enabled).toBe(DEFAULT_TTS_SETTINGS.enabled);
+		expect(s.rate).toBe(2);
+		expect(s.voiceURI).toBe("");
+		expect(s.announce).toBe(false);
 	});
 
 	it("round-trips through saveTtsSettings", () => {
@@ -208,98 +162,46 @@ describe("tts settings persistence", () => {
 			voiceURI: "v1",
 			engine: "builtin",
 		};
-		localStorage.setItem("pi-web-tts", JSON.stringify(s));
+		saveTtsSettings(s);
 		expect(loadTtsSettings()).toEqual(s);
 	});
 });
 
-// ---------------------------------------------------------------------------
-// resolveVoice
-// ---------------------------------------------------------------------------
-
-describe("resolveVoice", () => {
-	const voices = [
-		{ voiceURI: "zh-voice", lang: "zh-CN" },
-		{ voiceURI: "en-voice", lang: "en-US" },
-	];
-
-	it("prefers an exact URI match", () => {
-		expect(resolveVoice("en-voice", voices, "zh-CN")?.voiceURI).toBe("en-voice");
-	});
-
-	it("falls back to a page-language prefix match when the URI is gone", () => {
-		expect(resolveVoice("vanished", voices, "zh-CN")?.voiceURI).toBe("zh-voice");
-		expect(resolveVoice("vanished", voices, "en-GB")?.voiceURI).toBe("en-voice");
-	});
-
-	it("returns null with no voices and no explicit URI", () => {
-		expect(resolveVoice("", [], "zh-CN")).toBeNull();
-		expect(resolveVoice("vanished", [], "zh-CN")).toBeNull();
-	});
-});
-
-// ---------------------------------------------------------------------------
-// speak / stopSpeaking / speaking state
-// ---------------------------------------------------------------------------
-
 describe("speak and speaking state", () => {
-	it("reports availability only when window.speechSynthesis exists", () => {
-		stubSpeechSynthesis();
+	it("requires audio playback and fetch rather than browser speech synthesis", () => {
+		vi.stubGlobal("Audio", class {});
 		expect(isTtsAvailable()).toBe(true);
-		vi.stubGlobal("window", {});
+		vi.stubGlobal("Audio", undefined);
 		expect(isTtsAvailable()).toBe(false);
 	});
-
-	it("speaks with rate and resolved voice, ignoring the enabled gate (manual intent)", () => {
-		stubSpeechSynthesis([{ voiceURI: "zh-voice", lang: "zh-CN" }]);
+	it("sends builtin and plugin engines through the same provider with the selected voice and rate", () => {
 		speak("你好", { ...DEFAULT_TTS_SETTINGS, enabled: false, rate: 1.5, voiceURI: "zh-voice" });
-		expect(spoken).toHaveLength(1);
-		expect(spoken[0]!.text).toBe("你好");
-		expect(spoken[0]!.rate).toBe(1.5);
-		expect(spoken[0]!.voice).toMatchObject({ voiceURI: "zh-voice" });
+		expect(providerPlay).toHaveBeenCalledWith(
+			expect.objectContaining({ text: "你好", rate: 1.5, voiceURI: "zh-voice" }),
+		);
 	});
-
-	it("skips empty text and unavailable environments", () => {
-		stubSpeechSynthesis();
-		speak("", DEFAULT_TTS_SETTINGS);
-		expect(spoken).toHaveLength(0);
-		vi.stubGlobal("window", {});
-		speak("hi", DEFAULT_TTS_SETTINGS);
-		expect(spoken).toHaveLength(0);
-	});
-
-	it("tracks speaking state and source id, cleared on end", () => {
-		stubSpeechSynthesis();
-		const events: boolean[] = [];
-		onSpeakingChange((s) => events.push(s));
-
-		speak("line", DEFAULT_TTS_SETTINGS, "msg-1");
+	it("tracks source and clears speaking state after completion or error", () => {
+		const listener = vi.fn();
+		const off = onSpeakingChange(listener);
+		speak("hello", DEFAULT_TTS_SETTINGS, "msg-1");
 		expect(isSpeaking()).toBe(true);
 		expect(speakingSourceId()).toBe("msg-1");
-
-		spoken[0]!.onend?.();
+		providerPlay.mock.calls.at(-1)![0].onEnd();
 		expect(isSpeaking()).toBe(false);
 		expect(speakingSourceId()).toBeNull();
-		expect(events).toEqual([true, false]);
-	});
-
-	it("stopSpeaking cancels and clears the state", () => {
-		stubSpeechSynthesis();
-		speak("line", DEFAULT_TTS_SETTINGS, "msg-2");
-		stopSpeaking();
+		speak("again");
+		providerPlay.mock.calls.at(-1)![0].onError(new Error("unavailable"));
 		expect(isSpeaking()).toBe(false);
-		const synth = (window as unknown as { speechSynthesis: { cancel: ReturnType<typeof vi.fn> } }).speechSynthesis;
-		expect(synth.cancel).toHaveBeenCalled();
+		expect(listener).toHaveBeenCalledWith(false);
+		off();
 	});
-
-	it("a new speak call cancels the previous utterance", () => {
-		stubSpeechSynthesis();
+	it("cancels the previous audio before a new reply or explicit stop", () => {
 		speak("first", DEFAULT_TTS_SETTINGS, "a");
 		speak("second", DEFAULT_TTS_SETTINGS, "b");
-		const synth = (window as unknown as { speechSynthesis: { cancel: ReturnType<typeof vi.fn> } }).speechSynthesis;
-		expect(synth.cancel).toHaveBeenCalled();
-		expect(spoken).toHaveLength(2);
-		expect(spoken[1]!.text).toBe("second");
+		expect(providerStop).toHaveBeenCalledTimes(1);
 		expect(speakingSourceId()).toBe("b");
+		stopSpeaking();
+		expect(providerStop).toHaveBeenCalledTimes(2);
+		expect(isSpeaking()).toBe(false);
 	});
 });

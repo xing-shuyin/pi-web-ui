@@ -1,0 +1,44 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'app.pi.mobile.push'
+    compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion rootProject.ext.has('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+        manifestPlaceholders = [piJpushAppKey: '']
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation('cn.jiguang.sdk:jpush:6.3.0') {
+        exclude group: 'cn.jiguang.sdk', module: 'jcore'
+    }
+    implementation 'cn.jiguang.sdk:jcore:5.6.0'
+}
+
+// The host may add vendor SDKs, repositories and manifest placeholders here.
+// They require vendor credentials/configuration; the base SDK does not guarantee OEM delivery.
+if (rootProject.ext.has('piJpushVendorGradle')) {
+    apply from: rootProject.ext.piJpushVendorGradle
+}

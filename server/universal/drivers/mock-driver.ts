@@ -1,8 +1,3 @@
-/**
- * mock-driver.ts — 用于单元测试与驱动开发的 Mock 驱动。
- * 演示了如何以极简代码向 AgentEventSink 发射思考流、正文流和工具调用。
- */
-
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink } from "../driver-base.js";
 import type { PromptAttachment, SlashCommandInfo } from "../../protocol.js";
 
@@ -24,20 +19,16 @@ export class MockAgentDriver extends BaseAgentDriver {
 		return `mock-session-${++this.sessionCounter}`;
 	}
 
-	async resumeSession(_sessionId: string): Promise<void> {
-		/* no-op in mock */
-	}
+	async resumeSession(_sessionId: string): Promise<void> {}
 
 	async sendPrompt(prompt: string, _attachments: PromptAttachment[] | undefined, sink: AgentEventSink): Promise<void> {
 		this.aborted = false;
 
-		// 1. 发射思考过程
 		sink.onThinkingDelta("Thinking about how to handle: ");
 		if (this.aborted) return;
 		sink.onThinkingDelta(prompt);
 		if (this.aborted) return;
 
-		// 2. 发射工具调用（如果 prompt 包含 "tool" 关键字）
 		if (prompt.includes("tool")) {
 			const callId = `call_${Date.now()}`;
 			sink.onToolStart(callId, "bash", { command: "echo hello world" });
@@ -46,13 +37,11 @@ export class MockAgentDriver extends BaseAgentDriver {
 			if (this.aborted) return;
 		}
 
-		// 3. 发射正文
 		sink.onTextDelta("Response: ");
 		if (this.aborted) return;
 		sink.onTextDelta(`I have processed your request: "${prompt}".`);
 		if (this.aborted) return;
 
-		// 4. 发射完成事件
 		sink.onTurnComplete({
 			usage: {
 				inputTokens: 100,

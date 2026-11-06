@@ -62,7 +62,6 @@ async function fixture() {
 	};
 	return { ...f, bots, bot, other, config, options, intent, command, task };
 }
-// These cases construct real repositories and exercise the complete runtime admission route.
 describe("publication historical runtime routing", { timeout: 30_000 }, () => {
 	it("fences real ownerCleanup cancellation before enabled/currentBot/acquire even without a session", async () => {
 		const f = await fixture();

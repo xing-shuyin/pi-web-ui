@@ -1,10 +1,3 @@
-/* Composer toolbar E2E: at any width the left group (attach / model / thinking)
- * must never slide under the right group (send / stop / 对半胶囊) — the widest
- * right side happens while streaming, when the「排队|插队」对半胶囊 (fixed 78px)
- * shows up next to 停止 (hence it is injected here). Below 560px the labels give
- * way: model/thinking become icon-only buttons (the pill is already icon-only).
- * Run: npm run build && node tests/composer-overlap-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -24,7 +17,6 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 writeFileSync(join(workdir, "a.txt"), "a");
-// 假 provider + 一个很长的模型名：chip 的最宽情况
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -82,7 +74,6 @@ for (const w of WIDTHS) {
 	await page.setViewportSize({ width: w, height: 900 });
 	await sleep(200);
 	const info = await page.evaluate(() => {
-		// 流式中右侧多一颗对半胶囊（发送位变形，固定 78px）+ 停止 38px——本例里它们是错开的重叠源
 		const actions = document.querySelector(".composer-tools-right .inputbox-actions");
 		if (!actions.querySelector(".split-send")) {
 			const pill = document.createElement("div");

@@ -56,7 +56,6 @@ describe("PluginManager registerBackgroundTask 统一心跳机制", () => {
 		expect(tasksBefore[0].taskId).toBe("worker-1");
 		expect(tasksBefore[0].name).toBe("测试工作者");
 
-		// 等待至少两次心跳触发
 		await new Promise((r) => setTimeout(r, 160));
 		expect(checkCount).toBeGreaterThanOrEqual(2);
 
@@ -104,7 +103,6 @@ describe("PluginManager registerBackgroundTask 统一心跳机制", () => {
 		await mgr.ensureLoaded();
 		expect(mgr.bgTasks()).toHaveLength(1);
 
-		// 等待 2 次失败后注销（50ms * 2 = 100ms 左右，宽限至 250ms）
 		await new Promise((r) => setTimeout(r, 250));
 
 		expect(deadCalled).toBe(true);
@@ -149,7 +147,6 @@ describe("PluginManager registerBackgroundTask 统一心跳机制", () => {
 		expect(mgr.bgTasks()).toHaveLength(0);
 
 		await new Promise((r) => setTimeout(r, 150));
-		// unregister 之后心跳停止，不再增加 checkCalls
 		expect(checkCalls).toBe(callsBefore);
 
 		delete (globalThis as any).__hbCheckManual;

@@ -1,31 +1,3 @@
-// ---------------------------------------------------------------------------
-// subagents.ts — 第一方轻量子代理：工具定义与运行态模型
-// ---------------------------------------------------------------------------
-// 架构（相对参考项目的大幅简化）：
-//
-// 参考项目（tintinweb / nicobailon 的 pi-subagents）把子代理做成「完整子会话」
-// —— 独立 SessionManager / SettingsManager / 模型 / 工具隔离 / resume /
-// steer / 并发池 / 工作区隔离，复杂度来自「要独立支撑一个完整会话」。
-//
-// pi-web-ui 的 ClientSession 天生就是多会话并发的：一个 conversation 就有
-// 一个独立 AgentSessionRuntime + TerminalManager，所有 conversation 共享
-// 同一个 modelRuntime，创建走 createAgentSessionServices + FromServices（已
-// 封装好）。因此本模块把子代理定义为：
-//
-//   子代理 = 一个标记了 isSubagent 的普通 Conversation（inMemory session，
-//   不落盘、不进历史/resume 列表）
-//   - 出现在左栏「运行的对话」列表，带「子代理」徽标
-//   - 用户可以像普通对话一样：点开查看实时消息流、输入补充（= steer）、
-//     中止（= abort）、完成后移出（= dismiss）
-//   - 运行态经现有快照/消息管线推送，不需要单独的可视化桥
-//
-// 本文件只定义：运行态快照类型、host 接口（由 ClientSession 实现，操作的是
-// 它的 conversation 体系）、以及注册给每个会话的 subagent_* 工具。真正创建
-// conversation / 跑 prompt 全部在 agent-service.ts 的 spawnSubagent 里完成。
-//
-// 返回文本按 lang 取 pick(lang, zh, en)。
-// ---------------------------------------------------------------------------
-
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { QuestionAnswer, UiQuestion } from "./protocol.js";
@@ -35,15 +7,8 @@ import { THINKING_LEVELS } from "./subagent-templates.js";
 import { CONVERSATION_TOOL_NAME, SUBAGENT_TOOL_NAME } from "./tool-manager.js";
 export { CONVERSATION_TOOL_NAME, SUBAGENT_TOOL_NAME } from "./tool-manager.js";
 
-/** 子代理的状态（由 conversation 派生的轻量视图）。 */
 export type SubagentState = "running" | "queued" | "done" | "canceled";
 
-/**
- * subagent_wait_all 的最长阻塞时间：必须短暂低于工具看门狗（默认 20 分钟，
- * PI_WEB_TOOL_TIMEOUT_MS 可调），否则看门狗会先中止整个会话而不是让 wait
- * 干净地超时返回。取 0.8×看门狗（默认 ~16min，支持 PI_WEB_SUBAGENT_WAIT_CAP_SECONDS 覆盖），
- * 兜底不低于 5s。
- */
 export function computeWaitCapMs(watchdogMs?: number): number {
 	const customSecs = Number(process.env.PI_WEB_SUBAGENT_WAIT_CAP_SECONDS);
 	if (Number.isFinite(customSecs) && customSecs > 0) {
@@ -59,53 +24,30 @@ export function computeWaitCapMs(watchdogMs?: number): number {
 	return Math.max(Math.floor(watchdog * 0.8), 5_000);
 }
 
-/** Idle is terminal only when the host has no pending task dependencies.
- * Idle failures/cancellations remain terminal regardless of pending dependencies. */
 export function isSubagentTerminal(r: SubagentSnapshot | undefined): boolean {
 	return !!r && !r.streaming && (!r.taskPending || !!r.error || !!r.canceled);
 }
 
-/** 单个子代理的运行态快照（供 subagent_list / subagent_get_result 与左栏徽标）。 */
 export interface SubagentSnapshot {
-	/** conversation id（= 工具的 runId；左栏点击即 switch 到它）。 */
 	convId: string;
-	/** Stable runtime addresses, independent of holder-local display ids. */
 	executionId?: string;
 	parentExecutionId?: string;
-	/** 展示类型 / 角色（explore / implement / review …，默认 general）。 */
 	type: string;
-	/** 标题：prompt 首行（截断）。 */
 	title: string;
-	/** 原始 prompt。 */
 	prompt: string;
 	state: SubagentState;
-	/** 是否正在流式输出。 */
 	streaming: boolean;
-	/** Host task snapshot: manual idle may still await descendants or questions/communications. */
 	taskPending?: boolean;
-	/** 最近一次运行是否报错（provider 400/超时等）；有则这里带可读错误文本。 */
 	error?: string;
-	/** 是否被用户/AI 中止（最后一条 assistant 消息 stopReason=aborted，或中断后
-	 *  有输出但未正常结束）。区别于 error：中止不是故障，但不应当作成功结果。 */
 	canceled?: boolean;
-	/** 会话消息数（近似活动量）。 */
 	messageCount: number;
-	/** 会话模型 id（可空）。 */
 	model?: string;
-	/** 会话思考强度（可空）。 */
 	thinkingLevel?: string;
-	/** 已收集的 assistant 最后文本（运行中为最新输出）。 */
 	output: string;
-	/** 父对话 id（派发者会话；主对话派发时为普通对话 id，子代理嵌套派发时为父子代理 id）。
-	 *  wait_all 据此算后代/祖先，避免子代理无参等待把父级圈进来导致父子互等到超时。 */
 	parentId?: string;
-	/** 是否为持久化会话（落盘到 session 文件，非仅内存会话）。 */
 	persisted?: boolean;
-	/** 同行协作交接给的目标子代理 convId 列表（该子代理交接给谁）。 */
 	handoffTo?: string[];
-	/** 同行协作接收自的来源子代理 convId 列表（谁交接给该子代理）。 */
 	handoffFrom?: string[];
-	/** 工作树隔离运行态快照（若启用 isolation="worktree"）。 */
 	worktree?: {
 		path: string;
 		branch: string;
@@ -117,34 +59,14 @@ export interface SubagentSnapshot {
 	};
 }
 
-/**
- * 由 ClientSession 实现的子代理操作接口。所有操作都作用于它的
- * conversation 体系（convs.map 里的 isSubagent 对话）。
- */
 export interface SubagentToolHost {
-	/** Register completion intent; the host settles only when idle and dependencies allow it. */
 	completeSubagent?(selfId: string, summary: string): unknown;
-	/** Host validates ownership and keeps consults separate from user questions. */
 	consultParent?(selfConvId: string, questions: UiQuestion[], signal?: AbortSignal): Promise<unknown>;
 	answerConsult?(selfConvId: string, runId: string, requestId: string, answers: QuestionAnswer[]): unknown;
 	escalateConsult?(selfConvId: string, runId: string, requestId: string): unknown;
-	/** Only unresolved consults awaiting this parent's decision, excluding user escalations. */
 	getPendingConsults?(parentId: string): Array<{ runId: string; requestId: string; questions: UiQuestion[] }>;
-	/** Track active polling by stable conversation identity across ownership transfers. */
 	setConsultWaiting?(parentId: string, waiting: boolean): void;
-	/** Whether a request is already queued as a steering message in parent conversation (#828). */
 	isRequestSteering?(parentId: string, requestId: string): boolean;
-	/** 创建子代理 conversation 并触发 prompt。`templateName` 可选：设置面板配置
-	 *  的子代理模板（角色 prompt + 技能/扩展白名单 + 可选模型 + 可选思考强度）；
-	 *  不传 = 按主会话默认配置。`model` 可选："provider/id"，显式指定本次子代理模型
-	 *  （优先级高于模板与设置面板的默认模型）；不传 = 依次回退到模板模型 → 设置面板
-	 *  默认模型 → 跟随主对话当前模型。思考强度同理：模板自带优先（不传没有单独的
-	 *  thinking 参数）→ 不指定则跟随主对话当前强度。
-	 *  `parentId` 可选：真正的派发者对话 id（左栏嵌套用）。按会话归属的 host
-	 *  包装会自动填入；不传时回退到派发时刻的 active 对话（兼容旧行为）。
-	 *  `persist` 可选：是否创建为持久化落盘的普通对话（存入历史，可继续聊）；
-	 *  默认 false（轻量内存子代理）。
-	 *  模板不存在/已停用时应抛错（工具把错误转给 AI 而不是启动。）。 */
 	spawnSubagent(
 		prompt: string,
 		type: string,
@@ -159,19 +81,11 @@ export interface SubagentToolHost {
 		extra?: SubagentSpawnExtra,
 		signal?: AbortSignal,
 	): Promise<string>;
-	/** 取单个子代理快照（按 convId）。 */
 	getSubagent(convId: string): SubagentSnapshot | undefined;
 	resolveConversationId?(id: string): string | undefined;
-	/** 列出现有的子代理与派生的受控对话（按创建顺序）。scope: all（默认）/ subagent / persistent。
-	 *  `forSelfId`（可选，B20）：调用者自身对话 id。传了才把「祖先链能走到它」的
-	 *  会话外子代理一并列出（过户把整族搬去别的 ClientSession 后，wait_all/list
-	 *  仍能看到它们）；不传 = 只列本会话自己的（保持原语义与 list 的展示口径）。 */
 	listSubagents(scope?: "all" | "subagent" | "persistent", forSelfId?: string): SubagentSnapshot[];
-	/** 向运行中的子代理注入消息（未在运行的内容直接排队为下一次回合）。 */
 	steerSubagent(convId: string, message: string): Promise<void>;
-	/** 中止运行中的子代理。 */
 	stopSubagent(convId: string): Promise<void>;
-	/** 列出可供 AI 选择的子代理模板（名 + 简介 + 模型 + 思考强度）。只含 enabled 的（停用的对 AI 不可见）。 */
 	listTemplates(): {
 		name: string;
 		description: string;
@@ -179,42 +93,24 @@ export interface SubagentToolHost {
 		model?: string;
 		thinkingLevel?: string;
 	}[];
-	/** 获取当前生效的工具看门狗超时（毫秒），用于计算 wait_all 的最大等待上限。 */
 	getWatchdogTimeoutMs?(): number;
-	/** 获取当前激活的会话 ID（防止误删前端正在查看的会话）。 */
 	getActiveConversationId?(): string | undefined;
-	/** 移出子代理会话（释放内存运行时、临时目录与左栏展示）。 */
 	dismissSubagent?(
 		convId: string,
 		opts?: { force?: boolean; includePersisted?: boolean },
 	): Promise<{ ok: boolean; reason?: string }>;
-	/** 检查某个模板名是否可用于派生子代理（存在且 enabled）。 */
 	isTemplateUsable(name: string): boolean;
-	/** 将任务产物或指令从一个子代理直接交接给另一个同行子代理（对等协作路由）。 */
 	handoffSubagent(fromRunId: string, toRunId: string, payload: string): Promise<void>;
-	/** 标记指定子代理已被父会话消费（通过 wait_all 或 get_result），后续避免重复发送终态通知。 */
 	markSubagentsConsumed?(runIds: string[]): void;
-	/** 终态结算与清理子代理的工作树（若启用了工作树隔离）。 */
 	finalizeSubagentWorktree?(convId: string): Promise<void>;
-	/** 可选语言（主会话按客户端 locale 提供 getLang；缺省英文）。 */
 	lang?: () => ServerLang;
 }
 
-/** 从 prompt 取首行作为标题（截断 40 字符）。 */
 export function subagentTitle(prompt: string): string {
 	const line = prompt.split("\n")[0]?.trim() ?? "";
 	return line.length > 40 ? `${line.slice(0, 40)}…` : line;
 }
 
-/**
- * 返回注入 ownerId 的 host 包装：每次 spawn 时自动把 ownerId（真正的派发会话）
- * 作为子代理的 parentId 传给底层 host。
- *
- * 背景（issue #95）：子代理左栏嵌套靠 parentId，而派发方是某个会话的 runtime ——
- * 必须按 runtime 归属记父对话，而不是派发瞬间的 active。后台对话继续产出时用户
- * 可能已切到别的项目，直接读 activeId 会把孩子记到无关会话名下（错组/沉底）。
- * 每个会话创建 runtime 时用本函数包一层，让它的 spawn 天然带自己的会话 id。
- */
 export function withSubagentOwner(
 	host: SubagentToolHost,
 	ownerId: string,
@@ -279,24 +175,11 @@ export const SUBAGENT_ACTIONS = [
 
 export type SubagentAction = (typeof SUBAGENT_ACTIONS)[number];
 
-/**
- * 单 action 子代理总工具（注册进每个会话的 customTools，供主 agent 驱动子代理）。
- * 合并原 subagent_* 8 个工具为一个统一入口，节省会话上下文 token。
- *
- * `selfConvId`（可选）：这套工具所注册进的会话 convId。`wait_all`
- * 永远排除调用者自身——子代理会话上同样注册了该工具，不传 runIds 时
- * 「全部」会含它自己，而它正在执行本工具（streaming=true），不排除就是
- * 自己等自己、永远到超时（self-wait deadlock）。主会话调用时传它自己的
- * 普通对话 id 即可（不在子代理列表里，delete 是 no-op）。
- */
 export function makeSubagentTool(
 	host: SubagentToolHost,
 	lang?: () => ServerLang,
 	selfConvId?: string | (() => string | undefined),
 ): ToolDefinition {
-	// B20：过户会把对话改名（撞 id 时 remap），自省 id 必须在调用时刻解析
-	// （按 runtime 身份查当前持有方），不能死用建时的旧 id —— 否则 wait_all
-	// 排除自省/展开后代时拿错锚点。传函数形式由建时点按 findConversationHome 解析。
 	const selfIdOf = (): string | undefined => (typeof selfConvId === "function" ? selfConvId() : selfConvId);
 	const executionOf = (snapshot: SubagentSnapshot): string => snapshot.executionId ?? snapshot.convId;
 	const executionOfId = (id: string): string => host.getSubagent(id)?.executionId ?? id;
@@ -308,7 +191,6 @@ export function makeSubagentTool(
 		details,
 	});
 
-	// Share delivery memory across the primary tool and legacy alias. Keep only live requests.
 	const deliveredConsults = new Set<string>();
 	const consultKey = (parentId: string, runId: string, requestId: string) =>
 		JSON.stringify([parentId, runId, requestId]);
@@ -316,8 +198,6 @@ export function makeSubagentTool(
 	const expandDescendants = (roots: Set<string> | string[]): string[] => {
 		if (roots instanceof Set ? roots.size === 0 : (roots as string[]).length === 0) return [];
 		const rootSet = new Set([...roots].map(executionOfId));
-		// B20：带 forSelfId（本会话的族）展开 —— 过户把整族搬到别的会话后，
-		// 只列本会话自己的列表会展不开后代，wait_all 会误报「没有需要等待的子代理」。
 		const all = host.listSubagents(undefined, selfIdOf());
 		const out: string[] = [];
 		for (const s of all) {
@@ -843,7 +723,6 @@ export function makeSubagentTool(
 							r,
 						);
 					}
-					// 终态结果被父对话取走，标记已消费，避免后续重复触发自动通知
 					const targetAddress = executionOf(r);
 					host.markSubagentsConsumed?.([targetAddress]);
 					if (host.finalizeSubagentWorktree) {
@@ -1045,7 +924,6 @@ export function makeSubagentTool(
 					const collectConsults = () => {
 						const parentId = selfIdOf();
 						if (!parentId || !host.getPendingConsults || signal?.aborted) return;
-						// The host authorizes direct-child requests for this parent, independent of runIds.
 						const pending = host.getPendingConsults(parentId);
 						const liveKeys = new Set(pending.map((r) => consultKey(parentId, r.runId, r.requestId)));
 						for (const key of deliveredConsults) {
@@ -1100,9 +978,6 @@ export function makeSubagentTool(
 							if (consults) return consults;
 							const allDone = Array.from(wanted).every((id) => {
 								const r = host.getSubagent(id);
-								// #488：getSubagent 返回 undefined = 已被移出（强行关闭/收尾清理）
-								// ——视为终态，与下方报告段「已移出或不存在」口径一致；否则等待
-								// 集合含被移出子代理时 allDone 恒 false，必然白等满 timeoutMs。
 								return r === undefined || isSubagentTerminal(r);
 							});
 							if (allDone) break;
@@ -1117,7 +992,6 @@ export function makeSubagentTool(
 					const waitedSecs = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 					const timeoutSecs = Math.round(timeoutMs / 1000);
 
-					// 收口的子代理标记已消费，避免后续重复自动通知打扰父对话；同时结算隔离工作树
 					const finishedIds = Array.from(wanted).filter((id) => {
 						const r = host.getSubagent(id);
 						return r === undefined || isSubagentTerminal(r);
@@ -1365,7 +1239,6 @@ export function makeSubagentTool(
 							const descIds = new Set(expandDescendants(new Set([selfId])));
 							inScopeList = all.filter((s) => descIds.has(executionOf(s)));
 						}
-						// 口径与 finishedSubagentCount 一致：isSubagent、非 streaming、非当前 active
 						candidateIds = inScopeList
 							.filter((s) => {
 								if (s.streaming || s.state === "running") return false;
@@ -1626,9 +1499,6 @@ export function makeSubagentTool(
 	});
 }
 
-/**
- * 保持数组签名的子代理工具导出，兼容原有调用点与批处理包装。
- */
 export function makeSubagentTools(
 	host: SubagentToolHost,
 	lang?: () => ServerLang,
@@ -1648,16 +1518,10 @@ export function makeSubagentTools(
 	];
 }
 
-/** 短 id 前缀（前端展示/日志用）。 */
 function shortId(id: string): string {
 	return id.slice(0, 8);
 }
 
-/**
- * wait_all 收口时的长输出截断：留头（任务复述）+ 留尾（最终结论），中间折叠。
- * 旧实现只取前 30 行，长输出的子代理结论（一般在尾部）会被丢掉，模型收回一个
- * 没结论的摘要。短输出原样返回。
- */
 function clipSubagentOutput(output: string, lang: ServerLang): string {
 	const HEAD = 10;
 	const TAIL = 30;
@@ -1669,13 +1533,6 @@ function clipSubagentOutput(output: string, lang: ServerLang): string {
 	return [...lines.slice(0, HEAD), marker, ...lines.slice(-TAIL)].join("\n");
 }
 
-/**
- * 收集 root 的传递子代理后代 id（parentId 链向上能走到 root 的；含嵌套的嵌套）。
- * root 自身不含；非子代理对话不含（普通对话不参与子代理清理口径）。
- * parentId 环（理论上不应出现）按 visited 截断，不会死循环。
- * 纯函数：后端 dismiss 流程与单测共用（前端左栏按同样口径镜像实现，见
- * LeftPanel finishedSubagentCount）。
- */
 export function collectSubagentDescendantIds(
 	items: ReadonlyArray<{ id: string; parentId?: string; isSubagent: boolean }>,
 	rootId: string,
@@ -1700,14 +1557,12 @@ export function collectSubagentDescendantIds(
 	return out;
 }
 
-/** 人类可读的终态判定：报错 > 中止 > done > running。 */
 function subagentVerdict(r: SubagentSnapshot, lang: ServerLang = "en"): string {
 	if (r.error) return pick(lang, "error（报错）", "error", "subagents.verdict.error");
 	if (r.canceled) return pick(lang, "canceled（已中止）", "canceled", "subagents.verdict.canceled");
 	return r.taskPending ? "pending" : r.state;
 }
 
-/** 终态的可读说明（错误文本 / 中止说明 / 空）。运行中返回空。 */
 function verdictText(r: SubagentSnapshot, lang: ServerLang = "en"): string {
 	if (r.error)
 		return pick(lang, `错误：${r.error}`, `Error: ${r.error}`, "subagents.verdict.error.detail", {
@@ -1718,7 +1573,6 @@ function verdictText(r: SubagentSnapshot, lang: ServerLang = "en"): string {
 	return "";
 }
 
-/** 未完成部分的引导文案。 */
 function promptRemaining(remaining: string[], lang: ServerLang = "en"): string {
 	if (remaining.length === 0) return "";
 	const pendingIds = remaining.map(shortId).join(", ");

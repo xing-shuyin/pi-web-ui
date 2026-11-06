@@ -1,9 +1,3 @@
-// Vision bridge — settings-panel UI test (no model calls).
-// Opens the ⚙ settings modal and verifies the vision-bridge section:
-// toggle switch reflects server state, the model picker lists the configured
-// vision models, picking one round-trips through set_settings → settings_state,
-// and turning the bridge off hides the picker.
-// Usage: npm run build && node vision-bridge-ui-test.mjs
 import { chromium } from "playwright-core";
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -69,9 +63,7 @@ const server = spawn(NODE, ["dist/server/index.js"], {
 process.on("exit", () => {
 	try {
 		process.kill(server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 let failures = 0;
@@ -85,9 +77,7 @@ async function run() {
 		try {
 			const r = await fetch(`${URL}/`);
 			if (r.ok) break;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	const browser = await chromium.launch({
@@ -96,34 +86,25 @@ async function run() {
 	});
 	const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 	await page.goto(URL);
-	// Wait for the app shell (chat input).
 	await page.waitForSelector(".chat-input, .inputbar, textarea", {
 		timeout: 30000,
 	});
 
-	// Open settings via the ⚙ chip in the top bar.
 	const settingsChip = page.locator('[title*="设置"], [title*="Settings"]').first();
 	await settingsChip.click();
 	await page.waitForSelector(".settings-modal", { timeout: 10000 });
 
-	// Sidebar navigation: the settings modal is now tabbed (left rail), only
-	// the active group is rendered — open the vision-bridge tab first.
 	await page.locator(".settings-tab", { hasText: "视觉桥" }).click();
 	await page.waitForSelector(".set-section-title", { timeout: 5000 });
 
-	// Vision bridge section heading.
 	const heading = page.locator(".set-section-title", { hasText: "视觉桥" });
 	check("vision bridge section rendered", (await heading.count()) > 0);
 	await heading.first().scrollIntoViewIfNeeded();
 
-	// Toggle switch present and ON by default.
 	const sw = page.locator(".set-switch").last();
 	const swOn = await sw.evaluate((el) => el.classList.contains("on"));
 	check("toggle starts enabled", swOn);
 
-	// Model picker lists both vision models + auto option. (The vision-bridge
-	// section now has TWO selects — model + prompt mode — so scope to the
-	// first one inside the section.)
 	const vbSection = page.locator(".set-section", { hasText: "视觉桥" });
 	const modelSelect = vbSection.locator("select").first();
 	await modelSelect.waitFor({ timeout: 5000 });
@@ -134,7 +115,6 @@ async function run() {
 		JSON.stringify(opts),
 	);
 
-	// Pick the second vision model → server echoes it back.
 	await modelSelect.selectOption("vision/glm-vl");
 	await page.waitForFunction(
 		() => {
@@ -147,7 +127,6 @@ async function run() {
 	);
 	check("picker keeps the chosen model after server echo", true);
 
-	// Turn the bridge off → picker disappears, hint appears.
 	await sw.click();
 	await page.waitForSelector(".settings-modal", { timeout: 5000 });
 	await sleep(800);
@@ -155,10 +134,7 @@ async function run() {
 	const hint = await page.locator(".set-hint", { hasText: "已关闭" }).count();
 	check("disabling hides picker + shows off hint", pickerInVb === 0 && hint > 0);
 
-	// -- replace-mode prefills the built-in default prompts --------------------
-	// Vision bridge: switch its prompt mode to "replace" → the textarea must be
-	// prefilled with the built-in default transcription prompt (ready to edit).
-	await sw.click(); // re-enable the bridge
+	await sw.click();
 	await sleep(800);
 	const vbModeSelect = vbSection.locator("select").nth(1);
 	await vbModeSelect.waitFor({ timeout: 5000 });
@@ -174,10 +150,6 @@ async function run() {
 	);
 	check("replace mode prefills the built-in vision-bridge prompt", true);
 
-	// System prompt: switch to the “replace” tab group first (only the active
-	// sidebar group is rendered), then flip to "replace" — the textarea must
-	// show the built-in default system prompt (the SDK's default, since the
-	// test agent dir has no system-prompt file).
 	await page.locator(".settings-tab", { hasText: "系统提示词" }).click();
 	const sysSection = page.locator(".set-section", { hasText: "系统提示词" });
 	const sysModeSelect = sysSection.locator("select").first();
@@ -206,7 +178,5 @@ try {
 } finally {
 	try {
 		process.kill(server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 }

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-// Re-create the pure reducer resolution logic tested for tool_delta (issue #782)
 function resolveLiveOutput(
 	prevText: string,
 	action: { delta: string; mode?: "append" | "replace" },
@@ -36,7 +35,6 @@ describe("live tool output resolving (issue #782)", () => {
 		const out1 = resolveLiveOutput("", { delta: "tick 1\n" });
 		expect(out1).toBe("tick 1\n");
 
-		// Snapshot includes previous text as prefix -> should replace, avoiding duplication
 		const out2 = resolveLiveOutput(out1, { delta: "tick 1\ntick 2\n" });
 		expect(out2).toBe("tick 1\ntick 2\n");
 

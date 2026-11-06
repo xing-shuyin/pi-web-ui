@@ -1,7 +1,7 @@
 {
 	"id": "run-trace",
 	"name": "轨迹",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"icon": "🧭",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"22 12 18 12 15 21 9 3 6 12 2 12\"/></svg>",
 	"description": "运行轨迹：把 agent 从收到任务 → 思考 → 工具调用 → 文件改动 → 产出结果聚成时间线，支持回放与节点详情（类 harness 轨迹视图）。",

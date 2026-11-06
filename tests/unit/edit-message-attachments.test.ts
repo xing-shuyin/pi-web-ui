@@ -36,7 +36,6 @@ describe("editMessage 纯附件提问支持（#443）", () => {
 
 		await ClientSession.prototype.editMessage.call(session, "msg-1", "", [fakeAttachment as any]);
 
-		// 证明空检查未拦截，进入了寻找目标消息阶段
 		expect(session.resolveUserMessageEntryId).toHaveBeenCalledWith("msg-1");
 		expect(emitted).toEqual([
 			expect.objectContaining({

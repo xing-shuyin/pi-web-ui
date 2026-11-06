@@ -1,5 +1,3 @@
-// 一鍵產生與更新繁體中文全套語言包（委託至主同步器 scripts/sync-locales.mjs，保證單一事實源）。
-// 用法：node scripts/zh-tw-locale/build-all.mjs [repo]
 import { syncLocales } from "../sync-locales.mjs";
 
 const repoRoot = process.argv[2] || process.cwd();

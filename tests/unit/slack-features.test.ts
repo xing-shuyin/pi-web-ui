@@ -1,10 +1,3 @@
-/**
- * tests/unit/slack-features.test.ts
- * Tests for Slack Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, mention stripping)
- * - SlackBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import { extractSlackText, peerAccountId, SlackBotBridge, stripInternalMarkers } from "../../plugins/slack/index.mjs";
 
@@ -182,7 +175,6 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 		});
 		(bridge as any).botUser = { user_id: "B_BOT_999" };
 
-		// 1. 群聊消息但未 @ 机器人
 		await bridge.onInboundEvent({
 			user: "U_USER_1",
 			channel: "C_PUBLIC_1",
@@ -192,7 +184,6 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 		});
 		expect(chatSpy).not.toHaveBeenCalled();
 
-		// 2. 群聊消息指名道姓 @ 机器人
 		await bridge.onInboundEvent({
 			user: "U_USER_1",
 			channel: "C_PUBLIC_1",
@@ -202,7 +193,6 @@ describe("SlackBotBridge 双工逻辑测试", () => {
 		});
 		expect(chatSpy).toHaveBeenCalledTimes(1);
 
-		// 3. 私聊消息（im）即便不带 mention 也直接响应
 		await bridge.onInboundEvent({
 			user: "U_USER_1",
 			channel: "D_DM_1",

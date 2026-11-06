@@ -204,7 +204,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		act(() => root.unmount());
 		container.remove();
 
-		// 测试消息数 host:msg-count：纯图标 + 数字，无 # 与无「消息」文字
 		const msgEntry: UiSlotEntry = {
 			id: "host:msg-count",
 			slot: "topbar.primary",
@@ -221,9 +220,7 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		const msgWrap = msgContainer.querySelector('[data-bar-item="host:msg-count"]');
 		expect(msgWrap).not.toBeNull();
 		expect(msgWrap?.tagName.toLowerCase()).toBe("span");
-		// 拥有矢量消息图标
 		expect(msgWrap?.querySelector("svg.bar-item-icon")).not.toBeNull();
-		// 去除 # 符号与「消息」文字，只显示纯数字
 		expect(msgWrap?.textContent).not.toContain("#");
 		expect(msgWrap?.textContent).not.toContain("消息");
 		expect(msgWrap?.textContent).not.toContain("Messages");
@@ -256,7 +253,7 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		container.remove();
 	});
 
-	it("顶栏条目拖到左侧停靠栏（bar='left'）：对话 host:chat 正常渲染出图标与文字，且 active 状态正确", () => {
+	it("对话视图中不再显示重复的 host:chat 切换标签", () => {
 		const entry: UiSlotEntry = {
 			id: "host:chat",
 			slot: "sidebar.left",
@@ -271,10 +268,7 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			arrangedBy: [],
 		};
 		const { container, root } = renderBarItem(entry, "left");
-		const btn = container.querySelector("button.bar-item");
-		expect(btn).not.toBeNull();
-		expect(btn?.classList.contains("active")).toBe(true);
-		expect(btn?.textContent).toContain("对话");
+		expect(container.querySelector("button.bar-item")).toBeNull();
 		act(() => root.unmount());
 		container.remove();
 	});
@@ -348,7 +342,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		expect(iconWrap).not.toBeNull();
 		const svg = iconWrap?.querySelector("svg");
 		expect(svg).not.toBeNull();
-		// 不应为 emoji
 		expect(iconWrap?.textContent).not.toContain("📓");
 		expect(container.textContent).toContain("笔记");
 		act(() => root.unmount());
@@ -400,8 +393,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 	it("styles.css 中锁定纯图标按钮在 no-labels 模式下边框为圆形（border-radius: 50%）", () => {
 		const fs = require("node:fs");
 		const path = require("node:path");
-		// styles.css 现在整体包在 `@layer base { ... }` 里，内容比原来的顶层口径多缩进一格：
-		// 去掉最外层那一格 Tab 还原成「顶层」形态再断言（!important 已随分层重构删除，值未变）。
 		const css = fs.readFileSync(path.join(__dirname, "../../web/src/styles.css"), "utf8").replace(/^\t/gm, "");
 		expect(css).toContain("border-radius: 50%;");
 		expect(css).toMatch(/\.topbar\.no-labels[\s\S]*?border-radius:\s*50%/);
@@ -410,34 +401,23 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 	it("styles.css 中锁定带角标/额外内容的顶栏按钮在 no-labels 模式下悬浮与常态均为 7px 圆角矩形，防止畸变为椭圆", () => {
 		const fs = require("node:fs");
 		const path = require("node:path");
-		// 同上：去掉 @layer base 带来的那一格缩进（多行选择器的换行缩进随之回到原样）
 		const css = fs.readFileSync(path.join(__dirname, "../../web/src/styles.css"), "utf8").replace(/^\t/gm, "");
-		// 悬浮 hover 选择器排除了带角标/额外内容的项，仅对纯图标应用 50%
 		expect(css).toMatch(
 			/\.topbar\.no-labels\s+\.chip:not\(:has\(svg ~ svg\)\):not\(:has\(\.bg-task-badge\)\):not\(:has\(\.update-badge\)\):not\(:has\(\.update-dot\)\):hover/,
 		);
-		// 带角标或额外内容的条目显式声明为 7px 圆角矩形（分层后不再需要 !important）
 		expect(css).toMatch(/\.topbar\.no-labels\s+\.chip:has\(\.bg-task-badge\)[\s\S]*?border-radius:\s*7px;/);
 	});
 
 	it("styles.css 中锁定侧边栏隐藏文字，且有文字时是小圆角（7px），默认不显示边框", () => {
 		const fs = require("node:fs");
 		const path = require("node:path");
-		// 同上：去掉 @layer base 带来的那一格缩进
 		const css = fs.readFileSync(path.join(__dirname, "../../web/src/styles.css"), "utf8").replace(/^\t/gm, "");
-		// 侧边栏只显示图标，隐藏文字（分层后不再需要 !important）
 		expect(css).toMatch(/\.side-dock\s+\.bar-item-text\s*\{[^}]*display:\s*none;/);
-		// 默认不显示边框
 		expect(css).toMatch(/\.bar-item\s*\{[^}]*border:\s*1px\s*solid\s*transparent/);
-		// 有文字时是小圆角 7px
 		expect(css).toMatch(/\.bar-item\s*\{[^}]*border-radius:\s*7px/);
-		// 底栏文字字号收敛至 11px
 		expect(css).toMatch(/\.statusbar\s+\.bar-item-text[^{]*\{[^}]*font-size:\s*11px/);
 	});
 
-	// ---- 布局页改名落地（issue #555）：内置条目的文案一直是写死的 i18n 与实际数值，
-	// 只有 `labelExplicit`（用户改名 / 插件 arrange 指定）立着时才让位。----------------
-	/** 顶栏按钮的形状（host:terminal 在 switch 分支里画硬编码文案）。 */
 	const buttonEntry = (extra: Partial<UiSlotEntry> = {}): UiSlotEntry => ({
 		id: "host:terminal",
 		slot: "topbar.primary",
@@ -470,7 +450,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		expect(btn).not.toBeNull();
 		expect(btn?.textContent).toContain("MY-TERM");
 		expect(btn?.textContent).not.toContain("终端");
-		// 提示也跟着名字走（悬浮一次看到的还是用户起的名字，不是两套称呼）
 		expect(btn?.getAttribute("title")).toBe("MY-TERM");
 		act(() => root.unmount());
 		container.remove();
@@ -497,7 +476,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		act(() => root.unmount());
 		container.remove();
 
-		// 成本条目：名字在前、`$` 紧跟数字（不能变成「$ 用量 0.0123」）
 		const cost: UiSlotEntry = {
 			id: "host:cost",
 			slot: "bottombar",
@@ -513,7 +491,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		};
 		const costRendered = renderBarItem(cost, "bottom");
 		const costWrap = costRendered.container.querySelector('[data-bar-item="host:cost"]');
-		// 名字是独立的文本节点，`$` 仍紧贴数字 —— 间距由 .has-name 的 gap 给，不靠空格。
 		expect(costWrap?.querySelector(".bar-item-text")?.textContent).toBe("总花费");
 		expect(costWrap?.querySelector(".bar-item-char")?.textContent).toBe("$");
 		expect(costWrap?.classList.contains("has-name")).toBe(true);
@@ -545,7 +522,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			arrangedBy: [],
 		};
 		const { container, root } = renderBarItem(engEntry, "bottom");
-		// 图标作为直接子 svg 渲染，拥有 bar-item-icon 与 engine-picker-icon 类，确保任何隐藏文字模式都不会误杀图标
 		const icon = container.querySelector("svg.bar-item-icon.engine-picker-icon");
 		expect(icon).not.toBeNull();
 		const badge = container.querySelector(".engine-badge.engine-pi");
@@ -557,12 +533,10 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		act(() => {
 			triggerBtn?.click();
 		});
-		// 底栏由于开启了 portal，下拉菜单挂载在 document.body 下的 .dd-portal-wrapper 中，彻底摆脱 statusbar-left 的 overflow 截断
 		const portalWrapper = document.body.querySelector(".dd-portal-wrapper.dd-up");
 		expect(portalWrapper).not.toBeNull();
 		const items = document.body.querySelectorAll(".engine-picker-item");
 		expect(items.length).toBeGreaterThanOrEqual(2);
-		// 菜单条目也包含引擎图标
 		const itemIcons = document.body.querySelectorAll(".engine-picker-item-icon");
 		expect(itemIcons.length).toBeGreaterThanOrEqual(2);
 		act(() => root.unmount());
@@ -591,7 +565,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 			triggerBtn?.click();
 		});
 
-		// 验证：由于开启了 portal，下拉菜单挂载在 document.body 下的 .dd-portal-wrapper 中，不在原 container 内部
 		const portalWrapper = document.body.querySelector(".dd-portal-wrapper");
 		expect(portalWrapper).not.toBeNull();
 		const portalItems = document.body.querySelectorAll(".engine-picker-item");
@@ -703,7 +676,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		const hideOption = menu?.entries.find((e) => e.id === "host:hide-item");
 		expect(hideOption).toBeDefined();
 		expect(hideOption?.label).toBe("隐藏");
-		// 无覆盖时不应有恢复项
 		const restoreOptionNone = menu?.entries.find((e) => e.id === "host:restore-item");
 		expect(restoreOptionNone).toBeUndefined();
 
@@ -711,7 +683,6 @@ describe("上下左右四栏通用 BarItem 渲染测试", () => {
 		container.remove();
 		resetContextMenu();
 
-		// 测试带 userOverrides 的条目
 		const entryWithOverrides: UiSlotEntry = {
 			...entry,
 			userOverrides: ["slot"],

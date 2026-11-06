@@ -1,4 +1,3 @@
-/** Display writers opt into history replacement; streaming parsers omit reset. */
 export interface TerminalWriter {
 	write(data: string): void;
 	dispose(): void;
@@ -10,7 +9,13 @@ const MAX_TERM_BUFFER = 200_000;
 export type TerminalOwnerKind = "client" | "conversation";
 type BufferedOutput = { data: string; reset: boolean };
 
-/** Routes live output and retained-history replacements to terminal subscribers. */
+export function isClientTerminalStream(message: { type: string; ownerKind?: TerminalOwnerKind }): boolean {
+	return (
+		message.type === "terminal_list" ||
+		((message.type === "terminal_output" || message.type === "terminal_exit") && message.ownerKind === "client")
+	);
+}
+
 export function makeTerminalBridge() {
 	const writers = new Map<string, Set<TerminalWriter>>();
 	const buffers = new Map<string, BufferedOutput>();
@@ -24,14 +29,11 @@ export function makeTerminalBridge() {
 	const deliver = (writer: TerminalWriter, data: string, reset: boolean) => {
 		try {
 			if (reset) {
-				// A replay must neither reset nor feed old command markers to a live SCM parser.
 				if (!writer.reset) return;
 				writer.reset();
 			}
 			writer.write(data);
-		} catch {
-			// A stale subscriber must not prevent delivery to the others.
-		}
+		} catch {}
 	};
 	return {
 		write(
@@ -46,8 +48,6 @@ export function makeTerminalBridge() {
 				ownerKind || writers.get(writerKey)?.size ? [writerKey] : legacyKeys(writers.keys(), terminalId);
 			for (const k of recipientKeys) for (const writer of writers.get(k) ?? []) deliver(writer, data, reset);
 
-			// Keep one retained view per terminal, even while mounted. New display
-			// subscribers and remounts must receive the same history as existing ones.
 			const previous =
 				buffers.get(writerKey) ?? (!ownerKind ? buffers.get(legacyKeys(buffers.keys(), terminalId)[0]) : undefined);
 			if (!ownerKind) for (const k of legacyKeys(buffers.keys(), terminalId)) buffers.delete(k);
@@ -75,7 +75,6 @@ export function makeTerminalBridge() {
 				if (!current?.size) writers.delete(writerKey);
 			};
 		},
-		/** Remove output for terminals absent from an authoritative manager list. */
 		reconcile(conversationId: string, terminals: { id: string; ownerKind?: TerminalOwnerKind }[]): void {
 			const retained = new Set(terminals.map((t) => key(conversationId, t.id, t.ownerKind ?? "client")));
 			for (const k of buffers.keys()) {
@@ -83,7 +82,6 @@ export function makeTerminalBridge() {
 				if ((owner === "client" || conversation === conversationId) && !retained.has(k)) buffers.delete(k);
 			}
 		},
-		/** Socket/engine changes invalidate history, not mounted subscriptions. */
 		clear(): void {
 			buffers.clear();
 		},

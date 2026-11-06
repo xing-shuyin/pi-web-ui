@@ -53,15 +53,12 @@ describe("审批特权边界收敛与超宽操作熔断 (Issue #722)", () => {
 		});
 
 		it("已记住同类时，一旦执行全盘/根目录/家目录删除，同类记忆强制熔断并要求弹窗", () => {
-			// 试图删除根目录 /
 			const rootRes = approvalSuppressionReason(rmRfPolicy, true, "bash.rm-rf", "bash", { command: "rm -rf /" });
-			expect(rootRes).toBeNull(); // 熔断，强制弹窗！
+			expect(rootRes).toBeNull();
 
-			// 试图删除家目录 ~
 			const homeRes = approvalSuppressionReason(rmRfPolicy, true, "bash.rm-rf", "bash", { command: "rm -rf ~" });
 			expect(homeRes).toBeNull();
 
-			// 试图删除通配符 *
 			const starRes = approvalSuppressionReason(rmRfPolicy, true, "bash.rm-rf", "bash", { command: "rm -rf *" });
 			expect(starRes).toBeNull();
 		});

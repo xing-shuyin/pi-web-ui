@@ -120,7 +120,6 @@ export function CanvasToolbar({
 		align: "left",
 		onClose: () => setShowSquadMenu(false),
 	});
-	// 自动聚焦重命名输入框
 	useEffect(() => {
 		if (renamingGraph && renameInputRef.current) {
 			renameInputRef.current.focus();
@@ -128,7 +127,6 @@ export function CanvasToolbar({
 		}
 	}, [renamingGraph]);
 
-	// 自动聚焦新建输入框
 	useEffect(() => {
 		if (creatingGraph && createInputRef.current) {
 			createInputRef.current.focus();
@@ -162,7 +160,6 @@ export function CanvasToolbar({
 
 	return (
 		<div className="canvas-toolbar">
-			{/* 工程管理区 */}
 			<div className="canvas-toolbar-group">
 				<FiFolder className="canvas-toolbar-icon" />
 
@@ -304,7 +301,6 @@ export function CanvasToolbar({
 
 			<div className="canvas-toolbar-divider" />
 
-			{/* 通用节点库 + 预设战队 */}
 			<div className="canvas-toolbar-group">
 				<button
 					type="button"
@@ -445,7 +441,6 @@ export function CanvasToolbar({
 
 			<div className="canvas-toolbar-divider" />
 
-			{/* 全图调度控制 */}
 			<div className="canvas-toolbar-group">
 				{graph.status === "running" ? (
 					<button
@@ -520,7 +515,6 @@ export function CanvasToolbar({
 
 			<div className="canvas-toolbar-divider" />
 
-			{/* 视口缩放与居中控制 */}
 			<div className="canvas-toolbar-group">
 				<button
 					type="button"

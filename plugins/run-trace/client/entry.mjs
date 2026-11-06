@@ -1,13 +1,3 @@
-/**
- * run-trace 客户端视图 v2 —— 类 harness 轨迹分析。
- *
- * 顶部横向泳道时间轴（输入/模型/工具）看全貌，
- * 左列分段列表定位，右列详情做分析（概述/预览/原始内容/来源），
- * 而不只是把对话内容再看一遍。
- *
- * 约定：ESM 默认导出 { mount(container, ctx) → cleanup? }，纯 DOM 无依赖。
- */
-
 const LANE_FILTER = { input: "input", model: "model", tools: "tools" };
 
 const I18N = {
@@ -40,11 +30,29 @@ const I18N = {
 		tabs: { overview: "概述", preview: "预览", raw: "原始内容", source: "来源" },
 		status: { done: "已完成", running: "执行中", error: "失败" },
 		f: {
-			source: "来源", status: "状态", dur: "时长", turn: "轮次", len: "长度", pos: "位置",
-			total: "总时长", turns: "轮数", segs: "分段", toolCalls: "工具调用", toolErr: "工具失败",
-			toolTime: "工具耗时", slowest: "最慢工具", files: "文件改动", phase: "阶段分布",
-			calls: "累计调用", avg: "平均", errRate: "失败率", share: "耗时占比",
-			msgKey: "消息", toolCall: "调用", conv: "对话", time: "时间",
+			source: "来源",
+			status: "状态",
+			dur: "时长",
+			turn: "轮次",
+			len: "长度",
+			pos: "位置",
+			total: "总时长",
+			turns: "轮数",
+			segs: "分段",
+			toolCalls: "工具调用",
+			toolErr: "工具失败",
+			toolTime: "工具耗时",
+			slowest: "最慢工具",
+			files: "文件改动",
+			phase: "阶段分布",
+			calls: "累计调用",
+			avg: "平均",
+			errRate: "失败率",
+			share: "耗时占比",
+			msgKey: "消息",
+			toolCall: "调用",
+			conv: "对话",
+			time: "时间",
 		},
 	},
 	en: {
@@ -76,11 +84,29 @@ const I18N = {
 		tabs: { overview: "Overview", preview: "Preview", raw: "Raw", source: "Source" },
 		status: { done: "Done", running: "Running", error: "Failed" },
 		f: {
-			source: "Source", status: "Status", dur: "Duration", turn: "Turn", len: "Length", pos: "Position",
-			total: "Total", turns: "Turns", segs: "Segments", toolCalls: "Tool calls", toolErr: "Tool errors",
-			toolTime: "Tool time", slowest: "Slowest tools", files: "Files changed", phase: "Phases",
-			calls: "Calls", avg: "Avg", errRate: "Error rate", share: "Time share",
-			msgKey: "Message", toolCall: "Call", conv: "Conversation", time: "Time",
+			source: "Source",
+			status: "Status",
+			dur: "Duration",
+			turn: "Turn",
+			len: "Length",
+			pos: "Position",
+			total: "Total",
+			turns: "Turns",
+			segs: "Segments",
+			toolCalls: "Tool calls",
+			toolErr: "Tool errors",
+			toolTime: "Tool time",
+			slowest: "Slowest tools",
+			files: "Files changed",
+			phase: "Phases",
+			calls: "Calls",
+			avg: "Avg",
+			errRate: "Error rate",
+			share: "Time share",
+			msgKey: "Message",
+			toolCall: "Call",
+			conv: "Conversation",
+			time: "Time",
 		},
 	},
 };
@@ -88,7 +114,11 @@ const I18N = {
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 function fmtClock(t) {
-	try { return new Date(t).toLocaleTimeString(); } catch { return ""; }
+	try {
+		return new Date(t).toLocaleTimeString();
+	} catch {
+		return "";
+	}
 }
 function fmtDur(ms) {
 	if (ms === undefined || ms === null) return "—";
@@ -108,12 +138,37 @@ function chipFor(seg, lang) {
 	return seg.kind;
 }
 
-/* 工具配色：常用工具固定色（读=青、写=琥珀、bash=紫），其余按名哈希进调色板——同一工具永远同色。 */
-const TOOL_PALETTE = ["#3b82f6", "#22c55e", "#ec4899", "#06b6d4", "#f97316", "#84cc16", "#818cf8", "#fb7185", "#eab308", "#14b8a6"];
+const TOOL_PALETTE = [
+	"#3b82f6",
+	"#22c55e",
+	"#ec4899",
+	"#06b6d4",
+	"#f97316",
+	"#84cc16",
+	"#818cf8",
+	"#fb7185",
+	"#eab308",
+	"#14b8a6",
+];
 const TOOL_FIXED = {
-	read: "#2dd4bf", get: "#2dd4bf", list: "#2dd4bf", glob: "#2dd4bf", grep: "#2dd4bf",
-	search: "#2dd4bf", fetch: "#2dd4bf", cat: "#2dd4bf", show: "#2dd4bf", query: "#2dd4bf",
-	edit: "#f59e0b", write: "#f59e0b", patch: "#f59e0b", apply: "#f59e0b", create: "#f59e0b", save: "#f59e0b", move: "#f59e0b", rename: "#f59e0b",
+	read: "#2dd4bf",
+	get: "#2dd4bf",
+	list: "#2dd4bf",
+	glob: "#2dd4bf",
+	grep: "#2dd4bf",
+	search: "#2dd4bf",
+	fetch: "#2dd4bf",
+	cat: "#2dd4bf",
+	show: "#2dd4bf",
+	query: "#2dd4bf",
+	edit: "#f59e0b",
+	write: "#f59e0b",
+	patch: "#f59e0b",
+	apply: "#f59e0b",
+	create: "#f59e0b",
+	save: "#f59e0b",
+	move: "#f59e0b",
+	rename: "#f59e0b",
 	bash: "#a78bfa",
 };
 function toolColor(name) {
@@ -124,7 +179,6 @@ function toolColor(name) {
 	return TOOL_PALETTE[Math.abs(h) % TOOL_PALETTE.length];
 }
 
-/* 模型泳道内部分色：思考=浅天蓝，回答=正蓝（失败仍标红优先）。 */
 const MODEL_COLORS = { thinking: "#38bdf8", text: "#3b82f6" };
 function laneColor(seg) {
 	if (seg.status === "error") return "#f87171";
@@ -139,19 +193,18 @@ export default {
 		const t = () => I18N[lang];
 		let convs = [];
 		let activeId = null;
-		let lastActiveId = null; // 上次见到的服务端 active：只在它变化时跟随，避免看历史时被拽走
+		let lastActiveId = null;
 		let selectedConvId = null;
-		const segsCache = new Map(); // convId → light segs
-		const detailCache = new Map(); // `${convId}\n${key}` → { detail, seg, analysis }
+		const segsCache = new Map();
+		const detailCache = new Map();
 		const pendingSeg = new Set();
 		let selectedKey = null;
-		let pendingScroll = null; // selectSeg(scroll:true) 置位，下一帧渲染后把对应行滚进视野
+		let pendingScroll = null;
 		let detailTab = "overview";
 		let search = "";
 		const filters = { input: true, model: true, tools: true };
 		const replay = { on: false, idx: 0, playing: false, speed: 1, skipIdle: true, raf: 0, basePos: 0, baseClock: 0 };
 		let raf = 0;
-		// vis-timeline 专业时间轴状态（懒加载 vendor，失败回退手写 div）
 		let visApi = null;
 		let visPromise = null;
 		let tl = null;
@@ -168,8 +221,8 @@ export default {
 			if (!visPromise) {
 				visPromise = (async () => {
 					try {
-						const mod = await import("./vendor/vis-timeline.bundle.mjs").catch(() =>
-							import("https://esm.sh/vis-timeline@8.5.4/standalone/esm/vis-timeline-graph2d.min.mjs"),
+						const mod = await import("./vendor/vis-timeline.bundle.mjs").catch(
+							() => import("https://esm.sh/vis-timeline@8.5.4/standalone/esm/vis-timeline-graph2d.min.mjs"),
 						);
 						injectVisCss();
 						return { Timeline: mod.Timeline, DataSet: mod.DataSet };
@@ -186,15 +239,13 @@ export default {
 
 		function injectVisCss() {
 			try {
-				if (document.querySelector('link[data-rtr-vis]')) return;
+				if (document.querySelector("link[data-rtr-vis]")) return;
 				const link = document.createElement("link");
 				link.rel = "stylesheet";
 				link.dataset.rtrVis = "1";
 				link.href = new URL("./vendor/vis-timeline.css", import.meta.url).href;
 				document.head.appendChild(link);
-			} catch {
-				/* CDN 回退时无自带样式，靠内置覆盖照常可用 */
-			}
+			} catch {}
 		}
 
 		function tlDom() {
@@ -360,10 +411,17 @@ export default {
 </div>`;
 
 		const $ = (s) => container.querySelector(s);
-		const hdTitle = $(".t-title"), hdLive = $(".rtr-live"), qEl = $(".q");
-		const replayBtn = $(".act-replay"), langBtn = $(".act-lang"), clearBtn = $(".act-clear");
-		const convsEl = $(".rtr-convs"), rulerEl = $(".rtr-ruler"), replayBar = $(".rtr-replaybar");
-		const listEl = $(".rtr-list"), detailEl = $(".rtr-detail");
+		const hdTitle = $(".t-title"),
+			hdLive = $(".rtr-live"),
+			qEl = $(".q");
+		const replayBtn = $(".act-replay"),
+			langBtn = $(".act-lang"),
+			clearBtn = $(".act-clear");
+		const convsEl = $(".rtr-convs"),
+			rulerEl = $(".rtr-ruler"),
+			replayBar = $(".rtr-replaybar");
+		const listEl = $(".rtr-list"),
+			detailEl = $(".rtr-detail");
 
 		function applyLang() {
 			const L = t();
@@ -376,13 +434,18 @@ export default {
 			clearBtn.textContent = `🗑 ${L.clear}`;
 		}
 
-		function convOf(id) { return convs.find((c) => c.id === id); }
-		function allSegs() { return segsCache.get(selectedConvId ?? "") ?? []; }
+		function convOf(id) {
+			return convs.find((c) => c.id === id);
+		}
+		function allSegs() {
+			return segsCache.get(selectedConvId ?? "") ?? [];
+		}
 		function visibleSegs() {
 			const q = search.trim().toLowerCase();
 			return allSegs().filter((s) => {
 				if (!filters[s.lane]) return false;
-				if (q && !`${s.title}\n${s.summary}\n${s.source}\n${s.meta?.tool ?? ""}`.toLowerCase().includes(q)) return false;
+				if (q && !`${s.title}\n${s.summary}\n${s.source}\n${s.meta?.tool ?? ""}`.toLowerCase().includes(q))
+					return false;
 				return true;
 			});
 		}
@@ -394,7 +457,10 @@ export default {
 				return;
 			}
 			convsEl.innerHTML = convs
-				.map((c) => `<button class="rtr-conv${c.id === selectedConvId ? " sel" : ""}" data-id="${esc(c.id)}">${c.id === activeId ? `<span class="cur">●</span> ` : ""}${esc(c.title || L.empty)}${c.isStreaming ? " ⏳" : ""}</button>`)
+				.map(
+					(c) =>
+						`<button class="rtr-conv${c.id === selectedConvId ? " sel" : ""}" data-id="${esc(c.id)}">${c.id === activeId ? `<span class="cur">●</span> ` : ""}${esc(c.title || L.empty)}${c.isStreaming ? " ⏳" : ""}</button>`,
+				)
 				.join("");
 		}
 
@@ -411,9 +477,7 @@ export default {
 			}
 			const body = rulerEl.querySelector(".rtr-tlbody");
 			const all = visibleSegs();
-			void ensureVis(); // 后台加载专业时间轴，备好后自动重渲
-			// 容器不可见（宽高为 0，如视图切出/面板折叠）时不建轴——vis 会量到 0 高画瘪；
-			// 先画手写占位，显现后由 ResizeObserver 触发重建，自愈。
+			void ensureVis();
 			const sized = !!body && body.clientWidth > 0 && body.clientHeight > 0;
 			if (!visApi || !selectedConvId || !all.length || !sized) {
 				if (tl) destroyTl();
@@ -451,7 +515,6 @@ export default {
 					if (suppressSelect) return;
 					const id = props.items?.[0];
 					if (id === undefined) {
-						// 点空白处：取消选中，回整对话分析。
 						if (selectedKey) {
 							selectedKey = null;
 							scheduleRender(false);
@@ -461,11 +524,8 @@ export default {
 					selectSeg(String(id), { scroll: true });
 				});
 				tl.on("rangechange", (props) => {
-					// 缩放/平移进行中：按新窗口实时换算保底宽（rAF 节流），块始终贴合刻度。
 					scheduleEpsSync();
 					if (!props?.byUser) return;
-					// 区分用户缩放（跨度变了 → 保持跟随，按新缩放级别重新锚定「现在」）
-					// 与拖拽平移（跨度没变 → 暂停跟随，否则每帧被拽回右边，体验更差）。
 					const w = flowWin();
 					if (!w) return;
 					const zoomed = flowSpanSeen > 0 && Math.abs(w.span - flowSpanSeen) > Math.max(1, flowSpanSeen * 0.002);
@@ -480,7 +540,7 @@ export default {
 					if (props.byUser) userZoomed = true;
 					hideTip();
 					scheduleEpsSync();
-					if (replay.on) refreshPlayhead(false); // 缩放/平移后播放头对齐新窗口
+					if (replay.on) refreshPlayhead(false);
 				});
 				tl.on("itemover", (props) => {
 					if (props.item !== undefined && props.event) showTip(String(props.item), props.event);
@@ -490,8 +550,6 @@ export default {
 				userZoomed = false;
 				followEnabled = true;
 				try {
-					// 初始总览自动聚焦活跃段：把轮次间长空闲裁掉，真正干活的时间填满视口；
-					// 活动分散时回退全量。fit 按钮仍是“看全部”。
 					const aw = activeWindow(all);
 					if (aw) {
 						const pad = Math.max(0, (aw.end - aw.start) * 0.02);
@@ -504,13 +562,10 @@ export default {
 						tl.fit({ animation: false });
 					} catch {}
 				}
-				// 建轴即按当前窗口算保底宽，瞬时窄条第一帧就贴合刻度（不再有 1.5s 假宽）。
 				scheduleEpsSync();
 				flowMeasure();
 				flowSpanSeen = flowWin()?.span ?? 0;
-				// 正在运行的对话：进入流动模式（「现在」锚在绘图区右侧 40px，之后随时间平滑向左流）。
 				flowSync();
-				// 建轴瞬间若布局还在抖动（如刚显现），下一帧重排一次兜底。
 				requestAnimationFrame(() => {
 					try {
 						if (tl && tlConv === selectedConvId) tl.redraw();
@@ -522,19 +577,17 @@ export default {
 					tlItems.clear();
 					tlItems.add(visItems(all));
 				} catch {}
-				// 实时增量：需要时进入/维持流动模式（窗口由逐帧循环推进）；
-				// 用户手动看历史（跟随关）时不碰窗口——毫秒级缩放也不会被拽回。
 				flowSync();
 			}
 			try {
 				suppressSelect = true;
 				tl.setSelection(selectedKey ? [selectedKey] : []);
-			} catch {} finally {
+			} catch {
+			} finally {
 				suppressSelect = false;
 			}
 		}
 
-		/** 即时浮层（itemover 当帧展示，无原生 title 的延迟；离开/缩放即藏）。 */
 		function showTip(key, ev) {
 			const s = allSegs().find((x) => x.key === key);
 			if (!s) return;
@@ -557,14 +610,12 @@ export default {
 			container.querySelector(".rtr-tip")?.remove();
 		}
 
-		/** 保底可见宽度（px）。真实时长比它还短的事件只在显示层拉宽到该尺寸，
-		 *  拉宽量按当前缩放窗口换算——屏幕上最多多出 MIN_SLIVER_PX 像素，
-		 *  不再像旧的固定 1.5s/0.5% 那样在刻度上谎报时长。 */
 		const MIN_SLIVER_PX = 2;
 
 		function spanMs(all) {
 			if (!all.length) return 1;
-			let min = Infinity, max = -Infinity;
+			let min = Infinity,
+				max = -Infinity;
 			for (const s of all) {
 				if (s.t < min) min = s.t;
 				const e = Math.max(s.end ?? s.t, s.t);
@@ -573,7 +624,6 @@ export default {
 			return Math.max(1, max - min);
 		}
 
-		/** 时间轴实际画条目的区域宽度（px）：扣除左侧泳道标签列。 */
 		function tlDrawWidth() {
 			try {
 				const w = tlDom().clientWidth || 800;
@@ -584,7 +634,6 @@ export default {
 			}
 		}
 
-		/** 当前缩放窗口下 MIN_SLIVER_PX 像素对应的毫秒数（0 = 窗口未知，调用方兜底）。 */
 		function currentEps() {
 			try {
 				if (!tl) return 0;
@@ -599,14 +648,11 @@ export default {
 			}
 		}
 
-		/** 数据段没变、只变了缩放窗口/时间流逝时，同步各条目右端：
-		 *  瞬时窄条随缩放伸缩（放大收敛回真实时长）、执行中段右端随 now 推进。 */
 		function syncDisplayEnds() {
 			try {
 				if (!tlItems || !tl) return;
 				const eps = currentEps();
 				const now = Date.now();
-				// 抖动阀值：小于 0.25px 的差异不值得触发一次 vis 重绘（逐帧调用时能省下大量重排）。
 				const thr = Math.max(0.5, eps / 8);
 				const upd = [];
 				for (const s of visibleSegs()) {
@@ -618,9 +664,7 @@ export default {
 					if (Math.abs(curMs - want) > thr) upd.push({ id: s.key, end: new Date(want) });
 				}
 				if (upd.length) tlItems.update(upd);
-			} catch {
-				/* 缩放中间态兜底 */
-			}
+			} catch {}
 		}
 
 		let epsRaf = 0;
@@ -632,49 +676,39 @@ export default {
 			});
 		}
 
-		/** 当前选中对话是否正在运行（流式中或有执行中分段）。 */
 		function isLiveConv() {
 			const c = convOf(selectedConvId ?? "");
 			if (c?.isStreaming) return true;
 			return visibleSegs().some((s) => s.status === "running");
 		}
 
-		/** 最新时刻：各段最大结束时刻，运行时延伸到 now（执行中段右端在生长）。 */
-
-		/* ===================== 跟随（实时流动）模式 =====================
-		 * 目标：色块从右往左「平滑流动」，而时间刻度线一动不动。
-		 *
-		 * 时间轴锚定「现在」—— now 恒定落在绘图区右侧 FOLLOW_MARGIN_PX 处。
-		 * 推进拆成两段，互不干扰：
-		 *   ① vis 窗口（提交式）：累计位移超过 FLOW_COMMIT_PX 才 setWindow 一次（vis 需要重排条目）；
-		 *   ② CSS transform（逐帧）：对 .vis-itemset 逐帧 translateX(-shift) 做亚像素连续位移；
-		 *      提交时 transform 归零、窗口同步前移等量时间——两者抵消，肉眼完全连续（不再一秒一跳）。
-		 * 刻度尺由插件自绘在 .rtr-flowgrid（屏幕位置固定，数值随时间滚动）；
-		 * 流动期间隐藏 vis 自带轴/网格，所以刻度线永远不动。
-		 * 执行中的色块只靠 syncDisplayEnds 逐帧把 end 推到 now，天然钉在「现在」线上。
-		 */
 		const FOLLOW_MARGIN_PX = 40;
-		const FLOW_COMMIT_PX = 90; // 累计位移超过它就提交窗口（越大越省，但要留在 vis 可见带内）
-		const TICK_TARGET_PX = 110; // 每个刻度目标像素间隔
-		const TICK_LADDER = [1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000, 7200000, 21600000, 43200000, 86400000];
+		const FLOW_COMMIT_PX = 90;
+		const TICK_TARGET_PX = 110;
+		const TICK_LADDER = [
+			1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000, 7200000, 21600000,
+			43200000, 86400000,
+		];
 		let flowing = false;
 		let flowRaf = 0;
-		let flowShift = 0; // 当前 CSS 位移 px（>0 = 内容已左移）
-		let flowWrap = null; // .vis-itemset（唯一被 transform 的容器）
-		let flowGrid = null; // 自绘刻度层
-		let flowGeom = null; // { left, width, axisH }：绘图区在 .rtr-tlbody 内的几何
-		let flowTicks = []; // [{ line, label, x }]
-		let flowStep = 0; // 当前刻度步长（ms）
-		let flowSig = ""; // 刻度层几何签名（变了才重建 DOM）
-		let flowPaintSec = -1; // 上次刷刻度数值的秒
-		let flowSpanSeen = 0; // 上次见到的窗口跨度（用于区分用户缩放 vs 平移）
+		let flowShift = 0;
+		let flowWrap = null;
+		let flowGrid = null;
+		let flowGeom = null;
+		let flowTicks = [];
+		let flowStep = 0;
+		let flowSig = "";
+		let flowPaintSec = -1;
+		let flowSpanSeen = 0;
 
 		function fmtTick(t, withSec) {
-			const d = new Date(t), p = (n) => String(n).padStart(2, "0");
-			return withSec ? `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` : `${p(d.getHours())}:${p(d.getMinutes())}`;
+			const d = new Date(t),
+				p = (n) => String(n).padStart(2, "0");
+			return withSec
+				? `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+				: `${p(d.getHours())}:${p(d.getMinutes())}`;
 		}
 
-		/** 当前时间窗口（ms）。 */
 		function flowWin() {
 			try {
 				const w = tl?.getWindow?.();
@@ -688,12 +722,10 @@ export default {
 			}
 		}
 
-		/** 是否应当处于「实时流动」：跟随开 + 非回放 + 当前对话在跑 + 时间轴已建好。 */
 		function flowLive() {
 			return !!tl && followEnabled && !replay.on && tlConv === selectedConvId && isLiveConv();
 		}
 
-		/** 量绘图区在 .rtr-tlbody 内的位置与尺寸（只在建轴/尺寸变化时调，避免每帧强制布局）。 */
 		function flowMeasure() {
 			const tlbody = rulerEl.querySelector(".rtr-tlbody");
 			const content = tlDom().querySelector(".vis-panel.vis-center .vis-content");
@@ -709,14 +741,14 @@ export default {
 		const flowX = (ms, win, width) => ((ms - win.a) / win.span) * width;
 		const flowTimeAt = (x, win, width) => win.a + (x / width) * win.span;
 
-		/** 重建刻度尺 DOM：位置固定（只跟窗口跨度/绘图区尺寸有关），数值交给 flowPaint。 */
 		function flowBuild(win, geom) {
 			const tlbody = rulerEl.querySelector(".rtr-tlbody");
 			if (!tlbody) return;
 			if (!flowGrid || flowGrid.parentNode !== tlbody) {
 				flowGrid = document.createElement("div");
 				flowGrid.className = "rtr-flowgrid";
-				flowGrid.innerHTML = '<div class="rtr-fgtop"></div><div class="rtr-fgcols"></div><div class="rtr-fgnow"><u></u></div>';
+				flowGrid.innerHTML =
+					'<div class="rtr-fgtop"></div><div class="rtr-fgcols"></div><div class="rtr-fgnow"><u></u></div>';
 				tlbody.appendChild(flowGrid);
 			}
 			const top = flowGrid.querySelector(".rtr-fgtop");
@@ -746,41 +778,33 @@ export default {
 				const el = flowTicks[i];
 				el.x = x;
 				el.line.style.left = `${x.toFixed(2)}px`;
-				// 末尾那根标签会被右缘截断（还会与「现在」章重影）→ 直接不显示文字
 				el.label.style.left = `${(x + 4).toFixed(2)}px`;
 				el.tight = x > geom.width - 46;
 			}
-			flowPaintSec = -1; // 尺寸/步长变了 → 强制刷一次数值
+			flowPaintSec = -1;
 		}
 
-		/** 刻度数值：线不动，数值随时间滚动（每秒刷一次就够）。 */
 		function flowPaint(win, geom, now) {
 			const sec = Math.floor(now / 1000);
 			if (sec === flowPaintSec) return;
 			flowPaintSec = sec;
 			const withSec = flowStep < 60000;
-			for (const tk of flowTicks) tk.label.textContent = tk.tight ? "" : fmtTick(flowTimeAt(tk.x + flowShift, win, geom.width), withSec);
+			for (const tk of flowTicks)
+				tk.label.textContent = tk.tight ? "" : fmtTick(flowTimeAt(tk.x + flowShift, win, geom.width), withSec);
 			const u = flowGrid?.querySelector(".rtr-fgnow u");
 			if (u) u.textContent = fmtTick(now, true);
 		}
 
-		/** 把亚像素位移「提交」进 vis 窗口：窗口前移等量时间 + 同步重绘，视觉完全连续。
-		 *  vis 只在「整体重绘」时重算条目 X（rangechange 触发的重绘会被节流丢弃，
-		 *  实测条目位置会滞后约 1s 才跳一次）——同步触发一次完整重绘，
-		 *  让「条目重排」与「transform 归零」发生在同一帧，肉眼才真正连续。 */
 		function flowAbsorb(win, width, shift) {
 			const a2 = win.a + (shift * win.span) / width;
 			tl.setWindow(a2, a2 + win.span, { animation: false });
 			try {
 				if (typeof tl._origRedraw === "function") tl._origRedraw();
 				else tl.redraw();
-			} catch {
-				/* 内部 API 缺失时退化为下一帧重绘（可能有一帧小跳） */
-			}
+			} catch {}
 			return flowWin() ?? win;
 		}
 
-		/** 一帧：逐帧位移（+ 必要时提交窗口）。 */
 		function flowTick() {
 			flowRaf = 0;
 			if (!flowing) return;
@@ -799,7 +823,6 @@ export default {
 				}
 				flowShift = shift;
 				if (flowWrap) flowWrap.style.transform = Math.abs(shift) < 0.01 ? "" : `translateX(${(-shift).toFixed(2)}px)`;
-				// 执行中色块：数据层把右端推到 now（vis 自己重绘），配合上面的位移天然钉在「现在」线上。
 				syncDisplayEnds();
 				const sig = `${geom.left}|${geom.width}|${geom.axisH}|${win.span}`;
 				if (sig !== flowSig) {
@@ -807,12 +830,9 @@ export default {
 					flowBuild(win, geom);
 				}
 				flowPaint(win, geom, now);
-			} catch {
-				/* 窗口中间态兜底 */
-			}
+			} catch {}
 		}
 
-		/** 进入/退出流动模式（幂等）。 */
 		function flowSync() {
 			const live = flowLive();
 			if (live) flowMeasure();
@@ -832,16 +852,13 @@ export default {
 			}
 		}
 
-		/** 退出流动模式：把残留位移提交进窗口，内容不会跳。 */
 		function flowStop() {
 			try {
 				if (tl && flowGeom && Math.abs(flowShift) > 0.5) {
 					const win = flowWin();
 					if (win) flowAbsorb(win, flowGeom.width, flowShift);
 				}
-			} catch {
-				/* 轴已销毁等 */
-			}
+			} catch {}
 			flowing = false;
 			if (flowRaf) cancelAnimationFrame(flowRaf);
 			flowRaf = 0;
@@ -859,11 +876,6 @@ export default {
 			if (hintEl) hintEl.textContent = t().zoomHint;
 		}
 
-		/** 初始总览的“活跃窗口”：把轮次间的长空闲裁掉，只把真正干活的时间填满视口。
-		 *  返回 {start,end}(ms)；无可裁 / 活动分散到不该只露一小截时返回 null（调用方回退全量 fit）。
-		 *  规则：① 间隔 > 空闲阈值（默认 90s，且不超过总跨度 40%）即视为“没在干活”，聚成簇；
-		 *  ② 单簇 = 一次连续干活 → 直接裁掉前后空闲；③ 多簇 → 只当跨度最大的一簇显著占据
-		 *  总跨度（≥40%）才聚焦它（典型：一次主跑 + 零散跟进），否则保持全量总览。 */
 		function activeWindow(all) {
 			if (!all.length) return null;
 			const ivs = all.map((s) => [s.t, Math.max(s.end ?? s.t, s.t)]).sort((a, b) => a[0] - b[0]);
@@ -906,22 +918,15 @@ export default {
 			return bl >= span * 0.4 ? { start: best[0], end: best[1] } : null;
 		}
 
-		/** vis-timeline 条目（全 range：瞬时事件也画成窄条——box 型会被 vis 拆成
-		 *  dot/line/box 三元素，只有 box 绑选中事件，点圆点经常选不中/串选；
-		 *  统一 range 后所见即所得）。start/end 与时间轴刻度严格对齐：真实时长
-		 *  ≥ 保底时原样画（顺带消除了旧版假宽导致的“串行事件互相叠行”）；
-		 *  真实时长 < 当前缩放下 MIN_SLIVER_PX 才拉宽到保底（纯显示层，不改数据）。 */
 		function visItems(all) {
 			const eps = currentEps() || Math.max(1, spanMs(all) * 0.0001);
 			const now = Date.now();
 			return all.map((s) => {
 				const startMs = s.t;
 				const realEnd = Math.max(s.end ?? startMs, startMs);
-				// 显示层右端 = max(真实结束时刻, 开始 + 保底宽)；执行中无结束时刻 → 至少保底 + 延伸到现在。
 				const endMs = s.status === "running" ? Math.max(now, startMs + eps) : Math.max(realEnd, startMs + eps);
 				const err = s.status === "error";
 				const cls = `lane-${s.lane}${err ? " st-error" : ""}${s.status === "running" ? " st-running" : ""}`;
-				// 按泳道/类型着色（失败仍标红）；内联 style 覆盖泳道底色。
 				const color = laneColor(s);
 				const style = color ? `background-color:${color};border-color:${color};` : undefined;
 				return {
@@ -937,13 +942,15 @@ export default {
 			});
 		}
 
-		/** 专业库缺席时的手写时间轴（离线无 vendor 且 CDN 不可达时兜底）。 */
 		function renderRulerFallback(body, all) {
 			const L = t();
 			if (tl) destroyTl();
 			if (!selectedConvId || !all.length) {
 				body.innerHTML = ["input", "model", "tools"]
-					.map((ln) => `<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track"></div></div>`)
+					.map(
+						(ln) =>
+							`<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track"></div></div>`,
+					)
 					.join("");
 				body._vis = null;
 				return;
@@ -952,29 +959,29 @@ export default {
 			const maxT = Math.max(...all.map((s) => Math.max(s.end ?? s.t, s.t)));
 			const span = Math.max(1, maxT - minT);
 			const total = all[all.length - 1] ? fmtDur(maxT - minT) : "";
-			// 手写轴同样像素级保底（≈MIN_SLIVER_PX 随容器宽度换算），不歪曲刻度。
 			const pxW = body.clientWidth;
 			const minSpanMs = pxW > 0 ? span * (MIN_SLIVER_PX / pxW) : 0;
 			const lanes = ["input", "model", "tools"];
 			body.innerHTML = `
 <div class="rtr-axis"><span>${esc(fmtClock(minT))}</span><span>${esc(total)}</span><span>${esc(fmtClock(maxT))}</span></div>
 ${lanes
-					.map((ln) => {
-						const blocks = all
-							.map((s, i) => ({ s, i }))
-							.filter(({ s }) => s.lane === ln);
-						return `<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track">${blocks
-							.map(({ s, i }) => {
-								const left = ((s.t - minT) / span) * 100;
-								const realEnd = Math.max(s.end ?? s.t, s.t);
-								const end = s.status === "running" && minSpanMs > 0 ? Math.max(Date.now(), s.t + minSpanMs) : Math.max(realEnd, s.t + minSpanMs);
-								const width = ((end - s.t) / span) * 100;
-								const color = laneColor(s);
-								return `<span class="rtr-blk lane-${ln}${s.status === "error" ? " st-error" : ""}${s.status === "running" ? " st-running" : ""}${s.key === selectedKey ? " sel" : ""}" data-i="${i}" title="${esc(s.title)}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%${color ? `;background-color:${color};border-color:${color}` : ""}"></span>`;
-							})
-							.join("")}</div></div>`;
-					})
-					.join("")}`;
+	.map((ln) => {
+		const blocks = all.map((s, i) => ({ s, i })).filter(({ s }) => s.lane === ln);
+		return `<div class="rtr-lane"><span class="ln">${esc(L.lanes[ln])}</span><div class="rtr-track">${blocks
+			.map(({ s, i }) => {
+				const left = ((s.t - minT) / span) * 100;
+				const realEnd = Math.max(s.end ?? s.t, s.t);
+				const end =
+					s.status === "running" && minSpanMs > 0
+						? Math.max(Date.now(), s.t + minSpanMs)
+						: Math.max(realEnd, s.t + minSpanMs);
+				const width = ((end - s.t) / span) * 100;
+				const color = laneColor(s);
+				return `<span class="rtr-blk lane-${ln}${s.status === "error" ? " st-error" : ""}${s.status === "running" ? " st-running" : ""}${s.key === selectedKey ? " sel" : ""}" data-i="${i}" title="${esc(s.title)}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%${color ? `;background-color:${color};border-color:${color}` : ""}"></span>`;
+			})
+			.join("")}</div></div>`;
+	})
+	.join("")}`;
 			body._vis = all;
 		}
 
@@ -992,17 +999,24 @@ ${lanes
 			const shown = replay.on ? all.slice(0, replay.idx + 1) : all;
 			listEl.innerHTML = shown
 				.map((s) => {
-					const tc = s.status === "error" ? null : s.kind === "tool" ? toolColor(s.meta?.tool ?? "tool") : (s.kind === "thinking" || s.kind === "text") ? MODEL_COLORS[s.kind] : null;
+					const tc =
+						s.status === "error"
+							? null
+							: s.kind === "tool"
+								? toolColor(s.meta?.tool ?? "tool")
+								: s.kind === "thinking" || s.kind === "text"
+									? MODEL_COLORS[s.kind]
+									: null;
 					return `<button class="rtr-row${s.key === selectedKey ? " sel" : ""}${s.status === "error" ? " err" : ""}" data-key="${esc(s.key)}">
 <span class="rtr-chip"${tc ? ` style="border-color:${tc};color:${tc}"` : ""}>${esc(chipFor(s, lang))}</span>
 <span class="tt">${esc(s.title)}</span>
 <time>${esc(fmtClock(s.t))}${s.dur !== undefined ? ` · ${esc(fmtDur(s.dur))}` : ""}</time>
 </button>`;
-				}).join("");
+				})
+				.join("");
 			renderReplayBar(all);
 		}
 
-		/** 工具图例：当前视图出现的工具 × 颜色（与时间轴色块同色）。 */
 		function renderLegend() {
 			const el = rulerEl.querySelector(".rtr-legend");
 			if (!el) return;
@@ -1040,16 +1054,18 @@ ${lanes
 <label class="skip"><input type="checkbox" class="skipcb"${replay.skipIdle ? " checked" : ""} /> ${esc(L.skipIdle)}</label>`;
 		}
 
-		function kvRow(k, v) { return `<dt>${esc(k)}</dt><dd>${v}</dd>`; }
+		function kvRow(k, v) {
+			return `<dt>${esc(k)}</dt><dd>${v}</dd>`;
+		}
 
 		function renderDetail() {
-			const L = t(), F = L.f;
+			const L = t(),
+				F = L.f;
 			const c = convOf(selectedConvId ?? "");
 			const all = visibleSegs();
 			const seg = allSegs().find((s) => s.key === selectedKey) ?? null;
 			const cached = seg ? detailCache.get(`${selectedConvId}\n${seg.key}`) : null;
 
-			// 无选中 → 对话级分析
 			if (!seg || !c) {
 				if (!c?.analysis) {
 					detailEl.innerHTML = `<div class="rtr-empty">${esc(c ? L.selectHint : L.emptyHint)}</div>`;
@@ -1066,13 +1082,24 @@ ${kvRow(F.files, esc(a.filesChanged.length ? `${a.filesChanged.length} 个` : "�
 </dl>
 <div class="rtr-sec">${esc(F.phase)} · 💬${a.counts.text} 💭${a.counts.thinking} 🔧${a.counts.tool} 📝${a.counts.file} 👤${a.counts.user}</div>
 <div class="rtr-sec">${esc(F.slowest)}</div>
-${a.tools.slice(0, 5).map((x) => `<div style="font-size:12px">${esc(x.name)} · ${x.calls}× · ${esc(fmtDur(x.ms))}${x.errs ? ` · ❌${x.errs}` : ""}</div><div class="rtr-bar"><i style="width:${((x.ms / maxMs) * 100).toFixed(1)}%"></i></div>`).join("") || `<div style="opacity:.6;font-size:12px">—</div>`}
+${
+	a.tools
+		.slice(0, 5)
+		.map(
+			(x) =>
+				`<div style="font-size:12px">${esc(x.name)} · ${x.calls}× · ${esc(fmtDur(x.ms))}${x.errs ? ` · ❌${x.errs}` : ""}</div><div class="rtr-bar"><i style="width:${((x.ms / maxMs) * 100).toFixed(1)}%"></i></div>`,
+		)
+		.join("") || `<div style="opacity:.6;font-size:12px">—</div>`
+}
 ${a.filesChanged.length ? `<div class="rtr-sec">${esc(F.files)}</div><pre>${esc(a.filesChanged.slice(0, 20).join("\n"))}</pre>` : ""}`;
 				return;
 			}
 
-			// 有选中 → 四 tab
-			const tabs = ["overview", "preview", "raw", "source"].map((k) => `<button class="rtr-dtab${detailTab === k ? " on" : ""}" data-tab="${k}">${esc(L.tabs[k])}</button>`).join("");
+			const tabs = ["overview", "preview", "raw", "source"]
+				.map(
+					(k) => `<button class="rtr-dtab${detailTab === k ? " on" : ""}" data-tab="${k}">${esc(L.tabs[k])}</button>`,
+				)
+				.join("");
 			let body = "";
 			if (!cached) {
 				body = `<div class="rtr-empty"><span class="rtr-spin">⏳</span> ${esc(L.loading)}</div>`;
@@ -1142,7 +1169,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 		function selectSeg(key, opts = {}) {
 			hideTip();
 			if (key === selectedKey && !opts.force) {
-				// 再次点击同一分段：取消选中，回整对话分析。
 				selectedKey = null;
 				scheduleRender(false);
 				return;
@@ -1161,10 +1187,7 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			scheduleRender();
 		}
 
-		// ---- 回放引擎（按真实时间推进，非定时切块） ----
-		/** 回放轨道：把各段按真实时长映射到播放轴坐标 [p0,p1)（毫秒）。
-		 *  跳过空闲时坐标只累计活跃时长（段与段首尾相接）；否则坐标即相对总窗口的真实偏移。 */
-		const REPLAY_PREFETCH = 12; // 播放时向后预取的分段数，保证短块推进时详情已就绪
+		const REPLAY_PREFETCH = 12;
 		function replayTrack() {
 			const all = visibleSegs();
 			if (!all.length) return { segs: [], totalLen: 0, realStart: 0, skipIdle: replay.skipIdle };
@@ -1175,7 +1198,10 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			if (!replay.skipIdle) {
 				return {
 					segs: segs.map((s) => ({ seg: s, p0: s.t - realStart, p1: Math.max(s.end ?? s.t, s.t) - realStart })),
-					totalLen: span, realStart, span, skipIdle: false,
+					totalLen: span,
+					realStart,
+					span,
+					skipIdle: false,
 				};
 			}
 			let acc = 0;
@@ -1186,10 +1212,12 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 					acc += dur;
 					return it;
 				}),
-				totalLen: Math.max(1, acc), realStart, span, skipIdle: true,
+				totalLen: Math.max(1, acc),
+				realStart,
+				span,
+				skipIdle: true,
 			};
 		}
-		/** 播放坐标 pos → 激活分段索引（时间上最近一个已开始、尚未结束的段；空闲中保持上一段）。 */
 		function activeIndexAt(track, pos) {
 			let idx = -1;
 			for (let i = 0; i < track.segs.length; i++) {
@@ -1198,19 +1226,15 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			}
 			return idx;
 		}
-		/** pos → 真实时间（ms）：含空闲时连续推进；跳过空闲则停在激活段左缘。 */
 		function realTimeAt(track, pos, idx) {
 			if (idx < 0) return track.realStart + pos;
 			if (!track.skipIdle) return track.realStart + pos;
-			// 跳过空闲：播放头在激活段内沿其真实时长连续推进，越过空闲时才跳到下一段起点——
-			// 不是块间跳变，而是每个块里连续扫描，时间线“一直在走”。
 			return track.segs[idx].seg.t + Math.max(0, pos - track.segs[idx].p0);
 		}
 		function currentPos(track) {
 			if (!replay.playing) return replay.basePos;
 			return Math.min(track.totalLen, replay.basePos + (performance.now() - replay.baseClock) * replay.speed);
 		}
-		/** 播放头竖线：叠加在 vis 时间轴上方，按当前窗口换算 x。 */
 		function playheadShow(realMs) {
 			try {
 				if (!tl) return;
@@ -1227,7 +1251,7 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				const b = w.end instanceof Date ? w.end.getTime() : Number(w.end);
 				const span = Math.max(1, (b || 0) - (a || 0));
 				const dw = tlDrawWidth();
-				const left = (tlDom().clientWidth || dw) - dw; // 左侧标签列宽
+				const left = (tlDom().clientWidth || dw) - dw;
 				el.style.left = `${left + ((realMs - a) / span) * dw}px`;
 				el.style.display = "block";
 			} catch {}
@@ -1236,7 +1260,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			const el = tlDom().querySelector(".rtr-playhead");
 			if (el) el.style.display = "none";
 		}
-		/** 播放头越出可视窗口时把窗口跟过去（moveTo 保持缩放、仅平移）。 */
 		function ensurePlayheadVisible(realMs) {
 			try {
 				if (!tl) return;
@@ -1248,10 +1271,12 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				if (realMs < a + margin || realMs > b - margin) tl.moveTo(realMs, { animation: false });
 			} catch {}
 		}
-		/** 按当前播放位置刷新播放头（follow 时越界自动跟随窗口）。 */
 		function refreshPlayhead(follow) {
 			const tr = replayTrack();
-			if (!tr.segs.length) { playheadHide(); return; }
+			if (!tr.segs.length) {
+				playheadHide();
+				return;
+			}
 			const pos = currentPos(tr);
 			const idx = activeIndexAt(tr, pos);
 			const rt = realTimeAt(tr, pos, idx);
@@ -1260,7 +1285,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 		}
 		function stopPlay() {
 			if (replay.playing) {
-				// 记住暂停点，下次继续从这走
 				const tr = replayTrack();
 				if (tr.segs.length) replay.basePos = currentPos(tr);
 			}
@@ -1280,7 +1304,10 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 		function replayTick() {
 			if (!replay.playing) return;
 			const tr = replayTrack();
-			if (!tr.segs.length) { stopPlay(); return; }
+			if (!tr.segs.length) {
+				stopPlay();
+				return;
+			}
 			const pos = currentPos(tr);
 			const idx = activeIndexAt(tr, pos);
 			if (idx >= 0) {
@@ -1288,10 +1315,9 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				const key = tr.segs[idx].seg.key;
 				if (key !== selectedKey) {
 					selectedKey = key;
-					pendingScroll = key; // 列表跟随滚动到激活行（推进时底部跟着走）
+					pendingScroll = key;
 					scheduleRender();
 				}
-				// 预取后续分段详情：短块（几十 ms）也在一进入时就已缓存，详情即时显示、不被切走。
 				const end = Math.min(tr.segs.length, idx + REPLAY_PREFETCH);
 				for (let k = idx; k < end; k++) {
 					const kk = tr.segs[k].seg.key;
@@ -1306,7 +1332,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			playheadShow(rt);
 			ensurePlayheadVisible(rt);
 			if (pos >= tr.totalLen) {
-				// 播完：停在最后一段（播放头保留）。
 				stopPlay();
 				scheduleRender();
 				return;
@@ -1314,7 +1339,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			replay.raf = requestAnimationFrame(replayTick);
 		}
 
-		// ---- 事件 ----
 		convsEl.addEventListener("click", (e) => {
 			const b = e.target.closest("[data-id]");
 			if (b) selectConv(b.dataset.id);
@@ -1323,7 +1347,7 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			if (e.target.closest(".act-follow")) {
 				followEnabled = !followEnabled;
 				e.target.closest(".act-follow").classList.toggle("on", followEnabled);
-				flowSync(); // 打开时立刻进入流动：窗口按当前跨度重新锚定「现在」
+				flowSync();
 				return;
 			}
 			if (e.target.closest(".act-fit")) {
@@ -1332,13 +1356,12 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 					tl?.fit({ animation: true });
 					userZoomed = false;
 					flowSpanSeen = flowWin()?.span ?? 0;
-					// 看全部 = 明确要总览，暂停跟随（再点“跟随”回去）。
 					followEnabled = false;
 					rulerEl.querySelector(".act-follow")?.classList.remove("on");
 				} catch {}
 				return;
 			}
-			if (tl) return; // 专业时间轴自己处理 select
+			if (tl) return;
 			const body = rulerEl.querySelector(".rtr-tlbody");
 			const b = e.target.closest("[data-i]");
 			if (b && body?._vis) {
@@ -1361,14 +1384,20 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				const cached = detailCache.get(`${selectedConvId}\n${selectedKey}`);
 				const txt = cached ? `${cached.seg.title}\n${cached.detail}` : "";
 				if (txt) {
-					navigator.clipboard?.writeText(txt).then(() => {
-						e.target.textContent = `✅ ${t().copied}`;
-						setTimeout(scheduleRender, 1200);
-					}, () => {});
+					navigator.clipboard?.writeText(txt).then(
+						() => {
+							e.target.textContent = `✅ ${t().copied}`;
+							setTimeout(scheduleRender, 1200);
+						},
+						() => {},
+					);
 				}
 			}
 		});
-		qEl.addEventListener("input", () => { search = qEl.value; scheduleRender(); });
+		qEl.addEventListener("input", () => {
+			search = qEl.value;
+			scheduleRender();
+		});
 		replayBtn.addEventListener("click", () => {
 			if (!selectedConvId) return;
 			replay.on = !replay.on;
@@ -1386,7 +1415,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				}
 			} else {
 				playheadHide();
-				// 退出回放后若对话仍在跑，恢复跟随（最新时刻回到右侧 40px）。
 				followEnabled = true;
 			}
 			applyLang();
@@ -1418,10 +1446,12 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 				if (replay.playing) startPlay();
 			} else if (e.target.matches(".skipcb")) {
 				replay.skipIdle = e.target.checked;
-				// 切换跳过空闲会改变坐标基准 → 从当前激活段继续。
 				const tr = replayTrack();
 				const cur = selectedKey ? tr.segs.findIndex((x) => x.seg.key === selectedKey) : -1;
-				if (cur >= 0) { replay.idx = cur; replay.basePos = tr.segs[cur].p0; }
+				if (cur >= 0) {
+					replay.idx = cur;
+					replay.basePos = tr.segs[cur].p0;
+				}
 				if (replay.playing) startPlay();
 				refreshPlayhead(false);
 				scheduleRender();
@@ -1444,9 +1474,11 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 					const prevActive = lastActiveId;
 					activeId = p.activeId ?? null;
 					lastActiveId = activeId;
-					// active 变化（切对话/新对话/首次加载）→ 跟随到当前对话；
-					// active 没变时不动——用户可能正手动看历史，被重复 state 拽走很烦。
-					if (activeId && activeId !== selectedConvId && (activeId !== prevActive || !convs.some((c) => c.id === selectedConvId))) {
+					if (
+						activeId &&
+						activeId !== selectedConvId &&
+						(activeId !== prevActive || !convs.some((c) => c.id === selectedConvId))
+					) {
 						selectConv(activeId);
 						return;
 					}
@@ -1462,8 +1494,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 						const i = convs.findIndex((c) => c.id === p.conv.id);
 						if (i >= 0) convs[i] = p.conv;
 						else convs.unshift(p.conv);
-						// state 漏掉时的自愈：active 切到别的对话才跟随（只看 id 是否是新 active），
-						// 同一 active 的常规更新不碰——手动看历史不受打扰。
 						if (p.conv.active) {
 							activeId = p.conv.id;
 							if (p.conv.id !== selectedConvId && p.conv.id !== lastActiveId) {
@@ -1523,7 +1553,6 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 			}
 		});
 
-		// 容器尺寸变化（视图显隐/侧栏伸缩/窗口缩放）→ 触发重排，隐藏时建的瘪轴自动重建。
 		try {
 			const roBody = rulerEl.querySelector(".rtr-tlbody");
 			if (roBody && typeof ResizeObserver !== "undefined") {
@@ -1542,15 +1571,12 @@ ${kvRow(F.conv, esc(`${c.title ?? ""} · ${String(c.id).slice(0, 8)}`))}${kvRow(
 		scheduleRender(false);
 		ctx.send({ action: "state" });
 
-		// 流动模式由 rAF 循环推进（每帧推到 now）；非流动时靠 1s 心跳拉长执行中色块。
 		const liveTicker = setInterval(() => {
 			try {
 				if (!tl || replay.on) return;
 				flowSync();
 				if (!flowing && visibleSegs().some((s) => s.status === "running")) syncDisplayEnds();
-			} catch {
-				/* 忽略 */
-			}
+			} catch {}
 		}, 1000);
 
 		return () => {

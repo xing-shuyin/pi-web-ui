@@ -1,10 +1,3 @@
-/**
- * tool-schema 单测（web/src/tool-schema.ts）：参数 JSON Schema → 表格行的纯函数。
- *
- * 覆盖：类型标签（基础/数组/联合/$ref/record/脏输入）、自引用递归封顶、
- * 行构造（声明顺序 / required / description / hint / 嵌套 depth）、maxDepth 与 maxRows 封顶、
- * hasSchemaRows。纯函数，无 DOM、无端口。
- */
 import { describe, expect, it } from "vitest";
 import { hasSchemaRows, schemaRows, typeLabel } from "../../web/src/tool-schema.js";
 
@@ -34,9 +27,7 @@ describe("typeLabel", () => {
 
 	it("anyOf / oneOf / allOf 拼联合标签：去重、超过 4 个截断", () => {
 		expect(typeLabel({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe("string | number");
-		// 重复类型只留一份
 		expect(typeLabel({ oneOf: [{ type: "string" }, { type: "string" }] })).toBe("string");
-		// 超过 4 个成员：前 4 个 + …
 		expect(
 			typeLabel({
 				anyOf: [{ type: "a" }, { type: "b" }, { type: "c" }, { type: "d" }, { type: "e" }, { type: "f" }],

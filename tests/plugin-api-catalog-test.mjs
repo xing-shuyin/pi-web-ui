@@ -1,12 +1,3 @@
-/**
- * 注册面目录（P2-7）的 WS 往返协议测试（零 token、自包含）。
- *
- * 单测（`tests/unit/plugin-api-catalog.test.ts`）只覆盖装配 + 静态表 + 占位计数，
- * 这里覆盖的是**接线**：浏览器发 `plugin_api_catalog` → 服务端回
- * `plugin_api_catalog_result`（34 slot + 别名 + 工具表 + 方法表 + 当前占用者）。
- *
- * 运行：npm run build && node tests/plugin-api-catalog-test.mjs（已进 tests/run-smoke.mjs）
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +14,6 @@ const dataDir = join(tmp, "data");
 const work = join(tmp, "work");
 mkdirSync(work, { recursive: true });
 
-// 探针插件：占一个顶栏槽位（目录的 occupants 应点名它）。
 const plugDir = join(dataDir, "plugins", "catprobe");
 mkdirSync(plugDir, { recursive: true });
 writeFileSync(

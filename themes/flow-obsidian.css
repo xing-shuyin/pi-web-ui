@@ -1,13 +1,7 @@
 /* theme-name: 极简行文 · 黑曜星芒 */
 /* theme-name-en: Pure Flow · Obsidian Starfall */
 /* theme-group: builtin */
-/*
- * 极简行文 · 黑曜星芒（Obsidian Starfall）
- * 灵感源自 Linear / Raycast 顶奢工程美学：
- * 采用深海冷黑曜石基底搭配视线焦点多光谱极光微散光，
- * 配合电光曜蓝作为灵魂点睛与 0.5px 极光流线双层描边，
- * 兼具极简行文的流态无界排版与震撼的顶级极客质感。
- */
+
 :root {
 	color-scheme: dark;
 	--flow-shadow: #000000;
@@ -128,9 +122,6 @@
 
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   代码语法高亮（hljs）—— 极客黑曜星芒调
-   ======================================================== */
 .hljs {
 	color: #f8fafc;
 }

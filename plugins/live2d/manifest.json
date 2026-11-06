@@ -2,7 +2,7 @@
 	"id": "live2d",
 	"name": "Live2D 看板娘",
 	"nameEn": "Live2D Companion",
-	"version": "0.1.17",
+	"version": "0.1.18",
 	"icon": "🐾",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-9c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm4 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-2 5c1.66 0 3-1.34 3-3H9c0 1.66 1.34 3 3 3z\"/></svg>",
 	"description": "页面悬浮 Live2D 桌面看板娘宠物：支持 Cubism 2/3/4 模型、音乐音频实时口型对齐 (Lip Sync)、自然眨眼与抛媚眼、透明与完全点击穿透、本地模型一键上传、鼠标视线跟随与 AI 操控工具。",

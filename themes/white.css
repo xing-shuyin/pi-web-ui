@@ -90,7 +90,6 @@
 	--control-border: #d0d7de;
 }
 
-/* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
 	color: #1f2328;
 	background: #f6f8fa;

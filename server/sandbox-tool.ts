@@ -1,17 +1,3 @@
-/**
- * sandbox — AI 智能体侧的隔离沙盒项目管理工具。
- *
- * 支持动作：
- * - list: 列出当前受管的所有沙盒项目，并指出当前工作区是否处于沙盒内；
- * - create: 创建「空白沙盒」或「导入现有项目」的隔离沙盒副本（可选 switchTo 切换工作区，或将返回的 path 传给 subagent cwd）；
- * - diff: 对比沙盒与源项目之间的新增/修改/删除文件清单；
- * - reset: 将沙盒重置回初始干净状态（清空或重新从源项目复制）；
- * - persist: 将临时沙盒转为永久沙盒；
- * - promote: 将沙盒导出为外部正式项目目录；
- * - apply_to_source: 将导入型沙盒的修改同步写回源项目（强制触发用户审批确认 askApproval）；
- * - destroy: 销毁指定沙盒并回收磁盘空间。
- */
-
 import { Type, type Static } from "typebox";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -95,7 +81,6 @@ export interface SandboxToolHost {
 	applySandboxToSource: (target: string, expectedRevision: string) => ReturnType<SandboxManager["applyToSource"]>;
 }
 
-/** details 摘录中最多携带的文件路径条目数（严格守卫 details ≤ 64KB 预算）。 */
 const MAX_DIFF_FILES_IN_DETAILS = 100;
 
 export function makeSandboxTool(
@@ -363,7 +348,6 @@ export function makeSandboxTool(
 							};
 						}
 
-						// 强制触发人工审批：写回源项目会修改真实工作区文件，绝不允许静默执行
 						if (host.askApproval) {
 							const diffSummaryZh = [
 								diff.added.length > 0 ? `新增 ${diff.added.length}` : "",
@@ -474,9 +458,6 @@ export function makeSandboxTool(
 								isError: true,
 							};
 						}
-						// 销毁会 rm -rf 整个沙盒目录（可能含用户转正后的工作成果），
-						// 与 apply_to_source 同样强制人工审批——bash 跑 rm -rf 都会命中
-						// 内置审批规则，工具路径不该有绕过口
 						if (host.askApproval) {
 							const decision = await host.askApproval(
 								toolCallId,
@@ -513,8 +494,6 @@ export function makeSandboxTool(
 								};
 							}
 						}
-						// 若当前工作区正好在该沙盒内，先切出去（源项目优先，空白沙盒回退
-						// homedir——否则销毁后 cwd 悬空，后续 bash/read/write 全部 ENOENT）
 						if (activeSbx?.id === targetInfo.id) {
 							await host.setCwd(
 								targetInfo.sourcePath && existsSync(targetInfo.sourcePath) ? targetInfo.sourcePath : homedir(),

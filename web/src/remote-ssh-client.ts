@@ -1,12 +1,3 @@
-/**
- * remote-ssh-client.ts — 前端与远程 SSH 服务端的通信桥梁与请求辅助。
- *
- * 提供：
- * 1. 远程 SSH 消息分发与监听机制；
- * 2. 基于 Promise 的请求/响应封装（probe, listDir, installTools, listProfiles, deleteProfile）；
- * 3. 辅助解析远程工作区路径标识（例如 ssh://user@host:port/path）。
- */
-
 import { appSend } from "./app-globals";
 import type {
 	RemoteSshDirItem,
@@ -37,18 +28,15 @@ export function dispatchRemoteSshMessage(msg: ServerMessage): void {
 	}
 }
 
-/** 规范化远程工作区 URI：ssh://user@host:port/remote/path */
 export function formatRemoteWorkspaceUri(username: string, host: string, port: number, remotePath: string): string {
 	const normPath = remotePath.startsWith("/") ? remotePath : `/${remotePath}`;
 	return `ssh://${username}@${host}:${port}${normPath}`;
 }
 
-/** 检查路径是否是远程 SSH 工作区路径 */
 export function isRemoteWorkspaceUri(uri?: string): boolean {
 	return Boolean(uri && uri.startsWith("ssh://"));
 }
 
-/** 解析远程工作区 URI */
 export function parseRemoteWorkspaceUri(uri: string): {
 	username: string;
 	host: string;
@@ -68,7 +56,6 @@ export function parseRemoteWorkspaceUri(uri: string): {
 
 let nextReqId = 1;
 
-/** 发起远程连接与深度探针 */
 export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
 	ok: boolean;
 	connectionId?: string;
@@ -108,7 +95,6 @@ export function requestRemoteProbe(params: RemoteSshProbeParams): Promise<{
 	});
 }
 
-/** 浏览远程目录 */
 export function requestRemoteListDir(
 	connectionId: string,
 	dirPath?: string,
@@ -156,7 +142,6 @@ export function requestRemoteListDir(
 	});
 }
 
-/** 远程安装必要工具 */
 export function requestRemoteInstallTools(
 	connectionId: string,
 	tools: string[],
@@ -201,7 +186,6 @@ export function requestRemoteInstallTools(
 	});
 }
 
-/** 列出已保存的 SSH Profiles */
 export function requestRemoteProfiles(): Promise<RemoteSshProfileSummary[]> {
 	const reqId = `profiles_${Date.now()}_${nextReqId++}`;
 	return new Promise((resolve) => {
@@ -224,7 +208,6 @@ export function requestRemoteProfiles(): Promise<RemoteSshProfileSummary[]> {
 	});
 }
 
-/** 删除已保存的 SSH Profile */
 export function deleteRemoteProfile(name: string): void {
 	appSend({
 		type: "remote_ssh_delete_profile",

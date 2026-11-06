@@ -5,7 +5,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # 全量冒烟 nightly（北京时间午夜）：PR 只跑 --core 快检，慢/重测试由这里兜底。
   schedule:
     - cron: "0 16 * * *"
 
@@ -20,8 +19,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          # 两个锁文件都要缓存：下面的「插件 bundle 新鲜度」守卫会在 plugins/vscode-editor
-          # 里跑它自己的 `npm ci`（那个包有自己的 66 个依赖 + 自己的 esbuild）。
           cache-dependency-path: |
             package-lock.json
             plugins/vscode-editor/package-lock.json
@@ -29,19 +26,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 代码格式（prettier；失败先修格式：npm run format）
       - name: Check formatting
         run: npm run format:check
 
-      # 静态检查（oxlint；失败先看报告：npm run lint）
       - name: Lint
         run: npm run lint
 
-      # 协议双端手工同步校验（server/protocol.ts ↔ web/src/types.ts）
       - name: Check protocol sync
         run: node scripts/check-protocol-sync.mjs
 
-      # 语言包 key 对照（locales/*.json 与 web/src/i18n.tsx 的 zh 源头；缺 key / 死 key 即红）
       - name: Check locale packs
         run: npm run i18n:check
 
@@ -51,14 +44,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      # 入库的构建产物必须与 src/ 同步：改了插件 src/ 却忘了重新生成 bundle，这里直接红。
-      # · mermaid / run-trace 的 vendor bundle 已由上面的 `npm run build` 生成，直接校验；
-      # · db-client 的 bundle 无第三方依赖，用根依赖里的 esbuild 就能打；
-      # · vscode-editor 的 bundle 要**它自己的** 66 个包（CodeMirror / xterm / 自己锁定的
-      #   esbuild，见该目录 package.json），所以先在里面 `npm ci`；
-      # · legado-web 的 app 构建成本更高（整棵 Vite 前端 + 它自己的 node_modules），不在守卫范围。
-      # 两个 build.mjs 的 entryPoints/outfile 都是**相对 cwd** 的（无 absWorkingDir），
-      # 必须在各自插件目录里跑 —— 在仓库根跑会报 `Could not resolve "src/client.js"`。
       - name: Check committed plugin bundles are up to date
         run: |
           (cd plugins/vscode-editor && npm ci --no-audit --no-fund && node build.mjs)
@@ -69,25 +54,19 @@ jobs:
             plugins/mermaid/client/vendor \
             plugins/run-trace/client/vendor
 
-      # 浏览器扩展打包（esbuild；语法/入口问题在 PR 阶段就暴露）
       - name: Build browser extension
         run: npm run build:extension
 
       - name: Pack browser extension (自校验 zip)
         run: npm run pack:extension
 
-      # 纯函数单测（毫秒级、零 token）
       - name: Unit tests
         run: npx vitest run
 
-      # 零 token 协议冒烟（每个测试自起隔离 server：独立端口 + 临时 data-dir）
-      # 分层：PR 跑 --core 快检（~20 个，2~4 分钟），push main / nightly 跑全量（~70 个）。
       - name: Protocol smoke tests (core, PR fast gate)
         if: github.event_name == 'pull_request'
         env:
           PI_WEB_PLUGIN_CATALOG_URL: ""
-        # --no-build：上面的 Build 步骤已经构建过 dist/，跑器不必再构建一次
-        # （用例内的构建也由跑器统一接管，见 tests/lib/ensure-build.mjs）。
         run: node tests/run-smoke.mjs --core --retry-once --jobs=4 --no-build
 
       - name: Protocol smoke tests (full)

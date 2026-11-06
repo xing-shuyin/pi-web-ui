@@ -1,14 +1,3 @@
-/**
- * P2-9 层式组合（settings overlay）单测。
- *
- * 层语义：schema 默认 < 用户 overlay（<dataDir>/plugin-overrides/<id>.json，
- * 不 fork 改官方默认）< 面板保存的 storage.json 值（最高）。secret 永不来自 overlay。
- *
- * A. 合并优先级（真实 PluginManager scan：值 + 来源标注）。
- * B. overlay 校验：坏值丢弃+警告、secret 拒绝、未知键警告、坏文件忽略、缺文件静默。
- * C. 运行时视角（host.getSettings）同样走三层。
- * D. 重构锁：保存路径行为不变（抽出的 cleanNonSecretSettingsField 与原来逐字同义）。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -82,7 +71,6 @@ describe("三层合并", () => {
 		writeOverlay("b", { settings: { tone: "brief", pollSec: "30", notify: 0 } });
 		await mgr.ensureLoaded();
 		let info = await infoOf("b");
-		// 文本/数字/布尔走保存路径同一套清洗（"30"→30，0→false）
 		expect(info?.settingsValues).toMatchObject({ tone: "brief", pollSec: 30, notify: false });
 		expect(info?.settingsSources).toMatchObject({ tone: "override", pollSec: "override", theme: "default" });
 		writeStorage("b", { tone: "verbose" });
@@ -138,7 +126,6 @@ describe("保存路径重构锁", () => {
 	it("面板保存照旧：清洗+落盘+ secret 进加密 store", async () => {
 		makePlugin("g", { permissions: ["fs"], settings: SCHEMA });
 		await mgr.ensureLoaded();
-		// 经 plugin_settings 消息走完整保存路径（ covered by plugin-settings.test.ts，这里只锁合并位）
 		writeStorage("g", { pollSec: 120 });
 		await mgr.reload();
 		const info = await infoOf("g");

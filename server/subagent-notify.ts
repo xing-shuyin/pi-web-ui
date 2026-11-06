@@ -1,22 +1,7 @@
-// ---------------------------------------------------------------------------
-// subagent-notify.ts — 子代理终态自动通知与结构化交付契约（issue #713）
-// ---------------------------------------------------------------------------
-// 负责：
-// 1. extractSubagentConclusion: 提炼子代理输出的核心结论（保留首尾重点，折叠冗余日志）
-// 2. formatSubagentsCompletionNotice: 将批处理/防抖收敛的一组终态子代理格式化为
-//    高信噪比、低 Token 占用的父对话唤醒汇报
-// ---------------------------------------------------------------------------
-
 import type { Conversation } from "./agent-service.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { subagentRunOutcome } from "./subagent-helpers.js";
 
-/**
- * 从子代理的长文本输出中提取核心结论：
- * - 输出较短（<= 20 行）时原样返回；
- * - 输出较长时保留前 3 行任务概况与后 15 行最终总结/结论，中间过程性输出自适应折叠；
- * - 空输出给出可读占位符。
- */
 export function extractSubagentConclusion(output: string, lang: ServerLang = "en"): string {
 	const trimmed = (output ?? "").trim();
 	if (!trimmed) {
@@ -36,15 +21,10 @@ export function extractSubagentConclusion(output: string, lang: ServerLang = "en
 	return `${head}\n${omitMarker}\n${tail}`;
 }
 
-/** 短 id（前 8 字符） */
 function shortId(id: string): string {
 	return id.slice(0, 8);
 }
 
-/**
- * 格式化聚合的一组终态子代理为父对话的入站通知。
- * 多个子代理同时完成时合成一条结构化汇报，避免碎片化打断父对话。
- */
 export function formatSubagentsCompletionNotice(
 	subagents: Conversation[],
 	lang: ServerLang = "en",

@@ -3,7 +3,6 @@ import { checkedUrl } from "./relay.js";
 import type { TaskReportMeta } from "./task-report.js";
 import type { TaskReportUploadEntry } from "./task-report-outbox.js";
 
-/** 16 KiB raw text remains below the authenticated 128 KiB JSON budget even after escaping. */
 export async function uploadTaskReport(options: {
 	hubUrl: string;
 	deviceId: string;

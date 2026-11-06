@@ -1,8 +1,3 @@
-/**
- * 插件能力动态授权（server/plugin-permissions.ts + host.requestPermission +
- * net/llm 执行期强制）单测。网络/模型不断言成功路径（零外部依赖）：
- * net.fetch 用回环拒绝地址证明“过了门控”（错误是连接失败而非未授权）。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,11 +32,11 @@ describe("PluginPermissionStore", () => {
 		expect(store.has("p", "net", { host: "a.com" })).toBe(true);
 		expect(store.has("p", "net", { host: "sub.a.com" })).toBe(true);
 		expect(store.has("p", "net", { host: "b.com" })).toBe(false);
-		expect(store.has("p", "net")).toBe(false); // 无 host 不判
+		expect(store.has("p", "net")).toBe(false);
 		store.grant("p", "llm", { models: ["x/cheap"], remember: true });
 		expect(store.modelAllowed("p", "x/cheap")).toBe(true);
 		expect(store.modelAllowed("p", "x/opus")).toBe(false);
-		expect(store.modelAllowed("p")).toBe(true); // 空 model（默认模型）不卡
+		expect(store.modelAllowed("p")).toBe(true);
 	});
 	it("不限模型的 llm 授权全开", () => {
 		store.grant("p", "llm", { remember: true });
@@ -67,10 +62,10 @@ describe("PluginPermissionStore", () => {
 		store.grant("p", "net", { hosts: ["a.com", "b.com"], remember: true });
 		store.grant("p", "llm", { remember: true });
 		store.grant("q", "net", { hosts: ["c.com"], remember: true });
-		expect(store.revoke("p", "net", { host: "sub.a.com" })).toBe(1); // 点号后缀同样命中撤销
+		expect(store.revoke("p", "net", { host: "sub.a.com" })).toBe(1);
 		expect(store.has("p", "net", { host: "a.com" })).toBe(false);
-		expect(store.revoke("p")).toBe(1); // p 剩 llm 一条
-		expect(store.revoke()).toBe(1); // q 的一条，整表清空
+		expect(store.revoke("p")).toBe(1);
+		expect(store.revoke()).toBe(1);
 		expect(store.list()).toEqual([]);
 	});
 	it("非法 id 拒绝（grant 抛错，has 回 false）", () => {
@@ -147,7 +142,6 @@ describe("host.requestPermission", () => {
 		const raw = JSON.parse(readFileSync(join(dir, "plugin-permissions.json"), "utf8"));
 		expect(raw.grants).toHaveLength(1);
 		expect(raw.grants[0]).toMatchObject({ pluginId: "p", family: "net", hosts: ["a.com"], reason: "同步" });
-		// 第二次不再问
 		let called = 0;
 		mgr.permissionRequester = async () => {
 			called += 1;
@@ -167,7 +161,6 @@ describe("host.requestPermission", () => {
 		const list = mgr.permGrants.list();
 		expect(list).toHaveLength(1);
 		expect(list[0]!.session).toBe(true);
-		// 重建 store（模拟重启）：内存授权消失
 		expect(new PluginPermissionStore(dir).has("p", "net", { host: "b.com" })).toBe(false);
 	});
 });
@@ -198,7 +191,7 @@ describe("执行期强制", () => {
 	});
 
 	it("net.fetch：动态授权的主机可过门控（回环拒连证明不是未授权）", async () => {
-		makePlugin("p", { permissions: ["net"] }); // 空白名单
+		makePlugin("p", { permissions: ["net"] });
 		const h = await hostOf("p");
 		const before = await h.net.fetch("https://127.0.0.1:1/");
 		expect(before.ok).toBe(false);
@@ -206,13 +199,12 @@ describe("执行期强制", () => {
 		mgr.permGrants.grant("p", "net", { hosts: ["127.0.0.1"], remember: true });
 		const after = await h.net.fetch("https://127.0.0.1:1/");
 		expect(after.ok).toBe(false);
-		expect(after.error).not.toContain("未授权"); // 门过了，挂在连接上
+		expect(after.error).not.toContain("未授权");
 	});
 	it("llm.complete：作用域外模型被收紧，作用域内直通 provider", async () => {
 		makePlugin("p", { permissions: ["llm"] });
 		const h = await hostOf("p");
 		mgr.llmProvider = async () => ({ ok: true as const, text: "t", model: "m" });
-		// 无动态授权 = 声明即全开（向后兼容）
 		expect((await h.llm.complete({ prompt: "hi", model: "x/opus" })).ok).toBe(true);
 		mgr.permGrants.grant("p", "llm", { models: ["x/cheap"], remember: true });
 		const denied = await h.llm.complete({ prompt: "hi", model: "x/opus" });

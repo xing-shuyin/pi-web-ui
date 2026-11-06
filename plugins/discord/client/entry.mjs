@@ -1,8 +1,3 @@
-/**
- * plugins/discord/client/entry.mjs
- * Discord workspace and bot control panel for pi-web-ui.
- */
-
 export default {
 	async mount(el, ctx) {
 		const sendHost = async (type, payload = {}) => {

@@ -1,4 +1,3 @@
-/** Self-contained native JPEG desktop client. All URLs stay relative to the mounted page. */
 export function desktopPage(): string {
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote desktop</title>
@@ -126,8 +125,8 @@ function connect() {
    pendingFrame = {blob:event.data, generation:currentGeneration, socket:current}; void decodeFrames();
   }
  };
- current.onerror = () => { if (isCurrent()) fail(t('connectionError')); };
- current.onclose = event => { if (isCurrent()) { stop(); status(t('closed') + ' (' + event.code + ')' + (event.reason ? ': ' + event.reason : ''), true); } };
+ current.onerror = () => { if (isCurrent()) { fail(t('connectionError')); parent.postMessage({type:'device-portal-disconnected'}, '*'); } };
+ current.onclose = event => { if (isCurrent()) { stop(); status(t('closed') + ' (' + event.code + ')' + (event.reason ? ': ' + event.reason : ''), true); parent.postMessage({type:'device-portal-disconnected'}, '*'); } };
 }
 async function request(path, options = {}) {
  const response = await fetch(appUrl(path), {...options, credentials:'same-origin', cache:'no-store'});

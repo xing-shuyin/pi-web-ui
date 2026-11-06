@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * approval-gate —— 定时任务拍板登记 CLI。
- *
- * 用法：
- *   approval-gate register --task <任务名> --title <标题> [--summary <摘要>] [--project <项目目录>]
- *                          [--conversation <会话id>] | [--auto-session "<拍板请求提示词>"] [--raw] [--model <模型>] [--timeout <秒>]
- *   approval-gate resolve  --id <拍板项id> [--status resolved|dismissed]
- *   approval-gate list     [--pending]
- *
- * 环境变量：
- *   APPROVAL_GATE_TOKEN / PI_WEB_TOKEN  面板口令（缺省自动从 ~/.pi/secrets/com.xingshuyin.pi-web-ui.env 解析）
- *   APPROVAL_GATE_URL                   面板地址（缺省 http://127.0.0.1:${PI_WEB_PORT:-8082}）
- *
- * 退出码：0 成功 / 64 参数错 / 65 面板不可达 / 66 会话建立失败
- */
 import { spawnSync, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -33,7 +18,6 @@ function parseArgs(argv) {
 		if (a.startsWith("--")) {
 			const eq = a.indexOf("=");
 			if (eq > 2) {
-				// --key=value 形式：值可以是任意文本（含以 -- 开头的字符串）
 				out[a.slice(2, eq)] = a.slice(eq + 1);
 				continue;
 			}
@@ -96,7 +80,6 @@ async function api(method, path, body) {
 	return data;
 }
 
-/** 建快照会话（泛化自 面板更新/scripts/notify-session.sh 的 A 档模式）并返回会话 id。 */
 function autoSession(prompt, project, model, timeoutSec) {
 	const piBin = [
 		"pi",
@@ -121,7 +104,6 @@ function autoSession(prompt, project, model, timeoutSec) {
 	});
 }
 
-/** 扫 ~/.pi/agent/sessions/<编码cwd>/ 最新 jsonl 的 session id（编码：路径 / → -，首尾 --）。 */
 function latestSessionId(project) {
 	const enc = `--${project.replace(/^\/|\/$/g, "").replaceAll("/", "-")}--`;
 	const dir = join(homedir(), ".pi/agent/sessions", enc);
@@ -140,7 +122,6 @@ function latestSessionId(project) {
 	return "";
 }
 
-/** 快照会话固化模板（二期）：拍板请求 + STATE 待拍板区 + 拍板后自动清账指令。 */
 function buildTemplatePrompt(req, itemId) {
 	return [
 		req,
@@ -187,7 +168,6 @@ async function main() {
 		if (args["auto-session"]) {
 			const model = args.model || "glm-5.3-flash";
 			const timeout = Number(args.timeout || 300);
-			// 二期流程：先登记拿 id（模板需引用）→ 建快照会话（模板固化清账指令）→ update 回填会话 id
 			const pre = await api("POST", "/register", {
 				task: String(args.task),
 				title: String(args.title),
@@ -206,7 +186,6 @@ async function main() {
 			);
 			const r = await autoSession(prompt, project, model, timeout);
 			if (!r.sessionId) {
-				// 会话失败：把占位项标记 dismissed，不留孤儿 pending
 				await api("POST", "/resolve", { id: itemId, status: "dismissed" }).catch(() => {});
 				die(66, `快照会话建立失败（exit=${r.exitCode}）；已把占位项标记 dismissed`);
 			}

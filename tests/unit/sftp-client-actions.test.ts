@@ -1,19 +1,4 @@
 // @vitest-environment jsdom
-/**
- * sftp 插件「文件树右键菜单 → 上传」的客户端回归 —— 走真实 bundle + jsdom + 假 fetch，零端口零子进程。
- *
- * 现场问题（#601）：manifest 的 `ui["contextmenu.file"]` 声明了 `sftp:upload-file` /
- * `sftp:upload-dir`，但客户端 bundle **从来没注册过任何 host.onUiAction** —— 点下去宿主
- * 找不到接管者，只会弹一句「插件没有接管这个动作（可能版本不匹配）」。同一个坑还有底栏
- * 那个带 `sftp:open` 动作的徽标（点了同样没人接）。现在界面上只留顶栏一个入口，
- * 右键菜单这两条动作必须真的有人接，且接得**对**：
- *
- *   - 动作 = 打开面板 + 把这次上传交给面板跑（与面板按钮同一条路径，进度就地可见）；
- *   - 面板还没挂载（宿主按需加载 bundle 后立刻回调）时请求先排队，mount 完再消费；
- *   - 机器浏览给的绝对路径只有确实在工作区内才折算成相对路径，工作区外**必须拒绝**
- *     （服务端 /transfer 只认工作区内的相对路径：硬塞进去只会得到莫名的「本地不存在」，
- *     POSIX 上还会被当成远端路径）。
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (itemId: string, value?: string, target?: { id: string; kind?: string; label?: string }) => void;
@@ -24,7 +9,6 @@ const views: string[] = [];
 const posts: Post[] = [];
 const CWD = "E:/proj";
 
-/** 宿主动作桥必须在 bundle 求值前就位（它在模块顶层注册 handler）。 */
 function installBridge() {
 	(globalThis.window as unknown as { __piWebUiHost?: unknown }).__piWebUiHost = {
 		version: 11,
@@ -41,7 +25,6 @@ const bundle = (await import("../../plugins/sftp/client/entry.mjs")).default as 
 	mount: (c: HTMLElement) => () => void;
 };
 
-/** 假 fetch：按路径分发，顺带记下所有 POST body。 */
 function stubFetch() {
 	vi.stubGlobal(
 		"fetch",
@@ -86,7 +69,6 @@ function stubFetch() {
 	);
 }
 
-/** 让已 resolve 的 promise 链跑完（refresh → drain → transfer）。 */
 const flush = async () => {
 	for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -129,7 +111,6 @@ describe("sftp 右键菜单上传与下载动作", () => {
 		document.documentElement.lang = "zh";
 		stubFetch();
 		fire("sftp:upload-file", { id: "src/new.txt", kind: "file", label: "new.txt" });
-		// 回调先到：面板已切、请求还在排队，一个字节都还没传
 		expect(views).toEqual(["plugin:sftp"]);
 		expect(posts).toHaveLength(0);
 
@@ -137,7 +118,6 @@ describe("sftp 右键菜单上传与下载动作", () => {
 		await flush();
 		expect(posts).toHaveLength(1);
 		expect(posts[0]?.body).toMatchObject({ direction: "up", path: "src/new.txt" });
-		// 进度就写在面板里（与面板自己的按钮同一条路径）
 		expect(el.textContent ?? "").toContain("new.txt");
 		expect(el.textContent ?? "").toContain("已上传 1 个文件");
 	});
@@ -192,13 +172,11 @@ describe("sftp 右键菜单上传与下载动作", () => {
 		mount();
 		await flush();
 
-		// 空白处上传当前目录
 		fire("sftp:upload-dir", { id: "", kind: "list", label: "根目录" });
 		await flush();
 		expect(posts).toHaveLength(1);
 		expect(posts[0]?.body).toMatchObject({ direction: "up", path: "" });
 
-		// 空白处从远端下载同步当前目录
 		fire("sftp:download-dir", { id: "", kind: "list", label: "根目录" });
 		await flush();
 		expect(posts).toHaveLength(2);
@@ -253,19 +231,16 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const card = c.querySelector<HTMLElement>(".pass-help-card");
 		const btnClose = c.querySelector<HTMLButtonElement>(".btn-close-help");
 
-		// 点击问号展开
 		btnHelp?.click();
 		expect(card?.classList.contains("hidden")).toBe(false);
 		expect(btnHelp?.classList.contains("active")).toBe(true);
 		expect(card?.textContent).toContain("直接输入明文");
 		expect(card?.textContent).toContain("${secret:名}");
 
-		// 点击关闭按钮收起
 		btnClose?.click();
 		expect(card?.classList.contains("hidden")).toBe(true);
 		expect(btnHelp?.classList.contains("active")).toBe(false);
 
-		// 再次点击问号展开，再点一次问号收起
 		btnHelp?.click();
 		expect(card?.classList.contains("hidden")).toBe(false);
 		btnHelp?.click();
@@ -319,7 +294,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const authSelect = c.querySelector<HTMLSelectElement>(".f-auth");
 		expect(authSelect).toBeTruthy();
 
-		// 默认或选加密机密
 		authSelect!.value = "secret";
 		authSelect!.dispatchEvent(new Event("change"));
 
@@ -333,12 +307,10 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		expect(passRow?.classList.contains("hidden")).toBe(true);
 		expect(keyRow?.classList.contains("hidden")).toBe(true);
 
-		// 显式下拉菜单与快捷标签
 		const secretSelect = c.querySelector<HTMLSelectElement>(".f-secret-select");
 		expect(secretSelect).toBeTruthy();
 		expect(secretSelect?.innerHTML).toContain("my-existing-secret");
 
-		// 从下拉菜单选择已有机密
 		secretSelect!.value = "my-existing-secret";
 		secretSelect!.dispatchEvent(new Event("change"));
 
@@ -348,7 +320,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const statusEl = c.querySelector<HTMLElement>(".secret-name-status");
 		expect(statusEl?.textContent).toContain("已有同名机密");
 
-		// 快捷药丸徽章点击
 		const chipBtn = c.querySelector<HTMLButtonElement>(".sfx-chip-btn");
 		expect(chipBtn?.getAttribute("data-sec")).toBe("my-existing-secret");
 		expect(chipBtn?.classList.contains("active")).toBe(true);
@@ -368,14 +339,12 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const valInput = c.querySelector<HTMLInputElement>(".f-secret-val")!;
 		const statusEl = c.querySelector<HTMLElement>(".secret-name-status")!;
 
-		// 输入已存在的同名机密
 		nameInput.value = "my-existing-secret";
 		nameInput.dispatchEvent(new Event("input"));
 
 		expect(statusEl.textContent).toContain("已有同名机密");
 		expect(valInput.placeholder).toContain("留空直接复用");
 
-		// 输入不存在的新机密名
 		nameInput.value = "brand-new-secret";
 		nameInput.dispatchEvent(new Event("input"));
 
@@ -417,13 +386,13 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const valInput = c.querySelector<HTMLInputElement>(".f-secret-val")!;
 		nameInput.value = "my-existing-secret";
 		nameInput.dispatchEvent(new Event("input"));
-		valInput.value = ""; // 留空直接复用
+		valInput.value = "";
 
 		const btnSave = c.querySelector<HTMLButtonElement>(".btn-save")!;
 		btnSave.click();
 		await flush();
 
-		expect(secretApiCalled).toBe(false); // 无需调 /secret
+		expect(secretApiCalled).toBe(false);
 		expect(savedPatch?.patch?.password).toBe("${secret:my-existing-secret}");
 	});
 
@@ -479,7 +448,7 @@ describe("sftp 密码帮助问号与使用说明", () => {
 
 		expect(secretCallBody).toEqual({ name: "auto-created-secret", value: "super-safe-password-999" });
 		expect(savedPatch?.patch?.password).toBe("${secret:auto-created-secret}");
-		expect(valInput.value).toBe(""); // 保存后机密值自动清空
+		expect(valInput.value).toBe("");
 	});
 
 	it("新机密但未填写机密值时，点击保存阻止提交并报错提示", async () => {
@@ -509,7 +478,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 	it("即使后端未下发 secrets 字段，也能从连接凭据与本地记忆中聚合已建机密并展示在下拉框中", async () => {
 		document.documentElement.lang = "zh";
 
-		// 模拟旧版本后端（完全没有 secrets 字段）
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (url: string) => {
@@ -533,7 +501,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 								auth: { password: "secret:legacy-secret" },
 							},
 							profiles: [{ name: "mock", ready: true, auth: { password: "secret:legacy-secret" } }],
-							// 没有 secrets 字段！
 						},
 					}),
 				};
@@ -546,7 +513,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		const authSelect = c.querySelector<HTMLSelectElement>(".f-auth")!;
 		expect(authSelect.value).toBe("secret");
 
-		// legacy-secret 应该自动被提取并出现在下拉框中
 		const select = c.querySelector<HTMLSelectElement>(".f-secret-select");
 		expect(select?.innerHTML).toContain("legacy-secret");
 
@@ -624,16 +590,13 @@ describe("sftp 密码帮助问号与使用说明", () => {
 		expect(profileSelect.innerHTML).toContain("__new__");
 		expect(newRow.classList.contains("hidden")).toBe(true);
 
-		// 点击 ＋ 按钮展开新建行
 		addBtn.click();
 		expect(newRow.classList.contains("hidden")).toBe(false);
 
-		// 输入新名字并确认创建
 		nameInput.value = "prod-server";
 		confirmBtn.click();
 		await flush();
 
-		// 检查发出的 POST 请求
 		const profilePost = posts.find((p) => p.path.includes("/profile"));
 		expect(profilePost).toBeDefined();
 		expect(profilePost?.body).toMatchObject({
@@ -641,7 +604,6 @@ describe("sftp 密码帮助问号与使用说明", () => {
 			makeActive: true,
 		});
 
-		// 删除当前连接
 		vi.stubGlobal(
 			"confirm",
 			vi.fn(() => true),

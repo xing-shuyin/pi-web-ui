@@ -1,13 +1,3 @@
-/**
- * json-utils.ts — 跨模块共享 JSON 工具集。
- *
- * 统一收敛带注释 JSON（JSONC）的安全剥离与解析，消除跨模块重复手搓。
- */
-
-/**
- * 剥离 JSON 字符串中的 // 单行注释与 /* *\/ 块级注释。
- * 保护字符串字面量内部内容（如 URL 中的 "https://..." 或包含引号/斜杠的内容）。
- */
 export function stripJsonComments(src: string): string {
 	let out = "";
 	let inString = false;
@@ -48,9 +38,6 @@ export function stripJsonComments(src: string): string {
 	return out;
 }
 
-/**
- * 安全解析可能包含注释的 JSON 文本。
- */
 export function parseJsonWithComments<T = unknown>(src: string): T {
 	return JSON.parse(stripJsonComments(src)) as T;
 }

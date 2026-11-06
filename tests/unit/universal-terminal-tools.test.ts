@@ -1,18 +1,3 @@
-/**
- * universal-terminal-tools.test.ts — 通用底座（Universal Base）终端交互模拟工具集单测。
- *
- * 验证：
- *   1. getTerminalTools 返回统一 terminal(action) 工具；
- *   2. terminal_create 创建持久命名终端实例；
- *   3. terminal_input 模拟用户向终端键盘输入字符与命令；
- *   4. terminal_key 模拟键盘按键（Enter, Ctrl+c 等）；
- *   5. terminal_read 读取终端屏幕缓冲与等待新输出；
- *   6. terminal_list 回显当前所有持久终端；
- *   7. terminal_close 关闭终端并释放 PTY 进程树；
- *   8. getToolInfo 与 getToolPrompt 对终端交互工具集的正确响应；
- *   9. execTerminalTool 标准执行接口。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,9 +40,7 @@ describe("通用底座（Universal Base）终端交互模拟体系单测", () =>
 		if (existsSync(tempDir)) {
 			try {
 				rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-			} catch {
-				// 静默忽略 Windows 句柄释放延迟
-			}
+			} catch {}
 		}
 	});
 
@@ -81,7 +64,6 @@ describe("通用底座（Universal Base）终端交互模拟体系单测", () =>
 	it("3. terminal_input & terminal_read：能够模拟键盘输入并读取终端屏幕", async () => {
 		await session.execTerminalTool("terminal", { action: "create", terminalId: "term-interaction" });
 
-		// 模拟输入命令
 		const inputRes = await session.execTerminalTool("terminal", {
 			action: "input",
 			terminalId: "term-interaction",
@@ -89,7 +71,6 @@ describe("通用底座（Universal Base）终端交互模拟体系单测", () =>
 		});
 		expect(inputRes.output).toBeDefined();
 
-		// 等待 PTY 处理并读取屏幕
 		const readRes = await session.execTerminalTool("terminal", {
 			action: "read",
 			terminalId: "term-interaction",
@@ -101,7 +82,6 @@ describe("通用底座（Universal Base）终端交互模拟体系单测", () =>
 	it("4. terminal_key：能够模拟键盘控制键（如 Enter、Ctrl+C）", async () => {
 		await session.execTerminalTool("terminal", { action: "create", terminalId: "term-keys" });
 
-		// 模拟发送 Enter 键
 		const keyRes1 = await session.execTerminalTool("terminal", {
 			action: "key",
 			terminalId: "term-keys",
@@ -109,7 +89,6 @@ describe("通用底座（Universal Base）终端交互模拟体系单测", () =>
 		});
 		expect(keyRes1.output).toBeDefined();
 
-		// 模拟发送 Ctrl+C 中断信号
 		const keyRes2 = await session.execTerminalTool("terminal", {
 			action: "key",
 			terminalId: "term-keys",

@@ -25,7 +25,6 @@ mkdirSync(DATA_DIR, { recursive: true });
 const sessionDir = join(AGENT_DIR, "sessions");
 mkdirSync(sessionDir, { recursive: true });
 
-// 种入会话，防止触发首次配置向导弹窗遮挡
 const seedFile = join(sessionDir, "2026-08-04T00-00-00-000Z_ui-seed.jsonl");
 writeFileSync(
 	seedFile,
@@ -116,7 +115,6 @@ try {
 	await metricsEl.waitFor({ state: "visible", timeout: 15000 });
 
 	const text = (await metricsEl.textContent()) ?? "";
-	// 底栏走「紧凑」路线：常驻文本只留两个数值（CPU% · 内存%），文字标签交给 hover title。
 	const pcts = text.match(/\d+%/g) ?? [];
 	check("常驻文本是「CPU% · 内存%」两个数值", pcts.length === 2, text);
 	check("常驻文本不带 CPU/内存 字样（紧凑底栏，标签在 title）", !/CPU|处理器|内存|RAM|Memory/i.test(text), text);
@@ -138,7 +136,6 @@ try {
 	const metricsBox = await metricsEl.boundingBox();
 	const cwdBox = await page.locator(".statusbar-right .status-cwd").boundingBox();
 	check("指标水平位置在工作目录左侧", !!metricsBox && !!cwdBox && metricsBox.x < cwdBox.x);
-	// 工作目录是「内容自适应」条目（不再是固定百分比宽）：桌面下应完整显示 basename，没被省略号截断。
 	const cwdLabel = page.locator(".statusbar-right .status-cwd .bar-item-text").first();
 	const cwdLabelBox = await cwdLabel.boundingBox();
 	const cwdClipped = await cwdLabel.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
@@ -154,7 +151,6 @@ try {
 	const cwdVisibleAt520 = await page.locator(".status-cwd").isVisible();
 	const cwdBox520 = await page.locator(".status-cwd").boundingBox();
 	check("520px 视口下指标隐藏", hiddenAt520);
-	// 零内距后条目宽度 ≈ 图标 11 + gap + 路径文字，阈值只锁「路径文字真的画出来了」
 	const cwdLabel520 = await page.locator(".status-cwd .bar-item-text").first().boundingBox();
 	check(
 		"520px 视口下工作目录仍可见且未压成空条",

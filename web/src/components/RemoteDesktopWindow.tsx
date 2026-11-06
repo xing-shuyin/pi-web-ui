@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type PointerEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
 	closeDesktopAccess,
@@ -8,7 +8,6 @@ import {
 	type DesktopAccess,
 } from "../device-access";
 
-/** Persistent interaction window: outside clicks and chat navigation must not dismiss it. */
 export function RemoteDesktopWindow() {
 	const access = useSyncExternalStore(subscribeDesktopAccess, getDesktopAccess);
 	return access ? <DesktopWindow key={access.url} access={access} /> : null;
@@ -16,6 +15,21 @@ export function RemoteDesktopWindow() {
 
 function DesktopWindow({ access }: { access: DesktopAccess }) {
 	const { zh } = access;
+	const frameRef = useRef<HTMLIFrameElement>(null);
+	const [transport, setTransport] = useState(access.transport);
+	useEffect(() => {
+		const receive = (event: MessageEvent) => {
+			if (
+				event.source !== frameRef.current?.contentWindow ||
+				event.origin !== "null" ||
+				event.data?.type !== "device-access-transport"
+			)
+				return;
+			if (event.data.transport === "lan" || event.data.transport === "hub") setTransport(event.data.transport);
+		};
+		window.addEventListener("message", receive);
+		return () => window.removeEventListener("message", receive);
+	}, []);
 	const [box, setBox] = useState({
 		x: 24,
 		y: 64,
@@ -78,7 +92,6 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 		setBusy(true);
 		setError("");
 		try {
-			// The iframe may have consumed its one-time ticket. Always obtain a fresh one.
 			await openDeviceAccess(access.id, access.hubUrl, true, zh, true);
 			closeDesktopAccess(access);
 		} catch (e) {
@@ -108,6 +121,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 			<div className="remote-desktop-titlebar" onPointerDown={(e) => start(e, false)}>
 				<strong>
 					{title} · {access.id}
+					{transport === "lan" ? (zh ? " · 局域网" : " · LAN") : ""}
 				</strong>
 				<button type="button" className="btn" disabled={busy} onClick={() => void detach()}>
 					{shell ? (zh ? "独立窗口" : "Separate window") : zh ? "独立标签页" : "Separate tab"}
@@ -149,6 +163,7 @@ function DesktopWindow({ access }: { access: DesktopAccess }) {
 				</div>
 			)}
 			<iframe
+				ref={frameRef}
 				title={title}
 				src={access.url}
 				sandbox="allow-scripts allow-forms allow-pointer-lock"

@@ -1,13 +1,3 @@
-// 发现（explore）支持，对标原版 BookSourceExtensions.getExploreKinds + 探索页。
-//
-// exploreUrl 三种形态：
-//   1) @js:... / <js>...</js>  → 执行 JS 得到 JSON 数组（[{title,url,style}]）或文本
-//   2) JSON 数组字符串        → 直接用
-//   3) 旧式文本：分类之间用 && 或换行分隔，每项 "分类名::url"
-//
-// 分类类型（ExploreKind.type）：
-//   url    点击直接加载书籍列表（默认）
-//   text / button / select / toggle  作为筛选控件，值写入 infoMap，供 url 类分类/规则里的 JS 读取
 
 import type { BookSource, SearchBook } from '../types'
 import { evalJsRule, getScope, type JsContext } from './js'
@@ -29,7 +19,6 @@ function isJsonArrayText(t: string): boolean {
   return s.startsWith('[') && s.endsWith(']')
 }
 
-/** 解析某书源的发现分类列表（结果按源缓存到内存） */
 const kindCache = new Map<string, ExploreKind[]>()
 
 export async function parseExploreKinds(source: BookSource, force = false): Promise<ExploreKind[]> {
@@ -87,7 +76,6 @@ export function clearExploreKindsCache(sourceUrl?: string) {
   else kindCache.clear()
 }
 
-/** 加载某个发现分类的书籍列表 */
 export async function loadExploreBooks(source: BookSource, kind: ExploreKind, page = 1): Promise<SearchBook[]> {
   const url = (kind.url ?? '').trim()
   if (!url) return []
@@ -96,9 +84,7 @@ export async function loadExploreBooks(source: BookSource, kind: ExploreKind, pa
 
 export { discoverBooks }
 
-// ---------- infoMap（发现筛选控件的值，按源缓存，供 JS 读取） ----------
 
-/** 发现页筛选控件值：会话内存（不写 localStorage，页面刷新即回到默认） */
 const memInfoMap = new Map<string, Record<string, string>>()
 
 export interface InfoMap {
@@ -109,9 +95,7 @@ export interface InfoMap {
   containsKey(k: string): boolean
 }
 
-/** 可当普通对象用（infoMap.xx）也可当 Map 用（infoMap.get('xx')）的 infoMap */
 export function getInfoMap(sourceUrl: string): Record<string, string> & InfoMap {
-  // 筛选控件的值只放**页面内存**（不写 localStorage）：刷新后回到默认值，重新选一下即可
   let data: Record<string, string> = memInfoMap.get(sourceUrl) ?? {}
   const save = () => {
     memInfoMap.set(sourceUrl, data)

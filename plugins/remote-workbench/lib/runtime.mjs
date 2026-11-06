@@ -39,8 +39,6 @@ export async function profile(svc, name) {
 	return p;
 }
 
-// Logs are streamed to disk, never accumulated in RAM. A hard per-log limit
-// closes the channel rather than silently losing bytes or filling the disk.
 export class Commands {
 	constructor(host, svc, options = {}) {
 		this.svc = svc;

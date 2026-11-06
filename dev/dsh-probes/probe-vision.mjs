@@ -1,12 +1,9 @@
-// Temp probe: vision bridge — attachment/save + attachment/read + prompt with
-// a real image block (model must actually see the image).
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
@@ -98,7 +95,6 @@ try {
 	await req("initialize", { cwd: HERE, provider: "deepseek-official", model: "deepseek-v4-flash-vision-exp" });
 	console.log("initialize OK");
 
-	// 1) attachment/save（真实截图）
 	const png = readFileSync(IMG);
 	const b64 = png.toString("base64");
 	const saved = await req("attachment/save", { mediaType: "image/png", data: b64, name: "shot1.png" });
@@ -107,13 +103,11 @@ try {
 	const savedBytes = saved.ref.bytes;
 	console.log("ref bytes match:", savedBytes === png.length, `(src=${png.length} saved=${savedBytes})`);
 
-	// 2) attachment/read 往返
 	const read = await req("attachment/read", { ref: saved.ref });
 	const readBytes = Buffer.from(read.data, "base64").length;
 	console.log("read bytes:", readBytes, "mediaType:", read.mediaType);
 	if (readBytes === 0) throw new Error("attachment/read 空数据");
 
-	// 3) prompt 带 image 块 → 模型看图回复
 	const sessionId = "vision-probe-session";
 	await req("session/prompt", {
 		sessionId,

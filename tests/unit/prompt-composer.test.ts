@@ -89,13 +89,9 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 	});
 
 	it("soul：纯空白 SYSTEM.md 原样保留（= 空提示词，TUI 同语义）", () => {
-		// issue #812：SDK 用 `if (customPrompt)`（真值）判定，所以 " \n" 是「空提示词」
-		// 而不是「没文件」。旧实现的 .trim() 会让它回落内置默认，既与 TUI 不一致，
-		// 也把「切到空白项目就意外重置」伪装成 Bug。
 		const blank = resolveSectionTexts(inputs({ systemPromptFile: " \n" }));
 		expect(blank.soul.startsWith(" \n")).toBe(true);
 		expect(blank.soul.startsWith(BUILTIN_SOUL)).toBe(false);
-		// 0 字节 / undefined 才是「没文件」→ 内置默认。
 		expect(resolveSectionTexts(inputs({ systemPromptFile: "" })).soul.startsWith(BUILTIN_SOUL)).toBe(true);
 		expect(resolveSectionTexts(inputs({ systemPromptFile: undefined })).soul.startsWith(BUILTIN_SOUL)).toBe(true);
 	});
@@ -133,7 +129,6 @@ describe("resolveSectionTexts — 各来源自动内容", () => {
 		expect(auto.guidelines).toContain("- Use read to examine files instead of cat or sed.");
 		expect(auto.guidelines).not.toContain("Be concise in your responses");
 		expect(auto.guidelines).not.toContain("Show file paths clearly when working with files");
-		// 无 grep/find/ls 时不重复输出探索引导（去重生效）
 		expect(auto.guidelines.match(/Use bash for file operations/g)?.length).toBe(1);
 	});
 
@@ -329,26 +324,21 @@ describe("buildSkillsText 全文/名单模式", () => {
 			},
 			{ name: "alpha", description: "Alpha skill", filePath: "/custom/path/alpha.md" },
 		];
-		// 1. 稳定字母序排序
 		const sortedText = buildSkillsText(unordered, "en");
 		const alphaIdx = sortedText.indexOf("- alpha:");
 		const zebraIdx = sortedText.indexOf("- zebra:");
 		expect(alphaIdx).toBeGreaterThan(0);
 		expect(zebraIdx).toBeGreaterThan(alphaIdx);
 
-		// 2. 默认不输出 location 路径
 		expect(sortedText).not.toContain("/custom/path/alpha.md");
 		expect(sortedText).not.toContain("location:");
 
-		// 3. showLocation 为 true 时输出 location 路径
 		const withLoc = buildSkillsText(unordered, "en", false, { showLocation: true });
 		expect(withLoc).toContain("- alpha: Alpha skill (location: /custom/path/alpha.md)");
 
-		// 4. 描述截断
 		const truncated = buildSkillsText(unordered, "en", false, { maxDesc: 15 });
 		expect(truncated).toContain("- zebra: Zebra skill ...");
 
-		// 5. 预算超限自动降级为紧凑模式（names-only）
 		const compact = buildSkillsText(unordered, "en", false, { budget: 100 });
 		expect(compact).toContain("- alpha\n- zebra");
 		expect(compact).not.toContain("Alpha skill");
@@ -404,7 +394,6 @@ describe("plugin_dev — 插件开发指南提示词段落", () => {
 		expect(defaultRendered).not.toContain("Plugin Development Guide");
 		expect(defaultRendered).not.toContain("architecture-plugins.md");
 
-		// 显式开启时（传入空 disabled 列表），指南被正确包含
 		const enabledRendered = renderDefaultPrompt(autoTexts, []);
 		expect(enabledRendered).toContain("Plugin Development Guide");
 		expect(enabledRendered).toContain("E:/pi-web-ui/docs/architecture-plugins.md");
@@ -449,7 +438,6 @@ describe("estimatePromptTokens — token 占用估算", () => {
 
 	it("CJK 字符按 1 token/字，混排按两类分别计", () => {
 		expect(estimatePromptTokens("你好世界")).toBe(4);
-		// 4 个汉字 + 8 个 ASCII 字符
 		expect(estimatePromptTokens("你好世界abcdefgh")).toBe(6);
 	});
 

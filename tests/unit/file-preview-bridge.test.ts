@@ -1,7 +1,3 @@
-/**
- * 文件预览桥单测（web/src/file-preview-bridge.ts）：注册/注销/受理/竞态兜底。
- * 纯模块级 sink，无 DOM API 依赖（node 环境可跑）。
- */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	isFilePreviewOpen,

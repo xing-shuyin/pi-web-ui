@@ -1,7 +1,3 @@
-/**
- * buildUpdateCommand 单测：pi 扩展走 `pi update npm:<name>`（装在
- * <agentDir>/npm），pi-core/webui 走 `npm i -g`；多目标 `;` 连接；空数组。
- */
 import { describe, expect, it } from "vitest";
 import { buildUpdateCommand } from "../../web/src/update-command.js";
 

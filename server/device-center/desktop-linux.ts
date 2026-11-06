@@ -14,9 +14,7 @@ function executable(name: string): string | undefined {
 		try {
 			accessSync(candidate, constants.X_OK);
 			if (statSync(candidate).isFile()) return candidate;
-		} catch {
-			/* Missing or inaccessible PATH entry. */
-		}
+		} catch {}
 	}
 	return undefined;
 }
@@ -24,7 +22,6 @@ function executable(name: string): string | undefined {
 export function linuxDesktopStatus(): { supported: boolean; backend: string; reason?: string } {
 	const unsupported = (reason: string) => ({ supported: false, backend: "x11", reason });
 	if (process.platform !== "linux") return unsupported("Linux X11 desktop capture requires Linux.");
-	// XWayland only captures X11 windows, not the full Wayland desktop.
 	if (process.env.XDG_SESSION_TYPE?.toLowerCase() === "wayland" || process.env.WAYLAND_DISPLAY)
 		return unsupported("Wayland desktop capture requires Portal/PipeWire and is not supported yet.");
 	if (!process.env.DISPLAY) return unsupported("No X11 DISPLAY is available; Wayland requires Portal/PipeWire.");
@@ -48,9 +45,7 @@ function screenSize(): [number, number] {
 				: output;
 			const match = section?.match(/dimensions:\s*(\d+)x(\d+)\s+pixels/);
 			if (match && +match[1] > 0 && +match[2] > 0) return [+match[1], +match[2]];
-		} catch {
-			/* Try xrandr when xdpyinfo cannot query this display. */
-		}
+		} catch {}
 	}
 	const randr = executable("xrandr");
 	if (randr) {
@@ -58,9 +53,7 @@ function screenSize(): [number, number] {
 			const output = execFileSync(randr, ["--display", display, "--current"], PROBE_OPTIONS);
 			const match = output.match(/current\s+(\d+)\s+x\s+(\d+)/);
 			if (match && +match[1] > 0 && +match[2] > 0) return [+match[1], +match[2]];
-		} catch {
-			/* Report a useful dependency/display error below. */
-		}
+		} catch {}
 	}
 	throw new Error("Cannot determine X11 screen dimensions; install xdpyinfo or xrandr and check DISPLAY/XAUTHORITY.");
 }
@@ -144,7 +137,6 @@ export function startLinuxDesktop(options: {
 		keys.clear();
 		buttons.clear();
 		if (!control || !args.length) return;
-		// One bounded, directly spawned cleanup command; never starts a shell.
 		execFile(control, args, { timeout: 2000, killSignal: "SIGKILL", maxBuffer: 16384, shell: false }, () => {});
 	};
 	const close = () => {
@@ -157,7 +149,6 @@ export function startLinuxDesktop(options: {
 			killTimer = setTimeout(() => capture?.kill("SIGKILL"), 1000);
 			killTimer.unref();
 		}
-		// Wait for the active command's callback before releasing, avoiding a late keydown.
 		if (command) command.kill("SIGKILL");
 		else releaseAfterStop();
 		options.onClose();
@@ -173,7 +164,6 @@ export function startLinuxDesktop(options: {
 	const drain = () => {
 		if (closed || command || !queue.length || !control) return;
 		const args = queue.shift()!;
-		// Track attempted downs too: an interrupted xdotool can already have injected them.
 		for (let i = 0; i < args.length - 1; i++) {
 			if (args[i] === "keydown") keys.add(args[i + 1]);
 			if (args[i] === "mousedown") buttons.add(args[i + 1]);
@@ -307,7 +297,6 @@ export function startLinuxDesktop(options: {
 		);
 		capture.stdout!.on("data", (chunk: Buffer) => {
 			if (closed) return;
-			// Slice large writes so a single producer chunk cannot grow retained memory unboundedly.
 			for (let offset = 0; offset < chunk.length && !closed; offset += 65536) {
 				pending = Buffer.concat([pending, chunk.subarray(offset, offset + 65536)]);
 				while (pending.length && !closed) {
@@ -350,7 +339,6 @@ export function startLinuxDesktop(options: {
 				);
 		});
 	} catch (error) {
-		// Defer setup failures so callers can store the returned handle before onClose.
 		queueMicrotask(() => fail(String(error)));
 	}
 	return { input, close };

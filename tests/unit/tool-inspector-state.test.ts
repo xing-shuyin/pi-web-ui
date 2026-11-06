@@ -1,7 +1,3 @@
-/**
- * tool-inspector-state 单测（web/src/tool-inspector-state.ts）：
- * 覆盖工具执行详情与思考流检查器弹窗的模块级 store 及 isFlowMode 判定。
- */
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	closeToolInspector,
@@ -65,7 +61,6 @@ describe("tool-inspector-state store", () => {
 		expect(getToolInspectorState()).toBeNull();
 		expect(notified).toBe(1);
 
-		// 幂等关闭不重复触发通知
 		closeToolInspector();
 		expect(notified).toBe(1);
 
@@ -88,21 +83,18 @@ describe("tool-inspector-state store", () => {
 			notified++;
 		});
 
-		// 匹配 toolCallId，输出增加
 		updateToolInspectorLive("call_bash_123", {
 			output: "line 1\nline 2\n",
 		});
 		expect(notified).toBe(1);
 		expect(getToolInspectorState()?.output).toBe("line 1\nline 2\n");
 
-		// 不匹配 toolCallId，不更新也不通知
 		updateToolInspectorLive("call_different_456", {
 			output: "should not update",
 		});
 		expect(notified).toBe(1);
 		expect(getToolInspectorState()?.output).toBe("line 1\nline 2\n");
 
-		// 字段值无变化，不重复触发通知
 		updateToolInspectorLive("call_bash_123", {
 			output: "line 1\nline 2\n",
 		});

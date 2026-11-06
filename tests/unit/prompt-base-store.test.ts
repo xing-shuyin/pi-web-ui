@@ -1,13 +1,3 @@
-/**
- * prompt-base-store —— SYSTEM.md / APPEND_SYSTEM.md base 的归属守卫（issue #812）。
- *
- * 要守的语义只有一条：**base 属于 loader（= session），不属于客户端**。
- *  - 没文件的项目没有记录 → 空 base（内置默认），绝不会沿用别的会话的值；
- *  - 有文件 → 每次 reload 覆盖式登记（base 变空也覆盖），所以「删掉 SYSTEM.md
- *    再 reload」「切到无 SYSTEM.md 的项目」都不会留旧值；
- *  - key 是 loader 对象本身：过户把 session 搬给另一个 ClientSession 时，记录跟着
- *    会话走，新宿主读得到（旧实现存在客户端字段里，过户即丢/即串）。
- */
 import { describe, expect, it } from "vitest";
 import { readPromptBase, recordPromptBaseLoader } from "../../server/prompt-base-store.js";
 
@@ -65,8 +55,6 @@ describe("prompt-base-store — base 归属 loader", () => {
 	it("过户语义：同一 loader 换宿主读取，记录仍在（记录跟 session 走）", () => {
 		const loader = {};
 		recordPromptBaseLoader(loader, { system: "project prompt", append: [] });
-		// 过户 = session（含 loader）搬到另一个 ClientSession；读取侧只有 loader 句柄，
-		// 所以记录必须挂在 loader 上而不是挂在读取方身上。
 		const readFromNewHolder = () => readPromptBase(loader);
 		expect(readFromNewHolder().system).toBe("project prompt");
 	});

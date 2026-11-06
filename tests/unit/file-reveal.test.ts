@@ -19,7 +19,6 @@ function makeService(cwd: string) {
 		getCwd: () => cwd,
 		getActiveCwd: () => cwd,
 	});
-	// Mock spawnDetached 以免在测试时真正打开系统资源管理器窗口，并收集调用参数
 	(svc as unknown as { spawnDetached: unknown }).spawnDetached = async (
 		cmd: string,
 		args: string[],
@@ -69,14 +68,12 @@ describe("files-service: revealEntry 系统资源管理器定位", () => {
 		writeFileSync(join(cwd, "src", "index.ts"), "console.log('hi');");
 		const { svc, spawnCalls } = makeService(cwd);
 
-		// 目录
 		await svc.revealEntry("src");
 		expect(spawnCalls.length).toBe(1);
 		if (process.platform === "win32") {
 			expect(spawnCalls[0].args).toEqual(["/n,", join(cwd, "src")]);
 		}
 
-		// 文件
 		await svc.revealEntry("src/index.ts");
 		expect(spawnCalls.length).toBe(2);
 		if (process.platform === "win32") {

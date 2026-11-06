@@ -7,7 +7,6 @@ import { LanguageProvider } from "../../web/src/i18n";
 import type { UiMessage, UiState } from "../../web/src/types";
 
 const lifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }));
-// Keep the real Message and its tool/Markdown DOM; count its lifetime through a probe.
 vi.mock("../../web/src/components/Message", async (original) => {
 	const actual = await original<typeof import("../../web/src/components/Message")>();
 	return {
@@ -65,7 +64,6 @@ function render(messages: UiMessage[], streamingMessage: UiMessage | null) {
 
 beforeEach(() => {
 	vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-	// Render full text synchronously using the renderer's real background-tab path.
 	vi.spyOn(document, "hidden", "get").mockReturnValue(true);
 	vi.stubGlobal(
 		"ResizeObserver",
@@ -108,8 +106,6 @@ describe("MessageList stable assistant ownership", () => {
 		render([message("a-tool", [tool])], null);
 		expect(container.querySelector("[data-cluster-id]")).toBe(cluster);
 		expect(container.querySelector(".msg-assistant")).toBe(shell);
-		// Completion deliberately switches an active tool card to a compact pill.
-		// The stable identity boundary is the message shell and its mounted instance.
 		expect(container.querySelector(".toolcall")).not.toBeNull();
 		expect(lifecycle).toEqual({ mounts: 1, unmounts: 0 });
 	});
@@ -182,7 +178,6 @@ describe("MessageList stable assistant ownership", () => {
 		const tracker: StreamKeyTracker = { convKey: "c", pending: null, finalizedMap: new Map() };
 		syncStreamRenderKeys(tracker, "c", [], { id: "stream-old", role: "assistant" });
 		const old = { id: "a-old", role: "assistant" as const };
-		// A snapshot can publish the persisted message before dropping the old stream.
 		syncStreamRenderKeys(tracker, "c", [old], { id: "stream-old", role: "assistant" });
 		const map = syncStreamRenderKeys(tracker, "c", [old], { id: "stream-new", role: "assistant" });
 		expect(map.get("a-old")).toBe("stream-old");

@@ -1,4 +1,3 @@
-/** Only controlled execution failures cross the device boundary; model/SDK errors may contain secrets. */
 export class DeviceTaskError extends Error {
 	constructor(
 		readonly publicReport: string,

@@ -4,6 +4,8 @@ import canvasZh from "./messages/canvas/zh.json";
 import canvasEn from "./messages/canvas/en.json";
 import canvasRuntimeZh from "./messages/canvas-runtime/zh.json";
 import canvasRuntimeEn from "./messages/canvas-runtime/en.json";
+import nativeCliSessionZh from "./messages/native-cli-session/zh.json";
+import nativeCliSessionEn from "./messages/native-cli-session/en.json";
 
 interface MessageModule {
 	name: string;
@@ -58,6 +60,7 @@ export const { zh, en } = createCatalog([
 	{ name: "core", zh: coreZh, en: coreEn },
 	{ name: "canvas", zh: canvasZh, en: canvasEn },
 	{ name: "canvas-runtime", zh: canvasRuntimeZh, en: canvasRuntimeEn },
+	{ name: "native-cli-session", zh: nativeCliSessionZh, en: nativeCliSessionEn },
 ]);
 
 export type MessageKey = keyof typeof zh;

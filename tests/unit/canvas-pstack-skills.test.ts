@@ -136,7 +136,6 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 			lang: () => "zh",
 		});
 
-		// 1. 添加 pstack 节点
 		const addRes = await tool.execute(
 			"call_1",
 			{
@@ -153,7 +152,6 @@ describe("Canvas Tool & Orchestrator Execution for pstack and skill roles", () =
 		const text1 = String((addRes as any)?.content?.[0]?.text);
 		expect(text1).toContain("Unslop Specialist");
 
-		// 2. 添加 skill 节点
 		const addSkillRes = await tool.execute(
 			"call_2",
 			{

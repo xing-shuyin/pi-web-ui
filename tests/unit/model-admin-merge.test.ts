@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { ModelAdminService, mergeProviderConfigEntry, type ModelAdminHost } from "../../server/model-admin.js";
 import type { ServerMessage, UiModelConfigEntry, UiProviderConfig } from "../../server/protocol.js";
 
-/** 表单带上的模型行（UI 只认识这几个字段）。 */
 function formModel(id: string, overrides: Partial<UiModelConfigEntry> = {}): UiModelConfigEntry {
 	return { id, ...overrides };
 }
@@ -15,7 +14,6 @@ function formConfig(models: UiModelConfigEntry[], overrides: Partial<UiProviderC
 	return { providerId: "opencode-go", api: "openai-completions", models, ...overrides };
 }
 
-/** 覆盖内置 provider 的 models.json 条目：模型级 api/baseUrl/cost/compat 都是 UI 不认识的字段。 */
 const storedOverrideEntry = {
 	api: "openai-completions",
 	baseUrl: "https://opencode.ai/zen/go/v1",
@@ -58,22 +56,17 @@ describe("mergeProviderConfigEntry", () => {
 		const merged = mergeProviderConfigEntry(prev, formConfig([formModel("m1")]), [formModel("m1")]);
 		expect(merged.headers).toEqual({ Authorization: "Bearer secret" });
 		expect(merged.extraField).toEqual({ nested: true });
-		// apiKey 明文不再下发浏览器（只见 hasApiKey）：表单/内部路径缺字段 =
-		// 保留旧值（refresh_provider_models 不带 apiKey 保存也不得抹掉密钥）。
 		expect(merged.apiKey).toBe("stored");
 	});
 
 	it("apiKey：缺字段 = 保留旧值，显式空串 = 清除，非空 = 覆盖", () => {
 		const prev = { apiKey: "stored", models: [{ id: "m1" }] };
 
-		// 缺字段（表单留空 / 内部保存路径）→ 保留
 		expect(mergeProviderConfigEntry(prev, formConfig([formModel("m1")]), [formModel("m1")]).apiKey).toBe("stored");
 
-		// 显式空串 → 清除（协议级"空=清除"语义保留）
 		const cleared = mergeProviderConfigEntry(prev, formConfig([formModel("m1")], { apiKey: "  " }), [formModel("m1")]);
 		expect("apiKey" in cleared).toBe(false);
 
-		// 非空 → 覆盖
 		const replaced = mergeProviderConfigEntry(prev, formConfig([formModel("m1")], { apiKey: " new-key " }), [
 			formModel("m1"),
 		]);
@@ -188,7 +181,6 @@ describe("ModelAdminService.saveModelConfig", () => {
 				providers: Record<string, Record<string, unknown>>;
 			};
 			const entry = written.providers["opencode-go"];
-			// provider 级 headers（浏览器拿不到）与模型级 api/baseUrl/cost/compat 必须存活。
 			expect(entry.headers).toEqual({ "X-Test": "1" });
 			expect(entry.models).toEqual([{ ...storedOverrideEntry.models[0], reasoning: true }]);
 			expect(notices.some((msg) => msg.type === "notice")).toBe(true);

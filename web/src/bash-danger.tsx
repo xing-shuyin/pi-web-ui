@@ -8,11 +8,6 @@ export interface DangerousSegment {
 	label?: string;
 }
 
-/**
- * 无服务端命中清单时的降级高亮（对话卡片 / 已执行命令）。
- * 与服务端 evaluateApprovalRules 共用同一份内置规则表（issue #578：不再维护前端第二份黑名单），
- * 这里只取「命令字段 + 正则」这一类规则——高亮只需要它们。
- */
 const FALLBACK_RULES = DEFAULT_APPROVAL_RULES.filter(
 	(r) =>
 		r.enabled && r.field === "command" && r.match === "regex" && r.tools.some((t) => t.trim().toLowerCase() === "bash"),
@@ -64,7 +59,6 @@ export function findDangerousBashSegments(command: string, hits?: UiApprovalHit[
 		} catch {
 			continue;
 		}
-		// 同一规则在一段命令里可能多次出现，全部标出（#578）
 		for (const m of command.matchAll(re)) {
 			const start = m.index ?? 0;
 			if (m[0].length > 0) found.push({ start, end: start + m[0].length, label: rule.label });

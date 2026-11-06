@@ -1,4 +1,3 @@
-/** Actual speech and sampled on-screen text; metadata is never content evidence. */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -32,7 +31,6 @@ function bounded(operation, signal, timeoutMs) {
 	});
 }
 
-/** One process, no shell or child ASR processes. Credentials travel only over stdin. */
 function extract(python, payload, signal) {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) return reject(new Error("cancelled"));
@@ -59,7 +57,6 @@ function extract(python, payload, signal) {
 			if (output.length + chunk.length > 1_500_000) stop("media_output_limit");
 			else output += chunk;
 		});
-		// Never surface yt-dlp/Hugging Face diagnostics: they can contain signed URLs.
 		child.stderr.resume();
 		child.stdin.on("error", () => {});
 		child.on("error", () => {
@@ -80,11 +77,6 @@ function extract(python, payload, signal) {
 	});
 }
 
-/**
- * readVideoContent({api, host, storageDir, bvid, settings?, signal?})
- * Image requests require explicit host.llm.supportsImages. OCR alone is never
- * visual scene understanding. Descriptions and AI conclusions are excluded.
- */
 export async function readVideoContent({ api, host, storageDir, bvid, settings = {}, signal = undefined }) {
 	const evidence = [];
 	const limitations = [

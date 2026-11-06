@@ -1,9 +1,3 @@
-/**
- * 插件 AI 工具扩展点单测：
- *  - syncPluginToolsIntoSession：三向 diff（新增/更新/移除）+ 不兼容对象降级；
- *  - PluginManager.registerAgentTool：注册/重名拒绝/反激活自动注销/onAgentToolsChanged 回调。
- * 零 token、零网络，毫秒级。
- */
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +33,7 @@ describe("syncPluginToolsIntoSession", () => {
 		syncPluginToolsIntoSession(session as never, defs as never, new Set());
 		const again = syncPluginToolsIntoSession(session as never, defs as never, new Set(defs.map((d) => d.name)));
 		expect(again).toEqual(new Set(["a"]));
-		expect(calls).toHaveLength(1); // 第二次没有 changed，不重建
+		expect(calls).toHaveLength(1);
 	});
 
 	it("移除已注销的工具名", () => {
@@ -48,7 +42,7 @@ describe("syncPluginToolsIntoSession", () => {
 		const prev = new Set(["mail"]);
 		const next = syncPluginToolsIntoSession(session as never, [] as never, prev);
 		expect(next).toEqual(new Set());
-		expect(session._customTools!.map((d) => d.name)).toEqual(["bash"]); // 内置工具不动
+		expect(session._customTools!.map((d) => d.name)).toEqual(["bash"]);
 		expect(calls).toHaveLength(1);
 	});
 
@@ -92,14 +86,12 @@ export default {
 			expect(mgr.getAgentTools().map((t) => t.name)).toEqual(["fixture_ping"]);
 			expect(changes).toBeGreaterThanOrEqual(1);
 
-			// 重名注册被拒绝（返回的注销函数是空操作）
 			mgr.dispose();
 			await mgr.ensureLoaded();
 			const before = mgr.getAgentTools().length;
 			void before;
 			mgr.dispose();
 
-			// 删除插件目录后重新加载 → 工具随之消失
 			rmSync(join(base, "plugins", "fixture"), { recursive: true, force: true });
 			const mgr2 = new PluginManager(base, process.cwd());
 			await mgr2.ensureLoaded();

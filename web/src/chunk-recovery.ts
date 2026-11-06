@@ -1,4 +1,3 @@
-/** Only resource-loading failures qualify; application exceptions must remain visible. */
 export function isChunkLoadError(error: unknown): boolean {
 	const message =
 		typeof error === "object" && error !== null && "message" in error ? String(error.message) : String(error);
@@ -13,7 +12,6 @@ interface RecoveryEnvironment {
 	now: () => number;
 }
 
-/** One attempt per build and at most one per minute, including across reloads. */
 export function createChunkRecovery(buildId: string, env: RecoveryEnvironment) {
 	let reloading = false;
 	return (error: unknown): boolean => {
@@ -27,7 +25,6 @@ export function createChunkRecovery(buildId: string, env: RecoveryEnvironment) {
 			if (last && (last.buildId === buildId || now - last.time < 60_000)) return false;
 			env.storage.setItem(key, JSON.stringify({ buildId, time: now }));
 		} catch {
-			// Without a durable guard, automatic reload could create an endless loop.
 			return false;
 		}
 		reloading = true;

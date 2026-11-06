@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAbortedTurn } from "../../web/src/aborted-turn.js";
 
-/** #575：用户停止 / 被抢占的回合是「中性收尾」，不是红色报错、不给「立刻重试」。 */
 describe("isAbortedTurn", () => {
 	it("SDK 中止（stopReason=aborted）→ 中止回合", () => {
 		expect(isAbortedTurn({ stopReason: "aborted", errorMessage: "Request aborted" })).toBe(true);

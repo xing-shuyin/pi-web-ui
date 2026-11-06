@@ -44,12 +44,10 @@ describe("sessionsStorageKey and readCachedSessions (#439)", () => {
 	});
 
 	it("readCachedSessions 在未指定 engine 或跨 engine 时支持智能降级命中", () => {
-		// 模拟某项目在 "pi" 引擎下存入了会话
 		const keyPi = sessionsStorageKey("/proj/c", "pi");
 		const sessC = [{ path: "/proj/c/s1.jsonl", name: "sc", firstMessage: "hello", messageCount: 1, modified: 1 }];
 		localStorage.setItem(keyPi, JSON.stringify(sessC));
 
-		// 调用时不传 engine 或传不同 engine，依然能通过降级命中
 		expect(readCachedSessions("/proj/c")).toEqual(sessC);
 		expect(readCachedSessions("/proj/c", "default")).toEqual(sessC);
 	});

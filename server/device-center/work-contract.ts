@@ -21,7 +21,7 @@ export const MAX_ITEM_CHARS = 2_048;
 export const MAX_REPO_ID_CHARS = 256;
 export const MAX_POLICY_REF_CHARS = 256;
 export const MAX_TRUNCATION_BUDGET = 10_000_000;
-export const MAX_PATCH_BYTES = 128 * 1024; // 128 KiB
+export const MAX_PATCH_BYTES = 128 * 1024;
 export const MAX_INPUT_ARTIFACTS = 8;
 export const MAX_WORK_CONTRACT_BYTES = 256 * 1024;
 export const MAX_CONTEXT_MANIFEST_BYTES = 96 * 1024;
@@ -95,9 +95,6 @@ function checkAllowedKeys(obj: Record<string, unknown>, allowed: Set<string>, co
 	return null;
 }
 
-/**
- * Deeply freeze an object and all nested properties recursively.
- */
 export function deepFreeze<T>(obj: T): Readonly<T> {
 	if (obj === null || typeof obj !== "object") {
 		return obj;
@@ -117,8 +114,6 @@ export function deepFreeze<T>(obj: T): Readonly<T> {
 	return obj as Readonly<T>;
 }
 
-// Manifests cross JSON transport and storage. Reject values whose executable meaning
-// would change during serialization, rather than silently dropping or coercing them.
 function safeClone<T>(val: T): T {
 	const ancestors = new Set<object>();
 	let bytes = 0;
@@ -153,12 +148,6 @@ function safeClone<T>(val: T): T {
 	return JSON.parse(JSON.stringify(val));
 }
 
-/**
- * Deterministically serialize a JS value into canonical JSON.
- * - Recursively sorts object keys alphabetically.
- * - Ignores undefined object values.
- * - Formats primitives and arrays consistently.
- */
 export function canonicalizeJson(value: unknown): string {
 	if (value === null || typeof value !== "object") {
 		return JSON.stringify(value);
@@ -177,10 +166,6 @@ export function canonicalizeJson(value: unknown): string {
 	return "{" + entries.join(",") + "}";
 }
 
-/**
- * Deterministically compute the SHA-256 digest of a DeviceWorkContract.
- * Excludes the digest field itself from the hash payload.
- */
 export function computeContractDigest(contract: Omit<DeviceWorkContract, "digest"> | DeviceWorkContract): string {
 	const canonicalPayload = {
 		id: contract.id,
@@ -222,10 +207,6 @@ export function computeContractDigest(contract: Omit<DeviceWorkContract, "digest
 	return createHash("sha256").update(canonicalizeJson(canonicalPayload)).digest("hex");
 }
 
-/**
- * Deterministically compute the SHA-256 digest of a ContextManifest.
- * Excludes the digest field itself from the hash payload.
- */
 export function computeManifestDigest(manifest: Omit<ContextManifest, "digest"> | ContextManifest): string {
 	const canonicalPayload = {
 		version: manifest.version,
@@ -242,10 +223,6 @@ export function computeManifestDigest(manifest: Omit<ContextManifest, "digest"> 
 	return createHash("sha256").update(canonicalizeJson(canonicalPayload)).digest("hex");
 }
 
-/**
- * Deterministically compute the SHA-256 digest of a DeviceArtifact.
- * Excludes the digest field itself from the hash payload.
- */
 export function computeArtifactDigest(artifact: Omit<DeviceArtifact, "digest"> | DeviceArtifact): string {
 	const canonicalPayload = {
 		id: artifact.id,
@@ -272,16 +249,6 @@ export function computeArtifactDigest(artifact: Omit<DeviceArtifact, "digest"> |
 	return createHash("sha256").update(canonicalizeJson(canonicalPayload)).digest("hex");
 }
 
-/**
- * Validate a DeviceArtifact:
- * - Strict allowlist (no extra fields like producer.cwd).
- * - Must not contain machine-local file paths.
- * - Must have valid SHA-256 digest.
- * - If baseline is present, commit must be 40-char hex SHA.
- * - If patchBase64 is present, must be strict canonical base64, bounded to 128 KiB decoded,
- *   and patchSha256 must match its content hash.
- * - Never throws on malformed input.
- */
 export function validateDeviceArtifact(
 	artifact: unknown,
 ): { valid: true; artifact: DeviceArtifact } | { valid: false; reason: string } {
@@ -358,7 +325,6 @@ export function validateDeviceArtifact(
 			}
 		}
 
-		// Trees must not be local paths and if provided must be 40-character hex tree SHAs
 		if (a.inputTree !== undefined && a.inputTree !== null) {
 			if (typeof a.inputTree !== "string" || !TREE_HEX_REGEX.test(a.inputTree)) {
 				return { valid: false, reason: "Artifact inputTree must be a 40-character hex tree SHA" };
@@ -430,11 +396,6 @@ function codeArtifactProofError(artifact: DeviceArtifact): string | undefined {
 		return "Code artifact requires producer contractDigest and manifestDigest";
 }
 
-/**
- * Validate input artifacts and ensure they can be safely synthesized for the contract.
- * Rejects if artifacts conflict, lack matching baseline, or cannot be verified.
- * Never throws on malformed input.
- */
 export function validateInputArtifacts(
 	artifacts: unknown,
 	baseline?: DeviceArtifactBaseline,
@@ -501,12 +462,6 @@ export function validateInputArtifacts(
 	}
 }
 
-/**
- * Create an immutable DeviceWorkContract with computed digest.
- * Recursively deep-freezes and clones inputs so callers cannot mutate the contract after creation.
- * executionMode defaults to "chat".
- * If executionMode === "code", baseline with stable repositoryId and full 40-char commit SHA is strictly required.
- */
 export function createWorkContract(input: DeviceWorkContractInput, fallbackGoal?: string): DeviceWorkContract {
 	if (!input || typeof input !== "object" || Array.isArray(input)) {
 		throw new Error("Contract input must be a non-null object");
@@ -660,15 +615,6 @@ export function createWorkContract(input: DeviceWorkContractInput, fallbackGoal?
 	return deepFreeze(contract);
 }
 
-/**
- * Validate a DeviceWorkContract:
- * - Strict allowlist (no extra/unknown fields).
- * - Checks executionMode ("chat" | "code").
- * - If "code", verifies baseline repositoryId and 40-char commit SHA.
- * - Verifies inputArtifacts safe synthesis.
- * - Verifies immutable SHA-256 digest.
- * - Never throws on malformed input.
- */
 export function validateWorkContract(
 	contract: unknown,
 ): { valid: true; contract: DeviceWorkContract } | { valid: false; reason: string } {
@@ -800,10 +746,6 @@ export function assertValidWorkContract(contract: unknown): asserts contract is 
 	}
 }
 
-/**
- * Freeze a ContextManifest before task delivery.
- * Clones inputs, context, and taskState to prevent later external mutation, and deeply freezes the result.
- */
 export function createContextManifest(args: {
 	contract: DeviceWorkContract;
 	executionPolicy?: ContextManifest["executionPolicy"];
@@ -860,10 +802,6 @@ export function createContextManifest(args: {
 	return validated.manifest;
 }
 
-/**
- * Validate a ContextManifest and ensure its references match the expected contract.
- * Never throws on malformed input.
- */
 export function validateContextManifest(
 	manifest: unknown,
 	expectedContract?: DeviceWorkContract,
@@ -977,15 +915,6 @@ export function validateContextManifest(
 	}
 }
 
-/**
- * Validate a code artifact outcome when Hub receives terminal event or completion.
- * Checks proof fields (executionCompleted, artifactProduced) and validates artifact identity against contract/manifest.
- * Code artifact must have:
- * - 40hex inputTree and outputTree
- * - Complete baseline matching contract
- * - Canonical base64 patch <= 128 KiB decoded matching patchSha256
- * - Never throws on malformed input.
- */
 export function validateCodeArtifactOutcome(args: {
 	task: {
 		id: string;
@@ -1034,7 +963,6 @@ export function validateCodeArtifactOutcome(args: {
 			}
 			const art = artifactRes.artifact;
 
-			// Code artifact specific checks
 			if (isCode) {
 				const proofError = codeArtifactProofError(art);
 				if (proofError) return { valid: false, reason: proofError };

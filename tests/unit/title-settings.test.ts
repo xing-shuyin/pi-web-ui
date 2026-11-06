@@ -1,8 +1,3 @@
-/**
- * 标题显示项目名开关的纯函数单测（见 web/src/title-settings.ts）。
- * 只测 normalizeTitleSettings / projectNameFromCwd —— localStorage 存取在 node 环境
- * 不可用，load/save 都有 try/catch 兜底，不在单测范围内。
- */
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TITLE_SETTINGS, normalizeTitleSettings, projectNameFromCwd } from "../../web/src/title-settings.js";
 

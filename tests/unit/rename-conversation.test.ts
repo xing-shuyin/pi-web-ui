@@ -15,8 +15,6 @@ function harness() {
 	const directory = mkdtempSync(join(tmpdir(), "rename-conversation-"));
 	directories.push(directory);
 	const manager = SessionManager.create(directory, directory);
-	// Keep the real SDK sessionFile getter and setSessionName implementation.
-	// Only event delivery is faked; no model, agent runtime or server is needed.
 	const session = Object.assign(Object.create(AgentSession.prototype), {
 		sessionManager: manager,
 		_emit: vi.fn(),
@@ -73,7 +71,6 @@ describe("ClientSession.renameConversation persistence", () => {
 		await rename("Name retained by fork");
 		expect(conversation.title).toBe("Name retained by fork");
 		expect(context.emit).not.toHaveBeenCalled();
-		// The old implementation passes this check by writing through a second manager.
 		expect(SessionManager.open(file).getSessionName()).toBe("Name retained by fork");
 
 		const laterLeaf = appendUser(manager, "Message after renaming");

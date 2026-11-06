@@ -17,7 +17,6 @@ describe("file tree hidden entries (web/src/file-tree-hidden.ts)", () => {
 
 		expect(visibleTreeEntries(entries, false).map((e) => e.name)).toEqual(["src", "a.md"]);
 		expect(visibleTreeEntries(entries, true).map((e) => e.name)).toEqual([".env", "src", ".git", "a.md"]);
-		// 关掉开关时不应就地改数组（渲染层直接 map 它）。
 		expect(entries.map((e) => e.name)).toEqual([".env", "src", ".git", "a.md"]);
 	});
 

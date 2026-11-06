@@ -17,7 +17,6 @@ function deferred<T>() {
 function setup(config: Record<string, unknown> = {}) {
 	const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ errcode: 0 }) });
 	vi.stubGlobal("fetch", fetch);
-	// Model the host's account-scoped implicit binding, not just a constant reply.
 	const accounts = new Map<string, string>();
 	let sequence = 0;
 	const host = {
@@ -242,6 +241,6 @@ describe("WeCom reset command generation isolation", () => {
 		await send("/new");
 		firstChunk.resolve({ ok: true, json: async () => ({ errcode: 0 }) });
 		await delivery;
-		expect(fetch).toHaveBeenCalledTimes(2); // already-started chunk plus reset acknowledgement
+		expect(fetch).toHaveBeenCalledTimes(2);
 	});
 });

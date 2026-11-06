@@ -1,4 +1,3 @@
-/** Fit overview ticks to the measured rail; the full question list stays available. */
 export function questionNavLayout(count: number, height: number, activeIndex: number) {
 	const available = Math.max(0, height);
 	const capacity = Math.floor((available + 4) / 7);

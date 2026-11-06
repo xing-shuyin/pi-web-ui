@@ -1,8 +1,3 @@
-// 已结束对话的过户（零 token）：A 的 run 跑完后，B（全新页面，A 还在线）
-// 仍能在 elsewhere 看到空闲行并过户查看完整转录；且 B 上线时不会自动恢复
-// A 仍持有的会话（第二个 writer），而是空白落地 + 提示去向。
-// 回归：elsewhere 只推 running 时，对话一结束行就消失，只能趁运行中过户。
-// Usage: npm run build && node tests/idle-takeover-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +34,6 @@ const delta = (model, d, finish = null) => ({
 	model,
 	choices: [{ index: 0, delta: d, finish_reason: finish }],
 });
-// mock 恒直接回文本（不提问），run 一次即结束。
 const mock = createServer(async (req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${MOCK_PORT}`);
 	if (url.pathname.endsWith("/models")) {
@@ -89,7 +83,6 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: workdir,
 		PI_CODING_AGENT_DIR: agentDir,
-		// 显式清空：测试必须与 ambient shell 的 PI_WEB_TOKEN 无关。
 		PI_WEB_TOKEN: "",
 	},
 	stdio: "ignore",
@@ -102,9 +95,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/api/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -195,7 +186,6 @@ try {
 		return c;
 	};
 
-	// A：run 一次即结束（mock 直接回文本，不提问）。
 	clientA = await openClient("idle-takeover-A");
 	clientA.send({ type: "prompt", text: "hi" });
 	await clientA.waitForState((s) => s.isStreaming === false, 60000);
@@ -218,8 +208,6 @@ try {
 	}
 	const convA = clientA.state.conversationId;
 
-	// B：A 结束后才上线。B 不得自动恢复 A 仍持有的会话（第二个 writer），
-	// 应空白落地 + 收到去向提示。
 	clientB = await openClient("idle-takeover-B");
 	check(
 		"B 没有自动恢复别处的会话（空白落地）",
@@ -231,7 +219,6 @@ try {
 		clientB.notices().some((m) => (m.text ?? "").includes("在另一处开着")),
 	);
 
-	// 结束后 elsewhere 仍保留空闲行（可过户），而不是跑完即消失。
 	let row = null;
 	{
 		const started = Date.now();
@@ -245,7 +232,6 @@ try {
 	check("结束的行标为空闲（非 running）", row?.isStreaming === false, `isStreaming=${row?.isStreaming}`);
 	check("空闲行带过户定位", !!(row?.owner && row?.convId), `owner=${row?.owner} convId=${row?.convId}`);
 
-	// B 过户已结束的对话 → 切过去并看到完整转录（提问 + 回答都在）。
 	clientB.send({ type: "take_over_conversation", owner: row.owner, id: row.convId });
 	{
 		const started = Date.now();
@@ -280,7 +266,6 @@ try {
 		check("A 页该对话已搬走", gone);
 	}
 
-	// B 过户后发送新消息（issue 验证：已结束的对话过户后发新消息必须正常呈现，不需要刷新页面）。
 	clientB.send({ type: "prompt", text: "after-takeover-question" });
 	{
 		const started = Date.now();

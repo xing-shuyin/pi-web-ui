@@ -1,12 +1,3 @@
-/**
- * dsh 引擎视觉桥测试（真 key 门控）——base64 图片附件（imageData）→
- * attachment/save → 真 image 块 → vision-exp 模型看图回复。
- *
- * 需要真实 DeepSeek API key + 模型目录含 deepseek-v4-flash-vision-exp。
- * 无 key 时打印 SKIP 并退出 0。
- *
- * 用法：node tests/dsh-vision-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -20,7 +11,6 @@ const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
 const PORT = 8937;
 const CLIENT_ID = "dsh-vision-test";
 
-// 真 key 门控。
 let key = process.env.DEEPSEEK_API_KEY;
 if (!key) {
 	try {
@@ -30,9 +20,7 @@ if (!key) {
 			const ds = auth.deepseek;
 			key = typeof ds === "string" ? ds : ds?.key;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 if (!key) {
 	console.log("⏭ SKIP：无 DeepSeek API key（需 ~/.pi/agent/auth.json 的 deepseek.key 或 DEEPSEEK_API_KEY）");
@@ -91,9 +79,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -159,12 +145,10 @@ async function main() {
 	await c.wait((m) => m.type === "goal_status");
 	console.log("attached");
 
-	// 切到 vision 模型（模型目录动态化后无需本地表白名单）。
 	await sleep(2500);
 	c.send({ type: "set_model", modelId: "deepseek-v4-flash-vision-exp" });
-	await sleep(8000); // 换模型 = 重启运行时，等 vision 模型 boot 完成
+	await sleep(8000);
 
-	// 图片 base64 附件 → prompt。
 	const png = readFileSync(IMG);
 	const imageData = png.toString("base64");
 	c.send({
@@ -180,7 +164,6 @@ async function main() {
 		],
 	});
 
-	// 等模型回复（逐字 text_delta 累计）。
 	const t0 = Date.now();
 	let repliedText = "";
 	while (Date.now() - t0 < 120_000 && repliedText.length < 8) {

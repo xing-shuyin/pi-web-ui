@@ -1,14 +1,3 @@
-/**
- * notes 视图/浮窗的文案（中英双语）。
- *
- * 语言跟随主应用：切换语言时主应用会写 `document.documentElement.lang`（见
- * web/src/i18n.tsx），这里读它决定初始语言；浮窗设置里另有手动切换（存 localStorage，
- * 便于在别的语言下单独用中文/英文）。
- *
- * 插件是裸 ESM（不能 import 主应用的 i18n），所以自带一份小字典：缺 key 原样回显 key，
- * 便于发现漏配；`{name}` 形式的占位符由 t() 第二参替换。
- */
-
 export const DICT = {
 	zh: {
 		"app.title": "笔记",
@@ -352,20 +341,16 @@ export const DICT = {
 	},
 };
 
-/** 从主应用（document.documentElement.lang）读语言；认不出的按 zh 以外一律 en。 */
 export function detectLang() {
 	try {
 		const raw = String(globalThis.document?.documentElement?.lang ?? "").toLowerCase();
 		if (raw.startsWith("zh")) return "zh";
 		if (raw) return "en";
-	} catch {
-		/* 非浏览器环境（单测）→ 走 navigator / 默认 */
-	}
+	} catch {}
 	const nav = String(globalThis.navigator?.language ?? "").toLowerCase();
 	return nav.startsWith("zh") ? "zh" : nav ? "en" : "zh";
 }
 
-/** 语言 → t(key, params)；缺 key 原样回显（便于发现漏配）。 */
 export function makeT(lang) {
 	const table = DICT[lang] ?? DICT.zh;
 	return (key, params) => {

@@ -1,6 +1,3 @@
-/**
- * screenshot-themes-preview.mjs —— 真机截取壁纸弹窗内 5 款可切换专属主题实景效果
- */
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -72,7 +69,6 @@ async function main() {
 		await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "networkidle" });
 		await page.waitForFunction(() => Boolean(window.__piWallpaperEngineRuntime), { timeout: 15000 });
 
-		// 1. 打开壁纸抽屉，截取包含专属主题选择器的抽屉面板图
 		console.log("1. 打开壁纸抽屉截取主题切换器...");
 		await page.evaluate(() => {
 			window.__piWallpaperEngineRuntime.drawer.open();
@@ -83,7 +79,6 @@ async function main() {
 		await page.screenshot({ path: shotDrawer });
 		console.log(`✓ 已生成抽屉主题切换器截图: ${shotDrawer}`);
 
-		// 2. 激活壁纸并注入示例对话
 		console.log("2. 激活壁纸并设置示例消息...");
 		await page.evaluate(async () => {
 			const rt = window.__piWallpaperEngineRuntime;
@@ -133,7 +128,6 @@ void main() {
 		});
 		await sleep(3500);
 
-		// 3. 切换并截取 霓虹幻紫 (Synthwave) 主题
 		console.log("3. 切换至【🔮 霓虹幻紫】主题...");
 		await page.evaluate(() => {
 			const select = document.querySelector("#pi-we-theme-select");
@@ -147,7 +141,6 @@ void main() {
 		await page.screenshot({ path: shotSynthwave });
 		console.log(`✓ 已生成霓虹幻紫主题截图: ${shotSynthwave}`);
 
-		// 4. 切换并截取 黑曜冷月 (Obsidian) 主题
 		console.log("4. 切换至【🌑 黑曜冷月】主题...");
 		await page.evaluate(() => {
 			const select = document.querySelector("#pi-we-theme-select");
@@ -161,7 +154,6 @@ void main() {
 		await page.screenshot({ path: shotObsidian });
 		console.log(`✓ 已生成黑曜冷月主题截图: ${shotObsidian}`);
 
-		// 5. 切换并截取 极光翡翠 (Aurora) 主题
 		console.log("5. 切换至【🌲 极光翡翠】主题...");
 		await page.evaluate(() => {
 			const select = document.querySelector("#pi-we-theme-select");
@@ -175,7 +167,6 @@ void main() {
 		await page.screenshot({ path: shotAurora });
 		console.log(`✓ 已生成极光翡翠主题截图: ${shotAurora}`);
 
-		// 6. 切换并截取 晚霞琥珀 (Amber) 主题
 		console.log("6. 切换至【🌅 晚霞琥珀】主题...");
 		await page.evaluate(() => {
 			const select = document.querySelector("#pi-we-theme-select");

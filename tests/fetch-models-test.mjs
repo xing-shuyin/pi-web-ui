@@ -1,15 +1,3 @@
-// fetch_models — custom-provider model-list auto-fetch test.
-//
-// The server probes a custom provider's OpenAI-compatible /models endpoint
-// (server-side, so browser CORS doesn't apply) and returns the model ids.
-// This test runs a LOCAL MOCK endpoint and verifies:
-//   1. happy path: model ids come back, reqId is echoed
-//   2. auth: Authorization: Bearer sent when authHeader=true; skipped when false
-//   3. /v1 fallback: bare /models 404s → retried under /v1/models
-//   4. error paths: invalid/unsupported baseUrl, empty list, non-JSON body
-//   5. concurrent requests: each result matches its own reqId
-//
-// Usage: npm run build && node fetch-models-test.mjs [port]
 import WebSocket from "ws";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -28,15 +16,6 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// ---------------------------------------------------------------------------
-// Mock /models endpoint. Dispatch on pathname:
-//   /models            → full list with metadata (records Authorization header)
-//   /v1/models         → full list
-//   /fallback/models   → 404 (forces the /v1 retry)
-//   /fallback/v1/models→ small list
-//   /google/models     → Google-format { models: [...] } (no `data` array)
-//   /empty/models      → { data: [] }
-//   /badjson/models    → not JSON
 const authHeaders = [];
 const mock = createServer((req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${MOCK_PORT}`);
@@ -66,11 +45,9 @@ const mock = createServer((req, res) => {
 	if (url.pathname === "/models" || url.pathname === "/v1/models")
 		return send(200, {
 			data: [
-				// vLLM-style extended metadata is parsed into the form rows.
 				{ id: "mock-a", owned_by: "test", context_window: 32768, modalities: ["text", "image"] },
 				{ id: "mock-b", max_model_len: 128000, supports_vision: true, reasoning: true },
-				{ id: "mock-a" }, // duplicate — must be deduped
-				// 网关自报思考档位 → 推导成 thinkingLevelMap（#771：xhigh/max 才会出现）
+				{ id: "mock-a" },
 				{ id: "mock-c", reasoning_levels: ["low", "high", "max"] },
 				{ id: "mock-d", display_name: "Mock D", max_output_tokens: 8192 },
 			],
@@ -80,7 +57,6 @@ const mock = createServer((req, res) => {
 await new Promise((res) => mock.listen(MOCK_PORT, "127.0.0.1", res));
 console.log(`mock /models on :${MOCK_PORT}`);
 
-// Minimal agent config so the server starts cleanly.
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "main-key" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -113,7 +89,6 @@ server.stderr.on("data", (d) => process.stdout.write(`[srv-err] ${d}`));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
-/** JSON comparison that ignores object key order. */
 const sortKeysDeep = (o) => {
 	if (Array.isArray(o)) return o.map(sortKeysDeep);
 	if (o && typeof o === "object")
@@ -150,7 +125,7 @@ class Client {
 			for (let i = 0; i < this.received.length; i++) {
 				const m = this.received[i];
 				if (m.type !== type) continue;
-				if (pred && !pred(m)) continue; // keep unmatched (may be wanted by another waiter)
+				if (pred && !pred(m)) continue;
 				this.received.splice(i, 1);
 				return m;
 			}
@@ -182,9 +157,7 @@ async function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	mock.close();
 }
 process.on("exit", cleanup);
@@ -196,12 +169,10 @@ process.on("SIGINT", async () => {
 try {
 	await sleep(1000);
 	const c = await connect();
-	// 报错文案断言为中文（“无效”/“未返回任何模型”）——显式上报 zh，避免服务端默认英文。
 	c.send({ type: "hello", clientId: "fetch-models-test", locale: "zh" });
 	await c.waitFor("ready", 8000);
 	console.log("  · ready");
 
-	// 1) happy path with auth (openai-completions → Authorization: Bearer)
 	c.send({
 		type: "fetch_models",
 		reqId: 1,
@@ -231,7 +202,6 @@ try {
 		authHeaders.some((h) => h.path === "/models" && h.auth === "Bearer test-key"),
 	);
 
-	// 2) authHeader=false → no Authorization header
 	c.send({
 		type: "fetch_models",
 		reqId: 2,
@@ -246,7 +216,6 @@ try {
 		r2.ok && authHeaders.filter((h) => h.path === "/models").some((h) => h.auth === null),
 	);
 
-	// 3) /v1 fallback: bare /models 404 → retried under /v1/models
 	c.send({
 		type: "fetch_models",
 		reqId: 3,
@@ -256,7 +225,6 @@ try {
 	const r3 = await c.waitFor("fetch_models_result", 10000, (m) => m.reqId === 3);
 	check("/v1 fallback works", r3.ok && canon(r3.models) === canon([{ id: "fb-only" }]));
 
-	// 4) error paths
 	c.send({ type: "fetch_models", reqId: 4, baseUrl: "" });
 	const r4 = await c.waitFor("fetch_models_result", 10000, (m) => m.reqId === 4);
 	check("empty baseUrl → error", !r4.ok && r4.error.includes("baseUrl"));
@@ -293,7 +261,6 @@ try {
 	const r9 = await c.waitFor("fetch_models_result", 10000, (m) => m.reqId === 9);
 	check("404 route → HTTP error surfaced", !r9.ok && r9.error.includes("404"));
 
-	// 5) Google-format response ({ models: [...] }, no `data` array)
 	c.send({
 		type: "fetch_models",
 		reqId: 10,
@@ -308,7 +275,6 @@ try {
 				canon([{ id: "gemini-flash", name: "Gemini Flash", contextWindow: 1048576, maxTokens: 8192 }]),
 	);
 
-	// 6) concurrent requests: reqIds stay matched
 	c.send({
 		type: "fetch_models",
 		reqId: 11,
@@ -334,7 +300,6 @@ try {
 
 	console.log(`\n${passed} checks passed`);
 } catch (err) {
-	// Debug aid: dump what actually arrived before the failure.
 	if (typeof c !== "undefined") {
 		console.log("[debug] received so far:", c.received.map((m) => m.type).join(","));
 	}

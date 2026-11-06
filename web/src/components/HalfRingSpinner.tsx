@@ -1,11 +1,5 @@
 import type { SVGProps } from "react";
 
-/**
- * 半圆环转动等待指示器（Half-Ring Spinner）。
- *
- * 采用 180° 半圆弧结合圆润端点（round linecap），平滑旋转无卡顿，
- * 取代传统辐射状多短线菊花（FiLoader）或双箭头，呈现现代极简高级质感。
- */
 export function HalfRingSpinner({ className, width = "1em", height = "1em", ...props }: SVGProps<SVGSVGElement>) {
 	const cls = ["half-ring-spin", className].filter(Boolean).join(" ");
 	return (

@@ -1,15 +1,3 @@
-/**
- * question-answer-relay.ts 单测：问卷答案的「登记 + 重投」。
- *
- * 回归的 bug：QuestionDialog 用 appSend 发 question_answer，连接未开时 appSend 返回
- * false 而对话框不看返回值 → 答案丢失，服务端仍挂起提问，重连快照把问卷重新弹出，
- * 用户再答再丢，表现为「按正确的点选还是会弹出来」。
- *
- * 这里锁定三条语义：
- *  1. 送出与否都登记（断开时由下次 ready 重投，用户不必重答）；
- *  2. question_retracted 才算确认，确认后才移除；
- *  3. 有待投答案的问卷不再从快照恢复成弹窗。
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setAppSend, type AppSend } from "../../web/src/app-globals.js";
 import {
@@ -62,7 +50,6 @@ describe("question-answer-relay", () => {
 		online = false;
 		expect(sendQuestionAnswer(answer("q-1"))).toBe(false);
 		expect(delivered).toHaveLength(0);
-		// 关键：答案没丢，仍待投递
 		expect(hasUnconfirmedAnswer("q-1")).toBe(true);
 
 		online = true;
@@ -82,7 +69,6 @@ describe("question-answer-relay", () => {
 		sendQuestionAnswer(answer("q-1"));
 		confirmQuestionAnswer("q-1");
 		expect(hasUnconfirmedAnswer("q-1")).toBe(false);
-		// 已确认的不再重投，避免每轮重连都发一遍
 		resendUnconfirmedAnswers();
 		expect(delivered).toHaveLength(1);
 	});

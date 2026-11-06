@@ -1,6 +1,5 @@
 import { SUBAGENT_TOOL_NAMES } from "./tool-manager.js";
 
-/** Both public names share the same execution and permission boundary. */
 export const CONVERSATION_TOOL_NAMES = SUBAGENT_TOOL_NAMES;
 
 export const READ_ONLY_CONVERSATION_ACTIONS = ["get_result", "list", "templates", "read", "files", "status"] as const;

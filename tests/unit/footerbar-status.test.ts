@@ -44,7 +44,6 @@ function makeChatState(overrides: Partial<ChatState> = {}): ChatState {
 	} as unknown as ChatState;
 }
 
-/** 内存 localStorage：某些 jsdom/CI 环境的存储不可写，桩掉以保证语言确定为中文。 */
 function stubZhStorage() {
 	const store = new Map<string, string>();
 	vi.stubGlobal("localStorage", {
@@ -82,11 +81,9 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const connWrapper = container.querySelector(".status-conn");
 		expect(connWrapper).toBeTruthy();
-		// 连接态文字常驻（瞬息万变的指示灯代替不了明文状态）；窄屏隐藏文字是 CSS 的事，不在这里锁。
 		expect(connWrapper?.querySelector(".status-conn-label")?.textContent).toContain("已连接");
 		expect(connWrapper?.getAttribute("title")).toContain("已连接");
 		expect(connWrapper?.querySelector(".status-dot.ok")).toBeTruthy();
-		// 页面中只有一处连接包装节点
 		expect(container.querySelectorAll(".status-conn").length).toBe(1);
 	});
 
@@ -160,7 +157,6 @@ describe("FooterBar 连接状态", () => {
 		const ctxWrapper = container.querySelector(".status-ctx");
 		expect(ctxWrapper).toBeTruthy();
 		expect(ctxWrapper?.textContent).toContain("4K/8K");
-		// 常驻不显示「上下文」文字，由 hover title 解释
 		expect(container.querySelector(".ctx-label")).toBeNull();
 		expect(ctxWrapper?.getAttribute("title")).toContain("上下文用量: 4K / 8K");
 		const fill = container.querySelector(".ctx-ring-fill") as HTMLElement;
@@ -189,13 +185,10 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const ctxWrapper = container.querySelector(".status-ctx") as HTMLElement;
 		expect(ctxWrapper).toBeTruthy();
-		// 文本显示 150K / 300K 而非 150K / 1M
 		expect(ctxWrapper?.textContent).toContain("150K/300K");
-		// 进度圆环填充度为 150000 / 300000 = 50%
 		const fill = container.querySelector(".ctx-ring-fill") as HTMLElement;
 		expect(fill?.getAttribute("data-percent")).toBe("50");
 		expect(Number(fill?.getAttribute("stroke-dashoffset"))).toBeCloseTo(15.71, 1);
-		// hover tooltip 包含软上限与物理上限提示
 		expect(ctxWrapper?.title).toContain("300K");
 		expect(ctxWrapper?.title).toContain("1M");
 	});
@@ -215,7 +208,6 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const costWrapper = container.querySelector(".status-cost");
 		expect(costWrapper).toBeTruthy();
-		// 必须是 span 标签（与 ctx / cache 保持一致，绝不因误作为 button 导致移动端 baseline 偏移与非预期背景）
 		expect(costWrapper?.tagName.toLowerCase()).toBe("span");
 		expect(costWrapper?.textContent).toContain("$0.0125");
 		expect(costWrapper?.querySelector(".bar-item-char")?.textContent).toBe("$");
@@ -238,10 +230,8 @@ describe("FooterBar 连接状态", () => {
 		const { container } = mountFooter(chat);
 		const cacheWrapper = container.querySelector(".status-cache");
 		expect(cacheWrapper).toBeTruthy();
-		// 常驻文字标签已移除，仅显示百分比数值
 		expect(container.querySelector(".status-cache-label")).toBeNull();
 		expect(cacheWrapper?.textContent?.trim()).toBe("80.0%");
-		// hover title 提供完整的缓存命中与明细解释
 		const title = cacheWrapper?.getAttribute("title");
 		expect(title).toContain("缓存命中: 80.0%");
 		expect(title).toContain("缓存读取 8K");
@@ -264,7 +254,6 @@ describe("FooterBar 连接状态", () => {
 			expect(cwdBtn.textContent).toContain("my-app");
 			expect(document.querySelector(".cwd-picker")).toBeNull();
 
-			// 点击路径切换按钮（触发 220ms 双击防抖定时器）
 			act(() => {
 				cwdBtn.click();
 			});
@@ -272,28 +261,23 @@ describe("FooterBar 连接状态", () => {
 				vi.advanceTimersByTime(250);
 			});
 
-			// 弹窗弹出（Portal 到 body：不留在底栏子树里，否则祖先 opacity/z-index 会波及它）
 			const picker = document.querySelector(".cwd-picker");
 			expect(picker).toBeTruthy();
 			expect(picker?.parentElement).toBe(document.body);
 			expect(container.querySelector(".cwd-picker")).toBeNull();
 			expect(picker?.closest(".statusbar")).toBeNull();
 
-			// 原按钮依然存在且不消失，并且带有 active 状态
 			const cwdBtnAfter = container.querySelector(".status-cwd") as HTMLButtonElement;
 			expect(cwdBtnAfter).toBeTruthy();
 			expect(cwdBtnAfter.classList.contains("active")).toBe(true);
 
-			// 点击遮罩关闭弹窗
 			const backdrop = document.querySelector(".status-cwd-backdrop") as HTMLElement;
 			expect(backdrop).toBeTruthy();
 			act(() => {
 				backdrop.click();
 			});
 
-			// 弹窗关闭
 			expect(document.querySelector(".cwd-picker")).toBeNull();
-			// 按钮依然存在，且取消 active 状态
 			const cwdBtnFinal = container.querySelector(".status-cwd") as HTMLButtonElement;
 			expect(cwdBtnFinal).toBeTruthy();
 			expect(cwdBtnFinal.classList.contains("active")).toBe(false);
@@ -383,14 +367,11 @@ describe("FooterBar 连接状态", () => {
 		const solItem = container.querySelector('[data-bar-item="sol-savings-badge"]');
 		expect(solItem).toBeTruthy();
 
-		// 检查移动端隐藏选择器（对应 styles.css 中的 @media (max-width: 768px) 规则）
 		const hideSelector =
 			".statusbar .bar-item:not(.status-conn):not(.status-ctx):not(.status-cost):not(.status-cache):not(.status-rate):not(.status-host-metrics):not(.status-cwd):not(.working):not(.bar-item-working)";
 
-		// 插件条目匹配该隐藏规则（手机端自动隐藏，绝不变成被压缩的空条）
 		expect(solItem?.matches(hideSelector)).toBe(true);
 
-		// 核心状态条目不匹配隐藏规则（手机端正常保留显示）
 		const connItem = container.querySelector('[data-bar-item="host:conn"]');
 		const ctxItem = container.querySelector('[data-bar-item="host:ctx"]');
 		const costItem = container.querySelector('[data-bar-item="host:cost"]');
@@ -410,11 +391,9 @@ describe("FooterBar 连接状态", () => {
 
 		for (const relPath of themeFiles) {
 			const css = readThemeCss(resolve(rootDir, relPath));
-			// 确保没有全局未限定作用域的 .bar-item-badge:not(.bg-task-badge)
 			const hasUnscopedBadgeRule = /(?:^|\n)\.bar-item-badge:not\(\.bg-task-badge\)/.test(css);
 			expect(hasUnscopedBadgeRule, `${relPath} 不得包含全局未限定在顶栏的 .bar-item-badge 覆盖规则`).toBe(false);
 
-			// 确保限定在 .topbar 内
 			expect(css).toContain(".topbar .bar-item-badge:not(.bg-task-badge)");
 		}
 	});

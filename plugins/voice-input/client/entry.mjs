@@ -1,41 +1,7 @@
-/**
- * voice-input 客户端 —— 输入框麦克风按钮的全部逻辑（裸 ESM，无依赖）。
- *
- * 链路：
- *   manifest `ui.composer` 声明 🎤 按钮（宿主渲染，见 ChatInput）→ 用户点击 →
- *   宿主 `triggerPluginUiAction` 按需 import 本文件（view:false，平时不加载）→
- *   顶层代码注册 `onUiAction("voice-input:toggle")` → toggle() 开始/结束录音 →
- *   「填入输入框」经 `window.__piWebUiHost.compose({ text })` 并入输入框草稿
- *   （用户再编辑发送）；「直接发送」经 `startChat({ prompt, newChat:false })`
- *   发给当前对话，不需要编辑。
- *
- * 识别策略（`engine` 设置，点 🎤 时直接分流，不必等联网失败）：
- *   auto   先用浏览器原生识别（Chrome/Edge，免费实时出字），出错/不支持再降级；
- *   local  直接走服务端本地 Whisper（录音不出本机）；还没装就直接弹一键安装；
- *   remote 直接走服务端远端接口。
- *   三档都能在录音浮层里随时切（切完写回设置，下次 🎤 直接用这一档）。
- *   服务端录音：AudioWorklet 现场采 16k 单声道 WAV →
- *      POST /plugins-api/voice-input/transcribe → 本地 Whisper 或远端接口转写；
- *   服务端也没得用 → 浮层里「一键安装本地 Whisper」（后台下载，进度轮询，
- *      装完自动开始录音），或去设置里配远端转写接口。
- *
- * Edge 排障经验（用户实测“完全不能识别”多半是这三个之一）：
- *   - 页面走 http://<局域网IP> 打开 = 非安全上下文：语音识别和麦克风同时被
- *     浏览器掐掉。请用 http://localhost:8787 / http://127.0.0.1:8787 打开。
- *   - Edge 语音服务要联网（network 错误）：代理/VPN/企业策略可能拦。
- *   - 麦克风权限被拒（not-allowed）：地址栏左侧把麦克风设为允许。
- * 以上都映射成中文提示，不再只有一个“没听清”。
- *
- * 与宿主只有两条窄通道：`window.__piWebUiHost.compose/onUiAction`（动作）与
- * 自家服务端的 HTTP 路由（配置/转写/安装）。拿不到 React 状态，也不需要。
- */
-
 import { hostApi, apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
 
 const ACTION = "voice-input:toggle";
-/** 最长录音 5 分钟（16k 单声道 WAV ≈ 9.6MB，服务端 15MB 上限内）。 */
 const MAX_RECORD_MS = 5 * 60 * 1000;
-/** 浏览器静默自动断句后悄悄续听，最多续 2 次，防无限空转。 */
 const MAX_SR_RESTARTS = 2;
 
 function apiBase() {
@@ -145,7 +111,6 @@ const T = {
 		: "“Server transcription fallback” is off, so server recording is disabled: turn it on in the plugin settings, or use browser recognition.",
 };
 
-/** 浏览器原生识别的错误码 → 中文人话。纯展示映射，方便单测/排障。 */
 export function srExplain(code) {
 	const c = String(code || "");
 	if (c === "not-allowed" || c === "service-not-allowed") return { msg: T.micDenied, kind: "denied" };
@@ -157,23 +122,16 @@ export function srExplain(code) {
 	return { msg: `${T.noSpeech}（${c || "unknown"}）`, kind: "other" };
 }
 
-/**
- * 根据当前配置与录音模式解析出激活的引擎类型 ("sr" | "local" | "remote")。纯函数，单测覆盖。
- */
 export function resolveActiveEngine(cfg, mode) {
 	if (mode === "sr") return "sr";
 	const eng = String(cfg?.engine || "auto").toLowerCase();
 	if (eng === "remote") return "remote";
 	if (eng === "local") return "local";
-	// auto 模式在服务端录音时本地就绪优先
 	if (cfg?.localReady) return "local";
 	if (cfg?.serverReady) return "remote";
 	return "local";
 }
 
-/**
- * 格式化引擎徽标文案，如 "🧠 本地 Whisper(base)"、"🌐 浏览器识别"、"☁️ 远端接口"。纯函数，单测覆盖。
- */
 export function engineBadgeText(engineId, options = {}) {
 	const zh = options.isZh ?? isZh;
 	const id = String(engineId || "").toLowerCase();
@@ -187,9 +145,6 @@ export function engineBadgeText(engineId, options = {}) {
 	return zh ? `🧠 本地 Whisper(${model})` : `🧠 Local Whisper (${model})`;
 }
 
-/**
- * 计算单通道音频采样的 RMS（均方根振幅）。纯函数，单测覆盖。
- */
 export function computeAudioRms(frames) {
 	if (!frames || !frames.length) return 0;
 	let sum = 0;
@@ -200,19 +155,12 @@ export function computeAudioRms(frames) {
 	return Math.sqrt(sum / frames.length);
 }
 
-/**
- * 将 RMS 振幅平滑映射为 0~1 的电平标量。纯函数，单测覆盖。
- */
 export function audioLevelFromRms(rms) {
 	if (typeof rms !== "number" || Number.isNaN(rms) || rms <= 0) return 0;
 	const level = Math.min(1, Math.max(0, rms * 4.5));
 	return Math.round(level * 100) / 100;
 }
 
-/**
- * 单声道 Float32（目标采样率）→ 16-bit PCM WAV（Uint8Array）。
- * 服务端 decodeWav16k 的镜像；导出给单测做端到端往返。
- */
 export function encodeWavPCM(mono, sampleRate) {
 	const sr = Math.floor(sampleRate) || 16000;
 	const n = mono.length;
@@ -241,7 +189,6 @@ export function encodeWavPCM(mono, sampleRate) {
 	return new Uint8Array(buf);
 }
 
-/** 录音分片首尾拼接（worklet 每 128 帧推一块，这里是时间轴拼接，不是声道平均）。 */
 function concatMono(blocks) {
 	let total = 0;
 	for (const b of blocks) total += b.length;
@@ -254,7 +201,6 @@ function concatMono(blocks) {
 	return out;
 }
 
-/** 多声道平均成单声道。 */
 function downmix(channels) {
 	if (!channels.length) return new Float32Array(0);
 	if (channels.length === 1) return channels[0].slice();
@@ -264,7 +210,6 @@ function downmix(channels) {
 	return out;
 }
 
-/** 线性重采样到 16k（与服务端 decodeWav16k 对齐，减小上传体积）。 */
 function resampleTo16k(samples, fromRate) {
 	if (!samples.length) return samples;
 	if (Math.round(fromRate) === 16000) return samples.slice();
@@ -281,7 +226,6 @@ function resampleTo16k(samples, fromRate) {
 	return out;
 }
 
-/** 插件服务端公开配置（GET /settings，不含密钥），60s 缓存。 */
 let settingsCache = null;
 let settingsAt = 0;
 async function getSettings() {
@@ -302,14 +246,6 @@ async function getSettings() {
 	return settingsCache;
 }
 
-/* ------------------------------------------------------------------ */
-/* 浮层（录音状态 + 中间结果 + 完成/取消，纯 DOM）                      */
-/* ------------------------------------------------------------------ */
-
-/**
- * 探测 --accent 对比色（黑 / 白），杜绝浅色/纯白 accent（如 flow、wallpaper-flow 主题）下白底白字。
- * 规则：优先认主题/宿主声明的 --accent-contrast；没有则计算当前 --accent 的相对亮度，>0.55 用深色。
- */
 function getAccentContrastColor() {
 	try {
 		const hostVal = getComputedStyle(document.documentElement).getPropertyValue("--accent-contrast")?.trim();
@@ -329,27 +265,19 @@ function getAccentContrastColor() {
 			const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 			return lum > 0.55 ? "#111111" : "#ffffff";
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return "#ffffff";
 }
 
-/**
- * 寻找触发浮层的宿主按钮（如输入框工具栏的 🎤 或 📷 按钮）。
- */
 function findAnchorButton(actionName = ACTION) {
 	try {
-		// 1. 精确 data-action 属性（ChatInput 渲染时赋予）
 		let btn = document.querySelector(`button[data-action="${actionName}"]`);
 		if (btn && btn.offsetParent !== null) return btn;
 
-		// 2. 精确 data-plugin-slot-id（mic / camera）
 		const slotId = actionName === CAM_ACTION ? "camera" : "mic";
 		btn = document.querySelector(`button[data-plugin-slot-id="${slotId}"]`);
 		if (btn && btn.offsetParent !== null) return btn;
 
-		// 3. 语义属性（title / aria-label）
 		const kw = actionName === CAM_ACTION ? ["拍照", "相机", "Camera", "Photo"] : ["语音", "麦克风", "Voice", "Mic"];
 		for (const k of kw) {
 			const candidate = document.querySelector(
@@ -358,30 +286,18 @@ function findAnchorButton(actionName = ACTION) {
 			if (candidate && candidate.offsetParent !== null) return candidate;
 		}
 
-		// 4. 输入框内插件操作按钮
 		const allPluginBtns = document.querySelectorAll(".inputbox .btn.composer-plugin-action");
 		if (allPluginBtns.length > 0) {
 			const idx = actionName === CAM_ACTION && allPluginBtns.length > 1 ? 1 : 0;
 			return allPluginBtns[idx] || allPluginBtns[0];
 		}
 
-		// 5. 回退：如果找不到具体的按钮，找输入框整体容器 .inputbox
 		const composer = document.querySelector(".inputbox") || document.querySelector(".composer-tools");
 		if (composer) return composer;
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return null;
 }
 
-/**
- * 动态计算浮层相对于触发按钮的坐标（position: fixed）。
- * 规则：
- * 1. 水平：以锚点左边缘为基准微调对齐，且严格钳制在视口左右安全边距内；
- * 2. 垂直：优先位于锚点上方（使用 bottom 锚定，这样内容增高时向上生长，不遮挡麦克风图标）；
- *    若上方空间不足且下方放得下，则翻转到锚点下方（使用 top 锚定）；
- * 3. 找不到锚点时优雅降级到底部中央。
- */
 function positionOverlayToAnchor(panelEl, actionName = ACTION) {
 	if (!panelEl) return;
 	const anchor = findAnchorButton(actionName);
@@ -402,7 +318,6 @@ function positionOverlayToAnchor(panelEl, actionName = ACTION) {
 	const margin = 10;
 	const gap = 8;
 
-	// 水平位置：浮层左侧与锚点左侧微调对齐（偏左 6px 留出舒适内凹），带左右屏幕防溢出
 	let x = aRect.left - 6;
 	if (x + w > vw - margin) {
 		x = vw - margin - w;
@@ -411,17 +326,14 @@ function positionOverlayToAnchor(panelEl, actionName = ACTION) {
 		x = margin;
 	}
 
-	// 垂直位置：优先上方，上方放不下且下方放得下则翻转到下方
 	const fitsAbove = aRect.top - h - gap >= margin;
 	const fitsBelow = aRect.bottom + gap + h <= vh - margin;
 
 	if (fitsAbove || !fitsBelow) {
-		// 上方：以 bottom 锚定，文字增多变高时向上生长，永远不盖住麦克风按钮
 		const bottom = Math.max(margin, Math.round(vh - aRect.top + gap));
 		panelEl.style.bottom = `${bottom}px`;
 		panelEl.style.top = "auto";
 	} else {
-		// 下方：以 top 锚定
 		const top = Math.max(margin, Math.round(aRect.bottom + gap));
 		panelEl.style.top = `${top}px`;
 		panelEl.style.bottom = "auto";
@@ -460,11 +372,8 @@ function closeOverlay() {
 	}
 }
 
-/** 建浮层。返回 { setText, setState, onDone, onCancel } 由调用方接线。 */
 function openOverlay() {
 	closeOverlay();
-	// 上一个浮层的计时器要停掉：它盯的是全局 `overlay`，换一个浮层它并不会自杀，
-	// 于是每切一次识别方式就泄一个 500ms 的 interval（一直写进已脱离文档的节点）。
 	if (overlayTimer) {
 		clearInterval(overlayTimer);
 		overlayTimer = 0;
@@ -631,39 +540,29 @@ function openOverlay() {
 	};
 }
 
-/* ------------------------------------------------------------------ */
-/* 会话状态机：idle | sr(浏览器识别) | rec(服务端录音)                  */
-/* ------------------------------------------------------------------ */
-
-/** 浏览器识别的最终文本 + 中间结果拼成要发送的全文。纯函数，单测覆盖。 */
 export function srTotalText(finalText, interim) {
 	return `${String(finalText ?? "")}${String(interim ?? "")}`.trim();
 }
 
 const session = {
-	mode: "idle", // idle | sr | rec
+	mode: "idle",
 	recognition: null,
 	finalText: "",
 	interim: "",
 	manualStop: false,
-	// 切服务端途中：吞掉 abort 激起的 onend/onerror，避免“字进了输入框还弹录音”。
 	switching: false,
 	srRestarts: 0,
 	ui: null,
-	rec: null, // { stop(manual:boolean), cleanup() } 服务端录音句柄
+	rec: null,
 };
 
 function resetSession() {
 	try {
 		session.recognition?.abort();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	try {
 		session.rec?.cleanup();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	session.mode = "idle";
 	session.recognition = null;
 	session.rec = null;
@@ -674,7 +573,6 @@ function resetSession() {
 	session.srRestarts = 0;
 }
 
-/** 文本进输入框草稿（用户再编辑/手动发送）。返回是否接通。 */
 function tryComposeText(t) {
 	try {
 		return hostApi()?.compose({ text: t }) ?? false;
@@ -683,11 +581,6 @@ function tryComposeText(t) {
 	}
 }
 
-/**
- * 文本直接发给当前对话（不进草稿、不新建对话、不需要编辑）。
- * startChat 默认 newChat=true 会另起对话，这里必须显式 newChat:false
- * 留在当前对话里发出去。
- */
 function trySendDirect(t) {
 	try {
 		const fn = hostApi()?.startChat;
@@ -698,11 +591,6 @@ function trySendDirect(t) {
 	}
 }
 
-/**
- * 文本收尾·直接发送：接通就关浮层；没接通（断线/旧宿主没有 startChat）
- * 就回落到填入输入框，并用一行 note 告诉用户手动点发送；两条路都走不通
- * 才给复制按钮（不丢字）。
- */
 async function sendDirectText(text, engineBadge = "") {
 	const t = String(text ?? "").trim();
 	resetSession();
@@ -740,9 +628,7 @@ async function sendDirectText(text, engineBadge = "") {
 			onClick: async () => {
 				try {
 					await navigator.clipboard.writeText(t);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				closeOverlay();
 			},
 		},
@@ -750,7 +636,6 @@ async function sendDirectText(text, engineBadge = "") {
 	]);
 }
 
-/** 文本收尾：进输入框草稿；进不去就给复制按钮（不丢字）。 */
 async function finishWithText(text, engineBadge = "") {
 	const t = String(text ?? "").trim();
 	resetSession();
@@ -785,9 +670,7 @@ async function finishWithText(text, engineBadge = "") {
 			onClick: async () => {
 				try {
 					await navigator.clipboard.writeText(t);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				closeOverlay();
 			},
 		},
@@ -806,8 +689,6 @@ function showError(msg, note = "", actions = []) {
 	ui.setButtons(btns);
 }
 
-/* ---------------- 浏览器原生识别（Web Speech API） ---------------- */
-
 function srSupported() {
 	try {
 		return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -816,27 +697,11 @@ function srSupported() {
 	}
 }
 
-/** 服务端录音可用的前提：降级开关开 + 本地/远端至少一边就绪。 */
 function serverUsable(cfg) {
 	if (!cfg || cfg.serverFallback === false) return false;
 	return Boolean(cfg.localReady || cfg.serverReady);
 }
 
-/**
- * 引擎设置 + 当前就绪情况 → 起手动作。纯函数（不碰 DOM/fetch），单测覆盖。
- *
- * 返回：
- *   "sr"              浏览器原生识别（Web Speech）
- *   "rec"             服务端录音（本地 Whisper / 远端接口转写）
- *   "install-local"   选了 local 但没装 → 直接弹一键安装
- *   "remote-missing"  选了 remote 但没配接口 → 提示去设置
- *   "install-generic" auto 且浏览器没识别能力、服务端也没得用
- *   "fallback-off"    auto 且服务端就绪但「降级」开关关着
- *
- * 关键点（issue #383）：`local` / `remote` 是**主动选择**，点 🎤 就直接走它，
- * 不再「先测浏览器能不能联网、失败后才降级」—— 那是旧 toggle 的毛病，
- * 于是每次都得先干等几秒报错。
- */
 export function pickEngineRoute(engine, flags = {}) {
 	const e = String(engine || "auto").toLowerCase();
 	if (e === "local") return flags.localReady ? "rec" : "install-local";
@@ -846,7 +711,6 @@ export function pickEngineRoute(engine, flags = {}) {
 	return flags.serverFallback === false ? "fallback-off" : "rec";
 }
 
-/** 按引擎分发起始识别。toggle() 与切换面板共用这一份，别写两套。 */
 function startByEngine(cfg) {
 	const route = pickEngineRoute(cfg?.engine, {
 		srSupported: srSupported(),
@@ -854,8 +718,6 @@ function startByEngine(cfg) {
 		serverReady: Boolean(cfg?.serverReady),
 		serverFallback: cfg?.serverFallback !== false,
 	});
-	// 显式选了 local/remote 时，「服务端转写降级」开关不该拦住用户点名要的那条路
-	//（降级开关是给 auto 兜底用的）。
 	const explicit = cfg?.engine === "local" || cfg?.engine === "remote";
 	if (route === "sr") {
 		startSpeechRecognition(cfg?.lang || "zh-CN", cfg);
@@ -896,7 +758,6 @@ function startByEngine(cfg) {
 	showInstallPrompt(T.noSpeech, cfg);
 }
 
-/** 把引擎选择写回服务端（= 声明式设置里的 `engine`）。失败不抛：本次仍照用。 */
 async function persistEngine(eng) {
 	try {
 		const r = await fetch(`${apiBase()}/engine`, {
@@ -906,7 +767,6 @@ async function persistEngine(eng) {
 			credentials: "same-origin",
 		});
 		if (!r.ok) return false;
-		// 配置缓存作废：下面 startByEngine 要拿到新的 localReady/serverReady。
 		settingsCache = null;
 		settingsAt = 0;
 		return true;
@@ -915,14 +775,12 @@ async function persistEngine(eng) {
 	}
 }
 
-/** 「用哪种识别方式」面板：常驻在录音浮层里，不必等联网失败才有机会换（issue #383）。 */
 function showEnginePicker(cfg) {
 	const ui = openOverlay();
 	ui.setStatus("🎤");
 	ui.setText(T.pickEngine);
 	ui.setNote(T.pickEngineNote);
 	const pick = (eng) => () => {
-		// 先本地改缓存：不等网络回包就能开始录音（写回失败也只是不持久）。
 		if (settingsCache) settingsCache = { ...settingsCache, engine: eng };
 		const next = { ...(cfg ?? {}), engine: eng };
 		void persistEngine(eng).then((ok) => {
@@ -949,8 +807,6 @@ function startSpeechRecognition(lang, cfg) {
 	session.finalText = "";
 	session.interim = "";
 	session.manualStop = false;
-	// 必须清掉上一轮的 switching：从识别切到「切换面板」再切回来时，
-	// 旗子残留会让新识别的 onend 误以为是切途中（不续听也不收尾，识别静默死掉）。
 	session.switching = false;
 	session.srRestarts = 0;
 	const ui = openOverlay();
@@ -958,9 +814,6 @@ function startSpeechRecognition(lang, cfg) {
 	ui.setStatus(`🎤 ${T.listening}`);
 	ui.setBadge(engineBadgeText("sr", { isZh }));
 	const wireButtons = () => {
-		/** 离开当前识别去做别的（切服务端 / 开切换面板）：先立旗再 abort，
-		 *  否则 abort 激起的 onend 会把浏览器半截文字收尾。
-		 *  半截文字直接丢掉（切过去就是要重说），onend 见空会让路。 */
 		const leave = (next) => {
 			session.switching = true;
 			session.manualStop = true;
@@ -968,9 +821,7 @@ function startSpeechRecognition(lang, cfg) {
 			session.interim = "";
 			try {
 				rec.abort();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			next();
 		};
 		const srBadge = engineBadgeText("sr", { isZh });
@@ -981,9 +832,6 @@ function startSpeechRecognition(lang, cfg) {
 				onClick: () => finishWithText(srTotalText(session.finalText, session.interim), srBadge),
 			},
 			{ label: T.send, onClick: () => sendDirectText(srTotalText(session.finalText, session.interim), srBadge) },
-			// 常驻的切换入口：不必等浏览器联网失败才有机会换成本地识别（issue #383）。
-			// 走 resetSession 而不是 leave()：它先把 mode 置 idle 再收工，abort 激起的
-			// onend 醒来时看到 idle 就直接返回，浮层关掉后也不会留下“僵尸识别态”。
 			{
 				label: T.switchEngine,
 				onClick: () => {
@@ -1020,29 +868,22 @@ function startSpeechRecognition(lang, cfg) {
 	};
 	rec.onerror = (ev) => {
 		if (session.mode !== "sr") return;
-		// 切换/手动结束途中 abort 激起的 aborted：吞掉，否则会多排一次切服务端。
 		if (session.switching) return;
 		if (ev?.error === "aborted" && session.manualStop) return;
 		const info = srExplain(ev?.error);
-		// 权限/服务拒绝：重试也没用，直接报清楚。
 		if (info.kind === "denied") {
 			showError(info.msg);
 			return;
 		}
-		// 识别中途被抢占：等几秒让用户自己再点。
 		if (ev?.error === "audio-busy" || ev?.error === "SpeechRecognitionError") {
 			showError(T.srBusy);
 			return;
 		}
-		// 其余错误：能走服务端就悄悄切过去，否则把原因摆出来。
 		if (serverUsable(cfg)) {
-			// 先立旗：abort 激起的 onend 不许复活识别（有字则收尾、无字让路，见 onend）。
 			session.switching = true;
 			try {
 				rec.abort();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			ui.setStatus(`🎤 ${info.msg}`);
 			setTimeout(() => {
 				if (session.mode === "sr") void startRecorderFlow();
@@ -1052,11 +893,7 @@ function startSpeechRecognition(lang, cfg) {
 		showInstallPrompt(info.msg);
 	};
 	rec.onend = () => {
-		// 用户点的完成/取消/切换：finishWithText/showInstallPrompt/startRecorderFlow
-		// 里已经 reset，不能复活。
 		if (session.mode !== "sr") return;
-		// 切服务端途中 abort 激起的 onend：有字就收尾（收尾把 mode 置 idle，
-		// 挂起的延迟切换自动取消，成功优先）；没字才让路给服务端录音。
 		if (session.switching) {
 			if (srTotalText(session.finalText, session.interim))
 				void finishWithText(srTotalText(session.finalText, session.interim));
@@ -1066,7 +903,6 @@ function startSpeechRecognition(lang, cfg) {
 			void finishWithText(srTotalText(session.finalText, session.interim));
 			return;
 		}
-		// 有字就收尾（浏览器按静音断的句）；没字才续听，且最多续 N 次。
 		if (srTotalText(session.finalText, session.interim)) {
 			void finishWithText(srTotalText(session.finalText, session.interim));
 			return;
@@ -1092,8 +928,6 @@ function startSpeechRecognition(lang, cfg) {
 	}
 }
 
-/* ---------------- 服务端录音：WAV → 转写 ---------------- */
-
 const WORKLET_SRC = `
 class ViCap extends AudioWorkletProcessor {
 	process(inputs) {
@@ -1109,11 +943,6 @@ class ViCap extends AudioWorkletProcessor {
 registerProcessor('vi-cap', ViCap);
 `;
 
-/**
- * 采一段 16k 单声道 PCM。worklet 优先，失败回退 ScriptProcessor。
- * resolve 出 { samples: Float32Array }；中途出错 reject（人话错误）。
- * onLevel 可选回调，将麦克风实时电平 (0~1) post 给调用方更新音量条。
- */
 function capturePcm16k(onAutoStop, onLevel) {
 	return new Promise((resolve, reject) => {
 		let stream = null;
@@ -1129,45 +958,29 @@ function capturePcm16k(onAutoStop, onLevel) {
 		const cleanup = () => {
 			try {
 				if (typeof onLevel === "function") onLevel(null);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				if (autoTimer) clearTimeout(autoTimer);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				node?.disconnect();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				src?.disconnect();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				if (typeof node?.stop === "function") node.stop();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				ctx?.close();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				stream?.getTracks().forEach((t) => t.stop());
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			if (workletUrl) {
 				try {
 					URL.revokeObjectURL(workletUrl);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 		};
 		const finish = (manual) => {
@@ -1175,16 +988,10 @@ function capturePcm16k(onAutoStop, onLevel) {
 			settled = true;
 			try {
 				if (typeof onLevel === "function") onLevel(null);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				if (autoTimer) clearTimeout(autoTimer);
-			} catch {
-				/* ignore */
-			}
-			// 注意：chunks 是按时间切的分片，必须拼接；downmix 是声道平均，
-			// 误用会把整段录音压成 128 个采样的糊（之前转写永远为空就是这个原因）。
+			} catch {}
 			const mono = concatMono(chunks);
 			const out = resampleTo16k(mono, sampleRate);
 			const handle = { cleanup };
@@ -1223,9 +1030,7 @@ function capturePcm16k(onAutoStop, onLevel) {
 			} catch {
 				try {
 					stream.getTracks().forEach((t) => t.stop());
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				reject(new Error(T.recorderBroken));
 				return;
 			}
@@ -1242,15 +1047,12 @@ function capturePcm16k(onAutoStop, onLevel) {
 					}
 				}
 			};
-			// 5 分钟自动收尾：走回调直接进转写（await 那头早已 resolve，不能再 resolve）。
 			autoTimer = setTimeout(() => {
 				const r = finish(true);
 				if (r && typeof onAutoStop === "function") {
 					try {
 						onAutoStop(r.samples);
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 				}
 			}, MAX_RECORD_MS);
 
@@ -1263,27 +1065,20 @@ function capturePcm16k(onAutoStop, onLevel) {
 					if (Array.isArray(arr) && arr.length) push(downmix(arr.map((c) => Float32Array.from(c))));
 				};
 				src.connect(node);
-				// worklet 不接 destination 不出声，但有些浏览器要求连上才跑：
-				// 经零增益节点接地，既跑起来又不出声。
 				try {
 					const zero = ctx.createGain();
 					zero.gain.value = 0;
 					node.connect(zero);
 					zero.connect(ctx.destination);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			} catch {
-				// 回退：ScriptProcessor（deprecated 但全浏览器可用）。
 				try {
 					const sp = ctx.createScriptProcessor(4096, 1, 1);
 					node = sp;
 					sp.onaudioprocess = (ev) => {
 						try {
 							push(ev.inputBuffer.getChannelData(0).slice(0));
-						} catch {
-							/* ignore */
-						}
+						} catch {}
 					};
 					src.connect(sp);
 					try {
@@ -1291,9 +1086,7 @@ function capturePcm16k(onAutoStop, onLevel) {
 						zero.gain.value = 0;
 						sp.connect(zero);
 						zero.connect(ctx.destination);
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 				} catch {
 					cleanup();
 					reject(new Error(T.recorderBroken));
@@ -1305,10 +1098,6 @@ function capturePcm16k(onAutoStop, onLevel) {
 	});
 }
 
-/**
- * 服务端录音 → 转写。opts.explicit = 用户显式选了 local/remote 引擎，
- * 此时「服务端转写降级」开关不拦（它是给 auto 兜底用的）。
- */
 async function startRecorderFlow(opts = {}) {
 	let cfg;
 	try {
@@ -1362,7 +1151,6 @@ async function startRecorderFlow(opts = {}) {
 			onClick: () => stopAndTranscribe("send"),
 		},
 		{
-			// 常驻的切换入口：录到一半也能改主意换引擎（resetSession 顺带关麦）。
 			label: T.switchEngine,
 			onClick: () => {
 				resetSession();
@@ -1380,7 +1168,6 @@ async function startRecorderFlow(opts = {}) {
 	try {
 		const cap = await capturePcm16k(
 			(samples) => {
-				// 5 分钟自动收尾：stop() 已 settled（再调返回 null），直接进转写。
 				if (session.mode === "rec") {
 					session.manualStop = true;
 					void handleRecorded(samples, cfg, true);
@@ -1393,12 +1180,9 @@ async function startRecorderFlow(opts = {}) {
 			},
 		);
 		if (session.mode !== "rec") {
-			// 用户在授权弹窗那几秒里点了取消：直接收摊。
 			try {
 				cap.api.cleanup();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			return;
 		}
 		session.rec = cap;
@@ -1407,10 +1191,6 @@ async function startRecorderFlow(opts = {}) {
 	}
 }
 
-/**
- * 录音收尾 → 转写 → 按 mode 收尾：compose=填入输入框（用户再编辑发送），
- * send=直接发给当前对话（不需要编辑）。mode 默认 compose（自动收尾/旧调用）。
- */
 async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 	const rec = session.rec;
 	resetSession();
@@ -1439,9 +1219,7 @@ async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 	]);
 	try {
 		rec?.api?.cleanup?.();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	let text = "";
 	let finalEngine = activeEng;
 	try {
@@ -1463,7 +1241,6 @@ async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 		if (data?.engine) finalEngine = data.engine;
 	} catch (err) {
 		const status = err?.status || 0;
-		// 501（两边都没得用）→ 直接给安装入口，别只抛一句话。
 		if (status === 501) {
 			showInstallPrompt(err instanceof Error ? err.message : String(err));
 			return;
@@ -1475,8 +1252,6 @@ async function handleRecorded(samples, cfg, timedOut, mode = "compose") {
 	if (mode === "send") await sendDirectText(text, finalBadge);
 	else await finishWithText(text, finalBadge);
 }
-
-/* ---------------- 一键安装本地 Whisper ---------------- */
 
 function showInstallPrompt(why, cfg = null) {
 	resetSession();
@@ -1507,7 +1282,6 @@ async function runLocalInstall() {
 	const ui = openOverlay();
 	ui.setStatus(`🎤 ${T.installing("…")}`);
 	ui.setNote(T.installNote);
-	// 安装中途关浮层 = 后台继续装，不取消服务端任务。
 	ui.setButtons([{ label: T.close, onClick: closeOverlay }]);
 	try {
 		const r = await fetch(`${apiBase()}/local-install`, {
@@ -1528,7 +1302,6 @@ async function runLocalInstall() {
 		return;
 	}
 	const currentOverlay = overlay;
-	// 轮询进度（overlay 关了就停轮询，服务端照装）。
 	const timer = setInterval(async () => {
 		if (!overlay || overlay !== currentOverlay) {
 			clearInterval(timer);
@@ -1558,11 +1331,10 @@ async function runLocalInstall() {
 			return;
 		}
 		if (st.ready) {
-			settingsAt = 0; // 配置缓存作废，重读 localReady
+			settingsAt = 0;
 			ui.setStatus(`🎤 ${T.installDone}`);
 			ui.setText("");
 			ui.setNote("");
-			// 装完直接开录，一气呵成（仅当依然处于同一个浮层且为空闲态）。
 			setTimeout(() => {
 				if (overlay === currentOverlay && session.mode === "idle") void startRecorderFlow();
 			}, 600);
@@ -1573,8 +1345,6 @@ async function runLocalInstall() {
 		ui.setButtons([{ label: T.close, primary: true, onClick: closeOverlay }]);
 	}, 1000);
 }
-
-/* ---------------- 入口：🎤 按钮 ---------------- */
 
 function isSecure() {
 	try {
@@ -1587,7 +1357,6 @@ function isSecure() {
 }
 
 async function toggle() {
-	// 录音中再点 = 结束并收尾。
 	if (session.mode === "sr") {
 		session.manualStop = true;
 		try {
@@ -1605,10 +1374,7 @@ async function toggle() {
 			let cfg = { lang: "zh-CN" };
 			try {
 				cfg = await getSettings();
-			} catch {
-				/* 用默认语言转写 */
-			}
-			// stop() 返回 null = 自动收尾已接管（回调里进了转写），这里什么都不做。
+			} catch {}
 			if (r && r.samples) void handleRecorded(r.samples, cfg, false);
 		} catch {
 			resetSession();
@@ -1616,39 +1382,20 @@ async function toggle() {
 		}
 		return;
 	}
-	// 非安全上下文：语音识别+麦克风全被浏览器掐掉，先说清楚（Edge 走局域网 IP 常踩）。
 	if (!isSecure()) {
 		showError(T.insecure);
 		return;
 	}
-	// 空闲 → 开始：先读配置（语言 + 引擎 + 降级开关 + 服务端是否就绪）。
 	let cfg = { lang: "zh-CN", engine: "auto", serverFallback: true, serverReady: false, localReady: false };
 	try {
 		cfg = await getSettings();
-	} catch {
-		/* 读不到就按默认引擎跑，降级时再报错 */
-	}
-	// 引擎分流在 startByEngine 一处（与浮层里的切换面板共用，issue #383）。
+	} catch {}
 	startByEngine(cfg);
 }
 
-/* ------------------------------------------------------------------ */
-/* 拍照（📷）：摄像头现场取景 → 照片作为附件进输入框                    */
-/*                                                                     */
-/* 为什么走宿主的 compose：照片最终要和用户补的那句话一起发出去，而   */
-/* 「待发附件」是宿主 App 的 state（composer-bridge 的附件 sink）。    */
-/* 插件只产出 JPEG，剩下的交给宿主既有链路（与粘贴图片同一条）。       */
-/*                                                                     */
-/* 为什么要两档：getUserMedia 在非安全上下文 / 无摄像头 / 权限被拒时  */
-/* 全是不可用，而「手机系统相机」这条件在这些情况下照样能拍 ——       */
-/* 所以失败不让用户干瞪眼，直接给一条路（与 🎤 浮层的排障风格一致）。 */
-/* ------------------------------------------------------------------ */
-
 const CAMERA_ACTION = "voice-input:camera";
-/** 最长边与上限：与宿主粘贴图片同一口径（1568 ≈ 1.5K vision 裁切），别把原图塞进上下文。 */
 const CAMERA_MAX_DIM = 1568;
 const CAMERA_MAX_BYTES = 2 * 1024 * 1024;
-/** 前置/后置偏好：本会话记住就够（换设备、换场景比「一劳永逸的偏好」更常见）。 */
 let camFacing = "environment";
 let camPanel = null;
 let camStream = null;
@@ -1666,9 +1413,7 @@ function stopCamStream() {
 	for (const t of camStream.getTracks()) {
 		try {
 			t.stop();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	camStream = null;
 }
@@ -1688,7 +1433,6 @@ function cleanupCamPositioner() {
 	}
 }
 
-/** 关面板一律顺带停流：摄像头指示灯亮着而面板没了是最糟的收尾。 */
 function closeCameraPanel() {
 	cleanupCamPositioner();
 	stopCamStream();
@@ -1698,10 +1442,6 @@ function closeCameraPanel() {
 	}
 }
 
-/**
- * 把一帧画到 canvas 再编码 JPEG：先按最长边压到 1568，仍超 2MB 就逐档降尺寸。
- * 2MB 是服务端粘贴图片的硬上限（agent-service 的 MAX_PASTED_IMAGE_BYTES），超了会被拒。
- */
 function frameToJpegBase64(source, srcW, srcH) {
 	if (!srcW || !srcH) throw new Error(isZh ? "取不到画面尺寸，请稍后再拍" : "No frame size yet, try again");
 	const canvas = document.createElement("canvas");
@@ -1728,7 +1468,6 @@ function loadImage(src) {
 	});
 }
 
-/** 照片 → 输入框待发附件。imageData 走宿主既有的粘贴图片链路（服务端当图像内容发给模型）。 */
 function attachPhoto(base64) {
 	const host = hostApi();
 	if (!base64) return false;
@@ -1742,7 +1481,6 @@ function attachPhoto(base64) {
 					mode: "inline",
 					imageData: base64,
 					mimeType: "image/jpeg",
-					// key 让宿主判重有身份可用；同一秒连拍多张也不会互相顶掉。
 					key: `capture:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
 				},
 			],
@@ -1760,12 +1498,10 @@ async function attachPickedFile(file) {
 	}
 }
 
-/** 回退档：系统相机（手机直接调起）或文件选择（桌面退化成选图）。 */
 function pickViaSystemCamera() {
 	const input = document.createElement("input");
 	input.type = "file";
 	input.accept = "image/*";
-	// capture 让手机直接开相机；桌面浏览器忽略它，退化成选图。不需要任何权限。
 	input.setAttribute("capture", "environment");
 	input.style.display = "none";
 	document.body.append(input);
@@ -1865,7 +1601,6 @@ function openCameraPanel() {
 	closeBtn.addEventListener("click", closeCameraPanel);
 	fileBtn.addEventListener("click", () => pickViaSystemCamera());
 
-	/** 摄像头这条走不通时的收场：留住面板当提示牌，只留「系统相机」一条出路。 */
 	const fallback = (msg) => {
 		stopCamStream();
 		show(video, false);
@@ -1900,12 +1635,9 @@ function openCameraPanel() {
 		video.srcObject = camStream;
 		try {
 			await video.play();
-		} catch {
-			/* 自动播放被拦：首帧可能不出，但快门依旧能取帧 */
-		}
+		} catch {}
 		show(video, true);
 		show(shotBtn, true);
-		// 只有一个摄像头时切换按钮没意义（多数桌面机）；enumerateDevices 要权限后才给全量。
 		const cams = await navigator.mediaDevices.enumerateDevices().catch(() => []);
 		show(switchBtn, cams.filter((d) => d.kind === "videoinput").length > 1);
 		setHint(T.camHint);
@@ -1937,23 +1669,15 @@ function register() {
 		hostApi()?.onUiAction?.(CAMERA_ACTION, () => {
 			openCameraPanel();
 		});
-	} catch {
-		/* 宿主太旧：按钮点了没反应总比崩好（manifest 里 apiVersion 会先拦住旧版） */
-	}
+	} catch {}
 }
 
 register();
 
-/**
- * loadOne 要求 default.mount 是函数（否则记 failed → 首次点击只注册不执行）。
- * view:false 插件没有可见视图，这里给一个空挂载；真正的注册在顶层 register()。
- * mount 被调用时（隐藏 pane）再注册一次——Set 去重，幂等。
- */
 export default {
 	mount() {
 		register();
 		return () => {
-			// 面板随插件反激活收尾；摄像头不能留着亮灯。
 			closeCameraPanel();
 		};
 	},

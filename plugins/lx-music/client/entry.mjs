@@ -1,8 +1,3 @@
-/**
- * 洛雪音乐 (LX Music) 客户端入口 —— 全功能专业音乐播放器
- * 特性：一键播放全部、静默添加队列(无阻断弹窗)、多源搜索、热歌榜单、收藏夹持久化、播放队列抽屉、画中画桌面浮动歌词、音质切换、歌曲下载、快捷键
- */
-
 import { loadPlayer, savePlayer, PLAYER_STORAGE_KEY } from "./player-storage.mjs";
 
 let globalAudio = null;
@@ -116,7 +111,7 @@ let globalState = {
 	isPlaying: false,
 	currentTime: 0,
 	duration: 0,
-	playMode: "loop", // loop | random | single
+	playMode: "loop",
 	queue: [],
 	history: [],
 	searchKeyword: "",
@@ -126,10 +121,10 @@ let globalState = {
 	lyrics: [],
 	currentLrcIndex: -1,
 	volume: 0.8,
-	quality: "128k", // 128k | 320k | flac
+	quality: "128k",
 	activeUserApi: null,
-	activeViewTab: "search", // search | top | playlist | favorites | queue | history
-	topChartType: "hot", // 兼容旧状态
+	activeViewTab: "search",
+	topChartType: "hot",
 	topChartSource: "wy",
 	topChartBangId: "hot",
 	topListsMap: {},
@@ -166,9 +161,6 @@ globalState = new Proxy(globalState, {
 	},
 });
 
-// ==============================
-// 轻量无阻断 Toast 提示系统 (不弹 alert)
-// ==============================
 let toastTimer = null;
 function showToast(message, duration = 1800) {
 	if (!activeRootEl) return;
@@ -188,9 +180,6 @@ function showToast(message, duration = 1800) {
 	}, duration);
 }
 
-// ==============================
-// 画中画桌面歌词 (Picture-in-Picture)
-// ==============================
 let pipVideo = null;
 let pipCanvas = null;
 let pipCtx = null;
@@ -272,9 +261,6 @@ function updatePipBtnState() {
 	}
 }
 
-// ==============================
-// 播放核心与事件总线
-// ==============================
 function ensureGlobalAudio(apiBase) {
 	if (!globalAudio) {
 		globalAudio = new Audio();
@@ -496,7 +482,6 @@ async function playSong(song, addToQueue = true, resumeTime = 0) {
 	updatePlayButtonState();
 	renderCurrentTable();
 
-	// 1. 获取歌词
 	try {
 		const lrcRes = await fetch(`${apiBaseUrl}/lyric?source=${song.source}&songId=${encodeURIComponent(song.id)}`).then(
 			(r) => r.json(),
@@ -511,7 +496,6 @@ async function playSong(song, addToQueue = true, resumeTime = 0) {
 	}
 	renderLyrics();
 
-	// 2. 获取真实音频链接
 	try {
 		const urlRes = await fetch(
 			`${apiBaseUrl}/song-url?source=${song.source}&songId=${encodeURIComponent(song.id)}&name=${encodeURIComponent(song.name)}&singer=${encodeURIComponent(song.singer)}&album=${encodeURIComponent(song.album || "")}&quality=${globalState.quality}`,
@@ -626,9 +610,6 @@ async function downloadCurrentSong(song) {
 	}
 }
 
-// ==============================
-// 列表与队列批量操作核心
-// ==============================
 function getCurrentViewSongs() {
 	if (globalState.activeViewTab === "search") {
 		return globalState.searchResults || [];
@@ -646,21 +627,18 @@ function getCurrentViewSongs() {
 	return [];
 }
 
-/** 一键播放整个列表 */
 function playAllCurrentList() {
 	const songs = getCurrentViewSongs();
 	if (!songs || songs.length === 0) {
 		return showToast("当前列表没有可播放的歌曲");
 	}
 
-	// 将当前整个列表载入播放队列并立即从第 1 首播放
 	globalState.queue = [...songs];
 	updateQueueBadge();
 	playSong(songs[0], false);
 	showToast(`开始播放全部 (共 ${songs.length} 首)`);
 }
 
-/** 全部直接加入队列（静默添加，无阻断确认框） */
 function addAllCurrentToQueue() {
 	const songs = getCurrentViewSongs();
 	if (!songs || songs.length === 0) {
@@ -680,7 +658,6 @@ function addAllCurrentToQueue() {
 	showToast(`已追加 ${addedCount} 首歌曲至播放队列`);
 }
 
-/** 直接添加单曲到队列（无任何 confirm/alert 阻断弹窗） */
 function addSingleToQueueDirectly(song) {
 	const exists = globalState.queue.find((item) => item.id === song.id && item.source === song.source);
 	if (exists) {
@@ -692,7 +669,6 @@ function addSingleToQueueDirectly(song) {
 	}
 }
 
-/** 清空当前播放队列 */
 function clearQueue() {
 	globalState.queue = [];
 	updateQueueBadge();
@@ -853,7 +829,6 @@ function renderCurrentTable() {
 			playSong(song);
 		});
 		tr.querySelector(".btn-play").addEventListener("click", () => playSong(song));
-		// 直接静默加入队列，不弹任何 alert 确认窗！
 		tr.querySelector(".btn-add").addEventListener("click", () => addSingleToQueueDirectly(song));
 		tr.querySelector(".btn-down").addEventListener("click", () => downloadCurrentSong(song));
 		tr.querySelector(".lx-fav-btn").addEventListener("click", () => toggleFavorite(song));
@@ -2213,8 +2188,6 @@ function renderApp(el) {
 }
 
 function bindEvents(rootEl) {
-	// 1. 页签导航切换 (搜索 / 排行榜 / 我的收藏 / 播放队列)
-	// 格式化播放量
 	const formatPlayCount = (num) => {
 		const n = parseInt(num || "0", 10);
 		if (isNaN(n) || n <= 0) return "";
@@ -2234,7 +2207,6 @@ function bindEvents(rootEl) {
 	const playlistDetailBanner = rootEl.querySelector("#lx-playlist-detail-banner");
 	const songListWrap = rootEl.querySelector("#lx-song-list-wrap");
 
-	// 1. 页签导航切换 (搜索 / 排行榜 / 歌单 / 我的收藏 / 播放队列 / 播放记录)
 	const tabs = rootEl.querySelectorAll(".lx-nav-tab");
 
 	const updateViewTabUI = () => {
@@ -2279,7 +2251,6 @@ function bindEvents(rootEl) {
 		});
 	});
 
-	// 2. 音源平台切换 (搜索)
 	const srcBtns = rootEl.querySelectorAll(".lx-pill-btn[data-src]");
 	srcBtns.forEach((btn) => {
 		btn.addEventListener("click", () => {
@@ -2290,7 +2261,6 @@ function bindEvents(rootEl) {
 		});
 	});
 
-	// 3. 排行榜平台切换与榜单动态渲染
 	const topSrcBtns = rootEl.querySelectorAll(".lx-pill-btn[data-top-src]");
 	topSrcBtns.forEach((btn) => {
 		btn.addEventListener("click", () => {
@@ -2363,7 +2333,6 @@ function bindEvents(rootEl) {
 		}
 	};
 
-	// 4. 歌单相关事件与加载
 	const plSrcBtns = rootEl.querySelectorAll(".lx-pill-btn[data-pl-src]");
 	plSrcBtns.forEach((btn) => {
 		btn.addEventListener("click", () => {
@@ -2526,7 +2495,6 @@ function bindEvents(rootEl) {
 		});
 	}
 
-	// 导入/直达歌单功能
 	const importPlaylistModal = rootEl.querySelector("#lx-import-playlist-modal");
 	const importPlaylistBtn = rootEl.querySelector("#lx-import-playlist-btn");
 	const importModalCloseBtn = rootEl.querySelector("#lx-import-modal-close-btn");
@@ -2597,7 +2565,6 @@ function bindEvents(rootEl) {
 		});
 	}
 
-	// 4. 搜索
 	const searchInput = rootEl.querySelector("#lx-search-input");
 	const searchBtn = rootEl.querySelector("#lx-search-btn");
 
@@ -2630,7 +2597,6 @@ function bindEvents(rootEl) {
 		if (e.key === "Enter") triggerSearch();
 	});
 
-	// 5. 播控
 	const playBtn = rootEl.querySelector("#lx-play-btn");
 	playBtn.addEventListener("click", () => {
 		if (globalState.isPlaying) globalAudio.pause();
@@ -2640,12 +2606,10 @@ function bindEvents(rootEl) {
 	rootEl.querySelector("#lx-prev-btn").addEventListener("click", playPrevSong);
 	rootEl.querySelector("#lx-next-btn").addEventListener("click", playNextSong);
 
-	// 6. 一键播放全部 与 一键全部入队
 	rootEl.querySelector("#lx-play-all-btn").addEventListener("click", playAllCurrentList);
 	rootEl.querySelector("#lx-add-all-btn").addEventListener("click", addAllCurrentToQueue);
 	rootEl.querySelector("#lx-clear-queue-btn").addEventListener("click", clearQueue);
 
-	// 7. 播放模式切换 (列表循环 -> 随机播放 -> 单曲循环)
 	const modeBtn = rootEl.querySelector("#lx-mode-btn");
 	const modeIcon = rootEl.querySelector("#lx-mode-icon");
 	const modes = [
@@ -2666,10 +2630,8 @@ function bindEvents(rootEl) {
 		showToast(`播放模式: ${next.title}`);
 	});
 
-	// 8. 画中画歌词
 	rootEl.querySelector("#lx-pip-btn").addEventListener("click", togglePictureInPicture);
 
-	// 9. 音质切换
 	const qualitySelect = rootEl.querySelector("#lx-quality-select");
 	qualitySelect.value = globalState.quality;
 	qualitySelect.addEventListener("change", (e) => {
@@ -2677,7 +2639,6 @@ function bindEvents(rootEl) {
 		showToast(`已切换音质: ${e.target.options[e.target.selectedIndex].text}`);
 	});
 
-	// 10. 进度条拖拽与跳转
 	const track = rootEl.querySelector("#lx-progress-track");
 	track.addEventListener("click", (e) => {
 		if (!globalAudio || !globalState.duration) return;
@@ -2686,7 +2647,6 @@ function bindEvents(rootEl) {
 		globalAudio.currentTime = clickPct * globalState.duration;
 	});
 
-	// 11. 音量
 	const volSlider = rootEl.querySelector("#lx-vol-slider");
 	volSlider.value = globalState.volume;
 	volSlider.addEventListener("input", (e) => {
@@ -2695,7 +2655,6 @@ function bindEvents(rootEl) {
 		if (globalAudio) globalAudio.volume = val;
 	});
 
-	// 12. 自定义音源弹窗与推荐源管理
 	const modal = rootEl.querySelector("#lx-userapi-modal");
 	const saveBtn = rootEl.querySelector("#lx-modal-save-btn");
 	const scriptArea = rootEl.querySelector("#lx-userapi-script");
@@ -2706,7 +2665,6 @@ function bindEvents(rootEl) {
 	const recListEl = rootEl.querySelector("#lx-rec-sources-list");
 
 	const refreshUserApiModal = async () => {
-		// 刷新当前活跃音源信息
 		if (globalState.activeUserApi) {
 			currentApiSec.style.display = "flex";
 			currentApiDesc.textContent = `${globalState.activeUserApi.name} (v${globalState.activeUserApi.version}) ${globalState.activeUserApi.description ? `· ${globalState.activeUserApi.description}` : ""}`;
@@ -2715,7 +2673,6 @@ function bindEvents(rootEl) {
 			currentApiSec.style.display = "none";
 		}
 
-		// 刷新推荐音源
 		try {
 			const recRes = await fetch(`${apiBaseUrl}/user-api/recommended`).then((r) => r.json());
 			if (recRes.ok && Array.isArray(recRes.list)) {
@@ -2784,7 +2741,6 @@ function bindEvents(rootEl) {
 		} catch {}
 	};
 
-	// 探测当前音源
 	probeBtn.addEventListener("click", async () => {
 		probeBtn.disabled = true;
 		probeBtn.textContent = "⏳ 探测中...";
@@ -2855,7 +2811,6 @@ function bindEvents(rootEl) {
 		}
 	});
 
-	// 13. 键盘快捷键监听
 	const onKeyDown = (e) => {
 		if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
@@ -2891,7 +2846,6 @@ function bindEvents(rootEl) {
 	window.addEventListener("keydown", onKeyDown);
 	removeKeyboardListener = () => window.removeEventListener("keydown", onKeyDown);
 
-	// 14. 初始化恢复收藏夹与音源
 	fetch(`${apiBaseUrl}/favorites`)
 		.then((r) => r.json())
 		.then((d) => {
@@ -2930,7 +2884,6 @@ export default {
 			});
 		}
 
-		// 监听宿主 WebSocket 消息 (来自 AI Agent Tool 的点歌控制)
 		if (typeof ctx.onData === "function") {
 			ctx.onData((payload) => {
 				if (payload?.type === "lx:play_song" && payload?.song) {
@@ -2967,7 +2920,6 @@ export default {
 		el.querySelectorAll("[data-pl-src]").forEach((btn) =>
 			btn.classList.toggle("active", btn.dataset.plSrc === globalState.playlistSource),
 		);
-		// Restore the selected tab through its normal layout handler.
 		el.querySelector(`.lx-nav-tab[data-tab='${globalState.activeViewTab}']`)?.click();
 		renderPlayerBarInfo();
 		updateProgressBar();

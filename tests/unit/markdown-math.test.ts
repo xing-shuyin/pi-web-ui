@@ -122,7 +122,6 @@ describe("backslash math delimiters", () => {
 		const requiredKatex = rehypePkg.dependencies?.katex;
 		expect(katexVersion).toBeDefined();
 		expect(requiredKatex).toBeDefined();
-		// rehype-katex 依赖 ^0.16.0，根目录 katex 必须同样处于 0.16.x 避免类名分裂（.stretchy vs .katex-stretchy）
 		expect(katexVersion).toMatch(/^\^?0\.16\./);
 	});
 

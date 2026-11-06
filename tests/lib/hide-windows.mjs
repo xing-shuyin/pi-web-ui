@@ -1,11 +1,9 @@
-/** Hide test subprocess consoles on Windows, including nested Node processes. */
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
 
 const installed = Symbol.for("pi-web-ui.tests.hide-windows");
 
-/** Preserve overloads, callbacks, caller options, and explicit windowsHide overrides. */
 export function hiddenWindowArgs(name, args) {
 	const result = [...args];
 	const index = name === "exec" || name === "execSync" ? 1 : Array.isArray(result[1]) ? 2 : 1;
@@ -32,9 +30,7 @@ if (process.platform === "win32" && !childProcess[installed]) {
 		}
 		childProcess[name] = wrapped;
 	}
-	// Update named ESM imports as well as the CommonJS/default export.
 	syncBuiltinESMExports();
-	// Node loads this before test/server code at every level of the process tree.
 	const preload = `--import=${JSON.stringify(import.meta.url)}`;
 	if (!process.env.NODE_OPTIONS?.includes(preload)) {
 		process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, preload].filter(Boolean).join(" ");

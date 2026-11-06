@@ -1,7 +1,3 @@
-/**
- * 语言包单测：locales/*.json（下载源，不进 npm）与 zh key 一一对应；
- * 占位符（{xxx} / {{token}} / ${pwd} / [[marker）与中文一致。
- */
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -86,7 +82,6 @@ describe("language packs", () => {
 
 	it("非中文/非日文语言包（de/es/fr/it/ko/pt/ru/tr）无中文假翻译残留 (issue #502)", () => {
 		for (const [code, p] of packs) {
-			// zh / zh-TW / ja packs are written in Han characters by design.
 			if (code === "zh" || code.startsWith("zh-") || code === "ja") continue;
 			for (const [k, v] of Object.entries(p.strings)) {
 				expect(/[\u4e00-\u9fff]/.test(v), `${code}.${k} 包含中文残留: ${v}`).toBe(false);
@@ -95,11 +90,9 @@ describe("language packs", () => {
 	});
 
 	it("resolveSystemDefaultLocale 解析系统环境变量 (issue #654)", () => {
-		// 显式 PI_WEB_LOCALE 优先
 		expect(resolveSystemDefaultLocale({ PI_WEB_LOCALE: "de", LANG: "en_US.UTF-8" })).toBe("de");
 		expect(resolveSystemDefaultLocale({ PI_WEB_LOCALE: "zh-TW" })).toBe("zh-tw");
 
-		// POSIX LANG / LANGUAGE / LC_ALL 环境变量解析
 		expect(resolveSystemDefaultLocale({ LANG: "en_US.UTF-8" })).toBe("en");
 		expect(resolveSystemDefaultLocale({ LANGUAGE: "en" })).toBe("en");
 		expect(resolveSystemDefaultLocale({ LC_ALL: "en_GB.UTF-8" })).toBe("en");
@@ -108,7 +101,6 @@ describe("language packs", () => {
 		expect(resolveSystemDefaultLocale({ LANG: "zh_TW.UTF-8" })).toBe("zh-TW");
 		expect(resolveSystemDefaultLocale({ LANG: "zh_HK.UTF-8" })).toBe("zh-HK");
 
-		// C / POSIX / 空值忽略并回退 null
 		expect(resolveSystemDefaultLocale({ LANG: "C" })).toBe(null);
 		expect(resolveSystemDefaultLocale({ LANG: "POSIX" })).toBe(null);
 		expect(resolveSystemDefaultLocale({})).toBe(null);

@@ -130,7 +130,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 						expect(msg.text).not.toContain("wire text");
 						expect(msg.text).not.toContain("unsealed handoff instruction");
 						const cap = getBotExecution(state.clientId)!;
-						// Use the shared session fake, the production generic tool pipeline and real SDK disk operations.
 						const client = fakeClientSession({
 							botExecution: cap,
 							cwd: observedCwd,
@@ -159,7 +158,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 							undefined,
 							{},
 						);
-						// A valid capability cannot authorize a replaced on-disk Git identity on the next call.
 						const gitMarkerPath = join(observedCwd, ".git");
 						const gitMarkerBackup = join(observedCwd, ".git.original");
 						await rename(gitMarkerPath, gitMarkerBackup);
@@ -178,7 +176,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 							await rm(gitMarkerPath, { force: true });
 							await rename(gitMarkerBackup, gitMarkerPath);
 						}
-						// The same production gate must still enforce the original Bot allowlist.
 						await expect(
 							client
 								.wrapGenericTool({ name: "denied", execute: vi.fn() }, undefined, observedCwd)
@@ -326,12 +323,8 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				observedWorkspaceHandleId = executorOpts.workspaceHandleId;
 				return {
 					async run(task) {
-						// Verify that inside executor, bot-execution capability is bound to the isolated worktree
 						if (task.workspaceHandleId) {
-							// Find the active bot-execution clientId binding
-							// executor sets it up via registerBotExecution
 						}
-						// Write a file in the isolated worktree
 						await writeFile(join(observedExecutionCwd, "output.txt"), "hello from code task\n");
 						return "task finished successfully";
 					},
@@ -372,12 +365,10 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		});
 
 		expect(result).toBe("task finished successfully");
-		// Verify execution happened in isolated worktree, NOT in repoDir
 		expect(observedExecutionCwd).not.toBe(f.repoDir);
 		expect(observedExecutionCwd).toContain("task-workspaces");
 		expect(observedWorkspaceHandleId).toBeDefined();
 
-		// Verify outcome recorded in outbox with artifact and proofs
 		const outbox = runtime.recovery.getPendingOutboxEntry(taskId, attemptId);
 		expect(outbox).toBeDefined();
 		expect(outbox?.status).toBe("completed");
@@ -388,7 +379,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(outbox?.artifact?.producer.attemptId).toBe(attemptId);
 		expect(outbox?.artifact?.patchBase64).toBeDefined();
 
-		// Clean baseline repo remained untouched
 		const { stdout: repoStatus } = await runGit(f.repoDir, ["status", "--porcelain"]);
 		expect(repoStatus.trim()).toBe("");
 	});
@@ -440,7 +430,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				return {
 					async run() {
 						const cwd = executorOpts.executionCwd ?? executorOpts.cwd;
-						// Write an enormous binary file (> 128 KiB patch) that triggers MAX_TASK_ARTIFACT_PATCH_BYTES failure
 						const largeBuf = Buffer.alloc(200 * 1024, "A");
 						await writeFile(join(cwd, "large.bin"), largeBuf);
 						return "work finished but patch too large";
@@ -486,14 +475,11 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).rejects.toThrow(/Task artifact capture failed/i);
 
-		// Executor must have been confirmed stopped before settlement
 		expect(executorClosed).toBe(true);
 
-		// Must NOT be marked as completed in Outbox!
 		const outbox = runtime.recovery.getPendingOutboxEntry(taskId, attemptId);
 		expect(outbox).toBeDefined();
 		expect(outbox?.status).toBe("failed");
-		// Independent facts: execution completed, but artifact was NOT produced
 		expect(outbox?.executionCompleted).toBe(true);
 		expect(outbox?.artifactProduced).toBe(false);
 		expect(outbox?.artifact).toBeUndefined();
@@ -507,7 +493,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			...f.options,
 			executorFactory: () => ({
 				async run() {
-					// Simulate task cancellation while executing
 					controller.abort(new Error("User cancelled"));
 					return "done text that should not count as completed";
 				},
@@ -574,7 +559,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			patchSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 			createdAt: Date.now(),
 		};
-		// Set correct digest
 		const { computeArtifactDigest } = await import("../../server/device-center/work-contract.js");
 		fakeArtifact.digest = computeArtifactDigest(fakeArtifact);
 		fakeArtifact.patchSha256 = (await import("node:crypto"))
@@ -616,7 +600,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(outboxEntry.artifact?.digest).toBe(fakeArtifact.digest);
 		await runtime1.close();
 
-		// Simulate restart: create fresh runtime with the same dataDir
 		const runtime2 = createDeviceRuntime(f.options);
 		cleanups.push(async () => {
 			await runtime2.close();
@@ -628,7 +611,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(recovered?.executionCompleted).toBe(true);
 		expect(recovered?.artifactProduced).toBe(true);
 
-		// Wrong fingerprint or wrong artifactDigest fails to ACK
 		const badAck1 = runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", "wrong-fingerprint");
 		expect(badAck1).toBe(false);
 
@@ -637,7 +619,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		});
 		expect(badAck2).toBe(false);
 
-		// Exact ACK clears the Outbox
 		const goodAck = runtime2.recovery.ackOutbox("task-recovery-1", "attempt-1", recovered!.fingerprint, {
 			artifactDigest: fakeArtifact.digest,
 		});
@@ -661,7 +642,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			leaseGeneration: 1,
 		});
 
-		// Starting a different attempt for the SAME task while attempt-1 is active must be rejected
 		expect(() => {
 			runtime.recovery.recordTaskStart({
 				taskId: "task-conflict",
@@ -683,7 +663,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		const isolatedCwd = join(f.dir, "isolated-worktree");
 		await mkdir(isolatedCwd);
 
-		// A directory and a plausible handle string do not confer any local authority.
 		const context = {
 			executionCwd: isolatedCwd,
 			executionMode: "code" as const,
@@ -705,7 +684,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).toThrow(/Chat execution cwd/);
 
-		// 3. Unregistered fake client ID throws unregistered error
 		expect(() => getBotExecution("device-task-forged-random")).toThrow(/Unregistered Bot execution client/i);
 	});
 
@@ -764,7 +742,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			true,
 		);
 
-		// Old fingerprint that did not bind the artifact
 		const legacyFp = computeOutcomeFingerprint(
 			"task-fp-1",
 			"attempt-1",
@@ -805,7 +782,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			getHistoryLimit: () => 50,
 		};
 
-		// 1. Sending legacy fingerprint with artifact is rejected as fingerprint bypass
 		const bypassResult = settleTaskTerminalOutcome(
 			draftState,
 			"device-1",
@@ -821,7 +797,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				artifact: fakeArtifact,
 				executionCompleted: true,
 				artifactProduced: true,
-				fingerprint: legacyFp, // Bypass attempt!
+				fingerprint: legacyFp,
 			},
 			ctx,
 		);
@@ -829,7 +805,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(bypassResult.accepted).toBe(false);
 		expect(bypassResult.reason).toContain("Outcome fingerprint mismatch");
 
-		// 2. Canonical fingerprint is accepted
 		const validResult = settleTaskTerminalOutcome(
 			draftState,
 			"device-1",
@@ -871,7 +846,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 						throw new Error("Simulated model error");
 					},
 					close() {
-						// Simulate stop confirmation failure
 						return Promise.reject(new DeviceTaskStopUnconfirmedError(new Error("Cannot stop executor process")));
 					},
 				};
@@ -914,15 +888,12 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).rejects.toThrow(/Cannot stop executor process/i);
 
-		// 1. MUST NOT produce terminal entry in Outbox when stop is unconfirmed!
 		const outbox = runtime.recovery.getPendingOutboxEntry(taskId, attemptId);
 		expect(outbox).toBeUndefined();
 
-		// 2. Active lease MUST be retained (not deleted)!
 		const activeLease = runtime.recovery.getActiveLease(taskId, attemptId);
 		expect(activeLease).toBeDefined();
 
-		// 3. Worktree MUST be preserved on disk for inspection (not cleaned up)!
 		expect(capturedWorktreeDir).toBeTruthy();
 		expect(existsSync(capturedWorktreeDir)).toBe(true);
 	});
@@ -939,9 +910,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				capturedWorktreeDir = executorOpts.executionCwd ?? executorOpts.cwd;
 				return {
 					async run() {
-						// Write modified file so worktree is dirty
 						await writeFile(join(capturedWorktreeDir, "dirty.txt"), "dirty content\n");
-						// Write huge binary to trigger capture failure
 						const huge = Buffer.alloc(200 * 1024, "X");
 						await writeFile(join(capturedWorktreeDir, "huge.bin"), huge);
 						return "finished run";
@@ -987,7 +956,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).rejects.toThrow(/Task artifact capture failed/i);
 
-		// Worktree must still exist on disk because conservative cleanup preserves dirty trees!
 		expect(capturedWorktreeDir).toBeTruthy();
 		expect(existsSync(capturedWorktreeDir)).toBe(true);
 		expect(existsSync(join(capturedWorktreeDir, "dirty.txt"))).toBe(true);
@@ -1014,7 +982,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			taskState: { original: "sealed state" },
 		});
 
-		// 1. Tampered context on wire is rejected
 		await expect(
 			runtime.onTask({
 				id: "task-tamper-ctx",
@@ -1033,7 +1000,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).rejects.toThrow(/Task wire context does not match sealed contextManifest/i);
 
-		// 2. Tampered taskState on wire is rejected
 		await expect(
 			runtime.onTask({
 				id: "task-tamper-state",
@@ -1079,7 +1045,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			accountId: "acc-1",
 			status: "waiting",
 			dependsOnTaskId: "task-pred",
-			contract: { id: contractId, revision: 2, executionMode: "code" }, // Mismatched revision!
+			contract: { id: contractId, revision: 2, executionMode: "code" },
 		};
 
 		const draftState: any = {
@@ -1101,7 +1067,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		expect(succTask.status).toBe("failed");
 		expect(succTask.report).toContain("契约版本冲突");
 
-		// Conversely, tasks with DIFFERENT contractId transition cleanly based on taskId
 		const diffContractTask: any = {
 			id: "task-diff",
 			attemptId: "att-3",
@@ -1136,7 +1101,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			},
 		});
 
-		// 1. Mismatched botRevision in executionPolicy is rejected
 		const { computeManifestDigest } = await import("../../server/device-center/work-contract.js");
 		const baseManifest = createContextManifest({
 			contract,
@@ -1147,7 +1111,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			executionPolicy: {
 				deviceId: "device-1",
 				botId: f.bot.id,
-				botRevision: f.bot.revision + 999, // Mismatched revision!
+				botRevision: f.bot.revision + 999,
 			},
 		};
 		badRevisionManifest.digest = computeManifestDigest(badRevisionManifest);
@@ -1169,7 +1133,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			}),
 		).rejects.toThrow(/Context manifest execution policy mismatch/i);
 
-		// 2. Mismatched deviceId in executionPolicy is rejected
 		const badDeviceManifest: any = {
 			...baseManifest,
 			executionPolicy: {
@@ -1286,7 +1249,6 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 			getHistoryLimit: () => 50,
 		};
 
-		// 1. Settle terminal outcome
 		const result = settleTaskTerminalOutcome(
 			draftState,
 			"device-1",
@@ -1311,21 +1273,17 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 		const recordedTask = draftState.tasks[0];
 		expect(recordedTask.artifact?.digest).toBe(mutableArtifact.digest);
 
-		// 2. Caller modifies the original mutableArtifact in place
 		const originalDigest = mutableArtifact.digest;
 		mutableArtifact.patchBase64 = Buffer.from("TAMPERED PATCH").toString("base64");
 		mutableArtifact.producer.botId = "hacked-bot";
 
-		// 3. The stored task.artifact MUST NOT be mutated!
 		expect(recordedTask.artifact.producer.botId).toBe(f.bot.id);
 		expect(recordedTask.artifact.patchBase64).toBe(Buffer.from("original patch").toString("base64"));
 		expect(recordedTask.artifact.digest).toBe(originalDigest);
 
-		// 4. Stored task.artifact is deeply frozen
 		expect(Object.isFrozen(recordedTask.artifact)).toBe(true);
 		expect(Object.isFrozen(recordedTask.artifact.producer)).toBe(true);
 
-		// 5. Strictly reject non-boolean proof fields
 		const nonBoolResult = settleTaskTerminalOutcome(
 			draftState,
 			"device-1",
@@ -1338,7 +1296,7 @@ describe("Device Runtime Code Mode & Artifacts (Batch 2C)", { timeout: 30_000 },
 				leaseGeneration: 1,
 				status: "failed",
 				report: "failed",
-				executionCompleted: "true" as any, // String instead of boolean!
+				executionCompleted: "true" as any,
 			},
 			ctx,
 		);

@@ -1,17 +1,6 @@
-/**
- * wechat-ilink 客户端视图 —— 状态/扫码/配对/收件箱/手动发送/根目录联动。
- * 约定同 demo-mailbox：mount(container, ctx) → cleanup；ctx.send 上行，ctx.onData 订阅。
- *
- * 二维码是本地生成的：官方 `qrcode_img_content` 是个 JS 跳转页（非图片，
- * 且 X-Frame-Options 禁止 framing），扫的内容就是该 URL 本身（与官方 CLI
- * 用 qrcode-terminal 渲染的一致），编码器是自带的 vendor/qrcode.js（MIT）。
- */
-
 const ACTION_SET_WORKSPACE = "wechat-ilink:set-workspace";
 
-/** 当前挂载面板的上行发送器（null = 面板尚未挂载）。 */
 let panelSendSink = null;
-/** 面板尚未挂载时由右键菜单触发的待应用根目录。 */
 let pendingWorkspace = null;
 
 function requestSetWorkspace(path) {
@@ -43,12 +32,9 @@ function whenBridge(fn, tries = 40) {
 whenBridge((bridge) => {
 	try {
 		bridge.onUiAction?.(ACTION_SET_WORKSPACE, onSetWorkspaceAction);
-	} catch {
-		/* 忽略旧宿主桥 */
-	}
+	} catch {}
 });
 
-/** 按需加载二维码编码器（与服务端版本解耦：缺失时只显示官方链接）。 */
 let qrFactoryPromise = null;
 function loadQrFactory() {
 	if (!qrFactoryPromise) {
@@ -190,9 +176,7 @@ export default {
 		whenBridge((bridge) => {
 			try {
 				bridge.onUiAction?.(ACTION_SET_WORKSPACE, onSetWorkspaceAction);
-			} catch {
-				/* 忽略 */
-			}
+			} catch {}
 		});
 		if (pendingWorkspace) {
 			const next = pendingWorkspace;
@@ -209,7 +193,6 @@ export default {
 				wsInputEl.value = ws;
 			}
 
-			// 更新已有项目快捷下拉（包含当前项目、已固定根目录与全部已知项目列表）
 			if (wsSelectEl) {
 				const currentVal = wsSelectEl.value;
 				const options = [{ label: "选择最近项目…", value: "" }];

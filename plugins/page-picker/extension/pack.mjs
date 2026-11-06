@@ -1,16 +1,3 @@
-/**
- * 打分发用的 zip：`release/page-picker-extension-<版本>.zip`。
- *
- * 目的：让**没有 Node 的人**也能装 —— 下载 zip、解压、在 chrome://extensions 里
- * 「加载已解压的扩展程序」，不需要 clone 仓库、不需要构建。
- *
- * 三个硬要求（都有检查，宁可失败也不要出一个装不上的包）：
- * 1. zip 根目录直接就是 `manifest.json`（否则 Chrome 加载不了）；
- * 2. 只装运行时需要的东西（`src/` 不给，免得用户对着 TypeScript 源码困惑）；
- * 3. 写完自己读一遍校验条目与 CRC —— 「包是坏的」这种事不该等到用户手里才发现。
- *
- * 用法：node plugins/page-picker/extension/pack.mjs   （或 npm run pack:extension）
- */
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,13 +7,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..");
 const outDir = join(repoRoot, "release");
 
-/** 必须存在的文件（缺一个就是没构建 / 构建残缺）。 */
 const REQUIRED = ["manifest.json", "options.html"];
 
-/** 必须存在的多语言文件（缺一个 Chrome 会直接拒绝加载扩展）。 */
 const REQUIRED_LOCALES = ["_locales/en/messages.json", "_locales/zh_CN/messages.json"];
 
-/** 必须存在的构建产物（漏掉一个入口就是「装上了但某个功能静默失效」）。 */
 const REQUIRED_DIST = ["background.js", "picker.js", "bind.js", "bridge.js", "options.js"];
 
 function collect(dir, out = []) {
@@ -39,7 +23,6 @@ function collect(dir, out = []) {
 }
 
 function main() {
-	// dist/ 不在就明确报错（而不是打出一个只有 manifest 的空壳包）
 	let distFiles = [];
 	try {
 		distFiles = collect(join(here, "dist")).filter((f) => !f.endsWith(".map"));
@@ -57,7 +40,9 @@ function main() {
 		console.error("✗ dist/ 是空的 —— 先跑 npm run build:extension");
 		process.exit(1);
 	}
-	const missingDist = REQUIRED_DIST.filter((name) => !distFiles.some((f) => f.endsWith(join("dist", name)) || f.endsWith(`dist/${name}`)));
+	const missingDist = REQUIRED_DIST.filter(
+		(name) => !distFiles.some((f) => f.endsWith(join("dist", name)) || f.endsWith(`dist/${name}`)),
+	);
 	if (missingDist.length > 0) {
 		console.error(`✗ dist/ 里缺 ${missingDist.join(", ")} —— 先跑 npm run build:extension`);
 		process.exit(1);
@@ -83,7 +68,6 @@ function main() {
 
 	const entries = [...entryFiles, ...distFiles, ...localeFiles]
 		.map((full) => ({
-			// zip 内一律用 / 分隔（Windows 的 \ 会让解压器建出奇怪的文件名）
 			name: relative(here, full).split("\\").join("/"),
 			data: new Uint8Array(readFileSync(full)),
 		}))
@@ -91,7 +75,6 @@ function main() {
 
 	const zip = buildZip(entries);
 
-	// 自校验：读回来 → 条目一致 + manifest 在根目录（解压器不会告诉我们这些）
 	const info = readZip(zip);
 	const names = info.entries.map((e) => e.name);
 	if (names.length !== entries.length) {
@@ -110,8 +93,6 @@ function main() {
 	mkdirSync(outDir, { recursive: true });
 	const versioned = join(outDir, `page-picker-extension-${version}.zip`);
 	writeFileSync(versioned, zip);
-	// 无版本号别名：README 里用它做**永远指向最新**的下载链接
-	//（GitHub 的 /releases/latest/download/<name> 要求文件名固定），代价只是多 64KB
 	const alias = join(outDir, "page-picker-extension.zip");
 	writeFileSync(alias, zip);
 

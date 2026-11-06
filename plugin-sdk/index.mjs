@@ -1,9 +1,3 @@
-/**
- * Server / compatibility entry for the plugin SDK.
- * Browser plugins import ./client.mjs; Node tests import ./testing.mjs.
- */
-
-/** 服务端入口校验 + 原样返回（拼错 activate / 忘写 deactivate 在加载期就报错）。 */
 export function definePlugin(def) {
 	if (!def || typeof def !== "object") throw new Error("[sdk] definePlugin 需要一个对象");
 	if (typeof def.activate !== "function") throw new Error("[sdk] 插件缺 activate(host) 方法");

@@ -1,5 +1,3 @@
-// Windows foreground verification supervisor. Commands enter a non-breakaway Job before
-// their first instruction; only this supervisor can emit the per-operation stop receipt.
 export const WINDOWS_VERIFICATION_SUPERVISOR = String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'

@@ -1,7 +1,3 @@
-/**
- * llama-models.test.ts — Issue #755: SDK llama.cpp 本地模型动态装配与模型发现单测。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
@@ -40,9 +36,7 @@ describe("llama.cpp local models integration (Issue #755)", () => {
 		try {
 			rmSync(testAgentDir, { recursive: true, force: true });
 			rmSync(testCwd, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	it("1. getSdkBuiltinExtensionFactories 成功加载内置扩展，包含 llama.cpp 且排除 mcp", async () => {
@@ -79,7 +73,6 @@ describe("llama.cpp local models integration (Issue #755)", () => {
 	});
 
 	it("3. 模拟 llama-server router 模式，mr.refresh 能成功拉取并在 getAvailable 中列出本地模型", async () => {
-		// 启动 Mock llama-server
 		mockServer = createServer((req, res) => {
 			if (req.url === "/v1/models" || req.url === "/models") {
 				res.writeHead(200, { "Content-Type": "application/json" });

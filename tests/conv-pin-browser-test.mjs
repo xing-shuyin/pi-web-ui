@@ -1,14 +1,3 @@
-/* 浏览器 E2E（钉住对话常驻运行列表）：
- *
- *   1. seed 一条有内容的假会话 → 左栏历史行；点开它进「运行的对话」
- *   2. 运行行右键 → 菜单含「钉住」、不含「取消钉住」→ 点「钉住」
- *   3. 行上出现 📌 标记
- *   4. 把它切走（点成 active 后新建对话）→ 仍在运行列表里（空闲无终端也保留 = 本功能）
- *   5. 右键 → 「取消钉住」→ 标记消失；再走一遍同样的切换 → 该对话被释放（恢复旧行为）
- *
- * 零 token：switch_session 打开 seeded 会话即给运行列表造出内容，全程不调模型。
- * 缺 Chrome 时 SKIP。运行：npm run build && node tests/conv-pin-browser-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +17,6 @@ const PORT = 20000 + Math.floor(Math.random() * 8000);
 mkdirSync(WORK, { recursive: true });
 writeFileSync(join(WORK, "readme.txt"), "hello\n");
 
-/** 与 context-menu-ui-test.mjs 同款 seed：平铺 jsonl 进 PI_CODING_AGENT_SESSION_DIR。 */
 function seedSession(cwd, id, text) {
 	const dir = join(AGENT_DIR, "sessions");
 	mkdirSync(dir, { recursive: true });
@@ -71,9 +59,7 @@ async function waitServer() {
 	for (let i = 0; i < 120; i++) {
 		try {
 			if ((await fetch(`http://localhost:${PORT}/api/health`)).ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -114,7 +100,6 @@ async function clickMenuItem(page, text) {
 	await tap(page, menuItems(page).filter({ hasText: text }).first());
 }
 
-/** seeded 会话在左栏运行区的那一行（按 seed 文案定位）。 */
 const seededRow = (page) => page.locator(".lp-section-convs .lp-row").filter({ hasText: SEED_TEXT }).first();
 
 async function main() {
@@ -139,12 +124,8 @@ async function main() {
 	browser = await chromium.launch({
 		executablePath: CHROME_PATH,
 		headless: true,
-		// 容器内以 root 跑需要跳过 sandbox（本机 CI 环境加这俩参数也无害）。
 		args: ["--no-sandbox", "--disable-dev-shm-usage"],
 	});
-	// headless chromium 的 navigator.languages 默认是 en-US，而 locale 选择
-	// 顺序里浏览器语言优先于实例默认 → 给 context 直接指定中文，断言文案才是
-	// 中文（被测逻辑与语言无关）。
 	const context = await browser.newContext({ locale: "zh-CN" });
 	const page = await context.newPage();
 	const errors = [];
@@ -156,7 +137,6 @@ async function main() {
 	await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
 	await page.waitForSelector(".chat-input, .inputbar, textarea", { timeout: 30000 });
 
-	// 打开 seeded 会话 → 它有内容，进「运行的对话」。
 	const leftPanel = page.locator(".panel-left").first();
 	const historyRow = leftPanel.locator(".panel-sessions .lp-row").filter({ hasText: SEED_TEXT }).first();
 	check("左栏列出 seeded 历史会话", await until(async () => (await historyRow.count()) > 0, 40, 250));
@@ -164,7 +144,6 @@ async function main() {
 	const runningSection = leftPanel.locator(".lp-section-convs").first();
 	check("打开后进入「运行的对话」区", await until(async () => (await runningSection.count()) > 0, 50, 250));
 
-	// ---- 1. 未钉住时右键：菜单给的是「钉住」，没有「取消钉住」 ------------------
 	await rightClick(page, seededRow(page));
 	check("运行行右键弹菜单", await until(async () => (await page.locator(".ctx-menu").count()) > 0, 20, 150));
 	const textsBefore = await menuTexts(page);
@@ -175,7 +154,6 @@ async function main() {
 	);
 	check("菜单此时不含「取消钉住」", !textsBefore.some((t) => t.includes("取消钉住")));
 
-	// ---- 2. 点「钉住」→ 行上出现 📌 -------------------------------------------
 	await clickMenuItem(page, "钉住");
 	check("菜单点后关闭", await until(async () => (await page.locator(".ctx-menu").count()) === 0, 20, 150));
 	check(
@@ -193,7 +171,6 @@ async function main() {
 	);
 	check("服务端回了「已钉住」回执", pinnedNotice);
 
-	// ---- 3. 切走（打开第二个超长标题会话并钉住）→ 两个钉住对话的 📌 均在面板可视区域内 --------
 	const longHistoryRow = leftPanel.locator(".panel-sessions .lp-row").filter({ hasText: "这是一个非常" }).first();
 	await tap(page, longHistoryRow);
 	await sleep(600);
@@ -229,14 +206,12 @@ async function main() {
 		`panelW=${panelBox?.width}, b1X=${badge1Box?.x}, b2X=${badge2Box?.x}`,
 	);
 
-	// 取消第二个对话的钉住并切走释放，还原为单会话环境继续后续断言
 	await rightClick(page, longRunningRow);
 	await until(async () => (await page.locator(".ctx-menu").count()) > 0, 20, 150);
 	await clickMenuItem(page, "取消钉住");
 	await tap(page, leftPanel.locator('button.lp-new-chat-action[aria-label*="新对话"]').first());
 	await sleep(600);
 
-	// ---- 4. 取消钉住：标记消失，同样的切换之后它被释放（恢复旧行为）----------
 	await rightClick(page, seededRow(page));
 	check("右键再次弹菜单", await until(async () => (await page.locator(".ctx-menu").count()) > 0, 20, 150));
 	check("已钉住时菜单文案换成「取消钉住」", await hasMenuItem(page, "取消钉住"), (await menuTexts(page)).join(" | "));
@@ -245,7 +220,6 @@ async function main() {
 		"取消钉住后 📌 标记消失",
 		await until(async () => (await seededRow(page).locator(".pin-badge").count()) === 0, 40, 250),
 	);
-	// 点回 seeded 会话（让它成为 active），再新建对话 → 未钉住时置换释放。
 	await tap(page, seededRow(page).locator(".session-item"));
 	await sleep(600);
 	await tap(page, leftPanel.locator('button.lp-new-chat-action[aria-label*="新对话"]').first());
@@ -272,15 +246,11 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (server?.pid) {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* already gone */
-		}
+		} catch {}
 	}
 	freePort(PORT);
 	rmSync(base, { recursive: true, force: true });

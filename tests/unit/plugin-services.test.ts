@@ -1,7 +1,3 @@
-/**
- * 插件间服务总线（Service Registry / Bus）单测：
- * provide / get / has / list / onService，以及生命周期回卷与异常隔离。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,7 +62,6 @@ describe("Plugin Service Bus", () => {
 		const list = cHost.services.list();
 		expect(list).toEqual([{ name: "math.calculator", pluginId: "provider" }]);
 
-		// 手动注销
 		off();
 		expect(cHost.services.has("math.calculator")).toBe(false);
 		expect(cHost.services.get("math.calculator")).toBeUndefined();
@@ -77,18 +72,14 @@ describe("Plugin Service Bus", () => {
 		const aHost = hosts["plugin_a"];
 		const bHost = hosts["plugin_b"];
 
-		// 非法名称校验
 		expect(() => aHost.provide("", {})).toThrow(/非法服务名/);
 		expect(() => aHost.provide("invalid name with spaces", {})).toThrow(/非法服务名/);
 		expect(() => aHost.provide("a".repeat(65), {})).toThrow(/非法服务名/);
 
-		// 合法注册
 		aHost.provide("shared-db", { ready: true });
 
-		// 同一插件覆盖自身服务允许
 		expect(() => aHost.provide("shared-db", { ready: true, v2: true })).not.toThrow();
 
-		// 其它插件抢占同名服务抛错
 		expect(() => bHost.provide("shared-db", { hack: true })).toThrow(/已由插件 "plugin_a" 注册/);
 	});
 
@@ -100,7 +91,6 @@ describe("Plugin Service Bus", () => {
 		pHost.provide("auto-service", { hello: "world" });
 		expect(cHost.get("auto-service")).toEqual({ hello: "world" });
 
-		// 删除 provider_auto 插件目录并重新加载（触发 deactivateEntry）
 		rmSync(join(dir, "plugins", "provider_auto"), { recursive: true, force: true });
 		await mgr.ensureLoaded();
 
@@ -115,26 +105,22 @@ describe("Plugin Service Bus", () => {
 
 		const events: Array<unknown> = [];
 
-		// 1. 先监听尚未发布的服务
 		const offSub = sub.onService("my-stream", (svc) => {
 			events.push(svc);
 		});
 
-		expect(events).toEqual([]); // 尚未发布，不触发
+		expect(events).toEqual([]);
 
-		// 发布服务 -> 监听者收到
 		const streamInstance = { streamId: "123" };
 		const offPub = pub.provide("my-stream", streamInstance);
 		expect(events).toEqual([streamInstance]);
 
-		// 2. 另一个监听者在服务已存在时注册 -> 立即同步收到当前实例
 		let immediateReceived: unknown = null;
 		const offImmediate = sub.services.on("my-stream", (svc) => {
 			immediateReceived = svc;
 		});
 		expect(immediateReceived).toBe(streamInstance);
 
-		// 撤销服务 -> 两个监听者均收到 undefined
 		offPub();
 		expect(events).toEqual([streamInstance, undefined]);
 		expect(immediateReceived).toBeUndefined();

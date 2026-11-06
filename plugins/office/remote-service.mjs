@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { buildRemoteCanvas, createCanvasTransport } from "./remote-canvas.mjs";
 
-/** Authenticated plugin routes own admission; tokens additionally bind RPCs to one document. */
 export function registerRemoteCanvas(host, { prepare, viewerRoot, getOrigin, signal, touch, maxSessions = 16 }) {
 	const sessions = new Map();
 	let creating = 0;

@@ -18,13 +18,11 @@ function useInstantTip<T extends HTMLElement>(text: string) {
 	const show = () => {
 		const r = anchorRef.current?.getBoundingClientRect();
 		if (!r) return;
-		// 先按向下展开摆位，实测尺寸后再翻转（见下 effect；文本长度不定估算不可靠）。
 		setPos({ left: Math.max(8, r.left - 8), top: r.bottom + 8 });
 		setOpen(true);
 	};
 	const hide = () => setOpen(false);
 
-	// 打开后实测气泡尺寸再翻转/钳制。
 	useEffect(() => {
 		if (!open) return;
 		const b = bubbleRef.current;
@@ -36,8 +34,6 @@ function useInstantTip<T extends HTMLElement>(text: string) {
 		setPos((prev) => (prev.left === next.left && prev.top === next.top ? prev : next));
 	}, [open, text]);
 
-	// 打开期间滚动/缩放 → 跟随锚点重算位置（rAF 节流），不收起；
-	// 锚点滚出视口才收起。Esc/失焦的收起走下面的 onMouseLeave/onBlur。
 	useEffect(() => {
 		if (!open) return;
 		let raf = 0;
@@ -87,15 +83,6 @@ function useInstantTip<T extends HTMLElement>(text: string) {
 	return { anchorRef, show, hide, onKeyDown, tipPortal };
 }
 
-/**
- * 「？」悬浮提示（共享组件）：长解释默认不占版面，hover / 键盘聚焦时浮出全文。
- *
- * 顶层渲染：portal 到 document.body + fixed 定位，不受滚动容器 overflow 裁剪
- * （以前是 absolute 下挂在行内，贴底部的行气泡会被 modal-body 裁掉看不见）。
- * 打开后实测气泡尺寸：右侧/下侧空间不足自动翻转（左展/上展），四边钳制在视口内。
- * 滚动/缩放不收起 —— 跟随锚点重算位置（rAF 节流）；只有锚点滚出视口才收起
- * （指着空气的气泡没有意义）。Esc/失焦仍即时收起。
- */
 export function HintTip({ text }: { text: string }) {
 	const { anchorRef, show, hide, onKeyDown, tipPortal } = useInstantTip<HTMLSpanElement>(text);
 
@@ -117,9 +104,6 @@ export function HintTip({ text }: { text: string }) {
 	);
 }
 
-/**
- * 悬浮/聚焦立即弹出提示气泡的按钮（替代原生 `title` 的 500ms+ 延迟）。
- */
 export function TipButton({
 	tip,
 	children,

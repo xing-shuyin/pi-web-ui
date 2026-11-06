@@ -1,15 +1,3 @@
-// issue #291 回归（零 token）：elsewhere（「另一处」）列表的生命周期缺陷。
-//
-// 1) 断连残骸的离线行有宽限期：客户端 A 用随机 clientId attach 并发一次 prompt
-//    （产生对话），断开 socket 后，另一个客户端 B 的 elsewhere 里**宽限期内仍能看到**
-//    该行（标 ownerOffline，可过户 —— 手机上 run 途中关页面也能换设备接管），
-//    过期后自动消失（#291「残骸不永久占位」仍然成立；本测试把宽限期压到 3s）。
-//    含正向对照：A 在线时 B 必须能看到那一行（证明测试真的在读这张列表）。
-// 2) 删除定时任务回收伪客户端：建一个任务并 schedule_run 一次（产生 `scheduler:<id>`
-//    伪客户端 + 一条对话）→ B 的 elsewhere 有该行；schedule_delete 后该行应消失。
-//
-// 断言口：conversations 消息里的 elsewhere 数组（owner 字段标识持有方）。
-// Usage: npm run build && node tests/elsewhere-lifecycle-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,7 +34,6 @@ const delta = (model, d, finish = null) => ({
 	model,
 	choices: [{ index: 0, delta: d, finish_reason: finish }],
 });
-// mock：直接回文本并结束（run 结束后对话仍被持有方留着 = 空闲 elsewhere 行）。
 const mock = createServer(async (req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${MOCK_PORT}`);
 	if (url.pathname.endsWith("/models")) {
@@ -95,10 +82,8 @@ const server = spawn(process.execPath, [join(realpathSync("."), "dist", "server"
 		PI_WEB_CWD: workdir,
 		PI_WEB_DATA_DIR: dataDir,
 		PI_CODING_AGENT_DIR: agentDir,
-		// 显式清空：测试必须与 ambient shell 的 PI_WEB_TOKEN 无关。
 		PI_WEB_TOKEN: "",
 		PI_WEB_PLUGIN_CATALOG_URL: "",
-		// 离线行宽限期压到 3 秒：一次冒烟里就能验「到期自动消失」。
 		PI_WEB_OFFLINE_ROWS_TTL_MS: "3000",
 	},
 	stdio: ["ignore", "pipe", "pipe"],
@@ -112,19 +97,13 @@ server.stderr.on("data", (d) => (serverOut += String(d)));
 const cleanup = () => {
 	try {
 		clientB?.ws.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	try {
 		server.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	try {
 		mock.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 };
 
 class Client {
@@ -177,7 +156,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-/** 等 elsewhere 出现/消失某 owner 的行（conversations 推送驱动）。 */
 const waitElsewhere = async (c, pred, what, timeout = 15000) => {
 	const started = Date.now();
 	while (Date.now() - started < timeout) {
@@ -199,14 +177,11 @@ const waitElsewhereGone = async (c, pred, what, timeout = 15000) => {
 let clientA;
 let clientB;
 try {
-	// 等健康检查
 	for (let i = 0; i < 160; i++) {
 		try {
 			const r = await fetch(`http://127.0.0.1:${PORT}/api/health`);
 			if (r.ok) break;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 		if (i === 159) throw new Error("server did not come up");
 	}
@@ -229,21 +204,17 @@ try {
 		return c;
 	};
 
-	// B：先上线的观察者（有 sink → 其他客户端的对话在它这里是 elsewhere 行）。
 	clientB = await openClient("observer-b");
 
-	// --- 场景 1：断连残骸不入 elsewhere ---
 	const deadId = "probe-dead-1790000000000";
 	clientA = await openClient(deadId);
 	clientA.send({ type: "prompt", text: "残骸测试：只回复 OK" });
 	await clientA.waitForState((s) => s.isStreaming === true, 20000).catch(() => {});
-	// 正向对照：A 在线时，B 必须能看到 A 的行。
 	const liveRow = await waitElsewhere(clientB, (w) => w.owner === deadId, "A live row");
 	check("A 在线时 B 能看到其 elsewhere 行（正向对照）", !!liveRow, `owner=${liveRow.owner}`);
 	check("普通客户端 elsewhere 条目 pseudo 为 false/undefined（#426）", !liveRow.pseudo);
 	await clientA.waitForState((s) => s.isStreaming === false, 30000).catch(() => {});
 
-	// 断开 A（不 detach 回收 → 模拟「关浏览器留下的残骸」）。
 	clientA.ws.close();
 	const offlineRow = await waitElsewhere(
 		clientB,
@@ -262,7 +233,6 @@ try {
 		`elsewhere=${JSON.stringify(clientB.elsewhere.map((w) => w.owner))}`,
 	);
 
-	// --- 场景 2：删除定时任务回收伪客户端 ---
 	const taskId = "task-lifecycle-291";
 	clientB.send({
 		type: "schedule_save",
@@ -280,12 +250,10 @@ try {
 	await clientB.waitForType("scheduler_tasks", (m) => (m.tasks ?? []).some((t) => t.id === taskId), 15000);
 
 	clientB.send({ type: "schedule_run", id: taskId });
-	// 正向对照：伪客户端跑起来后应出现在 elsewhere。
 	const schedRow = await waitElsewhere(clientB, (w) => w.owner === `scheduler:${taskId}`, "scheduler row", 30000);
 	check("定时任务伪客户端出现在 elsewhere（正向对照）", !!schedRow, `owner=${schedRow.owner}`);
 	check("定时任务伪客户端 elsewhere 条目标记为 pseudo（#426）", schedRow.pseudo === true);
 
-	// #426：尝试请求过户伪客户端会话，应被拒并提示引导去处
 	clientB.send({ type: "take_over_conversation", owner: schedRow.owner, id: schedRow.convId });
 	const rejectNotice = await clientB.waitForType(
 		"notice",
@@ -294,7 +262,6 @@ try {
 	);
 	check("请求过户伪客户端时被拒并给出后台任务引导（#426）", rejectNotice.text.includes("后台任务面板"));
 
-	// 删除任务 → 伪客户端应被回收。
 	clientB.send({ type: "schedule_delete", id: taskId });
 	const schedGone = await waitElsewhereGone(
 		clientB,

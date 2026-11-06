@@ -5,7 +5,6 @@ const MAX_ITEM_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/** Validate before invoking the agent; never silently discard media or truncate base64. */
 export function normalizePluginChatAttachments(value: unknown): PromptAttachment[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value) || value.length > MAX_COUNT)

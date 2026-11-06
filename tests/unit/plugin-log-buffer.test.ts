@@ -1,15 +1,3 @@
-/**
- * 插件运行时分级日志（host.log）服务端单测：不启 server、不碰真模型。
- *
- * 覆盖：
- * - normalizePluginLogLevel / formatPluginLogText 纯函数（级别归一、截断封顶）
- * - 真 PluginManager + 真插件代码：host.log(level?, ...args) 写入缓冲
- *   （老写法 host.log(...args) 按 info 兼容；error 进缓冲）
- * - 缓冲封顶 200 条（丢最旧）、单条截断 500 字符
- * - handleMessage 的宿主保留通道：{__host:"logs",op:"get"|"clear"} 定向回包，
- *   且不进插件 onMessage（插件不可见）；from 缺席静默丢弃
- * - deactivate 后缓冲随插件一起清
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -102,7 +90,6 @@ describe("PluginManager plugin logs", () => {
 		await mgr.ensureLoaded();
 		const logs = mgr.getPluginLogs("flooder");
 		expect(logs).toHaveLength(PLUGIN_LOG_CAP);
-		// 最旧的 51 条被丢掉：第一条是 n51，末条是超长截断那条。
 		expect(logs[0]!.text).toBe("n51");
 		expect(logs[logs.length - 1]!.text).toBe("x".repeat(PLUGIN_LOG_TEXT_MAX));
 	});
@@ -123,7 +110,6 @@ describe("PluginManager plugin logs", () => {
 		expect(back.pluginId).toBe("logger");
 		expect(back.payload.__host).toBe("logs");
 		expect(back.payload.logs).toHaveLength(4);
-		// 插件自己的 onMessage 没见过这条保留请求。
 		expect(logSeen()).toHaveLength(0);
 	});
 

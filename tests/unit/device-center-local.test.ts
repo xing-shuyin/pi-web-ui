@@ -23,10 +23,10 @@ describe("local device enrollment", () => {
 	it("accepts public HTTP(S) hubs and rejects URL credentials, fragments or paths", () => {
 		expect(normalizeHubUrl("https://console.example.com/")).toBe("https://console.example.com");
 		expect(normalizeHubUrl("http://127.0.0.1:8790")).toBe("http://127.0.0.1:8790");
-		expect(normalizeHubUrl("http://82.156.246.55:8790/")).toBe("http://82.156.246.55:8790");
+		expect(normalizeHubUrl("http://198.51.100.10:8790/")).toBe("http://198.51.100.10:8790");
 		expect(normalizeHubUrl("http://example.com")).toBe("http://example.com");
 		for (const value of [
-			"ws://82.156.246.55:8790",
+			"ws://198.51.100.10:8790",
 			"http://example.com/#fragment",
 			"http://user:password@example.com",
 			"https://user@example.com",
@@ -91,7 +91,6 @@ describe("local device enrollment", () => {
 		const dir = await mkdtemp(join(tmpdir(), "device-local-settings-"));
 		cleanup.push(() => rm(dir, { recursive: true, force: true }));
 
-		// Initialize with paired device config so connection is created on boot
 		await writeFile(
 			join(dir, "device-center.json"),
 			JSON.stringify({
@@ -169,24 +168,20 @@ describe("local device enrollment", () => {
 				body: JSON.stringify(body),
 			});
 
-		// 1. Initial GET settings
 		const initialRes = await fetch(`${base}/api/device-center/execution-settings`);
 		expect(initialRes.status).toBe(200);
 		const initialData = await initialRes.json();
 		expect(initialData.settings).toEqual(DEFAULT_EXECUTION_SETTINGS);
 
-		// 2. Successful POST update settings
 		const updateRes = await post("execution-settings", { maxActiveTasks: 8, maxWaitingTasks: 40 });
 		expect(updateRes.status).toBe(200);
 		const updateData = await updateRes.json();
 		expect(updateData.settings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 		expect(runtimeSettings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
-		// Verify persisted file content
 		const savedContent = JSON.parse(await readFile(join(dir, "execution-settings.json"), "utf8"));
 		expect(savedContent).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
-		// 3. Failed POST with unknown field returns 400 and preserves existing settings
 		const badRes = await post("execution-settings", {
 			maxActiveTasks: 8,
 			maxWaitingTasks: 40,
@@ -195,18 +190,15 @@ describe("local device enrollment", () => {
 		expect(badRes.status).toBe(400);
 		expect(runtimeSettings).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 8, maxWaitingTasks: 40 });
 
-		// 4. GET execution queue snapshot
 		const queueRes = await fetch(`${base}/api/device-center/execution-queue`);
 		expect(queueRes.status).toBe(200);
 		const queueData = await queueRes.json();
 		expect(queueData.activeCount).toBe(1);
 		expect(queueData.waitingCount).toBe(1);
 		expect(queueData.waiting[0]?.blockReason).toBe("workspace_conflict");
-		// Ensure no root path in snapshot
 		expect(queueData.waiting[0]?.root).toBeUndefined();
 		expect(queueData.running[0]?.root).toBeUndefined();
 
-		// 5. POST cancel queue task
 		const cancelRes = await post("execution-queue/cancel", { taskId: "wait-1" });
 		expect(cancelRes.status).toBe(200);
 		const cancelData = await cancelRes.json();
@@ -220,7 +212,6 @@ describe("local device enrollment", () => {
 		const app = express();
 		app.use(express.json());
 
-		// 1. Unpaired returns 400
 		const localUnpaired = await installLocalDeviceCenter({
 			app,
 			dataDir: dir,
@@ -238,13 +229,17 @@ describe("local device enrollment", () => {
 		expect(await unpRes.json()).toEqual({ error: "Device hub not paired" });
 		await localUnpaired.close();
 
-		// 2. Mock Hub Server
 		let upgradeHeaders: Record<string, string | string[] | undefined> = {};
 		const mockHub = createServer((req, res) => {
-			if (req.url === "/api/system/upgrade" && req.method === "POST") {
+			if (req.url === "/api/device-user/system/upgrade" && req.method === "POST") {
 				upgradeHeaders = req.headers;
 				res.writeHead(200, { "Content-Type": "application/json" });
-				res.end(JSON.stringify({ ok: true, message: "Hub upgrade initiated" }));
+				res.end(
+					JSON.stringify({
+						ok: true,
+						job: { id: "12345678-1234-1234-1234-123456789012", state: "queued", fromBootId: "old" },
+					}),
+				);
 				return;
 			}
 			if (req.url === "/health") {
@@ -256,11 +251,11 @@ describe("local device enrollment", () => {
 		});
 		const hubBase = await listen(mockHub);
 
-		// Seed paired config
 		await writeFile(
 			join(dir, "device-center.json"),
 			JSON.stringify({
 				deviceId: "dev-test-1",
+				uiCredential: "human-ui-token",
 				credential: "cred-secret-123",
 				name: "MyClient",
 				allowExecution: true,
@@ -286,8 +281,9 @@ describe("local device enrollment", () => {
 		expect(upgRes.status).toBe(200);
 		const upgData = await upgRes.json();
 		expect(upgData.ok).toBe(true);
-		expect(upgData.healthy).toBe(true);
+		expect(upgData.job.state).toBe("queued");
+		expect(upgData.healthy).toBeUndefined();
 		expect(upgradeHeaders["x-device-id"]).toBe("dev-test-1");
-		expect(upgradeHeaders["authorization"]).toBe("Bearer cred-secret-123");
+		expect(upgradeHeaders["authorization"]).toBe("Bearer human-ui-token");
 	});
 });

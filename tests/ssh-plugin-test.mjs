@@ -1,20 +1,3 @@
-/**
- * 编辑器插件（vscode-editor，含 Remote-SSH）协议冒烟测试（零 token、自包含）。
- *
- * 用 ssh2 自带的 Server 在进程内起一个 mock SSH 远端（密码认证 + PTY shell
- * 回显 + exec + 内存 SFTP），把 plugins/vscode-editor 拷进临时 data-dir 并
- * 离线补装 ssh2（从本仓库构建目录拷贝 node_modules 子集），起隔离端口 server 验证：
- * - state / hosts_save（校验+脱敏）/ hosts_delete
- * - connect：错误密码拒绝、正确密码建立
- * - shell_open → 欢迎横幅；shell_input 回显
- * - exec 输出与退出码
- * - 远程文件全链路：与本地同名 action 带 connId（list/read/write/create/
- *   rename/delete 路由到该连接的 SFTP；内存文件系统核对）
- * - 本地文件操作不受影响（不带 connId）
- * - disconnect → conn_closed 事件
- *
- * 运行：先 npm run build:server，再 node tests/ssh-plugin-test.mjs
- */
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +8,6 @@ import { startMockSsh, dirs as mDirs, files as mFiles, ensurePluginSsh2Dep } fro
 import WebSocket from "ws";
 
 const PORT = Number(process.argv[2] || 8964);
-// mock SSH 端口必须跟随主端口走（并行时各 worker 端口不同，写死会撞车）。
 const SSH_PORT = PORT + 10000;
 const PLUGIN_ID = "vscode-editor";
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -42,15 +24,12 @@ let shells = [];
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-ssh-test-"));
 const plugDst = join(dataDir, "plugins", PLUGIN_ID);
 
-// ---- 种插件目录 + 离线补装 ssh2 --------------------------------------------
 mkdirSync(plugDst, { recursive: true });
 cpSync(join(REPO, "plugins/vscode-editor/manifest.json"), join(plugDst, "manifest.json"));
 cpSync(join(REPO, "plugins/vscode-editor/index.mjs"), join(plugDst, "index.mjs"));
 cpSync(join(REPO, "plugins/vscode-editor/client"), join(plugDst, "client"), { recursive: true });
-// 准备 ssh2 依赖：离线拷本地构建目录；CI 上回退 npm install
 ensurePluginSsh2Dep(plugDst, join(REPO, "plugins/vscode-editor"));
 
-// 本地工作区种一个文件（验证本地操作不受 Remote-SSH 改造影响）
 mkdirSync(join(dataDir, "local-proj"), { recursive: true });
 
 function fail(msg) {
@@ -58,7 +37,6 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// ---- WS 工具 ----------------------------------------------------------------
 function connect(clientId = "ssh-test") {
 	return new Promise((resolve, reject) => {
 		const sock = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
@@ -99,7 +77,6 @@ function rpc(sock, payload, timeoutMs = 25_000) {
 	});
 }
 
-/** 收集事件直到谓词命中或超时。 */
 function waitForEvent(sock, pred, label, timeoutMs = 15000) {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
@@ -118,7 +95,6 @@ function waitForEvent(sock, pred, label, timeoutMs = 15000) {
 	});
 }
 
-/** 等到某条 shell_data 的累计输出里出现指定文本。 */
 async function expectShellText(sock, connId, text, timeoutMs = 15000) {
 	let acc = "";
 	return new Promise((resolve, reject) => {
@@ -142,7 +118,6 @@ async function expectShellText(sock, connId, text, timeoutMs = 15000) {
 	});
 }
 
-// ---- 主流程 ------------------------------------------------------------------
 try {
 	sshServer = await startMockSsh(plugDst, SSH_PORT);
 
@@ -167,7 +142,6 @@ try {
 
 	let sock = await connect();
 
-	// -- 0. onAttach 推送：新客户端接入后不发任何请求，也应主动收到初始状态 ------
 	{
 		const statePush = await new Promise((resolve) => {
 			const timer = setTimeout(() => resolve(null), 10_000);
@@ -185,20 +159,17 @@ try {
 		else console.log("✓ attach 后主动收到插件状态推送（服务端唯一事实源）");
 	}
 
-	// -- 1. state：初始状态 + 依赖已就绪（我们拷了 ssh2） ------------------------
 	let r = await rpc(sock, { action: "state" });
 	if (!r.ok || !Array.isArray(r.state?.hosts)) fail(`state 异常: ${JSON.stringify(r)}`);
 	else if (!r.state.depsReady) fail("deps 应已就绪（已离线拷贝 ssh2）");
 	else console.log("✓ state 初始返回，ssh2 依赖就绪");
 
-	// -- 1b. 本地文件操作（不带 connId）不受改造影响 --------------------------------
 	r = await rpc(sock, { action: "write", path: "local-proj/a.txt", text: "local-hello" });
 	if (!r.ok) fail(`本地 write 失败: ${r.error}`);
 	r = await rpc(sock, { action: "read", path: "local-proj/a.txt" });
 	if (!r.ok || r.text !== "local-hello") fail(`本地 read 不一致: ${JSON.stringify(r)}`);
 	else console.log("✓ 本地文件读写正常（无 connId 直走 fs）");
 
-	// -- 2. 主机配置：校验 + 脱敏 -------------------------------------------------
 	r = await rpc(sock, { action: "hosts_save", host: { name: "", host: "" } });
 	if (r.ok) fail("空主机地址应被拒绝");
 	else console.log("✓ 空 host 校验拒绝");
@@ -221,8 +192,6 @@ try {
 		fail(`主机回显应脱敏: ${JSON.stringify(goodHost)}`);
 	else console.log("✓ hosts_save 落盘 + 回显脱敏（password 不回传）");
 
-	// 凭据已迁移进加密机密库（host.secrets）：ssh-hosts.json 不再含明文密码，
-	// secrets.bin 存在；后续 connect 步骤验证真实密码仍可认证。
 	const plugDirPath = join(dataDir, "plugins", PLUGIN_ID);
 	const cfgRaw = readFileSync(join(plugDirPath, "ssh-hosts.json"), "utf8");
 	if (cfgRaw.includes("secret123")) fail("明文密码不应落在 ssh-hosts.json（应只在加密机密库）");
@@ -230,18 +199,15 @@ try {
 	if (!existsSync(join(plugDirPath, "secrets.bin"))) fail("secrets.bin 机密文件缺失");
 	else console.log("✓ 加密机密文件 secrets.bin 已生成");
 
-	// -- 3. 连接：错误密码拒绝 ----------------------------------------------------
 	r = await rpc(sock, { action: "connect", id: badHost.id }, 30_000);
 	if (r.ok) fail("错误密码不应连上");
 	else console.log(`✓ 错误密码连接被拒（${r.error.slice(0, 40)}…）`);
 
-	// -- 4. 正确密码连接 ----------------------------------------------------------
 	r = await rpc(sock, { action: "connect", id: goodHost.id }, 30_000);
 	if (!r.ok || !r.connId) fail(`connect 失败: ${JSON.stringify(r)}`);
 	else console.log(`✓ 连接成功 connId=${r.connId}`);
 	const connId = r.connId;
 
-	// -- 5. PTY shell：横幅 + 输入回显 ---------------------------------------------
 	r = await rpc(sock, { action: "shell_open", connId, cols: 120, rows: 30 });
 	if (!r.ok || !r.shellId) fail(`shell_open 失败: ${JSON.stringify(r)}`);
 	await expectShellText(sock, connId, "welcome-to-mock");
@@ -262,7 +228,6 @@ try {
 	await expectShellText(sock, connId, "echo:ping-test");
 	console.log("✓ 终端输入回显正常");
 
-	// -- 6. exec --------------------------------------------------------------------
 	r = await rpc(sock, { action: "exec", connId, cmd: "echo abc-123" });
 	if (!r.ok || r.exitCode !== 0 || !r.output.includes("abc-123")) fail(`exec 异常: ${JSON.stringify(r)}`);
 	else console.log("✓ exec 输出与退出码 0");
@@ -271,7 +236,6 @@ try {
 	if (!r.ok || r.exitCode !== 7 || !r.output.includes("boom")) fail(`exec 失败命令异常: ${JSON.stringify(r)}`);
 	else console.log("✓ exec 非零退出码 + stderr 合并");
 
-	// -- 7. 远程目录列表（统一 action list + connId） ----------------------------------
 	r = await rpc(sock, { action: "list", connId, dir: "/home/test" });
 	if (!r.ok) fail(`远程 list 失败: ${r.error}`);
 	else {
@@ -281,7 +245,6 @@ try {
 		else console.log(`✓ 远程 list（connId 路由）${names.join(", ")}`);
 	}
 
-	// -- 8. 远程读（文本 + 二进制嗅探） -----------------------------------------------
 	r = await rpc(sock, { action: "read", connId, path: "/home/test/a.txt" });
 	if (!r.ok || r.text !== "hello ssh\n第二行\n") fail(`远程 read 文本异常: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 read 文本内容");
@@ -290,14 +253,12 @@ try {
 	if (!r.ok || r.binary !== true) fail(`二进制嗅探异常: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 read 二进制标记（NUL 嗅探）");
 
-	// -- 9. 远程写 → 读回核对 ----------------------------------------------------------
 	r = await rpc(sock, { action: "write", connId, path: "/home/test/b.txt", text: "written-by-test 中文" });
 	if (!r.ok) fail(`远程 write 失败: ${r.error}`);
 	r = await rpc(sock, { action: "read", connId, path: "/home/test/b.txt" });
 	if (!r.ok || r.text !== "written-by-test 中文") fail(`write→read 不一致: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 write 写入后读回一致（UTF-8）");
 
-	// -- 10. create / rename / delete ---------------------------------------------------
 	r = await rpc(sock, { action: "create", connId, path: "/home/test/newdir", kind: "dir" });
 	if (!r.ok || !mDirs["/home/test/newdir"]) fail(`create dir 异常: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 create 目录");
@@ -311,14 +272,11 @@ try {
 	if (!r.ok || mFiles["/home/test/renamed.txt"]) fail(`delete 异常: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 delete 文件");
 
-	// rename 含路径分隔符应拒绝
 	r = await rpc(sock, { action: "rename", connId, path: "/home/test/sub", newName: "../evil" });
 	if (r.ok) fail("rename ../ 应拒绝");
 	else console.log("✓ rename 非法名称拒绝");
 
-	// -- 10b. 远程上传（connId 路由，分片暂存内存末片一次 sftp.writeFile） ------------------
 	const b64 = (s) => Buffer.from(s).toString("base64");
-	// 新文件
 	r = await rpc(sock, { action: "upload_begin", connId, dir: "/home/test", name: "remote-up.bin", size: 7 });
 	if (!r.ok || r.exists || !r.uploadId) fail(`远程 upload_begin 异常: ${JSON.stringify(r)}`);
 	else {
@@ -332,11 +290,9 @@ try {
 			else console.log("✓ 远程 upload 分片上传落盘（exists=false）");
 		}
 	}
-	// 已存在文件：exists=true（覆盖确认依据）
 	r = await rpc(sock, { action: "upload_begin", connId, dir: "/home/test", name: "remote-up.bin", size: 2 });
 	if (!r.ok || !r.exists) fail(`远程 upload_begin 应报 exists: ${JSON.stringify(r)}`);
 	else console.log("✓ 远程 upload_begin 识别已存在文件（exists=true）");
-	// 目标目录不存在：自动创建（与本地同语义）
 	r = await rpc(sock, { action: "upload_begin", connId, dir: "/home/test/new/sub", name: "deep.txt", size: 4 });
 	if (!r.ok) fail(`远程子目录 upload_begin 失败: ${JSON.stringify(r)}`);
 	else {
@@ -345,7 +301,6 @@ try {
 		else if (mFiles["/home/test/new/sub/deep.txt"]?.toString() !== "deep") fail("远程子目录上传未落盘");
 		else console.log("✓ 远程 upload 自动创建目标目录");
 	}
-	// abort：分片未写盘（内存暂存，末片才 sftp.writeFile）
 	r = await rpc(sock, { action: "upload_begin", connId, dir: "/home/test", name: "abort-me.bin", size: 9 });
 	if (!r.ok) fail(`远程 abort 场景 upload_begin 失败: ${JSON.stringify(r)}`);
 	else {
@@ -357,25 +312,21 @@ try {
 		else console.log("✓ 远程 upload_abort 丢弃内存分片不落盘");
 	}
 
-	// -- 11. disconnect → conn_closed --------------------------------------------------------
 	const closedP = waitForEvent(sock, (p) => p.event === "conn_closed" && p.connId === connId, "conn_closed");
 	await rpc(sock, { action: "disconnect", connId });
 	await closedP;
 	console.log("✓ disconnect 触发 conn_closed 事件");
 
-	// -- 12. hosts_delete --------------------------------------------------------------------
 	r = await rpc(sock, { action: "hosts_delete", id: badHost.id });
 	if (!r.ok) fail(`hosts_delete 失败: ${r.error}`);
 	r = await rpc(sock, { action: "state" });
 	if (r.state.hosts.some((h) => h.id === badHost.id)) fail("主机未删除");
 	else console.log("✓ hosts_delete");
 
-	// -- 13. 未知 action ------------------------------------------------------------------------
 	r = await rpc(sock, { action: "no-such" });
 	if (r.ok) fail("未知 action 应失败");
 	else console.log("✓ 未知 action 报错不崩");
 
-	// -- 14. download：本地文件下载到电脑（base64 经 WS） ---------------------------------
 	r = await rpc(sock, { action: "write", path: "dl.bin", text: "download-me\n" });
 	if (!r.ok) fail(`写 dl.bin 失败: ${r.error}`);
 	r = await rpc(sock, { action: "download", path: "dl.bin" });
@@ -387,8 +338,6 @@ try {
 	if (r.ok) fail("download ../ 越界应拒绝");
 	else console.log("✓ download：路径越界拒绝");
 
-	// -- 17. 远端文件/文件夹直接下载到电脑（不经工作区映射） -------------------------------
-	// 重新连接 mock 主机（§11 已断开）
 	r = await rpc(sock, { action: "state" });
 	const hid2 = r.state.hosts.find((h) => h.name === "local").id;
 	r = await rpc(sock, { action: "connect", id: hid2 }, 30_000);

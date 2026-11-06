@@ -34,7 +34,6 @@ function conversation(id: string): any {
 	};
 }
 function client(): any {
-	// 集合/计数类实例字段由 fake-session 从生产源码推导，这里只列本用例关心的钩子。
 	return fakeClientSession({
 		activeId: "parent",
 		spawningSubagents: 0,
@@ -129,7 +128,6 @@ describe("spawn cancellation and stable runtime identity", () => {
 		vi.mocked(createAgentSessionRuntime).mockResolvedValue(child.runtime);
 		const remove = vi.spyOn(controller.signal, "removeEventListener");
 		await spawn();
-		// Spawn has returned: parent aborting must NOT abort the dispatched child
 		controller.abort();
 		expect(child.session.abort).not.toHaveBeenCalled();
 		gate.resolve();

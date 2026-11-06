@@ -1,32 +1,14 @@
-// ---------------------------------------------------------------------------
-// claim-files-tool.ts — 文件认领（claim_files）：并行冲突的「事前打招呼」
-// ---------------------------------------------------------------------------
-// 触碰集是事后信息（写完才知道），claim 是事前意图（"我要改这几个文件"）。
-// advisory 语义：认领只出现在提醒/files/list 里升级措辞，不拦 edit/bash ——
-// 强制锁会死锁（见 claim-store.ts 文件头）。先到先得；自己的可刷新，
-// 别人的动不了；过期自动释放 + 发 prompt 心跳续期 + 对话关闭释放。
-//
-// 开关走统一工具 tab（AGENT_TOOL_CATALOG 目录 + 设置页开关行；ActiveSet 门控，
-// live 生效）：认领是纯 advisory（关掉只会少提醒），默认开。DSH 引擎无 customTool
-// 注册面，只有 pi 引擎对话能认领（提醒是服务端算的，DSH 照样能看到别人的认领）。
-// ---------------------------------------------------------------------------
-
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
 import { CLAIM_FILES_TOOL_NAME } from "./tool-manager.js";
 import { CLAIM_TTL_MS, resolveClaimPath, type ClaimStore } from "./claim-store.js";
 
-/** 工具名（唯一定义在 tool-manager.ts，本模块 re-export 供单测沿用，模式同 present-files-tool.ts）。 */
 export { CLAIM_FILES_TOOL_NAME };
 
-/** 由 ClientSession 实现的数据宿主（owner 口径同 subagent：本 runtime 所属会话）。 */
 export interface ClaimFilesHost {
-	/** 认领 end up 落在哪个项目分表（owner 对话的 cwd，不是派发瞬间 active）。 */
 	cwd(): string;
-	/** 认领归属（owner 对话 id + 标题，展示用）。 */
 	self(): { convId: string; title: string };
-	/** 全局认领表（AgentService 级单例；未接线时 undefined，工具转报错）。 */
 	store(): ClaimStore | undefined;
 }
 
@@ -46,7 +28,7 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 		label: "Claim files to avoid parallel conflicts",
 		description:
 			"Declare files you are about to edit so parallel runs in the same project steer clear (advisory — never blocks edits). " +
-			"Claims expire after ~30 min idle (your prompts refresh them) and release when the conversation closes. " +
+			"Claims release when the run ends (completion, error, or stop); prompts refresh their 30-minute fallback expiry. " +
 			"Paths must stay inside the project.",
 		promptSnippet: "reserve files you are about to edit (parallel-run guard)",
 		parameters: Type.Object({
@@ -205,7 +187,6 @@ export function makeClaimFilesTool(host: ClaimFilesHost, lang?: () => ServerLang
 						},
 					);
 				}
-				// release 指定 paths：只放自己的，别人的动不了（返回里如实说）。
 				const n = store.release(cwd, self.convId, rawPaths);
 				return text(
 					pick(

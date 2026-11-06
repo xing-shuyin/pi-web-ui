@@ -1,12 +1,3 @@
-/**
- * response-speed 客户端入口
- *
- * 核心职责：
- *  1. 状态栏点击交互：监听 response-speed:show-details 打开当前对话响应速度明细看板；
- *  2. 弹窗展示当前对话最新响应、平均速度、最快/最慢与最近请求历史样本，每个对话独立记录，支持一键清空当前对话；
- *  3. 纯净设计：不显示“响应中…”，直接显示上一次的耗时，不注入右上角常驻计时器，不 hack 底层 WebSocket，完全由服务端权威精准测速驱动。
- */
-
 import { apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
 
 const ACTION_SHOW_DETAILS = "response-speed:show-details";
@@ -39,7 +30,6 @@ function apiBase() {
 	return getSharedApiBase("response-speed");
 }
 
-// ── 客户端统计数据缓存 ─────────────────────────────────────────
 const state = {
 	conversationId: null,
 	stats: {
@@ -52,7 +42,6 @@ const state = {
 	},
 };
 
-/** 注入看板样式表 */
 function ensureStyles() {
 	if (document.getElementById(STYLE_ID)) return;
 	const s = document.createElement("style");
@@ -216,7 +205,6 @@ function ensureStyles() {
 	document.head.appendChild(s);
 }
 
-/** 从服务端拉取最新统计 */
 async function fetchStats(targetConvId) {
 	try {
 		const convId = targetConvId || state.conversationId;
@@ -232,12 +220,9 @@ async function fetchStats(targetConvId) {
 				renderModalContent();
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-/** 重置当前对话统计数据 */
 async function resetStats() {
 	try {
 		await fetch(`${apiBase()}/reset`, {
@@ -245,9 +230,7 @@ async function resetStats() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ conversationId: state.conversationId || undefined }),
 		});
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	state.stats = {
 		count: 0,
 		avgMs: null,
@@ -259,7 +242,6 @@ async function resetStats() {
 	renderModalContent();
 }
 
-/** 动态刷新弹窗看板内容（若正处于打开状态） */
 function renderModalContent() {
 	const overlay = document.getElementById(MODAL_ID);
 	if (!overlay) return;
@@ -366,7 +348,6 @@ function onKeyDown(e) {
 	if (e.key === "Escape") closeDashboardModal();
 }
 
-/** 弹出统计分析看板 */
 function showDashboardModal(convId) {
 	ensureStyles();
 	if (convId) {
@@ -395,16 +376,13 @@ function showDashboardModal(convId) {
 	void fetchStats(convId);
 }
 
-// ── 初始化 ───────────────────────────────────────────────────
 function init() {
 	void fetchStats();
 
-	// 监听服务端推送的 plugin_data 数据与广播事件
 	window.addEventListener("pi-web-ui:plugin-data", (e) => {
 		if (e.detail?.pluginId === "response-speed") {
 			const payload = e.detail.payload;
 			if (payload?.type === "response_speed_stats") {
-				// 当收到当前会话的统计更新时，动态刷新看板
 				if (!state.conversationId || !payload.conversationId || state.conversationId === payload.conversationId) {
 					if (payload.conversationId) state.conversationId = payload.conversationId;
 					if (payload.stats) {
@@ -413,7 +391,6 @@ function init() {
 					}
 				}
 			} else if (payload?.type === "response_speed_conversation_switched") {
-				// 对话发生切换
 				state.conversationId = payload.conversationId;
 				if (payload.stats) {
 					state.stats = payload.stats;
@@ -427,7 +404,6 @@ function init() {
 		}
 	});
 
-	// 监听底栏动作
 	const host = window.__piWebUiHost;
 	if (host && typeof host.onUiAction === "function") {
 		host.onUiAction(ACTION_SHOW_DETAILS, () => {

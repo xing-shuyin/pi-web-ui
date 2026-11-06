@@ -28,7 +28,6 @@ const argOf = (name, fallback) => {
 const OUT_DIR = join(REPO_ROOT, argOf("out", ".theme-audit/out"));
 const WIDTH = Number(argOf("width", "1280"));
 const ONLY = argOf("themes", "");
-/** 仓库根（可用 --root 指向另一份检出，比如重构前的 git worktree，用来拍干净基线）。 */
 const ROOT = argOf("root", REPO_ROOT);
 
 const IMPORT_RE = /@import\s+["'](\.[^"']+\.css)["']\s*(?:layer\(([^)]+)\))?\s*;?[\r\n]*/g;
@@ -48,23 +47,16 @@ function readThemeCss(filePath, visited = new Set(), depth = 0) {
 		if (!existsSync(target) || !statSync(target).isFile()) return "";
 		const inner = readThemeCss(target, visited, depth + 1);
 		// `@import "x.css" layer(base);` → 内联内容必须落在同名层里；否则那个
-		// ` layer(base);` 会残留成游离 token，整份样式表直接失效（踩过一次）。
 		return layerName ? `@layer ${layerName} {\n${inner}\n}\n` : inner + "\n";
 	});
 }
 
 /** styles.css + 它的 @import 一起喂进去（浏览器里再 @import 相对路径不可靠）。 */
 const BASE_CSS = readThemeCss(join(ROOT, "web", "src", "styles.css"));
-/**
- * 夹具必须与生产一致的层环境：基线里一旦出现 `@layer base {`（分层已落地），
- * 就把主题 CSS 也包进 `@layer theme { ... }`（生产由 server/themes.ts 负责）。
- * 这样同一份脚本既能跑「分层前」基线，也能跑「分层后」对比，语义不会漂移。
- */
 const BASE_IS_LAYERED = /@layer\s+base\s*\{/.test(BASE_CSS);
 const wrapTheme = (css) => (BASE_IS_LAYERED && css.trim() ? `@layer theme {\n${css}\n}\n` : css);
 const THEMES_DIR = join(ROOT, "themes");
 
-/** 覆盖关键界面的固定 DOM。改这里要谨慎：它是像素 diff 的基准。 */
 const FIXTURE = `
 <div id="root">
 <div class="app"><div class="layout"><main class="main">

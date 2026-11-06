@@ -44,7 +44,6 @@ describe("ClientStateStore partial preset persistence", () => {
 	});
 
 	it("normalizes only fields actually present in persisted presets", () => {
-		// Persist raw legacy values to exercise the real file loader and normalization.
 		const values = {
 			reviewPrompt: { input: null, output: "" },
 			reviewDisabledSkills: { input: null, output: [] },

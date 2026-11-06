@@ -1,17 +1,3 @@
-/**
- * live-test.mjs — 纯 WebSocket 层端到端冒烟测试（不走浏览器）。
- *
- * 验证：hello → ready → set_cwd → read_file（文本预览）→ 媒体 /api/file → 结束
- *
- * 用法（需先有 server 在跑，或用环境变量指定）:
- *   node live-test.mjs                              # 连 ws://localhost:${PORT:-8787}
- *   PORT=9000 node live-test.mjs                    # 自定义端口
- *   WS_CWD=/path/node live-test.mjs                 # set_cwd 目标（默认当前目录）
- *   WS_READ=sub/dir/file.txt  node live-test.mjs    # read_file 的路径
- *   WS_MEDIA=sub/dir/pic.jpg  node live-test.mjs    # 可选：媒体文件，用于验证 /api/file 下载
- *
- * clientId 随机生成，不依赖特定项目，便于反复跑。
- */
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 

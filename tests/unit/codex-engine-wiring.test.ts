@@ -9,6 +9,8 @@ import { UniversalSession } from "../../server/universal/universal-session.js";
 import { UniversalSessionStore } from "../../server/universal/session-store.js";
 import { MockAgentDriver } from "../../server/universal/drivers/mock-driver.js";
 import type { AgentEventSink } from "../../server/universal/driver-base.js";
+import { isBuiltinEngineId } from "../../server/engine-catalog.js";
+import type { CanvasEngineId, EngineId } from "../../server/protocol.js";
 
 const roots: string[] = [];
 const sessions: UniversalSession[] = [];
@@ -127,10 +129,12 @@ describe("Codex engine wiring", () => {
 		expect(index).toContain("driverFactory: (cwd) => new CodexDriver(cwd)");
 		expect(index).toContain("if (codexServiceInstance) list.push(codexServiceInstance)");
 		const protocol = readFileSync(new URL("../../server/protocol.ts", import.meta.url), "utf8");
-		expect(protocol.match(/export type (?:EngineId|CanvasEngineId) = [^;]+/g)).toEqual([
-			expect.stringContaining('"codex"'),
-			expect.stringContaining('"codex"'),
-		]);
+		const engine: EngineId = "codex";
+		const canvasEngine: CanvasEngineId = "codex";
+		expect(isBuiltinEngineId(engine)).toBe(true);
+		expect(canvasEngine).toBe(engine);
+		expect(protocol).toContain('export type EngineId = import("./engine-catalog.js").BuiltinEngineId;');
+		expect(protocol.match(/export type CanvasEngineId = [^;]+/)?.[0]).toContain('"codex"');
 		const cli = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
 		expect(cli).toContain("env.PI_WEB_ENGINE = engine");
 		expect(cli.match(/\["pi", "dsh", "claude", "codex", "durable"\]\.includes/g)).toHaveLength(2);

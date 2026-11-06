@@ -11,11 +11,13 @@ export function SelectionQuoteButton({
 	rootRef,
 	sessionId,
 	enabled = true,
+	translateEnabled = true,
 	onSelect,
 }: {
 	rootRef: RefObject<HTMLDivElement | null>;
 	sessionId: string;
 	enabled?: boolean;
+	translateEnabled?: boolean;
 	onSelect?: () => void;
 }) {
 	const t = useT();
@@ -47,7 +49,10 @@ export function SelectionQuoteButton({
 				onSelect?.();
 				setPending({
 					quote,
-					left: Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)),
+					left: Math.max(
+						8,
+						Math.min(rect.right - (translateEnabled ? 240 : 176), window.innerWidth - (translateEnabled ? 248 : 184)),
+					),
 					top: Math.max(8, Math.min(rect.top >= 44 ? rect.top - 40 : rect.bottom + 8, window.innerHeight - 42)),
 				});
 			});
@@ -84,7 +89,7 @@ export function SelectionQuoteButton({
 			window.removeEventListener("resize", clear);
 			window.removeEventListener("blur", clear);
 		};
-	}, [rootRef, sessionId, enabled, onSelect]);
+	}, [rootRef, sessionId, enabled, translateEnabled, onSelect]);
 	if (!enabled) return null;
 	if (!pending || pending.quote.sessionId !== sessionId) return null;
 	return createPortal(
@@ -116,6 +121,7 @@ export function SelectionQuoteButton({
 					const rect = event.currentTarget.parentElement!.getBoundingClientRect();
 					openQuickAsk({
 						selection: pending.quote.text,
+						action: "explain",
 						anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
 					});
 					setPending(null);
@@ -124,6 +130,24 @@ export function SelectionQuoteButton({
 			>
 				{t("explainSelection")}
 			</button>
+			{translateEnabled && (
+				<button
+					type="button"
+					className="quote-selection-button selection-translate-trigger"
+					onClick={(event) => {
+						const rect = event.currentTarget.parentElement!.getBoundingClientRect();
+						openQuickAsk({
+							selection: pending.quote.text,
+							action: "translate",
+							anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+						});
+						setPending(null);
+						window.getSelection()?.removeAllRanges();
+					}}
+				>
+					{t("quickAskTranslate")}
+				</button>
+			)}
 		</div>,
 		document.body,
 	);

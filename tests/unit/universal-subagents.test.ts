@@ -1,19 +1,3 @@
-/**
- * universal-subagents.test.ts — 通用底座（Universal Base）子代理（Subagent）体系单测。
- *
- * 验证：
- *   1. spawnSubagent 创建子代理会话、关联父子拓扑与后台异步流式执行；
- *   2. getSubagent / getSubagentResult 获取子代理快照与正文提取；
- *   3. listSubagents 按作用域过滤（all / subagent / persistent）；
- *   4. waitSubagents 等待多个子代理终态（支持即时返回与异步事件唤醒）；
- *   5. stopSubagent 中止子代理与驱动释放；
- *   6. handoffSubagent 跨子代理对等交接与卡片注入；
- *   7. persistConversation 将临时子代理固化为持久会话；
- *   8. dismissConversation 级联清理子代理与 dismissFinishedSubagents 批量清理；
- *   9. getToolInfo("subagent") 工具定义查询与 /subagent 命令派发；
- *   10. 通用底座 engineCapabilities 声明 subagents: true。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,7 +36,6 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 			lang: "zh",
 		});
 
-		// 初始化一个主会话
 		await session.newChat();
 		outbox.length = 0;
 	});
@@ -62,9 +45,7 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		if (existsSync(tempDir)) {
 			try {
 				rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-			} catch {
-				// 静默忽略 Windows 下文件占用
-			}
+			} catch {}
 		}
 	});
 
@@ -78,14 +59,12 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 
 		expect(convId).toMatch(/^subconv-/);
 
-		// 即刻查询：处于运行态
 		const initialSnap = session.subagentHost.getSubagent(convId);
 		expect(initialSnap).toBeDefined();
 		expect(initialSnap?.convId).toBe(convId);
 		expect(initialSnap?.type).toBe("explore");
 		expect(initialSnap?.title).toBeDefined();
 
-		// 等待子代理执行到达终态
 		const waitResult = await session.waitSubagents(5, [convId]);
 		expect(waitResult.length).toBe(1);
 		expect(waitResult[0].convId).toBe(convId);
@@ -93,14 +72,12 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		expect(waitResult[0].streaming).toBe(false);
 		expect(waitResult[0].output).toContain("I have processed your request");
 
-		// 检查最终 snapshot
 		const finalSnap = session.subagentHost.getSubagent(convId);
 		expect(finalSnap?.state).toBe("done");
 		expect(finalSnap?.streaming).toBe(false);
 	});
 
 	it("3. listSubagents：能够按作用域过滤子代理列表", async () => {
-		// 派发一个普通轻量子代理（persist = false）
 		const { convId: sub1 } = await session.spawnSubagent(
 			"子任务 1",
 			"general",
@@ -110,7 +87,6 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 			undefined,
 			false,
 		);
-		// 派发一个持久化子代理（persist = true）
 		const { convId: sub2 } = await session.spawnSubagent(
 			"子任务 2",
 			"review",
@@ -154,7 +130,7 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		await session.steerSubagent(convId, "追加的补充说明");
 
 		const snap = session.subagentHost.getSubagent(convId);
-		expect(snap?.messageCount).toBeGreaterThanOrEqual(3); // user + assistant + user steer
+		expect(snap?.messageCount).toBeGreaterThanOrEqual(3);
 	});
 
 	it("6. handoffSubagent：支持对等子代理间交接任务并注入交接消息", async () => {
@@ -171,7 +147,6 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 		expect(snapA?.handoffTo).toContain(peerB);
 		expect(snapB?.handoffFrom).toContain(peerA);
 
-		// 检查 peerB 接收到的交接消息
 		const convB = (session as any).conversations.get(peerB) as UniversalConversation;
 		const lastMsg = convB.messages[convB.messages.length - 1];
 		expect(lastMsg.role).toBe("user");
@@ -198,7 +173,6 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 
 		expect(session.subagentHost.getSubagent(convId)?.persisted).toBe(true);
 
-		// 验证磁盘上确实已写入
 		const diskConv = store.loadConversation(tempDir, convId);
 		expect(diskConv).toBeDefined();
 		expect(diskConv?.id).toBe(convId);
@@ -220,7 +194,6 @@ describe("通用底座（Universal Base）子代理（Subagent）体系单测", 
 
 		expect(session.subagentHost.getSubagent(childSub)).toBeDefined();
 
-		// 级联清理：关闭父会话并一同清理已完成的子代理
 		await session.dismissConversation(parentId, true);
 
 		expect(session.subagentHost.getSubagent(childSub)).toBeUndefined();

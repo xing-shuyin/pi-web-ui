@@ -29,7 +29,6 @@ it("loads math on demand, shares requests, retries later and updates mounted DOM
 	expect(load).not.toHaveBeenCalled();
 	expect(container.querySelector(".katex")).toBeNull();
 
-	// SSR does not start imports; callers that need formulas must preload.
 	expect(renderToStaticMarkup(createElement(MarkdownBody, { text: "$x$" }))).not.toContain('class="katex"');
 	expect(load).not.toHaveBeenCalled();
 
@@ -48,7 +47,6 @@ it("loads math on demand, shares requests, retries later and updates mounted DOM
 				resolve = done;
 			}),
 	);
-	// A new candidate request retries, including a math fence with no delimiters.
 	await render("Plain text");
 	await act(async () => {
 		root.render(

@@ -1,13 +1,5 @@
-/**
- * plugins/feishu/client/entry.mjs
- * Client workbench UI for Feishu (Lark) plugin in pi-web-ui.
- */
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 
-// 视图入口：新版宿主（web/src/plugin-loader.ts）只认
-//   export default { mount(el, ctx) → cleanup? }
-// 旧版宿主才调 activate(ctx) + ctx.ui.registerView。这里两个契约都保留，
-// 避免升级宿主后报「entry.mjs 缺少 default.mount」。
 function activate(ctx) {
 	ctx.ui?.registerView?.({
 		id: "feishu",
@@ -331,7 +323,6 @@ function renderFeishuWorkbench(container, ctx) {
 		</div>
 	`;
 
-	// State
 	let state = {
 		config: {},
 		presets: {},
@@ -342,7 +333,6 @@ function renderFeishuWorkbench(container, ctx) {
 		models: [],
 	};
 
-	// Query DOM elements inside container
 	const q = (sel) => container.querySelector(sel);
 	const statusBadge = q(".feishu-status-badge");
 	const chatsListEl = q(".feishu-chats-list");
@@ -399,7 +389,6 @@ function renderFeishuWorkbench(container, ctx) {
 
 	let composeMode = { type: "new", replyId: "", replyInThread: false };
 
-	// Populate available LLM models for translation
 	if (ctx.host?.listModels) {
 		ctx.host
 			.listModels()
@@ -408,7 +397,7 @@ function renderFeishuWorkbench(container, ctx) {
 					state.models = models;
 					for (const m of models) {
 						const id = typeof m === "string" ? m : m.id || m.name;
-						const opt = document.createElement ? null : null; // do not call document.*
+						const opt = document.createElement ? null : null;
 						transModelSelect.insertAdjacentHTML(
 							"beforeend",
 							`<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`,
@@ -419,8 +408,6 @@ function renderFeishuWorkbench(container, ctx) {
 			.catch(() => {});
 	}
 
-	// 新版宿主只给 ctx.send（上行）/ ctx.onData（下行）两条窄通道，没有请求-回调配对，
-	// 回包按 __rid 精确配对（由服务端 index.mjs 的 onClientMessage 回显）。
 	let ridSeq = 0;
 	const pendingReplies = new Map();
 	if (typeof ctx.onData === "function") {
@@ -455,7 +442,6 @@ function renderFeishuWorkbench(container, ctx) {
 				}
 			});
 		}
-		// 旧版宿主：postMessage 自带请求-回调配对
 		return new Promise((resolve) => {
 			ctx.postMessage?.({ type, ...payload }, (res) => {
 				resolve(res);
@@ -652,7 +638,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	}
 
-	// Message actions
 	q(".feishu-btn-refresh").addEventListener("click", () => {
 		refreshAll();
 	});
@@ -682,7 +667,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Quote to Chat composer (window.__piWebUiHost.injectDraft)
 	q(".feishu-btn-quote").addEventListener("click", () => {
 		if (!state.activeMessage) return;
 		const m = state.activeMessage;
@@ -704,7 +688,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Translate message
 	q(".feishu-btn-translate").addEventListener("click", async () => {
 		if (!state.activeMessage) return;
 		transBanner.style.display = "block";
@@ -726,7 +709,6 @@ function renderFeishuWorkbench(container, ctx) {
 		transBanner.style.display = "none";
 	});
 
-	// Reaction buttons
 	container.querySelectorAll(".feishu-react-btn").forEach((btn) => {
 		btn.addEventListener("click", async () => {
 			if (!state.activeMessage) return;
@@ -744,7 +726,6 @@ function renderFeishuWorkbench(container, ctx) {
 		});
 	});
 
-	// Recall message
 	q(".feishu-btn-recall").addEventListener("click", async () => {
 		if (!state.activeMessage) return;
 		if (window.confirm?.("确认撤回这条飞书消息吗？（需由机器人或当前凭证发送的消息方可撤回）")) {
@@ -758,7 +739,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Open Compose Modal
 	q(".feishu-btn-compose").addEventListener("click", () => {
 		composeMode = { type: "new", replyId: "", replyInThread: false };
 		composeTitle.textContent = "✏ 发送飞书消息 / 卡片";
@@ -860,7 +840,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Quick add custom chat target
 	q(".feishu-btn-add-chat").addEventListener("click", async () => {
 		const id = window.prompt?.("请输入飞书会话 ID (oc_xxx / ou_xxx / 邮箱地址):");
 		if (!id?.trim()) return;
@@ -872,7 +851,6 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Open Settings Modal
 	q(".feishu-btn-settings").addEventListener("click", () => {
 		const cfg = state.config || {};
 		cfgPreset.value = cfg.preset || "feishu";
@@ -1027,6 +1005,5 @@ function renderFeishuWorkbench(container, ctx) {
 		}
 	});
 
-	// Initial load
 	refreshAll();
 }

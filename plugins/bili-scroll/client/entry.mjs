@@ -1,9 +1,3 @@
-/**
- * plugins/bili-scroll/client/entry.mjs
- * Bilibili AI 自动刷视频、字幕排雷、卡片墙与精选速报前端控制台 (2.0.0 深度复刻版)
- * 四页签架构：日常 (Daily) · 偏好 (Taste) · 互动 (Social) · 高级 (Advanced)
- */
-
 import qrcode from "./vendor/qrcode.js";
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
@@ -80,7 +74,6 @@ export default {
 				.catch((err) => ({ ok: false, error: String(err?.message || err) }));
 		};
 
-		// ── 主 DOM 结构 ──
 		el.innerHTML = `
 			<div class="bili-root" style="display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: var(--bg); color: var(--text); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
 				<style>
@@ -561,7 +554,6 @@ export default {
 			</div>
 		`;
 
-		// ── DOM 节点缓存 ──
 		const navTabs = el.querySelectorAll(".bili-nav-tab");
 		const tabPages = {
 			daily: el.querySelector(".bili-page-daily"),
@@ -572,7 +564,6 @@ export default {
 		const feedbackBar = el.querySelector(".bili-feedback-bar");
 		const btnRefresh = el.querySelector(".bili-btn-refresh");
 
-		// Daily
 		const statQuota = el.querySelector(".bili-stat-quota");
 		const statRounds = el.querySelector(".bili-stat-rounds");
 		const statDmMode = el.querySelector(".bili-stat-dm-mode");
@@ -590,7 +581,6 @@ export default {
 		const reportContent = el.querySelector(".bili-report-content");
 		const btnCopyReport = el.querySelector(".bili-btn-copy-report");
 
-		// Taste
 		const cfgModel = el.querySelector(".bili-cfg-model");
 		const btnPickModel = el.querySelector(".bili-btn-pick-model");
 		const cfgReasoningEffort = el.querySelector(".bili-cfg-reasoning-effort");
@@ -607,7 +597,6 @@ export default {
 		const cfgReportLevel = el.querySelector(".bili-cfg-report-level");
 		const btnSaveTaste = el.querySelector(".bili-btn-save-taste");
 
-		// Social
 		const dmRadios = el.querySelectorAll('input[name="bili_dm_mode"]');
 		const cfgDmUid = el.querySelector(".bili-cfg-dm-uid");
 		const cfgMentionName = el.querySelector(".bili-cfg-mention-name");
@@ -619,7 +608,6 @@ export default {
 		const cfgReplyComments = el.querySelector(".bili-cfg-reply-comments");
 		const btnSaveSocial = el.querySelector(".bili-btn-save-social");
 
-		// Inbox requests use the logged-in account, independently of digest settings.
 		const dmSessions = el.querySelector(".bili-dm-sessions");
 		const dmMessages = el.querySelector(".bili-dm-messages");
 		const dmStatus = el.querySelector(".bili-dm-status");
@@ -752,7 +740,6 @@ export default {
 			}
 		});
 
-		// Advanced
 		const avatar = el.querySelector(".bili-avatar");
 		const uname = el.querySelector(".bili-uname");
 		const udesc = el.querySelector(".bili-udesc");
@@ -780,7 +767,6 @@ export default {
 		const PAGE_SIZE = 24;
 		let pollTimer = null;
 
-		// ── 提示反馈辅助 ──
 		const notify = (msg, tone = "info") => {
 			feedbackBar.style.display = "block";
 			feedbackBar.textContent = msg;
@@ -802,7 +788,6 @@ export default {
 			}, 4000);
 		};
 
-		// ── 页签切换 ──
 		navTabs.forEach((tabBtn) => {
 			tabBtn.addEventListener("click", () => {
 				const target = tabBtn.dataset.tab;
@@ -821,7 +806,6 @@ export default {
 			});
 		});
 
-		// ── 实时动作终端追加 ──
 		function appendActionTerminal(act) {
 			const time = act.time || new Date().toLocaleTimeString();
 			const line = document.createElement("div");
@@ -845,13 +829,11 @@ export default {
 			terminalBody.innerHTML = '<span style="color: #666;">[终端已清空]</span>';
 		});
 
-		// ── 加载状态 ──
 		async function refreshStatus() {
 			const res = await httpGet("status");
 			if (!res || !res.ok) return;
 			currentStatus = res;
 
-			// 指标与概况
 			const quota = res.config?.perDay || 5;
 			statQuota.textContent = `${res.pickedToday || 0} / ${quota} 条`;
 			statRounds.textContent = `${res.ranToday || 0} 轮`;
@@ -861,7 +843,6 @@ export default {
 			statDmMode.textContent =
 				dmMode === "only" ? "只发私信 (默认)" : dmMode === "both" ? "私信 + 评论" : "只发公开评论";
 
-			// 偏好表单回填
 			populateModelOptions(res.config?.model || "");
 			if (!cfgVisionModel.dataset.dirty) cfgVisionModel.value = res.config?.visionModel || "";
 			if (!cfgTranscribe.dataset.dirty) cfgTranscribe.checked = res.config?.transcribe !== false;
@@ -872,7 +853,6 @@ export default {
 			if (cfgExclude && !cfgExclude.value) cfgExclude.value = res.config?.excludeKeywords || "";
 			if (cfgReportLevel) cfgReportLevel.value = res.config?.reportLevel || "full";
 
-			// 互动表单回填
 			dmRadios.forEach((r) => {
 				r.checked = r.value === dmMode;
 			});
@@ -885,7 +865,6 @@ export default {
 			if (cfgAutoComment) cfgAutoComment.checked = Boolean(res.config?.autoComment);
 			if (cfgReplyComments) cfgReplyComments.checked = Boolean(res.config?.replyToComments);
 
-			// 账号信息回填
 			if (res.user?.loggedIn) {
 				avatar.innerHTML = res.user.face
 					? `<img src="${esc(res.user.face)}" style="width: 100%; height: 100%; object-fit: cover;" />`
@@ -902,7 +881,6 @@ export default {
 				btnLogout.style.display = "none";
 			}
 
-			// 日报下拉列表
 			if (res.reports && res.reports.length > 0) {
 				reportSelect.innerHTML = res.reports
 					.map((r) => `<option value="${esc(r.date)}">${esc(r.title)}</option>`)
@@ -910,14 +888,12 @@ export default {
 				loadReport(res.reports[0].date);
 			}
 
-			// 日志 Tail 显示
 			if (res.installTail) {
 				installTail.style.display = "block";
 				installTail.textContent = res.installTail;
 			}
 		}
 
-		// ── 加载日报 ──
 		async function loadReport(day) {
 			const res = await httpGet("report", { day });
 			if (res && res.exists) {
@@ -938,7 +914,6 @@ export default {
 			}
 		});
 
-		// ── 加载卡片墙 ──
 		async function loadWatchedCards() {
 			const params = {
 				offset: currentOffset,
@@ -1009,7 +984,6 @@ export default {
 				})
 				.join("");
 
-			// 渲染后绑定单条笔记查看事件
 			cardsGrid.querySelectorAll(".bili-btn-view-note").forEach((btn) => {
 				btn.addEventListener("click", async (e) => {
 					e.stopPropagation();
@@ -1027,7 +1001,6 @@ export default {
 			});
 		}
 
-		// 筛选切换
 		el.querySelectorAll(".bili-chip-state").forEach((btn) => {
 			btn.addEventListener("click", () => {
 				el.querySelectorAll(".bili-chip-state").forEach((b) => {
@@ -1068,7 +1041,6 @@ export default {
 			loadWatchedCards();
 		});
 
-		// ── 加载收藏夹列表 ──
 		async function reloadFavFolders() {
 			const res = await httpGet("fav-folders");
 			if (res && res.ok) {
@@ -1086,7 +1058,6 @@ export default {
 			notify("已更新收藏夹列表", "good");
 		});
 
-		// ── 通用模型选项填充 ──
 		function populateModelOptions(selectedModel = "") {
 			const hostModels = window.__piWebUiHost?.models?.list?.() || [];
 			cfgModel.innerHTML = '<option value="">跟随当前会话模型</option>';
@@ -1111,7 +1082,6 @@ export default {
 			}
 		}
 
-		// ── 调起宿主通用模型选择器 ──
 		btnPickModel.addEventListener("click", async () => {
 			if (typeof window.__piWebUiHost?.pickModel === "function") {
 				const cur = cfgModel.value || window.__piWebUiHost.getCurrentModelId?.() || "";
@@ -1126,7 +1096,6 @@ export default {
 			}
 		});
 
-		// ── 调起宿主通用目录选择器 ──
 		btnPickWorkspace.addEventListener("click", async () => {
 			if (typeof window.__piWebUiHost?.pickDirectory === "function") {
 				const cur = cfgWorkspace.value.trim();
@@ -1146,7 +1115,6 @@ export default {
 			});
 		}
 
-		// ── 保存偏好 ──
 		btnSaveTaste.addEventListener("click", async () => {
 			const patch = {
 				model: cfgModel.value.trim(),
@@ -1168,7 +1136,6 @@ export default {
 			}
 		});
 
-		// 一键从 AGENTS.md 导入
 		btnImportAgents.addEventListener("click", () => {
 			if (currentStatus?.personaFromWs) {
 				cfgPersona.value = currentStatus.personaFromWs;
@@ -1178,7 +1145,6 @@ export default {
 			}
 		});
 
-		// ── 保存互动设置 ──
 		btnSaveSocial.addEventListener("click", async () => {
 			let dmMode = "only";
 			dmRadios.forEach((r) => {
@@ -1204,7 +1170,6 @@ export default {
 			}
 		});
 
-		// ── 扫码登录流程 ──
 		btnLogin.addEventListener("click", async () => {
 			qrSection.style.display = "block";
 			qrStatus.textContent = "正在向 B站 请求登录二维码...";
@@ -1252,7 +1217,6 @@ export default {
 			refreshStatus();
 		});
 
-		// ── 操作按钮事件 ──
 		btnRunDuty.addEventListener("click", async () => {
 			notify("🚀 AI 巡检已启动，正向动作视窗汇报每一步...", "info");
 			const r = await httpPost("duty/run");
@@ -1368,7 +1332,6 @@ export default {
 			notify("数据已刷新", "info");
 		});
 
-		// ── 初始化加载 ──
 		refreshStatus();
 		loadWatchedCards();
 		reloadFavFolders();

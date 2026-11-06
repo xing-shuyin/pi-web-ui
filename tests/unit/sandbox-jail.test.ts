@@ -142,7 +142,6 @@ describe("copy sandbox capability policy", () => {
 	});
 
 	it("rejects symlink and dangling-link file operations and recursive discovery", () => {
-		// Junctions do not require Windows developer-mode symlink privileges.
 		symlinkSync(outside, join(root, "escape"), process.platform === "win32" ? "junction" : "dir");
 		for (const name of ["read", "write", "edit", "edit_soft", "grep", "find"]) {
 			expect(decide(name, { path: "escape/token" })).not.toBeNull();
@@ -150,7 +149,6 @@ describe("copy sandbox capability policy", () => {
 		expect(decide("write", { path: "escape/new-file" })).not.toBeNull();
 		expect(decide("grep", { pattern: "secret" })).not.toBeNull();
 		expect(decide("find", { pattern: "*" })).not.toBeNull();
-		// Even a link-free subtree cannot neutralize executable search configuration.
 		expect(decide("grep", { path: "src", pattern: "process" })).not.toBeNull();
 		rmSync(outside, { recursive: true });
 		expect(decide("write", { path: "escape/new-file" })).not.toBeNull();

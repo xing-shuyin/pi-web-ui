@@ -16,9 +16,7 @@ describe("审批决策审计日志 (ApprovalAuditLogger - Issue #722)", () => {
 	afterEach(() => {
 		try {
 			rmSync(tempDir, { recursive: true, force: true });
-		} catch {
-			// ignore cleanup error
-		}
+		} catch {}
 	});
 
 	it("正常追加结构化审计日志", () => {

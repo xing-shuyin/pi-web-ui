@@ -1,4 +1,3 @@
-/** Office viewer lifecycle and workspace document browser. */
 import { esc, apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
 import { inspectionToText } from "./preview.mjs";
 import { attachCanvasBroker } from "./canvas-broker.mjs";
@@ -13,7 +12,6 @@ function resolveApi(ctx, path, params) {
 	return `${getSharedApiBase("office")}${path}${qs ? `?${qs}` : ""}`;
 }
 
-// Every mount/operation owns its requests and timers. Aborted work cannot publish late UI.
 function createScope() {
 	let active = true;
 	const lifetime = new AbortController();
@@ -63,7 +61,6 @@ function createScope() {
 					error.status = response.status;
 					throw error;
 				}
-				// Resource allocations must be reclaimed even if JSON arrives after cancellation.
 				onData?.(data);
 				if (!active || controller.signal.aborted) throw new DOMException("已取消", "AbortError");
 				if (!response.ok || data?.ok === false) {
@@ -222,7 +219,6 @@ export const fileHandlers = [
 				updateButtons();
 				showLoading(`打开失败：${error.message}`, () => void restart(true));
 			}
-			// Cleanup has its own bounded scope: the editor's scope is already aborted on unmount.
 			function closeCanvas(token) {
 				const cleanup = createScope();
 				void cleanup
@@ -364,14 +360,12 @@ export const fileHandlers = [
 						120_000,
 					);
 					if (!operation.active) return;
-					// All viewers use the opaque broker; browsers must never contact the loopback gateway.
 					await openCanvas(operation);
 				} catch (error) {
 					fail(operation, error);
 				}
 			}
 
-			// Provision POST can block until download completes; poll concurrently, with one deadline.
 			function provision(parent, reload = false) {
 				if (!parent.active) return;
 				const operation = parent.child();

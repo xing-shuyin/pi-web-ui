@@ -1,28 +1,3 @@
-/**
- * sftp 服务端入口 —— 项目级 SFTP 同步。
- *
- * 约定：ESM 默认导出 `{ activate(host) → deactivate? }`。
- *
- * 分层（都在 lib/ 下，各自可单测）：
- *   config.mjs  `.pi/sftp.json` + `.pi/sftp.local.json` 的读写/归一化/校验
- *   refs.mjs    凭据引用 ${env:} / ${secret:} / ${file:} 解析
- *   ssh.mjs     ssh2 连接池（惰性补装依赖、指纹重连、空闲回收、远端 exec）
- *   engine.mjs  扫描 → 差异计划 → 并发流式执行（半成品+rename、垃圾桶保护）
- *   remote.mjs  远端文件 CRUD（视图与工具共用）
- *
- * 三处出口共用同一套后端，不存在「UI 能干的 AI 干不了」：
- *   1. HTTP 路由 `/plugins-api/sftp/*`（视图用）
- *   2. AI 工具：**一个 action 式 `sftp`**（status/save/secret/test/plan/sync/cancel/ls/read/write/
- *      mkdir/mv/rm/search，开设置后多一个 exec）—— 动作共用同一份配置与守卫，
- *      拆成十几个工具只会把上下文塞满
- *   3. UI 条目（底栏状态徽标 / 文件右键「上传到远端」）
- *
- * 安全边界：
- *   - 凭据值永不回给浏览器与模型（host.secrets 的值只在服务端解析）；
- *   - 本地路径一律 `safeRel` + 同步根内校验，远端来的文件名含分隔符/`..` 直接丢弃；
- *   - 删除永远先进垃圾桶，垃圾桶目录被内部护栏永久排除（不会下次又被传上去）。
- */
-
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -64,23 +39,17 @@ const DEFAULTS = {
 };
 
 const MAX_WRITE_BYTES = 2 * 1024 * 1024;
-/** 工具回执里逐条列出的计划项上限（其余只给计数，避免把上下文塞满）。 */
 const PLAN_LIST_CAP = 40;
 
 export default {
 	async activate(host) {
 		const log = (msg, level = "info") => {
 			try {
-				// 宿主约定首参是级别（server/plugins.ts log(levelOrArg, ...args)）——
-				// 顺序颠倒是消息当级别、级别恒 info 且文本尾部多挂一个裸级别词
 				host.log?.(level, String(msg));
-			} catch {
-				/* 日志失败不影响主流程 */
-			}
+			} catch {}
 		};
 		const ssh = createSshManager({ host, log, secrets: host.secrets });
 		const trustChallenges = createTrustChallenges();
-		// 引擎的非致命降级（快扫/批量打包用不了）只报一次，不然每次同步都刷屏
 		onEngineNote((msg) => log(msg, "warn"));
 
 		/** @type {{running:boolean, kind:string, startedAt:number, phase:string, done:number, total:number, rel:string, bytes:number, scan:{side:string, files:number, dirs:number}, error:string, cancelled:boolean, reusedPlan:boolean, result:any, cwd?:string}} */
@@ -100,16 +69,10 @@ export default {
 			result: null,
 			cwd: "",
 		};
-		/** 每个项目最后一次完成/停止的任务结果（切工作区后按 cwd 取，避免把项目 A 的完成结果显示在项目 B 上） */
 		const lastResultsByCwd = new Map();
-		/** 当前任务的取消控制器（无任务时为 null）。**在扫描开始前就装上** —— 扫描也能停。 */
 		let jobCtrl = null;
 		/** @type {any} */
 		let lastPlan = null;
-		/**
-		 * 计划缓存：给「预览完直接执行」复用 —— 同一套参数下不必把两边的树再扫一遍。
-		 * 5 分钟过期、参数（含连接与规则）一变即失效、执行完立刻作废：宁可重扫，不可传错。
-		 */
 		let planCache = null;
 		const PLAN_REUSE_MS = 5 * 60 * 1000;
 
@@ -126,17 +89,11 @@ export default {
 				autoGitignore: raw.autoGitignore !== false,
 				plaintextWarn: raw.plaintextWarn !== false,
 				allowExec: raw.allowExec === true,
-				// 批量打包传（上行 tar 流 / 下行 tar -czf -）靠远端 tar/mv，实际上也要 exec ——
-				// 没开 exec 时这个开关等于不存在；`batchUpload` 是 #上一版的键名，读一下兼容旧存储
 				batchTransfer: (raw.batchTransfer ?? raw.batchUpload) !== false,
 				trashDays: Number.isFinite(days) ? Math.max(0, Math.min(90, Math.round(days))) : DEFAULTS.trashDays,
 			};
 		}
 
-		/**
-		 * 读配置：项目文件里的 defaults 优先于全局设置（项目约定的排除规则不该被机器级开关改掉），
-		 * 只有文件里没写的字段才回落设置页。
-		 */
 		async function load(profile, targetCwd = host.cwd) {
 			const cwd = targetCwd || host.cwd;
 			const settings = readSettings();
@@ -163,7 +120,6 @@ export default {
 			return c;
 		}
 
-		/** 计划指纹：连接、规则、方向、范围任一变化，缓存的计划就不能再用。 */
 		function planKey(loaded, conn, { scope, target, direction, deletePolicy }) {
 			return JSON.stringify([
 				loaded.cwd,
@@ -183,10 +139,6 @@ export default {
 			]);
 		}
 
-		/**
-		 * 计划：连上去扫双方 → 差异清单（不传任何文件）。
-		 * `signal` 在扫描期间就生效（取消按钮不能只停传输）；`reuseToken` 命中缓存则直接重用上次预览。
-		 */
 		async function buildPlan({
 			profile,
 			scope = "all",
@@ -225,7 +177,6 @@ export default {
 				signal,
 				onProgress: onScan,
 				scanConcurrency: loaded.settings.scanConcurrency,
-				// allowExec 打开时才注入远端 exec：快扫（一次 find）与批量打包都靠它
 				execScan: loaded.settings.allowExec ? (cmd, opts) => ssh.exec(conn, cmd, opts) : undefined,
 			});
 			plan.settings = loaded.settings;
@@ -242,12 +193,6 @@ export default {
 			return { loaded, conn, sftp, plan, reused: false, planToken: planCache.token };
 		}
 
-		/**
-		 * 执行：先出计划（除非命中 `reuseToken` 的缓存），再并发传输。dryRun 只回计划。
-		 *
-		 * 任务从**扫描前**就登记（`job.running = true` + 装上 AbortController）：
-		 * 大树上扫描才是最长的一段，那段界面上看不到进度、也没法停，体验就是「卡死」。
-		 */
 		async function runSync({
 			profile,
 			scope,
@@ -264,7 +209,6 @@ export default {
 				throw new Error(`已有同步任务在运行${diff} —— 请先点「停止」或等它结束`);
 			}
 			const ctrl = new AbortController();
-			// 外部信号（工具看门狗 / 调用方）与面板的取消按钮都归到同一个控制器上
 			const forward = () => ctrl.abort(external?.reason instanceof Error ? external.reason : new Error("已取消"));
 			if (external) {
 				if (external.aborted) forward();
@@ -327,10 +271,8 @@ export default {
 				job.result = result;
 				job.cancelled = result.cancelled;
 				job.phase = result.cancelled ? "cancelled" : "done";
-				// 计划已用掉：下次执行必须重新扫（否则改过的文件会拿旧计划去传）
 				planCache = null;
 				if (result.cancelled) {
-					// 取消不是失败：已传完的文件留在两边，垃圾桶批次可回滚
 					host.notify(
 						"warning",
 						`☁ 同步已停止（已完成 ${result.done.upload} 上传 / ${result.done.download} 下载，不丢文件）`,
@@ -339,7 +281,6 @@ export default {
 					lastResultsByCwd.set(runCwd, { ...job, running: false });
 					return { dryRun: false, plan, result, cancelled: true };
 				}
-				// 同步完顺手清老垃圾桶（保留天数由设置决定）
 				if (loaded.settings.trashDays > 0) await pruneTrash(loaded.cwd, loaded.settings.trashDays).catch(() => {});
 				if (result.failed.length) {
 					host.notify(
@@ -348,8 +289,6 @@ export default {
 						`☁ Sync finished with ${result.failed.length} failures (see panel)`,
 					);
 				} else {
-					// 等级只能用 info/warning/error（协议里的 notice 等级词表）—— 没有 "success"，
-					// 传它会渲染成一条没有背景/边框的裸 toast。
 					host.notify(
 						"info",
 						`☁ 同步完成：上传 ${result.done.upload} / 下载 ${result.done.download} / 清理 ${result.done.trashRemote + result.done.trashLocal}${
@@ -363,7 +302,6 @@ export default {
 				lastResultsByCwd.set(runCwd, { ...job, running: false });
 				return { dryRun: false, plan, result, planToken, reused: Boolean(reused) };
 			} catch (err) {
-				// 取消（含扫描中途取消）走「已停止」而不是报错：这是用户主动按的，不是故障
 				if (isAbortError(err, ctrl.signal)) {
 					job.cancelled = true;
 					job.phase = "cancelled";
@@ -373,7 +311,6 @@ export default {
 				}
 				job.error = String(err?.message ?? err);
 				job.phase = "error";
-				// 失败也发通知（以前只有成功/部分失败发，断连一类直接抛错时界面上看不见）
 				host.notify("error", `☁ 同步失败：${job.error}`, `☁ Sync failed: ${job.error}`);
 				lastResultsByCwd.set(runCwd, { ...job, running: false });
 				throw err;
@@ -384,7 +321,6 @@ export default {
 			}
 		}
 
-		/** 计划 → 给人/模型看的文本摘要。 */
 		function planText(plan) {
 			const s = plan.summary;
 			const lines = [
@@ -414,7 +350,6 @@ export default {
 			return lines.join("\n");
 		}
 
-		// ── 状态快照（视图轮询 / 工具共用） ───────────────────────────────────
 		async function publicState() {
 			const loaded = await load();
 			const settings = loaded.settings;
@@ -491,7 +426,6 @@ export default {
 			};
 		}
 
-		// ── HTTP 路由（视图走这些） ─────────────────────────────────────────
 		const routes = [];
 		const trustNotices = new Map();
 		const route = (method, p, fn) => {
@@ -655,7 +589,6 @@ export default {
 			if (typeof timer.unref === "function") timer.unref();
 		}
 
-		// 停正在跑的同步（包括还在扫的那一段）。UI 的「停止」按钮和 AI 工具的 action=cancel 走这里。
 		route("POST", "/cancel", () => {
 			if (!job.running) return { cancelled: false, job: { ...job } };
 			forceAbortJob();
@@ -670,7 +603,6 @@ export default {
 				target: body.path ?? "",
 				direction: body.direction,
 				deletePolicy: body.deletePolicy,
-				// 预览就是「只出计划」的同一个任务：扫描因此也有进度、也能停
 				dryRun: true,
 				reuseToken: body.reuse === true ? body.planToken : undefined,
 			});
@@ -687,10 +619,7 @@ export default {
 				target: body.path ?? "",
 				direction: body.direction,
 				deletePolicy: body.deletePolicy,
-				// 失败安全：**必须显式 `dryRun:false` 才真传**。一个缺 body 的 POST
-				// （手敲 curl / 别处探活 / 代理重放）不应该把工作区传到生产服务器上。
 				dryRun: body.dryRun !== false,
-				// 客户端带着刚预览过的 token 回来 → 直接沿用那份计划，省一次全量扫描
 				reuseToken: body.reuse === true ? body.planToken : undefined,
 			});
 			if (out.cancelled)
@@ -705,7 +634,6 @@ export default {
 			};
 		});
 
-		/** 远端绝对路径 → 本地相对路径（取匹配得最长的同步根；mappings 可能嵌套）。 */
 		function localRelFromRemote(conn, abs) {
 			const hit = [...conn.roots]
 				.sort((a, b) => b.remote.length - a.remote.length)
@@ -715,12 +643,6 @@ export default {
 			return hit.local ? (rest ? `${hit.local}/${rest}` : hit.local) : rest;
 		}
 
-		// ── 手动上传 / 下载（面板按钮与右键菜单用） ─────────────────────────
-		//
-		// 与 /sync 的区别：这里针对**一个明确的对象**（一个文件 / 一棵子树 / 整根），
-		// 用户点下去就是要传，所以不等计划、直接执行；但**永不动删除策略**
-		// （deletePolicy 固定 none）—— 手动推一个目录不该把远端多出来的东西清掉。
-		// `path` 给远端绝对路径时自动反查映射，所以面板上可以直接「传这个远端目录对应的本地目录」。
 		route("POST", "/transfer", async (req) => {
 			const body = req.body ?? {};
 			const direction = body.direction === "down" ? "down" : "up";
@@ -909,15 +831,6 @@ export default {
 			return pruneTrash(host.cwd, Number.isFinite(days) ? days : readSettings().trashDays);
 		});
 
-		// ── AI 工具：单个 action 式 `sftp` ──────────────────────────────────
-		//
-		// 为什么合成一个：这些动作共用同一份配置、同一条连接、同一套守卫，拆成 13 个工具只会
-		// 把上下文塞满（每个都要一份 description + snippet），模型还容易漏看某几个。代价是
-		// 描述要写全 —— 用一张动作表把「哪个 action 要哪些参数」一次说清（同仓库的 `pm2`、
-		// `patch`、`mail` 也是 action 式单工具）。
-		//
-		// exec 动作受「允许在远端执行命令」设置控制：关着时它**不在 enum 里**（模型看不见的
-		// 能力才是真关掉），设置一改就重注册工具。
 		const SFTP_ACTIONS = [
 			"status",
 			"save",
@@ -961,10 +874,6 @@ export default {
 			agent: { type: "string", description: "save: ssh-agent socket path, e.g. $SSH_AUTH_SOCK" },
 		};
 
-		/**
-		 * 动作 → 实现。参数从同一个扁平对象里取，各动作只读自己关心的字段
-		 * （合并工具的代价：`path` 在 plan/sync 下是本地相对路径，在文件动作下是远端绝对路径）。
-		 */
 		const sftpActions = {
 			async status() {
 				const st = await publicState();
@@ -1191,7 +1100,6 @@ export default {
 			},
 		};
 
-		/** 组装工具定义；allowExec 决定 enum 里有没有 exec。 */
 		function buildSftpTool(allowExec) {
 			const actions = allowExec ? SFTP_ACTIONS : SFTP_ACTIONS.filter((a) => a !== "exec");
 			return {
@@ -1204,7 +1112,6 @@ export default {
 					"plan reports the diff without transferring anything; sync transfers (dryRun defaults to true, pass dryRun=false to move bytes); " +
 					"cancel stops the sync that is running (or its scan phase) after the current files; " +
 					"ls, read, write, mkdir, mv, rm and search work on remote files; exec runs a remote shell command. " +
-					// 开了 exec 才有这两条快通道（扫描一次 find、小文件一批 tar）
 					"With exec access enabled, planning uses one remote find and many small files upload as one tar batch. " +
 					"path means a local relative path for plan and sync, and a remote absolute path for the file actions; direction=up|down|both and scope=all|tree|file shape a transfer; " +
 					"deletePolicy=none|remote-only|both decides what may be cleaned up, and removals always land in a trash folder first.",
@@ -1224,7 +1131,6 @@ export default {
 							description: "Which SFTP action to perform.",
 						},
 						profile: PROFILE_PROP,
-						// save：连接名；secret：机密名
 						name: {
 							type: "string",
 							description: "save: profile name (letters, digits, dot, dash, underscore); secret: secret name",
@@ -1292,32 +1198,21 @@ export default {
 			};
 		}
 
-		/** 当前注册（设置变化时先注销再注册，否则同名的第二次注册会被宿主拒掉）。 */
 		let sftpToolOff = null;
 		function syncSftpTool(allowExec) {
 			const on = typeof allowExec === "boolean" ? allowExec : readSettings().allowExec;
 			try {
 				sftpToolOff?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			sftpToolOff = host.registerAgentTool(buildSftpTool(on));
 		}
 		syncSftpTool();
 
-		// ── UI：顶栏「SFTP 同步」按钮上的实时状态 ───────────────────────────
-		//
-		// 插件在界面上只占一个入口（顶栏那个打开面板的按钮，见 manifest.ui.topbar）。
-		// 同步状态不再另占底栏一格，而是写到那个按钮自己身上：进行中把进度拼进文案
-		// （`SFTP 3/10`），悬停另有详细提示；完成/失败另发通知（见 runSync）。
-		// 只在文本真的变了的时候 update —— 每次 update 都会重推一遍插件清单。
 		const BASE_LABEL = { zh: "SFTP 同步", en: "SFTP Sync" };
 		let painted = "";
 		function paintBadge() {
 			try {
 				const st = job;
-				// 扫描阶段没有 done/total（那要等计划出来）—— 数字换成已扫到的文件数，
-				// 否则大树上会长时间显示冷冰冰的 `SFTP 0/0`，看着就像卡死了。
 				const scanning = st.running && (st.phase === "scan" || st.phase === "cancelling");
 				const projName = st.cwd ? path.basename(st.cwd) : "";
 				const isOtherProj = Boolean(st.running && projName && st.cwd !== host.cwd);
@@ -1332,7 +1227,6 @@ export default {
 						? `${prefix}SFTP scan ${st.scan.files}`
 						: `${prefix}SFTP ${st.done}/${st.total}`
 					: BASE_LABEL.en;
-				// 路径截断：hint 在服务端限 200 字符，超了会落一条运行时诊断
 				const rel = st.rel ? ` · ${String(st.rel).slice(0, 80)}` : "";
 				const sideZh = st.scan.side === "remote" ? "远端" : "本地";
 				const otherHintZh = isOtherProj ? `正在同步项目「${projName}」：` : "";
@@ -1363,9 +1257,7 @@ export default {
 				if (sig === painted) return;
 				painted = sig;
 				host.ui.update("__view", { label, labelEn, hint, hintEn });
-			} catch {
-				/* 按钮上的状态只是装饰，失败不影响功能 */
-			}
+			} catch {}
 		}
 		paintBadge();
 		const badgeTimer = setInterval(paintBadge, 1500);
@@ -1385,10 +1277,8 @@ export default {
 			paintBadge();
 		});
 
-		// 设置变化：exec 动作的可见性跟着走（关掉时它从 enum 里消失，模型看不到这个能力）
 		const offSettings = host.onSettingsChanged?.((values) => syncSftpTool(values?.allowExec === true));
 
-		// 首次跑一遍：清理过期垃圾桶 + 自动补 .gitignore
 		try {
 			const st = readSettings();
 			if (st.autoGitignore) {
@@ -1405,15 +1295,11 @@ export default {
 			clearInterval(badgeTimer);
 			try {
 				sftpToolOff?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			for (const off of routes) {
 				try {
 					off();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			offCwd?.();
 			offSettings?.();
@@ -1422,7 +1308,6 @@ export default {
 	},
 };
 
-/** 计划 → 可下发前端的形状（去掉内部字段）。取消导致没有计划时返回 null（前端会显示「没计划」而不是崩）。 */
 function serializePlan(plan) {
 	if (!plan) return null;
 	return {

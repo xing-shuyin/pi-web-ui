@@ -86,7 +86,6 @@ describe("Native LSP Tool", () => {
 	});
 
 	it("speaks JSON-RPC 2.0 with a mock language server process", async () => {
-		// 编写一个极简的标准 mock LSP 进程脚本，测试完整的协议与传输编解码
 		const mockServerScript = join(tempDir, "mock-lsp-server.mjs");
 		const mockCode = `
 import { createInterface } from "readline";
@@ -218,7 +217,6 @@ function handleMessage(msg) {
 		writeFileSync(testFile, "const x = 1;\nfoo();\n");
 		const uri = await client.syncDocument(testFile);
 
-		// 1. Definition
 		const defRes = await client.request("textDocument/definition", {
 			textDocument: { uri },
 			position: { line: 0, character: 6 },
@@ -226,14 +224,12 @@ function handleMessage(msg) {
 		expect(Array.isArray(defRes)).toBe(true);
 		expect(defRes[0].range.start.line).toBe(0);
 
-		// 2. Hover
 		const hoverRes = await client.request("textDocument/hover", {
 			textDocument: { uri },
 			position: { line: 0, character: 6 },
 		});
 		expect(hoverRes.contents.value).toContain("function greet");
 
-		// 3. References
 		const refRes = await client.request("textDocument/references", {
 			textDocument: { uri },
 			position: { line: 0, character: 6 },
@@ -242,14 +238,12 @@ function handleMessage(msg) {
 		expect(refRes.length).toBe(1);
 		expect(refRes[0].range.start.line).toBe(5);
 
-		// 4. Diagnostics (via publishDiagnostics notification)
 		await new Promise((r) => setTimeout(r, 80));
 		const diags = client.getDiagnostics(uri);
 		expect(diags.length).toBe(1);
 		expect(diags[0].message).toContain("Mock type error");
 		expect(diags[0].code).toBe(2304);
 
-		// 5. Document Symbols (Outline)
 		const symRes = await client.request("textDocument/documentSymbol", {
 			textDocument: { uri },
 		});
@@ -258,7 +252,6 @@ function handleMessage(msg) {
 		expect(symRes[0].name).toBe("Calculator");
 		expect(symRes[0].children[0].name).toBe("add");
 
-		// 6. Workspace Symbol
 		const wsRes = await client.request("workspace/symbol", {
 			query: "Calc",
 		});
@@ -287,10 +280,8 @@ function handleMessage(msg) {
 			clearResolveBinaryCache();
 			const res = await globalLspPool.getClient(tempDir, join(tempDir, "sample.ts"));
 			if ("error" in res) {
-				// 未授权时不得联网安装：返回安装指引 + allowInstall 重试提示
 				expect(res.error).toMatch(/allowInstall|Failed to start/);
 			} else {
-				// 该机器生态目录里已有语言服务：门禁未触发，直接释放
 				await res.client.shutdown();
 			}
 		} finally {
@@ -477,7 +468,6 @@ function handleMessage(msg) {
 			details: any;
 		}>;
 
-		// 1. documentSymbol: 格式化大纲包含类与子级缩进与行跨度
 		const docRes = await exec("call-doc", {
 			action: "documentSymbol",
 			path: "test.ts",
@@ -489,7 +479,6 @@ function handleMessage(msg) {
 		expect(docRes.content[0].text).toContain("  • [Method] add ((a: number, b: number) => number) (lines 2-4)");
 		expect(docRes.content[0].text).toContain("lines 1-5");
 
-		// 2. read_symbol 单符号
 		const readRes = await exec("call-read-single", {
 			action: "read_symbol",
 			path: "test.ts",
@@ -501,7 +490,6 @@ function handleMessage(msg) {
 		expect(readRes.content[0].text).toContain("Symbol: multiply [Function]");
 		expect(readRes.content[0].text).toContain("return a * b;");
 
-		// 3. read_symbol 点分符号
 		const readDotted = await exec("call-read-dotted", {
 			action: "read_symbol",
 			path: "test.ts",
@@ -513,7 +501,6 @@ function handleMessage(msg) {
 		expect(readDotted.details.endLine).toBe(4);
 		expect(readDotted.content[0].text).toContain("return a + b;");
 
-		// 4. read_symbol not-found 回退自愈提示
 		const readNotFound = await exec("call-read-nf", {
 			action: "read_symbol",
 			path: "test.ts",
@@ -524,7 +511,6 @@ function handleMessage(msg) {
 		expect(readNotFound.content[0].text).toContain("Available symbols in test.ts:");
 		expect(readNotFound.content[0].text).toContain("Calculator [Class]");
 
-		// 5. 两遍扫描测试：精确 count 优先于 Count，不被大小写遮蔽
 		const readExact = await exec("call-read-exact", {
 			action: "read_symbol",
 			path: "test.ts",
@@ -534,7 +520,6 @@ function handleMessage(msg) {
 		expect(readExact.details.symbol.name).toBe("count");
 		expect(readExact.details.symbol.kind).toBe(12);
 
-		// 6. workspaceSymbol 正常搜索与 container 格式
 		const wsRes = await exec("call-ws", {
 			action: "workspaceSymbol",
 			path: "test.ts",
@@ -545,7 +530,6 @@ function handleMessage(msg) {
 		expect(wsRes.content[0].text).toContain("• [Function] calculateTotal in OrderService");
 		expect(wsRes.details.symbols.length).toBe(2);
 
-		// 7. workspaceSymbol 空 query 防御校验
 		const wsEmpty = await exec("call-ws-empty", {
 			action: "workspaceSymbol",
 			path: "test.ts",
@@ -640,7 +624,6 @@ function handleMessage(msg) {
 			details: any;
 		}>;
 
-		// 1. 全文件级联：顶层符号 → references → importer.ts 的诊断回流
 		const res = await exec("call-cascade", {
 			action: "cascade",
 			path: "test.ts",
@@ -655,7 +638,6 @@ function handleMessage(msg) {
 		expect(res.details.impacted[0].path).toBe("importer.ts");
 		expect(res.details.clean.length).toBe(0);
 
-		// 2. 指定 line/character：单符号种子同样命中 importer
 		const resSeed = await exec("call-cascade-seed", {
 			action: "cascade",
 			path: "test.ts",
@@ -666,7 +648,6 @@ function handleMessage(msg) {
 		expect(resSeed.details.impacted.length).toBe(1);
 		expect(resSeed.details.impacted[0].path).toBe("importer.ts");
 
-		// 3. 无引用文件：不级联
 		const resLonely = await exec("call-cascade-lonely", {
 			action: "cascade",
 			path: "lonely.ts",
@@ -766,14 +747,10 @@ function handleMessage(msg) {
 			path: "test.ts",
 		});
 		expect(res.details.ok).toBe(true);
-		// 头部计数是截断前的真实总数（30），而不是被分析的前 25 个
 		expect(res.content[0].text).toContain("Impact cascade for test.ts");
 		expect(res.content[0].text).toContain("30 referencing file(s)");
-		// 截断尾注：30 - 25 = 5 个引用方未分析
 		expect(res.content[0].text).toContain("... and 5 more not analyzed");
-		// 种子截断尾注：25 个顶层符号只用前 20 个做种子
 		expect(res.content[0].text).toContain("... and 5 more top-level symbols not analyzed");
-		// details 带真实总数；referencedFiles 仍是实际分析的那 25 个
 		expect(res.details.referencedFilesTotal).toBe(30);
 		expect(res.details.referencedFiles.length).toBe(25);
 		expect(res.details.referencedFiles[0]).toBe("importer01.ts");
@@ -872,12 +849,10 @@ function handleMessage(msg) {
 		const flattenCount = (list: any[]): number =>
 			list.reduce((n: number, s: any) => n + 1 + (Array.isArray(s.children) ? flattenCount(s.children) : 0), 0);
 
-		// details.symbols 按展平计数截断，不超过 300（与文本大纲同口径）
 		const flat = flattenCount(docRes.details.symbols);
 		expect(flat).toBeLessThanOrEqual(300);
 		expect(flat).toBeGreaterThan(0);
 
-		// 结构正确：父被保留，其 children 与裁剪边界一致，未混入别的层级
 		expect(docRes.details.symbols.length).toBe(1);
 		expect(docRes.details.symbols[0].name).toBe("GeneratedBundle");
 		expect(docRes.details.symbols[0].children.length).toBe(flat - 1);
@@ -886,11 +861,9 @@ function handleMessage(msg) {
 			expect(Array.isArray(child.children)).toBe(false);
 		}
 
-		// 截断标记与文本大纲截断提示
 		expect(docRes.details.truncated).toBe(true);
 		expect(docRes.content[0].text).toContain("[Truncated: outline exceeds 300 symbols]");
 
-		// 64KB 预算：details 整体可序列化体积必须低于 TOOL_DETAILS_CAP（64,000）
 		expect(JSON.stringify(docRes.details).length).toBeLessThan(64_000);
 	});
 

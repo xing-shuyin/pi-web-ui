@@ -1,8 +1,3 @@
-/**
- * plugins/qq/client/entry.mjs
- * QQ Bot workspace and bot control panel for pi-web-ui.
- */
-
 const ACTION_SET_WORKSPACE = "qq:set-workspace";
 
 let panelSendSink = null;
@@ -240,6 +235,26 @@ export default {
 							</div>
 
 							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
+								<div style="font-weight: 600; margin-bottom: 8px;">🔊 自动回复语音</div>
+								<label style="display: block; margin-bottom: 8px;">回复方式
+									<select class="qq-cfg-reply-mode" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;">
+										<option value="text">文字回复</option><option value="voice">语音回复</option><option value="both">语音和文字</option>
+									</select>
+								</label>
+								<label style="display: block; margin-bottom: 8px;">TTS 引擎
+									<select class="qq-cfg-voice-engine" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;"></select>
+								</label>
+								<label style="display: block; margin-bottom: 8px;">音色
+									<select class="qq-cfg-voice-speaker" style="width: 100%; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;"></select>
+								</label>
+								<label style="display: block; margin-bottom: 8px;">语速
+									<input type="number" class="qq-cfg-voice-rate" min="0.5" max="2" step="0.1" value="1" style="width: 100%; box-sizing: border-box; padding: 6px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
+								</label>
+								<div class="qq-voice-error" role="alert" style="font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere;"></div>
+								<div style="font-size: 12px; color: var(--text-dim);">单聊和群聊支持语音，频道使用文字。长回复朗读开头并附完整文字；语音失败自动发送文字。安装并启用 TTS 插件后，可选择豆包等引擎及其音色。</div>
+							</div>
+
+							<div style="border-top: 1px solid var(--border); padding-top: 12px;">
 								<div style="font-weight: 600; margin-bottom: 8px;">🤖 机器人双工与白名单控制</div>
 								<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
 									<input type="checkbox" id="qq-cfg-bot-enabled" class="qq-cfg-bot-enabled" style="cursor: pointer;" />
@@ -303,6 +318,11 @@ export default {
 		const cfgBotEnabled = q(".qq-cfg-bot-enabled");
 		const cfgAllowedUsers = q(".qq-cfg-allowed-users");
 		const cfgTimeout = q(".qq-cfg-timeout");
+		const cfgReplyMode = q(".qq-cfg-reply-mode");
+		const cfgVoiceEngine = q(".qq-cfg-voice-engine");
+		const cfgVoiceSpeaker = q(".qq-cfg-voice-speaker");
+		const cfgVoiceRate = q(".qq-cfg-voice-rate");
+		const voiceError = q(".qq-voice-error");
 
 		let currentState = {};
 		let currentWorkspace = "";
@@ -534,7 +554,6 @@ export default {
 
 		q(".qq-btn-refresh").addEventListener("click", () => refresh());
 
-		// Workspace handlers
 		wsSelectEl?.addEventListener("change", () => {
 			const val = wsSelectEl.value;
 			if (val) {
@@ -584,7 +603,6 @@ export default {
 			}
 		});
 
-		// Model & Thinking handlers
 		modelBrowseBtn?.addEventListener("click", async () => {
 			const host = globalThis.window?.__piWebUiHost;
 			if (typeof host?.pickModel !== "function") return;
@@ -638,7 +656,38 @@ export default {
 			await sendHost("save_config", { config: cfg });
 		});
 
-		// Settings Modal Handlers
+		let voiceRequest = 0;
+		async function loadVoices(selected = "") {
+			const request = ++voiceRequest;
+			const engine = cfgVoiceEngine.value;
+			cfgVoiceSpeaker.replaceChildren(new Option("默认音色", ""));
+			if (selected) cfgVoiceSpeaker.add(new Option(selected, selected));
+			cfgVoiceSpeaker.value = selected;
+			voiceError.textContent = currentState.botStatus?.lastVoiceError
+				? `上次语音回复已回退为文字：${currentState.botStatus.lastVoiceError}`
+				: "";
+			try {
+				const result = await sendHost("get_voice_options", { engine });
+				if (request !== voiceRequest || engine !== cfgVoiceEngine.value) return;
+				if (result?.type !== "voice_options") throw new Error(result?.message || "无法加载音色");
+				cfgVoiceSpeaker.replaceChildren(new Option("默认音色", ""));
+				for (const voice of result.voices || []) cfgVoiceSpeaker.add(new Option(voice.label, voice.id));
+				if (selected && !(result.voices || []).some((voice) => voice.id === selected))
+					cfgVoiceSpeaker.add(new Option(selected, selected));
+				cfgVoiceSpeaker.value = selected;
+			} catch (error) {
+				if (request === voiceRequest) voiceError.textContent = error.message;
+			}
+		}
+		function updateVoiceRate() {
+			cfgVoiceRate.disabled =
+				currentState.ttsEngines?.find((engine) => engine.id === cfgVoiceEngine.value)?.supportsRate === false;
+			if (cfgVoiceRate.disabled) cfgVoiceRate.value = "1";
+		}
+		cfgVoiceEngine.addEventListener("change", () => {
+			updateVoiceRate();
+			void loadVoices();
+		});
 		q(".qq-btn-config").addEventListener("click", () => {
 			const cfg = currentState.config || {};
 			cfgAppId.value = cfg.appId || "";
@@ -655,6 +704,17 @@ export default {
 			cfgBotEnabled.checked = Boolean(cfg.botEnabled);
 			cfgAllowedUsers.value = Array.isArray(cfg.allowedUsers) ? cfg.allowedUsers.join(", ") : "";
 			cfgTimeout.value = cfg.replyTimeoutSec || 90;
+			cfgReplyMode.value = cfg.replyMode || "text";
+			cfgVoiceRate.value = cfg.voiceRate || 1;
+			const engines = currentState.ttsEngines?.length
+				? currentState.ttsEngines
+				: [{ id: "builtin", label: "系统语音" }];
+			cfgVoiceEngine.replaceChildren(...engines.map((engine) => new Option(engine.label, engine.id)));
+			if (cfg.voiceEngine && !engines.some((engine) => engine.id === cfg.voiceEngine))
+				cfgVoiceEngine.add(new Option(`${cfg.voiceEngine}（未加载）`, cfg.voiceEngine));
+			cfgVoiceEngine.value = cfg.voiceEngine || "builtin";
+			updateVoiceRate();
+			void loadVoices(cfg.voiceSpeaker || "");
 
 			modal.style.display = "flex";
 		});
@@ -721,7 +781,13 @@ export default {
 					broadcastChannelId: cfgBroadcastChannel.value.trim(),
 					notifyOnQuestion: Boolean(cfgNotifyQuestion.checked),
 					notifyOnRunEnd: Boolean(cfgNotifyRunEnd.checked),
-					inboundMedia: Boolean(cfgInboundMedia.checked),
+					inboundMedia: cfgInboundMedia
+						? Boolean(cfgInboundMedia.checked)
+						: currentState.config?.inboundMedia !== false,
+					replyMode: cfgReplyMode.value,
+					voiceEngine: cfgVoiceEngine.value,
+					voiceSpeaker: cfgVoiceSpeaker.value,
+					voiceRate: Math.max(0.5, Math.min(2, Number(cfgVoiceRate.value) || 1)),
 					botEnabled: Boolean(cfgBotEnabled.checked),
 					allowedUsers: cfgAllowedUsers.value
 						.split(/[,，\s]+/)

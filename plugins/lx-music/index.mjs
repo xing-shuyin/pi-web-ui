@@ -1,6 +1,3 @@
-/**
- * 洛雪音乐 (lx-music) 插件服务端入口
- */
 import { join } from "node:path";
 import { createStore } from "./store.mjs";
 import {
@@ -19,7 +16,6 @@ import { proxyAudioStream } from "./server/stream-proxy.mjs";
 import { UserApiEngine } from "./server/user-api-vm.mjs";
 import { createMusicTool } from "./server/tools.mjs";
 
-/** 安全读取 Express 已解析或未解析的 Body */
 async function getRequestBody(req) {
 	if (req.body && typeof req.body === "object") return req.body;
 	if (typeof req.body === "string" && req.body.trim()) {
@@ -44,7 +40,6 @@ async function getRequestBody(req) {
 	});
 }
 
-/** 辅助拉取远程脚本（支持 GitHub 加速镜像重试） */
 async function fetchRemoteScript(url) {
 	const urlsToTry = [url];
 	if (url.includes("raw.githubusercontent.com")) {
@@ -77,7 +72,6 @@ export default {
 		const store = createStore(join(host.dataDir, "lx-music"));
 		const userApi = new UserApiEngine({ log: (msg) => host.log(msg) });
 
-		// 恢复已保存的自定义音源
 		const savedApis = store.get("user-apis", []);
 		for (const item of savedApis) {
 			if (item?.id && item?.script) {
@@ -87,7 +81,6 @@ export default {
 		const activeApiId = store.get("active-api-id", null);
 		if (activeApiId) userApi.setActive(activeApiId);
 
-		// 1. 搜索歌曲
 		host.route("GET", "/search", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -109,7 +102,6 @@ export default {
 			}
 		});
 
-		// 2. 获取排行榜列表
 		host.route("GET", "/top-lists", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -123,7 +115,6 @@ export default {
 			}
 		});
 
-		// 2.1 获取排行榜歌曲
 		host.route("GET", "/top-list", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -140,7 +131,6 @@ export default {
 			}
 		});
 
-		// 2.2 歌单标签与分类
 		host.route("GET", "/playlist/tags", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -154,7 +144,6 @@ export default {
 			}
 		});
 
-		// 2.3 歌单列表
 		host.route("GET", "/playlist/list", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -171,7 +160,6 @@ export default {
 			}
 		});
 
-		// 2.4 歌单详情
 		host.route("GET", "/playlist/detail", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -191,7 +179,6 @@ export default {
 			}
 		});
 
-		// 3. 获取歌曲真实播放链接 (参考 enhanced 架构：支持音质梯级降级与跨源换源容灾)
 		host.route("GET", "/song-url", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -211,7 +198,6 @@ export default {
 				let url = null;
 				let resolvedQuality = quality;
 
-				// 1. 优先尝试自定义音源沙箱（内置音质平滑降级与有效性预检）
 				if (userApi.activeId) {
 					const resolveRes = await userApi.resolveUrl(source, { id: songId, name, singer, album }, quality);
 					if (resolveRes?.url) {
@@ -220,12 +206,10 @@ export default {
 					}
 				}
 
-				// 2. 自定义源未命中或返回死链时，回退到当前平台的官方/内置备选源
 				if (!url) {
 					url = await getMusicPlayUrl(source, songId);
 				}
 
-				// 3. 当前平台仍无可用链接时，跨平台智能换源容灾匹配 (酷我/酷狗/网易)
 				if (!url && name) {
 					const fallbackRes = await findCrossSourceMusicUrl(name, singer, source);
 					if (fallbackRes?.url) {
@@ -249,7 +233,6 @@ export default {
 			}
 		});
 
-		// 4. 歌曲歌词
 		host.route("GET", "/lyric", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -269,7 +252,6 @@ export default {
 			}
 		});
 
-		// 5. 音频流 Range 代理 (防盗链 + 前端 Seek)
 		host.route("GET", "/stream", async (req, res) => {
 			const query = new URL(req.url, "http://127.0.0.1").searchParams;
 			const targetUrl = query.get("url");
@@ -281,7 +263,6 @@ export default {
 			proxyAudioStream(req, res, targetUrl, referer);
 		});
 
-		// 6. 音频文件一键下载
 		host.route("GET", "/download", async (req, res) => {
 			const query = new URL(req.url, "http://127.0.0.1").searchParams;
 			const targetUrl = query.get("url");
@@ -295,7 +276,6 @@ export default {
 			proxyAudioStream(req, res, targetUrl, "", filename);
 		});
 
-		// 7. 收藏夹我喜欢的音乐
 		host.route("GET", "/favorites", (req, res) => {
 			const favorites = store.get("favorites", []);
 			res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ favorites }));
@@ -314,7 +294,6 @@ export default {
 			}
 		});
 
-		// 8. 歌单与队列
 		host.route("GET", "/playlists", (req, res) => {
 			const data = store.get("playlists", {
 				currentQueue: [],
@@ -334,12 +313,10 @@ export default {
 			}
 		});
 
-		// 9. 自定义音源管理
 		host.route("GET", "/user-apis", (req, res) => {
 			res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ apis: userApi.listApis() }));
 		});
 
-		// 9.1 社区推荐可用音源列表 (源自 pdone/lx-music-source 仓库)
 		host.route("GET", "/user-api/recommended", (req, res) => {
 			const recommended = [
 				{
@@ -390,7 +367,6 @@ export default {
 			res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, list: recommended }));
 		});
 
-		// 9.2 探测指定音源或当前活跃音源可用性
 		host.route("GET", "/user-api/probe", async (req, res) => {
 			try {
 				const query = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -411,7 +387,6 @@ export default {
 			}
 		});
 
-		// 9.3 删除自定义音源
 		host.route("POST", "/user-api/delete", async (req, res) => {
 			try {
 				const { id } = await getRequestBody(req);
@@ -472,7 +447,6 @@ export default {
 			}
 		});
 
-		// 10. 注册 AI 点歌工具
 		const musicTool = createMusicTool(host, userApi);
 		const unregisterTool = host.registerAgentTool(musicTool);
 

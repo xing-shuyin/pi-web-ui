@@ -1,11 +1,3 @@
-// clear_provider_api_key — built-in provider key clearing (zero token).
-//
-// 1. set_provider_api_key writes { provider: { type: "api_key", key } } to
-//    <agentDir>/auth.json
-// 2. clear_provider_api_key removes the entry + drops the runtime override
-// 3. clearing a provider with nothing stored → info notice, no crash
-//
-// Usage: npm run build && node tests/clear-provider-key-test.mjs [port]
 import WebSocket from "ws";
 import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -104,9 +96,7 @@ function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 }
 process.on("exit", cleanup);
 
@@ -115,24 +105,19 @@ try {
 	const c = await connect();
 	c.send({ type: "hello", clientId: "clear-key-test" });
 	await c.waitForNotice("", 1).catch(() => {});
-	// ready 不强等——直接开始，notice 匹配自带超时
 
-	// 1) 存一个 key（deepseek 是内置静态目录供应商，离线安全）
 	c.send({ type: "set_provider_api_key", provider: "deepseek", apiKey: "sk-test-123" });
 	await c.waitForNotice("已保存", 30000);
 	check("key stored in auth.json", readAuth().deepseek?.key === "sk-test-123");
 
-	// 2) 清空
 	c.send({ type: "clear_provider_api_key", provider: "deepseek" });
 	await c.waitForNotice("已清除", 30000);
 	check("auth.json entry removed", !readAuth().deepseek);
 
-	// 3) 再清一次 → 友好提示不崩
 	c.send({ type: "clear_provider_api_key", provider: "deepseek" });
 	const n = await c.waitForNotice("没有已保存的密钥", 15000);
 	check("second clear → friendly notice", !!n);
 
-	// 4) auth.json 里其他条目不受影响
 	c.send({ type: "set_provider_api_key", provider: "openai", apiKey: "sk-oa" });
 	await c.waitForNotice("已保存", 30000);
 	c.send({ type: "set_provider_api_key", provider: "anthropic", apiKey: "sk-an" });

@@ -35,7 +35,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			{ status: "completed", report: "done" },
 		);
 
-		// Attempting to start the same task attempt again must be rejected
 		expect(() => {
 			manager.recordTaskStart({
 				taskId: "task-1",
@@ -97,14 +96,12 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			{ status: "completed", report: "Result A" },
 		);
 
-		// Identical retry returns identical entry idempotently
 		const second = manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "Result A" },
 		);
 		expect(second.fingerprint).toBe(first.fingerprint);
 
-		// Conflicting finish (different report/status) MUST be rejected and original preserved
 		expect(() => {
 			manager.recordTaskFinish(
 				{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
@@ -169,15 +166,12 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 
 		expect(outbox.fingerprint).toBeDefined();
 
-		// 1. ACK without fingerprint must be rejected
 		expect(manager.ackOutbox("task-ack-1", "att-ack-1")).toBe(false);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		// 2. ACK with mismatched fingerprint must be rejected
 		expect(manager.ackOutbox("task-ack-1", "att-ack-1", "wrong-fingerprint")).toBe(false);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		// 3. ACK with exact matching fingerprint succeeds
 		expect(manager.ackOutbox("task-ack-1", "att-ack-1", outbox.fingerprint)).toBe(true);
 		expect(manager.getPendingOutbox()).toHaveLength(0);
 	});
@@ -225,7 +219,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		writeFileSync(legacyOutboxFile, JSON.stringify(legacyOutboxData));
 		writeFileSync(legacyLeasesFile, JSON.stringify(legacyLeasesData));
 
-		// Instantiate manager which performs one-time migration and halts orphaned running lease
 		const halted: string[] = [];
 		const manager = new TaskRecoveryManager({
 			dataDir: dir,
@@ -238,14 +231,13 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(existsSync(legacyOutboxFile)).toBe(false);
 		expect(existsSync(legacyLeasesFile)).toBe(false);
 
-		// Read new state file directly to verify versioned schema
 		const rawState = JSON.parse(readFileSync(newStateFile, "utf8"));
 		expect(rawState.version).toBe(2);
 		expect(rawState.quarantine).toEqual([]);
 		expect(rawState.deviceId).toBe("dev1");
 		expect(rawState.outbox).toBeInstanceOf(Array);
-		expect(rawState.outbox).toHaveLength(2); // 1 legacy completed + 1 halted orphan
-		expect(rawState.activeLeases).toHaveLength(0); // active leases halted into outbox
+		expect(rawState.outbox).toHaveLength(2);
+		expect(rawState.activeLeases).toHaveLength(0);
 
 		const oldCompleted = manager.getPendingOutbox().find((e) => e.taskId === "task-old");
 		expect(oldCompleted?.status).toBe("completed");
@@ -260,7 +252,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-double-crash-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
-		// Crash 1: task was running when process crashed
 		const stateFile = join(dir, "task-recovery-state.json");
 		const now = Date.now();
 		writeFileSync(
@@ -286,17 +277,14 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			}),
 		);
 
-		// Restart 1: detects orphan, stages interrupted to outbox, persists state
 		let manager1 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 		expect(manager1.getHaltedOrphans()).toHaveLength(1);
 		expect(manager1.getPendingOutbox()).toHaveLength(1);
 		expect(manager1.getPendingOutbox()[0].status).toBe("interrupted");
 		const orphanFingerprint = manager1.getPendingOutbox()[0].fingerprint;
 
-		// Crash 2: second crash happens immediately without ACK
-		// Restart 2: must load existing interrupted outbox outcome without losing it or overriding it
 		let manager2 = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		expect(manager2.getHaltedOrphans()).toHaveLength(0); // already halted in previous recovery
+		expect(manager2.getHaltedOrphans()).toHaveLength(0);
 		const pending2 = manager2.getPendingOutbox();
 		expect(pending2).toHaveLength(1);
 		expect(pending2[0].taskId).toBe("task-crash");
@@ -326,7 +314,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 			});
 		}).toThrow(/corrupted/i);
 
-		// Corrupted file on disk must NOT have been overwritten
 		expect(readFileSync(stateFile, "utf8")).toBe("{ corrupted json: [");
 	});
 
@@ -336,12 +323,11 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 
-		// Passing an invalid task lease (e.g. empty botId or empty leaseToken) must be rejected
 		expect(() => {
 			manager.recordTaskStart({
 				taskId: "t-valid",
 				attemptId: "a-valid",
-				botId: "", // invalid empty botId
+				botId: "",
 				deviceId: "dev1",
 				roomId: "r1",
 				leaseToken: "tok",
@@ -356,12 +342,11 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 				botId: "bot1",
 				deviceId: "dev1",
 				roomId: "r1",
-				leaseToken: "", // invalid empty leaseToken
+				leaseToken: "",
 				leaseGeneration: 1,
 			});
 		}).toThrow(/Invalid task lease parameters/i);
 
-		// The state file should not be corrupted; next valid task start succeeds
 		const valid = manager.recordTaskStart({
 			taskId: "t-valid",
 			attemptId: "a-valid",
@@ -373,7 +358,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		});
 		expect(valid.taskId).toBe("t-valid");
 
-		// Reload manager from disk to confirm state is completely intact
 		const reloaded = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
 		expect(reloaded.getHaltedOrphans()).toHaveLength(1);
 	});
@@ -382,7 +366,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-hub-scope-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
-		// 1. Connect to Hub A and record a finished task
 		const managerHubA = new TaskRecoveryManager({
 			dataDir: dir,
 			deviceId: "dev1",
@@ -404,18 +387,15 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 
 		expect(managerHubA.getPendingOutbox()).toHaveLength(1);
 
-		// 2. Restart and connect to Hub B (same dataDir, different hubUrl)
 		const managerHubB = new TaskRecoveryManager({
 			dataDir: dir,
 			deviceId: "dev1",
 			hubUrl: "http://hub-b.internal:9000",
 		});
 
-		// Must NOT replay Hub A's outcomes to Hub B
 		expect(managerHubB.getPendingOutbox()).toHaveLength(0);
 		expect(managerHubB.prepareClaims()).toHaveLength(0);
 
-		// Hub B can record its own task independently
 		managerHubB.recordTaskStart({
 			taskId: "task-hub-b",
 			attemptId: "att-b",
@@ -433,7 +413,6 @@ describe("Device Task Recovery Atomic & Immutability Tests", () => {
 		expect(managerHubB.getPendingOutbox()).toHaveLength(1);
 		expect(managerHubB.getPendingOutbox()[0].taskId).toBe("task-hub-b");
 
-		// 3. Reconnect back to Hub A: Hub A's pending outbox is restored without data loss
 		const reloadedHubA = new TaskRecoveryManager({
 			dataDir: dir,
 			deviceId: "dev1",

@@ -46,7 +46,6 @@ const pendingMarker = (id: string, parentId: string | null) =>
 		data: { reason: "manual" },
 	});
 
-/** 按 SDK 语义（last-wins + 无环保护）走 parent 链，最多走 n 步。 */
 function walkChain(raw: string, fromId: string, maxSteps: number): { visited: string[]; cycled: boolean } {
 	const byId = new Map<string, string | null>();
 	for (const line of raw.split("\n")) {
@@ -54,9 +53,7 @@ function walkChain(raw: string, fromId: string, maxSteps: number): { visited: st
 		try {
 			const e = JSON.parse(line) as { id?: unknown; parentId?: unknown };
 			if (typeof e.id === "string") byId.set(e.id, typeof e.parentId === "string" ? e.parentId : null);
-		} catch {
-			/* skip */
-		}
+		} catch {}
 	}
 	const visited: string[] = [];
 	let cur: string | null = fromId;
@@ -66,7 +63,7 @@ function walkChain(raw: string, fromId: string, maxSteps: number): { visited: st
 		visited.push(cur);
 		cur = byId.get(cur) ?? null;
 	}
-	return { visited, cycled: true }; // 步数耗尽仍未到头——视为环
+	return { visited, cycled: true };
 }
 
 describe("makeCompactionMarkerId", () => {
@@ -91,7 +88,6 @@ describe("repairSessionTranscript", () => {
 	it.each([1000, 4000])("健康 %i 节点长链原样返回且 Map 查找次数线性有界", (size) => {
 		const raw =
 			[HEADER, ...Array.from({ length: size }, (_, i) => msg(`n${i}`, i === 0 ? null : `n${i - 1}`))].join("\n") + "\n";
-		// 统计结构操作而非耗时；覆盖整个修复入口，避免恢复逐节点回溯而测试仍通过。
 		const get = vi.spyOn(Map.prototype, "get");
 		let lookups: number;
 		let result: ReturnType<typeof repairSessionTranscript>;
@@ -145,7 +141,6 @@ describe("repairSessionTranscript", () => {
 	it("穷举四节点父图，与旧逐节点回溯的断边和次数一致", () => {
 		const ids = ["a", "b", "c", "d"];
 		const targets = [null, "missing", ...ids];
-		// 包含自环、多独立环、共享祖先、前向引用、悬空引用及路径进入环。
 		for (let code = 0; code < targets.length ** ids.length; code++) {
 			let digits = code;
 			const rows = ids.map((id) => {
@@ -156,7 +151,6 @@ describe("repairSessionTranscript", () => {
 			const raw = [HEADER, ...rows.map((row) => JSON.stringify(row))].join("\n") + "\n";
 			const byId = new Map(rows.map((row) => [row.id, row]));
 			let cycles = 0;
-			// 原实现作为独立语义参照，按物理行序选择重复边的前驱。
 			for (const row of rows) {
 				const seen = new Set([row.id]);
 				let prev = row;
@@ -197,7 +191,6 @@ describe("repairSessionTranscript", () => {
 		expect(r.interrupted).toBe(true);
 		expect(r.rewiredParents).toBe(1);
 		expect(r.text.includes("compaction-pending")).toBe(false);
-		// b 的 parent 从 p1 旁路到 a
 		const lines = r.text.split("\n").filter(Boolean);
 		const b = JSON.parse(lines[2]) as { id: string; parentId: string };
 		expect(b.id).toBe("b");
@@ -212,7 +205,6 @@ describe("repairSessionTranscript", () => {
 		const r = repairSessionTranscript(raw);
 		expect(r.changed).toBe(true);
 		expect(r.renamedIds).toBe(1);
-		// m2 在第二个 done 之后——应指向改名后的第二个 done，而不是首个
 		const lines = r.text.split("\n").filter(Boolean);
 		const dones = lines.map((l) => JSON.parse(l)).filter((e) => e.customType === COMPACTION_DONE_TYPE);
 		expect(dones).toHaveLength(2);
@@ -262,11 +254,6 @@ describe("repairSessionTranscript", () => {
 });
 
 describe("issue #235 原场景", () => {
-	// 复现链：两次压缩留下两个同名 done；第二个 done 的 parent 前指同子树；
-	// 新消息 parentId 记成共享 id 后，last-wins 解析到最后一个 done → 成环。
-	// 文件行序：a → D1（首个 done，parent=x1 悬空旁支）→ x1（parent=DUP→last-wins 到 D2）
-	//        → D2（第二个 done，parent=x1，前指）→ m（新消息，parent=DUP）
-	// 回溯 m → DUP(=D2) → x1 → DUP(=D2) → … 死循环。
 	const DUP = "pi-web-ui-compaction-done";
 	const corrupt = [
 		HEADER,
@@ -293,7 +280,7 @@ describe("issue #235 原场景", () => {
 		const file = join(dir, "2026-09-19T00-00-00-000Z_s1.jsonl");
 		writeFileSync(file, r.text, "utf8");
 		const mgr = SessionManager.open(file);
-		const branch = mgr.getBranch(); // 坏文件到这一步会转死循环
+		const branch = mgr.getBranch();
 		expect(branch.length).toBeGreaterThan(0);
 		expect(mgr.buildContextEntries().length).toBeGreaterThan(0);
 	});
@@ -329,16 +316,13 @@ describe("repairSessionFile", () => {
 		const r = repairSessionFile(file);
 		expect(r?.changed).toBe(true);
 		expect(r?.backup).toBe(`${file}.bak`);
-		expect(readFileSync(`${file}.bak`, "utf8")).toBe("ORIGINAL"); // 旧备份不动
+		expect(readFileSync(`${file}.bak`, "utf8")).toBe("ORIGINAL");
 		expect(readFileSync(file, "utf8").includes("compaction-pending")).toBe(false);
 	});
 
 	it("修剪被陈旧元数据侧枝劫持的转录拓扑（issue #567）", () => {
 		const dir = mkdtempSync(join(tmpdir(), "session-repair-567-"));
 		const file = join(dir, "s567.jsonl");
-		// 构造 issue #567 结构：
-		// m1 -> m2(8775fb27) -> m3 -> m4(c9560bdb，手机主分支终点)
-		// 尾部追加了挂在 m2 上的 custom entry (plan-1 -> plan-2)
 		const custom1 = JSON.stringify({
 			type: "custom",
 			customType: "plannotator",
@@ -364,19 +348,15 @@ describe("repairSessionFile", () => {
 		].join("\n");
 		writeFileSync(file, transcript, "utf8");
 
-		// 在修复前：SDK SessionManager.open 会选 plan-2 为 leaf，分支只有 2 条消息
 		const beforeSm = SessionManager.open(file);
 		expect(beforeSm.getLeafId()).toBe("plan-2");
 		expect(beforeSm.getBranch().filter((e) => e.type === "message")).toHaveLength(2);
 
-		// 运行修复
 		const r = repairSessionFile(file);
 		expect(r?.changed).toBe(true);
 		expect(r?.reorderedBranches).toBe(true);
 		expect(r?.backup).toBe(`${file}.bak`);
 
-		// 在修复后：SDK SessionManager.open 顺序扫描后末尾变成了 c9560bdb，
-		// 且恢复出全部 4 条消息！且 plan-1, plan-2 完好保留在文件中。
 		const afterSm = SessionManager.open(file);
 		expect(afterSm.getLeafId()).toBe("c9560bdb");
 		expect(afterSm.getBranch().filter((e) => e.type === "message")).toHaveLength(4);

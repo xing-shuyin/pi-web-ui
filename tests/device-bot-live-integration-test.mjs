@@ -1,8 +1,3 @@
-// Real Hub -> local device runtime -> executor -> built pi server -> SDK -> local HTTP model.
-// Uses the shared build gate. Run: node --import tsx tests/device-bot-live-integration-test.mjs
-// Regression: a second Bot hello used to reclaim the first disconnected Bot's
-// ClientSession; its stale clientId snapshot aborted the task before SDK inference.
-// PI_BOT_LIVE_READ_FIRST=1 proves the tool path independently of the sequential check.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -106,7 +101,6 @@ function stream(response, delta, reason) {
 try {
 	await Promise.all([mkdir(project), mkdir(coldProject), mkdir(agent), mkdir(data)]);
 	await writeFile(join(project, "probe.txt"), sentinel);
-	// A real disk Skill excluded by this Bot must not cause perpetual SDK reloads.
 	const excludedSkill = join(agent, "skills", "bot-live-excluded");
 	await mkdir(excludedSkill, { recursive: true });
 	await writeFile(
@@ -523,8 +517,6 @@ try {
 		assert(payload.includes("snapshot") || payload.includes("delta"), "Context reaches the model request");
 	}
 	console.log("PASS context snapshots become persisted deltas on resumed turns without repeating history chunks");
-	// Reload from an ordinary local UI after the first executor releases its capability.
-	// A disposed Bot resource loader must never run under a revoked capability.
 	control = new WebSocket(`${localOrigin.replace("http:", "ws:")}/ws`, { origin: localOrigin });
 	control.on("message", (raw) => controlPackets.push(JSON.parse(String(raw))));
 	await new Promise((resolve, reject) => {
@@ -557,7 +549,6 @@ try {
 	assert.doesNotMatch(failure.task.report, /BOT_LIVE_FIXTURE_AUTH_REJECTED|bot-live-known-test-key/);
 	assert.match((await transcripts(temp)).join("\n"), /BOT_LIVE_FIXTURE_AUTH_REJECTED/);
 	console.log("PASS SDK provider rejection reaches failed Hub task");
-	// A model cannot elevate its Bot capability by inventing a forbidden tool call.
 	bot = (await api(localOrigin, "/api/device-center/local-bots", { ...bot, tools: ["bash"] }, 200, false)).value.bot;
 	const denied = await dispatch("denied-tool", "completed");
 	assert.deepEqual(
@@ -573,7 +564,6 @@ try {
 	);
 	console.log("PASS fixture-forced forbidden read cannot escape Bot tool allowlist");
 	assert.doesNotMatch(logs, /Unhandled Promise Rejection|Bot execution capability has been revoked/);
-	// A disabled Bot cannot receive a new task; this must not reach the model.
 	bot = (await api(localOrigin, "/api/device-center/local-bots", { ...bot, enabled: false }, 200, false)).value.bot;
 	await until(
 		async () => !(await api(hubOrigin, "/api/bots")).value.bots.some((item) => item.id === bot.id && item.enabled),
@@ -732,8 +722,6 @@ try {
 		"PASS: SDK Bot question persists, human answer clears attention and resumes the same transcript exactly once",
 	);
 	mode = "plain";
-	// Reuse the ordinary browser connection after all Bot executors released their
-	// capabilities. A cold project must construct its real SDK runtime independently.
 	async function ordinarySetCwd(path) {
 		const start = controlPackets.length;
 		control.send(JSON.stringify({ type: "set_cwd", path }));

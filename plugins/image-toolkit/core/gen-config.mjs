@@ -1,13 +1,8 @@
-/**
- * image-toolkit 生图配置：全局默认值、服务列表归一化、主流服务商预设、AI 配置管理助手。
- */
 import { SHAPE_LIST, isShape } from "./gen-providers.mjs";
 import * as U from "./gen-util.mjs";
 
-/** 密钥在 host.secrets 里的键名。 */
 export const secretKey = (id) => `svc:${U.slugId(id)}`;
 
-/** 全局默认值。 */
 export function defaultConfig() {
 	return {
 		version: 1,
@@ -21,7 +16,6 @@ export function defaultConfig() {
 	};
 }
 
-/** 字符串数组归一（去空、去重、限量）。 */
 function strList(v, max = 50) {
 	const arr = Array.isArray(v) ? v : typeof v === "string" && v.trim() ? v.split(/[\n,]/) : [];
 	const out = [];
@@ -34,7 +28,6 @@ function strList(v, max = 50) {
 	return out;
 }
 
-/** JSON 字段归一：对象原样，字符串按 JSON 解析（视图里的多行输入），坏值回 {}。 */
 function jsonObj(v) {
 	if (v && typeof v === "object" && !Array.isArray(v)) return v;
 	const s = U.str(v);
@@ -47,10 +40,8 @@ function jsonObj(v) {
 	}
 }
 
-/** 形状集合（客户端字段切换用）。 */
 const SHAPE_FIELDS = Object.fromEntries(SHAPE_LIST.map((s) => [s.id, s.fields]));
 
-/** 按形状裁剪专属字段（换形状不留残余）。 */
 function pruneShapeFields(service) {
 	const keep = new Set(SHAPE_FIELDS[service.shape] ?? []);
 	const optional = new Set(["query", "extraHeaders", "extraBody", "sizeMap", "qualityMap"]);
@@ -75,7 +66,6 @@ function pruneShapeFields(service) {
 	return out;
 }
 
-/** 单个服务归一化：id 唯一性由调用方保证。 */
 export function normalizeService(raw, fallbackId = "svc") {
 	const r = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
 	const shape = isShape(r.shape) ? U.str(r.shape) : "openai-images";
@@ -134,7 +124,6 @@ export function normalizeService(raw, fallbackId = "svc") {
 	return pruneShapeFields(svc);
 }
 
-/** 全局配置归一化（服务 id 去重：后者加 -2、-3 后缀，不覆盖）。 */
 export function normalizeConfig(raw) {
 	const r = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
 	const base = defaultConfig();
@@ -163,12 +152,10 @@ export function normalizeConfig(raw) {
 	return cfg;
 }
 
-/** 服务列表（含密钥占位）；打日志/下发前用 maskConfig 洗一遍。 */
 export function enabledServices(cfg) {
 	return (cfg?.services ?? []).filter((s) => s && s.enabled !== false);
 }
 
-/** 找服务：显式指定但已停用 → null；未指定或找不到时回落默认服务，再回落第一个启用项。 */
 export function pickService(cfg, id) {
 	const want = U.slugId(id, "");
 	if (want) {
@@ -180,7 +167,6 @@ export function pickService(cfg, id) {
 	return byDefault ?? list[0] ?? null;
 }
 
-/** 下发给浏览器前洗一遍：密钥换成 hasKey（明文永不出服务端）。 */
 export function maskConfig(cfg, hasKey) {
 	return {
 		...cfg,
@@ -191,9 +177,6 @@ export function maskConfig(cfg, hasKey) {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// 预置服务商模板（主流商业 API + 本地模型 + 兼容端点）
-// ---------------------------------------------------------------------------
 const SIZES_WIDE = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
 const Q = ["1k", "2k", "4k"];
 
@@ -434,7 +417,6 @@ export const PRESETS = [
 	},
 ];
 
-/** 预置模板的深拷贝（避免调用方改到模块级常量）。 */
 export function presetService(presetId, existingIds = []) {
 	const p = PRESETS.find((x) => x.id === presetId) ?? PRESETS[PRESETS.length - 1];
 	const svc = normalizeService(structuredClone(p.service), p.id);
@@ -444,17 +426,12 @@ export function presetService(presetId, existingIds = []) {
 	return { ...svc, id };
 }
 
-/** 在配置中查找服务（精确 id 匹配或 slug 匹配）。 */
 export function findServiceInConfig(cfg, id) {
 	const sid = U.slugId(id, "");
 	if (!sid) return null;
 	return (cfg?.services ?? []).find((s) => s.id === sid) ?? null;
 }
 
-/**
- * 插入或更新服务（纯函数，返回全新的规范化配置及更新/新增的服务 id）。
- * 支持 patch: { id?, preset?, name?, shape?, baseUrl?, models?, defaultModel?, sizes?, defaultSize?, qualities?, defaultQuality?, extraHeaders?, extraBody?, enabled?, setDefault? }
- */
 export function upsertServiceInConfig(cfg, patch = {}) {
 	const current = normalizeConfig(cfg);
 	const rawId = U.slugId(patch.id || patch.serviceId, "");
@@ -506,12 +483,14 @@ export function upsertServiceInConfig(cfg, patch = {}) {
 		defaultService,
 	});
 
-	return { config: nextConfig, service: merged, isNew: !existing, previous: existing ? structuredClone(existing) : null };
+	return {
+		config: nextConfig,
+		service: merged,
+		isNew: !existing,
+		previous: existing ? structuredClone(existing) : null,
+	};
 }
 
-/**
- * 删除指定服务（纯函数，返回全新规范化配置和被删服务的 id，不存在返回 null）。
- */
 export function removeServiceFromConfig(cfg, id) {
 	const current = normalizeConfig(cfg);
 	const sid = U.slugId(id, "");

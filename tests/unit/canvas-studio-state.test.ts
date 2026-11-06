@@ -154,11 +154,11 @@ describe("Studio request and visibility boundaries", () => {
 		const { render, send, host } = mount();
 		render(false);
 		expect(host.querySelectorAll(".canvas-node-card")).toHaveLength(0);
-		render(true); // Activate before socket open: placeholder must never issue a load.
+		render(true);
 		expect(send.mock.calls.filter(([m]) => m.type === "canvas_load")).toHaveLength(0);
 		act(() => connection.load({ id: "default", requestId: "initial" }));
 		render(false);
-		render(true); // Activate again while initial load remains pending.
+		render(true);
 		expect(send.mock.calls.filter(([m]) => m.type === "canvas_load")).toHaveLength(0);
 		render(true, {
 			type: "canvas_graph_state",
@@ -218,7 +218,7 @@ describe("Studio request and visibility boundaries", () => {
 		const latest = send.mock.calls.filter(([m]) => m.type === "canvas_save").at(-1)![0];
 		render(true, { type: "canvas_graph_state", graph: { ...request.graph, rev: 99 }, requestId: request.requestId });
 		render(true, { type: "canvas_error", code: "save_failed", message: "late failure", requestId: request.requestId });
-		save(); // Old reply must leave the new request pending, so no third save is sent.
+		save();
 		expect(send.mock.calls.filter(([m]) => m.type === "canvas_save")).toHaveLength(2);
 		expect(host.textContent).not.toContain("late failure");
 		render(true, { type: "canvas_graph_state", graph: { ...latest.graph, rev: 2 }, requestId: latest.requestId });

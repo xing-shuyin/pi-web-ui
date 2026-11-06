@@ -1,15 +1,3 @@
-/**
- * 插件运行条目协议测试（P3，零 token、自包含）。
- *
- * 覆盖：
- *   1. host.leftPanel.setRunning 登记的条目经 plugin_panel_items 推给已连接客户端（分组 + 条目字段）；
- *   2. 新客户端 attach 时补发全量（不依赖客户端主动拉取）；
- *   3. host.leftPanel.clear() 立即清空本插件分组并广播；清空后可再次 setRunning；
- *   4. 心跳过期：ttlMs 内没有再次调用 → 整组自动清空（ticker 插件 5 秒 TTL、不再心跳）；
- *      而 TTL 更长的 runner 插件不受影响。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-leftpanel-running-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +23,6 @@ function writePlugin(id, manifestName, source) {
 	writeFileSync(join(dir, "index.mjs"), source);
 }
 
-// runner：默认 TTL（60 秒）；命令 /lp-clear、/lp-set 驱动 clear / 再次 setRunning
 writePlugin(
 	"runner",
 	"运行器",
@@ -53,7 +40,6 @@ writePlugin(
 	},
 };`,
 );
-// ticker：5 秒 TTL、激活后不再心跳 → 必须自动过期
 writePlugin(
 	"ticker",
 	"心跳插件",
@@ -82,7 +68,6 @@ function connect(clientId) {
 	});
 }
 
-/** 常驻收集器：记录该连接收到的最新 plugin_panel_items 分组。 */
 function trackPanel(sock) {
 	const state = { groups: null, count: 0 };
 	sock.on("message", (raw) => {
@@ -127,7 +112,6 @@ try {
 	const sock = await connect("leftpanel-running-test");
 	const panel = trackPanel(sock);
 
-	// -- 1. 激活后两个插件的条目都推到客户端 -----------------------------------------
 	const both = await until(
 		() => byId(panel.groups, "runner") && byId(panel.groups, "ticker") && panel.groups,
 		20_000,
@@ -156,7 +140,6 @@ try {
 		JSON.stringify(job2 ?? null),
 	);
 
-	// -- 2. 新客户端 attach 补发全量 ----------------------------------------------------
 	const sock2 = await connect("leftpanel-running-test-2");
 	const panel2 = trackPanel(sock2);
 	const replay = await until(
@@ -166,7 +149,6 @@ try {
 	).catch(() => null);
 	check("新客户端 attach 时补发全量分组（无需主动拉取）", Boolean(replay), `groups=${replay?.length ?? 0}`);
 
-	// -- 3. clear() 立即清空 + 广播；再次 setRunning 恢复 -----------------------------------
 	sock.send(JSON.stringify({ type: "prompt", text: "/lp-clear" }));
 	const cleared = await until(
 		() => panel.groups && !byId(panel.groups, "runner") && panel.groups,
@@ -187,7 +169,6 @@ try {
 		JSON.stringify(r2?.items ?? null),
 	);
 
-	// -- 4. ticker 不心跳 → 5 秒 TTL 过期后整组清空，runner（60 秒 TTL）仍在 ----------------
 	const expired = await until(
 		() => panel.groups && !byId(panel.groups, "ticker") && panel.groups,
 		25_000,

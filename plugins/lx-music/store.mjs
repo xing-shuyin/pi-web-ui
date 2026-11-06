@@ -1,7 +1,3 @@
-/**
- * 洛雪音乐本地存储层 —— 歌单、自定义音源、播放历史
- * 存储路径：`<dataDir>/lx-music/<key>.json`
- */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,7 +27,7 @@ export function createStore(dir) {
 				writeFileSync(tmp, JSON.stringify(val, null, 2), "utf8");
 				renameSync(tmp, file);
 				return true;
-			} catch  {
+			} catch {
 				try {
 					writeFileSync(file, JSON.stringify(val, null, 2), "utf8");
 					return true;

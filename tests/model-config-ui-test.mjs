@@ -1,8 +1,3 @@
-// Model-config modal — "自动获取模型列表" (fetch model list) UI test.
-// Opens 模型管理 → 新增服务商, fills baseUrl/apiKey, clicks the fetch button
-// and verifies the model rows get auto-filled from the mock /models endpoint,
-// plus the inline success/error messages.
-// Usage: npm run build && node model-config-ui-test.mjs
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { chromium } from "playwright-core";
 import { createServer } from "node:http";
@@ -25,7 +20,6 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// Mock OpenAI-compatible /models endpoint with vLLM-style metadata.
 const mock = createServer((req, res) => {
 	res.writeHead(200, { "content-type": "application/json" });
 	res.end(
@@ -71,16 +65,12 @@ const server = spawn(NODE, ["dist/server/index.js"], {
 process.on("exit", () => {
 	try {
 		process.kill(server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 process.on("SIGINT", () => {
 	try {
 		process.kill(server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	process.exit(1);
 });
 
@@ -95,9 +85,7 @@ async function run() {
 		try {
 			const r = await fetch(`${URL}/`);
 			if (r.ok) break;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	const browser = await chromium.launch({
@@ -113,7 +101,6 @@ async function run() {
 			timeout: 30000,
 		});
 
-		// Open the model dropdown (top-bar chip) → 管理模型.
 		const modelChip = page.locator(".chip-model").first();
 		await modelChip.click();
 		const manageBtn = page
@@ -123,19 +110,15 @@ async function run() {
 		await manageBtn.click();
 		await page.waitForSelector(".model-modal", { timeout: 10000 });
 
-		// 新增服务商 → edit form.
 		const addBtn = page.locator(".modal-actions .btn.primary").first();
 		await addBtn.click();
 		await page.waitForSelector(".provider-form", { timeout: 8000 });
 
-		// Fill providerId / baseUrl / apiKey (field order: providerId, name,
-		// apiType, baseUrl, apiKey).
 		const inputs = page.locator(".provider-form .field input");
 		await inputs.nth(0).fill("mock-provider");
 		await inputs.nth(2).fill(`http://127.0.0.1:${MOCK_PORT}`);
 		await inputs.nth(3).fill("sk-test");
 
-		// Click 自动获取模型列表 and wait for the rows + success message.
 		await page.locator(".model-section-actions button", { hasText: "自动获取模型列表" }).click();
 		await page.waitForFunction(
 			() => {
@@ -151,10 +134,6 @@ async function run() {
 		const okText = await page.locator(".fetch-msg.ok").first().textContent();
 		check("success message shown", okText.includes("3"), okText);
 
-		// Metadata from the endpoint lands in the rows:
-		// mock-a → contextWindow 32768 + image support (modalities).
-		// mock-b → contextWindow 128000 + image support + reasoning (extended fields).
-		// mock-c → plain id, defaults.
 		const rowFor = (id) =>
 			page
 				.locator(".model-row")
@@ -177,7 +156,6 @@ async function run() {
 		check("mock-c stays text (no metadata)", inC === "text", `input=${inC}`);
 		check("mock-a reasoning stays unchecked (no metadata)", !reA);
 
-		// Error path: invalid baseUrl → inline error message.
 		await inputs.nth(2).fill("ht!tp://nope");
 		await page.locator(".model-section-actions button", { hasText: "自动获取模型列表" }).click();
 		await page.waitForSelector(".fetch-msg.err", { timeout: 10000 });
@@ -193,8 +171,6 @@ async function run() {
 await run();
 try {
 	process.kill(server.pid, "SIGKILL");
-} catch {
-	/* gone */
-}
+} catch {}
 mock.close();
 process.exit(failures === 0 ? 0 : 1);

@@ -21,7 +21,6 @@ export const COMMON_TEMPLATE_VARIABLES: readonly TemplateVariableDef[] = [
 	{ key: "{{selection}}", label: "{{selection}} 选中文本", desc: "当前编辑器中选中的文本" },
 ];
 
-/** 替换文本中的常用时间/日期等动态变量（如 {{date}}, {{time}}, {{datetime}}）。 */
 export function resolveDynamicTemplateVariables(text: string, now: Date = new Date()): string {
 	if (!text.includes("{{")) return text;
 	const pad = (n: number) => String(n).padStart(2, "0");
@@ -43,7 +42,6 @@ export function resolveDynamicTemplateVariables(text: string, now: Date = new Da
 		.replaceAll("{{year}}", String(year));
 }
 
-/** Store names without the leading slash; matching is case insensitive. */
 export function normalizeTemplateCommand(value: string): string {
 	return value.trim().replace(/^\//, "").toLowerCase();
 }
@@ -65,7 +63,6 @@ export function availableTemplateCommands<T extends CommandTemplate>(
 	});
 }
 
-/** Expand once, preserving multiline arguments and literal replacement characters. */
 export function expandTemplateCommand(
 	text: string,
 	templates: readonly CommandTemplate[],

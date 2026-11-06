@@ -1,12 +1,3 @@
-/**
- * enabled-models.test.ts
- *
- * Verifies issue #646:
- * - Server: adheres to pi's `enabledModels` setting in settings.json (flags models with enabled: true/false).
- * - UI Logic: dropdown filters out excluded models by default, retains currentModelId if out-of-scope,
- *   supports "show all" toggle, and updates provider counts accordingly.
- */
-
 import { describe, expect, it } from "vitest";
 import type { ModelInfo } from "../../server/protocol.js";
 
@@ -25,7 +16,7 @@ describe("enabledModels (Issue #646)", () => {
 				},
 			];
 
-			const getEnabledSet = (): Set<string> | null => null; // 无 enabledModels 配置
+			const getEnabledSet = (): Set<string> | null => null;
 			const enabledSet = getEnabledSet();
 
 			const models: ModelInfo[] = available.map((m) => {
@@ -57,7 +48,6 @@ describe("enabledModels (Issue #646)", () => {
 				},
 			];
 
-			// 模拟 resolveModelScopeWithDiagnostics 解析结果：只匹配了 gpt-4o 和 claude
 			const enabledSet = new Set(["openai/gpt-4o", "anthropic/claude-3-7-sonnet"]);
 
 			const models: ModelInfo[] = available.map((m) => {
@@ -131,7 +121,7 @@ describe("enabledModels (Issue #646)", () => {
 		it("若当前激活的模型处于白名单外，依然在默认视图中予以保留以防当前选中模型丢失", () => {
 			const showAllModels = false;
 			const hasEnabledScope = sampleModels.some((m) => m.enabled === false);
-			const currentModelId = "openai/gpt-4o-mini"; // 在白名单外
+			const currentModelId = "openai/gpt-4o-mini";
 
 			const visibleModels =
 				!hasEnabledScope || showAllModels
@@ -161,7 +151,7 @@ describe("enabledModels (Issue #646)", () => {
 			const counts = new Map<string, number>();
 			for (const m of visibleModels) counts.set(m.provider, (counts.get(m.provider) ?? 0) + 1);
 
-			expect(counts.get("openai")).toBe(1); // 默认模式下 openai 只计 1 个已选模型
+			expect(counts.get("openai")).toBe(1);
 			expect(counts.get("anthropic")).toBe(1);
 		});
 	});

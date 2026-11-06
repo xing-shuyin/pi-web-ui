@@ -6,11 +6,6 @@ import { ClientSession } from "../../server/agent-service.js";
 import { ClientStateStore } from "../../server/client-state.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
-/* 钉住（常驻运行列表）只走两处接线：setConversationPinned 改标记，
- * displaceActive 把标记喂给 shouldRetainActive。决策真值由
- * wait-subscription-scan.test.ts 覆盖；这里只验证「钉住 → 切走不释放」
- * 这条端到端路径真的被接上了。 */
-
 type AnySession = Record<string, (...args: unknown[]) => unknown>;
 
 function fakeConv(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -37,11 +32,9 @@ describe("钉住（pinned）会话", () => {
 		const conv = fakeConv();
 		const cs = fakeClientSession({ conv, convs: new Map([["c1", conv]]) });
 
-		// 未钉住：全部保留判据都不命中 → 返回待移除对象。
 		const displaced = priv("displaceActive").call(cs);
 		expect(displaced).toBe(conv);
 
-		// 钉住后同样的空闲态 → 保留，且 listed 被置位（左栏立刻可见）。
 		conv.pinned = true as boolean;
 		expect(priv("displaceActive").call(cs)).toBeNull();
 		expect(conv.listed).toBe(true);
@@ -72,7 +65,6 @@ describe("钉住（pinned）会话", () => {
 		expect(conv.listed).toBe(true);
 		expect(emitCalls).toBeGreaterThanOrEqual(1);
 
-		// 取消钉住：清掉标记，但不移出（下次自然置换时按常规规则处理）。
 		await (ClientSession.prototype as unknown as AnySession).setConversationPinned.call(cs, "c1", false);
 		expect(conv.pinned).toBeUndefined();
 		expect((cs as unknown as { convs: Map<string, unknown> }).convs.get("c1")).toBe(conv);
@@ -102,7 +94,6 @@ describe("钉住（pinned）会话", () => {
 		expect(sub.pinned).toBeUndefined();
 		expect(sub.listed).toBe(false);
 
-		// 已是该状态时不改动、只重推一次列表。
 		const pinned = fakeConv({ pinned: true, listed: true });
 		const emitSpy = vi.fn();
 		const cs3 = {
@@ -125,27 +116,22 @@ describe("钉住（pinned）会话", () => {
 		expect(store.getPinnedSessions(cwd)).toEqual([]);
 		expect(store.isSessionPinned(cwd, sess1)).toBe(false);
 
-		// 钉住 session 1
 		store.setSessionPinned(cwd, sess1, true);
 		expect(store.isSessionPinned(cwd, sess1)).toBe(true);
 		expect(store.isSessionPinned(cwd, sess2)).toBe(false);
 		expect(store.getPinnedSessions(cwd).length).toBe(1);
 
-		// 钉住 session 2
 		store.setSessionPinned(cwd, sess2, true);
 		expect(store.getPinnedSessions(cwd).length).toBe(2);
 
-		// 重新加载（跨实例模拟服务重启）
 		const store2 = new ClientStateStore(join(dir, "client-state.json"));
 		expect(store2.isSessionPinned(cwd, sess1)).toBe(true);
 		expect(store2.isSessionPinned(cwd, sess2)).toBe(true);
 
-		// 取消钉住 session 1
 		store2.setSessionPinned(cwd, sess1, false);
 		expect(store2.isSessionPinned(cwd, sess1)).toBe(false);
 		expect(store2.isSessionPinned(cwd, sess2)).toBe(true);
 
-		// 会话文件删除时自动清理
 		store2.cleanPinnedSession(sess2);
 		expect(store2.isSessionPinned(cwd, sess2)).toBe(false);
 		expect(store2.getPinnedSessions(cwd)).toEqual([]);

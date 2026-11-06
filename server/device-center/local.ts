@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createMobileNotificationForwarder } from "./mobile-notification-forwarder.js";
 import { getLocalBotOptions, type BotCatalogSources } from "./bot-catalog.js";
 import { applyLocalBotPreset } from "./bot-presets.js";
 import { installHubSetupRoutes } from "./hub-setup.js";
@@ -13,6 +14,7 @@ import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSetti
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
+import type { DeviceLanAccess } from "./device-lan-access.js";
 import { INTEGRATION_HTTP_TIMEOUT_MS, VERIFICATION_HTTP_TIMEOUT_MS } from "./verification-limits.js";
 
 export interface LocalDeviceConfig {
@@ -41,8 +43,8 @@ interface Options {
 	connect(config: LocalDeviceConfig, syncBots: () => Promise<void>): Connection | Promise<Connection>;
 	bots?: LocalBotRegistry;
 	botCatalog?: BotCatalogSources;
-	/** Legitimate external hostnames (PI_WEB_ALLOW_HOSTS) — reverse-proxy deployments. */
 	allowHosts?: readonly string[];
+	lanAccess?: DeviceLanAccess;
 }
 
 /** Hub enrollment accepts HTTP(S) origins, including public IP addresses. */
@@ -77,6 +79,63 @@ export function scrubHubMessage(message: string, secrets: (string | undefined)[]
 			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token) ? token : "[REDACTED]",
 		);
 	return safe.trim().slice(0, 300);
+}
+
+export async function requestDeviceHub(
+	config: LocalDeviceConfig,
+	path: string,
+	method = "GET",
+	body?: unknown,
+	options: { signal?: AbortSignal; user?: boolean } = {},
+): Promise<unknown> {
+	const captured = { ...config };
+	const credential = options.user ? captured.uiCredential : captured.credential;
+	if (!credential)
+		throw Object.assign(new Error("Pair this computer again to enable group administration"), { status: 409 });
+	const response = await fetch(`${captured.hubUrl}${path}`, {
+		method,
+		redirect: "error",
+		signal: AbortSignal.any([AbortSignal.timeout(15000), ...(options.signal ? [options.signal] : [])]),
+		headers: {
+			"Content-Type": "application/json",
+			"X-Device-Id": captured.deviceId,
+			Authorization: `Bearer ${credential}`,
+		},
+		...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+	});
+	if (!response.body) throw new Error("Empty Hub response");
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let bytes = 0;
+	try {
+		for (;;) {
+			const chunk = await reader.read();
+			if (chunk.done) break;
+			bytes += chunk.value.byteLength;
+			if (bytes > 256 * 1024) throw new Error("Hub response exceeds limit");
+			chunks.push(chunk.value);
+		}
+	} finally {
+		await reader.cancel();
+	}
+	let data: unknown;
+	try {
+		data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+	} catch {
+		throw new Error("Invalid Hub response");
+	}
+	if (!response.ok) {
+		const message = data && typeof data === "object" ? Reflect.get(data, "error") : undefined;
+		throw Object.assign(
+			new Error(
+				typeof message === "string"
+					? scrubHubMessage(message, [captured.credential, captured.uiCredential])
+					: "Hub rejected request",
+			),
+			{ status: response.status === 401 ? 409 : response.status },
+		);
+	}
+	return data;
 }
 
 /**
@@ -178,6 +237,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		}
 	}
 	async function reconnect() {
+		options.lanAccess?.reset();
 		await localStarting;
 		await connection?.close();
 		connection = undefined;
@@ -221,7 +281,6 @@ export async function installLocalDeviceCenter(options: Options) {
 		if (activeConfig() !== captured || closed) throw new Error("Device binding changed during Bot synchronization");
 		if (typeof accountId === "string" && accountId) {
 			if (captured.accountId && captured.accountId !== accountId) throw new Error("Device account binding changed");
-			// Legacy bindings are refreshed each connection; do not race pairing's serialized config writes.
 			if (!captured.accountId) captured.accountId = accountId;
 		}
 	}
@@ -273,7 +332,7 @@ export async function installLocalDeviceCenter(options: Options) {
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
-	// Hostnames the operator declared as legitimate entry points (reverse proxy);
+	const mobileNotifications = createMobileNotificationForwarder({ dataDir: options.dataDir, getBinding: activeConfig });
 	// entries are normalised exactly like the global guard does.
 	const allowHosts = new Set((options.allowHosts ?? []).map((entry) => hostWithoutPort(String(entry))).filter(Boolean));
 	const guard = localOnly(allowHosts);
@@ -301,7 +360,6 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.status(502).json({ error: err?.message ?? "Failed to forward webhook to hub" });
 		}
 	});
-	// Existing bookmarks now enter the native application view.
 	options.app.get("/devices", guard, (_req, res) => {
 		res.redirect("./?view=devices");
 	});
@@ -317,47 +375,34 @@ export async function installLocalDeviceCenter(options: Options) {
 			connected: connection?.isConnected?.() ?? false,
 		});
 	});
-	options.app.post("/api/device-center/upgrade-hub", async (_req, res) => {
+	async function forwardUpgrade(req: Request, res: Response, statusOnly: boolean) {
 		const captured = activeConfig();
 		if (!captured) return res.status(400).json({ error: "Device hub not paired" });
+		if (!captured.uiCredential)
+			return res.status(409).json({ error: "Re-pair this device to enable Hub administration" });
+		const id = req.body?.id;
+		if (statusOnly && (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)))
+			return res.status(400).json({ error: "Invalid upgrade job ID" });
 		try {
-			const hubUrl = captured.hubUrl;
-			const forwardUrl = `${hubUrl}/api/system/upgrade`;
-			const response = await fetch(forwardUrl, {
-				method: "POST",
+			const suffix = statusOnly ? `?id=${encodeURIComponent(id)}` : "";
+			const response = await fetch(`${captured.hubUrl}/api/device-user/system/upgrade${suffix}`, {
+				method: statusOnly ? "GET" : "POST",
 				headers: {
 					"Content-Type": "application/json",
 					"x-device-id": captured.deviceId,
-					authorization: `Bearer ${captured.credential}`,
+					authorization: `Bearer ${captured.uiCredential}`,
 				},
-				signal: AbortSignal.timeout(15_000),
+				signal: AbortSignal.timeout(statusOnly ? 10_000 : 40_000),
 			});
-			if (!response.ok) {
-				const errData = (await response.json().catch(() => ({}))) as { error?: string };
-				throw new Error(errData.error || `Hub returned HTTP ${response.status}`);
-			}
-			const deadline = Date.now() + 60_000;
-			let healthy = false;
-			await new Promise((r) => setTimeout(r, 1500));
-			while (Date.now() < deadline) {
-				try {
-					const probe = await fetch(`${hubUrl}/health`, { signal: AbortSignal.timeout(2000) });
-					if (probe.ok) {
-						const data = (await probe.json().catch(() => ({}))) as { status?: string };
-						if (data && data.status === "ok") {
-							healthy = true;
-							break;
-						}
-					}
-				} catch {}
-				await new Promise((r) => setTimeout(r, 1500));
-			}
-			await reconnect().catch(() => {});
-			res.json({ ok: true, healthy, message: healthy ? "Hub updated successfully" : "Hub update triggered" });
-		} catch (error: any) {
-			res.status(500).json({ error: error?.message || "Failed to upgrade hub" });
+			const data = await response.json().catch(() => ({ error: "Hub returned an invalid upgrade response" }));
+			res.setHeader("Cache-Control", "no-store");
+			res.status(response.status).json(data);
+		} catch (error) {
+			res.status(503).json({ error: error instanceof Error ? error.message : "Hub upgrade service unavailable" });
 		}
-	});
+	}
+	options.app.post("/api/device-center/upgrade-hub", (req, res) => forwardUpgrade(req, res, false));
+	options.app.post("/api/device-center/upgrade-hub-status", (req, res) => forwardUpgrade(req, res, true));
 	options.app.get("/api/device-center/execution-settings", (_req, res) => {
 		try {
 			const settings = loadExecutionSettings(options.dataDir);
@@ -387,7 +432,6 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.status(500).json({ error: (error as Error).message });
 		}
 	});
-	// Account chat discovery is safe to relay; local settings remain device-only.
 	options.app.get("/api/device-center/chat-status", async (_req, res) => {
 		try {
 			await serialize(ensureLocalHub);
@@ -469,6 +513,154 @@ export async function installLocalDeviceCenter(options: Options) {
 			res.end();
 		}
 	});
+	async function requestWorkItems(
+		path: string,
+		method = "GET",
+		body?: unknown,
+		signal?: AbortSignal,
+		binding?: { config: LocalDeviceConfig; generation: number },
+	): Promise<any> {
+		await serialize(ensureLocalHub);
+		if (binding && (activeConfig() !== binding.config || generation !== binding.generation))
+			throw Object.assign(new Error("Device binding changed; refresh"), { status: 409 });
+		const captured = activeConfig();
+		const capturedGeneration = generation;
+		if (!captured || closed) throw Object.assign(new Error("Pair this computer first"), { status: 409 });
+		if (inFlight >= 8) throw Object.assign(new Error("Device center busy"), { status: 429 });
+		const controller = new AbortController();
+		activeRequests.add(controller);
+		inFlight++;
+		try {
+			const data = await requestDeviceHub(captured, `/api/device-user/${path}`, method, body, {
+				user: true,
+				signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+			});
+			if (closed || activeConfig() !== captured || generation !== capturedGeneration)
+				throw Object.assign(new Error("Device binding changed; refresh"), { status: 409 });
+			return data;
+		} finally {
+			inFlight--;
+			activeRequests.delete(controller);
+		}
+	}
+	const flattenItem = (item: any) =>
+		item
+			? {
+					...item,
+					...item.source,
+					authorId: item.author?.id,
+					authorized: item.authorization?.mode === "auto",
+					manualAuthorized: item.authorization?.mode === "auto" && item.authorization?.origin === "manual",
+				}
+			: undefined;
+	async function workItems(method: string, args: Record<string, unknown> = {}): Promise<unknown> {
+		await serialize(ensureLocalHub);
+		const config = activeConfig();
+		if (!config || closed) throw Object.assign(new Error("Pair this computer first"), { status: 409 });
+		const binding = { config, generation };
+		const request = (path: string, method = "GET", body?: unknown) =>
+			requestWorkItems(path, method, body, undefined, binding);
+		const id = () => {
+			if (typeof args.id !== "string" || !args.id) throw new Error("Work item id required");
+			return encodeURIComponent(args.id);
+		};
+		switch (method) {
+			case "rooms": {
+				const data = await request("rooms");
+				return data.rooms ?? data;
+			}
+			case "ingest": {
+				const data = await request("work-items/ingest", "POST", args);
+				return flattenItem(data.workItem ?? data.item ?? data);
+			}
+			case "list": {
+				const query = typeof args.roomId === "string" ? `?roomId=${encodeURIComponent(args.roomId)}` : "";
+				const data = await request(`work-items${query}`);
+				return (data.workItems ?? data.items ?? data).map(flattenItem);
+			}
+			case "get": {
+				try {
+					const data = await request(`work-items/${id()}`);
+					return flattenItem(data.workItem ?? data.item ?? data);
+				} catch (error) {
+					if ((error as { status?: number }).status === 404) return undefined;
+					throw error;
+				}
+			}
+			case "update": {
+				const current = await request(`work-items/${id()}`);
+				const item = flattenItem(current.workItem ?? current.item ?? current);
+				if (!item) throw Object.assign(new Error("Work item not found"), { status: 404 });
+				const data = await request(`rooms/${encodeURIComponent(item.roomId)}/work-items/${id()}`, "PATCH", {
+					...(args.patch as Record<string, unknown>),
+					revision: item.revision,
+				});
+				return flattenItem(data.workItem ?? data.item ?? data);
+			}
+			case "claimDelivery": {
+				const deliveries = [];
+				const limit = Math.max(1, Math.min(20, Number(args.limit) || 1));
+				for (let i = 0; i < limit; i++) {
+					const data = await request("work-item-deliveries/claim", "POST", { provider: args.provider });
+					if (!data.delivery) break;
+					deliveries.push({ ...data.delivery, ...data.delivery.source });
+				}
+				return deliveries;
+			}
+			case "completeDelivery":
+			case "failDelivery": {
+				const body =
+					method === "completeDelivery"
+						? { leaseToken: args.leaseToken, externalId: args.externalId }
+						: { leaseToken: args.leaseToken, error: args.error };
+				await request(
+					`work-item-deliveries/${id()}/${method === "completeDelivery" ? "complete" : "fail"}`,
+					"POST",
+					body,
+				);
+				return;
+			}
+			default:
+				throw new Error("Unknown work item operation");
+		}
+	}
+	for (const [method, path] of [
+		["get", "router-models"],
+		["get", "rooms/:id/work-items"],
+		["patch", "rooms/:id/work-items/:workItemId"],
+		["post", "rooms/:id/router/jobs/:jobId/retry"],
+	] as const) {
+		options.app[method](`/api/device-center/${path}`, async (req, res) => {
+			const controller = new AbortController();
+			const cancel = () => {
+				if (!res.writableEnded) controller.abort();
+			};
+			req.once("aborted", cancel);
+			res.once("close", cancel);
+			try {
+				const suffix = path.replace(/:([A-Za-z]+)/g, (_match, key: string) =>
+					encodeURIComponent(String((req.params as Record<string, string>)[key])),
+				);
+				const queryIndex = req.url.indexOf("?");
+				const query = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
+				const data = await requestWorkItems(
+					`${suffix}${query}`,
+					method.toUpperCase(),
+					method === "patch" || method === "post" ? req.body : undefined,
+					controller.signal,
+				);
+				res.json(data);
+			} catch (error) {
+				if (!res.headersSent)
+					res
+						.status([400, 403, 404, 409, 429].includes((error as any).status) ? (error as any).status : 502)
+						.json({ error: (error as Error).message });
+			} finally {
+				req.off("aborted", cancel);
+				res.off("close", cancel);
+			}
+		});
+	}
 	function userRoute(method: "get" | "post", path: string, fields: string[]) {
 		const supportsContract = method === "post" && fields.includes("contract");
 		options.app[method](`/api/device-center/${path}`, async (req, res) => {
@@ -496,6 +688,13 @@ export async function installLocalDeviceCenter(options: Options) {
 						(supportsContract && body.contract !== undefined ? MAX_CONTRACT_REQUEST_BYTES : 32768))
 			)
 				return res.status(400).json({ code: "INVALID_BODY", error: "Invalid group request" });
+			if (path === "devices/:id/open" && body.preferLan === true) {
+				try {
+					body.preferLan = new URL(String(req.headers.origin)).host === req.headers.host;
+				} catch {
+					body.preferLan = false;
+				}
+			}
 			const controller = new AbortController();
 			activeRequests.add(controller);
 			inFlight++;
@@ -566,14 +765,62 @@ export async function installLocalDeviceCenter(options: Options) {
 					const status = [400, 401, 403, 404, 409, 429].includes(response.status) ? response.status : 502;
 					return res.status(status === 401 ? 409 : status).json({
 						code: status === 401 ? "REPAIR_REQUIRED" : status === 403 ? "HUB_FORBIDDEN" : "HUB_REJECTED",
-						// Forward the hub's own diagnosis: a fixed "rejected" string erases the real cause
-						// ("Task missing", "Plan conversation unavailable", …) and makes the UI undebuggable.
 						error: status === 401 ? "Pair this computer again" : (hubMessage ?? "Hub rejected group request"),
 						hubStatus: response.status,
 						...(hubCode ? { hubCode } : {}),
 					});
 				}
 				const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+				if (path === "devices/:id/open") {
+					const grant = data.deviceLan;
+					delete data.deviceLan;
+					if (req.body?.preferLan === true) {
+						data.transport = "hub";
+						const id = String((req.params as Record<string, string>).id);
+						const valid = () => !closed && activeConfig() === captured && generation === capturedGeneration;
+						const open = (preferLan: boolean) =>
+							requestDeviceHub(
+								captured,
+								`/api/device-user/devices/${encodeURIComponent(id)}/open`,
+								"POST",
+								{ preferLan },
+								{ user: true },
+							);
+						const direct =
+							grant &&
+							(await options.lanAccess?.open(grant, {
+								deviceId: id,
+								hubUrl: captured.hubUrl,
+								origin: String(req.headers.origin),
+								basePath: req.body?.basePath,
+								desktop: req.body?.desktop === true,
+								valid,
+								renew: async () => ((await open(true)) as { deviceLan?: unknown }).deviceLan,
+								fallback: async () => {
+									const result = (await open(false)) as { url?: unknown };
+									if (!valid() || typeof result.url !== "string") throw new Error("Device binding changed");
+									const url = new URL(result.url);
+									const hub = new URL(captured.hubUrl);
+									if (
+										!["http:", "https:"].includes(url.protocol) ||
+										url.username ||
+										Reflect.get(url, "pass" + "word") ||
+										(url.hostname !== hub.hostname && !url.hostname.endsWith("." + hub.hostname)) ||
+										![`/device/${id}/__open`, "/__device/open"].includes(url.pathname)
+									)
+										throw new Error("Invalid Hub ticket");
+									if (req.body?.desktop === true) url.searchParams.set("next", "/desktop");
+									return url.href;
+								},
+							}));
+						if (!valid())
+							return res.status(409).json({ code: "DEVICE_CHANGED", error: "Device binding changed; refresh" });
+						if (direct) {
+							data.fallbackOrigin = new URL(data.url).origin;
+							Object.assign(data, direct);
+						}
+					}
+				}
 				if (
 					path === "devices/:id/remark" &&
 					String((req.params as Record<string, string>).id) === captured.deviceId &&
@@ -752,10 +999,11 @@ export async function installLocalDeviceCenter(options: Options) {
 	options.app.post("/api/device-center/local-bots/:id/delete", botMutation(true));
 	userRoute("get", "bots", []);
 	userRoute("get", "devices", []);
-	userRoute("post", "devices/:id/open", []);
+	userRoute("post", "devices/:id/open", ["preferLan", "desktop", "basePath"]);
 	userRoute("post", "devices/:id/remark", ["remark"]);
 	userRoute("get", "rooms", []);
 	userRoute("get", "rooms/:id", []);
+	userRoute("post", "rooms/:id", ["router", "routerRevision"]);
 	userRoute("post", "rooms/:id/canvas", ["binding"]);
 	userRoute("get", "rooms/:id/tasks/:taskId", []);
 	userRoute("get", "rooms/:id/tasks/:taskId/journal", []);
@@ -1003,6 +1251,8 @@ export async function installLocalDeviceCenter(options: Options) {
 	});
 	return {
 		syncBots,
+		workItems,
+		publishMobileNotification: mobileNotifications.enqueue,
 		getConfig() {
 			const current = activeConfig();
 			if (!current) return undefined;
@@ -1010,6 +1260,8 @@ export async function installLocalDeviceCenter(options: Options) {
 		},
 		async close() {
 			closed = true;
+			await mobileNotifications.dispose();
+			options.lanAccess?.close();
 			await hubSetup.close();
 			generation++;
 			for (const controller of activeRequests) controller.abort();

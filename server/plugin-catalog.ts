@@ -1,34 +1,16 @@
-/**
- * 插件市场 / 插件列表 —— 可一键安装的插件清单。
- *
- * 两层来源（合并后经协议 plugin_catalog 推给前端）：
- *   - builtin : <pkgRoot>/plugins/catalog.json（随包发布，官方维护列表；
- *               插件作者把新插件加进来 = 往这个文件加一条 + PR）
- *   - custom  : <dataDir>/plugin-catalog.json（用户在设置面板「添加到列表」，
- *               任何第三方插件都能随时填进列表；仅 custom 条目可经 UI 移除）
- *
- * 条目结构见 protocol.UiPluginCatalogEntry。`id` 是安装落盘目录名
- * （<dataDir>/plugins/<id>）；安装固定用 `pi-web-ui install <source>
- * --name <id>` 保证目录名 == 列表 id，前端据此判断已装/未装。
- *
- * 设计上服务端不做网络探测（不拉 manifest）：名称/简介/图标由条目本身携带
- * （作者填），id 由来源推导或作者显式指定 —— 保持离线可用、可单测。
- */
 import { existsSync, readFileSync } from "node:fs";
+import { isBuiltinModule } from "./builtin-modules.js";
 import { writeJsonAtomicSync } from "./atomic-file.js";
 import type { UiPluginCatalogEntry } from "./protocol.js";
 import { normalizeIconSvg } from "./icon-svg.js";
 import { pick, type ServerLang } from "./i18n.js";
 
-/** 合法插件 id（与 server/plugins.ts 的 ID_RE 一致，防路径穿越）。 */
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-/** source 校验：owner/repo 或 owner/repo/子路径[#ref]。宽松校验，实际解析
- *  交给 CLI（pi-web-ui install）。只接受远程 GitHub 源，拒绝本地路径。 */
 function isValidSource(source: string): boolean {
 	if (!source || source.length > 300) return false;
 	if (source.startsWith("/") || /^[A-Za-z]:[\\/]/.test(source)) return false;
-	if (/^https?:\/\//.test(source)) return true; // 完整 URL（install 也支持）
+	if (/^https?:\/\//.test(source)) return true;
 	const spec = source.split("#")[0]!.replace(/\/+$/, "");
 	const segs = spec.split("/").filter(Boolean);
 	if (segs.length < 2) return false;
@@ -36,12 +18,8 @@ function isValidSource(source: string): boolean {
 	return true;
 }
 
-/** 导出给服务端其它模块（后台作业的安装源校验、目录同步），单一事实源。 */
 export { isValidSource };
 
-/** 推导默认 id：与 CLI（bin/pi-web-ui.mjs）的规则对齐 —— 子路径末段 > 仓库名
- *  > 来源末段；非法字符替换为 -，两端去 -；空则 "plugin"。显式 raw（含合法
- *  id 校验）优先。返回的 id 不保证通过 ID_RE（Cyrillic 等），调用方再校验。 */
 export function deriveCatalogId(raw: string | undefined, source: string): string {
 	if (raw && ID_RE.test(raw)) return raw;
 	const spec = source.split("#")[0]!.replace(/\/+$/, "");
@@ -63,7 +41,6 @@ function atomicWrite(path: string, data: unknown): void {
 	writeJsonAtomicSync(path, data);
 }
 
-/** 把任意对象规范化为合法条目；非法则返回 null。 */
 function toEntry(
 	raw: Record<string, unknown>,
 	originOrBuiltin: "builtin" | "community" | "custom" | boolean,
@@ -74,7 +51,7 @@ function toEntry(
 	const source = typeof raw.source === "string" ? raw.source.trim() : "";
 	if (!isValidSource(source)) return null;
 	const id = deriveCatalogId(typeof raw.id === "string" ? raw.id.trim() : undefined, source);
-	if (!ID_RE.test(id)) return null;
+	if (!ID_RE.test(id) || isBuiltinModule(id.toLowerCase())) return null;
 	const name = typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : id;
 	const nameEn = typeof raw.nameEn === "string" && raw.nameEn.trim() ? raw.nameEn.trim() : undefined;
 	const description =
@@ -99,18 +76,11 @@ function toEntry(
 	};
 }
 
-/** 读合并后的目录：
- *   1. builtin : 项目随包内置核心插件（不可移除）；
- *   2. community : 官方社区生态清单（pi-web-ui-plugins 自动化审核构建，不可移除）；
- *   3. custom : 用户在设置面板手动填写的自定义条目（同 id 可覆盖 builtin/community，支持单独移除）。
- *  custom 覆盖 builtin 时强制打 `overridesBuiltin: true` 标记（builtin 同时为
- *  false）：显示字段来自用户可写来源，前端据此把它标识为「自定义覆盖」。 */
 export function readCatalog(builtinPath: string, customPath: string, communityPath?: string): UiPluginCatalogEntry[] {
 	const out: UiPluginCatalogEntry[] = [];
 	const seenBuiltin = new Set<string>();
 	const seen = new Set<string>();
 
-	// 1. 内置核心插件
 	if (existsSync(builtinPath)) {
 		const raw = readJsonSafe<unknown>(builtinPath, []);
 		if (Array.isArray(raw)) {
@@ -125,7 +95,6 @@ export function readCatalog(builtinPath: string, customPath: string, communityPa
 		}
 	}
 
-	// 2. 官方社区生态插件（若存在）
 	if (communityPath && existsSync(communityPath)) {
 		const rawCommunity = readJsonSafe<unknown>(communityPath, []);
 		const list = Array.isArray(rawCommunity)
@@ -138,7 +107,6 @@ export function readCatalog(builtinPath: string, customPath: string, communityPa
 		for (const it of list) {
 			const e = it && typeof it === "object" ? toEntry(it as Record<string, unknown>, "community") : null;
 			if (!e) continue;
-			// 内置插件绝对优先，不被社区同名条目替换
 			if (seenBuiltin.has(e.id)) continue;
 			const idx = out.findIndex((x) => x.id === e.id);
 			if (idx >= 0) {
@@ -150,7 +118,6 @@ export function readCatalog(builtinPath: string, customPath: string, communityPa
 		}
 	}
 
-	// 3. 用户在设置面板手动添加的自定义条目
 	const rawCustom = readJsonSafe<{ entries?: unknown }>(customPath, {});
 	const list =
 		rawCustom && typeof rawCustom === "object" && Array.isArray((rawCustom as { entries?: unknown[] }).entries)
@@ -161,7 +128,6 @@ export function readCatalog(builtinPath: string, customPath: string, communityPa
 		if (!e) continue;
 		const idx = out.findIndex((x) => x.id === e.id);
 		if (idx >= 0) {
-			// 覆盖了同名 builtin/community 条目：强制带标识（不信任 custom 文件里的任何自标字段）。
 			out[idx] = { ...e, builtin: false, origin: "custom", overridesBuiltin: seenBuiltin.has(e.id) };
 		} else {
 			out.push(e);
@@ -180,12 +146,9 @@ export interface CatalogAddInput {
 	iconSvg?: string;
 }
 
-/** 把用户填的条目追加进 custom 文件（同 id 覆盖旧条目）；返回规范化后的条目。
- *  非法来源/条目抛 Error。 */
 export function addCustomEntry(
 	customPath: string,
 	input: CatalogAddInput,
-	/** 面向用户的抛错文案语言（默认英文）；调用方可传 () => getLang() 实现跟随。 */
 	lang?: () => ServerLang,
 ): UiPluginCatalogEntry {
 	const l = lang?.() ?? "en";
@@ -211,6 +174,14 @@ export function addCustomEntry(
 				{ id },
 			),
 		);
+	if (isBuiltinModule(id.toLowerCase()))
+		throw new Error(
+			pick(
+				l,
+				`内置模块 "${id}" 由宿主管理，不能添加为插件`,
+				`Built-in module "${id}" is managed by the host and cannot be added as a plugin`,
+			),
+		);
 	const raw = readJsonSafe<{ entries?: unknown[] }>(customPath, {});
 	const entries = Array.isArray(raw.entries) ? (raw.entries as unknown[]) : [];
 	const next = entries.filter((x) => !(x && typeof x === "object" && (x as Record<string, unknown>).id === id));
@@ -228,7 +199,6 @@ export function addCustomEntry(
 	return toEntry(next[next.length - 1] as Record<string, unknown>, false)!;
 }
 
-/** 移除用户添加的条目（builtin 由文件自身控制，不可经此删除）；返回是否删掉。 */
 export function removeCustomEntry(customPath: string, id: string): boolean {
 	if (!ID_RE.test(id)) return false;
 	const raw = readJsonSafe<{ entries?: unknown[] }>(customPath, {});
@@ -239,25 +209,11 @@ export function removeCustomEntry(customPath: string, id: string): boolean {
 	return true;
 }
 
-/* -------------------------------------------------------------------------- */
-/* 目录同步（issue #148：host.reloadCatalog —— 第三方插件同步远端目录）        */
-/* -------------------------------------------------------------------------- */
-
-/** 同步文档的规范化结果：合法条目 + 被丢掉的条目数。 */
 export interface CatalogSyncPayload {
 	entries: UiPluginCatalogEntry[];
-	/** 因缺 source / id 非法 / 形状不对而被丢弃的条目数（>0 时前端提示）。 */
 	skipped: number;
 }
 
-/**
- * 把同步文档规范化为自定义条目列表（纯函数，不碰磁盘）。
- *
- * 文档形状：JSON 数组，或 `{ entries: [...] }`（与本文件自身的磁盘格式同形）。
- * 每个条目走 `toEntry` —— 与市场“添加到列表”**同一套校验**（id 字符集、source 必须
- * 是远程 owner/repo[/subdir][#ref]、字段 trimmed + 长度上限），非法条目丢弃并计数；
- * 整份文档形状不对则直接报错，由调用方原样回给调用者（绝不写盘）。
- */
 export function normalizeSyncPayload(raw: unknown, lang?: () => ServerLang): CatalogSyncPayload | { error: string } {
 	const l = lang?.() ?? "en";
 	const list = Array.isArray(raw)
@@ -284,16 +240,6 @@ export function normalizeSyncPayload(raw: unknown, lang?: () => ServerLang): Cat
 	return { entries, skipped };
 }
 
-/**
- * 原子写入用户自定义列表。
- *
- * `replace=true` 整体替换（文档即真相）；`false`（默认）按 id upsert：文档里出现的
- * id 覆盖同名旧条目，文档没提的旧条目**保留** —— 这样插件只推送增量也能用。
- * 写入内容只包含本文件认识的白名单字段（id/source/name/description/descriptionEn/
- * icon/homepage），远端文档里塞的其他键不会落到磁盘上。
- *
- * 返回写盘后的自定义条目数（合并列表由 PluginManager.catalog() 重读得出）。
- */
 export function writeCustomCatalog(customPath: string, incoming: UiPluginCatalogEntry[], replace: boolean): number {
 	const byId = new Map<string, UiPluginCatalogEntry>();
 	if (!replace) {
@@ -304,7 +250,9 @@ export function writeCustomCatalog(customPath: string, incoming: UiPluginCatalog
 			if (e) byId.set(e.id, e);
 		}
 	}
-	for (const e of incoming) byId.set(e.id, e);
+	for (const e of incoming) {
+		if (!isBuiltinModule(e.id.toLowerCase())) byId.set(e.id, e);
+	}
 	const entries = [...byId.values()].map((e) => ({
 		id: e.id,
 		source: e.source,
@@ -320,21 +268,20 @@ export function writeCustomCatalog(customPath: string, incoming: UiPluginCatalog
 	return entries.length;
 }
 
-/**
- * 原子写入官方社区生态清单（由远端构建的 catalog.json 同步而来，全量替换）。
- */
 export function writeCommunityCatalog(communityPath: string, incoming: UiPluginCatalogEntry[]): number {
-	const entries = incoming.map((e) => ({
-		id: e.id,
-		source: e.source,
-		name: e.name,
-		...(e.nameEn ? { nameEn: e.nameEn } : {}),
-		...(e.description ? { description: e.description } : {}),
-		...(e.descriptionEn ? { descriptionEn: e.descriptionEn } : {}),
-		...(e.icon ? { icon: e.icon } : {}),
-		...(e.iconSvg ? { iconSvg: e.iconSvg } : {}),
-		...(e.homepage ? { homepage: e.homepage } : {}),
-	}));
+	const entries = incoming
+		.filter((e) => !isBuiltinModule(e.id.toLowerCase()))
+		.map((e) => ({
+			id: e.id,
+			source: e.source,
+			name: e.name,
+			...(e.nameEn ? { nameEn: e.nameEn } : {}),
+			...(e.description ? { description: e.description } : {}),
+			...(e.descriptionEn ? { descriptionEn: e.descriptionEn } : {}),
+			...(e.icon ? { icon: e.icon } : {}),
+			...(e.iconSvg ? { iconSvg: e.iconSvg } : {}),
+			...(e.homepage ? { homepage: e.homepage } : {}),
+		}));
 	atomicWrite(communityPath, { entries });
 	return entries.length;
 }

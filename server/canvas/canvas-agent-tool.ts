@@ -19,24 +19,19 @@ import { assertCanvasGraph } from "./canvas-validation.js";
 export interface CanvasToolHost {
 	dataDir: string;
 	lang?: () => ServerLang;
-	/** 当前项目（所有者对话 cwd，实时读）：新节点默认落到这里，而不是服务启动目录 */
 	getCwd?: () => string;
 }
 
-/** 新节点 cwd：显式参数 > 当前项目 > 服务启动目录(".") */
 function defaultNodeCwd(host: CanvasToolHost, p: Record<string, unknown>): string {
 	const explicit = typeof p.cwd === "string" ? p.cwd.trim().slice(0, 256) : "";
 	if (explicit) return explicit;
 	try {
 		const cur = host.getCwd?.()?.trim();
 		if (cur) return cur;
-	} catch {
-		// 读不到就回落 "."
-	}
+	} catch {}
 	return ".";
 }
 
-/** 运行态注入：index.ts 创建 CanvasOrchestrator 后调用；单测可注入 fake。 */
 interface CanvasRuntime {
 	runAll(graph: CanvasGraph, initialPrompt?: string, runBase?: string): Promise<void>;
 	runNode(graph: CanvasGraph, nodeId: string, prompt?: string, runBase?: string): Promise<void>;
@@ -56,21 +51,16 @@ export function setCanvasRuntime(rt: CanvasRuntime | null): void {
 	canvasRuntime = rt;
 }
 
-/** 广播钩子：index.ts 注入 WS 广播，工具改图后开着的画布实时可见，不用刷新。 */
 let canvasBroadcaster: ((msg: ServerMessage) => void) | null = null;
 
 export function setCanvasBroadcaster(fn: ((msg: ServerMessage) => void) | null): void {
 	canvasBroadcaster = fn;
 }
 
-/** 落盘 + 广播（开着的 Canvas Studio 实时刷新）。 */
-/** 自定义卡片变更广播：开着的画布工具栏实时刷新，无需重进。 */
 function pushCards(dataDir: string): void {
 	try {
 		canvasBroadcaster?.({ type: "canvas_cards_state", cards: listCustomCards(dataDir) });
-	} catch {
-		// 忽略
-	}
+	} catch {}
 }
 
 function saveAndPush(dataDir: string, graph: CanvasGraph): void {
@@ -79,9 +69,7 @@ function saveAndPush(dataDir: string, graph: CanvasGraph): void {
 	if (result.conflict) throw new Error("Canvas changed; get the latest graph before editing again");
 	try {
 		canvasBroadcaster?.({ type: "canvas_graph_state", graph });
-	} catch {
-		// 广播失败不影响落盘
-	}
+	} catch {}
 }
 
 const VALID_ROLES = new Set([
@@ -403,9 +391,7 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 					if (ok) {
 						try {
 							canvasBroadcaster?.({ type: "canvas_list_result", graphs: listCanvasGraphs(dataDir) });
-						} catch {
-							// 忽略
-						}
+						} catch {}
 					}
 					return text(
 						pick(
@@ -722,7 +708,6 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						{ graph: next },
 					);
 				}
-				// —— 运行态接管：需 index.ts 注入 canvasRuntime ——
 				const needRuntime = new Set([
 					"run_all",
 					"run_node",
@@ -869,7 +854,6 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 						);
 					}
 					if (action === "layout_graph") {
-						// 拓扑分层：按边 BFS 定深度，同层按序排，卡片 300 宽 + 80 间距
 						const byId = new Map(graph.nodes.map((n) => [n.id, n]));
 						const indeg = new Map(graph.nodes.map((n) => [n.id, 0]));
 						for (const e of graph.edges) {
@@ -903,7 +887,6 @@ export function makeCanvasTool(host: CanvasToolHost, lang?: () => ServerLang): T
 								if (left <= 0 && !queue.includes(nx)) queue.push(nx);
 							}
 						}
-						// 环内/不可达节点：按数组顺序排在主链之后，不再叠在第 0 列
 						let tail = depth.size > 0 ? Math.max(...depth.values()) : 0;
 						for (const n of graph.nodes) {
 							if (!depth.has(n.id)) {

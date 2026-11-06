@@ -21,8 +21,6 @@ export function checkSignal(signal?: AbortSignal) {
 	signal?.throwIfAborted();
 }
 
-/** Portable paths only. Case-fold duplicates even on case-sensitive hosts so a
- * bundle retains the same meaning when sent to Windows/macOS. */
 export function deniedPart(part: string): DeviceFileExclusion["reason"] | undefined {
 	if (/^(\.git|node_modules)$/i.test(part)) return "ignored";
 	if (
@@ -69,7 +67,6 @@ export function within(root: string, path: string) {
 	return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
 }
 
-/** Reject symlinks/junctions at every existing component, including ancestors. */
 export async function checkChain(path: string, allowMissing = false, signal?: AbortSignal) {
 	checkSignal(signal);
 	const absolute = resolve(path);
@@ -93,14 +90,12 @@ export async function checkChain(path: string, allowMissing = false, signal?: Ab
 	}
 }
 
-/** Deterministic JSON tuple hash for manifests */
 export function computeManifestHash(files: { path: string; size: number; sha256: string }[]): string {
 	const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
 	const tuples = sorted.map((f) => [f.path, f.size, f.sha256]);
 	return hash(JSON.stringify(tuples));
 }
 
-/** Atomic metadata-preserving save for bytes, shared between file-sync and transfer-stream. */
 export async function saveBytesPreservingMetadata({
 	path,
 	bytes,

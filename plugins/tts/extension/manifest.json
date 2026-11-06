@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "TTS 本地语音助手",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"description": "一键提取已登录的豆包与 DeepSeek 网页凭证并自动同步到本地 pi-web-ui 语音服务",
 	"permissions": ["cookies", "storage", "activeTab", "scripting"],
 	"host_permissions": ["*://*.doubao.com/*", "*://chat.deepseek.com/*", "http://127.0.0.1/*", "http://localhost/*"],

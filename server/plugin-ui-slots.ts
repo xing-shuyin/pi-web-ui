@@ -1,7 +1,3 @@
-/**
- * UI_SLOTS — 宿主支持的全部挂载点集合，用于运行态校验。
- * 抽离到独立文件以打破 client-state.ts 与 plugins.ts 之间的循环依赖。
- */
 export const UI_SLOTS: ReadonlySet<string> = new Set([
 	"topbar.primary",
 	"topbar.overflow",

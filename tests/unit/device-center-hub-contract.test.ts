@@ -98,7 +98,6 @@ async function fixture(publicUrl = "https://hub.test", onDeliver?: (dataDir: str
 		return response;
 	}
 
-	// Register account and pair device + bot
 	const reg = await request("/api/auth/register", { username: "alice", password: "Password123!" });
 	const cookie = reg.cookie;
 
@@ -128,7 +127,6 @@ async function fixture(publicUrl = "https://hub.test", onDeliver?: (dataDir: str
 	expect(botRes.status).toBe(200);
 	const bot = { id: botId, deviceId: device.deviceId };
 
-	// Create a room
 	const roomRes = await request("/api/rooms", { name: "test-room", botIds: [bot.id] }, cookie);
 	const room = roomRes.body.room;
 
@@ -246,7 +244,6 @@ describe("Hub contract idempotency and version conflict guards", () => {
 		const f = await fixture();
 		const key = "idemp-key-123";
 
-		// First request with contract A
 		const first = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -259,7 +256,6 @@ describe("Hub contract idempotency and version conflict guards", () => {
 		);
 		expect(first.status).toBe(200);
 
-		// Duplicate request with exact same contract -> 200 duplicate
 		const duplicate = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -272,7 +268,6 @@ describe("Hub contract idempotency and version conflict guards", () => {
 		);
 		expect(duplicate.status).toBe(200);
 
-		// Same key with DIFFERENT contract goal -> rejected with 409!
 		const conflict = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -300,13 +295,11 @@ describe("Hub contract idempotency and version conflict guards", () => {
 			},
 		};
 
-		// First call
 		const first = await f.request(`/api/rooms/${f.room.id}/messages`, payload, f.cookie);
 		expect(first.status).toBe(200);
 		const firstContract = first.body.tasks[0].contract;
 		expect(firstContract.id).toMatch(/^contract-[0-9a-f]{16}$/);
 
-		// Exact retry with same idempotency key
 		const retry = await f.request(`/api/rooms/${f.room.id}/messages`, payload, f.cookie);
 		expect(retry.status).toBe(200);
 		expect(retry.body.tasks[0].id).toBe(first.body.tasks[0].id);
@@ -317,7 +310,6 @@ describe("Hub contract idempotency and version conflict guards", () => {
 	it("rejects creating an older contract revision when a newer revision exists", async () => {
 		const f = await fixture();
 
-		// Submit revision 2
 		const rev2 = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -329,7 +321,6 @@ describe("Hub contract idempotency and version conflict guards", () => {
 		);
 		expect(rev2.status).toBe(200);
 
-		// Attempt to submit older revision 1 for same contract ID -> 409 rejected
 		const rev1 = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -367,7 +358,6 @@ describe("Hub ContextManifest sealing and delivery resilience", () => {
 		const delivered = f.deliveredTasks.find((t) => t.id === taskId);
 		expect(delivered).toBeDefined();
 
-		// Check wired contract and contextManifest
 		expect(delivered.contract).toBeDefined();
 		expect(delivered.contract.id).toBe("deliver-contract");
 		expect(delivered.contextManifest).toBeDefined();
@@ -376,7 +366,6 @@ describe("Hub ContextManifest sealing and delivery resilience", () => {
 		expect(delivered.contextManifest.contractDigest).toBe(delivered.contract.digest);
 		expect(delivered.contextManifest.digest).toMatch(/^[0-9a-f]{64}$/);
 
-		// GET task details returns sealed contract and manifest
 		const details = await f.request(`/api/rooms/${f.room.id}/tasks/${taskId}`, undefined, f.cookie);
 		expect(details.status).toBe(200);
 		expect(details.body.task.contract.digest).toBe(delivered.contract.digest);
@@ -399,11 +388,9 @@ describe("Hub ContextManifest sealing and delivery resilience", () => {
 		const firstDelivered = f.deliveredTasks.find((t) => t.id === task.id);
 		const originalManifestDigest = firstDelivered.contextManifest.digest;
 
-		// Add intervening room messages
 		await f.request(`/api/rooms/${f.room.id}/messages`, { text: "Chat message 1" }, f.cookie);
 		await f.request(`/api/rooms/${f.room.id}/messages`, { text: "Chat message 2" }, f.cookie);
 
-		// Details endpoint still returns the original frozen manifest
 		const details = await f.request(`/api/rooms/${f.room.id}/tasks/${task.id}`, undefined, f.cookie);
 		expect(details.body.task.contextManifest.digest).toBe(originalManifestDigest);
 	});
@@ -466,7 +453,6 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 		expect(accepted.status).toBe("completed");
 		expect(accepted.artifact?.id).toBe("art-hub-1");
 
-		// Task details reflects the saved artifact and proof flags
 		const details = await f.request(`/api/rooms/${f.room.id}/tasks/${task.id}`, undefined, f.cookie);
 		expect(details.body.task.artifact.id).toBe("art-hub-1");
 		expect(details.body.task.executionCompleted).toBe(true);
@@ -512,7 +498,6 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 		};
 		art.digest = computeArtifactDigest(art);
 
-		// Missing executionCompleted: true -> rejected
 		await expect(
 			f.hub.acceptTaskEvent(f.device.deviceId, {
 				taskId: task.id,
@@ -523,7 +508,7 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 				status: "completed",
 				report: "Report",
 				artifact: art,
-				executionCompleted: false, // Proof failure!
+				executionCompleted: false,
 				artifactProduced: true,
 			}),
 		).rejects.toThrow(/executionCompleted/);
@@ -532,7 +517,6 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 	it("rejects advancing an active revision, then preserves exact terminal ACK after advancing", async () => {
 		const f = await fixture();
 
-		// Task 1 with revision 1
 		const t1Res = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -545,7 +529,6 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 		const t1 = t1Res.body.tasks[0];
 		const d1 = f.deliveredTasks.find((t) => t.id === t1.id);
 
-		// Task 2 with revision 2 for same contract ID -> supersedes revision 1
 		const t2Res = await f.request(
 			`/api/rooms/${f.room.id}/messages`,
 			{
@@ -577,7 +560,6 @@ describe("Hub code artifact outcome validation and superseded revision rejection
 			f.cookie,
 		);
 		expect(next.status).toBe(200);
-		// The original positive ACK may have been lost. Replaying its durable payload still succeeds.
 		expect((await f.hub.acceptTaskEvent(f.device.deviceId, outcome)).status).toBe("completed");
 		const facts = f.hub.store.snapshot();
 		expect(facts.messages.filter((m) => m.taskIds.includes(t1.id) && m.text === outcome.report)).toHaveLength(1);
@@ -607,10 +589,8 @@ describe("Hub WAL persistence and crash recovery of contracts & manifests", () =
 		const originalContractDigest = delivered.contract.digest;
 		const originalManifestDigest = delivered.contextManifest.digest;
 
-		// Close the Hub instance
 		await f.hub.close();
 
-		// Read persisted state directly from storage
 		const persisted = await readPersistedHub(f.dataDir);
 		const recoveredTask = persisted.tasks.find((t) => t.id === task.id);
 
@@ -625,7 +605,6 @@ describe("Hub WAL persistence and crash recovery of contracts & manifests", () =
 		expect(recoveredTask?.contextManifest?.contractDigest).toBe(originalContractDigest);
 		expect(recoveredTask?.contextManifest?.digest).toBe(originalManifestDigest);
 
-		// Reopen a new Hub on the same dataDir and verify recovery
 		const reopenedHub = await createDeviceHub({
 			dataDir: f.dataDir,
 			publicUrl: "https://hub.test",
@@ -884,7 +863,6 @@ describe("Hub contract production regressions", () => {
 		await f.hub.store.transact((draft) => {
 			draft.tasks.find((t) => t.id === task.id)!.attemptId = "different-durable-attempt";
 		});
-		// Identity rejection takes precedence over validating this artifact against the newer attempt.
 		await expect(f.hub.acceptTaskEvent(f.device.deviceId, late)).rejects.toMatchObject({
 			status: 409,
 			permanent: true,
@@ -1030,7 +1008,6 @@ describe("Hub contract production regressions", () => {
 		expect(wire.taskState).toBeUndefined();
 		const frame = { type: "task", task: wire };
 		expect(Buffer.byteLength(JSON.stringify(frame))).toBeLessThanOrEqual(RELAY_LIMITS.frame);
-		// The formerly duplicated legacy fields made this same valid request exceed 512 KiB.
 		expect(
 			Buffer.byteLength(
 				JSON.stringify({ ...frame, task: { ...wire, context: manifest.context, taskState: manifest.taskState } }),

@@ -1,12 +1,7 @@
 /* theme-name: 极简行文 · 深空微晶 */
 /* theme-name-en: Pure Flow · Cristallo Space */
 /* theme-group: builtin */
-/*
- * 极简行文 · 深空微晶（Deep Space Cristallo）
- * 灵感源自 Apple VisionOS 空间流体与亚克力晶体微光：
- * 采用深邃外太空深黑蓝夜底色，辅以微晶玻璃倒角折射光与冰川幻蓝状态点睛，
- * 输入岛与微流排版如悬浮于深空星系之中，通透、轻盈、充满未来感。
- */
+
 :root {
 	color-scheme: dark;
 	--flow-shadow: #000000;
@@ -127,9 +122,6 @@
 
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   代码语法高亮（hljs）—— 深空微晶流光调
-   ======================================================== */
 .hljs {
 	color: #ffffff;
 }

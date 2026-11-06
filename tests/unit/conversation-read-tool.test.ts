@@ -1,7 +1,3 @@
-/**
- * conversation-read-tool 单测：转录文本化 / 分页格式化 / 转录解析 / 列表过滤。
- * 纯函数零 token；工具 execute 经 defineTool 走 SDK 类型，仅测纯函数部分。
- */
 import { describe, expect, it } from "vitest";
 import {
 	filterHistory,
@@ -144,7 +140,6 @@ describe("toolCalls additive 字段", () => {
 			content: [{ type: "toolCall", name: "edit", arguments: { path: "a.ts" } }],
 		} as never);
 		expect(live.toolCalls).toEqual([{ name: "edit", args: { path: "a.ts" } }]);
-		// 既有文本形状不变：仍渲染 [tool call: name]。
 		expect(transcriptText(live)).toBe("[tool call: edit]");
 		const hist = parseTranscriptLines(JSON.stringify({ type: "message", message: live }) + "\n");
 		expect(hist[0].toolCalls).toEqual([{ name: "edit", args: { path: "a.ts" } }]);
@@ -191,7 +186,6 @@ describe("selectReadMessages", () => {
 	it("query 只回命中 ±1 上下文并报原序号", () => {
 		const sel = selectReadMessages(MIXED, { view: "full", query: "修好了" });
 		expect(sel.hitIndices).toEqual([4]);
-		// ±1：下标 3（toolResult）与 4（assistant）。
 		expect(sel.selected).toHaveLength(2);
 		expect(sel.selected[1]).toBe(MIXED[4]);
 	});
@@ -201,7 +195,6 @@ describe("selectReadMessages", () => {
 		expect(sel.selected).toEqual([]);
 	});
 	it("query 大小写不敏感；脏输入不抛错", () => {
-		// hitIndices 只记命中（[0]），上下文展开只影响 selected。
 		const sel = selectReadMessages(MIXED, { query: "BUG" });
 		expect(sel.hitIndices).toEqual([0]);
 		expect(sel.selected).toHaveLength(2);
@@ -289,8 +282,8 @@ describe("files/status 认领与 sidecar 接线（execute 级）", () => {
 			content: { type: string; text: string }[];
 		};
 		const text = r.content[0].text;
-		expect(text).toContain("/r/old.ts"); // sidecar（压缩前）
-		expect(text).toContain("/r/new.ts"); // 实时
+		expect(text).toContain("/r/old.ts");
+		expect(text).toContain("/r/new.ts");
 		expect(text).toContain("认领");
 		expect(text).toContain("/r/x.ts");
 	});

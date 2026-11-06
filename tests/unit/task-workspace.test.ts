@@ -151,7 +151,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		expect(res1.contractDigest).toBe(contract1.digest);
 		expect(res1.manifestDigest).toBe(manifest1.digest);
 
-		// Capability object wrapper
 		const cap1 = getTaskWorkspaceCapability(handle1, binding1);
 		expect(await cap1.getCwd()).toBe(res1.cwd);
 		expect(await cap1.getRepoRoot()).toBe(res1.repoRoot);
@@ -174,12 +173,10 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 			"binding mismatch",
 		);
 
-		// Rejects forged handle / unverified JSON string
 		await expect(resolveTaskWorkspace("fake-uuid-not-in-registry", binding1)).rejects.toThrow(
 			"Unregistered or expired",
 		);
 
-		// Rejects binding mismatch
 		await expect(resolveTaskWorkspace(handle1, { ...binding1, taskId: "wrong-task" })).rejects.toThrow(
 			"Task workspace binding mismatch",
 		);
@@ -194,7 +191,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 	it("strictly validates repository baseline and rejects dirty/tampered baseline", async () => {
 		const { repo, baseCommit, dataDir, canonicalRepoId } = await fixture();
 
-		// Dirty baseline rejection
 		await writeFile(join(repo, "src", "dirty.txt"), "dirty uncommitted\n");
 		const contract = buildContract(canonicalRepoId, baseCommit);
 		const manifest = buildManifest(contract);
@@ -213,10 +209,8 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 			}),
 		).rejects.toThrow("requires a clean baseline repository");
 
-		// Clean up dirty file
 		await rm(join(repo, "src", "dirty.txt"));
 
-		// Rejects non-existent commit
 		const fakeCommit = "a".repeat(40);
 		const badCommitContract = buildContract(canonicalRepoId, fakeCommit);
 		const badCommitManifest = buildManifest(badCommitContract);
@@ -234,7 +228,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 			}),
 		).rejects.toThrow("does not exist in repository");
 
-		// Rejects repositoryId mismatch (no default/local alias bypass)
 		const badRepoContract = buildContract("fake-repo-id", baseCommit);
 		const badRepoManifest = buildManifest(badRepoContract);
 		await expect(
@@ -294,7 +287,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 
 		const ws = await resolveTaskWorkspace(handle, binding);
 
-		// Produce modifications in the isolated worktree
 		await writeFile(join(ws.cwd, "src", "feature.ts"), "export const answer = 42;\n");
 		await writeFile(join(ws.cwd, "src", "app.ts"), 'console.log("updated");\n');
 
@@ -307,18 +299,15 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		expect(artifact1.patchBase64).toBeDefined();
 		expect(artifact1.patchSha256).toBeDefined();
 
-		// No machine-local path leakage
 		expect(JSON.stringify(artifact1)).not.toContain(ws.cwd);
 		expect(JSON.stringify(artifact1)).not.toContain(repo);
 
-		// References are binding-scoped and unique to this handle, never shared by task/attempt alone.
 		const ref = (await gitExec(repo, "for-each-ref", "--format=%(refname)", "refs/pi-tasks/artifacts/"))
 			.split("\n")
 			.find((value) => value.endsWith(`/${handle.handleId}`))!;
 		const refCommit = await gitExec(repo, "rev-parse", ref);
 		expect(refCommit).toMatch(/^[0-9a-fA-F]{40}$/);
 
-		// Nested mutation cannot change the cached artifact or its validation/digest.
 		const originalJson = JSON.stringify(artifact1);
 		expect(Object.isFrozen(artifact1)).toBe(true);
 		expect(Object.isFrozen(artifact1.producer)).toBe(true);
@@ -329,17 +318,14 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		expect(validateDeviceArtifact(artifact1).valid).toBe(true);
 		expect(computeArtifactDigest(artifact1)).toBe(artifact1.digest);
 
-		// Repeated capture returns frozen cached artifact with identical id and digest
 		const artifact2 = await captureTaskArtifact(handle, binding);
 		expect(artifact2).toBe(artifact1);
 		expect(artifact2.id).toBe(artifact1.id);
 		expect(artifact2.digest).toBe(artifact1.digest);
 		expect(JSON.stringify(artifact2)).toBe(originalJson);
 
-		// Cleanup rejects without force because worktree has uncommitted modifications
 		await expect(cleanupTaskWorkspace(handle, binding)).rejects.toThrow("retained for inspection");
 
-		// Force cleanup cleans up
 		await cleanupTaskWorkspace(handle, binding, { force: true });
 	});
 
@@ -374,7 +360,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 	it("safely verifies and composes inputArtifacts, proving outputTree before applying", async () => {
 		const { repo, baseCommit, dataDir, canonicalRepoId } = await fixture();
 
-		// Step 1: Upstream task produces an artifact
 		const upContract = buildContract(canonicalRepoId, baseCommit);
 		const upManifest = buildManifest(upContract);
 		const upBinding: TaskWorkspaceBinding = {
@@ -397,7 +382,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		const upArtifact = await captureTaskArtifact(upHandle, upBinding);
 		await cleanupTaskWorkspace(upHandle, upBinding, { force: true });
 
-		// Step 2: Downstream task receives upArtifact in contract.inputArtifacts
 		const downContract = buildContract(canonicalRepoId, baseCommit, {
 			inputArtifacts: [upArtifact],
 		});
@@ -419,11 +403,9 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		});
 
 		const downWs = await resolveTaskWorkspace(downHandle, downBinding);
-		// Input artifact content is integrated into worktree
 		const libContent = await readFile(join(downWs.cwd, "src", "lib.ts"), "utf8");
 		expect(libContent).toBe('export const lib = "ok";\n');
 
-		// A single cumulative parent composes through a chain.
 		await writeFile(join(downWs.cwd, "src", "chain.ts"), "export const chain = 1;\n");
 		const downArtifact = await captureTaskArtifact(downHandle, downBinding);
 		const prepareWith = (taskId: string, inputArtifacts: DeviceArtifact[]) => {
@@ -441,7 +423,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		expect(await readFile(join(chainWs.cwd, "src", "chain.ts"), "utf8")).toContain("chain = 1");
 		await cleanupTaskWorkspace(chainHandle, chain.binding, { force: true });
 
-		// Repeating an ancestor cumulatively is an explicit conflict, not hidden deduplication.
 		const overlap = prepareWith("overlap", [upArtifact, downArtifact]);
 		await expect(prepareTaskWorkspace(overlap.options)).rejects.toThrow("Input artifact conflict");
 
@@ -468,7 +449,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 			await expect(prepareTaskWorkspace(invalid.options)).rejects.toThrow(/baseline|outputTree/);
 		}
 
-		// An independent artifact can compose alongside another cumulative input.
 		const independent = prepareWith("independent", []);
 		const independentHandle = await prepareTaskWorkspace(independent.options);
 		const independentWs = await resolveTaskWorkspace(independentHandle, independent.binding);
@@ -487,11 +467,10 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		await expect(git(repo, ["cat-file", "-e", combinedArtifact.inputTree!])).resolves.toBe("");
 		await expect(git(repo, ["cat-file", "-e", combinedArtifact.outputTree!])).resolves.toBe("");
 
-		// Step 3: Counterfeit outputTree in input artifact is rejected and cleans up temp worktree
 		const counterfeitArtifact: DeviceArtifact = {
 			...upArtifact,
 			id: `artifact-fake-${randomUUID()}`,
-			outputTree: "1".repeat(40), // fake outputTree
+			outputTree: "1".repeat(40),
 		};
 		counterfeitArtifact.digest = computeArtifactDigest(counterfeitArtifact);
 
@@ -514,8 +493,7 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 			}),
 		).rejects.toThrow("Artifact patch does not produce declared outputTree");
 
-		// Verified no orphaned worktree remained in registry
-		expect(getRegisteredWorkspaceCount()).toBe(1); // only downHandle
+		expect(getRegisteredWorkspaceCount()).toBe(1);
 
 		await cleanupTaskWorkspace(downHandle, downBinding, { force: true });
 	}, 90_000);
@@ -731,7 +709,6 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 
 		const ws = await resolveTaskWorkspace(handle, binding);
 
-		// Tampering: replace .git redirect with main repo .git
 		await rename(join(ws.cwd, ".git"), join(ws.cwd, ".git.saved"));
 		await writeFile(join(ws.cwd, ".git"), `gitdir: ${join(repo, ".git")}\n`);
 
@@ -739,11 +716,9 @@ describe("task-workspace isolation and capabilities", { timeout: 30_000 }, () =>
 		await expect(captureTaskArtifact(handle, binding)).rejects.toThrow("Worktree identity error");
 		await expect(cleanupTaskWorkspace(handle, binding)).rejects.toThrow("Worktree identity error");
 
-		// Restore .git and clean up
 		await rm(join(ws.cwd, ".git"));
 		await rename(join(ws.cwd, ".git.saved"), join(ws.cwd, ".git"));
 
-		// Even force cleanup must preserve an unrelated directory reached by a junction.
 		const saved = `${ws.cwd}-saved`;
 		const unrelated = join(dataDir, "unrelated");
 		await mkdir(unrelated);

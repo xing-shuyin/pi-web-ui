@@ -1,14 +1,3 @@
-/**
- * Download-button regression test.
- *
- * The right-panel download button fetches the file as a blob (fetch →
- * objectURL) instead of a plain anchor navigation, so Chrome Safe Browsing
- * can't block "no-reputation" file types and server errors surface as
- * readable toasts. This test clicks the real button and verifies the
- * browser download completes with the right name and content.
- *
- * Runs on a dedicated port (8899) to avoid stray processes.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { portUp } from "./lib/port-utils.mjs";
@@ -19,7 +8,6 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const HEADLESS = CHROME_PATH;
@@ -27,8 +15,6 @@ const PORT = 8899;
 const URL = `http://localhost:${PORT}`;
 const PROJ = REPO_ROOT;
 
-// Workspace with a "no-reputation" binary-ish file with a Chinese name —
-// the worst case for Chrome's Safe Browsing block.
 const dataDir = mkdtempSync(join(tmpdir(), "pi-dl-data-"));
 const agentDir = mkdtempSync(join(tmpdir(), "pi-dl-agent-"));
 const WS = mkdtempSync(join(tmpdir(), "pi-dl-test-"));
@@ -67,9 +53,6 @@ if (!(await portUp(PORT))) {
 
 const browser = await chromium.launch({ executablePath: HEADLESS });
 const page = await browser.newPage({ acceptDownloads: true });
-// The picker path (showSaveFilePicker) opens a native dialog headless
-// Chromium can't drive — disable it so the test exercises the blob-anchor
-// fallback, which is what the download event asserts.
 await page.addInitScript(() => {
 	Object.defineProperty(window, "showSaveFilePicker", { value: undefined });
 });

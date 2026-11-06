@@ -1,9 +1,3 @@
-/**
- * 目标审查证据摘要单测（issue #543 §1，纯函数，无宿主/端口）。
- *
- * 覆盖：从尾往前取最近工具事件、toolResult 借 toolCallId 找回参数提示、
- * 输出只留尾部、条目数/总长度封顶、坏形状平稳回落、会话消息读取口径。
- */
 import { describe, expect, it } from "vitest";
 import {
 	buildEvidenceDigest,
@@ -104,7 +98,7 @@ describe("formatEvidenceDigest", () => {
 		];
 		const text = formatEvidenceDigest(entries, { maxTotalChars: 400 });
 		expect(text).toContain("(1 earlier event(s) omitted for brevity)");
-		expect(text).toContain("1. bash: second"); // 重新编号，只留最新的那条
+		expect(text).toContain("1. bash: second");
 		expect(text).not.toContain("first");
 	});
 });

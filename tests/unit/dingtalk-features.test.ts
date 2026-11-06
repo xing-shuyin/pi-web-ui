@@ -1,10 +1,3 @@
-/**
- * tests/unit/dingtalk-features.test.ts
- * Tests for DingTalk (钉钉) plugin:
- * - Pure signature, URL signing and message builders
- * - Bot duplex bridge logic: whitelist, slash commands, chat dispatch, and run_end reply
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildDingtalkMessage,
@@ -34,12 +27,10 @@ describe("钉钉纯函数工具测试", () => {
 	});
 
 	it("buildDingtalkMessage 生成符合钉钉开放平台标准的载荷", () => {
-		// 1. text
 		const textMsg = buildDingtalkMessage({ msgType: "text", text: "测试消息" });
 		expect(textMsg.msgtype).toBe("text");
 		expect(textMsg.text!.content).toBe("测试消息");
 
-		// 2. markdown
 		const mdMsg = buildDingtalkMessage({ msgType: "markdown", title: "通报", text: "正文内容" });
 		expect(mdMsg.msgtype).toBe("markdown");
 		expect(mdMsg.markdown!.title).toBe("通报");
@@ -156,11 +147,8 @@ describe("DingtalkBotBridge 双工逻辑测试", () => {
 			}),
 		);
 
-		// 真实链路：宿主返回的是**它自己的**会话 id（本地编的 dt_xxx 只是占位），
-		// 事件也按这个 id 下发；这里用回执里的 id + 回执里的 runId。
 		const convId = "c1";
 
-		// 模拟流式增量与结束
 		runHandler!({
 			conversationId: convId,
 			runId: "pr-dt-1",
@@ -192,10 +180,6 @@ describe("DingtalkBotBridge 双工逻辑测试", () => {
 
 describe("钉钉：对话被过户（改名 + 换客户端）后仍按 runId 回包", () => {
 	it("conversationId 改名、clientId 变成浏览器后，run_end 仍推送到会话 webhook", async () => {
-		// 过户回归（issue：通道插件的回包认领）：微信/钉钉/Discord/飞书等通道靠 host.chat
-		// 回执关联 run_end。用户在网页左栏点开 running 对话 = take_over_conversation：对话被搬到
-		// 浏览器会话（clientId 变成对方的），目标会话已有同名 id（各会话独立从 c1 编号）时还会
-		// 就地改名 —— clientId 与 conversationId 双双失效，只有回执里的 runId 不变。
 		const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ errcode: 0 }) });
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -223,7 +207,6 @@ describe("钉钉：对话被过户（改名 + 换客户端）后仍按 runId 回
 			text: { content: "查一下磁盘占用" },
 		});
 
-		// 过户后：持有方换成浏览器标签页，对话 id 因撞车改名 c1 → c7
 		runHandler!({
 			conversationId: "c7",
 			clientId: "client_browser_tab1",

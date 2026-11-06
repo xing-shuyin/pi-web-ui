@@ -1,8 +1,3 @@
-/**
- * 插件内联 SVG 图标（iconSvg）单测：
- * server/icon-svg.ts 的 normalizeIconSvg（形状校验）+ web/src/plugin-icon.tsx 的
- * sanitizeIconSvg（node 下走正则快检分支）+ vscode-editor 真实图标能过两道门。
- */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -50,10 +45,6 @@ describe("sanitizeIconSvg", () => {
 	});
 });
 
-/** 白名单口径（大小写不敏感）：这两个函数是 `viewBox` 被静默剥掉那次的根因所在 ——
- *  白名单键按 SVG 原始大小写书写，比较时必须归一，否则 DOMParser 解析出的
- *  `viewBox` / `clipPath` / `linearGradient` 永远匹配不上（DOM 分支的实测见
- *  tests/unit/plugin-icon-dom.test.ts）。 */
 describe("iconSvg 白名单口径", () => {
 	it("大小写敏感的标签 / 属性放行（原名或全小写都认）", () => {
 		expect(isAllowedIconAttr("viewBox")).toBe(true);

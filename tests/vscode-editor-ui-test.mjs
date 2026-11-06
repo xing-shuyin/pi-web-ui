@@ -1,14 +1,3 @@
-/**
- * vscode-editor 插件 — 浏览器 UI 冒烟测试（零 token）。
- *
- * 起隔离端口 server（临时 data-dir + 临时工作区），Chrome headless 加载页面：
- * - 顶栏插件面板列出 📝 编辑器，点行切到插件视图
- * - 文件树渲染工作区条目
- * - 点击文件 → 标签页出现 + CodeMirror 编辑器带内容
- * - 修改内容 + Ctrl+S → 磁盘落盘核对
- *
- * 运行：先 npm run build:server，再 node tests/vscode-editor-ui-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { waitForStablePage } from "./lib/page-stability.mjs";
@@ -32,7 +21,6 @@ function check(name, ok, extra = "") {
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-vsc-ui-"));
 const workspace = join(dataDir, "ws");
 
-// 种插件 + 工作区
 const plugDst = join(dataDir, "plugins", "vscode-editor");
 mkdirSync(plugDst, { recursive: true });
 const repo = new globalThis.URL("../", import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:)/, "");
@@ -40,10 +28,9 @@ cpSync(join(repo, "plugins/vscode-editor/manifest.json"), join(plugDst, "manifes
 cpSync(join(repo, "plugins/vscode-editor/index.mjs"), join(plugDst, "index.mjs"));
 cpSync(join(repo, "plugins/vscode-editor/client"), join(plugDst, "client"), { recursive: true });
 mkdirSync(join(workspace, "src"), { recursive: true });
-mkdirSync(join(workspace, "sub"), { recursive: true }); // 拖拽上传的目标文件夹
+mkdirSync(join(workspace, "sub"), { recursive: true });
 writeFileSync(join(workspace, "README.md"), "# Hello\n");
 writeFileSync(join(workspace, "src", "app.js"), "let n = 1;\n");
-// CRLF 行尾文件（Windows 仓库常见）：回归「刚打开就提示未保存」误报
 writeFileSync(join(workspace, "src", "crlf.js"), "let a = 1;\r\nlet b = 2;\r\n");
 
 let server = null;
@@ -61,15 +48,8 @@ try {
 	const page = await browser.newPage();
 	page.on("pageerror", (e) => console.error("[pageerror]", e.message));
 	await page.goto(URL);
-	// 新会话页面会自己重载一次（WS hello 的 buildId 与页面烧进去的 id 不一致 → use-chat
-	// reload 一遭）。插件入口是宿主内置按钮，**重载之前就已 attached**，所以「一 attached 就点」
-	// 会点在那个马上被重载抹掉的页面上 —— 先等重载过去再点（见 lib/page-stability.mjs）。
 	await waitForStablePage(page);
 
-	// 等插件清单到达，再从顶栏插件面板切到插件视图（插件视图 tab 默认不钉顶栏，
-	// 只有用户在面板里钉住才出现 —— 见 ui-slots 的 withPluginViewItems）。
-	// 插件入口被实测溢出丢进「⋯」时，菜单里仍是同一个 chip（keep 包装）→ 同一个 locator 两种情形都命中。
-	// 注：不用 hasText: "🧩" 定位 —— 入口图标已换成矢量 FiBox（旧 Windows 缺 🧩 字形）。
 	const plugBtn = page.locator('button.chip[aria-haspopup="menu"]').first();
 	await plugBtn.waitFor({ state: "attached", timeout: 15000 }).catch(() => {});
 	if ((await plugBtn.count()) === 0) {
@@ -82,17 +62,14 @@ try {
 	check("插件面板列出 📝 编辑器", (await row.count()) > 0);
 	await row.click();
 
-	// 视图挂载 + 文件树渲染
 	await page.waitForSelector(".vsc .vsc-tree .vsc-row", { timeout: 15000 });
 	const rows = await page.locator(".vsc-row .nm").allInnerTexts();
 	check("文件树渲染工作区根目录", rows.includes("src") && rows.includes("README.md"), rows.join(","));
 
-	// 展开目录
 	await page.locator(".vsc-row", { hasText: "src" }).first().click();
 	await sleep(400);
 	check("展开 src 目录可见 app.js", (await page.locator(".vsc-row", { hasText: "app.js" }).count()) > 0);
 
-	// 点击打开 README.md → 标签页 + CodeMirror 内容
 	await page.locator(".vsc-row", { hasText: "README.md" }).first().click();
 	await page.waitForSelector(".vsc-tab.active", { timeout: 10000 });
 	check("标签页出现并激活", (await page.locator(".vsc-tab.active .tn").innerText()).includes("README.md"));
@@ -102,7 +79,6 @@ try {
 	const statusPath = await page.locator(".vsc-path").innerText();
 	check("状态栏显示路径", statusPath === "README.md", statusPath);
 
-	// 编辑 + Ctrl+S 保存 → 磁盘核对
 	await page.locator(".vsc-editor .cm-content").click();
 	await page.keyboard.press("Control+End");
 	await page.keyboard.type("\nedited-by-test\n");
@@ -115,7 +91,6 @@ try {
 	const dirtyDot = await page.locator(".vsc-tab .dot").count();
 	check("保存后脏标记消失", dirtyDot === 0, `dot=${dirtyDot}`);
 
-	// CRLF 回归：打开零修改的 CRLF 文件直接关闭，不得弹「未保存」确认框
 	let dialogFired = false;
 	page.on("dialog", (d) => {
 		dialogFired = true;
@@ -127,7 +102,6 @@ try {
 	await sleep(300);
 	check("CRLF 文件零修改关闭不弹确认框", !dialogFired);
 
-	// CRLF 保存后磁盘行尾保持
 	await page.locator(".vsc-row", { hasText: "crlf.js" }).first().click();
 	await sleep(400);
 	await page.locator(".vsc-editor .cm-content").click();
@@ -142,7 +116,6 @@ try {
 		JSON.stringify(crlfDisk),
 	);
 
-	// Ctrl+P 快速打开
 	await page.keyboard.press("Control+p");
 	await page.waitForSelector(".vsc-quickopen input", { timeout: 5000 });
 	await page.locator(".vsc-quickopen input").fill("app");
@@ -155,9 +128,6 @@ try {
 		.catch(() => "");
 	check("Ctrl+P 快速打开 app.js", activeTab.includes("app.js"), activeTab);
 
-	// ---- 上传：按钮 ⬆ / 拖拽到树（不触发主应用「附加到对话」） --------------------------
-
-	// ① 工具栏 ⬆ 按钮 → 文件选择框 → 上传到工作区根目录
 	const fc = page.waitForEvent("filechooser");
 	await page.locator('.vsc-pane[data-pane="files"] button[data-act="upload"]').click();
 	const chooser = await fc;
@@ -165,7 +135,6 @@ try {
 	await sleep(900);
 	check("⬆ 按钮上传到工作区根目录", readFileSync(join(workspace, "via-button.txt"), "utf-8") === "button upload\n");
 
-	// ② 拖拽到树空白处 → 根目录；且不变成主应用的对话附件
 	const msgsBefore = await page.locator(".messages-wrap .msg").count();
 	await page.evaluate(() => {
 		const tree = document.querySelector(".vsc-tree");
@@ -178,7 +147,6 @@ try {
 	check("拖拽到树空白处上传到根目录", readFileSync(join(workspace, "drag-root.txt"), "utf-8") === "drag root\n");
 	check("树内拖拽未附加到对话（消息数不变）", (await page.locator(".messages-wrap .msg").count()) === msgsBefore);
 
-	// ③ 拖拽到文件夹行 → 上传到该文件夹
 	await page.evaluate(() => {
 		const row = [...document.querySelectorAll(".vsc-row")].find(
 			(r) => r.dataset.path === "sub" && r.dataset.type === "dir",

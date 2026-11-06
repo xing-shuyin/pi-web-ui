@@ -1,7 +1,3 @@
-/**
- * registry.ts — 标记工具注册表（内置版）。
- */
-
 import { type MarkerTool, BUILTIN_MARKER_TOOLS, registerKnownMarkerTool, unregisterKnownMarkerTool } from "./marker.js";
 import type { ServerLang } from "../i18n.js";
 

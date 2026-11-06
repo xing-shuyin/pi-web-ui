@@ -1,14 +1,3 @@
-/**
- * approval-gate —— 客户端视图（拍板页）。
- * 交互：
- *  - 初始 ctx.send({type:"approval:list"}) 拉全量，之后靠服务端 broadcast 实时刷新
- *  - 点击待拍板卡片 → location.hash="#s=<conversationId>"（宿主 hashchange 监听切会话）
- *    + window.__piWebUiHost.setView("chat") 双保险
- *  - 每张待拍板卡片附「忽略」按钮 → approval:resolve dismissed
- *  - pending 在上、已处理淡显在下；中英双语；深浅色自适应（纯内联样式，无外部依赖）
- *  - 顶栏角标（approval-gate-dot）点击 → 打开本页（模块顶层注册，preload 常驻可响应）
- * 安全：全部 DOM 构建 + textContent（数据来自台账，天然免注入）。
- */
 import { defineView } from "./sdk/index.mjs";
 
 const I18N = {
@@ -25,7 +14,13 @@ const I18N = {
 		dismissed: "已忽略",
 		emptyFiltered: "没有待拍板项",
 		failure: "加载失败，请稍后刷新重试。",
-		time: { now: "刚刚", min: (n) => `${n} 分钟前`, hour: (n) => `${n} 小时前`, yesterday: "昨天", day: (n) => `${n} 天前` },
+		time: {
+			now: "刚刚",
+			min: (n) => `${n} 分钟前`,
+			hour: (n) => `${n} 小时前`,
+			yesterday: "昨天",
+			day: (n) => `${n} 天前`,
+		},
 	},
 	en: {
 		title: "Approvals",
@@ -40,7 +35,13 @@ const I18N = {
 		dismissed: "Dismissed",
 		emptyFiltered: "No pending items",
 		failure: "Failed to load. Please refresh and retry.",
-		time: { now: "just now", min: (n) => `${n}m ago`, hour: (n) => `${n}h ago`, yesterday: "yesterday", day: (n) => `${n}d ago` },
+		time: {
+			now: "just now",
+			min: (n) => `${n}m ago`,
+			hour: (n) => `${n}h ago`,
+			yesterday: "yesterday",
+			day: (n) => `${n}d ago`,
+		},
 	},
 };
 
@@ -56,7 +57,6 @@ function relTime(iso) {
 	return days === 1 ? t.time.yesterday : t.time.day(days);
 }
 
-/** 顶栏角标点击 → 打开拍板页（模块顶层+mount 双注册，preload 常驻时也能响应）。 */
 function registerOpenAction() {
 	try {
 		const bridge = globalThis.window?.__piWebUiHost;
@@ -67,16 +67,9 @@ function registerOpenAction() {
 				} catch {}
 			});
 		}
-	} catch {
-		/* 桥未就绪时由 mount 内的再注册兜底 */
-	}
+	} catch {}
 }
 
-/**
- * 顶栏「拍板」tab 红点（四期）：pending 数>0 在 view tab 按钮右上角画红底数字，=0 移除。
- * 数据源：页面内 fetch 台账（同源 cookie 免 token）30s 轮询；MutationObserver 兜底重画（tab 重渲染时）。
- * 宿主 badge 机制对 topbar 插件 action 条目不渲染（实测），故自绘 DOM。
- */
 function registerBadge() {
 	if (globalThis.__agBadgeTimer) return;
 	let lastN = -1;
@@ -107,9 +100,7 @@ function registerBadge() {
 			if (!r.ok) return;
 			const d = await r.json();
 			applyDot((d.items ?? []).filter((x) => x.status === "pending").length);
-		} catch {
-			/* 网络抖动下轮等下一轮 */
-		}
+		} catch {}
 	};
 	globalThis.__agBadgeTimer = setInterval(refresh, 30000);
 	globalThis.__agBadgeObserver?.disconnect();
@@ -205,7 +196,6 @@ export default defineView({
 			const pending = items.filter((x) => x.status === "pending");
 			const done = items.filter((x) => x.status !== "pending");
 
-			// 顶栏
 			const head = el("div", "ag-head");
 			head.append(el("div", "ag-title", `🪧 ${t.title}`));
 			const right = el("div", "ag-head-right");
@@ -215,7 +205,10 @@ export default defineView({
 			cb.id = "ag-only";
 			cb.checked = onlyPending;
 			toggleLabel.append(cb, el("span", "", t.onlyPending));
-			right.append(toggleLabel, el("span", `ag-badge ${pending.length ? "hot" : "calm"}`, t.pendingCount(pending.length)));
+			right.append(
+				toggleLabel,
+				el("span", `ag-badge ${pending.length ? "hot" : "calm"}`, t.pendingCount(pending.length)),
+			);
 			head.append(right);
 			wrap.append(head);
 

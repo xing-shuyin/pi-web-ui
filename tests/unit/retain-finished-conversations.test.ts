@@ -80,7 +80,6 @@ describe("retainFinishedConversations（结束的对话切换时不自动从运�
 
 		expect(priv("displaceActive").call(cs)).toBeNull();
 		expect(conv.listed).toBe(true);
-		// Revisiting resets promptedSinceActive; a second switch must still retain it.
 		expect(priv("displaceActive").call(cs)).toBeNull();
 	});
 
@@ -122,7 +121,7 @@ describe("retainFinishedConversations（结束的对话切换时不自动从运�
 		const conv = fakeConv({
 			title: "已在列表里的会话",
 			listed: true,
-			promptedSinceActive: false, // 看过但未发新消息
+			promptedSinceActive: false,
 			session: {
 				isStreaming: false,
 				isCompacting: false,

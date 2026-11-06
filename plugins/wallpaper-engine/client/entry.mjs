@@ -1,12 +1,8 @@
-/**
- * wallpaper-engine 客户端入口 (v0.3.13) —— 视频/WebGL2 Scene/Web 全能渲染、多套专属主题热切换、音频联动与自动轮播。
- */
 import { DRAWER_CSS, getGlassThemeCss } from "./styles.mjs?v=0.3.65";
 import { esc as escapeHtml } from "@pi-web-ui/plugin-sdk/client";
 
 const RUNTIME_KEY = "__piWallpaperEngineRuntime";
 
-/** 从 bundle 自己的 URL 推 API 前缀：<base>/plugins/wallpaper-engine/client/entry.mjs → <base>/plugins-api/wallpaper-engine */
 function getApiBase(importMetaUrl = import.meta.url) {
 	try {
 		const u = new URL(importMetaUrl);
@@ -32,7 +28,6 @@ function getClientBase(importMetaUrl = import.meta.url) {
 const API_BASE = getApiBase();
 const CLIENT_BASE = getClientBase();
 
-// ------------------------------------------------------------ 清理上一轮实例（可重入保护）
 const prev = globalThis[RUNTIME_KEY];
 if (prev?.destroy) {
 	try {
@@ -42,7 +37,6 @@ if (prev?.destroy) {
 	}
 }
 
-// ------------------------------------------------------------ 样式注入
 function ensureStyles() {
 	let s = document.getElementById("pi-we-drawer-styles");
 	if (!s) {
@@ -75,7 +69,6 @@ function updateGlassStyle(
 	s.textContent = getGlassThemeCss(blur, opacity, interactive, themeKey, lightWallpaperMode);
 }
 
-// ------------------------------------------------------------ WebWallGL 引擎动态载入（本地离线优先 + CDN 自动降级）
 let webwallglModule = null;
 
 function loadScript(src) {
@@ -96,29 +89,22 @@ async function loadWebWallGL() {
 		return webwallglModule;
 	}
 
-	// 1. 优先加载本地自带的离线包（零外网请求、零延迟、防 404 导致降级模糊）
 	try {
 		await loadScript(`${CLIENT_BASE}/vendor/webwallgl.js`);
 		if (globalThis.WebWallGL && typeof globalThis.WebWallGL.mount === "function") {
 			webwallglModule = globalThis.WebWallGL;
 			return webwallglModule;
 		}
-	} catch {
-		/* ignore local fail, try cdn */
-	}
+	} catch {}
 
-	// 2. 回退：esm.sh 自包含打包版本
 	try {
 		const mod = await import("https://esm.sh/webwallgl@3.0.0?bundle");
 		if (mod && (typeof mod.mount === "function" || mod.default?.mount)) {
 			webwallglModule = typeof mod.mount === "function" ? mod : mod.default;
 			return webwallglModule;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 3. 回退：unpkg 全局 UMD 脚本
 	try {
 		await loadScript("https://unpkg.com/webwallgl@3.0.0");
 		if (globalThis.WebWallGL && typeof globalThis.WebWallGL.mount === "function") {
@@ -132,7 +118,6 @@ async function loadWebWallGL() {
 	return null;
 }
 
-// ------------------------------------------------------------ 音频响应律动模拟与采集
 function createAudioReactiveEngine(getBgLayer) {
 	let active = false;
 	let rafId = null;
@@ -155,7 +140,6 @@ function createAudioReactiveEngine(getBgLayer) {
 
 	function tick() {
 		if (!active) return;
-		// 动态声学频谱波形模拟（高频平滑渐变与律动震荡）
 		const time = Date.now() * 0.003;
 		for (let i = 0; i < 64; i++) {
 			const wave1 = Math.sin(time + i * 0.25) * 0.5 + 0.5;
@@ -165,21 +149,16 @@ function createAudioReactiveEngine(getBgLayer) {
 			spectrumArray[i] = val;
 		}
 
-		// 注入至 Web 网页壁纸与 Scene 场景壁纸（复用固定数组，杜绝每帧 GC 压力）
 		if (typeof window.__weAudioCb === "function") {
 			try {
 				window.__weAudioCb(spectrumArray);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
 		try {
 			const layer = typeof getBgLayer === "function" ? getBgLayer() : null;
 			layer?.dispatchAudio?.(spectrumArray);
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 
 		rafId = requestAnimationFrame(tick);
 	}
@@ -187,7 +166,6 @@ function createAudioReactiveEngine(getBgLayer) {
 	return { start, stop };
 }
 
-// ------------------------------------------------------------ 专属黑曜冷月壁纸主题锁定机制
 const THEME_MAP = {
 	obsidian: "wallpaper-obsidian",
 };
@@ -230,9 +208,7 @@ function activateThemeLock() {
 			link.href = `${hostBase}/themes/${encodeURIComponent(targetTheme)}.css?v=0.3.45`;
 			window.dispatchEvent(new CustomEvent("pi-web-ui:theme-change"));
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 function deactivateThemeLock() {
@@ -258,12 +234,9 @@ function deactivateThemeLock() {
 			}
 			window.dispatchEvent(new CustomEvent("pi-web-ui:theme-change"));
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-// 守卫：只要壁纸处于激活状态，任何尝试切换其他主题的行为自动锁定修正回当前选定的壁纸专属主题
 function enforceThemeLock() {
 	if (!themeLockActive) return;
 	try {
@@ -282,9 +255,7 @@ function enforceThemeLock() {
 			link.href = `${hostBase}/themes/${encodeURIComponent(targetTheme)}.css?v=0.3.45`;
 			window.dispatchEvent(new CustomEvent("pi-web-ui:theme-change"));
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 window.addEventListener("pi-web-ui:theme-change", enforceThemeLock);
@@ -292,7 +263,6 @@ window.addEventListener("storage", (e) => {
 	if (e.key === "pi-web-ui:theme") enforceThemeLock();
 });
 
-// ------------------------------------------------------------ 场景画质档位与智能性能配置
 const QUALITY_PROFILES = {
 	performance: {
 		label: "节能极速",
@@ -344,7 +314,6 @@ function getEffectiveQuality(settings = {}) {
 	};
 }
 
-// ------------------------------------------------------------ 背景播放层管理
 function createBackgroundLayer() {
 	let container = document.getElementById("pi-we-bg-container");
 	if (!container) {
@@ -367,24 +336,18 @@ function createBackgroundLayer() {
 		if (sceneInst) {
 			try {
 				sceneInst.destroy?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		if (el instanceof HTMLVideoElement) {
 			try {
 				el.pause();
 				el.removeAttribute("src");
 				el.load();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		try {
 			el?.remove();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 
 	function cleanupAll() {
@@ -414,7 +377,6 @@ function createBackgroundLayer() {
 			return;
 		}
 
-		// 自动且只能使用专属主题
 		activateThemeLock();
 
 		if (settings.interactive) {
@@ -431,8 +393,6 @@ function createBackgroundLayer() {
 			settings.lightWallpaperMode,
 		);
 
-		// 只有在冷启动（当前没有任何壁纸在播放）时，才需要一张海报做瞬时垫底；
-		// 若当前已有壁纸在播放，旧的高清壁纸继续保持渲染过渡，绝不中途插入低清糊图！
 		const isColdStart = !currentMediaEl;
 		let coldPoster = null;
 		if (isColdStart) {
@@ -442,15 +402,12 @@ function createBackgroundLayer() {
 			container.appendChild(coldPoster);
 		}
 
-		// 保存旧媒体的引用，待新媒体准备好后再平滑销毁（无缝双缓冲过渡）
 		const oldMediaEl = currentMediaEl;
 		const oldSceneInst = currentSceneInstance;
 		const oldResizeHandler = currentSceneResizeHandler;
 
-		// 标记媒体就绪并淡入激活
 		function markReady(newMediaEl, newSceneInst, newResizeHandler) {
 			if (epoch !== currentLoadEpoch) {
-				// 已被后续切换作废，清理新创建的资源
 				safeDestroyMedia(newMediaEl, newSceneInst, newResizeHandler);
 				coldPoster?.remove();
 				return false;
@@ -460,7 +417,6 @@ function createBackgroundLayer() {
 			currentSceneInstance = newSceneInst || null;
 			currentSceneResizeHandler = newResizeHandler || null;
 
-			// 旧媒体与冷启动海报延时 350ms 平滑移除，保证交叉淡入动画无缝完成
 			if (oldMediaEl && oldMediaEl !== newMediaEl) {
 				setTimeout(() => {
 					safeDestroyMedia(oldMediaEl, oldSceneInst, oldResizeHandler);
@@ -476,7 +432,6 @@ function createBackgroundLayer() {
 			return true;
 		}
 
-		// 1. 视频壁纸播放（硬件直通与原生无损分辨率）
 		if (item.type === "video" || item.hasVideo) {
 			const video = document.createElement("video");
 			video.className = "pi-we-bg-media";
@@ -505,14 +460,12 @@ function createBackgroundLayer() {
 				video.muted = true;
 				void video.play();
 			});
-			// 兜底：如果 400ms 内因浏览器策略未触发 oncanplay，强制淡入显示
 			setTimeout(() => {
 				if (epoch === currentLoadEpoch && !activated) activateVideo();
 			}, 400);
 			return;
 		}
 
-		// 2. Scene 场景壁纸（原生全量支持打包的 scene.pkg 与官方内置/松散 scene.json 散装工程）
 		if (item.type === "scene" || item.hasScene) {
 			const mountEl = document.createElement("div");
 			mountEl.className = "pi-we-scene-mount";
@@ -522,7 +475,6 @@ function createBackgroundLayer() {
 				const pkgUrl = `${API_BASE}/api/pkg?id=${encodeURIComponent(item.id)}`;
 				const shouldTryPkg = Boolean(item.hasPkg) || (!item.isLooseScene && item.hasPkg !== false);
 
-				// 完全并行流水线：并发拉取 WebGL 引擎、工程配置与 scene.pkg 二进制流，消除串行瀑布
 				const [engine, projectRes, pkgRes] = await Promise.all([
 					loadWebWallGL(),
 					fetch(`${API_BASE}/api/project?id=${encodeURIComponent(item.id)}`).catch(() => null),
@@ -539,7 +491,6 @@ function createBackgroundLayer() {
 				const projectJson = projectRes && projectRes.ok ? await projectRes.json().catch(() => null) : null;
 				let source = null;
 
-				// 1. 对于打包版壁纸，优先尝试构建 bytesSource
 				if (pkgRes && pkgRes.ok) {
 					try {
 						const pkgBuffer = await pkgRes.arrayBuffer();
@@ -551,7 +502,6 @@ function createBackgroundLayer() {
 					}
 				}
 
-				// 2. 散装 scene.json 工程处理
 				if (!source && epoch === currentLoadEpoch) {
 					const entryFile = (projectJson?.file || item.file || "scene.json").replace(/\\/g, "/");
 					let totalBytes = 0;
@@ -629,7 +579,6 @@ function createBackgroundLayer() {
 				};
 				window.addEventListener("resize", resizeHandler, { passive: true });
 
-				// 场景渲染挂载完成，平滑淡入激活！
 				markReady(mountEl, sceneInstance, resizeHandler);
 				return;
 			} catch (err) {
@@ -639,14 +588,11 @@ function createBackgroundLayer() {
 			}
 		}
 
-		// 3. Web 网页壁纸（沙箱 iframe 挂载，注入高清视口与音频权限）
 		if (item.type === "web" || item.hasWeb) {
 			const iframe = document.createElement("iframe");
 			iframe.className = "pi-we-bg-media";
 			const webFile = item.webFile || "index.html";
 			iframe.src = `${API_BASE}/api/web?id=${encodeURIComponent(item.id)}&file=${encodeURIComponent(webFile)}`;
-			// 网页壁纸在独立 sandbox origin 渲染（禁 same-origin），与响应头 CSP sandbox 双保险：
-			// 壁纸脚本无法读取应用页面/存储/API。
 			iframe.sandbox = "allow-scripts allow-forms allow-popups allow-modals";
 			iframe.setAttribute("allow", "autoplay; audio *");
 
@@ -662,21 +608,18 @@ function createBackgroundLayer() {
 			};
 
 			iframe.onload = () => {
-				// onload 触发后延时 60ms 确保脚本完成首帧布局与渲染，然后丝滑淡入
 				setTimeout(() => {
 					if (epoch === currentLoadEpoch) activateWeb();
 				}, 60);
 			};
 
 			container.appendChild(iframe);
-			// 兜底：如果外部资源慢，最多 500ms 强制淡入，杜绝停滞
 			setTimeout(() => {
 				if (epoch === currentLoadEpoch && !activated) activateWeb();
 			}, 500);
 			return;
 		}
 
-		// 4. 静态图片或高清原图展示
 		const img = document.createElement("img");
 		img.className = "pi-we-bg-media";
 		const mediaSrc = item.hasImage
@@ -699,9 +642,7 @@ function createBackgroundLayer() {
 		if (currentSceneInstance && typeof currentSceneInstance.pause === "function") {
 			try {
 				currentSceneInstance.pause();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 	}
 
@@ -712,9 +653,7 @@ function createBackgroundLayer() {
 		if (currentSceneInstance && typeof currentSceneInstance.resume === "function") {
 			try {
 				currentSceneInstance.resume();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 	}
 
@@ -753,9 +692,7 @@ function createBackgroundLayer() {
 		if (currentMediaEl instanceof HTMLIFrameElement) {
 			try {
 				currentMediaEl.contentWindow?.__weReceiveAudio?.(spectrumArray);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 	}
 
@@ -766,7 +703,6 @@ function createBackgroundLayer() {
 	return { setWallpaper, pause, resume, setMuted, setInteractive, dispatchAudio, getCurrentItem, destroy };
 }
 
-// ------------------------------------------------------------ 壁纸库抽屉组件
 function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 	const backdrop = document.createElement("div");
 	backdrop.className = "pi-we-backdrop";
@@ -779,7 +715,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 	let searchKeyword = "";
 	const PAGE_SIZE = 12;
 	let currentPage = 1;
-	let displayMode = "paged"; // "paged" | "all"
+	let displayMode = "paged";
 
 	drawer.innerHTML = `
 		<div class="pi-we-header">
@@ -934,9 +870,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 
 		const now = Date.now();
 		if (wallpapers.length > 0 && now - lastWallpapersFetchTime < WALLPAPERS_CACHE_TTL) {
-			// 瞬时呈现已缓存的壁纸列表，零等待！
 			renderGrid();
-			// 后台静默刷新最新数据
 			void loadWallpapers(true);
 		} else {
 			void loadWallpapers(false);
@@ -1103,7 +1037,6 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		triggerRotate();
 	});
 
-	// 导出预设
 	drawer.querySelector("#pi-we-export-btn").addEventListener("click", async () => {
 		try {
 			const res = await fetch(`${API_BASE}/api/presets`);
@@ -1120,7 +1053,6 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		}
 	});
 
-	// 导入预设
 	drawer.querySelector("#pi-we-import-btn").addEventListener("click", async () => {
 		const input = prompt("请粘贴外观预设 JSON 内容：");
 		if (!input) return;
@@ -1149,7 +1081,6 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 	const toggleSettingsBtn = drawer.querySelector("#pi-we-toggle-settings-btn");
 	const toggleSettingsArrow = drawer.querySelector("#pi-we-toggle-settings-arrow");
 
-	// 配置项支持优雅折叠：默认在小屏幕下折叠以给壁纸列表最大的纵向可视浏览空间
 	const isMobile = typeof window !== "undefined" && window.innerWidth <= 480;
 	const savedCollapsed = typeof localStorage !== "undefined" ? localStorage.getItem("pi-we:settings-collapsed") : null;
 	let isSettingsCollapsed = savedCollapsed !== null ? savedCollapsed === "1" : isMobile;
@@ -1172,9 +1103,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 		applySettingsCollapsed(isSettingsCollapsed);
 		try {
 			localStorage.setItem("pi-we:settings-collapsed", isSettingsCollapsed ? "1" : "0");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	drawer.querySelector("#pi-we-rescan-btn").addEventListener("click", async () => {
@@ -1416,7 +1345,6 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 				</div>
 			`;
 
-			// 收藏按钮点击事件（阻止卡片点击冒泡）
 			const favBtn = card.querySelector(".pi-we-fav-btn");
 			favBtn.addEventListener("click", async (e) => {
 				e.stopPropagation();
@@ -1431,9 +1359,7 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 						state.favorites = json.favorites || [];
 						renderGrid();
 					}
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			});
 
 			card.addEventListener("click", () => {
@@ -1474,7 +1400,6 @@ function createDrawer(bgLayer, state, onStateChange, triggerRotate) {
 	return { open, close, toggle, loadWallpapers, renderGrid, syncSettings, getWallpapers: () => wallpapers, destroy };
 }
 
-// ------------------------------------------------------------ 工具调用与思考流详情检查器（Inline Code Pill Inspector）
 function createToolInspector() {
 	if (globalThis.__piToolInspectorActive) {
 		return {
@@ -1520,7 +1445,7 @@ function createToolInspector() {
 
 	let currentCopyText = "";
 	let currentData = null;
-	let currentMode = "preview"; // "preview" | "raw"
+	let currentMode = "preview";
 
 	function tryParsePresentArgs(argsStr) {
 		if (!argsStr || typeof argsStr !== "string") return null;
@@ -1687,7 +1612,6 @@ function createToolInspector() {
 		html += `</div>`;
 		bodyEl.innerHTML = html;
 
-		// 绑定复制路径事件
 		bodyEl.querySelectorAll(".pi-we-ins-copy-path").forEach((btn) => {
 			btn.addEventListener("click", () => {
 				const p = btn.getAttribute("data-path");
@@ -1760,7 +1684,6 @@ function createToolInspector() {
 			const presentData = name === "present_files" || args?.includes('"items"') ? tryParsePresentArgs(args) : null;
 
 			if (presentData) {
-				// 支持切换展示视图与原有视图
 				toggleBtn.style.display = "inline-flex";
 				currentMode = "preview";
 				toggleBtn.textContent = "⚙️ 原始参数";
@@ -1852,12 +1775,10 @@ function setupToolInspectorClickListener(inspector, state) {
 		const thinkEl = e.target.closest(".thinking");
 		if (!toolEl && !thinkEl) return;
 
-		// 豁免：如果点击了关闭/中断 bash 按钮或图片缩略图，不拦截，保证原生交互与大图灯箱有效
 		if (e.target.closest(".toolcall-kill, .toolcall-open, button.toolcall-image, .toolcall-image")) {
 			return;
 		}
 
-		// 拦截默认原地展开
 		e.preventDefault();
 		e.stopPropagation();
 
@@ -1941,7 +1862,6 @@ function setupToolInspectorClickListener(inspector, state) {
 	};
 }
 
-// ------------------------------------------------------------ 运行时主流程（同步初始化 + 异步非阻塞加载）
 const state = {
 	activeId: "",
 	favorites: [],
@@ -1985,7 +1905,6 @@ function onStateChange() {
 	}, 300);
 }
 
-// 轮播触发器
 function triggerRotate() {
 	const pool = drawer.getWallpapers();
 	if (!pool.length) return;
@@ -1993,7 +1912,6 @@ function triggerRotate() {
 	const candidates = candList.length ? candList : pool;
 	if (!candidates.length) return;
 
-	// 选取下一张（若当前在列表里则取下一个，否则随机取）
 	const curIdx = candidates.findIndex((w) => w.id === state.activeId);
 	const nextIdx = (curIdx + 1) % candidates.length;
 	const nextItem = candidates[nextIdx];
@@ -2006,7 +1924,6 @@ function triggerRotate() {
 	}
 }
 
-// 自动轮播定时器调度
 let autoRotateTimer = null;
 function scheduleAutoRotate() {
 	if (autoRotateTimer) {
@@ -2026,7 +1943,6 @@ function scheduleAutoRotate() {
 	}
 }
 
-// 同步创建抽屉面板（确保 UI 结构与事件监听立即就绪）
 const drawer = createDrawer(bgLayer, state, onStateChange, triggerRotate);
 const toolInspector = createToolInspector();
 const stopToolInspector = setupToolInspectorClickListener(toolInspector, state);
@@ -2044,7 +1960,6 @@ const onVisibilityChange = () => {
 };
 document.addEventListener("visibilitychange", onVisibilityChange);
 
-// ------------------------------------------------------------ 宿主动作桥（模块顶层同步注册，锁定作用域）
 const teardown = [];
 function whenBridge(fn, tries = 40) {
 	const bridge = globalThis.window?.__piWebUiHost;
@@ -2057,36 +1972,25 @@ function whenBridge(fn, tries = 40) {
 	teardown.push(() => clearTimeout(timer));
 }
 
-// 模块求值阶段直接执行，确保 registerPluginTopbarAction 在当前 pluginScope 下执行
 whenBridge((bridge) => {
 	try {
 		const off = bridge.onUiAction?.("wallpaper-engine:toggle", () => {
 			drawer.toggle();
 		});
 		if (typeof off === "function") teardown.push(off);
-	} catch {
-		/* ignore */
-	}
-	// 快捷键支持：Ctrl/Cmd+Alt+W 唤起壁纸抽屉
+	} catch {}
 	try {
 		const off = bridge.shortcuts?.register?.("ctrl+alt+w", () => {
 			drawer.toggle();
 		});
 		if (typeof off === "function") teardown.push(off);
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 });
 
-// ------------------------------------------------------------ 交互模式穿透滚轮转发
-// 当用户在动态壁纸中开启了「允许交互」时，.messages 会被设为 pointer-events: none 以便让鼠标
-// 事件穿透到底层动态场景；此时若在两侧空白区域滚动滚轮，事件落到了底层穿透层，原生无法滚动消息区。
-// 此处监听 wheel 并智能转发给当前活动的聊天滚动容器（.messages），兼顾粒子交互与自由滚动。
 function onInteractiveWheel(e) {
 	if (!state.settings?.interactive || !state.activeId) return;
 
 	const target = e.target;
-	// 如果事件目标本身在某个正常接收鼠标事件的 UI 部件或内部滚动区中，由其自身处理
 	if (
 		target &&
 		target.closest &&
@@ -2117,7 +2021,6 @@ function onInteractiveWheel(e) {
 }
 window.addEventListener("wheel", onInteractiveWheel, { passive: true });
 
-// 注册当前运行时（支持热重载与实例清理）
 globalThis[RUNTIME_KEY] = {
 	drawer,
 	bgLayer,
@@ -2130,9 +2033,7 @@ globalThis[RUNTIME_KEY] = {
 		for (const off of teardown.splice(0)) {
 			try {
 				off();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		if (autoRotateTimer) clearInterval(autoRotateTimer);
 		audioEngine.stop();
@@ -2143,7 +2044,6 @@ globalThis[RUNTIME_KEY] = {
 	},
 };
 
-// ------------------------------------------------------------ 异步拉取激活状态与壁纸（极速秒开起播）
 async function loadInitialState() {
 	try {
 		const res = await fetch(`${API_BASE}/api/active`);
@@ -2158,7 +2058,6 @@ async function loadInitialState() {
 			}
 			scheduleAutoRotate();
 
-			// 极速起播：若 /api/active 已直出激活壁纸的完整元数据，立即开播，彻底消除串行等待！
 			if (json.activeWallpaper && json.activeWallpaper.id === state.activeId) {
 				void bgLayer.setWallpaper(json.activeWallpaper, state.settings);
 				if (json.activeWallpaper.type === "scene" || json.activeWallpaper.hasScene) {
@@ -2166,11 +2065,8 @@ async function loadInitialState() {
 				}
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 闲时后台静默预热 WebWallGL 运行时引擎
 	if (typeof window !== "undefined" && "requestIdleCallback" in window) {
 		window.requestIdleCallback(() => void loadWebWallGL(), { timeout: 3000 });
 	} else {

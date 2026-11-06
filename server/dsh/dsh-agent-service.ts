@@ -1,34 +1,8 @@
-/**
- * dsh-agent-service.ts — DeepSeek Harness (dsh) 引擎的 AgentService 等价物。
- *
- * 每个浏览器客户端（clientId）持有：
- *   - 一个 DshRuntime 子进程（stdio JSON-RPC，模型在 initialize 固定 → 换模型 = 重启）
- *   - 一个或多个 conversation（1:1 映射 DSH session id）
- *   - 每 conversation 一个 TerminalManager
- *
- * 消息折叠（事件面 ground truth，见 docs/dsh-engine.md §2.1）：
- *   session.event 持久事件（user/message、assistant/message、tool/result、
- *   assistant/chunk、turn/step、session/title …）→ 追加到 conversation 的
- *   UiMessage[]（回放 JSONL 初始化 + 增量追加，按消息 id 去重）。
- *   assistant/chunk 增量累积 streamingMessage（reasoning→thinking、
- *   text→text、tool-call→toolCall）。
- *   session.status（running/idle）驱动 isStreaming。
- *
- * 协议面限制的处理：
- *   - 中止 = kill 运行时进程树（JSONL 在磁盘，重建不丢）→ 自动重启保持可用
- *   - 换模型 / 换项目 = 重启运行时（initialize 固定 model + cwd）
- *   - 会话列表/回放 = 直读 JSONL（dsh-sessions.ts）
- *   - queue 语义：DSH 无 mid-run steering —— isStreaming 时 prompt 走 followUp
- *     （运行时 inbox 排队，当前 run 结束后消费）
- *
- * 引擎无关模块复用：FilesService（文件树/预览）、scm.ts（git 查询）、
- * BgServerTracker（后台任务）、TerminalManager（PTY）、uploads.ts。
- */
-
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
 import { DEFAULT_DSH_CAPABILITIES } from "../engine-capabilities.js";
 import type { AgentEngineCapabilities } from "../protocol.js";
 import { mergeQuickAskSettings, normalizeQuickAskSettings, type QuickAskSettings } from "../quick-ask-settings.js";
+import { captureQuickAskConversation } from "../quick-ask-context.js";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -141,20 +115,14 @@ import { getMaxOpenConversations } from "../agent-formatters.js";
 import type { PluginChatRequest, PluginConversationQuery, PluginConversationSnapshot } from "../plugins.js";
 
 const SNAPSHOT_INTERVAL_MS = 60;
-/** 用户主目录（wire 格式）：进程内不变，模块加载时求值一次（右栏 🏠）。 */
 const HOME_WIRE = homedir().replace(/\\/g, "/");
-/** 桌面目录（wire 格式）：进程内不变，不存在则空串 → 前端不渲染 🖥️。 */
 const DESKTOP_WIRE = desktopDirWire(HOME_WIRE);
-/** 新会话默认权限预设（沙箱内 + 无审批弹窗；无头运行的当前行为，保持不变）。 */
 const PERMISSION_DEFAULT_PRESET = "workspace-write-never";
-/** 前端提供的三档（官方 workspace-write 走 ask，无应答者时是死路，不提供）。 */
 const PERMISSION_OFFERED = ["read-only", "workspace-write-never", "danger-full-access"];
 const DEFAULT_CONV_TITLE = "新对话";
 const DEFAULT_CONV_TITLE_EN = "New chat";
 const DEFAULT_MODEL = "deepseek-v4-flash";
 
-/** DSH 可选模型（顶栏模型选择器）。仅 deepseek-v4-flash-vision-exp 支持图片
- *  （adapter 默认目录 inputModalities: [text, image]）；flash/pro 是 text-only。 */
 const DSH_MODELS = [
 	{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "deepseek", vision: false },
 	{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", provider: "deepseek", vision: false },
@@ -166,13 +134,11 @@ const DSH_MODELS = [
 	},
 ];
 
-/** DeepSeek V4 context window + 官方每 1M token 定价（USD，api-docs.deepseek.com）。 */
 const DSH_CONTEXT_WINDOW = 1_000_000;
 const DSH_PRICE_INPUT = 0.14;
 const DSH_PRICE_CACHE_READ = 0.0028;
 const DSH_PRICE_OUTPUT = 0.28;
 
-/** 会话 root：<dataDir>/dsh-sessions（与 pi 引擎的会话目录隔离）。 */
 function dshSessionRoot(dataDir: string): string {
 	return join(dataDir, "dsh-sessions");
 }
@@ -189,21 +155,13 @@ function estimateCost(t: { input: number; output: number; cacheRead: number; cac
 
 interface DshConversation {
 	id: string;
-	/** DSH session id（JSONL 目录名，持久标识）。 */
 	sessionId: string;
-	/** 对应的磁盘会话文件绝对路径（若已知）。 */
 	sessionFile?: string;
-	/** Agent 预设 id（standard/ptc/minimal/cordis/自建；创建时确定，首轮后锁定）。 */
 	agentPreset: string;
-	/** 首轮用户发言后锁定（与官方 agent-preset/locked 同语义）。 */
 	presetLocked: boolean;
-	/** preset/assign 已登记到的运行时世代（运行时重启后需重登，见 runtimeGen）。 */
 	assignedGen: number;
-	/** 当前会话的权限预设值（permissions projection；null = 尚未拉取/legacy）。 */
 	permissionPreset: string | null;
-	/** 来自磁盘回放（switch_session）→ prompt 时自动 fork（DSH 无恢复续聊）。 */
 	fromDisk?: boolean;
-	/** DSH 原生目标状态（goal/change 事件维护，权威源在运行时）。 */
 	dsGoal: {
 		id: string;
 		revision: number;
@@ -213,9 +171,7 @@ interface DshConversation {
 		roundsStarted: number;
 		blockedReason?: string;
 	} | null;
-	/** 目标状态（前端 goal_status 数据源；per-conversation，随会话切换）。 */
 	goal: GoalStatus;
-	/** 向导等待器：startGoalWizard 等本轮 turn/end（模型提问-回答-收敛在同一轮）。 */
 	turnWaiter?: {
 		resolve: () => void;
 		reject: (err: Error) => void;
@@ -223,7 +179,6 @@ interface DshConversation {
 	title: string;
 	cwd: string;
 	createdAt: number;
-	/** 持久消息（回放 JSONL 初始化 + 事件增量追加；按 id 去重）。 */
 	messages: UiMessage[];
 	messageIds: Set<string>;
 	streaming: DshStreamAccumulator | null;
@@ -237,17 +192,9 @@ interface DshConversation {
 	terminals: TerminalManager;
 	toolStartTimes: Map<string, number>;
 	tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	/** 是否已拿到 usage：false → 底栏上下文显示 `—`（而不是骗人的 0 / 1.0M）。 */
 	usageSeen: boolean;
-	/**
-	 * 新版运行时（0.1.1-rc.2 之后）的直播帧（runtime `agent/assistant-stream` → wrapper
-	 * `assistant.stream` 通知）是否已接管本会话：接管后持久 `assistant/chunk`
-	 * （老运行时那路）不再重复喂，避免同一 chunk 进两次累计器。
-	 */
 	liveChunks: boolean;
-	/** 直播累计器锚点（首个直播帧的 time）：streamingMessage.id 跨快照稳定。 */
 	streamAnchor: number;
-	/** 直播帧所属 turn（累计器 id 用；帧里自带）。 */
 	streamTurn: number;
 }
 
@@ -261,48 +208,33 @@ interface DshSettings {
 	terminalBashIdleMs: number;
 	terminalBashMaxForegroundMs: number;
 	toolWatchdogTimeoutMs: number;
-	/** 「后台任务」自动清理阈值（分钟；0 = 关）。 */
 	bgAutoCleanupMin: number;
 	editSoftEnabled: boolean;
-	/** 问卷提问（ask_user_question）开关（默认开）。关 → 模型不再弹问卷。 */
 	questionnaireEnabled: boolean;
-	/** 工具执行审批总开关（默认开；DSH 无内置高危检测/审批桥，只做持久化位与面板回显）。 */
 	toolApprovalEnabled: boolean;
-	/** 同项目并行提醒开关（默认开）。关 → 同项目并行时不发 notice、不注 AI、不通知对端。 */
 	parallelReminderEnabled: boolean;
-	/** 目标模式（目标条 + 调研向导 + 审查循环）总开关（默认开）。 */
 	goalModeEnabled: boolean;
 	thinkingWrap: boolean;
 	toolsWrap: boolean;
 	toolImagesEnabled: boolean;
-	/** 消息列表尾部常驻渲染的消息条数（纯 UI 偏好，默认 15）。 */
 	keepRecentMessages: number;
 	showForkedParentSessions: boolean;
 	retainFinishedConversations: boolean;
 	openRecentSessionOnProjectSwitch: boolean;
 	disabledPlugins: string[];
-	/** 宿主 UI 布局偏好（插件 UI 贡献 + 内置条目；纯 UI，per-client；issue #146）。 */
 	uiLayout: UiLayoutPrefs;
-	/** 目标轮次附加指令（DSH 无独立审查者，经 DSH_PERSONA 注入让模型在目标轮次遵守）。 */
 	reviewPrompt: string;
-	/** Agent 预设默认（新会话取值；standard 回退；per-client 持久化，见 client-state）。 */
 	defaultAgentPreset: string;
-	/** 新会话默认权限预设（三档之一；per-client 持久化，创建时热应用）。 */
 	defaultPermissionPreset: string;
-	/** 输入框上方的快捷短语（点击即发送；纯 UI 偏好）。 */
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
 	minimalNewChat: boolean;
 	preserveDraftAcrossConversations: boolean;
-	/** 组合模板与来源覆盖（保持与 pi 引擎 ClientSettings 一致）。 */
 	promptTemplate?: string;
 	promptOverrides?: Record<string, string>;
 	promptDisabled?: string[];
 }
 
-/** 把插件工具 execute 的原始返回值归一化成模型可读文本。
- *  兼容：`{content:[{type:"text",text}...],details}` → text 拼接；string → 原串；
- *  其它对象 → JSON.stringify；null/undefined → 空串。 */
 function normalizeToolResult(result: unknown): string {
 	if (typeof result === "string") return result;
 	if (result === null || result === undefined) return "";
@@ -363,33 +295,22 @@ const DEFAULT_SETTINGS: DshSettings = {
 	promptDisabled: [],
 };
 
-// ---------------------------------------------------------------------------
-// DshClientSession — 一个浏览器客户端
-// ---------------------------------------------------------------------------
-
 export class DshClientSession {
 	readonly clientId: string;
 	cwd: string;
-	/** 当前项目的额外工作区根（宿主侧多根，见 protocol 的 set_workspace_roots）——
-	 *  按 cwd 存在 client-state 里，这里只存一份内存缓存给快照热路径读。 */
 	private roots: string[] = [];
 	private readonly stateStore: ClientStateStore;
 	private readonly sessionRoot: string;
 	private readonly dataDir: string;
-	/** pi 配置目录（auth.json 所在；尊重 PI_CODING_AGENT_DIR）。 */
 	private readonly agentDir: string;
-	/** 用户直接创建的交互式终端（按 CLIENT/工作区 存活，始终显示，不受单个对话切换、生命周期与过滤影响） */
 	private userTerminals: TerminalManager;
 
 	private runtime!: DshRuntime;
 	private convs = new Map<string, DshConversation>();
 	private activeId = "";
 	private convSeq = 0;
-	/** 待答问卷快照（见 attachRuntimeEvents 的 question.pending 与
-	 *  UiState.pendingQuestion）：重连/刷新后由快照恢复对话框。 */
 	private pendingQuestion: NonNullable<UiState["pendingQuestion"]> | null = null;
 
-	/** 客户端级目标/审查偏好（跨会话共享的默认值，per-conversation goal 用它初始化）。 */
 	private goalPrefs = { reviewModel: null as string | null, maxRounds: 2, locked: false };
 
 	private sinks = new Set<(msg: ServerMessage) => void>();
@@ -410,40 +331,29 @@ export class DshClientSession {
 	private modelVision = false;
 	thinkingLevel = "high";
 
-	/** P0-1 watchdog：60s 窗口内最多自动重启 2 次，超限升级为报错 notice。 */
 	private static readonly RUNTIME_RESTART_WINDOW_MS = 60_000;
 	private static readonly RUNTIME_MAX_RESTARTS = 2;
 	private runtimeRestart = { count: 0, windowStart: 0 };
 
-	/** P0-3 convs 内存回收：非活跃且非 streaming 的 conversation 定期回收（JSONL 在磁盘，回放可恢复）。 */
 	private static readonly RECLAIM_INTERVAL_MS = 5 * 60_000;
-	/** 未进左栏“运行的对话”的空闲上限。 */
 	private static readonly CONV_RECLAIM_IDLE_MS = 30 * 60_000;
-	/** 已在左栏“运行的对话”里的空闲上限（用户可见，给更长的保留期）。 */
 	private static readonly CONV_RECLAIM_LISTED_IDLE_MS = 24 * 3600_000;
 	private reclaimTimer: ReturnType<typeof setInterval> | null = null;
 
-	/** P1-13 会话 JSONL 保留期（PI_WEB_DSH_SESSION_RETENTION_DAYS，默认 90 天）。 */
 	private static readonly SESSION_RETENTION_MS =
 		(Number(process.env.PI_WEB_DSH_SESSION_RETENTION_DAYS) || 90) * 24 * 3600_000;
 	private retentionTimer: ReturnType<typeof setInterval> | null = null;
 	private retentionOnce: ReturnType<typeof setTimeout> | null = null;
 
 	private settings: DshSettings = { ...DEFAULT_SETTINGS };
-	/** 最近一次从运行时拉取的技能清单（UiSkillInfo，含 enabled 由 disabledSkills 推导）。 */
 	private skillsCache: UiSkillInfo[] = [];
-	/** 运行时世代（每次 start 成功 +1；conv.assignedGen 用它判断 preset/assign 是否过期）。 */
 	private runtimeGen = 0;
-	/** Agent 预设名录缓存（运行时 preset/list；unavailable/空 = legacy，UI 隐藏预设条）。 */
 	private agentPresets: DshAgentPreset[] = [];
 	private agentPresetDefault = PRESET_DEFAULT_ID;
 	private agentPresetsAvailable = false;
-	/** 权限选项表缓存（组合静态；空 = 未就绪/legacy，前端隐藏权限条）。 */
 	private permissionOptions: DshPermissionOption[] = [];
-	/** clone 出来的预设 id（roster 名录校验用；空 = 未生成，走 legacy）。 */
 	private presetCloneIds: string[] = [];
 
-	/** 系统提示词缓存（从运行时 inspectPrompt 异步拉取；未就绪时兜底）。 */
 	private cachedEffectiveSystemPrompt = "";
 	private cachedToolsSchema = "";
 	private cachedPromptSections: { name: string; text: string; chars: number }[] = [];
@@ -460,7 +370,6 @@ export class DshClientSession {
 	private readonly markerSvc: MarkerService;
 	private readonly modelAdmin: ModelAdminService;
 
-	/** 插件扩展点（index.ts 注入）。 */
 	onToolEvent:
 		| ((ev: {
 				phase: string;
@@ -477,8 +386,6 @@ export class DshClientSession {
 	onQuit: (() => boolean) | undefined;
 	isQuiesced: (() => boolean) | undefined;
 	onCwdChanged: ((cwd: string) => void) | undefined;
-	/** issue #145 跨客户端感知（DshAgentService.attach 接线，与 pi 引擎同语义；
-	 *  DSH 的会话身份是 sessionId = JSONL 目录名）。 */
 	findSessionOwnerById: ((sessionId: string) => SessionOwnerInfo | null) | undefined = undefined;
 	listProjectRunners: ((cwd: string) => ProjectRunnerInfo[]) | undefined = undefined;
 	listExternalRunning: (() => ElsewhereRunning[]) | undefined = undefined;
@@ -486,7 +393,6 @@ export class DshClientSession {
 		| ((msg: { type: "notice"; level: "info" | "warning" | "error"; text: string; textEn?: string }) => void)
 		| undefined = undefined;
 	onRunningChanged: (() => void) | undefined = undefined;
-	/** issue #145：上次 emit 时流式对话签名（变化才 poke 其他客户端，防循环）。 */
 	private lastRunningSig = "";
 
 	private constructor(clientId: string, cwd: string, stateStore: ClientStateStore, dataDir: string, agentDir: string) {
@@ -501,9 +407,7 @@ export class DshClientSession {
 		this.sandboxes = new SandboxManager(dataDir);
 		try {
 			mkdirSync(this.sessionRoot, { recursive: true });
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 		this.files = new FilesService({
 			emit: (msg) => this.emit(msg),
 			isDisposed: () => this.disposed,
@@ -565,8 +469,6 @@ export class DshClientSession {
 		agentDir?: string,
 	): DshClientSession {
 		const cs = new DshClientSession(clientId, cwd, stateStore, dataDir, agentDir ?? join(homedir(), ".pi", "agent"));
-		// 恢复上次使用的目标/审查偏好（全局记忆，跨重载存活；per-conversation
-		// 目标用它初始化）。
 		const gPrefs = stateStore.getGoalPrefs(clientId);
 		if (gPrefs) {
 			cs.goalPrefs = {
@@ -575,12 +477,10 @@ export class DshClientSession {
 				locked: gPrefs.locked,
 			};
 		}
-		// 恢复上次使用的模型（按 DSH 引擎独立记录：项目记忆 > 全局默认）
 		const savedModel = stateStore.getProjectModel(clientId, cwd, "dsh") ?? stateStore.getDefaultModel("dsh");
 		if (savedModel) {
 			cs.applySavedModel(savedModel);
 		}
-		// 恢复上次使用的设置（跨重连存活；DSH 忽略无行为字段但回显保持 UI 一致）。
 		const savedSettings = stateStore.getSettings(clientId);
 		if (savedSettings) {
 			cs.settings = {
@@ -623,7 +523,6 @@ export class DshClientSession {
 						: PERMISSION_DEFAULT_PRESET,
 			};
 		}
-		// 恢复最近会话（若有）或新建空白会话（避免刷新页面后丢失历史变成空白新对话）
 		cs.makeRuntime();
 		const recentFiles = findSessionFilesForCwd(cs.sessionRoot, cwd).filter(
 			(f) => !basename(dirname(f)).startsWith("review-"),
@@ -656,8 +555,6 @@ export class DshClientSession {
 			cs.activeId = first.id;
 		}
 		cs.attachRuntimeEvents();
-		// 每次启动成功（含初次/换模型/watchdog 重启）后重新注册插件工具桥，
-		// 因为重 spawn 后的 ctx.tools 是全新的，需要重新 sync 插件工具。
 		cs.runtime.onStarted = () => {
 			if (cs.switchingWorkspace) return;
 			cs.runtimeGen += 1;
@@ -669,13 +566,11 @@ export class DshClientSession {
 			void cs.refreshActivePermission().catch(() => {});
 			void cs.refreshPromptInfo().catch(() => {});
 		};
-		// P0-1 watchdog：意外退出（非 kill/close 主动触发）→ 限频自动重启，保持可用。
 		cs.runtime.onExit = (code, signal, intentional) => {
 			cs.cancelBridgedTools();
-			if (intentional) return; // kill()/close() 主动触发，不重启
+			if (intentional) return;
 			cs.handleRuntimeExit(code, signal);
 		};
-		// P0-5 启动重试：1s/3s/9s 指数退避，最终失败才发 notice。
 		void cs.startWithRetry().catch((err) => {
 			console.error(`[dsh] runtime.start 失败 (client=${clientId}): ${(err as Error).message}`);
 			const errMsg = (err as Error).message || "";
@@ -696,10 +591,8 @@ export class DshClientSession {
 				textEn: `DSH runtime failed to start: ${errMsg}. ${hintEn}`,
 			});
 		});
-		// P0-3 convs 内存回收定时器（unref：不阻止进程退出）。
 		cs.reclaimTimer = setInterval(() => cs.reclaimIdleConversations(), DshClientSession.RECLAIM_INTERVAL_MS);
 		cs.reclaimTimer.unref?.();
-		// P1-13 会话 JSONL 保留期清理：启动后 10s 首清 + 每 24h 一次（幂等）。
 		cs.retentionOnce = setTimeout(() => void cs.cleanupExpiredSessions(), 10_000);
 		cs.retentionOnce.unref?.();
 		cs.retentionTimer = setInterval(() => void cs.cleanupExpiredSessions(), 24 * 3600_000);
@@ -708,7 +601,6 @@ export class DshClientSession {
 		return cs;
 	}
 
-	/** P0-5 带指数退避的启动（1s/3s/9s，最终失败才抛）。 */
 	private async startWithRetry(): Promise<void> {
 		const delays = [1000, 3000, 9000];
 		let lastErr: unknown;
@@ -725,16 +617,13 @@ export class DshClientSession {
 		throw lastErr;
 	}
 
-	/** P0-1 意外崩溃处理：重置进行中的 conv 状态 → 限频自动重启。 */
 	private handleRuntimeExit(code: number | null, signal: string | null): void {
 		if (this.disposed) return;
 		console.error(`[dsh] runtime 意外退出 (client=${this.clientId}) code=${code} signal=${signal}`);
-		// 进行中的 run 全部中断（pending RPC 已被 failPending reject）→ 复位 streaming。
 		for (const conv of this.convs.values()) {
 			finishTurnTiming(conv);
 			conv.isStreaming = false;
 			conv.streaming = null;
-			// 直播帧能力跟着运行时进程走：重启后重新探测（换运行时版本也能回落到持久 assistant/chunk）。
 			conv.liveChunks = false;
 		}
 		this.emitConversations();
@@ -780,7 +669,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** P0-3 回收长时间空闲的非活跃 conversation（磁盘 JSONL 在，回放即可恢复）。 */
 	private reclaimIdleConversations(): void {
 		if (this.disposed) return;
 		const now = Date.now();
@@ -788,7 +676,6 @@ export class DshClientSession {
 		for (const [id, conv] of this.convs) {
 			if (id === this.activeId) continue;
 			if (conv.isStreaming) continue;
-			// 只看“用过”的存活终端：没动过的空 shell 不阻止空闲回收。
 			if (conv.terminals.countBlockingLive() > 0) continue;
 			const idle = now - conv.lastEventAt;
 			const limit = conv.listed ? DshClientSession.CONV_RECLAIM_LISTED_IDLE_MS : DshClientSession.CONV_RECLAIM_IDLE_MS;
@@ -803,8 +690,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** P1-13 清理超过保留期未活动的会话目录（<sessionRoot>/<projectKey>/<sessionId>/）。
-	 *  目录内最新文件 mtime 判活跃（JSONL 追加写不更新目录 mtime，不能看目录本身）。 */
 	private async cleanupExpiredSessions(): Promise<void> {
 		if (this.disposed) return;
 		const cutoff = Date.now() - DshClientSession.SESSION_RETENTION_MS;
@@ -825,13 +710,9 @@ export class DshClientSession {
 								if (m >= cutoffMs) return m;
 								max = Math.max(max, m);
 							}
-						} catch {
-							/* skip unreadable */
-						}
+						} catch {}
 					}
-				} catch {
-					/* skip unreadable dir */
-				}
+				} catch {}
 				return max;
 			};
 			let removed = 0;
@@ -846,7 +727,7 @@ export class DshClientSession {
 					const p = join(dir, e.name);
 					if (!e.isDirectory()) continue;
 					const lastMod = dirLastModified(p, cutoff);
-					if (lastMod === 0) continue; // 空目录不删
+					if (lastMod === 0) continue;
 					if (lastMod < cutoff) {
 						rmSync(p, { recursive: true, force: true });
 						removed++;
@@ -860,14 +741,10 @@ export class DshClientSession {
 				console.error(`[dsh] 已清理 ${removed} 个超过保留期的会话目录`);
 				this.scheduleSessionsRefresh();
 			}
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 	}
 
 	private makeRuntime(): void {
-		// Agent 预设 clone（file: 改写 shipped 预设，供 preset-plane patch 的 roster 用）。
-		// 成功 → 下发 patch（预设时代）；失败/null → 不下发（回落 legacy 单组合）。
 		let presetPatch: string | undefined;
 		try {
 			const clones = generatePresetClones(this.dataDir);
@@ -913,15 +790,11 @@ export class DshClientSession {
 						},
 					);
 				} else if (method === "assistant.stream") {
-					// 新版运行时（0.1.1-rc.2 之后）的直播流：wrapper 把 agent/assistant-stream 帧转成
-					// assistant.stream 通知（老运行时的持久 assistant/chunk 已不存在）。
 					this.handleAssistantStream(params as { sessionId: string; frame: Record<string, unknown> });
 				} else if (method === "session.status") {
 					this.handleSessionStatus(params as { sessionId: string; status: string });
 				} else if (method === "question.pending") {
-					// 模型 ask_user_question → 转发给浏览器对话框（deadline = 服务端超时时间戳）。
 					const params0 = params as { id: string; questions?: unknown[]; deadline?: unknown };
-					// 问卷开关（默认开）：关 → 不弹框，立即取消让模型得知已禁用。
 					if (this.settings.questionnaireEnabled === false) {
 						void this.answerQuestion(params0.id, [], true);
 						return;
@@ -948,9 +821,6 @@ export class DshClientSession {
 							: {}),
 						...((q as { multiSelect?: unknown }).multiSelect ? { multiSelect: true } : {}),
 					}));
-					// 记下待答问卷：`question_pending` 只推给「当时在线」的连接，刷新页面
-					// /WS 重连后靠快照（UiState.pendingQuestion）把对话框恢复出来。
-					// DSH 的提问桥是 runtime 级的（无 conversationId），故不分对话。
 					const dshConv = this.convs.get(this.activeId);
 					const conversationTitle = dshConv?.title;
 					this.pendingQuestion = {
@@ -970,7 +840,6 @@ export class DshClientSession {
 					});
 					this.flushSnapshot();
 				} else if (method === "tools.call.request") {
-					// 工具桥（#15）：模型调了插件工具 → 服务端跑插件实现 → tools/call-result 回传。
 					void this.handleToolCallRequest(params as { id: string; name: string; args?: Record<string, unknown> });
 				}
 			} catch (err) {
@@ -979,10 +848,6 @@ export class DshClientSession {
 		});
 	}
 
-	/** 快照侧的待答问卷（UiState.pendingQuestion）：重连/刷新后靠它恢复对话框。
-	 *  DSH 的提问自带超时（goal-rpc 到点 reject），deadline 已过的不再下发——
-	 *  否则已经没人等的问卷会被重连的客户端当成活的弹出来。标准引擎不限时，
-	 *  没有 deadline，生命周期由回答/取消/dispose 精确终止。 */
 	private pendingQuestionForSnapshot(): NonNullable<UiState["pendingQuestion"]> | null {
 		const p = this.pendingQuestion;
 		if (!p) return null;
@@ -990,14 +855,11 @@ export class DshClientSession {
 		return p;
 	}
 
-	/** 前端回答模型提问（question/answer → runtime 恢复工具结果）。 */
 	async answerQuestion(
 		id: string,
 		answers: { id: string; selected: string[]; custom?: string }[],
 		cancelled?: boolean,
 	): Promise<void> {
-		// 无论成功失败都清掉待答快照：同 id 不会再有下一次，留着会让重连的客户端
-		// 恢复到一张已经没人在等的问卷。
 		if (this.pendingQuestion?.id === id) this.pendingQuestion = null;
 		this.flushSnapshot();
 		try {
@@ -1012,12 +874,6 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 工具桥（#15 插件注入点）：服务端把插件工具注册进运行时，并执行模型对
-	// 桥接工具的调用（tools.call.request → 插件 execute → tools/call-result）。
-	// -----------------------------------------------------------------------
-
-	/** 桥接的插件工具最小形状（对齐 plugins.ts 的 PluginAgentTool，仅取桥接所需字段）。 */
 	private bridgedTool(t: unknown):
 		| {
 				name: string;
@@ -1058,7 +914,6 @@ export class DshClientSession {
 		return [...new Set([this.cwd, ...[...this.convs.values()].map((conv) => conv.cwd)])];
 	}
 
-	/** 把当前插件工具（pluginToolsProvider）同步注册进运行时（幂等，可重复调用）。 */
 	async syncPluginTools(): Promise<void> {
 		if (!this.runtime.alive) return;
 		const provider = this.pluginToolsProvider;
@@ -1078,13 +933,6 @@ export class DshClientSession {
 		}
 	}
 
-	/**
-	 * 取一条工具的**定义说明**（工具卡右键 → 「显示工具详细信息」）→ `tool_info`。
-	 *
-	 * DSH 侧的定义来自运行时（`tools/list`：DSH 原生工具 + 桥接进来的插件工具）。
-	 * 拿不到（运行时没起来 / RPC 报错）回 `unsupported`，让前端说「当前引擎不支持」
-	 * 而不是「未找到工具定义」—— 后者会让用户以为工具名写错了。
-	 */
 	async getToolInfo(name: string): Promise<void> {
 		if (!this.runtime.alive) {
 			this.emit({ type: "tool_info", ...unsupportedToolInfo(name) });
@@ -1100,7 +948,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** 从运行时拉取技能清单 → 缓存 → 重推 settings_state（enabled 由 disabledSkills 推导）。 */
 	async refreshSkillsFromRuntime(): Promise<void> {
 		if (!this.runtime.alive) return;
 		try {
@@ -1117,12 +964,9 @@ export class DshClientSession {
 		}
 		try {
 			this.pushSettings();
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 	}
 
-	/** 把禁用技能集合同步给运行时（晚 pre-step 钩子据此过滤 skill-catalog 消息）。 */
 	async pushDisabledSkillsToRuntime(): Promise<void> {
 		if (!this.runtime.alive) return;
 		try {
@@ -1132,7 +976,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** 模型调用桥接工具：找插件 execute，归一化结果，tools/call-result 回传。 */
 	private async handleToolCallRequest(params: {
 		id: string;
 		name: string;
@@ -1188,7 +1031,6 @@ export class DshClientSession {
 		return `c${++this.convSeq}-${randomUUID().slice(0, 8)}`;
 	}
 
-	/** 每个会话独立的目标状态（默认来自客户端级偏好）。 */
 	private makeGoalStatus(): GoalStatus {
 		return {
 			conversationId: null,
@@ -1204,17 +1046,14 @@ export class DshClientSession {
 		};
 	}
 
-	/** 未命名对话的默认标题（issue #91：按客户端语言，英文默认）。 */
 	private defaultTitle(): string {
 		return pick(this.getLang(), DEFAULT_CONV_TITLE, DEFAULT_CONV_TITLE_EN, "dsh.conv.default.title");
 	}
 
-	/** 是否仍是默认（未命名）标题——中英都认，跨语言切换不丢命名判断。 */
 	private static isDefaultTitle(title: string): boolean {
 		return title === DEFAULT_CONV_TITLE || title === DEFAULT_CONV_TITLE_EN;
 	}
 
-	/** 新建（或切换）一个 conversation。existing 的 sessionId 续聊最近 JSONL。 */
 	private addConversation(
 		sessionId: string,
 		cwd: string,
@@ -1248,7 +1087,6 @@ export class DshClientSession {
 			terminals: new TerminalManager(
 				(msg) => this.emit(msg),
 				cwd,
-				// issue #91：终端输入错误按客户端 UI 语言出中英（英文默认）。
 				() => this.getLang(),
 			),
 			toolStartTimes: new Map(),
@@ -1259,7 +1097,6 @@ export class DshClientSession {
 			streamTurn: 0,
 		};
 		if (replay) {
-			// 从磁盘 JSONL 回放历史消息（DSH 事件流不重放历史）。
 			try {
 				let targetFile = sessionFilePath && existsSync(sessionFilePath) ? sessionFilePath : null;
 				if (!targetFile) {
@@ -1272,24 +1109,17 @@ export class DshClientSession {
 					conv.messages = replayEventsToMessages(events);
 					for (const m of conv.messages) conv.messageIds.add(m.id);
 					conv.title = firstUserText(events, this.getLang());
-					// 回放定预设：日志记录（selected 事件/header）> 调用方指定 > 默认。
 					const logged = sessionLogPreset({ header, events });
 					conv.agentPreset = this.resolvePreset(logged ?? preset);
-					// 权限预设同理：permission/preset 事件最后一条为准（无则 null，激活时拉取）。
 					conv.permissionPreset = sessionLogPermission({ header, events });
-					// 底栏统计：日志里最后一次 usage（新版在 assistant/message.usage，0.1.1 在
-					// assistant/chunk 的 usage chunk）→ 切回历史会话立刻有上下文 / 缓存命中数字。
 					const loggedUsage = lastUsageFromEvents(events);
 					if (loggedUsage) {
 						conv.tokens = loggedUsage;
 						conv.usageSeen = true;
 					}
-					// 有历史消息 = 已开始的会话，预设锁定（官方语义）。
 					if (conv.messages.length > 0) conv.presetLocked = true;
 				}
-			} catch {
-				/* best effort */
-			}
+			} catch {}
 		}
 		this.convs.set(conv.id, conv);
 		return conv;
@@ -1298,10 +1128,6 @@ export class DshClientSession {
 	private get conv(): DshConversation {
 		return this.convs.get(this.activeId)!;
 	}
-
-	// -----------------------------------------------------------------------
-	// 事件管线
-	// -----------------------------------------------------------------------
 
 	private findConv(sessionId: string): DshConversation | undefined {
 		for (const conv of this.convs.values()) {
@@ -1315,17 +1141,13 @@ export class DshClientSession {
 		event: { type: string; seq: number; time: number; data: Record<string, unknown> };
 	}): void {
 		const conv = this.findConv(params.sessionId);
-		if (!conv) return; // 非本客户端 conversation（并发其他客户端）→ 忽略
+		if (!conv) return;
 		conv.lastEventAt = Date.now();
 		const ev = params.event;
 		switch (ev.type) {
 			case "user/message": {
-				// DSH 会注入系统内部消息（workspace 指令 / 运行时上下文快照 / 目标轮次
-				// prompt）——前端不显示（pi 引擎的 asides 同理），只保留真正的用户消息。
 				const srcKind = (ev.data as { source?: { kind?: string } }).source?.kind;
 				if (srcKind === "goal") {
-					// 目标轮次承认：不渲染，但更新轮数显示（round 由 source.round 携带）。
-					// P1-10：轮次达上限且仍未完成 → 提示轮尽。
 					const round = (ev.data as { source?: { round?: number } }).source?.round;
 					if (round && conv.goal.goal && conv.id === this.activeId) {
 						conv.goal.round = round;
@@ -1348,8 +1170,6 @@ export class DshClientSession {
 					.replace(/\n\[(?:文件引用|File reference|上传文件|Uploaded file|图片附件|Image attachment):[\s\S]*$/u, "")
 					.trim();
 
-				// 1. 优先查找是否有暂存的本地乐观用户消息（u-pending- 开头）
-				// DSH 运行时回抛的消息往往带有 \n[File reference: ...] 附件说明，需要替换原乐观消息避免出现两条气泡
 				const pendingIdx = conv.messages.findIndex(
 					(m) => m.role === "user" && typeof m.id === "string" && m.id.startsWith("u-pending-"),
 				);
@@ -1360,7 +1180,6 @@ export class DshClientSession {
 						conv.messageIds.delete(pendingMsg.id);
 						conv.messageIds.add(msg.id);
 						conv.messages[pendingIdx] = msg;
-						// 图片附件异步补图处理
 						const imgRefs = ((ev.data as { content?: unknown[] }).content ?? [])
 							.filter((b) => (b as { type?: string })?.type === "image")
 							.map((b) => (b as { attachment?: { attachmentId?: string; mediaType?: string } }).attachment)
@@ -1375,7 +1194,6 @@ export class DshClientSession {
 					}
 				}
 
-				// 2. 重复文本（DSH 有时重放同一用户消息）→ 去重。
 				if (
 					cleanText &&
 					conv.messages.some((m) => {
@@ -1387,8 +1205,6 @@ export class DshClientSession {
 					break;
 				}
 				this.appendMessage(conv, msg);
-				// 图片附件异步补图：DSH 事件里的 image 块只有 ref 没有像素，回读后
-				// 填 dataUrl 供前端显示（回放/事件流的图片块在本地乐观消息中已显示过）。
 				const imgRefs = ((ev.data as { content?: unknown[] }).content ?? [])
 					.filter((b) => (b as { type?: string })?.type === "image")
 					.map((b) => (b as { attachment?: { attachmentId?: string; mediaType?: string } }).attachment)
@@ -1412,7 +1228,6 @@ export class DshClientSession {
 			case "assistant/message": {
 				const msg = assistantMessageEventToUiMessage(ev.data as never);
 				if (msg) {
-					// 完整消息落地 → streaming 清空（避免重复）。
 					conv.streaming = null;
 					this.appendMessage(conv, msg);
 				}
@@ -1420,7 +1235,6 @@ export class DshClientSession {
 				if (rawText && rawText.includes("[[")) {
 					void this.markerSvc.handleAssistantText(conv.id, rawText);
 				}
-				// 新版运行时的 usage 挂在这条持久事件上（老运行时没有 → undefined 保持原统计）。
 				this.applyUsage(conv, (ev.data as { usage?: unknown }).usage);
 				break;
 			}
@@ -1429,7 +1243,6 @@ export class DshClientSession {
 				if (msg) this.appendMessage(conv, msg);
 				const startedAt = conv.toolStartTimes.get(msg?.toolCallId ?? "");
 				if (msg) conv.toolStartTimes.delete(msg.toolCallId ?? "");
-				// bash 工具结束 → 后台任务端口 diff。
 				const toolName = (ev.data as { toolName?: string }).toolName;
 				if (toolName === "bash") void this.bg.trackAfterBash();
 				this.onToolEvent?.({
@@ -1451,8 +1264,6 @@ export class DshClientSession {
 				break;
 			}
 			case "assistant/chunk": {
-				// 老运行时（0.1.1-rc.2）的持久直播 chunk；新版运行时没有这个事件（改发
-				// agent/assistant-stream 直播帧）→ 过渡期两边都在时只认直播帧，避免喂两遍。
 				if (conv.liveChunks) break;
 				const chunk = ev.data?.chunk as Record<string, unknown> | undefined;
 				if (!chunk) break;
@@ -1468,21 +1279,15 @@ export class DshClientSession {
 				break;
 			}
 			case "goal/change": {
-				// DSH 原生目标状态机事件（create/edit/resume/complete/block/clear），
-				// 全量快照 → 翻译成 GoalStatus 推前端。权威源在运行时，本地只镜像。
 				this.applyGoalChange(conv, ev.data as never);
 				break;
 			}
 			case "turn/end": {
 				conv.streaming = null;
-				// DSH 无法恢复已持久化会话（id collision）——abort 重启运行时后
-				// 原会话也变 "磁盘有日志无 live"。检测到 error → 自动 fork + 重发。
-				// 目标轮次由 goal-round-driver 自动续，这里不需要审查钩子。
 				const reason = (ev.data?.reason as { kind?: string; error?: { message?: string } }) ?? {};
 				if (reason.kind === "error" && /id collision/i.test(reason.error?.message ?? "") && !conv.fromDisk) {
 					this.forkAndReprompt(conv);
 				} else if (conv.turnWaiter) {
-					// 调研向导等本轮结束（completed 正常 / error 中断）。
 					const w = conv.turnWaiter;
 					conv.turnWaiter = undefined;
 					if (reason.kind === "completed") w.resolve();
@@ -1508,7 +1313,6 @@ export class DshClientSession {
 				break;
 			}
 			case "agent/inbox/spliced": {
-				// 用户 prompt 注入 → 清理 followUp 队列中已消费的文本。
 				const inserted = (ev.data?.inserted as { content?: { type?: string; text?: string }[] }[] | undefined) ?? [];
 				const texts = inserted.map((m) => m.content?.find((c) => c.type === "text")?.text ?? "").filter(Boolean);
 				if (texts.length > 0) {
@@ -1522,7 +1326,6 @@ export class DshClientSession {
 			default:
 				break;
 		}
-		// 事件驱动快照（60ms 节流；边界事件立即）。
 		if (
 			ev.type === "turn/end" ||
 			ev.type === "tool/result" ||
@@ -1535,20 +1338,12 @@ export class DshClientSession {
 		}
 	}
 
-	/**
-	 * 新版运行时的直播帧处理。运行时逐 chunk 发 `agent/assistant-stream`（agent scope，
-	 * host 侧要 `{ global: true }` 才收得到），wrapper（goal-rpc.mjs）转成本通知：
-	 *   { type: "start" | "chunk" | "end", attemptId, revision, index, time, chunk }
-	 * chunk 形状与老运行时的 `assistant/chunk.data.chunk` 同构 → 共用 applyStreamChunk。
-	 */
 	private handleAssistantStream(params: { sessionId: string; frame?: Record<string, unknown> }): void {
 		const conv = this.findConv(params.sessionId);
 		const frame = params.frame;
-		// 别家客户端的会话 / 子代理会话（不在本客户端 convs 里）→ 忽略。
 		if (!conv || !frame || typeof frame.type !== "string") return;
 		conv.lastEventAt = Date.now();
 		if (frame.type === "start") {
-			// 新 attempt（含重试）→ 换锚点，丢掉上一 attempt 的累计内容（与官方 dsh-web 一致）。
 			conv.liveChunks = true;
 			conv.streaming = null;
 			conv.streamAnchor = typeof frame.time === "number" && Number.isFinite(frame.time) ? frame.time : Date.now();
@@ -1556,28 +1351,18 @@ export class DshClientSession {
 			this.scheduleSnapshot();
 			return;
 		}
-		if (frame.type !== "chunk") return; // end：结算由 assistant/message / turn/end 清
+		if (frame.type !== "chunk") return;
 		conv.liveChunks = true;
 		const chunk = frame.chunk as Record<string, unknown> | undefined;
 		if (!chunk) return;
 		if (!conv.streamAnchor) {
-			// 没收到 start（重连晚到）→ 用首帧补锚点。
 			conv.streamAnchor = typeof frame.time === "number" && Number.isFinite(frame.time) ? frame.time : Date.now();
 			conv.streamTurn = typeof frame.turn === "number" ? frame.turn : 0;
 		}
 		this.applyStreamChunk(conv, chunk, conv.streamAnchor, conv.streamTurn);
-		// 60ms 节流快照：与持久事件那条路一样，让 isStreaming / streamingMessage 进快照
-		// （delta 通道只负责内容增量，靠它保证状态一致 + 背压时仍能收敛）。
 		this.scheduleSnapshot();
 	}
 
-	/**
-	 * 一个 model stream chunk → 会话：usage 进底栏统计，其余进 streamingMessage 累计器 +
-	 * 实时 delta 通道（message_delta）。两条投递路径（老 assistant/chunk / 新直播帧）共用。
-	 *
-	 * @param anchorId - streamingMessage id 的锚（老 = chunk 事件 seq；新版 = 首帧 time）。
-	 * @param turn - 所属 turn（累计器 id 用）。
-	 */
 	private applyStreamChunk(
 		conv: DshConversation,
 		chunk: Record<string, unknown>,
@@ -1590,9 +1375,6 @@ export class DshClientSession {
 		}
 		if (!conv.streaming) conv.streaming = new DshStreamAccumulator(anchorId, turn);
 		conv.streaming.apply(chunk);
-		// message_delta 实时通道：本机快速完成时 60ms 延迟快照总被 assistant/message 抢跑
-		// （streaming 从未被捕捉）→ delta 直接走独立通道，保证逐 token 渲染
-		// （前端 patch streamingMessage）。只推给当前对话，其他对话靠快照。
 		if (conv.id === this.conv.id && (chunk.type === "text-delta" || chunk.type === "reasoning-delta")) {
 			this.emit({
 				type: "message_delta",
@@ -1609,7 +1391,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** usage → 底栏统计（最近一次模型调用口径；缺字段 / 非对象保持原值）。 */
 	private applyUsage(conv: DshConversation, usage: unknown): void {
 		const next = normalizeDshUsage(usage);
 		if (!next) return;
@@ -1626,7 +1407,6 @@ export class DshClientSession {
 		else finishTurnTiming(conv);
 		conv.lastEventAt = Date.now();
 		if (was && !conv.isStreaming) {
-			// run 结束：清 streaming + 刷新会话列表。
 			conv.streaming = null;
 			this.refreshConversationTitle(conv);
 			this.scheduleSessionsRefresh();
@@ -1643,7 +1423,6 @@ export class DshClientSession {
 
 	private refreshConversationTitle(conv: DshConversation): void {
 		if (!DshClientSession.isDefaultTitle(conv.title)) return;
-		// 从消息列表取第一个用户文本。
 		const t = conv.messages
 			.find((m) => m.role === "user")
 			?.content?.map((c) => ("text" in c ? c.text : ""))
@@ -1655,11 +1434,6 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 快照
-	// -----------------------------------------------------------------------
-
-	/** 立即推送（节流 60ms 合并突发）。 */
 	flushSnapshot(forceFull = false): void {
 		if (this.disposed) return;
 		if (this.snapshotTimer) {
@@ -1680,12 +1454,9 @@ export class DshClientSession {
 	private emitSnapshotNow(forceFull = false): void {
 		if (this.disposed) return;
 		const conv = this.conv;
-		// 拷贝一份：appendMessage 直接 push conv.messages，若把引用存进
-		// emittedMessages，prev/cur 就是同一数组，slice(prev.length) 恒为空。
 		const cur = [...conv.messages];
 		const prev = this.emittedMessages;
 		const rev = ++this.snapRev;
-		// 增量：同一 conversation 且纯 append 时发 snapshot_delta。
 		let incremental = !forceFull && prev !== null && this.emittedRev > 0 && prev.length <= cur.length;
 		if (incremental && prev) {
 			for (let i = 0; i < prev.length; i++) {
@@ -1724,9 +1495,7 @@ export class DshClientSession {
 				conv.sessionFile = files[0];
 				return files[0];
 			}
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		return undefined;
 	}
 
@@ -1743,7 +1512,6 @@ export class DshClientSession {
 				total: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
 			},
 			cost: estimateCost(tokens),
-			// 最近一次请求的 prompt + 输出（usageSeen=false → tokens=null，前端显示 `—`）。
 			contextUsage: dshContextUsage(conv.usageSeen ? tokens : null, DSH_CONTEXT_WINDOW),
 		};
 		return {
@@ -1765,7 +1533,6 @@ export class DshClientSession {
 				id: this.model,
 				name: this.modelDisplayName || (DSH_MODELS.find((m) => m.id === this.model)?.name ?? this.model),
 				provider: this.modelProvider || "deepseek",
-				// dsh-llm-deepseek adapter：仅 vision-exp 模型 inputModalities 含 image
 				vision: this.modelVision,
 			},
 			thinkingLevel: this.thinkingLevel,
@@ -1779,7 +1546,6 @@ export class DshClientSession {
 			tools: [],
 			version: ++this.version,
 			piConfigured: this.isDshConfigured(),
-			// DSH 不需要 pi CLI：报 true 让 PiSetupModal 跳过“安装 pi”步骤，直达填 key 表单。
 			piAgentInstalled: true,
 			stats,
 		};
@@ -1788,10 +1554,6 @@ export class DshClientSession {
 	getCapabilities(): AgentEngineCapabilities {
 		return DEFAULT_DSH_CAPABILITIES;
 	}
-
-	// -----------------------------------------------------------------------
-	// socket / 通知
-	// -----------------------------------------------------------------------
 
 	attachSink(send: (msg: ServerMessage) => void): void {
 		this.sinks.add(send);
@@ -1890,10 +1652,6 @@ export class DshClientSession {
 		return (conversationId ? this.convs.get(conversationId) : this.conv)?.cwd ?? this.cwd;
 	}
 
-	// -----------------------------------------------------------------------
-	// 对话管理
-	// -----------------------------------------------------------------------
-
 	activeConversations(): number {
 		let n = 0;
 		for (const conv of this.convs.values()) if (conv.isStreaming) n++;
@@ -1904,18 +1662,15 @@ export class DshClientSession {
 		return 0;
 	}
 
-	/** issue #145：本实例连接的 socket 数（0 = 标签页全关了，会话残留）。 */
 	sinkCount(): number {
 		return this.sinks.size;
 	}
 
-	/** issue #145：按 sessionId 找本实例持有的对话（跨客户端查重的本机一半）。 */
 	findConversationBySessionId(sessionId: string): DshConversation | undefined {
 		for (const conv of this.convs.values()) if (conv.sessionId === sessionId) return conv;
 		return undefined;
 	}
 
-	/** issue #145：本实例在某 cwd 下正在跑的对话摘要（同项目并行感知用）。 */
 	streamingInCwd(cwd: string): { convId: string; title: string; sessionId: string }[] {
 		const out: { convId: string; title: string; sessionId: string }[] = [];
 		for (const conv of this.convs.values()) {
@@ -1925,7 +1680,6 @@ export class DshClientSession {
 		return out;
 	}
 
-	/** issue #145：本实例所有正在跑的对话摘要（elsewhere 列表的本机一半）。 */
 	streamingSummariesAll(): { title: string; cwd: string; isStreaming: boolean }[] {
 		const out: { title: string; cwd: string; isStreaming: boolean }[] = [];
 		for (const conv of this.convs.values()) {
@@ -1935,15 +1689,11 @@ export class DshClientSession {
 		return out;
 	}
 
-	/** issue #145：其他客户端重推 conversations 用（elsewhere 刷新）。 */
 	refreshExternalRunning(): void {
 		if (this.disposed) return;
 		this.emitConversations();
 	}
 
-	/** 左栏展示口径（issue #140，与 pi 引擎同义）：listed 之外，当前对话只要有
-	 *  内容（DSH 的对话消息全在内存里，直接数 messages）也在列表里；空白新对话
-	 *  不入列。只影响展示，不动 listed 的语义。 */
 	private shownInRunningList(conv: DshConversation): boolean {
 		return conv.id === this.activeId && conv.messages.length > 0;
 	}
@@ -1951,8 +1701,6 @@ export class DshClientSession {
 	private emitConversations(): void {
 		const list: ConversationSummary[] = [];
 		for (const conv of this.convs.values()) {
-			// 被置换到后台的会话 + 当前对话（一旦有内容就是用户正在聊的那条，
-			// 不该在列表里缺席——issue #140；空白新对话仍然不入列）。
 			if (!conv.listed && !this.shownInRunningList(conv)) continue;
 			const sf = this.guessSessionFile(conv);
 			const isPinned = Boolean(
@@ -1970,12 +1718,10 @@ export class DshClientSession {
 				isSubagent: false,
 				pinned: isPinned,
 				...(conv.terminals.countUserBlockingLive() > 0 ? { hasUserTerminals: true as const } : {}),
-				// DSH Agent 预设（左栏徽标/详情用；pi 引擎不填）。
 				agentPreset: conv.agentPreset,
 				presetLocked: conv.presetLocked,
 			});
 		}
-		// issue #145：流式集合签名变化 → 通知其他客户端重推（左栏「另一处正在运行」近实时）
 		const sig = JSON.stringify(
 			[...this.convs.values()]
 				.filter((c) => c.isStreaming)
@@ -1991,7 +1737,6 @@ export class DshClientSession {
 			type: "conversations",
 			conversations: list,
 			activeId: this.activeId,
-			// 为空时缺省（老快照字节一致）
 			...(elsewhere.length > 0 ? { elsewhere } : {}),
 		});
 	}
@@ -2004,9 +1749,6 @@ export class DshClientSession {
 		return false;
 	}
 
-	/** 语义同 pi 引擎的 newChat：true = 当前活动对话是可接收首条的空白新对话
-	 *  （/new <prompt> 靠它决定要不要把首条提示发出去）。preset = 新会话预设
-	 *  （复用空白会话时等价一次空白切换）。 */
 	async newChat(preset?: string, _ephemeral?: boolean, onReady?: (id: string) => void): Promise<boolean> {
 		if (this.switchingWorkspace) return false;
 		if (this.quiesceBlocked()) return false;
@@ -2041,7 +1783,6 @@ export class DshClientSession {
 			});
 			return false;
 		}
-		// 旧对话保留（listed 生命周期简化：不主动移除）。
 		const prevModel = this.model;
 		active.listed = this.shouldRetainDshConversation(active);
 		const conv = this.addConversation(`chat-${randomUUID().slice(0, 12)}`, this.cwd, false, preset);
@@ -2067,7 +1808,6 @@ export class DshClientSession {
 			if (this.cwd !== target.cwd) return;
 		}
 		const prev = this.conv;
-		// 只看“用过”的存活终端：没动过的空 shell 不钉住 listed（与 pi 的 displaceActive 同口径）。
 		prev.listed = this.shouldRetainDshConversation(prev);
 		this.activeId = id;
 		this.emitConversations();
@@ -2075,7 +1815,6 @@ export class DshClientSession {
 		this.pushTerminals();
 		this.pushSettings();
 		this.flushSnapshot(true);
-		// 切会话带上权限值（cwd 变化走运行时重启，onStarted 会重拉）。
 		void this.refreshActivePermission().catch(() => {});
 	}
 
@@ -2085,10 +1824,6 @@ export class DshClientSession {
 		this.convs.delete(id);
 		conv.terminals.killAll();
 	}
-
-	// -----------------------------------------------------------------------
-	// prompt / 附件
-	// -----------------------------------------------------------------------
 
 	async prompt(text: string, attachments?: PromptAttachment[], queue = false): Promise<void> {
 		if (this.switchingWorkspace) return;
@@ -2106,19 +1841,16 @@ export class DshClientSession {
 			return;
 		}
 
-		// 斜杠命令拦截（内置 NATIVE + 插件 registerCommand）；带附件时不拦截。
 		const parsed = parseSlash(text);
 		if (parsed && !attachments?.length) {
 			const handled = await this.execSlash(parsed.name, parsed.args);
 			if (handled) {
-				// 与 pi 一致：命令执行后强制刷一次快照（notice/状态变化立即可见）。
 				this.flushSnapshot();
 				return;
 			}
 		}
 		if (this.conv !== conv || this.switchingWorkspace) return;
 		this.markerSvc.clearActions(conv.id);
-		// issue #145：同文件守卫 —— 别处正在跑同一 sessionId 时拒绝发送（不造第二个 writer）。
 		const fileOwner = this.findSessionOwnerById?.(conv.sessionId);
 		if (fileOwner && fileOwner.isStreaming) {
 			this.emit({
@@ -2130,9 +1862,6 @@ export class DshClientSession {
 			this.flushSnapshot();
 			return;
 		}
-		// issue #145：同项目并行感知（与 pi 引擎同语义；DSH 无 display:false 的
-		// custom 消息通道，提醒以前置系统文本随本轮发给运行时，用户气泡保持原文）。
-		// parallelReminderEnabled=false 时整段跳过。
 		let sysPrefix = "";
 		if (!conv.isStreaming && this.settings.parallelReminderEnabled !== false) {
 			const localTitles = [...this.convs.values()]
@@ -2166,7 +1895,6 @@ export class DshClientSession {
 				}
 			}
 		}
-		// Restore persisted sessions without changing their conversation/session identity.
 		if (conv.fromDisk) {
 			const runtime = this.runtime;
 			const sessionId = conv.sessionId;
@@ -2196,7 +1924,6 @@ export class DshClientSession {
 				return;
 			conv.fromDisk = false;
 		}
-		// 命名对话（首个 prompt）。
 		if (DshClientSession.isDefaultTitle(conv.title) && text.trim()) {
 			const trimmed = text.trim().replace(/\s+/g, " ");
 			conv.title = trimmed.length > 30 ? `${trimmed.slice(0, 30)}…` : trimmed;
@@ -2205,13 +1932,6 @@ export class DshClientSession {
 		await this.promptConv(conv, text, attachments, queue, sysPrefix);
 	}
 
-	/**
-	 * Remove ONE queued prompt (the ✕ on a pending bubble). DSH queues are
-	 * display-only — the prompt was already handed to the runtime inbox, so this
-	 * only drops the pending bubble from the UI (there is no per-item runtime
-	 * cancel). `index` is the clicked bubble's position (duplicate texts need
-	 * it); mismatch or omission falls back to first-occurrence text match.
-	 */
 	removeQueued(kind: "steer" | "followUp", text: string, index?: number, _id?: string): void {
 		const conv = this.conv;
 		const arr = kind === "steer" ? conv.queue.steering : conv.queue.followUp;
@@ -2222,8 +1942,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** 向指定会话发提示（审查注入/重发用；不处理 fromDisk fork 与命名）。 */
-	/** 排空期拒绝新工作（与 pi 引擎同文案；存量运行继续）。 */
 	private quiesceBlocked(): boolean {
 		if (!this.isQuiesced?.()) return false;
 		this.emit({
@@ -2237,7 +1955,6 @@ export class DshClientSession {
 		return true;
 	}
 
-	/** 回放补图：按 ref 读回图片字节 → 填入消息的 image 块 dataUrl（失败静默保持占位）。 */
 	private async hydrateImageBlocks(
 		conv: DshConversation,
 		msg: UiMessage,
@@ -2251,7 +1968,6 @@ export class DshClientSession {
 				dataUrls.push(`data:${r.mediaType ?? "image/png"};base64,${r.data}`);
 			}
 			if (this.disposed) return;
-			// 找到该消息（可能已被去重跳过/会话已切换），原地填块。
 			const target = conv.messages.find((m) => m.id === msg.id);
 			if (!target) return;
 			let i = 0;
@@ -2261,9 +1977,7 @@ export class DshClientSession {
 				}
 			}
 			if (i > 0) this.flushSnapshot();
-		} catch {
-			/* 补图失败保持占位 */
-		}
+		} catch {}
 	}
 
 	private async promptConv(
@@ -2271,7 +1985,6 @@ export class DshClientSession {
 		text: string,
 		attachments?: PromptAttachment[],
 		_queue = false,
-		// issue #145 同项目并行提醒：只进运行时上下文，不进用户气泡。
 		sysPrefix = "",
 	): Promise<void> {
 		if (this.switchingWorkspace) return;
@@ -2284,18 +1997,13 @@ export class DshClientSession {
 			startTurnTiming(conv);
 			conv.promptedSinceActive = true;
 			conv.lastEventAt = Date.now();
-			// Agent 预设：运行时世代过期 → 重登 preset/assign（创建时消费；
-			// 已存在会话的登记永不消费，重启后新运行时建会话时正好用上）。
 			if (conv.assignedGen !== this.runtimeGen) {
 				try {
 					await this.runtime.assignPreset(conv.sessionId, conv.agentPreset);
 					conv.assignedGen = this.runtimeGen;
-				} catch {
-					/* legacy/运行时未就绪：创建走默认；best effort */
-				}
+				} catch {}
 			}
 			if (this.switchingWorkspace || generation !== this.workspaceGeneration) return;
-			// 新会话默认权限预设（与当前一致时 apply 无事件零噪音）。
 			await this.ensurePermissionDefault(conv);
 			if (this.switchingWorkspace || generation !== this.workspaceGeneration) return;
 			this.flushSnapshot();
@@ -2317,7 +2025,6 @@ export class DshClientSession {
 				effectiveAttachments,
 			);
 			if (this.switchingWorkspace || generation !== this.workspaceGeneration || conv.cwd !== this.cwd) return;
-			// 乐观落地用户消息（id 用暂定值；user/message 事件到达时按内容去重）。
 			const optimistic: UiMessage = {
 				id: `u-pending-${Date.now()}-${conv.deltaSeq++}`,
 				role: "user",
@@ -2338,8 +2045,6 @@ export class DshClientSession {
 			optimisticId = optimistic.id;
 			this.appendMessage(conv, optimistic);
 			if (conv.isStreaming) {
-				// DSH 无 mid-run steering：isStreaming 时入队（followUp），
-				// 运行时 inbox 在 run 结束后消费。入队后立即 flushSnapshot 让排队气泡上屏。
 				conv.queue.followUp.push(text);
 				followUpAdded = true;
 				this.flushSnapshot();
@@ -2351,14 +2056,12 @@ export class DshClientSession {
 				this.flushSnapshot();
 				await this.runtime.prompt(conv.sessionId, blocks);
 			}
-			// 首轮用户发言送达 → 预设锁定（官方语义；回放会话建时已锁）。
 			if (!conv.presetLocked) {
 				conv.presetLocked = true;
 				this.emitConversations();
 			}
 		} catch (err) {
 			if (!conv.isStreaming) finishTurnTiming(conv);
-			// 发送失败事务补偿：回滚乐观用户消息与排队气泡
 			if (optimisticId) {
 				const optIdx = conv.messages.findIndex((m) => m.id === optimisticId);
 				if (optIdx !== -1) {
@@ -2380,7 +2083,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** 会话历史 → 上下文文本（fork 时注入）。 */
 	private histToContext(conv: DshConversation): string {
 		return conv.messages
 			.map((m) => {
@@ -2391,15 +2093,12 @@ export class DshClientSession {
 			.join("\n");
 	}
 
-	/** 新建 fork 会话并切换到它（DSH 无法原地续聊旧会话）。 */
 	private forkConversation(prev: DshConversation): DshConversation {
 		const fork = this.addConversation(`fork-${randomUUID().slice(0, 12)}`, this.cwd, false, prev.agentPreset);
 		fork.title = prev.title;
-		// 继承原会话的所有消息历史，使得 UI 界面上完整保留所有轮次的历史消息
 		fork.messages = [...prev.messages];
 		fork.messageIds = new Set(prev.messageIds);
 		this.activeId = fork.id;
-		// P2-19：原会话有 active goal（DSH same-session 语义）→ 提示随会话存档。
 		const hadGoal = prev.goal.goal !== null && prev.goal.verdict === "pending";
 		this.emitConversations();
 		this.emit({
@@ -2415,10 +2114,8 @@ export class DshClientSession {
 		return fork;
 	}
 
-	/** turn/end 报 id collision（abort 重启运行时后会话不再 live）→ fork + 重发最后提问。 */
 	private forkAndReprompt(conv: DshConversation): void {
 		if (this.disposed) return;
-		// 找最后一条用户消息作为重发文本。
 		let lastUser = "";
 		for (let i = conv.messages.length - 1; i >= 0; i--) {
 			const m = conv.messages[i]!;
@@ -2444,8 +2141,6 @@ export class DshClientSession {
 		void this.prompt(text);
 	}
 
-	/** 附件 → DSH contentBlocks（v1 简化：文本内联 / 路径引用 / 图片占位）。 */
-	/** dataUrl（data:image/png;base64,XXX）→ {mediaType, base64}；无前缀按 PNG 处理。 */
 	private static splitImageDataUrl(data: string): { mediaType: string; base64: string } {
 		const m = /^data:([^;,]+);base64,([\s\S]*)$/u.exec(data);
 		if (m && m[2]) return { mediaType: m[1] ?? "image/png", base64: m[2] };
@@ -2475,7 +2170,6 @@ export class DshClientSession {
 			}
 			const resolved = a.path ? workspacePath(this.cwd, a.path) : null;
 			if (a.imageData) {
-				// 视觉桥：base64 图片 → attachment store → 真 image 块（模型可看图）。
 				try {
 					const { mediaType, base64 } = DshClientSession.splitImageDataUrl(a.imageData);
 					const saved = await this.runtime.attachmentSave(mediaType, base64, a.name);
@@ -2493,7 +2187,6 @@ export class DshClientSession {
 					});
 				}
 			} else if (a.fileData) {
-				// 上传文件 → 落盘 + 路径引用。
 				try {
 					const maxBytes = (this.stateStore.getSettingsSnapshot(this.clientId).chatUploadMaxMb ?? 20) * 1024 * 1024;
 					if (a.fileData.length > Math.ceil(maxBytes / 3) * 4)
@@ -2524,9 +2217,6 @@ export class DshClientSession {
 					});
 				}
 			} else if (resolved) {
-				// 一律只给路径引用：不再把文件内容注入 prompt（小文件也一样），模型用
-				// 自己的读取工具按需读。行范围模式带上行号提示。
-				// 工作区图片文件仍走 attachment store → 真 image 块（模型可看图）。
 				const refText =
 					pick(lang, `\n[文件引用: ${resolved.rel}]`, `\n[File reference: ${resolved.rel}]`, "dsh.attach.file.ref", {
 						"resolved.rel": resolved.rel,
@@ -2538,9 +2228,7 @@ export class DshClientSession {
 				try {
 					const st = statSync(resolved.abs);
 					isImage = st.isFile() && st.size > 0 && st.size <= 512 * 1024 && previewKind(resolved.abs) === "image";
-				} catch {
-					/* 不存在/不可读 → 照样给路径引用，读取工具会自己报错 */
-				}
+				} catch {}
 				if (isImage) {
 					try {
 						const buf = readFileSync(resolved.abs);
@@ -2580,7 +2268,6 @@ export class DshClientSession {
 		return blocks;
 	}
 
-	/** 中止：kill 运行时进程树（所有 conversation 的运行停止）→ 自动重启保持可用。 */
 	async abort(): Promise<void> {
 		this.cancelBridgedTools();
 		if (!this.runtime.alive) return;
@@ -2589,14 +2276,10 @@ export class DshClientSession {
 		conv.isStreaming = false;
 		conv.streaming = null;
 		this.emitConversations();
-		// 手动停止 → 清当前会话的 DSH 原生目标（半成品运行不该继续被轮次驱动）。
-		// 旧进程还活着，先 goal/clear 落盘，再重启运行时。
 		if (conv.dsGoal || conv.goal.goal) {
 			try {
 				await this.runtime.goalClear(conv.sessionId);
-			} catch {
-				/* 进程可能已死，事件兜底 */
-			}
+			} catch {}
 			conv.dsGoal = null;
 			conv.goal.goal = null;
 			conv.goal.conversationId = null;
@@ -2627,7 +2310,6 @@ export class DshClientSession {
 	}
 
 	async abortBash(): Promise<void> {
-		// DSH 无 per-tool 取消；bash 工具由运行时管理，超时策略在运行时侧。
 		this.emit({
 			type: "notice",
 			level: "info",
@@ -2636,9 +2318,6 @@ export class DshClientSession {
 		});
 	}
 
-	/** 手动重试上次失败的模型调用：找到最后一条用户提问并重发一次
-	 *  （DSH 运行时以 prompt 驱动回合，无 triggerTurn 语义）。流式中 /
-	 *  无可重试失败时只发 notice 拒绝。 */
 	async retryLast(): Promise<void> {
 		const conv = this.conv;
 		try {
@@ -2691,10 +2370,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	// -----------------------------------------------------------------------
-	// 后台任务
-	// -----------------------------------------------------------------------
-
 	async listBgServers(): Promise<void> {
 		await this.bg.listAndPush();
 	}
@@ -2721,12 +2396,10 @@ export class DshClientSession {
 		return killed;
 	}
 
-	/** 钉住 / 取消钉住（DSH 引擎同样有后台任务面板，行为与 pi 引擎一致）。 */
 	setBackgroundKeep(port: number, keep: boolean): boolean {
 		return this.bg.setKeep(port, keep);
 	}
 
-	/** 手动「立即清理」（阈值策略与 pi 引擎同源：设置里的 bgAutoCleanupMin，关时兼底 30 分钟）。 */
 	async cleanBackgroundLeftovers(minutesOverride?: number): Promise<number[]> {
 		const override = Number(minutesOverride);
 		const policy = Number(this.settings.bgAutoCleanupMin ?? 0);
@@ -2734,10 +2407,6 @@ export class DshClientSession {
 		const thresholdMs = (minutes > 0 ? minutes : BG_CLEANUP_FALLBACK_MIN) * 60_000;
 		return this.bg.cleanStale(thresholdMs, { manual: true });
 	}
-
-	// -----------------------------------------------------------------------
-	// 会话列表 / 切换 / 删除
-	// -----------------------------------------------------------------------
 
 	private sessionsTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -2757,15 +2426,11 @@ export class DshClientSession {
 
 	private async pushSessions(): Promise<void> {
 		try {
-			// 目录/会话文件被删除、改名或不可读都不许把异常抛出去：本方法以
-			// fire-and-forget（void …）方式调用，未处理的 rejection 会杀死服务进程
-			// （issue #74 同类）。失败降级为空列表，面板显示“暂无历史”。
 			const files = findSessionFilesForCwd(this.sessionRoot, this.cwd);
 			const summaries: SessionSummary[] = [];
 			for (const file of files) {
 				try {
 					const sessionId = basename(dirname(file));
-					// 审查会话（review-*）是内部工作会话，不进历史列表。
 					if (sessionId.startsWith("review-")) continue;
 					const { events } = readSessionLog(file);
 					const count = events.filter(
@@ -2774,7 +2439,6 @@ export class DshClientSession {
 							e.type === "assistant/message" ||
 							e.type === "tool/result",
 					).length;
-					// 过滤无消息空会话（仅有初始化 preset 事件的空壳不展示在历史列表）
 					if (count === 0) continue;
 					const isPinned = Boolean(
 						this.stateStore?.isSessionPinned(this.cwd, file) || this.stateStore?.isSessionPinned(this.cwd, sessionId),
@@ -2801,9 +2465,7 @@ export class DshClientSession {
 						source: "web",
 						pinned: isPinned,
 					});
-				} catch {
-					/* skip unreadable */
-				}
+				} catch {}
 			}
 			this.emit({ type: "sessions", sessions: summaries });
 		} catch {
@@ -2811,7 +2473,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** 引擎自属的会话展示名解析回调（定制 DSH 的首条提取 + 模型自动总结命名 + 用户显式重命名记忆） */
 	resolveSessionDisplayName(sessionId: string, explicitTitle?: string, firstMsg?: string): string {
 		const storedTitle = this.stateStore?.getSessionTitle(this.cwd, sessionId);
 		if (storedTitle && !DshClientSession.isDefaultTitle(storedTitle)) {
@@ -2946,8 +2607,6 @@ export class DshClientSession {
 	}
 
 	async dismissConversation(id: string, _withFinishedSubagents?: boolean, force?: boolean): Promise<void> {
-		// DSH 引擎无第一方子代理：withFinishedSubagents 恒为 no-op（签名与标准引擎对齐）。
-		// force 放行 active/终端限制；运行中仍拒绝（DSH 单 runtime 无法单独 abort 一个对话，请先点停止）。
 		const conv = this.convs.get(id);
 		if (!conv) {
 			this.emit({
@@ -2980,7 +2639,6 @@ export class DshClientSession {
 			});
 			return;
 		}
-		// issue #181：只看用户终端——AI bash 随对话一起释放，不得阻断移出。
 		if (conv.terminals.countUserBlockingLive() > 0 && !force) {
 			this.emit({
 				type: "notice",
@@ -2990,8 +2648,6 @@ export class DshClientSession {
 			});
 			return;
 		}
-		// 没动过的空 shell与 AI bash 不拦截：随对话一起释放。
-		// force + active：先让出 active（切到其他对话或新建），再移除。
 		if (id === this.activeId) {
 			const other = [...this.convs.values()].find((c) => c.id !== id);
 			if (other) await this.switchConversation(other.id);
@@ -3011,8 +2667,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** DSH 引擎无第一方子代理（emitConversations 恒 isSubagent:false）：批量
-	 *  关闭退化为空操作提示，保持与 pi 引擎同一 wire 行为。 */
 	async dismissFinishedSubagents(_parentId?: string): Promise<void> {
 		this.emit({
 			type: "notice",
@@ -3022,14 +2676,12 @@ export class DshClientSession {
 		});
 	}
 
-	/** 切换会话：读 JSONL 回放 → 新建 conversation（同一 sessionId 续聊）。 */
 	async switchSession(path: string, wantSessionId?: string): Promise<void> {
 		assertEngineWorkspaceSupported(this.sandboxes, this.cwd, "dsh");
 		try {
 			const resolvedPath = path.trim() ? resolve(path.trim()) : "";
 			const explicitSid = wantSessionId?.trim() ?? "";
 			const sessionId = explicitSid || (resolvedPath ? basename(dirname(resolvedPath)) : "");
-			// 同一 sessionId 已在运行 → 直接切过去。
 			for (const conv of this.convs.values()) {
 				if (conv.sessionId === sessionId || conv.id === sessionId) {
 					await this.switchConversation(conv.id);
@@ -3058,7 +2710,6 @@ export class DshClientSession {
 					return;
 				}
 			}
-			// issue #145：同 pi 引擎 —— 别处正在跑同一 sessionId 时不建第二个持有者。
 			const owner = this.findSessionOwnerById?.(sessionId);
 			if (owner && owner.isStreaming) {
 				this.emit({
@@ -3071,7 +2722,6 @@ export class DshClientSession {
 				return;
 			}
 			if (owner) {
-				// 对端已断开（标签页关了）只剩残留会话 —— 不打扰，直接开。
 				if (owner.connected) {
 					this.emit({
 						type: "notice",
@@ -3082,10 +2732,9 @@ export class DshClientSession {
 				}
 			}
 			const prev = this.conv;
-			// 只看“用过”的存活终端：没动过的空 shell 不钉住 listed（与 pi 的 displaceActive 同口径）。
 			prev.listed = this.shouldRetainDshConversation(prev);
 			const conv = this.addConversation(sessionId, this.cwd, true, undefined, resolvedPath || undefined);
-			conv.fromDisk = true; // 磁盘回放 → prompt 时 fork
+			conv.fromDisk = true;
 			if (resolvedPath) conv.sessionFile = resolvedPath;
 			this.activeId = conv.id;
 			this.emitConversations();
@@ -3120,16 +2769,10 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 用户 patch 扩展缝（<dataDir>/dsh-patches/*.yml）
-	// -----------------------------------------------------------------------
-
-	/** 用户 patch 目录。 */
 	private userPatchDir(): string {
 		return join(this.dataDir, "dsh-patches");
 	}
 
-	/** 列出 <dataDir>/dsh-patches/*.yml 以及 *.yml.disabled（按文件名序），带文件信息与启停状态。 */
 	async listDshPatches(): Promise<void> {
 		const dir = this.userPatchDir();
 		const files: DshPatchFileInfo[] = [];
@@ -3151,18 +2794,13 @@ export class DshClientSession {
 							disabled: isDisabledYaml,
 						});
 					}
-				} catch {
-					/* skip unreadable */
-				}
+				} catch {}
 			}
-		} catch {
-			/* 目录不存在 = 无用户 patch */
-		}
+		} catch {}
 		files.sort((a, b) => a.name.localeCompare(b.name));
 		this.emit({ type: "dsh_patches", patchDir: dir, files });
 	}
 
-	/** 重扫用户 patch：重启运行时使新 patch 生效（patch 只在 boot 时加载）。 */
 	async rescanDshPatches(): Promise<void> {
 		try {
 			if (this.runtime.alive) {
@@ -3185,7 +2823,6 @@ export class DshClientSession {
 		await this.listDshPatches();
 	}
 
-	/** 安装/添加 DSH 用户 patch（写入 <dataDir>/dsh-patches/<id>.yml 并重载运行时）。 */
 	async installDshPatch(rawSpec: string, rawId?: string): Promise<void> {
 		const spec = rawSpec.trim().replace(/^['"]|['"]$/g, "");
 		if (!spec) {
@@ -3198,7 +2835,6 @@ export class DshClientSession {
 			return;
 		}
 
-		// 推导合法 id（仅允许字母数字横线下划线）
 		let id = (rawId ?? "").trim();
 		if (!id) {
 			const base = basename(spec.replace(/[\\/]+$/, ""));
@@ -3209,7 +2845,6 @@ export class DshClientSession {
 		const dir = this.userPatchDir();
 		mkdirSync(dir, { recursive: true });
 
-		// 规范化包名/路径：Windows 路径转为正斜杠以确保 YAML 兼容性
 		const normalizedSpec = spec.replace(/\\/g, "/");
 		const escapedName = normalizedSpec.replace(/'/g, "''");
 
@@ -3241,7 +2876,6 @@ export class DshClientSession {
 		await this.rescanDshPatches();
 	}
 
-	/** 切换 DSH 用户 patch 启用/停用状态（重命名为 *.yml.disabled 或 *.yml）。 */
 	async toggleDshPatch(name: string, enabled: boolean): Promise<void> {
 		const safeName = basename(name);
 		if (!safeName || safeName !== name) {
@@ -3275,7 +2909,6 @@ export class DshClientSession {
 		await this.rescanDshPatches();
 	}
 
-	/** 删除指定的 DSH 用户 patch 文件并重启运行时。 */
 	async deleteDshPatch(name: string): Promise<void> {
 		const safeName = basename(name);
 		if (!safeName || safeName !== name) {
@@ -3310,7 +2943,6 @@ export class DshClientSession {
 		await this.rescanDshPatches();
 	}
 
-	/** 拉取 DSH 插件市场数据并推送给客户端。 */
 	async fetchDshMarket(force = false): Promise<void> {
 		try {
 			const data = await loadDshMarketData(this.dataDir, force);
@@ -3331,10 +2963,6 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 项目 / 文件 / SCM / 搜索
-	// -----------------------------------------------------------------------
-
 	async pushProjects(): Promise<void> {
 		const recent = await this.stateStore.getRecentProjects(this.clientId);
 		const removedKeys = new Set(this.stateStore.getRemovedProjects(this.clientId).map(normalizePathKey));
@@ -3344,7 +2972,6 @@ export class DshClientSession {
 				projects.set(p.path, p.lastUsed);
 			}
 		}
-		// 合并当前会话目录发现的项目。
 		const cwdProjects = new Set<string>();
 		try {
 			const { readdirSync } = await import("node:fs");
@@ -3355,9 +2982,7 @@ export class DshClientSession {
 					if (cwd && !projects.has(cwd) && !removedKeys.has(normalizePathKey(cwd))) cwdProjects.add(cwd);
 				}
 			}
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 		for (const cwd of cwdProjects) projects.set(cwd, Date.now());
 		if (!removedKeys.has(normalizePathKey(this.cwd))) {
 			projects.set(this.cwd, Date.now());
@@ -3384,7 +3009,6 @@ export class DshClientSession {
 	}
 
 	private decodeProjectKey(key: string): string | null {
-		// --<cwd>-- → 反解（尽力）。
 		if (!key.startsWith("--") || !key.endsWith("--")) return null;
 		const inner = key.slice(2, -2);
 		let out = "";
@@ -3583,8 +3207,6 @@ export class DshClientSession {
 					}
 					await this.setCwd(fallbackCwd);
 				}
-				// 清理仍挂在该沙盒下的后台会话（含子目录 cwd）——ClientSession 版有此步，
-				// DSH 版此前完全没有：销毁后这些对话的 runtime/终端指向已删目录
 				for (const [id, conv] of this.convs) {
 					if (id !== this.activeId && isSameOrSubpath(conv.cwd, sbx.path)) {
 						this.removeConversation(id);
@@ -3635,7 +3257,6 @@ export class DshClientSession {
 					const texts: string[] = [];
 					const anchors: { role: string; timestamp: number }[] = [];
 					for (const ev of events) {
-						// P1-14：索引范围 = user/assistant 文本 + tool-result 工具输出。
 						if (ev.type === "user/message" || ev.type === "assistant/message" || ev.type === "tool/result") {
 							if (ev.type === "user/message" && isDshInternalUserMessage(ev.data as Record<string, unknown>)) continue;
 							const blocks =
@@ -3649,7 +3270,6 @@ export class DshClientSession {
 								[];
 							let text = blocks.map((b) => (b?.type === "text" ? (b.text ?? "") : "")).join("\n");
 							if (ev.type === "tool/result") {
-								// 工具输出在嵌套 content[]（tool-result 块内），一并纳入索引。
 								const nested = blocks
 									.filter((b) => b?.type === "tool-result")
 									.flatMap((b) => b.content ?? [])
@@ -3669,7 +3289,6 @@ export class DshClientSession {
 					}
 					const all = texts.join("\n").toLowerCase();
 					const sessionId = basename(dirname(file));
-					// 审查会话不进搜索。
 					if (sessionId.startsWith("review-")) continue;
 					const firstMsg = firstUserText(events, this.getLang());
 					if (all.includes(q) || sessionId.toLowerCase().includes(q) || firstMsg.toLowerCase().includes(q)) {
@@ -3698,9 +3317,7 @@ export class DshClientSession {
 							anchors: anchors.slice(0, 10),
 						});
 					}
-				} catch {
-					/* skip unreadable */
-				}
+				} catch {}
 			}
 			results.sort((a, b) => b.modified - a.modified);
 			this.emit({ type: "session_search_results", reqId, query, ok: true, results: results.slice(0, 50) });
@@ -3714,8 +3331,6 @@ export class DshClientSession {
 		reqId: number,
 		opts?: { path?: string; hash?: string },
 	): Promise<void> {
-		// 走 FilesService：只读 git 查询 + git-dir watcher（外部提交 → scm_changed
-		// 面板自动刷新）+ 越界/notRepo 统一处理。
 		await this.files.scmQuery(kind, reqId, opts);
 	}
 
@@ -3731,7 +3346,6 @@ export class DshClientSession {
 		await this.files.uploadFile(dirRel, name, data, uploadId);
 	}
 
-	/** 文件树右键菜单：新建/重命名/删除/复制移动（FilesService 直透传）。 */
 	async createEntry(dir: string, name: string, kind: "file" | "dir"): Promise<void> {
 		await this.files.createEntry(dir, name, kind);
 	}
@@ -3748,7 +3362,6 @@ export class DshClientSession {
 		await this.files.copyEntry(src, destDir, move);
 	}
 
-	/** 文件树右键菜单：在资源管理器中定位 / 默认应用打开（issue #187）。 */
 	async revealEntry(path: string): Promise<void> {
 		await this.files.revealEntry(path);
 	}
@@ -3768,35 +3381,24 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 模型 / 思考
-	// -----------------------------------------------------------------------
-
-	/** P2-17 动态与自定义模型 id 缓存（adapter 目录与 models.json 自定义模型；setModel 校验用）。 */
 	private dynamicModels = new Set<string>();
-	/** 缓存自定义模型及动态适配器模型元数据，用于 setModel 快速解析。 */
 	private customModelsMap = new Map<
 		string,
 		{ id: string; bareId: string; name: string; provider: string; reasoning: boolean; vision: boolean }
 	>();
 
 	async listModels(): Promise<void> {
-		// 以本地表为底（定价/上下文窗口/vision 标记），运行时 adapter 目录与 models.json 自定义模型动态
-		// 扩展——新模型自动出现在选择器，无需改代码。
 		const known = new Map(DSH_MODELS.map((m) => [m.id, m]));
 		let dynamic: { id: string; name?: string; inputModalities?: string[] }[] = [];
 		try {
 			const res = await this.runtime.listModels();
 			dynamic = res.models ?? [];
-		} catch {
-			/* 运行时不可用 → 只发本地表 */
-		}
+		} catch {}
 		const seen = new Set<string>();
 		const models: { id: string; name: string; provider: string; reasoning: boolean; vision: boolean }[] = [];
 		this.dynamicModels.clear();
 		this.customModelsMap.clear();
 
-		// 1. DSH 官方内置模型
 		for (const m of DSH_MODELS) {
 			const canonicalId = `deepseek/${m.id}`;
 			seen.add(m.id);
@@ -3822,7 +3424,6 @@ export class DshClientSession {
 			});
 		}
 
-		// 2. 运行时动态目录（adapter 发现）
 		for (const m of dynamic) {
 			const canonicalId = m.id.includes("/") ? m.id : `deepseek/${m.id}`;
 			const bareId = m.id.includes("/") ? m.id.slice(m.id.indexOf("/") + 1) : m.id;
@@ -3853,7 +3454,6 @@ export class DshClientSession {
 			});
 		}
 
-		// 3. 用户在 models.json 中配置的第三方自定义端点模型（针对性过滤 DSH 不支持的协议，如 anthropic-messages）
 		try {
 			const custom = listCustomModelsFromConfig(this.agentDir, (entry) =>
 				isModelProtocolSupportedByEngine("dsh", entry),
@@ -3883,14 +3483,11 @@ export class DshClientSession {
 					vision: c.vision ?? false,
 				});
 			}
-		} catch {
-			/* models.json 不存在或解析错误 → 静默忽略 */
-		}
+		} catch {}
 
 		this.emit({ type: "models", models });
 	}
 
-	/** 解析模型 ID 对应的服务商、元数据与裸模型 ID。 */
 	resolveModelMeta(modelId: string): {
 		meta?: {
 			id: string;
@@ -3939,9 +3536,7 @@ export class DshClientSession {
 							vision: hit.vision ?? false,
 						};
 					}
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 		}
 
@@ -3961,7 +3556,6 @@ export class DshClientSession {
 		return { meta, targetProvider, bareModelId, known };
 	}
 
-	/** 应用已保存的模型配置到当前 session 实例（启动/恢复/切换工作区时用）。 */
 	private applySavedModel(modelId: string): void {
 		const res = this.resolveModelMeta(modelId);
 		if (res.known || res.meta) {
@@ -3972,7 +3566,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** 换模型 = 重启运行时。支持官方模型与第三方自定义端点模型。 */
 	async setModel(modelId: string): Promise<void> {
 		const { meta, targetProvider, bareModelId, known } = this.resolveModelMeta(modelId);
 		if (!known) {
@@ -3987,7 +3580,6 @@ export class DshClientSession {
 
 		if (bareModelId === this.model && targetProvider === this.modelProvider) return;
 
-		// 解析服务商 BaseURL 与 API Key（如果是自定义 Provider）
 		const cred = resolveProviderCredential(this.agentDir, targetProvider);
 		if (targetProvider !== "deepseek" && !cred.apiKey && !process.env.DEEPSEEK_API_KEY) {
 			this.emit({
@@ -3998,7 +3590,6 @@ export class DshClientSession {
 			});
 		}
 
-		// P0-2 竞态告知：换模型 = 强杀运行时 → 进行中的 run 全部中止。
 		if ([...this.convs.values()].some((c) => c.isStreaming)) {
 			this.emit({
 				type: "notice",
@@ -4013,7 +3604,6 @@ export class DshClientSession {
 		this.modelProvider = targetProvider;
 		this.modelDisplayName = meta?.name ?? bareModelId;
 		this.modelVision = meta?.vision ?? false;
-		// 持久化当前项目的模型选择（按 DSH 引擎独立记录）
 		this.stateStore?.saveProjectModel(this.clientId, this.cwd, modelId, "dsh");
 
 		try {
@@ -4091,10 +3681,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	// -----------------------------------------------------------------------
-	// 设置 / 系统提示词
-	// -----------------------------------------------------------------------
-
 	private buildFallbackPromptSections(): { name: string; text: string; chars: number }[] {
 		const identity = "You are an AI agent powered by DeepSeek Harness.";
 		const custom = this.settings.customSystemPrompt.trim();
@@ -4149,6 +3735,7 @@ export class DshClientSession {
 		const promptSections =
 			this.cachedPromptSections.length > 0 ? this.cachedPromptSections : this.buildFallbackPromptSections();
 		const settings: UiSettingsState = {
+			nativeCliInheritModel: { ...this.stateStore.getSettingsSnapshot(this.clientId).nativeCliInheritModel },
 			...normalizeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId)),
 			steeringMode: "all",
 			followUpMode: "all",
@@ -4156,32 +3743,25 @@ export class DshClientSession {
 			customSystemPrompt: this.settings.customSystemPrompt,
 			disabledSkills: this.settings.disabledSkills,
 			disabledExtensions: this.settings.disabledExtensions,
-			// DSH engine: no unified tool gating (no subagent/edit_soft); empty keeps protocol complete.
 			disabledAgentTools: [],
-			// DSH has no plugin host: no plugin AI tools exist here; empty keeps protocol complete.
 			disabledPluginTools: [],
 			terminalToolsEnabled: this.settings.terminalToolsEnabled,
 			terminalBash: this.settings.terminalBash,
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
 			terminalBashMaxForegroundMs: this.settings.terminalBashMaxForegroundMs,
 			toolWatchdogTimeoutMs: this.settings.toolWatchdogTimeoutMs,
-			// DSH 引擎无 customTool 注册面（工具来自 shipped preset），read 目录覆盖面不存在。
 			readDirEnabled: true,
 			bgAutoCleanupMin: Number(this.settings.bgAutoCleanupMin ?? 0),
-			// DSH 无 pi 工具注册面，不适用延迟加载；保协议完整（该字段恒为 false，设置页不显示这一行）。
 			toolLazyLoading: false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
 			editSoftEnabled: this.settings.editSoftEnabled,
-			// DSH 无独立重试配置（pi 引擎才暴露），保持默认。
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
-			// DSH 另有运行时：压缩软上限是 pi 引擎概念，这里保持关闭保协议完整。
 			softCapTokens: 0,
 			softCapByModel: {},
 			autoCompactionInstructions: "",
 			questionnaireEnabled: this.settings.questionnaireEnabled,
 			toolApprovalEnabled: this.settings.toolApprovalEnabled !== false,
-			// DSH 无审批弹窗，策略恒为空（保协议完整）。
 			approvalPolicy: { allowAll: false, categories: [] },
 			approvalRules: [],
 			goalModeEnabled: this.settings.goalModeEnabled,
@@ -4193,12 +3773,10 @@ export class DshClientSession {
 			showForkedParentSessions: this.settings.showForkedParentSessions ?? false,
 			retainFinishedConversations: this.settings.retainFinishedConversations ?? false,
 			openRecentSessionOnProjectSwitch: this.settings.openRecentSessionOnProjectSwitch ?? true,
-			// DSH 无 skill 全文注入概念，给空保协议完整。
 			skillsFullText: [],
 			skillsCatalogMaxDesc: 250,
 			skillsCatalogShowLocation: false,
 			skillsCatalogBudget: 20000,
-			// DSH 不注入技能正文，但协议字段要齐全（设置页读快照）。
 			skillsMaxFileBytes: 8192,
 			skillsFullTextMaxBytes: 32768,
 			chatUploadMaxMb: this.stateStore.getSettingsSnapshot(this.clientId).chatUploadMaxMb ?? 20,
@@ -4208,10 +3786,8 @@ export class DshClientSession {
 			visionBridgeModel: null,
 			visionBridgePromptMode: "append",
 			visionBridgePrompt: "",
-			// DSH 无「AI 生成提交信息」（scm_commitmsg 分发处直接报错），保协议完整。
 			scmCommitMsgPromptMode: "append",
 			scmCommitMsgPrompt: "",
-			// DSH 引擎不渲染计划按钮（无 customTools 注册面），保协议完整。
 			planModePromptMode: "append",
 			planModePrompt: "",
 			planModeDefaultPrompt: PLAN_MODE_SYSTEM_PROMPT,
@@ -4222,12 +3798,10 @@ export class DshClientSession {
 			promptTemplate: this.settings.promptTemplate ?? "",
 			promptOverrides: this.settings.promptOverrides ?? {},
 			promptDisabled: [...(this.settings.promptDisabled ?? [])],
-			// DSH 无 pi 工具注册表面，逐工具文案覆盖不适用；保协议完整。
 			toolPromptOverrides: {},
 			effectiveSystemPrompt,
 			promptSourceDefaults,
 			promptSections,
-			// DSH 运行时真实的工具 schema 文本（发给模型的工具列表 JSON Schema 格式化文本）。
 			toolsSchema: this.cachedToolsSchema,
 			visionBridgeDefaultPrompt: "",
 			scmCommitMsgDefaultPrompt: "",
@@ -4253,11 +3827,20 @@ export class DshClientSession {
 	}
 
 	async setSettings(partial: {
+		nativeCliInheritModel?: UiSettingsState["nativeCliInheritModel"];
 		quickAskEnabled?: QuickAskSettings["quickAskEnabled"];
 		quickAskModel?: QuickAskSettings["quickAskModel"];
 		quickAskThinking?: QuickAskSettings["quickAskThinking"];
 		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
 		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
+		quickAskTranslateEnabled?: QuickAskSettings["quickAskTranslateEnabled"];
+		quickAskTranslateTarget?: QuickAskSettings["quickAskTranslateTarget"];
+		quickAskTranslateStyle?: QuickAskSettings["quickAskTranslateStyle"];
+		quickAskTranslatePrompt?: QuickAskSettings["quickAskTranslatePrompt"];
+		quickAskShowOriginal?: QuickAskSettings["quickAskShowOriginal"];
+		quickAskReferenceMenus?: QuickAskSettings["quickAskReferenceMenus"];
+		quickAskConversationScope?: QuickAskSettings["quickAskConversationScope"];
+		quickAskFolderScope?: QuickAskSettings["quickAskFolderScope"];
 		promptMode?: "append" | "replace";
 		customSystemPrompt?: string;
 		promptTemplate?: string;
@@ -4266,7 +3849,6 @@ export class DshClientSession {
 		disabledSkills?: string[];
 		disabledExtensions?: string[];
 		disabledPlugins?: string[];
-		/** 宿主 UI 布局偏好（纯 UI，per-client）。 */
 		uiLayout?: UiLayoutPrefs;
 		terminalToolsEnabled?: boolean;
 		terminalBash?: boolean;
@@ -4357,8 +3939,8 @@ export class DshClientSession {
 			disabledMarkers: partial.disabledMarkers,
 		});
 		const markerGuidanceChanged = this.markerSvc.buildGuidance() !== prevMarkerGuidance;
-		// 持久化（跨重连存活）。
 		this.stateStore.saveSettings(this.clientId, {
+			nativeCliInheritModel: partial.nativeCliInheritModel,
 			...mergeQuickAskSettings(this.stateStore.getSettingsSnapshot(this.clientId), partial),
 			chatUploadMaxMb: partial.chatUploadMaxMb,
 			workspaceUploadMaxMb: partial.workspaceUploadMaxMb,
@@ -4372,9 +3954,7 @@ export class DshClientSession {
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
 			terminalBashMaxForegroundMs: this.settings.terminalBashMaxForegroundMs,
 			editSoftEnabled: this.settings.editSoftEnabled,
-			// DSH 无独立重试配置（pi 引擎才暴露），保持默认。
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
-			// DSH 另有运行时：压缩软上限是 pi 引擎概念，这里保持关闭保协议完整。
 			softCapTokens: 0,
 			softCapByModel: {},
 			autoCompactionInstructions: "",
@@ -4401,15 +3981,12 @@ export class DshClientSession {
 			promptOverrides: this.settings.promptOverrides ?? {},
 			promptDisabled: [...(this.settings.promptDisabled ?? [])],
 		});
-		// 仅系统提示词或内联标记指引变化才重启运行时（DSH_PERSONA 由 launcher env 注入）；
-		// 其他设置（开关/隐藏插件等）只存不回写运行时。
 		const personaChanged =
 			partial.promptMode !== undefined || partial.customSystemPrompt !== undefined || markerGuidanceChanged;
 		if (personaChanged) {
 			await this.applyPersona();
 			void this.refreshPromptInfo().catch(() => {});
 		}
-		// 技能启停（#18）：禁用集变化 → 同步运行时（晚 pre-step 钩子过滤目录）并刷新技能列表。
 		if (partial.disabledSkills !== undefined) {
 			void this.pushDisabledSkillsToRuntime();
 			void this.refreshSkillsFromRuntime();
@@ -4432,19 +4009,13 @@ export class DshClientSession {
 	}
 
 	private applyPersona(): Promise<void> {
-		// 自定义提示词双通道：DSH_PERSONA（host 部署人设；预设 persona 会 shadow 它，
-		// minimal 更全压住）+ PI_WEB_DSH_CUSTOM_PROMPT（独立 host section，随
-		// standard/ptc/cordis 下发；minimal 下被 complete 压住，官方语义）。
 		this.runtime.env = { ...this.runtime.env, ...this.buildPersonaEnv() };
 		if (this.runtime.alive) {
-			return this.runtime.restart(this.model).catch(() => {
-				/* keep old runtime */
-			});
+			return this.runtime.restart(this.model).catch(() => {});
 		}
 		return Promise.resolve();
 	}
 
-	/** 从运行时异步拉取真实组装的系统提示词、sections 与工具 schema。 */
 	async refreshPromptInfo(): Promise<void> {
 		try {
 			if (!this.runtime.alive) return;
@@ -4466,13 +4037,10 @@ export class DshClientSession {
 				}
 				this.pushSettings();
 			}
-		} catch {
-			/* 忽略拉取失败，保持上一次缓存或兜底 */
-		}
+		} catch {}
 	}
 
 	async reloadExtensions(): Promise<void> {
-		// DSH 引擎无 pi 扩展体系。
 		this.emit({
 			type: "notice",
 			level: "info",
@@ -4481,11 +4049,6 @@ export class DshClientSession {
 		});
 	}
 
-	// -----------------------------------------------------------------------
-	// Agent 预设（dsh-web 四模式；Node 侧是真相源，运行时只负责挂载）
-	// -----------------------------------------------------------------------
-
-	/** 从运行时拉取预设名录（每次启动后跑；失败/legacy → UI 隐藏预设条）。 */
 	async refreshAgentPresets(): Promise<void> {
 		try {
 			const res = await this.runtime.listPresets();
@@ -4507,12 +4070,10 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** 校验一个预设 id（名录 healthy 优先；legacy/未知 → 默认）。 */
 	resolvePreset(requested?: string): string {
 		if (requested) {
 			const hit = this.agentPresets.find((p) => p.id === requested && !p.broken);
 			if (hit) return hit.id;
-			// 名录还没拉到（启动中）但 clone 有它 → 先信 clone，挂载期再定。
 			if (this.presetCloneIds.includes(requested)) return requested;
 		}
 		const def = this.settings.defaultAgentPreset;
@@ -4524,7 +4085,6 @@ export class DshClientSession {
 		return PRESET_DEFAULT_ID;
 	}
 
-	/** 推送预设名录 + 默认（attach/变化后；legacy 下 presets 空，前端隐藏）。 */
 	pushAgentPresets(): void {
 		this.emit({
 			type: "dsh_presets",
@@ -4533,7 +4093,6 @@ export class DshClientSession {
 		});
 	}
 
-	/** 新会话默认预设（设置面板；非法 id 拒绝并提示）。 */
 	async setDefaultAgentPreset(preset: string): Promise<void> {
 		const hit = this.agentPresets.find((p) => p.id === preset && !p.broken);
 		const valid = hit ? hit.id : this.presetCloneIds.includes(preset) ? preset : null;
@@ -4553,7 +4112,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** 空白会话切换预设（首轮后锁定，官方语义；失败按 code 出双语 notice）。 */
 	async selectAgentPreset(preset: string): Promise<void> {
 		const conv = this.conv;
 		if (conv.presetLocked || conv.messages.length > 0) {
@@ -4600,16 +4158,10 @@ export class DshClientSession {
 		}
 	}
 
-	/** 预设显示名（名录 name > id；供 notice/前端回退）。 */
 	presetName(id: string): string {
 		return this.agentPresets.find((p) => p.id === id)?.name ?? id;
 	}
 
-	// -----------------------------------------------------------------------
-	// 权限预设（三档；官方 /permission 弹窗同源，Node 侧只做值守 + 转发）
-	// -----------------------------------------------------------------------
-
-	/** 校验三档值（非法 → 默认；组合里没有也照默认，前端按 options 取交集展示）。 */
 	resolvePermissionPreset(requested?: string): string {
 		if (requested && PERMISSION_OFFERED.includes(requested)) return requested;
 		const def = this.settings.defaultPermissionPreset;
@@ -4617,7 +4169,6 @@ export class DshClientSession {
 		return PERMISSION_DEFAULT_PRESET;
 	}
 
-	/** 推选项表 + 默认（组合静态，options 为空 = 运行时未就绪/legacy，前端隐藏）。 */
 	pushPermission(): void {
 		this.emit({
 			type: "dsh_permission",
@@ -4626,7 +4177,6 @@ export class DshClientSession {
 		});
 	}
 
-	/** 拉取权限选项表（运行时启动/重建后跑一次；失败 → 空，前端隐藏）。 */
 	async refreshPermissionOptions(): Promise<void> {
 		try {
 			const res = await this.runtime.getPermission(this.conv.sessionId);
@@ -4637,7 +4187,6 @@ export class DshClientSession {
 		this.pushPermission();
 	}
 
-	/** 拉取当前会话的权限预设值（激活/创建/切换/重启后跑；失败保持 null）。 */
 	async refreshActivePermission(): Promise<void> {
 		const conv = this.conv;
 		try {
@@ -4649,13 +4198,10 @@ export class DshClientSession {
 				return;
 			}
 			if (cur) conv.permissionPreset = cur;
-		} catch {
-			/* 运行时未就绪：保持 null/旧值 */
-		}
+		} catch {}
 		this.flushSnapshot();
 	}
 
-	/** 新会话默认权限预设（设置面板；非法值拒绝并提示）。 */
 	async setDefaultPermissionPreset(preset: string): Promise<void> {
 		if (!PERMISSION_OFFERED.includes(preset)) {
 			this.emit({
@@ -4672,7 +4218,6 @@ export class DshClientSession {
 		this.flushSnapshot();
 	}
 
-	/** 首轮 prompt 前：新会话应用 per-client 默认（与当前一致时 apply 无事件零噪音）。 */
 	async ensurePermissionDefault(conv: DshConversation): Promise<void> {
 		const target = this.resolvePermissionPreset();
 		try {
@@ -4684,12 +4229,9 @@ export class DshClientSession {
 				const res = await this.runtime.setPermission(conv.sessionId, target);
 				if (res.ok) conv.permissionPreset = res.currentValue || target;
 			}
-		} catch {
-			/* legacy/运行时未就绪：best effort */
-		}
+		} catch {}
 	}
 
-	/** 当前会话切换权限预设（热切换，无需重启；失败按 code 出双语 notice）。 */
 	async setPermissionPreset(preset: string): Promise<void> {
 		const conv = this.conv;
 		const target = this.resolvePermissionPreset(preset);
@@ -4730,11 +4272,6 @@ export class DshClientSession {
 		}
 	}
 
-	/**
-	 * 审查者模式：DSH 不支持（无 customTools 注册面 → 工具硬闸门无处可挂，
-	 * 自动路由也没有可派发的会话通道）。明确回报而不是静默失败 ——
-	 * “点了没反应”比“用不了”更让人怀疑是不是页面坏了。
-	 */
 	async setDelegateMode(enabled: boolean): Promise<void> {
 		if (!enabled) return;
 		this.emit({
@@ -4758,18 +4295,14 @@ export class DshClientSession {
 			promptDisabled: [],
 			disabledSkills: this.settings.disabledSkills,
 			disabledExtensions: this.settings.disabledExtensions,
-			// DSH engine: no unified tool gating (no subagent/edit_soft); empty keeps protocol complete.
 			disabledAgentTools: [],
 			terminalToolsEnabled: this.settings.terminalToolsEnabled,
 			terminalBash: this.settings.terminalBash,
 			terminalBashIdleMs: this.settings.terminalBashIdleMs,
 			terminalBashMaxForegroundMs: this.settings.terminalBashMaxForegroundMs,
 			editSoftEnabled: this.settings.editSoftEnabled,
-			// DSH 无独立重试配置，预设沿用默认值。
-			// DSH 无 skill 全文注入概念，给空保预设类型完整。
 			skillsFullText: [],
 			retryMaxAttempts: DEFAULT_RETRY_MAX_ATTEMPTS,
-			// DSH 另有运行时：压缩软上限是 pi 引擎概念，预设里保持关闭。
 			softCapTokens: 0,
 			softCapByModel: {},
 			autoCompactionInstructions: "",
@@ -4802,7 +4335,6 @@ export class DshClientSession {
 			});
 			return;
 		}
-		// Keep absent fields intact, including settings owned by other engines.
 		const { settings } = sanitizePresetSettings(preset);
 		this.stateStore.saveSettings(this.clientId, settings);
 		Object.assign(this.settings, settings);
@@ -4820,12 +4352,6 @@ export class DshClientSession {
 		this.pushSettings();
 	}
 
-	/* -----------------------------------------------------------------------
-	 * 预设分享（server/preset-share.ts）—— 与 pi 引擎同一份编排，只换适配层。
-	 * DSH 的预设存储/应用语义不同，所以把「取/存/应用」按 DSH 的做法接上。
-	 * --------------------------------------------------------------------- */
-
-	/** 分享编排需要的最小能力集合（DSH 侧）。 */
 	private sharePort(): PresetSharePort {
 		return {
 			lang: () => this.getLang(),
@@ -4833,8 +4359,6 @@ export class DshClientSession {
 			presets: () => this.stateStore.getPresets(this.clientId),
 			currentSettings: () => {
 				const s = this.settings;
-				// DSH 的预设记录字段与 ClientSettings 不完全一致（没有 promptTemplate/
-				// promptOverrides 等），导出时按预设形状给默认值（应用侧只读它认识的）。
 				return {
 					promptMode: s.promptMode,
 					customSystemPrompt: s.customSystemPrompt,
@@ -4870,34 +4394,25 @@ export class DshClientSession {
 		};
 	}
 
-	/** 导出预设/当前设置为可分享的 JSON（服务端 preset-share.ts）。 */
 	async exportPreset(msg: Extract<ClientMessage, { type: "preset_export" }>): Promise<void> {
 		exportPresetVia(this.sharePort(), msg);
 	}
 
-	/** 解析导入的预设 JSON（dryRun = 只预览）。 */
 	async importPreset(msg: Extract<ClientMessage, { type: "preset_import" }>): Promise<void> {
 		await importPresetVia(this.sharePort(), msg);
 	}
 
-	/** 按网址导入预设（服务端抓取）。 */
 	async importPresetFromUrl(msg: Extract<ClientMessage, { type: "preset_import_url" }>): Promise<void> {
 		await importPresetFromUrlVia(this.sharePort(), msg);
 	}
 
-	/** 拉社区共享预设目录。 */
 	async pushPresetCatalog(msg: Extract<ClientMessage, { type: "preset_catalog" }>): Promise<void> {
 		await pushPresetCatalogVia(this.sharePort(), msg);
 	}
 
-	/** 一键分享预设到社区共享仓库。 */
 	async sharePreset(msg: Extract<ClientMessage, { type: "preset_share" }>): Promise<void> {
 		await sharePresetVia(this.sharePort(), msg);
 	}
-
-	// -----------------------------------------------------------------------
-	// 子代理模板（DSH 引擎无子代理概念 —— 设置面板分区由前端 isDsh 隐藏）
-	// -----------------------------------------------------------------------
 
 	async saveSubagentTemplate(): Promise<void> {
 		this.emit({
@@ -4917,18 +4432,10 @@ export class DshClientSession {
 		});
 	}
 
-	// -----------------------------------------------------------------------
-	// 目标（DSH 原生 goal 域：goal/change 事件驱动，round-driver 自动轮次）
-	// -----------------------------------------------------------------------
-
 	private emitGoalStatus(): void {
 		this.emit({ type: "goal_status", status: { ...this.conv.goal } });
 	}
 
-	/**
-	 * goal/change 事件（DSH 原生状态机全量快照）→ 镜像到当前 conversation。
-	 * 权威源在运行时：create/edit/resume → active；complete → pass；block → fail。
-	 */
 	private applyGoalChange(
 		conv: DshConversation,
 		data: {
@@ -4974,8 +4481,6 @@ export class DshClientSession {
 				g.reviewing = true;
 				g.verdict = "pending";
 				g.feedback = undefined;
-				// P1-10：轮次已达上限且仍未完成 → 提示轮尽（模型可能正在跑最后一轮，
-				// 后续 complete/blocked 事件会覆盖此状态）。
 				const rounds = g.round ?? 0;
 				const max = data.goal.maxGoalRounds ?? g.maxRounds ?? 0;
 				g.status =
@@ -5020,7 +4525,6 @@ export class DshClientSession {
 			reviewModel?: string;
 			maxRounds?: number;
 			locked?: boolean;
-			/** 目标模式 2.0 的委托执行仅 pi 引擎支持，DSH 忽略这个字段。 */
 			execModel?: string;
 		},
 	): Promise<void> {
@@ -5046,12 +4550,9 @@ export class DshClientSession {
 		g.reviewModel = opts?.reviewModel ?? g.reviewModel;
 		g.maxRounds = opts?.maxRounds ?? g.maxRounds;
 		g.locked = opts?.locked ?? g.locked;
-		// P1-11：DSH 无独立审查者，locked 映射为轮次语义 ——
-		//   locked=true（目标锁定，必须达成）→ 保留用户轮次上限；
-		//   locked=false（不锁定）→ 单轮语义近似（maxGoalRounds=1，一轮后结束）。
 		const effectiveMax = g.locked ? g.maxRounds : 1;
 		g.round = 0;
-		g.reviewing = true; // round-driver 会立刻续第一轮
+		g.reviewing = true;
 		g.verdict = "pending";
 		g.feedback = undefined;
 		g.status = "目标已设，等待生成…";
@@ -5070,7 +4571,6 @@ export class DshClientSession {
 			textEn: `🎯 Goal set: ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`,
 		});
 		try {
-			// goal/set 创建 + arm；round-driver 在 agent idle 时自动续轮，无需额外 prompt。
 			const res = (await this.runtime.goalSet(conv.sessionId, text, effectiveMax > 0 ? effectiveMax : undefined)) as {
 				goal?: { maxGoalRounds?: number } | null;
 			};
@@ -5092,7 +4592,6 @@ export class DshClientSession {
 
 	async clearGoal(): Promise<void> {
 		const conv = this.conv;
-		// 向导进行中 → 中断等待（模型侧提问会因超时/无 provider 恢复）。
 		if (conv.turnWaiter) {
 			const w = conv.turnWaiter;
 			conv.turnWaiter = undefined;
@@ -5101,9 +4600,7 @@ export class DshClientSession {
 		if (conv.dsGoal) {
 			try {
 				await this.runtime.goalClear(conv.sessionId);
-			} catch {
-				/* goal/change clear 事件会回来兜底 */
-			}
+			} catch {}
 		}
 		conv.dsGoal = null;
 		const g = conv.goal;
@@ -5122,8 +4619,6 @@ export class DshClientSession {
 		text: string,
 		opts?: { wizardModel?: string; maxRounds?: number; locked?: boolean },
 	): Promise<void> {
-		// 交互式调研向导：主会话 prompt 向导指令 → 模型用 ask_user_question 逐题
-		// 提问（经提问桥 → 浏览器对话框）→ 收敛输出 GOAL: 行 → 自动设目标。
 		if (this.quiesceBlocked()) return;
 		if (this.settings.goalModeEnabled === false) {
 			this.emit({
@@ -5201,12 +4696,10 @@ export class DshClientSession {
 		g.wizard.step = 0;
 		g.wizard.status = "";
 		g.wizard.statusEn = "";
-		// 解析模型最终输出中的 GOAL: 行。
 		const finalText = this.lastAssistantText(conv);
 		const goalMatch = finalText.match(/GOAL\s*[:：]\s*([\s\S]*)/i);
 		let refined = goalMatch ? goalMatch[1]!.trim() : "";
 		if (!refined) {
-			// 未按格式：取最后一段非空文本（截断防污染）。
 			refined =
 				finalText
 					.split("\n")
@@ -5216,7 +4709,6 @@ export class DshClientSession {
 			if (refined.length > 300) refined = refined.slice(0, 300);
 		}
 		if (!refined && g.goal) {
-			// 模型可能直接用了 create_goal —— 目标已在运行时，镜像它即可。
 			this.emitGoalStatus();
 			this.emit({
 				type: "notice",
@@ -5249,7 +4741,6 @@ export class DshClientSession {
 		}
 	}
 
-	/** 调研向导指令（主会话 prompt）：先提问收敛，最后只输出 GOAL: 行。 */
 	private wizardPrompt(draft: string): string {
 		return [
 			`You are a goal-clarification wizard. The user stated a raw requirement. Your job is to turn it into ONE precise, actionable goal that a coding agent can fully satisfy.`,
@@ -5264,7 +4755,6 @@ export class DshClientSession {
 		].join("\n");
 	}
 
-	/** 会话最后一条 assistant 文本（向导/调试提取用）。 */
 	private lastAssistantText(conv: DshConversation): string {
 		for (let i = conv.messages.length - 1; i >= 0; i--) {
 			const m = conv.messages[i]!;
@@ -5279,7 +4769,6 @@ export class DshClientSession {
 		reviewModel?: string;
 		maxRounds?: number;
 		locked?: boolean;
-		/** 目标模式 2.0 的委托执行仅 pi 引擎支持，DSH 忽略（GoalBar 对 DSH 隐藏该控件）。 */
 		execModel?: string;
 	}): Promise<void> {
 		const g = this.conv.goal;
@@ -5294,10 +4783,6 @@ export class DshClientSession {
 		});
 		this.emitGoalStatus();
 	}
-
-	// -----------------------------------------------------------------------
-	// 命令列表（.pi/commands.json → DSH 无命令体系，简化为空/透传存储）
-	// -----------------------------------------------------------------------
 
 	async listCommands(): Promise<void> {
 		const { commands, path } = await loadCommands(this.cwd);
@@ -5318,10 +4803,6 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 斜杠命令（内置 NATIVE + 插件 registerCommand；DSH 无扩展/技能/模板体系）
-	// -----------------------------------------------------------------------
-
 	async pushSlashCommands(): Promise<void> {
 		const commands: {
 			name: string;
@@ -5336,7 +4817,6 @@ export class DshClientSession {
 			commands.push({ ...c, source: "builtin" });
 			seen.add(c.name);
 		}
-		// 技能命令：运行时技能 + 磁盘技能
 		for (const s of this.skillsCache) {
 			const name = `skill:${s.name}`;
 			if (seen.has(name)) continue;
@@ -5373,7 +4853,6 @@ export class DshClientSession {
 		this.emit({ type: "slash_commands", commands });
 	}
 
-	/** 拦截执行斜杠命令；返回 true 表示已处理（不发给模型）。 */
 	private async execSlash(name: string, args: string): Promise<boolean> {
 		if (name.startsWith("skill:")) {
 			const skillName = name.slice(6);
@@ -5391,8 +4870,6 @@ export class DshClientSession {
 		switch (name) {
 			case "new": {
 				const first = args.trim();
-				// /new <prompt>：与 pi 引擎一致（共用 NATIVE_COMMANDS 的提示词），
-				// 仅当真的落在空白新对话上才投递首条提示，否则会把提示误发进当前对话。
 				if ((await this.newChat()) && first) await this.prompt(first);
 				return true;
 			}
@@ -5442,9 +4919,9 @@ export class DshClientSession {
 				await this.refreshSessions();
 				return true;
 			case "help":
-				return true; // 前端 /help modal 展示目录
+				return true;
 			case "copy":
-				return true; // 前端本地实现
+				return true;
 			case "reload":
 				this.emit({
 					type: "notice",
@@ -5474,7 +4951,6 @@ export class DshClientSession {
 				this.onQuit?.();
 				return true;
 		}
-		// 插件命令（host.registerCommand）
 		const def = this.pluginCommandsProvider?.().find((c) => c.name === name);
 		if (def) {
 			try {
@@ -5495,17 +4971,12 @@ export class DshClientSession {
 		return false;
 	}
 
-	// -----------------------------------------------------------------------
-	// 自更新
-	// -----------------------------------------------------------------------
-
 	static currentAppVersion(): string {
 		return getAppVersion() || "0.0.0";
 	}
 
 	async checkUpdate(): Promise<void> {
 		try {
-			// registry 遵从 ~/.pi/agent/npm/.npmrc（与 `pi update` 经 npm 的行为一致，issue #151）
 			const npmRegistry = resolveNpmRegistry(join(homedir(), ".pi", "agent"));
 			const latest = await checkAllUpdates(
 				[{ name: "pi-web-ui", version: DshClientSession.currentAppVersion(), kind: "webui" }],
@@ -5547,7 +5018,6 @@ export class DshClientSession {
 				resolveNpmRegistry(join(homedir(), ".pi", "agent")),
 			);
 			if (force) {
-				// 强制模式：忽略缓存（默认 Fetcher 带 TTL，直接再查一次即可）。
 				void items;
 			}
 			this.emit({
@@ -5568,10 +5038,6 @@ export class DshClientSession {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// pi 专属：DSH 引擎下的简化实现
-	// -----------------------------------------------------------------------
-
 	async installPiAgent(): Promise<void> {
 		this.emit({
 			type: "install_result",
@@ -5585,7 +5051,6 @@ export class DshClientSession {
 		});
 	}
 
-	/** DSH 是否就绪：auth.json 的 deepseek key、环境变量 DEEPSEEK_API_KEY 或自定义 Provider 凭据任一即可。 */
 	private isDshConfigured(): boolean {
 		if (loadDeepSeekKey(this.agentDir) || process.env.DEEPSEEK_API_KEY) return true;
 		if (this.modelProvider && this.modelProvider !== "deepseek") {
@@ -5601,13 +5066,10 @@ export class DshClientSession {
 					if (resolveProviderCredential(this.agentDir, c.providerId).apiKey) return true;
 				}
 			}
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		return false;
 	}
 
-	/** 下拉框里的 deepseek-official 归一到 auth.json 的 deepseek 槽位（loadDeepSeekKey 只读它）。 */
 	private normalizeDshProvider(provider: string): string {
 		const pid = provider.trim();
 		return pid === "deepseek-official" ? "deepseek" : pid;
@@ -5747,19 +5209,11 @@ export class DshClientSession {
 		this.modelAdmin.abortEnrichModels(reqId);
 	}
 
-	// -----------------------------------------------------------------------
-	// 其他
-	// -----------------------------------------------------------------------
-
-	resolveDialog(_id: number, _value: string | boolean | null): void {
-		// DSH 引擎无扩展 UI 桥（dialog 由插件宿主走，v1 忽略）。
-	}
+	resolveDialog(_id: number, _value: string | boolean | null): void {}
 
 	async editMessage(messageId: string, text: string, attachments?: PromptAttachment[]): Promise<void> {
 		if (this.quiesceBlocked() || this.switchingWorkspace || this.disposed) return;
 		if (!text.trim() && !attachments?.length) return;
-		// The runtime has no history-replacement RPC. Close its append-only writer,
-		// replace the persisted prefix atomically, then resume the SAME session ID.
 		let recoverRuntime: (() => Promise<void>) | undefined;
 		try {
 			const conv = this.conv;
@@ -5789,8 +5243,6 @@ export class DshClientSession {
 				this.convs.get(conv.id) === conv;
 			const file = this.guessSessionFile(conv);
 			if (!file) throw new Error("Persisted DSH session log not found; history was not changed");
-			// Every persisted session loses its live agent when this shared process stops.
-			// Mark them before stopping so failed rebuilds can restore lazily on prompt.
 			const loaded = [...this.convs.values()].filter((c) => !c.fromDisk && this.guessSessionFile(c));
 			recoverRuntime = async () => {
 				if (!current()) return;
@@ -5807,7 +5259,6 @@ export class DshClientSession {
 					.map((e) => JSON.stringify(e))
 					.join("\n") + "\n";
 			writeAtomicSync(file, file.endsWith(".zstd") ? zstdCompressSync(Buffer.from(saved)) : saved, { fsync: true });
-			// Skip file asides belonging to this question; promptConv recreates attachments.
 			let cutIdx = idx;
 			while (
 				cutIdx > 0 &&
@@ -5823,7 +5274,6 @@ export class DshClientSession {
 			this.flushSnapshot(true);
 			await runtime.start();
 			if (!current()) return;
-			// DshRuntime has not yet exposed the installed SDK's session/resume RPC.
 			await (runtime as unknown as { _request(method: string, params: unknown): Promise<unknown> })._request(
 				"session/resume",
 				{ sessionId },
@@ -5854,24 +5304,16 @@ export class DshClientSession {
 		}
 	}
 
-	/** Server language for this client (issue #91): resolved LIVE from the
-	 *  persisted UI locale — "zh" only for zh*; everything else is English. */
 	getLang(): ServerLang {
 		return resolveServerLang(this.stateStore.get(this.clientId).locale);
 	}
 
-	/** Persist the browser UI locale (hello.locale / set_locale). DSH
-	 *  runtime prompts pick it up on the next run — no restart needed. */
 	async setLocale(locale: string): Promise<void> {
 		const code = locale.trim().slice(0, 16);
 		if (!code) return;
 		this.stateStore.saveLocale(this.clientId, code);
 	}
 
-	/** 设置当前项目的额外工作区根（宿主侧多根，宿主 API v2 的宿主侧能力）。
-	 *  DSH 引擎没有插件宿主，多根只落到「宿主知道 / 快照下发」这一层：右栏文件树
-	 *  （前端）据此多出可切换的根。
-	 *  与 pi 引擎同口径：归一化交给 ClientStateStore（只收绝对路径 / 去重 / 上限 8）。 */
 	async setWorkspaceRoots(roots?: string[]): Promise<void> {
 		const before = this.stateStore.getWorkspaceRoots(this.clientId, this.cwd);
 		this.stateStore.saveWorkspaceRoots(this.clientId, this.cwd, roots ?? []);
@@ -5928,7 +5370,6 @@ export class DshClientSession {
 				textEn: `Switching workspace & restarting runtime: ${abs}`,
 			});
 			await new Promise<void>((r) => setImmediate(r));
-			// 恢复新工作区的记忆模型（按 DSH 引擎独立记录：项目记忆 > 全局默认）
 			const savedModel =
 				this.stateStore.getProjectModel(this.clientId, abs, "dsh") ?? this.stateStore.getDefaultModel("dsh");
 			const previousModel = this.model;
@@ -5948,11 +5389,8 @@ export class DshClientSession {
 			this.cwd = abs;
 			this.roots = this.stateStore.getWorkspaceRoots(this.clientId, abs);
 			this.stateStore.remember(this.clientId, abs);
-			// 旧 active 会话：活跃的（流式/有终端/跑过）标 listed → 后台运行可见
-			// （与 pi 的 displaceActive 语义一致）；空白的直接弃（不列）。
 			const prev = this.conv;
 			prev.listed = this.shouldRetainDshConversation(prev) || prev.messages.length > 0;
-			// 新项目 → 恢复最近历史会话（若有）或新建空白会话
 			const openRecent = this.settings.openRecentSessionOnProjectSwitch ?? true;
 			const recentFiles = openRecent
 				? findSessionFilesForCwd(this.sessionRoot, abs).filter((f) => !basename(dirname(f)).startsWith("review-"))
@@ -5979,15 +5417,12 @@ export class DshClientSession {
 				}
 			}
 			this.activeId = (resumedConv ?? this.addConversation(`web-${randomUUID().slice(0, 12)}`, abs, false)).id;
-			// 旧项目非活跃 conversation 回收（pi 的 displaceActive 语义：切走后
-			// 非 streaming / 无终端 / 未列出的旧会话从内存移除，磁盘 JSONL 可回放恢复）。
 			// eslint-disable-next-line unicorn/no-useless-spread -- snapshot: handlers may unsubscribe mid-emit
 			for (const [id, c] of [...this.convs]) {
 				if (id === this.activeId) continue;
 				if (c.cwd === abs) continue;
 				if (c.listed) continue;
 				if (c.isStreaming) continue;
-				// 只看“用过”的存活终端：没动过的空 shell 不阻止项目切换时的旧会话回收。\n\t\t\t\tif (c.terminals.countBlockingLive() > 0) continue;
 				this.removeConversation(id);
 			}
 			this.onCwdChanged?.(abs);
@@ -6003,7 +5438,6 @@ export class DshClientSession {
 			this.emitConversations();
 			void this.pushSessions();
 			void this.pushProjects();
-			// 文件树跟随新项目（服务端原生 watcher 自动重挂）。
 			void this.listFiles(undefined);
 			this.pushTerminals();
 			this.pushSettings();
@@ -6054,14 +5488,44 @@ export class DshClientSession {
 		this.userTerminals?.killAll();
 		try {
 			await this.runtime.close();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 
-	// -----------------------------------------------------------------------
-	// 插件扩展点（与 pi 引擎的 *ForPlugins 对齐）
-	// -----------------------------------------------------------------------
+	async readQuickAskConversation(
+		source: import("../quick-ask-context.js").QuickAskConversationSource,
+		signal: AbortSignal,
+	): Promise<import("../quick-ask-context.js").QuickAskConversationSnapshot | undefined> {
+		signal.throwIfAborted();
+		const conv = source.conversationId
+			? this.convs.get(source.conversationId)
+			: source.sessionFile
+				? [...this.convs.values()].find(
+						(candidate) =>
+							candidate.sessionFile &&
+							normalizePathKey(candidate.sessionFile) === normalizePathKey(source.sessionFile!),
+					)
+				: undefined;
+		if (conv) {
+			const file = this.guessSessionFile(conv);
+			if (source.sessionFile && (!file || normalizePathKey(file) !== normalizePathKey(source.sessionFile)))
+				return undefined;
+			return captureQuickAskConversation(conv.title, file ?? undefined, conv.messages, conv.cwd);
+		}
+		if (!source.sessionFile) return undefined;
+		const cwd = this.cwd;
+		const file = findSessionFilesForCwd(this.sessionRoot, cwd).find(
+			(candidate) => normalizePathKey(candidate) === normalizePathKey(source.sessionFile!),
+		);
+		if (!file || statSync(file).size > 16 * 1024 * 1024) return undefined;
+		const { events } = readSessionLog(file);
+		signal.throwIfAborted();
+		return captureQuickAskConversation(
+			sessionLogTitle(events) || basename(dirname(file)),
+			file,
+			replayEventsToMessages(events),
+			cwd,
+		);
+	}
 
 	activeConversationId(): string {
 		return this.activeId;
@@ -6116,9 +5580,7 @@ export class DshClientSession {
 						kind: "history",
 						isStreaming: false,
 					});
-				} catch {
-					// 忽略损坏的会话日志
-				}
+				} catch {}
 			}
 			return out;
 		} catch {
@@ -6193,11 +5655,6 @@ export class DshClientSession {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// DshAgentService — 服务级：客户端会话管理与引擎分发入口
-// ---------------------------------------------------------------------------
-
-/** 与 pi 引擎 AgentService 同构的顶层服务（index.ts 按 PI_WEB_ENGINE 选择）。 */
 export class DshAgentService {
 	private clients = new Map<string, DshClientSession>();
 	private quiesced = false;
@@ -6280,7 +5737,6 @@ export class DshAgentService {
 		connectedClients: number;
 		activeConversations: number;
 		pendingMessages: number;
-		/** 托管本实例的平台服务（null = 前台/dev/Docker）；语义同 pi 引擎。 */
 		service: UiServiceInfo | null;
 	} {
 		return {
@@ -6295,7 +5751,6 @@ export class DshAgentService {
 		};
 	}
 
-	/** issue #145：跨客户端同会话查重（sessionId 口径，与 pi 引擎同语义）。 */
 	findSessionOwner(sessionId: string, excludeClientId: string): SessionOwnerInfo | null {
 		for (const [clientId, cs] of this.clients) {
 			if (clientId === excludeClientId) continue;
@@ -6313,7 +5768,6 @@ export class DshAgentService {
 		return null;
 	}
 
-	/** issue #145：别处在某 cwd 下正在跑的对话（同项目并行感知用）。 */
 	listProjectRunners(cwd: string, excludeClientId: string): ProjectRunnerInfo[] {
 		const out: ProjectRunnerInfo[] = [];
 		for (const [clientId, cs] of this.clients) {
@@ -6323,7 +5777,6 @@ export class DshAgentService {
 		return out;
 	}
 
-	/** issue #145：别处所有正在跑的对话（左栏 elsewhere 只读感知用）。 */
 	listExternalRunning(excludeClientId: string): ElsewhereRunning[] {
 		const out: ElsewhereRunning[] = [];
 		for (const [clientId, cs] of this.clients) {
@@ -6333,19 +5786,15 @@ export class DshAgentService {
 		return out;
 	}
 
-	/** issue #145：某客户端流式集合变化 → 其他客户端重推 conversations。 */
 	pokeExternalRunning(excludeClientId: string): void {
 		for (const [clientId, cs] of this.clients) {
 			if (clientId === excludeClientId) continue;
 			try {
 				cs.refreshExternalRunning();
-			} catch {
-				// 单客户端坏了不影响其他
-			}
+			} catch {}
 		}
 	}
 
-	/** issue #145：向除请求方外的所有客户端发一条 notice（并行通告用）。 */
 	notifyClientsExcept(
 		excludeClientId: string,
 		msg: { type: "notice"; level: "info" | "warning" | "error"; text: string; textEn?: string },
@@ -6354,9 +5803,7 @@ export class DshAgentService {
 			if (clientId === excludeClientId) continue;
 			try {
 				cs.emitNotice(msg.level, msg.text, msg.textEn);
-			} catch {
-				// 单客户端坏了不影响其他
-			}
+			} catch {}
 		}
 	}
 
@@ -6373,11 +5820,8 @@ export class DshAgentService {
 			if (saved.lastCwd && saved.lastCwd !== this.cwd) {
 				try {
 					if (statSync(saved.lastCwd).isDirectory()) cwd = saved.lastCwd;
-				} catch {
-					/* gone — fall back to default */
-				}
+				} catch {}
 			}
-			// 同步创建（runtime.start() 异步后台进行）——无并发竞态，无需 pending。
 			cs = DshClientSession.create(clientId, cwd, this.stateStore, this.dataDir, this.agentDir);
 			this.clients.set(clientId, cs);
 			this.stateStore.remember(clientId, cwd);
@@ -6398,7 +5842,6 @@ export class DshAgentService {
 		cs.pluginBgTasksProvider = this.pluginBgTasksProvider;
 		cs.pluginStopBgTask = this.pluginStopBgTask;
 		cs.isQuiesced = () => this.quiesced;
-		// issue #145 跨客户端感知接线（同会话查重 / 同项目并行 / elsewhere 列表）。
 		cs.findSessionOwnerById = (sessionId) => this.findSessionOwner(sessionId, clientId);
 		cs.listProjectRunners = (cwd) => this.listProjectRunners(cwd, clientId);
 		cs.listExternalRunning = () => this.listExternalRunning(clientId);
@@ -6409,8 +5852,6 @@ export class DshAgentService {
 		return cs;
 	}
 
-	/** Browser UI locale report (hello.locale / set_locale): persist per
-	 *  client; DSH runtime prompts refresh on next run (P2 bilingual). */
 	async setLocale(clientId: string, locale: string): Promise<void> {
 		const cs = this.clients.get(clientId);
 		if (cs) await cs.setLocale(locale);
@@ -6421,7 +5862,6 @@ export class DshAgentService {
 	}
 
 	applyPluginAgentTools(): void {
-		// 工具桥（#15）：插件工具列表变化 → 各客户端运行时重新注册。
 		for (const cs of this.clients.values()) void cs.syncPluginTools();
 	}
 
@@ -6449,9 +5889,7 @@ export class DshAgentService {
 		for (const cs of this.clients.values()) {
 			try {
 				await cs.dispose();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		this.clients.clear();
 	}
@@ -6460,14 +5898,7 @@ export class DshAgentService {
 		return DEFAULT_DSH_CAPABILITIES;
 	}
 
-	/** dsh engine keeps no interrupted-run record — resume is pi-only. */
-	recordInterruptedRuns(): void {
-		/* no-op */
-	}
-
-	// -----------------------------------------------------------------------
-	// 插件扩展点适配层（AAL - Agent Adapter Layer）
-	// -----------------------------------------------------------------------
+	recordInterruptedRuns(): void {}
 
 	pluginClient(): DshClientSession | undefined {
 		let fallback: DshClientSession | undefined;

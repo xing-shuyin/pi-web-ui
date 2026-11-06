@@ -1,12 +1,3 @@
-/**
- * Direct goal set — auto-start test.
- * Sends set_goal (NO AI-提炼 / no wizard) and confirms the main agent is
- * auto-triggered to generate (a "【目标已设定】" user message appears in a
- * snapshot). No reliance on the model completing.
- *
- * Robust harness: server-startup check + WebSocket open/error/close handled,
- * so it can never hang forever — every await has a bounded timeout.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -15,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -89,7 +79,6 @@ function mkWaiters() {
 }
 
 (async () => {
-	// PORT should be free at start (fresh data dir); if already in use, bail clearly.
 	if (await waitPort(0)) {
 		console.error("PORT already in use at start; aborting");
 		process.exit(1);
@@ -128,10 +117,8 @@ function mkWaiters() {
 		await next((m) => m.type === "snapshot", "snapshot", 20000);
 	} catch {}
 
-	// Direct goal set (maxRounds 0 = unlimited, locked).
 	ws.send(JSON.stringify({ type: "set_goal", goal: "帮我写一句自我介绍。", maxRounds: 0, locked: true }));
 
-	// Expect the auto-start kick-off user message in a snapshot.
 	let kickoff = false;
 	try {
 		await next(

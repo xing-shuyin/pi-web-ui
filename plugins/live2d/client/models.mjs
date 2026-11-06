@@ -1,7 +1,3 @@
-/**
- * Live2D 模型配置与管理
- */
-
 export function getClientBase(importMetaUrl = import.meta.url) {
 	try {
 		const u = new URL(importMetaUrl);
@@ -13,7 +9,6 @@ export function getClientBase(importMetaUrl = import.meta.url) {
 	}
 }
 
-/** 默认模型目录（全部内置本地离线） */
 export function getDefaultModels(clientBase) {
 	return [
 		{
@@ -95,7 +90,6 @@ export function getAllModels(clientBase) {
 	return list;
 }
 
-/** 智能表情别名映射 */
 export const EMOTION_ALIAS_MAP = {
 	happy: ["f01", "f00", "smile", "happy", "joy", "exp_01", "F01", "F02"],
 	sad: ["f03", "sad", "sorrow", "tear", "cry", "exp_03", "F04", "F05"],

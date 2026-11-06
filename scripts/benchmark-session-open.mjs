@@ -1,7 +1,3 @@
-// 打开历史会话的事件循环阻塞基准：SDK SessionManager.open（同步读 + 同步全量解析）对比
-// openSessionManagerAsync（异步读 + 分时片解析）。指标是「解析期间事件循环最长停顿」——
-// 也就是其他客户端的 WebSocket 消息最多要等多久——以及总耗时。仅使用合成数据。
-// 用法：node --import tsx scripts/benchmark-session-open.mjs [MB]
 import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +38,6 @@ function build() {
 	return `${lines.join("\n")}\n`;
 }
 
-/** 在 fn 运行期间用 setImmediate 链测量事件循环最长停顿。 */
 async function measure(fn) {
 	let maxGap = 0;
 	let last = performance.now();
@@ -59,7 +54,6 @@ async function measure(fn) {
 	last = start;
 	await fn();
 	const total = performance.now() - start;
-	// 同步阻塞的 fn 结束后，停顿要等下一次 tick 才被观测到
 	await new Promise((r) => setImmediate(r));
 	running = false;
 	return { total, maxGap };

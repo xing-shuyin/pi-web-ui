@@ -4,8 +4,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { sanitizeTextForJournal, sanitizeToolParameters } from "./task-progress.js";
 
 export const MAX_JOURNAL_SEGMENT_ENTRIES = 50;
-export const MAX_JOURNAL_SEGMENT_BYTES = 64 * 1024; // 64 KiB
-export const MAX_JOURNAL_RETAINED_SEGMENTS = 20; // 20 segments * 50 entries = up to 1000 events
+export const MAX_JOURNAL_SEGMENT_BYTES = 64 * 1024;
+export const MAX_JOURNAL_RETAINED_SEGMENTS = 20;
 
 export interface TaskJournalEntry {
 	id: string;
@@ -94,9 +94,7 @@ export function decodeJournalCursor(cursorStr: string): DecodedCursor | null {
 		) {
 			return { taskId: obj.taskId, attemptId: obj.attemptId, sequence: obj.sequence };
 		}
-	} catch {
-		// invalid cursor
-	}
+	} catch {}
 	return null;
 }
 
@@ -122,9 +120,7 @@ export function createTaskJournalManager(baseDir: string) {
 	const rootDir = join(baseDir, "task-journals");
 
 	let closed = false;
-	// In-memory active task state cache to avoid repeated disk reads on progress loops
 	const activeTasks = new Map<string, InMemoryTaskState>();
-	// Asynchronous serialization tail Promise per task
 	const taskLocks = new Map<string, Promise<unknown>>();
 
 	function taskDir(taskId: string): string {
@@ -180,7 +176,6 @@ export function createTaskJournalManager(baseDir: string) {
 			await writeAtomicAsync(join(dir, "meta.json"), JSON.stringify(meta, null, 2));
 		}
 
-		// Stat current active segment to track bytes and lines without full read
 		const segPath = join(dir, segmentFileName(meta.activeSegmentIndex));
 		let bytes = 0;
 		let lines = 0;
@@ -189,9 +184,7 @@ export function createTaskJournalManager(baseDir: string) {
 			bytes = s.size;
 			const content = await readFile(segPath, "utf8");
 			lines = content.split("\n").filter((l) => l.trim().length > 0).length;
-		} catch {
-			// Segment does not exist yet
-		}
+		} catch {}
 
 		const state: InMemoryTaskState = {
 			meta,
@@ -265,7 +258,6 @@ export function createTaskJournalManager(baseDir: string) {
 				const timestamp = entryInput.timestamp || now;
 				const id = `${taskId}-${seq}`;
 
-				// Sanitize output, summary, reason, parameters
 				let sanitizedOutput: string | undefined;
 				if (typeof entryInput.output === "string") {
 					sanitizedOutput = sanitizeTextForJournal(entryInput.output).slice(0, 2048);
@@ -309,7 +301,6 @@ export function createTaskJournalManager(baseDir: string) {
 				const line = JSON.stringify(entry) + "\n";
 				const lineBytes = Buffer.byteLength(line, "utf8");
 
-				// Rotate segment if needed
 				if (
 					taskState.currentSegLines >= MAX_JOURNAL_SEGMENT_ENTRIES ||
 					taskState.currentSegBytes + lineBytes >= MAX_JOURNAL_SEGMENT_BYTES
@@ -321,14 +312,12 @@ export function createTaskJournalManager(baseDir: string) {
 				}
 
 				const segPath = join(dir, segmentFileName(meta.activeSegmentIndex));
-				// Direct non-blocking append to file, no full segment rewrite
 				await appendFile(segPath, line, "utf8");
 				taskState.currentSegBytes += lineBytes;
 				taskState.currentSegLines++;
 				meta.totalEvents++;
 				meta.updatedAt = now;
 
-				// Segment bound pruning
 				if (meta.segmentCount > MAX_JOURNAL_RETAINED_SEGMENTS) {
 					const files = (await readdir(dir)).filter((f) => f.startsWith("segment-") && f.endsWith(".jsonl")).sort();
 					if (files.length > MAX_JOURNAL_RETAINED_SEGMENTS) {
@@ -338,9 +327,7 @@ export function createTaskJournalManager(baseDir: string) {
 								const oldLines = (await readFile(join(dir, f), "utf8")).split("\n").filter((l) => l.trim().length > 0);
 								meta.droppedCount += oldLines.length;
 								await unlink(join(dir, f));
-							} catch {
-								// ignore
-							}
+							} catch {}
 						}
 						meta.truncated = true;
 						const remaining = (await readdir(dir))
@@ -353,14 +340,11 @@ export function createTaskJournalManager(baseDir: string) {
 									const parsed = JSON.parse(firstLine) as TaskJournalEntry;
 									meta.minRetainedSequence = parsed.sequence;
 								}
-							} catch {
-								// ignore
-							}
+							} catch {}
 						}
 					}
 				}
 
-				// Asynchronous metadata atomic write
 				await writeAtomicAsync(join(dir, "meta.json"), JSON.stringify(meta, null, 2));
 				return entry;
 			});
@@ -423,7 +407,6 @@ export function createTaskJournalManager(baseDir: string) {
 				}
 			}
 
-			// Read retained segment entries asynchronously
 			const files = (await readdir(dir)).filter((f) => f.startsWith("segment-") && f.endsWith(".jsonl")).sort();
 			const allEntries: TaskJournalEntry[] = [];
 			let corrupted = false;

@@ -109,7 +109,6 @@ describe("iMessage command, routing and media behavior", () => {
 	});
 	const resets = ["/new", "/clear", "/reset", `/cwd ${process.cwd()}`, `/workspace ${process.cwd()}`];
 	it.each(resets)("%s starts fresh history and retains the new binding on follow-up", async (command) => {
-		// Model the daemon's account-based reuse, rather than always returning one fake conversation.
 		const accounts = new Map<string, string>();
 		let sequence = 0;
 		const { bridge, host } = setup(
@@ -464,7 +463,6 @@ describe("iMessage command, routing and media behavior", () => {
 		const bridge = new IMessageBotBridge({ host: {}, getConfig: () => ({}), execFileImpl: exec, platform: "darwin" });
 		await bridge.start();
 		await bridge.poll();
-		// poll dispatches inbound messages asynchronously; wait for delivery before shutting down.
 		await vi.waitFor(() => expect(exec).toHaveBeenCalledTimes(3));
 		await bridge.stop();
 		expect(exec.mock.calls[0][1]).toContain("-readonly");

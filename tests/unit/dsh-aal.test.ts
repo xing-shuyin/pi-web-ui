@@ -1,9 +1,3 @@
-/**
- * 阶段三单测：双引擎适配层（DSH Agent Adapter Layer for Plugins）。
- * 验证 DshClientSession 与 DshAgentService 的插件扩展接口：
- * readConversationForPlugins / listRunningForPlugins / listHistoryForPlugins /
- * searchForPlugins / steerForPlugins / abortForPlugins / listModelsForPlugins。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +23,6 @@ describe("Phase 3: DSH Agent Adapter Layer (AAL)", () => {
 
 		service = new DshAgentService(dir, stateStore, dataDir, agentDir);
 		cs = DshClientSession.create("test-client", dir, stateStore, dataDir, agentDir);
-		// 模拟挂载运行时，避免真实进程启动
 		(cs as unknown as { runtime: unknown }).runtime = {
 			close: vi.fn(),
 			prompt: vi.fn().mockResolvedValue(undefined),
@@ -53,7 +46,6 @@ describe("Phase 3: DSH Agent Adapter Layer (AAL)", () => {
 		expect(Array.isArray(snap?.messages)).toBe(true);
 		expect(snap?.model).toContain("deepseek");
 
-		// 指定 clientId 不匹配时返回 null
 		expect(cs.readConversationForPlugins({ clientId: "other-client" })).toBeNull();
 	});
 
@@ -78,42 +70,34 @@ describe("Phase 3: DSH Agent Adapter Layer (AAL)", () => {
 		const res = await cs.steerForPlugins(convId, "新的任务指示");
 		expect(res.ok).toBe(true);
 
-		// 空消息被拒绝
 		const emptyRes = await cs.steerForPlugins(convId, "   ");
 		expect(emptyRes.ok).toBe(false);
 
-		// 未知对话被拒绝
 		const unknownRes = await cs.steerForPlugins("non-existent-id", "test");
 		expect(unknownRes.ok).toBe(false);
 	});
 
 	it("DshClientSession.abortForPlugins 中止正在运行的对话", async () => {
 		const convId = cs.activeConversationId();
-		// 会话未在 streaming 时幂等返回 ok: true
 		const res = await cs.abortForPlugins(convId);
 		expect(res.ok).toBe(true);
 
-		// 未知对话返回 error
 		const unknownRes = await cs.abortForPlugins("unknown-conv");
 		expect(unknownRes.ok).toBe(false);
 	});
 
 	it("DshClientSession.searchForPlugins 搜索会话", async () => {
-		// 空 query 返回空数组
 		const empty = await cs.searchForPlugins("");
 		expect(empty).toEqual([]);
 
-		// 匹配当前对话标题
 		const found = await cs.searchForPlugins("新对话");
 		expect(Array.isArray(found)).toBe(true);
 	});
 
 	it("DshAgentService.pluginClient 与 readConversationForPlugins 多引擎统一适配", async () => {
-		// 尚未 attach 客户端前 fallback 为 undefined
 		expect(service.pluginClient()).toBeUndefined();
 		expect(service.readConversationForPlugins()).toBeNull();
 
-		// attach 客户端后能够被选取与读取
 		const attachedCs = await service.attach("attached-client", () => {});
 		expect(service.pluginClient()).toBe(attachedCs);
 

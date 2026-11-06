@@ -1,10 +1,3 @@
-/**
- * 通用右键菜单基础设施（web/src/context-menu-state.ts + components/ContextMenu.tsx）单测。
- *
- * 只测**纯逻辑**（本环境的 vitest environment = "node"，见 vitest.config.ts）：坐标钳制、
- * 条目过滤/分组排序、渲染行、键盘下标推进、模块级 store 的订阅语义。
- * 渲染层（portal / 焦点 / 事件监听）由真浏览器回归覆盖，不在单测里造 DOM。
- */
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -27,7 +20,6 @@ import {
 } from "../../web/src/context-menu-state.js";
 import type { UiSlotEntry } from "../../web/src/ui-slots.js";
 
-/** 造一条最终条目（只填用例关心的字段，其余走 UiSlotEntry 的缺省值）。 */
 function entry(id: string, partial: Partial<UiSlotEntry> = {}): UiSlotEntry {
 	return {
 		id,
@@ -54,7 +46,6 @@ describe("全局菜单挂载", () => {
 	it("独立于群组和其他视图分支，始终挂载唯一菜单", () => {
 		const source = readFileSync(new URL("../../web/src/App.tsx", import.meta.url), "utf8");
 		expect(source.match(/<ContextMenu\b/g)).toHaveLength(1);
-		// Require an unconditional direct child before any layout/view branch.
 		const providerChildren = source.slice(source.indexOf("<TemplateProvider "));
 		expect(providerChildren).toMatch(/^<TemplateProvider[^\n]*>\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<ContextMenu\b/);
 	});
@@ -121,7 +112,6 @@ describe("contextMenuItems（过滤 + 分组聚类 + 稳定排序）", () => {
 			entry("d", { kind: "divider", order: 16 }),
 			entry("b", { order: 20 }),
 		];
-		// divider 锚在输入顺序里它后面第一个幸存条目（b）之前。
 		expect(ids(contextMenuItems(list))).toEqual(["a", "d", "b"]);
 	});
 
@@ -131,7 +121,6 @@ describe("contextMenuItems（过滤 + 分组聚类 + 稳定排序）", () => {
 			entry("b1", { group: "b", order: 10 }),
 			entry("a1", { group: "a", order: 20 }),
 		];
-		// b 组最小 order = 10 < a 组 20 → b 整组在前；a 组内 20 在 30 前。
 		expect(ids(contextMenuItems(list))).toEqual(["b1", "a1", "a2"]);
 	});
 
@@ -147,7 +136,6 @@ describe("contextMenuItems（过滤 + 分组聚类 + 稳定排序）", () => {
 
 	it("末尾的显式分隔线被丢弃（没有下文可分隔）", () => {
 		expect(ids(contextMenuItems([entry("a"), entry("d", { kind: "divider" })]))).toEqual(["a"]);
-		// 只剩分隔线时结果为空
 		expect(contextMenuItems([entry("d1", { kind: "divider" }), entry("d2", { kind: "divider" })])).toEqual([]);
 	});
 
@@ -216,7 +204,6 @@ describe("nextEnabledIndex（键盘导航，环形）", () => {
 
 	it("向下从 -1 起：第一条可用条目（跳过分隔线与置灰项）", () => {
 		expect(nextEnabledIndex(items, -1, 1)).toBe(0);
-		// 0 → 跳过 1/2/3 → 4
 		expect(nextEnabledIndex(items, 0, 1)).toBe(4);
 	});
 
@@ -376,7 +363,7 @@ describe("context-menu-state store（打开 / 关闭 / 订阅）", () => {
 		expect(hits).toBe(1);
 		closeContextMenu();
 		expect(hits).toBe(2);
-		closeContextMenu(); // 已经关着：静默
+		closeContextMenu();
 		expect(hits).toBe(2);
 		off();
 	});

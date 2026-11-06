@@ -1,15 +1,3 @@
-/**
- * subagent-templates-hant.ts — 内置子代理模板的繁体中文（台湾用语）文案。
- *
- * 内置模板（DEFAULT_TEMPLATES）出厂只有简中 + 英文。繁中界面（zh-TW / zh-Hant / zh-HK）
- * 若直接用简中字段，设置页与子代理提示词都会是简体。这里按模板名存一份繁中文案，由
- * localizeTemplate 在「模板文字仍等于出厂简中」时作为视图套用；用户改过的字段不动。
- *
- * 文案由 scripts/zh-tw-locale 的 OpenCC（twp）+ 台湾用语词表转出后人工校订。
- * 简中出厂文案改动时，这里必须同步（守卫：tests/unit/subagent-templates.test.ts）。
- */
-
-/** 一个内置模板的繁中文案（只覆盖 description / systemPrompt，英文字段不涉及）。 */
 export interface TemplateHantText {
 	description: string;
 	systemPrompt: string;

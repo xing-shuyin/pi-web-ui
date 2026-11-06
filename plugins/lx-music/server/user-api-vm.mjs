@@ -1,12 +1,3 @@
-/**
- * 洛雪自定义音源 (User API) 脚本沙箱执行器
- * 参考 lx-music-desktop-enhanced 架构进行深度优化：
- * 1. 兼容 BOM 与多种元数据注释规范；
- * 2. 完备的 toOldMusicInfo 字段契约规范化（多平台兼容 hash / songmid / strMediaMid 等）；
- * 3. 音质档位别名（hires 与 flac24bit 互通）与多级平滑回退（master -> hires -> flac -> 320k -> 128k）；
- * 4. 音频有效性极速预检，杜绝 404 / HTML 报错死链传递给播放器；
- * 5. 全面补齐现代 JS 沙箱环境与资源回收机制。
- */
 import vm from "node:vm";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
@@ -14,7 +5,6 @@ import zlib from "node:zlib";
 const DEFAULT_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-/** 模拟 needle / 回调风格的 HTTP 请求客户端 */
 function createLxRequest(activeTimers) {
 	return function lxRequest(url, options = {}, callback) {
 		const method = (options.method || "GET").toUpperCase();
@@ -82,7 +72,6 @@ function createLxRequest(activeTimers) {
 	};
 }
 
-/** 规范化音乐信息字段，保证兼容所有平台（酷狗 hash、QQ strMediaMid、网易 songmid 等） */
 function normalizeMusicInfo(source, raw) {
 	const songId = String(raw.id || raw.songmid || raw.hash || "");
 	const hash = raw.hash || (source === "kg" ? songId : "");
@@ -125,7 +114,6 @@ function normalizeMusicInfo(source, raw) {
 	};
 }
 
-/** 音质降级候选序列映射（对齐 enhanced 版本 7 档口径） */
 const QUALITY_FALLBACK_LADDER = {
 	master: ["master", "hires", "flac24bit", "flac", "320k", "128k"],
 	atmos_plus: ["atmos_plus", "atmos", "hires", "flac", "320k", "128k"],
@@ -137,7 +125,6 @@ const QUALITY_FALLBACK_LADDER = {
 	"128k": ["128k"],
 };
 
-/** 极速检测返回的音频 URL 是否真实可播放（识别 404、5xx 及 text/html 错误页） */
 async function verifyAudioPlayable(url, source = "", timeoutMs = 2000) {
 	if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) return false;
 	try {
@@ -160,10 +147,8 @@ async function verifyAudioPlayable(url, source = "", timeoutMs = 2000) {
 		});
 		clearTimeout(timer);
 
-		// 如果状态码是 404 或 5xx，判定无效
 		if (res.status === 404 || res.status >= 500) return false;
 
-		// 检查内容类型，如果返回 html（常见于 404 错误页）或 json 错误响应，判定无效
 		const contentType = (res.headers.get("content-type") || "").toLowerCase();
 		if (contentType.includes("text/html") || contentType.includes("application/json")) {
 			return false;
@@ -171,30 +156,26 @@ async function verifyAudioPlayable(url, source = "", timeoutMs = 2000) {
 
 		return true;
 	} catch {
-		// 网络探测超时或异常时，如果不是确定的 404，先宽松放行让流代理去兜底
 		return true;
 	}
 }
 
 export class UserApiEngine {
 	constructor(options = {}) {
-		this.apis = new Map(); // id -> { id, meta, handler, script, timers }
+		this.apis = new Map();
 		this.activeId = null;
 		this.log = options.log || console.log;
 	}
 
-	/** 导入并初始化自定义音源脚本 */
 	importScript(id, scriptContent) {
 		let requestHandler = null;
 		const timers = new Set();
 
-		// 容错：去除 BOM 和开头空白字符
 		const cleanScript = (scriptContent || "").replace(/^\uFEFF\s*/, "").trim();
 		if (!cleanScript) {
 			return { ok: false, error: "脚本内容不能为空" };
 		}
 
-		// 解析元数据
 		const nameMatch = cleanScript.match(/@name\s+(.+)/);
 		const verMatch = cleanScript.match(/@version\s+(.+)/);
 		const descMatch = cleanScript.match(/@description\s+(.+)/);
@@ -329,7 +310,6 @@ export class UserApiEngine {
 			vm.createContext(context);
 			vm.runInContext(cleanScript, context, { timeout: 8000 });
 
-			// 清理旧同名脚本的定时器
 			if (this.apis.has(id)) {
 				this.cleanupTimers(id);
 			}
@@ -393,10 +373,6 @@ export class UserApiEngine {
 		return list;
 	}
 
-	/**
-	 * 解析播放真实链接
-	 * 引入 enhanced 的智能平滑降级：当请求音质（如 flac/hires）不可用时，自动向下一档降级获取
-	 */
 	async resolveUrl(source, rawMusicInfo, quality = "128k") {
 		if (!this.activeId) return null;
 		const target = this.apis.get(this.activeId);
@@ -421,7 +397,6 @@ export class UserApiEngine {
 				else if (res?.url && typeof res.url === "string" && res.url.startsWith("http")) candidateUrl = res.url;
 
 				if (candidateUrl) {
-					// 快速验证 URL 有效性（避免 404 死链）
 					const isPlayable = await verifyAudioPlayable(candidateUrl, source);
 					if (isPlayable) {
 						return { url: candidateUrl, quality: q };
@@ -429,7 +404,6 @@ export class UserApiEngine {
 					this.log(`[UserApi:${this.activeId}] 音源返回了失效死链 (404/不可达): ${candidateUrl}，正在尝试平滑降级`);
 				}
 			} catch (err) {
-				// 单个档位请求异常，继续尝试降级档位
 				this.log(`[UserApi:${this.activeId}] 音质档位 ${q} 请求未命中: ${err.message}`);
 			}
 		}
@@ -437,7 +411,6 @@ export class UserApiEngine {
 		return null;
 	}
 
-	/** 对指定音源进行健康与音质探测 */
 	async probeApi(id) {
 		const target = this.apis.get(id);
 		if (!target || !target.handler) {

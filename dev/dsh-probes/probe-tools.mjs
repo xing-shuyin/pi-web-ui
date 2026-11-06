@@ -1,14 +1,8 @@
-// Temp probe: DSH tools bridge (#15) — verify plugin tool registration via
-// tools/sync, schema conversion (pi JSON Schema → DSH param spec), tools/list,
-// and the FULL trampoline round-trip via tools/invoke (invoke → tools.call.request
-// notification → simulated server responds tools/call-result → value restored).
-// Zero key: boot + tools/* RPC need no model.
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const JSONRPC_ENTRY = resolve(
 	HERE,
@@ -25,7 +19,6 @@ const tmp = join(HERE, "..", "..", ".tmp-tools-probe");
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
 
-// PI_WEB_DSH_DEBUG=1 → 允许 tools/invoke（调试/探针专用）。
 const proc = spawn(process.execPath, [join(DSH_DIR, "runtime", "launcher.mjs")], {
 	cwd: HERE,
 	env: {
@@ -82,7 +75,6 @@ const req = (method, params) =>
 		proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
 	});
 
-// 模拟服务端：收到 tools.call.request → 立即跑插件（这里直接回显）→ tools/call-result。
 const onNotify = (method, params) => {
 	if (method !== "tools.call.request") return;
 	const { id, name, args } = params;
@@ -99,9 +91,7 @@ const fail = (msg) => {
 	console.error("PROBE FAILED:", msg);
 	try {
 		proc.kill();
-	} catch {
-		/* already dead */
-	}
+	} catch {}
 	process.exit(1);
 };
 
@@ -109,7 +99,6 @@ try {
 	await req("initialize", { cwd: HERE, provider: "deepseek-official", model: "deepseek-v4-flash" });
 	console.log("initialize OK");
 
-	// ---- 1. tools/sync：pi JSON Schema（required 数组形式）→ DSH 属性映射 ----
 	const tools = [
 		{
 			name: "echo_tool",
@@ -133,7 +122,6 @@ try {
 		fail("registered list mismatch: " + JSON.stringify(syncRes?.registered));
 	}
 
-	// ---- 2. tools/list：确认注册 + schema 转换 ----
 	const listRes = await req("tools/list", {});
 	const names = (listRes?.tools ?? []).map((t) => t.name);
 	console.log("tools/list ->", JSON.stringify(names));
@@ -141,7 +129,6 @@ try {
 	const echo = (listRes.tools ?? []).find((t) => t.name === "echo_tool");
 	console.log("echo_tool params (compiled):", JSON.stringify(echo?.parameters));
 	const params = echo?.parameters ?? {};
-	// DSH 编译后：object + properties.msg{type:string,description} + required:["msg"]
 	if (params.type !== "object" || params.properties?.msg?.type !== "string") {
 		fail("echo_tool parameters not converted: " + JSON.stringify(params));
 	}
@@ -149,12 +136,10 @@ try {
 		fail("required not preserved as array: " + JSON.stringify(params.required));
 	}
 
-	// ---- 3. tools/invoke 完整往返（trampoline → notify → call-result → 恢复） ----
 	const inv = await req("tools/invoke", { name: "echo_tool", args: { msg: "hello" } });
 	console.log("tools/invoke ->", JSON.stringify(inv));
 	if (inv?.ok !== true || inv?.value !== "echo:hello") fail("round-trip value mismatch: " + JSON.stringify(inv));
 
-	// ---- 4. 工具不存在 → 错误 ----
 	const missing = await req("tools/invoke", { name: "nope", args: {} });
 	console.log("tools/invoke(nope) ->", JSON.stringify(missing));
 	if (missing?.ok !== false) fail("unknown tool should fail");

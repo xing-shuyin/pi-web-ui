@@ -248,7 +248,6 @@ export function addDelivery(
 		checks,
 		limitations: limits.map((s) => text(s, 2048, "limitation")),
 	};
-	// The request budget covers author input; sealed Hub-derived criteria use the existing history budget.
 	const { acceptanceCriteria: _criteria, artifactRef: _artifactRef, ...requestPayload } = payload;
 	if (Buffer.byteLength(JSON.stringify(requestPayload)) > 24 * 1024) fail(413, "Delivery budget exceeded");
 	return append(state, "delivery", conversationId, key, actor, payload, () => ({

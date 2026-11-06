@@ -184,7 +184,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// 1. Update section "spec"
 		const sec1Res = await f.request(
 			`/api/rooms/${roomId}/blackboard/sections/spec`,
 			{
@@ -205,7 +204,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		expect(sec1Res.body.blackboard.content).toContain("## API Specification");
 		expect(sec1Res.body.blackboard.content).toContain("export interface User");
 
-		// 2. Update section "tasks"
 		const sec2Res = await f.request(
 			`/api/rooms/${roomId}/blackboard/sections/tasks`,
 			{
@@ -223,12 +221,11 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		expect(sec2Res.body.blackboard.content).toContain("## API Specification");
 		expect(sec2Res.body.blackboard.content).toContain("## Implementation Checklist");
 
-		// 3. Version conflict detection on section update
 		const conflictRes = await f.request(
 			`/api/rooms/${roomId}/blackboard/sections/tasks`,
 			{
 				content: "Conflicting write",
-				expectedVersion: 1, // outdated version, current is 2
+				expectedVersion: 1,
 			},
 			cookie,
 			{},
@@ -236,7 +233,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		);
 		expect(conflictRes.status).toBe(409);
 
-		// 4. Update section without title retains original title
 		const sec2Update = await f.request(
 			`/api/rooms/${roomId}/blackboard/sections/tasks`,
 			{
@@ -268,7 +264,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// 1. Dispatch pipeline with explicit pipeline: true
 		const dispatchRes = await f.request(
 			`/api/rooms/${roomId}/messages`,
 			{
@@ -282,26 +277,21 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		const tasks = dispatchRes.body.tasks;
 		expect(tasks.length).toBe(3);
 
-		// Task 0 is queued
 		expect(tasks[0].status).toBe("queued");
 		expect(tasks[0].dependsOnTaskId).toBeUndefined();
 
-		// Task 1 is waiting on Task 0
 		expect(tasks[1].status).toBe("waiting");
 		expect(tasks[1].dependsOnTaskId).toBe(tasks[0].id);
 		expect(tasks[1].blockReason).toBe("dependency");
 		expect(tasks[1].blockReasonDetail).toContain(tasks[0].id);
 
-		// Task 2 is waiting on Task 1
 		expect(tasks[2].status).toBe("waiting");
 		expect(tasks[2].dependsOnTaskId).toBe(tasks[1].id);
 		expect(tasks[2].blockReason).toBe("dependency");
 		expect(tasks[2].blockReasonDetail).toContain(tasks[1].id);
 
-		// Verify pipeline notice in chat message
 		expect(dispatchRes.body.message.text).toContain("流水线编排");
 
-		// 2. Dispatch pipeline with '->' in content
 		const arrowRes = await f.request(
 			`/api/rooms/${roomId}/messages`,
 			{
@@ -334,7 +324,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		);
 		const task = dispatchRes.body.tasks[0];
 
-		// Transition task to running
 		const taskLease = f.hub.store.snapshot().tasks.find((entry) => entry.id === task.id)!;
 		await f.hub.acceptTaskEvent(dev.deviceId, {
 			botId: dev.botId,
@@ -353,7 +342,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 			return { steered: true };
 		});
 
-		// Steer the task via Hub steer API
 		const steerRes = await f.request(
 			`/api/rooms/${roomId}/tasks/${task.id}/steer`,
 			{ text: "Dynamic correction: focus on memory efficiency" },
@@ -406,7 +394,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		}
 		expect(relay.isOnline("dev1")).toBe(true);
 
-		// Register a task in relay
 		expect(
 			relay.sendTask("dev1", {
 				id: "t1",
@@ -417,13 +404,11 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 			}),
 		).toBe(true);
 
-		// Now test steerTask
 		const steerResult = await relay.steerTask("dev1", "t1", "att1", "Change target to production");
 		expect(steerResult).toEqual({ steered: true });
 		expect(receivedSteerTaskId).toBe("t1");
 		expect(receivedSteerText).toBe("Change target to production");
 
-		// Mismatched attemptId should fail steer
 		const mismatchResult = await relay.steerTask("dev1", "t1", "wrong-attempt", "Hello");
 		expect(mismatchResult).toEqual({ steered: false });
 	});
@@ -482,7 +467,6 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 		});
 		cleanups.push(async () => runtime.close());
 
-		// Start a task
 		void runtime.onTask({
 			id: "task-steer-test",
 			attemptId: "att-1",
@@ -494,16 +478,13 @@ describe("Group Refactor Backend - Structured Blackboard, Pipeline & Steering", 
 			leaseToken: "valid-lease",
 		} as any);
 
-		// Wait briefly for owner to register in active set
 		await new Promise((r) => setTimeout(r, 100));
 
-		// Call steerTask on runtime
 		const result = await runtime.steerTask("task-steer-test", "Mid-flight instruction");
 		expect(result).toBe(true);
 		expect(steerCalled).toBe(true);
 		expect(executedSteerText).toBe("Mid-flight instruction");
 
-		// Non-existent task returns false
 		const nonExistent = await runtime.steerTask("random-task", "Text");
 		expect(nonExistent).toBe(false);
 	});

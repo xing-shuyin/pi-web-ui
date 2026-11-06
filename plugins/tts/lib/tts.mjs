@@ -1,18 +1,3 @@
-/**
- * 合成：取票 -> 建 ws -> 收帧 -> 回 ack -> 拼音频。
- *
- * 服务端行为（2026-09-12 实测 + 从 web-tts.d93cb232e3.js 读出来的状态机）：
- *   1. 连上后先来一个文本帧 ready：{"event":"ready","audio_id":..,"format":..,"voice_id":..,"trace_id":..}
- *   2. 然后一串二进制帧，每帧前 4 字节大端 seq + 负载
- *   3. 最后文本帧 finish：{"event":"finish","code":0,"msg":"success"}
- *   客户端发：
- *   {"event":"ack","received_seq":n,"played_seq":n}   官方是首帧之后每 1000ms 发一次
- *   {"event":"finish"}                                收到服务端 finish 之后回一句
- *   {"event":"abort","reason":..}                     主动中断时
- *
- * 「没有正文参数」这件事见 README —— 读什么由服务端从会话消息里取。
- */
-
 import { PCM, PLAYED_SEQ_UNIT_MS, WS_ENDPOINT, FORMATS } from "./constants.mjs";
 import { ErrorCode, codeName, protocolError, transportError, usageError } from "./errors.mjs";
 import { FrameAssembler, buildTtsUrl, parseAudioFrame } from "./frames.mjs";
@@ -21,7 +6,6 @@ import { assertToken, issueTicket, resolveToken, setVoice as setVoiceApi } from 
 const DEFAULT_ORIGIN = "https://chat.deepseek.com";
 const DEFAULT_TIMEOUT_MS = 90_000;
 
-/** 别把票打到日志里。 */
 export function redactUrl(url) {
 	return String(url).replace(/([?&]ticket=)[^&]*/i, "$1<redacted>");
 }
@@ -79,12 +63,10 @@ export async function synthesize({
 
 	const warnings = [];
 
-	// 切音色是服务端会话级状态，所以必须在取票/建连之前做完。
 	if (voice) {
 		await setVoiceApi({ voiceId: voice, token: t, signal, fetchImpl, ...(baseUrl ? { baseUrl } : {}) });
 	}
 
-	// 票是一次性的，每次建连前现取。
 	const ticketInfo = await issueTicket({ token: t, signal, fetchImpl, ...(baseUrl ? { baseUrl } : {}) });
 
 	const url = buildTtsUrl({ endpoint, sessionId, messageId, ticket: ticketInfo.ticket, format });
@@ -129,9 +111,7 @@ export async function synthesize({
 				ws.onclose = null;
 				ws.onopen = null;
 				ws.close();
-			} catch {
-				/* 关不掉就算了，后面有超时兜底 */
-			}
+			} catch {}
 		}
 	};
 
@@ -147,16 +127,11 @@ export async function synthesize({
 		}
 	};
 
-	/** 该往 ack 里填什么。 */
 	const currentSeqs = () => {
 		if (ackMode === "index") {
-			// 更省事的口径：直接把最后一个 seq 回过去。
-			// 2026-09-12 那次探针就是这么发的，能收全帧。官方不是这么发的。
 			const last = asm.maxSeq < 0 ? 0 : asm.maxSeq;
 			return { received: last, played: last };
 		}
-		// 官方口径：received_seq 是「收到的帧数」（progress.receivedCount = receivedSeq + 1，
-		// receivedSeq 初值 -1，所以 seq 是 0 起的）；played_seq 的单位是 100ms。
 		const received = asm.receivedCount;
 		let played;
 		if (format === "pcm") {
@@ -164,7 +139,6 @@ export async function synthesize({
 			const samples = Math.floor(asm.receivedBytes / (PCM.bitsPerSample / 8) / PCM.channels);
 			played = Math.floor(samples / samplesPerUnit);
 		} else {
-			// opus 不解码就算不出采样数，只能拿已消费的帧数顶一下。这一支没有实测过。
 			played = asm.emittedCount;
 		}
 		return { received, played };
@@ -172,7 +146,7 @@ export async function synthesize({
 
 	const sendJson = (obj) => {
 		const ws = state.ws;
-		if (!ws || ws.readyState !== 1 /* OPEN */) return false;
+		if (!ws || ws.readyState !== 1) return false;
 		try {
 			ws.send(JSON.stringify(obj));
 			return true;
@@ -282,8 +256,6 @@ export async function synthesize({
 			if (Object.prototype.hasOwnProperty.call(msg, "format") && msg.format !== format) {
 				warnings.push(`服务端把 format 从 ${format} 改成了 ${msg.format}，按服务端的来`);
 			}
-			// 官方前端在收到 ready 之后不专门 ack，只在首帧之后每 1s 发一次；
-			// 那次能跑通的探针是在 ready 后先补一个 0/0。这里两个都做，反正服务端不挑。
 			sendAck();
 			return;
 		}
@@ -308,7 +280,6 @@ export async function synthesize({
 				return;
 			}
 			if (!result.contiguous) {
-				// 有洞还硬拼会导致音频错位/杂音，宁可报错也别给个坏文件。
 				settle(
 					transportError(
 						`帧不连续：共 ${result.frameCount} 帧，缺 seq [${result.missingSeqs.slice(0, 20).join(", ")}` +
@@ -321,7 +292,6 @@ export async function synthesize({
 			settle(null, result);
 			return;
 		}
-		// 其它 event 不认，记下来就行
 	};
 
 	const handleBinaryFrame = async (data) => {
@@ -354,7 +324,6 @@ export async function synthesize({
 		}
 	};
 
-	// 建连。带上标准的 Chrome 伪装头
 	let ws;
 	const wsHeaders = {
 		Origin: origin || "https://chat.deepseek.com",
@@ -375,9 +344,7 @@ export async function synthesize({
 
 	try {
 		ws.binaryType = "arraybuffer";
-	} catch {
-		/* 有些实现不允许改，那就按它默认的来，binary 分支里两种都兜了 */
-	}
+	} catch {}
 
 	ws.onopen = () => log("ws 已连接");
 	ws.onmessage = (ev) => {
@@ -394,7 +361,7 @@ export async function synthesize({
 	ws.onclose = (ev) => {
 		state.closeInfo = { code: ev?.code, reason: ev?.reason, wasClean: ev?.wasClean };
 		if (state.settled) return;
-		if (state.finish) return; // finish 那条路已经 settle 了，理论上不会走到这
+		if (state.finish) return;
 		const got = asm.receivedCount;
 		const extra =
 			ev?.code === 1006 || got === 0
@@ -414,7 +381,6 @@ export async function synthesize({
 	return done;
 }
 
-/** 小工具：给个会话 id 和消息 id，合成并直接落到 wav / opus 文件上（CLI 用）。 */
 export async function synthesizeToWavBuffer(options = {}) {
 	const result = await synthesize(options);
 	if (result.format !== "pcm") {

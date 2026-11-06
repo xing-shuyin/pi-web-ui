@@ -1,7 +1,3 @@
-/**
- * Comprehensive preview test: content-sniffed text (unknown extension), hex
- * dump for binary, unchanged media metadata, empty file.
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -12,7 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = Number(process.argv[2] || 8898);

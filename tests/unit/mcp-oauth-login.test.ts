@@ -348,7 +348,6 @@ describe("MCP OAuth login with local discovery, DCR and PKCE", () => {
 							expect(response.status).toBe(200);
 							expect(await response.text()).toContain("MCP sign-in complete");
 						});
-			// Attach rejection handlers before waiting for the fixture to receive the exchange.
 			const firstResult = Promise.allSettled([first]);
 			await tokenReached;
 			const second = finishMcpOAuthLogin({ id: login.id, redirectUrl: callback });
@@ -357,7 +356,6 @@ describe("MCP OAuth login with local discovery, DCR and PKCE", () => {
 				secondSettled = true;
 				return results;
 			});
-			// A forged callback must still fail validation while valid callers share the exchange.
 			const forged = new URL(callback);
 			forged.searchParams.set("state", "forged-state");
 			await expect(finishMcpOAuthLogin({ id: login.id, redirectUrl: forged.href })).rejects.toThrow("does not match");
@@ -429,7 +427,6 @@ describe("MCP OAuth login with local discovery, DCR and PKCE", () => {
 		);
 		expect(getMcpOAuthLoginStatus(login.id).status).toBe("error");
 		expect(readFileSync(storePath(), "utf8")).toBe(original);
-		// pi-mcp retries invalid_grant internally; a terminal login must not start another exchange.
 		const exchanges = tokenRequests().length;
 		expect(exchanges).toBeGreaterThanOrEqual(1);
 		await expect(finishMcpOAuthLogin({ id: login.id, redirectUrl: await authorize(login) })).rejects.toThrow(

@@ -8,12 +8,6 @@ import {
 	type UiIdEntryLike,
 } from "../../server/serialize.js";
 
-// issue #381：渲染 id（serializeMessage / serializeCachedFor）与解析 id
-// （resolveMessageEntry → findEntryByUiId）必须出自同一套编号。这里按服务端
-// 真实流程做往返验证：先像 serializeCachedFor 那样给整条对话渲染出 id，
-// 再用 findEntryByUiId 找回 entry。旧实现（解析侧自算 assistant 同时间戳
-// 序号 / entry 全局序号）在助手气泡上 100% 解析失败——保留反例锁住。
-
 interface MockEntry extends UiIdEntryLike {
 	id: string;
 	parentId: string | null;
@@ -21,8 +15,6 @@ interface MockEntry extends UiIdEntryLike {
 	message?: AgentMessage;
 }
 
-/** 模拟 agent-service 的 uiMessageKey：n 是跨角色的对话级计数器，按首次
- *  遇见顺序分配（真实 key 含内容指纹，这里用 JSON(content) 代替）。 */
 function makeCounter() {
 	let nextN = 1;
 	const seqMap = new Map<string, number>();
@@ -35,8 +27,6 @@ function makeCounter() {
 	return { seqOf };
 }
 
-/** 模拟 serializeCachedFor：所有消息都先过 uiMessageKey 分配 n，user 的
- *  id 序号特判成同时间戳内第几条，其余直接用 n。返回 id 列表（按入参顺序）。 */
 function renderAll(entries: MockEntry[], seqOf: (m: AgentMessage) => number): string[] {
 	const userSeqByTs = new Map<number, number>();
 	return entries.map((e) => {
@@ -97,8 +87,8 @@ describe("findEntryByUiId：渲染 id ↔ 解析 id 往返一致（issue #381）
 		const ids = renderAll(entries, seqOf);
 
 		const entryA2 = findEntryByUiId(entries, ids[1], seqOf)!;
-		expect(entryA2.parentId).toBe("e1"); // before → e1
-		expect(entryA2.id).toBe("e2"); // at → e2
+		expect(entryA2.parentId).toBe("e1");
+		expect(entryA2.id).toBe("e2");
 
 		const entryU2 = findEntryByUiId(entries, ids[2], seqOf)!;
 		expect(entryU2.parentId).toBe("e2");
@@ -159,7 +149,6 @@ describe("findEntryByUiId：渲染 id ↔ 解析 id 往返一致（issue #381）
 			msgEntry("e2", "e1", user(2000)),
 		] as unknown as MockEntry[];
 
-		// 渲染侧：display:false 不产出气泡；display:true 的 custom 首次出现 → n=1
 		const hidden = serializeMessage(
 			{ role: "custom", content: [{ type: "text", text: "hi" }], timestamp: 900 } as AgentMessage,
 			1,
@@ -171,7 +160,6 @@ describe("findEntryByUiId：渲染 id ↔ 解析 id 往返一致（issue #381）
 		expect(ids[0]).toBe("c-1000-1");
 
 		expect(findEntryByUiId(entries, ids[0], seqOf)?.id).toBe("e1");
-		// display:false 的条目本就不渲染、无按钮，解析不到也算正确
 		expect(findEntryByUiId(entries, "c-900-1", seqOf)).toBeNull();
 	});
 
@@ -203,9 +191,6 @@ describe("findEntryByUiId：渲染 id ↔ 解析 id 往返一致（issue #381）
 	});
 
 	it("旧解析口径的 assistant id（同时间戳序号）不再撞上错误的 entry", () => {
-		// 旧 resolver 把第二条 assistant 重算成 a-1005-1（同时间戳内第 1 条），
-		// 而下发的是 a-1005-2——两个 id 各说各话。修好后真实渲染链路里
-		// 不存在 a-1005-1 这个 id，不应被解析到任何 entry。
 		const { seqOf } = makeCounter();
 		const entries: MockEntry[] = [
 			msgEntry("e1", null, user(1000)),
@@ -255,7 +240,6 @@ describe("findTurnBaseEntryId：带附件提问重问/分叉时的基准节点�
 			},
 		];
 		const sm = makeMockSessionManager(entries);
-		// 对用户提问 e2 查找基准节点，应跳过 e1 并返回 null（空分支）
 		expect(findTurnBaseEntryId(sm, "e2")).toBeNull();
 	});
 
@@ -298,7 +282,6 @@ describe("findTurnBaseEntryId：带附件提问重问/分叉时的基准节点�
 			},
 		];
 		const sm = makeMockSessionManager(entries);
-		// 应当跳过 e4、e3，返回上一轮 assistant 消息 e2
 		expect(findTurnBaseEntryId(sm, "e5")).toBe("e2");
 	});
 
@@ -316,12 +299,9 @@ describe("findTurnBaseEntryId：带附件提问重问/分叉时的基准节点�
 				type: "message",
 				message: { role: "assistant", content: [{ type: "text", text: "第1轮回复" }] },
 			},
-			// 第2轮的前置附件（对话引用 + 图片）
 			{ id: "e3", parentId: "e2", type: "custom_message", customType: "file", details: { mode: "conversation" } },
 			{ id: "e4", parentId: "e3", type: "custom_message", customType: "file", details: { mode: "image" } },
-			// SDK 在 prompt() 时注入的系统提示词截面
 			{ id: "e5", parentId: "e4", type: "message", message: { role: "system", content: [{ type: "text", text: "" }] } },
-			// 用户第2轮提问
 			{
 				id: "e6",
 				parentId: "e5",
@@ -330,7 +310,6 @@ describe("findTurnBaseEntryId：带附件提问重问/分叉时的基准节点�
 			},
 		];
 		const sm = makeMockSessionManager(entries);
-		// 必须穿透 e5 (system) 和 e4/e3 (file 附件)，精准返回 e2 (上一轮回复)，杜绝 fork 保留旧附件
 		expect(findTurnBaseEntryId(sm, "e6")).toBe("e2");
 	});
 
@@ -349,7 +328,6 @@ describe("findTurnBaseEntryId：带附件提问重问/分叉时的基准节点�
 			},
 		];
 		const sm = makeMockSessionManager(entries);
-		// 追溯到顶部无任何前置对话轮次，返回 null 触发 newSession 彻底重建
 		expect(findTurnBaseEntryId(sm, "e6")).toBeNull();
 	});
 

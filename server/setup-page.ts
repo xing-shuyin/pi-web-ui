@@ -1,13 +1,3 @@
-/**
- * Modern /setup page HTML generation.
- * Features:
- * - Sleek modern dark mode (Tailwind / Radix / Vercel style)
- * - Visual Token generation, toggle visibility, one-click copy with direct token URL
- * - Status pills (active, pending restart, secure / insecure)
- * - Clear guidance and tooltips
- * - Security note: only localhost/loopback non-proxy requests can reach this page.
- */
-
 export function renderSetupHtml(): string {
 	return `<!doctype html>
 <html lang="zh-CN">

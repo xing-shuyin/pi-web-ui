@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { splitAgentStartPrompt } from "../../server/agent-service.js";
 
-/** 复刻 SDK runner 的 before_agent_start 事件契约（dist/core/extensions/runner.js）：
- *  systemPromptOptions 是整条链共享的可变对象，systemPrompt 是它的 getter；
- *  handler 返回 systemPrompt 就等于给它设上 forceSystemPrompt。 */
 function fakeEvent(forced?: string) {
 	const systemPromptOptions: { forceSystemPrompt?: string } = {};
 	if (forced !== undefined) systemPromptOptions.forceSystemPrompt = forced;
 	return {
 		systemPromptOptions,
 		get systemPrompt(): string {
-			// buildSystemPromptState：forceSystemPrompt 有值则整体替换，否则拼装各段。
 			return systemPromptOptions.forceSystemPrompt ?? "BASE PROMPT\n\nAvailable tools:\nread";
 		},
 	};

@@ -3,7 +3,6 @@ import type { UiPresetPluginDependency } from "./protocol.js";
 const MAX_PLUGINS = 32;
 const ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
 
-/** Share portable GitHub sources only; never leak local paths or URL credentials. */
 export function portablePresetPluginSource(value: unknown): string | undefined {
 	if (typeof value !== "string" || value.length > 300) return undefined;
 	const source = value.trim();
@@ -27,7 +26,6 @@ export function portablePresetPluginSource(value: unknown): string | undefined {
 	return spec;
 }
 
-/** Untrusted metadata is bounded and allowlisted independently of settings. */
 export function normalizePresetPlugins(input: unknown): UiPresetPluginDependency[] {
 	if (!Array.isArray(input)) return [];
 	const result: UiPresetPluginDependency[] = [];

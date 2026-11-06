@@ -111,7 +111,6 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 			args: [["Yes", "No"]],
 		});
 
-		// 1. 三段式布局结构完整存在
 		const head = container.querySelector(".dialog-head");
 		const scrollBody = container.querySelector(".dialog-scroll-body");
 		const footer = container.querySelector(".dialog-footer");
@@ -119,12 +118,10 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 		expect(scrollBody).not.toBeNull();
 		expect(footer).not.toBeNull();
 
-		// 2. 顶栏标题单行紧凑并带完整 title 提示
 		const headTitle = head?.querySelector(".dialog-title");
 		expect(headTitle?.textContent).toBe("⚠️ Dangerous command:");
 		expect(headTitle?.getAttribute("title")).toBe(fullTitle);
 
-		// 3. 命令专用审计盒：高危警告、行号、行数微标、展开/折叠
 		const cmdBox = scrollBody?.querySelector(".dialog-cmd-box");
 		expect(cmdBox).not.toBeNull();
 		expect(cmdBox?.classList.contains("has-risk")).toBe(true);
@@ -133,11 +130,9 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 		const lines = cmdBox?.querySelectorAll(".dialog-cmd-line");
 		expect(lines).toHaveLength(20);
 
-		// 超过 8 行提供展开/收起按钮
 		const toggleBtn = cmdBox?.querySelector(".dialog-cmd-actions button");
 		expect(toggleBtn).not.toBeNull();
 
-		// 4. 常驻底栏操作按钮：首屏立即可见且带快捷键微标
 		const options = footer?.querySelectorAll(".dialog-option");
 		expect(options).toHaveLength(2);
 		expect(options?.[0].textContent).toContain("Yes");
@@ -145,7 +140,6 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 		expect(options?.[1].textContent).toContain("No");
 		expect(options?.[1].querySelector(".dialog-opt-badge")?.textContent).toBe("N");
 
-		// 杜绝旧版粘性遮挡的 dialog-custom-row
 		expect(container.querySelector(".dialog-custom-row")).toBeNull();
 	});
 
@@ -157,13 +151,11 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 			args: [["Yes", "No"]],
 		});
 
-		// 按 Y 键触发 Yes 提交
 		act(() => {
 			window.dispatchEvent(new KeyboardEvent("keydown", { key: "y" }));
 		});
 		expect(sent).toEqual([{ type: "dialog_response", id: 2, value: "Yes" }]);
 
-		// 重新挂载测试 N 键
 		const { sent: sent2 } = mount({
 			id: 3,
 			kind: "select",
@@ -187,7 +179,6 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 			args: [["Yes", "No"]],
 		});
 
-		// 点击“拒绝并说明原因...”展开附言输入框
 		const rejectToggle = container.querySelector(".dialog-reject-toggle") as HTMLButtonElement;
 		expect(rejectToggle).not.toBeNull();
 		act(() => {
@@ -197,19 +188,15 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 		const rejectInput = container.querySelector(".dialog-reject-input") as HTMLInputElement;
 		expect(rejectInput).not.toBeNull();
 
-		// 输入拒绝原因
 		setNativeValue(rejectInput, "请改去清空 temp 目录，不要删除整库");
 
-		// 点击提交
 		const submitBtn = container.querySelector(".dialog-reject-input-row .btn") as HTMLButtonElement;
 		act(() => {
 			submitBtn.click();
 		});
 
-		// 1. 发给扩展的仍然是合法的 "No"，扩展不会崩溃且能识别拒绝
 		expect(sent).toEqual([{ type: "dialog_response", id: 4, value: "No" }]);
 
-		// 2. 拒绝附言自动注入输入框草稿并聚焦，形成完整闭环
 		expect(composeSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				text: expect.stringContaining("请改去清空 temp 目录，不要删除整库"),
@@ -274,7 +261,6 @@ describe("Dialog component: 3-tier layout, command inspector, and reject-with-fe
 		const buttons = footer?.querySelectorAll(".dialog-actions .btn");
 		expect(buttons).toHaveLength(2);
 
-		// 按 Y 键确认
 		act(() => {
 			window.dispatchEvent(new KeyboardEvent("keydown", { key: "y" }));
 		});

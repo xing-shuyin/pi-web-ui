@@ -65,11 +65,11 @@ describe("ComposerDraftsStore", () => {
 		s.save("s", "typed", 1000);
 		s.clear("s");
 		expect(s.get("s")).toBeUndefined();
-		s.save("s", "stale", 1000); // 防抖延迟的旧 draft_update
+		s.save("s", "stale", 1000);
 		expect(s.get("s")).toBeUndefined();
 		s.save("s", "older", 999);
 		expect(s.get("s")).toBeUndefined();
-		s.save("s", "new", Date.now() + 60_000); // 提交后新打的字照常存
+		s.save("s", "new", Date.now() + 60_000);
 		expect(s.get("s")?.text).toBe("new");
 	});
 
@@ -78,8 +78,8 @@ describe("ComposerDraftsStore", () => {
 		const a = new ComposerDraftsStore(file);
 		const b = new ComposerDraftsStore(file);
 		a.save("s", "typed", 1000);
-		a.clear("s"); // tab B 的 submit 触发的 prompt-clear
-		b.save("s", "stale-from-other-tab", 1000); // tab A 防抖迟到
+		a.clear("s");
+		b.save("s", "stale-from-other-tab", 1000);
 		expect(a.get("s")).toBeUndefined();
 		expect(b.get("s")).toBeUndefined();
 	});
@@ -89,7 +89,6 @@ describe("ComposerDraftsStore", () => {
 		const file = join(dir, "composer-drafts.json");
 		const store = new ComposerDraftsStore(file);
 		store.save("ok", "v", Date.now());
-		// 灌入脏数据 + 过期条目
 		const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 		raw.junk = 42;
 		raw.old = { text: "o", ts: 1, updatedAt: 1 };
@@ -105,13 +104,10 @@ describe("ComposerDraftsStore", () => {
 		const file = join(dir, "composer-drafts.json");
 		writeFileSync(file, "{not-valid-json");
 		const store = new ComposerDraftsStore(file);
-		// 以空表继续：读不到任何草稿，但不抛错
 		expect(store.get("any")).toBeUndefined();
-		// 坏文件已改名留存，原路径无文件
 		const leftovers = readdirSync(dir).filter((f) => f.startsWith("composer-drafts.json.corrupt-"));
 		expect(leftovers.length).toBe(1);
 		expect(existsSync(file)).toBe(false);
-		// 后续 save 落盘的是新数据（空表 + 新条目），留存副本不受影响
 		store.save("new", "fresh", Date.now());
 		expect(store.get("new")?.text).toBe("fresh");
 	});

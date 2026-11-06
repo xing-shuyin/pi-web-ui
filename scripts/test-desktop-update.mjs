@@ -1,7 +1,3 @@
-/** Real Electron/GitHub updater probe. Downloads and verifies; never installs.
- * Run: node scripts/test-desktop-update.mjs [--check-only]
- * Uses an isolated temporary cache, without starting the application server.
- */
 import { spawn } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

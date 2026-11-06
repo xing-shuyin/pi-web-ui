@@ -52,7 +52,6 @@ describe("collaboration message display and duplicate delivery (#828)", () => {
 			{ requestId: "req-fresh-in-wait-all", runId: "c2", questions: [] },
 		];
 
-		// Emulate collectConsults filtering logic
 		const requests = pending.filter(
 			(r) =>
 				!deliveredConsults.has(`${parentId}:${r.runId}:${r.requestId}`) &&
@@ -76,14 +75,11 @@ describe("collaboration message display and duplicate delivery (#828)", () => {
 				subagentDoneNotified: false,
 			};
 
-			// 1. Parent is in wait_all
 			consultWaitingParents.add(parent.id);
 
 			const deliverNotice = (retryCount = 0) => {
 				if (consultWaitingParents.has(parent.id)) {
-					// Postpone delivery
 					setTimeout(() => {
-						// On retry: if child was consumed by wait_all, do NOT deliver
 						if (!child.subagentConsumedByParent && !child.subagentDoneNotified) {
 							deliveredNotices.push(child.id);
 						}
@@ -96,14 +92,11 @@ describe("collaboration message display and duplicate delivery (#828)", () => {
 			deliverNotice();
 			expect(deliveredNotices).toHaveLength(0);
 
-			// 2. wait_all finishes and consumes the child
 			child.subagentConsumedByParent = true;
 			consultWaitingParents.delete(parent.id);
 
-			// Fast-forward timer
 			vi.advanceTimersByTime(400);
 
-			// Child was consumed by wait_all, so notice MUST NOT be delivered again
 			expect(deliveredNotices).toHaveLength(0);
 		} finally {
 			vi.useRealTimers();

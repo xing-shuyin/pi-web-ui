@@ -1,7 +1,3 @@
-/**
- * server/delegate-mode.ts 纯函数单测：审查者模式（自动委派）的工具闸门。
- * 与 tests/unit/plan-mode.test.ts 同口径：锁判定，不碰 IO。
- */
 import { describe, expect, it } from "vitest";
 import { delegationDenial, DELEGATION_SYSTEM_PROMPT, delegateNoticeText } from "../../server/delegate-mode.js";
 
@@ -18,13 +14,10 @@ describe("delegationDenial", () => {
 			expect(d!.kind).toBe("write-tool");
 			expect(d!.reason).toContain("审查者模式");
 		}
-		// 回归 #436：eval 沙箱可写真实文件系统。
 		expect(delegationDenial("eval", {})?.kind).toBe("write-tool");
 	});
 
 	it("派发类工具拒：派活是服务端的活", () => {
-		// subagent 在审查者模式整体拒（不分 action）；schedule 是真实注册
-		// 的排程工具（单 action；#436 前名单里只有 schedule 等幽灵名，一个真实工具都没拦住）。
 		for (const name of ["subagent", "delegate_task", "schedule"]) {
 			const d = delegationDenial(name, {});
 			expect(d, name).toBeDefined();
@@ -32,7 +25,6 @@ describe("delegationDenial", () => {
 		}
 	});
 
-	// 回归 #436：名单以 server/tool-manager.ts 实际注册的工具名为事实源，幽灵名清掉。
 	it("幽灵名不再误报", () => {
 		for (const ghost of [
 			"spawn",
@@ -52,7 +44,6 @@ describe("delegationDenial", () => {
 		expect(delegationDenial("bash", { command: "npm test" })?.kind).toBe("bash");
 		expect(delegationDenial("bash", { command: "rm -rf dist" })?.kind).toBe("bash");
 		expect(delegationDenial("terminal", { command: "npm run build" })?.kind).toBe("write-tool");
-		// 空命令 → 直接拒（不给「空跑」留口子）
 		expect(delegationDenial("bash", { command: "  " })?.kind).toBe("bash");
 		expect(delegationDenial("bash", {})?.kind).toBe("bash");
 	});
@@ -81,7 +72,6 @@ describe("提示词与 notice 文案", () => {
 		expect(DELEGATION_SYSTEM_PROMPT).toMatch(/^# Reviewer mode/);
 		expect(DELEGATION_SYSTEM_PROMPT).toMatch(/blocked by the server/);
 		expect(DELEGATION_SYSTEM_PROMPT).toMatch(/plan mode wins/i);
-		// 不含中文字符
 		expect(/[一-鿿]/.test(DELEGATION_SYSTEM_PROMPT)).toBe(false);
 	});
 

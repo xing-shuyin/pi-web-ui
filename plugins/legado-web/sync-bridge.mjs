@@ -1,13 +1,3 @@
-/**
- * 同步桥 —— 把异步 fetch 变成阻塞调用（只能在 worker 线程里用：主线程 Atomics.wait 会卡死事件循环）。
- *
- * 用途：书源 JS 规则里的 `java.ajax / java.connect / java.get / java.post` 是**同步**语义
- * （浏览器实现是同步 XHR），规则引擎在 Node 里跑时需要等价能力。
- *
- * 实现：一个常驻 worker（sync-worker.mjs）+ 每调用一块 SharedArrayBuffer，
- * 主调线程 Atomics.wait 阻塞等待结果。
- */
-
 import { Worker } from "node:worker_threads";
 
 const SAB_BYTES = 16 * 1024 * 1024;
@@ -30,7 +20,6 @@ export function createSyncHttp(opts = {}) {
 	};
 
 	return {
-		/** 阻塞抓取。成功返回 { status, url, body }，失败抛错（消息即原因）。 */
 		call(req) {
 			const sab = new SharedArrayBuffer(SAB_BYTES);
 			const view = new Int32Array(sab);
@@ -46,9 +35,7 @@ export function createSyncHttp(opts = {}) {
 		dispose() {
 			try {
 				worker?.terminate();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			worker = null;
 		},
 	};

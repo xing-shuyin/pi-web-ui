@@ -1,12 +1,3 @@
-/**
- * 目标模式 2.0 的端到端冒烟（唯一路径：执行对话干活 + 当前对话验收）。
- *
- * 只验证**服务端接线**（不需要真模型）：左栏角色对话真的被拉起、主对话不再收到
- * 「请开始实现」kick、清目标时执行对话被收掉。审查/执行判定逻辑由
- * tests/unit/goal-delegated.test.ts（fake GoalHost）覆盖。
- *
- * 跑法：node tests/goal-delegated-test.mjs（端口 8907）
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -34,7 +25,6 @@ const server = spawn("node", ["dist/server/index.js"], {
 		PI_WEB_PORT: String(PORT),
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: REPO_ROOT,
-		// 角色轮等待上限跟着工具看门狗走：压小它，免在无凭据环境里等模型的整轮重试。
 		PI_WEB_TOOL_TIMEOUT_MS: "12000",
 	},
 	stdio: "ignore",
@@ -53,7 +43,7 @@ ws.on("message", (d) => {
 	try {
 		m = JSON.parse(d.toString());
 	} catch {
-		return; // malformed frame
+		return;
 	}
 	if (m.type === "snapshot") snapshot = m.state;
 	else if (m.type === "snapshot_delta") {
@@ -74,7 +64,6 @@ const waitFor = async (pred, what, timeout = 15000) => {
 	return false;
 };
 
-// 目标模式 2.0：执行对话是**落盘**普通对话（isSubagent=false），靠 parentId 挂到主对话下。
 const execRows = (parentId) => (conversations ?? []).filter((c) => c.parentId === parentId);
 
 try {
@@ -123,7 +112,6 @@ try {
 		.join("\n");
 	check("主对话没收到「请开始实现」kick（它是审查者）", !mainTexts.includes("请现在开始实现"));
 
-	// 清目标 → 执行对话被移出左栏（转录保留在历史里：落盘的代价）
 	send({ type: "clear_goal" });
 	await waitFor(() => goalStatus?.goal === null, "goal_status cleared");
 	const removed = await waitFor(() => !execRows(mainId).some((r) => r.id === execId), "executor row removed");
@@ -133,9 +121,7 @@ try {
 } finally {
 	try {
 		ws.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	server.kill();
 }
 

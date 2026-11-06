@@ -1,7 +1,3 @@
-/* themes/bases/obsidian-base.css — 黑曜冷月毛玻璃卡片基底
- * 包含：独立毛玻璃圆角卡片、透光顶栏与底栏、微光质感输入岛。
- */
-
 #root,
 .app,
 .layout,
@@ -61,7 +57,6 @@
 	background: rgba(255, 255, 255, 0.1);
 }
 
-/* 3.1 左侧分区标题（最近项目、运行对话、历史对话等）彻底提亮为清爽亮白，告别暗黑发脏 */
 .lp-section-header,
 .lp-section-title,
 .lp-section-title-text,
@@ -75,7 +70,6 @@
 		0 1px 1.5px rgba(0, 0, 0, 0.88);
 }
 
-/* 4. 单个气泡独立圆角与轻微毛玻璃背景（内部工具与正文平整连贯无空隙） */
 .messages-wrap,
 .chat-scroll,
 .messages {
@@ -88,7 +82,6 @@
 	box-shadow: none;
 }
 
-/* 回合工具集群在黑曜冷月模式下保持优雅垂直堆叠（方案 B：自上而下单列卡片，连成一体无空隙） */
 .turn-tools-trail {
 	display: flex;
 	flex-direction: column;
@@ -126,7 +119,6 @@
 	overflow: hidden;
 }
 
-/* 正文消息（最终文本回复）与上方工具卡、思考块左侧完全对齐留出边距，消除顶格突兀感 */
 .msg-text {
 	padding: 6px 12px;
 	border-radius: 8px;
@@ -136,7 +128,6 @@
 	display: block;
 }
 
-/* 4.1 全页面可见文字防眩光阴影（标题、项目名、会话名、正文字等），1像素紧致高锐度边缘，绝不晕染发糊 */
 .topbar,
 .topbar-title,
 .bar-item-text,
@@ -171,7 +162,6 @@ button:not(.icon-btn):not(.lp-section-action),
 		0 1px 1.5px rgba(0, 0, 0, 0.88);
 }
 
-/* 4.2 次要与偏黑小字全面保护（项目路径、时间戳、会话副标题、分区计数、底栏所有小指标等）：提亮并应用零扩散紧致微暗边缘，绝不隐形，绝不糊黑 */
 .project-path,
 .project-time,
 .session-sub,
@@ -252,12 +242,8 @@ button:not(.icon-btn):not(.lp-section-action),
 .inputbox textarea {
 	background: transparent;
 	color: #ffffff;
-	/* text-shadow 归上方 `.inputbox textarea` 所在的成组规则（同选择器；那条原本靠优先级补丁恒胜，
-	   本条的同名声明从未生效过）。分层后两条同权重，删掉这条死声明才能让成组规则继续胜出，
-	   视觉与重构前完全一致。 */
 }
 
-/* 6.1 输入框底部工具条：胶囊文字（高、完全权限、全功能等）彻底提亮为纯白，防眩光锁边 */
 .composer-tools,
 .composer-tools-left,
 .composer-tools-center,
@@ -308,7 +294,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	filter: none;
 }
 
-/* 胶囊按钮（模型、思考、权限、预设等下拉）恒定保持 8px 圆角矩形，悬停绝不变形为扁平椭圆 */
 .composer-tools .chip,
 .composer-tools .chip:hover,
 .composer-tools .dropdown > button,
@@ -318,7 +303,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	border-radius: 8px;
 }
 
-/* 仅针对左侧附件等纯图标小按钮悬停时轻微高光，绝不改变任何下拉胶囊圆角 */
 .inputbox .btn.composer-plugin-action:not(.chip):hover,
 .inputbox .composer-tools-left > button:not(.chip):not(.dropdown):hover {
 	color: #ffffff;
@@ -326,7 +310,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	border-radius: 6px;
 }
 
-/* 发送按钮（冷白银辉高光圆钮 + 深黑箭头，高对比度清晰锋利，绝不白底隐形） */
 .inputbox .btn.send {
 	background: #f8fafc;
 	border-color: #ffffff;
@@ -356,7 +339,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	filter: none;
 }
 
-/* 运行中插队/排队分裂胶囊按钮（银白双段胶囊，黑箭黑单，分界清晰） */
 .inputbox .split-send {
 	background: #f8fafc;
 	border-color: #ffffff;
@@ -385,7 +367,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	background: rgba(0, 0, 0, 0.12);
 }
 
-/* 7. 卡片、代码块与工具调用：方案 B（纯净无界微透流 · 连成一体无空隙） */
 .card {
 	background: rgba(255, 255, 255, 0.04);
 	border: none;
@@ -393,7 +374,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	box-shadow: none;
 }
 
-/* 工具调用（.toolcall）、思考块（.thinking）彻底消除外边距，连成一体，杜绝百叶窗斑马线切碎背景 */
 .toolcall,
 .thinking {
 	background: transparent;
@@ -409,7 +389,6 @@ button:not(.icon-btn):not(.lp-section-action),
 	-webkit-backdrop-filter: none;
 }
 
-/* 折叠条（.chead）：紧凑平整悬浮，完全不设边框与独立外边距，内边距与 .msg-text 对齐 */
 .chead {
 	display: flex;
 	width: 100%;
@@ -431,14 +410,12 @@ button:not(.icon-btn):not(.lp-section-action),
 	background: rgba(255, 255, 255, 0.06);
 }
 
-/* 条目之间仅以 1px 极微弱细线无缝分割，消除任何漏景空隙 */
 .toolcall + .toolcall .chead,
 .thinking + .toolcall .chead,
 .toolcall + .thinking .chead {
 	border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-/* 工具组首项与末项圆角封闭，整组浑然一体 */
 .msg-body > .toolcall:first-child .chead,
 .msg-body > .thinking:first-child .chead {
 	border-top-left-radius: 8px;
@@ -467,7 +444,6 @@ pre {
 	box-shadow: none;
 }
 
-/* 7.1 工具调用与思考文字：彻底提亮为高对比纯白，注入1像素紧致微暗边缘 */
 .toolcall-name,
 .chead-title.toolcall-name,
 .toolcall-path,
@@ -513,7 +489,6 @@ pre {
 	border-color: rgba(255, 255, 255, 0.4);
 }
 
-/* 对话底栏建议按钮行：块级独占整行，绝不与上方正文文字重叠 */
 .action-suggestions {
 	display: block;
 	clear: both;
@@ -550,7 +525,6 @@ pre {
 		0 1px 1.2px rgba(0, 0, 0, 0.88);
 }
 
-/* 9.1 右下角状态栏指标（GitHub、CPU/内存68%·32%、工作区路径等）全量高对比提亮与矢量锁边 */
 .statusbar-right,
 .statusbar-right *,
 .statusbar .bar-item-host-metrics,
@@ -578,7 +552,6 @@ pre {
 	filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.95)) drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.85));
 }
 
-/* 10. 顶部按钮与所有图标：所有按钮统一度量衡，阴影唯一精准挂载在矢量笔画上，严禁父子容器双重叠加产生浓黑光晕 */
 span.bar-item-icon,
 span.plugin-icon-svg,
 .side-dock-btn,
@@ -605,8 +578,6 @@ span.plugin-icon-svg,
 		color 0.15s ease;
 }
 
-/* 全界面所有图标矢量元素（SVG / Glyph / 胶囊图标）：统一定义唯一、精致、锐利的微黑锁边，绝不晕染；
-   注意：仅对叶子节点 SVG 或字符 Glyph 施加滤镜，绝对禁止在包含 SVG 的 span 容器上挂滤镜防嵌套双重阴影 */
 svg.bar-item-icon,
 .bar-item-glyph,
 .bar-item-icon svg,
@@ -633,7 +604,6 @@ svg.bar-item-icon,
 		color 0.15s ease;
 }
 
-/* 悬停微高光微反馈：统一只对图标自身应用光晕，容器 span 保持无滤镜 */
 .bar-item:hover span.bar-item-icon,
 .bar-item:hover span.plugin-icon-svg {
 	filter: none;
@@ -668,7 +638,6 @@ svg.bar-item-icon,
 	transform: scale(1.08);
 }
 
-/* 顶栏所有按钮（含沙盒、临时对话等）默认彻底裸幽灵化，绝不残留突兀的高亮黄色圆环或生硬外边框 */
 .topbar .bar-item:not(:hover),
 .topbar .chip:not(:hover),
 .topbar .sandbox-chip:not(:hover),
@@ -678,10 +647,6 @@ svg.bar-item-icon,
 	box-shadow: none;
 }
 
-/* ========================================================
-   底部状态栏按钮同步极简行文（基线方案 C 纯平流）
-   与 flow-base 一致：按钮只走基线形态，不做提亮/描边/白字覆盖。
-   ======================================================== */
 .statusbar *,
 .footer-bar *,
 .footer * {
@@ -848,7 +813,7 @@ svg.bar-item-icon,
 	text-shadow: none;
 	box-shadow: none;
 }
-/* 右下角指标（主机 CPU/内存、工作区路径等）回归继承，不再强制白字锁边 */
+
 .statusbar-right,
 .statusbar-right *,
 .statusbar .bar-item-host-metrics,
@@ -872,7 +837,7 @@ svg.bar-item-icon,
 	stroke: currentColor;
 	filter: none;
 }
-/* 底栏引擎选择器回归基线纯平微矩形 */
+
 .statusbar .engine-picker-btn,
 .footer .engine-picker-btn,
 .footer-bar .engine-picker-btn {

@@ -1,6 +1,3 @@
-// Real cross-device chunked file transfer, resume, checksum, >8MiB and 128+ files test
-// executed across real WebSocket RPC connections and genuine DeviceRuntime instances.
-// Run: node --import tsx tests/device-center-chunked-transfer-test.mjs
 import assert from "node:assert/strict";
 import express from "express";
 import { createServer } from "node:http";
@@ -54,7 +51,6 @@ async function run() {
 	await mkdir(rootB, { recursive: true });
 	await mkdir(dataDirB, { recursive: true });
 
-	// Local Bot Registries for Device A and Device B
 	const botsA = await createLocalBotRegistry(dataDirA);
 	const createdBotA = await botsA.upsert({
 		name: "Bot A",
@@ -81,7 +77,6 @@ async function run() {
 	});
 	const botIdB = createdBotB.id;
 
-	// Hub Store setup
 	const store = await DeviceHubStore.open(hubDataDir);
 	const accountId = "test-account";
 	const deviceIdA = "device-a";
@@ -125,7 +120,6 @@ async function run() {
 		});
 	});
 
-	// Hub HTTP & WebSocket Server Setup
 	const app = express();
 	app.use(express.json());
 	const server = createServer(app);
@@ -135,7 +129,6 @@ async function run() {
 	const hubPort = server.address().port;
 	const hubUrl = `http://127.0.0.1:${hubPort}`;
 
-	// Real Device Relay with WebSocket handling
 	const relay = createDeviceRelay({
 		server,
 		publicUrl: hubUrl,
@@ -151,7 +144,6 @@ async function run() {
 	});
 	cleanup.push(() => relay.close());
 
-	// Install transfers routes on Hub
 	await installDeviceTransfers({
 		app,
 		store,
@@ -169,7 +161,6 @@ async function run() {
 		getAccount: () => ({ id: accountId }),
 	});
 
-	// Set up Device A Genuine Runtime
 	const runtimeA = createDeviceRuntime({
 		config: {
 			deviceId: deviceIdA,
@@ -185,7 +176,6 @@ async function run() {
 	});
 	cleanup.push(() => runtimeA.close());
 
-	// Connect Device A WebSocket to Hub Relay
 	console.log("Connecting genuine Device A WebSocket to Hub Relay...");
 	const wsUrlA = `ws://127.0.0.1:${hubPort}/device-connect?deviceId=${deviceIdA}`;
 	const wsA = new WebSocket(wsUrlA, {
@@ -209,7 +199,6 @@ async function run() {
 		}
 	});
 
-	// Set up Device B Genuine Runtime
 	const runtimeB = createDeviceRuntime({
 		config: {
 			deviceId: deviceIdB,
@@ -225,7 +214,6 @@ async function run() {
 	});
 	cleanup.push(() => runtimeB.close());
 
-	// Connect Device B WebSocket to Hub Relay
 	console.log("Connecting genuine Device B WebSocket to Hub Relay...");
 	const wsUrlB = `ws://127.0.0.1:${hubPort}/device-connect?deviceId=${deviceIdB}`;
 	const wsB = new WebSocket(wsUrlB, {
@@ -249,7 +237,6 @@ async function run() {
 		}
 	});
 
-	// Verify both devices are online on Hub Relay
 	assert.equal(relay.isOnline(deviceIdA), true, "Device A must be online on Hub Relay");
 	assert.equal(relay.isOnline(deviceIdB), true, "Device B must be online on Hub Relay");
 	console.log("✓ Both Device A and Device B connected via genuine WebSocket RPC channels");
@@ -302,11 +289,8 @@ async function run() {
 		return { status: res.status, data };
 	}
 
-	// =========================================================================
-	// Scenario 1: Real >8MiB (9 MiB) file transfer across WebSocket RPC & resume
-	// =========================================================================
 	console.log("Scenario 1: >8MiB (9 MiB) file across genuine WebSocket RPC with resume...");
-	const bigFileSize = 9 * 1024 * 1024; // 9 MiB
+	const bigFileSize = 9 * 1024 * 1024;
 	const bigFileBuffer = Buffer.alloc(bigFileSize);
 	for (let i = 0; i < bigFileSize; i += 4096) {
 		bigFileBuffer.write(`RPC_PAYLOAD_CHUNK_${i}_`, i, "utf8");
@@ -314,7 +298,7 @@ async function run() {
 	const expectedBigHash = sha256(bigFileBuffer);
 	await writeFile(join(rootA, "real-9mb-asset.bin"), bigFileBuffer);
 
-	const chunkSize = 32 * 1024; // 32 KiB -> 288 chunks
+	const chunkSize = 32 * 1024;
 	const manifest1 = await syncA.prepareChunked({
 		paths: ["real-9mb-asset.bin"],
 		chunkSize,
@@ -323,7 +307,6 @@ async function run() {
 	assert.equal(manifest1.totalBytes, bigFileSize);
 	assert.equal(manifest1.totalChunks, 288);
 
-	// 1. Init chunked transfer on Hub -> transfers RPC call to Device B runtimeB!
 	const initRes = await postAgentTransfer({
 		action: "init",
 		manifest: manifest1,
@@ -333,7 +316,6 @@ async function run() {
 	const transferId1 = initRes.data.transferId;
 	assert.ok(transferId1);
 
-	// Verify User-facing GET endpoint sees the active transfer
 	const userList1 = await getUserTransfers();
 	assert.equal(userList1.status, 200);
 	assert.ok(Array.isArray(userList1.data.transfers));
@@ -342,7 +324,6 @@ async function run() {
 	assert.equal(item1.sourceBotId, botIdA);
 	assert.equal(item1.targetBotId, botIdB);
 
-	// 2. Stream first 45 chunks over WebSocket RPC, then simulate pause/interruption
 	console.log("  Streaming first 45 chunks over WebSocket RPC...");
 	for (let c = 0; c < 45; c++) {
 		const offset = c * chunkSize;
@@ -368,7 +349,6 @@ async function run() {
 		assert.equal(chunkRes.status, 200, `Chunk ${c} failed: ${chunkRes.data?.error || JSON.stringify(chunkRes.data)}`);
 	}
 
-	// 3. Status query over WebSocket RPC: verify exact 45 chunks received
 	console.log("  Querying transfer status over WebSocket RPC to verify resume boundary...");
 	const statusRes = await postAgentTransfer({
 		action: "status",
@@ -378,7 +358,6 @@ async function run() {
 	assert.equal(statusRes.data.status, "staging");
 	assert.equal(statusRes.data.receivedChunks.length, 45);
 
-	// 4. Resume remaining chunks from 45 to 287
 	console.log("  Resuming remaining chunks (45 to 287) across WebSocket RPC...");
 	for (let c = 45; c < manifest1.totalChunks; c++) {
 		const offset = c * chunkSize;
@@ -404,7 +383,6 @@ async function run() {
 		assert.equal(chunkRes.status, 200);
 	}
 
-	// 5. Query user transfers: should now be staged!
 	const userListAfterChunks = await getUserTransfers();
 	assert.equal(userListAfterChunks.status, 200);
 	const userItemStaged = userListAfterChunks.data.transfers.find((t) => t.transferId === transferId1);
@@ -412,7 +390,6 @@ async function run() {
 	assert.equal(userItemStaged.status, "staged");
 	assert.equal(userItemStaged.receivedChunks?.length, 288);
 
-	// 6. User Apply endpoint call
 	console.log("  Applying staged transfer via User endpoint...");
 	const previewRes = await postAgentTransfer({ action: "preview", transferId: transferId1 });
 	assert.equal(previewRes.status, 200);
@@ -422,15 +399,11 @@ async function run() {
 	assert.equal(userApplyRes.status, 200);
 	assert.deepEqual(userApplyRes.data.applied, ["real-9mb-asset.bin"]);
 
-	// 7. Verify file on Device B's physical project root
 	const destBytes = await readFile(join(rootB, "real-9mb-asset.bin"));
 	assert.equal(destBytes.length, bigFileSize);
 	assert.equal(sha256(destBytes), expectedBigHash);
 	console.log("  ✓ Real >8MiB file transferred over WebSocket RPC and verified with exact SHA256 match!");
 
-	// =========================================================================
-	// Scenario 2: 130 files directory transfer across WebSocket RPC
-	// =========================================================================
 	console.log("Scenario 2: 130 files directory transfer (breaking 128-file limit) over WebSocket RPC...");
 	const testDir = "source-bundle";
 	await mkdir(join(rootA, testDir), { recursive: true });
@@ -454,7 +427,6 @@ async function run() {
 	assert.equal(init2.status, 200);
 	const transferId2 = init2.data.transferId;
 
-	// Stream all files/chunks
 	for (const file of manifest2.files) {
 		for (let c = 0; c < file.chunkCount; c++) {
 			const offset = c * manifest2.chunkSize;
@@ -499,9 +471,6 @@ async function run() {
 	}
 	console.log("  ✓ 130 files transferred across WebSocket RPC and verified on disk!");
 
-	// =========================================================================
-	// Scenario 3: Corrupt chunk intercepted over WebSocket RPC
-	// =========================================================================
 	console.log("Scenario 3: Corrupt chunk intercepted over WebSocket RPC...");
 	await writeFile(join(rootA, "corrupt-rpc.txt"), "Authentic content");
 	const manifest3 = await syncA.prepareChunked({ paths: ["corrupt-rpc.txt"] });
@@ -515,7 +484,7 @@ async function run() {
 	});
 
 	const damagedBuf = Buffer.from(originalBuf);
-	damagedBuf[0] = 0xee; // alter first byte
+	damagedBuf[0] = 0xee;
 
 	const badRes = await postAgentTransfer({
 		action: "chunk",
@@ -532,7 +501,6 @@ async function run() {
 	});
 	assert.notEqual(badRes.status, 200, "Corrupt chunk must fail over WebSocket RPC");
 
-	// Retry with authentic chunk
 	const goodRes = await postAgentTransfer({
 		action: "chunk",
 		transferId: transferId3,
@@ -549,9 +517,6 @@ async function run() {
 	assert.equal(goodRes.status, 200, "Authentic chunk retry must succeed");
 	console.log("  ✓ Corrupt chunk correctly rejected and recovered over WebSocket RPC!");
 
-	// =========================================================================
-	// Scenario 4: Agent Abort endpoint cancels transfer and frees physical IO
-	// =========================================================================
 	console.log("Scenario 4: Agent Abort endpoint physically purges staged IO over WebSocket RPC...");
 	await writeFile(join(rootA, "agent-abort.txt"), Buffer.alloc(32 * 1024, "u"));
 	const manifest4 = await syncA.prepareChunked({ paths: ["agent-abort.txt"] });

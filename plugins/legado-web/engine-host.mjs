@@ -1,21 +1,7 @@
-/**
- * 规则引擎 worker —— 在独立线程里跑内嵌前端的书源规则引擎（server/engine.mjs）。
- *
- * 为什么放 worker：① 诊断一次书源要发好几个请求（几秒到几十秒），不能卡住主进程的
- * WS/HTTP；② 书源 JS 规则里的同步 HTTP（java.ajax…）需要 Atomics.wait 阻塞线程，
- * 只能在 worker 里做（见 sync-bridge.mjs）。
- *
- * 注入：
- *   - 异步 transport → net.mjs（绕 CORS/GBK/cookie jar，与 UI 走的 /proxy 同一份实现）
- *   - 同步 transport → sync-bridge（同步 worker + 共享内存）
- *   - localStorage 内存垫片（JS 规则的 java.cache / infoMap 需要）
- */
-
 import { parentPort } from "node:worker_threads";
 import { proxyFetch, describeFetchError } from "./net.mjs";
 import { createSyncHttp } from "./sync-bridge.mjs";
 
-// ---- localStorage 垫片（仅在 worker 内生效，进程内共享、退出即丢） ----------
 if (typeof globalThis.localStorage === "undefined") {
 	const mem = new Map();
 	globalThis.localStorage = {

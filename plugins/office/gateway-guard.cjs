@@ -1,8 +1,5 @@
 "use strict";
 
-// Preload ONLY in the private Office gateway process. The browser talks to the
-// authenticated parent broker. Undici sends Sec-Fetch-Mode alone; browsers also
-// send Origin or other Fetch Metadata. This is not local-process auth.
 const http = require("node:http");
 const installed = Symbol.for("pi-web-ui.office.gateway-browser-guard");
 
@@ -21,7 +18,6 @@ function admitted(request) {
 		if (name === "host") hostCount++;
 		if (browserHeader(name)) return false;
 	}
-	// Also inspect normalized headers so empty header values cannot bypass denial.
 	for (const name of Object.keys(headers)) {
 		if (browserHeader(name)) return false;
 	}

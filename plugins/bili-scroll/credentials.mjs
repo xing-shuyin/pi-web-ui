@@ -1,9 +1,3 @@
-/**
- * plugins/bili-scroll/credentials.mjs
- * Bilibili 登录凭证持久化与状态校验
- * 标准文件名为 bili_credential.json，兼容向后读取 credentials.json
- */
-
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -59,15 +53,12 @@ export class BiliCredentialManager {
 			refresh_token: String(cred.refresh_token || "").trim(),
 			updatedAt: new Date().toISOString(),
 		};
-		// 保存到标准 bili_credential.json 与兼容 credentials.json
 		for (const p of [this.filePath, this.legacyFilePath]) {
 			try {
 				const tmp = `${p}.tmp.${Date.now()}`;
 				writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
 				renameSync(tmp, p);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		this.cachedUser = null;
 		this.lastVerified = 0;
@@ -78,9 +69,7 @@ export class BiliCredentialManager {
 		for (const p of [this.filePath, this.legacyFilePath]) {
 			try {
 				if (existsSync(p)) unlinkSync(p);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		this.cachedUser = null;
 		this.lastVerified = 0;

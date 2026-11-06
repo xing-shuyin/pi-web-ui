@@ -1,10 +1,3 @@
-/**
- * 插件扩展 API（v2）接线单测。
- *
- * 只依赖已合入的 server/protocol.ts（import type，零运行时依赖）与本文件内的
- * 纯函数；绝不 import 并行任务未合入的新代码（server/plugins.ts 的新宿主方法、
- * web/ 的 plugin-host v8 都不碰）。全部自包含、零 token、无端口。
- */
 import { describe, expect, it } from "vitest";
 import type {
 	PluginBusEvent,
@@ -14,17 +7,11 @@ import type {
 	UiContribution,
 } from "../../server/protocol.js";
 
-// ---------------------------------------------------------------------------
-// 本文件内的纯函数（并行任务宿主行为的复刻，供单测锁定语义）
-// ---------------------------------------------------------------------------
-
-/** progress 0-100 钳制（宿主行为：越界由宿主钳制，只展示；非有限值归 0）。 */
 function clampProgress(v: number): number {
 	if (!Number.isFinite(v)) return 0;
 	return Math.min(100, Math.max(0, v));
 }
 
-/** semver 三段解析（失败抛错，调用方放行）。 */
 function parseVer(v: string): [number, number, number] {
 	const m = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(v.trim());
 	if (!m) throw new Error(`bad version: ${v}`);
@@ -40,11 +27,6 @@ function cmpVer(a: string, b: string): number {
 	return 0;
 }
 
-/**
- * engines 语义（manifest.engines["pi-web-ui"]，宿主校验复刻）：
- * 支持 >= / ^ / 精确（= 前缀与裸版本号同义），解析失败返回 true 放行
- * （宁可误激活一个旧插件，也不把用户环境误杀成全拒）。
- */
 function satisfiesEngines(pkgVersion: string, range: string): boolean {
 	const r = range.trim();
 	try {
@@ -62,15 +44,10 @@ function satisfiesEngines(pkgVersion: string, range: string): boolean {
 	}
 }
 
-/** net 白名单匹配（manifest.netAllowlist，宿主行为复刻）：全等或点号后缀。 */
 function hostMatches(host: string, pattern: string): boolean {
 	if (!pattern) return false;
 	return host === pattern || host.endsWith(`.${pattern}`);
 }
-
-// ---------------------------------------------------------------------------
-// 协议类型冒烟（构造对象 + expect 字段，类型错即编译失败）
-// ---------------------------------------------------------------------------
 
 describe("协议类型冒烟（plugin v2 新增类型）", () => {
 	it("PluginBusEvent：topic 必填，from/payload 可选", () => {

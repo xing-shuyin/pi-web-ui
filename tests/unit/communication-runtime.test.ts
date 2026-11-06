@@ -177,11 +177,9 @@ describe("ClientSession communication runtime", () => {
 			worktreePath: "C:/work/app/.worktrees/sa-test",
 			mainRepoPath: "C:/work/app",
 		};
-		// Child communicates with parent
 		await expect(b.communicate(child.id, "send", { to: "parent", message: "ping" })).resolves.toMatchObject({
 			status: "queued",
 		});
-		// Parent communicates with child
 		await expect(a.communicate(parent.id, "send", { to: child.id, message: "pong" })).resolves.toMatchObject({
 			status: "queued",
 		});
@@ -333,7 +331,7 @@ describe("ClientSession communication runtime", () => {
 		a.convs.delete(moved.id);
 		moved.id = "c2";
 		b.convs.set(moved.id, moved);
-		endpoint(a, "c2"); // Source's replacement active conversation collides.
+		endpoint(a, "c2");
 		home = { session: b, convId: moved.id };
 		const signal = new AbortController().signal;
 		await expect(
@@ -375,7 +373,7 @@ describe("ClientSession communication runtime", () => {
 		const a = holder("a"),
 			b = holder("b");
 		const parent = endpoint(b, "c2");
-		endpoint(b, "c3"); // An unrelated local conversation matches the foreign alias.
+		endpoint(b, "c3");
 		endpoint(a, "c3");
 		b.subagentTemplates = new Map();
 		b.findConversationHome = (session: unknown) =>
@@ -439,7 +437,7 @@ describe("ClientSession communication runtime", () => {
 		const a = holder("a"),
 			b = holder("b");
 		const parent = endpoint(b, "c4");
-		const unrelated = endpoint(b, "c2"); // The destination already owns the old id.
+		const unrelated = endpoint(b, "c2");
 		const child = endpoint(a, "sa-completed", "c2");
 		child.session.getLastAssistantText = () => "task result";
 		bindConversationParent(child, parent);

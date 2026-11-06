@@ -1,7 +1,3 @@
-/**
- * server/i18n.ts 单测：locale 归一 + 翻译表注册/查表/回退（issue #91 v2）。
- * 纯函数 + 内存注册表，无磁盘/端口。
- */
 import { describe, expect, it } from "vitest";
 import {
 	bilingual,
@@ -120,7 +116,7 @@ describe("resolveServerLang", () => {
 		expect(resolveServerLang(null)).toBe("en");
 		expect(resolveServerLang("")).toBe("en");
 		expect(resolveServerLang("   ")).toBe("en");
-		expect(resolveServerLang("zht")).toBe("zht"); // well-formed code, passes through
+		expect(resolveServerLang("zht")).toBe("zht");
 	});
 });
 
@@ -158,10 +154,8 @@ describe("pick / isZh / bilingual", () => {
 	it("pick interpolates {expr} slots from vars on table hits only", () => {
 		registerServerStrings("xx", { "k.i": "残り{n}件（{m}）" });
 		expect(pick("xx", "剩${1}个", "${1} left", "k.i", { n: 3, m: "x" })).toBe("残り3件（x）");
-		// zh/en inline stay pre-evaluated (vars ignored)
 		expect(pick("zh", "剩3个", "3 left", "k.i", { n: 3, m: "x" })).toBe("剩3个");
 		expect(pick("en", "剩3个", "3 left", "k.i", { n: 3, m: "x" })).toBe("3 left");
-		// unknown slots stay literal; null vars skipped
 		registerServerStrings("xx", { "k.u": "a{b}c{d}" });
 		expect(pick("xx", "甲", "A", "k.u", { b: null as unknown as string })).toBe("ac{d}");
 		unregisterServerStrings("xx");
@@ -232,7 +226,6 @@ describe("issue #640: server pick() preserves computed values in translated pack
 		registerServerStrings("pt", extracted.table);
 
 		try {
-			// Worktree
 			const wtCreate = pick("pt", "✅ 创建成功", "✅ Created", "worktree.create.success", {
 				path: "wt/feat",
 				branch: " (branch: feat)",
@@ -253,7 +246,6 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(wtSwitch).toContain("wt/dev");
 			expect(wtSwitch).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Claim files
 			const claimOk = pick("pt", "已认领", "Claimed", "claimfiles.claim.ok", {
 				n: 3,
 				paths: "a.ts, b.ts",
@@ -263,7 +255,6 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(claimOk).toContain("30m");
 			expect(claimOk).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Conv read
 			const convMore = pick("pt", "更多", "more", "convread.list.history.more", { n: 10, def: 20 });
 			expect(convMore).toContain("10");
 			expect(convMore).toContain("20");
@@ -275,7 +266,6 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(convAll).toContain("project");
 			expect(convAll).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// MCP manage
 			const mcpFail = pick("pt", "失败", "fail", "mcp_manage.install.fail", { error: "bad package" });
 			expect(mcpFail).toContain("bad package");
 			expect(mcpFail).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
@@ -288,12 +278,10 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(mcpEmpty).toContain("~/.pi/mcp.json");
 			expect(mcpEmpty).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Plugin installer timeout
 			const piTimeout = pick("pt", "超时", "timeout", "plugininstaller.timeout", { min: 15 });
 			expect(piTimeout).toContain("15");
 			expect(piTimeout).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// SCM commitmsg
 			const scmTerm = pick("pt", "异常终止", "terminated", "scm.commitmsg.model.terminated", {
 				stopReason: "tool_use",
 			});
@@ -304,13 +292,11 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(scmTimeout).toContain("30");
 			expect(scmTimeout).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Skill
 			const skillBad = pick("pt", "不可读", "unreadable", "skill.file.unreadable", { name: "my-skill", kb: 256 });
 			expect(skillBad).toContain("my-skill");
 			expect(skillBad).toContain("256");
 			expect(skillBad).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Goal mode
 			const goalStart = pick("pt", "审查开始", "review started", "goal.role.card.start", { round: 1, rounds: " / 3" });
 			expect(goalStart).toContain("1");
 			expect(goalStart).toContain(" / 3");
@@ -334,7 +320,6 @@ describe("issue #640: server pick() preserves computed values in translated pack
 			expect(goalFail).toContain(": missing tests");
 			expect(goalFail).not.toMatch(/\{[a-zA-Z0-9_.]+\}/);
 
-			// Present files titled vs untitled
 			const presTitled = pick("pt", "展示", "presented", "present.files.result.head.titled", { n: 2, title: "Report" });
 			expect(presTitled).toContain("2");
 			expect(presTitled).toContain("Report");

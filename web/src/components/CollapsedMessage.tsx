@@ -9,16 +9,9 @@ import { parseSkillBlock } from "../skill-block";
 interface CollapsedMessageProps {
 	message: UiMessage;
 	onExpand: (messageId: string) => void;
-	/** 调用方指定的摘要（不传则按旧口径取正文预览；目标审查回合的指令/结论用它）。 */
 	summary?: string;
 }
 
-/**
- * Cheap summary row for messages outside the recent window. Renders NO heavy
- * content (no Markdown, no thinking, no tool output, no attachments) — just a
- * role label, a plain-text preview, and block-type counts. The full message is
- * only rendered after the user clicks to expand.
- */
 export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpand, summary }: CollapsedMessageProps) {
 	const t = useT();
 	const exportImage = useExportImage();
@@ -26,15 +19,11 @@ export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpa
 	const exportSelected = exportImage.open && exportImage.selectedIds.includes(message.id);
 	const showExportCheck = exportImage.open && exportable;
 
-	// 调用方摘要优先（目标审查回合的指令/结论行）；否则按旧口径取正文预览。
-	// Plain-text preview (first text block, first line, ~90 chars — no Markdown).
 	let preview = summary ?? "";
 	if (!preview) {
 		for (const b of message.content) {
 			const text = asText(b);
 			if (text && text.text.trim()) {
-				// Skill invocations collapse to a `skill:name · <args>` chip instead
-				// of the raw SKILL.md dump.
 				const sb = parseSkillBlock(text.text);
 				if (sb) {
 					preview = `skill:${sb.name}` + (sb.userMessage ? ` · ${sb.userMessage.replace(/\s+/g, " ").trim()}` : "");
@@ -45,7 +34,6 @@ export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpa
 			}
 		}
 	}
-	// Attached files get their name as the preview.
 	if (!preview && message.role === "custom" && message.customType === "file") {
 		const details = (message.details ?? {}) as { name?: string; path?: string };
 		preview = details.name ?? details.path ?? "";
@@ -53,7 +41,6 @@ export const CollapsedMessage = memo(function CollapsedMessage({ message, onExpa
 	const truncated = preview.length > 90;
 	if (truncated) preview = `${preview.slice(0, 90)}…`;
 
-	// Count heavy block types for the summary chips.
 	let thinking = 0;
 	let tools = 0;
 	let bash = 0;

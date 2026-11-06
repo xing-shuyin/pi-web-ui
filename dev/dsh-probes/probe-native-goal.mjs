@@ -1,12 +1,9 @@
-// Temp probe: DSH native goal via goal-rpc wrapper — verify goal/set works,
-// goal/change events flow, round-driver auto-continues, model completes.
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
@@ -131,7 +128,6 @@ try {
 	const getRes = await req("goal/get", { sessionId });
 	console.log("goal/get ->", JSON.stringify(getRes));
 
-	// Wait up to 90s for completion (round-driver auto-runs rounds).
 	const t0 = Date.now();
 	while (Date.now() - t0 < 90_000 && !completed) {
 		await new Promise((r) => setTimeout(r, 1000));

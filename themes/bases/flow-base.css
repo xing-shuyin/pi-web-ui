@@ -1,24 +1,7 @@
-/* themes/bases/flow-base.css — 极简行文模式形态与排版基底
- * 包含：实体画布骨架、正文零边框无界微流排版、行内微胶囊深度思考与工具集群、
- * 双层悬浮输入岛、全自适应浮层与弹窗系统。
- *
- * 核心设计原则：
- *   1. 纯形态与排版：绝不硬编码任何具体色值（如 #ffffff、#141414、#000000）；
- *   2. 颜色统一由语义变量（var(--text), var(--bg-elev), var(--border), var(--accent) 等）驱动；
- *   3. 半透明/微透光统一走 color-mix(in srgb, var(--text) X%, transparent) 自适应深浅主题；
- *   4. 所有主操作实底按钮统一走 var(--accent) + var(--accent-contrast, #fff)。
- */
-
-/* 能力声明：本主题要求「正文 + 胶囊」连成一条行内流（字级输入流）。
-   前端用 web/src/flow-mode.ts 探测这条属性来决定分组方式与容器外观，
-   于是渲染层不需要认识任何主题 id —— 自制主题声明同一条属性即可复用。 */
 :root {
 	--flow-inline-stream: 1;
 }
 
-/* ========================================================
-   骨架与层级：实体暗调结构，利落细线分割
-   ======================================================== */
 #root,
 .app,
 .layout,
@@ -30,7 +13,6 @@
 	background: var(--bg);
 }
 
-/* 输入栏与消息包裹层必须保持背景透明，确保快捷短语所在带子透出底层消息正文 */
 .messages-wrap,
 .inputbar {
 	background: transparent;
@@ -83,7 +65,6 @@
 	border-radius: 8px;
 }
 
-/* 消除会话项激活与聚焦态的一切蓝色/紫蓝色外边框 */
 .session-item,
 .session-item.active,
 .session-item:hover,
@@ -133,9 +114,6 @@
 	color: var(--md-strong, var(--text));
 }
 
-/* ========================================================
-   核心：极简行文（Flow）—— 正文零气泡外壳、零边框、极致紧凑排版
-   ======================================================== */
 .messages {
 	padding-top: 6px;
 	padding-bottom: calc(48px + var(--quick-row-h, 0px));
@@ -154,7 +132,6 @@
 	padding: 0;
 }
 
-/* 助手正文主体：完全透明无外框无圆角无遮挡，如字书印于深曜画布上 */
 .msg-assistant .msg-body {
 	background: transparent;
 	border: none;
@@ -182,7 +159,6 @@
 	margin: 0;
 }
 
-/* 正文排版：段间距、行高、列表间隙微调，彻底消灭笨重留白 */
 .msg-body p {
 	margin: 0.36em 0;
 	line-height: 1.62;
@@ -276,7 +252,6 @@
 	font-size: 13px;
 }
 
-/* 工具调用与深度思考：Apple Vision 液态毛玻璃亚克力呼吸晶体微胶囊 */
 .toolcall,
 .thinking {
 	display: inline-flex;
@@ -331,7 +306,6 @@
 		transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 状态氛围点睛 */
 .toolcall.run {
 	border-color: rgba(245, 158, 11, 0.45);
 	box-shadow:
@@ -361,14 +335,12 @@
 		0 0 10px rgba(192, 132, 252, 0.25);
 }
 
-/* 隐藏流内大图缩略图（由点击居中弹窗展示大图） */
 .toolcall-images,
 .toolcall-image,
 .toolcall .toolcall-images {
 	display: none;
 }
 
-/* 卡头：自适应内容宽度，严格水平对齐 */
 .toolcall .toolcall-head,
 .toolcall .chead,
 .thinking .chead {
@@ -396,7 +368,6 @@
 	white-space: nowrap;
 }
 
-/* 隐藏原地折叠、复制、长命令与长路径等干扰元素 */
 .toolcall .chead-toggle,
 .toolcall .toolcall-toggle,
 .toolcall .toolcall-spacer,
@@ -475,7 +446,6 @@
 	filter: drop-shadow(0 0 4px rgba(192, 132, 252, 0.75));
 }
 
-/* 语义化工具微光宝石呼吸灯 */
 .toolcall-icon.tc-tone-exec {
 	color: var(--info-blue);
 	filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.75));
@@ -539,7 +509,6 @@
 	transform-origin: center center;
 }
 
-/* 输出徽标：图片 🖼️、Markdown 📝 等行内小微标 */
 .toolcall-out-badge {
 	display: inline-flex;
 	align-items: center;
@@ -566,7 +535,6 @@
 	padding: 0;
 }
 
-/* 附件也是一个“字”：混排在同一输入流中，外边距清零由 gap 管理 */
 .msg-queued-atts-bar {
 	display: inline-flex;
 	align-items: center;
@@ -591,16 +559,12 @@
 	color: var(--control-fg, var(--text));
 }
 
-/* 正文自成段落倾泻，与上方工具流保持舒适间距。
-   注意：正文块必须保持块级 —— 用户要的是「正文前后都断行，只有连续胶囊才连排」，
-   行内化正文会把它和胶囊焊在同一行，那就又乱了。 */
 .msg-assistant .msg-text {
 	display: block;
 	padding: 0;
 	margin: 8px 0 0 0;
 }
-/* 单行正文保持「正文 + 复制键」的同一条 flex 行（仍是块级：前后照样断行），
-   否则复制键会被挤到正文下面单独占一行。 */
+
 .msg-assistant .msg-text.single {
 	display: flex;
 }
@@ -612,7 +576,6 @@
 	margin: 0;
 }
 
-/* 彻底隐藏原地展开内容，点击由居中检查器弹窗接管 */
 .toolcall-body,
 .thinking-body {
 	display: none;
@@ -628,9 +591,6 @@
 	opacity: 1;
 }
 
-/* ========================================================
-   用户消息气泡：克制典雅的暗炭微卡片（无边框纯净融合）
-   ======================================================== */
 .msg-user {
 	background: transparent;
 	box-shadow: none;
@@ -648,9 +608,6 @@
 	color: var(--text);
 }
 
-/* ========================================================
-   输入框与控件（复刻 OpenAI Codex 桌面悬浮岛）
-   ======================================================== */
 .inputbox {
 	background: var(--card-bg, var(--bg-elev));
 	border: 1px solid var(--border);
@@ -790,7 +747,6 @@
 	background: color-mix(in srgb, var(--flow-shadow) 8%, transparent);
 }
 
-/* 快捷指令/快捷短语胶囊：悬浮、背景透明、磨砂毛玻璃浮空质感 */
 .quick-chip {
 	background: var(--chip-bg);
 	border: 1px solid var(--border);
@@ -828,7 +784,6 @@
 		inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent);
 }
 
-/* 底部候选操作建议（同属快捷指令交互）：悬浮透明毛玻璃 */
 .action-suggestion-chip {
 	background: var(--chip-bg);
 	border: 1px solid var(--border);
@@ -863,7 +818,6 @@
 	transform: translateY(0) scale(0.97);
 }
 
-/* 浮层与弹窗 */
 .dd-menu,
 .ctx-menu,
 .pm-panel,
@@ -885,7 +839,6 @@
 	color: var(--text);
 }
 
-/* ---------------- 工具详情检查器弹窗（Tool Inspector Modal） ---------------- */
 .pi-we-inspector-backdrop {
 	position: fixed;
 	inset: 0;
@@ -1097,7 +1050,6 @@
 	text-shadow: none;
 }
 
-/* 富媒体文件展示预览（针对 present_files 与文件交付） */
 .pi-we-ins-preview-wrap {
 	display: flex;
 	flex-direction: column;
@@ -1235,34 +1187,9 @@
 	background: #000;
 }
 
-/* 角标防白底白字：当 --accent 为纯白时，顶栏实体胶囊角标反色为深色，后台任务保持红底白字（底栏透明徽标保持 var(--accent) 纯白高亮） */
 .topbar .bar-item-badge:not(.bg-task-badge) {
 	color: var(--accent-contrast, #000);
 }
-
-/* ========================================================
-   字级输入流系统（Character-Level Inline Stream）
-   --------------------------------------------------------
-   一个回合的全部助手产出装进同一个 .flow-turn —— 一个弹性行流容器：
-   · 胶囊（.toolcall / .thinking / .thinking-wait）：行内项，横排、满了换行，
-     同一行 align-items:center + 统一 22px 高度 → 永远互相对齐；
-   · 其余内容（正文 / 附件 / 报错 / 折叠卡）：100% 宽项 → 独占整行，正文前后必断行；
-   · 间距单源：容器 gap（行列同值）+ 正文项外边距，不让每个元素各自 margin 打架。
-
-   ⚠ 为什么这里不再需要 `#root` 前缀（原先为了压过基线而加的 ID 权重已撤销）：
-   全项目样式改为显式分层（`@layer guard, base, theme;`）：基线 styles.css 落在
-   `base` 层，本主题样式表由服务端整体包进 `theme` 层。普通声明里**靠后的层恒压过
-   靠前的层**，与选择器权重无关 —— 所以基线那条靠「类选择器军备竞赛」堆出来的
-   `.main.hide-model-row .msg-assistant .toolcall`（4 个类）在 theme 层面前自然失效，
-   本主题的布局只由本主题说了算，不需要再挂 ID。
-
-   ⚠ 为什么本段整体放在文件末尾：
-   分层只解决「主题 vs 基线」，不解决「本主题内部」的先后问题 —— 同权重仍看源顺序。
-   本段与通用消息排版（如 `.msg-assistant .msg-text` 的 margin，同为 2 个类）本来
-   就会遇到同权撞车，改造前靠 `#root` 的 ID 权重强行胜出；现在用最平权的办法等效：
-   把「特化规则」整段放在文件最后，同权重时靠源顺序取胜，任何选择器都不用加权重。
-   新增本主题的流布局规则时，写普通类选择器、放在本段里即可。
-   ======================================================== */
 
 .flow-turn {
 	display: flex;
@@ -1278,7 +1205,6 @@
 	padding: 0;
 }
 
-/* 壳透明化：消息壳不再是排版单元，内部元素直接成为 .flow-turn 的弹性项 */
 .flow-turn > .msg,
 .flow-turn > .msg-assistant,
 .flow-turn > .msg .msg-body,
@@ -1287,8 +1213,6 @@
 	width: auto;
 }
 
-/* 元数据行（角色 / 时间）与消息级操作栏在流里没有位置：收起。
-   复制走正文自带的复制键 / 卡头的 .chead-copy。 */
 .flow-turn .msg-meta,
 .flow-turn > .msg > .msg-meta,
 .flow-turn > .msg-assistant > .msg-meta,
@@ -1298,8 +1222,6 @@
 	display: none;
 }
 
-/* 默认：除胶囊以外的一切（正文 / 附件卡 / 报错 / 技能卡 / 折叠卡 / 工具输出…）
-   都是 100% 宽项 —— 独占整行，前后自动断行，且不吃任何外边距（间距只由 gap 定）。 */
 .flow-turn .msg-body > * {
 	flex: 0 0 100%;
 	min-width: 0;
@@ -1307,7 +1229,6 @@
 	margin: 0;
 }
 
-/* 胶囊是行内项：宽度按内容、行内垂直居中（同一行内绝对对齐） */
 .flow-turn .toolcall,
 .flow-turn .thinking,
 .flow-turn .thinking-wait {
@@ -1320,7 +1241,7 @@
 	width: auto;
 	min-width: 0;
 	max-width: fit-content;
-	/* 高度单源：工具 / 思考 / 等待指示器全部 22px，避免 22/23 混用导致错半行 */
+
 	height: 22px;
 	line-height: 20px;
 	margin: 0;
@@ -1337,7 +1258,6 @@
 	border: 1px solid var(--border);
 }
 
-/* 消除兄弟选择器在行内流中对卡头施加的任何 border 细线 */
 .flow-turn .chead,
 .flow-turn .thinking .chead,
 .flow-turn .toolcall .chead,
@@ -1350,7 +1270,6 @@
 	padding: 0;
 }
 
-/* 正文：整行块（100% 宽项），上下再补一点留白，和胶囊行拉开呼吸感 */
 .flow-turn .msg-text {
 	padding: 0;
 	margin: 6px 0;

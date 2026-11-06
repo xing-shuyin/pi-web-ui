@@ -1,23 +1,3 @@
-/**
- * wallpaper-engine 服务端入口 (v0.3.1) —— Steam 探测、壁纸扫描、流式媒体、收藏与外观预设服务。
- *
- * 核心职责：
- * 1. 自动探测 Steam 与 Wallpaper Engine (AppID 431960) 创意工坊安装目录；
- * 2. 解析 libraryfolders.vdf，枚举所有磁盘分区中的 Steam 库；
- * 3. 扫描各壁纸目录下的 project.json，提取元数据并构建壁纸索引库（支持 Video、Scene、Web、Image）；
- * 4. 提供 HTTP 路由 (/plugins-api/wallpaper-engine/api/*)：
- *    - /api/wallpapers: 壁纸列表、分类元数据与收藏集
- *    - /api/rescan: 清除内存缓存并强制重新全量扫描
- *    - /api/preview: 缩略图服务（静态图片缓存）
- *    - /api/media: 视频/图片壁纸流服务（原生支持 HTTP 206 Range 请求，流畅拖动与分片）
- *    - /api/pkg: Scene 壁纸专属 scene.pkg 二进制流服务
- *    - /api/project: 读取特定壁纸的原始 project.json 配置
- *    - /api/web: 网页壁纸（Web Wallpaper）静态资源沙箱服务（防目录遍历）
- *    - /api/favorite: 收藏/取消收藏壁纸 (POST)
- *    - /api/presets: 外观配置预设导出与导入 (GET / POST)
- *    - /api/active: 当前激活壁纸、轮播设置与外观配置 (GET / POST)
- * 5. 用户状态、收藏夹与外观配置落盘至 <dataDir>/wallpaper-engine/store.json。
- */
 import { execFile } from "node:child_process";
 import {
 	createReadStream,
@@ -32,13 +12,10 @@ import {
 import { homedir } from "node:os";
 import { basename, extname, join, normalize, resolve, sep } from "node:path";
 
-/** Wallpaper Engine App ID */
 const WE_APPID = "431960";
 
-/** 扫描缓存 TTL (60 秒) */
 const SCAN_CACHE_TTL_MS = 60_000;
 
-/** 常见默认 Steam 安装路径（当注册表未配置时回退探测） */
 const COMMON_STEAM_DIRS = [
 	"C:\\Program Files (x86)\\Steam",
 	"C:\\Program Files\\Steam",
@@ -49,7 +26,6 @@ const COMMON_STEAM_DIRS = [
 	"F:\\SteamLibrary",
 ];
 
-/** Linux / WSL / macOS 路径 */
 const UNIX_STEAM_DIRS = [
 	"~/.steam/steam",
 	"~/.steam/root",
@@ -98,7 +74,6 @@ export default {
 		const storeFile = join(dir, "store.json");
 		const cacheFile = join(dir, "cache.json");
 
-		// ------------------------------------------------------------ 本地状态与索引落盘
 		let store = loadStore();
 
 		function loadStore() {
@@ -162,7 +137,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------ Steam 路径与库探测及持久化缓存
 		let cachedSteamRoot = null;
 		let cachedLibraries = [];
 		let cachedWallpapers = null;
@@ -182,9 +156,7 @@ export default {
 						return true;
 					}
 				}
-			} catch {
-				/* ignore cache read error */
-			}
+			} catch {}
 			return false;
 		}
 
@@ -201,12 +173,9 @@ export default {
 				};
 				writeFileSync(tmp, JSON.stringify(data), "utf8");
 				renameSync(tmp, cacheFile);
-			} catch {
-				/* ignore cache write error */
-			}
+			} catch {}
 		}
 
-		// 启动时优先恢复磁盘索引缓存（零等待瞬间命中）
 		loadCache();
 
 		async function probeSteamFromRegistry() {
@@ -312,7 +281,6 @@ export default {
 			return cachedLibraries;
 		}
 
-		// ------------------------------------------------------------ 壁纸扫描与索引
 		async function scanWallpapers(force = false) {
 			const now = Date.now();
 			if (!force && cachedWallpapers && now - lastScanTime < SCAN_CACHE_TTL_MS) {
@@ -373,7 +341,6 @@ export default {
 			if (cachedWallpaperMap.has(id)) {
 				return cachedWallpaperMap.get(id);
 			}
-			// 定向极速冷启动：若请求的是当前激活壁纸且记录了有效物理目录，单次读取瞬间命中，无需等待全盘扫描
 			if (store.activeId === id && store.activeFolder && existsSync(store.activeFolder)) {
 				const single = parseWallpaperProject(store.activeFolder, id);
 				if (single) {
@@ -385,7 +352,6 @@ export default {
 			return cachedWallpaperMap.get(id) || list.find((w) => w.id === id) || null;
 		}
 
-		/** 将壁纸包内相对路径解析到包目录内；越出包目录返回 null。 */
 		function resolveInsideWallpaper(folderPath, rel) {
 			const target = resolve(folderPath, String(rel).replace(/\\/g, "/"));
 			const base = resolve(folderPath);
@@ -403,7 +369,6 @@ export default {
 				const title = json.title || basename(folderPath);
 				const rawType = (json.type || "").toLowerCase();
 
-				// 一次性读取目录下的所有文件条目名称放入 Set，避免反复多次系统调用
 				let dirEntries = null;
 				try {
 					dirEntries = new Set(readdirSync(folderPath));
@@ -413,7 +378,6 @@ export default {
 
 				const rawFile = json.file || "";
 				const rawFileNorm = rawFile ? rawFile.replace(/\\/g, "/") : "";
-				// 含路径的 file 必须解析回包目录内，禁止 ../ 逃逸读取任意文件。
 				const rawFileResolved = rawFileNorm.includes("/") ? resolveInsideWallpaper(folderPath, rawFileNorm) : null;
 				const hasFile = rawFile
 					? rawFileNorm.includes("/")
@@ -450,7 +414,6 @@ export default {
 				}
 
 				let previewFile = json.preview || "";
-				// preview 同 file：含路径时强制解析回包目录内。
 				const previewResolved =
 					previewFile && previewFile.includes("/") ? resolveInsideWallpaper(folderPath, previewFile) : null;
 				let previewPath = previewFile ? (previewResolved ?? join(folderPath, previewFile)) : "";
@@ -495,7 +458,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------ HTTP 路由服务
 		const offRoutes = [];
 
 		function registerRoute(method, path, handler) {
@@ -512,7 +474,6 @@ export default {
 			offRoutes.push(off);
 		}
 
-		// 1. GET /api/wallpapers —— 壁纸列表查询
 		registerRoute("GET", "/api/wallpapers", async (_req, res) => {
 			const steamRoot = await resolveSteamRoot();
 			const list = await scanWallpapers(false);
@@ -546,7 +507,6 @@ export default {
 			});
 		});
 
-		// 2. GET /api/rescan —— 强制重新扫描
 		registerRoute("GET", "/api/rescan", async (_req, res) => {
 			cachedSteamRoot = null;
 			cachedWallpapers = null;
@@ -582,7 +542,6 @@ export default {
 			});
 		});
 
-		// 3. GET /api/preview —— 缩略图服务 (强缓存 + ETag 协商缓存)
 		registerRoute("GET", "/api/preview", async (req, res) => {
 			const id = String(req.query?.id || "");
 			if (!id) {
@@ -613,7 +572,6 @@ export default {
 			createReadStream(item.previewPath).pipe(res);
 		});
 
-		// 4. GET /api/media —— 壁纸流式播放 (HTTP 206 Partial Content + 强缓存)
 		registerRoute("GET", "/api/media", async (req, res) => {
 			const id = String(req.query?.id || "");
 			if (!id) {
@@ -671,7 +629,6 @@ export default {
 			}
 		});
 
-		// 5. GET /api/pkg —— Scene 壁纸二进制 scene.pkg 数据流 (强缓存 + 协商缓存)
 		registerRoute("GET", "/api/pkg", async (req, res) => {
 			const id = String(req.query?.id || "");
 			if (!id) {
@@ -702,7 +659,6 @@ export default {
 			createReadStream(item.pkgPath).pipe(res);
 		});
 
-		// 6. GET /api/project —— 读取原始 project.json (强缓存 + 协商缓存)
 		registerRoute("GET", "/api/project", async (req, res) => {
 			const id = String(req.query?.id || "");
 			if (!id) {
@@ -740,7 +696,6 @@ export default {
 			}
 		});
 
-		// 6.5 GET /api/scene-file —— 散装 Scene 场景工程文件安全读取服务 (支持官方内置散装工程与未封包壁纸)
 		registerRoute("GET", "/api/scene-file", async (req, res) => {
 			const id = String(req.query?.id || "");
 			const reqRelFile = String(req.query?.file || "");
@@ -788,13 +743,11 @@ export default {
 			createReadStream(targetPath).pipe(res);
 		});
 
-		// 7. GET /api/web & GET /api/web/* —— 网页壁纸静态资源沙箱服务
 		async function handleWeb(req, res) {
 			const pluginPath = String(req.pluginPath || req.path || req.url || "");
 			let id = "";
 			let reqRelFile = "";
 
-			// 优先从语义化子路径中解析: /api/web/<wallpaperId>/<relativeFilePath>
 			const cleanPath = pluginPath.split("?")[0];
 			const match = cleanPath.match(/^\/?api\/web\/([^/?#]+)(?:\/(.*))?$/);
 			if (match) {
@@ -838,7 +791,6 @@ export default {
 			if (ext === ".html" || ext === ".htm") {
 				let html = readFileSync(targetPath, "utf8");
 
-				// 智能改写 HTML 内部的静态资源相对引用，保证在任意宿主版本与 iframe 模式下均能无缝正确定位
 				html = html.replace(/\b(src|href|poster)\s*=\s*(["'])([^"']+)\2/gi, (_match, attr, quote, url) => {
 					if (/^(https?:|\/\/|data:|blob:|javascript:|#)/i.test(url.trim())) {
 						return _match;
@@ -848,7 +800,6 @@ export default {
 					return `${attr}=${quote}${rewritten}${quote}`;
 				});
 
-				// 读取 project.json 中的初始 properties
 				let initialProps = {};
 				try {
 					const pJsonPath = join(item.folder, "project.json");
@@ -999,8 +950,6 @@ canvas, video, img {
 				res.writeHead(200, {
 					"Content-Type": "text/html; charset=utf-8",
 					"Content-Length": Buffer.byteLength(html, "utf8"),
-					// 网页壁纸以独立沙箱 origin 渲染：禁 same-origin，脚本逃不出 opaque origin，
-					// 无法触及应用页面/API/存储；default-src 放开以兼容依赖远程资源的壁纸。
 					"Content-Security-Policy":
 						"sandbox allow-scripts allow-forms allow-popups allow-modals; " +
 						"default-src * data: blob:; script-src 'unsafe-inline' 'unsafe-eval' data: blob: *; " +
@@ -1016,7 +965,6 @@ canvas, video, img {
 				"Cache-Control": "public, max-age=3600",
 			};
 			if (ext === ".svg") {
-				// SVG 文档形态沙箱化（防内嵌脚本跨站）
 				headers["Content-Security-Policy"] = "sandbox";
 				headers["X-Content-Type-Options"] = "nosniff";
 			}
@@ -1027,7 +975,6 @@ canvas, video, img {
 		registerRoute("GET", "/api/web", handleWeb);
 		registerRoute("GET", "/api/web/*", handleWeb);
 
-		// 8. POST /api/favorite —— 切换收藏状态
 		registerRoute("POST", "/api/favorite", async (req, res) => {
 			const id = String(req.body?.id || "");
 			if (!id) {
@@ -1057,7 +1004,6 @@ canvas, video, img {
 			});
 		});
 
-		// 9. GET /api/presets & POST /api/presets —— 预设导出与导入
 		registerRoute("GET", "/api/presets", async (_req, res) => {
 			res.json({
 				ok: true,
@@ -1101,7 +1047,6 @@ canvas, video, img {
 			});
 		});
 
-		// 10. GET /api/active —— 获取当前激活的壁纸与设置 (包含完整直显元数据)
 		registerRoute("GET", "/api/active", async (_req, res) => {
 			const activeItem = await getWallpaperById(store.activeId);
 
@@ -1131,7 +1076,6 @@ canvas, video, img {
 			});
 		});
 
-		// 11. POST /api/active —— 保存激活的壁纸与设置 (记录物理目录以便定点极速冷启动)
 		registerRoute("POST", "/api/active", async (req, res) => {
 			const body = req.body || {};
 			if (typeof body.activeId === "string") {
@@ -1186,9 +1130,7 @@ canvas, video, img {
 			for (const off of offRoutes) {
 				try {
 					off();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			offRoutes.length = 0;
 		};

@@ -1,7 +1,3 @@
-/**
- * settings-engine-tabs.test.ts — 设置弹窗跨引擎动态自适应与分区隐藏单测。
- */
-
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -39,47 +35,34 @@ describe("设置面板多引擎动态自适应（分区条件隐藏与模型中�
 	});
 
 	it("Claude 引擎下彻底隐藏一切无法生效的 Pi/DSH 独有分区", () => {
-		// 系统提示词：仅 isPi / isDsh 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\((?:isPi|isPi\s*\|\|\s*isDsh)\s*\?\s*\[\s*\{\s*id:\s*"prompt"/);
 
-		// 定时任务：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"scheduler"/);
 
-		// 工具开关与审批规则：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/isPi\s*\?\s*\[\s*\{\s*id:\s*"tools"/);
 		expect(SETTINGS_SRC).toMatch(/id:\s*"approval-rules"/);
 
-		// 技能：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"skills"/);
 
-		// 扩展：仅 isPi / isDsh 可见（Claude 下隐藏）
 		expect(SETTINGS_SRC).toMatch(/isDsh[\s\S]*?isPi\s*\?\s*\[\s*\{\s*id:\s*"extensions"/);
 
-		// MCP：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"mcp"/);
 
-		// 目标审查：Claude 下隐藏
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isClaude\s*\|\|\s*isCodex\s*\?\s*\[\]\s*:\s*\[\s*\{\s*id:\s*"review"/);
 
-		// 视觉桥：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"vision"/);
 
-		// 预设：仅 isPi 可见（彻底隐藏在 Claude 下无法使用的预设选项）
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"presets"/);
 
-		// 子代理模板：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"subagent-templates"/);
 
-		// 群组协作与执行：仅 isPi 可见
 		expect(SETTINGS_SRC).toMatch(/\.\.\.\(isPi\s*\?\s*\[\s*\{\s*id:\s*"device-collab"/);
 	});
 
 	it("全引擎通用呈现「模型与服务商」分区并提供引擎切换与管理入口", () => {
-		// tabs 列表包含 models
 		expect(SETTINGS_SRC).toContain('id: "models" as const');
 		expect(SETTINGS_SRC).toContain('label: t("settingsModelsAndProviders")');
 
-		// 渲染块内包含引擎切换器与管理面板按钮
 		expect(SETTINGS_SRC).toContain('{tab === "models" && (');
 		expect(SETTINGS_SRC).toContain('t("manageModelsAndProviders")');
 		expect(SETTINGS_SRC).toContain("onClick={onOpenManageModels}");

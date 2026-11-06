@@ -6,6 +6,18 @@
 - [启动参数](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#cli-and-env) · [本地 /setup 配置指南](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#setup-page)
 - [下载最新 Release](https://github.com/xing-shuyin/pi-web-ui/releases/latest)
 
+## 内置浏览器与 Agent 切换
+
+桌面窗口内置多标签浏览器，可在顶部切换「浏览器」「Agent」「分栏」。切换复用已有网页和 Agent 视图，保留网页登录态、输入内容和 Agent 草稿。浏览器先启动，本地 Agent 服务并行启动；服务不可用时仍可浏览网页。
+
+地址栏支持输入网址或搜索词，`Ctrl/Cmd+L` 聚焦地址栏，`Ctrl/Cmd+T` 新建标签，浏览器模式下 `Ctrl/Cmd+W` 关闭标签，`Ctrl/Cmd+Shift+1/2/3` 切换三种模式。分栏模式可调整宽度。新标签页与浏览器设置提供书签、历史、下载、密码保险箱和扩展加载入口；旧 AI Browser 数据可以选择旧数据目录导入，已有文件不会覆盖。
+
+内置 Agent 自动连接本地服务。需要使用远端 Web Agent 时，在浏览器设置中填写该服务地址并连接；之后使用内置浏览器打开这个受信任地址，也可以通过原生页面桥操作其他标签，无需安装 page-picker。AI 操作、截图和脚本执行各有开关，脚本执行默认关闭。普通网站无法调用浏览器控制或读取存储。
+
+Office 支持文本/CSV 编辑，以及 DOCX/XLSX/PPTX 的只读内容预览；复杂排版、图片与公式计算不在当前预览范围。二进制文档不会被当作文本覆盖保存。本地文档必须先通过文件选择器打开。
+
+模块边界、权限和构建说明见 [内置浏览器架构](../docs/architecture-browser.md)。
+
 ## 设备中心集成浏览器
 
 桌面端点击“打开中心”，会打开独立的设备中心窗口，用于登录、创建账号及确认配对。主窗口继续轮询配对结果，确认后自动完成绑定；无需依赖系统浏览器的新标签。相同中心重复打开会复用窗口，窗口菜单提供前进、后退、刷新和返回中心首页。

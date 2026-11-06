@@ -1,12 +1,4 @@
-﻿# input.ps1 — 兜底输入后端（Windows 自带 user32 SendInput + 剪贴板，无第三方依赖）
-#
-# 主用是 @nut-tree/nut-js（插件自动安装）；本脚本在 nut-js 缺失/安装失败时顶上，
-# 保证离线机器也能点、能敲 ASCII、能粘贴中文。
-#
-# 用法: input.ps1 -Op move|click|key|paste|focus [-X ..] [-Y ..] [-Button left|right|middle]
-#       [-Double 0|1] [-Keys "ctrl+c"] [-Text ..] [-Title 窗口标题子串]
-# 输出: UTF-8 JSON { ok, ... } / { ok:false, error }
-
+﻿
 param(
   [string]$Op = "",
   [int]$X = 0, [int]$Y = 0,
@@ -64,7 +56,6 @@ function Move-Cursor($x, $y) {
 
 function Out-Ok($extra) {
   $o = [ordered]@{ ok = $true; op = $Op }
-  # 注：不能用 $extra.Keys——键名恰好叫 keys/values/count 时会被键遮蔽（取到键值而非集合），用 GetEnumerator 稳妥
   if ($extra) { foreach ($e in $extra.GetEnumerator()) { $o[$e.Key] = $e.Value } }
   $o | ConvertTo-Json -Compress | Write-Output
 }
@@ -142,7 +133,6 @@ try {
       Out-Ok @{ x = $X; y = $Y; button = $Button; double = $Double }
     }
     "key" {
-      # Keys: "enter" / "ctrl+c" / "alt+F4" / "win+r"
       $parts = $Keys -split '\+' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ -ne "" }
       if ($parts.Count -eq 0) { Out-Err "empty keys"; break }
       $modList = @(); $main = $null
@@ -163,9 +153,6 @@ try {
       Out-Ok @{ keys = $Keys }
     }
     "paste" {
-      # 中文/长文本走剪贴板（keybd 发不出 CJK），调用前应已聚焦目标。
-      # 先保存原剪贴板内容，粘贴完在 finally 里恢复——不洗掉用户自己复制的东西。
-      # （只能保文字：原内容是图片/文件等非文本时 Get-Clipboard 拿不到，放弃恢复）
       $prevText = $null
       try {
         try { $prevText = Get-Clipboard -Raw } catch { $prevText = $null }
@@ -178,14 +165,13 @@ try {
         Send-Vk 0x56 $true
         Start-Sleep -Milliseconds 20
         Send-Vk 0x11 $true
-        # Allow the target application to consume the clipboard before restoring it.
         Start-Sleep -Milliseconds 250
         Out-Ok @{ chars = $Text.Length }
       } finally {
         Send-Vk 0x56 $true
         Send-Vk 0x11 $true
         if ($null -ne $prevText) {
-          try { Set-Clipboard -Value $prevText } catch { # 恢复失败不掩盖主流程结果
+          try { Set-Clipboard -Value $prevText } catch {
           }
         }
       }
@@ -196,7 +182,6 @@ try {
         $found = $p; break
       }
       if ($null -eq $found) { Out-Err "no window matches title: $Title"; break }
-      # 发送空按键绕过 Windows SetForegroundWindow 前台锁定限制
       [Inp]::keybd_event(0, 0, 0, [UIntPtr]::Zero)
       [void][Inp]::ShowWindow($found.MainWindowHandle, 9)
       [void][Inp]::SetForegroundWindow($found.MainWindowHandle)

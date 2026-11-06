@@ -9,12 +9,11 @@ describe("server/net-guard (#602)", () => {
 		expect(isBlockedHost("[::ffff:0:127.0.0.1]")).toBe(true);
 		expect(isBlockedHost("[::ffff:0:7f00:1]")).toBe(true);
 		expect(isBlockedHost("[0:0:0:0:0:ffff:7f00:1]")).toBe(true);
-		expect(isBlockedHost("[0:0:0:0:0:ffff:a9fe:a9fe]")).toBe(true); // 169.254.169.254
+		expect(isBlockedHost("[0:0:0:0:0:ffff:a9fe:a9fe]")).toBe(true);
 		expect(isBlockedHost("[64:ff9b::169.254.169.254]")).toBe(true);
 		expect(isBlockedHost("[64:ff9b::a9fe:a9fe]")).toBe(true);
-		expect(isBlockedHost("100.64.0.1")).toBe(true); // CGNAT
+		expect(isBlockedHost("100.64.0.1")).toBe(true);
 
-		// Public IPv4-mapped / IPv6 should remain allowed
 		expect(isBlockedHost("[::ffff:8.8.8.8]")).toBe(false);
 		expect(isBlockedHost("[2606:4700:4700::1111]")).toBe(false);
 		expect(validateFetchUrl("http://[0:0:0:0:0:ffff:127.0.0.1]/x").ok).toBe(false);
@@ -61,7 +60,6 @@ describe("server/net-guard (#602)", () => {
 			),
 		).rejects.toThrow(/Blocked private or internal host/);
 
-		// preset-share fetchText also blocks redirects to internal hosts
 		const res = await fetchText("https://public.example.com/preset.json", {
 			fetcher: async () => ({
 				ok: false,

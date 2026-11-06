@@ -26,7 +26,6 @@ try {
 	});
 	await page.goto("http://127.0.0.1:23931/tests/fixtures/stream-stability.html");
 	await page.waitForFunction(() => !!window.streamTest);
-	// Let the real typewriter drain before each transition; assert identity, not render count.
 	const settle = async (text) => {
 		await page.evaluate((text) => window.streamTest.update(text), text);
 		await page.waitForFunction(

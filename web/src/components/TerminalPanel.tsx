@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { randomUuid } from "../uuid";
 import { FiEdit2, FiMenu, FiPlay, FiPlus, FiRefreshCw, FiTerminal, FiTrash2, FiX } from "react-icons/fi";
 import type { ChatState, TerminalMeta } from "../use-chat";
@@ -11,10 +11,7 @@ import type { TerminalOwnerKind } from "../terminal-bridge";
 const tabKey = (t: TerminalMeta) =>
 	JSON.stringify([t.ownerKind ?? "client", t.ownerKind === "conversation" ? t.conversationId : "", t.id]);
 import type { UiSlotEntry } from "../ui-slots";
-// 工具条通用渲染已抽到 ../slot-toolbar（本模块静态 import 会把 xterm 拉进主包）；
-// 这里 re-export 保持旧 import 路径兼容。
 import { renderMergedToolbar, renderSlotToolbar } from "../slot-toolbar";
-// 旧 import 路径兼容：之前各渲染层从本模块 import，本模块瘦身后继续 re-export。
 export { renderSlotToolbar };
 
 interface TerminalPanelProps {
@@ -31,10 +28,7 @@ interface TerminalPanelProps {
 		restart: (id: string) => void;
 		select: (id: string) => void;
 	};
-	/** `terminal.toolbar` 槽位的最终条目（全量，含 hidden；宿主 chrome + 插件按槽位顺序合并渲染）。
-	 *  不传 = 未接线，回落默认顺序（与旧硬编码一致）。 */
 	uiTerminalToolbar?: UiSlotEntry[];
-	/** 点击一条工具条目：交回 App 分发给贡献它的插件（与顶栏 onUiAction 同通道）。 */
 	onUiAction?: (item: UiSlotEntry) => void;
 }
 
@@ -46,30 +40,30 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { name: "", command: "", cwd: "${pwd}" };
 
-/**
- * Built-in terminal — two panes:
- *   left : user command list (.pi/commands.json) on top + terminal tabs below
- *          (on mobile this whole column slides in as a drawer)
- *   right: the active terminal (one xterm per tab, kept mounted)
- */
-export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }: TerminalPanelProps) {
+export function TerminalPanel({ chat: allChat, terminal, uiTerminalToolbar, onUiAction }: TerminalPanelProps) {
+	const activeConversationId = allChat.activeConversationId || allChat.state?.conversationId || "";
+	const shellTerminals = useMemo(
+		() =>
+			allChat.terminals.filter(
+				(item) =>
+					!item.nativeCli &&
+					((item.ownerKind ?? "client") === "client" || item.conversationId === activeConversationId),
+			),
+		[allChat.terminals, activeConversationId],
+	);
+	const chat = { ...allChat, terminals: shellTerminals };
 	const t = useT();
 	const [activeId, setActiveId] = useState<string | null>(null);
-	// Mobile: the left column (commands + tabs) slides in as a drawer.
 	const [sideOpen, setSideOpen] = useState(false);
-	// Command list editing state.
 	const [isNew, setIsNew] = useState(false);
 	const [editingIdx, setEditingIdx] = useState<number | null>(null);
 	const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-	// Two-step delete confirmation.
 	const [confirmDel, setConfirmDel] = useState<number | null>(null);
 	const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// 终端接管 bash 的「AI bash」折叠分组开关（默认展开）。
 	const [aiBashOpen, setAiBashOpen] = useState(true);
 	const [renamingTab, setRenamingTab] = useState<string | null>(null);
 	const [renameDraft, setRenameDraft] = useState("");
 
-	// Follow the authoritative list after reconnect, close and conversation switches.
 	useEffect(() => {
 		if (chat.terminals.length === 0) setActiveId(null);
 		else if (!chat.terminals.some((t) => tabKey(t) === activeId)) {
@@ -77,8 +71,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		}
 	}, [chat.terminals, activeId]);
 
-	// The SCM / settings panel asked to focus a specific terminal tab (git write
-	// ops, uninstall runs) — follow the request so the user sees the command run.
 	useEffect(() => {
 		if (chat.terminalActiveId) {
 			const tab = chat.terminals.find((t) => t.id === chat.terminalActiveId && (t.ownerKind ?? "client") === "client");
@@ -93,9 +85,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		};
 	}, []);
 
-	// -- tab management --------------------------------------------------------
-
-	// 终端接管 bash 的 ai-bash 终端单独归到「AI bash」折叠分组，与用户终端分开。
 	const userTabs = chat.terminals.filter((t) => !t.agentBash);
 	const agentTabs = chat.terminals.filter((t) => t.agentBash);
 
@@ -103,7 +92,7 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		meta: Omit<TerminalMeta, "running" | "exitCode" | "id" | "conversationId" | "cols" | "rows"> &
 			Partial<Pick<TerminalMeta, "cols" | "rows">>,
 	) => {
-		if (!chat.ready) return; // topbar already shows the connection state
+		if (!chat.ready) return;
 		const id = randomUuid();
 		const conversationId = chat.activeConversationId || chat.state?.conversationId || "";
 		terminal.create({
@@ -127,9 +116,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 
 	const runCommand = (cmd: CommandDef) => {
 		const title = cmd.name || cmd.command;
-		// Reuse a terminal with the same title (VSCode-style task reuse): the
-		// command is re-run in the SAME tab — a running process is interrupted
-		// first (the server kills the PTY's process group and starts fresh).
 		const existing = chat.terminals.find((t) => t.title === title && (t.ownerKind ?? "client") === "client");
 		if (existing) {
 			terminal.restart(existing.id);
@@ -160,7 +146,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		if (activeId === key) setActiveId(null);
 	};
 
-	// 单个终端标签（用户终端 + ai-bash 分组共用）。
 	const renderTab = (tab: TerminalMeta) => (
 		<div key={tabKey(tab)} className={`term-tab ${tabKey(tab) === activeId ? "active" : ""}`}>
 			<button
@@ -232,8 +217,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		</div>
 	);
 
-	// -- command list editing --------------------------------------------------
-
 	const startNew = () => {
 		setIsNew(true);
 		setEditingIdx(null);
@@ -283,7 +266,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 
 	const editing = isNew || editingIdx !== null;
 
-	/** 命令列表头与终端 tab 头按槽位分别排序（插件 historically 落 tab 头；命令行/标签行是数据，不动）。 */
 	const TERM_DEFAULT_ORDER = ["host:term-cmd-refresh", "host:term-cmd-new", "host:term-tab-new"];
 	const allTermEntries: UiSlotEntry[] =
 		uiTerminalToolbar === undefined
@@ -293,8 +275,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 		const set = new Set(ids);
 		return allTermEntries.filter((e) => set.has(e.id) || (withPlugins && e.source !== "host"));
 	};
-	/** 布局页改名 / 插件 arrange 指定过文案（`labelExplicit`）→ 用那一条，否则内置 i18n 文案。
-	 *  这三个条目是纯图标按钮，名字落在 `title` 上。 */
 	const termLabel = (id: string, fallback: string): string => {
 		const e = allTermEntries.find((x) => x.id === id);
 		return e?.labelExplicit ? e.label : fallback;
@@ -334,7 +314,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 
 	return (
 		<div className="terminal-view">
-			{/* ---------------- left: command list + terminal tabs ---------------- */}
 			<aside className={`term-side term-commands ${sideOpen ? "open" : ""}`}>
 				<div className="panel-header">
 					<span className="panel-title">{t("commands")}</span>
@@ -431,7 +410,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 					)}
 				</div>
 
-				{/* ---------------- tabs (below the command list) ---------------- */}
 				<div className="term-tabs-block">
 					<div className="panel-header">
 						<span className="panel-title">{t("terminal")}</span>
@@ -459,7 +437,6 @@ export function TerminalPanel({ chat, terminal, uiTerminalToolbar, onUiAction }:
 				</div>
 			</aside>
 
-			{/* ---------------- right: terminals ---------------- */}
 			<div className="term-main">
 				{sideOpen && <div className="drawer-backdrop" onClick={() => setSideOpen(false)} />}
 				<button type="button" className="term-side-toggle" title={t("commands")} onClick={() => setSideOpen((v) => !v)}>

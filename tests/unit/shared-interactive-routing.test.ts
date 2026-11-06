@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { handleInteractiveResponseMessage } from "../../server/dispatch-domain-handlers.js";
 import type { DispatchSession } from "../../server/index.js";
 
-// A browser can answer a shared background conversation without becoming its owner.
 describe("shared conversation interactive responses", () => {
 	it("routes a global questionnaire answer to its original owner", () => {
 		const localAnswer = vi.fn();

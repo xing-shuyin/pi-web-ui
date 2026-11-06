@@ -1,7 +1,3 @@
-/**
- * 图片灯箱桥单测（web/src/image-lightbox-bridge.ts）：注册/注销/受理/关闭/状态查询。
- * 纯模块级 sink，无 DOM API 依赖（node 环境可跑）。
- */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	closeImageLightbox,

@@ -140,7 +140,6 @@ describe("Global Resource Locks", () => {
 			expect(isValidLockKey("fs:/path/to/dir")).toBe(true);
 			expect(isValidLockKey("db_shared-1.0")).toBe(true);
 
-			// Invalid keys
 			expect(isValidLockKey("")).toBe(false);
 			expect(isValidLockKey("   ")).toBe(false);
 			expect(isValidLockKey("key with space")).toBe(false);
@@ -153,14 +152,11 @@ describe("Global Resource Locks", () => {
 			expect(validateResourceLocks(null)).toEqual([]);
 			expect(validateResourceLocks([])).toEqual([]);
 
-			// Deduplication
 			expect(validateResourceLocks(["lock:1", "lock:1", "lock:2"])).toEqual(["lock:1", "lock:2"]);
 
-			// Over max 10
 			const eleven = Array.from({ length: 11 }, (_, i) => `lock:${i}`);
 			expect(() => validateResourceLocks(eleven)).toThrow(/cannot exceed 10 items/);
 
-			// Invalid items
 			expect(() => validateResourceLocks(["valid", "invalid key"])).toThrow(/Invalid resource lock key/);
 			expect(() => validateResourceLocks("not-an-array" as any)).toThrow(/must be an array/);
 		});
@@ -178,7 +174,6 @@ describe("Global Resource Locks", () => {
 			});
 			expect(r1.success).toBe(true);
 
-			// Task 2 conflicts
 			const r2 = manager.acquireLocks({
 				roomId: "room1",
 				taskId: "task2",
@@ -189,14 +184,12 @@ describe("Global Resource Locks", () => {
 			expect(r2.conflictingLocks).toEqual(["git:repo:main"]);
 			expect(r2.holderTaskIds).toEqual(["task1"]);
 
-			// Check lock info
 			const info = manager.getRoomLockInfo("room1");
 			expect(info.activeLocks).toHaveLength(1);
 			expect(info.activeLocks[0].taskId).toBe("task1");
 			expect(info.waitingQueue).toHaveLength(1);
 			expect(info.waitingQueue[0].taskId).toBe("task2");
 
-			// Task 1 releases lock -> Task 2 is promoted
 			const promoted = manager.releaseLocks("room1", "task1");
 			expect(promoted).toEqual(["task2"]);
 
@@ -226,7 +219,6 @@ describe("Global Resource Locks", () => {
 				now,
 			});
 
-			// Advance time past TTL
 			const promoted = manager.cleanupExpiredLocks("room1", now + 1500);
 			expect(promoted).toEqual(["task2"]);
 
@@ -247,7 +239,6 @@ describe("Global Resource Locks", () => {
 			expect(roomRes.status).toBe(201);
 			const roomId = roomRes.body.room.id;
 
-			// Invalid lock: spaces
 			const res1 = await f.request(
 				`/api/rooms/${roomId}/messages`,
 				{
@@ -259,7 +250,6 @@ describe("Global Resource Locks", () => {
 			);
 			expect(res1.status).toBe(400);
 
-			// Invalid lock: > 10 items
 			const res2 = await f.request(
 				`/api/rooms/${roomId}/messages`,
 				{
@@ -276,20 +266,16 @@ describe("Global Resource Locks", () => {
 			const f = await fixture();
 			const cookie = await f.register();
 
-			// Setup Device A with Bot A
 			const devA = await f.pair(cookie, "Device-A");
 
-			// Setup Device B with Bot B
 			const devB = await f.pair(cookie, "Device-B");
 
-			// Create Room with both bots
 			const roomRes = await f.request("/api/rooms", { name: "Collab Room", botIds: [devA.botId, devB.botId] }, cookie);
 			expect(roomRes.status).toBe(201);
 			const roomId = roomRes.body.room.id;
 
 			const lockKey = "git:org/repo:feature";
 
-			// 1. Dispatch Task 1 to Bot A with resourceLock
 			const task1Res = await f.request(
 				`/api/rooms/${roomId}/messages`,
 				{
@@ -305,7 +291,6 @@ describe("Global Resource Locks", () => {
 			expect(f.onTask).toHaveBeenCalledTimes(1);
 			expect(f.deliveredTasks[0].id).toBe(task1.id);
 
-			// 2. Dispatch Task 2 to Bot B requesting the same lock
 			const task2Res = await f.request(
 				`/api/rooms/${roomId}/messages`,
 				{
@@ -317,13 +302,10 @@ describe("Global Resource Locks", () => {
 			);
 			expect(task2Res.status).toBe(200);
 			const task2 = task2Res.body.tasks[0];
-			// Task 2 should be in waiting status because of lock conflict
 			expect(task2.status).toBe("waiting");
 			expect(task2.blockReason).toBe("resource_locked");
-			// onTask should NOT have been called for task 2 yet!
 			expect(f.onTask).toHaveBeenCalledTimes(1);
 
-			// 3. Query GET /api/rooms/:id/locks
 			const locksRes = await f.request(`/api/rooms/${roomId}/locks`, undefined, cookie);
 			expect(locksRes.status).toBe(200);
 			const lockInfo: RoomLockInfo = locksRes.body;
@@ -333,7 +315,6 @@ describe("Global Resource Locks", () => {
 			expect(lockInfo.waitingQueue).toHaveLength(1);
 			expect(lockInfo.waitingQueue[0].taskId).toBe(task2.id);
 
-			// 4. Bot A starts and completes Task 1
 			const task1Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task1.id)!;
 			await f.hub.acceptTaskEvent(devA.deviceId, {
 				leaseToken: task1Lease.leaseToken,
@@ -353,18 +334,15 @@ describe("Global Resource Locks", () => {
 				report: "Task 1 finished successfully",
 			});
 
-			// 5. Verification: Task 2 is automatically promoted and delivered to Bot B!
 			expect(f.onTask).toHaveBeenCalledTimes(2);
 			expect(f.deliveredTasks[1].id).toBe(task2.id);
 
-			// Check locks state again: Task 2 now holds the lock
 			const locksResAfter = await f.request(`/api/rooms/${roomId}/locks`, undefined, cookie);
 			expect(locksResAfter.status).toBe(200);
 			expect(locksResAfter.body.activeLocks).toHaveLength(1);
 			expect(locksResAfter.body.activeLocks[0].taskId).toBe(task2.id);
 			expect(locksResAfter.body.waitingQueue).toHaveLength(0);
 
-			// 6. Bot B starts and completes Task 2
 			const task2Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task2.id)!;
 			await f.hub.acceptTaskEvent(devB.deviceId, {
 				leaseToken: task2Lease.leaseToken,
@@ -417,7 +395,6 @@ describe("Global Resource Locks", () => {
 			const task2 = t2Res.body.tasks[0];
 			expect(task2.status).toBe("waiting");
 
-			// Task 1 starts then fails
 			const task1Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task1.id)!;
 			await f.hub.acceptTaskEvent(devA.deviceId, {
 				leaseToken: task1Lease.leaseToken,
@@ -437,7 +414,6 @@ describe("Global Resource Locks", () => {
 				report: "Failed due to compile error",
 			});
 
-			// Task 2 should now be delivered
 			expect(f.onTask).toHaveBeenCalledTimes(2);
 			expect(f.deliveredTasks[1].id).toBe(task2.id);
 
@@ -456,7 +432,6 @@ describe("Global Resource Locks", () => {
 			expect(roomRes.status).toBe(201);
 			const roomId = roomRes.body.room.id;
 
-			// Create conversation with lock
 			const convRes = await f.request(
 				`/api/rooms/${roomId}/conversations`,
 				{
@@ -469,19 +444,15 @@ describe("Global Resource Locks", () => {
 			expect(convRes.status).toBe(200);
 			const convId = convRes.body.conversation.id;
 
-			// Verify lock acquired
 			let locksRes = await f.request(`/api/rooms/${roomId}/locks`, undefined, cookie);
 			expect(locksRes.body.activeLocks).toHaveLength(1);
 
-			// Stop conversation (with relay confirming cancellation)
 			const stopRes = await f.request(`/api/rooms/${roomId}/conversations/${convId}/stop`, {}, cookie);
 			expect(stopRes.status).toBe(200);
 
-			// Lock should be released
 			locksRes = await f.request(`/api/rooms/${roomId}/locks`, undefined, cookie);
 			expect(locksRes.body.activeLocks).toHaveLength(0);
 
-			// Clear room
 			const clearRes = await f.request(`/api/rooms/${roomId}/clear`, {}, cookie);
 			expect(clearRes.status).toBe(200);
 
@@ -501,7 +472,6 @@ describe("Global Resource Locks", () => {
 			const execute = vi.fn().mockResolvedValue({ id: "task-1" });
 			setDeviceCollabService({ execute });
 
-			// send_task with valid resourceLocks
 			await invoke({
 				action: "send_task",
 				roomId: "room-1",
@@ -514,7 +484,6 @@ describe("Global Resource Locks", () => {
 			expect(execute).toHaveBeenCalledTimes(1);
 			expect(execute.mock.calls[0][1].resourceLocks).toEqual(["git:repo:branch", "fs:/path"]);
 
-			// conversation_send with valid resourceLocks
 			await invoke({
 				action: "conversation_send",
 				roomId: "room-1",
@@ -532,7 +501,6 @@ describe("Global Resource Locks", () => {
 			const execute = vi.fn().mockResolvedValue({});
 			setDeviceCollabService({ execute });
 
-			// Unsupported action
 			await expect(
 				invoke({
 					action: "list_bots",
@@ -542,7 +510,6 @@ describe("Global Resource Locks", () => {
 				} as any),
 			).rejects.toThrow(/Unsupported device_collab argument/);
 
-			// Invalid lock key in send_task
 			await expect(
 				invoke({
 					action: "send_task",

@@ -15,9 +15,7 @@ describe("Conversation Permission Persistence", () => {
 	afterEach(() => {
 		try {
 			rmSync(tempDir, { recursive: true, force: true });
-		} catch {
-			// ignore cleanup error
-		}
+		} catch {}
 	});
 
 	it("returns undefined when session has no permission entry", () => {
@@ -27,20 +25,16 @@ describe("Conversation Permission Persistence", () => {
 
 	it("persists and restores permission preset across reload", () => {
 		const sm = SessionManager.create(tempDir);
-		// Pi SessionManager flushes entries to file once the first assistant response arrives
 		sm.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() });
 		sm.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }], timestamp: Date.now() } as any);
 
 		const sessionFile = sm.getSessionFile();
 		expect(sessionFile).toBeDefined();
 
-		// Simulate user switching permission to danger-full-access
 		sm.appendCustomEntry("permission/preset", { preset: "danger-full-access" });
 
-		// Read back from the same manager
 		expect(readPermissionFromSession(sm)).toBe("danger-full-access");
 
-		// Open afresh from file (simulating project switch or session reopen)
 		const reopened = SessionManager.open(sessionFile!);
 		expect(readPermissionFromSession(reopened)).toBe("danger-full-access");
 	});

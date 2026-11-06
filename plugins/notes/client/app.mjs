@@ -1,27 +1,10 @@
-/**
- * notes 界面本体（现代闪念笔记 + 日历双视图）。
- *
- * 核心设计：
- *   - 纯粹的「笔记」与「日历」两个 Tab：
- *       * 笔记：现代无标题流式速记（直接记录文字，可选设置提醒，无心智负担，
- *         就地快速内联编辑，秒速捕捉灵感与备忘）。
- *       * 日历：42 格月视图，展示每天有提醒的笔记与日程，可直观按天查阅与安排。
- *   - 顶部常驻 Quick Note Composer（自适应多行，支持 Markdown，Ctrl+Enter 即存，
- *     可快捷设置提醒时间与重复档位，智能嗅探时间）。
- *   - 笔记流卡片（Memos Timeline）：相对时间、置顶高亮、提醒状态胶囊、就地双击/按钮编辑。
- */
 import * as S from "./store.mjs";
-import {
-	fromLocalInput,
-	occurrencesBetween,
-	MIN_EVERY_MINUTES,
-} from "./cron.mjs";
+import { fromLocalInput, occurrencesBetween, MIN_EVERY_MINUTES } from "./cron.mjs";
 import { el } from "./dom.mjs";
 import { hostApi } from "@pi-web-ui/plugin-sdk/client";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-/** 当天 0 点 / 当月 1 号 0 点 / 加 N 天 / 加 N 月（本地时区）。 */
 function startOfDay(ms) {
 	const d = new Date(ms);
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -47,7 +30,6 @@ function fmtHM(ms) {
 	return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** 毫秒 → 相对时间（刚刚、N分钟前、今天 HH:MM、昨天 HH:MM、日期）。 */
 function formatRelativeTime(stampStr, t, nowMs = Date.now()) {
 	if (!stampStr) return "";
 	const ms = new Date(stampStr).getTime();
@@ -68,7 +50,6 @@ function formatRelativeTime(stampStr, t, nowMs = Date.now()) {
 	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** 毫秒 → 人话（今天/明天/周X/日期 + 时刻）。 */
 export function formatWhen(ms, t, nowMs = Date.now()) {
 	if (ms === null || ms === undefined || Number.isNaN(Number(ms))) return "";
 	const d = new Date(Number(ms));
@@ -85,7 +66,6 @@ export function formatWhen(ms, t, nowMs = Date.now()) {
 	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hm}`;
 }
 
-/** 提醒 schedule → 人话。 */
 export function scheduleLabel(schedule, t) {
 	const s = S.normalizeSchedule(schedule);
 	if (!s) return "—";
@@ -107,7 +87,6 @@ export function scheduleLabel(schedule, t) {
 	}
 }
 
-/** 格式化提醒标签，简明显示在卡片上。 */
 function reminderBadgeText(reminder, t) {
 	if (!reminder?.schedule) return "";
 	const s = reminder.schedule;
@@ -121,7 +100,6 @@ function reminderBadgeText(reminder, t) {
 	return scheduleLabel(s, t);
 }
 
-/** 格式化行内链接与代码。 */
 function appendInlineFormatted(parent, text) {
 	const str = String(text ?? "");
 	const parts = str.split(/(`[^`]+`|https?:\/\/[^\s]+)/g);
@@ -137,14 +115,12 @@ function appendInlineFormatted(parent, text) {
 	}
 }
 
-/** 简易轻量 Markdown 渲染器（支持换行、待办复选框、标题、行内代码）。 */
 function renderMarkdown(text, onToggleTask) {
 	const fragment = document.createDocumentFragment();
 	const lines = String(text ?? "").split("\n");
 	let i = 0;
 	while (i < lines.length) {
 		const line = lines[i];
-		// 任务复选框: - [ ] 或 - [x]
 		const taskMatch = line.match(/^(\s*[-*]\s*)\[([ xX])\]\s*(.*)$/);
 		if (taskMatch) {
 			const checked = taskMatch[2].toLowerCase() === "x";
@@ -164,7 +140,6 @@ function renderMarkdown(text, onToggleTask) {
 			i++;
 			continue;
 		}
-		// 标题: # ... 或 ## ...
 		const hMatch = line.match(/^(#{1,3})\s+(.*)$/);
 		if (hMatch) {
 			const h = el(hMatch[1].length === 1 ? "h4" : "h5", {
@@ -175,13 +150,11 @@ function renderMarkdown(text, onToggleTask) {
 			i++;
 			continue;
 		}
-		// 空行
 		if (!line.trim()) {
 			fragment.append(el("div", { style: "height: 6px;" }));
 			i++;
 			continue;
 		}
-		// 普通段落
 		const p = el("div", { style: "margin: 2px 0;" });
 		appendInlineFormatted(p, line);
 		fragment.append(p);
@@ -190,9 +163,6 @@ function renderMarkdown(text, onToggleTask) {
 	return fragment;
 }
 
-/**
- * 笔记界面。
- */
 export function createNotesApp(options) {
 	const { root, data, t, compact = false } = options;
 	const state = {
@@ -205,13 +175,12 @@ export function createNotesApp(options) {
 	};
 
 	let snapshot = data.getState();
-	let composerReminder = null; // 当前 composer 里设置的提醒 { schedule, enabled }
-	let activePopMenu = null; // 当前展开的提醒菜单
+	let composerReminder = null;
+	let activePopMenu = null;
 
 	root.classList.add("nt-root");
 	root.textContent = "";
 
-	// ---------------------------------------------------------------- 骨架
 	const tabButtons = {};
 	const tabBar = el("div", { class: "nt-tabs" });
 	for (const tab of ["note", "calendar"]) {
@@ -242,7 +211,6 @@ export function createNotesApp(options) {
 
 	const head = el("div", { class: "nt-head" }, tabBar, el("span", { class: "nt-grow" }), searchInput);
 
-	// ---------------- 现代闪念速记 Composer ----------------
 	const composerText = el("textarea", {
 		class: "nt-composer-text",
 		placeholder: t("quick.notePlaceholder"),
@@ -316,14 +284,12 @@ export function createNotesApp(options) {
 	const composerBox = el("div", { class: "nt-composer-box" }, composerText, composerTools);
 	const composerWrap = el("div", { class: "nt-composer" }, composerBox);
 
-	// ---------------- 列表与容器 ----------------
 	const listEl = el("div", { class: "nt-list" });
 	const bodyEl = el("div", { class: "nt-body" }, listEl);
 	const footEl = el("div", { class: "nt-foot" });
 	const app = el("div", { class: `nt-app${compact ? " nt-compact" : ""}` }, head, composerWrap, bodyEl, footEl);
 	root.append(app);
 
-	// 搜索框手机端收起/展开
 	if (compact) {
 		searchInput.style.display = "none";
 		const searchBtn = el("button", {
@@ -340,7 +306,6 @@ export function createNotesApp(options) {
 		head.insertBefore(searchBtn, searchInput);
 	}
 
-	// 全局点击关闭弹出层
 	document.addEventListener("click", (e) => {
 		if (activePopMenu && !activePopMenu.contains(e.target)) {
 			closePopMenu();
@@ -414,7 +379,6 @@ export function createNotesApp(options) {
 		checkSmartTimeSuggest();
 	}
 
-	// 提醒弹出菜单
 	function toggleComposerReminderPop(anchorEl) {
 		if (activePopMenu) {
 			closePopMenu();
@@ -504,7 +468,6 @@ export function createNotesApp(options) {
 			pop.append(btn);
 		}
 
-		// 自定义时间
 		const customWrap = el("div", { class: "nt-pop-custom" });
 		const dtInput = el("input", {
 			type: "datetime-local",
@@ -518,7 +481,6 @@ export function createNotesApp(options) {
 		customWrap.append(el("div", { class: "nt-hint", text: t("quick.customTime") }), dtInput);
 		pop.append(customWrap);
 
-		// 清除选项
 		const clearBtn = el("button", {
 			type: "button",
 			class: "nt-pop-item",
@@ -537,7 +499,6 @@ export function createNotesApp(options) {
 			composerText.focus();
 			return;
 		}
-		// 自动从内容中解析标签 #tag
 		const tagMatches = raw.match(/#[^\s#]{1,32}/g) ?? [];
 		const tags = [...new Set(tagMatches.map((x) => x.slice(1)))];
 		const title = S.extractTitle(raw) || "未命名笔记";
@@ -561,7 +522,6 @@ export function createNotesApp(options) {
 		}
 	}
 
-	// ---------------------------------------------------------------- 数据订阅
 	const unsubscribe = data.subscribe((next) => {
 		snapshot = next;
 		render();
@@ -617,7 +577,6 @@ export function createNotesApp(options) {
 		return best;
 	}
 
-	// ---------------------------------------------------------------- 列表渲染
 	function renderList() {
 		listEl.textContent = "";
 		if (state.tab === "calendar") {
@@ -625,15 +584,12 @@ export function createNotesApp(options) {
 			return;
 		}
 
-		// 笔记流渲染 (Notes Stream)
 		const allNotes = [...store().notes];
-		// 排序：置顶优先，其次按 updatedAt 倒序
 		allNotes.sort((a, b) => {
 			if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
 			return String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""));
 		});
 
-		// 搜索与标签过滤
 		const query = state.query.trim().toLowerCase();
 		const filtered = allNotes.filter((n) => {
 			if (!query) return true;
@@ -672,13 +628,11 @@ export function createNotesApp(options) {
 		}
 	}
 
-	// ---------------- 单条笔记卡片 (Card) ----------------
 	function renderNoteCard(note) {
 		const card = el("div", {
 			class: `nt-card${note.pinned ? " nt-pinned" : ""}`,
 		});
 
-		// 头部元信息
 		const headEl = el("div", { class: "nt-card-head" });
 		const timeEl = el("span", {
 			class: "nt-card-time",
@@ -691,7 +645,6 @@ export function createNotesApp(options) {
 			headEl.append(el("span", { class: "nt-card-pin-icon", text: "📌", title: t("action.pin") }));
 		}
 
-		// 提醒状态徽标
 		if (note.reminder?.schedule) {
 			const rem = note.reminder;
 			const isOnce = rem.schedule.type === "once";
@@ -709,7 +662,6 @@ export function createNotesApp(options) {
 			headEl.append(badge);
 		}
 
-		// 标签
 		for (const tag of note.tags ?? []) {
 			const tagChip = el("span", {
 				class: "nt-tag",
@@ -724,7 +676,6 @@ export function createNotesApp(options) {
 			headEl.append(tagChip);
 		}
 
-		// 右侧悬浮操作组
 		const ops = el("div", { class: "nt-card-ops" });
 
 		const editBtn = el("button", {
@@ -783,7 +734,6 @@ export function createNotesApp(options) {
 			},
 		});
 
-		// 删除按钮：点击变为打勾按钮，再次点击确认删除
 		let delTimer = null;
 		const delBtn = el("button", {
 			type: "button",
@@ -816,7 +766,6 @@ export function createNotesApp(options) {
 		headEl.append(ops);
 		card.append(headEl);
 
-		// 正文区（支持双击就地编辑）
 		const bodyEl = el("div", {
 			class: "nt-card-body",
 			onDblClick: () => {
@@ -825,7 +774,6 @@ export function createNotesApp(options) {
 			},
 		});
 
-		// 任务复选框切换
 		const onToggleTask = (lineIndex, nextChecked) => {
 			const lines = (note.body || "").split("\n");
 			if (lines[lineIndex] !== undefined) {
@@ -841,7 +789,6 @@ export function createNotesApp(options) {
 		return card;
 	}
 
-	// ---------------- 就地快速内联编辑卡片 (Inline Edit) ----------------
 	function renderInlineEditCard(note) {
 		const card = el("div", { class: "nt-card nt-editing" });
 		let draftReminder = note.reminder;
@@ -863,7 +810,6 @@ export function createNotesApp(options) {
 			},
 		});
 
-		// 自动撑开
 		setTimeout(() => {
 			textarea.style.height = "auto";
 			textarea.style.height = `${Math.min(textarea.scrollHeight + 10, 320)}px`;
@@ -871,7 +817,6 @@ export function createNotesApp(options) {
 			textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 		}, 20);
 
-		// 底栏与工具
 		const editFoot = el("div", { class: "nt-card-edit-foot" });
 		const leftTools = el("div", { class: "nt-inline-row" });
 
@@ -1001,7 +946,6 @@ export function createNotesApp(options) {
 		activePopMenu = pop;
 	}
 
-	// ---------------------------------------------------------------- 日历 (Calendar)
 	function renderCalendar(container) {
 		const monthStart = state.month;
 		const monthEnd = addMonths(monthStart, 1);
@@ -1018,7 +962,6 @@ export function createNotesApp(options) {
 			return b;
 		};
 
-		// 待办截止
 		for (const todo of store().todos) {
 			if (!todo.due) continue;
 			const ms = new Date(todo.due).getTime();
@@ -1027,7 +970,6 @@ export function createNotesApp(options) {
 			}
 		}
 
-		// 提醒
 		for (const rem of store().reminders) {
 			if (!rem.enabled) continue;
 			const occs = occurrencesBetween(rem.schedule, monthStart, monthEnd);
@@ -1036,7 +978,6 @@ export function createNotesApp(options) {
 			}
 		}
 
-		// 头部控制行
 		const head = el(
 			"div",
 			{ class: "nt-cal-head" },
@@ -1078,13 +1019,11 @@ export function createNotesApp(options) {
 		);
 		container.append(head);
 
-		// 星期表头
 		const grid = el("div", { class: "nt-cal-grid" });
 		for (let i = 0; i < 7; i++) {
 			grid.append(el("div", { class: "nt-cal-wd", text: t(`week.${(i + 1) % 7}`) }));
 		}
 
-		// 42 天格子
 		const firstCell = addDays(startOfMonth(monthStart), -((new Date(monthStart).getDay() + 6) % 7));
 		for (let i = 0; i < 42; i++) {
 			const dayMs = addDays(firstCell, i);
@@ -1124,7 +1063,6 @@ export function createNotesApp(options) {
 		}
 		container.append(grid);
 
-		// 选中当天的清单
 		const entry = buckets.get(selectedKey);
 		const detail = el("div", { class: "nt-cal-detail" });
 		const selected = new Date(state.day);
@@ -1142,7 +1080,6 @@ export function createNotesApp(options) {
 				class: "nt-btn",
 				text: `📝 ${t("quick.newNoteOnDay")}`,
 				onClick: () => {
-					// 切回笔记 tab，并预置好那一天的 09:00 提醒
 					state.tab = "note";
 					writeTab("note");
 					const d = new Date(state.day);
@@ -1202,7 +1139,6 @@ export function createNotesApp(options) {
 		container.append(detail);
 	}
 
-	// ---------------- 辅助工具 ----------------
 	async function copyItemText(btn, text) {
 		let ok = false;
 		try {
@@ -1253,9 +1189,7 @@ export function createNotesApp(options) {
 	function toast(text) {
 		try {
 			options.onNotify?.(text);
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 
 	return {
@@ -1276,16 +1210,12 @@ function readTab() {
 	try {
 		const v = localStorage.getItem("notes:tab");
 		if (v && ["note", "calendar"].includes(v)) return v;
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return "note";
 }
 
 function writeTab(tab) {
 	try {
 		localStorage.setItem("notes:tab", tab);
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }

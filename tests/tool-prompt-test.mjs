@@ -1,19 +1,3 @@
-/**
- * 逐工具文案覆盖（`set_settings.toolPromptOverrides` / `get_tool_prompt`）—— 设置页
- * 「工具」区「编辑文案」的**端到端**回归（零 token：本地 mock OpenAI 端点）。
- *
- * 断言链路：
- *   1. `get_tool_prompt` 回**出厂默认**（未覆盖时 override 缺席）；
- *   2. 写入覆盖后：`get_tool_prompt` 回该覆盖、`get_tool_info` 回**生效文案**；
- *   3. `settings_state.toolsSchema` / `effectiveSystemPrompt` 用覆盖文案；
- *   4. **真正发给模型的那一次请求**里 bash 工具的 `description` 就是覆盖文案，
- *      系统提示词里是覆盖后的 snippet / guideline（验证 `_toolRegistry` 打补丁生效）。
- *      注：codemode 声明存活时 SDK 会给每个工具描述**追加**一行调用提示，
- *      所以只比对首段——覆盖必须是**替换**而不是叠字；
- *   5. 清空覆盖（空对象）后完整复原出厂默认（不层层叠字）。
- *
- * 端口 8926（≥8900 约定），临时 data-dir / 工作区 / agent 目录，结束自行清理。
- */
 import { createServer } from "node:http";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
@@ -47,16 +31,13 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-/** 捕获每次模型请求的 body（只看工具声明 + 系统提示词）。 */
 const payloads = [];
 const mock = createServer(async (req, res) => {
 	let body = "";
 	for await (const chunk of req) body += chunk;
 	try {
 		payloads.push(JSON.parse(body));
-	} catch {
-		/* not json */
-	}
+	} catch {}
 	res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 	const chunk = (content, finish) =>
 		res.write(
@@ -123,7 +104,6 @@ if (!(await portUp(PORT))) {
 	process.exit(1);
 }
 
-/** 极简 WS 客户端：收集 tool_info / tool_prompt / settings_state 与快照。 */
 class Client {
 	constructor(ws) {
 		this.ws = ws;
@@ -177,7 +157,6 @@ const client = new Client(ws);
 client.send({ type: "hello", clientId: randomUUID() });
 await client.waitForState((s) => Boolean(s.conversationId));
 
-/** 发 request 并等应答（按工具名）。 */
 async function askPrompt(name) {
 	client.prompts.delete(name);
 	client.send({ type: "get_tool_prompt", name });
@@ -190,7 +169,6 @@ async function askInfo(name) {
 	await client.waitFor(() => client.infos.has(name));
 	return client.infos.get(name);
 }
-/** 写覆盖并等一次带该覆盖的 settings_state 回来。 */
 async function setOverride(patch) {
 	client.settings = null;
 	client.send({ type: "set_settings", toolPromptOverrides: patch });
@@ -198,7 +176,6 @@ async function setOverride(patch) {
 	return client.settings;
 }
 
-// 1) 出厂默认：未覆盖时 get_tool_prompt 回默认文案、override 缺席。
 const before = await askPrompt("bash");
 check("bash 取到默认（found: true）", before?.found === true, JSON.stringify(before && { found: before.found }));
 check(
@@ -208,7 +185,6 @@ check(
 );
 check("未覆盖时无 override 字段", before?.override === undefined, JSON.stringify(before?.override));
 
-// 2) 写入覆盖：description + snippet + guidelines 三处。
 await setOverride({
 	bash: { description: CUSTOM_DESC, promptSnippet: CUSTOM_SNIPPET, promptGuidelines: [CUSTOM_GUIDELINE] },
 });
@@ -232,8 +208,6 @@ check(
 	typeof client.settings?.toolsSchema === "string" && client.settings.toolsSchema.includes(CUSTOM_DESC),
 	`toolsSchema len=${client.settings?.toolsSchema?.length ?? 0}`,
 );
-// 非延迟模式平时隐藏工具目录省 token，但被覆盖的 snippet 必须列出（活体链路恒走自渲染）：
-// 预览与实发都要含覆盖的 snippet / guideline。
 check(
 	"effectiveSystemPrompt 含覆盖的 snippet / guideline",
 	typeof client.settings?.effectiveSystemPrompt === "string" &&
@@ -242,7 +216,6 @@ check(
 	`prompt len=${client.settings?.effectiveSystemPrompt?.length ?? 0}`,
 );
 
-// 3) 真正发给模型的那次请求：tools[].description 与系统提示词都要用覆盖。
 client.send({ type: "set_model", modelId: "main/tool-prompt-mock" });
 await client.waitForState((s) => s.model?.id === "tool-prompt-mock");
 payloads.length = 0;
@@ -253,7 +226,6 @@ check("模型请求里带上了 bash 工具", Boolean(req), `payloads=${payloads
 const bashTool = req?.tools?.find((t) => t.function?.name === "bash");
 check(
 	"模型看到的 bash description = 覆盖文案",
-	// 首段必须是覆盖文案（codemode 声明存活时 SDK 会在其后追加调用提示段）。
 	typeof bashTool?.function?.description === "string" && bashTool.function.description.split("\n")[0] === CUSTOM_DESC,
 	`desc=${bashTool?.function?.description?.slice(0, 80)}`,
 );
@@ -265,7 +237,6 @@ check(
 	`system len=${sysText.length}`,
 );
 
-// 4) 清空覆盖 → 完整复原（不层层叠字）。
 await setOverride({ bash: {} });
 const cleared = await askPrompt("bash");
 check("清空后无 override", cleared?.override === undefined, JSON.stringify(cleared?.override));

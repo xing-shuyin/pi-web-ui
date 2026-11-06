@@ -1,14 +1,3 @@
-/**
- * 额外工作区根（宿主侧多根，issue #146）服务端单测：归一化 + 按项目持久化 +
- * 插件宿主的「工作区内」判定。不起 server、不碰网络，纯状态与纯函数。
- *
- * 语义回顾（contract）：AI 仍只在主 cwd 里干活（pi SDK 单 cwd 模型）；多根只影响
- * 「哪些路径算工作区内」—— 右栏文件树可跨根浏览、插件 host.fs / project.create
- * 读这些根不必再走目录授权。所以三个不变量必须成立：
- *   1. 只收绝对路径（相对路径在服务端没有可靠基准），去重、上限 8；
- *   2. 根**按项目（cwd）**存：切项目各带各自的多根，互不串味；
- *   3. 插件宿主的 isInsideWorkspace 把根当工作区（否则「加根」在插件侧没有效果）。
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +15,6 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-/** 造一个能当“目录”用的绝对路径（不要求真的存在：归一化不看磁盘）。 */
 const abs = (...parts: string[]): string => join(dir, ...parts);
 
 describe("normalizeWorkspaceRoots", () => {
@@ -74,7 +62,6 @@ describe("ClientStateStore 的根持久化（按项目）", () => {
 
 		store.saveWorkspaceRoots("c1", cwdA, []);
 		expect(store.getWorkspaceRoots("c1", cwdA)).toEqual([]);
-		// 落盘后不该留 "projects":{"…":[]} 这种空壳
 		const raw = JSON.parse(readFileSync(join(dir, "client-state.json"), "utf8")) as Record<
 			string,
 			{ workspaceRoots?: Record<string, string[]> }
@@ -122,13 +109,11 @@ describe("插件宿主的「工作区内」判定把根算进去", () => {
 
 			mgr.notifyWorkspaceRoots([abs("extra")]);
 			expect(mgr.isInsideWorkspace(inRoot)).toBe(true);
-			expect(mgr.isInsideWorkspace(inMain)).toBe(true); // cwd 不会被多根挤掉
+			expect(mgr.isInsideWorkspace(inMain)).toBe(true);
 			expect(mgr.isInsideWorkspace(outside)).toBe(false);
 
-			// 前缀相同但不是父子（extra vs extra2）不能误判
 			expect(mgr.isInsideWorkspace(join(abs("extra2"), "x.ts"))).toBe(false);
 
-			// 清空后回到单根
 			mgr.notifyWorkspaceRoots([]);
 			expect(mgr.isInsideWorkspace(inRoot)).toBe(false);
 		} finally {
@@ -142,7 +127,6 @@ describe("插件宿主的「工作区内」判定把根算进去", () => {
 			mgr.notifyWorkspaceRoots([abs("extra")]);
 			mgr.notifyCwd(abs("main2"));
 			expect(mgr.isInsideWorkspace(join(abs("extra"), "b.ts"))).toBe(true);
-			// 重复通知同一份 = no-op（不抛错、状态不变）
 			mgr.notifyWorkspaceRoots([abs("extra")]);
 			expect(mgr.isInsideWorkspace(join(abs("extra"), "b.ts"))).toBe(true);
 		} finally {
@@ -151,20 +135,15 @@ describe("插件宿主的「工作区内」判定把根算进去", () => {
 	});
 
 	it("根也受归一化约束：相对路径/超上限在宿主侧同样进不来", async () => {
-		// 主轴 cwd = dir：额外根特意放到**另一个临时目录**下，否则「在 dir 下」本身就在工作区内，
-		// 测不出根有没有生效。
 		const outside = mkdtempSync(join(tmpdir(), "ws-roots-out-"));
 		const mgr = new PluginManager(dir, dir);
 		try {
-			// 相对路径被丢：拿一个「按进程 cwd 解析出来的」路径验证 —— 它不在工作区（临时目录）里，
-			// 所以里面为 true 就说明相对路径真的被当成了根。
 			mgr.notifyWorkspaceRoots(["relative/dir"]);
 			expect(mgr.isInsideWorkspace(join(process.cwd(), "relative", "dir", "x"))).toBe(false);
 			const many = Array.from({ length: MAX_WORKSPACE_ROOTS + 3 }, (_v, i) => join(outside, `m${i}`));
 			mgr.notifyWorkspaceRoots(many);
 			expect(mgr.isInsideWorkspace(join(join(outside, `m${MAX_WORKSPACE_ROOTS + 1}`), "y"))).toBe(false);
 			expect(mgr.isInsideWorkspace(join(join(outside, "m0"), "y"))).toBe(true);
-			// sep 归一化：末尾带分隔符的根也能命中
 			mgr.notifyWorkspaceRoots([`${join(outside, "trail")}${sep}`]);
 			expect(mgr.isInsideWorkspace(join(outside, "trail", "z"))).toBe(true);
 		} finally {

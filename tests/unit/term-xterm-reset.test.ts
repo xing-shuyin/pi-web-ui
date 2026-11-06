@@ -3,8 +3,6 @@ import { runInNewContext } from "node:vm";
 import { Terminal } from "@xterm/xterm";
 import { describe, expect, it } from "vitest";
 
-// Exercise the production registration with the installed xterm implementation,
-// without mounting the React component or requiring a browser renderer.
 const source = readFileSync(new URL("../../web/src/components/TermXterm.tsx", import.meta.url), "utf8");
 const begin = source.indexOf("const unregister = register(");
 const end = source.indexOf("const sendDims =", begin);
@@ -37,7 +35,6 @@ describe("TermXterm queued history reset", () => {
 			writer.write("old1\r\nold2\r\nold3\r\nold4\r\nold5\r\n");
 			await drain();
 			expect(term.buffer.active.baseY).toBeGreaterThan(0);
-			// These all enter the same xterm queue before it gets a chance to run.
 			writer.write("pending-old\r\n");
 			writer.reset();
 			writer.write("history1\r\nhistory2\r\nhistory3\r\nhistory4\r\n");

@@ -1,40 +1,10 @@
-/**
- * message-window — 历史消息的服务端「按需加载」（尾部窗口 + 往前翻页）。
- *
- * 为什么在传输层做：四个引擎（pi / DSH / claude / durable）各有一条发快照的
- * 路径，各自实现窗口化必然三处改动、以后新引擎还会漏。这里挂在 `server/index.ts`
- * 每个连接唯一的 `send` 漏斗上，引擎侧零改动，所有引擎（含第三方扩展）口径一致。
- *
- * 只做三件事：
- *   1. `snapshot`：把 `state.messages`（全量）裁成尾部窗口，回填
- *      `historyStart`（窗口首条在全量里的下标）、`historyTotal` 与 `historyGeneration`；
- *   2. `snapshot_delta`：把新追加的消息并入缓存，并回填同样的窗口元数据；
- *   3. `load_earlier_messages`：把窗口往前扩一页，回 `earlier_messages`。
- *
- * 刻意**不碰** `rev` / `baseRev`：各引擎的增量语义（DSH 的 baseRev 算法、
- * durable 的消息结构）完全不同，一旦在这里改写版本号就会把它们的自愈逻辑搞坏。
- * 往前翻页只是给客户端「补齐更早的一段」，不影响任何 rev 链。
- *
- * 窗口元数据可选以兼容旧端；新前端对带代次的分页同时校验代次与接缝，
- * 服务端发现失效代次或锚点时回 resyncRequired，由前端 get_state 重建基线。
- */
 import { randomUUID } from "node:crypto";
 import type { ServerMessage, UiMessage } from "./protocol.js";
 
-/** 尾部窗口条数（缺省 300 条）。 */
 export const DEFAULT_HISTORY_WINDOW = 300;
-/** 尾部窗口字符预算（缺省 150 万字符 ≈ 3MB JSON）。
- *
- *  只按条数裁不够用：一条巨型 tool 输出就能把几十条普通消息顶下去——实测一份
- *  287 条、17MB 的转录序列化后仍有 4MB，按条数（300）根本裁不动。所以从尾部
- *  往前累加**字符长度**（只读每个字符串的 `.length`，O(block 数)，不展开内容），超预算即停。
- */
 export const DEFAULT_HISTORY_CHARS = 1_500_000;
-/** 「加载更早」单页条数。 */
 export const DEFAULT_HISTORY_PAGE = 30;
-/** 单次翻页上限，防止一条消息把几千条历史一次拉下来。 */
 const MAX_PAGE = 2000;
-/** 最多为几个对话保留全量缓存（LRU）—— 引用的是引擎已序列化好的对象，只有指针开销。 */
 const MAX_CACHED_CONVERSATIONS = 64;
 
 export interface LoadEarlierOptions {
@@ -47,11 +17,8 @@ export interface LoadEarlierOptions {
 }
 
 export interface MessageWindowConfig {
-	/** 尾部窗口条数；<= 0 表示关闭窗口化（全量下发，与旧行为一致）。 */
 	windowSize: number;
-	/** 尾部窗口字符预算；<= 0 = 只按条数裁剪。 */
 	charBudget: number;
-	/** 「加载更早」缺省页大小。 */
 	pageSize: number;
 }
 
@@ -62,7 +29,6 @@ const DEFAULT_CONFIG: MessageWindowConfig = {
 	pageSize: DEFAULT_HISTORY_PAGE,
 };
 
-/** 从环境变量读窗口配置：`PI_WEB_HISTORY_WINDOW`（条数；0/off/false/no = 关闭）。 */
 export function readMessageWindowConfig(env: NodeJS.ProcessEnv): MessageWindowConfig {
 	const raw = (env.PI_WEB_HISTORY_WINDOW ?? "").trim().toLowerCase();
 	if (raw === "0" || raw === "off" || raw === "false" || raw === "no") return OFF_CONFIG;
@@ -72,13 +38,6 @@ export function readMessageWindowConfig(env: NodeJS.ProcessEnv): MessageWindowCo
 	return { ...DEFAULT_CONFIG, windowSize: Math.floor(n) };
 }
 
-/**
- * 本轮窗口起点（纯函数，便于单测）。
- *
- * `prevStart` 是上一次下发的起点（新对话传 -1）。起点只允许**单调不增**：
- * 客户端可能已经往前翻过几页，若某次全量快照把起点推回去（比如先 200 后 400），
- * 客户端会凭空丢掉已经看过的历史。消息总数变少（压缩重写）时以尾部窗口为准。
- */
 export function computeWindowStart(prevStart: number, total: number, windowSize: number): number {
 	if (windowSize <= 0) return 0;
 	const tail = Math.max(0, total - windowSize);
@@ -86,14 +45,11 @@ export function computeWindowStart(prevStart: number, total: number, windowSize:
 	return Math.min(prevStart, tail);
 }
 
-/** 单条消息的字符量估算：只累加各文本字段的 `.length`（每条 O(block 数)，不展开内容）。 */
 export function estimateMessageChars(m: UiMessage): number {
 	let n = 0;
 	const content = (m as { content?: readonly Record<string, unknown>[] }).content;
 	if (Array.isArray(content)) {
 		for (const b of content) {
-			// dataUrl：截图类 toolResult 是真正的重量级（实测一份长会话的 4MB JSON 里
-			// 3.4MB 全来自三张整页截图），漏掉它字符预算就形同虚设。
 			for (const k of ["text", "thinking", "argumentsText", "output", "command", "dataUrl", "summary"]) {
 				const v = b[k];
 				if (typeof v === "string") n += v.length;
@@ -105,10 +61,6 @@ export function estimateMessageChars(m: UiMessage): number {
 	return n;
 }
 
-/**
- * 首次计算窗口起点：条数上限与字符预算取**更严**的那个，且至少保留最后一条消息。
- *  `windowSize <= 0` 时返回 0（窗口化关闭）。
- */
 export function pickWindowStart(
 	messages: readonly UiMessage[],
 	cfg: Pick<MessageWindowConfig, "windowSize" | "charBudget">,
@@ -127,26 +79,17 @@ export function pickWindowStart(
 }
 
 interface ConvWindow {
-	/** 全量消息（直接引用引擎序列化出来的 UiMessage，不复制内容）。 */
 	full: UiMessage[];
-	/** 已下发窗口的起点下标。 */
 	start: number;
 	generation: string;
-	/** Copy IDs so in-place source array edits cannot conceal a history rewrite. */
 	ids: string[];
 }
 
-/**
- * 连接级历史窗口。每个 socket（= 每个标签页）一份，`accept()` 包在 send 之前，
- * `loadEarlier()` 由 WS 分发层直接调用。
- */
 export class MessageWindowTap {
 	private readonly convs = new Map<string, ConvWindow>();
-	/** 最近一次快照所属的对话 —— `load_earlier_messages` 不带 id，按「当前对话」服务。 */
 	private lastConversationId = "";
 	private scope = "";
 
-	/** Local conversation IDs are unique only within an execution owner. */
 	setScope(scope: string): void {
 		if (this.scope === scope) return;
 		this.scope = scope;
@@ -163,7 +106,6 @@ export class MessageWindowTap {
 		return this.cfg.windowSize > 0;
 	}
 
-	/** 引擎消息入口：窗口化 snapshot/delta，其余原样透传。 */
 	accept(msg: ServerMessage): void {
 		if (!this.enabled) {
 			this.send(msg);
@@ -190,7 +132,6 @@ export class MessageWindowTap {
 		if (msg.type === "snapshot_delta") {
 			const entry = this.convs.get(msg.conversationId);
 			if (!entry) {
-				// 没见过完整基线（重连后先来增量）：原样透传，客户端会凭 rev 缺口自愈。
 				this.send(msg);
 				return;
 			}
@@ -213,26 +154,15 @@ export class MessageWindowTap {
 		this.send(msg);
 	}
 
-	/**
-	 * 按需回水：从运行时或存储中恢复某个会话的全量消息基线，
-	 * 供 LRU 逐出、冷启动或跨连接无快照状态下立即恢复翻页服务能力。
-	 */
 	rehydrate(convId: string, full: UiMessage[], start?: number): void {
 		const entry = this.entry(convId);
 		const fresh = entry.start < 0;
 		this.updateBaseline(entry, full);
-		// Legacy clients may restore a numeric cursor on a fresh cache. Modern
-		// clients must first obtain its new generation through get_state.
 		if (fresh && start !== undefined && Number.isFinite(start) && start >= 0) {
 			entry.start = Math.min(full.length, start);
 		}
 	}
 
-	/** 客户端往上翻页：把窗口起点往前扩 `count` 条（`all` = 一路拉到最早）。
-	 *  - `conversationId`: 会话 ID（缺省回退最近一次快照会话）；
-	 *  - `beforeId`: 客户端首条消息的 ID（优先使用该不可变锚点，不受压缩/重试导致的下标漂移影响）；
-	 *  - `before`: 客户端当前窗口起点下标（自描述游标，entry 丢失或失忆时作为截断右边界）；
-	 *  返回 boolean: true = 已命中并下发 earlier_messages; false = entry 未命中（调用方可尝试回水）。 */
 	loadEarlier(
 		countOrOpts?: number | LoadEarlierOptions,
 		all?: boolean,
@@ -270,10 +200,6 @@ export class MessageWindowTap {
 			});
 			return true;
 		}
-		// 确定翻页右边界（end）：
-		// 1. 使用已校验的消息 ID beforeId 定位（失效锚点已在上方拒绝）；
-		// 2. 未提供锚点时兼容客户端自描述下标 before；
-		// 3. 最后回退服务端自身记录的 entry.start（若小于 0 则说明未初始化，回退 total）。
 		let end = entry.start >= 0 ? entry.start : total;
 		if (anchor !== undefined) {
 			end = anchor;
@@ -301,14 +227,11 @@ export class MessageWindowTap {
 	private updateBaseline(entry: ConvWindow, full: UiMessage[]): void {
 		const rewritten = entry.ids.length > full.length || entry.ids.some((id, i) => full[i]?.id !== id);
 		if (rewritten) entry.generation = randomUUID();
-		// Appends and repeated snapshots must not re-expand a character-limited
-		// baseline. Only explicit pagination expands it; rewrites start afresh.
 		if (entry.start < 0 || rewritten) entry.start = pickWindowStart(full, this.cfg);
 		entry.full = full;
 		entry.ids = full.map((m) => m.id);
 	}
 
-	/** 取（或建）对话窗口；LRU 超限时淘汰最久未用的那个。 */
 	private entry(convId: string): ConvWindow {
 		const hit = this.convs.get(convId);
 		if (hit) {

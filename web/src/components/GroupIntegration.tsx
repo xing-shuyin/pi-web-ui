@@ -93,7 +93,6 @@ export function GroupIntegration({
 		}
 	}, [disabled]);
 
-	// Fetch only when opened; each operation owns its controller and generation.
 	useEffect(() => {
 		if (!isOpen) return;
 		const generation = ++generationRef.current;
@@ -129,7 +128,6 @@ export function GroupIntegration({
 		};
 	}, [isOpen, roomId, conversationId, delivery.id, delivery.commit, delivery.artifactRef?.artifactDigest]);
 
-	// Recovery observes an existing operation; it never repeats apply or resume.
 	const pendingPublication = publicationPending(activeIntegration);
 	useEffect(() => {
 		if (
@@ -228,7 +226,6 @@ export function GroupIntegration({
 		zh,
 	]);
 
-	// 准备集成（在隔离 worktree 中检出并尝试预合并）
 	async function handlePrepare() {
 		if (disabled || busy || !targetBotId || !canStartNew) return;
 		const generation = ++generationRef.current;
@@ -263,7 +260,6 @@ export function GroupIntegration({
 		}
 	}
 
-	// Keep the browser deadline outside the server's verification and stop deadlines.
 	async function handleVerify() {
 		if (disabled || busy || !activeIntegration || !canVerify) return;
 		const commandsToRun = [...(activeIntegration.verificationPlan?.commands ?? authorizedCommands ?? selectedCommands)];
@@ -301,7 +297,6 @@ export function GroupIntegration({
 		} catch (err) {
 			if (!ctrl.signal.aborted && generation === generationRef.current) {
 				setError(err instanceof Error ? err.message : String(err));
-				// A failed response may still have frozen a plan or saved a verification.
 				try {
 					const refreshed = await request<{ integrations: DeviceIntegration[] }>(
 						basePath,
@@ -328,7 +323,6 @@ export function GroupIntegration({
 		}
 	}
 
-	// Every write requires an explicit action. A lost response only triggers observation.
 	async function handleApply() {
 		if (disabled || busy || !activeIntegration || !canApply) return;
 		const generation = ++generationRef.current;
@@ -369,9 +363,7 @@ export function GroupIntegration({
 				if (current.publishReceipt || (current.publishStop?.closed && current.publishStop.stopConfirmed))
 					setError(current.error ?? "");
 			}
-		} catch {
-			/* Keep the original transport error; never infer no effect. */
-		}
+		} catch {}
 	}
 
 	async function handlePublicationAction(action: "reconcile" | "resume") {
@@ -406,7 +398,6 @@ export function GroupIntegration({
 		}
 	}
 
-	// 取消集成
 	async function handleCancel() {
 		if (disabled || busy || !activeIntegration) return;
 		const generation = ++generationRef.current;
@@ -707,7 +698,6 @@ export function GroupIntegration({
 							)}
 						</div>
 
-						{/* 冲突预览 */}
 						{isConflict && activeIntegration.conflicts && (
 							<div style={{ background: "rgba(244, 63, 94, 0.1)", padding: "0.5rem", borderRadius: "4px" }}>
 								<strong style={{ color: "var(--red, #f43f5e)", fontSize: "0.85rem" }}>
@@ -731,7 +721,6 @@ export function GroupIntegration({
 							</div>
 						)}
 
-						{/* 差异预览 */}
 						{activeIntegration.diff && !isConflict && (
 							<details style={{ fontSize: "0.85rem", margin: "0.25rem 0" }}>
 								<summary>{zh ? "集成 Diff 预览" : "Integration Diff Preview"}</summary>
@@ -750,7 +739,6 @@ export function GroupIntegration({
 							</details>
 						)}
 
-						{/* 显式验证命令区域（绝不自动执行自述命令） */}
 						{canVerify && (
 							<div
 								style={{
@@ -897,7 +885,6 @@ export function GroupIntegration({
 							</button>
 						)}
 
-						{/* 最终合并确认按钮：用户明确确认后才写入目标 branch */}
 						{canApply && (
 							<div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
 								<button

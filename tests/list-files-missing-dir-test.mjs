@@ -1,13 +1,3 @@
-/**
- * Issue #74 regression: listing a directory that was deleted/renamed must
- * degrade to an empty listing + a "目录不存在" notice, NOT crash the whole
- * server with an unhandled ENOENT rejection.
- *
- * The crash was POSIX-only (readDirForUI re-threw the readdir error off
- * Windows, listFiles was fire-and-forget → unhandled rejection killed the
- * process). CI runs this on ubuntu so the regression is caught there; on
- * win32 it still asserts the common graceful-degradation contract.
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -59,7 +49,6 @@ let server = spawn("node", ["dist/server/index.js"], {
 let serverErr = "";
 const attachErr = () => (server.stderr.on("data", (d) => (serverErr += d.toString())), void 0);
 attachErr();
-// Windows 下反复起停同一端口可能偶发释放延迟：超时后清一次端口并重新拉起。
 for (let attempt = 0; attempt < 2 && !(await portUp(PORT)); attempt++) {
 	for (let i = 0; i < 40 && !(await portUp(PORT)); i++) await sleep(250);
 	if (await portUp(PORT)) break;
@@ -88,7 +77,6 @@ if (!(await portUp(PORT))) {
 
 const clientId = randomUUID();
 const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-/** files responses in arrival order. */
 const listResponses = [];
 const notices = [];
 ws.on("message", (d) => {
@@ -104,7 +92,6 @@ ws.on("message", (d) => {
 ws.on("open", () => ws.send(JSON.stringify({ type: "hello", clientId })));
 await sleep(800);
 
-// 1) Normal listing of the soon-to-vanish directory.
 ws.send(JSON.stringify({ type: "list_files", path: "documents/review" }));
 let t0 = Date.now();
 while (Date.now() - t0 < 8000 && listResponses.filter((m) => m.path === "documents/review").length < 1)
@@ -112,7 +99,6 @@ while (Date.now() - t0 < 8000 && listResponses.filter((m) => m.path === "documen
 const first = listResponses.filter((m) => m.path === "documents/review").pop();
 check("initial listing returns the file", first && first.entries.length === 1 && first.entries[0].name === "keep.txt");
 
-// 2) Delete the directory, then refresh the listing.
 rmSync(GONE_DIR, { recursive: true, force: true });
 ws.send(JSON.stringify({ type: "list_files", path: "documents/review" }));
 t0 = Date.now();
@@ -131,7 +117,6 @@ check(
 	JSON.stringify(notices.map((n) => n.textEn ?? n.text)),
 );
 
-// 3) The process must still be alive and serve further requests (root listing).
 const alive = server.exitCode === null && (await portUp(PORT));
 ws.send(JSON.stringify({ type: "list_files", path: undefined }));
 t0 = Date.now();

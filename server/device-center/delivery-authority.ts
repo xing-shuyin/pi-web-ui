@@ -7,7 +7,6 @@ function conflict(message: string): never {
 	throw Object.assign(new Error(message), { status: 409 });
 }
 
-/** Contract authority spans conversations within its owning account and room. */
 export function assertLatestContract(state: HubState, task: HubTask): void {
 	const contract = task.contract;
 	if (!contract) conflict("Artifact contract missing");
@@ -90,14 +89,12 @@ export function assertDeliveryAuthority(state: HubState, delivery: DeviceDeliver
 		conflict("Delivery artifact subject changed");
 	return task;
 }
-/** Legacy records have no durable CAS identity: preserve their uncertainty for manual recovery. */
 export function isLegacyPublicationUnknown(integration: DeviceIntegration): boolean {
 	return (
 		!integration.publishIntent &&
 		(integration.status === "applying" || !!integration.error?.startsWith("Apply failed; check target outcome:"))
 	);
 }
-/** Effect receipts do not prove a previously started Git child has stopped. */
 export function hasOpenPublication(integration: DeviceIntegration): boolean {
 	return (
 		!!integration.publishIntent &&

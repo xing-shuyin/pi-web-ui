@@ -133,7 +133,6 @@ export function validInteractionProjection(value: unknown, binding: InteractionB
 		)
 	);
 }
-/** Holds native IDs locally. Neither Hub nor browser can supply a native WS frame. */
 export function createHumanInteractionBridge(
 	binding: InteractionBinding,
 	options: {
@@ -159,11 +158,9 @@ export function createHumanInteractionBridge(
 			return;
 		}
 		if (message.type !== "question_pending" && message.type !== "tool_approval_pending") return;
-		// Missing conversation/foreign owner/global asks must stay local.
 		if (message.conversationId !== options.conversationId || message.global || message.owner) return;
 		const kind = message.type === "question_pending" ? "question" : "approval";
 		if (consumed.has(`${kind}:${message.id}`)) return;
-		// Stop projection after the per-execution consumption budget instead of forgetting tombstones.
 		if (consumed.size >= 256) return;
 		if ([...pending.values()].some((v) => v.nativeId === message.id && v.item.kind === kind)) return;
 		const item: TaskInteraction = {
@@ -255,7 +252,7 @@ export function createHumanInteractionBridge(
 				};
 			}
 			consumed.add(`${v.item.kind}:${v.nativeId}`);
-			pending.delete(value.interactionId); // Consume before calling send: duplicate/reentrant answers fail closed.
+			pending.delete(value.interactionId);
 			options.send(frame);
 			publish();
 			return true;

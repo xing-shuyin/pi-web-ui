@@ -1,6 +1,3 @@
-/**
- * 多源 TTS 语音插件前端界面与全局通用提供者注册
- */
 export default {
 	mount(el, ctx) {
 		el.innerHTML = `
@@ -141,35 +138,12 @@ export default {
 		const audioPlayer = el.querySelector("#audio-player");
 		const playerContainer = el.querySelector("#player-container");
 
-		const DOUBAO_VOICES = [
-			{ id: "yangguang", name: "阳光青年 (朝气男声)" },
-			{ id: "junyu", name: "磁性俊宇 (暖心男声)" },
-			{ id: "nanda", name: "清爽男大 (活力少年)" },
-			{ id: "taozi", name: "温柔桃子 (经典女声)" },
-			{ id: "tianmei", name: "阳光甜妹 (生动甜美)" },
-			{ id: "xiaotang", name: "知性小棠 (知性温柔)" },
-			{ id: "shuangkuai", name: "北京大妞 (爽快大方)" },
-			{ id: "bazong", name: "冷酷霸总 (特色音色)" },
-			{ id: "bingjiao", name: "病娇少爷 (特色音色)" },
-		];
-
-		const DEEPSEEK_VOICES = [
-			{ id: "echo", name: "白浪 Echo (明朗男声)" },
-			{ id: "tide", name: "暗潮 Tide (低沉男声)" },
-			{ id: "mira", name: "贝壳 Mira (活泼女声)" },
-			{ id: "stella", name: "海星 Stella (俏皮女声)" },
-		];
-
 		function updateSpeakerOptions() {
-			const engine = selEngine.value;
-			const list = engine === "deepseek" ? DEEPSEEK_VOICES : DOUBAO_VOICES;
-			selSpeaker.innerHTML = list.map((v) => `<option value="${v.id}">${v.name}</option>`).join("");
-			if (engineRiskTip) {
-				engineRiskTip.style.display = engine === "deepseek" ? "block" : "none";
-			}
+			selSpeaker.replaceChildren(new Option("默认音色", ""));
+			if (engineRiskTip) engineRiskTip.style.display = selEngine.value === "deepseek-tts" ? "block" : "none";
+			ctx.send({ action: "get-voices", engine: selEngine.value });
 		}
 		selEngine.onchange = updateSpeakerOptions;
-		updateSpeakerOptions();
 
 		function refreshStatus() {
 			ctx.send({ action: "get-status" });
@@ -177,6 +151,19 @@ export default {
 
 		const off = ctx.onData((msg) => {
 			if (!msg) return;
+			if (msg.engines) {
+				const previous = ["doubao", "deepseek"].includes(selEngine.value) ? `${selEngine.value}-tts` : selEngine.value;
+				selEngine.replaceChildren(...msg.engines.map((engine) => new Option(engine.label, engine.id)));
+				if (msg.engines.some((engine) => engine.id === previous)) selEngine.value = previous;
+				updateSpeakerOptions();
+			}
+			if (msg.type === "voices-response" && msg.engine === selEngine.value) {
+				selSpeaker.replaceChildren(
+					new Option("默认音色", ""),
+					...(msg.voices || []).map((voice) => new Option(voice.label, voice.id)),
+				);
+				if (msg.error) speakStatus.textContent = msg.error;
+			}
 
 			if (msg.type === "status-response" || msg.type === "credentials-updated") {
 				if (msg.hasDoubao || msg.hasDoubaoApiKey) {
@@ -209,7 +196,8 @@ export default {
 				if (msg.success && msg.audioBase64) {
 					speakStatus.innerText = "合成成功！";
 					speakStatus.style.color = "#22c55e";
-					const mime = msg.format === "wav" ? "audio/wav" : "audio/aac";
+					const mime =
+						{ wav: "audio/wav", mp3: "audio/mpeg", aac: "audio/aac", ogg: "audio/ogg" }[msg.format] || "audio/wav";
 					audioPlayer.src = `data:${mime};base64,${msg.audioBase64}`;
 					playerContainer.style.display = "block";
 					audioPlayer.play().catch(() => {});
@@ -231,207 +219,18 @@ export default {
 			if (confirm("确定清空本地保存的凭据吗？")) ctx.send({ action: "clear-credentials" });
 		};
 
-		btnSpeak.onclick = async () => {
+		btnSpeak.onclick = () => {
 			const text = el.querySelector("#inp-text").value.trim();
 			if (!text) return;
-			const engine = selEngine.value;
-			const speaker = selSpeaker.value;
-
 			btnSpeak.disabled = true;
-			speakStatus.innerText =
-				engine === "deepseek"
-					? "正在请求 DeepSeek 语音（需计算 PoW 与生成回复，约 3 秒）..."
-					: "正在请求豆包语音合成...";
-			speakStatus.style.color = "#a1a1aa";
-
-			try {
-				const res = await fetch("/plugins-api/tts/speak", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ text, engine, speaker }),
-				});
-				const d = await res.json();
-				btnSpeak.disabled = false;
-				if (d.ok && d.audioBase64) {
-					speakStatus.innerText = "合成成功！";
-					speakStatus.style.color = "#22c55e";
-					const mime = d.format === "wav" ? "audio/wav" : "audio/aac";
-					audioPlayer.src = `data:${mime};base64,${d.audioBase64}`;
-					playerContainer.style.display = "block";
-					audioPlayer.play().catch(() => {});
-				} else {
-					speakStatus.innerText = `合成失败: ${d.error || "未知错误"}`;
-					speakStatus.style.color = "#ef4444";
-				}
-			} catch (err) {
-				btnSpeak.disabled = false;
-				speakStatus.innerText = `请求失败: ${err.message}`;
-				speakStatus.style.color = "#ef4444";
-			}
+			speakStatus.textContent = "正在合成…";
+			ctx.send({ action: "test-speak", text, engine: selEngine.value, speaker: selSpeaker.value });
 		};
 
 		refreshStatus();
 
-		// ── 注册到系统全局通用 TTS 提供者体系 ────────────────────────────
-		const unregs = [];
-		const host = typeof window !== "undefined" ? window.__piWebUiHost : null;
-		if (host?.ttsProviders?.register) {
-			function splitSentences(rawText) {
-				const raw = (rawText || "")
-					.split(/(?<=[。！？!?；;\n])/g)
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0);
-
-				const result = [];
-				for (const s of raw) {
-					if (s.length > 80) {
-						const sub = s
-							.split(/(?<=[，,])/g)
-							.map((x) => x.trim())
-							.filter(Boolean);
-						result.push(...sub);
-					} else {
-						result.push(s);
-					}
-				}
-				return result.length > 0 ? result : [rawText];
-			}
-
-			function createPipelinePlayer(engineKey, defaultSpeaker) {
-				return ({ text, rate, voiceURI, onStart, onEnd, onError }) => {
-					const sentences = splitSentences(text);
-					let currentAudio = null;
-					let cancelled = false;
-					let currentIndex = 0;
-					let hasTriggeredStart = false;
-					const cache = new Map();
-
-					function fetchSentenceAudio(index) {
-						if (index >= sentences.length || cancelled) return null;
-						if (cache.has(index)) return cache.get(index);
-
-						const p = fetch("/plugins-api/tts/speak", {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								text: sentences[index],
-								engine: engineKey,
-								speaker: voiceURI || defaultSpeaker,
-								speed: (rate || 1) - 1.0,
-							}),
-						})
-							.then((r) => r.json())
-							.then((d) => {
-								if (cancelled) return null;
-								if (!d.ok || !d.audioBase64) {
-									throw new Error(d.error || "合成失败");
-								}
-								const mime = d.format === "wav" ? "audio/wav" : "audio/aac";
-								const a = new Audio(`data:${mime};base64,` + d.audioBase64);
-								a.playbackRate = Math.max(0.5, Math.min(2.0, rate || 1));
-								return a;
-							});
-
-						cache.set(index, p);
-						return p;
-					}
-
-					async function playNext() {
-						if (cancelled) return;
-						if (currentIndex >= sentences.length) {
-							onEnd?.();
-							return;
-						}
-
-						const idx = currentIndex;
-						if (idx + 1 < sentences.length) {
-							fetchSentenceAudio(idx + 1);
-						}
-
-						try {
-							const audio = await fetchSentenceAudio(idx);
-							if (cancelled || !audio) return;
-
-							currentAudio = audio;
-							audio.onplay = () => {
-								if (!hasTriggeredStart) {
-									hasTriggeredStart = true;
-									onStart?.();
-								}
-							};
-
-							audio.onended = () => {
-								if (cancelled) return;
-								currentIndex++;
-								playNext();
-							};
-
-							audio.onerror = () => {
-								if (!cancelled) {
-									currentIndex++;
-									if (currentIndex < sentences.length) {
-										playNext();
-									} else {
-										onError?.(new Error("音频播放中断"));
-									}
-								}
-							};
-
-							await audio.play();
-						} catch (err) {
-							if (!cancelled) {
-								currentIndex++;
-								if (currentIndex < sentences.length) {
-									playNext();
-								} else {
-									onError?.(err);
-								}
-							}
-						}
-					}
-
-					playNext();
-
-					return () => {
-						cancelled = true;
-						if (currentAudio) {
-							try {
-								currentAudio.pause();
-								currentAudio.src = "";
-							} catch {}
-							currentAudio = null;
-						}
-						cache.clear();
-					};
-				};
-			}
-
-			// 注册 1：豆包语音提供者
-			unregs.push(
-				host.ttsProviders.register({
-					id: "doubao-tts",
-					label: "豆包语音 (Doubao Voice)",
-					labelEn: "Doubao Voice",
-					getVoices: () => DOUBAO_VOICES.map((v) => ({ voiceURI: v.id, name: v.name, lang: "zh-CN" })),
-					play: createPipelinePlayer("doubao", "yangguang"),
-				}),
-			);
-
-			// 注册 2：DeepSeek 语音提供者
-			unregs.push(
-				host.ttsProviders.register({
-					id: "deepseek-tts",
-					label: "DeepSeek 官方语音 (⚠️易封号风险)",
-					labelEn: "DeepSeek Voice (⚠️Risk of Ban)",
-					getVoices: () => DEEPSEEK_VOICES.map((v) => ({ voiceURI: v.id, name: v.name, lang: "zh-CN" })),
-					play: createPipelinePlayer("deepseek", "echo"),
-				}),
-			);
-		}
-
 		return () => {
 			off?.();
-			unregs.forEach((fn) => fn?.());
 		};
 	},
 };

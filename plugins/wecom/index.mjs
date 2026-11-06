@@ -1,19 +1,9 @@
-/**
- * plugins/wecom/index.mjs
- * WeCom (企业微信) integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto).
- * Inspired by dsh-im: duplex bot chat, structure-aware Markdown chunks,
- * isolated multi-turn sessions, access control whitelist, and webhook delivery.
- */
-
 import { createHash, randomUUID } from "node:crypto";
 import { SessionRoutes, accountKey, identityKey, scopeKey } from "./session-routes.mjs";
 
 export const SECRET_CORP_SECRET = "wecom.corpSecret";
 export const SECRET_WEBHOOK_KEY = "wecom.webhookKey";
 
-/** 按 UTF-8 字节数切块（企微 markdown content 上限 4096 字节——按字符数切
- *  2048 个汉字 ≈ 6KB UTF-8 必超）。 */
 function chunkByUtf8Bytes(text, maxBytes) {
 	const input = String(text || "");
 	if (Buffer.byteLength(input, "utf8") <= maxBytes) return [input];
@@ -31,7 +21,6 @@ function chunkByUtf8Bytes(text, maxBytes) {
 	return chunks;
 }
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -40,7 +29,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from sender's user ID. */
 export function peerAccountId(userId, prefix = "wc") {
 	const raw = String(userId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -48,9 +36,6 @@ export function peerAccountId(userId, prefix = "wc") {
 	return `${prefix}_${hash}`;
 }
 
-/**
- * Build WeCom message payload for Webhook or Internal App message.
- */
 export function buildWecomMessage({ msgType = "markdown", title = "通知", text = "" } = {}) {
 	const safeTitle = String(title || "通知").trim();
 	const safeText = String(text || "").trim();
@@ -70,9 +55,6 @@ export function buildWecomMessage({ msgType = "markdown", title = "通知", text
 	};
 }
 
-/**
- * WecomBotBridge manages duplex message exchange between WeCom and pi-web-ui agent host.
- */
 export class WecomBotBridge {
 	/**
 	 * @param {object} options
@@ -104,7 +86,7 @@ export class WecomBotBridge {
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'waiting_callback' | 'error'
+			state: "idle",
 			messagesReceived: 0,
 			messagesReplied: 0,
 			lastMessageAt: null,
@@ -211,7 +193,6 @@ export class WecomBotBridge {
 			const command = await this.handleSlashCommand(text, { userId: scope, webhookKey, cfg });
 			if (!command || command === true) return;
 			if ((this.epochs.get(scope) || 0) !== command.epoch) return;
-			// A reset's prompt is literal input, including slash-prefixed text.
 			text = command.prompt;
 		}
 		if (this.dispatching.has(scope) || [...this.pendingRuns.values()].some((r) => r.scope === scope)) {
@@ -289,8 +270,6 @@ export class WecomBotBridge {
 	}
 
 	resetScope(scope) {
-		// Rotate the host account too: omitting conversationId alone can reuse
-		// the host account's old conversation and pending queue.
 		this.sessionRoutes.reset(scope);
 		this.epochs.set(scope, this.sessionRoutes.state(scope).epoch);
 		this.userConversations.delete(scope);
@@ -492,9 +471,6 @@ export class WecomBotBridge {
 						? "任务执行失败（无文本输出）。"
 						: "✅ 任务已完成（无文本输出）。");
 
-			// 企微群机器人 markdown content 上限 4096 **字节**：按 2048 字符切块，
-			// 纯中文时 2048 字 ≈ 6KB UTF-8 → 平台返回 errcode≠0 直接丢——按字节数
-			// 切（3900 字节内）
 			const chunks = chunkByUtf8Bytes(finalText, 3900);
 			const key = run.webhookKey;
 			if (!key) {
@@ -519,7 +495,6 @@ export class WecomBotBridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.corpSecret;
@@ -529,7 +504,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingCorpSecret = savedSecrets[SECRET_CORP_SECRET] || prev.corpSecret || "";
@@ -603,7 +577,6 @@ export default async function activate(host) {
 		return json.access_token;
 	}
 
-	// Register AI tool "wecom" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "wecom",
 		description: "Post notifications, markdown status reports, or alerts to WeChat Work (WeCom) via webhook.",
@@ -650,7 +623,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

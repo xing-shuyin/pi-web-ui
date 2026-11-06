@@ -12,7 +12,6 @@ export interface CanvasTimelineProps {
 	onLocate: (id: string) => void;
 }
 
-/** P1：执行时间线 — 用节点日志起止时间估算耗时，用 currentLoopCount/现状展示重试 */
 export function CanvasTimeline({ nodes, edges, logs, onRunNode, onLocate }: CanvasTimelineProps) {
 	const t = useT();
 	const locale = useLocale();

@@ -4,7 +4,6 @@ import { filterForkedParentSessions } from "../../server/session-parser.js";
 
 type Info = { path: string; parentSessionPath?: string; tag?: number };
 
-// 冻结优化前的全图扫描实现，作为独立语义基准。
 function legacyFilter<T extends Info>(infos: T[], showForkedParents = false): T[] {
 	if (showForkedParents || infos.length <= 1) return infos;
 	const byKey = new Map<string, T>();
@@ -68,7 +67,6 @@ describe("fork filter linear propagation", () => {
 			paths.filter((path) => path !== parentSessionPath).map((path) => ({ path, parentSessionPath })),
 		);
 		for (let mask = 0; mask < 2 ** edges.length; mask++) {
-			// Base rows plus edge rows exercise duplicate paths and multiple parents.
 			const selected = edges.filter((_, bit) => mask & (1 << bit));
 			check([...paths.map((path) => ({ path })), ...selected]);
 			check([...selected].reverse().concat(paths.map((path) => ({ path, parentSessionPath: path }))));
@@ -112,7 +110,6 @@ describe("fork filter linear propagation", () => {
 	it("bounds Set.has calls linearly on adversarial long chains without leaking instrumentation", () => {
 		const originalHas = Set.prototype.has;
 		for (const size of [1024, 4096, 16384]) {
-			// Root-first edge order forces the legacy implementation to rescan for each ancestor.
 			const infos = Array.from({ length: size }, (_, index) => ({
 				path: `/chain/${index}`,
 				parentSessionPath: index ? `/chain/${index - 1}` : undefined,

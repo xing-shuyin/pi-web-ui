@@ -60,20 +60,16 @@ describe("group-view-state: GroupNotificationManager", () => {
 		const manager = new GroupNotificationManager();
 		expect(manager.getPendingInteractionsCount()).toBe(0);
 
-		// First arrival
 		expect(manager.onInteractionReceived("room-1", "task-1", "req-1")).toBe(true);
 		expect(manager.getPendingInteractionsCount("room-1")).toBe(1);
 		expect(manager.getPendingInteractionsCount("room-2")).toBe(0);
 
-		// Duplicate replay is deduplicated
 		expect(manager.onInteractionReceived("room-1", "task-1", "req-1")).toBe(false);
 		expect(manager.getPendingInteractionsCount("room-1")).toBe(1);
 
-		// Second interaction in another task
 		expect(manager.onInteractionReceived("room-1", "task-2", "req-2")).toBe(true);
 		expect(manager.getPendingInteractionsCount("room-1")).toBe(2);
 
-		// Resolving first interaction decrements count
 		manager.onInteractionResolved("room-1", "task-1", "req-1");
 		expect(manager.getPendingInteractionsCount("room-1")).toBe(1);
 	});

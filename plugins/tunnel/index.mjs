@@ -1,18 +1,3 @@
-/**
- * pi-tunnel 插件服务端 —— 反向隧道（多设备共存）+ 本机 SOCKS5 出口。
- *
- * 数据面：AI --> SOCKS5(127.0.0.1:<socksPort>) --> WS(:<wsPort>) --> 出口设备 CLI --> 目标
- * DNS 解析发生在出口设备侧（SOCKS5 域名模式），测得即该设备所在网络真实结果。
- *
- * 多设备（B档，2026-10-19 主人拍板）：所有 CLI 共存在线（不互顶），server 维护设备表；
- *   SOCKS 流量走「当前出口设备」；出口掉线自动切换到剩余在线设备；面板可手动切换。
- *   CLI 零平台代码（Node net/WebSocket），hello 上报 name/os；旧 CLI 无 os 显示「—」兼容。
- *
- * 迁自 A 档 ~/projects/pi-tunnel/server/server.mjs（回环 + HTTPS 实测通过）。
- * ⚠ 全部逻辑内联本文件：宿主 plugins_reload 只对 index.mjs 做缓存击穿（?e=<epoch>），
- *   被 index 静态 import 的本地兄弟模块会命中 Node 模块缓存导致改动不生效。
- * 源仓：~/projects/pi-tunnel/plugin/（部署位 ~/.pi-web/plugins/tunnel/，cp 同步）。
- */
 import net from "node:net";
 import os from "node:os";
 import http from "node:http";
@@ -26,8 +11,6 @@ import { createRequire } from "node:module";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// ── ws 库定位：插件与宿主同进程，从宿主入口(process.argv[1])向上解析即可命中
-// 宿主 node_modules 里的 ws —— 对任何用户的 npm -g / 本地安装环境都成立，不硬编码路径。
 function loadWs() {
 	const tries = [];
 	if (process.env.PI_TUNNEL_WS) tries.push(process.env.PI_TUNNEL_WS);
@@ -35,7 +18,7 @@ function loadWs() {
 		const hostRequire = createRequire(process.argv[1] || import.meta.url);
 		tries.push(hostRequire.resolve("ws"));
 	} catch {}
-	tries.push("ws"); // 插件目录自身/全局 node_modules 兑底
+	tries.push("ws");
 	for (const spec of tries) {
 		try {
 			return require(spec);
@@ -44,8 +27,6 @@ function loadWs() {
 	throw new Error("pi-tunnel: 找不到 ws 库（设 PI_TUNNEL_WS=<ws包路径>）");
 }
 
-// ── 纯函数区（可离线单测）─────────────────────────────────────────────────────
-/** 常时口令安全比对（SHA-256 哈希后 timingSafeEqual，消除逐字节短路时序侧信道）。 */
 export function safeTokenEqual(candidate, expected) {
 	if (typeof candidate !== "string" || typeof expected !== "string" || !expected || !candidate) return false;
 	try {
@@ -60,7 +41,6 @@ export function safeTokenEqual(candidate, expected) {
 export const WRITE_EXEC_TOOLS = ["bash", "edit", "write", "patch"];
 export const READ_TOOLS = ["read", "grep", "glob", "find"];
 
-/** 校验任务通道工具是否符合设备端能力模型约束（fsRead / fsWrite）。 */
 export function validateTaskTools(toolsStr, caps = { fsRead: true, fsWrite: false }) {
 	const tools = String(toolsStr || "")
 		.split(",")
@@ -77,19 +57,16 @@ export function validateTaskTools(toolsStr, caps = { fsRead: true, fsWrite: fals
 	return { ok: true, tools };
 }
 
-/** 过滤并校验 mesh 发送目标名称（必须合法标识符，防止路径穿越）。 */
 export function sanitizeMeshTo(to) {
 	if (typeof to !== "string") return "";
 	const s = to.trim();
 	return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
 }
 
-/** 目录浏览安全白名单检查（限制在用户目录与外置卷，禁止系统保留根路径）。 */
 export function isRestrictedBrowsePath(targetPath, homeDir = os.homedir()) {
 	if (!targetPath || typeof targetPath !== "string") return true;
 	const norm = targetPath.trim().replace(/\\/g, "/");
 
-	// 严格禁止 Unix 系统敏感目录及根目录
 	const blockedPrefixes = ["/etc", "/proc", "/sys", "/dev", "/var", "/root", "/boot", "/bin", "/sbin", "/usr"];
 	if (norm === "/" || blockedPrefixes.some((p) => norm === p || norm.startsWith(p + "/"))) {
 		return true;
@@ -98,12 +75,10 @@ export function isRestrictedBrowsePath(targetPath, homeDir = os.homedir()) {
 	const resolved = path.resolve(targetPath);
 	const home = path.resolve(homeDir);
 
-	// 允许在用户主目录或其子目录中浏览
 	if (resolved === home || resolved.startsWith(home + path.sep)) {
 		return false;
 	}
 
-	// 跨盘/外接存储卷（macOS /Volumes/*, Linux /media/*, /mnt/*, Windows X:\）
 	const plat = process.platform;
 	if (plat === "darwin" && (resolved === "/Volumes" || resolved.startsWith("/Volumes/"))) {
 		return false;
@@ -126,7 +101,6 @@ export function isRestrictedBrowsePath(targetPath, homeDir = os.homedir()) {
 	return true;
 }
 
-/** 解析 SOCKS5 CONNECT 请求（RFC1928，仅 CMD=CONNECT；ATYP 1=IPv4 3=域名；4=IPv6 不支持）。 */
 export function parseSocksConnect(buf) {
 	if (buf.length < 7 || buf[0] !== 5 || buf[1] !== 1) return null;
 	const atyp = buf[3];
@@ -138,7 +112,6 @@ export function parseSocksConnect(buf) {
 	}
 	return null;
 }
-/** 自动探测本机内网 IPv4（面板生成常驻命令用，用户零配置；跨平台）。 */
 export function detectLanIp() {
 	for (const addrs of Object.values(os.networkInterfaces())) {
 		for (const a of addrs ?? []) {
@@ -148,7 +121,6 @@ export function detectLanIp() {
 	}
 	return "";
 }
-/** HTML 转义（面板渲染设备名/OS 用，防注入习惯）。 */
 export function escHtml(s) {
 	return String(s).replace(
 		/[&<>"']/g,
@@ -169,7 +141,6 @@ export default {
 		const { WebSocketServer } = loadWs();
 		const wsPort = Number(host.getSettings().wsPort ?? 8765);
 		const socksPort = Number(host.getSettings().socksPort ?? 1080);
-		// token 首次运行自动生成（代码里不硬编码；重置走面板或 POST /rotate）
 		let token = host.storage.get("token");
 		if (!token) {
 			token = crypto.randomBytes(16).toString("hex");
@@ -177,18 +148,16 @@ export default {
 		}
 
 		const state = {
-			agents: new Map(), // aid -> { ws, name, os, since, ctrlPort }
-			activeAgentId: null, // 当前出口设备
-			conns: new Map(), // cid -> { c, replied, aid }
+			agents: new Map(),
+			activeAgentId: null,
+			conns: new Map(),
 			nextId: 1,
 			nextAid: 1,
 			totalServed: 0,
 			lastNotifyAt: 0,
-			ctrlPending: new Map(), // P4: rid -> { resolve }（面板→设备控制请求-响应）
+			ctrlPending: new Map(),
 		};
 		let ctrlSeq = 0;
-		// POST body 读取：宿主 express.json 已消费流时用 req.body（手动读会永远等不到 end → ECONNRESET，20261019 实战根因）；
-		// content-type 非 JSON（express.json 跳过）时兜底手动读。
 		const readBodyJson = (req) =>
 			new Promise((resolve) => {
 				if (req.body !== undefined) return resolve(req.body ?? {});
@@ -205,7 +174,6 @@ export default {
 				});
 				req.on("error", () => resolve({}));
 			});
-		// 面板经 server 中转到设备控制 API（复用 CLI 本机鉴权/审计，不走 SOCKS 开销）
 		const deviceCtrl = (aid, url, opts = {}, timeoutMs = 8000) =>
 			new Promise((resolve) => {
 				const ag = agentById(aid);
@@ -229,17 +197,6 @@ export default {
 				});
 				toAgent(aid, { t: "ctrl", rid, url, method: opts.method || "GET", body: opts.body });
 			});
-		// ── 模型通道（v1.2 重写）──────────────────────────────────────────────
-		// 旧版两缺陷（20261024 修复）：
-		//   ① 正则扫 client-state.json 全文取「第一个 provider/model」——命中 projectModels 里任意项目条目，并非当前会话模型
-		//   ② 标准 provider 返回 {env:{}} 只传模型 ID——设备端 pi 无凭据直接报 No API key
-		// 新版语义（模型通道 = 为设备任务挑一条可用通道，不再假装「跟随会话」），三级解析：
-		//   ① 请求级 override：POST /device/task 带 model="provider/model[/…]" → 精确解析该 provider
-		//   ② 面板手动 modelEnv（storage 三元组）——明确指定优先于自动挑选
-		//   ③ 自动枚举：models.json providers ∩ provider-keys.json，仅 openai-completions 型
-		//     （设备端 cli.mjs /task 仅对 OPENAI_* 回写设备 models.json）；baseUrl 为
-		//     127.0.0.1/localhost 时换算 lanIp——设备与本机同网段直连，流量不出公网
-		// 返回 { env, model, source, baseUrl }；可解析但语义不匹配时返回 { error }；完全失败返回 null
 		const loadModelProviders = () => {
 			const home = os.homedir();
 			const rd = (p) => {
@@ -274,7 +231,7 @@ export default {
 			if (!base) return { error: `provider ${prov} 的 baseUrl 无法换算为设备可达地址（本机无内网 IP？）` };
 			return {
 				env: { OPENAI_BASE_URL: base, OPENAI_API_KEY: apiKey },
-				model: fullModel.split("/").slice(1).join("/") || fullModel, // 剥 provider 前缀 = provider 侧模型 ID
+				model: fullModel.split("/").slice(1).join("/") || fullModel,
 				source,
 				baseUrl: base,
 			};
@@ -299,7 +256,7 @@ export default {
 				const isLocalBase = (u) => /^(https?:\/\/)(127\.0\.0\.1|localhost)/i.test(u || "");
 				const order = Object.entries(providers).sort((a, b) =>
 					isLocalBase(a[1]?.baseUrl) === isLocalBase(b[1]?.baseUrl) ? 0 : isLocalBase(a[1]?.baseUrl) ? -1 : 1,
-				); // 内网网关型优先：设备流量不出公网
+				);
 				for (const [prov, pdef] of order) {
 					if (!pdef?.models?.[0]?.id) continue;
 					const r = buildModelChannel(providers, keys, prov, pdef, `${prov}/${pdef.models[0].id}`, "auto");
@@ -308,7 +265,6 @@ export default {
 			} catch {}
 			return null;
 		};
-		// C 档 P1：审计环 + 设备能力配置（按 name 持久化，重连不丢授权）
 		const auditRing = [];
 		let devCfg = {};
 		try {
@@ -329,7 +285,6 @@ export default {
 			for (const [id, a] of state.agents) if (a.ws.readyState === 1) return id;
 			return null;
 		};
-		/** 出口掉线时自动切换到剩余在线设备；无设备则提示。 */
 		const ensureActive = () => {
 			if (agentById(state.activeAgentId)) return;
 			state.activeAgentId = pickAnyOnline();
@@ -338,8 +293,8 @@ export default {
 				notifyDebounced("info", `网络隧道：出口设备已切换到 ${nm}`);
 			}
 		};
-		const CLI_VER_PUBLISH = "p16"; // 能力版本：server 握手下发最新版，本地旧则自更新（与 assets/cli.mjs CLI_VER 同步）
-		const lanIp = detectLanIp(); // 面板生成常驻命令用（网络变化随插件重载自动更新）
+		const CLI_VER_PUBLISH = "p16";
+		const lanIp = detectLanIp();
 
 		const hostHasToken = () => {
 			if (process.env.PI_WEB_TOKEN && process.env.PI_WEB_TOKEN.trim()) return true;
@@ -357,9 +312,9 @@ export default {
 			const includeToken = opts.includeToken ?? hostHasToken();
 			return {
 				running,
-				rev: "c1-p3", // 代码版本标记：reload 后可观测新代码是否激活
+				rev: "c1-p3",
 				lanIp,
-				agentOnline: !!activeAgent(), // 兼容旧面板语义：当前出口在线
+				agentOnline: !!activeAgent(),
 				activeAgentId: state.activeAgentId,
 				devices: [...state.agents.entries()].map(([id, a]) => ({
 					id,
@@ -374,7 +329,7 @@ export default {
 				activeConns: state.conns.size,
 				totalServed: state.totalServed,
 				tokenPrefix: `${token.slice(0, 4)}…`,
-				token: includeToken ? token : "", // 宿主未设 PI_WEB_TOKEN 时脱敏保护，防止公网反代无鉴权暴露下泄露
+				token: includeToken ? token : "",
 				tokenRedacted: !includeToken,
 				wsPort,
 				socksPort,
@@ -395,10 +350,6 @@ export default {
 			} catch {}
 		};
 
-		// ── WS 汇聚 + CLI 下载（:wsPort，全网卡——主人设备经 WG 连入）──────────────
-		// ── 鉴权（上游 60daa53d 移植）：wsPort 全网卡暴露，/cli 与 /status 必须校验 token，
-		// 否则任意同网可达主机都能拿到内嵌完整 token 的 CLI 代码冒充设备、踢掉真设备、劫持 SOCKS 出口。
-		// 宿主 route 通道（/plugins-api/tunnel/*）由面板自身鉴权体系保护，不加此处。
 		const tnlDeny = (res) => {
 			res.writeHead(401, { "content-type": "text/plain" });
 			res.end("unauthorized");
@@ -446,7 +397,7 @@ export default {
 			wss.handleUpgrade(req, sock, head, (ws) => {
 				const aid = `a${state.nextAid++}`;
 				state.agents.set(aid, { ws, name: "", os: "", since: Date.now() });
-				if (!agentById(state.activeAgentId)) state.activeAgentId = aid; // 无出口时首连即出口
+				if (!agentById(state.activeAgentId)) state.activeAgentId = aid;
 				ws.on("message", (raw) => {
 					let m;
 					try {
@@ -455,7 +406,6 @@ export default {
 						return;
 					}
 					const e = state.conns.get(m.id);
-					// SOCKS 连接消息设备归属校验：防止任一已配对设备伪造/跨设备串扰其他连接
 					if (["open", "data", "end", "err", "close"].includes(m.t) && e && e.aid !== aid) {
 						auditRing.push({
 							ts: Date.now(),
@@ -467,7 +417,6 @@ export default {
 					}
 					switch (m.t) {
 						case "ping": {
-							// 应用层心跳应答（CLI 25s 一发，服务端回 pong 供其判僵尸——TCP 半开时 onclose 不触发，靠这个自愈）
 							const pa = state.agents.get(aid);
 							if (pa) {
 								try {
@@ -484,15 +433,13 @@ export default {
 								a.ctrlPort = Number(m.ctrlPort) || 0;
 								a.ver = String(m.ver || "");
 							}
-							// 同名设备：能力优先（ctrlPort>0 的 P1 版保留）——旧版重连被拒长退避，根治互踢循环
 							const twin = [...state.agents.entries()].find(
 								([oid, oa]) => oid !== aid && oa.name && oa.name === a?.name && oa.ws.readyState === 1,
 							);
 							if (twin) {
 								const [oid, oa] = twin;
-								const newFull = a.ctrlPort > 0 && !(oa.ctrlPort > 0); // 新连接有控制 API 而在线的没有 → 新版接管
+								const newFull = a.ctrlPort > 0 && !(oa.ctrlPort > 0);
 								if (!newFull) {
-									// 新连接是旧版（或在线的也是新版）：拒绝本次连接，令其长退避
 									try {
 										ws.send(JSON.stringify({ t: "kicked", reason: "同名设备已有功能更全的实例在线" }));
 									} catch {}
@@ -521,12 +468,10 @@ export default {
 								notifyDebounced("info", `网络隧道：设备 ${a?.name || aid}（${a?.os || "未知系统"}）已就绪`);
 							} catch {}
 							if (!agentById(state.activeAgentId)) state.activeAgentId = aid;
-							// 重连自动同步持久化配置（一次性标志，防 hello↔config 死循环：CLI 收 config 回 hello，server 又推 → 无限闪烁）
 							if (devCfg[a.name] && !a.cfgSent) {
 								a.cfgSent = true;
 								toAgent(aid, { t: "config", ...devCfg[a.name] });
 							}
-							// P3a: mesh 桥——设备上线刷新 registry + 积压补发
 							if (meshEnabled() && meshWatcher && a?.name) {
 								const nm = meshAgentName(a.name);
 								meshRegistry(nm, a.name, true);
@@ -534,11 +479,10 @@ export default {
 							}
 							try {
 								ws.send(JSON.stringify({ t: "ver", v: CLI_VER_PUBLISH }));
-							} catch {} // 握手下发最新 CLI 能力版本（旧版自更新；与 assets/cli.mjs 的 CLI_VER 保持一致）
+							} catch {}
 							break;
 						}
 						case "audit": {
-							// C 档 P1：CLI 批量上报的操作审计（清洗字段并钳制时间戳）
 							const nm = state.agents.get(aid)?.name || aid;
 							const items = Array.isArray(m.items) ? m.items.slice(0, 50) : [];
 							const now = Date.now();
@@ -587,7 +531,6 @@ export default {
 							}
 							break;
 						case "ctrl-resp": {
-							// P4: 设备控制响应回给等待中的面板请求（校验 aid 归属防止抢答）
 							const p = state.ctrlPending.get(m.rid);
 							if (p && p.aid === aid) {
 								state.ctrlPending.delete(m.rid);
@@ -596,7 +539,6 @@ export default {
 							break;
 						}
 						case "msg-res": {
-							// P3a: 设备 mesh 任务结果上行 → 写发起方 inbox
 							const pm = meshPending.get(m.msgId);
 							if (!pm || pm.targetAid !== aid) {
 								auditRing.push({
@@ -612,7 +554,7 @@ export default {
 
 							const dn = state.agents.get(aid)?.name || aid;
 							const nm = pm.from || meshAgentName(dn);
-							const to = pm.to; // 严格以服务端记录的发起方为准，绝不信任客户端自报的 m.to
+							const to = pm.to;
 							const text = m.ok
 								? String(m.text || "").slice(0, 8000) || "（设备端无文本回复）"
 								: `任务失败：${String(m.err || "未知错误").slice(0, 300)}`;
@@ -640,7 +582,6 @@ export default {
 					const a = state.agents.get(aid);
 					const nm = a?.name || aid;
 					state.agents.delete(aid);
-					// 该设备承载的 SOCKS 连接全部拆除
 					for (const [cid, e] of state.conns) {
 						if (e.aid !== aid) continue;
 						try {
@@ -650,26 +591,23 @@ export default {
 					}
 					ensureActive();
 					notifyDebounced("warning", `网络隧道：设备 ${nm} 已断开`);
-					// P3a: mesh 桥——设备下线标记 registry
 					if (meshEnabled() && meshWatcher) meshRegistry(meshAgentName(nm), nm, false);
 				});
 				ws.on("error", () => {});
 			});
 		});
 
-		// ── SOCKS5（仅本机）───────────────────────────────────────────────────────
 		const socksSrv = net.createServer((c) => {
 			c.on("error", () => {});
 			let stage = 0;
 			c.on("data", (buf) => {
 				if (stage === 0) {
-					// 阶段1: 方法协商（curl 分步收发不粘包，A 档实测成立）
 					if (buf[0] !== 5) return c.destroy();
 					c.write(Buffer.from([5, 0]));
 					stage = 1;
 					return;
 				}
-				c.removeAllListeners("data"); // 阶段2: CONNECT 请求
+				c.removeAllListeners("data");
 				const req = parseSocksConnect(buf);
 				if (!req) {
 					socksReply(c, 7);
@@ -682,7 +620,7 @@ export default {
 				if (!ag) {
 					socksReply(c, 5);
 					return c.destroy();
-				} // 无在线设备：拒绝，AI 侧表现为快速失败
+				}
 				const aid = state.activeAgentId;
 				const cid = `c${state.nextId++}`;
 				state.totalServed++;
@@ -696,16 +634,14 @@ export default {
 			});
 		});
 
-		// ── P3a: pi_messenger mesh 桥（设计 docs/PHASE3-MESH-DESIGN.md）────────────
-		// 纯文件 mesh：桥替设备 agent 读写 registry/inbox；发起方 wake 由其 pi-messenger watcher 自带，零改造。
 		const MESH_DIR = path.join(os.homedir(), ".pi", "agent", "messenger");
-		const meshPending = new Map(); // msgId -> { to, from, timer }
-		const meshQueue = []; // 待投递消息（设备离线时滞留，上线扫描补发）
+		const meshPending = new Map();
+		const meshQueue = [];
 		let meshBusy = false;
 		let meshWatcher = null;
 		function meshEnabled() {
 			return host.storage.get("meshEnabled") === "1";
-		} // function 声明带提升：hello/离线钩子可在 startTunnel await 让出期触发（const 箭头 TDZ 竞态已两次致 activate failed）
+		}
 		const meshAgentName = (devName) =>
 			"Remote" +
 			String(devName || "")
@@ -722,7 +658,7 @@ export default {
 				if (!online) {
 					if (fs.existsSync(f)) {
 						const j = JSON.parse(fs.readFileSync(f, "utf8"));
-						j.offline = true; // pi-messenger 忽略未知字段，安全
+						j.offline = true;
 						fs.writeFileSync(f, JSON.stringify(j, null, 2));
 					}
 					return;
@@ -752,7 +688,6 @@ export default {
 		function meshDeliver(to, fromName, text, replyTo) {
 			const safeTo = sanitizeMeshTo(to);
 			if (!safeTo) return false;
-			// 写发起方（mini 侧 pi 会话）inbox → 其 pi-messenger watcher 自动 wake（零改造）
 			try {
 				const dir = path.join(MESH_DIR, "inbox", safeTo);
 				fs.mkdirSync(dir, { recursive: true });
@@ -774,16 +709,12 @@ export default {
 			}
 		}
 		async function meshDrain() {
-			// 串行消费（防多设备/多消息并发冲突）；设备离线则滞留队列等上线扫描
-			// P3b: 按目标路由——消息所在 inbox 目录即目标设备 agent（<nm>/xxx.json），经 registry 反查设备 aid 投递；
-			// p3a 版本错误地投给 activeAgent()（单设备侥幸正确，多设备必投错）
 			if (meshBusy) return;
 			meshBusy = true;
 			try {
 				while (meshQueue.length) {
 					const item = meshQueue.shift();
 					const { file, msg, nm } = item;
-					// registry <nm>.json 里存的 devName（物理设备名）→ state.agents 里找 aid
 					let targetAid = null,
 						devName = null;
 					try {
@@ -797,9 +728,9 @@ export default {
 							}
 					if (!targetAid) {
 						meshQueue.unshift(item);
-						break; // 目标设备不在线：滞留等上线补发（meshScanInbox 会重新入队）
+						break;
 					}
-					const me = resolveModelEnv(); // mesh 任务走三级解析默认路径
+					const me = resolveModelEnv();
 					if (!me || me.error) {
 						meshDeliver(msg.from, nm, `投递失败：模型通道无法解析${me?.error ? "：" + me.error : ""}`, msg.id);
 						try {
@@ -828,7 +759,7 @@ export default {
 					if (d.status === 200) {
 						try {
 							fs.renameSync(file, file + ".done");
-						} catch {} // 投递成功即标记（server 重启不重投；结果由 msg-res 异步回）
+						} catch {}
 						meshPending.set(msgId, {
 							targetAid,
 							to: msg.from,
@@ -857,11 +788,10 @@ export default {
 		function meshEnqueueFile(fp, nm) {
 			try {
 				const msg = JSON.parse(fs.readFileSync(fp, "utf8"));
-				if (msg?.to && msg?.from && typeof msg.text === "string") meshQueue.push({ file: fp, msg, nm }); // nm = 目标设备 agent 名（P3b 路由用）
+				if (msg?.to && msg?.from && typeof msg.text === "string") meshQueue.push({ file: fp, msg, nm });
 			} catch {}
 		}
 		function meshScanInbox(nm) {
-			// 上线补发：inbox/<nm>/ 未处理消息按时间序，限最近 5 条，更旧标记跳过并回写发起方
 			try {
 				const dir = path.join(MESH_DIR, "inbox", nm);
 				const files = fs
@@ -898,7 +828,7 @@ export default {
 				if (!ag) return;
 				const nm = meshAgentName(ag.name);
 				const parts = String(fname).split("/");
-				if (parts[0] !== nm || !parts[1]?.endsWith(".json") || parts[1].endsWith(".done")) return; // 只消费设备 agent 自己的 inbox，防环
+				if (parts[0] !== nm || !parts[1]?.endsWith(".json") || parts[1].endsWith(".done")) return;
 				meshEnqueueFile(path.join(inbox, String(fname)), parts[0]);
 				meshDrain();
 			});
@@ -948,7 +878,6 @@ export default {
 			auditRing.push({ ts: Date.now(), device: "-", op: "mesh.switch", detail: on ? "enabled" : "disabled" });
 			res.end(JSON.stringify({ ok: true, enabled: on }));
 		});
-		// P3b: 设备端 mesh 会话快照（只读）——默认活跃设备，可 ?agent=<设备agent名> 指定
 		host.route("GET", "/mesh/session", async (req, res) => {
 			const u = new URL(req.url, "http://local");
 			let aid = state.activeAgentId;
@@ -968,7 +897,6 @@ export default {
 				),
 			);
 		});
-		// P3b: 重置设备端 mesh 会话（删 session.json，下次消息开新会话）
 		host.route("POST", "/mesh/reset", async (req, res) => {
 			const j = await readBodyJson(req);
 			res.setHeader("content-type", "application/json");
@@ -994,7 +922,6 @@ export default {
 			);
 		});
 
-		// ── 服务启停（面板按钮 / POST /start /stop 控制；插件激活时默认启动）────────
 		let running = false;
 		async function startTunnel() {
 			if (running) return true;
@@ -1002,7 +929,6 @@ export default {
 			const upSocks = await listenSafe(socksSrv, socksPort, "127.0.0.1", `SOCKS:${socksPort}`);
 			running = upWs || upSocks;
 			if (running) notifyDebounced("info", "网络隧道服务已启动");
-			// P3a: mesh 桥的启动移到 hello 钩子（设备上线后注册+补发），此处不依赖块级 meshEnabled
 			if (running)
 				setTimeout(() => {
 					try {
@@ -1016,7 +942,7 @@ export default {
 		}
 		function stopTunnel() {
 			if (!running) return;
-			stopMeshBridge(); // 停隧道一并关闭 mesh 桥并标记 registry 下线，防 watcher/timer 句柄泄露
+			stopMeshBridge();
 			for (const [, e] of state.conns) {
 				try {
 					e.c.destroy();
@@ -1046,7 +972,6 @@ export default {
 			notifyDebounced("info", "网络隧道服务已停止");
 		}
 
-		// 端口被占时不拖垮宿主：error 后 notify 并继续
 		const listenSafe = (srv, port, addr, name) =>
 			new Promise((resolve) => {
 				srv.once("error", (e) => {
@@ -1055,9 +980,7 @@ export default {
 				});
 				srv.listen(port, addr, () => resolve(true));
 			});
-		await startTunnel(); // 激活即运行，面板可随时停/启
-		// 心跳 + 半开检测：ping 后未回 pong 的连接判定为僵尸（进程退出未挥手/网络半开），
-		// terminate 触发 close → 从设备表移除（否则假在线残留，SOCKS 全部空响应，20261019 实战根因）
+		await startTunnel();
 		const heartbeat = setInterval(() => {
 			for (const [, a] of state.agents) {
 				if (a.ws.readyState !== 1) continue;
@@ -1075,7 +998,6 @@ export default {
 			}
 		}, 30_000);
 
-		// ── 宿主集成：route（面板数据 + CLI 下载 + 令牌轮换 + 出口切换 + 启停）───────
 		const offStatus = host.route("GET", "/status", (_req, res) => {
 			res.setHeader("content-type", "application/json");
 			res.end(JSON.stringify(statusSnapshot()));
@@ -1085,7 +1007,6 @@ export default {
 			res.end(cliCode(req));
 		});
 		host.route("GET", "/pi-pkg", (_req, res) => {
-			// pi agent 离线安装包（mac 自包含 tgz，设备免公网 npm）
 			try {
 				const pkg = fs.readFileSync(path.join(__dirname, "assets", "pi-agent.tgz"));
 				res.setHeader("content-type", "application/gzip");
@@ -1099,7 +1020,6 @@ export default {
 		const offRotate = host.route("POST", "/rotate", (_req, res) => {
 			token = crypto.randomBytes(16).toString("hex");
 			host.storage.set("token", token);
-			// 踢掉所有已连接设备与现有 SOCKS 连接：旧 token 失效后必须重新配对
 			for (const [, e] of state.conns) {
 				try {
 					e.c.destroy();
@@ -1154,7 +1074,6 @@ export default {
 			});
 		});
 
-		// C 档 P1：设备能力/白名单下发（CLI 持久化并回 hello 确认）+ 审计查询
 		const offConfig = host.route("POST", "/agent/config", async (req, res) => {
 			{
 				const j = await readBodyJson(req);
@@ -1165,7 +1084,7 @@ export default {
 				patch = j;
 				name = String(j.name || "");
 				const a = state.agents.get(id);
-				const nm = a?.name || name; // 离线预配置：设备 crash/不在线时可直接传 name 持久化，重连自动下发（防 fsWrite 死锁）
+				const nm = a?.name || name;
 				res.setHeader("content-type", "application/json");
 				if (!nm) return res.end(JSON.stringify({ ok: false, error: "设备不在线且未提供 name" }));
 				const cur = capsOf(nm);
@@ -1190,7 +1109,6 @@ export default {
 			}
 		});
 		host.route("POST", "/device/fsread", async (req, res) => {
-			// P3a 收尾：面板读设备文件（白名单内，只读）——KeepAlive 排障用
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? ""),
@@ -1203,7 +1121,6 @@ export default {
 			}
 		});
 		host.route("POST", "/device/fs", async (req, res) => {
-			// P4: 面板浏览设备目录（选白名单路径用）
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? ""),
@@ -1216,7 +1133,6 @@ export default {
 			}
 		});
 		host.route("POST", "/device/uninstall", async (req, res) => {
-			// P4: 面板下发 CLI 自卸载
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? "");
@@ -1231,7 +1147,6 @@ export default {
 			}
 		});
 		host.route("POST", "/device/hw", async (req, res) => {
-			// P4+: 查看设备硬件概览（只读）
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? "");
@@ -1241,7 +1156,6 @@ export default {
 			}
 		});
 		host.route("POST", "/device/task", async (req, res) => {
-			// P4-B: 通用任务通道（指挥设备 pi agent）
 			{
 				const j = await readBodyJson(req);
 				const id = String(j.id ?? "");
@@ -1256,7 +1170,7 @@ export default {
 					return res.end(JSON.stringify({ error: toolsCheck.error }));
 				}
 
-				const me = resolveModelEnv(String(j.model ?? "").trim()); // 请求级 model override 优先于面板手动/自动
+				const me = resolveModelEnv(String(j.model ?? "").trim());
 				if (!me || me.error) {
 					return res.end(
 						JSON.stringify({
@@ -1282,7 +1196,6 @@ export default {
 			}
 		});
 		host.route("GET", "/modelenv", (_req, res) => {
-			// v1.2: 模型通道状态（key 只回尾部 4 位，不回全文）
 			res.setHeader("content-type", "application/json");
 			let manual = null;
 			try {
@@ -1317,7 +1230,6 @@ export default {
 			);
 		});
 		host.route("POST", "/modelenv", async (req, res) => {
-			// v1.2: 手动指定模型通道三元组；{clear:true} 恢复自动挑选
 			const j = await readBodyJson(req);
 			res.setHeader("content-type", "application/json");
 			if (j.clear) {
@@ -1343,7 +1255,6 @@ export default {
 			res.end(JSON.stringify({ items: auditRing.slice(-100).reverse() }));
 		});
 
-		// ── 宿主集成：AI 工具（数据面 = 当前出口设备所在网络）──────────────────────
 		const offTool = host.registerAgentTool({
 			name: "tunnel_fetch",
 			label: "隧道探测",
@@ -1402,7 +1313,6 @@ export default {
 			notifyDebounced("info", "网络隧道插件已就绪（多设备模式）");
 		}
 
-		// deactivate 清理（宿主 reload/停用时调用）
 		return () => {
 			clearInterval(heartbeat);
 			offStatus();

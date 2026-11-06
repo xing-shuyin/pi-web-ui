@@ -8,6 +8,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { LeftPanel } from "../../web/src/components/LeftPanel.js";
 import { setAppGlobals } from "../../web/src/app-globals.js";
+import { clearAllUnread, markConversationUnread } from "../../web/src/unread-conversations.js";
+import { conversationOrder, recordUserPrompt } from "../../web/src/conversation-order.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CSS = readFileSync(join(ROOT, "web/src/styles.css"), "utf8");
@@ -19,6 +21,8 @@ afterEach(() => {
 		root = null;
 	}
 	document.body.innerHTML = "";
+	clearAllUnread();
+	conversationOrder.clear();
 });
 
 function stubZhStorage() {
@@ -56,17 +60,20 @@ function mountLeftPanel(overrides: Record<string, unknown> = {}) {
 		panelSend,
 		...overrides,
 	};
-	act(() => {
-		root!.render(
-			createElement(
-				LanguageProvider,
-				null,
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				createElement(LeftPanel as any, props),
-			),
-		);
-	});
-	return { container, sent };
+	const rerender = (nextOverrides: Record<string, unknown>) => {
+		act(() => {
+			root!.render(
+				createElement(
+					LanguageProvider,
+					null,
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					createElement(LeftPanel as any, { ...props, ...nextOverrides }),
+				),
+			);
+		});
+	};
+	rerender({});
+	return { container, sent, rerender };
 }
 
 describe("左栏会话位置与纯背景高亮守卫", () => {
@@ -92,15 +99,13 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(CSS).toMatch(/\.ephemeral-badge\s*\{[^}]*var\(--amber/);
 	});
 
-	it("会话运行态杜绝使用背景色高亮与边框线，仅通过右侧转圈指示器体现", () => {
+	it("运行与完成未查看的会话仅通过右侧状态图标提示，不添加背景高亮", () => {
 		const runningMatch = CSS.match(/\.lp-tree-session-item\.is-running\s*\{([^}]*)\}/);
 		expect(runningMatch).toBeTruthy();
 		expect(runningMatch![1]).toMatch(/background:\s*transparent/);
 		expect(runningMatch![1]).toMatch(/box-shadow:\s*none/);
 
-		const unreadMatch = CSS.match(/\.lp-tree-session-item\.is-unread\s*\{([^}]*)\}/);
-		expect(unreadMatch).toBeTruthy();
-		expect(unreadMatch![1]).toMatch(/box-shadow:\s*none/);
+		expect(CSS).not.toMatch(/\.is-unread[^{}]*\{[^}]*\b(?:background|box-shadow)\s*:/);
 	});
 
 	it("仅仅打开历史会话查看时，不进入顶部活动列表，保留在历史列表中并展示时间戳", () => {
@@ -110,7 +115,6 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			{ path: "/test/session-new.jsonl", sessionId: "s-new", name: "最新会话", modified: Date.now() },
 			{ path: "/test/session-old.jsonl", sessionId: "s-old", name: "历史会话", modified: historyTime },
 		];
-		// 用户仅仅打开了 s-old 进行查看（后端已加载入内存 convs，但没有开始聊：非 streaming、非 question）
 		const conversations = [
 			{
 				id: "c-old",
@@ -131,28 +135,71 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			sessionFile: "/test/session-old.jsonl",
 		});
 
-		// 检查渲染出来的会话列表
 		const sessionRows = container.querySelectorAll(".lp-project-tree-children .lp-row");
 		expect(sessionRows.length).toBe(2);
 
-		// 第一行应依然是最新会话（最新时间），第二行应是历史会话，打开操作没有颠倒其原本相对位置
 		const titles = Array.from(sessionRows).map((r) => r.querySelector(".conv-title-text")?.textContent?.trim());
 		expect(titles[0]).toBe("最新会话");
 		expect(titles[1]).toBe("历史会话");
 
-		// 历史会话行右侧应依然显示其时间戳，没有因为打开而消失
 		const timeEl = sessionRows[1].querySelector(".conv-time");
 		expect(timeEl).toBeTruthy();
 		expect(timeEl?.textContent?.trim()).toBeTruthy();
 	});
 
-	it("只有在会话开始运行/交互（如流式输出）时，才将其提升到顶部活动列表", () => {
+	it.each(["local", "history", "elsewhere"] as const)("%s 仅在当前查看的对话标题前显示当前标识", (source) => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const modified = Date.now();
+		const { container } = mountLeftPanel({
+			conversations: [
+				{
+					id: "current-conv",
+					sessionId: "current-session",
+					cwd: "/test",
+					title: "正在查看的对话",
+					messageCount: 3,
+					modified,
+					isStreaming: false,
+					isSubagent: false,
+					...(source === "history" ? { sessionFile: "/test/current.jsonl" } : {}),
+					...(source === "elsewhere" ? { elsewhere: true, owner: "other-window", convId: "current-conv" } : {}),
+				},
+				{
+					id: "other-conv",
+					cwd: "/test",
+					title: "其他对话",
+					messageCount: 2,
+					modified: modified - 60_000,
+					isStreaming: false,
+					isSubagent: false,
+				},
+			],
+			activeConversationId: "current-conv",
+			sharedConversationOwner: source === "elsewhere" ? "other-window" : undefined,
+			sessionFile: source === "history" ? "/test/current.jsonl" : null,
+			sessions:
+				source === "history"
+					? [{ path: "/test/current.jsonl", sessionId: "current-session", name: "正在查看的对话", modified }]
+					: [],
+		});
+
+		const badges = container.querySelectorAll(".conv-current-badge");
+		expect(badges).toHaveLength(1);
+		expect(badges[0].textContent).toBe("当前");
+		const currentRow = badges[0].closest(".lp-tree-session-item")!;
+		expect(currentRow.classList.contains("active")).toBe(true);
+		expect(currentRow.querySelector(".conv-title-text")?.previousElementSibling).toBe(badges[0]);
+		expect(currentRow.querySelector(".conv-title-text")?.textContent).toBe("正在查看的对话");
+		expect(currentRow.querySelector(".conv-meta-zone .conv-time")).toBeTruthy();
+		expect(currentRow.querySelector(".conv-meta-zone .conv-current-badge")).toBeNull();
+	});
+
+	it("首次加载按更新时间排列全部会话，运行状态不优先于较新的历史会话", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const sessions = [
 			{ path: "/test/session-new.jsonl", sessionId: "s-new", name: "最新会话", modified: Date.now() },
 			{ path: "/test/session-old.jsonl", sessionId: "s-old", name: "历史会话", modified: Date.now() - 3600000 },
 		];
-		// 历史会话发起了提问，开始对话（isStreaming = true）
 		const conversations = [
 			{
 				id: "c-old",
@@ -176,16 +223,75 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const sessionRows = container.querySelectorAll(".lp-project-tree-children .lp-row");
 		expect(sessionRows.length).toBe(2);
 
-		// 开始对话后，历史会话被提到最顶部
 		const titles = Array.from(sessionRows).map((r) => r.querySelector(".conv-title-text")?.textContent?.trim());
-		expect(titles[0]).toBe("历史会话");
-		expect(titles[1]).toBe("最新会话");
+		expect(titles).toEqual(["最新会话", "历史会话"]);
 
-		// 并且第一行正在运行，带有流式 spinner 指示器，且运行中不显示时间戳（确保与无时间的新建会话圆圈对齐）
-		expect(sessionRows[0].querySelector(".status-spinner-right")).toBeTruthy();
-		expect(sessionRows[0].querySelector(".conv-time")).toBeNull();
-		// 第二行未运行的历史会话正常显示时间戳
-		expect(sessionRows[1].querySelector(".conv-time")).toBeTruthy();
+		expect(sessionRows[1].querySelector(".status-spinner-right")).toBeTruthy();
+		expect(sessionRows[1].querySelector(".conv-time")).toBeNull();
+		expect(sessionRows[0].querySelector(".conv-time")).toBeTruthy();
+	});
+
+	it.each(
+		(["local", "elsewhere", "history"] as const).flatMap((source) =>
+			(["idle", "unread", "streaming", "question", "error"] as const)
+				.filter((state) => source !== "history" || (state !== "streaming" && state !== "question"))
+				.map((state) => ({ source, state })),
+		),
+	)("$source 会话 $state 状态与时间共用最右侧位置", ({ source, state }) => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const modified = Date.now() - 60_000;
+		const conversation = {
+			id: "status-row",
+			sessionId: "status-session",
+			cwd: "/test",
+			title: "状态对齐",
+			messageCount: 3,
+			modified,
+			isSubagent: false,
+			isStreaming: state === "streaming",
+			hasQuestion: state === "question",
+			error: state === "error" ? "运行失败" : undefined,
+			agentPreset: "reviewer",
+			...(source === "history" ? { sessionFile: "/test/status.jsonl" } : {}),
+			...(source === "elsewhere" ? { elsewhere: true, owner: "other-window", convId: "status-row" } : {}),
+		};
+		if (state === "unread") markConversationUnread(conversation);
+		const { container } = mountLeftPanel({
+			conversations: [conversation],
+			sessions:
+				source === "history"
+					? [{ path: "/test/status.jsonl", sessionId: conversation.sessionId, name: conversation.title, modified }]
+					: [],
+		});
+
+		const row = container.querySelector(".lp-project-tree-children .lp-row");
+		expect(row).toBeTruthy();
+		const meta = row!.querySelector(".conv-meta-zone")!;
+		if (state === "idle") {
+			expect(meta.querySelector(".conv-indicator-slot")).toBeNull();
+			expect(meta.lastElementChild?.classList.contains("conv-time")).toBe(true);
+		} else {
+			const selector = {
+				unread: ".status-unread-right",
+				streaming: ".status-spinner-right",
+				question: ".status-question-right",
+				error: ".status-error-right",
+			}[state];
+			expect(meta.querySelector(".conv-time")).toBeNull();
+			expect(meta.lastElementChild?.classList.contains("conv-indicator-slot")).toBe(true);
+			expect(meta.lastElementChild?.querySelector(selector)).toBeTruthy();
+		}
+	});
+
+	it("历史会话切换转圈占用时间位置，不同时显示进度时间", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container } = mountLeftPanel({
+			sessions: [{ path: "/test/loading.jsonl", name: "正在打开", modified: Date.now() }],
+			transition: { kind: "session", target: "/test/loading.jsonl", progress: 45 },
+		});
+		const meta = container.querySelector(".session-item .conv-meta-zone")!;
+		expect(meta.querySelector(".conv-time")).toBeNull();
+		expect(meta.lastElementChild?.querySelector(".status-spinner-right")).toBeTruthy();
 	});
 
 	it("所有运行中的对话（包括无修改时间的新建对话和有修改时间的老对话）均不显示时间，确保右侧圆圈完全对齐", () => {
@@ -195,7 +301,6 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			{ path: "/test/session-idle.jsonl", sessionId: "s-idle", name: "闲置对话", modified: Date.now() - 7200000 },
 		];
 		const conversations = [
-			// 新建对话：无 sessionFile，无 modified 时间，正在运行
 			{
 				id: "c-new",
 				cwd: "/test",
@@ -204,7 +309,6 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 				isStreaming: true,
 				isSubagent: false,
 			},
-			// 老对话：有 sessionFile，有 modified 时间，正在运行
 			{
 				id: "c-old",
 				sessionId: "s-old",
@@ -225,17 +329,14 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		});
 
 		const rows = container.querySelectorAll(".lp-project-tree-children .lp-row");
-		// 正在运行的两个对话（c-new 和 c-old）带有 spinner
 		const runningSpinners = container.querySelectorAll(".lp-project-tree-children .status-spinner-right");
 		expect(runningSpinners.length).toBe(2);
 
-		// 所有运行中的对话都不显示时间，圆圈位于最右侧统一对齐
 		const newConvTime = rows[0].querySelector(".conv-time");
 		const oldConvTime = rows[1].querySelector(".conv-time");
 		expect(newConvTime).toBeNull();
 		expect(oldConvTime).toBeNull();
 
-		// 闲置的历史会话正常显示时间戳
 		const idleConvTime = rows[2].querySelector(".conv-time");
 		expect(idleConvTime).toBeTruthy();
 	});
@@ -264,11 +365,9 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		expect(badge).toBeTruthy();
 		expect(badge?.textContent).toContain("临时");
 
-		// 标志统一放置在右侧元数据区（.conv-meta-zone），左侧标题区（.conv-title-text）不残留任何前置标志
 		expect(badge?.closest(".conv-meta-zone")).toBeTruthy();
 		expect(container.querySelector(".conv-title-text .ephemeral-badge")).toBeNull();
 
-		// 置顶标志也统一放置在右侧元数据区
 		const pin = container.querySelector(".pin-badge");
 		expect(pin).toBeTruthy();
 		expect(pin?.closest(".conv-meta-zone")).toBeTruthy();
@@ -308,16 +407,13 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			projectSessions,
 		});
 
-		// 两个项目初始时，/proj1 作为当前项目已展开
 		const nodes = container.querySelectorAll(".lp-project-node");
 		expect(nodes.length).toBe(2);
 
-		// 点击 /proj2 的 chevron 展开 /proj2
 		const proj2Chevron = nodes[1].querySelector<HTMLElement>(".lp-project-chevron");
 		expect(proj2Chevron).toBeTruthy();
 		act(() => proj2Chevron!.click());
 
-		// 检查两个项目的头部：proj1 仍保持展开（is-expanded），proj2 也展开（is-expanded）
 		const head1 = nodes[0].querySelector(".lp-project-head-row");
 		const head2 = nodes[1].querySelector(".lp-project-head-row");
 		expect(head1?.classList.contains("is-expanded")).toBe(true);
@@ -334,17 +430,14 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const projectHeader = container.querySelector(".lp-project-header-item");
 		expect(projectHeader).toBeTruthy();
 
-		// 左侧不应该再出现 project-icon spin 元素挤占项目名
 		const leftSpinner = projectHeader!.querySelector(".project-icon.spin");
 		expect(leftSpinner).toBeNull();
 
-		// 右侧 conv-meta-zone 内部必须包含与会话状态完全相同的 status-spinner-right 等待圆圈
 		const metaZone = projectHeader!.querySelector(".conv-meta-zone");
 		expect(metaZone).toBeTruthy();
 		const rightSpinner = metaZone!.querySelector(".status-spinner-right");
 		expect(rightSpinner).toBeTruthy();
 
-		// 进度百分比必须在右侧元数据区内与 spinner 协同展示
 		const timeEl = metaZone!.querySelector(".project-time.switching-pct");
 		expect(timeEl).toBeTruthy();
 		expect(timeEl?.textContent).toContain("45%");
@@ -361,15 +454,12 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const chevron = container.querySelector<HTMLElement>(".lp-project-chevron");
 		expect(chevron).toBeTruthy();
 
-		// 初始展开状态下包含 expanded
 		const collapsible = container.querySelector(".lp-history-collapsible");
 		expect(collapsible).toBeTruthy();
 		expect(collapsible?.classList.contains("expanded")).toBe(true);
 
-		// 点击折叠
 		act(() => chevron!.click());
 
-		// 折叠后，子节点仍然驻留 DOM，但带有 collapsed 类以执行 CSS Grid 平滑收缩过渡，杜绝瞬间卸载
 		const treeChildren = container.querySelector(".lp-project-tree-children");
 		expect(treeChildren).toBeTruthy();
 		expect(treeChildren?.classList.contains("is-collapsed")).toBe(true);
@@ -401,7 +491,6 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 	it("打开运行中的对话时，不改变运行对话的原有顺序，绝不因为查看/激活而随意置顶移动", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const now = Date.now();
-		// 两个都在运行中的会话，c-1 的最后修改时间比 c-2 新
 		const conversations = [
 			{
 				id: "c-1",
@@ -423,7 +512,6 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 			},
 		];
 
-		// 用户点击打开任务 2（activeConversationId 变为 c-2）
 		const { container } = mountLeftPanel({
 			conversations,
 			activeConversationId: "c-2",
@@ -432,31 +520,259 @@ describe("左栏会话位置与纯背景高亮守卫", () => {
 		const rows = container.querySelectorAll(".lp-project-tree-children .lp-row");
 		expect(rows.length).toBe(2);
 
-		// 虽然 c-2 是激活状态，但因为没有发送新消息产生更新的时间戳，列表不应颠倒移动，c-1 依然排第一位
 		const titles = Array.from(rows).map((r) => r.querySelector(".conv-title-text")?.textContent?.trim());
 		expect(titles[0]).toBe("任务 1（较新）");
 		expect(titles[1]).toBe("任务 2（较旧）");
+	});
+
+	it("用户发送只提升所属项目内的会话，常驻标记与项目最近使用时间不改变顺序", () => {
+		setAppGlobals({ cwd: "/first", ready: true, status: "open", workspaceRoots: [] });
+		const conversations = [
+			{ id: "first", cwd: "/first", title: "第一个项目的对话", messageCount: 1, modified: 2000 },
+			{ id: "older", cwd: "/second", title: "较旧的对话", messageCount: 1, isStreaming: true, modified: 1000 },
+			{ id: "pinned", cwd: "/second", title: "置顶的对话", messageCount: 1, pinned: true, modified: 500 },
+		];
+		const { container, rerender } = mountLeftPanel({
+			projects: [
+				{ path: "/first", lastUsed: 2000 },
+				{ path: "/second", lastUsed: 1000 },
+			],
+			conversations,
+			activeConversationId: "first",
+		});
+		const projectOrder = () =>
+			Array.from(container.querySelectorAll(".lp-project-header-item")).map((node) =>
+				node.getAttribute("data-project-path"),
+			);
+		expect(projectOrder()).toEqual(["/first", "/second"]);
+
+		setAppGlobals({ cwd: "/second", ready: true, status: "open", workspaceRoots: [] });
+		act(() => recordUserPrompt({ cwd: "/second", conversationId: "new" }, conversations));
+		rerender({
+			projects: [
+				{ path: "/second", lastUsed: 3000 },
+				{ path: "/first", lastUsed: 2000 },
+			],
+			conversations: [
+				...conversations,
+				{ id: "new", cwd: "/second", title: "新对话", messageCount: 1, isStreaming: true, modified: 3000 },
+			],
+			activeConversationId: "new",
+		});
+
+		expect(projectOrder()).toEqual(["/first", "/second"]);
+		const secondProject = container.querySelector('[data-project-path="/second"]')!.closest(".lp-project-node")!;
+		const titles = Array.from(secondProject.querySelectorAll(".conv-title-text")).map((node) =>
+			node.textContent?.trim(),
+		);
+		expect(titles).toEqual(["新对话", "较旧的对话", "置顶的对话"]);
+	});
+
+	it("页面初始化等待最新历史摘要替换缓存，之后冻结顺序", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const cached = [
+			{ path: "/test/a.jsonl", sessionId: "a", name: "缓存较新", modified: 200 },
+			{ path: "/test/b.jsonl", sessionId: "b", name: "后来更新", modified: 100 },
+		];
+		const { container, rerender } = mountLeftPanel({ sessions: cached, projectSessions: {} });
+		const titles = () =>
+			Array.from(container.querySelectorAll(".lp-project-tree-children .conv-title-text"), (node) => node.textContent);
+		expect(titles()).toEqual(["缓存较新", "后来更新"]);
+		const live = [{ ...cached[1], modified: 500 }, cached[0]];
+		rerender({ sessions: live, projectSessions: { "/test": live } });
+		expect(titles()).toEqual(["后来更新", "缓存较新"]);
+		const background = [{ ...cached[0], modified: 9000 }, ...live.slice(0, 1)];
+		rerender({ sessions: background, projectSessions: { "/test": background } });
+		expect(titles()).toEqual(["后来更新", "缓存较新"]);
+	});
+
+	it("状态、修改时间、常驻、后台未读和活动/历史切换都不移动会话", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = [
+			{ path: "/test/new.jsonl", sessionId: "new", name: "较新", modified: 300 },
+			{ path: "/test/middle.jsonl", sessionId: "middle", name: "中间", modified: 200 },
+			{ path: "/test/old.jsonl", sessionId: "old", name: "较旧", modified: 100 },
+		];
+		const middle = {
+			id: "middle-conv",
+			sessionId: "middle",
+			sessionFile: sessions[1].path,
+			cwd: "/test",
+			title: "中间",
+			messageCount: 3,
+			modified: 200,
+		};
+		const { container, rerender } = mountLeftPanel({
+			sessions,
+			conversations: [middle],
+			activeConversationId: middle.id,
+		});
+		const titles = () =>
+			Array.from(container.querySelectorAll(".lp-project-tree-children .conv-title-text"), (node) => node.textContent);
+		expect(titles()).toEqual(["较新", "中间", "较旧"]);
+		for (const status of [
+			{ isStreaming: true },
+			{ completionPending: true },
+			{ hasQuestion: true },
+			{ error: "failed" },
+			{ pinned: true },
+			{},
+		]) {
+			rerender({
+				conversations: [{ ...middle, ...status, modified: 9000 }],
+				sessions: [...sessions]
+					.reverse()
+					.map((session) => ({ ...session, modified: session.sessionId === "old" ? 10000 : session.modified })),
+			});
+			expect(titles()).toEqual(["较新", "中间", "较旧"]);
+		}
+		act(() => markConversationUnread({ id: middle.id, sessionId: "middle" }));
+		expect(titles()).toEqual(["较新", "中间", "较旧"]);
+		rerender({ conversations: [] });
+		expect(titles()).toEqual(["较新", "中间", "较旧"]);
+	});
+
+	it("创建、运行和移除工作树子代理时父对话保留位置，直接发送给子代理才提升父树", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = [
+			{ path: "/test/new.jsonl", sessionId: "new", name: "较新", modified: 300 },
+			{ path: "/test/parent.jsonl", sessionId: "parent", name: "父对话", modified: 200 },
+		];
+		const parent = {
+			id: "parent-conv",
+			sessionId: "parent",
+			sessionFile: sessions[1].path,
+			cwd: "/test",
+			title: "父对话",
+			messageCount: 3,
+			modified: 200,
+		};
+		const { container, rerender } = mountLeftPanel({ sessions, conversations: [parent] });
+		const titles = () =>
+			Array.from(container.querySelectorAll(".lp-project-tree-children .conv-title-text"), (node) => node.textContent);
+		const child = {
+			id: "child",
+			parentId: parent.id,
+			cwd: "/worktree",
+			title: "子代理",
+			messageCount: 1,
+			isSubagent: true,
+			isStreaming: true,
+			modified: 9999,
+		};
+		rerender({ conversations: [{ ...parent, isStreaming: true, modified: 9999 }, child] });
+		expect(titles()).toEqual(["较新", "父对话", "子代理"]);
+		expect(container.querySelectorAll(".lp-project-header-item")).toHaveLength(1);
+		rerender({ conversations: [parent, { ...child, isStreaming: false, modified: 19999 }] });
+		expect(titles()).toEqual(["较新", "父对话", "子代理"]);
+		act(() => recordUserPrompt({ cwd: "/worktree", conversationId: child.id }, [parent, child]));
+		expect(titles()).toEqual(["父对话", "子代理", "较新"]);
+		rerender({ conversations: [parent] });
+		expect(titles()).toEqual(["父对话", "较新"]);
+	});
+
+	it("用户发送时立即把历史会话提升到所有活动/历史会话上方，下一次发送才再次重排", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const sessions = Array.from({ length: 10 }, (_, index) => ({
+			path: `/test/s${index}.jsonl`,
+			sessionId: `s${index}`,
+			name: `会话${index}`,
+			modified: index + 1,
+		}));
+		const older = {
+			id: "older",
+			sessionId: "s0",
+			sessionFile: sessions[0].path,
+			cwd: "/test",
+			title: "会话0",
+			messageCount: 2,
+			modified: 1,
+		};
+		const active = {
+			id: "active",
+			sessionId: "s8",
+			sessionFile: sessions[8].path,
+			cwd: "/test",
+			title: "会话8",
+			messageCount: 2,
+			isStreaming: true,
+			modified: 9,
+		};
+		const conversations = [older, active];
+		const { container, rerender } = mountLeftPanel({ sessions, conversations, activeConversationId: older.id });
+		const titles = () =>
+			Array.from(container.querySelectorAll(".lp-project-tree-children .conv-title-text"), (node) => node.textContent);
+		expect(titles().slice(0, 2)).toEqual(["会话9", "会话8"]);
+		expect(titles()).not.toContain("会话0");
+		act(() => recordUserPrompt({ cwd: "/test", conversationId: older.id, sessionId: "s0" }, conversations));
+		expect(titles().slice(0, 3)).toEqual(["会话0", "会话9", "会话8"]);
+		rerender({
+			conversations: [
+				{ ...active, modified: 999 },
+				{ ...older, isStreaming: true, modified: 999 },
+			],
+		});
+		expect(titles().slice(0, 3)).toEqual(["会话0", "会话9", "会话8"]);
+		act(() => recordUserPrompt({ cwd: "/test", conversationId: active.id, sessionId: "s8" }, conversations));
+		expect(titles().slice(0, 3)).toEqual(["会话8", "会话0", "会话9"]);
+	});
+
+	it("新建但未发送消息的会话追加到末尾，不因后台快照插到项目顶部", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const existing = { id: "existing", cwd: "/test", title: "已有会话", messageCount: 1, modified: 100 };
+		const { container, rerender } = mountLeftPanel({ conversations: [existing] });
+		rerender({
+			conversations: [{ id: "created", cwd: "/test", title: "新会话", messageCount: 1, modified: 9999 }, existing],
+		});
+		expect(Array.from(container.querySelectorAll(".conv-title-text"), (node) => node.textContent)).toEqual([
+			"已有会话",
+			"新会话",
+		]);
+	});
+
+	it("新建 CLI 对话在历史摘要尚未返回且没有 SDK 消息时仍显示在所属项目", () => {
+		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
+		const { container } = mountLeftPanel({
+			conversations: [
+				{
+					id: "cli-new",
+					cwd: "/test",
+					title: "新建 CLI 对话",
+					messageCount: 0,
+					nativeCli: true,
+					sessionFile: "/test/cli-new.jsonl",
+				},
+			],
+			activeConversationId: "cli-new",
+			projectSessions: { "/test": [] },
+		});
+		expect(container.querySelector(".lp-project-tree-children .conv-title-text")?.textContent).toBe("新建 CLI 对话");
+		expect(container.querySelector(".lp-project-empty-tip")).toBeNull();
+	});
+
+	it("项目分隔线覆盖整个项目节点，仅出现在相邻项目之间", () => {
+		const separator = CSS.match(/\.lp-project-node\s*\+\s*\.lp-project-node\s*\{([^}]*)\}/);
+		expect(separator).toBeTruthy();
+		expect(separator![1]).toMatch(/border-top:\s*1px solid var\(--border\)/);
+		expect(separator![1]).toMatch(/padding-top:\s*[1-9]/);
 	});
 
 	it("工作区加号下拉菜单中包含新建当前项目对话选项，点击后发送 new_chat", () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const { container, sent } = mountLeftPanel();
 
-		// 打开加号菜单
 		const plusBtn = container.querySelector<HTMLButtonElement>(".lp-section-actions .lp-project-action");
 		expect(plusBtn).toBeTruthy();
 		act(() => {
 			plusBtn!.click();
 		});
 
-		// 检查菜单内的新建对话按钮
 		const menu = container.querySelector(".lp-workspace-menu");
 		expect(menu).toBeTruthy();
 		const newChatBtn = menu?.querySelector<HTMLButtonElement>(".lp-new-chat-btn");
 		expect(newChatBtn).toBeTruthy();
 		expect(newChatBtn?.textContent).toContain("新建对话");
 
-		// 点击新建对话
 		act(() => {
 			newChatBtn!.click();
 		});

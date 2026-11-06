@@ -32,7 +32,6 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 }: ModelPickerModalProps) {
 	const t = useT();
 
-	// 键盘 Esc 关闭
 	useEffect(() => {
 		if (!open) return;
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -79,7 +78,6 @@ export const ModelPickerModal = memo(function ModelPickerModal({
 					border: "1px solid var(--border)",
 				}}
 			>
-				{/* 顶部标题栏（模型筛选控件由通用 UniversalModelPicker 提供，这里只留标题与关闭） */}
 				<div
 					className="dd-header dd-header-flex"
 					style={{ padding: "10px 14px", borderBottom: "1px solid var(--border, #333)" }}

@@ -1,12 +1,3 @@
-/**
- * 插件声明式设置协议测试（零 token、自包含）。
- *
- * 覆盖：plugins 清单带 settingsSchema + settingsValues（默认）；plugin_settings
- * 消息 → 服务端校验 + 持久化到 storage.json + 通知插件 onSettingsChanged +
- * 重推清单回显；非法值（越界/坏选项）被拒并 notice 报错。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-settings-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +22,6 @@ writeFileSync(
 			{ key: "pollSec", type: "number", label: "间隔", default: 60, min: 10, max: 600 },
 			{ key: "notify", type: "boolean", label: "通知", default: true },
 			{ key: "theme", type: "select", label: "主题", default: "dark", options: ["dark", "light"] },
-			// 宿主数据源：候选值在浏览器侧现算（模型清单 / 思考强度档位），服务端只透传
 			{ key: "model", type: "select", optionsFrom: "models", label: "模型", default: "" },
 		],
 	}),
@@ -117,7 +107,6 @@ try {
 		if (m.type === "plugins") latestPlugins = m.plugins ?? [];
 	});
 
-	// -- 1. 清单带 schema + 默认值 -------------------------------------------------
 	let opts;
 	for (let i = 0; i < 40 && !opts; i++) {
 		opts = latestPlugins.find((x) => x.id === "opts");
@@ -134,7 +123,6 @@ try {
 		console.log("✓ select 的 optionsFrom（宿主动态候选值）随 schema 下发");
 	}
 
-	// -- 2. plugin_settings 保存 → storage.json + onSettingsChanged + 回显 -------------
 	sock.send(
 		JSON.stringify({
 			type: "plugin_settings",
@@ -143,18 +131,15 @@ try {
 		}),
 	);
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "插件设置已保存", "save notice");
-	// 落盘断言
 	const raw = JSON.parse(readFileSync(join(plugDir, "storage.json"), "utf8"));
 	if (
 		raw.settings?.pollSec !== 120 ||
 		raw.settings?.notify !== false ||
 		raw.settings?.theme !== "light" ||
-		// 动态候选值（选项在浏览器侧算）不做清单校验，原样存下
 		raw.settings?.model !== "xai/grok-4"
 	) {
 		fail(`storage.json 未正确落盘：${JSON.stringify(raw.settings)}`);
 	}
-	// 回显（重推的 plugins 清单）
 	let echoed;
 	for (let i = 0; i < 40 && !echoed; i++) {
 		echoed = latestPlugins.find((x) => x.id === "opts")?.settingsValues?.pollSec === 120 ? latestPlugins : undefined;
@@ -163,7 +148,6 @@ try {
 	if (!echoed) fail("保存后清单未回显新值");
 	else console.log("✓ plugin_settings 保存 → 落盘 + 重推回显");
 
-	// -- 3. 非法值被拒 -----------------------------------------------------------------
 	sock.send(JSON.stringify({ type: "plugin_settings", pluginId: "opts", values: { pollSec: 5 } }));
 	const err = await waitFor(sock, (m) => m.type === "notice" && m.text.includes("插件设置保存失败"), "reject notice");
 	if (!err.text.includes("超出范围")) fail(`拒绝文案不对：${err.text}`);

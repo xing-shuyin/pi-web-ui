@@ -92,10 +92,6 @@ import {
 type Snapshot = FileSnapshot;
 const run = promisify(execFile);
 
-/** Local capability: root never comes from an incoming bundle. No execution,
- * deletion or implicit directory traversal (recursive export is opt-in). Staged transfers are process-local;
- * close/cancel remove only this instance's private transfer directories. Node
- * path checks cannot exclude a hostile OS user racing filesystem operations. */
 export function createDeviceFileSync(config: {
 	root: string;
 	dataDir: string;
@@ -172,7 +168,6 @@ export function createDeviceFileSync(config: {
 			const opened = await handle.stat();
 			active(signal);
 			if (!opened.isFile() || identity(opened) !== identity(before)) throw new Error("File changed while opening");
-			// Fixed buffer prevents unbounded allocation if a local writer grows it.
 			const buffer = Buffer.alloc(before.size + 1);
 			let count = 0;
 			while (count < buffer.length) {
@@ -308,8 +303,6 @@ export function createDeviceFileSync(config: {
 			throw error;
 		}
 	}
-	/** Same metadata/atomic-replacement policy as file-save.ts, extended to bytes.
-	 * No direct-write fallback; metadata preservation failure rejects this file. */
 	async function overwrite(path: string, bytes: Buffer, baseline: Snapshot, signal?: AbortSignal) {
 		if (!["linux", "darwin", "freebsd", "win32"].includes(process.platform))
 			throw new Error("Metadata-preserving saves unsupported on this platform");
@@ -349,7 +342,6 @@ export function createDeviceFileSync(config: {
 			if (process.platform === "win32") {
 				const script =
 					"$ErrorActionPreference='Stop'; try { [IO.File]::Replace($env:PI_SAVE_SOURCE,$env:PI_SAVE_TARGET,$env:PI_SAVE_BACKUP,$false) } catch { [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }";
-				// Once committing, do not interrupt ReplaceFile: its completion must be known.
 				await run(
 					"powershell.exe",
 					[
@@ -463,7 +455,6 @@ export function createDeviceFileSync(config: {
 								active(signal);
 								if (!entry) break;
 								countVisit();
-								// Reject links even when their names would otherwise be excluded.
 								if (entry.isSymbolicLink()) throw new Error("Symlink paths are denied");
 								names.push(entry.name);
 							}
@@ -624,7 +615,6 @@ export function createDeviceFileSync(config: {
 						report.rejected.push({ path: file.path, reason });
 					}
 				}
-				// Keep rejected transfers available for a deliberate new preview/retry.
 				if (!report.rejected.length) {
 					try {
 						await drop(id);

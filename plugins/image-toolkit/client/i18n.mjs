@@ -1,11 +1,3 @@
-/**
- * image-toolkit 视图文案（中英双语）。
- *
- * 语言跟随主应用：主应用切换语言时会写 document.documentElement.lang
- * （见 web/src/i18n.tsx），这里读它决定初始语言，右上角另有手动切换按钮。
- */
-
-/** 扁平 key → 文案；键名用 `<区>.<名>` 前缀分组，缺 key 时原样显示 key（便于发现漏配）。 */
 export const DICT = {
 	zh: {
 		"app.title": "图片工具",
@@ -526,7 +518,6 @@ export const DICT = {
 	},
 };
 
-/** 从主应用设置的语言推断初始语言（主应用切换语言会写 documentElement.lang）。 */
 export function detectLang() {
 	const html = (typeof document !== "undefined" && document.documentElement.lang) || "";
 	const nav = (typeof navigator !== "undefined" && (navigator.language || "")) || "";
@@ -534,7 +525,6 @@ export function detectLang() {
 	return l.startsWith("zh") ? "zh" : "en";
 }
 
-/** 取文案函数：t("info.bytes", {v: "12 KB"})。缺 key 时回退英文再回退 key 本身。 */
 export function makeT(getLang) {
 	return (key, vars) => {
 		const lang = getLang();

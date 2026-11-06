@@ -1,31 +1,3 @@
-/**
- * voice-input 服务端入口 —— 语音输入插件的服务端一半。
- *
- * 两条转写引擎（`engine` 设置，默认 auto）：
- *   local  本地 Whisper（transformers.js + ONNX，CPU 跑，零 key）：
- *          点「一键安装」后经 host.ensureDeps 装运行时、下载模型到本插件目录
- *          （<dataDir>/plugins/voice-input/whisper-cache），转写全程不出本机；
- *   remote 远端 OpenAI 兼容接口（POST {base}/audio/transcriptions）。
- *   auto   本地装好了用本地，否则用远端（配了才可用）。
- *
- * 客户端录音统一发 16kHz 单声道 16-bit WAV（AudioWorklet 现场编码，
- * 无需服务端装 ffmpeg）；远端接口同时兼容其它音频 mime。
- *
- * 路由（挂载在 `/plugins-api/voice-input/*`，需 manifest `permissions` 含 `http`）：
- *   GET    /settings      → { lang, serverFallback, engine, localModel,
- *                             serverReady, localReady, localModels }（绝不下发密钥）
- *   POST   /engine        → 改「转写引擎」（body {engine: auto|local|remote}，
- *                             浮层里的切换面板用；白名单校验后写回声明式设置）
- *   POST   /transcribe    → 音频字节（WAV 最佳，?lang= 可选），回 { text, engine }
- *   GET    /local-status  → { installing, progress, error, ready, models, loaded }
- *   POST   /local-install → {started:true}（body {model?}；单飞，后台慢慢装）
- *   DELETE /local         → 删模型缓存（node_modules 留着，重装快）
- *
- * 约定：handler 内部一切抛错自己转成 HTTP 状态码，绝不让 promise reject 出去——
- * 宿主只 try/catch 同步抛错，异步 rejection 会变成 unhandledRejection 把整个
- * 服务打挂（image-toolkit 踩过的坑）。
- */
-
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -33,25 +5,17 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const REMOTE_TRANSCRIBE_TIMEOUT_MS = 120_000;
-/** 远端 Whisper 单文件上限 25MB；超了直接 413，不浪费一次转发。 */
 const MAX_REMOTE_AUDIO_BYTES = 25 * 1024 * 1024;
-/** 本地 WAV 上限 15MB（16k 单声道 ≈ 8 分钟，足够口述）。 */
 const MAX_LOCAL_AUDIO_BYTES = 15 * 1024 * 1024;
-/** transformers.js 运行时（ONNX 预编译，win/mac/linux 全平台，CPU 可跑）。 */
 const TRANSFORMERS_PKG = "@xenova/transformers";
 const TRANSFORMERS_SPEC = `${TRANSFORMERS_PKG}@2.17.2`;
 
-/**
- * 本地模型档位 → HuggingFace 模型 id。白名单：install 接口只认这俩，
- * 杜绝「用户可控 URL 任意下载」的口子。
- */
 export const LOCAL_MODELS = {
-	tiny: "Xenova/whisper-tiny", // ~150MB，中英短句够用，老机器首选
-	base: "Xenova/whisper-base", // ~290MB，中文长句明显更准（默认）
-	small: "Xenova/whisper-small", // ~500MB，2.4 亿参数，中文同音字少很多；CPU 转写比 base 慢 3~4 倍
+	tiny: "Xenova/whisper-tiny",
+	base: "Xenova/whisper-base",
+	small: "Xenova/whisper-small",
 };
 
-/** 档位名 → 模型 id，非法输入回 null。纯函数，单测覆盖。 */
 export function resolveLocalModel(size) {
 	const s = typeof size === "string" ? size.trim().toLowerCase() : "";
 	return Object.prototype.hasOwnProperty.call(LOCAL_MODELS, s) ? LOCAL_MODELS[s] : null;
@@ -61,10 +25,6 @@ function str(v) {
 	return typeof v === "string" ? v.trim() : "";
 }
 
-/**
- * 插件语言（zh-CN / en-US …）→ 远端 Whisper 的 language 参数（ISO-639-1）。
- * 纯函数，单测覆盖。
- */
 export function whisperLang(lang) {
 	const l = str(lang).toLowerCase();
 	if (l.startsWith("zh")) return "zh";
@@ -80,11 +40,6 @@ export function whisperLang(lang) {
 	return "";
 }
 
-/**
- * 各语言默认 initial_prompt：Whisper 只有一个 chinese 标签，繁简靠统计偏好，
- * 不干预时中文常见偏繁体；官方推荐用 initial_prompt 纠偏（#709）。
- * 用户自定义（initialPrompt 设置）优先于这里；空串 = 不传。纯函数，单测覆盖。
- */
 export const DEFAULT_INITIAL_PROMPTS = {
 	zh: "以下是普通话的句子，请使用简体中文。",
 	"zh-traditional": "以下是國語的句子，請使用臺灣繁體中文。",
@@ -93,7 +48,6 @@ export const DEFAULT_INITIAL_PROMPTS = {
 	ko: "다음은 한국어 문장입니다. 정확하게 받아써 주세요.",
 };
 
-/** 解析转写 initial_prompt：用户自定义 > 中文按 zhVariant 选繁简 > 按语言默认。纯函数，单测覆盖。 */
 export function resolveInitialPrompt(lang, cfg = {}) {
 	const custom = typeof cfg?.initialPrompt === "string" ? cfg.initialPrompt.trim() : "";
 	if (custom) return custom.slice(0, 500);
@@ -107,10 +61,6 @@ export function resolveInitialPrompt(lang, cfg = {}) {
 	return "";
 }
 
-/**
- * 插件语言 → 本地 transformers.js Whisper 的 language 参数（英文全名）。
- * 纯函数，单测覆盖。
- */
 export function whisperFullLang(lang) {
 	const l = str(lang).toLowerCase();
 	if (l.startsWith("zh")) return "chinese";
@@ -126,18 +76,10 @@ export function whisperFullLang(lang) {
 	return "";
 }
 
-/** 基址 + 路径拼接（容忍末尾斜杠）。纯函数，单测覆盖。 */
 export function joinUrl(base, path) {
 	return `${str(base).replace(/\/+$/, "")}${path}`;
 }
 
-/**
- * package.json → 入口文件候选（相对路径，按优先级）。纯函数，单测覆盖。
- *
- * 不能只信 `exports`：`exports["."]` 可能是字符串，也可能是带条件
- * （import / require / default / node / browser…）的对象，形状没对齐就取空。
- * 这里把常见形状摊平，再兜几个 transformers.js 的历史布局名。
- */
 export function pkgEntryCandidates(pkg) {
 	const out = [];
 	const push = (v) => {
@@ -157,39 +99,17 @@ export function pkgEntryCandidates(pkg) {
 	return out;
 }
 
-/** 权重下载源：设置里的 hfEndpoint > 环境变量 HF_ENDPOINT > 官方（空 = 不改）。
- *  国内直连 huggingface.co 常超时，hf-mirror.com 是社区镜像。非 http(s) 一律忽略。 */
 export function hfEndpointHost(setting, env = process.env.HF_ENDPOINT) {
 	const s = str(setting || env).replace(/\/+$/, "");
 	return /^https?:\/\/\S+$/i.test(s) ? s : "";
 }
 
-/** 把 endpoint 应用到 transformers.js v2 的 env：只改 remoteHost。
- *  v2 的下载 URL 是 pathJoin(remoteHost, remotePathTemplate, filename) 纯字符串
- *  拼接（hub.js 不识别绝对 URL），模板默认 {model}/resolve/{revision}/ 已含路径——
- *  若把模板再设成带主机名的完整 URL，会拼出 <endpoint>/https://<endpoint>/…
- *  双重前缀，任何文件都 404。endpoint 为空时不动原值。 */
 export function applyHfEndpoint(transformersEnv, endpoint) {
 	if (!transformersEnv || !endpoint) return transformersEnv;
 	transformersEnv.remoteHost = endpoint;
 	return transformersEnv;
 }
 
-/**
- * 为缺失原生绑定的 `sharp` 注入内存 stub（纯函数，单测覆盖）。
- *
- * `@xenova/transformers` v2 的 `src/utils/image.js` 在顶层执行 `import sharp from "sharp"`
- * 并以 `else if (sharp)` 校验真值。本插件仅用语音识别（automatic-speech-recognition）
- * 且自带纯 JS WAV 解码，从不调用任何图像处理接口。
- *
- * 当用户配置了 npm `allow-scripts` / `ignore-scripts` 或因网络/编译环境导致 `sharp`
- * 的 `libvips` 原生二进制（`../build/Release/sharp-*.node`）未生成时，直接加载会抛
- * `Something went wrong installing the "sharp" module`。这里先探测 `sharp` 是否可加载；
- * 若抛错则在 `require.cache` 中把 `sharp` 主入口与底层 `sharp.js` 替换为轻量真值函数 stub，
- * 使 ESM 加载 `@xenova/transformers` 时绕过损坏的 `sharp` 绑定。
- *
- * 返回 true = 注入了 stub；false = `sharp` 本身正常或尚未安装。
- */
 export function ensureSharpStub(fromFile) {
 	let req;
 	try {
@@ -201,7 +121,6 @@ export function ensureSharpStub(fromFile) {
 	try {
 		sharpEntry = req.resolve("sharp");
 	} catch {
-		// 兜底 CJS 负缓存：沿 fromFile 向上找 node_modules/sharp/package.json
 		let cur = dirname(fromFile);
 		for (;;) {
 			const pkgJson = join(cur, "node_modules", "sharp", "package.json");
@@ -214,9 +133,7 @@ export function ensureSharpStub(fromFile) {
 						sharpEntry = cand;
 						break;
 					}
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			const up = dirname(cur);
 			if (!up || up === cur) break;
@@ -250,12 +167,6 @@ export function ensureSharpStub(fromFile) {
 	}
 }
 
-/**
- * 检查本地模型权重是否已落盘（`<cacheDir>/<modelId>/config.json` + `onnx/*.onnx`）。
- *
- * 插件覆盖更新、回滚或 `storage.json` 的 `whisperModels` 标记丢失后，磁盘上的
- * `whisper-cache/` 若仍在，据此自动恢复就绪态并回写 storage，避免几百 MB 模型白重下。
- */
 export function hasCachedModelOnDisk(cacheDir, modelId) {
 	const id = str(modelId);
 	if (!cacheDir || !id) return false;
@@ -271,13 +182,6 @@ export function hasCachedModelOnDisk(cacheDir, modelId) {
 	}
 }
 
-/* ------------------------------------------------------------------ */
-/* WAV 解码：客户端发的 16k 单声道 16-bit WAV 转 Float32Array（本地      */
-/* Whisper 的输入）。兼容其它采样率/声道/位深（线性重采样 + 声道平均）， */
-/* 保证手写编码器的小偏差不炸。纯函数，单测覆盖。                        */
-/* ------------------------------------------------------------------ */
-
-/** 线性重采样。纯函数，单测覆盖。 */
 export function resampleLinear(samples, fromRate, toRate) {
 	const src = samples instanceof Float32Array ? samples : Float32Array.from(samples ?? []);
 	if (!Number.isFinite(fromRate) || !Number.isFinite(toRate) || fromRate <= 0 || toRate <= 0) {
@@ -304,10 +208,6 @@ function readAscii(view, offset, len) {
 	return s;
 }
 
-/**
- * WAV（PCM/Float）→ 16kHz 单声道 Float32Array。
- * 抛错信息直接面向用户（中文）。纯函数，单测覆盖。
- */
 export function decodeWav16k(buf) {
 	const u8 = Buffer.isBuffer(buf) ? new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) : buf;
 	if (!(u8 instanceof Uint8Array) || u8.length < 44) throw new Error("音频不是有效的 WAV（太短）");
@@ -315,7 +215,6 @@ export function decodeWav16k(buf) {
 	if (readAscii(view, 0, 4) !== "RIFF" || readAscii(view, 8, 4) !== "WAVE") {
 		throw new Error("音频不是有效的 WAV（缺 RIFF/WAVE 头）");
 	}
-	// 遍历 chunk：fmt 拿格式，data 拿采样（跳过 fact/LIST 等）。
 	let audioFormat = 0;
 	let channels = 0;
 	let sampleRate = 0;
@@ -377,17 +276,15 @@ export default {
 		let cfg = host.getSettings?.() ?? {};
 		const offSettings = host.onSettingsChanged?.((v) => {
 			cfg = v && typeof v === "object" ? v : {};
-			// 设置里改「给 AI 转写工具」要即时生效（注册/下架），不用重启服务。
 			syncTranscribeTool();
 		});
 
-		/** 本地引擎运行态（常驻内存，重启服务清零；安装标记在 storage 里持久化）。 */
 		const local = {
 			installing: false,
-			progress: null, // 0~100，null=未知/非下载阶段
+			progress: null,
 			phase: "",
 			error: "",
-			pipe: null, // transformers pipeline（热缓存）
+			pipe: null,
 			loadedModel: "",
 			transcribeBusy: false,
 		};
@@ -415,9 +312,7 @@ export default {
 				prev[id] = true;
 				try {
 					host.storage.set("whisperModels", prev);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				return true;
 			}
 			return false;
@@ -444,13 +339,10 @@ export default {
 					if (!res.headersSent)
 						res.status(status >= 400 && status < 600 ? status : 500).json({ error: msg || "internal error" });
 					else res.end();
-					// 体超限（413）：响应已写回，再销毁读端停止继续上传
 					if (status === 413) req.destroy();
 				}
 			});
 
-		/** 读原始请求体（JSON 小包或二进制大包，抄 image-toolkit 的 readBody）。
-		 *  收包循环内实时累计，超过远端转写上限立即停收并 413，不全量缓存完再查。 */
 		async function readRaw(req) {
 			const tooLarge = () =>
 				Object.assign(new Error(`录音超过 ${MAX_REMOTE_AUDIO_BYTES / 1048576}MB 上限`), { statusCode: 413 });
@@ -472,7 +364,7 @@ export default {
 					if (done) return;
 					done = true;
 					if (err) {
-						req.pause(); // 停收（不销毁）：让 413 先送出去，safe() 再掐断
+						req.pause();
 						req.removeListener("data", onData);
 						reject(err);
 					} else resolve(val);
@@ -489,16 +381,6 @@ export default {
 			});
 		}
 
-		/* ---------------- 本地引擎：装 / 状态 / 卸 ---------------- */
-
-		/**
-		 * transformers.js 入口文件：先按 package.json 拼绝对路径，绕开 CJS 解析缓存。
-		 *
-		 * `createRequire().resolve()` 走 Node 的进程级解析，package.json 路径缓存会把
-		 * 「文件不存在」记成**负结果**且不随 npm install 失效（issue #383：明明装成功
-		 * 却恒报「运行时装不上」，只能重启服务）。盘上判据不受影响，所以先读
-		 * package.json 自己定位入口；读不到（exports 怪形状 / 文件损坏）再回落老路。
-		 */
 		function transformersEntry() {
 			const pkgDir = join(dir, "node_modules", ...TRANSFORMERS_PKG.split("/"));
 			try {
@@ -507,9 +389,7 @@ export default {
 					const abs = join(pkgDir, rel);
 					if (existsSync(abs)) return abs;
 				}
-			} catch {
-				/* package.json 读不到 / 坏了：走下面的 resolve 回落 */
-			}
+			} catch {}
 			return createRequire(join(dir, "index.mjs")).resolve(TRANSFORMERS_PKG);
 		}
 
@@ -520,8 +400,6 @@ export default {
 				},
 			});
 			if (!ok) throw new Error("本地语音运行时安装失败（npm install 没跑通，请检查网络后重试）");
-			// ESM 不支持目录 import（ERR_UNSUPPORTED_DIR_IMPORT），且 import() 也要一个
-			// 真实文件路径 —— 所以先定位入口文件，再按 file URL import（URL 恒可 import）。
 			let entry;
 			try {
 				entry = transformersEntry();
@@ -532,13 +410,10 @@ export default {
 			const mod = await import(pathToFileURL(entry).href);
 			if (!mod || !mod.pipeline) throw new Error("本地语音运行时加载失败（依赖装上了但 import 不到）");
 			mod.env.cacheDir = cacheDir;
-			// 权重下载源：transformers.js v2 只认自己的 env.remoteHost，不读 HF_ENDPOINT
-			// （v3 才读），所以手工接上，否则国内直连 huggingface.co 会卡到超时。
 			applyHfEndpoint(mod.env, hfEndpointHost(cfg.hfEndpoint));
 			return mod;
 		}
 
-		/** 后台安装全流程（单飞）：运行时 → 权重下载 → 预热。进度写 local.*。 */
 		async function runInstall(modelId) {
 			local.installing = true;
 			local.progress = null;
@@ -547,7 +422,7 @@ export default {
 				local.phase = "正在安装本地语音运行时（首次约几分钟）…";
 				const tf = await importTransformers();
 				local.phase = `正在下载语音模型（${modelId}，首次约几百 MB）…`;
-				const seen = new Map(); // file → { loaded, total }
+				const seen = new Map();
 				const pipe = await tf.pipeline("automatic-speech-recognition", modelId, {
 					progress_callback: (p) => {
 						try {
@@ -571,35 +446,26 @@ export default {
 									seen.set(k, { loaded: Math.max(v.loaded, v.total), total: v.total });
 								}
 							}
-						} catch {
-							/* 进度上报失败不影响安装 */
-						}
+						} catch {}
 					},
 				});
 				if (!pipe) throw new Error("语音模型加载返回空");
 				local.phase = "预热…";
-				// 3 秒静音过一遍：把 onnx session 真正跑起来，首句转写不冷启动。
 				try {
 					await pipe(new Float32Array(16000 * 3), { language: "english", task: "transcribe" });
-				} catch {
-					/* 预热失败不致命 */
-				}
+				} catch {}
 				try {
 					if (local.pipe && local.loadedModel !== modelId) {
 						await local.pipe.model?.dispose?.();
 					}
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				local.pipe = pipe;
 				local.loadedModel = modelId;
 				const prev = installedModels();
 				prev[modelId] = true;
 				try {
 					host.storage.set("whisperModels", prev);
-				} catch {
-					/* 标记写失败：下次重启会重新下载，不致命 */
-				}
+				} catch {}
 				local.progress = 100;
 				local.phase = "完成";
 				host.log(`voice-input 本地模型就绪: ${modelId}`);
@@ -612,7 +478,6 @@ export default {
 			}
 		}
 
-		/** 拿热 pipeline（内存里没有就懒加载；权重缺了会自动重下，自愈）。 */
 		async function getPipe(modelId) {
 			if (local.pipe && local.loadedModel === modelId) return local.pipe;
 			const tf = await importTransformers();
@@ -620,9 +485,7 @@ export default {
 				if (local.pipe) {
 					await local.pipe.model?.dispose?.();
 				}
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			local.pipe = await tf.pipeline("automatic-speech-recognition", modelId);
 			local.loadedModel = modelId;
 			return local.pipe;
@@ -643,7 +506,6 @@ export default {
 				e.statusCode = 400;
 				throw e;
 			}
-			// 8 分钟硬截：防超长音频把 CPU 跑死。
 			const capped = samples.length > 16000 * 480 ? samples.slice(0, 16000 * 480) : samples;
 			const pipe = await getPipe(modelId);
 			const fullLang = whisperFullLang(lang);
@@ -669,8 +531,6 @@ export default {
 			}
 			return text;
 		}
-
-		/* ---------------- 远端引擎（OpenAI 兼容） ---------------- */
 
 		async function transcribeRemote(audio, mime, lang) {
 			const baseUrl = str(cfg.transcribeUrl);
@@ -731,9 +591,6 @@ export default {
 			return str(data?.text);
 		}
 
-		/* ---------------- 路由 ---------------- */
-
-		/** 客户端读公开配置（密钥永不下发）。 */
 		const offGet = safe("GET", "/settings", async (_req, res) => {
 			res.json({
 				lang: str(cfg.lang) || "zh-CN",
@@ -749,17 +606,6 @@ export default {
 			res.json(localStatus());
 		});
 
-		/**
-		 * 客户端改「转写引擎」（麦克风浮层里的切换面板，issue #383）。
-		 *
-		 * 直写声明式设置（storage.json 的 settings 键）—— 与宿主设置面板的
-		 * saveSettingsValues 同一个键，host.storage.set 内部已用同一把文件级 RMW 锁
-		 * 且写前重读，两边交替保存不会互相抹掉。
-		 *
-		 * 刻意只 RMW `engine` 这一个键、而不是把 getSettings() 的合并值整份写回：
-		 * 整份写回会把「用户从没设过」的字段固化成当前默认值，以后改 schema 默认值
-		 * 对老用户就不生效了。值只认白名单三档。
-		 */
 		const offEngine = safe("POST", "/engine", async (req, res) => {
 			const want = str((req.body ?? {}).engine).toLowerCase();
 			if (!["auto", "local", "remote"].includes(want)) {
@@ -770,7 +616,6 @@ export default {
 			const next = stored && typeof stored === "object" ? { ...stored } : {};
 			next.engine = want;
 			host.storage.set("settings", next);
-			// 内存里的快照同步跟上（本进程后续的 host.getSettings() 也会从磁盘读到新值）。
 			cfg = { ...cfg, engine: want };
 			res.json({ ok: true, engine: want });
 		});
@@ -807,9 +652,7 @@ export default {
 				if (local.pipe) {
 					await local.pipe.model?.dispose?.();
 				}
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			local.pipe = null;
 			local.loadedModel = "";
 			let freed = false;
@@ -821,24 +664,13 @@ export default {
 			}
 			try {
 				host.storage.delete("whisperModels");
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			local.progress = null;
 			local.phase = "";
 			local.error = "";
 			res.json({ ok: true, freed });
 		});
 
-		/**
-		 * 音频 → { text, engine }：本地/远端/auto 三档分发。
-		 *
-		 * HTTP 路由（浏览器录音）与 transcribe_audio 工具（工作区音频文件）**共用这一份**：
-		 * 「什么时候悄悄降级、什么时候把错误抛给调用方」两处各写一套必然漂移。
-		 * 抛错一律带 statusCode（沿用既有口径）—— 路由把它翻成 HTTP 码，工具把它翻成人话。
-		 *
-		 * 注意：本地引擎只吃 WAV 字节（没有 ffmpeg 解码器），非 WAV 必须由调用方自己走 transcribeRemote。
-		 */
 		async function runTranscribe(audio, mime, lang) {
 			const eng = engine();
 			const tryLocal = eng !== "remote" && localReady();
@@ -850,7 +682,6 @@ export default {
 				return e;
 			};
 
-			// auto：本地优先（免费不出网），本地炸了再试远端；local：只用本地。
 			if (eng !== "remote" && tryLocal) {
 				if (audio.length > MAX_LOCAL_AUDIO_BYTES) {
 					if (eng === "auto" && tryRemote) {
@@ -870,7 +701,6 @@ export default {
 				try {
 					return { text: await transcribeLocal(audio, lang), engine: "local" };
 				} catch (err) {
-					// 本地挂了且有远端可兜：悄悄降级（415 非 WAV / 400 太短 之类调用方问题除外，那类换谁也一样）。
 					const status = err?.statusCode;
 					if (eng === "auto" && tryRemote && status !== 415 && status !== 400) {
 						host.log("voice-input 本地转写失败，切远端兜底:", err instanceof Error ? err.message : err);
@@ -895,7 +725,6 @@ export default {
 			return { text: await transcribeRemote(audio, mime, lang), engine: "remote" };
 		}
 
-		/** 录音 → 本地/远端 → { text, engine }。 */
 		const offPost = safe("POST", "/transcribe", async (req, res) => {
 			const audio = await readRaw(req);
 			if (!audio.length) {
@@ -911,11 +740,6 @@ export default {
 			}
 		});
 
-		/* ------------------------------------------------------------------ */
-		/* AI 工具：把工作区里的音频文件转成文字（transcribe_audio）            */
-		/* ------------------------------------------------------------------ */
-
-		/** 扩展名 → MIME。远端接口按 MIME 决定上传文件名后缀；本地引擎不看 MIME（只认 WAV 字节）。 */
 		function audioMimeOf(name) {
 			const ext = String(name).toLowerCase().split(".").pop();
 			if (ext === "wav") return "audio/wav";
@@ -928,7 +752,6 @@ export default {
 			return "";
 		}
 
-		/** 头 12 字节判 WAV（RIFF....WAVE）——扩展名会骗人，字节不会。 */
 		function looksLikeWav(buf) {
 			try {
 				const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf ?? []);
@@ -940,7 +763,6 @@ export default {
 
 		let offTranscribeTool = null;
 
-		/** 按设置注册/下架 transcribe_audio（保存设置即时生效，与 image-toolkit 同做法）。 */
 		function syncTranscribeTool() {
 			const want = cfg.transcribeTool !== false;
 			if (want && !offTranscribeTool) {
@@ -981,7 +803,6 @@ export default {
 						if (!buf?.length) return `${base} 是空文件。`;
 
 						const isWav = looksLikeWav(buf);
-						// 本地引擎只吃 WAV：非 WAV 又没配远端 → 直接把两条出路讲清楚，别抛一个模型看不懂的 415。
 						if (!isWav && !remoteReady()) {
 							return (
 								`${base} 不是 WAV，而本地 Whisper 只能解码 WAV（这台机器没有 ffmpeg）。两条出路：` +
@@ -992,7 +813,6 @@ export default {
 						const mime = isWav ? "audio/wav" : audioMimeOf(base) || "application/octet-stream";
 						const lang = str(params?.lang) || str(cfg.lang) || "zh-CN";
 						try {
-							// 非 WAV 直接走远端：自动档在本地优先时一定会撞上「本地只要 WAV」，没必要让它白撞一次。
 							const out = isWav
 								? await runTranscribe(buf, "audio/wav", lang)
 								: { text: await transcribeRemote(buf, mime, lang), engine: "remote" };
@@ -1010,9 +830,7 @@ export default {
 			} else if (!want && offTranscribeTool) {
 				try {
 					offTranscribeTool();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				offTranscribeTool = null;
 				host.log("voice-input AI 工具已下架：transcribe_audio");
 			}
@@ -1025,21 +843,15 @@ export default {
 			try {
 				offTranscribeTool?.();
 				offTranscribeTool = null;
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			for (const off of [offGet, offStatus, offEngine, offInstall, offUninstall, offPost]) {
 				try {
 					off();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			try {
 				offSettings?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			host.log("voice-input deactivated");
 		};
 	},

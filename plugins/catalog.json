@@ -1,5 +1,53 @@
 [
 	{
+		"id": "hongguo",
+		"name": "hongguo",
+		"nameEn": "hongguo",
+		"version": "0.1.3",
+		"icon": "📺",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"m10 8 6 4-6 4Z\"/></svg>",
+		"description": "短剧观看",
+		"descriptionEn": "Watch short dramas",
+		"source": "xing-shuyin/pi-web-ui/plugins/hongguo",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/hongguo"
+	},
+	{
+		"id": "github-workbench",
+		"name": "GitHub 工作台",
+		"nameEn": "GitHub Workbench",
+		"version": "0.1.4",
+		"icon": "🐙",
+		"iconSvg": "<svg stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\" viewBox=\"0 0 24 24\" stroke-linecap=\"round\" stroke-linejoin=\"round\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22\"/></svg>",
+		"description": "文件列表旁的 GitHub 工作台 Tab：集中查看 PR 与 Issue、切换个人待办、筛选搜索、引用到对话、交给 AI、评论及关闭／重新打开。复用本机 gh 登录，切换 Tab 保留草稿。",
+		"descriptionEn": "A GitHub sidebar tab next to Files with PRs, issues, personal inboxes and search. Read, quote into chat, delegate to AI, comment, close and reopen using your existing gh login. Tab switches preserve drafts.",
+		"source": "xing-shuyin/pi-web-ui/plugins/github-workbench",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/github-workbench"
+	},
+	{
+		"id": "image-ocr",
+		"name": "图片文字识别",
+		"nameEn": "Image OCR",
+		"icon": "🔎",
+		"description": "在统一图片预览弹窗中识别并复制中英文文字。浏览器本地 OCR，无需 API Key；首次使用需联网下载引擎和字库。",
+		"descriptionEn": "Recognize and copy Chinese and English text from any image preview. Local browser OCR, no API key. First use downloads the engine and language data.",
+		"source": "xing-shuyin/pi-web-ui/plugins/image-ocr",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/image-ocr",
+		"version": "0.1.2",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 7V4h3m10 0h3v3m0 10v3h-3M7 20H4v-3M8 9h8M8 13h8M8 17h4\"/></svg>"
+	},
+	{
+		"id": "superagent",
+		"preinstall": true,
+		"name": "Superagent",
+		"version": "0.1.5",
+		"icon": "📥",
+		"description": "GitHub / 飞书渠道工单适配、群组映射与原渠道回写；默认仅观察，由群组独立 AI Router 分配给 Bot 执行。",
+		"descriptionEn": "GitHub and Feishu work item adapters, group mapping, and durable channel replies. Observe by default; group AI Router delegates execution to Bots.",
+		"source": "xing-shuyin/pi-web-ui/plugins/superagent",
+		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/superagent",
+		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z\"/></svg>"
+	},
+	{
 		"id": "lx-music",
 		"name": "lx-music",
 		"icon": "🎵",
@@ -183,8 +231,8 @@
 		"nameEn": "QQ",
 		"icon": "🐧",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 2a8 8 0 0 0-8 8c0 3 1.5 5 2 7-1 .5-2 1.5-2 3h16c0-1.5-1-2.5-2-3 .5-2 2-4 2-7a8 8 0 0 0-8-8z\"/><circle cx=\"9\" cy=\"9\" r=\"1\"/><circle cx=\"15\" cy=\"9\" r=\"1\"/><path d=\"M10 13h4\"/></svg>",
-		"description": "QQ 机器人：腾讯官方开放平台 QQBot 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 用户白名单准入 / AI qq 工具（密钥加密存储，零外部依赖）。",
-		"descriptionEn": "QQ Bot: official Tencent QQBot outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), access control whitelist, and AI qq tool.",
+		"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单与 AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储。",
+		"descriptionEn": "QQ Bot with outbound WebSocket chat, rich media, access control, and an AI qq tool. Automatic voice replies use the shared TTS center with selectable engines and voices, optional text, and encrypted credentials.",
 		"source": "xing-shuyin/pi-web-ui/plugins/qq",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/qq"
 	},
@@ -387,8 +435,8 @@
 		"nameEn": "TTS Voice Engine",
 		"icon": "🔊",
 		"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
-		"description": "多源通用语音合成插件，聚合豆包大模型语音与 DeepSeek 官方音色，支持浏览器扩展一键同步登录凭据并支持消息朗读与实时边打字边流式发声。",
-		"descriptionEn": "Multi-engine TTS plugin aggregating Doubao and DeepSeek official voices, supporting one-click browser credential sync, message narration, and real-time streaming speech playback.",
+		"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成。",
+		"descriptionEn": "Registers Doubao and DeepSeek engines and voices in the shared TTS center for web playback, QQ replies, and other tools. Includes credential synchronization, engine/voice discovery, and audio-file generation.",
 		"source": "xing-shuyin/pi-web-ui/plugins/tts",
 		"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/tts"
 	},

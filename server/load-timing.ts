@@ -7,7 +7,6 @@ export interface LoadTiming {
 }
 const disabled: LoadTiming = { mark() {}, finish() {} };
 
-/** Opt-in diagnostics; deliberately omit transcript paths, IDs and message content. */
 export function startLoadTiming(
 	enabled = /^(1|true|on|yes)$/i.test(process.env.PI_WEB_LOAD_TIMING ?? ""),
 	now: () => number = () => performance.now(),
@@ -31,9 +30,7 @@ export function startLoadTiming(
 			finished = true;
 			try {
 				report({ event: "history-open", outcome, totalMs: Number((now() - start).toFixed(3)), stages });
-			} catch {
-				// Diagnostics must never change session loading behavior.
-			}
+			} catch {}
 		},
 	};
 }

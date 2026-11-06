@@ -36,7 +36,6 @@ function tmpFile(content: string): string {
 	return file;
 }
 
-/** 原全量算法（逐行 JSON.parse 全部条目），只计数不写盘——作为等价性基准。 */
 function legacyDanglingCount(raw: string): number {
 	const entries: unknown[] = [];
 	let lastId: string | null = null;
@@ -48,9 +47,7 @@ function legacyDanglingCount(raw: string): number {
 			if (typeof parsed === "object" && parsed !== null && typeof (parsed as { id?: unknown }).id === "string") {
 				lastId = (parsed as { id: string }).id;
 			}
-		} catch {
-			/* skip */
-		}
+		} catch {}
 	}
 	if (entries.length === 0 || !lastId) return 0;
 	const tailIds = tailAssistantToolCallIds(entries, lastId);
@@ -58,7 +55,6 @@ function legacyDanglingCount(raw: string): number {
 	return findDanglingToolCalls(entries).filter((d) => tailIds.has(d.toolCallId)).length;
 }
 
-/** 可复现的伪随机数（mulberry32）。 */
 function rng(seed: number) {
 	let a = seed >>> 0;
 	return () => {
@@ -79,9 +75,8 @@ function randomTranscript(seed: number): string {
 	const n = 3 + Math.floor(r() * 25);
 	for (let i = 0; i < n; i++) {
 		const id = `e${i}`;
-		// 多数接在上一条之后，少量从更早节点分叉（老分支）
 		const parent = ids.length === 0 ? null : r() < 0.85 ? ids[ids.length - 1] : ids[Math.floor(r() * ids.length)];
-		const pad = r() < 0.3 ? 600 + Math.floor(r() * 3000) : 0; // 触发长行头字段快速路径
+		const pad = r() < 0.3 ? 600 + Math.floor(r() * 3000) : 0;
 		const kind = r();
 		if (kind < 0.25) {
 			lines.push(msg(id, parent, user(`u${i}`)));
@@ -100,7 +95,6 @@ function randomTranscript(seed: number): string {
 		ids.push(id);
 	}
 	let text = `${lines.join("\n")}\n`;
-	// 偶尔模拟崩溃残留的半截尾行
 	if (r() < 0.2) text += msg("trunc", ids[ids.length - 1], assistant(["cz"], { pad: 900 })).slice(0, 700);
 	return text;
 }
@@ -116,7 +110,6 @@ describe("healDanglingToolCallsInText（按需解析）与原全量算法等价"
 			const got = healDanglingToolCallsInText(file, raw);
 			expect({ seed, got }).toEqual({ seed, got: expected });
 		}
-		// 样本必须同时覆盖「有悬空」与「健康」两类，否则等价性检验没有意义
 		expect(nonZero).toBeGreaterThan(20);
 		expect(nonZero).toBeLessThan(380);
 	});
@@ -175,7 +168,6 @@ describe("prepareTranscriptForOpen", () => {
 		expect(r.repair?.renamedIds).toBeGreaterThan(0);
 		expect(r.healed).toBe(0);
 		expect(existsSync(`${file}.bak`)).toBe(true);
-		// 下次打开：链已健康，此时补悬空调用
 		const next = await prepareTranscriptForOpen(file);
 		expect(next.repair?.changed).toBe(false);
 		expect(next.healed).toBe(1);

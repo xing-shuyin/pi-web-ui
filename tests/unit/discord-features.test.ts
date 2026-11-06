@@ -1,10 +1,3 @@
-/**
- * tests/unit/discord-features.test.ts
- * Tests for Discord Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, mention stripping)
- * - DiscordBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	DiscordBotBridge,
@@ -147,7 +140,6 @@ describe("DiscordBotBridge 双工逻辑测试", () => {
 			}),
 		);
 
-		// 真实链路：宿主返回它自己的会话 id（本地编的 dc_xxx 只是占位），事件按它下发。
 		const convId = "c1";
 
 		runHandler!({
@@ -180,9 +172,6 @@ describe("DiscordBotBridge 双工逻辑测试", () => {
 
 describe("Discord：对话被过户（改名 + 换客户端）后仍按 runId 回包", () => {
 	it("conversationId 改名、clientId 变成浏览器后，run_end 仍回复到原频道", async () => {
-		// 过户回归：用户在网页左栏点开 running 对话 = take_over_conversation —— 对话搬到浏览器
-		// 会话（clientId 变），目标会话已有同名 id（各会话独立从 c1 编号）时还会改名（conversationId
-		// 也变）。两个键全失效，只有 host.chat 回执里的 runId 不变，插件必须按它认领回包。
 		const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "m_1" }) });
 		vi.stubGlobal("fetch", fetchMock);
 

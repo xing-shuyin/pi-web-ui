@@ -87,8 +87,6 @@ describe("ModelAdminService.refreshProviderModels baseUrl 回退", () => {
 				.mockResolvedValue([{ id: "deepseek-flash" }, { id: "new-model" }]);
 			const { host, notices } = makeHost(agentDir, { baseUrl: "https://opencode.ai/zen/go/v1" });
 			const service = new ModelAdminService(host);
-			// saveModelConfig 会触发 modelRuntime().refresh() 等 host 动作——这里只关心
-			// probe 用了回退地址且落盘条目仍是纯覆盖，直接调 service 并断言结果消息。
 			let reqId = 0;
 			const done = new Promise<ServerMessage>((resolve) => {
 				const origEmit = host.emit;
@@ -100,7 +98,6 @@ describe("ModelAdminService.refreshProviderModels baseUrl 回退", () => {
 					}
 				};
 			});
-			// save 路径里的 pushModels/listModels 需要 UiProviderConfig 形状——保持最小 host 即可。
 			await service.refreshProviderModels("opencode-go", 7);
 			const result = await done;
 			expect(reqId).toBe(7);

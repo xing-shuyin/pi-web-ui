@@ -1,29 +1,5 @@
 /// <reference path="../chrome.d.ts" />
 /// <reference lib="dom" />
-/**
- * 页面桥的扩展侧（content script，**隔离世界**，注入到被配对的页面）。
- *
- * 它只做一件事：把「页面 → 扩展后台」这一段接上。
- *
- *   页面 MAIN world  ──window.postMessage──▶  本文件（隔离世界）
- *                                                 │ chrome.runtime.sendMessage
- *                                                 ▼
- *                                          background service worker
- *                                                 │
- *                                        （结果原路返回）
- *
- * 为什么必须是两段：MAIN world 里没有 `chrome.*`（页面脚本拿不到扩展 API），而隔离世界
- * 又看不见页面挂在 `window` 上的对象 —— 少一段都过不去。
- *
- * 两个世界共享**同一个 document**，所以通道凭据（token）借一个 DOM 属性传递：
- * content script 写、MAIN 桥读。token **不是安全边界**（同文档的任何脚本都能读它），
- * 只用来挡「偶发/无意的伪造 postMessage」。真正的边界在 worker：用 `sender.tab.url`
- * 判定「你是谁」，再查配对表决定「你能跟谁说话」—— 消息体里的任何字段都不作数。
- *
- * 注入时机与幂等：由 worker 在「配对生效 / 页面导航完成」时注入（`page-picker:bridge-arm`
- * 消息负责刷新 token 并写属性）。重复注入不会叠加监听器（`FLAG` 挡住），
- * 也不会在重复注入时偷偷换 token —— 那会让已经装好的 MAIN 桥与新 token 失配。
- */
 
 const FLAG = "__piBridgeContent";
 const ATTR = "data-pi-bridge";
@@ -34,7 +10,6 @@ interface ContentRuntime {
 	token: string;
 }
 
-/** 后台回给页面侧的结果形状（与 `shared/bridge.ts` 的约定一致）。 */
 interface BridgeCallResult {
 	ok: boolean;
 	value?: unknown;
@@ -46,7 +21,6 @@ const existing = g[FLAG] as ContentRuntime | undefined;
 const runtime: ContentRuntime = existing ?? { token: "" };
 g[FLAG] = runtime;
 
-/** 通道凭据：随机 16 字节 hex（拿不到 crypto 时退回时间戳 + 随机数，一样够用）。 */
 function makeToken(): string {
 	try {
 		const bytes = new Uint8Array(16);
@@ -57,18 +31,14 @@ function makeToken(): string {
 	}
 }
 
-/** 刷新 token 并写到 DOM 上（MAIN 桥注入时从这里读）。 */
 function arm(): string {
 	runtime.token = makeToken();
 	try {
 		document.documentElement?.setAttribute(ATTR, runtime.token);
-	} catch {
-		/* documentElement 还没就绪（极早期注入）：MAIN 桥注入时会因为读不到 token 而拒绝，worker 重试即可 */
-	}
+	} catch {}
 	return runtime.token;
 }
 
-/** 把页面侧的调用转给后台。后台没响应（SW 正在重启/被杀）不能静默 —— 要回一句人能看懂的话。 */
 async function forward(data: Record<string, unknown>): Promise<BridgeCallResult> {
 	try {
 		const res = (await chrome.runtime.sendMessage({
@@ -83,7 +53,10 @@ async function forward(data: Record<string, unknown>): Promise<BridgeCallResult>
 		}
 		return res;
 	} catch (err) {
-		return { ok: false, error: chrome.i18n.getMessage("bridge_noResponse", [err instanceof Error ? err.message : String(err)]) };
+		return {
+			ok: false,
+			error: chrome.i18n.getMessage("bridge_noResponse", [err instanceof Error ? err.message : String(err)]),
+		};
 	}
 }
 
@@ -92,7 +65,13 @@ function reply(id: unknown, result: BridgeCallResult): void {
 		window.postMessage(
 			result.ok
 				? { __piBridge: runtime.token, kind: "result", id, ok: true, value: result.value }
-				: { __piBridge: runtime.token, kind: "result", id, ok: false, error: result.error ?? chrome.i18n.getMessage("bridge_peerCallFailed") },
+				: {
+						__piBridge: runtime.token,
+						kind: "result",
+						id,
+						ok: false,
+						error: result.error ?? chrome.i18n.getMessage("bridge_peerCallFailed"),
+					},
 			"*",
 		);
 	} catch (err) {
@@ -107,33 +86,27 @@ function reply(id: unknown, result: BridgeCallResult): void {
 				},
 				"*",
 			);
-		} catch {
-			/* 连错误都发不出去就只能算了（页面侧有超时兜底） */
-		}
+		} catch {}
 	}
 }
 
 function onWindowMessage(e: MessageEvent): void {
-	// e.source 校验：只有本窗口自己发的才算（iframe / 别的窗口发的消息不带这个 source）
 	if (e.source !== window) return;
 	const data = e.data as Record<string, unknown> | null | undefined;
 	if (!data || typeof data !== "object") return;
-	if (data.__piBridge !== runtime.token) return; // 不是我们这条通道（token 每次都刷新）
+	if (data.__piBridge !== runtime.token) return;
 	if (data.kind !== "call") return;
 	const id = data.id;
 	void forward(data).then((res) => reply(id, res));
 }
 
 if (!existing) {
-	// 只装一次：重复注入（配对变更 / 导航后重装）不能叠加监听器
 	chrome.runtime.onMessage.addListener((raw, _sender, respond) => {
 		const msg = raw as { type?: string } | undefined;
 		if (!msg || msg.type !== ARM) return undefined;
-		// 同步 respond（token 就在手边）→ 不返回 true：返回 true 是「我会稍后回」的意思，
-		// 两者同时做会让通道多开一会儿
 		respond({ ok: true, token: arm() });
 		return undefined;
 	});
 	window.addEventListener("message", onWindowMessage);
-	arm(); // 首次就绪即可用（worker 随后还会 arm 一次，那次会换 token 并紧接着重装 MAIN 桥）
+	arm();
 }

@@ -1,10 +1,3 @@
-/**
- * tests/unit/whatsapp-features.test.ts
- * Tests for WhatsApp Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, text extraction, payload building)
- * - WhatsappBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildWhatsappPayload,

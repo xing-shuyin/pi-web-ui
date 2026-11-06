@@ -1,8 +1,3 @@
-/**
- * 内置定时任务单测（issue #184）：输入归一化/校验、下次触发计算、
- * Store 的 CRUD + 开关 + 持久化往返。执行器（Agent 无头调用）与 ticker
- * 时序不进单测，覆盖靠 tests/run-smoke 聚合里的协议冒烟。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -108,7 +103,6 @@ describe("normalizeSchedulerInput", () => {
 
 describe("computeNextFire", () => {
 	it("cron：每天 9 点从当天 8 点起算是今天 9 点", () => {
-		// 2026-09-17 08:00 本地时区
 		const from = new Date(2026, 8, 17, 8, 0, 0).getTime();
 		const next = computeNextFire({ kind: "cron", spec: "0 9 * * *" }, from);
 		const d = new Date(next!);
@@ -144,9 +138,7 @@ describe("SchedulerStore", () => {
 	afterEach(() => {
 		try {
 			rmSync(dir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	it("upsert → list → 持久化往返（新 Store 读盘）", () => {
@@ -167,7 +159,6 @@ describe("SchedulerStore", () => {
 	it("坏文件当空表（不抛错）", () => {
 		const s = new SchedulerStore(dir, {});
 		s.upsert({ ...BASE, id: "a" });
-		// 写坏文件
 		writeFileSync(join(dir, "scheduler-tasks.json"), "{broken");
 		const s2 = new SchedulerStore(dir, {});
 		s2.load();
@@ -195,12 +186,10 @@ describe("SchedulerStore", () => {
 	it("issue #231：面板编辑（不带绑定字段）保留旧绑定，显式给空才清", () => {
 		const s = new SchedulerStore(dir, {});
 		s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
-		// 面板改名：没带绑定字段 → 绑定保留
 		s.upsert({ ...BASE, id: "a", name: "新名字" });
 		expect(s.list()[0]!.name).toBe("新名字");
 		expect(s.list()[0]!.conversationId).toBe("c1");
 		expect(s.list()[0]!.sessionFile).toBe("/s/old.jsonl");
-		// 显式给空 → 按全量语义清掉
 		s.upsert({ ...BASE, id: "a", conversationId: "", sessionFile: "" });
 		expect(s.list()[0]!.conversationId).toBe("");
 		expect(s.list()[0]!.sessionFile).toBe("");
@@ -211,17 +200,13 @@ describe("SchedulerStore", () => {
 		s.upsert({ ...BASE, id: "a", conversationId: "c1", sessionFile: "/s/old.jsonl" });
 		const before = s.list()[0]!;
 		const nextBefore = before.nextFire;
-		// 无变化 → false
 		expect(s.rebind("a", { conversationId: "c1", sessionFile: "/s/old.jsonl" })).toBe(false);
-		// 换新 id（压缩后同文件对话改名）→ true，下次触发不动
 		expect(s.rebind("a", { conversationId: "c9" })).toBe(true);
 		const after = s.list()[0]!;
 		expect(after.conversationId).toBe("c9");
 		expect(after.sessionFile).toBe("/s/old.jsonl");
 		expect(after.nextFire).toBe(nextBefore);
-		// 未知任务 → false
 		expect(s.rebind("nope", { conversationId: "c1" })).toBe(false);
-		// 持久化往返：重绑后的绑定落盘
 		const s2 = new SchedulerStore(dir, {});
 		s2.load();
 		expect(s2.list()[0]!.conversationId).toBe("c9");
@@ -354,21 +339,17 @@ describe("SchedulerStore", () => {
 					return { ok: true };
 				},
 			});
-			// 间隔 5 分钟
 			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
 			const next0 = s.list().find((t) => t.id === "t1")!.nextFire!;
 			expect(next0).toBeDefined();
 
-			// 首次 tick 触发
 			vi.setSystemTime(next0);
 			await s.tick(next0);
 			const viewWhileRunning = s.list().find((t) => t.id === "t1")!;
 			expect(viewWhileRunning.running).toBe(true);
-			// nextFire 必须已推进到下个周期，而不是停留在当前触发时间
 			expect(viewWhileRunning.nextFire).toBe(next0 + 300000);
 
 			finishRun();
-			// 等待微任务消费完成
 			await vi.advanceTimersByTimeAsync(0);
 			const viewAfterRun = s.list().find((t) => t.id === "t1")!;
 			expect(viewAfterRun.running).toBe(false);
@@ -392,29 +373,23 @@ describe("SchedulerStore", () => {
 			s.upsert({ ...BASE, id: "t1", kind: "interval", spec: "300000" });
 			const next0 = s.list()[0]!.nextFire!;
 
-			// 第一次触发
 			vi.setSystemTime(next0);
 			await s.tick(next0);
 			expect(s.list()[0]!.running).toBe(true);
 			expect(s.list()[0]!.nextFire).toBe(next0 + 300000);
 
-			// 下一周期已到达，但第一次执行仍未结束（耗时 > 间隔）
 			vi.setSystemTime(next0 + 300000);
 			await s.tick(next0 + 300000);
 			const viewDelayed = s.list()[0]!;
 			expect(viewDelayed.running).toBe(true);
-			// 顺延至第三个周期，而不是卡死在第二个周期
 			expect(viewDelayed.nextFire).toBe(next0 + 600000);
 
-			// 第一次运行在 400s 处结束
 			vi.setSystemTime(next0 + 400000);
 			finishRun();
 			await vi.advanceTimersByTimeAsync(0);
 			expect(s.list()[0]!.running).toBe(false);
-			// 此时任务完成，nextFire 按完成时间顺延到 next0 + 700000
 			expect(s.list()[0]!.nextFire).toBe(next0 + 700000);
 
-			// 下次到达时第二次正常触发
 			let secondRunStarted = false;
 			(s as any).opts.executor = async () => {
 				secondRunStarted = true;
@@ -448,11 +423,9 @@ describe("SchedulerStore", () => {
 		const nextA = s.list().find((t) => t.id === "task-a")!.nextFire!;
 		const nextB = s.list().find((t) => t.id === "task-b")!.nextFire!;
 
-		// 触发两个任务
 		await s.tick(Math.max(nextA, nextB));
 		await new Promise((r) => setTimeout(r, 20));
 
-		// task-a 正在运行，但 task-b 已成功执行完成，未被 task-a 阻塞
 		expect(s.list().find((t) => t.id === "task-a")!.running).toBe(true);
 		expect(runBCount).toBe(1);
 
@@ -470,23 +443,17 @@ describe("SchedulerStore", () => {
 				return { ok: true };
 			},
 		});
-		// 每 15 分钟触发一次
 		s.upsert({ ...BASE, id: "cron-1", kind: "cron", spec: "*/15 * * * *" });
 		const next0 = s.list()[0]!.nextFire!;
 		expect(next0).toBeDefined();
 
-		// 触发
 		await s.tick(next0);
 		expect(s.list()[0]!.running).toBe(true);
-		// 下一次触发时间必须是下一个 15 分钟节点（next0 + 15 分钟）
 		expect(s.list()[0]!.nextFire).toBe(next0 + 15 * 60 * 1000);
 
-		// 15 分钟后下一轮已到达，但本轮仍在执行
 		await s.tick(next0 + 15 * 60 * 1000);
-		// 顺延至下下个 15 分钟节点（next0 + 30 分钟）
 		expect(s.list()[0]!.nextFire).toBe(next0 + 30 * 60 * 1000);
 
-		// 本轮完成
 		finishRun();
 		await new Promise((r) => setTimeout(r, 10));
 		expect(s.list()[0]!.running).toBe(false);

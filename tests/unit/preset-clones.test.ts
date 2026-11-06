@@ -1,7 +1,3 @@
-/**
- * preset-clones 单测：裸包名改写 + preset-plane patch 生成 + fixture 端到端。
- * 纯函数 + 临时目录，零 token、零端口。
- */
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,7 +98,6 @@ describe("generatePresetClones (fixture)", () => {
 		const root = mkdtempSync(join(tmpdir(), "preset-clones-"));
 		const scope = join(root, "node_modules", "@deepseek-ai");
 		const shipped = join(scope, "dsh-agent-presets", "presets");
-		// 可解析的入口包（改写目标）
 		mkdirSync(join(scope, "dsh-persona", "lib"), { recursive: true });
 		writeFileSync(join(scope, "dsh-persona", "package.json"), JSON.stringify({ main: "lib/index.js" }));
 		writeFileSync(join(scope, "dsh-persona", "lib", "index.js"), "// entry\n");
@@ -115,7 +110,6 @@ describe("generatePresetClones (fixture)", () => {
 			writeFileSync(join(shipped, id, "preset.yml"), `name: ${id}\norder: 1\n`);
 			writeFileSync(join(shipped, id, "skills", "demo", "SKILL.md"), "# demo\n");
 		}
-		// 无 composition 的目录应被跳过
 		mkdirSync(join(shipped, "empty"));
 		return { root, shipped, dataDir: join(root, "data") };
 	};

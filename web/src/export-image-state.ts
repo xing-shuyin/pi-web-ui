@@ -1,7 +1,3 @@
-/**
- * 复制为图片的模块级状态：同一时刻只有一个导出面板。
- * 勾选集合始终按对话时间线排（早 → 晚），预览/导出从上到下就是从旧到新。
- */
 import { useSyncExternalStore } from "react";
 import { messageMarkdown } from "./copy-text";
 
@@ -14,11 +10,8 @@ export interface ExportableMsg {
 interface ExportImageState {
 	open: boolean;
 	triggerId: string;
-	/** 已按对话时间线排好（早 → 晚）。 */
 	selectedIds: string[];
-	/** 默认关：关着时导出图里去掉工具卡；开着时强制展开再拍。 */
 	includeTools: boolean;
-	/** 默认关：关着时导出图里去掉思考块；开着时强制展开再拍。 */
 	includeThinking: boolean;
 }
 
@@ -42,7 +35,6 @@ export function isExportableMessage(m: ExportableMsg): boolean {
 	return (m.role === "user" || m.role === "assistant") && messageMarkdown(m.content).length > 0;
 }
 
-/** 按 catalog 时间线排序并去重；不在 catalog 里的丢掉。 */
 export function sortIdsByCatalog(ids: readonly string[], messages: readonly ExportableMsg[] = catalog): string[] {
 	const order = new Map(messages.map((m, i) => [m.id, i]));
 	return [...new Set(ids)].filter((id) => order.has(id)).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
@@ -126,7 +118,6 @@ export function toggleExportImageSelect(id: string): void {
 	notify();
 }
 
-/** 单测用：清空状态，不通知。 */
 export function resetExportImage(): void {
 	cached = EMPTY;
 	catalog = [];

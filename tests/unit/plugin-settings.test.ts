@@ -1,7 +1,3 @@
-/**
- * 插件声明式设置（manifest "settings" schema）单测：schema 解析校验、
- * 默认值合并、savePluginSettings 持久化 + 通知、host.getSettings 读取。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import * as atomicFile from "../../server/atomic-file.js";
 import { withFileRmwLock } from "../../server/plugin-facilities.js";
@@ -50,7 +46,6 @@ describe("schema 解析 + 默认值", () => {
 		const p = list.find((x) => x.id === "cfg")!;
 		expect(p.settingsSchema?.length).toBe(5);
 		expect(p.settingsValues).toEqual({ pollSec: 60, notify: true, theme: "dark", name: "demo", pass: "" });
-		// 没装过 → storage.json 不存在
 		expect(existsSync(join(dir, "plugins", "cfg", "storage.json"))).toBe(false);
 	});
 
@@ -95,16 +90,12 @@ describe("optionsFrom（select 候选值由宿主动态提供）", () => {
 		expect(mgr.savePluginSettings("dyn", { model: "xai/grok-4", thinking: "high" }).error).toBeUndefined();
 		expect(h.getSettings().model).toBe("xai/grok-4");
 		expect(h.getSettings().thinking).toBe("high");
-		// 换一个未在清单里的值也能存（模型被删掉/改过供应商时不该卡住）
 		expect(mgr.savePluginSettings("dyn", { model: "gone/model" }).error).toBeUndefined();
 		expect(h.getSettings().model).toBe("gone/model");
-		// 每次保存都会写入整份 schema（与前端一次性提交整张表单同口径），
-		// 所以只传 model 的那次会让 thinking 回落默认空串。
 		expect(JSON.parse(readFileSync(join(dir, "plugins", "dyn", "storage.json"), "utf8")).settings).toEqual({
 			model: "gone/model",
 			thinking: "",
 		});
-		// 只做长度护栏（防手写 storage.json 塞垃圾）
 		expect(mgr.savePluginSettings("dyn", { model: "x".repeat(300) }, () => "zh").error).toContain("过长");
 		expect(h.getSettings().model).toBe("gone/model");
 	});
@@ -113,7 +104,7 @@ describe("optionsFrom（select 候选值由宿主动态提供）", () => {
 describe("savePluginSettings", () => {
 	it("校验 + 原子落盘 + 保留 storage.json 其它键", async () => {
 		const h = await makePlugin("cfg", SCHEMA_PLUGIN);
-		h.storage.set("custom", 42); // 插件自己的键
+		h.storage.set("custom", 42);
 		const r = mgr.savePluginSettings("cfg", {
 			pollSec: 120,
 			notify: false,
@@ -124,8 +115,7 @@ describe("savePluginSettings", () => {
 		expect(r.error).toBeUndefined();
 		const raw = JSON.parse(readFileSync(join(dir, "plugins", "cfg", "storage.json"), "utf8"));
 		expect(raw.settings).toEqual({ pollSec: 120, notify: false, theme: "light", name: "prod", pass: "s3cret" });
-		expect(raw.custom).toBe(42); // 插件数据不被覆盖
-		// 重扫后默认值已被存值覆盖
+		expect(raw.custom).toBe(42);
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "cfg")?.settingsValues).toEqual({
 			pollSec: 120,
@@ -138,12 +128,10 @@ describe("savePluginSettings", () => {
 
 	it("number 越界 / select 非法值被拒", async () => {
 		await makePlugin("cfg", SCHEMA_PLUGIN);
-		// issue #91：默认英文
 		expect(mgr.savePluginSettings("cfg", { pollSec: 5 }).error).toContain("out of range");
 		expect(mgr.savePluginSettings("cfg", { pollSec: 5 }, () => "zh").error).toContain("超出范围");
 		expect(mgr.savePluginSettings("cfg", { pollSec: 9999 }, () => "zh").error).toContain("超出范围");
 		expect(mgr.savePluginSettings("cfg", { theme: "neon" }, () => "zh").error).toContain("值非法");
-		// 合法保存不受影响
 		expect(mgr.savePluginSettings("cfg", { pollSec: 30 }).error).toBeUndefined();
 	});
 
@@ -162,11 +150,9 @@ describe("savePluginSettings", () => {
 				},
 			],
 		});
-		// 合法保存
 		expect(mgr.savePluginSettings("objopts", { model: "haru" }, () => "zh").error).toBeUndefined();
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "objopts")?.settingsValues).toEqual({ model: "haru" });
-		// 非法保存被拒
 		expect(mgr.savePluginSettings("objopts", { model: "invalid" }, () => "zh").error).toContain("值非法");
 	});
 
@@ -179,7 +165,7 @@ describe("savePluginSettings", () => {
 describe("host.getSettings + onSettingsChanged", () => {
 	it("getSettings 实时反映存值；onSettingsChanged 在保存后触发", async () => {
 		const h = await makePlugin("cfg", SCHEMA_PLUGIN);
-		expect(h.getSettings().pollSec).toBe(60); // 默认
+		expect(h.getSettings().pollSec).toBe(60);
 		const received: unknown[] = [];
 		const off = h.onSettingsChanged((v) => received.push(v));
 		mgr.savePluginSettings("cfg", { pollSec: 90 });
@@ -187,7 +173,7 @@ describe("host.getSettings + onSettingsChanged", () => {
 		expect(h.getSettings().pollSec).toBe(90);
 		off();
 		mgr.savePluginSettings("cfg", { pollSec: 100 });
-		expect(received).toHaveLength(1); // 注销后不再触发
+		expect(received).toHaveLength(1);
 	});
 });
 
@@ -275,20 +261,15 @@ describe("secret 类型（P0-4 加密存、浏览器只见有无）", () => {
 		const h = await makePlugin("sec", SECRET_PLUGIN);
 		expect(mgr.savePluginSettings("sec", { apiKey: "sk-live-123" }).error).toBeUndefined();
 		expect(h.getSettings().apiKey).toBe("sk-live-123");
-		// 浏览器侧仍是有无布尔
 		const list = await mgr.list();
 		expect(list.find((x) => x.id === "sec")!.settingsValues?.apiKey).toBe(true);
-		// storage.json 里没有明文
 		const raw = readFileSync(join(dir, "plugins", "sec", "storage.json"), "utf8");
 		expect(raw).not.toContain("sk-live-123");
 		expect(JSON.parse(raw).settings).toEqual({ name: "demo" });
-		// 空串 = 不改
 		expect(mgr.savePluginSettings("sec", { apiKey: "" }).error).toBeUndefined();
 		expect(h.getSettings().apiKey).toBe("sk-live-123");
-		// 覆盖
 		expect(mgr.savePluginSettings("sec", { apiKey: "sk-new" }).error).toBeUndefined();
 		expect(h.getSettings().apiKey).toBe("sk-new");
-		// 超长拒绝
 		expect(mgr.savePluginSettings("sec", { apiKey: "x".repeat(5000) }, () => "zh").error).toContain("过长");
 		expect(h.getSettings().apiKey).toBe("sk-new");
 	});

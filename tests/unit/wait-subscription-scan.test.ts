@@ -13,9 +13,6 @@ import {
 } from "../../server/wait-subscription-scan.js";
 
 const SESSION_FILE = "/root/.pi/agent/sessions/--proj--/2026-01-01T00-00-00Z_session.jsonl";
-// 用现代时间戳作为假想「现在」（而非 1_000_000/1970 附近）：过期场景会算出
-// 1970 之前的负 mtime，而 Windows 文件系统不支持 1970 前的时间戳（utimesSync
-// 会把负时间折返成 2106 年），导致「marker 过期」用例在 Windows 上误判为新鲜。
 const NOW = Date.UTC(2026, 0, 1);
 const TOKEN = "0ffbdaf3-c196-4e88-8ae2-0674b2586335";
 
@@ -47,8 +44,6 @@ function writeRecord(dir: string, value: unknown, file = `${TOKEN}.json`): void 
 	writeFileSync(path.join(dir, file), typeof value === "string" ? value : JSON.stringify(value));
 }
 
-/** 构造 pi-subagents 磁盘布局：<dir>/async-subagent-runs/{runId}/{status.json} +
- *  <dir>/async-subagent-runs/.active-runs/{runId}（空 marker）。返回 runs 根。 */
 function makeRunLayout(dir: string, runId: string, status: Record<string, unknown>): string {
 	const runsDir = path.join(dir, "async-subagent-runs");
 	const marker = path.join(runsDir, ".active-runs", runId);
@@ -326,7 +321,6 @@ describe("shouldRetainActive（置换决策）", () => {
 
 	it("pinned → 无条件保留（空闲无终端也不释放）", () => {
 		expect(shouldRetainActive({ ...base, pinned: true })).toBe(true);
-		// 其余判据全关掉的最苛刻情形下仍然保留
 		expect(
 			shouldRetainActive({
 				...base,
@@ -424,8 +418,6 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 		if (process.getuid) {
 			expect(resolveTempScopeId()).toMatch(/^uid-\d+$/);
 		} else {
-			// Windows/macOS 无 process.getuid：应回退到 user-<用户名>，
-			// 而不是抛错或落到 home/shared。
 			expect(resolveTempScopeId()).toMatch(/^user-[\w.-]+$/);
 		}
 	});
@@ -439,10 +431,7 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 		let username: string | null = null;
 		try {
 			username = userInfo().username;
-		} catch {
-			// userInfo 在本平台不可用 → 该层跳过（落到下一层 home），
-			// 断言仍验证不抛错且不是 shared。
-		}
+		} catch {}
 		if (username) {
 			expect(resolveTempScopeId(cleanEnv, null)).toBe(`user-${username}`);
 		} else {
@@ -459,8 +448,6 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 	});
 
 	it("resolveSubscriptionsDir：PI_SUBAGENTS_TEMP_ROOT 覆盖（含尾斜杠/相对路径）", () => {
-		// path.resolve 把 /tmp/custom 规范成平台绝对路径（POSIX 原样，
-		// Windows 变 C:\tmp\custom），断言跟随实现，平台无关。
 		expect(resolveSubscriptionsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom" })).toBe(
 			path.join(path.resolve("/tmp/custom"), "wait-subscriptions"),
 		);
@@ -476,7 +463,6 @@ describe("resolveTempScopeId / resolveSubscriptionsDir", () => {
 		expect(resolveAsyncRunsDir({ PI_SUBAGENTS_TEMP_ROOT: "/tmp/custom" })).toBe(
 			path.join(path.resolve("/tmp/custom"), "async-subagent-runs"),
 		);
-		// 默认根下两个目录同 parent：<root>/async-subagent-runs 与 <root>/wait-subscriptions
 		expect(resolveAsyncRunsDir(cleanEnv)).toBe(
 			path.join(tmpdir(), `pi-subagents-${resolveTempScopeId(cleanEnv)}`, "async-subagent-runs"),
 		);
@@ -518,7 +504,6 @@ describe("M1/M4/S2 边界与宿主对齐", () => {
 	it("非 ENOENT I/O 错误 warn 一次且仍 fail-open；ENOENT 静默", () => {
 		const warnings: string[] = [];
 		const warn = (message: string) => warnings.push(message);
-		// foo.json 是目录 → readFileSync 抛 EISDIR（非 ENOENT）
 		const dir = makeDir();
 		mkdirSync(path.join(dir, "foo.json"));
 		expect(
@@ -530,7 +515,6 @@ describe("M1/M4/S2 边界与宿主对齐", () => {
 			}),
 		).toBe(false);
 		expect(warnings).toHaveLength(1);
-		// 目录整体缺失 → ENOENT → 静默
 		const silent: string[] = [];
 		expect(
 			hasPendingWaitSubscription({
@@ -544,7 +528,6 @@ describe("M1/M4/S2 边界与宿主对齐", () => {
 	});
 });
 
-/** #576：第三方后台任务（bg_run）在飞时，切目录 / 移出 / 置换不得 dispose 掉它。 */
 describe("hasRunningBackgroundTask（#576：.pi/tasks 的 running 任务是保留证据）", () => {
 	const SESSION =
 		"/home/u/.pi/agent/sessions/--proj--/2026-10-09T03-32-42-335Z_01a11eb8-60df-7150-9357-ba8dbbb73cff.jsonl";

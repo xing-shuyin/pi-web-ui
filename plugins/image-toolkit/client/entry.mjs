@@ -1,20 +1,3 @@
-/**
- * image-toolkit 视图 —— 图片处理工作台。
- *
- * 约定：ESM 默认导出 { mount(container, ctx) → cleanup? }，纯 DOM 无依赖
- * （不 import npm 包，浏览器直接执行）。像素处理全在本地 Canvas 完成，
- * 只有「从工作区读」与「存回工作区」才走服务端路由。
- *
- * 结构：
- *   顶部工具条（导入 / 从工作区 / 语言）
- *   左：队列（每项一份自己的参数）
- *   中：画布（缩放、对比原图、裁剪选框）
- *   右：参数面板（压缩/裁剪/尺寸/旋转/水印/滤镜/信息）+ 导出动作
- *
- * 参数与像素分离：item.state 是纯数据（可 JSON 快照 → 撤销/重做、复制到全部），
- * 渲染是 state 的纯函数（renderToCanvas），所以预览、精确估算、导出、批量
- * 走的是同一套代码，参数一致的项结果一定一致。
- */
 import { detectLang, makeT } from "./i18n.mjs";
 import { mountGenView } from "./gen-view.mjs";
 import {
@@ -50,14 +33,11 @@ import {
 	supportsMime,
 } from "./pipeline.mjs";
 
-/** 预览渲染的像素预算：适应窗口时用小的（快），放大看细节时给更多（清楚）。
- *  实际渲染尺度还会按「屏幕需要的像素比」再收一次（见 currentPreview），所以这里是上限。 */
 const PREVIEW_FIT_PIXELS = 2_600_000;
 const PREVIEW_ZOOM_PIXELS = 6_000_000;
 
 const MIME_OF = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp", avif: "image/avif" };
 
-/** 参数路径读写（"adjust.brightness"）。 */
 function getPath(o, p) {
 	return p.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
 }
@@ -70,12 +50,10 @@ function setPath(o, p, v) {
 	cur[last] = v;
 }
 
-/** 源图尺寸（item.bitmap 的宽高）。 */
 function srcSize(item) {
 	return { width: item.bitmap.width, height: item.bitmap.height };
 }
 
-/** 裁剪坐标基于「旋转+任意角度外扩后」的坐标系。 */
 function baseOf(item) {
 	return baseSize(item.state, item.bitmap.width, item.bitmap.height);
 }
@@ -100,7 +78,6 @@ export default {
 			lang: detectLang(),
 			tab: "compress",
 			mode: "edit",
-			// 手机端底部参数抽屉是否收起（桌面端手柄不显示，这个状态一直用不上）
 			sheetMin: false,
 			cfg: {},
 			zoom: 0,
@@ -121,7 +98,6 @@ export default {
 		let studioNavBtns = [];
 		let editActionGroup = null;
 		let genActionGroup = null;
-		/** 最近一次渲染用的显示比例（显示像素 / 源像素），裁剪拖动时更新状态文案要用。 */
 		let viewScaleNow = 1;
 		let cleanupFns = [];
 
@@ -131,9 +107,6 @@ export default {
 			return () => `img${++n}`;
 		})();
 
-		// ------------------------------------------------------------------
-		// 状态与历史
-		// ------------------------------------------------------------------
 		function varsFor(item) {
 			return {
 				name: stem(item.name),
@@ -169,7 +142,6 @@ export default {
 			afterStateChange(item, false);
 		}
 
-		/** 参数变了：可选重建面板（结构变了）→ 重绘 → 重估体积。 */
 		function afterStateChange(item, structural) {
 			if (structural) buildPanel();
 			else syncPanelValues();
@@ -177,7 +149,6 @@ export default {
 			scheduleEstimate();
 		}
 
-		/** 参数变更的统一入口（控件都走这里）。 */
 		function commit(item, fn, structural) {
 			fn(item.state);
 			pushHistory(item);
@@ -185,9 +156,6 @@ export default {
 			afterStateChange(item, structural);
 		}
 
-		// ------------------------------------------------------------------
-		// 队列
-		// ------------------------------------------------------------------
 		async function addFiles(files, opts = {}) {
 			const list = [...files].filter((f) => /^image\//.test(f.type) || ws.IMAGE_EXT.test(f.name || ""));
 			if (!list.length) return;
@@ -197,7 +165,6 @@ export default {
 			renderQueue();
 		}
 
-		/** 解码一张图并建队列项（失败只标记该项，不影响其它）。 */
 		async function addOne({ name, bytes, path = "" }) {
 			if (bytes instanceof Blob) {
 				bytes = await bytes.arrayBuffer();
@@ -242,14 +209,11 @@ export default {
 			return item;
 		}
 
-		/** 解码：优先 createImageBitmap（快），失败回落 <img>（SVG 等）。 */
 		async function decodeBytes(bytes, type) {
 			const blob = new Blob([bytes], { type: type || "application/octet-stream" });
 			try {
 				return await createImageBitmap(blob);
-			} catch {
-				/* 走 img 回落 */
-			}
+			} catch {}
 			const url = URL.createObjectURL(blob);
 			try {
 				const img = await new Promise((resolve, reject) => {
@@ -270,7 +234,7 @@ export default {
 			app.estimate = null;
 			app.exact = null;
 			app.fit = true;
-			app.zoom = 0; // 换图回到适应
+			app.zoom = 0;
 			renderQueue();
 			buildPanel();
 			scheduleRender(true);
@@ -300,9 +264,6 @@ export default {
 			setTimeout(() => node.remove(), 3200);
 		}
 
-		// ------------------------------------------------------------------
-		// 渲染
-		// ------------------------------------------------------------------
 		function previewBudget() {
 			return app.fit ? PREVIEW_FIT_PIXELS : PREVIEW_ZOOM_PIXELS;
 		}
@@ -313,21 +274,12 @@ export default {
 		}, 40);
 		const scheduleEstimate = debounce(() => void computeEstimate(), 300);
 
-		/**
-		 * 当前参数下的预览画布。
-		 * ignoreCrop：裁剪 tab 要看「未被裁掉的全图 + 选框」，否则选框会相对裁后画面
-		 * 定位，越拖越乱（选框坐标基于未裁的 base 画面）；同时也要忽略形状 —— 形状只在
-		 * 选框里以轮廓 + 压暗呈现，不然整张图会当场变成椭圆，看着像「改形状把图改了」。
-		 * 其它参数页与导出结果才应用形状。
-		 */
 		function currentPreview(ignoreCrop = false, viewScale = 0) {
 			const item = active();
 			if (!item?.bitmap) return null;
 			const bs = baseOf(item);
 			const budget = previewBudget();
 			const cap = Math.min(1, Math.sqrt(budget / Math.max(1, bs.width * bs.height)));
-			// 屏幕只需要 viewScale×dpr 那么多像素：多渲的部分肉眼看不见，纯烧时间。
-			// 但也不低于预算的 35%（否则 1:1 放大看就糊了）。
 			const want = viewScale > 0 ? viewScale * (window.devicePixelRatio || 1) : cap;
 			const scale = clamp(Math.min(cap, Math.max(want, cap * 0.35)), 0.05, 1);
 			const mime = outputMime(item.state, item.sourceType);
@@ -365,7 +317,6 @@ export default {
 
 			const bs = baseOf(item);
 
-			// 显示尺寸：fit 用容器可容纳的比例；手动缩放时按 viewScale（显示像素/源像素）
 			const availW = Math.max(80, ui.viewwrap.clientWidth - 24);
 			const availH = Math.max(80, ui.viewwrap.clientHeight - 24);
 			const fitScale = Math.min(availW / bs.width, availH / bs.height);
@@ -382,7 +333,6 @@ export default {
 			c2.height = p.canvas.height;
 			const cctx = c2.getContext("2d");
 			if (app.compare) {
-				// 对比原图：直接画源图（不经任何参数）
 				cctx.clearRect(0, 0, c2.width, c2.height);
 				cctx.imageSmoothingQuality = "high";
 				cctx.drawImage(item.bitmap, 0, 0, c2.width, c2.height);
@@ -395,7 +345,6 @@ export default {
 			ui.frame.style.width = `${dispW}px`;
 			ui.frame.style.height = `${dispH}px`;
 
-			// 裁剪层（显示像素 ↔ 源像素在这里换算）
 			if (app.tab === "crop" && !app.compare) {
 				if (!cropper) {
 					cropper = createCropper(ui.cropLayer, {
@@ -428,9 +377,6 @@ export default {
 								w: Math.round(clamp(r.w, 1, b.width)),
 								h: Math.round(clamp(r.h, 1, b.height)),
 							};
-							// 这里**故意不重渲染画布**：裁剪 tab 的预览本来就是未裁的全图，
-							// 每帧重渲一遍大图正是以前拖动卡顿的主因。选框由 cropper 自己挪，
-							// 面板数值帧内跟一下，体积估算走防抖。
 							syncPanelValues();
 							scheduleEstimate();
 							updateStageInfo(null, viewScaleNow);
@@ -458,7 +404,6 @@ export default {
 			void p;
 		}
 
-		/** 当前输出尺寸（源像素空间）。 */
 		function currentOutputSize(item) {
 			const crop = cropRect(item);
 			let w = crop.w;
@@ -492,9 +437,6 @@ export default {
 			return { width: Math.max(1, Math.round(w)), height: Math.max(1, Math.round(h)) };
 		}
 
-		// ------------------------------------------------------------------
-		// 体积估算
-		// ------------------------------------------------------------------
 		async function computeEstimate() {
 			const item = active();
 			if (!item?.bitmap || !ui) return;
@@ -529,7 +471,6 @@ export default {
 			const delta = outSize ? Math.round((1 - outSize / item.info.bytes) * 100) : null;
 			ui.statusbar.innerHTML = "";
 			if (app.tab === "crop") ui.statusbar.append(el("span", { class: "igt-dim", text: t("stage.cropHint") }));
-			// 形状抠图：形状外到底透明还是被底色填了，直接写在状态条上（用户就是踩了这个坑）
 			if (alphaFixForShape(item.state, item.sourceType)) {
 				ui.statusbar.append(
 					el("span", { class: "igt-chip-warn", text: t("status.shapeFilled", { c: item.state.background }) }),
@@ -546,7 +487,6 @@ export default {
 			);
 		}
 
-		/** 精确体积：按真实输出分辨率编码一次。 */
 		async function measureExact() {
 			const item = active();
 			if (!item?.bitmap) return;
@@ -563,10 +503,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------------
-		// 导出 / 保存
-		// ------------------------------------------------------------------
-		/** 把一项按当前参数渲染到真实分辨率并编码。 */
 		async function exportItem(item, onStep) {
 			const mime = outputMime(item.state, item.sourceType);
 			const canvas = renderToCanvas(item.bitmap, withWatermarkImage(item, item.state), {
@@ -637,7 +573,6 @@ export default {
 			}
 		}
 
-		/** 把当前项的参数复制给队列里其它图（裁剪框超出对方尺寸时丢掉，避免裁出空白）。 */
 		function syncToAll() {
 			const src = active();
 			if (!src?.bitmap) {
@@ -685,7 +620,6 @@ export default {
 			}
 		}
 
-		/** 打开「保存到工作区」弹窗。 */
 		function openSaveDialog() {
 			const item = active();
 			if (!item?.bitmap) {
@@ -718,7 +652,6 @@ export default {
 								const r = await exportItem(item);
 								const res = await ws.saveImage(path, r.blob, ow.checked);
 								toast(t(res.renamed ? "save.renamed" : "save.ok", { path: res.pretty ?? res.path }));
-								// 存回工作区后此项的来源路径跟着走，下次保存/后缀更聪明
 								item.path = res.path;
 								return false;
 							} catch (err) {
@@ -732,7 +665,6 @@ export default {
 			void dlg;
 		}
 
-		/** 插件内部设置弹窗（右上角 ⚙；以前在 ⚙ 面板 → 界面插件里，已搬进来）。 */
 		function openSettingsDialog() {
 			const draft = {
 				defaultFormat: String(app.cfg.defaultFormat ?? "keep"),
@@ -833,7 +765,6 @@ export default {
 			);
 		}
 
-		/** 工作区文件浏览弹窗。 */
 		function openWorkspaceDialog() {
 			let dir = "";
 			const listEl = el("div", { class: "igt-wslist" });
@@ -911,7 +842,6 @@ export default {
 			void load("");
 		}
 
-		/** 通用弹窗（返回 { close, header }）。 */
 		function modal(title, bodyEl, buttons) {
 			const header = el("div", { class: "igt-modal-hd" }, [el("b", { text: title })]);
 			const footer = el("div", { class: "igt-modal-ft" });
@@ -934,9 +864,6 @@ export default {
 			return { close, header };
 		}
 
-		// ------------------------------------------------------------------
-		// 面板（控件描述 → DOM）
-		// ------------------------------------------------------------------
 		let builtControls = [];
 
 		function panelSpec(item) {
@@ -1141,12 +1068,10 @@ export default {
 									commit(
 										it,
 										(st) => {
-											// 用「旋转后」的尺寸：用户看到的画面就是这个比例
 											const b = baseOf(it);
 											st.ratio = "custom";
 											st.ratioW = b.width;
 											st.ratioH = b.height;
-											// 光改比例数字不够：框还停在旧尺寸上。按这个比例取最大框（= 整幅）才算「还原」
 											st.crop = { x: 0, y: 0, w: Math.round(b.width), h: Math.round(b.height) };
 										},
 										true,
@@ -1168,7 +1093,6 @@ export default {
 						get: (st) => st.cropShape ?? "rect",
 						set: (st, v) => {
 							st.cropShape = v;
-							// 「圆形」= 椭圆 + 锁 1:1（否则它只是躺平的椭圆）
 							if (v === "circle") st.ratio = "1:1";
 						},
 						options: ["rect", "rounded", "ellipse", "circle", "diamond", "heart", "star"].map((v) => ({
@@ -1473,11 +1397,6 @@ export default {
 			return tabs[app.tab] ?? [];
 		}
 
-		/**
-		 * 选了非矩形形状（= 要抠图）却碰上不支持透明的输出格式时：
-		 * 「保持原格式」这种没表态的情况直接改成 PNG —— 否则用户拿到的是一张白角图，
-		 * 而他要的是透明；用户显式选了 JPEG 就不动他的选择，只在面板给警告 + 一键切换。
-		 */
 		function autoAlphaForShape(item) {
 			const fix = alphaFixForShape(item.state, item.sourceType);
 			if (!fix || item.state.format !== "keep") return;
@@ -1491,11 +1410,6 @@ export default {
 			toast(t("crop.autoAlpha"), "info");
 		}
 
-		/**
-		 * 裁剪字段写入（相对整个 base 画面）。
-		 * 锁了比例时另一个维度跟着算——否则面板写 120×300、选框与导出却是 120×120，
-		 * 两边各说各的（曾经就是这么错的）。
-		 */
 		function setCrop(state, key, v) {
 			const item = active();
 			if (!item) return;
@@ -1529,7 +1443,7 @@ export default {
 				item,
 				(st) => {
 					st.rotate90 = ((((st.rotate90 / 90 + steps) % 4) + 4) % 4) * 90;
-					st.crop = null; // 坐标系变了，裁剪重置（否则框会跳到别处）
+					st.crop = null;
 				},
 				true,
 			);
@@ -1546,13 +1460,11 @@ export default {
 			}
 		}
 
-		/** 建面板（tab 或 active 项变化时；控件内部改动不走这里）。 */
 		function buildPanel() {
 			if (!ui) return;
 			const item = active();
 			ui.panelBody.innerHTML = "";
 			builtControls = [];
-			// tab 高亮
 			for (const b of ui.tabBtns) b.classList.toggle("on", b.dataset.tab === app.tab);
 			if (!item || !item.bitmap) {
 				ui.panelBody.append(el("div", { class: "igt-hint", text: t("msg.noItem") }));
@@ -1569,9 +1481,6 @@ export default {
 		function buildControl(c, item) {
 			const s = item.state;
 			if (c.when && !c.when(s)) return el("span", { style: "display:none" });
-			// 只有「值型」控件（range/num/select/bool/color/text）才有 path 或 get/set；
-			// buttons/note/info/file 没有可同步的值——别给它们造一个 undefined path 的
-			// getter，否则 syncPanelValues 一调就抛（曾经把整条参数变更链打断）。
 			const hasValue = Boolean(c.get || c.path);
 			const get = c.get ?? (hasValue ? (st) => getPath(st, c.path) : () => undefined);
 			const set = c.set ?? (hasValue ? (st, v) => setPath(st, c.path, v) : () => {});
@@ -1710,7 +1619,6 @@ export default {
 			return wrap;
 		}
 
-		/** 控件值回填（拖动裁剪框 / 撤销 / 外部改参数后调用，不重建 DOM）。 */
 		function syncPanelValues() {
 			const item = active();
 			if (!item) return;
@@ -1732,7 +1640,6 @@ export default {
 			}
 		}
 
-		/** 信息 tab：文件信息 + EXIF + 直方图 + 主色。 */
 		function infoBlock(item) {
 			const box = el("div", { class: "igt-info" });
 			const rows = [
@@ -1748,7 +1655,6 @@ export default {
 			for (const [k, v] of rows) tbl.append(el("tr", {}, [el("th", { text: k }), el("td", { text: String(v) })]));
 			box.append(tbl);
 
-			// 直方图 + 主色（代理像素统计，进来才算一次）
 			if (!item.stats && item.bitmap) {
 				try {
 					const w = 200;
@@ -1785,9 +1691,7 @@ export default {
 									try {
 										await navigator.clipboard?.writeText(c.hex);
 										toast(t("info.copied", { v: c.hex }));
-									} catch {
-										/* 剪贴板不可用就安静失败 */
-									}
+									} catch {}
 								})();
 							},
 						}),
@@ -1837,13 +1741,9 @@ export default {
 			return box;
 		}
 
-		// ------------------------------------------------------------------
-		// 队列渲染
-		// ------------------------------------------------------------------
 		function renderQueue() {
 			if (!ui) return;
 			ui.queueCount.textContent = `${app.items.length}`;
-			// 手机端队列是顶部那条缩略图带：空了就整条收掉，别白占一行高度
 			ui.queue.classList.toggle("igt-empty", !app.items.length);
 			ui.queueList.innerHTML = "";
 			if (!app.items.length) {
@@ -1889,11 +1789,6 @@ export default {
 			}
 		}
 
-		/**
-		 * 队列缩略图：用**原图**（不跑参数）画一次 64px 并缓存。
-		 * 不跟参数联动是故意的：每拖一次滑杆就重渲染一遍全部缩略图太贵，
-		 * 而且队列缩略图需要的是「我导入了哪张」这个身份信息。
-		 */
 		function makeThumb(item) {
 			try {
 				const k = 64 / Math.max(item.bitmap.width, item.bitmap.height);
@@ -1955,9 +1850,7 @@ export default {
 						const candidate = `temp/ref-${Date.now()}-${stem(item.name)}.${ext}`;
 						const res = await ws.saveImage(candidate, item.bytes, false);
 						relPath = res.path;
-					} catch {
-						/* 忽略保存失败 */
-					}
+					} catch {}
 				}
 			}
 			if (relPath) {
@@ -1992,9 +1885,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------------
-		// 外壳
-		// ------------------------------------------------------------------
 		function buildShell() {
 			container.innerHTML = "";
 			container.classList.add("igt-root");
@@ -2087,7 +1977,6 @@ export default {
 				topActions,
 			);
 
-			// 左：队列
 			const queueCount = el("b", { text: "0" });
 			const queueList = el("div", { class: "igt-queue-list" });
 			const queue = el("aside", { class: "igt-queue" }, [
@@ -2100,9 +1989,6 @@ export default {
 				el("div", { class: "igt-hint igt-pad", text: t("queue.emptyHint") }),
 			]);
 
-			// 中：舞台
-			// draggable=false + CSS -webkit-user-drag:none：Chrome 默认允许把 <canvas> 当图片
-			// 原生拖走（拖影 + 冒泡出主应用的拖放提示框），必须两条都堵上。
 			const canvas = el("canvas", { class: "igt-canvas", draggable: "false" });
 			const cropLayer = el("div", { class: "igt-crop-layer" });
 			const frame = el("div", { class: "igt-frame" }, [canvas, cropLayer]);
@@ -2154,7 +2040,6 @@ export default {
 			const statusbar = el("div", { class: "igt-statusbar" });
 			const stage = el("section", { class: "igt-stage" }, [stagebar, viewwrap, statusbar]);
 
-			// 右：参数面板
 			const tabBtns = [];
 			const tabbar = el("div", { class: "igt-tabs" });
 			for (const [key, label] of [
@@ -2172,7 +2057,6 @@ export default {
 					"data-tab": key,
 					onclick: () => {
 						app.tab = key;
-						// 手机端抽屉收起时点 tab = 要改参数，顺手展开（否则点了没反应）
 						if (app.sheetMin) setSheetMin(false);
 						buildPanel();
 						scheduleRender(true);
@@ -2243,7 +2127,6 @@ export default {
 				}),
 			]);
 			const actions = el("div", { class: "igt-actions" }, [heroRow, flowRow, batchRow, historyRow]);
-			// 抽屉手柄：只在手机窄屏显示（桌面参数栏常驻，不需要开合）
 			const grip = el("button", { class: "igt-grip", type: "button", onclick: () => setSheetMin(!app.sheetMin) });
 			const panel = el("aside", { class: "igt-panel" }, [grip, tabbar, panelBody, actions]);
 
@@ -2303,7 +2186,6 @@ export default {
 			};
 			syncSheet();
 
-			// 滚轮缩放（容器内，需要 Ctrl/⌘ —— 裸滚轮留给页面滚动）
 			viewwrap.addEventListener(
 				"wheel",
 				(e) => {
@@ -2314,14 +2196,10 @@ export default {
 				},
 				{ passive: false },
 			);
-			// 拖放导入
 			const stop = (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 			};
-			// 插件内部不起原生拖拽：Chrome 允许把 <canvas> 当图片拖，既出拖影又会冒泡到
-			// 主应用的全窗口拖放提示（「拖拽文件到聊天」的虚线框）。注意外部文件拖进来
-			// 走的是 dragenter/dragover/drop，不会被这条挡住，导入照常可用。
 			root.addEventListener("dragstart", (e) => e.preventDefault());
 			root.addEventListener("dragover", (e) => {
 				stop(e);
@@ -2334,7 +2212,6 @@ export default {
 				const files = [...(e.dataTransfer?.files ?? [])];
 				if (files.length) void addFiles(files);
 			});
-			// 键盘（仅在本视图可见时生效）
 			const onKey = (e) => {
 				if (!container.offsetParent) return;
 				const mod = e.ctrlKey || e.metaKey;
@@ -2393,7 +2270,6 @@ export default {
 			scheduleRender(true);
 		}
 
-		/** 手机端底部参数抽屉开合（宽屏下手柄不显示，类名留着不影响三栏布局）。 */
 		function setSheetMin(min) {
 			app.sheetMin = min;
 			syncSheet();
@@ -2406,7 +2282,6 @@ export default {
 			ui.grip.title = app.sheetMin ? t("sheet.expand") : t("sheet.collapse");
 		}
 
-		/** 切语言：整棵外壳重建（文案都长在 DOM 里，重建比逐节点替换更不容易漏）。 */
 		function switchLang() {
 			app.lang = app.lang === "zh" ? "en" : "zh";
 			if (genHandle?.load) genHandle.load(true);
@@ -2416,13 +2291,10 @@ export default {
 		function rebuild() {
 			cropper?.destroy();
 			cropper = null;
-			// 先拆上一轮挂的全局监听，否则切几次语言会叠好几套 paste/keydown 处理器
 			for (const f of cleanupFns) {
 				try {
 					f();
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 			cleanupFns = [];
 			buildShell();
@@ -2431,15 +2303,11 @@ export default {
 			scheduleRender(true);
 		}
 
-		// ------------------------------------------------------------------
-		// 启动
-		// ------------------------------------------------------------------
 		buildShell();
 		renderQueue();
 		buildPanel();
 		scheduleRender(true);
 
-		// 插件内部配置（默认质量/格式/后缀…，右上角 ⚙ 里改）；拿到后刷新默认值
 		void ws
 			.fetchSettings()
 			.then((res) => {
@@ -2450,9 +2318,7 @@ export default {
 				buildPanel();
 				scheduleRender(true);
 			})
-			.catch(() => {
-				/* 服务端没起来时用内置默认值 */
-			});
+			.catch(() => {});
 
 		const offData = ctx.onData?.((payload) => {
 			if (payload?.kind === "settings") {
@@ -2466,9 +2332,7 @@ export default {
 			for (const f of cleanupFns) {
 				try {
 					f();
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 			cleanupFns = [];
 			cropper?.destroy();
@@ -2481,7 +2345,6 @@ export default {
 	},
 };
 
-/** 视图样式（注入到容器内；变量都带主题回落，浅色主题自动跟随）。 */
 const CSS = `
 .igt-root { position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .igt { display: flex; flex-direction: column; flex: 1 1 auto; height: 100%; min-height: 0; font-size: 13px; color: var(--text, #e6e8ef); }

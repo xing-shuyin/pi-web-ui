@@ -1,18 +1,3 @@
-/* 页面桥 E2E：**真实的 bridge.js（content script 打包产物）+ 真实的 background 模块 +
- * 两个真实页面（两个端口 = 两个 origin）**，把「一个页面调另一个页面」整条链跑通：
- *
- *   syncBridges（真实注入协调）→ A 页 window.__piBridge.call
- *     → A 的 content script（真实 bundle）→ 真 handleMessage（sender 判定 + 配对路由）
- *     → 在 B 页里调它的 handler（把 dist 里那个函数搬进页面 —— 与 executeScript 等价）
- *     → 结果原路回到 A 的 Promise
- *
- * 为什么值得跑真浏览器：这条链上的每一段都可能「单测全绿、真环境全废」——
- * content script 能不能在页面里跑起来、postMessage 协议对不对、页面侧的函数被单独搬进
- * MAIN world 后能不能活（任何对模块作用域的引用都会变成 ReferenceError）、
- * 结果能不能原样回传。假 chrome 只替掉浏览器管道本身，其余全是真的。
- *
- * Run: npm run build:extension && node tests/page-picker-bridge-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
@@ -47,7 +32,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-/** 夹具站：三个 origin 各一个页面（第三个用来验「没配对的页面被拒」）。 */
 const FIXTURE_HTML = (who) =>
 	`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${who}</title></head>` +
 	`<body><h1 id="who">${who}</h1><p id="data">夹具页 ${who}</p></body></html>`;
@@ -66,12 +50,10 @@ for (const [who, port] of [
 	sites.push(server);
 }
 
-// --------------------------------------------------------------------- 假 chrome（只替浏览器管道）
 const fakeSettings = {};
 const localStore = {
 	bridgePairs: [{ a: ORIGIN_A, b: ORIGIN_B, enabled: true, createdAt: "2026-01-01T00:00:00.000Z" }],
 };
-/** tabId → { page }（真实的浏览器标签页）。 */
 const tabsById = new Map();
 
 function matchesPattern(pattern, url) {
@@ -94,7 +76,6 @@ globalThis.chrome = {
 		query: async (info = {}) => {
 			const patterns = Array.isArray(info.url) ? info.url : info.url ? [info.url] : [];
 			for (const p of patterns) {
-				// 像真 Chrome：match pattern 的 path 不能缺（裸 origin 会抛 Invalid url pattern）
 				if (!/^https?:\/\/[^/]+\//.test(String(p))) throw new Error(`Invalid url pattern '${p}'`);
 			}
 			const all = [...tabsById.entries()].map(([id, entry]) => ({ id, windowId: 1, url: entry.url }));
@@ -104,7 +85,6 @@ globalThis.chrome = {
 			if (message?.type !== "page-picker:bridge-arm") return undefined;
 			const entry = tabsById.get(tabId);
 			if (!entry) throw new Error(`No tab with id: ${tabId}`);
-			// content script 在页面里注册的 arm 监听器（真实 bundle 里那个）
 			return await entry.page.evaluate(
 				() =>
 					new Promise((resolve) => {
@@ -128,8 +108,6 @@ globalThis.chrome = {
 	action: { setBadgeText: async () => {}, setTitle: async () => {} },
 	permissions: { contains: async () => true, request: async () => true },
 	scripting: {
-		// 关键：把函数搬进页面执行 —— 与 `chrome.scripting.executeScript({ func })` 等价
-		// （Playwright 也是把函数 toString 后丢进页面），所以自包含性在这里是真验证
 		executeScript: async (injection) => {
 			const entry = tabsById.get(injection.target.tabId);
 			if (!entry) throw new Error(`No tab with id: ${injection.target.tabId}`);
@@ -147,16 +125,13 @@ globalThis.chrome = {
 	},
 };
 
-// --------------------------------------------------------------------- 浏览器
 const browser = await chromium.launch({ executablePath: CHROME_PATH });
 const context = await browser.newContext();
 
-/** 开一个夹具页：假 chrome → 真实 bridge.js 注入（由 syncBridges 触发）。 */
 async function openTab(id, origin) {
 	const page = await context.newPage();
 	page.on("pageerror", (e) => check(`页面 ${origin} 无 JS 报错`, false, String(e)));
 	await page.exposeFunction("__toWorker", async (message) => {
-		// content script → background：走真实的 handleMessage，并且**带上 sender.tab**（准入判定靠它）
 		return await new Promise((resolve) =>
 			handleMessage(message, { tab: { id, url: `${origin}/` } }, (r) => resolve(r ?? null)),
 		);
@@ -179,7 +154,6 @@ const pageA = await openTab(1, ORIGIN_A);
 const pageB = await openTab(2, ORIGIN_B);
 const pageC = await openTab(3, ORIGIN_C);
 
-// ============================================================= 场景 1：注入协调（真实 syncBridges）
 const installed = await syncBridges();
 check("syncBridges 给配对的页面装上了桥（两端各一次）", installed === 2, `installed=${installed}`);
 check(
@@ -190,7 +164,6 @@ const peersA = await pageA.evaluate(() => globalThis.__piBridge?.peers ?? null);
 check("页面侧知道自己的对端是谁", Array.isArray(peersA) && peersA[0] === ORIGIN_B, JSON.stringify(peersA));
 check("页面侧 API 的版本与扩展一致（字面量同步）", (await pageA.evaluate(() => globalThis.__piBridge?.version)) === 1);
 
-// ============================================================= 场景 2：A 读 B
 await pageB.evaluate(() => {
 	globalThis.__orders = [
 		{ id: 1, amount: 88 },
@@ -230,7 +203,6 @@ check(
 		JSON.stringify([{ args: { day: "今天" }, from: ORIGIN_A }]),
 );
 
-// ============================================================= 场景 3：反向（B 操作 A 的页面）
 await pageA.evaluate(() => {
 	window.__piBridge.on("highlight", ({ id }) => {
 		const el = document.querySelector(`#${id}`);
@@ -251,7 +223,6 @@ check(
 	JSON.stringify(highlight),
 );
 
-// ============================================================= 场景 4：失败路径都要说人话
 const notRegistered = await pageA.evaluate(async () => {
 	try {
 		return { ok: true, value: await window.__piBridge.call({ op: "没注册过的 op" }) };
@@ -296,10 +267,7 @@ const thrown = await pageA.evaluate(async () => {
 });
 check("对端 handler 抛错 → 原因原样带回本页", !thrown.ok && thrown.error.includes("炸了"), thrown.error);
 
-// ============================================================= 场景 5：准入（安全边界）
-// C 是没配对的页面。这里**手动替它把桥装上**（模拟「有人硬注入」）：它仍然应该调不动任何人 ——
-// 放行与否只看 worker 侧的配对表 + sender.tab.url，页面自己说什么都不算数。
-await pageC.addScriptTag({ path: BRIDGE_BUNDLE }); // 真实 content script（它会自己 arm，写上 token）
+await pageC.addScriptTag({ path: BRIDGE_BUNDLE });
 const cInstalled = await pageC.evaluate(installBridgePage, { peers: [ORIGIN_B], self: ORIGIN_C });
 check("没配对的页面也能被硬装上桥（用来验证准入不是靠页面自觉）", cInstalled.ok === true, JSON.stringify(cInstalled));
 const outsider = await pageC.evaluate(async (to) => {
@@ -315,7 +283,6 @@ check(
 	outsider.error,
 );
 
-// ============================================================= 场景 6：对端没打开 / 配对被删
 const bEntry = tabsById.get(2);
 tabsById.delete(2);
 const closed = await pageA.evaluate(async () => {
@@ -337,7 +304,6 @@ check(
 	"卸下后页面上的 window.__piBridge 真的没了",
 	(await pageA.evaluate(() => typeof globalThis.__piBridge)) === "undefined",
 );
-// 恢复路径：worker 重新 arm + 装 MAIN 桥（真实环境里这就是「重新配对」时发生的事）
 await globalThis.chrome.tabs.sendMessage(1, { type: "page-picker:bridge-arm" });
 await pageA.evaluate(installBridgePage, { peers: [ORIGIN_B], self: ORIGIN_A });
 const afterDrop = await pageA.evaluate(async () => {
@@ -353,17 +319,11 @@ check(
 	afterDrop.error,
 );
 
-// ============================================================= 场景 7：AI 操作页面
-// 这一节把「模型怎么动手」走一遍：浏览器里那个 pi-web-ui 页面是**默认的调用方**，
-// 目标页面只需被授权（不需要配两端）。这里是真浏览器 + 真内置动作。
-
-// C 扮 pi-web-ui 宿主（它的地址就是服务地址），B 是被授权给 AI 的页面
 fakeSettings.serverUrl = ORIGIN_C;
 localStore.aiPages = [{ origin: ORIGIN_B, title: "页面 B", at: "2026-01-02T00:00:00.000Z" }];
 const armCount = await syncBridges();
 check("授权后：宿主页与控制页都装上了桥", armCount >= 2, `installed=${armCount}`);
 
-/** 从「宿主页面」发起一个页面动作（等价于模型调 browser_page 工具后的链路）。 */
 const hostCall = async (op, args) =>
 	await pageC.evaluate(
 		async ([action, payload]) => {
@@ -406,7 +366,6 @@ fakeSettings.aiControl = true;
 const noGrant = await hostCall("read", { what: "text", selector: "#永远不存在" });
 check("动作本身失败（选择器没匹上）时原因原样带回宿主", !noGrant.ok && noGrant.error.includes("没匹上"), noGrant.error);
 
-// A 页没被授权 → 它自己调不动任何人（哪怕它是配对过的页面）
 const ungranted = await pageA.evaluate(async () => {
 	try {
 		return { ok: true, value: await window.__piBridge.call({ op: "read" }) };

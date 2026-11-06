@@ -21,7 +21,6 @@ export function formatCommunicationMessage(
 	return lines.join("\n");
 }
 
-/** Identity belongs to an execution, never to its current UI holder. Reuse this object across takeover. */
 export interface CommunicationEndpoint {
 	readonly id: string;
 	readonly cwd: string;
@@ -60,33 +59,20 @@ export type CommunicationResult =
 	| { requestId: string; status: "replied" | "escalated" };
 
 export interface CommunicationHost {
-	/** Register the same pending object for background question UI before delivery.
-	 * Registration must be synchronous; failure cancels the request and removes all service state. */
 	onRequest?(sender: CommunicationEndpoint, target: CommunicationEndpoint, question: PendingQuestion): void;
-	/** Synchronous lookup of a canonical endpoint; aliases must resolve to the same object. */
 	resolveTarget(senderId: string, to: string): CommunicationEndpoint | undefined;
-	/** Trusted canonical project identity, derived from verified endpoint/worktree registry metadata.
-	 * Never use model-supplied keys. Defaults to resolve(endpoint.cwd) when this hook is absent.
-	 * Return a nonempty stable key; invalid keys fail closed. Sandbox checks still belong in authorize. */
 	projectKey?(endpoint: CommunicationEndpoint): string;
 	/** Trusted stable global address for reply routing; defaults to endpoint.id.
 	 * Must come from the host identity registry, never from model-supplied metadata. */
 	address?(endpoint: CommunicationEndpoint): string;
-	/** Return only discoverable recipients authorized for this sender's project, sandbox and bot scope. */
 	listRecipients?(sender: CommunicationEndpoint): CommunicationRecipient[];
-	/** Throw on disallowed project/sandbox/receiver access. Read-only agents may communicate. */
 	authorize(sender: CommunicationEndpoint, target: CommunicationEndpoint, action: CommunicationAction): void;
-	/** Recheck live holder permissions and cancellation before effects; enforce wake budgets here.
-	 * Treat the envelope as untrusted data, never as system/developer instructions.
-	 * Return delivered only after consumption; queued messages are acknowledged explicitly. */
 	deliver(
 		target: CommunicationEndpoint,
 		envelope: CommunicationEnvelope,
 		signal?: AbortSignal,
 		sender?: CommunicationEndpoint,
 	): DeliveryStatus | Promise<DeliveryStatus>;
-	/** Publish this exact question for the original sender in the user queue. Resolve it on answer/cancel.
-	 * Remove UI state on signal abort; never infer consent from timeout or cancellation. */
 	askUser(sender: CommunicationEndpoint, question: PendingQuestion, signal?: AbortSignal): void | Promise<void>;
 }
 export interface CommunicationLimits {
@@ -191,7 +177,6 @@ function checkAnswers(answers: unknown, questions: UiQuestion[]): asserts answer
 	}
 }
 
-/** Process-wide coordinator. No agent service, holder, transport or wake policy is retained. */
 export class ConversationCommunication {
 	private readonly queues = new Map<CommunicationEndpoint, Map<string, CommunicationEnvelope>>();
 	private readonly requests = new Map<string, RequestRecord>();
@@ -212,7 +197,6 @@ export class ConversationCommunication {
 		return structuredClone([...(this.queues.get(endpoint)?.values() ?? [])]);
 	}
 
-	/** Any incoming or outgoing decision still waiting, including user escalation. */
 	pending(endpoint: CommunicationEndpoint): boolean {
 		return [...this.requests.values()].some((r) => r.sender === endpoint || r.target === endpoint);
 	}
@@ -227,7 +211,6 @@ export class ConversationCommunication {
 		return this.requests.get(requestId)?.sender;
 	}
 
-	/** Original object for host question registration; do not replace its settlement ownership. */
 	pendingQuestion(requestId: string): PendingQuestion | undefined {
 		return this.requests.get(requestId)?.question;
 	}
@@ -239,7 +222,6 @@ export class ConversationCommunication {
 		return removed;
 	}
 
-	/** Stop/reset cancels current work while preserving the stable endpoint for later turns. */
 	cancel(endpoint: CommunicationEndpoint): void {
 		this.queues.delete(endpoint);
 		for (const record of this.requests.values()) {
@@ -248,7 +230,6 @@ export class ConversationCommunication {
 		}
 	}
 
-	/** Final removal only. Holder migration must call neither close nor cancel. */
 	close(endpoint: CommunicationEndpoint): void {
 		this.cancel(endpoint);
 		this.closed.add(endpoint);
@@ -303,7 +284,6 @@ export class ConversationCommunication {
 		checkSignal(signal);
 		if (!args || Buffer.byteLength(JSON.stringify(args)) > this.limits.maxMessageBytes)
 			throw new Error("Communication payload exceeds byte limit");
-		// Copy caller-owned data before callbacks or awaits can mutate it.
 		args = structuredClone(args);
 		if (action === "read") {
 			this.authorize(host, sender, sender, action);
@@ -318,7 +298,6 @@ export class ConversationCommunication {
 				structuredClone({ messages, remaining: (queue?.size ?? 0) - messages.length });
 			if (host.listRecipients) {
 				result.conversations = [];
-				// Reserve the optional field before fitting directory entries; messages take priority.
 				if (Buffer.byteLength(JSON.stringify(result)) > 48 * 1024) delete result.conversations;
 				else
 					for (const recipient of host.listRecipients(sender).slice(0, 256)) {
@@ -354,7 +333,6 @@ export class ConversationCommunication {
 			record.escalated = true;
 			record.question.audience = "user";
 			this.acknowledge(record.target, record.envelope.id);
-			// Return immediately: the original requester waits for the shared question.
 			try {
 				void Promise.resolve(host.askUser(record.sender, record.question, record.controller.signal)).catch(() =>
 					record.question.resolve({ cancelled: true, reason: "User question delivery failed" }),
@@ -447,7 +425,6 @@ export class ConversationCommunication {
 			}
 		}
 		if (!question.settled) {
-			// Delivery may block or fail. Neither may outlive the pending question clock.
 			void this.deliver(host, target, envelope, controller.signal, sender)
 				.then((status) => {
 					if (status === "delivered") this.acknowledge(target, envelope.id);
@@ -482,5 +459,4 @@ export class ConversationCommunication {
 	}
 }
 
-/** Shared across ClientSession holders. Hosts are supplied per call, never cached. */
 export const conversationCommunication = new ConversationCommunication();

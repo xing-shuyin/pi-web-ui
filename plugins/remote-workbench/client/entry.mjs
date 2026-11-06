@@ -1,21 +1,3 @@
-/**
- * plugins/remote-workbench/client/entry.mjs — 远程工作台前端入口（画布与多分屏矩阵增强版）。
- *
- * 核心能力：
- * 1. 深度适配主题色盘（--term-* 与宿主色彩动态同步）；
- * 2. 交互式多会话 Web SSH 终端 + 快捷重连 + 一键全屏；
- * 3. 类似画布的多终端矩阵查看模式（单标签 Tabs、双列平铺 Split、四宫格 Quad、自适应画布 Canvas 卡片）；
- * 4. 明确选择终端与环境后的多机广播输入；
- * 5. 凭据输入绑定触发提示的终端，发送后清空输入框；
- * 6. 清理终端 ANSI 与覆盖进度后导出文本；
- * 7. 常用运维指令快捷条（Ctrl+C/D、top、htop、df -h、docker ps 等）；
- * 8. 主机资产搜索过滤、~/.ssh/config 本机自动发现与批量导入；
- * 9. 内置轻量 SFTP 远程文件树浏览抽屉（双击文件快速预览、文件上传）；
- * 10. 生产机高危指令安全审阅保护（Approval Gate）；
- * 11. 本地端口转发管理（-L SSH Tunnel：支持建立/管理本地映射至远端端口）；
- * 12. 联动 SFTP 插件与远程工作区。
- */
-
 import {
 	appPath,
 	decodeBytes,
@@ -45,7 +27,6 @@ async function loadXterm() {
 	return xtermModule;
 }
 
-/** 动态同步宿主终端调色板（随暗色/亮色/自定义主题自适应） */
 function buildTermTheme() {
 	const cs = getComputedStyle(document.documentElement);
 	const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
@@ -79,7 +60,6 @@ export default {
 		const root = document.createElement("div");
 		root.className = "rw-root";
 
-		// 局部样式
 		const styleEl = document.createElement("style");
 		styleEl.textContent = `
 			.rw-root {
@@ -714,14 +694,13 @@ export default {
 		`;
 		root.appendChild(styleEl);
 
-		// 运行状态
-		let currentTab = "hosts"; // "hosts" | "term" | "tunnels"
-		let termLayout = "tabs"; // "tabs" | "grid" | "quad" | "canvas"
-		let broadcastInput = false; // 是否开启多机同步广播
+		let currentTab = "hosts";
+		let termLayout = "tabs";
+		let broadcastInput = false;
 		let hosts = [];
 		let tunnels = [];
 		let filterKeyword = "";
-		let activeShells = []; // [{ id, shellId, host, port, username, remotePath, title, term, fit, dom, cell, connected }]
+		let activeShells = [];
 		let activeShellIndex = -1;
 		let modalVisible = false;
 		let activePopmenu = null,
@@ -739,7 +718,6 @@ export default {
 		const post = (path, payload) => api(path, { method: "POST", body: JSON.stringify(payload) });
 		const operations = createOperations({ root, api, post, hosts: () => hosts });
 
-		// 顶栏构建
 		const header = document.createElement("div");
 		header.className = "rw-header";
 		header.innerHTML = `
@@ -763,17 +741,14 @@ export default {
 		tasksButton.onclick = () => operations.tasks();
 		header.querySelector(".rw-header-right").append(tasksButton);
 
-		// 主体构建
 		const body = document.createElement("div");
 		body.className = "rw-body";
 		root.appendChild(body);
 
-		// 主机资产面板
 		const hostsPane = document.createElement("div");
 		hostsPane.className = "rw-hosts-pane";
 		body.appendChild(hostsPane);
 
-		// 终端面板
 		const termPane = document.createElement("div");
 		termPane.className = "rw-term-pane";
 		termPane.style.display = "none";
@@ -832,13 +807,11 @@ export default {
 		`;
 		body.appendChild(termPane);
 
-		// 端口转发面板（-L 隧道）
 		const tunnelsPane = document.createElement("div");
 		tunnelsPane.className = "rw-tunnels-pane";
 		tunnelsPane.style.display = "none";
 		body.appendChild(tunnelsPane);
 
-		// API 请求封装
 		async function api(path, options = {}) {
 			const res = await fetch(appPath(ctx, `/plugins-api/remote-workbench${path}`, import.meta.url), {
 				signal: lifecycle.signal,
@@ -851,7 +824,6 @@ export default {
 			return json.data;
 		}
 
-		// 刷新主机列表
 		async function refreshHosts() {
 			try {
 				const data = await api("/hosts");
@@ -862,7 +834,6 @@ export default {
 			}
 		}
 
-		// 刷新隧道列表
 		async function refreshTunnels() {
 			try {
 				const data = await api("/tunnels");
@@ -873,7 +844,6 @@ export default {
 			}
 		}
 
-		// 渲染主机卡片
 		function renderHosts() {
 			hostsPane.innerHTML = "";
 
@@ -936,7 +906,6 @@ export default {
 				hosts
 					.filter((h) => matchesHost(h, filterKeyword, groupFilter, environmentFilter))
 					.forEach((h) => {
-						// 避免重复连接
 						const existing = activeShells.find(
 							(s) => s.host === h.host && s.username === h.username && s.port === (h.port || 22),
 						);
@@ -1043,7 +1012,6 @@ export default {
 			});
 		}
 
-		// ── ~/.ssh/config 发现与导入弹窗 ───────────────────────────────────────
 		async function showSshConfigImportModal() {
 			const overlay = document.createElement("div");
 			overlay.className = "rw-modal-overlay";
@@ -1123,7 +1091,6 @@ export default {
 			}
 		}
 
-		// ── 轻量 SFTP 远程文件浏览抽屉 ─────────────────────────────────────────
 		async function showFileExplorerModal(h) {
 			const overlay = document.createElement("div");
 			overlay.className = "rw-modal-overlay";
@@ -1298,7 +1265,6 @@ export default {
 			loadDir(curPath);
 		}
 
-		// 渲染端口转发面板
 		function renderTunnels() {
 			tunnelsPane.innerHTML = "";
 			const countSpan = header.querySelector("#rw-tunnel-count");
@@ -1400,7 +1366,6 @@ export default {
 			return `${n}MB`;
 		}
 
-		// 快速探测并在卡片显示状态
 		async function probeHostCard(h, card) {
 			const badge = card.querySelector(`[id^="rw-probe-badge"]`);
 			const btn = card.querySelector(".rw-op-probe");
@@ -1437,7 +1402,6 @@ export default {
 			}
 		}
 
-		// 切换 Tab
 		function switchTab(tab) {
 			currentTab = tab;
 			header.querySelectorAll(".rw-nav-btn").forEach((b) => {
@@ -1466,7 +1430,6 @@ export default {
 		});
 		termPane.querySelector("#rw-btn-goto-hosts")?.addEventListener("click", () => switchTab("hosts"));
 
-		// ── 打开远程交互终端 ──────────────────────────────────────────────────
 		async function openTerminal(hostInfo) {
 			switchTab("term");
 			if (disposed) return;
@@ -1505,7 +1468,6 @@ export default {
 				const fit = new xterm.FitAddon();
 				term.loadAddon(fit);
 
-				// 创建独立卡片 Cell
 				const cell = document.createElement("div");
 				cell.className = "rw-term-cell";
 				cell.innerHTML = `
@@ -1544,7 +1506,6 @@ export default {
 				waitingItem.dom = containerEl;
 				waitingItem.cell = cell;
 
-				// Cell 内部按钮事件
 				cell.querySelector(".rw-cell-max").addEventListener("click", () => {
 					const isMax = cell.classList.toggle("cell-maximized");
 					cell.querySelector(".rw-cell-max").textContent = isMax ? "🗗" : "⛶";
@@ -1574,7 +1535,6 @@ export default {
 					renderTermTabs();
 				});
 
-				// 发起建立终端请求
 				ctx.send({
 					action: hostInfo.resumeToken ? "shell_attach" : "shell_open",
 					resumeToken: hostInfo.resumeToken,
@@ -1589,7 +1549,6 @@ export default {
 					rows: term.rows,
 				});
 
-				// 输入监听（支持多机广播同步输入）
 				waitingItem.disposables.push(term.onData((data) => sendInput(data, waitingItem)));
 				waitingItem.resizeObserver = new ResizeObserver(() => refitActiveTerm());
 				waitingItem.resizeObserver.observe(containerEl);
@@ -1627,7 +1586,6 @@ export default {
 			}
 		}
 
-		// 重新连接当前会话
 		function reconnectActiveTerminal() {
 			const current = activeShells[activeShellIndex];
 			if (!current) return;
@@ -1644,7 +1602,6 @@ export default {
 			openTerminal(hostInfo);
 		}
 
-		// 新建终端弹窗（实底背景，防透底）
 		function closePopmenu() {
 			clearTimeout(popmenuTimer);
 			if (popmenuListener) document.removeEventListener("click", popmenuListener);
@@ -1745,7 +1702,6 @@ export default {
 			}, 10);
 		}
 
-		// 渲染终端 Tab 与多布局矩阵
 		function renderTermTabs() {
 			const tabsContainer = termPane.querySelector("#rw-term-tabs");
 			const emptyTip = termPane.querySelector("#rw-term-empty");
@@ -1766,7 +1722,6 @@ export default {
 				reconnectBar.style.display = current && !current.connected && termLayout === "tabs" ? "flex" : "none";
 			}
 
-			// 渲染 Tab 标签
 			activeShells.forEach((sh, idx) => {
 				const tab = document.createElement("div");
 				tab.className = `rw-term-tab ${idx === activeShellIndex ? "active" : ""}`;
@@ -1789,7 +1744,6 @@ export default {
 
 				tabsContainer.appendChild(tab);
 
-				// 更新 Cell 卡片内部标题与状态
 				if (sh.cell) {
 					const statusSpan = sh.cell.querySelector(".rw-cell-status");
 					if (statusSpan) statusSpan.textContent = sh.connected ? "🟢" : "🔴";
@@ -1797,15 +1751,14 @@ export default {
 
 					if (termLayout === "tabs") {
 						sh.cell.style.display = idx === activeShellIndex ? "flex" : "none";
-						sh.cell.querySelector(".rw-term-cell-header").style.display = "none"; // 标签模式下隐藏单元卡头
+						sh.cell.querySelector(".rw-term-cell-header").style.display = "none";
 					} else {
 						sh.cell.style.display = "flex";
-						sh.cell.querySelector(".rw-term-cell-header").style.display = "flex"; // 画布/平铺模式下显示各卡头
+						sh.cell.querySelector(".rw-term-cell-header").style.display = "flex";
 					}
 				}
 			});
 
-			// 总是渲染 ＋ 按钮
 			const addBtn = document.createElement("button");
 			addBtn.className = "rw-term-tab-add";
 			addBtn.id = "rw-term-add-btn";
@@ -1819,7 +1772,6 @@ export default {
 			});
 		}
 
-		// 重新自适应所有可见终端窗口
 		function refitActiveTerm() {
 			clearTimeout(fitTimer);
 			fitTimer = setTimeout(() => {
@@ -1864,7 +1816,6 @@ export default {
 			refitActiveTerm();
 		}
 
-		// 凭据外带直通弹窗（对标 Termcp）
 		const secureBar = termPane.querySelector("#rw-secure-bar");
 		const secureInput = termPane.querySelector("#rw-secure-input");
 		const secureSend = termPane.querySelector("#rw-secure-send");
@@ -1914,7 +1865,6 @@ export default {
 			hideSecureBar();
 		});
 
-		// 布局切换按钮事件绑定
 		termPane.querySelectorAll(".rw-layout-btn").forEach((btn) => {
 			btn.addEventListener("click", () => {
 				termPane.querySelectorAll(".rw-layout-btn").forEach((b) => b.classList.remove("active"));
@@ -1925,7 +1875,6 @@ export default {
 			});
 		});
 
-		// 多机广播输入切换
 		const broadcastBtn = termPane.querySelector("#rw-tool-broadcast");
 		broadcastBtn.addEventListener("click", () => {
 			if (broadcastInput) {
@@ -1990,7 +1939,6 @@ export default {
 			};
 		}
 
-		// 导出净化后的终端文本（Termcp Compact 压缩）
 		termPane.querySelector("#rw-tool-export").addEventListener("click", () => {
 			const current = activeShells[activeShellIndex];
 			if (!current?.term) return;
@@ -2026,7 +1974,6 @@ export default {
 		termPane.querySelector("#rw-tool-reconnect").addEventListener("click", reconnectActiveTerminal);
 		termPane.querySelector("#rw-reconnect-btn").addEventListener("click", reconnectActiveTerminal);
 
-		// 快捷指令条切换
 		const snippetBar = termPane.querySelector("#rw-snippet-bar");
 		termPane.querySelector("#rw-tool-snippet").addEventListener("click", () => {
 			showSnippetBar = !showSnippetBar;
@@ -2034,15 +1981,12 @@ export default {
 			refitActiveTerm();
 		});
 
-		// 快捷指令按钮点击注入
 		snippetBar.querySelectorAll(".rw-snippet-btn").forEach((btn) => {
 			btn.addEventListener("click", () => {
 				const cmd = btn.dataset.cmd;
 				let payload = "";
-				if (cmd === "SIGINT")
-					payload = "\x03"; // Ctrl+C
-				else if (cmd === "SIGQUIT")
-					payload = "\x04"; // Ctrl+D
+				if (cmd === "SIGINT") payload = "\x03";
+				else if (cmd === "SIGQUIT") payload = "\x04";
 				else if (cmd === "ESC") payload = "\x1b";
 				else if (cmd === "TAB") payload = "\t";
 				else payload = `${cmd}\r`;
@@ -2078,7 +2022,6 @@ export default {
 			previewPaste(expandSnippet(template, values) + "\r", activeShells[activeShellIndex]);
 		};
 
-		// 全屏切换
 		termPane.querySelector("#rw-tool-fullscreen").addEventListener("click", () => {
 			root.classList.toggle("rw-fullscreen");
 			refitActiveTerm();
@@ -2092,7 +2035,6 @@ export default {
 		};
 		document.addEventListener("keydown", onKeydown);
 
-		// 监听 WebSocket 数据推送
 		const unsubscribeData = ctx.onData((msg) => {
 			if (disposed) return;
 			if (!msg || typeof msg !== "object") return;
@@ -2139,7 +2081,6 @@ export default {
 					target.decoder ||= new TextDecoder();
 					const decoded = target.decoder.decode(bytes, { stream: true });
 
-					// 嗅探是否为 Sudo 提权或密码输入提示（触发凭据外带输入条）
 					target.promptTail = ((target.promptTail || "") + decoded).slice(-512);
 					const checkText = target.promptTail.trim();
 					if (
@@ -2177,7 +2118,6 @@ export default {
 			}
 		});
 
-		// 监听主题变化，动态更新 xterm 配色
 		const syncTheme = () => {
 			const th = buildTermTheme();
 			for (const sh of activeShells) {
@@ -2190,7 +2130,6 @@ export default {
 		const themeObserver = new MutationObserver(syncTheme);
 		themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
 
-		// 窗口自适应
 		const onResize = () => {
 			if (currentTab === "term") refitActiveTerm();
 		};
@@ -2201,7 +2140,6 @@ export default {
 			if (currentTab === "tunnels") refreshTunnels();
 		}, 10000);
 
-		// ── 联动能力 ──────────────────────────────────────────────────────────
 		async function linkSftp(h) {
 			const ok = confirm(
 				`是否将「${h.name}」绑定至当前项目的 SFTP 同步？\n绑定后可在顶部「SFTP 同步」面板直接比较文件差异与上传下载。`,
@@ -2232,19 +2170,16 @@ export default {
 				return;
 			}
 
-			// 组装该主机对应的标准初始远程 URI
 			const pathVal = initialPath || h.remotePath || (h.username === "root" ? "/root" : `/home/${h.username}`);
 			const initialUri = buildRemoteWorkspaceUri(h, pathVal);
 
 			try {
-				// 呼起宿主通用的路径选择组件（DirectoryBrowser），已自动切换至远程(SSH)并定位至该主机与目录
 				const res = await host.pickDirectory({
 					initialPath: initialUri,
 					title: `选择远程工作区 — ${h.name}`,
 				});
 
 				if (!res || !res.ok || !res.path) {
-					// 用户取消或关闭选择器
 					return;
 				}
 
@@ -2280,7 +2215,6 @@ export default {
 			}
 		}
 
-		// ── 端口转发新建弹窗 ──────────────────────────────────────────────────
 		function showCreateTunnelModal(targetHost = null) {
 			const overlay = document.createElement("div");
 			overlay.className = "rw-modal-overlay";
@@ -2372,7 +2306,6 @@ export default {
 			});
 		}
 
-		// ── 添加/编辑主机弹窗 ──────────────────────────────────────────────────
 		function showEditModal(existingHost = null, onSaved = null) {
 			if (modalVisible) return;
 			modalVisible = true;
@@ -2493,7 +2426,6 @@ export default {
 				};
 			}
 
-			// 测试连接
 			overlay.querySelector("#rw-modal-probe").addEventListener("click", async () => {
 				try {
 					errBox.style.display = "none";
@@ -2529,7 +2461,6 @@ export default {
 				}
 			});
 
-			// 保存
 			overlay.querySelector("#rw-modal-save").addEventListener("click", async () => {
 				try {
 					errBox.style.display = "none";
@@ -2568,7 +2499,6 @@ export default {
 
 		header.querySelector("#rw-btn-add").addEventListener("click", () => showEditModal());
 
-		// 初始加载
 		refreshHosts();
 		refreshTunnels();
 		container.appendChild(root);

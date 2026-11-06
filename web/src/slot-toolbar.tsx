@@ -2,16 +2,6 @@ import { Fragment, type ReactNode } from "react";
 import { SlotErrorBoundary } from "./components/SlotErrorBoundary";
 import type { UiSlotEntry } from "./ui-slots";
 
-/** 工具条槽位通用渲染（terminal.toolbar / scm.toolbar / goalbar.actions / chat.header /
- *  chat.empty / file.preview.toolbar 共用形状 —— ui-slots.ts 只做合并，不放渲染）。
- *  toggle 显示 checked 态（aria-pressed + .on），progress 显示条，input 渲染小输入框
- *  （回车触发 action），其余画成按钮（title=hint||label，点击交回 onUiAction）。
- *  无条目返回 null。
- *
- *  单独成模块的原因：TerminalPanel.tsx 静态 import 会把 xterm 拉进主包
- *  （App 对 TerminalPanel 用 lazy 拆包，见 App.tsx）。各渲染层都从这里 import，
- *  TerminalPanel 只 re-export 保持兼容。
- */
 export function renderSlotToolbar(
 	entries: UiSlotEntry[] | undefined,
 	onUiAction: ((item: UiSlotEntry, value?: string) => void) | undefined,
@@ -33,7 +23,6 @@ export function renderSlotToolbar(
 	);
 }
 
-/** 单条目渲染（renderSlotToolbar 的每项逻辑抽出，供合并渲染复用，输出一字不差）。 */
 function renderSlotEntry(
 	entry: UiSlotEntry,
 	i: number,
@@ -85,7 +74,6 @@ function renderSlotEntry(
 				}}
 			/>
 		);
-	// kind="select"：下拉框（当前值取 value ?? options[0]；切换直接回插件）。
 	if (entry.kind === "select" && entry.options?.length)
 		return (
 			<select
@@ -118,12 +106,6 @@ function renderSlotEntry(
 	);
 }
 
-/**
- * 宿主 chrome + 插件条目按槽位顺序合并渲染（FilePreview / GoalBar / SCM / 终端面板）。
- * entries 已按合并顺序排好且滤掉 hidden；host 条目查 hostNodes（缺失/条件不满足画 null，
- * 不占位），插件条目保持原样；连续的插件条目共用一个 .slot-toolbar 包裹（gap 与旧版一致）。
- * 全空（或全是 null 宿主节点）时返回 null，不留空壳。
- */
 export function renderMergedToolbar(
 	entries: UiSlotEntry[],
 	hostNodes: Record<string, ReactNode>,

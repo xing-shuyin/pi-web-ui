@@ -53,19 +53,15 @@ describe("Durable 引擎项目记录与对话持久化真实测试", () => {
 		const emitted: ServerMessage[] = [];
 		const session = await service.attach("test-client-1", (msg) => emitted.push(msg));
 
-		// 验证初次 attach 推送了 projects 消息，且包含当前 workspace1
 		const lastProjMsg = await waitForMessage(emitted, "projects");
 		expect(lastProjMsg.projects.some((p) => p.path === workspace1)).toBe(true);
 
-		// 切换到 workspace2
 		emitted.length = 0;
 		await (session as any).setCwd(workspace2);
 
-		// 验证切换后 stateStore 记住了 workspace2，并向前端推送了包含 workspace2 的新 projects 列表
 		const afterSwitchMsg = await waitForMessage(emitted, "projects");
 		expect(afterSwitchMsg.projects.some((p) => p.path === workspace2)).toBe(true);
 
-		// 测试删除项目 removeProject
 		await (session as any).removeProject(workspace1);
 		const finalProjects = await stateStore.getRecentProjects("test-client-1");
 		expect(finalProjects.some((p) => p.path === workspace1)).toBe(false);
@@ -85,7 +81,6 @@ describe("Durable 引擎项目记录与对话持久化真实测试", () => {
 		const emitted: ServerMessage[] = [];
 		const session = await service.attach("test-client-2", (msg) => emitted.push(msg));
 
-		// 模拟发送一条用户消息并保存
 		const uSession = session as any;
 		const activeConv = uSession.activeConv;
 		expect(activeConv).toBeDefined();
@@ -100,34 +95,28 @@ describe("Durable 引擎项目记录与对话持久化真实测试", () => {
 		activeConv.updatedAt = Date.now();
 		store.saveConversation(workspace1, activeConv);
 
-		// 验证磁盘上确实存在该持久化记录
 		const diskConv = store.loadConversation(workspace1, convId);
 		expect(diskConv).toBeDefined();
 		expect(diskConv?.messages.length).toBe(1);
 
-		// 移出运行中会话 (用户在界面关闭此 tab，调用 dismissConversation)
 		await uSession.dismissConversation(convId);
 
-		// ⭐ 核心验证：移出后内存中不再有此会话，但磁盘上的历史文件依然完好保存！
 		expect(uSession.conversations.has(convId)).toBe(false);
 		const diskConvAfterDismiss = store.loadConversation(workspace1, convId);
 		expect(diskConvAfterDismiss).toBeDefined();
 		expect(diskConvAfterDismiss?.id).toBe(convId);
 
-		// 验证历史会话列表依然包含此会话
 		emitted.length = 0;
 		await uSession.refreshSessions();
 		const sessionsMsg = emitted.find((m) => m.type === "sessions") as Extract<ServerMessage, { type: "sessions" }>;
 		expect(sessionsMsg).toBeDefined();
 		expect(sessionsMsg.sessions.some((s) => s.path === convId)).toBe(true);
 
-		// 验证用户从历史列表中点击 switch_session / switchConversation 可以重新恢复并打开
 		await uSession.switchConversation(convId);
 		expect(uSession.activeConvId).toBe(convId);
 		expect(uSession.conversations.has(convId)).toBe(true);
 		expect(uSession.activeConv.messages[0].content[0].text).toBe("保存测试消息");
 
-		// 验证真正删除会话 (deleteSession) 会彻底清除磁盘文件
 		await uSession.deleteSession(convId);
 		expect(store.loadConversation(workspace1, convId)).toBeNull();
 
@@ -142,17 +131,13 @@ describe("Durable 引擎项目记录与对话持久化真实测试", () => {
 			stateStore,
 		});
 
-		// 客户端 3 首先访问 workspace2
 		stateStore.remember("client-3", workspace2);
 
 		const emitted: ServerMessage[] = [];
-		// 客户端 3 连接接入
 		const session = await service.attach("client-3", (msg) => emitted.push(msg));
 
-		// 验证 session 自动恢复了客户端上次的 lastCwd (workspace2)
 		expect((session as any).cwd).toBe(workspace2);
 
-		// 验证 attachSink 立即向客户端下发了全量 snapshot
 		const snapshots = emitted.filter((m) => m.type === "snapshot");
 		expect(snapshots.length).toBeGreaterThan(0);
 		const lastSnap = snapshots[snapshots.length - 1] as Extract<ServerMessage, { type: "snapshot" }>;

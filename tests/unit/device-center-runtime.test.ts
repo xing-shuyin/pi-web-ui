@@ -538,7 +538,6 @@ describe("Bot-only device runtime", () => {
 				seen.push(options.resumePath);
 				options.onSession?.(task.id, "sdk-session");
 				options.onSessionPath?.(task.id, path);
-				// The SDK creates a fresh transcript only after the initial snapshot.
 				if (!options.resumePath) await writeFile(path, "transcript");
 				return options.resumePath ? "continued" : "created";
 			},

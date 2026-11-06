@@ -1,20 +1,3 @@
-/**
- * 折叠消息的搜索索引 —— 纯函数、零依赖（可被 tsconfig.tests.json 单测）。
- *
- * 折叠的旧消息（CollapsedMessage 摘要行）全文不在 DOM 里，Ctrl+F 的「DOM 即
- * 事实源」收集看不到它们。这里有两条路：
- *   a) 搜索期间把旧消息全部展开 —— 重（几百条消息全部渲染）；
- *   b) 用消息数据（UiMessage 仍在内存）做折叠层索引，命中后**只展开那一条**
- *      —— 按需展开，DOM 增量最小。
- * 本文件实现 b 的纯函数部分：
- *   - `foldedSearchText`：把一条消息折叠成可搜索文本。字段与展开后的 DOM
- *     渲染**逐一对齐**（text/thinking 原文、toolCall 名称+参数、bash 命令+
- *     输出），并额外并入该 toolCall 的 toolResult 文本——折叠时 toolResult
- *     消息没有独立行（DOM 里结果本就渲染在宿主 toolCall 卡内），归属到宿主
- *     才能让「搜到 → 展开 → 定位」指到同一个词。
- *   - `collectFoldedHits`：对全部折叠消息扫一遍 query，返回每条消息的命中
- *     次数（SearchBar 据此合并进总命中序列）。
- */
 interface FoldedBlock {
 	type: string;
 	id?: unknown;
@@ -32,12 +15,10 @@ export interface FoldedMessage {
 	content: FoldedBlock[];
 }
 
-/** toolCallId → toolResult 消息（镜像 UiMessage 的 text 内容）。 */
 export interface FoldedResultMessage {
 	content: FoldedBlock[];
 }
 
-/** toolResult 消息渲染在宿主 toolCall 卡里的文本。 */
 export function foldedResultText(m: FoldedResultMessage): string {
 	const parts: string[] = [];
 	for (const b of m.content) {
@@ -46,7 +27,6 @@ export function foldedResultText(m: FoldedResultMessage): string {
 	return parts.join("\n");
 }
 
-/** 一条消息的可搜索折叠文本（顺序 = 内容块顺序，与 DOM 文档序一致）。 */
 export function foldedSearchText(m: FoldedMessage, results: ReadonlyMap<string, FoldedResultMessage>): string {
 	const parts: string[] = [];
 	for (const b of m.content) {
@@ -82,10 +62,6 @@ function countOccurrences(text: string, needle: string): number {
 	return n;
 }
 
-/**
- * 折叠消息命中计数：msgId → 命中次数（大小写不敏感）。
- * 只统计 `collapsedIds` 里的消息——已渲染的消息走 DOM 收集，不在这里重复。
- */
 export function collectFoldedHits(
 	messages: readonly FoldedMessage[],
 	collapsedIds: ReadonlySet<string>,

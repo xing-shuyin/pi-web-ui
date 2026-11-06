@@ -134,7 +134,6 @@ for (const channel of channels) {
 			await channel.inbound(bridge, "hello", "2");
 			expect(chat).toHaveBeenCalledTimes(2);
 			expect(chat.mock.calls[0][0].accountId).not.toBe(chat.mock.calls[1][0].accountId);
-			// A new scope may omit conversationId so the host creates it from its distinct accountId.
 			if (chat.mock.calls[0][0].conversationId || chat.mock.calls[1][0].conversationId)
 				expect(chat.mock.calls[0][0].conversationId).not.toBe(chat.mock.calls[1][0].conversationId);
 		});

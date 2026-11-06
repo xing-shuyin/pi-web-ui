@@ -5,7 +5,6 @@ import {
 } from "../../server/device-center/integration-verification.js";
 import { sealPublishIntent } from "../../server/device-center/publish-intent.js";
 
-/** Complete real protocol evidence, with synthetic Git IDs for tests that do not execute Git. */
 export function publicationFixture(
 	format: DeviceGitObjectFormat = "sha1",
 	id = "integration",

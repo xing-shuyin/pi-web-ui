@@ -9,7 +9,6 @@ import { hashSecret } from "./store.js";
 import type { LocalDeviceConfig } from "./local.js";
 import type { DeviceExecutionSettings } from "./execution-settings.js";
 
-/** Private loopback Hub: uses the same authenticated Bot, room and task paths as a remote Hub. */
 export async function createLocalDeviceHub(dataDir: string, getSettings?: () => DeviceExecutionSettings) {
 	const server = createServer();
 	await new Promise<void>((resolve, reject) => {
@@ -34,7 +33,6 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 		});
 		const credential = randomBytes(32).toString("hex");
 		const uiCredential = randomBytes(32).toString("hex");
-		// Stable local identity and durable rooms; credentials are rotated on every process start.
 		const accountId = "local-account";
 		const deviceId = "local-device";
 		await hub.store.transact((draft) => {

@@ -1,14 +1,5 @@
-/**
- * 内置默认审批规则表（纯数据，不依赖 node 模块）。
- *
- * 单独成文件是为了让浏览器也能 import 同一份表做命令高亮（issue #578）：
- * 前端不再维护内联黑名单，与服务端 evaluateApprovalRules 共用这一个事实源。
- */
 import type { ApprovalRule } from "./approval-rules.js";
 
-/**
- * 内置默认审批规则（与 server/tool-approval.ts 既有内置检测表保持 100% 同口径与同一 id）。
- */
 export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 	{
 		id: "builtin.bash.rm-rf",
@@ -62,9 +53,6 @@ export const DEFAULT_APPROVAL_RULES: ApprovalRule[] = [
 		tools: ["bash"],
 		field: "command",
 		match: "regex",
-		// git 全局选项前缀（-C <path> / -c k=v / --git-dir=…）、git.exe；push 强推 / +refspec / :branch 删远端；
-		// checkout . / restore . / stash drop|clear 丢弃未提交修改（restore --staged 只取消暂存，排除）。
-		// push 的参数区不跨 ; & | 换行，避免把后续命令里的 -f（如 `rm -f`）算进来（#578）。
 		value:
 			"\\bgit(?:\\.exe)?(?:\\s+(?:-[cC]\\s+\\S+|--[a-zA-Z-]+=\\S+))*\\s+(?:push\\s+(?:[^;&|\\n]*?\\s)?(?:--force|-[a-zA-Z0-9]*f)\\b|push\\s+(?:[^;&|\\n]*?\\s)?(?:\\+\\S+|:[^\\s/]\\S*)|reset\\s+--hard|clean\\s+(?:-[a-zA-Z]+\\s+)*-[a-zA-Z0-9]*f[a-zA-Z0-9]*|branch\\s+-[dD]\\b|checkout\\s+(?:--\\s+)?\\.(?=\\s|$|[;&|])|restore\\s+(?:--(?!staged\\b)\\S+\\s+)*\\.(?=\\s|$|[;&|])|stash\\s+(?:drop|clear)\\b)",
 		action: "ask",

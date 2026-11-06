@@ -1,6 +1,3 @@
-/**
- * CanvasNodeCard.tsx — 智能体画布单个节点组件（数字员工 Teammate 卡片）。
- */
 import { useState, useMemo, useLayoutEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { CanvasEngineId, CanvasNode, ModelInfo, ProjectSummary } from "../../types";
 import type { ThinkingValue } from "../../thinking-levels";
@@ -26,22 +23,18 @@ import { UniversalPathPicker } from "../UniversalPathPicker";
 import { FiPlay, FiSquare, FiSliders, FiTrash2, FiGitBranch, FiCpu } from "react-icons/fi";
 
 export interface CanvasNodeCardProps {
-	/** Screen-to-canvas scale used by header dragging. */
 	zoom?: number;
 	node: CanvasNode;
 	isSelected: boolean;
 	hasIncoming?: boolean;
 	hasOutgoing?: boolean;
 	models: ModelInfo[];
-	/** 全局默认模型（"provider/model-id"），列表中找不到节点模型时的显示回退 */
 	defaultModel?: string | null;
 	installedSkills?: { name: string; description: string }[];
 	projects: ProjectSummary[];
 	workspaceRoots?: string[];
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
-	/** cwd 为 "." 时弹窗初始目录的回退（画布 currentCwd） */
 	baseCwd?: string;
-	/** 经画布通道下发 make_dir（缺省由通用选择器内置回退经主通道创建） */
 	onMakeDir?: (path: string) => void;
 	onSelect: (nodeId: string) => void;
 	onUpdate: (nodeId: string, patch: Partial<CanvasNode>) => void;
@@ -51,13 +44,9 @@ export interface CanvasNodeCardProps {
 	onOpenDrawer: (nodeId: string) => void;
 	onStartConnect: (nodeId: string, outX: number, outY: number, sourcePort?: string) => void;
 	onEndConnect: (nodeId: string, targetPort?: string) => void;
-	/** 拖拽卡片前通知父级保存快照（支持拖动撤销） */
 	onDragStart?: () => void;
-	/** 上报卡片内各字段端子的纵向中心（相对卡片顶部，画布坐标 px），供连线层按实测位置绘制 */
 	onPortPositions?: (nodeId: string, positions: Record<string, number>) => void;
-	/** 已连线的端子（高亮用）：{ in: [targetPort...], out: [sourcePort...] } */
 	activePorts?: { in: string[]; out: string[] };
-	/** 上游连线已沉淀的交付摘要（结束/汇聚节点用来展示收到的输出） */
 	incomingPreview?: string;
 }
 
@@ -105,7 +94,6 @@ export function CanvasNodeCard({
 	const actionText = formatCanvasMessage(node.currentActionMessage, node.currentAction, t);
 	const errorText = formatCanvasMessage(node.errorMessage, node.error, t);
 
-	// 解析出与 ModelThinking 兼容的当前模型对象：绝不杜撰，不存在时回退到全局默认/列表第一个
 	const selectedModelObj = useMemo(() => {
 		const raw = node.model;
 		const canonical = (m: { provider: string; id: string }) =>
@@ -150,7 +138,6 @@ export function CanvasNodeCard({
 	const setCfg = (patch: Record<string, string | number | boolean>) =>
 		onUpdate(node.id, { config: { ...node.config, ...patch } });
 	const roleCfg = (node.config ?? {}) as Record<string, string | number | boolean | undefined>;
-	/** 单个专属字段（卡片样式，全宽内联，免碰 styles.css） */
 	const renderRoleField = (f: RoleField, withPort = false) => {
 		if (f.kind === "hint") {
 			return (
@@ -229,7 +216,6 @@ export function CanvasNodeCard({
 				);
 			}
 		} else {
-			// 文本一律用 AI 指令同款多行框（3 行），不再用又短又矮的单行框
 			control = (
 				<textarea
 					className="canvas-instruction-input"
@@ -263,13 +249,11 @@ export function CanvasNodeCard({
 			</div>
 		);
 	};
-	/** 纯代码节点专属区：字段直接平铺（与 AI 指令同款输入框，不再套虚线外框），config 端子挂首个 label */
 	const renderUtilityFields = () => {
 		const fields = visibleRoleFields(node.role, roleCfg, t);
 		if (fields.length === 0) return <span className="canvas-muted-note">{roleMeta.blurb}</span>;
 		return <>{fields.map((f, i) => renderRoleField(f, i === 0))}</>;
 	};
-	/** Agent 节点专属参数（调度器拼入提示词，所见即所得） */
 	const renderAgentExtras = () => {
 		const fields = visibleRoleFields(node.role, roleCfg, t);
 		if (fields.length === 0) return null;
@@ -280,7 +264,6 @@ export function CanvasNodeCard({
 			</div>
 		);
 	};
-	/** 端子纵向中心（相对卡片顶部，画布坐标）：经 offsetTop 链实测，不受视口缩放影响 */
 	const portCenterY = (el: HTMLElement): number => {
 		const card = cardRef.current;
 		if (!card) return PORT_Y_OFFSET;
@@ -293,7 +276,6 @@ export function CanvasNodeCard({
 		return Math.round(y);
 	};
 
-	// 每次渲染后实测各字段端子位置并上报（父组件做浅比较去重，避免循环渲染）
 	useLayoutEffect(() => {
 		if (!onPortPositions || !cardRef.current) return;
 		const map: Record<string, number> = {};
@@ -314,7 +296,6 @@ export function CanvasNodeCard({
 		onEndConnect(node.id, portKey);
 	};
 
-	// 处理按住卡头拖拽节点位置
 	const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
 		if (e.button !== 0 || (e.target as HTMLElement).closest("input, button, select, textarea, a")) return;
 		e.stopPropagation();
@@ -351,9 +332,7 @@ export function CanvasNodeCard({
 			setIsDragging(false);
 			try {
 				(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-			} catch {
-				// 忽略释放异常
-			}
+			} catch {}
 		}
 	};
 
@@ -379,7 +358,6 @@ export function CanvasNodeCard({
 				onOpenDrawer(node.id);
 			}}
 		>
-			{/* 节点头部：拖拽把手 + 角色 + 引擎徽标 */}
 			<div
 				className="canvas-node-header"
 				onPointerDown={handlePointerDown}
@@ -448,7 +426,6 @@ export function CanvasNodeCard({
 				)}
 			</div>
 
-			{/* 节点配置面板：引擎、模型、目录 */}
 			<div className="canvas-node-body">
 				{roleCapabilityNotice(node.role, t) && (
 					<p
@@ -471,7 +448,6 @@ export function CanvasNodeCard({
 						{roleCapabilityNotice(node.role, t)}
 					</p>
 				)}
-				{/* 通用节点类型（对标 LangGraph/n8n 前沿范式） */}
 				<div className="canvas-node-field-row">
 					<span className="canvas-field-label">
 						{t("canvas.node.type")}
@@ -510,7 +486,6 @@ export function CanvasNodeCard({
 					</select>
 				</div>
 
-				{/* 输入来源：单行展示（左 label 右状态），圆点锚在 label 行内 */}
 				<div className="canvas-node-field-row">
 					<span className="canvas-field-label">
 						<div
@@ -536,7 +511,6 @@ export function CanvasNodeCard({
 					</span>
 				</div>
 
-				{/* AI 指令（可输入）：圆点锚在 label 行内，与文字对齐 */}
 				{roleNeedsInstruction(node.role) ? (
 					<div className="canvas-node-field-col">
 						<span className="canvas-field-label">
@@ -611,7 +585,6 @@ export function CanvasNodeCard({
 							</select>
 						</div>
 
-						{/* 模型与思考强度胶囊（直接复用主对话通用 ModelThinking 组件） */}
 						<div className="canvas-node-field-col">
 							<span className="canvas-field-label">{t("canvas.node.modelAndThinking")}</span>
 							<ModelThinking
@@ -631,7 +604,6 @@ export function CanvasNodeCard({
 							/>
 						</div>
 
-						{/* 工作目录选择与本地浏览（直接复用通用 UniversalPathPicker 组件） */}
 						<div className="canvas-node-field-col">
 							<span className="canvas-field-label">{t("canvas.node.workspace")}</span>
 							<UniversalPathPicker
@@ -653,7 +625,6 @@ export function CanvasNodeCard({
 							/>
 						</div>
 
-						{/* Git Worktree 物理隔离开关 */}
 						{(() => {
 							const isRemote = (node.cwd ?? "").trim().startsWith("ssh://");
 							return (
@@ -680,7 +651,6 @@ export function CanvasNodeCard({
 					</>
 				)}
 
-				{/* 分支输出端子：条件成立/不成立、批准/驳回，各绑定独立连线 */}
 				{branchOutPorts.length > 0 && (
 					<div className="canvas-node-branch-group">
 						{branchOutPorts.map((bd) => (
@@ -703,7 +673,6 @@ export function CanvasNodeCard({
 						))}
 					</div>
 				)}
-				{/* 结束/汇聚节点：把上游连线沉淀的交付摘要直接展示出来 */}
 				{(node.role === "end" || node.role === "merge") && (
 					<div className="canvas-node-field-col" title={incomingPreview || t("canvas.node.noUpstreamInput")}>
 						<span className="canvas-field-label">{t("canvas.node.receivedOutput")}</span>
@@ -714,7 +683,6 @@ export function CanvasNodeCard({
 						</span>
 					</div>
 				)}
-				{/* 输出内容提示：期望输出 + 实际产物预览（悬停看全文） */}
 				<div
 					className="canvas-node-field-col"
 					title={
@@ -747,7 +715,6 @@ export function CanvasNodeCard({
 						</div>
 						{t("canvas.node.outputContent")}
 					</span>
-					{/* 出错时优先显示本轮真实报错，不挂上一次遗留的「交付完成」 */}
 					{node.status === "error" && node.error ? (
 						<span className="canvas-muted-note canvas-output-preview canvas-output-error">
 							{t("canvas.node.executionError", { name: errorText }).slice(0, 120)}
@@ -762,7 +729,6 @@ export function CanvasNodeCard({
 						</span>
 					)}
 				</div>
-				{/* 实时状态灯与动态简报 */}
 				<div
 					className="canvas-node-status-bar"
 					style={{
@@ -775,7 +741,6 @@ export function CanvasNodeCard({
 				</div>
 			</div>
 
-			{/* 节点底部控制条 */}
 			<div className="canvas-node-footer">
 				{node.status === "running" ? (
 					<button

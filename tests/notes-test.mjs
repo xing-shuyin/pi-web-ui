@@ -1,16 +1,3 @@
-/**
- * notes 插件端到端协议测试（零 token、自包含、真服务端）。
- *
- * 覆盖「插件装进真宿主后到底活不活」这一层（unit/notes-plugin.test.ts 用假宿主测逻辑）：
- *   - 真 manifest 被宿主解析：插件出现在 plugins 清单里、无 error、ui.items 里有顶栏
- *     动作 notes:toggle、agentTools 有 5 个工具、斜杠命令 3 个（source=plugin）。
- *   - HTTP 通道：GET /plugins-api/notes/store、POST /op（记笔记/加待办/设提醒）、
- *     GET /export（Markdown + Content-Disposition）。
- *   - 长轮询：rev 对得上时挂住，改动后立刻被唤醒并带回新快照（浏览器侧推送的命脉）。
- *   - 持久化：重启服务后库还在（数据在 <dataDir>/notes/，不在插件目录）。
- *
- * 运行：先 npm run build:server，再 node tests/notes-test.mjs
- */
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +13,6 @@ const dataDir = mkdtempSync(join(tmpdir(), "pi-notes-e2e-"));
 const cwd = join(dataDir, "work");
 mkdirSync(cwd, { recursive: true });
 mkdirSync(join(dataDir, "plugins"), { recursive: true });
-// 装插件 = 复制目录（与 CLI install 效果一致）
 cpSync(join(repoRoot, "plugins", "notes"), join(dataDir, "plugins", "notes"), { recursive: true });
 
 function fail(msg) {
@@ -55,15 +41,12 @@ async function waitReady() {
 	for (;;) {
 		try {
 			if ((await fetch(`${BASE}/api/health`)).ok) return;
-		} catch {
-			/* 还没起来 */
-		}
+		} catch {}
 		if (Date.now() - t0 > 25_000) throw new Error("server not ready");
 		await new Promise((r) => setTimeout(r, 300));
 	}
 }
 
-/** attach 一个 WS 客户端并收集下行消息（插件清单/命令表都靠它）。 */
 function connectWs(collect) {
 	return new Promise((resolve, reject) => {
 		const s = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
@@ -112,7 +95,6 @@ try {
 	proc = startServer();
 	await waitReady();
 
-	// -- 插件被宿主加载 + 清单内容 -------------------------------------------------
 	const messages = [];
 	sock = await connectWs((m) => messages.push(m));
 	await new Promise((r) => setTimeout(r, 1200));
@@ -140,7 +122,6 @@ try {
 		fail(`斜杠命令没注册：${JSON.stringify(pluginCmds)}`);
 	}
 
-	// -- HTTP：空库 → 写入 → 读回 --------------------------------------------------
 	let r = await api("/store");
 	if (r.status !== 200 || r.body?.ok !== true || r.body.store.notes.length !== 0) fail(`GET /store 异常：${r.status}`);
 	else ok("GET /plugins-api/notes/store → 空库");
@@ -156,7 +137,6 @@ try {
 	if (!reminderId || !r.body.next?.[reminderId]) fail(`提醒没排上下次触发：${JSON.stringify(r.body?.next)}`);
 	else ok(`设提醒成功，服务端算出的下次触发：${r.body.next[reminderId]}`);
 
-	// -- 长轮询：挂住 → 被改动唤醒 ---------------------------------------------------
 	const rev = r.body.store.meta.rev;
 	const waitStart = Date.now();
 	const waiting = api(`/wait?rev=${rev}`);
@@ -174,13 +154,11 @@ try {
 	else if (!woken.body.store.todos.some((t) => t.text === "买牛奶")) fail("唤醒后的快照没带新数据");
 	else ok(`长轮询被唤醒（${elapsed}ms）并带回新快照`);
 
-	// -- 导出 ----------------------------------------------------------------------
 	const md = await api("/export?format=md");
 	if (!md.headers.get("content-disposition")?.includes("notes-")) fail("导出没有 Content-Disposition");
 	else if (!String(md.body).includes("交周报")) fail("Markdown 导出内容不对");
 	else ok("GET /export?format=md → 带文件名的 Markdown");
 
-	// -- 重启后数据还在 --------------------------------------------------------------
 	sock?.close();
 	proc.kill("SIGTERM");
 	await new Promise((res) => setTimeout(res, 800));
@@ -189,7 +167,6 @@ try {
 	}
 	proc = startServer();
 	await waitReady();
-	// 插件路由在**客户端 attach 时**才挂载（宿主扫目录 + activate）——重启后要先连一次
 	sock = await connectWs(() => {});
 	await new Promise((r) => setTimeout(r, 1200));
 	const after = await api("/store");
@@ -200,15 +177,11 @@ try {
 } finally {
 	try {
 		sock?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (proc?.pid) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	await new Promise((r) => setTimeout(r, 800));
 	rmSync(dataDir, { recursive: true, force: true });

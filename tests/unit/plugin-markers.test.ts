@@ -70,11 +70,9 @@ describe("插件动态注册 Marker 体系", () => {
 		expect(getMarker(markerName)).toBeDefined();
 		expect(isKnownMarkerTool(markerName)).toBe(true);
 
-		// stripMarkers 能自动识别并剥离
 		const text = "这是前文 [[test_custom_marker:ping:hello]] 这是后文";
 		expect(stripMarkers(text)).toBe("这是前文  这是后文");
 
-		// 注销后恢复
 		expect(unregisterMarker(markerName)).toBe(true);
 		expect(getMarker(markerName)).toBeUndefined();
 		expect(isKnownMarkerTool(markerName)).toBe(false);
@@ -140,12 +138,10 @@ describe("插件动态注册 Marker 体系", () => {
 		let guidance = svc.buildGuidance();
 		expect(guidance).toContain("[[test_guidance_marker:do:something]] execute action");
 
-		// 禁用该标记
 		svc.toggleMarker(markerName, false);
 		guidance = svc.buildGuidance();
 		expect(guidance).not.toContain("test_guidance_marker");
 
-		// 重新启用
 		svc.toggleMarker(markerName, true);
 		guidance = svc.buildGuidance();
 		expect(guidance).toContain("[[test_guidance_marker:do:something]] execute action");
@@ -183,14 +179,11 @@ describe("插件动态注册 Marker 体系", () => {
 		const customTag = "my_custom_tag";
 		const raw = "实时回复文字 [[my_custom_tag:click:ok]] 结束";
 
-		// 未同步前，原样保留避免误杀
 		expect(stripInlineMarkers(raw, false)).toBe(raw);
 
-		// 同步已知列表
 		syncKnownInlineMarkers(["notify", "conv", "action", customTag]);
 		expect(stripInlineMarkers(raw, false)).toBe("实时回复文字  结束");
 
-		// 测试流式末尾半截
 		const streamingRaw = "文字生成中 [[my_custom_tag:foo";
 		expect(stripInlineMarkers(streamingRaw, true)).toBe("文字生成中");
 	});
@@ -230,10 +223,8 @@ export default {
 			expect(isKnownMarkerTool("plug_tag")).toBe(true);
 			expect(changed).toBeGreaterThanOrEqual(1);
 
-			// 验证 stripMarkers 认识它
 			expect(stripMarkers("hello [[plug_tag:set:123]] world")).toBe("hello  world");
 
-			// 反激活清理
 			mgr.dispose();
 			expect(getMarker("plug_tag")).toBeUndefined();
 			expect(isKnownMarkerTool("plug_tag")).toBe(false);
@@ -269,7 +260,6 @@ export default {
 			const mgr = new PluginManager(base, process.cwd());
 			await mgr.ensureLoaded();
 
-			// 内置 marker 不会被篡改
 			const m = getMarker("notify");
 			expect(m?.pluginId).toBeUndefined();
 

@@ -2,9 +2,16 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { randomUuid } from "./uuid";
 import { updateApprovalQueue } from "./pending-queue";
 import { CANVAS_LIST_EVENT } from "./canvas-mentions";
-import { makeTerminalBridge, type TerminalWriter, type TerminalOwnerKind } from "./terminal-bridge";
+import {
+	isClientTerminalStream,
+	makeTerminalBridge,
+	type TerminalWriter,
+	type TerminalOwnerKind,
+} from "./terminal-bridge";
 import { withToken } from "./auth-token";
-import { appUrl } from "./base-url";
+import { appUrl, appWsUrl } from "./base-url";
+import { isMobileRuntime } from "./mobile-runtime";
+import { handleNativeCliEvent, resolveNativeCliControlResult } from "./native-cli-events";
 import { notifySessionSwitch } from "./composer-bridge";
 import { syncKnownInlineMarkers } from "./components/Message";
 import type {
@@ -78,19 +85,16 @@ import {
 	resetUnconfirmedAnswers,
 } from "./question-answer-relay";
 import { emitTuiOverlayRender, resetTuiOverlayRender } from "./tui-overlay-bridge";
-import { setAppGlobals, setAppSend } from "./app-globals";
+import { setAppGlobals, setAppSend, type AppSendContext } from "./app-globals";
 import { currentUiLocale, UI_LOCALE_EVENT } from "./ui-locale.js";
-// 工具定义说明弹窗（工具卡右键 → 「显示工具详细信息」）：应答直接回模块级 store，
-// 不进 ChatState（弹窗挂在 App 上，消息列表里几十张卡片不必为此各拿一份数据）。
 import { receiveToolInfo } from "./tool-info-state";
-// 设置页逐工具文案编辑器：默认值/当前覆盖回模块级 store（不弹工具定义弹窗）。
 import { receiveToolPrompt } from "./tool-prompt-state";
-// 被上下文压缩折叠的历史消息（issue #398）：按需获取后回模块级 store 供卡片展开。
 import { receiveCompactedMessages } from "./compacted-history-state";
 import { emitPluginData } from "./plugin-loader";
 import { ingestPluginLogsData } from "./plugin-logs";
 import { resolveCatalogSyncResult } from "./plugin-host";
 import { resolveNewChatResult } from "./new-chat-request";
+import { recordUserPrompt } from "./conversation-order";
 import { PROTOCOL_VERSION } from "./protocol-version";
 import { earlierPageNeedsResync, mergeEarlierPage } from "./history-window";
 import { enqueueNotice } from "./notice-policy";
@@ -105,24 +109,16 @@ import type { ConnStatus, PluginPanelGroup, SchedulerTaskView } from "./types";
 
 export type { ConnStatus };
 
-/** Browser UI locale for the hello/set_locale server report (issue #91). */
 function readUiLocale(): string {
 	return currentUiLocale();
 }
 
-/**
- * Safe WebSocket readyState constants:
- * In customized shells (e.g. WebView2/Neutralino), proxy scripts, or user extensions that monkey-patch
- * `window.WebSocket`, static properties like `WebSocket.OPEN` may be missing/undefined.
- * Fallbacks (OPEN=1, CLOSING=2, CLOSED=3) guarantee checks never silently fail (report 20261012 §2).
- */
 const WS_OPEN = typeof WebSocket !== "undefined" && WebSocket.OPEN !== undefined ? WebSocket.OPEN : 1;
 const WS_CLOSING = typeof WebSocket !== "undefined" && WebSocket.CLOSING !== undefined ? WebSocket.CLOSING : 2;
 const WS_CLOSED = typeof WebSocket !== "undefined" && WebSocket.CLOSED !== undefined ? WebSocket.CLOSED : 3;
 
 const isWsOpen = (ws?: WebSocket | null): ws is WebSocket => Boolean(ws && ws.readyState === WS_OPEN);
 
-/** One component in an all-source update check (update_status_all). */
 export interface UpdateAllItem {
 	name: string;
 	kind: UpdateItemKind;
@@ -131,7 +127,6 @@ export interface UpdateAllItem {
 	latestPublishedAt?: string | null;
 	upToDate: boolean;
 	error?: string;
-	/** git-extension / plugin only: `host/path` shorthand (prepend `git:` for the `pi update` command). */
 	source?: string;
 	pluginId?: string;
 	builtin?: boolean;
@@ -144,60 +139,41 @@ export interface Notice {
 	textEn?: string;
 }
 
-/** A terminal tab. The output stream itself lives in the xterm instance
- * (via the terminal bridge) — this is just the tab metadata. */
 export interface TerminalMeta extends TerminalInfo {
 	conversationId: string;
 }
 
-/** 插件后台作业（安装/更新/卸载）的实时状态（issue #152）。
- *  由服务端的 `plugin_job` 即时通道消息驱动；只在发起它的客户端上看得到。 */
 export interface PluginJobState {
 	jobId: string;
 	action: "install" | "update" | "uninstall";
 	pluginId: string;
 	phase: "start" | "log" | "done";
-	/** phase="done"：作业是否成功。 */
 	ok?: boolean;
-	/** phase="done" 且失败：可读原因。 */
 	error?: string;
-	/** phase="done"：输出尾部（就地展开看详情）。 */
 	output?: string;
-	/** 最近的输出行（滚动显示最后一行）。 */
 	lines: string[];
-	/** 本地收到 start 的时间（算耗时；作业在服务端）。 */
 	startedAt: number;
 }
 
-/** 目录同步回执（issue #165：设置面板「从目录同步」框用；发起它的客户端才看得到）。
- *  由服务端的 `plugin_catalog_sync_result` 即时通道消息驱动（与 plugin-host 的
- *  reloadCatalog 等待者在 use-chat 里共用同一条消息，各取所需）。 */
 export interface CatalogSyncState {
 	requestId: string;
 	ok: boolean;
 	error?: string;
-	/** 同步后的完整市场列表长度（成功时）。 */
 	entryCount?: number;
-	/** install:true 时逐条安装结果。 */
 	installed?: { id: string; ok: boolean; error?: string }[];
-	/** 本地收到回执的时间。 */
 	receivedAt: number;
 }
 
-/** 预设导出结果（`preset_export_result`）：json = 可复制/下载的交换文档文本。 */
 export interface PresetExportState {
 	requestId?: string;
 	ok: boolean;
 	name?: string;
-	/** 建议的下载文件名（<slug>-<短哈希>.json）。 */
 	fileName?: string;
 	json?: string;
 	error?: string;
 	receivedAt: number;
 }
 
-/** 预设导入结果（`preset_import_result`）：dryRun=true 时只有预览，没有落盘。
- *  source 是前端记的（“粘贴/文件/网址”），用于预览头部提示。 */
 export interface PresetImportState {
 	requestId?: string;
 	ok: boolean;
@@ -211,12 +187,10 @@ export interface PresetImportState {
 	receivedAt: number;
 }
 
-/** 社区共享预设目录（`preset_catalog_result`）：失败时 entries 是上一次成功的缓存。 */
 export interface PresetCatalogState {
 	requestId?: string;
 	ok: boolean;
 	entries: UiPresetCatalogEntry[];
-	/** 目录来源地址（关闭时为空串）。 */
 	source: string;
 	cached: boolean;
 	fetchedAt: number;
@@ -224,8 +198,6 @@ export interface PresetCatalogState {
 	receivedAt: number;
 }
 
-/** 预设分享结果（`preset_share_result`）：method=gh|api 时 url 是新 Issue（直接打开）；
- *  method=browser 时前端复制 json 后打开 url（预填正文/标题的建 Issue 页）。 */
 export interface PresetShareState {
 	requestId?: string;
 	ok: boolean;
@@ -237,8 +209,6 @@ export interface PresetShareState {
 	receivedAt: number;
 }
 
-/** 「安装前先读 spec」结果（DSH P0-3）：形状分类 + 已装判定 + 远端 manifest 探测。
- *  由 `plugin_install_inspect_result` 驱动；problem 非空时设置面板在输入框下显示一句话。 */
 export interface PluginInstallInspectState {
 	requestId: string;
 	source: string;
@@ -251,7 +221,6 @@ export interface PluginInstallInspectState {
 	manifest?: { id?: string; name?: string; version?: string; description?: string; permissions?: string[] };
 }
 
-/** DSH 引擎专有状态命名空间（切换引擎时物理整体清空，杜绝散落字段残留与死键）。 */
 export interface DshEngineState {
 	patches: { patchDir: string; files: DshPatchFileInfo[] } | null;
 	market: {
@@ -266,82 +235,40 @@ export interface DshEngineState {
 
 export interface ChatState {
 	status: ConnStatus;
-	/** True once the server confirmed the agent session is ready (hello processed). */
 	ready: boolean;
 	state: UiState | null;
-	/** Latest host server CPU and memory usage from heartbeat. */
 	hostMetrics: UiHostMetrics | null;
-	/** Latest WebSocket round-trip network latency in ms (null when disconnected or not yet measured). */
 	latencyMs?: number | null;
-	/** Live tool output accumulated from tool_delta messages, keyed by toolCallId. */
 	liveOutputs: Map<string, { toolName: string; text: string }>;
-	/**
-	 * Tools that FINISHED executing (tool_status from tool_execution_end), keyed
-	 * by toolCallId. Lets the card show "done · waiting for the model" even
-	 * while the session is still streaming. Cleared once the toolResult message
-	 * lands in the snapshot (it carries the authoritative result).
-	 */
 	toolStatuses: Map<string, ToolStatus>;
 	notices: Notice[];
 	serverVersion?: string;
-	/** 引擎标识（pi | dsh）—— ready 消息携带，底栏显示徽标。 */
 	engine?: string;
-	/** 引擎安装探测结果列表（包含各引擎是否已在宿主中安装、对应包名与版本）。 */
 	engines?: EngineStatus[];
-	/** PI_WEB_MANAGED=1 on the server: updates and plugin installs come from
-	 *  whoever deploys this instance, so the interface does not offer them.
-	 *  The server refuses those messages regardless (server/managed.ts). */
-	/** pi-web-ui's own version, from `ready`. `serverVersion` is the pi SDK's,
-	 *  and the update check — the client's other source — does not run on a
-	 *  managed instance. */
 	appVersion?: string;
 	managed?: boolean;
-	/** PI_WEB_TABS on the server: the tabs this instance offers. Undefined
-	 *  means all of them, which is the default. */
 	tabs?: string[];
-	/** Persisted session list for the left panel. */
 	sessions: SessionSummary[];
-	/** Open conversations (each runs its own session in parallel). */
 	conversations: ConversationSummary[];
-	/** issue #145：在其他客户端（标签页/设备）上正在跑的对话（只读感知，不可点）。 */
 	elsewhere: ElsewhereRunning[];
-	/** Id of the conversation the current snapshot belongs to. */
 	activeConversationId: string;
-	/** Recent workspaces this client opened (left panel project picker). */
 	projects: ProjectSummary[];
-	/** 按工作区规范化路径缓存的会话列表（支持跨项目按需拉取）。 */
 	projectSessions?: Record<string, SessionSummary[]>;
-	/** B5：服务端还有更多（更旧）会话未下发的项目（规范化路径 → true）。 */
 	projectSessionsHasMore?: Record<string, boolean>;
-	/** Workspace file listing for the right panel. */
 	files: FileListing | null;
-	/** Latest file content fetched for the preview panel (path-matched in the modal). */
 	fileContent: FileContent | null;
 
-	/** Last dir-changed push from the server fs.watch (path = listed directory). */
 	fileChanged: { path: string } | null;
-	/** Models with valid auth, for the model dropdown. */
 	models: ModelInfo[];
-	/** True while a model list request is in flight. */
 	modelsLoading: boolean;
-	/** Custom providers from agentDir/models.json (model config panel). */
 	modelsConfig: UiProviderConfig[];
-	/** Built-in providers with auth status (key-only config). */
 	providers: ProviderStatus[];
-	/** Stored API keys per built-in provider (masked), for multi-key grouping. */
 	providerKeys: Record<string, ProviderKeyInfo[]>;
-	/** 全局默认模型（"provider/id"，null = 未设置）：模型下拉的 ★ 标记 +
-	 *  "设为全局默认"按钮状态。pi 引擎经 default_model 消息推送。 */
 	defaultModel: string | null;
-	/** OAuth login flows that may survive a browser reconnect. */
 	providerOAuthFlows: ProviderOAuthFlowState[];
-	/** Last OAuth action result per provider. */
 	providerOAuthResults: Record<string, ProviderOAuthResultState>;
-	/** Result of the last install_pi_agent run (null while not started/running). */
 	installResult: { ok: boolean; detail: string } | null;
-	/** Path completions for the cwd input. */
 	pathCompletions: { name: string; path: string; type: "dir" | "file" }[];
-	/** Self-update status (result of check_update). */
 	update: {
 		current: string;
 		latest: string | null;
@@ -349,17 +276,10 @@ export interface ChatState {
 		upToDate: boolean;
 		error?: string;
 	} | null;
-	/** All-source update check (webui + pi core + installed packages). */
 	updatesAll: UpdateAllItem[] | null;
-	/** issue #321：pi SDK 副本状态（update_status_all 随发）。`running` = 本进程实际
-	 *  加载的版本；`bundledInUse` = 加载的是随包自带那份（未跟随全局）；
-	 *  `newerInstalled` = 机器上更新的 pi 版本（全局 CLI / 被遮蔽副本），null = 没有。 */
 	updatesSdk: { running: string; bundledInUse: boolean; newerInstalled: string | null } | null;
-	/** Extension widgets (TUI overlays bridged to the web UI). */
 	widgets: { key: string; lines: string[] }[];
-	/** Extension footer statuses (setStatus bridge). */
 	statuses: { key: string; text: string | undefined }[];
-	/** Active extension dialog (select/confirm/input) awaiting a response. */
 	dialog: {
 		id: number;
 		kind: "select" | "confirm" | "input";
@@ -371,7 +291,6 @@ export interface ChatState {
 			hasRisk?: boolean;
 		};
 	} | null;
-	/** Active TUI modal overlay (from ctx.ui.custom) awaiting user interaction. */
 	tuiOverlay: {
 		id: number;
 		title?: string;
@@ -379,19 +298,12 @@ export interface ChatState {
 		rows: number;
 		initialAnsi?: string;
 	} | null;
-	/** 待用户审批的高危工具调用（Human-in-the-Loop: Edit & Run）。 */
 	approval: UiToolApproval | null;
 	approvals: UiToolApproval[];
 	globalQuestions: UiPendingQuestion[];
 	globalApprovals: UiToolApproval[];
-	/** 待用户回答的模型提问（ask_user_question）——两个引擎共用。服务端是事实源：
-	 *  即时通道（question_pending）+ 快照（UiState.pendingQuestion，见 syncPendingQuestion）。 */
 	question: UiPendingQuestion | null;
-	/** null until the server supplies an authoritative queue. */
 	questionQueue: UiQueuedQuestion[] | null;
-	/** 跨页作答预告（peek_elsewhere_question 的回包）：别处会话问卷的原文。
-	 *  与本地 question 独立共存（id 各会话作用域，不进 answered 集合）；
-	 *  提交带 owner 由持有方 resolve，本页只负责展示/关闭。 */
 	remoteQuestion: {
 		owner: string;
 		convId: string;
@@ -399,51 +311,36 @@ export interface ChatState {
 		questions: UiQuestion[];
 		conversationTitle?: string;
 	} | null;
-	/** User command list from .pi/commands.json (terminal left panel). */
 	commands: CommandDef[];
 	commandsPath: string;
-	/** Slash-command catalog for the chat input (builtin + extension +
-	 *  template + skill). */
 	slashCommands: SlashCommandInfo[];
-	/** Open terminal tabs (metadata only; streams go through the bridge). */
 	terminals: TerminalMeta[];
-	/** Terminal the SCM/settings panel asked to focus (auto-switch on write ops). */
+	nativeCliPasteResult?: Extract<ServerMessage, { type: "terminal_cli_paste_result" }> | null;
 	terminalActiveId: string | null;
-	/** Goal / review status (set via the goal bar). */
 	goal: GoalStatus;
-	/** Settings-panel state (system prompt, skill/extension toggles, presets). */
 	settings: UiSettingsState | null;
-	/** AI-started background servers (managed from the 后台任务 panel). The
-	 *  list lives on the client session, so it survives conversation ends. */
 	bgServers: BgServer[];
 	/** Built-in scheduled tasks (issue #184, global list, all projects). */
 	schedulerTasks: SchedulerTaskView[];
-	/** P3：左栏「运行的对话」里的插件运行条目（全量，服务端节流推送）。 */
 	pluginPanelGroups: PluginPanelGroup[];
-	/** Last fetch_models probe result (custom-provider model list), matched by
-	 *  reqId in the model config modal. */
 	fetchModelsResult: {
 		reqId: number;
 		ok: boolean;
 		models?: UiModelConfigEntry[];
 		error?: string;
 	} | null;
-	/** Last test_model_connection result, matched by reqId in the model config modal. */
 	testModelConnectionResult: {
 		reqId: number;
 		ok: boolean;
 		latencyMs?: number;
 		error?: string;
 	} | null;
-	/** Last enrich_models result (catalog params for draft rows), matched by
-	 *  reqId in the model config modal. */
 	enrichModelsResult: {
 		reqId: number;
 		ok: boolean;
 		results?: UiEnrichResult[];
 		error?: string;
 	} | null;
-	/** Progress notification for enrich_models while downloading catalogs or matching. */
 	enrichModelsProgress: {
 		reqId: number;
 		phase: "catalog" | "page" | "matching" | "aborted";
@@ -451,7 +348,6 @@ export interface ChatState {
 		total?: number;
 		message?: string;
 	} | null;
-	/** Last refresh_provider_models result (saved-provider list refresh). */
 	refreshProviderResult: {
 		reqId: number;
 		ok: boolean;
@@ -459,22 +355,16 @@ export interface ChatState {
 		total?: number;
 		error?: string;
 	} | null;
-	/** Last refresh_builtin_models result (forced official-catalog refresh),
-	 *  matched by reqId in the model config modal. */
 	refreshBuiltinResult: {
 		reqId: number;
 		ok: boolean;
 		error?: string;
 	} | null;
-	/** Last append_builtin_model result (one model appended to a built-in
-	 *  provider's overlay entry), matched by reqId in the modal. */
 	appendBuiltinResult: {
 		reqId: number;
 		ok: boolean;
 		error?: string;
 	} | null;
-	/** Last clone_provider result (built-in → custom draft for the model
-	 *  config modal to open pre-filled). */
 	cloneProviderResult: {
 		reqId: number;
 		ok: boolean;
@@ -482,8 +372,6 @@ export interface ChatState {
 		configs?: UiProviderConfig[];
 		error?: string;
 	} | null;
-	/** Last source-control query result (scm_status / scm_filediff /
-	 *  scm_commit), matched by reqId in the SCM panel. */
 	scmData: ServerMessage | null;
 	/** Last global-search file query result, matched by reqId in the
 	 *  global search panel (stale results with older reqIds are ignored). */
@@ -493,40 +381,25 @@ export interface ChatState {
 		results: FileSearchResult[];
 		truncated?: boolean;
 	} | null;
-	/** Last global-search conversation-content query result (server-side
-	 *  transcript match, AI output included) — same reqId discipline. */
 	sessionSearch: {
 		reqId: number;
 		ok: boolean;
 		results: SessionSearchResult[];
 	} | null;
-	/** Installed optional plugins (<dataDir>/plugins). Empty = none installed. */
 	plugins: UiPluginInfo[];
-	/** Server-side plugin reload counter (import-cache buster, see plugins msg). */
 	pluginsEpoch: number;
-	/** 已装插件的更新状态（key = pluginId）。 */
 	pluginUpdates: Record<string, UiPluginUpdateInfo> | null;
-	/** 正在检查插件更新 */
 	checkingPluginUpdates: boolean;
-	/** Installable-plugin list (marketplace): shipped catalog + user-added
-	 *  entries, each a one-click install candidate (see plugin_catalog msg). */
 	pluginCatalog: UiPluginCatalogEntry[];
-	/** Catalog epoch (increments on every add/remove — re-render trigger). */
 	pluginCatalogEpoch: number;
-	/** 插件后台作业的实时状态，key = jobId（即时通道消息：刷新即丢，作业在服务端继续跑）。 */
 	pluginJobs: Record<string, PluginJobState>;
-	/** 最近一次目录同步的回执（设置面板「从目录同步」框展示用；刷新即丢）。 */
 	catalogSync: CatalogSyncState | null;
-	/** 预设分享（server/preset-share.ts）：导出结果 / 导入预览 / 社区目录（刷新即丢）。 */
 	presetExport: PresetExportState | null;
 	presetImport: PresetImportState | null;
 	presetCatalog: PresetCatalogState | null;
 	presetShare: PresetShareState | null;
-	/** 最近一次「安装前先读 spec」的检查结果（设置面板输入框下展示；刷新即丢）。 */
 	installInspect: PluginInstallInspectState | null;
-	/** 插件目录授权表（issue #146）：设置面板列出 + 可撤销。 */
 	pluginGrants: { pluginId: string; paths: string[] }[];
-	/** 插件能力授权表（动态授权）：设置面板列出 + 可撤销；session 授权只在本次运行有效。 */
 	pluginPermissions: {
 		pluginId: string;
 		family: "net" | "llm";
@@ -536,9 +409,7 @@ export interface ChatState {
 		grantedAt: number;
 		session?: boolean;
 	}[];
-	/** 等待用户答复的「插件请求访问目录」（队列；服务端 120s 未答复视为拒绝）。 */
 	pathRequests: { id: string; pluginId: string; path: string; reason?: string }[];
-	/** 等待用户答复的「插件请求能力授权」（队列；语义与 pathRequests 同）。 */
 	permRequests: {
 		id: string;
 		pluginId: string;
@@ -547,28 +418,18 @@ export interface ChatState {
 		models?: string[];
 		reason?: string;
 	}[];
-	/** DSH engine: 专属状态命名空间（切换引擎时一键清空）。 */
 	dsh: DshEngineState | null;
-	/** DSH engine: <dataDir>/dsh-patches user patch files (list + dir)（兼容镜像）。 */
 	dshPatches: { patchDir: string; files: DshPatchFileInfo[] } | null;
-	/** DSH engine: awesome-dsh-plugin / dsh-market 社区插件市场数据（兼容镜像）。 */
 	dshMarket: {
 		count: number;
 		updated?: string;
 		categories: Record<string, { en: string; zh: string }>;
 		plugins: DshMarketPlugin[];
 	} | null;
-	/** DSH engine: Agent 预设名录（兼容镜像）。 */
 	dshPresets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
-	/** DSH engine: 权限预设选项表 + 新会话默认（兼容镜像）。 */
 	dshPermission: { options: DshPermissionOption[]; defaultPreset: string } | null;
-	/** Increments when the server reports the watched git dir changed
-	 *  outside the panel — SCMPanel refreshes on change while visible. */
 	scmDirty: number;
-	/** Server wire-protocol version differs from ours — the page was loaded
-	 *  before/after an app update; show a persistent refresh banner. */
 	protocolMismatch: boolean;
-	/** 公开远程 MCP 市场查询结果（来自 Smithery/GitHub/自定义源） */
 	mcpOAuthResult: Extract<ServerMessage, { type: "mcp_oauth_result" }> | null;
 	mcpMarketResult: {
 		ok: boolean;
@@ -577,25 +438,20 @@ export interface ChatState {
 		source: string;
 		error?: string;
 	} | null;
-	/** 公开远程 Skill 技能仓库检索结果 */
 	skillMarketResult: {
 		ok: boolean;
 		skills: RemoteSkillSummary[];
 		repo: string;
 		error?: string;
 	} | null;
-	/** 单个技能的远程 SKILL.md 内容拉取结果 */
 	skillContentResult: {
 		ok: boolean;
 		skillId: string;
 		content: string;
 		error?: string;
 	} | null;
-	/** 工作区/历史会话/新对话的流式阶段切换状态（像传输文件一样展示实时进度与先行预览消息）。 */
 	transition: WorkspaceTransitionState | null;
-	/** 沙盒与源项目的最新对比结果（点击「写回源项目」弹窗时拉取展示）。 */
 	sandboxDiff: SandboxDiffView | null;
-	/** 流式期间发送排队/插队消息与撤回的本地乐观状态追踪器（消除按 Enter 后气泡延迟与在途快照闪退）。 */
 	optimisticQueue: OptimisticQueueTracker;
 }
 
@@ -608,8 +464,6 @@ export interface WorkspaceTransitionState {
 	textEn: string;
 	totalMessages?: number;
 	previewMessages?: UiMessage[];
-	/** 服务端预分配的对话 id 与会话文件（预览消息 id 与首个快照一致时才有）：
-	 *  预览态用它们组成与快照相同的会话键，消息列表在预览→快照之间不重挂载。 */
 	previewConversationId?: string;
 	previewSessionFile?: string;
 	startedAt: number;
@@ -732,7 +586,6 @@ type Action =
 	| {
 			type: "update_status_all";
 			items: UpdateAllItem[];
-			/** issue #321：pi SDK 副本状态快照。 */
 			piSdk?: { running: string; bundledInUse: boolean; newerInstalled: string | null };
 	  }
 	| { type: "updates_check_started" }
@@ -800,6 +653,7 @@ type Action =
 	| { type: "terminal_restart"; terminalId: string; ownerKind?: TerminalOwnerKind; conversationId?: string }
 	| { type: "terminal_list"; conversationId?: string; terminals: TerminalInfo[] }
 	| { type: "terminal_active"; id: string }
+	| { type: "terminal_cli_paste_result"; result: Extract<ServerMessage, { type: "terminal_cli_paste_result" }> }
 	| {
 			type: "transition_start";
 			kind: WorkspaceTransitionState["kind"];
@@ -843,10 +697,8 @@ type Action =
 	| { type: "plugin_updates"; updates: UiPluginUpdateInfo[] }
 	| { type: "plugin_updates_check_started" }
 	| { type: "plugin_catalog"; entries: UiPluginCatalogEntry[]; epoch: number }
-	/** 插件后台作业进度（安装/更新/卸载）：line 为该次新增的一行输出。 */
 	| { type: "plugin_job"; job: Omit<PluginJobState, "lines" | "startedAt">; line?: string }
 	| { type: "plugin_catalog_sync_result"; result: Omit<CatalogSyncState, "receivedAt"> }
-	/** 预设分享（server/preset-share.ts）：导出/导入/目录/一键分享回执。 */
 	| { type: "preset_export_result"; result: Omit<PresetExportState, "receivedAt"> }
 	| {
 			type: "preset_import_result";
@@ -856,9 +708,7 @@ type Action =
 	| { type: "preset_catalog_result"; result: Omit<PresetCatalogState, "receivedAt"> }
 	| { type: "preset_share_result"; result: Omit<PresetShareState, "receivedAt"> }
 	| { type: "plugin_install_inspect_result"; result: PluginInstallInspectState }
-	/** 插件目录授权表（服务端推）。 */
 	| { type: "plugin_grants"; grants: { pluginId: string; paths: string[] }[] }
-	/** 插件能力授权表（服务端推；session 授权只在本次运行有效）。 */
 	| {
 			type: "plugin_permissions";
 			grants: {
@@ -871,7 +721,6 @@ type Action =
 				session?: boolean;
 			}[];
 	  }
-	/** 插件请求能力授权（等用户答复；答复/超时后服务端推 resolved，本地移除）。 */
 	| {
 			type: "plugin_permission_request";
 			req: {
@@ -884,7 +733,6 @@ type Action =
 			};
 	  }
 	| { type: "plugin_permission_resolved"; id: string }
-	/** 插件请求访问某个目录（等用户答复；答复后本地移除）。 */
 	| { type: "plugin_path_request"; req: { id: string; pluginId: string; path: string; reason?: string } }
 	| { type: "plugin_path_resolved"; id: string }
 	| {
@@ -909,11 +757,8 @@ type Action =
 	| { type: "optimistic_queue_remove"; kind: "steer" | "followUp"; text: string; index?: number };
 
 const MAX_LIVE_OUTPUT = 200_000;
-/** Marker for truncated live output (was "…[前 N 字符已省略]…" / "…[N chars omitted above]…").
- *  ToolCallBlock maps it through the liveOutputOmitted i18n key so only one language shows. */
 const LIVE_OMIT_MARK = "LIVE_OMIT";
 
-/** Initial (inactive) goal status before the server pushes the first one. */
 const DEFAULT_GOAL: GoalStatus = {
 	conversationId: null,
 	goal: null,
@@ -941,7 +786,6 @@ function pruneLiveOutputs(
 	const completed = new Set<string>();
 	for (const m of state.messages) {
 		if (m.role === "toolResult" && m.toolCallId) completed.add(m.toolCallId);
-		// bashExecution transcript messages supersede live bash deltas
 		if (m.role === "bashExecution") completed.add(`bash-${m.id}`);
 	}
 	let changed = false;
@@ -954,9 +798,6 @@ function pruneLiveOutputs(
 	return changed ? new Map(live) : live;
 }
 
-/** Drop tool_status entries once the authoritative toolResult message lands.
- *  Builds the landed-id Set once (O(messages)) instead of scanning all
- *  messages per status entry (was O(statuses × messages) every snapshot). */
 function pruneToolStatuses(statuses: Map<string, ToolStatus>, state: UiState): Map<string, ToolStatus> {
 	if (statuses.size === 0) return statuses;
 	const landed = new Set<string>();
@@ -990,10 +831,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return {
 				...state,
 				status: action.status,
-				// A new socket is not ready until its hello/ready round-trip completes.
 				ready: action.status === "open" ? state.ready : false,
-				// PTYs are conversation-owned and survive socket reconnects. Clear only
-				// the browser views so xterm writers remount when the server replays them.
 				terminals: action.status === "closed" ? [] : state.terminals,
 				hostMetrics: action.status === "closed" ? null : state.hostMetrics,
 				latencyMs: action.status === "open" ? state.latencyMs : null,
@@ -1022,6 +860,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 							state: null,
 							models: [],
 							sessions: readCachedSessions(state.state?.cwd, action.engine),
+							projectSessions: {},
+							projectSessionsHasMore: {},
 							conversations: [],
 							terminals: [],
 							dsh: null,
@@ -1032,8 +872,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 						} satisfies Partial<ChatState>)
 					: {}),
 				...(typeof action.latencyMs === "number" && state.latencyMs == null ? { latencyMs: action.latencyMs } : {}),
-				// Old page + new server (or the reverse) after an in-place update:
-				// WS handling on either side may be stale — banner asks for refresh.
 				protocolMismatch: action.protocolVersion !== undefined && action.protocolVersion !== PROTOCOL_VERSION,
 			};
 		}
@@ -1097,8 +935,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			};
 		}
 		case "earlier_messages": {
-			// 服务端历史窗口前扩页（按需加载）：合并规则（接缝校验/空页语义）见
-			// web/src/history-window.ts（纯函数，有单测）。
 			const ui = state.state;
 			const d = action.msg;
 			if (!ui || ui.conversationId !== d.conversationId) return state;
@@ -1106,11 +942,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			return merged ? { ...state, state: merged } : state;
 		}
 		case "snapshot_delta": {
-			// Incremental checkpoint from the server. Apply ONLY when it chains			// cleanly onto our current rev; a mismatch (dropped message under
-			// backpressure, stale tab) is ignored here — the ws handler schedules
-			// a get_state resync. Immutable merge: appended messages extend the
-			// array (element references preserved → React memo keeps working);
-			// light fields replace wholesale.
 			const ui = state.state;
 			const d = action.msg;
 			if (!ui || ui.conversationId !== d.conversationId || ui.rev !== d.baseRev) return state;
@@ -1166,7 +997,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 			};
 		}
 		case "optimistic_prompt_echo": {
-			// 空闲态发送的本地回显（recordOptimisticPromptEcho 自带空闲态判定，流式态 no-op）
 			const res = recordOptimisticPromptEcho(state.optimisticQueue, state.state, {
 				text: action.text,
 				attachments: action.attachments,
@@ -1187,10 +1017,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "tool_delta": {
 			const prev = state.liveOutputs.get(action.toolCallId);
 			const prevText = prev?.text ?? "";
-			// issue #782: Transmission mode resolution.
-			// 1) Explicit "replace": overwrite with incoming snapshot (from tool_execution_update).
-			// 2) Self-healing fallback: if action.delta already starts with prevText, treat as cumulative snapshot.
-			// 3) Explicit or default "append": accumulate incrementally.
 			let text: string;
 			if (action.mode === "replace") {
 				text = action.delta;
@@ -1200,11 +1026,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				text = prevText + action.delta;
 			}
 
-			// Keep the TAIL when over the cap (not the head): for a long-running
-			// tool what matters is the LATEST output — keeping the head would show
-			// only the earliest 200K chars and freeze visually while the tool is
-			// still streaming. The terminal-bridge buffer below already keeps the
-			// newest data; this unifies the semantics.
 			const capped =
 				text.length > MAX_LIVE_OUTPUT
 					? `…[${LIVE_OMIT_MARK}:${text.length - MAX_LIVE_OUTPUT}]…\n` + text.slice(text.length - MAX_LIVE_OUTPUT)
@@ -1218,10 +1039,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		}
 		case "message_delta": {
 			const ui = state.state;
-			// Server only streams the active conversation, but filter defensively:
-			// a late delta for another conversation must not clobber this view.
 			if (!ui || ui.conversationId !== action.msg.conversationId) return state;
-			// applyMessageDelta is pure/immutable (StrictMode double-invokes reducers).
 			return { ...state, state: applyMessageDelta(ui, action.msg) };
 		}
 		case "tool_status":
@@ -1365,7 +1183,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "update_status_all":
 			return { ...state, updatesAll: action.items, updatesSdk: action.piSdk ?? null };
 		case "updates_check_started":
-			// Forced re-check: clear stale rows so the "checking" state renders.
 			return { ...state, updatesAll: null };
 		case "widgets":
 			return { ...state, widgets: action.widgets };
@@ -1390,7 +1207,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "question":
 			return { ...state, question: action.question };
 		case "remote_question":
-			// Ignore late peek responses after this server has supplied its queue.
 			return { ...state, remoteQuestion: state.questionQueue === null ? action.question : null };
 		case "question_queue":
 			return { ...state, questionQueue: action.questions, remoteQuestion: null };
@@ -1489,7 +1305,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "plugin_permission_resolved":
 			return { ...state, permRequests: state.permRequests.filter((r) => r.id !== action.id) };
 		case "plugin_job": {
-			// 插件后台作业的进度（安装/更新/卸载）——即时通道，不进快照。
 			const { pluginId, phase, ok, action: jobAction } = action.job;
 			let nextUpdates = state.pluginUpdates;
 			if (jobAction === "update" && phase === "done" && ok && state.pluginUpdates?.[pluginId]) {
@@ -1526,7 +1341,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "preset_share_result":
 			return { ...state, presetShare: { ...action.result, receivedAt: Date.now() } };
 		case "plugin_install_inspect_result":
-			// 只留最近一次（输入框下面的那一句话），旧的直接丢掉。
 			return { ...state, installInspect: action.result };
 		case "dsh_patches": {
 			const patches = { patchDir: action.patchDir, files: action.files };
@@ -1565,6 +1379,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				dshPermission: permission,
 			};
 		}
+		case "terminal_cli_paste_result":
+			return { ...state, nativeCliPasteResult: action.result };
 		case "terminal_add":
 			return { ...state, terminals: [...state.terminals, action.meta] };
 		case "terminal_remove":
@@ -1591,7 +1407,6 @@ export function reducer(state: ChatState, action: Action): ChatState {
 				),
 			};
 		case "terminal_restart":
-			// The command is re-running in the same tab (server restarted the PTY).
 			return {
 				...state,
 				terminals: state.terminals.map((t) =>
@@ -1605,11 +1420,16 @@ export function reducer(state: ChatState, action: Action): ChatState {
 		case "terminal_list": {
 			const activeId = state.activeConversationId || state.state?.conversationId || "";
 			const listConversationId = action.conversationId ?? activeId;
-			// This is the authoritative list, including stopped history. Purpose
-			// (agentBash) never determines ownership or whether a tab survives.
-			const terminals: TerminalMeta[] = action.terminals
-				.filter((t) => (t.ownerKind ?? "client") === "client" || listConversationId === activeId)
-				.map((t) => ({ ...t, ownerKind: t.ownerKind ?? "client", conversationId: listConversationId }));
+			const terminals: TerminalMeta[] = action.terminals.map((t) => ({
+				...t,
+				ownerKind: t.ownerKind ?? "client",
+				conversationId: listConversationId,
+			}));
+			if (listConversationId !== activeId) {
+				terminals.push(
+					...state.terminals.filter((t) => t.ownerKind === "conversation" && t.conversationId === activeId),
+				);
+			}
 			return { ...state, terminals };
 		}
 		case "terminal_active":
@@ -1692,11 +1512,7 @@ const WINDOW_NAME_PI_CID = "__PI_CID__:";
 
 let cachedClientId: string | null = null;
 
-/** 从 window.name 或 sessionStorage 读取已记忆的 clientId（跨刷新守护）。 */
 function readStoredClientId(): string | null {
-	// 1. 优先尝试从 window.name 读取：生命周期严格绑定当前标签页，
-	// 即使在无痕/隐私模式、地址栏回车导航或强刷（Ctrl+F5）下，window.name 均 100% 保持稳定；
-	// 而新开标签页天然为空，绝不破坏多标签页隔离（issue #10）。
 	try {
 		if (typeof window !== "undefined" && typeof window.name === "string" && window.name) {
 			const name = window.name;
@@ -1710,26 +1526,19 @@ function readStoredClientId(): string | null {
 				if (id) return id;
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 2. 尝试从 sessionStorage 读取
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			const id = sessionStorage.getItem(CLIENT_ID_KEY);
 			if (id) return id;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
 	return null;
 }
 
-/** 将 clientId 同步持久化到 window.name 与 sessionStorage。 */
 function persistClientId(id: string): void {
-	// 1. 写入 window.name（兼容外部已有的 window.name 内容，不暴力破坏）
 	try {
 		if (typeof window !== "undefined") {
 			const current = typeof window.name === "string" ? window.name : "";
@@ -1741,31 +1550,15 @@ function persistClientId(id: string): void {
 				window.name = `${base}${WINDOW_NAME_PI_CID}${id}`;
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 2. 写入 sessionStorage
 	try {
 		if (typeof sessionStorage !== "undefined") {
 			sessionStorage.setItem(CLIENT_ID_KEY, id);
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-/**
- * 客户端标识 —— **每标签页独立**（window.name + sessionStorage 双通道守护）。
- *
- * 曾用 localStorage：同源所有标签页共享同一 clientId，后端把它们挂到同一个
- * ClientSession 上互为镜像——B 标签页切换对话会同步切走 A 页、甚至把 A 页
- * 正在输出的 agent 强制中断且状态持久化（issue #10）。
- * 后改 sessionStorage：但在隐私/无痕模式、地址栏回车导航或部分浏览器安全策略下，
- * 刷新页面时 sessionStorage 易丢失，每次刷新产生新 clientId，导致旧会话全部沦为“另一处”。
- * 现采用 window.name（标签页生命周期原生隔离且刷新/跳转/无痕恒保留）+ sessionStorage 双重保障：
- * 新开标签页天然为空新开客户端；本页无论以何种方式刷新均绝对保留同一 id，彻底根治“刷新全变另一处”。
- */
 export function getClientId(): string {
 	if (cachedClientId) return cachedClientId;
 	let id = readStoredClientId();
@@ -1777,22 +1570,12 @@ export function getClientId(): string {
 	return id;
 }
 
-/** 仅供单元测试重置内存缓存。 */
 export function _resetClientIdCacheForTest(): void {
 	cachedClientId = null;
 }
 
-/**
- * 上次成功工作目录（localStorage，跨浏览器重启记忆）——解决「每次打开浏览器都
- * 回默认目录」：clientId 在 sessionStorage（每标签页独立，issue #10），浏览器
- * 整个关闭后 sessionStorage 清空 → 新 clientId 在服务端 client-state 里查不到
- *  lastCwd → 落回默认目录。这里用 localStorage 单独记住最近一次成功的工作目录
- * （只存一个路径字符串，不涉及客户端身份），首帧快照时若服务端落在其他目录则
- * 补发 set_cwd 切回。
- */
 const LAST_CWD_KEY = "pi-web-last-cwd";
 
-/** Read the last-used working directory remembered across browser restarts. */
 function readLastCwd(): string | null {
 	try {
 		return localStorage.getItem(LAST_CWD_KEY);
@@ -1804,12 +1587,9 @@ function readLastCwd(): string | null {
 function writeLastCwd(cwd: string): void {
 	try {
 		localStorage.setItem(LAST_CWD_KEY, cwd);
-	} catch {
-		/* storage 不可用（隐私模式等）：忽略，仅本次会话生效 */
-	}
+	} catch {}
 }
 
-/** 当用户移出最近项目时，若与上次记忆目录匹配，则同步清除该记忆，避免重启后自动切回并复活墓碑。 */
 export function clearLastCwdIfMatches(path: string): void {
 	try {
 		const current = localStorage.getItem(LAST_CWD_KEY);
@@ -1822,14 +1602,11 @@ export function clearLastCwdIfMatches(path: string): void {
 		if (current === path || norm(current) === norm(path)) {
 			localStorage.removeItem(LAST_CWD_KEY);
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 const RECENT_PROJECTS_KEY = "pi-web-recent-projects";
 
-/** 读取前端缓存的最近项目（刷新时首帧立即可见，避免空白与等待）。 */
 function readCachedProjects(): ProjectSummary[] {
 	try {
 		const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
@@ -1844,12 +1621,9 @@ function readCachedProjects(): ProjectSummary[] {
 function writeCachedProjects(projects: ProjectSummary[]): void {
 	try {
 		localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects.slice(0, 20)));
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-/** 用户移出最近项目时，同步清理前端缓存。 */
 export function clearCachedProject(path: string): void {
 	try {
 		const current = readCachedProjects();
@@ -1861,9 +1635,7 @@ export function clearCachedProject(path: string): void {
 		const target = norm(path);
 		const filtered = current.filter((p) => norm(p.path) !== target);
 		writeCachedProjects(filtered);
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 export const normalizeSessionPathKey = (p?: string | null): string => {
@@ -1879,7 +1651,6 @@ export function sessionsStorageKey(cwd?: string | null, engine?: string): string
 	return `${RECENT_SESSIONS_PREFIX}${eng}:${normalizeSessionPathKey(cwd)}`;
 }
 
-/** 读取前端缓存的当前工作区历史会话列表（刷新时首帧立即可见，避免空白）。 */
 export function readCachedSessions(cwd?: string | null, engine?: string): SessionSummary[] {
 	try {
 		const targetCwd = cwd ?? readLastCwd();
@@ -1890,7 +1661,6 @@ export function readCachedSessions(cwd?: string | null, engine?: string): Sessio
 			if (Array.isArray(parsed) && parsed.length > 0) return parsed;
 		}
 
-		// 降级回退：若主 key 未命中，尝试常用 engine ("pi", "default")
 		if (targetCwd) {
 			for (const fallbackEng of ["pi", "default"]) {
 				if (fallbackEng === (engine ?? "pi")) continue;
@@ -1902,7 +1672,6 @@ export function readCachedSessions(cwd?: string | null, engine?: string): Sessio
 				}
 			}
 
-			// 进一步降级：扫描 localStorage 中匹配该 cwd 规范化后缀的任意 engine 缓存
 			const normCwd = normalizeSessionPathKey(targetCwd);
 			const suffix = `:${normCwd}`;
 			for (let i = 0; i < localStorage.length; i++) {
@@ -1923,15 +1692,6 @@ export function readCachedSessions(cwd?: string | null, engine?: string): Sessio
 	}
 }
 
-/**
- * 物理路径确定性工作区归属校验（最佳落地实践 · 彻底根除跨项目会话串味）：
- * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
- */
-/**
- * 物理路径确定性工作区归属校验（彻底根除跨项目会话串味与前缀包含污染）：
- * 在 SDK 底层，会话文件必定存储在 `<sessionsDir>/--<cwd-slug>--/` 子目录或以工作区为前缀。
- * 必须全字精确匹配目录段，绝对不能进行部分模糊匹配（杜绝 pi-web-ui 误匹配 pi-web-ui-site、foo 误匹配 foo-bar）。
- */
 interface ProjectMatcher {
 	normP: string;
 	sdkSlug1: string;
@@ -1939,8 +1699,6 @@ interface ProjectMatcher {
 	sdkSlug2: string;
 }
 
-/** 项目侧的规范化结果与 slug 推导只依赖 projectPath：左栏每次渲染要对每个会话调用一次，
- *  按项目缓存可避免逐会话重复字符串替换与切分。 */
 const projectMatcherCache = new Map<string, ProjectMatcher>();
 function projectMatcher(projectPath: string): ProjectMatcher {
 	let m = projectMatcherCache.get(projectPath);
@@ -1962,7 +1720,6 @@ export function isSessionMatchingProject(
 ): boolean {
 	if (!sessionOrPath || !projectPath) return true;
 
-	// 1. 协议级权威单源优先：若会话对象自身带有服务端声明的 cwd，直接做 O(1) 绝对路径比对
 	if (typeof sessionOrPath === "object" && sessionOrPath.cwd) {
 		return normalizeSessionPathKey(sessionOrPath.cwd) === normalizeSessionPathKey(projectPath);
 	}
@@ -1974,21 +1731,15 @@ export function isSessionMatchingProject(
 	const normS = sessionPath.toLowerCase().replace(/\\/g, "/");
 	const { normP, sdkSlug1, sdkSlugRoot, sdkSlug2 } = projectMatcher(projectPath);
 
-	// 纯文件名（不含任何目录斜杠，常见于测试 mock 数据）：直接放行
 	if (!normS.includes("/")) return true;
 
-	// 若落盘文件直接在工作区目录或其子目录下
 	if (normS.startsWith(normP + "/")) return true;
 
-	// 解析 sessionPath 路径中的所有目录段
 	const segments = normS.split("/").filter(Boolean);
-	// 找到 SDK session 专用的 slug 目录段（形如 "--<slug>--"）
-	// 注意排除最后的文件名（仅检查父级目录段）
 	const dirSegments = segments.slice(0, -1);
 	const sessionSlugSeg = dirSegments.find((seg) => seg.startsWith("--") && seg.endsWith("--"));
 
 	if (sessionSlugSeg) {
-		// 必须全字精确匹配目录段，绝对不能进行部分模糊匹配（杜绝 pi-web-ui 误匹配 pi-web-ui-site、foo 误匹配 foo-bar）
 		return (
 			sessionSlugSeg === sdkSlug1 ||
 			(Boolean(sdkSlugRoot) && sessionSlugSeg === sdkSlugRoot) ||
@@ -2002,16 +1753,12 @@ export function isSessionMatchingProject(
 function writeCachedSessions(cwd: string | undefined | null, sessions: SessionSummary[], engine?: string): void {
 	try {
 		const safeCwd = cwd ?? readLastCwd();
-		// 缓存写入前置验真：只将真正物理归属于目标工作区的会话写入缓存，杜绝切换时脏数据污染
 		const valid = safeCwd ? sessions.filter((s) => isSessionMatchingProject(s, safeCwd)) : sessions;
 		const key = sessionsStorageKey(safeCwd, engine);
 		localStorage.setItem(key, JSON.stringify(valid.slice(0, 50)));
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-/** 用户删除会话时，同步清理本地对应会话缓存。 */
 export function clearCachedSession(path: string, cwd?: string | null, engine?: string): void {
 	try {
 		const current = readCachedSessions(cwd, engine);
@@ -2023,16 +1770,11 @@ export function clearCachedSession(path: string, cwd?: string | null, engine?: s
 		const target = norm(path);
 		const filtered = current.filter((s) => norm(s.path) !== target);
 		writeCachedSessions(cwd, filtered, engine);
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
-/** Resolve the WebSocket URL: same host when served by the backend, or the Vite proxy in dev. */
 function wsUrl(): string {
-	const proto = location.protocol === "https:" ? "wss:" : "ws:";
-	// appUrl 补应用根前缀：子路径反代（/pi/）下 WS 也必须走 /pi/ws。
-	return withToken(`${proto}//${location.host}${appUrl("/ws")}`);
+	return withToken(appWsUrl());
 }
 
 export function useChat() {
@@ -2046,6 +1788,8 @@ export function useChat() {
 		toolStatuses: new Map(),
 		notices: [],
 		sessions: readCachedSessions(),
+		projectSessions: {},
+		projectSessionsHasMore: {},
 		conversations: [],
 		elsewhere: [],
 		activeConversationId: "",
@@ -2132,43 +1876,22 @@ export function useChat() {
 		optimisticQueue: createOptimisticQueueTracker(),
 	});
 	const wsRef = useRef<WebSocket | null>(null);
-	/** Terminal output bridge (writers keyed by terminalId). */
 	const bridgeRef = useRef(makeTerminalBridge());
-	/** Reconnect backoff counter — ref so it never causes re-renders. */
 	const retryRef = useRef(0);
-	/** Pending reconnect timer. */
 	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	/** False once the hook is unmounted/cleaned up — stops stale onclose handlers from reconnecting. */
 	const aliveRef = useRef(true);
-	/** Last time any server message arrived — used to detect half-open connections. */
 	const lastBeatRef = useRef(0);
 	const noticeId = useRef(0);
-	/** Last delta seq seen per conversation (message_delta + tool_delta share
-	 *  one per-conversation sequence) — a gap on the ACTIVE conversation
-	 *  triggers a one-shot get_state resync; background conversations converge
-	 *  via snapshot when switched to. */
 	const lastDeltaSeqRef = useRef<Map<string, number>>(new Map());
 	const resyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	/** 跨重启工作目录记忆：restoreRef 只允许首帧快照发起一次恢复；lastCwdRef
-	 *  避免对同一目录重复写 localStorage。 */
 	const restoreRef = useRef(false);
 	const lastCwdRef = useRef<string | null>(null);
 
-	/** 已作答/取消的问卷 id —— 在途旧快照不得把已答过的问卷重新弹出来。
-	 *  id 全局单调递增（服务端 questionSeq / 时间戳），保留少量历史即可。 */
 	const answeredQuestionsRef = useRef<Set<string>>(new Set());
-	/** 当前问卷面板的来源：live = question_pending 即时通道弹出；snapshot = 由快照
-	 *  恢复（重连/刷新）。在同一会话内，只有 snapshot 来源的才接受快照收起（切换会话
-	 *  时无论来源一律收起，见 resolvePendingQuestion 规则 2）。 */
 	const questionSourceRef = useRef<QuestionSource>("live");
-	/** 已连上的服务进程 runId（ready 帧下发）。null = 还不知道。
-	 *  用它区分「同一实例断线重连」（保留已答缓存 + 重投未确认答案）
-	 *  与「换了新服务」（必须清空：新实例的 q-1 是另一张问卷）。 */
 	const serverRunIdRef = useRef<string | null>(null);
 
-	/** Debounced authoritative resync: get_state always returns a FULL snapshot.
-	 *  Shared by delta-seq gap detection and snapshot_delta rev mismatch. */
 	const scheduleResync = (): void => {
 		if (resyncTimerRef.current) return;
 		resyncTimerRef.current = setTimeout(() => {
@@ -2185,9 +1908,6 @@ export function useChat() {
 			const c = chatApi.current.chat;
 			const active = c.activeConversationId || c.state?.conversationId;
 			if (conversationId === active) {
-				// Missed deltas (should not happen on a healthy WS) — resync via a
-				// debounced get_state; keep patching meanwhile (the next snapshot
-				// reconciles any drift).
 				scheduleResync();
 			}
 		}
@@ -2197,18 +1917,14 @@ export function useChat() {
 	const pushNotice = useCallback((level: Notice["level"], text: string) => {
 		const id = ++noticeId.current;
 		dispatch({ type: "notice", notice: { id, level, text } });
-		// 自动消失计时由通知组件（NoticeToast）管理：悬浮暂停、移开继续。
 	}, []);
 
-	// 流式阶段切换进度：等待后端 runtime/转录时平滑递增进度条，并在完成/超时后自动收起
 	useEffect(() => {
 		if (!chat.transition) return;
 		if (chat.transition.phase === "done" || chat.transition.phase === "error") {
 			const t = setTimeout(() => dispatch({ type: "transition_clear" }), 180);
 			return () => clearTimeout(t);
 		}
-		// 自愈守卫：若当前会话快照已到达且就绪，其会话标识（sessionId/sessionFile/conversationId）已与当前 transition.target 吻合，
-		// 说明内容早已完整上屏渲染，此 transition 为滞留孤儿状态，立即清除，绝不卡住界面。
 		const cur = chat.state;
 		if (cur && chat.ready) {
 			const normTarget = (chat.transition.target ?? "").trim().replace(/\\/g, "/").toLowerCase();
@@ -2237,15 +1953,12 @@ export function useChat() {
 		return () => clearInterval(iv);
 	}, [chat.transition, chat.state, chat.ready]);
 
-	const send = useCallback((msg: ClientMessage) => {
+	const send = useCallback((msg: ClientMessage, context?: AppSendContext) => {
 		const ws = wsRef.current;
 		if (!isWsOpen(ws)) {
 			return false;
 		}
-		// 切换工作目录 / 历史会话 / 运行中对话 / 新建对话：0ms 乐观启动流式进度指示
 		const currentChat = chatApi.current.chat;
-		// Legacy SCM/settings callers only address client terminals. Never infer
-		// ownership from a matching conversation terminal or agentBash purpose.
 		if (
 			(msg.type === "terminal_input" ||
 				msg.type === "terminal_resize" ||
@@ -2270,10 +1983,9 @@ export function useChat() {
 				before: msg.before ?? curState.historyStart,
 			};
 		}
-		// Every conversation entry point must leave group/auxiliary views, including
-		// Bot conversations owned by another client and the already-active local one.
 		if (
 			msg.type === "new_chat" ||
+			msg.type === "new_cli_chat" ||
 			(msg.type === "switch_session" && (msg.path || msg.sessionId)) ||
 			((msg.type === "switch_conversation" ||
 				msg.type === "open_shared_conversation" ||
@@ -2323,8 +2035,11 @@ export function useChat() {
 					textEn: "Streaming session history…",
 				});
 			}
-		} else if (msg.type === "new_chat") {
-			if (curState && (curState.messages.length > 0 || curState.isStreaming)) {
+		} else if (msg.type === "new_chat" || msg.type === "new_cli_chat") {
+			if (
+				curState &&
+				(msg.type === "new_cli_chat" || curState.nativeCli || curState.messages.length > 0 || curState.isStreaming)
+			) {
 				dispatch({
 					type: "transition_start",
 					kind: "new_chat",
@@ -2347,8 +2062,6 @@ export function useChat() {
 			}
 		}
 		if (isWsOpen(ws)) {
-			// Forced re-check: drop stale rows immediately so the "checking"
-			// state renders instead of the cached list.
 			if (msg.type === "check_updates_all" && msg.force === true) {
 				dispatch({ type: "updates_check_started" });
 			}
@@ -2356,18 +2069,27 @@ export function useChat() {
 				dispatch({ type: "plugin_updates_check_started" });
 			}
 			ws.send(JSON.stringify(msg));
-			// 流式期间发送排队/插队消息或点 ✕ / ↩ 撤回：立即在本地做乐观队列更新，
-			// 消除按完 Enter 到服务端快照回包之间的视觉真空期与在途旧快照闪退。
 			if (msg.type === "prompt") {
+				if (context?.userInitiated && (msg.text.trim() || msg.attachments?.length)) {
+					const targetId = msg.targetConversationId || curState?.conversationId;
+					const target = targetId
+						? currentChat.conversations.find((c) => c.id === targetId || c.sessionId === targetId)
+						: null;
+					if (target) {
+						recordUserPrompt(
+							{ ...target, engine: currentChat.engine, conversationId: target.id },
+							currentChat.conversations,
+						);
+					} else if (curState && targetId === curState.conversationId) {
+						recordUserPrompt({ ...curState, engine: currentChat.engine }, currentChat.conversations);
+					}
+				}
 				dispatch({
 					type: "optimistic_queue_add",
 					text: msg.text,
 					attachments: msg.attachments,
 					queue: msg.queue,
 				});
-				// 空闲态发送：立即本地回显用户气泡（recordOptimisticPromptEcho 自带空闲态判定，
-				// 流式态 no-op —— 流式插队/排队由上面的 optimistic_queue_add 处理），
-				// 消除「输入框已清空但气泡迟迟不上屏」的真空期。
 				dispatch({ type: "optimistic_prompt_echo", text: msg.text, attachments: msg.attachments });
 			} else if (msg.type === "queue_remove") {
 				dispatch({
@@ -2377,26 +2099,19 @@ export function useChat() {
 					index: msg.index,
 				});
 			}
-			// 提交/取消模型提问后立即收起对话框：服务端只 resolve 模型侧 Promise，
-			// 不会发任何回执清除前端面板（否则会出现“回答后不消失、取消无效”）。
-			// 模型再次 ask_user_question 时会重新 question_pending，面板自动回来。
 			if (msg.type === "question_answer" && msg.global) {
 				dispatch({ type: "global_question", id: msg.id, owner: msg.owner });
 			} else if (msg.type === "question_answer") {
 				dispatch({ type: "question_queue_answered", id: msg.id, owner: msg.owner });
-				// 记住这个 id：快照恢复时跳过它（回答消息与快照在途时会交错，服务端
-				// 删除 pending 之前生成的快照仍带着这张问卷）。
 				answeredQuestionsRef.current.add(msg.id);
 				if (answeredQuestionsRef.current.size > 64) {
 					const oldest = answeredQuestionsRef.current.values().next().value;
 					if (oldest !== undefined) answeredQuestionsRef.current.delete(oldest);
 				}
 				if (msg.owner) {
-					// 无论来源，当前若正显示该问卷立即收起
 					if (chatApi.current.chat.question?.id === msg.id) {
 						dispatch({ type: "question", question: null });
 					}
-					// 跨页作答：只收跨页对话框。
 					const cur = chatApi.current.chat.remoteQuestion;
 					if (cur && cur.id === msg.id && cur.owner === msg.owner)
 						dispatch({ type: "remote_question", question: null });
@@ -2410,12 +2125,6 @@ export function useChat() {
 		return false;
 	}, []);
 
-	/** 快照里的待答问卷 → 恢复/收起对话框（页面刷新、WS 重连、新标签页）。
-	 *
-	 *  为什么需要它：question_pending 是即时通道，只推给「提问那一刻在线」的连接；
-	 *  刷新/重连后前端拿不到那条历史消息，而服务端还在阻塞等人回答——问卷就从眼前
-	 *  消失（QuestionDialog 无入口）。快照是权威态，据此把面板补回来。
-	 *  判定规则（含三条边界）全在纯函数 resolvePendingQuestion。 */
 	const syncPendingQuestion = useCallback((p: UiPendingQuestion | null | undefined, activeConversationId: string) => {
 		const decision = resolvePendingQuestion({
 			current: chatApi.current.chat.question,
@@ -2423,7 +2132,6 @@ export function useChat() {
 			snapshot: p,
 			answered: answeredQuestionsRef.current,
 			activeConversationId,
-			// 已提交但未确认的答案：不在快照里复活弹窗，而是重投（幂等）。
 			pendingDelivery: hasUnconfirmedAnswer,
 		});
 		if (!decision.changed) return;
@@ -2431,13 +2139,8 @@ export function useChat() {
 		dispatch({ type: "question", question: decision.question });
 	}, []);
 
-	// 装配全局发送器（web/src/app-globals.ts 的 appSend）：**在 render 期间**赋值，不用 effect。
-	// 子组件的 effect 先于父组件跑，若放到 effect 里装配，那些「挂载即发请求」的弹窗
-	// （PiSetupModal / ModelConfigModal / TerminalPanel …）会在 appSend 还是空的时候发消息，
-	// 静默丢包。send 是 useCallback([]) 的稳定引用，重复赋值无副作用（StrictMode 双渲染亦然）。
 	setAppSend(send);
 
-	/** Stable across renders — the reconnect loop lives entirely inside this closure. */
 	const connect = useCallback(() => {
 		if (!aliveRef.current) return;
 		dispatch({ type: "status", status: "connecting" });
@@ -2446,7 +2149,7 @@ export function useChat() {
 		let helloSentAt = 0;
 
 		ws.onopen = () => {
-			if (wsRef.current !== ws) return; // stale socket
+			if (wsRef.current !== ws) return;
 			dispatch({ type: "status", status: "open" });
 			retryRef.current = 0;
 			lastBeatRef.current = Date.now();
@@ -2455,17 +2158,11 @@ export function useChat() {
 				JSON.stringify({
 					type: "hello",
 					clientId: getClientId(),
-					// UI language report (issue #91): server persists it per
-					// client and uses it for tool return values / AI prompts.
 					locale: readUiLocale(),
 				} satisfies ClientMessage),
 			);
 		};
 
-		/**
-		 * 属于具体会话生命周期的增量流式消息类型集合。
-		 * 这些消息若归属于其他会话（非当前激活会话），直接在顶层门禁丢弃，杜绝跨会话串台与脏数据写入。
-		 */
 		const SESSION_STREAM_MESSAGE_TYPES = new Set([
 			"snapshot_delta",
 			"message_delta",
@@ -2477,44 +2174,30 @@ export function useChat() {
 		]);
 
 		ws.onmessage = (ev) => {
-			if (wsRef.current !== ws) return; // stale socket
-			lastBeatRef.current = Date.now(); // any traffic proves the connection is alive
+			if (wsRef.current !== ws) return;
+			lastBeatRef.current = Date.now();
 			let msg: ServerMessage;
 			try {
 				msg = JSON.parse(ev.data as string) as ServerMessage;
 			} catch {
 				return;
 			}
-			// ── 顶层会话门禁（Session Envelope Gate）─────────────────────────
-			// 属于具体会话生命周期的增量流式消息：若归属的 conversationId 与当前激活会话不符，
-			// 在入口处直接丢弃，绝不允许其向下渗透并污染当前会话的 reducer、状态或副作用。
 			if (
 				"conversationId" in msg &&
 				typeof msg.conversationId === "string" &&
-				SESSION_STREAM_MESSAGE_TYPES.has(msg.type)
+				SESSION_STREAM_MESSAGE_TYPES.has(msg.type) &&
+				!isClientTerminalStream(msg)
 			) {
 				const activeId = chatApi.current.chat.activeConversationId || chatApi.current.chat.state?.conversationId;
 				if (activeId && msg.conversationId !== activeId) {
-					// 异会话在途增量消息（用户切走了该会话），直接截断丢弃
 					return;
 				}
 			}
 			switch (msg.type) {
 				case "ready": {
-					// Stale-build self-reload: the server reports the on-disk bundle
-					// hash. Ours is baked in at build time. Mismatch = rebuilt since
-					// this page loaded → reload once for the fresh bundle.
-					// Loop guard: stamp sessionStorage BEFORE reloading — the fresh
-					// page sees the same server hash, finds the stamp, and stops.
-					// The stamp is per-build-id, so the NEXT rebuild reloads again.
-					// Dev-server (Vite :5173) has no baked id — never reload there.
 					const mine = typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "";
-					// Auto-reload setting (display tab, default on from source / off
-					// for installs): settings may not have arrived yet on first
-					// connect — fall back to ON so a fresh build never strands a stale
-					// page on its very first load.
 					const autoReload = chatApi.current.chat.settings?.autoReload ?? true;
-					if (autoReload && msg.buildId && mine && msg.buildId !== mine) {
+					if (!isMobileRuntime() && autoReload && msg.buildId && mine && msg.buildId !== mine) {
 						const key = `pi-web-ui-reloaded-${msg.buildId}`;
 						if (!sessionStorage.getItem(key)) {
 							sessionStorage.setItem(key, "1");
@@ -2522,9 +2205,6 @@ export function useChat() {
 							return;
 						}
 					}
-					// 全局运行态（engine / managed / tabs / 版本号）在这里落一次：
-					// 同步于 dispatch 之前，等 React 因为新状态重渲染时，读全局的组件
-					// 已经拿到正确值（不会闪一帧 pi）。详见 web/src/app-globals.ts。
 					const prevEngine = chatApi.current.chat.engine;
 					if (prevEngine && msg.engine && prevEngine !== msg.engine) {
 						bridgeRef.current.clear();
@@ -2552,10 +2232,6 @@ export function useChat() {
 						latencyMs: initialLatencyMs,
 						engines: msg.engines,
 					});
-					// 重连/attach：只在「换了服务实例」时清空已答缓存与旧对话框。
-					// 同一实例的断线重连必须保留：否则在途旧快照里还没删掉的问卷会被
-					// 重新弹出来（用户已答过 → 重连又冒出来 → 再答再断 → 无限循环）。
-					// runId 缺失（旧服务）退化成旧行为，保证兼容。
 					const runChanged = msg.runId !== undefined && msg.runId !== serverRunIdRef.current;
 					if (runChanged || msg.runId === undefined) {
 						serverRunIdRef.current = msg.runId ?? null;
@@ -2563,24 +2239,14 @@ export function useChat() {
 						resetUnconfirmedAnswers();
 						dispatch({ type: "question", question: null });
 					} else {
-						// 同一实例重连：已答过的 id 继续保留（快照恢复时跳过），
-						// 并把断线期间没送出去的答案重投。
 						dispatch({ type: "question", question: null });
 						resendUnconfirmedAnswers();
 					}
-					// Ensure a fresh snapshot on (re)connect.
 					ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
-					// Sessions + recent projects are LAZY: LeftPanel requests them
-					// when it is actually shown — listing scans every session file
-					// on disk (listAll scans ALL projects), too heavy for the
-					// connect critical path.
 					ws.send(JSON.stringify({ type: "list_files" } satisfies ClientMessage));
 					ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
 					ws.send(JSON.stringify({ type: "list_commands" } satisfies ClientMessage));
 					ws.send(JSON.stringify({ type: "get_commands" } satisfies ClientMessage));
-					// A managed instance refuses both (server/managed.ts): asking
-					// anyway would greet every visitor with two red toasts about a
-					// thing the interface does not even offer.
 					if (!msg.managed) {
 						ws.send(JSON.stringify({ type: "check_update" } satisfies ClientMessage));
 						ws.send(JSON.stringify({ type: "check_updates_all" } satisfies ClientMessage));
@@ -2588,20 +2254,13 @@ export function useChat() {
 					break;
 				}
 				case "snapshot":
-					// Snapshot is authoritative — delta sequence tracking restarts.
 					lastDeltaSeqRef.current = new Map();
 					dispatch({ type: "snapshot", state: msg.state });
-					// 重连/刷新后从这里把待答问卷恢复出来（见 syncPendingQuestion）。
 					syncPendingQuestion(msg.state.pendingQuestion, msg.state.conversationId);
 					break;
 				case "snapshot_delta": {
-					// Gap detection BEFORE dispatch: if this incremental checkpoint
-					// doesn't chain onto our current rev (a message was dropped under
-					// backpressure, or we're stale), schedule one debounced full resync.
 					const cur = chatApi.current.chat.state;
 					if (!cur) {
-						// 前端当前没有任何快照（冷启动 boot 加载态）：增量快照无法应用，
-						// 立即无延迟向服务端请求全量快照，迅速脱离 boot-wait 加载态！
 						const ws = wsRef.current;
 						if (isWsOpen(ws)) {
 							ws.send(JSON.stringify({ type: "get_state" } satisfies ClientMessage));
@@ -2611,7 +2270,6 @@ export function useChat() {
 					}
 					const activeId = chatApi.current.chat.activeConversationId || cur?.conversationId;
 					if (activeId && msg.conversationId !== activeId) {
-						// 跨会话晚到 delta，直接丢弃，防止污染当前会话或串台弹问卷
 						break;
 					}
 					dispatch({ type: "snapshot_delta", msg });
@@ -2647,7 +2305,6 @@ export function useChat() {
 					break;
 				}
 				case "subagent_handoff": {
-					// 收到子代理对等交接事件：快照与 notice 会同步下发，此处作为协同事件分发入口
 					break;
 				}
 				case "notice": {
@@ -2671,6 +2328,26 @@ export function useChat() {
 				case "sessions":
 					dispatch({ type: "sessions", sessions: msg.sessions, cwd: msg.cwd, hasMore: msg.hasMore });
 					break;
+				case "native_cli_prompt_submitted": {
+					const current = chatApi.current.chat;
+					const conversation = current.conversations.find(
+						(c) => c.id === msg.conversationId || c.sessionId === msg.sessionId,
+					);
+					if (conversation) {
+						recordUserPrompt(
+							{
+								engine: current.engine,
+								cwd: conversation.cwd,
+								conversationId: conversation.id,
+								sessionId: msg.sessionId,
+								sessionFile: conversation.sessionFile,
+							},
+							current.conversations,
+							msg.eventId,
+						);
+					}
+					break;
+				}
 				case "conversations":
 					dispatch({
 						type: "conversations",
@@ -2960,10 +2637,7 @@ export function useChat() {
 					dispatch({ type: "tool_approval", approval: null, resolvedId: msg.id });
 					break;
 				case "question_retracted": {
-					// 服务端 settle 即投递确认：从「未确认答案」登记簿里移除（见
-					// question-answer-relay.ts）。否则重连时会反复重投。
 					confirmQuestionAnswer(msg.id, msg.owner);
-					// 队列中的问卷被撤回时，立即从 questionQueue 中移除
 					dispatch({ type: "question_queue_answered", id: msg.id, owner: msg.owner });
 					if (msg.global) {
 						dispatch({ type: "global_question", id: msg.id, owner: msg.owner });
@@ -2972,9 +2646,6 @@ export function useChat() {
 					if (chatApi.current.chat.remoteQuestion?.id === msg.id) {
 						dispatch({ type: "remote_question", question: null });
 					}
-					// 问卷被搬走/取消（手动过户到另一会话）：源页面正在展示该 id 即立即收起。
-					// 快照为 null 收不掉 live 面板（见 pending-question.ts 规则 3），必须显式撤回；
-					// 记入 answered，迟到的旧快照也不会把它复活。
 					const cur = chatApi.current.chat.question;
 					if (cur && cur.id === msg.id) {
 						answeredQuestionsRef.current.add(msg.id);
@@ -2991,8 +2662,6 @@ export function useChat() {
 					dispatch({ type: "question_queue", questions: msg.questions });
 					break;
 				case "elsewhere_question":
-					// 跨页作答预告（peek 的回包）：别处问卷原文直接弹框，提交带 owner
-					// 由持有方 resolve。与本地问卷独立共存，id 不进 answered 集合。
 					dispatch({
 						type: "remote_question",
 						question: {
@@ -3005,9 +2674,6 @@ export function useChat() {
 					});
 					break;
 				case "page_request": {
-					// 模型要操作浏览器里的页面（browser_page 工具）：转给扩展，再把结果回给服务端。
-					// 服务端的工具正阻塞等这个 page_response —— 任何一条路径（宿主桥缺失、
-					// 扩展没装、页面没授权、动作失败）都必须回一条，否则模型只能等到超时。
 					void (async () => {
 						const host = (
 							window as unknown as {
@@ -3049,6 +2715,15 @@ export function useChat() {
 					})();
 					break;
 				}
+				case "native_cli_event":
+					handleNativeCliEvent(msg);
+					break;
+				case "terminal_cli_control_result":
+					resolveNativeCliControlResult(msg);
+					break;
+				case "terminal_cli_paste_result":
+					dispatch({ type: "terminal_cli_paste_result", result: msg });
+					break;
 				case "terminal_output":
 					bridgeRef.current.write(
 						msg.conversationId ?? "",
@@ -3169,10 +2844,6 @@ export function useChat() {
 					});
 					break;
 				case "plugin_dom_consent_request":
-					// DOM 授权两步握手（协议 v20）：grant 由服务端生成在途请求并广播；
-					// 只有发起端（from === 自己的 clientId）自动确认——用户在设置面板
-					// 点一下的体验不变，其他端不是发起人不代答（服务端也只接受广播时
-					// 在线端的应答，陌生连接无从插手）。
 					if (msg.from === getClientId()) {
 						ws.send(
 							JSON.stringify({
@@ -3217,9 +2888,7 @@ export function useChat() {
 					resolveNewChatResult(msg);
 					break;
 				case "plugin_catalog_sync_result":
-					// host.reloadCatalog() 的回执（等待中的 Promise 由 plugin-host 管）。
 					resolveCatalogSyncResult(msg);
-					// 设置面板发起的同步也在此收回执（requestId 对上才展示，见 SettingsModal）。
 					dispatch({
 						type: "plugin_catalog_sync_result",
 						result: {
@@ -3245,8 +2914,6 @@ export function useChat() {
 					});
 					break;
 				case "preset_import_result": {
-					// 导入来源由前端编在 requestId 前缀里（"paste:" / "file:" / "url:"），
-					// 服务端不关心来源，但预览头部要提示“从网址导入”还是“粘贴的”。
 					const id = String(msg.requestId ?? "");
 					const source: PresetImportState["source"] = id.startsWith("url:")
 						? "url"
@@ -3310,7 +2977,6 @@ export function useChat() {
 					dispatch({ type: "dsh_permission", options: msg.options, defaultPreset: msg.defaultPreset });
 					break;
 				case "plugin_data":
-					// 宿主保留通道（host.log 按需拉取回包）先拦截：命中即吞掉，只进日志 store。
 					if (!ingestPluginLogsData(msg.pluginId, msg.payload)) emitPluginData(msg.pluginId, msg.payload);
 					break;
 				case "remote_ssh_probe_result":
@@ -3325,15 +2991,11 @@ export function useChat() {
 		};
 
 		ws.onclose = () => {
-			// Only the owning socket may clear shared terminal state or reconnect.
 			if (wsRef.current !== ws) return;
 			wsRef.current = null;
-			// Terminals died with the server-side PTYs — drop writers/buffers.
 			bridgeRef.current.clear();
-			// Cleanup closed this socket on purpose — do not reconnect.
 			if (!aliveRef.current) return;
 			dispatch({ type: "status", status: "closed" });
-			// Reconnect with exponential backoff (1s → 2s → 4s → … capped at 10s).
 			const delay = Math.min(1000 * 2 ** retryRef.current, 10_000);
 			retryRef.current += 1;
 			timerRef.current = setTimeout(() => {
@@ -3342,17 +3004,9 @@ export function useChat() {
 			}, delay);
 		};
 
-		ws.onerror = () => {
-			// onclose fires after onerror, triggering reconnect.
-			// Do NOT call ws.close() here: it's redundant and causes a browser
-			// warning "WebSocket is closed before the connection is established"
-			// when the connection is still in CONNECTING state.
-		};
+		ws.onerror = () => {};
 	}, []);
 
-	// UI language changes (i18n.tsx setLocale) → report to the server so tool
-	// return values / AI prompts follow the UI locale (issue #91). Socket may
-	// be mid-reconnect — hello already carries the fresh code on re-open.
 	useEffect(() => {
 		const onLocale = (ev: Event) => {
 			const locale = (ev as CustomEvent<string>).detail ?? readUiLocale();
@@ -3374,12 +3028,9 @@ export function useChat() {
 		return () => window.removeEventListener("storage", onStorage);
 	}, [chat.state?.cwd, chat.engine]);
 
-	// Mount once; all reconnection is self-contained in `connect`.
 	useEffect(() => {
 		aliveRef.current = true;
 		connect();
-		// Watchdog: if no server message arrives for 30s, assume the connection is
-		// half-open and force a close, which triggers the normal reconnect path.
 		const watchdog = setInterval(() => {
 			if (!aliveRef.current) return;
 			const ws = wsRef.current;
@@ -3388,10 +3039,6 @@ export function useChat() {
 			}
 		}, 5_000);
 
-		// 移动端/多标签页休眠唤醒（visibilitychange / pageshow / online）：
-		// 手机锁屏或切换后台挂起一晚上后唤醒，网络往往在后台已断开或变成半开死连接。
-		// 页面重新可见时立即检查：连接断开则立即触发重连（掐掉退避等待）；
-		// 若连接虽然打开但超过心跳阈值（或尚无会话快照），主动发 get_state 校验并拉取最新会话状态。
 		const onWake = () => {
 			if (!aliveRef.current) return;
 			if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
@@ -3434,16 +3081,10 @@ export function useChat() {
 			}
 			wsRef.current?.close();
 			wsRef.current = null;
-			// Drop cached output while this effect owns the socket; mounted writers
-			// unregister themselves and survive reconnects. The late onclose is stale.
 			bridgeRef.current.clear();
 		};
 	}, [connect]);
 
-	// -- 跨浏览器重启：恢复上次工作目录（localStorage 记忆） ---------------------
-	// 服务端按 clientId 记 lastCwd，而 clientId 在 sessionStorage（关浏览器即失），
-	// 重启后新 clientId 查不到记录 → 落回默认目录。这里在首帧快照上：若服务端
-	// 当前目录 ≠ 记忆目录，补发 set_cwd 切回；此后每次 cwd 变化都写回记忆。
 	useEffect(() => {
 		const cwd = chat.state?.cwd;
 		if (!cwd) return;
@@ -3451,8 +3092,6 @@ export function useChat() {
 			restoreRef.current = true;
 			const remembered = readLastCwd();
 			if (remembered && remembered !== cwd) {
-				// 记忆目录存在则服务端切换后会推新快照；不存在则服务端报错通知，
-				// 保持默认目录——两种结果都不回写记忆，等用户下次操作再更新。
 				send({ type: "set_cwd", path: remembered });
 				return;
 			}
@@ -3472,21 +3111,13 @@ export function useChat() {
 		}
 	}, [chat.state?.cwd, send]);
 
-	// -- 全局镜像：连接态 + 当前工作目录 -----------------------------------------
-	// 这三个值整棵树都要（左栏/输入框/右栏/全局搜索/底栏…）且变化频率低，放全局 store
-	// 省掉逐层传参（见 web/src/app-globals.ts）。用 effect 单一写入：值就是 reducer
-	// 里的真值，不会出现第二个 source of truth；最多晚一帧（对应默认值只会是
-	//「未就绪 / 未连接 / 空目录」，用户看不出）。
 	useEffect(() => {
 		setAppGlobals({
 			ready: chat.ready,
 			status: chat.status,
 			cwd: chat.state?.cwd ?? "",
-			// 额外工作区根（多根）与 cwd 同源：右栏文件树用 useAppField("workspaceRoots") 取。
 			workspaceRoots: chat.state?.workspaceRoots ?? [],
-			// 用户主目录（右栏 🏠）：与 cwd 同源，空串 = 旧服务不提供 → 不渲染 🏠。
 			homeDir: chat.state?.homeDir ?? "",
-			// 桌面目录（右栏 🖥️）：与 cwd 同源，空串 = 不存在/旧服务 → 不渲染 🖥️。
 			desktopDir: chat.state?.desktopDir ?? "",
 			chatUploadMaxMb: chat.settings?.chatUploadMaxMb ?? 20,
 			workspaceUploadMaxMb: chat.settings?.workspaceUploadMaxMb ?? 100,
@@ -3508,12 +3139,8 @@ export function useChat() {
 
 	const dismissNotice = useCallback((id: number) => dispatch({ type: "dismiss_notice", id }), []);
 
-	// -- terminal tab management ----------------------------------------------
-
 	const terminalCreate = useCallback(
 		(meta: TerminalMeta) => {
-			// All UI creation paths (commands, SCM, settings and bare shells) enter
-			// here once. Displays only attach, even when remounted or reconnected.
 			const current = chatApi.current.chat;
 			if (
 				!current.ready ||
@@ -3538,9 +3165,11 @@ export function useChat() {
 				: send({
 						type: "terminal_create",
 						...route,
+						ownerKind: "client",
 						title: meta.title,
 						cwd: meta.cwd,
 						agentBash: meta.agentBash,
+						nativeCli: meta.nativeCli,
 						locale: readUiLocale(),
 					});
 			if (sent) dispatch({ type: "terminal_add", meta: { ...meta, ownerKind } });

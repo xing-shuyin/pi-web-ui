@@ -1,10 +1,53 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import * as atomicFs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { writeAtomicSync, writeJsonAtomicSync } from "../../server/atomic-file.js";
+import {
+	portableAtomicWriteSyncSource,
+	writeAtomicPortableSync,
+	writeAtomicSync,
+	writeJsonAtomicSync,
+} from "../../server/atomic-file.js";
 
 describe("atomic-file", () => {
+	it("exports a standalone private writer that does not need server imports on the remote host", () => {
+		const base = mkdtempSync(join(tmpdir(), "pi-portable-atomic-"));
+		try {
+			const write = new Function(
+				`${portableAtomicWriteSyncSource()}; return writeAtomicPortable;`,
+			)() as typeof writeAtomicPortableSync;
+			const target = join(base, "native-id");
+			write(atomicFs, target, "session-1", randomUUID(), 0o600);
+			expect(readFileSync(target, "utf8")).toBe("session-1");
+			if (process.platform !== "win32") expect(statSync(target).mode & 0o777).toBe(0o600);
+			expect(() => write(atomicFs, target, "invalid", "../escape")).toThrow("nonce");
+			expect(readdirSync(base)).toEqual(["native-id"]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
+	it("preserves the previous portable record and removes temporary files on rename failure", () => {
+		const base = mkdtempSync(join(tmpdir(), "pi-portable-atomic-error-"));
+		try {
+			const target = join(base, "native-id");
+			writeAtomicSync(target, "previous");
+			const fs = {
+				...atomicFs,
+				renameSync: () => {
+					throw Object.assign(new Error("disk failure"), { code: "EIO" });
+				},
+			};
+			expect(() => writeAtomicPortableSync(fs, target, "next", randomUUID())).toThrow("disk failure");
+			expect(readFileSync(target, "utf8")).toBe("previous");
+			expect(readdirSync(base)).toEqual(["native-id"]);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
+
 	it("optional private mode and flush preserve existing permissions", () => {
 		const base = mkdtempSync(join(tmpdir(), "pi-atomic-mode-"));
 		try {

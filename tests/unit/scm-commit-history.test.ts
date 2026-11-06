@@ -1,7 +1,3 @@
-/**
- * 提交信息历史纯函数：记住（去重置顶 + 上限）、读回（坏 JSON 容错）、
- * ↑/↓ 循环回溯（shell 风格，草稿保存/恢复）。storage 可注入。
- */
 import { describe, expect, it } from "vitest";
 import {
 	COMMIT_RECALL_INITIAL,
@@ -12,7 +8,6 @@ import {
 	type KvStorage,
 } from "../../web/src/scm-commit-history.js";
 
-/** 内存 storage（测试注入用）。 */
 function memStorage(initial: Record<string, string> = {}): KvStorage & { data: Record<string, string> } {
 	const data: Record<string, string> = { ...initial };
 	return {

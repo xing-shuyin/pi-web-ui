@@ -84,7 +84,6 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 	});
 
 	it("enrichWithUpdateInfo() 正确比对并计算 hasUpdate 状态", async () => {
-		// 模拟一个旧版本
 		const oldStatus: EngineStatus = {
 			id: "dsh",
 			installed: true,
@@ -95,7 +94,6 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 		expect(oldStatus.latestVersion).toBeDefined();
 		expect(oldStatus.hasUpdate).toBe(true);
 
-		// 模拟一个超新版本（已是最新）
 		const freshStatus: EngineStatus = {
 			id: "dsh",
 			installed: true,
@@ -106,7 +104,6 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 		expect(freshStatus.latestVersion).toBeDefined();
 		expect(freshStatus.hasUpdate).toBe(false);
 
-		// 未安装的引擎不注入更新信息
 		const uninstalled: EngineStatus = {
 			id: "fake",
 			installed: false,
@@ -129,13 +126,11 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 	}, 15000);
 
 	it("updateEngineBackground() 安全拦截未知引擎，且正确维护 isEngineUpdating 状态与 updating 标记", async () => {
-		// 未知引擎直接返回失败
 		expect(isEngineUpdating("unknown-engine")).toBe(false);
 		const unknownRes = await updateEngineBackground("unknown-engine");
 		expect(unknownRes.ok).toBe(false);
 		expect(unknownRes.error).toContain("unknown-engine");
 
-		// 默认状态下所有已知引擎均为非更新中
 		expect(isEngineUpdating("dsh")).toBe(false);
 		expect(isEngineUpdating("claude")).toBe(false);
 		const initialStatuses = getCachedEngineStatuses();
@@ -145,19 +140,16 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 	});
 
 	it("uninstallEngineBackground() 拒绝卸载内置核心引擎 pi 与未知引擎，且正确维护 isEngineUninstalling 状态", async () => {
-		// pi 为内置核心引擎，拒绝卸载
 		expect(isEngineUninstalling("pi")).toBe(false);
 		const piRes = await uninstallEngineBackground("pi");
 		expect(piRes.ok).toBe(false);
 		expect(piRes.error).toContain("内置核心引擎");
 
-		// 未知引擎直接返回失败
 		expect(isEngineUninstalling("unknown-engine")).toBe(false);
 		const unknownRes = await uninstallEngineBackground("unknown-engine");
 		expect(unknownRes.ok).toBe(false);
 		expect(unknownRes.error).toContain("unknown-engine");
 
-		// 默认状态下所有引擎均为非卸载中
 		expect(isEngineUninstalling("dsh")).toBe(false);
 		expect(isEngineUninstalling("claude")).toBe(false);
 		const initialStatuses = getCachedEngineStatuses();
@@ -167,16 +159,13 @@ describe("引擎探测与更新检测模块 (server/engine-probe.ts)", () => {
 	});
 
 	it("probeEngine() 单项探测与 probeAllEngines() 全量刷新具备联动 TTL 缓存防抖", async () => {
-		// 单项探测写入缓存与时间戳
 		const first = await probeEngine("claude", true);
 		expect(first.id).toBe("claude");
 
-		// 5 秒内再次调用，命中单项缓存
 		const second = await probeEngine("claude");
 		expect(second.id).toBe("claude");
 		expect(second.version).toBe(first.version);
 
-		// 全量刷新后，单项探测也能享受到全量刷新的时间戳防抖
 		await probeAllEngines(true);
 		const afterAll = await probeEngine("claude");
 		expect(afterAll.id).toBe("claude");

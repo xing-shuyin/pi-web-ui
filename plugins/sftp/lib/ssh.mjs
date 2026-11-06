@@ -1,15 +1,3 @@
-/**
- * SSH / SFTP 连接管理 —— 连接池 + 配置指纹重连 + 空闲回收 + 远端 exec。
- *
- * 依赖 `ssh2` 不随插件分发：首次用到时经 `host.ensureDeps(["ssh2"])` 自动装到插件
- * 目录（宿主做单飞合并，并发调用只装一次）。装完再 `import("ssh2")` —— 裸 ESM
- * 说明符会从本文件所在目录向上找 node_modules，正好命中插件目录里刚装的那份。
- *
- * 连接键 = `cwd \u0000 连接名`：切换工作区/换 profile 各用各的，互不串台。
- * 指纹 = 影响连接的字段（host/port/username/凭据）；用户改完配置保存，下一次
- * 取连接自动断开重连，不需要重载插件。
- */
-
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
@@ -19,11 +7,10 @@ import path from "node:path";
 import { resolveRef } from "./refs.mjs";
 import { createHostVerifier } from "../../../plugin-sdk/ssh-host-trust.mjs";
 
-const IDLE_CLOSE_MS = 5 * 60 * 1000; // 空闲多久断开（远端 sshd 一般 10 分钟掐 idle，留点余量）
+const IDLE_CLOSE_MS = 5 * 60 * 1000;
 const READY_TIMEOUT_MS = 20_000;
 const MAX_EXEC_BYTES = 256 * 1024;
 
-/** `~` 展开（配置文件里写 `~/.ssh/id_ed25519` 是通行习惯）。 */
 export function expandHome(p) {
 	const s = String(p ?? "").trim();
 	if (!s) return s;
@@ -32,12 +19,8 @@ export function expandHome(p) {
 	return s;
 }
 
-/** 遵循 OpenSSH 标准行为，未指定密钥路径时自动探测 ~/.ssh/ 下的常用私钥。 */
 export const DEFAULT_KEY_PATHS = ["~/.ssh/id_ed25519", "~/.ssh/id_ecdsa", "~/.ssh/id_rsa", "~/.ssh/id_dsa"];
 
-/**
- * 探测用户目录常用私钥，返回第一个存在且有内容的密钥信息。
- */
 export async function findDefaultPrivateKey(fsModule = fs) {
 	for (const candidate of DEFAULT_KEY_PATHS) {
 		const file = expandHome(candidate);
@@ -46,17 +29,11 @@ export async function findDefaultPrivateKey(fsModule = fs) {
 			if (content && content.trim()) {
 				return { path: candidate, expandedPath: file, content };
 			}
-		} catch {
-			/* 不存在或不可读，尝试下一个 */
-		}
+		} catch {}
 	}
 	return null;
 }
 
-/**
- * 寻找本地对应的公钥文件（.pub）。
- * 优先找指定 privateKeyPath 对应的 .pub，未指定时按 DEFAULT_KEY_PATHS 查找。
- */
 export async function resolvePublicKey(privateKeyPath, fsModule = fs) {
 	if (privateKeyPath) {
 		const expanded = expandHome(privateKeyPath);
@@ -66,9 +43,7 @@ export async function resolvePublicKey(privateKeyPath, fsModule = fs) {
 			if (content && content.trim()) {
 				return { path: pubCandidate, content: content.trim() };
 			}
-		} catch {
-			/* 不存在，继续向后查找 */
-		}
+		} catch {}
 	}
 	for (const candidate of DEFAULT_KEY_PATHS) {
 		const pubCandidate = `${expandHome(candidate)}.pub`;
@@ -77,14 +52,11 @@ export async function resolvePublicKey(privateKeyPath, fsModule = fs) {
 			if (content && content.trim()) {
 				return { path: pubCandidate, content: content.trim() };
 			}
-		} catch {
-			/* 不存在，尝试下一个 */
-		}
+		} catch {}
 	}
 	return null;
 }
 
-/** `$SSH_AUTH_SOCK` 占位符展开（vscode-sftp 的习惯写法）。 */
 function expandAgent(a) {
 	return String(a ?? "").replace(/\$SSH_AUTH_SOCK\b/g, () => process.env.SSH_AUTH_SOCK || "");
 }
@@ -96,18 +68,11 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 	/** @type {any} */
 	let mod = null;
 	let loading = null;
-	/** 依赖状态：idle | installing | ready | failed（前端读它画 ⚠ 提示）。 */
 	const dep = { status: "idle", error: "" };
-	/** key → { client, sftp, fp, lastUsed, timer, alive } */
 	const pool = new Map();
-	// key → Promise<entry>：同 key 在建连接的单飞表。并发首连共享同一条 TCP/SFTP，
-	// 防止「两个并发各开一条、后完成者覆盖池位」——输者成孤儿（dropAll/drop 都
-	// 摸不到，永久泄漏），且其 5 分钟空闲定时器到期时会误杀正在使用的后到连接
 	const inflight = new Map();
-	// 每个连接键独立代次：清理时取消旧请求，保留 exceptCwd 的在建连接。
 	const generations = new Map();
 
-	/** 惰性加载 ssh2；缺了就装上。并发调用共享同一个 Promise。 */
 	function library() {
 		if (mod) return Promise.resolve(mod);
 		if (loading) return loading;
@@ -117,9 +82,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				mod = m.default ?? m;
 				dep.status = "ready";
 				return mod;
-			} catch {
-				/* 没装，下面补装 */
-			}
+			} catch {}
 			dep.status = "installing";
 			log("ssh2 未就绪，开始安装到插件目录…");
 			try {
@@ -148,12 +111,10 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		return loading;
 	}
 
-	/** 把连接上的凭据引用解析成真实值（明文原样返回，但记录来源用于告警）。 */
 	async function resolveAuth(conn) {
 		const a = conn.auth ?? {};
 		const method = String(a.method ?? "").trim();
 
-		// 若连接引用了全局主机（global-hosts.json），自动回填全局凭据
 		const remoteSsh = typeof host?.get === "function" ? host.get("remoteSsh") : null;
 		const globalDecrypted =
 			conn.useGlobal && remoteSsh ? await remoteSsh.getDecryptedProfile(conn.useGlobal).catch(() => null) : null;
@@ -168,7 +129,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			}
 		}
 
-		// 按认证方式按需解析引用，避免选了密钥登录却因残留的密码机密引用报错
 		let password = { value: "", source: "plain" };
 		let passphrase = { value: "", source: "plain" };
 		let privateKey = { value: "", source: "plain" };
@@ -184,7 +144,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				resolveRef(a.privateKey, { secrets, label: `${conn.name}.auth.privateKey` }),
 			]);
 		} else {
-			// 未显式指定 method，按字段存在性依次解析
 			[password, passphrase, privateKey, agent] = await Promise.all([
 				resolveRef(a.password, { secrets, label: `${conn.name}.auth.password` }),
 				resolveRef(a.passphrase, { secrets, label: `${conn.name}.auth.passphrase` }),
@@ -222,7 +181,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				throw new Error(`私钥文件读不到（${file}）：${err?.code ?? err?.message ?? err}`);
 			}
 		} else if (allowKey && !key && (method === "key" || (!password.value && !agent.value))) {
-			// 选了密钥方式或没有任何可用凭据时，默认尝试 ~/.ssh 用户目录的标准密钥
 			const found = await findDefaultPrivateKey();
 			if (found) {
 				key = found.content;
@@ -245,7 +203,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		};
 	}
 
-	/** 影响连接的字段指纹 —— 变了就重连。 */
 	function fingerprint(conn, auth) {
 		return createHash("sha256")
 			.update(
@@ -274,13 +231,10 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		entry.alive = false;
 		try {
 			entry.client.end();
-		} catch {
-			/* 关不掉的连接交给 OS */
-		}
+		} catch {}
 	}
 
 	function dropAll(exceptCwd) {
-		// Map 迭代中删除当前项是安全的（不会跳过未访问的项）
 		for (const key of new Set([...pool.keys(), ...generations.keys()])) {
 			if (exceptCwd && key.startsWith(`${exceptCwd}\u0000`)) continue;
 			drop(key);
@@ -319,7 +273,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 					await pending;
 				} catch (err) {
 					check();
-					// 另一份配置建连失败，不阻止本请求用自己的凭据重试。
 					if (pending.fp === fp) throw err;
 				}
 				continue;
@@ -331,7 +284,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				return { client: existing.client, sftp: existing.sftp, key };
 			}
 			if (existing) {
-				// 配置替换仅回收已建连接，不取消当前代次中的等待者。
 				pool.delete(key);
 				clearTimeout(existing.timer);
 				existing.alive = false;
@@ -373,9 +325,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 						generation.signal.removeEventListener("abort", onAbort);
 						try {
 							client.end();
-						} catch {
-							/* ignore */
-						}
+						} catch {}
 						reject(trust.getError() ?? err);
 					};
 					const onAbort = () => fail(generation.signal.reason);
@@ -427,14 +377,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		}
 	}
 
-	/**
-	 * 在远端跑一条命令，收集输出（截断保护）与退出码。
-	 *
-	 * - `inputStream`：把流（AsyncIterable / Readable）喂进 stdin 再关掉，**带背压**。
-	 *   打包上传靠它 —— 不必先在内存里攒出整包再一次 `end()`。
-	 * - `binary`：stdout 按字节收（`tar -czf -` 的 gzip 流一旦过 UTF-8 解码就整包全坏）。
-	 * - `signal`：中止就断开这条执行通道（命令真被掐掉，不会留在远端跑完）。
-	 */
 	async function exec(
 		conn,
 		cmd,
@@ -462,9 +404,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				stop();
 				try {
 					chan?.destroy();
-				} catch {
-					/* 关不掉的交给 OS */
-				}
+				} catch {}
 				reject(err);
 			};
 			const onAbort = () => fail(abortErr());
@@ -472,9 +412,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				() => fail(new Error(`远端命令超时（${Math.round(timeoutMs / 1000)}s）：${String(cmd).slice(0, 120)}`)),
 				timeoutMs,
 			);
-			// 文本模式的解码器：ssh2 的 data 分块按网络边界切，不按字符对齐——
-			// 逐 chunk toString("utf8") 会让跨块的中日韩多字节字符变成 U+FFFD。
-			// StringDecoder 攒住半个字符直到下一块，close 时 end() 收尾。
 			const outDecoder = new StringDecoder("utf8");
 			const errDecoder = new StringDecoder("utf8");
 			const push = (buf, which) => {
@@ -492,7 +429,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 						truncated = true;
 						return;
 					}
-					outChunks.push(Buffer.from(buf)); // 拷贝一份：ssh2 的接收缓冲不保证可长期持有
+					outChunks.push(Buffer.from(buf));
 					outBytes += buf.length;
 					return;
 				}
@@ -525,7 +462,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				});
 				stream.on("error", fail);
 				if (inputStream) {
-					// 背压喂 stdin：`for await` + write() 的返回值决定要不要等 drain
 					(async () => {
 						for await (const chunk of inputStream) {
 							if (settled) return;
@@ -570,9 +506,7 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 				stop();
 				try {
 					chan?.destroy();
-				} catch {
-					/* 关不掉的交给 OS */
-				}
+				} catch {}
 				reject(err);
 			};
 			const onAbort = () => fail(abortErr());
@@ -619,7 +553,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		});
 	}
 
-	/** 连通性探测：连接 + 远端根可达 + 可写（写一个探针文件再删掉）。 */
 	async function probe(conn, { sftpCalls }) {
 		const { sftp } = await getSftp(conn);
 		const dir = conn.remotePath || "/";
@@ -655,10 +588,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		});
 	}
 
-	/**
-	 * 把本地公钥添加到远端 authorized_keys 中（类似 ssh-copy-id）。
-	 * 支持临时提供密码（未配置密钥授权时的首次登入）。
-	 */
 	async function authorizePublicKey(conn, opts = {}) {
 		const { Client } = await library();
 		const password = opts.password;
@@ -676,7 +605,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			throw new Error("未找到本地公钥文件（~/.ssh/id_ed25519.pub / id_rsa.pub 等不存在，请先用 ssh-keygen 生成）");
 		}
 
-		// 公钥行清理：提取第一行非空，必须像合法 SSH 公钥（ssh-ed25519 / ssh-rsa / ecdsa-sha2-...）
 		const rawLine =
 			pubInfo.content
 				.split(/\r?\n/)
@@ -687,7 +615,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 		}
 		const pubLine = rawLine;
 
-		// 决定连接认证凭据：优先使用本次传入的临时密码 → 配置中的密码 → 机密库中同名 password → 现有凭据
 		const connectOpts = {
 			host: conn.host,
 			port: conn.port || 22,
@@ -702,16 +629,12 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			try {
 				const r = await resolveRef(conn.auth.password, { secrets, label: `${conn.name}.auth.password` });
 				effectivePassword = r.value || "";
-			} catch {
-				/* ignore missing ref */
-			}
+			} catch {}
 		}
 		if (!effectivePassword && conn.name) {
 			try {
 				effectivePassword = secrets?.get?.(`${conn.name}-password`) || "";
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
 		if (effectivePassword) {
@@ -721,7 +644,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			throw new Error("NEED_PASSWORD: 请先在上方「密码」输入框填写一次远程服务器密码，再点击「添加公钥到远端」");
 		}
 
-		// 建立临时 SSH + SFTP 连接
 		const client = new Client();
 		const sftp = await new Promise((resolve, reject) => {
 			let settled = false;
@@ -755,13 +677,10 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 
 		let alreadyPresent = false;
 		try {
-			// 获取远端用户 home 目录
 			let homeDir = "";
 			try {
 				homeDir = await sftpCallInternal(sftp, "realpath", ".");
-			} catch {
-				/* fallback */
-			}
+			} catch {}
 			if (!homeDir || typeof homeDir !== "string" || !homeDir.startsWith("/")) {
 				homeDir = conn.username === "root" ? "/root" : `/home/${conn.username}`;
 			}
@@ -770,32 +689,24 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			const sshDir = `${homeDir}/.ssh`;
 			const authKeysFile = `${sshDir}/authorized_keys`;
 
-			// 确保 ~/.ssh 目录存在并具有 700 权限
 			let sshDirStat = null;
 			try {
 				sshDirStat = await sftpCallInternal(sftp, "stat", sshDir);
-			} catch {
-				/* 目录不存在 */
-			}
+			} catch {}
 			if (!sshDirStat) {
 				try {
 					await sftpCallInternal(sftp, "mkdir", sshDir);
-				} catch {
-					/* 忽略已存在报错 */
-				}
+				} catch {}
 			}
 			try {
 				await sftpCallInternal(sftp, "setstat", sshDir, { mode: 0o700 });
 			} catch {}
 
-			// 读取已有 authorized_keys
 			let existingContent = "";
 			try {
 				const buf = await sftpCallInternal(sftp, "readFile", authKeysFile);
 				existingContent = buf ? buf.toString("utf8") : "";
-			} catch {
-				/* 文件不存在视为空 */
-			}
+			} catch {}
 
 			const lines = existingContent.split(/\r?\n/).map((l) => l.trim());
 			if (lines.includes(pubLine)) {
@@ -813,7 +724,6 @@ export function createSshManager({ host, log = () => {}, secrets }) {
 			} catch {}
 		}
 
-		// 清理已有连接池缓存，测试密钥登录验证
 		drop(`${conn.__cwd ?? ""}\u0000${conn.name}`);
 		let verified = false;
 		let verifyError = "";

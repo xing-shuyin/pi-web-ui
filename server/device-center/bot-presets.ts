@@ -2,7 +2,6 @@ import type { LocalBot, LocalBotInput } from "./bots.js";
 import type { LocalBotOptions } from "./bot-catalog.js";
 import { DeviceWorkspaceError } from "./workspaces.js";
 
-/** Partial Bot presets never carry workspace, identity, credentials or host runtime settings. */
 export function applyLocalBotPreset(bot: LocalBot, raw: unknown, catalog: LocalBotOptions): LocalBotInput {
 	const fail = (message: string): never => {
 		throw new DeviceWorkspaceError(400, "BOT_PRESET_INVALID", message);

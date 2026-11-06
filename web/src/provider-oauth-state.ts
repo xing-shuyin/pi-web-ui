@@ -67,11 +67,6 @@ export function reduceProviderOAuthState(
 		}
 		case "provider_oauth_event": {
 			const current = state.flows.find((flow) => flow.flowId === message.flowId);
-			// event 到达 = 登录阶段推进，之前的 prompt 已作废必须清掉：服务端 reply()
-			// 只 resolve promise，不下发“prompt 已回答”消息，这里是唯一的老 prompt 清理点，
-			// 不要改成保留（否则答完的 select 按钮/输入框会残留，还能重复提交）。
-			// 并发显示靠另一侧保证：prompt 分支保留 event，而 SDK 总是先 notify 后 prompt
-			//（Codex browser 路径：notify(auth_url) → prompt(manual_code)），所以两者能同屏。
 			return {
 				...state,
 				flows: replaceFlow(state.flows, {

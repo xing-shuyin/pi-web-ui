@@ -1,8 +1,3 @@
-/* Smoke test for edit-and-re-ask (edit_message → runtime.fork → re-prompt).
- * Needs a server on PORT=8791 with PI_WEB_DATA_DIR and a temp agent dir that
- * has a dummy auth.json (the user message is appended before the API call, so
- * the fork mechanics are testable even though the real call fails).
- */
 import { WebSocket } from "ws";
 
 const WS = "ws://localhost:8791/ws";
@@ -68,7 +63,6 @@ async function main() {
 	const snap0 = await c.wait((m) => m.type === "snapshot");
 	console.log("[1] initial session:", snap0.state.sessionId.slice(0, 8));
 
-	// Pick any model that appears available with the dummy auth, then ask twice.
 	c.send({ type: "list_models" });
 	const models = await c.wait((m) => m.type === "models");
 	console.log("[2] available models:", models.models.length);

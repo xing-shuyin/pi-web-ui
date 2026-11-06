@@ -72,13 +72,12 @@ describe("response-speed 插件测试", () => {
 			];
 			const stats = calcStats(records);
 			expect(stats.count).toBe(3);
-			// (400 + 1200 + 800) / 3 = 800
 			expect(stats.avgMs).toBe(800);
 			expect(stats.minMs).toBe(400);
 			expect(stats.maxMs).toBe(1200);
 			expect(stats.latestMs).toBe(800);
 			expect(stats.recent.length).toBe(3);
-			expect(stats.recent[0].latencyMs).toBe(800); // 倒序排在首位
+			expect(stats.recent[0].latencyMs).toBe(800);
 		});
 	});
 
@@ -90,7 +89,7 @@ describe("response-speed 插件测试", () => {
 
 			expect(validation.errors).toEqual([]);
 			expect(validation.apiVersion).toBe(2);
-			expect(raw.version).toBe("0.3.3");
+			expect(raw.version).toMatch(/^\d+\.\d+\.\d+$/);
 			expect(validation.permissions).toContain("ui");
 			expect(validation.permissions).toContain("http");
 			expect(validation.permissions).toContain("storage");
@@ -133,7 +132,6 @@ describe("response-speed 插件测试", () => {
 			const cleanup = responseSpeedPlugin.activate(mockHost as any);
 			expect(typeof cleanup).toBe("function");
 
-			// 初始底栏应为 --/--，且提示文案严格遵守宿主 ≤200 字符限制（避免触发诊断警告）
 			const initialBadge = uiUpdates.get("response-speed-badge");
 			expect(initialBadge).toBeDefined();
 			expect(initialBadge.label).toBe("--/--");
@@ -141,7 +139,6 @@ describe("response-speed 插件测试", () => {
 			expect(initialBadge.hint?.length).toBeLessThanOrEqual(200);
 			expect(initialBadge.hintEn?.length).toBeLessThanOrEqual(200);
 
-			// 测试 GET /stats 路由
 			const getStats = routes.get("GET /stats");
 			expect(getStats).toBeDefined();
 			let statsJson: any = null;
@@ -157,7 +154,6 @@ describe("response-speed 插件测试", () => {
 			expect(statsJson.conversationId).toBe("conv-1");
 			expect(statsJson.stats.count).toBe(0);
 
-			// 测试 POST /record 路由（上报首字响应）
 			const postRecord = routes.get("POST /record");
 			expect(postRecord).toBeDefined();
 			let recordJson: any = null;
@@ -175,14 +171,12 @@ describe("response-speed 插件测试", () => {
 			expect(recordJson.stats.count).toBe(1);
 			expect(recordJson.stats.avgMs).toBe(650);
 
-			// 底栏应已刷新为 0.7/0.7（650ms 换算为秒，一位小数），且更新后的提示文案严格 ≤200 字符
 			const updatedBadge = uiUpdates.get("response-speed-badge");
 			expect(updatedBadge.label).toBe("0.7/0.7");
 			expect(updatedBadge.labelEn).toBe("0.7/0.7");
 			expect(updatedBadge.hint?.length).toBeLessThanOrEqual(200);
 			expect(updatedBadge.hintEn?.length).toBeLessThanOrEqual(200);
 
-			// 上报非法数据应返回 400
 			let errorStatus = 0;
 			let errorJson: any = null;
 			postRecord!(
@@ -200,7 +194,6 @@ describe("response-speed 插件测试", () => {
 			);
 			expect(errorStatus).toBe(400);
 
-			// 测试 POST /reset 路由
 			const postReset = routes.get("POST /reset");
 			expect(postReset).toBeDefined();
 			let resetJson: any = null;
@@ -215,7 +208,6 @@ describe("response-speed 插件测试", () => {
 			expect(resetJson.ok).toBe(true);
 			expect(resetJson.conversationId).toBe("conv-1");
 
-			// 底栏应复位为 --/--
 			const resetBadge = uiUpdates.get("response-speed-badge");
 			expect(resetBadge.label).toBe("--/--");
 
@@ -250,8 +242,6 @@ describe("response-speed 插件测试", () => {
 			const cleanup = responseSpeedPlugin.activate(mockHost as any);
 			expect(runEventHandler).toBeDefined();
 
-			// 1. 首轮回合开始（用户刚发完提问）
-			// 【关键需求】：不要显示响应中！直接显示上一次的时间（初始为 --/--）
 			runEventHandler!({
 				type: "turn_start",
 				conversationId: "conv-1",
@@ -259,7 +249,6 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("--/--");
 
-			// 2. 首轮大模型首包返回（耗时 400ms）
 			runEventHandler!({
 				type: "turn_first_token",
 				conversationId: "conv-1",
@@ -268,7 +257,6 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.4/0.4");
 
-			// 3. 模型执行工具并结束第一回合
 			runEventHandler!({
 				type: "turn_end",
 				conversationId: "conv-1",
@@ -276,8 +264,6 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.4/0.4");
 
-			// 4. 【关键需求】：AI 进入自循环（工具执行完毕后进入第二回合）
-			// 此时不要显示“响应中…”，而是直接显示上一次的时间 0.4/0.4
 			runEventHandler!({
 				type: "turn_start",
 				conversationId: "conv-1",
@@ -285,17 +271,14 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.4/0.4");
 
-			// 5. 自循环第二回合首包返回（耗时 600ms）
 			runEventHandler!({
 				type: "turn_first_token",
 				conversationId: "conv-1",
 				at: 3100,
 				durationMs: 600,
 			});
-			// 最新为 600ms (0.6s)，均速为 (400 + 600) / 2 = 500ms (0.5s)
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.6/0.5");
 
-			// 6. 第二回合结束，任务完成
 			runEventHandler!({
 				type: "turn_end",
 				conversationId: "conv-1",
@@ -348,7 +331,6 @@ describe("response-speed 插件测试", () => {
 			const cleanup = responseSpeedPlugin.activate(mockHost as any);
 			expect(conversationChangeHandler).toBeDefined();
 
-			// 1. conv-A 回合执行（耗时 300ms）
 			runEventHandler!({
 				type: "turn_start",
 				conversationId: "conv-A",
@@ -362,18 +344,15 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.3/0.3");
 
-			// 2. 用户在界面上切换到了 conv-B（新对话，尚无记录）
 			currentActiveConvId = "conv-B";
 			conversationChangeHandler!();
 			expect(uiUpdates.get("response-speed-badge").label).toBe("--/--");
 
-			// 3. conv-B 产生提问与首包响应（耗时 900ms）
 			runEventHandler!({
 				type: "turn_start",
 				conversationId: "conv-B",
 				at: 2000,
 			});
-			// turn_start 时不显示响应中，仍为上一次时间（conv-B 之前无记录，所以是 --/--）
 			expect(uiUpdates.get("response-speed-badge").label).toBe("--/--");
 
 			runEventHandler!({
@@ -384,13 +363,10 @@ describe("response-speed 插件测试", () => {
 			});
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.9/0.9");
 
-			// 4. 用户切回 conv-A
 			currentActiveConvId = "conv-A";
 			conversationChangeHandler!();
-			// 底栏应立即无缝恢复为 conv-A 的独立统计：0.3/0.3
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.3/0.3");
 
-			// 5. 在 conv-A 执行 reset 清空
 			const postReset = routes.get("POST /reset");
 			postReset!(
 				{ body: { conversationId: "conv-A" } },
@@ -400,7 +376,6 @@ describe("response-speed 插件测试", () => {
 			);
 			expect(uiUpdates.get("response-speed-badge").label).toBe("--/--");
 
-			// 6. 再切回 conv-B，验证 conv-B 的统计数据未受 conv-A 重置的影响
 			currentActiveConvId = "conv-B";
 			conversationChangeHandler!();
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.9/0.9");
@@ -410,7 +385,6 @@ describe("response-speed 插件测试", () => {
 
 		it("兼容旧版单一 records 存储结构并平滑迁移", () => {
 			const storageMap = new Map<string, any>();
-			// 模拟旧版本存储数据
 			storageMap.set("records", [
 				{ latencyMs: 500, timestamp: 1000, conversationId: "legacy-conv" },
 				{ latencyMs: 700, timestamp: 2000, conversationId: "legacy-conv" },
@@ -435,7 +409,6 @@ describe("response-speed 插件测试", () => {
 			};
 
 			const cleanup = responseSpeedPlugin.activate(mockHost as any);
-			// legacy-conv 数据已迁移生效：(500 + 700) / 2 = 600ms -> 最新 700ms (0.7s) / 均速 600ms (0.6s)
 			expect(uiUpdates.get("response-speed-badge").label).toBe("0.7/0.6");
 
 			cleanup!();

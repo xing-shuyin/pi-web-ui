@@ -1,10 +1,3 @@
-/**
- * Goal wizard — cancellation test.
- *
- * Starts a wizard, answers the first question, then sends clear_goal (the ✗
- * button). Verifies the browser dialog is closed (dialog_closed), the wizard
- * status clears, and NO goal is auto-set.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -13,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -45,9 +37,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("no server");
 }
@@ -92,15 +82,12 @@ async function main() {
 
 	ws.send(JSON.stringify({ type: "start_goal_wizard", text: "写一个文件同步工具", maxRounds: 4 }));
 
-	// Wait for the FIRST question dialog, then cancel via clear_goal.
 	const d1 = await next((m) => m.type === "dialog", "first question", 40000);
 	console.error(`[d] got Q (id=${d1.id}): ${(d1.args?.[0] || "").toString().slice(0, 50)}`);
 	check("wizard asked a question", true);
 
-	// User clicks ✗ → clear_goal.
 	ws.send(JSON.stringify({ type: "clear_goal" }));
 
-	// Expect a dialog_closed for that dialog (the browser modal must close).
 	try {
 		const closed = await next(
 			(m) => m.type === "dialog_closed" && m.id === d1.id,
@@ -112,7 +99,6 @@ async function main() {
 		check("dialog closed on cancel", false, "no dialog_closed");
 	}
 
-	// Wizard status should return to inactive (no active=goal).
 	await sleep(1200);
 	const gs = inbox.filter((m) => m.type === "goal_status");
 	const last = gs[gs.length - 1];
@@ -121,7 +107,6 @@ async function main() {
 	check("wizard went inactive after cancel", Boolean(wizardInactive), JSON.stringify(last?.status?.wizard));
 	check("no goal auto-set on cancel", noGoal);
 
-	// Wait a moment to ensure no delayed goal_set arrives.
 	await sleep(2000);
 	const lateGoal = inbox.some((m) => m.type === "goal_status" && m.status.goal && m.status.goal !== null);
 	check("no goal set even after waiting", !lateGoal);
@@ -130,9 +115,7 @@ async function main() {
 	try {
 		ws.close();
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -140,8 +123,6 @@ main().catch((e) => {
 	console.error("ERR", e);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

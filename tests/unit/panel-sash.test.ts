@@ -29,7 +29,6 @@ describe("applySashDrag", () => {
 	const base = { start: { above: 4, below: 1 }, availablePx: 400, totalWeight: 5, minAbovePx: 120, minBelowPx: 56 };
 
 	it("可用高度 / 总权重 → 像素与权重的线性换算", () => {
-		// 400px / 5 权重 = 80px 每权重；向下拖 20px → above +0.25（仍在最小像素之间）
 		const r = applySashDrag({ ...base, deltaPx: 20 });
 		expect(r.above).toBeCloseTo(4.25, 10);
 		expect(r.below).toBeCloseTo(0.75, 10);
@@ -63,7 +62,6 @@ describe("applySashDrag", () => {
 	});
 
 	it("两个最小值之和超过可用高度时折中，不翻转", () => {
-		// 60px 高、最小 120 + 56：装不下 → above/below 折中且都为正
 		const r = applySashDrag({ ...base, availablePx: 60, deltaPx: 40 });
 		expect(r.above).toBeGreaterThan(0);
 		expect(r.below).toBeGreaterThan(0);

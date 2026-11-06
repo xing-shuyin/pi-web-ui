@@ -1,18 +1,3 @@
-/**
- * 宿主 cron 引爆的溢出回归（零 token、自包含、真服务端）。
- *
- * 背景：`host.schedule` 的 cron 分支用 `setTimeout(next - now)` 引爆，而 Node 的 setTimeout
- * 延迟超过 2^31-1ms（≈24.8 天）会**溢出成 1ms**；旧版 `nextCronFire` 在「一年内找不到」时
- * 还会回一个 366 天后的哨兵值。两者相遇 → 「1ms 后再触发 → 再排下一次」的死循环：
- * 插件回调每秒被调上千次（配持久任务的插件还会写盘 + 广播，把服务打瘫）。
- *
- * 本测用两个插件任务验证修复：
- *   - `0 9 1 1 *`（下次在 100 天开外，合法且真的会发生）→ 4 秒内**一次都不许触发**；
- *   - `0 0 31 2 *`（2 月没有 31 号，永远不发生）→ 同样不触发，且后台面板状态是「不再触发」。
- * 修复前这两条都会在几秒内触发上千次（可把 armDelay 的分片上限临时改大来复核本测有效）。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-cron-overflow-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,9 +46,7 @@ async function waitReady() {
 	for (let i = 0; i < 120; i++) {
 		try {
 			if ((await fetch(`${BASE}/api/health`)).ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await new Promise((r) => setTimeout(r, 250));
 	}
 	throw new Error("server not ready");
@@ -99,7 +82,6 @@ try {
 		env: {
 			...process.env,
 			PI_WEB_PORT: String(PORT),
-			// 本测试只验其它功能；工具延迟加载默认开会让非核心工具不活跃，这里按部署默认关掉它。
 			PI_WEB_TOOL_LAZY_LOADING: "0",
 			PI_WEB_DATA_DIR: dataDir,
 			PI_WEB_CWD: repoRoot,
@@ -116,9 +98,6 @@ try {
 	const messages = [];
 	sock = await connectWs((m) => messages.push(m));
 
-	// 插件被激活了才谈得上排定时：轮询等 `plugins` 快照里出现 far。
-	// （原来只 sleep(1s) 就断言：满负荷并行跑全量时插件列表可能晚于 1s 才到 → 假红；
-	//  插件真没激活的话这里会在 10s 后仍然 fail。）
 	let info = null;
 	for (let i = 0; i < 40 && !info; i++) {
 		const plugins = messages.filter((m) => m.type === "plugins").at(-1)?.plugins ?? [];
@@ -129,7 +108,6 @@ try {
 	else if (info.error) fail(`插件激活报错：${info.error}`);
 	else ok("测试插件已激活并排了两条 cron 任务");
 
-	// 关键窗口：旧实现在这 5 秒里会触发上千次（每次还伴随写盘/广播）
 	await new Promise((r) => setTimeout(r, 5_000));
 	const hits = fires();
 	if (hits.length > 0) {
@@ -138,20 +116,16 @@ try {
 		ok("5 秒内远期（100 天开外）与永不发生（2/31）的 cron 都没被触发 —— 没有溢出死循环");
 	}
 
-	// 溢出发生时 Node 会打 TimeoutOverflowWarning；顺带断言没有
 	if (/TimeoutOverflowWarning/.test(stderr))
 		fail("服务端出现了 TimeoutOverflowWarning（仍有超长延迟被喂给 setTimeout）");
 	else ok("服务端没有 TimeoutOverflowWarning");
 
-	// 服务必须还活着且响应正常（旧实现会被写盘 + 广播拖住）
 	const alive = await fetch(`${BASE}/api/health`)
 		.then((r) => r.ok)
 		.catch(() => false);
 	if (!alive) fail("服务在 5 秒后不响应了");
 	else ok("服务仍然健康（事件循环没被定时器占满）");
 
-	// 后台任务列表（快照里的 bg_servers）：永不发生的那条状态应显式为「不再触发」，
-	// 而不是拿哨兵值编一个明年的日期
 	let bg = [];
 	for (let i = 0; i < 40 && !bg.length; i++) {
 		bg = messages.filter((m) => m.type === "bg_servers").at(-1)?.servers ?? [];
@@ -171,15 +145,11 @@ try {
 } finally {
 	try {
 		sock?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (proc?.pid) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	await new Promise((r) => setTimeout(r, 600));
 	rmSync(dataDir, { recursive: true, force: true });

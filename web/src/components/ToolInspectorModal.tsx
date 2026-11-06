@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { openImageLightbox } from "../image-lightbox-bridge";
 import { useCopyFeedback } from "../use-copy-feedback";
 import {
 	FiBookOpen,
@@ -41,7 +42,7 @@ import {
 import { parsePresentArgs } from "../present-items";
 import { openFilePreview } from "../file-preview-bridge";
 import { parseFileMutationArgs } from "../file-diff";
-import { appUrl } from "../base-url";
+import { appResourceCrossOrigin, appResourceUrl } from "../base-url";
 import { PresentedFiles } from "./PresentedFiles";
 import { QuestionnaireCard } from "./QuestionnaireCard";
 import { CodemodeCard, DelegateBrief, TerminalCommand, ToolSearchDetails } from "./ToolCallBlock";
@@ -72,9 +73,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 	conversation_read: <FiMessageSquare />,
 };
 
-/**
- * 统一收敛检查器弹窗的运行状态与文案，保证顶底栏单源一致，彻底杜绝「上面进行中、下面已完成」的矛盾。
- */
 export function resolveInspectorStatus(
 	state: ToolInspectorState,
 	t: ReturnType<typeof useT>,
@@ -120,13 +118,9 @@ export function ToolInspectorModal() {
 	return createPortal(<ToolInspectorRouter state={state} />, document.body);
 }
 
-/**
- * 方案 D 全局分发路由器：将所有工具检查窗口统一收敛至精炼三段式架构
- */
 function ToolInspectorRouter({ state }: { state: ToolInspectorState }) {
 	const [isMaximized, setIsMaximized] = useState(false);
 
-	// ESC 键关闭
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
@@ -140,38 +134,30 @@ function ToolInspectorRouter({ state }: { state: ToolInspectorState }) {
 
 	const onToggleMaximize = () => setIsMaximized((prev) => !prev);
 
-	// 1. 思考流视口
 	if (state.isThinking) {
 		return <ThinkingInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 	}
 
 	const name = state.name || "";
 
-	// 2. 文件编辑与写入视口（edit, write, edit_soft, patch）
 	const isFileChange = name === "edit" || name === "write" || name === "edit_soft" || name === "patch";
 	if (isFileChange) {
 		return <FileDiffInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 	}
 
-	// 3. 命令行终端视口（bash）
 	if (name === "bash") {
 		return <BashInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 	}
 
-	// 4. 文件与内容读取/检索视口（read, ls, grep, find, tool_search）
 	const isReadOrSearch =
 		name === "read" || name === "ls" || name === "grep" || name === "find" || name === "tool_search";
 	if (isReadOrSearch) {
 		return <ReadInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 	}
 
-	// 5. 通用/插件工具视口
 	return <GenericInspectorDialog state={state} isMaximized={isMaximized} onToggleMaximize={onToggleMaximize} />;
 }
 
-/**
- * 方案 D：1. 思考流（Thinking）纯粹沉浸式 Markdown 视口
- */
 function ThinkingInspectorDialog({
 	state,
 	isMaximized,
@@ -199,7 +185,6 @@ function ThinkingInspectorDialog({
 				role="dialog"
 				aria-modal="true"
 			>
-				{/* 顶栏 Header */}
 				<div className="file-diff-inspector-header" onDoubleClick={onToggleMaximize}>
 					<div className="file-diff-inspector-title-group">
 						<FiCpu className="file-diff-file-icon" />
@@ -247,7 +232,6 @@ function ThinkingInspectorDialog({
 					</div>
 				</div>
 
-				{/* 中间正文：无缝沉浸式 Markdown 思考流 */}
 				<div className="file-diff-inspector-body">
 					<div className="thinking-inspector-content">
 						{text ? (
@@ -260,7 +244,6 @@ function ThinkingInspectorDialog({
 					</div>
 				</div>
 
-				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
 					<div className="file-diff-footer-status">
 						<span className="file-diff-status-icon">💭</span>
@@ -279,9 +262,6 @@ function ThinkingInspectorDialog({
 	);
 }
 
-/**
- * 方案 D：2. 命令行终端（Bash）极客终端直通视口
- */
 function BashInspectorDialog({
 	state,
 	isMaximized,
@@ -412,7 +392,6 @@ function BashInspectorDialog({
 				role="dialog"
 				aria-modal="true"
 			>
-				{/* 顶栏 Header */}
 				<div className="file-diff-inspector-header" onDoubleClick={onToggleMaximize}>
 					<div className="file-diff-inspector-title-group">
 						<FiTerminal className="file-diff-file-icon" />
@@ -515,7 +494,6 @@ function BashInspectorDialog({
 					</div>
 				</div>
 
-				{/* 中间正文：直通黑底终端视口 */}
 				<div className="file-diff-inspector-body">
 					{viewMode === "raw" ? (
 						<div className="file-diff-raw-body">
@@ -544,7 +522,6 @@ function BashInspectorDialog({
 					)}
 				</div>
 
-				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
 					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
 						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
@@ -580,9 +557,6 @@ function BashInspectorDialog({
 	);
 }
 
-/**
- * 方案 D：3. 文件与检索类（Read, Ls, Grep, Find, ToolSearch）内容直通阅读器
- */
 function ReadInspectorDialog({
 	state,
 	isMaximized,
@@ -666,7 +640,6 @@ function ReadInspectorDialog({
 				role="dialog"
 				aria-modal="true"
 			>
-				{/* 顶栏 Header */}
 				<div className="file-diff-inspector-header" onDoubleClick={onToggleMaximize}>
 					<div className="file-diff-inspector-title-group">
 						<span className="file-diff-file-icon">{TOOL_ICONS[name] ?? <FiFileText />}</span>
@@ -762,7 +735,6 @@ function ReadInspectorDialog({
 					</div>
 				</div>
 
-				{/* 中间正文：直通源码/输出视口 */}
 				<div className="file-diff-inspector-body">
 					{viewMode === "raw" ? (
 						<div className="file-diff-raw-body">
@@ -786,12 +758,22 @@ function ReadInspectorDialog({
 							{isImage && images && images.length > 0 ? (
 								<div className="read-image-viewport">
 									{images.map((img, i) => {
-										const src = img.startsWith("/") ? appUrl(img) : img;
+										const src = img.startsWith("/") ? appResourceUrl(img) : img;
 										return (
 											<div key={i} className="read-image-container">
-												<a href={src} target="_blank" rel="noreferrer" title="点击新窗口查看原图">
-													<img src={src} alt={targetPath || `Image ${i + 1}`} className="read-image-item" />
-												</a>
+												<button
+													type="button"
+													className="image-preview-trigger"
+													title={t("toolImageZoom")}
+													onClick={() => openImageLightbox({ src, alt: targetPath || `Image ${i + 1}` })}
+												>
+													<img
+														crossOrigin={appResourceCrossOrigin(src)}
+														src={src}
+														alt={targetPath || `Image ${i + 1}`}
+														className="read-image-item"
+													/>
+												</button>
 											</div>
 										);
 									})}
@@ -808,7 +790,6 @@ function ReadInspectorDialog({
 					)}
 				</div>
 
-				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
 					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
 						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
@@ -838,9 +819,6 @@ function ReadInspectorDialog({
 	);
 }
 
-/**
- * 方案 D：4. 统一文件改动审查视口（Edit, Write, Edit_Soft, Patch）
- */
 function FileDiffInspectorDialog({
 	state,
 	isMaximized,
@@ -901,7 +879,6 @@ function FileDiffInspectorDialog({
 				role="dialog"
 				aria-modal="true"
 			>
-				{/* 顶栏 Header */}
 				<div className="file-diff-inspector-header" onDoubleClick={onToggleMaximize}>
 					<div className="file-diff-inspector-title-group">
 						<FiFileText className="file-diff-file-icon" />
@@ -1011,7 +988,6 @@ function FileDiffInspectorDialog({
 					</div>
 				</div>
 
-				{/* 中间 Diff 视口 */}
 				<div className="file-diff-inspector-body">
 					{viewMode === "raw" ? (
 						<div className="file-diff-raw-body">
@@ -1038,7 +1014,6 @@ function FileDiffInspectorDialog({
 					)}
 				</div>
 
-				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
 					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
 						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>
@@ -1070,9 +1045,6 @@ function FileDiffInspectorDialog({
 	);
 }
 
-/**
- * 方案 D：5. 通用工具（Generic / Plugin）三段式精炼视口
- */
 function GenericInspectorDialog({
 	state,
 	isMaximized,
@@ -1105,7 +1077,6 @@ function GenericInspectorDialog({
 	const detailsKeysCount =
 		details && typeof details === "object" ? Object.keys(details as Record<string, unknown>).length : 0;
 
-	// 特殊富组件参数解析
 	const isPresent = name === "present_files";
 	const presentArgs = useMemo(() => (isPresent && args ? parsePresentArgs(args) : null), [isPresent, args]);
 
@@ -1143,7 +1114,6 @@ function GenericInspectorDialog({
 				role="dialog"
 				aria-modal="true"
 			>
-				{/* 顶栏 Header */}
 				<div className="file-diff-inspector-header" onDoubleClick={onToggleMaximize}>
 					<div className="file-diff-inspector-title-group">
 						<span className="file-diff-file-icon">{TOOL_ICONS[name] ?? <FiPackage />}</span>
@@ -1219,7 +1189,6 @@ function GenericInspectorDialog({
 					</div>
 				</div>
 
-				{/* 中间正文：富组件或无缝代码视口 */}
 				<div className="file-diff-inspector-body">
 					{viewMode === "raw" ? (
 						<div className="file-diff-raw-body">
@@ -1277,7 +1246,6 @@ function GenericInspectorDialog({
 								/>
 							)}
 
-							{/* 图片列表 */}
 							{images && images.length > 0 && (
 								<div className="tool-inspector-section pi-we-inspector-section" style={{ padding: "8px 14px" }}>
 									<div className="tool-inspector-label-row">
@@ -1286,16 +1254,29 @@ function GenericInspectorDialog({
 										</span>
 									</div>
 									<div className="tool-inspector-images">
-										{images.map((src, i) => (
-											<a key={i} href={src} target="_blank" rel="noreferrer" title="点击新窗口打开图片">
-												<img src={src} alt={`output image ${i + 1}`} loading="lazy" />
-											</a>
-										))}
+										{images.map((image, i) => {
+											const src = image.startsWith("/") ? appResourceUrl(image) : image;
+											return (
+												<button
+													key={i}
+													type="button"
+													className="image-preview-trigger"
+													title={t("toolImageZoom")}
+													onClick={() => openImageLightbox({ src, alt: `output image ${i + 1}` })}
+												>
+													<img
+														crossOrigin={appResourceCrossOrigin(src)}
+														src={src}
+														alt={`output image ${i + 1}`}
+														loading="lazy"
+													/>
+												</button>
+											);
+										})}
 									</div>
 								</div>
 							)}
 
-							{/* 普通输出：方案 D 顶格无缝通栏展示，彻底消除多余标签行与四周外层边框 */}
 							{!hasRichView && (
 								<pre className="generic-output-pre">
 									{output ||
@@ -1306,7 +1287,6 @@ function GenericInspectorDialog({
 					)}
 				</div>
 
-				{/* 底部微型状态栏 */}
 				<div className="file-diff-inspector-footer">
 					<div className={`file-diff-footer-status ${statusMeta.badgeClass}`}>
 						<span className={`file-diff-status-icon${statusMeta.isRunning ? " spin" : ""}`}>

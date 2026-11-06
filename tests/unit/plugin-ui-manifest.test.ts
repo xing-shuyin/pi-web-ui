@@ -1,61 +1,13 @@
-/**
- * 插件 UI 扩展点框架（issue #146 完整版）——**服务端**单测。
- *
- * 覆盖面（两块，全部走真实源码路径，无替身/mock 掉被测逻辑）：
- *   A. 纯函数解析（`server/plugins.ts`）
- *      - `parseUiContributions`：两种 manifest `"ui"` 形状（按 slot 分组 / 平铺 `items`）与混写、
- *        slot 别名映射（topbar→topbar.primary 等 7 组）、非法条目的丢弃规则、条目数上限、
- *        children 只收一层、when 上限、kind 缺省与回落、文本字段截断。
- *      - `parseUiArrange`：非数组回落 `[]`、目标 id 的 `xxx:yyy` 形态、slot 枚举校验、
- *        hide 三态、order 的数字判定、条数上限。
- *   B. `host.ui` 运行时注册（真实 `PluginManager` + 临时 plugins 目录 + 真 import `index.mjs`）
- *      - `permissions: ["ui"]` 放行、注销函数、manifest 与运行时同 id 覆盖、
- *        `update` 只改已存在条目、`remove`、`arrange` 只追加本插件意图、
- *        单次 `register` 上限、能力门控三态（声明 ui / 声明别的族 / 未声明 permissions 的旧全权模式）。
- *
- * 取舍：
- *   - 只测服务端（parser + host.ui）。前端合并优先级（宿主默认 < 插件贡献 < arrange < 用户偏好）
- *     与顶栏溢出已由 `tests/unit/ui-slots.test.ts` 覆盖，这里不重复。
- *   - 不测 `pushToAll()` 的广播内容（要造 ws sender，属协议/端到端层，见 `tests/plugin-topbar-ui-test.mjs`）。
- *     register/update/remove/arrange 触发的 `void pushToAll()` 未 await，但它只重算 manifest 基线
- *     （uiBase），不碰 uiRuntime，因此断言 `host.ui.list()` 不受该竞态影响。
- *   - 不测性能/并发。
- *
- * 与交接单描述不一致之处（一律以源码为准，逐条登记）：
- *   1. 条目数上限是**跨两种写法共享的一个 32 总上限**（`push` 里判 `items.length < 32`），
- *      不是「单个 slot 数组 32 + 平铺 items 32」各自独立；混写时先收平铺项再收分组项，
- *      后面的分组项可能被前一批挤掉。
- *   2. 版本门与严格模式现在**两条都可达**（宿主 `PLUGIN_API_VERSION = 2`）：`apiVersion: 2`
- *      不再被版本门拦下，而是落到严格模式（未声明 permissions ⇒ 默认拒绝）；只有
- *      `apiVersion > 2` 才触发「请升级 pi-web-ui」版本门（`plugin-facilities.test.ts` 覆盖）。
- *   3. 运行时 `host.ui.register` 起初与 manifest 解析口径不同（不映射别名、不校 slot 枚举），
- *      已修正为**同一套**解析（别名先映射、非枚举 slot 丢弃）；用例改锁新行为。
- *   4. `parseUiArrange` 的 slot 仍**不走别名映射**（`"topbar"` 被丢，只有完整名留得下）——
- *      与 register 不同，这是 arrange 的既有契约（arrange 的 slot 只接受枚举内的完整名）。
- *   5. label/icon/hint 的截断上限分别是 60/16/200（`trimStr` 默认 60），交接单未给数值，按源码写；
- *      `when` 值只过滤「trim 后非空的字符串」且**原样保留（不 trim 回写）**，不校验取值合法性。
- *   6. `children` 的孙子节点是被 `{ ...child, children: undefined }` **覆盖成 undefined**（键还在），
- *      不是删键；只有「一个合法子项都没有」时 `children` 字段才整个不出现。
- *   7. `parseUiArrange` 的 64 条上限也切在**入参切片**上，非对象垃圾同样占名额
- *      （3 条垃圾 + 70 条合法 → 只得到 61 条）。
- *      除以上 1–7 外，未发现其它与交接单描述不一致的地方。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PluginManager, parseUiContributions, parseUiArrange, type PluginHost } from "../../server/plugins.js";
 
-// ---------------------------------------------------------------------------
-// A. 纯函数解析
-// ---------------------------------------------------------------------------
-
-/** 造 n 个合法条目（id 前缀可调，便于断言截断边界）。 */
 function mkItems(n: number, prefix = "it", slot = "topbar.primary"): Array<Record<string, unknown>> {
 	return Array.from({ length: n }, (_, i) => ({ slot, id: `${prefix}${i}`, label: `L${prefix}${i}` }));
 }
 
-/** 取解析结果里的第 idx 个条目（数量不符时给出可读的失败信息）。 */
 function itemOf(raw: unknown, idx = 0) {
 	const parsed = parseUiContributions(raw);
 	expect(parsed, "parseUiContributions 应返回对象").toBeTruthy();
@@ -108,7 +60,6 @@ describe("parseUiContributions —— 形状与 slot 别名", () => {
 	it("不认识的 slot（含拼错的别名）整组丢弃；值不是数组也丢弃", () => {
 		expect(parseUiContributions({ topbars: [{ id: "a", label: "A" }] })).toBeUndefined();
 		expect(parseUiContributions({ topar: [{ id: "a", label: "A" }] })).toBeUndefined();
-		// 值不是数组 → 跳过（丢的是这一组，不是整份）
 		expect(
 			parseUiContributions({ topbar: "nope", bottombar: [{ id: "ok", label: "OK" }] })?.items.map((i) => i.id),
 		).toEqual(["ok"]);
@@ -206,7 +157,6 @@ describe("parseUiContributions —— kind 缺省与回落", () => {
 	it("一般 slot 缺省 action，settings.pages 缺省 page", () => {
 		expect(itemOf({ topbar: [{ id: "a", label: "A" }] }).kind).toBe("action");
 		expect(itemOf({ settings: [{ id: "p", label: "P" }] }).kind).toBe("page");
-		// 平铺写法同口径
 		expect(itemOf({ items: [{ slot: "settings.pages", id: "p", label: "P" }] }).kind).toBe("page");
 		expect(itemOf({ items: [{ slot: "bottombar", id: "b", label: "B" }] }).kind).toBe("action");
 	});
@@ -264,12 +214,9 @@ describe("parseUiContributions —— 上限、children、when、截断", () => 
 			],
 		});
 		expect(withGrandchild.children?.map((c) => c.id)).toEqual(["child"]);
-		// 孙子被清掉：注意是「键还在、值为 undefined」（源码 `{ ...child, children: undefined }`
-		// 覆盖而**不是删键**），前端要按 falsy 判空。
 		expect(withGrandchild.children?.[0]).toHaveProperty("children", undefined);
 		expect(withGrandchild.children?.[0]?.children).toBeUndefined();
 
-		// 子项与父项同口径校验（缺 label / id 非法都丢），全丢时 children 字段不出现
 		const dropped = itemOf({
 			topbar: [{ id: "parent", label: "父", children: [{ id: "bad.id", label: "坏" }, { id: "nolabel" }] }],
 		});
@@ -293,7 +240,6 @@ describe("parseUiContributions —— 上限、children、when、截断", () => 
 		const filtered = itemOf({ topbar: [{ id: "a", label: "A", when: [1, "", "  ", null, "  x  "] }] });
 		expect(filtered.when).toEqual(["  x  "]);
 
-		// when 不是数组 / 全是垃圾 → 字段不出现
 		expect(itemOf({ topbar: [{ id: "a", label: "A", when: "always" }] })).not.toHaveProperty("when");
 		expect(itemOf({ topbar: [{ id: "a", label: "A", when: [1, ""] }] })).not.toHaveProperty("when");
 	});
@@ -320,7 +266,6 @@ describe("parseUiContributions —— 上限、children、when、截断", () => 
 		expect(it.group).toHaveLength(40);
 		expect(it.badge).toHaveLength(24);
 
-		// 刚好到上限不裁
 		const exact = itemOf({ topbar: [{ id: "a", label: "字".repeat(60), icon: "i".repeat(16) }] });
 		expect(exact.label).toHaveLength(60);
 		expect(exact.icon).toHaveLength(16);
@@ -405,7 +350,6 @@ describe("parseUiArrange", () => {
 		expect(ops[0]?.id).toBe("host:i0");
 		expect(ops.at(-1)?.id).toBe("host:i63");
 
-		// 3 条垃圾占掉名额：入参 slice 到 64 个 → 只有 61 条有效
 		const withJunk = parseUiArrange([null, "x", 42, ...valid]);
 		expect(withJunk).toHaveLength(61);
 		expect(withJunk[0]?.id).toBe("host:i0");
@@ -417,10 +361,6 @@ describe("parseUiArrange", () => {
 		expect(op).toEqual({ id: "host:a" });
 	});
 });
-
-// ---------------------------------------------------------------------------
-// B. host.ui 运行时注册（真实 PluginManager）
-// ---------------------------------------------------------------------------
 
 let dir: string;
 let mgr: PluginManager;
@@ -435,14 +375,12 @@ function makePlugin(id: string, manifest: Record<string, unknown>, body = ""): v
 	);
 }
 
-/** 写插件 + ensureLoaded，返回它的 host（激活被门控拦下时为 undefined）。 */
 async function load(id: string, manifest: Record<string, unknown> = {}, body = ""): Promise<PluginHost | undefined> {
 	makePlugin(id, manifest, body);
 	await mgr.ensureLoaded();
 	return (globalThis as unknown as { __hosts: Record<string, PluginHost | undefined> }).__hosts[id];
 }
 
-/** 同上，但要求确实激活成功。 */
 async function activate(id: string, manifest: Record<string, unknown> = {}, body = ""): Promise<PluginHost> {
 	const h = await load(id, manifest, body);
 	expect(h, `插件 ${id} 应激活成功`).toBeTruthy();
@@ -468,7 +406,6 @@ describe("host.ui —— 能力门控", () => {
 			{ permissions: ["ui"] },
 			`globalThis.__uiOff = h.ui.register([{ slot: "composer.actions", id: "act", label: "激活时注册" }]);`,
 		);
-		// activate 里注册的那条已在快照里（manifest 没声明别的，所以只有它）
 		expect(h.ui.list().items.map((i) => i.id)).toEqual(["act"]);
 
 		const off = h.ui.register([
@@ -483,7 +420,7 @@ describe("host.ui —— 能力门控", () => {
 		]);
 
 		off();
-		off(); // 幂等：再调一次不该抛错
+		off();
 		expect(h.ui.list().items.map((i) => i.id)).toEqual(["act"]);
 
 		(globalThis as unknown as { __uiOff: () => void }).__uiOff();
@@ -505,7 +442,6 @@ describe("host.ui —— 能力门控", () => {
 	it("未声明 permissions 且 apiVersion 1（旧全权模式）→ 放行 + 每个激活期只警告一次", async () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const h = await activate("ui-legacy", { apiVersion: 1, ui: { topbar: [{ id: "m", label: "manifest 条目" }] } });
-		// 旧全权模式下 manifest 的 ui 贡献也照常发布
 		expect(h.ui.list().items.map((i) => i.id)).toEqual(["m"]);
 
 		h.ui.register({ slot: "composer.actions", id: "r1", label: "R1" });
@@ -517,7 +453,6 @@ describe("host.ui —— 能力门控", () => {
 	});
 
 	it("apiVersion 2 且未声明 permissions → 默认拒绝（v2 严格语义，宿主已升 v2）", async () => {
-		// P1-6：v2 无 permissions = 结构级错误，直接拒绝激活（不再是"激活成功但 ui 静默忽略"）。
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const h = await load("ui-v2", { apiVersion: 2, ui: { topbar: [{ id: "m", label: "M" }] } });
 		expect(h, "插件 ui-v2 应被拒绝激活").toBeUndefined();
@@ -529,8 +464,6 @@ describe("host.ui —— 能力门控", () => {
 	});
 
 	it("只声明别的能力（fs）却写 ui → manifest 校验失败即拒（P1-6）", async () => {
-		// P1-6 之前：激活成功但 ui 整份静默忽略 + 运行时调用逐次 denied。
-		// P1-6 之后：结构级错误，直接拒绝激活（不再带病启动，诊断随清单下发）。
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const h = await load("ui-fsonly", {
 			permissions: ["fs"],
@@ -562,10 +495,9 @@ describe("host.ui —— 合并、更新、移除、arrange", () => {
 		]);
 
 		h.ui.register({ slot: "topbar.primary", id: "dup", label: "来自运行时", order: 9 });
-		expect(h.ui.list().items).toHaveLength(1); // 覆盖，不是追加
+		expect(h.ui.list().items).toHaveLength(1);
 		expect(h.ui.list().items[0]).toMatchObject({ id: "dup", label: "来自运行时", order: 9, slot: "topbar.primary" });
 
-		// update：patch 能改 label/order 等，但改不动 id/slot
 		h.ui.update("dup", { label: "更新后", order: 1, badge: "3", slot: "settings.pages" });
 		expect(h.ui.list().items[0]).toMatchObject({
 			id: "dup",
@@ -575,7 +507,6 @@ describe("host.ui —— 合并、更新、移除、arrange", () => {
 			badge: "3",
 		});
 
-		// 不存在的 id → 静默忽略（不能凭空造条目）
 		h.ui.update("nope", { label: "凭空造", slot: "topbar.primary" });
 		expect(h.ui.list().items.map((i) => i.id)).toEqual(["dup"]);
 
@@ -590,7 +521,7 @@ describe("host.ui —— 合并、更新、移除、arrange", () => {
 		h.ui.arrange([{ id: "host:files", hide: true }]);
 		expect(h.ui.list().arrange).toEqual([{ id: "host:files", hide: true }]);
 
-		h.ui.arrange({ id: "host:cost", order: 1 }); // 单条对象
+		h.ui.arrange({ id: "host:cost", order: 1 });
 		expect(h.ui.list().arrange).toEqual([
 			{ id: "host:files", hide: true },
 			{ id: "host:cost", order: 1 },
@@ -616,8 +547,6 @@ describe("host.ui —— 合并、更新、移除、arrange", () => {
 			{ slot: "topbar", id: "alias", label: "别名" },
 			{ slot: "nowhere.at.all", id: "junk", label: "野槽位" },
 		]);
-		// 别名映射成完整名，野 slot 丢掉 —— 否则前端 buildUiSlots 会静默忽略它，
-		// 表现为「插件说注册了但界面上没东西」（最难排查的一类）。
 		expect(h.ui.list().items.map((i) => [i.id, i.slot])).toEqual([["alias", "topbar.primary"]]);
 	});
 });

@@ -1,16 +1,3 @@
-/**
- * AGENTS.md 防复发守卫（对应 `AGENTS.md` §4「映射式索引」约定）。
- *
- * 背景：`AGENTS.md` 长期把细节（设备中心/群组、画布、环境变量全表、UI 样式红线…）
- * 抄成正文，膨胀到 51KB / 281 行，于是每个会话都要吞一遍全量细节，而细则仍会
- * 与 `docs/` 走样。整改后它只承担「关键功能 → 事实源文件 → 文档」的映射职责，
- * 细则统一沉到 `docs/agent-rules.md` / `docs/device-collaboration.md` 等文档。
- *
- * 本测试锁住三件事，防止体积与死链复发：
- *   1. 体量上限（行数 + 字节）——超了说明又在往里堆细则；
- *   2. 所有 `docs/xxx.md` 链接（含 `#锚点`）都必须真实存在 ——路由索引不能骗人；
- *   3. 关键能力文档必须仍在索引里，且 §3 红线表里点名的守卫测试文件必须存在。
- */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +8,6 @@ const root = join(here, "..", "..");
 const agentsPath = join(root, "AGENTS.md");
 const agents = readFileSync(agentsPath, "utf8");
 
-/** 必须出现在索引里的关键文档（删掉 = 断掉 AI 的入口）。 */
 const REQUIRED_DOCS = [
 	"README.md",
 	"architecture-core.md",
@@ -46,7 +32,6 @@ const REQUIRED_DOCS = [
 	"root-cause-boundaries.md",
 ];
 
-/** GitHub 风格锚点 slug（与渲染端一致：小写、去标点、空格转连字符）。 */
 function slugify(heading: string): string {
 	return heading
 		.trim()
@@ -81,7 +66,6 @@ describe("AGENTS.md 保持索引形态", () => {
 	it("体量不超标（细则应写进 docs/）", () => {
 		const lines = agents.split("\n").length;
 		const bytes = statSync(agentsPath).size;
-		// 当前 ~72 行 / ~10KB；留一倍余量给索引增长，但绝不回到段落式正文。
 		expect(lines).toBeLessThanOrEqual(150);
 		expect(bytes).toBeLessThanOrEqual(20 * 1024);
 	});
@@ -128,13 +112,11 @@ describe("AGENTS.md 保持索引形态", () => {
 		expect(guardSection).not.toBe("");
 		const names = new Set<string>();
 		for (const m of guardSection.matchAll(/`([a-z0-9-]+)`/g)) names.add(m[1]);
-		// 文件清单（只扫 tests 顶层与 tests/unit，够用且不受 node_modules 影响）。
 		const files = ["tests", join("tests", "unit")].flatMap((dir) =>
 			readdirSync(join(root, dir))
 				.filter((name) => name.endsWith(".ts") || name.endsWith(".mjs"))
 				.map((name) => name.replace(/(?:\.test)?\.(?:ts|mjs)$/, "")),
 		);
-		// CSS 变量名（`--accent-contrast` 等）不是测试名，跳过。
 		const guardNames = [...names].filter((name) => !name.startsWith("-") && /-/.test(name));
 		const missing = guardNames.filter((name) => !files.some((file) => file === name || file === `${name}-test`));
 		expect(

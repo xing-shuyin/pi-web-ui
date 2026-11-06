@@ -7,7 +7,6 @@ import {
 	type LeafCalibrationResult,
 } from "../../server/session-branch.js";
 
-// Frozen pre-cache implementation, independent of production helpers.
 function parseEntryTimestamp(ts?: unknown): number {
 	if (typeof ts === "string") {
 		const parsed = Date.parse(ts);
@@ -18,9 +17,6 @@ function parseEntryTimestamp(ts?: unknown): number {
 	return 0;
 }
 
-/**
- * Identify all branch leaves and compute branch metrics (from root to leaf).
- */
 function legacyFindBranchCandidates(entries: AnySessionEntry[]): BranchCandidate[] {
 	const validEntries: AnySessionEntry[] = [];
 	const byId = new Map<string, AnySessionEntry>();
@@ -65,7 +61,7 @@ function legacyFindBranchCandidates(entries: AnySessionEntry[]): BranchCandidate
 			cur = typeof node.parentId === "string" ? node.parentId : null;
 		}
 
-		path.reverse(); // root -> ... -> leaf
+		path.reverse();
 
 		let messageCount = 0;
 		let lastMessageTimestamp = 0;
@@ -96,9 +92,6 @@ function legacyFindBranchCandidates(entries: AnySessionEntry[]): BranchCandidate
 	return candidates;
 }
 
-/**
- * Find the lowest common ancestor (LCA) entry ID of two branches.
- */
 function findLowestCommonAncestor(branchA: BranchCandidate, branchB: BranchCandidate): string | null {
 	const setA = new Set(branchA.pathIds);
 	let lca: string | null = null;
@@ -112,14 +105,6 @@ function findLowestCommonAncestor(branchA: BranchCandidate, branchB: BranchCandi
 	return lca;
 }
 
-/**
- * Select the best branch leaf from all branch candidates.
- *
- * If multiple leaves exist, compares the currently selected leaf against the candidate
- * pool. If the current leaf is on an abandoned metadata-only branch (e.g. extension
- * wrote to an older node after a completed task) or significantly lags behind the main
- * conversation in message count, selects the main branch leaf.
- */
 function legacySelectBestSessionLeaf(
 	entries: AnySessionEntry[],
 	currentLeafId?: string | null,
@@ -136,11 +121,6 @@ function legacySelectBestSessionLeaf(
 		};
 	}
 
-	// Sort candidates by preference:
-	// 1. Message count (descending)
-	// 2. Last message timestamp (descending)
-	// 3. Total entry depth (descending)
-	// 4. Leaf timestamp (descending)
 	const sorted = [...candidates].sort((a, b) => {
 		if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
 		if (b.lastMessageTimestamp !== a.lastMessageTimestamp) return b.lastMessageTimestamp - a.lastMessageTimestamp;
@@ -177,7 +157,6 @@ function legacySelectBestSessionLeaf(
 		};
 	}
 
-	// Check if current leaf is a hijacked/stale branch:
 	const lca = findLowestCommonAncestor(currentCandidate, bestCandidate);
 	const lcaIndexCurrent = lca ? currentCandidate.pathIds.indexOf(lca) : -1;
 	const currentEntriesAfterLca = lcaIndexCurrent >= 0 ? currentCandidate.pathIds.slice(lcaIndexCurrent + 1) : [];
@@ -201,9 +180,6 @@ function legacySelectBestSessionLeaf(
 		if (node?.type === "message") bestMessagesAfterLca += 1;
 	}
 
-	// Pattern A: Metadata-only branch hijacking (issue #567)
-	// Current branch has 0 messages after LCA (only custom / extension metadata),
-	// while best branch has real messages after LCA.
 	if (currentMessagesAfterLca === 0 && bestMessagesAfterLca > 0) {
 		return {
 			bestLeafId: bestCandidate.leafId,
@@ -213,7 +189,6 @@ function legacySelectBestSessionLeaf(
 		};
 	}
 
-	// Pattern B: Substantial message gap (stale branch restored after task completed elsewhere)
 	if (bestCandidate.messageCount > currentCandidate.messageCount) {
 		return {
 			bestLeafId: bestCandidate.leafId,
@@ -223,7 +198,6 @@ function legacySelectBestSessionLeaf(
 		};
 	}
 
-	// Otherwise, current branch has equal or valid intentional message history
 	return {
 		bestLeafId: currentCandidate.leafId,
 		currentLeafId,
@@ -272,7 +246,6 @@ describe("session branch timestamp cache", () => {
 		const tied = findBranchCandidates(fixtures[5] as AnySessionEntry[]);
 		expect(tied.map((c) => c.leafId)).toEqual(["first", "second"]);
 		expect(tied[0].lastMessageTimestamp).toBe(0);
-		// Deterministic small graphs cover combinations without timing assertions.
 		let seed = 567;
 		const random = (n: number) => {
 			seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -317,7 +290,6 @@ describe("session branch timestamp cache", () => {
 		} finally {
 			parse.mockRestore();
 		}
-		// Same objects in a new call must not retain cached timestamps.
 		entries[0].timestamp = "2030-01-01";
 		expect(findBranchCandidates(entries)).toEqual(legacyFindBranchCandidates(entries));
 		expect(findBranchCandidates(entries)[0].lastMessageTimestamp).toBe(Date.parse("2030-01-01"));

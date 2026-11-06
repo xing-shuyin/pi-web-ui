@@ -1,7 +1,3 @@
-/**
- * server/locales.ts 单测：pack 校验、安装（stub fetch）、删除。
- * 磁盘隔离：mkdtempSync 临时 data-dir；端口：无（纯函数 + stub 网络）。
- */
 import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -43,7 +39,6 @@ describe("locales", () => {
 		expect(isKnownPack("zh-Hant")).toBe(true);
 		expect(isKnownPack("zh-HK")).toBe(true);
 		expect(isKnownPack("zh-TW")).toBe(true);
-		// Codes are exact: the browser-side picker canonicalizes the case first.
 		expect(isKnownPack("zh-tw")).toBe(false);
 		expect(isKnownPack("zh-hant")).toBe(false);
 		expect(isKnownPack("zh-hk")).toBe(false);
@@ -70,7 +65,6 @@ describe("locales", () => {
 		if (withTable.ok) expect(withTable.pack.serverStrings).toEqual({ "a.b": "エー" });
 		expect(validatePack({ ...PACK, serverStrings: { "a.b": 1 } }, "ja").ok).toBe(false);
 		expect(validatePack({ ...PACK, serverStrings: [] }, "ja").ok).toBe(false);
-		// 无 serverStrings 的老包照常通过
 		expect(validatePack(PACK, "ja").ok).toBe(true);
 	});
 

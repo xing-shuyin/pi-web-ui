@@ -1,7 +1,3 @@
-/**
- * 插件直调模型（server/plugin-llm.ts + host.llm 门控）单测：只走校验与门控路径，
- * 不发起真实模型调用（零 token、零网络：ModelRuntime.create 默认 allowModelNetwork=false）。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +15,7 @@ describe("completeWithIsolatedSession 入参校验（不建会话）", () => {
 			error: "llm.complete: prompt 为空",
 		});
 		expect(await completeWithIsolatedSession(env, { prompt: "   " })).toMatchObject({ ok: false });
-		expect(llmInflight()).toBe(0); // 校验失败不占并发位
+		expect(llmInflight()).toBe(0);
 	});
 	it("超长 prompt/system 拒绝", async () => {
 		const r1 = await completeWithIsolatedSession(env, { prompt: "x".repeat(8001) });
@@ -37,7 +33,6 @@ describe("completeWithIsolatedSession 入参校验（不建会话）", () => {
 		expect(llmInflight()).toBe(0);
 	});
 	it("非法 model 形状（无斜杠）走默认模型路径——此处不断言结果，只断言不抛错", async () => {
-		// 无可用模型时 SDK 会在 prompt 前报错，整体仍收敛为 {ok:false}（可能建了本地会话，无网络调用）。
 		const r = await completeWithIsolatedSession(env, { prompt: "hi", model: "not-a-spec", timeoutMs: 5000 });
 		expect(typeof r.ok).toBe("boolean");
 		if (!r.ok) expect(typeof r.error).toBe("string");

@@ -1,28 +1,13 @@
-/**
- * 主题「文字令牌」可读性体检（issue：亮色主题沿用深色主题的浅色语义色当文字）。
- *
- * 背景：`--amber` / `--green` / `--red` / `--link` / `--text-faint` 这些令牌既当
- * 边框/图标，也**当文字色**（全仓 `--text-faint` 428 处、`--red` 208 处、`--amber` 147 处）。
- * 亮色主题曾直接继承深色默认值：`--amber #fbbf24` 在 codex 白底上只有 1.89:1、
- * `--plugin-purple #b58cff` 在 gruvbox-light 上 1.50:1 —— 警告文字/状态 chip 基本看不清。
- *
- * 规则（`make-light-theme.mjs` 的 `TEXT_FLOORS` 与 themes/*.css 同口径）：
- *   • 语义文字令牌在 --bg 与 --bg-elev2 上 >= 4.5:1（保持色相、只调明度）；
- *   • `--accent` 多作图标/次级强调文字，地板 3.5:1（默认品牌紫 4.28 保持不动）；
- *   • `--text-faint` 是「次要文字」，地板 3.05:1（仍是弱层级，但要能读）；
- *   • `--code-text` 在 --code-bg 上 >= 4.5:1。
- * 本测试取地板：语义 4.0、faint 2.9（略低于目标值，留给取整与主题微调）。
- */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { contrast, parseHex } from "../helpers/theme-contrast.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const THEMES_DIR = join(ROOT, "themes");
 const STYLES_PATH = join(ROOT, "web", "src", "styles.css");
 
-/** 令牌 → [地板, 目标表面]（表面取不到十六进制时跳过）。 */
 const FLOORS: Record<string, { min: number; surfaces: string[] }> = {
 	"--text-faint": { min: 2.9, surfaces: ["--bg", "--bg-elev", "--bg-elev2", "--code-bg"] },
 	"--accent": { min: 3.0, surfaces: ["--bg", "--bg-elev2"] },
@@ -43,20 +28,6 @@ const FLOORS: Record<string, { min: number; surfaces: string[] }> = {
 	"--code-text": { min: 4.0, surfaces: ["--code-bg"] },
 };
 
-function parseHex(value: string | undefined | null): [number, number, number] | null {
-	const m = /^#([0-9a-f]{6})$/i.exec((value ?? "").trim());
-	if (!m) return null;
-	const n = parseInt(m[1]!, 16);
-	return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-function luminance([r, g, b]: [number, number, number]): number {
-	const ch = [r, g, b].map((v) => v / 255).map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)));
-	return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
-}
-function contrast(a: [number, number, number], b: [number, number, number]): number {
-	const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-	return (hi! + 0.05) / (lo! + 0.05);
-}
 function vars(css: string): Map<string, string> {
 	const map = new Map<string, string>();
 	for (const m of css.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/gm)) map.set(m[1]!, m[2]!.trim());
@@ -69,8 +40,10 @@ describe("主题文字令牌可读性", () => {
 	const themeFiles = readdirSync(THEMES_DIR).filter((f) => f.endsWith(".css"));
 	const cases = themeFiles.map((file) => ({ file, vars: vars(readFileSync(join(THEMES_DIR, file), "utf8")) }));
 
-	it("扫描到了足够多的主题（防止解析器失效后静默全跳过）", () => {
+	it("扫描到了足够多的主题及有效行内代码颜色（防止解析器失效后静默全跳过）", () => {
 		expect(cases.length).toBeGreaterThanOrEqual(20);
+		const inlineCases = cases.filter(({ vars }) => parseHex(vars.get("--link-soft")) && parseHex(vars.get("--bg")));
+		expect(inlineCases.length).toBeGreaterThanOrEqual(20);
 	});
 
 	it("默认调色板（styles.css :root）满足全部门槛", () => {

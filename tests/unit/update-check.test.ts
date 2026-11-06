@@ -1,8 +1,3 @@
-/**
- * All-source update check 单测：包枚举（含 scoped/.bin/坏 package.json）、
- * 结果 shape、并发 checkAll 的优雅降级（单个失败不影响整体）、顺序保持。
- * 全程注入 fake fetcher，零网络。
- */
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -94,13 +89,12 @@ describe("listInstalledPackages", () => {
 		pkg(join(root, "foo"), "foo", "1.0.0");
 		pkg(join(root, "@scope", "bar"), "@scope/bar", "2.3.4");
 		pkg(join(root, "@scope", "baz"), "@scope/baz", "0.1.0");
-		// noise
 		mkdirSync(join(root, ".bin"), { recursive: true });
 		mkdirSync(join(root, ".hidden"), { recursive: true });
 		mkdirSync(join(root, "@scope", ".staging"), { recursive: true });
 		mkdirSync(join(root, "broken"), { recursive: true });
 		writeFileSync(join(root, "broken", "package.json"), "{not json");
-		mkdirSync(join(root, "empty"), { recursive: true }); // no package.json
+		mkdirSync(join(root, "empty"), { recursive: true });
 
 		const items = listInstalledPackages(dir);
 		expect(items).toEqual([
@@ -112,7 +106,6 @@ describe("listInstalledPackages", () => {
 	});
 
 	it("returns [] for a missing agentDir", () => {
-		// Self-contained fixture — not coupled to the first test's directory.
 		const isolated = mkdtempSync(join(tmpdir(), "upd-check-empty-"));
 		try {
 			expect(listInstalledPackages(join(isolated, "nope"))).toEqual([]);
@@ -140,7 +133,6 @@ describe("listInstalledPackages (manifest-driven)", () => {
 				name: "@scope/bar",
 				version: "2.0.1",
 			});
-			// transitive dep: present in node_modules but not in the manifest
 			pkgJson(join(root, "transitive"), {
 				name: "transitive",
 				version: "0.5.0",
@@ -161,7 +153,6 @@ describe("listInstalledPackages (manifest-driven)", () => {
 			const root = join(dir, "npm", "node_modules");
 			pkgJson(join(root, "foo"), { name: "foo", version: "1.0.0" });
 			pkgJson(join(root, "extra"), { name: "extra", version: "2.0.0" });
-			// no <dir>/npm/package.json at all → old walk behavior
 			expect(listInstalledPackages(dir)).toEqual([
 				{ name: "extra", version: "2.0.0", kind: "package" },
 				{ name: "foo", version: "1.0.0", kind: "package" },
@@ -177,8 +168,6 @@ describe("listInstalledPackages (manifest-driven)", () => {
 			pkgJson(join(dir, "npm"), {
 				dependencies: { foo: "^1.0.0", ghost: "^1.0.0" },
 			});
-			// one installed sibling: a mutant that bails to the walk when ANY dep
-			// is uninstalled would surface walk-only entries — this pins it
 			pkgJson(join(dir, "npm", "node_modules", "foo"), {
 				name: "foo",
 				version: "1.0.0",
@@ -276,7 +265,6 @@ describe("collectTargets", () => {
 			["plain", "plain", "1.0.0"],
 		]);
 		try {
-			// probe null → vendored 0.85.0 wins; the raw walk must not re-add CORE
 			expect(collectTargets(dir, "0.48.0", () => null)).toEqual([
 				{ name: "pi-web-ui", version: "0.48.0", kind: "webui" },
 				{ name: CORE, version: "0.85.0", kind: "pi-core" },
@@ -404,7 +392,6 @@ describe("checkAll", () => {
 			upToDate: false,
 		});
 		expect(flaky!.error).toContain("500");
-		// one failure never rejects the whole list
 		expect(items.every((i) => typeof i.current === "string")).toBe(true);
 	});
 
@@ -447,7 +434,6 @@ describe("npmrc registry resolution (issue #151)", () => {
 		expect(
 			parseNpmrcRegistry('registry=https://registry.npmjs.org/\nregistry = "https://registry.npmmirror.com/"\n'),
 		).toBe("https://registry.npmmirror.com");
-		// 非 http(s) 行忽略
 		expect(parseNpmrcRegistry("registry=npmjs\n")).toBeNull();
 	});
 
@@ -575,13 +561,10 @@ describe("parseGitExtensionSource (issue #178)", () => {
 		expect(parseGitExtensionSource("npm:@scope/pkg@1.2.3")).toBeNull();
 		expect(parseGitExtensionSource("./relative/path")).toBeNull();
 		expect(parseGitExtensionSource("bare-name")).toBeNull();
-		// bare a/b without git: prefix is a local path, not a git source
 		expect(parseGitExtensionSource("my-dir/my-ext")).toBeNull();
 		expect(parseGitExtensionSource("")).toBeNull();
 		expect(parseGitExtensionSource("git:")).toBeNull();
-		// single-segment path can never be owner/repo
 		expect(parseGitExtensionSource("git:github.com/onlyowner")).toBeNull();
-		// path traversal is refused
 		expect(parseGitExtensionSource("git:github.com/a/../../evil")).toBeNull();
 	});
 });
@@ -618,7 +601,6 @@ describe("listGitExtensions (issue #178)", () => {
 		);
 		writeJson(join(agentDir, "git", "github.com", "NVlabs", "SoL-Pi"), { name: "sol-pi", version: "0.1.0" });
 		writeJson(join(agentDir, "git", "github.com", "acme", "widgets"), { name: "acme-widgets", version: "2.0.0" });
-		// object-form has no clone on disk → row kept with version "?"
 		mkdirSync(join(projCwd, ".pi"), { recursive: true });
 		writeFileSync(
 			join(projCwd, ".pi", "settings.json"),
@@ -648,7 +630,7 @@ describe("listGitExtensions (issue #178)", () => {
 				"sol-pi-proj",
 			]);
 			const solPi = items.find((i) => i.source === "github.com/NVlabs/SoL-Pi")!;
-			expect(solPi.version).toBe("9.9.9"); // project clone wins
+			expect(solPi.version).toBe("9.9.9");
 			expect(solPi.installDir).toBe(join(projCwd, ".pi", "git", "github.com", "NVlabs", "SoL-Pi"));
 			expect(solPi.ref).toBeNull();
 			const projOnly = items.find((i) => i.name === "proj-only")!;
@@ -656,7 +638,6 @@ describe("listGitExtensions (issue #178)", () => {
 			const missing = items.find((i) => i.name === "github.com/acme/object-form")!;
 			expect(missing.version).toBe("?");
 			expect(missing.installDir).toBe(join(agentDir, "git", "github.com", "acme", "object-form"));
-			// npm:/local: entries never leak into the git list
 			expect(items.every((i) => i.kind === "git-extension")).toBe(true);
 		} finally {
 			rmSync(agentDir, { recursive: true, force: true });
@@ -692,13 +673,11 @@ describe("listGitExtensions (issue #178)", () => {
 	it("w9: name and version fall back independently, name never empty", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "upd-git-half-"));
 		try {
-			// Clone with a version but no usable name: version kept, name = shorthand.
 			mkdirSync(join(agentDir, "git", "github.com", "acme", "noname"), { recursive: true });
 			writeFileSync(
 				join(agentDir, "git", "github.com", "acme", "noname", "package.json"),
 				JSON.stringify({ version: "1.0.0" }),
 			);
-			// Clone with a name but no version: name kept, version "?".
 			mkdirSync(join(agentDir, "git", "github.com", "acme", "nover"), { recursive: true });
 			writeFileSync(
 				join(agentDir, "git", "github.com", "acme", "nover", "package.json"),
@@ -821,7 +800,6 @@ describe("checkAll git extensions (issue #178)", () => {
 		const items = await checkAll(targets, fetcher, undefined, undefined, gitCheck);
 		expect(items[2]).toMatchObject({ latest: null, upToDate: false, current: "?" });
 		expect(items[2]!.error).toContain("clone missing");
-		// the npm path still works alongside git rows
 		const mixed = await checkAll(
 			[...targets.slice(0, 1), { name: "foo", version: "1.0.0", kind: "package" as const }],
 			makeFetcher({ foo: "2.0.0" }).fetcher,
@@ -948,7 +926,6 @@ describe("defaultCheckGitExtension (issue #665)", () => {
 		const cloneDir = join(root, "clone");
 
 		try {
-			// 1. Create a remote bare repo with main and dev branches + annotated tag
 			const git = (args: string[], cwd: string) =>
 				execFileSync("git", args, {
 					cwd,
@@ -965,7 +942,6 @@ describe("defaultCheckGitExtension (issue #665)", () => {
 			mkdirSync(remoteDir, { recursive: true });
 			git(["init", "--bare", "-b", "main"], remoteDir);
 
-			// Temporary work dir to push initial commits
 			const workDir = join(root, "work");
 			mkdirSync(workDir, { recursive: true });
 			git(["init", "-b", "main"], workDir);
@@ -975,7 +951,6 @@ describe("defaultCheckGitExtension (issue #665)", () => {
 			git(["remote", "add", "origin", remoteDir], workDir);
 			git(["push", "-u", "origin", "main"], workDir);
 
-			// Create dev branch with another commit
 			git(["checkout", "-b", "dev"], workDir);
 			writeFileSync(join(workDir, "dev.txt"), "dev commit 1\n");
 			git(["add", "dev.txt"], workDir);
@@ -983,11 +958,9 @@ describe("defaultCheckGitExtension (issue #665)", () => {
 			const devCommit = git(["rev-parse", "HEAD"], workDir);
 			git(["push", "-u", "origin", "dev"], workDir);
 
-			// Create annotated tag on dev commit
 			git(["tag", "-a", "v1.0.0", "-m", "tag v1.0.0", devCommit], workDir);
 			git(["push", "origin", "v1.0.0"], workDir);
 
-			// Add a new commit to main so main > mainCommit1
 			git(["checkout", "main"], workDir);
 			writeFileSync(join(workDir, "file.txt"), "main commit 2\n");
 			git(["add", "file.txt"], workDir);
@@ -995,53 +968,41 @@ describe("defaultCheckGitExtension (issue #665)", () => {
 			const mainCommit2 = git(["rev-parse", "HEAD"], workDir);
 			git(["push", "origin", "main"], workDir);
 
-			// 2. Clone repository: checked out on main, but reset to devCommit (simulating pi update state)
 			git(["clone", remoteDir, cloneDir], root);
-			// Symbolic-ref HEAD is still refs/heads/main, upstream is origin/main,
-			// but working tree & HEAD is set to devCommit
 			git(["reset", "--hard", devCommit], cloneDir);
 
 			const localSha = git(["rev-parse", "HEAD"], cloneDir);
 			const currentBranch = git(["symbolic-ref", "--short", "HEAD"], cloneDir);
 			expect(currentBranch).toBe("main");
 
-			// Case 1: with ref="dev" -> resolves to origin/dev (devCommit), NOT origin/main (mainCommit2)!
 			const resDev = await defaultCheckGitExtension(cloneDir, "dev");
 			expect(resDev.localSha).toBe(localSha);
-			expect(resDev.remoteSha).toBe(resDev.localSha); // Up-to-date with dev!
+			expect(resDev.remoteSha).toBe(resDev.localSha);
 
-			// Case 2: with ref="v1.0.0" -> resolves to peeled commit of annotated tag
 			const resTag = await defaultCheckGitExtension(cloneDir, "v1.0.0");
 			expect(resTag.localSha).toBe(localSha);
-			expect(resTag.remoteSha).toBe(resDev.localSha); // Same commit as tag!
+			expect(resTag.remoteSha).toBe(resDev.localSha);
 
-			// Case 3: with ref=commit SHA (exact or short sha)
 			const shortDev = localSha.slice(0, 7);
 			const resSha = await defaultCheckGitExtension(cloneDir, shortDev);
 			expect(resSha.localSha).toBe(localSha);
 			expect(resSha.remoteSha).toBe(localSha);
 
-			// Case 3b: commit SHA works even if remote is unreachable (e.g. offline)
-			// Point origin to a nonexistent local path that fails immediately without network DNS delay
 			git(["remote", "set-url", "origin", join(root, "nonexistent-remote")], cloneDir);
 			const resOfflineSha = await defaultCheckGitExtension(cloneDir, shortDev);
 			expect(resOfflineSha.localSha).toBe(localSha);
 			expect(resOfflineSha.remoteSha).toBe(localSha);
-			// Restore origin URL
 			git(["remote", "set-url", "origin", remoteDir], cloneDir);
 
-			// Case 4: with ref=commit SHA that does not match local HEAD
 			const shortMain = git(["rev-parse", "main"], workDir).slice(0, 7);
 			const resShaDiff = await defaultCheckGitExtension(cloneDir, shortMain);
 			expect(resShaDiff.localSha).toBe(localSha);
 			expect(resShaDiff.remoteSha).not.toBe(localSha);
 
-			// Case 5: nonexistent ref throws clear error
 			await expect(defaultCheckGitExtension(cloneDir, "nonexistent-branch")).rejects.toThrow(
 				/Failed to resolve remote ref/,
 			);
 
-			// Case 6: without ref -> falls back to upstream (origin/main == mainCommit2), so remoteSha != localSha
 			const resNoRef = await defaultCheckGitExtension(cloneDir);
 			expect(resNoRef.localSha).toBe(localSha);
 			expect(resNoRef.remoteSha).not.toBe(localSha);

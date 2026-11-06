@@ -1,7 +1,3 @@
-/** Real isolated server + Hub + pi SDK + Chrome; only the HTTP model is deterministic.
- * Parent builds dist first. This test never builds or mocks an executor.
- * Run: node tests/device-group-expansion-live-test.mjs
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";

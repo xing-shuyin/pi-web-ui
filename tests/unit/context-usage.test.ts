@@ -125,7 +125,6 @@ describe("context usage categories", () => {
 		expect(weights.toolResults).toBeGreaterThan(0);
 		expect(weights.skills).toBeGreaterThan(0);
 		expect(weights.other).toBeGreaterThan(0);
-		// Compaction changes the live context; removed tool output must disappear.
 		const compacted = estimateContextWeights(empty, [messages[5]]);
 		expect(compacted.toolResults).toBe(0);
 		expect(compacted.skills).toBe(0);
@@ -170,8 +169,6 @@ describe("context usage categories", () => {
 		expect(saved).toBeGreaterThan(2000);
 		expect(rawWeights.toolResults - requestWeights.toolResults).toBe(saved);
 		expect(rawWeights.systemPrompt).toBe(requestWeights.systemPrompt);
-		// The request estimate stands in for a lower provider total. Equal totals do not
-		// make raw transcript proportions an accurate breakdown of that request.
 		const total = totalWeights(requestWeights);
 		expect(categoryTokens(rawWeights, total, "systemPrompt")).toBeLessThan(
 			categoryTokens(requestWeights, total, "systemPrompt"),
@@ -231,15 +228,12 @@ describe("context usage categories", () => {
 		const messages = readExchange("first", "original tool result");
 		const final = messages[1];
 		const before = estimateContextWeights(empty, messages, undefined, cache);
-		// AgentSession._replaceMessageInPlace uses Object.assign after emitMessageEnd;
-		// agent-core has already appended this same object and cleared streamingMessage.
 		await Promise.resolve();
 		Object.assign(final, { content: [{ type: "text", text: "replacement tool result\n".repeat(1000) }] });
 		const after = estimateContextWeights(empty, messages, undefined, cache);
 		expect(messages[1]).toBe(final);
 		expect(after.toolResults).toBeGreaterThan(before.toolResults);
 		expect(after).toEqual(estimateContextWeights(empty, messages));
-		// Appending another message must not revive a stale cached contribution.
 		messages.push({ role: "user", content: "Continue", timestamp: 1 });
 		expect(estimateContextWeights(empty, messages, undefined, cache)).toEqual(estimateContextWeights(empty, messages));
 	});

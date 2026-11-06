@@ -15,9 +15,7 @@ interface ExecutionPrompt {
 
 const ownedSections = ["device_bot", "device_execution"] as const;
 
-/** Keep execution authority in SDK sections, including when a renderer forces opaque text. */
 export function prepareBotExecutionSystemPrompt(event: PromptEvent, execution?: ExecutionPrompt) {
-	// Split before adding sections: earlier extensions wrapped the previous SDK baseline.
 	const { pre, core, post } = splitAgentStartPrompt(event);
 	if (!execution) return { core, rewrap: (next: string) => pre + next + post };
 	const sections: Record<string, string> = {};
@@ -41,7 +39,6 @@ export function prepareBotExecutionSystemPrompt(event: PromptEvent, execution?: 
 		const wrapped = stripOwnedSections(pre + next + post);
 		return rendered ? `${wrapped.trimEnd()}\n\n${rendered}` : wrapped;
 	};
-	// SDK ignores sections when an earlier extension has already forced the prompt.
 	if (typeof event.systemPromptOptions?.forceSystemPrompt === "string") {
 		event.systemPromptOptions.forceSystemPrompt = rewrap(core);
 	}

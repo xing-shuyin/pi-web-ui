@@ -1,6 +1,3 @@
-// Independent Hub -> real connector relay -> real pi runtime -> real Git.
-// Requires the parent's completed dist build; never builds or contacts a model.
-// Accepted delivery metadata is an explicit test fixture, not a claimed Bot run.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -107,8 +104,6 @@ async function scenario(name, work) {
 		console.error(`FAIL ${name}: ${error.message}`);
 	}
 }
-// Only metadata is seeded through the Hub's serialized store. Integration RPCs
-// and Git execution are never replaced, imported directly, or monkey patched.
 async function fixture(label, commit = delivered, branch = `int-${label}`) {
 	git(target.project, "branch", branch, base);
 	const conversationId = randomUUID();
@@ -191,8 +186,6 @@ async function cancel(f, integration) {
 async function rejected(f, integration, pattern, expectedStatus) {
 	const result = await apply(f, integration);
 	assert.equal(git(target.project, "rev-parse", f.branch), base, "Rejected apply must not move target ref");
-	// Check persisted detail as well: the public HTTP error must preserve the
-	// actionable reason rather than hiding runtime rejection behind generic 500.
 	const { integrations } = await api(origin, `${f.path}/integrations`);
 	const persisted = integrations.find((it) => it.id === integration.id);
 	assert.match(result.data.error ?? persisted.error ?? "", pattern);

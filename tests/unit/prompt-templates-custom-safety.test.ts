@@ -77,7 +77,6 @@ describe("prompt templates & user custom templates safety", () => {
 		expect(ids).toContain("prototype");
 		expect(ids).toContain("research");
 
-		// Titles are clear, disciplined Chinese engineering terms
 		const titles = capturedTemplates.map((t) => t.title);
 		expect(titles).toContain("需求对齐");
 		expect(titles).toContain("规划与拆工单");
@@ -101,7 +100,6 @@ describe("prompt templates & user custom templates safety", () => {
 
 		await mountWithData([customTpl]);
 
-		// 8 builtins + 1 custom
 		expect(capturedTemplates).toHaveLength(9);
 
 		const found = capturedTemplates.find((t) => t.id === "my-custom-flow-123");
@@ -111,11 +109,10 @@ describe("prompt templates & user custom templates safety", () => {
 		expect(found?.command).toBe("pre-release");
 		expect(found?.icon).toBe("🚀");
 		expect(found?.prompt).toBe("请按三步走检查当前工作区的打包状态与发布标签...");
-		expect(found?.builtin).toBeUndefined(); // correctly identified as custom
+		expect(found?.builtin).toBeUndefined();
 	});
 
 	it("preserves user modifications to legacy removed templates as custom entries", async () => {
-		// A user who previously customized the legacy 'grill-me' template
 		const legacyModified = {
 			id: "grill-me",
 			icon: "🔍",
@@ -127,7 +124,6 @@ describe("prompt templates & user custom templates safety", () => {
 
 		await mountWithData([legacyModified]);
 
-		// Builtin 8 + 1 legacy-customized
 		expect(capturedTemplates).toHaveLength(9);
 
 		const found = capturedTemplates.find((t) => t.id === "grill-me");

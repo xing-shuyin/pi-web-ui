@@ -1,4 +1,3 @@
-/** Request-local compaction. Never mutate SDK history or change an existing prefix. */
 import type { AgentSession, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { persistContextEvidence, contextEvidenceReference } from "./context-evidence.js";
 
@@ -7,12 +6,10 @@ const READ_ONLY_TOOLS = new Set(["read", "grep", "find"]);
 const MIN_DUPLICATE_CHARS = 4096;
 const evidenceReady = new WeakSet<object>();
 
-/** Enable only when the SDK permission hook and compaction adapters are compatible. */
 export function enableRequestEvidence(sessionManager: object): void {
 	evidenceReady.add(sessionManager);
 }
 
-/** Keep the first exact result, so appending messages does not rewrite earlier requests. */
 export function deduplicateRequestContext(messages: Message[]): Message[] {
 	const calls = new Map<string, string>();
 	const originals = new Map<string, { content: string; id: string }>();
@@ -20,7 +17,6 @@ export function deduplicateRequestContext(messages: Message[]): Message[] {
 	for (let index = 0; index < messages.length; index++) {
 		const message = messages[index];
 		if (message.role === "user") {
-			// A human may have changed workspace files outside the agent.
 			calls.clear();
 			originals.clear();
 			continue;
@@ -28,7 +24,6 @@ export function deduplicateRequestContext(messages: Message[]): Message[] {
 		if (message.role === "assistant") {
 			const toolCalls = message.content.filter((block) => block.type === "toolCall");
 			if (toolCalls.some((block) => !READ_ONLY_TOOLS.has(block.name))) {
-				// Mixed/parallel batches cannot establish a reliable read-before-write order.
 				calls.clear();
 				originals.clear();
 				continue;
@@ -40,7 +35,6 @@ export function deduplicateRequestContext(messages: Message[]): Message[] {
 		}
 		if (message.role !== "toolResult") continue;
 		if (!READ_ONLY_TOOLS.has(message.toolName)) {
-			// Unknown tools (including codemode and plugins) may mutate the workspace.
 			calls.clear();
 			originals.clear();
 			continue;
@@ -49,10 +43,8 @@ export function deduplicateRequestContext(messages: Message[]): Message[] {
 		if (!call) continue;
 		calls.delete(message.toolCallId);
 		const previous = originals.get(call);
-		// Even an ineligible result invalidates the previous observation for this query.
 		originals.delete(call);
 		if (message.isError || !message.content.length || message.content.some((block) => block.type !== "text")) continue;
-		// Unknown/signed block fields and structured payloads must retain provider semantics.
 		if (message.content.some((block) => Object.keys(block).some((key) => key !== "type" && key !== "text"))) continue;
 		if ("structuredContent" in message) continue;
 		const content = JSON.stringify(message.content);
@@ -76,7 +68,6 @@ export function deduplicateRequestContext(messages: Message[]): Message[] {
 	return output;
 }
 
-/** Conservative estimates; never claim this is the provider's tokenizer. */
 export function requestMessageBudget(
 	model: { contextWindow: number; maxTokens: number } | undefined,
 	systemPrompt: string,
@@ -89,7 +80,6 @@ export function requestMessageBudget(
 }
 
 export interface RequestEvidenceBudget {
-	/** Estimated tokens available to messages after fixed prompt/tool/output overhead. */
 	messageTokens?: number;
 	keepRecentResults?: number;
 	signal?: AbortSignal;
@@ -171,7 +161,6 @@ export function requestContextExtension(pi: ExtensionAPI): void {
 			};
 		} catch {
 			ctx.signal?.throwIfAborted();
-			// Optimization must never prevent a provider request.
 			return { messages: event.messages };
 		}
 	});

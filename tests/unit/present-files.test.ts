@@ -1,10 +1,3 @@
-/**
- * present-files-tool 单测：
- *   - 纯函数：路径归一、条目归一（上限/去重/脏数据）、类型判定、体积文案、结果文本；
- *   - 探测（probePresentItem）：真文件系统（mkdtemp 隔离），含缺失/目录/未知扩展嗅探/
- *     摘录预算与截断。
- * 无端口、无 SDK 会话、零 token。
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as nodeResolve } from "node:path";
@@ -45,7 +38,6 @@ function budget(left = 6000): { left: number } {
 	return { left };
 }
 
-/** 调工具定义，返回 {text, details}。 */
 async function runTool(params: Record<string, unknown>, cwd = root) {
 	const tool = makePresentFilesTool(cwd, { getLang: () => "en" });
 	const res = (await (tool.execute as unknown as (...a: unknown[]) => Promise<unknown>)(
@@ -121,7 +113,7 @@ describe("classifyPresentKind", () => {
 	it("isAudioFile 只认浏览器能播的容器", () => {
 		expect(isAudioFile("a.ogg")).toBe(true);
 		expect(isAudioFile("a.wma")).toBe(false);
-		expect(isAudioFile(".mp3")).toBe(false); // 前导点 = 无扩展名
+		expect(isAudioFile(".mp3")).toBe(false);
 	});
 });
 
@@ -262,7 +254,6 @@ describe("makePresentFilesTool 的 execute", () => {
 		const total = (details?.items ?? []).reduce((n, i) => n + ((i as { excerpt?: string }).excerpt?.length ?? 0), 0);
 		expect(total).toBeLessThanOrEqual(6000);
 		expect(total).toBeGreaterThan(0);
-		// 每条单独不超过单条上限
 		for (const item of details?.items ?? []) {
 			expect((item as { excerpt?: string }).excerpt?.length ?? 0).toBeLessThanOrEqual(MAX_EXCERPT_CHARS);
 		}

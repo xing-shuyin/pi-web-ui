@@ -3,20 +3,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createMockHost as legacyCreateMockHost, definePlugin, SDK_VERSION } from "../../plugin-sdk/index.mjs";
 import { createMockHost as createRawMockHost } from "../../plugin-sdk/testing.mjs";
-// 值实现走 .mjs（运行时），类型走同目录 index.d.ts（与插件作者 `import type` 同款）：
-// 扩展名省略的 ".../index" 落到 index.d.ts，而带 .mjs 的值导入会被 tsc 按 JS 实现推断。
 import type { PluginHost, PluginModule } from "../../plugin-sdk/index";
 import type { MockHost, MockHostCall, MockHostOverrides } from "../../plugin-sdk/testing";
-// 防腐烂：服务端 PluginHost 加方法时这里编译失败，逼 mock 同步补上
-// （只 import type，零运行时依赖，不碰 server/plugins.ts 运行时）。
 import type { PluginHost as ServerPluginHost } from "../../server/plugins";
 type ServerKeysMissingFromMock = Exclude<keyof ServerPluginHost, keyof MockHost>;
 const _serverHostCoveredByMock: ServerKeysMissingFromMock extends never ? true : never = true;
 
-/** 类型化外皮：一次 as unknown 收敛 JS 推断，其余调用全按 MockHost 类型检查。 */
 const createMockHost = (overrides?: MockHostOverrides): MockHost => createRawMockHost(overrides) as unknown as MockHost;
 
-/** 示例插件：读设置 + 注册 UI/工具/命令 + 订阅消息 + 分级日志（README 里的写法）。 */
 const demoPlugin: PluginModule = definePlugin({
 	async activate(host: PluginHost) {
 		const tone = String(host.getSettings().tone ?? "short");
@@ -112,7 +106,6 @@ describe("createMockHost：overrides", () => {
 		expect(await host.llm.complete({ prompt: "hi" })).toEqual({ ok: true, text: "mock answer" });
 		expect(methods(host)).toContain("conversations.list");
 		expect(methods(host)).toContain("llm.complete");
-		// 没被覆盖的子键保持默认回退
 		expect(host.conversations.get("c1")).toBeNull();
 	});
 
@@ -154,7 +147,6 @@ describe("createMockHost：reset()", () => {
 		expect(host.logs).toBe(logsRef);
 		expect(host.getSettings()).toEqual({ a: 1 });
 		expect(host.mock.handlers["onMessage"].length).toBe(1);
-		// reset 只清交互记录：fake 状态（注册表）保留，要全新状态就重新 createMockHost()。
 		expect(host.mock.agentTools.map((t) => t.name)).toEqual(["demo_hello"]);
 		expect(host.ui.list().items.length).toBe(1);
 	});
@@ -210,7 +202,6 @@ describe("createMockHost：无注入回退语义", () => {
 		expect(typeof bg.update).toBe("function");
 		expect(typeof bg.unregister).toBe("function");
 		expect(await host.ensureDeps(["left-pad"])).toBe(true);
-		// storage/secrets 是内存实现（照样进 calls）
 		host.storage.set("k", 1);
 		expect(host.storage.get("k", 0)).toBe(1);
 		expect(host.storage.get("missing", "fb")).toBe("fb");
@@ -299,15 +290,15 @@ describe("createMockHost：ui 内存注册表", () => {
 		expect(host.ui.list().items.map((i) => i.id)).toEqual(["a", "mock-1"]);
 		host.ui.update("a", { label: "A2", badge: "1" });
 		expect(host.ui.list().items.find((i) => i.id === "a")).toMatchObject({ label: "A2", badge: "1" });
-		host.ui.update("missing", { label: "x" }); // 不存在：静默无视
+		host.ui.update("missing", { label: "x" });
 		expect(host.ui.list().items.some((i) => i.id === "missing")).toBe(false);
-		host.ui.register({ id: "a", label: "A-override" }); // 同 id 覆盖
+		host.ui.register({ id: "a", label: "A-override" });
 		expect(host.ui.list().items.find((i) => i.id === "a")?.label).toBe("A-override");
 		host.ui.remove("mock-1");
 		expect(host.ui.list().items.map((i) => i.id)).toEqual(["a"]);
 		host.ui.arrange([{ op: "hide", id: "host:x" }]);
 		expect(host.ui.list().arrange).toEqual([{ op: "hide", id: "host:x" }]);
-		offA(); // 摘除本次注册的 id（与宿主“移除本次注册的 id”同口径）
+		offA();
 		expect(host.ui.list().items).toEqual([]);
 	});
 
@@ -381,7 +372,7 @@ describe("createMockHost：emitAsync / seq / calls 过滤", () => {
 			return "fast";
 		});
 		await expect(host.mock.emitAsync("onMessage", { n: 1 })).resolves.toEqual(["r1", "fast"]);
-		expect(order).toEqual(["slow:1", "fast:1"]); // 串行，不是并发
+		expect(order).toEqual(["slow:1", "fast:1"]);
 		const failing = createMockHost();
 		failing.onMessage(() => {
 			throw new Error("boom");
@@ -400,7 +391,7 @@ describe("createMockHost：emitAsync / seq / calls 过滤", () => {
 			order.push("fast");
 		});
 		host.mock.emit("onMessage", {});
-		expect(order).toEqual(["fast"]); // slow 还在飞，同步版不等它
+		expect(order).toEqual(["fast"]);
 		await new Promise((r) => setTimeout(r, 30));
 		expect(order).toEqual(["fast", "slow"]);
 	});

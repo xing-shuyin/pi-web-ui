@@ -1,13 +1,3 @@
-# pi-web-ui systemd unit — Linux auto-start on boot.
-#
-# Install (adjust User/WorkingDirectory/Environment to taste):
-#   sudo npm i -g pi-web-ui
-#   sudo cp deploy/pi-web-ui.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now pi-web-ui
-#   sudo systemctl status pi-web-ui
-#
-# Logs: journalctl -u pi-web-ui -f
 
 [Unit]
 Description=pi-web-ui — web chat for the pi coding agent
@@ -15,22 +5,12 @@ After=network.target
 
 [Service]
 Type=simple
-# Run as an unprivileged user (change to your user, e.g. yourname)
 User=YOUR_USER
-# The workspace the agent operates in (read/edit/bash/write)
 WorkingDirectory=/home/YOUR_USER
 Environment=PI_WEB_PORT=8787
-# For privileged ports (1-1023, e.g. 80/443), uncomment both lines:
-#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-#AmbientCapabilities=CAP_NET_BIND_SERVICE
-# Optional authentication; protect this file if you store a token here.
-#Environment="PI_WEB_TOKEN=replace-with-your-token"
-# Point at your pi config dir if it's not the default ~/.pi/agent
-#Environment=PI_CODING_AGENT_DIR=/home/YOUR_USER/.pi/agent
 ExecStart=/usr/bin/pi-web-ui
 Restart=on-failure
 RestartSec=5
-# npm global bin may live elsewhere (nvm, etc.) — find with: which pi-web-ui
 
 [Install]
 WantedBy=multi-user.target

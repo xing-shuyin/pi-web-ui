@@ -149,13 +149,9 @@ describe("selectDraftToRestore", () => {
 		expect(selectDraftToRestore({ text: "old", ts: 90 }, { text: "older", ts: 80 }, 100)).toBeNull();
 	});
 
-	// TODO 9 回归：submit() 把水位打到提交时刻，之前打的旧草稿
-	//（防抖延迟的 draft_update / prompt() 处理前的快照）不再倒回输入框。
 	it("提交前的旧草稿（ts <= 提交时刻水位）→ 不恢复", () => {
 		const submitTs = 1_000_000;
-		// 旧版行为对照：水位 0 时旧草稿会被恢复（这正是 bug）。
 		expect(selectDraftToRestore({ text: "刚发出去的话", ts: 999_000 }, null, 0)).not.toBeNull();
-		// 修后：水位 = 提交时刻，旧草稿被拦下。
 		expect(selectDraftToRestore({ text: "刚发出去的话", ts: 999_000 }, null, submitTs)).toBeNull();
 		expect(
 			selectDraftToRestore({ text: "刚发出去的话", ts: 999_000 }, { text: "更旧的本地", ts: 998_000 }, submitTs),
@@ -186,7 +182,6 @@ describe("advanceComposerSession（待发附件的会话闸门）", () => {
 
 	it("空 sessionId 的瞬时态（断线重连 / 会话未就绪）→ 不动水位也不清", () => {
 		expect(advanceComposerSession("s1", "")).toEqual({ key: "s1", clear: false });
-		// 瞬时态后再回到同一会话：仍不清（水位没被空值冲掉）
 		const afterGap = advanceComposerSession(advanceComposerSession("s1", "").key, "s1");
 		expect(afterGap).toEqual({ key: "s1", clear: false });
 	});
@@ -220,27 +215,19 @@ describe("shouldCarryOverDraft", () => {
 
 describe("shouldPreserveDraftOnSwitch (可开关跨对话保留)", () => {
 	it("开的时候（preserveDraftAcrossConversations=true） → 输入文字切换别的会话不清空", () => {
-		// 切到已有历史消息的对话 → 文本保留！不清空！
 		expect(shouldPreserveDraftOnSwitch("跨会话草稿内容", false, 5, false, true)).toBe(true);
-		// 切到已有自身草稿的对话 → 文本保留！不清空！
 		expect(shouldPreserveDraftOnSwitch("跨会话草稿内容", false, 5, true, true)).toBe(true);
-		// 切到空白新对话 → 文本保留！不清空！
 		expect(shouldPreserveDraftOnSwitch("跨会话草稿内容", false, 0, false, true)).toBe(true);
 	});
 
 	it("关的时候（preserveDraftAcrossConversations=false） → 只保留当前会话文字，切别的会话不清空旧草稿到新会话", () => {
-		// 切到已有历史消息的对话 → 不保留到目标会话（目标会话清空或恢复自身草稿）
 		expect(shouldPreserveDraftOnSwitch("旧会话草稿", false, 5, false, false)).toBe(false);
-		// 切到目标已有草稿的对话 → 不保留到目标会话
 		expect(shouldPreserveDraftOnSwitch("旧会话草稿", false, 0, true, false)).toBe(false);
-		// 切到全新空白对话 → 关只保留当前会话文字，切别的会话清空
 		expect(shouldPreserveDraftOnSwitch("旧会话草稿", false, 0, false, false)).toBe(false);
 	});
 
 	it("用户在发起切换/新建后主动输入了内容（userEditedAfterSwitch=true） → 无论开关状态均保留当前积极输入", () => {
-		// 关的状态下，如果在切换后主动输入了内容 → 保留
 		expect(shouldPreserveDraftOnSwitch("切换中打的字", true, 10, false, false)).toBe(true);
-		// 开的状态下，在切换后主动输入了内容 → 保留
 		expect(shouldPreserveDraftOnSwitch("切换中打的字", true, 10, false, true)).toBe(true);
 	});
 

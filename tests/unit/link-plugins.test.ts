@@ -35,7 +35,6 @@ describe("scripts/link-plugins", () => {
 		mkdirSync(pluginSrc);
 		writeFileSync(join(pluginSrc, "manifest.json"), JSON.stringify({ id: "my-plugin", version: "1.0.0" }));
 
-		// Link
 		const ok = linkPlugin("my-plugin", { repoDir, targetDir });
 		expect(ok).toBe(true);
 
@@ -43,16 +42,13 @@ describe("scripts/link-plugins", () => {
 		expect(existsSync(dest)).toBe(true);
 		expect(lstatSync(dest).isSymbolicLink()).toBe(true);
 
-		// Read through link
 		const readManifest = JSON.parse(readFileSync(join(dest, "manifest.json"), "utf8"));
 		expect(readManifest.version).toBe("1.0.0");
 
-		// Modify source and verify immediate reflection
 		writeFileSync(join(pluginSrc, "manifest.json"), JSON.stringify({ id: "my-plugin", version: "1.0.1" }));
 		const updated = JSON.parse(readFileSync(join(dest, "manifest.json"), "utf8"));
 		expect(updated.version).toBe("1.0.1");
 
-		// Unlink
 		const unlinked = unlinkPlugin("my-plugin", { repoDir, targetDir });
 		expect(unlinked).toBe(true);
 		expect(lstatSync(dest).isSymbolicLink()).toBe(false);

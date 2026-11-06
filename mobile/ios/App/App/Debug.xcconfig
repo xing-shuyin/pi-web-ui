@@ -1,0 +1,5 @@
+#include? "../Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"
+CODE_SIGN_ENTITLEMENTS = App/App.entitlements
+PI_APNS_ENVIRONMENT = development
+PI_JPUSH_APP_KEY =
+#include? "NativeConfig.xcconfig"

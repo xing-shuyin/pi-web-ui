@@ -1,14 +1,3 @@
-/**
- * 插件目录授权（issue #146）的**接线**协议测试（零 token、自包含）。
- *
- * 单测（`tests/unit/plugin-grants.test.ts`）只覆盖授权表本身（父子目录覆盖 / 撤销 / 坏文件），
- * 这里覆盖的是**接线**：插件调 `host.fs.requestAccess()` → 服务端把
- * `plugin_path_request` 广播给浏览器 → 用户答复 `plugin_path_response` → 授权落到表里
- * → 插件真的读到了那个目录；以及 attach 时推 `plugin_grants`、`plugin_path_revoke` 能撤销。
- * 这三段任何一段断掉，插件都会「弹了窗、点了允许、还是读不到」——最难查的一类断线。
- *
- * 运行：npm run build && node tests/plugin-grants-test.mjs（已进 tests/run-smoke.mjs）
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,7 +13,6 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = mkdtempSync(join(tmpdir(), "pi-plugin-grants-"));
 const dataDir = join(tmp, "data");
 const work = join(tmp, "work");
-/** 工作区**外**的目录：插件碰它必须走授权。 */
 const outside = join(tmp, "outside");
 const outside2 = join(tmp, "outside2");
 mkdirSync(work, { recursive: true });
@@ -33,8 +21,6 @@ mkdirSync(outside2, { recursive: true });
 writeFileSync(join(outside, "secret.txt"), "granted-content");
 writeFileSync(join(outside2, "other.txt"), "other-content");
 
-// 探针插件：一条命令 → 请求访问某个目录并读一个文件。
-// 返回 "OK:<内容>" = 授权流程走通；"DENY:<原因>" = 被拒；"ERR:<原因>" = 抛错。
 const plugDir = join(dataDir, "plugins", "grantprobe");
 mkdirSync(plugDir, { recursive: true });
 writeFileSync(
@@ -117,7 +103,6 @@ const until = async (pred, label, timeoutMs = 15_000) => {
 	}
 };
 
-/** 发一条命令并等它的回显（只认 OK:/DENY:/ERR:/DIRS: 前缀，插件激活通知会混进同一通道）。 */
 const runCommand = async (text) => {
 	notices.length = 0;
 	sock.send(JSON.stringify({ type: "prompt", text }));
@@ -145,19 +130,16 @@ try {
 			await sleep(250);
 		}
 	}
-	// 等插件激活（命令注册是异步的）。
 	await sleep(1200);
 
 	sock = await connect(randomUUID());
 
-	// -- 1. 工作区内：不打扰用户，直接放行 ------------------------------------
 	const insideFile = join(work, "inside.txt");
 	writeFileSync(insideFile, "inside-content");
 	const inside = await runCommand(`/probe-grant ${work}|${insideFile}`);
 	check("工作区内的目录不需确认（requestAccess 直接 true）", inside === "OK:inside-content", inside.slice(0, 120));
 	check("工作区内不产生授权弹窗", pathRequests.length === 0);
 
-	// -- 2. 工作区外：服务端把确认请求广播给浏览器，用户同意后插件读到文件 ----
 	const secret = join(outside, "secret.txt");
 	const pending = runCommand(`/probe-grant ${outside}|${secret}`);
 	const req = await until(() => pathRequests[0], "plugin_path_request");
@@ -171,7 +153,6 @@ try {
 	const afterGrant = await pending;
 	check("用户同意后插件读到该目录（授权链路打通）", afterGrant === "OK:granted-content", afterGrant.slice(0, 120));
 
-	// -- 3. 授权落进表 + attach 时会推给客户端 --------------------------------
 	const pushed = await until(
 		() => grantPushes.find((g) => (g.grants ?? []).some((x) => x.pluginId === "grantprobe")),
 		"plugin_grants push",
@@ -183,7 +164,6 @@ try {
 		JSON.stringify(entry),
 	);
 
-	// 新客户端 attach 也要拿到同一份（刷新页面后设置面板照旧列出）
 	const sock2 = await connect(randomUUID());
 	const pushed2 = await until(
 		() =>
@@ -196,7 +176,6 @@ try {
 	check("新连接 attach 时也收到 plugin_grants（刷新不丢授权）", !!pushed2);
 	sock2.close();
 
-	// 已授权 → 不再弹窗（remember 生效）
 	pathRequests.length = 0;
 	const second = await runCommand(`/probe-grant ${outside}|${secret}`);
 	check(
@@ -207,7 +186,6 @@ try {
 	const dirs = await runCommand("/probe-dirs");
 	check("authorizedDirs() 列出该目录", /DIRS:\[".*outside.*"\]/.test(dirs), dirs.slice(0, 160));
 
-	// -- 4. 撤销：plugin_path_revoke → 表清空、插件再也读不到 ------------------
 	grantPushes.length = 0;
 	sock.send(JSON.stringify({ type: "plugin_path_revoke", pluginId: "grantprobe" }));
 	const revoked = await until(() => {
@@ -217,7 +195,6 @@ try {
 		return !e || e.paths.length === 0 ? last : null;
 	}, "plugin_grants after revoke");
 	check("撤销后推送的授权表里该插件为空", !!revoked);
-	// 撤销后再读：必须重新问一遍用户（这条命令会挂着等答复，所以这里要真的答一次）
 	pathRequests.length = 0;
 	const pending2 = runCommand(`/probe-grant ${outside}|${secret}`);
 	const req2 = await until(() => pathRequests[0], "second plugin_path_request after revoke");

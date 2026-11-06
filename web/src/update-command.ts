@@ -18,9 +18,7 @@
 interface UpdateTarget {
 	name: string;
 	kind: "webui" | "pi-core" | "package" | "git-extension" | "plugin" | "engine";
-	/** git-extension only: `host/path` shorthand carried from update_status_all. */
 	source?: string;
-	/** plugin only: directory/install id, matches pluginId. */
 	pluginId?: string;
 }
 
@@ -38,7 +36,6 @@ export function buildUpdateCommand(targets: UpdateTarget[]): string {
 		.join("; ");
 }
 
-/** `host/path` → `git:host/path` (already-prefixed values pass through). */
 function toGitUpdateArg(source: string): string {
 	return source.startsWith("git:") ? source : `git:${source}`;
 }

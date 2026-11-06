@@ -22,7 +22,6 @@ afterEach(async () => {
 
 describe("group webhook validation and security", () => {
 	it("validates incoming and outgoing webhook inputs correctly", () => {
-		// Incoming webhook
 		const incoming = validateWebhookInput({
 			name: "GitHub Actions",
 			type: "incoming",
@@ -33,7 +32,6 @@ describe("group webhook validation and security", () => {
 		expect(incoming.enabled).toBe(true);
 		expect(incoming.allowBotTrigger).toBe(true);
 
-		// Outgoing webhook
 		const outgoing = validateWebhookInput({
 			name: "Feishu Alert",
 			type: "outgoing",
@@ -49,7 +47,6 @@ describe("group webhook validation and security", () => {
 		expect(outgoing.events).toEqual(["message", "task_completed"]);
 		expect(outgoing.relayViaHub).toBe(false);
 
-		// Default relayViaHub is true
 		const defaultRelay = validateWebhookInput({
 			name: "DingTalk",
 			type: "outgoing",
@@ -57,7 +54,6 @@ describe("group webhook validation and security", () => {
 		});
 		expect(defaultRelay.relayViaHub).toBe(true);
 
-		// Error cases
 		expect(() => validateWebhookInput({ name: "" })).toThrow(/name must be 1-80 characters/i);
 		expect(() => validateWebhookInput({ name: "A", type: "outgoing" })).toThrow(/target url is required/i);
 		expect(() => validateWebhookInput({ name: "A", type: "outgoing", url: "ftp://invalid" })).toThrow(
@@ -71,7 +67,7 @@ describe("group webhook validation and security", () => {
 	it("generates tokens and performs timing-safe comparison", () => {
 		const token = createWebhookToken();
 		expect(typeof token).toBe("string");
-		expect(token.length).toBe(48); // 24 bytes hex = 48 chars
+		expect(token.length).toBe(48);
 		expect(secureCompareTokens(token, token)).toBe(true);
 		expect(secureCompareTokens(token, token + "x")).toBe(false);
 		expect(secureCompareTokens(token, "wrong-token")).toBe(false);
@@ -82,7 +78,6 @@ describe("outgoing webhook dispatching", () => {
 	it("dispatches webhook events with signature and handles ping test", async () => {
 		const receivedRequests: { event: string; signature?: string; body: any }[] = [];
 
-		// Create mock target server
 		const targetServer = createServer((req, res) => {
 			const chunks: Buffer[] = [];
 			req.on("data", (chunk) => chunks.push(chunk));
@@ -105,7 +100,6 @@ describe("outgoing webhook dispatching", () => {
 		const targetUrl = `http://127.0.0.1:${port}/webhook`;
 		const secret = "test-hmac-secret";
 
-		// 1. Test ping
 		const pingResult = await testOutgoingWebhook({ url: targetUrl, secret });
 		expect(pingResult.success).toBe(true);
 		expect(receivedRequests.length).toBe(1);
@@ -113,12 +107,10 @@ describe("outgoing webhook dispatching", () => {
 		expect(receivedRequests[0].body.event).toBe("ping");
 		expect(receivedRequests[0].signature).toBeTruthy();
 
-		// Verify signature
 		const rawPayload = JSON.stringify(receivedRequests[0].body);
 		const expectedSig = "sha256=" + createHmac("sha256", secret).update(rawPayload).digest("hex");
 		expect(receivedRequests[0].signature).toBe(expectedSig);
 
-		// 2. Test dispatch from mock store
 		const mockStore = {
 			snapshot: () => ({
 				rooms: [
@@ -144,7 +136,6 @@ describe("outgoing webhook dispatching", () => {
 
 		dispatchGroupWebhook(mockStore, "room-1", "message", { id: "m1", text: "Hello Webhook" });
 
-		// Wait for async fetch
 		await new Promise((r) => setTimeout(r, 200));
 
 		expect(receivedRequests.length).toBe(2);
@@ -153,12 +144,10 @@ describe("outgoing webhook dispatching", () => {
 		expect(receivedRequests[1].body.roomId).toBe("room-1");
 		expect(receivedRequests[1].body.roomName).toBe("Dev Team");
 
-		// Non-subscribed event should be filtered out
 		dispatchGroupWebhook(mockStore, "room-1", "delivery", { commit: "abc" });
 		await new Promise((r) => setTimeout(r, 100));
 		expect(receivedRequests.length).toBe(2);
 
-		// If relayViaHub === false, Hub does not relay it
 		const directStore = {
 			snapshot: () => ({
 				rooms: [
@@ -184,7 +173,7 @@ describe("outgoing webhook dispatching", () => {
 
 		dispatchGroupWebhook(directStore, "room-1", "message", { id: "m2", text: "Direct message" });
 		await new Promise((r) => setTimeout(r, 100));
-		expect(receivedRequests.length).toBe(2); // Still 2, not dispatched by Hub
+		expect(receivedRequests.length).toBe(2);
 	});
 });
 
@@ -271,12 +260,10 @@ describe("group webhook hub integration e2e", () => {
 	it("manages webhooks via API and handles incoming webhook dispatches", async () => {
 		const { hub, request, deliveredTasks } = await setupHubFixture();
 
-		// 1. Register owner account
 		const reg = await request("/api/auth/register", { username: "alice", password: "password-123456" });
 		expect(reg.status).toBe(201);
 		const cookie = reg.cookie;
 
-		// 2. Setup a mock bot in store
 		await hub.store.transact((draft) => {
 			const owner = draft.accounts.find((a) => a.username === "alice")!;
 			draft.devices.push({
@@ -299,7 +286,6 @@ describe("group webhook hub integration e2e", () => {
 			});
 		});
 
-		// 3. Create room with primaryBotId
 		const createRoom = await request(
 			"/api/rooms",
 			{ name: "DevOps", botIds: ["bot-ci"], primaryBotId: "bot-ci" },
@@ -308,7 +294,6 @@ describe("group webhook hub integration e2e", () => {
 		expect(createRoom.status).toBe(201);
 		const roomId = createRoom.body.room.id;
 
-		// 4. Create an Incoming Webhook
 		const createHook = await request(
 			`/api/rooms/${roomId}/webhooks`,
 			{
@@ -325,22 +310,19 @@ describe("group webhook hub integration e2e", () => {
 		expect(hook.type).toBe("incoming");
 		expect(hook.allowBotTrigger).toBe(true);
 
-		// 5. Query webhooks list
 		const listRes = await request(`/api/rooms/${roomId}/webhooks`, undefined, cookie);
 		expect(listRes.status).toBe(200);
 		expect(listRes.body.webhooks.length).toBe(1);
 		expect(listRes.body.webhooks[0].id).toBe(hook.id);
 
-		// 6. Test Incoming Webhook endpoint without token -> 401
 		const unauth = await request(
 			`/api/rooms/${roomId}/webhooks/incoming/${hook.id}`,
 			{ text: "Build failed on commit abc" },
 			"",
-			{ Origin: "" }, // No user cookie or origin
+			{ Origin: "" },
 		);
 		expect(unauth.status).toBe(401);
 
-		// 7. Test Incoming Webhook with token -> 200 OK & triggers Primary Bot
 		const pushRes = await request(
 			`/api/rooms/${roomId}/webhooks/incoming/${hook.id}?token=${hook.token}`,
 			{
@@ -358,18 +340,15 @@ describe("group webhook hub integration e2e", () => {
 		expect(pushRes.body.tasks.length).toBe(1);
 		expect(pushRes.body.tasks[0].botId).toBe("bot-ci");
 
-		// Bot task should have been delivered!
 		expect(deliveredTasks.length).toBe(1);
 		expect(deliveredTasks[0].botId).toBe("bot-ci");
 		expect(deliveredTasks[0].text).toBe("Build failed on commit abc: please check logs");
 
-		// 8. Test regenerate token
 		const regenRes = await request(`/api/rooms/${roomId}/webhooks/${hook.id}/regenerate-token`, {}, cookie);
 		expect(regenRes.status).toBe(200);
 		const newToken = regenRes.body.webhook.token;
 		expect(newToken).not.toBe(hook.token);
 
-		// Old token fails
 		const oldTokenRes = await request(
 			`/api/rooms/${roomId}/webhooks/incoming/${hook.id}?token=${hook.token}`,
 			{ text: "retry" },
@@ -378,7 +357,6 @@ describe("group webhook hub integration e2e", () => {
 		);
 		expect(oldTokenRes.status).toBe(401);
 
-		// New token succeeds
 		const newTokenRes = await request(
 			`/api/rooms/${roomId}/webhooks/incoming/${hook.id}?token=${newToken}`,
 			{ text: "retry with new token" },
@@ -387,7 +365,6 @@ describe("group webhook hub integration e2e", () => {
 		);
 		expect(newTokenRes.status).toBe(200);
 
-		// 9. Test allowBotTrigger = false
 		const noTriggerHookRes = await request(
 			`/api/rooms/${roomId}/webhooks`,
 			{
@@ -409,13 +386,11 @@ describe("group webhook hub integration e2e", () => {
 		);
 		expect(quietPush.status).toBe(200);
 		expect(quietPush.body.tasks.length).toBe(0);
-		expect(deliveredTasks.length).toBe(tasksCountBefore); // No new task dispatched
+		expect(deliveredTasks.length).toBe(tasksCountBefore);
 
-		// 10. Test delete webhook
 		const delRes = await request(`/api/rooms/${roomId}/webhooks/${hook.id}/delete`, {}, cookie);
 		expect(delRes.status).toBe(200);
 
-		// 11. Test configure hub-relay base URL
 		const relaySet = await request(
 			`/api/rooms/${roomId}/hub-relay`,
 			{ hubRelayBaseUrl: "https://hub.example.com" },
@@ -427,7 +402,6 @@ describe("group webhook hub integration e2e", () => {
 		const roomInfo = await request(`/api/rooms/${roomId}`, undefined, cookie);
 		expect(roomInfo.body.room.hubRelayBaseUrl).toBe("https://hub.example.com");
 
-		// 12. Create outgoing webhook with relayViaHub toggle
 		const outHookRes = await request(
 			`/api/rooms/${roomId}/webhooks`,
 			{

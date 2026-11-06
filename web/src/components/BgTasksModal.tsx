@@ -10,19 +10,13 @@ import { PluginPage } from "./PluginPage";
 interface BgTasksModalProps {
 	servers: BgServer[];
 	onClose: () => void;
-	/** 插件清单（`tasks.panel` 槽位的贡献者要在这里查到，才嵌得进来）。 */
 	plugins?: UiPluginInfo[];
-	/** 插件重载纪元（插件 bundle 的 `?e=` 缓存击穿参数）。 */
 	epoch?: number;
-	/** 上行 plugin_message（App 注入；与 PluginPage 的 ctx.send 同形）。 */
 	send?: (msg: { type: "plugin_message"; pluginId: string; payload: unknown }) => void;
-	/** 非 view 类条目的分派（App 的 onUiAction；没传就只渲染内嵌面板）。 */
 	onUiAction?: (item: UiSlotEntry) => void;
-	/** 「自动清理遗留实例」阈值（分钟；0 = 关）。 */
 	autoCleanupMin?: number;
 }
 
-/** Relative time for a bg task's `since` stamp (ms epoch). */
 function formatSince(since: number, t: ReturnType<typeof useT>): string {
 	const ms = Math.max(0, Date.now() - since);
 	const min = Math.floor(ms / 60_000);
@@ -33,16 +27,6 @@ function formatSince(since: number, t: ReturnType<typeof useT>): string {
 	return t("bgTaskDays", { n: Math.floor(hr / 24) });
 }
 
-/**
- * 后台任务面板 — the AI-started background servers (detected via listening-port
- * diffs around bash tool runs). Each task can be stopped individually, or all
- * at once. The list lives on the CLIENT (not a conversation), so it survives
- * conversation ends and reconnects — it only empties when tasks are stopped or
- * their processes exit on their own.
- *
- * 居中模态（`<Modal>` 原语）：定位由 `.modal.bg-task-modal` 规则恢复居中
- * （`.modal` 基类在层叠顺序上靠后，需更高优先级选择器压住，见 styles.css）。
- */
 export function BgTasksModal({
 	servers,
 	onClose,
@@ -54,9 +38,6 @@ export function BgTasksModal({
 }: BgTasksModalProps) {
 	const t = useT();
 	const { locale } = useI18n();
-	// Which tasks have their command line expanded (default: one truncated line
-	// + hover tooltip; click toggles full wrap so long commands stay readable).
-	// 插件任务无 port——用 taskId 作展开键。
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const toggleCmd = (key: string) =>
 		setExpanded((prev) => {
@@ -66,15 +47,11 @@ export function BgTasksModal({
 			return next;
 		});
 
-	// Ask the server for a fresh list (it prunes dead entries) on open.
 	useEffect(() => {
 		appSend({ type: "list_bg_servers" });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	/** `tasks.panel` 槽位的插件贡献（issue #146 同一套四层合并）：kind="view" 的就地内嵌
-	 *  渲染（同 settings.pages 的挂载口径），其余 kind 交给 App 的 onUiAction 分派。
-	 *  宿主自己 diff 出来的后台进程仍走下面的原生列表 —— 两者在同一面板里共存。 */
 	const pluginPanels = useMemo(() => {
 		const slots = buildUiSlots(withPluginViewItems(plugins), {
 			locale,
@@ -114,7 +91,6 @@ export function BgTasksModal({
 			) : (
 				<ul className="bg-task-list">
 					{servers.map((s) => {
-						// 插件任务（registerBackgroundTask）没有端口/pid——键与展示按 taskId。
 						const isPlugin = !!s.taskId;
 						const key = s.taskId ?? String(s.port);
 						return (
@@ -184,7 +160,6 @@ export function BgTasksModal({
 				</ul>
 			)}
 
-			{/* ---- 插件贡献（tasks.panel，issue #146 同口径）：pm2 托管的应用就嵌在这里 ---- */}
 			{pluginPanels.map((entry) => {
 				const plugin = plugins.find((p) => p.id === entry.source.slice("plugin:".length));
 				if (entry.kind === "view") {
@@ -209,7 +184,6 @@ export function BgTasksModal({
 			})}
 
 			<div className="bg-task-foot">
-				{/* 自动清理：阈值下拉 + 立即清理。钉住（📌）的实例永不参与。 */}
 				<div className="bg-task-cleanup-bar">
 					<label className="bg-task-cleanup-field" title={t("bgTaskCleanupHint")}>
 						<span className="bg-task-cleanup-label">{t("bgTaskCleanup")}</span>

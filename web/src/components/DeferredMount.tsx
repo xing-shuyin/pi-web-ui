@@ -1,6 +1,5 @@
 import { Suspense, useRef, type ReactNode } from "react";
 
-/** Load a view on first use, then preserve its state while its pane is hidden. */
 export function DeferredMount({ active, children }: { active: boolean; children: ReactNode }) {
 	const visited = useRef(false);
 	if (active) visited.current = true;

@@ -1,15 +1,3 @@
-/**
- * #542：插件会话快照按客户端（clientId）取用 + 模型变更事件（零 token、自包含）。
- *
- * 覆盖 issue 的三条验收：
- *   1. 两个标签页各取得自己的 conversationId / model / 消息数（互不串台）；
- *   2. 页面切模型后**不发消息**也能立即收到 onClientModelChanged 事件；
- *   3. 重连重放同一个 set_model / 重复选同一个模型不重复发；切换失败不发。
- * 「子代理不把用户正看的对话挤出快照」的选会话口径由单测
- * （tests/unit/plugin-conversation-view.test.ts）逐条锁住，这里只验接线。
- *
- * 运行：npm run build && node tests/plugin-client-conversation-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +16,6 @@ const agentDir = join(tmp, "agent");
 mkdirSync(work, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// 两个模型：mock 是「可切换成功」的（只写状态，不发请求），bad 用作切换失败对照。
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ mock: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -47,8 +34,6 @@ writeFileSync(
 	}),
 );
 
-// 探针插件：把 getActiveConversation({clientId}) 与 onClientModelChanged 的事件
-// 经 HTTP 路由暴露出来（测试进程不用直连插件内部状态）。
 const plugDir = join(dataDir, "plugins", "convprobe");
 mkdirSync(plugDir, { recursive: true });
 writeFileSync(
@@ -121,8 +106,6 @@ const connect = (clientId) =>
 		});
 	});
 
-// 插件在首个客户端 attach 时才激活（ensureLoaded 跑在 attach 链里）——抢跑时路由还没挂，
-// 这里把非 JSON/非 200 一律当「还没好」，交给 waitFor 重试（不抛错）。
 const getJson = async (path) => {
 	try {
 		const r = await fetch(`${BASE}${path}`);
@@ -173,7 +156,6 @@ try {
 	const t1 = await connect("tab-1");
 	const t2 = await connect("tab-2");
 	socks.push(t1, t2);
-	// 两个标签页各开一个对话（空白对话会被 new_chat 原地复用，id 稳定）。
 	t1.send(JSON.stringify({ type: "new_chat" }));
 	t2.send(JSON.stringify({ type: "new_chat" }));
 
@@ -182,8 +164,6 @@ try {
 	check("tab-1 能取到自己的快照", !!a1);
 	check("tab-2 能取到自己的快照", !!a2);
 	check("快照点名 clientId", a1?.clientId === "tab-1" && a2?.clientId === "tab-2");
-	// 注意：conversationId 是**每客户端**分配（c1/c2…），两个标签页可能同名；
-	// 分辨「是不是同一条对话」要看 sessionFile（每条对话一个会话文件）。
 	check(
 		"两个标签页拿的是各自的对话（会话文件不同）",
 		!!a1?.sessionFile && !!a2?.sessionFile && a1.sessionFile !== a2.sessionFile,
@@ -204,7 +184,6 @@ try {
 		JSON.stringify({ scoped: unknown.scoped, fallback: unknown.fallback }),
 	);
 
-	// --- 模型切换事件（不发任何消息） ---
 	const ofTab = (list, cid) => list.filter((e) => e.clientId === cid);
 	check("切换前没有事件", (await events()).length === 0);
 	t1.send(JSON.stringify({ type: "set_model", modelId: "mock/mock-model" }));
@@ -214,23 +193,19 @@ try {
 	check("另一个标签页没收到（不串台）", ofTab(await events(), "tab-2").length === 0);
 	check("事件带 isSubagent 与消息数", ev1?.isSubagent === false && typeof ev1?.totalMessages === "number");
 
-	// 重复选同一个模型（等价于重连重放 set_model）：不得重复触发
 	t1.send(JSON.stringify({ type: "set_model", modelId: "mock/mock-model" }));
 	await sleep(1200);
 	check("重复切同一个模型不重复发事件", (await events()).length === 1, `events=${(await events()).length}`);
 
-	// tab-2 切同一个模型 → 因为 clientId 不同，是一条新事件
 	t2.send(JSON.stringify({ type: "set_model", modelId: "mock/mock-model" }));
 	const ev2 = await waitFor(async () => ofTab(await events(), "tab-2")[0]);
 	check("另一个标签页切模型单独出事件", ev2?.sessionFile === a2?.sessionFile, JSON.stringify(ev2));
 	const afterGood = (await events()).length;
 
-	// 切换失败（模型不存在）：不得产生事件
 	t1.send(JSON.stringify({ type: "set_model", modelId: "mock/nope-model" }));
 	await sleep(1200);
 	check("切换失败不产生事件", (await events()).length === afterGood, `events=${(await events()).length}`);
 
-	// A→B→A：换到另一个模型再换回来 —— 必须都发（去重键只压住「连续重复」）
 	t1.send(JSON.stringify({ type: "set_model", modelId: "mock/other-model" }));
 	const ev3 = await waitFor(async () => (await events()).find((e) => e.model === "mock/other-model"));
 	check("切到新模型再发事件", !!ev3, JSON.stringify(ev3));

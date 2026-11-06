@@ -1,26 +1,5 @@
 /// <reference path="../chrome.d.ts" />
 /// <reference lib="dom" />
-/**
- * 拾取 overlay + 状态机（content script，注入到被调试页面）。
- *
- * 隔离：整套 UI 挂在**闭合 Shadow DOM** 里（`:host { all: initial }` 兜底），页面 CSS
- * 进不来、我们的样式出不去 —— 否则页面一个 `button { width: 100% }` 就能把浮层搞乱，
- * 我们也可能污染页面。
- *
- * 状态机：
- *   idle → picking ──(普通点击 / Enter)──→ editing ──(添加到对话)──→ idle
- *            ↑                                  │
- *            └──────(Shift+点击 / 「继续选」)────┘
- *            │
- *            └──(Esc)──→ idle（丢弃）
- *
- * 每个元素在**点击那一刻**就取快照：之后页面可能重渲染（React 换掉 DOM 节点），
- * 那时候再去读就晚了。
- *
- * closed shadow 的坑：从 window 上的监听器看事件，target 会被**重定向到 host**，
- * `composedPath()` 也拿不到内部节点 —— 所以「事件是不是发生在我们的 UI 里」只能靠
- * `host.contains(e.target)` 判断，而输入框里的 Enter/Esc 直接挂输入框自己的监听器。
- */
 
 import {
 	PICK_SECTIONS,
@@ -161,7 +140,6 @@ button:hover { filter: brightness(1.15); }
 .hidden { display: none !important; }
 `;
 
-/** 焦点在可编辑元素里吗（页面上正打字时绝不抢它的键盘）。 */
 function isEditable(target: EventTarget | null): boolean {
 	if (!(target instanceof Element)) return false;
 	const tag = target.tagName.toLowerCase();
@@ -188,8 +166,8 @@ function createPicker(): PickerRuntime {
 	let picked: Picked[] = [];
 	let hovered: Element | null = null;
 	let detail: DetailLevel = "standard";
-	let sections: PickSection[] | undefined; // undefined = 没拿到设置 → 采集层按「全采」宽容处理
-	let state: PageState | null | undefined; // undefined = 还没查到；null = 查不到（后台没响应）
+	let sections: PickSection[] | undefined;
+	let state: PageState | null | undefined;
 	let note = "";
 	let rafId = 0;
 	let stopped = true;
@@ -206,19 +184,17 @@ function createPicker(): PickerRuntime {
 	shadow.append(el("style", { text: CSS }), hl, picks, hud, bar, mini, toast);
 
 	const rows = el("div", { class: "rows" });
-	// 预设控件：**改设置不用再去扩展选项页** —— chip 一键套组合，展开还能逐项勾。
-	// 三个回调都汇到 applyPickOptions / applyPreset 这一个口上（重采 + 重画 + 写回只写一遍）。
-	let optionsNotice = ""; // 写回设置失败时挂在摘要行上（确认条正开着，不宜拿 toast 遮它）
+	let optionsNotice = "";
 	const presets = createPresetControls({
 		onPreset: (id) => applyPreset(id),
 		onToggleSection: (key, on) => applyPickOptions(detail, applySectionToggle(effectiveSections(), key, on)),
-		onRefuseEmpty: () => showToast(getMessage("preset_atLeastOne", undefined, "至少要留一项：全不勾会回落成标准组合"), "err"),
+		onRefuseEmpty: () =>
+			showToast(getMessage("preset_atLeastOne", undefined, "至少要留一项：全不勾会回落成标准组合"), "err"),
 	});
 	const noteInput = el("input", {
 		type: "text",
 		placeholder: getMessage("picker_notePlaceholder", undefined, "整体说明（可选）：比如「这三处间距不一致」"),
 	});
-	// 勾选项里按 Esc 也要能退（焦点落在我们自己的 UI 里时，全局键盘监听会跳过）—— 与备注框一致
 	presets.root.addEventListener("keydown", (e) => {
 		if (e.key !== "Escape") return;
 		e.stopPropagation();
@@ -228,8 +204,6 @@ function createPicker(): PickerRuntime {
 	const sendBtn = el("button", { class: "primary", text: getMessage("picker_addToDialog", undefined, "添加到对话") });
 	const moreBtn = el("button", { text: getMessage("picker_continuePick", undefined, "继续选") });
 	const cancelBtn = el("button", { text: getMessage("picker_cancel", undefined, "取消") });
-	// 两个“另一件事”的入口：都在页面上给不了权限手势，所以只是把用户送到设置页那一次点击上。
-	// 抽成函数是因为现在有**两处**要挂它们：确认条底部 + 拾取态的常驻细条。
 	const openGrant = (): void => {
 		void (async () => {
 			const ok = await requestGrantHere(location.href);
@@ -277,9 +251,6 @@ function createPicker(): PickerRuntime {
 		el("div", { class: "foot" }, [grantBtn, pairBtn, el("span", { class: "grow" }), moreBtn, cancelBtn, sendBtn]),
 	);
 
-	// ---------------------------------------------------------------- 底部常驻细条
-	// 拾取态就看得见「让 AI 操作本页…」：原来它只在确认条的 foot 里，于是「想让模型操作这一页」
-	// 得先在页面上随便点一个元素 —— 这个额外步骤对“只想授权”的人来说完全是噪声。
 	const miniStatus = el("span", {
 		class: "st info",
 		text: getMessage("picker_miniCheckingAuth", undefined, "检查授权状态…"),
@@ -294,8 +265,6 @@ function createPicker(): PickerRuntime {
 	miniPair.addEventListener("click", openPair);
 	miniExit.addEventListener("click", () => stop());
 	mini.append(miniStatus, miniGrant, miniPair, miniExit);
-
-	// ------------------------------------------------------------------ 渲染
 
 	const place = (box: HTMLElement, node: Element, label: string, cls: string): void => {
 		const r = node.getBoundingClientRect();
@@ -323,7 +292,6 @@ function createPicker(): PickerRuntime {
 			}
 			const badge = box.querySelector<HTMLElement>(".n");
 			if (badge) badge.textContent = String(i + 1);
-			// 元素可能已被页面移除（SPA 换页）→ 框跟着消失，不留幽灵框
 			if (!p.el.isConnected) {
 				box.className = "pick hidden";
 				return;
@@ -420,7 +388,6 @@ function createPicker(): PickerRuntime {
 		});
 	};
 
-	/** 底部细条：只在拾取态常驻；编辑态让位给确认条（那两个入口确认条里本来就有）。 */
 	const renderMini = (): void => {
 		mini.classList.toggle("hidden", phase !== "picking");
 		const view = grantView(state);
@@ -430,17 +397,10 @@ function createPicker(): PickerRuntime {
 		miniGrant.textContent = view.label;
 		miniGrant.title = view.hint;
 		miniGrant.classList.toggle("primary", !view.done);
-		// 确认条底部那个同名按钮跟着走同一份文案：两处显示不一致会让人以为哪一个坏了
 		grantBtn.textContent = view.label;
 		grantBtn.title = view.hint;
 	};
 
-	/**
-	 * 问一次本页的 AI 授权状态。
-	 *
-	 * 拿不到（worker 被回收 / 通道断）→ 状态记成 null（「查不到」），**不装成未授权**：
-	 * 把后台故障说成「你得去授权」是故意误导人。
-	 */
 	async function refreshState(): Promise<void> {
 		let res: PageState | undefined;
 		try {
@@ -449,17 +409,11 @@ function createPicker(): PickerRuntime {
 		} catch {
 			res = undefined;
 		}
-		if (stopped) return; // 期间被关掉了：别去碰已经不存在的 UI
+		if (stopped) return;
 		state = res ?? null;
 		renderMini();
 	}
 
-	/**
-	 * 授权表 / 总开关在别处被改了（用户在设置页点了「授权该页面」）→ 重查一次：
-	 * 回到这个页面时细条自己就变绿了，不用再点一遍图标。
-	 *
-	 * 没有 storage API 的环境（老浏览器 / E2E 的 chrome 替身）只是少这份自动刷新，不报错。
-	 */
 	const onStorageChanged = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
 		if (stopped) return;
 		if (area === "local" && changes[AI_PAGES_KEY]) void refreshState();
@@ -467,25 +421,14 @@ function createPicker(): PickerRuntime {
 	};
 	try {
 		chrome.storage?.onChanged?.addListener(onStorageChanged);
-	} catch {
-		/* 没有 storage 通道：状态只在开条时查那一次 */
-	}
+	} catch {}
 
-	// ------------------------------------------------------------------ 预设 / 勾选项
-
-	/** 当前**实际**要发的项（设置没取到时显示全采 —— 与采集层的宽容语义一致）。 */
 	const effectiveSections = (): PickSection[] => sections ?? [...PICK_SECTIONS];
 
-	/**
-	 * 预设 / 逐项勾选的**唯一入口**：改状态 → 重采已选元素 → 重画 → 写回设置。
-	 *
-	 * 为什么要重采（而不是只影响下一个选的元素）：快照是点击那一刻取的，不重采就会出现
-	 * 「浮条上写着精简、发出去的还是完整档」—— 用户改设置的全部目的就是改**这次**发什么。
-	 */
 	const applyPickOptions = (nextDetail: DetailLevel, nextSections: PickSection[]): void => {
 		detail = nextDetail;
 		sections = nextSections;
-		optionsNotice = ""; // 新的一次选择清掉上一次的失败提示
+		optionsNotice = "";
 		resnapshotPicked();
 		renderHud();
 		renderBar();
@@ -498,7 +441,6 @@ function createPicker(): PickerRuntime {
 		applyPickOptions(preset.depth, [...preset.sections]);
 	};
 
-	/** 已选元素按新设置重新采一遍（元素已被页面换掉就留着旧快照，不弄丢）。 */
 	const resnapshotPicked = (): void => {
 		let failed = 0;
 		for (const p of picked) {
@@ -517,26 +459,17 @@ function createPicker(): PickerRuntime {
 		}
 	};
 
-	/**
-	 * 把这次的选择写回扩展设置（选项页同步可见，下次拾取沿用）。
-	 *
-	 * 失败**不阻断拾取**：本地已经生效了，这条消息只是「记住它」。但必须说出来 ——
-	 * 静默失败会让人以为下次也是这个档位。
-	 */
 	async function persistPickOptions(): Promise<void> {
 		let res: { ok?: boolean; detail?: DetailLevel; sections?: PickSection[] } | undefined;
 		try {
 			res = (await chrome.runtime.sendMessage({ type: "page-picker:set-sections", detail, sections })) as
 				{ ok?: boolean; detail?: DetailLevel; sections?: PickSection[] } | undefined;
-		} catch {
-			/* 后台没响应 → 下面统一提示 */
-		}
+		} catch {}
 		if (!res?.ok) {
 			optionsNotice = getMessage("picker_syncFailed", undefined, "没同步到扩展设置（这次的选择只在本页生效）");
 			renderBar();
 			return;
 		}
-		// 后台做过归一（比如空列表回落标准组合）→ 以它为准，别让浮条显示一个不会生效的状态
 		if (res.detail) detail = res.detail;
 		if (res.sections) sections = res.sections;
 		renderHud();
@@ -558,9 +491,6 @@ function createPicker(): PickerRuntime {
 		window.setTimeout(() => toast.classList.add("hidden"), 3600);
 	};
 
-	// ------------------------------------------------------------------ 事件
-
-	/** 每帧重画：滚动、平滑滚动、动画、布局抖动都能跟上（比只监听 scroll 可靠）。 */
 	const tick = (): void => {
 		if (stopped) return;
 		renderHover();
@@ -582,7 +512,6 @@ function createPicker(): PickerRuntime {
 	};
 
 	const onMouseDown = (e: MouseEvent): void => {
-		// 只在拾取阶段吞掉 mousedown：编辑备注时要能正常点我们自己的按钮
 		if (phase !== "picking") return;
 		if (e.target instanceof Node && host.contains(e.target)) return;
 		swallow(e);
@@ -619,22 +548,19 @@ function createPicker(): PickerRuntime {
 	};
 
 	const onKeyDown = (e: KeyboardEvent): void => {
-		if (e.target instanceof Node && host.contains(e.target)) return; // 我们自己的 UI
+		if (e.target instanceof Node && host.contains(e.target)) return;
 		if (e.key === "Escape") {
 			swallow(e);
 			if (phase === "editing") setPhase("picking");
 			else stop();
 			return;
 		}
-		// Alt+1~6 切预设：整个流程都能用键盘走完（HUD 上写着这个提示）。
-		// 焦点在输入框里时不动手 —— 页面上正打字，macOS 的 Option+数字是在打 ¡ 这类字符。
 		const presetIndex = presetHotkeyIndex(e);
 		if (presetIndex > 0 && !isEditable(e.target)) {
 			swallow(e);
 			applyPreset(SECTION_PRESETS[presetIndex - 1].id);
 			return;
 		}
-		// Ctrl/Cmd+Enter 在编辑阶段直接发送（键盘能把整套流程走完，不依赖鼠标）
 		if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && picked.length > 0) {
 			swallow(e);
 			void send();
@@ -659,14 +585,11 @@ function createPicker(): PickerRuntime {
 		stop();
 	};
 
-	// ------------------------------------------------------------------ 投递
-
 	const buildPayload = (): PickPayload => ({
 		id: makePickId(),
 		pickedAt: new Date().toISOString(),
 		page: pageContext(),
 		detail,
-		// 只有拿到设置时才写 sections（渲染层见到 undefined 会按 detail 推，老行为不丢）
 		...(sections ? { sections } : {}),
 		elements: picked.map((p) => ({
 			snapshot: p.snapshot,
@@ -708,14 +631,11 @@ function createPicker(): PickerRuntime {
 		sendBtn.textContent = getMessage("picker_addToDialog", undefined, "添加到对话");
 	}
 
-	/** 剪贴板：优先 async API，失败回退 execCommand（页面未聚焦时会走到这里）。 */
 	async function copyText(text: string): Promise<void> {
 		try {
 			await navigator.clipboard.writeText(text);
 			return;
-		} catch {
-			/* fall through */
-		}
+		} catch {}
 		const ta = document.createElement("textarea");
 		ta.value = text;
 		ta.style.cssText = "position:fixed;left:-9999px;top:0;";
@@ -723,13 +643,9 @@ function createPicker(): PickerRuntime {
 		ta.select();
 		try {
 			document.execCommand("copy");
-		} catch {
-			/* 复制失败不致命：主路径是把内容注入对话 */
-		}
+		} catch {}
 		ta.remove();
 	}
-
-	// ------------------------------------------------------------------ 生命周期
 
 	const stop = (): void => {
 		if (stopped) return;
@@ -761,7 +677,7 @@ function createPicker(): PickerRuntime {
 			if (opts?.detail) detail = opts.detail;
 			if (opts?.sections) sections = opts.sections;
 			noteInput.value = "";
-			presets.setPanelOpen(false); // 新一轮从「只有六个 chip」开始，不叠着上轮的展开状态
+			presets.setPanelOpen(false);
 			sendBtn.disabled = false;
 			sendBtn.textContent = getMessage("picker_addToDialog", undefined, "添加到对话");
 			(document.body ?? document.documentElement).append(host);
@@ -769,7 +685,7 @@ function createPicker(): PickerRuntime {
 			renderBar();
 			renderMini();
 			renderHover();
-			state = undefined; // 先按「正在查」画，回来再变成实际状态
+			state = undefined;
 			void refreshState();
 			window.addEventListener("pointermove", onPointerMove, true);
 			window.addEventListener("mousedown", onMouseDown, true);
@@ -796,10 +712,6 @@ function createPicker(): PickerRuntime {
 	return runtime;
 }
 
-/**
- * 入口：注入一次装一次。重复注入（再点扩展图标）只是让已有实例重新开始，
- * 不会叠出第二套 overlay。设置（详细度）从 background 取，取不到就用默认。
- */
 const w = window as unknown as Record<string, unknown>;
 const existing = w[FLAG] as PickerRuntime | undefined;
 const runtime = existing ?? createPicker();
@@ -813,9 +725,7 @@ void (async () => {
 			{ detail?: DetailLevel; sections?: PickSection[] } | undefined;
 		detail = res?.detail;
 		sections = res?.sections;
-	} catch {
-		/* 拿不到设置也能用默认档拾取 */
-	}
+	} catch {}
 	const startOpts: { detail?: DetailLevel; sections?: PickSection[] } = {};
 	if (detail) startOpts.detail = detail;
 	if (sections) startOpts.sections = sections;

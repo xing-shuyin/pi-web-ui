@@ -1,15 +1,3 @@
-// issue #145 跨客户端同会话双写防护 —— 第二个 writer 造不出来，新标签页不默认落进正在跑的对话，
-// 且同项目并行互相可见。
-//
-// A 客户端开一条 SLOW run（streaming）；B 客户端（另一标签页/设备 = 不同 clientId）：
-//   1. B 直接 switch_session 到 A 正在跑的 session 文件 → 必须被拒绝（warning notice），
-//      B 的 conversationId / sessionFile 不变（改前 RED：B 会打开成功并持有同一文件）；
-//   2. B 在自己的会话（同一项目）发消息 → 允许并行，但 B 收到同项目并行提醒，
-//      A 收到对端并行通告；两边 run 都能正常跑完；
-//   3. A 跑完后 B 再 switch_session 同一文件 → 允许（owner 空闲），B 能打开。
-//
-// 零 token：mock SSE 模型（prompt 含 SLOW 即慢速输出），纯 WS 协议，无需浏览器。
-// Usage: node tests/cross-client-session-test.mjs [port]   （先 npm run build）
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -67,7 +55,6 @@ const mock = createServer(async (req, res) => {
 			})}\n\n`,
 		);
 	writeChunk(first);
-	// SLOW 分支要盖住 B 的三步断言（elsewhere/拒绝/并行提醒），给足窗口。
 	if (slow) await sleep(12000);
 	writeChunk(lastChunk);
 	res.write(
@@ -114,7 +101,6 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		...process.env,
 		PI_WEB_PORT: String(PORT),
 		PI_WEB_DATA_DIR: dataDir,
-		// 服务默认目录就是 work（最常见的单项目情形）：新 clientId 上来初始恢复即命中。
 		PI_WEB_CWD: workdir,
 		PI_CODING_AGENT_DIR: agentDir,
 	},
@@ -128,9 +114,7 @@ const waitForPort = async (port, timeout = 15000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -227,8 +211,6 @@ try {
 
 	clientA = await openClient("cross-client-A");
 
-	// A 先用普通首条命名对话（标题进 AI 提醒，不能含 mock 的 SLOW 特征串），
-	// 再开一条慢 run（streaming 中）。
 	clientA.send({ type: "prompt", text: "seed" });
 	await clientA.waitForMessage(
 		(m) => m.role === "assistant" && JSON.stringify(m.content).includes("seed-message"),
@@ -239,7 +221,6 @@ try {
 	const runningFile = await clientA.waitForState((s) => Boolean(s.sessionFile), 15000).then((s) => s.sessionFile);
 	console.log(`✓ A streaming on ${runningFile}`);
 
-	// 0a. attach 路径：新标签页初始恢复即命中正在跑的那条 —— 首帧快照之前必须已纠正为空白。
 	clientC = await openClient("cross-client-C", false);
 	await clientC.waitForType("notice", (m) => noticeText(m).includes("停在了新对话"), 15000);
 	await sleep(500);
@@ -249,7 +230,6 @@ try {
 	console.log("✓ 新标签页不再默认打开正在跑的对话（attach 即纠正，首帧空白）");
 	clientC.ws.close();
 
-	// 0b. setCwd 路径：F 先去别的项目，再首次进入 work —— 首访恢复同样跳过正在跑的那条。
 	clientF = await openClient("cross-client-F", false);
 	await clientF.waitForType("notice", (m) => noticeText(m).includes("停在了新对话"), 15000);
 	clientF.send({ type: "set_cwd", path: otherdir });
@@ -267,7 +247,6 @@ try {
 	await clientB.waitForType("notice", (m) => noticeText(m).includes("停在了新对话"), 15000);
 	console.log("✓ B 上来同样不恢复正在跑的会话");
 
-	// B 的 elsewhere 应能看到 A（近实时；poke 经 emitConversations 驱动）。
 	const bSeesA = await (async () => {
 		const started = Date.now();
 		while (Date.now() - started < 15000) {
@@ -279,7 +258,6 @@ try {
 	if (!bSeesA) throw new Error("B 的左栏 elsewhere 没有出现 A 的运行（跨客户端感知缺失）");
 	console.log("✓ B 在 elsewhere 看到 A 正在运行");
 
-	// 1. B 试图打开 A 正在跑的同一文件 → 必须被拒绝，不建第二个 writer。
 	const convBBefore = clientB.state.conversationId;
 	clientB.send({ type: "switch_session", path: runningFile });
 	const blocked = await clientB.waitForType("notice", (m) => noticeText(m).includes("另一处运行中"), 15000);
@@ -291,7 +269,6 @@ try {
 		throw new Error("B 持有了与 A 相同的文件 —— 第二个 writer 已建（双写发生）");
 	console.log("✓ B 打开正在跑的会话被拒绝，未建第二个 writer");
 
-	// 2. B 在自己会话（同一项目）并行发送 → 允许，但双方都要收到并行提醒。
 	clientB.send({ type: "prompt", text: "hello from B" });
 	await clientB.waitForType("notice", (m) => noticeText(m).includes("同项目并行"), 15000);
 	console.log("✓ B 收到同项目并行提醒");
@@ -309,12 +286,10 @@ try {
 	await clientA.waitForState((s) => !s.isStreaming, 15000);
 	console.log("✓ A 的 run 正常跑完（不受 B 影响）");
 
-	// 3. owner 空闲后 B 再打开同一文件 → 允许。
 	clientB.send({ type: "switch_session", path: runningFile });
 	await clientB.waitForState((s) => s.sessionFile === runningFile, 15000);
 	console.log("✓ A 结束后 B 可正常打开该会话");
 
-	// 4. 幽灵持有者：B 建一条新对话后关掉标签页，A 再打开 B 的文件 → 不应再警告“另一处也开着”。
 	clientB.send({ type: "new_chat" });
 	await clientB.waitForState((s) => !s.sessionFile || s.sessionFile !== runningFile, 15000);
 	clientB.send({ type: "prompt", text: "B second file" });

@@ -23,7 +23,7 @@ export class DingtalkBotBridge {
 		this.generation = 0;
 		this.seenMessageIds = new Set();
 		this.sessions = new Map();
-		this.pendingRuns = new Map(); // stable runId only
+		this.pendingRuns = new Map();
 		this.earlyRuns = new Map();
 		this.dispatching = 0;
 		this.routes = new SessionRoutes(this);
@@ -337,7 +337,6 @@ export class DingtalkBotBridge {
 		if (!key || (rid && this.ended.has(key))) return;
 		let run = this.pendingRuns.get(key);
 		if (!run && !rid && identity) {
-			// Exact identity also supports old hosts whose event omits a known runId.
 			run = [...this.pendingRuns.values()].find((value) => sessionKey(value) === identity);
 		}
 		if (!run && !rid && ev.type === "run_start") {

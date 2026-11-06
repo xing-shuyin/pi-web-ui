@@ -1,8 +1,3 @@
-/* PR 118 撤回按钮 E2E（真排队路径）：假模型 hang 住制造 streaming 窗口，
- * 经 .split-queue 入 followUp 队列 → 点 ↩ → 断言文字/聚焦/光标/气泡消失。
- * 零 token（hang 模型永不回包）。Run: node tests/recall-queue-test.mjs
- * PI_TEST_REPO=<dir> 可改测指定工作树（默认本仓库）。
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
@@ -25,7 +20,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// --- 0. build worktree（套件内 run-smoke.mjs 已统一构建，避免并行时互相踩 dist/）---
 try {
 	ensureBuild(REPO_ROOT, "recall-queue-test");
 } catch (err) {
@@ -33,7 +27,6 @@ try {
 	process.exit(1);
 }
 
-// --- 1. hang 假模型：GET 正常回（防启动刷新卡死），POST 永不回（制造 streaming） ---
 const hang = createServer((req, res) => {
 	if (req.method === "GET") {
 		res.writeHead(200, { "content-type": "application/json" });
@@ -41,7 +34,6 @@ const hang = createServer((req, res) => {
 		return;
 	}
 	req.socket.on("error", () => {});
-	// POST：故意不回包，连接挂起
 });
 await new Promise((r) => hang.listen(0, "127.0.0.1", r));
 const HANG_PORT = hang.address().port;
@@ -96,7 +88,6 @@ try {
 	await sleep(1200);
 	await page.screenshot({ path: join(base, "recall-0-boot.png") });
 
-	// --- 2. 主问题发出 → 进入 streaming（.btn.stop 出现） ---
 	await page.locator("textarea").fill("主问题（hang 住别回）");
 	await page.keyboard.press("Enter");
 	const streaming = await page
@@ -113,7 +104,6 @@ try {
 	const recallBtns = () => page.locator(".msg-queued-recall");
 	const inputVal = () => page.locator("textarea").inputValue();
 
-	// --- 3. 排队一条 → 气泡出现（↩ + ✕） ---
 	await page.locator("textarea").fill("第一条排队内容");
 	await page.locator(".split-queue").click();
 	await page.waitForFunction(() => document.querySelectorAll(".msg-queued").length === 1, null, { timeout: 10000 });
@@ -127,7 +117,6 @@ try {
 	check("↩ 在 ✕ 左边", !!(rb && xb && rb.x + rb.width <= xb.x + 1), `recall.x=${rb?.x} remove.x=${xb?.x}`);
 	await page.screenshot({ path: join(base, "recall-1-queued.png") });
 
-	// --- 4. 点 ↩ → 气泡消失 + 文字落输入框 + 聚焦 + 光标末尾 ---
 	await recallBtns().first().click();
 	await page.waitForFunction(() => document.querySelectorAll(".msg-queued").length === 0, null, { timeout: 10000 });
 	check("撤回后气泡消失", (await queuedCount()) === 0);
@@ -141,7 +130,6 @@ try {
 	check("光标在末尾", !!cursor && cursor[0] === cursor[1] && cursor[1] === cursor[2], JSON.stringify(cursor));
 	await page.screenshot({ path: join(base, "recall-2-recalled.png") });
 
-	// --- 5. 非空追加语义：先排队第二条，再手打一行，撤回后应为「手打\n第二条」 ---
 	await page.locator("textarea").fill("");
 	await page.locator("textarea").fill("第二条内容");
 	await page.locator(".split-queue").click();
@@ -152,7 +140,6 @@ try {
 	const v5 = await inputVal();
 	check("非空追加（单换行分隔、不覆盖手打）", v5 === "正在打的字\n第二条内容", JSON.stringify(v5));
 
-	// --- 6. 连续撤回两条不丢 ---
 	await page.locator("textarea").fill("");
 	await page.locator("textarea").fill("连A");
 	await page.locator(".split-queue").click();
@@ -169,7 +156,6 @@ try {
 	check("连续撤回两条都回来且有序", v6 === "连A\n连B", JSON.stringify(v6));
 	await page.screenshot({ path: join(base, "recall-3-multi.png") });
 
-	// --- 7. 移动端触屏：独立上下文走一遍（新 page = 新会话，需自己起 streaming） ---
 	const mobCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 	const mob = await mobCtx.newPage();
 	await mob.goto(`http://127.0.0.1:${PORT}`);
@@ -191,7 +177,6 @@ try {
 		const n = await mob.locator(".msg-queued").count();
 		check("手机端排队气泡渲染", n >= 1, `count=${n}`);
 		await mob.screenshot({ path: join(base, "recall-4-mobile.png") });
-		// 手机端也点一次 ↩，确认触屏点击链路
 		if (n >= 1) {
 			await mob.locator(".msg-queued-recall").first().click();
 			await mob

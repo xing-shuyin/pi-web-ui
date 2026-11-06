@@ -19,7 +19,6 @@ export function mapCanvasHits(graphs: CanvasGraphSummary[], query: string, label
 		}));
 }
 
-/** Query on the existing chat connection; keep no cross-project list cache. */
 export function searchCanvasMentions(send: () => boolean, timeoutMs = 1800): Promise<CanvasGraphSummary[]> {
 	return new Promise((resolve) => {
 		const finish = (graphs: CanvasGraphSummary[]) => {

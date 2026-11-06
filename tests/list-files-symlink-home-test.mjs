@@ -1,20 +1,3 @@
-/**
- * Issue #262 regression (Android/Termux files-panel navigation):
- *
- *   1. Directory symlinks must be listed as "dir" on ALL platforms (previously
- *      only the win32 branch of readDirForUI followed symlinks, so e.g. the
- *      Termux ~/storage/* links showed as files and could not be entered);
- *   2. A symlinked directory must be navigable from the tree;
- *   3. The panel path bar must expand a leading "~/…" to the home directory
- *      (same as completePath/makeDir) instead of treating it as
- *      workspace-relative and degrading to an empty listing;
- *   4. cwd-picker completions must also classify the symlink as "dir" — the
- *      picker only offers directories, so a "file" classification renders as
- *      an empty list (the actual #262 user symptom).
- *
- * The unreadable-"/" machine-root fallback is Android-only (on Linux/CI "/"
- * is listable) and is not covered here.
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -42,7 +25,6 @@ try {
 	process.exit(1);
 }
 
-// Workspace lives under $HOME (not the system temp dir) — otherwise "~" cannot point at it.
 const WS = join(homedir(), `.pi-web-ui-symtest-${randomUUID().slice(0, 8)}`);
 const dataDir = mkdtempSync(join(tmpdir(), "pi-symlink-data-"));
 const agentDir = mkdtempSync(join(tmpdir(), "pi-symlink-agent-"));
@@ -53,7 +35,6 @@ writeFileSync(join(REAL, "inner.txt"), "x");
 try {
 	symlinkSync("real", join(WS, "link"));
 } catch (err) {
-	// Windows without developer mode denies directory-symlink creation (EPERM) — the test premise does not hold, skip.
 	console.log(`skip: cannot create a directory symlink on this platform (${err.code ?? err.message})`);
 	rmSync(WS, { recursive: true, force: true });
 	process.exit(0);
@@ -85,7 +66,6 @@ try {
 
 	const clientId = randomUUID();
 	const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-	/** files / path_completions responses in arrival order. */
 	const listResponses = [];
 	const completionResponses = [];
 	ws.on("message", (d) => {
@@ -108,12 +88,10 @@ try {
 		return listResponses.filter(match).pop();
 	};
 
-	// 1) Symlinked directory is classified as "dir" in the listing.
 	const root = await listAndWait("", (m) => m.path === "");
 	const link = root?.entries.find((e) => e.name === "link");
 	check("directory symlink is listed as dir", link?.type === "dir", `type=${link?.type}`);
 
-	// 2) …and is navigable from the tree.
 	const entered = await listAndWait("link", (m) => m.path === "link");
 	check(
 		"symlinked directory is navigable",
@@ -121,7 +99,6 @@ try {
 		`entries=${entered ? JSON.stringify(entered.entries) : "none"}`,
 	);
 
-	// 3) Path bar "~/…" expands to the home directory (absolute machine-browse).
 	const wsBase = WS.split("/").pop();
 	const viaTilde = await listAndWait(`~/${wsBase}`, (m) => m.absolute === true && m.path.endsWith(wsBase));
 	check(
@@ -130,8 +107,6 @@ try {
 		`entries=${viaTilde ? viaTilde.entries.map((e) => e.name).join(",") : "none"}`,
 	);
 
-	// 4) cwd picker completions must classify the symlink as "dir" (else the
-	//    directory-only picker renders an empty list).
 	ws.send(JSON.stringify({ type: "complete_path", path: WS + "/" }));
 	const t1 = Date.now();
 	while (Date.now() - t1 < 8000 && completionResponses.length < 1) await sleep(150);

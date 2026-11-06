@@ -25,7 +25,6 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		const plan = pm.setPlan("conv-1", steps);
 		expect(plan).toBeTruthy();
 		expect(plan.steps.length).toBe(3);
-		// 自动识别 in_progress 步骤为 activeStepId
 		expect(plan.activeStepId).toBe("2");
 		expect(plan.steps[0].status).toBe("done");
 		expect(plan.steps[1].status).toBe("in_progress");
@@ -39,14 +38,11 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			{ id: "step-2", title: "步骤二", status: "pending" },
 		]);
 
-		// 步骤一完成
 		const updated = pm.updateStep("conv-1", "step-1", { status: "done" });
 		expect(updated).toBeTruthy();
 		expect(updated?.steps[0].status).toBe("done");
-		// 完成后自动推进到下一个 pending 步骤
 		expect(updated?.activeStepId).toBe("step-2");
 
-		// 将步骤二设为进行中
 		const updated2 = pm.updateStep("conv-1", "step-2", { status: "in_progress" });
 		expect(updated2?.activeStepId).toBe("step-2");
 	});
@@ -55,7 +51,6 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		const pm = new PlanManager();
 		pm.setPlan("conv-1", [{ id: "step-1", title: "原标题", status: "in_progress", description: "原描述" }]);
 
-		// patch 带 id：不允许改 id（activeStepId 的锚点，改了会悬空）
 		const patched = pm.updateStep("conv-1", "step-1", {
 			id: "hijacked",
 			title: "新标题",
@@ -65,7 +60,6 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(patched?.activeStepId).toBe("step-1");
 		expect(patched?.steps[0].title).toBe("新标题");
 
-		// 超长截断：title ≤200、description ≤1000（与 setPlan 一致）
 		const long = pm.updateStep("conv-1", "step-1", {
 			title: "T".repeat(500),
 			description: "D".repeat(2000),
@@ -73,7 +67,6 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(long?.steps[0].title.length).toBe(200);
 		expect(long?.steps[0].description?.length).toBe(1000);
 
-		// patch 不带 description 时保留旧值；显式空串清除
 		expect(pm.updateStep("conv-1", "step-1", { status: "pending" })?.steps[0].description).toBeDefined();
 		expect(pm.updateStep("conv-1", "step-1", { description: "" })?.steps[0].description).toBeUndefined();
 	});
@@ -111,14 +104,12 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			() => {},
 		);
 
-		// 验证 promptSnippet 与 promptGuidelines 规范
 		expect(tool.promptSnippet).toBeTruthy();
 		const guidelines = (tool.promptGuidelines as string[]).join("\n");
 		expect(guidelines).toContain("decision-ready steps");
 		expect(guidelines).toContain("File Touch List");
 		expect(guidelines).toContain("rollback");
 
-		// 执行更新
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const ctx = {} as any;
 		await tool.execute(
@@ -160,12 +151,10 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			{ id: "step-3", title: "步骤3", status: "pending" },
 		]);
 
-		// 删除正在执行的步骤2，activeStepId 自动推给步骤3
 		const next = pm.deleteStep("conv-1", "step-2");
 		expect(next?.steps.map((s) => s.id)).toEqual(["step-1", "step-3"]);
 		expect(next?.activeStepId).toBe("step-3");
 
-		// 删除不存在的步骤：安全早退保持不变
 		const untouched = pm.deleteStep("conv-1", "step-not-found");
 		expect(untouched?.steps.length).toBe(2);
 	});
@@ -177,11 +166,9 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			{ id: "step-2", title: "步骤2", status: "pending" },
 		]);
 
-		// 插入到步骤1之后
 		const after1 = pm.addStep("conv-1", { id: "step-1.5", title: "步骤1.5", status: "pending" }, "step-1");
 		expect(after1?.steps.map((s) => s.id)).toEqual(["step-1", "step-1.5", "step-2"]);
 
-		// 默认追加到末尾
 		const atEnd = pm.addStep("conv-1", { id: "step-3", title: "步骤3", status: "pending" });
 		expect(atEnd?.steps.map((s) => s.id)).toEqual(["step-1", "step-1.5", "step-2", "step-3"]);
 	});
@@ -201,13 +188,10 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			"session-uuid-1",
 		);
 
-		// 新实例（模拟服务重启或跨刷新恢复）
 		const pm2 = new PlanManager(filePath);
-		// 1. 通过 sessionId 恢复
 		expect(pm2.getPlan("session-uuid-1")).toBeTruthy();
 		expect(pm2.getPlan("session-uuid-1")?.steps.length).toBe(2);
 
-		// 2. 绑定新 conversationId 到该 sessionId
 		const restored = pm2.bindSession("c2", "session-uuid-1");
 		expect(restored).toBeTruthy();
 		expect(pm2.getPlan("c2")).toBeTruthy();
@@ -229,12 +213,9 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 			"session-prev-c2",
 		);
 
-		// 新实例（模拟服务重启后，新对话重新分配到 conversationId = "c2"）
 		const pm2 = new PlanManager(filePath);
-		// 临时 conversationId 绝不应被直接从 plans.json 中加载
 		expect(pm2.getPlan("c2")).toBeNull();
 
-		// 全新会话绑定全新 sessionId，绝不能被旧计划附体
 		const bound = pm2.bindSession("c2", "session-fresh-c2");
 		expect(bound).toBeNull();
 		expect(pm2.getPlan("c2")).toBeNull();
@@ -260,7 +241,6 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		expect(pm.getPlan("c2")).toBeNull();
 		expect(pm.getPlan("valid-session-uuid")).toBeTruthy();
 
-		// 触发更新与保存
 		pm.setPlan("c3", [{ id: "1", title: "新任务", status: "pending" }], null, "valid-session-uuid-2");
 
 		const saved = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
@@ -288,11 +268,9 @@ describe("结构化任务计划状态机与看板管理 (PlanManager / Plan Mode
 		pm.setPlan("c1", [{ id: "1", title: "步骤1", status: "pending" }], null, "session-to-clear");
 		expect(pm.getPlan("session-to-clear")?.steps.length).toBe(1);
 
-		// 清空计划
 		pm.setPlan("c1", [], null, "session-to-clear");
 		expect(pm.getPlan("c1")?.steps.length).toBe(0);
 
-		// 读取磁盘文件确认条目已被自动清除
 		const saved = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
 		expect(saved["session-to-clear"]).toBeUndefined();
 	});

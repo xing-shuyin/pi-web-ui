@@ -1,9 +1,3 @@
-/**
- * 覆盖注入单测：pi-web-ui 对 read / write / edit 的覆盖必须叠在「扩展注册的同名工具」之上，
- * 而不是把它顶掉 —— SDK 的合并链是 `[...扩展工具, ...customTools]` 逐个 `Map.set`（后写赢），
- * 所以覆盖层只能在会话建好后按名字把扩展那份取出来当基底（见 server/tool-overrides.ts）。
- * 夹具会话对象与 plugin-tools.test.ts 同款：零 token、零网络、不起服务。
- */
 import { describe, expect, it, vi } from "vitest";
 import {
 	extensionToolDefinition,
@@ -13,7 +7,6 @@ import {
 	type OverrideSessionLike,
 } from "../../server/tool-overrides.js";
 
-/** 最小可用工具定义：只在 name 与 marker 上有差别，便于断言「用的是哪一份」。 */
 function tool(name: string, marker = ""): AnyToolDefinition {
 	return {
 		name,

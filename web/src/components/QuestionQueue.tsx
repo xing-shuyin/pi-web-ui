@@ -16,7 +16,6 @@ export interface QuestionQueueProps {
 	mode: QuestionQueueMode;
 }
 
-/** The single rendering entrance for queued and legacy engine questionnaires. */
 export function QuestionQueue({ questions, activeConversationId, mode }: QuestionQueueProps) {
 	const t = useT();
 	const navigate = (q: QueueQuestion) => {

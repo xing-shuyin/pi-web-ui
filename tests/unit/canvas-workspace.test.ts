@@ -45,7 +45,6 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-// Real Git worktrees need a separate budget when parallel suites contend for disk I/O.
 describe("canvas workspace isolation", { timeout: 20_000 }, () => {
 	it("uses detached graph/run/node paths, preserves subdirectories, and never resets existing worktrees", async () => {
 		const options = await fixture();
@@ -171,7 +170,6 @@ describe("canvas workspace isolation", { timeout: 20_000 }, () => {
 		await expect(
 			prepareCanvasWorkspace({ ...options, nodeId: "outside", upstreamArtifacts: [forged] }),
 		).rejects.toThrow("Untrusted canvas artifact path");
-		// A legitimate top-level path must not hide a forged layer path.
 		await expect(
 			prepareCanvasWorkspace({
 				...options,

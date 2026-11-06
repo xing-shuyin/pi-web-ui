@@ -156,7 +156,6 @@ describe("subagent-security-gate", () => {
 				expect(subagentSecurityDenial("readonly", "bash", { command: "echo hello > file.txt" })?.kind).toBe(
 					"bash-write",
 				);
-				// 测试命令在 readonly 模式被阻断（readonly 仅允许纯静态只读）
 				expect(subagentSecurityDenial("readonly", "bash", { command: "npm test" })?.kind).toBe("bash-write");
 			});
 		});
@@ -216,7 +215,6 @@ describe("subagent-security-gate", () => {
 			expect(result.details?.subagentSecurityDenied).toBe(true);
 			expect(result.content[0]?.text).toContain("Restricted subagent (readonly)");
 
-			// When switched back to normal, execution proceeds
 			currentMode = "normal";
 			const allowedResult = (await wrapped.execute(
 				"call-2",

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-/** Runtime identity survives holder changes and display-id renames. */
 const identities = new WeakMap<object, string>();
 const parents = new WeakMap<object, object | null>();
 export function conversationIdentity(conversation: object): string {

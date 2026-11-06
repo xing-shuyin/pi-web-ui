@@ -1,16 +1,3 @@
-/**
- * 「AI 修复源」按钮的消息组装与校验（纯函数，浏览器与 Node 测试共用）。
- *
- * 链路：内嵌阅读页（iframe）点按钮 → postMessage 给插件视图（entry.mjs）
- *      → entry.mjs 用这里的 buildFixPrompt 拼出给 AI 的正文
- *      → window.__piWebUiHost.startChat({ prompt, newChat: true, cwd })
- *      → pi-web-ui 切到对话视图 + 新建对话（工作目录切到插件目录）+ 自动发送。
- *
- * 让 AI 拿到的东西，正好对它手上的工具（见 ../rules.md 与 ../tools.mjs）：
- *   书源名与 URL、场景、失败步骤、出错地址、报错原文、当前相关规则 →
- *   足以直接 legado_source_probe / legado_run_rule / legado_book_sources update。
- */
-
 export const AI_FIX_MESSAGE_TYPE = "legado:ai-fix";
 
 const SCENE_TEXT = {
@@ -24,12 +11,10 @@ const SCENE_TEXT = {
 	new: "新建书源（只给了网站链接）",
 };
 
-/** 这条 postMessage 是不是我们要的「AI 修复源」请求？ */
 export function isAiFixMessage(data) {
 	return Boolean(data && typeof data === "object" && data.type === AI_FIX_MESSAGE_TYPE);
 }
 
-/** 校验并归一化 iframe 传来的上下文（脏数据一律丢弃该字段，不抛错）。 */
 export function normalizeFixContext(raw) {
 	const ctx = raw && typeof raw === "object" ? raw : {};
 	const s = (v, max = 500) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
@@ -48,7 +33,6 @@ export function normalizeFixContext(raw) {
 	};
 }
 
-/** 公共「硬约束」块（修复与新建都适用）：只动书源数据，不碰插件本体。 */
 function constraintLines() {
 	return [
 		"硬约束：",
@@ -58,7 +42,6 @@ function constraintLines() {
 	];
 }
 
-/** 「新建书源」正文：只给一个网站链接，其余（搜索入口/详情/目录/正文规则）交给 AI 自己抓页分析。 */
 function buildNewSourcePrompt(c, dirs) {
 	const site = c.sourceUrl || c.url || "(未提供)";
 	const dataDir = typeof dirs.dataDir === "string" ? dirs.dataDir.trim() : "";
@@ -121,7 +104,6 @@ export function buildFixPrompt(rawContext, dirs = {}) {
 				? `${dataDir}/sources.json`
 				: "";
 	const pluginDir = typeof dirs.pluginDir === "string" ? dirs.pluginDir.trim() : "";
-	// 兼容旧服务端（只回 pluginDir/dataDir）：规则文件路径可由插件目录推出
 	const rulesFile =
 		typeof dirs.rulesFile === "string" && dirs.rulesFile.trim()
 			? dirs.rulesFile.trim()

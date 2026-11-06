@@ -1,16 +1,3 @@
-// Vision bridge — end-to-end protocol test with a LOCAL MOCK OpenAI-compatible
-// API that serves BOTH roles: the text-only main model and the vision model.
-// The mock records the vision request (must contain image content) and returns
-// a fixed transcript; the main model returns a canned answer.
-//
-// Verifies the full flow for a text-only main model (deepseek-style):
-//   1. prompt with imageData → server notices "正在用视觉桥转写"
-//   2. mock vision API receives the image content
-//   3. the attachment card message carries mode "bridged" + <vision-bridge>
-//      transcript text (what the main model actually sees)
-//   4. transcript cache: re-sending the same image skips the vision API
-//
-// Usage: npm run build && node vision-bridge-test.mjs [port]
 import WebSocket from "ws";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -29,17 +16,12 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// A 1x1 red PNG (pure base64, no data: prefix).
 const IMG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-// A real PNG file in the workspace — for the file-list (path reference) flow.
 writeFileSync(join(workdir, "screenshot.png"), Buffer.from(IMG_B64, "base64"));
 
 const TRANSCRIPT = "图 1：测试图片，内容为红色 1x1 像素。无文字。" + " ".repeat(50);
 const MAIN_REPLY = "我看到了：图 1 是一张纯色测试图。";
 
-// ---------------------------------------------------------------------------
-// Mock OpenAI-compatible API — serves both the main (text-only) model and the
-// vision model. Vision requests include an image content block.
 const visionRequests = [];
 let visionRequestCount = 0;
 const mock = createServer(async (req, res) => {
@@ -54,7 +36,6 @@ const mock = createServer(async (req, res) => {
 	}
 	const model = payload.model ?? "";
 	const lastMsg = payload.messages?.at(-1);
-	// The SDK serializes ImageContent to OpenAI's image_url blocks on the wire.
 	const hasImage =
 		Array.isArray(lastMsg?.content) && lastMsg.content.some((b) => b.type === "image_url" || b.type === "image");
 	if (hasImage) {
@@ -69,9 +50,8 @@ const mock = createServer(async (req, res) => {
 				.join(" "),
 		});
 	}
-	const isVision = hasImage; // reply routing below uses isVision
+	const isVision = hasImage;
 	const reply = isVision ? TRANSCRIPT : MAIN_REPLY;
-	// Split into a few SSE chunks.
 	const chunks = [reply.slice(0, 30), reply.slice(30)];
 	if (payload.stream !== false) {
 		res.writeHead(200, {
@@ -126,7 +106,6 @@ const mock = createServer(async (req, res) => {
 await new Promise((res) => mock.listen(MOCK_PORT, "127.0.0.1", res));
 console.log(`mock API on :${MOCK_PORT}`);
 
-// Models: MAIN is text-only; VISION accepts images. Both point at the mock.
 writeFileSync(
 	join(agentDir, "auth.json"),
 	JSON.stringify({
@@ -219,8 +198,6 @@ class Client {
 	send(m) {
 		this.ws.send(JSON.stringify(m));
 	}
-	/** Track merged snapshot state (full snapshots replace; rev-chained deltas
-	 *  merge light fields + extend messages) — mirrors the frontend reducer. */
 	track(m) {
 		if (m.type === "snapshot") {
 			this.state = m.state;
@@ -250,7 +227,6 @@ class Client {
 		}
 		throw new Error(`timeout waiting for ${type}`);
 	}
-	/** Wait until the merged state satisfies pred (snapshot or delta). */
 	async waitForState(pred, timeout = 15000) {
 		const start = Date.now();
 		while (Date.now() - start < timeout) {
@@ -259,7 +235,6 @@ class Client {
 		}
 		throw new Error("timeout waiting for state");
 	}
-	/** Wait until the merged messages contain one matching pred. */
 	async waitForMessage(pred, timeout = 20000) {
 		const start = Date.now();
 		while (Date.now() - start < timeout) {
@@ -293,28 +268,22 @@ async function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	mock.close();
 }
 
 try {
-	// warm up
 	await sleep(1000);
 	const c = await connect();
 	c.send({ type: "hello", clientId: "vision-bridge-test" });
 	await c.waitFor("ready", 8000);
 	console.log("  · ready, data-dir:", dataDir);
 
-	// Pick the text-only main model.
 	await new Promise((r) => setTimeout(r, 500));
 	c.send({ type: "set_model", modelId: "main/deepseek-main" });
-	// wait for a snapshot showing the model
 	await c.waitForState((s) => s.model?.id === "deepseek-main", 15000);
 	console.log("  · main model:", "deepseek-main");
 
-	// Send one prompt with a pasted image.
 	c.send({
 		type: "prompt",
 		text: "这张图里有什么？",
@@ -330,11 +299,9 @@ try {
 		],
 	});
 
-	// 1) "transcribing" notice
 	const startNotice = await c.waitFor("notice", 15000, (m) => m.text && m.text.includes("正在用视觉桥"));
 	check("transcribe-start notice", startNotice.level === "info");
 
-	// 2) mock vision API saw the image
 	const doneNotice = await c.waitFor(
 		"notice",
 		25000,
@@ -345,10 +312,8 @@ try {
 		"vision API received 1 image",
 		visionRequests.length === 1 && visionRequests[0].imageBlocks === 1 && visionRequests[0].model === "qwen-vl-mock",
 	);
-	// issue #91：转写提示词默认英文（未上报 locale 时），中文 UI 下为中文——两种都接受。
 	check("vision prompt asks for transcription", /转写|transcri/i.test(visionRequests[0]?.textPrompt ?? ""));
 
-	// 3) bridged attachment card in the message list
 	const bridged = await c.waitForMessage((m) => m.customType === "file" && m.details?.mode === "bridged", 20000);
 	check("attachment card mode=bridged", true);
 	const bridgedText = (bridged.content ?? [])
@@ -364,13 +329,10 @@ try {
 		(bridged.content ?? []).some((b) => b.type === "image"),
 	);
 
-	// 4) main model request must NOT carry image content, but carry the text
-	const mainSeen = visionRequests.length; // only vision calls recorded; add main-model capture
-	// wait for the main model to answer (assistant message appears)
+	const mainSeen = visionRequests.length;
 	await c.waitForMessage((m) => m.role === "assistant", 30000);
 	console.log("  · main model replied");
 
-	// 5) cache: same image again → no second vision API call
 	const before = visionRequestCount;
 	c.send({
 		type: "prompt",
@@ -390,8 +352,6 @@ try {
 	await sleep(4000);
 	check("same image reuses transcript cache (no 2nd vision call)", visionRequestCount === before);
 
-	// -- settings: pick a specific vision model ------------------------------
-	// settings_state must carry the vision-bridge fields + the model picker list
 	const ss = await c.waitFor("settings_state", 10000, (m) => m.settings && Array.isArray(m.settings.visionModels));
 	check(
 		"settings_state has vision-bridge fields",
@@ -407,14 +367,12 @@ try {
 			typeof ss.settings.effectiveSystemPrompt === "string",
 	);
 
-	// Switch the preferred transcription model to the SECOND vision model.
 	c.send({
 		type: "set_settings",
 		visionBridgeModel: "vision/glm-vl-mock",
 	});
 	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeModel === "vision/glm-vl-mock");
 	const before2 = visionRequestCount;
-	// A DIFFERENT image (different name -> different batch hash -> no cache hit)
 	c.send({
 		type: "prompt",
 		text: "用指定模型看这张图",
@@ -435,7 +393,6 @@ try {
 		visionRequestCount === before2 + 1 && visionRequests.at(-1)?.model === "glm-vl-mock",
 	);
 
-	// -- settings: disable the bridge ----------------------------------------
 	c.send({ type: "set_settings", visionBridgeEnabled: false });
 	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeEnabled === false);
 	const before3 = visionRequestCount;
@@ -458,13 +415,9 @@ try {
 		"disabled bridge warns and skips transcription",
 		offNotice.level === "warning" && visionRequestCount === before3,
 	);
-	// Re-enable for the next scenario.
 	c.send({ type: "set_settings", visionBridgeEnabled: true, visionBridgeModel: null });
 	await c.waitFor("settings_state", 10000, (m) => m.settings?.visionBridgeEnabled === true);
 
-	// -- path-referenced image (file list → attach) ---------------------------
-	// Referencing screenshot.png by PATH must ALSO go through the vision bridge
-	// (a text-only model can't read binary pixels; reference alone is useless).
 	const beforePath = visionRequestCount;
 	c.send({
 		type: "prompt",
@@ -493,10 +446,6 @@ try {
 		pathText.includes("<vision-bridge>") && pathText.includes(TRANSCRIPT.trim()),
 	);
 
-	// -- custom transcription prompt (settings-panel) -------------------------
-	// The vision-bridge prompt is configurable: "append" appends custom text
-	// after the built-in default prompt; "replace" replaces it entirely. The
-	// mock now records the system prompt it receives for each vision request.
 	const DEFAULT_PROMPT_MARKER = "You are a vision bridge";
 	c.send({
 		type: "set_settings",
@@ -566,9 +515,6 @@ try {
 			!replaceReq.systemPrompt.includes(DEFAULT_PROMPT_MARKER),
 	);
 
-	// Custom prompt also invalidates the transcript cache for the same image:
-	// changing the prompt must NOT reuse a cached transcript made with the old
-	// prompt. (Re-send the SAME image/name that was cached earlier in this run.)
 	const before6 = visionRequestCount;
 	c.send({
 		type: "prompt",
@@ -587,7 +533,6 @@ try {
 	await c.waitFor("notice", 25000, (m) => m.text && m.text.includes("转写完成"));
 	check("custom prompt change invalidates the transcript cache", visionRequestCount === before6 + 1);
 
-	// Restore defaults so a rerun behaves the same from the start.
 	c.send({
 		type: "set_settings",
 		visionBridgePromptMode: "append",

@@ -1,30 +1,3 @@
-/**
- * subagent-templates.ts — 子代理模板库（全局共享，<dataDir>/subagent-templates.json）。
- *
- * 模板 = 派生子代理时套用的预设：角色系统提示词（replace/append 同主设置语义）+
- * 技能白名单 + 扩展白名单 + 可选模型 + 可选思考强度。白名单空数组 = 该维度不限定，
- * 子代理跟随主会话设置。
- * `model` 为 "provider/id"（与 subagent_spawn 的 model 参数、设置面板子代理默认模型
- * 同格式）；空字符串 = 跟随主对话当前模型。
- * `thinkingLevel` 为 SDK 的思考强度（off…max，见 THINKING_LEVELS）；空字符串 = 跟随
- * 主对话当前思考强度（与 model 的「跟随主对话」同语义）。
- * 带 `enabled: false` 的模板停用：设置面板仍可见、可重新启用，但 AI 工具
- * （subagent_templates / subagent_spawn）查询不到它、也不能选择它——「关闭 =
- * 对 AI 不可见」。
- *
- * 与 per-client 的 client-state.json 不同：模板是配置品而非个人偏好，所有浏览器
- * 客户端共用同一份。文件 I/O 一律 best-effort：持久化故障绝不能弄崩 server。
- *
- * 双语约定（issue #91）：description/systemPrompt 为中文（zh 用），descriptionEn/
- * systemPromptEn 为英文（en 用，缺失回落中文）；调用方用 pickTemplateDescription/
- * pickTemplatePrompt 按语言选用。
- *
- * 繁中视图：内置模板出厂只有简中 + 英文，resolveServerLang 又把 zh-TW / zh-HK / zh-Hant
- * 都折成 "zh"，繁中用户会拿到简体。localizeTemplate 按**原始 locale** 在内置模板文字仍等于
- * 出厂简中时换上 subagent-templates-hant.ts 的繁中文案（一份台湾用语，三个繁中界面共用）；
- * 它只是展示/取用视图，不回写库——canonicalizeTemplate 在 upsert 时把「恰为出厂繁中」的
- * 文字还原成出厂简中，库里始终是出厂简中或用户自己的文字。
- */
 import { readFileSync } from "node:fs";
 import { writeJsonAtomicSync } from "./atomic-file.js";
 import type { PromptMode } from "./client-state.js";
@@ -32,80 +5,42 @@ import { isTraditionalLocale, type ServerLang } from "./i18n.js";
 import { BUILTIN_TEMPLATES_HANT } from "./subagent-templates-hant.js";
 import type { SubagentSecurityMode } from "./subagent-security-gate.js";
 
-/**
- * 思考强度取值：与 SDK 的 THINKING_LEVEL_OPTIONS（前端 ModelThinking 的 THINKING_VALUES）
- * 一致。SDK 未从包根导出该常量，这里照抄一份作输入校验（写错的值一律当未配置）。
- * 注意模型能力收敛（reasoning / thinkingLevelMap）由 SDK 的 setThinkingLevel 负责：
- * 非推理模型只会得到 "off"，这里不做也不该做模型相关的判断。
- */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** 一个子代理模板（也与 wire 协议 UiSubagentTemplate 同形）。 */
 export interface SubagentTemplate {
-	/** 唯一标识；AI 在 subagent_spawn 的 template 参数里传这个名字。 */
 	name: string;
-	/** 给 AI / 设置面板看的简介（AI 选模板时靠它判断适用场景）。 */
 	description: string;
-	/** 英文简介（en 用；缺失/为空回落 description）。 */
 	descriptionEn?: string;
-	/** 模板系统提示词与子代理默认提示词组合方式（同主设置语义）。 */
 	promptMode: PromptMode;
-	/** 模板系统提示词（replace 模式必填；append 模式可空 = 只用白名单限定）。 */
 	systemPrompt: string;
-	/** 英文系统提示词（en 用；缺失/为空回落 systemPrompt）。 */
 	systemPromptEn?: string;
-	/** 技能白名单：非空 → 子代理只启用这些技能；空 → 跟随主会话技能开关。 */
 	enabledSkills: string[];
-	/** 扩展白名单（extensionKey：npm:<pkg> / 入口路径）：非空 → 只加载这些；空 → 跟随主会话。
-	 *  非空时插件/MCP 自定义工具也不进子代理（它们没有 SDK extensionKey 身份，无法参与
-	 *  匹配，放行等于白名单没关门），只想限技能/提示词时用 append + 空扩展白名单。 */
 	enabledExtensions: string[];
-	/** 子代理模型 ("provider/id"，与 subagent_spawn 的 model 参数同格式)；空 = 跟随主对话。 */
 	model: string;
-	/** 子代理思考强度（"off"…"max"，见 THINKING_LEVELS）；空 = 跟随主对话当前思考强度。 */
 	thinkingLevel: string;
-	/** false = 停用：设置面板可见可重开，但不出现在 AI 工具清单里（也不能被选择）。 */
 	enabled: boolean;
-	/** 安全模式："normal"（默认全功能） | "readonly"（只读，仅允许只读命令与工具） | "verify"（审查验证，允许只读命令 + 测试套件） */
 	securityMode?: SubagentSecurityMode;
 }
 
-/** 按语言选模板简介：zh 用 description；en 优先 descriptionEn、缺失回落 description。 */
 export function pickTemplateDescription(t: { description: string; descriptionEn?: string }, lang: ServerLang): string {
 	if (lang === "zh") return t.description;
 	return t.descriptionEn || t.description;
 }
 
-/** 按语言选模板提示词：zh 用 systemPrompt；en 优先 systemPromptEn、缺失回落 systemPrompt。 */
 export function pickTemplatePrompt(t: { systemPrompt: string; systemPromptEn?: string }, lang: ServerLang): string {
 	if (lang === "zh") return t.systemPrompt;
 	return t.systemPromptEn || t.systemPrompt;
 }
 
-/** 名字去空白折叠后非空且 ≤ 60 字符（工具参数可读，允许中文）。 */
 const NAME_MAX = 60;
 
-/**
- * 模板体积上限（保存期拒绝，不静默截断）：模板会整体进入设置面板快照并被
- * subagent_templates 工具列给 AI，systemPrompt 还会拼进子代理上下文，无上限
- * 的单条模板能把快照推送与子代理首响都拖爆。对齐常见上下文预算的保守值。
- */
 export const TEMPLATE_LIMITS = {
-	/** 模板系统提示词上限（systemPrompt / systemPromptEn 各自计）。 */
 	systemPrompt: 32_768,
-	/** 模板简介上限（description / descriptionEn 各自计）。 */
 	description: 2_000,
-	/** 技能/扩展白名单各自最多条目数。 */
 	whitelistEntries: 64,
-	/** 白名单单条字符上限。 */
 	whitelistEntryLength: 200,
 } as const;
 
-/**
- * 保存期体积校验：超限返回明确错误文本（让设置面板能原样提示），null = 通过。
- * 只拦新保存，不拦读盘老数据（向后兼容，与 replace 空提示词的拦截口径一致）；
- * 拒绝而非截断——静默截断会让用户以为保存的是完整内容。
- */
 export function validateTemplateLimits(t: SubagentTemplate): string | null {
 	if (t.systemPrompt.length > TEMPLATE_LIMITS.systemPrompt) {
 		return `模板 "${t.name}" 的系统提示词超长（${t.systemPrompt.length} > ${TEMPLATE_LIMITS.systemPrompt} 字符），请精简后再保存`;
@@ -134,15 +69,7 @@ export function validateTemplateLimits(t: SubagentTemplate): string | null {
 	return null;
 }
 
-/**
- * 内置默认模板（第一次运行时种子进列表；用户改动后以 <dataDir> 文件为准）。
- * 文案改编自 pi-subagents 社区项目（tintinweb / nicobailon）的角色提示词,
- * 剔除了本项目没有的专有工具引用（contact_supervisor / web_search / workflow…）。
- * 白名单留空 = 技能/扩展跟随主会话设置，开箱即用。
- */
 export const DEFAULT_TEMPLATES: SubagentTemplate[] = [
-	// 全部内置模板默认 model / thinkingLevel 为空字符串 = 跟随主对话当前模型与思考强度
-	// （面板改模板时可指定专属模型与强度）。
 	{
 		name: "review",
 		description: "代码 / 计划 / 方案 / PR 审查：有证据的 P0-P2 发现与合并结论",
@@ -389,10 +316,6 @@ export const DEFAULT_TEMPLATES: SubagentTemplate[] = [
 		thinkingLevel: "",
 		enabled: true,
 	},
-	// ---- oh-my-pi specialist 系列（移植自 oh-my-pi 内置 agents + persona 包装模板，
-	// 见 tests/scratch/ohmy-essence.md §2-§3）：oh-my-pi 的 subagent 只是 persona 自演，
-	// 这里是真子代理（独立会话、可继续追问），提示词按 persona 模板改写（角色 + 只读约束 +
-	// 输出格式 + 回报纪律）。全部 model:"" = 跟随主对话模型，白名单留空 = 跟随主会话开关。
 	{
 		name: "oracle",
 		description: "只读高智顾问：架构设计、难调的 bug、多系统权衡，复杂决策前先咨询",
@@ -616,17 +539,10 @@ export const DEFAULT_TEMPLATES: SubagentTemplate[] = [
 	},
 ];
 
-/** 出厂简中文案索引（按模板名）：判断「文字是否仍是出厂原样」的唯一基准。 */
 const SHIPPED_BY_NAME: ReadonlyMap<string, SubagentTemplate> = new Map(DEFAULT_TEMPLATES.map((t) => [t.name, t]));
 
-/** localize / canonicalize 只关心的三个字段（UiSubagentTemplate 与 SubagentTemplate 都满足）。 */
 type TemplateText = Pick<SubagentTemplate, "name" | "description" | "systemPrompt">;
 
-/**
- * 繁中界面（zh-TW / zh-HK / zh-Hant）看到的模板视图：内置模板的 description / systemPrompt
- * 若仍等于出厂简中，换成繁中文案；两个字段逐一判断、互不牵连。用户改过的字段、自建模板、
- * 非繁中界面一律原样返回（同一个对象）。返回值只作展示/取用，不要回写进库。
- */
 export function localizeTemplate<T extends TemplateText>(t: T, locale?: string | null): T {
 	if (!isTraditionalLocale(locale)) return t;
 	const shipped = SHIPPED_BY_NAME.get(t.name);
@@ -638,12 +554,6 @@ export function localizeTemplate<T extends TemplateText>(t: T, locale?: string |
 	return { ...t, description, systemPrompt };
 }
 
-/**
- * localizeTemplate 的逆运算：内置模板里恰好等于出厂繁中的 description / systemPrompt 还原成
- * 出厂简中。设置页在繁中界面显示的是繁中视图，单击启用开关或只改模型都会把整个模板连同
- * 繁中文字回传；不还原的话，库（所有客户端共享）就会被悄悄改写成繁体，其它语言的用户再
- * 也看不到出厂简中。用户真正改过的文字与自建模板原样保留。
- */
 export function canonicalizeTemplate<T extends TemplateText>(t: T): T {
 	const shipped = SHIPPED_BY_NAME.get(t.name);
 	const hant = shipped && BUILTIN_TEMPLATES_HANT[t.name];
@@ -654,7 +564,6 @@ export function canonicalizeTemplate<T extends TemplateText>(t: T): T {
 	return { ...t, description, systemPrompt };
 }
 
-/** 容忍脏数据/旧版本：非法条目整体丢弃。 */
 function normalize(raw: unknown): SubagentTemplate | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
@@ -673,9 +582,7 @@ function normalize(raw: unknown): SubagentTemplate | null {
 		enabledExtensions: Array.isArray(o.enabledExtensions)
 			? o.enabledExtensions.filter((x): x is string => typeof x === "string")
 			: [],
-		// 空字符串 = 跟随主对话；其余剥掉首尾空白，超长当脏数据丢弃。
 		model: typeof o.model === "string" ? o.model.trim() : "",
-		// 只认 THINKING_LEVELS 里的档位；老文件没有该字段 / 值写错 → 空 = 跟随主对话。
 		thinkingLevel:
 			typeof o.thinkingLevel === "string" && (THINKING_LEVELS as readonly string[]).includes(o.thinkingLevel.trim())
 				? o.thinkingLevel.trim()
@@ -684,7 +591,6 @@ function normalize(raw: unknown): SubagentTemplate | null {
 	};
 }
 
-/** 全局子代理模板库（原子写；失败静默）。 */
 export class SubagentTemplatesStore {
 	private templates: SubagentTemplate[] | null = null;
 
@@ -698,18 +604,12 @@ export class SubagentTemplatesStore {
 				? parsed.map(normalize).filter((t): t is SubagentTemplate => t !== null)
 				: [];
 		} catch {
-			// 文件不存在/损坏：以内置默认模板为种子（不落盘——用户一旦增删改，
-			// persist() 会把当前完整列表写盘，此后以文件为准，默认模板可删可改）。
 			this.templates = DEFAULT_TEMPLATES.map((t) => ({
 				...t,
 				enabledSkills: [...t.enabledSkills],
 				enabledExtensions: [...t.enabledExtensions],
 			}));
 		}
-		// 老用户已有文件时：把「从未播种过」的内置模板合并进来（发版新增的内置
-		// 模板才能送达）。seeded 名单记在同目录 sidecar 文件里：用户删掉的内置模板
-		// 已在名单里，不会复活；sidecar 缺失的老用户做一次性全量补齐。
-		// name 即去重键，用户改过的同名条目原样保留。
 		const names = new Set(this.templates.map((t) => t.name));
 		const seeded = this.loadSeeded();
 		let grown = false;
@@ -732,12 +632,9 @@ export class SubagentTemplatesStore {
 	private persist(): void {
 		try {
 			writeJsonAtomicSync(this.filePath, this.templates);
-		} catch {
-			// best effort
-		}
+		} catch {}
 	}
 
-	/** 已播种过的内置模板名（sidecar 文件，best-effort；缺失=老用户，做一次性补齐）。 */
 	private seededNames: Set<string> | null = null;
 
 	private seededPath(): string {
@@ -752,9 +649,7 @@ export class SubagentTemplatesStore {
 		try {
 			const parsed = JSON.parse(readFileSync(this.seededPath(), "utf8")) as unknown;
 			if (Array.isArray(parsed)) for (const n of parsed) if (typeof n === "string" && n) out.add(n);
-		} catch {
-			// 无 sidecar：老用户，返回空集触发一次性补齐（下次 load 即建档）。
-		}
+		} catch {}
 		this.seededNames = out;
 		return out;
 	}
@@ -763,12 +658,9 @@ export class SubagentTemplatesStore {
 		this.seededNames = names;
 		try {
 			writeJsonAtomicSync(this.seededPath(), [...names].sort());
-		} catch {
-			// best effort
-		}
+		} catch {}
 	}
 
-	/** 全部模板（含停用的）。设置面板展示用。 */
 	list(): SubagentTemplate[] {
 		return this.load().map((t) => ({
 			...t,
@@ -777,24 +669,17 @@ export class SubagentTemplatesStore {
 		}));
 	}
 
-	/** 按名取模板（含停用的；spawn 时由宿主做启用校验）。 */
 	get(name: string): SubagentTemplate | undefined {
 		return this.load().find((t) => t.name === name);
 	}
 
-	/** Upsert 一个模板（同名覆盖）。返回错误文本；成功返回 null。 */
 	upsert(input: unknown): string | null {
 		const normalized = normalize(input);
 		if (!normalized) return `模板名称不合法（去空白后 1-${NAME_MAX} 字符）`;
-		// 设置页在繁中界面回传的是繁中视图：恰为出厂繁中的文字还原成出厂简中再入库。
 		const t = canonicalizeTemplate(normalized);
-		// replace + 空提示词 = 子代理静默用默认 persona 运行（模板等于没生效），
-		// 在保存期直接拦下：只想限定白名单请用 append 模式。读盘的老数据不拦
-		// （向后兼容，只拦新保存）。
 		if (t.promptMode === "replace" && !t.systemPrompt.trim() && !(t.systemPromptEn ?? "").trim()) {
 			return `模板 "${t.name}" 用了 replace 模式但系统提示词为空：replace 会整体替换子代理 persona，空提示词等于模板没生效。请填写提示词（中文或英文至少一个），只想限定技能/扩展白名单请用 append 模式`;
 		}
-		// 体积上限同样只在保存期拦：超限明确报错，绝不静默截断。
 		const limitError = validateTemplateLimits(t);
 		if (limitError) return limitError;
 		const list = this.load();
@@ -805,7 +690,6 @@ export class SubagentTemplatesStore {
 		return null;
 	}
 
-	/** 删除一个模板（不存在时静默）。 */
 	remove(name: string): void {
 		const list = this.load();
 		const next = list.filter((t) => t.name !== name);

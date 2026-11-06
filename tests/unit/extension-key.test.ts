@@ -31,7 +31,6 @@ describe("extensionKeyCandidates", () => {
 	it("sourceInfo 缺失时（SDK override 阶段）从 node_modules 路径推导 npm:<pkg>", () => {
 		const e = { path: "C:\\Users\\c\\.pi\\agent\\npm\\node_modules\\pi-powerline-footer\\dist\\index.js" };
 		expect(extensionKeyCandidates(e)).toContain("npm:pi-powerline-footer");
-		// 同时保留原始路径键，旧数据（按路径禁用）仍然生效
 		expect(extensionKeyCandidates(e)).toContain(e.path);
 	});
 
@@ -89,7 +88,6 @@ describe("isInternalExtension", () => {
 		expect(isInternalExtension({ path: "<builtin:mcp>" })).toBe(true);
 		expect(isInternalExtension({ path: "C:\\Users\\c\\.pi\\extensions\\my.ts", hidden: true })).toBe(true);
 
-		// 普通外部扩展返回 false
 		expect(isInternalExtension({ path: "C:\\Users\\c\\.pi\\extensions\\my.ts" })).toBe(false);
 		expect(isInternalExtension({ path: "C:\\Users\\c\\.pi\\agent\\git\\foo\\index.ts" })).toBe(false);
 	});

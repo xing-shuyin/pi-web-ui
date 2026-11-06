@@ -1,7 +1,7 @@
 {
 	"id": "desktop-use",
 	"name": "桌面控制",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"icon": "🖱️",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5\" y=\"2\" width=\"14\" height=\"20\" rx=\"7\"/><line x1=\"12\" y1=\"6\" x2=\"12\" y2=\"10\"/></svg>",
 	"description": "让 AI 操作 Windows/macOS 桌面：原生无障碍与离线截图 OCR 定位、点击、中文输入、快捷键、窗口聚焦、滚动与拖拽。macOS 使用内置 Swift 后端，需系统权限与 Apple Command Line Tools。",

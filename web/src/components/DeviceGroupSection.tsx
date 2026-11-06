@@ -70,7 +70,6 @@ export class DeviceGroupRequestError extends Error {
 	}
 }
 
-// Never surface arbitrary upstream text: local error codes are the public boundary.
 export async function deviceGroupRequest<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
 	const response = await fetch(withToken(appUrl(`/api/device-center/${path}`)), {
 		signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
@@ -91,7 +90,6 @@ export function deviceGroupErrorKind(error: unknown): "bind" | "running" | "forb
 	return "failed";
 }
 
-/** One request at a time; changes during a request queue one fresh read and invalidate its result. */
 export function createDeviceGroupRefresh(
 	load: (signal: AbortSignal) => Promise<SidebarDeviceGroup[]>,
 	onResult: (rooms: SidebarDeviceGroup[]) => void,

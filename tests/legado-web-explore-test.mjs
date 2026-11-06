@@ -1,13 +1,3 @@
-/**
- * 发现页 E2E（零 token）：**收藏书源** + **直接搜这个源** + 分类浏览。
- *
- * 起一个假书源站（JSON 搜索接口 + 发现分类），种一个可用的书源，然后：
- *   1. 发现页「☆ 收藏」→ 按钮变「⭐ 已收藏」、下拉出现「⭐ 常用（收藏）」分组、出现「⭐ 常用」一键切换行、prefs.json 落盘；
- *   2. 在发现页搜索框输入关键词 → 列表出现搜索结果（书名）、标题写「🔍 搜索「x」」；
- *   3. 点分类 → 分类结果照常渲染（搜索与分类共用一个列表容器，不能互相串）。
- *
- * 没有 Chrome 时自动 SKIP。运行：先 build，再 node tests/legado-web-explore-test.mjs
- */
 import { spawn } from "node:child_process";
 import http from "node:http";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -37,7 +27,6 @@ const source = {
 	bookSourceType: 0,
 	enabled: true,
 	searchUrl: "/search?key={{key}}",
-	// 发现分类：legado 的 exploreUrl 是「规则串」（JSON 数组 / 「分类::url」/ @js:），不是页面地址
 	exploreUrl: '[{"title":"玄幻","url":"/explore?kind=1"}]',
 	ruleSearch: { bookList: "$.data.list", name: "$.name", author: "$.author", bookUrl: "$.url" },
 	ruleExplore: { bookList: "$.data.list", name: "$.name", author: "$.author", bookUrl: "$.url" },
@@ -72,7 +61,6 @@ try {
 	});
 	if (!existsSync(join(pluginDir, "client", "app", "index.html"))) throw new Error("缺 client/app —— 先 build");
 	mkdirSync(join(dataDir, "legado-web"), { recursive: true });
-	// 书源：exploreUrl 是「JSON 分类数组」形态（parseExploreKinds 直接认）
 	writeFileSync(join(dataDir, "legado-web", "sources.json"), JSON.stringify([source]));
 
 	freePort(PORT);
@@ -117,7 +105,6 @@ try {
 		await page.click('nav button[data-tab="explore"]');
 		await page.waitForTimeout(800);
 
-		// 1) 收藏书源
 		if (!(await page.textContent("#ex-pin")).includes("☆ 收藏")) fail("发现页没找到「☆ 收藏」按钮");
 		await page.click("#ex-pin");
 		await page.waitForTimeout(400);
@@ -132,7 +119,6 @@ try {
 		if (!process.exitCode)
 			console.log("✓ 发现页收藏书源：按钮状态 / 下拉「⭐ 常用（收藏）」分组 / 常用快捷行 / prefs.json");
 
-		// 2) 发现页直接搜这个源
 		await page.fill("#ex-search", "剑");
 		await page.click("#ex-search-go");
 		await page.waitForTimeout(1200);
@@ -142,7 +128,6 @@ try {
 		if (!(await page.textContent("#status")).includes("搜索「剑」")) fail("状态栏没提示搜索");
 		if (!process.exitCode) console.log("✓ 发现页直接搜这个源（结果与标题都进同一个列表容器）");
 
-		// 3) 分类浏览仍正常（两种模式共用一个容器）
 		const kinds = await page.locator("#ex-kinds button[data-kind]").count();
 		if (kinds) {
 			await page.locator("#ex-kinds button[data-kind]").first().click();
@@ -163,15 +148,11 @@ try {
 } finally {
 	try {
 		sock?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (proc?.pid) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	site?.close();
 	await new Promise((r) => setTimeout(r, 600));

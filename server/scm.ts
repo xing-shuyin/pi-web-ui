@@ -1,11 +1,3 @@
-/**
- * Read-only git queries backing the source-control panel.
- *
- * Replaces the old hidden-PTY + text-scraping approach: every query is a
- * plain `execFile("git", …)` — no shell, no prompts, no echo, no sentinel
- * parsing. Output is parsed into structured JSON on the server; the client
- * just renders it.
- */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pick, type ServerLang } from "./i18n.js";
@@ -13,7 +5,6 @@ import { getGlobalRemoteSshService, isRemoteWorkspaceUri, shellQuotePosix } from
 
 const exec = promisify(execFile);
 
-/** Per-command timeout / output cap — a stuck repo must not hang the panel. */
 const GIT_TIMEOUT_MS = 15_000;
 const MAX_GIT_OUTPUT = 16 * 1024 * 1024;
 
@@ -26,8 +17,6 @@ export interface ScmFileEntry {
 export interface ScmBranchEntry {
 	name: string;
 	current: boolean;
-	/** Remote name for remote-tracking refs ("origin/main" → "origin");
-	 *  true when the remote can't be determined. */
 	remote?: string | boolean;
 }
 
@@ -38,7 +27,6 @@ export interface ScmCommitEntry {
 	date: string;
 	subject: string;
 	decorations: string;
-	/** The graph prefix emitted by `git log --graph` (for example `| * `). */
 	graph: string;
 }
 
@@ -52,11 +40,9 @@ export interface ScmStatusData {
 	upstreamGone: boolean;
 	files: ScmFileEntry[];
 	branches: ScmBranchEntry[];
-	/** path → [added, deleted] line counts (worktree + staged combined). */
 	stats: Record<string, [number, number]>;
 }
 
-/** Run one git command; throws Error with a readable message on failure. */
 async function git(cwd: string, args: string[], lang?: () => ServerLang): Promise<string> {
 	const l = lang?.() ?? "en";
 	if (isRemoteWorkspaceUri(cwd)) {
@@ -97,8 +83,6 @@ async function git(cwd: string, args: string[], lang?: () => ServerLang): Promis
 	}
 }
 
-/** Absolute path of the repo's git dir (handles worktrees/submodules), or
- *  null when cwd isn't inside a repository. */
 export async function gitDirOf(cwd: string): Promise<string | null> {
 	if (isRemoteWorkspaceUri(cwd)) return null;
 	try {
@@ -113,17 +97,10 @@ export async function gitDirOf(cwd: string): Promise<string | null> {
 	}
 }
 
-/** True when the error is "this directory isn't a git repository". */
 export function isNotRepoError(err: unknown): boolean {
 	return /not a git repository/i.test(err instanceof Error ? err.message : String(err));
 }
 
-/* ------------------------------------------------------------------ */
-/* parsers                                                             */
-/* ------------------------------------------------------------------ */
-
-/** Undo git's C-style quoting for unusual file names ("a\tb" → a<TAB>b).
- *  core.quotepath=false already handles non-ASCII; this covers control chars. */
 function unquotePath(s: string): string {
 	if (!s.startsWith('"')) return s;
 	const inner = s.endsWith('"') ? s.slice(1, -1) : s.slice(1);
@@ -214,7 +191,7 @@ function parseStatusFiles(text: string): ScmFileEntry[] {
 		if (!line || line.startsWith("## ")) continue;
 		if (line.length >= 3) {
 			let path = line.slice(3);
-			const arrow = path.indexOf(" -> "); // rename: "R  old -> new"
+			const arrow = path.indexOf(" -> ");
 			if (arrow >= 0) path = path.slice(arrow + 4);
 			out.push({ path: unquotePath(path), x: line[0], y: line[1] });
 		}
@@ -233,7 +210,6 @@ function parseBranches(text: string): ScmBranchEntry[] {
 			out.push({ name: ref.slice("refs/heads/".length), current: isHead });
 		} else if (ref.startsWith("refs/remotes/")) {
 			const short = ref.slice("refs/remotes/".length);
-			// Skip the "origin/HEAD -> origin/main" symlink.
 			if (short.endsWith("/HEAD")) continue;
 			const slash = short.indexOf("/");
 			out.push({
@@ -246,18 +222,15 @@ function parseBranches(text: string): ScmBranchEntry[] {
 	return out;
 }
 
-/** Parse `git log --graph --pretty=format:%H%x09…` preserving graph prefixes. */
 function parseCommitHistory(text: string): ScmCommitEntry[] {
 	const out: ScmCommitEntry[] = [];
 	for (const line of text.split("\n")) {
 		const tab = line.indexOf("\t");
-		if (tab < 0) continue; // connector-only graph line
+		if (tab < 0) continue;
 		const prefixAndHash = line.slice(0, tab);
 		const match = prefixAndHash.match(/([0-9a-f]{7,40})$/i);
 		if (!match || match.index === undefined) continue;
 		const fields = line.slice(tab + 1).split("\t");
-		// An empty decoration field removes the final tab — four fields is a
-		// valid undecorated commit.
 		if (fields.length < 4) continue;
 		out.push({
 			hash: match[1],
@@ -272,7 +245,6 @@ function parseCommitHistory(text: string): ScmCommitEntry[] {
 	return out;
 }
 
-/** Parse `git diff --numstat` output: "12\t3\tpath" → { path: [add, del] }. */
 function parseNumStat(text: string): Record<string, [number, number]> {
 	const stats: Record<string, [number, number]> = {};
 	for (const line of text.split("\n")) {
@@ -282,7 +254,7 @@ function parseNumStat(text: string): Record<string, [number, number]> {
 		if (tab2 < 0) continue;
 		let add = Number(line.slice(0, tab1));
 		let del = Number(line.slice(tab1 + 1, tab2));
-		if (!Number.isFinite(add)) add = 0; // binary file → "-"
+		if (!Number.isFinite(add)) add = 0;
 		if (!Number.isFinite(del)) del = 0;
 		const path = unquotePath(line.slice(tab2 + 1).trim());
 		const prev = stats[path];
@@ -290,10 +262,6 @@ function parseNumStat(text: string): Record<string, [number, number]> {
 	}
 	return stats;
 }
-
-/* ------------------------------------------------------------------ */
-/* queries                                                             */
-/* ------------------------------------------------------------------ */
 
 const HISTORY_ARGS = [
 	"log",
@@ -306,13 +274,10 @@ const HISTORY_ARGS = [
 	"120",
 ];
 
-/** Commit graph for the history tab — fetched lazily so the common
- *  "changes" view never pays for it on huge repos. */
 export async function scmHistory(cwd: string, lang?: () => ServerLang): Promise<ScmCommitEntry[]> {
 	return parseCommitHistory(await git(cwd, HISTORY_ARGS, lang));
 }
 
-/** Status refresh payload (status + branches + numstat) — parallel. */
 export async function scmStatus(cwd: string, lang?: () => ServerLang): Promise<Omit<ScmStatusData, "history">> {
 	const [statusText, branchText, statText, cachedStatText] = await Promise.all([
 		git(cwd, ["status", "--porcelain=v1", "-b", "--find-renames"], lang),
@@ -326,7 +291,6 @@ export async function scmStatus(cwd: string, lang?: () => ServerLang): Promise<O
 			.find((l) => l.startsWith("## "))
 			?.slice(3) ?? "",
 	);
-	// Worktree + staged line counts, merged per path.
 	const merged: Record<string, [number, number]> = {};
 	for (const [path, pair] of Object.entries(parseNumStat(statText))) {
 		merged[path] = pair;
@@ -349,7 +313,6 @@ export async function scmStatus(cwd: string, lang?: () => ServerLang): Promise<O
 	};
 }
 
-/** Staged + worktree diffs for one file (empty strings when no diff). */
 export async function scmFileDiff(
 	cwd: string,
 	path: string,
@@ -362,7 +325,6 @@ export async function scmFileDiff(
 	return { staged, worktree };
 }
 
-/** Full patch of one commit (`git show`). */
 export async function scmCommitDetail(cwd: string, hash: string, lang?: () => ServerLang): Promise<string> {
 	return git(
 		cwd,
@@ -371,45 +333,23 @@ export async function scmCommitDetail(cwd: string, hash: string, lang?: () => Se
 	);
 }
 
-/* ------------------------------------------------------------------ */
-/* AI commit-message context                                           */
-/* ------------------------------------------------------------------ */
-
-/** Cap per patch (staged / worktree) fed to the commit-message prompt —
- *  enough for the model to see what most commits are about without letting
- *  one huge repo blow up the one-off completion request. */
 const MAX_COMMITMSG_PATCH_CHARS = 12_000;
 
-/** Everything the commit-message generator needs, gathered in one pass.
- *  Structured on purpose: rendering/truncation decisions live in the pure
- *  prompt builder (scm-commitmsg.ts) so they are unit-testable. */
 export interface ScmCommitContext {
-	/** Recent commit subjects, newest first — style & language reference. */
 	subjects: string[];
-	/** True when the repo has no commits yet (no style reference exists). */
 	emptyRepo: boolean;
-	/** porcelain entries (staged + unstaged + untracked; renames resolved). */
 	files: ScmFileEntry[];
-	/** path → [added, deleted] for the staged diff. */
 	stagedStat: Record<string, [number, number]>;
-	/** path → [added, deleted] for the worktree diff. */
 	worktreeStat: Record<string, [number, number]>;
-	/** Staged patch (capped at MAX_COMMITMSG_PATCH_CHARS; marker appended). */
 	stagedPatch: string;
-	/** Worktree patch (capped the same way). */
 	worktreePatch: string;
 }
 
-/** Cap one patch at MAX_COMMITMSG_PATCH_CHARS, keeping the head (early files
- *  matter most for a commit message) and marking the cut. */
 function capPatch(text: string): string {
 	if (text.length <= MAX_COMMITMSG_PATCH_CHARS) return text;
 	return `${text.slice(0, MAX_COMMITMSG_PATCH_CHARS)}\n… (diff truncated)`;
 }
 
-/** Gather staged/worktree patches, numstats, status and recent subjects for
- *  the AI commit-message generator. Throws the usual git errors (including
- *  "not a git repository") — the caller maps them to friendly replies. */
 export async function scmCommitContext(cwd: string, lang?: () => ServerLang): Promise<ScmCommitContext> {
 	const [stagedPatch, worktreePatch, stagedStatText, worktreeStatText, statusText, subjectText] = await Promise.all([
 		git(cwd, ["diff", "--cached", "--no-color", "--no-ext-diff", "--find-renames"], lang).catch(() => ""),
@@ -417,8 +357,6 @@ export async function scmCommitContext(cwd: string, lang?: () => ServerLang): Pr
 		git(cwd, ["diff", "--cached", "--numstat"], lang).catch(() => ""),
 		git(cwd, ["diff", "--numstat"], lang).catch(() => ""),
 		git(cwd, ["status", "--porcelain=v1", "--find-renames"], lang),
-		// Empty repos (no commits yet) make `git log` fail — that's a valid
-		// "no style reference" answer, not an error worth failing the request.
 		git(cwd, ["log", "-n", "15", "--pretty=format:%s"], lang).then(
 			(s) => s,
 			() => "",

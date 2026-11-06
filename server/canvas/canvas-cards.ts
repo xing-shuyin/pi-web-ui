@@ -1,9 +1,3 @@
-/**
- * canvas-cards.ts — 自定义卡片注册表（AI/用户沉淀的可复用节点模板，永久有效）。
- *
- * 存放在 <dataDir>/canvas/custom-cards.json 中：{ cards: CanvasCustomCard[] }。
- * 卡片落图时展开为普通节点（role 沿用内置角色），不碰封闭的 CanvasNodeRole 联合类型。
- */
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeJsonAtomicSync } from "../atomic-file.js";
@@ -12,7 +6,6 @@ import { isSafeGraphId } from "./canvas-store.js";
 
 const VALID_ENGINES: ReadonlySet<string> = new Set(["pi", "dsh", "codex", "claude", "durable"]);
 
-/** 卡片 id 与节点 id 同一安全口径：可作文件名/分支名，不穿越。 */
 export function isSafeCardId(id: unknown): id is string {
 	return isSafeGraphId(id);
 }
@@ -23,7 +16,6 @@ function cardsPath(dataDir: string): string {
 	return join(dir, "custom-cards.json");
 }
 
-/** 读全表（文件缺失/损坏 → 空表，不炸）。 */
 export function listCustomCards(dataDir: string): CanvasCustomCard[] {
 	try {
 		const raw = JSON.parse(readFileSync(cardsPath(dataDir), "utf8")) as { cards?: CanvasCustomCard[] };
@@ -48,7 +40,6 @@ export interface CardInput {
 	config?: unknown;
 }
 
-/** 净化输入：标题≤24，文案各≤2000，role/engine 非法直接抛（调用方转用户提示）。 */
 export function sanitizeCardInput(
 	input: CardInput,
 	isValidRole: (r: string) => boolean,
@@ -74,7 +65,6 @@ export function sanitizeCardInput(
 		if (!VALID_ENGINES.has(engine)) throw new Error(`Invalid card engine: ${JSON.stringify(input.engine)}`);
 		out.engine = engine as CanvasEngineId;
 	}
-	// 行为参数：纯量键值≤20个（落图即节点 config，循环次数/表达式/cron/api 等都靠它）
 	if (input.config !== undefined) {
 		if (typeof input.config !== "object" || input.config === null || Array.isArray(input.config)) {
 			throw new Error("Card config must be a plain object.");
@@ -93,7 +83,6 @@ export function sanitizeCardInput(
 	return out;
 }
 
-/** 新增卡片（id 服务端生成）。 */
 export function addCustomCard(
 	dataDir: string,
 	input: CardInput,
@@ -111,7 +100,6 @@ export function addCustomCard(
 	return card;
 }
 
-/** 更新卡片（只改给定字段，id 不可改）。 */
 export function updateCustomCard(
 	dataDir: string,
 	id: string,
@@ -133,7 +121,6 @@ export function updateCustomCard(
 	};
 	const clean = sanitizeCardInput(merged, isValidRole);
 	Object.assign(card, clean, { updatedAt: Date.now() });
-	// 清掉被置空的可选字段
 	if (!clean.instruction) delete card.instruction;
 	if (!clean.systemPrompt) delete card.systemPrompt;
 	if (!clean.model) delete card.model;
@@ -143,7 +130,6 @@ export function updateCustomCard(
 	return card;
 }
 
-/** 删除卡片（不存在返回 false）。 */
 export function deleteCustomCard(dataDir: string, id: string): boolean {
 	if (!isSafeCardId(id)) throw new Error(`Invalid card id: ${JSON.stringify(id)}`);
 	const cards = listCustomCards(dataDir);

@@ -1,11 +1,3 @@
-/**
- * tests/unit/plugin-compat-apis.test.ts
- *
- * 验证宿主为插件控制面提供的核心 API（Issue #615）：
- * 1. secrets.getAll() 批量解密读取；
- * 2. onClientMessage(handler) 客户端上行 RPC 定向 reply；
- * 3. registerTool(tool) 单参 execute(args) 自动适配并注册为标准 AgentTool。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,7 +63,6 @@ describe("PluginHost compatibility APIs (Issue #615)", () => {
 	it("host.onClientMessage(handler) dispatches client message and replies to caller", async () => {
 		const h = await activate("test-on-client-message");
 		const sent: Array<{ clientId: string; payload: unknown }> = [];
-		// 监听宿主发往下游的定向消息
 		mgr.sendTo = (clientId: string, pluginId: string, payload: unknown) => {
 			if (pluginId === "test-on-client-message") {
 				sent.push({ clientId, payload });
@@ -85,10 +76,8 @@ describe("PluginHost compatibility APIs (Issue #615)", () => {
 		});
 		expect(off).toBeTypeOf("function");
 
-		// 模拟客户端发送上行消息
 		mgr.handleMessage("test-on-client-message", { type: "ping" }, "client-session-abc");
 
-		// 等待异步 handler 执行完毕
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(receivedMsg).toEqual({ type: "ping" });
@@ -98,7 +87,6 @@ describe("PluginHost compatibility APIs (Issue #615)", () => {
 			payload: { type: "test_ack", status: "ok" },
 		});
 
-		// 注销后不再接收
 		off?.();
 		mgr.handleMessage("test-on-client-message", { type: "ping2" }, "client-session-abc");
 		await new Promise((r) => setTimeout(r, 10));
@@ -132,12 +120,10 @@ describe("PluginHost compatibility APIs (Issue #615)", () => {
 		expect(tool).toBeDefined();
 		expect(tool?.description).toBe("Send message via IM bot");
 
-		// 智能体调用工具时传入 toolCallId 与 params
 		const res = await tool!.execute("call_12345", { action: "send", text: "hello world" });
 		expect(executedArgs).toEqual({ action: "send", text: "hello world" });
 		expect(res).toBe(JSON.stringify({ sent: true, text: "hello world" }));
 
-		// 注销工具
 		off?.();
 		const toolsAfter = mgr.getAgentTools();
 		expect(toolsAfter.find((t) => t.name === "my_im_bot")).toBeUndefined();

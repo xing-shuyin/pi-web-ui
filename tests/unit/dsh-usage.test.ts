@@ -1,4 +1,3 @@
-/** dsh-usage 单测：DSH 用量 → 底栏四桶 / 上下文占用 / 日志回放取最后一条（纯函数）。 */
 import { describe, expect, it } from "vitest";
 import { dshContextUsage, dshPromptTokens, lastUsageFromEvents, normalizeDshUsage } from "../../server/dsh/dsh-usage";
 

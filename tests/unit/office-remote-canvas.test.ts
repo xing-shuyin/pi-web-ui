@@ -338,19 +338,6 @@ describe("opaque iframe parent broker", () => {
 	});
 });
 
-/**
- * 跑一次真正的 esbuild 打包，并把「只在 jsdom 下暴露」的坑挡在用例内。
- *
- * 两个已知的脆弱点（满负载下才现形，且现场容易误判成并发争用）：
- *  1. jsdom 的 `Uint8Array` 与 Node 的 `TextEncoder`/`Buffer` 不同 realm —— esbuild 的
- *     JS 协议层会做 `instanceof` 判断，必须临时换成 Node 的实现。旧实现用
- *     `vi.stubGlobal` 把整个文件的作用域都改了；这里只在一对 build 前后换，避免任何
- *     后续用例/同 worker 的其它路径读到 Node 的构造器。
- *  2. esbuild 首次 `build()` 需要拉起子进程（进程内单例）。在 4 worker 并发 + 其它用例
- *     同时 spawn server/PTY 的机器上，偶发 `spawn EAGAIN` / `EPERM` / `service was
- *     stopped` 这类**瞬态**启动失败。这类失败与打包结果无关，重试一次即可；真失败
- *     （例如插件规则不再匹配）第二次照样抛，并把 root 下的文件清单一起带出来便于定位。
- */
 const TRANSIENT_BUNDLE_FAILURE = /spawn|EAGAIN|EPERM|EBUSY|EMFILE|ENFILE|service was stopped|socket hang up/i;
 
 async function bundleInNodeRealm<T>(build: () => Promise<T>): Promise<T> {
@@ -363,7 +350,6 @@ async function bundleInNodeRealm<T>(build: () => Promise<T>): Promise<T> {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			if (!TRANSIENT_BUNDLE_FAILURE.test(message)) throw error;
-			// 瞬态启动失败：立刻重试一次（esbuild service 已在上一轮拉起，第二次不会再 spawn）
 			return await build();
 		}
 	} finally {

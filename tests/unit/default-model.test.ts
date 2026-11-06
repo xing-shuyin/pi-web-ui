@@ -1,11 +1,3 @@
-/**
- * 全局默认模型服务端单测：存取 + 清除 + key 记忆跟随 + 删除改指。
- * 不起 server、不碰网络，纯 ClientStateStore 状态。
- *
- * 语义回顾（contract）：新项目回落链 = 项目记忆 projectModels[cwd]
- *  > 全局默认 defaultModel（__settings__ 键，全客户端共享）
- *  > SDK 默认。key 记忆同理（projectProviderKeys > defaultProviderKeys）。
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,10 +25,8 @@ describe("全局默认模型", () => {
 	it("设置/读取/清除", () => {
 		store.saveDefaultModel("anthropic/claude-sonnet-5");
 		expect(store.getDefaultModel()).toBe("anthropic/claude-sonnet-5");
-		// 覆盖
 		store.saveDefaultModel("openai/gpt-5");
 		expect(store.getDefaultModel()).toBe("openai/gpt-5");
-		// 清除连带 key 记忆
 		store.saveDefaultProviderKey("openai", "密钥 1");
 		store.clearDefaultModel();
 		expect(store.getDefaultModel()).toBeUndefined();
@@ -47,7 +37,6 @@ describe("全局默认模型", () => {
 		store.saveDefaultModel("anthropic/claude-sonnet-5");
 		store.saveDefaultProviderKey("anthropic", "密钥 2");
 		expect(store.getDefaultProviderKey("anthropic")).toBe("密钥 2");
-		// 别的 provider 不受影响
 		expect(store.getDefaultProviderKey("openai")).toBeUndefined();
 	});
 
@@ -56,7 +45,6 @@ describe("全局默认模型", () => {
 		store.saveDefaultModel("anthropic/claude-sonnet-5");
 		expect(store.getProjectModel("tab1", "/proj/a")).toBe("openai/gpt-5");
 		expect(store.getDefaultModel()).toBe("anthropic/claude-sonnet-5");
-		// 删项目记忆不碰全局
 		store.deleteProjectModel("tab1", "/proj/a");
 		expect(store.getProjectModel("tab1", "/proj/a")).toBeUndefined();
 		expect(store.getDefaultModel()).toBe("anthropic/claude-sonnet-5");

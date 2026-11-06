@@ -135,7 +135,6 @@ describe("local on-demand execution guides", () => {
 		const primary = getBotExecutionInstructions(true);
 		const ordinary = getBotExecutionInstructions(false);
 		const primaryRole = primary.length - ordinary.length;
-		// Previous primary role/workflow alone exceeded 2300 characters.
 		expect(primaryRole).toBeLessThan(800);
 		for (const phrase of [
 			"Never enable auto-approval",

@@ -1,6 +1,3 @@
-/**
- * DSH 用户补丁管理单测（install / toggle / delete / list 行为验证）。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,9 +16,7 @@ describe("DSH 用户补丁管理核心逻辑", () => {
 	afterEach(() => {
 		try {
 			rmSync(testDir, { recursive: true, force: true });
-		} catch {
-			/* ignore cleanup errors */
-		}
+		} catch {}
 	});
 
 	it("推导合法 id 并生成标准的 insert patch YAML", () => {
@@ -70,12 +65,10 @@ describe("DSH 用户补丁管理核心逻辑", () => {
 		writeFileSync(activeFile, "content", "utf8");
 		expect(existsSync(activeFile)).toBe(true);
 
-		// 禁用
 		renameSync(activeFile, disabledFile);
 		expect(existsSync(activeFile)).toBe(false);
 		expect(existsSync(disabledFile)).toBe(true);
 
-		// 重新启用
 		renameSync(disabledFile, activeFile);
 		expect(existsSync(activeFile)).toBe(true);
 		expect(existsSync(disabledFile)).toBe(false);

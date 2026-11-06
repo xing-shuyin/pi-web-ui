@@ -1,15 +1,3 @@
-/**
- * tool-info-state 单测（web/src/tool-info-state.ts）：「工具详细信息」弹窗的模块级 store。
- *
- * 覆盖两块：
- *   1. `toolInfoView`（应答载荷 → 视图）：unsupported / missing 的优先级、各字段的有无、
- *      `active` 只认布尔、`promptGuidelines` 空数组忽略；
- *   2. store 行为：空工具名不发请求、打开即 loading + 发出 get_tool_info、
- *      只认当前在等的那条应答（迟到的/已关闭的应答不得把弹窗重新弹出来或覆盖新工具）、
- *      订阅通知次数、未打开时快照引用恒定（useSyncExternalStore 的前提）。
- *
- * 纯数据面：`useToolInfoState` 是 useSyncExternalStore 包装，需要 React 运行时，不在单测范围。
- */
 import { afterEach, describe, expect, it } from "vitest";
 import { setAppSend } from "../../web/src/app-globals.js";
 import {
@@ -23,7 +11,6 @@ import {
 	toolInfoView,
 } from "../../web/src/tool-info-state.js";
 
-/** 记录 appSend 出去的协议消息。 */
 let sent: unknown[] = [];
 
 function stubSend() {
@@ -39,7 +26,6 @@ afterEach(() => {
 	resetToolInfo();
 });
 
-/** 造一份应答载荷（默认是「找到了、有定义」）。 */
 function payload(over: Partial<ToolInfoPayload> = {}): ToolInfoPayload {
 	return { type: "tool_info", name: "bash", found: true, ...over } as ToolInfoPayload;
 }
@@ -159,7 +145,7 @@ describe("store：打开 / 应答 / 关闭", () => {
 		expect(n).toBe(2);
 		closeToolInfo();
 		expect(n).toBe(3);
-		closeToolInfo(); // 已关：不该再通知
+		closeToolInfo();
 		expect(n).toBe(3);
 		unsub();
 		openToolInfo("read");

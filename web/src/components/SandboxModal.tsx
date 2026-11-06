@@ -60,8 +60,6 @@ export function SandboxModal({
 }: SandboxModalProps) {
 	const t = useT();
 
-	// Default source path when importing: if currently inside a sandbox that has a sourcePath, use that;
-	// otherwise use currentCwd (if not a sandbox) or first non-sandbox recent project.
 	const defaultSourcePath =
 		currentSandbox?.sourcePath ||
 		(!currentSandbox && currentCwd ? currentCwd : projects.find((p) => !p.sandbox)?.path || currentCwd || "");
@@ -71,7 +69,6 @@ export function SandboxModal({
 	const [ephemeral, setEphemeral] = useState<boolean>(true);
 	const [name, setName] = useState<string>("");
 
-	// Promote state
 	const suggestedTarget = currentSandbox?.sourcePath
 		? `${currentSandbox.sourcePath}-exp`
 		: `~/projects/${(currentSandbox?.name || "sandbox-app").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "sandbox-app"}`;

@@ -1,15 +1,3 @@
-/**
- * Theme switching smoke test (pure `:root` palette override).
- *
- * Scenarios:
- *   1. /api/themes lists the builtin palette themes (white/md-preview/…)
- *   2. choosing a theme injects a <link> and applies its palette
- *   3. the choice persists across reload
- *   4. switching back to default removes the injected link
- *   5. a user-dropped theme in <dataDir>/themes shows up and is selectable
- *
- * Runs on a dedicated port (8937) with an isolated data dir.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
@@ -19,7 +7,6 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const HEADLESS = CHROME_PATH;
@@ -34,7 +21,6 @@ function check(name, ok, extra = "") {
 }
 
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-theme-test-"));
-// Drop a user theme to prove user themes are listed and served.
 mkdirSync(join(dataDir, "themes"));
 writeFileSync(join(dataDir, "themes", "user-test.css"), ":root {\n\t--bg: #123456;\n\t--text: #ffffff;\n}\n");
 
@@ -54,9 +40,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return true;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 	}
 	return false;
 }
@@ -64,9 +48,7 @@ async function stopServer() {
 	if (server) {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* noop */
-		}
+		} catch {}
 		server = null;
 	}
 	for (let i = 0; i < 40; i++) {
@@ -80,7 +62,6 @@ async function stopServer() {
 }
 
 async function openThemeMenu(page) {
-	// Open the theme dropdown (desktop toolbar, FiSun chip labeled "主题"/"Theme").
 	await page.locator(".topbar-flow .dropdown button.chip").filter({ hasText: "主题" }).click();
 }
 
@@ -92,7 +73,6 @@ try {
 	await page.goto(URL, { waitUntil: "domcontentloaded" });
 	await page.waitForTimeout(2500);
 
-	// 1. /api/themes lists builtin + user themes.
 	const themes = await page.evaluate(() => fetch("/api/themes").then((r) => r.json()));
 	const ids = themes.themes.map((t) => t.id).sort();
 	check(
@@ -101,7 +81,7 @@ try {
 			ids.includes("md-preview") &&
 			ids.includes("cyberpunk") &&
 			ids.includes("dazzle") &&
-			!ids.includes("light") && // legacy full-copy theme removed
+			!ids.includes("light") &&
 			ids.includes("user-test"),
 		`got ${ids.join(", ")}`,
 	);
@@ -116,18 +96,15 @@ try {
 	const userInfo = themes.themes.find((t) => t.id === "user-test");
 	check("user-test is not builtin", userInfo?.builtin === false);
 
-	// 2. Choosing white injects a <link> and applies the palette.
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "白色" }).first().click();
 	await page.waitForTimeout(1500);
 	const hasLink = await page.evaluate(() => document.getElementById("theme-stylesheet")?.getAttribute("href"));
-	// 主题 <link> 带版本戳（?v=…，防止旧缓存把新主题样式顶掉），只校验路径部分
 	const isWhiteHref = typeof hasLink === "string" && /^\/themes\/white\.css(\?v=[^&]*)?$/.test(hasLink);
 	check("theme <link> injected for white", isWhiteHref, `href=${hasLink}`);
 	const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
 	check("white palette applied", bg === "#ffffff", `--bg=${bg}`);
 
-	// 3. Persists across reload.
 	await page.reload({ waitUntil: "domcontentloaded" });
 	await page.waitForTimeout(1500);
 	const afterReload = await page.evaluate(() => {
@@ -143,14 +120,12 @@ try {
 		`href=${afterReload.href} bg=${afterReload.bg}`,
 	);
 
-	// 4. User theme is selectable and its CSS is served.
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "user-test" }).first().click();
 	await page.waitForTimeout(1500);
 	const userBg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
 	check("user theme applied", userBg === "#123456", `--bg=${userBg}`);
 
-	// 5. Switching back to default removes the injected link.
 	await openThemeMenu(page);
 	await page.locator(".dd-item", { hasText: "深色" }).first().click();
 	await page.waitForTimeout(800);

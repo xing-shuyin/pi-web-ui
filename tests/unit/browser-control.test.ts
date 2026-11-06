@@ -1,20 +1,21 @@
 // @vitest-environment jsdom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { compactPage, openExtensionOptions, pageCitation, queryBrowserControl } from "../../web/src/browser-control";
-
-/**
- * pi-web-ui 侧的「浏览器操作」入口靠这两个函数拿到状态、并把用户送到扩展设置页。
- *
- * 关键纪律：**永远 resolve、永远给出人能照做的下一步** ——
- * 用户看到的状态面板是他们唯一能发现这个能力的地方，这里抛错或返回空状态等于功能消失。
- */
+import {
+	compactPage,
+	openExtensionOptions,
+	pageCitation,
+	queryBrowserControl,
+	useBrowserControl,
+	type BrowserControlStatus,
+} from "../../web/src/browser-control";
 
 type PageCall = (opts: {
 	op: string;
 	timeoutMs?: number;
 }) => Promise<{ ok: boolean; result?: unknown; error?: string }>;
 
-/** 装一个假宿主桥（真桥是 page-picker 注入的 window.__piWebUiHost）。 */
 function installHost(pageCall: PageCall): ReturnType<typeof vi.fn> {
 	const fn = vi.fn(pageCall);
 	(globalThis as unknown as Record<string, unknown>).__piWebUiHost = { pageCall: fn };
@@ -23,7 +24,9 @@ function installHost(pageCall: PageCall): ReturnType<typeof vi.fn> {
 
 afterEach(() => {
 	delete (globalThis as unknown as Record<string, unknown>).__piWebUiHost;
+	delete (globalThis as unknown as Record<string, unknown>).__piBrowser;
 	delete (window as unknown as Record<string, unknown>).piDesktop;
+	vi.useRealTimers();
 });
 
 describe("queryBrowserControl", () => {
@@ -31,8 +34,8 @@ describe("queryBrowserControl", () => {
 		const status = await queryBrowserControl();
 		expect(status.available).toBe(false);
 		expect(status.pages).toEqual([]);
-		expect(status.error).toContain("page-picker"); // 点名要装什么
-		expect(status.error).toContain("刷新"); // 给下一步
+		expect(status.error).toContain("page-picker");
+		expect(status.error).toContain("刷新");
 	});
 
 	it("桥在但扩展报错 → 把原因原样带出来（不吞掉）", async () => {
@@ -71,9 +74,8 @@ describe("queryBrowserControl", () => {
 		});
 	});
 
-	it("桌面壳（Electron）→ desktop:true + 直接给结论，不碰宿主桥（桥在也没用）", async () => {
+	it("旧桌面壳没有原生桥 → desktop:true，不等待宿主扩展桥", async () => {
 		(window as unknown as Record<string, unknown>).piDesktop = { isDesktop: true };
-		// 即使宿主桥在（桌面壳里 __piWebUiHost 是存在的），也不该去等页面桥
 		installHost(async () => {
 			throw new Error("should not be called in desktop shell");
 		});
@@ -82,6 +84,72 @@ describe("queryBrowserControl", () => {
 		expect(status.desktop).toBe(true);
 		expect(status.pages).toEqual([]);
 		expect(status.error).toContain("桌面版");
+	});
+
+	it("原生浏览器桥优先于宿主扩展桥，桌面壳也能查询", async () => {
+		(window as unknown as Record<string, unknown>).piDesktop = { isDesktop: true };
+		const fallback = installHost(async () => {
+			throw new Error("extension path must not run");
+		});
+		const pageCall = vi.fn(async () => ({
+			ok: true,
+			result: {
+				installed: true,
+				aiControl: true,
+				allowEval: false,
+				pages: [{ origin: "https://native.example", title: "Native", open: true, tabId: "native-tab" }],
+			},
+		}));
+		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 1, pageCall };
+		expect(await queryBrowserControl()).toEqual({
+			available: true,
+			native: true,
+			aiControl: true,
+			allowEval: false,
+			pages: [{ origin: "https://native.example", title: "Native", open: true, tabId: "native-tab" }],
+		});
+		expect(pageCall).toHaveBeenCalledWith({ op: "status", timeoutMs: 5000 });
+		expect(fallback).not.toHaveBeenCalled();
+	});
+
+	it("不支持的原生桥版本保留网页版扩展路径", async () => {
+		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 2, pageCall: vi.fn() };
+		const pageCall = installHost(async () => ({ ok: true, result: { installed: true } }));
+		expect((await queryBrowserControl()).available).toBe(true);
+		expect(pageCall).toHaveBeenCalledOnce();
+	});
+
+	it("原生桥晚于首查注入时保留1.5秒重试", async () => {
+		vi.useFakeTimers();
+		(window as unknown as Record<string, unknown>).piDesktop = { isDesktop: true };
+		const globals = globalThis as unknown as Record<string, unknown>;
+		const previousAct = globals.IS_REACT_ACT_ENVIRONMENT;
+		globals.IS_REACT_ACT_ENVIRONMENT = true;
+		const container = document.createElement("div");
+		document.body.append(container);
+		const root = createRoot(container);
+		let latest: BrowserControlStatus | null = null;
+		function Probe() {
+			latest = useBrowserControl().status;
+			return null;
+		}
+		try {
+			await act(async () => {
+				root.render(createElement(Probe));
+			});
+			expect(latest).toMatchObject({ available: false, desktop: true });
+			const pageCall = vi.fn(async () => ({ ok: true, result: { installed: true, aiControl: true, pages: [] } }));
+			globals.__piBrowser = { version: 1, pageCall };
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(1500);
+			});
+			expect(latest).toMatchObject({ available: true });
+			expect(pageCall).toHaveBeenCalledOnce();
+		} finally {
+			await act(async () => root.unmount());
+			container.remove();
+			globals.IS_REACT_ACT_ENVIRONMENT = previousAct;
+		}
 	});
 
 	it("返回体脏（pages 不是数组）→ 当成没有页面，不炸", async () => {
@@ -126,6 +194,15 @@ describe("compactPage / pageCitation（顶栏单页紧凑态 + 网页引用 chip
 			mode: "page",
 			key: "page:https://a.example",
 		});
+	});
+
+	it("原生同源多页引用以tabId区分，扩展页仍引用origin", () => {
+		const first = pageCitation({ ...a, tabId: "native-one" });
+		const second = pageCitation({ ...a, tabId: "native-two" });
+		expect(first).toEqual({ path: "native-one", name: "A 页", mode: "page", key: "page:native-one" });
+		expect(second.path).toBe("native-two");
+		expect(first.key).not.toBe(second.key);
+		expect(pageCitation(a).path).toBe(a.origin);
 	});
 
 	it("没有标题（或全是空白）→ 退化成 origin，chip 上不会空着", () => {

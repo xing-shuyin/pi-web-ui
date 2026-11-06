@@ -1,0 +1,46 @@
+# Hub 发布包升级验收
+
+发布前测试应安装 npm 将要交付的 `.tgz`，从已发布的 Hub 升级到该包，并使用真实的系统服务和浏览器。只在源码目录启动服务或单测中模拟 `/health`，不能证明打包内容、安装路径、npm 依赖和服务重启正确。
+
+## 本地运行
+
+```bash
+node scripts/prepare-hub-release.mjs
+node tests/hub-upgrade-release-test.mjs --candidate /absolute/path/pi-web-ui-VERSION.tgz --baseline pi-web-ui@0.117.0 --output /absolute/path/results
+```
+
+第一条命令将当前源码复制到独立临时目录，完整执行发布构建，再执行 `npm pack --ignore-scripts`，不覆盖正在使用的工作区 `dist/`。构建使用当前工作区已安装的依赖；CI 使用干净 `npm ci` 构建同一个候选包。可通过 `PI_HUB_TEST_TMP` 指定临时目录（Windows 开发环境建议 `E:/tmp`）。
+
+第二条命令会安装候选包与指定 npm 公开版本，用真实服务管理器运行旧版本，再升级到候选包。它使用唯一的 `pi-device-hub-smoke-<随机值>` 名称、独立服务配置和数据目录，结束后卸载测试服务，不改动默认 Hub。首轮基线启动使用候选 CLI 生成隔离名称的服务定义，服务入口和运行代码来自实际公开包；格式与旧版本安装的定义相同。需要 npm registry 网络、可用的用户服务会话、服务管理权限和 Chromium/Chrome。已有 Chrome 会自动检测；否则运行 `npx playwright-core install chromium --with-deps`。
+
+可以传 `--background` 后台运行并查看输出目录的 `acceptance.log`、`commands.log` 和 `result.json`。脚本返回结果或 `result.json` 的终态为 `passed` 才算通过。失败时保留安装目录和诊断信息；清理服务失败也会使验收失败。
+
+## 实际验证的行为
+
+1. 安装准确的候选 tarball 和公开版本依赖，检查真实包内容及独立 Hub 启动。
+2. 通过真实 OS 服务启动公开版本，创建账号、配对设备、同步 Bot 并创建群组。
+3. 用候选 CLI 将旧服务升级到候选包，检查实例 ID、登录 Cookie、设备和群组仍存在。兼容旧版不含版本/启动标识的健康接口。
+4. 用真实 Chromium 点击网页「一键升级」，经过真实 npm 安装、独立更新任务、服务停止和重启；只接受任务终态、目标版本及新启动标识。
+5. 使用不存在的包模拟安装失败，断言页面显示失败、旧 Hub 的启动标识没有变化。
+6. 创建可正常导入但启动函数会抛错的候选包，让真实服务实际尝试启动该包；确认自动恢复旧服务，界面报告失败且群组数据保留。
+7. 卸载隔离测试服务并清理受管安装目录。
+
+输出包含报告 JSON/Markdown、候选包 SHA-256、基线和候选版本、Node 与操作系统，以及浏览器成功/失败/回滚截图。失败日志不会把 Hub 凭据写入报告。
+
+## 发布门禁
+
+`.github/workflows/hub-upgrade.yml` 先构建一次候选 tarball，再将同一文件交给 Windows、Linux、macOS × Node 22/24 的六组真实服务验收。基线默认为 npm 当前 `latest`，可通过手动触发指定具体版本。Linux 会准备 systemd 用户会话。报告和截图作为工作流产物上传。
+
+发布应等待相关单测、类型检查和六组验收通过，核对 `result.json` 中的 tarball SHA-256，然后发布**同一份已测试文件**：
+
+```bash
+npm publish /absolute/path/to/the-tested-candidate.tgz
+```
+
+不要在测试后重新构建或直接对源码目录执行发布，否则校验过的文件与用户获得的文件可能不同。工作流本身不执行 npm 发布；分支保护和发布权限应将这个检查设为门禁。
+
+## 结果的适用范围
+
+本机通过证明该候选包在本机 OS、Node、账号权限及服务配置下完成了这些升级场景。矩阵通过再增加对应干净系统环境的证据。它们不能保证所有用户机器的网络、代理、磁盘、权限、系统版本和自定义部署都相同；生产数据兼容性也需要随 schema 改动增加历史数据夹具。
+
+更强的交付约束是：扩大已支持环境矩阵，使用上一公开版本的真实历史数据样本，发布同一份验证过的包，并保留明确失败状态、诊断日志和旧运行版本。未跑过的平台应标记待验证，不能用源码单测通过替代。

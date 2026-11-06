@@ -1,10 +1,3 @@
-/**
- * tests/unit/imessage-features.test.ts
- * Tests for iMessage Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, text cleaning)
- * - IMessageBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	cleanIMessageText,

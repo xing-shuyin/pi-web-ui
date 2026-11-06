@@ -1,8 +1,3 @@
-/**
- * Real browser regression: 预览面板的「标题导航」（左侧目录）。
- * 覆盖：标题 ≥2 才出现开关、默认不显示、点开后条目数 = 标题数、点击跳转并高亮、关掉消失、刷新后保持。
- * Run after npm run build. No model requests.
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -26,7 +21,6 @@ await new Promise((ok) => probe.close(ok));
 const root = await mkdtemp(join(tmpdir(), "pi-preview-toc-ui-"));
 const workspace = join(root, "workspace");
 await mkdir(workspace, { recursive: true });
-// 必须把文档撑得足够长：否则容器根本滚不动，就验证不出「点击跳转 + 滚动高亮」。
 const filler = Array.from({ length: 30 }, (_, i) => `填充段落 ${i + 1}：把文档撑长，保证真的有得滚。`).join("\n\n");
 await writeFile(
 	join(workspace, "doc.md"),
@@ -78,9 +72,7 @@ try {
 				ready = true;
 				break;
 			}
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		if (server.exitCode !== null) throw new Error(`Server exited: ${log}`);
 		await sleep(200);
 	}
@@ -104,7 +96,6 @@ try {
 	await openDoc();
 	await page.locator(".fp-markdown").waitFor({ timeout: 15000 });
 
-	// 标题 ≥2 → 开关出现；默认不展开目录。
 	const tocBtn = page.locator(".fp-attach.toc");
 	await tocBtn.waitFor({ timeout: 10000 });
 	assert.equal(await page.locator(".fp-toc").count(), 0, "默认不显示目录");
@@ -115,7 +106,6 @@ try {
 	assert.equal(await links.count(), 5, "目录条目数应等于标题数（5）");
 	assert.equal(await links.first().textContent(), "一级标题", "首条应为一级标题");
 
-	// 点中间一条 → 容器真的滚动了、且被点那项高亮（用轮询，避免固定 sleep 抖动）。
 	const target = links.nth(1);
 	await target.click();
 	await page.waitForFunction(() => (document.querySelector(".fp-markdown")?.scrollTop ?? 0) > 100, null, {
@@ -130,7 +120,6 @@ try {
 		{ timeout: 8000 },
 	);
 
-	// 关掉 → 目录消失；再打开 → 仍在（且刷新后保持）。
 	await tocBtn.click();
 	await page.locator(".fp-toc").waitFor({ state: "detached", timeout: 10000 });
 	await tocBtn.click();

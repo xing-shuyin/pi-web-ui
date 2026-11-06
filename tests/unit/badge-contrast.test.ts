@@ -11,7 +11,6 @@ const THEMES_DIR = join(ROOT, "themes");
 describe("顶栏/底栏角标徽标对比度与样式防护", () => {
 	it("styles.css 中后台任务计数角标 (.bar-item-badge.bg-task-badge) 保持红色告警底与反色前景，不被通用 bar-item-badge 冲刷", () => {
 		const css = readFileSync(STYLES_PATH, "utf8");
-		// 前景走 --on-red（由主题按 --red 明暗反色），不再写死白字
 		expect(css).toMatch(
 			/\.bar-item-badge\.bg-task-badge\s*\{[^}]*background:\s*var\(--red\)[^}]*color:\s*var\(--on-red\)/,
 		);

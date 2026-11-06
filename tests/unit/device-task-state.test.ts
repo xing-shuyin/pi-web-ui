@@ -110,7 +110,6 @@ describe("transactional conversation task projection", () => {
 			s.conversations[0].rootTaskId = "followup";
 		});
 		expect(conversation().taskState).toMatchObject({ objective: task().text, currentTaskId: "followup" });
-		// Legacy migration selects the earliest own turn even when the dispatch root was reset.
 		const previous = store.snapshot();
 		delete previous.conversations[0].taskState;
 		const next = structuredClone(previous);
@@ -208,7 +207,6 @@ describe("transactional conversation task projection", () => {
 			taskState: { revision: 0, phase: "completed" },
 			events: [],
 		});
-		// The index no longer carries the task collection; durable state is index + append logs.
 		const durable = await readPersistedHub(dir);
 		expect(durable.tasks).toEqual(legacy.tasks);
 		expect(durable.conversations[0].taskState).toMatchObject({ revision: 0, phase: "completed" });

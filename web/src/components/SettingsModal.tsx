@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ENGINE_CATALOG } from "../../../server/engine-catalog";
 import {
 	FiAlertTriangle,
 	FiAperture,
@@ -34,6 +35,7 @@ import {
 	FiVolume2,
 	FiSliders,
 	FiTool,
+	FiTerminal,
 	FiTrash2,
 	FiUpload,
 	FiUsers,
@@ -51,6 +53,7 @@ import { PluginSettingsForm } from "./PluginSettingsForm";
 import { ToolPromptEditor } from "./ToolPromptEditor";
 import { McpServersPanel } from "./McpServersPanel";
 import { DeviceExecutionSettings } from "./DeviceExecutionSettings";
+import { excludeBuiltinModules, isBuiltinModule } from "../../../server/builtin-modules";
 import { SKILL_MARKETS, type SkillMarketCategory } from "../skill-catalog";
 import { SUPPORTED_ENGINES } from "./EnginePicker";
 import { Markdown } from "./Markdown";
@@ -154,12 +157,7 @@ import {
 	TERMINAL_TOOL_NAMES,
 } from "../../../server/tool-manager.js";
 
-/**
- * 设置页「其他」组开关行的渲染口径：目录即页面。目录里加一行，页面自动多一行
- * （文案走目录项的 descKey/offHintKey）；不再手写 ToggleRow。
- */
 const OTHER_AGENT_TOOLS = AGENT_TOOL_CATALOG.filter((e) => e.group === "other");
-// The legacy alias shares conversation's switch; keep other subagent tools visible.
 const CONVERSATION_TOOL_NAMES = [
 	...new Set(
 		AGENT_TOOL_CATALOG.filter((tool) => tool.group === "subagent").map((tool) =>
@@ -168,7 +166,6 @@ const CONVERSATION_TOOL_NAMES = [
 	),
 ];
 
-/** Minimal terminal-tab bridge (same shape SCMPanel uses). */
 interface SettingsTerminalBridge {
 	create: (meta: {
 		id: string;
@@ -186,33 +183,22 @@ interface SettingsTerminalBridge {
 }
 
 interface SettingsModalProps {
-	/** Optional direct entry used by the top-bar plugin menu. */
 	initialSection?: "plugins";
 	chat: {
 		settings: UiSettingsState | null;
 		plugins: UiPluginInfo[];
-		/** Installable-plugin list (marketplace) — one-click install candidates. */
 		pluginCatalog: UiPluginCatalogEntry[];
-		/** 插件更新状态表，key = pluginId。 */
 		pluginUpdates?: Record<string, UiPluginUpdateInfo> | null;
-		/** 是否正在检查插件更新。 */
 		checkingPluginUpdates?: boolean;
-		/** 插件后台作业（安装/更新/卸载）的实时状态，key = jobId（issue #152）。 */
 		pluginJobs: Record<string, PluginJobState>;
-		/** 最近一次目录同步的回执（issue #165「从目录同步」框展示用）。 */
 		catalogSync: CatalogSyncState | null;
-		/** 预设分享（server/preset-share.ts）的四条回执状态。 */
 		presetExport: PresetExportState | null;
 		presetImport: PresetImportState | null;
 		presetCatalog: PresetCatalogState | null;
 		presetShare: PresetShareState | null;
-		/** 最近一次「安装前先读 spec」的检查结果（DSH P0-3）。 */
 		installInspect: PluginInstallInspectState | null;
-		/** 插件重载纪元：作为插件 client bundle URL 的 ?e= 缓存击穿参数传给插件页（#146）。 */
 		pluginsEpoch: number;
-		/** 插件目录授权表（设置面板列出 + 可撤销）。 */
 		pluginGrants: { pluginId: string; paths: string[] }[];
-		/** 插件能力授权表（动态授权；设置面板列出 + 可撤销）。 */
 		pluginPermissions: {
 			pluginId: string;
 			family: "net" | "llm";
@@ -222,20 +208,15 @@ interface SettingsModalProps {
 			grantedAt: number;
 			session?: boolean;
 		}[];
-		/** DSH engine: <dataDir>/dsh-patches user patch files. */
 		dshPatches: { patchDir: string; files: DshPatchFileInfo[] } | null;
-		/** DSH engine: awesome-dsh-plugin 社区插件市场清单。 */
 		dshMarket: {
 			count: number;
 			updated?: string;
 			categories: Record<string, { en: string; zh: string }>;
 			plugins: DshMarketPlugin[];
 		} | null;
-		/** DSH engine: Agent 预设名录（null/空 = legacy，隐藏预设区）。 */
 		dshPresets: { presets: UiAgentPreset[]; defaultPreset: string } | null;
-		/** DSH engine: 权限预设选项表 + 新会话默认（null = 未就绪/legacy，隐藏权限区）。 */
 		dshPermission: { options: DshPermissionOption[]; defaultPreset: string } | null;
-		/** Engine id ("pi" | "dsh") 与 PI_WEB_MANAGED 已移到全局（web/src/app-globals.ts）。 */
 		terminals: {
 			id: string;
 			title: string;
@@ -244,12 +225,9 @@ interface SettingsModalProps {
 			exitCode: number | null;
 			command?: CommandDef;
 		}[];
-		/** 轻量会话状态的窄投影（只列设置页要用的字段）。 */
 		state?: { cwd: string; conversationId: string; delegateMode?: boolean } | null;
 		activeConversationId?: string | null;
-		/** 内置定时任务（issue #184，全局列表；DSH 引擎下为空） */
 		schedulerTasks: SchedulerTaskView[];
-		/** 公开远程 MCP 市场检索结果 */
 		mcpOAuthResult?: Extract<import("../types").ServerMessage, { type: "mcp_oauth_result" }> | null;
 		mcpMarketResult?: {
 			ok: boolean;
@@ -258,14 +236,12 @@ interface SettingsModalProps {
 			source: string;
 			error?: string;
 		} | null;
-		/** 公开远程 Skill 技能仓库检索结果 */
 		skillMarketResult?: {
 			ok: boolean;
 			skills: RemoteSkillSummary[];
 			repo: string;
 			error?: string;
 		} | null;
-		/** 远程单个技能的 SKILL.md 内容拉取结果 */
 		skillContentResult?: {
 			ok: boolean;
 			skillId: string;
@@ -274,24 +250,16 @@ interface SettingsModalProps {
 		} | null;
 	};
 	terminal: SettingsTerminalBridge;
-	/** Switch the top-level view to the terminal (uninstall runs there). */
 	onSwitchToTerminal: () => void;
 	onClose: () => void;
-	/** Open icon drag-and-drop editor mode (issue: quick access from layout settings). */
 	onOpenIconEdit?: () => void;
-	/** 打开模型与服务商管理面板（弹窗） */
 	onOpenManageModels?: () => void;
-	/** Sound cue + TTS settings — state lives in App (localStorage-backed),
-	 *  shared with the TopBar sound dropdown via props. */
 	sound: SoundSettings;
 	onSoundChange: (settings: SoundSettings) => void;
 	tts: TtsSettings;
 	onTtsChange: (settings: TtsSettings) => void;
 }
 
-/** A row with an enable/disable switch (skill / extension). */
-/** 最近同步过的目录 URL（issue #165：一键重同步）。localStorage 存本浏览器的最近 8 个，
- *  与服务端无关——换浏览器/清缓存只丢掉快捷入口，不影响已同步的列表。 */
 const CATALOG_SYNC_RECENT_KEY = "pi-web-ui:catalog-sync-urls";
 const CATALOG_SYNC_RECENT_MAX = 8;
 function loadCatalogSyncRecent(): string[] {
@@ -311,13 +279,10 @@ function rememberCatalogSyncUrl(url: string): string[] {
 	const next = [src, ...loadCatalogSyncRecent().filter((s) => s !== src)].slice(0, CATALOG_SYNC_RECENT_MAX);
 	try {
 		localStorage.setItem(CATALOG_SYNC_RECENT_KEY, JSON.stringify(next));
-	} catch {
-		/* 隐私模式：记不住就记不住 */
-	}
+	} catch {}
 	return next;
 }
 
-/** 各来源排序权重：append 置顶（最常用），可编辑居中，只读沉底（纯预览）。 */
 function rankPromptToken(tk: string): number {
 	if (tk === "append") return 0;
 	return isReadonlyPromptSource(tk) ? 2 : 1;
@@ -336,13 +301,10 @@ function ToggleRow({
 }: {
 	title: React.ReactNode;
 	subtitle?: string;
-	/** 长解释走「？」悬浮提示，不再平铺（subtitle 与 tip 二选一）。 */
 	tip?: string;
 	enabled: boolean;
 	onToggle: () => void;
-	/** Optional extra control rendered left of the switch (e.g. uninstall). */
 	action?: React.ReactNode;
-	/** 被默认预设过滤时禁用开关（展示实效 off，底层禁用名单原样保留）。 */
 	disabled?: boolean;
 	onInfoClick?: () => void;
 	infoTitle?: string;
@@ -367,6 +329,7 @@ function ToggleRow({
 				type="button"
 				className={`set-switch ${enabled ? "on" : ""}`}
 				role="switch"
+				aria-label={typeof title === "string" ? title : undefined}
 				aria-checked={enabled}
 				disabled={disabled}
 				title={enabled ? t("settingsEnabled") : t("settingsDisabled")}
@@ -378,7 +341,6 @@ function ToggleRow({
 	);
 }
 
-/** 工具行右端的「编辑文案」按钮（设置→工具区每个工具行都用；有覆盖时高亮）。 */
 function ToolPromptButton({ name, edited, onEdit }: { name: string; edited: boolean; onEdit: (name: string) => void }) {
 	const t = useT();
 	return (
@@ -394,22 +356,18 @@ function ToolPromptButton({ name, edited, onEdit }: { name: string; edited: bool
 	);
 }
 
-/** 相位 → 文案 key（tt 绕行字面量约束，见文件顶部 tt 定义）。 */
 function phaseLabelKey(ph: PluginPhase): string {
 	if (ph === "active") return "pluginPhaseActive";
 	if (ph === "disabled") return "pluginPhaseDisabled";
 	if (ph === "failed") return "pluginPhaseFailed";
 	return "pluginPhaseIdle";
 }
-/** 插件运行相位圆点（设置面板清单区 + 列表行标题用；颜色见 styles.css `.inv-dot`）。 */
 function InvDot({ phase, label }: { phase: PluginPhase; label: string }) {
 	return <span className={`inv-dot inv-dot-${phase}`} title={label} aria-label={label} />;
 }
 
-/** 官方插件市场仓库链接。 */
 export const OFFICIAL_PLUGINS_REPO_URL = "https://github.com/xing-shuyin/pi-web-ui-plugins";
 
-/** 解析插件的官方主页/源码链接（优先 homepage，其次解析 GitHub 来源）。 */
 export function pluginOfficialUrl(entry?: { homepage?: string; source?: string } | null): string | null {
 	if (entry?.homepage && /^https?:\/\//i.test(entry.homepage)) {
 		return entry.homepage;
@@ -430,7 +388,6 @@ export function pluginOfficialUrl(entry?: { homepage?: string; source?: string }
 	return null;
 }
 
-/** 插件清单汇总条（只读）：四相计数 + 各相微芯片，明细在下方列表行里看。 */
 function PluginInventoryStrip({ plugins, disabledIds }: { plugins: UiPluginInfo[]; disabledIds: ReadonlySet<string> }) {
 	const t = useT();
 	const counts = countPluginPhases(plugins, disabledIds);
@@ -454,7 +411,6 @@ function PluginInventoryStrip({ plugins, disabledIds }: { plugins: UiPluginInfo[
 	);
 }
 
-/** 一行式表单行：标签左、控件（数字框/下拉）右，与开关共用右对齐线。 */
 function FieldRow({
 	label,
 	tip,
@@ -477,7 +433,6 @@ function FieldRow({
 	);
 }
 
-/** 通用提示词覆盖区块（SCM commit msg、计划模式、视觉桥等共用）：包含模式选择、草稿防抖与默认值契约。 */
 function PromptOverrideEditor({
 	mode,
 	onModeChange,
@@ -545,7 +500,6 @@ function PromptOverrideEditor({
 	);
 }
 
-/** 某插件的运行时日志面板（host.log 环形缓冲：级别过滤 + 清空；数据来自 plugin-logs store）。 */
 function PluginLogView({ pluginId }: { pluginId: string }) {
 	const t = useT();
 	const [level, setLevel] = useState<"all" | PluginLogLevel>("all");
@@ -592,10 +546,6 @@ function PluginLogView({ pluginId }: { pluginId: string }) {
 	);
 }
 
-/** 设置弹窗的左侧分组导航（一次只显示一个区块，消灭长滚动）。
- *  插件自定义页（`settings.pages`）复用同一套导航：id 形如 `plugin-page:<条目全局 id>`
- *  —— 条目全局 id 本身是 `<pluginId>:<itemId>`，所以整串是 `plugin-page:<pluginId>:<itemId>`；
- *  一个插件可以贡献多页，故不用 `plugin-page:<pluginId>`（会撞车）。 */
 type SettingsTab =
 	| "models"
 	| "prompt"
@@ -622,8 +572,8 @@ type SettingsTab =
 	| "device-collab"
 	| `plugin-page:${string}`;
 
-/** set_settings 允许的字段（原 setPartial 内联类型提出为具名类型，供乐观合并层复用）。 */
 interface SettingsPatch extends QuickAskPatch {
+	nativeCliInheritModel?: UiSettingsState["nativeCliInheritModel"];
 	chatUploadMaxMb?: number;
 	workspaceUploadMaxMb?: number;
 	folderUploadMaxMb?: number;
@@ -632,31 +582,22 @@ interface SettingsPatch extends QuickAskPatch {
 	promptTemplate?: string;
 	promptOverrides?: Record<string, string>;
 	promptDisabled?: string[];
-	/** 逐工具文案覆盖（工具名 → description/snippet/guidelines；空对象 = 清除该工具覆盖）。 */
 	toolPromptOverrides?: Record<string, UiToolPromptOverride>;
 	disabledSkills?: string[];
 	disabledExtensions?: string[];
 	disabledPlugins?: string[];
-	/** 宿主 UI 布局偏好（插件 UI 贡献 + 内置条目的隐藏/排序/分组；纯 UI，per-client）。 */
 	uiLayout?: UiLayoutPrefs;
-	/** 统一工具禁用名单（工具 tab 逐工具开关；遗留单开关仍可用，会折回此名单）。 */
 	disabledAgentTools?: string[];
-	/** 插件 AI 工具禁用名单（工具名；live 生效无需 reload）。 */
 	disabledPluginTools?: string[];
 	terminalToolsEnabled?: boolean;
 	terminalBash?: boolean;
 	terminalBashIdleMs?: number;
 	terminalBashMaxForegroundMs?: number;
 	toolWatchdogTimeoutMs?: number;
-	/** read 工具读目录开关（默认开；行为开关，live 生效无需 reload，见 server/read-tool.ts）。 */
 	readDirEnabled?: boolean;
-	/** 工具延迟加载开关（默认开）：只影响新会话与之后的门控重放。 */
 	toolLazyLoading?: boolean;
-	/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式）。 */
 	codemodeMode?: "on" | "only";
-	/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
 	codemodeInlineBudget?: number;
-	/** 工具执行审批总开关（默认开；纯运行开关，live 生效无需 reload）。 */
 	toolApprovalEnabled?: boolean;
 	editSoftEnabled?: boolean;
 	questionnaireEnabled?: boolean;
@@ -668,15 +609,10 @@ interface SettingsPatch extends QuickAskPatch {
 	thinkingWrap?: boolean;
 	toolsWrap?: boolean;
 	toolImagesEnabled?: boolean;
-	/** 消息列表尾部常驻渲染的消息条数（纯 UI 偏好，默认 15）。 */
 	keepRecentMessages?: number;
-	/** 向上分页加载开关（纯 UI 偏好，默认关）。 */
 	reversePagination?: boolean;
-	/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
 	showForkedParentSessions?: boolean;
-	/** 结束的对话切换时不自动从运行列表移出（默认 false）。 */
 	retainFinishedConversations?: boolean;
-	/** 切换项目时是否打开该项目最近的会话（默认 true 开）。关 → 切换项目时始终创建空白新对话。 */
 	openRecentSessionOnProjectSwitch?: boolean;
 	devNoCache?: boolean;
 	autoReload?: boolean;
@@ -684,9 +620,7 @@ interface SettingsPatch extends QuickAskPatch {
 	skillsCatalogMaxDesc?: number;
 	skillsCatalogShowLocation?: boolean;
 	skillsCatalogBudget?: number;
-	/** 单个技能正文上限（字节，默认 8192；0 = 不设单文件上限）。 */
 	skillsMaxFileBytes?: number;
-	/** {{skills}} 全文注入总字节预算（默认 32768；0 = 不设总量上限）。 */
 	skillsFullTextMaxBytes?: number;
 	quickPhrases?: string[];
 	quickPhrasesEnabled?: boolean;
@@ -715,7 +649,6 @@ interface SettingsPatch extends QuickAskPatch {
 	disabledMarkers?: string[];
 }
 
-/** 结构相等（乐观补丁对账用）：同值或 JSON 形态一致（覆盖数组/对象字段）。 */
 function looseEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
 	try {
@@ -725,12 +658,35 @@ function looseEqual(a: unknown, b: unknown): boolean {
 	}
 }
 
-/** 未确认补丁的最长存活时间：超过后以服务端为准落层（服务端会归一化部分字段，
- *  或同值被另一端覆盖 —— 乐观值不能永久遮蔽真实状态）。 */
 const PENDING_MAX_AGE_MS = 10_000;
 
-export function SettingsModal({
+export function SettingsModal({ chat, ...props }: SettingsModalProps) {
+	const managedChat = useMemo(
+		() => ({
+			...chat,
+			plugins: excludeBuiltinModules(chat.plugins ?? []),
+			pluginCatalog: excludeBuiltinModules(chat.pluginCatalog ?? []),
+			pluginGrants: (chat.pluginGrants ?? []).filter((entry) => !isBuiltinModule(entry.pluginId)),
+			pluginPermissions: (chat.pluginPermissions ?? []).filter((entry) => !isBuiltinModule(entry.pluginId)),
+			pluginUpdates: chat.pluginUpdates
+				? Object.fromEntries(Object.entries(chat.pluginUpdates).filter(([id]) => !isBuiltinModule(id)))
+				: chat.pluginUpdates,
+			pluginJobs: Object.fromEntries(
+				Object.entries(chat.pluginJobs ?? {}).filter(([, job]) => !isBuiltinModule(job.pluginId ?? "")),
+			),
+		}),
+		[chat],
+	);
+	useEffect(() => {
+		appSend({ type: "get_settings" });
+	}, [chat.state?.cwd, chat.activeConversationId]);
+	if (!chat.settings) return null;
+	return <LoadedSettingsModal {...props} chat={managedChat} serverSettings={chat.settings} />;
+}
+
+function LoadedSettingsModal({
 	chat,
+	serverSettings,
 	terminal,
 	initialSection,
 	onSwitchToTerminal,
@@ -741,27 +697,17 @@ export function SettingsModal({
 	onSoundChange,
 	tts,
 	onTtsChange,
-}: SettingsModalProps) {
+}: SettingsModalProps & { serverSettings: UiSettingsState }) {
 	const t = useT();
 	const { locale } = useI18n();
-	// {{token}} 元数据文案键是动态的（promptTok_<token>[,_desc]），用 tt 跳过字面量类型。
 	const tt = (k: string) => t(k as Parameters<typeof t>[0]);
-	// 审查 #2：服务端快照是异步回程的，快速连续操作时（如连点两个技能开关）第二次
-	// 点击若直接从旧快照计算全量新值，会把第一次的修改覆盖回去（丢更新）。这里维护
-	// 一层「未确认补丁」：组件内所有显示与计算统一走 `settings` = 最新快照 + 补丁
-	// （原始快照留作 serverSettings 供对账）。
-	const serverSettings = chat.settings;
 	const [pendingSettings, setPendingSettings] = useState<Record<string, { value: unknown; at: number }>>({});
-	const settings = useMemo<UiSettingsState | null>(() => {
-		if (!serverSettings) return null;
+	const settings = useMemo<UiSettingsState>(() => {
 		if (Object.keys(pendingSettings).length === 0) return serverSettings;
 		const merged = { ...serverSettings } as UiSettingsState & Record<string, unknown>;
 		for (const [k, { value }] of Object.entries(pendingSettings)) merged[k] = value;
 		return merged;
 	}, [serverSettings, pendingSettings]);
-	// 快照回程 rebase：补丁值被服务端确认（原始快照追平）即落层；超过
-	// PENDING_MAX_AGE_MS 仍未追平的也落层 —— 服务端会归一化部分字段（trim/钳制/
-	// 去重）或值已被他端改写，以服务端为准，避免乐观值永久遮蔽真实状态。
 	useEffect(() => {
 		if (!serverSettings) return;
 		setPendingSettings((prev) => {
@@ -775,39 +721,30 @@ export function SettingsModal({
 			return Object.keys(next).length === Object.keys(prev).length ? prev : next;
 		});
 	}, [serverSettings]);
-	// 审批放行策略（仅内存、随对话走；审批弹窗的「允许同类 / 全部允许」在这里撤销）。
 	const approvalPolicy = settings?.approvalPolicy;
-	// 全局运行态（引擎 / 受管）：不再从 App 一路传进来，见 web/src/app-globals.ts。
 	const { engine, managed } = useAppGlobals();
 	const engines = useEngineStatuses();
-	// 引擎特性分支判断：动态适应引擎，隐藏不可用的分区
 	const isDsh = engine === "dsh";
 	const isClaude = engine === "claude";
 	const isCodex = engine === "codex";
 	const isPi = !isDsh && !isClaude && !isCodex;
-	// 默认分区自适应：Claude/DSH 优先进模型与服务商，Pi 进系统提示词
 	const defaultTab: SettingsTab = isClaude || isCodex || isDsh ? "models" : "prompt";
 	const [tab, setTab] = useState<SettingsTab>(initialSection ?? defaultTab);
-	// 界面插件分组内的子页签：市场 / 已安装（一次只看一坨，免得 5 大块堆在一起滚半天；默认进市场，安装一步直达）。
 	const [pluginSub, setPluginSub] = useState<"market" | "installed">("market");
-	// 内容滚动容器：切换分组后回到顶部（各组高度不同，停留旧滚动位置会像没切换）。
 	const bodyRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		bodyRef.current?.scrollTo({ top: 0 });
 	}, [tab]);
-	// 窄屏横滑导航：切换分组后把当前 chip 滚进可见区。
 	const railRef = useRef<HTMLElement>(null);
 	useEffect(() => {
 		railRef.current?.querySelector(".settings-tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}, [tab]);
 
-	// 技能市场子页签与市场链接筛选
 	const [skillSubTab, setSkillSubTab] = useState<"installed" | "market">("installed");
 	const [skillMarketCategory, setSkillMarketCategory] = useState<SkillMarketCategory | "all">("all");
 	const [skillMarketSearch, setSkillMarketSearch] = useState<string>("");
 	const [copiedMarketId, setCopiedMarketId] = useState<string | null>(null);
 
-	// 技能指令正文详情模态框状态（点击已安装技能行的名称/描述等其他地方查看具体内容）
 	const [inspectingSkill, setInspectingSkill] = useState<{ name: string; content?: string } | null>(null);
 	const [inspectLoading, setInspectLoading] = useState(false);
 	const [inspectCopied, setInspectCopied] = useState(false);
@@ -864,7 +801,6 @@ export function SettingsModal({
 				return t("skillCatAll");
 		}
 	};
-	// DSH 引擎：打开设置时自动拉取用户 patch 列表与社区插件市场数据（pi 引擎忽略该消息）。
 	useEffect(() => {
 		if (isDsh) {
 			appSend({ type: "dsh_patches_list" });
@@ -872,13 +808,6 @@ export function SettingsModal({
 		}
 	}, [isDsh]);
 
-	// 打开设置面板或当前工作区/会话切换时，主动拉取一次最新设置快照（确保 {{context}}、生效提示词与 token 估算为当前项目最新值）。
-	useEffect(() => {
-		appSend({ type: "get_settings" });
-	}, [chat.state?.cwd, chat.activeConversationId]);
-
-	// Compose prompt — 组合模板（{{token}} 自由拼装）+ 各来源覆盖。本地草稿：
-	// 模板聚焦中不覆盖；某个来源的覆盖框聚焦中不覆盖该 key（防回显打断输入）。
 	const [promptTemplateDraft, setPromptTemplateDraft] = useState("");
 	const promptTemplateDraftRef = useRef(promptTemplateDraft);
 	promptTemplateDraftRef.current = promptTemplateDraft;
@@ -889,12 +818,9 @@ export function SettingsModal({
 	promptOverridesDraftRef.current = promptOverridesDraft;
 	const templateFocus = useRef(false);
 	const overrideFocus = useRef<string | null>(null);
-	// 各来源展示顺序：append 置顶，其次可编辑来源，只读来源沉底（组内保持 PROMPT_TOKENS 原序）。
 	const orderedPromptTokens = [...PROMPT_TOKENS].sort((a, b) => rankPromptToken(a) - rankPromptToken(b));
-	// 未覆盖来源行内默认内容预览：点击预览进入覆盖输入（editingSource）；长文本展开/收起。
 	const [editingSource, setEditingSource] = useState<string | null>(null);
 	const [defaultOpen, setDefaultOpen] = useState<Record<string, boolean>>({});
-	// Vision-bridge prompt draft — same local-edit/re-sync pattern as above.
 	const [dshCustomPromptDraft, setDshCustomPromptDraft] = useState("");
 	const [dshPromptMode, setDshPromptMode] = useState<"append" | "replace">("append");
 	const dshCustomPromptDraftRef = useRef("");
@@ -921,41 +847,30 @@ export function SettingsModal({
 	const [vbPromptDraft, setVbPromptDraft] = useState("");
 	const [vbPromptMode, setVbPromptMode] = useState<"append" | "replace">("append");
 	const vbPromptFocus = useRef(false);
-	// 「AI 提交信息」提示词草稿（模式 + 文本；replace 且未改动内置默认 → 存空）。
 	const [scmMsgDraft, setScmMsgDraft] = useState("");
 	const [scmMsgMode, setScmMsgMode] = useState<"append" | "replace">("append");
 	const scmMsgFocus = useRef(false);
 	const [planModeDraft, setPlanModeDraft] = useState("");
 	const [planModeMode, setPlanModeMode] = useState<"append" | "replace">("append");
 	const planModeFocus = useRef(false);
-	// Goal-review prompt is an independent draft: it does not change the main
-	// agent system prompt and is only used by the isolated reviewer.
 	const [reviewPromptDraft, setReviewPromptDraft] = useState("");
 	const reviewPromptFocus = useRef(false);
 	const [presetName, setPresetName] = useState("");
-	// 预设分享面板（导入/导出/浏览分享）：null = 关闭；否则打开并带页签 + 预选预设（"" = 当前设置）。
 	const [presetShareFor, setPresetShareFor] = useState<{ name: string; tab: PresetShareTab } | null>(null);
-	// 正在编辑的子代理模板草稿（新建 = 空模板；null = 关闭编辑表单，表单在独立弹窗里渲染）。
 	const [tplDraft, setTplDraft] = useState<UiSubagentTemplate | null>(null);
-	// 弹窗标题用：新建 vs 编辑（draft 本身区分不出来）。
 	const [tplIsNew, setTplIsNew] = useState(false);
-	// 删除子代理模板的两步确认。
 	const [confirmTplDelete, setConfirmTplDelete] = useState<string | null>(null);
-	// 正在编辑的审批规则草稿。
 	const [ruleDraft, setRuleDraft] = useState<UiApprovalRule | null>(null);
 	const [ruleIsNew, setRuleIsNew] = useState(false);
 	const [ruleToolsText, setRuleToolsText] = useState("");
 	const [ruleError, setRuleError] = useState<string | null>(null);
 	const [confirmRuleDelete, setConfirmRuleDelete] = useState<string | null>(null);
 	const [confirmRuleReset, setConfirmRuleReset] = useState<string | null>(null);
-	// Read-only viewer for the FULL system prompt actually in effect.
 	const [showFullPrompt, setShowFullPrompt] = useState(false);
 	const [showToolsSchema, setShowToolsSchema] = useState(false);
-	// 逐工具文案编辑器：当前正在编辑的工具名（null = 未打开）。
 	const [editingToolPrompt, setEditingToolPrompt] = useState<string | null>(null);
 	const toolPromptEdits = settings?.toolPromptOverrides ?? {};
 	const editedToolNames = useMemo(() => new Set(Object.keys(toolPromptEdits)), [toolPromptEdits]);
-	// 工具内嵌子配置的展开/收起集合（默认全部折叠，空 Set）
 	const [expandedToolConfigs, setExpandedToolConfigs] = useState<Set<string>>(() => new Set());
 	const toggleToolConfigExpand = (name: string) => {
 		setExpandedToolConfigs((prev) => {
@@ -965,14 +880,12 @@ export function SettingsModal({
 			return next;
 		});
 	};
-	/** 工具行右端的「编辑文案」按钮（三个工具列表共用）。DSH 引擎无 pi 工具注册面，不显示。 */
 	const toolEditAction = (name: string) => {
 		const canonical = name === "subagent" ? "conversation" : name;
 		return isDsh ? null : (
 			<ToolPromptButton name={canonical} edited={editedToolNames.has(canonical)} onEdit={setEditingToolPrompt} />
 		);
 	};
-	/** 保存/清除某工具的文案覆盖（空对象 = 清除，服务端逐工具合并）。 */
 	const applyToolPromptOverride = (name: string, override: UiToolPromptOverride | null) =>
 		setPartial({
 			toolPromptOverrides:
@@ -980,7 +893,6 @@ export function SettingsModal({
 					? { conversation: override ?? {}, subagent: override ?? {} }
 					: { [name]: override ?? {} },
 		});
-	// 当前生效提示词与工具 schema 的 token 占用（估算值，非精确分词）。
 	const promptTokenEstimate = useMemo(
 		() => estimatePromptTokens(settings?.effectiveSystemPrompt ?? ""),
 		[settings?.effectiveSystemPrompt],
@@ -990,17 +902,12 @@ export function SettingsModal({
 		[settings?.toolsSchema],
 	);
 	const totalContextTokenEstimate = promptTokenEstimate + toolsSchemaTokenEstimate;
-	// 宽屏聊天列开关（纯前端 localStorage，见 chat-width-settings.ts）。
 	const wideChat = useWideChat();
 	const hideModelRow = useHideModelRow();
-	// 输入框回车行为（纯前端 localStorage，见 composer-keys.ts）。
 	const effectiveSendKey = useEffectiveSendKey();
-	// present_files 卡片：AI 标了「先看这个」时要不要自动弹预览窗（纯前端偏好，localStorage）。
 	const presentAutoOpen = usePresentAutoOpen();
 	const projectTitle = useProjectTitle();
 	const faviconSettings = useFaviconSettings();
-	// 聊天背景图（纯前端 localStorage，见 wallpaper.ts）：地址输入框用本地草稿，
-	// 失焦/回车才提交（避免边输边校验）；压暗/模糊滑杆直接提交即时预览。
 	const wallpaper = useWallpaperSettings();
 	const [wallpaperDraft, setWallpaperDraft] = useState(wallpaper.url);
 	const wallpaperFocus = useRef(false);
@@ -1008,7 +915,6 @@ export function SettingsModal({
 	const [wallpaperUploading, setWallpaperUploading] = useState(false);
 	const [wallpaperUploadError, setWallpaperUploadError] = useState(false);
 	useEffect(() => {
-		// data: 图不回填输入框（太长），下方缩略预览即表示生效中。
 		if (!wallpaperFocus.current) setWallpaperDraft(wallpaper.url.startsWith("data:") ? "" : wallpaper.url);
 	}, [wallpaper.url]);
 	const onPickWallpaperFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1030,7 +936,6 @@ export function SettingsModal({
 			setWallpaperUploading(false);
 		}
 	};
-	// Prompt history settings (纯前端 localStorage，不经过 server).
 	const [phSettings, setPhSettings] = useState(() => loadPromptHistorySettings());
 	const [phCount, setPhCount] = useState(() => {
 		try {
@@ -1055,33 +960,21 @@ export function SettingsModal({
 		const id = window.setTimeout(() => setPhClearConfirm(false), 3000);
 		return () => window.clearTimeout(id);
 	}, [phClearConfirm]);
-	// Two-step uninstall confirm: which extension id is awaiting confirmation.
 	const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
-	// Two-step uninstall confirm for agent engines (dsh, claude, codex, durable).
 	const [confirmEngineUninstallId, setConfirmEngineUninstallId] = useState<string | null>(null);
-	// Two-step uninstall confirm for UI plugins (<dataDir>/plugins).
 	const [confirmUiUninstall, setConfirmUiUninstall] = useState<string | null>(null);
-	/** 界面插件诊断展开态（插件 id → 展开；一次只展开一行）。 */
 	const [diagOpen, setDiagOpen] = useState<string | null>(null);
-	/** 界面插件运行日志展开态（插件 id → 展开；一次只展开一行，点开即按需拉取）。 */
 	const [logOpen, setLogOpen] = useState<string | null>(null);
-	/** 界面插件配置展开态（插件 id → 展开；默认折叠）。 */
 	const [settingsOpen, setSettingsOpen] = useState<Record<string, boolean>>({});
-	/** 日志 store 变化即重渲（拉取/清空回包到达时刷新列表与条数）。 */
 	const [, bumpLogSeq] = useState(0);
 	useEffect(() => subscribePluginLogs(() => bumpLogSeq((n) => n + 1)), []);
-	// "Add to plugin list" form fields (plugin marketplace).
 	const [catSource, setCatSource] = useState("");
 	const [catId, setCatId] = useState("");
 	const [catName, setCatName] = useState("");
 	const [catDesc, setCatDesc] = useState("");
 	const [catIcon, setCatIcon] = useState("");
 	const [showCatAdd, setShowCatAdd] = useState(false);
-	/** 市场安装/更新时先做隔离源码构建（等价 CLI --build，issue #150）。
-	 *  没勾选也不怕：只有源码没有产物的插件服务端会自动构建（issue #165 的 --build 推断）；
-	 *  勾选 = 连产物齐全的也强制重编。 */
 	const [catBuild, setCatBuild] = useState(false);
-	// 「从目录同步」表单（issue #165）：来源 + 选项 + 等待中的请求 id。
 	const [showCatSync, setShowCatSync] = useState(false);
 	const [catSyncSource, setCatSyncSource] = useState("");
 	const [catSyncInstall, setCatSyncInstall] = useState(false);
@@ -1089,18 +982,12 @@ export function SettingsModal({
 	const [catSyncReq, setCatSyncReq] = useState<string | null>(null);
 	const [catSyncSent, setCatSyncSent] = useState("");
 	const [catSyncRecent, setCatSyncRecent] = useState<string[]>(() => loadCatalogSyncRecent());
-	// 快捷短语新增输入框草稿（Enter / 添加按钮提交）。
 	const [quickNew, setQuickNew] = useState("");
-	// 快捷短语行内编辑（null = 未在编辑；输入框受控于 value，回显不打断输入）。
 	const [quickEdit, setQuickEdit] = useState<{ index: number; value: string } | null>(null);
-	// 插件市场标签分类：all = 全部合并显示；builtin = 官方内置；community = 社区生态；custom = 自定义
 	const [catalogFilter, setCatalogFilter] = useState<"all" | "builtin" | "community" | "custom">("all");
 	const [catalogSearch, setCatalogSearch] = useState("");
-	// 插件市场方案 3：精炼单行展开查看详情的插件 ID
 	const [expandedPluginId, setExpandedPluginId] = useState<string | null>(null);
-	// DSH 用户补丁安装输入框草稿
 	const [dshPatchInput, setDshPatchInput] = useState("");
-	// DSH 插件市场子面板（探索 / 已安装）与搜索分类状态
 	const [dshMarketSub, setDshMarketSub] = useState<"discover" | "installed">("discover");
 	const [dshMarketSearch, setDshMarketSearch] = useState("");
 	const [dshMarketCat, setDshMarketCat] = useState<string>("all");
@@ -1126,7 +1013,6 @@ export function SettingsModal({
 				? settings.visionBridgePrompt
 				: settings.visionBridgeDefaultPrompt || "",
 		);
-		// 「AI 提交信息」提示词：replace 且存的是空（= 内置默认）时预填默认文本。
 		setScmMsgMode(settings.scmCommitMsgPromptMode);
 		if (!scmMsgFocus.current) {
 			setScmMsgDraft(
@@ -1135,7 +1021,6 @@ export function SettingsModal({
 					: settings.scmCommitMsgDefaultPrompt || "",
 			);
 		}
-		// 计划模式提示词：replace 且存的是空（= 内置默认）时预填默认文本。
 		setPlanModeMode(settings.planModePromptMode);
 		if (!planModeFocus.current) {
 			setPlanModeDraft(
@@ -1160,19 +1045,16 @@ export function SettingsModal({
 	useEffect(() => {
 		setMaxMsDraft(String(settings?.terminalBashMaxForegroundMs ?? 60000));
 	}, [settings?.terminalBashMaxForegroundMs]);
-	// 工具看门狗超时（分钟，默认 20 分钟；0 = 禁用）。
 	const [watchdogMinDraft, setWatchdogMinDraft] = useState<string>(
 		String(Math.round((settings?.toolWatchdogTimeoutMs ?? 1200000) / 60_000)),
 	);
 	useEffect(() => {
 		setWatchdogMinDraft(String(Math.round((settings?.toolWatchdogTimeoutMs ?? 1200000) / 60_000)));
 	}, [settings?.toolWatchdogTimeoutMs]);
-	// 模型报错自动重试次数：本地草稿（失焦/回车提交，0 = 失败即停）。
 	const [retryDraft, setRetryDraft] = useState<string>(String(settings?.retryMaxAttempts ?? 6));
 	useEffect(() => {
 		setRetryDraft(String(settings?.retryMaxAttempts ?? 6));
 	}, [settings?.retryMaxAttempts]);
-	// 常驻渲染消息数：本地草稿（失焦/回车提交，默认 15）。
 	const [keepRecentDraft, setKeepRecentDraft] = useState<string>(String(settings?.keepRecentMessages ?? 15));
 	useEffect(() => {
 		setKeepRecentDraft(String(settings?.keepRecentMessages ?? 15));
@@ -1181,7 +1063,6 @@ export function SettingsModal({
 	useEffect(() => {
 		setSkillsMaxDescDraft(String(settings?.skillsCatalogMaxDesc ?? 250));
 	}, [settings?.skillsCatalogMaxDesc]);
-	// 技能正文上限按 KB 编辑（落库仍是字节）：min 0 = 不限。
 	const kbDraft = (bytes: number | undefined, fallback: number) => String(Math.round((bytes ?? fallback) / 1024));
 	const [skillsFileLimitDraft, setSkillsFileLimitDraft] = useState<string>(kbDraft(settings?.skillsMaxFileBytes, 8192));
 	useEffect(() => {
@@ -1193,7 +1074,6 @@ export function SettingsModal({
 	useEffect(() => {
 		setSkillsFullTextBudgetDraft(kbDraft(settings?.skillsFullTextMaxBytes, 32768));
 	}, [settings?.skillsFullTextMaxBytes]);
-	// 压缩软上限：本地草稿（空 = 关闭；失焦/回车提交）。
 	const [softCapDraft, setSoftCapDraft] = useState<string>(
 		settings?.softCapTokens && settings.softCapTokens > 0 ? formatTokenDraft(settings.softCapTokens) : "",
 	);
@@ -1202,17 +1082,9 @@ export function SettingsModal({
 			settings?.softCapTokens && settings.softCapTokens > 0 ? formatTokenDraft(settings.softCapTokens) : "",
 		);
 	}, [settings?.softCapTokens]);
-	// 按模型覆盖的新增行草稿。
 	const [newCapModel, setNewCapModel] = useState<string>("");
 	const [newCapTokens, setNewCapTokens] = useState<string>("");
 
-	/** 宿主 UI 布局（issue #146 完整版）：所有挂载点的最终条目 = 内置 + 插件贡献 +
-	 *  插件 arrange + 用户偏好。设置面板与 TopBar 用同一份计算，看到的顺序永远一致。
-	 *  刻意放在 tabs 之前（也就跑在上面的 `if (!settings) return null` 之前）：插件自定义页
-	 *  （settings.pages）也是导航的一项，得先算出来；而引用它的回落 effect 是 hook，
-	 *  不能写在条件 return 之后。 */
-	// 合并诊断（P0-1）：未知 slot / 未知 kind / arrange 目标不存在 / 插件被禁用或激活
-	// 失败都产出一条带归因的记录，布局页顶部横幅展示（按 pluginId 分组，可折叠）。
 	const uiDiagnostics: UiDiagnostic[] = [];
 	const uiSlots = buildUiSlots(withPluginViewItems(chat.plugins), {
 		locale,
@@ -1222,10 +1094,6 @@ export function SettingsModal({
 		diagnostics: uiDiagnostics,
 	});
 
-	/** `settings.pages` 里可渲染的插件页（导航一项 = 一页）。跳过：宿主条目（该槽位按契约是
-	 *  插件专属）、被插件或用户隐藏的、纯分隔线，以及**查不到插件的**（清单还没推来 /
-	 *  插件刚被卸载 / 被禁用）—— 宁可少一页，也不要点开才发现白屏（口径同右栏插件 tab）。
-	 *  顺序严格按 uiSlots 给的结果（那边已按「插件 → arrange → 用户偏好」排好）。 */
 	const pluginPages: { entry: UiSlotEntry; plugin: UiPluginInfo }[] = [];
 	for (const entry of uiSlots["settings.pages"]) {
 		if (entry.source === "host" || entry.hidden || entry.kind === "divider") continue;
@@ -1233,18 +1101,11 @@ export function SettingsModal({
 		if (!plugin) continue;
 		pluginPages.push({ entry, plugin });
 	}
-	/** 导航 id ↔ 插件页的换算只写这一处（tab 状态、回落 effect、渲染块共用）。 */
 	const pluginPageTabId = (entryId: string): SettingsTab => `plugin-page:${entryId}`;
 
-	if (!settings) return null;
-
-	// 统一工具禁用名单（工具 tab 唯一写入口；旧 tab 的遗留单开关已迁入）。
 	const disabledTools = new Set(settings.disabledAgentTools ?? []);
 	const disabledToolsCount = disabledTools.size;
 
-	// pi 引擎默认预设的二次过滤（server/tool-manager.ts filterToolsByPreset）：预设是
-	// 禁用名单之外的第二层门控。默认预设为极简/代码/只读/纯对话时，大批开关看似开着
-	// 实则对新对话不生效——此处算出实效，被过滤的行置灰并在顶部挂横幅（一键切回全功能）。
 	const piPresetId = isDsh ? null : (chat.dshPresets?.defaultPreset ?? null);
 	const piPresetFiltering = !!piPresetId && piPresetId !== "standard";
 	const piPresetAllowed: Set<string> = piPresetFiltering
@@ -1268,16 +1129,12 @@ export function SettingsModal({
 	const blockedPresetCount = piPresetFiltering
 		? AGENT_TOOL_CATALOG.filter((e) => !piPresetAllowed.has(e.name)).length
 		: 0;
-	// 非 standard 预设下插件工具一律不可用（见 tool-manager.ts 语义总表）：
-	// 横幅计数把「实际被拦的已启用插件工具」也算上，行级开关同步置灰。
 	const blockedPluginCount = piPresetFiltering
 		? chat.plugins
 				.flatMap((pp) => pp.agentTools ?? [])
 				.filter((pt) => !(settings.disabledPluginTools ?? []).includes(pt.name)).length
 		: 0;
 
-	// 预设区（合并为一个卡片后）用到的两处「当前值」说明文案：默认 Agent 预设 + 默认权限。
-	// 原来的只读列表被删掉，说明文字改挂在下拉框下方一行（信息不丢、纵向占用大幅缩水）。
 	const defaultAgentPreset = chat.dshPresets
 		? sortAgentPresets(chat.dshPresets.presets).find((p) => p.id === chat.dshPresets!.defaultPreset)
 		: undefined;
@@ -1285,12 +1142,10 @@ export function SettingsModal({
 		? (defaultAgentPreset.broken ?? presetText(defaultAgentPreset, locale, t).description)
 		: undefined;
 	const hasUserAgentPreset = !!chat.dshPresets?.presets.some((p) => p.trust === "user");
-	// 合并后的预设配置块是否有内容（两个下拉都在时才渲染，免得留个空框）。
 	const showPresetConfig =
 		!!(chat.dshPresets && chat.dshPresets.presets.length > 0) ||
 		!!(chat.dshPermission && chat.dshPermission.options.length > 0);
 
-	// 界面插件更新检查状态
 	const pluginUpdates = chat.pluginUpdates;
 	const hasBuiltinPluginUpdate = Object.values(pluginUpdates ?? {}).some((u) => u.updatable && (u.builtin ?? false));
 	const hasAnyPluginUpdate = Object.values(pluginUpdates ?? {}).some((u) => u.updatable);
@@ -1299,16 +1154,11 @@ export function SettingsModal({
 		id: SettingsTab;
 		icon: React.ReactNode;
 		label: string;
-		/** 有计数徽标（与各区块标题里的 set-count 同源）。 */
 		count?: number;
-		/** 状态指示红点（如存在内置插件更新）。 */
 		dot?: boolean;
-		/** 插件自定义页：内容交给 PluginPage 渲染（内置分区没有这一项）。 */
 		pluginPage?: { plugin: UiPluginInfo; entry: UiSlotEntry };
-		/** 悬浮提示（插件条目的 `hint`）。 */
 		hint?: string;
 	}[] = [
-		// 模型与服务商（全引擎通用：统一管理 BaseURL、API Key 与自定义中转模型）
 		...(onOpenManageModels
 			? [
 					{
@@ -1318,18 +1168,14 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 系统提示词（Pi 引擎与 DSH 引擎均支持自定义提示词注入与查看）
 		...(isPi || isDsh ? [{ id: "prompt" as const, icon: <FiFileText />, label: t("settingsSystemPrompt") }] : []),
-		// Independent model-only window, available with every main conversation engine.
 		{ id: "quick-ask" as const, icon: <FiMessageSquare />, label: t("quickAskSettingsTitle") },
-		// 输入历史（全引擎通用）
 		{
 			id: "prompt-history",
 			icon: <FiClock />,
 			label: t("settingsPromptHistory"),
 			count: phCount,
 		},
-		// 定时任务（仅 Pi 引擎具备后台执行通道）
 		...(isPi
 			? [
 					{
@@ -1340,7 +1186,6 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 工具 & 审批规则 / DSH 问卷提问
 		...(isDsh
 			? [{ id: "question" as const, icon: <FiHelpCircle />, label: t("settingsQuestionnaire") }]
 			: isPi
@@ -1359,17 +1204,12 @@ export function SettingsModal({
 						},
 					]
 				: []),
-		// 对话展示（全引擎通用）
 		{ id: "display", icon: <FiMessageSquare />, label: t("settingsMessageDisplay") },
-		// 声音与语音（全引擎通用）
 		{ id: "sound", icon: <FiVolume2 />, label: t("settingsSoundVoice") },
-		// 快捷短语（全引擎通用）
 		{ id: "quick", icon: <FiSend />, label: t("quickPhrases"), count: settings.quickPhrases.length },
-		// 技能（仅 Pi 引擎支持 .pi/skills）
 		...(isPi
 			? [{ id: "skills" as const, icon: <FiCpu />, label: t("settingsSkills"), count: settings.skills.length }]
 			: []),
-		// 扩展 / DSH 补丁市场（Claude 引擎无此类扩展）
 		...(isDsh
 			? [
 					{
@@ -1389,7 +1229,6 @@ export function SettingsModal({
 						},
 					]
 				: []),
-		// 界面插件（全引擎通用）
 		{
 			id: "plugins",
 			icon: <FiBox />,
@@ -1397,7 +1236,6 @@ export function SettingsModal({
 			count: chat.plugins.length,
 			dot: hasBuiltinPluginUpdate || hasAnyPluginUpdate,
 		},
-		// MCP 服务器（仅 Pi 引擎原生支持）
 		...(isPi
 			? [
 					{
@@ -1409,19 +1247,14 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 界面布局（全引擎通用）
 		{ id: "layout", icon: <FiSliders />, label: t("uiLayoutTitle") },
-		// 目标审查（仅 Pi 与 DSH 支持）
 		...(isClaude || isCodex
 			? []
 			: [{ id: "review" as const, icon: <FiZap />, label: t("settingsReview"), count: settings.reviewSkills.length }]),
-		// 视觉桥（仅 Pi 引擎支持）
 		...(isPi ? [{ id: "vision" as const, icon: <FiEye />, label: t("settingsVisionBridge") }] : []),
-		// 预设（仅 Pi 引擎支持）
 		...(isPi
 			? [{ id: "presets" as const, icon: <FiSliders />, label: t("settingsPresets"), count: settings.presets.length }]
 			: []),
-		// DSH 预设与权限三档（仅 DSH 引擎支持：极简模式/代码运行时/PTC 预设 + 权限三档）
 		...(isDsh
 			? [
 					{
@@ -1432,7 +1265,6 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 子代理模板（仅 Pi 引擎支持）
 		...(isPi
 			? [
 					{
@@ -1443,7 +1275,6 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 群组协作与执行（仅 Pi 引擎支持）
 		...(isPi
 			? [
 					{
@@ -1454,7 +1285,6 @@ export function SettingsModal({
 					},
 				]
 			: []),
-		// 插件自定义设置页（全引擎通用）
 		...pluginPages.map((p) => ({
 			id: pluginPageTabId(p.entry.id),
 			icon: p.entry.iconSvg ? (
@@ -1469,11 +1299,9 @@ export function SettingsModal({
 		})),
 	];
 
-	// 侧栏搜索与四维分组（方案 1: Linear 穿透命令流）
 	const [tabSearchQuery, setTabSearchQuery] = useState("");
 	const searchInputRef = useRef<HTMLInputElement>(null);
 
-	// 即时同步状态指示（Linear / Raycast 风格：操作即生效，右上角微脉冲反馈）
 	const [syncState, setSyncState] = useState<"idle" | "syncing" | "synced">("idle");
 	const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1486,7 +1314,6 @@ export function SettingsModal({
 		}, 300);
 	};
 
-	// 全局快捷键支持：Ctrl+K / Cmd+K 或 / 直接唤起并聚焦 Command 搜索栏
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -1535,7 +1362,6 @@ export function SettingsModal({
 		"device-collab": "advanced",
 	};
 
-	// 穿透搜索语义词库（输入 TTS、宽屏、软上限、延迟加载、只读等具体参数可穿透定位到所属 Tab）
 	const TAB_KEYWORDS: Record<string, string[]> = {
 		models: [
 			"模型",
@@ -1654,7 +1480,6 @@ export function SettingsModal({
 		});
 	}, [tabs, tabSearchQuery]);
 
-	// 当搜索过滤发生变更时，若当前选中的 Tab 不在结果内，自动激活首个匹配 Tab
 	useEffect(() => {
 		if (!tabSearchQuery.trim()) return;
 		if (filteredTabs.length > 0 && !filteredTabs.some((t) => t.id === tab)) {
@@ -1677,7 +1502,6 @@ export function SettingsModal({
 		}
 	};
 
-	/** 导航纠偏：若当前 tab 不在当前引擎可用的分区列表（例如切换引擎、或插件被卸载）→ 自动回落到该引擎的首个可用分区。 */
 	useEffect(() => {
 		if (tabs.length === 0) return;
 		if (!tabs.some((t) => t.id === tab)) {
@@ -1685,8 +1509,6 @@ export function SettingsModal({
 		}
 	}, [tabs, tab]);
 
-	/** 当前选中的插件页（tab 形如 `plugin-page:<条目全局 id>`）。找不到 = null：上面的 effect
-	 *  会把 tab 纠回默认分区，这里先什么都不画，免得白屏时还留着上一页的错误提示。 */
 	const activePluginPage = tab.startsWith("plugin-page:")
 		? (pluginPages.find((p) => pluginPageTabId(p.entry.id) === tab) ?? null)
 		: null;
@@ -1696,9 +1518,6 @@ export function SettingsModal({
 
 	const setPartial = (patch: SettingsPatch) => {
 		triggerSyncState();
-		// 审查 #2：先把补丁盖进本地未确认层（显示立即生效，下一次点击的「全量新值」
-		// 计算也基于它），再原样发服务端（服务端只合并给出的字段）。快照回程后由
-		// 上方 rebase effect 对账落层。
 		const now = Date.now();
 		setPendingSettings((prev) => {
 			const stamped = { ...prev };
@@ -1708,7 +1527,6 @@ export function SettingsModal({
 		appSend({ type: "set_settings", ...patch });
 	};
 
-	/** 提交快捷短语行内编辑（空 = 取消；与原值相同 = 无操作；其余走服务端归一化）。 */
 	const commitQuickEdit = () => {
 		if (!quickEdit || !settings) return;
 		const v = quickEdit.value.trim();
@@ -1727,7 +1545,6 @@ export function SettingsModal({
 		setPartial({ disabledSkills: [...next] });
 	};
 
-	// skill 全文注入名单：按技能单独勾选（空 = 名录模式）。
 	const fullTextSkills = new Set(settings.skillsFullText ?? []);
 	const toggleSkillFullText = (name: string) => {
 		const next = new Set(fullTextSkills);
@@ -1752,7 +1569,6 @@ export function SettingsModal({
 		setPartial({ disabledExtensions: [...next] });
 	};
 
-	// 子代理各工具的「?」说明（key 与 tool-manager.ts 的 SUBAGENT_TOOL_NAMES 对齐）。
 	const SUBAGENT_TOOL_TIPS: Record<string, string> = {
 		conversation: t("toolDescSubagent"),
 		...Object.fromEntries(
@@ -1769,11 +1585,9 @@ export function SettingsModal({
 		subagent_wait_all: t("toolDescSubagentWaitAll"),
 		subagent_templates: t("toolDescSubagentTemplates"),
 	};
-	// 核心内置工具的「?」说明（由 CORE_TOOL_CATALOG 声明式派生，双端事实源统一）。
 	const CORE_TOOL_TIPS: Record<string, string> = Object.fromEntries(
 		CORE_TOOL_CATALOG.map((c) => [c.name, t(c.descKey as any)]),
 	);
-	// 统一工具开关（工具 tab 逐工具；与 toggleSkill 同模式）。
 	const toggleAgentTool = (name: string) => {
 		const next = new Set(disabledTools);
 		const names = name === "conversation" || name === "subagent" ? ["conversation", "subagent"] : [name];
@@ -1784,7 +1598,6 @@ export function SettingsModal({
 		}
 		setPartial({ disabledAgentTools: [...next] });
 	};
-	// 插件 AI 工具开关（插件 tab 按插件分组 + 工具 tab 汇总区共用；live 生效）。
 	const disabledPluginTools = new Set(settings.disabledPluginTools ?? []);
 	const togglePluginTool = (name: string) => {
 		const next = new Set(disabledPluginTools);
@@ -1796,7 +1609,6 @@ export function SettingsModal({
 		.map((p) => ({ plugin: p, tools: [...(p.agentTools ?? [])].sort((a, b) => a.name.localeCompare(b.name)) }))
 		.filter((g) => g.tools.length > 0);
 
-	// ---- markers ----
 	const markersEnabled = settings.markersEnabled ?? true;
 	const disabledMarkers = new Set(settings.disabledMarkers ?? []);
 	const toggleMarker = (name: string) => {
@@ -1807,10 +1619,6 @@ export function SettingsModal({
 		setPartial({ disabledMarkers: [...next] });
 	};
 
-	/** Run a maintenance command (extension uninstall / UI-plugin install or
-	 *  uninstall) in a VISIBLE terminal tab (same reuse pattern as SCM write
-	 *  ops) so the user sees exactly what happened. On exit the App watcher
-	 *  sends extensions_reload / plugins_reload to re-discover the lists. */
 	const runTerminalCommand = (title: string, command: string) => {
 		const cmd: CommandDef = {
 			name: title,
@@ -1849,15 +1657,11 @@ export function SettingsModal({
 		onClose();
 	};
 
-	/** Uninstall a `pi install`-ed package: run `pi remove npm:<pkg>` in a
-	 *  visible terminal tab (see runTerminalCommand). */
 	const runUninstall = (pkgName: string) => {
 		setConfirmUninstall(null);
 		runTerminalCommand(`${t("uninstallTitle")} ${pkgName}`, `pi remove npm:${pkgName}`);
 	};
 
-	/** 提交一个插件后台作业（安装/更新/卸载，issue #152）：服务端跑 CLI 并把输出按行
-	 *  回推，设置面板就地显示——不切视图、不关弹窗、不占用户终端。 */
 	const runPluginJob = (action: "install" | "update" | "uninstall", id: string, source?: string) => {
 		appSend({
 			type: "plugin_job",
@@ -1869,7 +1673,6 @@ export function SettingsModal({
 		});
 	};
 
-	/** 某个插件最近一次后台作业（按开始时间取最新）。 */
 	const jobFor = (pluginId: string): PluginJobState | null => {
 		let best: PluginJobState | null = null;
 		for (const j of Object.values(chat.pluginJobs ?? {})) {
@@ -1879,8 +1682,6 @@ export function SettingsModal({
 		return best;
 	};
 
-	/** 「安装前先读 spec」的一句话提示（DSH P0-3）：形状不对 / 已装 / 远端无 manifest
-	 *  都在输入框下就地告知，不阻塞填写；探到的 manifest 顺带展示给用户确认。 */
 	const inspectHint = (r: PluginInstallInspectState | null) => {
 		if (!r) return null;
 		if (r.problem === "already-installed")
@@ -1919,7 +1720,6 @@ export function SettingsModal({
 		);
 	};
 
-	/** 就地显示作业状态：进行中（带最后一行输出）/ 成功 / 失败（带输出尾部）。 */
 	const renderJobStatus = (pluginId: string) => {
 		const job = jobFor(pluginId);
 		if (!job) return null;
@@ -1930,8 +1730,6 @@ export function SettingsModal({
 					<FiRefreshCw className="set-job-spin" />
 					{t("pluginJobRunning")}
 					<span className="set-catalog-job-line">{last}</span>
-					{/* 安装/更新是长任务（跑 CLI、打构建），起跑后必须给一个中止口：服务端
-					    `plugin_job_cancel` 会杀掉整棵进程树（plugin-installer.cancel）。 */}
 					<button
 						type="button"
 						className="set-job-cancel"
@@ -1951,9 +1749,6 @@ export function SettingsModal({
 		);
 	};
 
-	/** 布局页按界面位置分组的挂载点（30 个全量：与 ui-slots.ts 的 SLOT_IDS 同顺序，
-	 *  严格按实际界面的 DOM/视觉顺序：顶栏 → 通知 → 左栏 → 主列（头部/空态/消息/目标条/
-	 *  输入框） → 右栏 → 终端/Git 视图 → 底栏 → 悬浮层 → 右键菜单 → 设置页 → 对话框）。 */
 	const uiLayoutSections: { slot: UiSlotId; labelKey: string }[] = [
 		{ slot: "topbar.primary", labelKey: "uiLayoutTopbar" },
 		{ slot: "topbar.overflow", labelKey: "uiLayoutTopbarOverflow" },
@@ -1990,24 +1785,16 @@ export function SettingsModal({
 		{ slot: "sidebar.left", labelKey: "uiLayoutSidebarLeft" },
 		{ slot: "sidebar.right", labelKey: "uiLayoutSidebarRight" },
 	];
-	/** 渲染层真正按 align 分区的槽位（其余槽位的 align 存了也无处生效，布局页就不提供了）。
-	 *  顶栏与底栏/输入框动作区同口径：顶栏可受管条目的 align 均生效（手机端特有的对话折叠
-	 *  按钮 host:history 与文件列表折叠按钮 host:files 是两侧列表的唯一入口，不可被管理显示，
-	 *  已从设置页中去掉）。侧边停靠栏同属「真分区」，只是轴是竖的（靠上/居中/靠下）。 */
 	const uiAlignSlots: UiSlotId[] = ["bottombar", "composer.actions", "topbar.primary", "sidebar.left", "sidebar.right"];
-	/** 该槽位的 align 是竖轴：分段头与下拉用「靠上/居中/靠下」而非 start/center/end。 */
 	const verticalAlignSlot = (slot: string) => slot === "sidebar.left" || slot === "sidebar.right";
-	/** 可自由在上下和两侧切换位置的槽位 */
 	const uiPositionSlots: UiSlotId[] = ["topbar.primary", "bottombar", "sidebar.left", "sidebar.right"];
 	const [uiLayoutFilter, setUiLayoutFilter] = useState("");
-	/** 槽位 id → 布局页分区标题（movedFrom「移自哪」的显示用）。 */
 	const uiSlotTitle = (slot: UiSlotId): string => {
 		const found = uiLayoutSections.find((s) => s.slot === slot);
 		return found ? t(found.labelKey as Parameters<typeof t>[0]) : slot;
 	};
 	const layout = chat.settings?.uiLayout;
 	const setLayout = (patch: UiLayoutPrefs) => setPartial({ uiLayout: { ...layout, ...patch } });
-	/** 取消勾选＝用户隐藏；勾回＝用户显式显示（覆盖插件声明的 hidden / arrange 的 hide）。 */
 	const toggleUiHidden = (entry: UiSlotEntry) => {
 		const hidden = new Set(layout?.hidden ?? []);
 		const shown = new Set(layout?.shown ?? []);
@@ -2020,15 +1807,6 @@ export function SettingsModal({
 		}
 		setLayout({ hidden: [...hidden], shown: [...shown] });
 	};
-	/** ↑/↓：把顺序写进全局 order，同时保留其他槽位已有的自定义顺序。
-	 *  layout.order 是跨槽位共享的一维数组（合并引擎按槽位内相对次序用），直接用本槽位
-	 *  的全量 id 覆盖它会把其他槽位的调序洗掉 —— 所以先摘掉本槽位的旧痕迹，再把新顺序
-	 *  接在其他槽位顺序之后（跨槽位的前后关系不影响渲染，只影响同槽位内的相对次序）。
-	 *  顶栏/底栏/输入框动作区在界面上按对齐段分组渲染（左 start → 中 center → 右 end，
-	 *  见 TopBar 的 segStart/segCenter/segEnd、FooterBar 的左右分区、ChatInput 的
-	 *  composerGroups），布局页同口径按段展示、↑↓ 只在段内移动：调用方传全槽位
-	 *  allEntries 与当前段 rowItems，段内新顺序就地写回全槽位顺序（段外条目原位不动 ——
-	 *  跨段的前后本来就不影响渲染，换段走对齐下拉）。其余槽位整槽一段，与旧行为一致。 */
 	const moveUiEntry = (allEntries: UiSlotEntry[], rowItems: UiSlotEntry[], id: string, delta: number) => {
 		const groupKeys = rowItems.map((e) => e.id);
 		const idx = groupKeys.indexOf(id);
@@ -2038,7 +1816,6 @@ export function SettingsModal({
 		const [moved] = nextGroup.splice(idx, 1);
 		if (moved === undefined) return;
 		nextGroup.splice(target, 0, moved);
-		// 段内新顺序就地写回全槽位顺序：属于本段的位置按新顺序依次填入，段外条目不动。
 		const groupSet = new Set(groupKeys);
 		const queue = [...nextGroup];
 		const next = allEntries.map((e) => (groupSet.has(e.id) ? (queue.shift() as string) : e.id));
@@ -2046,17 +1823,14 @@ export function SettingsModal({
 		const others = (layout?.order ?? []).filter((x) => !inSlot.has(x));
 		setLayout({ order: [...others, ...next] });
 	};
-	/** 对齐：只给渲染层真分区的槽位提供（start/center/end，脏值由合并引擎兜底）。 */
 	const setUiAlign = (id: string, align: string) => {
 		if (align !== "start" && align !== "center" && align !== "end") return;
 		setLayout({ align: { ...layout?.align, [id]: align } });
 	};
-	/** 位置：支持在顶栏、底栏、左侧悬浮、右侧悬浮自由切换。 */
 	const setUiSlot = (id: string, targetSlot: UiSlotId) => {
 		const slots = { ...layout?.slots, [id]: targetSlot };
 		setLayout({ slots });
 	};
-	/** 改名：空串 = 清掉用户文案、回到合并文案（60 字截断与协议同口径）。 */
 	const setUiLabel = (id: string, label: string) => {
 		const labels = { ...layout?.labels };
 		const name = label.trim().slice(0, 60);
@@ -2064,33 +1838,26 @@ export function SettingsModal({
 		else labels[id] = name;
 		setLayout({ labels });
 	};
-	/** 恢复单条：清掉该条目上的全部用户覆盖（隐藏/显示/顺序/分组/文案）。 */
 	const restoreUi = (id: string) => setPartial({ uiLayout: restoreUiItem(layout, id) });
-	/** 一键恢复：插件 arrange 与用户偏好全部作废，回到宿主默认布局。 */
 	const restoreUiAll = () => setPartial({ uiLayout: restoreAllUi() });
 
-	/** 卸载一个界面插件：后台作业（不占用户终端、不关设置面板，issue #152）。 */
 	const runUiPluginUninstall = (id: string) => {
 		setConfirmUiUninstall(null);
 		runPluginJob("uninstall", id);
 	};
 
-	/** 更新一个界面插件：用记录下来的安装来源重装（--force，config.json 保留）。 */
 	const runUiPluginUpdate = (id: string, source: string) => {
 		runPluginJob("update", id, source);
 	};
 
-	/** 从市场一键安装（未装的直接装；已装的按钮走更新）。 */
 	const runCatalogInstall = (e: UiPluginCatalogEntry) => {
 		runPluginJob("install", e.id, e.source);
 	};
 
-	/** Remove a user-added plugin from the marketplace list. */
 	const runCatalogRemove = (id: string) => {
 		appSend({ type: "plugin_catalog_remove", id });
 	};
 
-	/** Submit the "add to plugin list" form (server validates + persists). */
 	const submitCatalogAdd = () => {
 		const source = catSource.trim();
 		if (!source) return;
@@ -2112,9 +1879,6 @@ export function SettingsModal({
 		setShowCatAdd(false);
 	};
 
-	/** 从目录文档同步可安装列表（issue #165）：走服务端现成的 plugin_catalog_sync 通道
-	 *  （与插件 host.reloadCatalog 同一条：同校验、同原子写盘、同回执），只是在设置面板里
-	 *  给用户一个直接入口 —— 第三方仓库不再需要为此专门发一个“目录同步插件”。 */
 	const runCatalogSync = (source: string) => {
 		const src = source.trim();
 		if (!src) return;
@@ -2130,8 +1894,6 @@ export function SettingsModal({
 		});
 	};
 
-	/** 「安装前先读 spec」：来源变了（防抖 500ms）自动查一次 —— 输入框下面就地显示
-	 *  形状/已装/远端有没有 manifest，不用等 CLI 跑完再猜（DSH P0-3）。 */
 	const [catInspectReq, setCatInspectReq] = useState("");
 	useEffect(() => {
 		const source = catSource.trim();
@@ -2152,14 +1914,10 @@ export function SettingsModal({
 		return () => clearTimeout(timer);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [catSource, catId]);
-	/** 与当前输入对齐的那次检查结果：requestId 对得上、且来源与输入框一致
-	 *  （值变了、新结果还没回来时不展示旧结论，免得说错话）。 */
 	const insp = chat.installInspect;
 	const catInspect = insp && insp.requestId === catInspectReq && insp.source === catSource.trim() ? insp : null;
 
-	/** 正在等的那次同步的回执（requestId 对上才展示；别人的/插件的同步不掺和）。 */
 	const syncReceipt = chat.catalogSync && chat.catalogSync.requestId === catSyncReq ? chat.catalogSync : null;
-	// 同步成功才记住 URL（失败的不进“最近”，免得一键重放一个坏地址）。
 	useEffect(() => {
 		if (syncReceipt?.ok && catSyncSent) setCatSyncRecent(rememberCatalogSyncUrl(catSyncSent));
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2200,11 +1958,8 @@ export function SettingsModal({
 		setPartial({ promptOverrides: { [token]: "" } });
 	};
 
-	/** 来源默认内容预览的长文本展开/收起。 */
 	const toggleDefault = (tk: string) => setDefaultOpen((p) => ({ ...p, [tk]: !p[tk] }));
 
-	/** 覆盖输入时一键把默认（自动）内容填进覆盖框 —— 只想改一小部分时用它打底（填
-	 *  入后该来源内容固定，不再随每次对话自动重新生成）。 */
 	const seedFromDefault = (tk: string, def: string) => {
 		setPromptOverridesDraft((p) => {
 			const next = { ...p, [tk]: def };
@@ -2232,7 +1987,6 @@ export function SettingsModal({
 		});
 	};
 
-	/** 点击 token 芯片追加：立即更新草稿并立即提交保存，不依赖后续失焦。 */
 	const appendTokenToTemplate = (token: string) => {
 		if (templateDebounceTimer.current) {
 			clearTimeout(templateDebounceTimer.current);
@@ -2245,7 +1999,6 @@ export function SettingsModal({
 		setPartial({ promptTemplate: next });
 	};
 
-	/** 离开/关闭/切换分组前把未提交的草稿全量落盘，防止卸载丢失。 */
 	const flushAllDrafts = () => {
 		if (templateDebounceTimer.current) {
 			clearTimeout(templateDebounceTimer.current);
@@ -2295,11 +2048,9 @@ export function SettingsModal({
 		setTab(nextTab);
 	};
 
-	// 按 Escape 键安全退出：先 flush 草稿再关闭；子弹窗开启时放行给子弹窗。
 	useEscapeKey(handleClose, !tplDraft && !ruleDraft && !editingToolPrompt && !presetShareFor && !inspectingSkill);
 	useEscapeKey(() => setInspectingSkill(null), Boolean(inspectingSkill));
 
-	// 组件卸载清理：兜底提交任何在途草稿。
 	useEffect(() => {
 		return () => {
 			flushAllDrafts();
@@ -2374,7 +2125,6 @@ export function SettingsModal({
 					</div>
 				</div>
 
-				{/* Scrollable body — head above stays fixed; only these sections scroll. */}
 				<div className="settings-layout">
 					<nav className="settings-rail" aria-label={t("settingsTitle")} ref={railRef}>
 						{tabSearchQuery.trim() ? (
@@ -2427,7 +2177,6 @@ export function SettingsModal({
 						)}
 					</nav>
 					<div className="modal-body" ref={bodyRef}>
-						{/* ---- models & providers (all engines) ------------------------ */}
 						{tab === "models" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -2634,10 +2383,33 @@ export function SettingsModal({
 										</div>
 									</div>
 								)}
+								<div className="set-section-title">
+									<FiTerminal className="set-section-icon" />
+									{t("nativeCliModelSettings")}
+									<HintTip text={t("nativeCliModelSettingsDesc")} />
+								</div>
+								{Object.values(ENGINE_CATALOG)
+									.filter((item) => item.cliCommand)
+									.map((item) => (
+										<ToggleRow
+											key={item.id}
+											title={t("nativeCliInheritModel", { name: item.name })}
+											tip={item.cliModelArgs ? t("nativeCliModelSettingsDesc") : t("nativeCliModelUnsupported")}
+											disabled={!item.cliModelArgs}
+											enabled={Boolean(item.cliModelArgs && settings.nativeCliInheritModel?.[item.id])}
+											onToggle={() =>
+												setPartial({
+													nativeCliInheritModel: {
+														...settings.nativeCliInheritModel,
+														[item.id]: !settings.nativeCliInheritModel?.[item.id],
+													},
+												})
+											}
+										/>
+									))}
 							</div>
 						)}
 
-						{/* ---- system prompt -------------------------------------------- */}
 						{tab === "prompt" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -2983,16 +2755,13 @@ export function SettingsModal({
 												))}
 											</div>
 										</div>
-										{/* 各来源覆盖：留空 = 用自动内容；未覆盖时行内直接展示该来源当前的默认（自动）内容 */}
 										<div className="set-field">
 											<label className="set-field-label">{t("promptSourcesLabel")}</label>
 											{orderedPromptTokens.map((tk) => {
 												const v = promptOverridesDraft[tk] ?? "";
-												// 该来源当前默认（自动）内容：会话未就绪时为空对象 → def = ""。
 												const def = settings.promptSourceDefaults?.[tk] ?? "";
 												const editing = editingSource === tk;
 												const isLong = def.split("\n").length > 6 || def.length > 480;
-												// 该块有效 token（估算）：禁用 = 0，否则按覆盖/自动内容的实际生效文本算。
 												const tkDisabled = (settings.promptDisabled ?? []).includes(tk);
 												const tkEffTokens = tkDisabled ? 0 : estimatePromptTokens(v.trim() ? v : def);
 												if (isReadonlyPromptSource(tk)) {
@@ -3114,7 +2883,6 @@ export function SettingsModal({
 																	onFocus={(e) => {
 																		overrideFocus.current = tk;
 																		setEditingSource(tk);
-																		// 刚点预览载入默认文本时把光标放到末尾，方便直接接着改。
 																		const el = e.currentTarget as HTMLTextAreaElement;
 																		if (el.value && el.value === def)
 																			el.setSelectionRange(el.value.length, el.value.length);
@@ -3123,7 +2891,6 @@ export function SettingsModal({
 																		if (overrideFocus.current === tk) overrideFocus.current = null;
 																		const val = promptOverridesDraft[tk] ?? "";
 																		if (val.trim() && val === def) {
-																			// 点击预览载入默认后原样失焦（没改任何字）→ 不产生覆盖，仍用自动内容。
 																			resetOverride(tk);
 																			return;
 																		}
@@ -3139,7 +2906,6 @@ export function SettingsModal({
 																		});
 																	}}
 																/>
-																{/* 编辑覆盖内容时，下方始终展示该来源的默认（自动）内容，方便对照/复制/只改一小部分。 */}
 																<div className="override-edit-foot">
 																	<div className="override-edit-foot-head">
 																		<span className="set-muted">{t("promptSourceRefLabel")}</span>
@@ -3177,7 +2943,6 @@ export function SettingsModal({
 																</div>
 															</>
 														) : (
-															// 未覆盖：行内展示默认（自动）内容；点击 = 载入默认文本开始编辑（不改就失焦则回到自动内容）。
 															<div
 																className="source-default"
 																title={t("promptSourceDefaultEditHint")}
@@ -3237,9 +3002,7 @@ export function SettingsModal({
 										</div>
 									</>
 								) : (
-									/* ---- DSH 引擎专属详细系统提示词配置 ---- */
 									<>
-										{/* 注入模式选择：追加 / 替换 */}
 										<div className="set-field">
 											<label className="set-field-label">{t("dshPromptModeLabel")}</label>
 											<div className="set-mode-row" role="radiogroup" aria-label={t("dshPromptModeLabel")}>
@@ -3272,7 +3035,6 @@ export function SettingsModal({
 											</div>
 										</div>
 
-										{/* 自定义提示词多行输入框 */}
 										<div className="set-field">
 											<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
 												<label className="set-field-label">{t("dshCustomPromptLabel")}</label>
@@ -3309,7 +3071,6 @@ export function SettingsModal({
 													}, 800);
 												}}
 											/>
-											{/* 快捷模板预设 Chips */}
 											<div className="compose-toolbar" style={{ marginTop: 8 }}>
 												<span className="set-field-label set-muted">{t("dshPromptQuickPresets")}</span>
 												<button
@@ -3374,7 +3135,6 @@ export function SettingsModal({
 											</div>
 										</div>
 
-										{/* DSH 提示词分段明细 Sections Breakdown */}
 										{dshSections.length > 0 && (
 											<div className="set-field" style={{ marginTop: 16 }}>
 												<div
@@ -3472,7 +3232,6 @@ export function SettingsModal({
 
 						{tab === "quick-ask" && <QuickAskSettings settings={settings} onChange={setPartial} />}
 
-						{/* ---- AI 提交信息（SCM 面板的 scm_commitmsg 生成提示词） ---- */}
 						{tab === "prompt" && !isDsh && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -3500,7 +3259,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- 计划模式提示词（计划模式开启时追加给模型的那一段） ---- */}
 						{tab === "prompt" && !isDsh && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -3526,7 +3284,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- prompt history -------------------------------------------- */}
 						{tab === "scheduler" && !isDsh && (
 							<SchedulerPanel
 								tasks={chat.schedulerTasks}
@@ -3641,7 +3398,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- agent tools (unified tool_manage) ------------------------- */}
 						{tab === "tools" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -3666,8 +3422,6 @@ export function SettingsModal({
 									enabled={settings.readDirEnabled !== false}
 									onToggle={() => setPartial({ readDirEnabled: settings.readDirEnabled === false })}
 								/>
-								{/* 工具延迟加载（DSH 无 pi 工具注册面，不显示）：开 = 只有核心工具常驻，
-								    其余工具在提示词里只有名字 + 一行摘要，模型用 load_tools 按需拉取。 */}
 								{!isDsh && (
 									<ToggleRow
 										title={t("toolLazyLoading")}
@@ -3724,7 +3478,6 @@ export function SettingsModal({
 										</select>
 									</div>
 								)}
-								{/* 已记住的放行（本对话）：只存内存，撤销就在设置里（审批弹窗本身不再出现） */}
 								{approvalPolicy?.allowAll || (approvalPolicy?.categories.length ?? 0) > 0 ? (
 									<div className="set-field" style={{ marginTop: 8 }}>
 										<div className="set-field-label">
@@ -4058,7 +3811,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- questionnaire (DSH only; pi moved into Tools) -------------- */}
 						{tab === "question" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -4119,7 +3871,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- message display ----------------------------------------- */}
 						{tab === "display" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -4169,7 +3920,6 @@ export function SettingsModal({
 										}}
 									/>
 								</FieldRow>
-								{/* 按模型覆盖：key = provider/id，优先于全局（issue #229）。 */}
 								<div className="set-section-title">
 									{t("softCapByModel")}
 									<HintTip text={t("softCapByModelHint")} />
@@ -4530,7 +4280,6 @@ export function SettingsModal({
 												onChange={(e) => setWallpaperDraft(e.target.value)}
 												onBlur={() => {
 													wallpaperFocus.current = false;
-													// 已上传的 data: 图不占输入框：空输入 = 未改动，不断然清空。
 													if (!wallpaperDraft.trim() && wallpaper.url.startsWith("data:")) {
 														setWallpaperDraft("");
 														return;
@@ -4610,7 +4359,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- 声音与语音（提示音事件开关 + 本地 TTS 播报，issue #288） ---- */}
 						{tab === "sound" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -4631,7 +4379,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- 快捷短语（输入框上方一键发送） ------------------------------ */}
 						{tab === "quick" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -4785,7 +4532,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- skills --------------------------------------------------- */}
 						{tab === "skills" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -4795,7 +4541,6 @@ export function SettingsModal({
 									<span className="set-count">{settings.skills.length}</span>
 								</div>
 
-								{/* 子页签：已安装 vs 技能市场 */}
 								<div className="mcp-tab-bar">
 									<button
 										type="button"
@@ -4817,7 +4562,6 @@ export function SettingsModal({
 									</button>
 								</div>
 
-								{/* 1. 已安装技能列表 */}
 								{skillSubTab === "installed" && (
 									<>
 										{!isDsh && piPresetFiltering && !presetShowsSkillCatalog(piPresetId ?? undefined) && (
@@ -4970,10 +4714,8 @@ export function SettingsModal({
 									</>
 								)}
 
-								{/* 2. 技能市场列表 */}
 								{skillSubTab === "market" && (
 									<div className="skill-market-view">
-										{/* 顶部说明引导栏 */}
 										<div className="skill-market-notice">
 											<FiShoppingBag className="skill-market-notice-icon" />
 											<div className="skill-market-notice-content">
@@ -5112,7 +4854,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- extensions (DSH: 独立 DSH 插件市场与管理面板) ------------------ */}
 						{tab === "extensions" && isDsh && (
 							<div className="set-section dsh-market-container">
 								<div className="dsh-market-header">
@@ -5160,7 +4901,6 @@ export function SettingsModal({
 									</div>
 								</div>
 
-								{/* 子选项卡导航：Discover (探索) | Installed (已安装) */}
 								<div className="dsh-market-tabs">
 									<button
 										type="button"
@@ -5186,10 +4926,8 @@ export function SettingsModal({
 									</button>
 								</div>
 
-								{/* ---------------- TAB 1: Discover (插件市场探索) ---------------- */}
 								{dshMarketSub === "discover" && (
 									<div className="dsh-market-discover">
-										{/* 兼容性提示横幅：明确声明 WebUI 视图类插件可能无效 */}
 										<div className="dsh-market-compat-banner">
 											<FiAlertTriangle className="dsh-market-banner-icon" />
 											<div className="dsh-market-banner-text">
@@ -5400,7 +5138,6 @@ export function SettingsModal({
 														})}
 													</div>
 
-													{/* 翻页控制器 (Pagination) */}
 													{totalPages > 1 && (
 														<div className="dsh-market-pagination">
 															<span className="dsh-market-page-info">
@@ -5451,7 +5188,6 @@ export function SettingsModal({
 									</div>
 								)}
 
-								{/* ---------------- TAB 2: Installed (已安装与本地补丁管理) ---------------- */}
 								{dshMarketSub === "installed" && (
 									<div className="dsh-market-installed">
 										<div className="dsh-patch-install-bar">
@@ -5543,7 +5279,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- extensions (pi: pi 扩展管理) -------------------------------- */}
 						{tab === "extensions" && !isDsh && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -5596,13 +5331,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- 插件市场（可一键安装的插件列表） ------------------------ */}
-						{/* A managed instance installs software through its deploy, not
-						    through this page: the market would only offer an action the
-						    server refuses (server/managed.ts). Plugins already installed
-						    keep working and stay listed above. */}
-						{/* 界面布局（issue #146）：插件能整理任何条目（含宿主内置入口），但用户随时能改回来 ——
-							    隐藏的条目仍可在顶栏溢出菜单里点到，改过的条目会显示「恢复」。 */}
 						{tab === "layout" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -5630,8 +5358,6 @@ export function SettingsModal({
 									</button>
 								</div>
 								<div className="set-note">{t("uiLayoutHint")}</div>
-								{/* 侧边图标停靠栏形态：默认「贴边槽位」（占宽、不遮挡面板按钮）；勾上 = 旧的
-								    悬浮浮层（不占宽，但会盖住面板竖中央那条）。 */}
 								<label className="set-toggle" title="sideDockFloat">
 									<input
 										type="checkbox"
@@ -5681,15 +5407,10 @@ export function SettingsModal({
 											(isDsh ||
 												(e.id !== "host:composer-dsh-perm" &&
 													e.id !== "host:composer-dsh-preset" &&
-													// 计划模式靠 pi 引擎的工具硬闸门，DSH 无 customTools 注册面 → 不列。
 													e.id !== "host:goal-plan")) &&
 											!HIDDEN_FROM_LAYOUT_ITEM_IDS.has(e.id),
 									);
 									const q = uiLayoutFilter.trim().toLowerCase();
-									// 按实际界面分组展示：顶栏/底栏/输入框动作区在界面上按对齐段
-									// （左 start → 中 center → 右 end）分段渲染，布局页同口径按段
-									// 列出（段头即界面上的段），↑↓ 只在段内移动；搜索时展平
-									// （看到的是子集，此时 ↑↓ 禁用，免得挪了看不见的邻居）。
 									const grouped = !q && uiAlignSlots.includes(slot);
 									const segments: { align: string | null; items: UiSlotEntry[] }[] = grouped
 										? (["start", "center", "end"] as const)
@@ -5704,7 +5425,6 @@ export function SettingsModal({
 												},
 											];
 									const total = segments.reduce((n, g) => n + g.items.length, 0);
-									// 搜索时藏掉无命中的分区（30 个分区全展开翻不动）。
 									if (q && total === 0) return null;
 									const renderRow = (it: UiSlotEntry, rowItems: UiSlotEntry[]) => {
 										const idx = rowItems.findIndex((e) => e.id === it.id);
@@ -5814,7 +5534,6 @@ export function SettingsModal({
 									return (
 										<div key={slot} className="set-ui-slot">
 											<div className="set-ui-slot-title">{t(labelKey as Parameters<typeof t>[0])}</div>
-											{/* 顶栏按钮文字总开关：关掉后顶栏只剩图标（角标保留，溢出菜单仍带文字）。 */}
 											{slot === "topbar.primary" && (
 												<label className="set-toggle" title="topbarText">
 													<input
@@ -5844,8 +5563,6 @@ export function SettingsModal({
 								})}
 							</div>
 						)}
-						{/* 插件目录授权（issue #146）：插件访问工作区外目录要经用户确认，
-						    这里列出已授权目录并支持逐条撤销（插件自己也能 requestAccess）。 */}
 						{tab === "plugins" && !managed && (
 							<div className="set-subtabs" role="tablist">
 								<button
@@ -6501,7 +6218,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- UI plugins（<dataDir>/plugins，纯 UI 隐藏） ----------------- */}
 						{tab === "plugins" && pluginSub === "installed" && (
 							<div className="set-section">
 								<div className="smart-market-head">
@@ -6679,7 +6395,6 @@ export function SettingsModal({
 
 													{renderJobStatus(p.id)}
 
-													{/* 功能微胶囊栏：将 AI 工具、配置、日志、DOM 特权、诊断平铺为整洁的横向胶囊 */}
 													<div className="smart-installed-chips">
 														{p.agentTools && p.agentTools.length > 0 && !isDsh && (
 															<button
@@ -6769,7 +6484,6 @@ export function SettingsModal({
 														)}
 													</div>
 
-													{/* 展开的抽屉区域 */}
 													{isSettingsOpen && p.settingsSchema && (
 														<div className="smart-card-drawer">
 															<PluginSettingsForm plugin={p} models={settings?.subagentModels ?? []} />
@@ -6799,7 +6513,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- goal review ----------------------------------------------- */}
 						{tab === "review" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -6814,9 +6527,6 @@ export function SettingsModal({
 									enabled={settings.goalModeEnabled}
 									onToggle={() => setPartial({ goalModeEnabled: !settings.goalModeEnabled })}
 								/>
-								{/* 审查者模式（会话级，默认关）：开启后本对话只审阅，用户请求由服务端
-								    转给一个常驻落盘执行对话；写类/派发类工具被服务端硬闸门拒。
-								    不是全局设置 → 直接发协议消息，不走 setPartial。 */}
 								<ToggleRow
 									title={t("delegateMode")}
 									tip={`${t("delegateModeDesc")}\n${t("delegateModeOffHint")}`}
@@ -6862,7 +6572,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- vision bridge ---------------------------------------------- */}
 						{tab === "vision" && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -6919,7 +6628,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- DSH 预设与权限三档（极简模式/代码运行时/PTC 预设 + 权限三档） ---- */}
 						{tab === "dsh-presets" && isDsh && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -6993,7 +6701,6 @@ export function SettingsModal({
 									{t("settingsPresets")}
 									<span className="set-count">{settings.presets.length}</span>
 								</div>
-								{/* 分享功能区：导入 / 导出分享 / 浏览共享仓库全部走同一个面板（server/preset-share.ts）。 */}
 								<div className="set-preset-share-actions">
 									<button
 										type="button"
@@ -7095,7 +6802,6 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- subagent templates（全局共享；DSH 引擎隐藏该分区） ---------- */}
 						{tab === "mcp" && <McpServersPanel settings={settings} chat={chat} />}
 
 						{tab === "subagent-templates" && (
@@ -7128,7 +6834,6 @@ export function SettingsModal({
 									</button>
 								</div>
 
-								{/* ---- 默认模型：全部子代理的兜底（模板/显式 model 参数优先） ---------- */}
 								<FieldRow label={t("subagentDefaultModelLabel")} tip={t("subagentDefaultModelHint")}>
 									<select
 										className="set-select"
@@ -7144,7 +6849,6 @@ export function SettingsModal({
 									</select>
 								</FieldRow>
 								{settings.subagentModels.length === 0 && <p className="set-hint">{t("subagentNoModels")}</p>}
-								{/* 只有 Pi 引擎接了这个设置；durable 也会显示本页但不处理它 */}
 								{engine === "pi" && (
 									<>
 										<FieldRow label={t("subagentMaxDepth")} tip={t("subagentMaxDepthDesc")}>
@@ -7154,7 +6858,6 @@ export function SettingsModal({
 												onChange={(e) => setPartial({ subagentMaxDepth: Number(e.target.value) })}
 											>
 												<option value={0}>{t("subagentMaxDepthUnlimited")}</option>
-												{/* 预设导入可能带来 >5 的值，并入列表免得下拉显示空白 */}
 												{[...new Set([1, 2, 3, 4, 5, settings.subagentMaxDepth ?? 0])]
 													.filter((n) => n > 0)
 													.map((n) => (
@@ -7184,7 +6887,6 @@ export function SettingsModal({
 									</>
 								)}
 
-								{/* ---- 编辑器：独立弹窗（新建 / 编辑同表单，列表页保持干净） ---------- */}
 								{tplDraft && (
 									<div className="modal-backdrop tpl-modal-backdrop" onClick={() => setTplDraft(null)}>
 										<div className="modal tpl-modal" onClick={(e) => e.stopPropagation()}>
@@ -7376,7 +7078,6 @@ export function SettingsModal({
 									</div>
 								)}
 
-								{/* ---- 模板列表 ------------------------------------------------ */}
 								{settings.subagentTemplates.length === 0 ? (
 									<p className="set-empty">{t("noSubagentTemplates")}</p>
 								) : (
@@ -7463,10 +7164,8 @@ export function SettingsModal({
 							</div>
 						)}
 
-						{/* ---- 群组协作与执行调度（仅 Pi 引擎支持） ---------- */}
 						{tab === "device-collab" && isPi && <DeviceExecutionSettings onNotice={() => triggerSyncState()} />}
 
-						{/* ---- approval rules（全局共享；DSH 引擎隐藏该分区） ---------- */}
 						{tab === "approval-rules" && !isDsh && (
 							<div className="set-section">
 								<div className="set-section-title">
@@ -7501,7 +7200,6 @@ export function SettingsModal({
 									</button>
 								</div>
 
-								{/* ---- 编辑 / 新建表单 ---------- */}
 								{ruleDraft && (
 									<div className="rule-editor">
 										<div className="set-section-title" style={{ fontSize: 13, marginBottom: 4 }}>
@@ -7674,7 +7372,6 @@ export function SettingsModal({
 									</div>
 								)}
 
-								{/* ---- 规则列表 ---------- */}
 								{(settings.approvalRules ?? []).length === 0 ? (
 									<p className="set-hint">{t("approvalRuleEmpty")}</p>
 								) : (
@@ -7725,7 +7422,6 @@ export function SettingsModal({
 														</div>
 													</div>
 													<div className="set-row-actions" style={{ marginLeft: 12, flexShrink: 0 }}>
-														{/* 启用/停用开关 */}
 														<button
 															type="button"
 															className={`set-switch${rule.enabled ? " on" : ""}`}
@@ -7741,7 +7437,6 @@ export function SettingsModal({
 														>
 															<span className="set-switch-knob" />
 														</button>
-														{/* 排序上移下移（自定义规则） */}
 														{!isBuiltin && idx > 0 && (
 															<button
 																type="button"
@@ -7839,7 +7534,6 @@ export function SettingsModal({
 								)}
 							</div>
 						)}
-						{/* ---- 插件自定义页（settings.pages，issue #146） ------------------- */}
 						{activePluginPage && (
 							<PluginPage
 								plugin={activePluginPage.plugin}
@@ -7849,7 +7543,6 @@ export function SettingsModal({
 							/>
 						)}
 
-						{/* ---- 逐工具文案编辑器（工具 tab 的「编辑文案」入口） ------------- */}
 						{editingToolPrompt && (
 							<ToolPromptEditor
 								name={editingToolPrompt}
@@ -7862,7 +7555,6 @@ export function SettingsModal({
 				</div>
 			</div>
 
-			{/* 预设分享面板（导入 / 导出 / 浏览共享仓库）—— 自己一层 portal，盖在设置页上。 */}
 			{presetShareFor !== null && (
 				<PresetShareModal
 					presets={settings.presets}
@@ -7880,7 +7572,6 @@ export function SettingsModal({
 				/>
 			)}
 
-			{/* 技能指令正文详情模态框（点击已安装技能行的名称/描述等其他地方查看具体内容） */}
 			{inspectingSkill && (
 				<div className="modal-backdrop" onClick={() => setInspectingSkill(null)} style={{ zIndex: 1200 }}>
 					<div className="modal-dialog skill-inspect-dialog" onClick={(e) => e.stopPropagation()}>

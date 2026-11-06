@@ -1,15 +1,5 @@
-/**
- * engine-capabilities.ts — 智能体底座能力声明规范与出厂事实源。
- *
- * 职责：
- * 1. 为 pi / dsh / 通用基座（Claude Code 等）及未来第三方驱动提供标准能力声明契约；
- * 2. 提供各内置引擎的开箱即用能力事实源（Pi 全能力、DSH 差异化子集、通用基座保守默认）；
- * 3. 辅助生成安全归一化的 AgentEngineCapabilities 对象。
- */
-
 import type { AgentEngineCapabilities } from "./protocol.js";
 
-/** Pi 原生引擎能力：全功能全集 */
 export const DEFAULT_PI_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object.freeze({
 	remoteSsh: true,
 	sandboxes: true,
@@ -29,7 +19,6 @@ export const DEFAULT_PI_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object
 	ephemeralChat: true,
 });
 
-/** DSH 引擎能力：外部独立进程运行时（缺失 SSH 透明接管、conversation_read 等宿主特性） */
 export const DEFAULT_DSH_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object.freeze({
 	remoteSsh: false,
 	sandboxes: false,
@@ -49,7 +38,6 @@ export const DEFAULT_DSH_CAPABILITIES: Readonly<AgentEngineCapabilities> = Objec
 	ephemeralChat: false,
 });
 
-/** 通用基座保守默认能力：外部 CLI / 子进程默认仅支持纯线性消息对话 */
 export const DEFAULT_UNIVERSAL_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object.freeze({
 	remoteSsh: false,
 	sandboxes: false,
@@ -69,7 +57,6 @@ export const DEFAULT_UNIVERSAL_CAPABILITIES: Readonly<AgentEngineCapabilities> =
 	ephemeralChat: true,
 });
 
-/** Pi Durable 引擎能力：事务化、任务图驱动的持久执行底座 */
 export const DEFAULT_DURABLE_CAPABILITIES: Readonly<AgentEngineCapabilities> = Object.freeze({
 	remoteSsh: false,
 	sandboxes: false,
@@ -89,7 +76,6 @@ export const DEFAULT_DURABLE_CAPABILITIES: Readonly<AgentEngineCapabilities> = O
 	ephemeralChat: true,
 });
 
-/** 合并并归一化能力声明（默认回落到通用基座保守值） */
 export function resolveEngineCapabilities(
 	caps?: Partial<AgentEngineCapabilities> | null,
 	base: AgentEngineCapabilities = DEFAULT_UNIVERSAL_CAPABILITIES,

@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildZip, crc32, readZip } from "../../plugins/page-picker/extension/zip.mjs";
 
-/** 分发用的 zip 打包器。
- *
- *  为什么值得单测：这个字节流最终会交到用户手里（下载 → 解压 → 加载扩展），
- *  而「写坏的 zip」在不同解压器上表现不一（有的直接拒绝、有的解出空目录）。
- *  Node 没有内置 zip，所以这里既有 CRC32 的标准测试向量，也有**独立于实现**的
- *  结构解析（按规范从本地文件头把数据抠出来），而不是只信自己写的 `readZip`。 */
-
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 describe("crc32", () => {
@@ -39,11 +32,11 @@ describe("buildZip / readZip", () => {
 		const payload = bytes("// 内容");
 		const zip = buildZip([{ name: "a/b.js", data: payload }]);
 		const view = new DataView(zip.buffer);
-		expect(view.getUint32(0, true)).toBe(0x04034b50); // 本地头签名
-		expect(view.getUint16(8, true)).toBe(0); // store：未压缩
+		expect(view.getUint32(0, true)).toBe(0x04034b50);
+		expect(view.getUint16(8, true)).toBe(0);
 		const nameLen = view.getUint16(26, true);
 		const size = view.getUint32(18, true);
-		expect(view.getUint32(14, true)).toBe(crc32(payload)); // 头部里的 CRC 就是负载的 CRC
+		expect(view.getUint32(14, true)).toBe(crc32(payload));
 		expect(new TextDecoder().decode(zip.subarray(30, 30 + nameLen))).toBe("a/b.js");
 		expect(zip.subarray(30 + nameLen, 30 + nameLen + size)).toEqual(payload);
 	});

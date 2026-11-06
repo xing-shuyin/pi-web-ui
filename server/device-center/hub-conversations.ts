@@ -8,13 +8,10 @@ import {
 	type HubConversation,
 } from "./store.js";
 
-/** Closed conversations kept per room for reading history; open ones are capacity, closed ones are archive. */
 export const CLOSED_CONVERSATION_RETENTION = 200;
-/** Idempotency receipts outlive message retention; replay must never re-dispatch evicted messages. */
 export const ROOM_RECEIPT_RETENTION = 2000;
 export const RECEIPT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A conversation whose Bot registration no longer matches cannot continue; report it instead of a late 409. */
 export function conversationStale(state: HubState, conversation: HubConversation): boolean {
 	const bot = state.bots.find((b) => b.id === conversation.botId && b.accountId === conversation.accountId);
 	if (!bot || !bot.enabled || bot.revision !== conversation.botRevision || bot.deviceId !== conversation.deviceId)
@@ -23,7 +20,6 @@ export function conversationStale(state: HubState, conversation: HubConversation
 	return !room || !room.botIds.includes(bot.id);
 }
 
-/** Delivery/review records are the audit trail; a conversation carrying them is never silently dropped. */
 export function conversationHasAuditRecords(state: HubState, conversationId: string): boolean {
 	return (
 		state.deliveries.some((delivery) => delivery.conversationId === conversationId) ||
@@ -33,7 +29,6 @@ export function conversationHasAuditRecords(state: HubState, conversationId: str
 	);
 }
 
-/** Delete every record scoped to one conversation. Never called for conversations with audit records. */
 export function dropConversationRecords(state: HubState, conversationId: string): void {
 	const taskIds = new Set(state.tasks.filter((task) => task.conversationId === conversationId).map((task) => task.id));
 	state.conversations = state.conversations.filter((conversation) => conversation.id !== conversationId);
@@ -45,7 +40,6 @@ export function dropConversationRecords(state: HubState, conversationId: string)
 	state.integrations = state.integrations.filter((integration) => integration.conversationId !== conversationId);
 }
 
-/** Bound the closed-conversation archive per room without touching auditable or still-running work. */
 export function trimClosedConversations(state: HubState, roomId: string, limit = CLOSED_CONVERSATION_RETENTION): void {
 	const closed = state.conversations
 		.filter((conversation) => conversation.roomId === roomId && conversation.closed)
@@ -59,7 +53,6 @@ export function trimClosedConversations(state: HubState, roomId: string, limit =
 			dropConversationRecords(state, conversation.id);
 }
 
-/** Receipts are the replay guard, so they must not be evicted by message retention. */
 export function trimRoomReceipts(state: HubState, roomId: string, limit = ROOM_RECEIPT_RETENTION): void {
 	const cutoff = Date.now() - RECEIPT_TTL_MS;
 	const stale = new Set(
@@ -116,7 +109,6 @@ export function conversationPage(state: HubState, conversationId: string, before
 					text: task.text.slice(0, 1024),
 					report: task.report?.slice(0, 1024),
 					handoff: undefined,
-					// Full immutable payloads remain on the task; history pages are bounded projections.
 					contract: undefined,
 					contextManifest: undefined,
 					artifact: undefined,
@@ -138,7 +130,6 @@ export function conversationPage(state: HubState, conversationId: string, before
 	};
 }
 
-/** Persisted insertion order is the FIFO; timestamps can collide and latestTaskId is not a queue. */
 export function nextConversationTask(state: HubState, conversationId: string): HubTask | undefined {
 	const conversation = state.conversations.find((entry) => entry.id === conversationId);
 	if (!conversation || conversation.closed) return;
@@ -147,7 +138,6 @@ export function nextConversationTask(state: HubState, conversationId: string): H
 	return pending[0];
 }
 
-/** A queued continuation must not replace the identity of the turn still executing. */
 export function advanceConversationTask(state: HubState, conversation: HubConversation, task: HubTask) {
 	const current = state.tasks.find((entry) => entry.id === conversation.latestTaskId);
 	if (current && current.id !== task.id && taskPending(current)) return;
@@ -159,7 +149,6 @@ export function conversationStatus(state: HubState, conversation: HubConversatio
 	return state.tasks.find((task) => task.id === conversation.latestTaskId)?.status ?? "interrupted";
 }
 
-/** Establish the address in the same transaction that commits the initial task. */
 export function establishConversation(state: HubState, task: HubTask): HubConversation {
 	const conversation: HubConversation = {
 		id: randomUUID(),
@@ -200,7 +189,6 @@ export function recordConversationTurn(state: HubState, task: HubTask, key?: str
 	});
 }
 
-/** A terminal child result creates one durable continuation. Its task is the delivery receipt. */
 export function queueParentResult(
 	state: HubState,
 	child: HubTask,

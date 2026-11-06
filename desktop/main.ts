@@ -1,33 +1,18 @@
-/**
- * pi-web-ui desktop shell (Electron, sidecar 模式).
- *
- * 设计：不碰 server/ 现有逻辑。主进程用 ELECTRON_RUN_AS_NODE 把
- * Electron 二进制当纯 Node 用，起一个 `dist/server/index.js` 子进程
- * （127.0.0.1 + 随机空闲口），等 /api/health 就绪后 BrowserWindow
- * 直接 load 该地址。前端继续走 appUrl("/ws") + location.host，
- * protocol.ts 零改动——和浏览器访问远端 server 是同一条路。
- *
- * 运行前先 `npm run build`（需要 dist/server + web/dist）。
- * 开发联调：PI_WEB_DESKTOP_URL=http://localhost:5173 可让窗口指到 vite
- * （仅开发模式生效，打包版忽略该 override —— 见 startServerSidecar）。
- */
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { isAllowedExternalUrl } from "./external-url.js";
+import { DesktopBrowserHost } from "./browser-host.js";
 import { createHubBrowser } from "./hub-browser.js";
 import { setupPortableMode } from "./portable.js";
 import { buildDesktopLoadUrl, DEFAULT_DESKTOP_PORT, resolveHealthTimeoutMs, waitForHealth } from "./startup.js";
 
-// 便携模式初始化：在 app ready 之前完成 Electron userData 重定向与便携环境变量装载
 setupPortableMode(app);
 
 const here = dirname(fileURLToPath(import.meta.url));
-/** 开发：dist/desktop → dist/server；打包后：asar 关闭，app 目录即根布局（dist/server + web/dist + themes）。 */
 function resolveServerEntry(): string {
 	if (app.isPackaged) {
 		return join(app.getAppPath(), "dist", "server", "index.js");
@@ -36,7 +21,6 @@ function resolveServerEntry(): string {
 }
 
 function resolveWebDir(): string | null {
-	// 打包后静态资源由 server 自己从 web/dist 提供（与 npm 包一致），此处仅 dev 兜底检查。
 	const devWeb = join(here, "..", "..", "web", "dist", "index.html");
 	if (!app.isPackaged && !existsSync(join(here, "..", "server", "index.js"))) {
 		console.error("✖ 找不到 dist/server/index.js，请先跑 `npm run build`");
@@ -45,7 +29,6 @@ function resolveWebDir(): string | null {
 	return devWeb;
 }
 
-/** 取一个系统分配的空闲 TCP 口（桌面模式不用固定 8787，避免和网页版冲突）。 */
 function pickFreePort(): Promise<number> {
 	return new Promise((resolve, reject) => {
 		const s = createServer();
@@ -60,7 +43,6 @@ function pickFreePort(): Promise<number> {
 	});
 }
 
-/** 该端口现在能不能绑（能绑 = 空闲）。 */
 function isPortFree(port: number): Promise<boolean> {
 	return new Promise((resolve) => {
 		const s = createServer();
@@ -69,13 +51,6 @@ function isPortFree(port: number): Promise<boolean> {
 	});
 }
 
-/**
- * 端口解析：
- * 1. 若显式指定 `PI_WEB_PORT`，优先使用该端口（若被占用则回落随机口）；
- * 2. 默认优先尝试固定端口 `DEFAULT_DESKTOP_PORT`（8790），这样窗口 Origin 保持恒定，Chromium 的 localStorage
- *    （主题选择、面板宽度、折叠状态等）在重启与多会话间能稳定持久化；
- * 3. 若该端口已被占用，安全退回系统分配的随机空闲口。
- */
 async function resolvePort(): Promise<number> {
 	const want = Number(process.env.PI_WEB_PORT ?? 0);
 	if (want > 0) {
@@ -92,15 +67,12 @@ async function resolvePort(): Promise<number> {
 
 let serverProc: ChildProcess | null = null;
 let mainWin: BrowserWindow | null = null;
-let serverHealthy = false;
+let browserHost: DesktopBrowserHost | null = null;
 
-/** 启动失败时清理子进程并以非零码退出（issue #584：避免退出码 0 掩盖启动失败）。 */
 function exitOnStartupFailure(code = 1): void {
 	try {
 		serverProc?.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	serverProc = null;
 	app.exit(code);
 }
@@ -110,9 +82,6 @@ console.log("[desktop] main started, waiting for app ready…");
 async function startServerSidecar(): Promise<string> {
 	const override = process.env.PI_WEB_DESKTOP_URL;
 	if (override) {
-		// 仅开发模式允许 override（指向 vite(:5173) 联调，前提是另起 dev:server）。
-		// 打包版一律忽略：这是唯一能让应用窗口指向任意 URL 的入口（appOrigin、
-		// will-navigate 守卫都从返回值推导），打包后放行等于把窗口交给环境变量。
 		if (!app.isPackaged) return override;
 		console.warn(`[desktop] 打包版忽略 PI_WEB_DESKTOP_URL=${override}（仅开发模式允许）`);
 	}
@@ -122,24 +91,13 @@ async function startServerSidecar(): Promise<string> {
 	const port = await resolvePort();
 	const dataDir = process.env.PI_WEB_DATA_DIR ?? join(app.getPath("userData"), "data");
 	const cwd = process.env.PI_WEB_CWD ?? homedir();
-	// 确保工作区与数据目录在子进程启动前已实体创建，防止第一次打开找不到目录
 	try {
 		mkdirSync(dataDir, { recursive: true });
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	try {
 		mkdirSync(cwd, { recursive: true });
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	console.log(`[desktop] spawning server on 127.0.0.1:${port} (data: ${dataDir})`);
-	// ELECTRON_RUN_AS_NODE=1：让 Electron 二进制退化成纯 Node 跑 server，
-	// 无需额外捆一个 node，也不用改 server/index.ts。
-	// --import：「机器上有更新的 pi 副本就跟随它」钩子（issue #260；#321 起默认启用，
-	// 见 server/resolve-global-sdk.ts）。dist 可能是旧构建（没这个文件）—— 只有存在才
-	// 注入，别让桌面版起不来。桌面版通常没有祖先 node_modules，所以一般回落自带那份；
-	// 用户机器上恰好有全局 pi 时桌面版也会跟随（与浏览器/服务模式一致）。
 	const sdkHook = join(dirname(entry), "resolve-global-sdk.js");
 	serverProc = spawn(
 		process.execPath,
@@ -168,12 +126,12 @@ async function startServerSidecar(): Promise<string> {
 	serverProc.on("error", (err) => {
 		console.error(`[desktop] server spawn 失败：${err.message}`);
 		earlyExitError = new Error(`server spawn 失败：${err.message}`);
-		if (!serverHealthy) exitOnStartupFailure(1);
+		if (!browserHost?.browser.getSettings().agentUrl) browserHost?.setAgentError(err.message);
 	});
 	serverProc.on("exit", (code, signal) => {
 		console.error(`[desktop] server 提前退出（code=${code} signal=${signal}），请看上方 server 日志`);
 		earlyExitError = new Error(`server 提前退出（code=${code} signal=${signal}）`);
-		if (!serverHealthy) exitOnStartupFailure(typeof code === "number" && code !== 0 ? code : 1);
+		if (!browserHost?.browser.getSettings().agentUrl) browserHost?.setAgentError(earlyExitError.message);
 	});
 	const url = `http://127.0.0.1:${port}`;
 	const timeoutMs = resolveHealthTimeoutMs(process.env);
@@ -181,19 +139,17 @@ async function startServerSidecar(): Promise<string> {
 		timeoutMs,
 		shouldAbort: () => earlyExitError,
 	});
-	serverHealthy = true;
 	console.log(`[desktop] server 就绪：${url}`);
 	return url;
 }
 
-async function createWindow(url: string): Promise<void> {
+async function createWindow(): Promise<void> {
 	mainWin = new BrowserWindow({
 		width: 1280,
 		height: 860,
 		minWidth: 800,
 		minHeight: 600,
 		autoHideMenuBar: true,
-		// 自定义沉浸式标题栏：隐藏系统通用标题栏，使用无边框沉浸式窗口
 		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
 		trafficLightPosition: process.platform === "darwin" ? { x: 12, y: 15 } : undefined,
 		webPreferences: {
@@ -203,70 +159,47 @@ async function createWindow(url: string): Promise<void> {
 			sandbox: true,
 		},
 	});
-	const loadUrl = buildDesktopLoadUrl(url, process.env);
+	const assetsDir = join(here, "..", "browser", "renderer");
+	browserHost = new DesktopBrowserHost(mainWin, {
+		assetsDir,
+		browserPreload: join(here, "..", "browser", "preload.cjs"),
+		agentPreload: join(here, "preload.cjs"),
+		dataDir: join(app.getPath("userData"), "browser"),
+	});
 	const openHub = createHubBrowser();
 	ipcMain.removeHandler("pi-desktop:open-hub");
 	ipcMain.handle("pi-desktop:open-hub", (event, target: unknown) => {
-		if (event.sender !== mainWin?.webContents || event.senderFrame !== mainWin.webContents.mainFrame)
-			throw new Error("Untrusted device center request");
+		assertTrustedDesktopRequest(event);
 		if (typeof target !== "string") throw new Error("Invalid device center URL");
 		return openHub(target);
 	});
-	console.log(`[desktop] opening window: ${url}`);
-	try {
-		await mainWin.loadURL(loadUrl);
-	} catch (err) {
-		console.error(`[desktop] loadURL 失败：${(err as Error).message}`);
-	}
-	// 外链（更新日志/插件主页等）丢给系统浏览器，别在应用窗口里导航走。
-	mainWin.webContents.setWindowOpenHandler(({ url: u }) => {
-		if (!isAllowedExternalUrl(u)) {
-			console.warn(`[desktop] 已拦截非 allowlist 外链（新窗口）：${u}`);
-			return { action: "deny" };
-		}
-		void shell.openExternal(u);
-		return { action: "deny" };
-	});
-	// 同帧导航守卫（issue #154）：setWindowOpenHandler 只拦新窗口请求（window.open /
-	// target="_blank"），而对话正文里的裸 href（现在 Markdown 已补 target，见
-	// web/src/components/Markdown.tsx）与 JS 主动跳转（location.href/assign）走的是
-	// 同帧导航 —— 默认会被允许，直接把应用窗口带走（无地址栏、无后退键，只能重启）。
-	// 应用自身 origin（重载/前端路由）放行，其余一律转系统浏览器。
-	const appOrigin = new URL(url).origin;
-	mainWin.webContents.on("will-navigate", (e, target) => {
-		let origin: string;
-		try {
-			origin = new URL(target).origin;
-		} catch {
-			return; // 非法 URL：交给 Electron 处理
-		}
-		if (origin === appOrigin) return;
-		e.preventDefault();
-		if (!isAllowedExternalUrl(target)) {
-			console.warn(`[desktop] 已拦截非 allowlist 外链（同帧导航）：${target}`);
-			return;
-		}
-		console.log(`[desktop] will-navigate 拦截，已用系统浏览器打开：${target}`);
-		void shell.openExternal(target);
-	});
+	mainWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+	mainWin.webContents.on("will-navigate", (event) => event.preventDefault());
+	await mainWin.loadFile(join(assetsDir, "shell.html"));
+	const savedAgent = browserHost.browser.getSettings().agentUrl;
+	if (savedAgent)
+		void browserHost
+			.connectAgent(savedAgent, false)
+			.catch((error: unknown) => console.warn("[desktop] saved Agent unavailable:", error));
 	mainWin.on("enter-full-screen", () => {
-		mainWin?.webContents.send("pi-desktop:full-screen-change", true);
+		broadcastDesktop("pi-desktop:full-screen-change", true);
 	});
 	mainWin.on("leave-full-screen", () => {
-		mainWin?.webContents.send("pi-desktop:full-screen-change", false);
+		broadcastDesktop("pi-desktop:full-screen-change", false);
 	});
 	mainWin.on("maximize", () => {
-		mainWin?.webContents.send("pi-desktop:window-maximized-change", true);
+		broadcastDesktop("pi-desktop:window-maximized-change", true);
 	});
 	mainWin.on("unmaximize", () => {
-		mainWin?.webContents.send("pi-desktop:window-maximized-change", false);
+		broadcastDesktop("pi-desktop:window-maximized-change", false);
 	});
 	mainWin.on("closed", () => {
+		browserHost?.dispose();
+		browserHost = null;
 		mainWin = null;
 	});
 }
 
-// 单实例：第二个实例聚焦已有窗口（和网页版多标签页各走独立 clientId 不冲突）。
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
@@ -278,16 +211,24 @@ if (!app.requestSingleInstanceLock()) {
 	});
 }
 
-// ⚠️ 绝对不要在 ESM 主进程顶层 `await app.whenReady()`（Electron 44 实测死锁）：
-// Electron 要等入口模块求值完成才发 ready 事件，顶层 await ready = 互相死等——
-// 进程挂在 "waiting for app ready…"，窗口永远不开（改成 .then 回调里 await 即可）。
 void app.whenReady().then(async () => {
 	console.log("[desktop] app ready");
 	try {
 		wireWindowControls();
-		const url = await startServerSidecar();
-		await createWindow(url);
-		await wireAutoUpdater();
+		await createWindow();
+		void startServerSidecar()
+			.then(async (url) => {
+				const saved = browserHost?.browser.getSettings().agentUrl;
+				const savedUrl = typeof saved === "string" ? saved : "";
+				const target = savedUrl || buildDesktopLoadUrl(url, process.env);
+				if (browserHost?.getState().agentUrl !== target) await browserHost?.connectAgent(target, false);
+			})
+			.catch((error: unknown) => {
+				console.error("[desktop] Agent startup failed; browser remains available:", error);
+				if (!browserHost?.browser.getSettings().agentUrl)
+					browserHost?.setAgentError(error instanceof Error ? error.message : String(error));
+			});
+		void wireAutoUpdater().catch((error: unknown) => console.warn("[desktop] updater unavailable:", error));
 	} catch (err) {
 		console.error("✖ 桌面版启动失败：", err);
 		exitOnStartupFailure(1);
@@ -298,7 +239,6 @@ app.on("window-all-closed", () => {
 	if (process.platform !== "darwin") app.quit();
 });
 app.on("activate", () => {
-	// macOS 点 dock 时窗口已关：server sidecar 还在，本骨架暂不重建窗口，退出重进即可。
 	if (BrowserWindow.getAllWindows().length === 0) app.quit();
 });
 app.on("will-quit", () => {
@@ -306,13 +246,22 @@ app.on("will-quit", () => {
 	serverProc = null;
 });
 
-// -- 沉浸式标题栏与窗口控制（Windows / Linux 前端一体化控制三键） ----------
+function assertTrustedDesktopRequest(event: IpcMainInvokeEvent): void {
+	if (event.senderFrame !== event.sender.mainFrame || !browserHost?.isTrustedContents(event.sender))
+		throw new Error("Untrusted desktop request");
+}
+
+function broadcastDesktop(channel: string, value: unknown): void {
+	for (const contents of browserHost?.trustedContents() ?? []) contents.send(channel, value);
+}
+
 let windowControlsWired = false;
 function wireWindowControls(): void {
 	if (windowControlsWired) return;
 	windowControlsWired = true;
 
-	ipcMain.handle("pi-desktop:window-minimize", () => {
+	ipcMain.handle("pi-desktop:window-minimize", (event) => {
+		assertTrustedDesktopRequest(event);
 		if (mainWin && !mainWin.isDestroyed()) {
 			mainWin.minimize();
 			return true;
@@ -320,7 +269,8 @@ function wireWindowControls(): void {
 		return false;
 	});
 
-	ipcMain.handle("pi-desktop:window-toggle-maximize", () => {
+	ipcMain.handle("pi-desktop:window-toggle-maximize", (event) => {
+		assertTrustedDesktopRequest(event);
 		if (mainWin && !mainWin.isDestroyed()) {
 			if (mainWin.isMaximized()) {
 				mainWin.unmaximize();
@@ -332,7 +282,8 @@ function wireWindowControls(): void {
 		return false;
 	});
 
-	ipcMain.handle("pi-desktop:window-close", () => {
+	ipcMain.handle("pi-desktop:window-close", (event) => {
+		assertTrustedDesktopRequest(event);
 		if (mainWin && !mainWin.isDestroyed()) {
 			mainWin.close();
 			return true;
@@ -340,14 +291,16 @@ function wireWindowControls(): void {
 		return false;
 	});
 
-	ipcMain.handle("pi-desktop:window-is-maximized", () => {
+	ipcMain.handle("pi-desktop:window-is-maximized", (event) => {
+		assertTrustedDesktopRequest(event);
 		if (mainWin && !mainWin.isDestroyed()) {
 			return mainWin.isMaximized();
 		}
 		return false;
 	});
 
-	ipcMain.handle("pi-desktop:set-title-bar-overlay", (_event, opts: { color?: string; symbolColor?: string }) => {
+	ipcMain.handle("pi-desktop:set-title-bar-overlay", (event, opts: { color?: string; symbolColor?: string }) => {
+		assertTrustedDesktopRequest(event);
 		if (!mainWin || process.platform === "darwin") return false;
 		try {
 			if (typeof mainWin.setTitleBarOverlay === "function") {
@@ -361,20 +314,6 @@ function wireWindowControls(): void {
 	});
 }
 
-// -- 应用内自动更新（issue #180） ----------------------------------------------
-//
-// 以前更新面板走的永远是 npm 全局包（`npm i -g pi-web-ui@latest`），而打包后
-// 的服务来自包内 `dist/server` —— npm 换的是别处，桌面用户只能手换 dmg。
-// 现在主进程经 electron-updater 直连 GitHub releases 的 latest*.yml：
-// check（只拉元数据）→ download（进度回传）→ quitAndInstall（重启即装好）。
-// autoDownload=false：下载必须由用户在更新面板里点按钮触发，不搞 surprise 下载。
-//
-// 前端（web/，与浏览器同一份代码）经 preload 的 `window.piDesktop.updater`
-// 调 invoke/订阅 event，全走 IPC，不与 server/protocol.ts 分叉。
-//
-// 未签名说明：Windows/Linux 未签名也能原地更新（SmartScreen 照常提示一次）；
-// macOS 首次安装仍要右键→打开（Gatekeeper），之后 zip 通道照常更新。
-/** 发往 renderer 的更新事件（preload 原样透出，见 web/src/desktop-updater.ts）。 */
 interface DesktopUpdaterEvent {
 	state: "checking" | "available" | "up-to-date" | "downloading" | "downloaded" | "error";
 	version?: string | null;
@@ -383,7 +322,7 @@ interface DesktopUpdaterEvent {
 }
 
 function pushUpdaterEvent(msg: DesktopUpdaterEvent): void {
-	mainWin?.webContents.send("pi-desktop-updater:event", msg);
+	broadcastDesktop("pi-desktop-updater:event", msg);
 }
 
 let updaterWired = false;
@@ -391,8 +330,6 @@ let updaterWired = false;
 async function wireAutoUpdater(): Promise<void> {
 	if (updaterWired) return;
 	updaterWired = true;
-	// dev（`npm run desktop:dev`，isPackaged=false）也注册同一套 IPC：调用直接
-	// 报“仅打包后可用”，前端据此显示下载页指引 —— 不让 invoke 挂起无 handler。
 	if (!app.isPackaged) {
 		const devOnly = () => {
 			throw new Error("auto-update 只在打包后的桌面应用里可用（dev 请去下载页）");
@@ -402,13 +339,6 @@ async function wireAutoUpdater(): Promise<void> {
 		ipcMain.handle("pi-desktop-updater:quit-install", devOnly);
 		return;
 	}
-	// electron-updater 的 autoUpdater 是 `Object.defineProperty(exports, "autoUpdater", { get })`
-	// 懒 getter 导出（见其 out/main.js），而 Node 的 CJS→ESM 具名导出探测只认 `exports.X = …`，
-	// 于是打包版里 `const { autoUpdater } = await import("electron-updater")` 拿到的是 undefined，
-	// 下一行赋值就抛 TypeError，整个 App 启动即退出（#220）。
-	// 注意 out/main.d.ts 声明的是 `export declare const autoUpdater`，类型层面看不出这个坑。
-	// 所以：回落到 default（= module.exports）再取一次；两者都没有就整体降级为“更新不可用”，
-	// 绝不让更新接线拖垮启动。
 	const updaterModule = (await import("electron-updater")) as typeof import("electron-updater") & {
 		default?: { autoUpdater?: (typeof import("electron-updater"))["autoUpdater"] };
 	};
@@ -444,20 +374,21 @@ async function wireAutoUpdater(): Promise<void> {
 			message: err instanceof Error ? err.message : String(err),
 		}),
 	);
-	ipcMain.handle("pi-desktop-updater:check", async () => {
+	ipcMain.handle("pi-desktop-updater:check", async (event) => {
+		assertTrustedDesktopRequest(event);
 		await autoUpdater.checkForUpdates();
 		return true;
 	});
-	ipcMain.handle("pi-desktop-updater:download", async () => {
+	ipcMain.handle("pi-desktop-updater:download", async (event) => {
+		assertTrustedDesktopRequest(event);
 		await autoUpdater.downloadUpdate();
 		return true;
 	});
-	ipcMain.handle("pi-desktop-updater:quit-install", () => {
+	ipcMain.handle("pi-desktop-updater:quit-install", (event) => {
+		assertTrustedDesktopRequest(event);
 		autoUpdater.quitAndInstall(false, true);
 		return true;
 	});
-	// 开机静默查一次（只拉 yml 元数据，不下载）：面板打开时即有结论，
-	// 离线/无 release 时只记日志，不挡窗口。
 	try {
 		await autoUpdater.checkForUpdates();
 	} catch (err) {

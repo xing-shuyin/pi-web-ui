@@ -1,13 +1,3 @@
-/* 手机端侧栏抽屉的**边缘横滑手势**回归（右滑拉出左栏、左滑拉出右栏、开着往外滑收回）。
- *
- * 盯四条不变量（都只有真浏览器能验）：
- *   1. 从左右边缘往内横滑 → 该侧抽屉打开（跟手期间面板真的跟着手指位移）；
- *   2. 抽屉开着时在遮罩上往外横滑 → 收回，且遮罩同步淡出；
- *   3. 非边缘起手 / 竖向主导的手势**一律不动抽屉**（内容是能滚的，别抢手势）；
- *   4. 轻扫（短时间内划一小段）也能开 —— 不必真拖过宽度的 40%。
- *
- * 缺 Chrome 自动 SKIP。运行：npm run build && node tests/swipe-drawer-ui-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +15,6 @@ const AGENT_DIR = join(base, "agent");
 mkdirSync(WORK, { recursive: true });
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(AGENT_DIR, { recursive: true });
-// 远端不可达的假 provider：只是让服务端认为「pi 配好了」，页面不该弹首次配置向导。
 writeFileSync(join(AGENT_DIR, "auth.json"), JSON.stringify({ dummy: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(AGENT_DIR, "models.json"),
@@ -79,9 +68,7 @@ async function startServer() {
 	for (let i = 0; i < 160; i++) {
 		try {
 			if ((await fetch(`http://localhost:${PORT}/api/health`)).ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -94,14 +81,11 @@ function killServer() {
 	} catch {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* already gone */
-		}
+		} catch {}
 	}
 	server = undefined;
 }
 
-/** 抽屉当前状态：有没有 open 类 + 实际横向位移（matrix.m41）。 */
 const probe = (sel) => {
 	const el = document.querySelector(sel);
 	if (!el) return null;
@@ -130,7 +114,6 @@ async function openPage() {
 	return { page, errors };
 }
 
-/** 真触摸手势（CDP）：stepMs 大 = 慢拖（走「露出比例」判定），小 = 轻扫。 */
 function makeSwipe(cdp) {
 	return async (x0, y0, x1, y1, { steps = 10, stepMs = 0, end = true } = {}) => {
 		await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y: y0 }] });
@@ -170,7 +153,6 @@ async function main() {
 		const hit = await page.evaluate(() => document.elementFromPoint(195, 420)?.className ?? "");
 		check("收起时遮罩不挡命中（elementFromPoint 不是遮罩）", !String(hit).includes("drawer-backdrop"), `hit=${hit}`);
 
-		// 慢拖：跟手到一半先撤一次（不松手），看面板是否真的跟着走。
 		await swipe(18, 420, 218, 420, { steps: 8, stepMs: 45, end: false });
 		const mid = await left();
 		check("跟手期间面板跟着手指走（不再是 -105%，也没到 0）", mid.tx < -40 && mid.tx > -290, `tx=${mid.tx}`);

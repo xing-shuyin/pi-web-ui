@@ -65,7 +65,6 @@ describe("removeQueuedByIndexOrText", () => {
 	});
 
 	it("下标处文本已变化（队列在点击后移位）回落到文本匹配", () => {
-		// 点击时第二个气泡是 "dup"，执行时该位置已变成 "new"（有条消息刚送达）。
 		expect(removeQueuedByIndexOrText(["gone", "new"], "dup", 1)).toEqual(["gone", "new"]);
 		expect(removeQueuedByIndexOrText(["dup", "new", "dup"], "dup", 1)).toEqual(["new", "dup"]);
 	});
@@ -93,7 +92,6 @@ describe("removeQueuedEntry (跨引擎统一排队契约)", () => {
 			createQueuedEntry("同名文本", { id: "item-1", images: imgA }),
 			createQueuedEntry("同名文本", { id: "item-2", images: imgB }),
 		];
-		// 即使传入了错误的 index=0，只要提供了 id="item-2"，就精准移除 item-2
 		const result = removeQueuedEntry(list, { id: "item-2", text: "同名文本", index: 0 });
 		expect(result.length).toBe(1);
 		expect(result[0]!.id).toBe("item-1");
@@ -109,7 +107,6 @@ describe("removeQueuedEntry (跨引擎统一排队契约)", () => {
 
 	it("index 文本不匹配或越界时，回退到首处文本匹配", () => {
 		const list: QueuedMessageEntry[] = [createQueuedEntry("重复"), createQueuedEntry("重复")];
-		// index 99 越界，回落到删第一条
 		const result = removeQueuedEntry(list, { text: "重复", index: 99 });
 		expect(result.length).toBe(1);
 	});
@@ -171,7 +168,6 @@ describe("reconcileQueuedEntries (queue_update 对账)", () => {
 			createQueuedEntry("继续", { id: "c1", images: imgA }),
 			createQueuedEntry("继续", { id: "c2", images: imgB }),
 		];
-		// SDK 头部消费了第一条 "继续"，最新队列只剩一条 "继续"
 		const newTexts = ["继续"];
 		const reconciled = reconcileQueuedEntries(current, newTexts);
 		expect(reconciled.length).toBe(1);
@@ -186,7 +182,6 @@ describe("reconcileQueuedEntries (queue_update 对账)", () => {
 			createQueuedEntry("任务2", { images: imgB }),
 			createQueuedEntry("任务3", { images: imgC }),
 		];
-		// 任务1 出队完成
 		const reconciled = reconcileQueuedEntries(current, ["任务2", "任务3"]);
 		expect(reconciled.length).toBe(2);
 		expect(reiled(0, reconciled).text).toBe("任务2");

@@ -1,7 +1,3 @@
-/**
- * delegate-task.test.ts — 结构化派单工具单测：
- * server/delegate-task.ts 的归一化 / 校验 / 拼装（纯函数，不启动会话）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	buildDelegationPrompt,

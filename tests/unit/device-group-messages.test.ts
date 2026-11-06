@@ -262,13 +262,10 @@ describe("group conversation adapter", () => {
 		};
 		const { state, labels } = groupConversationState("room", detail, detail.bots, true);
 
-		// Coordinator tag in message label
 		expect(labels.get("group-message:m2")).toBe("Architect · host [群组主管]");
 
-		// Internal result task should be suppressed to avoid duplicate message bubbles
 		expect(state.messages.some((m) => m.id === "group-task:internal-result")).toBe(false);
 
-		// Worker task should have subagent label and collapsible details
 		expect(labels.get("group-task:child-task")).toBe("Coder · worker-pc [协同子代理] · 已完成");
 		const childMsg = state.messages.find((m) => m.id === "group-task:child-task");
 		expect(childMsg).toBeDefined();

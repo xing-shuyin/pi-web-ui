@@ -1,17 +1,3 @@
-/**
- * sftp 引擎「可取消 + 扫描并行」单测 —— 纯本地纯函数，零端口零 token。
- *
- * 现场问题（用户可见）：
- *   - **同步停不下来**：任务只有 `running` 标志，没有任何取消通道，`runPool` 也不看信号 ——
- *     按下去没反应，只能重启服务；
- *   - **扫描太慢**：老实现是一条 `await` 链串到底（目录 → 文件 → 下一个目录），远端更狠，
- *     一次 readdir 一个往返，500 个目录串行 = 几百秒，界面还全程「扫描中…」没有进度。
- *
- * 这里锁住三件事：
- *   1. `runPool` 收到中止后不再领新任务（已在跑的不强杀，由各自的 signal 收尾）；
- *   2. `scanLocal` 层序扫完整棵树（含 ignore / 内部护栏 / 深度上限），中止信号立刻抛；
- *   3. `applyPlan` 被中止时返回 `cancelled: true`、已完成的保留、**不把取消算成失败**。
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,7 +37,6 @@ describe("runPool 可取消", () => {
 			},
 			{ signal: ctrl.signal },
 		);
-		// 4 个 worker 最多各多领一个任务，绝不可能跑满 40 个
 		expect(started).toBeLessThanOrEqual(8);
 		expect(started).toBeGreaterThan(0);
 	});
@@ -134,7 +119,6 @@ describe("scanLocal", () => {
 		const seen: number[] = [];
 		await scanLocal(root, () => false, { onProgress: (p: object) => seen.push((p as { files: number }).files) });
 		expect(seen.length).toBeGreaterThan(1);
-		// 5 个真实文件（含 node_modules 里的）；.sftp-trash 被内部护栏挡掉
 		expect(seen[seen.length - 1]).toBe(5);
 	});
 
@@ -152,7 +136,6 @@ describe("scanLocal", () => {
 });
 
 describe("applyPlan 取消", () => {
-	/** 一份只有「本地进垃圾桶」动作的计划：不碰 sftp，纯本地即可验证取消语义。 */
 	function makePlan(cwd: string, rels: string[]) {
 		for (const rel of rels) writeFileSync(join(cwd, rel), rel);
 		return {
@@ -189,8 +172,8 @@ describe("applyPlan 取消", () => {
 		});
 		expect(result.cancelled).toBe(true);
 		expect(result.ok).toBe(false);
-		expect(result.done.trashLocal).toBe(1); // 第一个真的做完了
-		expect(result.failed).toEqual([]); // 取消不是失败
+		expect(result.done.trashLocal).toBe(1);
+		expect(result.failed).toEqual([]);
 	});
 
 	it("还没开始就取消：一个动作都不执行", async () => {

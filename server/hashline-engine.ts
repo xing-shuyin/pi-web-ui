@@ -1,15 +1,3 @@
-/**
- * hashline-engine.ts — 基于内容哈希锚定与语法块解析的高可靠 Patch 引擎。
- *
- * 核心设计（借鉴 @oh-my-pi/hashline）：
- * 1. [path#TAG] 内容哈希锚点：每个 hunk 绑定文件内容的 4-hex 校验和，杜绝模型基于陈旧行号盲改。
- * 2. PUT N*= 语法块级替换：通过括号嵌套（Brace matching）与缩进（Indentation）自动识别代码块闭合，
- *    模型无需数行号，消除最常见的行号漂移问题。
- * 3. 3-Way Merge 冲突自愈：若磁盘文件已被修改导致哈希不匹配，通过快照与 diff 进行三方合并，
- *    无重叠冲突时平滑合入，冲突时提供带行号的准确定位提示。
- * 4. 寄存器支持（CUT / PUT @reg）：支持在跨文件或同文件内部移动代码段。
- */
-
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
@@ -17,40 +5,25 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 export const HL_HASH_LENGTH = 4;
 
-/** 归一化文本换行符与尾随空白（确保哈希跨平台一致） */
 export function normalizeLineEndings(text: string): string {
 	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-/** 计算文件的 4 位十六进制内容哈希（大写） */
 export function computeFileHash(text: string): string {
 	const normalized = normalizeLineEndings(text).replace(/[ \t]+(?=\n|$)/g, "");
 	const hash = createHash("sha256").update(normalized, "utf8").digest("hex");
 	return hash.slice(0, HL_HASH_LENGTH).toUpperCase();
 }
 
-/** 为文件生成带哈希的段头：[src/app.ts#A1B2] */
 export function formatHashlineHeader(filePath: string, hash: string): string {
 	return `[${filePath}#${hash}]`;
 }
 
-/** 为文本输出带行号的展示视图：1:line1\n2:line2 */
 export function formatNumberedLines(text: string, startLine = 1): string {
 	const lines = normalizeLineEndings(text).split("\n");
 	return lines.map((l, i) => `${startLine + i}:${l}`).join("\n");
 }
 
-// ----------------------------------------------------------------------------
-// 语法块解析（Block Resolver）
-// ----------------------------------------------------------------------------
-
-/**
- * 启发式语法块边界解析：从 startLine（1-indexed）开始，定位该语句块的闭合行。
- * 支持：
- * 1. 括号/大括号嵌套语言（JS/TS/Rust/Go/C/C++/Java/PHP）：匹配同深度闭合 '}'。
- * 2. 缩进敏感语言（Python/YAML/Makefile）：匹配缩进回退的边界。
- * 3. Markdown 标题：匹配同级或更高级标题的边界。
- */
 export function resolveBlockSpan(
 	lines: readonly string[],
 	startLine: number,
@@ -61,7 +34,6 @@ export function resolveBlockSpan(
 	const startContent = lines[sIdx] ?? "";
 	const trimmedStart = startContent.trim();
 
-	// 1. Markdown 标题：## Title -> 下一个同级或更高级标题
 	const isMd = /\.(md|markdown|mdx)$/i.test(filePath);
 	const mdHeaderMatch = trimmedStart.match(/^(#{1,6})\s+/);
 	if (isMd && mdHeaderMatch) {
@@ -76,7 +48,6 @@ export function resolveBlockSpan(
 		return { start: sIdx + 1, end: endIdx + 1 };
 	}
 
-	// 2. 缩进语言判定（Python、YAML、Make）
 	const isIndentLang = /\.(py|yaml|yml|makefile|dockerfile)$/i.test(filePath) || !startContent.includes("{");
 	if (isIndentLang && (trimmedStart.endsWith(":") || !trimmedStart.includes("{"))) {
 		const baseIndent = startContent.match(/^[ \t]*/)?.[0].length ?? 0;
@@ -84,7 +55,6 @@ export function resolveBlockSpan(
 		for (let i = sIdx + 1; i < n; i++) {
 			const line = lines[i];
 			if (line.trim().length === 0) {
-				// 空行不打断块，只要后面还有更深缩进
 				continue;
 			}
 			const curIndent = line.match(/^[ \t]*/)?.[0].length ?? 0;
@@ -96,7 +66,6 @@ export function resolveBlockSpan(
 		return { start: sIdx + 1, end: endIdx + 1 };
 	}
 
-	// 3. 大括号 / 括号计数解析（JS/TS/Rust/Go/C/C++ 等）
 	let braceDepth = 0;
 	let parenDepth = 0;
 	let bracketDepth = 0;
@@ -128,7 +97,6 @@ export function resolveBlockSpan(
 				inString = char;
 				continue;
 			}
-			// 单行注释
 			if (char === "/" && next === "/") break;
 
 			if (char === "{") {
@@ -156,23 +124,19 @@ export function resolveBlockSpan(
 	return { start: sIdx + 1, end: endIdx + 1 };
 }
 
-// ----------------------------------------------------------------------------
-// 补丁语法抽象语法树与解析器
-// ----------------------------------------------------------------------------
-
 export type HunkOpKind =
-	| "put_range" // PUT 10.=25:
-	| "put_block" // PUT 10*:
-	| "insert_before" // PUT <10:
-	| "insert_after" // PUT >10:
-	| "insert_after_block" // PUT >10*:
-	| "cut_range" // CUT 10.=25 [@reg]
-	| "cut_block" // CUT 10* [@reg]
-	| "paste_at" // PUT <10 @reg 或 PUT >10 @reg
-	| "paste_over_range" // PUT 10.=25 @reg
-	| "paste_over_block" // PUT 10* @reg
-	| "remove_file" // REM
-	| "move_file"; // MV dest/path.ts
+	| "put_range"
+	| "put_block"
+	| "insert_before"
+	| "insert_after"
+	| "insert_after_block"
+	| "cut_range"
+	| "cut_block"
+	| "paste_at"
+	| "paste_over_range"
+	| "paste_over_block"
+	| "remove_file"
+	| "move_file";
 
 export interface Hunk {
 	kind: HunkOpKind;
@@ -189,9 +153,6 @@ export interface PatchSection {
 	hunks: Hunk[];
 }
 
-/**
- * 解析 Hashline 补丁文本
- */
 export function parseHashlinePatch(patchText: string): PatchSection[] {
 	const lines = normalizeLineEndings(patchText).split("\n");
 	const sections: PatchSection[] = [];
@@ -217,7 +178,6 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 		const rawLine = lines[i];
 		const trimmed = rawLine.trim();
 
-		// 1. 段落头: [path#TAG] 或 [path]
 		const secMatch = rawLine.match(/^\s*\[([^#\]]+)(?:#([0-9a-fA-F]{4}))?\]\s*$/);
 		if (secMatch) {
 			flushSection();
@@ -230,18 +190,15 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 		}
 
 		if (!currentSection) {
-			// 未进入段落前的空白或注释跳过
 			continue;
 		}
 
-		// 2. 文件级指令: REM (删除当前文件)
 		if (/^REM\b/i.test(trimmed)) {
 			flushHunk();
 			currentSection.hunks.push({ kind: "remove_file", bodyLines: [] });
 			continue;
 		}
 
-		// 3. 文件级指令: MV dest (重命名/移动当前文件)
 		const mvMatch = trimmed.match(/^MV\s+([^\s]+)/i);
 		if (mvMatch) {
 			flushHunk();
@@ -249,7 +206,6 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 			continue;
 		}
 
-		// 4. CUT 指令: CUT N.=M [@reg] 或 CUT N* [@reg]
 		const cutMatch = trimmed.match(/^CUT\s+(\d+)(?:\.=(\d+)|\*)\s*(?:@([a-zA-Z0-9_-]+))?/);
 		if (cutMatch) {
 			flushHunk();
@@ -267,11 +223,10 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 			continue;
 		}
 
-		// 5. 粘贴指令 (无冒号头): PUT <N @reg / PUT >N @reg / PUT N.=M @reg / PUT N* @reg
 		const pasteMatch = trimmed.match(/^PUT\s+(<|>)?(\d+)(?:\.=(\d+)|\*)?\s+@([a-zA-Z0-9_-]+)/);
 		if (pasteMatch && !trimmed.endsWith(":")) {
 			flushHunk();
-			const prefix = pasteMatch[1]; // < 或 >
+			const prefix = pasteMatch[1];
 			const num = parseInt(pasteMatch[2], 10);
 			const endNum = pasteMatch[3] ? parseInt(pasteMatch[3], 10) : num;
 			const isBlock = trimmed.includes("*");
@@ -296,8 +251,6 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 			continue;
 		}
 
-		// 6. 替换或插入指令头 (带冒号):
-		// PUT N.=M: / PUT N*: / PUT <N: / PUT >N: / PUT >N*: / PUT <$: / PUT >$:
 		const putHeaderMatch = trimmed.match(/^PUT\s+(<|>)?(\d+|\$)(?:\.=(\d+)|\*)?:$/);
 		if (putHeaderMatch) {
 			flushHunk();
@@ -327,7 +280,6 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 			continue;
 		}
 
-		// 7. 内容行 (以 '+' 开头)
 		if (rawLine.startsWith("+")) {
 			if (currentHunk) {
 				currentHunk.bodyLines.push(rawLine.slice(1));
@@ -340,16 +292,10 @@ export function parseHashlinePatch(patchText: string): PatchSection[] {
 	return sections;
 }
 
-// ----------------------------------------------------------------------------
-// 快照存储与三方合并恢复（Snapshot Store & 3-Way Merge Recovery）
-// ----------------------------------------------------------------------------
-
 export class HashlineSnapshotStore {
-	/** 单个文件保留的快照代数上限（LRU）：全局单例会跨整个会话存活，反复编辑
-	 *  同一文件会让快照按编辑次数无界增长，必须驱逐最旧一代。 */
 	private static readonly MAX_PER_FILE = 200;
 
-	private snapshots = new Map<string, Map<string, string>>(); // path -> (hash -> content)
+	private snapshots = new Map<string, Map<string, string>>();
 
 	record(filePath: string, text: string): string {
 		const hash = computeFileHash(text);
@@ -358,7 +304,6 @@ export class HashlineSnapshotStore {
 			fileMap = new Map();
 			this.snapshots.set(filePath, fileMap);
 		}
-		// 先删后插：覆盖同代快照的同时把访问序刷到尾部（Map 插入序即 LRU 序）
 		fileMap.delete(hash);
 		fileMap.set(hash, text);
 		while (fileMap.size > HashlineSnapshotStore.MAX_PER_FILE) {
@@ -375,7 +320,6 @@ export class HashlineSnapshotStore {
 		const key = hash.toUpperCase();
 		const hit = fileMap.get(key);
 		if (hit !== undefined) {
-			// get 命中即 refresh：重插到尾部，正在参与三方合并的快照不被 LRU 驱逐
 			fileMap.delete(key);
 			fileMap.set(key, hit);
 		}
@@ -383,17 +327,8 @@ export class HashlineSnapshotStore {
 	}
 }
 
-/** 全局会话级快照单例 */
 export const globalSnapshotStore = new HashlineSnapshotStore();
 
-/**
- * 启发式三方行合并：
- * baseLines: 制作补丁时的原始文件快照
- * currentLines: 磁盘当前的最新文件
- * targetHunks: 针对 baseLines 计算出的目标改动行区间
- *
- * 核心逻辑：若磁盘文件的改动未侵入 targetHunks 所在的锚点行，则将锚点行映射到最新文件的对应行，安全完成合并。
- */
 export function tryRecoverEdits(
 	baseText: string,
 	currentText: string,
@@ -403,10 +338,8 @@ export function tryRecoverEdits(
 	const baseLines = normalizeLineEndings(baseText).split("\n");
 	const curLines = normalizeLineEndings(currentText).split("\n");
 
-	// 若内容完全相同，无需恢复
 	if (baseText === currentText) return { success: true, remappedHunks: hunks };
 
-	// 简单行偏移探测：计算首个不一致行与行数差
 	let firstDiff = -1;
 	for (let i = 0; i < Math.max(baseLines.length, curLines.length); i++) {
 		if (baseLines[i] !== curLines[i]) {
@@ -417,7 +350,6 @@ export function tryRecoverEdits(
 
 	if (firstDiff === -1) return { success: true, remappedHunks: hunks };
 
-	// 检查是否有 hunk 的锚点位于差异产生点之前或之后
 	const delta = curLines.length - baseLines.length;
 	const remapped: Hunk[] = [];
 
@@ -426,14 +358,11 @@ export function tryRecoverEdits(
 		const end = hunk.lineEnd ?? start;
 
 		if (start < firstDiff && end < firstDiff) {
-			// 在差异行之前，行号保持不变
 			remapped.push({ ...hunk });
 		} else {
-			// 差异行之后，尝试应用行号平移 delta
 			const shiftedStart = Math.max(1, start + delta);
 			const shiftedEnd = Math.max(1, end + delta);
 
-			// 校验平移后的周围文本是否与 base 时的上下文匹配
 			const baseSnippet = baseLines.slice(Math.max(0, start - 2), Math.min(baseLines.length, end + 1)).join("\n");
 			const curSnippet = curLines
 				.slice(Math.max(0, shiftedStart - 2), Math.min(curLines.length, shiftedEnd + 1))
@@ -446,7 +375,6 @@ export function tryRecoverEdits(
 					lineEnd: hunk.lineEnd !== undefined ? shiftedEnd : undefined,
 				});
 			} else {
-				// 平移后上下文仍不匹配：±6 行窗口内做 trim 归一化重锚定
 				const baseCtx = baseLines
 					.slice(Math.max(0, start - 2), Math.min(baseLines.length, end + 1))
 					.join("\n")
@@ -487,10 +415,6 @@ export function tryRecoverEdits(
 	return { success: true, remappedHunks: remapped };
 }
 
-// ----------------------------------------------------------------------------
-// 补丁执行器（Patcher）
-// ----------------------------------------------------------------------------
-
 export interface ApplySectionResult {
 	filePath: string;
 	op: "updated" | "deleted" | "moved";
@@ -510,13 +434,9 @@ export interface PatchApplyReport {
 	error?: string;
 }
 
-/**
- * 错误消息附带当前内容摘录（行号: 内容，锚点附近 ±2 行），
- * 让模型基于现内容一次重试到位，而不是被迫整文件重读。
- */
 function patchFileExcerpt(lines: string[], aroundLine: number | undefined, filePath: string, hash: string): string {
 	let n = lines.length;
-	if (n > 0 && lines[n - 1] === "") n--; // 尾随换行 split 出的幻影空行不计入行数（与引擎 lines 口径一致）
+	if (n > 0 && lines[n - 1] === "") n--;
 	const head = `当前共 ${n} 行，最新锚点：[${filePath}#${hash}]`;
 	if (n === 0) return `${head}（空文件）`;
 	const center = Math.max(1, Math.min(n, aroundLine ?? n));
@@ -527,7 +447,6 @@ function patchFileExcerpt(lines: string[], aroundLine: number | undefined, fileP
 	return `${head}；第 ${lo}-${hi} 行现内容：\n${rows.join("\n")}`;
 }
 
-/** 同名文件解析时跳过的高风险/重目录 */
 const SAME_BASENAME_SKIP_DIRS = new Set([
 	"node_modules",
 	".git",
@@ -548,10 +467,6 @@ interface SameBasenameLookup {
 	candidates: string[];
 }
 
-/**
- * 带锚头但文件读不到时：工作区内找同名唯一文件（典型场景：模型写错目录层级）。
- * 只接受唯一命中；歧义/无命中交回原错误路径并附候选清单。
- */
 function findUniqueSameBasename(cwd: string, targetPath: string): SameBasenameLookup {
 	const base = basename(targetPath);
 	if (!base || base.startsWith(".")) return { status: "none", candidates: [] };
@@ -583,10 +498,6 @@ function findUniqueSameBasename(cwd: string, targetPath: string): SameBasenameLo
 	return { status: same.length + ci.length > 1 ? "ambiguous" : "none", candidates: [...same, ...ci].slice(0, 8) };
 }
 
-/**
- * 应用 Hashline 补丁
- * 支持传入虚拟或物理文件读写器（便于单元测试或沙箱执行）
- */
 export function applyHashlinePatch(
 	patchText: string,
 	options: {
@@ -631,18 +542,14 @@ export function applyHashlinePatch(
 		return { ok: false, summary: "未能从输入中解析出有效的 [path#TAG] 补丁段", results: [] };
 	}
 
-	const clipboard = new Map<string, string[]>(); // 命名剪切板寄存器
-	const plannedWrites = new Map<string, string>(); // foldKey(absPath) -> 新内容
+	const clipboard = new Map<string, string[]>();
+	const plannedWrites = new Map<string, string>();
 	const plannedDeletes = new Set<string>();
-	// Windows 文件系统大小写不敏感：键做大小写折叠，避免 [a]/[A] 变体绕过路径归一化造成双写覆盖；
-	// plannedPaths 记录首次见到的原始路径（保持相对/绝对形态）供落盘与自定义读写器使用。
 	const foldKey = (abs: string): string => (process.platform === "win32" ? abs.toLowerCase() : abs);
 	const plannedPaths = new Map<string, string>();
 	const results: ApplySectionResult[] = [];
 
-	// ===== 阶段 1: 预检所有文件并计算目标内容 =====
 	for (const sec of sections) {
-		// 越界安全防护
 		const rel = relative(cwd, resolve(cwd, sec.filePath));
 		if (
 			rel === ".." ||
@@ -659,12 +566,9 @@ export function applyHashlinePatch(
 			};
 		}
 
-		// 同一次 patch 内对同文件的后续段落，优先使用前面段落生成的新内容。
-		// plannedWrites/plannedDeletes 一律按折叠绝对路径做键：[a] 与 [./a]、大小写变体视为同一文件。
 		let currentText = plannedWrites.get(foldKey(resolve(cwd, sec.filePath))) ?? read(sec.filePath);
 		let fuzzyNote = "";
 		if (currentText === null && sec.expectedHash) {
-			// 带 #TAG 却读不到：先尝试工作区内同名唯一文件解析（典型：模型写错目录层级）
 			const cand = findUniqueSameBasename(cwd, sec.filePath);
 			if (cand.status === "resolved" && cand.path) {
 				fuzzyNote = `（路径 ${sec.filePath} 不存在，已解析为同名文件 ${cand.path}）`;
@@ -674,7 +578,6 @@ export function applyHashlinePatch(
 		}
 		const isNewFile = currentText === null;
 		if (currentText === null) {
-			// [path] 段头（无 #TAG）+ 内容 hunk = 创建新文件
 			if (sec.hunks.some((h) => h.kind === "remove_file" || h.kind === "move_file")) {
 				return {
 					ok: false,
@@ -684,7 +587,6 @@ export function applyHashlinePatch(
 				};
 			}
 			if (sec.expectedHash) {
-				// 附工作区相近文件候选（相对路径），有候选时不建议新建遮蔽
 				const cand = findUniqueSameBasename(cwd, sec.filePath);
 				const candRel = cand.candidates.map((c) => relative(cwd, c) || c);
 				const advice = candRel.length
@@ -697,7 +599,7 @@ export function applyHashlinePatch(
 					error: `Tagged header on nonexistent file: ${sec.filePath}`,
 				};
 			}
-			currentText = ""; // 新建：从空文件起步
+			currentText = "";
 		}
 
 		const isCrlf = currentText.includes("\r\n");
@@ -707,7 +609,6 @@ export function applyHashlinePatch(
 		let workingText = currentText;
 		let isRecovered = false;
 
-		// 哈希校验与三方冲突自愈（快照按绝对路径优先隔离，兼容相对路径回退）
 		const absFilePath = resolve(cwd, sec.filePath);
 		if (sec.expectedHash && sec.expectedHash !== liveHash) {
 			const snapshot = store.get(absFilePath, sec.expectedHash) ?? store.get(sec.filePath, sec.expectedHash);
@@ -717,7 +618,6 @@ export function applyHashlinePatch(
 					sec.hunks = recovery.remappedHunks;
 					isRecovered = true;
 				} else {
-					// 附现内容摘录，模型可基于现内容一次重锚定
 					const excerptLines = normalizeLineEndings(currentText).split("\n");
 					const firstHunk = sec.hunks.find((h) => h.kind !== "remove_file" && h.kind !== "move_file");
 					return {
@@ -728,7 +628,6 @@ export function applyHashlinePatch(
 					};
 				}
 			} else {
-				// 附现内容摘录，模型可基于现内容一次重锚定
 				const excerptLines = normalizeLineEndings(currentText).split("\n");
 				const firstHunk = sec.hunks.find((h) => h.kind !== "remove_file" && h.kind !== "move_file");
 				return {
@@ -746,13 +645,11 @@ export function applyHashlinePatch(
 			lines.pop();
 		}
 		if (isNewFile) {
-			lines = []; // 新文件按 0 行处理，PUT <1: / PUT >$: 直接写入内容
+			lines = [];
 		}
 		let isDeleted = false;
 		let moveDest: string | undefined = undefined;
 
-		// 倒序/顺序处理 hunks。为了保证行号不受前面 hunk 影响，从后往前执行行号替换；
-		// 但先提取 CUT 的内容到寄存器
 		for (const h of sec.hunks) {
 			if (h.kind === "remove_file") {
 				isDeleted = true;
@@ -779,7 +676,6 @@ export function applyHashlinePatch(
 				continue;
 			}
 
-			// 语法块展开
 			if (h.kind === "put_block" || h.kind === "cut_block" || h.kind === "paste_over_block") {
 				const span = resolveBlockSpan(lines, h.lineStart ?? 1, sec.filePath);
 				h.lineStart = span.start;
@@ -790,7 +686,6 @@ export function applyHashlinePatch(
 				h.kind = "insert_after";
 			}
 
-			// 捕获到寄存器
 			if (h.kind === "cut_range" || h.kind === "cut_block") {
 				const start = Math.max(1, h.lineStart ?? 1);
 				const end = Math.min(lines.length, h.lineEnd ?? start);
@@ -813,12 +708,10 @@ export function applyHashlinePatch(
 			continue;
 		}
 
-		// 行号越界校验与重叠校验
 		for (const h of sec.hunks) {
 			if (h.kind === "remove_file" || h.kind === "move_file") continue;
 			if (h.lineStart !== -1 && typeof h.lineStart === "number") {
 				if (h.lineStart < 1 || h.lineStart > Math.max(1, lines.length)) {
-					// 附文件尾部摘录，模型可自行改用 PUT >$ 或修正行号
 					return {
 						ok: false,
 						summary: `行号越界：${sec.filePath} 第 ${h.lineStart} 行（文件总共只有 ${lines.length} 行）。${patchFileExcerpt(lines, lines.length, sec.filePath, liveHash)}`,
@@ -842,10 +735,6 @@ export function applyHashlinePatch(
 			let s: number;
 			let e: number;
 			if (h.kind === "insert_before" || h.kind === "insert_after") {
-				// insert 类 hunk 也纳入重叠校验（锚点单行）：执行时按行号降序 splice，
-				// 若锚点行被同补丁的 replace/cut 覆盖删除、或与其它 insert 锚点重合，
-				// 插入位置会随前面的改动串位，产出与模型意图不符的内容。保守策略：
-				// 锚点行与任何 replace span / 其它 insert 锚点重叠即报错。
 				s = h.lineStart === -1 ? lines.length : (h.lineStart ?? 1);
 				e = s;
 			} else if (
@@ -874,7 +763,6 @@ export function applyHashlinePatch(
 			replacementSpans.push({ start: s, end: e });
 		}
 
-		// 按行号从大到小排序执行，避免前方修改引起后续行号错位
 		const sortedHunks = [...sec.hunks]
 			.filter((h) => h.kind !== "remove_file" && h.kind !== "move_file")
 			.sort((a, b) => {
@@ -897,7 +785,7 @@ export function applyHashlinePatch(
 			}
 
 			let start = h.lineStart ?? 1;
-			if (start === -1) start = lines.length; // $ 尾部锚点
+			if (start === -1) start = lines.length;
 
 			if (h.kind === "insert_before") {
 				const idx = Math.max(0, Math.min(lines.length, start - 1));
@@ -961,12 +849,9 @@ export function applyHashlinePatch(
 		}
 	}
 
-	// ===== 阶段 2: 全部校验通过，统一落盘 =====
-	// 先执行所有写入，确保新文件与移动目标成功落盘，避免先删后写异常时永久丢失源文件
 	for (const [key, content] of plannedWrites.entries()) {
 		const p = plannedPaths.get(key) ?? key;
 		write(p, content);
-		// 记住新快照（统一采用绝对路径隔离多工作区）
 		store.record(resolve(cwd, p), content);
 	}
 	for (const key of plannedDeletes) {

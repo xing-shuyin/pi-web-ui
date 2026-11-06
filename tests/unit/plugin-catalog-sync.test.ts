@@ -1,8 +1,3 @@
-/**
- * 插件目录同步（server/plugin-catalog-sync.ts + plugin-catalog.ts 的同步纯函数）单测（issue #148）：
- * 文档形状校验、非法条目跳过、原子写盘的 merge/replace、失败不覆盖有效目录、
- * 可选安装（走正常安装器）与 afterWrite 重载回调。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,7 +22,6 @@ afterEach(() => {
 
 const ENTRY = { id: "third-party", source: "someone/repo", name: "第三方" };
 
-/** 记录调用、按脚本返回结果的假安装器（只用到 run）。 */
 function fakeInstaller(script?: (spec: PluginJobSpec) => { ok: boolean; error?: string }) {
 	const calls: PluginJobSpec[] = [];
 	const installer = {
@@ -39,6 +33,57 @@ function fakeInstaller(script?: (spec: PluginJobSpec) => { ok: boolean; error?: 
 	} as unknown as PluginInstaller;
 	return { installer, calls };
 }
+
+describe("host-owned module sync", () => {
+	it("counts reserved explicit and inferred IDs as skipped", () => {
+		expect(
+			normalizeSyncPayload([
+				ENTRY,
+				{ id: "superagent", source: "a/b", builtinModule: false },
+				{ source: "host/repo/plugins/superagent#main" },
+			]),
+		).toMatchObject({
+			entries: [expect.objectContaining({ id: "third-party" })],
+			skipped: 2,
+		});
+	});
+
+	it.each([false, true])("filters incoming modules and stale entries on write (replace=%s)", (replace) => {
+		writeFileSync(custom, JSON.stringify({ entries: [{ id: "superagent", source: "a/b" }, ENTRY] }));
+		expect(
+			writeCustomCatalog(
+				custom,
+				[
+					{ id: "superagent", name: "Host", source: "a/b", builtin: false },
+					{ ...ENTRY, builtin: false },
+				],
+				replace,
+			),
+		).toBe(1);
+		expect(JSON.parse(readFileSync(custom, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["third-party"]);
+	});
+
+	it("never schedules host modules for automatic installation", async () => {
+		const src = join(dir, "remote.json");
+		writeFileSync(src, JSON.stringify([ENTRY, { id: "superagent", source: "a/b" }]));
+		const { installer, calls } = fakeInstaller();
+		const res = await syncPluginCatalog(
+			src,
+			{ install: true },
+			{
+				customCatalogPath: custom,
+				pluginsDir,
+				installer,
+				workspaceRoot: dir,
+				afterWrite: async () => {},
+				confirmInstall: async () => true,
+			},
+		);
+		expect(res.ok).toBe(true);
+		expect(calls.map((c) => c.id)).toEqual(["third-party"]);
+		expect(JSON.parse(readFileSync(custom, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["third-party"]);
+	});
+});
 
 describe("normalizeSyncPayload", () => {
 	it("接受数组与 { entries: [...] } 两种形状", () => {
@@ -116,7 +161,6 @@ describe("syncPluginCatalog", () => {
 				customCatalogPath: custom,
 				pluginsDir,
 				installer,
-				// 本地文件来源只允许工作区内（P0 收口：任意绝对路径可读 = 文件探测 oracle）
 				workspaceRoot: dir,
 				afterWrite: async () => {
 					afterWrites += 1;
@@ -154,7 +198,7 @@ describe("syncPluginCatalog", () => {
 		const r1 = await syncPluginCatalog(join(dir, "missing.json"), {}, deps);
 		writeFileSync(join(dir, "bad.json"), "{ not json");
 		const r2 = await syncPluginCatalog(join(dir, "bad.json"), {}, deps);
-		const r3 = await syncPluginCatalog(join(dir, "..", "outside.json"), {}, deps); // 越出工作区
+		const r3 = await syncPluginCatalog(join(dir, "..", "outside.json"), {}, deps);
 		expect(r1.ok).toBe(false);
 		expect(r2.ok).toBe(false);
 		expect(r3.ok).toBe(false);
@@ -170,7 +214,6 @@ describe("syncPluginCatalog", () => {
 			const deps = { customCatalogPath: custom, pluginsDir, installer, workspaceRoot: dir, afterWrite: async () => {} };
 			const r1 = await syncPluginCatalog(outside, {}, deps);
 			expect(r1.ok).toBe(false);
-			// 未接入 workspaceRoot（无头/调用方没配）：本地路径 fail-closed
 			const r2 = await syncPluginCatalog(
 				outside,
 				{},
@@ -191,7 +234,6 @@ describe("syncPluginCatalog", () => {
 	it("install:true：未装的走 install、已装的走 update，失败逐条记录（不中断整批）", async () => {
 		const src = join(dir, "remote.json");
 		writeFileSync(src, JSON.stringify([ENTRY, { id: "installed-already", source: "other/repo" }]));
-		// 已装：目录存在
 		const { mkdirSync } = await import("node:fs");
 		mkdirSync(join(pluginsDir, "installed-already"), { recursive: true });
 		const { installer, calls } = fakeInstaller((spec) =>
@@ -209,7 +251,6 @@ describe("syncPluginCatalog", () => {
 				afterWrite: async () => {
 					afterWrites += 1;
 				},
-				// 安装确认门放行（本条测的是安装批处理本身，门的行为在下面两条单测）
 				confirmInstall: async () => true,
 			},
 		);
@@ -222,7 +263,6 @@ describe("syncPluginCatalog", () => {
 			["third-party", "install"],
 			["installed-already", "update"],
 		]);
-		// 写盘一次 + 安装后再重载一次
 		expect(afterWrites).toBe(2);
 		expect(existsSync(custom)).toBe(true);
 	});
@@ -249,14 +289,13 @@ describe("syncPluginCatalog", () => {
 		expect(res.installRefused).toBe(true);
 		expect(res.installed).toEqual([]);
 		expect(calls).toHaveLength(0);
-		expect(afterWrites).toBe(1); // 写盘后一次；安装后的重载没有发生
+		expect(afterWrites).toBe(1);
 		expect(JSON.parse(readFileSync(custom, "utf8"))).toMatchObject({ entries: [{ id: "third-party" }] });
 	});
 
 	it("install:true 用户拒绝 → 只写目录不安装；同意 → 正常安装", async () => {
 		const src = join(dir, "remote.json");
 		writeFileSync(src, JSON.stringify([ENTRY]));
-		// 拒绝
 		const refused = fakeInstaller();
 		const r1 = await syncPluginCatalog(
 			src,
@@ -272,7 +311,6 @@ describe("syncPluginCatalog", () => {
 		);
 		expect(r1.installRefused).toBe(true);
 		expect(refused.calls).toHaveLength(0);
-		// 同意
 		const accepted = fakeInstaller();
 		const r2 = await syncPluginCatalog(
 			src,

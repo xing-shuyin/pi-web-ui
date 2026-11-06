@@ -1,14 +1,3 @@
-/**
- * 审查者模式（自动委派）端到端回归：
- *
- *   set_delegate_mode{true} → 快照 delegateMode=true + notice
- *     → 用户 prompt 被服务端转给常驻执行对话（delegateConvId 出现，主对话不跑模型）
- *     → 执行对话里模型调 write → 放行（施工发生在执行对话，不在主对话）
- *     → 关闭 → 主对话恢复自己干活（write 放行）
- *   顺带锁两条边界：闸门纯函数在主对话生效（write 被拒）+ 转录落 delegate/mode。
- *
- * 零 token：本地 mock LLM（openai-completions SSE），只验接线与路由。
- */
 import { createServer } from "node:http";
 import WebSocket from "ws";
 import { spawn } from "node:child_process";
@@ -20,7 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { freePort, portUp } from "./lib/port-utils.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const PORT = 8942; // ≥8900，与其他回归隔离
+const PORT = 8942;
 const CLIENT_ID = "delegate-mode-test-client";
 
 let failures = 0;
@@ -29,7 +18,6 @@ function check(name, ok, extra = "") {
 	if (!ok) failures++;
 }
 
-// ── mock LLM ────────────────────────────────────────────────────────────
 let script = [];
 const delta = (model, d, finish = null) => ({
 	id: "chatcmpl-mock",
@@ -136,9 +124,7 @@ const server = spawn("node", [join(REPO_ROOT, "dist/server/index.js")], {
 const cleanup = async () => {
 	try {
 		server.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	mockServer.close();
 	await freePort(PORT);
 };
@@ -177,7 +163,6 @@ const waitFor = async (pred, what, timeout = 25000) => {
 };
 const msgText = (m) => (m?.content ?? []).map((b) => (typeof b?.text === "string" ? b.text : "")).join("");
 const lastReply = () => [...(snapshot?.messages ?? [])].reverse().find((m) => m.role === "assistant");
-/** 发 prompt 前的消息条数（只认本轮新增）。 */
 let markCount = 0;
 
 await new Promise((r) => ws.on("open", r));
@@ -187,7 +172,6 @@ send({ type: "set_model", modelId: "mock/mock-model" });
 await sleep(600);
 
 try {
-	// ── 1. 开关 ───────────────────────────────────────────────────────────
 	check("默认关闭", snapshot?.delegateMode === false || snapshot?.delegateMode === undefined);
 	send({ type: "set_delegate_mode", enabled: true });
 	await waitFor(() => snapshot?.delegateMode === true, "delegateMode=true in snapshot");
@@ -197,7 +181,6 @@ try {
 		notices.some((n) => /审查者|Reviewer/.test(n)),
 	);
 
-	// ── 2. 自动路由：prompt 不在主对话跑，转给执行对话 ──────────────────────
 	markCount = (snapshot?.messages ?? []).length;
 	script = [{ name: "write", args: { path: "executor-wrote.txt", content: "by executor" } }];
 	send({ type: "prompt", text: "请写一个文件" });
@@ -206,7 +189,6 @@ try {
 		"delegateConvId 出现",
 	);
 	check("prompt 触发自动路由 → 生成常驻执行对话 id", gotConv, String(snapshot?.delegateConvId ?? ""));
-	// 60ms 节流的快照可能先于 notice 到达（id 落定后到 emit 之间有个快照窗口），显式等一下。
 	const gotDispatchNotice = await waitFor(
 		() => notices.some((n) => /已派给执行对话|Dispatched/.test(n)),
 		"派活 notice",
@@ -216,7 +198,6 @@ try {
 	await waitFor(() => existsSync(join(workDir, "executor-wrote.txt")), "执行对话真的把文件写了", 25000);
 	check("施工发生在执行对话（文件落盘）", existsSync(join(workDir, "executor-wrote.txt")));
 
-	// ── 4. 关闭 → 恢复普通对话（主对话自己能写） ──────────────────────────
 	send({ type: "set_delegate_mode", enabled: false });
 	await waitFor(() => snapshot?.delegateMode === false, "delegateMode=false in snapshot");
 	check("set_delegate_mode{false} → 快照 delegateMode=false", snapshot?.delegateMode === false);
@@ -230,7 +211,6 @@ try {
 	check("关闭后主对话恢复自己施工", existsSync(join(workDir, "main-wrote.txt")));
 	check("关闭后不再自动派活（无新的执行对话 id）", !snapshot?.delegateConvId);
 
-	// ── 5. 转录落 delegate/mode（主对话跑完一轮后才有 jsonl） ─────────────
 	const sessionsRoot = join(agentDir, "sessions");
 	let sawEntry = false;
 	const walk = (dir) => {

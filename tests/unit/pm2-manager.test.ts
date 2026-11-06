@@ -1,14 +1,3 @@
-/**
- * pm2-manager 插件单测 —— 走真实源码（纯函数 + 假宿主），零端口、零 token、零子进程。
- *
- * 覆盖：
- *   - manifest：id/apiVersion 2/permissions（ui+tools+http）/`view:false`（没有独立面板）+
- *     `ui["tasks.panel"]` 一条 kind=view（内嵌进宿主「后台任务」面板，经 parseUiContributions 解析）。
- *   - pm2 入口候选与 jlist 解析（含 ANSI 噪声与坏输入）。
- *   - 展示格式化（字节/时长/状态行/工具行）。
- *   - index.mjs activate：只注册 `pm2` 工具（提示词纯英文且三处不重复）与三个 HTTP 路由，
- *     且**不接管 bash**（无 onToolPre / onToolPost 订阅）。
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,8 +23,6 @@ afterEach(() => {
 	while (cleanups.length) cleanups.pop()?.();
 });
 
-// ──────────────────────────────────────────────────────────── manifest
-
 describe("pm2-manager manifest", () => {
 	it("声明 apiVersion 2 / 三项权限 / 无独立面板（内嵌进后台任务面板）", () => {
 		expect(manifest.id).toBe("pm2-manager");
@@ -57,8 +44,6 @@ describe("pm2-manager manifest", () => {
 		expect(item.labelEn).toBeTruthy();
 	});
 });
-
-// ──────────────────────────────────────────────────────────── pm2 入口与解析
 
 describe("pm2-manager pm2 入口候选与 jlist", () => {
 	it("环境变量优先，其次 node 前缀布局，且去重", () => {
@@ -144,8 +129,6 @@ describe("pm2-manager pm2 入口候选与 jlist", () => {
 	});
 });
 
-// ──────────────────────────────────────────────────────────── activate（假宿主）
-
 describe("pm2-manager activate", () => {
 	function activate(settings: Record<string, unknown> = {}) {
 		const host = createMockHost({ settings });
@@ -229,7 +212,7 @@ describe("pm2 探测负缓存（0.103 审计）", () => {
 			const second = await callStatus();
 			expect(first.installed).toBe(false);
 			expect(second.installed).toBe(false);
-			expect(execFileCalls).toBe(spawnsAfterFirst); // 第二次轮询零新增 spawn（负缓存命中）
+			expect(execFileCalls).toBe(spawnsAfterFirst);
 		} finally {
 			vi.doUnmock("node:child_process");
 			vi.resetModules();

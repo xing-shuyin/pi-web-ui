@@ -6,6 +6,12 @@ import { request as httpRequest } from "node:http";
 import { createDeviceHub } from "../../server/device-center/hub.js";
 import { DEFAULT_EXECUTION_SETTINGS } from "../../server/device-center/execution-settings.js";
 import { DeviceHubStore, hashSecret, readPersistedHub } from "../../server/device-center/store.js";
+import {
+	claimRouterJob,
+	prepareRouterActions,
+	queueRouterJob,
+	updateGroupRouterConfig,
+} from "../../server/device-center/group-router.js";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -29,7 +35,6 @@ async function fixture(
 			}
 		}
 	});
-	// Keep the first issued lease: later attempts must not refresh stale event fixtures.
 	const issuedLeases = new Map<string, { leaseToken: string | undefined; leaseGeneration: number | undefined }>();
 	const onTask = vi.fn<NonNullable<Parameters<typeof createDeviceHub>[0]["onTask"]>>((_deviceId, task) => {
 		if (!issuedLeases.has(task.id))
@@ -206,6 +211,7 @@ describe("device center hub", () => {
 		});
 		const before = hub.store.snapshot();
 		expect((await request(`/api/rooms/${room.id}/clear`, {}, otherCookie)).status).toBe(404);
+		expect(hub.store.snapshot()).toEqual(before);
 		expect(
 			(
 				await request(`/api/agent/rooms/${room.id}/clear`, {}, "", {
@@ -218,10 +224,11 @@ describe("device center hub", () => {
 			await hub.store.transact((state) => {
 				state.tasks.find((task) => task.roomId === room.id)!.status = status;
 			});
+			const blocked = hub.store.snapshot();
 			const response = await request(`/api/rooms/${room.id}/clear`, {}, cookie);
 			expect(response.status).toBe(409);
 			expect(response.body.code).toBe("ACTIVE_TASKS");
-			expect(hub.store.snapshot().messages).toEqual(before.messages);
+			expect(hub.store.snapshot()).toEqual(blocked);
 		}
 		await hub.store.transact((state) => {
 			state.tasks.find((task) => task.roomId === room.id)!.status = "completed";
@@ -236,7 +243,12 @@ describe("device center hub", () => {
 		expect(response.status).toBe(200);
 		expect(response.body).toEqual({ cleared: true });
 		const after = hub.store.snapshot();
-		expect(after.rooms).toEqual(before.rooms);
+		// Clearing history invalidates router decisions made from the old context.
+		expect(after.rooms).toEqual(
+			before.rooms.map((entry) =>
+				entry.id === room.id ? { ...entry, routerRevision: (entry.routerRevision ?? 0) + 1 } : entry,
+			),
+		);
 		for (const key of ["messages", "tasks", "receipts"] as const) {
 			expect(after[key].filter((entry) => entry.roomId === room.id)).toEqual([]);
 			expect(after[key].filter((entry) => entry.roomId === otherRoom.id)).toEqual(
@@ -248,10 +260,99 @@ describe("device center hub", () => {
 		expect(recovered.tasks.every((task) => task.status === "interrupted")).toBe(true);
 		expect({ ...recovered, tasks: after.tasks }).toEqual(after);
 		expect((await request(`/api/rooms/${room.id}/clear`, {}, cookie)).status).toBe(200);
+		expect(hub.store.snapshot().rooms).toEqual(
+			after.rooms.map((entry) =>
+				entry.id === room.id ? { ...entry, routerRevision: entry.routerRevision! + 1 } : entry,
+			),
+		);
 		expect(
 			(await request(`/api/rooms/${room.id}/messages`, { text: "new message", idempotencyKey: "history" }, cookie))
 				.status,
 		).toBe(200);
+	});
+	it("invalidates queued and running router jobs on history clear and rejects late decisions", async () => {
+		const { hub, request, register, pair } = await fixture();
+		const cookie = await register();
+		const device = await pair(cookie);
+		const room = (await request("/api/rooms", { name: "Team", botIds: [device.botId] }, cookie)).body.room;
+		const otherRoom = (await request("/api/rooms", { name: "Other", botIds: [device.botId] }, cookie)).body.room;
+		for (const id of [room.id, room.id, otherRoom.id])
+			await request(`/api/rooms/${id}/messages`, { text: "history" }, cookie);
+		const lease = await hub.store.transact((state) => {
+			const now = Date.now();
+			for (const id of [room.id, otherRoom.id]) {
+				updateGroupRouterConfig(
+					state,
+					{
+						accountId: room.accountId,
+						roomId: id,
+						config: {
+							enabled: true,
+							deviceId: device.deviceId,
+							model: "provider/model",
+							thinkingLevel: "high",
+							tools: ["reply"],
+						},
+					},
+					now,
+				);
+			}
+			for (const message of state.messages)
+				queueRouterJob(
+					state,
+					{
+						accountId: room.accountId,
+						roomId: message.roomId,
+						eventKey: `message:${message.id}`,
+						trigger: { type: "human_message", messageId: message.id },
+					},
+					now,
+				);
+			const job = claimRouterJob(
+				state,
+				{
+					accountId: room.accountId,
+					roomId: room.id,
+					deviceId: device.deviceId,
+					leaseToken: "before-clear",
+					leaseMs: 60_000,
+				},
+				now,
+			)!;
+			return { accountId: room.accountId, jobId: job.id, deviceId: device.deviceId, leaseToken: "before-clear" };
+		});
+		const before = hub.store.snapshot();
+		expect(before.routerJobs.filter((job) => job.roomId === room.id).map((job) => job.status)).toEqual([
+			"running",
+			"queued",
+		]);
+		expect((await request(`/api/rooms/${room.id}/clear`, {}, cookie)).status).toBe(200);
+		const after = hub.store.snapshot();
+		expect(after.rooms).toEqual(
+			before.rooms.map((entry) =>
+				entry.id === room.id ? { ...entry, routerRevision: entry.routerRevision! + 1 } : entry,
+			),
+		);
+		expect(after.routerJobs).toEqual(
+			before.routerJobs.map((job) => {
+				if (job.roomId !== room.id) return job;
+				const { leaseToken: _leaseToken, leaseExpiresAt: _leaseExpiresAt, ...rest } = job;
+				return { ...rest, status: "failed", error: "Group history cleared", updatedAt: expect.any(Number) };
+			}),
+		);
+		await expect(
+			hub.store.transact((state) =>
+				prepareRouterActions(
+					state,
+					{
+						...lease,
+						actions: [{ type: "reply", text: "late decision" }],
+					},
+					Date.now(),
+				),
+			),
+		).rejects.toThrow("Stale router lease or config");
+		expect(hub.store.snapshot()).toEqual(after);
 	});
 	it("freezes identical context for parallel recipients and never persists context copies", async () => {
 		const { hub, request, register, pair, onTask } = await fixture();
@@ -414,7 +515,7 @@ describe("device center hub", () => {
 		expect((await f.request(`/device/${first.deviceId}`, undefined, other)).status).toBe(404);
 	});
 	it("supports public IP HTTP accounts, pairing and tasks without device web access", async () => {
-		const { request, register, pair, onTask } = await fixture("http://82.156.246.55:8790", "");
+		const { request, register, pair, onTask } = await fixture("http://198.51.100.10:8790", "");
 		expect((await request("/api/info")).body).toEqual({ transport: "http", deviceWebAccess: false });
 		expect((await request("/api/info", undefined, "", { Host: "evil.test" })).status).toBe(421);
 		const cookie = await register();
@@ -576,10 +677,8 @@ describe("device center hub", () => {
 			droppedCount: 0,
 			journalUnavailable: false,
 		});
-		// Unknown tasks and foreign rooms stay 404 — the empty page never widens access.
 		expect((await request(`/api/rooms/${room.id}/tasks/unknown-task/journal`, undefined, cookie)).status).toBe(404);
 		expect((await request(`/api/rooms/foreign-room/tasks/${task.id}/journal`, undefined, cookie)).status).toBe(404);
-		// Real progress turns the same empty page into a populated one.
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
 			...initialLease(task.id),
@@ -610,7 +709,6 @@ describe("device center hub", () => {
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Win Mac Linux", botIds: [device.botId] }, cookie)).body.room;
 		const path = `/api/rooms/${room.id}/messages`;
-		// The Hub resolves mentions against real room membership: names outside the room never dispatch.
 		await request(path, { text: "@Unknown hello", sender: "fake" }, cookie);
 		expect(onTask).not.toHaveBeenCalled();
 		const payload = {
@@ -818,7 +916,6 @@ describe("device center hub", () => {
 		expect(await readFile(join(dataDir, "hub-wal.jsonl"), "utf8")).not.toBe("");
 		await rm(hub.store.path, { recursive: true });
 		await writeFile(hub.store.path, checkpoint);
-		// Replay against the old index must restore the whole committed transaction.
 		expect(await readPersistedHub(dataDir)).toEqual(committed);
 		expect((await request("/api/rooms", { name: "recovered", botIds: [device.botId] }, cookie)).status).toBe(201);
 	});
@@ -850,7 +947,6 @@ describe("device center hub", () => {
 		const first = await send("first", "capacity-1");
 		expect(first.status).toBe(200);
 		const conversationId = first.body.tasks[0].conversationId;
-		// A long-lived room keeps a large closed archive; only open conversations may consume the budget.
 		await hub.store.transact((draft) => {
 			const template = draft.conversations.find((entry) => entry.id === conversationId)!;
 			for (let i = 0; i < 500; i++)
@@ -877,11 +973,9 @@ describe("device center hub", () => {
 		const full = await send("third", "capacity-3");
 		expect(full.status).toBe(409);
 		expect(full.body.error).toMatch(/open conversations/i);
-		// Stopping then deleting a conversation returns its capacity instead of forcing a room wipe.
 		await hub.store.transact((draft) => {
 			draft.conversations = draft.conversations.filter((entry) => !entry.id.startsWith("open-"));
 		});
-		// Complete the first turn so the conversation has no pending task when it is stopped and deleted.
 		const firstTask = first.body.tasks[0];
 		await hub.acceptTaskEvent(device.deviceId, {
 			botId: device.botId,
@@ -916,7 +1010,6 @@ describe("device center hub", () => {
 				cookie,
 			);
 		expect((await send()).status).toBe(200);
-		// Retention removes the message row; the replay guard must survive it.
 		await hub.store.transact((draft) => {
 			draft.messages = draft.messages.filter((message) => message.roomId !== room.id);
 		});
@@ -934,7 +1027,6 @@ describe("device center hub", () => {
 		const path = `/api/rooms/${room.id}/messages`;
 		expect((await request(path, { text: "@Mac please build" }, cookie)).status).toBe(200);
 		expect(hub.store.snapshot().tasks[0].botId).toBe(other.botId);
-		// The composer sends @Name(<uuid>); the canonical id must resolve too.
 		expect((await request(path, { text: `@Windows(${device.botId}) run` }, cookie)).status).toBe(200);
 		expect(hub.store.snapshot().tasks[1].botId).toBe(device.botId);
 		await request(path, { text: "@Nobody hello" }, cookie);
@@ -1021,7 +1113,6 @@ describe("device center hub", () => {
 		const device = await pair(cookie);
 		const room = (await request("/api/rooms", { name: "Limits Room", botIds: [device.botId] }, cookie)).body.room;
 
-		// Blackboard test: 5000 bytes exceeds 4096 bytes limit
 		const oversized = "a".repeat(5000);
 		const bbRes = await request(
 			`/api/rooms/${room.id}/blackboard`,
@@ -1033,7 +1124,6 @@ describe("device center hub", () => {
 		expect(bbRes.status).toBe(400);
 		expect(bbRes.body.error).toMatch(/exceeds/);
 
-		// Within custom blackboard limit
 		const validBb = await request(
 			`/api/rooms/${room.id}/blackboard`,
 			{ content: "hello world", expectedVersion: 0 },

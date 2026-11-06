@@ -1,0 +1,141 @@
+<svg
+	xmlns="http://www.w3.org/2000/svg"
+	width="1200"
+	height="360"
+	viewBox="0 0 1200 360"
+	fill="none"
+	role="img"
+	aria-labelledby="title desc"
+>
+	<title id="title">pi-web-ui — Make room for better work.</title>
+	<desc id="desc">A transparent cover with lavender, coral, and teal shapes that blend into the page background.</desc>
+	<defs>
+		<linearGradient id="gem" x1="881" y1="113" x2="1008" y2="248" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#A99AF9" />
+			<stop offset="0.55" stop-color="#7A68CF" />
+			<stop offset="1" stop-color="#55449F" />
+		</linearGradient>
+		<linearGradient id="coral" x1="1048" y1="51" x2="1122" y2="129" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#FFC4B0" />
+			<stop offset="1" stop-color="#EE8A83" />
+		</linearGradient>
+		<linearGradient id="teal" x1="742" y1="225" x2="815" y2="299" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#A3DED2" />
+			<stop offset="1" stop-color="#389C95" />
+		</linearGradient>
+		<filter id="shadow" x="-50%" y="-50%" width="200%" height="220%">
+			<feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#000000" flood-opacity="0.14" />
+		</filter>
+		<clipPath id="frame"><rect width="1200" height="360" rx="28" /></clipPath>
+	</defs>
+	<g clip-path="url(#frame)">
+		<path d="M677 360C674 265 711 103 908 2" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.8" />
+		<path d="M760 373C743 253 828 81 1043-13" stroke="#48405F" stroke-width="1.5" />
+		<circle cx="946" cy="180" r="132" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" />
+		<ellipse
+			cx="946"
+			cy="180"
+			rx="201"
+			ry="116"
+			transform="rotate(-20 946 180)"
+			stroke="#71608C"
+			stroke-width="1.5"
+			stroke-dasharray="4 9"
+		/>
+		<path d="M786 88C857 81 877 119 946 180S1035 252 1081 278" stroke="#A49AC9" stroke-width="2" />
+		<path d="M778 262C844 264 884 196 946 180S1038 133 1085 88" stroke="#A49AC9" stroke-width="2" />
+		<path d="M786 88C904 20 1044 22 1085 88" stroke="#4F445F" stroke-width="1.5" />
+		<path d="M778 262C874 334 1010 334 1081 278" stroke="#3F6662" stroke-width="1.5" />
+		<circle cx="848" cy="123" r="5" fill="#222638" stroke="#AC9CCB" stroke-width="2" />
+		<circle cx="1030" cy="240" r="5" fill="#222638" stroke="#AC9CCB" stroke-width="2" />
+		<circle cx="855" cy="225" r="4" fill="#549E99" />
+		<circle cx="1029" cy="133" r="4" fill="#DC938F" />
+		<g filter="url(#shadow)">
+			<rect
+				x="755"
+				y="57"
+				width="62"
+				height="62"
+				rx="21"
+				transform="rotate(-14 786 88)"
+				fill="#222638"
+				stroke="#49415D"
+			/>
+			<circle cx="786" cy="88" r="16" stroke="#A391D8" stroke-width="8" />
+			<circle cx="1085" cy="88" r="36" fill="url(#coral)" />
+			<circle cx="1085" cy="88" r="19" stroke="#FFF6EC" stroke-width="2" stroke-opacity="0.8" />
+			<rect x="745" y="229" width="66" height="66" rx="23" transform="rotate(15 778 262)" fill="url(#teal)" />
+			<path
+				d="M763 263L775 275L795 250"
+				stroke="#F1FFFA"
+				stroke-width="4"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+			<rect
+				x="1053"
+				y="250"
+				width="56"
+				height="56"
+				rx="19"
+				transform="rotate(-12 1081 278)"
+				fill="#222638"
+				stroke="#454354"
+			/>
+			<path d="M1068 278H1094M1081 265V291" stroke="#8E7CC4" stroke-width="4" stroke-linecap="round" />
+		</g>
+		<circle cx="946" cy="180" r="82" fill="#222638" fill-opacity="0.5" stroke="#FFFFFF" stroke-width="2" />
+		<g filter="url(#shadow)">
+			<rect x="887" y="121" width="118" height="118" rx="38" transform="rotate(-12 946 180)" fill="url(#gem)" />
+			<rect
+				x="901"
+				y="135"
+				width="90"
+				height="90"
+				rx="27"
+				transform="rotate(-12 946 180)"
+				stroke="#E8DEFF"
+				stroke-opacity="0.5"
+			/>
+			<path
+				d="M918 160H974M931 160V201M960 160V201"
+				stroke="#FFFFFF"
+				stroke-width="8"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+		</g>
+		<circle cx="1126" cy="197" r="6" fill="#B5A2E7" />
+		<circle cx="904" cy="41" r="5" fill="#F0A997" />
+		<circle cx="955" cy="318" r="4" fill="#66B5A8" />
+		<path d="M720 175H734M727 168V182" stroke="#A8BDBB" stroke-width="2" stroke-linecap="round" />
+		<rect x="64" y="78" width="38" height="6" rx="3" fill="#9D8DDB" />
+		<rect x="110" y="78" width="20" height="6" rx="3" fill="#F0A297" />
+		<rect x="138" y="78" width="20" height="6" rx="3" fill="#69B9AB" />
+		<text
+			x="60"
+			y="177"
+			font-family="system-ui, -apple-system, 'Segoe UI', Arial, sans-serif"
+			font-size="72"
+			font-weight="750"
+			letter-spacing="-3.5"
+			fill="#F0EEF8"
+		>
+			pi-web-ui
+		</text>
+		<text
+			x="64"
+			y="230"
+			font-family="system-ui, -apple-system, 'Segoe UI', Arial, sans-serif"
+			font-size="27"
+			font-weight="400"
+			letter-spacing="-0.4"
+			fill="#B9B2CC"
+		>
+			Make room for better work.
+		</text>
+		<path d="M64 281H489" stroke="#40394F" stroke-width="1.5" />
+		<circle cx="496" cy="281" r="3" fill="#AF9BD7" />
+
+	</g>
+</svg>

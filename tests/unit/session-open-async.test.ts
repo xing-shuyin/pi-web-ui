@@ -1,4 +1,3 @@
-/** C2：异步分时片打开会话与 SDK SessionManager.open 结果一致，且解析期间让出事件循环。 */
 import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,7 +82,6 @@ describe("openSessionManagerAsync ≡ SessionManager.open", () => {
 			const asyncM = await openSessionManagerAsync(b);
 			expect(snapshot(asyncM)).toEqual(snapshot(sync));
 			expect(asyncM.getSessionFile()).toBe(b);
-			// 文件副作用一致（缺换行时补 "\n"）
 			expect(readFileSync(b, "utf8")).toBe(readFileSync(a, "utf8"));
 		});
 	}

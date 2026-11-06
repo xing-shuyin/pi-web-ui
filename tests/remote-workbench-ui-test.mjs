@@ -1,4 +1,3 @@
-// Independent mock server: no shared dist, credentials, SSH or actual remote hosts.
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";

@@ -37,8 +37,6 @@ describe("/new <prompt>", () => {
 		expect(prompt).toHaveBeenCalledWith("hello world");
 	});
 	it("does not send when the switch bailed (cap reached / create failed)", async () => {
-		// newChat() === false means no blank chat became active — sending anyway
-		// would drop the text into the conversation the user was already in.
 		const prompt = vi.fn(async (_t: string) => {});
 		const h = host({ prompt, newChat: vi.fn(async () => false) });
 		const svc = new SlashCommandsService(h as never);

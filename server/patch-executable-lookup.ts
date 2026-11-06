@@ -1,30 +1,3 @@
-/**
- * Fork-free executable lookup for Android/Termux.
- *
- * Background: on POSIX the SDK resolves host executables with `spawnSync("which", …)`
- * (`dist/utils/shell.js`) and probes availability with `spawnSync(cmd, ["--version"])`
- * (`dist/utils/tools-manager.js`). On Android/Termux forking a child process can stall
- * before it ever execs, so those probes never return and the first tool call hangs the
- * server instead of failing fast. Both are pure lookups, so this patch answers them from
- * PATH — no child process involved.
- *
- * The SDK sources are transformed in memory before compilation, never on disk (same seam
- * as `server/patch-bash-process.ts`). The patch therefore survives every
- * `npm i -g @earendil-works/pi-coding-agent` and applies to whichever copy
- * `resolve-global-sdk.ts` picks. Drop this module once the SDK resolves executables from
- * PATH itself.
- *
- * Two properties matter more than brevity here:
- *
- * 1. The replacement never relies on a binding that happens to exist in the SDK version
- *    at hand — it carries its own imports (`PREAMBLE`). Otherwise a version whose module
- *    header differs (SDK 1.1.0 has no `shellPathExists`) throws a ReferenceError that the
- *    surrounding `catch` swallows, and the hook reports `patched` while shell discovery
- *    silently falls back to `sh`.
- * 2. It keeps the *semantics* of executable lookup: an entry only counts when it is a
- *    real file we may execute — not a directory and not an inert file. Existence alone
- *    made `ensureTool` claim a tool it could not spawn (`ENOENT` right after).
- */
 import { registerHooks } from "node:module";
 
 export const SENTINEL = "// pi-web-ui #810: fork-free executable lookup v1";
@@ -39,11 +12,6 @@ const TARGETS: Record<ExecutableLookupTarget, string> = {
 	"tools-manager": "/@earendil-works/pi-coding-agent/dist/utils/tools-manager.js",
 };
 
-/**
- * Self-contained definitions the replacement uses, injected ahead of the SDK source.
- * Aliased names cannot collide with the SDK's own imports, so this works for every
- * module header — including the shapes that predate `shellPathExists`.
- */
 export const PREAMBLE = `${PREAMBLE_START}
 import {
     accessSync as __piWebExecAccess,
@@ -82,7 +50,6 @@ function __piWebExecProgram(candidate) {
 }
 ${PREAMBLE_END}`;
 
-/** SDK 1.4.0 shape: `which` child process in the POSIX branch of findExecutableOnPath. */
 const SHELL_LOOKUP_OLD = `    // Unix: Use 'which' and trust its output (handles Termux and special filesystems)
     try {
         const result = spawnSync("which", [executable], { encoding: "utf-8", timeout: 5000 });
@@ -97,7 +64,6 @@ const SHELL_LOOKUP_OLD = `    // Unix: Use 'which' and trust its output (handles
         // Ignore errors
     }`;
 
-/** SDK 1.4.0 shape: `--version` child process probe in commandExists. */
 const TOOLS_LOOKUP_OLD = `function commandExists(cmd) {
     try {
         const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
@@ -143,7 +109,6 @@ const TOOLS_LOOKUP_NEW = `function commandExists(cmd) {
     }
 }`;
 
-/** Which target a loaded module URL belongs to, or null when it is not ours to touch. */
 export function executableLookupTarget(url: string): ExecutableLookupTarget | null {
 	const normalized = url.replaceAll("\\\\", "/");
 	for (const [target, suffix] of Object.entries(TARGETS) as [ExecutableLookupTarget, string][]) {
@@ -157,12 +122,9 @@ const ANCHORS: Record<ExecutableLookupTarget, string> = {
 	"tools-manager": "function commandExists",
 };
 
-/** Any child process a lookup could still be forking through, however it is spelled. */
 const FORKING_CALL = /\b(?:spawnSync|execSync|execFileSync)\s*\(/;
 
-/** 在这些字符之后出现的 `/` 是正则字面量的开头，而不是除号。 */
 const REGEX_PREFIX_CHARS = new Set("(,=:[!&|?{};+-*%<>~^".split(""));
-/** 这些关键字之后同理（`return /…/` vs `a / b`）。 */
 const REGEX_PREFIX_WORDS = new Set([
 	"return",
 	"typeof",
@@ -180,7 +142,6 @@ const REGEX_PREFIX_WORDS = new Set([
 	"await",
 ]);
 
-/** `/` 在这里是正则字面量而不是除号（只看前一个 token）。 */
 function isRegexStart(source: string, i: number): boolean {
 	let j = i - 1;
 	while (j >= 0 && /\s/.test(source[j])) j--;
@@ -192,13 +153,6 @@ function isRegexStart(source: string, i: number): boolean {
 	return REGEX_PREFIX_WORDS.has(source.slice(k + 1, j + 1));
 }
 
-/**
- * `}` / `{` 在正则字面量里不是括号。不认正则的话，`/^}$/` 这种只带一个右花括号的
- * 字面量会把深度算错：接着那个嵌套块自己的 `}` 就被当成「函数结束」，于是后面的
- * `spawnSync` 落在被截断的 body 之外，已经打过叉的源码会被判成 `already` —— 正是
- * 上游改写后最危险的那种误判（Android 上依然会卡死，却不报警）。
- * 解析错方向的代价很低：误把代码当成字符串只会让 body 取不出来 → `unsupported`。
- */
 function skipRegex(source: string, i: number): number | null {
 	let inClass = false;
 	for (let j = i + 1; j < source.length; j++) {
@@ -207,7 +161,6 @@ function skipRegex(source: string, i: number): number | null {
 			j++;
 			continue;
 		}
-		// 正则字面量不跨行：跑到行尾说明这是个除号，交给调用方按代码处理。
 		if (char === "\n") return null;
 		if (inClass) {
 			if (char === "]") inClass = false;
@@ -219,7 +172,6 @@ function skipRegex(source: string, i: number): number | null {
 	return null;
 }
 
-/** Index just past the comment or quoted literal starting at `i`, or null when it is code. */
 function skipNonCode(source: string, i: number): number | null {
 	const char = source[i];
 	if (char === "/" && source[i + 1] === "/") {
@@ -241,10 +193,6 @@ function skipNonCode(source: string, i: number): number | null {
 	return null;
 }
 
-/**
- * Body of the function starting at `anchor`, or null when it is not there.
- * Skips comments and string/template contents so braces inside them cannot unbalance it.
- */
 export function functionBody(source: string, anchor: string): string | null {
 	const start = source.indexOf(anchor);
 	if (start < 0) return null;
@@ -260,9 +208,6 @@ export function functionBody(source: string, anchor: string): string | null {
 		const char = source[i];
 		if (char === "{") depth++;
 		else if (char === "}") {
-			// Only a brace that ends the line can close the function. A `}` inside a regex
-			// literal sits mid-statement, and treating it as the end would truncate the body —
-			// hiding a child process that comes later and reporting the lookup as fixed.
 			if (depth === 1) {
 				if (isStatementEnd(source, i + 1)) return source.slice(open, i + 1);
 			} else depth--;
@@ -271,7 +216,6 @@ export function functionBody(source: string, anchor: string): string | null {
 	return null;
 }
 
-/** Index of the `}` matching the `{` at `open`, or null when the block is unbalanced. */
 function bracedBlockEnd(source: string, open: number): number | null {
 	let depth = 0;
 	for (let i = open; i < source.length; i++) {
@@ -286,12 +230,6 @@ function bracedBlockEnd(source: string, open: number): number | null {
 	return null;
 }
 
-/**
- * What actually runs on POSIX: the body without the `if (process.platform === "win32")`
- * early return. The shell lookup keeps a `where` child process in that branch on every SDK
- * version, and it never runs on Android/Termux — counting it as a fork would report a
- * fork-free POSIX lookup as unrecognized and warn on every start.
- */
 export function posixPortion(body: string): string {
 	const guard = body.search(/if \(process\.platform === "win32"\)\s*\{/);
 	if (guard < 0) return body;
@@ -301,17 +239,10 @@ export function posixPortion(body: string): string {
 	return body.slice(0, guard) + body.slice(close + 1).replace(/^\s*return null;\s*/, "");
 }
 
-/** Whitespace (and an optional `;`) up to the end of the line — a statement boundary. */
 function isStatementEnd(source: string, at: number): boolean {
 	return /^[ \t]*;?[ \t]*(?:\r?\n|$)/.test(source.slice(at, at + 8));
 }
 
-/**
- * A lookup counts as already fork-free only when that is positively identifiable:
- * the function is still there, it scans `process.env.PATH`, and it forks nothing.
- * Anything else — a reformatted probe, an unknown rewrite — stays `unsupported`, so an
- * unrecognized SDK never gets reported as fixed while the probe is still in the way.
- */
 function isForkFreeLookup(source: string, anchor: string): boolean {
 	const body = functionBody(source, anchor);
 	if (body === null) return false;
@@ -326,8 +257,6 @@ export function patchExecutableLookupSource(
 	if (source.includes(SENTINEL)) return { code: source, status: "already" };
 	const old = target === "shell" ? SHELL_LOOKUP_OLD : TOOLS_LOOKUP_OLD;
 	const replacement = target === "shell" ? SHELL_LOOKUP_NEW : TOOLS_LOOKUP_NEW;
-	// Exact, single occurrence: a moved or rewritten lookup must fail loudly, never
-	// half-apply, because the alternative is a silently hanging server.
 	if (source.split(old).length !== 2) {
 		return { code: source, status: isForkFreeLookup(source, ANCHORS[target]) ? "already" : "unsupported" };
 	}
@@ -339,7 +268,6 @@ const LOG_PREFIX = "[executable-lookup]";
 const OPT_OUT = new Set(["off", "0", "false", "no"]);
 const OPT_IN = new Set(["on", "1", "true", "yes"]);
 
-/** Android/Termux only by default; `PI_WEB_EXEC_LOOKUP=off` opts out, `=on` forces. */
 export function shouldPatchExecutableLookup(
 	platform: string = process.platform,
 	env: NodeJS.ProcessEnv = process.env,
@@ -350,7 +278,6 @@ export function shouldPatchExecutableLookup(
 	return platform === "android" || Boolean(env.TERMUX_VERSION);
 }
 
-/** Logged once per target, so every restart states whether the patch is really in place. */
 export function describeLookupResult(
 	target: ExecutableLookupTarget,
 	status: PatchStatus,
@@ -372,12 +299,10 @@ function report(target: ExecutableLookupTarget, status: PatchStatus, url: string
 	else console.log(message);
 }
 
-/** Only ES modules can take the preamble; everything else keeps the SDK's own lookup. */
 export function isPatchableFormat(format: string | null | undefined): boolean {
 	return format === "module" || format === "module-typescript";
 }
 
-/* SDK sources are transformed in memory before compilation, never on disk. */
 export function registerExecutableLookupPatch(
 	platform: string = process.platform,
 	env: NodeJS.ProcessEnv = process.env,
@@ -394,8 +319,6 @@ export function registerExecutableLookupPatch(
 			if (!target) return nextLoad(url, context);
 			const loaded = nextLoad(url, context);
 			if (loaded.source == null) return loaded;
-			// The preamble is an ES module head; injecting it into CommonJS would break the
-			// load instead of falling back to the lookup we were trying to improve.
 			if (!isPatchableFormat(loaded.format)) {
 				console.warn(
 					`${LOG_PREFIX} ${target}: NOT patched — loaded as ${loaded.format ?? "an unknown format"}, ` +

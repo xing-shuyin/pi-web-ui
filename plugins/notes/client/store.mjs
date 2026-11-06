@@ -1,25 +1,3 @@
-/**
- * notes 插件的数据模型与全部纯逻辑 —— **服务端与浏览器共用**（所以住在 client/ 下，
- * 见 cron.mjs 顶部说明）。
- *
- * 三样东西一个库：笔记（notes，Markdown 正文）、待办（todos，勾选/优先级/截止/重复）、
- * 提醒（reminders，cron 定时，到点由服务端 host.schedule 触发）。库整体是一个 JSON 对象，
- * 落在 `<dataDir>/notes/store.json`（不放插件目录：`install --force` 更新插件会替换整个
- * 目录，用户数据必须活在外面）。
- *
- * 这里只有纯函数：不碰 fs、不碰 DOM、不看时钟（时间一律由调用方传进来）—— 服务端、
- * 视图、浮窗、AI 工具、单测走的是同一套语义（"同一份计算"）。
- *
- * 数据形状（normalize 后保证）：
- *   note     { id, title, body, tags[], pinned, createdAt, updatedAt }
- *   todo     { id, text, done, doneAt|null, priority 0..3, due|null, repeat, tags[],
- *              noteId|null, createdAt, updatedAt }
- *   reminder { id, text, enabled, schedule, noteId|null, todoId|null, lastFired|null,
- *              fireCount, snoozedFrom|null, createdAt, updatedAt }
- *   meta     { rev, pending[{ id, reminderId, text, firedAt, noteId, todoId }] }
- * 时间字段一律「本地时区的 'YYYY-MM-DDTHH:MM' 串或 ISO 串」（字符串比较即可排序，
- * 与 datetime-local 输入框同形）；`repeat` 是 'none'|'daily'|'weekly'|'monthly'。
- */
 import { isSupportedEvery, MIN_EVERY_MINUTES, nextScheduleFire, scheduleText } from "./cron.mjs";
 
 export const STORE_VERSION = 1;
@@ -74,7 +52,6 @@ export const STORE_VERSION = 1;
  * @typedef {{ v: number, notes: Note[], todos: Todo[], reminders: Reminder[], meta: { rev: number, pending: PendingItem[] } }} Store
  */
 
-/** 上限（防手滑粘贴/导入把库撑爆；超出的按时间新的保留）。 */
 export const CAPS = {
 	notes: 2000,
 	todos: 5000,
@@ -87,13 +64,11 @@ export const CAPS = {
 	tagLen: 32,
 };
 
-/** 全局唯一 id（前缀便于人眼辨认；不依赖 crypto，浏览器/Node 都能跑）。 */
 export function newId(prefix = "x") {
 	const rnd = Math.random().toString(36).slice(2, 8);
 	return `${prefix}_${Date.now().toString(36)}${rnd}`;
 }
 
-/** 当前时间 → 'YYYY-MM-DDTHH:MM'（本地时区，与输入框同形的可排序串）。 */
 export function nowStamp(ms = Date.now()) {
 	const d = new Date(ms);
 	const p = (n) => String(n).padStart(2, "0");
@@ -120,7 +95,6 @@ function stamp(v) {
 	if (!s) return null;
 	const t = new Date(s).getTime();
 	if (Number.isNaN(t)) return null;
-	// 统一成 'YYYY-MM-DDTHH:MM'（秒/毫秒/时区尾巴都抹掉，字符串排序才可靠）
 	return nowStamp(t);
 }
 
@@ -137,29 +111,12 @@ function tags(v) {
 
 const REPEATS = new Set(["none", "daily", "weekly", "monthly"]);
 
-/**
- * 「该响的绝对时间」—— 提醒到点判定的**唯一依据**（持久化在 `reminder.nextDue`）。
- *
- * 为什么不让宿主 cron 当基准：宿主 `host.schedule` 用 `setTimeout(next - now)` 引爆，
- * 而 Node 的 setTimeout 延迟超过 2^31-1ms（≈24.8 天）会溢出成 1ms —— 而宿主的
- * `nextCronFire` 在「一年内找不到」时会回一个 366 天后的哨兵值。于是一条
- * `{type:"monthly", dom:31}`（下次 42 天）或 `0 9 1 1 *`（明年）这种完全合法的提醒
- * 会变成「每秒触发上千次 + 每次同步写盘」的死循环（实测已复现）。
- * 改成自己算：每分钟扫一遍库（一条持久 cron `* * * * *`，一定在安全窗口内），
- * 到点就推 —— 顺便得到「停机期间错过的那一次在下次启动补上」的能力。
- */
 export function nextDueStamp(rem, nowMs = Date.now(), anchor = "prev") {
 	if (!rem?.enabled) return null;
-	// 一次性：就是那个时刻本身（**已经过去也要照发** —— 那是「欠一次」：服务停机期间
-	// 错过的、或者用户刚设了一个本分钟内的时刻）。若改用 cron 计算，已过的时刻会被算成
-	// 「明年同一天」，补送能力直接没了。
 	if (rem.schedule?.type === "once") {
 		const at = new Date(rem.schedule.at).getTime();
 		return Number.isFinite(at) ? nowStamp(at) : null;
 	}
-	// 间隔型：**接着上一个到点时刻的相位走**（anchor="prev"，触发后用），这样
-	// 「每 90 分钟」不会因为巡检的分钟对齐而慢慢漂；新建/改档位时用 anchor="now"
-	// （从现在起算）。停机很久（或把间隔从大改小）时一次跳到未来，不补跑一长串。
 	if (rem.schedule?.type === "every") {
 		const step = Number(rem.schedule.minutes) * 60_000;
 		if (!Number.isFinite(step) || step <= 0) return null;
@@ -173,7 +130,6 @@ export function nextDueStamp(rem, nowMs = Date.now(), anchor = "prev") {
 	return ms ? nowStamp(ms) : null;
 }
 
-/** 给缺 `nextDue` 的提醒补上（老数据/刚导入/刚启用）；返回补了几条。 */
 export function ensureNextDue(store, nowMs = Date.now()) {
 	let n = 0;
 	for (const rem of store.reminders) {
@@ -191,13 +147,11 @@ export function ensureNextDue(store, nowMs = Date.now()) {
 	return n;
 }
 
-/** 重复档位归一（认不出的回落 none）。 */
 export function normalizeRepeat(v) {
 	const s = str(v, 20).toLowerCase();
 	return REPEATS.has(s) ? s : "none";
 }
 
-/** 待办/提醒的重复档位 → 人类文案用的下一跳（纯日期运算，本地时区）。 */
 export function advanceDue(dueStamp, repeat, fromMs = Date.now()) {
 	const kind = normalizeRepeat(repeat);
 	if (kind === "none") return dueStamp;
@@ -218,7 +172,6 @@ export function advanceDue(dueStamp, repeat, fromMs = Date.now()) {
 	return nowStamp(next.getTime());
 }
 
-/** 提醒的 schedule 归一；非法回 null。 */
 export function normalizeSchedule(raw) {
 	const s = raw && typeof raw === "object" ? raw : null;
 	if (!s) return null;
@@ -248,8 +201,6 @@ export function normalizeSchedule(raw) {
 		return { type: "monthly", time: hhmm, dom };
 	}
 	if (type === "every") {
-		// 真间隔语义：1 分钟 .. 7 天，任意整数都行（到点判定走 nextDue，不依赖 cron 能力）。
-		// 越界直接 null（不 clamp —— 把 0 悄悄改成 1 分钟是另一种「设了但不是我想要的」）
 		const minutes = Number(s.minutes);
 		if (!Number.isInteger(minutes) || !isSupportedEvery(minutes)) return null;
 		return { type: "every", minutes };
@@ -272,7 +223,6 @@ export function extractTitle(text) {
 	return strText.slice(0, 60);
 }
 
-/** 空库。 */
 export function emptyStore() {
 	/** @type {Store} */
 	const store = { v: STORE_VERSION, notes: [], todos: [], reminders: [], meta: { rev: 0, pending: [] } };
@@ -406,13 +356,10 @@ export function normalizeStore(raw) {
 	return out;
 }
 
-/** 版本号 +1（每次真正落盘的改动都调它；长轮询就是靠 rev 变化唤醒的）。 */
 export function touch(store) {
 	store.meta.rev = num(store.meta.rev, 0, 1e12, 0) + 1;
 	return store.meta.rev;
 }
-
-// ---------------------------------------------------------------- 笔记
 
 export function findNote(store, id) {
 	return store.notes.find((n) => n.id === String(id ?? "")) ?? null;
@@ -455,7 +402,6 @@ function syncNoteReminder(store, note) {
 	}
 }
 
-/** 新建 / 更新笔记（patch.id 命中即更新）。返回 { ok, item?, error? }。 */
 export function saveNote(store, patch, at = nowStamp()) {
 	const p = patch && typeof patch === "object" ? patch : {};
 	const id = str(p.id, 60).trim();
@@ -515,7 +461,6 @@ export function saveNote(store, patch, at = nowStamp()) {
 	return { ok: true, item: created };
 }
 
-/** 删笔记（同时摘掉指着它的待办/提醒链接，不留悬空引用）。 */
 export function removeNote(store, id) {
 	const key = String(id ?? "");
 	const i = store.notes.findIndex((n) => n.id === key);
@@ -530,13 +475,10 @@ export function removeNote(store, id) {
 	return true;
 }
 
-// ---------------------------------------------------------------- 待办
-
 export function findTodo(store, id) {
 	return store.todos.find((t) => t.id === String(id ?? "")) ?? null;
 }
 
-/** 新建 / 更新待办。返回 { ok, item?, error? }。 */
 export function saveTodo(store, patch, at = nowStamp()) {
 	const p = patch && typeof patch === "object" ? patch : {};
 	const id = str(p.id, 60).trim();
@@ -578,10 +520,6 @@ export function saveTodo(store, patch, at = nowStamp()) {
 	return { ok: true, item: created };
 }
 
-/**
- * 勾选 / 取消勾选。重复待办（repeat != none）勾选时**不置完成**而是把截止推到下一跳
- * （月租/周报这类「定期要做」的语义；要留历史就新建一条，不做自动复制项）。
- */
 export function toggleTodo(store, id, at = nowStamp()) {
 	const todo = findTodo(store, id);
 	if (!todo) return { ok: false, error: `todo not found: ${id}` };
@@ -605,13 +543,10 @@ export function removeTodo(store, id) {
 	return true;
 }
 
-// ---------------------------------------------------------------- 提醒
-
 export function findReminder(store, id) {
 	return store.reminders.find((r) => r.id === String(id ?? "")) ?? null;
 }
 
-/** 新建 / 更新提醒。返回 { ok, item?, error? }。 */
 export function saveReminder(store, patch, at = nowStamp(), nowMs = Date.now()) {
 	const p = patch && typeof patch === "object" ? patch : {};
 	const id = str(p.id, 60).trim();
@@ -627,13 +562,12 @@ export function saveReminder(store, patch, at = nowStamp(), nowMs = Date.now()) 
 		}
 		if (nextSchedule) {
 			rem.schedule = nextSchedule;
-			rem.snoozedFrom = null; // 手动改时间 = 放弃「稍后提醒」的还原点
+			rem.snoozedFrom = null;
 		}
 		if (p.enabled !== undefined) rem.enabled = bool(p.enabled);
 		if (p.noteId !== undefined) rem.noteId = str(p.noteId, 60).trim() || null;
 		if (p.todoId !== undefined) rem.todoId = str(p.todoId, 60).trim() || null;
 		rem.updatedAt = at;
-		// 改过时间/启用状态 → 重算下一次；否那么保留原值（不要让无关编辑把「已到点"推迟）
 		if (nextSchedule || p.enabled !== undefined) rem.nextDue = nextDueStamp(rem, nowMs, "now");
 		return { ok: true, item: rem };
 	}
@@ -663,7 +597,6 @@ export function removeReminder(store, id) {
 	return true;
 }
 
-/** 「稍后提醒 N 分钟」：临时把 schedule 换成一次性，并记下原档等着触发后还原。 */
 export function snoozeReminder(store, id, minutes = 10, nowMs = Date.now()) {
 	const rem = findReminder(store, id);
 	if (!rem) return { ok: false, error: `reminder not found: ${id}` };
@@ -676,16 +609,9 @@ export function snoozeReminder(store, id, minutes = 10, nowMs = Date.now()) {
 	return { ok: true, item: rem };
 }
 
-/**
- * 提醒触发后的**数据侧**收尾（时间计算、schedule 还原、待送达队列都在这里，纯函数）：
- * 服务端 host.schedule 的回调里调它 → 拿到要落盘的新状态与本次要送达的内容。
- */
 export function markFired(store, id, nowMs = Date.now()) {
 	const rem = findReminder(store, id);
 	if (!rem) return { ok: false, error: `reminder not found: ${id}` };
-	// 同一次发生不重复推：每分钟的扫描与近处精确定时可能同时到点，稍后提醒也会把
-	// 已响过的一次性档还原回来（那时 lastFired 已 >= 它自己的时刻）。守卫放这里，
-	// 两条触发路径就都安全（放在调用方迟早会漏一条）。
 	if (rem.schedule?.type === "once" && rem.lastFired) {
 		const dueAt = new Date(rem.schedule.at).getTime();
 		if (Number.isFinite(dueAt) && new Date(rem.lastFired).getTime() >= dueAt) {
@@ -696,13 +622,10 @@ export function markFired(store, id, nowMs = Date.now()) {
 	rem.lastFired = at;
 	rem.fireCount = num(rem.fireCount, 0, 1e9, 0) + 1;
 	rem.updatedAt = at;
-	// 一次性（或「稍后提醒」的临时档）：触发即停/还原
 	if (rem.schedule.type === "once") {
 		if (rem.snoozedFrom) {
 			rem.schedule = rem.snoozedFrom;
 			rem.snoozedFrom = null;
-			// 还原档若已经过去（例如给一次性的提醒按了「推迟」），还原出来就是一条永远
-			// 不会响还赖在列表里的提醒 —— 直接停用，用户想再要就自己改时间
 			const restoredAt = new Date(rem.schedule.at ?? 0).getTime();
 			if (rem.schedule.type === "once" && (!Number.isFinite(restoredAt) || restoredAt <= nowMs)) {
 				rem.enabled = false;
@@ -711,7 +634,6 @@ export function markFired(store, id, nowMs = Date.now()) {
 			rem.enabled = false;
 		}
 	}
-	// 下一跳（停用则 null）
 	rem.nextDue = nextDueStamp(rem, nowMs);
 	if (rem.noteId) {
 		const note = findNote(store, rem.noteId);
@@ -734,7 +656,6 @@ export function markFired(store, id, nowMs = Date.now()) {
 	return { ok: true, item: rem, pending: item };
 }
 
-/** 送达确认（浏览器把它见过的提醒回执过来 → 从待送达队列里摘掉）。 */
 export function ackPending(store, ids) {
 	const list = Array.isArray(ids) ? ids.map((x) => String(x)) : [];
 	if (!list.length) return 0;
@@ -744,15 +665,11 @@ export function ackPending(store, ids) {
 	return before - keep.length;
 }
 
-// ---------------------------------------------------------------- 查询与统计
-
-/** 一天的毫秒数（本地日历日边界靠 +1 天取整，不用固定 86400000 防夏令时）。 */
 function endOfDay(ms) {
 	const d = new Date(ms);
 	return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0).getTime();
 }
 
-/** 待办的截止状态：'none' | 'future' | 'today' | 'overdue'（视图用它上色）。 */
 export function dueState(todo, nowMs = Date.now()) {
 	if (!todo?.due) return "none";
 	const t = new Date(todo.due).getTime();
@@ -762,14 +679,12 @@ export function dueState(todo, nowMs = Date.now()) {
 	return "future";
 }
 
-/** 提醒的下次触发毫秒（关掉/非法回 null）。以此为准（服务端扫描与界面显示同一份）。 */
 export function reminderFireAt(rem) {
 	if (!rem?.enabled || !rem.nextDue) return null;
 	const t = new Date(rem.nextDue).getTime();
 	return Number.isFinite(t) ? t : null;
 }
 
-// 包一层把时钟/cron 的异常吞成 null：视图只是显示「下次」，不该因此崩掉整块列表。
 function nextScheduleFireSafe(schedule, nowMs) {
 	try {
 		return nextScheduleFire(schedule, nowMs);
@@ -778,7 +693,6 @@ function nextScheduleFireSafe(schedule, nowMs) {
 	}
 }
 
-/** 列表查询：tab 过滤 + 关键词 + 标签 + 排序。返回的数组是**引用**（视图只读用）。 */
 export function searchItems(store, opts = {}) {
 	const tab = String(opts.tab ?? "all");
 	const q = String(opts.query ?? "")
@@ -830,7 +744,6 @@ export function searchItems(store, opts = {}) {
 	return out;
 }
 
-/** 顶栏/浮窗上的计数：未完成且今天到期或已逾期的待办 + 未送达提醒 + 库总量。 */
 export function counts(store, nowMs = Date.now()) {
 	let dueTodos = 0;
 	let openTodos = 0;
@@ -851,11 +764,8 @@ export function counts(store, nowMs = Date.now()) {
 	};
 }
 
-// ---------------------------------------------------------------- 快速捕获（自然语言）
-
 const WEEKDAY_CN = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0, 天: 0 };
 
-/** 'HH:MM' / 'H点' / 'H点半' / 'H点MM分' → {h, m}；没有回 null。 */
 function parseTimeText(text) {
 	let m = /(\d{1,2})\s*[:：]\s*(\d{1,2})/.exec(text);
 	if (m) {
@@ -872,7 +782,6 @@ function parseTimeText(text) {
 	return null;
 }
 
-/** 日期词 → {ms, text}（今天/明天/后天/周X/下周X/M-D）；没有回 null。 */
 function parseDateText(text, nowMs) {
 	const base = new Date(nowMs);
 	const at = (daysAhead) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + daysAhead, 9, 0, 0, 0);
@@ -886,7 +795,7 @@ function parseDateText(text, nowMs) {
 		const want = WEEKDAY_CN[m[2]];
 		const cur = base.getDay();
 		let delta = (want - cur + 7) % 7;
-		if (delta === 0) delta = 7; // “周三”说在周三 = 下周三
+		if (delta === 0) delta = 7;
 		if (m[1]) delta += 7 * m[1].length;
 		const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + delta, 9, 0, 0, 0);
 		return { ms: d.getTime(), text: m[0] };
@@ -906,10 +815,6 @@ function parseDateText(text, nowMs) {
 	return null;
 }
 
-/**
- * 待办快速输入解析：「交周报 明天 18:00 #工作 !!」→ { text, due, priority, tags }。
- * 只认明确写出的东西，猜不出来的原样留在 text 里（不做「周报」→猜日期 这种事）。
- */
 export function parseQuickTodo(input, nowMs = Date.now()) {
 	let text = String(input ?? "").trim();
 	const out = { text: "", due: null, priority: 0, tags: [] };
@@ -931,7 +836,7 @@ export function parseQuickTodo(input, nowMs = Date.now()) {
 			d.setHours(time.h, time.m, 0, 0);
 		} else if (!date) {
 			d.setMinutes(0, 0, 0);
-			d.setHours(d.getHours() + 1); // 只写了时间：下一个整点
+			d.setHours(d.getHours() + 1);
 		}
 		out.due = nowStamp(d.getTime());
 		if (date) text = text.replace(date.text, " ");
@@ -941,10 +846,6 @@ export function parseQuickTodo(input, nowMs = Date.now()) {
 	return out;
 }
 
-/**
- * 提醒快速输入解析：「每天 9:00 吃药」/「每周五 18:00 复盘」/「明天 21:30 交作业」/
- * 「每30分钟 起身活动」。至少要有个时间，否则回 null（由调用方提示）。
- */
 export function parseQuickReminder(input, nowMs = Date.now()) {
 	let text = String(input ?? "").trim();
 	const every = /每\s*(\d{1,3})\s*(分钟|min|小时|h)/i.exec(text);
@@ -983,7 +884,6 @@ export function parseQuickReminder(input, nowMs = Date.now()) {
 		if (!body) return null;
 		return { text: body, schedule: { type: "once", at: nowStamp(d.getTime()) } };
 	}
-	// 「9:00 吃药」这种只写时间的 → 今天/下一个该时刻的一次性
 	if (time && !date) {
 		const d = new Date(nowMs);
 		d.setHours(time.h, time.m, 0, 0);
@@ -999,9 +899,6 @@ function hm(t) {
 	return `${String(t.h).padStart(2, "0")}:${String(t.m).padStart(2, "0")}`;
 }
 
-// ---------------------------------------------------------------- 导入 / 导出
-
-/** 导出 Markdown（人看的备份；导入走 JSON）。 */
 export function toMarkdown(store, nowMs = Date.now()) {
 	const lines = [`# 笔记库导出 ${nowStamp(nowMs)}`, ""];
 	lines.push(`## 待办（${store.todos.filter((t) => !t.done).length} 项未完成）`, "");
@@ -1031,10 +928,6 @@ export function toMarkdown(store, nowMs = Date.now()) {
 	return lines.join("\n");
 }
 
-/**
- * 导入：mode='merge'（按 id 合并，导入方覆盖同 id；同 id 不存在则新增）或
- * mode='replace'（整库替换）。返回 { ok, added, updated, error? }。
- */
 export function importStore(store, incoming, mode = "merge") {
 	const next = normalizeStore(incoming);
 	if (!next.notes.length && !next.todos.length && !next.reminders.length) {
@@ -1064,7 +957,6 @@ export function importStore(store, incoming, mode = "merge") {
 				skipped++;
 			}
 		}
-		// 一次 unshift 整批，保持导入文件里的顺序（逐条 unshift 会把顺序整体倒过来）
 		if (fresh.length) {
 			list.unshift(...fresh);
 			added += fresh.length;
@@ -1073,7 +965,6 @@ export function importStore(store, incoming, mode = "merge") {
 	return { ok: true, added, updated, skipped };
 }
 
-/** 从文本中识别日期时间（例如「明天 18:00 开会」→ { stamp: "...", timeLabel: "明天 18:00" }）。 */
 export function detectTimeFromText(input, nowMs = Date.now()) {
 	const text = String(input ?? "").trim();
 	if (!text) return null;
@@ -1086,7 +977,6 @@ export function detectTimeFromText(input, nowMs = Date.now()) {
 	} else {
 		d.setHours(9, 0, 0, 0);
 	}
-	// 如果只给时间且时刻已过去，推到明天
 	if (!date && time && d.getTime() <= nowMs) {
 		d.setDate(d.getDate() + 1);
 	}

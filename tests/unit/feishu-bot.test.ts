@@ -1,12 +1,3 @@
-/**
- * tests/unit/feishu-bot.test.ts
- * Verifies Feishu bot duplex bridge:
- * - Access control (whitelist / group mention mode)
- * - Slash command handling (/help, /clear, /status)
- * - Inbound event dispatch to host.chat
- * - Outbound Markdown chunk delivery on run_end
- */
-
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -42,10 +33,8 @@ describe("Feishu Bot 纯函数与辅助方法测试", () => {
 	});
 
 	it("extractInboundText 能够正确提取 text 与 post 内容", () => {
-		// 1. text
 		expect(extractInboundText(JSON.stringify({ text: "你好机器人" }), "text")).toBe("你好机器人");
 
-		// 2. post
 		const post = {
 			zh_cn: {
 				content: [[{ tag: "text", text: "第一行" }], [{ tag: "text", text: "第二行" }]],
@@ -153,7 +142,6 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 
 		await bridge.start();
 
-		// 模拟用户发送提问
 		await bridge.onInboundMessage({
 			message: {
 				message_id: "om_3",
@@ -175,10 +163,8 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 		);
 		expect(reactSpy).toHaveBeenCalledWith(expect.anything(), "om_3", "THUMBSUP");
 
-		// 获取派发后的会话 ID（宿主返回给插件并关联到 pendingRuns 的 conversationId）
 		const convId = (await chatSpy.mock.results[0].value).conversationId;
 
-		// 模拟模型输出消息增量
 		registeredRunHandler!({
 			conversationId: convId,
 			runId: "run_test_1",
@@ -189,14 +175,12 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 			},
 		});
 
-		// 模拟会话完成
 		await registeredRunHandler!({
 			conversationId: convId,
 			runId: "run_test_1",
 			type: "run_end",
 		});
 
-		// 校验回包被清洗且正确回复
 		expect(replySpy).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.objectContaining({
@@ -232,7 +216,6 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 
 		await bridge.start();
 
-		// 1. 发送 /cwd 查看当前项目根目录
 		await bridge.onInboundMessage({
 			message: {
 				message_id: "om_cwd_1",
@@ -254,7 +237,6 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 			}),
 		);
 
-		// 2. 使用宿主平台的绝对路径切换项目根目录
 		await bridge.onInboundMessage({
 			message: {
 				message_id: "om_cwd_2",
@@ -275,7 +257,6 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 			}),
 		);
 
-		// 3. 发送正常消息，校验 host.chat 收到了切换后的 cwd
 		await bridge.onInboundMessage({
 			message: {
 				message_id: "om_cwd_3",
@@ -317,9 +298,6 @@ describe("FeishuBotBridge 双工通信流程测试", () => {
 
 describe("飞书：对话被过户（改名 + 换客户端）后仍按 runId 回包", () => {
 	it("conversationId 改名、clientId 变成浏览器后，run_end 仍回发 AI 回复", async () => {
-		// 过户回归：用户在网页左栏点开 running 对话 = take_over_conversation —— 对话搬到浏览器
-		// 会话（clientId 变），目标会话已有同名 id（各会话独立从 c1 编号）时还会改名（conversationId
-		// 也变）。两个键全失效，只有 host.chat 回执里的 runId 不变，插件必须按它认领回包。
 		let registeredRunHandler: ((ev: any) => void) | null = null;
 		const chatSpy = vi.fn().mockResolvedValue({ conversationId: "c1", clientId: "plugin:feishu:x", runId: "pr-fs-9" });
 		const replySpy = vi.fn().mockResolvedValue({ success: true });

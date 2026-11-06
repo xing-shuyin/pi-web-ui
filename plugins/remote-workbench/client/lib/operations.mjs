@@ -1,6 +1,5 @@
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
-// Task and health panels only poll while visible. Requests are cancelled with the view.
 export function createOperations({ root, api, hosts, post }) {
 	let panel = null,
 		timer = null,

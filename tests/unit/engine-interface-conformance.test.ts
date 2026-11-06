@@ -1,10 +1,3 @@
-/**
- * engine-interface-conformance.test.ts
- *
- * 验证三大引擎（Pi 引擎 ClientSession、DSH 引擎 DshClientSession、Universal 引擎 UniversalSession）
- * 对 DispatchSession 平台核心接口的实现一致性与方法契约，防止功能在某引擎单体中意外遗漏。
- */
-
 import { describe, expect, it, vi } from "vitest";
 import { ClientSession } from "../../server/agent-service";
 import { DshClientSession } from "../../server/dsh/dsh-agent-service";
@@ -12,13 +5,11 @@ import { UniversalSession } from "../../server/universal/universal-session";
 
 describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", () => {
 	const CORE_PLATFORM_METHODS = [
-		// 1. 模型与偏好管理
 		"setModel",
 		"setDefaultModel",
 		"clearDefaultModel",
 		"setThinking",
 
-		// 2. 会话生命周期与草稿
 		"saveDraft",
 		"newChat",
 		"switchSession",
@@ -31,16 +22,13 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 		"searchSessions",
 		"refreshSessions",
 
-		// 3. 工具与提示词元数据（右键详情/提示词覆盖/折叠卡片展开）
 		"getToolInfo",
 		"getToolPrompt",
 		"getCompactedMessages",
 
-		// 4. 工作区与多根管理
 		"setCwd",
 		"setWorkspaceRoots",
 
-		// 5. 状态同步与终端管理
 		"flushSnapshot",
 		"pushSettings",
 	] as const;
@@ -98,7 +86,6 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 		const dshProto = DshClientSession.prototype as any;
 		expect(typeof dshProto.resolveSessionDisplayName, "DSH 必须提供 resolveSessionDisplayName 回调").toBe("function");
 
-		// DSH 回调行为验证：优先显式自定义标题 > 首条提问 > 默认
 		const dshMockSession = {
 			defaultTitle: () => "新对话",
 		};
@@ -164,17 +151,12 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 			pushSessions: vi.fn(async () => {}),
 		};
 
-		// 执行重命名
 		await dshProto.renameConversation.call(mockSession, "c-rename-1", "新的项目分析标题");
 
-		// 验证：
-		// 1. 内存会话标题更新
 		expect(conv.title).toBe("新的项目分析标题");
-		// 2. 状态持久化到 stateStore
 		expect(mockSession.stateStore.saveSessionTitle).toHaveBeenCalled();
 		expect(savedTitle).toBe("新的项目分析标题");
 		expect(savedCwd).toBe("E:/my-project");
-		// 3. 立即触发了快照推送、会话列表推送和历史列表推送
 		expect(mockSession.emitConversations).toHaveBeenCalled();
 		expect(mockSession.flushSnapshot).toHaveBeenCalled();
 		expect(mockSession.pushSessions).toHaveBeenCalled();
@@ -206,7 +188,6 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 			refreshSessions: vi.fn(),
 		};
 
-		// 执行重命名
 		await uniProto.renameConversation.call(mockSession, "uconv-test-1", "通过Marker重命名的标题");
 
 		expect(conv.title).toBe("通过Marker重命名的标题");
@@ -218,7 +199,6 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 	it("Universal 引擎完整实现高级扩展能力契约（命令、预设、技能与 SCM）", () => {
 		const uniProto = UniversalSession.prototype as unknown as Record<string, unknown>;
 		const UNIVERSAL_EXTENDED_METHODS = [
-			// 1. 命令与技能管理
 			"pushSlashCommands",
 			"installSkill",
 			"uninstallSkill",
@@ -226,7 +206,6 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 			"fetchSkillContent",
 			"fetchMcpMarket",
 
-			// 2. 预设生命周期与跨端共享
 			"savePreset",
 			"applyPreset",
 			"deletePreset",
@@ -236,11 +215,9 @@ describe("引擎接口一致性门禁 (DispatchSession Interface Conformance)", 
 			"pushPresetCatalog",
 			"sharePreset",
 
-			// 3. 子代理模板管理
 			"saveSubagentTemplate",
 			"deleteSubagentTemplate",
 
-			// 4. Git SCM AI 提交信息生成
 			"scmGenCommitMessage",
 		];
 

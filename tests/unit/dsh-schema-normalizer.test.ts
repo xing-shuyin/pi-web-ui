@@ -16,7 +16,6 @@ if (rtBase) {
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const GOAL_RPC_URL = pathToFileURL(join(ROOT, "server", "dsh", "runtime", "goal-rpc.mjs")).href;
 
-// 动态 import goal-rpc.mjs 导出的 piParamsToDshSpec 纯函数
 const { piParamsToDshSpec } = (await import(GOAL_RPC_URL)) as {
 	piParamsToDshSpec: (params: unknown) => Record<string, unknown>;
 };
@@ -52,7 +51,6 @@ describe("DSH 工具 Schema 规整器 (piParamsToDshSpec)", () => {
 			},
 		});
 
-		// 确保 defineTool 能够正常编译，不抛出 unsupported JSON schema
 		expect(() =>
 			defineTool({
 				name: "sftp_test",
@@ -203,7 +201,6 @@ describe("DSH 工具 Schema 规整器 (piParamsToDshSpec)", () => {
 		expect(piParamsToDshSpec({ type: "object" })).toEqual({});
 		expect(piParamsToDshSpec({ type: "object", properties: {} })).toEqual({});
 
-		// 直接是 per-property 形状
 		const directMap = {
 			token: { type: "string", description: "auth token" },
 		};

@@ -8,18 +8,12 @@ import { UniversalModelPicker, matchesModelId } from "./UniversalModelPicker";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
 
-/** Props are deliberately NARROW (no whole-ChatState object): every field is
- *  stable while tokens stream in, so the shallow-compared memo() below skips
- *  the goal bar entirely during streaming. */
 interface Props {
 	goal: GoalStatus;
 	models: ModelInfo[];
 	modelsLoading: boolean;
 	activeConversationId: string;
-	/** `goalbar.actions` 槽位的最终条目（全量，含 hidden；宿主 chrome + 插件按槽位顺序合并渲染）。
-	 *  不传 = 未接线，回落默认顺序（与旧硬编码一致）。 */
 	uiGoalbarActions?: UiSlotEntry[];
-	/** 点击一条目标条动作：交回 App 分发给贡献它的插件（与顶栏 onUiAction 同通道）。 */
 	onUiAction?: (item: UiSlotEntry) => void;
 }
 
@@ -35,19 +29,12 @@ export const GoalBar = memo(function GoalBar({
 	const { locale } = useI18n();
 	const goalDetail = !isZhLocale(locale) && goal.statusEn ? goal.statusEn : goal.status || "";
 	const wizardDetail = !isZhLocale(locale) && goal.wizard?.statusEn ? goal.wizard.statusEn : goal.wizard?.status || "";
-	// DSH：不接目标模式 2.0 的执行对话（隐藏执行模型下拉；轮次上限仍然有效）。
-	// engine 走全局（web/src/app-globals.ts），不再从 App 一路传下来。
 	const isDsh = useIsDsh();
 	const capabilities = useEngineCapabilities();
-	// Goals belong to the conversation that created them. The server keeps the
-	// status around while switching chats so returning to the owner restores the
-	// goal, but never show another conversation's goal as active.
 	const goalBelongsToActiveConversation = !goal.conversationId || goal.conversationId === activeConversationId;
 	const active = goal.goal !== null && goalBelongsToActiveConversation;
-	// 目标模式 2.0：委托执行者的对话 id（有它才能「一键打开执行对话」）。
 	const execRole = goalBelongsToActiveConversation ? goal.roles?.executor : undefined;
 	const execRoleConvId = execRole?.convId;
-	// 执行者实时动态（轮次边界刷新）：跑什么工具 / 自述头；中英按 locale 二选一。
 	const execActivity = execRole?.activity
 		? !isZhLocale(locale) && execRole.activityEn
 			? execRole.activityEn
@@ -55,45 +42,29 @@ export const GoalBar = memo(function GoalBar({
 		: execRole?.streaming
 			? "…"
 			: undefined;
-	// 轮次标签：有限预算显示 N/M，不限显示 N·不限（单次模式只显示 N）。
 	const roundBudget = goal.locked && goal.maxRounds > 0 ? goal.maxRounds : 0;
 	const roundLabel =
 		roundBudget > 0
 			? isZhLocale(locale)
-				? // 走 i18n 词条：简中「第 N/M 轮」、繁中「第 N/M 輪」
-					t("goalBarRound", { n: `${goal.round}/${roundBudget}` })
+				? t("goalBarRound", { n: `${goal.round}/${roundBudget}` })
 				: `Round ${goal.round}/${roundBudget}`
 			: `${t("goalBarRound", { n: goal.round })}${goal.locked ? ` · ${t("goalBarUnlimitedShort")}` : ""}`;
-	// 本目标累计用量（执行者 + 审查者，轮次边界累计）。
 	const usageTotal = (goal.usage?.inputTokens ?? 0) + (goal.usage?.outputTokens ?? 0);
 	const fmtTok = (n: number): string =>
 		n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-	// 目标模式 2.0 加固：pi 引擎的新后端在**任何** goal_status 里都带 execModel
-	// （makeGoalStatus 一定赋值）；旧后端（进程没重启）把未知字段丢掉，于是这里是
-	// undefined。不静默：「新界面 + 旧后端」这种混合态必须当场说出来。
 	const staleBackend = !isDsh && goal.execModel === undefined;
 
-	// Draft fields (only meaningful while editing a new goal).
 	const [text, setText] = useState("");
 	const [reviewModel, setReviewModel] = useState<string>(goal.reviewModel ?? "");
 	const [maxRounds, setMaxRounds] = useState(goal.maxRounds);
 	const [locked, setLocked] = useState(goal.locked);
-	// 目标模式 2.0：执行者模型（空 = 跟随主对话）。
 	const [execModel, setExecModel] = useState<string>(goal.execModel ?? "");
 	const [modelOpen, setModelOpen] = useState(false);
 	const [execModelOpen, setExecModelOpen] = useState(false);
 	const [historyOpen, setHistoryOpen] = useState(false);
 	const [reqLoading, setReqLoading] = useState(false);
-	// Collapsed by default: idle shows only a compact pill so the bar never
-	// occupies vertical space until the user actually wants to set a goal.
 	const [collapsed, setCollapsed] = useState(true);
 
-	// Keep the editor's preference pickers in sync with the server's remembered
-	// prefs (maxRounds 0 = unlimited). When the goal is inactive, adopt whatever
-	// the server currently holds — so a reload restores the last-used model /
-	// rounds / lock, and clearing a goal reverts to those remembered defaults.
-	// `goal` (goaled status) holds the persisted prefs; upstream signals drive
-	// this via `goal.goal !== null` transitions and the prefs fields changing.
 	useEffect(() => {
 		setReviewModel(goal.reviewModel ?? "");
 		setMaxRounds(goal.maxRounds || 0);
@@ -102,7 +73,6 @@ export const GoalBar = memo(function GoalBar({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [goal.goal, goal.reviewModel, goal.maxRounds, goal.locked, goal.execModel]);
 
-	// Lazily fetch the model list when the review-model dropdown opens.
 	useEffect(() => {
 		if (modelOpen && models.length === 0 && !reqLoading && !modelsLoading) {
 			setReqLoading(true);
@@ -137,9 +107,6 @@ export const GoalBar = memo(function GoalBar({
 		setCollapsed(false);
 	};
 
-	/** 「计划」= 一次性动作，不是开关：开服务端只规划闸门 + 把目标输入直接发出去。
-	 *  闸门本身是会话级且热生效（服务端 `set_plan_mode` 重建提示词 + 挂工具硬闸门），
-	 *  两条消息同一条 WS 按序到达 → 本轮就在闸门内跑。输入为空则只开闸门。 */
 	const runPlan = () => {
 		const trimmed = text.trim();
 		appSend({ type: "set_plan_mode", enabled: true });
@@ -148,9 +115,6 @@ export const GoalBar = memo(function GoalBar({
 		setText("");
 	};
 
-	/** Start the collaborative wizard: AI asks questions to refine the draft
-	 *  into a goal, then auto-sets it. Reuses the reviewer-model picker as the
-	 *  optional wizard model. */
 	const startWizard = () => {
 		const trimmed = text.trim();
 		if (!trimmed) return;
@@ -165,9 +129,6 @@ export const GoalBar = memo(function GoalBar({
 		setCollapsed(false);
 	};
 
-	// A wizard running (scoping questions in flight) — show its progress.
-	// ---- 槽位合并：宿主 chrome 按 id 分区（编辑行/选项行/活跃行/pill），插件条目跟随同行；
-	// 未接线时用默认顺序（与旧硬编码一致），hidden 由上层过滤（App 传全量）。 ----
 	const GOAL_DEFAULT_ORDER = [
 		"host:goal-pill",
 		"host:goal-set",
@@ -185,12 +146,10 @@ export const GoalBar = memo(function GoalBar({
 		uiGoalbarActions === undefined
 			? GOAL_DEFAULT_ORDER.map((id) => ({ id, source: "host" }) as UiSlotEntry)
 			: uiGoalbarActions.filter((e) => !e.hidden);
-	/** 取某行要画的条目：该行宿主 id + 全部插件条目（插件跟随每行，与旧版 renderSlotToolbar 四处都画一致），按槽位顺序。 */
 	const goalZone = (ids: string[]): UiSlotEntry[] => {
 		const set = new Set(ids);
 		return allGoalEntries.filter((e) => set.has(e.id) || e.source !== "host");
 	};
-	/** 布局页改名 / 插件 arrange 指定过文案（`labelExplicit`）→ 用那一条，否则内置 i18n 文案。 */
 	const goalLabel = (id: string, fallback: string): string => {
 		const e = allGoalEntries.find((x) => x.id === id);
 		return e?.labelExplicit ? e.label : fallback;
@@ -222,8 +181,6 @@ export const GoalBar = memo(function GoalBar({
 				{goalLabel("host:goal-wizard", t("goalWizardBtn"))}
 			</button>
 		),
-		// 计划：与提炼/发送同列的一次性动作按钮（无常亮态、无 aria-pressed ——
-		// 开关语义已删；「退出计划」的唯一出口是计划看板里的「开始实施」）。底座不支持计划模式时隐藏。
 		"host:goal-plan": !capabilities.planMode ? null : (
 			<button
 				type="button"
@@ -260,8 +217,6 @@ export const GoalBar = memo(function GoalBar({
 		) : (
 			<Dropdown
 				trigger={
-					// 标签与值拆成两层：窄屏并排两个下拉时，标签钉死不缩、值省略号收着
-					// （整块挤成一个空盒子 = 模型选谁完全看不见）。title 给全名。
 					<span className="goalbar-opt" title={`${t("goalBarReviewModel")}: ${reviewModelName()}`}>
 						<span className="goalbar-opt-label">{`${goalLabel("host:goal-model", t("goalBarReviewModel"))}:`}</span>
 						<b>{reviewModelName()}</b>
@@ -332,7 +287,6 @@ export const GoalBar = memo(function GoalBar({
 				/>
 			</label>
 		),
-		// 执行者模型（空 = 跟随主对话）。
 		"host:goal-execmodel": isDsh ? null : (
 			<Dropdown
 				trigger={
@@ -468,7 +422,6 @@ export const GoalBar = memo(function GoalBar({
 						goalZone(["host:goal-openrole", "host:goal-clear"]),
 						{
 							...goalHostNodes,
-							// 目标模式 2.0：委托执行下把「执行对话」一键打开（左栏同样可点）。
 							"host:goal-openrole": execRoleConvId ? (
 								<button
 									type="button"
@@ -501,17 +454,9 @@ export const GoalBar = memo(function GoalBar({
 		);
 	}
 
-	// Inactive, collapsed — a single compact pill floating in the CENTER of the
-	// chat column (not a full-width panel). A discreet 🎯 chip; click to open the editor.
 	if (collapsed) {
-		// pill 藏掉且无插件条目时整条不占位（布局页「恢复」可找回）。
 		const pillBar = renderMergedToolbar(goalZone(["host:goal-pill"]), goalHostNodes, onUiAction);
 		if (!pillBar) return null;
-		// 折叠态**刻意不带 `.goalbar` 类**：那一套是「整条面板」的皮（边框/底色/
-		// 圆角/内边距），主题还可能用 `.goalbar { border-top: … }` 画一条通栏细线 ——
-		// 收起时它就是一条横跨整列的带子，正好横在最后一条消息上把它
-		// 切断（用户实报「折叠时一整行遮挡底部消息」）。折叠态只是消息区与输入框
-		// 之间的一枚小药丸：自带一个 flex 行、整行水平居中、不多占高度。
 		return <div className="goalbar-collapsed">{pillBar}</div>;
 	}
 
@@ -562,7 +507,6 @@ export const GoalBar = memo(function GoalBar({
 							<DropdownItem
 								key={`${h.finishedAt}-${i}`}
 								onClick={() => {
-									// 一键重设 = 把历史目标填回输入框（不直接发送，确认/改完再按发送）。
 									setText(h.goal);
 									setHistoryOpen(false);
 								}}

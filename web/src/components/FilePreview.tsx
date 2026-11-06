@@ -29,10 +29,9 @@ import { appUrl } from "../base-url";
 import { appSend } from "../app-globals";
 import { formatSize } from "../format-bytes";
 import { downloadFile } from "../download";
+import { ImageLightbox } from "./ImageLightbox";
 
-/** Cap rendered lines so a pathological file can't freeze the modal. */
 const MAX_PREVIEW_LINES = 5000;
-/** 预览面板「标题导航」开关的 localStorage key（每个浏览器各自记忆）。 */
 const LS_PREVIEW_TOC = "pi-web-ui:preview-toc";
 
 export interface PreviewFile {
@@ -42,20 +41,15 @@ export interface PreviewFile {
 
 interface FilePreviewProps {
 	file: PreviewFile;
-	/** Latest file content from the server (path-matched inside the modal). */
+	composerSessionId?: string;
 	content: FileContent | null;
-	/** Add the selected line range as a "lines" attachment to the chat input. */
 	onAddLines: (path: string, name: string, start: number, end: number) => void;
-	/** Attach the whole file as a path reference like the row buttons. */
 	onAttach: (path: string, name: string, mode: "reference") => void;
 	onClose: () => void;
-	/** 文件预览工具条（file.preview.toolbar 槽位：纯插件新增位，无条目时不渲染）。 */
 	uiFilePreviewToolbar?: UiSlotEntry[];
-	/** 工具条动作分发（交回 App 给贡献它的插件）。 */
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 }
 
-/** 1-based inclusive line range. */
 interface Range {
 	start: number;
 	end: number;
@@ -63,6 +57,7 @@ interface Range {
 
 export function FilePreview({
 	file,
+	composerSessionId,
 	content,
 	onAddLines,
 	onAttach,
@@ -76,35 +71,22 @@ export function FilePreview({
 	const [sel, setSel] = useState<Range | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const [added, setAdded] = useState(false);
-	// Editing is deliberately opt-in for every newly opened file.
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
-	// Markdown files open in rendered view; raw source remains one click away.
 	const [markdownPreview, setMarkdownPreview] = useState(true);
-	// Same for HTML files: sandboxed iframe render by default, source on toggle.
 	const [htmlPreview, setHtmlPreview] = useState(true);
-	// HTML preview script gate: off by default (pure static render). Turning it
-	// on is an explicit per-file opt-in — resets on file switch, never persisted.
 	const [allowJs, setAllowJs] = useState(false);
 	const editViewRef = useRef(false);
-	// Word wrap for the text preview (default on).
 	const [wrap, setWrap] = useState(true);
-	// Fullscreen fills the whole viewport; zoom scales the preview body
-	// (font-size for code/editor/hex, CSS zoom for the rendered markdown).
 	const [fullscreen, setFullscreen] = useState(false);
 	const [zoom, setZoom] = useState(100);
 	const anchorRef = useRef(0);
 	const draggingRef = useRef(false);
 	const addedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// 保存回执（审查 #1）：write_file 发出后进入 saving 态，服务端保存成功会
-	// 立即对该路径重读并推回 file_content（见 server/files-service.ts writeFile），
-	// content prop 更新即确认；5s 未确认按「结果未知」处理。
 	const [saving, setSaving] = useState(false);
 	const [saveUnknown, setSaveUnknown] = useState(false);
-	// effect 里只看 ref（saving 不进 deps，避免旧 content 触发假确认）。
 	const savingRef = useRef(false);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// 卸载时清掉未触发的定时器（审查 #5）：added 提示与保存超时都不该再回调 setState。
 	useEffect(
 		() => () => {
 			if (addedTimer.current) clearTimeout(addedTimer.current);
@@ -113,7 +95,6 @@ export function FilePreview({
 		[],
 	);
 
-	// Request content on open / file change (mount included).
 	useEffect(() => {
 		setLoading(true);
 		setLoaded(null);
@@ -124,7 +105,6 @@ export function FilePreview({
 		setHtmlPreview(true);
 		setAllowJs(false);
 		editViewRef.current = false;
-		// 换文件：放弃上一个文件未确认的保存等待（回包会被 path 校验丢弃）。
 		savingRef.current = false;
 		setSaving(false);
 		setSaveUnknown(false);
@@ -132,15 +112,11 @@ export function FilePreview({
 		appSend({ type: "read_file", path: file.path });
 	}, [file.path]);
 
-	// Accept responses only for the file currently shown (stale responses for
-	// previously previewed files are ignored).
 	useEffect(() => {
 		if (content && content.path === file.path) {
 			setLoaded(content);
 			if (!editing) setDraft(content.text);
 			setLoading(false);
-			// 保存确认（审查 #1）：该路径的重读回包到达 → 按已确认内容退出编辑态。
-			// saving 走 ref：它不在 deps 里，同一次 content 变化不会因 saving 翻转重跑。
 			if (savingRef.current) {
 				savingRef.current = false;
 				if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -157,7 +133,6 @@ export function FilePreview({
 		}
 	}, [content, editing, file.path]);
 
-	// Escape closes; Ctrl/Cmd+A selects everything in the preview.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
@@ -182,7 +157,6 @@ export function FilePreview({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [onClose, loaded, editing, draft]);
 
-	// End drag selection on mouseup anywhere.
 	useEffect(() => {
 		const up = () => {
 			draggingRef.current = false;
@@ -195,8 +169,6 @@ export function FilePreview({
 	const lines = useMemo(() => {
 		if (!loaded) return [];
 		const parts = loaded.text.split("\n");
-		// Trailing newline → empty phantom line; drop it so line numbers match
-		// what the server counts.
 		if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
 		return parts.slice(0, MAX_PREVIEW_LINES);
 	}, [loaded]);
@@ -235,8 +207,6 @@ export function FilePreview({
 		loaded !== null && loaded.kind === "text" && !loaded.binary && !loaded.truncated && !isOfficeFile(file.name);
 
 	const cancelEditing = () => {
-		// 取消编辑同时放弃未确认的保存等待（若服务端实际写成功，回包到达时
-		// savingRef 已退出，只会静默刷新正文）。
 		savingRef.current = false;
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		setSaving(false);
@@ -269,14 +239,11 @@ export function FilePreview({
 	const saveEditing = () => {
 		if (!editing || !loaded || !canEdit) return;
 		if (!appSend({ type: "write_file", path: file.path, text: draft })) return;
-		// 审查 #1：发出即进入 saving（不再「发出即关编辑态」）。编辑器保持打开，
-		// 等该路径重读回包确认（见 content effect）；5s 未确认提示结果未知。
 		savingRef.current = true;
 		setSaveUnknown(false);
 		setSaving(true);
 		if (saveTimer.current) clearTimeout(saveTimer.current);
 		saveTimer.current = setTimeout(() => {
-			// 超时未确认：退出 saving，留在编辑态让用户重试或取消（输入不丢）。
 			savingRef.current = false;
 			setSaving(false);
 			setSaveUnknown(true);
@@ -297,8 +264,6 @@ export function FilePreview({
 	const selCount = sel ? sel.end - sel.start + 1 : 0;
 	const isBinary = loaded?.binary ?? false;
 	const truncated = loaded?.truncated ?? false;
-	// Preview category from the server ("text" while loading). Media kinds are
-	// streamed over the /api/file HTTP endpoint; "none" is never previewable.
 	const kind = loaded?.kind ?? "text";
 	const isMarkdown = isMarkdownFile(file.name) || isOfficeFile(file.name);
 	const isHtml = isHtmlFile(file.name);
@@ -307,7 +272,6 @@ export function FilePreview({
 	const showMarkdown = isMarkdown && markdownPreview && !editing && kind === "text" && !isBinary;
 	const showHtml = isHtml && htmlPreview && !editing && kind === "text" && !isBinary;
 
-	/** 标题导航：开关记在 localStorage；条目在正文渲染完成后从 DOM 里扫出来（同一份事实源）。 */
 	const [tocOpen, setTocOpen] = useState(() => {
 		try {
 			return localStorage.getItem(LS_PREVIEW_TOC) === "1";
@@ -318,17 +282,12 @@ export function FilePreview({
 	useEffect(() => {
 		try {
 			localStorage.setItem(LS_PREVIEW_TOC, tocOpen ? "1" : "0");
-		} catch {
-			// Storage may be disabled; the current in-memory preference remains usable.
-		}
+		} catch {}
 	}, [tocOpen]);
 	const [toc, setToc] = useState<TocHeading[]>([]);
 	const [tocActive, setTocActive] = useState("");
-	/** 正文容器（`.fp-markdown-zoom`）：既用来扫标题，也是点击跳转的查询根。 */
 	const markdownRef = useRef<HTMLDivElement>(null);
 
-	// 扫标题：给正文里的 h1~h6 补稳定 id（已有 id 的不动），并生成目录条目。
-	// 依赖 loaded.text/file.path：正文一变就重扫；React 复用同一批元素时 id 也会保留。
 	useEffect(() => {
 		const root = markdownRef.current;
 		if (!root || !showMarkdown) {
@@ -345,7 +304,6 @@ export function FilePreview({
 		setToc(heads);
 	}, [showMarkdown, loaded?.text, file.path]);
 
-	// 滚动高亮：以「进入视口的标题」为准（IntersectionObserver 比逐帧读 offsetTop 便宜）。
 	useEffect(() => {
 		const root = markdownRef.current;
 		if (!root || !tocOpen || !shouldShowToc(toc)) return;
@@ -365,8 +323,6 @@ export function FilePreview({
 		for (const node of nodes) observer.observe(node);
 		return () => observer.disconnect();
 	}, [toc, tocOpen]);
-	/** 头栏宿主节点（key = file.preview.toolbar 条目 id；显隐与顺序由槽位决定，
-	 *  文件类型条件（md/html/文本/缩放）仍各自保留 —— 布局隐藏是用户意图，类型条件是内容能力）。 */
 	const fpHostNodes: Record<string, ReactNode> = {
 		"host:fp-md":
 			isMarkdown && kind === "text" && !isBinary && loaded ? (
@@ -484,7 +440,6 @@ export function FilePreview({
 		),
 		"host:fp-close": null,
 	};
-	/** 头栏顺序：接线时（App 传全量）宿主+插件按槽位顺序交错；未接线回落旧硬编码顺序。关闭按钮统一固定在头栏最右侧，不占工具条流动位。 */
 	const fpEntries: UiSlotEntry[] =
 		uiFilePreviewToolbar === undefined
 			? [
@@ -499,25 +454,28 @@ export function FilePreview({
 					"host:fp-full",
 				].map((id) => ({ id, source: "host" }) as UiSlotEntry)
 			: uiFilePreviewToolbar.filter((e) => !e.hidden && e.id !== "host:fp-close");
-	// /api/file resolves against the requesting client's workspace (the opened
-	// project), not the server's startup cwd — pass clientId so they can differ.
 	const mediaUrl = (p: string) =>
 		withToken(appUrl(`/api/file?clientId=${encodeURIComponent(getClientId())}&path=${encodeURIComponent(p)}`));
-	// HTML render URL: directory-mapped /api/preview so the page's RELATIVE
-	// subresources (<link href="../web/src/styles.css">, ./app.js, images…)
-	// resolve against the file's own directory. ?allowJs=1 lifts the script
-	// block (server CSP + iframe sandbox switch together).
 	const htmlUrl = (p: string) => {
 		const segs = p
 			.split("/")
 			.map((s) => encodeURIComponent(s))
 			.join("/");
-		// Machine browsing sends absolute wire paths ("C:/..." / "/...");
-		// workspace-relative paths never start with "/" or a drive letter.
 		const abs = /^[A-Za-z]:([\\/]|$)/.test(p) || p.startsWith("/");
 		const base = abs ? `/api/preview/__abs__/${segs}` : `/api/preview/${segs}`;
 		return withToken(appUrl(`${base}?clientId=${encodeURIComponent(getClientId())}${allowJs ? "&allowJs=1" : ""}`));
 	};
+
+	if (kind === "image" && !loading) {
+		return (
+			<ImageLightbox
+				src={mediaUrl(file.path)}
+				alt={file.name}
+				onClose={handleClose}
+				composerSessionId={composerSessionId}
+			/>
+		);
+	}
 
 	return (
 		<div
@@ -547,10 +505,7 @@ export function FilePreview({
 						{loaded && kind === "text" && !isBinary && t("fileLines", { n: lineCount })}
 						{loaded && ` · ${formatSize(loaded.size)}`}
 					</span>
-					<span className="fp-head-actions">
-						{/* 宿主 chrome + 插件条目按槽位顺序交错（显隐/顺序走布局页，类型条件见 fpHostNodes）。 */}
-						{renderMergedToolbar(fpEntries, fpHostNodes, onUiAction)}
-					</span>
+					<span className="fp-head-actions">{renderMergedToolbar(fpEntries, fpHostNodes, onUiAction)}</span>
 					<button type="button" className="fp-close" title={t("close")} aria-label={t("close")} onClick={handleClose}>
 						<FiX />
 					</button>
@@ -565,18 +520,6 @@ export function FilePreview({
 				{loading && !loaded && <div className="fp-empty">{t("loading")}</div>}
 
 				{!loading && kind === "none" && !isBinary && <div className="fp-empty">{t("previewNotSupported")}</div>}
-
-				{!loading && kind === "image" && (
-					<div className="fp-media-wrap clickable" onClick={handleClose} title={t("clickToCloseImage")}>
-						<img
-							className="fp-media fp-media-clickable"
-							src={mediaUrl(file.path)}
-							alt={file.name}
-							onClick={handleClose}
-							title={t("clickToCloseImage")}
-						/>
-					</div>
-				)}
 
 				{!loading && kind === "video" && (
 					<div className="fp-media-wrap">
@@ -627,16 +570,10 @@ export function FilePreview({
 							</a>
 						</div>
 						<iframe
-							// key forces a reload when the gate flips (script blocking is
-							// decided at document load — toggling attributes alone reuses
-							// the already-parsed page).
 							key={allowJs ? "js" : "nojs"}
 							className="fp-html-frame"
 							src={htmlUrl(file.path)}
 							title={file.name}
-							// No allow-same-origin, ever: even with scripts on, the page
-							// runs in an opaque origin — no access to our DOM, cookies,
-							// storage; forms and top-navigation stay blocked too.
 							sandbox={allowJs ? "allow-scripts" : ""}
 							referrerPolicy="no-referrer"
 						/>
@@ -714,7 +651,6 @@ export function FilePreview({
 					<div
 						className={`fp-code ${dragging ? "dragging" : ""} ${wrap ? "" : "no-wrap"}`}
 						onMouseDown={(e) => {
-							// Block native text selection so click/drag maps to line ranges.
 							if (e.button === 0) e.preventDefault();
 						}}
 					>
@@ -802,7 +738,6 @@ function isMarkdownFile(name: string): boolean {
 	return lower.endsWith(".md") || lower.endsWith(".markdown");
 }
 
-/** Office 文档：服务端已转成 Markdown 文本下发，这里按 Markdown 渲染即可随处可看。 */
 function isOfficeFile(name: string): boolean {
 	const lower = name.toLowerCase();
 	return (

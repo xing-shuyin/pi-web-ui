@@ -1,6 +1,5 @@
 import { decodeBytes, encodeInput } from "./workbench-state.mjs";
 
-// One accepted chunk at a time. write(false) accepts the chunk; never resend it.
 export function createInputQueue(send, onError, limit = 65536) {
 	const chunks = [];
 	const queueId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);

@@ -1,18 +1,3 @@
-/**
- * lsp-tool.ts — 导出给 AI Agent 的原生 LSP 语言服务器工具（Native Opt-in LSP Tool）。
- *
- * 核心设计：
- * - 零重型外部依赖：基于 Node.js 标准流与原生 JSON-RPC 2.0 实现轻量级 LSP 客户端。
- * - 多会话共享池（Project-level Pool）：同项目多会话与并发子代理复用同一个后台语言服务器实例，
- *   避免多子代理重复拉起语言服务器导致内存爆炸（参考 omp 的 lspmux 理念）。
- * - 支持 4 大核心语义动作：
- *   1. definition：跳转到符号定义位置（支持展示定义代码片段）；
- *   2. references：列出工作区内所有引用/调用处；
- *   3. hover：获取类型签名与文档说明（Docstring/Markdown）；
- *   4. diagnostics：获取文件或项目的实时编译与类型检查错误。
- * - 闲置自动回收：15 分钟无请求自动休眠退出，释放系统内存。
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -68,7 +53,7 @@ interface LspDiagnostic {
 		start: { line: number; character: number };
 		end: { line: number; character: number };
 	};
-	severity?: number; // 1 = Error, 2 = Warning, 3 = Info, 4 = Hint
+	severity?: number;
 	message: string;
 	source?: string;
 	code?: string | number;
@@ -165,14 +150,12 @@ function getLanguageForPath(filePath: string): { langKey: string; config: Langua
 	return null;
 }
 
-/** 二进制探测结果的内存缓存（cwd + cmd 为 key；用户态安装成功后按包失效） */
 const resolveBinaryCache = new Map<string, string | null>();
 
 export function clearResolveBinaryCache(): void {
 	resolveBinaryCache.clear();
 }
 
-/** 探测二进制是否可在当前系统执行（优先项目本地、Pi 生态共享目录、用户态托管目录、系统 PATH） */
 export function resolveBinary(cmd: string, cwd: string): string | null {
 	const cacheKey = `${cwd}::${cmd}`;
 	const cached = resolveBinaryCache.get(cacheKey);
@@ -196,14 +179,12 @@ function resolveBinaryUncached(cmd: string, cwd: string): string | null {
 		return null;
 	}
 
-	// 1. 本地 workspace node_modules/.bin 优先
 	const localBinDir = resolve(cwd, "node_modules", ".bin");
 	for (const ext of exts) {
 		const target = join(localBinDir, cmd + ext);
 		if (existsSync(target)) return target;
 	}
 
-	// 2. Pi 生态工具与用户态目录（pi-lens / pi-web 用户态托管，零权限直接复用）
 	const home = homedir();
 	const sharedDirs = [
 		join(home, ".pi-lens", "tools", "node_modules", ".bin"),
@@ -217,7 +198,6 @@ function resolveBinaryUncached(cmd: string, cwd: string): string | null {
 		}
 	}
 
-	// 3. 遍历系统 PATH 目录（纯文件系统检查，零子进程开销、杜绝 Windows cmd.exe 引号卡死）
 	const pathDirs = (process.env.PATH || "").split(delimiter);
 	for (const dir of pathDirs) {
 		if (!dir) continue;
@@ -231,14 +211,9 @@ function resolveBinaryUncached(cmd: string, cwd: string): string | null {
 }
 
 const installTasks = new Map<string, Promise<boolean>>();
-/** 安装失败的负缓存（pkg -> 失败时间戳）：失败后 5 分钟内不再重复执行 120s 的 npm install */
 const installFailedAt = new Map<string, number>();
 const INSTALL_FAIL_NEGATIVE_CACHE_MS = 5 * 60 * 1000;
 
-/**
- * 在用户专属目录（~/.pi-web/lsp-servers）执行无侵入、免 sudo/root 的语言服务包按需安装。
- * 注意：必须经用户显式授权（lsp 工具的 allowInstall 参数）后才能调用，不得静默触发。
- */
 export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 	const existing = installTasks.get(pkg);
 	if (existing) return existing;
@@ -275,7 +250,6 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 				});
 				const timer = setTimeout(() => {
 					if (isWin) {
-						// win32 下 taskkill /T 连整棵子进程树强杀，避免 npm/node 残留。
 						if (typeof proc.pid === "number") {
 							const killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
 								stdio: "ignore",
@@ -284,9 +258,6 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 							killer.on("error", () => {});
 						}
 					} else {
-						// POSIX：npm 由非 shell 直接 spawn，kill 其主进程即可让安装流程终止
-						//（取 SIGKILL 而非 detached 进程组方案：不改变子进程组语义，安装
-						// 超时本身是罕见路径，残余 node 子进程随 npm 主进程退出被回收）。
 						try {
 							proc.kill("SIGKILL");
 						} catch {}
@@ -307,7 +278,6 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 				});
 			});
 			console.warn(`[LSP] Language server [${pkg}] installed, resolving binaries…`);
-			// 新二进制落盘，探测缓存失效
 			clearResolveBinaryCache();
 			installFailedAt.delete(pkg);
 			return true;
@@ -324,10 +294,6 @@ export async function autoInstallLanguageServer(pkg: string): Promise<boolean> {
 	return task;
 }
 
-// ----------------------------------------------------------------------------
-// JSON-RPC 2.0 传输层与单项目 LSP 客户端
-// ----------------------------------------------------------------------------
-
 export class LspClient {
 	private proc: ChildProcess | null = null;
 	private nextId = 1;
@@ -335,9 +301,9 @@ export class LspClient {
 		number,
 		{ resolve: (res: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
 	>();
-	private diagnosticsCache = new Map<string, LspDiagnostic[]>(); // fileUri -> diagnostics
-	private openFiles = new Set<string>(); // fileUri
-	private docVersions = new Map<string, number>(); // fileUri -> version
+	private diagnosticsCache = new Map<string, LspDiagnostic[]>();
+	private openFiles = new Set<string>();
+	private docVersions = new Map<string, number>();
 	private buffer = Buffer.alloc(0);
 	private idleTimer: NodeJS.Timeout | null = null;
 	private initialized = false;
@@ -349,7 +315,6 @@ export class LspClient {
 		public readonly binPath: string,
 		public readonly binArgs: string[],
 		public readonly languageId: string,
-		/** 客户端不可用（空闲回收 / 进程退出 / spawn 失败）时从池移除的回调 */
 		private readonly onEvict: () => void,
 	) {}
 
@@ -366,20 +331,14 @@ export class LspClient {
 		});
 
 		this.proc.stdout?.on("data", (chunk: Buffer) => this.handleData(chunk));
-		this.proc.stderr?.on("data", (_d: Buffer) => {
-			// 可选记录 debug 日志，不干扰输出
-		});
+		this.proc.stderr?.on("data", (_d: Buffer) => {});
 
-		// spawn 失败（ENOENT/EACCES 等）只触发 'error'，进程从未启动时不会触发
-		// 'exit'——不监听会让 initialize 等请求挂到超时，客户端还留在池里被误判存活。
 		this.proc.on("error", (err: Error) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server failed to start: ${err.message}`));
 			this.onEvict();
 		});
 
-		// stdin 写错误（对端退出后的 EPIPE 等）在 stream 上异步 emit，不监听会以
-		// uncaughtException 崩掉整个服务进程。这里统一兜底：标记死亡 + 清理挂起请求。
 		this.proc.stdin?.on("error", (err: Error) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server stdin error: ${err.message}`));
@@ -389,12 +348,10 @@ export class LspClient {
 		this.proc.on("exit", (code) => {
 			this.proc = null;
 			this.rejectAllPending(new Error(`Language server exited with code ${code}`));
-			// 进程退出即从池移除，防止后续请求命中死客户端
 			this.onEvict();
 		});
 
 		try {
-			// 发送 initialize 握手
 			await this.request("initialize", {
 				processId: process.pid,
 				rootUri: pathToFileURL(this.projectCwd).toString(),
@@ -439,7 +396,6 @@ export class LspClient {
 	touch(): void {
 		if (this.isShuttingDown) return;
 		if (this.idleTimer) clearTimeout(this.idleTimer);
-		// 15 分钟无调用自动回收
 		this.idleTimer = setTimeout(
 			() => {
 				this.shutdown().catch(() => {});
@@ -480,8 +436,6 @@ export class LspClient {
 	private handleMessage(msg: any): void {
 		if (msg.id !== undefined) {
 			if (msg.method) {
-				// 服务端向客户端发起的请求（如 window/workDoneProgress/create, client/registerCapability）
-				// 标准 JSON-RPC 必须回复 result: null，防止上游语言服务器挂起等待
 				const reply = JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: null });
 				const wire = `Content-Length: ${Buffer.byteLength(reply, "utf8")}\r\n\r\n${reply}`;
 				try {
@@ -528,8 +482,6 @@ export class LspClient {
 			try {
 				this.proc!.stdin!.write(wire);
 			} catch (err) {
-				// 同步写失败（stream 已销毁等）：撤销挂起请求；异步 EPIPE 由 start() 里的
-				// stdin 'error' 监听兜底，这里只需保证 promise 被 reject 而非向上抛。
 				clearTimeout(timer);
 				this.pendingRequests.delete(id);
 				rej(new Error(`Language server stdin write failed: ${(err as Error).message}`));
@@ -544,9 +496,7 @@ export class LspClient {
 		const wire = `Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`;
 		try {
 			this.proc.stdin.write(wire);
-		} catch {
-			// 通知写失败只影响状态同步，不值得打断调用链；异步 EPIPE 由 stdin 'error' 监听兜底
-		}
+		} catch {}
 	}
 
 	async syncDocument(absPath: string): Promise<string> {
@@ -627,12 +577,8 @@ export class LspClient {
 	}
 }
 
-// ----------------------------------------------------------------------------
-// 全局项目级语言服务器管理池（Project-Level LSP Pool）
-// ----------------------------------------------------------------------------
-
 class LspServerPool {
-	private pool = new Map<string, LspClient>(); // key: `${cwd}::${langKey}`
+	private pool = new Map<string, LspClient>();
 	private inFlight = new Map<string, Promise<{ client: LspClient } | { error: string }>>();
 	private shuttingDown = false;
 
@@ -661,8 +607,6 @@ class LspServerPool {
 		const poolKey = `${projectCwd}::${langInfo.langKey}`;
 		const client = this.pool.get(poolKey);
 		if (client) {
-			// 池命中必须复检存活：进程退出事件与请求之间有竞态窗口（exit 回调排队、
-			// spawn error 未触发 exit），死客户端留在池里会让所有请求挂到超时。
 			if (client.isAlive()) {
 				client.touch();
 				return { client };
@@ -676,7 +620,6 @@ class LspServerPool {
 		}
 
 		const task = (async () => {
-			// 寻找可用命令
 			let resolvedBin: string | null = null;
 			let resolvedArgs: string[] = [];
 			let hint = "";
@@ -693,7 +636,6 @@ class LspServerPool {
 				if (!autoPkg && cmd.npmPackage) autoPkg = cmd.npmPackage;
 			}
 
-			// 用户态按需安装必须经用户显式授权（allowInstall），避免在工具调用链里无提示联网 npm install
 			if (!resolvedBin && autoPkg && opts?.allowInstall === true) {
 				const ok = await autoInstallLanguageServer(autoPkg);
 				if (ok) {
@@ -729,8 +671,6 @@ class LspServerPool {
 					}
 				},
 			);
-			// 启动失败时客户端尚在 start() 内部、池里没有它，onEvict 是空操作；
-			// 成功后再退出/回收才会真正从池移除。
 
 			try {
 				await newClient.start();
@@ -764,9 +704,6 @@ class LspServerPool {
 
 export const globalLspPool = new LspServerPool();
 
-/**
- * 辅助函数：在文件改动后，若已有存活的语言服务器，获取即时编译报错（Writethrough Diagnostics）
- */
 export async function getLiveLspDiagnostics(absPath: string, cwd: string): Promise<string | null> {
 	if (!globalLspPool.hasAliveClient(cwd, absPath)) {
 		return null;
@@ -776,7 +713,6 @@ export async function getLiveLspDiagnostics(absPath: string, cwd: string): Promi
 
 	const { client } = res;
 	const uri = await client.syncDocument(absPath);
-	// 稍等 80ms 让后台增量分析返回
 	await new Promise((r) => setTimeout(r, 80));
 
 	const diags = client.getDiagnostics(uri);
@@ -794,19 +730,9 @@ export async function getLiveLspDiagnostics(absPath: string, cwd: string): Promi
 	return `⚠️ Post-edit Diagnostics (${errors.length} error${errors.length > 1 ? "s" : ""}):\n${lines.join("\n")}`;
 }
 
-/** 文本大纲与 details.symbols 共用的展平符号数上限（顶层与子级一并计数）。 */
 const DOCUMENT_SYMBOL_OUTLINE_CAP = 300;
-/**
- * details.symbols 的序列化体积预算（字符数）。details 随会话持久且整体 ≤64KB，
- * 超限会被整条丢弃（见 serialize.ts 的 TOOL_DETAILS_CAP）；符号名/签名极长的
- * 极端文件（生成的 .d.ts、protobuf 产物）下 300 个符号也可能撑爆，故按实际
- * 序列化体积逐步收紧上限（预算留足余量给 count/truncated 等包装字段）。
- */
 const DOCUMENT_SYMBOL_DETAILS_CHAR_BUDGET = 60_000;
 
-/**
- * 递归格式化 DocumentSymbol 列表为缩进的符号大纲树（做条数上限保护）
- */
 function formatDocumentSymbols(symbols: any[], indent = "", lines: string[] = []): string[] {
 	for (const sym of symbols) {
 		if (lines.length >= DOCUMENT_SYMBOL_OUTLINE_CAP) {
@@ -827,12 +753,6 @@ function formatDocumentSymbols(symbols: any[], indent = "", lines: string[] = []
 	return lines;
 }
 
-/**
- * 与 formatDocumentSymbols 同口径的结构化裁剪：按展平后的符号数（先序遍历，
- * 顶层与子级一并计数）截断到 cap 个。只在展平序列的边界上裁剪，保留符号的
- * 父子结构保持一致 —— 父被裁掉则整棵子树不再出现；有符号被裁时 truncated 置真。
- * 未触发截断时原样返回（不拷贝，避免大对象无谓重建）。
- */
 function capDocumentSymbolTree(symbols: any[], cap: number): { capped: any[]; truncated: boolean } {
 	let count = 0;
 	let truncated = false;
@@ -861,12 +781,6 @@ function capDocumentSymbolTree(symbols: any[], cap: number): { capped: any[]; tr
 	return { capped: truncated ? kept : symbols, truncated };
 }
 
-/**
- * details.symbols 的最终裁剪：先与文本大纲同口径按展平计数截到 300；再用实际
- * 序列化体积校验 —— details 随会话持久且整体 ≤64KB，超限整条丢弃（见
- * serialize.ts 的 TOOL_DETAILS_CAP），符号名/签名极长的极端文件下按半数逐步
- * 收紧展平上限，保证结构化大纲真的能进快照而不是被整条丢掉。
- */
 function capDocumentSymbolsForDetails(symbols: any[]): { capped: any[]; truncated: boolean } {
 	let cap = DOCUMENT_SYMBOL_OUTLINE_CAP;
 	let res = capDocumentSymbolTree(symbols, cap);
@@ -879,9 +793,6 @@ function capDocumentSymbolsForDetails(symbols: any[]): { capped: any[]; truncate
 	return res;
 }
 
-/**
- * 递归单趟查找符号（两遍扫描：先严格精确匹配，未命中再执行大小写忽略回退，避免遮蔽后续精确符号；支持 containerName 点分路径）
- */
 function findSymbolPass(
 	symbols: any[],
 	target: string,
@@ -918,9 +829,6 @@ function findSymbol(symbols: any[], target: string): { symbol: any; fullName: st
 	return findSymbolPass(symbols, target, "exact") ?? findSymbolPass(symbols, target, "ci");
 }
 
-/**
- * 收集文件内可用的顶层符号全名清单（最多收集 50 条，供找不到符号时提供备选提示）
- */
 function collectSymbolNames(symbols: any[], prefix = "", names: string[] = []): string[] {
 	for (const sym of symbols) {
 		if (names.length >= 50) break;
@@ -938,9 +846,6 @@ function collectSymbolNames(symbols: any[], prefix = "", names: string[] = []): 
 	return names;
 }
 
-/**
- * 当未传 path 且执行工作区级操作（如 workspaceSymbol）时，寻找工作区默认主文件以定位语言服务
- */
 function findDefaultSourceFileForLsp(cwd: string): string | null {
 	const candidates = [
 		"src/index.ts",
@@ -960,10 +865,6 @@ function findDefaultSourceFileForLsp(cwd: string): string | null {
 	}
 	return null;
 }
-
-// ----------------------------------------------------------------------------
-// 导出给 AI Agent 的工具对象
-// ----------------------------------------------------------------------------
 
 export interface LspToolOptions {
 	cwd: string;
@@ -1175,7 +1076,6 @@ export function makeLspTool(options: LspToolOptions) {
 			const client = clientRes.client;
 			const uri = await client.syncDocument(absPath);
 
-			// 0-indexed positions for LSP protocol
 			const position = {
 				line: line - 1,
 				character: character - 1,
@@ -1197,8 +1097,6 @@ export function makeLspTool(options: LspToolOptions) {
 						};
 					}
 
-					// 与 references(:25) 同口径：每个位置都要整读一次目标文件拼 snippet，
-					// 无上限的 definition 列表会放大成几十次同步 IO 拖死请求。
 					const MAX_DEFS = 25;
 					const formatted = locs.slice(0, MAX_DEFS).map((loc: any) => {
 						const targetUri: string = loc.targetUri || loc.uri || "";
@@ -1307,7 +1205,6 @@ export function makeLspTool(options: LspToolOptions) {
 				}
 
 				if (action === "diagnostics") {
-					// 给予极短缓冲以确保 publishDiagnostics 缓存已收到
 					await new Promise((r) => setTimeout(r, 120));
 					const diags = client.getDiagnostics(uri);
 
@@ -1349,9 +1246,6 @@ export function makeLspTool(options: LspToolOptions) {
 					}
 
 					const lines = formatDocumentSymbols(symbols);
-					// details 随会话持久且整体 ≤64KB（超限整条丢弃）：symbols 与文本大纲同口径
-					// 截断 —— 按展平后的符号数（先序遍历，顶层与子级一并计数）截到 300，保留
-					// 符号维持父子结构；再按序列化体积兜底收紧，极端文件下保证 details 进得了快照。
 					const { capped: detailsSymbols, truncated: symbolsTruncated } = capDocumentSymbolsForDetails(symbols);
 					return {
 						content: [
@@ -1415,9 +1309,8 @@ export function makeLspTool(options: LspToolOptions) {
 						};
 					}
 
-					let startLine = range.start.line; // 0-indexed
-					let endLine = range.end.line; // 0-indexed
-					// 针对行尾排他边界（end.character === 0 且跨行时）避免多读末尾空行
+					let startLine = range.start.line;
+					let endLine = range.end.line;
 					if (range.end.character === 0 && endLine > startLine) {
 						endLine -= 1;
 					}
@@ -1512,17 +1405,13 @@ export function makeLspTool(options: LspToolOptions) {
 				}
 
 				if (action === "cascade") {
-					// 影响级联（Impact Cascade）：找出引用本文件（或本文件某个符号）的工作区文件，
-					// 聚合它们的实时诊断——让"改了签名/导出，下游编译炸了"在编辑当轮就暴露，
-					// 而不是等到构建或提交时才发现。
 					const MAX_SEEDS = 20;
 					const MAX_DEPENDENTS = 25;
 					const DIAGS_BUDGET_MS = 1500;
 					const normalizePath = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);
 
-					// 1. 收集种子位置：给了 line/character 就只查那个符号；否则查全部顶层符号。
 					const seeds: Array<{ line: number; character: number }> = [];
-					let seedTotal = 0; // 顶层符号总数（截断前），超出 MAX_SEEDS 时在输出尾部标明
+					let seedTotal = 0;
 					if (typeof params.line === "number") {
 						seeds.push({ line: line - 1, character: character - 1 });
 					} else {
@@ -1544,7 +1433,6 @@ export function makeLspTool(options: LspToolOptions) {
 						};
 					}
 
-					// 2. 对每个种子查 references（不含声明处），汇总工作区内的引用方文件。
 					const selfNorm = normalizePath(absPath);
 					const depPaths = new Set<string>();
 					const seedResults = await Promise.allSettled(
@@ -1567,19 +1455,16 @@ export function makeLspTool(options: LspToolOptions) {
 							} catch {
 								continue;
 							}
-							if (normalizePath(refPath) === selfNorm) continue; // 排除自身
+							if (normalizePath(refPath) === selfNorm) continue;
 							const relRef = relative(cwd, refPath);
 							if (relRef === ".." || relRef.startsWith(".." + sep) || relRef.startsWith("../") || isAbsolute(relRef)) {
-								continue; // 只看工作区内
+								continue;
 							}
 							if (relRef.split(sep).includes("node_modules")) continue;
 							depPaths.add(refPath);
 						}
 					}
 
-					// 只分析排序后的前 MAX_DEPENDENTS 个引用方，但计数必须如实上报：文本与
-					// details 都带截断前的真实总数，超出部分用尾注标明（对照 references 动作
-					// 的 "... and N more references" 口径），避免模型误以为清单是完整的。
 					const totalReferencing = depPaths.size;
 					const dependents = [...depPaths].sort().slice(0, MAX_DEPENDENTS);
 					if (dependents.length === 0) {
@@ -1594,7 +1479,6 @@ export function makeLspTool(options: LspToolOptions) {
 						};
 					}
 
-					// 3. 逐个 didOpen/didChange 触发服务器分析，轮询等待 publishDiagnostics 回流。
 					const depUris: string[] = [];
 					for (const dep of dependents) {
 						try {
@@ -1613,7 +1497,6 @@ export function makeLspTool(options: LspToolOptions) {
 						}
 					}
 
-					// 4. 聚合输出：有错误的排前面，其次警告，clean 与未上报的折叠列出。
 					const impacted: Array<{ path: string; errors: number; warnings: number; diagnostics: LspDiagnostic[] }> = [];
 					const clean: string[] = [];
 					const notReported: string[] = [];
@@ -1632,7 +1515,7 @@ export function makeLspTool(options: LspToolOptions) {
 						if (errors + warnings > 0) {
 							impacted.push({ path: depRel, errors, warnings, diagnostics: diags.slice(0, 10) });
 						} else if (diags.length === 0 && !knownFinal.has(depUri)) {
-							notReported.push(depRel); // 预算内服务器未上报（可能仍在分析）
+							notReported.push(depRel);
 						} else {
 							clean.push(depRel);
 						}
@@ -1667,8 +1550,6 @@ export function makeLspTool(options: LspToolOptions) {
 							`Diagnostics not reported in time (${notReported.length}, server may still be analyzing): ${notReported.slice(0, 5).join(", ")}${notReported.length > 5 ? ", ..." : ""}`,
 						);
 					}
-					// 截断尾注：与 references 动作的 "... and N more references" 同口径，
-					// 让模型知道被丢弃的引用方/种子符号既不在 clean 也不在 notReported 里。
 					if (totalReferencing > dependents.length) {
 						out.push(`... and ${totalReferencing - dependents.length} more not analyzed`);
 					}

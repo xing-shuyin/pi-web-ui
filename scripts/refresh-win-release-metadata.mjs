@@ -25,7 +25,6 @@ async function main() {
 	console.log(`[refresh-metadata] 新 SHA-512: ${newSha512}`);
 	console.log(`[refresh-metadata] 新文件大小: ${newSize} bytes`);
 
-	// 1. 重新生成 .blockmap
 	const blockmapFile = `${exeFile}.blockmap`;
 	const blockmapPath = join(releaseDir, blockmapFile);
 	try {
@@ -36,13 +35,10 @@ async function main() {
 		console.warn(`[refresh-metadata] 无法使用 app-builder-lib 生成 blockmap (${err.message})，跳过 blockmap 刷新`);
 	}
 
-	// 2. 更新 latest.yml
 	const latestYmlPath = join(releaseDir, "latest.yml");
 	try {
 		let content = readFileSync(latestYmlPath, "utf-8");
-		// 更新 sha512: <old> -> sha512: <new>
 		content = content.replace(/(sha512:\s*)[^\r\n]+/g, `$1${newSha512}`);
-		// 更新 size: <old> -> size: <new>
 		content = content.replace(/(size:\s*)\d+/g, `$1${newSize}`);
 		writeFileSync(latestYmlPath, content, "utf-8");
 		console.log(`[refresh-metadata] 已更新 latest.yml 中的哈希与尺寸`);

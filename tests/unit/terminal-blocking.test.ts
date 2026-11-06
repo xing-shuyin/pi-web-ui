@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isTerminalQueryResponse, TerminalManager } from "../../server/terminals.js";
 
-/** issue #181：残留的 AI bash 终端（agentBash）不得阻断会话移出。
- *  countBlockingLive 保持老口径（含 AI bash，供切对话保留用——切走不杀后台活）；
- *  dismiss 口径改用 countUserBlockingLive（只看用户亲手开且用过的终端）。 */
 function makeManager(): TerminalManager {
 	return new TerminalManager(() => {}, "/tmp");
 }
@@ -65,36 +62,29 @@ describe("countUserBlockingLive（issue #181）", () => {
 
 describe("isTerminalQueryResponse 与空 shell 保持 pristine", () => {
 	it("精确识别 xterm 自动探测回传序列，不误判用户输入", () => {
-		// 光标位置报告 CPR
 		expect(isTerminalQueryResponse("\x1b[1;1R")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[24;80R")).toBe(true);
-		// 设备属性 DA1
 		expect(isTerminalQueryResponse("\x1b[?1;2c")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[0c")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[?62;1;2;4;6;7;8;9;15;18;21;22;28;29c")).toBe(true);
-		// 设备属性 DA2 / DA3
 		expect(isTerminalQueryResponse("\x1b[>0;10;1c")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[<0;10;1c")).toBe(true);
-		// 焦点通知与模式
 		expect(isTerminalQueryResponse("\x1b[I")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[O")).toBe(true);
 		expect(isTerminalQueryResponse("\x1b[?25;1$y")).toBe(true);
-		// 窗口状态
 		expect(isTerminalQueryResponse("\x1b[4;300;400t")).toBe(true);
-		// 批量应答（CPR + DA1 粘包）
 		expect(isTerminalQueryResponse("\x1b[1;1R\x1b[?1;2c")).toBe(true);
 
-		// 用户真实输入：绝对不得被判为自动探测序列
 		expect(isTerminalQueryResponse("ls\r")).toBe(false);
 		expect(isTerminalQueryResponse("a")).toBe(false);
 		expect(isTerminalQueryResponse("\r")).toBe(false);
 		expect(isTerminalQueryResponse("\n")).toBe(false);
 		expect(isTerminalQueryResponse("\x03")).toBe(false);
-		expect(isTerminalQueryResponse("\x1b[A")).toBe(false); // 方向键 上
-		expect(isTerminalQueryResponse("\x1b[B")).toBe(false); // 方向键 下
-		expect(isTerminalQueryResponse("\x1b[C")).toBe(false); // 方向键 右
-		expect(isTerminalQueryResponse("\x1b[D")).toBe(false); // 方向键 左
-		expect(isTerminalQueryResponse("\x1b[13;5u")).toBe(false); // Ctrl+Enter
+		expect(isTerminalQueryResponse("\x1b[A")).toBe(false);
+		expect(isTerminalQueryResponse("\x1b[B")).toBe(false);
+		expect(isTerminalQueryResponse("\x1b[C")).toBe(false);
+		expect(isTerminalQueryResponse("\x1b[D")).toBe(false);
+		expect(isTerminalQueryResponse("\x1b[13;5u")).toBe(false);
 	});
 
 	it("空 shell 收到自动探测回传时保持 used: false，收到真实输入才置 used: true", () => {
@@ -121,7 +111,6 @@ describe("isTerminalQueryResponse 与空 shell 保持 pristine", () => {
 		};
 		(mgr as unknown as { terms: Map<string, unknown> }).terms.set("shell-1", entry);
 
-		// 收到 xterm 自动探测回传，依然不算 used
 		mgr.inputChecked("shell-1", "\x1b[1;1R");
 		expect(entry.used).toBe(false);
 		expect(mgr.countUserBlockingLive()).toBe(0);
@@ -130,7 +119,6 @@ describe("isTerminalQueryResponse 与空 shell 保持 pristine", () => {
 		expect(entry.used).toBe(false);
 		expect(mgr.countUserBlockingLive()).toBe(0);
 
-		// 用户真实按键输入（敲回车），正式置为 used
 		mgr.inputChecked("shell-1", "\r");
 		expect(entry.used).toBe(true);
 		expect(mgr.countUserBlockingLive()).toBe(1);

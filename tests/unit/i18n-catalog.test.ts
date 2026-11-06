@@ -43,6 +43,7 @@ describe("i18n catalog", () => {
 			"core",
 			"canvas",
 			"canvas-runtime",
+			"native-cli-session",
 		]);
 		expect(Object.entries(zh)).toEqual([...catalog.zh.map]);
 		expect(Object.entries(en)).toEqual([...catalog.en.map]);
@@ -67,6 +68,7 @@ describe("i18n catalog", () => {
 		function typecheckOnly(t: Translate) {
 			t("save");
 			t("canvas.aiBar.cancel");
+			t("nativeCliSession.lastActivity", { time: "12:00" });
 			// @ts-expect-error Unknown keys must fail compilation even after merging modules.
 			t("__unknown_i18n_key__");
 		}

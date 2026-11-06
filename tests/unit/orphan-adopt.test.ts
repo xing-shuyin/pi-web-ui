@@ -47,8 +47,6 @@ describe("pickAdoptableOrphan", () => {
 	});
 
 	it("在线的残留不被选中（只看断开的）", () => {
-		// 注意：本用例里“在线”的是伪客户端之外的普通客户端 → 直接 null，
-		// 覆盖“live 的普通客户端既挡认领、自己也不被认领”两条。
 		const cands = [cand({ id: "still-open", live: true, streaming: 3, activity: 50 })];
 		expect(pickAdoptableOrphan(cands)).toBeNull();
 	});

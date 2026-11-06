@@ -14,9 +14,7 @@ describe("attachment-store 内容寻址附件存储（CAS）", () => {
 		return () => {
 			try {
 				rmSync(tempDir, { recursive: true, force: true });
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		};
 	});
 
@@ -58,9 +56,6 @@ describe("attachment-store 内容寻址附件存储（CAS）", () => {
 
 	it("原子写：同 hash 并发保存全部成功，落盘唯一且无 .tmp 残留", async () => {
 		const data = Buffer.from("concurrent atomic write probe");
-		// 旧实现（existsSync 检查 + 原地 writeFile）在并发下会互相截断半个文件；
-		// 新实现 tmp + rename，并发同 hash 各自 rename，Windows 上 EEXIST/EPERM
-		// 视为成功（内容寻址同 hash 同内容）。
 		const results = await Promise.all([saveAttachment(data), saveAttachment(data), saveAttachment(data)]);
 		const hashes = new Set(results.map((r) => r.hash));
 		expect(hashes.size).toBe(1);
@@ -73,7 +68,6 @@ describe("attachment-store 内容寻址附件存储（CAS）", () => {
 	it("findAttachment 跳过 .tmp 残留", async () => {
 		const data = Buffer.from("tmp leftover probe");
 		const rec = await saveAttachment(data);
-		// 模拟崩溃残留：同前缀的 tmp 文件（后缀错乱）不能被当成附件命中
 		writeFileSync(join(tempDir, "attachments", `${rec.hash}.deadbeef.tmp`), Buffer.from("junk"));
 		const hit = await findAttachment(rec.hash);
 		expect(hit?.ext).toBe(rec.ext);

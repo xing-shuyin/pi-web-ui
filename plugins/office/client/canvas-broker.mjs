@@ -1,4 +1,3 @@
-/** Connect an opaque Office iframe to an authenticated, document-scoped RPC route. */
 export function attachCanvasBroker({ iframe, channel, request, signal, onReady, onError }) {
 	if (!iframe || typeof channel !== "string" || !channel || typeof request !== "function")
 		throw new Error("Invalid Office canvas broker configuration");
@@ -13,14 +12,10 @@ export function attachCanvasBroker({ iframe, channel, request, signal, onReady, 
 		if (port) {
 			try {
 				port.postMessage({ type: "office-canvas-dispose" });
-			} catch {
-				/* Detached frame. */
-			}
+			} catch {}
 			try {
 				port.close();
-			} catch {
-				/* Already closed. */
-			}
+			} catch {}
 			port = undefined;
 		}
 		ready = false;

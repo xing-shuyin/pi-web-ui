@@ -1,11 +1,3 @@
-/**
- * demo-mailbox 客户端视图 —— 插件协议示例。
- *
- * 约定：ESM 默认导出 { mount(container, ctx) → cleanup? }。
- * ctx.send(payload) 上行 plugin_message；ctx.onData(cb) 订阅 plugin_data。
- * 不依赖 React —— 纯 DOM 即可，也可以打包任意框架（自带实例，与主应用隔离）。
- */
-
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 let uid = 0;
@@ -84,7 +76,7 @@ export default {
 		const off = ctx.onData((payload) => {
 			if (payload && Array.isArray(payload.mails)) render(payload.mails);
 		});
-		ctx.send({ action: "list" }); // 拉初始列表
+		ctx.send({ action: "list" });
 
 		return () => {
 			off();

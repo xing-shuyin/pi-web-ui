@@ -1,10 +1,3 @@
-/**
- * MCP 工具桥端到端冒烟（零 token、自包含、独立端口）：
- * 临时 data-dir 写 mcp.json（指向本地夹具服务器），起真实 server：
- *  - 客户端连接后按项目初始化 MCP 服务器
- *  - 管理 API 返回就绪状态及正确工具数量（10）
- *  - MCP 服务器失败不影响其它服务器及宿主进程
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -79,7 +72,6 @@ async function main() {
 		"server",
 	);
 
-	// MCP runtime 按项目懒创建；服务监听不代表已有项目 Bridge。
 	client = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 	let ready = false;
 	let servers = [];

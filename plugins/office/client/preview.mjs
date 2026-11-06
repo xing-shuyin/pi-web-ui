@@ -1,4 +1,3 @@
-/** True when the browser cannot safely use the server's isolated loopback viewer. */
 export function detectRemoteViewer(viewerUrl, pageUrl) {
 	try {
 		if (typeof viewerUrl !== "string" || typeof pageUrl !== "string") return true;
@@ -24,11 +23,6 @@ export function detectRemoteViewer(viewerUrl, pageUrl) {
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const limit = (value, fallback, max) => (Number.isSafeInteger(value) && value > 0 ? Math.min(value, max) : fallback);
 
-/**
- * Extract known inspection fields as bounded plain text. Render with textContent,
- * never innerHTML/Markdown. Unknown metadata, cell formulas and URLs are omitted.
- * Accepts direct worker results, {ok,value}, or the /inspect {result} envelope.
- */
 export function inspectionToText(inspection, options = {}) {
 	const maxChars = limit(options?.maxChars, 32_000, 64_000);
 	const unavailable = (message = "Preview unavailable.") => message.slice(0, maxChars);

@@ -8,13 +8,6 @@ import { TemplateProvider } from "../../web/src/components/PromptTemplates.js";
 import { resetAppGlobals, setAppGlobals, setAppSend } from "../../web/src/app-globals.js";
 import { LanguageProvider, zh } from "../../web/src/i18n.js";
 
-/**
- * ChatInput 发送失败提示（jsdom）：websocket 关闭时提交不能静默吞字。
- * 回归目标：appSend 返回 false / 未连接时文本原样保留 + 一条 error notice
- *（此前两条路径都直接 return，字还留在框里且无任何提示，看起来与草稿恢复
- * 竞态一模一样）。全部确定性、零 token、零端口。
- */
-
 let root: Root | null = null;
 
 function mount(opts: {
@@ -27,9 +20,7 @@ function mount(opts: {
 	setAppSend(() => opts.sendResult);
 	try {
 		localStorage.setItem("pi-web-ui:lang", "zh");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	const container = document.createElement("div");
 	document.body.appendChild(container);
 	root = createRoot(container);
@@ -66,7 +57,6 @@ function mount(opts: {
 	return container;
 }
 
-/** 受控 textarea：走原生 setter + input 事件（与 question-dialog 的 click 同路）。 */
 function typeText(container: HTMLElement, value: string) {
 	const ta = container.querySelector("textarea") as HTMLTextAreaElement;
 	if (!ta) throw new Error("cannot find textarea");
@@ -103,7 +93,7 @@ function dispatchCompositionEnd(container: HTMLElement) {
 
 afterEach(() => {
 	resetAppGlobals();
-	setAppSend(null); // 断开全局发送器，避免串到下一个用例
+	setAppSend(null);
 	if (root) {
 		act(() => root!.unmount());
 		root = null;
@@ -123,7 +113,6 @@ describe("ChatInput 发送失败提示", () => {
 
 		expect(notices).toEqual([["error", zh.netDisconnected]]);
 		expect(onSent).not.toHaveBeenCalled();
-		// 文本保留，供重连后重发。
 		expect((c.querySelector("textarea") as HTMLTextAreaElement).value).toBe("hello");
 	});
 
@@ -133,7 +122,6 @@ describe("ChatInput 发送失败提示", () => {
 		const c = mount({ ready: true, sendResult: true, onNotice: (l, t) => notices.push([l, t]), onSent });
 
 		typeText(c, "hello");
-		// 发送中途断连：ready 翻 false 后再按 Enter（act 内翻转，保证重渲染先生效）。
 		act(() => {
 			setAppGlobals({ ready: false });
 		});
@@ -175,7 +163,6 @@ describe("ChatInput 发送失败提示", () => {
 		const c = mount({ ready: true, sendResult: true, onNotice: (l, t) => notices.push([l, t]), onSent });
 
 		typeText(c, "hello");
-		// 模拟 macOS 中文输入法：先触发 compositionend，随后浏览器派发 Enter (isComposing=false)
 		dispatchCompositionEnd(c);
 		pressEnter(c, { isComposing: false });
 

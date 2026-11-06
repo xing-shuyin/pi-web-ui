@@ -1,5 +1,3 @@
-// Real pi-web-ui inside the single-port opaque device portal. Never builds dist.
-// Parent/runner must build first: node --import tsx tests/device-path-portals-browser-test.mjs
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -32,7 +30,6 @@ async function reservePort() {
 	});
 	const port = server.address().port;
 	await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-	// OS ephemeral ports normally exceed this, but enforce the test isolation contract.
 	return port >= 18980 ? port : reservePort();
 }
 
@@ -55,7 +52,6 @@ async function main() {
 		console.log("SKIP device-path-portals-browser: Chrome unavailable (set PI_WEB_CHROME)");
 		return;
 	}
-	// This case deliberately consumes parent-built artifacts, including when run alone.
 	const previousPrebuilt = process.env[PREBUILT_ENV];
 	process.env[PREBUILT_ENV] = "1";
 	try {
@@ -197,9 +193,7 @@ async function main() {
 			socket.on("framereceived", ({ payload }) => {
 				try {
 					packets.push(JSON.parse(String(payload)));
-				} catch {
-					// Non-JSON control frames are irrelevant to the app's wire protocol.
-				}
+				} catch {}
 			});
 		});
 		const response = await page.goto(`${hubOrigin}/device/${deviceId}/`);
@@ -244,7 +238,6 @@ async function main() {
 			{ local: "local", session: "session", cookieDenied: true },
 			"Opaque frame storage shim works while browser cookie access stays blocked",
 		);
-		// The same cookie authenticates the top document, but cannot authorize the opaque frame.
 		assert.equal((await context.request.get(`${hubOrigin}/api/auth/me`)).ok(), true);
 		const isolation = await frame.evaluate(async (origin) => {
 			try {
@@ -273,7 +266,6 @@ async function main() {
 			requests.some((url) => /\/assets\/.*\.js(?:\?|$)/.test(url)),
 			"Real built React JavaScript must be requested through Hub",
 		);
-		// Memory sessionStorage resets on reload: a build-id mismatch used to loop here.
 		await delay(1000);
 		assert.equal(sockets.length, 1, "App must keep its original WS instead of reloading in an opaque storage loop");
 		assert.equal(

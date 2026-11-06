@@ -1,7 +1,3 @@
-/**
- * Mermaid fence detection unit tests — the pure helpers behind MermaidBlock's
- * interception in PreWithCopy (see web/src/components/mermaid.ts).
- */
 import { describe, expect, it } from "vitest";
 import { createElement, type ReactNode } from "react";
 import {
@@ -13,7 +9,6 @@ import {
 	singleCodeChild,
 } from "../../web/src/components/mermaid.js";
 
-/** Simulate the <code> element react-markdown hands PreWithCopy's children. */
 function code(className: string | undefined, children: ReactNode) {
 	return createElement("code", { className }, children);
 }

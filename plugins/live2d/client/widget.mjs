@@ -1,6 +1,3 @@
-/**
- * Live2D 挂件组件控制器 (DOM、手势、气泡、右键菜单、设置面板与音效)
- */
 import { Live2DStage, ensureLive2dEngine } from "./engine.mjs";
 import { getAllModels, saveCustomModels, loadCustomModels } from "./models.mjs";
 import { WIDGET_CSS } from "./styles.mjs";
@@ -49,7 +46,6 @@ export class Live2DWidget {
 		this._onPointerMove = null;
 		this._onPointerUp = null;
 
-		// 清理旧版本遗留的最小化悬浮药丸
 		document.getElementById("pi-l2d-minimized-pill")?.remove();
 
 		this.width = Math.round(280 * (this.config.scale || 1.0));
@@ -98,7 +94,6 @@ export class Live2DWidget {
 	}
 
 	_buildDOM() {
-		// 1. 全局挂件容器
 		const container = document.createElement("div");
 		container.id = "pi-live2d-companion";
 		if (!this.visible) {
@@ -107,10 +102,8 @@ export class Live2DWidget {
 		}
 		if (this.config.clickThrough) container.classList.add("pi-l2d-click-through");
 
-		// 恢复位置
 		this._applyStoredPosition(container);
 
-		// 2. 气泡框
 		const bubble = document.createElement("div");
 		bubble.className = "pi-l2d-bubble";
 		bubble.innerHTML = `
@@ -132,7 +125,6 @@ export class Live2DWidget {
 		this.bubbleEl = bubble;
 		container.appendChild(bubble);
 
-		// 3. 挂件主体包裹与 Canvas
 		const bodyWrap = document.createElement("div");
 		bodyWrap.className = "pi-l2d-body-wrap";
 		this.bodyWrap = bodyWrap;
@@ -146,7 +138,6 @@ export class Live2DWidget {
 		this.canvas = canvas;
 		bodyWrap.appendChild(canvas);
 
-		// 4. 悬浮快捷工具条
 		const actionsBar = document.createElement("div");
 		actionsBar.className = "pi-l2d-actions-bar";
 		actionsBar.innerHTML = `
@@ -173,7 +164,6 @@ export class Live2DWidget {
 		});
 		bodyWrap.appendChild(actionsBar);
 
-		// 5. 正在播放音乐时的飘浮音符微标
 		const musicBadge = document.createElement("div");
 		musicBadge.className = "pi-l2d-music-badge";
 		musicBadge.innerHTML = `🎵 <span class="pi-l2d-badge-note">♪</span>`;
@@ -198,7 +188,6 @@ export class Live2DWidget {
 				if (pos.right !== undefined) el.style.right = `${pos.right}px`;
 				if (pos.bottom !== undefined) el.style.bottom = `${pos.bottom}px`;
 				if (pos.left !== undefined) {
-					// 钳制进当前视口：换显示器/改分辨率后旧坐标可能落在屏幕外导致“看板娘失踪”
 					const maxLeft = Math.max(10, window.innerWidth - this.width - 10);
 					const left = Math.max(10, Math.min(maxLeft, Number(pos.left) || 0));
 					el.style.left = `${left}px`;
@@ -213,7 +202,6 @@ export class Live2DWidget {
 				return;
 			}
 		} catch {}
-		// 默认右下角停靠
 		el.style.right = "24px";
 		el.style.bottom = "24px";
 	}
@@ -229,7 +217,6 @@ export class Live2DWidget {
 	}
 
 	_setupGestures() {
-		// 拖拽手势
 		this.isDragging = false;
 		let startX = 0;
 		let startY = 0;
@@ -239,9 +226,8 @@ export class Live2DWidget {
 
 		const onPointerDown = (e) => {
 			if (!this.visible || this.config.clickThrough) return;
-			if (e.button !== 0) return; // 仅左键拖拽
+			if (e.button !== 0) return;
 			if (e.target.closest(".pi-l2d-actions-bar") || e.target.closest(".pi-l2d-bubble")) return;
-			// 角色外围完全透明空白区域不拦截点击与拖拽
 			if (this.stage?.isPixelTransparent(e.clientX, e.clientY)) return;
 
 			this.isDragging = true;
@@ -253,7 +239,6 @@ export class Live2DWidget {
 			origLeft = rect.left;
 			origTop = rect.top;
 
-			// 将定位切换为 left/top 绝对控制
 			this.container.style.left = `${origLeft}px`;
 			this.container.style.top = `${origTop}px`;
 			this.container.style.right = "auto";
@@ -275,7 +260,6 @@ export class Live2DWidget {
 			let newLeft = origLeft + dx;
 			let newTop = origTop + dy;
 
-			// 限制在窗口可视边界内
 			const maxLeft = window.innerWidth - this.width - 10;
 			const maxTop = window.innerHeight - this.height - 10;
 			newLeft = Math.max(10, Math.min(maxLeft, newLeft));
@@ -296,7 +280,6 @@ export class Live2DWidget {
 			if (!this.visible) return;
 
 			if (moved) {
-				// 保存位置
 				const rect = this.container.getBoundingClientRect();
 				try {
 					localStorage.setItem(
@@ -308,14 +291,12 @@ export class Live2DWidget {
 					);
 				} catch {}
 			} else {
-				// 单击处理
 				this._handleClick(e);
 			}
 		};
 
 		this.canvas.addEventListener("pointerdown", onPointerDown);
 
-		// 滚轮缩放手势
 		this.container.addEventListener(
 			"wheel",
 			(e) => {
@@ -332,7 +313,6 @@ export class Live2DWidget {
 	}
 
 	_setupEvents() {
-		// 右键菜单
 		this.canvas.addEventListener("contextmenu", (e) => {
 			if (!this.visible || this.config.clickThrough) return;
 			if (this.stage?.isPixelTransparent(e.clientX, e.clientY)) return;
@@ -341,7 +321,6 @@ export class Live2DWidget {
 			this._showContextMenu(e.clientX, e.clientY);
 		});
 
-		// 双击互动
 		this.canvas.addEventListener("dblclick", (e) => {
 			if (!this.visible || this.config.clickThrough) return;
 			if (this.stage?.isPixelTransparent(e.clientX, e.clientY)) return;
@@ -350,7 +329,6 @@ export class Live2DWidget {
 			this._handleDoubleClick();
 		});
 
-		// 全局点击关闭菜单
 		window.addEventListener("click", () => {
 			this._closeContextMenu();
 		});
@@ -361,11 +339,9 @@ export class Live2DWidget {
 		this.stage.onHoverPixel = (transparent) => {
 			if (!this.visible || this.config.clickThrough || this.isDragging) return;
 			if (transparent === true) {
-				// 鼠标悬停在角色周围的透明空白区域：完全穿透到网页下层
 				if (this.canvas) this.canvas.style.pointerEvents = "none";
 				if (this.bodyWrap) this.bodyWrap.style.pointerEvents = "none";
 			} else {
-				// 鼠标悬停在角色身体或移出 canvas 区域：恢复正常交互
 				if (this.canvas) this.canvas.style.pointerEvents = "auto";
 				if (this.bodyWrap) this.bodyWrap.style.pointerEvents = "auto";
 			}
@@ -409,7 +385,6 @@ export class Live2DWidget {
 			if (!this.visible) {
 				this.stage.stop();
 			} else {
-				// 初次启动弹出一句亲切的问候气泡
 				setTimeout(() => {
 					this.showBubble(this.t("bubble.default"), 4500);
 				}, 600);
@@ -564,7 +539,6 @@ export class Live2DWidget {
 			this.container.style.display = "";
 			void this.container.offsetHeight;
 			this.container.classList.remove("pi-l2d-hidden");
-			// 兜底：容器若完全落在视口外（旧坐标/缩放残留），拉回右下角默认位置
 			try {
 				const rect = this.container.getBoundingClientRect();
 				if (rect.right < 0 || rect.bottom < 0 || rect.left > window.innerWidth || rect.top > window.innerHeight) {
@@ -612,14 +586,12 @@ export class Live2DWidget {
 		else this.show();
 	}
 
-	// ── 右键上下文菜单 ──────────────────────────────────────────
 	_showContextMenu(clientX, clientY) {
 		this._closeContextMenu();
 
 		const menu = document.createElement("div");
 		menu.className = "pi-l2d-contextmenu";
 
-		// 模式
 		menu.appendChild(this._createMenuTitle(this.t("menu.mode")));
 		const isMouse = this.config.mode === "mouse";
 		menu.appendChild(
@@ -648,7 +620,6 @@ export class Live2DWidget {
 
 		menu.appendChild(this._createDivider());
 
-		// 表情
 		const expressions = this.stage?.expressions || [];
 		if (expressions.length > 0) {
 			menu.appendChild(this._createMenuTitle(this.t("menu.expressions")));
@@ -663,7 +634,6 @@ export class Live2DWidget {
 			menu.appendChild(this._createDivider());
 		}
 
-		// 角色
 		menu.appendChild(this._createMenuTitle(this.t("menu.models")));
 		for (const m of this.models) {
 			menu.appendChild(
@@ -675,7 +645,6 @@ export class Live2DWidget {
 
 		menu.appendChild(this._createDivider());
 
-		// 音乐口型与眨眼互动
 		menu.appendChild(this._createMenuTitle(this.t("menu.music_and_blink")));
 		menu.appendChild(
 			this._createMenuItem(this.t("menu.music_panel"), false, () => {
@@ -695,7 +664,6 @@ export class Live2DWidget {
 
 		menu.appendChild(this._createDivider());
 
-		// 恢复位置
 		menu.appendChild(
 			this._createMenuItem(this.t("menu.reset_pos"), false, () => {
 				localStorage.removeItem(POS_STORAGE_KEY);
@@ -706,14 +674,12 @@ export class Live2DWidget {
 			}),
 		);
 
-		// 设置
 		menu.appendChild(
 			this._createMenuItem(this.t("menu.settings"), false, () => {
 				this.openSettings();
 			}),
 		);
 
-		// 收起
 		menu.appendChild(
 			this._createMenuItem(this.t("menu.hide"), false, () => {
 				this.hide();
@@ -723,7 +689,6 @@ export class Live2DWidget {
 		document.body.appendChild(menu);
 		this.contextMenuEl = menu;
 
-		// 调整坐标避免超出屏幕
 		const menuW = 200;
 		const menuH = menu.offsetHeight || 280;
 		const x = Math.min(window.innerWidth - menuW - 10, clientX);
@@ -776,7 +741,6 @@ export class Live2DWidget {
 		}
 	}
 
-	// ── 音乐口型对齐与播放控制 ────────────────────────────────────
 	_setupAudioSyncListeners() {
 		if (!this.stage?.audioSync) return;
 		const audioSync = this.stage.audioSync;
@@ -917,13 +881,10 @@ export class Live2DWidget {
 		document.body.appendChild(panel);
 		this.musicPanelEl = panel;
 
-		// 智能根据看板娘挂件位置停靠
 		this._positionMusicPanel(panel);
 
-		// 绑定面板事件
 		this._bindMusicPanelEvents(panel);
 
-		// 启动口型可视化更新循环
 		this._startMeterRaf();
 
 		requestAnimationFrame(() => panel.classList.add("pi-l2d-music-visible"));
@@ -936,7 +897,6 @@ export class Live2DWidget {
 		const panelW = 320;
 		const panelH = 430;
 
-		// 优先停靠在挂件左侧；如果左侧放不下则停靠在上方
 		let left = widgetRect.left - panelW - 12;
 		let top = widgetRect.top;
 
@@ -955,12 +915,10 @@ export class Live2DWidget {
 	_bindMusicPanelEvents(panel) {
 		const audioSync = this.stage?.audioSync;
 
-		// 关闭按钮
 		panel.querySelector("#pi-l2d-music-close").addEventListener("click", () => {
 			this.closeMusicPanel();
 		});
 
-		// 1. 本地音乐选择
 		const fileInput = panel.querySelector("#pi-l2d-input-audio-file");
 		panel.querySelector("#pi-l2d-btn-music-local").addEventListener("click", () => {
 			fileInput.click();
@@ -974,7 +932,6 @@ export class Live2DWidget {
 			fileInput.value = "";
 		});
 
-		// 拖拽音频文件到播放卡片
 		const dropzone = panel.querySelector("#pi-l2d-track-dropzone");
 		dropzone.addEventListener("dragover", (e) => {
 			e.preventDefault();
@@ -993,7 +950,6 @@ export class Live2DWidget {
 			}
 		});
 
-		// 2. 示范旋律一键播放
 		panel.querySelector("#pi-l2d-btn-music-demo").addEventListener("click", () => {
 			if (audioSync) {
 				audioSync.playDemo();
@@ -1001,7 +957,6 @@ export class Live2DWidget {
 			}
 		});
 
-		// 3. 网络直链抽屉折叠展开
 		const urlDrawer = panel.querySelector("#pi-l2d-url-drawer");
 		panel.querySelector("#pi-l2d-btn-music-url-toggle").addEventListener("click", () => {
 			const isHidden = urlDrawer.style.display === "none";
@@ -1009,7 +964,6 @@ export class Live2DWidget {
 			if (isHidden) panel.querySelector("#pi-l2d-music-url-input").focus();
 		});
 
-		// 播放 URL 直链
 		panel.querySelector("#pi-l2d-btn-play-url").addEventListener("click", () => {
 			const urlInput = panel.querySelector("#pi-l2d-music-url-input");
 			const val = urlInput.value.trim();
@@ -1019,7 +973,6 @@ export class Live2DWidget {
 			}
 		});
 
-		// 4. 播放 / 暂停 / 停止
 		panel.querySelector("#pi-l2d-btn-music-toggle").addEventListener("click", () => {
 			if (audioSync) audioSync.togglePlayPause();
 		});
@@ -1027,7 +980,6 @@ export class Live2DWidget {
 			if (audioSync) audioSync.stop();
 		});
 
-		// 5. 进度条点击跳转 seek
 		const progressBar = panel.querySelector("#pi-l2d-music-progress-bar");
 		progressBar.addEventListener("click", (e) => {
 			if (!audioSync || !audioSync.duration) return;
@@ -1037,7 +989,6 @@ export class Live2DWidget {
 			audioSync.seek(ratio * audioSync.duration);
 		});
 
-		// 6. 口型灵敏度滑块
 		const sensInput = panel.querySelector("#pi-l2d-music-sens");
 		const sensVal = panel.querySelector("#pi-l2d-music-sens-val");
 		sensInput.addEventListener("input", (e) => {
@@ -1048,7 +999,6 @@ export class Live2DWidget {
 			if (audioSync) audioSync.setSensitivity(val);
 		});
 
-		// 7. 音量大小滑块
 		const volInput = panel.querySelector("#pi-l2d-music-vol");
 		const volVal = panel.querySelector("#pi-l2d-music-vol-val");
 		volInput.addEventListener("input", (e) => {
@@ -1057,7 +1007,6 @@ export class Live2DWidget {
 			if (audioSync) audioSync.setVolume(val);
 		});
 
-		// 8. 人声跟随开关
 		const voiceOnlyCheckbox = panel.querySelector("#pi-l2d-music-voice-only");
 		voiceOnlyCheckbox.addEventListener("change", (e) => {
 			const checked = e.target.checked;
@@ -1066,7 +1015,6 @@ export class Live2DWidget {
 			this.stage?.setVoiceOnly(checked);
 		});
 
-		// 9. 自动眨眼开关与互动按钮
 		const blinkCheckbox = panel.querySelector("#pi-l2d-music-auto-blink");
 		blinkCheckbox.addEventListener("change", (e) => {
 			const checked = e.target.checked;
@@ -1153,7 +1101,6 @@ export class Live2DWidget {
 		}
 	}
 
-	/** 外部 API：播放音频 URL 直链或 Base64 */
 	async playAudio(url, title = "", volume = 0.85) {
 		if (!this.stage?.audioSync) return;
 		if (typeof volume === "number") this.stage.audioSync.setVolume(volume);
@@ -1165,19 +1112,16 @@ export class Live2DWidget {
 		this.showBubble(`🎵 正在播放: ${title || "音乐"}`, 3000);
 	}
 
-	/** 外部 API：停止音频 */
 	stopAudio() {
 		this.stage?.audioSync?.stop();
 	}
 
-	/** 外部 API：触发眨眼动作 */
 	triggerBlink(type = "both") {
 		if (type === "wink_left") this.stage?.triggerWink("left");
 		else if (type === "wink_right" || type === "wink") this.stage?.triggerWink("right");
 		else this.stage?.triggerBlink();
 	}
 
-	// ── 设置弹窗 ──────────────────────────────────────────────────
 	openSettings() {
 		if (this.modalEl) return;
 
@@ -1309,13 +1253,11 @@ export class Live2DWidget {
 		};
 		renderModelsList();
 
-		// 上传状态提示处理
 		const statusEl = card.querySelector("#pi-l2d-upload-status");
 		const fileZipInput = card.querySelector("#pi-l2d-file-zip");
 		const fileFolderInput = card.querySelector("#pi-l2d-file-folder");
 		const dropzoneEl = card.querySelector("#pi-l2d-dropzone");
 
-		// 1. 处理 ZIP 模型上传
 		const handleZipFile = async (file) => {
 			if (!file) return;
 			statusEl.style.display = "flex";
@@ -1348,7 +1290,6 @@ export class Live2DWidget {
 			}
 		};
 
-		// 2. 处理文件夹模型上传
 		const handleFolderFiles = async (fileList) => {
 			if (!fileList || fileList.length === 0) return;
 			const files = Array.from(fileList);
@@ -1397,7 +1338,6 @@ export class Live2DWidget {
 			}
 		};
 
-		// 绑定按钮触发文件选择
 		card.querySelector("#pi-l2d-btn-upload-zip").addEventListener("click", () => {
 			fileZipInput.click();
 		});
@@ -1415,7 +1355,6 @@ export class Live2DWidget {
 			fileFolderInput.value = "";
 		});
 
-		// 拖拽 ZIP 上传支持
 		dropzoneEl.addEventListener("dragover", (e) => {
 			e.preventDefault();
 			dropzoneEl.classList.add("dragover");
@@ -1436,7 +1375,6 @@ export class Live2DWidget {
 			}
 		});
 
-		// 3. 外部 URL 导入模型
 		const sensRange = card.querySelector("#pi-l2d-cfg-lipsync-sens");
 		const sensVal = card.querySelector("#pi-l2d-val-lipsync-sens");
 		sensRange?.addEventListener("input", (e) => {
@@ -1468,7 +1406,6 @@ export class Live2DWidget {
 			renderModelsList();
 		});
 
-		// 4. 保存设置并关闭
 		const close = () => {
 			const clickThroughChecked = card.querySelector("#pi-l2d-cfg-clickthrough").checked;
 			if (clickThroughChecked !== Boolean(this.config.clickThrough)) {
@@ -1494,7 +1431,6 @@ export class Live2DWidget {
 		});
 	}
 
-	// ── AI 情绪联动响应 ──────────────────────────────────────────
 	onAgentThinking() {
 		if (!this.config.reactToAgent || !this.visible) return;
 		this.stage?.playExpression("f00") || this.stage?.playExpression("neutral");

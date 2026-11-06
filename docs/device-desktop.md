@@ -1,6 +1,6 @@
 # 已授权设备的原生远程桌面
 
-设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据、连接器与既有 WebSocket 中继，在浏览器 canvas 显示 JPEG。无需 VNC 服务、noVNC 或额外桌面端口。画面不进入聊天快照或模型上下文。
+设备中心参考 [krd](https://github.com/zzjcool/krd) 的原生捕获与输入方式，复用设备访问票据和连接器，在浏览器 canvas 显示 JPEG。从本机设备中心打开时，与「打开设备」的完整对话界面共用[局域网优先访问](device-center.md#局域网优先访问)：优先使用经过 TLS PSK 验证的私网通道，不可达时使用原 Hub WebSocket 中继。无需 VNC 服务、noVNC 或固定桌面端口。画面不进入聊天快照或模型上下文。
 
 ## 平台与启用
 
@@ -41,8 +41,8 @@ HTTP/WS 独立检查物理回环来源、回环 Host、本机鉴权与存在时�
 
 输出为最大 4 MiB 的二进制 JPEG，文本帧报告 ready/error。浏览器完成绘制后回复 `{type:"ack"}`，每连接仅有一帧等待确认，期间丢弃新帧，防止跨设备慢连接积压。输入为最大 16 KiB 的 JSON，校验 normalized pointer、wheel、物理 key code、text 和 release。
 
-每设备最多四个桌面连接；启动超时 60 秒，30 秒 ping/pong，30 分钟无用户输入释放。断开、关闭、禁用或错误清理捕获并释放按住的键鼠。原生进程输入队列、帧大小和错误日志均有界，取消先请求退出再终止特定子进程。不监听额外 TCP 端口，不保存录像或剪贴板历史。
+每设备最多四个桌面连接；启动超时 60 秒，30 秒 ping/pong，30 分钟无用户输入释放。断开、关闭、禁用或错误清理捕获并释放按住的键鼠。原生进程输入队列、帧大小和错误日志均有界，取消先请求退出再终止特定子进程。捕获器本身不监听额外 TCP 端口；设备连接器按需提供共享的加密局域网端口，桌面与完整设备网页共用该通道。浏览器仍只连接本机能力入口，不直接处理私网地址或共享密钥。不保存录像或剪贴板历史。
 
 ## 验证
 
-相关测试在 `tests/unit/device-center-desktop*.test.ts`、`device-desktop-native.test.ts`、`device-desktop-linux.test.ts` 和 `device-desktop-relay.test.ts`。覆盖权限、启用持久化、原生进程清理、输入边界、只读、帧确认以及真实 Hub/connector 中继。可用 Chrome 时验证代理前缀下的画布解码、控制模式鼠标移动与输入长度；浏览器模拟画面测试不等于各平台实机验证。
+相关测试在 `tests/unit/device-center-desktop*.test.ts`、`device-desktop-native.test.ts`、`device-desktop-linux.test.ts`、`device-desktop-relay.test.ts` 和 `device-lan*.test.ts`。LAN 测试使用真实 TLS PSK、HTTP/WS 和 Chrome 嵌套沙箱，验证聊天与画面直连、授权隔离、路径前缀及断线回退。覆盖权限、启用持久化、原生进程清理、输入边界、只读、帧确认以及真实 Hub/connector 中继。可用 Chrome 时验证代理前缀下的画布解码、控制模式鼠标移动与输入长度；浏览器模拟画面测试不等于各平台实机验证。

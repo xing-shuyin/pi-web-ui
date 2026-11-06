@@ -40,13 +40,10 @@ export interface BotCatalogSources {
 	models?: (signal: AbortSignal) => Promise<ModelInfo[]>;
 	projects?: () => { path: string }[] | Promise<{ path: string }[]>;
 	defaultModel?: () => string | undefined;
-	/** Current saved tool switches, captured when the catalog is requested. */
 	defaultTools?: () => string[];
-	/** Must only inspect an existing bridge; do not initialize one for browsing. */
 	peekMcpBridge?: (cwd: string) => McpBridge | undefined;
 }
 
-/** Captures the requested project once; only public metadata is returned. */
 export async function getLocalBotOptions(
 	sources: BotCatalogSources,
 	requestedCwd: unknown,
@@ -62,8 +59,6 @@ export async function getLocalBotOptions(
 	const defaultTools = [...(sources.defaultTools?.() ?? [])];
 	const agentDir = sources.agentDir ?? getAgentDir();
 	const settings = SettingsManager.create(cwd, agentDir);
-	// Match ResourceLoader package/path resolution, but skip missing packages rather than installing.
-	// No extensions are imported and no MCP transport is initialized.
 	const resources = await new DefaultPackageManager({ cwd, agentDir, settingsManager: settings }).resolve(async () => {
 		signal.throwIfAborted();
 		return "skip";

@@ -1,7 +1,3 @@
-/**
- * model-enrich 单测：规范化 / 模糊匹配 / 依据钉死 / URL 兜底。
- * 零网络（目录走注入 fixture，抓取走注入函数）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	buildIndex,
@@ -113,7 +109,6 @@ describe("enrichBatch 自动匹配", () => {
 		expect(claude?.contextWindow).toBe(1000000);
 		expect(claude?.maxTokens).toBe(128000);
 		expect(claude?.input).toEqual(["text", "image"]);
-		// OpenRouter fixture 无 reasoning 信号，models.dev 补上。
 		expect(claude?.reasoning).toBe(true);
 		expect(claude?.matchType).toBe("normalized");
 		expect(claude?.source).toContain("OpenRouter");
@@ -161,7 +156,6 @@ describe("enrichBatch 依据钉死", () => {
 		expect(res[0].contextWindow).toBe(1000000);
 		expect(res[0].maxTokens).toBe(128000);
 		expect(res[0].input).toEqual(["text", "image"]);
-		// 推理不从网页认。
 		expect(res[0].reasoning).toBeUndefined();
 	});
 	it("URL 无可用参数 → unmatched", async () => {

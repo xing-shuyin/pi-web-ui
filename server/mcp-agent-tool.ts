@@ -1,13 +1,3 @@
-/**
- * mcp-agent-tool.ts — Agent 工具 `mcp_manage`：让 AI 便捷地检查、安装、移除与重载 MCP 服务器。
- *
- * 约定：
- * - 工具定义（description / promptSnippet / promptGuidelines）保持精简纯英文；
- * - 单次调用返回文本走 pick(lang, zh, en, key)；
- * - 安装或移除后立即触发 McpBridge.reload() + 会话工具表热同步（syncPluginToolsIntoSession），
- *   新挂载的远端工具在同一对话下一拍即可直接调用。
- */
-
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { pick, type ServerLang } from "./i18n.js";
@@ -312,7 +302,6 @@ export function makeMcpManageTool(host: McpManageToolHost, lang?: () => ServerLa
 				);
 			}
 
-			// action === "reload"
 			const { servers } = await host.reloadServers();
 			const runningCount = servers.filter((s) => s.status === "running").length;
 			return reply(

@@ -5,11 +5,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { HintTip, TipButton } from "../../web/src/components/HintTip.js";
 
-/**
- * HintTip 回归：滚动/缩放不收起（跟随锚点），锚点滚出视口才收。
- * 真 jsdom + 真 React 渲染；rAF 打成同步桩（jsdom 的帧回调不可靠）。
- */
-
 let root: Root | null = null;
 
 afterEach(() => {
@@ -19,7 +14,6 @@ afterEach(() => {
 	document.body.innerHTML = "";
 });
 
-/** rAF 同步执行（滚动跟随的节流回调立刻跑完，可断言）。 */
 function stubSyncRaf() {
 	vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
 		cb(0);
@@ -28,7 +22,6 @@ function stubSyncRaf() {
 	vi.stubGlobal("cancelAnimationFrame", () => {});
 }
 
-/** 渲染并 hover 打开气泡，返回问号锚点。 */
 function openTip(text = "很长很长的说明文本") {
 	stubSyncRaf();
 	const container = document.createElement("div");
@@ -38,7 +31,6 @@ function openTip(text = "很长很长的说明文本") {
 		root!.render(createElement(HintTip, { text }));
 	});
 	const anchor = container.querySelector(".set-tip") as HTMLElement;
-	// React 的 onMouseEnter 基于 mouseover 合成（mouseenter 不冒泡，直接派发测不到）。
 	act(() => {
 		anchor.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 	});

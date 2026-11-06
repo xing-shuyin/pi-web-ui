@@ -141,11 +141,9 @@ describe("compose template persistence and state synchronization", () => {
 			return current.trim() ? `${current}\n\n{{${token}}}` : `{{${token}}}`;
 		};
 
-		// 空模板直接追加
 		expect(appendToken("", "tools")).toBe("{{tools}}");
 		expect(appendToken("   ", "tools")).toBe("{{tools}}");
 
-		// 已有模板空行隔开追加
 		expect(appendToken("{{soul}}", "tools")).toBe("{{soul}}\n\n{{tools}}");
 		expect(appendToken("{{soul}}\n\n{{append}}", "guidelines")).toBe("{{soul}}\n\n{{append}}\n\n{{guidelines}}");
 	});

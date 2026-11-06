@@ -164,7 +164,7 @@ describe("MessageWindowTap", () => {
 		expect(page.messages[0]).toBe(full[670]);
 		expect(page.messages.at(-1)).toBe(full[699]);
 		expect(page.historyStart).toBe(670);
-		expect(page.historyStart + page.messages.length).toBe(700); // 与上一窗口无缝相接
+		expect(page.historyStart + page.messages.length).toBe(700);
 	});
 
 	it("loadEarlier all=true 一路拉到最早；到底后回空页", () => {
@@ -219,13 +219,10 @@ describe("MessageWindowTap", () => {
 
 	it("未命中时返回 false；rehydrate 回水后当场成功服务", () => {
 		const { tap, out, full } = makeTap(1000, 300);
-		// 尚未接收快照，直接翻页未命中返回 false
 		expect(tap.loadEarlier({ conversationId: "c_unknown", count: 30 })).toBe(false);
 		expect(out).toHaveLength(0);
 
-		// 按需回水：从运行时注回全量消息
 		tap.rehydrate("c_unknown", full, 700);
-		// 回水后立即成功，返回 true 并发出 earlier_messages
 		expect(tap.loadEarlier({ conversationId: "c_unknown", count: 30 })).toBe(true);
 		expect(out).toHaveLength(1);
 		const page = out[0] as Extract<ServerMessage, { type: "earlier_messages" }>;
@@ -238,7 +235,6 @@ describe("MessageWindowTap", () => {
 	it("beforeId 优先于下标进行不可变锚定（防止下标漂移）", () => {
 		const { tap, out, full } = makeTap(1000, 300);
 		tap.accept(snapshot("c1", full));
-		// 客户端首条是 full[700]，带 beforeId="m700"
 		const ok = tap.loadEarlier({ conversationId: "c1", count: 20, beforeId: "m700" });
 		expect(ok).toBe(true);
 		const page = out[1] as Extract<ServerMessage, { type: "earlier_messages" }>;
@@ -271,7 +267,6 @@ describe("MessageWindowTap", () => {
 		const { tap, out, full } = makeTap(10, 3);
 		tap.accept(snapshot("c1", full));
 		const generation = (out[0] as Extract<ServerMessage, { type: "snapshot" }>).state.historyGeneration;
-		// Retain the seam ID, but replace an earlier message in the same source array.
 		full[0] = msg("replacement");
 		tap.accept(snapshot("c1", full));
 		const next = (out[1] as Extract<ServerMessage, { type: "snapshot" }>).state;

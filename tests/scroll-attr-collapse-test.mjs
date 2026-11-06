@@ -1,13 +1,3 @@
-/* Scroll-stick E2E: attribute-driven shrink regression (live hawkeye symptom).
- * A stuck-at-bottom chat receives a streaming append (childList growth) AND a
- * card-like block collapses every 2.5s via CLASS REMOVAL — a pure attribute
- * mutation (no childList change), like ThinkingBlock's open⇄collapsed flip.
- * The class flip above the viewport shrinks scrollHeight with NO scroll event
- * and NO container-box change, so onScroll's dSh discriminator and the RO are
- * both silent — at HEAD 3871698 the bottom drifts and the chip pops. The
- * content MutationObserver must catch it via attributes:true + a
- * scrollHeight-delta re-pin. Assert: stick survives ≥30s (gap ~0, chip hidden).
- * Run: npm run build && node tests/scroll-attr-collapse-test.mjs */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -75,7 +65,6 @@ async function waitServer() {
 	}
 	throw new Error("server did not start");
 }
-/* Seed a long chat so .messages overflows and cards land above the viewport. */
 function seedChat() {
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
@@ -109,12 +98,6 @@ function seedChat() {
 		ws.on("error", reject);
 	});
 }
-/* Setup: pre-create collapsible "tool cards" ABOVE the viewport. The churn
-/* Setup: pre-create collapsible "tool cards" ABOVE the viewport. The churn
- * itself must be attribute-ONLY (class removal + style mutation, no
- * childList/characterData): at HEAD the MO already re-pins on childList /
- * characterData mutations, which would mask the drift. Attribute flips fire
- * no observer, no scroll event, and no RO callback → silent drift at HEAD. */
 const SETUP_FN = `
 	window.__setup = (n) => {
 		const el = document.querySelector('.messages');
@@ -162,10 +145,6 @@ const gapOf = () => {
 	return el.scrollHeight - el.scrollTop - el.clientHeight;
 };
 
-/** Live-chat arrivals: a new user+assistant message pair every 3s (like the
- * hawkeye streaming session). With >36 seeded messages this drives
- * KEEP_RECENT summary-row collapses, lazy-window placeholder swaps and
- * virtualizer remounts on every arrival. */
 function startArrivals(count) {
 	const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
 	let left = count;
@@ -211,9 +190,6 @@ async function main() {
 	await page.addScriptTag({ content: CHURN_FN });
 	await page.evaluate(() => window.__setup(16));
 
-	// Stick at the bottom (go up first to summon the chip), then let ALL
-	// backstops expire — only the content MO can see what comes next
-	// (no scroll events, no RO, no React renders).
 	await page.evaluate(() => {
 		document.querySelector(".messages").scrollTop = 0;
 	});
@@ -223,9 +199,6 @@ async function main() {
 	let gap = await page.evaluate(gapOf);
 	check(`setup: pinned before churn (gap ${gap}px < 80)`, gap < 80);
 
-	// ---- 36s of live arrivals (12 prompts x 3s): new user+assistant pairs
-	// land while pinned — KEEP_RECENT summary-row collapses, lazy-window
-	// placeholder swaps and virtualizer remounts all churn per arrival.
 	const stopArrivals = startArrivals(12);
 	let chipEverVisible = false;
 	let maxGap = 0;
@@ -239,7 +212,6 @@ async function main() {
 	stopArrivals();
 	check("36s of arrivals: Back-to-bottom chip never appeared", !chipEverVisible);
 
-	// Grace: user escape still works after the churn (no forced snap machinery).
 	await page.mouse.move(700, 450);
 	await page.mouse.wheel(0, -600);
 	await sleep(400);

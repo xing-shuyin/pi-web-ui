@@ -1,4 +1,3 @@
-/** Stable local execution policy. Never interpolate task, history or Bot configuration here. */
 export function getBotExecutionInstructions(primary: boolean): string {
 	return [
 		"Follow the existing local agent approval policy. Never enable auto-approval or change safety settings on behalf of a remote task.",

@@ -51,7 +51,7 @@ function mockApi(status: object, handler?: (path: string, init: RequestInit) => 
 		}
 	});
 }
-async function mount() {
+async function mount(props: Parameters<typeof DeviceCenter>[0] = {}) {
 	localStorage.setItem("pi-web-ui:lang", "zh");
 	const container = document.createElement("div");
 	document.body.append(container);
@@ -61,11 +61,44 @@ async function mount() {
 		container.remove();
 	});
 	await act(async () => {
-		root.render(createElement(LanguageProvider, null, createElement(DeviceCenter)));
+		root.render(createElement(LanguageProvider, null, createElement(DeviceCenter, props)));
 	});
 	return container;
 }
 describe("native device workspace", () => {
+	it("provides one navigation for device connections, groups and work items, and external channels", async () => {
+		vi.stubGlobal(
+			"fetch",
+			mockApi({
+				name: "Windows",
+				deviceId: "win",
+				hubUrl: "https://hub.example.com",
+				allowExecution: false,
+				connected: true,
+			}),
+		);
+		const page = await mount();
+		const navigation = page.querySelector("nav.dc-sidebar")!;
+		const buttons = [...navigation.querySelectorAll("button")];
+		expect(buttons.map((button) => button.textContent)).toEqual(["设备与连接", "群组与工单", "外部渠道"]);
+		await act(async () => buttons[2].click());
+		expect(page.textContent).toContain("GitHub / 飞书渠道");
+		expect(buttons[2].getAttribute("aria-pressed")).toBe("true");
+		await act(async () => buttons[1].click());
+		expect(page.textContent).toContain("新建群聊");
+		expect(page.querySelector('[aria-label="外部渠道配置"]')).toBeNull();
+	});
+	it("guides an unpaired device back to connection setup instead of opening channel or group APIs", async () => {
+		const api = mockApi({ name: "Windows", allowExecution: false, connected: false });
+		vi.stubGlobal("fetch", api);
+		const page = await mount();
+		await act(async () => (page.querySelectorAll("nav.dc-sidebar button")[2] as HTMLButtonElement).click());
+		expect(page.textContent).toContain("先连接设备中心");
+		expect(api.mock.calls.some(([url]) => url.includes("/rooms"))).toBe(false);
+		const connect = [...page.querySelectorAll("button")].find((button) => button.textContent === "前往设备连接")!;
+		await act(async () => connect.click());
+		expect(page.querySelector(".dc-form")).not.toBeNull();
+	});
 	it("hides permission and disconnect actions until paired", async () => {
 		vi.stubGlobal("fetch", mockApi({ name: "Windows", allowExecution: false, connected: false }));
 		const page = await mount();
@@ -100,7 +133,7 @@ describe("native device workspace", () => {
 		expect(toggle.getAttribute("aria-checked")).toBe("false");
 		expect(page.querySelector('[role="alert"]')?.textContent).toContain("权限保存失败");
 	});
-	it("renders all sections cleanly in a single unified overview", async () => {
+	it("keeps devices and permissions together and opens groups from the same workspace", async () => {
 		vi.stubGlobal(
 			"fetch",
 			mockApi({
@@ -114,9 +147,12 @@ describe("native device workspace", () => {
 		const page = await mount();
 		expect(page.querySelectorAll('section[aria-label="所有设备"]')).toHaveLength(1);
 		expect(page.querySelectorAll(".dc-bots")).toHaveLength(1);
-		expect(page.querySelectorAll('section[aria-label="群聊列表"]')).toHaveLength(1);
+		expect(page.querySelectorAll('section[aria-label="群聊列表"]')).toHaveLength(0);
 		expect(page.querySelectorAll('section[aria-label="本机远程桌面"]')).toHaveLength(1);
 		expect(page.querySelectorAll(".dc-danger-zone")).toHaveLength(1);
+		await act(async () => (page.querySelectorAll("nav.dc-sidebar button")[1] as HTMLButtonElement).click());
+		expect(page.querySelectorAll('section[aria-label="群聊列表"]')).toHaveLength(1);
+		expect(page.querySelectorAll(".dc-danger-zone")).toHaveLength(0);
 	});
 	it("opens the connected Hub and authorizes remote desktop access", async () => {
 		const replace = vi.fn();

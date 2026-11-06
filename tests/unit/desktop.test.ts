@@ -1,8 +1,3 @@
-/**
- * 桌面壳检测与沉浸式装饰单测（`web/src/desktop.ts`）。
- *
- * 传参即判定，不碰全局 window —— 单测里不需要 jsdom。
- */
 import { describe, expect, it, vi } from "vitest";
 import {
 	getDesktopPlatform,

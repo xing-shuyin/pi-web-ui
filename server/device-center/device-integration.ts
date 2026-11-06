@@ -74,12 +74,10 @@ export interface DeviceIntegrationSession {
 	targetDeviceId?: string;
 }
 
-/** 持久化会话映射表文件路径 */
 function sessionsFilePath(dataDir: string): string {
 	return join(dataDir, "integration-sessions.json");
 }
 
-/** 从磁盘读取持久化的集成会话记录 */
 export async function loadPersistentSessions(dataDir: string): Promise<Map<string, DeviceIntegrationSession>> {
 	const filePath = sessionsFilePath(dataDir);
 	const map = new Map<string, DeviceIntegrationSession>();
@@ -94,13 +92,10 @@ export async function loadPersistentSessions(dataDir: string): Promise<Map<strin
 				}
 			}
 		}
-	} catch {
-		// ignore corrupted read
-	}
+	} catch {}
 	return map;
 }
 
-/** 原子保存持久化的集成会话记录 */
 export async function savePersistentSessions(
 	dataDir: string,
 	sessionsMap: Map<string, DeviceIntegrationSession>,
@@ -134,7 +129,6 @@ function persistSession(dataDir: string, integrationId: string, session?: Device
 	return operation;
 }
 
-/** 内存活跃会话映射及操作中断控制器 */
 const memorySessions = new Map<string, DeviceIntegrationSession>();
 type IntegrationIdentity = {
 	integrationId: string;
@@ -203,7 +197,6 @@ function sanitizeError(error: unknown): string {
 		.slice(0, 500);
 }
 
-/** 确保受控的空 Git 配置文件以移植跨平台禁用全局配置 */
 async function getVerifiedEmptyConfigFile(dataDir: string): Promise<string> {
 	const file = resolve(dataDir, ".safe-empty-gitconfig");
 	if (!existsSync(file)) {
@@ -212,7 +205,6 @@ async function getVerifiedEmptyConfigFile(dataDir: string): Promise<string> {
 	return file.replace(/\\/g, "/");
 }
 
-/** 确保受控的临时空 Home 目录，防验证命令读取宿主真实 ~/.ssh, ~/.gitconfig 或 ~/.npmrc 等密钥配置 */
 async function getVerifiedEmptyHomeDir(dataDir: string): Promise<string> {
 	const dir = resolve(dataDir, ".safe-empty-home");
 	if (!existsSync(dir)) {
@@ -221,7 +213,6 @@ async function getVerifiedEmptyHomeDir(dataDir: string): Promise<string> {
 	return dir.replace(/\\/g, "/");
 }
 
-/** 构造受限的隔离环境变量，剥离所有宿主 Token、密钥与真实 Home 配置（大小写不敏感兼容 Windows） */
 async function buildIsolatedEnv(dataDir: string): Promise<NodeJS.ProcessEnv> {
 	const emptyConfig = await getVerifiedEmptyConfigFile(dataDir);
 	const emptyHome = await getVerifiedEmptyHomeDir(dataDir);
@@ -252,7 +243,6 @@ async function buildIsolatedEnv(dataDir: string): Promise<NodeJS.ProcessEnv> {
 	return env;
 }
 
-/** 确保受控的空 hook 目录，通过 lstat 严格验证不是软链接且内部为空 */
 async function getVerifiedEmptyHooksDir(dataDir: string): Promise<string> {
 	const dir = resolve(dataDir, ".safe-git-hooks");
 	if (!existsSync(dir)) {
@@ -272,7 +262,6 @@ async function getVerifiedEmptyHooksDir(dataDir: string): Promise<string> {
 	return dir.replace(/\\/g, "/");
 }
 
-/** 严格核验仓库无外部可执行 merge/filter/diff 驱动配置 */
 export async function verifyNoExternalDrivers(repoRoot: string, dataDir: string): Promise<void> {
 	const env = await buildIsolatedEnv(dataDir);
 	try {
@@ -291,7 +280,6 @@ export async function verifyNoExternalDrivers(repoRoot: string, dataDir: string)
 	}
 }
 
-/** 检查 .gitattributes 中是否定义了外部自定义驱动 */
 export async function verifyGitAttributesSafe(cwd: string, _dataDir: string): Promise<void> {
 	const attrPath = join(cwd, ".gitattributes");
 	if (!existsSync(attrPath)) return;
@@ -309,7 +297,6 @@ export async function verifyGitAttributesSafe(cwd: string, _dataDir: string): Pr
 	}
 }
 
-/** 严格校验分支名：拒绝以 '-' 开头，并通过 git check-ref-format --branch 检验 */
 export async function validateBranchName(cwd: string, branch: string): Promise<string> {
 	const trimmed = (branch || "").trim();
 	if (!trimmed || trimmed.startsWith("-")) {
@@ -327,7 +314,6 @@ export async function validateBranchName(cwd: string, branch: string): Promise<s
 	}
 }
 
-/** 安全参数执行 Git 命令：强制空 hooks、禁用 gpg 签名、禁用 autocrlf */
 export async function runIsolatedGit(
 	cwd: string,
 	dataDir: string,
@@ -371,7 +357,6 @@ export async function runIsolatedGit(
 	}
 }
 
-/** 获取隔离工作树根目录，通过 lstat + realpath 链与 within 验证，禁止逃逸出 dataDir */
 export async function getVerifiedWorktreesRoot(dataDir: string): Promise<string> {
 	const dataDirStat = await lstat(dataDir);
 	if (dataDirStat.isSymbolicLink()) {
@@ -401,7 +386,6 @@ export async function getVerifiedWorktreesRoot(dataDir: string): Promise<string>
 	return rootReal;
 }
 
-/** 检查仓库是否为 Git 且获取指定分支的当前 HEAD commit SHA 及未提交改动状态 */
 export async function inspectLocalTarget(
 	repoRoot: string,
 	dataDir: string,
@@ -442,13 +426,11 @@ export async function inspectLocalTarget(
 	return { headSha, isDirty };
 }
 
-/** 安全非强制移除工作树 */
 export async function safeRemoveWorktree(repoRoot: string, dataDir: string, worktreePath: string): Promise<void> {
 	if (!existsSync(worktreePath)) return;
 	const normalizedPath = worktreePath.replace(/\\/g, "/");
 	const sessions = await loadPersistentSessions(dataDir);
 	const session = [...sessions.values()].find((item) => resolve(item.worktreePath) === resolve(worktreePath));
-	// Only discard the exact staged merge we prepared; preserve modified or unpinned workspaces.
 	if (session) {
 		if (session.stopUnconfirmed || session.verificationInFlight) throw new VerificationStopUnconfirmedError();
 		await assertPreparedTree(session, dataDir);
@@ -462,7 +444,6 @@ export async function safeRemoveWorktree(repoRoot: string, dataDir: string, work
 	}
 }
 
-/** 扫描并清理孤儿工作树目录 */
 export async function recoverOrphanWorktrees(
 	dataDir: string,
 	repoRootFinder?: (integrationId: string) => string | undefined,
@@ -507,7 +488,6 @@ export async function recoverOrphanWorktrees(
 	return { recoveredCount, pendingCount };
 }
 
-/** 获取会话对象并严格核验多租户 Bot 身份、Revision 与工作区归属 */
 async function getVerifiedSession(
 	dataDir: string,
 	params: {
@@ -529,7 +509,6 @@ async function getVerifiedSession(
 		throw new Error("Active integration worktree session not found on this device");
 	}
 	if (session.stopUnconfirmed || session.verificationInFlight) throw new VerificationStopUnconfirmedError();
-	// 严格跨 Bot 隔离校验：防止 opaque ID 借由另一 Bot 的 lease 跨权操作
 	if (
 		session.targetBotId !== params.targetBotId ||
 		session.targetBotRevision !== params.targetBotRevision ||
@@ -554,7 +533,6 @@ async function getVerifiedSession(
 	return session;
 }
 
-/** 设备本地：准备集成（创建隔离 worktree，尝试预合并并提取 diff 或冲突） */
 async function prepareIntegration(
 	params: {
 		integrationId: string;
@@ -675,7 +653,6 @@ async function prepareIntegration(
 
 	if (existsSync(worktreePath)) throw new Error("Integration worktree already exists; explicit cancellation required");
 
-	// 检出 expectedTargetSha 的 detached 隔离工作树
 	await runIsolatedGit(
 		repoRoot,
 		dataDir,
@@ -724,7 +701,6 @@ async function prepareIntegration(
 		if (params.artifactRef && session.preparedTreeSha !== params.artifactRef.outputTree)
 			throw new Error("Prepared tree does not match artifact outputTree");
 
-		// 保存到内存和持久化磁盘
 		memorySessions.set(sessionKey(params), session);
 		await persistSession(dataDir, integrationId, session);
 
@@ -779,7 +755,6 @@ async function prepareIntegration(
 	}
 }
 
-/** 设备本地：在隔离 worktree 中执行显式选择的验证命令（全量透传 signal 并支持 cancel 中断） */
 async function assertPreparedTree(
 	session: DeviceIntegrationSession,
 	dataDir: string,
@@ -941,16 +916,6 @@ async function verifyIntegration(
 	}
 }
 
-/**
- * 设备本地：用户确认写入目标分支
- * 1. 严格排他锁：不能在当前有在途验证命令执行时并发 apply
- * 2. 多租户会话与 Bot 身份、Revision 强校验
- * 3. 检查未被验证命令污染或篡改（diff / untracked / write-tree 三重验证）
- * 4. 验证生成的 merge commit 父链（HEAD^1 === expectedTargetSha 且 HEAD^2 === deliveryCommit）
- * 5. 前置紧邻二次检查目标仓库 dirty 状态与目标分支 HEAD SHA
- * 6. 执行原子 CAS update-ref 写入目标分支
- * 7. 若目标分支为 checked-out 分支，使用安全无覆盖 read-tree -u -m 同步当前工作区（绝不 hard reset！）
- */
 type ConfirmIntegrationParams = IntegrationIdentity & {
 	deliveryId: string;
 	commit?: string;
@@ -1161,7 +1126,6 @@ export function deviceCancelPublication(params: {
 }): Promise<DevicePublicationResult> {
 	const intent = validatePublishIntent(params.publishIntent);
 	const operation = activeOperations.get(sessionKey({ dataDir: params.dataDir, integrationId: intent.integrationId }));
-	// Install the publication fence synchronously even if confirmation has not reached its gate yet.
 	const cancellation = cancelLocalPublication(params);
 	operation?.controller.abort(new Error("Publication cancelled"));
 	return (async () => {

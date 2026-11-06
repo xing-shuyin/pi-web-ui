@@ -1,7 +1,3 @@
-/**
- * 设置面板快照里的内置子代理模板：繁中界面（zh-TW / zh-HK / zh-Hant）看到繁中视图，
- * 其余界面看到出厂简中；快照只是视图，不改库（全局共享，其它客户端不受影响）。
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +35,6 @@ function makeHost(getLocale?: () => string | undefined): SettingsHost {
 	};
 }
 
-/** 最近一次 settings_state 里的某个模板。 */
 function snapshotTemplate(name: string): UiSubagentTemplate | undefined {
 	for (let i = emitted.length - 1; i >= 0; i--) {
 		const m = emitted[i] as { type?: string; settings?: { subagentTemplates?: UiSubagentTemplate[] } };
@@ -120,7 +115,6 @@ describe("设置快照的内置模板按界面语言出视图", () => {
 		expect(review?.systemPrompt).toBe("我自己改的提示词");
 		expect(review?.description).toBe(BUILTIN_TEMPLATES_HANT.review!.description);
 		expect(snapshotTemplate("mine")?.description).toBe("自建");
-		// 库里仍是出厂简中
 		expect(templates.get("review")?.description).toBe(shipped("review").description);
 	});
 });

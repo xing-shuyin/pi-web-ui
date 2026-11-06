@@ -1,11 +1,3 @@
-/**
- * 权限预设相关辅助逻辑与会话回放。
- */
-
-/**
- * 从会话 sessionManager entries 回放恢复最后设定的**计划模式**状态（同 permission/preset
- * 的落盘口径：切会话/重载不丢）。从未设定或非布尔 → false。
- */
 export function readPlanModeFromSession(sm: unknown): boolean {
 	try {
 		const mgr = sm as { getEntries?: () => unknown[] };
@@ -15,18 +7,10 @@ export function readPlanModeFromSession(sm: unknown): boolean {
 			const e = entries[i] as { customType?: string; data?: { enabled?: unknown } } | undefined;
 			if (e?.customType === "plan/mode" && typeof e.data?.enabled === "boolean") return e.data.enabled;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return false;
 }
 
-/**
- * 从会话 sessionManager entries 回放恢复最后设定的**审查者模式**状态（同 plan/mode
- * 口径：customType "delegate/mode"）。从未设定或非布尔 → false。
- * ⚠️ 执行对话 id **不回放**：常驻执行对话是本进程内的活对象，重启后
- * 首条请求会重新建一个（宁可多一个执行对话，也别指向一个不存在的 id）。
- */
 export function readDelegateModeFromSession(sm: unknown): boolean {
 	try {
 		const mgr = sm as { getEntries?: () => unknown[] };
@@ -36,16 +20,10 @@ export function readDelegateModeFromSession(sm: unknown): boolean {
 			const e = entries[i] as { customType?: string; data?: { enabled?: unknown } } | undefined;
 			if (e?.customType === "delegate/mode" && typeof e.data?.enabled === "boolean") return e.data.enabled;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return false;
 }
 
-/**
- * 从会话 sessionManager entries 回放恢复最后设定的权限预设（若从未设定则返回 undefined）。
- * customType 为 "permission/preset"，载荷结构为 { preset: string }。
- */
 export function readPermissionFromSession(sm: unknown): string | undefined {
 	try {
 		const mgr = sm as { getEntries?: () => unknown[] };
@@ -57,16 +35,10 @@ export function readPermissionFromSession(sm: unknown): string | undefined {
 				return e.data.preset;
 			}
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return undefined;
 }
 
-/**
- * 从会话 sessionManager entries 回放恢复最后保存的结构化计划状态。
- * customType 为 "plan/update" 或 "pi-web-ui/plan"，载荷结构为 { plan: PlanState }。
- */
 export function readPlanFromSession(sm: unknown): import("./protocol.js").PlanState | null {
 	try {
 		const mgr = sm as { getEntries?: () => unknown[] };
@@ -89,8 +61,6 @@ export function readPlanFromSession(sm: unknown): import("./protocol.js").PlanSt
 				return e.data.plan;
 			}
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return null;
 }

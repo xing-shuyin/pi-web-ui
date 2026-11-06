@@ -49,7 +49,6 @@ async function snapshot(dir: string): Promise<string> {
 	await visit(dir);
 	return files.sort().join("\n");
 }
-// Real Git objects, refs and independent Node crashes require the native Windows process budget.
 describe("local publication process and Git faults", { timeout: 60_000 }, () => {
 	it("recovers prepared-before-candidate only with exact owner resume, preserves raw candidate and GC pin", async () => {
 		const f = await fixture();

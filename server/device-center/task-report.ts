@@ -4,10 +4,9 @@ import { createHash } from "node:crypto";
 import { writeAtomicSync, writeJsonAtomicSync } from "../atomic-file.js";
 
 export const TASK_REPORT_BYTES = 16 * 1024;
-export const MAX_TASK_FULL_REPORT_BYTES = 4 * 1024 * 1024; // 4 MiB hard quota
-export const MAX_TASK_REPORT_CHUNK_BYTES = 64 * 1024; // 64 KiB per transport chunk
+export const MAX_TASK_FULL_REPORT_BYTES = 4 * 1024 * 1024;
+export const MAX_TASK_REPORT_CHUNK_BYTES = 64 * 1024;
 
-/** Keep the opening context and final conclusions within the wire report budget. */
 export function boundTaskReport(text: string, limit = TASK_REPORT_BYTES): string {
 	const bytes = Buffer.from(text, "utf8");
 	if (bytes.length <= limit) return text;
@@ -16,7 +15,6 @@ export function boundTaskReport(text: string, limit = TASK_REPORT_BYTES): string
 	const budget = limit - Buffer.byteLength(marker);
 	let start = Math.floor(budget / 2);
 	let end = bytes.length - (budget - start);
-	// UTF-8 continuation bytes cannot begin either retained boundary.
 	while (start > 0 && (bytes[start] & 0xc0) === 0x80) start--;
 	while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) end++;
 	return bytes.subarray(0, start).toString("utf8") + marker + bytes.subarray(end).toString("utf8");
@@ -134,7 +132,6 @@ export function createTaskReportStore(baseDir: string, role: "hub" | "device" = 
 				throw new TaskReportConflictError("Completed task report cannot be overwritten");
 			}
 
-			// Pre-flight quota check before writing any bytes to disk
 			if (bytes > quotaLimit) {
 				mkdirSync(dir, { recursive: true });
 				const meta: TaskReportMeta = {
@@ -221,7 +218,6 @@ export function createTaskReportStore(baseDir: string, role: "hub" | "device" = 
 					throw new Error("Account or room mismatch for report binding");
 				}
 				if (existing.complete) {
-					// Check idempotence
 					const chunkFile = join(chunksDir, `chunk-${String(chunkIndex).padStart(4, "0")}.txt`);
 					if (existsSync(chunkFile)) {
 						const prev = readFileSync(chunkFile, "utf8");
@@ -238,14 +234,12 @@ export function createTaskReportStore(baseDir: string, role: "hub" | "device" = 
 				}
 			}
 
-			// Pre-flight check cumulative bytes with new chunk before disk write
 			mkdirSync(chunksDir, { recursive: true });
 			const chunkFile = join(chunksDir, `chunk-${String(chunkIndex).padStart(4, "0")}.txt`);
 			if (existsSync(chunkFile)) {
 				const existingText = readFileSync(chunkFile, "utf8");
 				if (sha256Hex(existingText) !== chunkHash)
 					throw new TaskReportConflictError(`Conflicting content for chunk ${chunkIndex}`);
-				// Rebuild metadata below: a process may have stopped after writing the chunk.
 			}
 
 			let currentAccumulated = 0;
@@ -280,10 +274,8 @@ export function createTaskReportStore(baseDir: string, role: "hub" | "device" = 
 				);
 			}
 
-			// Safe atomic write chunk
 			writeAtomicSync(chunkFile, text);
 
-			// Count all chunks
 			const allChunkFiles = readdirSync(chunksDir)
 				.filter((f) => f.startsWith("chunk-") && f.endsWith(".txt"))
 				.sort();

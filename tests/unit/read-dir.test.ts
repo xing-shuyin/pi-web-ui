@@ -1,7 +1,3 @@
-/**
- * read-tool 单测：read 覆盖定义在「路径是目录」时列目录，其余情形原样转发内置实现。
- * 磁盘隔离：mkdtempSync 临时目录；无端口、无 SDK 会话（纯工具定义）。
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as nodeResolve } from "node:path";
@@ -26,7 +22,6 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-/** 调用工具定义，把返回的文本内容拼成一串（只关心正文）。 */
 async function readText(
 	tool: { execute: (...args: never[]) => Promise<unknown> },
 	params: Record<string, unknown>,
@@ -58,14 +53,12 @@ describe("read 覆盖：目录", () => {
 		expect(text).toContain("[Directory: .]");
 		expect(text).toContain("nested/");
 		expect(text).toContain("a.txt");
-		// 排序：a.txt 在 b.txt 前
 		expect(text.indexOf("a.txt")).toBeLessThan(text.indexOf("b.txt"));
 	});
 
 	it("相对 cwd 的目录路径（ctx.cwd 优先于创建时的 fallbackCwd）", async () => {
 		const tool = makeReadDirTool("/definitely/not/here");
 		const text = await readText(tool as never, { path: "nested" }, root);
-		// 空目录：SDK ls 给 (empty directory)
 		expect(text).toContain("[Directory: nested]");
 		expect(text).toContain("(empty directory)");
 	});
@@ -145,7 +138,6 @@ describe("read 覆盖：非目录照旧", () => {
 });
 
 describe("withReadDirSupport：叠在扩展 read 之上（内置/扩展基底共用的目录能力）", () => {
-	/** 假扩展 read：schema 里有内置没有的 `windows` 参数，执行时记录收到的参数并返回扩展标记。 */
 	function extensionRead(seen: Record<string, unknown>[]): never {
 		return {
 			name: "read",

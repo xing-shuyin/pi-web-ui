@@ -1,14 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+import { wrapperHtml } from "../../server/device-center/path-portal.js";
 import { relayBase, resolveBase, withAppBase } from "../../web/src/base-url.js";
-import { createMemoryStorage, installPortalEnvironment } from "../../web/src/portal-environment.js";
+import { createMemoryStorage, installPortalEnvironment, restorePortalTheme } from "../../web/src/portal-environment.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.useRealTimers();
+});
 
 function frame(path = "/device/dev/__relay/cap/index.html?token=auth", blocked = true) {
 	const fetch = vi.fn().mockResolvedValue({ ok: true });
 	const location = new URL(path, "http://hub:50001");
-	const target = { location, document: { baseURI: location.href }, fetch };
+	const target = { location, document: { baseURI: location.href }, fetch, parent: { postMessage: vi.fn() } };
 	for (const name of ["localStorage", "sessionStorage"]) {
 		Object.defineProperty(target, name, {
 			configurable: true,
@@ -27,6 +32,20 @@ function frame(path = "/device/dev/__relay/cap/index.html?token=auth", blocked =
 }
 
 describe("opaque portal environment", () => {
+	it.each(["/device-lan/dev/__relay/cap/", "/pi/device-lan/dev/__relay/cap/index.html"])(
+		"boots a LAN device portal with safe storage and scoped fetch: %s",
+		async (path) => {
+			const { target, fetch } = frame(path);
+			const base = path.replace(/index\.html$/, "");
+			expect(relayBase(path)).toBe(base);
+			expect(installPortalEnvironment(target)).toBe(true);
+			target.localStorage.setItem("draft", "hello");
+			expect(target.localStorage.getItem("draft")).toBe("hello");
+			await target.fetch(base + "api/conversations", { credentials: "same-origin" });
+			expect(fetch).toHaveBeenLastCalledWith(base + "api/conversations", { credentials: "omit" });
+			expect(resolveBase(target.location.pathname)).toBe(base);
+		},
+	);
 	it("implements the Storage API with string coercion and insertion order", () => {
 		const storage = createMemoryStorage();
 		expect(storage.length).toBe(0);
@@ -126,6 +145,125 @@ describe("opaque portal environment", () => {
 	it("evaluates the environment before application imports in the entry point", () => {
 		const main = readFileSync(new URL("../../web/src/main.tsx", import.meta.url), "utf8");
 		expect(main.match(/^import .*$/m)?.[0]).toContain('from "./portal-environment"');
+	});
+});
+
+function portal(storage: Storage, scope = ["account", "dev"], capability = "cap") {
+	const base = `/device/${scope[1]}/__relay/${capability}/`;
+	const { target } = frame(`${base}index.html`);
+	const listeners = new Set<(event: MessageEvent) => void>();
+	let receiveWrapper: (event: Partial<MessageEvent>) => void;
+	const sendToChild = (data: unknown, source = target.parent, origin = target.location.origin) => {
+		for (const listener of listeners) listener({ data, source, origin } as MessageEvent);
+	};
+	const child = {
+		postMessage: (data: unknown) => queueMicrotask(() => sendToChild(data)),
+	};
+	const sendToWrapper = (data: unknown, source: unknown = child, origin = "null") => {
+		receiveWrapper({ data, source: source as MessageEventSource, origin });
+	};
+	Object.assign(target, {
+		parent: { postMessage: (data: unknown) => queueMicrotask(() => sendToWrapper(data)) },
+		addEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.add(listener),
+		removeEventListener: (_type: string, listener: (event: MessageEvent) => void) => listeners.delete(listener),
+	});
+	const iframe = { contentWindow: child, addEventListener: vi.fn(), src: "" };
+	const { html } = wrapperHtml(base, "", undefined, "Device", JSON.stringify(scope));
+	runInNewContext(html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)![1], {
+		document: { querySelector: () => iframe, getElementById: () => ({}) },
+		addEventListener: (_type: string, listener: typeof receiveWrapper) => (receiveWrapper = listener),
+		localStorage: storage,
+		location: target.location,
+		setTimeout: vi.fn(() => 1),
+		clearTimeout: vi.fn(),
+		URL,
+	});
+	installPortalEnvironment(target);
+	return { target, sendToWrapper, sendToChild };
+}
+
+describe("remote theme persistence", () => {
+	it("restores the theme after reopening with a new capability, isolated by account and device", async () => {
+		const storage = createMemoryStorage();
+		const first = portal(storage);
+		await restorePortalTheme(first.target);
+		first.target.localStorage.setItem("pi-theme", "nord");
+		first.target.localStorage.setItem("pi-auth-token", "private-token");
+		first.target.sessionStorage.setItem("pi-theme", "dracula");
+		await Promise.resolve();
+		expect(storage.length).toBe(1);
+		expect(storage.getItem(storage.key(0)!)).toBe("nord");
+
+		const reopened = portal(storage, undefined, "rotated-capability");
+		await restorePortalTheme(reopened.target);
+		expect(reopened.target.localStorage.getItem("pi-theme")).toBe("nord");
+		expect(reopened.target.localStorage.getItem("pi-auth-token")).toBeNull();
+		for (const scope of [
+			["another-account", "dev"],
+			["account", "another-device"],
+		]) {
+			const other = portal(storage, scope);
+			await restorePortalTheme(other.target);
+			expect(other.target.localStorage.getItem("pi-theme")).toBeNull();
+		}
+	});
+
+	it("persists theme removal and clear without exposing other storage keys", async () => {
+		const storage = createMemoryStorage();
+		const { target } = portal(storage);
+		await restorePortalTheme(target);
+		for (const remove of [() => target.localStorage.removeItem("pi-theme"), () => target.localStorage.clear()]) {
+			target.localStorage.setItem("pi-theme", "nord");
+			await Promise.resolve();
+			expect(storage.length).toBe(1);
+			remove();
+			await Promise.resolve();
+			expect(storage.length).toBe(0);
+			const reopened = portal(storage);
+			await restorePortalTheme(reopened.target);
+			expect(reopened.target.localStorage.getItem("pi-theme")).toBeNull();
+		}
+	});
+
+	it("rejects forged wrapper messages, unrelated storage requests and invalid themes", async () => {
+		const storage = createMemoryStorage();
+		const first = portal(storage);
+		first.target.localStorage.setItem("pi-theme", "nord");
+		await Promise.resolve();
+		storage.setItem("hub-secret", "secret");
+		const reopened = portal(storage);
+		const ready = restorePortalTheme(reopened.target);
+		reopened.sendToChild({ type: "device-portal-theme", value: "dracula" }, {} as Window);
+		reopened.sendToChild({ type: "device-portal-theme", value: "dracula" }, reopened.target.parent, "null");
+		await ready;
+		expect(reopened.target.localStorage.getItem("pi-theme")).toBe("nord");
+		const write = { type: "device-portal-theme-write", value: "dracula" };
+		reopened.sendToWrapper(write, {});
+		reopened.sendToWrapper(write, undefined, reopened.target.location.origin);
+		reopened.sendToWrapper({ ...write, value: "../../secret" });
+		reopened.sendToWrapper({ type: "storage-write", key: "hub-secret", value: "stolen" });
+		const another = portal(storage);
+		await restorePortalTheme(another.target);
+		expect(another.target.localStorage.getItem("pi-theme")).toBe("nord");
+		expect(another.target.localStorage.getItem("hub-secret")).toBeNull();
+		expect(storage.getItem("hub-secret")).toBe("secret");
+		expect(storage.length).toBe(2);
+	});
+
+	it("continues startup when an older wrapper does not support theme persistence", async () => {
+		vi.useFakeTimers();
+		const { target } = frame();
+		const listeners = new Set();
+		Object.assign(target, {
+			addEventListener: (_type: string, listener: unknown) => listeners.add(listener),
+			removeEventListener: (_type: string, listener: unknown) => listeners.delete(listener),
+		});
+		installPortalEnvironment(target);
+		const ready = restorePortalTheme(target);
+		await vi.advanceTimersByTimeAsync(500);
+		await ready;
+		expect(listeners.size).toBe(0);
+		expect(target.localStorage.getItem("pi-theme")).toBeNull();
 	});
 });
 

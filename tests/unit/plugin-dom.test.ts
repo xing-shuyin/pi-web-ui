@@ -1,11 +1,3 @@
-/**
- * 特权 DOM 授权表（server/plugin-dom.ts）单测 —— 走真实源码路径。
- *
- * 覆盖：
- * - declarationWantsDom：族名判定（`dom` / `dom:xxx` 大小写/空格容忍；其它族/非数组/空 → false）。
- * - isDomBundleBlocked：wantsDom && !granted 才拦；未知插件（未声明）永远放行。
- * - PluginDomConsent：授权/撤销返回值、落盘与重读、坏 JSON 当空表、空 id 拒绝。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -89,7 +81,6 @@ describe("PluginManager 集成：scan 标记 + 门禁 + 授权", () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		pdir = mkdtempSync(join(tmpdir(), "pi-dom-int-"));
 		mkdirSync(join(pdir, "plugins"), { recursive: true });
-		// pluginsDir = <dataDir>/plugins，consent 落 <dataDir>/plugin-dom.json。
 		mgr = new PluginManager(pdir, pdir);
 	});
 

@@ -59,15 +59,10 @@ describe("复合命令连接符防逃逸与白名单降级 (Issue #722)", () => 
 		});
 
 		it("包含复合操作符且未完全覆盖整条命令时，禁止白名单命中", () => {
-			// 分号逃逸
 			expect(matchApprovalRule(allowPrefixRule, "bash", { command: "rm tmp.log; rm -rf /" }, cwd)).toBe(false);
-			// 逻辑与逃逸
 			expect(matchApprovalRule(allowContainsRule, "bash", { command: "git status && rm -rf /" }, cwd)).toBe(false);
-			// 换行逃逸
 			expect(matchApprovalRule(allowPrefixRule, "bash", { command: "rm tmp.log\nrm -rf /" }, cwd)).toBe(false);
-			// 管道逃逸
 			expect(matchApprovalRule(allowContainsRule, "bash", { command: "git status | xargs rm -rf" }, cwd)).toBe(false);
-			// 子 shell 逃逸
 			expect(matchApprovalRule(allowContainsRule, "bash", { command: "echo $(rm -rf /) && git status" }, cwd)).toBe(
 				false,
 			);
@@ -76,11 +71,9 @@ describe("复合命令连接符防逃逸与白名单降级 (Issue #722)", () => 
 		it("复合命令下，白名单降级后后续的高危规则能正常触发阻断/询问", () => {
 			const rules: ApprovalRule[] = [allowPrefixRule, ...DEFAULT_APPROVAL_RULES];
 
-			// 单独安全的原子命令：白名单生效，直接放行
 			const safeRes = evaluateApprovalRules(rules, "bash", { command: "rm tmp.log" }, cwd);
 			expect(safeRes.action).toBe("allow");
 
-			// 复合命令：白名单拒绝命中，后续内置 rm -rf 规则成功拦截！
 			const maliciousRes = evaluateApprovalRules(rules, "bash", { command: "rm tmp.log; rm -rf /" }, cwd);
 			expect(maliciousRes.action).toBe("ask");
 			expect(maliciousRes.matchedRule?.id).toBe("builtin.bash.rm-rf");
@@ -98,7 +91,6 @@ describe("复合命令连接符防逃逸与白名单降级 (Issue #722)", () => 
 				label: "禁止 rm -rf",
 			};
 
-			// deny 不受复合命令放行限制，必须能命中复合命令中的恶意片段
 			expect(matchApprovalRule(denyRule, "bash", { command: "echo ok && rm -rf /" }, cwd)).toBe(true);
 		});
 	});

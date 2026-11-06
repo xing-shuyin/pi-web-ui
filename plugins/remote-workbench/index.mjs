@@ -1,15 +1,3 @@
-/**
- * plugins/remote-workbench/index.mjs — 远程工作台服务端入口。
- *
- * 核心机制（对标 Termcp）：
- * 1. 唯一事实源：直接读取宿主服务 remoteSshService（<dataDir>/global-hosts.json），
- *    与「远程工作区 (SSH)」和「SFTP 插件」完全共享主机资产，零重复配置；
- * 2. 交互式 PTY Web SSH：基于 remoteSshService.openShell 建立流式双向通道，
- *    通过 host.sendTo / host.onMessage 提供极低延迟的终端交互；
- * 3. AI 批处理执行工具：注册 remote_term 工具，集成 Termcp 式 ANSI 噪音折叠与有界摘要；
- * 4. 端口转发引擎：支持在任意主机上建立本地端口转发（-L tunnel）。
- */
-
 import { Commands, text, integer, profile } from "./lib/runtime.mjs";
 import { Shells } from "./lib/shells.mjs";
 import { Tasks, Tunnels } from "./lib/services.mjs";
@@ -54,7 +42,6 @@ export default {
 			}));
 		};
 
-		// ── HTTP 路由 ────────────────────────────────────────────────────────
 		const route = (method, p, fn) => {
 			host.route(method, p, async (req, res) => {
 				try {
@@ -68,12 +55,10 @@ export default {
 			});
 		};
 
-		// 获取所有全局主机
 		route("GET", "/hosts", async () => {
 			return { hosts: await hostsWithMetadata() };
 		});
 
-		// 新增或更新全局主机
 		route("POST", "/hosts", async (req) => {
 			const remoteSsh = getRemoteSsh();
 			const b = req.body ?? {};
@@ -109,7 +94,6 @@ export default {
 			return { hosts: await hostsWithMetadata(), savedName: name };
 		});
 
-		// 删除全局主机
 		route("POST", "/hosts/delete", async (req) => {
 			const remoteSsh = getRemoteSsh();
 			const name = String(req.body?.name ?? "").trim();
@@ -122,7 +106,6 @@ export default {
 			return { hosts: list };
 		});
 
-		// 探测并测试连接
 		route("POST", "/hosts/probe", async (req) => {
 			const remoteSsh = getRemoteSsh();
 			const b = req.body ?? {};
@@ -156,7 +139,6 @@ export default {
 			return { ...res, connected: true, system: res.system ?? {} };
 		});
 
-		// ── ~/.ssh/config 发现与导入 ─────────────────────────────────────────
 		route("GET", "/sshconfig", async () => {
 			const remoteSsh = getRemoteSsh();
 			const scanned = await scanLocalSshConfig();
@@ -195,7 +177,6 @@ export default {
 			return { hosts: await hostsWithMetadata(), importedCount: imported.length, imported, warnings: scanned.warnings };
 		});
 
-		// ── 轻量 SFTP 远程文件浏览 ──────────────────────────────────────────
 		route("POST", "/files/list", async (req) => {
 			const remoteSsh = getRemoteSsh();
 			const hostName = String(req.body?.hostName ?? "").trim();

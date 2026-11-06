@@ -10,13 +10,8 @@ import {
 	shouldScrollToBottomOnStreamChange,
 } from "./scroll-classify";
 
-/**
- * 保护窗口时长（毫秒）：程序吸底后的短时间内，onScroll 产生的位移均视为程序吸底引起，
- * 绝不误判为用户向上离开意图。
- */
 export const PROGRAMMATIC_SCROLL_GRACE_MS = 250;
 
-/** 向上无限滚动自动静默预加载阈值（像素）：距离顶部不足此距离且仍有更早历史时，提前静默拉取。 */
 export const PRELOAD_EARLIER_THRESHOLD_PX = 400;
 
 export interface UseChatScrollOptions {
@@ -34,13 +29,9 @@ export interface UseChatScrollOptions {
 	loadEarlier: () => void;
 	scheduleActiveFromScroll: () => void;
 	scheduleSweep: () => void;
-	/** 用户主动发送消息的触发信号（每次发送递增），用于零延迟吸底恢复跟随。 */
 	userPromptNonce?: number;
-	/** 可选注入外部已有的 scrollRef。若不提供则内部自动创建。 */
 	scrollRef?: React.RefObject<HTMLDivElement | null>;
-	/** 可选注入外部已有的 stickRef。若不提供则内部自动创建。 */
 	stickRef?: React.MutableRefObject<boolean>;
-	/** 可选注入外部已有的 escapedRef。若不提供则内部自动创建。 */
 	escapedRef?: React.MutableRefObject<boolean>;
 }
 
@@ -61,15 +52,6 @@ export interface UseChatScrollReturn {
 	onScroll: () => void;
 }
 
-/**
- * useChatScroll — 对话流贴底滚动与用户逃逸阅读生命周期统一管理器。
- *
- * 核心设计准则：
- * 1. 职责彻底内聚：将手势感知、吸底定时器、流式追尾、逃逸保护及原生锚定交互从消息渲染树中解耦；
- * 2. 用户逃逸意图不可侵犯：一旦用户主动向上滚动（escaped=true），流式多回合、工具交替或页面刷新
- *    坚决不强行吸底打扰；
- * 3. 严格定时器生命周期：追帧定时器统一纳管，用户任何向上手势当场清理，杜绝后台偷袭。
- */
 export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 	const {
 		messages,
@@ -99,29 +81,20 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 	const internalEscapedRef = useRef(false);
 	const escapedRef = opts.escapedRef ?? internalEscapedRef;
 
-	/** 上一帧 scrollTop —— 判定滚动方向（向上 = 用户要离开底部）。 */
 	const prevStRef = useRef(0);
-	/** 上一帧 scrollHeight —— 布局塌缩/增长的判据。 */
 	const prevScrollHeightRef = useRef(0);
-	/** Timestamp until which scroll events are treated as programmatic. */
 	const progUntilRef = useRef(0);
-	/** 用户物理向上滚动/滑动手势的最新时间戳。 */
 	const userUpwardGestureTimeRef = useRef(0);
-	/** 用户指针是否在容器内按下（用于识别按住滚动条滑块拖动）。 */
 	const isPointerDownRef = useRef(false);
-	/** 鼠标中键是否按下（中键自动滚动期间视为物理意图）。 */
 	const middleDownRef = useRef(false);
-	/** 触摸起始 clientY。 */
 	const touchStartYRef = useRef(0);
 
-	/** 在途的滚动吸底定时器（120ms/300ms/600ms），在用户主动向上滚动时当场清理。 */
 	const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 	const clearScrollTimers = useCallback(() => {
 		for (const t of scrollTimersRef.current) clearTimeout(t);
 		scrollTimersRef.current = [];
 	}, []);
 
-	/** 框选文本暂停吸底。 */
 	const pauseForSelection = useCallback(() => {
 		clearScrollTimers();
 		escapedRef.current = true;
@@ -129,7 +102,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		setStickBottom(false);
 	}, [clearScrollTimers]);
 
-	/** 用户主动向上手势：当场同步切断吸底并清理所有在途定时器。 */
 	const disengageStick = useCallback(() => {
 		clearScrollTimers();
 		userUpwardGestureTimeRef.current = Date.now();
@@ -139,7 +111,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		setStickBottom(false);
 	}, [clearScrollTimers]);
 
-	/** 统一安全的程序吸底总阀门。 */
 	const pinToBottom = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -152,7 +123,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		prevScrollHeightRef.current = el.scrollHeight;
 	}, [scrollRef]);
 
-	/** 主动滚动到底部（发新消息、点击回底按钮时触发）。 */
 	const scrollToBottom = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -168,13 +138,11 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		scrollTimersRef.current.push(setTimeout(pinToBottom, 600));
 	}, [pinToBottom, clearScrollTimers, scrollRef]);
 
-	// 滚轮事件监听：内部容器可滚时透传，否则识别向上离开/向下归底
 	const hasEarlierRef = useRef(hasEarlier);
 	hasEarlierRef.current = hasEarlier;
 	const loadEarlierRef = useRef(loadEarlier);
 	loadEarlierRef.current = loadEarlier;
 
-	/** 向上无限滚动动态水位线预加载：进入第二页（上半部/距顶两屏内）即提前在后台拉取第三页 */
 	const maybePreloadEarlier = useCallback(
 		(isMovingUp: boolean) => {
 			const el = scrollRef.current;
@@ -261,7 +229,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		[disengageStick],
 	);
 
-	// 全局 pointerup / pointerdown / keydown 监听
 	useEffect(() => {
 		const onPointerUp = (e?: MouseEvent | PointerEvent) => {
 			isPointerDownRef.current = false;
@@ -297,7 +264,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		};
 	}, [disengageStick]);
 
-	// 容器 onScroll 统一分类与决策
 	const onScroll = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -308,7 +274,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 36;
 		const programmatic = Date.now() < progUntilRef.current;
 
-		// 判定是否存在真实的用户物理向上意图（来自滚轮、触控板、触屏滑动手势、按住滑块向上拖动或中键滚动）
 		if (middleDownRef.current && dSt < 0) {
 			userUpwardGestureTimeRef.current = Date.now();
 			disengageStick();
@@ -344,7 +309,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 
 		if (!programmatic && !hasUserUpwardIntent) {
 			if (dSt < 0) {
-				// 无向上意图的负位移不撤销 stickRef
 			} else if (nearBottom && (dSt > 0 || !escapedRef.current)) {
 				stickRef.current = true;
 				escapedRef.current = false;
@@ -357,7 +321,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		scheduleSweep();
 	}, [scheduleActiveFromScroll, scheduleSweep, pinToBottom, disengageStick, maybePreloadEarlier, scrollRef]);
 
-	// 流式启闭：仅在未逃逸时吸底跟随；流结束时沉降吸底
 	const wasStreamingRef = useRef(!!isStreaming);
 	useEffect(() => {
 		const was = wasStreamingRef.current;
@@ -385,7 +348,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		}
 	}, [isStreaming, jumpTarget, urlJumpMessageId, scrollToBottom, pinToBottom, scrollRef]);
 
-	// 会话切换与提问变化吸底
 	const lastQuestionId = questions.length > 0 ? questions[questions.length - 1].id : null;
 	const prevConvKeyRef = useRef(`${conversationId ?? ""}:${sessionFile ?? ""}`);
 	const prevLastQuestionIdRef = useRef<string | null>(lastQuestionId);
@@ -405,13 +367,11 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		});
 		prevConvKeyRef.current = convKey;
 		prevLastQuestionIdRef.current = lastQuestionId;
-		// 本地用户主动发送的新提问（isOptimisticEcho）或判定需要吸底时，立即执行滚动并恢复跟随
 		if (shouldScroll || isOptimisticEcho) {
 			scrollToBottom();
 		}
 	}, [conversationId, sessionFile, lastQuestionId, jumpTarget, urlJumpMessageId, scrollToBottom]);
 
-	// 用户显式发送新消息时（输入框按回车/点发送/点快捷短语）立刻无条件吸底并恢复贴底跟随
 	const prevUserPromptNonceRef = useRef(userPromptNonce ?? 0);
 	useEffect(() => {
 		const nonce = userPromptNonce ?? 0;
@@ -421,7 +381,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		}
 	}, [userPromptNonce, scrollToBottom]);
 
-	// 渲染 Paint 前同步贴底（消除微颤；保持吸底跟随态）
 	useLayoutEffect(() => {
 		const el = scrollRef.current;
 		if (!el) return;
@@ -430,7 +389,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		}
 	}, [messages, isStreaming, liveOutputs, toolStatuses, pinToBottom, scrollRef]);
 
-	// 排队/插队气泡吸底
 	const queueSig = queue ? queue.steering.join("\u0000") + "\u0001" + queue.followUp.join("\u0000") : "";
 	const queueTotal = queue ? queue.steering.length + queue.followUp.length : 0;
 	const prevQueueTotalRef = useRef(queueTotal);
@@ -447,7 +405,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		}
 	}, [queueSig, queueTotal, scrollToBottom, pinToBottom, scrollRef]);
 
-	// ResizeObserver 容器尺寸收缩修正
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (!el || typeof ResizeObserver === "undefined") return;
@@ -462,7 +419,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		return () => ro.disconnect();
 	}, [scrollRef]);
 
-	// MutationObserver 容器内容无状态变动长高修正
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (!el || typeof MutationObserver === "undefined") return;
@@ -483,7 +439,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		return () => mo.disconnect();
 	}, [pinToBottom, scrollRef]);
 
-	// 悬浮提问导轨滚轮事件转发
 	useEffect(() => {
 		const rail = railRef.current;
 		const el = scrollRef.current;
@@ -511,7 +466,6 @@ export function useChatScroll(opts: UseChatScrollOptions): UseChatScrollReturn {
 		return () => rail.removeEventListener("wheel", onWheel);
 	}, [disengageStick, scrollRef]);
 
-	// 卸载时彻底清理定时器
 	useEffect(() => () => clearScrollTimers(), [clearScrollTimers]);
 
 	return {

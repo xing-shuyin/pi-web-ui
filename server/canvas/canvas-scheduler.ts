@@ -1,7 +1,6 @@
 import { CanvasRuntimeError } from "./canvas-runtime-messages.js";
 import type { CanvasEdge, CanvasGraph, CanvasNode } from "../protocol.js";
 
-/** FIFO slots; cancelled waiters never consume execution capacity. */
 export class CanvasExecutionQueue {
 	private active = 0;
 	private waiters: Array<() => void> = [];
@@ -40,7 +39,6 @@ export class CanvasExecutionQueue {
 	}
 }
 
-/** Decision edges are feedback, never prerequisites of a forward join. */
 export function isCanvasBackedge(edge: CanvasEdge): boolean {
 	return edge.type === "review" || edge.type === "reject" || edge.type === "loop_back" || edge.sourcePort === "reject";
 }
@@ -64,7 +62,6 @@ export function canvasCondition(node: CanvasNode, graph: CanvasGraph): boolean {
 	return tokens.length === 0 || tokens.some((token) => input.includes(token));
 }
 
-/** Wait for every forward path to resolve, then join only the selected paths. */
 export function canvasReadiness(graph: CanvasGraph, node: CanvasNode): "ready" | "skip" | "wait" {
 	const incoming = graph.edges.filter((e) => e.targetNodeId === node.id && !isCanvasBackedge(e));
 	if (!incoming.length) return "ready";

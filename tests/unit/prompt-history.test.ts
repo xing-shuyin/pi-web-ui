@@ -33,7 +33,6 @@ describe("appendHistory", () => {
 	it("连续重复不入队（返回原引用）", () => {
 		const h = ["a", "b"];
 		expect(appendHistory(h, "b")).toBe(h);
-		// trim 后相同也算重复
 		expect(appendHistory(h, " b ")).toBe(h);
 	});
 

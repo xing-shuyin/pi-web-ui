@@ -4,7 +4,6 @@ import { Value } from "typebox/value";
 import type { CommunicationAction, CommunicationArgs, CommunicationResult } from "./conversation-communication.js";
 
 export interface CommunicateToolHost {
-	/** Capture the stable sender endpoint in the integration, not the current active conversation. */
 	communicate(action: CommunicationAction, args: CommunicationArgs, signal?: AbortSignal): Promise<CommunicationResult>;
 }
 
@@ -44,7 +43,6 @@ export function makeCommunicateTool(host: CommunicateToolHost): ToolDefinition {
 		}),
 		{ minItems: 1, maxItems: 3 },
 	);
-	// Providers need root properties; action-specific requirements are enforced at execution.
 	const parameters = Type.Object({
 		action: Type.Union(
 			[
@@ -103,7 +101,6 @@ export function makeCommunicateTool(host: CommunicateToolHost): ToolDefinition {
 		],
 		parameters,
 		execute: async (_id: string, params: unknown, signal?: AbortSignal) => {
-			// Adapters may call execute directly, bypassing SDK argument validation.
 			for (const schema of [parameters, actionParameters]) {
 				const errors = Value.Errors(schema, params);
 				if (errors.length) {
@@ -114,7 +111,6 @@ export function makeCommunicateTool(host: CommunicateToolHost): ToolDefinition {
 			}
 			const { action, ...args } = params as CommunicationArgs & { action: CommunicationAction };
 			const result = await host.communicate(action, args, signal);
-			// Host results are bounded by the service; guard adapters too (wire details <=64KB).
 			const text = JSON.stringify(result);
 			if (Buffer.byteLength(text) > 48 * 1024) throw new Error("Communication result exceeds byte limit");
 			return { content: [{ type: "text", text }], details: result };

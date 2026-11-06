@@ -1,4 +1,3 @@
-// Actual server + bundled frontend: context categories, popover and narrow-screen placement.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";

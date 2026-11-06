@@ -1,11 +1,4 @@
 /// <reference lib="dom" />
-/**
- * 元素 → 契约快照（DOM 相关，薄封装）。
- *
- * 这一层只做「读 DOM」，不含任何定位/裁剪/渲染决策 —— 那些都在 shared/ 的纯函数里
- * （能单测）。这里唯一的规则是**按档位决定采多少**：compact 连骨架都不生成，
- * 因为生成骨架本身不便宜，而渲染时又会丢掉它。
- */
 
 import type { DetailLevel, ElementRect, ElementSnapshot, PageContext, PickSection } from "../shared/contract.js";
 import { htmlSkeleton } from "../shared/html-skeleton.js";
@@ -15,18 +8,14 @@ import { collectMatchedRules, collectStyles } from "./styles.js";
 
 export interface SnapshotOptions {
 	detail: DetailLevel;
-	/** 要采集哪几类信息（设置页多选）。缺省 = 全要（调用方没传时的宽容行为）。 */
 	sections?: PickSection[];
-	/** innerText 截断上限（骨架另有自己的上限）。 */
 	maxText?: number;
 }
 
-/** 这一项要不要采（没传 sections = 全采）。 */
 function wants(sections: PickSection[] | undefined, section: PickSection): boolean {
 	return sections === undefined || sections.includes(section);
 }
 
-/** 相对视口的矩形 + 占视口比例（比例比裸 px 有用：AI 不知道你的屏多宽）。 */
 export function elementRect(el: Element, view: Window = window): ElementRect {
 	const r = el.getBoundingClientRect();
 	const vw = view.innerWidth || 1;
@@ -41,14 +30,12 @@ export function elementRect(el: Element, view: Window = window): ElementRect {
 	};
 }
 
-/** 元素文本：优先 innerText（尊重可见性/换行），拿不到就回退 textContent。 */
 export function elementText(el: Element, maxText = 600): string {
 	const el2 = el as HTMLElement;
 	const raw = typeof el2.innerText === "string" && el2.innerText !== "" ? el2.innerText : (el.textContent ?? "");
 	return raw.length > maxText ? raw.slice(0, maxText) : raw;
 }
 
-/** 组装一个元素的快照（按档位决定采集深度，按勾选项决定采哪几类）。 */
 export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnapshot {
 	const detail = opts.detail;
 	const sections = opts.sections;
@@ -61,7 +48,6 @@ export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnap
 		tagSummary: tagSummary(el, { maxAttrs: full ? 3 : 2 }),
 		rect: elementRect(el),
 	};
-	// 以下都是「贵」的部分：没勾就不采（生成骨架/读 CSSOM 都不便宜，渲染时又会丢掉）
 	if (wants(sections, "locator")) {
 		snapshot.xpath = buildXPath(el);
 		snapshot.domPath = buildDomPath(el, { maxDepth: 5 });
@@ -76,7 +62,6 @@ export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnap
 			maxLength: full ? 800 : 400,
 		});
 	}
-	// 命中的规则：勾了 rules 要，勾了 source 也要 —— 源码位置的兵形之一就是「哪条 CSS 命中了它」
 	if (wants(sections, "rules") || wants(sections, "source")) {
 		const rules = collectMatchedRules(el);
 		if (rules.length > 0) snapshot.matchedRules = rules;
@@ -85,7 +70,6 @@ export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnap
 		const styles = collectStyles(el, { full });
 		if (Object.keys(styles).length > 0) snapshot.styles = styles;
 	}
-	// 源码定位（React fiber / Vue 实例 / CSS 命中）：认不出来就留空，绝不因此失败
 	if (wants(sections, "source")) {
 		const source = collectSource(el, snapshot.matchedRules);
 		if (source) snapshot.source = source;
@@ -93,7 +77,6 @@ export function snapshotElement(el: Element, opts: SnapshotOptions): ElementSnap
 	return snapshot;
 }
 
-/** 页面上下文（URL/title/视口/深浅色/疑似框架）。 */
 export function pageContext(doc: Document = document, view: Window = window): PageContext {
 	const root = doc.documentElement;
 	const scheme = root?.classList.contains("dark") || root?.dataset?.theme === "dark" ? "dark" : undefined;
@@ -110,7 +93,6 @@ export function pageContext(doc: Document = document, view: Window = window): Pa
 	};
 }
 
-/** 疑似框架探测（只看全局线索，不深挖；探测不出来就是 unknown）。 */
 export function detectFramework(view: Window = window): string {
 	const w = view as unknown as Record<string, unknown>;
 	const probe = view.document?.createElement("div");
@@ -126,7 +108,6 @@ export function detectFramework(view: Window = window): string {
 	return "unknown";
 }
 
-/** 元素上挂着的框架实例键（React/Vue 都用随机后缀的键名，只能认前缀）。 */
 export function instanceKeys(el: Element | object): string[] {
 	try {
 		return Object.keys(el as object);

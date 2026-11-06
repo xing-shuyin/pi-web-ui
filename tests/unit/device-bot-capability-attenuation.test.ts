@@ -135,7 +135,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			expect(isBotToolHighPrivilege("tool_manage")).toBe(true);
 			expect(isBotToolHighPrivilege("mcp_manage")).toBe(true);
 
-			// Read-only or ordinary tools
 			expect(isBotToolHighPrivilege("read")).toBe(false);
 			expect(isBotToolHighPrivilege("write")).toBe(false);
 			expect(isBotToolHighPrivilege("edit")).toBe(false);
@@ -154,7 +153,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			const partial = computeAttenuatedTools(["read", "bash"], ["read", "bash", "codemode"]);
 			expect(partial).toEqual(["codemode"]);
 
-			// Safe tools (read, write) are never attenuated even if caller lacks write
 			const safeTools = computeAttenuatedTools(["read"], ["read", "write"]);
 			expect(safeTools).toEqual([]);
 		});
@@ -177,7 +175,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			expect(task.attenuatedTools).toBeUndefined();
 			expect(task.sourceBotId).toBeUndefined();
 
-			// Verify in task details API
 			const detailsRes = await request(`/api/rooms/${room.id}/tasks/${task.id}`, undefined, cookie);
 			expect(detailsRes.status).toBe(200);
 			expect(detailsRes.body.task.attenuatedTools).toBeUndefined();
@@ -193,7 +190,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			const room = (await request("/api/rooms", { name: "collab-room", botIds: [lowBot.botId, highBot.botId] }, cookie))
 				.body.room;
 
-			// Human starts a task for LowBot
 			const rootRes = await request(
 				`/api/rooms/${room.id}/messages`,
 				{ text: "Start research", targetBotIds: [lowBot.botId] },
@@ -201,7 +197,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			);
 			const rootTask = rootRes.body.tasks[0];
 
-			// LowBot accepts root task to running state
 			const rootTaskLease = hub.store.snapshot().tasks.find((task) => task.id === rootTask.id)!;
 			await hub.acceptTaskEvent(lowBot.deviceId, {
 				botId: lowBot.botId,
@@ -212,7 +207,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				status: "running",
 			});
 
-			// LowBot attempts to dispatch a task to HighBot
 			const subtaskRes = await request(
 				`/api/agent/rooms/${room.id}/messages`,
 				{ text: "Please run bash rm -rf", targetBotIds: [highBot.botId], parentTaskId: rootTask.id },
@@ -222,7 +216,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			expect(subtaskRes.status).toBe(200);
 			const subtask = subtaskRes.body.tasks[0];
 
-			// bash and codemode must be stripped
 			expect(subtask.sourceBotId).toBe(lowBot.botId);
 			expect(subtask.attenuatedTools).toEqual(expect.arrayContaining(["bash", "codemode"]));
 			expect(subtask.attenuatedTools).not.toContain("read");
@@ -253,17 +246,14 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			try {
 				const cap = execution.capability;
 
-				// Attenuated tools must be strictly denied
 				expect(cap.allowsToolRegistration("bash")).toBe(false);
 				expect(cap.allowsToolRegistration("codemode")).toBe(false);
 				expect(cap.allowsTool("bash")).toBe(false);
 				expect(cap.allowsTool("codemode")).toBe(false);
 
-				// Non-attenuated tool retains authorization
 				expect(cap.allowsToolRegistration("read")).toBe(true);
 				expect(cap.allowsTool("read")).toBe(true);
 
-				// Unconfigured tool remains unauthorized
 				expect(cap.allowsTool("terminal")).toBe(false);
 				expect(cap.allowsToolRegistration("terminal")).toBe(false);
 			} finally {
@@ -298,7 +288,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				status: "running",
 			});
 
-			// BotA dispatches task to BotB
 			const subtaskRes = await request(
 				`/api/agent/rooms/${room.id}/messages`,
 				{ text: "Run joint work", targetBotIds: [botB.botId], parentTaskId: rootTask.id },
@@ -308,11 +297,9 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			expect(subtaskRes.status).toBe(200);
 			const subtask = subtaskRes.body.tasks[0];
 
-			// bash was possessed by BotA, so only codemode is attenuated
 			expect(subtask.attenuatedTools).toEqual(["codemode"]);
 			expect(subtask.attenuatedTools).not.toContain("bash");
 
-			// Device-side capability check for BotB with this attenuation
 			const dummyBotB: LocalBot = {
 				id: botB.botId,
 				name: "BotB",
@@ -376,17 +363,14 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 			expect(subtaskRes.status).toBe(200);
 			const subtask = subtaskRes.body.tasks[0];
 
-			// 1) Verify publicTask exposes attenuatedTools
 			const pub = publicTask(subtask);
 			expect(pub.attenuatedTools).toBeDefined();
 			expect(pub.attenuatedTools).toEqual(expect.arrayContaining(["bash", "subagent", "terminal"]));
 
-			// 2) Verify GET /api/rooms/:id/tasks/:taskId details API
 			const details = await request(`/api/rooms/${room.id}/tasks/${subtask.id}`, undefined, cookie);
 			expect(details.status).toBe(200);
 			expect(details.body.task.attenuatedTools).toEqual(expect.arrayContaining(["bash", "subagent", "terminal"]));
 
-			// 3) Verify instructions warning
 			const dummySysBot: LocalBot = {
 				id: sysBot.botId,
 				name: "SysBot",
@@ -425,7 +409,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				await request("/api/rooms", { name: "multihop-room", botIds: [bot1.botId, bot2.botId, bot3.botId] }, cookie)
 			).body.room;
 
-			// Human -> Bot1
 			const r1 = await request(
 				`/api/rooms/${room.id}/messages`,
 				{ text: "step 1", targetBotIds: [bot1.botId] },
@@ -442,7 +425,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				status: "running",
 			});
 
-			// Bot1 -> Bot2 (Bot2's bash is attenuated)
 			const r2 = await request(
 				`/api/agent/rooms/${room.id}/messages`,
 				{ text: "step 2", targetBotIds: [bot2.botId], parentTaskId: t1.id },
@@ -461,7 +443,6 @@ describe("Capability Attenuation (跨 Bot 安全能力衰减与不可信调用�
 				status: "running",
 			});
 
-			// Bot2 -> Bot3 (even though Bot2 configured with bash, because t2 had bash attenuated, Bot3 must have bash attenuated too!)
 			const r3 = await request(
 				`/api/agent/rooms/${room.id}/messages`,
 				{ text: "step 3", targetBotIds: [bot3.botId], parentTaskId: t2.id },

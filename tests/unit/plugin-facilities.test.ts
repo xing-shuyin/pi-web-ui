@@ -1,7 +1,3 @@
-/**
- * 插件宿主设施单测（零依赖、毫秒级）：storage / secrets / deps 探测 /
- * apiVersion 门控 / 斜杠命令注册表。不启 server、不碰网络。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import * as atomicFile from "../../server/atomic-file.js";
 import { randomBytes } from "node:crypto";
@@ -31,7 +27,6 @@ function makePlugin(id: string, code: string, manifest?: Record<string, unknown>
 	writeFileSync(join(pdir, "index.mjs"), code);
 }
 
-/** 抓取宿主对象，供断言宿主设施行为。 */
 async function activate(id: string): Promise<PluginHost> {
 	let host!: PluginHost;
 	makePlugin(id, `export default { activate(h) { globalThis.__hosts["${id}"] = h; } };`);
@@ -84,7 +79,6 @@ describe("host.storage", () => {
 		expect(h.storage.get("layout")).toEqual({ split: 0.3 });
 		expect(h.storage.get("missing", "fallback")).toBe("fallback");
 		expect(Object.keys(h.storage.all())).toContain("layout");
-		// 明文落盘到插件目录，跨实例（重新 load）可读
 		expect(existsSync(join(dir, "plugins", "a", "storage.json"))).toBe(true);
 
 		h.storage.set("k", 1);
@@ -102,18 +96,14 @@ describe("host.storage", () => {
 	});
 
 	it("宿主直写 storage.json 后，插件 set() 不抹掉外部写入的键（回归：设置重启即丢）", () => {
-		// 真实场景：设置面板的 saveSettingsValues 直写 settings 键（不经过本缓存），
-		// 而 wechat-ilink 这类长轮询插件每隔几秒就 store.set("cursor", …) 一次。
 		const file = join(dir, "external.json");
 		writeFileSync(file, JSON.stringify({ cursor: "a" }));
 		const store = new PluginStorage(file);
-		expect(store.get("cursor")).toBe("a"); // 预热缓存
-		// 宿主直写磁盘（模拟 settings 面板保存）
+		expect(store.get("cursor")).toBe("a");
 		writeFileSync(file, JSON.stringify({ cursor: "a", settings: { model: "x/y" } }));
-		// 插件长轮询继续写自己的键
 		store.set("cursor", "b");
 		const after = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-		expect(after.settings).toEqual({ model: "x/y" }); // 旧实现这里被旧缓存抹成 undefined
+		expect(after.settings).toEqual({ model: "x/y" });
 		expect(after.cursor).toBe("b");
 	});
 
@@ -199,7 +189,7 @@ describe("host.storage", () => {
 		const store = new PluginStorage(file);
 		store.set("a", 1);
 		store.set("b", 2);
-		expect(store.get("a")).toBe(1); // 第二次 set 没有丢掉第一个键
+		expect(store.get("a")).toBe(1);
 		expect(store.get("b")).toBe(2);
 		expect(store.all()).toEqual({ a: 1, b: 2 });
 	});
@@ -215,7 +205,7 @@ describe("host.secrets", () => {
 		expect(h.secrets.list()).toEqual(["mail_pass"]);
 
 		const raw = readFileSync(join(dir, "plugins", "b", "secrets.bin"), "utf8");
-		expect(raw).not.toContain(secret); // 密文形态存在
+		expect(raw).not.toContain(secret);
 		expect(raw.length).toBeGreaterThan(50);
 
 		h.secrets.delete("mail_pass");
@@ -224,8 +214,6 @@ describe("host.secrets", () => {
 	});
 
 	it("重启后从文件加载的 key 仍可用（回归：hex 二次编码致 Invalid key length）", () => {
-		// 预置合法 key 文件，模拟“老版本已生成 key → 进程重启后重新加载”。
-		// 注意静态 key 缓存按 dataDir 隔离：beforeEach 每次给新 dir，必走文件路径。
 		const keyHex = randomBytes(32).toString("hex");
 		writeFileSync(join(dir, "secrets.key"), `${keyHex}\n`);
 		const h = new PluginSecrets(dir, join(dir, "plugins", "x"));
@@ -244,7 +232,6 @@ describe("host.secrets", () => {
 	it("换了宿主密钥（拷到别的机器）解不开 → fail closed 返回 undefined", async () => {
 		const h = await activate("c");
 		h.secrets.set("token", "t0psecret");
-		// 同一插件目录、不同 dataDir（= 不同密钥）
 		const otherDataDir = mkdtempSync(join(tmpdir(), "other-data-"));
 		try {
 			const stolen = new PluginSecrets(otherDataDir, join(dir, "plugins", "c"));
@@ -272,7 +259,6 @@ describe("deps 探测", () => {
 	});
 
 	it("isDepAvailable 认带版本的 spec（只判存在，不审计版本）", () => {
-		// 仓库根下探测：沿目录树向上能走到本仓库 node_modules（vitest 已安装）。
 		const probe = join(repoRoot, "tests", "scratch");
 		expect(isDepAvailable(probe, "vitest")).toBe(true);
 		expect(isDepAvailable(probe, "vitest@9.9.9")).toBe(true);
@@ -280,15 +266,11 @@ describe("deps 探测", () => {
 	});
 
 	it("包已落盘时即便 CJS 解析失败也判可用（issue #383 的负缓存修复）", () => {
-		// 复刻现场：探测时包还没装（Node 把 package.json 不存在记成进程级负结果），
-		// 随后 npm install 把它写上盘。真实包这里故意给一个不存在的 main，
-		// 让 createRequire().resolve() 必然失败 —— 判据得由落盘事实兜住。
 		const pdir = join(dir, "plugins", "stale-cache");
 		const pkgDir = join(pdir, "node_modules", "@xenova", "transformers");
 		mkdirSync(pkgDir, { recursive: true });
 		writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "@xenova/transformers", main: "nope.js" }));
-		// 先在没有包的目录上探测一次，污染进程级解析缓存。
-		expect(isDepAvailable(pdir, "@xenova/transformers")).toBe(true); // 此时已落盘
+		expect(isDepAvailable(pdir, "@xenova/transformers")).toBe(true);
 		const fresh = join(dir, "plugins", "stale-cache-2");
 		mkdirSync(fresh, { recursive: true });
 		expect(isDepAvailable(fresh, "@xenova/transformers")).toBe(false);
@@ -297,7 +279,6 @@ describe("deps 探测", () => {
 			join(fresh, "node_modules", "@xenova", "transformers", "package.json"),
 			JSON.stringify({ name: "@xenova/transformers", main: "nope.js" }),
 		);
-		// 同一个 spec、同一个进程：上一轮的负结果不该把这一轮也带进坑里。
 		expect(isDepAvailable(fresh, "@xenova/transformers")).toBe(true);
 		expect(isDepAvailable(fresh, "@xenova/transformers@2.17.2")).toBe(true);
 	});
@@ -347,11 +328,11 @@ describe("host.registerCommand", () => {
 			run: () => "first",
 		});
 		const h2 = await activate("second");
-		const off2 = h2.registerCommand({ name: "shared", run: () => "second" }); // 应被拒绝
+		const off2 = h2.registerCommand({ name: "shared", run: () => "second" });
 		expect(mgr.listCommands()).toHaveLength(1);
 		expect(mgr.findCommand("shared")?.def.run("", { clientId: "" })).toBe("first");
 
-		off2(); // 被拒的注销函数应是空操作
+		off2();
 		expect(mgr.listCommands()).toHaveLength(1);
 
 		mgr.dispose();
@@ -430,7 +411,7 @@ describe("host.fs 新增方法（P0-1 stat/mkdir/append/glob）", () => {
 	});
 	it("只读插件（fs:read）：读放行、写/append/mkdir 被拒并提示缺写能力", async () => {
 		const h = await fsHost("fsro", ["fs:read"]);
-		writeFileSync(join(dir, "seed.txt"), "s"); // 直写磁盘（只读插件自己写不进去）
+		writeFileSync(join(dir, "seed.txt"), "s");
 		expect(await h.fs.readText("seed.txt")).toContain("s");
 		expect((await h.fs.stat("seed.txt")).type).toBe("file");
 		await expect(h.fs.append("seed.txt", "x")).rejects.toThrow(/写能力/);

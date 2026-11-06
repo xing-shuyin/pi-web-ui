@@ -38,18 +38,14 @@ describe("ElsewhereRunning pseudo support (#426)", () => {
 			return Boolean(c.owner && c.convId) && !isPseudo;
 		};
 
-		// 正常双端会话：可过户
 		expect(computeCanTakeover({ owner: "client-a", convId: "c1" })).toBe(true);
-		// 旧版条目（缺 owner 或 convId）：不可过户
 		expect(computeCanTakeover({ convId: "c1" })).toBe(false);
 		expect(computeCanTakeover({ owner: "client-a" })).toBe(false);
-		// 伪客户端条目（有 owner + convId，但 pseudo: true）：不可过户
 		expect(computeCanTakeover({ owner: "scheduler:task-1", convId: "c1", pseudo: true })).toBe(false);
 		expect(computeCanTakeover({ owner: "plugin:sync", convId: "c2", pseudo: true })).toBe(false);
 	});
 
 	it("LeftPanel 问卷徽章与右键过户菜单对 pseudo 过滤", () => {
-		// 问卷徽章条件：c.hasQuestion && elseOwner && elseConvId && !isPseudo
 		const showQuestionBadge = (c: { hasQuestion?: boolean; owner?: string; convId?: string; pseudo?: boolean }) => {
 			const isPseudo = Boolean(c.pseudo);
 			return Boolean(c.hasQuestion && c.owner && c.convId && !isPseudo);
@@ -58,7 +54,6 @@ describe("ElsewhereRunning pseudo support (#426)", () => {
 		expect(showQuestionBadge({ hasQuestion: true, owner: "client-a", convId: "c1" })).toBe(true);
 		expect(showQuestionBadge({ hasQuestion: true, owner: "scheduler:task-1", convId: "c1", pseudo: true })).toBe(false);
 
-		// 右键菜单 host:conv-takeover 过滤条件：isElsewhere && takeId && target.owner && !target.pseudo
 		const isTakeoverMenuVisible = (target: { kind: string; id?: string; owner?: string; pseudo?: boolean }) => {
 			const isElsewhere = target.kind === "elsewhere";
 			const takeId = target.id;

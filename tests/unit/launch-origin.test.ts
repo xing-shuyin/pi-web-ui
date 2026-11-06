@@ -1,17 +1,6 @@
-/**
- * launch-origin：启动来源判定的纯函数单测（env / ppid / 目录读取全部注入，
- * 不碰真实进程与文件系统）。
- *
- * 覆盖三种 supervisor 的识别路径 + 各平台「不是服务启动」的反例，尤其是
- * Windows 的两个易错点：PID 文件对不上（不是启动器起的）与同名 ps1 里没有
- * watchdog 循环（桌面快捷方式的前台实例，退出不会回来）。
- */
 import { describe, expect, it } from "vitest";
 import { detectLaunchOrigin, toServiceInfo, winServiceDir } from "../../server/launch-origin.js";
 
-/** 内存文件系统（路径 → 内容）。键与查询统一按 / 归一：被探测的平台可能是
- *  win32，但 join() 用的是**宿主**平台的分隔符（ubuntu CI 上会拼出
- *  `…\pi-web-ui/pi-web-ui.pid`），所以这里不能按字面拼键。 */
 function fakeFs(files: Record<string, string>) {
 	const norm = (path: string) => path.replace(/\\/g, "/");
 	const table = new Map(Object.entries(files).map(([path, body]) => [norm(path), body]));
@@ -123,7 +112,6 @@ describe("detectLaunchOrigin", () => {
 	});
 
 	it("winServiceDir 走 %APPDATA%（CLI 的 winServiceDir 同源）", () => {
-		// 分隔符跟随宿主平台（join 的语义），所以两边归一到 / 再比。
 		expect(winServiceDir({ APPDATA: "C:\\Users\\t\\AppData\\Roaming" }).replace(/\\/g, "/")).toBe(
 			"C:/Users/t/AppData/Roaming/pi-web-ui",
 		);
@@ -136,7 +124,6 @@ describe("detectLaunchOrigin", () => {
 	});
 });
 
-/** Linux 分支的小助手：注入 cgroup 读取。 */
 function detectLinux(env: NodeJS.ProcessEnv, cgroup: string) {
 	return detectLaunchOrigin({ env, platform: "linux", readCgroup: () => cgroup });
 }

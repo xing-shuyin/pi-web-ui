@@ -1,9 +1,5 @@
-/**
- * canvas-client.ts — Canvas Studio 独立 WebSocket 客户端。
- *
- * 绕行主 use-chat.ts，独立持有与服务端的专用事件与状态通道。
- */
-import { appUrl } from "../../base-url";
+import { appWsUrl } from "../../base-url";
+import { withToken } from "../../auth-token";
 import { PROTOCOL_VERSION } from "../../protocol-version";
 import type { ClientMessage, ServerMessage } from "../../types";
 import { randomUuid } from "../../uuid";
@@ -27,7 +23,6 @@ export class CanvasClient {
 	}
 	private disposed = false;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	/** 当前正在编辑的工程：重连/刷新后恢复它而非硬编码 default（#704，跨会话落 localStorage）。 */
 	private currentGraphId = CanvasClient.readLastGraphId();
 	onLoadRequest?: (request: Extract<ClientMessage, { type: "canvas_load" }>) => void;
 
@@ -39,30 +34,23 @@ export class CanvasClient {
 		try {
 			const saved = localStorage.getItem(CanvasClient.lastGraphKey());
 			if (saved && /^[A-Za-z0-9._-]{1,64}$/.test(saved)) return saved;
-		} catch {
-			// 无痕/禁用存储时回落 default
-		}
+		} catch {}
 		return "default";
 	}
 
-	/** 外部发送通道（主 WS）切工程时同步追踪，保证重连恢复的是当前工程（#704）。 */
 	setCurrentGraphId(id: string): void {
 		if (typeof id === "string" && id) {
 			this.currentGraphId = id;
 			try {
 				localStorage.setItem(CanvasClient.lastGraphKey(), id);
-			} catch {
-				// 存储不可写时仅保内存
-			}
+			} catch {}
 		}
 	}
 
 	connect(): void {
 		if (this.disposed || this.ws) return;
 		try {
-			const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-			const wsUrl = `${wsProtocol}//${location.host}${appUrl("/ws")}`;
-			const ws = new WebSocket(wsUrl);
+			const ws = new WebSocket(withToken(appWsUrl()));
 			this.ws = ws;
 
 			ws.onopen = () => {
@@ -89,9 +77,7 @@ export class CanvasClient {
 					for (const l of this.listeners) {
 						l(msg);
 					}
-				} catch {
-					// 忽略格式错误
-				}
+				} catch {}
 			};
 
 			ws.onclose = () => {
@@ -105,9 +91,7 @@ export class CanvasClient {
 					}, 2000);
 				}
 			};
-		} catch {
-			// 忽略网络初始化错误
-		}
+		} catch {}
 	}
 
 	send(msg: ClientMessage): boolean {

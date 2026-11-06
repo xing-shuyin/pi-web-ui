@@ -14,7 +14,7 @@ describe("standalone device hub", () => {
 		const port = (probe.address() as { port: number }).port;
 		await new Promise<void>((resolve) => probe.close(() => resolve()));
 		const dir = await mkdtemp(join(tmpdir(), "device-main-"));
-		const publicUrl = "http://82.156.246.55:8790";
+		const publicUrl = "http://198.51.100.10:8790";
 		const hub = await startDeviceHub({
 			PI_DEVICE_HUB_PUBLIC_URL: publicUrl,
 			PI_DEVICE_HUB_PORT: String(port),
@@ -30,7 +30,7 @@ describe("standalone device hub", () => {
 							port,
 							path,
 							method: body ? "POST" : "GET",
-							headers: { host: "82.156.246.55:8790", origin: publicUrl, cookie, "content-type": "application/json" },
+							headers: { host: "198.51.100.10:8790", origin: publicUrl, cookie, "content-type": "application/json" },
 						},
 						(res) => {
 							const chunks: Buffer[] = [];
@@ -62,7 +62,6 @@ describe("standalone device hub", () => {
 			expect(devices.data.devices[0].url).toBe(`${publicUrl}/device/${paired.data.deviceId}/`);
 			const opened = await request(`/api/devices/${paired.data.deviceId}/open`, {}, cookie);
 			expect(opened.status).toBe(409);
-			// Offline devices are rejected even though no extra port is required.
 			expect(opened.data.code).not.toBe("DEVICE_WEB_ORIGIN_REQUIRED");
 		} finally {
 			await hub.close();

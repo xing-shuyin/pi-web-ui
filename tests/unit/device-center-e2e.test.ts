@@ -17,7 +17,6 @@ describe("device collaboration full wiring", () => {
 		const targetRoot = join(temp, "target");
 		await mkdir(sourceRoot);
 		await mkdir(targetRoot);
-		// Reserve a loopback ephemeral port before constructing the origin-bound Hub.
 		const probe = createServer();
 		await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
 		const address = probe.address();
@@ -164,7 +163,6 @@ describe("device collaboration full wiring", () => {
 				if (Date.now() > deadline) throw new Error("Connector did not authenticate");
 				await delay(10);
 			}
-			// Exercise both the Hub's 32 KiB parser bypass and the RPC chunk boundary.
 			const code = "// transfer fixture\n".repeat(1800) + "export const answer = 42;\n";
 			await writeFile(join(sourceRoot, "answer.ts"), code);
 			await writeFile(join(targetRoot, "answer.ts"), "old content\n");

@@ -1,11 +1,3 @@
-/**
- * plugins/imessage/index.mjs
- * iMessage (Apple Messages) integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto + node:child_process).
- * Inspired by dsh-im: macOS Messages bridge, structure-aware Markdown chunks,
- * isolated multi-turn sessions, access control whitelist, and slash commands.
- */
-
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
@@ -15,7 +7,6 @@ import { resolve } from "node:path";
 const execFileAsync = promisify(execFile);
 export const IMESSAGE_BOT_PREFIX = "🤖 PI\n";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -24,7 +15,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from sender's Apple ID or phone number. */
 export function peerAccountId(senderId, prefix = "im") {
 	const raw = String(senderId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -32,7 +22,6 @@ export function peerAccountId(senderId, prefix = "im") {
 	return `${prefix}_${hash}`;
 }
 
-/** Clean message text and strip bot reply markers. */
 export function cleanIMessageText(textRaw = "") {
 	let text = String(textRaw || "").trim();
 	if (!text) return "";
@@ -40,9 +29,6 @@ export function cleanIMessageText(textRaw = "") {
 	return text.replace(/^@\S+\s+/g, "").trim();
 }
 
-/**
- * Send an iMessage via macOS AppleScript (/usr/bin/osascript).
- */
 export async function sendMacOSIMessage(address, text, { execFileImpl, file } = {}) {
 	const chatId = typeof address === "object" ? String(address?.chatId || "").trim() : "";
 	const safeAddress = chatId || String(address || "").trim();
@@ -53,8 +39,6 @@ export async function sendMacOSIMessage(address, text, { execFileImpl, file } = 
 	if (filePath && !(await stat(filePath)).isFile()) throw new Error("Attachment must be a regular local file.");
 
 	if (process.platform !== "darwin" && !execFileImpl) {
-		// 非 macOS 且未注入执行实现时明确报错——假成功会让用户以为消息已发出
-		//（实际什么都没发）。注入的 execFileImpl（测试/宿主钩子）不受此限。
 		throw new Error(`iMessage is only available on macOS (current platform: ${process.platform}).`);
 	}
 
@@ -74,12 +58,10 @@ export async function sendMacOSIMessage(address, text, { execFileImpl, file } = 
 export { IMessageBotBridge } from "./bridge.mjs";
 import { IMessageBotBridge } from "./bridge.mjs";
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	return { ...(cfg || {}) };
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}) {
 	return { ...(prev || {}), ...(incoming || {}) };
 }
@@ -102,7 +84,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "imessage" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "imessage",
 		description:
@@ -150,7 +131,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

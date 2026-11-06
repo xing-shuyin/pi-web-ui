@@ -12,12 +12,10 @@ describe("makeLoadToolsTool", () => {
 		const tool = makeLoadToolsTool(host, () => "en");
 		expect(tool.name).toBe(LOAD_TOOLS_TOOL_NAME);
 
-		// guidelines 必须包含核心工具常驻且不需要加载的规则
 		const guidelines = Array.isArray(tool.promptGuidelines) ? tool.promptGuidelines : [];
 		expect(guidelines.some((g) => g.includes("Core tools (bash, read, edit, write) are always active"))).toBe(true);
 		expect(guidelines.some((g) => g.includes("Tool loading is additive across turns"))).toBe(true);
 
-		// 绝不能出现导致模型误判为覆盖重声明的歧义语句
 		for (const g of guidelines) {
 			expect(g).not.toContain("re-declares");
 			expect(g).not.toContain("re-declare");

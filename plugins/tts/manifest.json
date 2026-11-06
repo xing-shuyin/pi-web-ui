@@ -2,11 +2,11 @@
 	"id": "tts",
 	"name": "语音合成 (TTS)",
 	"nameEn": "TTS Voice Engine",
-	"version": "1.4.4",
+	"version": "1.5.0",
 	"icon": "🔊",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"11 5 6 9 2 9 2 15 6 15 11 19 11 5\"/><path d=\"M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07\"/></svg>",
-	"description": "多源通用语音合成插件，聚合豆包大模型语音、微软云端音色与 DeepSeek 语音（含专属会话复用与防风控标头伪装），支持浏览器扩展一键同步登录凭据。",
-	"descriptionEn": "Multi-engine TTS plugin aggregating Doubao, Edge-TTS, and DeepSeek voices (with session reuse and browser disguise) with companion browser extension.",
+	"description": "将豆包和 DeepSeek 语音及音色注册到系统统一 TTS 中心，供网页播报、QQ 自动回复和其他工具共用。支持浏览器扩展同步凭据、引擎音色查询与音频文件生成。",
+	"descriptionEn": "Registers Doubao and DeepSeek engines and voices in the shared TTS center for web playback, QQ replies, and other tools. Includes credential synchronization, engine/voice discovery, and audio-file generation.",
 	"apiVersion": 2,
 	"permissions": ["ui", "http", "tools", "fs:write", "fs:read", "net"],
 	"view": true,
@@ -16,8 +16,8 @@
 			"type": "select",
 			"label": "默认语音引擎",
 			"default": "doubao",
-			"options": ["doubao", "deepseek"],
-			"hint": "语音合成优先使用的引擎类型。注意：DeepSeek 引擎高频使用极易触发网页端封号风控，推荐优先使用豆包。"
+			"options": ["builtin", "doubao", "deepseek"],
+			"hint": "AI tts 工具默认使用的引擎；builtin 为服务器系统语音，其他引擎使用本插件凭据。工具 action=list 可查询中心全部引擎与音色。"
 		},
 		{
 			"key": "doubaoApiKey",

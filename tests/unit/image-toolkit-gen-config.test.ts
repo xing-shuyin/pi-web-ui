@@ -1,10 +1,3 @@
-/**
- * image-gen 配置与产物路径单测（纯函数，零网络零宿主）。
- *
- * 覆盖：配置归一化（脏值回默认 / id 去重 / 形状字段裁剪）、密钥键名与脱敏、
- * 服务挑选回落、预置模板可用性、工具函数（画幅/像素/文件名/slug/嗅探）与
- * multipart 编码、输出路径规划（显式路径 / 目录 / 查重）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	PRESETS,
@@ -62,7 +55,6 @@ describe("工具函数", () => {
 		expect(U.filenameFromTemplate("{stamp}-{model}", { model: "gpt image 1", now: new Date(2026, 0, 2) })).toContain(
 			"gpt-image-1",
 		);
-		// 未知变量原样保留（便于发现拼写错误），但会被 slug 洗成安全字符
 		expect(U.filenameFromTemplate("{nope}", {})).toBe("nope");
 	});
 
@@ -175,7 +167,6 @@ describe("配置归一化", () => {
 		const back = normalizeService({ ...comfy, shape: "openai-images" });
 		expect(back.workflow).toBeUndefined();
 		expect(back.editFields).toBeDefined();
-		// 通用逃生舱字段跨形状保留
 		expect(back.sizeMap).toEqual({ "1:1": "512x512" });
 	});
 
@@ -185,7 +176,7 @@ describe("配置归一化", () => {
 			services: [{ id: "a2" }, { id: "b2", enabled: false }],
 		});
 		expect(cfg.defaultService).toBe("");
-		expect(pickService(cfg, "b2")).toBe(null); // 停用不算
+		expect(pickService(cfg, "b2")).toBe(null);
 		expect(pickService(cfg, "")?.id).toBe("a2");
 		expect(pickService(cfg, "nope")?.id).toBe("a2");
 		const cfg2 = normalizeConfig({ defaultService: "b3", services: [{ id: "a3" }, { id: "b3" }] });

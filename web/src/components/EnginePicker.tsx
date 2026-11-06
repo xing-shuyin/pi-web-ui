@@ -5,41 +5,27 @@ import { useI18n } from "../i18n";
 import type { EngineId } from "../types";
 import { Dropdown } from "./Dropdown";
 
-/**
- * 智能体引擎元数据规格：支持未来无缝扩展 N 个引擎（如 Claude Code、自定义引擎等）。
- */
 export interface EngineMeta {
 	id: string;
-	/** 显示名称多语言键 */
 	titleKey:
 		| "settingsEnginePiTitle"
 		| "settingsEngineDshTitle"
 		| "settingsEngineClaudeTitle"
 		| "settingsEngineCodexTitle"
 		| "settingsEngineDurableTitle";
-	/** 简短徽标标签 */
 	badge: string;
-	/** 特色定位标签（如「完整生态」「极速补丁」「通用驱动」「持久自愈」） */
 	tagKey: "engineTagFull" | "engineTagFast" | "engineTagUniversal" | "engineTagDurable";
-	/** 描述说明翻译键 */
 	descKey:
 		| "settingsEnginePiDesc"
 		| "settingsEngineDshDesc"
 		| "settingsEngineClaudeDesc"
 		| "settingsEngineCodexDesc"
 		| "settingsEngineDurableDesc";
-	/** 样式色彩类 */
 	colorClass: string;
-	/** 对应的全局 npm 包名（如 "@deepseek-ai/dsh"） */
 	packageName?: string;
-	/** 全局安装执行命令（如 "npm i -g @deepseek-ai/dsh"） */
 	installCommand?: string;
 }
 
-/**
- * 支持的智能体引擎列表（单源可扩展名录）。
- * 后续引入新引擎只需在此追加一条定义。
- */
 export const SUPPORTED_ENGINES: EngineMeta[] = [
 	{
 		id: "pi",
@@ -94,19 +80,12 @@ export const SUPPORTED_ENGINES: EngineMeta[] = [
 ];
 
 interface EnginePickerProps {
-	/** 下拉展开方向："down"（顶栏用）、"up"（底栏用）、"left"（右侧栏用）、"right"（左侧栏用） */
 	direction?: "down" | "up" | "left" | "right";
-	/** 对齐方向 */
 	align?: "left" | "right";
-	/** 附加样式类 */
 	className?: string;
-	/** 显示的自定义文案（优先于默认引擎名） */
 	label?: string;
-	/** 是否渲染尾部 caret 箭头（默认 false） */
 	caret?: boolean;
-	/** 当前所在栏 */
 	bar?: "top" | "bottom" | "left" | "right";
-	/** 是否将下拉菜单 portal 到 document.body（脱离父级 overflow 截断与包含块约束，底栏与侧边栏默认开启） */
 	portal?: boolean;
 }
 
@@ -118,15 +97,12 @@ export function EnginePicker({ direction, align, className, label, caret = false
 	const [confirmUninstallId, setConfirmUninstallId] = useState<string | null>(null);
 	const wrapRef = useRef<HTMLDivElement>(null);
 
-	// 侧边栏向视口内侧弹出：左侧栏向右、右侧栏向左；底栏向上；顶栏向下
 	const effectiveDirection: "down" | "up" | "left" | "right" =
 		direction ?? (bar === "left" ? "right" : bar === "right" ? "left" : bar === "bottom" ? "up" : "down");
-	// 侧边栏和底栏带有 overflow 截断与包含块约束，必须 portal 到 body 防止菜单被裁切；若未指定则默认底栏/侧栏开启
 	const effectivePortal = portal ?? (bar === "left" || bar === "right" || bar === "bottom");
 
 	const handleOpenChange = (nextOpen: boolean) => {
 		if (nextOpen) {
-			// 展开下拉时自动请求服务端复查引擎安装状态，确保后台最新安装秒级感知
 			appSend({ type: "check_engines" });
 		} else {
 			setConfirmUninstallId(null);
@@ -189,7 +165,6 @@ export function EnginePicker({ direction, align, className, label, caret = false
 					{SUPPORTED_ENGINES.map((item) => {
 						const isSelected = item.id === engine;
 						const status = engines.find((e) => e.id === item.id);
-						// pi 原生捆绑引擎恒可用，其余引擎按服务端探测结果判断是否安装
 						const isInstalled = item.id === "pi" || (status ? status.installed : false);
 						const isUpdating = Boolean(status?.updating);
 						const isUninstalling = Boolean(status?.uninstalling);
@@ -233,7 +208,6 @@ export function EnginePicker({ direction, align, className, label, caret = false
 
 						const handleSelect = () => {
 							if (!isInstalled) {
-								// 未安装时不可切换，点击直接引导安装终端
 								setOpen(false);
 								if (item.installCommand) {
 									window.dispatchEvent(

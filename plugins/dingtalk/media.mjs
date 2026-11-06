@@ -56,7 +56,6 @@ function imageMime(bytes) {
 	throw new Error("图片无法解码：仅支持 PNG / JPEG / GIF / WebP，请重新发送原图");
 }
 
-/** Actual bytes enter host.chat attachments; download URLs never masquerade as model input. */
 export async function receiveMedia(event, cfg) {
 	const kind = String(event.msgtype || event.msgType || "text").toLowerCase();
 	if (kind === "text" || kind === "markdown") return { attachments: [], notice: "" };
@@ -131,7 +130,6 @@ async function uploadMedia(path, type, token) {
 	return body.media_id;
 }
 
-/** Native robot media delivery. Custom/session webhooks cannot send arbitrary binary media. */
 export async function sendMedia(cfg, args) {
 	const type = String(args.mediaType || "");
 	if (!["image", "audio", "file", "video"].includes(type)) throw new Error("mediaType 必须为 image/audio/file/video");
@@ -168,7 +166,6 @@ export async function sendMedia(cfg, args) {
 	);
 }
 
-/** Shared enterprise delivery, preserving recipient validation and honest API errors. */
 export async function sendRobotMessage(cfg, args, msgKey, params, token) {
 	if (!cfg.robotCode || (!args.openConversationId && !args.userId) || (args.openConversationId && args.userId))
 		throw new Error("企业机器人发送需要 robotCode 和唯一的精确接收目标");

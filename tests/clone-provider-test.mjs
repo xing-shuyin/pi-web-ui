@@ -1,18 +1,3 @@
-// clone_provider — built-in → custom provider draft test (zero token).
-//
-// The model-config modal offers "复制为自定义": the server copies a BUILT-IN
-// provider's baseUrl + current model catalog into an editable UiProviderConfig
-// draft (clone_provider_result) so the user can paste a SECOND API key without
-// overwriting the built-in one. Nothing is persisted until save_model_config.
-// This test verifies:
-//   1. happy path: deepseek → deepseek-2 draft with api/baseUrl/models, NO apiKey
-//   2. nothing saved server-side (list_models_config unchanged after clone)
-//   3. saving the draft occupies the id; the next clone suggests deepseek-3
-//   4. providers without baseUrl (opencode-go) now succeed with templated draft (models + default baseUrl)
-//   5. unknown provider ids refuse with an error
-//   6. reqId is echoed back
-//
-// Usage: npm run build && node tests/clone-provider-test.mjs [port]
 import WebSocket from "ws";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +14,6 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// Minimal agent config so the server starts cleanly.
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "main-key" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -62,7 +46,6 @@ server.stderr.on("data", (d) => process.stdout.write(`[srv-err] ${d}`));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let passed = 0;
-/** JSON comparison that ignores object key order. */
 const sortKeysDeep = (o) => {
 	if (Array.isArray(o)) return o.map(sortKeysDeep);
 	if (o && typeof o === "object")
@@ -99,7 +82,7 @@ class Client {
 			for (let i = 0; i < this.received.length; i++) {
 				const m = this.received[i];
 				if (m.type !== type) continue;
-				if (pred && !pred(m)) continue; // keep unmatched (may be wanted by another waiter)
+				if (pred && !pred(m)) continue;
 				this.received.splice(i, 1);
 				return m;
 			}
@@ -131,9 +114,7 @@ async function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 }
 process.on("exit", () => void cleanup());
 process.on("SIGINT", async () => {
@@ -148,7 +129,6 @@ try {
 	await c.waitFor("ready", 8000);
 	console.log("  · ready");
 
-	// Sanity: deepseek is listed as a built-in provider.
 	c.send({ type: "list_providers" });
 	const ps = await c.waitFor("providers_status");
 	check(
@@ -156,7 +136,6 @@ try {
 		ps.providers.some((p) => p.id === "deepseek"),
 	);
 
-	// 1) happy path: clone deepseek
 	c.send({ type: "clone_provider", provider: "deepseek", reqId: 11 });
 	const r1 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 11);
 	check("reqId echoed + ok", r1.reqId === 11 && r1.ok === true);
@@ -177,7 +156,6 @@ try {
 		!("apiKey" in r1.config) && !("authHeader" in r1.config),
 	);
 
-	// 2) clone must not persist anything — custom list unchanged (only `main`).
 	c.send({ type: "list_models_config" });
 	const mc1 = await c.waitFor("models_config");
 	check(
@@ -185,7 +163,6 @@ try {
 		mc1.providers.length === 1 && mc1.providers[0].providerId === "main",
 	);
 
-	// 3) save the draft under deepseek-2, then clone again → deepseek-3.
 	c.send({
 		type: "save_model_config",
 		providerId: "deepseek-2",
@@ -203,8 +180,6 @@ try {
 	const r2 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 12);
 	check("id collision avoided: next suggestion is deepseek-3", r2.ok && r2.config?.providerId === "deepseek-3");
 
-	// 4) provider without baseUrl now succeeds with templated draft (auto-filled models, no manual needed).
-	//    单供应商全量模型（按占比最高 api），包含 muse-spark 等跨 api 模型
 	c.send({ type: "clone_provider", provider: "opencode-go", reqId: 13 });
 	const r3 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 13);
 	check(
@@ -219,7 +194,6 @@ try {
 		"opencode-go draft has templated baseUrl",
 		r3.ok && typeof r3.config.baseUrl === "string" && r3.config.baseUrl.length > 0,
 	);
-	// 4b) opencode 含 muse-spark，验证全量模型包含 muse-spark（单供应商全量）
 	c.send({ type: "clone_provider", provider: "opencode", reqId: 15 });
 	const r5 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 15);
 	check(
@@ -227,7 +201,6 @@ try {
 		r5.ok && Array.isArray(r5.config.models) && r5.config.models.some((m) => m.id === "muse-spark-1.2"),
 	);
 
-	// 5) unknown provider refuses.
 	c.send({ type: "clone_provider", provider: "no-such-provider", reqId: 14 });
 	const r4 = await c.waitFor("clone_provider_result", 10000, (m) => m.reqId === 14);
 	check("unknown provider → error", !r4.ok && (r4.error ?? "").includes("不存在"));

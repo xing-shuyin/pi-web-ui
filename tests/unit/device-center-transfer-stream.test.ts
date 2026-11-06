@@ -47,7 +47,6 @@ describe("device-center transfer-stream", () => {
 		const { receiver } = await fixture();
 		const uuid = "11111111-2222-4333-8444-555555555555";
 
-		// Negative size
 		const negativeManifest: any = {
 			version: 2,
 			transferId: uuid,
@@ -60,7 +59,6 @@ describe("device-center transfer-stream", () => {
 		};
 		await expect(receiver.initTransfer(negativeManifest)).rejects.toThrow(/Invalid file size/);
 
-		// Offset mismatch
 		const offsetMismatch: any = {
 			version: 2,
 			transferId: uuid,
@@ -70,7 +68,7 @@ describe("device-center transfer-stream", () => {
 			chunkSize: 32768,
 			files: [
 				{ path: "a.txt", size: 100, sha256: "0".repeat(64), offset: 0, chunkCount: 1, firstChunkIndex: 0 },
-				{ path: "b.txt", size: 100, sha256: "0".repeat(64), offset: 50, chunkCount: 1, firstChunkIndex: 1 }, // expected offset 100
+				{ path: "b.txt", size: 100, sha256: "0".repeat(64), offset: 50, chunkCount: 1, firstChunkIndex: 1 },
 			],
 			manifestHash: "0".repeat(64),
 		};
@@ -91,14 +89,13 @@ describe("device-center transfer-stream", () => {
 			totalChunks: 1,
 			chunkSize: 32768,
 			files,
-			manifestHash: "1".repeat(64), // wrong hash
+			manifestHash: "1".repeat(64),
 		};
 		await expect(receiver.initTransfer(fakeHashManifest)).rejects.toThrow(/Manifest hash verification failed/);
 	});
 
 	it("prepares manifest correctly, validates chunk sizes, and transfers end-to-end with checksums", async () => {
 		const { root, receiver } = await fixture();
-		// Create a test file of 70 KiB (3 chunks with 32 KiB chunk size)
 		const content = Buffer.alloc(70 * 1024, "a");
 		await writeFile(join(root, "large.dat"), content);
 
@@ -111,15 +108,13 @@ describe("device-center transfer-stream", () => {
 		expect(manifest.version).toBe(2);
 		expect(manifest.totalFiles).toBe(1);
 		expect(manifest.totalBytes).toBe(70 * 1024);
-		expect(manifest.totalChunks).toBe(3); // 32k + 32k + 6k
+		expect(manifest.totalChunks).toBe(3);
 		expect(manifest.files[0].chunkCount).toBe(3);
 
-		// Init on receiver
 		const initRes = await receiver.initTransfer(manifest);
 		expect(initRes.status).toBe("staging");
 		expect(initRes.receivedChunks).toEqual([]);
 
-		// Read and send chunk 0
 		const c0 = await readChunkFromSource({ root, path: "large.dat", offset: 0, size: 32 * 1024 });
 		const p0: TransferChunkPayload = {
 			transferId: manifest.transferId,
@@ -133,18 +128,15 @@ describe("device-center transfer-stream", () => {
 		const r0 = await receiver.writeChunk(p0);
 		expect(r0.receivedChunks).toEqual([0]);
 
-		// Idempotent resend of chunk 0 returns success
 		const r0Again = await receiver.writeChunk(p0);
 		expect(r0Again.receivedChunks).toEqual([0]);
 
-		// Conflict duplicate chunk with different hash is rejected!
 		const conflictChunk: TransferChunkPayload = {
 			...p0,
 			sha256: "f".repeat(64),
 		};
 		await expect(receiver.writeChunk(conflictChunk)).rejects.toThrow(/Duplicate chunk with mismatched checksum/);
 
-		// Read and send chunk 1
 		const c1 = await readChunkFromSource({ root, path: "large.dat", offset: 32 * 1024, size: 32 * 1024 });
 		const p1: TransferChunkPayload = {
 			transferId: manifest.transferId,
@@ -157,27 +149,24 @@ describe("device-center transfer-stream", () => {
 		};
 		await receiver.writeChunk(p1);
 
-		// Check status in progress
 		const status = await receiver.getStatus(manifest.transferId);
 		expect(status.receivedChunks).toEqual([0, 1]);
 		expect(status.status).toBe("staging");
 
-		// Corrupt data chunk is rejected
 		const c2 = await readChunkFromSource({ root, path: "large.dat", offset: 64 * 1024, size: 6 * 1024 });
 		const corruptData = Buffer.from(c2.buffer);
-		corruptData[0] = 0xff; // corrupt a byte
+		corruptData[0] = 0xff;
 		const p2Corrupt: TransferChunkPayload = {
 			transferId: manifest.transferId,
 			chunkIndex: 2,
 			path: "large.dat",
 			offset: 64 * 1024,
 			size: 6 * 1024,
-			sha256: c2.sha256, // original hash does not match corrupt data
+			sha256: c2.sha256,
 			data: corruptData.toString("base64"),
 		};
 		await expect(receiver.writeChunk(p2Corrupt)).rejects.toThrow(/Chunk sha256 checksum mismatch/);
 
-		// Send valid chunk 2
 		const p2Valid: TransferChunkPayload = {
 			transferId: manifest.transferId,
 			chunkIndex: 2,
@@ -209,10 +198,8 @@ describe("device-center transfer-stream", () => {
 			chunkSize: 1024,
 		});
 
-		// Init on receiver 1
 		await receiver1.initTransfer(manifest);
 
-		// Only send chunk 0 (fileA)
 		const c0 = await readChunkFromSource({ root, path: "fileA.txt", offset: 0, size: contentA.length });
 		await receiver1.writeChunk({
 			transferId: manifest.transferId,
@@ -224,19 +211,15 @@ describe("device-center transfer-stream", () => {
 			data: c0.buffer.toString("base64"),
 		});
 
-		// Explicit close of receiver 1: MUST NOT delete persistent staged chunks!
 		await receiver1.close();
 
-		// Simulate restart / reopen: create receiver2 pointing to same dataDir and root
 		const receiver2 = createChunkedTransferReceiver({ root, dataDir, allowReceive: true });
 		cleanup.push(() => receiver2.close());
 
-		// Query status on receiver2: chunk 0 is cleanly preserved and discovered!
 		const status = await receiver2.getStatus(manifest.transferId);
 		expect(status.status).toBe("staging");
 		expect(status.receivedChunks).toEqual([0]);
 
-		// Send missing chunk 1 (fileB)
 		const c1 = await readChunkFromSource({ root, path: "fileB.txt", offset: 0, size: contentB.length });
 		const r1 = await receiver2.writeChunk({
 			transferId: manifest.transferId,
@@ -260,24 +243,20 @@ describe("device-center transfer-stream", () => {
 		const manifest = await prepareChunkedTransfer({ root, paths: ["test.txt"] });
 		await receiver.initTransfer(manifest);
 
-		// Staged directory exists
 		const dirPath = join(dataDir, "device-transfers", `transfer-${manifest.transferId}`);
 		const existsBefore = await readFile(join(dirPath, "manifest.json"))
 			.then(() => true)
 			.catch(() => false);
 		expect(existsBefore).toBe(true);
 
-		// Abort
 		const res = await receiver.abortTransfer(manifest.transferId);
 		expect(res.ok).toBe(true);
 
-		// Physical directory is gone
 		const existsAfter = await readFile(join(dirPath, "manifest.json"))
 			.then(() => true)
 			.catch(() => false);
 		expect(existsAfter).toBe(false);
 
-		// Status query throws not found
 		await expect(receiver.getStatus(manifest.transferId)).rejects.toThrow(/not found/);
 	});
 
@@ -296,7 +275,6 @@ describe("device-center transfer-stream", () => {
 		expect(fileEntry.chunkHashes).toBeDefined();
 		expect(fileEntry.chunkHashes!.length).toBe(fileEntry.chunkCount);
 
-		// Read chunk with valid expectedFileSize and expectedChunkSha256
 		const validChunk = await readChunkFromSource({
 			root,
 			path: "test-chunk-hashes.dat",
@@ -307,7 +285,6 @@ describe("device-center transfer-stream", () => {
 		});
 		expect(validChunk.sha256).toBe(fileEntry.chunkHashes![0]);
 
-		// Read chunk with altered expectedFileSize fails
 		await expect(
 			readChunkFromSource({
 				root,
@@ -318,7 +295,6 @@ describe("device-center transfer-stream", () => {
 			}),
 		).rejects.toThrow(/size mismatch/);
 
-		// Read chunk with altered expectedChunkSha256 fails
 		await expect(
 			readChunkFromSource({
 				root,
@@ -335,12 +311,10 @@ describe("device-center transfer-stream", () => {
 		const stagingStorage = join(dataDir, "device-transfers");
 		await mkdir(stagingStorage, { recursive: true });
 
-		// 1. Create a corrupt directory (missing valid manifest)
 		const corruptDir = join(stagingStorage, "transfer-11111111-2222-4333-8444-555555555555");
 		await mkdir(corruptDir, { recursive: true });
 		await writeFile(join(corruptDir, "manifest.json"), "NOT_JSON");
 
-		// 2. Start receiver and await its initialization
 		const receiver = createChunkedTransferReceiver({ root, dataDir, allowReceive: true });
 		cleanup.push(() => receiver.close());
 		await receiver.getStatus("00000000-0000-4000-8000-000000000000").catch(() => {});
@@ -362,15 +336,12 @@ describe("device-center transfer-stream", () => {
 		await receiver1.initTransfer(manifest);
 		await receiver1.close();
 
-		// Create a different project root
 		const differentRoot = join(dir, "different-project");
 		await mkdir(differentRoot, { recursive: true });
 
-		// Receiver on different root must not adopt bundles bound to original root
 		const receiver2 = createChunkedTransferReceiver({ root: differentRoot, dataDir, allowReceive: true });
 		cleanup.push(() => receiver2.close());
 
-		// Querying manifest from different root must fail as unknown / purged
 		await expect(receiver2.getStatus(manifest.transferId)).rejects.toThrow(/not found/);
 	});
 });

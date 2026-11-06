@@ -7,23 +7,6 @@ import {
 	shouldScrollToBottomOnStreamChange,
 } from "../../web/src/components/scroll-classify.js";
 
-/**
- * MUTATION-PROOF PIN for the scroll layout-shift discriminator (5cd680b).
- *
- * The synthetic E2E harness self-recovers (the lazy-window sweep re-clears
- * escapedRef), so reverting the dSh<0 branch still shows 9/9 green there.
- * These unit tests do NOT self-recover: if you simulate the pre-fix behavior
- * by deleting/commenting the `if (dSh < 0)` branch in classifyScroll
- * (web/src/components/scroll-classify.ts) — i.e. always treating a moderate
- * negative dSt as user intent (flipEscape = true) — the tests marked
- * [MUTATION-KILL] below MUST fail.
- *
- * Mutation check procedure:
- *   1. Comment out `if (dSh < 0) { ... return ...; }` in classifyScroll.
- *   2. npx vitest run tests/unit/scroll-classify.test.ts  → expect RED.
- *   3. Restore the branch.
- *   4. npx vitest run tests/unit/scroll-classify.test.ts  → expect GREEN.
- */
 const base = {
 	escaped: false,
 	graceActive: false,
@@ -62,7 +45,7 @@ describe("classifyScroll — layout-shift discriminator decision table", () => {
 		expect(collapse.reassert).toBe(false);
 
 		const largeUser = run({ dSt: -800, dSh: 0 });
-		expect(largeUser.flipEscape).toBe(false); // existing behavior for that band
+		expect(largeUser.flipEscape).toBe(false);
 	});
 
 	it("dSt >= -4 → no-op", () => {
@@ -290,13 +273,10 @@ describe("shouldPreloadEarlier — 动态水位线预加载决策", () => {
 	};
 
 	it("用户向上滚动，视口离开底部进入倒数第二页（scrollTop <= 2屏/50%水位线）且有更早历史 → 提前触发后台拉取", () => {
-		// threshold = max(800 * 2 = 1600, 4000 * 0.5 = 2000, 800) = 2000px
-		// scrollTop 1000 <= 2000, 且 isMovingUp = true
 		expect(shouldPreloadEarlier(defaultParams)).toBe(true);
 	});
 
 	it("用户仍在底部第一页区域（scrollTop 远大于预警水位线） → 不提前触发翻页", () => {
-		// scrollTop 3000 > threshold 2000
 		expect(shouldPreloadEarlier({ ...defaultParams, scrollTop: 3000 })).toBe(false);
 	});
 

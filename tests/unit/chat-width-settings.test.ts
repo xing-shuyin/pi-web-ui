@@ -1,8 +1,3 @@
-/**
- * 宽屏聊天列开关规整单测（见 web/src/chat-width-settings.ts）。
- * 仅测纯函数 normalizeChatWidthSettings —— localStorage 存取在 node 环境不可用，
- * load/save 都有 try/catch 兜底，不在单测范围内。
- */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

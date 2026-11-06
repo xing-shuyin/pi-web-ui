@@ -9,7 +9,6 @@ function emptyWeights(): ContextWeights {
 	return { systemPrompt: 0, memoryFiles: 0, tools: 0, skills: 0, toolResults: 0, messages: 0, other: 0 };
 }
 
-/** Uses the same rendered prompt and token estimator as the settings preview. */
 export function estimateBaseContext(
 	snapshot: { full: string; texts: Record<string, string>; toolsSchema: string },
 	options: { promptTemplate?: string; promptOverrides?: Record<string, string>; promptDisabled?: string[] },
@@ -17,7 +16,6 @@ export function estimateBaseContext(
 	const weights = emptyWeights();
 	const disabled = new Set(options.promptDisabled ?? []);
 	const template = effectiveTemplate(options.promptTemplate ?? "");
-	// Count only sections actually present in the template, including repeated placeholders.
 	for (const match of template.matchAll(/\{\{\s*(context|skills|tools)\s*\}\}/g)) {
 		const name = match[1];
 		if (disabled.has(name)) continue;
@@ -27,7 +25,6 @@ export function estimateBaseContext(
 	}
 	const prompt = estimatePromptTokens(snapshot.full);
 	const schema = estimatePromptTokens(snapshot.toolsSchema);
-	// Rounding individual sections can exceed the full prompt by a few tokens.
 	const sections = weights.memoryFiles + weights.skills + weights.tools;
 	if (sections > prompt) {
 		for (const category of ["memoryFiles", "skills", "tools"] as const) {
@@ -39,11 +36,6 @@ export function estimateBaseContext(
 	return { tokens: prompt + schema, weights };
 }
 
-/**
- * Estimate proportions from live session messages, excluding compacted/branched-away entries.
- * These are transcript weights, not an exact breakdown of a provider request: request-local
- * deduplication, evidence externalization and extensions can change the submitted messages.
- */
 export function estimateContextWeights(
 	base: ContextWeights,
 	messages: unknown[],
@@ -53,7 +45,6 @@ export function estimateContextWeights(
 	const weights = { ...base };
 	const add = (value: unknown, settled = false) => {
 		if (!value || typeof value !== "object") return;
-		// A former prefix may become the mutable tail after truncation; discard its old estimate.
 		if (!settled) cache?.delete(value);
 		const cached = settled ? cache?.get(value) : undefined;
 		if (cached) {
@@ -78,15 +69,12 @@ export function estimateContextWeights(
 		if (settled) cache?.set(value, contribution);
 		for (const category of Object.keys(weights) as ContextCategory[]) weights[category] += contribution[category];
 	};
-	// Agent-core appends message_end and clears streamingMessage before AgentSession awaits
-	// extensions, which may replace the final message in place. Cache only the earlier prefix.
 	const lastMessage = messages[messages.length - 1];
 	for (const message of messages) add(message, message !== streamingMessage && message !== lastMessage);
 	if (streamingMessage && !messages.includes(streamingMessage)) add(streamingMessage);
 	return weights;
 }
 
-/** Keep the provider's total authoritative; integer allocation does not make the estimated proportions exact. */
 export function reconcileContextCategories(weights: ContextWeights, usedTokens: number): ContextCategoryUsage[] {
 	const total = Math.max(0, Math.round(Number.isFinite(usedTokens) ? usedTokens : 0));
 	const entries = (Object.keys(weights) as ContextCategory[]).map((category) => ({

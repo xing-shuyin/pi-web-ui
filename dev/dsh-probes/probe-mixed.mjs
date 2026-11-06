@@ -1,6 +1,4 @@
-// One-shot JSON-RPC probe for the pi-web-ui DSH runtime (mixed-tree layout):
 // dsh-base rows resolve from the GLOBAL runtime tree; the jsonrpc plugin
-// mounts by absolute path into the PROJECT node_modules.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -8,7 +6,6 @@ import { join, resolve } from "node:path";
 import { resolveRuntimeBase } from "../../server/dsh/runtime/runtime-root.mjs";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
@@ -22,7 +19,6 @@ const JSONRPC_ENTRY = resolve(
 	"index.js",
 );
 
-// 1) 验证运行时树解析（launcher 内部逻辑的镜像 —— 直接复用共享模块）
 const rtBase = await resolveRuntimeBase();
 console.log("runtime base ->", rtBase);
 if (!rtBase) {
@@ -34,7 +30,6 @@ console.log("has dsh-base bundle:", existsSync(join(rtBase, "@deepseek-ai", "dsh
 console.log("has dsh-app-boot:", existsSync(join(rtBase, "@deepseek-ai", "dsh-app-boot", "lib", "index.js")));
 console.log("jsonrpc entry exists:", existsSync(JSONRPC_ENTRY));
 
-// 2) 启动 launcher 子进程
 const proc = spawn(process.execPath, [join(DSH_DIR, "runtime", "launcher.mjs")], {
 	cwd: HERE,
 	env: {
@@ -49,7 +44,6 @@ const proc = spawn(process.execPath, [join(DSH_DIR, "runtime", "launcher.mjs")],
 proc.stderr.setEncoding("utf8");
 proc.stderr.on("data", (d) => process.stderr.write("[rt] " + d));
 
-// 子进程提前退出 → 立刻炸掉所有未决请求，不演 120s 死等。
 proc.on("exit", (code, signal) => {
 	for (const [, p] of pending) {
 		p.reject(new Error(`launcher exited early (code=${code} signal=${signal})`));

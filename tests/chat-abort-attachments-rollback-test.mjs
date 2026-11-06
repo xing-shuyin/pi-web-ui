@@ -133,14 +133,11 @@ const server = spawn("node", [join(REPO_ROOT, "dist/server/index.js")], {
 server.stdout?.on("data", (d) => process.stdout.write("[srv out] " + d.toString()));
 server.stderr?.on("data", (d) => process.stderr.write("[srv] " + d.toString()));
 
-// 等端口就绪，不用固定 sleep（Node 启动耗时略超 2s 时旧写法会在连接处 ECONNREFUSED）。
 for (let i = 0; i < 100; i++) {
 	try {
 		const r = await fetch(`http://127.0.0.1:${PORT}/api/health`);
 		if (r.ok) break;
-	} catch {
-		/* not up yet */
-	}
+	} catch {}
 	await new Promise((r) => setTimeout(r, 100));
 }
 await new Promise((r) => setTimeout(r, 200));
@@ -425,7 +422,6 @@ try {
 		check("Edit-and-reask with attachments succeeded", snapEdited.isStreaming === false);
 	}
 	console.log("=== 8. 边界测试：快速连续中断与再次发附件 (Rapid Abort & Prompt) ===");
-	// 轮次 1: 发送附件 A -> 立即 abort
 	mockResponses.push("Will be aborted instantly 1");
 	streamDelayMs = 150;
 	send({
@@ -438,7 +434,6 @@ try {
 	await waitState((s) => !s.isStreaming, "rapid 1 stopped", 5000);
 	check("Rapid abort 1 stopped", true);
 
-	// 轮次 2: 紧接着发送附件 B -> 再次立即 abort
 	mockResponses.push("Will be aborted instantly 2");
 	streamDelayMs = 150;
 	send({
@@ -451,7 +446,6 @@ try {
 	await waitState((s) => !s.isStreaming, "rapid 2 stopped", 5000);
 	check("Rapid abort 2 stopped", true);
 
-	// 轮次 3: 再次发送附件 A + 附件 B -> 顺利完成
 	mockResponses.push("Rapid abort recovered successfully and finished final turn.");
 	streamDelayMs = 10;
 	send({
@@ -503,7 +497,6 @@ try {
 			snapDoubleRolled.messages.filter((x) => x.role === "user").length <= 1,
 		);
 
-		// 二次回滚后再次发带附件消息
 		mockResponses.push("Response after double rollback.");
 		streamDelayMs = 10;
 		send({

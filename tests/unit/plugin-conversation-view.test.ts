@@ -1,9 +1,3 @@
-/**
- * 插件会话快照的选会话策略单测（issue #542，纯函数，无宿主/端口）。
- *
- * 覆盖：本客户端取「正在看的对话」/最近活跃、缺省跳过子代理、跨客户端回落、
- * 模型变更事件去重键。
- */
 import { describe, expect, it } from "vitest";
 import {
 	modelChangeKey,

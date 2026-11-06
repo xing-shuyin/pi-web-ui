@@ -1,19 +1,9 @@
-/**
- * plugins/telegram/index.mjs
- * Telegram Bot integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto).
- * Inspired by dsh-im: outbound long-polling (getUpdates, zero public IP),
- * structure-aware Markdown chunks, isolated multi-turn sessions,
- * access control whitelist, and slash commands.
- */
-
 import { createHash } from "node:crypto";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { ChannelBehavior, uploadMedia } from "./channel-behavior.mjs";
 
 export const SECRET_BOT_TOKEN = "telegram.botToken";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -22,7 +12,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from Telegram sender user ID. */
 export function peerAccountId(userId, prefix = "tg") {
 	const raw = String(userId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -30,7 +19,6 @@ export function peerAccountId(userId, prefix = "tg") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and strip bot username mention from Telegram message. */
 export function extractTelegramText(message, botUsername = "") {
 	const text = String(message?.text || message?.caption || "").trim();
 	if (!text) return "";
@@ -39,9 +27,6 @@ export function extractTelegramText(message, botUsername = "") {
 	return text.replace(regex, "").trim();
 }
 
-/**
- * Telegram API request helper.
- */
 export async function telegramApi(
 	token,
 	method,
@@ -65,9 +50,6 @@ export async function telegramApi(
 	return json.result;
 }
 
-/**
- * TelegramBotBridge manages outbound long-polling duplex exchange with Telegram.
- */
 export class TelegramBotBridge extends ChannelBehavior {
 	/**
 	 * @param {object} options
@@ -99,7 +81,7 @@ export class TelegramBotBridge extends ChannelBehavior {
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			botUsername: "",
 			messagesReceived: 0,
 			messagesReplied: 0,
@@ -134,7 +116,6 @@ export class TelegramBotBridge extends ChannelBehavior {
 			return;
 		}
 
-		// Verify bot identity
 		try {
 			const me = await telegramApi(
 				cfg.botToken,
@@ -160,7 +141,6 @@ export class TelegramBotBridge extends ChannelBehavior {
 			this.offRunEvent = this.host.onRunEvent((ev) => this.handleRunEvent(ev));
 		}
 
-		// Start outbound long-polling loop
 		this.pollAbort = new AbortController();
 		this.startPollingLoop(this.pollAbort.signal);
 	}
@@ -224,20 +204,17 @@ export class TelegramBotBridge extends ChannelBehavior {
 				}
 				this.status.connected = true;
 				this.status.state = "connected";
-				// Empty immediate responses (proxies or mocks) must not create a hot loop.
 				if (!Array.isArray(updates) || !updates.length) await new Promise((r) => setTimeout(r, 50));
 			} catch (err) {
 				if (!this.running || signal.aborted) break;
 				this.status.state = "connecting";
 				this.log("info", `Telegram poll retry notice: ${err.message}`);
-				// Wait 3 seconds backoff before retrying
 				await new Promise((r) => setTimeout(r, 3000));
 			}
 		}
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.botToken;
@@ -245,7 +222,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingBotToken = savedSecrets[SECRET_BOT_TOKEN] || prev.botToken || "";
@@ -280,7 +256,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "telegram" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "telegram",
 		description: "Send text or local/URL images, audio, voice, video, animations and files to Telegram chats.",
@@ -346,7 +321,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

@@ -1,17 +1,3 @@
-/**
- * builtins/action.ts — 建议操作标记（期待用户操作）。
- *
- * 语法：
- *   [[action:suggest:<按钮文字>]]                      添加快捷操作建议（点击发送该文字）
- *   [[action:suggest:<按钮显示>,prompt=<实际发送文本>]] 区分展示标签与实际发送内容
- *   [[action:suggest:label=<按钮显示>,prompt=<发送文本>]] kwargs 风格
- *   [[action:clear:all]]                             清空当前建议操作
- *
- * 兼容操作别名：
- *   tool 兼容 action 与 suggest
- *   op 兼容 suggest / add / next / reply / choice / option / clear
- */
-
 import type { ApplyResult, MarkerTool, MarkerOverlay, ParsedToken, MarkerContext } from "../marker.js";
 import { getServerBlock, pick, type ServerLang } from "../../i18n.js";
 
@@ -40,7 +26,6 @@ const ACTION_GUIDANCE_EN: string[] = [
 	"- Suggest action buttons: [[action:suggest:<label>]] (one marker per button; for multiple choices output separate markers: [[action:suggest:A]] [[action:suggest:B]], NEVER join options in one marker). Separate prompt: [[action:suggest:<label>,prompt=<text>]]. Clear: [[action:clear:all]].",
 ];
 
-/** 语言感知的 action guidance：en 用英译、zh 用中文，默认英文。 */
 export function getActionGuidance(lang: ServerLang = "en"): string[] {
 	return getServerBlock(lang, "markers.action.guidance", ACTION_GUIDANCE_ZH, ACTION_GUIDANCE_EN);
 }
@@ -81,8 +66,6 @@ export const actionMarker: MarkerTool<ActionState> = {
 			};
 		}
 
-		// 提取 label 与 prompt：
-		// args: token.args.join(",").trim() (兼容含逗号的正文，如 "是，继续执行")
 		const argsText = token.args.join(",").trim();
 		const kwLabel = token.kwargs["label"]?.trim() || "";
 		const kwPrompt = token.kwargs["prompt"]?.trim() || "";
@@ -106,11 +89,9 @@ export const actionMarker: MarkerTool<ActionState> = {
 		if (!prompt) prompt = label;
 		if (!label) label = prompt;
 
-		// 字符长度封顶保护
 		if (label.length > 80) label = label.slice(0, 80);
 		if (prompt.length > 2000) prompt = prompt.slice(0, 2000);
 
-		// 去重
 		const existing = state.actions.find((a) => a.label === label && a.prompt === prompt);
 		if (existing) {
 			return {
@@ -125,7 +106,6 @@ export const actionMarker: MarkerTool<ActionState> = {
 			};
 		}
 
-		// 数量上限 8 个，超限剔除最早的一项
 		if (state.actions.length >= 8) {
 			state.actions.shift();
 		}

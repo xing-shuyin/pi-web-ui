@@ -1,9 +1,3 @@
-/**
- * Goal prefs — persistence test.
- * Sends set_goal_prefs (model + rounds cap + locked), verifies goal_status
- * reflects it, then reconnects with the SAME clientId (simulating a reload) and
- * checks the prefs are restored. Also verifies maxRounds 0 → unlimited default.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -12,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -45,9 +38,7 @@ async function startServer(dataDir) {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("no server");
 }
@@ -105,7 +96,6 @@ async function main() {
 	await startServer(dataDir);
 	await sleep(400);
 
-	// Connection 1: change prefs.
 	const c1 = await connect();
 	await c1.next((m) => m.type === "snapshot", "initial snapshot", 20000);
 	c1.send({
@@ -114,7 +104,6 @@ async function main() {
 		maxRounds: 8,
 		locked: false,
 	});
-	// Wait specifically for the prefs to appear (skip the attach-time goal_status).
 	const g1 = await c1.next(
 		(m) => m.type === "goal_status" && m.status.reviewModel === "openai/gpt-4o-mini",
 		"goal_status with prefs",
@@ -127,11 +116,8 @@ async function main() {
 	);
 	c1.ws.close();
 
-	// Connection 2 (same clientId) — simulates a reload; prefs should be restored.
 	await sleep(500);
 	const c2 = await connect();
-	// The restored prefs come through as goal_status on attach; also snapshot may
-	// not carry prefs, so wait for a goal_status whose prefs are populated.
 	const g2 = await c2.next((m) => m.type === "goal_status", "goal_status after reload", 10000);
 	check(
 		"prefs persisted across reload (model/rounds/locked)",
@@ -143,9 +129,7 @@ async function main() {
 	console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURE(S)`);
 	try {
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -153,8 +137,6 @@ main().catch((e) => {
 	console.error("ERR", e);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

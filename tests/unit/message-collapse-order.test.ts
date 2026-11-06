@@ -10,18 +10,6 @@ import { Message } from "../../web/src/components/Message.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { UiMessage } from "../../web/src/types.js";
 
-/**
- * w23: expanded-message collapse control stays on the left.
- *
- * The collapse button used to render LAST in `.msg-meta` with
- * `margin-left: auto`, so it sat far right while collapsed rows show
- * expand on the left. The button now renders FIRST in `.msg-meta`,
- * before the `.msg-role` (PI) span, with no auto margin; `.msg-time`
- * keeps `margin-left: auto` so the time stays right.
- *
- * True jsdom + true React render, DOM order asserts.
- */
-
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CSS = readFileSync(join(ROOT, "web", "src", "styles.css"), "utf8");
 

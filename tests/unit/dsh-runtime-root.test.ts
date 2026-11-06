@@ -69,7 +69,6 @@ describe("runtime-root resolution and version compatibility", () => {
 			const baseDir = join(root, "@deepseek-ai", "dsh-base");
 			mkdirSync(baseDir, { recursive: true });
 			writeFileSync(join(baseDir, "cordis.patch.yml"), "# patch");
-			// 缺少 dsh-app-boot
 			expect(runtimeBaseFor(root)).toBeNull();
 		});
 	});

@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { appResourceCrossOrigin } from "../base-url";
 import { FiList, FiSquare, FiPaperclip, FiArrowUp, FiBookOpen, FiMic, FiCamera } from "react-icons/fi";
 import type { FileSearchResult, ModelInfo, ProviderKeyInfo, SlashCommandInfo, UiMessage, UiState } from "../types";
 import { isZhLocale, useT, useI18n } from "../i18n";
@@ -45,6 +46,7 @@ import { groupByAlign } from "../ui-slots";
 import { nextSearchReqId } from "../search-req-id";
 
 import { ModelThinking } from "./ModelThinking";
+import { SystemScreenshotButton } from "./SystemScreenshotButton";
 import { groupConversationHits, groupMessageTargets } from "../device-group-messages";
 import {
 	insertGroupMember,
@@ -63,31 +65,19 @@ import { availableTemplateCommands, expandTemplateCommand, normalizeTemplateComm
 import { TextQuoteCard } from "./TextQuoteCard";
 import { openImageLightbox } from "../image-lightbox-bridge";
 import { openFilePreview } from "../file-preview-bridge";
+import { resolveWorkspaceFileUrl } from "../workspace-file-url";
 
-/** True on touch-first devices (phones / tablets driven by a soft keyboard) —
- *  see `touch-device.ts` for the detection rules (Windows 触屏笔记本不算触屏，
- *  否则回车只换行、发不出去). */
 const IS_TOUCH = detectTouchFirstDevice();
 
-/** 输入框高度的拖拽与自适应范围（px）：
- *  1. 最低高度开始写：走自适应高度（从最低高度单行开始随内容自动长高，清空时自动缩回最低行）。
- *  2. 手动拖拽拉高后：固定为用户拉高的高度，不随内容自适应；内容溢出时在框内纵向滚动。
- *  3. 双击手柄或拖回最低高度：一键恢复最低高度自适应模式。
- *  4. 无论自适应还是手动拉高，都严格受到最大高度限制（COMPOSER_MAX_H + 视口保护），绝不挤爆正文。 */
 const COMPOSER_MIN_H = 40;
 const COMPOSER_MAX_H = 320;
 const COMPOSER_H_KEY = "pi-web-ui:composer-height";
 
-/** 计算当前环境下的安全最大高度上限（结合视口比例与硬上限），保证上方消息正文始终可见。 */
 function getComposerSafeMaxH(): number {
 	if (typeof window === "undefined") return COMPOSER_MAX_H;
 	return Math.max(160, Math.min(COMPOSER_MAX_H, Math.floor(window.innerHeight * 0.42)));
 }
 
-/** Props are deliberately NARROW (no whole-ChatState object): every field is
- *  stable while tokens stream in (the messages ARRAY reference is kept stable
- *  by the server when the persisted set is unchanged), so the shallow-compared
- *  memo() below skips this input bar on every text delta. */
 interface ChatInputProps {
 	groupDevices?: readonly import("../device-group-messages").GroupDevice[];
 	groupReady?: boolean;
@@ -100,20 +90,13 @@ interface ChatInputProps {
 		conversationId?: string,
 		options?: { planOnly?: boolean },
 	) => Promise<boolean>;
-	/** 可选的自定义任务中止回调；群聊模式下用于中止在途远程任务 */
 	onAbort?: () => void;
-	/** 输入框前置区条目（composer.leading 槽位：纯插件，无内置条目；渲染在文件上传按钮左侧）。 */
 	composerLeading?: import("../ui-slots").UiSlotEntry[];
-	/** 输入框动作区条目（composer.actions 槽位：内置 + 插件的最终结果）。 */
 	composerActions?: import("../ui-slots").UiSlotEntry[];
-	/** 点击一个条目：view 由宿主切视图，其余（action/select）交给贡献它的插件
-	 *  （select 切选项时第二个参数带选中的 value）。 */
 	onUiAction?: (item: import("../ui-slots").UiSlotEntry, value?: string) => void;
 	streaming: boolean;
-	/** Persisted messages (stable reference while unchanged) — used by /copy. */
 	messages: UiMessage[];
 	slashCommands: SlashCommandInfo[];
-	/** Forwarded to ModelThinking (all fields stable while streaming). */
 	modelState: {
 		model: UiState["model"];
 		thinkingLevel: UiState["thinkingLevel"];
@@ -121,39 +104,25 @@ interface ChatInputProps {
 	} | null;
 	models: ModelInfo[];
 	modelsLoading: boolean;
-	/** Files/folders attached via the right panel / preview, waiting to be sent. */
 	attachments: {
 		path: string;
 		name: string;
-		/** "page" = 已授权给 AI 的网页（page-picker）：path 是 origin、name 是标题。
-		 *  "conversation" = 引用的另一个对话：path 不用，引用走 conversationId
-		 *  （运行中，含子代理）或 sessionPath（历史转录）。
-		 *  "inline" = 旧版「全文注入」的遗留值（服务端按 reference 处理）。
-		 *  粘贴图片/上传文件没有 mode（path 为空）。 */
 		mode?: "inline" | "reference" | "lines" | "page" | "conversation" | "quote" | "canvas";
 		quote?: import("../types").TextQuote;
-		/** mode "conversation" + 引用运行中对话的 id（如 "c3"）。 */
 		conversationId?: string;
-		/** mode "conversation" + 引用历史会话的转录文件 path。 */
 		sessionPath?: string;
 		isDir?: boolean;
 		lines?: { start: number; end: number };
-		/** Raw pasted/dropped/uploaded image (no workspace path). */
 		imageData?: string;
 		mimeType?: string;
-		/** Raw uploaded file bytes (no workspace path). */
 		fileData?: string;
 		size?: number;
-		/** Stable key for pasted images (path is ""). */
 		key?: string;
 	}[];
 	onRemoveAttachment: (path: string) => void;
-	/** Images pasted into the input / dropped onto it / picked via upload. */
+	onAnnotateImage?: (attachment: ChatInputProps["attachments"][number], dataUrl: string) => void | Promise<void>;
 	onAddImageFiles: (files: File[]) => void;
-	/** Any dropped/uploaded file (images go through onAddImageFiles instead). */
 	onAddLocalFiles: (files: File[]) => void;
-	/** `@` 提及命中带的路径附件（App.attach 包装，无则只插文本）。
-	 *  silent = 本组件 acceptAt 已亲自插好提及文本，attach 不要再插一遍。 */
 	onAddPathAttachment?: (a: {
 		path: string;
 		name: string;
@@ -162,45 +131,27 @@ interface ChatInputProps {
 		lines?: { start: number; end: number };
 		silent?: boolean;
 	}) => void;
-	/** 服务端文件名搜索结果（App 透传 chat.fileSearch；`@` 内置文件提供方消费）。 */
 	fileSearch?: { reqId: number; ok: boolean; results: FileSearchResult[] } | null;
-	/** 触发一次服务端文件名搜索（App 透传，内部 appSend search_files）。 */
 	onSearchFiles?: (reqId: number, query: string) => void;
-	/** Client-side notices (e.g. folders dropped). */
 	onNotice: (level: "info" | "warning" | "error", text: string) => void;
-	/** Called after a prompt is successfully sent — clears pending attachments. */
 	onSent: () => void;
-	/** Opens the custom-model config modal (mobile input row). */
 	onManageModels: () => void;
-	/** 被撤回的排队/插队消息队列：每项 seq 递增，effect 按序合并回输入框（空则填入、非空追加）。数组保证连续撤回多条不丢。 */
 	recallDrafts?: { text: string; seq: number }[];
-	/** Stored API keys per built-in provider (masked) — drives the picker's
-	 *  multi-key grouping (click a model under a key to switch to it). */
 	providerKeys: Record<string, ProviderKeyInfo[]>;
-	/** 全局默认模型（undefined = 隐藏该功能，App 按 engine==='pi' 才传）。 */
 	defaultModel?: string | null;
-	/** 输入框上方的快捷短语（点击即发送；与文件引用 chips 是两套独立 UI，互不干扰）。 */
 	quickPhrases: string[];
 	quickPhrasesEnabled: boolean;
-	/** DSH 引擎：权限下拉（思考强度右侧；undefined/空 = 非 dsh 或未就绪，不渲染）。 */
 	dshPermCurrent?: string | null;
 	dshPermOptions?: DshPermissionOption[];
 	dshPermDefault?: string;
-	/** DSH 引擎：模式下拉（思考强度右侧；undefined/空 = 非 dsh 或未就绪，不渲染）。 */
 	dshPreset?: DshPresetInfo | null;
 	dshPresets?: UiAgentPreset[];
 	dshPresetDefault?: string;
 	dshBlank?: boolean;
-	/** 会话 id（dsh 下拉切换会话时重置选中值）。 */
 	conversationId?: string;
-	/** 当前会话是否处于只读规划模式。 */
 	planMode?: boolean;
-	/** 服务端存过的未发送草稿（全量快照携带，issue #166 单中心文件方案；
-	 *  DSH 引擎不填，传了也忽略）。 */
 	sessionDraft?: { text: string; ts: number } | null;
-	/** 当前会话的 sessionId（草稿跨重启的稳定 key；空 = 未就绪，不存不取）。 */
 	sessionId?: string;
-	/** 输入框文字跨对话保留（默认关；开 = 切换别的会话不清空；关 = 各会话独立保留草稿）。 */
 	preserveDraftAcrossConversations?: boolean;
 }
 
@@ -221,6 +172,7 @@ export const ChatInput = memo(function ChatInput({
 	modelsLoading,
 	attachments,
 	onRemoveAttachment,
+	onAnnotateImage,
 	onAddImageFiles,
 	onAddLocalFiles,
 	onAddPathAttachment,
@@ -250,19 +202,14 @@ export const ChatInput = memo(function ChatInput({
 	preserveDraftAcrossConversations = false,
 }: ChatInputProps) {
 	const t = useT();
-	/** 连接/会话就绪：走全局（web/src/app-globals.ts），不再从 App 传。 */
 	const localReady = useAppField("ready");
 	const ready = groupDevices ? Boolean(groupReady) : localReady;
-	/** DSH 无 mid-run steering（isStreaming 时 prompt 全部走 followUp，
-	 *  见 server/dsh/dsh-agent-service.ts）—— 只渲染「排队」半段，不摆一个说了不算的「插队」。 */
 	const isDsh = useIsDsh();
 	const capabilities = useEngineCapabilities();
 	const effectivePlanMode = Boolean(planMode && capabilities.planMode);
 	const { locale } = useI18n();
-	/** 发送按键语义偏好（issue #664）：显式设置优先；未配置时触屏设备回落 mod-enter，桌面回落 enter */
 	const effectiveSendKey = useEffectiveSendKey(IS_TOUCH);
 	const isModEnter = effectiveSendKey === "mod-enter";
-	/** 打开模板库（对话中途也可随时取用提示词模板）。 */
 	const { openPicker, templates } = useTemplates();
 	const commandTemplates = availableTemplateCommands(templates, slashCommands);
 	const allSlashCommands: SlashCommandInfo[] = [
@@ -278,53 +225,32 @@ export const ChatInput = memo(function ChatInput({
 	const slashHint = (c: SlashCommandInfo) =>
 		!isZhLocale(locale) && c.argumentHintEn ? c.argumentHintEn : (c.argumentHint ?? "");
 	const [text, setText] = useState("");
-	/** 手动拉出的固定高度：
-	 *  null = 处于最低高度（自适应模式，随内容自动伸缩）；
-	 *  数字 = 手动拉高固定高度（不随内容自适应，内容溢出时内部滚动）。 */
 	const [composerH, setComposerH] = useState<number | null>(() => {
 		try {
 			const v = Number(localStorage.getItem(COMPOSER_H_KEY));
 			if (Number.isFinite(v) && v > COMPOSER_MIN_H + 4) {
 				return Math.min(v, COMPOSER_MAX_H);
 			}
-		} catch {
-			/* 无痕/配额满：用自适应 */
-		}
+		} catch {}
 		return null;
 	});
-	/** 拖拽中的起点（clientY + 起始高度；up 拉高、down 压低，见 onPointerMove）。
-	 * next 记最后一次 move 算出的保底高度：pointerup 持久化走它（state 在连续 move 下
-	 * 可能还没 flush，直接读 state 会存个落后几像素的旧值）；全程没 move（纯点击）
-	 * 时 next 为 null，不写盘，自适应不被一次点击锁死。 */
 	const dragResizeRef = useRef<{ startY: number; startH: number; next: number | null } | null>(null);
-	/** 统一补全浮层：`/` 命令与 `@` 提及共用一个浮层，按 kind 换内容（互斥，
-	 *  同一时间只可能开一个：slash 优先全文匹配，否则看光标前的 @ 词元）。 */
 	type ComposerMenu =
 		{ kind: "slash"; items: SlashCommandInfo[] } | { kind: "at"; start: number; end: number; items: AtHit[] };
 	const [menu, setMenu] = useState<ComposerMenu | null>(null);
 	const [menuIndex, setMenuIndex] = useState(0);
-	/** `@` 异步查询的竞态 guard：迟到响应直接丢弃。 */
 	const atReqRef = useRef(0);
-	/** 等 search_files 回填的 waiter（reqId → resolve；超时/命中即删）。 */
 	const fileWaiters = useRef(new Map<number, (v: unknown) => void>());
-	/** 最近一次 refreshMenus 的输入（迟到响应与快照不一致即丢弃）。 */
 	const menuTextRef = useRef("");
-	/** /help modal — shows the full command catalog. */
 	const [showHelp, setShowHelp] = useState(false);
-	/** Width captured from the input box when /help opens — the modal overlays
-	 *  the whole viewport, so it must measure the chat column to match. */
 	const [helpWidth, setHelpWidth] = useState<number | undefined>(undefined);
 	const taRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
-	/** 全局 prompt 历史导航状态（issue #68）：-1 = 未在历史中，>=0 = 历史下标。 */
 	const historyIndexRef = useRef(-1);
 	const draftRef = useRef("");
 	const [groupPlanOnly, setGroupPlanOnly] = useState(false);
 
-	// 撤回的排队/插队消息 → 按序合并回输入框（空则填入、非空追加，见 composer-draft.ts）。
-	// 用 lastRecallSeqRef 去重：已消费的 seq 不再应用（StrictMode/重复渲染下不会重复追加）；
-	// 数组形式保证连续点两条时第一条不丢失（单槽会被后一次覆盖）。
 	const lastRecallSeqRef = useRef(0);
 	useEffect(() => {
 		if (!recallDrafts || recallDrafts.length === 0) return;
@@ -337,7 +263,6 @@ export const ChatInput = memo(function ChatInput({
 			menuTextRef.current = next;
 			return next;
 		});
-		// 与 prompt 历史导航状态解耦：撤回后从「当前草稿」重新开始。
 		historyIndexRef.current = -1;
 		draftRef.current = "";
 		requestAnimationFrame(() => {
@@ -348,9 +273,6 @@ export const ChatInput = memo(function ChatInput({
 		});
 	}, [recallDrafts]);
 
-	// 宿主注入草稿（浏览器元素拾取扩展 / 插件 → window.__piWebUiHost.compose）：
-	// 合并语义与撤回完全一致（空则填入、非空追加、绝不覆盖），所以直接复用同一个纯函数。
-	// 挂载时装一次：setText 是 useState 的稳定引用，不依赖任何会变的闭包。
 	useEffect(() => {
 		if (groupDevices) return;
 		registerDraftSink((incoming) => {
@@ -372,7 +294,6 @@ export const ChatInput = memo(function ChatInput({
 		return () => registerDraftSink(null);
 	}, []);
 
-	// 宿主触发聚焦（点击新对话等）。
 	useEffect(() => {
 		registerFocusSink(() => {
 			if (!IS_TOUCH) {
@@ -384,16 +305,11 @@ export const ChatInput = memo(function ChatInput({
 		return () => registerFocusSink(null);
 	}, []);
 
-	// 宿主触发在光标处插入文本（文件树/预览点击「引用路径」联动插入 @文件名）
-	// 审查 #15：正文走 textRef（effect 每键重注册会让宿主桥反复解绑/挂载，
-	// 且错过注册窗口的插入会丢）。textRef 在每次渲染同步最新正文，effect 依赖 []。
 	const textRef = useRef("");
 	textRef.current = text;
 	useEffect(() => {
 		if (groupDevices) return;
 		registerInsertSink((textToInsert) => {
-			// 第二道防线：正文里已有同一 @提及（重复点同一文件等）→ 跳过不重复插。
-			// 同 tick 的双通道（@ 选单 acceptAt + attach）由 silent 分工，这里管跨 tick。
 			{
 				const core = textToInsert.trim();
 				const specials = new Set([".", "*", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"]);
@@ -431,7 +347,6 @@ export const ChatInput = memo(function ChatInput({
 		return () => registerInsertSink(null);
 	}, []);
 
-	// 宿主触发移除特定提及（用户点击附件 chip 的 ✕ 时联动从正文中删除对应的 @文件名）
 	useEffect(() => {
 		if (groupDevices) return;
 		registerRemoveMentionSink((mention) => {
@@ -466,30 +381,19 @@ export const ChatInput = memo(function ChatInput({
 		return () => registerRemoveMentionSink(null);
 	}, []);
 
-	// 未发送草稿持久化（issue #166，单中心文件方案）：L1 localStorage（同步写，
-	// 保住刷新/崩溃/beforeunload 的最后一击——beforeunload 时 WS 发已不可靠，
-	// 但同步写过的 L1 还在）+ L2 服务端 <dataDir>/composer-drafts.json
-	//（draft_update：防抖 2s + blur/切会话即时刷，保重启/换 tab）。
-	// 恢复只在「本地没动过且输入框为空」时做（绝不覆盖用户正在打的字、撤回/注入/
-	// 历史导航进来的内容），服务端快照 vs 本地 L1 按 ts 新的赢。DSH 引擎不参与。
-	const DRAFT_TEXT_CAP = 20000; // 与服务端 DRAFT_TEXT_MAX 同值（两端各自截断）
+	const DRAFT_TEXT_CAP = 20000;
 	const DRAFT_SAVE_DEBOUNCE_MS = 2000;
 	const draftSessionKey = sessionId ? `${conversationId ?? ""}${sessionId}` : null;
 	const draftLocalKey = draftSessionKey && sessionId ? `pi-web-ui:composer-draft:${sessionId}` : null;
 	const textMirrorRef = useRef("");
 	const lastEditTsRef = useRef(0);
-	/** 当前会话本地是否动过键盘（切会话重置；恢复的守卫条件之一）。 */
 	const touchedRef = useRef(false);
-	/** 已应用的恢复 ts（迟到的重复全量快照不再重应用）。 */
 	const appliedDraftTsRef = useRef(0);
 	const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const draftScopeRef = useRef<string | null>(null);
 	const pendingCarryOverRef = useRef<{ text: string; userEditedAfterSwitch: boolean } | null>(null);
 	const preserveAcrossRef = useRef(preserveDraftAcrossConversations);
 	preserveAcrossRef.current = preserveDraftAcrossConversations;
-	/** 输入法守卫（issue #248：macOS 中文输入法下敲英文字母按 Enter 上屏时，浏览器会先派发
-	 *  compositionend 再派发 keydown(Enter, isComposing=false)，需通过时间差拦截误发送）。
-	 *  判定与 ask_user_question 问卷输入框同源：web/src/ime-guard.ts。 */
 	const imeGuard = useImeCompositionGuard();
 
 	const readLocalDraft = (key: string): { text: string; ts: number } | null => {
@@ -504,30 +408,24 @@ export const ChatInput = memo(function ChatInput({
 		}
 	};
 
-	/** L1+L2 一起写（空文本 = 删除两边；sid 显式传——清理旧会话时调的是旧闭包）。 */
 	const persistComposerDraft = (sid: string, localKey: string, text: string, ts: number) => {
 		const capped = text.slice(0, DRAFT_TEXT_CAP);
 		try {
 			if (capped.trim()) localStorage.setItem(localKey, JSON.stringify({ text: capped, ts }));
 			else localStorage.removeItem(localKey);
-		} catch {
-			// 配额满等：L2 还在，不崩
-		}
+		} catch {}
 		if (!groupDevices) appSend({ type: "draft_update", sessionId: sid, text: capped, ts });
 	};
 
-	/** 把镜像里的当前内容刷出去（timer 到期 / blur / 切会话 / 快捷短语发送后回存）。 */
 	const flushComposerDraft = () => {
 		if (draftTimerRef.current) {
 			clearTimeout(draftTimerRef.current);
 			draftTimerRef.current = null;
 		}
-		// 没动过键盘就没东西可刷（恢复进来的内容不回刷，避免空转写盘）。
 		if (!touchedRef.current || !draftSessionKey || !draftLocalKey || !sessionId || !connected) return;
 		persistComposerDraft(sessionId, draftLocalKey, textMirrorRef.current, lastEditTsRef.current);
 	};
 
-	/** 用户一次键盘编辑：镜像 + L1 同步写 + L2 防抖。 */
 	const selectedGroupDevices = useRef(new Set<string>());
 	const groupReferences = useRef<GroupMemberReference[]>([]);
 	const groupReferenceText = useRef("");
@@ -572,9 +470,7 @@ export const ChatInput = memo(function ChatInput({
 				if (capped.trim())
 					localStorage.setItem(draftLocalKey, JSON.stringify({ text: capped, ts: lastEditTsRef.current }));
 				else localStorage.removeItem(draftLocalKey);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		if (draftSessionKey && sessionId && connected) {
 			if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -584,7 +480,6 @@ export const ChatInput = memo(function ChatInput({
 			const scope = draftSessionKey;
 			draftTimerRef.current = setTimeout(() => {
 				draftTimerRef.current = null;
-				// 开火时会话已切走 → 旧 timer 作废（切会话的 cleanup 刷过旧内容了）。
 				if (scope !== draftScopeRef.current || !localKey) return;
 				persistComposerDraft(sid, localKey, textMirrorRef.current, ts);
 			}, DRAFT_SAVE_DEBOUNCE_MS);
@@ -592,15 +487,12 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const handleTextChange = (value: string, cursor: number | null) => {
-		// 用户手动编辑则退出历史导航（下次 Up 从最新开始）
 		historyIndexRef.current = -1;
 		setText(value);
 		refreshMenus(value, cursor);
 		noteComposerEdit(value);
 	};
 
-	// 切会话（conversationId/sessionId 任一变）：旧会话 timer 里没发出去的先刷掉
-	//（cleanup 闭包里还是旧 sid/旧文本，key 不会写错），并记下未发出的打字内容。
 	useEffect(() => {
 		const scope = draftSessionKey;
 		const sid = sessionId;
@@ -625,8 +517,6 @@ export const ChatInput = memo(function ChatInput({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [draftSessionKey]);
 
-	// 新会话就绪：判断是否保留打字内容（issue #638：切换/新建期间用户正在输入的内容绝不清空；
-	// 若无主动编辑，仅全新空会话承接旧未发送草稿）。
 	useEffect(() => {
 		draftScopeRef.current = draftSessionKey;
 		const carryInfo = pendingCarryOverRef.current;
@@ -668,7 +558,6 @@ export const ChatInput = memo(function ChatInput({
 		historyIndexRef.current = -1;
 	}, [draftSessionKey]);
 
-	// 会话切换或初次加载新对话时自动聚焦输入框（触屏设备除外）。
 	const prevSessionKeyRef = useRef<string | null>(null);
 	useEffect(() => {
 		const isNewChat = messages.length === 0;
@@ -682,9 +571,6 @@ export const ChatInput = memo(function ChatInput({
 		}
 	}, [draftSessionKey, messages.length, ready]);
 
-	// 恢复：服务端快照 vs 本地 L1，新的赢；本地动过 / 框里有东西一律不碰。
-	// 无 dep 数组刻意不用——快照可能晚于会话切换到达，靠守卫条件保证幂等。
-	// 决策见 composer-draft.ts 的 selectDraftToRestore（单测覆盖）。
 	useEffect(() => {
 		if (!draftSessionKey || !draftLocalKey) return;
 		if (touchedRef.current) return;
@@ -710,17 +596,11 @@ export const ChatInput = memo(function ChatInput({
 		plugin: t("slashPlugin"),
 	};
 
-	/** 重算统一浮层：slash 全文优先，否则看光标前的 @ 词元（异步问各 provider）。
-	 *  cursor === null = 程序化改文本（历史导航/撤回/补全接受）：直接关浮层，
-	 *  不猜光标（猜错位置会吞字）。 */
 	const refreshMenus = (value: string, cursor: number | null) => {
 		menuTextRef.current = value;
-		// Match the RAW value (no trim): a trailing space must close the picker
-		// so Enter right after it submits instead of completing the command.
 		const m = value.match(/^\/([^\s]*)$/);
 		if (m && ready && !groupDevices) {
 			const prefix = m[1].toLowerCase();
-			// skill 条目名是 `skill:<name>`，这里额外用裸名匹配（见 ../slash-filter）。
 			const matches = filterSlashCommands(allSlashCommands, prefix);
 			setMenu(matches.length > 0 ? { kind: "slash", items: matches } : null);
 			setMenuIndex(0);
@@ -741,8 +621,6 @@ export const ChatInput = memo(function ChatInput({
 			setMenuIndex(0);
 			return;
 		}
-		// 查询作业 = 插件注册表 + 内置文件提供方（宿主自带，零插件也可用；
-		// 空 query 不走文件搜索，裸 @ 不刷全量）。
 		let ids: { id: string; label: string }[] = [];
 		try {
 			ids = listPluginComposerProviders();
@@ -777,7 +655,6 @@ export const ChatInput = memo(function ChatInput({
 		if (query && typeof onSearchFiles === "function") {
 			jobs.push({ id: "host:files", label: t("openFiles"), run: () => searchBuiltinFiles(query) });
 		}
-		// 内置页面提供方（page-picker 已授权页）：底座支持 pageRef 且在线时才添加
 		let immediatePages: AtHit[] = [];
 		if (capabilities.pageRef) {
 			pokeBrowserControl();
@@ -826,14 +703,12 @@ export const ChatInput = memo(function ChatInput({
 				30,
 			);
 			setMenu(items.length > 0 ? { kind: "at", start, end, items } : null);
-			// 仅在初次渲染浮层时重置高亮；若已展示过 eager 结果，保留用户已有键盘/鼠标选项目
 			if (!eagerRendered && items.length > 0) {
 				setMenuIndex(0);
 			}
 		});
 	};
 
-	/** 内置文件查询：发 search_files，命中回填时 resolve（超时 3s 回空）。 */
 	const searchBuiltinFiles = (query: string): Promise<unknown> => {
 		if (typeof onSearchFiles !== "function") return Promise.resolve([]);
 		const reqId = nextSearchReqId();
@@ -855,8 +730,6 @@ export const ChatInput = memo(function ChatInput({
 		});
 	};
 
-	// search_files 回填：按 reqId 唤醒等它的内置查询（对不上就丢，
-	// 与 GlobalSearchModal 同口径；这里只管 waiter，展示走统一浮层）。
 	useEffect(() => {
 		if (!fileSearch || !fileSearch.ok) return;
 		const resolve = fileWaiters.current.get(fileSearch.reqId);
@@ -865,18 +738,13 @@ export const ChatInput = memo(function ChatInput({
 		resolve(fileSearch.results ?? []);
 	}, [fileSearch]);
 
-	/** 旧名（= refreshMenus 全文分支）：slash 全文匹配逻辑未动。 */
 	const updateCompletions = (value: string) => refreshMenus(value, null);
 
-	// Keep the highlighted command visible while navigating with the keyboard
-	// (the picker scrolls; arrow keys must not leave the selection off-screen —
-	// same behavior as the FooterBar path completions).
 	useEffect(() => {
 		const el = menuRef.current?.querySelector(".slash-item.active");
 		el?.scrollIntoView({ block: "nearest" });
 	}, [menuIndex, menu]);
 
-	/** Insert the highlighted command into the input (" /cmd " + rest). */
 	const acceptSlash = (cmd?: SlashCommandInfo) => {
 		const list = menu?.kind === "slash" ? menu.items : [];
 		const pick = cmd ?? list[menuIndex % Math.max(list.length, 1)];
@@ -884,8 +752,6 @@ export const ChatInput = memo(function ChatInput({
 			setMenu(null);
 			return;
 		}
-		// Replace the current "/prefix" token with the completed command. The
-		// trailing space closes the picker and lets the user type args right away.
 		const m = text.match(/^\/([^\s]*)([\s\S]*)$/);
 		const rest = m ? m[2] : "";
 		const next = `/${pick.name} ${rest}`;
@@ -896,7 +762,6 @@ export const ChatInput = memo(function ChatInput({
 		taRef.current?.focus();
 	};
 
-	/** `@` 命中接受：光标处词元换成文本 + 附件进 chips（无文本回落 title）。 */
 	const acceptAt = (hit?: AtHit, start?: number) => {
 		const cur = menu?.kind === "at" ? menu : null;
 		const list = cur?.items ?? [];
@@ -920,8 +785,6 @@ export const ChatInput = memo(function ChatInput({
 		const rawText = pick.text ?? (groupMember ? `@${groupMember.name}` : pick.title);
 		if (groupDevices && pick.providerId === "host:group-devices" && pick.hint)
 			selectedGroupDevices.current.add(pick.hint);
-		// 附件型命中（文件/目录/页签…）统一插 `@提及` 形式：正文里的 `@x` 与附件 chip
-		// 双向联动（点 ✕ 双向删、退格整块删）；纯文本命中保持原样。
 		const insert = atts.length > 0 && !rawText.startsWith("@") ? `@${rawText} ` : `${rawText} `;
 		const next = `${text.slice(0, at)}${insert}${text.slice(replaceEnd)}`;
 		menuTextRef.current = next;
@@ -945,9 +808,7 @@ export const ChatInput = memo(function ChatInput({
 					...(a.lines ? { lines: a.lines } : {}),
 					silent: true,
 				});
-			} catch {
-				/* 单条附件失败不挡文本插入 */
-			}
+			} catch {}
 		}
 		requestAnimationFrame(() => {
 			const el = taRef.current;
@@ -957,7 +818,6 @@ export const ChatInput = memo(function ChatInput({
 		});
 	};
 
-	/** 统一浮层的两套行渲染（抽成函数：三元内联 JSX 在 .tsx 里解析脆弱）。 */
 	const renderSlashRows = () => {
 		if (menu?.kind !== "slash") return null;
 		return menu.items.map((c, i) => (
@@ -995,7 +855,6 @@ export const ChatInput = memo(function ChatInput({
 		));
 	};
 
-	/** 统一接受：按浮层 kind 分发（回车/Tab/点击共用）。 */
 	const acceptMenu = (item?: SlashCommandInfo | AtHit) => {
 		if (!menu) return;
 		if (menu.kind === "slash") acceptSlash(item as SlashCommandInfo | undefined);
@@ -1026,13 +885,11 @@ export const ChatInput = memo(function ChatInput({
 	const handleFiles = (files: FileList | File[] | null) => {
 		if (groupDevices) return;
 		if (!files || files.length === 0) {
-			// A folder drag lands here with an empty FileList — tell the user.
 			onNotice("warning", t("foldersNotSupported"));
 			return;
 		}
 		const images = Array.from(files).filter((f) => isRasterImage(f.type));
 		const others = Array.from(files).filter((f) => !isRasterImage(f.type));
-		// P1-7：当前模型明确不支持图片（vision === false）时拒绝图片附件。
 		const noVision = currentModelNoVision();
 		if (images.length > 0 && noVision) {
 			onNotice("warning", noVision);
@@ -1043,17 +900,12 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-		// 粘贴板里带真文件（文件管理器复制 / 截图 / 混合内容）→ 当附件附加；
-		// 与拖拽同走 handleFiles：图片走视觉管线（含 noVision 拦截），其余走
-		// fileData 上传。拿不到文件就是纯文本粘贴，不 preventDefault。
 		const files = collectClipboardFiles(e.clipboardData?.items, e.clipboardData?.files);
-		if (files.length === 0) return; // plain text paste — leave the default
+		if (files.length === 0) return;
 		e.preventDefault();
 		handleFiles(files);
 	};
 
-	/** 当前模型在模型清单中标记为 text-only（vision === false）→ 返回提示文案。
-	 *  pi 引擎/自定义模型无此标记（undefined）→ 不阻止（视觉桥/后端兜底）。 */
 	const currentModelNoVision = (): string | null => {
 		const m = modelState?.model;
 		if (!m?.id) return null;
@@ -1064,21 +916,15 @@ export const ChatInput = memo(function ChatInput({
 	const connected = ready;
 	const sessionReady = ready && Boolean(sessionId);
 
-	// Re-open the picker when the command catalog arrives late — the user may
-	// have typed "/" before the server pushed slash_commands (cold start).
 	const lastTextRef = useRef(text);
 	useEffect(() => {
 		lastTextRef.current = text;
 	}, [text]);
 	useEffect(() => {
-		// Catalog updates only affect slash completion. Recomputing arbitrary text
-		// with a null cursor would dismiss an open @ picker during polling.
 		if (!groupDevices && /^\/[^\s]*$/.test(lastTextRef.current)) updateCompletions(lastTextRef.current);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [slashCommands]);
 
-	// Fill the input from the welcome-page example cards / template picker (issue #586:
-	// confirm before overwriting a non-empty composer draft).
 	const [pendingFill, setPendingFill] = useState<string | null>(null);
 	const resolvePendingFill = (choice: TemplateFillChoice) => {
 		const incoming = pendingFill;
@@ -1110,7 +956,6 @@ export const ChatInput = memo(function ChatInput({
 		return () => window.removeEventListener("pi-web:fill", onFill);
 	}, []);
 
-	// Esc closes the /help modal or the template-fill confirm modal.
 	useEffect(() => {
 		if (!showHelp && pendingFill === null) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -1127,10 +972,6 @@ export const ChatInput = memo(function ChatInput({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [showHelp, pendingFill]);
 
-	// Auto-grow textarea or hold manual fixed height; no scrollbar until content overflows.
-	// 1. 手动拉高了高度（composerH > COMPOSER_MIN_H + 4）：固定高度不自适应；超长在框内滚动。
-	// 2. 最低高度开始写（composerH == null）：从最低行开始随输入内容自适应长高。
-	// 3. 两者均严格受 getComposerSafeMaxH() 最大高度限制截断，杜绝遮挡正文。
 	const composerRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		const ta = taRef.current;
@@ -1146,15 +987,12 @@ export const ChatInput = memo(function ChatInput({
 		const isManualFixed = composerH != null && composerH > COMPOSER_MIN_H + 4;
 		let h: number;
 
-		// natural height measurement first
 		ta.style.height = "auto";
 		const naturalH = ta.scrollHeight;
 
 		if (isManualFixed) {
-			// 手动拖拽拉高了高度：不自适应，固定为拉高高度（上限截断）
 			h = Math.min(composerH, maxCap);
 		} else {
-			// 最低高度开始写：自适应高度，从最低行随内容长高（上限截断）
 			h = Math.min(Math.max(naturalH, COMPOSER_MIN_H), maxCap);
 		}
 
@@ -1167,11 +1005,6 @@ export const ChatInput = memo(function ChatInput({
 		}
 	}, [text, composerH]);
 
-	/** 输入框上方的芯片行（文件引用 `.attach-row` + 快捷短语 `.quick-row`）：
-	 *  实测总高写进 CSS 变量 `--quick-row-h`。消息区按这个值往下铺一层
-	 *  （.messages-wrap 的负 margin / .messages 的底部留白，见 styles.css
-	 *  的「消息列表」），正文才能从芯片行后面透出来；行高会随条数/窗口宽度变
-	 *  （窄屏折行），所以挂 ResizeObserver 而不是只量一次。两行都不存在时归 0。 */
 	const attachRowRef = useRef<HTMLDivElement>(null);
 	const quickRowRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
@@ -1198,11 +1031,6 @@ export const ChatInput = memo(function ChatInput({
 		};
 	}, [attachments.length, quickPhrasesEnabled, quickPhrases.length]);
 
-	/* 光标是否在首/末**视觉行**交给 caret-visual-line.ts：自动折行的长草稿（没有 \n，
-	 * 但界面上是多行）也必须先让 ↑/↓ 走普通光标移动，不能误触发历史（issue #127）。 */
-
-	/** 把当前待发送附件（含粘贴图/上传文件/工作区引用）转成 prompt 消息格式。
-	 *  submit 与快捷短语发送共用 —— 点短语时文件引用同样带上，不丢失。 */
 	const buildPromptAttachments = () =>
 		attachments.map((a) => {
 			if (a.mode === "quote") return { path: "", mode: "quote" as const, quote: a.quote };
@@ -1227,9 +1055,7 @@ export const ChatInput = memo(function ChatInput({
 				path: a.path,
 				mode: a.mode,
 				...(a.lines ? { lines: a.lines } : {}),
-				// 网页引用：标题要一起送（服务端不读文件，用标题当卡片名）。
 				...(a.mode === "page" || a.mode === "canvas" ? { name: a.name } : {}),
-				// 对话引用：id/path 二选一 + 标题（服务端只发 <conversation-ref>，转录由 AI 按需读）。
 				...(a.mode === "conversation"
 					? {
 							name: a.name,
@@ -1240,26 +1066,17 @@ export const ChatInput = memo(function ChatInput({
 			};
 		});
 
-	/** 输入框内容被消费（发送/客户端直执行）→ 草稿作废：L1/定时器/镜像/水位重置。
-	 *  服务端 prompt() 同样清（server/composer-drafts.ts 的 clear 水位拦迟到写）；
-	 *  `/help` 与 `/copy` 不走 server，本地不清则旧文本经 L1/timer 复活（TODO 9）。 */
 	const clearDraftAfterConsume = () => {
 		if (draftLocalKey) {
 			try {
 				localStorage.removeItem(draftLocalKey);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		if (draftTimerRef.current) {
 			clearTimeout(draftTimerRef.current);
 			draftTimerRef.current = null;
 		}
 		touchedRef.current = false;
-		// 提交时刻打水位（不是 0）：之前打的旧草稿（防抖延迟的 draft_update、
-		// prompt() 处理前的全量快照里带的旧 draft）ts 都 <= 此刻，恢复 effect
-		// 因此不再把刚消费的文本倒回输入框（TODO 9）。提交后新打的字 ts
-		// 更大，照常恢复；同 ms 的并列按「不恢复」算（`<=` 守卫）。
 		appliedDraftTsRef.current = Date.now();
 		textMirrorRef.current = "";
 		lastEditTsRef.current = 0;
@@ -1271,8 +1088,6 @@ export const ChatInput = memo(function ChatInput({
 		const hasAttach = attachments.length > 0;
 		if (!trimmed && !hasAttach) return;
 		if (!connected) {
-			// 输入框在断连时不禁用（只有发送按钮禁用），Enter 仍进 submit：
-			// 别静默吞掉，文本保留并给出可见提示供重连后重发。
 			onNotice("error", t("netDisconnected"));
 			return;
 		}
@@ -1327,10 +1142,7 @@ export const ChatInput = memo(function ChatInput({
 			);
 			return;
 		}
-		// Client-side slash commands (never sent to the server).
 		if (trimmed === "/help") {
-			// Match the modal width to the input box (the backdrop spans the full
-			// viewport, so the CSS max-width would be wider than the chat column).
 			const box = taRef.current?.closest(".inputbox")?.getBoundingClientRect();
 			setHelpWidth(box?.width);
 			setShowHelp(true);
@@ -1346,13 +1158,6 @@ export const ChatInput = memo(function ChatInput({
 			void copyLastAssistant();
 			return;
 		}
-		// While the agent is streaming, the server queues this prompt as a
-		// steering message (delivered as soon as the current assistant turn
-		// settles, skipping remaining tool calls — the pi CLI Enter semantic)
-		// and the agent immediately responds to it — see AgentService.prompt()
-		// in agent-service.ts. 运行中发送位那颗「对半胶囊」的右半（插队）走这条；
-		// 左半（排队）传 queue=true，服务端改走 followUp —— 整轮跑完才发
-		// ("AI 生成结束才发送")。
 		if (
 			appSend({
 				type: "prompt",
@@ -1361,28 +1166,20 @@ export const ChatInput = memo(function ChatInput({
 				attachments: buildPromptAttachments(),
 			})
 		) {
-			// 入全局历史（连续重复不重复入队，已在 pushPromptHistory 内去重）——仅提交成功才记。
 			if (trimmed) pushPromptHistory(trimmed);
-			// 退出历史导航状态，下次 Up 从最新开始。
 			historyIndexRef.current = -1;
 			draftRef.current = "";
 			setText("");
-			// 发送成功：草稿作废（服务端 prompt() 里已清），本地 L1/定时器/追踪重置。
 			clearDraftAfterConsume();
 			onSent();
-			// 提交成功 → 把本次使用的模型使用次数 +1（模型下拉按次数排序）。
 			const m = modelState?.model;
 			if (m) recordModelUsage(`${m.provider}/${m.id}`);
 			taRef.current?.focus();
 		} else {
-			// 发送瞬间连接断开（appSend 返回 false）：文本保留，给出可见提示，
-			// 否则与草稿恢复竞态的表现完全一样（字还在、无任何提示）。
 			onNotice("error", t("netDisconnected"));
 		}
 	};
 
-	/** 快捷短语一键发送：直接发出短语文本（带上当前文件附件），不碰输入框草稿。
-	 *  左键 = 立即发送（运行中为插队 steer）；右键 = 排队发送（followUp，整轮结束后才发）。 */
 	const sendPhrase = (phrase: string, queue = false) => {
 		if (groupDevices) return;
 		const trimmed = phrase.trim();
@@ -1399,14 +1196,10 @@ export const ChatInput = memo(function ChatInput({
 			if (trimmed) pushPromptHistory(trimmed);
 			historyIndexRef.current = -1;
 			draftRef.current = "";
-			// 快捷短语不碰输入框：服务端 prompt() 会清草稿，这里把当前内容重存回去。
 			flushComposerDraft();
 			onSent();
 			const m = modelState?.model;
 			if (m) recordModelUsage(`${m.provider}/${m.id}`);
-			// 触屏设备点击快捷短语后不回焦输入框：点按钮时虚拟键盘本未弹出，回焦会
-			// 立刻把它弹起来盖住界面（发送按钮/回车路径本就处于键盘开启状态，不受
-			// 影响，仍保留 submit() 里的回焦）。桌面端保留回焦，方便直接接着输入。
 			if (!IS_TOUCH) taRef.current?.focus();
 		} else {
 			onNotice("error", t("netDisconnected"));
@@ -1414,13 +1207,7 @@ export const ChatInput = memo(function ChatInput({
 	};
 
 	const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-		// macOS 中文输入法下输入英文字母按 Enter 上屏时，浏览器会先触发 compositionend，
-		// 紧接着立即派发 keydown (Enter, isComposing=false, keyCode=13)。
-		// 若只查 isComposing 会漏掉该 Enter，导致文字刚上屏就误发送（issue #248）。
-		// 三条件判定（isComposing / keyCode 229 / 距 compositionend < 50ms）见 web/src/ime-guard.ts。
 		if (imeGuard.isImeKey(e.nativeEvent)) return;
-		// 统一浮层导航（`/` 与 `@` 同一个浮层，按 kind 换内容）：上下 + 回车/Tab
-		// 接受 + Esc 关闭。历史导航在浮层打开时让路（浮层优先级更高）。
 		if (menu && menu.items.length > 0) {
 			const len = menu.items.length;
 			switch (e.key) {
@@ -1444,9 +1231,6 @@ export const ChatInput = memo(function ChatInput({
 			}
 		}
 
-		// 退格键原子化整块删除 @提及 并联动摘掉对应附件 chip（文件/目录/页签同一套）。
-		// 逻辑收敛在纯函数 resolveBackspaceMention（单测锁定）：优先按最长相对路径精确匹配，
-		// 彻底杜绝同名 basename（如 根目录报告 vs 方案/报告）退格误删。
 		if (groupDevices && (e.key === "Backspace" || e.key === "Delete") && !e.nativeEvent.isComposing) {
 			const ta = taRef.current;
 			if (ta) {
@@ -1491,20 +1275,14 @@ export const ChatInput = memo(function ChatInput({
 			}
 		}
 		// Global prompt history cycling (issue #68): Up = older, Down = newer.
-		// 不绑定到特定会话；存储在 localStorage，跨对话全局共享。
-		// 多行编辑时：仅当光标在首/末**视觉行**才进入历史（自动折行的长草稿同样算多行，
-		// 见 caret-visual-line.ts），否则交给浏览器做普通光标移动，避免打断行内编辑。
 		if (!groupDevices && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-			// 修饰键组合不触发历史（避免与快捷键冲突）。
 			if (e.ctrlKey || e.metaKey || e.altKey) return;
 			const ta = taRef.current;
 			if (!ta) return;
 			const isUp = e.key === "ArrowUp";
-			// 非边界视觉行：走光标移动，不进历史（自动折行也算多行）。
 			const lineFlags = caretVisualLineFlags(ta);
 			if (isUp && !lineFlags.first) return;
 			if (!isUp && !lineFlags.last) return;
-			// Down 且当前不在历史中：不消耗，让光标正常移动（末行 Down 本来就是无操作）。
 			if (!isUp && historyIndexRef.current === -1) return;
 			const history = loadPromptHistory();
 			if (history.length === 0) return;
@@ -1532,9 +1310,7 @@ export const ChatInput = memo(function ChatInput({
 						if (el) el.selectionStart = el.selectionEnd = next.length;
 					});
 				}
-				// 已在最旧一条：保持不动
 			} else {
-				// ArrowDown: 往更新方向
 				const idx = historyIndexRef.current + 1;
 				if (idx < history.length) {
 					historyIndexRef.current = idx;
@@ -1546,7 +1322,6 @@ export const ChatInput = memo(function ChatInput({
 						if (el) el.selectionStart = el.selectionEnd = next.length;
 					});
 				} else {
-					// 越过最新一条：回到草稿（通常是空）
 					historyIndexRef.current = -1;
 					const draft = draftRef.current;
 					setText(draft);
@@ -1559,7 +1334,6 @@ export const ChatInput = memo(function ChatInput({
 			}
 			return;
 		}
-		// Esc：在历史中时先退出历史并回到草稿
 		if (e.key === "Escape" && historyIndexRef.current !== -1) {
 			e.preventDefault();
 			const draft = draftRef.current;
@@ -1572,7 +1346,6 @@ export const ChatInput = memo(function ChatInput({
 			});
 			return;
 		}
-		// Enter semantics (issue #664): 由 resolveEnterAction 结合偏好与设备类型统一判定。
 		const enterAction = resolveEnterAction({
 			key: e.key,
 			shiftKey: e.shiftKey,
@@ -1591,30 +1364,22 @@ export const ChatInput = memo(function ChatInput({
 		}
 	};
 
-	// 有东西可发才允许提交（空文本 + 无附件时 submit() 直接 return）：
-	// 空闲态的发送按钮和运行中的对半胶囊共用这一个条件。与 submit() 口径保持一致。
 	const canSubmit = sessionReady && (text.trim() !== "" || attachments.length > 0);
 
-	// 插件输入框动作按 align 分组（未接线回落用；接线后统一走下面的 composerGroups）。
 	const pluginActions = useMemo(
 		() => groupByAlign((composerActions ?? []).filter((it) => it.source !== "host" && !it.hidden)),
 		[composerActions],
 	);
-	// 输入框前置区（composer.leading）：纯插件槽位，按合并后的顺序整串渲染在上传按钮左侧。
 	const leadingActions = useMemo(
 		() => (composerLeading ?? []).filter((it) => it.source !== "host" && !it.hidden),
 		[composerLeading],
 	);
-	// 输入框槽位是否已接线（App 传全量 slot 数组，含 hidden；单测/未传时回落旧硬编码顺序）。
 	const composerWired = composerActions !== undefined;
-	// 接线后的统一分组：宿主内置（上传/模板/模型/思考/DSH/发送）+ 插件贡献按合并顺序来，
-	// hidden 已滤掉；align=start 落左列，center 居中，end 落右列（发送簇 align=end）。
 	const composerGroups = useMemo(
 		() => groupByAlign((composerActions ?? []).filter((it) => !it.hidden)),
 		[composerActions],
 	);
 	const renderPluginAction = (it: import("../ui-slots").UiSlotEntry) => {
-		// kind="select"：下拉框（当前值取 value ?? options[0]；切换直接回插件，不等确认）。
 		if (it.kind === "select" && it.options?.length) {
 			const cur = it.options.some((o) => o.value === it.value) ? (it.value as string) : it.options[0]!.value;
 			return (
@@ -1634,8 +1399,6 @@ export const ChatInput = memo(function ChatInput({
 				</select>
 			);
 		}
-		// 插件 icon 是宿主图标词表名时映射到 feather 线条图标（与文件上传 FiPaperclip 同风格），
-		// emoji/文字则原样当文本画。
 		const icon = it.icon === "mic" ? <FiMic /> : it.icon === "camera" ? <FiCamera /> : it.icon || it.label;
 		return (
 			<button
@@ -1653,14 +1416,6 @@ export const ChatInput = memo(function ChatInput({
 		);
 	};
 
-	// Send / stop / steer+queue — rendered once inside the composer toolbar
-	// (ChatInput .composer-tools-right). 运行中发送位与停止位二选一互斥：
-	// 空输入（含无附件）时只显示停止键（蓝圆），插队/排队胶囊隐藏；
-	// 一旦有可发送内容（canSubmit）则胶囊出现、停止键隐藏。
-	// 胶囊：左半 = 排队（followUp，整轮结束才发），右半 = 插队（steer，回车语义，
-	// 本回合立刻响应）；两半同宽、中间一条细分隔线。DSH 引擎没有 mid-run
-	// 是否支持 mid-run steering（插话打断）：由引擎底座 capabilities 声明驱动。
-	// 不支持时只留下左半边单一排队按钮（.single 收成 38px）。
 	const canSteer = Boolean(capabilities.steer !== false && !isDsh);
 	const renderActions = () => (
 		<div className="inputbox-actions">
@@ -1719,8 +1474,6 @@ export const ChatInput = memo(function ChatInput({
 			)}
 		</div>
 	);
-	/** 宿主内置输入框节点（key = composer.actions 条目 id；显隐与顺序由 composerGroups 决定）。
-	 *  DSH 两项自带运行时条件（非 DSH / 未就绪时画 null，不占位）；发送簇含发送/排队/停止三种形态。 */
 	const composerHostNodes: Record<string, ReactNode> = {
 		"host:composer-upload": (
 			<button
@@ -1733,6 +1486,7 @@ export const ChatInput = memo(function ChatInput({
 				<FiPaperclip />
 			</button>
 		),
+		"host:composer-screenshot": <SystemScreenshotButton onNotice={onNotice} />,
 		"host:composer-templates": (
 			<button type="button" className="btn tpl-open" title={t("tpl.openPicker")} onClick={openPicker}>
 				<FiBookOpen />
@@ -1784,7 +1538,6 @@ export const ChatInput = memo(function ChatInput({
 			) : null,
 		"host:composer-send": renderActions(),
 	};
-	/** 单条目渲染：宿主走工厂（未知 id 画 null，不白屏），插件走 renderPluginAction。 */
 	const renderComposerEntry = (it: import("../ui-slots").UiSlotEntry) => {
 		if (it.source === "host") return <Fragment key={it.id}>{composerHostNodes[it.id] ?? null}</Fragment>;
 		return renderPluginAction(it);
@@ -1795,12 +1548,9 @@ export const ChatInput = memo(function ChatInput({
 			ref={composerRef}
 			className="inputbar"
 			onDragOver={(e) => {
-				// 只做 preventDefault（允许落点 drop）；提示交给全窗口遮罩
-				// （App.tsx 的 .app-drop-overlay），输入条不再叠一层局部遮罩。
 				e.preventDefault();
 			}}
 			onDrop={(e) => {
-				// 输入条优先：stopPropagation 后 App 的 onDrop 不再重复附加。
 				e.preventDefault();
 				e.stopPropagation();
 				handleFiles(e.dataTransfer?.files ?? null);
@@ -1821,10 +1571,16 @@ export const ChatInput = memo(function ChatInput({
 							? a.imageData.startsWith("data:")
 								? a.imageData
 								: `data:${a.mimeType ?? "image/png"};base64,${a.imageData}`
-							: undefined;
+							: isImage && a.path
+								? resolveWorkspaceFileUrl(a.path)
+								: undefined;
 						const handlePreview = () => {
 							if (imgSrc) {
-								openImageLightbox({ src: imgSrc, alt: a.name });
+								openImageLightbox({
+									src: imgSrc,
+									alt: a.name,
+									onSaveAnnotation: onAnnotateImage ? (dataUrl) => onAnnotateImage(a, dataUrl) : undefined,
+								});
 							} else if (isFile && a.path) {
 								openFilePreview({ path: a.path, name: a.name });
 							}
@@ -1875,7 +1631,12 @@ export const ChatInput = memo(function ChatInput({
 								}
 							>
 								{imgSrc ? (
-									<img src={imgSrc} alt={a.name} className="attach-thumb" />
+									<img
+										crossOrigin={appResourceCrossOrigin(imgSrc)}
+										src={imgSrc}
+										alt={a.name}
+										className="attach-thumb"
+									/>
 								) : a.fileData ? (
 									"📄"
 								) : a.isDir ? (
@@ -2023,7 +1784,6 @@ export const ChatInput = memo(function ChatInput({
 				</div>
 			)}
 			<div className="inputbox" data-pi-anchor="composer">
-				{/* 顶部拖拽条：上下拖动固定高度，最低高度或双击复位自适应。 */}
 				<div
 					className={`composer-resize${composerH != null && composerH > COMPOSER_MIN_H + 4 ? " is-manual" : ""}`}
 					aria-label={
@@ -2047,7 +1807,6 @@ export const ChatInput = memo(function ChatInput({
 						const d = dragResizeRef.current;
 						if (!d) return;
 						const maxCap = getComposerSafeMaxH();
-						// 往上拖（clientY 变小）= 拉高，往下拖 = 压低
 						const next = Math.min(maxCap, Math.max(COMPOSER_MIN_H, d.startH + (d.startY - e.clientY)));
 						d.next = next;
 						if (next <= COMPOSER_MIN_H + 4) {
@@ -2069,9 +1828,7 @@ export const ChatInput = memo(function ChatInput({
 								setComposerH(rounded);
 								localStorage.setItem(COMPOSER_H_KEY, String(rounded));
 							}
-						} catch {
-							/* 配额满：本次生效，下次回默认 */
-						}
+						} catch {}
 					}}
 					onPointerCancel={() => {
 						dragResizeRef.current = null;
@@ -2080,9 +1837,7 @@ export const ChatInput = memo(function ChatInput({
 						setComposerH(null);
 						try {
 							localStorage.removeItem(COMPOSER_H_KEY);
-						} catch {
-							/* ignore */
-						}
+						} catch {}
 					}}
 				>
 					<span className="composer-resize-tip">
@@ -2096,7 +1851,7 @@ export const ChatInput = memo(function ChatInput({
 					hidden
 					onChange={(e) => {
 						handleFiles(e.target.files);
-						e.target.value = ""; // allow re-picking the same file
+						e.target.value = "";
 					}}
 				/>
 				<textarea
@@ -2192,8 +1947,6 @@ export const ChatInput = memo(function ChatInput({
 						<span style={{ marginLeft: 2, opacity: 0.7 }}>✕</span>
 					</button>
 				)}
-				{/* 底部工具条（ChatGPT 风格）：附件 / 模型 / 思考强度 在左，
-				    发送 / 停止 在右，全部收进输入框容器内。 */}
 				<div className="composer-tools">
 					{groupDevices ? (
 						<>
@@ -2248,7 +2001,6 @@ export const ChatInput = memo(function ChatInput({
 								>
 									<FiPaperclip />
 								</button>
-								{/* 插件输入框动作（start 组）：紧跟文件上传右侧，与上传同一组线条图标风格。 */}
 								{pluginActions.start.map(renderPluginAction)}
 								<button type="button" className="btn tpl-open" title={t("tpl.openPicker")} onClick={openPicker}>
 									<FiBookOpen />
@@ -2262,7 +2014,6 @@ export const ChatInput = memo(function ChatInput({
 									defaultModel={defaultModel}
 									compact
 								/>
-								{/* DSH 引擎：权限 + 模式下拉（思考强度右侧，只留按钮）。 */}
 								{dshPermOptions && dshPermOptions.length > 0 && dshPermDefault !== undefined && (
 									<DshPermissionBar
 										compact
@@ -2282,8 +2033,6 @@ export const ChatInput = memo(function ChatInput({
 										conversationId={conversationId ?? ""}
 									/>
 								)}
-								{/* 插件贡献的输入框动作（issue #146）：align 分三组：start 已在文件上传右侧渲染，center 居中，end 紧贴发送键；
- 只画图标（label 进 title/aria），无图标的才回落显示文字。 */}
 							</div>
 							{pluginActions.center.length > 0 && (
 								<div className="composer-tools-center">{pluginActions.center.map(renderPluginAction)}</div>

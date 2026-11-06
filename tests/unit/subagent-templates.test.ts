@@ -12,7 +12,6 @@ import {
 } from "../../server/subagent-templates.js";
 import { BUILTIN_TEMPLATES_HANT } from "../../server/subagent-templates-hant.js";
 
-/** 每个用例一个临时目录，用后即焚。 */
 const dirs: string[] = [];
 function tmpStore(): SubagentTemplatesStore {
 	const dir = mkdtempSync(join(tmpdir(), "satpl-"));
@@ -50,15 +49,11 @@ describe("SubagentTemplatesStore", () => {
 		const dir = mkdtempSync(join(tmpdir(), "satpl-"));
 		dirs.push(dir);
 		const file = join(dir, "subagent-templates.json");
-		// 模拟发版前的旧文件：只有 review（无 sidecar 档）
 		writeFileSync(file, JSON.stringify([{ name: "review", systemPrompt: "old" }]));
 		const a = new SubagentTemplatesStore(file);
-		// 新内置模板（oracle 等）被补齐
 		expect(a.get("oracle")).toBeDefined();
 		expect(a.get("review")!.systemPrompt).toBe("old");
-		// 旧文件没有 thinkingLevel：归一为空 = 跟随主对话（升级不改变已有模板行为）
 		expect(a.get("review")!.thinkingLevel).toBe("");
-		// 用户删掉 review 后重载：不再复活（已在 seeded 名单）
 		a.remove("review");
 		const b = new SubagentTemplatesStore(file);
 		expect(b.get("review")).toBeUndefined();
@@ -71,14 +66,12 @@ describe("SubagentTemplatesStore", () => {
 		expect(store.upsert(base)).toBeNull();
 		expect(store.get("reviewer")).toEqual(base);
 		expect(store.list()).toHaveLength(DEFAULT_TEMPLATES.length + 1);
-		// 同名覆盖
 		expect(store.upsert({ ...base, description: "v2" })).toBeNull();
 		expect(store.get("reviewer")!.description).toBe("v2");
 		expect(store.list()).toHaveLength(DEFAULT_TEMPLATES.length + 1);
 		store.remove("reviewer");
 		expect(store.get("reviewer")).toBeUndefined();
 		expect(store.list()).toHaveLength(DEFAULT_TEMPLATES.length);
-		// 删除不存在的名字静默
 		store.remove("nope");
 	});
 
@@ -87,10 +80,8 @@ describe("SubagentTemplatesStore", () => {
 		dirs.push(dir);
 		const file = join(dir, "subagent-templates.json");
 		const a = new SubagentTemplatesStore(file);
-		// 删除内置 review + 新增自定义 —— 触发落盘
 		a.remove("review");
 		a.upsert({ ...base, enabled: false });
-		// 新实例重读磁盘：review 不再出现（用户已删）、reviewer 保留
 		const b = new SubagentTemplatesStore(file);
 		expect(b.get("review")).toBeUndefined();
 		expect(b.get("reviewer")).toEqual({ ...base, enabled: false });
@@ -104,7 +95,6 @@ describe("SubagentTemplatesStore", () => {
 		expect(store.upsert({ ...base, name: "   " })).toMatch(/名称/);
 		expect(store.upsert({ ...base, name: "x".repeat(61) })).toMatch(/名称/);
 		expect(store.upsert({ ...base, name: "  合法 名称 " })).toBeNull();
-		// 名字做空白折叠
 		expect(store.get("合法 名称")).toBeDefined();
 	});
 
@@ -113,29 +103,23 @@ describe("SubagentTemplatesStore", () => {
 		expect(store.upsert({ ...base, promptMode: "replace", systemPrompt: "   ", systemPromptEn: "" })).toMatch(
 			/replace/,
 		);
-		// 拒绝后不落盘、不污染列表
 		expect(store.get("reviewer")).toBeUndefined();
-		// 英文提示词非空则放行（双语任填一个即可）
 		expect(store.upsert({ ...base, promptMode: "replace", systemPrompt: "", systemPromptEn: "Be strict." })).toBeNull();
-		// append 允许空提示词（只用白名单限定身份）
 		expect(store.upsert({ ...base, name: "append-only", promptMode: "append", systemPrompt: "" })).toBeNull();
 	});
 
 	it("体积超限拒绝保存（明确报错，不静默截断）", () => {
 		const store = tmpStore();
-		// systemPrompt / systemPromptEn 各自计上限
 		expect(store.upsert({ ...base, systemPrompt: "x".repeat(TEMPLATE_LIMITS.systemPrompt + 1) })).toMatch(/超长/);
 		expect(
 			store.upsert({ ...base, name: "long-en", systemPromptEn: "x".repeat(TEMPLATE_LIMITS.systemPrompt + 1) }),
 		).toMatch(/英文系统提示词超长/);
-		// description / descriptionEn
 		expect(
 			store.upsert({ ...base, name: "long-desc", description: "x".repeat(TEMPLATE_LIMITS.description + 1) }),
 		).toMatch(/简介超长/);
 		expect(
 			store.upsert({ ...base, name: "long-desc-en", descriptionEn: "x".repeat(TEMPLATE_LIMITS.description + 1) }),
 		).toMatch(/英文简介超长/);
-		// 白名单条数与单条长度
 		expect(
 			store.upsert({
 				...base,
@@ -150,11 +134,9 @@ describe("SubagentTemplatesStore", () => {
 				enabledExtensions: ["npm:" + "x".repeat(TEMPLATE_LIMITS.whitelistEntryLength)],
 			}),
 		).toMatch(/超长条目/);
-		// 拒绝后不落盘
 		for (const name of ["reviewer", "long-en", "long-desc", "long-desc-en", "too-many-skills", "long-extension"]) {
 			expect(store.get(name)).toBeUndefined();
 		}
-		// 恰好卡线的值放行（不误伤）
 		expect(store.upsert({ ...base, systemPrompt: "x".repeat(TEMPLATE_LIMITS.systemPrompt) })).toBeNull();
 		expect(
 			store.upsert({
@@ -171,7 +153,6 @@ describe("SubagentTemplatesStore", () => {
 		const file = join(dir, "subagent-templates.json");
 		const a = new SubagentTemplatesStore(file);
 		a.upsert({ ...base, enabled: false });
-		// 新实例重读磁盘
 		const b = new SubagentTemplatesStore(file);
 		expect(b.get("reviewer")).toEqual({ ...base, enabled: false });
 		expect(b.get("reviewer")!.enabled).toBe(false);
@@ -189,7 +170,6 @@ describe("SubagentTemplatesStore", () => {
 		);
 		const store = new SubagentTemplatesStore(file);
 		const list = store.list();
-		// 脏条目丢弃 + 缺失的内置模板一次性补齐（sidecar 无档）
 		expect(list).toHaveLength(1 + DEFAULT_TEMPLATES.length);
 		expect(list[0]).toEqual({
 			name: "ok",
@@ -216,7 +196,6 @@ describe("SubagentTemplatesStore", () => {
 		expect(store.get("a")!.model).toBe("anthropic/claude-opus-4-5");
 		expect(store.get("b")!.model).toBe("");
 		expect(store.get("c")!.model).toBe("");
-		// upsert 时同样归一
 		store.upsert({ ...base, name: "withModel", model: "  dashscope/qwen-max " });
 		expect(store.get("withModel")!.model).toBe("dashscope/qwen-max");
 	});
@@ -240,11 +219,9 @@ describe("SubagentTemplatesStore", () => {
 		expect(store.get("a")!.thinkingLevel).toBe("high");
 		expect(store.get("b")!.thinkingLevel).toBe("xhigh");
 		expect(store.get("c")!.thinkingLevel).toBe("off");
-		// 写错的值当未配置（不报错、不猜），回落「跟随主对话」
 		expect(store.get("d")!.thinkingLevel).toBe("");
 		expect(store.get("e")!.thinkingLevel).toBe("");
 		expect(store.get("f")!.thinkingLevel).toBe("");
-		// upsert 同样校验
 		store.upsert({ ...base, name: "ok", thinkingLevel: "medium" });
 		expect(store.get("ok")!.thinkingLevel).toBe("medium");
 		store.upsert({ ...base, name: "bad", thinkingLevel: "MAX" });
@@ -291,12 +268,9 @@ describe("oh-my-pi specialist 内置模板", () => {
 });
 
 describe("内置模板繁中视图（zh-TW / zh-HK / zh-Hant 共用一份台湾用语）", () => {
-	/** 简中出厂文案里已知的笔误（momus「_Number_」应为「步骤编号」）；繁中版写对，对齐比较时先剔掉。 */
 	const ZH_SOURCE_STRAY = ["_Number_"];
-	/** 只在简体出现的字（繁体写法不同）：繁中文案里出现 = 漏转/粘贴了简体。 */
 	const SIMPLIFIED_ONLY =
 		"这与为个们发现档验证码类项请实阅读并统结构测试环风险总过关说对该态执览审计划议诊应误错没问题务备约规范释简编库";
-	/** 英文/符号词元序列（P0/P1/P2、BLOCK / OK、No issues found. 等）：繁中版必须与简中版逐个对齐。 */
 	const asciiTokens = (s: string, strip: string[] = []) =>
 		strip.reduce((acc, x) => acc.split(x).join(" "), s).match(/[A-Za-z0-9][A-Za-z0-9_./+-]*/g) ?? [];
 	const review = () => DEFAULT_TEMPLATES.find((t) => t.name === "review")!;
@@ -362,7 +336,6 @@ describe("内置模板繁中视图（zh-TW / zh-HK / zh-Hant 共用一份台湾�
 			expect(canonicalizeTemplate(localizeTemplate(d, "zh-HK"))).toEqual(d);
 			expect(canonicalizeTemplate(d)).toBe(d);
 		}
-		// 用户真正改过的繁中文字不会被还原
 		const mine = { ...review(), systemPrompt: `${BUILTIN_TEMPLATES_HANT.review!.systemPrompt}\n- 額外約定。` };
 		expect(canonicalizeTemplate(mine)).toBe(mine);
 	});
@@ -385,7 +358,6 @@ describe("内置模板繁中视图（zh-TW / zh-HK / zh-Hant 共用一份台湾�
 		expect(store.upsert({ ...view, systemPrompt: edited })).toBeNull();
 		const saved = store.get("review")!;
 		expect(saved.systemPrompt).toBe(edited);
-		// 简介没改 → 仍是出厂简中，繁中视图继续翻译它
 		expect(saved.description).toBe(review().description);
 		expect(localizeTemplate(saved, "zh-Hant").systemPrompt).toBe(edited);
 	});
@@ -395,11 +367,10 @@ describe("内置模板繁中视图（zh-TW / zh-HK / zh-Hant 共用一份台湾�
 		dirs.push(dir);
 		const file = join(dir, "subagent-templates.json");
 		const a = new SubagentTemplatesStore(file);
-		a.upsert({ ...base }); // 触发整表落盘（含全部出厂简中内置模板）
+		a.upsert({ ...base });
 		const b = new SubagentTemplatesStore(file);
 		expect(b.get("review")!.systemPrompt).toBe(review().systemPrompt);
 		expect(localizeTemplate(b.get("review")!, "zh-HK").systemPrompt).toBe(BUILTIN_TEMPLATES_HANT.review!.systemPrompt);
-		// 视图不回写：库里仍是简中
 		expect(b.get("review")!.systemPrompt).toBe(review().systemPrompt);
 	});
 });

@@ -1,4 +1,3 @@
-/** session-migrate 服务端入口 —— issue 286：omp/pi 直落 + claude/codex 格式转换。 */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
@@ -13,7 +12,6 @@ const OPENCODE_DB = join(homedir(), ".local", "share", "opencode", "opencode.db"
 
 function grokHome() {
 	const env = (process.env.GROK_HOME || "").trim();
-	// grok.rs：GROK_HOME 为空回落 ~/.grok；相对路径按进程 cwd 解析
 	if (!env) return join(homedir(), ".grok");
 	return isAbsolute(env) || env.startsWith("/") ? env : join(process.cwd(), env);
 }
@@ -30,7 +28,6 @@ const SOURCES = [
 	{ id: "claude", dir: join(homedir(), ".claude", "projects"), kind: "claude" },
 	{ id: "codex", dir: join(homedir(), ".codex", "sessions"), kind: "codex" },
 	{ id: "opencode", dir: OPENCODE_DB, kind: "opencode" },
-	// grok / kimi：本机无样本、无稳定公开格式，scan 返回说明性 note（见 scanSources）
 ];
 
 function escapeCwd(cwd) {
@@ -51,7 +48,6 @@ function parseJson(line) {
 	}
 }
 
-/** 从 pi 系 message 包里取 role/text。 */
 function piMsgText(obj) {
 	const msg = obj.message ?? obj;
 	if (msg?.role !== "user" && msg?.role !== "assistant") return null;
@@ -65,7 +61,6 @@ function piMsgText(obj) {
 	return { role: msg.role, text };
 }
 
-/** pi 系文件解析（omp/pi）：找 session 头 + 计数 + 首条 user 预览。 */
 function parsePiFile(file) {
 	const raw = readLines(file);
 	let session = null;
@@ -87,7 +82,6 @@ function parsePiFile(file) {
 	return { session, messages, preview };
 }
 
-/** 从 content 块里抽纯文本（claude/codex 通用）。 */
 function blocksText(content) {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -97,11 +91,6 @@ function blocksText(content) {
 		.join("");
 }
 
-/**
- * Claude Code 会话文件：~/.claude/projects/<slug>/<uuid>.jsonl，
- * 行如 {type:'user'|'assistant', message:{role,content}, timestamp, sessionId, cwd}，
- * 另有 summary / file-history-snapshot 等非消息行（扫描与转换时跳过）。
- */
 function parseClaudeFile(file) {
 	const raw = readLines(file);
 	let sessionId = basename(file, ".jsonl");
@@ -126,10 +115,6 @@ function parseClaudeFile(file) {
 	return { session: { id: sessionId, cwd, timestamp }, messages, preview };
 }
 
-/**
- * Codex rollout：~/.codex/sessions/YYYY/MM/DD/rollout-*.json（单 JSON，{session, items}）
- * 或 .jsonl（每行一个 event）。两种都兼容。
- */
 function parseCodexFile(file) {
 	const text = readFileSync(file, "utf8");
 	let session = { id: basename(file).replace(/\.[^.]+$/, ""), cwd: "", timestamp: "" };
@@ -179,7 +164,6 @@ function walkFiles(dir, depth) {
 
 function scanSource(src) {
 	if (!existsSync(src.dir)) return { items: [], note: `目录不存在：${src.dir}` };
-	// pi 系固定两层 <escaped-cwd>/*.jsonl；claude 两层；codex 日期四层
 	const depth = src.kind === "codex" ? 4 : 1;
 	const parse = PARSERS[src.kind];
 	const items = [];
@@ -202,9 +186,6 @@ function scanSource(src) {
 	return { items };
 }
 
-/** Grok Build：$GROK_HOME/sessions/<percent-encoded-cwd>/<session-id>/{summary.json,updates.jsonl}。
- * 依据 jerrywu001/cc-sessions-viewer src-tauri/src/agents/grok.rs + site-docs/agents/grok-build.md。
- * 只读 updates.jsonl（JSONRPC 包络，method=session/update），按 eventId 去重，chunk 拼接。 */
 function grokChunkText(content) {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -230,11 +211,11 @@ function parseGrokSessionDir(sessDir) {
 	);
 	const updPath = join(sessDir, "updates.jsonl");
 	const seen = new Set();
-	const chunks = []; // {role, text, promptKey, ts}
+	const chunks = [];
 	if (existsSync(updPath)) {
 		for (const line of readFileSync(updPath, "utf8").split("\n")) {
 			const ev = parseJson(line.trim());
-			if (!ev) continue; // 尾行写一半属正常
+			if (!ev) continue;
 			if (ev.method !== "session/update" && ev.method !== "_x.ai/session/update") continue;
 			const meta = ev.params?._meta ?? {};
 			if (meta.eventId) {
@@ -262,7 +243,6 @@ function parseGrokSessionDir(sessDir) {
 			}
 		}
 	}
-	// 同一 prompt 的 user chunk 拼成一轮
 	const messages = [];
 	for (const c of chunks) {
 		const last = messages[messages.length - 1];
@@ -274,9 +254,7 @@ function parseGrokSessionDir(sessDir) {
 		const dotCwd = join(sessDir, "..", ".cwd");
 		try {
 			if (existsSync(dotCwd)) cwd = readFileSync(dotCwd, "utf8").trim();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	if (!cwd) {
 		try {
@@ -347,9 +325,6 @@ function convertGrokBuild(updatesFile, targetCwd) {
 	return { lines, skipped: 0, cwd };
 }
 
-/** Kimi（Python 版 kimi-cli，仓库 HEAD 实测）：~/.kimi/kimi.json 索引 →
- * sessions/<md5(workdir)>/<uuid>/{context.jsonl, wire.jsonl, state.json}。
- * context.jsonl 每行一条 Message（role 以 _ 开头跳过）；wire.jsonl 首 TurnBegin 带用户原文与时间戳。 */
 function kimiContentText(content) {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -466,7 +441,6 @@ function convertKimi(contextFile, targetCwd) {
 	return { lines, skipped: 0, cwd: targetCwd };
 }
 
-/** opencode：只读打开 SQLite，按会话聚合消息数与首条 user 文本。file 记为 `opencode:<sessionId>`。 */
 function scanOpencode() {
 	try {
 		if (!existsSync(OPENCODE_DB)) return { items: [], note: `[opencode] 目录不存在：${OPENCODE_DB}` };
@@ -492,9 +466,7 @@ function scanOpencode() {
 				try {
 					const t = JSON.parse(first?.data ?? "null")?.text;
 					if (t) preview = t.slice(0, 120);
-				} catch {
-					/* keep title */
-				}
+				} catch {}
 				return {
 					source: "opencode",
 					file: `opencode:${s.id}`,
@@ -514,7 +486,6 @@ function scanOpencode() {
 	}
 }
 
-/** opencode 会话 → pi v3 行：user/assistant 的 text part 直转，tool 等记 skipped。 */
 function convertOpencode(sessionId) {
 	const { DatabaseSync } = require("node:sqlite");
 	const db = new DatabaseSync(OPENCODE_DB, { readOnly: true });
@@ -602,7 +573,6 @@ export function normalizeOmp(lines) {
 	});
 }
 
-/** 构造 pi v3 消息行（含 parent 链）。 */
 function piMsg(role, text, parentId) {
 	const id = randomUUID().slice(0, 8);
 	const ts = Date.now();
@@ -621,7 +591,6 @@ function piMsg(role, text, parentId) {
 const IMPORT_NOTICE =
 	"（本会话由 session-migrate 插件从外部智能体导入：超出现有工具范围的工具调用记录可能已省略，缺失的上下文不代表当前工具可用。）";
 
-/** claude/codex → pi v3 jsonl 行。返回 {lines, skipped}。 */
 export function convertToPi(source, file) {
 	const raw = source === "codex" && file.endsWith(".json") ? [readFileSync(file, "utf8")] : readLines(file);
 	const sessionId = randomUUID();
@@ -659,7 +628,6 @@ export function convertToPi(source, file) {
 			push(role, text);
 		}
 	} else {
-		// codex：json rollout 或 jsonl events 统一抽 items
 		let items = [];
 		if (file.endsWith(".json")) {
 			items = parseJson(raw[0])?.items ?? [];
@@ -743,12 +711,7 @@ function importSessions(files, targetCwd) {
 					continue;
 				}
 				out = normalizeOmp(raw);
-				// #500：会话头补来源元数据（历史/工具可识别，不可视渲染无影响）。
 				out[0] = JSON.stringify({ ...JSON.parse(out[0]), cwd, importedFrom: "pi-file" });
-				// #500：pi fallback 此前无任何「导入」标记（其它来源都有 pushNotice）
-				// ——模型可控文件可无痕伪装成官方会话进入历史列表。给首条消息注入与
-				// 其它来源一致的提示；选择改写首条消息文本而非插入新消息，避免重构
-				// 原有 parent 链。
 				const noticeIdx = out.findIndex((l, i) => i > 0 && parseJson(l)?.type === "message");
 				if (noticeIdx > 0) {
 					const firstMsg = parseJson(out[noticeIdx]);

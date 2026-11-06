@@ -1,20 +1,7 @@
-/**
- * builtins/rename.ts — 重命名当前对话标记。
- *
- * 需求：加个重命名当前对话 marker。
- *
- * 语法（唯一写法）：
- *   [[conv:rename:<新标题>]]        重命名当前对话
- *
- * 持久化：通过宿主回调直接改对话标题（内存 + 磁盘 transcript session_info），
- *         不需要额外状态。
- */
-
 import type { ApplyResult, MarkerTool, ParsedToken, MarkerContext } from "../marker.js";
 import { getServerBlock, pick, type ServerLang } from "../../i18n.js";
 
 function extractTitle(token: ParsedToken): string {
-	// args[0] 是主标题；kwargs 兼容 text/name/title
 	const fromArgs = token.args.join(" ").trim();
 	const fromKw = (token.kwargs["text"] ?? token.kwargs["name"] ?? token.kwargs["title"] ?? "").trim();
 	if (fromArgs && fromKw) return `${fromArgs} ${fromKw}`.trim();
@@ -27,7 +14,6 @@ const RENAME_GUIDANCE_EN: string[] = [
 	"- Rename conversation: [[conv:rename:<title>]] (call once early when user intent is clear).",
 ];
 
-/** 语言感知的 conv guidance（issue #91）：en 用英译、zh 用中文，默认英文。 */
 export function getRenameGuidance(lang: ServerLang = "en"): string[] {
 	return getServerBlock(lang, "markers.rename.guidance", RENAME_GUIDANCE_ZH, RENAME_GUIDANCE_EN);
 }

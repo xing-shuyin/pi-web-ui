@@ -1,15 +1,7 @@
-/**
- * splitCodeLines 单元测试（issue #36 代码块行号）。
- *
- * rehype-highlight 把代码块 children 展平成「文本 run + token span」的扁平数组，
- * 换行只出现在文本节点里。splitCodeLines 按逻辑行切分并克隆跨行 span，供
- * PreWithCopy 每行渲染一个 gutter 行号。
- */
 import { describe, expect, it } from "vitest";
 import { createElement, type ReactNode } from "react";
 import { splitCodeLines } from "../../web/src/code-lines.js";
 
-/** 模拟 hljs 的一个 token span（类型 = span，props = className + children）。 */
 function span(className: string, children?: ReactNode) {
 	return createElement("span", { className }, children);
 }
@@ -63,8 +55,6 @@ describe("splitCodeLines", () => {
 	});
 
 	it("跨行的 token span 被克隆成每行一个，保持高亮", () => {
-		// 一个 span 的文本跨越两行（极端情况，rehype-highlight 通常不会这样，
-		// 但算法要兜得住）。
 		const input = [span("hljs-string", '"a\nb"'), "\n", "c"];
 		const lines = splitCodeLines(input);
 		expect(lines).toHaveLength(3);
@@ -89,9 +79,6 @@ describe("splitCodeLines", () => {
 		expect(line[0]).toBeTruthy();
 	});
 	it("按 code 元素的内部 children 切分（PreWithCopy 的真实用法）", () => {
-		// react-markdown 给 pre 组件的是 <code> 元素；PreWithCopy 取它的
-		// props.children（span/文本）交给 splitCodeLines，而不是 code 元素本身
-		// —— 否则每行会嵌套克隆的 <code>，且尾随幻影空行不会被丢弃。
 		const codeEl = createElement("code", { className: "hljs language-ts" }, [
 			span("hljs-keyword", "function"),
 			" foo() {\n",

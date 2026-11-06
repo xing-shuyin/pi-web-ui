@@ -1,6 +1,3 @@
-// Human HTTP start/list/preview/apply and resume/abort across two HTTP services,
-// genuine DeviceRuntime instances and real WebSocket RPC. No mock device/file handlers.
-// Run: node --import tsx tests/device-center-user-transfer-test.mjs
 import assert from "node:assert/strict";
 import express from "express";
 import { createServer } from "node:http";
@@ -55,7 +52,6 @@ async function run() {
 	await mkdir(rootB, { recursive: true });
 	await mkdir(dataDirB, { recursive: true });
 
-	// Local Bot Registries for Device A and Device B
 	const botsA = await createLocalBotRegistry(dataDirA);
 	const createdBotA = await botsA.upsert({
 		name: "Bot A",
@@ -82,7 +78,6 @@ async function run() {
 	});
 	const botIdB = createdBotB.id;
 
-	// Hub Store setup
 	const hubServer = createServer();
 	await new Promise((resolve) => hubServer.listen(0, "127.0.0.1", resolve));
 	const hub = await createDeviceHub({
@@ -148,7 +143,6 @@ async function run() {
 		});
 	});
 
-	// Hub HTTP & WebSocket Server Setup
 	const deviceApp = express();
 	deviceApp.get("/health", (_req, res) => res.json({ ok: true }));
 	const deviceServer = createServer(deviceApp);
@@ -163,7 +157,6 @@ async function run() {
 	const hubPort = server.address().port;
 	const hubUrl = `http://127.0.0.1:${hubPort}`;
 
-	// Real Device Relay with WebSocket handling
 	const relay = createDeviceRelay({
 		server,
 		publicUrl: hubUrl,
@@ -180,7 +173,6 @@ async function run() {
 	cleanup.push(() => relay.close());
 	hub.setRelay(relay);
 
-	// Install transfers routes on Hub
 	const scheduler = await installDeviceTransfers({ app, hub, dataDir: hubDataDir, relay });
 	cleanup.push(() => scheduler.close());
 	const localDataDir = join(tempDir, "user-local-data");
@@ -204,7 +196,6 @@ async function run() {
 	});
 	cleanup.push(() => local.close());
 
-	// Set up Device A Genuine Runtime
 	const runtimeA = createDeviceRuntime({
 		config: {
 			deviceId: deviceIdA,
@@ -220,7 +211,6 @@ async function run() {
 	});
 	cleanup.push(() => runtimeA.close());
 
-	// Connect Device A WebSocket to Hub Relay
 	console.log("Connecting genuine Device A WebSocket to Hub Relay...");
 	const wsUrlA = `ws://127.0.0.1:${hubPort}/device-connect?deviceId=${deviceIdA}`;
 	let wsA = new WebSocket(wsUrlA, {
@@ -270,7 +260,6 @@ async function run() {
 		}
 	});
 
-	// Set up Device B Genuine Runtime
 	const runtimeBOptions = {
 		config: {
 			deviceId: deviceIdB,
@@ -287,7 +276,6 @@ async function run() {
 	let runtimeB = createDeviceRuntime(runtimeBOptions);
 	cleanup.push(() => runtimeB.close());
 
-	// Connect Device B WebSocket to Hub Relay
 	console.log("Connecting genuine Device B WebSocket to Hub Relay...");
 	const wsUrlB = `ws://127.0.0.1:${hubPort}/device-connect?deviceId=${deviceIdB}`;
 	let wsB = new WebSocket(wsUrlB, {
@@ -311,7 +299,6 @@ async function run() {
 		}
 	});
 
-	// Verify both devices are online on Hub Relay
 	assert.equal(relay.isOnline(deviceIdA), true, "Device A must be online on Hub Relay");
 	assert.equal(relay.isOnline(deviceIdB), true, "Device B must be online on Hub Relay");
 	console.log("✓ Both Device A and Device B connected via genuine WebSocket RPC channels");
@@ -431,7 +418,6 @@ async function run() {
 		"cancelled",
 	);
 	console.log("PASS abort during sender IO waits, holds capacity, stops loop, prevents resume");
-	// Retrying a saved manifest must reject source bytes changed without changing file size.
 	await writeFile(join(rootA, "changed.bin"), bytes.subarray(0, 128 * 1024));
 	fault = "disconnect";
 	const changed = await api("/start", { ...base, paths: ["changed.bin"], idempotencyKey: "human-source-change" }, 202);
@@ -480,7 +466,6 @@ async function run() {
 	await waitStatus(fenced.transferId, "ready");
 	await api(`/${fenced.transferId}/abort`, {});
 	console.log("PASS sender lost during RPC -> persistent device block -> real runtime fence -> resume");
-	// Reconstruct the Hub registry from disk, then inspect through HTTP and perform real RPC.
 	await scheduler.close();
 	const restoredApp = express();
 	restoredApp.use(express.json());

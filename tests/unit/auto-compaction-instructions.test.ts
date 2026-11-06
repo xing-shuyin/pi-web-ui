@@ -114,17 +114,13 @@ describe("dispatch -> SettingsService -> 持久化/读取回归", () => {
 		expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ autoCompactionInstructions: customInstructions }));
 		await setSpy.mock.results[0]?.value;
 
-		// 1. SettingsService 当前内存状态已更新
 		expect(settingsSvc.current.autoCompactionInstructions).toBe(customInstructions);
 
-		// 2. 当前 ClientStateStore 实例读取得到更新后的指令
 		expect(stateStore.getSettings(clientId).autoCompactionInstructions).toBe(customInstructions);
 
-		// 3. 重新实例化 ClientStateStore 从磁盘读取，验证持久化落盘保真
 		const reloadedStore = new ClientStateStore(stateFile);
 		expect(reloadedStore.getSettings(clientId).autoCompactionInstructions).toBe(customInstructions);
 
-		// 4. 下发的 settings_state 也携带了 autoCompactionInstructions
 		const lastState = emitted.filter((m) => (m as { type?: string }).type === "settings_state").pop() as
 			{ settings: { autoCompactionInstructions?: string } } | undefined;
 		expect(lastState?.settings.autoCompactionInstructions).toBe(customInstructions);
@@ -142,7 +138,6 @@ describe("dispatch -> SettingsService -> 持久化/读取回归", () => {
 		await setSpy.mock.results[0]?.value;
 		expect(settingsSvc.current.autoCompactionInstructions).toBe("Keep existing instructions");
 
-		// 发送不带 autoCompactionInstructions 的设置变更
 		const partialMsg: ClientMessage = {
 			type: "set_settings",
 			thinkingWrap: true,
@@ -150,7 +145,6 @@ describe("dispatch -> SettingsService -> 持久化/读取回归", () => {
 		handleSettingsMessage(partialMsg, cs as unknown as DispatchSession);
 		await setSpy.mock.results[1]?.value;
 
-		// autoCompactionInstructions 依然保持原值
 		expect(settingsSvc.current.autoCompactionInstructions).toBe("Keep existing instructions");
 		const reloadedStore = new ClientStateStore(stateFile);
 		expect(reloadedStore.getSettings(clientId).autoCompactionInstructions).toBe("Keep existing instructions");
@@ -170,7 +164,6 @@ describe("dispatch -> SettingsService -> 持久化/读取回归", () => {
 		await setSpy.mock.results[0]?.value;
 		expect(settingsSvc.current.autoCompactionInstructions).toBe("Custom text to be cleared");
 
-		// 清空指令
 		handleSettingsMessage(
 			{
 				type: "set_settings",

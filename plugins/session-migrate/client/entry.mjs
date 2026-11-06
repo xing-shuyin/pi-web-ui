@@ -1,4 +1,3 @@
-/** session-migrate 客户端视图。 */
 function appRoot() {
 	try {
 		const u = new URL(import.meta.url);

@@ -1,12 +1,3 @@
-/**
- * session-parser — 会话转录快速轻量解析器与磁盘项目发现。
- *
- * 负责：
- * - parseSessionInfoFast: 快速解析单个会话文件头部和消息，提取元信息，按需截断收集全文
- * - discoverRecentProjectsFromDisk: 遍历会话根目录，按最近修改时间轻量发现使用过的项目路径
- *
- * 从 agent-service.ts 抽出为独立模块。
- */
 import { existsSync } from "node:fs";
 import { sessionLines } from "./session-scan.js";
 import { scanSessionListInfo } from "./session-list-scan.js";
@@ -17,17 +8,12 @@ import type { ProjectSummary } from "./protocol.js";
 import { normalizePathKey } from "./client-state.js";
 import { MAX_SEARCH_TEXT_CHARS, readCwdFromSessionHeader, piSessionsRoot } from "./session-search.js";
 
-/**
- * 快速轻量地从 SDK 会话目录中发现项目路径（仅读取会话文件的第一行头部获取 cwd，
- * 绝不使用 SessionManager.listAll 遍历解析全部会话文本，避免大历史时阻塞数秒到数十秒）。
- */
 export async function discoverRecentProjectsFromDisk(sessionRoots: string[], limit = 30): Promise<ProjectSummary[]> {
 	const projects = new Map<string, ProjectSummary>();
 
 	for (const root of sessionRoots) {
 		if (projects.size >= limit) break;
 		try {
-			// 异步探测（issue #441）：会话根可能在已断连的网络盘上，同步 existsSync 会冻结事件循环。
 			try {
 				await fsPromises.access(root);
 			} catch {
@@ -35,7 +21,6 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 			}
 			const entries = await fsPromises.readdir(root, { withFileTypes: true });
 
-			// 1. 扁平布局（PI_CODING_AGENT_SESSION_DIR）：根目录下直接是 .jsonl
 			const flatFiles = entries.filter((e) => e.isFile() && e.name.endsWith(".jsonl"));
 			if (flatFiles.length > 0) {
 				const fileStats = await Promise.all(
@@ -57,7 +42,6 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 						const key = normalizePathKey(cwd);
 						if (!projects.has(key)) {
 							try {
-								// 异步探测（issue #441）：cwd 可能在已断连的网络盘上。
 								await fsPromises.access(cwd);
 								projects.set(key, { path: cwd, lastUsed: s.mtime });
 							} catch {}
@@ -66,7 +50,6 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 				}
 			}
 
-			// 2. 默认子目录布局（<agentDir>/sessions/--<cwd>--/）：每 cwd 一个子目录
 			const subdirs = entries.filter((e) => e.isDirectory() || e.isSymbolicLink()).map((e) => join(root, e.name));
 			if (subdirs.length > 0 && projects.size < limit) {
 				const CHUNK = 64;
@@ -130,7 +113,6 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 						const key = normalizePathKey(r.path);
 						if (!projects.has(key)) {
 							try {
-								// 异步探测（issue #441）：cwd 可能在已断连的网络盘上。
 								await fsPromises.access(r.path);
 								projects.set(key, r);
 							} catch {}
@@ -138,29 +120,17 @@ export async function discoverRecentProjectsFromDisk(sessionRoots: string[], lim
 					}
 				}
 			}
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 	}
 
 	return [...projects.values()].sort((a, b) => b.lastUsed - a.lastUsed);
 }
 
-/**
- * 快速解析单个会话文件（提取 id/cwd/name/parentSessionPath/firstMessage/messageCount/modified，
- * 以及可选的转录全文 allMessagesText）。仅用于会话列表发现与搜索，避免调用 SDK 重型的全量树解析。
- *
- * withAllMessagesText=false（默认，列表路径）时不收集转录全文，allMessagesText 返回空串 ——
- * 全文单条可达 MB 级，绝不随列表进任何缓存（issue #440）；true 仅兼容旧调用，返回
- * MAX_SEARCH_TEXT_CHARS 内的文本预览。全文搜索请使用 scanSessionForSearch，避免截断漏查。
- * 逐行异步读取，内存仅保留当前 JSONL 记录及列表字段。
- */
 export async function parseSessionInfoFast(
 	filePath: string,
 	fileMtime: number,
 	withAllMessagesText = false,
 ): Promise<SessionInfo | null> {
-	// 列表模式：字节级扫描（长行不解码、不过 base64 过滤器），规则与下方原实现一致。
 	if (!withAllMessagesText) return (await scanSessionListInfo(filePath, fileMtime))?.info ?? null;
 	try {
 		let id = "";
@@ -176,8 +146,6 @@ export async function parseSessionInfoFast(
 
 		for await (const line of sessionLines(filePath)) {
 			if (!line.trim()) continue;
-			// 列表路径（withAllMessagesText=false）已拿到 id 与首条消息后，跳过对大块长行
-			// （如数百 KB 的 toolResult/assistant 消息）的全量 JSON.parse：仅轻量计数并提取时间戳
 			if (!withAllMessagesText && id && firstMessage && line.length > 512 && !line.includes('"session_info"')) {
 				const head = line.slice(0, 140);
 				if (/"type"\s*:\s*"message"/.test(head)) {
@@ -261,13 +229,6 @@ export async function parseSessionInfoFast(
 	}
 }
 
-/**
- * 历史会话列表的 fork 父会话过滤：
- * - `showForkedParents === true` 时保留全部会话（父会话与子会话同时显示）；
- * - `showForkedParents === false`（默认）时隐藏「已被后续分支派生、且该分支链上存在叶子会话」的父会话，
- *   仅保留每条 fork 链最新的链尾叶子会话；
- * - 若某条链因异常形成纯环（无叶子）或自环，环上节点保留而不整条隐藏。
- */
 export function filterForkedParentSessions<T extends { path: string; parentSessionPath?: string }>(
 	infos: T[],
 	showForkedParents = false,
@@ -292,7 +253,6 @@ export function filterForkedParentSessions<T extends { path: string; parentSessi
 	}
 	if (childrenOf.size === 0) return infos;
 
-	// 从去重后的边构建反向关系；重复 path 可能让同一节点有多个父节点。
 	const parentsOf = new Map<string, string[]>();
 	for (const [parentKey, children] of childrenOf) {
 		for (const childKey of children) {
@@ -313,7 +273,6 @@ export function filterForkedParentSessions<T extends { path: string; parentSessi
 			queue.push(key);
 		}
 	}
-	// 每个节点最多入队一次，每条反向边最多访问一次，避免长链反复全图扫描。
 	for (let head = 0; head < queue.length; head++) {
 		for (const parentKey of parentsOf.get(queue[head]) ?? []) {
 			if (canReachLeaf.has(parentKey)) continue;
@@ -331,18 +290,6 @@ export function filterForkedParentSessions<T extends { path: string; parentSessi
 	return kept.length > 0 ? kept : infos;
 }
 
-/**
- * 极速定位指定目录下最近修改的单个有效会话文件路径（用于 attach/恢复 判定，毫秒级返回）。
- *
- * 绝不使用 SessionManager.list 递归全量加载解析全部历史消息（大历史会有数百个文件、
- * 几百兆 JSON 反序列化耗时数十秒，严重饿死 Node 事件循环）。
- *
- * 逻辑：
- * 1. 扫描目录下的 .jsonl 文件；
- * 2. 按 mtime 降序排序；
- * 3. 逐个轻量探测（仅读首行 cwd，使用 readCwdFromSessionHeader）；
- * 4. 找到首个匹配 targetCwd（若指定）的有效会话文件后立即返回；若未指定 targetCwd 则直接返回最新文件的路径。
- */
 export async function findMostRecentSessionFileFast(
 	sessionDir: string,
 	targetCwd?: string,
@@ -364,7 +311,6 @@ export async function findMostRecentSessionFileFast(
 				candidateFiles.set(normalizePathKey(fp), fp);
 			}
 		} else {
-			// 如果 targetDir 下没有 .jsonl 文件，可能是工作区根目录（sessionBaseDir），尝试解析物理存储目录
 			try {
 				const projectDir = SessionManager.create(targetDir).getSessionDir();
 				if (existsSync(projectDir)) {

@@ -6,26 +6,18 @@ import { appSend } from "../app-globals";
 import { Dropdown, DropdownItem } from "./Dropdown";
 
 interface Props {
-	/** 快照当前会话权限值（null = 尚未拉取，回落默认展示）。 */
 	current: string | null;
-	/** 组合选项表（空 = 运行时未就绪/legacy，不渲染）。 */
 	options: DshPermissionOption[];
-	/** 新会话默认（三档之一）。 */
 	defaultPreset: string;
-	/** 会话切换时重置确认态。 */
 	conversationId: string;
-	/** 紧凑模式：只渲染一个下拉按钮（输入框工具条内，思考强度右侧）。 */
 	compact?: boolean;
 }
 
-/** 前端三档顺序（官方 workspace-write 走 ask，无应答者是死路，不提供；
- *  custom 仅展示不可点）。 */
 const OFFER_ORDER = ["read-only", "workspace-write-never", "danger-full-access"];
 
 type PermLabelKey = "dshPermReadOnly" | "dshPermWorkspaceWrite" | "dshPermFullAccess";
 type PermDescKey = "dshPermReadOnlyDesc" | "dshPermWorkspaceWriteDesc" | "dshPermFullAccessDesc";
 
-/** 前端三档顺序（设置面板默认项共用）。 */
 export const DSH_PERMISSION_ORDER = ["read-only", "workspace-write-never", "danger-full-access"];
 
 export function permLabelKey(value: string): PermLabelKey {
@@ -49,7 +41,6 @@ export const DshPermissionBar = memo(function DshPermissionBar({
 }: Props) {
 	const t = useT();
 	const [open, setOpen] = useState(false);
-	// 完全权限二次确认态（官方同款 confirm，内联两步，关菜单/切会话即撤防）。
 	const [confirmFull, setConfirmFull] = useState(false);
 	useEffect(() => {
 		setConfirmFull(false);

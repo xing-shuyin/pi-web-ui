@@ -7,6 +7,6 @@
 	"id": "session-migrate",
 	"name": "会话迁移",
 	"permissions": ["ui", "tools", "fs", "http"],
-	"version": "0.4.3",
+	"version": "0.4.4",
 	"view": true
 }

@@ -46,11 +46,9 @@ describe("switchConversation 性能与快速切换优化 (#switch-conv-perf)", (
 
 		const switchConvBody = src.slice(switchConvStart, switchConvEnd);
 
-		// 检查 1: 遇到不存在的对话发送 transition_progress error 提示
 		expect(switchConvBody).toContain('type: "transition_progress"');
 		expect(switchConvBody).toContain('phase: "error"');
 
-		// 检查 2: 跨项目切换时调用 unwatchGit 释放旧工作区 Git watcher
 		expect(switchConvBody).toContain("this.files.unwatchGit()");
 	});
 

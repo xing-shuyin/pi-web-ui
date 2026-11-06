@@ -1,22 +1,5 @@
-/**
- * plugins/qq/media.mjs
- * QQBot 富媒体（图片/视频/语音/文件）纯函数 + 上传链路。
- *
- * 官方 API（https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/rich-media.html）：
- *   1) 先上传拿 file_info：
- *      - 公网 URL：`POST /v2/{users|groups}/{openid}/files {file_type, url}`
- *      - 小文件（≤5MB）：同上带 `file_data`（base64）
- *      - 大文件：`upload_prepare` → 逐片 `PUT presigned_url` → `upload_part_finish`
- *        → `POST .../files {upload_id}`
- *   2) 再发消息：`msg_type=7` + `media.file_info`（文件 ttl 有限，用完即弃）。
- *
- * 这里只做「怎么传」，不碰 token/网络细节：调用方注入 `api(method, path, body)`
- * 与 `put(url, chunk)`，单测可以完全离线（与 wechat-ilink 的媒体单测同思路）。
- */
-
 import { createHash } from "node:crypto";
 
-/** 软限制：超过按文件类型上传（官方文档：图片 20MB / 视频 30MB / 语音 20MB / 文件 200MB）。 */
 export const QQ_SOFT_LIMITS = {
 	image: 20 * 1024 * 1024,
 	video: 30 * 1024 * 1024,
@@ -24,16 +7,12 @@ export const QQ_SOFT_LIMITS = {
 	file: 200 * 1024 * 1024,
 };
 
-/** 硬限制：超过直接报错，不浪费带宽。 */
 export const QQ_HARD_LIMIT = 200 * 1024 * 1024;
 
-/** file_data（base64）上限：超过就必须走分片上传。 */
 export const QQ_FILE_DATA_MAX = 5 * 1024 * 1024;
 
-/** 收图/收文件落盘的单件上限（腾讯 CDN 下载）。 */
 export const QQ_INBOUND_MAX = 25 * 1024 * 1024;
 
-/** 秒传判定用的前缀长度（官方：文件前 10002432 字节，约 9.54MB 的 MD5）。 */
 export const QQ_MD5_10M_BYTES = 10002432;
 
 const IMAGE_MIME = {
@@ -67,7 +46,6 @@ const MIME_BY_EXT = {
 	".avif": "image/avif",
 };
 
-/** 附件 content_type（MIME 或 `voice`/`file` 标记）→ 媒体种类。 */
 export function mediaKindOfContentType(contentType) {
 	const ct = String(contentType ?? "")
 		.trim()
@@ -81,7 +59,6 @@ export function mediaKindOfContentType(contentType) {
 	return "file";
 }
 
-/** 媒体种类 → QQ 上传接口的 file_type（1 图片 / 2 视频 / 3 语音 / 4 文件）。 */
 export function qqFileTypeOfKind(kind) {
 	switch (kind) {
 		case "image":
@@ -95,7 +72,6 @@ export function qqFileTypeOfKind(kind) {
 	}
 }
 
-/** 扩展名（带点，小写）；未知返回空串。 */
 export function extOfMedia({ contentType = "", filename = "", url = "" } = {}) {
 	const ct = String(contentType ?? "")
 		.trim()
@@ -115,19 +91,15 @@ export function extOfMedia({ contentType = "", filename = "", url = "" } = {}) {
 	try {
 		const urlExt = /\.[A-Za-z0-9]{1,8}$/.exec(new URL(String(url ?? "")).pathname);
 		if (urlExt) return urlExt[0].toLowerCase();
-	} catch {
-		/* 非法 URL 就按未知处理 */
-	}
+	} catch {}
 	return "";
 }
 
-/** MIME（按扩展名猜，未知回 application/octet-stream）。 */
 export function mimeOfPath(filePath) {
 	const m = /\.[A-Za-z0-9]{1,8}$/.exec(String(filePath ?? "").trim());
 	return (m && MIME_BY_EXT[m[0].toLowerCase()]) || "application/octet-stream";
 }
 
-/** 文件路径/URL → 媒体种类（用扩展名猜；图片/视频/语音/文件）。 */
 export function mediaKindOfPath(spec) {
 	const s = String(spec ?? "").trim();
 	if (!s) return "file";
@@ -139,7 +111,6 @@ export function mediaKindOfPath(spec) {
 	return mediaKindOfContentType(mimeOfPath(s));
 }
 
-/** 收下来的附件落盘用的文件名（保留扩展名，去掉危险字符）。 */
 export function inboundFileName({
 	contentType = "",
 	filename = "",
@@ -160,7 +131,6 @@ export function inboundFileName({
 	return base.replace(/[\\/:*?"<>|]/g, "_");
 }
 
-/** 附件种类中文标签（拼给 agent 的正文用）。 */
 export function mediaLabel(kind) {
 	switch (kind) {
 		case "image":
@@ -174,10 +144,6 @@ export function mediaLabel(kind) {
 	}
 }
 
-/**
- * 拼「附件」提示行给 agent。落盘成功给绝对路径（agent 用 read 工具直接看），
- * 下载失败/超限则降级为占位文字，绝不吞掉消息。
- */
 export function formatInboundMediaLines(items = []) {
 	const lines = [];
 	for (const it of items) {
@@ -199,7 +165,6 @@ export function formatInboundMediaLines(items = []) {
 	return lines.join("\n");
 }
 
-/** 上传场景端点分段：单聊 /v2/users/{openid}，群聊 /v2/groups/{openid}。 */
 export function mediaScopePath(scope) {
 	const type = String(scope?.type ?? "").toLowerCase();
 	const openid = String(scope?.openid ?? "").trim();
@@ -238,7 +203,6 @@ export async function uploadQqMedia({
 	const fileType = qqFileTypeOfKind(kind);
 	const name = String(fileName ?? "").trim() || (source?.url ? source.url.split("/").pop() || "file" : "file");
 
-	// 1) 公网 URL：平台自己下载转存，最省事。
 	if (source?.url) {
 		const r = await api("POST", `${base}/files`, {
 			file_type: fileType,
@@ -255,7 +219,6 @@ export async function uploadQqMedia({
 		throw new Error(`文件超过 QQ 硬限制 ${Math.round(hardLimit / 1024 / 1024)}MB，无法发送`);
 	}
 
-	// 2) 小文件：base64 直传（免分片，一次请求）。
 	if (buf.length <= fileDataMax) {
 		const r = await api("POST", `${base}/files`, {
 			file_type: effectiveFileType(fileType, buf.length),
@@ -266,7 +229,6 @@ export async function uploadQqMedia({
 		return fileInfoOf(r);
 	}
 
-	// 3) 大文件：预上传 → 逐片 PUT → 片确认 → 合并。
 	const sum = (digests ?? defaultDigests)(buf);
 	const prep = await api("POST", `${base}/upload_prepare`, {
 		file_type: effectiveFileType(fileType, buf.length),
@@ -329,7 +291,6 @@ export async function sendQqMediaMessage({
 	return api("POST", `${base}/messages`, payload);
 }
 
-/** 超过软限制时降级为「文件」类型（官方行为：图片 20MB 以上按文件卡片发）。 */
 export function effectiveFileType(fileType, size) {
 	const limit = QQ_SOFT_LIMITS[["", "image", "video", "voice", "file"][fileType] ?? "file"] ?? QQ_HARD_LIMIT;
 	return size > limit ? 4 : fileType;

@@ -34,7 +34,6 @@ describe("notice-policy", () => {
 		expect(shouldSuppressNotice({ level: "info", text: "已重命名当前会话为「新标题」" })).toBe(true);
 		expect(shouldSuppressNotice({ level: "info", text: "计划模式已开启" })).toBe(true);
 
-		// Keep important user-triggered feedbacks that have no obvious in-place indicator or are tested
 		expect(shouldSuppressNotice({ level: "info", text: "📌 已钉住对话「测试」" })).toBe(false);
 		expect(shouldSuppressNotice({ level: "info", text: "已上传：demo.txt" })).toBe(false);
 		expect(shouldSuppressNotice({ level: "warning", text: "已在工作目录：/srv/app" })).toBe(false);
@@ -54,14 +53,12 @@ describe("notice-policy", () => {
 		const s2 = enqueueNotice(s1, { id: 3, level: "info", text: "📌 已钉住对话" });
 		expect(s2).toHaveLength(MAX_VISIBLE_NOTICES);
 
-		// Same text & level replaces existing item with fresh id instead of stacking
 		const s2Dup = enqueueNotice(s2, { id: 4, level: "info", text: "📌 已钉住对话" });
 		expect(s2Dup).toEqual([
 			{ id: 2, level: "error", text: "连接失败" },
 			{ id: 4, level: "info", text: "📌 已钉住对话" },
 		]);
 
-		// When a 3rd notice arrives, the older non-error notice (id=4) is evicted before the error (id=2)
 		const s3 = enqueueNotice(s2Dup, { id: 5, level: "info", text: "已上传：a.png" });
 		expect(s3).toEqual([
 			{ id: 2, level: "error", text: "连接失败" },

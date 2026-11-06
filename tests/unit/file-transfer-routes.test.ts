@@ -105,7 +105,7 @@ describe("file transfer HTTP routes", () => {
 					},
 				);
 				req.on("error", fail);
-				req.flushHeaders(); // deliberately never send the declared body
+				req.flushHeaders();
 			});
 			expect(response).toBe(status);
 		}
@@ -136,7 +136,6 @@ describe("file transfer HTTP routes", () => {
 					req.end(body);
 				});
 			}
-			// Multibyte text verifies the cap counts bytes, rather than characters.
 			expect(await upload("too-large.txt", "ééééx")).toBe(413);
 			await expect.poll(() => readdir(f.root)).toEqual(["a.txt", "temporary"]);
 			expect(await upload("at-limit.txt", "éééé")).toBe(200);

@@ -1,7 +1,3 @@
-/**
- * image-toolkit 生图视图文案（中英双语）。
- */
-
 export const DICT = {
 	zh: {
 		"app.title": "AI 生图",

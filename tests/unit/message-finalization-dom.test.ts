@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { Message } from "../../web/src/components/Message";
 import { LanguageProvider } from "../../web/src/i18n";
 
-// Exercise the real Markdown renderer, including its streaming state.
 vi.spyOn(document, "hidden", "get").mockReturnValue(true);
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

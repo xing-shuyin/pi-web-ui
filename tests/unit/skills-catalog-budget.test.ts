@@ -43,7 +43,6 @@ describe("buildSkillsText 极简格式与优化表现", () => {
 	it("默认输出为极简单行 Markdown 格式，去除了多层 XML 标签且不包含 location", () => {
 		const out = buildSkillsText(sampleSkills, "en");
 		expect(out).toContain("<available_skills>");
-		// 校验多行描述被规范化为单行
 		expect(out).toContain("- git-commit: Format git commits with conventional standard.");
 		expect(out).toContain("- code-review: Review code thoroughly for bugs, performance and architecture.");
 		expect(out).not.toContain("<skill>");

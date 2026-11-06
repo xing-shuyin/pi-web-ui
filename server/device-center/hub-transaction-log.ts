@@ -84,13 +84,6 @@ export class HubTransactionLog {
 		}
 	}
 
-	/**
-	 * Read all transactions from WAL.
-	 * Rules:
-	 * - Only ignore partial trailing bytes missing a newline (torn tail).
-	 * - Any complete line ending with newline that fails JSON parse, has invalid structure,
-	 *   discontinuous seq, or bad checksum is treated as corruption and FAILS CLOSED.
-	 */
 	async readTransactions(options: { readOnly?: boolean } = {}): Promise<{
 		records: HubTransactionRecord[];
 		tornTailDetected: boolean;
@@ -120,7 +113,6 @@ export class HubTransactionLog {
 		let tornTailDetected = false;
 		let validBytesCount = raw.length;
 
-		// Torn tail rule: only ignore trailing bytes if there is no terminating newline at EOF
 		if (!raw.endsWith("\n")) {
 			tornTailDetected = true;
 			const lastNewline = raw.lastIndexOf("\n");
@@ -132,7 +124,6 @@ export class HubTransactionLog {
 				validBytesCount = 0;
 			}
 
-			// If not readOnly, repair the file on disk immediately
 			if (!options.readOnly) {
 				try {
 					await this.truncate(validBytesCount);
@@ -172,7 +163,6 @@ export class HubTransactionLog {
 				throw new Error(`Corrupted Hub transaction log at line ${i + 1}: invalid transaction schema`);
 			}
 
-			// Check sequence continuity
 			if (expectedSeq !== undefined && parsed.seq !== expectedSeq) {
 				throw new Error(
 					`Corrupted Hub transaction log at line ${i + 1}: discontinuous sequence, expected ${expectedSeq} but got ${parsed.seq}`,
@@ -180,7 +170,6 @@ export class HubTransactionLog {
 			}
 			expectedSeq = parsed.seq + 1;
 
-			// Verify checksum (fail closed if corrupted)
 			const expectedChecksum = computeTransactionChecksum(parsed.seq, parsed.time, parsed.index, parsed.diff);
 			if (parsed.checksum !== expectedChecksum) {
 				throw new Error(`Corrupted Hub transaction log at line ${i + 1} (seq ${parsed.seq}): checksum mismatch`);
@@ -192,11 +181,6 @@ export class HubTransactionLog {
 		return { records, tornTailDetected };
 	}
 
-	/**
-	 * Authoritative commit: append a single transaction line and fsync.
-	 * If append or fsync fails, rollback to original size and sync.
-	 * If rollback fails, mark poisoned so no subsequent commits can corrupt the log.
-	 */
 	async append(seq: number, index: HubIndexState, diff: HubTransactionDiff): Promise<HubTransactionRecord> {
 		if (this.poisoned) {
 			throw new Error("Store WAL is poisoned due to previous rollback failure; operations halted");
@@ -217,13 +201,11 @@ export class HubTransactionLog {
 		};
 		const payload = JSON.stringify(record) + "\n";
 
-		// Failure to open cannot have appended bytes and does not require a rollback.
 		const handle = await open(this.walPath, "a", 0o600);
 		try {
 			await handle.writeFile(payload, "utf8");
 			await handle.sync();
 		} catch (appendError) {
-			// writeFile may write a prefix before rejecting, so every failed append needs rollback.
 			try {
 				await this.truncate(previousSize);
 			} catch {
@@ -231,16 +213,12 @@ export class HubTransactionLog {
 			}
 			throw appendError;
 		} finally {
-			// A close error cannot undo a successful fsync or replace the original append failure.
 			await handle.close().catch(() => {});
 		}
 
 		return record;
 	}
 
-	/**
-	 * Checkpoint: safely truncate WAL to 0 bytes after all projections succeed.
-	 */
 	async checkpoint(_checkpointSeq: number): Promise<void> {
 		if (this.poisoned) return;
 		try {

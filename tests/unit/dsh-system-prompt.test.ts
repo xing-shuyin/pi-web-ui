@@ -1,12 +1,3 @@
-/**
- * dsh-system-prompt.test.ts — DSH 引擎系统提示词与自定义提示词详情单测。
- *
- * 覆盖：
- * 1. UiSettingsState 中的提示词字段契约（customSystemPrompt, promptMode, promptSections, effectiveSystemPrompt, toolsSchema）；
- * 2. buildToolsSchemaText 在 DSH 工具列表下的格式化输出；
- * 3. DSH 专属自定义提示词与快捷指令模板契约。
- */
-
 import { describe, it, expect } from "vitest";
 import { buildToolsSchemaText, type ToolSchemaEntry } from "../../server/prompt-composer.js";
 import type { UiSettingsState } from "../../server/protocol.js";

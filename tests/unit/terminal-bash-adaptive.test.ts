@@ -43,8 +43,6 @@ describe("makeAdaptiveBashTool", () => {
 		const tool = makeAdaptiveBashTool(killable, terminalBacked, () => true);
 
 		if (process.platform === "win32") {
-			// On Windows, one-shot (persist !== true) routes to native killable (pipe spawn)
-			// to avoid MSYS2 128-console exhaustion (issue #269).
 			await tool.execute("call2", { command: "echo 2" } as never, undefined, undefined, {} as never);
 			expect(killableExec).toHaveBeenCalledTimes(1);
 			expect(terminalExec).not.toHaveBeenCalled();
@@ -53,11 +51,9 @@ describe("makeAdaptiveBashTool", () => {
 			expect(killableExec).toHaveBeenCalledTimes(2);
 			expect(terminalExec).not.toHaveBeenCalled();
 
-			// Only persist === true routes to persistent visible terminal 'ai-bash'
 			await tool.execute("call4", { command: "echo 4", persist: true } as never, undefined, undefined, {} as never);
 			expect(terminalExec).toHaveBeenCalledTimes(1);
 		} else {
-			// On non-Windows platforms, terminal mode routes to terminalBacked for all calls
 			await tool.execute("call2", { command: "echo 2" } as never, undefined, undefined, {} as never);
 			expect(terminalExec).toHaveBeenCalledTimes(1);
 			expect(killableExec).not.toHaveBeenCalled();

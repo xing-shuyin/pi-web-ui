@@ -51,7 +51,6 @@ describe("思考小胶囊按钮与流式状态结构守卫", () => {
 		expect(statusEl).not.toBeNull();
 		expect(statusEl!.classList.contains("toolcall-status")).toBe(true);
 
-		// 摘要文本被解耦至 .thinking-summary-text，便于极简行文主题精准隐藏
 		const summaryEl = container.querySelector(".thinking-summary-text");
 		expect(summaryEl).not.toBeNull();
 	});
@@ -74,11 +73,9 @@ describe("思考小胶囊按钮与流式状态结构守卫", () => {
 			const thinkingRoot = container.querySelector(".thinking");
 			expect(thinkingRoot).not.toBeNull();
 
-			// 微胶囊具有基本标识与状态指示
 			expect(container.querySelector(".thinking-name")).not.toBeNull();
 			expect(container.querySelector(".thinking-status")).not.toBeNull();
 
-			// 纯净轻量：绝不挂载正文 .thinking-body 与大段 DOM
 			expect(container.querySelector(".thinking-body")).toBeNull();
 			expect(container.querySelector(".thinking-summary-text")).toBeNull();
 		} finally {

@@ -1,13 +1,5 @@
 import { THEME_CHANGE_EVENT } from "./theme";
 
-/**
- * 桌面壳（Electron）检测与沉浸式窗口装饰。
- *
- * `desktop/preload.ts` 经 contextBridge 在主世界挂了 `window.piDesktop = { isDesktop: true, … }`，
- * 这是主判定；UA 里带 `Electron/` 当兜底（preload 未来改名也不至于全瞎）。
- *
- * 参数注水（`win?`）是为了单测：浏览器里直接调 `isDesktopShell()` 读全局 window 即可。
- */
 export interface DesktopWindowBridge {
 	minimize: () => Promise<boolean>;
 	toggleMaximize: () => Promise<boolean>;
@@ -19,6 +11,7 @@ export interface DesktopWindowBridge {
 export interface DesktopShellWindow {
 	piDesktop?: {
 		isDesktop?: unknown;
+		embedded?: unknown;
 		platform?: unknown;
 		setTitleBarOverlay?: (opts: { color?: string; symbolColor?: string }) => Promise<unknown>;
 		onFullScreenChange?: (cb: (isFullScreen: boolean) => void) => () => void;
@@ -38,19 +31,16 @@ export function isDesktopShell(win?: unknown): boolean {
 	return typeof ua === "string" && ua.includes("Electron/");
 }
 
-/** 兼容别名 */
 export const isDesktopApp = isDesktopShell;
 
-/** 获取桌面端窗口控制桥（最小化/最大化/关闭）。 */
 export function getDesktopWindowBridge(win?: unknown): DesktopWindowBridge | null {
 	const w =
 		(win as DesktopShellWindow | undefined) ??
 		(typeof window === "undefined" ? undefined : (window as unknown as DesktopShellWindow));
-	if (!w || !w.piDesktop?.window) return null;
+	if (!w || w.piDesktop?.embedded === true || !w.piDesktop?.window) return null;
 	return w.piDesktop.window;
 }
 
-/** 获取桌面操作系统类型，供沉浸式顶栏做平台避让（macOS 避让交通灯，Windows/Linux 避让右上角三键）。 */
 export function getDesktopPlatform(win?: unknown): "darwin" | "win32" | "linux" | null {
 	if (!isDesktopShell(win)) return null;
 	const w =
@@ -66,7 +56,6 @@ export function getDesktopPlatform(win?: unknown): "darwin" | "win32" | "linux" 
 	return null;
 }
 
-/** 动态同步 Windows / Linux 的系统控制按钮图标颜色，确保深色/浅色主题下均清晰可见。 */
 export function syncDesktopTitleBarTheme(win?: unknown): void {
 	const w =
 		(win as DesktopShellWindow | undefined) ??
@@ -80,9 +69,7 @@ export function syncDesktopTitleBarTheme(win?: unknown): void {
 				document.body?.classList.contains("theme-light") ||
 				document.documentElement?.getAttribute("data-theme-scheme") === "light" ||
 				Boolean(document.getElementById("theme-stylesheet")?.getAttribute("href")?.includes("light"));
-		} catch {
-			// 忽略 DOM 读取异常
-		}
+		} catch {}
 	}
 	const symbolColor = isLight ? "#334155" : "#cbd5e1";
 	void w.piDesktop.setTitleBarOverlay({
@@ -91,14 +78,9 @@ export function syncDesktopTitleBarTheme(win?: unknown): void {
 	});
 }
 
-/**
- * 在应用启动时初始化桌面端窗口沉浸式装饰：
- * 1. 注入 body 类名（is-desktop, is-desktop-mac / is-desktop-win 等）
- * 2. 监听全屏切换，动态避让/解除交通灯与控制按钮 padding
- * 3. 监听主题切换，动态更新控制按钮图标颜色
- */
 export function setupDesktopWindowDecorations(): () => void {
 	if (typeof window === "undefined" || !isDesktopShell()) return () => {};
+	if ((window as unknown as DesktopShellWindow).piDesktop?.embedded === true) return () => {};
 
 	const platform = getDesktopPlatform();
 	const body = document.body;
@@ -112,18 +94,15 @@ export function setupDesktopWindowDecorations(): () => void {
 		else body.classList.remove("is-desktop-fullscreen");
 	};
 
-	// DOM 全屏事件监听
 	const domFsHandler = () => {
 		updateFullScreen(Boolean(document.fullscreenElement));
 	};
 	document.addEventListener("fullscreenchange", domFsHandler);
 
-	// Electron 全屏事件监听
 	const cleanupFs = (window as unknown as DesktopShellWindow).piDesktop?.onFullScreenChange?.((isFs) =>
 		updateFullScreen(isFs),
 	);
 
-	// 主题切换同步
 	const themeHandler = () => syncDesktopTitleBarTheme();
 	window.addEventListener(THEME_CHANGE_EVENT, themeHandler);
 	syncDesktopTitleBarTheme();

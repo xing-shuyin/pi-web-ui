@@ -1,5 +1,3 @@
-# One-command deploy: `docker compose up -d`
-# Auto-restarts on boot when the Docker daemon starts (restart: unless-stopped).
 services:
   pi-web-ui:
     build: .
@@ -8,35 +6,9 @@ services:
       - "8787:8787"
     environment:
       PI_WEB_PORT: "8787"
-      # 共享口令鉴权。容器必须监听全部网卡端口映射才能工作，暴露面大于默认
-      # loopback 部署——不设 token 时任何能访问到该端口的人都可以直接使用
-      # 对话/终端/文件读写全部能力。首次部署务必改成自己的口令（浏览器打开
-      # 后用 http://<host>:8787/?token=<口令> 进入，之后走 cookie 免带）。
       PI_WEB_TOKEN: "change-me"
-      # 浏览器经反向代理/域名访问时，把对外域名加进 Host 白名单（逗号分隔；
-      # loopback 与私网 IP 默认放行）。设了 token 时无需配置。
-      # PI_WEB_ALLOW_HOSTS: "pi.example.com"
-      # The container must bind ALL interfaces so the -p port mapping works —
-      # the server defaults to loopback-only for security.
       PI_WEB_HOST: "0.0.0.0"
-      # DSH engine (DeepSeek Harness subprocess, see docs/dsh-engine.md).
-      # The image already bundles the runtime tree; uncomment to switch:
-      # PI_WEB_ENGINE: "dsh"
-      # DSH user patches dir override (default: <PI_WEB_DATA_DIR>/dsh-patches):
-      # PI_WEB_DSH_PATCH_DIR: /dsh-patches
-      # volumes:
-      #   - /host/path/to/dsh-patches:/dsh-patches
-      # Workspace the agent operates in (read/edit/bash/write). Mount your
-      # project dir and point PI_WEB_CWD at it, e.g.:
-      # PI_WEB_CWD: /workspace
-      # volumes:
-      #   - /host/path/to/project:/workspace
-      # pi config (auth.json, models, skills) — mount ~/.pi/agent read-only:
-      # PI_CODING_AGENT_DIR: /pi-agent
-      # volumes:
-      #   - /home/YOU/.pi/agent:/pi-agent:ro
     volumes:
-      # Persist per-client chat sessions across container restarts.
       - pi-web-data:/app/.pi-web
     restart: unless-stopped
 

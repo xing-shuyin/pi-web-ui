@@ -1,13 +1,3 @@
-/**
- * 插件工作区跟随（cwd-follow）协议测试（零 token、自包含）。
- *
- * 覆盖整条链路：WS set_cwd → ClientSession.onCwdChanged →
- * AgentService.onClientCwdChanged → PluginManager.notifyCwd →
- * 插件 onCwdChange 钩子 → plugin_data {kind:"workspace"} 广播。
- * 这是编辑器插件（vscode-editor）「目录随项目切换」的服务端事实源。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-cwd-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,11 +10,9 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const serverPath = realpathSync(process.execPath);
 let proc = null;
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-cwd-plugin-"));
-// 两个真实存在的项目目录：启动工作区 + 切换目标
 const dirA = mkdtempSync(join(tmpdir(), "cwd-proj-a-"));
 const dirB = mkdtempSync(join(tmpdir(), "cwd-proj-b-"));
 
-// ---- 探针插件：记录激活时的 cwd，注册 onCwdChange 广播 workspace ----------
 const plugDir = join(dataDir, "plugins", "probe");
 mkdirSync(plugDir, { recursive: true });
 writeFileSync(join(plugDir, "manifest.json"), JSON.stringify({ name: "cwd-probe", version: "0.1.0" }));
@@ -48,9 +36,7 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// 从第一个消息起持续收集 workspace 广播——初始广播在 ready/plugins 之间到达，
-// 不能按消息类型分段等待（会漏掉早到的）。
-const workspaces = []; // resolve() 过的根路径，按到达顺序
+const workspaces = [];
 
 function handleMessage(raw) {
 	const msg = JSON.parse(raw.toString());
@@ -78,7 +64,6 @@ function connect(clientId) {
 	});
 }
 
-/** 等到收集到第 i 个（0 起）workspace 广播。 */
 function nextWorkspace(i, label, timeoutMs = 10_000) {
 	return new Promise((resolve2, reject) => {
 		const t0 = Date.now();
@@ -117,7 +102,6 @@ try {
 		void ping();
 	});
 
-	// -- attach：插件激活时广播服务端启动目录 ----------------------------------
 	const sock = await connect("cwd-test");
 	const first = await nextWorkspace(0, "initial workspace broadcast");
 	if (first !== resolve(dirA)) {
@@ -126,7 +110,6 @@ try {
 		console.log(`✓ attach 时插件拿到服务端工作区 ${first}`);
 	}
 
-	// -- set_cwd → workspace 广播跟随 -----------------------------------------
 	sock.send(JSON.stringify({ type: "set_cwd", path: dirB }));
 	const second = await nextWorkspace(1, "workspace after set_cwd");
 	if (second !== resolve(dirB)) {
@@ -135,7 +118,6 @@ try {
 		console.log(`✓ set_cwd 后插件收到新根 ${second}`);
 	}
 
-	// 同路径重复 set_cwd 不应再广播（幂等）
 	const countBefore = workspaces.length;
 	sock.send(JSON.stringify({ type: "set_cwd", path: dirB }));
 	await new Promise((r) => setTimeout(r, 1200));
@@ -145,7 +127,6 @@ try {
 		console.log("✓ 同路径重复 set_cwd 幂等（无多余广播）");
 	}
 
-	// 激活钩子记录的 seen 应与广播一致（内证）
 	sock.close();
 } catch (err) {
 	fail(err?.stack ?? String(err));
@@ -155,7 +136,6 @@ try {
 			process.kill(proc.pid, "SIGTERM");
 		} catch {}
 	}
-	// 等端口释放再删临时目录（win 文件句柄释放稍慢）
 	await new Promise((r) => setTimeout(r, 600));
 	for (const d of [dataDir, dirA, dirB]) rmSync(d, { recursive: true, force: true });
 }

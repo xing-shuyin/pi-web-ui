@@ -1,4 +1,3 @@
-// CoreGraphics follows the same capture/input split as krd, without a network service.
 export const macDesktopScript = String.raw`
 import Foundation
 import CoreGraphics

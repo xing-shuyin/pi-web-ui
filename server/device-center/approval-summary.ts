@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 
-/** Public facts only: never include parameter values, paths, command text or rule reasons. */
 export function approvalOperationSummary(toolName: string, params: unknown): string {
 	const input =
 		params && typeof params === "object" && !Array.isArray(params) ? (params as Record<string, unknown>) : {};

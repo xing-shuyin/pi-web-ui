@@ -3,6 +3,7 @@ import type { DeviceTaskActivity, DeviceTaskClaim } from "../protocol.js";
 import { projectTaskActivity } from "./task-progress.js";
 import https from "node:https";
 import { WebSocket } from "ws";
+import { createDeviceLanServer } from "./device-lan.js";
 import { deviceTaskFailure } from "./task-error.js";
 import type { TaskRecoveryManager, TaskOutboxEntry } from "./task-recovery.js";
 import type { TaskReportOutbox, TaskReportUploadEntry } from "./task-report-outbox.js";
@@ -37,7 +38,6 @@ export interface DeviceConnectorOptions {
 		callbacks?: import("./executor.js").DeviceTaskCallbacks,
 	) => unknown | Promise<unknown>;
 	onSteer?: (taskId: string, text: string) => boolean | Promise<boolean>;
-	/** Parent disposes its executor; the next task after reconnect must create a fresh executor. */
 	onInteractionAnswer?: (answer: import("../protocol.js").DeviceTaskInteractionAnswer) => boolean;
 	onDisconnect?: () => void;
 	onConnect?: () => void | Promise<void>;
@@ -68,6 +68,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 	const endpoint = new URL("/device-connect", hub);
 	endpoint.protocol = hub.protocol === "https:" || hub.protocol === "wss:" ? "wss:" : "ws:";
 	endpoint.searchParams.set("deviceId", options.deviceId);
+	const deviceLan = createDeviceLanServer({ localOrigin: local.origin, localAuthToken: options.localAuthToken });
 	let closed = false;
 	let tasksDisabled = false;
 	const waitingForHumanTaskIds = new Set<string>();
@@ -114,8 +115,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			tasksDisabled = true;
 			for (const task of runningTasks.values()) task.controller.abort();
 		} else {
-			// Passive network disconnect: ONLY retain tasks that have an active lease and recovery enabled!
-			// Tasks without leaseToken or without recovery cannot be claimed on reconnect; abort them.
 			for (const task of runningTasks.values()) {
 				if (!options.recovery || !task.leaseToken) {
 					task.controller.abort();
@@ -213,7 +212,19 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			handshakeTimeout: 10_000,
 		});
 		socket = ws;
-		const rpc = createCommandChannel(ws, options.onCommand);
+		const rpc = createCommandChannel(ws, async (action, payload, signal) => {
+			if (action !== "device_lan") {
+				if (!options.onCommand) throw new Error("Device command unavailable");
+				return options.onCommand(action, payload, signal);
+			}
+			if (signal.aborted) throw new Error("Device access cancelled");
+			const grant = await deviceLan.issueGrant();
+			if (signal.aborted || closed || socket !== ws || ws.readyState !== WebSocket.OPEN) {
+				if (grant) deviceLan.revoke(grant.identity);
+				throw new Error("Device connection changed");
+			}
+			return grant;
+		});
 		const messages = createWsMessageChannel(ws);
 		const cancellations = new Set<string>();
 		const steerings = new Set<string>();
@@ -227,7 +238,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			lastPong = Date.now();
 			retryReports();
 
-			// === Task Recovery / Reconnect Claim / Outbox Replay ===
 			const claimsToSend = new Map<string, DeviceTaskClaim>();
 			if (options.recovery) {
 				for (const claim of options.recovery.prepareClaims()) {
@@ -258,7 +268,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			if (options.recovery) {
 				for (const item of options.recovery.getPendingOutbox()) sendOutboxEntry(ws, item);
 			}
-			// =======================================================
 
 			void Promise.resolve()
 				.then(() => options.onConnect?.())
@@ -272,7 +281,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			try {
 				const frame = parseFrame(Buffer.from(raw as Buffer));
 				if (rpc.handle(frame)) return;
-				// === Task Recovery / Reconnect Results ===
 				if (frame.type === "task_claim_result") {
 					if (typeof frame.taskId === "string" && typeof frame.attemptId === "string" && frame.accepted === false) {
 						const task = runningTasks.get(frame.taskId);
@@ -351,7 +359,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 					}
 					return;
 				}
-				// =========================================
 				if (frame.type === "task_cancel") {
 					if (
 						typeof frame.id !== "string" ||
@@ -686,7 +693,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 								void (async () => {
 									let bytes = 0;
 									try {
-										// Pull only as fast as the relay socket drains, instead of aborting bursts.
 										for await (const data of res) {
 											const chunk = Buffer.from(data);
 											bytes += chunk.length;
@@ -781,7 +787,8 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			messages.close();
 			if (socket !== ws) return;
 			socket = undefined;
-			stopTasks(false); // Retain running tasks locally across disconnects
+			deviceLan.close();
+			stopTasks(false);
 			for (const id of streams.keys()) dispose(id);
 			if (!closed) {
 				const delay = Math.min(30_000, 500 * 2 ** Math.min(attempts++, 6)) + Math.floor(Math.random() * 250);
@@ -796,7 +803,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 			else socket.ping();
 			retryReports();
 
-			// === Heartbeat Lease Renewal ===
 			if (options.recovery) {
 				const renews = options.recovery.prepareLeaseRenews({ waitingForHumanTaskIds });
 				for (const renew of renews) {
@@ -813,7 +819,6 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 					}
 				}
 			}
-			// ===============================
 		}
 	}, 15_000);
 	heartbeat.unref();
@@ -822,6 +827,7 @@ export function createDeviceConnector(options: DeviceConnectorOptions) {
 		isOnline: () => socket?.readyState === WebSocket.OPEN,
 		close() {
 			closed = true;
+			deviceLan.close();
 			reportAbort.abort();
 			stopTasks(true);
 			clearInterval(heartbeat);

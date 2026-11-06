@@ -1,15 +1,7 @@
-/**
- * collectQuestionAttachments 单测 —— 编辑重问的「原附件恢复」收集逻辑。
- *
- * 覆盖：自身内容里的图片块、紧随其后的 aside 图片卡、上传文件（uploadPath
- * 标记）、工作区路径附件（reference/inline/lines）、多个附件全部收集、以及
- * 非 file 消息打断收集。
- */
 import { describe, expect, it } from "vitest";
 import { collectQuestionAttachments } from "../../web/src/question-attachments.js";
 import type { EditPromptAttachment } from "../../web/src/question-attachments.js";
 
-// 结构化镜像（与 web/src/question-attachments.ts 的输入类型一致）
 interface TestBlock {
 	type: string;
 	text?: string;
@@ -222,7 +214,6 @@ describe("collectQuestionAttachments", () => {
 			endLine: 1,
 		});
 		const atts: EditPromptAttachment[] = collectQuestionAttachments([user("u1", "q"), aside]).get("u1") ?? [];
-		// 用户移除第一项后剩下的仍可直接作为 edit_message.attachments 发送
 		const kept = atts.slice(1);
 		expect(kept).toEqual([]);
 	});
@@ -253,7 +244,6 @@ describe("collectQuestionAttachments", () => {
 
 		const messages = [user("u1", "q"), asideConv1, asideImg1, asideConvDuplicate, asideImgDuplicate];
 		const atts = collectQuestionAttachments(messages).get("u1")!;
-		// 应当剔除重复项，只保留 1 个对话引用和 1 个图片
 		expect(atts).toHaveLength(2);
 		expect(atts[0].mode).toBe("conversation");
 		expect(atts[1].imageData).toBeDefined();

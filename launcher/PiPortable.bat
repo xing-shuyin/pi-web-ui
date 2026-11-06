@@ -2,20 +2,10 @@
 setlocal enableextensions
 title Pi Web UI Portable
 
-rem ---------------------------------------------------------------------------
-rem  Pi Portable Launcher
-rem  All paths are relative to this script (%~dp0), so the whole PiPortable
-rem  folder can be copied to any PC or USB drive without drive letter issues.
-rem
-rem  NOTE: this file is intentionally pure ASCII to prevent cmd.exe from
-rem  mis-parsing multi-byte characters under different console code pages.
-rem  Localized details live in checks\*.utf8.txt and checks\*.gbk.txt.
-rem ---------------------------------------------------------------------------
 
 set "PI_ROOT=%~dp0"
 if "%PI_ROOT:~-1%"=="\" set "PI_ROOT=%PI_ROOT:~0,-1%"
 
-rem ----- console code page -> select language file -----
 set "PI_CP=0"
 for /f "tokens=2 delims=:" %%C in ('chcp') do set "PI_CP=%%C"
 set "PI_CP=%PI_CP: =%"
@@ -23,7 +13,6 @@ set "PI_LANG="
 if "%PI_CP%"=="936"   set "PI_LANG=.gbk"
 if "%PI_CP%"=="65001" set "PI_LANG=.utf8"
 
-rem ----- fatal checks: main app executable -----
 if not exist "%PI_ROOT%\app\pi-web-ui-desktop.exe" (
     echo.
     echo [Pi] ERROR: app\pi-web-ui-desktop.exe not found.
@@ -32,7 +21,6 @@ if not exist "%PI_ROOT%\app\pi-web-ui-desktop.exe" (
     goto :fail
 )
 
-rem ----- optional runtime check: PortableGit -----
 if exist "%PI_ROOT%\runtime\git\cmd\git.exe" (
     echo [Pi] PortableGit detected in runtime\git. Mounting environment...
     set "PORTABLE_GIT=%PI_ROOT%\runtime\git"
@@ -50,7 +38,6 @@ if exist "%PI_ROOT%\runtime\git\cmd\git.exe" (
     call :print_detail warn-git
 )
 
-rem ----- optional runtime check: PortableNode & npm -----
 if exist "%PI_ROOT%\runtime\node\node.exe" (
     echo [Pi] Portable Node.js detected in runtime\node. Mounting npm environment...
     if not exist "%PI_ROOT%\data\npm-global" mkdir "%PI_ROOT%\data\npm-global"
@@ -60,7 +47,6 @@ if exist "%PI_ROOT%\runtime\node\node.exe" (
     set "PATH=%PI_ROOT%\data\npm-global;%PI_ROOT%\runtime\node;%PATH%"
 )
 
-rem ----- ensure portable data directories exist -----
 if not exist "%PI_ROOT%\data\agent"      mkdir "%PI_ROOT%\data\agent"
 if not exist "%PI_ROOT%\data\web"        mkdir "%PI_ROOT%\data\web"
 if not exist "%PI_ROOT%\data\git"        mkdir "%PI_ROOT%\data\git"
@@ -70,7 +56,6 @@ if not exist "%PI_ROOT%\data\electron"   mkdir "%PI_ROOT%\data\electron"
 if not exist "%PI_ROOT%\data\npm-global" mkdir "%PI_ROOT%\data\npm-global"
 if not exist "%PI_ROOT%\data\npm-cache"  mkdir "%PI_ROOT%\data\npm-cache"
 
-rem ----- configure environment variables for total isolation -----
 set "PI_PORTABLE=1"
 set "PI_PORTABLE_ROOT=%PI_ROOT%"
 set "PI_CODING_AGENT_DIR=%PI_ROOT%\data\agent"

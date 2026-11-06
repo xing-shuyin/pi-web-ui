@@ -1,4 +1,3 @@
-// Embedded so tsc/npm packaging cannot omit the native helper.
 export const windowsDesktopScript = String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -ReferencedAssemblies System.Drawing,System.Windows.Forms,System.Web.Extensions -TypeDefinition @'

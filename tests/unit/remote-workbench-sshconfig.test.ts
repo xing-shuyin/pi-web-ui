@@ -18,7 +18,7 @@ Host dev-server
     IdentityFile ~/.ssh/id_ed25519
 
 Host aliyun-prod
-    HostName 82.156.246.55
+    HostName 198.51.100.10
     User root
 `;
 		const hosts = parseSshConfig(sample);
@@ -31,7 +31,7 @@ Host aliyun-prod
 		expect(hosts[0].privateKeyPath).toBe("~/.ssh/id_ed25519");
 
 		expect(hosts[1].alias).toBe("aliyun-prod");
-		expect(hosts[1].host).toBe("82.156.246.55");
+		expect(hosts[1].host).toBe("198.51.100.10");
 		expect(hosts[1].username).toBe("root");
 		expect(hosts[1].port).toBe(22);
 	});

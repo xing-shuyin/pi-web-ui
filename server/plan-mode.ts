@@ -1,21 +1,4 @@
-/**
- * server/plan-mode.ts
- *
- * 计划模式（Plan Mode）：**只规划不实施** 的纯函数闸门与判定。
- *
- * 形态：会话级开关（`set_plan_mode`）→ 打开后本对话只允许「只读调研」，
- * 产出走 `plan_update` 步骤看板 + 计划正文，实施由用户确认后另起一轮。
- *
- * 为什么要硬闸门而不只靠提示词：模型不遵守软约束是常态（尤其长任务里
- * 「顺手改一下」）。所以计划模式在**工具执行前**再挡一道：写类工具直接拒、
- * bash 只放行只读命令，拒了就把原因当工具结果回给模型，让它换只读路径。
- *
- * 判定全部是纯函数（无 IO），单测见 tests/unit/plan-mode.test.ts。
- */
-
-/** 计划模式下确定禁止的工具：写文件 / 改文件 / 建删 / 版本控制写。 */
 const BLOCKED_TOOLS = new Set([
-	// 文件写入与编辑（第一方 + SDK 内置 + 编辑器类扩展的常见名）
 	"write",
 	"create",
 	"create_file",
@@ -30,7 +13,6 @@ const BLOCKED_TOOLS = new Set([
 	"str_replace_editor",
 	"multi_edit",
 	"notebook_edit",
-	// 文件系统增删改
 	"mv",
 	"move",
 	"cp",
@@ -45,67 +27,29 @@ const BLOCKED_TOOLS = new Set([
 	"chown",
 	"truncate",
 	"rename",
-	// 版本控制写（git add/commit/checkout/reset…；git 的只读子命令走 bash 白名单）
 	"git",
-	// 代码求值（eval 沙箱的 execute 直接 kernel.execute，可写真实文件系统；
-	// 默认关但用户可开，开了就是一条写路径 —— #436）
 	"eval",
-	// QuickJS 沙箱代码执行（可嵌套调用写工具/命令，计划模式禁止任意代码执行）
 	"codemode",
-	// MCP 服务器配置管理（install/remove 会修改 mcp.json 并拉起新子进程）
 	"mcp_manage",
 	"sandbox",
-	// 形态变换（会重写整个文件树）
 	"format",
 	"prettier",
 	"lint_fix",
 	"autofix",
 ]);
 
-/**
- * 常驻终端的「写向」工具（server/terminals.ts）：直接往 PTY stdin 写字符/按键。
- * 必须整体剥离而不只是补检查：terminal_input 只在自带换行时才过 checkSafety，
- * terminal_key 的 Enter 连检查都没有 —— 「input(无换行) + key(Enter)」两步即可
- * 绕过 bash 只读白名单执行任意命令（#436）。且 PTY 的行编辑缓冲在 shell 进程内，
- * 服务端拿不到可靠的「待提交行」（退格/Ctrl+U/补全都无法镜像），按缓冲检查既会
- * 误放也会误拦 —— 所以计划模式下干脆不给这两件工具：调研用 bash（走白名单），
- * 观察已有终端用 terminal_read/terminal_list/terminal_wait（只读）。
- */
 const TERMINAL_WRITE_TOOLS = new Set(["terminal_input", "terminal_key"]);
 
-/**
- * 三个只读闸门（计划 / 审查者 / 目标审查）共用的「派发类」工具名：它们会把活
- * 派到**别的会话**执行（delegate_task 走子代理 spawn 通道；schedule 到期
- * 唤醒对话跑 prompt），而这三道闸门都是会话级的 —— 放行即绕过。
- *
- * 名单以 server/tool-manager.ts 实际注册的工具名为事实源（#436）：历史名单里的
- * spawn / spawn_agent / subagent_spawn / schedule_agent / host_schedule /
- * create_goal / set_goal / start_goal_wizard / create_conversation /
- * fork_conversation / set_plan_mode 等都是协议消息名或从未注册的幽灵名，一个
- * 真实工具都没拦住，反而掩盖了 schedule 这类真实旁路工具完全可用的事实。
- * subagent 是单 action 工具，由各闸门按 action 细分（只读 action 放行，见各闸门
- * 的判定函数）；schedule（create/list/cancel）则整工具拒——调度面在计划/审查
- * 回合都不需要，宁可保守。
- */
 import {
 	isReadOnlyConversationAction,
 	CONVERSATION_TOOL_NAMES,
 	isConversationTool,
 } from "./conversation-tool-names.js";
 
-// Every communication action can carry instructions, including replies and escalations.
-// Plan/delegate/goal reviewers must not direct execution through another conversation.
 export const SESSION_DISPATCH_TOOLS = new Set<string>(["delegate_task", "schedule", "communicate"]);
 
-/**
- * 计划模式下也禁掉的「旁路工具」（真实派发类，见 SESSION_DISPATCH_TOOLS）：
- * 它们能在**别的会话**里干活，而闸门是会话级的 —— 子代理/排程对话的
- * planMode 是 false，等于绕过只读约束。调研靠本对话的 read/grep/只读 bash
- * 足够，需要并行调研时先退出计划模式。
- */
 const BYPASS_TOOLS = SESSION_DISPATCH_TOOLS;
 
-/** 计划模式下从模型视野中彻底隐藏的写类工具与旁路工具全集。 */
 export const PLAN_MODE_BLOCKED_TOOL_NAMES = new Set<string>([
 	...BLOCKED_TOOLS,
 	...BYPASS_TOOLS,
@@ -113,13 +57,10 @@ export const PLAN_MODE_BLOCKED_TOOL_NAMES = new Set<string>([
 	...CONVERSATION_TOOL_NAMES,
 ]);
 
-/** bash 类工具名（terminalBash 开关分流后可能是这几个）。 */
 const BASH_TOOLS = new Set(["bash", "bash_execute", "run_command", "shell", "terminal_exec"]);
 
-/** Reject expansion/escaping even inside quotes: unsupported syntax fails closed. */
 const UNSUPPORTED_SHELL = /[$`\\<>\x00-\x08\x0b-\x1f\x7f]/;
 
-/** 引号感知的命令切分：把一条命令按 ; && || | 换行 拆成独立段。 */
 function splitShellSegments(cmd: string): string[] {
 	const out: string[] = [];
 	let cur = "";
@@ -136,8 +77,6 @@ function splitShellSegments(cmd: string): string[] {
 			cur += ch;
 			continue;
 		}
-		// Globbing can inject option-like filenames (e.g. --pre=...). Use quoted patterns
-		// with structured search tools instead. All unsupported expansions fail closed.
 		if (/[(){}~#*?[\]]/.test(ch)) return [""];
 		if (ch === ";" || ch === "\n") {
 			out.push(cur);
@@ -163,7 +102,6 @@ function splitShellSegments(cmd: string): string[] {
 	return out.map((s) => s.trim());
 }
 
-/** Only named options are accepted; arguments are tokenized before validation. */
 interface ReadOnlyOptions {
 	short?: string;
 	flags?: string[];
@@ -336,7 +274,6 @@ const GIT_OPTIONS: Record<string, ReadOnlyOptions> = {
 	grep: READ_ONLY_OPTIONS.grep!,
 };
 
-/** No assignment prefixes, command wrappers, arbitrary programs or executable paths. */
 function segmentIsReadOnly(segment: string): boolean {
 	const words: string[] = [];
 	let word = "";
@@ -372,7 +309,6 @@ function segmentIsReadOnly(segment: string): boolean {
 		return Object.hasOwn(GIT_OPTIONS, sub) && readOnlyArgs(args, GIT_OPTIONS[sub]!);
 	}
 	if (name === "jq") {
-		// Accept field/index projections, not arbitrary programs or module loading.
 		if (args[0] === "-r" || args[0] === "-c") args.shift();
 		return (
 			args.length > 0 &&
@@ -395,18 +331,12 @@ function segmentIsReadOnly(segment: string): boolean {
 	return Object.hasOwn(READ_ONLY_OPTIONS, name) && readOnlyArgs(args, READ_ONLY_OPTIONS[name]!);
 }
 
-/**
- * Accept only the supported foreground shell grammar and per-command option allowlists.
- * This is a capability filter, not an OS sandbox: executable resolution and inherited
- * environment/configuration must be trusted by the execution layer.
- */
 export function bashCommandIsReadOnly(cmd: string): boolean {
 	const text = (cmd ?? "").trim();
 	if (!bashCommandHasSupportedSyntax(text)) return false;
 	return splitShellSegments(text).every(segmentIsReadOnly);
 }
 
-/** Shared syntax boundary for readonly commands and the explicit test-runner exception. */
 export function bashCommandHasSupportedSyntax(cmd: string): boolean {
 	const text = (cmd ?? "").trim();
 	if (!text || UNSUPPORTED_SHELL.test(text)) return false;
@@ -414,7 +344,6 @@ export function bashCommandHasSupportedSyntax(cmd: string): boolean {
 	return segments.length > 0 && segments.every((segment) => segment.length > 0);
 }
 
-/** 从工具参数里取命令文本（各工具字段名不同）。 */
 function commandOf(params: unknown): string {
 	if (!params || typeof params !== "object") return "";
 	const p = params as Record<string, unknown>;
@@ -425,7 +354,6 @@ function commandOf(params: unknown): string {
 	return "";
 }
 
-/** Narrow the existing action enum without changing execution or other parameters. */
 export function restrictTerminalToolToReadOnly<T extends { parameters: unknown }>(tool: T): T {
 	const parameters = tool.parameters as Record<string, any>;
 	return {
@@ -441,7 +369,6 @@ export function restrictTerminalToolToReadOnly<T extends { parameters: unknown }
 }
 
 const terminalSchemas = new WeakMap<object, unknown>();
-/** Call after registry refresh and before setActiveToolsByName; false restores the full schema. */
 export function syncTerminalReadOnlySchema(session: { _toolRegistry?: Map<string, any> }, readOnly: boolean): void {
 	const tool = session._toolRegistry?.get("terminal");
 	if (!tool) return;
@@ -450,7 +377,6 @@ export function syncTerminalReadOnlySchema(session: { _toolRegistry?: Map<string
 	tool.parameters = readOnly ? restrictTerminalToolToReadOnly({ parameters }).parameters : parameters;
 }
 
-/** Structured queries are preferred to shell; unknown tools/actions fail closed. */
 export function readOnlyToolCallAllowed(name: string, params: unknown): boolean {
 	const p = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
 	if (name === "terminal") return ["list", "read", "wait"].includes(String(p.action ?? ""));
@@ -498,32 +424,18 @@ export function readOnlyToolCallAllowed(name: string, params: unknown): boolean 
 	return false;
 }
 
-/** 计划模式对一次工具调用的裁决：undefined = 放行。 */
 export interface PlanModeDenial {
 	reason: string;
 	reasonEn: string;
-	/** 归类，写进 details 供前端与回归判读。 */
 	kind: "write-tool" | "bash" | "bypass-tool";
 }
 
-/**
- * 计划模式闸门（纯函数）：命中即拒绝，并把可操作的替代路径告诉模型。
- * - 写类工具 → 拒（提示：把要做的事写进计划，用户确认后另起一轮实施）
- * - bash 非常规命令 → 拒（提示：用 read/grep/只读 git，或给出计划）
- * - 终端写向工具（terminal_input/terminal_key）→ 拒（会绕过只读命令白名单）
- * - 旁路工具（spawn/delegate/目标模式/排程）→ 拒（会绕过本会话只读约束）
- */
 export function planModeDenial(toolName: string, params: unknown): PlanModeDenial | undefined {
 	const name = (toolName ?? "").trim();
 	if (isConversationTool(name)) {
 		const action =
 			typeof params === "object" && params !== null ? (params as Record<string, unknown>).action : undefined;
 		const act = typeof action === "string" ? action.trim().toLowerCase() : "";
-		// 与 goal-review-gate 同口径：只读 action（get_result/list/templates，看状态
-		// 与名录）放行；其余（spawn/steer/stop/wait_all/handoff，见 subagents.ts 的
-		// SUBAGENT_ACTIONS）或未传 action 一律拒 —— steer/handoff 会向运行中的子代理
-		// 会话投指令驱动它继续写代码，子代理会话 planMode=false 工具齐全，等于绕过
-		// 本会话的只读约束（#436 此前只拒了 spawn）。
 		if (!isReadOnlyConversationAction(act)) {
 			return {
 				kind: "bypass-tool",
@@ -572,13 +484,6 @@ export function planModeDenial(toolName: string, params: unknown): PlanModeDenia
 	return undefined;
 }
 
-/**
- * 计划模式系统提示词段（英文：进入模型上下文，按工具提示词卫生口径只写英文）。
- *
- * 头两条是这份提示词真正的载荷：**禁代码倾倒**（模型在本模式下写不出文件，
- * 于是会把整份实现当正文吐出来 —— 那既烧 token 又没落地，是计划模式最大的
- * 失败模式）与 **小需求走短计划**（一句话需求不必先跑一轮 plan_update 看板）。
- */
 export const PLAN_MODE_SYSTEM_PROMPT = [
 	"# Plan mode (planning only — do NOT implement)",
 	"The user turned on plan mode for this conversation. Your job in this mode is to produce a concrete, executable plan — never to make the changes.",
@@ -598,11 +503,6 @@ export const PLAN_MODE_SYSTEM_PROMPT = [
 	"- If the request is too ambiguous to plan, ask 1-3 targeted questions instead of guessing.",
 ].join("\n");
 
-/**
- * 按设置面板偏好拼出生效的计划模式提示词（契约同 buildCommitMsgPrompt）：
- * append 把自定义文字接在内置默认之后（空自定义 = 纯默认）；replace 用自定义
- * 文字整体替换，但空自定义仍回落内置默认（绝不发空提示词）。
- */
 export function buildPlanModePrompt(mode: "append" | "replace", custom: string): string {
 	const text = custom?.trim() ?? "";
 	if (mode === "replace" && text) return text;
@@ -610,7 +510,6 @@ export function buildPlanModePrompt(mode: "append" | "replace", custom: string):
 	return PLAN_MODE_SYSTEM_PROMPT;
 }
 
-/** 拒给用户的界面文案（notice，zh + en 成对）。 */
 export function planModeNoticeText(enabled: boolean): { text: string; textEn: string } {
 	return enabled
 		? {

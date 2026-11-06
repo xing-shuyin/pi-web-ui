@@ -1,6 +1,3 @@
-/**
- * 桌面版打包清单（issue #583）与启动纯逻辑（issue #584）单测。
- */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +22,7 @@ describe("desktop/electron-builder.yml 打包清单守卫 (issue #583)", () => {
 			"plugins/catalog.json",
 			"plugin-sdk",
 			"dist/desktop",
+			"dist/browser",
 			"dist/server",
 			"web/dist",
 			"themes",
@@ -63,7 +61,6 @@ describe("desktop/startup.ts 启动纯逻辑 (issue #584)", () => {
 		expect(buildDesktopLoadUrl("http://127.0.0.1:54321", { PI_WEB_TOKEN: "sec ret&1" })).toBe(
 			"http://127.0.0.1:54321/?token=sec+ret%261",
 		);
-		// 已带 token 时不重复覆盖
 		expect(buildDesktopLoadUrl("http://127.0.0.1:54321/?token=existing", { PI_WEB_TOKEN: "other" })).toBe(
 			"http://127.0.0.1:54321/?token=existing",
 		);
@@ -81,7 +78,6 @@ describe("desktop/startup.ts 启动纯逻辑 (issue #584)", () => {
 		});
 		expect(attempts).toBe(3);
 
-		// 子进程提前退出：不傻等超时，立刻抛错
 		await expect(
 			waitForHealth("http://127.0.0.1:59999", {
 				timeoutMs: 10_000,
@@ -91,7 +87,6 @@ describe("desktop/startup.ts 启动纯逻辑 (issue #584)", () => {
 			}),
 		).rejects.toThrow("server 提前退出");
 
-		// 超时抛错
 		await expect(
 			waitForHealth("http://127.0.0.1:59999", {
 				timeoutMs: 40,

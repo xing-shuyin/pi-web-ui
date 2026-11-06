@@ -1,15 +1,3 @@
-/**
- * Freeze/reconnect regression test.
- *
- * Scenario (mirrors the reported bug):
- *   1. server up → page connects
- *   2. server killed → page must stay responsive, reconnect attempts must be
- *      bounded (exponential backoff), and at most ONE socket in flight at a time
- *   3. server restarted → page must auto-recover and complete a prompt round-trip
- *
- * Any page freeze (blocked main thread) or connection flood fails the test.
- * Runs on a dedicated port (8899) to avoid stray processes.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
@@ -20,7 +8,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const HEADLESS = CHROME_PATH;
@@ -43,15 +30,12 @@ async function startServer() {
 		env: { ...process.env, PI_WEB_PORT: String(PORT), PI_WEB_DATA_DIR: dataDir, PI_CODING_AGENT_DIR: agentDir },
 		stdio: "ignore",
 	});
-	// Wait until the port actually listens (or the process died).
 	for (let i = 0; i < 40; i++) {
 		await sleep(250);
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return true;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 	}
 	return false;
 }
@@ -59,29 +43,23 @@ async function stopServer() {
 	if (server) {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* noop */
-		}
+		} catch {}
 		server = null;
 	}
-	// Wait until the port is actually free.
 	for (let i = 0; i < 40; i++) {
 		await sleep(250);
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 		} catch {
-			return; // free
+			return;
 		}
 	}
 	console.error("⚠ port did not free — killing stragglers");
 	try {
 		await freePort(PORT);
-	} catch {
-		/* noop */
-	}
+	} catch {}
 }
 
-// Build first so web/dist is fresh.（套件内由 run-smoke.mjs 统一构建，这里直接跳过。）
 try {
 	ensureBuild(PROJ, "freeze-test");
 } catch (err) {
@@ -102,11 +80,8 @@ page.on("console", (m) => {
 	if (m.type() === "error") pageErrors.push(`console: ${m.text()}`);
 });
 
-// Connection-refused errors during the deliberate downtime are expected;
-// anything else (e.g. "Insufficient resources", JS exceptions) is a failure.
 const isExpectedError = (text) => text.includes("ERR_CONNECTION_REFUSED") || text.includes("Connection reset");
 
-// Instrument WebSocket before app code runs: count instances / active sockets.
 await page.addInitScript(() => {
 	window.__wsCount = { created: 0, active: 0, maxActive: 0, closed: 0 };
 	const Orig = window.WebSocket;
@@ -132,7 +107,6 @@ const connected = await page
 	.catch(() => false);
 check("initial connect", connected);
 
-// ---- kill the server: page must stay responsive with bounded reconnects ----
 await stopServer();
 await sleep(1200);
 const responsive1 = await page
@@ -145,14 +119,12 @@ const responsive1 = await page
 	.catch(() => null);
 check("page responsive with server down", !!responsive1 && responsive1.ms < 3000, JSON.stringify(responsive1));
 
-// Give the client a few backoff attempts (~1s+2s+4s) to prove boundedness.
 await sleep(9000);
 const c1 = await page.evaluate(() => window.__wsCount);
 check("at most one socket in flight at a time", c1.maxActive <= 1, JSON.stringify(c1));
 check("bounded reconnect attempts while down", c1.created <= 6, `created=${c1.created}`);
 check("page still responsive after 9s of downtime", (await page.evaluate(() => 40 + 2)) === 42);
 
-// ---- restart the server: must auto-recover ----
 if (!(await startServer())) {
 	check("server restarted", false, "start failed");
 } else {
@@ -164,7 +136,6 @@ const recovered = await page
 	.catch(() => false);
 check("auto-reconnect after server restart", recovered);
 
-// ---- prompt round-trip after recovery (text-stability completion detector) ----
 const reply = await page.evaluate(async () => {
 	const ta = document.querySelector("textarea");
 	const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;

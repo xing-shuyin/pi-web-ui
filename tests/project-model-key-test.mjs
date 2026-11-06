@@ -1,17 +1,3 @@
-// project-model-key — remember {model, key} PER PROJECT on project switch (zero token).
-//
-// A provider holds several models AND several API keys. Selecting a model in a
-// project must remember BOTH the model and its provider's active key IMMEDIATELY
-// (not only after a turn — a fresh conversation's model_change is only flushed to
-// disk once an assistant message exists, so without client-state the choice would
-// be lost on switch). Switching back to the project must restore the pair.
-//
-// Verifies:
-//   1. set_model in A stores projectModels[A]=model and projectProviderKeys[A][main]=key
-//   2. switching A→B→A restores the model (state.model.id is the A model, not B's)
-//   3. the provider's ACTIVE key is restored to A's key (auth.json), overriding B's key
-//
-// Usage: npm run build && node tests/project-model-key-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,9 +33,6 @@ const MODELS = [
 	{ id: "beta-mock", name: "Beta Mock", input: ["text"], contextWindow: 32000, maxTokens: 4096 },
 ];
 
-// Mock OpenAI-completions server. /models returns BOTH models so a provider
-// refresh (triggered by activate_provider_key → applyActiveKey → refresh) never
-// drops "beta-mock" out of the catalog; /chat/completions is not exercised here.
 const mock = createServer(async (req, res) => {
 	const url = new URL(req.url ?? "/", `http://127.0.0.1:${MOCK_PORT}`);
 	if (url.pathname.endsWith("/models")) {
@@ -91,8 +74,6 @@ const mock = createServer(async (req, res) => {
 });
 await new Promise((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
 
-// Multi-key provider "main": k1 active, k2 secondary (a custom provider is fine —
-// provider-keys.json tracks any registered provider id, incl. models.json ones).
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "k1-val" } }));
 writeFileSync(
 	join(agentDir, "provider-keys.json"),
@@ -140,9 +121,7 @@ const waitForPort = async (port, timeout = 15000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -219,12 +198,10 @@ try {
 	await client.waitForType("ready");
 	await client.waitForState((state) => Boolean(state.conversationId));
 
-	// The default model = first available (alpha-mock). Select beta-mock in A.
 	client.send({ type: "set_model", modelId: "main/beta-mock" });
 	await client.waitForState((state) => state.model?.id === "beta-mock");
 	check("project A model set to beta-mock", client.state.model?.id === "beta-mock");
 
-	// (1) client-state recorded BOTH model and active key IMMEDIATELY on set_model.
 	let cs = readClientState();
 	check(
 		"client-state remembers project A model",
@@ -237,7 +214,6 @@ try {
 		JSON.stringify(cs.projectProviderKeys),
 	);
 
-	// Move to B — a fresh conversation (A's blank one is dismissed). Default model = first (alpha-mock).
 	client.send({ type: "set_cwd", path: projB });
 	await client.waitForState((state) => state.cwd === projB);
 	const bDefaultModel = client.state.model?.id;
@@ -254,7 +230,6 @@ try {
 	check("project B remembers provider key k2", readClientState().projectProviderKeys?.[projB]?.main === "k2");
 	check("global auth.json is k2 while in B", readAuth().main?.key === "k2-val", readAuth().main?.key);
 
-	// Back to A — model (beta) AND key (k1) must both be restored.
 	client.send({ type: "set_cwd", path: projA });
 	await client.waitForState((state) => state.cwd === projA && state.model?.id === "beta-mock");
 	check("project A model restored (beta-mock, not B's/alpha default)", client.state.model?.id === "beta-mock");

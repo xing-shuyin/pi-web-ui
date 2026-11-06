@@ -25,7 +25,6 @@ describe("unread-conversations store", () => {
 		expect(isConversationUnread({ sessionFile: "/path/to/session.jsonl" })).toBe(true);
 		expect(isConversationUnread({ id: "other" })).toBe(false);
 
-		// Case-insensitive check
 		expect(isConversationUnread({ id: "C-123" })).toBe(true);
 		expect(isConversationUnread({ sessionId: "SID-456" })).toBe(true);
 	});

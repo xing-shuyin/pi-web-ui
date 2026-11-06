@@ -1,7 +1,6 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-/** Compose before wrapping so both paths retain the caller's ownership and cancellation. */
 export function mergeConversationTools(tools: ToolDefinition[]): ToolDefinition[] {
 	const reader = tools.find((tool) => tool.name === "conversation_read");
 	if (!reader) return tools;

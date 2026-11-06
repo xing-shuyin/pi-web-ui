@@ -8,15 +8,6 @@ import { LanguageProvider } from "../../web/src/i18n.js";
 import type { ChatState } from "../../web/src/use-chat.js";
 import { setAppSend, setAppGlobals, resetAppGlobals } from "../../web/src/app-globals.js";
 
-/**
- * 插件面板（顶栏插件入口）的结构锁：顶栏不再把每个已装插件都钉成 tab，
- * 只留一个插件入口；面板列出全部已装插件，每行一个「钉到顶栏」开关，
- * 钉住的插件视图 tab 才回到直流里。
- *
- * 与 topbar-panel-toggle.test.ts 同一套 mount 手法（真 jsdom + 真 React），
- * 只断言 DOM 结构与发出去的协议消息。
- */
-
 const chatStub = {
 	status: "open",
 	ready: true,
@@ -42,7 +33,6 @@ const hostEntry = (id: string, hidden = false) => ({
 	arrangedBy: [],
 });
 
-/** 插件合成的视图条目（withPluginViewItems 的产物：默认 hidden）。 */
 const viewEntry = (pluginId: string, label: string, hidden = true) => ({
 	id: `${pluginId}:__view`,
 	source: `plugin:${pluginId}`,
@@ -137,7 +127,6 @@ describe("顶栏的插件入口", () => {
 		const { container } = mount([hostEntry("host:chat"), hostEntry("host:plugins")]);
 		const trigger = pluginTrigger(container);
 		expect(trigger).toBeTruthy();
-		// 矢量图标（FiBox）：旧 Windows 缺 🧩 字形会显示成空框，所以不再用 emoji（见 TopBar host:plugins）。
 		expect(trigger!.querySelector("svg")).toBeTruthy();
 		expect(trigger!.getAttribute("data-tip")?.trim()).toBeTruthy();
 		expect(trigger!.getAttribute("aria-expanded")).toBe("false");
@@ -170,7 +159,6 @@ describe("顶栏的插件入口", () => {
 		);
 		expect(pluginTrigger(container)).toBeNull();
 		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
-		// 折叠后仍是原来的插件 chip（不是扁平菜单行），点它照样开面板。
 		const chip = document.querySelector<HTMLButtonElement>(
 			'.plugin-topbar-menu .plugin-topbar-menu-keep > button[aria-haspopup="menu"]',
 		);
@@ -194,7 +182,6 @@ describe("插件面板的内容", () => {
 		expect(rows().length).toBe(2);
 		expect(rows()[0].textContent).toContain("Mailbox");
 		expect(rows()[1].textContent).toContain("Notes");
-		// 钉住的（mail 在 uiPrimary 且非 hidden）开、未钉的（notes）关
 		expect(pinOf(rows()[0])!.getAttribute("aria-checked")).toBe("true");
 		expect(pinOf(rows()[1])!.getAttribute("aria-checked")).toBe("false");
 		expect(pinOf(rows()[1])!.getAttribute("aria-label")?.trim()).toBeTruthy();
@@ -225,7 +212,6 @@ describe("插件面板的内容", () => {
 		expect(pinOf(bad!)).toBeNull();
 		expect(hud!.querySelector<HTMLButtonElement>(".pm-row-main")!.disabled).toBe(true);
 		expect(bad!.querySelector<HTMLButtonElement>(".pm-row-main")!.disabled).toBe(true);
-		// 报错原因要看得见（标签或提示）
 		const errTag = bad!.querySelector(".pm-err-tag");
 		expect(errTag?.getAttribute("title") || bad!.textContent).toContain("manifest 解析失败");
 	});
@@ -327,7 +313,6 @@ describe("钉住开关写回 uiLayout", () => {
 		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
 		const menu = document.querySelector(".plugin-topbar-menu")!;
 		expect(menu.textContent).not.toContain("Mailbox");
-		// 同一份溢出数据里的其他条目照样在（只是插件视图条目被滤掉了）
 		expect(menu.textContent).toContain("host:zzz");
 	});
 });

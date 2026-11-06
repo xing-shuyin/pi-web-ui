@@ -11,10 +11,6 @@ import {
 
 export { CURSOR_MARKER };
 
-/**
- * Extract CURSOR_MARKER from rendered lines, calculate row and visual column,
- * and strip the marker from lines. Returns cursor position if found.
- */
 export function extractCursorPosition(lines: string[]): { row: number; col: number } | null {
 	for (let row = 0; row < lines.length; row++) {
 		const line = lines[row];
@@ -29,18 +25,10 @@ export function extractCursorPosition(lines: string[]): { row: number; col: numb
 	return null;
 }
 
-/**
- * Format rendered component lines into a flicker-free ANSI screen frame for xterm.js.
- * \x1b[H resets cursor to top-left, \x1b[?25l hides cursor during paint,
- * \x1b[K clears line trail, \x1b[J clears below content,
- * and hardware cursor is restored if CURSOR_MARKER was emitted.
- */
 export function formatAnsiScreen(rawLines: string[], _cols: number, _rows?: number): string {
 	const lines = [...rawLines];
 	const cursor = extractCursorPosition(lines);
 
-	// Move cursor to (1,1), hide cursor during line updates, clear each line tail,
-	// and clear any remaining lines below viewport.
 	let out = "\x1b[H\x1b[?25l";
 	out += lines.map((l) => l + "\x1b[K").join("\r\n");
 	out += "\x1b[J";
@@ -53,9 +41,6 @@ export function formatAnsiScreen(rawLines: string[], _cols: number, _rows?: numb
 	return out;
 }
 
-/**
- * Minimal in-memory Terminal interface for driving TUI components without an OS PTY.
- */
 export class VirtualTerminal implements Terminal {
 	columns = 80;
 	rows = 24;
@@ -123,9 +108,6 @@ export interface VirtualTuiBridgeOptions {
 	onClose: () => void;
 }
 
-/**
- * Bridges a single `ctx.ui.custom()` component to the web client via WebSocket.
- */
 export class VirtualTuiBridge<T = unknown> {
 	readonly id: number;
 	readonly title?: string;
@@ -171,7 +153,6 @@ export class VirtualTuiBridge<T = unknown> {
 		return this.closed;
 	}
 
-	/** Create the TUI facade expected by ExtensionUIContext.custom() factories. */
 	createTuiFacade() {
 		return {
 			terminal: this.terminal,
@@ -189,7 +170,6 @@ export class VirtualTuiBridge<T = unknown> {
 		};
 	}
 
-	/** Create OverlayHandle passed to options.onHandle */
 	createOverlayHandle(): OverlayHandle {
 		return {
 			hide: () => this.cancel(),
@@ -220,7 +200,6 @@ export class VirtualTuiBridge<T = unknown> {
 			const ansi = formatAnsiScreen(lines, this.terminal.columns, this.terminal.rows);
 			this.onRenderCb(ansi);
 		} catch (err) {
-			// Best-effort render error protection
 			console.error("[virtual-tui] Component render error:", err);
 		}
 	}
@@ -268,9 +247,7 @@ export class VirtualTuiBridge<T = unknown> {
 		this.closed = true;
 		try {
 			this.component?.dispose?.();
-		} catch {
-			// ignore dispose errors
-		}
+		} catch {}
 		this.onCloseCb();
 		this.resolvePromise(result);
 	}
@@ -285,9 +262,7 @@ export class VirtualTuiBridge<T = unknown> {
 		this.closed = true;
 		try {
 			this.component?.dispose?.();
-		} catch {
-			// ignore dispose errors
-		}
+		} catch {}
 		this.onCloseCb();
 		this.rejectPromise(err);
 	}

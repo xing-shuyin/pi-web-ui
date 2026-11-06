@@ -12,7 +12,6 @@ describe("market-service", () => {
 	it("fetchRemoteMcpMarket 命中缓存与容错", async () => {
 		const dir = makeTempDir("market-test-");
 		try {
-			// 伪造缓存文件
 			const cacheDir = join(dir, "market-cache");
 			const cacheFile = join(cacheDir, "mcp-market-smithery-all.json");
 			const mockServers = [
@@ -133,13 +132,11 @@ describe("market 缓存 key 路径穿越防护（0.103 审计）", () => {
 			const mockServers = [
 				{ id: "hit", name: "Hit", description: "d", transport: "stdio" as const, source: "smithery" },
 			];
-			// 与实现同一消毒口径：`q/../../x` 里 / 和 . 都替换成 _
 			const query = "q/../../x";
 			writeFileSync(
 				join(cacheDir, `mcp-market-smithery-${query.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`),
 				JSON.stringify({ timestamp: Date.now(), data: mockServers }),
 			);
-			// fetch 一旦被调用即失败——命中缓存就意味着零网络
 			let fetchCalled = false;
 			vi.stubGlobal("fetch", ((..._args: unknown[]) => {
 				fetchCalled = true;

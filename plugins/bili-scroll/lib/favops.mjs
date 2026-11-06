@@ -1,8 +1,3 @@
-/**
- * plugins/bili-scroll/lib/favops.mjs
- * 纯 JS 实现的 Bilibili 收藏夹查询与视频收藏服务
- * 无需 Python 解释器即可毫秒级完成收藏夹操作
- */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -36,7 +31,6 @@ export class BiliFavOps {
 		};
 	}
 
-	/** 获取当前用户创建的所有视频收藏夹 */
 	async getFolders() {
 		const cred = this.loadCred();
 		if (!cred) return { ok: false, error: "未登录，缺少登录凭证" };
@@ -64,7 +58,6 @@ export class BiliFavOps {
 		}
 	}
 
-	/** 根据 bvid 获取 aid */
 	async getAid(bvid) {
 		const url = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`;
 		const res = await fetch(url, {
@@ -75,7 +68,6 @@ export class BiliFavOps {
 		return 0;
 	}
 
-	/** 收藏视频到指定收藏夹 fid */
 	async addVideo(bvid, fid) {
 		const cred = this.loadCred();
 		if (!cred) return { ok: false, error: "未登录，缺少登录凭证" };
@@ -87,7 +79,7 @@ export class BiliFavOps {
 		try {
 			const body = new URLSearchParams();
 			body.append("rid", String(aid));
-			body.append("type", "2"); // 2 = 视频
+			body.append("type", "2");
 			body.append("add_media_ids", String(fid));
 			body.append("csrf", cred.bili_jct);
 

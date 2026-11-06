@@ -1,24 +1,3 @@
-/**
- * PCM -> WAV 封装。标准 44 字节头，小端。
- *
- * 服务端 format=pcm 给的是 24kHz 单声道 s16le 的裸流，没有容器，所以得自己套一层。
- * 布局（偏移都从 0 算）：
- *   0  "RIFF"
- *   4  uint32le  = 36 + dataLength        （RIFF 块长度，不含前 8 字节）
- *   8  "WAVE"
- *   12 "fmt "
- *   16 uint32le  = 16                     （PCM 的 fmt 块固定 16）
- *   20 uint16le  = 1                      （audioFormat: 1 = PCM）
- *   22 uint16le  = channels
- *   24 uint32le  = sampleRate
- *   28 uint32le  = byteRate    = sampleRate * channels * bits / 8
- *   32 uint16le  = blockAlign  = channels * bits / 8
- *   34 uint16le  = bitsPerSample
- *   36 "data"
- *   40 uint32le  = dataLength
- *   44 数据
- */
-
 import { PCM } from "./constants.mjs";
 import { usageError } from "./errors.mjs";
 
@@ -60,7 +39,7 @@ export function wavHeader({
 	buf.write("WAVE", 8, "ascii");
 	buf.write("fmt ", 12, "ascii");
 	buf.writeUInt32LE(16, 16);
-	buf.writeUInt16LE(1, 20); // PCM
+	buf.writeUInt16LE(1, 20);
 	buf.writeUInt16LE(channels, 22);
 	buf.writeUInt32LE(sampleRate, 24);
 	buf.writeUInt32LE(byteRate, 28);
@@ -71,12 +50,6 @@ export function wavHeader({
 	return buf;
 }
 
-/**
- * 给裸 PCM 套上 WAV 头。
- *
- * 长度必须是 blockAlign 的整数倍。差一个字节就说明流被截断了，与其悄悄补/删一个字节
- * 让人拿到个听不出问题的文件，不如直接报错。
- */
 export function pcmToWav(pcm, options = {}) {
 	const { sampleRate = PCM.sampleRate, channels = PCM.channels, bitsPerSample = PCM.bitsPerSample } = options;
 
@@ -96,7 +69,6 @@ export function pcmToWav(pcm, options = {}) {
 	return Buffer.concat([wavHeader({ dataLength: data.length, sampleRate, channels, bitsPerSample }), data]);
 }
 
-/** 读回 WAV 头，测试和 `dstts wav --info` 用。 */
 function parseWavHeader(buf) {
 	const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
 	if (b.length < WAV_HEADER_BYTES) {

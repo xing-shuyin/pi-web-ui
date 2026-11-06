@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import { checkBashCommandDanger } from "../../server/approval-rules.js";
 import { findDangerousBashSegments } from "../../web/src/bash-danger.js";
 
-/** #578：高危命令高亮覆盖。
- *  - 同一规则在一段命令里的每一处出现都要列出（不只首个）；
- *  - git 破坏性操作的前缀 / 形态（-C、checkout .、+refspec、stash clear …）纳入同一规则表；
- *  - 前端降级高亮与服务端命中清单是同一份规则表：两边标出的区间必须一致（单一事实源）。 */
-
 const labelsOf = (cmd: string) => checkBashCommandDanger(cmd).map((h) => h.label);
 const textsOf = (cmd: string) => checkBashCommandDanger(cmd).map((h) => h.text);
 
@@ -71,7 +66,6 @@ describe("前端降级高亮与服务端命中清单一致（#578 根因②：�
 				.map((h) => [h.index, h.index + h.length])
 				.sort((a, b) => a[0] - b[0]);
 			const client = findDangerousBashSegments(cmd).map((s) => [s.start, s.end]);
-			// 客户端会合并相邻/重叠区间；服务端逐条给出 —— 合并服务端区间后比较
 			const merged: number[][] = [];
 			for (const [s, e] of server) {
 				const last = merged[merged.length - 1];

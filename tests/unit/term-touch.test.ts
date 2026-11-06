@@ -19,10 +19,8 @@ describe("shouldStartTouchScroll", () => {
 	});
 
 	it("横向拖动不劫持：让给选择/其他手势", () => {
-		// dy 与 dx 相当 → 不算竖直手势。
 		expect(shouldStartTouchScroll(50, 55)).toBe(false);
 		expect(shouldStartTouchScroll(60, 30)).toBe(false);
-		// 明显竖直主导 → 劫持。
 		expect(shouldStartTouchScroll(10, 50)).toBe(true);
 	});
 

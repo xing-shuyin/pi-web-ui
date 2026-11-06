@@ -73,14 +73,12 @@ describe("Device Execution Settings", () => {
 			});
 		}
 
-		// Empty object defaults all fields
 		const emptyRes = validateExecutionSettings({});
 		expect(emptyRes.valid).toBe(true);
 		if (emptyRes.valid) {
 			expect(emptyRes.value).toEqual(DEFAULT_EXECUTION_SETTINGS);
 		}
 
-		// Partial configuration with newly added fields
 		const partial = { allowBotMentions: true, fileSyncMaxBytes: 10485760 };
 		const partialRes = validateExecutionSettings(partial);
 		expect(partialRes.valid).toBe(true);
@@ -179,96 +177,79 @@ describe("Device Execution Settings", () => {
 
 	describe("Out-of-range bounds and type validations", () => {
 		it("rejects invalid concurrency and scheduling settings", () => {
-			// maxActiveTasks: 1 ~ 64
 			expect(validateExecutionSettings({ maxActiveTasks: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxActiveTasks: 65 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxActiveTasks: 4.5 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxActiveTasks: "4" }).valid).toBe(false);
 
-			// maxWaitingTasks: 0 ~ 1024
 			expect(validateExecutionSettings({ maxWaitingTasks: -1 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxWaitingTasks: 1025 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxWaitingTasks: 3.2 }).valid).toBe(false);
 
-			// starvationThresholdMs: 1000 ~ 60000
 			expect(validateExecutionSettings({ starvationThresholdMs: 999 }).valid).toBe(false);
 			expect(validateExecutionSettings({ starvationThresholdMs: 60001 }).valid).toBe(false);
 			expect(validateExecutionSettings({ starvationThresholdMs: 8000.5 }).valid).toBe(false);
 
-			// maxSkipsBeforeStarvation: 1 ~ 20
 			expect(validateExecutionSettings({ maxSkipsBeforeStarvation: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxSkipsBeforeStarvation: 21 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxSkipsBeforeStarvation: 3.14 }).valid).toBe(false);
 		});
 
 		it("rejects invalid dispatch and collaboration settings", () => {
-			// maxDispatchDepth: 1 ~ 64
 			expect(validateExecutionSettings({ maxDispatchDepth: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxDispatchDepth: 65 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxDispatchDepth: 8.5 }).valid).toBe(false);
 
-			// maxDispatchBudget: 1 ~ 256
 			expect(validateExecutionSettings({ maxDispatchBudget: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxDispatchBudget: 257 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxDispatchBudget: 16.5 }).valid).toBe(false);
 
-			// allowBotMentions: boolean
 			expect(validateExecutionSettings({ allowBotMentions: "true" }).valid).toBe(false);
 			expect(validateExecutionSettings({ allowBotMentions: 1 }).valid).toBe(false);
 			expect(validateExecutionSettings({ allowBotMentions: null }).valid).toBe(false);
 
-			// botMentionBudgetPerTurn: 1 ~ 10
 			expect(validateExecutionSettings({ botMentionBudgetPerTurn: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ botMentionBudgetPerTurn: 11 }).valid).toBe(false);
 			expect(validateExecutionSettings({ botMentionBudgetPerTurn: 2.5 }).valid).toBe(false);
 		});
 
 		it("rejects invalid context and history settings", () => {
-			// groupContextBytes: 4096 ~ 2097152
 			expect(validateExecutionSettings({ groupContextBytes: 4095 }).valid).toBe(false);
 			expect(validateExecutionSettings({ groupContextBytes: 2097153 }).valid).toBe(false);
 			expect(validateExecutionSettings({ groupContextBytes: 24576.2 }).valid).toBe(false);
 
-			// groupRetentionLimit: 50 ~ 20000
 			expect(validateExecutionSettings({ groupRetentionLimit: 49 }).valid).toBe(false);
 			expect(validateExecutionSettings({ groupRetentionLimit: 20001 }).valid).toBe(false);
 			expect(validateExecutionSettings({ groupRetentionLimit: 500.5 }).valid).toBe(false);
 		});
 
 		it("rejects invalid file sync quota settings", () => {
-			// fileSyncMaxBytes: 1048576 ~ 10737418240
 			expect(validateExecutionSettings({ fileSyncMaxBytes: 1048575 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncMaxBytes: 10737418241 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncMaxBytes: 8388608.5 }).valid).toBe(false);
 
-			// fileSyncMaxFiles: 10 ~ 10000
 			expect(validateExecutionSettings({ fileSyncMaxFiles: 9 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncMaxFiles: 10001 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncMaxFiles: 128.5 }).valid).toBe(false);
 
-			// fileSyncStagedBytes: 4194304 ~ 53687091200
 			expect(validateExecutionSettings({ fileSyncStagedBytes: 4194303 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncStagedBytes: 53687091201 }).valid).toBe(false);
 			expect(validateExecutionSettings({ fileSyncStagedBytes: 33554432.1 }).valid).toBe(false);
 		});
 
 		it("rejects invalid resource lock and blackboard settings", () => {
-			// resourceLockDefaultTtlMs: 60000 ~ 86400000
 			expect(validateExecutionSettings({ resourceLockDefaultTtlMs: 59999 }).valid).toBe(false);
 			expect(validateExecutionSettings({ resourceLockDefaultTtlMs: 86400001 }).valid).toBe(false);
 			expect(validateExecutionSettings({ resourceLockDefaultTtlMs: 600000.5 }).valid).toBe(false);
 
-			// blackboardMaxBytes: 4096 ~ 4194304
 			expect(validateExecutionSettings({ blackboardMaxBytes: 4095 }).valid).toBe(false);
 			expect(validateExecutionSettings({ blackboardMaxBytes: 4194305 }).valid).toBe(false);
 			expect(validateExecutionSettings({ blackboardMaxBytes: 32768.8 }).valid).toBe(false);
 
-			// taskReportExcerptBytes: 4096 ~ 524288
 			expect(validateExecutionSettings({ taskReportExcerptBytes: 4095 }).valid).toBe(false);
 			expect(validateExecutionSettings({ taskReportExcerptBytes: 524289 }).valid).toBe(false);
 			expect(validateExecutionSettings({ taskReportExcerptBytes: 8192.5 }).valid).toBe(false);
 
-			// maxResourceLocksPerTask: 1 ~ 256
 			expect(validateExecutionSettings({ maxResourceLocksPerTask: 0 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxResourceLocksPerTask: 257 }).valid).toBe(false);
 			expect(validateExecutionSettings({ maxResourceLocksPerTask: 12.3 }).valid).toBe(false);

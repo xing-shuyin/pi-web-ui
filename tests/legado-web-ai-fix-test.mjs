@@ -1,19 +1,3 @@
-/**
- * 「AI 修复源」按钮 E2E（零 token）。
- *
- * 不起 React 主界面，而是搭一个最小宿主页（harness）顶替它：
- *   harness 页 → 动态 import 插件的 client/entry.mjs → mount(容器, 假 ctx)
- *   → 容器里出现内嵌阅读页 iframe（真产物 client/app/index.html）
- *   → 在 iframe 里点「🤖 AI 修复源」
- *   → entry.mjs 组正文 → 调 window.__piWebUiHost.startChat（harness 记录的假宿主）
- * 这样能把「按钮 → postMessage → entry 转发 → 宿主 API」整条链路跑通，且不会真的
- * 触发一次模型调用（没有主应用，就没有 agent 运行）。
- *
- * 没有 Chrome 时自动 SKIP（与 fence-render-test 同策略）；纯函数的正文组装断言
- * 在这之前先跑（见 tests/legado-web-engine-test.mjs 里也有一份，保持同步）。
- *
- * 运行：npm run build:server && node tests/legado-web-ai-fix-test.mjs
- */
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +19,6 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// ---- 0. 纯函数：正文组装（无 Chrome 也会跑） --------------------------------
 {
 	const msg = {
 		type: "legado:ai-fix",
@@ -75,7 +58,6 @@ function fail(msg) {
 	if (!process.exitCode) console.log("✓ 纯函数：请求判定 / 脏上下文归一化 / 给 AI 的正文组装");
 }
 
-// ---- 1. 起服务 + 装插件 + 种一个书源 ---------------------------------------
 const pluginDir = join(dataDir, "plugins", "legado-web");
 cpSync(join(import.meta.dirname, "..", "plugins", "legado-web"), pluginDir, {
 	recursive: true,
@@ -118,7 +100,6 @@ try {
 	}
 	if (!up) throw new Error("服务未就绪");
 
-	// 插件在 attach 时才装载/激活（路由与 AI 工具随之注册）——照主界面的行为来
 	sock = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 	await new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error("ws 超时")), 15_000);
@@ -142,7 +123,6 @@ try {
 		const browser = await chromium.launch({ executablePath: CHROME_PATH });
 		const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 		page.on("pageerror", (e) => console.error("[pageerror]", String(e).slice(0, 300)));
-		// 先落到同源页面，再写入 harness（URL 不变 → 与 iframe 同源）
 		await page.goto(`${BASE}/`, { waitUntil: "load" });
 		await page.setContent(`<!doctype html><meta charset="utf-8"><div id="view"></div>
 <script type="module">
@@ -164,9 +144,7 @@ try {
 <\/script>`);
 		await page.waitForFunction(() => window.__mounted === true, null, { timeout: 15_000 });
 
-		// 内嵌阅读页 → 书源页 → 点「AI 修复源」
 		const app = page.frameLocator("#view iframe");
-		// 等首屏渲染完（否则 nav 的监听还没挂上，点了不生效）
 		await app.locator("#tab-shelf .card").first().waitFor({ timeout: 20_000 });
 		await app.locator('nav button[data-tab="sources"]').click({ timeout: 20_000 });
 		const btn = app.locator("#tab-sources .book button.aifix").first();
@@ -188,7 +166,6 @@ try {
 		if (!process.exitCode)
 			console.log("✓ 书源页点按钮 → entry 转发 → 宿主 startChat（切 chat、新对话、cwd=书源所在目录、正文含现场）");
 
-		// 书源页的「AI 新建书源」：只给一个网站链接
 		await app.locator("#src-ai-url").fill("example.com");
 		await app.locator("#src-ai-new").click();
 		await page.waitForFunction(() => window.__calls.length > 1, null, { timeout: 15_000 });
@@ -202,7 +179,6 @@ try {
 		if (!process.exitCode)
 			console.log("✓ 书源页「AI 新建书源」：只给域名也能自动补 scheme 并交给 AI（正文含网址/工具/硬约束）");
 
-		// 发现页也要有（书源选择行 / 分类解析失败处）
 		await app.locator('nav button[data-tab="explore"]').click();
 		const exBtn = app.locator("#tab-explore button.aifix").first();
 		await exBtn.waitFor({ state: "visible", timeout: 20_000 });
@@ -220,15 +196,11 @@ try {
 } finally {
 	try {
 		sock?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (proc?.pid) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	await new Promise((r) => setTimeout(r, 600));
 	freePort(PORT);

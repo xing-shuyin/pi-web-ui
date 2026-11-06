@@ -61,7 +61,6 @@ export async function loadFileHandler(
 	let candidate: PluginFileHandler | undefined;
 	if (Array.isArray(handlers)) {
 		candidate = handlers.find((x) => x && x.id === entry.declaration.id);
-		// 只有一个 handler 且没写 id 时直接用它，避免 manifest id 与 bundle 对不上就打不开。
 		if (!candidate && handlers.length === 1 && typeof handlers[0]?.mount === "function") {
 			candidate = handlers[0];
 		}

@@ -199,11 +199,9 @@ describe("审批规则引擎纯函数与匹配逻辑 (Approval Rules Engine)", (
 				...DEFAULT_APPROVAL_RULES,
 			];
 
-			// 命中了前面的 allow 规则，不再触发默认的 rm -rf 拦截
 			const resAllowed = evaluateApprovalRules(rules, "bash", { command: "rm -rf /tmp/my-build" }, cwd);
 			expect(resAllowed.action).toBe("allow");
 
-			// 其他危险 rm -rf 依然被后续内置规则拦截为 ask
 			const resAsk = evaluateApprovalRules(rules, "bash", { command: "rm -rf /" }, cwd);
 			expect(resAsk.action).toBe("ask");
 			expect(resAsk.category?.id).toBe("bash.rm-rf");
@@ -284,9 +282,7 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 	afterEach(() => {
 		try {
 			rmSync(tmpDir, { recursive: true, force: true });
-		} catch {
-			// ignore
-		}
+		} catch {}
 	});
 
 	it("初次加载自动播种全部内置默认规则", () => {
@@ -315,7 +311,6 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		let list = store.list();
 		expect(list.find((r) => r.id === "custom.test-rule")).toBeDefined();
 
-		// 编辑
 		store.upsert({
 			id: "custom.test-rule",
 			enabled: false,
@@ -331,7 +326,6 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(updated?.enabled).toBe(false);
 		expect(updated?.value).toBe("danger-cmd-2");
 
-		// 删除
 		const removed = store.remove("custom.test-rule");
 		expect(removed).toBe(true);
 		list = store.list();
@@ -343,7 +337,6 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		const rmSuccess = store.remove("builtin.bash.rm-rf");
 		expect(rmSuccess).toBe(false);
 
-		// 修改内置规则
 		store.upsert({
 			...DEFAULT_APPROVAL_RULES[0],
 			action: "allow",
@@ -352,7 +345,6 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		let item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
 		expect(item?.action).toBe("allow");
 
-		// 恢复默认
 		const resetOk = store.resetBuiltin("builtin.bash.rm-rf");
 		expect(resetOk).toBe(true);
 		item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
@@ -387,11 +379,9 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 		expect(err).toBeNull();
 
 		const list = store.list();
-		// 全部内置规则仍在
 		for (const def of DEFAULT_APPROVAL_RULES) {
 			expect(list.find((r) => r.id === def.id)).toBeDefined();
 		}
-		// 自定义规则保持在队首（用户排序不被动），补种的内置规则追加在队尾
 		expect(list[0].id).toBe("custom.only-one");
 		expect(list.length).toBe(1 + DEFAULT_APPROVAL_RULES.length);
 		const last = list[list.length - 1];
@@ -411,13 +401,12 @@ describe("ApprovalRulesStore 持久化库与播种机制", () => {
 				value: "rm -rf",
 				action: "deny",
 				label: "魔改内置",
-				builtin: false, // 伪造标记以绕过 remove() 的内置保护
+				builtin: false,
 			},
 		]);
 		expect(err).toBeNull();
 		const item = store.list().find((r) => r.id === "builtin.bash.rm-rf");
 		expect(item?.builtin).toBe(true);
-		// 保护未被绕过
 		expect(store.remove("builtin.bash.rm-rf")).toBe(false);
 	});
 });

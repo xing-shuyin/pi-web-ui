@@ -30,15 +30,6 @@ const NEXT_STATUS: Record<PlanStepStatus, PlanStepStatus> = {
 	failed: "pending",
 };
 
-/**
- * 结构化任务计划看板（Plan Mode / Step State Machine）。
- *
- * 吸收主流规划与看板范式（DSH / narumitw / plannotator）：
- * 1. 实时展示任务步骤状态机（pending / in_progress / done / failed）与总体进度；
- * 2. 支持「开始实施」与「✨ 净室执行（Clean Handoff）」双轨落地；
- * 3. 支持在看板上可视化微调/批注：内联编辑步骤、删除步骤、切换状态、新增步骤；
- * 4. 支持一键导出/复制为 Markdown 离线存档。
- */
 export function PlanBoard({ plan }: PlanBoardProps) {
 	const t = useT();
 	const isZh = isZhLocale(useLocale());
@@ -68,15 +59,11 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 		}
 	};
 
-	/** 「开始实施」：关掉服务端只规划闸门，在当前会话直接发起实施轮。 */
 	const handleImplement = () => {
 		appSend({ type: "set_plan_mode", enabled: false });
 		appSend({ type: "prompt", text: t("planImplementRequest") });
 	};
 
-	/** 「✨ 净室执行（Clean-session Handoff）」：
-	 *  关闭当前计划模式闸门，新起净室会话，并把目标与计划步骤无损交接过去。
-	 *  避免长调研探索期的上下文噪音污染与注意力漂移。 */
 	const handleCleanHandoff = () => {
 		const planSummary = steps
 			.map((s, i) => `${i + 1}. ${s.title}${s.description ? ` (${s.description})` : ""}`)
@@ -88,7 +75,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 		});
 	};
 
-	/** 导出并复制为 Markdown 文本 */
 	const handleExportMarkdown = async () => {
 		const lines = [
 			`# ${t("planBoardTitle")} (${doneCount}/${totalCount})`,
@@ -104,7 +90,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 		await copy(lines.join("\n"));
 	};
 
-	/** 单步内联编辑控制 */
 	const startEdit = (step: PlanStep) => {
 		setEditingId(step.id);
 		setEditTitle(step.title);
@@ -127,12 +112,10 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 		setEditingId(null);
 	};
 
-	/** 删除步骤（增量删除，防整组覆盖清改） */
 	const handleDeleteStep = (stepId: string) => {
 		appSend({ type: "plan_step_delete", stepId });
 	};
 
-	/** 顺时针切换步骤状态 (pending -> in_progress -> done -> failed，增量更新) */
 	const handleCycleStatus = (stepId: string) => {
 		const targetStep = steps.find((s) => s.id === stepId);
 		if (!targetStep) return;
@@ -143,7 +126,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 		});
 	};
 
-	/** 新增步骤（增量添加） */
 	const handleAddStep = () => {
 		const newId = `step-${Date.now()}`;
 		const newStep: PlanStep = {
@@ -232,7 +214,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 
 	return (
 		<div className={`plan-board ${expanded ? "" : "plan-board-collapsed"}`.trim()}>
-			{/* 顶部概要栏 */}
 			<div className="plan-board-head" onClick={() => setExpanded(!expanded)}>
 				<div className="plan-board-head-main">
 					<FiList className="plan-board-icon" />
@@ -240,7 +221,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 					<span className={`plan-board-count ${percent === 100 ? "plan-board-count-done" : ""}`.trim()}>
 						{doneCount}/{totalCount}
 					</span>
-					{/* 紧凑模式下显示当前进行中步骤 */}
 					{!expanded && activeStep && (
 						<span className="plan-board-active" title={activeStep.title}>
 							{activeStep.title}
@@ -249,7 +229,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 				</div>
 
 				<div className="plan-board-actions">
-					{/* 实施按钮：核心出口，折叠态和展开态均可访问 */}
 					<button
 						type="button"
 						className="plan-board-implement"
@@ -262,7 +241,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 						{t("planImplementBtn")}
 					</button>
 
-					{/* 净室执行：展开态与实施按钮紧邻并排 */}
 					{expanded && (
 						<button
 							type="button"
@@ -277,7 +255,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 						</button>
 					)}
 
-					{/* 展开态下的辅助图标操作：Markdown导出、清空看板 */}
 					{expanded && (
 						<>
 							<button
@@ -306,7 +283,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 						</>
 					)}
 
-					{/* 展开/折叠 */}
 					<button
 						type="button"
 						className="plan-board-iconbtn"
@@ -316,7 +292,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 					</button>
 				</div>
 
-				{/* 展开态：紧贴头部底部的分界线进度条（优雅充当分界线，不占单独空行） */}
 				{expanded && (
 					<div className="plan-board-head-divider">
 						<div
@@ -330,7 +305,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 				)}
 			</div>
 
-			{/* 折叠态：底边 2px 细线进度条（零额外高度成本） */}
 			{!expanded && (
 				<div className="plan-board-progress-line">
 					<div
@@ -343,7 +317,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 				</div>
 			)}
 
-			{/* 展开的完整步骤清单 */}
 			{expanded && (
 				<div className="plan-board-steps" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
 					{steps.map((step, idx) => {
@@ -517,7 +490,6 @@ export function PlanBoard({ plan }: PlanBoardProps) {
 						);
 					})}
 
-					{/* 底部新增步骤按钮 */}
 					<button type="button" className="plan-board-add-btn" onClick={handleAddStep}>
 						<FiPlus /> {t("planBoardAddStep")}
 					</button>

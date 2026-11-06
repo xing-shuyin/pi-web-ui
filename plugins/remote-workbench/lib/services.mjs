@@ -62,8 +62,6 @@ export class Tasks {
 		if (error) item.error = String(error.message ?? error).slice(0, 512);
 		if (!task.items.some((i) => ["running", "queued"].includes(i.status)) && task.status === "running")
 			task.status = "completed";
-		// Execution has happened. Preserve that fact even when persistence fails,
-		// and only retry saving this snapshot, never the remote command.
 		this.tasks = copy;
 		try {
 			this.host.storage.set("tasks", copy);

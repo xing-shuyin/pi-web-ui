@@ -1,19 +1,3 @@
-/**
- * Skill-invocation block parsing — mirrors the pi SDK's `parseSkillBlock`
- * (dist/core/agent-session.js). When the user sends `/skill:name args`, the
- * SDK expands the prompt text into:
- *
- *     <skill name="..." location="...">
- *     ...full SKILL.md body...
- *     </skill>
- *
- *     <args>
- *
- * The CLI renders this as a compact collapsible [skill] card plus the user's
- * own args as a separate message; the web UI used to dump the whole block
- * into the user bubble. Keep the regex in sync with the SDK's.
- */
-
 export interface SkillBlock {
 	name: string;
 	location: string;

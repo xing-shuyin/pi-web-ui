@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { filterSlashCommands, fuzzyScore, MatchTier, slashCandidates } from "../../web/src/slash-filter.js";
 
-/**
- * slash 候选匹配单测：
- * 1. 用户敲裸 skill 名（`/review`）能列出 `skill:review`（裸名候选）；
- * 2. 词边界前缀（`/quit` → `pi-web-ui:quit`，段首算词首）；
- * 3. 模糊子序列搜索（`/mdel` → `model`，漏打/跳字匹配）；
- * 4. 分级排序保证 exact > startsWith > wordBoundary > subsequence，同级保序。
- */
 const COMMANDS = [
 	{ name: "reload", source: "builtin" },
 	{ name: "resume", source: "builtin" },
@@ -72,23 +65,17 @@ describe("filterSlashCommands", () => {
 			{ name: "mock-demo-element", source: "plugin" },
 			{ name: "model", source: "builtin" },
 		];
-		// mock-demo-element 包含 m-o-d-e-l 作为子序列
-		// 即使 mock-demo-element 在目录靠前，输入 model 时 Exact 仍严格优先于 Subsequence
 		expect(filterSlashCommands(cmds, "model").map((c) => c.name)).toEqual(["model", "mock-demo-element"]);
-		// 输入 mode 时 StartsWith 仍严格优先于 Subsequence
 		expect(filterSlashCommands(cmds, "mode").map((c) => c.name)).toEqual(["model", "mock-demo-element"]);
 	});
 
 	it("子序列级内部按 score 排序，score 相同保持目录原顺序", () => {
 		const cmds = [
-			// 在目录前面，但匹配跳字多、位置靠后
 			{ name: "extra-thinking-tool", source: "plugin" },
-			// 在目录后面，但连续命中且位置靠前
 			{ name: "thinking", source: "builtin" },
 		];
 		expect(filterSlashCommands(cmds, "thnk").map((c) => c.name)).toEqual(["thinking", "extra-thinking-tool"]);
 
-		// score 相同时保持目录原顺序
 		const tied = [
 			{ name: "test-a", source: "builtin" },
 			{ name: "test-b", source: "builtin" },
@@ -98,7 +85,6 @@ describe("filterSlashCommands", () => {
 
 	it("空前缀返回全部（组件靠「结果为空」决定是否收起菜单）", () => {
 		expect(names("")).toEqual(COMMANDS.map((c) => c.name));
-		// 新数组：组件会把它直接塞进 state，不该复用入参引用
 		expect(filterSlashCommands(COMMANDS, "")).not.toBe(COMMANDS);
 	});
 

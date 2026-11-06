@@ -1,9 +1,3 @@
-/**
- * pi-tunnel 插件面板 —— 隧道状态(三态) / 出口设备管理(多设备) / 服务启停 / 令牌 / 三平台常驻化。
- * 数据源：GET /plugins-api/tunnel/status（3s 轮询）；操作：POST start/stop/rotate/agent/select。
- * 可重入：mount 返回清理函数，plugins_reload 后由宿主重新 mount。
- * HTML 拼接用字符串相加而非嵌套模板串（20261019 嵌套模板曾触发 V8 解析错，规避）。
- */
 import { defineView, esc } from "./sdk/index.mjs";
 
 const CSS = `
@@ -79,16 +73,15 @@ const CSS = `
 .tnl-in { flex: 1; min-width: 120px; background: var(--bg-elev2, #8881); color: var(--text, inherit); border: 1px solid var(--border, #8884); border-radius: 6px; padding: 4px 8px; font-family: var(--mono, monospace); font-size: 11.5px; }
 `;
 
-let lastLanIp = ""; // 由 status 轮询填充；无内网 IP 时命令里用占位符提示替换
+let lastLanIp = "";
 let lastPort = 8765;
-let lastToken = ""; // tunnel 令牌（snapshot 完整下发）：persistCmd 下载 /cli 时作鉴权参数
+let lastToken = "";
 let lastDevices = [];
 
-/** 三平台常驻安装命令（CLI 已在用户主目录：~/pi-tunnel-cli.mjs / %USERPROFILE%\pi-tunnel-cli.mjs）。 */
 function persistCmd(os) {
 	const host = lastLanIp || "<mini内网IP>";
 	const port = lastPort || 8765;
-	const tk = lastToken || "<tunnel令牌>"; // /cli 已鉴权（tnlAuthed），下载必须带 token
+	const tk = lastToken || "<tunnel令牌>";
 	if (os === "Windows") {
 		return [
 			'curl.exe -o $env:USERPROFILE\\pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
@@ -118,7 +111,6 @@ function persistCmd(os) {
 			"echo 常驻已装：开机自启+掉线自愈",
 		].join("\n");
 	}
-	// macOS（默认）
 	return [
 		'curl -o ~/pi-tunnel-cli.mjs "http://' + host + ":" + port + "/cli?token=" + tk + '"',
 		"NODE_BIN=$(command -v node)",
@@ -126,7 +118,7 @@ function persistCmd(os) {
 		"mkdir -p ~/pi-agent/node_modules && tar xzf ~/pi-agent.tgz -C ~/pi-agent/node_modules && rm -f ~/pi-agent.tgz",
 		"mkdir -p ~/Library/LaunchAgents",
 		"launchctl bootout gui/$(id -u)/com.pi-tunnel.cli 2>/dev/null",
-		"launchctl bootout gui/$(id -u)/com.gxg.pi-tunnel 2>/dev/null", // 历史版本 label，重装时一并卸掉防双服务并存
+		"launchctl bootout gui/$(id -u)/com.gxg.pi-tunnel 2>/dev/null",
 		"cat > ~/Library/LaunchAgents/com.pi-tunnel.cli.plist <<PLIST",
 		'<?xml version="1.0" encoding="UTF-8"?>',
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -141,7 +133,7 @@ function persistCmd(os) {
 		"  <key>RunAtLoad</key><true/>",
 		"  <key>KeepAlive</key><true/>",
 		"  <key>StandardOutPath</key><string>$HOME/pi-tunnel-cli.log</string>",
-		"  <key>StandardErrorPath</key><string>$HOME/pi-tunnel-cli.log</string>", // launchd 不展开 %h（78 EX_CONFIG 实锤），heredoc 里 $HOME 会展开成绝对路径
+		"  <key>StandardErrorPath</key><string>$HOME/pi-tunnel-cli.log</string>",
 		"</dict>",
 		"</plist>",
 		"PLIST",
@@ -157,14 +149,12 @@ export default defineView({
 		el.appendChild(style);
 		const H = [
 			'<div class="tnl-wrap">',
-			// 状态仪表卡
 			'<div class="tnl-card">',
 			'<div class="tnl-row"><span class="tnl-dot" id="tnl-dot"></span><span class="tnl-state" id="tnl-state">读取中…</span>',
 			'<button class="tnl-btn danger" id="tnl-toggle" style="margin-left:auto">停止服务</button></div>',
 			'<div class="tnl-row" style="margin-top:10px"><span class="tnl-label">连接数</span><span id="tnl-conns">—</span>',
 			'<span class="tnl-kv" style="margin-left:18px"><span class="tnl-label">端口</span><span class="tnl-mono" id="tnl-ports">—</span></span></div>',
 			"</div>",
-			// 模型通道（v1.2：指挥设备 pi agent 用哪条模型通道）
 			'<div class="tnl-card">',
 			'<div class="tnl-row"><b>模型通道</b><span class="tnl-dim">指挥设备 pi agent 用的模型；手动指定优先于自动挑选</span>',
 			'<span class="tnl-dim" id="tnl-me-state" style="margin-left:auto;font-size:11.5px">读取中…</span></div>',
@@ -179,7 +169,6 @@ export default defineView({
 			'<span class="tnl-dim" style="font-size:11px" id="tnl-me-cands"></span>',
 			"</div>",
 			"</div>",
-			// Mesh 桥（P3a：设备 pi agent 接入 pi_messenger）
 			'<div class="tnl-card">',
 			'<div class="tnl-row"><b>Mesh 桥</b><span class="tnl-dim">把设备 pi agent 接入 pi_messenger，任意会话可 send 直达</span>',
 			'<span class="tnl-dim" id="tnl-mesh-state" style="margin-left:auto;font-size:11.5px">读取中…</span></div>',
@@ -190,17 +179,14 @@ export default defineView({
 			'<span class="tnl-dim" style="font-size:11px" id="tnl-mesh-info"></span>',
 			"</div>",
 			"</div>",
-			// 出口设备
 			'<div class="tnl-card">',
 			'<div class="tnl-row"><b>出口设备</b><span class="tnl-dim">SOCKS 流量走选中的设备；出口掉线自动切换</span></div>',
 			'<div id="tnl-devs"><div class="tnl-row tnl-dim">加载中…</div></div>',
 			"</div>",
-			// 审计
 			'<div class="tnl-card">',
 			'<div class="tnl-row"><b>操作审计（最近 100 条）</b><span class="tnl-dim">设备侧文件/目录枚举操作记录</span></div>',
 			'<div id="tnl-audit" class="tnl-code tnl-audit" style="max-height:190px;overflow-y:auto">加载中…</div>',
 			"</div>",
-			// 接入与部署（令牌 + 常驻化合并）
 			'<div class="tnl-card">',
 			'<div class="tnl-sec">接入令牌</div>',
 			'<div class="tnl-row"><span class="tnl-token" id="tnl-token">—</span>',
@@ -221,7 +207,6 @@ export default defineView({
 			"</div>",
 			'<div class="tnl-row tnl-dim" style="font-size:11px;margin-top:8px">AI 侧探测： curl --socks5-hostname 127.0.0.1:1080 &lt;url&gt;</div>',
 			"</div>",
-			// P4: 目录选择器 modal（默认隐藏）
 			'<div class="tnl-bm" id="tnl-bm" style="display:none">',
 			'<div class="tnl-bm-card">',
 			'<div class="tnl-bm-head"><b>选择白名单目录</b><button class="tnl-btn sm" id="tnl-bm-x">关闭</button></div>',
@@ -232,14 +217,12 @@ export default defineView({
 			"</div>",
 			"</div>",
 			"</div>",
-			// P4+: 硬件概览 modal（默认隐藏）
 			'<div class="tnl-bm" id="tnl-hw" style="display:none">',
 			'<div class="tnl-bm-card">',
 			'<div class="tnl-bm-head"><b>硬件概览</b><button class="tnl-btn sm" id="tnl-hw-x">关闭</button></div>',
 			'<pre id="tnl-hw-body" class="tnl-bm-path" style="margin:14px;white-space:pre-wrap;font-size:12.5px;line-height:1.9">加载中…</pre>',
 			"</div>",
 			"</div>",
-			// P4-B: pi agent 任务 modal（默认隐藏）
 			'<div class="tnl-bm" id="tnl-tk" style="display:none">',
 			'<div class="tnl-bm-card" style="width:520px">',
 			'<div class="tnl-bm-head"><b>指挥设备 pi agent</b><button class="tnl-btn sm" id="tnl-tk-x">关闭</button></div>',
@@ -257,7 +240,6 @@ export default defineView({
 		let running = null;
 		let curOs = "macOS";
 
-		// 页签切换
 		$("#tnl-tabs").addEventListener("click", (e) => {
 			const b = e.target.closest("button.tab");
 			if (!b) return;
@@ -268,7 +250,6 @@ export default defineView({
 		});
 		$("#tnl-persist").textContent = persistCmd(curOs);
 
-		// 出口切换 + 设备配置保存（事件委托）
 		$("#tnl-devs").addEventListener("click", async (e) => {
 			const b = e.target.closest("button[data-id]");
 			if (!b) return;
@@ -288,7 +269,6 @@ export default defineView({
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-uninst")) {
-				// P4: 卸载该设备 CLI（停常驻+删文件）
 				if (!confirm("确定卸载该设备上的隧道 CLI？\n将停止常驻服务并删除 CLI 文件，设备将从列表消失。")) return;
 				try {
 					await fetch("/plugins-api/tunnel/device/uninstall", {
@@ -301,17 +281,14 @@ export default defineView({
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-browse")) {
-				// P4: 打开目录选择器
 				openBrowse(b.dataset.id);
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-hw")) {
-				// P4+: 打开硬件概览
 				openHw(b.dataset.id);
 				return;
 			}
 			if (b.classList.contains("tnl-cfg-task")) {
-				// P4-B: 打开任务面板（受设备能力模型约束）
 				const dev = (lastDevices || []).find((d) => d.id === b.dataset.id);
 				$("#tnl-tk").style.display = "flex";
 				$("#tnl-tk-prompt").dataset.id = b.dataset.id;
@@ -346,11 +323,10 @@ export default defineView({
 			} catch {}
 		});
 
-		// ── P4: 目录选择器（经隧道逐级浏览设备目录，选中后追加到白名单输入框） ─────────
 		let browseId = null,
 			browseAbs = null,
 			browseHome = "/";
-		const rel = (p) => (browseHome && p.startsWith(browseHome) ? "~" + p.slice(browseHome.length) : p); // 绝对路径→~/显示
+		const rel = (p) => (browseHome && p.startsWith(browseHome) ? "~" + p.slice(browseHome.length) : p);
 		async function browseTo(p) {
 			$("#tnl-bm-list").textContent = "加载中…";
 			try {
@@ -392,7 +368,6 @@ export default defineView({
 			$("#tnl-bm").style.display = "flex";
 			browseTo("~");
 		}
-		// ── P4+: 硬件概览 ─────────
 		async function openHw(id) {
 			$("#tnl-hw").style.display = "flex";
 			$("#tnl-hw-body").textContent = "加载中…";
@@ -426,7 +401,6 @@ export default defineView({
 		$("#tnl-hw").addEventListener("click", (e) => {
 			if (e.target.id === "tnl-hw") $("#tnl-hw").style.display = "none";
 		});
-		// ── P4-B: 任务面板 ─────────
 		$("#tnl-tk-x").onclick = () => {
 			$("#tnl-tk").style.display = "none";
 		};
@@ -454,7 +428,6 @@ export default defineView({
 					$("#tnl-tk-meta").style.display = "none";
 					$("#tnl-tk-out").textContent = "✗ " + d.error;
 				} else {
-					// pi --mode json 输出 NDJSON 事件流：提取最后的 assistant 文本，回退原样
 					let text = "";
 					try {
 						for (const line of String(d.output || "").split("\n")) {
@@ -491,7 +464,6 @@ export default defineView({
 			if (it) browseTo(it.dataset.go);
 		});
 		$("#tnl-bm-pick").onclick = () => {
-			// 追加到对应设备的白名单输入框（去重）
 			if (!browseAbs) return;
 			const row = document.querySelector('.tnl-cfg[data-id="' + browseId + '"]');
 			if (!row) return;
@@ -527,9 +499,7 @@ export default defineView({
 							)
 							.join("")
 					: "暂无操作记录";
-			} catch {
-				/* 审计拉取失败静默 */
-			}
+			} catch {}
 		}
 		loadAudit();
 		const auditTimer = setInterval(loadAudit, 10000);
@@ -627,13 +597,12 @@ export default defineView({
 				lastPort = d.wsPort || 8765;
 				lastToken = d.token || "";
 				lastDevices = d.devices || [];
-				$("#tnl-persist").textContent = persistCmd(curOs); // lanIp/port 到位后刷新命令
+				$("#tnl-persist").textContent = persistCmd(curOs);
 				renderDevs(d);
 			} catch {
 				$("#tnl-state").textContent = "状态读取失败（插件未激活？）";
 			}
 		}
-		// ── 模型通道（v1.2）：状态 + 手动指定/恢复自动 ──────────────────────
 		async function refreshMe() {
 			try {
 				const r = await fetch("/plugins-api/tunnel/modelenv");
@@ -696,7 +665,6 @@ export default defineView({
 				refreshMe();
 			} catch {}
 		};
-		// ── Mesh 桥（P3a）：开关 + 状态 ─────────────────────
 		async function refreshMesh() {
 			try {
 				const r = await fetch("/plugins-api/tunnel/mesh");
@@ -735,7 +703,6 @@ export default defineView({
 				alert("切换失败：网络错误");
 			}
 		};
-		// P3b: 设备端 mesh 会话快照查看/重置
 		$("#tnl-mesh-session").onclick = async () => {
 			try {
 				const r = await fetch("/plugins-api/tunnel/mesh/session");

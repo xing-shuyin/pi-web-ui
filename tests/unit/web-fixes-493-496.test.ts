@@ -21,7 +21,6 @@ describe("issue #494: banner notice silent dismissal", () => {
 			onClose: onClose1,
 		});
 
-		// silent dismissal: onClose must NOT be called
 		dismissBanner(id1, { silent: true });
 		expect(onClose1).not.toHaveBeenCalled();
 
@@ -32,7 +31,6 @@ describe("issue #494: banner notice silent dismissal", () => {
 			onClose: onClose2,
 		});
 
-		// normal dismissal: onClose MUST be called
 		dismissBanner(id2);
 		expect(onClose2).toHaveBeenCalledTimes(1);
 	});

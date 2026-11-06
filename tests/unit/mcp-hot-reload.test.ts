@@ -1,9 +1,3 @@
-/**
- * `mcp.json` 热加载单测（server/mcp-hot-reload.ts）：
- *  - 指纹策略（内容没变不重启 / 真变了才应用 / 坏配置保留在跑的服务器 / 删文件 = 清空）；
- *  - 真 fs 监视（fs.watch 命中；目录不存在 → 回落到轮询；dispose 后不再触发）；
- *  - 端到端一条：真 McpBridge + 真文件，改完 mcp.json 工具表跟着变，全程不重启服务。
- */
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,7 +28,6 @@ function writeConfig(dir: string, servers: Record<string, unknown>, pretty = tru
 	);
 }
 
-/** 假 reload + 钩子记录：策略层不需要真起服务器。 */
 function harness(dir: string, debounceMs = 40, pollIntervalMs = 60) {
 	const state = { reloads: 0, toolsChanged: 0, notices: [] as Array<{ level: string; text: string }> };
 	const hot = createMcpHotReload({
@@ -110,7 +103,6 @@ describe("mcp.json 热加载：什么时候该动、什么时候不该动", () =
 		expect(await hot.apply()).toBe("reloaded");
 		expect(state.reloads).toBe(1);
 
-		// 同样的语义、不同的写法：服务器顺序互换 + env 键序互换 + 压缩成一行
 		writeFileSync(
 			join(dir, "mcp.json"),
 			JSON.stringify({
@@ -127,13 +119,12 @@ describe("mcp.json 热加载：什么时候该动、什么时候不该动", () =
 		const { hot, state } = harness(dir);
 		expect(await hot.apply()).toBe("reloaded");
 
-		writeFileSync(join(dir, "mcp.json"), '{ "servers": { "srv": '); // 半写状态
+		writeFileSync(join(dir, "mcp.json"), '{ "servers": { "srv": ');
 		expect(await hot.apply()).toBe("invalid");
 		expect(await hot.apply()).toBe("unchanged");
 		expect(state.reloads).toBe(1);
 		expect(state.notices.filter((n) => n.level === "warning")).toHaveLength(1);
 
-		// 改好 → 立刻应用
 		writeConfig(dir, { srv: SPEC });
 		expect(await hot.apply()).toBe("reloaded");
 		expect(state.reloads).toBe(2);
@@ -158,7 +149,6 @@ describe("mcp.json 热加载：文件监视", () => {
 		const { hot, state } = harness(dir);
 		hot.start();
 
-		// 播种：启动时 load() 已按这份文件启动过，第一个事件不该触发重载
 		await sleep(250);
 		expect(state.reloads).toBe(0);
 
@@ -204,7 +194,6 @@ describe("mcp.json 热加载：端到端（真桥 + 真文件）", () => {
 		disposables.push(() => hot.dispose());
 		hot.start();
 
-		// 配置里删掉全部服务器 → 旧实例关掉、工具表清空
 		writeConfig(dir, {});
 		await waitFor(() => bridge.getTools().length === 0);
 		expect(bridge.getTools()).toEqual([]);

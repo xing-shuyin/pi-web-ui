@@ -54,7 +54,6 @@ const gitEnvironment = () => {
 		GIT_LFS_SKIP_SMUDGE: "1",
 	};
 };
-/** Dedicated runner: actual zero exit is preserved even when cancellation wins the JS race. */
 export function runPublicationGit(
 	cwd: string,
 	args: string[],
@@ -114,9 +113,7 @@ export function runPublicationGit(
 				else
 					try {
 						process.kill(-child.pid, "SIGKILL");
-					} catch {
-						/* close/error remains the only stop proof */
-					}
+					} catch {}
 			}
 			stopTimer ??= setTimeout(() => settle(), options.stopTimeoutMs ?? 2000);
 		};
@@ -213,7 +210,6 @@ async function verifyOriginalRepository(journal: PublicationJournal) {
 	await checkedGit(repo, ["cat-file", "-e", `${journal.intent.expectedOld}^{commit}`]);
 	return repo;
 }
-/** Historical observation is read-only: no session, current Bot, config helpers, index, refs or journal writes. */
 export function localPublicationStatus(params: {
 	dataDir: string;
 	publishIntent: DevicePublishIntent;
@@ -320,7 +316,6 @@ export interface LocalPublicationHooks {
 	afterCasExit?: (result: PublicationGitExit) => Promise<void>;
 	afterReceipt?: () => Promise<void>;
 }
-/** All callers use one local gate; cancellation fences are installed synchronously before waiting. */
 export function publishLocalIntent(
 	params: {
 		dataDir: string;
@@ -395,7 +390,6 @@ export function publishLocalIntent(
 				{ signal, key },
 			);
 			await options.hooks?.afterCasExit?.(exit);
-			// No outer cancellation check after spawn: record the actual process exit.
 			if (exit.code === 0 && !exit.signal && !exit.error) {
 				const applied = receipt(intent, "cas_exit", candidateSha);
 				journal = await appendPublicationJournal(params.dataDir, journal, "applied", {
@@ -405,7 +399,6 @@ export function publishLocalIntent(
 				await options.hooks?.afterReceipt?.();
 				return { status: "applied", publishReceipt: applied };
 			}
-			// Only Git's explicit old-value mismatch proves that update-ref did not apply.
 			if (
 				!exit.signal &&
 				!exit.error &&

@@ -23,10 +23,10 @@ import { PluginIcon } from "../plugin-icon";
 import { hostEntryIcon } from "../host-icon";
 import { Modal } from "./Modal";
 import { PluginSettingsForm } from "./PluginSettingsForm";
+import { excludeBuiltinModules } from "../../../server/builtin-modules";
 
 export type PluginFilterTab = "all" | "configurable" | "enabled" | "disabled";
 
-/** 插件卡片图标渲染：保证内联 SVG、Emoji、词表图标、语义兜底皆能饱满呈现，绝不留空 */
 function PluginCardIcon({ plugin }: { plugin: UiPluginInfo }) {
 	if (plugin.iconSvg) {
 		return <PluginIcon iconSvg={plugin.iconSvg} />;
@@ -50,23 +50,14 @@ function PluginCardIcon({ plugin }: { plugin: UiPluginInfo }) {
 }
 
 export interface PluginManagerModalProps {
-	/** 是否打开弹窗 */
 	open?: boolean;
-	/** 关闭回调 */
 	onClose: () => void;
-	/** 初始化聚焦并展开配置的插件 ID */
 	focusPluginId?: string | null;
-	/** 全部已安装插件清单（chat.plugins） */
 	plugins: UiPluginInfo[];
-	/** 当前被停用的插件 ID 列表 */
 	disabledPlugins: string[];
-	/** 模型清单（传给 PluginSettingsForm 做候选） */
 	models?: PluginSelectModel[];
-	/** 切换插件启用/停用 */
 	onTogglePlugin: (plugin: UiPluginInfo) => void;
-	/** 打开独立视图 */
 	onOpenView?: (pluginId: string) => void;
-	/** 前往全局设置中的插件市场 / 高级管理 */
 	onOpenMarketplace?: () => void;
 }
 
@@ -74,7 +65,7 @@ export function PluginManagerModal({
 	open = true,
 	onClose,
 	focusPluginId,
-	plugins,
+	plugins: allPlugins,
 	disabledPlugins,
 	models = [],
 	onTogglePlugin,
@@ -82,6 +73,7 @@ export function PluginManagerModal({
 	onOpenMarketplace,
 }: PluginManagerModalProps) {
 	const t = useT();
+	const plugins = useMemo(() => excludeBuiltinModules(allPlugins), [allPlugins]);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterTab, setFilterTab] = useState<PluginFilterTab>("all");
 	const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
@@ -91,7 +83,6 @@ export function PluginManagerModal({
 
 	const disabledSet = useMemo(() => new Set(disabledPlugins), [disabledPlugins]);
 
-	// 计算各类数量
 	const counts = useMemo(() => {
 		let configurable = 0;
 		let enabled = 0;
@@ -115,15 +106,12 @@ export function PluginManagerModal({
 		};
 	}, [plugins, disabledSet]);
 
-	// 聚焦指定插件时自动展开与滚动
 	useEffect(() => {
 		if (!open || !focusPluginId) return;
 
-		// 确保该插件处于展开状态
 		setExpandedMap((prev) => ({ ...prev, [focusPluginId]: true }));
 		setHighlightedId(focusPluginId);
 
-		// 如果当前筛选器过滤掉了该插件，重置为 all 以确保可见
 		const target = plugins.find((p) => p.id === focusPluginId);
 		if (target) {
 			setFilterTab("all");
@@ -161,7 +149,6 @@ export function PluginManagerModal({
 		setExpandedMap(next);
 	}, [plugins, expandedMap]);
 
-	// 过滤插件列表
 	const filteredPlugins = useMemo(() => {
 		const q = searchQuery.trim().toLowerCase();
 		return plugins.filter((p) => {
@@ -247,7 +234,6 @@ export function PluginManagerModal({
 					</div>
 				</div>
 
-				{/* 搜索与过滤工具栏 */}
 				<div className="plugin-mgr-toolbar">
 					<div className="plugin-mgr-search-wrap">
 						<FiSearch className="plugin-mgr-search-icon" aria-hidden />
@@ -359,7 +345,6 @@ export function PluginManagerModal({
 										isHighlighted ? " highlighted" : ""
 									}`}
 								>
-									{/* 卡片头部 */}
 									<div className="plugin-mgr-card-head">
 										<div className="plugin-mgr-card-identity">
 											<div className="plugin-mgr-card-icon-wrap">
@@ -424,7 +409,6 @@ export function PluginManagerModal({
 													<span>{t("pluginOpenView")}</span>
 												</button>
 											)}
-											{/* 启用/停用 Toggle 开关 */}
 											<div className="plugin-mgr-toggle-wrap">
 												<button
 													type="button"
@@ -441,14 +425,12 @@ export function PluginManagerModal({
 										</div>
 									</div>
 
-									{/* 描述：截断展示，悬浮看全名 */}
 									{p.description && (
 										<div className="plugin-mgr-card-desc" title={p.description}>
 											{p.description}
 										</div>
 									)}
 
-									{/* 错误提示 */}
 									{p.error && (
 										<div className="plugin-mgr-card-error">
 											<FiAlertTriangle aria-hidden />
@@ -456,7 +438,6 @@ export function PluginManagerModal({
 										</div>
 									)}
 
-									{/* 配置区域 */}
 									{hasSchema && (
 										<div className="plugin-mgr-settings-section">
 											<button

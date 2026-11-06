@@ -1,36 +1,10 @@
-/**
- * AI commit-message generation — pure prompt assembly + response cleanup.
- *
- * The git gathering lives in scm.ts (scmCommitContext); the one-off model
- * call lives in agent-service (ClientSession.scmGenCommitMessage, same
- * completeSimple path as the vision bridge). This module owns everything
- * deterministic so it stays unit-testable:
- *
- *   buildCommitMsgInput(ctx, fallbackLang) → user message (null = nothing
- *     to commit — the caller turns that into a friendly error)
- *   COMMITMSG_SYSTEM_PROMPT                   → system prompt
- *   sanitizeCommitMessage(raw)               → the single-line subject that
- *     ends up in the commit input (models are told to emit exactly that, but
- *     fences/labels/quotes/newlines are stripped defensively)
- *
- * Language policy: the generated message follows the repository's own commit
- * subjects (style AND language — a repo writing "feat(xxx): 描述" keeps
- * getting that). Only a repo with no commits yet falls back to the UI
- * language passed as fallbackLang.
- */
-
 import { isNotRepoError, scmCommitContext, type ScmCommitContext } from "./scm.js";
 import { pick, type ServerLang } from "./i18n.js";
 
-/** SCM AI 提交信息生成超时时间（毫秒） */
 export const SCM_COMMITMSG_TIMEOUT_MS = 60_000;
 
-/** Hard cap for the generated subject — the commit input is single-line and
- *  this keeps a chatty model from filling the whole header row. */
 export const MAX_COMMITMSG_LEN = 200;
 
-/** File list cap inside the prompt (porcelain lines); the diffs carry the
- *  details, the list is orientation only. */
 const MAX_FILE_LINES = 200;
 
 export const COMMITMSG_SYSTEM_PROMPT = `You write git commit messages. You receive the pending changes of a repository and output exactly one commit message: a single subject line.
@@ -45,13 +19,6 @@ Rules:
 
 Output ONLY the subject line.`;
 
-/**
- * Assemble the effective system prompt from the settings-panel prefs (same
- * contract as the vision bridge's buildVisionBridgePrompt): mode "append"
- * puts custom text after the built-in default (empty custom = pure default);
- * mode "replace" swaps in the custom text, but an empty custom still falls
- * back to the default (never send an empty system prompt).
- */
 export function buildCommitMsgPrompt(mode: "append" | "replace", custom: string): string {
 	const text = custom?.trim() ?? "";
 	if (mode === "replace" && text) return text;
@@ -59,18 +26,12 @@ export function buildCommitMsgPrompt(mode: "append" | "replace", custom: string)
 	return COMMITMSG_SYSTEM_PROMPT;
 }
 
-/** "path → [add,del]" map → compact "+12/-3 path" lines (sorted by path). */
 function formatNumStat(stat: Record<string, [number, number]>): string[] {
 	return Object.keys(stat)
 		.sort()
 		.map((p) => `+${stat[p][0]}/-${stat[p][1]} ${p}`);
 }
 
-/**
- * Assemble the user message from the gathered context. Returns null when
- * there is nothing to describe (no staged/unstaged diff and no untracked
- * files) — the caller replies "no changes" instead of calling the model.
- */
 export function buildCommitMsgInput(ctx: ScmCommitContext, fallbackLang: "zh" | "en"): string | null {
 	const parts: string[] = [];
 
@@ -111,8 +72,6 @@ export function buildCommitMsgInput(ctx: ScmCommitContext, fallbackLang: "zh" | 
 
 	const untracked = ctx.files.filter((f) => f.x === "?" && f.y === "?");
 	if (untracked.length > 0 && !ctx.stagedPatch.trim()) {
-		// Untracked content never appears in `git diff` — name the files so
-		// the model knows they are part of the change set (commit-all flow).
 		parts.push(
 			`Untracked files (new, content not shown): ${untracked
 				.map((f) => f.path)
@@ -125,26 +84,17 @@ export function buildCommitMsgInput(ctx: ScmCommitContext, fallbackLang: "zh" | 
 	return parts.join("\n");
 }
 
-/**
- * Normalize whatever the model emitted into the single-line subject that goes
- * into the commit input: drop fences, labels and wrapping quotes, keep only
- * the first non-empty line, collapse whitespace, cap the length.
- */
 export function sanitizeCommitMessage(raw: string): string {
 	let text = raw.trim();
-	// ```…``` fences wrapping the whole answer.
 	const fence = text.match(/^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?```$/);
 	if (fence) text = fence[1].trim();
-	// Leading labels some models add despite the instructions.
 	text = text.replace(/^(commit(\s+message)?|subject|提交信息|提交消息|提交说明)\s*[:：]\s*/i, "");
-	// First non-empty line only — the input field is single-line by design.
 	const firstLine =
 		text
 			.split("\n")
 			.map((l) => l.trim())
 			.find((l) => l.length > 0) ?? "";
 	let out = firstLine.replace(/\s+/g, " ").trim();
-	// Matching wrapping quotes.
 	if (out.length >= 2) {
 		const a = out[0];
 		const b = out[out.length - 1];
@@ -156,10 +106,6 @@ export function sanitizeCommitMessage(raw: string): string {
 	return out;
 }
 
-/**
- * 完整的 SCM AI 提交信息生成逻辑封装：
- * 提取 git 差异上下文 -> 组装 prompt -> 调用模型 completeSimple -> 结果清洗校验
- */
 export async function generateScmCommitMessage(opts: {
 	cwd: string;
 	model: any;

@@ -1,14 +1,3 @@
-/**
- * image-toolkit 一体化合并单测 —— AI 生图与图像处理无缝流转。
- *
- * 覆盖：
- *   - manifest 规范校验与 catalog 一致性；
- *   - 7 个 AI 工具完整注册与纯英文/长度合规性；
- *   - 支持当下主流生图模型预设（通义万相 Wanx 2.1、FLUX.1、Seedream 4.0、CogView-4、Imagen 3 等）；
- *   - AI 可配置生图供应商配置（image_config_service 的 list/get/upsert/probe/fetch_models/set_default/delete）；
- *   - 生图产物与图像处理工具链的无缝流转协同（image_generate → image_transform → image_compress → references 图生图）；
- *   - 反激活注销。
- */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -107,7 +96,7 @@ describe("image-toolkit manifest 与插件注册", () => {
 	it("manifest 过校验且 catalog 记录同步，图标沿用 AI 生图图标（🎨）", () => {
 		const v = validatePluginManifest(manifest, "image-toolkit");
 		expect(v.errors).toEqual([]);
-		expect(manifest.version).toBe("0.2.4");
+		expect(manifest.version).toBe("0.2.5");
 		expect(manifest.icon).toBe("🎨");
 		expect(manifest.iconSvg).toContain('path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"');
 		expect(manifest.permissions).toContain("tools");
@@ -208,12 +197,10 @@ describe("AI 配置生图服务商（image_config_service）", () => {
 		imageToolkit.activate(host);
 		const cfgTool = toolOf(host, "image_config_service");
 
-		// 1. list
 		const listRes: any = await cfgTool.execute("t1", { action: "list" });
 		expect(listRes.details.presets.length).toBeGreaterThan(6);
 		expect(listRes.content[0].text).toContain("Configured services");
 
-		// 2. upsert 添加硅基流动服务
 		const upsertRes: any = await cfgTool.execute("t2", {
 			action: "upsert",
 			id: "siliconflow-main",
@@ -226,17 +213,14 @@ describe("AI 配置生图服务商（image_config_service）", () => {
 		expect(upsertRes.details.service.hasKey).toBe(true);
 		expect(host.secrets.get("svc:siliconflow-main")).toBe("sk-siliconflow-secret");
 
-		// 3. get
 		const getRes: any = await cfgTool.execute("t3", { action: "get", id: "siliconflow-main" });
 		expect(getRes.details.service.id).toBe("siliconflow-main");
 		expect(getRes.details.service.defaultModel).toBe("black-forest-labs/FLUX.1-schnell");
 
-		// 4. probe
 		const probeRes: any = await cfgTool.execute("t4", { action: "probe", id: "siliconflow-main" });
 		expect(probeRes.details.ok).toBe(true);
 		expect(probeRes.details.models.length).toBeGreaterThan(0);
 
-		// 5. fetch_models 并保存
 		const fetchRes: any = await cfgTool.execute("t5", {
 			action: "fetch_models",
 			id: "siliconflow-main",
@@ -245,7 +229,6 @@ describe("AI 配置生图服务商（image_config_service）", () => {
 		expect(fetchRes.details.saved).toBe(true);
 		expect(fetchRes.details.models).toContain("black-forest-labs/FLUX.1-schnell");
 
-		// 6. 添加通义万相并 set_default
 		await cfgTool.execute("t6", {
 			action: "upsert",
 			id: "wanx-ai",
@@ -254,7 +237,6 @@ describe("AI 配置生图服务商（image_config_service）", () => {
 		const defRes: any = await cfgTool.execute("t7", { action: "set_default", id: "wanx-ai" });
 		expect(defRes.details.defaultService).toBe("wanx-ai");
 
-		// 7. delete
 		const delRes: any = await cfgTool.execute("t8", { action: "delete", id: "siliconflow-main" });
 		expect(delRes.details.removedId).toBe("siliconflow-main");
 		expect(host.secrets.has("svc:siliconflow-main")).toBe(false);
@@ -294,7 +276,6 @@ describe("图像生成与图像处理无缝流转", () => {
 		const { host, files } = makeEnv();
 		imageToolkit.activate(host);
 
-		// 1. 配置生图服务
 		const cfgTool = toolOf(host, "image_config_service");
 		await cfgTool.execute("c1", {
 			action: "upsert",
@@ -304,7 +285,6 @@ describe("图像生成与图像处理无缝流转", () => {
 			setDefault: true,
 		});
 
-		// 2. 调用 image_generate 出图
 		const genTool = toolOf(host, "image_generate");
 		const genRes: any = await genTool.execute("g1", { prompt: "A cozy studio desk" });
 		expect(genRes.details.files.length).toBe(1);
@@ -314,13 +294,11 @@ describe("图像生成与图像处理无缝流转", () => {
 			"Workflow hint: You can now pass these generated images to `image_transform`",
 		);
 
-		// 3. 将生图产物无缝送入 image_info 查看元数据
 		const infoTool = toolOf(host, "image_info");
 		const infoRes: any = await infoTool.execute("i1", { path: genFilePath });
 		const parsedInfo = JSON.parse(infoRes.content[0].text);
 		expect(parsedInfo[0].size).toBe("80×60");
 
-		// 4. 将生图产物无缝送入 image_transform 进行裁剪与缩放
 		const transformTool = toolOf(host, "image_transform");
 		const transRes: any = await transformTool.execute("tr1", {
 			path: genFilePath,
@@ -331,7 +309,6 @@ describe("图像生成与图像处理无缝流转", () => {
 		const transFilePath = transRes.details.results[0].outRel;
 		expect(files.has(transFilePath)).toBe(true);
 
-		// 5. 将处理产物送入 image_compress 进一步压缩体积
 		const compressTool = toolOf(host, "image_compress");
 		const compRes: any = await compressTool.execute("cp1", {
 			path: transFilePath,
@@ -342,7 +319,6 @@ describe("图像生成与图像处理无缝流转", () => {
 		const compFilePath = compRes.details.results[0].outRel;
 		expect(files.has(compFilePath)).toBe(true);
 
-		// 6. 将加工优化后的图片作为 references 回传入 image_generate 执行图生图（Img2Img）
 		const editRes: any = await genTool.execute("g2", {
 			prompt: "Watercolor version",
 			references: [compFilePath],
@@ -350,7 +326,6 @@ describe("图像生成与图像处理无缝流转", () => {
 		expect(editRes.details.files.length).toBe(1);
 		expect(files.has(editRes.details.files[0].path)).toBe(true);
 
-		// 7. AI 像素取色并获取局部放大截图（image_pick_color）
 		const pickTool = toolOf(host, "image_pick_color");
 		const pickRes: any = await pickTool.execute("pc1", {
 			path: genFilePath,
@@ -373,7 +348,6 @@ describe("图像生成与图像处理无缝流转", () => {
 		expect(pickRes.details.color.hex).toBeDefined();
 		expect(files.has("crops/picked.png")).toBe(true);
 
-		// 坐标越界时给出明确友好的错误提示
 		await expect(
 			pickTool.execute("pc2", {
 				path: genFilePath,

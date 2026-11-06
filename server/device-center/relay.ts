@@ -8,7 +8,16 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 
-import { capabilityBase, createPortalResponse, parseDevicePath, portalHeaders, wrapperHtml } from "./path-portal.js";
+import {
+	capabilityBase,
+	createPortalResponse,
+	nativeResourceContentType,
+	parseDevicePath,
+	portalHeaders,
+	wrapperHtml,
+} from "./path-portal.js";
+import { nativeOrigin, type NativeOrigin } from "./hub-auth.js";
+import type { NativeCapabilityRequest } from "./hub-mobile.js";
 
 export const RELAY_LIMITS = {
 	frame: 512 * 1024,
@@ -108,10 +117,8 @@ export function safePath(path: unknown, method = "GET"): path is string {
 		}
 		if (/%|[\\\x00-\x20]/.test(decoded)) return false;
 		const normalized = new URL(decoded, "http://local").pathname.toLowerCase();
-		// OS authorization is initiated only on the device itself, never through a Hub portal.
 		if (normalized === "/api/device-desktop/local" || normalized.startsWith("/api/device-desktop/local/")) return false;
 		if (normalized === "/api/device-center" || normalized.startsWith("/api/device-center/")) {
-			// Only account-scoped chat routes may cross a device portal.
 			if (method === "GET") {
 				return /^\/api\/device-center\/(chat-status|devices|bots|rooms(?:\/[^/]+(?:\/(?:events|interactions|conversations(?:\/[^/]+)?))?)?)$/.test(
 					normalized,
@@ -132,6 +139,8 @@ export function safePath(path: unknown, method = "GET"): path is string {
 }
 
 export const COMMANDS = [
+	"device_lan",
+	"group_router_models",
 	"transfer_stage",
 	"transfer_preview",
 	"transfer_apply",
@@ -386,7 +395,6 @@ export function createCommandChannel(
 }
 
 export const WS_MESSAGE_BYTES = 16 * 1024 * 1024;
-/** Connection-scoped, bounded message assembly and outbound queue. */
 export function createWsMessageChannel(transport: WebSocket) {
 	const assemblies = new Map<
 		string,
@@ -582,7 +590,6 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			messages: ReturnType<typeof createWsMessageChannel>;
 		}
 	>();
-	// Slow browser responses apply transport backpressure instead of losing resource bodies.
 	const stalledResponses = new WeakMap<WebSocket, Set<ServerResponse>>();
 	function pauseForResponse(ws: WebSocket, res: ServerResponse) {
 		let stalled = stalledResponses.get(ws);
@@ -601,7 +608,17 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	}
 	const tickets = new Map<string, { deviceId: string; accountId: string; generation: number; expiresAt: number }>();
 	const sessions = new Map<string, { deviceId: string; expiresAt: number }>();
-	const capabilities = new Map<string, { deviceId: string; accountId: string; expiresAt: number }>();
+	const capabilities = new Map<
+		string,
+		{
+			deviceId: string;
+			accountId: string;
+			expiresAt: number;
+			nativeOrigin?: NativeOrigin;
+			isSessionActive?: () => boolean;
+		}
+	>();
+	const nativeSockets = new Map<WebSocket, () => Promise<boolean>>();
 	const pathRequest = (req: IncomingMessage) => {
 		if (req.headers.host?.toLowerCase() !== hub.host.toLowerCase()) return null;
 		const path = parseDevicePath(req.url);
@@ -610,18 +627,24 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			? path
 			: null;
 	};
-	function pathAuthorized(req: IncomingMessage, id: string, websocket = false) {
+	async function pathAuthorized(req: IncomingMessage, id: string, websocket = false) {
 		const path = pathRequest(req);
-		const session = path?.token ? capabilities.get(path.token) : undefined;
-		return !!(
-			session &&
-			session.deviceId === id &&
-			session.expiresAt > Date.now() &&
-			path?.path &&
-			(!websocket || safePath(path.path, "WS")) &&
-			(!req.headers.origin || req.headers.origin === "null") &&
-			(!websocket || req.headers.origin === "null")
-		);
+		const grant = path?.token ? capabilities.get(path.token) : undefined;
+		if (
+			!grant ||
+			grant.deviceId !== id ||
+			grant.expiresAt <= Date.now() ||
+			!path?.path ||
+			(websocket && !safePath(path.path, "WS"))
+		)
+			return false;
+		if (!grant.nativeOrigin)
+			return (!req.headers.origin || req.headers.origin === "null") && (!websocket || req.headers.origin === "null");
+		if (req.headers.origin !== grant.nativeOrigin || !grant.isSessionActive?.()) return false;
+		if (!websocket && !path.path.startsWith("/api/") && !nativeResourceContentType(path.path, req.method || "GET"))
+			return false;
+		const owns = await options.ownsDevice(grant.accountId, id);
+		return owns && grant.expiresAt > Date.now() && grant.isSessionActive() && capabilities.get(path.token!) === grant;
 	}
 	const wss = new WebSocketServer({ noServer: true, maxPayload: RELAY_LIMITS.frame, perMessageDeflate: false });
 	const browserWss = new WebSocketServer({ noServer: true, maxPayload: WS_MESSAGE_BYTES, perMessageDeflate: false });
@@ -688,7 +711,6 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					)
 					.catch(() => {});
 			} else {
-				// Retain recovery grace window on Hub for tasks with active lease!
 				Promise.resolve()
 					.then(() => options.onTaskDisconnect?.(id, taskId, attemptId))
 					.catch(() => {});
@@ -719,7 +741,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		entry.streams.set(id, item);
 		return item;
 	}
-	async function handleOpen(req: IncomingMessage, res: ServerResponse, id: string, redirect = false) {
+	async function handleOpen(
+		req: IncomingMessage,
+		res: ServerResponse,
+		id: string,
+		redirect = false,
+		preferLan = false,
+	) {
 		const generation = revision;
 		const account = await options.getAccount(req);
 		const accountId = typeof account === "string" ? account : account?.id;
@@ -751,6 +779,17 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(503).end();
 			return;
 		}
+		let deviceLan: unknown;
+		if (preferLan && !redirect) {
+			const entry = devices.get(id)!;
+			try {
+				deviceLan = await entry.rpc.call("device_lan", {}, { signal: AbortSignal.timeout(1500) });
+			} catch {}
+			if (closed || generation !== revision || devices.get(id) !== entry || res.destroyed) {
+				res.writeHead(409).end();
+				return;
+			}
+		}
 		const ticket = randomBytes(32).toString("hex");
 		const expiresAt = Date.now() + 30_000;
 		tickets.set(ticket, { deviceId: id, accountId, generation, expiresAt });
@@ -762,7 +801,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		else
 			res
 				.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" })
-				.end(JSON.stringify({ url, expiresAt }));
+				.end(JSON.stringify({ url, expiresAt, ...(deviceLan ? { deviceLan } : {}) }));
 	}
 	function sendWrapper(res: ServerResponse, id: string, accountId: string, initialPath = "") {
 		if (closed || !devices.has(id)) {
@@ -782,6 +821,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			initialPath,
 			initialPath === "desktop" ? hub : undefined,
 			label,
+			JSON.stringify([accountId, id]),
 		);
 		res
 			.writeHead(200, {
@@ -829,6 +869,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			}
 			return false;
 		}
+		void handleDeviceRequest(req, res, id).catch(() => {
+			if (!res.headersSent) res.writeHead(403).end();
+			else res.destroy();
+		});
+		return true;
+	}
+	async function handleDeviceRequest(req: IncomingMessage, res: ServerResponse, id: string) {
 		res.setHeader("Cache-Control", "no-store");
 		res.setHeader("Referrer-Policy", "no-referrer");
 		const path = pathRequest(req);
@@ -881,22 +928,23 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				.end();
 			return true;
 		}
-		if (!(path ? pathAuthorized(req, id) : authorized(req, id))) {
+		if (!(path ? await pathAuthorized(req, id) : authorized(req, id))) {
 			res.writeHead(403).end();
 			return true;
 		}
+		const requestNativeOrigin = path?.token ? capabilities.get(path.token)?.nativeOrigin : undefined;
 		if (path && req.method === "OPTIONS") {
-			res.writeHead(204, portalHeaders(hub, capabilityBase(id, path.token!))).end();
+			res.writeHead(204, portalHeaders(hub, capabilityBase(id, path.token!), requestNativeOrigin)).end();
 			return true;
 		}
 		// Only authenticated capability requests receive opaque-origin response headers.
 		if (path) {
-			for (const [key, value] of Object.entries(portalHeaders(hub, capabilityBase(id, path.token!))))
+			for (const [key, value] of Object.entries(
+				portalHeaders(hub, capabilityBase(id, path.token!), requestNativeOrigin),
+			))
 				res.setHeader(key, value);
 		}
 		const forwardPath = path ? path.path! : req.url;
-		// Serve account binding at the Hub, including compatibility for older device UIs.
-		// Never forward the local management status endpoint or expose its settings.
 		if (
 			path &&
 			req.method === "GET" &&
@@ -915,14 +963,20 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			res.writeHead(400).end();
 			return true;
 		}
-		// Only entry documents are rewritten; preserve negotiated compression for assets.
 		const rewriteHtml = !!path && ["/", "/desktop"].includes(path.path!.split("?")[0]);
 		const streamId = randomBytes(12).toString("hex");
 		addStream(entry, streamId, {
 			res,
 			...(path
 				? {
-						portal: createPortalResponse(res, hub, capabilityBase(id, path.token!), rewriteHtml),
+						portal: createPortalResponse(
+							res,
+							hub,
+							capabilityBase(id, path.token!),
+							rewriteHtml,
+							requestNativeOrigin,
+							requestNativeOrigin ? nativeResourceContentType(forwardPath!, req.method || "GET") : undefined,
+						),
 					}
 				: {}),
 		});
@@ -965,7 +1019,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 			const entry = devices.get(id);
 			if (
 				!entry ||
-				!(path ? pathAuthorized(req, id, true) : authorized(req, id, true)) ||
+				!(path ? await pathAuthorized(req, id, true) : authorized(req, id, true)) ||
+				devices.get(id) !== entry ||
 				entry.streams.size >= RELAY_LIMITS.streams ||
 				!safePath(path ? path.path : req.url, "WS")
 			) {
@@ -973,6 +1028,10 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				return;
 			}
 			browserWss.handleUpgrade(req, socket, head, (ws) => {
+				if (path?.token && capabilities.get(path.token)?.nativeOrigin) {
+					nativeSockets.set(ws, () => pathAuthorized(req, id, true));
+					ws.once("close", () => nativeSockets.delete(ws));
+				}
 				const streamId = randomBytes(12).toString("hex");
 				addStream(entry, streamId, { ws });
 				ws.pause();
@@ -1179,8 +1238,6 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 											committed.status === frame.status
 										) {
 											const outcome = frame as unknown as DeviceTaskEventFrame;
-											// The Hub has verified this immutable legacy duplicate. Echo
-											// its old digest even if the stored result uses a canonical one.
 											const legacyDuplicate =
 												outcome.leaseToken === undefined &&
 												outcome.leaseGeneration === undefined &&
@@ -1240,7 +1297,6 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 								});
 							return;
 						}
-						// === Task Recovery / Reconnect Claim / Lease Renewal ===
 						if (frame.type === "task_claim") {
 							const rawClaim = (frame as { claim?: unknown }).claim ?? frame;
 							if (
@@ -1317,7 +1373,6 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 								.catch(() => {});
 							return;
 						}
-						// ========================================================
 						const item = entry.streams.get(frame.id);
 						if (!item) return;
 						if (frame.type === "response") {
@@ -1378,6 +1433,13 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	options.server.on("upgrade", upgradeListener);
 	const heartbeat = setInterval(() => {
 		const now = Date.now();
+		for (const [ws, valid] of nativeSockets)
+			void valid().then(
+				(ok) => {
+					if (!ok) ws.terminate();
+				},
+				() => ws.terminate(),
+			);
 		for (const map of [tickets, sessions, capabilities])
 			for (const [key, value] of map) if (value.expiresAt <= now) map.delete(key);
 		for (const entry of devices.values()) {
@@ -1391,6 +1453,31 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 	}, 15_000);
 	heartbeat.unref();
 	return {
+		async createNativeCapability(request: NativeCapabilityRequest): Promise<string | null> {
+			const { deviceId, accountId, nativeOrigin: origin, isSessionActive } = request;
+			const generation = revision;
+			if (!nativeOrigin(origin) || !isSessionActive() || !(await options.ownsDevice(accountId, deviceId))) return null;
+			for (const [key, grant] of capabilities)
+				if (grant.expiresAt <= Date.now() || (grant.isSessionActive && !grant.isSessionActive()))
+					capabilities.delete(key);
+			if (
+				closed ||
+				generation !== revision ||
+				!devices.has(deviceId) ||
+				!isSessionActive() ||
+				capabilities.size >= RELAY_LIMITS.sessions
+			)
+				return null;
+			const token = randomBytes(32).toString("hex");
+			capabilities.set(token, {
+				deviceId,
+				accountId,
+				expiresAt: Date.now() + 8 * 60 * 60_000,
+				nativeOrigin: origin,
+				isSessionActive,
+			});
+			return hub.origin + capabilityBase(deviceId, token).replace(/\/$/, "");
+		},
 		async answerInteraction(deviceId: string, answer: import("../protocol.js").DeviceTaskInteractionAnswer) {
 			const entry = devices.get(deviceId);
 			if (

@@ -1,8 +1,3 @@
-/**
- * /cwd 相对路径解析（resolveCwdTarget）与超时杀进程树决策（processTreeKillPlan）
- * 的纯函数单测 —— 两者都从 agent-service 提取成可注入平台参数的纯函数，
- * 行为差异（win32/posix）在这里覆盖，端到端走 smoke。
- */
 import { describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { processTreeKillPlan, resolveCwdTarget } from "../../server/agent-service.js";
@@ -33,7 +28,6 @@ describe("resolveCwdTarget", () => {
 	});
 
 	it("win32 裸盘符显式指到盘根（大写归一）", () => {
-		// 不调 resolve，任何平台上都可测
 		expect(resolveCwdTarget("c:", "C:\\proj", "win32")).toBe("C:\\");
 		expect(resolveCwdTarget("D:", "C:\\proj", "win32")).toBe("D:\\");
 	});

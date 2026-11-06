@@ -41238,7 +41238,6 @@ var client_default = {
           ...completionKeymap,
           ...lintKeymap,
           indentWithTab,
-          // 最高优先级：编辑器内 Ctrl+S / Ctrl+P 不被默认 keymap 吃掉
           Prec.highest(
             keymap.of([
               {
@@ -41651,7 +41650,6 @@ var client_default = {
           binary: !!r.binary,
           dirty: false,
           crlf: (r.text ?? "").includes("\r\n")
-          // 保留原文件行尾风格，保存时写回
         });
         if (r.binary) toast("二进制文件暂不支持编辑");
       }
@@ -42357,7 +42355,6 @@ var client_default = {
         username: q2("h-user").value.trim() || "root",
         password: q2("h-pass").value || void 0,
         privateKey: q2("h-key").value.trim() || void 0,
-        // 口令留空 = 保持不变（与密码/私钥同规则）；路径与 agent 非密文，空串 = 清除
         passphrase: q2("h-pp").value || void 0,
         privateKeyPath: q2("h-keypath").value.trim(),
         agent: q2("h-agent").value.trim()

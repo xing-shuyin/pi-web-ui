@@ -25,13 +25,6 @@ function unseal(key: Buffer, blob: SealedBlob): string {
 	return Buffer.concat([decipher.update(Buffer.from(blob.ct, "hex")), decipher.final()]).toString("utf8");
 }
 
-/** 读或创建全局密钥文件（懒加载一次）。
- *
- * 曾有一个 bug：`readFileSync` 拿到的缓冲直接 `.toString("hex")`（把 hex 文本
- * 又做了一次 hex 编码），导致重启后 key 变成 65 字节，AES-256-GCM 全线报
- * "Invalid key length”。此处按 UTF-8 读 hex 文本再解码，并校验 32 字节——
- * 长度不对即视为损坏，重新生成（旧 secrets.bin 用旧 key 解不开→按 fail closed
- * 丢弃，总比所有机密操作全炸好；见 tests/unit/plugin-facilities.test.ts 回归）。 */
 function loadOrCreateKey(dataDir: string): Buffer {
 	const keyFile = join(dataDir, "secrets.key");
 	try {
@@ -40,18 +33,15 @@ function loadOrCreateKey(dataDir: string): Buffer {
 			if (loaded.length === 32) return loaded;
 			console.warn(`[secrets] ${keyFile} 长度异常（${loaded.length} 字节），重新生成密钥（旧机密将不可读）`);
 		}
-	} catch {
-		/* fallthrough → regenerate */
-	}
+	} catch {}
 	const key = randomBytes(32);
 	writeAtomicSync(keyFile, `${key.toString("hex")}\n`);
 	try {
-		chmodSync(keyFile, 0o600); // best-effort（win 无效，不抛错）
+		chmodSync(keyFile, 0o600);
 	} catch {}
 	return key;
 }
 
-/** 加密 KV：先原子落盘再发布；每次读取磁盘，跨实例不缓存失败候选。 */
 export class PluginSecrets {
 	private readonly file: string;
 	private readonly settingsFile: string;
@@ -91,7 +81,6 @@ export class PluginSecrets {
 			throw err;
 		}
 	}
-	/** Settings and their encrypted secrets share one atomic commit, avoiding two-file rollback. */
 	commitSettings(settings: Record<string, unknown>, updates: Record<string, string>): void {
 		const storage = this.storage();
 		const items = { ...this.settingsItems(storage) };
@@ -120,9 +109,7 @@ export class PluginSecrets {
 		let legacy: SecretFile["items"] = {};
 		try {
 			legacy = this.load().items;
-		} catch {
-			/* Unreadable legacy data must not hide migrated settings. */
-		}
+		} catch {}
 		return { ...legacy, ...this.settingsItems() };
 	}
 	get(name: string): string | undefined {

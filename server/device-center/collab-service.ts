@@ -33,7 +33,6 @@ export function createDeviceCollabService(options: {
 				signal?.throwIfAborted();
 				if (!context) throw new Error("Invalid workspace");
 				const bound = options.getExecutionContext?.(context);
-				// Resolve authority before workspace acquisition; never mutate caller arguments.
 				if (
 					[
 						"task_state",
@@ -422,7 +421,7 @@ export function createDeviceCollabService(options: {
 								for (let c = 0; c < file.chunkCount; c++) {
 									signal?.throwIfAborted();
 									const chunkIndex = file.firstChunkIndex + c;
-									if (receivedSet.has(chunkIndex)) continue; // Resume skip
+									if (receivedSet.has(chunkIndex)) continue;
 
 									const chunkOffset = c * manifest.chunkSize;
 									const chunkSize = Math.min(manifest.chunkSize, file.size - chunkOffset);
@@ -525,7 +524,6 @@ export function createDeviceCollabService(options: {
 						throw new Error("Unsupported collaboration action");
 				}
 			} catch {
-				// Remote errors, URLs, fetch errors and local file errors may contain secrets.
 				throw new Error(signal?.aborted ? "Device collaboration cancelled." : "Device collaboration request failed.");
 			} finally {
 				workspace?.release();

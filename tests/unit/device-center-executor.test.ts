@@ -90,7 +90,6 @@ async function fixture(
 					streamingMessage: null,
 				} as UiState;
 				socket.send(JSON.stringify({ type: "ready", clientId: msg.clientId }));
-				// ready precedes attach completion: no new_chat until this snapshot.
 				setImmediate(() => {
 					if (opts.onHello) opts.onHello(socket, snapshot);
 					else push(socket);
@@ -179,8 +178,6 @@ function delta(socket: WebSocket, state: UiState, patch: Partial<UiState>, appen
 	);
 }
 
-// These tests use real loopback sockets and the production protocol envelope,
-// without invoking models or weakening the existing approval mechanism.
 describe("device task executor", () => {
 	it("waits for durable full report persistence before settling its bounded result", async () => {
 		let persisted!: () => void;
@@ -346,7 +343,6 @@ describe("device task executor", () => {
 		const onSessionPath = vi.fn();
 		const f = await fixture(
 			(socket, state) => {
-				// An idle restored snapshot after prompt must not complete from old history.
 				f.push(socket);
 				setImmediate(() =>
 					f.push(socket, {
@@ -573,8 +569,6 @@ describe("device task executor", () => {
 			bot: independentBot,
 			allowExecution: true,
 		});
-		// The fixture serves the first cwd; reaching init proves admission passed
-		// the process-wide lock while the first task is still running.
 		await expect(independent.run({ ...task(), botId: independentBot.id })).rejects.toThrow("fixed cwd");
 		await independent.close();
 		await nested.close();
@@ -640,7 +634,6 @@ describe("device task executor", () => {
 			);
 		else socket.send(JSON.stringify({ type: kind, ...entry }));
 		f.push(socket, patch);
-		// Drain real socket events before advancing the fake execution clock.
 		for (let i = 0; i < 20; i++) await new Promise<void>((done) => setImmediate(done));
 		await vi.advanceTimersByTimeAsync(40 * 60 * 1000);
 		expect(completed).toBe(false);
@@ -683,7 +676,6 @@ describe("device task executor", () => {
 		for (let i = 0; i < 20; i++) await new Promise<void>((done) => setImmediate(done));
 		socket.send(JSON.stringify({ type: "tool_approval_resolved", id: "first" }));
 		f.push(socket, { pendingApprovals: [approvals[1]] as any });
-		// Unrelated notifications must not release the remaining approval.
 		socket.send(JSON.stringify({ type: "tool_approval_resolved", id: "unrelated" }));
 		for (let i = 0; i < 20; i++) await new Promise<void>((done) => setImmediate(done));
 		await vi.advanceTimersByTimeAsync(40 * 60 * 1000);
@@ -825,7 +817,7 @@ describe("device task executor", () => {
 		const failure = error as DeviceExecutionError;
 		expect(failure.failure.category).toBe(category);
 		expect(failure.failure.phase).toBe(category === "tool_denied" ? "tool" : "model");
-		expect(failure.message).toContain(secret); // Local-only diagnostic remains available.
+		expect(failure.message).toContain(secret);
 		const outgoing = deviceTaskFailure(error);
 		expect(outgoing).toContain(`category=${category}`);
 		expect(outgoing).not.toContain(secret);
@@ -1045,7 +1037,6 @@ describe("device task executor", () => {
 		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 		const running = f.executor.run(task());
 		const rejected = expect(running).rejects.toThrow("20 minute timeout");
-		// Native socket events are still real; poll with native setImmediate.
 		for (let i = 0; i < 1000 && !f.received.some((m) => m.type === "prompt"); i++)
 			await new Promise<void>((done) => setImmediate(done));
 		expect(f.received.some((m) => m.type === "prompt")).toBe(true);

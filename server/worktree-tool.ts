@@ -1,15 +1,3 @@
-/**
- * server/worktree-tool.ts
- *
- * Git 工作树（worktree）管理工具。
- *
- * 支持动作：
- * - list: 列出当前仓库的所有工作树、分支、未提交文件数与领先状态；
- * - create: 创建新的工作树（支持基于已有分支或新分支，可选 switchTo 立即切换工作区）；
- * - switch: 切换当前工作区至指定工作树；
- * - remove: 安全移除工作树（含未提交修改保护）。
- */
-
 import { Type, type Static } from "typebox";
 import { resolve } from "node:path";
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";

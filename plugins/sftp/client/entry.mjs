@@ -1,15 +1,3 @@
-/**
- * sftp 客户端视图 —— 连接管理 + 差异预览 + 传输进度 + 远端文件浏览。
- *
- * 纯 DOM（不依赖主应用 React），样式自带 <style> 且颜色走主应用 CSS 变量，
- * 主题切换自动跟随。数据面全部走插件的 HTTP 路由 `/plugins-api/sftp/*`
- * （host.route）——请求/响应语义比 WS 往返更省事，轮询只在有任务时加速。
- *
- * 关键设计：**预览与执行是同一份计划**。点「预览差异」拿到 dry-run 的 plan，
- * 确认无误再点「执行」；执行时若两边都没改，结果与预览一致。删除类条目在列表里
- * 单独标红，且执行前会二次确认（删掉的东西虽然进垃圾桶，但没人愿意误删线上文件）。
- */
-
 const TEXT = {
 	zh: {
 		title: "SFTP 同步",
@@ -319,7 +307,6 @@ const TEXT = {
 	},
 };
 
-/** 从 bundle 自己的 URL 推 API 前缀：<base>/plugins/sftp/client/entry.mjs → <base>/plugins-api/sftp */
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 import { authFormState } from "./auth-form.mjs";
 
@@ -351,15 +338,6 @@ function detectLang() {
 	return String(attr).toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-// ---------------------------------------------------------------- 宿主动作桥
-/**
- * 文件树右键菜单里的两条动作（manifest `ui["contextmenu.file"]`）由本 bundle 接管：
- * 先把同步面板切出来，再把这次手动上传交给**面板自己**跑 —— 进度、报错、刷新走的
- * 都是面板按钮那条完全相同的路径，不另造一套静默上传。
- *
- * 时序：宿主是「按需加载 bundle → 回调 handler」，所以回调可能发生在面板第一次
- * mount 之前；面板没挂载时请求先排队，mount 完（且初始 refresh 回来、cwd 可用）再消费。
- */
 const ACTION_UPLOAD_FILE = "sftp:upload-file";
 const ACTION_UPLOAD_DIR = "sftp:upload-dir";
 const ACTION_DOWNLOAD_FILE = "sftp:download-file";
@@ -367,14 +345,10 @@ const ACTION_DOWNLOAD_DIR = "sftp:download-dir";
 const ACTION_IGNORE_ITEM = "sftp:ignore-item";
 const ACTION_UNIGNORE_ITEM = "sftp:unignore-item";
 
-/** 当前挂载中的面板（null = 没挂载）——只暴露一个「外部上传/下载请求」入口。 */
 let panelSink = null;
-/** 外部忽略请求（支持面板未挂载时直接调用 API）。 */
 let panelIgnoreSink = null;
-/** 面板没挂载时攒下的请求（最多 8 条，防连点堆爆）。 */
 const pendingOps = [];
 
-/** 相对路径转换，纯工具函数 */
 function cleanWorkspaceRel(raw) {
 	const p = String(raw ?? "")
 		.replace(/\\/g, "/")
@@ -397,7 +371,6 @@ async function handleIgnoreAction(mode, target) {
 		await panelIgnoreSink(mode, rel);
 		return;
 	}
-	// 无论面板是否挂载，直接发 HTTP 请求更新忽略规则
 	try {
 		const res = await fetch("/plugins-api/sftp/ignore-toggle", {
 			method: "POST",
@@ -413,15 +386,12 @@ async function handleIgnoreAction(mode, target) {
 	}
 }
 
-/** 请求：打开面板 + 传输这个路径（dir 只影响文案与提示，服务端按 stat 判目录）。 */
 function requestTransfer(action, target) {
 	if (!target || target.id === "@root") return;
 	const path = target.id !== undefined && target.id !== null ? String(target.id).trim() : "";
 	try {
 		globalThis.window?.__piWebUiHost?.setView?.("plugin:sftp");
-	} catch {
-		/* 宿主桥没有：面板照样能从顶栏按钮进，不影响功能 */
-	}
+	} catch {}
 	const isDir = action === ACTION_UPLOAD_DIR || action === ACTION_DOWNLOAD_DIR;
 	const isDown = action === ACTION_DOWNLOAD_FILE || action === ACTION_DOWNLOAD_DIR;
 	const req = {
@@ -438,7 +408,6 @@ function requestTransfer(action, target) {
 	if (pendingOps.length > 8) pendingOps.splice(0, pendingOps.length - 8);
 }
 
-/** 具名 handler：注册两次也只会存进 Set 一次（Set 按引用去重）。 */
 function onUploadFile(_itemId, _value, target) {
 	requestTransfer(ACTION_UPLOAD_FILE, target);
 }
@@ -458,7 +427,6 @@ function onUnignoreItem(_itemId, _value, target) {
 	void handleIgnoreAction("remove", target);
 }
 
-/** 等宿主桥就绪（宿主先挂 App 再 import bundle，按需加载时可能抢先一步）。 */
 function whenBridge(fn, tries = 40) {
 	const bridge = globalThis.window?.__piWebUiHost;
 	if (bridge && typeof bridge === "object") {
@@ -477,9 +445,7 @@ whenBridge((bridge) => {
 		bridge.onUiAction?.(ACTION_DOWNLOAD_DIR, onDownloadDir);
 		bridge.onUiAction?.(ACTION_IGNORE_ITEM, onIgnoreItem);
 		bridge.onUiAction?.(ACTION_UNIGNORE_ITEM, onUnignoreItem);
-	} catch {
-		/* 宿主太旧：菜单点了没反应总比崩好（manifest apiVersion 会先拦住旧版） */
-	}
+	} catch {}
 });
 
 export default {
@@ -498,15 +464,11 @@ export default {
 		let trustChallenge = null;
 		const trustContext = () =>
 			JSON.stringify([state?.cwd, state?.active, state?.connection?.host, state?.connection?.port]);
-		/** 远端浏览器路径栈 */
 		let remoteDir = "";
 		let editor = { path: "", text: "", binary: false };
-		/** 最近一次计划的摘要 —— 执行前用它判断要不要弹「包含 n 项删除」的确认 */
 		let lastPlanSummary = null;
-		/** 最近一次预览的计划 token + 参数签名：执行时参数没变就直接沿用（省一次全量扫描） */
 		let lastPlanToken = null;
 		let lastPlanKey = null;
-		/** profile 下拉的当前签名：只有清单真的变了才重建（否则会把用户选中的项/焦点冲掉） */
 		let profileSig = "";
 
 		container.innerHTML = `
@@ -744,7 +706,6 @@ export default {
 			if (el) el.textContent = text;
 		};
 
-		// 静态文案（切换语言时不会重挂，但视图本来就随语言重载）
 		setText(".ttl", t("title"));
 		setText(".sub", t("subtitle"));
 		setText(".ttl-profile", t("profile"));
@@ -817,7 +778,6 @@ export default {
 		$(".f-keypath").placeholder = t("keypathPlaceholder");
 		$(".f-path").placeholder = t("pathHint");
 
-		/** fetch 包装：统一解 `{ok,data}` / `{ok:false,error}`。 */
 		async function api(p, { method = "GET", body } = {}) {
 			const requestContext = trustContext();
 			const init = { method };
@@ -1006,13 +966,11 @@ export default {
 			const list = getKnownSecretsList();
 			const curName = $(".f-secret-name")?.value?.trim() ?? "";
 
-			// 1. 原生 datalist 补全
 			const dl = $("#sftp-secrets-list");
 			if (dl) {
 				dl.innerHTML = list.map((s) => `<option value="${esc(s)}"></option>`).join("");
 			}
 
-			// 2. 显式下拉菜单
 			const sel = $(".f-secret-select");
 			if (sel) {
 				if (!list.length) {
@@ -1028,7 +986,6 @@ export default {
 				}
 			}
 
-			// 3. 快捷药丸徽章
 			const chipsWrap = $(".secret-chips");
 			if (chipsWrap) {
 				if (!list.length) {
@@ -1057,13 +1014,11 @@ export default {
 			if (!nameInput || !valInput) return;
 			const name = nameInput.value.trim();
 
-			// 同步 select 选项
 			if (sel && sel.value !== name) {
 				const hasOption = Array.from(sel.options).some((o) => o.value === name);
 				sel.value = hasOption ? name : "";
 			}
 
-			// 同步 chips 选中态
 			const chipBtns = container.querySelectorAll(".sfx-chip-btn");
 			for (const b of chipBtns) {
 				b.classList.toggle("active", b.getAttribute("data-sec") === name);
@@ -1136,7 +1091,6 @@ export default {
 
 			updateAuthFieldsVisibility($(".f-auth").value);
 			updateSecretDetection();
-			// ignore 里剔除内置默认，只显示用户额外加的那部分（否则表单里全是噪音）
 			const builtin = new Set([
 				".git",
 				"node_modules",
@@ -1353,7 +1307,6 @@ export default {
 			const stop = $(".btn-stop");
 			const scanning = j?.running && (j.phase === "scan" || j.phase === "cancelling");
 			if (stop) {
-				// 停止按钮在扫描期间也要亮着：大树上「扫描」比传输还久，这段停不了等于卡死
 				stop.classList.toggle("hidden", !j?.running);
 				stop.disabled = j?.phase === "cancelling";
 				stop.textContent = j?.phase === "cancelling" ? t("stopping") : t("stopBtn");
@@ -1382,7 +1335,6 @@ export default {
 			const isOtherProj = Boolean(j.cwd && state?.cwd && j.cwd !== state.cwd);
 			const projTag = isOtherProj ? `[${j.projectName || t("otherProject")}] ` : "";
 			if (scanning) {
-				// 扫描没有「总量」：走不确定态条纹 + 实时计数，让用户看到它在动
 				bar.classList.add("indet");
 				prog.textContent =
 					projTag +
@@ -1443,7 +1395,6 @@ export default {
 			});
 		}
 
-		// ── 远端浏览器 ──────────────────────────────────────────────────────
 		async function loadRemote(dir) {
 			try {
 				const data = await api(`/remote?path=${encodeURIComponent(dir)}`);
@@ -1501,7 +1452,6 @@ export default {
 			}
 		}
 
-		/** 手动传一个明确的对象（文件/子树/整根）—— 服务端固定 deletePolicy=none，永不删。 */
 		async function transfer(direction, path, label) {
 			const prog = $(".progress");
 			prog.classList.remove("hidden");
@@ -1526,10 +1476,6 @@ export default {
 			}
 		}
 
-		/** 右键菜单给的路径 → 工作区相对路径。
-		 *  文件树在工作区里给的是相对路径；机器浏览给的是绝对路径 —— 只有确实在工作区内
-		 *  才折算成相对路径，工作区外一律拒绝（服务端 /transfer 只认工作区内的相对路径：
-		 *  硬塞绝对路径只会得到一句莫名的「本地不存在」，POSIX 上还会被当成远端路径）。 */
 		function toWorkspaceRel(raw) {
 			const p = String(raw ?? "")
 				.replace(/\\/g, "/")
@@ -1548,7 +1494,6 @@ export default {
 			return null;
 		}
 
-		/** 右键菜单来的上传/下载：面板已经切出来了，进度与结果就写在这张卡片里。 */
 		async function transferExternal(req) {
 			showError(".msg.err", "");
 			const rel = toWorkspaceRel(req.path);
@@ -1559,22 +1504,18 @@ export default {
 			await transfer(req.direction ?? "up", rel, req.label || rel || ".");
 		}
 
-		// 初始快照。**声明必须在 drainExternal 之前**：右键菜单唤起时那个同步调用会
-		// 立刻求值 `ready`（在后面声明就撞 TDZ）。refresh() 自带 try/catch，不会 reject。
 		const ready = refresh().then(() => {
 			const root = state?.connection?.remotePath;
 			if (root) void loadRemote(root);
 			scheduleRefresh();
 		});
 
-		/** 外部请求队列：串行跑（两条并发会互相刷同一个进度条）。 */
 		const externalQueue = [];
 		let draining = false;
 		async function drainExternal() {
 			if (draining) return;
 			draining = true;
 			try {
-				// 初始 refresh 回来前 state.cwd 是空的，而绝对路径要靠它折算 —— 先等一下
 				await ready.catch(() => {});
 				while (externalQueue.length) {
 					await transferExternal(externalQueue.shift());
@@ -1609,7 +1550,6 @@ export default {
 				} catch {}
 			}
 		};
-		// 面板就是被右键菜单唤起的那一次：把模块级攒下的请求转进来
 		if (pendingOps.length) {
 			externalQueue.push(...pendingOps.splice(0, pendingOps.length));
 			void drainExternal();
@@ -1630,7 +1570,6 @@ export default {
 			}
 		}
 
-		// ── 事件绑定 ────────────────────────────────────────────────────────
 		const on = (sel, ev, fn) => {
 			const el = $(sel);
 			if (el) el.addEventListener(ev, fn);
@@ -2035,13 +1974,11 @@ export default {
 					} else if (!globalThis.confirm?.(t("confirmRun"))) {
 						return;
 					}
-					// 参数没变就用刚才预览的那份计划：大树上「预览→执行」等于扫两遍，第二遍纯属白等
 					const reuse = Boolean(lastPlanToken) && lastPlanKey === key;
 					const out = await api("/sync", {
 						method: "POST",
 						body: { ...body, dryRun: false, ...(reuse ? { reuse: true, planToken: lastPlanToken } : {}) },
 					});
-					// 计划一到手就作废：下次执行必须重新扫，不能让改完的文件拿旧计划去传
 					lastPlanToken = null;
 					lastPlanKey = null;
 					if (out.cancelled) {
@@ -2060,7 +1997,6 @@ export default {
 			}
 		}
 
-		/** 进度行就地写一句话（不经过 refresh，因为任务已经结束、state 里未必马上有）。 */
 		function progLine(text) {
 			const prog = $(".progress");
 			prog.classList.remove("hidden");
@@ -2070,7 +2006,6 @@ export default {
 		on(".btn-plan", "click", () => doPlanOrSync(false));
 		on(".btn-run", "click", () => doPlanOrSync(true));
 
-		// 停止：扫描阶段和传输阶段都能停（服务端复用同一个 AbortController）。
 		on(".btn-stop", "click", async () => {
 			const btn = $(".btn-stop");
 			btn.disabled = true;
@@ -2090,7 +2025,6 @@ export default {
 		on(".btn-rroot", "click", () => void loadRemote(state?.connection?.remotePath || "/"));
 		on(".btn-rgo", "click", () => void loadRemote($(".f-rdir").value.trim() || "/"));
 		on(".btn-rfresh", "click", () => void loadRemote(remoteDir));
-		// 手动上传：把当前远端目录对应的本地目录推上去（服务端反查 mappings）
 		on(".btn-rup", "click", async () => {
 			const btn = $(".btn-rup");
 			btn.disabled = true;
@@ -2106,19 +2040,16 @@ export default {
 			const row = e.target.closest?.(".fr");
 			if (!row) return;
 			const p = row.dataset.path;
-			// ⬆ 手动上传本地对应文件/目录到此处
 			if (e.target.closest?.("[data-up]")) {
 				e.stopPropagation();
 				void transfer("up", p, row.querySelector(".nm")?.textContent ?? p);
 				return;
 			}
-			// ⬇ 手动下载这一项（目录则整棵子树）
 			if (e.target.closest?.("[data-dl]")) {
 				e.stopPropagation();
 				void transfer("down", p, row.querySelector(".nm")?.textContent ?? p);
 				return;
 			}
-			// 🚫 将对应路径加入 SFTP 忽略
 			if (e.target.closest?.("[data-ign]")) {
 				e.stopPropagation();
 				const hit = findSyncRoot(p);

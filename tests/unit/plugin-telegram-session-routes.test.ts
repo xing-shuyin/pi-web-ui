@@ -37,10 +37,6 @@ async function finish(bridge: any, sessionId: string, runId?: string) {
 }
 it("isolates concurrent c1 receipts, forwards web runs once, rejects unknown IDs and clears the last candidate", async () => {
 	const { bridge, host } = setup();
-	// 两个账号并发进入同一个 conversationId（c1）。`host.chat` 的**调用顺序**取决于哪条
-	// inbound 先跑完内部 await（storage.get / workspace 校验…），所以不能拿
-	// `mock.results` 的下标当账号号——满载时会偶发拿到 [2,1] 而假红。
-	// 这里按「这条 run 是给哪个 chat 回的」取（run.msg.chat.id），与调度顺序无关。
 	await Promise.all([bridge.onInboundMessage(msg(1)), bridge.onInboundMessage(msg(2))]);
 	const runForChat = (chatId: number) => {
 		for (const [runId, run] of bridge.pendingRuns) {
@@ -55,7 +51,6 @@ it("isolates concurrent c1 receipts, forwards web runs once, rejects unknown IDs
 	expect(host.chat).toHaveBeenCalledTimes(2);
 	await finish(bridge, one!.sessionId, one!.runId);
 	await finish(bridge, two!.sessionId, two!.runId);
-	// 各自回到各自的 chat：两次 finish 的先后决定调用顺序，这里只锁「谁都回了、没串号」。
 	expect(bridge.send.mock.calls.map(([m]: any[]) => m.chat.id).sort()).toEqual([1, 2]);
 	bridge.send.mockClear();
 	await bridge.handleRunEvent(event("run_start", one!.sessionId));

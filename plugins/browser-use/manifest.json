@@ -1,7 +1,7 @@
 {
 	"id": "browser-use",
 	"name": "browser-use",
-	"version": "0.10.0",
+	"version": "0.10.1",
 	"icon": "🌐",
 	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\"/><path d=\"M2 12h20\"/></svg>",
 	"description": "常驻 Chrome 自动化与全能智能搜索：支持无头静默运行与实体窗口切换、受后台任务面板精确管理；注册 browser_search 极速搜索（标签页隔离、无图极速渲染、搜阅一体、时效过滤、官网认证置顶、域名多样性、真实落地页并发还原与智能降级）与 browser_use 全能交互、read_page 纯净阅读以及控制台日志实时捕获（Console）。",

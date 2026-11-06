@@ -1,7 +1,3 @@
-/**
- * matchAtToken 单测（web/src/at-mention.ts）：`@` 提及词元判定。
- * 锁住三条不变量：邮箱不误弹 / CJK 无空格可触发 / 空格关闭。
- */
 import { describe, expect, it } from "vitest";
 import {
 	mapFileHits,
@@ -87,7 +83,6 @@ describe("matchAtToken", () => {
 				{ path: "", name: "x", type: "file" },
 			]);
 			expect(out).toHaveLength(2);
-			// 正文写相对路径（非 basename）：同名条目靠路径区分，linkify 按路径渲染药丸。
 			expect(out[0]).toMatchObject({ providerId: "host:files", title: "a.ts", text: "@src/a.ts" });
 			expect(out[0]?.attachments?.[0]).toMatchObject({ path: "src/a.ts", mode: "reference" });
 			expect(out[0]?.attachments?.[0]).not.toHaveProperty("isDir");
@@ -106,6 +101,24 @@ describe("matchAtToken", () => {
 	});
 
 	describe("mapPageHits", () => {
+		it("原生同源标签页保持各自tabId，扩展页保留origin", () => {
+			const hits = mapPageHits(
+				"Browser",
+				[
+					{ origin: "https://example.com", title: "First", open: true, tabId: "native-one" },
+					{ origin: "https://example.com", title: "Second", open: true, tabId: "native-two" },
+					{ origin: "https://extension.example", title: "Extension", open: true },
+				],
+				"",
+			);
+			expect(hits.map((hit) => hit.attachments?.[0]?.path)).toEqual([
+				"native-one",
+				"native-two",
+				"https://extension.example",
+			]);
+			expect(hits[0].hint).toBe("https://example.com");
+		});
+
 		it("标题/origin 双字段过滤，无标题回落 origin", () => {
 			const pages = [
 				{ origin: "https://example.com", title: "Example", open: true },
@@ -116,11 +129,9 @@ describe("matchAtToken", () => {
 			expect(out).toHaveLength(1);
 			expect(out[0]).toMatchObject({ providerId: "host:pages", title: "page · Example", text: "Example" });
 			expect(out[0]?.attachments?.[0]).toMatchObject({ path: "https://example.com", mode: "page" });
-			// 关掉的页不收录（模型读不到）。
 			const all = mapPageHits("浏览器操作", pages, "");
 			expect(all).toHaveLength(1);
 			expect(all[0]?.hint).toBe("https://example.com");
-			// 前缀词精确命中即列出全部；前缀仍走过滤。
 			expect(mapPageHits("浏览器操作", pages, "page")).toHaveLength(1);
 			expect(mapPageHits("浏览器操作", pages, "页面")).toHaveLength(1);
 			expect(mapPageHits("浏览器操作", pages, "pag")).toHaveLength(0);
@@ -174,7 +185,6 @@ describe("matchAtToken", () => {
 		it("相关性排序：名称匹配优先于描述匹配，防止描述泛匹配挤占名称命中", () => {
 			const out = mapSkillHits("Skills", commands, "code");
 			expect(out.length).toBeGreaterThanOrEqual(2);
-			// "code-helper" 包含 "code" 在名称中，必须排在仅描述包含 "code" 的 "helper-with-long-desc" 之前
 			expect(out[0]?.title).toBe("code-helper");
 			expect(out[1]?.title).toBe("helper-with-long-desc");
 		});
@@ -184,17 +194,14 @@ describe("matchAtToken", () => {
 			expect(byName).toHaveLength(1);
 			expect(byName[0]?.title).toBe("wrapup");
 
-			// 3 字符以上支持 description / descriptionEn 检索
 			const byDescEn = mapSkillHits("Skills", commands, "repo");
 			expect(byDescEn).toHaveLength(1);
 			expect(byDescEn[0]?.title).toBe("analyze");
 
-			// 自定义 resolver 优先
 			const byResolver = mapSkillHits("Skills", commands, "session", 15, (c) => c.descriptionEn ?? "");
 			expect(byResolver).toHaveLength(1);
 			expect(byResolver[0]?.hint).toBe("Wrap up the current session");
 
-			// 2 字符短查询不匹配 description（防泛匹配挤占）
 			const shortDesc = mapSkillHits("Skills", commands, "se");
 			expect(shortDesc).toHaveLength(0);
 		});
@@ -243,7 +250,6 @@ describe("matchAtToken", () => {
 			expect(merged).toHaveLength(4);
 			expect(merged.map((m) => m.providerId)).toEqual(["host:pages", "host:skills", "host:files", "p1"]);
 
-			// 验证缺省 totalCap 为 30：35 条项目默认截断为 30 条
 			const thirtyFiveSkills: AtHit[] = Array.from({ length: 35 }, (_, idx) => ({
 				providerId: "host:skills",
 				providerLabel: "Skills",
@@ -252,7 +258,6 @@ describe("matchAtToken", () => {
 			const defaultCapped = mergeAtHits({ skills: thirtyFiveSkills }, "query");
 			expect(defaultCapped).toHaveLength(30);
 
-			// 显式 totalCap 截断
 			const capped = mergeAtHits(
 				{ pages: [pageHit], skills: [skillHit], files: [fileHit], plugins: [pluginHit] },
 				"test",
@@ -260,7 +265,6 @@ describe("matchAtToken", () => {
 			);
 			expect(capped).toHaveLength(2);
 
-			// 空 buckets 测试
 			const empty = mergeAtHits({}, "test");
 			expect(empty).toHaveLength(0);
 		});

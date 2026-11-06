@@ -1,14 +1,3 @@
-/**
- * browser-use/index.mjs — 常驻 Chrome 自动化插件 (DrissionPage)
- *
- * 为 AI 注册 `browser_use` 原生工具：
- * - 自动拉起或连接常驻 Chrome（默认端口 9333，独立 user-data 目录防止冲突）；
- * - 闲置超时自动关闭（默认 15 分钟无操作自动退出释放内存，可在插件设置中自定义）；
- * - 多标签页管理：tabs / switch / close / open / new；
- * - 页面快照：精简提取人类可见的交互元素（带有序号及属性，极省 Token）；
- * - 动作控制：click / input / select / check / type / press / scroll / wait / js / shot / quit。
- */
-
 import { exec, execFile } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { createConnection } from "node:net";
@@ -39,10 +28,8 @@ function decode(buf) {
 
 function resolvePython() {
 	const isWin = process.platform === "win32";
-	// 1. 插件内置虚拟环境
 	const venvPy = join(PLUGIN_DIR, ".venv", isWin ? "Scripts/python.exe" : "bin/python");
 	if (existsSync(venvPy)) return venvPy;
-	// 2. 外部环境变量或默认 python
 	if (process.env.PYTHON_PATH && existsSync(process.env.PYTHON_PATH)) {
 		return process.env.PYTHON_PATH;
 	}
@@ -67,7 +54,6 @@ function checkPortAlive(port = DEFAULT_PORT, timeoutMs = 1500) {
 }
 
 async function forceKillPort(port = DEFAULT_PORT) {
-	// 端口会拼进 shell 命令（netstat/fuser/lsof），先做白名单校验防注入。
 	const portStr = String(port ?? "");
 	if (!/^\d{1,5}$/.test(portStr)) return;
 	const portNum = Number(portStr);
@@ -83,21 +69,15 @@ async function forceKillPort(port = DEFAULT_PORT) {
 				if (pid && /^\d+$/.test(pid) && pid !== "0" && pid !== String(process.pid)) {
 					try {
 						await execAsync(`taskkill /F /PID ${pid}`);
-					} catch {
-						// ignore
-					}
+					} catch {}
 				}
 			}
 		} else {
 			await execAsync(`fuser -k -n tcp ${port} 2>/dev/null || lsof -ti :${port} | xargs kill -9 2>/dev/null || true`);
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 }
 
-// 搜索串行队列：同一个 worker 标签页被并发导航会互相踩（结果串味/误报无结果），
-// 进程内先排队，再由 dp_browser.py 的文件锁做跟进程互斥。
 let searchChain = Promise.resolve();
 
 function enqueueSearch(fn) {
@@ -138,9 +118,7 @@ function runPythonScript(pyExecutable, scriptArgs, { env = {}, timeout = DEFAULT
 								resolve(parsed);
 								return;
 							}
-						} catch {
-							// fallback to reject
-						}
+						} catch {}
 					}
 					const tail = stderrText ? `（${stderrText.slice(-300)}）` : "";
 					reject(new Error(`browser_use 运行失败：${err.message}${tail}`));
@@ -280,7 +258,6 @@ const ATTEMPT_KIND_LABEL = {
 	error: "执行出错",
 };
 
-/** 零结果时必须说清「被拦」还是「真没有」，禁止统一降级成“未找到有效自然搜索结果”。 */
 function formatSearchFailureText(attempts) {
 	const list = Array.isArray(attempts) ? attempts.filter((a) => a && a.engine) : [];
 	if (list.length === 0) {
@@ -348,12 +325,11 @@ export function activate(host) {
 	const userDataDir = join(host.dataDir, "browser-use-chrome-data");
 	mkdirSync(userDataDir, { recursive: true });
 
-	// 空闲自动关闭管理与无头模式设置
 	let browserActive = false;
 	let lastActivityTime = Date.now();
 	let idleTimer = null;
 	let idleTimeoutMinutes = DEFAULT_IDLE_MINUTES;
-	let headlessMode = true; // 默认采用无头模式
+	let headlessMode = true;
 	let defaultEngine = "auto";
 	let fastSearch = true;
 	let searchTabIsolation = true;
@@ -375,9 +351,7 @@ export function activate(host) {
 		if (typeof stored?.searchTabIsolation === "boolean") {
 			searchTabIsolation = stored.searchTabIsolation;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 
 	function buildBrowserEnv() {
 		return {
@@ -397,7 +371,6 @@ export function activate(host) {
 		}
 	}
 
-	// 后台任务面板登记 (Background Tasks)
 	let bgTaskHandle = null;
 
 	function syncBackgroundTask(tabCount) {
@@ -446,11 +419,8 @@ export function activate(host) {
 			const py = resolvePython();
 			const env = buildBrowserEnv();
 			await runPythonScript(py, ["quit"], { env, timeout: 5_000 });
-		} catch {
-			// ignore
-		}
+		} catch {}
 
-		// 精确强力释放端口（防止卡死或僵尸进程遗留）
 		const stillAlive = await checkPortAlive(DEFAULT_PORT, 600);
 		if (stillAlive) {
 			await forceKillPort(DEFAULT_PORT);
@@ -466,7 +436,7 @@ export function activate(host) {
 	function armIdleTimer() {
 		stopIdleTimer();
 		if (idleTimeoutMinutes <= 0 || !browserActive) {
-			return; // 0 表示永不自动关闭
+			return;
 		}
 		const timeoutMs = idleTimeoutMinutes * 60 * 1000;
 		const elapsed = Date.now() - lastActivityTime;
@@ -743,7 +713,6 @@ export function activate(host) {
 			const env = buildBrowserEnv();
 
 			const runScript = () => runPythonScript(py, scriptArgs, { env, signal });
-			// search 走串行队列，其余动作直接执行
 			const resp = action === "search" ? await enqueueSearch(runScript) : await runScript();
 			if (!resp.ok) {
 				const errMsg = resp.error || "未知错误";
@@ -751,7 +720,6 @@ export function activate(host) {
 				throw new Error(`[browser_use] ${errMsg}${hintMsg}`);
 			}
 
-			// 更新活跃状态、后台任务卡片与空闲定时器
 			if (action === "quit") {
 				browserActive = false;
 				stopIdleTimer();
@@ -787,7 +755,6 @@ export function activate(host) {
 				outputText = JSON.stringify(resp, null, 2);
 			}
 
-			// details 字段硬限制 ≤64KB
 			const detailsSafe = {
 				ok: true,
 				action,
@@ -923,14 +890,10 @@ export function activate(host) {
 	const unregSearch = host.registerAgentTool(searchTool);
 
 	return async function deactivate() {
-		// 卸载插件时把常驻 Chrome 一并关掉：否则反注册只是摘掉工具面，
-		// 9333 端口上带着登录态的浏览器进程会永远残留（僵尸 + 凭据面）。
 		stopIdleTimer();
 		try {
 			await quitBrowser();
-		} catch {
-			// 关闭失败不阻塞插件卸载
-		}
+		} catch {}
 		removeBackgroundTask();
 		offSettings?.();
 		unregUse?.();

@@ -12,7 +12,13 @@ vi.mock("../../web/src/components/MessageList", () => ({
 		createElement(
 			"div",
 			{ "data-readonly": props.readOnly },
-			props.state.messages.map((m: any) => createElement("p", { key: m.id }, m.content[0].text)),
+			props.state.messages.map((m: any) =>
+				createElement(
+					"p",
+					{ key: m.id, "data-role": m.role, title: props.messageLabels?.get(m.id) },
+					m.content[0].text,
+				),
+			),
 		),
 }));
 let root: Root;
@@ -125,6 +131,58 @@ async function append(text: string) {
 	await type(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")!.value + text);
 }
 describe("group stream lifecycle", () => {
+	it("presents the Router as a separate assistant and sends unmentioned messages without a Bot target", async () => {
+		const bodies: any[] = [];
+		const routed = {
+			...detail,
+			room: {
+				...detail.room,
+				primaryBotId: "alpha",
+				router: { enabled: true, deviceId: "host", model: "p/router-model", thinkingLevel: "high", tools: ["reply"] },
+			},
+			messages: [
+				{
+					id: "router-reply",
+					text: "Router response",
+					createdAt: 2,
+					sender: { type: "router", name: "Router", id: "group-router" },
+				},
+				{ id: "bot-reply", text: "Bot execution", createdAt: 3, sender: { type: "bot", name: "Twin", id: "alpha" } },
+			],
+		};
+		vi.stubGlobal(
+			"fetch",
+			mockApi(async (url, init) => {
+				if (init.method === "POST") {
+					bodies.push(JSON.parse(String(init.body)));
+					return response({});
+				}
+				return response(url.endsWith("/conversations") ? { conversations: [] } : routed);
+			}),
+		);
+		await mount();
+		expect(host.querySelector('p[title*="AI Router"]')?.getAttribute("data-role")).toBe("assistant");
+		expect(host.querySelector<HTMLParagraphElement>('p[title*="Twin"]')?.title).not.toMatch(/Coordinator|群组主管/);
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.placeholder).toContain("AI Router");
+		await type("Coordinate the work");
+		await send();
+		expect(bodies[0].targetBotIds).toEqual([]);
+		expect(localSend).not.toHaveBeenCalled();
+	});
+	it("keeps the legacy primary Bot when the group Router is disabled", async () => {
+		vi.stubGlobal(
+			"fetch",
+			mockApi(async (url) =>
+				response(
+					url.endsWith("/conversations")
+						? { conversations: [] }
+						: { ...detail, room: { ...detail.room, primaryBotId: "alpha", router: { enabled: false } } },
+				),
+			),
+		);
+		await mount();
+		expect(host.querySelector<HTMLTextAreaElement>(".inputbar textarea")?.placeholder).toContain("Twin");
+	});
 	it("routes new and continued Bot mentions without a separate dropdown", async () => {
 		const posts: { url: string; body: any }[] = [];
 		vi.stubGlobal(

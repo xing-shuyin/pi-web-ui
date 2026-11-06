@@ -1,12 +1,3 @@
-/**
- * session-fast-finder.test.ts
- *
- * 验证 findMostRecentSessionFileFast:
- * 1. 空目录 / 不存在目录安全返回 undefined；
- * 2. 毫秒级按 mtime 定位最新 .jsonl 文件，无需调用 SessionManager.list 全量解析；
- * 3. 当指定 targetCwd 时，仅读取首行 header 过滤匹配该 cwd 的最新会话；
- * 4. 忽略非 .jsonl 文件。
- */
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,7 +40,6 @@ describe("findMostRecentSessionFileFast", () => {
 		await writeFile(f2, header2, "utf8");
 		await writeFile(nonJsonl, "some notes", "utf8");
 
-		// 设置 f1 为过去的时间，f2 为更新的时间
 		const now = Date.now() / 1000;
 		await utimes(f1, now - 100, now - 100);
 		await utimes(f2, now, now);
@@ -76,16 +66,13 @@ describe("findMostRecentSessionFileFast", () => {
 		const now = Date.now() / 1000;
 		await utimes(projA_old, now - 200, now - 200);
 		await utimes(projA_new, now - 100, now - 100);
-		await utimes(projB_newest, now, now); // projB 是整个目录最新的
+		await utimes(projB_newest, now, now);
 
-		// 若不带 targetCwd，返回最新的 projB
 		expect(await findMostRecentSessionFileFast(dir)).toBe(projB_newest);
 
-		// 若带 targetCwd 为 project-alpha，忽略虽然更新但属于 projB 的文件，精确返回 projA_new
 		const resultAlpha = await findMostRecentSessionFileFast(dir, "/workspace/project-alpha");
 		expect(resultAlpha).toBe(projA_new);
 
-		// 验证 project-beta 得到 projB_newest
 		const resultBeta = await findMostRecentSessionFileFast(dir, "/workspace/project-beta");
 		expect(resultBeta).toBe(projB_newest);
 	});
@@ -122,12 +109,10 @@ describe("findMostRecentSessionFileFast", () => {
 			process.env.PI_CODING_AGENT_DIR = agentDir;
 			process.env.PI_CODING_AGENT_SESSION_DIR = sessionsRoot;
 
-			// 旧扁平会话在 sessionsRoot 顶层
 			const legacyFile = join(sessionsRoot, "legacy.jsonl");
 			await writeFile(legacyFile, JSON.stringify({ type: "session", id: "s-legacy", cwd: workdir }) + "\n", "utf8");
 			await utimes(legacyFile, new Date(1_000), new Date(1_000));
 
-			// 新会话在专属子目录
 			const projectDir = SessionManager.create(workdir).getSessionDir();
 			const newFile = join(projectDir, "new.jsonl");
 			await writeFile(newFile, JSON.stringify({ type: "session", id: "s-new", cwd: workdir }) + "\n", "utf8");

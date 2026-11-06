@@ -22,7 +22,6 @@ export const DESKTOP_LIMITS = Object.freeze({
 });
 const loopback = (host: string) => ["127.0.0.1", "::1", "[::1]", "localhost"].includes(host);
 
-/** Independent local authorization. Connector rewrites Host/Origin and injects local credentials. */
 export function desktopLocalRequest(req: IncomingMessage): boolean {
 	if (!loopback(req.socket.remoteAddress?.replace(/^::ffff:/, "") ?? "")) return false;
 	try {
@@ -57,7 +56,6 @@ export interface DeviceDesktopOptions {
 	authorize: (req: IncomingMessage) => boolean;
 	env?: NodeJS.ProcessEnv;
 	dataDir?: string;
-	/** Dependency injection keeps route tests independent of the machine's physical desktop. */
 	native?: {
 		status: () => { supported: boolean; backend: string; reason?: string };
 		start: (options: CaptureOptions) => Capture;
@@ -68,7 +66,6 @@ export interface DeviceDesktopOptions {
 	};
 }
 
-/** Validate the entire input at the trust boundary, before invoking any native API. */
 export function parseDesktopInput(value: unknown): NativeDesktopInput | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return;
 	const v = value as Record<string, unknown>;
@@ -184,7 +181,6 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 		}
 		next();
 	};
-	// Both Hub and connector reject these routes. Require a loopback browser as well.
 	const localGuard: express.RequestHandler = (req, res, next) => {
 		if (!allowed(req) || req.headers["sec-fetch-site"] === "cross-site") {
 			res.status(403).json({ error: "Open Device Center on this device to manage desktop permissions." });
@@ -326,9 +322,7 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 					return;
 				}
 				input = parseDesktopInput(value);
-			} catch {
-				/* Invalid input closes this connection. */
-			}
+			} catch {}
 			if (!input) return cleanup();
 			lastActivity = Date.now();
 			if (!readOnly) {
@@ -351,7 +345,6 @@ export function createDeviceDesktop({ app, authorize, env = process.env, dataDir
 						clearTimeout(connectTimer);
 						ws.send(JSON.stringify({ type: "ready" }));
 					}
-					// Slow clients drop frames rather than building latency or an unbounded queue.
 					if (
 						sending ||
 						awaitingAck ||

@@ -1,10 +1,3 @@
-/**
- * tests/unit/wecom-features.test.ts
- * Tests for WeCom (企业微信) plugin:
- * - Pure helpers (marker stripping, accountId hashing, message builders)
- * - WecomBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import { buildWecomMessage, peerAccountId, stripInternalMarkers, WecomBotBridge } from "../../plugins/wecom/index.mjs";
 
@@ -23,12 +16,10 @@ describe("企业微信纯函数工具测试", () => {
 	});
 
 	it("buildWecomMessage 生成符合企微规范的 Markdown 与文本消息", () => {
-		// 1. text
 		const textMsg = buildWecomMessage({ msgType: "text", text: "测试消息" });
 		expect(textMsg.msgtype).toBe("text");
 		expect(textMsg.text!.content).toBe("测试消息");
 
-		// 2. markdown
 		const mdMsg = buildWecomMessage({ msgType: "markdown", title: "通报", text: "正文内容" });
 		expect(mdMsg.msgtype).toBe("markdown");
 		expect(mdMsg.markdown!.content).toContain("正文内容");
@@ -185,7 +176,6 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 
 		const convId = "conv_wc_bytes";
 
-		// 构造 2000 个中文字符，每个 3 字节，共 6000 字节，必拆成至少 2 块
 		const chineseLong = "测".repeat(2000);
 		await runHandler!({
 			conversationId: convId,
@@ -200,7 +190,6 @@ describe("WecomBotBridge 双工逻辑测试", () => {
 			type: "run_end",
 		});
 
-		// 应该切成两块发送，且每块（包含标题头）均不超过企微平台的 4096 字节硬上限
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		for (const call of fetchMock.mock.calls) {
 			const body = JSON.parse(call[1].body);

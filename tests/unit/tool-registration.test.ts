@@ -1,17 +1,3 @@
-/**
- * 注册→目录守卫（静态源码检查，不启动服务）。
- *
- * 为什么需要：claim_files 当年就是从这里漏的——在 agent-service.ts 的 customTools
- * 里注册了，却没进 AGENT_TOOL_CATALOG，全程静默，没有任何测试变红。
- * settings-tool-rows 只守「目录→设置行」，不管「注册→目录」。
- *
- * 规则：agent-service.ts 里调用的每个 make*Tool(s) 工厂，必须在 FACTORY_TOOLS 里
- * 登记它的产出；每个产出的工具名要么在目录里（可开关），要么在 INTRINSIC 内核
- * 白名单里（bash/read：覆盖 SDK 内置，与 write/edit 一起走设置页「核心工具」区开关、
- * 不占目录行——见 tool-manager.ts 的 CORE_BUILTIN_TOOL_NAMES）。
- * 加新工具 = 在这里给它的工厂登记一行，逼着你当场决定：入目录还是内核。
- * 插件工具走 enabledPluginToolDefs 动态区，不经过 make*Tool 调用，不管。
- */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -58,19 +44,12 @@ it("registers exactly one terminal catalog entry", () => {
 
 const AGENT_SERVICE_SRC = readFileSync(join(__dirname, "..", "..", "server", "agent-service.ts"), "utf8");
 
-/** 覆盖 SDK 内置的内核工具（与 write/edit 同走设置页「核心工具」区，不占目录行；
- *  目录行是 OTHER_AGENT_TOOLS 自动渲染的细粒度开关，核心四件套不在其中）。 */
 const INTRINSIC = new Set(["bash", "read"]);
 
-/** 常驻脚手架工具（不入目录、不可单独关掉）：它们是机制的入口，关掉机制就断了。
- *  load_tools = 延迟加载模式的唯一拉取入口（见 server/load-tools-tool.ts）。 */
 const HARNESS = new Set([LOAD_TOOLS_TOOL_NAME]);
 
-/** 群组/设备运行态专用工具（不入普通用户设置目录、仅在群任务 Bot 执行环境中由 bot.tools 动态注入与授权）：
- *  device_collab = 设备中心群任务协作工具。 */
 const BOT_ONLY = new Set(GROUP_BOT_TOOL_CATALOG.map((t) => t.name));
 
-/** 工厂 → 它注册的工具名（与各工厂的 name: 对齐；makeSubagentTools 产出 7 个子代理工具，见 subagents.ts）。 */
 const FACTORY_TOOLS: Record<string, string[]> = {
 	makeAdaptiveBashTool: ["bash"],
 	makeKillableBashTool: ["bash"],
@@ -103,7 +82,6 @@ const FACTORY_TOOLS: Record<string, string[]> = {
 	createToolSearchExtension: [TOOL_SEARCH_TOOL_NAME],
 };
 
-/** agent-service.ts 里实际调用的工厂（去注释、防定义行，只认 `makeXxxTool(` 或 `createCodemodeExtension(` 或 `createToolSearchExtension(` 调用）。 */
 function calledFactories(): Set<string> {
 	const lines = AGENT_SERVICE_SRC.replace(/\/\*[\s\S]*?\*\//g, "")
 		.split("\n")

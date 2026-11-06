@@ -53,7 +53,6 @@ describe("abortBash stable ownership", () => {
 			undefined,
 			{ sessionManager: { getSessionId: () => "bash-scope", getSessionFile: () => undefined } } as any,
 		);
-		// Attach a rejection handler immediately; cancellation may settle during readiness checks.
 		const settled = running.then(
 			(value) => ({ value }),
 			(error) => ({ error }),
@@ -114,9 +113,7 @@ describe("abortBash stable ownership", () => {
 				if (!processId) continue;
 				try {
 					process.kill(processId, "SIGKILL");
-				} catch {
-					/* already exited */
-				}
+				} catch {}
 			}
 			rmSync(directory, { recursive: true, force: true });
 		}

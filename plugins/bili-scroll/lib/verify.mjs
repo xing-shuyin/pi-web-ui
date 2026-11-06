@@ -1,17 +1,9 @@
-/**
- * plugins/bili-scroll/lib/verify.mjs
- * 评论发出后复核（检查新号/风控压审导致并未公开可见）
- *
- * 顶层评论：/x/v2/reply/main?type=1&oid=<aid>&mode=2&next=0&ps=20
- * 楼中楼：/x/v2/reply/reply?type=1&oid=<aid>&root=<root>&ps=20
- */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 从判重表里抠出「我们发过的评论」记录：容忍 markdown 表格 / 列表 / 随手写的行 */
 export function parseSeen(text) {
 	const rows = [];
 	for (const line of String(text).split(/\r?\n/)) {
@@ -63,9 +55,6 @@ async function jget(url, headers) {
 	}
 }
 
-/**
- * 复核一条：先试顶层（按时间第一页），再试楼中楼（如果记了 root）
- */
 export async function verifyOne(record, { cred, aidCache = new Map(), headers }) {
 	const out = { rpid: record.rpid, bv: record.bv, visible: null, how: "", note: "" };
 	if (!aidCache.has(record.bv)) {
@@ -81,7 +70,6 @@ export async function verifyOne(record, { cred, aidCache = new Map(), headers })
 	}
 	const aid = meta.aid;
 
-	// ① 顶层：按时间第一页（刚发的就在这儿）
 	if (!record.root) {
 		const d = await jget(`https://api.bilibili.com/x/v2/reply/main?type=1&oid=${aid}&mode=2&next=0&ps=20`, headers);
 		const list = d?.data?.replies || [];
@@ -98,7 +86,6 @@ export async function verifyOne(record, { cred, aidCache = new Map(), headers })
 		return out;
 	}
 
-	// ② 楼中楼：按 root 拉那一串
 	const d = await jget(
 		`https://api.bilibili.com/x/v2/reply/reply?type=1&oid=${aid}&root=${record.root}&ps=20&pn=1`,
 		headers,
@@ -117,9 +104,6 @@ export async function verifyOne(record, { cred, aidCache = new Map(), headers })
 	return out;
 }
 
-/**
- * 查最近的评论记录（最多挑最近 5 条核）
- */
 export async function verifyRecent(stateDir, { max = 5, log = () => {} } = {}) {
 	const cred = loadCredential(stateDir);
 	if (!cred) return { ok: false, error: "未登录，无法核对评论可见性" };

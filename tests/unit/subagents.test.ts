@@ -14,7 +14,6 @@ import { countActiveSubagents, isSubagentActive, toSubagentSnapshot } from "../.
 import type { Conversation } from "../../server/agent-service.js";
 import { SUBAGENT_TOOL_NAMES } from "../../server/tool-manager.js";
 
-/** 一个假的 host，工具调用不会真正执行会话（只验证走通与参数透传）。 */
 function makeHostSpies() {
 	const host: SubagentToolHost = {
 		spawnSubagent: vi.fn(async (_prompt, type, _cwd) => `sa-${type}-abc`),
@@ -33,14 +32,10 @@ function makeHostSpies() {
 
 describe("subagents tools", () => {
 	it("computeWaitCapMs 计算阻塞上限（#449）", () => {
-		// 默认看门狗 20 分钟 -> 0.8 * 20min = 16 分钟 = 960,000ms
 		expect(computeWaitCapMs()).toBe(960_000);
-		// 自定义看门狗 100s -> 80,000ms
 		expect(computeWaitCapMs(100_000)).toBe(80_000);
-		// 看门狗极小 -> 5s 兜底
 		expect(computeWaitCapMs(2_000)).toBe(5_000);
 
-		// 环境变量覆盖
 		const oldEnv = process.env.PI_WEB_SUBAGENT_WAIT_CAP_SECONDS;
 		try {
 			process.env.PI_WEB_SUBAGENT_WAIT_CAP_SECONDS = "120";
@@ -932,8 +927,7 @@ describe("subagents tools", () => {
 		let watchdog = 1_200_000;
 		(host as unknown as { getWatchdogTimeoutMs: () => number }).getWatchdogTimeoutMs = () => watchdog;
 		const [subagent] = makeSubagentTools(host, () => "zh");
-		// 动态调低看门狗：兜底下限 5000ms
-		watchdog = 6_000; // computeWaitCapMs: Math.max(4800, 5000) = 5000ms (5s)
+		watchdog = 6_000;
 		const runningList = [
 			{
 				convId: "sa-dyn",
@@ -951,7 +945,6 @@ describe("subagents tools", () => {
 			runningList.find((x) => x.convId === id),
 		);
 		const start = Date.now();
-		// 传入 timeoutSeconds: 60，应当被 liveCapSeconds (5s) 压制，在 ~5s 超时而非 60s
 		const result = (await subagent.execute!(
 			"t1",
 			{ action: "wait_all", timeoutSeconds: 60 } as never,
@@ -1112,7 +1105,6 @@ describe("active subagent quota & retention decoupling (issue #589)", () => {
 		expect(isSubagentActive(canceledSa)).toBe(false);
 		expect(isSubagentActive(regularRunning)).toBe(false);
 
-		// 即使存在 20 个已终态子代理保留在左栏，活跃名额只计 running + booting + 在途 spawning
 		const finishedBatch = Array.from({ length: 20 }, (_, i) =>
 			makeFakeConv({ id: `sa-fin-${i}`, isSubagent: true, isStreaming: false, stopReason: "end_turn" }),
 		);
@@ -1372,7 +1364,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			}));
 			const [tool] = makeSubagentTools(host, () => "zh", "c1");
 
-			// 移出当前自身 -> 拒绝
 			const resSelf = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "c1" } as never,
@@ -1382,7 +1373,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			)) as { content: { text: string }[] };
 			expect(resSelf.content[0].text).toContain("不能移出当前会话自身");
 
-			// 移出前端处于 active 打开态的子代理 -> 拒绝
 			const resActive = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "sa-active-viewing" } as never,
@@ -1408,7 +1398,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			});
 			const [tool] = makeSubagentTools(host, () => "zh", "c1");
 
-			// 无 force -> 拒绝
 			const resRefuse = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "sa-running-1" } as never,
@@ -1420,7 +1409,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			expect(resRefuse.content[0].text).toContain("force=true 强行中止并移出");
 			expect(host.dismissSubagent).not.toHaveBeenCalled();
 
-			// 带 force=true -> 成功放行
 			const resForce = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "sa-running-1", force: true } as never,
@@ -1488,7 +1476,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			});
 			const [tool] = makeSubagentTools(host, () => "zh", "c1");
 
-			// 默认拒绝
 			const resDenied = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "conv-persisted-1" } as never,
@@ -1500,7 +1487,6 @@ describe("Issue #713 subagent thinking, notification & information flow", () => 
 			expect(resDenied.content[0].text).toContain("includePersisted=true");
 			expect(host.dismissSubagent).not.toHaveBeenCalled();
 
-			// 传入 includePersisted=true -> 放行
 			const resAllowed = (await tool.execute!(
 				"t1",
 				{ action: "dismiss", runId: "conv-persisted-1", includePersisted: true } as never,

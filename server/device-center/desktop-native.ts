@@ -52,7 +52,6 @@ const specialKeys = new Set([
 	"Slash",
 ]);
 
-// Rebuild a bounded wire object: never forward untrusted extra fields to the helper.
 function validatedInput(value: NativeDesktopInput): NativeDesktopInput | undefined {
 	if (!value || typeof value !== "object") return;
 	switch (value.type) {
@@ -95,7 +94,6 @@ function powershellPath(): string {
 	return join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-/** Availability of the capture runtime; OS permissions are checked by the helper at startup. */
 export function nativeDesktopStatus(): { supported: boolean; backend: string; reason?: string } {
 	if (process.platform === "win32") {
 		return existsSync(powershellPath())
@@ -123,9 +121,7 @@ export function nativeDesktopStatus(): { supported: boolean; backend: string; re
 					stdio: ["ignore", "pipe", "ignore"],
 				}).trim(),
 			);
-		} catch {
-			/* Missing/unselected developer tools or a stalled xcrun. */
-		}
+		} catch {}
 		return swiftAvailable
 			? { supported: true, backend: "macos-screencapturekit" }
 			: {
@@ -142,7 +138,6 @@ export function nativeDesktopStatus(): { supported: boolean; backend: string; re
 	};
 }
 
-/** Explicit local permission action; callers must enforce local-device access. */
 export async function requestNativeDesktopPermissions(
 	kind: "screen" | "control",
 	signal?: AbortSignal,
@@ -166,7 +161,6 @@ export async function requestNativeDesktopPermissions(
 			clearTimeout(timeout);
 			clearTimeout(killTimer);
 			signal?.removeEventListener("abort", abort);
-			// Never remove a running helper's script, or block the event loop on retries.
 			if (directory) rm(directory, { recursive: true, force: true, maxRetries: 2 }, () => {});
 		}
 		function fail(error: Error) {
@@ -249,7 +243,6 @@ export async function requestNativeDesktopPermissions(
 	});
 }
 
-/** Main-display JPEG stream. Read-only is immutable per handle and defaults to true. */
 export function startNativeDesktop(options: {
 	onFrame: (jpeg: Buffer) => void;
 	onError: (message: string) => void;
@@ -289,8 +282,6 @@ export function startNativeDesktop(options: {
 			finish();
 			return;
 		}
-		// EOF/close is processed on a dedicated input thread: held keys/buttons are
-		// released before exit, even when capture is waiting for frame acknowledgment.
 		if (!child.stdin.destroyed) child.stdin.end('{"type":"close"}\n');
 		timer = setTimeout(() => {
 			child?.kill();

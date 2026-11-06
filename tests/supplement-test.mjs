@@ -1,8 +1,3 @@
-/**
- * 排队（followUp）按钮 test：智能体回复期间，输入 + 点「排队」（运行中发送位那颗
- * 对半胶囊的左半）把消息加队列；本轮回复一结束它立刻出现在聊天里，智能体随后回答。
- * 同时覆盖对半胶囊的两个状态：无输入时两半禁用（胶囊变暗），输入后解锁可点。
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
@@ -13,7 +8,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const HEADLESS = CHROME_PATH;
@@ -40,9 +34,7 @@ try {
 }
 try {
 	await freePort(PORT);
-} catch {
-	/* port free */
-}
+} catch {}
 await sleep(500);
 const server = spawn("node", ["dist/server/index.js"], {
 	cwd: PROJ,
@@ -67,7 +59,6 @@ await page.goto(URL);
 await page.waitForSelector("textarea", { timeout: 15000 });
 await sleep(800);
 
-// --- 1. send the first prompt; wait for streaming (stop button) ---
 await page.locator("textarea").fill("只回复两个字：好的");
 await page.keyboard.press("Enter");
 await page
@@ -75,7 +66,6 @@ await page
 	.then(() => check("first reply streaming", true))
 	.catch(() => check("first reply streaming", false, "no stop button"));
 
-// --- 2. 流式中发送位 = 「排队|插队」对半胶囊；空输入时两半禁用，输入后解锁 ---
 const pill = page.locator(".split-send");
 const queueBtn = page.locator(".split-send .split-queue");
 const steerBtn = page.locator(".split-send .split-steer");
@@ -85,7 +75,6 @@ await page.locator("textarea").fill("补充一句话：请再说一遍");
 await sleep(400);
 check("输入后两半解锁", (await queueBtn.isEnabled()) && (await steerBtn.isEnabled()));
 
-// --- 3. 点左半（排队）→ 输入框清空 + 队列提示出现 ---
 await queueBtn.click();
 await sleep(600);
 check("input cleared after 排队", (await page.locator("textarea").inputValue()) === "");
@@ -99,21 +88,16 @@ check(
 	hint.join(" | "),
 );
 
-// --- 4. wait for the first reply to finish, then the queued message fires ---
 await page
 	.waitForSelector(".btn.stop", { state: "detached", timeout: 120000 })
 	.then(() => check("first reply finished", true))
 	.catch(() => check("first reply finished", false, "still streaming"));
 
-// The queued message delivers immediately after; its user message should
-// appear in the chat, then a second reply streams.
 const supplementSeen = await page
 	.waitForFunction(() => document.body.innerText.includes("补充一句话：请再说一遍"), { timeout: 180000 })
 	.then(() => true)
 	.catch(() => false);
 check("queued message delivered right after reply", supplementSeen);
-// The second assistant reply must follow the queued message (count is
-// race-free even when the reply is fast).
 const secondReply = await page
 	.waitForFunction(() => document.querySelectorAll('.msg[data-role="assistant"]').length >= 2, { timeout: 90000 })
 	.then(() => true)

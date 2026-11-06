@@ -1,6 +1,3 @@
-/**
- * 会话与消息 URL 深链纯逻辑单测（issue #587）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	buildSessionDeepLink,

@@ -27,21 +27,17 @@ describe("检查点回滚（Checkpoint Rollback）", () => {
 			timestamp: Date.now(),
 		});
 
-		// 初始叶子节点为 id4
 		expect(sm.getLeafId()).toBe(id4);
 		expect(sm.buildSessionContext().messages.length).toBe(4);
 
-		// 回滚到 id2
 		sm.branch(id2);
 		expect(sm.getLeafId()).toBe(id2);
 
-		// 回滚后上下文只包含 id1 和 id2
 		const context = sm.buildSessionContext();
 		expect(context.messages.length).toBe(2);
 		expect((context.messages[0] as { content: unknown[] }).content[0]).toEqual({ type: "text", text: "Hello" });
 		expect((context.messages[1] as { content: unknown[] }).content[0]).toEqual({ type: "text", text: "Step 2" });
 
-		// 继续追加新消息，新消息以 id2 作为 parentId
 		const id5 = sm.appendMessage({
 			role: "user",
 			content: [{ type: "text", text: "Fixed question" }],

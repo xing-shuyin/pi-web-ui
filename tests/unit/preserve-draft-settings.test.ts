@@ -1,11 +1,3 @@
-/**
- * 输入框文字跨对话保留配置项（preserveDraftAcrossConversations）单元测试：
- *   1. 默认值为 false（关：各会话独立保留草稿，切换其他会话清空或显示该会话已保留文字，切回时恢复当前会话文字）；
- *   2. ClientStateStore 持久化与加载保真；
- *   3. SettingsService.set() 可更新并通过 current 暴露；
- *   4. 预设白名单与净化收录该字段；
- *   5. i18n 多语言翻译完整且对齐。
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

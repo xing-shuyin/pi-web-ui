@@ -8,7 +8,6 @@ import {
 
 describe("group-active-context store", () => {
 	it("preserves user selected right tab across repeated room data syncs", () => {
-		// 1. 初始化房间数据
 		setActiveGroupRoomData({
 			roomId: "room-1",
 			detail: null,
@@ -20,10 +19,8 @@ describe("group-active-context store", () => {
 			conversationError: "",
 		});
 
-		// 2. 用户切换到交付待办
 		switchActiveGroupRightTab("deliveries", false);
 
-		// 3. 模拟后台轮询 / 鼠标移动导致群组件触发数据同步
 		setActiveGroupRoomData({
 			roomId: "room-1",
 			detail: null,
@@ -35,7 +32,6 @@ describe("group-active-context store", () => {
 			conversationError: "",
 		});
 
-		// 4. 用户的选择必须严格保持在 deliveries，绝不能被重置为 files
 		expect(getActiveGroupRightTab()).toBe("deliveries");
 	});
 

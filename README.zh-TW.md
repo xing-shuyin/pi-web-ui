@@ -17,8 +17,10 @@ npm、npx 和原始碼安裝需要 **Node.js ≥ 22.19.0** 與 npm。Windows 請
 ```bash
 npm install -g pi-web-ui@latest
 cd /path/to/your-project
-pi-web-ui
+pwu .
 ```
+
+`pwu`、`piwebui`、`pi-web-ui` 是等價命令，所有子命令與選項通用。使用 `pwu [目錄]` 即可在指定專案目錄啟動。
 
 預設開啟瀏覽器，網址為 `http://127.0.0.1:8787`。在工作台設定中配置模型供應商、憑證與模型，再開始對話。安裝完成不代表模型已經可用。
 

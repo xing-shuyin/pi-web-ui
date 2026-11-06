@@ -15,7 +15,6 @@ interface PendingQueueProps<T> {
 	children: (item: T, defer: () => void) => ReactNode;
 }
 
-/** Shared queue selection, deferral and presentation for questions and tool approvals. */
 export function PendingQueue<T>({
 	items,
 	itemKey,

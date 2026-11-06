@@ -1,12 +1,3 @@
-/**
- * tests/unit/qq-media.test.ts
- * QQ 通道富媒体（图片/语音/视频/文件）:
- *  - 纯函数（附件类型 → 种类/扩展名、文件名、软限制降级、展示行）
- *  - 上传链路（公网 URL / base64 直传 / 分片上传）与 msg_type=7 发送
- *  - 入站落地（下载到工作区 .pi-qq-media/，正文给绝对路径；关开关只给占位）
- *  - 出站：频道只收 URL、单聊/群聊本地文件自动上传
- */
-
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

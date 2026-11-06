@@ -27,9 +27,7 @@ describe("HTTP Proxy 支持", () => {
 
 		try {
 			rmSync(dir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	it("从 settings.json 正确解析 httpProxy", () => {

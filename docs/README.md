@@ -20,30 +20,35 @@
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | [`architecture-core.md`](architecture-core.md)       | 核心架构：快照驱动、协议单源、安全边界、主题与 CSS 分层、中央列几何、多对话并发、审批、问卷、异步归属与持久化、命令/搜索/恢复状态 | 任何跨端、运行态、审批、并发改动   |
 | [`architecture-plugins.md`](architecture-plugins.md) | 插件体系：manifest、34 个 UI 插槽与四层合并、宿主 API、MCP 项目运行态、多根工作区、定时任务、市场与更新                           | 插件、UI 扩展点、MCP、工作区改动   |
+| [`architecture-tts.md`](architecture-tts.md)         | 统一 TTS 引擎中心：系统音色、插件注册、音频合成、网页播报与 QQ 自动语音回复                                                       | 语音、TTS 引擎与音色、QQ 回复改动  |
 | [`agent-rules.md`](agent-rules.md)                   | 编码红线细则：协议与数据安全、工具提示词三处分离、UI 样式与对比度、运行态铁律、边界指针表                                         | 提交前自查；改样式/提示词/运行态前 |
 | [`development.md`](development.md)                   | 开发工作流：常用命令、CI 矩阵、编码约定、AGENTS.md 索引约定、斜杠命令目录、测试规范                                               | 每天；动测试或无把握的写法时       |
 | [`directory-reference.md`](directory-reference.md)   | 目录树参考：每个文件干什么（★ 标单源/入口）                                                                                       | 找文件、判断该改哪一层             |
 
 ## 二、模块专题（★★）
 
-| 文档                                                             | 主题                                                                                                | 何时读                               |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| [`architecture-terminal.md`](architecture-terminal.md)           | 终端 PTY、SCM 只读走 execFile、`ownerKind` 归属、bash 接管分流、SDK process patch hook              | 动终端、bash 路由、Git 面板          |
-| [`architecture-attachments.md`](architecture-attachments.md)     | 附件 / 图片 / 视觉桥、预览嗅探与 GBK 回退、512KB 上限、媒体 Range、上传下载安全                     | 动附件、预览、文件保存               |
-| [`architecture-system-prompt.md`](architecture-system-prompt.md) | 系统提示词组装链路：`compose` 模板、`{{tools}}` 目录、override 钩子、项目上下文文件                 | 动提示词、工具描述、上下文注入       |
-| [`tool-context-budget.md`](tool-context-budget.md)               | 工具上下文预算：文案精简、逐工具覆盖、延迟加载、前缀缓存硬约束、只读去重、证据外置、压缩指令        | 工具多到吃预算、延迟加载、上下文优化 |
-| [`i18n.md`](i18n.md)                                             | 模块字典、全部语言翻译源、语言包同步与 Canvas 运行消息                                              | 动界面文案、语言包或翻译工具         |
-| [`architecture-canvas.md`](architecture-canvas.md)               | 画布协同：`@画布` 引用、revision 保存、定时触发、每轮执行与返工、Git 隔离产物                       | 动画布、图形工作流、产物回写         |
-| [`architecture-sandbox.md`](architecture-sandbox.md)             | 沙盒工作区：身份与准入、基线写回三方比较、生命周期冻结、验证重点                                    | 动沙盒、写回、执行边界               |
-| [`root-cause-boundaries.md`](root-cause-boundaries.md)           | 根因整改边界：稳定归属、取消代次、持久提交与安全清理、工作树清理、HTTP 传输                         | 动异步/归属/清理/网络请求            |
-| [`goal-conversation-design.md`](goal-conversation-design.md)     | 目标模式 2.0 设计：执行对话 + 审查者主对话、服务端轮次与熔断、证据注入                              | 动目标模式、审查循环                 |
-| [`dsh-engine.md`](dsh-engine.md)                                 | DSH 双引擎：四预设 file: 克隆隔离、问卷与技能钩子挂 agent scope、底栏统计吃直播帧                   | 动 DSH 预设 / 问卷 / 统计            |
-| [`preset-sharing.md`](preset-sharing.md)                         | 预设导入导出：白名单净化、dryRun、一键分享、社区目录与 gh 回落                                      | 动设置预设、分享流程                 |
-| [`device-center.md`](device-center.md)                           | 设备中心：Hub 与连接器、绑定配对、群聊、单端口 `/device/<id>/` 与 CSP sandbox                       | 动设备中心服务端                     |
-| [`device-collaboration.md`](device-collaboration.md)             | 群组 / Bot / 跨设备协作硬约束：任务派发、Bot registry lease、并发调度、任务恢复、交付审查、远程桌面 | 动群任务、Bot、跨设备协作、交付流    |
-| [`device-desktop.md`](device-desktop.md)                         | 远程桌面：原生 JPEG over WS、平台权限、只读强制、禁用中继的本地接口                                 | 动远程桌面                           |
-| [`streaming-stability.md`](streaming-stability.md)               | 流式消息稳定性：身份贯穿三层、不卸载不重置、不移动阅读位置                                          | 动消息渲染 / 流式状态                |
-| [`loading-performance.md`](loading-performance.md)               | 加载优化：首屏动态导入、`DeferredMount` 语义、历史对话加载                                          | 动首屏、懒加载、大列表               |
+| 文档                                                             | 主题                                                                                                | 何时读                                |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| [`architecture-browser.md`](architecture-browser.md)             | 内置浏览器模块、桌面 browser/agent/split、可信原生页面桥、数据与打包                                | 动浏览器、桌面组合、Web 原生操作      |
+| [`plugin-hongguo.md`](plugin-hongguo.md)                         | hongguo 插件：悬浮 / 分屏播放、选集续播、媒体代理、FFmpeg、缓存与常驻生命周期                       | 动短剧播放器、播放布局或媒体接口      |
+| [`mobile.md`](mobile.md)                                         | React + Capacitor 手机客户端、设备中心登录与多设备切换、极光 / APNs 通知与构建验收                  | 动手机 App、后台通知、native 设备连接 |
+| [`architecture-terminal.md`](architecture-terminal.md)           | 终端 PTY、SCM 只读走 execFile、`ownerKind` 归属、bash 接管分流、SDK process patch hook              | 动终端、bash 路由、Git 面板           |
+| [`architecture-attachments.md`](architecture-attachments.md)     | 附件 / 图片 / 视觉桥、预览嗅探与 GBK 回退、512KB 上限、媒体 Range、上传下载安全                     | 动附件、预览、文件保存                |
+| [`architecture-system-prompt.md`](architecture-system-prompt.md) | 系统提示词组装链路：`compose` 模板、`{{tools}}` 目录、override 钩子、项目上下文文件                 | 动提示词、工具描述、上下文注入        |
+| [`tool-context-budget.md`](tool-context-budget.md)               | 工具上下文预算：文案精简、逐工具覆盖、延迟加载、前缀缓存硬约束、只读去重、证据外置、压缩指令        | 工具多到吃预算、延迟加载、上下文优化  |
+| [`i18n.md`](i18n.md)                                             | 模块字典、全部语言翻译源、语言包同步与 Canvas 运行消息                                              | 动界面文案、语言包或翻译工具          |
+| [`architecture-canvas.md`](architecture-canvas.md)               | 画布协同：`@画布` 引用、revision 保存、定时触发、每轮执行与返工、Git 隔离产物                       | 动画布、图形工作流、产物回写          |
+| [`architecture-sandbox.md`](architecture-sandbox.md)             | 沙盒工作区：身份与准入、基线写回三方比较、生命周期冻结、验证重点                                    | 动沙盒、写回、执行边界                |
+| [`root-cause-boundaries.md`](root-cause-boundaries.md)           | 根因整改边界：稳定归属、取消代次、持久提交与安全清理、工作树清理、HTTP 传输                         | 动异步/归属/清理/网络请求             |
+| [`goal-conversation-design.md`](goal-conversation-design.md)     | 目标模式 2.0 设计：执行对话 + 审查者主对话、服务端轮次与熔断、证据注入                              | 动目标模式、审查循环                  |
+| [`dsh-engine.md`](dsh-engine.md)                                 | DSH 双引擎：四预设 file: 克隆隔离、问卷与技能钩子挂 agent scope、底栏统计吃直播帧                   | 动 DSH 预设 / 问卷 / 统计             |
+| [`preset-sharing.md`](preset-sharing.md)                         | 预设导入导出：白名单净化、dryRun、一键分享、社区目录与 gh 回落                                      | 动设置预设、分享流程                  |
+| [`device-center.md`](device-center.md)                           | 设备中心：Hub 与连接器、绑定配对、群聊、单端口 `/device/<id>/` 与 CSP sandbox                       | 动设备中心服务端                      |
+| [`device-collaboration.md`](device-collaboration.md)             | 群组 / Bot / 跨设备协作硬约束：任务派发、Bot registry lease、并发调度、任务恢复、交付审查、远程桌面 | 动群任务、Bot、跨设备协作、交付流     |
+| [`group-orchestration.md`](group-orchestration.md)               | 群组 AI 路由、工单持久化、Superagent 渠道与执行协作                                                 | 动群组调度与工单                      |
+| [`device-desktop.md`](device-desktop.md)                         | 远程桌面：原生 JPEG over WS、平台权限、只读强制、禁用中继的本地接口                                 | 动远程桌面                            |
+| [`streaming-stability.md`](streaming-stability.md)               | 流式消息稳定性：身份贯穿三层、不卸载不重置、不移动阅读位置                                          | 动消息渲染 / 流式状态                 |
+| [`loading-performance.md`](loading-performance.md)               | 加载优化：首屏动态导入、`DeferredMount` 语义、历史对话加载                                          | 动首屏、懒加载、大列表                |
 
 ## 三、运维与接入（★）
 
@@ -52,6 +57,7 @@
 | [`env-vars.md`](env-vars.md)                                                       | 环境变量全表（端口/鉴权/数据目录/引擎/窗口/预设/SSH/远程桌面）   | 改配置、排查行为差异       |
 | [`deployment.md`](deployment.md)                                                   | 部署：前台、自启（launchd/systemd/Run 键）、Docker、反代与子路径 | 上线、装机、守护进程       |
 | [`device-center-deployment.md`](device-center-deployment.md)                       | 设备中心独立部署：Hub 拓扑、账号、连接器、域名与 TLS             | 部署设备中心               |
+| [`hub-upgrade-release-testing.md`](hub-upgrade-release-testing.md)                 | Hub 升级流程与发布前升级验证                                     | 发布与验证 Hub 更新        |
 | [`release.md`](release.md)                                                         | 发布：版本号、changelog:i18n、tag 与 Action、npm publish         | 发版                       |
 | [`official-providers.md`](official-providers.md)                                   | 官方供应商快速配置                                               | 接官方 API Key             |
 | [`antigravity-proxy.md`](antigravity-proxy.md)                                     | Antigravity-Manager 反代接入（本机 8045）                        | 用反代接 Google/Anthropic  |

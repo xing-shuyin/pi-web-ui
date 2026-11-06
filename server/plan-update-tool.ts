@@ -1,18 +1,9 @@
-/**
- * plan_update customTool：结构化任务执行计划更新工具（Plan Mode / Step State Machine）。
- *
- * 跟踪决策就绪步骤、文件改动清单（File Touch List）与状态机流转。
- * 从 agent-service.ts 抽出为独立模块。
- */
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PlanState, PlanStep, ServerMessage } from "./protocol.js";
 import type { PlanManager } from "./plan-manager.js";
 import { PLAN_UPDATE_TOOL_NAME } from "./tool-manager.js";
 
-/**
- * 将 SoL-Pi 的 update_plan 步骤结构（{ id, goal, status }）标准化为 pi-web-ui 的 PlanStep[] 结构。
- */
 export function normalizeSolPlanToPlanSteps(steps: unknown[]): {
 	steps: PlanStep[];
 	activeStepId?: string | null;
@@ -40,9 +31,6 @@ export function normalizeSolPlanToPlanSteps(steps: unknown[]): {
 	return { steps: normalizedSteps, activeStepId };
 }
 
-/**
- * 结构化任务执行计划更新工具（plan_update）— Plan Mode / Step State Machine。
- */
 export function makePlanUpdateTool(
 	planManager: PlanManager,
 	getActiveConvTarget: () => string | { id: string; sessionId?: string; sessionManager?: unknown },
@@ -93,9 +81,7 @@ export function makePlanUpdateTool(
 				try {
 					const sm = target.sessionManager as { appendCustomEntry?: (type: string, data: unknown) => void };
 					sm?.appendCustomEntry?.("plan/update", { plan });
-				} catch {
-					// 转录追加失败不影响主流程
-				}
+				} catch {}
 			}
 			onPersist?.(convId, plan);
 			emit({

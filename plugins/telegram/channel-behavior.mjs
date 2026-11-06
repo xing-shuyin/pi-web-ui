@@ -171,7 +171,6 @@ export class ChannelBehavior {
 			return;
 		}
 		const epoch = this.peerEpochs.get(peer) || 0;
-		// Serialize dispatch while stop/reset bypasses downloads immediately.
 		const previous = this.peerQueues.get(peer) || Promise.resolve();
 		const work = previous
 			.catch(() => {})
@@ -376,8 +375,6 @@ export class ChannelBehavior {
 				(ev.type === "run_end" || (ev.type === "message" && ev.message?.role === "assistant"))
 			) {
 				const queue = this.earlyRuns.get(ev.runId) || [];
-				// Reserve terminal state independently of the text budget. A burst of tool
-				// events or assistant messages must never lose run_end and leave a peer busy.
 				if (ev.type === "run_end") queue[1] = ev;
 				else {
 					const content =

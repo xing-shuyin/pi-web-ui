@@ -1,11 +1,3 @@
-/**
- * 错误码与错误类型。
- *
- * 错误码枚举直接抄自 main.js 里的那一段：
- *   s[s.SUCCESS=0]="SUCCESS", s[s.INTERNAL_ERROR=1]="INTERNAL_ERROR", ...
- * 是权威来源，不是从提示文案反推的。
- */
-
 export const ErrorCode = Object.freeze({
 	SUCCESS: 0,
 	INTERNAL_ERROR: 1,
@@ -24,7 +16,6 @@ export const ErrorCode = Object.freeze({
 
 const CODE_NAMES = Object.freeze(Object.fromEntries(Object.entries(ErrorCode).map(([name, code]) => [code, name])));
 
-/** 0 是成功，其余都算失败。官方前端判断就是 `e.code === SUCCESS`。 */
 export function codeName(code) {
 	if (code === undefined || code === null) return "UNKNOWN";
 	return CODE_NAMES[code] ?? `UNKNOWN(${code})`;
@@ -34,7 +25,6 @@ function isSuccessCode(code) {
 	return code === ErrorCode.SUCCESS;
 }
 
-/** 中文解释，给 CLI 看。没把握的就直说。 */
 const CODE_HINTS = Object.freeze({
 	1: "服务端内部错误",
 	2: "请求参数不对（会话 id / 消息 id 大概率是错的）",
@@ -54,16 +44,6 @@ export function codeHint(code) {
 	return CODE_HINTS[code] ?? null;
 }
 
-/**
- * 本包所有主动抛出的错误都是这个类型。
- *
- * kind 是我们自己的分类，方便调用方分支出提示：
- *   usage      参数用错了（本地就能判出来的）
- *   auth       没有登录态 / token 无效
- *   protocol   服务端明确回了个非 0 的业务码
- *   transport  连接层面的问题（握手失败、1006、超时、帧不连续）
- *   network    HTTP 请求本身失败
- */
 export class DeepSeekTtsError extends Error {
 	constructor(message, { kind = "protocol", code, cause, details } = {}) {
 		super(message, cause === undefined ? undefined : { cause });
@@ -74,7 +54,6 @@ export class DeepSeekTtsError extends Error {
 		this.details = details;
 	}
 
-	/** 一行摘要，CLI 用。 */
 	describe() {
 		const bits = [this.message];
 		if (this.code !== undefined && this.code !== null) {
@@ -89,8 +68,6 @@ export function usageError(message, details) {
 }
 
 export function authError(message, details) {
-	// 刻意不带 code：这是本地就判出来的「没有登录态」，服务端一个字都没说过，
-	// 挂个 11(FORBIDDEN) 上去只会让人以为是服务端拒绝的。
 	return new DeepSeekTtsError(message, { kind: "auth", details });
 }
 

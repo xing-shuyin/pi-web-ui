@@ -1,6 +1,3 @@
-/**
- * 桌面版便携模式（Portable Mode）单测。
- */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,9 +22,7 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 	afterEach(() => {
 		try {
 			rmSync(tempDir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	describe("hasPortableMarkers", () => {
@@ -151,7 +146,6 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 			expect(paths!.gitConfigGlobal).toBe(join(tempDir, "data", "git", ".gitconfig"));
 			expect(paths!.userHome).toBe(join(tempDir, "data", "home"));
 
-			// 环境变量覆盖
 			const customPaths = resolvePortablePaths(exePath, {
 				PI_PORTABLE_ROOT: tempDir,
 				PI_WEB_DATA_DIR: join(tempDir, "custom-web"),
@@ -204,11 +198,9 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 			const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
 			applyPortableEnvironment(paths, env, mockApp);
 
-			// 校验 app.setPath
 			expect(setPaths.userData).toBe(join(tempDir, "data", "electron"));
 			expect(setPaths.sessionData).toBe(join(tempDir, "data", "electron", "session"));
 
-			// 校验环境变量
 			expect(env.PI_PORTABLE).toBe("1");
 			expect(env.PI_PORTABLE_ROOT).toBe(tempDir);
 			expect(env.PI_WEB_DATA_DIR).toBe(join(tempDir, "data", "web"));
@@ -218,18 +210,15 @@ describe("desktop/portable.ts 便携模式纯逻辑", () => {
 			expect(env.HOME).toBe(join(tempDir, "data", "home"));
 			expect(env.USERPROFILE).toBe(join(tempDir, "data", "home"));
 
-			// 校验 PortableGit 注入
 			expect(env.SHELL).toBe(join(gitDir, "usr", "bin", "bash.exe"));
 			expect(env.PI_WEB_SHELL).toBe(join(gitDir, "usr", "bin", "bash.exe"));
 			expect(env.PATH).toContain(join(gitDir, "cmd"));
 			expect(env.PATH).toContain(join(gitDir, "usr", "bin"));
 
-			// 校验 PortableNode & npm 隔离注入
 			expect(env.NPM_CONFIG_PREFIX).toBe(join(tempDir, "data", "npm-global"));
 			expect(env.NPM_CONFIG_CACHE).toBe(join(tempDir, "data", "npm-cache"));
 			expect(env.PATH).toContain(join(tempDir, "data", "npm-global"));
 			expect(env.PATH).toContain(nodeDir);
-			// npmGlobalDir 必须在 nodeDir 之前，以确保全局安装的 CLI 优先生效
 			const npmGlobalIdx = env.PATH!.indexOf(join(tempDir, "data", "npm-global"));
 			const nodeIdx = env.PATH!.indexOf(nodeDir);
 			expect(npmGlobalIdx).toBeLessThan(nodeIdx);

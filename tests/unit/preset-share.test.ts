@@ -1,12 +1,5 @@
-/**
- * preset-share 单测：交换格式的解析/净化、目录解析与缓存、网址收口（SSRF）、
- * 以及 port 编排（导出/导入/分享/目录）在假 port 上的行为。
- * 全程零网络、零磁盘（gh 与 fetch 都不真跑；createPresetIssue 只用不存在
- * 的 ghPath 验证失败回落路径）。
- */
 import { describe, expect, it, vi } from "vitest";
 
-// Orchestration fixtures explicitly inject their in-memory transport at the shared boundary.
 // Production never inspects global fetch identity to select its security policy.
 vi.mock("../../server/net-guard.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../server/net-guard.js")>();
@@ -77,10 +70,6 @@ import {
 } from "../../server/preset-fields.js";
 import type { ClientSettings } from "../../server/client-state.js";
 
-/**
- * 编译期守卫：`ClientSettings` 的每个字段都必须在 `preset-fields.ts` 里登记（含明确排除）。
- * 两者对不上时 `Exclude<...>` 不是 `never`，`Assert<true>` 立刻报类型错误。
- */
 type Assert<T extends true> = T;
 export type PresetFieldsCoverClientSettings = Assert<
 	Exclude<keyof ClientSettings, PresetFieldName | PresetExcludedKey> extends never ? true : false
@@ -119,7 +108,6 @@ function shareText(): string {
 	);
 }
 
-/** 一个记录所有 emit 的假 port（编排测试用）。 */
 function makePort(over: Partial<PresetSharePort> = {}): {
 	port: PresetSharePort;
 	sent: ServerMessage[];
@@ -210,7 +198,6 @@ describe("sanitizePresetSettings（白名单 + 类型 + 上限）", () => {
 			softCapByModel: { "gpt-x": 1000 },
 		});
 		expect(r.settings["promptOverrides"]).toEqual({ soul: "hi" });
-		// softCapByModel 的值走 soft-cap 归一化（<=1000 视为 K tokens）。
 		expect(r.settings["softCapByModel"]).toEqual({ "gpt-x": 1_000_000 });
 	});
 
@@ -218,7 +205,6 @@ describe("sanitizePresetSettings（白名单 + 类型 + 上限）", () => {
 		const p = toSettingsPreset("n", { promptMode: "replace" });
 		expect(p.name).toBe("n");
 		expect(p.promptMode).toBe("replace");
-		// 部分预设：未出现的字段不聪凭空补默认值（由应用侧保留当前值）。
 		expect("customSystemPrompt" in p).toBe(false);
 		expect("terminalToolsEnabled" in p).toBe(false);
 	});
@@ -409,7 +395,6 @@ describe("网址收口（SSRF）", () => {
 			"foo.local",
 			"x.internal",
 			"",
-			// IPv4-mapped IPv6：dotted 与 URL 规范化后的十六进制两种形态
 			"::ffff:127.0.0.1",
 			"::ffff:10.0.0.1",
 			"::ffff:192.168.1.1",
@@ -421,7 +406,7 @@ describe("网址收口（SSRF）", () => {
 		}
 		expect(isBlockedHost("raw.githubusercontent.com")).toBe(false);
 		expect(isBlockedHost("172.32.0.1")).toBe(false);
-		expect(isBlockedHost("::ffff:ac10:0")).toBe(true); // 172.16.0.0/12 内网段映射
+		expect(isBlockedHost("::ffff:ac10:0")).toBe(true);
 	});
 
 	it("validateFetchUrl 只放行 http/https 且非内网", () => {
@@ -451,7 +436,6 @@ describe("目录解析与缓存", () => {
 				summary: { promptMode: "replace", skills: 1, agentTools: 0, hasTemplate: true, hasReviewPrompt: false },
 			},
 			{ id: "b-2", name: "B", file: "presets/b-2.json", updatedAt: "2026-03-01T00:00:00.000Z" },
-			// 坏条目：缺 file / 越界 file / 重复 id → 全部丢弃
 			{ id: "c-3", name: "C" },
 			{ id: "d-4", name: "D", file: "../../etc/passwd" },
 			{ id: "d-4", name: "D2", file: "/abs.json" },
@@ -589,7 +573,6 @@ describe("issue 文本", () => {
 	it("网页回落：正文能塞进 URL 时预填正文（不带 template，点一下 Submit 就行）", () => {
 		const small = presetIssueWebUrl("o/r", "A", "body");
 		expect(small).toContain("body=body");
-		// 带 template 时 GitHub 会忽略 body，所以两者不能同时给。
 		expect(small).not.toContain("template=");
 		expect(decodeURIComponent(small.replace(/\+/g, " "))).toContain("[preset] A");
 	});
@@ -810,7 +793,6 @@ describe("编排：导入", () => {
 		const msg = sent[0] as Extract<ServerMessage, { type: "preset_import_result" }>;
 		expect(msg.ok).toBe(true);
 		expect(msg.dryRun).toBe(false);
-		// 回执里的 fields = **实际写入**的子集（不是文档全部）。
 		expect(msg.preview?.fields).toEqual(["customSystemPrompt"]);
 	});
 
@@ -988,7 +970,6 @@ describe("编排：分享与目录", () => {
 	});
 
 	it("formatPresetFieldValue：工具类字段可清晰区分全开启与具体禁用明细", () => {
-		// 全开启
 		const allEnabledZh = formatPresetFieldValue("disabledAgentTools", [], "zh");
 		expect(allEnabledZh.summary).toContain("全部启用");
 		expect(allEnabledZh.detail).toContain("已启用可用工具");
@@ -996,7 +977,6 @@ describe("编排：分享与目录", () => {
 		const allEnabledEn = formatPresetFieldValue("disabledAgentTools", [], "en");
 		expect(allEnabledEn.summary).toContain("All enabled");
 
-		// 部分禁用
 		const disabledZh = formatPresetFieldValue("disabledAgentTools", ["bash", "write"], "zh");
 		expect(disabledZh.summary).toContain("禁用 2 个");
 		expect(disabledZh.summary).toContain("默认没开即关");
@@ -1056,12 +1036,10 @@ describe("编排：分享与目录", () => {
 		);
 		const disabled = res.settings["disabledAgentTools"] as string[];
 		expect(disabled).toBeDefined();
-		// 四个明确开启的核心工具不应该在 disabled 列表中
 		expect(disabled).not.toContain("bash");
 		expect(disabled).not.toContain("read");
 		expect(disabled).not.toContain("edit");
 		expect(disabled).not.toContain("write");
-		// 其余所有已知工具均应被自动归入 disabled（默认没开即关）
 		expect(disabled).toContain("terminal");
 		expect(disabled).toContain("eval");
 		expect(disabled).toContain("patch");
@@ -1133,13 +1111,11 @@ describe("编排：分享与目录", () => {
 			expect(parsed.ok, `parse ${file}`).toBe(true);
 			if (!parsed.ok) continue;
 
-			// 验证元数据
 			expect(parsed.doc.format).toBe(PRESET_SHARE_FORMAT);
 			expect(parsed.doc.version).toBe(PRESET_SHARE_VERSION);
 			expect(parsed.doc.name.length).toBeGreaterThan(0);
 			expect(parsed.doc.tags.length).toBeGreaterThan(0);
 
-			// 验证 UI 布局与偏好完整保留
 			const s = parsed.doc.settings;
 			expect(s["uiLayout"]).toBeDefined();
 			expect(typeof s["uiLayout"]).toBe("object");
@@ -1149,7 +1125,6 @@ describe("编排：分享与目录", () => {
 			expect(typeof s["thinkingWrap"]).toBe("boolean");
 			expect(typeof s["toolsWrap"]).toBe("boolean");
 
-			// 验证白名单收敛：无未知非法字段
 			expect(parsed.sanitized.rejected.length, `rejected for ${file}`).toBe(0);
 			expect(parsed.sanitized.fields.length, `fields for ${file}`).toBeGreaterThan(15);
 		}

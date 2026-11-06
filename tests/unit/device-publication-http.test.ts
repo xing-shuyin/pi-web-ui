@@ -104,7 +104,6 @@ async function fixture() {
 			publishObservation: observation,
 		});
 	});
-	// Install the driver after seeding. Startup reconciliation and later explicit queries are read-only.
 	hub.setRelay({
 		callDevice: async (device: string, action: string, payload: any) => {
 			calls.push({ device, action, payload });
@@ -351,7 +350,6 @@ describe("local publication proxy and authenticated account binding", () => {
 			credential: "Bearer device-ui",
 		});
 		expect(received.at(-1)).toMatchObject({ body: input, credential: "Bearer device-ui" });
-		// Live backfill does not rewrite the pairing file outside its serialization gate.
 		expect(JSON.parse(await readFile(join(dataDir, "device-center.json"), "utf8")).accountId).toBeUndefined();
 	});
 });

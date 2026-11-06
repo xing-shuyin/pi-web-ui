@@ -91,7 +91,6 @@ export function DeviceFileTransfer({
 	const [statusMessage, setStatusMessage] = useState("");
 	const [error, setError] = useState("");
 
-	// New transfer form state
 	const [showNewTransfer, setShowNewTransfer] = useState(false);
 	const [sourceBotId, setSourceBotId] = useState("");
 	const [targetBotId, setTargetBotId] = useState("");
@@ -121,7 +120,6 @@ export function DeviceFileTransfer({
 		return botNameMap.current.get(botId) || botId;
 	}
 
-	// Clear state and bump generation when roomId changes to prevent cross-room race
 	useEffect(() => {
 		generationRef.current++;
 		startKeyRef.current = null;
@@ -140,7 +138,6 @@ export function DeviceFileTransfer({
 		};
 	}, [roomId]);
 
-	// Fetch transfers list with room generation and cancellation
 	useEffect(() => {
 		if (!roomId) return;
 		const gen = generationRef.current;
@@ -164,7 +161,6 @@ export function DeviceFileTransfer({
 					setTransfers(res.transfers);
 				}
 			} catch {
-				// Failed poll ignored; keeps previous state
 			} finally {
 				if (!disposed && gen === generationRef.current) {
 					const hasActive = transfers.some((t) => ["queued", "staging", "cancelling", "applying"].includes(t.status));
@@ -182,7 +178,6 @@ export function DeviceFileTransfer({
 		};
 	}, [roomId, transfers.length]);
 
-	// Toggle overwrite selection for conflicted files
 	const toggleOverwrite = (transferId: string, path: string) => {
 		setSelectedOverwrites((prev) => {
 			const current = new Set(prev[transferId] || []);
@@ -195,7 +190,6 @@ export function DeviceFileTransfer({
 		});
 	};
 
-	// Start a deterministic transfer directly via user API
 	const handleStartTransfer = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!sourceBotId || !targetBotId || !transferPaths.trim() || starting) return;
@@ -259,7 +253,6 @@ export function DeviceFileTransfer({
 		}
 	};
 
-	// Apply staged transfer with explicit decisions
 	const handleApply = async (item: TransferItem) => {
 		const preview =
 			item.preview ||
@@ -305,7 +298,6 @@ export function DeviceFileTransfer({
 		}
 	};
 
-	// Abort in-flight transfer
 	const handleAbort = async (item: TransferItem) => {
 		const gen = generationRef.current;
 		const targetRoom = roomId;
@@ -384,7 +376,6 @@ export function DeviceFileTransfer({
 				)}
 				{statusMessage && <div className="dft-alert dft-alert-info">{statusMessage}</div>}
 
-				{/* Header actions: toggle new transfer */}
 				<div className="dft-toolbar">
 					<button
 						type="button"
@@ -402,7 +393,6 @@ export function DeviceFileTransfer({
 					</button>
 				</div>
 
-				{/* New transfer start form */}
 				{showNewTransfer && (
 					<form className="dft-start-form" onSubmit={handleStartTransfer}>
 						<div className="dft-form-row">
@@ -477,7 +467,6 @@ export function DeviceFileTransfer({
 					</form>
 				)}
 
-				{/* Active & Staged Transfers list */}
 				{transfers.length === 0 ? (
 					<div className="dft-empty">
 						<p>{zh ? "当前群暂无文件传输记录。" : "No active file transfers in this room."}</p>
@@ -535,7 +524,6 @@ export function DeviceFileTransfer({
 										</span>
 									</div>
 
-									{/* Progress Bar */}
 									<div className="dft-progress-bar-wrap">
 										<div className="dft-progress-bar" style={{ width: `${percent}%` }} />
 									</div>
@@ -570,7 +558,6 @@ export function DeviceFileTransfer({
 										</div>
 									)}
 
-									{/* Staged Preview Section */}
 									{previewFiles.length > 0 && (
 										<div className="dft-preview-section">
 											<div className="dft-preview-title">{zh ? "变更差异预览：" : "File Changes Preview:"}</div>
@@ -603,7 +590,6 @@ export function DeviceFileTransfer({
 										</div>
 									)}
 
-									{/* Action buttons */}
 									<div className="dft-card-actions">
 										{item.status === "interrupted" && item.manifestHash && (
 											<button type="button" className="btn" disabled={disabled} onClick={() => handleResume(item)}>

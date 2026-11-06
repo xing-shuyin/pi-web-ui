@@ -1,22 +1,3 @@
-/* 浏览器 E2E：notes 插件的浮窗/提醒链路（真 Chrome + 真服务端，零 token）。
- *
- * 覆盖（这是客户端 bundle 唯一的真浏览器验证；单测只覆盖纯逻辑与假宿主）：
- *   - 顶栏图钉按钮 → 可拖拽浮窗出现；拖动改位置、刷新后位置与开合状态保留
- *     （后者靠 manifest `preload:true`：view:false 的插件默认不预加载 bundle）
- *   - 快速捕获：待办（含「明天 18:00 #工作」解析）、提醒（「每天 9:00 」解析）、笔记（落库）
- *   - 最小化成小贴片、展开回来；没有独立视图（无 ⤢、无 .plugin-view）
- *   - 月视图日历在**浮窗**里：42 格、重复提醒天天画、翻月、正文区裁剪不撑破面板
- *   - 提醒到点：服务端触发 → 长轮询把浏览器叫醒 → 客户端确认（fireCount=1、单次提醒自停、
- *     待送达队列被清空）—— 也就是说「服务端到点 → 浏览器弹提示」这条链路真的通
- *   - 设置是覆盖层：盖住正文与底栏、不压缩正文、「语言」标签不被挤成竖排、✕ 能关
- *   - 浮窗里改条目写回库（待办编辑器切换重复档）
- *   - 插件热重载（plugins_reload）后旧实例被拆干净：页面里只剩一个浮窗（不会多出一条长轮询），
- *     且顶栏按钮仍能开合浮窗（动作处理器已重注册）
- *   - 页面无 JS 报错
- *
- * 缺 Chrome 自动 SKIP（与其它浏览器 E2E 同约定，不入 run-smoke）。运行：
- *   npm run build && node tests/notes-ui-test.mjs
- */
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,9 +36,7 @@ async function waitServer() {
 	for (let i = 0; i < 120; i++) {
 		try {
 			if ((await fetch(`${BASE}/api/health`)).ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -91,11 +70,9 @@ async function main() {
 	});
 
 	await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-	// 顶栏插件条目（📌 笔记）
 	const topbarBtn = page.locator(".plugin-topbar-item", { hasText: "笔记" }).first();
 	await topbarBtn.waitFor({ timeout: 20000 });
 	check("顶栏出现笔记按钮", await topbarBtn.isVisible());
-	// 关掉顶栏文字后只剩图标 —— 图标必须在、且是内联 SVG（不能是空 span，否则用户只看到一个点）
 	const iconInfo = await topbarBtn.evaluate((el) => {
 		const svg = el.querySelector("svg");
 		const r = svg?.getBoundingClientRect();
@@ -104,14 +81,12 @@ async function main() {
 			hasSvg: !!svg,
 			w: r ? Math.round(r.width) : 0,
 			h: r ? Math.round(r.height) : 0,
-			// 精装记事簿：书脊 + 3 条横线（不是图钉，也不是日历打勾）
 			isBook: ds.some((d) => d.startsWith("M4 19.5v-15")),
 		};
 	});
 	check("按钮内联 SVG 图标（14px 级仍然可辨）", iconInfo.hasSvg && iconInfo.w >= 10 && iconInfo.h >= 10);
 	check("图标是「精装记事簿」那版（与浮窗头部同一枚）", iconInfo.isBook);
 
-	// -- 开浮窗 -------------------------------------------------------------------
 	await topbarBtn.click();
 	await page.waitForSelector(".nt-panel", { timeout: 10000 });
 	check("点击后浮窗出现且置顶可拖拽", await page.locator(".nt-panel").isVisible());
@@ -120,14 +95,12 @@ async function main() {
 		(await page.locator(".nt-panel-head").count()) === 1 && (await page.locator(".nt-grip").count()) === 1,
 	);
 
-	// -- 只有两个 Tab：笔记与日历 ---------------------------------------------------
 	const tabs = await page.locator(".nt-panel .nt-tab").allInnerTexts();
 	check(
 		"Tab 栏只保留「笔记」和「日历」两个选项卡",
 		tabs.length === 2 && tabs.includes("笔记") && tabs.includes("日历"),
 	);
 
-	// -- 快速捕获笔记：直接记录文字、无标题、自动提取标签 ----------------------------
 	const composer = page.locator(".nt-panel .nt-composer-text").first();
 	await composer.fill("交周报 #工作\n这是一段详细记录。");
 	await composer.press("Control+Enter");
@@ -137,7 +110,6 @@ async function main() {
 	check("无标题速记：直接写文字 Ctrl+Enter 落入列表", noteCardText.includes("交周报"));
 	check("#工作 被解析成标签", noteCardText.includes("#工作"));
 
-	// -- 笔记额外设置提醒：选择提醒档位并保存 -----------------------------------------
 	await composer.fill("明天交方案");
 	await page.locator('.nt-panel .nt-composer-tools button:has-text("设提醒")').first().click();
 	await page.waitForSelector(".nt-pop-menu", { timeout: 5000 });
@@ -149,7 +121,6 @@ async function main() {
 	const remCard = page.locator('.nt-panel .nt-card:has-text("明天交方案")').first();
 	check("保存后笔记卡片展示提醒状态胶囊", (await remCard.locator(".nt-rem-chip").count()) >= 1);
 
-	// -- 就地快速编辑（Inline Edit）：点击 ✏️ 原位修改正文与提醒 --------------------
 	await remCard.locator('button[title*="编辑"]').first().click();
 	await page.waitForSelector(".nt-panel .nt-card-edit-area", { timeout: 5000 });
 	check(
@@ -167,7 +138,6 @@ async function main() {
 		s.notes.some((n) => n.body.includes("补充材料")),
 	);
 
-	// -- 删除：点击变为打勾按钮，再次点击确认删除 -----------------------------------
 	const targetCard = page.locator('.nt-panel .nt-card:has-text("补充材料")').first();
 	const delBtn = targetCard.locator("button.nt-del").first();
 	await delBtn.click();
@@ -185,7 +155,6 @@ async function main() {
 	s = await store();
 	check("删除笔记成功落库（库中不再存在）", !s.notes.some((n) => n.body.includes("补充材料")));
 
-	// -- 提醒到点：服务端 → 长轮询 → 浏览器确认 ----------------------------------------
 	const at = new Date(Date.now() + 6000);
 	const pad = (n) => String(n).padStart(2, "0");
 	const stamp = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
@@ -205,7 +174,6 @@ async function main() {
 	check("一次性提醒触发后自动停用", fired?.enabled === false);
 	check("浏览器收到并确认了提醒（待送达队列清空）", s.meta.pending.length === 0);
 
-	// -- 浮窗里「点开编辑 → 切 tab」不能变成全空面板 ---------------------------------
 	await page.locator('.nt-panel .nt-card:has-text("交周报") button[title*="编辑"]').first().click();
 	await sleep(300);
 	check("浮窗里点编辑进入就地编辑态", (await page.locator(".nt-panel .nt-card.nt-editing").count()) === 1);
@@ -217,20 +185,18 @@ async function main() {
 	const stillEditing = await page.locator(".nt-panel .nt-card.nt-editing").count();
 	check("切 tab 后列表回来、编辑态退出（不出现全空面板）", rowsAfterTabSwitch > 0 && stillEditing === 0);
 
-	// -- 勾一个通知开关不能重建面板（否则正在打的字会丢） ---------------------------------
 	const noteQuick = page.locator(".nt-panel .nt-composer-text").first();
 	await noteQuick.fill("切语言前的草稿");
 	let langSelCount = 0;
-	await page.locator(".nt-panel-head .nt-pill-hide").first().click(); // ⚙
+	await page.locator(".nt-panel-head .nt-pill-hide").first().click();
 	await sleep(300);
 	langSelCount = await page.locator(".nt-panel .nt-settings select").count();
-	await page.locator(".nt-panel .nt-settings .nt-checkline input").first().click(); // 站内通知条开关
+	await page.locator(".nt-panel .nt-settings .nt-checkline input").first().click();
 	await sleep(300);
 	check("浮窗设置能开（开关 + 语言下拉）", langSelCount > 0);
 	check("切换偏好不会重建浮窗（输入框里的字还在）", (await noteQuick.inputValue()) === "切语言前的草稿");
-	await page.locator(".nt-panel-head .nt-pill-hide").first().click(); // 收起设置
+	await page.locator(".nt-panel-head .nt-pill-hide").first().click();
 
-	// -- 最小化 ---------------------------------------------------------------
 	await page.locator(".nt-panel-head button[title*='收起']").first().click();
 	await sleep(200);
 	check("最小化成小贴片（数量角标）", (await page.locator(".nt-panel.nt-pill").count()) === 1);
@@ -239,11 +205,9 @@ async function main() {
 	await sleep(300);
 	check("展开回浮窗（正文回来）", (await page.locator(".nt-panel.nt-pill").count()) === 0);
 
-	// -- 没有独立视图 tab / 没有「打开完整视图」按钮（浮窗就是全部界面） ---------------
 	check("浮窗头部只有 ⚙ ▾ ✕ 三个按钮（不再有 ⤢）", (await page.locator(".nt-panel-head button").count()) === 3);
 	check("插件不再有独立视图（页面里没有 .plugin-view）", (await page.locator(".plugin-view").count()) === 0);
 
-	// -- 月视图日历（重复提醒要画在当月每一天） --------------------------------------
 	await fetch(`${BASE}/plugins-api/notes/op`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -260,8 +224,6 @@ async function main() {
 	check("日历画出 6×7 = 42 天格子", cells === 42);
 	check("重复提醒在当月多天都有条目（chip 数 > 5）", chips > 5);
 	check("日历下方给出选中日的清单", /\d{4}-\d{2}-\d{2}/.test(calText));
-	// 窄窗裁剪回归：曾经的 .nt-body{display:block} 让列表按内容撑高（实测 600px），
-	// 日历会画到底栏、设置层上去；正文区必须自己收缩成可滚动的一块。
 	const clip = await page.evaluate(() => {
 		const list = document.querySelector(".nt-panel .nt-list");
 		const foot = document.querySelector(".nt-panel .nt-foot");
@@ -274,7 +236,6 @@ async function main() {
 	});
 	check("浮窗正文区被裁剪（列表底 ≤ 底栏顶）", !!clip && clip.listBottom <= clip.footTop + 1);
 	check("内容超出时正文区自己滚（不是把面板撑破）", clip?.scrollable === true);
-	// 点另一天 → 详情跟着换
 	const dayIndex = await page.evaluate(() => {
 		const all = [...document.querySelectorAll(".nt-panel .nt-cal-cell")];
 		return all.findIndex((c) => !c.classList.contains("nt-today") && !c.classList.contains("nt-out"));
@@ -283,14 +244,12 @@ async function main() {
 	await sleep(400);
 	const selText = await page.locator(".nt-panel .nt-cal-detail").first().innerText();
 	check("点别的日期会切到那一天的清单", selText !== calText);
-	// 下个月按钮
 	const titleBefore = await page.locator(".nt-panel .nt-cal-title").first().innerText();
 	await page.locator('.nt-panel .nt-cal-head button[title*="下个月"]').first().click();
 	await sleep(400);
 	const titleAfter = await page.locator(".nt-panel .nt-cal-title").first().innerText();
 	check("能翻到下个月", titleAfter !== titleBefore && (await page.locator(".nt-panel .nt-cal-cell").count()) === 42);
 
-	// -- 设置：盖在正文之上的覆盖层（不再把正文挤成一条缝） ---------------------------
 	await page.locator('.nt-panel-head button[title*="设置"]').first().click();
 	await sleep(300);
 	const settingsText = await page.locator(".nt-panel .nt-settings").first().innerText();
@@ -315,7 +274,6 @@ async function main() {
 	});
 	check("设置是覆盖层（盖住正文与底栏）", overlay?.on === true && overlay.coversFoot === true);
 	check("开设置不压缩正文（列表高度没被挤成一条缝）", (overlay?.listHeight ?? 0) > 80);
-	// 「语言」标签曾经被 .nt-select{width:100%} 挤成竖排两个字
 	const langLabelH = await page.evaluate(() => {
 		const span = [...document.querySelectorAll(".nt-settings .nt-checkline > span")].find((s) =>
 			s.textContent.includes("语言"),
@@ -327,13 +285,11 @@ async function main() {
 	await sleep(200);
 	check("设置覆盖层的 ✕ 能关掉", (await page.locator(".nt-settings-pop.on").count()) === 0);
 
-	// -- 浮窗里改一条：点击置顶写回库 ---------------------------------------------
 	await page.locator('.nt-panel .nt-card:has-text("交周报") button[title*="置顶"]').first().click();
 	await sleep(600);
 	s = await store();
 	check("笔记卡片点击置顶写回库（pinned=true）", s.notes.find((n) => n.body.includes("交周报"))?.pinned === true);
 
-	// -- 插件热重载后旧实例必须收干净（否则会多出一个浮窗 + 第二条长轮询） -----------------
 	const reloadSock = new WebSocket(`ws://localhost:${PORT}/ws`);
 	await new Promise((resolve, reject) => {
 		reloadSock.on("open", () => resolve());
@@ -343,7 +299,6 @@ async function main() {
 	await sleep(4000);
 	const panels = await page.locator(".nt-panel").count();
 	check("热重载后只剩一个浮窗（旧实例已拆干净）", panels === 1);
-	// 预加载（manifest preload）：热重载后新 bundle 的顶栏动作照旧能开合浮窗
 	await page.locator(".plugin-topbar-item", { hasText: "笔记" }).first().click();
 	await sleep(600);
 	check("热重载后顶栏按钮仍能开合浮窗（动作处理器已重注册）", (await page.locator(".nt-panel").count()) === 1);
@@ -365,18 +320,14 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (server?.pid) {
 		try {
 			process.kill(-server.pid, "SIGTERM");
 		} catch {
 			try {
 				process.kill(server.pid, "SIGTERM");
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 	}
 	await sleep(600);

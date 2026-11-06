@@ -57,7 +57,6 @@ describe("decodeCookieToken", () => {
 		expect(decodeCookieToken("s3cret-token-xyz")).toBe("s3cret-token-xyz");
 	});
 
-	// issue #261：base64 口令尾巴上的 = 下发时被写成 %3D，以前拿 %3D 去比对 → 永久 401。
 	it("把 %3D 解回 =", () => {
 		expect(decodeCookieToken("00mJYc4g8rnJVJOxqBlaSiGrszirmeVQCmGnrmw8i8s%3D")).toBe(
 			"00mJYc4g8rnJVJOxqBlaSiGrszirmeVQCmGnrmw8i8s=",

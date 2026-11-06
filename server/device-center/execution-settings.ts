@@ -150,7 +150,6 @@ export function validateExecutionSettings(
 	}
 	const candidate = input as Record<string, unknown>;
 
-	// Strict rejection of unknown/extra keys to prevent spelling mistakes
 	for (const key of Object.keys(candidate)) {
 		if (!ALLOWED_KEYS.has(key)) {
 			return { valid: false, error: `Unknown configuration key: ${key}` };

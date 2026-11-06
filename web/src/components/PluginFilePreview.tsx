@@ -17,10 +17,6 @@ interface PluginFilePreviewProps {
 	onFallback: () => void;
 }
 
-/**
- * 文件插件的统一宿主壳。插件只能拥有这个容器的子树；文件路径由宿主
- * 传入，读取走插件自己的服务端路由/host.fs，不开放主应用 DOM。
- */
 export function PluginFilePreview({
 	file,
 	plugin,

@@ -33,7 +33,6 @@ PLUGIN_DIR = SCRIPT_DIR.parent
 CMD = ""
 
 
-# ---------------------------------------------------------------- 输出辅助
 
 
 def out(obj, code=0) -> NoReturn:
@@ -48,7 +47,6 @@ def fail(msg, hint=None) -> NoReturn:
     out(d, 1)
 
 
-# ---------------------------------------------------------------- 依赖引导
 
 
 def _has_dp(py):
@@ -71,12 +69,10 @@ def _ensure_python():
     """
     if _has_dp(sys.executable):
         return None
-    # 查找常见项目 venv
     for cand in (Path.cwd() / ".venv", Path.cwd() / "venv"):
         py = cand / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         if py.exists() and _has_dp(py):
             return str(py)
-    # 插件独立 venv
     venv = PLUGIN_DIR / ".venv"
     py = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if not py.exists():
@@ -100,22 +96,18 @@ def _ensure_python():
     return str(py)
 
 
-# ---------------------------------------------------------------- 浏览器
 
 
 def get_browser(port):
     from DrissionPage import Chromium, ChromiumOptions  # type: ignore[reportMissingImports]
 
     co = ChromiumOptions().set_local_port(port)
-    # 采用 eager 加载策略：DOMContentLoaded 即返回，杜绝外部慢速统计/图片打点资源挂起
     co.set_load_mode("eager")
     ud = os.environ.get("DP_USER_DATA", "")
     if ud:
-        # 指定独立用户目录，避免与本机普通 Chrome 单实例锁冲突
         Path(ud).mkdir(parents=True, exist_ok=True)
         co.set_user_data_path(ud)
 
-    # 默认无头模式 (可由环境变量 DP_HEADLESS=0/false/off 显式关闭)
     headless = os.environ.get("DP_HEADLESS", "1").strip().lower() not in ("0", "false", "no", "off")
     if headless:
         co.headless(True)
@@ -130,7 +122,6 @@ def need_tab(browser):
     return browser.latest_tab
 
 
-# ---------------------------------------------------------------- 定位
 
 LOC_PREFIXES = ("css:", "xpath:", "x:", "text:", "t:", "tag:", "@")
 _CSSISH = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -153,7 +144,6 @@ def find_ele(tab, loc, timeout=8):
     return tab.ele(resolve_loc(loc), timeout=timeout)
 
 
-# ---------------------------------------------------------------- 快照 JS
 
 SNAPSHOT_JS = r"""
 const SEL = 'a[href],button,input:not([type="hidden"]),select,textarea,' +
@@ -342,7 +332,6 @@ def snapshot_payload(tab, interactive_only):
     return payload
 
 
-# ---------------------------------------------------------------- 命令实现
 
 
 def _norm_url(url):
@@ -783,7 +772,6 @@ def cmd_js(browser, args):
     out({"ok": True, "cmd": CMD, "result": _sanitize(r)})
 
 
-# ---------------------------------------------------------------- 控制台捕获与日志读取
 
 CONSOLE_HOOK_JS = r"""
 (function() {
@@ -1594,13 +1582,11 @@ def _execute_search_on_tab(
             "error": f"导航加载超时（{_safe_host(url)}）：{nav_err}",
         }
 
-    # 1. 等待文档加载完成
     try:
         tab.wait.doc_loaded(timeout=3.0)
     except Exception:
         pass
 
-    # 2. 等待关键自然搜索结果出现 (使用 DrissionPage 原生 ele 持续等待)
     wait_sel = {
         "bing": "#b_results",
         "baidu": "#content_left",
@@ -1618,7 +1604,6 @@ def _execute_search_on_tab(
     except Exception:
         pass
 
-    # 3. 执行 JS 时防御页面二次重定向/刷新竞态 (Navigation Race Guard)
     raw = None
     for attempt in range(2):
         try:
@@ -1676,11 +1661,9 @@ def _apply_domain_diversity(items: list, max_per_domain: int = 2) -> list:
     return filtered
 
 
-# ---------------------------------------------------------------- 搜索：互斥锁 / 引擎健康
 
 SEARCH_WORKER_NAME = "__dp_search_worker__"
 
-# 引擎域名（用于 TCP 可达性探测）
 ENGINE_HOSTS = {
     "bing": "www.bing.com",
     "baidu": "www.baidu.com",
@@ -1850,7 +1833,6 @@ def _search_locked(browser, args):
         )
 
     query = ""
-    # 默认引擎可通过环境变量 DP_DEFAULT_ENGINE 覆盖，默认 auto
     engine = os.environ.get("DP_DEFAULT_ENGINE", "auto").strip().lower() or "auto"
     limit = 8
     page = 1
@@ -1903,9 +1885,6 @@ def _search_locked(browser, args):
     tabs = browser.get_tabs()
     original_tab = browser.latest_tab if tabs else None
 
-    # 标签页隔离逻辑：专用后台 search worker 标签页
-    # 用 window.name 而非 JS 全局做标记 —— window.name 能跨导航存活，
-    # 页面被验证码劫持/跳转后仍能找回同一个 worker，根除「每次搜索新开一个标签页」的泄漏。
     search_tab = None
     if tab_isolation and tabs:
         orphans = []
@@ -1935,8 +1914,6 @@ def _search_locked(browser, args):
     else:
         search_tab = browser.latest_tab if tabs else browser.new_tab()
 
-    # 智能引擎尝试顺序与回退降级链
-    # 策略：首选指定的引擎；若失败，国内免梯高性能引擎优先（sogou/so/bing/baidu），而后依次尝试境外隐私/全球引擎
     primary_engine = "bing" if engine == "auto" else engine
     candidate_engines = [primary_engine]
     if fallback:
@@ -1945,7 +1922,6 @@ def _search_locked(browser, args):
             if fb not in candidate_engines:
                 candidate_engines.append(fb)
 
-    # 引擎健康自检（TCP 可达性 + 近期拦截记录）：避免每个搜索都白等四个境外引擎超时
     health = _load_health()
     health_ttl = _env_float("DP_ENGINE_HEALTH_TTL", 600.0)
     block_ttl = _env_float("DP_ENGINE_BLOCK_TTL", 900.0)
@@ -1957,7 +1933,6 @@ def _search_locked(browser, args):
         for eng in candidate_engines:
             is_primary = eng == primary_engine
 
-            # a) 网络层自检：非首选引擎若确认不可达，直接记原因跳过（省掉一次 6s 导航超时）
             reachable, net_note = _engine_reachable(health, eng, health_ttl)
             if not reachable and not is_primary:
                 attempts.append(
@@ -1971,7 +1946,6 @@ def _search_locked(browser, args):
                     fallback_from = eng
                 continue
 
-            # b) 近期刚被拦截过的引擎：非首选时跳过，不再白跑一遍验证码
             recent_block = _engine_blocked_reason(health, eng, block_ttl)
             if recent_block and not is_primary:
                 attempts.append(
@@ -2025,12 +1999,9 @@ def _search_locked(browser, args):
 
             _clear_engine_blocked(health, eng)
 
-            # 1. 域名多样性过滤
             results = _apply_domain_diversity(results, max_per_domain=2)
-            # 2. 限制 limit
             results = results[:limit]
 
-            # 3. 搜阅一体模式：使用独立临时标签页提取首条纯净正文（不污染 search_tab）
             top_content = None
             if fetch_top and results:
                 first_url = results[0].get("url")
@@ -2079,7 +2050,6 @@ def _search_locked(browser, args):
             )
             return
 
-        # 所有引擎都没拿到结果：如实交代「为什么」，而不是统一伪装成「搜不到」
         out(
             {
                 "ok": True,
@@ -2098,7 +2068,6 @@ def _search_locked(browser, args):
             }
         )
     finally:
-        # 如果启用了隔离，切回原前台活动标签页
         if tab_isolation and original_tab is not None and original_tab != search_tab:
             try:
                 browser.activate_tab(original_tab)

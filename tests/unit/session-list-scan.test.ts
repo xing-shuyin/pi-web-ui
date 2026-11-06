@@ -1,4 +1,3 @@
-/** B2：字节级 / 增量会话列表扫描与原 parseSessionInfoFast（列表模式）结果一致；增量只读新增字节。 */
 import { describe, expect, it } from "vitest";
 import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,7 +5,6 @@ import { join } from "node:path";
 import { sessionLines } from "../../server/session-scan.js";
 import { scanSessionListInfo } from "../../server/session-list-scan.js";
 
-/** 原列表模式实现（withAllMessagesText=false 分支），原样保留作为差分基准。 */
 async function legacyListParse(filePath: string, fileMtime: number) {
 	let id = "";
 	let cwd = "";
@@ -169,6 +167,55 @@ describe("scanSessionListInfo 与原列表解析等价", () => {
 	});
 });
 
+describe("CLI 类型元信息", () => {
+	const header = { type: "session", id: "cli-session", cwd: "/workspace", timestamp: "2026-01-01T00:00:00.000Z" };
+	const config = { preset: "codex", args: ["--model", "configured-model"] };
+	const marker = (value: unknown = config, version = 1) => ({
+		type: "custom",
+		customType: "webui/native-cli",
+		data: { version, config: value },
+	});
+
+	it("custom-only CLI session is visible with zero SDK messages and its persisted configuration", async () => {
+		const file = tmpFile(
+			[header, marker(), { type: "session_info", name: "Codex CLI" }].map((row) => JSON.stringify(row)).join("\n") +
+				"\n",
+		);
+		const result = await scanSessionListInfo(file, 1234);
+		expect(result?.info).toMatchObject({
+			id: "cli-session",
+			name: "Codex CLI",
+			nativeCli: config,
+			messageCount: 0,
+			firstMessage: "",
+		});
+		expect(result?.state.nativeCli).toEqual(config);
+	});
+
+	it("preserves CLI type on incremental rename and accepts a long marker after a user message", async () => {
+		const file = tmpFile(
+			[header, { type: "message", message: { role: "user", content: "existing message" } }]
+				.map((row) => JSON.stringify(row))
+				.join("\n") + "\n",
+		);
+		const first = await scanSessionListInfo(file, 0);
+		const configured = { preset: "custom", args: ["x".repeat(2000)], executable: "/native/program" };
+		appendFileSync(file, JSON.stringify(marker(configured)) + "\n");
+		const typed = await scanSessionListInfo(file, 0, first!.state);
+		expect(typed?.resumedFrom).toBe(first!.state.offset);
+		expect(typed?.info?.nativeCli).toEqual(configured);
+		expect(typed?.info?.messageCount).toBe(1);
+		appendFileSync(file, JSON.stringify({ type: "session_info", name: "Renamed CLI" }) + "\n");
+		const renamed = await scanSessionListInfo(file, 0, typed!.state);
+		expect(renamed?.info).toMatchObject({ nativeCli: configured, name: "Renamed CLI", messageCount: 1 });
+	});
+
+	it("does not advertise an invalid final CLI marker as valid configuration", async () => {
+		const file = tmpFile([header, marker(), marker(config, 99)].map((row) => JSON.stringify(row)).join("\n") + "\n");
+		expect((await scanSessionListInfo(file, 0))?.info?.nativeCli).toBeUndefined();
+	});
+});
+
 describe("增量扫描", () => {
 	const header = JSON.stringify({ type: "session", id: "s1", cwd: "/p", timestamp: "2026-01-01T00:00:00.000Z" });
 	const msg = (i: number, role = "user", pad = 0) =>
@@ -197,7 +244,6 @@ describe("增量扫描", () => {
 		const line = msg(2, "assistant", 3000);
 		appendFileSync(file, line.slice(0, 1500));
 		const a = await scanSessionListInfo(file, 0);
-		// 半截 JSON：快路径按行首计数（与原实现一致）
 		const offsetBefore = a!.state.offset;
 		appendFileSync(file, `${line.slice(1500)}\n`);
 		const b = await scanSessionListInfo(file, 0, a!.state);
@@ -209,12 +255,10 @@ describe("增量扫描", () => {
 	it("文件被改写（中段变化 / 截断）：指纹不符，整份重扫", async () => {
 		const file = tmpFile(`${header}\n${msg(1)}\n${msg(2)}\n${msg(3)}\n`);
 		const first = await scanSessionListInfo(file, 0);
-		// 改写为更长的内容（如链修复给重复 id 改名），偏移前的字节变了
 		writeFileSync(file, `${header}\n${msg(1)}\n${msg(2).replace('"m2"', '"m2--dup-1"')}\n${msg(3)}\n${msg(4)}\n`);
 		const rescan = await scanSessionListInfo(file, 0, first!.state);
 		expect(rescan!.resumedFrom).toBe(0);
 		expect(rescan!.info!.messageCount).toBe(4);
-		// 截断到比偏移短
 		writeFileSync(file, `${header}\n${msg(1)}\n`);
 		const truncated = await scanSessionListInfo(file, 0, rescan!.state);
 		expect(truncated!.resumedFrom).toBe(0);

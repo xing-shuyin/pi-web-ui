@@ -12,7 +12,6 @@ import {
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 
-/** 临时插件目录：{ 相对路径: 内容 } → 目录路径（用完即删）。 */
 function fixture(files: Record<string, string>) {
 	const dir = mkdtempSync(join(tmpdir(), "pi-import-check-"));
 	for (const [rel, content] of Object.entries(files)) {
@@ -105,7 +104,6 @@ describe("scanPluginImports", () => {
 				escapesClient: false,
 				missing: false,
 			});
-			// index.mjs re-export 的 client-utils.mjs 没拷 → 缺失（服务端 import 也会炸）
 			expect(bySpec("./client-utils.mjs")).toMatchObject({ file: "sdk/index.mjs", missing: true });
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

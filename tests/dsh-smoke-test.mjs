@@ -1,23 +1,3 @@
-/**
- * dsh 引擎零 key 协议冒烟（DSH = DeepSeek Harness 子进程引擎）。
- *
- * 覆盖 dsh 引擎特有的协议面 + 通用对齐抽查（全部不需要 API key）：
- *   1. hello → ready(engine=dsh) + 初始状态推送齐全（conversations /
- *      goal_status / settings_state / slash_commands / snapshot）
- *   2. dsh_patches_list → dsh_patches（patch 目录 + 文件列表）
- *   3. list_sessions → sessions（空 dataDir 下应为空列表）
- *   4. list_models → models（本地表 + 运行时动态目录合并）
- *   5. get/set_settings → settings_state 回显 + 重连持久化
- *   6. slash 命令拦截（/model 无匹配、/cwd 无效路径 → notice，不发模型；
- *      /new <首条提示> 把参数当新对话的首条投递）
- *   7. terminal create/input/output（echo TERM_OK 回显）
- *   8. scm_status → scm_data（在 git 仓库中返回 status）
- *
- * 零 key 前提：dsh 引擎 boot/initialize 不需要 key（prompt 才需要）。运行时树
- * 缺失时打印 SKIP 并退出 0（CI 无全局 dsh 时不误报失败）。
- *
- * 用法：node tests/dsh-smoke-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,7 +17,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// 运行时树检测：无树/版本不兼容 → SKIP（CI / 未装全局 dsh 的环境不误报失败）。
 let rtAvailable = false;
 let skipReason = "未找到 dsh 运行时树（需 npm i -g @deepseek-ai/dsh@0.1.5-rc.3 或 PI_WEB_DSH_RUNTIME 指向运行时树根）";
 try {
@@ -62,9 +41,6 @@ if (!rtAvailable) {
 }
 
 const dataDir = mkdtempSync(join(tmpdir(), "dsh-smoke-"));
-// 放一个用户 patch 文件，验证 dsh_patches 列表能扫到。用 persona 覆盖
-// （probe-patch-seam 验证过的无害 patch）——不能 insert 重复的 dsh-session
-// entry，那会与 base bundle 的 service 注册冲突导致 boot 失败。
 const patchDir = join(dataDir, "dsh-patches");
 const { mkdirSync } = await import("node:fs");
 mkdirSync(patchDir, { recursive: true });
@@ -88,14 +64,8 @@ const server = spawn("node", ["dist/server/index.js"], {
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: REPO,
 		PI_WEB_ENGINE: "dsh",
-		// 隔离 agent 目录：不读真实 ~/.pi/agent（冒烟零 key 场景）。
 		PI_CODING_AGENT_DIR: mkdtempSync(join(tmpdir(), "dsh-smoke-agent-")),
-		// 隔离 DSH 家目录：不读真实 ~/.dsh（里面有用户自建 agent-presets，会让
-		// 「四预设 / 无 broken」两条断言取决于跑测试的机器上装了什么）。dsh-home-paths
-		// 的优先级是 显式配置 > $DSH_HOME > ~/.dsh，所以这里设 env 即刻生效。
 		DSH_HOME: mkdtempSync(join(tmpdir(), "dsh-smoke-home-")),
-		// 预设分享：分享关掉（绝不真在共享仓库开 Issue），目录指向回环地址（被 SSRF 收口拦下）——
-		// 两条都是确定性的离线断言（DSH 侧 sharePort 适配的回归，见 docs/preset-sharing.md）。
 		PI_WEB_PRESET_REPO: "0",
 		PI_WEB_PRESET_CATALOG_URL: "https://127.0.0.1/index.json",
 	},
@@ -107,9 +77,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -169,7 +137,6 @@ async function main() {
 	const c = await connect(CLIENT_ID);
 	c.send({ type: "hello", clientId: CLIENT_ID, protocolVersion: 1 });
 
-	// --- 1. ready(engine=dsh) + 初始推送 ---
 	const ready = await c.wait((m) => m.type === "ready");
 	check("ready.engine === 'dsh'", ready.engine === "dsh", `engine=${ready.engine} proto=${ready.protocolVersion}`);
 	await c.wait((m) => m.type === "conversations");
@@ -179,7 +146,6 @@ async function main() {
 	await c.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta");
 	check("初始推送齐全（conversations/goal_status/settings_state/slash_commands/snapshot）", true);
 
-	// --- 2. dsh_patches_list → dsh_patches ---
 	c.send({ type: "dsh_patches_list" });
 	const patches = await c.wait((m) => m.type === "dsh_patches");
 	check(
@@ -188,23 +154,15 @@ async function main() {
 		`patchDir=${patches.patchDir} files=${patches.files.map((f) => f.name).join(",")}`,
 	);
 
-	// --- 2.5 Agent 预设（dsh-web 四模式；零 key：只建会话不 prompt） ---
 	c.send({ type: "dsh_preset_list" });
-	// attach 时可能先推一次空名录（运行时未就绪），等 onStarted 后的實名单。
-	// 若当前运行时无 shipped 四预设（如 0.2.x 升级或 legacy 环境），回落 legacy 模式（presets 为空）。
 	let pr = await c.wait((m) => m.type === "dsh_presets");
 	if (pr.presets.length === 0) {
 		try {
 			pr = await c.wait((m) => m.type === "dsh_presets" && m.presets.length > 0, 3000);
-		} catch {
-			/* 当前环境无 shipped 预设，保持 legacy 空名录 */
-		}
+		} catch {}
 	}
 	if (pr.presets.length > 0) {
 		const presetIds = pr.presets.map((p) => p.id).sort();
-		// shipped 四预设（standard/ptc/minimal/cordis，由 preset-clones.ts 克隆改写）。
-		// 不断言「恰好只有这四个」：$DSH_HOME/.agent-presets 里的自建预设也会一并上架
-		// （设计如此，见 preset-clones.ts 的 roster 注释），那是机器状态不是仓库行为。
 		const SHIPPED = ["cordis", "minimal", "ptc", "standard"];
 		check(
 			"dsh_presets 四预设",
@@ -213,13 +171,10 @@ async function main() {
 		);
 		check(
 			"dsh_presets 无 broken（clone 改写生效）",
-			// 只查 shipped：自建预设里的裸包名在 launcher 式 boot 下不可解析，是**已知限制**
-			// （preset-clones.ts 只克隆 shipped；裸名需要官方 CLI 的安装锚点才能解析）。
 			SHIPPED.every((id) => !pr.presets.find((p) => p.id === id)?.broken),
 			pr.presets.map((p) => `${p.id}:${p.broken ?? "ok"}`).join(", "),
 		);
 		check("dsh_presets 默认 standard", pr.defaultPreset === "standard", pr.defaultPreset);
-		// 快照断言要跳过 inbox 里旧快照：轮询到目标预设为止。
 		const snapWithPreset = async (want) => {
 			const t0 = Date.now();
 			for (;;) {
@@ -243,7 +198,6 @@ async function main() {
 		check("dsh_presets legacy 兼容（无 shipped 预设时名录为空，进程存活）", Array.isArray(pr.presets));
 	}
 
-	// --- 2.6 权限预设三档（官方 /permission 弹窗；零 key：只切换不 prompt） ---
 	const perm = await c.wait((m) => m.type === "dsh_permission" && m.options.length > 0);
 	const permValues = perm.options.map((o) => o.value).sort();
 	check(
@@ -284,16 +238,13 @@ async function main() {
 	c.send({ type: "dsh_permission_default", preset: "no-such-preset" });
 	const badPermNotice = await c.wait((m) => m.type === "notice" && m.text.includes("未知权限预设"));
 	check("非法权限默认被拒绝", !!badPermNotice, badPermNotice?.text ?? "timeout");
-	// 默认恢复，避免污染后续用例与本地 client-state。
 	c.send({ type: "dsh_permission_default", preset: "workspace-write-never" });
 	await c.wait((m) => m.type === "dsh_permission" && m.defaultPreset === "workspace-write-never");
 
-	// --- 3. list_sessions → sessions（空） ---
 	c.send({ type: "list_sessions" });
 	const sessions = await c.wait((m) => m.type === "sessions");
 	check("list_sessions 空列表", Array.isArray(sessions.sessions), `count=${sessions.sessions.length}`);
 
-	// --- 4. list_models → models（本地表 + 动态目录） ---
 	c.send({ type: "list_models" });
 	const models = await c.wait((m) => m.type === "models", 20000);
 	const hasFlash = models.models.some((m) => m.id.includes("deepseek-v4-flash"));
@@ -304,14 +255,12 @@ async function main() {
 		`count=${models.models.length} flash=${hasFlash} vision=${hasVision}`,
 	);
 
-	// --- 5. 设置存储回显 + 重连持久化 ---
 	c.send({
 		type: "set_settings",
 		customSystemPrompt: "你是 DSH 冒烟测试助手",
 		promptMode: "replace",
 	});
 	const st1 = await (async () => {
-		// 2.5 节的 setDefaultAgentPreset 推过 defaults 快照，跳到目标值。
 		const t0 = Date.now();
 		for (;;) {
 			const m = await c.wait((x) => x.type === "settings_state");
@@ -326,7 +275,6 @@ async function main() {
 	);
 	c.close();
 
-	// 重连（同 clientId）→ 设置持久化恢复
 	const c2 = await connect(CLIENT_ID);
 	c2.send({ type: "hello", clientId: CLIENT_ID, protocolVersion: 1 });
 	await c2.wait((m) => m.type === "ready");
@@ -337,7 +285,6 @@ async function main() {
 		`prompt=${st2.settings.customSystemPrompt}`,
 	);
 
-	// --- 5.5 预设分享（DSH 侧的 PresetSharePort 适配；导入/导出/目录） ---
 	c2.send({ type: "preset_export", source: "current", requestId: "dsh-ex1" });
 	const dshEx = await c2.wait((m) => m.type === "preset_export_result" && m.requestId === "dsh-ex1", 10000);
 	check(
@@ -351,8 +298,6 @@ async function main() {
 	c2.send({ type: "preset_import", json: dshEx.json, name: "dsh-冒烟预设", requestId: "dsh-im2" });
 	const dshImp = await c2.wait((m) => m.type === "preset_import_result" && m.requestId === "dsh-im2", 10000);
 	check("DSH 导入落盘", dshImp.ok === true && dshImp.dryRun === false);
-	// 导入成功会推一条 notice（与真实使用一致）——在这里消费掉，否则会污染后面
-	// 「slash 命令 → notice」那几段的首条匹配。
 	await c2.wait((m) => m.type === "notice" && m.text.includes("预设已导入"), 10000).catch(() => null);
 	c2.send({ type: "apply_preset", name: "dsh-冒烟预设" });
 	const dshApplied = await c2.wait(
@@ -372,7 +317,6 @@ async function main() {
 		10000,
 	);
 
-	// --- 6. slash 命令拦截（不发模型） ---
 	c2.send({ type: "prompt", text: "/model 这个模型必然不存在xyz" });
 	const modelBad = await c2.wait((m) => m.type === "notice", 10000);
 	check("slash /model 无匹配 → notice", modelBad.text.includes("没有匹配到模型"), modelBad.text);
@@ -380,15 +324,12 @@ async function main() {
 	const cwdBad = await c2.wait((m) => m.type === "notice", 10000);
 	check("slash /cwd 无效路径 → notice", cwdBad.text.includes("切换工作目录失败"), cwdBad.text);
 
-	// /new <prompt>：首条提示必须落进新对话（NATIVE_COMMANDS 是两个引擎共用的，
-	// 行为必须一致）。探针用「/cwd」无参数形态——只回显、不发模型。
 	c2.send({ type: "prompt", text: "/new /cwd" });
 	const firstNotice = await c2
 		.wait((m) => m.type === "notice" && m.text.includes("当前工作目录"), 10000)
 		.catch(() => null);
 	check("slash /new <首条提示> 投递到新对话", !!firstNotice, firstNotice?.text ?? "timeout");
 
-	// --- 7. terminal create/input/output ---
 	const termId = "smoke-term";
 	c2.send({ type: "terminal_create", terminalId: termId, cwd: REPO, cols: 80, rows: 24 });
 	await sleep(1500);
@@ -401,7 +342,6 @@ async function main() {
 	}
 	check("terminal echo TERM_OK 回显", termOk);
 
-	// --- 8. scm_status → scm_data（git 仓库） ---
 	c2.send({ type: "scm_status", reqId: 42 });
 	const scm = await c2.wait((m) => m.type === "scm_data" && m.reqId === 42, 15000);
 	check(

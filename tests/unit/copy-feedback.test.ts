@@ -46,7 +46,6 @@ describe("useCopyFeedback", () => {
 		expect(hookResult!.copied).toBe(false);
 		expect(container.textContent).toBe("idle");
 
-		// 执行复制
 		let ok: boolean | undefined;
 		await act(async () => {
 			ok = await hookResult!.copy("test content");
@@ -57,13 +56,11 @@ describe("useCopyFeedback", () => {
 		expect(hookResult!.copied).toBe(true);
 		expect(container.textContent).toBe("copied");
 
-		// 时间推移 500ms（尚未到期）
 		act(() => {
 			vi.advanceTimersByTime(500);
 		});
 		expect(hookResult!.copied).toBe(true);
 
-		// 时间推移到 1000ms（到期复位）
 		act(() => {
 			vi.advanceTimersByTime(500);
 		});

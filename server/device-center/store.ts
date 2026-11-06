@@ -23,6 +23,11 @@ import {
 	type ConversationEvent,
 } from "./task-state.js";
 
+import type { GroupRouterConfig, RouterJob } from "./group-router.js";
+import type { WorkItem, WorkItemEvent, WorkItemOutbox } from "./work-items.js";
+export type { GroupRouterConfig, RouterJob } from "./group-router.js";
+export type { WorkItem, WorkItemEvent, WorkItemOutbox } from "./work-items.js";
+
 export type TaskStatus = "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
 export interface Handoff {
 	repository: string;
@@ -46,7 +51,6 @@ export interface Device {
 	createdAt: number;
 }
 export interface Bot {
-	/** Public tool names only; authorization remains enforced by the device lease. */
 	tools?: string[];
 	id: string;
 	deviceId: string;
@@ -65,7 +69,6 @@ export type HubConversation = Omit<
 > & {
 	taskState?: ConversationTaskState;
 	events?: ConversationEvent[];
-	/** Why the conversation can no longer continue; surfaced instead of a late 409 on the next turn. */
 	closedReason?: ConversationClosedReason;
 };
 export interface DeliveryReceipt {
@@ -138,11 +141,11 @@ export interface HubTask {
 	artifactProduced?: boolean;
 }
 export interface GroupBlackboard {
-	version: number; // 严格自增版本号（从 1 开始）
+	version: number;
 	updatedAt: number;
 	updatedBy: { type: "human" | "bot"; id: string; name: string };
 	title?: string;
-	content: string; // Markdown 格式结构化共识，最大 32KB
+	content: string;
 	sections?: Record<string, BlackboardSection>;
 }
 
@@ -156,10 +159,8 @@ export interface GroupWebhook {
 	enabled: boolean;
 	createdAt: number;
 	updatedAt: number;
-	// Incoming exclusive
 	token?: string;
 	allowBotTrigger?: boolean;
-	// Outgoing exclusive
 	url?: string;
 	secret?: string;
 	events?: GroupWebhookEventType[];
@@ -172,6 +173,8 @@ export interface Room {
 	name: string;
 	botIds: string[];
 	primaryBotId?: string;
+	router?: GroupRouterConfig;
+	routerRevision?: number;
 	canvasBinding?: { deviceId: string; graphId: string; cwd: string; title: string };
 	blackboard?: GroupBlackboard;
 	webhooks?: GroupWebhook[];
@@ -179,15 +182,15 @@ export interface Room {
 	createdAt: number;
 }
 export interface RoomMessage {
+	routerJobId?: string;
 	id: string;
 	roomId: string;
 	accountId: string;
 	text: string;
-	sender: { type: "human" | "bot" | "webhook"; id: string; name: string; sourceDeviceId?: string };
+	sender: { type: "human" | "bot" | "webhook" | "router"; id: string; name: string; sourceDeviceId?: string };
 	createdAt: number;
 	taskIds: string[];
 	targetBotIds?: string[];
-	/** Stable anchor to the message this one answers; survives retention only while both are retained. */
 	replyToMessageId?: string;
 	conversationId?: string;
 	conversationIds?: string[];
@@ -201,6 +204,10 @@ export interface HubState {
 	reviews: DeviceReview[];
 	deliveryReceipts: DeliveryReceipt[];
 	integrations: DeviceIntegration[];
+	workItems: WorkItem[];
+	workItemEvents: WorkItemEvent[];
+	routerJobs: RouterJob[];
+	workItemOutbox: WorkItemOutbox[];
 	accounts: Account[];
 	devices: Device[];
 	bots: Bot[];
@@ -214,7 +221,6 @@ export interface HubState {
 		key: string;
 		fingerprint: string;
 		messageId: string;
-		/** Optional for state written before receipts were decoupled from message retention. */
 		createdAt?: number;
 	}[];
 }
@@ -222,7 +228,6 @@ export const taskPending = (task: HubTask) =>
 	!isTerminal(task.status) ||
 	!!(task.cancelRequested && !task.stopConfirmed) ||
 	(task.recoveryUntil !== undefined && task.recoveryUntil > Date.now());
-/** Contract authority and captured evidence survive automatic retention until explicit room data reset. */
 export const taskHasImmutableEvidence = (task: HubTask) =>
 	!!task.contract ||
 	!!task.artifact ||
@@ -244,7 +249,6 @@ export function publicTask<T extends object>(task: T): Omit<T, "leaseToken"> {
 	return visible as Omit<T, "leaseToken">;
 }
 
-/** Rows kept per room when replaying append logs; mirrors the group retention the Hub enforces. */
 export const HUB_LOG_RETENTION = 500;
 
 interface HubLogs {
@@ -267,7 +271,6 @@ function createHubLogs(dataDir: string): HubLogs {
 			partition: (task) => task.roomId,
 			id: (task) => task.id,
 			retention: HUB_LOG_RETENTION,
-			// Retain live work and immutable code evidence across checkpoint compaction and restarts.
 			protect: (task) => taskPending(task) || taskHasImmutableEvidence(task),
 		}),
 		conversationMessages: new PartitionedAppendLog<ConversationMessage>({
@@ -288,6 +291,10 @@ function emptyHubState(): HubState {
 		reviews: [],
 		deliveryReceipts: [],
 		integrations: [],
+		workItems: [],
+		workItemEvents: [],
+		routerJobs: [],
+		workItemOutbox: [],
 		accounts: [],
 		devices: [],
 		bots: [],
@@ -299,7 +306,6 @@ function emptyHubState(): HubState {
 	};
 }
 
-/** Tasks/messages are partitioned by room; conversations may reference a room row that no longer exists. */
 function roomPartitionsOf(state: Pick<HubState, "rooms" | "conversations">): Set<string> {
 	return new Set([
 		...state.rooms.map((room) => room.id),
@@ -307,7 +313,6 @@ function roomPartitionsOf(state: Pick<HubState, "rooms" | "conversations">): Set
 	]);
 }
 
-/** Merge log rows with rows still inlined by an older Hub; inline rows win (they are the older baseline). */
 function mergeRows<T extends { id: string }>(stored: readonly T[], inline: readonly T[]): T[] {
 	if (!inline.length) return [...stored];
 	if (!stored.length) return [...inline];
@@ -440,6 +445,10 @@ async function loadHubFiles(
 	state.reviews ??= [];
 	state.deliveryReceipts ??= [];
 	state.integrations ??= [];
+	state.workItems ??= [];
+	state.workItemEvents ??= [];
+	state.routerJobs ??= [];
+	state.workItemOutbox ??= [];
 	if (
 		![
 			state.conversations,
@@ -448,10 +457,13 @@ async function loadHubFiles(
 			state.reviews,
 			state.deliveryReceipts,
 			state.integrations,
+			state.workItems,
+			state.workItemEvents,
+			state.routerJobs,
+			state.workItemOutbox,
 		].every(Array.isArray)
 	)
 		throw new Error("Invalid conversation store");
-	// Read the WAL before loading/sweeping projections: a committed parent may not be in the old index yet.
 	const wal = new HubTransactionLog({ walPath: join(dataDir, "hub-wal.jsonl") });
 	const { records } = await wal.readTransactions({ readOnly: options.readOnly });
 	const unprojectedRecords = records.filter((record) => record.seq > checkpointSeq);
@@ -462,7 +474,6 @@ async function loadHubFiles(
 		for (const partition of roomPartitionsOf(record.index)) roomPartitions.add(partition);
 		for (const conversation of record.index.conversations) conversations.add(conversation.id);
 	}
-	// Logs are the authority; inline rows only exist in files written before the split (or by an older Hub).
 	const storedMessages = await logs.messages.load(roomPartitions, options);
 	const storedTasks = await logs.tasks.load(roomPartitions, options);
 	const storedConversationMessages = await logs.conversationMessages.load(conversations, options);
@@ -481,22 +492,17 @@ async function loadHubFiles(
 			checkpointSeq = record.seq;
 		}
 
-		// Catch-up projection: if not read-only, project recovered uncommitted states to logs and index checkpoint
 		if (!options.readOnly) {
 			const recoveryRooms = roomPartitionsOf(state);
 			const recoveryConversations = new Set(state.conversations.map((conversation) => conversation.id));
-			// Projection order: 1. commit logs
 			await logs.messages.commit(state.messages, recoveryRooms);
 			await logs.tasks.commit(state.tasks, recoveryRooms);
 			await logs.conversationMessages.commit(state.conversationMessages, recoveryConversations);
-			// Projection order: 2. commit index checkpoint
 			await persistIndexTo(join(dataDir, "device-hub.json"), state, checkpointSeq);
-			// 3. checkpoint WAL
 			await wal.checkpoint(checkpointSeq);
 		}
 	}
 
-	// Legacy state is a baseline, not evidence that historical transitions were observed.
 	for (const conversation of state.conversations) {
 		conversation.taskState = projectConversationState(state, conversation);
 		conversation.events ??= [];
@@ -504,13 +510,10 @@ async function loadHubFiles(
 	return { state, logs, wal, checkpointSeq, legacy };
 }
 
-/** Read the durable state without open() side effects (no interrupt marking); used by tests and tooling. */
 export async function readPersistedHub(dataDir: string): Promise<HubState> {
-	// Read-only: never sweep orphan files or repair tails or mutate checkpoints from an inspection path.
 	return (await loadHubFiles(dataDir, { sweep: false, readOnly: true })).state;
 }
 
-/** A single process owns a data directory. The fsynced WAL is the transaction commit point. */
 export class DeviceHubStore {
 	private state: HubState;
 	private readonly listeners = new Set<() => void>();
@@ -542,8 +545,6 @@ export class DeviceHubStore {
 	static async open(dataDir: string, options: { retainUnleasedQueued?: boolean } = {}): Promise<DeviceHubStore> {
 		const { state, logs, wal, checkpointSeq, legacy } = await loadHubFiles(dataDir);
 		const store = new DeviceHubStore(dataDir, state, logs, wal, checkpointSeq);
-		// Move collections that older Hubs kept inline into their append logs. Logs are written first so
-		// an interrupted migration can be retried from the still-inline index without losing rows.
 		if (legacy) await store.migrateInlineCollections();
 		const now = Date.now();
 		const recoveryGraceMs = 60_000;
@@ -569,7 +570,6 @@ export class DeviceHubStore {
 						task.report = "Hub restarted before execution was confirmed; submit a new turn to retry.";
 						task.updatedAt = now;
 						if (task.leaseToken || task.leaseGeneration !== undefined) {
-							// Retain recovery grace window for active leases to claim on reconnect!
 							task.recoveryUntil = now + recoveryGraceMs;
 						}
 					}
@@ -605,18 +605,14 @@ export class DeviceHubStore {
 			const draft = structuredClone(this.state);
 			const result = update(draft);
 			if (result && (typeof result === "object" || typeof result === "function") && "then" in result) {
-				// Transactions only reserve/commit state. External work runs between transactions.
-				// Drain a rejected accidental async callback without publishing its detached draft.
 				void Promise.resolve(result).catch(() => {});
 				throw new Error("Hub transactions require a synchronous update");
 			}
 			if (typeof reconcileConversationState === "function") {
 				reconcileConversationState(this.state, draft);
 			}
-			// Reject uncloneable results before commit and detach returned evidence before any I/O awaits.
 			const detachedResult = structuredClone(result);
 
-			// Sequence and diff calculation
 			const nextSeq = this.lastSeq + 1;
 			const diff: HubTransactionDiff = {
 				messages: computeCollectionDiff(this.state.messages, draft.messages),
@@ -624,27 +620,18 @@ export class DeviceHubStore {
 				conversationMessages: computeCollectionDiff(this.state.conversationMessages, draft.conversationMessages),
 			};
 
-			// Keep the public hook before the commit point so tests can inject a pre-commit failure.
 			await this.persist(draft, nextSeq, diff);
 			for (const listener of this.listeners) {
 				try {
 					listener();
-				} catch {
-					/* notification cannot roll back a committed transaction */
-				}
+				} catch {}
 			}
 			return detachedResult;
 		});
 		this.tail = operation.catch(() => {});
 		return operation;
 	}
-	/**
-	 * Kept as a method so I/O failures can be injected without replacing transaction semantics.
-	 * WAL append is the commit point. Projection failures retain WAL for retry/recovery and cannot reject a commit.
-	 */
 	async persist(state: HubState, checkpointSeq: number = this.lastSeq, diff?: HubTransactionDiff): Promise<void> {
-		// Detach accepted evidence before the first asynchronous write. A caller may
-		// retain its transaction inputs, but cannot subsequently rewrite durable facts.
 		state = structuredClone(state);
 		if (diff) diff = structuredClone(diff);
 
@@ -678,7 +665,6 @@ export class DeviceHubStore {
 		await this.logs.tasks.commit(state.tasks, rooms);
 		await this.logs.conversationMessages.commit(state.conversationMessages, conversations);
 	}
-	/** One-time upgrade from Hubs that inlined messages/tasks/transcripts in the index file. */
 	private async migrateInlineCollections(): Promise<void> {
 		await this.commitLogs(this.state);
 		await this.persistIndex(this.state, this.checkpointSeq);

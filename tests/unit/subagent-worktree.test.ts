@@ -186,7 +186,6 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 
 		beforeEach(async () => {
 			testRepoDir = mkdtempSync(join(tmpdir(), "pi-wt-test-"));
-			// 初始化 git 仓库并打一个初始提交
 			await exec("git", ["init", "-b", "main"], { cwd: testRepoDir });
 			await exec("git", ["config", "user.name", "Tester"], { cwd: testRepoDir });
 			await exec("git", ["config", "user.email", "tester@example.com"], { cwd: testRepoDir });
@@ -220,13 +219,11 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			expect(wt.baseCommit).toHaveLength(40);
 			expect(wt.subagentCwd).toBe(wt.worktreePath);
 
-			// 验证 .git/info/exclude 包含了 .worktrees/
 			const excludeFile = join(testRepoDir, ".git", "info", "exclude");
 			expect(existsSync(excludeFile)).toBe(true);
 			const excludeContent = readFileSync(excludeFile, "utf-8");
 			expect(excludeContent).toContain(".worktrees");
 
-			// 验证在工作树中能正常读取已有文件
 			expect(existsSync(join(wt.worktreePath, "README.md"))).toBe(true);
 		});
 
@@ -235,17 +232,14 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			const wt = await createSubagentWorktree(testRepoDir, subagentId);
 			expect(existsSync(wt.worktreePath)).toBe(true);
 
-			// 执行 finalizeSubagentWorktree（无任何写入或 commit）
 			const finalized = await finalizeSubagentWorktree(wt);
 			expect(finalized.finalized).toBe(true);
 			expect(finalized.cleanedUp).toBe(true);
 			expect(finalized.isDirty).toBe(false);
 			expect(finalized.uncommittedCount).toBe(0);
 
-			// 工作树目录已被物理移除
 			expect(existsSync(wt.worktreePath)).toBe(false);
 
-			// 临时分支已被删除
 			const { stdout: branches } = await exec("git", ["branch"], { cwd: testRepoDir });
 			expect(branches).not.toContain(`subagent/${subagentId}`);
 		});
@@ -254,7 +248,6 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			const subagentId = "sa-with-changes";
 			const wt = await createSubagentWorktree(testRepoDir, subagentId);
 
-			// 模拟子代理修改文件
 			writeFileSync(join(wt.worktreePath, "new-file.txt"), "hello from subagent\n", "utf-8");
 
 			const finalized = await finalizeSubagentWorktree(wt);
@@ -263,10 +256,8 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			expect(finalized.isDirty).toBe(true);
 			expect(finalized.uncommittedCount).toBe(1);
 
-			// 工作树目录依然存在
 			expect(existsSync(wt.worktreePath)).toBe(true);
 
-			// 分支依然存在
 			const { stdout: branches } = await exec("git", ["branch"], { cwd: testRepoDir });
 			expect(branches).toContain(`subagent/${subagentId}`);
 		});
@@ -275,7 +266,6 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			const subagentId = "sa-with-commits";
 			const wt = await createSubagentWorktree(testRepoDir, subagentId);
 
-			// 模拟子代理提交修改
 			writeFileSync(join(wt.worktreePath, "committed.txt"), "new feature\n", "utf-8");
 			await exec("git", ["add", "committed.txt"], { cwd: wt.worktreePath });
 			await exec("git", ["commit", "-m", "feat: new feature"], { cwd: wt.worktreePath });
@@ -285,7 +275,6 @@ describe("Subagent Worktree Isolation (Issue #728)", () => {
 			expect(finalized.cleanedUp).toBe(false);
 			expect(finalized.aheadCount).toBe(1);
 
-			// 工作树与分支依然保留
 			expect(existsSync(wt.worktreePath)).toBe(true);
 		});
 	});

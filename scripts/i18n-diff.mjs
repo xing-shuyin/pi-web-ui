@@ -51,7 +51,6 @@ function gitShow(ref, p, repoRoot = root) {
 	}
 }
 
-/** 简单 semver（x.y.z）比较：a<b 返回 <0，a>b 返回 >0。 */
 function cmpVersion(a, b) {
 	const pa = String(a)
 		.split(".")
@@ -66,14 +65,6 @@ function cmpVersion(a, b) {
 	return 0;
 }
 
-/** 缺省 base：最新的 tag；HEAD 正好是最新 tag（发版打完 tag 后跑）则取上一个。
- *
- * `atOrBelowVersion`（`--unreleased` 专用）：取版本号 ≤ 该值的最后一个 tag。
- * 发版流程是「升版本 → 写 CHANGELOG → 自检 → 提交 → 打 tag」，跑 `npm run changelog:i18n`
- * 时 HEAD 往往正好停在**上一个版本的 tag** 上，而上面那条「HEAD 在 tag 上就往前
- * 一个」会把已经发布过的那个版本的文案增量重复算进未发布小节（实测：v0.75.0
- * 的 tag 上跑，它拿 v0.74.0 当 base，结果把 0.75.0 的 key 又列了一遍）。
- */
 export function resolveBase(explicit, atOrBelowVersion) {
 	if (explicit) return explicit;
 	const tags = git(["tag", "--sort=-v:refname"])
@@ -89,18 +80,11 @@ export function resolveBase(explicit, atOrBelowVersion) {
 	let head = null;
 	try {
 		head = git(["describe", "--tags", "--exact-match", "HEAD"]);
-	} catch {
-		// 不在 tag 上：base 就是最新 tag
-	}
+	} catch {}
 	if (head === tags[0] && tags.length > 1) return tags[1];
 	return tags[0];
 }
 
-/* ------------------------------------------------------------------ */
-/* 通用扫描器：跳过注释 / 字符串（含模板字符串 ${} 嵌套）               */
-/* ------------------------------------------------------------------ */
-
-/** 从字符串字面量开头跳到结尾之后（处理转义与 `…${…}…` 嵌套）。 */
 function skipString(src, i) {
 	const q = src[i];
 	const n = src.length;
@@ -146,9 +130,6 @@ function skipString(src, i) {
 	return n;
 }
 
-/** '/' 是否为正则字面量起点（而非除法）：看上一个有效 token。
- * 启发式：标识符/数字/字符串/)/] 之后是除法；} 之后按块结尾处理为正则；
- * return/typeof 等关键字之后是正则。if(x)/re/ 这类罕见写法会误判为除法，接受。 */
 const REGEX_KEYWORDS = new Set([
 	"return",
 	"typeof",
@@ -200,7 +181,6 @@ function isRegexStart(src, i) {
 	return true;
 }
 
-/** 从正则起始 '/' 跳到 flags 之后（处理转义与 [...] 字符类）。 */
 function skipRegex(src, i) {
 	const n = src.length;
 	i++;
@@ -238,7 +218,6 @@ function parseKeyLiteral(raw) {
 	return m ? m[2] : null;
 }
 
-/** 从 '(' 起切顶层参数（字符串/注释/括号感知），返回 {args, end}。 */
 function splitArgs(src, openIdx) {
 	const args = [];
 	const n = src.length;
@@ -296,10 +275,9 @@ function splitArgs(src, openIdx) {
 const isIdentStart = (c) => /[A-Za-z_$]/.test(c ?? "");
 const isIdentChar = (c) => /[\w$]/.test(c ?? "");
 
-/** 扫描模板字符串：每个 ${…} 表达式递归 scanRange；返回模板结束之后的位置。 */
 function scanTemplate(src, i, end, file, found) {
 	const n = Math.min(end, src.length);
-	i++; // 跳过开头的 `
+	i++;
 	while (i < n) {
 		const c = src[i];
 		if (c === "\\") {
@@ -352,7 +330,6 @@ function scanTemplate(src, i, end, file, found) {
 	return n;
 }
 
-/** 扫描一段代码区间，收集 pick/getServerBlock 的 key（注释/字符串/正则感知）。 */
 function scanRange(src, start, end, file, found) {
 	const n = Math.min(end, src.length);
 	let i = start;
@@ -385,7 +362,6 @@ function scanRange(src, start, end, file, found) {
 			while (j < n && isIdentChar(src[j])) j++;
 			const ident = src.slice(i, j);
 			if (ident === "pick" || ident === "getServerBlock") {
-				// 排除自身定义 `function pick(` / `function getServerBlock(`
 				let k = i - 1;
 				while (k >= 0 && /\s/.test(src[k])) k--;
 				let w = "";
@@ -415,7 +391,6 @@ function scanRange(src, start, end, file, found) {
 	}
 }
 
-/** 返回 Map<key, {zh, en, file}>；zh/en 为归一化后的源头原文（getServerBlock 传标识符则记 ""）。 */
 export function extractServerKeys(src, file) {
 	const found = new Map();
 	scanRange(src, 0, src.length, file, found);
@@ -433,7 +408,7 @@ function listServerFilesRecursive(rel = SERVER_DIR, repoRoot = root) {
 }
 
 function collectServerKeys(getContent, files) {
-	const all = new Map(); // key -> {zh, en, file}
+	const all = new Map();
 	const dupes = [];
 	for (const f of files) {
 		const src = getContent(f);
@@ -488,17 +463,12 @@ function checkPacksMain() {
 	console.log(`${rows.length} 个语言包 key 与 zh 一一对应。`);
 }
 
-/** 只列死 key，不删除。 */
 function pruneMain() {
 	for (const r of checkPacks()) {
 		if (r.extra.length === 0) console.log(`${r.code}：无死 key`);
 		else console.log(`${r.code} 死 key（${r.extra.length}）：${r.extra.join("、")}`);
 	}
 }
-
-/* ------------------------------------------------------------------ */
-/* diff                                                                 */
-/* ------------------------------------------------------------------ */
 
 function diffKeyMaps(oldMap, newOrder, newMap) {
 	const added = [];
@@ -519,7 +489,6 @@ export function diffWorktreeVsBase(base, { repoRoot = root } = {}) {
 	const zhDiff = diffKeyMaps(oldMaps.zh.map, newMaps.zh.order, newMaps.zh.map);
 	const enDiff = diffKeyMaps(oldMaps.en.map, newMaps.en.order, newMaps.en.map);
 
-	// 服务端
 	let baseFiles = [];
 	try {
 		baseFiles = git(["ls-tree", "-r", "--name-only", base, "--", SERVER_DIR], repoRoot)
@@ -555,10 +524,6 @@ export function diffWorktreeVsBase(base, { repoRoot = root } = {}) {
 		dupes: curCol.dupes,
 	};
 }
-
-/* ------------------------------------------------------------------ */
-/* 输出                                                                 */
-/* ------------------------------------------------------------------ */
 
 const trunc = (s, len = 70) => {
 	const one = (s ?? "").replace(/\s+/g, " ").trim();

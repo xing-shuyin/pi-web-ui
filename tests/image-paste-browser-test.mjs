@@ -1,14 +1,3 @@
-/* Image Q&A E2E test: boots the compiled server, opens the built UI in
- * headless Chrome, and drives paste / drag-drop / upload of images:
- *
- *   1. paste a PNG into the textarea -> 🖼 attach chip appears
- *   2. drag a PNG onto the input bar -> second chip appears
- *   3. pick a PNG via the upload button -> third chip appears
- *   4. send -> the attachment card with the image preview renders in chat
- *
- * Works with system Chrome; no pi model auth needed (the image aside renders
- * even when the model call fails).
- * Run:  npm run build && node image-paste-browser-test.mjs */
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +10,6 @@ const workdir = mkdtempSync(join(tmpdir(), "piweb-img-"));
 process.env.PI_WEB_PORT = String(PORT);
 process.env.PI_WEB_CWD = workdir;
 
-// 1x1 transparent PNG (base64)
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const HERE = fileURLToPath(new URL("../", import.meta.url));
@@ -35,9 +23,7 @@ server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -57,9 +43,7 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -84,7 +68,6 @@ async function main() {
 	await page.waitForSelector(".topbar", { timeout: 5000 });
 	console.log("app booted");
 
-	// 1) Paste image into the textarea.
 	await page.evaluate(
 		({ b64, name }) => {
 			const ta = document.querySelector(".inputbox textarea");
@@ -105,8 +88,6 @@ async function main() {
 	await page.waitForSelector(".attach-chip.image", { timeout: 8000 });
 	check("paste: 🖼 chip appeared", (await page.locator(".attach-chip.image").count()) === 1);
 
-	// 2) Drag & drop a LARGE image (4000x3000) onto the input bar — the
-	//    client must downscale it to MAX_DIMENSION (1568) before sending.
 	await page.evaluate(async () => {
 		const c = document.createElement("canvas");
 		c.width = 4000;
@@ -126,31 +107,23 @@ async function main() {
 	await page.waitForTimeout(800);
 	check("drop: two 🖼 chips (big image accepted)", (await page.locator(".attach-chip.image").count()) === 2);
 
-	// 3) Upload via the hidden file input (the button opens it).
 	const upFile = join(workdir, "upload-me.png");
 	writeFileSync(upFile, Buffer.from(PNG_B64, "base64"));
 	await page.locator('input[type="file"]').setInputFiles(upFile);
 	await page.waitForTimeout(500);
 	check("upload: three 🖼 chips", (await page.locator(".attach-chip.image").count()) === 3);
 
-	// Remove one chip and confirm it's gone.
 	await page.locator(".attach-chip.image").first().locator(".attach-remove").click();
 	await page.waitForTimeout(300);
 	check("remove: back to two 🖼 chips", (await page.locator(".attach-chip.image").count()) === 2);
 
-	// 4) Image-only send (no text) — the send button must enable, submit
-	//    clears the chips, and the attachment card renders.
 	check("send button enabled with image-only attachments", !(await page.locator(".btn.send").isDisabled()));
 	await page.locator(".inputbox textarea").focus();
 	await page.keyboard.press("Enter");
 	await page.waitForSelector(".attachcard", { timeout: 20000 });
-	// The card starts collapsed — click its head to reveal the image preview.
 	await page.locator(".attachcard-head").first().click();
 	await page.waitForSelector(".attachcard-image img", { timeout: 8000 });
 	check("chat: attachment card rendered with image preview", true);
-	// The dropped 4000px image must have been downscaled to ≤1568. drop-big.png
-	// is the FIRST card and was already expanded above — clicking its head again
-	// would collapse it, so only click when the image isn't visible yet.
 	const bigCard = page.locator(".attachcard", { hasText: "drop-big.png" });
 	if ((await bigCard.locator("img").count()) === 0) {
 		await bigCard.locator(".attachcard-head").click();

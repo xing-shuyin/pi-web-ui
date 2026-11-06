@@ -43,11 +43,9 @@ describe("半圆环转动等待指示器 (HalfRingSpinner)", () => {
 
 	it("底栏 working-spin 与工作区 transition-spinner 均为半圆环转动结构", () => {
 		const css = readFileSync(STYLES_PATH, "utf8");
-		// working-spin
 		expect(css).toMatch(
 			/\.working-spin\s*\{[^}]*border:\s*2px solid transparent[^}]*border-top-color:[^}]*border-right-color:/,
 		);
-		// workspace-transition-spinner
 		expect(css).toMatch(
 			/\.workspace-transition-spinner\s*\{[^}]*border:\s*2px solid transparent[^}]*border-top-color:[^}]*border-right-color:/,
 		);
@@ -61,7 +59,6 @@ describe("半圆环转动等待指示器 (HalfRingSpinner)", () => {
 		const toolcallSrc = readFileSync(TOOLCALL_PATH, "utf8");
 		expect(toolcallSrc).toContain("HalfRingSpinner");
 		expect(toolcallSrc).not.toContain("FiLoader");
-		// 运行和等待模型（waitingModel）均显示部分圆环转动 (HalfRingSpinner)，状态区不再出现旋转的钟表形图标
 		expect(toolcallSrc).not.toContain("waitingModel ? <FiClock />");
 		expect(toolcallSrc).toContain("running || waitingModel ? <HalfRingSpinner />");
 	});

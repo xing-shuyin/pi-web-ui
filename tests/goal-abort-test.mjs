@@ -1,11 +1,3 @@
-/**
- * Manual-abort stops the goal review loop.
- * Sets a goal, sends a prompt, then hits Stop (abort) mid-run. Verifies the
- * review loop does NOT re-fire and the goal is cleared (no endless review of a
- * half-finished run). If the model is too fast to interrupt, it degrades to a
- * best-effort check (may pass trivially) — the real fix is structural.
- * Robust harness: bounded awaits, never hangs.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -14,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -71,7 +62,6 @@ function mkWaiters() {
 }
 
 (async () => {
-	// bail if port already in use
 	try {
 		if (!(await portUp(PORT))) throw new Error("port not up");
 		console.error("PORT busy");
@@ -130,15 +120,12 @@ function mkWaiters() {
 		await next((m) => m.type === "goal_status" && m.status.goal, "goal set", 10000);
 	} catch {}
 
-	// Start generation then abort shortly after (if model streams at all).
 	ws.send(JSON.stringify({ type: "prompt", text: "请开始。" }));
 	await sleep(4000);
 	ws.send(JSON.stringify({ type: "abort" }));
 
-	// After abort, the goal should be cleared (abort → stop review), not re-reviewed.
 	await sleep(6000);
 	let goalCleared = false;
-	// Wait for the abort-clear goal_status (goal === null with our marker).
 	try {
 		await next(
 			(m) => m.type === "goal_status" && m.status.goal === null && m.status.status.includes("手动停止"),

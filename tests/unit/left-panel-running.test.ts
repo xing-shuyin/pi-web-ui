@@ -1,9 +1,3 @@
-/**
- * 插件运行条目（P3）的服务端存储单测（server/left-panel-running.ts）。
- *
- * 锁的是：清洗（必填 id、去重、上限、枚举夹取、长度截断）、TTL 夹取、心跳过期、
- * 「只心跳不变内容 → changed=false（不广播）」、clear 与 groups 的稳定输出。
- */
 import { describe, expect, it } from "vitest";
 import {
 	LeftPanelRunningStore,
@@ -15,7 +9,6 @@ import {
 	sanitizePanelItems,
 } from "../../server/left-panel-running.js";
 
-/** 可控时钟：store 的所有时间判断都走它。 */
 function clock(start = 1_000_000) {
 	let t = start;
 	return {
@@ -164,7 +157,6 @@ describe("LeftPanelRunningStore", () => {
 			pluginName: "Alpha",
 			items: [{ id: "a1", title: "α", status: "running" }],
 		});
-		// 副本：外部改动不影响存储
 		groups[0]!.items[0]!.title = "被改";
 		expect(s.groups()[0]!.items[0]!.title).toBe("α");
 		expect(s.clear("zeta")).toBe(true);

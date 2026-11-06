@@ -7,7 +7,6 @@ export const sessionKey = (value) =>
 			? `owner:${JSON.stringify([value.clientId, value.conversationId])}`
 			: "";
 
-/** One atomic snapshot keeps scope epochs and their routes consistent across reloads. */
 export class SessionRoutes {
 	constructor(bridge) {
 		this.bridge = bridge;
@@ -37,7 +36,6 @@ export class SessionRoutes {
 		const saved = await this.bridge.host.storage?.get("sessionRoutes");
 		this.accountId = this.account();
 		if (saved?.account !== this.accountId || saved.version !== 1) {
-			// Commit revocation even when this account never receives a message.
 			if (saved) await this.save();
 			return;
 		}
@@ -69,7 +67,6 @@ export class SessionRoutes {
 			revision: session.revision,
 			peer: session.peer,
 		};
-		// A conflicting identity must never choose one of two destinations.
 		this.routes.set(
 			key,
 			previous && (previous.ambiguous || previous.scope !== route.scope) ? { ambiguous: true } : route,

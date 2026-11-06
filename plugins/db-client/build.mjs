@@ -1,10 +1,3 @@
-/**
- * 构建脚本：把 src/client.js 打包成自包含的 client/entry.mjs
- * （插件静态服务只暴露 client/ 子树，产物必须无 bare import）。
- *
- * 客户端零第三方依赖，纯 vanilla JS，esbuild 只做打包/压缩。
- * 用法：npm install && npm run build
- */
 import { build } from "esbuild";
 
 await build({

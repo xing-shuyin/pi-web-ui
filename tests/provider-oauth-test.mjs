@@ -1,7 +1,3 @@
-// OAuth（开放授权）服务商登录协议：使用真实 openai-codex 目录，但在选择登录方式后立即取消。
-// 该测试不会访问模型或消耗 token，用于验证能力发现、交互提示和取消链路。
-//
-// Usage: npm run build && node tests/provider-oauth-test.mjs [port]
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -104,14 +100,10 @@ try {
 } finally {
 	try {
 		socket?.close();
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	await sleep(500);
 	rmSync(base, { recursive: true, force: true });
 	process.exit(exitCode);

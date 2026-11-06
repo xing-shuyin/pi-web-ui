@@ -41,7 +41,6 @@ export function validateLocalVerificationPlan(value: unknown): DeviceIntegration
 	return structuredClone(plan);
 }
 
-/** Owner-trusted foreground/non-daemon commands. Digest covers all output bytes in observed stream order. */
 export async function runVerificationCommand(
 	command: string,
 	options: { cwd: string; env: NodeJS.ProcessEnv; signal?: AbortSignal; timeoutMs?: number; stopTimeoutMs?: number },

@@ -23,12 +23,10 @@ describe("office plugin verification (plugins/office)", () => {
 		const { assertInWorkspace } = await import(join(pluginDir, "index.mjs"));
 		const mockCwd = mkdtempSync(join(tmpdir(), "office-boundary-"));
 
-		// 正常工作区内文件与工作区根路径放行
 		const normalFile = join(mockCwd, "sub", "test.xlsx");
 		expect(assertInWorkspace(normalFile, mockCwd)).toBe(normalFile);
 		expect(assertInWorkspace(mockCwd, mockCwd)).toBe(mockCwd);
 
-		// 恶意遍历路径越界：应抛出 403 异常且绝不抛 ReferenceError
 		expect(() => {
 			assertInWorkspace(resolve(mockCwd, "../../etc/passwd"), mockCwd);
 		}).toThrowError(/工作区/);
@@ -54,7 +52,6 @@ describe("office plugin verification (plugins/office)", () => {
 			},
 		};
 
-		// 路由中委托的 assertInWorkspaceLocal 会检测 host.resolveInWorkspace
 		expect(typeof mockHost.resolveInWorkspace).toBe("function");
 		const resolved = mockHost.resolveInWorkspace("data.xlsx");
 		expect(hostResolveCalled).toBe(true);
@@ -85,7 +82,6 @@ describe("office plugin verification (plugins/office)", () => {
 		expect(typeof routes["GET /status"]).toBe("function");
 		expect(typeof routes["POST /provision-runtime"]).toBe("function");
 
-		// 本地可能已安装运行时；激活始终保持冷启动，状态反映实际资产。
 		let jsonResult: any = null;
 		const mockRes = {
 			json: (data: any) => {
@@ -98,7 +94,6 @@ describe("office plugin verification (plugins/office)", () => {
 		expect(jsonResult.ready).toBe(false);
 		expect(jsonResult.hasArtifacts).toBe(hasArtifacts);
 
-		// 工具正确注册
 		expect(registeredTool).toBeTruthy();
 		expect(registeredTool.name).toBe("office");
 
@@ -140,7 +135,6 @@ describe("office plugin verification (plugins/office)", () => {
 
 		const cleanup = await mod.default.activate(mockHost);
 
-		// status 路由应委托 host.assets.status
 		let statusJson: any = null;
 		await routes["GET /status"]({}, { json: (d: any) => (statusJson = d) });
 		expect(assetStatusCalled).toBe(true);

@@ -31,15 +31,10 @@ import {
 } from "../remote-ssh-client";
 import type { RemoteSshDirItem, RemoteSshProfileSummary, RemoteSshSystemInfo, RemoteSshToolsInfo } from "../types";
 
-/** 机器根（此电脑/盘符列表）wire 字面量 —— 与 server/files-service.ts 的 MACHINE_ROOT 同值。 */
 export const MACHINE_ROOT = "@root";
 
 export const browseQuery = (p: string) => (p.endsWith("/") ? p : p + "/");
 
-/**
- * 规范拼接工作目录父路径与新建子目录名称。
- * 该函数只负责正斜杠路径连接；服务端负责解析为原生绝对路径。
- */
 export function joinProjectPath(parent: string, name: string): string {
 	const trimmedName = name.trim();
 	const normParent = parent.replace(/\\/g, "/");
@@ -52,7 +47,6 @@ export function joinProjectPath(parent: string, name: string): string {
 	return normParent + "/" + trimmedName;
 }
 
-/** 校验新建项目名称：不能包含分隔符、不能为 . 或 ..、不能唯空。 */
 export function isValidProjectName(name: string): boolean {
 	const trimmed = name.trim();
 	if (!trimmed) return false;
@@ -61,7 +55,6 @@ export function isValidProjectName(name: string): boolean {
 	return true;
 }
 
-/** Parent of an absolute "/"-separated path; null at the filesystem root. */
 export const parentOf = (p: string): string | null => {
 	const s = p.endsWith("/") && p !== "/" ? p.slice(0, -1) : p;
 	if (s === MACHINE_ROOT || s === "/") return null;
@@ -109,11 +102,9 @@ export function DirectoryBrowser({
 	const isZh = isZhLocale(useLocale());
 	const capabilities = useEngineCapabilities();
 	const supportsRemoteSsh = capabilities.remoteSsh && !localOnly;
-	// 常用目录跳转（快照直给的绝对路径；旧服务空串则不渲染对应按钮）
 	const homeDir = useAppField("homeDir");
 	const desktopDir = useAppField("desktopDir");
 
-	// 模式 Tab：本地 vs 远程 SSH（底座不支持远程 SSH 时强制本地）
 	const [activeTab, setActiveTab] = useState<"local" | "remote">(() =>
 		supportsRemoteSsh && isRemoteWorkspaceUri(currentCwd) ? "remote" : "local",
 	);
@@ -124,7 +115,6 @@ export function DirectoryBrowser({
 		}
 	}, [supportsRemoteSsh, activeTab]);
 
-	// ===== 本地文件浏览状态 =====
 	const [browsePath, setBrowsePath] = useState("");
 	const [draft, setDraft] = useState("");
 	const [showNew, setShowNew] = useState(false);
@@ -134,7 +124,6 @@ export function DirectoryBrowser({
 	const inputRef = useRef<HTMLInputElement>(null);
 	const newInputRef = useRef<HTMLInputElement>(null);
 
-	// ===== 远程 SSH 状态 =====
 	const [profiles, setProfiles] = useState<RemoteSshProfileSummary[]>([]);
 	const [sshHost, setSshHost] = useState("");
 	const [sshPort, setSshPort] = useState("22");
@@ -153,19 +142,16 @@ export function DirectoryBrowser({
 	const [suggestedTools, setSuggestedTools] = useState<string[]>([]);
 	const [installingTool, setInstallingTool] = useState(false);
 
-	// 远程目录树状态
 	const [remoteCwd, setRemoteCwd] = useState("/");
 	const [remoteDraft, setRemoteDraft] = useState("/");
 	const [remoteItems, setRemoteItems] = useState<RemoteSshDirItem[]>([]);
 	const [loadingRemoteDir, setLoadingRemoteDir] = useState(false);
-	// 远程新建文件夹/项目状态（与本地 showNew/newName 镜像，服务端 make_dir 已支持 ssh:// URI）
 	const [showRemoteNew, setShowRemoteNew] = useState(false);
 	const [remoteNewName, setRemoteNewName] = useState("");
 	const [remoteCreateError, setRemoteCreateError] = useState<string | null>(null);
 
 	const dirs = pathCompletions.filter((c) => c.type === "dir");
 
-	// 初始化本地路径
 	useEffect(() => {
 		if (isRemoteWorkspaceUri(currentCwd)) {
 			const parsed = parseRemoteWorkspaceUri(currentCwd);
@@ -187,7 +173,6 @@ export function DirectoryBrowser({
 		setCompIndex(-1);
 	}, [currentCwd]);
 
-	// 打开后聚焦输入框
 	useEffect(() => {
 		const frame = requestAnimationFrame(() => {
 			inputRef.current?.focus();
@@ -208,7 +193,6 @@ export function DirectoryBrowser({
 		}
 	});
 
-	// 本地目录浏览请求（60ms 防抖）
 	useEffect(() => {
 		if (activeTab !== "local") return;
 		const timer = setTimeout(() => {
@@ -217,7 +201,6 @@ export function DirectoryBrowser({
 		return () => clearTimeout(timer);
 	}, [browsePath, activeTab]);
 
-	// 本地自由路径打字补全（150ms 防抖）
 	useEffect(() => {
 		if (activeTab !== "local" || draft === browsePath) return;
 		const timer = setTimeout(() => {
@@ -232,7 +215,6 @@ export function DirectoryBrowser({
 		onSelectDirectory(trimmed);
 	};
 
-	// 常用目录一键跳转：此电脑 / 用户目录 / 桌面（与右侧文件树 crumbs 同一条路）
 	const goQuickJump = (target: string) => {
 		setBrowsePath(target);
 		setDraft(target);
@@ -292,8 +274,6 @@ export function DirectoryBrowser({
 		}
 	};
 
-	// ===== 远程 SSH 操作逻辑 =====
-
 	const handleConnectAndProbe = async (overrideParams?: {
 		host: string;
 		port: number;
@@ -342,18 +322,15 @@ export function DirectoryBrowser({
 		setRemoteTools(res.tools ?? null);
 		setSuggestedTools(res.suggestedInstall ?? []);
 
-		// 优先使用传入的远程路径（若为合法的非根路径），否则回退到远端用户主目录
 		const parsedRemotePath = isRemoteWorkspaceUri(currentCwd) ? parseRemoteWorkspaceUri(currentCwd)?.remotePath : null;
 		const targetDir = parsedRemotePath && parsedRemotePath !== "/" ? parsedRemotePath : res.system?.homeDir || "/";
 		setRemoteCwd(targetDir);
 		setRemoteDraft(targetDir);
 		void loadRemoteDir(res.connectionId, targetDir);
 
-		// 刷新已保存列表
 		void requestRemoteProfiles().then((p) => setProfiles(p));
 	};
 
-	// 打开远程 Tab 时拉取已保存的 profiles；若初始路径为远程 SSH URI 且未连接，自动匹配 profile 建立连接
 	const autoConnectedRef = useRef(false);
 	useEffect(() => {
 		if (activeTab === "remote") {
@@ -449,7 +426,6 @@ export function DirectoryBrowser({
 		onClose();
 	};
 
-	// 远程新建：在当前远端目录下 mkdir（经 appSend make_dir 下发 ssh:// URI，服务端走 sftpMkdirRecursive）
 	const handleCreateRemote = () => {
 		const trimmed = remoteNewName.trim();
 		if (!trimmed || !connectionId) return;
@@ -477,7 +453,6 @@ export function DirectoryBrowser({
 			setRemoteNewName("");
 			setShowRemoteNew(false);
 			setRemoteCreateError(null);
-			// 远端 mkdir 经 SSH 往返，稍后刷新列表
 			const conn = connectionId;
 			const dir = remoteCwd;
 			setTimeout(() => {
@@ -487,7 +462,6 @@ export function DirectoryBrowser({
 	};
 
 	const upPath = parentOf(browsePath);
-	// 远程上级目录（".." 行用；根目录时 parentOf 返回 null 即不渲染）
 	const remoteUpPath = parentOf(remoteCwd);
 	const norm = (p: string) => {
 		const f = p.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -500,10 +474,6 @@ export function DirectoryBrowser({
 		cur !== norm(currentCwd) &&
 		!workspaceRoots.some((r) => norm(r) === cur);
 
-	/* Portal 到 body：选择器从底栏（.statusbar）或左栏打开时，祖先的 opacity<1 会把
-	   整个弹层层层相乘（主题里 `.statusbar *{opacity:.95}` → 底部按钮 0.95^5≈0.77，
-	   背景看起来透明），并且会把它锁进祖先的 stacking context，被侧边浮标等
-	   z-index>50 的元素压住。挂到 body 后 opacity 与层级都只取决于自身。 */
 	return createPortal(
 		<>
 			<div
@@ -520,7 +490,6 @@ export function DirectoryBrowser({
 				onMouseDown={(e) => e.stopPropagation()}
 				onWheel={(e) => e.stopPropagation()}
 			>
-				{/* 模式切换 Tab（支持远程 SSH 时显示选项卡切换，不支持时仅显示本地目录模式） */}
 				{supportsRemoteSsh ? (
 					<div className="cwd-mode-tabs">
 						<button
@@ -552,7 +521,6 @@ export function DirectoryBrowser({
 					</div>
 				)}
 
-				{/* 本地目录视图 */}
 				{activeTab === "local" && (
 					<>
 						<div className="cwd-picker-head">
@@ -561,7 +529,6 @@ export function DirectoryBrowser({
 								<span>{browsePath === MACHINE_ROOT ? t("computer") : browsePath}</span>
 							</span>
 						</div>
-						{/* 单行图标工具栏（旧 head 三按钮与跳转行合并，去掉重复的此电脑）：跳转 | 导航 | 新建 | 选定 */}
 						<div className="cwd-toolbar" role="toolbar" aria-label={t("projectPickerTitle")}>
 							<TipButton
 								className={`cwd-jump ${browsePath === MACHINE_ROOT ? "active" : ""}`}
@@ -778,11 +745,9 @@ export function DirectoryBrowser({
 					</>
 				)}
 
-				{/* 远程 (SSH) 视图 */}
 				{activeTab === "remote" && (
 					<div className="cwd-ssh-container">
 						{!connectionId ? (
-							/* 未连接：展示已存配置与新建连接表单 */
 							<div className="cwd-ssh-form">
 								{profiles.length > 0 && (
 									<>
@@ -943,9 +908,7 @@ export function DirectoryBrowser({
 								</button>
 							</div>
 						) : (
-							/* 已连接：展示探针信息与远程目录浏览 */
 							<>
-								{/* 探针信息与必要工具检测 */}
 								<div className="cwd-ssh-probe-box">
 									<div className="cwd-ssh-probe-header">
 										<span>
@@ -976,7 +939,6 @@ export function DirectoryBrowser({
 										</span>
 									</div>
 
-									{/* 工具缺失引导 */}
 									{suggestedTools.length > 0 && (
 										<div className="cwd-ssh-install-box">
 											<div>
@@ -1002,7 +964,6 @@ export function DirectoryBrowser({
 									)}
 								</div>
 
-								{/* 远程路径浏览条 */}
 								<div className="cwd-picker-head">
 									<span className="cwd-picker-title" title={remoteCwd}>
 										<FiGlobe />
@@ -1067,7 +1028,6 @@ export function DirectoryBrowser({
 									</TipButton>
 								</div>
 
-								{/* 远程文件列表 */}
 								<div className="cwd-list">
 									{!loadingRemoteDir && remoteUpPath && (
 										<div key=".." className="cwd-item">
@@ -1117,7 +1077,6 @@ export function DirectoryBrowser({
 										))
 									)}
 								</div>
-								{/* 远程新建文件夹/项目（需已连接） */}
 								{connectionId && showRemoteNew && (
 									<div className="cwd-picker-foot">
 										<div className="cwd-newrow">

@@ -1,4 +1,3 @@
-/** Browser-only SDK entry; declarations share the canonical SDK types. */
 export {
 	SDK_VERSION,
 	defineView,

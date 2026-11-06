@@ -1,17 +1,4 @@
 // @vitest-environment jsdom
-/**
- * 插件内联 SVG 图标（iconSvg）单测 —— **真实 DOM 分支**。
- *
- * 为什么单独一个文件：`sanitizeIconSvg` 走哪条路取决于 `typeof DOMParser`。
- * `tests/unit/plugin-icon-svg.test.ts` 跑在 node 环境（无 DOMParser）→ 只覆盖正则快检
- * 分支，**白名单剥离逻辑一行都没跑过**；这正是 `viewBox` 被静默剥掉却没人发现的原因
- * （bug 现场：DOMParser 解析出的属性名保留原文 `viewBox`，过滤代码却拿
- * `attr.name.toLowerCase()` 去比白名单里带大写的键 → 永不匹配 → 属性删除；
- * 没有 viewBox 的 SVG 不再做坐标映射，24×24 的图标按 1 单位 = 1px 画进 1em 的容器，
- * 只剩左上角一块，CSS 怎么调都对不上）。
- *
- * jsdom 提供真的 DOMParser + XMLSerializer，所以这里锁的就是浏览器里跑的那段代码。
- */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,24 +63,12 @@ describe("sanitizeIconSvg（jsdom：DOM 分支）", () => {
 			iconSvg?: string;
 		}[];
 		const entry = catalog.find((e) => e.id === "vscode-editor");
-		// 这是本次回归的现场：manifest 与 catalog 必须是同一串，且 viewBox 必须活下来。
-		// 改图标时若换了 viewBox 坐标系（16 → 24），下面这条断言仍成立，界面尺寸也不会再歪。
 		expect(entry?.iconSvg).toBe(manifest.iconSvg);
 		const out = sanitizeIconSvg(manifest.iconSvg) ?? "";
 		expect(out).toMatch(/viewBox="0 0 24 24"/);
 	});
 });
 
-/**
- * 内置插件统一线条图标（feather / lucide 风格：`stroke=currentColor` + `fill=none`）。
- * 一个插件忘加 `iconSvg`（回落到 emoji）或塞回彩色方块，界面上立刻就不是一套；
- * 而 iconSvg 缺 `viewBox` 又会被渲染成“被裁一半”的老毛病（见本文件顶部的回归说明）。
- * 四条一起锁：都有、都合法、都带 viewBox、catalog 与 manifest 同一串。
- *
- * 豁免表：用户点名要的实心填充图标不受“线条风格”约束（只锁跟随主题色），
- * 新增豁免必须在这里写明理由。
- */
-/** 填充图标豁免：notes（用户指定的 iconfont 实心笔记本图标，2026-09）。 */
 const FILLED_ICON_EXEMPTIONS = new Set(["notes"]);
 describe("内置插件统一线条图标", () => {
 	const pluginsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "plugins");
@@ -125,13 +100,11 @@ describe("内置插件统一线条图标", () => {
 			const out = sanitizeIconSvg(raw) ?? "";
 			expect(out, `${dir}: viewBox 必须活下来`).toContain('viewBox="');
 			if (FILLED_ICON_EXEMPTIONS.has(dir)) {
-				// 填充图标豁免：只锁“填充跟文字色”（深浅主题都可见），不锁线条描边。
 				expect(out, `${dir}: 填充跟文字色`).toContain('fill="currentColor"');
 			} else {
 				expect(out, `${dir}: 线条描边跟文字色`).toContain('stroke="currentColor"');
 				expect(out, `${dir}: 无填充`).toContain('fill="none"');
 			}
-			// emoji 保留为回落（iconSvg 缺失/被过滤时才会用到）
 			expect(manifest.icon, `${dir}: emoji 回落`).toBeTruthy();
 		}
 	});
@@ -139,7 +112,7 @@ describe("内置插件统一线条图标", () => {
 	it("catalog 条目与插件 manifest 的 iconSvg 完全一致（同一串）", () => {
 		for (const entry of catalog) {
 			const m = manifests.find((x) => x.dir === entry.id || x.manifest.id === entry.id);
-			if (!m) continue; // 目录里没有的条目（尚未 vendored）不参与一致性检查
+			if (!m) continue;
 			expect(entry.iconSvg, `catalog:${entry.id}`).toBe(m.manifest.iconSvg);
 		}
 	});
@@ -156,9 +129,6 @@ describe("内置插件统一线条图标", () => {
 		}
 	});
 
-	/** 回归：白名单漏一个属性就是“图标静默缺一块”（`points` 漏了 polyline 整个不渲染
-	 *  —— run-trace 的图标当时就是空白；`ry` 漏了椭圆/圆角矩形不画）。
-	 *  这里把每个内置图标的标签/属性逐个过白名单，漏了就点名。 */
 	it("白名单必须覆盖所有内置图标用到的标签 / 属性", () => {
 		const missing: string[] = [];
 		const check = (who: string, svg: string) => {

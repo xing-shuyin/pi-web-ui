@@ -1,14 +1,3 @@
-/**
- * 服务端下发文案的双语回归（issue: 英文界面仍见中文预设/审批提示）。
- *
- * 背景：界面语言开关（i18n.setLocale）只换前端文案；凡是服务端 name/reason
- * 字段一路原样渲染的，英文用户就会看到中文。三处曾经漏了：
- *   1. PI_AGENT_PRESETS / PI_PERMISSION_OPTIONS 只有中文 name/description；
- *   2. 审批弹窗写 `reason || reasonEn`（reason 恒存在 → 永远中文）；
- *   3. 预设/权限选项的 tooltip 优先取服务端 description。
- *
- * 这里钉住不变量：内置预设与权限档必须两种语言都给全，且 *En 不得含中文。
- */
 import { describe, expect, it } from "vitest";
 import {
 	PI_AGENT_PRESETS,
@@ -18,7 +7,6 @@ import {
 } from "../../server/tool-manager.js";
 import { DEFAULT_APPROVAL_RULES } from "../../server/approval-rules.js";
 
-/** CJK Unified Ideographs —— 只要命中就是漏翻译。 */
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
 
 describe("预设/权限文案双语（server → client）", () => {
@@ -44,8 +32,8 @@ describe("预设/权限文案双语（server → client）", () => {
 		const preset = PI_AGENT_PRESETS[0];
 		expect(localizedName(preset, "zh")).toBe(preset.name);
 		expect(localizedName(preset, "en")).toBe(preset.nameEn);
-		expect(localizedName(preset, "ja")).toBe(preset.nameEn); // 其它语言包同口径回落英文
-		expect(localizedName({ name: "只有中文" }, "en")).toBe("只有中文"); // 无 En → 不空白
+		expect(localizedName(preset, "ja")).toBe(preset.nameEn);
+		expect(localizedName({ name: "只有中文" }, "en")).toBe("只有中文");
 		expect(localizedName(undefined, "en", "全功能")).toBe("全功能");
 	});
 

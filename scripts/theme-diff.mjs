@@ -1,11 +1,3 @@
-/**
- * 主题像素 diff：比较两次 `theme-audit` 的截图，输出每个主题的差异像素占比 + 差异图。
- *
- * 用法：node scripts/theme-diff.mjs .theme-audit/before .theme-audit/after
- * 退出码：全部主题差异 ≤ 阈值（默认 0.05%）时 0，否则 1（可直接当 CI / 重构闸门）。
- *
- * 解析在浏览器里做（canvas + getImageData），不引入额外依赖。
- */
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { chromium } from "playwright-core";
@@ -36,7 +28,6 @@ const browser = await chromium.launch({ executablePath: CHROME_PATH });
 const page = await browser.newPage();
 await page.setContent("<canvas id=c></canvas>");
 
-/** 在页面里比较两张图，返回 { total, changed, ratio, diffPng }。 */
 async function compare(aB64, bB64) {
 	return page.evaluate(
 		async ({ aB64, bB64 }) => {
@@ -68,7 +59,6 @@ async function compare(aB64, bB64) {
 					Math.abs(da.data[i + 2] - db.data[i + 2]);
 				if (d > 8) {
 					changed++;
-					// 差异像素标红，其余压暗便于定位
 					out.data[i] = 255;
 					out.data[i + 1] = 0;
 					out.data[i + 2] = 0;

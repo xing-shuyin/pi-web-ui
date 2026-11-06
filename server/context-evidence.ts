@@ -1,4 +1,3 @@
-/** Immutable, session-local evidence. Persistence must succeed before replacing text. */
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { link, lstat, mkdir, open, readdir, rm, unlink, type FileHandle } from "node:fs/promises";
@@ -14,7 +13,6 @@ export function contextEvidenceReference(text: string): string {
 	return `context-evidence:${createHash("sha256").update(text).digest("hex")}`;
 }
 
-/** Deterministic summary appendix: names only, never artifact bodies or machine-specific paths. */
 export async function buildContextEvidenceIndex(sessionFile: string): Promise<string> {
 	return withEvidenceQueue([sessionFile], undefined, async () => {
 		let directory: string;
@@ -36,7 +34,6 @@ export async function buildContextEvidenceIndex(sessionFile: string): Promise<st
 	});
 }
 
-/** Resolve before permission guards, so they inspect the actual filesystem path. */
 export function withContextEvidenceRead(
 	base: ToolDefinition,
 	getSessionFile: () => string | undefined,
@@ -57,8 +54,6 @@ export function withContextEvidenceRead(
 				if ((!digest && !isIndex) || !sessionFile)
 					throw new Error("Invalid evidence reference or no persisted session");
 			} else if (sessionFile) {
-				// SDK hooks may already have resolved the alias. Only this session's exact directory
-				// or a direct hash-named child qualifies; sibling prefixes and nested paths do not.
 				const directory = resolve(`${sessionFile}.evidence`);
 				const candidate = resolve(ctx.cwd || process.cwd(), value);
 				const child = relative(directory, candidate);
@@ -71,7 +66,6 @@ export function withContextEvidenceRead(
 				const path = digest ? join(directory, `${digest}.txt`) : directory;
 				if (digest) await readEvidence(path, digest, signal);
 				signal?.throwIfAborted();
-				// Keep the original reader (including its permission guard and offset/limit behavior).
 				const result = await base.execute(
 					id,
 					{ ...input, path, ...("file_path" in input ? { file_path: path } : {}) },
@@ -88,8 +82,6 @@ export function withContextEvidenceRead(
 	};
 }
 
-// Reserve all queues synchronously: opposite-direction copies never hold one lock while acquiring another.
-// One service process owns a data directory. Canonical lexical paths also serialize relative/absolute aliases.
 const pendingWrites = new Map<string, Promise<unknown>>();
 async function withEvidenceQueue<T>(
 	sessions: string[],
@@ -115,7 +107,6 @@ function missing(error: unknown): boolean {
 	return (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
-/** O_NOFOLLOW is not supported by Windows. There, compare lstat against the opened handle too. */
 async function openRegular(path: string, signal?: AbortSignal): Promise<FileHandle> {
 	signal?.throwIfAborted();
 	const before = await lstat(path);
@@ -153,7 +144,6 @@ async function evidenceDirectory(session: string, create: boolean, signal?: Abor
 	return directory;
 }
 
-/** Never read more than the fstat size plus one byte, even if the file grows during the read. */
 async function readEvidence(
 	path: string,
 	digest: string,
@@ -209,7 +199,6 @@ async function sessionExists(session: string, signal?: AbortSignal): Promise<voi
 	signal?.throwIfAborted();
 }
 
-/** Include every entry in the budget; never follow symlinks or silently ignore damaged named artifacts. */
 async function inventory(directory: string, signal?: AbortSignal): Promise<Map<string, number>> {
 	const sizes = new Map<string, number>();
 	let total = 0;
@@ -228,7 +217,6 @@ async function inventory(directory: string, signal?: AbortSignal): Promise<Map<s
 	return sizes;
 }
 
-/** Publish without replacing an existing digest, and remove a newly published file if cancellation wins. */
 async function publish(temporary: string, target: string, session: string, signal?: AbortSignal): Promise<void> {
 	await sessionExists(session, signal);
 	signal?.throwIfAborted();
@@ -284,7 +272,6 @@ export async function persistContextEvidence(
 	});
 }
 
-/** Call after removing the transcript; queued writers then observe its absence. */
 export async function removeContextEvidence(sessionFile: string, signal?: AbortSignal): Promise<void> {
 	await withEvidenceQueue([sessionFile], signal, async () => {
 		signal?.throwIfAborted();
@@ -293,7 +280,6 @@ export async function removeContextEvidence(sessionFile: string, signal?: AbortS
 	});
 }
 
-/** Copy all artifacts sequentially with one fixed-size buffer, while reserving both session queues. */
 export async function copyContextEvidence(source: string, destination: string, signal?: AbortSignal): Promise<void> {
 	await withEvidenceQueue([source, destination], signal, async () => {
 		signal?.throwIfAborted();

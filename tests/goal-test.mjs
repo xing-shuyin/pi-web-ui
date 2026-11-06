@@ -1,14 +1,3 @@
-/**
- * Goal — protocol smoke test.
- *
- * Verifies the full wire path for set_goal / goal_status / clear_goal on the
- * goal-mode-2.0 path (the server spawns an executor conversation and drives the
- * loop; the reviewer IS this conversation). No LLM call is required for the
- * status machine + socket round-trip — the executor run may fail without
- * credentials, which the test tolerates.
- *
- * Runs against the compiled server on a dedicated port (8901).
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -16,7 +5,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -49,9 +37,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			// not up yet
-		}
+		} catch {}
 	}
 	throw new Error("server did not start");
 }
@@ -64,7 +50,6 @@ function connect() {
 		const api = {
 			ws,
 			inbox,
-			/** Wait for the next message matching a predicate (with timeout). */
 			async next(pred, what, ms = 8000) {
 				const existing = inbox.findIndex(pred);
 				if (existing >= 0) return inbox.splice(existing, 1)[0];
@@ -112,7 +97,6 @@ async function run() {
 	await sleep(300);
 	const c = await connect();
 
-	// 1) Set a locked goal (wizard-model memory slot + maxRounds + executor model).
 	c.send({
 		type: "set_goal",
 		goal: "把首页标题改为 Goal Buddy",
@@ -143,12 +127,10 @@ async function run() {
 		String(g1.status.reviewMode),
 	);
 
-	// 2) Clear it.
 	c.send({ type: "clear_goal" });
 	const g2 = await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status after clear");
 	check("clear_goal clears the goal", g2.status.goal === null, JSON.stringify(g2.status));
 
-	// 3) Single-shot (locked=false).
 	c.send({ type: "set_goal", goal: "只审查这一轮", maxRounds: 3, locked: false });
 	const g3 = await c.next(
 		(m) => m.type === "goal_status" && m.status.goal === "只审查这一轮",
@@ -159,7 +141,6 @@ async function run() {
 	c.send({ type: "clear_goal" });
 	await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status cleared again");
 
-	// 4) Empty goal text should clear, not set. Drain any stragglers first.
 	c.inbox.length = 0;
 	c.send({ type: "set_goal", goal: "", maxRounds: 3, locked: true });
 	const g4 = await c.next((m) => m.type === "goal_status" && m.status.goal === null, "goal_status empty set");
@@ -169,9 +150,7 @@ async function run() {
 	try {
 		c.ws.close();
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -179,8 +158,6 @@ run().catch((err) => {
 	console.error("test error:", err);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

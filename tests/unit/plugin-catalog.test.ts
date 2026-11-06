@@ -1,9 +1,5 @@
-/**
- * 插件市场列表（server/plugin-catalog.ts）单测：builtin+custom 两层合并、
- * 同 id 覆盖、source 校验、默认 id 推导、添加/移除持久化。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -46,6 +42,50 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
+describe("host-owned modules", () => {
+	it("excludes module IDs from every catalog origin without trusting manifest flags", () => {
+		const module = { id: "superagent", source: "host/repo/plugins/superagent", builtinModule: false };
+		writeFileSync(builtin, JSON.stringify([...BUILTIN, module]));
+		writeFileSync(
+			community,
+			JSON.stringify({ entries: [module, { id: "community", source: "a/b", builtinModule: true }] }),
+		);
+		writeFileSync(
+			custom,
+			JSON.stringify({
+				entries: [module, { id: "Superagent", source: "a/b" }, { id: "custom", source: "a/b", builtinModule: true }],
+			}),
+		);
+		expect(readCatalog(builtin, custom, community).map((e) => e.id)).toEqual([
+			"webmail",
+			"mermaid",
+			"community",
+			"custom",
+		]);
+	});
+
+	it.each([
+		{ id: "superagent", source: "a/b" },
+		{ id: " Superagent ", source: "a/b" },
+		{ source: "host/repo/plugins/superagent#main" },
+	])("rejects custom module entries before writing: %j", (input) => {
+		writeFileSync(custom, JSON.stringify({ entries: [{ id: "keep", source: "a/b" }] }));
+		const before = readFileSync(custom, "utf8");
+		expect(() => addCustomEntry(custom, input)).toThrow(/managed by the host/);
+		expect(readFileSync(custom, "utf8")).toBe(before);
+	});
+
+	it("does not persist host modules in the community catalog", () => {
+		expect(
+			writeCommunityCatalog(community, [
+				{ id: "superagent", source: "a/b", name: "Host", builtin: false },
+				{ id: "keep", source: "a/b", name: "Keep", builtin: false },
+			]),
+		).toBe(1);
+		expect(JSON.parse(readFileSync(community, "utf8")).entries.map((e: { id: string }) => e.id)).toEqual(["keep"]);
+	});
+});
+
 describe("readCatalog", () => {
 	it("合并 builtin + custom，custom 同 id 覆盖 builtin", () => {
 		writeFileSync(
@@ -82,12 +122,10 @@ describe("readCatalog", () => {
 	});
 
 	it("三层合并：builtin + community + custom 标记 origin 并分级优先级", () => {
-		// 社区列表包含一个第三方插件和一个试图重名覆盖 webmail 的条目
 		writeCommunityCatalog(community, [
 			{ id: "pi-web-multigit", name: "Multi Git", source: "EinErste/pi-web-multigit", builtin: false },
 			{ id: "webmail", name: "社区邮箱（应被内置阻挡）", source: "other/webmail", builtin: false },
 		]);
-		// 自定义列表包含一个全新的自定义插件和一个显式覆盖 mermaid 的条目
 		writeFileSync(
 			custom,
 			JSON.stringify({
@@ -101,26 +139,22 @@ describe("readCatalog", () => {
 		const list = readCatalog(builtin, custom, community);
 		expect(list).toHaveLength(4);
 
-		// 1. webmail：属于内置，不被社区列表覆盖
 		const webmail = list.find((e) => e.id === "webmail")!;
 		expect(webmail.origin).toBe("builtin");
 		expect(webmail.builtin).toBe(true);
 		expect(webmail.name).toBe("webmail");
 
-		// 2. pi-web-multigit：来自社区生态
 		const multigit = list.find((e) => e.id === "pi-web-multigit")!;
 		expect(multigit.origin).toBe("community");
 		expect(multigit.builtin).toBe(false);
 		expect(multigit.name).toBe("Multi Git");
 
-		// 3. mermaid：被自定义列表覆盖
 		const mermaid = list.find((e) => e.id === "mermaid")!;
 		expect(mermaid.origin).toBe("custom");
 		expect(mermaid.builtin).toBe(false);
 		expect(mermaid.overridesBuiltin).toBe(true);
 		expect(mermaid.name).toBe("我的 Mermaid");
 
-		// 4. my-custom：独立自定义插件
 		const myCustom = list.find((e) => e.id === "my-custom")!;
 		expect(myCustom.origin).toBe("custom");
 		expect(myCustom.builtin).toBe(false);
@@ -151,7 +185,6 @@ describe("addCustomEntry / removeCustomEntry", () => {
 		addCustomEntry(custom, { source: "a/b", id: "temp" });
 		expect(removeCustomEntry(custom, "temp")).toBe(true);
 		expect(removeCustomEntry(custom, "temp")).toBe(false);
-		// 内置条目（不在 custom 文件里）移除返回 false
 		expect(removeCustomEntry(custom, "webmail")).toBe(false);
 		const list = readCatalog(builtin, custom);
 		expect(list.find((x) => x.id === "webmail")).toBeDefined();

@@ -118,7 +118,6 @@ export function GroupSteerModal({ task, botName, deviceName, onClose, onSubmit }
 			className="dg-steer-modal"
 		>
 			<div className="dg-steer-body">
-				{/* 任务详情卡片 */}
 				<div className="dg-steer-target-card">
 					<div className="dg-steer-target-header">
 						<div className="dg-steer-bot-badge">
@@ -151,7 +150,6 @@ export function GroupSteerModal({ task, botName, deviceName, onClose, onSubmit }
 					)}
 				</div>
 
-				{/* 预设指令快捷纠偏 */}
 				<div className="dg-steer-presets-section">
 					<div className="dg-steer-presets-header">
 						<FiZap className="dg-steer-zap-icon" />
@@ -173,7 +171,6 @@ export function GroupSteerModal({ task, botName, deviceName, onClose, onSubmit }
 					</div>
 				</div>
 
-				{/* 多行输入框 */}
 				<div className="dg-steer-input-section">
 					<label className="dg-field-label">
 						{zh ? "转向指令 (Ctrl+Enter 提交)" : "Steering Instruction (Ctrl+Enter to submit)"}
@@ -201,7 +198,6 @@ export function GroupSteerModal({ task, botName, deviceName, onClose, onSubmit }
 					</div>
 				)}
 
-				{/* 底部动作按钮 */}
 				<div className="dg-steer-actions">
 					<button type="button" className="btn secondary" onClick={onClose} disabled={submitting}>
 						{zh ? "取消" : "Cancel"}

@@ -1,20 +1,3 @@
-/**
- * legado-web 的「AI 修源接口」测试（零 token、自包含）。
- *
- * 不起 pi-web-ui 服务：直接用假 host 激活插件入口，拿到注册的 AI 工具与 HTTP 路由，
- * 对着本进程里的假书源站跑一遍（规则引擎在 worker 里跑，同步 JS 规则走共享内存桥）。
- *
- * 覆盖：
- * - 四个工具注册 + 规则速查内容
- * - legado_book_sources：list / get / add / update（深合并）/ remove（真正落盘）
- * - legado_source_probe：完整链路逐步回报（请求、页体片段、规则原文、规则失败）
- * - legado_run_rule：抓页试规则（含条目级 listRule）
- * - 引擎修复回归：单段 CSS 规则（无 @）= 选择器 + 取文本，`.title##正则` 可用，
- *   且 `text`/`href` 这类输出写法仍然有效
- * - 书源 JS 规则里的同步 java.ajax（worker + Atomics 桥）
- *
- * 运行：先 npm run build（或 node plugins/legado-web/build.mjs），再 node tests/legado-web-engine-test.mjs
- */
 import http from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,7 +7,6 @@ import { freePort } from "./lib/port-utils.mjs";
 
 import { buildFixPrompt, isAiFixMessage, normalizeFixContext } from "../plugins/legado-web/client/ai-fix.mjs";
 
-// 测试内假书源站监听 127.0.0.1，SSRF 防护对回环地址放行
 process.env.LEGADO_ALLOW_PRIVATE_HOSTS = process.env.LEGADO_ALLOW_PRIVATE_HOSTS ?? "127.0.0.1,localhost";
 
 const PORT = 8995;
@@ -40,7 +22,6 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// ---- 假书源站 --------------------------------------------------------------
 const site = http.createServer((req, res) => {
 	const u = new URL(req.url ?? "/", BASE);
 	const send = (type, body) => {
@@ -113,9 +94,8 @@ try {
 		throw new Error("缺 server/engine.mjs —— 先跑 node plugins/legado-web/build.mjs");
 
 	await new Promise((r) => site.listen(PORT, "127.0.0.1", r));
-	freePort(PORT + 1000); // 只探测（本测试不需要额外端口）
+	freePort(PORT + 1000);
 
-	// ---- 假 host 激活插件 ----------------------------------------------------
 	const mod = await import(pathToFileURL(join(pluginDir, "index.mjs")).href);
 	const tools = new Map();
 	const routes = new Map();
@@ -141,7 +121,6 @@ try {
 	};
 	deactivate = mod.default.activate(host);
 
-	// ---- 1. 工具注册 ---------------------------------------------------------
 	const want = ["legado_rules", "legado_book_sources", "legado_source_probe", "legado_run_rule"];
 	const missing = want.filter((n) => !tools.has(n));
 	if (missing.length) fail(`缺工具：${missing.join(", ")}`);
@@ -150,7 +129,6 @@ try {
 
 	const run = (name, params) => tools.get(name).execute("t", params);
 
-	// ---- 2. 规则速查 ---------------------------------------------------------
 	const rules = await run("legado_rules", {});
 	const text = String(rules.text ?? "");
 	for (const kw of ["ruleSearch", "ruleContent", "@put", "##", "java.ajax"]) {
@@ -158,7 +136,6 @@ try {
 	}
 	if (!process.exitCode) console.log(`✓ legado_rules 返回规则速查（${text.length} 字）`);
 
-	// ---- 2b. 「AI 修复源」的给 AI 正文（纯函数） ------------------------------
 	{
 		const msg = {
 			type: "legado:ai-fix",
@@ -191,7 +168,6 @@ try {
 		]) {
 			if (!prompt.includes(need)) fail(`给 AI 的正文缺内容：${need}`);
 		}
-		// 目录没给全时不能凭空编：sourcesFile 可由 dataDir 推出，但绝不能再给出“可改的源码目录”
 		const noDirs = buildFixPrompt(msg.context, {});
 		if (/插件源码目录/.test(noDirs)) fail("正文里不应该再出现“插件源码目录”（AI 不该改插件代码）");
 		if (!buildFixPrompt(msg.context, { dataDir: "D:/data/legado-web" }).includes("D:/data/legado-web/sources.json"))
@@ -204,7 +180,6 @@ try {
 				"✓ 「AI 修复源」正文组装（含书源/现场/规则 + 书源文件与规则文件路径 + “只改书源不改插件”硬约束）+ 脏上下文归一化",
 			);
 
-		// 「AI 新建书源」：只给网站链接的正文模板
 		const newPrompt = buildFixPrompt(
 			{ scene: "new", sourceUrl: "https://www.example.com" },
 			{ dataDir: "D:/d", sourcesFile: "D:/d/sources.json", pluginDir: "P:/p" },
@@ -225,7 +200,6 @@ try {
 		if (!process.exitCode) console.log("✓ 「AI 新建书源」正文模板（网址 + 抓页步骤 + 落盘要求 + 硬约束）");
 	}
 
-	// ---- 3. 书源文件读写 -----------------------------------------------------
 	let r = await run("legado_book_sources", { action: "list" });
 	if (r.total !== 0) fail(`初始书源应为 0，实际 ${r.total}`);
 	r = await run("legado_book_sources", { action: "add", source });
@@ -252,7 +226,6 @@ try {
 	else if (!written?.ruleContent?.nextContentUrl === undefined) fail("update 没合并新键");
 	else console.log("✓ legado_book_sources：list / get / add / update（深合并落盘）/ 通知");
 
-	// ---- 4. 链路诊断 ---------------------------------------------------------
 	r = await run("legado_source_probe", { url: BASE, key: "测试", dump: "snippet", dumpMax: 300 });
 	const names = (r.steps ?? []).map((s) => s.name).join(">");
 	if (!r.ok) fail(`完整链路应通过，实际：${r.conclusion}（${names}）`);
@@ -261,20 +234,17 @@ try {
 	else if (!r.steps.find((s) => s.name === "content")?.requests?.[0]?.snippet) fail("dump=snippet 没回传页体片段");
 	else console.log(`✓ legado_source_probe：${r.conclusion}（逐步回报请求 + 规则 + 页体片段）`);
 
-	// 步进模式：只测正文（跳过搜索/详情/目录）
 	r = await run("legado_source_probe", { url: BASE, step: "content", bookUrl: `${BASE}/c/1`, dump: "none" });
 	if (!r.ok || r.steps.length !== 1)
 		fail(`step=content 应只跑一步，实际 ${JSON.stringify(r.steps?.map((s) => s.name))}`);
 	else console.log("✓ legado_source_probe：step 只跑指定步骤");
 
-	// ---- 5. 试规则（含条目级） ------------------------------------------------
 	r = await run("legado_run_rule", { url: `${BASE}/c/1`, rule: "#content" });
 	if (!String(r.first ?? "").startsWith("正文内容")) fail(`runRule 单段选择器失败：${JSON.stringify(r).slice(0, 160)}`);
 	const itemLevel = await run("legado_run_rule", { url: `${BASE}/toc/1`, rule: "text", listRule: "#mulu a" });
 	if (itemLevel.list?.[0] !== "第1章 起始") fail(`条目级 listRule 失败：${JSON.stringify(itemLevel).slice(0, 160)}`);
 	else console.log("✓ legado_run_rule：抓页试规则（页面级 + 条目级）");
 
-	// ---- 6. 引擎修复回归：单段 CSS 规则 --------------------------------------
 	const html = '<html><body><div class="title">测试<font color="RED">书</font></div></body></html>';
 	const cssCases = [
 		[".title##<font.*?></font>", "测试书"],
@@ -289,19 +259,16 @@ try {
 	}
 	if (!process.exitCode) console.log("✓ 单段 CSS 规则 = 选择器 + 取文本（`.title##正则`、`text` 均可用）");
 
-	// ---- 7. 书源 JS 规则里的同步 java.ajax -----------------------------------
 	r = await run("legado_source_probe", { url: jsSource.bookSourceUrl, key: "测试", mode: "search", dump: "none" });
 	if (!r.ok) fail(`同步 java.ajax 规则失败：${r.conclusion}`);
 	else console.log(`✓ java.ajax 同步规则可用（${r.conclusion}）`);
 
-	// ---- 8. 删源 --------------------------------------------------------------
 	r = await run("legado_book_sources", { action: "remove", url: jsSource.bookSourceUrl });
 	if (!r.ok || r.total !== 1) fail(`remove 失败：${JSON.stringify(r).slice(0, 120)}`);
 	else console.log("✓ legado_book_sources：remove");
 	if (!notes.length) fail("写操作没有通知用户");
 	else console.log(`✓ 写操作通知用户（${notes.length} 条，例如「${notes[0].slice(0, 40)}…」）`);
 
-	// ---- 9. 前端问目录：{type:"info"} → 回 {kind:"info", sourcesFile, rulesFile, dataDir, pluginDir} ------
 	if (!messageHandlers.length) fail("没注册 onMessage（前端问目录拿不到答案）");
 	else {
 		for (const h of messageHandlers) h({ type: "info" }, "client-1");
@@ -322,9 +289,7 @@ try {
 } finally {
 	try {
 		deactivate?.();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	site.close();
 	await new Promise((r) => setTimeout(r, 500));
 	rmSync(dataDir, { recursive: true, force: true });

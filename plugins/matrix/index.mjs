@@ -1,12 +1,3 @@
-/**
- * plugins/matrix/index.mjs
- * Matrix protocol integration for pi-web-ui (experimental).
- * Zero external dependencies (built-in fetch + node:crypto).
- * Inspired by dsh-im: outbound sync long-polling (zero public IP),
- * structure-aware Markdown chunks, isolated multi-turn sessions,
- * access control whitelist, and slash commands.
- */
-
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { scopeKey, threadOf, mediaTypes, receiveMedia, sendMedia } from "./channel-behavior.mjs";
@@ -14,7 +5,6 @@ import { chunkMarkdownText } from "./markdown-chunks.mjs";
 
 export const SECRET_ACCESS_TOKEN = "matrix.accessToken";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -23,7 +13,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from Matrix User ID (@user:server). */
 export function peerAccountId(userId, prefix = "mtx") {
 	const raw = String(userId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -31,7 +20,6 @@ export function peerAccountId(userId, prefix = "mtx") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and strip bot mention tags from Matrix message content. */
 export function extractMatrixText(content = {}, botUserId = "") {
 	let text = String(content?.body || "").trim();
 	if (!text) return "";
@@ -42,9 +30,6 @@ export function extractMatrixText(content = {}, botUserId = "") {
 	return text;
 }
 
-/**
- * Matrix Client-Server API request helper.
- */
 export async function matrixApi(homeserverUrl, accessToken, method, path, payload = null, { timeoutMs = 35000 } = {}) {
 	const base = homeserverUrl.replace(/\/+$/, "");
 	const subpath = path.startsWith("/") ? path : `/${path}`;
@@ -75,9 +60,6 @@ export async function matrixApi(homeserverUrl, accessToken, method, path, payloa
 	return await res.json().catch(() => ({}));
 }
 
-/**
- * MatrixBotBridge manages outbound /sync long-polling duplex exchange with Matrix.
- */
 export class MatrixBotBridge {
 	/**
 	 * @param {object} options
@@ -96,8 +78,6 @@ export class MatrixBotBridge {
 
 		this.botUserId = "";
 		this.nextBatch = "";
-		// sync 游标持久化：内存态 nextBatch 在重启/热重载后清零，首轮 sync 会把
-		// 各房间最近时间线（此前已回复过的消息）当新消息重放、重复触发 agent
 		this.nextBatchLoaded = false;
 
 		this.seenEventIds = new Set();
@@ -119,7 +99,7 @@ export class MatrixBotBridge {
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			botUserId: "",
 			messagesReceived: 0,
 			messagesReplied: 0,
@@ -233,7 +213,6 @@ export class MatrixBotBridge {
 			return;
 		}
 
-		// Verify bot identity
 		try {
 			const whoami = await matrixApi(
 				cfg.homeserverUrl,
@@ -321,9 +300,6 @@ export class MatrixBotBridge {
 					await this.host?.storage?.set?.("matrix.nextBatch", this.nextBatch);
 				}
 
-				// Handle joined room timeline events（无持久化游标的首轮 sync 只落
-				// 游标不消费时间线——Synapse 默认返回每房间最近约 10 条，其中多数
-				// 是重启前已回复过的消息，重放会重复触发 agent）
 				if (!initialSync) {
 					const joinedRooms = res?.rooms?.join || {};
 					for (const [roomId, roomData] of Object.entries(joinedRooms)) {
@@ -503,7 +479,6 @@ export class MatrixBotBridge {
 		const cfg = this.getConfig();
 		if (!cfg.homeserverUrl || !cfg.accessToken) throw new Error("Matrix credentials are not configured");
 		if (this.encryptedRooms.has(roomId)) throw new Error("E2EE sending is unsupported; use an unencrypted room");
-		// Check room state for outbound-only rooms as well; never leak plaintext into an E2EE room.
 		const state = await matrixApi(
 			cfg.homeserverUrl,
 			cfg.accessToken,
@@ -712,7 +687,6 @@ export class MatrixBotBridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.accessToken;
@@ -720,7 +694,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingToken = savedSecrets[SECRET_ACCESS_TOKEN] || prev.accessToken || "";
@@ -755,7 +728,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "matrix" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "matrix",
 		description: "Send messages or notifications to Matrix rooms via Matrix Client-Server API.",
@@ -813,7 +785,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

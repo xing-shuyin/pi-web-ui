@@ -1,13 +1,3 @@
-/**
- * universal-attachments.ts — 通用底座附件构建、@ 提及扫描与技能提示注入。
- *
- * 职责：
- *   1. 扫描用户提问中的 `@path`（文件引用）与 `@skill:name`（技能引用）；
- *   2. 生成符合 Web UI 标准的 custom "file" 卡片（UiMessage），供渲染折叠文件卡片、
- *      图片预览并支持编辑重问（question-attachments.ts）；
- *   3. 格式化最终投递给各底层驱动（Claude Code、DSH 等）的 Prompt 上下文与附件列表。
- */
-
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
@@ -15,7 +5,6 @@ import type { PromptAttachment, UiMessage } from "../protocol.js";
 import { readSkillInstruction, type DiscoveredSkill } from "../skill-discovery.js";
 import { isRemoteWorkspaceUri } from "../remote-ssh-service.js";
 
-/** Canvas ids are not workspace paths; unsupported engines must say so. */
 export function formatUnavailableCanvasReference(att: PromptAttachment): string {
 	const escape = (s: string) =>
 		s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -27,11 +16,6 @@ export interface ScanResult {
 	detectedSkills: DiscoveredSkill[];
 }
 
-/**
- * 扫描用户提问文本中的 `@` 词元：
- *   - `@skill:foo` 或匹配已知技能名的 `@foo`
- *   - `@path/to/file` 在当前工作区存在的相对路径
- */
 export function scanAtMentions(
 	text: string,
 	cwd: string,
@@ -42,7 +26,6 @@ export function scanAtMentions(
 	const detectedSkills: DiscoveredSkill[] = [];
 	const existingPaths = new Set(existingAttachments.map((a) => a.path).filter(Boolean));
 
-	// 1. 扫描 @skill:xxx 引用
 	const skillRegex = /@skill:([A-Za-z0-9_-]+)/g;
 	let sm: RegExpExecArray | null;
 	const matchedSkillNames = new Set<string>();
@@ -57,12 +40,10 @@ export function scanAtMentions(
 		}
 	}
 
-	// 远程 SSH 项目的工作区不在本地文件系统中，跳过本地相对路径与 existsSync 检查
 	if (isRemoteWorkspaceUri(cwd)) {
 		return { detectedAttachments, detectedSkills };
 	}
 
-	// 2. 扫描 @path/to/file 引用（避开邮箱格式，例如 a@b.com）
 	const pathRegex = /(?:^|\s)@([^\s@:"'<>|?*]+)/g;
 	let pm: RegExpExecArray | null;
 	const root = resolve(cwd);
@@ -77,11 +58,9 @@ export function scanAtMentions(
 		const rawCandidate = pm[1].trim();
 		if (!rawCandidate || rawCandidate.startsWith("skill:")) continue;
 
-		// 规范化相对路径
 		const candidate = rawCandidate.replace(/^[/\\]+/, "");
 		const absPath = isAbsolute(rawCandidate) ? rawCandidate : resolve(root, candidate);
 
-		// 防止跳出项目根目录或不存在的文件
 		if (existsSync(absPath)) {
 			try {
 				const rel = relative(root, absPath).replace(/\\/g, "/");
@@ -93,25 +72,19 @@ export function scanAtMentions(
 						mode: "reference",
 					});
 				}
-			} catch {
-				/* ignore fs error */
-			}
+			} catch {}
 		}
 	}
 
 	return { detectedAttachments, detectedSkills };
 }
 
-/**
- * 将用户携带的附件列表转为 UiMessage 卡片消息（以便持久化及前端渲染与复原）。
- */
 export function createAttachmentUiMessages(attachments: PromptAttachment[], timestamp = Date.now()): UiMessage[] {
 	const out: UiMessage[] = [];
 
 	for (const att of attachments) {
 		const cardId = `u-att-${timestamp}-${randomUUID().slice(0, 6)}`;
 
-		// 1. 图片附件
 		if (att.imageData) {
 			const dataUrl = att.imageData.startsWith("data:")
 				? att.imageData
@@ -130,7 +103,6 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 			continue;
 		}
 
-		// 2. 引述文本
 		if (att.mode === "quote" && att.quote) {
 			out.push({
 				id: cardId,
@@ -146,7 +118,6 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 			continue;
 		}
 
-		// 3. 授权网页
 		if (att.mode === "page") {
 			out.push({
 				id: cardId,
@@ -174,7 +145,6 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 			});
 			continue;
 		}
-		// 4. 工作区文件/目录/行范围
 		if (att.path) {
 			const isLines = att.mode === "lines" && att.lines;
 			let isDir = false;
@@ -182,9 +152,7 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 				if (existsSync(att.path)) {
 					isDir = statSync(att.path).isDirectory();
 				}
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			const text = isLines
 				? `<file path="${att.path}" lines="${att.lines!.start}-${att.lines!.end}" />`
 				: isDir
@@ -211,9 +179,6 @@ export function createAttachmentUiMessages(attachments: PromptAttachment[], time
 	return out;
 }
 
-/**
- * 组装最终送入底座驱动的 Prompt 上下文与综合附件。
- */
 export function formatPromptWithSkills(rawPrompt: string, skills: readonly DiscoveredSkill[]): string {
 	if (!skills || skills.length === 0) return rawPrompt;
 

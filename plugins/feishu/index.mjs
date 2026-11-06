@@ -1,9 +1,3 @@
-/**
- * plugins/feishu/index.mjs
- * Feishu (Lark) Open Platform & Webhook integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto).
- */
-
 import { createHmac } from "node:crypto";
 import { FeishuBotBridge } from "./bot-bridge.mjs";
 import { createMedia } from "./media.mjs";
@@ -37,9 +31,6 @@ export const PRESETS = {
 	},
 };
 
-/**
- * Redact sensitive secrets from configuration before sending to browser.
- */
 export function redactConfig(cfg, { hasAppSecret = false, hasWebhookSecret = false } = {}) {
 	const c = { ...(cfg || {}) };
 	c.hasAppSecret = Boolean(c.appSecret || hasAppSecret);
@@ -49,9 +40,6 @@ export function redactConfig(cfg, { hasAppSecret = false, hasWebhookSecret = fal
 	return c;
 }
 
-/**
- * Strip secrets and secret-presence flags before storing config in plaintext storage.
- */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.appSecret;
@@ -61,10 +49,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/**
- * Merge saved secrets into incoming config.
- * Empty secret string retains existing saved secret unless clear flag is set.
- */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingAppSecret = savedSecrets[SECRET_APP_SECRET] || prev.appSecret || "";
@@ -91,18 +75,12 @@ export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	return out;
 }
 
-/**
- * Sign Feishu custom bot webhook request with HMAC-SHA256.
- */
 export function signWebhook(timestampSec, secret) {
 	if (!secret) return "";
 	const stringToSign = `${timestampSec}\n${secret}`;
 	return createHmac("sha256", stringToSign).update("").digest("base64");
 }
 
-/**
- * Parse Feishu message content JSON into human-readable text and subject.
- */
 export function parseFeishuMessageContent(msgType, contentRaw) {
 	let parsed = {};
 	if (typeof contentRaw === "string") {
@@ -222,9 +200,6 @@ export function parseFeishuMessageContent(msgType, contentRaw) {
 	};
 }
 
-/**
- * Build message payload for Feishu Open API / Webhook.
- */
 export function buildMessageContent({ msgType = "text", text = "", title = "", cardTemplate = "blue" } = {}) {
 	const safeText = String(text || "");
 	const safeTitle = String(title || "");
@@ -276,9 +251,6 @@ export function buildMessageContent({ msgType = "text", text = "", title = "", c
 	};
 }
 
-/**
- * Format a raw Feishu message item into unified UI/AI structure.
- */
 export function formatMessageItem(rawMsg, seenIds = new Set()) {
 	const msgId = rawMsg.message_id || rawMsg.id || "";
 	const msgType = rawMsg.msg_type || "text";
@@ -313,9 +285,6 @@ export function formatMessageItem(rawMsg, seenIds = new Set()) {
 	};
 }
 
-/**
- * Protect URLs during machine translation.
- */
 export function protectUrls(text) {
 	const urls = [];
 	const protectedText = String(text || "").replace(/https?:\/\/[^\s<>'")]+/g, (match) => {
@@ -326,16 +295,10 @@ export function protectUrls(text) {
 	return { protectedText, urls };
 }
 
-/**
- * Restore protected URLs after machine translation.
- */
 export function restoreProtectedUrls(text, urls = []) {
 	return String(text || "").replace(/__URL_(\d+)__/g, (_, idx) => urls[Number(idx)] || "");
 }
 
-/**
- * Fast Google GTX translation fallback.
- */
 export async function fastTranslateText(text, targetLang = "zh-CN") {
 	if (!text?.trim()) return "";
 	const { protectedText, urls } = protectUrls(text);
@@ -849,10 +812,6 @@ export default async function activate(host) {
 		}
 	}
 
-	// 轮询调度：宿主的 registerBackgroundTask 是纯「后台任务面板」登记（只消费
-	// id/label/status/stop，不产生任何调度）——此前把 intervalSec/run 传给它，
-	// 轮询从未被调度，新消息通知/未读徽标只剩面板「立即轮询」一条触发路径。
-	// 与 webmail 同口径：插件自建 setInterval，面板任务负责可见性与一键停止。
 	let pollTimer = null;
 	const pollSecLabel = () => `每 ${Math.max(15, Math.floor(Number(localConfig.pollSec) || 60))}s`;
 	const restartPoller = () => {
@@ -863,7 +822,7 @@ export default async function activate(host) {
 		if (hasAppConfig(localConfig)) {
 			const sec = Math.max(15, Math.floor(Number(localConfig.pollSec) || 60));
 			pollTimer = setInterval(() => void pollNewMessages(), sec * 1000);
-			void pollNewMessages(); // 立即来一轮
+			void pollNewMessages();
 			bgTask?.update({ status: pollSecLabel() });
 		} else {
 			bgTask?.update({ status: "未配置" });
@@ -881,7 +840,6 @@ export default async function activate(host) {
 	});
 	restartPoller();
 
-	// Register AI tool "feishu" adhering strictly to tool-prompt-hygiene rules
 	host.registerTool?.({
 		name: "feishu",
 		description:
@@ -1078,9 +1036,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
-	// 回包回显请求里的 __rid：新宿主只有「上行 send / 下行 onData」，没有请求-回调
-	// 配对，客户端据此把回包配到发起的那次请求上（不带 __rid 时行为不变）。
 	host.onClientMessage?.(async (msg, replyRaw) => {
 		const __rid = msg && msg.__rid;
 		const reply = (payload) =>
@@ -1132,7 +1087,6 @@ export default async function activate(host) {
 					tokenCache.token = "";
 					tokenCache.expiresAt = 0;
 
-					// 配置变了（含 pollSec、首次配好 appId/appSecret）：按新配置重启轮询
 					restartPoller();
 					if (localConfig.botEnabled && hasAppConfig(localConfig)) {
 						await botBridge.start().catch(() => {});
@@ -1339,7 +1293,6 @@ export default async function activate(host) {
 
 	await updateUnreadStatus();
 
-	// activate 返回的函数被宿主登记为 deactivate（server/plugins.ts）：反激活时停掉轮询与 Bot
 	return async () => {
 		if (pollTimer) {
 			clearInterval(pollTimer);

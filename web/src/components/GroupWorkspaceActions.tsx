@@ -87,7 +87,6 @@ export function GroupWorkspaceActions({
 	const { locale } = useI18n();
 	const w = words[isZhLocale(locale) ? "zh" : "en"];
 
-	// 房间生命周期跟踪：切房间时丢弃旧回调结果
 	const activeRoomIdRef = useRef(roomId);
 	useEffect(() => {
 		activeRoomIdRef.current = roomId;
@@ -102,7 +101,6 @@ export function GroupWorkspaceActions({
 	const [applyingPreset, setApplyingPreset] = useState(false);
 	const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
-	// 计划模式硬门禁：必须用户显式点击且处于 ready 状态
 	const handleStartPlan = async () => {
 		if (!activeTaskId || !planState || startingPlan || !onStartPlanExecution) return;
 		const check = prepareStartPlanExecution(planState);
@@ -126,10 +124,8 @@ export function GroupWorkspaceActions({
 		}
 	};
 
-	// 画布工作流显式启动：绝不自动运行，必须显式调用
 	const handleLaunchCanvas = async () => {
 		if (!canvasRef || launchingCanvas || !onLaunchCanvas) return;
-		// 权威硬校验：确保绝不自动执行
 		if (shouldAutoExecuteCanvas(canvasRef)) return;
 
 		setErrorNotice(null);
@@ -147,7 +143,6 @@ export function GroupWorkspaceActions({
 		}
 	};
 
-	// Bot 预设快照应用：白名单净化与在途任务热改防护
 	const handleApplyPreset = async () => {
 		if (!botSnapshot || applyingPreset || !onApplyPresetSnapshot) return;
 
@@ -160,7 +155,6 @@ export function GroupWorkspaceActions({
 		setErrorNotice(null);
 		setApplyingPreset(true);
 		try {
-			// 白名单净化，安全隔离主会话私有配置
 			const sanitized = sanitizeBotPreset(botSnapshot, botSnapshot.botId, botSnapshot.revision + 1);
 			await onApplyPresetSnapshot(botSnapshot.botId, sanitized);
 		} catch (err) {
@@ -188,7 +182,6 @@ export function GroupWorkspaceActions({
 				</div>
 			)}
 
-			{/* 1. 计划模式状态与实施硬门禁 */}
 			{planState && (
 				<div className="group-workspace-card plan-card">
 					<div className="card-header">
@@ -228,7 +221,6 @@ export function GroupWorkspaceActions({
 				</div>
 			)}
 
-			{/* 2. 关联画布：显式启动器，保证不因引用自动跑 */}
 			{canvasRef && (
 				<div className="group-workspace-card canvas-card">
 					<div className="card-header">
@@ -253,7 +245,6 @@ export function GroupWorkspaceActions({
 				</div>
 			)}
 
-			{/* 3. Bot 预设快照：版本锁定与私有配置隔离展示及安全应用 */}
 			{botSnapshot && (
 				<div className="group-workspace-card bot-preset-card">
 					<div className="card-header">
@@ -292,7 +283,6 @@ export function GroupWorkspaceActions({
 				</div>
 			)}
 
-			{/* 4. 群视图正式 UI 插槽渲染 (device.group.actions) */}
 			{uiSlotEntries && uiSlotEntries.length > 0 && (
 				<div className="group-workspace-card group-slots-card">
 					<div className="card-header">

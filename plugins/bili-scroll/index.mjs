@@ -1,8 +1,3 @@
-/**
- * plugins/bili-scroll/index.mjs
- * Bilibili AI 自动巡检、字幕深度排雷、精选速报与私信双向插件 (2.0.0 深度复刻版)
- */
-
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -57,7 +52,6 @@ export default {
 
 		const unregisterFns = [];
 
-		// ── 读取与更新本地配置 ──
 		const cfgFile = join(storageDir, "config.json");
 		const loadLocalCfg = () => {
 			const s = host.getSettings?.() || {};
@@ -66,9 +60,7 @@ export default {
 					const local = JSON.parse(readFileSync(cfgFile, "utf8"));
 					return { ...s, ...local };
 				}
-			} catch {
-				// ignore
-			}
+			} catch {}
 			return s;
 		};
 
@@ -83,7 +75,6 @@ export default {
 			}
 		};
 
-		// ── Python & venv 环境探测 ──
 		const venvDir = join(storageDir, ".venv");
 		const venvPython = () =>
 			process.platform === "win32" ? join(venvDir, "Scripts", "python.exe") : join(venvDir, "bin", "python");
@@ -100,9 +91,7 @@ export default {
 					try {
 						const entries = readdirSync(p);
 						if (entries.some((e) => e.toLowerCase().startsWith(prefix.toLowerCase()))) return true;
-					} catch {
-						// ignore
-					}
+					} catch {}
 				}
 			}
 			return false;
@@ -117,7 +106,6 @@ export default {
 		const venvReadyNow = () => existsSync(venvPython()) && missingVenvDeps().length === 0;
 		const asrReadyNow = () => existsSync(asrPython()) && hasPkg(asrDir, "faster_whisper");
 
-		// ── 1. HTTP 路由注册辅助 ──
 		const route = (method, path, handler) => {
 			if (typeof host.route === "function") {
 				const off = host.route(method, path, async (req, res) => {
@@ -134,14 +122,11 @@ export default {
 			}
 		};
 
-		// ── 2. 安装主依赖 (后台运行) ──
 		let installing = false;
 		const appendInstall = (s) => {
 			try {
 				appendFileSync(installLogFile, s, "utf8");
-			} catch {
-				// ignore
-			}
+			} catch {}
 		};
 
 		const runInstall = () => {
@@ -181,7 +166,6 @@ export default {
 					const venvPy = venvPython();
 					let installCode = 1;
 
-					// 多镜像源轮替尝试
 					for (const mirror of mirrors) {
 						if (installCode === 0) break;
 						appendInstall(`\n尝试从镜像源安装依赖: ${mirror}...\n`);
@@ -230,14 +214,11 @@ export default {
 			return { ok: true, started: true, log: installLogFile, hint: "正在后台安装环境，通常需数十秒" };
 		};
 
-		// ── 3. 安装本地 Whisper 转写依赖 ──
 		let installingAsr = false;
 		const appendAsr = (s) => {
 			try {
 				appendFileSync(asrLogFile, s, "utf8");
-			} catch {
-				// ignore
-			}
+			} catch {}
 		};
 
 		const runAsrInstall = () => {
@@ -320,7 +301,6 @@ export default {
 			return { ok: true, started: true, log: asrLogFile, hint: "正在后台安装转写依赖，请观察日志" };
 		};
 
-		// ── 4. 卡片墙数据解析 parseSeenTable ──
 		const parseSeenTable = () => {
 			if (!existsSync(seenFile)) return [];
 			let text = "";
@@ -382,7 +362,6 @@ export default {
 			return out;
 		};
 
-		// ── 从报告中提取 meta ──
 		const reportMeta = () => {
 			const map = new Map();
 			let files = [];
@@ -420,7 +399,6 @@ export default {
 			return map;
 		};
 
-		// ── 5. 全状态聚合 statusPayload ──
 		const buildStatusPayload = async () => {
 			const user = await credManager.verify();
 			const state = dutyEngine.getState();
@@ -453,9 +431,7 @@ export default {
 					const cache = JSON.parse(readFileSync(join(storageDir, "uid-cache.json"), "utf8")) || {};
 					const name = String(cfg.mentionName).replace(/^@/, "").trim();
 					if (cache[name]) resolvedUid = Number(cache[name]);
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 
 			const reports = dutyEngine.listReports();
@@ -503,7 +479,6 @@ export default {
 			};
 		};
 
-		// ── 6. HTTP 接口清单 ──
 		route("GET", "/status", async (_req, res) => {
 			const payload = await buildStatusPayload();
 			res.json(payload);
@@ -718,7 +693,6 @@ export default {
 			const items = [];
 			const put = (name, ok, detail, fix) => items.push({ name, ok, detail: detail || "", fix: ok ? "" : fix || "" });
 
-			// 1. 家目录可写
 			let writable = true;
 			try {
 				const t = join(storageDir, ".diag-write-test");
@@ -734,11 +708,9 @@ export default {
 				"请检查杀毒软件防护规则或权限，确保数据目录可写",
 			);
 
-			// 2. 账号登录
 			const hasCred = credManager.hasCredential();
 			put("B站已登录", hasCred, hasCred ? "凭证文件存在" : "未登录", "点击高级页「扫码登录」进行扫码绑定");
 
-			// 3. 网络连通
 			let reach = false;
 			let reachDetail = "";
 			try {
@@ -750,7 +722,6 @@ export default {
 			}
 			put("B站接口连通性", reach, reachDetail, "检查网络连接或网络代理是否畅通");
 
-			// 4. 私信收件人
 			const cfg = loadLocalCfg();
 			const dmOk = true;
 			put(
@@ -760,7 +731,6 @@ export default {
 				"可选配置速报收件人；私信查询和自动回复直接使用当前账号",
 			);
 
-			// 5. 虚拟环境
 			put(
 				"Python 独立运行环境",
 				venvReadyNow(),
@@ -808,7 +778,6 @@ export default {
 			res.json({ ok: true, log: dutyEngine.getRecentLog(100) });
 		});
 
-		// ── 7. 双向客户端通信 (WebSocket 通道) ──
 		if (typeof host.onClientMessage === "function") {
 			const offMsg = host.onClientMessage(async (msg, replyRaw) => {
 				const __rid = msg && msg.__rid;
@@ -903,7 +872,6 @@ export default {
 			if (typeof offMsg === "function") unregisterFns.push(offMsg);
 		}
 
-		// ── 8. 双向私信监听守护进程 (dmTick) ──
 		const dmService = new DmService({
 			api: apiClient,
 			host,
@@ -929,7 +897,6 @@ export default {
 		};
 		startDmWatcher();
 
-		// ── 9. 定时谷时巡检 ──
 		const tickSchedule = () => {
 			const cfg = loadLocalCfg();
 			if (!cfg.peakValley) return;
@@ -954,13 +921,11 @@ export default {
 		const schedTimer = setInterval(tickSchedule, 60000);
 		if (typeof schedTimer?.unref === "function") schedTimer.unref();
 
-		// ── 10. 注册 AI Agent 工具（纯英文精简，符合严格规范） ──
 		const registerTool = (spec) => {
 			const originalExec = spec.execute;
 			const adaptedSpec = {
 				...spec,
 				execute: async (toolCallIdOrArgs, paramsMaybe, signal, onUpdate) => {
-					// 兼容两种调用规范：SDK 传入的 (toolCallId, params, signal, onUpdate) 或直接调用的 (params)
 					const args =
 						paramsMaybe && typeof paramsMaybe === "object" && !Array.isArray(paramsMaybe)
 							? paramsMaybe
@@ -979,7 +944,6 @@ export default {
 			}
 		};
 
-		// 工具 1: bili_whoami
 		registerTool({
 			name: "bili_whoami",
 			label: "B站身份状态",
@@ -998,7 +962,6 @@ export default {
 			},
 		});
 
-		// 工具 2: bili_login_start
 		registerTool({
 			name: "bili_login_start",
 			label: "B站登录扫码出码",
@@ -1022,7 +985,6 @@ export default {
 			},
 		});
 
-		// 工具 3: bili_login_poll
 		registerTool({
 			name: "bili_login_poll",
 			label: "B站扫码结果轮询",
@@ -1042,7 +1004,6 @@ export default {
 			},
 		});
 
-		// 工具 4: bili_search
 		registerTool({
 			name: "bili_search",
 			label: "搜索B站视频",
@@ -1074,7 +1035,6 @@ export default {
 			},
 		});
 
-		// 工具 5: bili_video_info
 		registerTool({
 			name: "bili_video_info",
 			label: "B站视频详情",
@@ -1094,7 +1054,6 @@ export default {
 			},
 		});
 
-		// 工具 6: bili_subtitle
 		registerTool({
 			name: "bili_subtitle",
 			label: "获取B站视频字幕全文",
@@ -1113,7 +1072,6 @@ export default {
 			},
 		});
 
-		// 工具 7: bili_hot_videos
 		registerTool({
 			name: "bili_hot_videos",
 			label: "B站热门综合视频",
@@ -1132,7 +1090,6 @@ export default {
 			},
 		});
 
-		// 工具 8: bili_rank
 		registerTool({
 			name: "bili_rank",
 			label: "B站分区排行榜",
@@ -1152,7 +1109,6 @@ export default {
 			},
 		});
 
-		// 工具 9: bili_comments
 		registerTool({
 			name: "bili_comments",
 			label: "获取视频评论",
@@ -1175,7 +1131,6 @@ export default {
 			},
 		});
 
-		// 工具 10: bili_reply
 		registerTool({
 			name: "bili_reply",
 			label: "发布B站评论",
@@ -1210,7 +1165,6 @@ export default {
 			},
 		});
 
-		// 工具 11: bili_send_message
 		registerTool({
 			name: "bili_send_message",
 			label: "发送B站私信",
@@ -1232,7 +1186,6 @@ export default {
 			},
 		});
 
-		// 工具 12: bili_status
 		registerTool({
 			name: "bili_status",
 			label: "B站巡检速报状态",
@@ -1257,7 +1210,6 @@ export default {
 			},
 		});
 
-		// 工具 13: bili_duty_run
 		registerTool({
 			name: "bili_duty_run",
 			label: "立即刷一轮B站",
@@ -1275,7 +1227,6 @@ export default {
 			},
 		});
 
-		// 工具 14: bili_resolve_uid
 		registerTool({
 			name: "bili_resolve_uid",
 			label: "查询B站用户UID",
@@ -1295,7 +1246,6 @@ export default {
 			},
 		});
 
-		// 工具 15: bili_fav_folders
 		registerTool({
 			name: "bili_fav_folders",
 			label: "获取B站收藏夹列表",
@@ -1311,7 +1261,6 @@ export default {
 			},
 		});
 
-		// 工具 16: bili_fav_add
 		registerTool({
 			name: "bili_fav_add",
 			label: "添加到B站收藏夹",
@@ -1331,7 +1280,6 @@ export default {
 			},
 		});
 
-		// 工具 17: bili_related (AI 漫游推荐跳板)
 		registerTool({
 			name: "bili_related",
 			label: "获取B站相关推荐视频",
@@ -1351,7 +1299,6 @@ export default {
 			},
 		});
 
-		// 工具 18: bili_up_videos (顺藤摸瓜探索 UP 主)
 		registerTool({
 			name: "bili_up_videos",
 			label: "获取UP主近期投稿",
@@ -1441,9 +1388,7 @@ export default {
 			for (const unreg of unregisterFns) {
 				try {
 					unreg();
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 			host.log?.("info", "[bili-scroll] 插件已卸载");
 		};

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TerminalManager } from "../../server/terminals.js";
 
-/** safeCwd 是私有方法：经真实实例（emit 空实现）转发调用。
- *  远程工作区根是 ssh:// URI——本地边界（realpath/relative）无法解析它，
- *  修复前远程终端的每次创建/接管命令都会被「必须位于工作区内」拒掉。 */
 const safeCwdOf = (workspaceRoot: string): ((raw: string) => string | null) => {
 	const mgr = new TerminalManager(() => {}, workspaceRoot);
 	return (mgr as unknown as { safeCwd(raw: string): string | null }).safeCwd.bind(mgr);

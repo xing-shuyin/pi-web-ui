@@ -18,7 +18,6 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function session(id: string) {
-	// 原型真方法（sharedPendingMessages 之类）+ 源码推导的实例字段，只覆写行为钩子。
 	return fakeClientSession({
 		clientId: id,
 		cwd: resolve("."),
@@ -60,7 +59,10 @@ describe("private Bot orphan adoption boundary", () => {
 		const create = vi.spyOn(ClientSession, "create").mockResolvedValue(fresh);
 		const attached = await service.attach("device-task-new", vi.fn());
 		expect(attached).toBe(fresh);
-		expect(create).toHaveBeenCalledWith("device-task-new", resolve("."), expect.any(ClientStateStore), { blank: true });
+		expect(create).toHaveBeenCalledWith("device-task-new", resolve("."), expect.any(ClientStateStore), {
+			blank: true,
+			onNotificationEvent: expect.any(Function),
+		});
 		expect(service.get(oldId)).toBe(old);
 		expect(service.get("device-task-new")).toBe(fresh);
 		expect(old.attachSink).not.toHaveBeenCalled();

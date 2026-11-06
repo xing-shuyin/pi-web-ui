@@ -21,9 +21,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 	afterEach(() => {
 		try {
 			rmSync(testDir, { recursive: true, force: true });
-		} catch {
-			// ignore cleanup
-		}
+		} catch {}
 	});
 
 	it("strictly redacts thought blocks, passwords, tokens and private keys", () => {
@@ -55,7 +53,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 		});
 		expect(bashParams?.action).toBe("run_shell_command");
 		expect(bashParams?.commandLength).toBeGreaterThan(0);
-		expect((bashParams as any)?.command).toBeUndefined(); // no raw command dumped
+		expect((bashParams as any)?.command).toBeUndefined();
 
 		const writeParams = sanitizeToolParameters("write", {
 			path: "/secret/path/to/config.json",
@@ -64,7 +62,7 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(writeParams?.action).toBe("write_file");
 		expect(writeParams?.fileType).toBe(".json");
 		expect(writeParams?.contentBytes).toBeGreaterThan(0);
-		expect((writeParams as any)?.content).toBeUndefined(); // no raw content dumped
+		expect((writeParams as any)?.content).toBeUndefined();
 	});
 
 	it("projects tool lifecycle safely and records into journal stream", async () => {
@@ -80,7 +78,6 @@ describe("device task details, journal pagination and secure redaction", () => {
 		});
 		expect(lifecycleStart?.parametersPreview?.action).toBe("run_shell_command");
 
-		// Record tool lifecycle into task journal
 		await journalMgr.append(
 			"task-tool",
 			{
@@ -156,7 +153,6 @@ describe("device task details, journal pagination and secure redaction", () => {
 		const journalMgr = createTaskJournalManager(testDir);
 		const reportStore = createTaskReportStore(testDir, "hub");
 
-		// Append to Account A / Room A
 		await journalMgr.append(
 			"task-1",
 			{
@@ -170,17 +166,14 @@ describe("device task details, journal pagination and secure redaction", () => {
 
 		reportStore.saveFullReport("task-1", "att-1", "room-A", "acc-A", "Report for Account A");
 
-		// Account A can access
 		expect(await journalMgr.getMeta("task-1", "acc-A", "room-A")).not.toBeNull();
 		expect(await journalMgr.getPage("task-1", "acc-A", "room-A")).not.toBeNull();
 		expect(reportStore.getReport("task-1", "att-1", "acc-A", "room-A")?.text).toBe("Report for Account A");
 
-		// Account B is blocked
 		expect(await journalMgr.getMeta("task-1", "acc-B", "room-A")).toBeNull();
 		expect(await journalMgr.getPage("task-1", "acc-B", "room-A")).toBeNull();
 		expect(reportStore.getReport("task-1", "att-1", "acc-B", "room-A")).toBeNull();
 
-		// Room B under Account A is also blocked
 		expect(await journalMgr.getMeta("task-1", "acc-A", "room-B")).toBeNull();
 		expect(await journalMgr.getPage("task-1", "acc-A", "room-B")).toBeNull();
 		expect(reportStore.getReport("task-1", "att-1", "acc-A", "room-B")).toBeNull();
@@ -188,7 +181,6 @@ describe("device task details, journal pagination and secure redaction", () => {
 
 	it("end-to-end chunks large >16KiB report, reassembles and verifies sha256 consistency", () => {
 		const reportStore = createTaskReportStore(testDir, "hub");
-		// Create a realistic large report (>40 KiB)
 		const lines: string[] = [];
 		for (let i = 1; i <= 600; i++) {
 			lines.push(
@@ -201,7 +193,6 @@ describe("device task details, journal pagination and secure redaction", () => {
 
 		const expectedSha256 = createHash("sha256").update(fullOriginalReport).digest("hex");
 
-		// Chunk into 32 KiB slices
 		const CHUNK_SIZE = 32 * 1024;
 		const totalChunks = Math.ceil(fullBytes / CHUNK_SIZE);
 		const rawBuffer = Buffer.from(fullOriginalReport, "utf8");
@@ -230,7 +221,6 @@ describe("device task details, journal pagination and secure redaction", () => {
 		expect(lastMeta.totalBytes).toBe(fullBytes);
 		expect(lastMeta.sha256).toBe(expectedSha256);
 
-		// Read back via sliced pagination and verify full assembled hash
 		let reassembled = "";
 		let offset = 0;
 		const limit = 20 * 1024;
@@ -279,13 +269,11 @@ describe("device task details, journal pagination and secure redaction", () => {
 		const journalMgr = createTaskJournalManager(testDir);
 		const context = { accountId: "acc-1", roomId: "room-1" };
 
-		// Task A
 		await journalMgr.append(
 			"task-A",
 			{ botId: "b1", attemptId: "a1", type: "progress", summary: "Task A event" },
 			context,
 		);
-		// Task B
 		await journalMgr.append(
 			"task-B",
 			{ botId: "b2", attemptId: "b1", type: "progress", summary: "Task B event" },

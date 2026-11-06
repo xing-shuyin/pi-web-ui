@@ -113,7 +113,6 @@
 	--menu-bg: var(--bg-elev2);
 }
 
-/* ---- syntax highlighting (Claude Code Dark) ---- */
 .hljs {
 	color: #e3ded2;
 	background: #141312;

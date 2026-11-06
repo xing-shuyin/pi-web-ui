@@ -13,10 +13,6 @@ declare module "micromark-util-types" {
 	}
 }
 
-/** Recognize TeX delimiters before CommonMark consumes them as escapes.
- * Code spans, fenced/indented code, links and HTML retain their normal parsing.
- * Only complete pairs become math; incomplete streaming input stays literal.
- */
 const remarkBackslashMath: Plugin = function () {
 	const data = this.data();
 	(data.micromarkExtensions ??= []).push({
@@ -61,9 +57,6 @@ function construct(block: boolean): Construct {
 			return body;
 		}
 		function body(code: Parameters<State>[0]): ReturnType<State> {
-			// A display block may continue only while its list/quote container
-			// continues. Otherwise an unclosed opener could consume later prose
-			// or literal code outside that container while searching for a closer.
 			if (code === null || (block && self.parser.lazy[self.now().line])) return nok(code);
 			if (code === -5 || code === -4 || code === -3) {
 				effects.enter("lineEnding");
@@ -80,7 +73,6 @@ function construct(block: boolean): Construct {
 				effects.exit(type);
 				return block ? endLine : ok;
 			}
-			// Consume an escaped character as a pair, including TeX row breaks.
 			if (code === null) return nok(code);
 			if (code === -5 || code === -4 || code === -3) return body(code);
 			consumeData(code);

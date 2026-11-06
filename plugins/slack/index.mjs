@@ -1,12 +1,3 @@
-/**
- * plugins/slack/index.mjs
- * Slack Bot integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto + native WebSocket).
- * Inspired by dsh-im: outbound Socket Mode WebSocket duplex chat (zero public IP),
- * structure-aware Markdown chunks, isolated multi-turn sessions,
- * access control whitelist, and slash commands.
- */
-
 import { createHash } from "node:crypto";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { installChannelBehavior, sendMedia } from "./channel-behavior.mjs";
@@ -15,7 +6,6 @@ export const SECRET_BOT_TOKEN = "slack.botToken";
 export const SECRET_APP_TOKEN = "slack.appToken";
 const SLACK_API_BASE = "https://slack.com/api";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -24,7 +14,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from Slack user ID. */
 export function peerAccountId(userId, prefix = "sl") {
 	const raw = String(userId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -32,7 +21,6 @@ export function peerAccountId(userId, prefix = "sl") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and strip bot mention tags (<@U123456>) from Slack text. */
 export function extractSlackText(textRaw = "", botUserId = "") {
 	let text = String(textRaw || "").trim();
 	if (!text) return "";
@@ -43,9 +31,6 @@ export function extractSlackText(textRaw = "", botUserId = "") {
 	return text;
 }
 
-/**
- * Slack Web API request helper.
- */
 export async function slackApi(token, method, payload = null, { timeoutMs = 15000 } = {}) {
 	if (!token) throw new Error("Slack Token is required.");
 	const url = `${SLACK_API_BASE}/${method}`;
@@ -74,9 +59,6 @@ export async function slackApi(token, method, payload = null, { timeoutMs = 1500
 	return json;
 }
 
-/**
- * SlackBotBridge manages outbound Socket Mode WebSocket duplex exchange with Slack.
- */
 export class SlackBotBridge {
 	/**
 	 * @param {object} options
@@ -104,7 +86,7 @@ export class SlackBotBridge {
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			botUsername: "",
 			messagesReceived: 0,
 			messagesReplied: 0,
@@ -135,7 +117,6 @@ export class SlackBotBridge {
 			return;
 		}
 
-		// Verify bot identity
 		try {
 			const auth = await slackApi(cfg.botToken, "auth.test", {}, { timeoutMs: 10000 });
 			this.botUser = auth;
@@ -199,7 +180,6 @@ export class SlackBotBridge {
 		const cfg = this.getConfig();
 		if (!cfg.appToken) return;
 
-		// 1. Get Socket Mode WebSocket URL
 		let wssUrl;
 		try {
 			const conn = await slackApi(cfg.appToken, "apps.connections.open", {}, { timeoutMs: 10000 });
@@ -255,7 +235,6 @@ export class SlackBotBridge {
 			return;
 		}
 
-		// Acknowledge envelope to avoid Slack retries
 		if (packet.envelope_id && this.ws && this.ws.readyState === 1) {
 			this.ws.send(JSON.stringify({ envelope_id: packet.envelope_id }));
 		}
@@ -268,7 +247,6 @@ export class SlackBotBridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.botToken;
@@ -278,7 +256,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingBotToken = savedSecrets[SECRET_BOT_TOKEN] || prev.botToken || "";
@@ -328,7 +305,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "slack" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "slack",
 		description: "Send text and local media files to Slack channels or threads; inspect bot status.",
@@ -396,7 +372,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

@@ -1,12 +1,3 @@
-/**
- * Smoke test for the security hardening changes (issue #3):
- *   1. loopback-only binding + Origin/Host admission (cross-origin WS rejected)
- *   2. quiesce admission gate (new work rejected, existing socket survives)
- *   3. control socket status / quiesce / unquiesce
- *   4. headers stripped from models_config
- *
- * Run: node quiesce-test.mjs  (after npm run build)
- */
 import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,7 +46,6 @@ async function waitFor(pred, timeoutMs = 15000, desc = "") {
 	return false;
 }
 
-/** Send one command over the control socket; resolves parsed reply or null. */
 function control(cmd) {
 	const path = process.platform === "win32" ? `\\\\.\\pipe\\pi-web-ui-${PORT}` : join(DATA, "pi-web-ui.sock");
 	return new Promise((resolvePromise) => {
@@ -87,7 +77,6 @@ function control(cmd) {
 	});
 }
 
-/** Open a WS with an explicit Origin; resolves { opened, code, messages }. */
 function openWs(origin, path = "/ws") {
 	return new Promise((resolvePromise) => {
 		const ws = new WebSocket(`ws://${HOST}:${PORT}${path}`, {
@@ -104,31 +93,23 @@ function openWs(origin, path = "/ws") {
 		ws.on("open", () => {
 			opened = true;
 			clearTimeout(timer);
-			// handshake + attach
 			ws.send(JSON.stringify({ type: "hello", clientId: "tester" }));
-			// 首次创建 ClientSession 含 runtime 初始化，负载高时可能超 1s ——
-			// 给足握手+首帧 snapshot 时间（总上限仍由外层 4s timer 兒底）。
 			setTimeout(() => resolvePromise({ opened, closed, code: undefined, messages }), 2500);
 		});
 		ws.on("message", (d) => {
 			try {
 				messages.push(JSON.parse(d.toString()));
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 		ws.on("close", (code) => {
 			closed = true;
 			clearTimeout(timer);
 			resolvePromise({ opened, closed, code, messages });
 		});
-		ws.on("error", () => {
-			/* handled by close */
-		});
+		ws.on("error", () => {});
 	});
 }
 
-/** Send a prompt and wait for the rejection notice. */
 async function sendPromptAndCheck(origin) {
 	const ws = new WebSocket(`ws://${HOST}:${PORT}/ws`, {
 		origin,
@@ -178,22 +159,19 @@ async function main() {
 		check("status cwd=repo", st?.cwd === REPO);
 
 		console.log("\n[3] Origin admission (HTTP-level)");
-		// Cross-origin must NOT open.
 		const evil = await openWs("https://evil.example");
 		check("cross-origin rejected (not open)", !evil.opened, JSON.stringify(evil));
-		// Same-authority must open + get ready.
 		const same = await openWs(`http://${HOST}:${PORT}`);
 		check("same-authority opens", same.opened);
 		check(
 			"same-authority got ready + snapshot",
 			same.messages.some((m) => m.type === "ready") && same.messages.some((m) => m.type === "snapshot"),
 		);
-		// Different PORT same host → must be rejected.
 		const diffPort = await openWs(`http://${HOST}:${PORT + 1}`);
 		check("different-port origin rejected", !diffPort.opened, JSON.stringify(diffPort));
 
 		console.log("\n[4] headers stripped from models_config");
-		const cfg = await control("status"); // models_config is pushed on attach; check via a fresh ws
+		const cfg = await control("status");
 		const ws2 = await new Promise((resolvePromise) => {
 			const w = new WebSocket(`ws://${HOST}:${PORT}/ws`, {
 				origin: `http://${HOST}:${PORT}`,
@@ -230,7 +208,6 @@ async function main() {
 		check("status now quiesced=true", st2?.quiesced === true);
 		check("status quiescedSince present", typeof st2?.quiescedSince === "number");
 
-		// New prompt on an EXISTING client must be rejected with a notice.
 		const { ready, notices } = await sendPromptAndCheck(`http://${HOST}:${PORT}`);
 		check("existing client attaches while quiesced", ready);
 		check(
@@ -239,8 +216,7 @@ async function main() {
 			JSON.stringify(notices),
 		);
 
-		// Brand-new client attach must be refused and socket closed (4403).
-		const fresh = await openWs(`http://${HOST}:${PORT}`, "/ws"); // clientId "tester" reused... use unique id
+		const fresh = await openWs(`http://${HOST}:${PORT}`, "/ws");
 		const fresh2 = await (async () => {
 			const w = new WebSocket(`ws://${HOST}:${PORT}/ws`, {
 				origin: `http://${HOST}:${PORT}`,
@@ -264,7 +240,6 @@ async function main() {
 		check("brand-new client attach refused (closed)", fresh2.closed);
 		check("brand-new client closed with 4403", fresh2.code === 4403, `code=${fresh2.code}`);
 
-		// unquiesce
 		const uq = await control("unquiesce");
 		check("unquiesce ok", uq?.ok === true);
 		const st3 = await control("status");

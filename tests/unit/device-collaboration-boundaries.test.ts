@@ -50,14 +50,12 @@ describe("device-collaboration-boundaries", () => {
 		await mkdir(dataDir, { recursive: true });
 		await mkdir(repoDir, { recursive: true });
 
-		// 初始化目标真实 Git 仓库
 		await runGit(repoDir, ["init"]);
 		await runGit(repoDir, ["branch", "-M", "main"]);
 		await runGit(repoDir, ["config", "user.name", "Boundary Test Runner"]);
 		await runGit(repoDir, ["config", "user.email", "boundary@test.local"]);
 		await runGit(repoDir, ["config", "commit.gpgSign", "false"]);
 
-		// 创建初始提交
 		await writeFile(join(repoDir, "base.txt"), "Base content\n", "utf8");
 		await runGit(repoDir, ["add", "base.txt"]);
 		await runGit(repoDir, ["commit", "-m", "Initial base commit"]);
@@ -76,7 +74,6 @@ describe("device-collaboration-boundaries", () => {
 				code: "INTEGRATION_CUSTOM_DRIVER",
 				status: 422,
 			});
-			// Canary 检查：确保驱动绝未被执行
 			expect(existsSync(canaryFile)).toBe(false);
 		});
 
@@ -88,7 +85,6 @@ describe("device-collaboration-boundaries", () => {
 				code: "INTEGRATION_CUSTOM_DRIVER",
 				status: 422,
 			});
-			// Canary 检查：确保 filter 绝未被触发
 			expect(existsSync(canaryFile)).toBe(false);
 		});
 
@@ -121,7 +117,6 @@ describe("device-collaboration-boundaries", () => {
 			expect(clean.isDirty).toBe(false);
 			expect(clean.headSha).toBe(baseCommit);
 
-			// 在目标仓库中制造未跟踪脏文件
 			await writeFile(join(repoDir, "dirty.txt"), "uncommitted dirty content\n", "utf8");
 
 			const dirty = await inspectLocalTarget(repoDir, dataDir, "main");
@@ -132,7 +127,6 @@ describe("device-collaboration-boundaries", () => {
 			const before = await inspectLocalTarget(repoDir, dataDir, "main");
 			expect(before.headSha).toBe(baseCommit);
 
-			// 并发在 main 上推进一步提交
 			await writeFile(join(repoDir, "concurrent.txt"), "Concurrent commit\n", "utf8");
 			await runGit(repoDir, ["add", "concurrent.txt"]);
 			await runGit(repoDir, ["commit", "-m", "Concurrent head advance"]);
@@ -202,15 +196,12 @@ describe("device-collaboration-boundaries", () => {
 		it("strictly validates settings schema and rejects unknown keys or out-of-range bounds", () => {
 			expect(validateExecutionSettings({ maxActiveTasks: 4, maxWaitingTasks: 32 }).valid).toBe(true);
 
-			// 未知 key 拒绝
 			const unknownKey = validateExecutionSettings({ maxActiveTasks: 4, maxWaitingTasks: 32, rogue: true });
 			expect(unknownKey.valid).toBe(false);
 
-			// 超界拒绝
 			const tooLarge = validateExecutionSettings({ maxActiveTasks: 999, maxWaitingTasks: 32 });
 			expect(tooLarge.valid).toBe(false);
 
-			// 非整数拒绝
 			const floatVal = validateExecutionSettings({ maxActiveTasks: 3.5, maxWaitingTasks: 32 });
 			expect(floatVal.valid).toBe(false);
 		});
@@ -243,7 +234,6 @@ describe("device-collaboration-boundaries", () => {
 				} as any,
 			});
 
-			// 合法更新
 			const updated = runtime.updateExecutionSettings({ maxActiveTasks: 6, maxWaitingTasks: 20 });
 			expect(updated).toEqual({ ...DEFAULT_EXECUTION_SETTINGS, maxActiveTasks: 6, maxWaitingTasks: 20 });
 			expect(runtime.getSchedulerSnapshot().settings).toEqual({
@@ -252,14 +242,12 @@ describe("device-collaboration-boundaries", () => {
 				maxWaitingTasks: 20,
 			});
 
-			// 检查磁盘也已同步
 			expect(loadExecutionSettings(dataDir)).toEqual({
 				...DEFAULT_EXECUTION_SETTINGS,
 				maxActiveTasks: 6,
 				maxWaitingTasks: 20,
 			});
 
-			// 传入非法配置必须被抛错拦截，且内存和磁盘维持原样
 			expect(() => runtime.updateExecutionSettings({ maxActiveTasks: 9999, maxWaitingTasks: 20 })).toThrow(
 				DeviceExecutionSettingsError,
 			);
@@ -282,7 +270,6 @@ describe("device-collaboration-boundaries", () => {
 				initialSettings: { maxActiveTasks: 1, maxWaitingTasks: 16 },
 			});
 
-			// 先占满 active 槽位，使后续任务必然进入 waiting 队列
 			scheduler.registerActive(
 				{
 					id: "task-blocking-slot",
@@ -313,13 +300,11 @@ describe("device-collaboration-boundaries", () => {
 			expect(queuedItem).not.toBeNull();
 			expect(scheduler.getWaitingCount()).toBe(1);
 
-			// 取消不存在的不匹配 attemptId -> 应返回 false 且队列不被误杀
 			const missCancel = scheduler.cancelTask(task1.id, "attempt-999");
 			expect(missCancel).toBe(false);
 			expect(scheduler.getWaitingCount()).toBe(1);
 			expect(cancelledCount).toBe(0);
 
-			// 取消完全匹配的 attemptId -> 应返回 true 且任务出队
 			const hitCancel = scheduler.cancelTask(task1.id, "attempt-1");
 			expect(hitCancel).toBe(true);
 			expect(scheduler.getWaitingCount()).toBe(0);
@@ -344,12 +329,10 @@ describe("device-collaboration-boundaries", () => {
 			);
 			expect(scheduler.getActiveCount()).toBe(1);
 
-			// 尝试用错误 attempt 取消运行中的任务
 			const missCancel = scheduler.cancelTask("task-running-precision", "attempt-active-2");
 			expect(missCancel).toBe(false);
 			expect(controller.signal.aborted).toBe(false);
 
-			// 正确匹配 attemptId 取消
 			const hitCancel = scheduler.cancelTask("task-running-precision", "attempt-active-1");
 			expect(hitCancel).toBe(true);
 			expect(controller.signal.aborted).toBe(true);
@@ -372,7 +355,6 @@ describe("device-collaboration-boundaries", () => {
 			const address = hub.server.address() as { port: number };
 
 			try {
-				// Helper 发送请求
 				const sendReq = (path: string, method = "GET", body?: any, cookie = "") =>
 					new Promise<{ status: number; rawText: string; body: any; cookie: string }>((resolve, reject) => {
 						const req = httpRequest(
@@ -410,7 +392,6 @@ describe("device-collaboration-boundaries", () => {
 						req.end(body ? JSON.stringify(body) : undefined);
 					});
 
-				// 1. 注册获取 session cookie
 				const reg = await sendReq("/api/auth/register", "POST", {
 					username: "tokenguard",
 					password: "safe-password-123",
@@ -419,7 +400,6 @@ describe("device-collaboration-boundaries", () => {
 				const cookie = reg.cookie;
 				const userAccount = hub.store.snapshot().accounts.find((a) => a.username === "tokenguard")!;
 
-				// 2. 在 store 中直接准备 room 和带有机密 leaseToken 的任务
 				const secretToken = "super-secret-lease-token-must-not-leak-99999";
 				const roomId = "room-leak-audit-1";
 				const taskId = "task-with-secret-lease";
@@ -462,16 +442,13 @@ describe("device-collaboration-boundaries", () => {
 					});
 				});
 
-				// 3. 验证 GET /api/rooms/:id 返回的 tasks 数组绝不包含 leaseToken
 				const roomRes = await sendReq(`/api/rooms/${roomId}`, "GET", undefined, cookie);
 				expect(roomRes.status).toBe(200);
-				// 文本级断言：绝对不能在原始响应字符串中出现 secretToken
 				expect(roomRes.rawText.includes(secretToken)).toBe(false);
 				const foundTaskInRoom = roomRes.body.tasks.find((t: any) => t.id === taskId);
 				expect(foundTaskInRoom).toBeDefined();
 				expect(foundTaskInRoom.leaseToken).toBeUndefined();
 
-				// 4. 验证 GET /api/rooms/:id/tasks/:taskId 单任务详情也绝不包含 leaseToken
 				const taskDetailsRes = await sendReq(`/api/rooms/${roomId}/tasks/${taskId}`, "GET", undefined, cookie);
 				expect(taskDetailsRes.status).toBe(200);
 				expect(taskDetailsRes.rawText.includes(secretToken)).toBe(false);
@@ -488,11 +465,9 @@ describe("device-collaboration-boundaries", () => {
 			const humanWorkContent = "Critical human unsaved code\n";
 			await writeFile(humanWorkPath, humanWorkContent, "utf8");
 
-			// 验证 inspectLocalTarget 能立刻捕获到人类未提交改动，在第一道防线就拒绝集成，绝不给后续破坏性 reset 机会
 			const targetCheck = await inspectLocalTarget(repoDir, dataDir, "main");
 			expect(targetCheck.isDirty).toBe(true);
 
-			// 验证人类改动文件完好无损，绝未被修改或丢失
 			expect(existsSync(humanWorkPath)).toBe(true);
 			expect(readFileSync(humanWorkPath, "utf8")).toBe(humanWorkContent);
 		});
@@ -500,15 +475,12 @@ describe("device-collaboration-boundaries", () => {
 
 	describe("CAS applied boundary and cleanup fault isolation", () => {
 		it("rejects confirm when target branch is currently checked out in the main worktree", async () => {
-			// 当前 repoDir HEAD 停留在 main 分支
-			// 创建并提交真正的 feature 分支
 			await runGit(repoDir, ["checkout", "-b", "dev-feature-branch"]);
 			await writeFile(join(repoDir, "feature-code.txt"), "feature logic\n", "utf8");
 			await runGit(repoDir, ["add", "feature-code.txt"]);
 			await runGit(repoDir, ["commit", "-m", "feature commit"]);
 			const devCommit = await runGit(repoDir, ["rev-parse", "HEAD"]);
 
-			// 切回 main 分支
 			await runGit(repoDir, ["checkout", "main"]);
 			const baseSha = await runGit(repoDir, ["rev-parse", "HEAD"]);
 
@@ -517,7 +489,6 @@ describe("device-collaboration-boundaries", () => {
 
 			const integrationId = "int-checkedout-test";
 
-			// Complete real preparation and verification before exercising the publication guard.
 			const prepared = await devicePrepareIntegration({
 				integrationId,
 				targetBotId: "bot-1",
@@ -578,7 +549,6 @@ describe("device-collaboration-boundaries", () => {
 					treeAfter: verified.treeAfter,
 					results: verified.results,
 				});
-				// 尝试对已检出的 main 分支进行 confirm，必须直接被安全拦截，提示切换分支
 				await expect(
 					deviceConfirmIntegration({
 						integrationId,

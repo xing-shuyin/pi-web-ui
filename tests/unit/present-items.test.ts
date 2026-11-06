@@ -1,12 +1,3 @@
-/**
- * present_items 单测（web/src/present-items.ts）：
- *   - parsePresentArgs：宽容解析工具参数（半截 JSON / 裸字符串条目 / 缺字段）；
- *   - presentCardItems：参数 + details 合并（按路径配对、序号兜底、缺 details 兜底）；
- *   - 能力判定（内联媒体 / 可预览 / 图标 / 体积文案）；
- *   - shouldAutoOpenPresent：自动打开预览弹窗的三道闸。
- * 纯函数，无 DOM、无 fs、无端口。localStorage/sessionStorage 相关的 partial 存取
- * 在 node 环境不可用（同 chat-width-settings 的取舍），不在单测范围。
- */
 import { describe, expect, it } from "vitest";
 import {
 	focusPresentItem,

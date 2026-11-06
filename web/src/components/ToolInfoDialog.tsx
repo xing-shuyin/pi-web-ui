@@ -6,22 +6,10 @@ import { closeToolInfo, useToolInfoState, type ToolInfoView } from "../tool-info
 import { schemaRows, type SchemaRow } from "../tool-schema";
 import { CopyButton } from "./copy-button";
 
-/**
- * 「工具详细信息」弹窗 —— 工具卡右键菜单（`contextmenu.toolcall`）的宿主内置条目
- * `host:tool-info` 打开，展示**工具的定义说明**（不含本次调用数据）。
- *
- * 内容来自 `get_tool_info` 应答（服务端从 SDK / DSH 运行时现取，不进快照），
- * 状态机在 tool-info-state.ts；参数 schema 的表格化在 tool-schema.ts（都是纯函数 + 单测）。
- *
- * 为什么 portal 到 body：弹窗挂在 App 上，但触发点在消息流里 —— 消息列表有自己的滚动
- * 容器（祖先还有 overflow/transform），fixed 定位会被裁掉（同 ContextMenu.tsx 的理由）。
- */
 export function ToolInfoDialog() {
 	const t = useT();
 	const info = useToolInfoState();
 
-	// 审查 #12：Esc 改走 shortcut-stack 分层栈（与 Modal 同一调度）；
-	// 关闭状态下不启用，避免吞掉下层弹窗的 Esc。
 	useEscapeKey(() => {
 		closeToolInfo();
 	}, Boolean(info));
@@ -57,7 +45,6 @@ export function ToolInfoDialog() {
 	);
 }
 
-/** 按状态渲染正文：读取中 / 未找到 / 引擎不支持 / 有定义。 */
 function StatusBody({ info }: { info: ToolInfoView }) {
 	const t = useT();
 	if (info.status === "loading") {
@@ -140,7 +127,6 @@ function StatusBody({ info }: { info: ToolInfoView }) {
 	);
 }
 
-/** 参数表：参数名 / 类型 / 必填 / 说明（嵌套对象属性按 depth 缩进）。 */
 function SchemaTable({ rows }: { rows: SchemaRow[] }) {
 	const t = useT();
 	return (
@@ -162,7 +148,6 @@ function SchemaTable({ rows }: { rows: SchemaRow[] }) {
 	);
 }
 
-/** JSON 美化（循环引用等脏数据回落成一句说明，绝不抛错 —— 这是只读展示）。 */
 function safeJson(value: unknown): string {
 	try {
 		return JSON.stringify(value, null, 2) ?? "";

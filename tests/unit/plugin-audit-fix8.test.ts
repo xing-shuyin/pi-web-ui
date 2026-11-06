@@ -1,14 +1,3 @@
-/**
- * 插件系统审查修复（fix/audit-plugins）单测，覆盖：
- *  - pluginNetFetch（host.net.fetch 底层）：手动重定向每跳复查白名单、跳数上限、
- *    跨宿主剥凭据头、未授权主机直接拒绝（item 3）；
- *  - PluginManager.registerAgentTool：跨插件重名拒绝（item 4）；
- *  - WorkspaceFS 写类操作：符号链接/junction 逃逸被 realpath 复核挡下（item 5）；
- *  - McpClient.onData：单行 / 总缓冲上限，超限按协议错误杀进程（item 9）；
- *  - withFileRmwLock：storage.json 两个读-改-写者的进程内互斥（item 12）；
- *  - readCatalog：custom 条目覆盖 builtin 时强制 overridesBuiltin 标记（item 11）。
- * 零 token、零网络（fetch 用注入替身）、零端口；symlink 用 junction（win 无特权可建）。
- */
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +18,6 @@ afterEach(() => {
 	dirs.length = 0;
 });
 
-/** 假 fetch：按脚本逐次回 Response，并记录每次调用的入参。 */
 function fakeFetch(script: Array<{ status: number; location?: string; body?: string }>) {
 	const calls: Array<{ url: string; init?: RequestInit }> = [];
 	const impl = (input: string, init?: RequestInit): Promise<Response> => {
@@ -78,7 +66,7 @@ describe("pluginNetFetch：重定向每跳复查白名单（item 3）", () => {
 			ok: false,
 			error: "net: 主机 evil.example 未授权（manifest.netAllowlist 或 host.requestPermission 申请）",
 		});
-		expect(f.calls).toHaveLength(1); // 不发起对未授权主机的请求
+		expect(f.calls).toHaveLength(1);
 	});
 
 	it("首跳主机未授权：直接拒绝", async () => {
@@ -110,7 +98,6 @@ describe("pluginNetFetch：重定向每跳复查白名单（item 3）", () => {
 			fetchImpl: f.impl,
 		});
 		expect(r).toEqual({ ok: false, error: "net: 重定向超过 5 跳上限" });
-		// 首跳 + 5 跳重定向 = 6 次请求，第 7 跳不再发
 		expect(f.calls).toHaveLength(6);
 	});
 
@@ -152,12 +139,10 @@ describe("registerAgentTool：跨插件重名拒绝（item 4）", () => {
 			const offA = reg("aaa", makeTool("dup_tool"));
 			expect(mgr.getAgentTools().map((t) => t.name)).toEqual(["dup_tool"]);
 			const offB = reg("bbb", makeTool("dup_tool"));
-			// 拒绝：返回空操作注销函数，工具表不变（bbb 未抢到名字）
 			expect(typeof offB).toBe("function");
 			offB();
 			expect(mgr.getAgentTools().map((t) => t.name)).toEqual(["dup_tool"]);
 			expect(mgr.getAgentToolsGrouped().map((g) => g.pluginId)).toEqual(["aaa"]);
-			// aaa 自己注销后，bbb 可以注册同名（先注册者胜出，不永久占坑）
 			offA();
 			expect(mgr.getAgentTools()).toEqual([]);
 			reg("bbb", makeTool("dup_tool"));
@@ -188,7 +173,6 @@ describe("WorkspaceFS 写类操作 realpath 复核（item 5）", () => {
 		const fs = new WorkspaceFS(() => root);
 		return { root, outside, fs };
 	}
-	/** 建一个 root 内的目录链接指向 outside（win 用 junction，无需特权）。 */
 	function linkInside(root: string, outside: string, name: string): void {
 		symlinkSync(outside, join(root, name), process.platform === "win32" ? "junction" : "dir");
 	}
@@ -214,7 +198,7 @@ describe("WorkspaceFS 写类操作 realpath 复核（item 5）", () => {
 		await expect(fs.mkdir("escape/newdir")).rejects.toThrow(/越界/);
 		await expect(fs.remove("escape/junk/keep.txt")).rejects.toThrow(/越界/);
 		await expect(fs.remove("escape/junk")).rejects.toThrow(/越界/);
-		expect(existsSync(join(outside, "junk", "keep.txt"))).toBe(true); // 没删到外面
+		expect(existsSync(join(outside, "junk", "keep.txt"))).toBe(true);
 		await expect(fs.append("escape/log.txt", "x")).rejects.toThrow(/越界/);
 	});
 
@@ -246,7 +230,6 @@ describe("McpClient.onData 缓冲上限（item 9）", () => {
 	it("单行超过 1MB：拒绝在途请求并按协议错误关闭", async () => {
 		const { onData, request, logs } = rawClient("cap-line");
 		const pending = request("tools/call", {}, 5000);
-		// 总缓冲未超（1MB+1 < 4MB），但首个换行前长度已超单行上限
 		onData(`${"x".repeat(1024 * 1024 + 1)}\n`);
 		await expect(pending).rejects.toThrow(/单行超过/);
 		expect(logs.some((l) => l.includes("单行超过"))).toBe(true);
@@ -263,8 +246,6 @@ describe("McpClient.onData 缓冲上限（item 9）", () => {
 	it("正常大小的行不受影响：合法 JSON-RPC 响应照常匹配", async () => {
 		const { onData, request } = rawClient("cap-ok");
 		const pending = request("tools/call", {}, 5000);
-		// rpcSeq 是模块级共享计数，请求 id 无法预知 —— 把一批候选 id 都喂进去，
-		// 命中在途请求的那一行会 resolve，其余被当「未知响应 id」记日志忽略。
 		onData(Array.from({ length: 10 }, (_, i) => `{"id":"${i}","result":{"pong":1}}`).join("\n") + "\n");
 		await expect(pending).resolves.toEqual({ pong: 1 });
 	});
@@ -287,7 +268,6 @@ describe("withFileRmwLock：RMW 进程内互斥（item 12）", () => {
 		const pa = withFileRmwLock(file, fnA) as Promise<void>;
 		const pb = withFileRmwLock(file, fnB) as Promise<void>;
 		await Promise.all([pa, pb]);
-		// a 拿到链头后 b 必须等 a 完整跑完（读-改-写不可拆）
 		expect(order).toEqual(["a:start", "a:end", "b:start", "b:end"]);
 	});
 
@@ -313,7 +293,7 @@ describe("withFileRmwLock：RMW 进程内互斥（item 12）", () => {
 			ran = true;
 			return 42;
 		});
-		expect(ran).toBe(true); // 同步执行，没有推迟到微任务
+		expect(ran).toBe(true);
 		expect(r).toBe(42);
 	});
 
@@ -339,14 +319,12 @@ describe("readCatalog：custom 覆盖 builtin 的标识（item 11）", () => {
 		const hit = list.find((e) => e.id === "official")!;
 		expect(hit.builtin).toBe(false);
 		expect(hit.overridesBuiltin).toBe(true);
-		expect(hit.source).toBe("evil/repo"); // 真实来源，不允许伪装
+		expect(hit.source).toBe("evil/repo");
 		expect(hit.name).toBe("仿冒");
-		// 纯 custom（无同名 builtin）不标记
 		writeFileSync(custom, JSON.stringify({ entries: [{ id: "plain", source: "a/b" }] }));
 		const list2 = readCatalog(builtin, custom);
 		expect(list2.find((e) => e.id === "plain")!.overridesBuiltin).toBeUndefined();
 		expect(list2.find((e) => e.id === "plain")!.builtin).toBe(false);
-		// custom 文件撤掉覆盖后，builtin 条目恢复且不带标记
 		const official = list2.find((e) => e.id === "official")!;
 		expect(official.builtin).toBe(true);
 		expect(official.overridesBuiltin).toBeUndefined();

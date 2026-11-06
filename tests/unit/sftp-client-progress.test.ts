@@ -1,24 +1,9 @@
 // @vitest-environment jsdom
-/**
- * sftp 面板「扫描进度 / 停止 / 计划复用」的客户端回归 —— 走真实 bundle + jsdom + 假 fetch，零端口零子进程。
- *
- * 现场问题（用户可感知）：
- *   - 同步**停不下来**：面板里根本没有停止键，任务又没有取消通道，只能重启服务；
- *   - 扫描**看着像卡死**：只有一个「扫描中…」，没有计数、没有进度，也不知道还要多久；
- *   - 「预览差异 → 执行同步」把两边的树**扫两遍**，第二遍纯属白等。
- *
- * 这三条现在都有了明确契约，必须钉住：
- *   - 扫描期间进度行给出「已扫 N 个文件 / M 个目录」，停止键可见且点了真的 POST /cancel；
- *   - 任务被停止后写「已停止（已完成的文件保留）」，而不是继续显示传输进度；
- *   - 预览后**参数没变**时执行带 `reuse: true` + `planToken`（服务端据此跳过重扫）；
- *     参数一改就不带 token（服务端重扫），预览拿到的 token 用掉即作废。
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Post = { path: string; body: Record<string, unknown> };
 
 const posts: Post[] = [];
-/** /state 的返回值：每个用例自己摆（默认没有任务在跑） */
 let state: Record<string, unknown> = {};
 let planToken: string | null = "p-preview-1";
 
@@ -104,7 +89,6 @@ function stubFetch() {
 	);
 }
 
-/** 让已 resolve 的 promise 链跑完（refresh → drain → paint）。 */
 const flush = async () => {
 	for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -148,7 +132,6 @@ describe("sftp 面板：扫描进度与停止", () => {
 		const el = mount();
 		await flush();
 
-		// 进度行：扫描阶段没有「总量」，给的是已扫到的文件/目录数
 		expect(el.textContent ?? "").toContain("扫描远端：4321 个文件 / 210 个目录");
 		const stop = el.querySelector(".btn-stop") as HTMLButtonElement;
 		expect(stop.classList.contains("hidden")).toBe(false);
@@ -275,7 +258,6 @@ describe("sftp 面板：计划复用", () => {
 		expect(stopBtn.classList.contains("hidden")).toBe(false);
 		expect(stopBtn.disabled).toBe(false);
 
-		// 点击停止依然能调用 /cancel
 		stopBtn.click();
 		await flush();
 		const cancel = posts.find((p) => p.path === "/cancel");

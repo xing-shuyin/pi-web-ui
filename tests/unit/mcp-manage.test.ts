@@ -82,14 +82,12 @@ describe("checkMcpServer & installMcpServer", () => {
 		expect(installed.tools).toHaveLength(2);
 		expect(reloadCount).toBe(1);
 
-		// 按短名查询
 		const byShort = checkMcpServer({ agentDir, cwd, dataDir: dir, bridge: fakeBridge, query: "filesystem" });
 		expect(byShort.installed).toBe(true);
 		expect(byShort.running).toBe(true);
 		expect(byShort.server?.command).toBe("npx");
 		expect(byShort.server?.args).toEqual(["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]);
 
-		// 按完整 npm 包名查询
 		const byPkg = checkMcpServer({
 			agentDir,
 			cwd,
@@ -195,14 +193,12 @@ describe("PluginHost host.mcp", () => {
 		const roHost = hosts["readonly-p"];
 		const toolsHost = hosts["tools-p"];
 
-		// 1. 未声明 tools 权限的插件调用 install 被拒，但 check/list 可正常调用
 		expect(await roHost.mcp.list()).toEqual([]);
 		expect((await roHost.mcp.check("memory")).installed).toBe(false);
 		const denied = await roHost.mcp.install({ package: "@modelcontextprotocol/server-memory" });
 		expect(denied.ok).toBe(false);
 		expect(denied.error).toContain("tools");
 
-		// 2. 声明了 tools 权限的插件可直接安装并检查
 		const okRes = await toolsHost.mcp.install({ package: "@modelcontextprotocol/server-memory" });
 		expect(okRes.ok).toBe(true);
 		expect(okRes.name).toBe("memory");
@@ -211,7 +207,6 @@ describe("PluginHost host.mcp", () => {
 		expect(checked.installed).toBe(true);
 		expect(checked.server?.name).toBe("memory");
 
-		// 3. promptInstall 向活动对话投递 AI 安装指令
 		const sentPrompts: Array<{ cid: string; text: string }> = [];
 		mgr.conversationProvider = () => ({
 			clientId: "c1",

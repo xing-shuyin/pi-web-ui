@@ -56,7 +56,7 @@ describe("device center overview and remark management", () => {
 				createElement(
 					LanguageProvider,
 					null,
-					createElement(DeviceDirectory, { hubUrl: "http://82.156.246.55:50001", currentDeviceId: "dev-1" }),
+					createElement(DeviceDirectory, { hubUrl: "http://198.51.100.10:50001", currentDeviceId: "dev-1" }),
 				),
 			);
 		});
@@ -64,21 +64,17 @@ describe("device center overview and remark management", () => {
 		const items = container.querySelectorAll(".dd-device");
 		expect(items).toHaveLength(2);
 
-		// 第一个设备设置了备注，应优先显示备注
 		const dev1Identity = items[0].querySelector(".dd-identity")!;
 		expect(dev1Identity.querySelector("strong")?.textContent).toBe("我的办公电脑");
 		expect(dev1Identity.querySelector("span")?.textContent).toContain("DESKTOP-S1QKEI6");
 
-		// 第二个设备没有备注，显示原名称
 		const dev2Identity = items[1].querySelector(".dd-identity")!;
 		expect(dev2Identity.querySelector("strong")?.textContent).toBe("cdeMac-mini.local");
 
-		// 点击为第二个设备设置备注
 		const editButton = items[1].querySelector<HTMLButtonElement>('.dc-actions button[title="设置备注"]')!;
 		expect(editButton).not.toBeNull();
 		await act(async () => editButton.click());
 
-		// 检查内联输入框
 		const form = items[1].querySelector(".dd-remark-form");
 		expect(form).not.toBeNull();
 		const input = form!.querySelector<HTMLInputElement>("input")!;
@@ -89,12 +85,10 @@ describe("device center overview and remark management", () => {
 			input.dispatchEvent(new Event("change", { bubbles: true }));
 		});
 
-		// 提交保存
 		await act(async () => {
 			form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 		});
 
-		// 保存后，应优先显示新备注
 		const updatedItems = container.querySelectorAll(".dd-device");
 		expect(updatedItems[1].querySelector(".dd-identity strong")?.textContent).toBe("家庭迷你主机");
 		expect(updatedItems[1].querySelector(".dd-identity span")?.textContent).toContain("cdeMac-mini.local");
@@ -109,7 +103,7 @@ describe("device center overview and remark management", () => {
 					return response({
 						name: "DESKTOP-S1QKEI6",
 						remark: "工作站主控机",
-						hubUrl: "http://82.156.246.55:50001",
+						hubUrl: "http://198.51.100.10:50001",
 						deviceId: "dev-1",
 						allowExecution: true,
 						connected: true,
@@ -170,29 +164,28 @@ describe("device center overview and remark management", () => {
 			root.render(createElement(LanguageProvider, null, createElement(DeviceCenter)));
 		});
 
-		// 1. 本机设备卡片：优先显示备注
 		const summary = container.querySelector(".dc-device-summary")!;
 		expect(summary).not.toBeNull();
 		expect(summary.querySelector("h2")?.textContent).toBe("工作站主控机");
 		expect(summary.querySelector("p")?.textContent).toContain("DESKTOP-S1QKEI6");
 
-		// 2. 主页直接显示设备列表
 		const deviceSection = container.querySelector('section[aria-label="所有设备"]');
 		expect(deviceSection).not.toBeNull();
 		expect(deviceSection?.textContent).toContain("工作站主控机");
 
-		// 3. 主页直接显示 Bot 列表
 		const botSection = container.querySelector(".dc-bots");
 		expect(botSection).not.toBeNull();
 		expect(botSection?.textContent).toContain("代码评审助手");
 
-		// 4. 主页直接显示群聊列表（管理功能）
+		const groups = [...container.querySelectorAll("nav.dc-sidebar button")].find(
+			(button) => button.textContent === "群组与工单",
+		) as HTMLButtonElement;
+		await act(async () => groups.click());
 		const groupSection = container.querySelector('section[aria-label="群聊列表"]');
 		expect(groupSection).not.toBeNull();
 		expect(groupSection?.textContent).toContain("开发协作群");
 		expect(groupSection?.textContent).toContain("主 Bot: 代码评审助手");
 
-		// 5. 确保群聊管理功能中不显示聊天内容（无聊天消息流与发送区）
 		expect(container.querySelector(".dg-chat-messages")).toBeNull();
 		expect(container.querySelector(".dg-message-form")).toBeNull();
 		expect(container.querySelector("textarea")).toBeNull();

@@ -1,20 +1,4 @@
-/**
- * manifest 本体校验：schema 失败即拒（DSH 对照 P1-6）。
- *
- * 与 `parseUiItem` / `parseSettingsSchema` 的"宽容丢弃"正交：
- * 那些是字段级容错（坏条目跳过、文本截断），这里是**结构级否决**
- * （坏 manifest 不该变成运行时 `undefined` 再在远处 nổ）。
- *
- * 语义对齐既有契约：
- * - 旧插件（无 `permissions` 且 `apiVersion<2`）走宽容通道：只拦
- *   JSON 坏 / 非对象 / apiVersion 非法这类"连启动都不该启动"的；
- *   未知能力族、v2 必填缺失等只在严格模式下才算 error。
- * - `errors` 非空 → 拒绝激活（scan 置 error + activate 首行回卷）；
- *   `warnings` 永不阻断，只进 `diagnostics` 供设置面板查看。
- */
-
 export interface ManifestIssue {
-	/** 精确路径（如 `permissions[2]` / `ui.topbar[0].id` / `apiVersion`）。 */
 	path: string;
 	message: string;
 	messageEn: string;
@@ -30,7 +14,6 @@ export interface ManifestValidation {
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-/** 与 `plugin-sdk/index.d.ts#PluginPermissionFamily` + 运行时 `requestPermission` 同口径。 */
 export const KNOWN_PERMISSION_FAMILIES: ReadonlySet<string> = new Set([
 	"fs",
 	"fs:read",
@@ -52,7 +35,6 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
 
-/** 能力串是否已知：完整串或冒号前族名命中其一即算（如 "ui:read" 归 ui 族）。 */
 export function isKnownPermission(v: string): boolean {
 	return KNOWN_PERMISSION_FAMILIES.has(v) || KNOWN_PERMISSION_FAMILIES.has(v.split(":")[0]!);
 }
@@ -70,10 +52,8 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 	}
 	const o = raw as Record<string, unknown>;
 
-	// id：缺省回落目录名（向后兼容，只警告）；写了就必须合法且与目录一致。
 	const idRaw = o.id;
 	if (idRaw === undefined) {
-		// 旧插件大量不写 id，不警告（避免全仓黄灯），仅回落。
 	} else if (typeof idRaw !== "string" || !idRaw.trim()) {
 		warnings.push({
 			path: "id",
@@ -94,7 +74,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		});
 	}
 
-	// apiVersion：缺省 1（旧插件常态，不警告）；写了必须是 1..2 整数。
 	let apiVersion = 1;
 	const av = o.apiVersion;
 	if (av === undefined) {
@@ -110,7 +89,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		apiVersion = av;
 	}
 
-	// permissions：非数组即错；条目逐个校验。
 	let permissions: string[] = [];
 	const perms = o.permissions;
 	if (perms === undefined) {
@@ -138,7 +116,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 			}
 			const v = p.trim();
 			if (!isKnownPermission(v)) {
-				// 未知族：拼写错了就永远授权失败，与静默丢弃同源 —— 直接拒。
 				errors.push({
 					path,
 					message: `未知能力「${v.slice(0, 32)}」（可选 ${[...KNOWN_PERMISSION_FAMILIES].join("/")})`,
@@ -151,8 +128,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 	}
 
 	const strict = permissions.length > 0 || apiVersion >= 2;
-	// v2 必须声明 permissions（与 §2.5 严格模式同口径）。只对宿主认识的版本强制：
-	// apiVersion > 2 交给版本门出“请升级”（见 activate/scan），这里不抢它的错误信息。
 	if (apiVersion === 2 && permissions.length === 0 && perms === undefined) {
 		errors.push({
 			path: "permissions",
@@ -161,7 +136,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		});
 	}
 
-	// engines：只收字符串映射；坏形状即错（否则约束被静默吞掉）。
 	if (o.engines !== undefined) {
 		if (!isRecord(o.engines)) {
 			errors.push({ path: "engines", message: "engines 必须是对象", messageEn: '"engines" must be an object' });
@@ -178,7 +152,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		}
 	}
 
-	// requires（P2-8 硬依赖）：坏形状即错（依赖判定错不得，静默吞掉等于回到 peerPlugins 的老路）。
 	if (o.requires !== undefined) {
 		if (!isRecord(o.requires)) {
 			errors.push({ path: "requires", message: "requires 必须是对象", messageEn: '"requires" must be an object' });
@@ -254,7 +227,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		}
 	}
 
-	// view / preload：坏类型只警告（不影响安全语义，回落缺省）。
 	for (const key of ["view", "preload"] as const) {
 		if (o[key] !== undefined && typeof o[key] !== "boolean") {
 			warnings.push({
@@ -265,7 +237,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		}
 	}
 
-	// 文本字段：坏类型只警告（回落缺省，不阻断）。
 	for (const key of ["name", "version", "description", "icon"] as const) {
 		if (o[key] !== undefined && typeof o[key] !== "string") {
 			warnings.push({
@@ -276,7 +247,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		}
 	}
 
-	// 数组型声明：坏形状只警告（解析层已按"过滤+截断"处理）。
 	for (const key of [
 		"netAllowlist",
 		"peerPlugins",
@@ -308,8 +278,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 		});
 	}
 
-	// ui：有声明却无 ui 能力（严格模式）= 整份不会生效 —— 算 error 而不是等解析层那条英文诊断。
-	// 同样只对宿主认识的版本（apiVersion<=2）强制，未来版本交给版本门。
 	if (o.ui !== undefined && strict && apiVersion <= 2 && !permissions.some((x) => x.split(":")[0] === "ui")) {
 		errors.push({
 			path: "ui",
@@ -324,7 +292,6 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
 	return { errors, warnings, apiVersion, permissions, strict };
 }
 
-/** 诊断行渲染（scan/activate 共用）：`path: 中文（en）`。 */
 export function formatManifestIssue(i: ManifestIssue): string {
 	return `${i.path}: ${i.message} (${i.messageEn})`;
 }

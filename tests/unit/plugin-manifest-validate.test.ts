@@ -35,7 +35,6 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		const v = validatePluginManifest({ apiVersion: 2 }, "x");
 		expect(v.errors.some((e) => e.path === "permissions")).toBe(true);
 		expect(v.strict).toBe(true);
-		// v3 交给 activate/scan 的版本门出“请升级”，校验层不提前拒。
 		const future = validatePluginManifest({ apiVersion: 99 }, "x");
 		expect(future.errors.some((e) => e.path === "permissions")).toBe(false);
 	});
@@ -53,7 +52,6 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		expect(KNOWN_PERMISSION_FAMILIES.has("notify")).toBe(true);
 		expect(KNOWN_PERMISSION_FAMILIES.has("storage")).toBe(true);
 		expect(KNOWN_PERMISSION_FAMILIES.has("secrets")).toBe(true);
-		// 验证 imessage 等官方机器人插件的完整声明在 v2 严格模式下通过
 		const botManifest = {
 			apiVersion: 2,
 			name: "imessage",
@@ -212,7 +210,6 @@ describe("P1-6 manifest 校验失败即拒", () => {
 		const diags: string[] = [];
 		const res = parseUiContributions(legacyUi, diags);
 
-		// 彻底消除未知 slot group 报警
 		expect(diags).toEqual([]);
 		expect(res?.items.length).toBe(2);
 

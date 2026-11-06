@@ -1,10 +1,4 @@
 // @vitest-environment jsdom
-/**
- * 布局页改名落到目标条（issue #555 的同一类「假承诺」）：目标条的按钮文字一直是写死的
- * t("goalBarSet")/t("planActionBtn")/…，用户在设置里改名字，界面上必须真的换。
- * 名字走 `UiSlotEntry.labelExplicit`（用户改名 / 插件 arrange.label）才让位；没置旗时
- * 渲染结果必须与旧版逐字节一致（否则内置条目的本地化会被 entry.label 抢掉）。
- */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -27,7 +21,6 @@ const goal = {
 	wizard: null,
 } as unknown as GoalStatus;
 
-/** goalbar.actions 槽位条目（与 buildUiSlots 的落成形状一致；labelExplicit 由改名/arrange 置位）。 */
 const entries = (overrides: Record<string, Partial<UiSlotEntry>> = {}): UiSlotEntry[] =>
 	["host:goal-pill", "host:goal-set", "host:goal-wizard", "host:goal-plan"].map((id) => ({
 		id,
@@ -64,7 +57,6 @@ function render(uiGoalbarActions: UiSlotEntry[], expand = false) {
 		);
 	});
 	if (expand) {
-		// 折叠态只画那枚药丸；点开才是编辑器（host:goal-set / wizard / plan… 的那一行）。
 		const pill = container.querySelector("button.goalbar-hint");
 		act(() => {
 			pill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

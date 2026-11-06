@@ -56,7 +56,6 @@ export function fitCanvasViewport(
 	);
 	return { x: (width - b.width * zoom) / 2 - b.x * zoom, y: (height - b.height * zoom) / 2 - b.y * zoom, zoom };
 }
-/** Topological longest-path layers, with measured card heights and widths. */
 export function autoLayout(nodes: CanvasNode[], edges: CanvasEdge[], heights?: NodeHeights): CanvasNode[] {
 	const ids = new Set(nodes.map((n) => n.id));
 	const indeg = new Map(nodes.map((n) => [n.id, 0]));
@@ -78,7 +77,6 @@ export function autoLayout(nodes: CanvasNode[], edges: CanvasEdge[], heights?: N
 			if (!indeg.get(next)) queue.push(next);
 		}
 	}
-	// Cyclic legacy graphs still get a finite, deterministic layout.
 	let fallback = Math.max(0, ...layers.values()) + 1;
 	for (const n of nodes) if (!visited.has(n.id)) layers.set(n.id, fallback++);
 	const groups = new Map<number, CanvasNode[]>();
@@ -104,7 +102,6 @@ export interface GraphSnap {
 	edges: CanvasEdge[];
 }
 
-/** 有界撤销栈 */
 export class HistoryStack {
 	private past: GraphSnap[] = [];
 	private future: GraphSnap[] = [];

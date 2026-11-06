@@ -1,4 +1,3 @@
-/** Shared, fail-closed OpenSSH verification and explicit, fingerprint-confirmed trust persistence. */
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -33,9 +32,6 @@ function hostMatches(patterns, hostname) {
 	return matched;
 }
 
-/** Exact host/port binding; hashed hosts, wildcards, negation and @revoked are supported.
- * @cert-authority is intentionally not accepted: certificate verification is not implemented.
- */
 export function verifyKnownHosts(contents, host, port, key) {
 	const hostname = port === 22 ? host.toLowerCase() : `[${host.toLowerCase()}]:${port}`;
 	let trusted = false;
@@ -115,16 +111,10 @@ function trustStatus(contents, hostname, key) {
 	return rows.length ? "changed" : "unknown";
 }
 
-// Serialize the read/modify/rename transaction, including saves to the same file from different callers.
 let pendingSave = Promise.resolve();
 
-/** Persist only a caller-confirmed key. Returns the public trust description; never returns key bytes.
- * replace is required for changed keys. Wildcard/CA/revoked bindings cannot be rewritten here.
- * Serialization is process-local; one service process must own the configured trust file.
- */
 export function saveTrustedHostKey({ host, port = 22, key, fingerprint, replace = false }) {
 	const file = knownHostsFile();
-	// Capture bytes now: callers cannot change the key while waiting for an earlier save.
 	const capturedKey = Buffer.isBuffer(key) ? Buffer.from(key) : key;
 	const save = pendingSave.then(async () => {
 		const hostname = hostBinding(host, port);
@@ -146,7 +136,6 @@ export function saveTrustedHostKey({ host, port = 22, key, fingerprint, replace 
 				throw new Error("Cannot safely replace wildcard or marked SSH known_hosts binding");
 			}
 			const remaining = bindings.filter((binding) => binding.startsWith("!") || !matches(binding, hostname));
-			// A list containing only exclusions no longer binds any host.
 			if (!remaining.some((binding) => !binding.startsWith("!"))) replacements.set(row.line, "");
 			else {
 				const start = row.fields[1].length;
@@ -187,7 +176,6 @@ export function saveTrustedHostKey({ host, port = 22, key, fingerprint, replace 
 	return save;
 }
 
-/** Read once per handshake, before any authentication. The override names a single local file. */
 export async function createHostVerifier(host, port = 22) {
 	const file = knownHostsFile();
 	const contents = await readKnownHosts(file);

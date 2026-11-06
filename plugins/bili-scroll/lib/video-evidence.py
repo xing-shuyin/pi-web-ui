@@ -28,7 +28,6 @@ def main(options):
     root = Path(options["workDir"]).resolve()
     root.mkdir(parents=True, exist_ok=True)
     os.chdir(root)
-    # Auth remains in memory. yt-dlp's cookie file option would persist credentials.
     limits = []
 
     def progress(status):
@@ -109,7 +108,6 @@ def main(options):
                     limits.append("One sampled frame could not be decoded.")
         if options.get("transcribe"):
             try:
-                # Download audio separately, avoiding ffmpeg postprocessors/children.
                 downloader.params.update({"format": "bestaudio/worst", "outtmpl": str(root / "speech.%(ext)s")})
                 audio = downloader.extract_info(url, download=True)
                 if audio.get("entries"):
@@ -117,8 +115,6 @@ def main(options):
                 audio_path = Path(downloader.prepare_filename(audio))
                 if not audio_path.is_file() or audio_path.stat().st_size > MAX_BYTES:
                     raise RuntimeError("audio_unavailable")
-                # Execute an unchanged temporary copy: legacy asr.py derives its
-                # tmp path from __file__, so it must never point at plugin source.
                 local_script = root / "asr.py"
                 shutil.copyfile(options["asrScript"], local_script)
                 cache = Path(options["cacheDir"]).resolve()
@@ -152,7 +148,6 @@ def main(options):
 if __name__ == "__main__":
     try:
         request = json.loads(sys.stdin.read(64 * 1024))
-        # Suppress third-party stdout and diagnostics (signed URLs/cookies).
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             response = main(request)
         print(json.dumps(response, ensure_ascii=False))

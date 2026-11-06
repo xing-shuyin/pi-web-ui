@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildTerminalBashLine, detectTrailingLimiter, sentinelUnsafeReason } from "../../server/terminals.js";
 
-/** 哨兵 printf 格式串（回显里出现的那一份）：nonce 每次随机，只校验形状。 */
 const SENTINEL_FMT = /\[pi-exit-[0-9a-f]{12}:%s\]/;
 
-/** One physical eval line protects the control suffix from stdin readers and comments. */
 describe("buildTerminalBashLine：单物理行执行与退出捕获", () => {
 	it("单行命令使用 eval 转义并保留 shell 退出语义", () => {
 		const line = buildTerminalBashLine("ls -la");
@@ -152,7 +150,7 @@ describe("sentinelUnsafeReason：heredoc 与关键字块（0.103 审计补漏）
 		expect(sentinelUnsafeReason("cat <<< 'text'")).toBeNull();
 		expect(sentinelUnsafeReason("echo $((1 << 2))")).toBeNull();
 		expect(sentinelUnsafeReason("(( x << 2 ))")).toBeNull();
-		expect(sentinelUnsafeReason("echo a << b")).toBe("unclosed_heredoc"); // 重定向仍是 heredoc
+		expect(sentinelUnsafeReason("echo a << b")).toBe("unclosed_heredoc");
 	});
 
 	it("未闭合 if/for/while/case 块 → unclosed_block", () => {

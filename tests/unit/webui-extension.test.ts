@@ -22,7 +22,6 @@ describe("webui extension: buildNodeArgs (#580)", () => {
 			"C:\\Users\\Administrator\\.pi\\agent\\npm\\node_modules\\pi-web-ui\\dist\\server\\resolve-global-sdk.js";
 		const args = buildNodeArgs("C:\\path\\index.js", winHook, true);
 		expect(args[0]).toBe("--import");
-		// 必须是 file: scheme，绝不能是裸盘符开头的 C:\（会被 Node 误判为协议 c:）
 		expect(args[1].startsWith("file:")).toBe(true);
 		expect(args[1]).not.toMatch(/^[A-Za-z]:\\/);
 		const parsedUrl = new URL(args[1]);

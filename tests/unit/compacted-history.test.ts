@@ -50,7 +50,6 @@ describe("compacted-history", () => {
 			];
 
 			const folded = sliceCompactedEntries(branch[5], branch);
-			// 应该切出 [s0, m1, m2]，即到 m3 之前
 			expect(folded.map((e) => e.id)).toEqual(["s0", "m1", "m2"]);
 		});
 
@@ -65,7 +64,6 @@ describe("compacted-history", () => {
 					type: "compaction",
 					firstKeptEntryId: "m2",
 				},
-				// c1 保留了 m2，后续又产生 m3, m4, m5
 				{ id: "m3", parentId: "c1", type: "message" },
 				{ id: "m4", parentId: "m3", type: "message" },
 				{ id: "m5", parentId: "m4", type: "message" },
@@ -77,11 +75,9 @@ describe("compacted-history", () => {
 				},
 			];
 
-			// c1 折叠了 [s0, m1]
 			const folded1 = sliceCompactedEntries(branch[3], branch);
 			expect(folded1.map((e) => e.id)).toEqual(["s0", "m1"]);
 
-			// c2 折叠了从 c1 的 firstKeptId (m2) 到 c2 的 firstKeptId (m5) 之间的内容：[m2, c1, m3, m4]
 			const folded2 = sliceCompactedEntries(branch[7], branch);
 			expect(folded2.map((e) => e.id)).toEqual(["m2", "c1", "m3", "m4"]);
 		});
@@ -144,7 +140,6 @@ describe("compacted-history", () => {
 			expect(msgs[1].role).toBe("assistant");
 			expect(msgs[1].content).toEqual([{ type: "text", text: "模型回答 1", truncated: false }]);
 
-			// issue #437: 复用全局 seqOf 而不是强制从 1 重计
 			const msgsWithSeq = serializeCompactedEntries(entries, () => 42);
 			expect(msgsWithSeq[0].id).toContain("-42");
 			expect(msgsWithSeq[1].id).toContain("-42");
@@ -198,7 +193,7 @@ describe("compacted-history", () => {
 			const mockSm: SessionManagerLike = {
 				getEntries: () => branch,
 				getBranch: () => branch,
-				buildContextEntries: () => [branch[3]], // 活跃上下文中只剩 compaction 和保留消息
+				buildContextEntries: () => [branch[3]],
 				getEntry: (id) => branch.find((e) => e.id === id),
 			};
 

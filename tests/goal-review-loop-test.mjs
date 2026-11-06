@@ -1,9 +1,3 @@
-/**
- * Review loop — bounded smoke. Sets a LOCKED unlimited goal (maxRounds=0), sends
- * a prompt, and verifies a review fires (reviewing=true observed, then a verdict
- * or a revision-steer user message). Confirms the "unlimited" lock actually
- * reviews (doesn't skip / single-shot). (Real LLM calls, small cost.)
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -12,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -44,9 +37,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("no server");
 }
@@ -89,7 +80,6 @@ async function main() {
 	ws.send(JSON.stringify({ type: "hello", clientId: "lock-test" }));
 	await next((m) => m.type === "snapshot", "initial snapshot", 20000);
 
-	// Locked, unlimited (maxRounds=0).
 	ws.send(
 		JSON.stringify({
 			type: "set_goal",
@@ -101,7 +91,6 @@ async function main() {
 	await next((m) => m.type === "goal_status" && m.status.goal, "goal set", 10000);
 	ws.send(JSON.stringify({ type: "prompt", text: "请完成：用 markdown 表格列出 1,2,3 的平方。" }));
 
-	// Watch for a review (reviewing=true) OR a review result card.
 	let sawReviewing = false;
 	let sawVerdict = false;
 	let sawRevision = false;
@@ -127,7 +116,6 @@ async function main() {
 				sawVerdict = true;
 				break;
 			}
-			// A revision-steer user message appears → review failed and loop continues.
 			if (msg.state.messages.some((m) => m.role === "user" && (m.content?.[0]?.text ?? "").includes("目标审查"))) {
 				sawRevision = true;
 			}
@@ -143,9 +131,7 @@ async function main() {
 	try {
 		ws.close();
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -153,8 +139,6 @@ main().catch((e) => {
 	console.error("ERR", e);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

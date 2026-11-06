@@ -1,14 +1,3 @@
-/**
- * image-toolkit 服务端入口 —— 一体化 AI 生图与图像处理工作台。
- *
- * 核心能力：
- *   1. 图像处理 —— 工作区图片读写、压缩（目标体积二分逼近）、裁剪、缩放、旋转、
- *      图片水印、滤镜调色、EXIF 解析与直方图分析；
- *   2. AI 生图 —— 多形状多端点 AI 生图（通义万相、FLUX、OpenAI、Google Imagen/Gemini、
- *      智谱 CogView、火山豆包、Stability、ComfyUI、Antigravity 反代等），支持文生图与图生图；
- *   3. AI 供应商配置 —— AI 智能体可直接配置、更新、测试生图服务商与模型（image_config_service）；
- *   4. 无缝流转 —— 生图产物可直接传给图像处理工具二次加工，处理产物可作为参考图回传生图。
- */
 import { createRequire } from "node:module";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { decodeImage, encodeImage, hasJpegCodec, mimeForFormat, setJpegCodec, sniffFormat } from "./core/codec.mjs";
@@ -44,9 +33,7 @@ import { planOutputPaths } from "./core/gen-output.mjs";
 import { ProviderError, SHAPE_LIST, generateImage, probeService } from "./core/gen-providers.mjs";
 import * as GU from "./core/gen-util.mjs";
 
-/** 认得的图片扩展名（列目录与 AI 扫描用）。 */
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif", ".svg", ".ico"]);
-/** 服务端能解码与编码的格式。 */
 const SERVER_DECODE = new Set(["png", "jpeg", "bmp"]);
 const SERVER_ENCODE = new Set(["png", "jpeg", "bmp"]);
 const EXT_OF = { jpeg: "jpg", png: "png", bmp: "bmp", webp: "webp", avif: "avif", gif: "gif" };
@@ -113,9 +100,6 @@ function pathList(params) {
 
 export default {
 	activate(host) {
-		// ------------------------------------------------------------------
-		// 1. 配置管理（处理配置 + 生图配置）
-		// ------------------------------------------------------------------
 		const TOOLKIT_DEFAULTS = {
 			defaultFormat: "keep",
 			quality: 0.82,
@@ -165,9 +149,7 @@ export default {
 				const migrated = normalizeToolkitConfig({ ...TOOLKIT_DEFAULTS, ...legacy });
 				try {
 					host.storage?.set("config", migrated);
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 				return migrated;
 			}
 			return { ...TOOLKIT_DEFAULTS };
@@ -190,14 +172,12 @@ export default {
 			return cfg;
 		}
 
-		// 生图配置独立键管理
 		let genCfg = normalizeGenConfig(readGenStored());
 
 		function readGenStored() {
 			try {
 				const fromGen = host.storage?.get("genConfig", null);
 				if (fromGen && typeof fromGen === "object") return fromGen;
-				// 兼容：若老生图插件迁移过来或在 storage 根配置中
 				const fromRoot = host.storage?.get("config", {});
 				if (Array.isArray(fromRoot?.services)) return fromRoot;
 				return {};
@@ -266,9 +246,6 @@ export default {
 			return { service: svc, config: publicGenConfig() };
 		}
 
-		// ------------------------------------------------------------------
-		// 2. 图像处理核心（解码/缩放/裁剪/滤镜/水印/落盘）
-		// ------------------------------------------------------------------
 		let jpegTried = false;
 		async function ensureJpeg() {
 			if (hasJpegCodec()) return true;
@@ -508,9 +485,6 @@ export default {
 			return lines.join("\n");
 		}
 
-		// ------------------------------------------------------------------
-		// 3. AI 生图执行与任务管理
-		// ------------------------------------------------------------------
 		async function loadRefs(paths) {
 			const list = (Array.isArray(paths) ? paths : []).map(GU.normalizeRel).filter(Boolean).slice(0, 8);
 			const out = [];
@@ -600,9 +574,7 @@ export default {
 				if (dir && dir !== ".") {
 					try {
 						await host.fs.mkdir(dir);
-					} catch {
-						/* 已存在忽略 */
-					}
+					} catch {}
 				}
 				await host.fs.write(p.rel, p.img.data);
 				files.push({
@@ -641,9 +613,7 @@ export default {
 					"history",
 					jobs.slice(0, JOB_CAP).map((j) => ({ ...j, stage: undefined, detail: undefined })),
 				);
-			} catch {
-				/* 忽略 */
-			}
+			} catch {}
 		}
 		function publicJobs() {
 			return jobs.slice(0, JOB_CAP);
@@ -740,18 +710,12 @@ export default {
 				try {
 					const buf = await host.fs.read(f.path);
 					blocks.push({ type: "image", data: buf.toString("base64"), mimeType: GU.sniffImageMime(buf) || f.mime });
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 			return blocks;
 		}
 
-		// ------------------------------------------------------------------
-		// 4. 7 个 AI 工具定义与无缝流转打通
-		// ------------------------------------------------------------------
 		const TOOLS = [
-			// 4.1 图片信息
 			{
 				name: "image_info",
 				label: "图片信息",
@@ -830,7 +794,6 @@ export default {
 				},
 			},
 
-			// 4.2 几何变换与调色
 			{
 				name: "image_transform",
 				label: "图片几何/调色",
@@ -932,7 +895,6 @@ export default {
 				},
 			},
 
-			// 4.3 图片压缩
 			{
 				name: "image_compress",
 				label: "图片压缩",
@@ -1037,7 +999,6 @@ export default {
 				},
 			},
 
-			// 4.4 图片水印
 			{
 				name: "image_watermark",
 				label: "图片水印",
@@ -1083,7 +1044,6 @@ export default {
 				},
 			},
 
-			// 4.5 生图服务与模型清单
 			{
 				name: "image_services",
 				label: "生图服务清单",
@@ -1118,7 +1078,6 @@ export default {
 				},
 			},
 
-			// 4.6 AI 生图（文生图 / 参考图生图 / 图像流转衔接）
 			{
 				name: "image_generate",
 				label: "生成图片",
@@ -1198,7 +1157,6 @@ export default {
 				},
 			},
 
-			// 4.7 AI 配置生图供应商（核心新增能力）
 			{
 				name: "image_config_service",
 				label: "配置生图服务",
@@ -1314,8 +1272,6 @@ export default {
 						genCfg = res.config;
 						persistGen();
 						const sid = res.service.id;
-						// 端点变更即吊销已存密钥（密钥与 baseUrl 绑定）：防止 AI 改 baseUrl 后
-						//  旧 key 随新端点外呼（探测/拉模型/生成均会携带存量密钥）。
 						const prevBase = res.previous?.baseUrl;
 						if (prevBase && prevBase !== res.service.baseUrl) {
 							try {
@@ -1349,8 +1305,6 @@ export default {
 							svc = normalizeService(params, "probe-temp");
 						}
 						if (!svc) throw new Error("缺少有效的服务 id 或服务配置参数");
-						// probe 不自动携带存量密钥：baseUrl 可由提示注入改写，
-						//  带 key 外呼即密钥外泄；显式传 apiKey 才允许带。
 						const key = GU.str(params?.apiKey) || "";
 						const out = await probeService(svc, { key, fetch: globalThis.fetch });
 						const text = `Probe ${svc.name || svc.id}: ${out.ok ? "SUCCESS" : "FAILED"}\nDetail: ${out.detail}\nModels found: ${out.models?.length ?? 0}`;
@@ -1397,9 +1351,7 @@ export default {
 						if (!res) throw new Error(`服务不存在或已被删除：${sid}`);
 						try {
 							host.secrets?.delete(secretKey(sid));
-						} catch {
-							/* 忽略 */
-						}
+						} catch {}
 						genCfg = res.config;
 						persistGen();
 						host.broadcast({ kind: "config", config: publicGenConfig() });
@@ -1432,7 +1384,6 @@ export default {
 				},
 			},
 
-			// 4.8 像素取色与位置截图（单点/批量/全图色板提取）
 			{
 				name: "image_pick_color",
 				label: "图片取色",
@@ -1507,7 +1458,6 @@ export default {
 					const hasSingle =
 						params?.x !== undefined && params?.x !== null && params?.y !== undefined && params?.y !== null;
 
-					// 1. 批量多点取色
 					if (hasPoints) {
 						const batchRes = pickColorsBatch(img, params.points, {
 							sampleRadius: params.sampleRadius,
@@ -1550,7 +1500,6 @@ export default {
 						};
 					}
 
-					// 2. 单点精准取色
 					if (hasSingle) {
 						const x = Math.round(Number(params.x));
 						const y = Math.round(Number(params.y));
@@ -1618,7 +1567,6 @@ export default {
 						};
 					}
 
-					// 3. 区域 / 全图自动色板提取模式
 					const paletteRes = extractRegionPalette(img, {
 						region: params.region,
 						maxColors: params.maxColors,
@@ -1694,9 +1642,7 @@ export default {
 				for (const off of offTools) {
 					try {
 						off();
-					} catch {
-						/* 忽略 */
-					}
+					} catch {}
 				}
 				offTools = [];
 				toolsOn = false;
@@ -1705,9 +1651,6 @@ export default {
 		}
 		syncTools();
 
-		// ------------------------------------------------------------------
-		// 5. HTTP 路由整合（工作区处理 + 生图 API + 兼容别名）
-		// ------------------------------------------------------------------
 		async function readBody(req) {
 			const tooLarge = () =>
 				Object.assign(new Error(`请求体超过 ${fmtBytes(MAX_BODY_BYTES)} 上限`), { statusCode: 413 });
@@ -1721,7 +1664,6 @@ export default {
 				if (b.length > MAX_BODY_BYTES) throw tooLarge();
 				return b;
 			}
-			// 兼容 async iterator 形式的 req（如 mock request）
 			if (typeof req[Symbol.asyncIterator] === "function" && typeof req.on !== "function") {
 				const chunks = [];
 				let total = 0;
@@ -1744,9 +1686,7 @@ export default {
 						try {
 							req.pause?.();
 							req.removeListener?.("data", onData);
-						} catch {
-							/* 忽略 */
-						}
+						} catch {}
 						reject(err);
 					} else resolve(val);
 				};
@@ -1812,7 +1752,6 @@ export default {
 			return off;
 		};
 
-		// 5.1 图片处理工作区路由（/ws/*）
 		regRoute("GET", "/ws/settings", async (_req, res) => {
 			res.json({
 				settings: cfg,
@@ -1910,9 +1849,7 @@ export default {
 			if (typeof req.query?.points === "string") {
 				try {
 					points = JSON.parse(req.query.points);
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 
 			const x = req.query?.x !== undefined ? Number(req.query?.x) : undefined;
@@ -1922,7 +1859,6 @@ export default {
 			const zoom = req.query?.zoom ? Number(req.query.zoom) : 2;
 			const marker = req.query?.marker !== "0" && req.query?.marker !== "false";
 
-			// 1. 批量多点采样
 			if (Array.isArray(points) && points.length > 0) {
 				const r = pickColorsBatch(img, points, { sampleRadius, cropSize, zoom, marker });
 				const sheetPng = await encodeImage(r.contactSheet, "png");
@@ -1941,7 +1877,6 @@ export default {
 				return;
 			}
 
-			// 2. 单点精准采样
 			if (Number.isFinite(x) && Number.isFinite(y)) {
 				if (x < 0 || x >= img.width || y < 0 || y >= img.height) {
 					res.status(400).json({
@@ -1969,7 +1904,6 @@ export default {
 				return;
 			}
 
-			// 3. 区域或全图色板自动提取
 			const maxColors = req.query?.maxColors ? Number(req.query.maxColors) : 6;
 			const r = extractRegionPalette(img, { maxColors, cropSize, zoom, marker, sampleRadius });
 			const sheetPng = r.contactSheet ? await encodeImage(r.contactSheet, "png") : null;
@@ -1990,7 +1924,6 @@ export default {
 			});
 		});
 
-		// 5.2 生图 API 路由（统一提供 /gen/*，并注册老 /config, /probe 等兼容别名）
 		const handleGetConfig = async (_req, res) => {
 			res.json({
 				cwd: host.cwd,
@@ -2020,7 +1953,6 @@ export default {
 				? normalizeService({ ...(pickService(genCfg, b.id) ?? {}), ...inline })
 				: pickService(genCfg, b.id ?? b.service);
 			if (!svc) throw new Error("没有这个服务");
-			// inline 覆盖 baseUrl 时不用存量密钥（防止旧 key 随新端点外呼），显式 apiKey 除外。
 			const inlineResetsEndpoint = inline && String(b.service?.baseUrl ?? "").trim() ? true : false;
 			const key = GU.str(b.apiKey) || (inlineResetsEndpoint ? "" : keyOf(svc.id ?? ""));
 			const out = await probeService(svc, { key, fetch: globalThis.fetch });
@@ -2075,7 +2007,6 @@ export default {
 			res.send(buf);
 		};
 
-		// 注册标准 /gen/* 路由
 		regRoute("GET", "/gen/config", handleGetConfig);
 		regRoute("POST", "/gen/config", handlePostConfig);
 		regRoute("POST", "/gen/service/preset", handlePostPreset);
@@ -2087,7 +2018,6 @@ export default {
 		regRoute("POST", "/gen/jobs/remove", handleRemoveJob);
 		regRoute("GET", "/gen/image", handleGetImage);
 
-		// 兼容老客户端的短路由（/config, /probe 等）
 		regRoute("GET", "/config", handleGetConfig);
 		regRoute("POST", "/config", handlePostConfig);
 		regRoute("POST", "/service/preset", handlePostPreset);
@@ -2099,21 +2029,16 @@ export default {
 		regRoute("POST", "/jobs/remove", handleRemoveJob);
 		regRoute("GET", "/image", handleGetImage);
 
-		// 返回注销函数
 		return () => {
 			for (const off of routeOffs) {
 				try {
 					off();
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 			for (const off of offTools) {
 				try {
 					off();
-				} catch {
-					/* 忽略 */
-				}
+				} catch {}
 			}
 			offTools = [];
 			toolsOn = false;

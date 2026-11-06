@@ -3,7 +3,6 @@ import type { Translate } from "../../i18n";
 import { getRoleMetas, getInPortDefs, outPortsForRole } from "./CanvasTypes";
 import { isCanvasMessage } from "../../../../server/canvas/canvas-runtime-messages.js";
 
-/** Only authored fields participate in dirty tracking; execution streams never save themselves. */
 export function graphFingerprint(graph: CanvasGraph): string {
 	const { rev: _rev, updatedAt: _updated, status: _status, run: _run, ...rest } = graph;
 	const authored = {
@@ -28,7 +27,6 @@ export function graphFingerprint(graph: CanvasGraph): string {
 		),
 		edges: graph.edges.map(({ currentLoopCount: _c, lastHandoffSummary: _s, runId: _r, active: _a, ...edge }) => edge),
 	};
-	// Server serialization may reorder keys; read-back equality is semantic.
 	const canonical = (value: unknown): unknown =>
 		Array.isArray(value)
 			? value.map(canonical)
@@ -91,7 +89,6 @@ export class CanvasDraftState {
 	pendingSave: { requestId: string; graphId: string; fingerprint: string } | null = null;
 	pendingLoad: { requestId: string; graphId: string } | null = null;
 	readonly unknownSaves = new Map<string, string>();
-	/** A closed socket cannot deliver the old ACK. Keep its submission for read-back reconciliation. */
 	disconnected() {
 		if (this.pendingSave) this.unknownSaves.set(this.pendingSave.graphId, this.pendingSave.fingerprint);
 		this.pendingSave = null;
@@ -172,9 +169,7 @@ export class CanvasDraftState {
 	clearDraft(id: string) {
 		try {
 			this.storage?.removeItem(`pi-web-ui.canvas.draft.${id}`);
-		} catch {
-			/* stale draft remains recoverable */
-		}
+		} catch {}
 	}
 }
 

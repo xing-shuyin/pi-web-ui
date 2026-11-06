@@ -1,11 +1,3 @@
-/**
- * 插件安装加速与稀疏检出 / 随包本地快速通路单测。
- * 验证：
- *   1. 随包内置插件本地优先路径（免外网全量 clone 仓库）；
- *   2. 单段官方插件 id 自动补全为官方源；
- *   3. --remote 标志跳过随包快速路径；
- *   4. 稀疏检出与增量复用逻辑。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -55,7 +47,6 @@ describe("plugin install fast path & sparse checkout", () => {
 	});
 
 	it("当本地随包版本高于已安装版本时，--force 升级优先命中本地随包", () => {
-		// 先在 testDataDir 下预设一个低版本的 notes
 		const targetDir = join(testDataDir, "plugins", "notes");
 		mkdirSync(targetDir, { recursive: true });
 		writeFileSync(
@@ -81,7 +72,6 @@ describe("plugin install fast path & sparse checkout", () => {
 		} catch {}
 		if (!hasGit) return;
 
-		// 构造一个包含两个子目录插件的本地 monorepo 作为测试源
 		const repoDir = join(testDataDir, "test-monorepo");
 		mkdirSync(join(repoDir, "plugins", "plugin-a"), { recursive: true });
 		mkdirSync(join(repoDir, "plugins", "plugin-b"), { recursive: true });
@@ -102,7 +92,6 @@ describe("plugin install fast path & sparse checkout", () => {
 		execFileSync("git", ["-C", repoDir, "add", "-A"]);
 		execFileSync("git", ["-C", repoDir, "commit", "-qm", "initial"]);
 
-		// 生成本地 catalog 文档测试批量安装与增量复用
 		const catalogFile = join(testDataDir, "test-catalog.json");
 		const repoUrl = "file:///" + repoDir.replace(/\\/g, "/");
 		writeFileSync(

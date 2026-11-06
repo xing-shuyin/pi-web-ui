@@ -1,11 +1,3 @@
-/**
- * 切换项目时是否打开最近会话配置项（openRecentSessionOnProjectSwitch）单元测试：
- *   1. 默认值为 true（保持开箱即用兼容性）；
- *   2. ClientStateStore 持久化与加载保真；
- *   3. SettingsService.set() 可更新并通过 current 暴露；
- *   4. 预设白名单与净化收录该字段；
- *   5. i18n 多语言翻译完整且对齐。
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,11 +62,9 @@ describe("openRecentSessionOnProjectSwitch 配置项", () => {
 		await svc.set({ openRecentSessionOnProjectSwitch: false });
 		expect(svc.current.openRecentSessionOnProjectSwitch).toBe(false);
 
-		// 新实例从 store 重载，值仍为 false
 		const svc2 = new SettingsService(host, templates);
 		expect(svc2.current.openRecentSessionOnProjectSwitch).toBe(false);
 
-		// 重新设为 true
 		await svc2.set({ openRecentSessionOnProjectSwitch: true });
 		expect(svc2.current.openRecentSessionOnProjectSwitch).toBe(true);
 	});

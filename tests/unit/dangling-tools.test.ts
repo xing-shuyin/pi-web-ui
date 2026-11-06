@@ -120,7 +120,6 @@ describe("tailAssistantToolCallIds (issue #332)", () => {
 			{ id: "a_old", parentId: "u1", message: assistantWithCalls(["call_old"]) },
 			{ id: "a_active", parentId: "u1", message: assistantWithCalls(["call_active"]) },
 		];
-		// If lastId is a_active, old branch a_old is never visited
 		expect(tailAssistantToolCallIds(entries, "a_active")).toEqual(new Set(["call_active"]));
 	});
 });
@@ -139,11 +138,9 @@ describe("healDanglingToolCallFile", () => {
 		});
 		writeFileSync(file, `${header}\n${u}\n`, "utf8");
 		expect(healDanglingToolCallFile(file)).toBe(0);
-		// 命中缓存：即使把文件内容换成"读不出"的状态也不会重读（这里用同签名验证不改写文件）
 		const before = readFileSync(file, "utf8");
 		expect(healDanglingToolCallFile(file)).toBe(0);
 		expect(readFileSync(file, "utf8")).toBe(before);
-		// 追加一条带悬空调用的 assistant：签名变化 → 必须重新检查并修复
 		const a = JSON.stringify({
 			type: "message",
 			id: "a1",
@@ -179,7 +176,6 @@ describe("healDanglingToolCallFile", () => {
 		expect(e1.parentId).toBe("m1");
 		expect(e2.parentId).toBe(e1.id);
 		expect(e2.message.toolCallId).toBe("call-2");
-		// healed file is clean on second pass
 		expect(healDanglingToolCallFile(file)).toBe(0);
 	});
 
@@ -202,14 +198,12 @@ describe("healDanglingToolCallFile", () => {
 		const raw = [
 			JSON.stringify({ type: "session", id: "s1" }),
 			JSON.stringify({ type: "message", id: "u1", parentId: null, message: { role: "user", content: [] } }),
-			// Abandoned branch: a_old has a dangling toolCall, but user retried and branched to a_new
 			JSON.stringify({
 				type: "message",
 				id: "a_old",
 				parentId: "u1",
 				message: assistantWithCalls(["call_old"]),
 			}),
-			// Active branch: a_new succeeded with normal text, no tool calls
 			JSON.stringify({
 				type: "message",
 				id: "a_new",
@@ -218,7 +212,6 @@ describe("healDanglingToolCallFile", () => {
 			}),
 		].join("\n");
 		writeFileSync(file, `${raw}\n`, "utf8");
-		// Should NOT heal call_old onto active branch tail
 		expect(healDanglingToolCallFile(file)).toBe(0);
 		expect(readFileSync(file, "utf8")).toBe(`${raw}\n`);
 	});
@@ -237,7 +230,6 @@ describe("healDanglingToolCallFile", () => {
 			}),
 		].join("\n");
 		writeFileSync(file, `${raw}\n`, "utf8");
-		// Should NOT append synthetic result for aborted assistant
 		expect(healDanglingToolCallFile(file)).toBe(0);
 		expect(readFileSync(file, "utf8")).toBe(`${raw}\n`);
 	});
@@ -247,14 +239,12 @@ describe("healDanglingToolCallFile", () => {
 		const file = join(dir, "s.jsonl");
 		const header = JSON.stringify({ type: "session", id: "s1" });
 		const u1 = JSON.stringify({ type: "message", id: "u1", parentId: null, message: { role: "user", content: [] } });
-		// Old branch call
 		const aOld = JSON.stringify({
 			type: "message",
 			id: "a_old",
 			parentId: "u1",
 			message: assistantWithCalls(["call_old"]),
 		});
-		// Active branch call that hung
 		const aActive = JSON.stringify({
 			type: "message",
 			id: "a_active",
@@ -273,12 +263,10 @@ describe("healDanglingToolCallFile", () => {
 		expect(synthetic.message.toolCallId).toBe("call_active");
 		expect(synthetic.parentId).toBe("a_active");
 
-		// Second pass is clean
 		expect(healDanglingToolCallFile(file)).toBe(0);
 	});
 });
 
-/** #574：合成结果按成因归因——服务重启不得被说成「超时 / 流卡死」，且都提醒可能已执行。 */
 describe("合成结果文案按成因归因 (#574)", () => {
 	it("restart：说明是服务重启中断，不提「超时 / 流卡死」", () => {
 		const t = danglingToolResultText("restart");

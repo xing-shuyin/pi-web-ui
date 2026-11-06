@@ -1,10 +1,3 @@
-/**
- * tool_status smoke test — verifies the new tool_status (tool_execution_end)
- * message arrives the moment a bash command finishes, before the model's next
- * response lands. Runs against a throwaway server on port 9798.
- *
- * Usage: node tool-status-test.mjs
- */
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -30,9 +23,6 @@ async function startServer() {
 		env: {
 			...process.env,
 			PI_WEB_PORT: String(PORT),
-			// 隔离 cwd + client-state：绝不写进仓库根的真实会话存储；
-			// 历史快照里也不会再出现旧 toolResult 干扰排序断言。
-			// （agent 目录保留 —— 本测试需真模型执行 bash 工具）
 			PI_WEB_CWD: mkdtempSync(join(tmpdir(), "piweb-toolstatus-")),
 			PI_WEB_DATA_DIR: mkdtempSync(join(tmpdir(), "piweb-toolstatus-data-")),
 		},
@@ -48,9 +38,7 @@ async function startServer() {
 			});
 			ws.close();
 			return true;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 	}
 	return false;
 }
@@ -58,9 +46,7 @@ function stopServer() {
 	if (server) {
 		try {
 			server.kill();
-		} catch {
-			/* noop */
-		}
+		} catch {}
 		server = null;
 	}
 }
@@ -103,7 +89,6 @@ async function main() {
 	await waitFor((m) => m.type === "ready");
 	console.log("ready");
 
-	// Fire a prompt that should make the model run a fast bash command.
 	ws.send(
 		JSON.stringify({
 			type: "prompt",
@@ -111,7 +96,6 @@ async function main() {
 		}),
 	);
 
-	// 1) tool_execution_end → tool_status must arrive.
 	const status = await waitFor((m) => m.type === "tool_status", 120_000);
 	check(
 		"tool_status arrived",
@@ -120,14 +104,11 @@ async function main() {
 	);
 	check("tool_status carries durationMs", status.durationMs !== undefined);
 
-	// 2) tool_status must arrive BEFORE the snapshot containing the toolResult
-	//    (i.e. while the model is still chewing on the result).
 	const toolResultSnapshot = await waitFor(
 		(m) => m.type === "snapshot" && m.state.messages.some((mm) => mm.role === "toolResult"),
 		120_000,
 	);
 	const statusIdx = msgs.indexOf(status);
-	// 只在 tool_status 之后找快照 —— 历史快照若含旧 toolResult 不应参与比较
 	const snapIdx = msgs.findIndex(
 		(m, i) => i > statusIdx && m.type === "snapshot" && m.state.messages.some((mm) => mm.role === "toolResult"),
 	);
@@ -137,9 +118,6 @@ async function main() {
 		`status@${statusIdx} snapshot@${snapIdx}`,
 	);
 
-	// 3) The run must complete (agent settles → snapshot no longer streaming).
-	//    Match the FIRST settled snapshot AFTER our turn (the initial empty
-	//    snapshot is also !isStreaming).
 	const settled = await waitFor(
 		(m) => m.type === "snapshot" && !m.state.isStreaming && m.state.messages.some((mm) => mm.role === "toolResult"),
 		120_000,

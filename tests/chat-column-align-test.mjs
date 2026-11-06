@@ -1,14 +1,3 @@
-/* Chat column alignment E2E: the message column and the input column must be
- * exactly the same width with both edges aligned — at any viewport width and
- * with the wide-chat-column toggle on/off (see "中央列几何" in styles.css).
- * Run: npm run build && node tests/chat-column-align-test.mjs
- *
- * No model needed: the column elements are injected with the same DOM shape the
- * real renderer produces (.msg / .msg-collapsed / .retry-notice are direct
- * children of .messages; LazyMount adds no wrapper around shown messages), and
- * geometry is pure CSS. Also asserts the qn-rail never overlaps the message
- * column.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -76,7 +65,6 @@ const ctx = await browser.newContext();
 const page = await ctx.newPage();
 
 for (const vp of VIEWPORTS) {
-	// 宽屏聊天列是 localStorage 开关（web/src/chat-width-settings.ts）
 	await ctx.addInitScript((wide) => {
 		try {
 			localStorage.setItem("pi-web-ui:wide-chat", JSON.stringify({ wide }));
@@ -112,8 +100,6 @@ for (const vp of VIEWPORTS) {
 		);
 		add("slash-menu", '<div class="slash-menu-item">/help</div>', document.querySelector(".inputbar"));
 		add("dialog-inline", "<div>question</div>", document.querySelector(".main"));
-		// 任务执行看板（PlanBoard.tsx）：.main 的直系子元素、输入框上方 —— 宽度必须
-		// 跟对话列一致（曾写死 margin: 0 16px，宽屏聊天列/窄屏下都比输入框宽一截）。
 		add("plan-board", '<div class="plan-board-row">board</div>', document.querySelector(".main"));
 		const wrap = document.querySelector(".messages-wrap");
 		add("qn-rail", '<button class="qn-bar"><span class="qn-bar-text">1. q</span></button>', wrap);
@@ -146,7 +132,6 @@ for (const vp of VIEWPORTS) {
 		);
 	}
 	const msg = rects[".msg"];
-	// 不得贴边：内缩至少是列留白本身（<641px 无 rail；≥641px 可能被 rail 抬到 48px）
 	const inset = +(msg.l - rects.mainLeft).toFixed(2);
 	const floor = vp.w < 641 ? rects.chatPad : Math.max(rects.chatPad, 48);
 	check(`${label} → 消息列不贴边`, inset >= floor - 0.6, `inset=${inset} floor=${floor} chatPad=${rects.chatPad}`);

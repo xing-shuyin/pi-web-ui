@@ -1,18 +1,3 @@
-/**
- * image-toolkit 的像素运算层（纯 JS，零依赖，输入输出统一 RgbaImage）。
- *
- * 性能取向：
- *   - 所有循环直接操作 Uint8Array/Uint8ClampedArray 索引，不在像素级创建中间数组；
- *   - 线性/曲线映射（亮度、对比度、gamma）预计算 256 项 LUT；
- *   - 缩放用「按轴可分离」重采样：下采样 = 面积平均（box 权重，避免摩尔纹），
- *     上采样 = 双线性（三角核，最多取 2 个源点），每轴权重预计算一次。
- */
-
-// ---------------------------------------------------------------------------
-// 通用工具
-// ---------------------------------------------------------------------------
-
-/** 校验 RgbaImage 并返回归一后的字段；非法参数给中文错误。 */
 function assertImage(img, who = "图像") {
 	if (!img || typeof img !== "object") throw new Error(`${who}对象无效`);
 	const { width, height, data } = img;
@@ -27,7 +12,6 @@ function assertImage(img, who = "图像") {
 	return img;
 }
 
-/** 新建一张全透明 RGBA 画布（format 用 "rgba" 标记这是内存像素图，与源文件格式无关）。 */
 function newImage(width, height, hasAlpha = true) {
 	return { width, height, data: new Uint8Array(width * height * 4), hasAlpha, format: "rgba" };
 }
@@ -42,10 +26,6 @@ function copyImage(img) {
 	};
 }
 
-/**
- * 浮点计算得出的像素必须经过「夹取 + 四舍五入」再落地：内部用 Uint8ClampedArray 承载，
- * 最后套一个 Uint8Array 视图返回（零拷贝，满足约定的 Uint8Array 类型）。
- */
 function clampView(arr) {
 	return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
 }
@@ -54,15 +34,6 @@ function clampInt(v, lo, hi) {
 	return v < lo ? lo : v > hi ? hi : v;
 }
 
-// ---------------------------------------------------------------------------
-// 缩放
-// ---------------------------------------------------------------------------
-
-/**
- * 预计算某一轴的重采样权重。
- * scale >= 1（缩小/等比）：按目标像素在源轴的覆盖区间做面积平均，权重 = 重叠长度（最后归一）；
- * scale < 1（放大）：取目标像素中心落在源轴的位置做双线性（三角核，端点夹取）。
- */
 function axisWeights(srcSize, dstSize) {
 	const scale = srcSize / dstSize;
 	const out = new Array(dstSize);
@@ -103,11 +74,6 @@ function axisWeights(srcSize, dstSize) {
 	return out;
 }
 
-/**
- * 缩放：给 width/height 之一即按比例算另一个；都不给抛错。
- * 下采样面积平均、上采样双线性（分两轴做，中间用 Float32 保精度，避免二次取整）。
- * quality 参数保留占位（当前实现自适应，不需要它）。
- */
 export function resizeImage(img, { width, height, quality } = {}) {
 	void quality;
 	assertImage(img);
@@ -124,7 +90,6 @@ export function resizeImage(img, { width, height, quality } = {}) {
 	const xw = axisWeights(sw, w);
 	const yw = axisWeights(sh, h);
 
-	// 第一趟：水平方向 → Float32 中间缓冲
 	const mid = new Float32Array(w * sh * 4);
 	for (let y = 0; y < sh; y++) {
 		const srcRow = y * sw * 4;
@@ -151,7 +116,6 @@ export function resizeImage(img, { width, height, quality } = {}) {
 		}
 	}
 
-	// 第二趟：垂直方向 → 输出
 	const out = new Uint8ClampedArray(w * h * 4);
 	for (let y = 0; y < h; y++) {
 		const { idx, wts } = yw[y];
@@ -179,11 +143,6 @@ export function resizeImage(img, { width, height, quality } = {}) {
 	return { width: w, height: h, data: clampView(out), hasAlpha: img.hasAlpha, format: "rgba" };
 }
 
-// ---------------------------------------------------------------------------
-// 裁剪 / 旋转 / 镜像
-// ---------------------------------------------------------------------------
-
-/** 裁剪：x/y 可负、越界部分补透明 (0,0,0,0)；width/height 取整且至少 1。 */
 export function cropImage(img, { x = 0, y = 0, width, height } = {}) {
 	assertImage(img);
 	const cx = Math.trunc(x) || 0;
@@ -209,7 +168,6 @@ export function cropImage(img, { x = 0, y = 0, width, height } = {}) {
 	return out;
 }
 
-/** 90 的倍数旋转：就近取整到最近的 90°（正数 = 顺时针），返回新图，宽高按需交换。 */
 export function rotateImage(img, degrees) {
 	assertImage(img);
 	if (!Number.isFinite(degrees)) throw new Error("旋转角度必须是数字");
@@ -244,7 +202,6 @@ export function rotateImage(img, degrees) {
 	return out;
 }
 
-/** 镜像：axis="h" 水平翻转（左右），axis="v" 垂直翻转（上下）。 */
 export function flipImage(img, axis) {
 	assertImage(img);
 	if (axis !== "h" && axis !== "v") throw new Error('镜像轴只能是 "h"（水平）或 "v"（垂直）');
@@ -265,7 +222,6 @@ export function flipImage(img, axis) {
 	return out;
 }
 
-/** 双线性采样：坐标是像素中心坐标系，越界返回 background（默认全透明）。 */
 function sampleBilinear(img, sx, sy, background) {
 	const { width: w, height: h, data } = img;
 	if (sx < -1 || sy < -1 || sx > w || sy > h) return background;
@@ -295,7 +251,6 @@ function sampleBilinear(img, sx, sy, background) {
 			a += data[s + 3] * wxy;
 		}
 	}
-	// 采样点落在画布外的地方按 background 加权补齐
 	if (x0 < 0 || x0 + 1 >= w || y0 < 0 || y0 + 1 >= h) {
 		let covered = 0;
 		for (let j = 0; j < 2; j++) {
@@ -319,11 +274,6 @@ function sampleBilinear(img, sx, sy, background) {
 	return [r, g, b, a];
 }
 
-/**
- * 任意角度旋转：输出到目标点做逆映射 + 双线性重采样。
- * expand=true 时按旋转后外接矩形扩画布（多出来的地方填 background），否则保持原尺寸（边缘被裁）。
- * 正数 = 顺时针。
- */
 export function rotateArbitrary(img, degrees, { background = [0, 0, 0, 0], expand = true } = {}) {
 	assertImage(img);
 	if (!Number.isFinite(degrees)) throw new Error("旋转角度必须是数字");
@@ -342,7 +292,6 @@ export function rotateArbitrary(img, degrees, { background = [0, 0, 0, 0], expan
 		const dy = y + 0.5 - cy;
 		for (let x = 0; x < outW; x++) {
 			const dx = x + 0.5 - cx;
-			// 逆旋转（顺时针角度 → 逆映射用转置）
 			const sx = dx * cos + dy * sin + w / 2 - 0.5;
 			const sy = -dx * sin + dy * cos + h / 2 - 0.5;
 			const [r, g, b, a] = sampleBilinear(img, sx, sy, bg);
@@ -356,11 +305,6 @@ export function rotateArbitrary(img, degrees, { background = [0, 0, 0, 0], expan
 	return { width: outW, height: outH, data: clampView(out), hasAlpha: true, format: "rgba" };
 }
 
-// ---------------------------------------------------------------------------
-// 模糊 / 锐化
-// ---------------------------------------------------------------------------
-
-/** 单次 box blur（水平 + 垂直，滑动窗口和，边界按边缘像素外推）；RGB 模糊，alpha 原样保留。 */
 function boxBlurOnce(src, w, h, radius) {
 	const len = w * h * 4;
 	const tmp = new Uint8ClampedArray(len);
@@ -397,16 +341,11 @@ function boxBlurOnce(src, w, h, radius) {
 	return out;
 }
 
-/** 近似高斯：连续做 passes 次 box blur（3 次已足够接近正态核）。 */
 function boxBlur(src, w, h, radius, passes) {
 	let cur = src;
 	for (let i = 0; i < passes; i++) cur = boxBlurOnce(cur, w, h, radius);
 	return cur;
 }
-
-// ---------------------------------------------------------------------------
-// 调色 / 滤镜
-// ---------------------------------------------------------------------------
 
 const LUMA = [0.2126, 0.7152, 0.0722];
 const SEPIA = [
@@ -427,7 +366,6 @@ function mul3(a, b) {
 	return out;
 }
 
-/** 色相旋转矩阵（标准 3×3，角度制）。 */
 function hueMatrix(deg) {
 	const rad = (deg * Math.PI) / 180;
 	const c = Math.cos(rad);
@@ -439,7 +377,6 @@ function hueMatrix(deg) {
 	];
 }
 
-/** 饱和度矩阵（沿亮度轴插值：100 = 不变，0 = 灰度，>100 加色）。 */
 function satMatrix(percent) {
 	const s = percent / 100;
 	const k = 1 - s;
@@ -466,13 +403,6 @@ function sepiaMatrix(percent) {
 	return SEPIA.map((row, i) => row.map((v, j) => (i === j ? 1 - p : 0) + v * p));
 }
 
-/**
- * 调色/滤镜。缺省全部“不变”，只有显式给值才生效。
- * 数学顺序：亮度/对比度 LUT → 色相×饱和度矩阵 → 灰度/棕褐/反相矩阵（含偏移）→ gamma LUT → 模糊 → 锐化 → 暗角。
- * brightness/contrast/saturation/gamma 是百分比（100 = 不变）；hue 是度数；
- * grayscale/sepia/invert/vignette 是 0..100 强度；blur 是 0..50 像素半径（3 次 box blur 近似高斯）；
- * sharpen 是 0..100（unsharp mask 强度）。
- */
 export function adjustImage(img, opts = {}) {
 	assertImage(img);
 	const brightness = opts.brightness ?? 100;
@@ -504,28 +434,23 @@ export function adjustImage(img, opts = {}) {
 
 	const { width: w, height: h, data } = img;
 
-	// 1) 亮度 + 对比度：合并成一张 256 项 LUT
 	const toneLut = new Uint8ClampedArray(256);
 	const bf = brightness / 100;
 	const cf = contrast / 100;
 	for (let v = 0; v < 256; v++) toneLut[v] = (v * bf - 128) * cf + 128;
 
-	// 2) 色相 × 饱和度：合并成 3×3 矩阵
 	const m1 = mul3(hueMatrix(hue), satMatrix(saturation));
 
-	// 3) 灰度 → 棕褐 → 反相：合并成矩阵 + 偏移
 	let m2 = grayMatrix(grayscale);
 	m2 = mul3(sepiaMatrix(sepia), m2);
 	const invScale = 1 - (2 * invert) / 100;
 	const invOffset = (255 * invert) / 100;
 	for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m2[i][j] *= invScale;
 
-	// 4) gamma：非线性，只能在最后按通道查表
 	const gammaLut = new Uint8ClampedArray(256);
 	const exp = 100 / gamma;
 	for (let v = 0; v < 256; v++) gammaLut[v] = 255 * Math.pow(v / 255, exp);
 
-	// 5) 暗角：按到中心的归一化距离预先算好每像素衰减系数
 	let vig = null;
 	if (vignette > 0) {
 		vig = new Float32Array(w * h);
@@ -589,15 +514,6 @@ export function adjustImage(img, opts = {}) {
 	return { width: w, height: h, data: clampView(result), hasAlpha: img.hasAlpha, format: "rgba" };
 }
 
-// ---------------------------------------------------------------------------
-// 叠加 / 圆角 / 边框
-// ---------------------------------------------------------------------------
-
-/**
- * 把 overlay 源式（source-over）alpha 合成到 base 上，返回新图（不改 base）。
- * x/y 是 overlay 左上角坐标（可为负，超出部分自然裁掉）；opacity 0..1；scale 缩放 overlay；
- * tile=true 时按 gap 间距平铺整个 base（忽略 x/y）。
- */
 export function compositeOverlay(base, overlay, { x = 0, y = 0, opacity = 1, scale = 1, tile = false, gap = 8 } = {}) {
 	assertImage(base, "底图");
 	assertImage(overlay, "叠加图");
@@ -644,7 +560,6 @@ export function compositeOverlay(base, overlay, { x = 0, y = 0, opacity = 1, sca
 	return { width: bw, height: bh, data: clampView(out), hasAlpha: true, format: "rgba" };
 }
 
-/** 圆角：四角按到圆心的距离做 1px 覆盖度抗锯齿，半径自动夹到 min(w,h)/2。 */
 export function roundCorners(img, radius) {
 	assertImage(img);
 	const r0 = Math.round(radius);
@@ -673,7 +588,6 @@ export function roundCorners(img, radius) {
 	return { width: w, height: h, data: out, hasAlpha: true, format: "rgba" };
 }
 
-/** 颜色解析：[r,g,b,a] 数组（a 0..255）或 "#rrggbb"/"#rrggbbaa" 字符串。 */
 function parseColor(color) {
 	if (Array.isArray(color)) {
 		if (color.length !== 3 && color.length !== 4) throw new Error("边框颜色数组必须是 [r,g,b] 或 [r,g,b,a]");
@@ -697,7 +611,6 @@ function parseColor(color) {
 	throw new Error('边框颜色必须是 [r,g,b,a] 数组或 "#rrggbb"/"#rrggbbaa" 字符串');
 }
 
-/** 加边框：返回 (w+2*width) × (h+2*width) 的新图，原图居中，边框填 color。 */
 export function addBorder(img, width, color) {
 	assertImage(img);
 	const b = Math.round(width);
@@ -706,7 +619,6 @@ export function addBorder(img, width, color) {
 	const { width: w, height: h, data } = img;
 	const out = newImage(w + b * 2, h + b * 2, img.hasAlpha || a < 255);
 	const ow = out.width;
-	// 先铺边框色
 	for (let i = 0; i < out.data.length; i += 4) {
 		out.data[i] = r;
 		out.data[i + 1] = g;
@@ -721,14 +633,6 @@ export function addBorder(img, width, color) {
 	return out;
 }
 
-// ---------------------------------------------------------------------------
-// 统计
-// ---------------------------------------------------------------------------
-
-/**
- * 直方图：bins 桶（默认 256），返回 { r, g, b, luma }，每通道按自身最大计数归一化到 0..1。
- * luma 用 BT.709 亮度（0.2126R + 0.7152G + 0.0722B）。
- */
 export function histogram(img, bins = 256) {
 	assertImage(img);
 	if (!Number.isInteger(bins) || bins <= 0 || bins > 65536) throw new Error("直方图桶数必须是 1..65536 的整数");
@@ -754,10 +658,6 @@ export function histogram(img, bins = 256) {
 	return { r: norm(r), g: norm(g), b: norm(b), luma: norm(luma) };
 }
 
-/**
- * 主色调：每通道取高 4 位分桶（4096 桶），统计桶内真实颜色均值与占比，按占比降序返回前 count 名。
- * 完全透明的像素（alpha < 8）不参与统计，避免透明区域把黑色顶到第一。
- */
 export function dominantColors(img, count = 6) {
 	assertImage(img);
 	if (!Number.isInteger(count) || count <= 0) throw new Error("主色数量必须是正整数");
@@ -785,10 +685,6 @@ export function dominantColors(img, count = 6) {
 		share: ns[k] / total,
 	}));
 }
-
-// ---------------------------------------------------------------------------
-// 取色与位置截图（Color Picker & Location Reticle Crop）
-// ---------------------------------------------------------------------------
 
 function rgbToHsl(r, g, b) {
 	const r0 = r / 255;
@@ -931,13 +827,11 @@ function drawReticle(img, targetRect) {
 		}
 	};
 
-	// 目标像素外边框（不覆盖目标像素自身，贴着外缘绘制）
 	drawRectOutline(tx - 1, ty - 1, tw + 2, th + 2, 0, 0, 0);
 	if (tw >= 4) {
 		drawRectOutline(tx - 2, ty - 2, tw + 4, th + 4, 255, 255, 255);
 	}
 
-	// 十字准星线（从边缘到中心，留出中央间隔）
 	const gap = Math.max(3, Math.floor(tw / 2) + 2);
 
 	const drawHLine = (x0, x1, y) => {
@@ -962,10 +856,6 @@ function drawReticle(img, targetRect) {
 	if (cy + gap < h - 1) drawVLine(cx, cy + gap, h - 1);
 }
 
-/**
- * 图像取色与定位截图：
- * 提取坐标 (x, y) 处的像素颜色（精确值与半径均值），截取周边局部区域，放大并绘制高对比度瞄准准星。
- */
 export function pickColor(img, { x, y, sampleRadius = 0, cropSize = 64, zoom = 2, marker = true } = {}) {
 	assertImage(img);
 	const px = Math.round(Number(x));
@@ -1106,9 +996,6 @@ function colorDistSq(r1, g1, b1, r2, g2, b2) {
 	return 2 * dr * dr + 4 * dg * dg + 3 * db * db;
 }
 
-/**
- * 将若干个带准星的局部截图及对应色块拼接成一张综合 Contact Sheet
- */
 function stitchCropsWithSwatches(items, { swatchHeight = 22, gap = 8, padding = 8 } = {}) {
 	if (!items.length) return null;
 	const n = items.length;
@@ -1123,7 +1010,6 @@ function stitchCropsWithSwatches(items, { swatchHeight = 22, gap = 8, padding = 
 	const totalH = padding * 2 + rows * blockH + (rows - 1) * gap;
 
 	const sheet = newImage(totalW, totalH, true);
-	// 填充深色底板背景 #18191f
 	const bgR = 24;
 	const bgG = 25;
 	const bgB = 31;
@@ -1150,7 +1036,6 @@ function stitchCropsWithSwatches(items, { swatchHeight = 22, gap = 8, padding = 
 		const startX = padding + c * (itemW + gap);
 		const startY = padding + r * (blockH + gap);
 
-		// 1. 复制局部截图像素
 		const src = item.cropImage;
 		for (let y = 0; y < src.height; y++) {
 			for (let x = 0; x < src.width; x++) {
@@ -1159,13 +1044,11 @@ function stitchCropsWithSwatches(items, { swatchHeight = 22, gap = 8, padding = 
 			}
 		}
 
-		// 2. 截图下方绘制分割线
 		const lineY = startY + itemH + 1;
 		for (let x = 0; x < itemW; x++) {
 			setPx(startX + x, lineY, 60, 64, 76, 255);
 		}
 
-		// 3. 绘制颜色色块
 		const swY = lineY + 2;
 		const { r: cr, g: cg, b: cb } = item.color;
 		for (let sy = 0; sy < swatchHeight; sy++) {
@@ -1183,10 +1066,6 @@ function stitchCropsWithSwatches(items, { swatchHeight = 22, gap = 8, padding = 
 	return sheet;
 }
 
-/**
- * 批量多点取色：
- * 对指定的多个点坐标依次取色并生成带准星截图，同时返回拼贴总览图。
- */
 export function pickColorsBatch(img, points, options = {}) {
 	assertImage(img);
 	if (!Array.isArray(points) || !points.length) {
@@ -1214,10 +1093,6 @@ export function pickColorsBatch(img, points, options = {}) {
 	};
 }
 
-/**
- * 区域/全图色板提取与自动代表坐标定位：
- * 分析画面中所有关键特征颜色（主背景、强调色、文字等），并自动为每个颜色在原图上定位出最佳代表坐标与局部准星截图。
- */
 export function extractRegionPalette(
 	img,
 	{ region = {}, maxColors = 6, cropSize = 64, zoom = 2, marker = true, sampleRadius = 0 } = {},

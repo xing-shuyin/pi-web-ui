@@ -49,6 +49,24 @@ const defaults = {
 	quickAskThinking: "off",
 	quickAskSystemPrompt: "",
 	quickAskExplainPrompt: "解释下: {{input}}",
+	quickAskTranslateEnabled: true,
+	quickAskTranslateTarget: "auto",
+	quickAskTranslateStyle: "natural",
+	quickAskTranslatePrompt: "将以下文字翻译成{{targetLanguage}}，只输出译文，保留代码与专有名词。\n{{input}}",
+	quickAskShowOriginal: false,
+	quickAskReferenceMenus: true,
+	quickAskConversationScope: "recent",
+	quickAskFolderScope: "listing",
+};
+const referencePreferences = {
+	quickAskTranslateEnabled: false,
+	quickAskTranslateTarget: "ja" as const,
+	quickAskTranslateStyle: "technical" as const,
+	quickAskTranslatePrompt: "Translate {{input}} into {{targetLanguage}}",
+	quickAskShowOriginal: true,
+	quickAskReferenceMenus: false,
+	quickAskConversationScope: "full" as const,
+	quickAskFolderScope: "content" as const,
 };
 
 describe("quick ask settings wiring", () => {
@@ -82,7 +100,6 @@ describe("quick ask settings wiring", () => {
 				},
 			}),
 		);
-		// Normalization is also exercised directly so corrupted storage never reaches the model call.
 		expect(
 			normalizeQuickAskSettings({
 				quickAskEnabled: "false",
@@ -102,6 +119,7 @@ describe("quick ask settings wiring", () => {
 			quickAskThinking: "high" as const,
 			quickAskSystemPrompt: "Only popup instructions",
 			quickAskExplainPrompt: "Explain {{input}} in detail",
+			...referencePreferences,
 		};
 		await service.set(values);
 		expect(service.current).toMatchObject(values);
@@ -137,6 +155,7 @@ describe("quick ask settings wiring", () => {
 		await dispatch({ quickAskSystemPrompt: "Only the popup system" });
 		await dispatch({ quickAskExplainPrompt: "Custom {{input}}" });
 		await dispatch({ quickAskEnabled: false });
+		await dispatch(referencePreferences);
 		await dispatch({ quickPhrasesEnabled: false });
 		const expected = {
 			quickAskModel: "local/independent",
@@ -144,6 +163,7 @@ describe("quick ask settings wiring", () => {
 			quickAskSystemPrompt: "Only the popup system",
 			quickAskExplainPrompt: "Custom {{input}}",
 			quickAskEnabled: false,
+			...referencePreferences,
 		};
 		expect(service.current).toMatchObject(expected);
 		expect(new ClientStateStore(path).getSettings("browser")).toMatchObject(expected);
@@ -156,6 +176,45 @@ describe("quick ask settings wiring", () => {
 			quickAskSystemPrompt: "",
 			quickAskEnabled: true,
 		});
+	});
+	it("normalizes every translation and reference preference and accepts the full target allowlist", () => {
+		for (const quickAskTranslateTarget of [
+			"auto",
+			"zh-CN",
+			"zh-TW",
+			"en",
+			"ja",
+			"ko",
+			"de",
+			"fr",
+			"es",
+			"ru",
+			"pt",
+			"it",
+			"tr",
+		]) {
+			expect(normalizeQuickAskSettings({ quickAskTranslateTarget }).quickAskTranslateTarget).toBe(
+				quickAskTranslateTarget,
+			);
+		}
+		for (const quickAskTranslateStyle of ["natural", "literal", "technical"]) {
+			expect(normalizeQuickAskSettings({ quickAskTranslateStyle }).quickAskTranslateStyle).toBe(quickAskTranslateStyle);
+		}
+		expect(
+			normalizeQuickAskSettings({
+				quickAskTranslateEnabled: "false",
+				quickAskShowOriginal: 1,
+				quickAskReferenceMenus: null,
+				quickAskTranslateTarget: "zh",
+				quickAskTranslateStyle: "fancy",
+				quickAskTranslatePrompt: " ",
+				quickAskConversationScope: "all",
+				quickAskFolderScope: "recursive",
+			}),
+		).toEqual(defaults);
+		expect(normalizeQuickAskSettings({ quickAskTranslatePrompt: "x".repeat(MAX_QUICK_ASK_PROMPT_LENGTH + 1) })).toEqual(
+			defaults,
+		);
 	});
 	it("normalizes updates while preserving valid template text and supported thinking levels", async () => {
 		const { service } = setup();

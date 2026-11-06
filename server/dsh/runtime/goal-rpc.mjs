@@ -1,18 +1,3 @@
-/**
- * goal-rpc.mjs — pi-web-ui DSH runtime 的 goal RPC 扩展插件。
- *
- * 在官方 dsh-sdk-jsonrpc-server 之上包一层，为 stdio JSON-RPC 面增加 goal
- * 方法（goal/set goal/get goal/clear goal/resume goal/edit），直连 DSH 原生
- * goal 域（ctx.goals 服务，dsh-goal）。这样 pi-web-ui 前端的目标条驱动的是
- * DSH 自己的持久化目标状态机 + goal-round-driver 自动轮次，而不是另造一套
- * 审查会话 —— 审查语义 = DSH 原生（模型自判定 complete/blocked，轮次自动续）。
- *
- * 与官方插件的差异：inject 增加 "goals"（goal 域服务依赖）；handleRequest
- * 增加 goal 分支；其余 stdio transport / shutdown 语义原样继承。
- *
- * 官方入口（做 base 类）从环境变量解析：PI_WEB_DSH_JSONRPC_ENTRY 由 dsh-client
- * 注入（指向项目 node_modules 的官方包）；兜底从本文件位置向上找项目依赖。
- */
 import { resolve } from "node:path";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -28,7 +13,6 @@ if (!process.env.PI_WEB_DSH_RUNTIME_BASE) {
 	} catch {}
 }
 
-/** 动态解析并加载 DSH 相关模块（优先使用当前正在运行的运行时树，兜底本地依赖） */
 async function loadDshModule(pkgName) {
 	const rt = process.env.PI_WEB_DSH_RUNTIME_BASE;
 	if (rt) {
@@ -51,7 +35,6 @@ async function loadDshModule(pkgName) {
 const { JsonRpcLineTransport } = await loadDshModule("@deepseek-ai/dsh-sdk-protocol");
 const { defineTool } = await loadDshModule("@deepseek-ai/dsh-tools");
 
-/** 官方 jsonrpc-server 入口（优先运行时树，次选 env，兜底从项目依赖向上找）。 */
 function findOfficialEntry() {
 	if (process.env.PI_WEB_DSH_RUNTIME_BASE) {
 		const candidate = join(
@@ -85,15 +68,10 @@ const officialEntry = findOfficialEntry();
 const official = await import(pathToFileURL(officialEntry).href);
 const { HarnessSdkJsonRpcServer, Config } = official;
 
-/** 提问桥超时（P0-6）：PI_WEB_DSH_QUESTION_TIMEOUT_MS 可配置，默认 10 分钟。 */
 const QUESTION_TIMEOUT_MS = Number(process.env.PI_WEB_DSH_QUESTION_TIMEOUT_MS) || 10 * 60_000;
 
-/** 工具桥超时（#15）：服务端跑插件实现的等待上限。PI_WEB_DSH_TOOL_TIMEOUT_MS 可配置，默认 10 分钟。 */
 const TOOL_TIMEOUT_MS = Number(process.env.PI_WEB_DSH_TOOL_TIMEOUT_MS) || 10 * 60_000;
 
-/** 过滤一条 skill-catalog 用户消息：按 disabled 集合剔除条目并重建文本。
- *  纯函数（可单测）。条目来自消息的 `source.entries`（`{name,description}`），
- *  文本里的 `<available_skills>…</available_skills>` 块按保留条目重建，其余不动。 */
 export function filterSkillCatalogMessage(message, disabled) {
 	if (!message || message?.source?.kind !== "skill-catalog") return message;
 	const entries = Array.isArray(message.source?.entries) ? message.source.entries : [];
@@ -109,7 +87,6 @@ export function filterSkillCatalogMessage(message, disabled) {
 	};
 }
 
-/** 重建 `<available_skills>` 块的文本（保留块外结构；无条目时给占位）。 */
 function rebuildCatalogText(original, entries) {
 	const startTag = "<available_skills>";
 	const endTag = "</available_skills>";
@@ -122,7 +99,6 @@ function rebuildCatalogText(original, entries) {
 	return `${original.slice(0, si + startTag.length)}\n${body}\n${original.slice(ei)}`;
 }
 
-/** 最小 HTML 实体转义（避免 `<`/`&` 破坏 markdown/目录结构）。 */
 function escapeTextSimple(s) {
 	return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
@@ -141,14 +117,12 @@ function normalizeDshNode(def, allowRequired = false) {
 
 	const out = {};
 
-	// 1. 复制合法的 annotations
 	if (typeof def.description === "string") out.description = def.description;
 	if (typeof def.title === "string") out.title = def.title;
 	if (def.default !== undefined) out.default = def.default;
 	if (Array.isArray(def.examples)) out.examples = def.examples;
 	if (allowRequired && def.required === true) out.required = true;
 
-	// 2. 处理 oneOf / anyOf（DSH 仅支持 oneOf，且与 type 互斥）
 	const unionCandidates = Array.isArray(def.oneOf) ? def.oneOf : Array.isArray(def.anyOf) ? def.anyOf : null;
 
 	if (unionCandidates) {
@@ -162,7 +136,6 @@ function normalizeDshNode(def, allowRequired = false) {
 		}
 	}
 
-	// 3. 处理 type 字段（可能为数组，如 ["string", "null"]）
 	let rawType = def.type;
 	if (Array.isArray(rawType)) {
 		const types = rawType
@@ -196,7 +169,6 @@ function normalizeDshNode(def, allowRequired = false) {
 
 	out.type = type;
 
-	// 4. 根据具体 type 补充/规整专属字段（严格限制在 DSH 允许子集，去除 format/pattern 等不支持属性）
 	switch (type) {
 		case "object": {
 			out.additionalProperties = typeof def.additionalProperties === "boolean" ? def.additionalProperties : true;
@@ -238,10 +210,6 @@ function normalizeDshNode(def, allowRequired = false) {
 	return out;
 }
 
-/** 把 pi-web-ui 插件工具的标准 JSON Schema `parameters`（`{type,properties,required[]}`）
- *  转成 DSH defineTool 的 per-property 参数映射 spec（`{key:{type,required?,description}}`）。
- *  DSH 的 parameterSchemaSpecToJsonSchema 需要 property-map 形状（required 挂在每条属性上），
- *  而 pi 插件/TypeBox 用的是标准 JSON Schema（required 是对象数组）。纯函数。 */
 export function piParamsToDshSpec(parameters) {
 	if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return {};
 	let propSource;
@@ -250,10 +218,8 @@ export function piParamsToDshSpec(parameters) {
 		propSource = parameters.properties;
 		if (Array.isArray(parameters.required)) requiredList = parameters.required;
 	} else if (parameters.type === "object") {
-		// 标准 JSON Schema 的无属性对象：{ type: "object" }
 		return {};
 	} else {
-		// 已是 DSH property-map 形状
 		propSource = parameters;
 		if (Array.isArray(parameters.required)) requiredList = parameters.required;
 	}
@@ -266,7 +232,6 @@ export function piParamsToDshSpec(parameters) {
 	return propMap;
 }
 
-/** goal view → RPC 载荷（紧凑 JSON；view 是扁平结构，无目标时 get 返回 undefined）。 */
 function viewPayload(view) {
 	if (!view || view.id === undefined) return { goal: null, activation: null };
 	return {
@@ -283,14 +248,10 @@ function viewPayload(view) {
 	};
 }
 
-/** 取会话的 live agent（不存在则按需创建，与 prompt 的隐式建会话一致）。 */
 function agentOf(server, sessionId) {
 	return server.getOrCreateSession(sessionId).then((rec) => rec.handle.agent);
 }
 
-/**
- * 官方 SDK server 的 goal 扩展：goal/* 方法直连 ctx.goals 服务动词。
- */
 class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 	/**
 	 * 官方构造器订阅 session.event / session.status / subagent.*；这里再加**直播流**：
@@ -321,10 +282,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		);
 	}
 
-	/**
-	 * 创建（或替换已完成的）目标并 arm —— round-driver 会在 agent idle 时
-	 * 自动续第一轮，不需要额外 prompt。
-	 */
 	async goalSet(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("goal/set requires sessionId");
 		if (typeof params?.objective !== "string" || !params.objective.trim()) {
@@ -338,14 +295,12 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return viewPayload(this.ctx.goals.create(agent, request));
 	}
 
-	/** 当前目标视图（goal 或 null）。 */
 	async goalGet(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("goal/get requires sessionId");
 		const agent = await agentOf(this, params.sessionId);
 		return viewPayload(this.ctx.goals.get(agent));
 	}
 
-	/** 清除当前目标（保留 durable 墓碑与历史）。 */
 	async goalClear(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("goal/clear requires sessionId");
 		const agent = await agentOf(this, params.sessionId);
@@ -355,7 +310,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { cleared: true };
 	}
 
-	/** 恢复被 disarm 的目标（abort 重启运行时后轮次驱动停止，需要 resume 续）。 */
 	async goalResume(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("goal/resume requires sessionId");
 		const agent = await agentOf(this, params.sessionId);
@@ -364,7 +318,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return viewPayload(this.ctx.goals.resume(agent, { id: view.id, revision: view.revision }));
 	}
 
-	/** 编辑目标（改客观文本或轮次上限，不改 phase）。 */
 	async goalEdit(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("goal/edit requires sessionId");
 		const agent = await agentOf(this, params.sessionId);
@@ -383,28 +336,10 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return viewPayload(this.ctx.goals.edit(agent, { id: view.id, revision: view.revision }, request));
 	}
 
-	// -----------------------------------------------------------------------
-	// Agent 预设（dsh-web 四模式：standard/ptc/minimal/cordis + 用户自建）。
-	//
-	// roster 挂了 preset-plane patch 才存在（见 server/dsh/preset-clones.ts 生成的
-	// preset-plane.patch.yml）；legacy 单组合（无 patch）下全部回退：list 报 unavailable，
-	// assign/select 透过，创建走官方原逻辑，per-agent 钩子照装（问卷 waterfall 修法
-	// 本就要求 agent scope 注册，与预设有无无关）。
-	//
-	// 约定：Node 侧（dsh-agent-service）是 preset 真源 —— 新会话首个 prompt 前调
-	// preset/assign 登记，会话创建时消费；空白会话切换走 preset/select（首轮后锁，
-	// 与官方 agent-preset/locked 语义一致）。RPC 错误不抛 domain 码（transport 统一
-	// 坍缩成 -32603），一律走 {ok:false,code,message} 信封。
-	// -----------------------------------------------------------------------
-
-	/** 待消费的创建期预设：sessionId → preset id（创建时消费并删除）。 */
 	pendingPresets = new Map();
-	/** minimal 下被门禁的 agent id（bridge 工具 + 问卷调用期拒绝，中英双语报错）。 */
 	minimalAgents = new Set();
-	/** 技能目录取数 agent（standard 预设，常驻但永不 prompt，零 token）。 */
 	inventorySessionId = "pi-webui-inventory";
 
-	/** roster 服务（无 preset-plane patch 时 undefined → 全员 legacy）。 */
 	presetRoster() {
 		try {
 			return this.ctx.get("agentPresets") ?? undefined;
@@ -413,7 +348,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** 解析一个 preset id（非法/unknown → 默认；roster 缺失 → undefined）。 */
 	async resolvePresetId(requested) {
 		const roster = this.presetRoster();
 		if (!roster) return undefined;
@@ -428,25 +362,19 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** preset/list RPC：roster 名录（display 字段以运行时树为准）。 */
 	async listPresets() {
 		const roster = this.presetRoster();
 		if (!roster) return { presets: [], defaultPreset: "standard", authorable: false, unavailable: true };
 		try {
-			// service.list() = discovery 数组；isDefault/authorable 走同名的 getter。
 			const items = await roster.list();
 			let defaultId = "standard";
 			try {
 				defaultId = roster.defaultId ?? defaultId;
-			} catch {
-				/* keep */
-			}
+			} catch {}
 			let authorable = false;
 			try {
 				authorable = !!roster.authorable;
-			} catch {
-				/* keep */
-			}
+			} catch {}
 			return {
 				presets: (Array.isArray(items) ? items : []).map((p) => ({
 					id: p.id,
@@ -471,7 +399,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** preset/assign RPC：登记创建期预设（首个 prompt/goal 前调用，仅创建时消费）。 */
 	async assignPreset(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("preset/assign requires sessionId");
 		if (typeof params?.preset !== "string" || !params.preset) throw new TypeError("preset/assign requires preset");
@@ -479,7 +406,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ok: true };
 	}
 
-	/** agent 存活检查（项目依赖的 0.1.1-rc.2 无基类 assertLiveAgent，内联同语义）。 */
 	liveAgent(rec, sessionId) {
 		if (!rec || this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
 			throw new Error(`session agent was disposed outside the server: ${sessionId}`);
@@ -487,7 +413,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return rec.handle.agent;
 	}
 
-	/** preset/select RPC：空白会话切换预设（首轮后官方抛 agent-preset/locked）。 */
 	async selectPreset(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("preset/select requires sessionId");
 		if (typeof params?.preset !== "string" || !params.preset) throw new TypeError("preset/select requires preset");
@@ -507,7 +432,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** permission/get RPC：读一个会话的权限预设 projection（官方 /permission 弹窗同源）。 */
 	async getPermission(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("permission/get requires sessionId");
 		const rec = await this.getOrCreateSession(params.sessionId);
@@ -522,9 +446,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ...cat, currentValue: cur };
 	}
 
-	/** permission/set RPC：按会话热切换权限预设（写会话日志，无需重启；
-	 *  与官方 /permission 命令同语义：approval 走 live writer，模型会收到一条
-	 *  策略变更的用户消息）。未知预设走 {ok:false} 信封，不抛 domain 错。 */
 	async setPermission(params) {
 		if (typeof params?.sessionId !== "string") throw new TypeError("permission/set requires sessionId");
 		if (typeof params?.preset !== "string" || !params.preset) throw new TypeError("permission/set requires preset");
@@ -559,7 +480,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** preset/tools RPC（仅 DEBUG）：读一个会话 agent scope 的实际工具名（校验挂载用）。 */
 	async presetTools(params) {
 		if (process.env.PI_WEB_DSH_DEBUG !== "1") {
 			throw new Error("preset/tools 仅调试可用（服务端需设 PI_WEB_DSH_DEBUG=1）");
@@ -567,12 +487,10 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		if (typeof params?.sessionId !== "string") throw new TypeError("preset/tools requires sessionId");
 		const rec = await this.getOrCreateSession(params.sessionId);
 		const agent = this.liveAgent(rec, params.sessionId);
-		// agent 视角（scope）：preset 层 + host 层合并目录；缺省全局视角只看到 host 层。
 		const schemas = this.ctx.tools.schemas(agent);
 		return { tools: schemas.map((s) => s.name).sort() };
 	}
 
-	/** prompt/inspect RPC：返回系统提示词全文、分段（sections）、上下文（contexts）与工具 schemas。 */
 	async promptInspect(params) {
 		let context = {};
 		if (typeof params?.sessionId === "string" && params.sessionId) {
@@ -580,17 +498,13 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				const rec = await this.getOrCreateSession(params.sessionId);
 				const agent = this.liveAgent(rec, params.sessionId);
 				context = { agent, scope: agent };
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		if (!context.agent) {
 			try {
 				const agent = await this.ensureInventoryAgent();
 				context = { agent, scope: agent };
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		const contexts = context.agent
 			? [{ agent: context.agent, scope: context.agent }, { scope: context.agent }, { scope: context.agent.ctx }, {}]
@@ -656,8 +570,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		};
 	}
 
-	/** debug/assemble RPC（仅 DEBUG）：读一个会话 agent 视角的系统提示词 section 名录
-	 *  （零 token 验证 persona 遮蔽/complete 压制/自定义 section 用；不返回正文）。 */
 	async debugAssemble(params) {
 		if (process.env.PI_WEB_DSH_DEBUG !== "1") {
 			throw new Error("debug/assemble 仅调试可用（服务端需设 PI_WEB_DSH_DEBUG=1）");
@@ -665,7 +577,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		if (typeof params?.sessionId !== "string") throw new TypeError("debug/assemble requires sessionId");
 		const rec = await this.getOrCreateSession(params.sessionId);
 		const agent = this.liveAgent(rec, params.sessionId);
-		// 组装上下文同 agent-loop（assembleContextFor）：{ agent, scope: agent }。
 		const contexts = [{ agent, scope: agent }, { scope: agent }, { scope: agent.ctx }];
 		let lastErr = null;
 		for (const context of contexts) {
@@ -681,9 +592,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		throw new Error(`debug/assemble: assembly failed (${lastErr?.message ?? lastErr})`);
 	}
 
-	/** 会话创建（官方同形 + setup）：mount 预设 + 装 per-agent 钩子。
-	 *  磁盘上已有同 id（运行时重启/优雅关闭后重建）→ 转 agents.resume
-	 *  （官方恢复路径，自动缝合被中断的 turn；setup 照跑，预设照挂）。 */
 	async createSession(sessionId, preset) {
 		const requested = preset ?? this.pendingPresets.get(sessionId);
 		this.pendingPresets.delete(sessionId);
@@ -716,7 +624,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return rec;
 	}
 
-	/** 官方 getOrCreateSession 同形（多出来的 preset 参数供创建时使用）。 */
 	async getOrCreateSession(sessionId, preset) {
 		if (this.shuttingDown) throw new Error("SDK server is shutting down");
 		const existing = this.sessions.get(sessionId);
@@ -736,9 +643,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return creation;
 	}
 
-	/** 每个 agent 出生时跑一次：mount 预设 + 问卷 waterfall + 技能目录过滤。
-	 *  预设优先级：会话记录（header/selected 事件，重启恢复时是唯一真相）>
-	 *  创建参数 > roster 默认。 */
 	async agentSetup(agentCtx, agent, presetId) {
 		const roster = this.presetRoster();
 		let effective = presetId;
@@ -746,9 +650,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 			try {
 				const prior = this.ctx.sessionProjections.stateOf(agent.session, "agentPreset");
 				if (typeof prior === "string" && prior) effective = prior;
-			} catch {
-				/* 无 projection 能力 → 用创建参数 */
-			}
+			} catch {}
 		}
 		if (roster && effective) {
 			try {
@@ -760,11 +662,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				);
 			}
 		}
-		// 问卷 waterfall（P0 修法）：answerer 必须挂 agent scope —— host 层收不到
-		// agent-scoped 事件，且新版 UserQuestionService 已删 registerProvider。
-		// 与官方 ui-user-questions 同构：返回 {answers} 即 short-circuit。
 		agentCtx.on("user-questions/request", (request, _next) => this.answerScopedQuestion(agent, request));
-		// 技能目录过滤：与上面同理，host 版已死（收不到事件），改挂 agent scope。
 		// eslint-disable-next-line no-empty-pattern -- only next is needed
 		agentCtx.on("agent/pre-step", async ({}, next) => {
 			const decision = await next();
@@ -777,7 +675,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		});
 	}
 
-	/** agent scope 的问卷 answerer：minimal 门禁 → 浏览器桥（复用排队逻辑）。 */
 	async answerScopedQuestion(agent, request) {
 		if (this.minimalAgents.has(agent?.id)) {
 			throw new Error(
@@ -789,13 +686,11 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return this.askUser(request ?? {});
 	}
 
-	/** 技能目录取数 agent（standard 常驻，永不 prompt；roster 缺失时不用）。 */
 	async ensureInventoryAgent() {
 		const rec = await this.getOrCreateSession(this.inventorySessionId);
 		return this.liveAgent(rec, this.inventorySessionId);
 	}
 
-	/** 方法分发：goal/* 与 attachment/* 走上面/下面，其余交官方。 */
 	async handleRequest(method, params) {
 		switch (method) {
 			case "goal/set":
@@ -853,9 +748,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** P2-17 模型目录动态化：查询 adapter（ctx.llm）的真实模型清单。
-	 *  dsh-llm-deepseek 的 listModels 返回模型目录（含 inputModalities），
-	 *  失败时返回空数组（服务端回退本地表）。 */
 	async listModels(params) {
 		try {
 			const providerId = params?.provider ?? "deepseek-official";
@@ -877,36 +769,17 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	// -----------------------------------------------------------------------
-	// 用户提问桥（交互式调研/确认）：模型调 ask_user_question 工具 →
-	// ctx.userQuestions.ask() 阻塞 → 本 provider 把问题发给浏览器 →
-	// question/answer RPC 带回答案 → 工具结果恢复模型循环。
-	// -----------------------------------------------------------------------
-
-	/** 挂起的提问 + 排队（apply 注册 provider 时初始化）。一次只向浏览器展示一个。 */
 	questionBridge = { pending: null, queue: [] };
 
-	// -----------------------------------------------------------------------
-	// 工具桥（#15 插件注入点）：把 pi-web-ui 插件 AI 工具（registerAgentTool）
-	// 桥成 DSH 原生工具。服务端 tools/sync 注册 defineTool（trampoline execute），
-	// 模型调用时 trampoline 发 tools.call.request 通知 → 服务端跑插件实现 →
-	// tools/call-result RPC 恢复工具结果。
-	// -----------------------------------------------------------------------
-
-	/** 挂起的桥接调用：callId → { resolve, reject }（超时/中止统一拒）。 */
 	toolsPending = new Map();
-	/** 已注册工具的卸装回调（工具列表变化时先卸再重注册，last-write-wins 覆盖）。 */
 	toolUnregisters = [];
 
-	/** 注册（或替换）一批插件工具为 DSH 原生工具。返回当前注册清单。 */
 	async syncTools(params) {
 		const tools = Array.isArray(params?.tools) ? params.tools : [];
 		for (const off of this.toolUnregisters) {
 			try {
 				off();
-			} catch {
-				/* re-register 前的卸载不阻断 */
-			}
+			} catch {}
 		}
 		this.toolUnregisters = [];
 		const registered = [];
@@ -933,7 +806,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { registered, count: registered.length };
 	}
 
-	/** 列出运行时当前可见的工具 schema（供零 key 验证/调试）。 */
 	async listTools() {
 		const schemas = this.ctx.tools.schemas();
 		return {
@@ -945,7 +817,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		};
 	}
 
-	/** 桥接工具的 execute：minimal 门禁后把调用发给服务端并 await 结果。 */
 	invokeBridgedTool(exec, name, args) {
 		const agentId = exec?.agent?.id;
 		if (agentId !== undefined && this.minimalAgents.has(agentId)) {
@@ -995,8 +866,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		});
 	}
 
-	/** 调试/probe 用：绕过模型直接触发一个已注册桥接工具的完整往返
-	 *  （trampoline → tools.call.request → tools/call-result 恢复）。仅 PI_WEB_DSH_DEBUG=1 可用。 */
 	async toolsInvoke(params) {
 		if (process.env.PI_WEB_DSH_DEBUG !== "1") {
 			throw new Error("tools/invoke 仅调试可用（服务端需设 PI_WEB_DSH_DEBUG=1）");
@@ -1014,7 +883,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** tools/call-result RPC：服务端跑完插件实现后回传结果，恢复桥接调用。 */
 	async toolsCallResult(params) {
 		const id = params?.id;
 		if (typeof id !== "string") throw new TypeError("tools/call-result requires id");
@@ -1026,23 +894,13 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ok: true };
 	}
 
-	// -----------------------------------------------------------------------
-	// 技能 RPC（#18 技能启停 UI）：暴露 SkillRegistry list/get + 设置禁用集合
-	// （晚 pre-step 钩子用它过滤 skill-catalog 消息）。
-	// -----------------------------------------------------------------------
-
-	/** 禁用的技能名集合（skills/set-disabled 更新）。 */
 	disabledSkills = new Set();
 
-	/** 列出运行时当前可见技能：roster 下读常驻 inventory agent 的合并目录（技能只活在
-	 *  各预设的 agent 层，host 的 skill-filesystem 已 disable，host 直读恒为空）；
-	 *  legacy 下保持原来的 host 直读。零 key 校验/前端显示用。 */
 	async listSkills() {
 		const roster = this.presetRoster();
 		if (roster) {
 			try {
 				const agent = await this.ensureInventoryAgent();
-				// scope 视图：host registry + agent 层合并；cwd 选工作区根。
 				const skills = await this.ctx.skills.list({ scope: agent, cwd: this.cwd });
 				if (Array.isArray(skills)) {
 					return {
@@ -1073,21 +931,18 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 	}
 
-	/** 读取单个技能的完整定义（SkillRegistry.get）。 */
 	async getSkill(params) {
 		if (typeof params?.name !== "string") throw new TypeError("skills/get requires name");
 		const skill = await this.ctx.skills.get(params.name);
 		return { skill: skill ?? null };
 	}
 
-	/** 切换一个技能的可见性（服务端 set_settings.disabledSkills 变化时推送）。 */
 	async setDisabledSkills(params) {
 		const names = Array.isArray(params?.skills) ? params.skills : [];
 		this.disabledSkills = new Set(names.map((n) => String(n)));
 		return { disabled: [...this.disabledSkills] };
 	}
 
-	/** 调试/probe 用：注册一个运行时技能（SkillRegistry.register），仅 DEBUG 可用。 */
 	async registerSkill(params) {
 		if (process.env.PI_WEB_DSH_DEBUG !== "1") throw new Error("skills/register 仅调试可用");
 		if (typeof params?.name !== "string" || !params.name.trim()) {
@@ -1103,7 +958,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ok: true, unregister: typeof reg === "function" };
 	}
 
-	/** 把队首提问变为 pending（发通知给浏览器）。 */
 	dispatchNextQuestion() {
 		if (this.questionBridge.pending) return;
 		const next = this.questionBridge.queue.shift();
@@ -1116,8 +970,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		this.questionBridge.pending = { qid: next.qid, resolve: next.resolve, reject: next.reject };
 	}
 
-	/** ctx.userQuestions provider：把问题桥到客户端并等待答案。
-	 *  P2-20：并发 ask() 排队（深度 3），当前提问回答后自动发下一个。 */
 	async askUser(request) {
 		const questions = (request?.questions ?? []).map((q) => ({
 			id: q.id,
@@ -1135,16 +987,12 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				const queued = this.questionBridge.queue.findIndex((q) => q.qid === qid);
 				if (queued >= 0) {
 					this.questionBridge.queue.splice(queued, 1);
-					// #459：排队条目超时也必须 settle——此前只 splice 不 reject，
-					// 该 ask 的 Promise 永不落定，agent-loop 卡死在工具调用上。
 					reject(new Error("提问超时（等待回答过久）"));
 					return;
 				}
 				if (this.questionBridge.pending?.qid === qid) {
 					this.questionBridge.pending = null;
 					reject(new Error("提问超时（等待回答过久）"));
-					// #459：pending 腾出后必须派发下一个排队提问——否则队列无人派发，
-					// 后续条目只能等各自超时且永不 settle，整条提问桥永久停摆。
 					this.dispatchNextQuestion();
 				}
 			}, QUESTION_TIMEOUT_MS);
@@ -1163,7 +1011,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				},
 			};
 			if (this.questionBridge.pending || this.questionBridge.queue.length > 0) {
-				// 已有提问在展示 → 排队；深度 3，满则拒绝（模型会收到工具报错继续）。
 				if (this.questionBridge.queue.length >= 3) {
 					clearTimeout(timer);
 					reject(new Error("提问排队已满（最多 3 个），请先回答当前提问"));
@@ -1171,14 +1018,12 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 				}
 				this.questionBridge.queue.push(entry);
 			} else {
-				// 无 pending → 立即发通知并等待。
 				this.transport.notify("question.pending", { id: qid, questions, deadline });
 				this.questionBridge.pending = { qid, resolve: entry.resolve, reject: entry.reject };
 			}
 		});
 	}
 
-	/** question/answer RPC：前端提交答案（或取消）。回答后自动发队列里的下一个。 */
 	async answerQuestion(params) {
 		const pending = this.questionBridge.pending;
 		if (!pending || pending.qid !== params?.id) {
@@ -1199,12 +1044,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ok: true };
 	}
 
-	// -----------------------------------------------------------------------
-	// 附件 RPC（视觉桥）：base64 图片 → durable ref；ref → base64 回读。
-	// 模型请求侧的 image 块由 dsh-llm-deepseek adapter 自动解析 ref（file-id/inline）。
-	// -----------------------------------------------------------------------
-
-	/** 保存一张 base64 图片到附件存储（ctx.attachments，dsh-attachment-local 后端）。 */
 	async attachmentSave(params) {
 		const mediaType = params?.mediaType;
 		if (typeof mediaType !== "string" || !/^image\/(png|jpeg|webp|gif)$/u.test(mediaType)) {
@@ -1215,7 +1054,7 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		}
 		const bytes = new Uint8Array(Buffer.from(params.data, "base64"));
 		if (bytes.length === 0) throw new TypeError("attachment/save: empty image data");
-		const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20MB 上限
+		const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 		if (bytes.length > MAX_ATTACHMENT_BYTES) {
 			throw new RangeError(`attachment/save: image data exceeds 20MB limit (${bytes.length} bytes)`);
 		}
@@ -1227,7 +1066,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 		return { ref };
 	}
 
-	/** 按 ref 回读规范化后的图片字节（base64），供前端回放显示。 */
 	async attachmentRead(params) {
 		const ref = params?.ref;
 		if (!ref || typeof ref?.attachmentId !== "string" || typeof ref?.mediaType !== "string") {
@@ -1241,10 +1079,6 @@ class DshGoalJsonRpcServer extends HarnessSdkJsonRpcServer {
 	}
 }
 
-/**
- * 插件 apply：transport 接线 / shutdown 语义与官方一致，server 换成本地扩展类。
- * 保持 named exports（无 default），Loader unwrapExports 需要 name/inject/Config/apply。
- */
 function apply(ctx, config) {
 	const resolvedConfig = config;
 	const rootFiber = ctx.root.fiber;
@@ -1262,9 +1096,6 @@ function apply(ctx, config) {
 	const server = new DshGoalJsonRpcServer(ctx, transport, {
 		maxTokensAsSuccess: resolvedConfig.maxTokensAsSuccess,
 	});
-	// 问卷/技能目录钩子不再挂 host：agent-scoped 事件 host 收不到（且新版
-	// UserQuestionService 已删 registerProvider，旧写法直接导致 boot 失败）。
-	// 二者改由每次会话创建的 setup() 挂到 agent scope（见 agentSetup）。
 	let exitTask;
 	const disposeAndExit = () => {
 		exitTask ??= (async () => {

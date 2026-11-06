@@ -231,15 +231,12 @@ describe("deterministic task summary & decision aggregation", () => {
 
 describe("deterministic report evidence pagination, boundary alignment & version digest", () => {
 	it("aligns non-boundary offset backward to code point start without replacement characters", () => {
-		// "🙂" is 4 bytes: [0xf0, 0x9f, 0x99, 0x82]
 		const text = "Prefix🙂Suffix";
 		const rawBuf = Buffer.from(text, "utf8");
-		// Index of 🙂 start is 6, continuation bytes are 7, 8, 9
 		const unalignedOffset = 8;
 		expect((rawBuf[unalignedOffset] & 0xc0) === 0x80).toBe(true);
 
 		const result = queryTaskReportChunk("task-test", text, unalignedOffset, 256);
-		// Must align backward to index 6
 		expect(result.offset).toBe(6);
 		expect(result.chunk.startsWith("🙂")).toBe(true);
 		expect(result.chunk).not.toContain("\uFFFD");
@@ -247,10 +244,6 @@ describe("deterministic report evidence pagination, boundary alignment & version
 
 	it("shrinks end boundary backward to never exceed limit by 1-3 bytes", () => {
 		const text = "A".repeat(10) + "🙂" + "B".repeat(10);
-		// Buffer length is 24. If offset is 0 and limit is 12:
-		// Bytes 0..9 are 'A', byte 10 is 0xf0, byte 11 is 0x9f.
-		// If naive forward search was used, end would be 14 (14 > 12, exceeding limit).
-		// Our backward shrink ensures end is 10 (length 10 <= 12).
 		const result = queryTaskReportChunk("task-test", text, 0, 12);
 		expect(Buffer.byteLength(result.chunk, "utf8")).toBeLessThanOrEqual(12);
 		expect(result.chunk).toBe("A".repeat(10));
@@ -262,9 +255,9 @@ describe("deterministic report evidence pagination, boundary alignment & version
 		const chunkB = queryTaskReportChunk("task-1", text, 0, 1024, { attemptId: "att-2", revision: 1 });
 		const chunkC = queryTaskReportChunk("task-1", text, 0, 1024, { attemptId: "att-1", revision: 2 });
 
-		expect(chunkA.sha256).toBe(chunkB.sha256); // content sha256 identical
-		expect(chunkA.digest).not.toBe(chunkB.digest); // attempt differs
-		expect(chunkA.digest).not.toBe(chunkC.digest); // revision differs
+		expect(chunkA.sha256).toBe(chunkB.sha256);
+		expect(chunkA.digest).not.toBe(chunkB.digest);
+		expect(chunkA.digest).not.toBe(chunkC.digest);
 	});
 
 	it("differentiates full_report from report_excerpt and detects excerpt truncation markers", () => {
@@ -423,7 +416,6 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 		const address = hub.server.address() as { port: number };
 
 		try {
-			// Setup account, device, bot, room, conversation, task using hub.store
 			await hub.store.transact((s) => {
 				s.accounts.push({ id: "acc-1", username: "user1", passwordHash: "h", createdAt: 1 });
 				s.devices.push({
@@ -534,7 +526,6 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 					r.end();
 				});
 
-			// 1. Strict query validation on task-state
 			const invalidQuery = await req(
 				"/api/agent/rooms/room-1/conversations/conv-1/task-state?sourceBotId=bot-1&rogueParam=123",
 			);
@@ -545,7 +536,6 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 			);
 			expect(invalidSeq.status).toBe(400);
 
-			// 2. Normal task-state with beforeSequence
 			const validState = await req(
 				"/api/agent/rooms/room-1/conversations/conv-1/task-state?sourceBotId=bot-1&beforeSequence=2",
 			);
@@ -554,16 +544,13 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 			expect(validState.body.events[0].sequence).toBe(1);
 			expect(validState.body.summary.constraints[0].text).toBe("No force-push");
 
-			// 3. Evidence endpoint: before full report is stored, returns report_excerpt with complete=false
 			const excerptEvidence = await req("/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1");
 			expect(excerptEvidence.status).toBe(200);
 			expect(excerptEvidence.body.evidence.source).toBe("report_excerpt");
 			expect(excerptEvidence.body.evidence.complete).toBe(false);
 			expect(excerptEvidence.body.evidence.isExcerpt).toBe(true);
 
-			// 4. Save genuine >64KiB full report to createTaskReportStore and verify endpoint returns full_report with complete=true
 			const reportStore = createTaskReportStore(tempDir, "hub");
-			// Create a 80,000 bytes full report (clearly exceeds 64 KiB)
 			const realFullText =
 				"Header: un-truncated start\n" +
 				"Middle log line payload: 0123456789ABCDEF\n".repeat(2000) +
@@ -573,7 +560,6 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 
 			reportStore.saveFullReport("task-1", "att-1", "room-1", "acc-1", realFullText);
 
-			// First chunk reading from 0
 			const firstChunkRes = await req(
 				"/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1&offset=0&limit=32768",
 			);
@@ -588,7 +574,6 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 			const canonicalDigest = firstChunk.digest;
 			expect(canonicalDigest).toBeDefined();
 
-			// Second chunk reading second half (>64KiB at offset=70000) with expectedDigest
 			const secondChunkRes = await req(
 				`/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1&offset=70000&limit=16384&expectedDigest=${canonicalDigest}`,
 			);
@@ -596,18 +581,16 @@ describe("hub HTTP endpoints integration: task-state & evidence", () => {
 			const secondChunk = secondChunkRes.body.evidence;
 			expect(secondChunk.source).toBe("full_report");
 			expect(secondChunk.complete).toBe(true);
-			expect(secondChunk.totalBytes).toBe(fullBytes); // Full totalBytes preserved!
+			expect(secondChunk.totalBytes).toBe(fullBytes);
 			expect(secondChunk.offset).toBe(70000);
 			expect(secondChunk.digest).toBe(canonicalDigest);
 			expect(secondChunk.chunk).toContain("Footer: un-truncated end\n");
 
-			// Version drift check: tampered expectedDigest must be rejected with 409
 			const conflictRes = await req(
 				`/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1&offset=70000&limit=16384&expectedDigest=mismatched-drifted-digest`,
 			);
 			expect(conflictRes.status).toBe(409);
 
-			// 5. Strict query validation on evidence
 			const invalidEvQuery = await req(
 				"/api/agent/rooms/room-1/conversations/conv-1/evidence?sourceBotId=bot-1&unknown=1",
 			);

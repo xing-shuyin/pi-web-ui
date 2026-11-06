@@ -1,10 +1,3 @@
-/**
- * tests/unit/telegram-features.test.ts
- * Tests for Telegram Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, mention stripping)
- * - TelegramBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	extractTelegramText,
@@ -144,7 +137,6 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 
 		const convId = "conv_tg_1";
 
-		// 模拟流式增量与收尾
 		runHandler!({
 			runId: "run_tg_1",
 			conversationId: convId,
@@ -180,7 +172,6 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 		});
 		bridge.status.botUsername = "MyAwesomeBot";
 
-		// 1. 群聊里 @别人（entities 指向别人，文本也是别人）
 		await bridge.onInboundMessage({
 			message_id: 10,
 			chat: { id: -100123, type: "supergroup" },
@@ -190,7 +181,6 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 		});
 		expect(chatSpy).not.toHaveBeenCalled();
 
-		// 2. 群聊里指名道姓 @ 机器人自己（通过 text 或 entities）
 		await bridge.onInboundMessage({
 			message_id: 11,
 			chat: { id: -100123, type: "supergroup" },
@@ -200,7 +190,6 @@ describe("TelegramBotBridge 双工通信流程测试", () => {
 		});
 		expect(chatSpy).toHaveBeenCalledTimes(1);
 
-		// 3. 私聊消息无需 @ 即可触发
 		await bridge.onInboundMessage({
 			message_id: 12,
 			chat: { id: 8888, type: "private" },

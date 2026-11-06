@@ -1,19 +1,3 @@
-/**
- * vscode-editor 客户端视图 —— 类 VSCode 的轻量编辑器 + Remote-SSH。
- *
- * 技术栈：CodeMirror 6（编辑器）+ xterm.js（远程终端），经 esbuild 打包进本文件，
- * 无运行时外部依赖。布局：左侧多根文件树（本地工作区 + SSH 主机）+ 右侧多标签
- * 编辑区 + 底部可拖拽终端面板；Ctrl+P 快速打开（本地）、Ctrl+S 保存（本地/远程）。
- *
- * 范围模型：scope = "local" | connId。文件树节点、标签页都携带 scope，
- * 所有文件操作（list/read/write/create/rename/delete）经 req() 自动附加
- * connId —— 服务端据此路由到本地 fs 或该连接的 SFTP，前后端共用一套代码路径。
- *
- * 与服务端（index.mjs）的协议：{ action, reqId, ... } 上行，
- * { res:true, reqId, ok, ... } 响应（reqId 匹配并发）；事件流 shell_data /
- * shell_exit / conn_closed / sync_progress 定向推送；kind:"state" 广播主机状态、
- * kind:"workspace" 广播工作区切换（主应用 set_cwd）。
- */
 import {
 	EditorView,
 	keymap,
@@ -65,14 +49,8 @@ const b64 = {
 	bytes: (b64s) => Uint8Array.from(atob(b64s), (c) => c.charCodeAt(0)),
 };
 
-/** POSIX shell 单引号转义（cd 到含空格/引号的路径用） */
 const shQuote = (s) => `'${String(s ?? "").replace(/'/g, "'\\''")}'`;
 
-// ---- 亮色主题适配 ----------------------------------------------------------
-// 主应用切换主题后在 window 派发 pi-web-ui:theme-change（见 web/src/theme.ts）；
-// 插件监听它，把 CodeMirror 与 xterm 切到对应明暗。亮暗判定读 documentElement
-// 的 color-scheme——浅色主题文件统一声明 `color-scheme: light`，默认深色无声明
-// （computed 为 normal）即按暗色处理。
 const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 function isLightTheme() {
 	try {
@@ -81,7 +59,6 @@ function isLightTheme() {
 		return false;
 	}
 }
-/** --term-* 调色板 → xterm theme（与主应用 buildTermTheme 同源，见 web/src/theme.ts） */
 function buildTermTheme() {
 	let cs = null;
 	try {
@@ -121,8 +98,6 @@ function buildTermTheme() {
 		brightWhite: v("--term-bright-white", "#ffffff"),
 	};
 }
-/** 亮色 CodeMirror 壳：跟随 --bg/--text/--accent；语法色沿用自带的
- *  defaultHighlightStyle（本就是按浅色底设计的，makeExtensions 里常驻）。 */
 const cmLight = EditorView.theme(
 	{
 		"&": { backgroundColor: "var(--bg, #ffffff)", color: "var(--text, #1f2328)" },
@@ -142,8 +117,6 @@ const cmLight = EditorView.theme(
 	},
 	{ dark: false },
 );
-
-// ---- 语言检测 -----------------------------------------------------------
 
 const LANGS = [
 	[/\.(jsx?|mjs|cjs)$/, () => javascript()],
@@ -171,8 +144,6 @@ function langName(path) {
 	if (/\.py$/.test(path)) return "Python";
 	return "Plain Text";
 }
-
-// ---- 文件图标 ------------------------------------------------------------
 
 function iconFor(name, type) {
 	if (type === "dir") return "📁";
@@ -205,8 +176,6 @@ function iconFor(name, type) {
 	return map[ext] || "📄";
 }
 
-// ---- 模糊匹配（快速打开 Ctrl+P 用）：返回得分或 -1 -----------------------
-
 export function fuzzyScore(query, target) {
 	const q = query.toLowerCase();
 	const t = target.toLowerCase();
@@ -216,12 +185,11 @@ export function fuzzyScore(query, target) {
 	for (let ti = 0; ti < t.length && qi < q.length; ti++) {
 		if (t[ti] === q[qi]) {
 			streak++;
-			score += 1 + streak; // 连续命中加权
+			score += 1 + streak;
 			qi++;
 		} else streak = 0;
 	}
 	if (qi < q.length) return -1;
-	// 短文件名 / 靠前命中加分
 	score += Math.max(0, 40 - t.length) / 10;
 	return score;
 }
@@ -531,7 +499,6 @@ export default {
 		const termTabsEl = root.querySelector(".vsc-termbar .tts");
 		const termAreaEl = root.querySelector(".vsc-termarea");
 
-		// ---- 手机端抽屉（窄屏 ☰ 开关；桌面端无影响） ----
 		const burger = root.querySelector(".vsc-burger");
 		const backdrop = root.querySelector(".vsc-backdrop");
 		function closeDrawer() {
@@ -540,8 +507,7 @@ export default {
 		if (burger) burger.addEventListener("click", () => root.classList.toggle("drawer-open"));
 		if (backdrop) backdrop.addEventListener("click", closeDrawer);
 
-		// ---- 请求/响应 -------------------------------------------------------
-		const pending = new Map(); // reqId → {resolve}
+		const pending = new Map();
 		function request(payload) {
 			const reqId = `r${++reqSeq}`;
 			return new Promise((resolve) => {
@@ -552,7 +518,6 @@ export default {
 				}, 60000);
 			});
 		}
-		/** scope 路由：remote（connId）自动附加 connId，其余直发 */
 		function req(scope, payload) {
 			return scope === "local" ? request(payload) : request({ connId: scope, ...payload });
 		}
@@ -567,7 +532,6 @@ export default {
 			}, 4000);
 		}
 
-		/** 复制路径（剪贴板 API 不可用时回落 textarea+execCommand，与右栏同口径） */
 		function copyText(text) {
 			const done = () => toast("已复制路径");
 			const fallback = () => {
@@ -618,7 +582,6 @@ export default {
 			await invalidateScope(scope);
 		}
 
-		/** 创建副本：foo.js → foo_copy.js（重名自动 _copy2…；目录同理，落在源旁边） */
 		async function duplicateEntry(scope, srcW, type) {
 			const dir = scope === "local" ? localParentOf(srcW) : parentOf(srcW);
 			const base = srcW.split("/").pop();
@@ -636,7 +599,7 @@ export default {
 				const dest = dir ? `${dir.replace(/\/$/, "")}/${name}` : name;
 				const r = await req(scope, { action: "copy", src: srcW, dest });
 				if (r.ok) {
-					selNode = { scope, path: dest, type }; // 新副本成为选中项
+					selNode = { scope, path: dest, type };
 					await invalidateScope(scope);
 					return;
 				}
@@ -648,7 +611,6 @@ export default {
 			toast("创建副本失败：重名次数过多");
 		}
 
-		// ---- 状态 ------------------------------------------------------------
 		let S = {
 			depsReady: true,
 			depsInstalling: false,
@@ -656,16 +618,16 @@ export default {
 			conns: [],
 			configHosts: [],
 			configPath: "~/.ssh/config",
-		}; // 服务端广播
-		const conns = new Map(); // connId → { label, cwd }
-		const connecting = new Set(); // 正在连接中的 hostId
-		const expanded = new Set(["local:"]); // 已展开目录（scope:path）
-		const dirCache = new Map(); // `${scope}:${dir}` → entries
-		const flatFiles = new Set(); // 本地文件路径（Ctrl+P 数据源）
-		const tabs = new Map(); // tabKey → {scope, path, name, savedText, binary, dirty, crlf}
+		};
+		const conns = new Map();
+		const connecting = new Set();
+		const expanded = new Set(["local:"]);
+		const dirCache = new Map();
+		const flatFiles = new Set();
+		const tabs = new Map();
 		let activeTk = null;
-		let selNode = null; // 最近点选的节点 {scope, path, type}——高亮 + 新建文件/文件夹的落点
-		let clipboard = null; // {scope, src, cut}——复制/剪切后待粘贴（仅同 scope 内粘贴，与右栏文件列表同口径）
+		let selNode = null;
+		let clipboard = null;
 
 		const tkey = (scope, p) => `${scope}:${p}`;
 		function parseTk(k) {
@@ -685,8 +647,6 @@ export default {
 			return conns.get(connId)?.label ?? connMeta(connId)?.label ?? connId;
 		}
 
-		/** 应用主机状态（初始拉取或广播）；顺带收养服务端仍持有的连接——
-		 *  刷新页面后远程目录树立即可见，不用重新连一遍 */
 		function applyState(next) {
 			S = next ?? S;
 			for (const c of S.conns) {
@@ -698,9 +658,7 @@ export default {
 			renderHosts();
 		}
 
-		// ---- 编辑器 ----------------------------------------------------------
 		const langComp = new Compartment();
-		// 主题跟随：亮色用 cmLight、暗色用 oneDark（Compartment 热切换，无需重建编辑器）
 		const themeComp = new Compartment();
 
 		function makeExtensions() {
@@ -732,7 +690,6 @@ export default {
 					...completionKeymap,
 					...lintKeymap,
 					indentWithTab,
-					// 最高优先级：编辑器内 Ctrl+S / Ctrl+P 不被默认 keymap 吃掉
 					Prec.highest(
 						keymap.of([
 							{
@@ -757,9 +714,6 @@ export default {
 				EditorView.updateListener.of((u) => {
 					if (u.docChanged || u.selectionSet) updateStatus(u.state);
 					if (u.docChanged) {
-						// 事件驱动脏标记：只有真实编辑才置脏。不能用「doc !== savedText」
-						// 判断——CodeMirror 内部把 \r\n 归一化成 \n，CRLF 文件刚打开
-						// 就会被误判为未保存。
 						const t = tabs.get(activeTk);
 						if (t && !t.binary && !t.dirty) {
 							t.dirty = true;
@@ -787,7 +741,6 @@ export default {
 			}
 		}
 
-		// ---- 文件树渲染（本地 + 远程多根） --------------------------------------
 		async function ensureDir(scope, dirWire) {
 			const key = tkey(scope, dirWire ?? "");
 			if (!dirCache.has(key)) {
@@ -798,7 +751,6 @@ export default {
 				}
 				dirCache.set(key, r.entries);
 				if (scope === "local") {
-					// Ctrl+P 只索引本地
 					for (const e of r.entries) {
 						if (e.type === "file") flatFiles.add(dirWire ? `${dirWire}/${e.name}` : e.name);
 					}
@@ -807,7 +759,6 @@ export default {
 			return dirCache.get(key);
 		}
 
-		/** 侧栏双 tab 切换：文件 / SSH */
 		function switchPane(name) {
 			root.querySelectorAll(".vsc-stabs .stab").forEach((b) => b.classList.toggle("active", b.dataset.pane === name));
 			root.querySelectorAll(".vsc-pane").forEach((p) => p.classList.toggle("vsc-hidden", p.dataset.pane !== name));
@@ -817,10 +768,6 @@ export default {
 			if (b) switchPane(b.dataset.pane);
 		});
 
-		// 整树重绘都是「清空 → 异步填充」两步：并发调用会交错——后一个清了前一个的
-		// 半成品，前一个的异步 append 又落进后一个的树里，最终同一份列表重复出现
-		// （挂载时初始 renderTree 与 state 广播触发的 renderTree 并发就是这种情形，
-		// 点一下 ⟳ 刷新才正常）。所有整树异步重绘走同一串行队列，一次只跑一个。
 		let renderChain = Promise.resolve();
 		function enqueue(fn) {
 			renderChain = renderChain.then(fn, fn);
@@ -829,11 +776,8 @@ export default {
 
 		async function renderTree() {
 			await enqueue(async () => {
-				// 重渲染前后保住滚动位置——否则点开文件/状态广播后树跳回顶部，
-				// 用户得重新滚回刚才看的地方
 				const st = treeEl.scrollTop;
 				treeEl.innerHTML = "";
-				// 文件 tab 只管本地工作区；远程目录树归 SSH tab（renderRemoteTrees）
 				const lh = document.createElement("div");
 				lh.className = "vsc-sect";
 				lh.innerHTML = `<b>📁 本地工作区</b>`;
@@ -845,7 +789,6 @@ export default {
 			});
 		}
 
-		/** SSH tab：主机列表（状态点 / 连接·断开 / 终端 / 编辑 / 删除） */
 		function renderHosts() {
 			const st = hostsEl.scrollTop;
 			hostsEl.innerHTML = "";
@@ -867,7 +810,6 @@ export default {
 				d.appendChild(btn);
 				hostsEl.appendChild(d);
 			}
-			// ~/.ssh/config 自动加载区（与 VSCode Remote-SSH 同源）：免导入直连
 			if ((S.configHosts ?? []).length) {
 				const sec = document.createElement("div");
 				sec.className = "vsc-sect";
@@ -888,12 +830,10 @@ export default {
 			}
 			for (const h of S.hosts) renderHostRow(h);
 			hostsEl.scrollTop = st;
-			void renderRemoteTrees(); // SSH tab 下半区：已连接主机的远程目录树
+			void renderRemoteTrees();
 		}
 
-		/** SSH tab 下半区：每台已连接主机的远程目录树（与文件 tab 完全独立） */
 		async function renderRemoteTrees() {
-			// 与 renderTree 同一队列：并发时防止交错 append 导致远端树重复
 			await enqueue(async () => {
 				const st = sshTreeEl.scrollTop;
 				sshTreeEl.innerHTML = "";
@@ -917,7 +857,6 @@ export default {
 			});
 		}
 
-		/** ssh config 行：别名 + user@host，点击直连（免导入）；已连则开终端 */
 		function renderConfigRow(c) {
 			const row = document.createElement("div");
 			row.className = "vsc-row vsc-hrow";
@@ -983,11 +922,10 @@ export default {
 						showTermPanel();
 						void newTerm(connId);
 					} else if (btn.dataset.hop === "dis" && connId) {
-						void request({ action: "disconnect", connId }); // conn_closed 事件统一清理
+						void request({ action: "disconnect", connId });
 					} else if (btn.dataset.hop === "conn") void connectHost(h);
 					return;
 				}
-				// 点主机行：未连则连上（远程目录树出现在下方）；已连则直接开终端
 				if (!connId) {
 					await connectHost(h);
 					return;
@@ -998,7 +936,6 @@ export default {
 			hostsEl.appendChild(row);
 		}
 
-		/** 连接子树：根 = 探测到的 home（cwd）；cwd ≠ / 时补一行「..」返回上级 */
 		async function renderConnTree(connId, parentEl) {
 			const c = conns.get(connId);
 			if (!c) return;
@@ -1009,11 +946,10 @@ export default {
 				up.innerHTML = `<span class="caret"></span><span>⬆</span><span class="nm">..</span>`;
 				up.addEventListener("click", async () => {
 					c.cwd = parentOf(c.cwd);
-					// 只清本连接的目录缓存，别把其它主机/本地的也丢了
 					for (const key of [...dirCache.keys()]) {
 						if (key.startsWith(`${connId}:`)) dirCache.delete(key);
 					}
-					renderHosts(); // 重画 SSH tab 的远端树
+					renderHosts();
 				});
 				parentEl.appendChild(up);
 			}
@@ -1025,7 +961,6 @@ export default {
 			await renderEntries(scope, entries, dirWire, parentEl, depth);
 		}
 
-		/** 把一层目录条目渲染成行（全量重绘与原地展开共用） */
 		async function renderEntries(scope, entries, dirWire, parentEl, depth) {
 			for (const e of entries) {
 				const p = dirWire ? `${dirWire.replace(/\/$/, "")}/${e.name}` : e.name;
@@ -1047,8 +982,6 @@ export default {
 						void openFile(scope, p);
 						return;
 					}
-					// 原地展开/收起：只动这一行下面的子容器，不整棵重绘——
-					// 整树 innerHTML 清空 + 网络往返会让其它目录闪没再回来
 					const caret = row.querySelector(".caret");
 					if (expanded.has(ek)) {
 						expanded.delete(ek);
@@ -1064,7 +997,7 @@ export default {
 				row.addEventListener("contextmenu", (ev) => {
 					ev.preventDefault();
 					ev.stopPropagation();
-					selectNode(scope, p, e.type); // 右键同样选中：菜单里的新建以此为落点
+					selectNode(scope, p, e.type);
 					if (scope === "local" && window.__piWebUiHost?.openFileContextMenu) {
 						window.__piWebUiHost.openFileContextMenu({
 							x: ev.clientX,
@@ -1089,7 +1022,6 @@ export default {
 			}
 		}
 
-		/** 原地展开一个目录：在该行后插入 .vsc-sub 子容器并填充，不动树的其它部分 */
 		async function expandDirInPlace(scope, p, row) {
 			const ek = tkey(scope, p);
 			const depth = Number(row.dataset.depth ?? 0);
@@ -1107,22 +1039,18 @@ export default {
 			if (!expanded.has(ek)) {
 				sub.remove();
 				return;
-			} // 等待期间用户又收起了
+			}
 			sub.innerHTML = "";
 			sub.dataset.loaded = "1";
 			await renderEntries(scope, entries, p, sub, depth + 1);
-			applySelHighlight(); // 新行带上选中态
+			applySelHighlight();
 		}
 
-		/** 点选节点：高亮 + 决定工具栏「新建文件/文件夹」的落点 */
 		function selectNode(scope, pathW, type) {
 			selNode = { scope, path: pathW, type };
 			applySelHighlight();
 		}
 
-		/** 下载到用户电脑（本地或远端；base64 经 WS 回传 → Blob 保存；
-		 *  Chromium 安全上下文优先 showSaveFilePicker 自选保存位置）。
-		 *  远端文件夹由服务端在远端就地 tar.gz 打包后回传 */
 		async function downloadToPC(scope, pathW, isDir = false) {
 			const name = pathW.split("/").filter(Boolean).pop() || pathW;
 			toast(`正在下载 ${name}${isDir ? "（打包中）" : ""}…`);
@@ -1153,7 +1081,7 @@ export default {
 						}, 3000);
 					})
 					.catch((e) => {
-						if (e?.name === "AbortError") return; // 用户取消保存对话框不算错误
+						if (e?.name === "AbortError") return;
 						fallbackAnchor();
 					});
 				return;
@@ -1191,7 +1119,6 @@ export default {
 				);
 		}
 
-		// ---- 标签页 ----------------------------------------------------------
 		function renderTabs() {
 			tabsEl.innerHTML = "";
 			for (const [k, t] of tabs.entries()) {
@@ -1212,7 +1139,7 @@ export default {
 		}
 
 		async function openFile(scope, p) {
-			closeDrawer(); // 窄屏抽屉：选文件后自动收起
+			closeDrawer();
 			const k = tkey(scope, p);
 			if (!tabs.has(k)) {
 				const r = await req(scope, { action: "read", path: p });
@@ -1227,7 +1154,7 @@ export default {
 					savedText: r.text ?? "",
 					binary: !!r.binary,
 					dirty: false,
-					crlf: (r.text ?? "").includes("\r\n"), // 保留原文件行尾风格，保存时写回
+					crlf: (r.text ?? "").includes("\r\n"),
 				});
 				if (r.binary) toast("二进制文件暂不支持编辑");
 			}
@@ -1246,7 +1173,7 @@ export default {
 					extensions: makeExtensions(),
 				}),
 			);
-			t.dirty = false; // 新载入的文档永远是干净的
+			t.dirty = false;
 			view.dispatch({ effects: langComp.reconfigure(langFor(t.path) ?? []) });
 			stScope.textContent = t.scope !== "local" ? `🖥 ${connLabel(t.scope)}` : "本地";
 			stScope.classList.toggle("remote", t.scope !== "local");
@@ -1262,7 +1189,6 @@ export default {
 			const t = tabs.get(activeTk);
 			if (!activeTk || !t || t.binary) return false;
 			const text = currentDoc();
-			// CRLF 文件写回原行尾，避免整个文件被重写成 LF
 			const wire = t.crlf ? text.replace(/\n/g, "\r\n") : text;
 			const r = await req(t.scope, { action: "write", path: t.path, text: wire });
 			if (!r.ok) {
@@ -1296,7 +1222,6 @@ export default {
 			} else renderTabs();
 		}
 
-		/** 关掉某个范围的所有标签（连接断开时用，不弹确认） */
 		function closeTabsOfScope(scope) {
 			for (const k of [...tabs.keys()]) {
 				if (parseTk(k).scope === scope) tabs.delete(k);
@@ -1317,17 +1242,14 @@ export default {
 			renderTabs();
 		}
 
-		/** 工作区已切换（主应用 set_cwd → 服务端广播）：本地相对路径全部作废——
-		 *  清目录缓存/Ctrl+P 索引、关掉所有本地标签（脏标签计数提示，避免旧项目
-		 *  内容被保存进新项目的同名路径）；远程 SSH 标签与连接不受影响。 */
 		async function applyWorkspace(newRoot) {
 			dirCache.clear();
 			flatFiles.clear();
 			flatLoaded = false;
 			for (const k of [...expanded]) {
-				if (parseTk(k).scope === "local") expanded.delete(k); // 旧项目的展开状态全部作废
+				if (parseTk(k).scope === "local") expanded.delete(k);
 			}
-			if (selNode?.scope === "local") selNode = null; // 新建文件落点也随旧项目失效
+			if (selNode?.scope === "local") selNode = null;
 			let dirtyLost = 0;
 			for (const [k, t] of tabs.entries()) {
 				if (parseTk(k).scope === "local" && t.dirty) dirtyLost++;
@@ -1341,7 +1263,6 @@ export default {
 			);
 		}
 
-		// ---- 快速打开（Ctrl+P，仅本地） ----------------------------------------
 		let flatLoaded = false;
 		async function loadFlat() {
 			if (flatLoaded) return;
@@ -1354,7 +1275,7 @@ export default {
 		}
 
 		let quickSel = 0;
-		let quickOverride = null; // 文件名搜索模式：[{scope, path, type}]，非空时接管浮层（替代本地 flatFiles）
+		let quickOverride = null;
 		function quickMatches() {
 			const q = quickInput.value.trim().toLowerCase();
 			if (quickOverride) {
@@ -1387,7 +1308,7 @@ export default {
 		}
 
 		function openQuickOpen() {
-			quickOverride = null; // 回到本地 Ctrl+P 模式
+			quickOverride = null;
 			void loadFlat().then(() => {
 				quickSel = 0;
 				renderQuick();
@@ -1428,7 +1349,6 @@ export default {
 			const li = ev.target.closest("li[data-p]");
 			if (!li) return;
 			const scope = li.dataset.s || "local";
-			// 搜索结果里的目录行不可点开（只打开文件）
 			if (li.textContent && quickOverride) {
 				const hit = quickOverride.find((x) => x.scope === scope && x.path === li.dataset.p);
 				if (hit?.type === "dir") return;
@@ -1437,7 +1357,6 @@ export default {
 			void openFile(scope, li.dataset.p);
 		});
 
-		/** 文件名搜索（本地走工作区全仓，远端以当前选中目录为起点收窄）：结果复用 Ctrl+P 浮层 */
 		async function runSearch(scope, baseOverride) {
 			let base = baseOverride ?? "";
 			if (scope !== "local" && baseOverride === undefined) {
@@ -1471,7 +1390,6 @@ export default {
 			quickInput.select();
 		}
 
-		// ---- 宿主 contextmenu.file 右键菜单桥（本地文件树直接继承宿主与插件条目） ----
 		function handleLocalHostAction(actionId, pathW, type) {
 			const _base = pathW.split("/").filter(Boolean).pop() || "";
 			const _dir = type === "dir" ? pathW : localParentOf(pathW);
@@ -1543,7 +1461,6 @@ export default {
 			return false;
 		}
 
-		// ---- 右键菜单（scope 感知） --------------------------------------------
 		function parentOf(dir) {
 			if (!dir || dir === "/" || dir === ".") return "/";
 			const s = dir.replace(/\/$/, "");
@@ -1590,7 +1507,6 @@ export default {
 					},
 				]);
 			}
-			// 剪切/复制/粘贴（同 scope 内）、创建副本、复制路径
 			const _base = pathW.split("/").pop();
 			const _rowDir = type === "dir" ? pathW : scope === "local" ? localParentOf(pathW) : parentOf(pathW);
 			items.push(
@@ -1637,7 +1553,6 @@ export default {
 							toast(`删除失败：${r.error}`);
 							return;
 						}
-						// 关闭被删文件（或其子目录下）的活跃标签
 						for (const k of [...tabs.keys()]) {
 							const { scope: s, path } = parseTk(k);
 							if (s === scope && (path === pathW || path.startsWith(pathW + "/"))) void closeTab(k);
@@ -1647,7 +1562,6 @@ export default {
 				],
 			);
 			if (scope !== "local") {
-				// 文件在其所在目录、文件夹在自身目录打开远程终端
 				items.push([
 					type === "dir" ? "在此打开终端" : "在所在文件夹打开终端",
 					async () => {
@@ -1670,7 +1584,6 @@ export default {
 				menuEl.appendChild(b);
 			}
 			menuEl.classList.remove("vsc-hidden");
-			// 限制在容器内
 			const rect = root.getBoundingClientRect();
 			menuEl.style.left = `${Math.min(x - rect.left, rect.width - 170)}px`;
 			menuEl.style.top = `${Math.min(y - rect.top, rect.height - items.length * 32 - 20)}px`;
@@ -1680,7 +1593,6 @@ export default {
 		}
 		document.addEventListener("click", hideMenu);
 
-		/** 结构变化后清缓存重拉；keepTabs 内容不动 */
 		async function invalidateScope(scope) {
 			for (const key of [...dirCache.keys()]) {
 				if (key.startsWith(`${scope}:`)) dirCache.delete(key);
@@ -1690,7 +1602,7 @@ export default {
 				flatLoaded = false;
 			}
 			await renderTree();
-			renderHosts(); // 远端树也刷（invalidateScope 可能由远端操作触发）
+			renderHosts();
 		}
 
 		async function promptCreate(scope, dirWire, kind) {
@@ -1703,12 +1615,11 @@ export default {
 				return;
 			}
 			expanded.add(tkey(scope, dirWire));
-			selNode = { scope, path: p, type: kind }; // 新条目成为当前选中，后续新建落在它旁边/里面
+			selNode = { scope, path: p, type: kind };
 			if (kind === "file") void openFile(scope, p);
 			await invalidateScope(scope);
 		}
 
-		/** 全量刷新：清缓存重拉；磁盘内容为准刷新已开标签 */
 		async function refreshAll() {
 			dirCache.clear();
 			flatFiles.clear();
@@ -1719,7 +1630,7 @@ export default {
 				if (r.ok && r.text != null) {
 					t.savedText = r.text;
 					t.crlf = r.text.includes("\r\n");
-					t.dirty = false; // 磁盘为准，丢弃未保存编辑
+					t.dirty = false;
 				}
 			}
 			if (activeTk && tabs.has(activeTk)) await activateTab(activeTk);
@@ -1728,23 +1639,20 @@ export default {
 			renderHosts();
 		}
 
-		// ---- 上传（工具栏按钮 / 右键菜单 / 拖拽到文件树；本地与远端共用） -------------
-		const UPLOAD_CHUNK = 512 * 1024; // 分片字节数（base64 经 WS，避开单帧过大）
-		let uploading = false; // 防重入：上一批还在传时忽略新触发
+		const UPLOAD_CHUNK = 512 * 1024;
+		let uploading = false;
 
-		/** 弹系统文件选择框（multiple），返回 File[]；取消返回 [] */
 		function pickFiles() {
 			return new Promise((resolve) => {
 				filePick.onchange = () => {
 					const files = [...(filePick.files ?? [])];
-					filePick.value = ""; // 清空以允许下次重选同一批文件
+					filePick.value = "";
 					resolve(files);
 				};
 				filePick.click();
 			});
 		}
 
-		/** Uint8Array → base64（btoa 只吃 latin1 字符串，分批防爆栈） */
 		function bufToB64(u8) {
 			let bin = "";
 			for (let i = 0; i < u8.length; i += 0x8000) {
@@ -1757,7 +1665,6 @@ export default {
 			stUp.textContent = text;
 		}
 
-		/** 单个文件：begin（存在检查 + 覆盖确认）→ 逐片上传 → 末片落盘。返回是否成功 */
 		async function uploadOne(scope, dir, file) {
 			const name = file.name;
 			if (file.size > 100 * 1024 * 1024) {
@@ -1790,7 +1697,6 @@ export default {
 			}
 		}
 
-		/** 批量上传到某个目录（本地/远端通用），完成后刷新对应树 + 汇总提示 */
 		async function uploadFilesTo(scope, dir, files) {
 			if (!files?.length) return;
 			if (uploading) {
@@ -1810,7 +1716,6 @@ export default {
 			}
 		}
 
-		// ---- 拖拽上传（类 VSCode：文件夹行→该文件夹；文件行→其所在目录；空白处→根） ----
 		function isFileDrag(ev) {
 			return Array.from(ev.dataTransfer?.types ?? []).includes("Files");
 		}
@@ -1821,13 +1726,11 @@ export default {
 			sshTreeEl.classList.remove("drop-root");
 		}
 
-		/** 本地文件的父目录（不同于 parentOf：根级文件返回 "" 而不是 "/"） */
 		function localParentOf(p) {
 			const i = p.lastIndexOf("/");
 			return i <= 0 ? "" : p.slice(0, i);
 		}
 
-		/** 当前拖拽落点：{scope, dir}。命中行 → 目录行/文件行所在目录；空白 → 本地根或首台已连主机根 */
 		function dropTargetFrom(ev, containerScope) {
 			const row = ev.target.closest(".vsc-row");
 			if (row && row.dataset.scope) {
@@ -1849,7 +1752,6 @@ export default {
 		function setDropHighlight(t) {
 			clearDropTargets();
 			if (!t) return;
-			// 具体目录落点：高亮那一行；根目录/远端根落点：高亮整个树容器
 			if (t.dir && t.dir !== "/") {
 				root
 					.querySelector(`.vsc-row[data-scope="${CSS.escape(t.scope)}"][data-path="${CSS.escape(t.dir)}"]`)
@@ -1859,9 +1761,6 @@ export default {
 			}
 		}
 
-		/** 主应用把整个窗口当作拖放目标（拖文件即「附加到对话」）；文件树的
-		 *  dragover 已 stopPropagation 拦下，这里再清掉它的全屏 📎 提示，
-		 *  避免盖在上传落点上方造成歧义（纯视觉清理，不碰其行为）。 */
 		function clearAppDropOverlay() {
 			const appEl = container.ownerDocument.querySelector(".app");
 			if (appEl) appEl.dispatchEvent(new DragEvent("dragleave", { bubbles: true }));
@@ -1873,14 +1772,14 @@ export default {
 		]) {
 			el.addEventListener("dragover", (ev) => {
 				if (!isFileDrag(ev)) return;
-				ev.preventDefault(); // 声明自己是合法落点，否则浏览器默认禁止 drop
-				ev.stopPropagation(); // 主应用全窗口拖放不参与（不会附加到对话）
+				ev.preventDefault();
+				ev.stopPropagation();
 				clearAppDropOverlay();
 				setDropHighlight(dropTargetFrom(ev, containerScope));
 				ev.dataTransfer.dropEffect = "copy";
 			});
 			el.addEventListener("dragleave", (ev) => {
-				if (ev.relatedTarget && el.contains(ev.relatedTarget)) return; // 仍在树内移动
+				if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
 				clearDropTargets();
 			});
 			el.addEventListener("drop", (ev) => {
@@ -1903,14 +1802,13 @@ export default {
 			});
 		}
 
-		// ---- 空白处右键（与拖拽空白落点一致：本地→工作区根；SSH 树→首台已连主机根） ----
 		for (const [el, containerScope] of [
 			[treeEl, "local"],
 			[sshTreeEl, null],
 		]) {
 			el.addEventListener("contextmenu", (ev) => {
 				const tgt = ev.target instanceof Element ? ev.target : el;
-				if (tgt.closest(".vsc-row")) return; // 行行自己有菜单（且已 stopPropagation）
+				if (tgt.closest(".vsc-row")) return;
 				ev.preventDefault();
 				ev.stopPropagation();
 				if (containerScope === "local" && window.__piWebUiHost?.openFileContextMenu) {
@@ -1924,7 +1822,7 @@ export default {
 					});
 					return;
 				}
-				const t = dropTargetFrom(ev, containerScope); // 复用拖拽落点计算，空白→根
+				const t = dropTargetFrom(ev, containerScope);
 				if (!t) {
 					toast("请先连接一台 SSH 主机");
 					return;
@@ -1963,7 +1861,6 @@ export default {
 				menuEl.style.top = `${Math.min(ev.clientY - rect.top, rect.height - items.length * 32 - 20)}px`;
 			});
 		}
-		// ---- 工具栏 -----------------------------------------------------------
 		root.querySelector(".vsc-side-head").addEventListener("click", (ev) => {
 			const btn = ev.target.closest("button[data-act]");
 			if (!btn) return;
@@ -1982,7 +1879,6 @@ export default {
 			}
 		});
 
-		// ---- SSH 主机表单 -------------------------------------------------------
 		let modalEditId = null;
 		function openHostModal(h) {
 			modalEditId = h?.id ?? null;
@@ -2019,7 +1915,6 @@ export default {
 				username: q("h-user").value.trim() || "root",
 				password: q("h-pass").value || undefined,
 				privateKey: q("h-key").value.trim() || undefined,
-				// 口令留空 = 保持不变（与密码/私钥同规则）；路径与 agent 非密文，空串 = 清除
 				passphrase: q("h-pp").value || undefined,
 				privateKeyPath: q("h-keypath").value.trim(),
 				agent: q("h-agent").value.trim(),
@@ -2084,11 +1979,9 @@ export default {
 			panel.appendChild(btn);
 		});
 
-		/** ssh config 别名直连（免导入，与 VSCode Remote-SSH 同源） */
 		async function connectConfig(alias) {
 			const key = `cfg:${alias}`;
 			if (connecting.has(key)) return;
-			// 已有该别名的存活连接则复用
 			for (const [id, c] of conns) {
 				if ((c.label ?? "").startsWith(`${alias}（`)) return id;
 			}
@@ -2115,7 +2008,6 @@ export default {
 			return r.connId;
 		}
 
-		/** 编辑 ~/.ssh/config 原文（与 VSCode 写法完全一样，保存自动备份 .bak + 刷新列表） */
 		async function openSshConfigEditor() {
 			const r = await request({ action: "sshconfig_get" });
 			if (!r.ok) {
@@ -2126,13 +2018,12 @@ export default {
 				`编辑 ${S.configPath ?? "~/.ssh/config"}（与 VSCode 写法完全一样）：\nHost 别名\n  HostName 主机\n  User 用户\n  Port 端口\n  IdentityFile 私钥路径\n  ProxyJump 跳板`,
 				r.text ?? "",
 			);
-			if (text === null) return; // 取消
+			if (text === null) return;
 			const r2 = await request({ action: "sshconfig_save", text });
 			if (!r2.ok) toast(`保存失败：${r2.error}`);
 			else toast("ssh config 已保存（旧版已备份 .bak），列表已刷新");
 		}
 
-		/** 连接一台主机并展开其目录树（探测 home 作起始路径） */
 		async function connectHost(h) {
 			if (connecting.has(h.id) || connOfHost(h.id)) return;
 			connecting.add(h.id);
@@ -2152,12 +2043,11 @@ export default {
 			}
 			conns.set(r.connId, { label: r.label, cwd });
 			lastConnId = r.connId;
-			selNode = { scope: r.connId, path: cwd, type: "dir" }; // 工具栏＋📄/＋📁 默认落点
+			selNode = { scope: r.connId, path: cwd, type: "dir" };
 			renderHosts();
 			await renderTree();
 		}
 
-		/** 连接断开：清连接态 + 该范围标签/终端/缓存 */
 		function handleConnClosed(connId, reason) {
 			for (const [, t] of terms.entries()) {
 				if (t.connId === connId) disposeTerm(t);
@@ -2176,13 +2066,12 @@ export default {
 			if (reason) toast(`连接断开：${connLabel(connId)} ${reason}`);
 		}
 
-		// ---- 底部终端面板（每台主机可多个 shell） ---------------------------------
-		const terms = new Map(); // termId → {id, connId, shellId, label, n, term, fit, el, opened, dead}
+		const terms = new Map();
 		let termSeq = 0;
 		let activeTermId = null;
 		let lastConnId = null;
 		let termH = 240;
-		const inputQueue = new Map(); // shellId 未就绪前缓冲输入
+		const inputQueue = new Map();
 
 		function pickConnId() {
 			const t = tabs.get(activeTk);
@@ -2204,7 +2093,6 @@ export default {
 			if (terms.size) showTermPanel();
 			else hideTermPanel();
 		}
-		// 主题跟随：编辑器明暗 + 全部存活终端调色一起切换
 		function onThemeChange() {
 			try {
 				view.dispatch({ effects: themeComp.reconfigure(isLightTheme() ? cmLight : oneDark) });
@@ -2279,13 +2167,11 @@ export default {
 				return;
 			}
 			t.shellId = r.shellId;
-			// 补发 shell 就绪前敲入的内容
 			const queued = inputQueue.get(t.id);
 			if (queued?.length && !t.dead) {
 				ctx.send({ action: "shell_input", connId: t.connId, shellId: t.shellId, b64: b64.enc(queued.join("")) });
 			}
 			inputQueue.delete(t.id);
-			// 指定起始目录：shell 就绪后补发一条 cd（与手动敲入等效）
 			if (startCwd && !t.dead) {
 				ctx.send({
 					action: "shell_input",
@@ -2358,7 +2244,6 @@ export default {
 		root.querySelector(".vsc-termbar .t-add").addEventListener("click", () => void newTerm());
 		root.querySelector(".vsc-termbar .t-hide").addEventListener("click", hideTermPanel);
 
-		// 面板高度拖拽
 		dragEl.addEventListener("mousedown", (ev) => {
 			ev.preventDefault();
 			const startY = ev.clientY;
@@ -2381,7 +2266,6 @@ export default {
 			document.addEventListener("mouseup", onUp);
 		});
 
-		// ---- 服务端事件分发 -------------------------------------------------------
 		const offData = ctx.onData((payload) => {
 			if (!payload) return;
 			if (payload.res && pending.has(payload.reqId)) {
@@ -2390,17 +2274,14 @@ export default {
 				p(payload);
 				return;
 			}
-			// 防呆：无 reqId 的响应会被上面的匹配静默丢弃——发请求必须走 request()
 			if (payload.res && !payload.reqId) {
 				console.warn("[vscode-editor] 收到无 reqId 的响应（已忽略），请用 request() 发请求：", payload.action);
 			}
 			if (payload.kind === "workspace") {
-				// 服务端工作区切换（主应用 set_cwd）：重建树 + 关本地标签
 				void applyWorkspace(payload.root);
 				return;
 			}
 			if (payload.kind === "state") {
-				// 主机/连接列表广播（凭据脱敏）
 				applyState(payload.state);
 				return;
 			}
@@ -2429,7 +2310,6 @@ export default {
 			}
 		});
 
-		// ---- 全局快捷键 ---------------------------------------------------------
 		function onGlobalKey(ev) {
 			if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "p") {
 				ev.preventDefault();
@@ -2444,11 +2324,10 @@ export default {
 		}
 		container.ownerDocument.addEventListener("keydown", onGlobalKey, true);
 
-		// ---- 启动 ----------------------------------------------------------------
 		root.querySelector('.vsc-pane[data-pane="ssh"] .vsc-side-head').addEventListener("click", (ev) => {
 			const btn = ev.target.closest("button[data-act]");
 			if (!btn) return;
-			ev.stopPropagation(); // 同上
+			ev.stopPropagation();
 			if (btn.dataset.act === "add-host") openHostModal(null);
 			else if (btn.dataset.act === "deps") void request({ action: "deps_install" });
 			else if (btn.dataset.act === "new-term") {
@@ -2467,16 +2346,14 @@ export default {
 				void refreshAll();
 				void request({ action: "state" }).then((r) => {
 					if (r.ok && r.state) applyState(r.state);
-				}); // 顺带重读 ~/.ssh/config
+				});
 			}
 		});
-		/** 本地工具栏（＋📄/＋📁）目标：最近点选的本地节点（文件取其所在目录），否则工作区根 */
 		function pickLocalDir() {
 			if (selNode?.scope === "local") return selNode.type === "dir" ? selNode.path : parentOf(selNode.path);
 			return "";
 		}
 
-		/** SSH 工具栏（＋📄/＋📁）目标：最近点选的远端节点（文件取其所在目录），否则第一台已连主机的根 */
 		function pickRemoteDir() {
 			if (selNode && selNode.scope !== "local" && conns.has(selNode.scope)) {
 				return { connId: selNode.scope, dir: selNode.type === "dir" ? selNode.path : parentOf(selNode.path) };
@@ -2490,8 +2367,6 @@ export default {
 		}
 
 		switchPane("files");
-		// 初始拉取：必须带 reqId 走响应通道——无 reqId 的响应会被
-		// 「pending 匹配失败」丢弃，且它不是 kind:"state" 广播，永远没人处理
 		void request({ action: "state" }).then((r) => {
 			if (r.ok && r.state) applyState(r.state);
 		});

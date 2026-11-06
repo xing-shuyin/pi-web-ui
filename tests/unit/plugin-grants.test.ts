@@ -1,12 +1,3 @@
-/**
- * plugin-grants 单测（零依赖、毫秒级、无端口）。
- *
- * 覆盖：grant/has/list/revoke 基本行为与幂等、父目录覆盖子目录（含 `/proj` 不覆盖
- * `/project` 的分段边界）、win32 大小写/尾分隔符归一、非法 pluginId/路径拒绝、
- * revoke 三种粒度与返回条数、坏 JSON 视为空表且**不回写文件**、持久化与 reload。
- *
- * 临时目录用 mkdtempSync(join(tmpdir(), …))，afterEach 清理。
- */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -14,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { normalizeGrantPath, PluginGrantsStore } from "../../server/plugin-grants.js";
 
 const dirs: string[] = [];
-/** 每个用例一个临时 dataDir，用后即焚。 */
 function tmpDataDir(): string {
 	const dir = mkdtempSync(join(tmpdir(), "pgrants-"));
 	dirs.push(dir);
@@ -24,7 +14,6 @@ afterEach(() => {
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-/** 新建 store + 它对应的 dataDir / 授权文件路径（目录本身不用先建）。 */
 function makeStore(): { store: PluginGrantsStore; dir: string; file: string } {
 	const dir = tmpDataDir();
 	return { store: new PluginGrantsStore(dir), dir, file: join(dir, "plugin-grants.json") };
@@ -37,7 +26,6 @@ describe("normalizeGrantPath", () => {
 		const base = tmpDataDir();
 		expect(normalizeGrantPath(base)).toBe(resolve(base));
 		expect(normalizeGrantPath(`${base}${sep}`)).toBe(resolve(base));
-		// 相对路径里的 . / .. 不会走到这里（相对一律拒绝），只验证绝对路径的规范化
 		expect(normalizeGrantPath(join(base, "a", "..", "b"))).toBe(resolve(base, "b"));
 	});
 
@@ -57,7 +45,6 @@ describe("normalizeGrantPath", () => {
 
 	it("win32：怪盘符（C:relative / 1:\\x）拒绝；根 C:\\ 保留分隔符", () => {
 		if (!WIN) {
-			// posix 下这些本来就是相对路径 → 同样拒绝
 			expect(normalizeGrantPath("C:\\Temp")).toBeNull();
 			expect(normalizeGrantPath("/")).toBe("/");
 			return;
@@ -81,7 +68,6 @@ describe("PluginGrantsStore 基本行为", () => {
 		expect(store.get("demo")).toEqual([resolve(proj)]);
 		expect(store.list()).toEqual([{ pluginId: "demo", paths: [resolve(proj)] }]);
 
-		// 幂等：同一目录（含尾部分隔符等价形式）不重复记
 		expect(store.grant("demo", proj)).toBe(false);
 		expect(store.grant("demo", `${proj}${sep}`)).toBe(false);
 		expect(store.get("demo")).toHaveLength(1);
@@ -113,7 +99,6 @@ describe("父子目录包含关系（授权 /proj 就等于 /proj/a）", () => {
 		store.grant("demo", proj);
 		expect(store.has("demo", join(proj, "a"))).toBe(true);
 		expect(store.has("demo", join(proj, "a", "b", "c"))).toBe(true);
-		// 自身当然命中
 		expect(store.has("demo", proj)).toBe(true);
 	});
 
@@ -152,10 +137,8 @@ describe("win32 大小写 / 尾部分隔符归一", () => {
 		if (WIN) {
 			expect(store.has("demo", proj.toUpperCase())).toBe(true);
 			expect(store.has("demo", join(proj.toUpperCase(), "sub"))).toBe(true);
-			// 大小写不同的等价形式不重复记
 			expect(store.grant("demo", proj.toUpperCase())).toBe(false);
 			expect(store.get("demo")).toHaveLength(1);
-			// 存储保持写入时的形式（不 lowerCase，设置面板显示友好）
 			expect(store.get("demo")[0]).toBe(resolve(proj));
 			expect(store.get("demo")[0]).toMatch(/[A-Z]/);
 		} else {
@@ -172,7 +155,6 @@ describe("win32 大小写 / 尾部分隔符归一", () => {
 		expect(store.has("demo", `${proj}${sep}`)).toBe(true);
 		expect(store.grant("demo", `${proj}${sep}${sep}`)).toBe(false);
 		if (WIN) {
-			// win32 上正斜杠与反斜杠是同一路径
 			expect(store.has("demo", proj.replace(/\\/g, "/"))).toBe(true);
 			expect(store.grant("demo", proj.replace(/\\/g, "/"))).toBe(false);
 			expect(store.get("demo")).toHaveLength(1);
@@ -218,9 +200,7 @@ describe("revoke 三种粒度", () => {
 		expect(store.has("alpha", d1)).toBe(false);
 		expect(store.has("alpha", d2)).toBe(true);
 		expect(store.has("beta", d1)).toBe(true);
-		// 再撤同一个目录：没有可删的 → 0
 		expect(store.revoke("alpha", d1)).toBe(0);
-		// 撤销按归一后的同一目录匹配（win32 上大小写等价形式也算命中）
 		expect(store.revoke("alpha", WIN ? d2.toUpperCase() : d2)).toBe(1);
 		expect(store.get("alpha")).toEqual([]);
 	});
@@ -241,7 +221,6 @@ describe("revoke 三种粒度", () => {
 		store.grant("alpha", join(dir, "a"));
 		store.grant("beta", join(dir, "b"));
 		store.grant("beta", join(dir, "c"));
-		// 非法用法（只给 dir 不知道删谁的）→ 0，表不变
 		expect(store.revoke(undefined, join(dir, "a"))).toBe(0);
 		expect(store.list()).toHaveLength(2);
 		expect(store.revoke()).toBe(3);
@@ -269,12 +248,10 @@ describe("坏文件 / 边界持久化", () => {
 		expect(store.list()).toEqual([]);
 		expect(store.get("demo")).toEqual([]);
 		expect(store.has("demo", join(dir, "x"))).toBe(false);
-		// 读路径上的空撤销也不写盘：坏文件必须原样留着（好让用户/运维看到并修）
 		expect(store.revoke()).toBe(0);
 		expect(store.revoke("demo")).toBe(0);
 		expect(readFileSync(file, "utf8")).toBe(broken);
 
-		// 真正发生变更（grant）时才重写
 		expect(store.grant("demo", join(dir, "x"))).toBe(true);
 		expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ grants: { demo: [resolve(join(dir, "x"))] } });
 	});
@@ -309,9 +286,8 @@ describe("坏文件 / 边界持久化", () => {
 		expect(again.has("demo", join(proj, "sub"))).toBe(true);
 		expect(again.list()).toEqual([{ pluginId: "demo", paths: [resolve(proj)] }]);
 
-		// 另一实例撤销后，旧实例 reload() 也能看到（多进程 / 手改场景）
 		expect(again.revoke("demo", proj)).toBe(1);
-		expect(store.has("demo", proj)).toBe(true); // 缓存里还是旧的
+		expect(store.has("demo", proj)).toBe(true);
 		store.reload();
 		expect(store.has("demo", proj)).toBe(false);
 		expect(store.list()).toEqual([]);
@@ -322,7 +298,7 @@ describe("坏文件 / 边界持久化", () => {
 		const proj = join(dir, "proj");
 		expect(store.has("demo", proj)).toBe(false);
 		writeFileSync(file, JSON.stringify({ grants: { demo: [proj] } }));
-		expect(store.has("demo", proj)).toBe(false); // 未 reload 前仍是缓存
+		expect(store.has("demo", proj)).toBe(false);
 		store.reload();
 		expect(store.has("demo", proj)).toBe(true);
 	});
@@ -334,11 +310,9 @@ describe("坏文件 / 边界持久化", () => {
 		expect(store.grant("demo", join(dir, "proj"))).toBe(true);
 		expect(existsSync(join(nested, "plugin-grants.json"))).toBe(true);
 
-		// 把文件路径变成一个目录 → 写盘必然失败；只要求「不抛」且内存态仍生效
 		const badDir = tmpDataDir();
 		store.reload();
 		const bad = new PluginGrantsStore(badDir);
-		// 先让 plugin-grants.json 成为目录，rename 必然失败
 		mkdirSync(join(badDir, "plugin-grants.json"), { recursive: true });
 		expect(() => bad.grant("demo", join(badDir, "proj"))).not.toThrow();
 		expect(bad.has("demo", join(badDir, "proj"))).toBe(true);

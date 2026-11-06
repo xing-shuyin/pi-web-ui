@@ -21,7 +21,6 @@ describe("Terminal & Eval Sandbox Security Enhancements (#339)", () => {
 		expect(cleaned.HOME).toBe("/home/user");
 		expect(cleaned.NODE_ENV).toBe("production");
 
-		// 验证敏感密钥已被彻底过滤
 		expect((cleaned as any).OPENAI_API_KEY).toBeUndefined();
 		expect((cleaned as any).ANTHROPIC_AUTH_TOKEN).toBeUndefined();
 		expect((cleaned as any).AWS_SECRET_ACCESS_KEY).toBeUndefined();
@@ -47,7 +46,6 @@ describe("Terminal & Eval Sandbox Security Enhancements (#339)", () => {
 		const inputTool = tools.find((t) => t.name === "terminal");
 		expect(inputTool).toBeDefined();
 
-		// 输入普通文本（无换行）不触发拦截
 		await expect(
 			inputTool!.execute(
 				"call-safe",
@@ -58,7 +56,6 @@ describe("Terminal & Eval Sandbox Security Enhancements (#339)", () => {
 			),
 		).resolves.toBeDefined();
 
-		// 输入危险破坏性命令（带换行提交）直接抛错阻断
 		await expect(
 			inputTool!.execute(
 				"call-danger",
@@ -70,7 +67,6 @@ describe("Terminal & Eval Sandbox Security Enhancements (#339)", () => {
 		).rejects.toThrow("Dangerous rm -rf / blocked");
 
 		expect(mockTerminals.inputChecked).toHaveBeenCalledWith("term-1", "ls -la");
-		// 验证危险命令根本没有被传递给底层终端
 		expect(mockTerminals.inputChecked).not.toHaveBeenCalledWith("term-1", "rm -rf /\n");
 	});
 });

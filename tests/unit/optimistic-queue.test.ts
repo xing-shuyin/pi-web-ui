@@ -72,7 +72,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const tracker0 = createOptimisticQueueTracker();
 		const state0 = makeBaseState();
 
-		// 1. 按 Enter 插队（queue=false）
 		const step1 = recordOptimisticQueueAdd(tracker0, state0, {
 			text: "先停一下，优先修这个 bug",
 			queue: false,
@@ -83,7 +82,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(step1.state?.queue.followUp).toEqual([]);
 		expect(step1.tracker.adds).toHaveLength(1);
 
-		// 2. 点左半胶囊排队（queue=true）
 		const step2 = recordOptimisticQueueAdd(step1.tracker, step1.state, {
 			text: "跑完后再帮我补一下单测",
 			queue: true,
@@ -106,30 +104,25 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		});
 		expect(added.state?.queue.steering).toEqual(["插队消息 A"]);
 
-		// 模拟服务端在收到 prompt 前发出的在途旧 snapshot_delta（queue 仍为空）
 		const staleServerSnapshot = makeBaseState({
 			rev: 2,
 			queue: { steering: [], followUp: [] },
 		});
 		const afterStale = reconcileOptimisticQueue(added.tracker, staleServerSnapshot, 1020);
-		// 乐观气泡保持展示，绝不消失或闪烁
 		expect(afterStale.state.queue.steering).toEqual(["插队消息 A"]);
 		expect(afterStale.tracker.adds).toHaveLength(1);
 
-		// 模拟服务端处理完 queue_update 后推回权威快照（queue.steering 已含该项）
 		const confirmedServerSnapshot = makeBaseState({
 			rev: 3,
 			queue: { steering: ["插队消息 A"], followUp: [] },
 		});
 		const afterConfirmed = reconcileOptimisticQueue(afterStale.tracker, confirmedServerSnapshot, 1050);
-		// 服务端已落账：不重复渲染，且乐观追踪项自动核销清空
 		expect(afterConfirmed.state.queue.steering).toEqual(["插队消息 A"]);
 		expect(afterConfirmed.tracker.adds).toHaveLength(0);
 	});
 
 	it("支持连续发送两条完全相同的排队/插队文字（如连续两次发“继续”），逐条核销不吞不重", () => {
 		const tracker0 = createOptimisticQueueTracker();
-		// 假设服务端已有 1 条“继续”，用户又快速按 Enter 发了第 2 条“继续”
 		const stateWithOne = makeBaseState({
 			queue: { steering: ["继续"], followUp: [] },
 		});
@@ -142,7 +135,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(addedSecond.state?.queue.steering).toEqual(["继续", "继续"]);
 		expect(addedSecond.tracker.adds[0]?.baselineQueueMatches).toBe(1);
 
-		// 在途快照仍然只有 1 条“继续” → 保持显示 2 条
 		const staleSnap = makeBaseState({
 			rev: 2,
 			queue: { steering: ["继续"], followUp: [] },
@@ -151,7 +143,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(rec1.state.queue.steering).toEqual(["继续", "继续"]);
 		expect(rec1.tracker.adds).toHaveLength(1);
 
-		// 服务端确认第 2 条“继续”入队 → 核销乐观项，显示仍为 2 条
 		const confirmedSnap = makeBaseState({
 			rev: 3,
 			queue: { steering: ["继续", "继续"], followUp: [] },
@@ -188,7 +179,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 			{ type: "file", name: "index.ts", path: "src/index.ts", lines: { start: 10, end: 20 } },
 		]);
 
-		// 服务端若开启了视觉桥，会把图片转成 <vision-bridge> 标签后入队；对账时仍能识别为同一条消息不重复
 		const tracker0 = createOptimisticQueueTracker();
 		const state0 = makeBaseState();
 		const added = recordOptimisticQueueAdd(tracker0, state0, {
@@ -236,11 +226,9 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 			index: 0,
 			now: 4000,
 		});
-		// 0ms 立即消失
 		expect(removed.state?.queue.followUp).toEqual([]);
 		expect(removed.tracker.removes).toHaveLength(1);
 
-		// 在途旧快照仍带“待撤回消息” → 被 remove 追踪项拦住，不闪回
 		const staleSnap = makeBaseState({
 			rev: 2,
 			queue: { steering: [], followUp: ["待撤回消息"] },
@@ -249,7 +237,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(afterStale.state.queue.followUp).toEqual([]);
 		expect(afterStale.tracker.removes).toHaveLength(1);
 
-		// 服务端确认移除后的快照到达 → 追踪项清空
 		const confirmedSnap = makeBaseState({
 			rev: 3,
 			queue: { steering: [], followUp: [] },
@@ -277,19 +264,15 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 	it("非流式态、斜杠命令、审查者模式（delegateMode）与目标审查回合 steer 不产生错误乐观入队", () => {
 		const tracker0 = createOptimisticQueueTracker();
 
-		// 1. 非流式态
 		const idleState = makeBaseState({ isStreaming: false });
 		expect(recordOptimisticQueueAdd(tracker0, idleState, { text: "普通消息" }).tracker.adds).toHaveLength(0);
 
-		// 2. 斜杠命令
 		const streamingState = makeBaseState({ isStreaming: true });
 		expect(recordOptimisticQueueAdd(tracker0, streamingState, { text: "/compact" }).tracker.adds).toHaveLength(0);
 
-		// 3. 审查者自动委派模式
 		const delegateState = makeBaseState({ isStreaming: true, delegateMode: true });
 		expect(recordOptimisticQueueAdd(tracker0, delegateState, { text: "转交执行会话" }).tracker.adds).toHaveLength(0);
 
-		// 4. 目标审查回合中的 steer（会被服务端顺延到 deferredPrompts，不进 queue.steering）
 		expect(
 			recordOptimisticQueueAdd(tracker0, streamingState, {
 				text: "审查中插话",
@@ -303,7 +286,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const tracker0 = createOptimisticQueueTracker();
 		const idleState = makeBaseState({ isStreaming: false, rev: 1 });
 
-		// 1. 空闲态发送 → 真空期立即出现本地气泡
 		const sent = recordOptimisticPromptEcho(tracker0, idleState, { text: "你好", now: 1000 });
 		expect(sent.state).not.toBeNull();
 		expect(sent.state!.messages).toHaveLength(2);
@@ -314,13 +296,11 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(sent.tracker.echoes).toHaveLength(1);
 		expect(sent.tracker.echoes[0].baselineUserMsgMatches).toBe(0);
 
-		// 2. 在途旧快照（消息未落盘）→ 气泡保留不闪退
 		const staleSnap = makeBaseState({ isStreaming: false, rev: 1 });
 		const afterStale = reconcileOptimisticPromptEchoes(sent.tracker, staleSnap, 1100);
 		expect(afterStale.state.messages).toHaveLength(2);
 		expect(afterStale.tracker.echoes).toHaveLength(1);
 
-		// 3. 消息已落盘的快照到达 → echo 被真实消息消解，不重复
 		const landedSnap = makeBaseState({
 			isStreaming: false,
 			rev: 2,
@@ -333,7 +313,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(afterLanded.state.messages.map((m) => m.id)).toEqual(["u-1", "u-2"]);
 		expect(afterLanded.tracker.echoes).toHaveLength(0);
 
-		// 4. 服务端拒绝（error/warning 通知）→ 回滚气泡
 		const sent2 = recordOptimisticPromptEcho(createOptimisticQueueTracker(), makeBaseState({ isStreaming: false }), {
 			text: "会被拒绝的消息",
 			now: 2000,
@@ -342,7 +321,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		expect(rolled.state?.messages).toHaveLength(1);
 		expect(rolled.tracker.echoes).toHaveLength(0);
 
-		// 5. TTL 兜底：超过 OPTIMISTIC_ECHO_TTL_MS 仍未落账 → 气泡移除、跟踪清空
 		const sent3 = recordOptimisticPromptEcho(createOptimisticQueueTracker(), makeBaseState({ isStreaming: false }), {
 			text: "落账慢的消息",
 			now: 3000,
@@ -375,7 +353,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const sent = recordOptimisticPromptEcho(createOptimisticQueueTracker(), stateWithDup, { text: "你好", now: 1000 });
 		expect(sent.tracker.echoes[0].baselineUserMsgMatches).toBe(1);
 
-		// 快照仍只有 1 条同文本（旧快照在途）→ 不消解
 		const staleSnap = makeBaseState({
 			isStreaming: false,
 			messages: [{ id: "u-1", role: "user", content: [{ type: "text", text: "你好" }], timestamp: 900 }],
@@ -383,7 +360,6 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const afterStale = reconcileOptimisticPromptEchoes(sent.tracker, staleSnap, 1100);
 		expect(afterStale.tracker.echoes).toHaveLength(1);
 
-		// 快照有 2 条同文本（新消息落账）→ 消解，只留真实消息
 		const landedSnap = makeBaseState({
 			isStreaming: false,
 			messages: [
@@ -402,14 +378,13 @@ describe("前端排队与插队消息乐观更新与快照对账 (optimistic-que
 		const sent = recordOptimisticPromptEcho(tracker0, idleState, { text: "触发流式的消息", now: 1000 });
 		expect(sent.state!.messages).toHaveLength(2);
 
-		// 服务端开始流式，快照整体覆盖列表但尚未含新用户消息本体 → 剥离 echo 防幽灵
 		const streamingSnap = makeBaseState({
 			isStreaming: true,
 			rev: 5,
 			messages: [{ id: "u-1", role: "user", content: [{ type: "text", text: "初始问题" }], timestamp: 1000 }],
 		});
 		const after = reconcileOptimisticPromptEchoes(sent.tracker, streamingSnap, 1100);
-		expect(after.state.messages.map((m) => m.id)).toEqual(["u-1"]); // echo 被剥离
+		expect(after.state.messages.map((m) => m.id)).toEqual(["u-1"]);
 		expect(after.tracker.echoes).toHaveLength(0);
 	});
 });

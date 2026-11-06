@@ -40,13 +40,11 @@ describe("useClickOutside", () => {
 		const targetEl = container.querySelector(".target")!;
 		const outsideEl = container.querySelector(".outside")!;
 
-		// 点击目标内部
 		act(() => {
 			targetEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 		});
 		expect(onClickOutside).not.toHaveBeenCalled();
 
-		// 点击目标外部
 		act(() => {
 			outsideEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 		});
@@ -79,7 +77,6 @@ describe("useClickOutside", () => {
 
 		const triggerEl = container.querySelector(".trigger")!;
 
-		// 点击 ignore 的触发按钮
 		act(() => {
 			triggerEl.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
 		});
@@ -104,7 +101,6 @@ describe("useClickOutside", () => {
 			root!.render(createElement(TestComponent));
 		});
 
-		// 在 body 上触发 touchstart
 		act(() => {
 			document.body.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
 		});

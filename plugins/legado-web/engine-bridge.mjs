@@ -1,10 +1,3 @@
-/**
- * 规则引擎桥（主进程侧）—— 起一个 engine-host.mjs worker，把诊断任务丢过去等结果。
- *
- * 生命周期：lazy 起 worker；任务超时/worker 崩溃 → 终止并重建（下次调用自动恢复）；
- * 插件反激活时 dispose。
- */
-
 import { Worker } from "node:worker_threads";
 
 const DEFAULT_JOB_TIMEOUT_MS = 120_000;
@@ -21,13 +14,9 @@ export function createEngineBridge({ log = () => {}, jobTimeoutMs = DEFAULT_JOB_
 		worker = w;
 		ready = new Promise((resolve, reject) => {
 			const timer = setTimeout(() => {
-				// #466/E-6：启动超时必须复位——此前 ready 永久 rejected、worker 残留，
-				// 桥直到插件重载前不可用。terminate + 置空，让下一次 run() 重新 spawn。
 				try {
 					w.terminate();
-				} catch {
-					// worker 可能已死，best-effort
-				}
+				} catch {}
 				if (worker === w) {
 					worker = null;
 					ready = null;
@@ -72,7 +61,6 @@ export function createEngineBridge({ log = () => {}, jobTimeoutMs = DEFAULT_JOB_
 	};
 
 	return {
-		/** 在引擎 worker 里跑一个任务（{kind:'probe'|'check', …}）。 */
 		async run(job) {
 			const w = worker ?? spawn();
 			await ready;
@@ -80,12 +68,9 @@ export function createEngineBridge({ log = () => {}, jobTimeoutMs = DEFAULT_JOB_
 			return new Promise((resolve, reject) => {
 				const timer = setTimeout(() => {
 					pending.delete(id);
-					// 超时：任务可能还卡在同步桥里，杀掉 worker 免得留着脏状态
 					try {
 						w.terminate();
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 					if (worker === w) {
 						worker = null;
 						ready = null;
@@ -99,9 +84,7 @@ export function createEngineBridge({ log = () => {}, jobTimeoutMs = DEFAULT_JOB_
 		dispose() {
 			try {
 				worker?.terminate();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			worker = null;
 			ready = null;
 		},

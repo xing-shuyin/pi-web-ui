@@ -1,15 +1,3 @@
-/**
- * 内置定时任务调度（issue #184）。
- *
- * 面向普通用户的图形化调度器：任务 CRUD + cron/间隔触发 + 无头执行 +
- * 执行历史 + 通知。底层 cron 解析复用 plugin-schedule.ts（parseCronSpec /
- * nextCronFire），持久化走 <dataDir>/scheduler-tasks.json（全局共享，
- * 与 client-state.json 同级），执行经调用方注入的 executor（index.ts 接
- * AgentService.chatFromScheduler，无头伪客户端）。
- *
- * 定时策略：单个 10s ticker 检查到期任务（cron 下次触发 / 间隔毫秒），
- * running 集合防重叠；catchUp "once" 在启动时补跑一次漏掉的触发。
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nextCronFire, parseCronSpec } from "./plugin-schedule.js";
@@ -18,7 +6,6 @@ import { writeJsonAtomicSync } from "./atomic-file.js";
 export type SchedulerKind = "cron" | "interval";
 export type SchedulerCatchUp = "skip" | "once";
 
-/** Creation identity, independent of the mutable delivery binding. */
 export interface SchedulerTaskOrigin {
 	sessionFile: string;
 	toolCallId: string;
@@ -32,30 +19,20 @@ export interface SchedulerTaskInput {
 	description?: string;
 	cwd?: string;
 	kind?: SchedulerKind;
-	/** cron: 5 字段表达式；interval: 毫秒整数（字符串或数字）。 */
 	spec?: string | number;
 	prompt?: string;
 	enabled?: boolean;
-	/** 可选 "provider/id"，空 = 跟随默认。 */
 	model?: string;
 	thinkingLevel?: string;
 	catchUp?: SchedulerCatchUp;
-	/** 发起对话 id（Agent 工具创建时填）：触发时优先唤醒它，找不到再无头执行。空 = 无头。
-	 *  注意：它是各客户端内存计数器（c1/c2…），重启/切走释放后即失效 ——
-	 *  持久化只靠它认对话必然在压缩/重启后误判 closed/gone（issue #231），
-	 *  必须配合下面的 sessionFile（落盘会话路径，压缩/重启后稳定）做二次确认。 */
 	conversationId?: string;
-	/** 发起对话的落盘会话文件（Agent 工具创建时快照，压缩/重启后依然稳定）。 */
 	sessionFile?: string;
-	/** 单次任务：触发执行一次后自动删除（Agent 工具 recurring=false 时置 true）。 */
 	oneShot?: boolean;
 }
 
 export interface SchedulerTask {
 	origin?: SchedulerTaskOrigin;
-	/** Persisted before invoking the executor; an attempted external operation is never rolled back. */
 	startedAt?: number;
-	/** Missing on legacy task objects means conversation. */
 	target?: "conversation" | "canvas";
 	graphId?: string;
 	id: string;
@@ -63,22 +40,14 @@ export interface SchedulerTask {
 	description: string;
 	cwd: string;
 	kind: SchedulerKind;
-	/** 归一化：cron 原样（单空格），interval 为毫秒整数字符串。 */
 	spec: string;
 	prompt: string;
 	enabled: boolean;
 	model: string;
 	thinkingLevel: string;
 	catchUp: SchedulerCatchUp;
-	/** 发起对话 id（空 = 无头执行）。
-	 *  易失的内存 id（c1/c2…，各客户端从 0 计数）：只做首选唤醒键，绝不能单独
-	 *  作为跨重启的身份依据（issue #231）。跨重启/防串台的稳定键是 sessionFile。 */
 	conversationId: string;
-	/** 发起对话的落盘会话文件（Agent 工具创建时快照，压缩/重启后依然稳定）。
-	 *  触发时优先按它找持有方（同一文件的对话 id 可能已变 —— 自动重绑定到新 id）；
-	 *  空 = 创建时没拿到（面板任务/老任务），按原逻辑只认 conversationId。 */
 	sessionFile: string;
-	/** 单次任务：触发执行一次后自动删除。 */
 	oneShot: boolean;
 	createdAt: number;
 	updatedAt: number;
@@ -93,7 +62,6 @@ export interface SchedulerRunRecord {
 	durationMs: number;
 	conversationId?: string;
 	error?: string;
-	/** 手动触发（面板 Run Now）还是定时触发。 */
 	manual?: boolean;
 }
 
@@ -116,7 +84,6 @@ export interface SchedulerExecutorResult {
 export type SchedulerExecutor = (task: SchedulerTask) => Promise<SchedulerExecutorResult>;
 
 export const SCHEDULER_FILE = "scheduler-tasks.json";
-/** 持久间隔底线 60s（与 host.schedule 持久任务同口径，防 token 烧穿）。 */
 export const SCHEDULER_MIN_INTERVAL_MS = 60_000;
 export const SCHEDULER_MAX_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SCHEDULER_HISTORY_MAX = 20;
@@ -146,7 +113,6 @@ export class SchedulerValidationError extends Error {
 	}
 }
 
-/** 归一化 + 校验用户输入；非法抛 SchedulerValidationError。纯函数，可单测。 */
 export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.now()): SchedulerTask {
 	const idRaw = String(input.id ?? "").trim();
 	const id = idRaw || randomTaskId();
@@ -248,8 +214,6 @@ export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.no
 	const conversationId = String(input.conversationId ?? "")
 		.trim()
 		.slice(0, 128);
-	// 落盘会话文件：稳定身份键（issue #231）。只做归一化（去首尾空白、封顶），
-	// 不校验存在性 —— 创建时刻文件可能还没落盘，触发时按它匹配不上即回落。
 	const sessionFile = String(input.sessionFile ?? "")
 		.trim()
 		.slice(0, 1024);
@@ -275,7 +239,6 @@ export function normalizeSchedulerInput(input: SchedulerTaskInput, now = Date.no
 	};
 }
 
-/** 下次触发毫秒时间戳；非法/禁用回 null。纯函数，可单测。 */
 export function computeNextFire(task: Pick<SchedulerTask, "kind" | "spec">, fromMs: number): number | null {
 	try {
 		if (task.kind === "cron") {
@@ -291,7 +254,6 @@ export function computeNextFire(task: Pick<SchedulerTask, "kind" | "spec">, from
 	}
 }
 
-/** 间隔任务的人类可读描述（面板显示用）。纯函数。 */
 export function describeIntervalMs(ms: number): string {
 	const s = Math.round(ms / 1000);
 	if (s < 60) return `每 ${s} 秒`;
@@ -346,9 +308,6 @@ function sanitizeHistory(v: unknown): SchedulerRunRecord[] {
 	return out.sort((a, b) => b.at - a.at).slice(0, SCHEDULER_HISTORY_MAX);
 }
 
-/** 落盘会话路径是否指向同一会话（纯函数，可单测）。
- *  Windows 上 `C:\a\b` 与 `C:/a/b`、尾部分隔符差异都算同一文件；
- *  空串永不相等（没拿到稳定键的任务不配对）。 */
 export function sameSessionFile(a: string, b: string): boolean {
 	const x = String(a ?? "").trim();
 	const y = String(b ?? "").trim();
@@ -368,7 +327,6 @@ export class SchedulerStore {
 		private readonly dataDir: string,
 		private readonly opts: {
 			executor?: SchedulerExecutor;
-			/** Validate external references before persisting an upsert; throwing leaves state unchanged. */
 			validateTask?: (task: SchedulerTask) => void;
 			onChange?: () => void;
 			notify?: (level: "info" | "warning" | "error", text: string, textEn?: string) => void;
@@ -380,7 +338,6 @@ export class SchedulerStore {
 		this.opts.executor = executor;
 	}
 
-	/** 启动 ticker + catchUp 补跑（幂等）。 */
 	start(): void {
 		this.load();
 		if (this.started) return;
@@ -392,7 +349,6 @@ export class SchedulerStore {
 			const next = computeNextFire(task, Math.max(lastAt, task.updatedAt));
 			if (next === null) continue;
 			if (next <= now && task.catchUp === "once" && lastAt < now) {
-				// 重启发现漏跑：补一次，补完按这次重排。
 				this.nextFire.set(task.id, now + 5000);
 				void this.fire(task.id, false).catch((err) => this.reportFailure(err));
 			} else if (next <= now) {
@@ -413,7 +369,6 @@ export class SchedulerStore {
 		this.started = false;
 	}
 
-	/** 读盘；坏文件/形状不对当空表（读路径不回写）。 */
 	load(): void {
 		try {
 			const parsed = JSON.parse(readFileSync(schedulerFile(this.dataDir), "utf8")) as {
@@ -456,9 +411,7 @@ export class SchedulerStore {
 						...(typeof r.startedAt === "number" && Number.isFinite(r.startedAt) ? { startedAt: r.startedAt } : {}),
 						history: sanitizeHistory(r.history),
 					});
-				} catch {
-					// 单条坏记录跳过，不影响其他任务
-				}
+				} catch {}
 			}
 			this.tasks = next;
 		} catch {
@@ -487,9 +440,7 @@ export class SchedulerStore {
 	private changed(): void {
 		try {
 			this.opts.onChange?.();
-		} catch {
-			/* 推送失败不影响调度 */
-		}
+		} catch {}
 	}
 
 	list(): SchedulerTaskView[] {
@@ -527,10 +478,6 @@ export class SchedulerStore {
 			.sort((a, b) => a.name.localeCompare(b.name, "zh"));
 	}
 
-	/** 新建或全量更新（同名 id 覆盖）；返回归一化后的任务。
-	 *  issue #231：面板编辑不带绑定字段（conversationId/sessionFile 缺席）时保留旧绑定 ——
-	 *  否则用户在面板改个名字就会把 AI 任务的会话绑定洗掉，下次触发直接变无头。
-	 *  字段显式出现（含空串）仍按全量语义覆盖。 */
 	upsert(input: SchedulerTaskInput, origin?: SchedulerTaskOrigin): SchedulerTask {
 		if (origin !== undefined && !validOrigin(origin)) throw new Error("Invalid scheduled-task creation origin");
 		const prev = this.tasks.get(String(input.id ?? "").trim());
@@ -559,13 +506,11 @@ export class SchedulerStore {
 		this.opts.validateTask?.(task);
 		const history = prev?.history ? sanitizeHistory(prev.history) : [];
 		this.save(new Map(this.tasks).set(task.id, { ...task, history }));
-		// spec/cwd/开关变了 → 按现在重排下次触发
 		this.nextFire.set(task.id, computeNextFire(task, Date.now()) ?? Date.now() + TICK_MS);
 		this.changed();
 		return task;
 	}
 
-	/** Commit cancellation before the caller discards transcript evidence. No awaits can race fire(). */
 	cancelUnstartedFromCalls(sessionFile: string, toolCallIds: ReadonlySet<string>, commit?: () => void): number {
 		const next = new Map(this.tasks);
 		const removed: string[] = [];
@@ -623,9 +568,7 @@ export class SchedulerStore {
 			this.changed();
 			try {
 				this.opts.onTaskRemoved?.(id);
-			} catch {
-				/* 回调失败不影响删除 */
-			}
+			} catch {}
 		}
 		return ok;
 	}
@@ -640,9 +583,6 @@ export class SchedulerStore {
 		return { ...t };
 	}
 
-	/** 会话重绑定（issue #231）：触发时按稳定键找到了新的对话句柄，把任务的
-	 *  投递目标迁移过去（只改 conversationId/sessionFile/updatedAt，不碰下次触发
-	 *  与历史）。无变化回 false（调用方免一次落盘+推送）；未知任务回 false。 */
 	rebind(id: string, binding: { conversationId?: string; sessionFile?: string }): boolean {
 		const prev = this.tasks.get(id);
 		if (!prev || prev.target === "canvas") return false;
@@ -683,7 +623,6 @@ export class SchedulerStore {
 			}
 			if (this.running.has(task.id)) {
 				if (next <= now) {
-					// 任务已在执行中（单次执行耗时超过周期）：顺延本次计划触发至下个周期，防同一任务并发重叠（issue #836）
 					const nextSlot = computeNextFire(task, now) ?? now + TICK_MS;
 					this.nextFire.set(task.id, nextSlot);
 					this.changed();
@@ -701,7 +640,6 @@ export class SchedulerStore {
 		}
 	}
 
-	/** 手动立即执行一次（面板 Run Now；调试用，不扰动下次触发）。 */
 	async runNow(id: string): Promise<SchedulerExecutorResult> {
 		const task = this.tasks.get(id);
 		if (!task) return { ok: false, error: "任务不存在" };
@@ -713,7 +651,6 @@ export class SchedulerStore {
 		const task = this.tasks.get(id);
 		if (!task) return { ok: false, error: "任务不存在" };
 		const executor = this.opts.executor;
-		// Remember the attempt before any external effect, even if run-history persistence later fails.
 		if (task.origin && task.startedAt === undefined) {
 			try {
 				this.save(new Map(this.tasks).set(id, { ...task, startedAt: Date.now() }));
@@ -725,9 +662,6 @@ export class SchedulerStore {
 		this.running.add(id);
 		const startedAt = Date.now();
 		const scheduleBase = triggerAt !== undefined ? Math.max(triggerAt, startedAt) : startedAt;
-		// issue #836：定时触发瞬间即刻推进 nextFire 到下一周期：
-		// 1. 面板在长任务执行期间不会停留在已过期的历史时间戳；
-		// 2. 执行时长 ≥ 任务间隔时，调度器不会停摆或遗漏后续排期。
 		if (!task.oneShot && !manual) {
 			this.nextFire.set(id, computeNextFire(task, scheduleBase) ?? scheduleBase + TICK_MS);
 		}
@@ -761,20 +695,14 @@ export class SchedulerStore {
 			};
 			this.reportFailure(err);
 		} finally {
-			// 执行可能已产生外部副作用；记录写失败也不能在每个 tick 立即重试。
-			// 仅推进内存调度，使用执行期间更新后的配置，不伪造成功历史。
-			// 进程重启后仍可能补跑：本地记录与外部副作用不保证跨进程 exactly-once。
 			const cur = this.tasks.get(id);
 			if (cur && task.oneShot) {
-				// A failed history/removal write must not repeat an already attempted one-shot.
 				this.tasks.set(id, { ...cur, enabled: false });
 				this.nextFire.delete(id);
 			} else if (cur && cur.enabled && !manual) {
 				if (cur.kind === "interval") {
-					// 间隔任务完成时按下一次周期排期（自执行结束起算，与既有单测契约对齐）
 					this.nextFire.set(id, computeNextFire(cur, Date.now()) ?? Date.now() + TICK_MS);
 				} else {
-					// cron 任务若执行耗时超过原定时刻，顺延至下一个有效 cron 时间点（issue #836）
 					const currentNext = this.nextFire.get(id);
 					if (currentNext === undefined || currentNext <= Date.now()) {
 						this.nextFire.set(id, computeNextFire(cur, Date.now()) ?? Date.now() + TICK_MS);

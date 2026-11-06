@@ -1,4 +1,3 @@
-// 监听并自动静默同步豆包与 DeepSeek 凭证到本地服务
 const DEFAULT_SERVER = "http://127.0.0.1:8787";
 
 async function getServerUrl() {
@@ -39,12 +38,9 @@ async function syncDoubaoCookies() {
 			signal: controller.signal,
 		});
 		clearTimeout(timeoutId);
-	} catch  {
-		// 本地服务未开时静默忽略
-	}
+	} catch {}
 }
 
-// 1. 监听 Cookie 变化
 chrome.cookies.onChanged.addListener((changeInfo) => {
 	if (
 		changeInfo.cookie.domain.includes("doubao.com") &&
@@ -54,7 +50,6 @@ chrome.cookies.onChanged.addListener((changeInfo) => {
 	}
 });
 
-// 2. 插件安装或唤醒时尝试同步一次
 chrome.runtime.onInstalled.addListener(() => {
 	syncDoubaoCookies();
 });

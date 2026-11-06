@@ -98,10 +98,10 @@ describe("GroupWorkspaceActions Component Integration", () => {
 		const applyMock = vi.fn().mockResolvedValue(undefined);
 		const { host, cleanup } = await mountComponent({
 			roomId: "room-1",
-			taskSnapshotRevision: 1, // in-flight task locked to rev 1
+			taskSnapshotRevision: 1,
 			botSnapshot: {
 				botId: "bot-agent",
-				revision: 2, // new preset candidate is rev 2
+				revision: 2,
 				name: "Agent Bot",
 				toolWhitelist: ["read", "write"],
 				capturedAt: Date.now(),

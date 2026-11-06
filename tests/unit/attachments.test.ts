@@ -1,14 +1,3 @@
-/**
- * buildAttachmentMessages 单元测试（零 token、零 server）。
- *
- * 覆盖编辑重问的附件恢复管线：
- *   1. 新上传的 fileData → aside 卡 details.upload === true（供浏览器按路径恢复）；
- *   2. 恢复的 uploadPath → 服务端从 uploads 目录重读字节、按同路径附加；
- *   3. uploadPath 越出本客户端 uploads 目录 → 拒绝 + notice；
- *   4. uploadPath 指向已清理/不存在文件 → notice + 跳过；
- *   5. 工作区路径附件（reference / lines / 无 mode 的 auto / 旧版 inline）一律只给
- *      路径引用（内容不进 prompt）。
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCanvasGraph, saveCanvasGraph } from "../../server/canvas/canvas-store.js";
 import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -17,6 +6,7 @@ import { join } from "node:path";
 import { buildAttachmentMessages, type AttachmentContext } from "../../server/attachments.js";
 import { saveUpload, uploadsRoot } from "../../server/uploads.js";
 import { setGlobalRemoteSshService } from "../../server/remote-ssh-service.js";
+import { normalizeQuickAskSettings } from "../../server/quick-ask-settings.js";
 
 const dirs: string[] = [];
 
@@ -28,7 +18,6 @@ describe("canvas references", () => {
 		const graph = createDefaultCanvasGraph("pipeline.png");
 		graph.name = 'Build "UI" <safe> & test';
 		saveCanvasGraph(dataDir, graph);
-		// A same-named image must never reach the workspace-image prepass.
 		writeFileSync(join(cwd, graph.id), "WORKSPACE SECRET");
 		const notices: { level: string; text: string }[] = [];
 		const ctx = makeCtx({ dataDir, cwd, notices });
@@ -128,6 +117,7 @@ function makeCtx(opts: {
 			disabledSkills: [],
 			disabledExtensions: [],
 			disabledAgentTools: [],
+			nativeCliInheritModel: {},
 			terminalToolsEnabled: true,
 			terminalBash: false,
 			terminalBashIdleMs: 15000,
@@ -143,11 +133,7 @@ function makeCtx(opts: {
 			visionBridgePrompt: "",
 			scmCommitMsgPromptMode: "append" as const,
 			scmCommitMsgPrompt: "",
-			quickAskEnabled: true,
-			quickAskModel: null,
-			quickAskThinking: "off",
-			quickAskSystemPrompt: "",
-			quickAskExplainPrompt: "解释下: {{input}}",
+			...normalizeQuickAskSettings({}),
 			planModePromptMode: "append" as const,
 			planModePrompt: "",
 			reviewPrompt: "",
@@ -173,7 +159,6 @@ function makeCtx(opts: {
 			softCapTokens: 0,
 			softCapByModel: {},
 		},
-		// 非视觉路径下只用得到 session.model / modelRuntime 的占位（不触 SDK）。
 		session: { model: null, modelRuntime: null } as unknown as AttachmentContext["session"],
 	};
 }
@@ -220,7 +205,6 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 			expect(out.length).toBe(1);
 			expect(out[0].message.customType).toBe("file");
 			expect(out[0].message.details.upload).toBe(true);
-			// 上传文件一律只给绝对路径引用（不再内联小文本）
 			expect(out[0].message.details.mode).toBe("reference");
 			const abs = out[0].message.details.path!;
 			expect(abs.startsWith(uploadsRoot(dataDir).replace(/\\/g, "/"))).toBe(true);
@@ -237,7 +221,6 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 		process.env.PI_WEB_DATA_DIR = dataDir;
 		try {
 			const clientId = "edit-client";
-			// 先真正落一个上传文件，模拟“之前 prompt 上传过”
 			const { abs, displayName } = saveUpload(clientId, "data.bin", Buffer.from([0, 1, 2, 3, 4]), dataDir);
 			const notices: { level: string; text: string }[] = [];
 			const ctx = makeCtx({ dataDir, cwd: tempDir(), clientId, notices });
@@ -250,7 +233,6 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 				},
 			])) as Aside[];
 			expect(out.length).toBe(1);
-			// 二进制 → reference
 			expect(out[0].message.details.mode).toBe("reference");
 			expect(out[0].message.details.upload).toBe(true);
 			expect(out[0].message.details.name).toBe(displayName);
@@ -267,7 +249,6 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 		const oldDataDir = process.env.PI_WEB_DATA_DIR;
 		process.env.PI_WEB_DATA_DIR = dataDir;
 		try {
-			// 别的客户端目录里的文件
 			const other = saveUpload("other-client", "x.txt", Buffer.from("x"), dataDir);
 			const notices: { level: string; text: string }[] = [];
 			const ctx = makeCtx({ dataDir, cwd: tempDir(), clientId: "edit-client", notices });
@@ -327,22 +308,18 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 			{ path: "src/big.md", mode: "reference" },
 		])) as Aside[];
 		expect(out.length).toBe(5);
-		// 内容永不进 prompt（连 2 行的小文件也是）
 		for (const card of out) {
 			expect(card.message.content[0].text).not.toContain("export const a = 1");
 		}
 		expect(out[0].message.details.mode).toBe("reference");
 		expect(out[0].message.details.path).toBe("src/a.ts");
 		expect(out[0].message.content[0].text).toContain('path="src/a.ts"');
-		// 旧版 inline 模式 → 当 reference 处理
 		expect(out[1].message.details.mode).toBe("reference");
 		expect(out[1].message.content[0].text).toContain('path="src/a.ts"');
-		// 行范围 → 引用上带 lines 属性（模型据此只读那几行）
 		expect(out[2].message.details.mode).toBe("lines");
 		expect(out[2].message.details.startLine).toBe(1);
 		expect(out[2].message.details.endLine).toBe(1);
 		expect(out[2].message.content[0].text).toContain('lines="1-1"');
-		// 无 mode（auto）同样只给引用
 		expect(out[3].message.details.mode).toBe("reference");
 		expect(out[4].message.details.mode).toBe("reference");
 		expect(out[4].message.details.path).toBe("src/big.md");
@@ -350,7 +327,6 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 
 	it("网页引用（mode:page）：不读文件，只给模型 browser_page 的 target（origin）+ 标题", async () => {
 		const notices: { level: string; text: string }[] = [];
-		// cwd 是一个空目录：若实现去 stat(URL) 就会报「附件不存在」并产出 0 张卡。
 		const ctx = makeCtx({ dataDir: tempDir(), cwd: tempDir(), clientId: "c", notices });
 		const out = (await buildAttachmentMessages(ctx, [
 			{ path: "https://search.bilibili.com/all?keyword=x", mode: "page", name: "铁手杯 · 搜索" },
@@ -358,10 +334,8 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 		expect(notices).toEqual([]);
 		expect(out.length).toBe(1);
 		expect(out[0].message.details.mode).toBe("page");
-		// 卡片名用页面标题，path 保留完整 URL（消息里可点开）
 		expect(out[0].message.details.name).toBe("铁手杯 · 搜索");
 		expect(out[0].message.details.path).toBe("https://search.bilibili.com/all?keyword=x");
-		// 给模型的那句话：带 origin 形式的 target（扩展按 origin 判定），且明说不要去抓网页
 		const text = out[0].message.content[0].text ?? "";
 		expect(text).toContain('target="https://search.bilibili.com"');
 		expect(text).toContain("browser_page");
@@ -380,7 +354,7 @@ describe("buildAttachmentMessages — 编辑重问附件恢复", () => {
 
 describe("buildAttachmentMessages — 远程 SSH 工作区附件引用", () => {
 	it("在远程 SSH 工作区下正确引用远程文件与目录", async () => {
-		const remoteUri = "ssh://root@39.99.235.208:22/root/workspace/ljz";
+		const remoteUri = "ssh://root@203.0.113.10:22/root/workspace/ljz";
 		const mockSvc = {
 			sftpStat: async (_uri: string, p: string) => {
 				if (p === "/root/workspace/ljz/小区名单/全省小区台账") {
@@ -406,12 +380,10 @@ describe("buildAttachmentMessages — 远程 SSH 工作区附件引用", () => {
 			expect(notices).toEqual([]);
 			expect(out).toHaveLength(2);
 
-			// 目录引用
 			expect(out[0].message.details.type).toBe("folder");
 			expect(out[0].message.details.path).toBe("小区名单/全省小区台账");
 			expect(out[0].message.content[0].text).toContain('<folder path="小区名单/全省小区台账" />');
 
-			// 文件引用
 			expect(out[1].message.details.mode).toBe("reference");
 			expect(out[1].message.details.path).toBe("小区名单/全省小区台账/附件4 石家庄市居民小区台账 (2).xls");
 			expect(out[1].message.details.size).toBe(10240);
@@ -424,7 +396,7 @@ describe("buildAttachmentMessages — 远程 SSH 工作区附件引用", () => {
 	});
 
 	it("在远程 SSH 工作区下正确识别不存在的文件并提示错误", async () => {
-		const remoteUri = "ssh://root@39.99.235.208:22/root/workspace/ljz";
+		const remoteUri = "ssh://root@203.0.113.10:22/root/workspace/ljz";
 		const mockSvc = {
 			sftpStat: async () => {
 				throw new Error("File not found");

@@ -1,24 +1,11 @@
-/**
- * Office 文档纯文本提取（docx / xlsx / xlsm，csv 由调用方按普通文本处理）。
- *
- * 给「随处可看」用的：文件预览（files-service readFile）、附件等走 file_content
- * 下发 Markdown 文本，前端 FilePreview 按 Markdown 渲染表格/段落，无需改协议。
- *
- * 零依赖：docx / xlsx / pptx 本质是 zip 包，这里用 node:zlib + 手写 zip 中央目录解析
- * 做最小解包（只支持 stored / deflate，Office 写出的文件都是这两种）。
- */
 import { inflateRawSync } from "node:zlib";
 import type { PptxSlideImagePayload, PptxSlidePayload } from "./protocol.js";
 
 const OFFICE_EXTS = new Set([".docx", ".xlsx", ".xlsm", ".pptx", ".pptm", ".ppsx", ".potx"]);
 
-/** 单个文件上限（15MB）。 */
 export const OFFICE_MAX_FILE_BYTES = 15 * 1024 * 1024;
-/** 解包后总量上限（防 zip 炸弹：小包解出巨量内容）。 */
 export const OFFICE_MAX_UNCOMPRESSED_BYTES = 64 * 1024 * 1024;
-/** 下发文本上限（字符；超出截断并置 truncated）。 */
 export const OFFICE_MAX_TEXT_CHARS = 200_000;
-/** 表格上限：每表行数 × 列数（预览首屏口径）。 */
 const MAX_ROWS = 500;
 const MAX_COLS = 20;
 
@@ -41,7 +28,6 @@ function findEocd(buf: Buffer): number {
 	throw new Error("不是有效的 zip 文件（找不到 EOCD）");
 }
 
-/** 返回 Map<文件名, Buffer>（只解要的文件，其余跳过）。 */
 export function unzipFiles(buf: Buffer, wanted: string[]): Map<string, Buffer> {
 	const want = new Set(wanted);
 	const eocd = findEocd(buf);
@@ -110,7 +96,6 @@ export function unzipFiles(buf: Buffer, wanted: string[]): Map<string, Buffer> {
 	return out;
 }
 
-/** 列出 zip 中央目录里的全部条目名（不解压内容，快速探测）。 */
 export function listZipEntries(buf: Buffer): string[] {
 	const eocd = findEocd(buf);
 	const cdCount = buf.readUInt16LE(eocd + 10);
@@ -131,13 +116,6 @@ export function listZipEntries(buf: Buffer): string[] {
 
 const NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
 
-/**
- * 单轮解码命名实体与十/十六进制数字实体（一次扫描同时匹配三类）。
- *
- * 旧实现分三段 replace：`&amp;#60;` 会先被命名段解码成 `&#60;`、再被数字段
- * 解码成 `<`——双重解码让转义文本"逃出"字面量（可注入标签）。单轮扫描把
- * `&…;` 整体消费、解码产物不参与后续匹配：`&amp;#60;` 正确地得到 `&#60;`。
- */
 function decodeEntities(s: string): string {
 	return String(s ?? "").replace(
 		/&(?:#([0-9]+);|#x([0-9a-fA-F]+);|([a-zA-Z]+);)/g,
@@ -156,7 +134,6 @@ function decodeEntities(s: string): string {
 					return "";
 				}
 			}
-			// 未知的命名实体保留原文（与旧实现一致，不臆造映射）
 			return NAMED_ENTITIES[name ?? ""] ?? _whole;
 		},
 	);
@@ -164,24 +141,17 @@ function decodeEntities(s: string): string {
 
 const stripTags = (s: string): string => decodeEntities(String(s ?? "").replace(/<[^>]+>/g, ""));
 
-/** document.xml 解压后的字节上限：超大 XML 会让段落正则扫描退化成秒级卡顿（同步事件循环被挂死）。 */
 const DOCX_MAX_XML_BYTES = 20 * 1024 * 1024;
 
-/** docx → 段落数组。 */
 export function parseDocxParagraphs(buf: Buffer): string[] {
 	const files = unzipFiles(buf, ["word/document.xml"]);
 	const xml = files.get("word/document.xml")?.toString("utf8");
 	if (!xml) throw new Error("docx 里找不到 word/document.xml");
-	// 预检 1：解压后过大的 document.xml 在下面的正则扫描里代价爆炸（一次性物化
-	// 全部段落、非贪婪匹配最坏回溯到文本末尾），直接友好报错而不是挂住进程。
 	if (xml.length > DOCX_MAX_XML_BYTES) {
 		throw new Error(
 			`文档内容过大（document.xml 解压后 ${(xml.length / 1048576).toFixed(1)} MB，上限 20 MB），拒绝预览`,
 		);
 	}
-	// 预检 2：正常文档的段落闭合标签与开标签同量级。"只有开标签、没有闭标签"
-	// 的恶意结构会让非贪婪正则在每个候选起点都回溯扫描到文本末尾（O(n²)），
-	// 同步挂死事件循环——开标签远多于闭标签（>2 倍）且闭标签为 0 时直接报错。
 	const opens = xml.match(/<w:p[\s>]/g)?.length ?? 0;
 	const closes = xml.match(/<\/w:p>/g)?.length ?? 0;
 	if (opens > 0 && closes === 0) {
@@ -234,7 +204,6 @@ export interface XlsxSheet {
 	name: string;
 	nRows: number;
 	nCols: number;
-	/** 首屏（MAX_ROWS × MAX_COLS），超出的计 truncated。 */
 	rows: string[][];
 	truncated: boolean;
 }
@@ -253,7 +222,6 @@ function parseSheet(xml: string, shared: string[]): { rows: string[][]; nRows: n
 		if (!Number.isFinite(rNum) || rNum < 0) continue;
 		maxRowSeen = Math.max(maxRowSeen, rNum + 1);
 
-		// 防 OOM：巨大行号不进行无边界预分配，仅计入总量
 		if (rNum >= MAX_PARSE_ROWS) continue;
 
 		while (rows.length <= rNum) rows.push([]);
@@ -266,7 +234,6 @@ function parseSheet(xml: string, shared: string[]): { rows: string[][]; nRows: n
 			if (!pos || pos.col < 0) continue;
 			maxColSeen = Math.max(maxColSeen, pos.col + 1);
 
-			// 防 OOM：巨大列号不进行无边界空字符串 push
 			if (pos.col >= MAX_PARSE_COLS) continue;
 
 			const inner = c[2];
@@ -293,7 +260,6 @@ function parseSheet(xml: string, shared: string[]): { rows: string[][]; nRows: n
 	};
 }
 
-/** xlsx/xlsm → sheet 数组（名按 workbook 还原，取不到时回落 sheetN）。 */
 export function parseXlsxSheets(buf: Buffer): XlsxSheet[] {
 	const probe = unzipFiles(buf, ["xl/workbook.xml", "xl/_rels/workbook.xml.rels"]);
 	const wbXml = probe.get("xl/workbook.xml")?.toString("utf8") ?? "";
@@ -344,7 +310,6 @@ const mdCell = (s: string): string =>
 		.replace(/\|/g, "\\|")
 		.replace(/\r?\n/g, " ");
 
-/** 列号 → Excel 式列名（0→A，25→Z，26→AA）。 */
 function colName(i: number): string {
 	let s = "";
 	let n = i;
@@ -354,8 +319,6 @@ function colName(i: number): string {
 	} while (n >= 0);
 	return s;
 }
-
-/* ---------------- PPTX 幻灯片解析 ---------------- */
 
 export const PPTX_MAX_SLIDES = 500;
 
@@ -478,7 +441,6 @@ function slideToMarkdown(slide: PptxSlide): string {
 	return `${head}\n\n${bodyParts.join("\n\n")}`;
 }
 
-/** pptx/pptm/ppsx/potx → 幻灯片数组。 */
 export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 	const allEntries = new Set(listZipEntries(buf));
 	const probeTargets = ["ppt/presentation.xml", "ppt/_rels/presentation.xml.rels"].filter((n) => allEntries.has(n));
@@ -509,7 +471,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 		.filter((t): t is string => Boolean(t))
 		.map((t) => (t.startsWith("ppt/") ? t : `ppt/${t}`));
 
-	// Fallback 1: presentation.xml.rels 中声明的 slide 关系
 	if (slideTargets.length === 0) {
 		for (const m of relsXml.matchAll(/<Relationship\b[^>]*>/gi)) {
 			const type = /\bType=["']([^"']+)["']/i.exec(m[0])?.[1] ?? "";
@@ -525,7 +486,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 		slideTargets.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 	}
 
-	// Fallback 2: 中央目录扫描 ppt/slides/slideN.xml
 	if (slideTargets.length === 0) {
 		slideTargets = Array.from(allEntries)
 			.filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
@@ -538,7 +498,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 
 	const cappedSlideTargets = slideTargets.slice(0, PPTX_MAX_SLIDES);
 
-	// 扫描各幻灯片的 .rels 关系（查找图片与演讲者备注）
 	const slideRelsMap = new Map<string, Map<string, string>>();
 	const slideToNotes = new Map<string, string>();
 	const slideRelsToFetch: string[] = [];
@@ -596,7 +555,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 		let titleShapeXml: string | null = null;
 		let subtitle: string | undefined;
 
-		// 查找标题与副标题占位符
 		for (const spMatch of slideXml.matchAll(/<p:sp\b[\s\S]*?<\/p:sp>/g)) {
 			const sp = spMatch[0];
 			if (!title && /<p:ph\b[^>]*\btype=["'](?:title|ctrTitle)["']/i.test(sp)) {
@@ -650,7 +608,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 
 		const rMap = slideRelsMap.get(target);
 
-		// 提取图片（<p:pic>）
 		for (const picMatch of slideXml.matchAll(/<p:pic\b[\s\S]*?<\/p:pic>/gi)) {
 			const pic = picMatch[0];
 			const rEmbed = /<a:blip\b[^>]*r:embed=["']([^"']+)["']/i.exec(pic)?.[1];
@@ -666,7 +623,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 			}
 		}
 
-		// 提取背景色
 		let bg: string | undefined;
 		const bgPrMatch = /<p:bgPr\b[\s\S]*?<a:srgbClr\b[^>]*val=["']([0-9a-fA-F]{6})["']/i.exec(slideXml);
 		if (bgPrMatch) {
@@ -739,10 +695,6 @@ export function parsePptxSlides(buf: Buffer): PptxSlide[] {
 	return slides;
 }
 
-/**
- * 表头固定用 A/B/C…（与 Excel 列标一致），而不拿第一行数据冒充表头——
- * 很多表的第一行是通知/标题文字，染成紫色表头又怪又误导。
- */
 function sheetToMarkdown(sheet: XlsxSheet): string {
 	const head = `## ${sheet.name}（${sheet.nRows} 行 × ${sheet.nCols} 列${sheet.truncated ? "，只看前一部分" : ""}）`;
 	if (sheet.rows.length === 0) return `${head}\n\n（空表）`;
@@ -765,10 +717,6 @@ export interface OfficeExtractResult {
 	slides?: PptxSlide[];
 }
 
-/**
- * Office 文件 → Markdown 预览文本（前端 FilePreview 按 Markdown 渲染）。
- * 非 office 扩展名返回 null；zip 损坏/加密等抛错（调用方回落旧的二进制嗅探）。
- */
 export function extractOfficeText(filename: string, buf: Buffer): OfficeExtractResult | null {
 	const dot = String(filename ?? "")
 		.toLowerCase()

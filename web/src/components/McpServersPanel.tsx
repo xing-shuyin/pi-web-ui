@@ -285,7 +285,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 
 	return (
 		<div className="set-section mcp-section">
-			{/* 标题栏 */}
 			<div className="set-section-title">
 				<FiServer className="set-section-icon" />
 				{t("settingsMcp")}
@@ -313,7 +312,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 				</div>
 			</div>
 
-			{/* 子页签切换：已配置 vs MCP 市场 */}
 			<div className="mcp-tab-bar">
 				<button
 					type="button"
@@ -335,12 +333,8 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 				</button>
 			</div>
 
-			{/* ========================================================= */}
-			{/* 1. 已配置服务器视图                                        */}
-			{/* ========================================================= */}
 			{viewMode === "configured" && (
 				<>
-					{/* 路径与作用域概览 */}
 					<div className="mcp-meta-card">
 						<div className="mcp-scope-filter">
 							<button
@@ -390,7 +384,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 						</div>
 					</div>
 
-					{/* 服务器卡片列表 */}
 					{filteredServers.length === 0 ? (
 						<div className="mcp-empty-card">
 							<div className="mcp-empty-icon">
@@ -478,7 +471,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 											</div>
 										</div>
 
-										{/* 命令 / 端点与配置说明 */}
 										<div className="mcp-card-body">
 											{s.description && <div className="mcp-server-desc">{s.description}</div>}
 
@@ -519,7 +511,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 												</div>
 											)}
 
-											{/* 错误提示 */}
 											{s.error && (
 												<div className="mcp-error-box">
 													<FiAlertTriangle className="mcp-error-icon" />
@@ -527,7 +518,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 												</div>
 											)}
 
-											{/* 工具列表抽屉 */}
 											{toolsCount > 0 && (
 												<div className="mcp-tools-accordion">
 													<button type="button" className="mcp-tools-toggle" onClick={() => toggleToolsExpand(cardKey)}>
@@ -556,9 +546,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 				</>
 			)}
 
-			{/* ========================================================= */}
-			{/* 2. MCP 市场视图（各大 MCP 插件市场与目录列表）             */}
-			{/* ========================================================= */}
 			{viewMode === "market" && (
 				<div className="mcp-market-view skill-market-view">
 					<div className="mcp-market-toolbar">
@@ -646,13 +633,11 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 
 										<p className="mcp-market-desc">{descText}</p>
 
-										{/* 市场列表链接行 */}
 										<div className="skill-market-url-row" title={market.url}>
 											<FiGlobe className="skill-market-url-icon" />
 											<span className="skill-market-url-text">{market.url}</span>
 										</div>
 
-										{/* 标签 */}
 										{market.tags && market.tags.length > 0 && (
 											<div className="skill-market-tags">
 												{market.tags.map((tag) => (
@@ -701,9 +686,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 				</div>
 			)}
 
-			{/* ========================================================= */}
-			{/* 3. 删除确认弹窗                                           */}
-			{/* ========================================================= */}
 			{login && (
 				<div className="modal-backdrop sub-modal" onClick={closeLogin}>
 					<div
@@ -816,9 +798,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 				</div>
 			)}
 
-			{/* ========================================================= */}
-			{/* 4. 新增 / 编辑弹窗                                        */}
-			{/* ========================================================= */}
 			{draft && (
 				<div className="modal-backdrop sub-modal" onClick={() => setDraft(null)}>
 					<div className="modal mcp-edit-modal" onClick={(e) => e.stopPropagation()}>
@@ -831,7 +810,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 						</div>
 
 						<div className="modal-body mcp-form-body">
-							{/* 预设模板选择（仅新建时快捷填入） */}
 							{draft.isNew && (
 								<div className="set-field">
 									<label className="set-field-label">{t("mcpPresetSelect")}</label>
@@ -849,7 +827,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								</div>
 							)}
 
-							{/* 作用域选择 */}
 							<div className="set-field">
 								<label className="set-field-label">
 									{t("mcpScopeLabel")}
@@ -883,7 +860,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								</div>
 							</div>
 
-							{/* 服务器名称 */}
 							<div className="set-field">
 								<label className="set-field-label">
 									{t("mcpNameLabel")}
@@ -898,7 +874,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								/>
 							</div>
 
-							{/* 传输协议 */}
 							<div className="set-field">
 								<label className="set-field-label">{t("mcpTransportLabel")}</label>
 								<div className="mcp-transport-selector">
@@ -921,7 +896,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								</div>
 							</div>
 
-							{/* stdio 表单字段 */}
 							{draft.transport === "stdio" ? (
 								<>
 									<div className="set-field">
@@ -1041,7 +1015,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 									</div>
 								</>
 							) : (
-								/* HTTP 表单字段 */
 								<>
 									<div className="set-field">
 										<label className="set-field-label">
@@ -1111,7 +1084,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								</>
 							)}
 
-							{/* 描述与说明 */}
 							<div className="set-field">
 								<label className="set-field-label">{t("mcpDescriptionLabel")}</label>
 								<input
@@ -1123,7 +1095,6 @@ export function McpServersPanel({ settings, chat }: McpServersPanelProps) {
 								/>
 							</div>
 
-							{/* 启用开关 */}
 							<div className="set-row">
 								<div className="set-row-text">
 									<div className="set-row-label">{t("mcpEnabledLabel")}</div>

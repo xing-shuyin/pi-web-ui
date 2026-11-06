@@ -1,16 +1,3 @@
-/**
- * image-toolkit 插件测试（零 token、自包含、无网络）。
- *
- * 两段：
- *   A. 假 host 直测服务端入口 —— 把 index.mjs 的 activate() 跑在内存 host 上，
- *      拿到它注册的路由与 AI 工具直接调用（比经 HTTP 断言更细，能验证到
- *      「目标体积二分」「不支持的格式给出可执行建议」这类行为）；
- *   B. 真服务端接线 —— 起一个真实 server，把插件目录放进临时 data-dir，
- *      经 /plugins-api/image-toolkit/* 验证 host.route 真的挂上了、manifest 的
- *      permissions 声明足够、插件激活没有报错。
- *
- * 运行：先 npm run build:server，再 node tests/image-toolkit-test.mjs
- */
 import { spawn } from "node:child_process";
 import {
 	existsSync,
@@ -64,9 +51,6 @@ async function rejects(fn, re, msg) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 夹具：一张 40×30 的 PNG（纯色块 + 半透明角），一张同尺寸叠加用 PNG
-// ---------------------------------------------------------------------------
 function makeRgba(w, h, fn) {
 	const data = new Uint8Array(w * h * 4);
 	for (let y = 0; y < h; y++) {
@@ -89,7 +73,6 @@ async function pngFixture(w = 40, h = 30) {
 	);
 }
 
-/** 假 host：把插件真正用到的宿主能力都实现一遍（其余保持最小）。 */
 function makeHost(cwd, pluginDir, settings = {}) {
 	const routes = new Map();
 	const tools = new Map();
@@ -125,7 +108,6 @@ function makeHost(cwd, pluginDir, settings = {}) {
 			return () => routes.delete(key);
 		},
 		getSettings: () => settings,
-		// 故意「装不上」：测没注入 JPEG 编解码时的行为
 		ensureDeps: async () => false,
 		storage: { get: (_k, d) => d, set: () => {}, delete: () => {}, all: () => ({}) },
 		secrets: { set: () => {}, get: () => undefined, has: () => false, delete: () => {}, list: () => [] },
@@ -156,7 +138,6 @@ function makeHost(cwd, pluginDir, settings = {}) {
 	return { host, routes, tools, notices, broadcasts };
 }
 
-/** 极简 res 替身。 */
 function makeRes() {
 	return {
 		statusCode: 200,
@@ -184,7 +165,6 @@ function makeRes() {
 	};
 }
 
-/** 极简 req 替身：带 raw body 的 async iterable。 */
 function makeReq({ query = {}, body, raw } = {}) {
 	const chunks = raw ? [raw] : [];
 	return {
@@ -204,9 +184,6 @@ const callRoute = async (route, { query, body, raw } = {}) => {
 
 const textOf = (result) => result?.content?.[0]?.text ?? String(result);
 
-// ---------------------------------------------------------------------------
-// A. 假 host 直测
-// ---------------------------------------------------------------------------
 async function partA() {
 	console.log("\n── A. 假 host 直测 index.mjs ──");
 	const cwd = mkdtempSync(join(tmpdir(), "igt-a-"));
@@ -214,7 +191,6 @@ async function partA() {
 	mkdirSync(pluginDir, { recursive: true });
 	const mod = await import(pathToFileURL(join(ROOT, "plugins", "image-toolkit", "index.mjs")).href);
 
-	// 夹具：a.png（带透明角）、logo.png、sub/ 目录、一个假 webp、一个假 jpeg
 	const png = await pngFixture(40, 30);
 	writeFileSync(join(cwd, "a.png"), png);
 	writeFileSync(join(cwd, "logo.png"), await pngFixture(10, 10));
@@ -234,7 +210,6 @@ async function partA() {
 		const { host, routes, tools } = makeHost(cwd, pluginDir, { suffix: "-min", quality: 0.8 });
 		const stop = mod.default.activate(host);
 
-		// -- 注册面 ----------------------------------------------------------
 		const wsRoutes = [...routes.keys()].filter((k) => k.includes("/ws/")).sort();
 		check(
 			wsRoutes.join(",") ===
@@ -271,14 +246,12 @@ async function partA() {
 			);
 		}
 
-		// -- /ws/settings ----------------------------------------------------
 		let res = await callRoute(routes.get("GET /ws/settings"));
 		check(
 			res.body?.settings?.suffix === "-min" && Array.isArray(res.body?.serverFormats),
 			"/ws/settings 回设置与服务端可写格式",
 		);
 
-		// -- /ws/list --------------------------------------------------------
 		res = await callRoute(routes.get("GET /ws/list"), { query: { dir: "" } });
 		const names = res.body.entries.map((e) => e.name);
 		check(
@@ -289,7 +262,6 @@ async function partA() {
 		check(res.body.entries.find((e) => e.name === "a.png")?.isImage === true, "/ws/list 标记图片文件");
 		check(res.body.entries.find((e) => e.name === "note.txt")?.isImage === false, "/ws/list 非图片不标记");
 
-		// -- /ws/probe -------------------------------------------------------
 		res = await callRoute(routes.get("GET /ws/probe"), { query: { path: "a.png" } });
 		check(
 			res.body.width === 40 && res.body.height === 30 && res.body.format === "png",
@@ -297,12 +269,10 @@ async function partA() {
 		);
 		check(res.body.serverEditable === true && res.body.bytes === png.length, "/ws/probe 标记服务端可编辑并给出字节数");
 
-		// -- /ws/image -------------------------------------------------------
 		res = await callRoute(routes.get("GET /ws/image"), { query: { path: "a.png" } });
 		check(Buffer.isBuffer(res.body) && res.body.equals(png), "/ws/image 原样回传字节");
 		check(res.headers["content-type"] === "image/png", "/ws/image 带 image/png content-type");
 
-		// -- /ws/save（原始 body，不走 JSON） --------------------------------
 		const payload = await pngFixture(12, 12);
 		res = await callRoute(routes.get("GET /ws/save") ?? routes.get("POST /ws/save"), {
 			query: { path: "out/kept.png", overwrite: "0" },
@@ -330,8 +300,6 @@ async function partA() {
 			res.body?.ok === true && existsSync(join(cwd, "out", "x.png")),
 			"/ws/save 兼容 JSON base64 body（前端小图路径）",
 		);
-		// 越界路径：safeRoute 内部抦住 → 400 + 错误文案（绝不让 promise reject，
-		// 否则会被宿主的 unhandledRejection 打挂服务）
 		res = await callRoute(routes.get("GET /ws/probe"), { query: { path: "../escape.png" } });
 		check(
 			res.statusCode === 400 && /越界/.test(res.body?.error ?? ""),
@@ -343,7 +311,6 @@ async function partA() {
 			"读不存在的文件也转成 400 而不是打挂服务",
 		);
 
-		// -- image_info ------------------------------------------------------
 		let out = textOf(await tools.get("image_info").execute("t1", { path: "a.png" }));
 		const info = JSON.parse(out);
 		check(
@@ -358,7 +325,6 @@ async function partA() {
 		out = textOf(await tools.get("image_info").execute("t4", { path: "note.txt" }));
 		check(/unknown/.test(out), "image_info 对非图片文件不炸（format=unknown）");
 
-		// -- image_transform：旋转 + 裁剪 + 缩放 ------------------------------
 		out = textOf(
 			await tools.get("image_transform").execute("t5", {
 				path: "a.png",
@@ -373,13 +339,11 @@ async function partA() {
 		check(rotated.width === 100 && rotated.height === 50, "image_transform 输出文件真实尺寸 100×50");
 		check(existsSync(join(cwd, "a.png")) && readFileSync(join(cwd, "a.png")).equals(png), "image_transform 不动原文件");
 
-		// -- image_transform：不放大 ----------------------------------------
 		out = textOf(
 			await tools.get("image_transform").execute("t6", { path: "a.png", resize: { longEdge: 400 }, suffix: "-le" }),
 		);
 		check(/40×30/.test(out), "resize.longEdge 默认不放大（仍是 40×30）");
 
-		// -- image_compress：目标体积 ----------------------------------------
 		const big = await encodeImage(
 			makeRgba(240, 180, (x, y) => [(x * 7) % 256, (y * 11) % 256, (x ^ y) % 256, 255]),
 			"png",
@@ -392,7 +356,6 @@ async function partA() {
 		);
 		check(/✅/.test(out), `image_compress PNG（无损，走 png 分支）成功：${out.split("\n")[1]}`);
 
-		// -- 批量 ------------------------------------------------------------
 		out = textOf(
 			await tools
 				.get("image_transform")
@@ -405,7 +368,6 @@ async function partA() {
 			"批量输出按各自目录落盘",
 		);
 
-		// -- 不支持格式 / 缺依赖：逐项报 ❌（不抛错，批量时不拖累其它项） ----
 		out = textOf(await tools.get("image_transform").execute("t9", { path: "x.webp", resize: { longEdge: 10 } }));
 		check(/❌/.test(out) && /视图/.test(out), `WebP 走服务端时给出「去视图处理」的可执行建议：${out.split("\n")[1]}`);
 		out = textOf(await tools.get("image_compress").execute("t10", { path: "y.jpg", format: "jpeg" }));
@@ -413,7 +375,6 @@ async function partA() {
 		out = textOf(await tools.get("image_info").execute("t10b", { path: "x.webp" }));
 		check(/webp/.test(out) && /serverEditable": false/.test(out), "image_info 能读 WebP 文件头并标记服务端不可编辑");
 
-		// -- 精确尺寸（同时给宽高）覆盖 noUpscale -----------------------------
 		out = textOf(
 			await tools
 				.get("image_transform")
@@ -421,7 +382,6 @@ async function partA() {
 		);
 		check(/160×120/.test(out), `同时给 width+height = 精确尺寸（允许放大）：${out.split("\n")[1]}`);
 
-		// -- 参数校验 --------------------------------------------------------
 		await rejects(() => tools.get("image_transform").execute("t11", {}), /缺少 path/, "无参数时报「缺少 path」");
 		await rejects(
 			() => tools.get("image_transform").execute("t12", { paths: ["a.png", "sub/b.png"], out: "one.png" }),
@@ -434,7 +394,6 @@ async function partA() {
 			"水印缺 watermarkPath 时报错",
 		);
 
-		// -- image_watermark -------------------------------------------------
 		out = textOf(
 			await tools
 				.get("image_watermark")
@@ -446,7 +405,6 @@ async function partA() {
 		check(wmPix.width === 40 && wmPix.height === 30, "水印不改变画布尺寸");
 		check(!wmOut.equals(png), "水印确实改了像素");
 
-		// -- image_pick_color 单点取色 -----------------------------------------
 		const pickRes = await tools.get("image_pick_color").execute("t15", {
 			path: "a.png",
 			x: 10,
@@ -473,7 +431,6 @@ async function partA() {
 			"坐标越界时抛出明确提示",
 		);
 
-		// -- image_pick_color 批量多点取色 -------------------------------------
 		const batchRes = await tools.get("image_pick_color").execute("t17", {
 			path: "a.png",
 			points: [
@@ -492,7 +449,6 @@ async function partA() {
 			"批量模式返回 image block",
 		);
 
-		// -- image_pick_color 全图/区域自动色板提取模式 -----------------------
 		const paletteRes = await tools.get("image_pick_color").execute("t18", {
 			path: "a.png",
 			maxColors: 4,
@@ -508,7 +464,6 @@ async function partA() {
 		);
 		check(existsSync(join(cwd, "palette-sheet.png")), "色板总览图成功落盘");
 
-		// -- /ws/pick-color 路由测试（单点 / 批量 / 色板） ---------------------
 		res = await callRoute(routes.get("GET /ws/pick-color"), { query: { path: "a.png", x: "10", y: "10" } });
 		check(
 			res.body?.ok === true && res.body?.color?.hex && typeof res.body?.crop?.dataUrl === "string",
@@ -535,7 +490,6 @@ async function partA() {
 		stop();
 	}
 	{
-		// -- 内部配置：POST /ws/settings 存档 → aiTools 开关即时上/下架工具 -----
 		const { host, routes, tools, broadcasts, notices } = makeHost(cwd, pluginDir, { aiTools: false });
 		const stop = mod.default.activate(host);
 		check(tools.size === 0, "aiTools=false 时不注册任何 AI 工具");
@@ -552,7 +506,6 @@ async function partA() {
 		stop();
 		void notices;
 	}
-	// 反激活后路由应撤销
 	{
 		const { host, routes, tools } = makeHost(cwd, pluginDir, {});
 		const stop = mod.default.activate(host);
@@ -564,9 +517,6 @@ async function partA() {
 	rmSync(cwd, { recursive: true, force: true });
 }
 
-// ---------------------------------------------------------------------------
-// B. 真服务端接线（路由真的挂上 / 权限声明够用 / 插件激活无错）
-// ---------------------------------------------------------------------------
 async function partB() {
 	console.log("\n── B. 真服务端接线 ──");
 	const dataDir = mkdtempSync(join(tmpdir(), "igt-b-"));
@@ -575,7 +525,6 @@ async function partB() {
 	const png = await pngFixture(24, 18);
 	writeFileSync(join(cwd, "pics", "p.png"), png);
 
-	// 插件目录：真实插件源码（走 CLI 之外的路径：直接复制进 data-dir 的 plugins/）
 	const pluginSrc = join(ROOT, "plugins", "image-toolkit");
 	const pluginDst = join(dataDir, "plugins", "image-toolkit");
 	mkdirSync(pluginDst, { recursive: true });
@@ -590,9 +539,7 @@ async function partB() {
 		if (!proc) return;
 		try {
 			proc.kill();
-		} catch {
-			/* 忽略 */
-		}
+		} catch {}
 		proc = null;
 	};
 	try {
@@ -606,15 +553,12 @@ async function partB() {
 		while (!up && Date.now() - t0 < 25_000) {
 			try {
 				up = (await fetch(`${BASE}/api/health`)).ok;
-			} catch {
-				/* 还没起来 */
-			}
+			} catch {}
 			if (!up) await new Promise((r) => setTimeout(r, 300));
 		}
 		if (!up) throw new Error("服务端没起来");
 		ok("服务端就绪");
 
-		// 浏览器 attach 触发插件激活（路由随之挂载）
 		const plugins = await new Promise((resolve2, reject) => {
 			const sock = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 			const timer = setTimeout(() => reject(new Error("ws 超时")), 15_000);
@@ -639,7 +583,6 @@ async function partB() {
 		check(info?.view !== false, "视图 tab 默认开启");
 
 		await new Promise((r) => setTimeout(r, 800));
-		// 路由：/plugins-api/<id>/ws/*
 		let r = await fetch(`${BASE}/plugins-api/image-toolkit/ws/settings`);
 		check(r.ok, `GET /plugins-api/image-toolkit/ws/settings → ${r.status}`);
 		const st = await r.json();
@@ -672,12 +615,10 @@ async function partB() {
 			"落盘字节数与请求一致（原始 body 不被 10mb JSON 上限卡住）",
 		);
 
-		// 非法路径（host.fs 强制）：应 500，且不能写出文件
 		r = await fetch(`${BASE}/plugins-api/image-toolkit/ws/probe?path=../../escape.png`);
 		check(r.status >= 400, `/ws/probe 越界路径被拒（HTTP ${r.status}）`);
 		check(!existsSync(join(dirname(cwd), "escape.png")), "越界路径没有产生任何文件");
 
-		// 插件工具应进模型工具表：查 /api/health 之外的现成通道较绕，这里用 settings 里的 aiTools 默认 true 佐证
 		check(st.settings.aiTools === true, "AI 工具默认开启");
 	} finally {
 		stopServer();
@@ -688,13 +629,9 @@ async function partB() {
 	void sniffFormat;
 }
 
-// ---------------------------------------------------------------------------
-// C. 客户端纯逻辑（不依赖 DOM 的那部分：文案、渲染管线的尺寸/格式判定、ZIP）
-// ---------------------------------------------------------------------------
 async function partC() {
 	console.log("\n── C. 客户端纯逻辑 ──");
 
-	// -- 文案：中英必须逐 key 对齐（缺一个就会出现半截英文界面） --------------
 	const zh = Object.keys(DICT.zh);
 	const en = Object.keys(DICT.en);
 	check(zh.length === en.length, `中英文案 key 数量一致（${zh.length}）`);
@@ -716,7 +653,6 @@ async function partC() {
 	);
 	check(unused.length === 0, `没有无用文案 key${unused.length ? `（残留：${unused.join(", ")}）` : ""}`);
 
-	// -- 渲染管线：纯函数部分 -----------------------------------------------
 	const st = (over = {}) => ({ rotate90: 0, angle: 0, ...over });
 	let r = pipeline.rotatedSize(st({ rotate90: 90 }), 400, 300);
 	check(r.width === 300 && r.height === 400, "rotatedSize：90° 交换宽高");
@@ -770,7 +706,6 @@ async function partC() {
 	check(pipeline.ratioOf({ ratio: "custom", ratioW: 0, ratioH: 0 }) === null, "ratioOf：自定义非法值当不锁");
 	check(pipeline.ratioOf({ ratio: "custom", ratioW: -3, ratioH: 2 }) === null, "ratioOf：负数当不锁");
 	check(pipeline.ratioOf(null) === null, "ratioOf：空 state 不炸");
-	// 形状抠图 + 不透明格式：必须能被识别出来（否则用户拿到一张"白角图"）
 	check(
 		pipeline.alphaFixForShape({ cropShape: "rect", format: "jpeg" }, "image/png") === null,
 		"alphaFixForShape：矩形不掺和格式",
@@ -808,7 +743,6 @@ async function partC() {
 	const dsBad = pipeline.defaultState({ defaultFormat: "tiff", quality: 99 });
 	check(dsBad.format === "keep" && dsBad.quality === 1, "defaultState：非法设置回落合法值");
 
-	// -- util ---------------------------------------------------------------
 	check(
 		fmtBytes(512) === "512 B" && fmtBytes(2048) === "2.0 KB" && fmtBytes(3 * 1024 * 1024) === "3.00 MB",
 		"fmtBytes：B/KB/MB",
@@ -828,7 +762,6 @@ async function partC() {
 	check(zb.includes(Buffer.from("a.webp")) && zb.includes(Buffer.from("a-1.webp")), "makeZip：同名自动改成 a-1");
 	check(zip.type === "application/zip", "makeZip：MIME 正确");
 
-	// -- 裁剪形状几何（画布与 SVG 共用同一份路径） ---------------------------
 	const rectCmds = shapes.shapeCommands("rect", 100, 50);
 	check(rectCmds.length === 5 && shapes.toPathD(rectCmds).startsWith("M0 0"), "形状：矩形 = M/L/L/L/Z");
 	check(shapes.shapeCommands("ellipse", 100, 100).length === 6, "形状：椭圆 = M + 4 段三次贝塞尔 + Z");
@@ -840,7 +773,6 @@ async function partC() {
 	check(shapes.shapeCommands("rounded", 100, 100, 20).length === 10, "形状：圆角矩形含 4 段圆角");
 	check(shapes.shapeCommands("star", 100, 100)[12] === undefined, "形状：星形不会多出多余命令");
 	check(shapes.CROP_SHAPES[0] === "rect" && shapes.CROP_SHAPES.includes("star"), "CROP_SHAPES：rect 在前，含 star");
-	// 形状必须完全落在外接矩形内，否则导出会被切掉一角
 	for (const sh of shapes.CROP_SHAPES) {
 		const cmds = shapes.shapeCommands(sh, 120, 80, 25);
 		let inside = true;
@@ -853,11 +785,9 @@ async function partC() {
 	}
 	check(shapes.toPathD(shapes.shapeCommands("star", 10, 10)).endsWith(" Z"), "toPathD：以 Z 收尾");
 	check(shapes.toPathD(rectCmds) === "M0 0 L100 0 L100 50 L0 50 Z", "toPathD：d 属性拼装正确");
-	// 默认参数就该是矩形（老状态 JSON 里没有 cropShape 时不能崩）
 	check(pipeline.defaultState({}).cropShape === "rect", "defaultState：默认裁剪形状是矩形");
 	check(pipeline.defaultState({}).cropRadius > 0, "defaultState：圆角半径有默认值");
 
-	// -- 客户端信息探测 -----------------------------------------------------
 	const magic = (bytes) => cprobe.sniffType(new Uint8Array(bytes));
 	check(magic([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) === "image/png", "sniffType：PNG");
 	check(magic([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]) === "", "sniffType：PNG 签名不全时不误判");

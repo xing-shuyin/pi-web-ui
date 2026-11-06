@@ -37,11 +37,9 @@ describe("工作区稳定性与多项目会话隔离", () => {
 			cwd: targetProject,
 		});
 
-		// 1. 当前项目的 sessions 必须完好无损，绝不被冲刷
 		expect(nextState.sessions.length).toBe(1);
 		expect(nextState.sessions[0]?.displayName).toBe("主项目会话");
 
-		// 2. 外部项目的 sessions 存入 projectSessions 独立隔离字典中
 		const normTarget = "/path/to/project-other";
 		expect(nextState.projectSessions?.[normTarget]).toBeDefined();
 		expect(nextState.projectSessions?.[normTarget]?.length).toBe(1);
@@ -56,11 +54,9 @@ describe("工作区稳定性与多项目会话隔离", () => {
 			cwd: emptyProject,
 		});
 
-		// 当前项目的会话依然完整
 		expect(nextState.sessions.length).toBe(1);
 		expect(nextState.sessions[0]?.displayName).toBe("主项目会话");
 
-		// 空项目的 projectSessions 记录为 []
 		expect(nextState.projectSessions?.[emptyProject]).toEqual([]);
 	});
 

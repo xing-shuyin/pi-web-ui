@@ -1,9 +1,3 @@
-/**
- * Goal bar — UI smoke test (no model call).
- * Boots the built server, loads the page, verifies the goal bar renders,
- * a goal can be set (active bar + status), and cleared. Only UI state changes —
- * no prompt, so no LLM tokens.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
@@ -13,7 +7,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -47,9 +40,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			// retry
-		}
+		} catch {}
 	}
 	throw new Error("server did not start");
 }
@@ -59,21 +50,17 @@ async function run() {
 	const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 	const page = await browser.newPage();
 	await page.goto(URL);
-	// The goal bar hint (idle, collapsed) should appear near the chat input.
 	await page.waitForSelector(".goalbar", { timeout: 20000 });
 	const hintVisible = await page.locator(".goalbar-hint").count();
 	check("goal bar renders (idle hint)", hintVisible > 0 || (await page.locator(".goalbar-input").count()) > 0);
 
-	// If collapsed, expand it; then type a goal and click 开始.
 	const input = page.locator(".goalbar-input");
 	if ((await input.count()) === 0) {
 		await page.locator(".goalbar-hint").click();
 		await page.waitForSelector(".goalbar-input");
 	}
 	await page.locator(".goalbar-input").fill("把页面标题改为 Goal UI 测试");
-	// 开始 (Set) button — not the AI-提炼 (wizard) button.
 	await page.locator(".goalbar-btn:not(.wizard)").click();
-	// Active goal bar replaces the edit row.
 	await page.waitForSelector(".goalbar-active", { timeout: 8000 });
 	check("active goal bar shown after set", true);
 	const text = await page
@@ -82,7 +69,6 @@ async function run() {
 		.catch(() => "");
 	check("active goal shows the goal text", text.includes("Goal UI 测试"), text);
 
-	// Clear it.
 	await page.locator(".goalbar-x").click();
 	await page.waitForSelector(".goalbar-active", { state: "detached", timeout: 8000 });
 	const hintCount = await page.locator(".goalbar-hint").count();
@@ -92,9 +78,7 @@ async function run() {
 	await browser.close();
 	try {
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -102,8 +86,6 @@ run().catch((err) => {
 	console.error("test error:", err);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

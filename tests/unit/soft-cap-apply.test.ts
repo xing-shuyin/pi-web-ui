@@ -4,7 +4,6 @@ import { ClientSession } from "../../server/agent-service.js";
 import { DEFAULT_COMPACTION_RESERVE_TOKENS } from "../../server/soft-cap.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
-/** 不起 server：伪造 settingsSvc + convs，直接调原型方法验逻辑。 */
 function serviceWith(settings: { softCapTokens: number; softCapByModel: Record<string, number> }, sessions: unknown[]) {
 	const svc = fakeClientSession() as {
 		settingsSvc: { current: typeof settings };
@@ -15,7 +14,6 @@ function serviceWith(settings: { softCapTokens: number; softCapByModel: Record<s
 	return svc;
 }
 
-/** 可变窗口 + 可选 isSubagent 标记（issue #773：子代理会话一视同仁）。 */
 function fakeSession(
 	model: { provider: string; id: string } | null,
 	window: number,
@@ -56,7 +54,6 @@ describe("applyCompactionOverrides", () => {
 	});
 
 	it("软上限开启 → 逐会话按自己的窗口算 cw - cap（回合内层，issue #773）", () => {
-		// 500K 窗口 + 190K 上限 → 310K；128K 窗口压不下来 → 回落默认。
 		const big = fakeSession({ provider: "xai", id: "grok-4" }, 500000);
 		const small = fakeSession({ provider: "openai", id: "gpt-4o" }, 128000);
 		const svc = serviceWith({ softCapTokens: 190000, softCapByModel: {} }, [big, small]);
@@ -90,7 +87,6 @@ describe("applyCompactionOverrides", () => {
 		const svc = serviceWith({ softCapTokens: 256000, softCapByModel: {} }, [s]);
 		apply(svc);
 		expect(s._captured).toHaveBeenLastCalledWith({ compaction: { reserveTokens: 744_000 } });
-		// 换到 200K 窗口的模型：新 cap 220000 可压（reserve 200000-220000 < 0 → 不可压）
 		s._setWindow(200000);
 		apply(svc);
 		expect(s._captured).toHaveBeenLastCalledWith({
@@ -149,7 +145,6 @@ describe("activeSoftCap", () => {
 			);
 		expect(cap({ softCapTokens: 190000, softCapByModel: {} }, { provider: "xai", id: "grok-4" }, 500000)).toBe(190000);
 		expect(cap({ softCapTokens: 0, softCapByModel: {} }, { provider: "xai", id: "grok-4" }, 500000)).toBeNull();
-		// cap 太接近或超过物理上限（保留少于 SOFT_CAP_MIN_HEADROOM）
 		expect(cap({ softCapTokens: 199500, softCapByModel: {} }, { provider: "a", id: "b" }, 200000)).toBeNull();
 		expect(cap({ softCapTokens: 300000, softCapByModel: {} }, { provider: "a", id: "b" }, 128000)).toBeNull();
 	});
@@ -165,9 +160,7 @@ describe("activeSoftCap", () => {
 			(
 				ClientSession.prototype as unknown as Record<string, (w: number, s?: unknown) => number | null>
 			).activeSoftCap.call(svc, 500000, session);
-		// 不传 → 用活动会话（claude 没有覆盖 → 全局 300000）
 		expect(call()).toBe(300000);
-		// 传子代理会话 → 命中 xai/grok-4 的按模型覆盖
 		expect(call({ model: { provider: "xai", id: "grok-4" } })).toBe(120000);
 	});
 });

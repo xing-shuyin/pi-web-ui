@@ -1,18 +1,3 @@
-// provider_keys — built-in provider MULTIPLE keys (zero token).
-//
-// One provider holds several API keys; exactly one is active and routes the
-// provider's requests. The UI groups the (system-default) models per key so a
-// click switches the key WITHOUT copying any model list. This test verifies:
-//   1. set_provider_api_key records the key as the active entry in auth.json
-//      AND in provider-keys.json
-//   2. list_provider_keys returns a masked key list with the active flag
-//   3. add_provider_key adds a SECONDARY (inactive) key; the active one stays
-//   4. activate_provider_key switches the active key (auth.json + runtime)
-//   5. remove_provider_key removes a key; removing the active one falls back to
-//      the first remaining; removing the last returns the provider to unconfigured
-//   6. add_provider_key with a duplicate key refuses without duplicating
-//
-// Usage: npm run build && node tests/provider-keys-test.mjs [port]
 import WebSocket from "ws";
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,9 +14,6 @@ mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
 const NODE = realpathSync(process.execPath);
-// 遗留迁移场景：provider-keys.json 尚不存在的旧配置升级 —— auth.json 必须在
-// 服务启动【前】就位（listProviderKeys 只在文件不存在时做引导补种并落盘；
-// 文件存在后绝不整份写回，防止竞态把密钥覆盖掉）。
 const authPath = join(agentDir, "auth.json");
 writeFileSync(authPath, JSON.stringify({ anthropic: { type: "api_key", key: "sk-legacy-a" } }, null, 2) + "\n");
 const server = spawn(NODE, ["dist/server/index.js"], {
@@ -82,15 +64,11 @@ class Client {
 		}
 		throw new Error(`timeout waiting for notice "${substr}"`);
 	}
-	// Returns the latest provider_keys map seen so far (or null).
 	lastProviderKeys() {
 		let keys = null;
 		for (const m of this.received) if (m.type === "provider_keys") keys = m.keys;
 		return keys;
 	}
-	// Poll until provider_keys for `provider` has `n` entries (or timeout).
-	// `ready` 可选：再用一个谓词筛一遍（例：等某条密钥的 active 变 true）。
-	// 只比条数会在「条数不变、activated 标记变了」的场景里拿到切换前的旧广播。
 	async waitProviderKeys(provider, n, timeout = 25000, ready = null) {
 		const start = Date.now();
 		while (Date.now() - start < timeout) {
@@ -141,9 +119,7 @@ function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 }
 process.on("exit", cleanup);
 
@@ -153,10 +129,6 @@ try {
 	c.send({ type: "hello", clientId: "provider-keys-test" });
 	await c.waitForNotice("", 1).catch(() => {});
 
-	// 0) legacy migration: a provider configured in auth.json BEFORE the
-	// multi-key store existed (auth.json was written before server boot, see
-	// spawn above) must be seeded at bootstrap (listed as the active key), and
-	// adding a second key must stack it (inactive) instead of replacing it.
 	c.send({ type: "list_provider_keys" });
 	let legacy = await c.waitProviderKeys("anthropic", 1);
 	check(
@@ -173,7 +145,6 @@ try {
 	check("no value/masked/id on the wire", !legacy.some((k) => ["id", "masked", "apiKey"].some((key) => key in k)));
 	check("auth.json still legacy", readAuth().anthropic?.key === "sk-legacy-a");
 
-	// 1) first key → stored + active
 	c.send({ type: "set_provider_api_key", provider: "deepseek", apiKey: "sk-A" });
 	await c.waitForNotice("已保存", 30000);
 	check("auth.json has deepseek", readAuth().deepseek?.key === "sk-A");
@@ -187,7 +158,6 @@ try {
 	check("no value/masked/id on the wire", !ks.some((k) => ["id", "masked", "apiKey"].some((key) => key in k)));
 	const keyAName = ks[0].name;
 
-	// 2) add a secondary key → stays inactive, active keeps routing
 	c.send({ type: "add_provider_key", provider: "deepseek", apiKey: "sk-B", name: "备用" });
 	await c.waitForNotice("点击模型时可切换", 30000);
 	check("auth.json still sk-A", readAuth().deepseek?.key === "sk-A");
@@ -197,28 +167,23 @@ try {
 	check("added key is inactive", ks.find((k) => k.name === keyBName)?.active === false);
 	check("first key still active", ks.find((k) => k.name === keyAName)?.active === true);
 
-	// duplicate add refused (still 2 keys)
 	c.send({ type: "add_provider_key", provider: "deepseek", apiKey: "sk-B" });
 	await c.waitForNotice("已存在该密钥", 30000);
 	ks = await c.waitProviderKeys("deepseek", 2);
 	check("duplicate add not duplicated", ks.length === 2);
 
-	// 3) switch to key B BY NAME
 	c.send({ type: "activate_provider_key", provider: "deepseek", keyName: keyBName });
 	await c.waitForNotice("已切换", 30000);
 	check("auth.json now sk-B", readAuth().deepseek?.key === "sk-B");
-	// 条数没变（依旧是 2），必须等「激活标记已翻转」的那条广播，否则会读到切换前的旧列表。
 	ks = await c.waitProviderKeys("deepseek", 2, 25000, (list) => list.find((k) => k.name === keyBName)?.active === true);
 	check("key B active now", ks.find((k) => k.name === keyBName)?.active === true);
 
-	// 4) remove the ACTIVE key by name → falls back to the remaining (sk-A)
 	c.send({ type: "remove_provider_key", provider: "deepseek", keyName: keyBName });
 	await c.waitForNotice("已切换", 30000);
 	check("auth.json fell back to sk-A", readAuth().deepseek?.key === "sk-A");
 	ks = await c.waitProviderKeys("deepseek", 1);
 	check("only 1 key left", ks.length === 1 && ks[0].active === true);
 
-	// 5) remove the last key by name → provider returns to unconfigured
 	c.send({ type: "remove_provider_key", provider: "deepseek", keyName: keyAName });
 	await c.waitForNotice("回到未配置状态", 30000);
 	check("auth.json deepseek gone", !readAuth().deepseek);

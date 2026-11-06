@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * recursive-watch-test.mjs — 文件树递归 watcher 回归（零 token）。
- *
- * 验证点：
- *   1. win32/darwin 上对工作区根开 fs.watch(recursive)，**深层未列出目录**里的
- *      文件变化也能推 file_changed（旧实现只监听当前列出目录，看不到深层）。
- *   2. node_modules / .git 子树的事件被过滤，不触发刷新。
- *   3. 切换列出目录后 file_changed.path 跟随新目录。
- *
- * 自包含：独立端口 + 临时 data-dir + 临时 workspace，自行清理。Linux 上
- * （无递归 watch）仅验证 fallback 不炸 + 浅层变化仍工作，跳过深层断言。
- */
 import { spawn, execFile } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -111,25 +99,21 @@ async function main() {
 		send({ type: "hello", clientId: "" });
 		await sleep(600);
 
-		// 初始列根目录 → 建立 watcher
 		const root1 = await listDir("");
 		if (root1.error) throw new Error(root1.error);
 
 		const deepSupported = process.platform === "win32" || process.platform === "darwin";
 
-		// 1) 深层（未列出）目录变化 → file_changed
 		lastFileChanged = null;
 		setTimeout(() => writeFileSync(join(workspace, "deep", "nested", "leaf.txt"), "changed\n"), 100);
 		if (deepSupported) {
 			const ev = await nextFileChanged();
 			console.log(`✓ 深层变化推送 file_changed (path=${ev.path})`);
 		} else {
-			// Linux fallback：等一小段确认不炸即可（非断言失败）
 			await sleep(1500);
 			console.log(`⏭ 平台无递归 watch，跳过深层断言`);
 		}
 
-		// 2) node_modules 事件过滤：写入后短时间内不应触发 file_changed
 		mkdirSync(join(workspace, "node_modules", "pkg"), { recursive: true });
 		lastFileChanged = null;
 		writeFileSync(join(workspace, "node_modules", "pkg", "x.js"), "x\n");
@@ -137,17 +121,14 @@ async function main() {
 		try {
 			await nextFileChanged(2500);
 			filtered = false;
-		} catch {
-			/* 未触发 = 已过滤 */
-		}
+		} catch {}
 		if (!filtered && deepSupported) {
 			throw new Error("node_modules 变化不应触发 file_changed");
 		}
 		console.log(`✓ node_modules 事件已过滤`);
 
-		// 3) 切换列出目录后，file_changed.path 跟随
 		await listDir("deep");
-		await sleep(300); // 等 retarget 生效
+		await sleep(300);
 		lastFileChanged = null;
 		setTimeout(() => writeFileSync(join(workspace, "deep", "other.txt"), "y\n"), 100);
 		if (deepSupported) {
@@ -167,8 +148,6 @@ async function main() {
 			ws?.close();
 		} catch {}
 		if (child?.pid) {
-			// win32 用 taskkill /T 杀进程树；posix 直接 SIGTERM（否则 server 子进程
-			// 泄漏占住端口，下一次跑套件在 PORT 上 EADDRINUSE）。
 			if (process.platform === "win32") {
 				execFile("taskkill", ["/F", "/T", "/PID", String(child.pid)], () => {});
 			} else {

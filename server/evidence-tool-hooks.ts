@@ -14,7 +14,6 @@ type HookSession = {
 const installed = new WeakMap<object, BeforeToolCall>();
 const PREFIX = "context-evidence:";
 
-/** Resolve evidence before SDK permission hooks; leave all file access to the reader. */
 export function installEvidenceToolHooks(session: unknown): boolean {
 	if (!session || typeof session !== "object") return false;
 	const target = session as HookSession;
@@ -43,7 +42,6 @@ export function installEvidenceToolHooks(session: unknown): boolean {
 				}
 				const sessionFile = target.sessionManager.getSessionFile();
 				if (!sessionFile) throw new Error("Evidence requires a persisted session");
-				// SDK validated args must be detached from the immutable transcript block.
 				if (args === context.toolCall.arguments) {
 					throw new Error("Evidence arguments must not alias tool call history");
 				}

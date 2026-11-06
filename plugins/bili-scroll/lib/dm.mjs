@@ -9,9 +9,7 @@ export function loadCred(stateDir) {
 		try {
 			const c = JSON.parse(readFileSync(file, "utf8"));
 			if (c?.sessdata) return c;
-		} catch {
-			/* Invalid credentials are not authentication. */
-		}
+		} catch {}
 	}
 	return null;
 }
@@ -128,7 +126,6 @@ export async function fetchMessagePage(cred, talkerId, options = {}) {
 			...content(m),
 		}))
 		.reverse();
-	// Bound serialized UTF-8 output, including JSON escaping, below tool details limits.
 	let truncated = false;
 	const textBudget = Math.floor(36000 / Math.max(1, messages.length));
 	for (const message of messages) {

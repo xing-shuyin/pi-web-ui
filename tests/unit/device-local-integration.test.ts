@@ -172,8 +172,6 @@ async function fixture() {
 	};
 }
 
-// These integration cases execute many real Git processes plus the native Windows supervisor.
-// Product cancellation/aggregate limits remain separately injected and asserted below.
 describe("device local artifact integration", { timeout: 30_000 }, () => {
 	let f: Awaited<ReturnType<typeof fixture>>;
 	let prepared: Awaited<ReturnType<typeof devicePrepareIntegration>>;

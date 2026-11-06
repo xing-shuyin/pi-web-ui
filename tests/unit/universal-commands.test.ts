@@ -1,17 +1,3 @@
-/**
- * universal-commands.test.ts — 通用底座及各引擎 / 和 @ 命令支持单元测试。
- *
- * 覆盖：
- *   1. 通用底座（Universal Base）推送与执行内置斜杠命令（/new, /name, /model, /cwd, /thinking, /compact 等）；
- *   2. 通用底座与各引擎对磁盘/运行时技能的发现，以及通过 /skill:name 和 @skill:name 触发的上下文指令扩展；
- *   3. 用户提问中 @path 文件引用与附件卡片自动解析、持久化（UiMessage custom "file" 卡片）；
- *   4. 各引擎驱动接入：
- *      - Claude Code 驱动专有斜杠命令（/cost, /doctor, /init, /clear）；
- *      - DSH 驱动与技能注入；
- *      - Mock 驱动命令（/mock-echo）与测试技能（mock-analyzer）；
- *      - DshAgentService 独立引擎推入技能与 @ 提及解析。
- */
-
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,15 +33,12 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 		if (existsSync(tempDir)) {
 			try {
 				rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-			} catch {
-				/* ignore EPERM on Windows */
-			}
+			} catch {}
 		}
 	});
 
 	describe("1. 技能磁盘发现与正文解析 (skill-discovery)", () => {
 		it("能够正确发现 .pi/skills 与 .claude/skills 下的目录型与单文件型技能", () => {
-			// 1. 创建项目级目录型技能 workspace/.pi/skills/code-review/SKILL.md
 			const reviewDir = join(workspaceDir, ".pi", "skills", "code-review");
 			mkdirSync(reviewDir, { recursive: true });
 			writeFileSync(
@@ -64,7 +47,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				"utf8",
 			);
 
-			// 2. 创建 Claude 规范技能 workspace/.claude/skills/unit-test/SKILL.md
 			const testDir = join(workspaceDir, ".claude", "skills", "unit-test");
 			mkdirSync(testDir, { recursive: true });
 			writeFileSync(
@@ -73,7 +55,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				"utf8",
 			);
 
-			// 3. 创建单文件技能 agentDir/skills/format.md
 			const globalSkillsDir = join(agentDir, "skills");
 			mkdirSync(globalSkillsDir, { recursive: true });
 			writeFileSync(
@@ -103,7 +84,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 
 	describe("2. 通用底座 @ 提及扫描与附件卡片 (universal-attachments)", () => {
 		it("能够扫描文本中的 @skill 与存在的工作区 @path，并组装有效附件与技能上下文", () => {
-			// 在工作区创建一个真实文件
 			writeFileSync(join(workspaceDir, "index.ts"), `console.log("hello world");`, "utf8");
 
 			const skills = [
@@ -143,24 +123,20 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			const cards = createAttachmentUiMessages(atts, 123456);
 			expect(cards.length).toBe(4);
 
-			// 工作区引用
 			expect(cards[0].role).toBe("custom");
 			expect(cards[0].customType).toBe("file");
 			expect(cards[0].content[0]).toEqual({ type: "text", text: '<file path="src/main.ts" />' });
 			expect((cards[0].details as any).name).toBe("main.ts");
 
-			// 行引用
 			expect(cards[1].content[0]).toEqual({ type: "text", text: '<file path="src/utils.ts" lines="10-20" />' });
 			expect((cards[1].details as any).startLine).toBe(10);
 			expect((cards[1].details as any).endLine).toBe(20);
 
-			// 页面引用
 			expect(cards[2].content[0]).toEqual({
 				type: "text",
 				text: '<browser-page url="https://example.com" title="Example Page" />',
 			});
 
-			// 图片
 			expect(cards[3].content[0]).toEqual({ type: "image", dataUrl: "data:image/png;base64,AAAA" });
 		});
 	});
@@ -180,7 +156,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 写入一个本地技能
 			const skillDir = join(workspaceDir, ".pi", "skills", "code-doc");
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(
@@ -197,16 +172,13 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			expect(slashMsg).toBeDefined();
 
 			const names = slashMsg!.commands.map((c) => c.name);
-			// 验证内置命令
 			expect(names).toContain("new");
 			expect(names).toContain("model");
 			expect(names).toContain("cwd");
 			expect(names).toContain("thinking");
 
-			// 验证技能命令
 			expect(names).toContain("skill:code-doc");
 
-			// 验证驱动扩展命令（MockAgentDriver 中的 /mock-echo）
 			expect(names).toContain("mock-echo");
 
 			session.dispose();
@@ -227,7 +199,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 测试 /name 重命名命令
 			await session.prompt("/name 新的测试会话名称");
 			expect(sendSpy).not.toHaveBeenCalled();
 
@@ -236,11 +207,9 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				.pop();
 			expect(session.activeConversations()).toBe(0);
 
-			// 验证通知回显
 			const notices = messages.filter((m): m is Extract<ServerMessage, { type: "notice" }> => m.type === "notice");
 			expect(notices.some((n) => n.text.includes("已重命名当前会话"))).toBe(true);
 
-			// 2. 测试 /mock-echo 驱动扩展命令
 			await session.prompt("/mock-echo 你好世界");
 			expect(sendSpy).not.toHaveBeenCalled();
 			expect(messages.some((m) => m.type === "notice" && m.text.includes("Mock echo: 你好世界"))).toBe(true);
@@ -270,7 +239,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 准备一个技能
 			const skillDir = join(workspaceDir, ".pi", "skills", "security-audit");
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(
@@ -279,10 +247,8 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				"utf8",
 			);
 
-			// 准备一个文件
 			writeFileSync(join(workspaceDir, "server.ts"), "const a = 1;", "utf8");
 
-			// 用户调用 /skill:security-audit 检查代码
 			await session.prompt("/skill:security-audit 检查 server.ts 安全性");
 
 			expect(receivedPrompt).toContain("[Skill: security-audit]");
@@ -309,17 +275,14 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				emitNotice: (_level: string, text: string) => notices.push(text),
 			};
 
-			// 执行 /doctor
 			const docHandled = await driver.execSlashCommand("doctor", "", context as any);
 			expect(docHandled).toBe(true);
 			expect(notices.some((n) => n.includes("Claude Code CLI"))).toBe(true);
 
-			// 执行 /init
 			const initHandled = await driver.execSlashCommand("init", "", context as any);
 			expect(initHandled).toBe(true);
 			expect(existsSync(join(workspaceDir, "CLAUDE.md"))).toBe(true);
 
-			// 执行 /clear
 			const clearHandled = await driver.execSlashCommand("clear", "", context as any);
 			expect(clearHandled).toBe(true);
 			expect(driver.getActiveSessionId()).toBeNull();
@@ -357,13 +320,11 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 发起首个请求，开始生成
 			const p1 = session.prompt("首个问题");
 			await new Promise((r) => setTimeout(r, 10));
 			expect(session.isStreaming).toBe(true);
 			expect(executedPrompts).toEqual(["首个问题"]);
 
-			// 2. 在生成过程中以 queue: true 发送排队请求
 			await session.prompt("排队的问题", undefined, true);
 			expect(executedPrompts).toEqual(["首个问题"]);
 
@@ -372,12 +333,10 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			);
 			expect(notice).toBeDefined();
 
-			// 3. 第一轮生成结束，底座自动消费队列中的第二条消息
 			activeSink.onTurnComplete();
 			if (turnResolve) turnResolve();
 			await p1;
 
-			// 等待微任务队列消费
 			await new Promise((r) => setTimeout(r, 15));
 
 			expect(executedPrompts).toEqual(["首个问题", "排队的问题"]);
@@ -418,7 +377,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			await new Promise((r) => setTimeout(r, 10));
 			expect(session.isStreaming).toBe(true);
 
-			// 发起插队
 			await session.prompt("紧急插队问题", undefined, false);
 			expect(abortSpy).toHaveBeenCalled();
 			expect(callCount).toBe(2);
@@ -462,17 +420,14 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 保存预设
 			await session.savePreset("代码精简模式");
 			expect(savedPresets.length).toBe(1);
 			expect(savedPresets[0].name).toBe("代码精简模式");
 
-			// 2. 修改当前设置并应用预设
 			savedSettings.customSystemPrompt = "被修改后的提示词";
 			await session.applyPreset("代码精简模式");
 			expect(savedSettings.customSystemPrompt).toBe("全局提示");
 
-			// 3. 删除预设
 			await session.deletePreset("代码精简模式");
 			expect(savedPresets.length).toBe(0);
 
@@ -522,13 +477,11 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 安装一个项目级技能
 			const skillBody = `---\nname: auto-doc\ndescription: 自动代码注释生成\n---\n为函数编写标准注释。`;
 			await session.installSkill("auto-doc", "project", skillBody);
 
 			expect(existsSync(join(workspaceDir, ".pi", "skills", "auto-doc", "SKILL.md"))).toBe(true);
 
-			// 验证推送的斜杠命令中已包含该技能
 			messages.length = 0;
 			await session.pushSlashCommands();
 			const slashMsg = messages.find(
@@ -536,7 +489,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			);
 			expect(slashMsg?.commands.some((c) => c.name === "skill:auto-doc")).toBe(true);
 
-			// 2. 卸载该技能
 			await session.uninstallSkill("auto-doc", "project");
 			expect(existsSync(join(workspaceDir, ".pi", "skills", "auto-doc"))).toBe(false);
 
@@ -564,7 +516,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 保存子代理模板
 			await session.saveSubagentTemplate({
 				name: "code-reviewer",
 				description: "代码审查专家子代理",
@@ -578,7 +529,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			);
 			expect(settingsMsg?.settings.subagentTemplates.some((t) => t.name === "code-reviewer")).toBe(true);
 
-			// 2. 删除子代理模板
 			await session.deleteSubagentTemplate("code-reviewer");
 
 			messages.length = 0;
@@ -629,7 +579,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 				driver,
 			});
 
-			// 1. 导出预设
 			await session.exportPreset({
 				type: "preset_export",
 				source: "preset",
@@ -642,7 +591,6 @@ describe("通用底座与多引擎 / 和 @ 命令体系测试", () => {
 			expect(exportResult?.ok).toBe(true);
 			expect(exportResult?.json).toContain("专注于严谨的代码审查");
 
-			// 2. 导入预设并持久化
 			await session.importPreset({
 				type: "preset_import",
 				json: exportResult!.json ?? "",

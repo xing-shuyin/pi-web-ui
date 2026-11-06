@@ -1,173 +1,100 @@
-<div align="center">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/readme/hero-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="./assets/readme/hero.svg" />
+    <img src="./assets/readme/hero.svg" alt="pi-web-ui — Make room for better work." width="1200" />
+  </picture>
+</p>
 
-# pi-web-ui
+<h1 align="center">A home for your AI coding work.</h1>
 
-A browser and desktop workspace for AI coding agents.
+<p align="center">Conversations, tools, and collaboration in one browser or desktop workspace.</p>
 
-**English** · [简体中文](./README.zh-CN.md) · [繁體中文](./README.zh-TW.md)
+**English** · [简体中文](./README.zh-CN.md) · [繁體中文](./README.zh-TW.md) · [Website](https://xing-shuyin.github.io/pi-web-ui-site/) · [Docs](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [Downloads](https://github.com/xing-shuyin/pi-web-ui/releases)
 
-[Website](https://xing-shuyin.github.io/pi-web-ui-site/) · [Documentation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html) · [Downloads](https://github.com/xing-shuyin/pi-web-ui/releases/latest)
+![The pi-web-ui workspace in action](./assets/readme/workspace.gif)
 
-[![npm version](https://img.shields.io/npm/v/pi-web-ui)](https://www.npmjs.com/package/pi-web-ui)
-[![Node version](https://img.shields.io/node/v/pi-web-ui)](https://nodejs.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[Watch the walkthrough · MP4](./assets/readme/showcase.mp4)
 
-</div>
+## Your project, within reach
 
-pi-web-ui brings chat, files, terminals, Git and agent workflows into one workspace. Run it locally in a browser, use the Electron desktop app, or connect to remote SSH projects. The pi SDK and DeepSeek Harness (DSH) have different capabilities; choose the engine and model that suit your task.
+| Keep your flow                                                                                                                      | Make room for more                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Conversations that stay organized.** Run parallel conversations, revisit history, and bring files and images into the discussion. | **A choice of engines.** Work with pi, DSH, Claude Code, and Codex, with capabilities specific to each engine.  |
+| **Tools beside the conversation.** Browse and edit files, preview changes, open a terminal, and inspect Git status and diffs.       | **Collaboration you can follow.** Connect work on a canvas, coordinate Bot groups, and reach connected devices. |
+| **A workspace that feels like yours.** Choose themes and languages, with layouts for desktop and mobile.                            | **Room to extend.** Add Skills, MCP servers, plugins, and UI extensions as your workflow grows.                 |
 
-## Quick start
+## Start in two commands
 
-For the command-line version, install **Node.js 22.19.0 or newer**. Desktop installers include their runtime. Git and shell availability affect terminal and repository features.
-
-```bash
-npm install -g pi-web-ui@latest
-cd /path/to/your/project
-pi-web-ui
-```
-
-Open `http://127.0.0.1:8787` if the browser does not open automatically. Configure a model provider and its credentials in workspace settings, select a model, and send your first task. Stop a foreground process with Ctrl+C.
-
-For a first try without a global installation:
-
-```bash
-npx pi-web-ui@latest
-```
-
-If npm blocks native dependency scripts, follow the installed npm version's script-approval instructions. See the [installation guide](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#installation) for platform dependencies and troubleshooting.
-
-## Choose an installation
-
-| Method               | When to use it                                      | Instructions                                                                                                                                                                     |
-| -------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm / npx            | Local development or a server with Node.js          | Commands above; [complete guide](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#npm-install)                                                                             |
-| Desktop installers   | A desktop app with an included runtime              | Download the matching Windows, macOS or Linux asset from [Releases](https://github.com/xing-shuyin/pi-web-ui/releases/latest)                                                    |
-| Windows portable ZIP | Keep the app and portable data together             | Extract `pi-web-ui-desktop-<version>-portable.zip`; follow its included launcher instructions. Bundled Git/Node depend on the build; see [portable details](./desktop/README.md) |
-| Docker Compose       | Container deployment built from source              | See the commands below                                                                                                                                                           |
-| Android / Termux     | Browser access from an Android terminal environment | [Termux prerequisites and commands](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#termux-install)                                                                       |
-| Source checkout      | Contributing or testing local changes               | [Development](#development)                                                                                                                                                      |
-
-On Linux, native dependency compilation may require Python, make and a C++ compiler. On Windows, install Git for Windows when Bash-based workflows are needed. Portable data placement does not guarantee that the operating system, browser or external tools leave no traces.
-
-### Run as a background service
-
-After global npm installation, install **and start** the service with explicit project and data paths. Stop any foreground process already using the port first.
-
-```bash
-pi-web-ui server install --cwd "/path/to/project" --data-dir "/path/to/pi-data" --port 8787
-pi-web-ui server status
-```
-
-Windows PowerShell example:
-
-```powershell
-pi-web-ui server install --cwd "D:\Projects\app" --data-dir "D:\pi-data" --port 8787
-pi-web-ui server status
-```
-
-Visit `http://127.0.0.1:8787` and verify the project and a model response. macOS uses a user launchd agent, Linux systemd, and Windows the current user's login Run key. Linux installation may require elevated privileges; Windows login autostart is not a system-level Windows Service.
-
-```bash
-pi-web-ui server stop
-pi-web-ui server start
-pi-web-ui server restart
-pi-web-ui server status
-pi-web-ui server shortcut
-# Remove the service only when it is no longer needed:
-pi-web-ui server uninstall
-```
-
-Use `--name my-pi` consistently when installing and managing named services. Services may not inherit interactive-shell credentials or PATH. See [service configuration](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#daemon-service).
-
-### Common startup options
-
-```bash
-pi-web-ui --cwd "/path/to/project" --port 9000 --no-browser
-pi-web-ui --host 0.0.0.0 --port 9000 --cwd "/path/to/project"
-pi-web-ui --help
-```
-
-| Flag                 | Environment           | Purpose / default                                                                  |
-| -------------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| `--cwd <dir>`        | `PI_WEB_CWD`          | Workspace: current directory in foreground; `~/pi-web-ui` for service installation |
-| `--port <n>`         | `PI_WEB_PORT`         | HTTP and WebSocket port; 8787                                                      |
-| `--host <addr>`      | `PI_WEB_HOST`         | Listen address; 127.0.0.1 is local-only                                            |
-| `--data-dir <dir>`   | `PI_WEB_DATA_DIR`     | Service data; `~/.pi-web` under the running account                                |
-| `--agent-dir <dir>`  | `PI_CODING_AGENT_DIR` | pi agent configuration; `~/.pi/agent`                                              |
-| `--engine <pi\|dsh>` | `PI_WEB_ENGINE`       | Execution engine; pi                                                               |
-| `--no-browser`       | —                     | Do not automatically open a browser                                                |
-
-Paths with spaces need quoting. `0.0.0.0` is a listen address; other devices connect using the server's actual IP or domain. Configure authentication and appropriate network protection before sharing access. [Full startup reference](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#cli-and-env).
-
-### Local `/setup` page
-
-Open **`http://127.0.0.1:8787/setup` on the server's machine**, substituting the actual port. This page configures server access and networking; API keys and models belong in workspace settings.
-
-- Set or generate an access token, then **save**. Token changes apply immediately; an empty saved token disables token authentication.
-- Configure listen address, port, Host allowlist and extra Origins; these require a restart.
-- Check the displayed `<dataDir>/server-config.json` path. Startup flags and environment take precedence over saved settings on restart.
-- LAN and proxy access to `/setup` is restricted. A remote server can be reached through an SSH local port forward; see the [step-by-step setup guide](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#setup-page).
-
-### Docker from source
-
-```bash
-git clone https://github.com/xing-shuyin/pi-web-ui.git
-cd pi-web-ui
-# Review docker-compose.yml: authentication, ports, project and credential mounts.
-docker compose up -d --build
-docker compose logs -f
-```
-
-The repository Compose configuration builds the image locally. Persist service data at **`/app/.pi-web`** in the container. Mount projects and credentials deliberately; container paths differ from host paths. Do not assume a published container port satisfies `/setup`'s loopback checks. See [container installation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#docker-source-install) and [deployment](./docs/deployment.md).
-
-### Update and remove
+Requires **Node.js 22.19.0 or later**. Run these commands from your project directory.
 
 ```bash
 npm install -g pi-web-ui@latest
-pi-web-ui server restart  # For an installed service; restart foreground processes yourself.
+pwu .
 ```
 
-Desktop and portable users should follow the matching package's update instructions and retain their actual data directories. Before removal, back up needed conversations, settings and credentials. For npm users, uninstall the service first if installed, then run `npm uninstall -g pi-web-ui`. Removing the package does not remove separately stored user data.
+`pwu`, `piwebui`, and `pi-web-ui` are equivalent commands; all subcommands and options work with each. Use `pwu [directory]` to start in a project directory.
 
-## What you can do
+Open `http://127.0.0.1:8787` if the browser does not open automatically.
+In workspace settings, configure a model provider and its credentials, select a model, and send your first task.
 
-- **Chat and context:** streaming responses, tool outputs, attachments, file references, structured questions and multiple conversations.
-- **Work on projects:** file browsing and previews, uploads, integrated terminals, Git diffs, staging and commits. Remote SSH capabilities depend on the engine, host tools and connection configuration.
-- **Organize agent work:** planning, goal review/execution, delegated work and subagents. File claims coordinate parallel edits through advisory notices; they are not edit locks.
-- **Extend the workspace:** plugins, MCP tools, skills, configuration presets and customizable layouts and themes. Availability depends on installed components and permissions.
+Prefer a packaged app? Choose an [Electron desktop build or Windows portable package](https://github.com/xing-shuyin/pi-web-ui/releases).
 
-Approval controls, task modes and isolated project directories have specific implementation boundaries; they are not universal operating-system security sandboxes. See [approval and security](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#approval-and-security).
+[Installation guide](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#installation) · [Workspace documentation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html)
 
-## See the workspace
+## More than one way to work
 
-| Chat                                          | Terminal                                       |
-| --------------------------------------------- | ---------------------------------------------- |
-| ![Chat workspace](./assets/chat-prompts.jpeg) | ![Integrated terminal](./assets/terminal.jpeg) |
+Use chat for a focused task, parallel conversations for separate threads, and subagents for delegated work.
+Plan mode, goal mode, and review delegation provide different ways to organize execution.
+Tool approvals let you review tool actions as part of that workflow.
 
-| Git                               | Settings                                                |
-| --------------------------------- | ------------------------------------------------------- |
-| ![Git changes](./assets/git.jpeg) | ![Model and workspace settings](./assets/settings.jpeg) |
+The workspace supports **pi, DSH, Claude Code, and Codex** through their respective integrations.
+Session formats, configuration, tools, and available controls vary by engine.
 
-## Plugins and documentation
+In a pi-hosted workspace, native CLI conversations can also run local pi, Claude Code, Codex, or a configured DSH terminal profile.
+These are interactive terminal sessions that use each CLI's own installation, login, and permissions; they do not inherit every chat feature.
 
-Browse plugins in the workspace or install from a repository:
+[Execution modes](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#modes-guide) · [Native CLI details](./docs/architecture-terminal.md#原生-cli-工作台)
 
-```bash
-pi-web-ui install owner/repo
-pi-web-ui plugins
-pi-web-ui plugin create my-plugin
-```
+## Give the work a canvas
 
-Plugin permissions and external-service requirements vary. For submissions, follow the [community registry](https://github.com/xing-shuyin/pi-web-ui-plugins); automation is governed by that repository's current checks and policies.
+Connect task steps, follow runs, and inspect logs and artifacts in a visual workflow.
+Canvas collaboration brings handoffs and review into view, so the shape of a larger task stays readable.
 
-- [Getting started and installation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#installation)
-- [Remote SSH projects](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#remote-ssh-projects)
-- [Plan, goal and review workflows](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#modes-guide)
-- [MCP and browser tools](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#mcp-and-browser)
-- [Plugin SDK](./plugin-sdk/README.md) · [Desktop](./desktop/README.md) · [Windows portable launcher](./launcher/README.md)
-- [Environment variables](./docs/env-vars.md) · [Deployment](./docs/deployment.md) · [Architecture](./docs/architecture-core.md)
+![The canvas workspace in action](./assets/readme/canvas.gif)
 
-## Development
+Canvas supports execution tracking, approval branches, and reviewable artifacts.
+Where Git isolation is enabled and supported, changes remain available for inspection and explicit adoption.
+
+[Canvas architecture and behavior](./docs/architecture-canvas.md)
+
+## Connect people, agents, and machines
+
+Use the device center to work with connected machines and their supported remote desktop and file capabilities.
+Bot groups bring device-backed agents into a shared conversation for coordination and task dispatch.
+
+Extend the workspace with **Skills, MCP, and plugins**: add tools, reusable instructions, or your own interface contributions.
+Browse the [community plugin directory](https://github.com/xing-shuyin/pi-web-ui-plugins), or start with the [plugin SDK](./plugin-sdk/README.md).
+
+[Device center](./docs/device-center.md) · [Bot groups and collaboration](./docs/device-collaboration.md) · [MCP and browser tools](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#mcp-and-browser)
+
+## Pick your place to work
+
+| Entry point                     | A good fit for                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| **Web**                         | Opening the workspace in a browser, locally or through a configured service.     |
+| **Electron desktop**            | A desktop application with a built-in browser and local workflow integration.    |
+| **Windows portable**            | A packaged Windows entry point; check the release notes for included components. |
+| **Background service / Docker** | Keeping the workspace available on your own machine or server.                   |
+
+Model credentials are configured separately from the app installation.
+For remote access, use the deployment guide to configure authentication and your network entry point.
+
+[Background service](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#daemon-service) · [Docker installation](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#docker-source-install) · [Deployment guide](./docs/deployment.md) · [CLI and environment](https://xing-shuyin.github.io/pi-web-ui-site/docs.html#cli-and-env)
+
+## Build with us
+
+To run from source:
 
 ```bash
 git clone https://github.com/xing-shuyin/pi-web-ui.git
@@ -176,12 +103,16 @@ npm ci
 npm run dev
 ```
 
-Node.js 22.19.0+ and the platform's native build dependencies are required. The dev frontend is normally on port 5173 and the backend on 8788. For a production checkout, run `npm run build`, then `npm start`.
+The default development frontend is `http://localhost:5173`.
+See the [development guide](./docs/development.md) for checks, builds, and contribution conventions, or explore the [documentation index](./docs/README.md).
 
-Before submitting a change, follow [development guidelines](./docs/development.md) and run the applicable formatting, type, lint and test checks. Desktop build details live in [desktop/README.md](./desktop/README.md).
+## Community
 
-## Community and license
+- **QQ group:** 1126050727
+- **Bugs and feature requests:** [GitHub Issues](https://github.com/xing-shuyin/pi-web-ui/issues)
+- **Questions and ideas:** [GitHub Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions)
+- **Releases:** [Downloads and release notes](https://github.com/xing-shuyin/pi-web-ui/releases)
 
-[Issues](https://github.com/xing-shuyin/pi-web-ui/issues) · [Discussions](https://github.com/xing-shuyin/pi-web-ui/discussions) · QQ group: `1126050727` · [dsh-ui-tools](https://github.com/xing-shuyin/dsh-ui-tools)
+Thanks to [pi](https://github.com/badlogic/pi-mono) and its contributors for the upstream coding-agent foundation.
 
-[MIT License](./LICENSE)
+Licensed under [MIT](./LICENSE).

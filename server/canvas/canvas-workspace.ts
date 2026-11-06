@@ -50,7 +50,6 @@ export interface PrepareCanvasWorkspaceOptions {
 	graphId: string;
 	runId: string;
 	nodeId: string;
-	/** Relative to baseCwd, or an absolute directory within the same repository. */
 	cwd?: string;
 	useWorktree?: boolean;
 	baseCommit?: string;
@@ -90,7 +89,6 @@ function layersOf(artifacts: CanvasWorkspaceArtifact[]): CanvasArtifactLayer[] {
 }
 
 async function trustedArtifactPath(workspace: CanvasWorkspace, path: string, nodeId?: string): Promise<string> {
-	// graph/run come from the service's prepare arguments, never imported artifact metadata.
 	const root = join(workspace.dataDir, "canvas", "artifacts");
 	const runRoot = join(root, workspace.graphId, workspace.runId);
 	const resolved = resolve(path);
@@ -137,7 +135,6 @@ async function assertWorkspaceIdentity(workspace: CanvasWorkspace, signal?: Abor
 	}
 }
 
-/** No fallback: an isolation request either returns a detached worktree or throws. */
 export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOptions): Promise<CanvasWorkspace> {
 	checkSignal(options.signal);
 	for (const value of [options.baseCwd, options.cwd ?? ""]) {
@@ -233,7 +230,6 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 	if ((await canonicalPath(worktreePath)) !== worktreePath)
 		throw new CanvasRuntimeError("Canvas worktree path is redirected", "error.worktreeRedirected");
 	await createDetachedWorktree(repoRoot, worktreePath, baseCommit, options.signal);
-	// Once created, failures deliberately retain the workspace for inspection. Never remove dirty outputs.
 	for (const { layer, bytes } of patches) {
 		checkSignal(options.signal);
 		if (!bytes.length) continue;
@@ -267,7 +263,6 @@ export async function prepareCanvasWorkspace(options: PrepareCanvasWorkspaceOpti
 	return prepared;
 }
 
-/** Includes tracked changes, deletions, and non-ignored untracked files, including binary additions. */
 export async function captureCanvasWorkspaceArtifact(
 	workspace: CanvasWorkspace,
 	options: { signal?: AbortSignal } = {},
@@ -318,7 +313,6 @@ export async function captureCanvasWorkspaceArtifact(
 	};
 }
 
-/** Explicit clean-only cleanup. Artifacts are never deleted, and dirty worktrees are retained. */
 export async function cleanupCanvasWorkspace(
 	workspace: CanvasWorkspace,
 	options: { signal?: AbortSignal } = {},

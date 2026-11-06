@@ -1,10 +1,3 @@
-/**
- * wrapPatchToolWithPermission 单测：patch 写面工具的权限预设与审批规则覆盖。
- *
- * 背景：patch 的写目标（含 REM/MV）内嵌在补丁文本 [path#TAG] 段头里，规则引擎
- * 的 path 字段提取对它取到空串——不单独解析时 read-only / workspace-write-never
- * 与敏感文件规则（.env 等）被整体旁路。
- */
 import { describe, expect, it, vi } from "vitest";
 import { wrapPatchToolWithPermission } from "../../server/tool-guards.js";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -89,7 +82,6 @@ describe("wrapPatchToolWithPermission", () => {
 			wrap(tool, { permission: "danger-full-access", askApproval: ask }),
 			"[.env#abcd]\nPUT 1.=1:\n+x\n",
 		);
-		// 不给自定义规则表 → checkDangerousToolCall 用内置默认表（.env 规则已含 patch）。
 		expect(ask).toHaveBeenCalledTimes(1);
 		expect(ask.mock.calls[0][1]).toBe("patch");
 		expect(res.isError).toBe(true);
@@ -134,7 +126,6 @@ describe("wrapPatchToolWithPermission", () => {
 	it("空补丁/解析失败不拦截（交引擎报错）", async () => {
 		const { tool, execute } = makeBaseTool();
 		const res = await run(wrap(tool, { permission: "read-only" }), "");
-		// read-only 对空补丁同样拒绝（语义一致：只读会话不许任何 patch 调用）。
 		expect(res.isError).toBe(true);
 		const res2 = await run(wrap(tool, {}), "not a valid patch");
 		expect(res2.isError).toBeUndefined();

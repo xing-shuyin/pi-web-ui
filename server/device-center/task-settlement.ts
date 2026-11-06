@@ -43,7 +43,6 @@ function effects(): TaskSettlementEffects {
 	return { settledWakes: [], readyTaskIds: [], cascadedFailedTaskIds: [] };
 }
 
-/** Record the outcome and its notifications in the same store transaction, exactly once. */
 export function recordTaskOutcome(
 	draft: HubState,
 	task: HubTask,
@@ -63,7 +62,6 @@ export function recordTaskOutcome(
 ): TaskSettlementNotice | undefined {
 	if (task.outcomeFingerprint) return;
 	if (outcome.artifact !== undefined) {
-		// Defensive deep-freeze copy prevents in-memory alias mutation from altering stored evidence
 		task.artifact = deepFreeze(structuredClone(outcome.artifact));
 	}
 	if (outcome.executionCompleted !== undefined) task.executionCompleted = outcome.executionCompleted;
@@ -97,7 +95,6 @@ export function recordTaskOutcome(
 	task.status = outcome.status;
 	task.updatedAt = now;
 	delete task.recoveryUntil;
-	// Fallback display text is deliberately outside the wire outcome fingerprint.
 	task.report =
 		outcome.report ||
 		outcome.error ||
@@ -144,14 +141,12 @@ export function recordTaskOutcome(
 	return { taskId: task.id, roomId: task.roomId, conversationId: task.conversationId, wake, context };
 }
 
-/** One dependency rule for creation, completion, delivery checks and crash recovery. */
 export function settleTaskDependencies(
 	draft: HubState,
 	ctx: TaskSettlementContext,
 	now = Date.now(),
 ): TaskSettlementEffects {
 	const result = effects();
-	// Each pass either promotes or terminates waiting work. Iterate to cover arbitrarily ordered chains.
 	let changed: boolean;
 	do {
 		changed = false;
@@ -167,7 +162,6 @@ export function settleTaskDependencies(
 				(p) => p.id === task.dependsOnTaskId && p.roomId === task.roomId && p.accountId === task.accountId,
 			);
 
-			// 统一依赖守卫：等待/queued未lease任务若其contract.id同dependency.contract.id而revision不同，明确failed而不能因old completed释放
 			if (
 				pred &&
 				task.contract?.id &&
@@ -223,7 +217,6 @@ export function settleTaskDependencies(
 	return result;
 }
 
-/** Validate a device's immutable terminal payload before making any draft changes. */
 export function settleTaskTerminalOutcome(
 	draft: HubState,
 	deviceId: string,
@@ -248,8 +241,6 @@ export function settleTaskTerminalOutcome(
 		(entry) => entry.id === event.botId && entry.deviceId === deviceId && entry.accountId === device?.accountId,
 	);
 	if (!task) {
-		// Explicit task/room deletion can outlive a lost ACK. Only an authenticated,
-		// locally owned Bot with no colliding task identity can retire that replay.
 		if (device && bot && isTerminal(event.status) && !draft.tasks.some((entry) => entry.id === event.taskId))
 			return { ...reject("Task attempt no longer exists", 404), permanent: true, reasonCode: "attempt_expired" };
 		return reject("Task missing", 404);
@@ -259,9 +250,6 @@ export function settleTaskTerminalOutcome(
 	if (task.attemptId !== event.attemptId)
 		return { ...reject("Attempt mismatch"), permanent: true, reasonCode: "attempt_expired" };
 	if (!isTerminal(event.status)) return reject("Terminal outcome required", 400);
-	// v0.116 persisted terminal outbox entries without their lease, then deleted
-	// the active lease. A legacy digest is content evidence, never lease proof:
-	// it may acknowledge an identical committed result, but cannot settle work.
 	const legacyLeaseMissing =
 		event.leaseToken === undefined &&
 		event.leaseGeneration === undefined &&
@@ -302,12 +290,10 @@ export function settleTaskTerminalOutcome(
 			task.contract?.executionMode === "code"
 		)
 			return { ...reject("Conflicting duplicate terminal outcome"), permanent: true, reasonCode: "terminal_conflict" };
-		// Do not backfill fingerprints, publish effects, or change the accepted lease.
 		return { accepted: true, duplicate: true, fingerprint: event.fingerprint, task };
 	}
 	if (task.leaseToken !== event.leaseToken || task.leaseGeneration !== event.leaseGeneration)
 		return reject("Lease token or generation mismatch");
-	// An already committed terminal is compared below so identical retries retain their positive ACK.
 	if (event.status === "completed" && (task.cancelRequested || task.stopConfirmed) && !task.outcomeFingerprint)
 		return reject("Task stop requested");
 	if (event.status === "completed" && !event.report) return reject("Completed task requires agent report", 400);
@@ -319,7 +305,6 @@ export function settleTaskTerminalOutcome(
 		return reject("Artifact proof 'artifactProduced' must be a boolean when present", 400);
 	}
 
-	// Consume detached, validated evidence for every mode, including chat outcomes with proof fields.
 	if (event.artifact !== undefined) {
 		const checked = validateDeviceArtifact(event.artifact);
 		if (!checked.valid) return reject(`Artifact validation failed: ${checked.reason}`, 400);
@@ -355,12 +340,10 @@ export function settleTaskTerminalOutcome(
 	);
 
 	if (hasProofOrArtifact) {
-		// 当有新字段时必须 canonical 新指纹，拒绝任何未绑定证据的兼容指纹
 		if (event.fingerprint !== undefined && event.fingerprint !== canonical) {
 			return reject("Outcome fingerprint mismatch (v46 artifact proof must match canonical digest)");
 		}
 	} else {
-		// 仅在没有 artifact / proof 的旧格式下允许 legacy 兼容
 		const legacy = computeLegacyOutcomeFingerprint(
 			task.id,
 			task.attemptId,
@@ -464,7 +447,6 @@ export function rescanReadyTasksOnRecovery(
 			task.recoveryUntil = now + recoveryGraceMs;
 	}
 	const result = sweepExpiredRecoveryLeases(draft, now, ctx);
-	// A crash may occur after storing a terminal outcome but before its parent continuation is queued.
 	for (const task of [...draft.tasks]) {
 		if (!isTerminal(task.status) || isRecoveringTask(task, now)) continue;
 		const wake = queueParentResult(draft, task, ctx.settings);

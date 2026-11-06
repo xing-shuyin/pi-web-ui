@@ -1,6 +1,3 @@
-/**
- * sol-savings 客户端 —— 无独立视图（manifest view:false），接底栏动作。
- */
 import { esc, hostApi, formatBytes, apiBase as getSharedApiBase } from "@pi-web-ui/plugin-sdk/client";
 
 const ACTION_DETAILS = "sol-savings:details";
@@ -26,9 +23,7 @@ async function fetchStatus() {
 	try {
 		const res = await fetch(`${apiBase()}/status`);
 		if (res.ok) return await res.json();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return null;
 }
 
@@ -135,7 +130,6 @@ function showModal(content, statusInfo) {
 		gap: 14px;
 	`;
 
-	// 1. 会话实时节省统计区（严格按当前会话呈现，非项目全局累计）
 	const stats = statusInfo?.stats;
 	const statsBox = document.createElement("div");
 	statsBox.style.cssText = `
@@ -197,12 +191,10 @@ function showModal(content, statusInfo) {
 	}
 	body.appendChild(statsBox);
 
-	// 2. SoL-Pi 扩展与配置状态区
 	const isInstalled = statusInfo?.installed ?? false;
 	const hasConfig = statusInfo?.hasConfig ?? false;
 	const config = statusInfo?.config;
 
-	// 已安装且已配置时默认折叠详情，避免占用弹窗主要空间；未安装或未配置时展开提示用户操作
 	const detailsContainer = document.createElement("details");
 	detailsContainer.style.cssText = `
 		border: 1px solid var(--border, #333);
@@ -226,7 +218,6 @@ function showModal(content, statusInfo) {
 		user-select: none;
 		list-style: none;
 	`;
-	// 针对不同浏览器的 summary 箭头样式隐藏
 	summary.innerHTML = `
 		<div style="display: flex; align-items: center; gap: 8px;">
 			<span>⚙️ SoL-Pi 运行与配置</span>
@@ -262,11 +253,9 @@ function showModal(content, statusInfo) {
 		</div>
 	`;
 
-	// 快捷操作按钮容器
 	const btnRow = document.createElement("div");
 	btnRow.style.cssText = `display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;`;
 
-	// 配置管理表单与操作区
 	if (isInstalled || hasConfig) {
 		const form = document.createElement("div");
 		form.style.cssText = `
@@ -289,7 +278,6 @@ function showModal(content, statusInfo) {
 			evidencePreservingReducerModel: "",
 		};
 
-		// 1. 快捷模式预设栏
 		const presetBar = document.createElement("div");
 		presetBar.style.cssText = `
 			display: flex;
@@ -390,7 +378,6 @@ function showModal(content, statusInfo) {
 			},
 		];
 
-		// 全覆盖配置项滚动列表容器（纯 CSS 平滑独立滚动，0 高斯模糊，全量覆盖所有配置项）
 		const scrollContainer = document.createElement("div");
 		scrollContainer.style.cssText = `
 			display: flex;
@@ -446,7 +433,6 @@ function showModal(content, statusInfo) {
 			scrollContainer.appendChild(row);
 		}
 
-		// 缓存读写比阈值参数调节
 		const ratioRow = document.createElement("div");
 		ratioRow.style.cssText = `
 			display: flex;
@@ -488,7 +474,6 @@ function showModal(content, statusInfo) {
 		ratioRow.appendChild(ratioControl);
 		scrollContainer.appendChild(ratioRow);
 
-		// 高级辅模型路由设置（EPR 专属轻量模型，可选）
 		const advDetails = document.createElement("details");
 		advDetails.style.cssText = `
 			border: 1px solid rgba(255, 255, 255, 0.05);
@@ -558,7 +543,6 @@ function showModal(content, statusInfo) {
 		advDetails.appendChild(advBox);
 		scrollContainer.appendChild(advDetails);
 
-		// 实时 JSON 配置预览折叠区
 		const jsonDetails = document.createElement("details");
 		jsonDetails.style.cssText = `
 			border: 1px solid rgba(255, 255, 255, 0.05);
@@ -588,9 +572,7 @@ function showModal(content, statusInfo) {
 				if (prov) obj.evidencePreservingReducerProvider = prov;
 				if (mdl) obj.evidencePreservingReducerModel = mdl;
 				jsonPre.textContent = JSON.stringify(obj, null, 2);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
 		jsonDetails.appendChild(jsonSummary);
@@ -617,7 +599,6 @@ function showModal(content, statusInfo) {
 			font-weight: 500;
 		`;
 		installBtn.onclick = async () => {
-			// 安装会从远端拉取并运行第三方扩展，必须先弹确认框（服务端也要 confirm:"install"）
 			const okToInstall = window.confirm(
 				"确认安装 SoL-Pi 扩展？\n\n将从网络执行：pi install git:github.com/NVlabs/SoL-Pi\n（已有配置不会被覆盖）",
 			);
@@ -671,7 +652,6 @@ function showModal(content, statusInfo) {
 	detailsContainer.appendChild(configBox);
 	body.appendChild(detailsContainer);
 
-	// 弹窗底部操作栏（固定在底部，永不被挤出屏幕）
 	const footer = document.createElement("div");
 	footer.style.cssText = `
 		padding: 12px 18px;
@@ -828,13 +808,10 @@ function register() {
 				if (lines.length > 0) content = lines.join("\n");
 			}
 
-			// 获取扩展与配置实时状态
 			const statusInfo = await fetchStatus();
 			showModal(content, statusInfo);
 		});
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 register();

@@ -101,7 +101,6 @@ describe("Group / Device-Task conversation dismissal", () => {
 			pokeExternalRunning: vi.fn(),
 		}) as any;
 
-		// 1. 无 force：拒绝并提示
 		const res1 = await service.dismissConversation("browser-client", {
 			id: "c1",
 			force: false,
@@ -111,7 +110,6 @@ describe("Group / Device-Task conversation dismissal", () => {
 		expect(service.clients.has(task.clientId)).toBe(true);
 		expect(notices.some((n) => n.text?.includes("仍在运行中"))).toBe(true);
 
-		// 2. 带 force: true：强行关闭
 		const res2 = await service.dismissConversation("browser-client", {
 			id: "c1",
 			force: true,
@@ -126,7 +124,6 @@ describe("Group / Device-Task conversation dismissal", () => {
 	});
 
 	it("LeftPanel 针对 elsewhere 会话行暴露 host:conv-force-dismiss 菜单项", () => {
-		// 模拟 LeftPanel 的 showSessionMenu 过滤逻辑
 		const computeMenuEntries = (target: { kind: string; id?: string; owner?: string; pseudo?: boolean }) => {
 			const scopeId = target.kind === "running" ? target.id : undefined;
 			const isElsewhere = target.kind === "elsewhere";

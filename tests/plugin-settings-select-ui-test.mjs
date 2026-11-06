@@ -1,15 +1,3 @@
-/* 浏览器 E2E：插件声明式设置里的 select 字段（含宿主数据源 optionsFrom）在真浏览器里的行为。
- *
- * 覆盖（零 token，本地假插件 + 假模型配置，不联网）：
- *   - 静态 `options` 的 select 照常渲染候选项
- *   - `optionsFrom: "models"` 的 select 列出**已配置鉴权**的模型（provider/id），且首项 = 跟随全局默认
- *   - `optionsFrom: "thinkingLevels"` 的 select 列出 SDK 全部档位（文案走 i18n），首项 = 跟随全局默认
- *   - 改选后保存 → 服务端 storage.json 落盘的是选中值（空值 = 空串）
- *   - 页面无 JS 报错
- *
- * 缺 Chrome 自动 SKIP（与 plugin-settings-page-test / fence-render-test 同约定）。运行：
- *   npm run build && node tests/plugin-settings-select-ui-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +16,6 @@ const AGENT_DIR = join(base, "agent");
 const PORT = 20000 + Math.floor(Math.random() * 8000);
 for (const d of [WORK, DATA_DIR, AGENT_DIR]) mkdirSync(d, { recursive: true });
 
-// 假 agent 配置：一个配置过鉴权的供应商 + 两个模型 → 模型下拉应列出它们。
 writeFileSync(join(AGENT_DIR, "auth.json"), JSON.stringify({ main: { type: "api_key", key: "main-key" } }));
 writeFileSync(
 	join(AGENT_DIR, "models.json"),
@@ -55,7 +42,6 @@ const check = (name, cond, extra) => {
 	}
 };
 
-// 假插件：三种 select 各一个（静态 / 模型 / 思考强度），字段标签带 T- 前缀便于定位。
 const pdir = join(DATA_DIR, "plugins", "dds");
 mkdirSync(pdir, { recursive: true });
 writeFileSync(
@@ -80,15 +66,12 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-/** 点一个元素：headless 下 locator.click() 在顶栏/弹窗里偶发不达 —— 派发真实鼠标事件。 */
 async function tap(page, locator) {
 	await locator.waitFor({ state: "visible", timeout: 15000 });
 	await locator.scrollIntoViewIfNeeded();
@@ -98,7 +81,6 @@ async function tap(page, locator) {
 }
 
 async function openSettings(page) {
-	// 顶栏设置按钮：宿主条目走 data-tip（设置/Settings），旧版可能只有 title，一并兼容。
 	const btn = page.locator('button.chip[data-tip*="设置"], button[title*="设置"], button[title*="Settings"]').first();
 	for (let attempt = 0; attempt < 6; attempt++) {
 		if ((await page.locator(".settings-modal").count()) > 0) return true;
@@ -137,7 +119,6 @@ async function settle(page, quietMs = 2500) {
 	await page.waitForSelector(".chat-input, .inputbar, textarea", { timeout: 30000 });
 }
 
-/** 某个字段（按标签文案定位）的 select 的候选值/文案。 */
 async function optionsOf(page, labelText) {
 	const select = page.locator(".plugin-settings-field", { hasText: labelText }).locator("select").first();
 	await select.waitFor({ state: "attached", timeout: 15000 });
@@ -183,8 +164,6 @@ async function main() {
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
 	await tap(page, page.locator(".settings-tab", { hasText: /界面插件|UI plugins/ }).first());
-	// 默认落在「插件市场」子页：切到「插件列表」（已安装）才看得到本地插件与它的设置表单。
-	// 子页顺序固定（市场、已安装），按序号点不受语言影响。
 	await tap(page, page.locator(".set-subtab").nth(1));
 	check(
 		"界面插件配置默认折叠（表单未渲染且存在展开按钮）",
@@ -202,11 +181,9 @@ async function main() {
 		await until(async () => (await page.locator(".plugin-settings-form").count()) > 0, 40, 250),
 	);
 
-	// ---- 静态 options：原样渲染，不塞空值 ---------------------------------
 	const theme = await optionsOf(page, "T-Theme");
 	check("静态 select 只有 manifest 声明的候选项", theme.values.join(",") === "dark,light", theme.values);
 
-	// ---- optionsFrom: models：已配置鉴权的模型 + 首项「跟随全局默认」 --------
 	const model = await optionsOf(page, "T-Model");
 	const modelLabels = model.labels.map((s) => s.trim());
 	check("模型下拉首项 = 跟随全局默认（空值）", model.values[0] === "" && modelLabels[0] !== "", {
@@ -220,7 +197,6 @@ async function main() {
 	);
 	check("模型下拉不重复、无空壳项", new Set(model.values).size === model.values.length, model.values);
 
-	// ---- optionsFrom: thinkingLevels：SDK 全档位（i18n 文案） --------------
 	const think = await optionsOf(page, "T-Think");
 	check(
 		"思考强度下拉 = 空值 + SDK 全部档位",
@@ -233,7 +209,6 @@ async function main() {
 		think.labels,
 	);
 
-	// ---- 选中 → 保存 → 落盘 -------------------------------------------------
 	const form = page.locator(".plugin-settings-form").filter({ hasText: "T-Model" }).first();
 	await page
 		.locator(".plugin-settings-field", { hasText: "T-Model" })
@@ -287,18 +262,14 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (server?.pid) {
 		try {
 			process.kill(-server.pid, "SIGKILL");
 		} catch {
 			try {
 				server.kill("SIGKILL");
-			} catch {
-				/* already gone */
-			}
+			} catch {}
 		}
 	}
 	freePort(PORT);

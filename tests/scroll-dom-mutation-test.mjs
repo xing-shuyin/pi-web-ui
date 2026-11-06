@@ -1,14 +1,3 @@
-/* Scroll DOM-mutation stick E2E: pins the content-level MutationObserver
- * re-pin in MessageList.tsx. Growth that mutates DOM INSIDE .messages without
- * any React state change (extension/liveOutputs card churn, post-jump height
- * corrections) used to drift the bottom away silently: the container RO only
- * sees the container BOX (unchanged), and the messages/liveOutputs effects
- * never re-run. Growth here runs ~3.75s — far beyond the ~850ms
- * scrollToBottom re-assert window — so only the MutationObserver keeps the
- * viewport pinned.
- *
- * Mutation-proven: revert the MO effect in MessageList.tsx → drift >80px → RED.
- * Run: npm run build:web && node tests/scroll-dom-mutation-test.mjs */
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,9 +46,7 @@ const server = spawn(process.execPath, [join(root, "dist", "server", "index.js")
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 for (let i = 0; i < 100; i++) {
@@ -128,7 +115,6 @@ async function main() {
 	await page.waitForSelector(".msg", { timeout: 30000 });
 	await sleep(500);
 
-	// Jump to bottom via the app's own back-to-bottom control (sets stick=true).
 	await page.evaluate(() => {
 		const el = document.querySelector(".messages");
 		el.scrollTop = 0;
@@ -138,8 +124,6 @@ async function main() {
 	if (chip) await chip.click();
 	await sleep(400);
 
-	// Pure-DOM growth INSIDE the scroll content, NO React state change, running
-	// ~3.75s (past every scrollToBottom re-assert timer).
 	await page.evaluate(() => {
 		const el = document.querySelector(".messages");
 		const anchor = el.querySelector(".msg .msg-body") || el.querySelector(".msg");

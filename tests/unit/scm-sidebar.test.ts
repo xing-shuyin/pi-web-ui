@@ -1,7 +1,3 @@
-/**
- * Git 面板左栏宽度（issue #139）纯函数：夹取 + localStorage 存档解析。
- * 拖动 / 持久化本身在 SCMPanel 里（浏览器 E2E 见 tests/scm-test.mjs）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	clampScmSidebarWidth,
@@ -32,9 +28,7 @@ describe("clampScmSidebarWidth", () => {
 
 	it("量到容器宽度时给 diff 区留出 SCM_DIFF_MIN", () => {
 		expect(clampScmSidebarWidth(700, 900)).toBe(900 - SCM_DIFF_MIN);
-		// 容器够宽 → 仍是 SCM_SIDEBAR_MAX 封顶
 		expect(clampScmSidebarWidth(9999, 2000)).toBe(SCM_SIDEBAR_MAX);
-		// 容器窄到装不下「最小值 + diff 最小值」→ 以最小值兜底，不退化成 0
 		expect(clampScmSidebarWidth(700, 300)).toBe(SCM_SIDEBAR_MIN);
 	});
 

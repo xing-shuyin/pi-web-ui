@@ -3,8 +3,6 @@ import { ExtensionRunner } from "@earendil-works/pi-coding-agent";
 import { mockThemeProxy, WebUIContext } from "../../server/webui-context.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
-/** Mimic pi SDK wrapUIPromptContext: `{ ...ui, select: wrapped }` copies own
- *  properties only. Class prototype methods would vanish here. */
 function wrapLikeSdk(ui: WebUIContext) {
 	return {
 		...ui,
@@ -20,9 +18,6 @@ describe("WebUIContext SDK wrap", () => {
 		expect(typeof wrapped.notify).toBe("function");
 	});
 
-	// Regression (#823): `theme` used to be a class-prototype getter, so the SDK's
-	// `{ ...ui }` wrap dropped it — extensions then read `ctx.ui.theme === undefined`
-	// and threw on `theme.fg(...)` during session_start/agent_end.
 	it("keeps ctx.ui.theme defined through the SDK spread", () => {
 		const wrapped = wrapLikeSdk(new WebUIContext(() => {}));
 		expect(typeof wrapped.theme).toBe("object");
@@ -30,9 +25,6 @@ describe("WebUIContext SDK wrap", () => {
 	});
 
 	it("spread copy keeps a live theme accessor, not a frozen value", () => {
-		// The clone gets the *value* spread copies (same as the TUI's object-literal UI
-		// context); what matters is that the source exposes theme as an own, enumerable
-		// accessor, so there is something to copy at all.
 		const ui = new WebUIContext(() => {});
 		const source = Object.getOwnPropertyDescriptor(ui, "theme");
 		expect(typeof source?.get).toBe("function");
@@ -79,13 +71,11 @@ describe("WebUIContext SDK wrap", () => {
 	});
 
 	it("survives the real SDK wrapper, not just the shape we mimic", () => {
-		// Guards the actual failure mode of #823: ExtensionRunner.wrapUIPromptContext
-		// spreads the host context. Called with a stub `this` so no runner setup is needed.
 		const proto = ExtensionRunner.prototype as unknown as {
 			wrapUIPromptContext?: (ui: unknown) => unknown;
 		};
 		const wrap = proto.wrapUIPromptContext;
-		if (typeof wrap !== "function") return; // SDK reshaped its internals — nothing to pin here
+		if (typeof wrap !== "function") return;
 		const wrapped = wrap.call(
 			{ withUIPrompt: (_k: string, _t: unknown, run: () => unknown) => run() },
 			new WebUIContext(() => {}),
@@ -118,7 +108,6 @@ describe("WebUIContext SDK wrap", () => {
 
 describe("WebUIContext.headless (subagent sessions)", () => {
 	it("cancels dialogs right away instead of waiting for a browser", async () => {
-		// 没有浏览器应答：挂 Promise 会让扩展永久 await（PR #128 回归点）。
 		const ui = WebUIContext.headless();
 		await expect(ui.select("pick", ["a"])).resolves.toBeNull();
 		await expect(ui.confirm("sure?", "m")).resolves.toBeNull();
@@ -126,7 +115,6 @@ describe("WebUIContext.headless (subagent sessions)", () => {
 	});
 
 	it("drops every UI message (no cross-talk with the main conversation)", () => {
-		// 先盯「挂浏览器的上下文照常发」，再盯「headless 一条都不发」。
 		const attached: ServerMessage[] = [];
 		const live = new WebUIContext((msg) => attached.push(msg));
 		const ui = WebUIContext.headless();
@@ -177,9 +165,6 @@ describe("WebUIContext.hasWidgets (conditional 2s poll)", () => {
 });
 
 describe("mockThemeProxy (TUI theme shim used in the browser)", () => {
-	// 主题代理的文本永远是**最后一个**参数：`decorate(text)` 与 `color(token, text)` 两种形态都有。
-	// 若通用兜底假设文本固定在第二位，单参数装饰器会把包住的正文整段丢成空串
-	// （实测：扩展 @lanlance/pi-recap 的 `※ recap:` 行在网页端只剩前缀）。
 	const theme = mockThemeProxy as unknown as Record<string, (...args: unknown[]) => string>;
 
 	it("keeps text through every single-arg decorator", () => {

@@ -52,7 +52,6 @@ describe("Message 流式状态与光标防抖稳定性", () => {
 		const msgBody = c.querySelector(".msg-body");
 		expect(msgBody).toBeTruthy();
 
-		// .msg-body 的直接子节点中不应有孤立的 .stream-cursor（孤立行会导致卡片高度增加 24px 并跳动）
 		const orphanCursor = msgBody!.querySelector(":scope > .stream-cursor");
 		expect(orphanCursor).toBeNull();
 	});

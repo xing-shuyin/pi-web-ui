@@ -1,8 +1,3 @@
-/**
- * marker.ts — 通用内联标记核心抽象（内置版）。
- * 复刻自 pi-marker-tools，保持相同解析语义，便于 AI 无缝迁移。
- */
-
 import type { ServerLang } from "../i18n.js";
 
 export interface ParsedToken {
@@ -26,33 +21,22 @@ export interface MarkerOverlay {
 }
 
 export interface MarkerContext {
-	/** 当前对话 id（用于 rename 等需要定位对话的标记）。 */
 	conversationId: string;
-	/** 通知 UI（非打断）。 */
 	notify(text: string, level?: "info" | "warning" | "error", textEn?: string): void;
-	/** 重命名当前对话（rename 标记专用）。 */
 	renameConversation?(title: string): void;
 }
 
 export interface MarkerTool<State = unknown> {
 	name: string;
-	/** 显示给用户的名称（设置面板中展示；缺省为 name）。 */
 	label?: string;
-	/** 归属插件 id（内置标记为 undefined）。 */
 	pluginId?: string;
-	/** 为 true 时表示该标记为别名（如 suggest 是 action 的别名），不参与提示词注入和 UI 列表。 */
 	isAlias?: boolean;
 	guidance: string[];
-	/** 语言感知的 guidance（issue #91）：en 用英译、zh 用中文。未提供时回退到静态 guidance。 */
 	getGuidance?: (lang: ServerLang) => string[];
 	apply(token: ParsedToken, ctx: MarkerContext, state: State, lang?: ServerLang): Promise<ApplyResult> | ApplyResult;
 	overlay?(state: State, ctx: MarkerContext): MarkerOverlay | undefined;
 	init?(): State;
 }
-
-// ---------------------------------------------------------------------------
-// 解析器
-// ---------------------------------------------------------------------------
 
 const TOKEN_RE = /\[\[\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([A-Za-z][A-Za-z0-9_-]*)\s*:(.*?)\s*\]\]/g;
 
@@ -134,11 +118,6 @@ export function parseMarkers(text: string): ParsedToken[] {
 	return tokens;
 }
 
-/**
- * 从助手展示文本中剥离内联状态标记（[[todo:...]] / [[notify:...]] / [[conv:rename:...]] / [[action:suggest:...]] 等）。
- * 仅剥离已知标记命名空间，避免误删正文或代码中的普通双括号内容；
- * `stripTrailingIncomplete` 为 true 时同步剥离流式末尾尚未闭合的半截标记。
- */
 export function stripMarkers(text: string, options?: { stripTrailingIncomplete?: boolean }): string {
 	if (!text || !text.includes("[[")) return text;
 	let out = text.replace(TOKEN_RE, (raw, tool: string, _op: string, body: string) => {
@@ -150,7 +129,6 @@ export function stripMarkers(text: string, options?: { stripTrailingIncomplete?:
 		out = out.replace(trailingIncompleteMarkerRe, "");
 	}
 	if (out === text) return text;
-	// 清理因剥离首尾标记残留在行首/段首/段尾的空行与空白
 	return out
 		.replace(/^[ \t]+\n/gm, "\n")
 		.replace(/\n{3,}/g, "\n\n")

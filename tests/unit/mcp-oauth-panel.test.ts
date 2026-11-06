@@ -70,7 +70,6 @@ describe("MCP OAuth modal", () => {
 		expect(link.getAttribute("rel")).toBe("noopener noreferrer");
 		expect(link.getAttribute("target")).toBe("_blank");
 		vi.useFakeTimers();
-		// Recreate the polling effect under fake timers.
 		await render({ ...pending, status: "error" });
 		await render(pending);
 		await act(async () => vi.advanceTimersByTime(1500));

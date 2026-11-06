@@ -1,13 +1,8 @@
-/**
- * wallpaper-engine 客户端样式注入 —— 多套专属炫酷毛玻璃主题、清晰度增强与壁纸抽屉组件样式。
- */
-
 export const WALLPAPER_THEMES = {
 	obsidian: {
 		id: "wallpaper-obsidian",
 		name: "🌑 黑曜冷月",
 		accent: "#e2e8f0",
-		// accent 是近白色：主操作按钮前景必须反色，否则白底白字（--accent-contrast）
 		accentContrast: "#0c0d11",
 		accentSoft: "rgba(255, 255, 255, 0.14)",
 		border: "rgba(255, 255, 255, 0.16)",
@@ -67,21 +62,18 @@ export function getGlassThemeCss(
 	lightWallpaperMode = false,
 ) {
 	const clampedBlur = Math.max(0, Math.min(Number(blur) || 0, 24));
-	// 解除最小 40% 限制，支持 0%~100% 自由无级调节
 	const opRatio = Math.max(0.0, Math.min(1.0, (Number(opacity) ?? 40) / 100));
 	const op = opRatio.toFixed(2);
 	const hasBlur = clampedBlur > 0;
 	const isFlowTheme = themeKey === "flow" || themeKey === "compact-flow";
 	const pal = WALLPAPER_THEMES[themeKey] || WALLPAPER_THEMES.obsidian;
 
-	// 动态缩放面板与输入框等底色透明度
 	const topbarBg = scaleAlpha(pal.topbarBg, opRatio);
 	const panelBg = scaleAlpha(pal.panelBg, opRatio);
 	const cardBg = scaleAlpha(pal.cardBg, opRatio);
 	const inputboxBg = scaleAlpha(pal.inputboxBg, opRatio);
 	const userBg = scaleAlpha(pal.userBg, opRatio);
 
-	// 对固定悬浮部件应用轻量 GPU 磨砂质感；当 blur <= 0 时严格输出 none，防复合风暴
 	const fixedGlassFilter = hasBlur
 		? `backdrop-filter: blur(${clampedBlur}px) !important; -webkit-backdrop-filter: blur(${clampedBlur}px) !important;`
 		: `backdrop-filter: none !important; -webkit-backdrop-filter: none !important;`;

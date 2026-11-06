@@ -8,7 +8,6 @@ describe("preview-toc（预览面板标题导航的纯函数）", () => {
 		expect(slugifyHeading("  a   b  ")).toBe("a-b");
 		expect(slugifyHeading("///")).toBe("section");
 		expect(slugifyHeading("")).toBe("section");
-		// 超长标题截断到 80（防超长 URL 片段）。
 		expect(slugifyHeading("中".repeat(120)).length).toBe(80);
 	});
 

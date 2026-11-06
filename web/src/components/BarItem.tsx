@@ -35,10 +35,12 @@ import { Dropdown, DropdownItem } from "./Dropdown";
 import { BrowserControl } from "./BrowserControl";
 import { BROWSER_PAGE_TOOL_NAME } from "../../../server/tool-manager.js";
 import { EnginePicker } from "./EnginePicker";
+import { NativeCliCreateEntry } from "./NativeCliCreateModal";
 import { ContextUsage } from "./ContextUsage";
 import { formatTokens } from "../format-tokens";
 
-export type ViewName = "chat" | "terminal" | "git" | "canvas" | "devices" | "worktrees" | `plugin:${string}`;
+export type ViewName =
+	"chat" | "native-cli" | "terminal" | "git" | "canvas" | "devices" | "worktrees" | `plugin:${string}`;
 
 export interface BarItemTheme {
 	id: string;
@@ -69,6 +71,7 @@ export interface BarItemProps {
 	zenMode?: boolean;
 	onToggleZenMode?: () => void;
 	onOpenSandboxModal?: () => void;
+	onCreateCli?: (cwd?: string) => void;
 	dropdownProps?: {
 		theme?: string | null;
 		themes?: BarItemTheme[];
@@ -97,12 +100,6 @@ function localeShort(code: string): string {
 	return "EN";
 }
 
-/**
- * 通用条目组件（BarItem）：
- * 统一服务于顶栏（topbar.primary）、底栏（bottombar）、左侧栏（sidebar.left）、右侧栏（sidebar.right）。
- * 统一采用【图标 + 文字】的形式展现（特殊条目保留其环形进度、状态指示灯等特色结构），
- * 支持跨栏拖动后在任意位置正常渲染与交互，右键菜单支持在四个栏之间自由互移。
- */
 export function BarItem({
 	entry,
 	bar,
@@ -124,6 +121,7 @@ export function BarItem({
 	zenMode,
 	onToggleZenMode,
 	onOpenSandboxModal,
+	onCreateCli,
 }: BarItemProps) {
 	const t = useT();
 	const { locale, packs, setLocale } = useI18n();
@@ -189,7 +187,6 @@ export function BarItem({
 		const hideItem = () => {
 			const hidden = new Set(layout?.hidden ?? []);
 			hidden.add(entry.id);
-			// shown 后于 hidden 生效（见 buildUiSlots）：不清掉 shown，隐藏会被顶掉而无效。
 			const shown = (layout?.shown ?? []).filter((x) => x !== entry.id);
 			appSend({ type: "set_settings", uiLayout: { ...layout, hidden: [...hidden], shown } });
 		};
@@ -312,16 +309,10 @@ export function BarItem({
 	};
 
 	const id = entry.id;
-	/** 显式文案（用户布局页改名 / 插件 arrange 改名，见 UiSlotEntry.labelExplicit）。内置条目一直画
-	 *  的是自己写死的 i18n 文案与实时数值，所以只有文案被显式指定时才让位 —— 不然布局页的改名
-	 *  框就是「假承诺」：改了没人理（issue #555）。没置旗时渲染结果与旧版逐字节一致。 */
 	const custom = entry.labelExplicit ? entry.label : "";
-	/** 名字型条目：显式文案顶掉内置文案。 */
 	const named = (fallback: string) => custom || fallback;
-	/** 数值型条目：`名字 数值`（名字只为显式文案而存在），没指定时就是原来的数值。 */
 	const withName = (value: string) => (custom ? `${custom} ${value}` : value);
 
-	// 下拉选择类型插件条目
 	if (entry.kind === "select" && entry.options?.length) {
 		const val = entry.options.some((o) => o.value === entry.value) ? (entry.value as string) : entry.options[0]!.value;
 		return (
@@ -344,12 +335,10 @@ export function BarItem({
 		);
 	}
 
-	// 1. 特殊条目：品牌（唯品牌徽标例外，不加 data-tip）
 	if (id === "host:brand") {
 		return <BrandDeviceMenu label={named("pi-web-ui")} barItem onContextMenu={handleContextMenu} />;
 	}
 
-	// 2. 特殊条目：连接状态（已连接时附带实时网络延迟 ms）
 	if (id === "host:conn") {
 		const connClass = chat.ready ? "ok" : chat.status === "closed" ? "error" : "busy";
 		const connLabel = chat.ready ? t("connected") : chat.status === "closed" ? t("reconnecting") : t("connecting");
@@ -368,15 +357,12 @@ export function BarItem({
 				data-bar-item={id}
 			>
 				<span className={`status-dot ${connClass}`} />
-				{/* 连接态常驻「指示灯 + 文字」：只留圆点虽然紧凑，但底栏缺少一处明文的健康状态，
-				 * 用户看不出「亮着的是绿灯还是黄灯」，所以文字保留（窄屏≤768px 由 CSS 单独隐藏文字）。 */}
 				<span className="status-conn-label bar-item-text">{withName(connLabel)}</span>
 				{latencyText && <span className={`status-latency ${latencyClass}`}>{latencyText}</span>}
 			</span>
 		);
 	}
 
-	// 3. 特殊条目：引擎选择器（常驻显示下拉胶囊，支持任意多引擎扩展）
 	if (id === "host:engine") {
 		return (
 			<span
@@ -397,7 +383,6 @@ export function BarItem({
 		);
 	}
 
-	// 4. 特殊条目：上下文进度环
 	if (id === "host:ctx") {
 		const context = stats?.contextUsage;
 		const cap = context?.softCap ?? null;
@@ -461,7 +446,6 @@ export function BarItem({
 		);
 	}
 
-	// 5. 特殊条目：缓存命中率
 	if (id === "host:cache") {
 		const cache = cacheMetrics(stats?.tokens ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
 		const hitPct = cache.hitRate * 100;
@@ -493,7 +477,6 @@ export function BarItem({
 		);
 	}
 
-	// 5.5 特殊条目：累计成本（与 ctx / cache 同级的纯状态指标，无按钮行为；支持配置货币符号或插件接管格式化 #607）
 	if (id === "host:cost") {
 		const cost = stats?.cost ?? 0;
 		const costTip = costDisplay.tooltip || t("cumulativeCost");
@@ -506,7 +489,6 @@ export function BarItem({
 				onContextMenu={handleContextMenu}
 				data-bar-item={id}
 			>
-				{/* 名字落在货币符号前面：`.status-cost` 默认 gap:0 让符号紧贴数字，有名字时靠 .has-name 把间距还给条目。 */}
 				{custom ? <span className="bar-item-text">{custom}</span> : null}
 				{costDisplay.symbol ? <span className="bar-item-char">{costDisplay.symbol}</span> : null}
 				<span className="bar-item-text">{costDisplay.value}</span>
@@ -514,7 +496,6 @@ export function BarItem({
 		);
 	}
 
-	// 5.6 特殊条目：消息数（纯图标 + 数字，去掉了文字和 #）
 	if (id === "host:msg-count") {
 		const count = stats?.totalMessages ?? 0;
 		const tip = `${t("sessionMessages")}: ${count}`;
@@ -533,7 +514,6 @@ export function BarItem({
 		);
 	}
 
-	// 6. 特殊条目：运行状态
 	if (id === "host:working") {
 		if (!isStreaming && !timing) return null;
 		const working = isStreaming || timingRunning;
@@ -567,7 +547,6 @@ export function BarItem({
 		);
 	}
 
-	// 7. 特殊条目：审查者模式
 	if (id === "host:status-delegate") {
 		if (!state?.delegateMode) return null;
 		return (
@@ -594,7 +573,6 @@ export function BarItem({
 		);
 	}
 
-	// 8. 特殊条目：主机资源占用
 	if (id === "host:host-metrics") {
 		const metrics = chat.hostMetrics;
 		if (!metrics) return null;
@@ -615,7 +593,6 @@ export function BarItem({
 		);
 	}
 
-	// 浏览器控制条目
 	if (id === "host:browser") {
 		if (chat.settings?.disabledAgentTools?.includes(BROWSER_PAGE_TOOL_NAME)) return null;
 		return (
@@ -625,7 +602,6 @@ export function BarItem({
 		);
 	}
 
-	// 9. 下拉面板类条目
 	const dropdownDirection: "down" | "up" | "left" | "right" =
 		bar === "bottom" ? "up" : bar === "left" ? "right" : bar === "right" ? "left" : "down";
 	const shouldPortalDropdown = true;
@@ -809,7 +785,6 @@ export function BarItem({
 		);
 	}
 
-	// 10. 标准【图标 + 文字】各类按钮
 	let iconNode: ReactNode = null;
 	let labelText = entry.label;
 	let badgeNode: ReactNode = null;
@@ -822,12 +797,14 @@ export function BarItem({
 
 	switch (id) {
 		case "host:chat":
+			if (!view || view === "chat" || view === "native-cli") return null;
 			iconNode = <FiMessageSquare className="bar-item-icon" />;
 			labelText = named(t("chat"));
-			isActive = view === "chat";
 			isTab = true;
 			onClick = () => onViewChange?.("chat");
 			break;
+		case "host:native-cli":
+			return null;
 		case "host:terminal":
 			iconNode = <FiTerminal className="bar-item-icon" />;
 			labelText = named(t("terminal"));
@@ -1005,7 +982,6 @@ export function BarItem({
 			extraClasses = "status-item ext-status";
 			break;
 		default:
-			// 插件视图（kind === "view"）或常规插件 action
 			if (entry.kind === "view") {
 				const target = entry.view ?? "";
 				isActive = view === target;
@@ -1017,7 +993,6 @@ export function BarItem({
 				if (meta?.error) {
 					tipOverride = `${entry.label}: ${meta.error}`;
 				}
-				// 优先展示插件定义的线性矢量 SVG 图标（iconSvg），无 SVG 时才回退到 emoji（icon）
 				const svg = entry.iconSvg || meta?.iconSvg;
 				const glyph = entry.icon || meta?.icon;
 				iconNode = svg ? (
@@ -1049,7 +1024,7 @@ export function BarItem({
 		.filter(Boolean)
 		.join(" ");
 
-	return (
+	const button = (
 		<button
 			type="button"
 			role={isTab ? "tab" : undefined}
@@ -1071,5 +1046,10 @@ export function BarItem({
 			)}
 			{badgeNode}
 		</button>
+	);
+	return id === "host:new-chat" ? (
+		<NativeCliCreateEntry onCreateCli={onCreateCli}>{button}</NativeCliCreateEntry>
+	) : (
+		button
 	);
 }

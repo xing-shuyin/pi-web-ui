@@ -1,32 +1,4 @@
 #!/usr/bin/env node
-/**
- * Regenerates the built-in themes as PURE PALETTE files (since the 布局与主题
- * 解耦 refactor):
- *
- *   themes/white.css     — 纯白底 + GitHub 蓝强调（浅色）
- *   themes/paper.css     — 暖纸米黄底 + 赭石强调（浅色护眼）
- *   themes/mist.css      — 雾蓝灰底 + 天青蓝强调（浅色冷淡风）
- *   themes/sakura.css    — 粉白底 + 樱粉强调（浅色柔和风）
- *   themes/md-preview.css— 暗色紫晕：深黑底 + 紫色径向渐变，chrome 全透明
- *   themes/cyberpunk.css — 赛博朋克（霓虹青/品红，近黑底）
- *   themes/dazzle.css    — 炫彩（高对比多彩，近黑底）
- *
- * THEMING MODEL: web/src/styles.css is the SINGLE layout file — it defines the
- * whole UI layout plus the default (dark) palette as :root CSS variables
- * (including the derived color vars like --tooltip-bg/--code-bg/--notice-*).
- * A theme is just a :root override of those variables — NO layout code ships
- * in theme files anymore, so layout changes never need to touch themes.
- *
- * The frontend (web/src/theme.ts applyTheme) injects <link>/themes/<id>.css
- * AFTER the bundled styles.css, so its :root variables win the cascade.
- *
- * Run whenever styles.css or a palette changes:
- *
- *   node make-light-theme.mjs
- *
- * User themes (<dataDir>/themes/<id>.css) follow the same model: just write
- * :root { ...vars... } (or drop a full standalone stylesheet if you must).
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,10 +8,6 @@ const srcPath = join(here, "web", "src", "styles.css");
 
 const css = readFileSync(srcPath, "utf8").replace(/\r\n/g, "\n");
 
-// --- 1) parse the :root variable list (name → default value) from styles.css
-// Themes inherit unchanged values from styles.css. Keep the full effective map
-// for contrast calculations, but emit only differences so shared component
-// tokens keep following the host rather than being frozen into every palette.
 const rootBlock = css.match(/:root \{[^}]*\}/);
 if (!rootBlock) throw new Error("make-light-theme: :root block not found in styles.css");
 const defaults = new Map();
@@ -48,7 +16,6 @@ for (const line of rootBlock[0].split("\n")) {
 	if (m) defaults.set(m[1], m[2]);
 }
 
-// Shared light surfaces must remain palette-relative when a theme omits them.
 const LIGHT_NOTICE_COLORS = {
 	"--notice-err-bg": "color-mix(in srgb, var(--bg-elev) 90%, var(--red))",
 	"--notice-warn-bg": "color-mix(in srgb, var(--bg-elev) 90%, var(--amber))",
@@ -58,17 +25,13 @@ const LIGHT_NOTICE_COLORS = {
 	"--notice-info-border": "var(--info-blue)",
 };
 
-/** Emit a theme file: palette differences + optional shared structure and tail. */
 const emitTheme = (name, overrides = {}, tail = "", nameEn = "", group = "", base = "") => {
-	// 1) 有效变量表 = styles.css 默认值 ∪ 调色板覆盖
 	const vars = new Map(defaults);
 	if ((overrides["color-scheme"] ?? "light") === "light") {
 		for (const [k, v] of Object.entries(LIGHT_NOTICE_COLORS)) vars.set(k, v);
 	}
 	for (const [k, v] of Object.entries(overrides)) if (k !== "color-scheme") vars.set(k, v);
-	// 2) 文字令牌可读性下限（与 themes/ 手写主题的压暗规则同一算法）
 	applyTextFloors(vars);
-	// Every palette owns switch colors; components only consume these tokens.
 	const light = (overrides["color-scheme"] ?? "light") === "light";
 	const switchOn = vars.get("--accent");
 	const switchRgb = parseHexColor(switchOn);
@@ -88,7 +51,6 @@ const emitTheme = (name, overrides = {}, tail = "", nameEn = "", group = "", bas
 	if (group) lines.push("/* theme-group: " + group + " */");
 	if (base) lines.push(`@import "./bases/${base}.css";`);
 	lines.push(":root {");
-	// color-scheme: themes default to light unless told otherwise.
 	lines.push("\tcolor-scheme: " + (overrides["color-scheme"] ?? "light") + ";");
 	for (const token of Object.keys(SEMANTIC_ON_TOKENS)) {
 		if (!vars.has(token)) vars.set(token, "");
@@ -104,12 +66,6 @@ const emitTheme = (name, overrides = {}, tail = "", nameEn = "", group = "", bas
 	return lines.join("\n") + tail;
 };
 
-/*
- * 强调色实底上的前景色（--accent-contrast）：主操作按钮 / 徽标都是
- * 「--accent 实底 + 该令牌」，白字压在浅色 accent 上会直接隐形（flow 主题
- * 纯白 accent → 1:1）。这里按对比度自动反色，门槛与守卫
- * tests/unit/accent-contrast.test.ts 一致；调色板可显式覆盖（更贴主题的深色）。
- */
 const ACCENT_MIN_RATIO = 3.0;
 const parseHexColor = (value) => {
 	const m = /^#([0-9a-f]{6})$/i.exec(String(value ?? "").trim());
@@ -136,11 +92,6 @@ function accentContrast(vars) {
 	return "#0b0d12";
 }
 
-/*
- * 文字令牌可读性下限（--text-faint / 语义文字色 / 代码正文色）：亮色主题经常沿用
- * 深色主题的浅色值（`--amber #fbbf24` 白底仅 1.67:1）。这里保持色相与饱和度、只调
- * 明度直到目标表面都够对比（门槛与 tests/unit/theme-text-contrast.test.ts 一致）。
- */
 const TEXT_FLOORS = {
 	"--text-faint": [3.05, ["--bg", "--bg-elev", "--bg-elev2", "--code-bg"]],
 	"--accent": [3.5, ["--bg", "--bg-elev2"]],
@@ -221,7 +172,6 @@ function applyTextFloors(vars) {
 		let fixed = null;
 		for (let i = 1; i <= 100 && !fixed; i++) {
 			for (const dir of goDark ? [-1, 1] : [1, -1]) {
-				// 用取整后的 hex 评估，保证「生成器 ↔ 主题文件」是同一个不动点
 				const cand = parseHexColor(hexOf(fromHsl([h, sat, l + (dir * i) / 100])));
 				if (cand && worst(cand) >= target) {
 					fixed = cand;
@@ -233,17 +183,10 @@ function applyTextFloors(vars) {
 	}
 }
 
-/*
- * 语义色（green/red/amber/blue/send-blue/stop-red）实底上的前景（--on-*）：
- * 	白字压浅色语义色上会隐形（默认 --amber #fbbf24 仅 1.67:1），这里按对比度自动
- * 	反色；门槛与守卫 tests/unit/semantic-contrast.test.ts 一致。
- */
 const SEMANTIC_ON_TOKENS = {
-	// 状态色：取白/深里对比更高者（徽标、状态 chip 求最大可读）
 	"--on-green": ["--green", "max"],
 	"--on-red": ["--red", "max"],
 	"--on-amber": ["--amber", "max"],
-	// 动作色：白字够用就保留白字（主操作按钮的品牌实心观感）
 	"--on-blue": ["--blue", "whiteFirst"],
 	"--on-send-blue": ["--send-blue", "whiteFirst"],
 	"--on-stop-red": ["--stop-red", "whiteFirst"],
@@ -257,7 +200,7 @@ function semanticForeground(token, vars, overrides) {
 	const [baseVar, mode] = spec;
 	if (overrides[token]) return overrides[token];
 	const base = parseHexColor(vars.get(baseVar));
-	if (!base) return null; // 交给默认值（由 styles.css 的 :root 提供）
+	if (!base) return null;
 	const onWhite = contrastRatio([255, 255, 255], base);
 	const onDark = contrastRatio(parseHexColor(ON_DARK), base);
 	if (mode === "max") return onDark > onWhite ? ON_DARK : "#ffffff";
@@ -267,9 +210,6 @@ function semanticForeground(token, vars, overrides) {
 const writeTheme = (name, file, body) =>
 	writeFileSync(join(process.env.PI_THEMES_OUT_DIR || join(here, "themes"), file), body, "utf8");
 
-// --- 2) palettes -----------------------------------------------------------
-// Only the variables that differ from the dark default are listed. The light
-// values mirror the old make-light-theme colorMap (dark surfaces → light).
 const LIGHT_DERIVED = {
 	"--tooltip-bg": "#ffffff",
 	"--code-bg": "#f6f8fa",
@@ -294,18 +234,13 @@ const LIGHT_DERIVED = {
 	"--notice-info-border": "#2563eb",
 	"--send-blue": "#0969da",
 	"--send-blue-hover": "#0550ae",
-	/* 收起/展开按钮的常驻对照色（issue #100）：浅色下用灰底灰边框 */
 	"--control-fg": "#59636e",
 	"--control-bg": "#f6f8fa",
 	"--control-border": "#d0d7de",
-	/* 壁纸默认关闭（纯色背景），用户/主题按需打开 */
 	"--bg-image": "none",
 	"--bg-image-dim": "0.78",
 	"--bg-image-blur": "0px",
 	"--bg-elev3": "rgba(0, 0, 0, 0.03)",
-	/* 凹陷内容面（右栏扩展 widgets 区等）：深色默认是 15% 黑（压在深底上只深一点点），
-	   浅色下压到 4%（浅底上 15% 会变成一块明显的深灰），既与面板分区分层、
-	   又不至于吃撑卡片（.widget 用 --bg-elev2） */
 	"--sunken-bg": "rgba(0, 0, 0, 0.04)",
 	"--glow-015": "rgba(0, 0, 0, 0.02)",
 	"--glow-025": "rgba(0, 0, 0, 0.02)",
@@ -318,7 +253,6 @@ const LIGHT_DERIVED = {
 	"--glow-38": "rgba(0, 0, 0, 0.25)",
 };
 
-// 「白色」— pure white page, GitHub-blue accents (vs. violet in LIGHT).
 const WHITE = {
 	"color-scheme": "light",
 	"--bg": "#ffffff",
@@ -358,10 +292,8 @@ const WHITE = {
 	"--term-bright-cyan": "#0e7490",
 	"--term-bright-white": "#000000",
 	...LIGHT_DERIVED,
-	// 品牌渐变保持紫色系（原 colorMap 不改它）
 };
 
-// 「暖纸」— warm paper page, 赭石 accents (vs. GitHub-blue in WHITE).
 const PAPER = {
 	"color-scheme": "light",
 	"--bg": "#f7f1e3",
@@ -425,11 +357,9 @@ const PAPER = {
 	"--notice-err-border": "#b91c1c",
 	"--notice-warn-border": "#b45309",
 	"--notice-info-border": "#57534e",
-	/* 收起/展开按钮的常驻对照色（issue #100）：暖纸下用纸深灰底 */
 	"--control-fg": "#6f6250",
 	"--control-bg": "#efe7d3",
 	"--control-border": "#ddcfae",
-	/* 暖纸实底卡片（issue #243）：避免半透明透光冲淡文字，保证截图与复制为图片字迹清晰 */
 	"--wallpaper-panel-alpha": "100%",
 	"--topbar-bg": "#fffdf6",
 	"--statusbar-bg": "#fffdf6",
@@ -438,12 +368,10 @@ const PAPER = {
 	"--chip-bg": "#efe7d3",
 	"--msgs-bg": "#fffdf6",
 	"--inputbox-bg": "#efe7d3",
-	/* 壁纸默认关闭（纯色背景），用户/主题按需打开 */
 	"--bg-image": "none",
 	"--bg-image-dim": "0.78",
 	"--bg-image-blur": "0px",
 	"--bg-elev3": "rgba(120, 90, 30, 0.06)",
-	/* 凹陷内容面：暖棕调与纸面对味（同 --bg-elev3 的调子，只低一点点） */
 	"--sunken-bg": "rgba(120, 90, 30, 0.05)",
 	"--glow-015": "rgba(120, 90, 30, 0.02)",
 	"--glow-025": "rgba(120, 90, 30, 0.02)",
@@ -456,8 +384,6 @@ const PAPER = {
 	"--glow-38": "rgba(120, 90, 30, 0.25)",
 };
 
-// 浅色主题的 hljs 覆盖（github-dark 静态打包，浅色下必须整块覆盖）——
-// 属于「配色」而非布局，保留在主题文件里。
 const hljsLight = `
 /* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
@@ -539,8 +465,6 @@ const hljsLight = `
 }
 `;
 
-// 「雾蓝灰」— misty blue-gray page, 天青蓝 accents (vs. GitHub-blue in WHITE,
-// warm 赭石 in PAPER).
 const MIST = {
 	"color-scheme": "light",
 	"--bg": "#e9eef4",
@@ -604,16 +528,13 @@ const MIST = {
 	"--notice-err-border": "#dc2626",
 	"--notice-warn-border": "#b45309",
 	"--notice-info-border": "#2563eb",
-	/* 收起/展开按钮的常驻对照色（issue #100）：雾蓝灰下用 slate 底 */
 	"--control-fg": "#475569",
 	"--control-bg": "#dde5ec",
 	"--control-border": "#cbd5e1",
-	/* 壁纸默认关闭（纯色背景），用户/主题按需打开 */
 	"--bg-image": "none",
 	"--bg-image-dim": "0.78",
 	"--bg-image-blur": "0px",
 	"--bg-elev3": "rgba(30, 58, 95, 0.05)",
-	/* 凹陷内容面：冷蓝调与雾蓝灰对味 */
 	"--sunken-bg": "rgba(30, 58, 95, 0.05)",
 	"--glow-015": "rgba(30, 58, 95, 0.02)",
 	"--glow-025": "rgba(30, 58, 95, 0.02)",
@@ -626,7 +547,6 @@ const MIST = {
 	"--glow-38": "rgba(30, 58, 95, 0.25)",
 };
 
-// 暖纸主题的 hljs 覆盖：纸色底，其余 token 沿用浅色 GitHub 色系。
 const hljsPaper = `
 /* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
@@ -708,8 +628,6 @@ const hljsPaper = `
 }
 `;
 
-// 「樱粉」— 粉白底 + 樱粉强调（vs. GitHub 蓝 in WHITE / 赭石 in PAPER /
-// 天青蓝 in MIST）。
 const SAKURA = {
 	"color-scheme": "light",
 	"--bg": "#fdf2f5",
@@ -773,16 +691,13 @@ const SAKURA = {
 	"--notice-err-border": "#e11d48",
 	"--notice-warn-border": "#b45309",
 	"--notice-info-border": "#a855f7",
-	/* 收起/展开按钮的常驻对照色（issue #100）：樱粉下用粉灰底 */
 	"--control-fg": "#7d5561",
 	"--control-bg": "#f8e2e8",
 	"--control-border": "#eccdd6",
-	/* 壁纸默认关闭（纯色背景），用户/主题按需打开 */
 	"--bg-image": "none",
 	"--bg-image-dim": "0.78",
 	"--bg-image-blur": "0px",
 	"--bg-elev3": "rgba(150, 50, 90, 0.05)",
-	/* 凹陷内容面：粉调与樱粉对味 */
 	"--sunken-bg": "rgba(150, 50, 90, 0.05)",
 	"--glow-015": "rgba(150, 50, 90, 0.02)",
 	"--glow-025": "rgba(150, 50, 90, 0.02)",
@@ -795,7 +710,6 @@ const SAKURA = {
 	"--glow-38": "rgba(150, 50, 90, 0.25)",
 };
 
-// 雾蓝灰主题的 hljs 覆盖：冷灰蓝底，其余 token 沿用浅色 GitHub 色系。
 const hljsMist = `
 /* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
@@ -877,7 +791,6 @@ const hljsMist = `
 }
 `;
 
-// 樱粉主题的 hljs 覆盖：粉底，其余 token 沿用浅色 GitHub 色系。
 const hljsSakura = `
 /* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
@@ -959,8 +872,6 @@ const hljsSakura = `
 }
 `;
 
-// 「紫晕」— dark theme mirroring the in-app markdown FILE preview surface.
-// Opaque chrome surfaces go translucent so the ambient gradient shows through.
 const MD_PREVIEW_TAIL = `
 /* ---- ambient gradient（镜像 .fp-markdown 预览底色，覆盖整个窗口）---- */
 :root {
@@ -980,7 +891,6 @@ body {
 }
 `;
 
-// 「赛博朋克」— neon cyan/magenta on near-black.
 const CYBERPUNK = {
 	"color-scheme": "dark",
 	"--bg": "#0a0a0f",
@@ -1028,7 +938,6 @@ const CYBERPUNK = {
 	"--info-blue": "#00d4ff",
 };
 
-// 「炫彩」— high-contrast, colorful.
 const DAZZLE = {
 	"color-scheme": "dark",
 	"--bg": "#0b0b14",
@@ -1074,7 +983,6 @@ const DAZZLE = {
 	"--send-blue-hover": "#6366f1",
 };
 
-// --- Catppuccin Mocha（现代经典柔和深色）--------------------------------
 const CATPPUCCIN = {
 	"color-scheme": "dark",
 	"--bg": "#1e1e2e",
@@ -1186,7 +1094,6 @@ const hljsCatppuccin = `
 }
 `;
 
-// --- Tokyo Night（深邃蓝紫极客风）------------------------------------------
 const TOKYO_NIGHT = {
 	"color-scheme": "dark",
 	"--bg": "#1a1b26",
@@ -1298,7 +1205,6 @@ const hljsTokyoNight = `
 }
 `;
 
-// --- Catppuccin Latte（温润奶咖浅色）---------------------------------------
 const CATPPUCCIN_LATTE = {
 	"color-scheme": "light",
 	"--bg": "#eff1f5",
@@ -1405,7 +1311,6 @@ const hljsCatppuccinLatte = `
 }
 `;
 
-// --- Nord（北欧极光冷灰蓝）--------------------------------------------------
 const NORD = {
 	"color-scheme": "dark",
 	"--bg": "#2e3440",
@@ -1507,7 +1412,6 @@ const hljsNord = `
 }
 `;
 
-// --- Solarized Light（经典防眩光浅色）----------------------------------------
 const SOLARIZED_LIGHT = {
 	"color-scheme": "light",
 	"--bg": "#fdf6e3",
@@ -1609,7 +1513,6 @@ const hljsSolarized = `
 }
 `;
 
-// --- One Dark Pro（经典暗灰深色）--------------------------------------------
 const ONE_DARK = {
 	"color-scheme": "dark",
 	"--bg": "#282c34",
@@ -1712,7 +1615,6 @@ const hljsOneDark = `
 }
 `;
 
-// --- Codex Pure（借鉴 OpenAI Codex / ChatGPT 的现代清爽纯白极简）----------
 const CODEX_PURE = {
 	"color-scheme": "light",
 	"--bg": "#ffffff",
@@ -1815,7 +1717,6 @@ const hljsCodex = `
 }
 `;
 
-// --- Geist Light（借鉴 Vercel / Next.js 的高质感几何纯净雪白设计）---------
 const GEIST_LIGHT = {
 	"color-scheme": "light",
 	"--bg": "#ffffff",
@@ -1828,8 +1729,6 @@ const GEIST_LIGHT = {
 	"--text-faint": "#767676",
 	"--accent": "#0070f3",
 	"--accent-soft": "rgba(0, 112, 243, 0.12)",
-	// --green 是**语义色**（SCM diff 的新增行、status-dot.ok、ctx-bar.ok、--auth-green
-	// 的「已授权」、终端 ANSI green），不是品牌色；Geist 的品牌蓝留在 --accent / --link / --info-blue。
 	"--green": "#059669",
 	"--green-soft": "rgba(5, 150, 105, 0.12)",
 	"--red": "#ee0000",
@@ -1920,7 +1819,6 @@ const hljsGeist = `
 }
 `;
 
-// --- Rose Pine Dawn（广受好评的 Rosé Pine 浅色变体，雾紫玫瑰粉系）----------
 const ROSE_PINE_DAWN = {
 	"color-scheme": "light",
 	"--bg": "#faf4ed",
@@ -2023,7 +1921,6 @@ const hljsRosePineDawn = `
 }
 `;
 
-// --- Gruvbox Light（经典复古暖沙色，faded 色系保证浅底高对比）--------------
 const GRUVBOX_LIGHT = {
 	"color-scheme": "light",
 	"--bg": "#fbf1c7",
@@ -2126,7 +2023,6 @@ const hljsGruvboxLight = `
 }
 `;
 
-// --- Everforest Light（森系护眼浅绿，社区口碑极佳）--------------------------
 const EVERFOREST_LIGHT = {
 	"color-scheme": "light",
 	"--bg": "#fdf6e3",
@@ -2229,7 +2125,6 @@ const hljsEverforest = `
 }
 `;
 
-// --- Kanagawa Lotus（神奈川和风浅色，水墨白黄宣纸质感）---------------------
 const KANAGAWA_LOTUS = {
 	"color-scheme": "light",
 	"--bg": "#f2ecbc",
@@ -2332,7 +2227,6 @@ const hljsKanagawaLotus = `
 }
 `;
 
-// --- Ayu Light（日系极简高效浅色，橙色强调 + 青绿点缀）---------------------
 const AYU_LIGHT = {
 	"color-scheme": "light",
 	"--bg": "#fcfcfc",
@@ -2436,8 +2330,6 @@ const hljsAyu = `
 }
 `;
 
-// --- 3) emit ----------------------------------------------------------------
-// 内置原生主题（保留原汁原味）
 writeTheme("白色", "white.css", emitTheme("白色", WHITE, hljsLight, "White"));
 writeTheme("暖纸", "paper.css", emitTheme("暖纸", PAPER, hljsPaper, "Warm Paper"));
 writeTheme("雾蓝灰", "mist.css", emitTheme("雾蓝灰", MIST, hljsMist, "Misty Blue Gray"));
@@ -2450,7 +2342,6 @@ writeTheme(
 writeTheme("赛博朋克", "cyberpunk.css", emitTheme("赛博朋克", CYBERPUNK, "", "Cyberpunk"));
 writeTheme("炫彩", "dazzle.css", emitTheme("炫彩", DAZZLE, "", "Dazzle"));
 
-// 现代经典流行主题（带 group: classic，分组置顶展示）
 writeTheme(
 	"Catppuccin",
 	"catppuccin.css",

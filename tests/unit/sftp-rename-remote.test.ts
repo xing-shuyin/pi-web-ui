@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renameRemote } from "../../plugins/sftp/lib/engine.mjs";
 
-/** 假 sftp：记录调用序列，rename 可按 (from,to) 定向失败，stat 按 exists 表应答。 */
 function makeSftp(opts: { renameFail?: (from: string, to: string) => boolean; exists?: Record<string, boolean> }) {
 	const calls: Array<{ method: string; args: string[] }> = [];
 	const sftp = {
@@ -39,7 +38,6 @@ describe("renameRemote 安全覆盖路径（0.103 审计）", () => {
 
 	it("目标存在（覆盖场景）：目标先挪备份、改名成功后清备份", async () => {
 		const { sftp, calls } = makeSftp({
-			// 仅第一次 /a→/b 失败（mock 的 push 在判断前发生，故按已记录数 <=1 判首调）
 			renameFail: (from, to) =>
 				from === "/a" && to === "/b" && calls.filter((c) => c.method === "rename" && c.args[0] === "/a").length <= 1,
 			exists: { "/b": true },

@@ -1,16 +1,3 @@
-/**
- * model-admin — 模型/服务商配置管理，从 agent-service.ts 抽出。
- *
- * 职责：auth.json 的 provider api-key 存取（set/clear）、models.json 读写
- * （listModelsConfig/saveModelConfig/deleteModelConfig）、自定义服务商「自动获取
- * 模型列表」（fetch_models：服务端探测 OpenAI 兼容 /models 端点，绕开 CORS；
- * anthropic/google 鉴权头各不同；裸 /models 404 回退 /v1/models）与已保存供应商
- * 的一键刷新（refresh_provider_models，凭据不出浏览器）。改动后热更新 runtime
- * （refresh/setRuntimeApiKey）并推 models/models_config。
- *
- * 经 ModelAdminHost 与 ClientSession 解耦（同 settings/goal/slash 服务模式）。
- * UI 文案直接中文（服务端 notice 约定）。apiKey/headers 绝不下发浏览器。
- */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
@@ -29,44 +16,22 @@ import { resolveModelReasoningSpec } from "./reasoning-registry.js";
 import { pick, type ServerLang } from "./i18n.js";
 import { ProviderOAuthFlowManager } from "./provider-oauth-flow.js";
 
-/** ClientSession 提供给本服务的宿主能力（窄接口）。 */
 export interface ModelAdminHost {
 	agentDir: string;
 	emit: (msg: ServerMessage) => void;
 	flushSnapshot: () => void;
 	isDisposed: () => boolean;
-	/** 共享 ModelRuntime（所有对话共用），改动后需 refresh/热更新。非 pi 引擎时可缺省。 */
 	modelRuntime?: () => ModelRuntime;
-	/** auth/models 变更后 pi 配置检测缓存失效（piConfigured 可能翻转）。 */
 	invalidatePiConfig?: () => void;
-	/** 变更后重推顶栏模型下拉。 */
 	pushModels: () => Promise<void>;
-	/** OAuth becomes authoritative, so project-scoped API-key choices must not restore over it. */
 	onOAuthActivated?: (provider: string) => void;
 }
 
-/** One models.json overlay row graduated to the official catalog. */
 export interface OverlayGraduation {
 	providerId: string;
 	modelId: string;
 }
 
-/** Drop provisional overlay rows once the official catalog lists the same id.
- *
- *  Background: a hand-appended row SHADOWS the official row at compose time
- *  (applyModelsJson rebuilds the entry from the definition, so official
- *  name/vision/contextWindow/etc. are lost and only api/baseUrl are
- *  inherited). While pi.dev doesn't list the id the shadow is the whole
- *  point; once it does, the shadow becomes stale metadata. `official` maps
- *  provider → model id → the official row's api (undefined when unknown).
- *  A row graduates when the official catalog lists its id AND the row
- *  carries no deliberate routing of its own: no baseUrl, and either no api
- *  or the same api the official row uses. A row with its own baseUrl or a
- *  differing api is a customization, not a provisional — it stays. When an
- *  entry's models become empty and it carries no other keys, the whole entry
- *  is removed so it also leaves the "custom providers" list; entries with
- *  other keys (baseUrl/apiKey/headers/…) are kept. Mutates `providers` in
- *  place and returns what was graduated. Pure + unit-tested. */
 export function graduateOverlayModels(
 	providers: Record<string, Record<string, unknown>>,
 	official: Record<string, Record<string, string | undefined>>,
@@ -101,34 +66,13 @@ export function graduateOverlayModels(
 	return graduated;
 }
 
-/** 原子写凭据 JSON 并修权限 0600（port from fork 50e723f，保留上游原子写语义）。
- *  chmod 覆盖已存在文件（mode 选项只对新建有效）。Windows 下尽力而为。 */
 function atomicWriteCredentialJson(path: string, data: unknown): void {
 	writeJsonAtomicSync(path, data);
 	try {
 		chmodSync(path, CREDENTIAL_FILE_MODE);
-	} catch {
-		/* best-effort (win) */
-	}
+	} catch {}
 }
 
-/** Merge a UI-submitted provider config into the existing models.json entry.
- *
- * 表单（`UiProviderConfig`）只承载 UI 认识的字段：provider 级 name/api/baseUrl/
- * hasApiKey/authHeader，模型级 id/name/reasoning/input/contextWindow/maxTokens。
- * models.json 里还可能有 UI 不认识的字段——provider 级 headers（浏览器拿不到，
- * 见 listModelsConfig）、模型级 api/baseUrl/cost/compat/thinkingLevelMap（手写或
- * 脚本写入，pi-ai 靠它们决定请求地址与推理格式）。按表单整体重建条目会把这些字段
- * 静默抹掉，可能把可用的配置改坏：模型级 baseUrl 丢失后会回退到对该 api 适配器
- * 无效的地址（例如 opencode-go 的 anthropic baseUrl），请求直接打到不存在的路径。
- *
- * 所以这里以已有条目为底、表单字段覆盖：表单没提到的字段原样保留，表单清空的可选
- * 字段才真正删除；`models` 仍是「表单即全集」——表单里删掉的 id 会被移除。
- *
- * apiKey 例外：浏览器不再持有明文（只见 hasApiKey），**缺字段 = 保留旧值**；显式
- * 空串才清除（协议级"空=清除"语义保留，但 Web 表单留空时整字段不传）。这样
- * refresh_provider_models 等不带 apiKey 的内部保存路径也绝不会把密钥抹掉。
- */
 export function mergeProviderConfigEntry(
 	prevEntry: Record<string, unknown> | undefined,
 	config: UiProviderConfig,
@@ -143,7 +87,6 @@ export function mergeProviderConfigEntry(
 		}
 	}
 	const mergedModels = models.map((model) => {
-		// 旧条目同 id 的字段（api/baseUrl/cost/compat/…）先铺底，表单字段覆盖。
 		const merged: Record<string, unknown> = { ...prevModels.get(model.id), id: model.id };
 		if (model.name?.trim()) merged.name = model.name.trim();
 		else delete merged.name;
@@ -155,9 +98,6 @@ export function mergeProviderConfigEntry(
 		else delete merged.contextWindow;
 		if (model.maxTokens) merged.maxTokens = Number(model.maxTokens);
 		else delete merged.maxTokens;
-		// thinkingLevelMap：表单带了就覆盖，没带（undefined）= 保留磁盘上的手写映射，
-		// 与 api/baseUrl/cost/compat 同语义。注意不能 `else delete`——那会把用户在
-		// models.json 里手写的 xhigh/max 映射抹掉，档位又会退回 off…high。
 		const thinkingLevelMap = sanitizeThinkingLevelMap(model.thinkingLevelMap);
 		if (thinkingLevelMap) merged.thinkingLevelMap = thinkingLevelMap;
 		if (model.compat && typeof model.compat === "object") merged.compat = model.compat;
@@ -173,9 +113,7 @@ export function mergeProviderConfigEntry(
 							...parsed,
 						};
 					}
-				} catch {
-					// 忽略非合法 JSON
-				}
+				} catch {}
 			} else {
 				delete merged.customExtraBody;
 			}
@@ -192,7 +130,6 @@ export function mergeProviderConfigEntry(
 	apply("api", config.api?.trim() || undefined);
 	apply("baseUrl", config.baseUrl?.trim() || undefined);
 	if (config.apiKey === undefined) {
-		// 表单没带 apiKey（留空/内部路径）→ 保留旧值，绝不清除。
 	} else {
 		apply("apiKey", config.apiKey.trim() || undefined);
 	}
@@ -201,7 +138,6 @@ export function mergeProviderConfigEntry(
 	return mergedEntry;
 }
 
-/** Numeric metadata value (NaN/string "unknown" → undefined). */
 function numMeta(v: unknown): number | undefined {
 	return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
@@ -214,17 +150,6 @@ function strArrMeta(v: unknown): string[] | undefined {
 	return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined;
 }
 
-/**
- * 体系化启发式推断模型是否具备推理/深度思考能力：
- * 1. 显式端点元数据优先（reasoning / supports_reasoning / modalities 包含 reasoning）；
- * 2. 业界主流推理模型命名特征正则库：
- *    - thinking / reasoner / reasoning 显式词
- *    - OpenAI o1 / o3 / o4 系列（如 o1, o1-mini, o1-preview, o3-mini, o3-high, o4 等）
- *    - DeepSeek R1 / Reasoner 系列（如 deepseek-r1, r1-distill 等）
- *    - 阿里千问 QwQ 系列（如 qwq-32b, qwq-32b-preview）
- *    - 智谱 GLM-Zero 系列（如 glm-4-zero, glm-zero）
- *    - CoT (Chain of Thought) 显式标记
- */
 export function detectReasoningCapability(id: string, rawMeta?: Record<string, unknown>): boolean {
 	if (!id) return false;
 	const r = rawMeta ?? {};
@@ -250,18 +175,11 @@ export function detectReasoningCapability(id: string, rawMeta?: Record<string, u
 	return REASONING_PATTERNS.some((pattern) => pattern.test(lower));
 }
 
-// ---------------------------------------------------------------------------
-// 思考档位（models.json 的模型级 thinkingLevelMap）
-// ---------------------------------------------------------------------------
-
-/** pi-ai 的思考档位，同时也是 `thinkingLevelMap` 认识的全部键（顺序 = 下拉顺序）。 */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
-/** pi-ai 默认开放给「推理模型」的档位（没有 thinkingLevelMap 时就是这个集合）。 */
 const DEFAULT_THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
 
-/** 网关/推理端点常见的档位字面值 → pi 档位（查表前先归一化，见 normalizeLevelToken）。 */
 const THINKING_LEVEL_ALIASES: Record<string, ThinkingLevel> = {
 	off: "off",
 	none: "off",
@@ -289,7 +207,6 @@ const THINKING_LEVEL_ALIASES: Record<string, ThinkingLevel> = {
 	ultra: "max",
 };
 
-/** `/v1/models` 条目里可能携带推理档位的字段名（各家字段拼写不一）。 */
 const THINKING_LEVEL_META_KEYS = [
 	"reasoning_levels",
 	"reasoningLevels",
@@ -307,7 +224,6 @@ function normalizeLevelToken(token: string): string {
 		.replace(/[\s_]+/g, "-");
 }
 
-/** 档位元数据可能是数组、对象数组（`.effort`）、字典或逗号串——统一摊平成字面值列表。 */
 function collectLevelTokens(value: unknown, out: string[], depth = 0): void {
 	if (depth > 2 || value === null || value === undefined) return;
 	if (typeof value === "string") {
@@ -334,14 +250,12 @@ function collectLevelTokens(value: unknown, out: string[], depth = 0): void {
 	}
 	if (typeof value === "object") {
 		const row = value as Record<string, unknown>;
-		// 形如 { levels: [...] } / { supported: [...] } 的包裹
 		for (const key of ["levels", "values", "supported"]) {
 			if (key in row) {
 				collectLevelTokens(row[key], out, depth + 1);
 				return;
 			}
 		}
-		// 形如 { low: true, high: {…} } 的字典（false/null 表示不支持）
 		for (const [key, val] of Object.entries(row)) {
 			if (val === false || val === null || val === undefined) continue;
 			out.push(key);
@@ -349,22 +263,6 @@ function collectLevelTokens(value: unknown, out: string[], depth = 0): void {
 	}
 }
 
-/** 从网关 `/models` 条目的推理档位元数据推导 pi-ai 的模型级 `thinkingLevelMap`。
- *
- *  背景：pi-ai 的 `getSupportedThinkingLevels()` 只有在模型带 `thinkingLevelMap`
- *  且 `xhigh` / `max` 有显式映射时才开放这两档（见 pi-ai dist/models.js），否则
- *  自定义服务商（vLLM / 聚合网关）永远只能选到 `off`…`high`。网关自己在
- *  `reasoning_levels` / `supported_reasoning_levels[].effort` 里报了能力，这里就
- *  把它翻译成 pi 的映射：报了的档位映射成网关字面值，没报的显式写 `null`（= 不支持）。
- *
- *  两条保守规则：
- *  - `off` 永不隐藏（不写 `null`）：关掉思考总是合法的，而且多数网关也没有
- *    `none` / `off` 这个字面值；只有在网关明确报了这类字面值时才映射过去。
- *  - 推导结果与 pi 默认能力（`off` + `minimal/low/medium/high`）完全一致时不返回
- *    任何映射，避免每次刷新都把 models.json 无谓改写一遍。
- *
- *  纯函数，单测见 tests/unit/model-admin-thinking-levels.test.ts。
- */
 export function buildThinkingLevelMapFromMeta(raw?: Record<string, unknown>): UiThinkingLevelMap | undefined {
 	const meta = raw ?? {};
 	const tokens: string[] = [];
@@ -378,7 +276,6 @@ export function buildThinkingLevelMapFromMeta(raw?: Record<string, unknown>): Ui
 		const level = THINKING_LEVEL_ALIASES[normalizeLevelToken(token)];
 		if (level && !advertised.has(level)) advertised.set(level, token.trim());
 	}
-	// 只报了「关思考」类字面值 = 这模型压根不推理，别当成档位元数据。
 	if (![...advertised.keys()].some((level) => level !== "off")) return undefined;
 
 	const map: UiThinkingLevelMap = {};
@@ -399,8 +296,6 @@ export function buildThinkingLevelMapFromMeta(raw?: Record<string, unknown>): Ui
 	return map;
 }
 
-/** 只保留 pi 认识的 7 个档位键，值归一化成「非空字符串」或 `null`。
- *  models.json 的模型 schema 只列这 7 个键，未知键写进去既无意义也可能被拒。 */
 export function sanitizeThinkingLevelMap(value: unknown): UiThinkingLevelMap | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const src = value as Record<string, unknown>;
@@ -413,11 +308,6 @@ export function sanitizeThinkingLevelMap(value: unknown): UiThinkingLevelMap | u
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Best-effort extraction of model metadata from an OpenAI-compatible
- *  /models `data[]` item. Most endpoints only return `{ id }` — the extra
- *  fields (context_window / max_model_len / modalities / supports_vision /
- *  reasoning / display_name / 推理档位) come from vLLM, 聚合网关 and other
- *  extended implementations, and are filled into the form when present. */
 function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 	const r = (m ?? {}) as Record<string, unknown>;
 	const id = typeof r.id === "string" ? r.id : "";
@@ -430,10 +320,6 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 		boolMeta(r.supports_vision) === true ||
 		boolMeta(r.vision) === true ||
 		strArrMeta(r.input)?.includes("image") === true;
-	// 名字与元数据兜底：端点未提供 reasoning 时通过通用推理模型特征或权威知识库推断。
-	// 只增不减：取消勾选靠手填（编辑页/刷新合并都只补缺）。
-	// 网关自报推理档位同样是「这是推理模型」的铁证（如聚合网关的 glm-5.3，
-	// 名字认不出来，但 reasoning_levels 报了 low/high/max）。
 	const knownSpec = resolveModelReasoningSpec(id, r);
 	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r) ?? knownSpec?.thinkingLevelMap;
 	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined || Boolean(knownSpec);
@@ -451,15 +337,11 @@ function parseOpenAiModel(m: unknown): UiModelConfigEntry {
 	};
 }
 
-/** google-generative-ai /models shape:
- *  { models: [{ name: "models/gemini-flash", displayName, inputTokenLimit,
- *               outputTokenLimit, supportedGenerationMethods }] } */
 function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	const r = (m ?? {}) as Record<string, unknown>;
 	const rawName = typeof r.name === "string" ? r.name : "";
 	const id = rawName.replace(/^models\//, "");
 	const displayName = typeof r.displayName === "string" ? r.displayName : undefined;
-	// 与 OpenAI 形状同口径的推断兜底（见 detectReasoningCapability 与 resolveModelReasoningSpec）。
 	const knownGoogleSpec = resolveModelReasoningSpec(id, r);
 	const thinkingLevelMap = buildThinkingLevelMapFromMeta(r) ?? knownGoogleSpec?.thinkingLevelMap;
 	const reasoning = detectReasoningCapability(id, r) || thinkingLevelMap !== undefined || Boolean(knownGoogleSpec);
@@ -473,37 +355,26 @@ function parseGoogleModel(m: unknown): UiModelConfigEntry {
 	};
 }
 
-/** Persisted shape of <agentDir>/provider-keys.json (one entry per provider). */
 export interface ProviderKeysData {
 	activeKeyName: string | null;
 	keys: { name: string; apiKey: string }[];
 }
 
-/** Credential files hold raw provider API keys — always mode 0600.
- *  models.json can hold per-provider apiKey/headers, so it gets the same treatment. */
 export const CREDENTIAL_FILE_MODE = 0o600;
 
-/** Write a credential file (provider-keys.json / auth.json / models.json) with mode 0600.
- *  The `mode` option covers creation; the chmod covers pre-existing files
- *  (mode is ignored when the file already exists). Best-effort on Windows. */
 export function writeCredentialFile(path: string, data: string): void {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, data, { mode: CREDENTIAL_FILE_MODE });
 	try {
 		chmodSync(path, CREDENTIAL_FILE_MODE);
-	} catch {
-		/* best-effort (win) */
-	}
+	} catch {}
 }
 
-/** Startup repair: chmod existing credential files to 0600 (best-effort). */
 export function ensureCredentialFilePermissions(agentDir: string): void {
 	for (const name of ["provider-keys.json", "auth.json", "models.json"]) {
 		try {
 			chmodSync(join(agentDir, name), CREDENTIAL_FILE_MODE);
-		} catch {
-			/* missing / win — ignore */
-		}
+		} catch {}
 	}
 }
 
@@ -602,26 +473,16 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	// ---------------------------------------------------------------------------
-	// Built-in provider multiple key store (one provider, several API keys).
-	// Persisted as <agentDir>/provider-keys.json:
-	//   { "<providerId>": { activeKeyName: string|null, keys: [{name,apiKey}] } }
-	// The frontend only ever sees NAMES (no value, no masked fragment). The key
-	// value travels to the server ONCE on add and is stored (like auth.json); the
-	// server resolves + switches the active key by NAME.
-	// ---------------------------------------------------------------------------
-
 	private providerKeysPath(): string {
 		return join(this.host.agentDir, "provider-keys.json");
 	}
 
-	/** Read + parse provider-keys.json. */
 	private readProviderKeys(): Record<string, ProviderKeysData> {
 		let raw: string;
 		try {
 			raw = readFileSync(this.providerKeysPath(), "utf8");
 		} catch {
-			return {}; // 文件不存在 = 首次引导
+			return {};
 		}
 		let parsed: Record<string, { activeKeyName?: string | null; keys?: { name: string; apiKey: string }[] }>;
 		try {
@@ -630,7 +491,6 @@ export class ModelAdminService {
 				{ activeKeyName?: string | null; keys?: { name: string; apiKey: string }[] }
 			>;
 		} catch (err) {
-			// 坏文件改名留存：里面可能有全部备用密钥，绝不能被后续种子/空表整份覆盖。
 			this.quarantineCorruptFile(this.providerKeysPath(), err);
 			return {};
 		}
@@ -651,17 +511,11 @@ export class ModelAdminService {
 
 	private writeProviderKeys(data: Record<string, ProviderKeysData>): void {
 		atomicWriteCredentialJson(this.providerKeysPath(), data);
-		// Keep the sibling credential file at 0600 too (e.g. adding an
-		// inactive key rewrites provider-keys.json but not auth.json).
 		try {
 			chmodSync(join(this.host.agentDir, "auth.json"), CREDENTIAL_FILE_MODE);
-		} catch {
-			/* missing / win — ignore */
-		}
+		} catch {}
 	}
 
-	/** 解析失败的配置文件改名留存为 <name>.corrupt-<timestamp>。改名失败（占用/
-	 *  跨盘等）也不抛——留存是尽力而为，绝不能阻塞主流程。 */
 	private quarantineCorruptFile(path: string, err: unknown): void {
 		try {
 			renameSync(path, `${path}.corrupt-${Date.now()}`);
@@ -671,13 +525,10 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Default name "密钥 N" for a provider's Nth key. */
 	private defaultKeyName(keys: { name: string; apiKey: string }[]): string {
 		return `密钥 ${keys.length + 1}`;
 	}
 
-	/** Resolve a user-supplied (or default) name into a UNIQUE one (append
-	 *  " (2)", " (3)", … on collision) so a name is a reliable switch key. */
 	private uniqueKeyName(entry: { keys: { name: string; apiKey: string }[] }, wanted: string | undefined): string {
 		const base = (wanted?.trim() || this.defaultKeyName(entry.keys)).trim() || this.defaultKeyName(entry.keys);
 		const taken = new Set(entry.keys.map((k) => k.name));
@@ -687,7 +538,6 @@ export class ModelAdminService {
 		return name;
 	}
 
-	/** Build the name-only ProviderKeyInfo list for a provider (no value/mask). */
 	private providerKeysInfo(data: Record<string, ProviderKeysData>): { keys: Record<string, ProviderKeyInfo[]> } {
 		const keys: Record<string, ProviderKeyInfo[]> = {};
 		for (const [pid, entry] of Object.entries(data)) {
@@ -696,15 +546,11 @@ export class ModelAdminService {
 		return { keys };
 	}
 
-	/** Get the currently active key name for a provider, or null. */
 	getActiveKeyName(provider: string): string | null {
 		const data = this.readProviderKeys();
 		return data[provider]?.activeKeyName ?? null;
 	}
 
-	/** Whether a named key still exists for a provider (no side effects, no
-	 *  notices). Restore paths use this to drop stale per-project references
-	 *  silently instead of going through activate (which notifies). */
 	hasProviderKey(provider: string, keyName: string): boolean {
 		const pid = provider.trim();
 		const targetName = keyName.trim();
@@ -716,11 +562,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Seed a provider's key list from an EXISTING auth.json credential (legacy
-	 *  configs written before the multi-key store existed) so the store stays
-	 *  authoritative and the UI shows the current active key immediately even
-	 *  before the user adds a second key. Idempotent — does nothing if the
-	 *  provider already has a store entry. */
 	private seedProviderKeysFromAuth(pid: string, data: Record<string, ProviderKeysData>): void {
 		if (data[pid]) return;
 		try {
@@ -735,15 +576,9 @@ export class ModelAdminService {
 					keys: [{ name: "密钥 1", apiKey: cred.key.trim() }],
 				};
 			}
-		} catch {
-			// no auth.json / unparsable — nothing to seed
-		}
+		} catch {}
 	}
 
-	/** Push the masked provider-keys map to the client. Seeds the store from any
-	 *  auth.json credentials so legacy single-key setups show up immediately.
-	 *  只在文件不存在（首次引导）时才落盘种子；文件存在（含空表）绝不整份写回
-	 *  ——写回的来源永远是读盘结果，避免任何竞态把用户密钥覆盖掉。 */
 	listProviderKeys(): void {
 		const path = this.providerKeysPath();
 		const data = this.readProviderKeys();
@@ -755,10 +590,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Candidate built-in provider ids whose keys we track: those with a store
-	 *  entry plus every provider actually registered in the runtime (seed reads
-	 *  auth.json per id, so only real providers with a credential get seeded —
-	 *  unrelated auth.json entries like "main" are ignored). */
 	private builtinProviderIds(): string[] {
 		const data = this.readProviderKeys();
 		const ids = new Set(Object.keys(data));
@@ -767,9 +598,7 @@ export class ModelAdminService {
 			if (mr) {
 				for (const p of mr.getProviders()) ids.add(p.id);
 			}
-		} catch {
-			// runtime not ready
-		}
+		} catch {}
 		for (const id of [
 			"anthropic",
 			"openai",
@@ -786,15 +615,12 @@ export class ModelAdminService {
 		return [...ids];
 	}
 
-	/** Persist the ACTIVE key's apiKey into auth.json + runtime override + refresh. */
 	private async applyActiveKey(pid: string, apiKey: string): Promise<void> {
 		const authPath = join(this.host.agentDir, "auth.json");
 		let data: Record<string, unknown> = {};
 		try {
 			data = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
-		} catch {
-			// no file yet / unparsable — start fresh
-		}
+		} catch {}
 		if (pid === "llama.cpp") {
 			const prevLlama = (data[pid] ?? {}) as { env?: { LLAMA_BASE_URL?: string } };
 			const baseUrl = prevLlama.env?.LLAMA_BASE_URL || process.env.LLAMA_BASE_URL || "http://127.0.0.1:8080";
@@ -809,9 +635,7 @@ export class ModelAdminService {
 		atomicWriteCredentialJson(authPath, data);
 		try {
 			chmodSync(this.providerKeysPath(), CREDENTIAL_FILE_MODE);
-		} catch {
-			/* missing / win — ignore */
-		}
+		} catch {}
 		const mr = this.host.modelRuntime?.();
 		if (mr) {
 			await mr.setRuntimeApiKey(pid, apiKey);
@@ -820,9 +644,6 @@ export class ModelAdminService {
 		this.host.invalidatePiConfig?.();
 	}
 
-	/** Persist an api-key credential for a provider (auth.json) and apply it now.
-	 *  Also records the key in provider-keys.json (as the active key), so it shows
-	 *  in the multi-key list too. */
 	async setProviderApiKey(provider: string, apiKey: string): Promise<void> {
 		const pid = provider.trim();
 		const key = apiKey.trim();
@@ -836,15 +657,12 @@ export class ModelAdminService {
 		}
 		try {
 			const data = this.readProviderKeys();
-			// Preserve a legacy auth.json key as the first (active) entry so adding
-			// a new key stacks alongside it instead of clobbering it.
 			if (!data[pid]) this.seedProviderKeysFromAuth(pid, data);
 			let entry = data[pid];
 			if (!entry) entry = data[pid] = { activeKeyName: null, keys: [] };
 			const existing = entry.keys.find((k) => k.apiKey === key);
 			let name: string;
 			if (existing) {
-				// Same key value already in the list → just make it active.
 				entry.activeKeyName = existing.name;
 				name = existing.name;
 			} else {
@@ -874,10 +692,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Add a SECONDARY API key to a built-in provider's key list. `name` is the
-	 *  only thing the frontend ever sees (auto-generated when blank, deduped on
-	 *  collision). The added key stays INACTIVE unless it is the provider's first
-	 *  key; the user switches to it by name or by clicking a model under it. */
 	async addProviderKey(provider: string, apiKey: string, name?: string): Promise<void> {
 		const pid = provider.trim();
 		const key = apiKey.trim();
@@ -891,8 +705,6 @@ export class ModelAdminService {
 		}
 		try {
 			const data = this.readProviderKeys();
-			// Preserve a legacy auth.json key (active) so the new key stacks as a
-			// SECONDARY inactive key rather than replacing the current one.
 			if (!data[pid]) this.seedProviderKeysFromAuth(pid, data);
 			let entry = data[pid];
 			if (!entry) entry = data[pid] = { activeKeyName: null, keys: [] };
@@ -908,7 +720,6 @@ export class ModelAdminService {
 			}
 			const keyName = this.uniqueKeyName(entry, name);
 			entry.keys.push({ name: keyName, apiKey: key });
-			// First key becomes active (provider had none usable yet).
 			if (!entry.activeKeyName) entry.activeKeyName = keyName;
 			this.writeProviderKeys(data);
 			const isActive = entry.activeKeyName === keyName;
@@ -942,11 +753,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Make a stored API key the ACTIVE one for a built-in provider by NAME (the
-	 *  server resolves the stored value from the name). Returns true when the
-	 *  key is (now) active, false when it doesn't exist or the switch failed.
-	 *  `silent` suppresses all notices — for automatic project restores, which
-	 *  must self-heal stale references without spamming the user. */
 	async activateProviderKey(provider: string, keyName: string, opts?: { silent?: boolean }): Promise<boolean> {
 		const pid = provider.trim();
 		const targetName = keyName.trim();
@@ -1002,8 +808,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Remove a stored API key by NAME. If it was active, the first remaining key
-	 *  becomes active (or the provider returns to unconfigured when no key is left). */
 	async removeProviderKey(provider: string, keyName: string): Promise<void> {
 		const pid = provider.trim();
 		const targetName = keyName.trim();
@@ -1024,15 +828,11 @@ export class ModelAdminService {
 			if (entry.keys.length === 0) {
 				delete data[pid];
 				this.writeProviderKeys(data);
-				// Drop auth.json entry + runtime override so the provider returns
-				// to unconfigured (its stored keys are gone too).
 				const authPath = join(this.host.agentDir, "auth.json");
 				let auth: Record<string, unknown> = {};
 				try {
 					auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
-				} catch {
-					// no file yet — nothing to clean
-				}
+				} catch {}
 				delete auth[pid];
 				atomicWriteCredentialJson(authPath, auth);
 				const mr = this.host.modelRuntime?.();
@@ -1080,13 +880,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/**
-	 * Clear a built-in provider's stored API key (auth.json entry + runtime
-	 * override) so it returns to the unconfigured state — its models disappear
-	 * from the picker until a key is set again. Only meaningful for keys that
-	 * were stored via set_provider_api_key (source "stored"); env-var sourced
-	 * credentials can't be cleared from here.
-	 */
 	async clearProviderApiKey(provider: string): Promise<void> {
 		const pid = provider.trim();
 		if (!pid) {
@@ -1104,14 +897,11 @@ export class ModelAdminService {
 			return;
 		}
 		try {
-			// Remove from auth.json ({ <provider>: { type: "api_key", key } }).
 			const authPath = join(this.host.agentDir, "auth.json");
 			let data: Record<string, unknown> = {};
 			try {
 				data = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
-			} catch {
-				// no file yet / unparsable — nothing stored to clear
-			}
+			} catch {}
 			const keyData = this.readProviderKeys();
 			const hasStoredKeys = (keyData[pid]?.keys.length ?? 0) > 0;
 			if (!(pid in data) && !hasStoredKeys) {
@@ -1125,11 +915,8 @@ export class ModelAdminService {
 			}
 			delete data[pid];
 			atomicWriteCredentialJson(authPath, data);
-			// Clear every stored key so the provider returns to unconfigured.
 			delete keyData[pid];
 			this.writeProviderKeys(keyData);
-			// Drop the runtime override too, then re-read credentials so the
-			// provider goes back to unconfigured and its models leave the list.
 			const mr = this.host.modelRuntime?.();
 			if (mr) {
 				await mr.removeRuntimeApiKey(pid);
@@ -1156,14 +943,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/**
-	 * Copy a BUILT-IN provider (baseUrl + current model catalog) into an
-	 * editable custom-provider draft and return it via clone_provider_result.
-	 * Nothing is persisted — the user renames the draft, pastes a DIFFERENT
-	 * API key in the form, then saves via save_model_config. Credentials are
-	 * never copied: the whole point is running a second key alongside the
-	 * built-in one without touching it.
-	 */
 	async cloneProvider(providerId: string, reqId: number): Promise<void> {
 		const pid = providerId.trim();
 		const fail = (error: string, errorEn?: string) => {
@@ -1200,8 +979,6 @@ export class ModelAdminService {
 				return;
 			}
 			const noBaseUrl = !p.baseUrl;
-			// Map runtime models → models.json rows; dynamic providers ship an
-			// empty catalog until refreshed over the network.
 			const readModels = (): { api: string; entry: UiModelConfigEntry }[] => {
 				try {
 					return mr.getModels(pid).map((m) => ({
@@ -1231,8 +1008,6 @@ export class ModelAdminService {
 				);
 				return;
 			}
-			// 供应商级 api 取占比最高，模型保留全量去重（避免 muse-spark 被过滤）
-			// 多 key 场景：复制一次即得到 opencode1/opencode2 两组，界面按供应商分组，选模型即切 key
 			const counts = new Map<string, number>();
 			for (const m of models) counts.set(m.api, (counts.get(m.api) ?? 0) + 1);
 			let api = models[0].api;
@@ -1269,11 +1044,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/**
-	 * Enrich custom-provider DRAFT rows with public catalog params
-	 * (OpenRouter primary, models.dev secondary) — enrich_models_result.
-	 * Nothing is saved here; the UI fills blanks from the result.
-	 */
 	async enrichModels(
 		reqId: number,
 		ids: string[],
@@ -1358,7 +1128,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Enumerate pi's built-in providers with auth capabilities and status. */
 	async listProviders(): Promise<void> {
 		const mr = this.host.modelRuntime?.();
 		let providers;
@@ -1381,7 +1150,6 @@ export class ModelAdminService {
 							usingOAuth: mr.isUsingOAuth(p.id),
 						};
 					} catch {
-						// One odd provider must not blank the whole list.
 						return {
 							id: p.id,
 							name: p.name,
@@ -1403,13 +1171,10 @@ export class ModelAdminService {
 				return;
 			}
 		} else {
-			// 非 pi 引擎：根据 models.json + auth.json + provider-keys.json + 常见官方列表综合列出
 			let auth: Record<string, unknown> = {};
 			try {
 				auth = JSON.parse(readFileSync(join(this.host.agentDir, "auth.json"), "utf8")) as Record<string, unknown>;
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			const keyData = this.readProviderKeys();
 			const { providers: custom } = this.readModelsConfig();
 			const builtins = [
@@ -1474,15 +1239,10 @@ export class ModelAdminService {
 		this.host.emit({ type: "providers_status", providers });
 	}
 
-	// ---------------------------------------------------------------------------
-	// Custom model config (agentDir/models.json)
-	// ---------------------------------------------------------------------------
-
 	private modelsConfigPath(): string {
 		return join(this.host.agentDir, "models.json");
 	}
 
-	/** Read + parse models.json (tolerating // and /* *\/ comments like the SDK). */
 	private readModelsConfig(): {
 		providers: Record<string, Record<string, unknown>>;
 	} {
@@ -1498,7 +1258,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Send the current models.json custom providers to the client. */
 	async listModelsConfig(): Promise<void> {
 		const { providers } = this.readModelsConfig();
 		const list: UiProviderConfig[] = Object.entries(providers).map(([providerId, p]) => {
@@ -1510,8 +1269,6 @@ export class ModelAdminService {
 						input: Array.isArray(m.input) ? (m.input as string[]) : undefined,
 						contextWindow: m.contextWindow as number | undefined,
 						maxTokens: m.maxTokens as number | undefined,
-						// 思考档位映射必须下发：前端模型行拿不到它就会在保存往返里丢掉，
-						// 编辑页也无法展示网关自报的 xhigh/max 能力。
 						thinkingLevelMap: sanitizeThinkingLevelMap(m.thinkingLevelMap),
 					}))
 				: [];
@@ -1520,19 +1277,14 @@ export class ModelAdminService {
 				name: p.name as string | undefined,
 				api: p.api as string | undefined,
 				baseUrl: p.baseUrl as string | undefined,
-				// apiKey 明文绝不下发浏览器，只报有无；表单留空 = 保持不变。
 				hasApiKey: typeof p.apiKey === "string" && p.apiKey.trim() !== "",
 				authHeader: p.authHeader as boolean | undefined,
-				// headers are intentionally NOT sent to the browser — they may
-				// contain Authorization / API-key values; kept server-side only.
 				models,
 			};
 		});
 		this.host.emit({ type: "models_config", providers: list });
 	}
 
-	/** Re-read models.json from disk (hand/script edits outside the UI) and
-	 *  repush — same refresh tail that save_model_config runs. */
 	async reloadModelsConfig(): Promise<void> {
 		try {
 			await this.host.modelRuntime?.()?.refresh();
@@ -1556,16 +1308,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	// 模型元数据解析（numMeta/boolMeta/strArrMeta/parseOpenAiModel/parseGoogleModel）
-	// 单源在模块级：这几份曾是静态方法里的死副本，改一处漏一处（#771 白改一遍）。
-
-	/** Probe a custom provider's OpenAI-compatible /models endpoint (server-side
-	 *  because the baseUrl is often a LAN/loopback host the browser can't reach
-	 *  cross-origin) and return the advertised models. reqId is echoed back
-	 *  in fetch_models_result so the UI can match concurrent requests. */
-	/** 编辑表单的探测（fetch_models / test_model_connection）没带明文 apiKey 时，
-	 *  按 providerId 回落到 models.json 里已保存的密钥——编辑存量服务商时表单
-	 *  一律留空（明文不再回传浏览器），没有这个回落「测试连接」就会 401。 */
 	private savedProviderApiKey(providerId: string | undefined): string | undefined {
 		const pid = providerId?.trim();
 		if (!pid) return undefined;
@@ -1579,7 +1321,6 @@ export class ModelAdminService {
 		apiKey?: string,
 		authHeader?: boolean,
 		api?: string,
-		/** 探测抛错文案语言（默认英文）；调用方可传 () => getLang() 实现跟随。 */
 		lang?: () => ServerLang,
 		providerId?: string,
 	): Promise<void> {
@@ -1593,10 +1334,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/**
-	 * Lightweight connectivity and auth probe for a provider endpoint.
-	 * Measures latency in ms and returns ok/error.
-	 */
 	async testConnection(
 		reqId: number,
 		baseUrl: string,
@@ -1622,19 +1359,12 @@ export class ModelAdminService {
 		}
 	}
 
-	/**
-	 * Probe a custom provider's model-list endpoint (OpenAI-compatible /models
-	 * with a /v1 retry; Google {models:[…]} shape supported). Throws Error with
-	 * a user-facing message on any failure; returns deduped+sorted entries.
-	 * Shared by the edit-form "auto fetch" and the saved-provider refresh.
-	 */
 	static async probeModelsEndpoint(
 		baseUrl: string,
 		apiKey?: string,
 		authHeader?: boolean,
 		api?: string,
 		extraHeaders?: Record<string, string>,
-		/** 抛错文案语言（默认英文）；调用方可传 () => getLang() 实现跟随。 */
 		lang?: () => ServerLang,
 	): Promise<UiModelConfigEntry[]> {
 		const l = lang?.() ?? "en";
@@ -1657,11 +1387,6 @@ export class ModelAdminService {
 		const headers: Record<string, string> = {
 			...extraHeaders,
 		};
-		// Per-api auth conventions (mirror pi's built-in provider configs):
-		//   openai-*:      Authorization: Bearer <key>
-		//   anthropic:     x-api-key + anthropic-version
-		//   google:        x-goog-api-key
-		// authHeader=false → no auth header at all (custom gateways).
 		if (apiKey?.trim() && authHeader !== false) {
 			const key = apiKey.trim();
 			if (api === "anthropic-messages") {
@@ -1695,8 +1420,6 @@ export class ModelAdminService {
 		};
 
 		let res = await tryFetch(`${base}/models`);
-		// BaseUrls that omit the /v1 prefix (e.g. https://api.openai.com) 404 on
-		// the bare path — retry under /v1.
 		if (res && res.status === 404 && !/\/v\d+[a-z-]*$/.test(base)) {
 			res = await tryFetch(`${base}/v1/models`);
 		}
@@ -1705,9 +1428,7 @@ export class ModelAdminService {
 			let detail = "";
 			try {
 				detail = (await res.text()).slice(0, 200);
-			} catch {
-				// response body already consumed / not text — ignore
-			}
+			} catch {}
 			const detailSuffixZh = detail ? `：${detail}` : "";
 			const detailSuffixEn = detail ? `: ${detail}` : "";
 			throw new Error(
@@ -1725,16 +1446,13 @@ export class ModelAdminService {
 			const json = (await res.json()) as Record<string, unknown>;
 			const data = Array.isArray(json.data) ? json.data : null;
 			if (data) {
-				// OpenAI-compatible: { data: [{ id, context_window, modalities, … }] }
 				models = data.map((m) => parseOpenAiModel(m)).filter((m) => m.id);
 			} else if (Array.isArray(json.models)) {
-				// Google: { models: [{ name: "models/…", displayName, … }] }
 				models = (json.models as unknown[]).map((m) => parseGoogleModel(m)).filter((m) => m.id);
 			}
 		} catch {
 			throw new Error(pick(l, "响应不是有效的 JSON", "Response is not valid JSON", "models.fetch.invalid.json"));
 		}
-		// Dedupe by id (keep the first, most complete entry) and sort by id.
 		const seen = new Set<string>();
 		models = models
 			.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
@@ -1744,20 +1462,12 @@ export class ModelAdminService {
 		return models;
 	}
 
-	/**
-	 * Re-probe a SAVED custom provider's model list and merge it into its
-	 * models.json entry — credentials never leave the server (unlike the
-	 * edit-form fetch, which sends whatever the browser typed). Merge rules:
-	 * existing ids keep all manually-entered fields and only gain metadata
-	 * they were missing; brand-new ids are appended. Hot-reloads the runtime.
-	 */
 	async refreshProviderModels(providerId: string, reqId: number, lang?: () => ServerLang): Promise<void> {
 		const done = (ok: boolean, extra: { added?: number; total?: number; error?: string } = {}) =>
 			this.host.emit({ type: "refresh_provider_result", reqId, ok, ...extra });
 		try {
 			const pid = providerId.trim();
 			const { providers } = this.readModelsConfig();
-			// models.json 原始形状是 Record<string, unknown>——按已保存条目的结构断言
 			const saved = providers[pid] as
 				| {
 						name?: string;
@@ -1769,9 +1479,6 @@ export class ModelAdminService {
 						models?: UiModelConfigEntry[];
 				  }
 				| undefined;
-			// 纯覆盖条目（只改 models，没有 provider 级 baseUrl）回退到运行时
-			// 已知的地址——内置 provider 的 baseUrl 本来就不在 models.json 里。
-			// 注意只拿来探测用，不写回磁盘：保持条目仍是纯覆盖。
 			const baseUrl =
 				saved?.baseUrl?.trim() || (this.host.modelRuntime?.()?.getProvider(pid)?.baseUrl ?? "").trim() || undefined;
 			if (!saved || !baseUrl) {
@@ -1792,13 +1499,8 @@ export class ModelAdminService {
 				lang,
 			);
 
-			// Merge: manual values win; fetched fills blanks and appends new ids.
-			// #486：probe 是数秒级网络 await，期间用户可能已在设置面板编辑同一服务商——
-			// 以盘上最新条目为合并基准（旧快照 saved 只提供探测参数），否则刷新会用
-			// 旧快照整表覆盖，静默回滚并发编辑（删除的模型复活、手动新增丢失）。
 			const fresh = this.readModelsConfig().providers[pid] as NonNullable<typeof saved> | undefined;
 			if (!fresh) {
-				// probe 期间服务商被删除：不再写回，避免用旧快照复活已删除的条目。
 				return done(false, { error: "provider deleted during refresh" });
 			}
 			const prev = new Map((fresh.models ?? []).map((m) => [m.id, m]));
@@ -1812,7 +1514,7 @@ export class ModelAdminService {
 				}
 				prev.set(f.id, {
 					...f,
-					...cur, // 手填字段优先：cur 覆盖 f 的同名字段
+					...cur,
 				});
 			}
 			const merged = [...prev.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -1821,7 +1523,6 @@ export class ModelAdminService {
 				name: fresh.name,
 				api: fresh.api,
 				baseUrl: fresh.baseUrl,
-				// apiKey/headers 不回传浏览器——saveModelConfig 会保留旧值
 				authHeader: fresh.authHeader === true ? true : undefined,
 				models: merged,
 			});
@@ -1850,14 +1551,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Force-refresh BUILT-IN providers' official pi.dev catalogs, bypassing
-	 *  the SDK's 4h freshness window (`force: true`). Without force, refresh
-	 *  inside the window is a silent no-op against models-store.json — which
-	 *  is why a newly-published cheap model can sit on pi.dev for hours while
-	 *  the picker still shows the old list. Afterwards the picker + provider
-	 *  status are repushed. Per-provider fetch failures don't fail the whole
-	 *  run (those providers keep their cached catalog) but are surfaced in
-	 *  the result + a warning notice. */
 	async refreshBuiltinModels(reqId: number): Promise<void> {
 		const done = (ok: boolean, error?: string) =>
 			this.host.emit({ type: "refresh_builtin_result", reqId, ok, ...(error ? { error } : {}) });
@@ -1873,10 +1566,6 @@ export class ModelAdminService {
 				force: true,
 				signal: AbortSignal.timeout(90_000),
 			});
-			// Provisional overlay rows (append_builtin_model) shadow the official
-			// row once pi.dev lists the id — graduate them so official
-			// name/vision/limits take over. Only rows without their own
-			// api/baseUrl are provisional; deliberate customizations stay.
 			const graduated = this.graduateProvisionalOverlays();
 			if (graduated.length > 0) {
 				await mr.refresh();
@@ -1924,10 +1613,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Graduate provisional overlay rows against the freshly force-refreshed
-	 *  official catalog (models-store.json next to models.json). Persists the
-	 *  pruned models.json only when something actually graduated; a missing
-	 *  or unparsable store is a silent no-op (never fail the refresh). */
 	private graduateProvisionalOverlays(): OverlayGraduation[] {
 		let official: Record<string, Record<string, string | undefined>> = {};
 		try {
@@ -1959,11 +1644,6 @@ export class ModelAdminService {
 		return graduated;
 	}
 
-	/** Normalize one UI-submitted model row into models.json shape (same rules
-	 *  as save_model_config: blank optionals dropped, numbers coerced).
-	 *  Per-model api/baseUrl overrides pass through (validated by callers —
-	 *  toModelRow itself only trims); absent values keep being inherited
-	 *  from sibling models at compose time. */
 	private static toModelRow(m: UiModelConfigEntry): UiModelConfigEntry {
 		const thinkingLevelMap = sanitizeThinkingLevelMap(m.thinkingLevelMap);
 		let samplingParams = m.samplingParams;
@@ -1973,9 +1653,7 @@ export class ModelAdminService {
 				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 					samplingParams = { ...(samplingParams ?? {}), ...parsed };
 				}
-			} catch {
-				// 忽略格式错误，保留原样
-			}
+			} catch {}
 		}
 		return {
 			id: m.id.trim(),
@@ -1993,7 +1671,6 @@ export class ModelAdminService {
 		};
 	}
 
-	/** Known per-model api types (same list as the custom-provider form). */
 	private static readonly MODEL_APIS = new Set([
 		"openai-completions",
 		"openai-responses",
@@ -2001,10 +1678,6 @@ export class ModelAdminService {
 		"google-generative-ai",
 	]);
 
-	/** Write models.json and hot-reload the model runtime (shared tail of
-	 *  save_model_config / append_builtin_model). Reuses the provider
-	 *  credential already in auth.json for the runtime, then repushes the
-	 *  config list + the picker. Callers emit their own notice. */
 	private async writeModelsConfigAndReload(
 		providers: Record<string, Record<string, unknown>>,
 		pid: string,
@@ -2012,10 +1685,6 @@ export class ModelAdminService {
 		mkdirSync(this.host.agentDir, { recursive: true });
 		atomicWriteCredentialJson(this.modelsConfigPath(), { providers });
 
-		// Allow a models.json entry to reuse the provider credential already
-		// stored in auth.json. Seed the shared runtime too, because older pi-ai
-		// versions did not always fall back to stored credentials for a
-		// newly-created custom provider. Never copy the secret into models.json.
 		try {
 			const auth = JSON.parse(readFileSync(join(this.host.agentDir, "auth.json"), "utf8")) as Record<string, unknown>;
 			const credential = auth[pid];
@@ -2028,24 +1697,13 @@ export class ModelAdminService {
 			) {
 				await this.host.modelRuntime?.()?.setRuntimeApiKey(pid, credential.key);
 			}
-		} catch {
-			// auth.json is optional; models.json can still use its own apiKey.
-		}
+		} catch {}
 		await this.host.modelRuntime?.()?.refresh();
 		this.host.invalidatePiConfig?.();
 		await this.listModelsConfig();
 		await this.host.pushModels();
 	}
 
-	/** Append ONE model to a BUILT-IN provider's models.json overlay entry
-	 *  (append_builtin_result). Pure overlay: when the provider has no entry
-	 *  yet, a `{ models: [row] }` entry is created — no baseUrl/api — so
-	 *  api/baseUrl keep being inherited from the provider's own models at
-	 *  compose time and later official catalog refreshes never drop the row.
-	 *  Existing entry fields are left byte-for-byte alone (append-only, even
-	 *  safer than save_model_config's merge). Duplicate id is an idempotent
-	 *  no-op (info notice, ok:true). The row shows up under "custom
-	 *  providers" (same id) for edit/remove. */
 	async appendBuiltinModel(providerId: string, model: UiModelConfigEntry, reqId: number): Promise<void> {
 		const done = (ok: boolean, error?: string) =>
 			this.host.emit({ type: "append_builtin_result", reqId, ok, ...(error ? { error } : {}) });
@@ -2099,8 +1757,6 @@ export class ModelAdminService {
 				});
 				return done(true);
 			}
-			// 手填行只带用户给的字段（通常只有 id，也许有名），api/baseUrl
-			// 由 compose 时从同供应商现有模型继承——这正是纯 overlay 能工作的原因。
 			const row = ModelAdminService.toModelRow({ ...model, id: mid });
 			providers[pid] = { ...prev, models: [...prevModels, row] };
 			await this.writeModelsConfigAndReload(providers, pid);
@@ -2118,7 +1774,6 @@ export class ModelAdminService {
 		}
 	}
 
-	/** Upsert one provider into models.json and hot-reload the model runtime. */
 	async saveModelConfig(providerId: string, config: UiProviderConfig): Promise<void> {
 		const pid = providerId.trim();
 		if (!pid || !/^[\w.-]+$/.test(pid)) {
@@ -2142,8 +1797,6 @@ export class ModelAdminService {
 		}
 		try {
 			const { providers } = this.readModelsConfig();
-			// 合并而不是重建：UI 认识之外的字段（provider 级 headers、模型级 api/
-			// baseUrl/cost/compat/thinkingLevelMap）必须原样保留，见 mergeProviderConfigEntry。
 			providers[pid] = mergeProviderConfigEntry(providers[pid], config, models);
 			await this.writeModelsConfigAndReload(providers, pid);
 			this.host.emit({
@@ -2163,7 +1816,6 @@ export class ModelAdminService {
 		this.host.flushSnapshot();
 	}
 
-	/** Remove a provider from models.json and hot-reload. */
 	async deleteModelConfig(providerId: string): Promise<void> {
 		try {
 			const { providers } = this.readModelsConfig();

@@ -1,16 +1,6 @@
-/**
- * 生图协议形状适配器 —— 把市面上各家生图 API 归一到同一种调用方式。
- *
- *   openai-images   POST {base}/images/generations（图生图走 /images/edits 的 multipart）
- *   gemini          Google 原生：{model}:generateContent（图片模型）或 :predict（Imagen）
- *   openrouter-chat chat/completions + modalities:["image"] → message.images[]
- *   stability       POST {base}/v2beta/stable-image/generate/{core|ultra|sd3}（multipart）
- *   comfyui         本地 ComfyUI：POST /prompt → 轮询 /history → GET /view（要 workflow 模板）
- */
 import { buildMultipart } from "./gen-multipart.mjs";
 import * as U from "./gen-util.mjs";
 
-/** 生图调用失败（状态码 / 供应商原文都带上，便于用户对着服务商文档排错）。 */
 export class ProviderError extends Error {
 	constructor(message, extra = {}) {
 		super(message);
@@ -20,7 +10,6 @@ export class ProviderError extends Error {
 	}
 }
 
-/** 形状能力表（UI 用来决定显示哪些字段）。 */
 export const SHAPE_LIST = [
 	{
 		id: "openai-images",
@@ -78,21 +67,14 @@ export const SHAPE_LIST = [
 
 const SHAPE_IDS = new Set(SHAPE_LIST.map((s) => s.id));
 
-/** 取形状定义（未知/空 → openai-images，宽进严出错不了大格）。 */
 export function shapeOf(id) {
 	return shapes[U.str(id)] ?? shapes["openai-images"];
 }
 
-/** 形状是否存在（配置校验用）。 */
 export function isShape(id) {
 	return SHAPE_IDS.has(U.str(id));
 }
 
-/**
- * 请求归一：工具层（AI 参数）与视图层（表单）都先过这里，形状适配器只认这个结构。
- * raw: { prompt, negative, model, size, quality, n, seed, refs, extra }
- * refs: [{ name, mimeType, data: Buffer }]
- */
 export function normalizeRequest(raw = {}) {
 	const refs = (Array.isArray(raw.refs) ? raw.refs : [])
 		.filter((r) => r && (Buffer.isBuffer(r.data) || r.data instanceof Uint8Array) && r.data.length)
@@ -115,17 +97,14 @@ export function normalizeRequest(raw = {}) {
 	};
 }
 
-/** `{{key}}` 占位替换（extraHeaders / extraBody / workflow 用）；未知占位保留原样。 */
 export function substVars(text, vars) {
 	return String(text).replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
 }
 
-/** 密钥占位上下文：`{{key}}` = 本服务密钥，`{{model}}`/`{{prompt}}` 等见调用处。 */
 function keyVars(service, key) {
 	return { key: key ?? "", baseUrl: service.baseUrl ?? "" };
 }
 
-/** 鉴权头（按 service.authStyle；默认 bearer）。 */
 export function authHeaders(service, key) {
 	const style = U.str(service.authStyle) || "bearer";
 	const k = U.str(key);
@@ -139,7 +118,6 @@ export function authHeaders(service, key) {
 	return out;
 }
 
-/** 自定义额外请求头（值支持 `{{key}}` 插值）。 */
 function extraHeaders(service, key) {
 	const out = {};
 	const raw = service.extraHeaders;
@@ -151,7 +129,6 @@ function extraHeaders(service, key) {
 	return out;
 }
 
-/** 额外请求体字段（值支持 `{{key}}` 插值；对象/数组原样嵌套）。 */
 function extraBodyFields(service, key) {
 	const raw = service.extraBody;
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -163,7 +140,6 @@ function extraBodyFields(service, key) {
 	return out;
 }
 
-/** 拼查询串（service.query 支持 `{{key}}`；authStyle=query 时补 key=<密钥>）。 */
 function withQuery(url, service, key) {
 	const q = new URLSearchParams();
 	if (service.query && typeof service.query === "object") {
@@ -179,7 +155,6 @@ function withQuery(url, service, key) {
 	return s ? `${url}${url.includes("?") ? "&" : "?"}${s}` : url;
 }
 
-/** 读响应：一次读成 Buffer，按 content-type/首字符判断 JSON 还是二进制。 */
 async function readResponse(res) {
 	const ct = String(res.headers?.get?.("content-type") ?? "").toLowerCase();
 	let buf = Buffer.alloc(0);
@@ -192,14 +167,11 @@ async function readResponse(res) {
 	if (looksJson) {
 		try {
 			return { kind: "json", json: JSON.parse(buf.toString("utf8")), buf, ct };
-		} catch {
-			/* 不是 JSON，当二进制处理 */
-		}
+		} catch {}
 	}
 	return { kind: "binary", json: null, buf, ct };
 }
 
-/** 从各种错误形状里抠一句人话（各家写法都不一样）。 */
 function errorText(json, buf) {
 	const pick = (v) => (typeof v === "string" && v.trim() ? v.trim() : "");
 	if (json && typeof json === "object") {
@@ -218,14 +190,11 @@ function errorText(json, buf) {
 		if (hit) return hit;
 		try {
 			return U.truncate(JSON.stringify(json), 400);
-		} catch {
-			/* 环形结构等 */
-		}
+		} catch {}
 	}
 	return U.truncate(buf?.toString("utf8") ?? "", 400);
 }
 
-/** 单请求形状的骨架：build → fetch → 非 2xx 抛 ProviderError → parse。 */
 function single(build, parse) {
 	return async (service, req, deps) => {
 		const built = build(service, req, deps);
@@ -240,7 +209,6 @@ function single(build, parse) {
 	};
 }
 
-/** 一次 HTTP（统一 method/headers/body + 超时信号 + 取值错误的友好提示）。 */
 async function doFetch(deps, url, built) {
 	const init = {
 		method: built.method || "POST",
@@ -256,7 +224,6 @@ async function doFetch(deps, url, built) {
 	}
 }
 
-/** 把 data URI / http(s) URL / 裸 base64 统一成图片块。 */
 async function imageFromAny(v, deps, fallbackMime = "") {
 	const picked = typeof v === "string" ? v : (v?.url ?? v?.image_url?.url ?? v?.b64_json ?? v?.base64 ?? v?.image);
 	const s = U.str(picked);
@@ -281,7 +248,6 @@ async function imageFromAny(v, deps, fallbackMime = "") {
 	return { data: buf, mimeType: U.sniffImageMime(buf) || fallbackMime || "image/png" };
 }
 
-/** 响应里没有图时，尽量把「为什么」说清楚（安全过滤 / 只回文本）。 */
 function blockedReason(json) {
 	const j = json ?? {};
 	const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;
@@ -297,9 +263,6 @@ function blockedReason(json) {
 	return "";
 }
 
-// ---------------------------------------------------------------------------
-// 1) OpenAI 兼容
-// ---------------------------------------------------------------------------
 const openaiImages = {
 	id: "openai-images",
 	caps: { edit: true, n: true },
@@ -379,9 +342,6 @@ const openaiImages = {
 };
 openaiImages.run = single(openaiImages.build, openaiImages.parse);
 
-// ---------------------------------------------------------------------------
-// 2) Google 原生（Gemini generateContent / Imagen predict）
-// ---------------------------------------------------------------------------
 const gemini = {
 	id: "gemini",
 	caps: { edit: true, n: false },
@@ -462,9 +422,6 @@ const gemini = {
 };
 gemini.run = single(gemini.build, gemini.parse);
 
-// ---------------------------------------------------------------------------
-// 3) OpenRouter（chat + modalities）
-// ---------------------------------------------------------------------------
 const openrouterChat = {
 	id: "openrouter-chat",
 	caps: { edit: true, n: false },
@@ -522,9 +479,6 @@ const openrouterChat = {
 };
 openrouterChat.run = single(openrouterChat.build, openrouterChat.parse);
 
-// ---------------------------------------------------------------------------
-// 4) Stability AI
-// ---------------------------------------------------------------------------
 const stability = {
 	id: "stability",
 	caps: { edit: true, n: false, negative: true, seed: true },
@@ -582,9 +536,6 @@ const stability = {
 };
 stability.run = single(stability.build, stability.parse);
 
-// ---------------------------------------------------------------------------
-// 5) 本地 ComfyUI
-// ---------------------------------------------------------------------------
 const comfyui = {
 	id: "comfyui",
 	caps: { edit: true, n: true, seed: true, negative: true },

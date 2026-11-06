@@ -1,20 +1,3 @@
-/**
- * 存储 E2E（零 token）：**数据只落数据目录文件，不写浏览器 localStorage**。
- *
- * 背景：书源列表动辄几 MB（用户实测 4.5MB）+ 书架每本书带整份章节表，曾把浏览器
- * 5MB 配额顶满（页面报 QuotaExceededError）。现在：
- *   - 页面只在内存里放一份镜像，同步渲染读它；
- *   - 数据落 `<dataDir>/legado-web/*.json`（后端文件是唯一事实源）；
- *   - 老版本的浏览器数据只做一次性只读迁移，迁完把老键删掉。
- *
- * 断言：
- * 1. 1.8MB 书源 + 3000 章书架下无 QuotaExceededError、无红条；
- * 2. 跑完后 localStorage 里**一个 legado.* 键都不剩**；
- * 3. 刷新页面数据仍在（来自文件，不是浏览器缓存）：书源页列全、书架章节数正常；
- * 4. 老数据（localStorage 里的 legado.shelf.v1）被迁到文件、文件内容正确、老键被清。
- *
- * 没有 Chrome 时自动 SKIP。运行：先 build，再 node tests/legado-web-storage-test.mjs
- */
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,7 +17,6 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// ---- 种数据：~1.8MB 书源（老版本会直接顶爆浏览器缓存）放文件；书架只放浏览器（测迁移） ----
 const pad = "x".repeat(6000);
 const sources = Array.from({ length: 300 }, (_, i) => ({
 	bookSourceUrl: `http://src${i}.example.com`,
@@ -116,7 +98,6 @@ try {
 			if (m.type() === "error" && /Quota|storage/i.test(m.text())) errors.push(m.text());
 		});
 
-		// 先到同源页面写下「老版本」的浏览器数据，再打开阅读页
 		await page.goto(`${BASE}/`, { waitUntil: "load" });
 		await page.evaluate((shelf) => localStorage.setItem("legado.shelf.v1", JSON.stringify(shelf)), legacyShelf);
 
@@ -146,7 +127,6 @@ try {
 		if (first.legadoKeys.length) fail(`localStorage 里仍有 legado.* 键：${first.legadoKeys.join(", ")}`);
 		if (!first.shelfText.includes("3000 章")) fail(`书架没显示章节数：${first.shelfText.slice(0, 120)}`);
 
-		// 书源页：搜索 + 置顶（存 prefs.json，刷新后仍在）
 		const searchBox = page.locator("#src-search");
 		await searchBox.fill("src42.example.com");
 		await page.waitForTimeout(400);
@@ -181,12 +161,10 @@ try {
 		if (!prefs?.pinned?.includes(sources[42].bookSourceUrl)) fail(`置顶没落 prefs.json：${JSON.stringify(prefs)}`);
 		if (!process.exitCode) console.log("✓ 书源页：搜索/只看置顶/⭐ 置顶（落 prefs.json）");
 
-		// 迁移结果：老书架进文件，老键被清
 		const migrated = existsSync(shelfFile) ? JSON.parse(readFileSync(shelfFile, "utf8")) : null;
 		if (!Array.isArray(migrated) || migrated[0]?.name !== "大书") fail("浏览器里的老书架没被迁到文件");
 		if (migrated[0]?.chapters?.length !== 3000) fail("迁移后章节表不完整（文件里应保留整份 chapters）");
 
-		// 刷新后数据仍在（来自文件，不依赖浏览器缓存）
 		const second = await probe();
 		if (second.sourceRows !== sources.length || !second.shelfText.includes("3000 章"))
 			fail("刷新后数据丢了（文件为事实源没生效）");
@@ -206,15 +184,11 @@ try {
 } finally {
 	try {
 		sock?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (proc?.pid) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	await new Promise((r) => setTimeout(r, 600));
 	freePort(PORT);

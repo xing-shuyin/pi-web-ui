@@ -1,16 +1,3 @@
-/**
- * bin/frp-manager.mjs — FRP (Fast Reverse Proxy) 自动化部署与管理模块。
- *
- * 职责：
- * 1. 自动探针本地与远程操作系统及 CPU 架构（x86_64, aarch64, arm 等）；
- * 2. 自动下载适配版本的 frp 二进制（官方 GitHub Release + 国内高速镜像回退）；
- * 3. 自动生成规范的双端 TOML 配置文件（frps.toml 与 frpc.toml），支持随机高强度 Token 鉴权；
- * 4. 通过 SSH 自动化部署远程 Linux 服务器端的 frps（systemd 服务管理与开机自启，防火墙放行提示）；
- * 5. 管理本地 frpc 客户端（后台守护启动、停止、重启、状态查看、前台调试、系统自启服务安装/卸载）；
- * 6. 支持生成独立的一键远程 Shell 部署脚本（适合手动粘贴或堡垒机环境）；
- * 7. 交互式命令行向导，在缺省参数时引导用户完成全流程配置。
- */
-
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -28,16 +15,13 @@ export const DEFAULT_REMOTE_PORT = 8787;
 export const DEFAULT_SSH_PORT = 22;
 export const DEFAULT_SSH_USER = "root";
 
-/** 探测用户语言偏好 */
 export function isZhLang() {
 	const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || "";
 	if (env.startsWith("zh")) return true;
 	if (!env) {
 		try {
 			return Intl.DateTimeFormat().resolvedOptions().locale.startsWith("zh");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	return false;
 }
@@ -48,7 +32,6 @@ export function pick(zh, en) {
 	return ZH ? zh : en;
 }
 
-/** 获取本地数据目录，默认 ~/.pi-web */
 export function getFrpDataDir(customDataDir) {
 	const base =
 		customDataDir ||
@@ -57,7 +40,6 @@ export function getFrpDataDir(customDataDir) {
 	return join(base, "frp");
 }
 
-/** 智能获取当前本地 pi-web-ui 端口 */
 export function getDefaultLocalPort() {
 	if (process.env.PI_WEB_PORT) {
 		const p = parseInt(process.env.PI_WEB_PORT, 10);
@@ -66,7 +48,6 @@ export function getDefaultLocalPort() {
 	return DEFAULT_LOCAL_PORT;
 }
 
-/** 映射本地系统与 CPU 架构到 FRP 命名 */
 export function getLocalPlatformArch(platform = process.platform, arch = process.arch) {
 	let osName = "linux";
 	let isZip = false;
@@ -105,7 +86,6 @@ export function getLocalPlatformArch(platform = process.platform, arch = process
 	};
 }
 
-/** 映射远程 Linux 系统的 CPU 架构到 FRP 命名 */
 export function getRemotePlatformArch(unameM = "x86_64") {
 	const raw = String(unameM).trim().toLowerCase();
 	let archName = "amd64";
@@ -134,12 +114,10 @@ export function getRemotePlatformArch(unameM = "x86_64") {
 	};
 }
 
-/** 生成随机安全的认证 Token */
 export function generateRandomToken() {
 	return randomBytes(16).toString("hex");
 }
 
-/** 生成服务端 frps.toml 配置内容 */
 export function generateFrpsToml({ bindPort = DEFAULT_SERVER_PORT, token }) {
 	return `# frps.toml - Managed by pi-web-ui
 bindPort = ${bindPort}
@@ -148,7 +126,6 @@ auth.token = "${token}"
 `;
 }
 
-/** 生成客户端 frpc.toml 配置内容 */
 export function generateFrpcToml({
 	serverAddr,
 	serverPort = DEFAULT_SERVER_PORT,
@@ -172,7 +149,6 @@ remotePort = ${remotePort}
 `;
 }
 
-/** 生成远程 Linux 服务器一键执行的 bash 脚本 */
 export function generateRemoteBashScript({
 	version = DEFAULT_FRP_VERSION,
 	bindPort = DEFAULT_SERVER_PORT,
@@ -339,14 +315,10 @@ echo "==========================================================================
 `;
 }
 
-/** 候选下载 URL 列表 */
 export function getFrpDownloadUrls(version, archiveName) {
-	// 只使用官方 GitHub 发布源：第三方代理镜像（ghfast.top/ghproxy.net 等）可能被
-	// 接管换包，配合 root 安装即供应链投毒。需要加速请自行配置 HTTP(S) 代理。
 	return [`https://github.com/fatedier/frp/releases/download/v${version}/${archiveName}`];
 }
 
-/** 从官方 release 的 checksums 文件解析指定归档的 SHA256（两种文件名都试）。 */
 export async function fetchFrpSha256(version, archiveName) {
 	const candidates = [
 		`https://github.com/fatedier/frp/releases/download/v${version}/frp_${version}_sha256_checksums.txt`,
@@ -363,9 +335,7 @@ export async function fetchFrpSha256(version, archiveName) {
 					return parts[0];
 				}
 			}
-		} catch {
-			// 尝试下一个候选
-		}
+		} catch {}
 	}
 	return null;
 }
@@ -374,7 +344,6 @@ function sha256File(filePath) {
 	return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
-/** 从多个镜像源下载文件 */
 export async function downloadFileWithFallback(urls, destPath) {
 	for (let i = 0; i < urls.length; i++) {
 		const url = urls[i];
@@ -399,7 +368,6 @@ export async function downloadFileWithFallback(urls, destPath) {
 	}
 }
 
-/** 解压 Zip 提取目标文件 (Windows) */
 export function extractZipSingleFile(zipPath, targetFileName, outFilePath) {
 	return new Promise((resolve, reject) => {
 		yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
@@ -444,7 +412,6 @@ export function extractZipSingleFile(zipPath, targetFileName, outFilePath) {
 	});
 }
 
-/** 解压 TarGz 提取目标文件 (macOS / Linux) */
 export async function extractTarGzSingleFile(tarPath, targetFileName, outFilePath) {
 	const tmpExtractDir = join(tmpdir(), `frp-extract-${Date.now()}`);
 	mkdirSync(tmpExtractDir, { recursive: true });
@@ -453,7 +420,6 @@ export async function extractTarGzSingleFile(tarPath, targetFileName, outFilePat
 			file: tarPath,
 			cwd: tmpExtractDir,
 		});
-		// 搜索提取出来的目标二进制
 		const { readdirSync, statSync } = await import("node:fs");
 		function findFile(dir) {
 			const entries = readdirSync(dir);
@@ -483,7 +449,6 @@ export async function extractTarGzSingleFile(tarPath, targetFileName, outFilePat
 	}
 }
 
-/** 确保本地有适配的 frpc 二进制并返回其路径 */
 export async function ensureLocalFrpc({ dataDir, version = DEFAULT_FRP_VERSION, force = false }) {
 	const frpDir = getFrpDataDir(dataDir);
 	mkdirSync(frpDir, { recursive: true });
@@ -508,7 +473,6 @@ export async function ensureLocalFrpc({ dataDir, version = DEFAULT_FRP_VERSION, 
 
 	try {
 		await downloadFileWithFallback(urls, tmpArchive);
-		// 供应链守卫：无论来自哪个源，下载物必须与官方 SHA256 一致，否则拒绝安装。
 		const expectedSha = await fetchFrpSha256(version, arcName);
 		if (!expectedSha) {
 			rmSync(tmpArchive, { force: true });
@@ -548,14 +512,12 @@ export async function ensureLocalFrpc({ dataDir, version = DEFAULT_FRP_VERSION, 
 	}
 }
 
-/** 查找系统已存在的默认 SSH 密钥 */
 export function findDefaultSshKeys() {
 	const home = homedir();
 	const candidates = [join(home, ".ssh", "id_ed25519"), join(home, ".ssh", "id_rsa"), join(home, ".ssh", "id_ecdsa")];
 	return candidates.filter((p) => existsSync(p));
 }
 
-/** 通过 SSH 连接远程 Linux 服务器并部署 frps */
 export async function deployRemoteFrpsViaSsh({
 	host,
 	port = DEFAULT_SSH_PORT,
@@ -596,9 +558,7 @@ export async function deployRemoteFrpsViaSsh({
 				try {
 					sshConfig.privateKey = readFileSync(keys[0]);
 					onLog(pick(`🔑 使用本地密钥: ${keys[0]}`, `🔑 Using local key: ${keys[0]}`));
-				} catch {
-					/* ignore fallback */
-				}
+				} catch {}
 			}
 		}
 
@@ -635,7 +595,6 @@ export async function deployRemoteFrpsViaSsh({
 			};
 
 			try {
-				// 1. 探针系统与架构
 				const osRes = await runCommand("uname -s");
 				if (osRes.stdout !== "Linux") {
 					throw new Error(
@@ -655,12 +614,10 @@ export async function deployRemoteFrpsViaSsh({
 					),
 				);
 
-				// 2. 检查权限
 				const uidRes = await runCommand("id -u");
 				const isRoot = uidRes.stdout === "0";
 				const sudoPrefix = isRoot ? "" : "sudo ";
 
-				// 3. 生成部署脚本并在远端执行
 				onLog(
 					pick(
 						`🚀 正在远程下载并安装 frps v${version}...`,
@@ -674,7 +631,6 @@ export async function deployRemoteFrpsViaSsh({
 					token,
 				});
 
-				// 在远程使用临时脚本执行
 				const remoteTmpScript = `/tmp/frps-deploy-${Date.now()}.sh`;
 				const writeScriptCmd = `cat > "${remoteTmpScript}" << 'DEPLOY_SCRIPT_EOF'\n${bashScript}\nDEPLOY_SCRIPT_EOF\nchmod +x "${remoteTmpScript}" && ${sudoPrefix}"${remoteTmpScript}"\nrm -f "${remoteTmpScript}"`;
 
@@ -689,7 +645,6 @@ export async function deployRemoteFrpsViaSsh({
 					);
 				}
 
-				// 4. 验证服务状态
 				const statusRes = await runCommand(`${sudoPrefix}systemctl is-active frps`);
 				if (statusRes.stdout.includes("active")) {
 					onLog(pick(`✔ 远程 frps 服务运行正常 (active)`, `✔ Remote frps service is active`));
@@ -714,7 +669,6 @@ export async function deployRemoteFrpsViaSsh({
 	});
 }
 
-/** 检查 PID 对应进程是否活跃 */
 export function isPidAlive(pid) {
 	if (!pid || isNaN(pid)) return false;
 	try {
@@ -725,7 +679,6 @@ export function isPidAlive(pid) {
 	}
 }
 
-/** 保存本地状态 */
 export function saveFrpState(dataDir, state) {
 	const frpDir = getFrpDataDir(dataDir);
 	mkdirSync(frpDir, { recursive: true });
@@ -733,7 +686,6 @@ export function saveFrpState(dataDir, state) {
 	writeFileSync(statePath, JSON.stringify({ ...state, updatedAt: Date.now() }, null, 2), "utf8");
 }
 
-/** 读取本地状态 */
 export function loadFrpState(dataDir) {
 	const frpDir = getFrpDataDir(dataDir);
 	const statePath = join(frpDir, "state.json");
@@ -745,7 +697,6 @@ export function loadFrpState(dataDir) {
 	}
 }
 
-/** 启动本地 frpc 客户端服务（后台运行） */
 export async function startLocalFrpc({ dataDir, version }) {
 	const frpDir = getFrpDataDir(dataDir);
 	const binPath = await ensureLocalFrpc({ dataDir, version });
@@ -783,15 +734,12 @@ export async function startLocalFrpc({ dataDir, version }) {
 	const pid = child.pid;
 	writeFileSync(pidPath, String(pid), "utf8");
 
-	// 等待 1 秒检查进程是否存活
 	await new Promise((r) => setTimeout(r, 1000));
 	if (!isPidAlive(pid)) {
 		let recentLog = "";
 		try {
 			recentLog = readFileSync(logPath, "utf8").split("\n").slice(-10).join("\n");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		rmSync(pidPath, { force: true });
 		throw new Error(
 			pick(
@@ -817,7 +765,6 @@ export async function startLocalFrpc({ dataDir, version }) {
 	return { pid, running: true };
 }
 
-/** 停止本地 frpc 客户端服务 */
 export function stopLocalFrpc({ dataDir }) {
 	const frpDir = getFrpDataDir(dataDir);
 	const pidPath = join(frpDir, "frpc.pid");
@@ -853,7 +800,6 @@ export function stopLocalFrpc({ dataDir }) {
 	console.log(pick(`✔ 已停止本地 frpc 服务 (PID: ${pid})`, `✔ Stopped local frpc service (PID: ${pid})`));
 }
 
-/** 前台直接运行本地 frpc（便于调试排查） */
 export async function runLocalFrpcForeground({ dataDir, version }) {
 	const frpDir = getFrpDataDir(dataDir);
 	const binPath = await ensureLocalFrpc({ dataDir, version });
@@ -883,7 +829,6 @@ export async function runLocalFrpcForeground({ dataDir, version }) {
 	});
 }
 
-/** 查询本地 frpc 状态及映射详情 */
 export function statusLocalFrpc({ dataDir }) {
 	const frpDir = getFrpDataDir(dataDir);
 	const pidPath = join(frpDir, "frpc.pid");
@@ -953,7 +898,6 @@ export function statusLocalFrpc({ dataDir }) {
 	console.log("================================================================================");
 }
 
-/** 安装本地开机自启系统服务 */
 export function installLocalFrpcService({ dataDir }) {
 	const frpDir = getFrpDataDir(dataDir);
 	const { binName } = getLocalPlatformArch();
@@ -970,7 +914,6 @@ export function installLocalFrpcService({ dataDir }) {
 	}
 
 	if (process.platform === "win32") {
-		// Windows: HKCU Run 注册表键 + 隐藏式 VBS 启动脚本
 		const vbsPath = join(frpDir, "start-frpc-hidden.vbs");
 		const vbsContent = `CreateObject("WScript.Shell").Run """${binPath}"" -c ""${configPath}""", 0, False\n`;
 		writeFileSync(vbsPath, "\uFEFF" + vbsContent, "utf16le");
@@ -984,7 +927,6 @@ export function installLocalFrpcService({ dataDir }) {
 			),
 		);
 	} else if (process.platform === "darwin") {
-		// macOS: launchd 用户代理
 		const plistPath = join(homedir(), "Library", "LaunchAgents", "com.xingshuyin.pi-web-ui-frpc.plist");
 		mkdirSync(dirname(plistPath), { recursive: true });
 		const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1020,7 +962,6 @@ export function installLocalFrpcService({ dataDir }) {
 			),
 		);
 	} else {
-		// Linux: systemd 用户服务
 		const userUnitDir = join(homedir(), ".config", "systemd", "user");
 		mkdirSync(userUnitDir, { recursive: true });
 		const unitPath = join(userUnitDir, "pi-web-ui-frpc.service");
@@ -1046,7 +987,6 @@ WantedBy=default.target
 	}
 }
 
-/** 卸载本地开机自启系统服务 */
 export function uninstallLocalFrpcService({ dataDir }) {
 	const frpDir = getFrpDataDir(dataDir);
 	stopLocalFrpc({ dataDir });
@@ -1078,7 +1018,6 @@ export function uninstallLocalFrpcService({ dataDir }) {
 	}
 }
 
-/** 解析 FRP CLI 命令行参数 */
 export function parseFrpArgs(argv) {
 	const opts = {
 		server: undefined,
@@ -1181,7 +1120,6 @@ export function parseFrpArgs(argv) {
 	return { opts, positionals };
 }
 
-/** 交互式部署向导 */
 export async function runInteractiveWizard(initialOpts = {}) {
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	try {
@@ -1192,7 +1130,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 		const defaultLocalPort = getDefaultLocalPort();
 		const saved = loadFrpState(initialOpts.dataDir) || {};
 
-		// 1. 远程服务器地址
 		let server = initialOpts.server || saved.serverAddr;
 		while (!server) {
 			const ans = await rl.question(pick("1. 远程服务器公网 IP 或域名: ", "1. Remote server public IP or hostname: "));
@@ -1202,7 +1139,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 			}
 		}
 
-		// 2. 本地端口
 		let localPort = initialOpts.localPort || saved.localPort || defaultLocalPort;
 		const localPortAns = await rl.question(
 			pick(`2. 本地 pi-web-ui 端口 [默认 ${localPort}]: `, `2. Local pi-web-ui port [default ${localPort}]: `),
@@ -1212,7 +1148,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 			if (parsed > 0 && parsed < 65536) localPort = parsed;
 		}
 
-		// 3. 远程访问端口
 		let remotePort = initialOpts.remotePort || saved.remotePort || localPort;
 		const remotePortAns = await rl.question(
 			pick(
@@ -1225,7 +1160,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 			if (parsed > 0 && parsed < 65536) remotePort = parsed;
 		}
 
-		// 4. FRP 通信端口
 		let serverPort = initialOpts.serverPort || saved.serverPort || DEFAULT_SERVER_PORT;
 		const serverPortAns = await rl.question(
 			pick(
@@ -1238,7 +1172,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 			if (parsed > 0 && parsed < 65536) serverPort = parsed;
 		}
 
-		// 5. 鉴权 Token
 		let token = initialOpts.token || saved.token;
 		if (!token) {
 			const defaultToken = generateRandomToken();
@@ -1248,7 +1181,6 @@ export async function runInteractiveWizard(initialOpts = {}) {
 			token = tokenAns.trim() || defaultToken;
 		}
 
-		// 6. 是否自动部署到远程服务器
 		let autoRemote = !initialOpts.localOnly;
 		if (!initialOpts.remoteOnly && !initialOpts.localOnly) {
 			const autoRemoteAns = await rl.question(
@@ -1388,7 +1320,6 @@ deploy / script options:
   --frp-version <ver>        Specify FRP version (default ${DEFAULT_FRP_VERSION})
 `;
 
-/** 核心命令执行入口 */
 export async function frpCmd(argv) {
 	const { opts, positionals } = parseFrpArgs(argv);
 
@@ -1449,7 +1380,6 @@ export async function frpCmd(argv) {
 		case "": {
 			let config = { ...opts };
 
-			// 未提供 server 且在交互终端，启动向导
 			if (!config.server && process.stdin.isTTY) {
 				const wizardConfig = await runInteractiveWizard(opts);
 				config = { ...config, ...wizardConfig };
@@ -1479,7 +1409,6 @@ export async function frpCmd(argv) {
 			console.log(pick(`  安全 Token     : ${token}`, `  Auth Token     : ${token}`));
 			console.log("================================================================================\n");
 
-			// 1. 部署远程服务器
 			const shouldDeployRemote = !config.localOnly && config.autoRemote !== false;
 			if (shouldDeployRemote) {
 				console.log(
@@ -1501,7 +1430,6 @@ export async function frpCmd(argv) {
 				console.log(pick("ℹ 已跳过远程部署 (--local-only)\n", "ℹ Skipped remote deployment (--local-only)\n"));
 			}
 
-			// 2. 部署本地客户端
 			if (!config.remoteOnly) {
 				console.log(
 					pick(
@@ -1512,10 +1440,8 @@ export async function frpCmd(argv) {
 				const frpDir = getFrpDataDir(config.dataDir);
 				mkdirSync(frpDir, { recursive: true });
 
-				// 准备本地客户端二进制
 				await ensureLocalFrpc({ dataDir: config.dataDir, version });
 
-				// 生成并写入本地 frpc.toml
 				const frpcContent = generateFrpcToml({
 					serverAddr,
 					serverPort,
@@ -1527,7 +1453,6 @@ export async function frpCmd(argv) {
 				writeFileSync(configPath, frpcContent, "utf8");
 				console.log(pick(`✔ 已写入本地配置文件: ${configPath}`, `✔ Wrote local configuration: ${configPath}`));
 
-				// 保存状态记录
 				saveFrpState(config.dataDir, {
 					serverAddr,
 					serverPort,
@@ -1537,7 +1462,6 @@ export async function frpCmd(argv) {
 					version,
 				});
 
-				// 后台启动本地 frpc
 				await startLocalFrpc({ dataDir: config.dataDir, version });
 			}
 

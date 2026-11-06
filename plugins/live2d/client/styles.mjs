@@ -1,8 +1,3 @@
-/**
- * Live2D 看板娘样式表
- * 严格遵从 pi-web-ui 主题 CSS 变量，深浅主题 100% 自动自适应
- */
-
 export const WIDGET_CSS = `
 /* ── Live2D 挂件全局容器 ────────────────────────────────────────── */
 #pi-live2d-companion {

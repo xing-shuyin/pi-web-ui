@@ -1,5 +1,3 @@
-// Only these fixed integration failures may cross the device RPC boundary.
-// Raw Git stderr, paths, command lines and arbitrary error messages stay local.
 const integrationErrors = {
 	INTEGRATION_TARGET_CHECKED_OUT: {
 		status: 409,

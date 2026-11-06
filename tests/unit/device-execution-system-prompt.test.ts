@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { prepareBotExecutionSystemPrompt } from "../../server/device-center/execution-system-prompt.js";
 import { getBotExecutionInstructions } from "../../server/device-center/execution-instructions.js";
 
-// Exercise the installed SDK renderer without importing agent-service or starting a server.
 const sdkEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { buildSystemPrompt } = await import(new URL("./core/system-prompt.js", sdkEntry).href);
 
@@ -52,7 +51,6 @@ describe("Bot execution system prompt sections", () => {
 		event.systemPromptOptions.forceSystemPrompt = `EXTENSION PRE\n${original}\nEXTENSION POST`;
 		const { core, rewrap } = prepareBotExecutionSystemPrompt(event, execution);
 		expect(core).toBe(original);
-		// Renderers can replace the entire baseline, or retain its SDK sections.
 		for (const replacement of ["Replacement prompt", event.systemPrompt, core]) {
 			const rendered = rewrap(replacement);
 			expectOwnedOnce(rendered);

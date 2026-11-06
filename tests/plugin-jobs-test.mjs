@@ -1,15 +1,3 @@
-/* Smoke test（issue #152 / #148）：起真服务，用 WebSocket 验证插件后台作业与
- * 市场目录同步协议 —— 不联网、不开浏览器。
- *
- * 覆盖：
- *   - plugin_job 参数非法 → 立即回 done(ok:false, 原因)
- *   - plugin_job uninstall 真实存在的插件目录 → 跑 CLI 删掉 → done(ok:true) + 列表更新
- *   - plugin_job uninstall 不存在的插件 → done(ok:false)（完整 spawn→失败路径）
- *   - plugin_catalog_sync 本地 JSON → result(ok) + 原子写盘 + 条目出现在推送的 plugin_catalog 里
- *   - plugin_catalog_sync 坏 JSON → result(ok:false) 且旧目录文件原样保留
- *
- * Run:  npm run build:server && node tests/plugin-jobs-test.mjs
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,15 +53,12 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-/** 每个 jobId 的进度消息 + 最终结果。 */
 const jobs = new Map();
 const syncResults = new Map();
 let catalogEntries = null;
@@ -84,9 +69,7 @@ function cleanup() {
 	} catch {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* already gone */
-		}
+		} catch {}
 	}
 	rmSync(workdir, { recursive: true, force: true });
 	rmSync(dataDir, { recursive: true, force: true });
@@ -128,23 +111,19 @@ async function main() {
 					clearTimeout(timer);
 					res();
 				}
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 	});
 	console.log("ready received");
 
 	const done = (jobId) => jobs.get(jobId)?.find((m) => m.phase === "done");
 
-	// -- 1) 参数非法：本地路径不被服务端作业接受 --------------------------------
 	const badJob = "bad-source";
 	send({ type: "plugin_job", jobId: badJob, action: "install", id: "nope", source: "/etc/passwd" });
 	await waitFor(() => done(badJob), 5000, 50);
 	check("非法来源被拒（就回一条 done，不让面板等超时）", done(badJob)?.ok === false);
 	check("拒绝原因可读", typeof done(badJob)?.error === "string" && done(badJob).error.length > 0);
 
-	// -- 2) 卸载一个真实存在的插件目录：完整 spawn → 成功 → 列表更新 --------------
 	const pluginsDir = join(dataDir, "plugins");
 	mkdirSync(join(pluginsDir, "faked"), { recursive: true });
 	writeFileSync(join(pluginsDir, "faked", "manifest.json"), JSON.stringify({ name: "faked" }));
@@ -156,13 +135,11 @@ async function main() {
 	await waitFor(() => catalogEntries !== null, 5000, 50);
 	check("成功后服务端重推了插件列表", Array.isArray(catalogEntries));
 
-	// -- 3) 卸载不存在的插件：CLI 报错 → done(ok:false, 带输出尾部) --------------
 	send({ type: "plugin_job", jobId: "uninstall-missing", action: "uninstall", id: "does-not-exist" });
 	await waitFor(() => done("uninstall-missing"), 60000, 100);
 	check("卸载不存在的插件失败并回 done(ok:false)", done("uninstall-missing")?.ok === false);
 	check("失败回执带输出尾部", (done("uninstall-missing")?.output ?? "").length > 0);
 
-	// -- 4) 目录同步：本地 JSON → 原子写盘 + 条目推送 ----------------------------
 	const src = join(workdir, "catalog.json");
 	writeFileSync(src, JSON.stringify({ entries: [{ id: "third-party", source: "someone/repo", name: "第三方" }] }));
 	send({ type: "plugin_catalog_sync", requestId: "sync-1", source: src });
@@ -183,7 +160,6 @@ async function main() {
 		(catalogEntries ?? []).some((e) => e.id === "third-party"),
 	);
 
-	// -- 5) 坏 JSON：不写盘（旧目录保持有效） ------------------------------------
 	const before = readFileSync(customFile, "utf8");
 	const bad = join(workdir, "bad.json");
 	writeFileSync(bad, "{ not json");

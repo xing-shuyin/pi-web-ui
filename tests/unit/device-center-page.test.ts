@@ -8,7 +8,7 @@ const flush = async () => {
 	for (let i = 0; i < 80; i++) await Promise.resolve();
 };
 
-function fixture(origin = "https://hub.example") {
+function fixture(origin = "https://hub.example", canUpgradeHub = true) {
 	const devices = [
 		{ id: "device-win-11111111", name: "Work", online: true, url: "https://win.example/" },
 		{ id: "device-mac-22222222", name: "Work", online: false, url: "javascript:alert(1)" },
@@ -29,7 +29,9 @@ function fixture(origin = "https://hub.example") {
 
 	const fetch = vi.fn(async (path: string, options: any) => {
 		let data: any = {};
-		if (path === "/api/me") data = { account: { id: "owner", username: "<script>bad</script>" } };
+		if (path === "/api/me") data = { account: { id: "owner", username: "<script>bad</script>", canUpgradeHub } };
+		else if (path === "/api/system/upgrade")
+			data = { ok: true, job: { id: "12345678-1234-1234-1234-123456789012", state: "queued", fromBootId: "old" } };
 		else if (path === "/api/bots") data = { bots };
 		else if (path === "/api/devices") data = { devices };
 		else if (path === "/api/rooms") data = { rooms };
@@ -61,7 +63,7 @@ afterEach(() => {
 
 describe("standalone device Hub", () => {
 	it("renders public HTTP note on unencrypted connections", async () => {
-		const f = fixture("http://82.156.246.55:8790");
+		const f = fixture("http://198.51.100.10:8790");
 		await flush();
 		expect(f.document.getElementById("transport-note")?.textContent).toContain("HTTP");
 	});
@@ -334,7 +336,7 @@ describe("standalone device Hub", () => {
 		expect(f.document.getElementById("error")!.textContent).toBe("Network down");
 	});
 
-	it("shows upgrade button for authenticated users and triggers system upgrade on confirmation", async () => {
+	it("shows upgrade button for the Hub owner and submits an upgrade job on confirmation", async () => {
 		const f = fixture();
 		await flush();
 
@@ -353,5 +355,74 @@ describe("standalone device Hub", () => {
 
 		expect(f.dom.window.confirm).toHaveBeenCalled();
 		expect(f.fetch).toHaveBeenCalledWith("/api/system/upgrade", expect.objectContaining({ method: "POST" }));
+	});
+
+	it("hides maintenance controls from ordinary accounts", async () => {
+		const f = fixture("https://hub.example", false);
+		await flush();
+		expect(f.document.getElementById("upgrade").hidden).toBe(true);
+	});
+
+	it("clears pending upgrade UI when the account logs out", async () => {
+		const f = fixture();
+		await flush();
+		f.dom.window.confirm = vi.fn().mockReturnValue(true);
+		f.click("#upgrade");
+		await flush();
+		expect(f.document.getElementById("upgrade").disabled).toBe(true);
+		f.click("#logout");
+		await flush();
+		expect(f.document.getElementById("upgrade").hidden).toBe(true);
+		expect(f.document.getElementById("upgrade").disabled).toBe(false);
+	});
+
+	it("reports upgrade rejection even when the old Hub would be healthy", async () => {
+		const f = fixture();
+		await flush();
+		const original = f.fetch.getMockImplementation()!;
+		f.fetch.mockImplementation(async (path, options) =>
+			path === "/api/system/upgrade"
+				? { ok: false, status: 500, json: async () => ({ error: "installation rejected" }) }
+				: original(path, options),
+		);
+		f.dom.window.confirm = vi.fn().mockReturnValue(true);
+		f.click("#upgrade");
+		await flush();
+		expect(f.document.getElementById("error").textContent).toBe("installation rejected");
+		expect(f.document.getElementById("connection").textContent).toBe("升级失败，请查看日志或重试");
+		expect(f.fetch.mock.calls.some(([path]) => path === "/health")).toBe(false);
+		expect(f.document.getElementById("upgrade").disabled).toBe(false);
+	});
+
+	it.each([
+		[{ state: "running" }, false],
+		[{ state: "failed", error: "rollback completed" }, false],
+		[{ state: "succeeded", targetVersion: "2", version: "2", bootId: "old" }, false],
+		[{ state: "succeeded", targetVersion: "2", version: "1", bootId: "new" }, false],
+		[{ state: "succeeded", targetVersion: "2", version: "2", bootId: "new" }, true],
+	])("only acknowledges a completed job for the new runtime: %j", async (result, succeeds) => {
+		const f = fixture();
+		await flush();
+		const original = f.fetch.getMockImplementation()!;
+		f.fetch.mockImplementation(async (path, options) =>
+			path.startsWith("/api/system/upgrade?")
+				? {
+						ok: true,
+						status: 200,
+						json: async () => ({
+							ok: true,
+							job: { id: "12345678-1234-1234-1234-123456789012", fromBootId: "old", ...result },
+						}),
+					}
+				: original(path, options),
+		);
+		f.dom.window.confirm = vi.fn().mockReturnValue(true);
+		f.click("#upgrade");
+		await flush();
+		const poll = f.timer.mock.calls.find((call: any[]) => call[1] === 1500)?.[0] as () => Promise<void>;
+		expect(poll).toBeTypeOf("function");
+		await poll();
+		await flush();
+		expect(f.document.getElementById("connection").textContent.includes("升级成功")).toBe(succeeds);
 	});
 });

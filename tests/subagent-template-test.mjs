@@ -1,16 +1,4 @@
-// Subagent templates — protocol smoke test (no model calls).
-//
-// Verifies the wire path for the Settings → Subagent templates panel:
 //   - settings_state carries subagentTemplates (empty initially, global file);
-//   - save_subagent_template upserts (promptMode / whitelists / enabled / thinkingLevel),
-//     and an unknown thinking level normalizes to "" (= follow main conversation);
-//   - disabled templates stay listed with enabled:false (panel keeps them),
-//   - delete_subagent_template removes,
-//   - templates persist to <dataDir>/subagent-templates.json on disk.
-// The AI-side visibility filtering (listTemplates / isTemplateUsable) and the
-// subagent_templates tool are covered by unit tests (tests/unit/subagents.test.ts).
-//
-// Usage: npm run build && node tests/subagent-template-test.mjs [port]
 import WebSocket from "ws";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,8 +35,6 @@ class Client {
 	send(m) {
 		this.ws.send(JSON.stringify(m));
 	}
-	/** Wait for a message of one of `types`; optional predicate consumes
-	 *  stale duplicates while scanning (settings_state is re-pushed often). */
 	async waitFor(type, timeout = 8000, pred) {
 		const start = Date.now();
 		const types = Array.isArray(type) ? type : [type];
@@ -99,7 +85,6 @@ async function main() {
 		}
 	};
 
-	// 1. 初始 settings_state：subagentTemplates 已带内置默认模板。
 	{
 		const s = await c.waitFor("settings_state");
 		check(
@@ -120,7 +105,6 @@ async function main() {
 		);
 	}
 
-	// 2. 保存一个模板（replace + 白名单）。
 	{
 		c.send({
 			type: "save_subagent_template",
@@ -157,7 +141,6 @@ async function main() {
 		);
 	}
 
-	// 3. 同名覆盖 + 停用（enabled=false 仍留在列表，对 AI 不可见由 unit 测试覆盖）。
 	{
 		c.send({
 			type: "save_subagent_template",
@@ -181,7 +164,6 @@ async function main() {
 		check("覆盖时未传思考强度 → 归一为空串（跟随主对话）", tpl?.thinkingLevel === "");
 	}
 
-	// 3.5 非法思考强度（面板旧数据 / 手改文件）→ 归一为空串，不报错也不污染列表。
 	{
 		c.send({
 			type: "save_subagent_template",
@@ -206,7 +188,6 @@ async function main() {
 		c.send({ type: "delete_subagent_template", name: "badthink" });
 	}
 
-	// 4. 磁盘持久化（全局共享文件，含默认模板 + 用户改动）。
 	{
 		const onDisk = existsSync(TPL_FILE) ? JSON.parse(readFileSync(TPL_FILE, "utf8")) : [];
 		check(
@@ -214,13 +195,11 @@ async function main() {
 			Array.isArray(onDisk) &&
 				onDisk.some((t) => t.name === "review") &&
 				onDisk.some((t) => t.name === "reviewer" && t.enabled === false) &&
-				// 未传的 thinkingLevel 也会带上归一值写入（老文件读入同样归一）
 				onDisk.find((t) => t.name === "reviewer")?.thinkingLevel === "",
 			JSON.stringify(onDisk?.map?.((t) => t.name)),
 		);
 	}
 
-	// 5. 删除 → 用户模板消失、默认保留。
 	{
 		c.send({ type: "delete_subagent_template", name: "reviewer" });
 		const s = await c.waitFor(
@@ -241,23 +220,19 @@ async function main() {
 		);
 	}
 
-	// 6.5 子代理默认模型设置（跟随主对话 ⇄ 显式模型）走通 wire + 持久化。
 	{
 		c.send({ type: "get_settings" });
 		const s0 = await c.waitFor("settings_state", 8000, (m) => m.settings.subagentDefaultModel !== undefined);
 		check("默认模型初始为 null（跟随主对话）", s0.settings.subagentDefaultModel === null);
 		check("subagentModels 字段存在（零模型环境为空数组）", Array.isArray(s0.settings.subagentModels));
-		// 设置一个显式默认模型（wire 只校验透传，不校验存在性）。
 		c.send({ type: "set_settings", subagentDefaultModel: "dashscope/qwen-max" });
 		const s1 = await c.waitFor("settings_state", 8000, (m) => m.settings.subagentDefaultModel === "dashscope/qwen-max");
 		check("set_settings 更新 subagentDefaultModel", s1.settings.subagentDefaultModel === "dashscope/qwen-max");
-		// 再切回跟随主对话（null）。
 		c.send({ type: "set_settings", subagentDefaultModel: null });
 		const s2 = await c.waitFor("settings_state", 8000, (m) => m.settings.subagentDefaultModel === null);
 		check("置空恢复跟随主对话", s2.settings.subagentDefaultModel === null);
 	}
 
-	// 6. 非法保存（空名）→ 列表不变 + 错误 notice。
 	{
 		c.send({
 			type: "save_subagent_template",
@@ -282,8 +257,6 @@ async function main() {
 		);
 	}
 
-	// 7. 繁中界面（zh-TW / zh-HK / zh-Hant 共用一份台湾用语）：内置模板文字是「视图」，不回写库。
-	//    review 的简介出厂简中含「代码」、繁中含「程式碼」。
 	{
 		const review = (s) => s.settings.subagentTemplates.find((t) => t.name === "review");
 		const isHant = (m) => /程式碼/.test(review(m)?.description ?? "") && !/代码/.test(review(m)?.description ?? "");
@@ -293,7 +266,6 @@ async function main() {
 		const zhSnap = await c.waitFor("settings_state", 8000, isHans);
 		check("简中界面：内置模板是出厂简中", isHans(zhSnap));
 
-		// zh → zh-TW：服务端语言同为 zh（不 reload），但必须补推快照，设置页才会换字。
 		c.send({ type: "set_locale", locale: "zh-TW" });
 		const twSnap = await c.waitFor("settings_state", 8000, isHant);
 		check("zh → zh-TW：补推快照，内置模板换成繁中", isHant(twSnap));
@@ -302,7 +274,6 @@ async function main() {
 			/審查類型/.test(review(twSnap).systemPrompt) && /Code \/ plan/.test(review(twSnap).descriptionEn ?? ""),
 		);
 
-		// 在繁中快照上只点启用开关（回传整个繁中视图）→ 库里仍应是出厂简中。
 		c.send({ type: "save_subagent_template", template: { ...review(twSnap), enabled: false } });
 		const toggled = await c.waitFor("settings_state", 8000, (m) => review(m)?.enabled === false);
 		check("繁中界面点开关：保存成功且仍显示繁中", isHant(toggled));
@@ -313,18 +284,15 @@ async function main() {
 			onDisk.description,
 		);
 
-		// zh-TW → zh-HK：同属繁体，文字不变（不需要重推也不应变回简体）。
 		c.send({ type: "set_locale", locale: "zh-HK" });
 		c.send({ type: "get_settings" });
 		const hkSnap = await c.waitFor("settings_state", 8000, isHant);
 		check("zh-HK 同样是繁中视图", isHant(hkSnap));
 
-		// 回到英文：库里是简中，快照回到出厂简中（其它语言的用户不受繁中用户操作影响）。
 		c.send({ type: "set_locale", locale: "en" });
 		const enSnap = await c.waitFor("settings_state", 8000, isHans);
 		check("切回英文：显示出厂简中（库未被繁中操作污染）", isHans(enSnap) && review(enSnap).enabled === false);
 
-		// 还原现场。
 		c.send({ type: "save_subagent_template", template: { ...review(enSnap), enabled: true } });
 		await c.waitFor("settings_state", 8000, (m) => review(m)?.enabled === true);
 	}

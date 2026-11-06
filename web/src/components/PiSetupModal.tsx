@@ -7,25 +7,15 @@ import { isDesktopShell } from "../desktop";
 import { ProviderOAuthControls, type ProviderOAuthResultView } from "./ProviderOAuthControls";
 
 interface PiSetupModalProps {
-	/** Fetched from the latest snapshot; true once auth.json has credentials. */
 	piConfigured: boolean;
-	/** Whether the pi CLI binary is installed (snapshot piAgentInstalled). */
 	piAgentInstalled: boolean;
-	/** Built-in providers with supported authentication methods and current status. */
 	providers: ProviderStatus[];
 	providerOAuthFlows: ProviderOAuthFlowState[];
 	providerOAuthResults: Record<string, ProviderOAuthResultView>;
-	/** Real result of the last install_pi_agent run (null = not finished). */
 	installResult: { ok: boolean; detail: string } | null;
 	onClose: () => void;
 }
 
-/**
- * One-time setup overlay: shown when the server reports the pi agent config is
- * missing (no auth.json credentials). If the pi CLI is already installed the
- * provider authentication controls appear immediately; otherwise the modal
- * offers auto-install first and the controls after the server confirms it.
- */
 export function PiSetupModal({
 	piConfigured,
 	piAgentInstalled,
@@ -37,30 +27,25 @@ export function PiSetupModal({
 }: PiSetupModalProps) {
 	const t = useT();
 	const isDesktop = isDesktopShell();
-	// PI_WEB_MANAGED=1：装软件不是本页的事（全局，见 web/src/app-globals.ts）。
 	const managed = useIsManaged();
 	const [installing, setInstalling] = useState(false);
 	const [provider, setProvider] = useState("");
 	const [apiKey, setApiKey] = useState("");
 	const [saving, setSaving] = useState(false);
 
-	// Built-in provider list for the dropdown.
 	useEffect(() => {
 		appSend({ type: "list_providers" });
 		appSend({ type: "list_provider_oauth_flows" });
 	}, []);
 
-	// Auto-close once the config is actually ready (snapshot-driven).
 	useEffect(() => {
 		if (piConfigured) onClose();
 	}, [piConfigured, onClose]);
 
-	// Install finished (success or failure) → stop the spinner.
 	useEffect(() => {
 		if (installResult) setInstalling(false);
 	}, [installResult]);
 
-	// Default to the first unconfigured provider once the list arrives.
 	useEffect(() => {
 		if (!provider && providers.length > 0) {
 			setProvider(providers.find((p) => !p.configured)?.id ?? providers[0].id);
@@ -81,8 +66,6 @@ export function PiSetupModal({
 			provider: provider.trim(),
 			apiKey: apiKey.trim(),
 		});
-		// The server refreshes models and flushes a snapshot — the modal closes
-		// itself once piConfigured flips true. Keep the button disabled meanwhile.
 		setTimeout(() => setSaving(false), 3000);
 	};
 
@@ -164,9 +147,6 @@ export function PiSetupModal({
 						</div>
 					</div>
 				) : managed ? (
-					/* A managed instance does not install software on itself: the
-					   server refuses install_pi_agent, so offering the button would
-					   only produce a refusal. Whoever deploys this installs pi. */
 					<div className="setup-actions">
 						<div className="setup-done">{t("updatesManaged")}</div>
 						<button type="button" className="btn" onClick={onClose}>

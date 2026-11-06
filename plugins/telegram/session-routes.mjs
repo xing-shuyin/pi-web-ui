@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-// Local to this independently installable plugin; never persist credentials.
 export class SessionRoutes {
 	constructor(bridge) {
 		this.bridge = bridge;

@@ -10,21 +10,6 @@ import { TopBar } from "../../web/src/components/TopBar.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { ChatState } from "../../web/src/use-chat.js";
 
-/**
- * w9: outdated update rows show `[button] <name> v123 -> v125`.
- * w10: the wrapped second line shows `[kind v123 -> v125]` right-aligned.
- *
- * The per-row Update button used to render AFTER the version span, so on
- * narrow panels the name (flex:1, min-width:0) collapsed to nothing and the
- * row showed only the version change plus a trailing button. The button now
- * renders FIRST in DOM order for outdated rows, and warn rows wrap the
- * kind + version meta as one unit onto a second line instead of hiding the
- * name. The meta carries margin-left: auto so the second line sits right
- * while button + name stay left on the first line.
- *
- * Zero token / zero port: true jsdom + true React render, DOM order asserts.
- */
-
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CSS = readFileSync(join(ROOT, "web", "src", "styles.css"), "utf8");
 
@@ -45,7 +30,6 @@ const chatStub = {
 	],
 } as unknown as ChatState;
 
-/** issue #321：全局 pi CLI（0.95.0，最新）比服务实际加载的 SDK（0.85.1）新。 */
 const SPLIT = { running: "0.85.1", bundledInUse: true, newerInstalled: "0.95.0" };
 const splitChatStub = {
 	...chatStub,
@@ -55,21 +39,18 @@ const splitChatStub = {
 	],
 } as unknown as ChatState;
 
-/** issue #321：服务在用随包自带引擎（未跟随/没有全局 pi），面板要亮安装入口。 */
 const bundledChatStub = {
 	...chatStub,
 	updatesSdk: { running: "0.87.1", bundledInUse: true, newerInstalled: null },
 	updatesAll: [{ name: "steady-ext", kind: "package", current: "10", latest: "10", upToDate: true }],
 } as unknown as ChatState;
 
-/** issue #321：服务已跟随全局副本（bundledInUse=false）→ 不出安装入口。 */
 const followingChatStub = {
 	...chatStub,
 	updatesSdk: { running: "0.95.0", bundledInUse: false, newerInstalled: null },
 	updatesAll: [{ name: "steady-ext", kind: "package", current: "10", latest: "10", upToDate: true }],
 } as unknown as ChatState;
 
-/** 全局与自带同版本且都是 npm 最新 → 完全安静（安装入口是噪音）。 */
 const bundledCurrentStub = {
 	...chatStub,
 	updatesSdk: { running: "0.87.1", bundledInUse: true, newerInstalled: null },
@@ -78,7 +59,6 @@ const bundledCurrentStub = {
 	],
 } as unknown as ChatState;
 
-/** 全局比 npm 最新版旧 → 有语境提示，但不出现重复按钮（pi-core 行的「更新」已覆盖）。 */
 const bundledStaleStub = {
 	...chatStub,
 	updatesSdk: { running: "0.87.1", bundledInUse: true, newerInstalled: null },
@@ -130,8 +110,6 @@ function mount(chat: ChatState = chatStub) {
 			),
 		);
 	});
-	// Open every closed dropdown (sound / language / update / mobile panel):
-	// the update rows only enter the DOM when their menu is open.
 	act(() => {
 		for (const chip of Array.from(
 			container.querySelectorAll<HTMLButtonElement>('button.chip[aria-expanded="false"]'),
@@ -224,7 +202,6 @@ describe("issue #321 pi SDK split surfacing", () => {
 		const container = mount(splitChatStub);
 		const row = container.querySelector("li.dd-all-item")!;
 		expect(row.classList.contains("warn")).toBe(true);
-		// 行里的版本号是全局 CLI 的 —— 后面必须跟「服务运行 vX」的并列标注。
 		expect(row.querySelector(".dd-split-run")?.textContent).toContain(SPLIT.running);
 	});
 
@@ -268,7 +245,6 @@ describe("issue #321 bundled engine surfacing", () => {
 		const note = container.querySelector(".dd-note:not(.warn)")!;
 		expect(note.textContent).toContain("0.87.1");
 		expect(findInstallBtn(container)).toBeUndefined();
-		// 行级「更新」按钮仍在（同一条 npm i -g 命令）。
 		expect(container.querySelector("button.dd-update-btn")).toBeTruthy();
 	});
 

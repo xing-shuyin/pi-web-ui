@@ -1,7 +1,3 @@
-/**
- * 通用代理纯单测（零依赖、毫秒级）：前缀/目标归一化 + 最长前缀匹配 +
- * PluginManager 注册/占用/注销/反激活回收。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +22,6 @@ describe("normalizeProxyPrefix", () => {
 		for (const r of ["/api", "/api/file", "/ws", "/plugins", "/plugins-api/x", "/assets/app.js", "/themes/dark.css"]) {
 			expect(normalizeProxyPrefix(r)).toBeNull();
 		}
-		// 仅前缀形似但非子路径的不误伤
 		expect(normalizeProxyPrefix("/apix")).toBe("/apix");
 	});
 });
@@ -69,9 +64,7 @@ describe("PluginManager proxy registry", () => {
 	afterEach(() => {
 		try {
 			rmSync(dir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 	it("注册/命中/大小写命中", () => {
 		expect(mgr.registerProxy("live-preview", "/liveserver", 45678)).toBe("/liveserver");
@@ -85,7 +78,6 @@ describe("PluginManager proxy registry", () => {
 		expect(mgr.registerProxy("a", "/ok", { port: 1, host: "evil.com" })).toBeNull();
 		expect(mgr.registerProxy("a", "/dup", 1111)).toBe("/dup");
 		expect(mgr.registerProxy("b", "/dup", 2222)).toBeNull();
-		// 同插件重注册 = 更新目标
 		expect(mgr.registerProxy("a", "/dup", 3333)).toBe("/dup");
 		expect(mgr.findProxy("/dup/x")).toMatchObject({ port: 3333 });
 	});

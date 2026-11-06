@@ -2,9 +2,7 @@ import type { DeviceTaskState } from "../protocol.js";
 
 export interface TaskContextSelection {
 	budgetBytes: number;
-	/** UTF-8 bytes of JSON.stringify({ taskState, taskStateSelection }), including this metadata. */
 	bytes: number;
-	/** 1 when essential context exceeds budget; numeric for stable JSON byte width. */
 	overflow: 0 | 1;
 	omitted: {
 		decisions: number;
@@ -17,12 +15,10 @@ export interface TaskContextSelection {
 		reportedBlockers: number;
 		reportedNextSteps: number;
 	};
-	/** No text is shortened here; counts expose truncation already present in canonical decisions. */
 	textTruncated: { objective: false; blocker: false; decisionQuestions: number; decisionAnswers: number };
 	lookup: string;
 }
 
-/** Select optional reference data only. Current task text, handoff and runtime state never pass through here. */
 export function selectTaskContext(
 	source: DeviceTaskState,
 	budget = 12 * 1024,
@@ -71,7 +67,6 @@ export function selectTaskContext(
 			"Optional reference snapshot. Use device_collab task_state for full canonical state, omitted constraints/decisions and current revision before acting.",
 	};
 	const measure = () => {
-		// bytes counts itself, so settle its decimal width before comparing the budget.
 		let bytes: number;
 		do {
 			bytes = selection.bytes;
@@ -92,7 +87,6 @@ export function selectTaskContext(
 		measure();
 		return false;
 	};
-	// Newest human decisions first; each question/answer pair is indivisible.
 	for (const d of [...source.decisions].reverse()) {
 		const decision: DeviceTaskState["decisions"][number] = {
 			attentionId: d.attentionId,

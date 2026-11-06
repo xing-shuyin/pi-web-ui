@@ -1,33 +1,10 @@
-/**
- * image-toolkit 服务端图像编解码内核（纯 JS，只依赖 node 内置模块）。
- *
- * 约定：所有解码产物统一为 RGBA8（data 长度 width*height*4，行优先、左上角为原点），
- * 这样 ops.mjs 可以按索引直接做像素运算，不必关心源格式。
- *
- * 覆盖范围与边界：
- *   - PNG：解码 bitDepth 1/2/4/8/16 × colorType 0/2/3/4/6，五种 filter 全支持，
- *     调色板 + tRNS 透明度正确；**隔行（interlace=1）明确抛错**（Adam7 需要重排像素，
- *     这里不做，交给浏览器 🖼 视图）。编码输出 8 位真彩（有 alpha → colorType 6，否则 colorType 2），
- *     逐行按「最小绝对差启发」自适应选 filter。
- *   - BMP：解码 24/32 位 BI_RGB + 8 位调色板；bottom-up（height 为负 = top-down）与 4 字节行对齐都处理；
- *     编码 24 位（无 alpha）/32 位（有 alpha），bottom-up。1/4 位调色板、RLE 压缩不支持（抛中文错）。
- *   - JPEG：**模块内不 import 任何第三方包**，由插件入口用 host.ensureDeps 加载 jpeg-js 后经
- *     setJpegCodec 注入；未注入时 decode/encode 抛的中文错误里带 “JPEG”，调用方回退浏览器侧。
- *   - GIF/WEBP/AVIF/SVG：无论是否可解码路径都抛错（调用方按格式回退 🖼 视图）。
- */
-
 import { Buffer } from "node:buffer";
 import { deflateSync, inflateSync } from "node:zlib";
 
 /** @typedef {{ width: number, height: number, data: Uint8Array, hasAlpha: boolean, format: string }} RgbaImage */
 
-// ---------------------------------------------------------------------------
-// 常量与通用校验
-// ---------------------------------------------------------------------------
-
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-/** 默认最大像素数（宽×高）：约 64M 像素（≈256MB RGBA），防止误传大图把内存打爆。 */
 const DEFAULT_MAX_PIXELS = 64_000_000;
 
 const MIME_BY_FORMAT = {
@@ -68,7 +45,6 @@ function assertSize(width, height, maxPixels) {
 	}
 }
 
-/** 校验 RgbaImage 结构（编码前的入口检查）。 */
 function assertImage(img) {
 	if (!img || typeof img !== "object") throw new Error("图像对象无效");
 	assertSize(img.width, img.height, Number.MAX_SAFE_INTEGER);
@@ -80,11 +56,6 @@ function assertImage(img) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 格式嗅探 / MIME
-// ---------------------------------------------------------------------------
-
-/** 前 2KB 文本里找 <svg> 标签（SVG 是文本格式，没有魔数，只能按内容判）。 */
 function looksLikeSvg(buf) {
 	const head = buf
 		.subarray(0, 2048)
@@ -93,14 +64,9 @@ function looksLikeSvg(buf) {
 		.trimStart();
 	if (!head.startsWith("<")) return false;
 	if (/^<svg[\s/>]/i.test(head)) return true;
-	// 允许前置声明/注释/DOCTYPE，但 2KB 内必须真的出现 <svg
 	return /^<(\?xml|!--|!DOCTYPE)/i.test(head) && /<svg[\s/>]/i.test(head);
 }
 
-/**
- * 嗅探格式：返回 "png" | "jpeg" | "gif" | "webp" | "bmp" | "avif" | "svg" | "unknown"。
- * 只看魔数/文件头，不做完整解析，因此对截断数据也安全。
- */
 export function sniffFormat(buf) {
 	let b;
 	try {
@@ -128,7 +94,6 @@ export function sniffFormat(buf) {
 	if (b.length >= 12 && b.toString("latin1", 4, 8) === "ftyp") {
 		const major = b.toString("latin1", 8, 12);
 		if (major === "avif" || major === "avis") return "avif";
-		// 兼容品牌可能排在 minor version 之后的兼容列表里
 		const size = b.readUInt32BE(0);
 		if (size >= 16 && size <= 4096 && b.length >= size) {
 			const brands = b.toString("latin1", 8, Math.min(b.length, size));
@@ -139,7 +104,6 @@ export function sniffFormat(buf) {
 	return "unknown";
 }
 
-/** 格式 → MIME；未知返回 application/octet-stream。 */
 export function mimeForFormat(format) {
 	return MIME_BY_FORMAT[String(format ?? "").toLowerCase()] ?? "application/octet-stream";
 }
@@ -151,17 +115,8 @@ function unsupportedDecode(format) {
 	return new Error(`${label} 格式暂不支持服务端解码，${VIEW_HINT}`);
 }
 
-// ---------------------------------------------------------------------------
-// JPEG 编解码器注入
-// ---------------------------------------------------------------------------
-
 let jpegCodec = null;
 
-/**
- * 注入 JPEG 编解码器（插件入口加载 jpeg-js 后调用）。
- * codec 形状与 npm 包 jpeg-js 一致：
- *   { decode(buf, opts?): { width, height, data }, encode({ data, width, height }, quality): { data } }
- */
 export function setJpegCodec(codec) {
 	if (codec == null) {
 		jpegCodec = null;
@@ -184,10 +139,6 @@ function requireJpegCodec() {
 	return jpegCodec;
 }
 
-/**
- * 从 JPEG 文件头里取尺寸/精度（不解码像素），用于 maxPixels 预检。
- * 做法：顺序扫 marker，跳过带长度段，命中 SOFn 时读 precision/height/width。
- */
 function jpegHeaderInfo(buf) {
 	let pos = 2;
 	while (pos + 4 <= buf.length) {
@@ -204,10 +155,9 @@ function jpegHeaderInfo(buf) {
 			pos += 2;
 			continue;
 		}
-		if (marker === 0xda) break; // 进入扫描数据，后面没有 SOF 了
+		if (marker === 0xda) break;
 		const len = buf.readUInt16BE(pos + 2);
 		if (len < 2) break;
-		// SOF0..SOF15，排除 DHT(C4)/JPG(C8)/DAC(CC)
 		if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
 			if (pos + 9 <= buf.length) {
 				return { bitDepth: buf[pos + 4], height: buf.readUInt16BE(pos + 5), width: buf.readUInt16BE(pos + 7) };
@@ -219,11 +169,6 @@ function jpegHeaderInfo(buf) {
 	return null;
 }
 
-// ---------------------------------------------------------------------------
-// PNG 解码
-// ---------------------------------------------------------------------------
-
-/** 解析 PNG 块表：返回 { ihdr, palette, trns, idat }。 */
 function parsePng(buf) {
 	if (buf.length < 8) throw new Error("PNG 数据过短");
 	for (let i = 0; i < 8; i++) {
@@ -247,7 +192,6 @@ function parsePng(buf) {
 	return out;
 }
 
-/** Paeth 预测器（PNG filter 4）。 */
 function paeth(a, b, c) {
 	const p = a + b - c;
 	const pa = Math.abs(p - a);
@@ -258,10 +202,6 @@ function paeth(a, b, c) {
 	return c;
 }
 
-/**
- * 反 filter：就地还原每个扫描行。五种 filter 都不能越出当前行（行首缺失项按 0 处理），
- * bpp = 每像素字节数（bitDepth<8 时按 1 字节处理，这是 PNG 规范要求）。
- */
 function unfilter(raw, rowBytes, height, bpp) {
 	const out = Buffer.alloc(rowBytes * height);
 	let pos = 0;
@@ -302,7 +242,6 @@ function unfilter(raw, rowBytes, height, bpp) {
 	return out;
 }
 
-/** 从行内取第 ch 个通道的第 x 个采样（支持 1/2/4/8/16 位打包）。 */
 function sampleAt(raw, rowStart, x, ch, bitDepth, channels) {
 	const bitOffset = (x * channels + ch) * bitDepth;
 	const bytePos = rowStart + (bitOffset >> 3);
@@ -312,7 +251,6 @@ function sampleAt(raw, rowStart, x, ch, bitDepth, channels) {
 	return (raw[bytePos] >> shift) & ((1 << bitDepth) - 1);
 }
 
-/** 展开成 RGBA8：调色板查表、低位深灰度缩放到 0..255、16 位取高精度四舍五入。 */
 function expandToRgba(raw, width, height, bitDepth, colorType, palette, trns) {
 	const out = new Uint8Array(width * height * 4);
 	const channels = colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 6 ? 4 : 1;
@@ -355,7 +293,6 @@ function expandToRgba(raw, width, height, bitDepth, colorType, palette, trns) {
 	return out;
 }
 
-/** 解码 PNG → RgbaImage。 */
 function decodePng(buf, maxPixels) {
 	const { ihdr, palette, trns, idat } = parsePng(buf);
 	const width = ihdr.readUInt32BE(0);
@@ -391,10 +328,6 @@ function decodePng(buf, maxPixels) {
 	return { width, height, data, hasAlpha, format: "png" };
 }
 
-// ---------------------------------------------------------------------------
-// PNG 编码
-// ---------------------------------------------------------------------------
-
 const CRC_TABLE = (() => {
 	const t = new Int32Array(256);
 	for (let n = 0; n < 256; n++) {
@@ -420,7 +353,6 @@ function pngChunk(type, data) {
 	return Buffer.concat([head, data, crcBuf]);
 }
 
-/** 编码 PNG：8 位真彩（hasAlpha → colorType 6），逐行按最小绝对差启发选 filter。 */
 function encodePng(img, pngLevel) {
 	const { width, height, data } = img;
 	const ch = img.hasAlpha ? 4 : 3;
@@ -456,7 +388,6 @@ function encodePng(img, pngLevel) {
 				else v = cur[i] - paeth(a, b, c);
 				out[i] = v & 0xff;
 			}
-			// 启发式：把字节当有符号数求绝对值和，越小压缩越好
 			let score = 0;
 			for (let i = 0; i < rowBytes; i++) score += out[i] < 128 ? out[i] : 256 - out[i];
 			if (score < bestScore) {
@@ -487,11 +418,6 @@ function encodePng(img, pngLevel) {
 	]);
 }
 
-// ---------------------------------------------------------------------------
-// BMP 解码 / 编码
-// ---------------------------------------------------------------------------
-
-/** 解码 BMP（24/32 位 BI_RGB、8 位调色板）→ RgbaImage。 */
 function decodeBmp(buf, maxPixels) {
 	if (buf.length < 26) throw new Error("BMP 数据过短");
 	if (buf.toString("latin1", 0, 2) !== "BM") throw new Error("不是合法的 BMP 文件头");
@@ -556,11 +482,9 @@ function decodeBmp(buf, maxPixels) {
 			}
 		}
 	}
-	// 8/24 位没有 alpha 通道；32 位 BI_RGB 的 alpha 字节按真实透明度读入
 	return { width, height, data, hasAlpha: bitCount === 32, format: "bmp" };
 }
 
-/** 编码 BMP：hasAlpha → 32 位，否则 24 位；bottom-up，行按 4 字节对齐补 0。 */
 function encodeBmp(img) {
 	const { width, height, data } = img;
 	const bitCount = img.hasAlpha ? 32 : 24;
@@ -580,7 +504,7 @@ function encodeBmp(img) {
 	out.writeInt32LE(2835, 38);
 	out.writeInt32LE(2835, 42);
 	for (let row = 0; row < height; row++) {
-		const y = height - 1 - row; // bottom-up：文件第一行是图像最后一行
+		const y = height - 1 - row;
 		let p = 54 + row * stride;
 		for (let x = 0; x < width; x++) {
 			const s = (y * width + x) * 4;
@@ -593,14 +517,6 @@ function encodeBmp(img) {
 	return out;
 }
 
-// ---------------------------------------------------------------------------
-// 对外 API
-// ---------------------------------------------------------------------------
-
-/**
- * 解码图片 → RgbaImage。
- * maxPixels 默认 64M，超出直接抛错（在分配内存之前用文件头尺寸预检）。
- */
 export async function decodeImage(buf, opts = {}) {
 	const maxPixels = opts.maxPixels ?? DEFAULT_MAX_PIXELS;
 	if (!Number.isInteger(maxPixels) || maxPixels <= 0) throw new Error("maxPixels 必须是正整数");
@@ -632,11 +548,6 @@ export async function decodeImage(buf, opts = {}) {
 	}
 }
 
-/**
- * 编码 RgbaImage → Buffer。
- * format ∈ "png" | "bmp" | "jpeg"；quality 只对 jpeg 生效（1..100，默认 82）；
- * pngLevel 是 zlib 压缩级别（0..9，默认 9）；bmp 忽略 quality。
- */
 export async function encodeImage(img, format, opts = {}) {
 	assertImage(img);
 	const fmt = String(format ?? "").toLowerCase();

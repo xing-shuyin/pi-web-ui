@@ -1,7 +1,3 @@
-// Real independent Hub + two isolated pi services + deterministic HTTP inference.
-// Run only after an explicit build: node tests/device-project-collaboration-test.mjs
-// No paid model, mocked device_collab, or inferred test success. Same-host devices
-// exercise the network/runtime boundary, not physical Windows/macOS interoperability.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -13,7 +9,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { ensureBuild, PREBUILT_ENV } from "./lib/ensure-build.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-// The helper validates existing dist; this script must never build a shared tree.
 process.env[PREBUILT_ENV] = "1";
 ensureBuild(root, "device-project-collaboration");
 const { startDeviceHub } = await import(pathToFileURL(join(root, "dist/server/device-center/main.js")).href);
@@ -184,7 +179,6 @@ async function dispatch(device, name, conversationId) {
 	assert.ok(task.conversationId);
 	if (device.role === "dev") devConversation ??= task.conversationId;
 	else reviewConversation ??= task.conversationId;
-	// Repeat actual HTTP sends. The same task/conversation must be returned.
 	const duplicate = (await api(hub.origin, path, body)).value;
 	assert.equal(duplicate.tasks[0].id, task.id);
 	assert.equal(duplicate.tasks[0].conversationId, task.conversationId);

@@ -1,4 +1,3 @@
-/** Real browser + isolated server regression. Run after npm run build. No model requests. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -52,9 +51,7 @@ try {
 				ready = true;
 				break;
 			}
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		if (server.exitCode !== null) throw new Error(`Server exited: ${log}`);
 		await sleep(200);
 	}
@@ -119,7 +116,6 @@ try {
 	await menu("folder", "压缩");
 	await submit("压缩");
 	assert((await readdir(workspace)).some((name) => /^folder-.*\.tar\.gz$/.test(name)));
-	// Exercise File System Access separately: unlike webkitdirectory, it represents empty directories.
 	await page.evaluate(() => {
 		Object.defineProperty(window, "showDirectoryPicker", {
 			configurable: true,

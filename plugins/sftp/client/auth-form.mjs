@@ -1,4 +1,3 @@
-/** Explicit authentication choice wins over credentials retained for other methods. */
 export function authFormState(connection) {
 	const auth = connection?.auth ?? {};
 	const password = String(auth.password ?? "");

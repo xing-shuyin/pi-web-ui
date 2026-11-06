@@ -51,14 +51,11 @@ describe("Remote Workspace & SSH URI", () => {
 			const clientId = "client_test_remote";
 			const remoteUri = "ssh://developer@192.168.50.2:22/home/developer/app";
 
-			// 记录远程工作区为当前使用的工作区
 			store.remember(clientId, remoteUri);
 
-			// 读取状态验证 lastCwd
 			const state = store.get(clientId);
 			expect(state.lastCwd).toBe(remoteUri);
 
-			// 读取最近项目列表，远程工作区必须存在且排在首位，未被本地磁盘 access 误删
 			const projects = await store.getRecentProjects(clientId);
 			expect(projects.length).toBeGreaterThanOrEqual(1);
 			expect(projects[0].path).toBe(remoteUri);
@@ -74,19 +71,17 @@ describe("Remote Workspace & SSH URI", () => {
 		);
 		await fs.mkdir(testDir, { recursive: true });
 		try {
-			const remoteUri = "ssh://root@82.156.246.55:22/project/game-share";
+			const remoteUri = "ssh://root@198.51.100.10:22/project/game-share";
 			const localSessionDir = resolveWorkspaceSessionDir(testDir, remoteUri);
 			expect(localSessionDir).not.toBe(remoteUri);
 			expect(restoreWorkspaceUriFromSessionDir(localSessionDir)).toBe(remoteUri);
 
-			// 校验相对路径与绝对路径映射
 			const localSubFile = path.join(localSessionDir, "src", "main.ts");
 			expect(mapResolvedPathToRemote(localSubFile, localSessionDir, remoteUri)).toBe("/project/game-share/src/main.ts");
 			expect(mapResolvedPathToRemote("/project/game-share/package.json", localSessionDir, remoteUri)).toBe(
 				"/project/game-share/package.json",
 			);
 
-			// 校验工作区越界保护
 			expect(resolveRemoteWorkspacePath("/project/game-share", "src/index.ts")).toEqual({
 				abs: "/project/game-share/src/index.ts",
 				rel: "src/index.ts",
@@ -96,17 +91,16 @@ describe("Remote Workspace & SSH URI", () => {
 			expect(isInsideWorkspaceRoots("/project/game-share/README.md", localSessionDir)).toBe(true);
 			expect(isInsideWorkspaceRoots("/etc/passwd", localSessionDir)).toBe(false);
 
-			// 校验 SDK 工具远程 operations 构建与系统提示词注入
 			const ops = createRemoteSdkOperations(localSessionDir);
 			expect(ops).not.toBeNull();
 			expect(ops?.remoteUri).toBe(remoteUri);
 
 			expect(formatCwdForPrompt(localSessionDir)).toBe(
-				"/project/game-share (remote SSH: ssh://root@82.156.246.55:22/project/game-share)",
+				"/project/game-share (remote SSH: ssh://root@198.51.100.10:22/project/game-share)",
 			);
 			const persona = buildRemoteWorkspacePersona(remoteUri);
 			expect(persona).toContain("REMOTE SSH workspace");
-			expect(persona).toContain("root@82.156.246.55:22");
+			expect(persona).toContain("root@198.51.100.10:22");
 			expect(persona).toContain("/project/game-share");
 		} finally {
 			await fs.rm(testDir, { recursive: true, force: true }).catch(() => {});

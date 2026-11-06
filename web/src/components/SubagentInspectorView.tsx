@@ -30,7 +30,6 @@ export interface SubagentParsedData {
 	notifyOnDone?: boolean | "manual";
 	message?: string;
 	summary?: string;
-	// 运行态详情
 	state?: string;
 	streaming?: boolean;
 	messageCount?: number;
@@ -50,9 +49,6 @@ export interface SubagentParsedData {
 	}>;
 }
 
-/**
- * 解析 subagent / conversation 工具调用的入参与 details
- */
 export function parseSubagentData(
 	argsText: string | undefined,
 	details: unknown,
@@ -62,7 +58,6 @@ export function parseSubagentData(
 		action: "spawn",
 	};
 
-	// 1. 解析入参 JSON
 	if (argsText) {
 		try {
 			const parsed = JSON.parse(argsText) as Record<string, unknown>;
@@ -82,12 +77,9 @@ export function parseSubagentData(
 					out.notifyOnDone = parsed.notifyOnDone;
 				}
 			}
-		} catch {
-			// ignore JSON error
-		}
+		} catch {}
 	}
 
-	// 2. 解析 details 对象
 	if (details && typeof details === "object") {
 		const det = details as Record<string, unknown>;
 		if (typeof det.convId === "string") out.convId = det.convId;
@@ -101,7 +93,6 @@ export function parseSubagentData(
 		if (typeof det.prompt === "string" && !out.prompt) out.prompt = det.prompt;
 		if (typeof det.output === "string") out.output = det.output;
 
-		// 隔离工作树
 		if (det.worktree && typeof det.worktree === "object") {
 			const wt = det.worktree as Record<string, unknown>;
 			out.worktree = {
@@ -114,13 +105,11 @@ export function parseSubagentData(
 			};
 		}
 
-		// 咨询请求列表
 		if (Array.isArray(det.requests)) {
 			out.consultRequests = det.requests as SubagentParsedData["consultRequests"];
 		}
 	}
 
-	// 3. 回退从 output 文本匹配会话 ID
 	if (!out.convId) {
 		if (out.runId && /^sa-[0-9a-f]{8}/.test(out.runId)) {
 			out.convId = out.runId;
@@ -133,9 +122,6 @@ export function parseSubagentData(
 	return out;
 }
 
-/**
- * 角色映射辅助展示
- */
 function getRoleBadge(type?: string, isZh = true): { icon: string; label: string; desc: string } {
 	const t = (type || "").toLowerCase();
 	switch (t) {
@@ -197,14 +183,12 @@ export function SubagentInspectorView({
 	const [isPromptExpanded, setIsPromptExpanded] = useState(true);
 
 	const isSpawnAction = data.action === "spawn";
-	// 如果是 spawn，初始聚焦 prompt 指派态；如果是 get_result/wait_all/complete，初始聚焦成果态
 	const [activeTab, setActiveTab] = useState<"spawn" | "result">(isSpawnAction ? "spawn" : "result");
 
 	const roleMeta = getRoleBadge(data.type, isZh);
 	const finalOutput = data.output || output || "";
 	const targetConvId = data.convId || (data.runId && /^sa-[0-9a-f]{8}/.test(data.runId) ? data.runId : undefined);
 
-	// 切换到子会话现场
 	const handleSwitchConversation = () => {
 		if (!targetConvId) return;
 		closeToolInspector();
@@ -518,7 +502,6 @@ export function SubagentInspectorView({
 				}
 			`}</style>
 
-			{/* 顶部自适应视图切换 */}
 			<div className="subagent-mode-switcher">
 				<div className="subagent-mode-tabs">
 					<button
@@ -543,7 +526,6 @@ export function SubagentInspectorView({
 				</div>
 			</div>
 
-			{/* HUD 核心指标 */}
 			<div className="subagent-hud-grid">
 				<div className="subagent-hud-card accent">
 					<span className="subagent-hud-label">{isZh ? "角色与类型" : "Role & Type"}</span>
@@ -608,10 +590,8 @@ export function SubagentInspectorView({
 				</div>
 			</div>
 
-			{/* ================= 视角 A：指派与使命 (Prompt / Spawn View) ================= */}
 			{activeTab === "spawn" && (
 				<>
-					{/* 核心指派 Prompt */}
 					<div className="subagent-section-card">
 						<div className="subagent-section-header">
 							<span className="subagent-section-title">
@@ -634,7 +614,6 @@ export function SubagentInspectorView({
 						</div>
 					</div>
 
-					{/* 运行环境与规格 (可折叠) */}
 					<div className="subagent-section-card">
 						<div className="subagent-section-header clickable" onClick={() => setIsEnvExpanded((prev) => !prev)}>
 							<span className="subagent-section-title">
@@ -691,10 +670,8 @@ export function SubagentInspectorView({
 				</>
 			)}
 
-			{/* ================= 视角 B：成果与交付 (Result View) ================= */}
 			{activeTab === "result" && (
 				<>
-					{/* 交付报告与产出 */}
 					<div className="subagent-section-card">
 						<div className="subagent-section-header">
 							<span className="subagent-section-title">
@@ -724,7 +701,6 @@ export function SubagentInspectorView({
 						</div>
 					</div>
 
-					{/* 关联任务 Prompt 折叠查看 */}
 					{data.prompt && (
 						<div className="subagent-section-card">
 							<div className="subagent-section-header clickable" onClick={() => setIsPromptExpanded((prev) => !prev)}>
@@ -748,7 +724,6 @@ export function SubagentInspectorView({
 				</>
 			)}
 
-			{/* 底部快捷操作条 (Action Dock) */}
 			<div className="subagent-action-dock">
 				<div className="subagent-dock-tip">
 					<span>💡</span>

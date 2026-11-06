@@ -1,14 +1,3 @@
-/**
- * image-toolkit 视图 E2E：把插件的 client/entry.mjs 挂进一个迷你 harness 页
- * （复刻主应用的 .plugin-view 容器与主题变量），用真实 Chrome 跑一遍：
- * 导入图片 → 参数面板各 tab → 裁剪选框 → 精确体积 → 导出下载 → 存回工作区。
- *
- * 工作区接口（/plugins-api/image-toolkit/ws/*）用 page.route 打桩，所以这个测试
- * 不需要起 pi-web-ui 服务端、不烧 token、不联网。
- *
- * Run: node tests/image-toolkit-view-test.mjs
- * 缺 Chrome（PI_WEB_CHROME 或常见路径都找不到）时自动 SKIP。
- */
 import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,7 +26,6 @@ const check = (cond, m) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 夹具：400×300 渐变 PNG（带透明角），有内容才好看、也能验证透明处理。 */
 async function fixture() {
 	const w = 400;
 	const h = 300;
@@ -130,7 +118,6 @@ try {
 		if (m.type() === "error") errors.push(`console: ${m.text()}`);
 	});
 
-	// ---- 工作区接口打桩（不依赖真实服务端） --------------------------------
 	const saved = [];
 	await page.route("**/plugins-api/image-toolkit/ws/settings", (r) =>
 		r.fulfill({
@@ -206,8 +193,6 @@ try {
 
 	await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "load" });
 	await page.waitForSelector(".igt", { timeout: 15_000 });
-	// 记录「没有任何人 preventDefault」的原生 dragstart：插件内部拖拽不该起原生拖图
-	// （Chrome 会把 <canvas> 当图片拖，连带冒泡出主应用的全窗口拖放提示框）。
 	await page.evaluate(() => {
 		window.__dragStarts = 0;
 		window.addEventListener("dragstart", (e) => {
@@ -215,13 +200,11 @@ try {
 		});
 	});
 
-	// ---- 1. 外壳 ---------------------------------------------------------
 	const tabs = await page.$$eval(".igt-tab", (els) => els.map((e) => e.textContent));
 	check(tabs.length === 7, `7 个参数 tab（${tabs.join("/")}）`);
 	check((await page.textContent(".igt-title"))?.includes("图片工具"), "标题渲染为中文");
 	check((await page.textContent(".igt-placeholder"))?.includes("先导入"), "没有图片时给引导文案");
 
-	// ---- 2. 导入图片 -----------------------------------------------------
 	await page.setInputFiles(".igt input[type=file]", join(tmp, "photo.png"));
 	await page.waitForSelector(".igt-qitem", { timeout: 15_000 });
 	await sleep(600);
@@ -240,7 +223,6 @@ try {
 	const status0 = await page.textContent(".igt-statusbar");
 	check(/输出 400×300/.test(status0 ?? ""), `状态条显示输出尺寸（${status0?.trim()}）`);
 
-	// ---- 3. 参数面板：压缩 ------------------------------------------------
 	await page.selectOption(".igt-ctl-select select", "webp");
 	await sleep(500);
 	const status1 = await page.textContent(".igt-statusbar");
@@ -249,7 +231,6 @@ try {
 	const qualityHidden = await page.$$eval(".igt-ctl-range", (els) => els.length);
 	check(qualityHidden >= 1, "WebP 下质量滑杆可见（有损格式）");
 	await page.click(".igt-actions >> text=精确计算");
-	// 精确值不带 ≈ 前缀：等它出现才算测到（旧的「≈ 估算」会立刻满足条件）
 	await page.waitForFunction(
 		() => {
 			const tx = document.querySelector(".igt-statusbar")?.textContent ?? "";
@@ -260,7 +241,6 @@ try {
 	const exact = await page.textContent(".igt-statusbar");
 	check(/\d+(\.\d+)?\s?(KB|MB|B)/.test(exact ?? "") && !/≈/.test(exact ?? ""), `精确体积算出来了：${exact?.trim()}`);
 
-	// ---- 4. 裁剪 tab ------------------------------------------------------
 	await page.click('.igt-tab[data-tab="crop"]');
 	await page.waitForSelector(".igt-crop-box", { timeout: 8000 });
 	const handles = await page.$$eval(".igt-crop-h", (els) => els.length);
@@ -276,7 +256,6 @@ try {
 		ratioNums[2] === ratioNums[3] && ratioNums[2] === 300,
 		`面板宽高跟锁比例一致（${ratioNums[2]}×${ratioNums[3]}）`,
 	);
-	// 拖右下角把手缩小选款 → 输出尺寸应随之变小
 	const before = await page.textContent(".igt-stageinfo");
 	const h8 = await page.$(".igt-crop-se");
 	const hb = await h8.boundingBox();
@@ -297,7 +276,6 @@ try {
 	});
 	check(paintedCropped > 500, "裁剪 tab 下仍画着未裁的全图（选框相对全图定位）");
 
-	// ---- 5. 其它 tab -----------------------------------------------------
 	await page.locator(".igt-btnrow button", { hasText: /^重置裁剪$/ }).click();
 	await sleep(400);
 	const resetNums = await page.$$eval(".igt-ctl-num input", (els) => els.map((e) => Number(e.value)));
@@ -328,7 +306,6 @@ try {
 	await sleep(200);
 	const ranges = await page.$$eval('.igt-tab[data-tab="filter"]', () => 0);
 	void ranges;
-	// 拖一下亮度滑杆：非 100 值应触发重绘
 	const bright = await page.$(".igt-ctl-range input[type=range]");
 	const bb = await bright.boundingBox();
 	await page.mouse.click(bb.x + bb.width * 0.75, bb.y + bb.height / 2);
@@ -336,7 +313,6 @@ try {
 	const brightVal = await page.$eval(".igt-ctl-range .igt-ctl-val", (el) => el.textContent);
 	check(Number(brightVal) > 100, `亮度滑杆生效（${brightVal}）`);
 
-	// ---- 6. 信息 tab ------------------------------------------------------
 	await page.click('.igt-tab[data-tab="info"]');
 	await page.waitForSelector(".igt-hist", { timeout: 5000 });
 	const infoText = await page.textContent(".igt-info");
@@ -346,7 +322,6 @@ try {
 	const exif = await page.textContent(".igt-info");
 	check(/EXIF/.test(exif ?? ""), "信息面板有 EXIF 区（无 EXIF 时给说明）");
 
-	// ---- 7. 导出下载 ------------------------------------------------------
 	await page.click('.igt-tab[data-tab="compress"]');
 	await sleep(200);
 	const [download] = await Promise.all([
@@ -363,7 +338,6 @@ try {
 		`文件名带后缀与正确扩展名（${download.suggestedFilename()}）`,
 	);
 
-	// ---- 8. 从工作区 ------------------------------------------------------
 	await page.click(".igt-top >> text=从工作区");
 	await page.waitForSelector(".igt-modal", { timeout: 8000 });
 	await page.waitForSelector(".igt-wsitem", { timeout: 8000 });
@@ -377,7 +351,6 @@ try {
 	await page.waitForFunction(() => document.querySelectorAll(".igt-qitem").length === 2, { timeout: 15_000 });
 	ok("从工作区选图 → 队列变成 2 张（走 /ws/image 拉取）");
 
-	// ---- 9. 保存到工作区 --------------------------------------------------
 	await page.click(".igt-actions >> text=保存到工作区");
 	await page.waitForSelector(".igt-modal", { timeout: 8000 });
 	const savePath = await page.$eval(".igt-modal input.igt-input", (el) => el.value);
@@ -391,7 +364,6 @@ try {
 	const toast = await page.textContent(".igt-toast");
 	check(/已保存到 out\/photo-min\.webp/.test(toast ?? ""), `保存成功提示（${toast?.trim()}）`);
 
-	// ---- 10. 批量导出 ZIP -------------------------------------------------
 	await page.click(".igt-actions >> text=导出全部（ZIP）");
 	const [zip] = await Promise.all([
 		page.waitForEvent("download", { timeout: 30_000 }),
@@ -404,7 +376,6 @@ try {
 	);
 	check(zipBytes.includes(Buffer.from("photo")), "ZIP 里含队列项文件名");
 
-	// ---- 11. 裁剪形状：星形 → 导出 PNG 的四角必须是真透明 ----------------
 	await page.click(".igt-qitem");
 	await page.click(".igt-actions >> text=重置参数");
 	await sleep(400);
@@ -445,7 +416,6 @@ try {
 	check(alphaAt(shapeOut.width - 2, 1) === 0, "星形右上角透明");
 	check(alphaAt(shapeOut.width >> 1, shapeOut.height >> 1) === 255, "星形中心不透明（图还在）");
 	check(alphaAt(shapeOut.width >> 1, 3) === 255, "星形正上方尖角处不透明");
-	// 换成 JPEG（无 alpha）后，形状外应该被底色填满而不是透明
 	await page.click('.igt-tab[data-tab="compress"]');
 	await page.selectOption(".igt-ctl-select select", "jpeg");
 	await sleep(400);
@@ -458,7 +428,6 @@ try {
 	await page.click('.igt-tab[data-tab="crop"]');
 	await sleep(200);
 
-	// ---- 11d. 自定义比例 W:H 与「按原图比例」 -----------------------------
 	await page.click('.igt-tab[data-tab="crop"]');
 	await sleep(300);
 	const ratioSel = page.locator(".igt-ctl-select select").first();
@@ -478,10 +447,7 @@ try {
 	await rhInput.fill("9");
 	await rhInput.dispatchEvent("change");
 	await sleep(600);
-	const wide = await page.$$eval(
-		".igt-ctl-num input",
-		(els) => els.slice(4, 6).map((e) => Number(e.value)) /* 自定义宽/高 占了 0,1：裁剪宽高在 4,5 */,
-	);
+	const wide = await page.$$eval(".igt-ctl-num input", (els) => els.slice(4, 6).map((e) => Number(e.value)));
 	check(
 		Math.abs(wide[0] / wide[1] - 21 / 9) < 0.05,
 		`自定义 21:9 生效（选框 ${wide[0]}×${wide[1]}，比值 ${(wide[0] / wide[1]).toFixed(2)}）`,
@@ -491,7 +457,6 @@ try {
 		(el) => el.getBoundingClientRect().width / el.getBoundingClientRect().height,
 	);
 	check(Math.abs(boxWide - 21 / 9) < 0.06, `选框形状跟着变（比值 ${boxWide.toFixed(2)}）`);
-	// 「按原图比例」还原：比例字段变成当前图的宽高，选框回到整幅
 	await page.locator(".igt-btnrow button", { hasText: /^按原图比例$/ }).click();
 	await sleep(600);
 	const back = await page.$$eval(".igt-ctl-num input", (els) => els.slice(0, 6).map((e) => Number(e.value)));
@@ -501,10 +466,8 @@ try {
 	await ratioSel.selectOption("free");
 	await sleep(300);
 
-	// ---- 11c. 框内平移 / 框外拉新选区 / 不触发原生拖图 --------------------
 	await page.locator(".igt-ctl-select select").first().selectOption("1:1");
 	await sleep(400);
-	// 先把框缩小：裁剪=全图时它占满整幅，本来就没有平移余地
 	const cropNums2 = await page.$$(".igt-ctl-num input");
 	await cropNums2[2].fill("120");
 	await cropNums2[2].dispatchEvent("change");
@@ -521,7 +484,6 @@ try {
 		Math.abs(boxRect.w - 120) <= 3 && Math.abs(boxRect.h - 120) <= 3,
 		`锁 1:1 且宽=120 → 选框 120×120（${Math.round(boxRect.w)}×${Math.round(boxRect.h)}）`,
 	);
-	// ① 框内按住 → 平移选框
 	await page.mouse.move(boxRect.x + boxRect.w / 2, boxRect.y + boxRect.h / 2);
 	await page.mouse.down();
 	await page.mouse.move(boxRect.x + boxRect.w / 2 + 60, boxRect.y + boxRect.h / 2 + 40, { steps: 12 });
@@ -548,7 +510,6 @@ try {
 		(await page.$eval(".igt-crop-move", (e) => getComputedStyle(e).cursor)) === "move",
 		"框内有专门的平移命中区（cursor: move）",
 	);
-	// ② 框外（压暗区）按住 → 从落点拉出新选区
 	await page.locator(".igt-ctl-select select").first().selectOption("free");
 	await sleep(300);
 	const sx = frameBox.x + frameBox.w - 20;
@@ -571,14 +532,12 @@ try {
 		Math.abs(fresh.x - (frameBox.w - 20 - 160)) <= 10 && Math.abs(fresh.y - (frameBox.h - 20 - 120)) <= 10,
 		`新选区从落点画起（左上角落在 ${fresh.x},${fresh.y}，起点应是 ${Math.round(frameBox.w - 180)},${Math.round(frameBox.h - 140)}）`,
 	);
-	// ③ 形状只影响导出：裁剪页预览里整张图必须还在（不然看着像「改形状把图改了」）
 	await page.locator(".igt-ctl-select select").nth(1).selectOption("ellipse");
 	await sleep(500);
 	const tabCorner = await page.$eval(".igt-canvas", (c) => c.getContext("2d").getImageData(2, 2, 1, 1).data[3]);
 	check(tabCorner > 200, `裁剪页预览里图片本身没被变形（角落 alpha=${tabCorner}）`);
 	const ellipseD = await page.$eval(".igt-crop-shape-line", (e) => e.getAttribute("d") ?? "");
 	check(ellipseD.includes("C"), `形状以轮廓呈现（椭圆路径已绘制）`);
-	// 导出前把格式切回 PNG：形状的透明只有带 alpha 的格式才有意义（上一步刚切成 JPEG）
 	await page.click('.igt-tab[data-tab="compress"]');
 	await page.selectOption(".igt-ctl-select select", "png");
 	await sleep(400);
@@ -595,8 +554,6 @@ try {
 	await page.locator(".igt-ctl-select select").nth(1).selectOption("rect");
 	await sleep(300);
 
-	// ---- 11e. 形状 + JPEG（无 alpha）→ 提示并自动/一键换成透明格式 --------
-	// 造一张真 JPEG 源（浏览器自己编码），复现「JPEG 源 + 椭圆 → 白角」那个坑
 	const jpegB64 = await page.evaluate(() => {
 		const c = document.createElement("canvas");
 		c.width = 320;
@@ -623,7 +580,6 @@ try {
 		(await page.$eval(".igt-ctl-select select", (e) => e.value)) === "keep",
 		"JPEG 源默认是「保持原格式」（= 输出也是 JPEG）",
 	);
-	// 选椭圆：应当自动把格式改成 PNG 并明确告知（而不是默默给一张白角图）
 	await page.click('.igt-tab[data-tab="crop"]');
 	await sleep(300);
 	await page.locator(".igt-ctl-select select").nth(1).selectOption("ellipse");
@@ -634,7 +590,6 @@ try {
 	await sleep(300);
 	check((await page.$eval(".igt-ctl-select select", (e) => e.value)) === "png", "输出格式自动变成了 PNG");
 	check(/形状外透明/.test((await page.textContent(".igt-statusbar")) ?? ""), "状态条标明「形状外透明」");
-	// 显式切回 JPEG：不能再默默变白，必须给警告 + 一键按钮，状态条也要改口
 	await page.selectOption(".igt-ctl-select select", "jpeg");
 	await sleep(500);
 	const warnTxt = await page.textContent(".igt-warn");
@@ -646,7 +601,6 @@ try {
 	]);
 	const whiteName = dlWhite.suggestedFilename();
 	check(/\.jpg$/.test(whiteName), `此时导出的是 JPEG（${whiteName}）`);
-	// 一键改回 PNG
 	await page.locator(".igt-warn button").click();
 	await sleep(500);
 	check((await page.$eval(".igt-ctl-select select", (e) => e.value)) === "png", "点「改用 PNG」立刻切回透明格式");
@@ -659,13 +613,11 @@ try {
 	const acorner = alphaOut.data[(2 * alphaOut.width + 2) * 4 + 3];
 	const acenter = alphaOut.data[((alphaOut.height >> 1) * alphaOut.width + (alphaOut.width >> 1)) * 4 + 3];
 	check(acorner === 0 && acenter === 255, `换成 PNG 后角上真的透明了（角落 alpha=${acorner}、中心 ${acenter}）`);
-	// 收拾现场：形状回矩形
 	await page.click('.igt-tab[data-tab="crop"]');
 	await sleep(200);
 	await page.locator(".igt-ctl-select select").nth(1).selectOption("rect");
 	await sleep(300);
 
-	// ---- 11b. 大图拖动：跟手（不等画布重渲染）+ 不卡 --------------------
 	const bigW = 3000;
 	const bigH = 2000;
 	const bigData = new Uint8Array(bigW * bigH * 4);
@@ -687,10 +639,7 @@ try {
 	await page.waitForFunction((n) => document.querySelectorAll(".igt-qitem").length === n + 1, beforeBigItem, {
 		timeout: 30_000,
 	});
-	// 新加入队列的图不会自动选中（当前那张才是在编辑的），必须显式点它，
-	// 否则下面拖的还是上一张 400×300 的小图，性能断言等于白测。
 	await page.click(".igt-qitem:last-child");
-	// 等覆盖层真的换成大图（只等「是百分比」会被上一张的 100% 骗过去）
 	await page.waitForFunction(() => parseFloat(document.querySelector(".igt-crop-box")?.style.width ?? "0") > 600, {
 		timeout: 30_000,
 	});
@@ -708,7 +657,6 @@ try {
 	await page.mouse.move(hbBig.x + 5, hbBig.y + 5);
 	await page.mouse.down();
 	await page.mouse.move(hbBig.x - 160, hbBig.y - 160, { steps: 60 });
-	// 关键断言：鼠标刚松开的那一刻（没给任何防抖/重渲染留时间）选框就必须已经跟上了
 	const boxMid = await page.$eval(".igt-crop-box", (el) => parseFloat(el.style.width));
 	await page.mouse.up();
 	const dragMs = Date.now() - t0;
@@ -717,7 +665,6 @@ try {
 	await sleep(800);
 	const canvasBig = await page.$eval(".igt-canvas", (c) => `${c.width}×${c.height}`);
 	check(parseInt(canvasBig, 10) <= 900, `预览按显示需要渲染而不是整幅（画布 ${canvasBig}）`);
-	// 顺手量一下「按显示需要渲染」省了多少（只打印，不断言：机器差异太大）
 	const renderCost = await page.evaluate(async () => {
 		const mod = await import("/plugins/image-toolkit/client/pipeline.mjs");
 		const c = document.createElement("canvas");
@@ -730,7 +677,6 @@ try {
 		cx.fillStyle = g;
 		cx.fillRect(0, 0, 3000, 2000);
 		const bmp = await createImageBitmap(c);
-		// 开到常用的滤镜档（gamma/锐化/暗角走逐像素，这是旧实现每帧重渲染时最贵的部分）
 		const base = mod.defaultState({});
 		const st = {
 			...base,
@@ -751,7 +697,6 @@ try {
 	const afterBig = await page.$eval(".igt-crop-box", (el) => parseFloat(el.style.width));
 	check(Math.abs(afterBig - boxMid) <= 2, "松手后选框停在拖到的位置（没被后续重渲染弹回）");
 
-	// ---- 12. 撤销 / 语言 / 截图 -------------------------------------------
 	await page.keyboard.press("Control+z");
 	await sleep(300);
 	ok("Ctrl+Z 撤销不报错");
@@ -776,7 +721,6 @@ try {
 	await page.screenshot({ path: shot2 });
 	console.log(`\n截图：\n  ${shot}\n  ${shot2}\n  （手机端截图在下面）`);
 
-	// 布局没被压扁：三个栏都应有实际宽度
 	const layout = await page.evaluate(() => {
 		const g = (s) => document.querySelector(s)?.getBoundingClientRect().width ?? 0;
 		return {
@@ -799,22 +743,17 @@ try {
 	check(canvasDrag.draggable === false, "画布显式 draggable=false（Chrome 默认会把 canvas 当图片拖走）");
 	check(canvasDrag.css === "none", `画布 CSS 也禁止原生拖拽（-webkit-user-drag: ${canvasDrag.css || "空"}）`);
 
-	// ---- 12b. 一体化布局与图片流转真实交互 --------------------------------
-	// 验证参数面板动作区分层（hero / flow / batch / history）
 	const actRows = await page.$$eval(".igt-act-row", (els) => els.length);
 	check(actRows === 4, `参数面板动作区清晰分 4 层（实际 ${actRows} 层）`);
 
-	// 验证 Studio 顶栏导航与流转
 	const navBtns = await page.$$eval(".igt-nav-tab", (els) => els.map((e) => e.textContent.trim()));
 	check(navBtns.length === 4, `Studio 顶栏包含 4 个模式页签（${navBtns.join(" | ")}）`);
 
-	// 切换到「AI 生图」
 	await page.click('.igt-nav-tab[data-mode="gen"]');
 	await sleep(400);
 	check(await page.$eval(".igt-gen-wrap", (el) => getComputedStyle(el).display !== "none"), "成功切入 AI 生图工作台");
 	check(await page.$eval(".igt-main", (el) => getComputedStyle(el).display === "none"), "编辑主界面平滑隐藏");
 
-	// 点击任务卡上的「进入处理」按钮流转到工具箱
 	await page.waitForSelector('.ig-tile button:has-text("进入处理")', { timeout: 10_000 });
 	await page.click('.ig-tile button:has-text("进入处理")');
 	await sleep(600);
@@ -829,7 +768,6 @@ try {
 		"图片流转：生图产物 cat.png 成功流转加入工具箱队列",
 	);
 
-	// 反向流转：在编辑界面点击「用作生图参考图」
 	await page.click(".igt-actions >> text=用作生图参考图");
 	await sleep(600);
 	check(
@@ -838,11 +776,9 @@ try {
 	);
 	check((await page.textContent(".ig-dock"))?.includes("cat.png"), "图片流转：参考图芯片在生图 dock 中可见");
 
-	// 随时一键切回图片处理
 	await page.click('.igt-nav-tab[data-mode="edit"]');
 	await sleep(300);
 	check(await page.$eval(".igt-main", (el) => getComputedStyle(el).display !== "none"), "Studio 顶栏一键切回图片处理");
-	// ---- 13. 手机端（390×780）：三栏 → 上下堆叠 + 底部抽屉 ----------------
 	const mobile = await browser.newPage({
 		viewport: { width: 390, height: 780 },
 		hasTouch: true,
@@ -932,9 +868,7 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* 忽略 */
-	}
+	} catch {}
 	server.close();
 	console.log(`\n临时目录（含截图）：${tmp}`);
 }

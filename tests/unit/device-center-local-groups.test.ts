@@ -296,7 +296,6 @@ describe("device user group authority", () => {
 		});
 		expect(root.status).toBe(200);
 		expect(root.data.tasks[0]).toMatchObject({ botId: "two", deviceId: "two", dispatchDepth: 0, dispatchCount: 1 });
-		// Device authentication cannot claim another device's Bot, even in the same account and room.
 		expect(
 			(await request(`agent/${path}`, { text: "forged sender", sourceBotId: "two", targetBotIds: [] }, "agent-one"))
 				.status,
@@ -307,7 +306,6 @@ describe("device user group authority", () => {
 			s.rooms.find((r) => r.id === created.data.room.id)!.botIds.push(sibling.id);
 			s.tasks.find((t) => t.id === root.data.tasks[0].id)!.status = "running";
 		});
-		// A sibling Bot on the parent task's device cannot inherit that task's dispatch budget.
 		expect(
 			(
 				await request(
@@ -539,18 +537,15 @@ describe("device user group authority", () => {
 			return body as { tasks: Array<{ conversationId: string; resume?: boolean }> };
 		}
 
-		// First message: establishes conversation
 		const r1 = await send("Task 1");
 		const convId1 = r1.tasks[0]?.conversationId;
 		expect(convId1).toBeDefined();
 		expect(r1.tasks[0]?.resume).toBeFalsy();
 
-		// Second message: automatically resumes active conversation
 		const r2 = await send("Task 2");
 		expect(r2.tasks[0]?.conversationId).toBe(convId1);
 		expect(r2.tasks[0]?.resume).toBe(true);
 
-		// Third message: explicitly requests new conversation
 		const r3 = await send("Task 3", true);
 		const convId2 = r3.tasks[0]?.conversationId;
 		expect(convId2).toBeDefined();
@@ -597,7 +592,6 @@ describe("local-only device center behind a reverse proxy (PI_WEB_ALLOW_HOSTS)",
 		cleanup.push(() => local.close());
 		return listen(createServer(app));
 	}
-	// fetch() refuses to override Host, so talk to the server directly.
 	function call(
 		base: string,
 		options: { path: string; host: string; method?: string; origin?: string; body?: unknown },
@@ -637,15 +631,12 @@ describe("local-only device center behind a reverse proxy (PI_WEB_ALLOW_HOSTS)",
 
 	it("serves a reverse-proxy host declared in the allowlist, and keeps loopback working", async () => {
 		const base = await boot(["chat.example.com"]);
-		// The proxied deployment: Host is a real domain, the peer is still loopback.
 		expect((await call(base, { path: "status", host: "chat.example.com" })).status).toBe(200);
 		// Allowlist entries are normalised (lowercase) like the global host guard does.
 		expect((await call(base, { path: "status", host: "CHAT.EXAMPLE.COM" })).status).toBe(200);
-		// Loopback keeps working exactly as before.
 		expect((await call(base, { path: "status", host: "127.0.0.1" })).status).toBe(200);
 		// *.localhost resolves to loopback in browsers; the global guard already allows it.
 		expect((await call(base, { path: "status", host: "pi.localhost" })).status).toBe(200);
-		// Anything else is still local-only (DNS rebinding target).
 		const denied = await call(base, { path: "status", host: "evil.example.com" });
 		expect(denied.status).toBe(403);
 		expect(denied.body).toMatchObject({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
@@ -653,7 +644,6 @@ describe("local-only device center behind a reverse proxy (PI_WEB_ALLOW_HOSTS)",
 
 	it("still requires same-origin writes on an allowlisted host", async () => {
 		const base = await boot(["chat.example.com"]);
-		// Passing the host guard reaches the route (which rejects the empty body with 400).
 		const sameOrigin = await call(base, {
 			path: "pair",
 			host: "chat.example.com",
@@ -681,7 +671,6 @@ describe("local-only device center behind a reverse proxy (PI_WEB_ALLOW_HOSTS)",
 		const denied = await call(base, { path: "status", host: "chat.example.com" });
 		expect(denied.status).toBe(403);
 		expect(denied.body).toMatchObject({ code: "LOCAL_ONLY", error: "Use localhost to configure device access" });
-		// Same-origin writes still pass, so the change only widens the hostname check.
 		const write = await call(base, { path: "pair", host: loopback, method: "POST", origin: base, body: {} });
 		expect(write.status).toBe(400);
 		expect(write.body.error).toBe("Invalid hub URL");

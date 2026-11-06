@@ -1,9 +1,3 @@
-/**
- * resolve-global-sdk 单测（issue #260；#321 起默认反转）：
- * 「优先用全局/祖先那份 pi SDK」的选择逻辑 —— 缺省即启用，且绝不降级
- * （祖先那份必须**严格**比自带的新才采用，多份取版本最高的），否则自带副本兜底；
- * 只有显式 PI_WEB_SDK=bundled（或 0/off/false/no）才强制自带。
- */
 import { describe, expect, it } from "vitest";
 import { isSdkCopyUsable, pickGlobalSdk } from "../../server/resolve-global-sdk.js";
 import type { SdkCopy } from "../../server/sdk-origin.js";
@@ -111,7 +105,6 @@ describe("pickGlobalSdk：损坏/截断副本健全性防护", () => {
 			writeFileSync(pkgJson, JSON.stringify({ name: "@earendil-works/pi-coding-agent", version: "1.5.0" }));
 			writeFileSync(join(testDir, "dist", "index.js"), "export const VERSION = '1.5.0';");
 
-			// 损坏且截断在非闭合代码行（如 'tr'）
 			const sessionFile = join(testDir, "dist", "core", "agent-session.js");
 			writeFileSync(
 				sessionFile,
@@ -119,7 +112,6 @@ describe("pickGlobalSdk：损坏/截断副本健全性防护", () => {
 			);
 			expect(isSdkCopyUsable({ path: pkgJson, version: "1.5.0" })).toBe(false);
 
-			// 修复为带有 sourceMappingURL 的正常结尾（且大小正常）
 			writeFileSync(
 				sessionFile,
 				"class Session {\n  async run() {\n    return true;\n  }\n}\n".padEnd(12000, " ") +

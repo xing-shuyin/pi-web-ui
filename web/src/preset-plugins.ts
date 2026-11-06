@@ -2,7 +2,6 @@ import type { UiPresetPluginDependency, UiPluginInfo, UiPluginCatalogEntry } fro
 import type { PluginJobState } from "./use-chat";
 import { portablePresetPluginSource } from "../../server/preset-plugin-dependencies.js";
 
-/** Explicit projection keeps plugin settings and credentials out of exchange documents. */
 export function presetPluginDependency(
 	plugin: UiPresetPluginDependency,
 	catalog: readonly UiPluginCatalogEntry[],

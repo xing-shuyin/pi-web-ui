@@ -1,12 +1,3 @@
-/**
- * Modern 401 Unauthorized page for browser navigation when PI_WEB_TOKEN is required.
- * Features:
- * - Self-healing: automatically tries cached token from localStorage if available
- * - Clean UI matching the design system of the /setup page
- * - Token input with direct entry
- * - Helpful shortcuts for loopback/localhost visitors (direct link to /setup)
- */
-
 export interface UnauthorizedPageOptions {
 	isLoopback: boolean;
 	isStaleCookie: boolean;

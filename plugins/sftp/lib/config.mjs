@@ -1,23 +1,9 @@
-/**
- * 项目级 SFTP 配置存储 —— 一切以**项目目录里的 `.pi/`** 为准。
- *
- *   <项目>/.pi/sftp.json        连接与同步策略（可提交、可分享；凭据只写引用）
- *   <项目>/.pi/sftp.local.json  本机覆盖（端口/私钥路径/明文口令…），插件会自动加进 .gitignore
- *
- * 两层做**深合并**（local 覆盖 base，数组整体替换而非拼接），所以团队共用一份
- * base、每台机器只写自己那点差异。读取永远合并；**写入分文件**——工具改哪个字段
- * 就落哪个文件，不会把本机覆盖内容反向灌进 base 造成「一次保存就把团队配置带偏」。
- *
- * 这里只做「读写 + 归一化 + 校验」，不碰网络；连接与传输在 lib/ssh.mjs 与 lib/engine.mjs。
- */
-
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
 export const CONFIG_DIR = ".pi";
 export const BASE_FILE = "sftp.json";
 export const LOCAL_FILE = "sftp.local.json";
-/** 本地垃圾桶（删除保护：删掉的东西先挪这儿，能捞回来）。 */
 export const TRASH_DIR = "sftp-trash";
 
 const DELETE_POLICIES = new Set(["none", "remote-only", "both"]);
@@ -27,9 +13,6 @@ const DIRECTIONS = new Set(["up", "down", "both"]);
 const AUTH_METHODS = new Set(["password", "key", "agent", "secret"]);
 const SYMLINK_MODES = new Set(["skip", "follow"]);
 
-/** 默认排除：本地开发产物 + 本插件自身配置（`.pi` 里是机器/账号相关的东西，不该外传）。
- *  `.vscode/sftp.json` 单独列出来：它是 vscode-sftp / 编辑器插件共用的**明文凭据**文件，
- *  不能被“顺手把 .vscode 也同步上去”带走。（`.vscode` 其余文件不在默认排除里，用户想传就传。） */
 export const DEFAULT_IGNORE = [
 	".git",
 	"node_modules",
@@ -51,12 +34,10 @@ export function configPaths(cwd) {
 	};
 }
 
-/** 相对配置文件在界面上的展示名（错误提示里用，比绝对路径短）。 */
 export function relLabel(cwd, abs) {
 	return path.relative(cwd, abs).split(path.sep).join("/");
 }
 
-/** 相对路径规范化：反斜杠→斜杠、去掉首尾斜杠与 `./`；返回 null 表示越界（含 `..`）。 */
 export function safeRel(rel) {
 	const raw = String(rel ?? "")
 		.replace(/\\/g, "/")
@@ -65,7 +46,7 @@ export function safeRel(rel) {
 	for (const seg of raw.split("/")) {
 		if (!seg || seg === ".") continue;
 		if (seg === "..") {
-			if (!out.length) return null; // 越出根
+			if (!out.length) return null;
 			out.pop();
 			continue;
 		}
@@ -74,14 +55,12 @@ export function safeRel(rel) {
 	return out.join("/");
 }
 
-/** 远端路径拼接（POSIX 语义，永远是绝对路径）。 */
 export function posixJoin(base, rel) {
 	const b = String(base ?? "/").replace(/\/+$/, "");
 	const r = String(rel ?? "").replace(/^\/+/, "");
 	return r ? `${b}/${r}` : b || "/";
 }
 
-/** 远端路径的父目录。 */
 export function posixDir(p) {
 	const s = String(p ?? "");
 	const i = s.lastIndexOf("/");
@@ -93,8 +72,6 @@ function asStringArray(v) {
 	return [...new Set(v.map((x) => String(x ?? "").trim()).filter(Boolean))];
 }
 
-/** 远端根路径归一化：去掉结尾多余的斜杠（vscode-sftp 习惯写 `/srv/app/`），
- *  根路径保留 `/`，非绝对路径原样返回交给调用方告警。 */
 export function normalizeRemotePath(v) {
 	const raw = String(v ?? "").trim();
 	const trimmed = raw.replace(/\/+$/, "");
@@ -112,7 +89,6 @@ function isPlainObject(v) {
 	return Boolean(v) && typeof v === "object" && !Array.isArray(v);
 }
 
-/** 深合并（数组整体替换；只递归普通对象）。 */
 function deepMerge(base, over) {
 	if (!isPlainObject(base)) return isPlainObject(over) ? { ...over } : over;
 	const out = { ...base };
@@ -131,7 +107,6 @@ async function readJson(file) {
 	}
 }
 
-/** 原子写（tmp + rename），避免保存到一半断电留下半截 JSON 把配置读废。 */
 export async function writeJsonAtomic(file, value) {
 	await fs.mkdir(path.dirname(file), { recursive: true });
 	const tmp = `${file}.tmp-${process.pid}`;
@@ -139,13 +114,11 @@ export async function writeJsonAtomic(file, value) {
 	await fs.rename(tmp, file);
 }
 
-/** 归一化一个连接。`defaults` 来自文档级 defaults。 */
 export function normalizeConnection(name, raw, defaults = {}, warnings = []) {
 	const c = isPlainObject(raw) ? raw : {};
 	const warn = (msg) => warnings.push(`${name}: ${msg}`);
 
 	const authRaw = isPlainObject(c.auth) ? c.auth : {};
-	// 兼容扁平写法（host/username/password 同级）与 vscode-sftp 的名字
 	const password = String(authRaw.password ?? c.password ?? "");
 	const privateKeyPath = String(authRaw.privateKeyPath ?? c.privateKeyPath ?? "").trim();
 	const privateKey = String(authRaw.privateKey ?? c.privateKey ?? "");
@@ -163,7 +136,6 @@ export function normalizeConnection(name, raw, defaults = {}, warnings = []) {
 	}
 	if (method === "secret" && !password) warn("选了加密机密但没配机密");
 	if (method === "password" && !password) warn("选了密码登录但没配密码");
-	// method 为 key 且未给路径时，会自动探测 ~/.ssh/ 默认密钥，无需报警
 
 	const useGlobal = String(c.useGlobal ?? "").trim();
 	const host = String(c.host ?? "").trim();
@@ -197,8 +169,6 @@ export function normalizeConnection(name, raw, defaults = {}, warnings = []) {
 		})
 		.filter(Boolean);
 
-	// 同步根：有 mappings 就只按 mappings 走（各自一棵独立的树，互不重叠）；
-	// 没有就是「工作区根 ↔ remotePath」这一对。
 	const roots = mappings.length
 		? mappings.map((m) => ({ local: m.local, remote: m.remote }))
 		: [{ local: "", remote: remotePath || "/" }];
@@ -225,12 +195,10 @@ export function normalizeConnection(name, raw, defaults = {}, warnings = []) {
 		roots,
 		ignore,
 		useGlobal: useGlobal || undefined,
-		/** 是否配置齐全到可连接（host + 远端根绝对路径）。 */
 		ready: Boolean((host || useGlobal) && remotePath.startsWith("/")),
 	};
 }
 
-/** 归一化整份文档。 */
 export function normalizeDoc(raw) {
 	const doc = isPlainObject(raw) ? raw : {};
 	const warnings = [];
@@ -268,7 +236,6 @@ export function normalizeDoc(raw) {
 	};
 }
 
-/** 读取合并后的配置：`{ raw, base, local, doc, files }`。 */
 export async function readConfig(cwd) {
 	const files = configPaths(cwd);
 	const [base, local] = await Promise.all([readJson(files.base), readJson(files.local)]);
@@ -283,20 +250,17 @@ export async function readConfig(cwd) {
 	};
 }
 
-/** 取当前生效的连接（默认 active，可指定 profile）。 */
 export function pickConnection(doc, profile) {
 	const name = String(profile ?? "").trim() || doc.active;
 	return { name, conn: name ? doc.connections[name] : undefined };
 }
 
-/** 写 base 文件（整份替换）。 */
 export async function writeBase(cwd, obj) {
 	const files = configPaths(cwd);
 	await writeJsonAtomic(files.base, obj);
 	return files.base;
 }
 
-/** 写 local 覆盖文件（整份替换）。 */
 export async function writeLocal(cwd, obj) {
 	const files = configPaths(cwd);
 	await writeJsonAtomic(files.local, obj);
@@ -341,8 +305,6 @@ export async function upsertConnection(cwd, name, patch, opts = {}) {
 		);
 	}
 
-	// 凭据：统一收进 auth 子对象（同时接受扁平的 patch.password 与嵌套的 patch.auth.password；
-	// 写入时把扁平的旧字段清掉，避免两处说法打架）
 	const authKeys = ["method", "password", "passphrase", "privateKey", "privateKeyPath", "agent"];
 	const authPatch = isPlainObject(patch.auth) ? { ...patch.auth } : {};
 	for (const k of authKeys) {
@@ -382,7 +344,6 @@ export async function upsertConnection(cwd, name, patch, opts = {}) {
 	return { name: clean, target };
 }
 
-/** 删除连接（两层都删）。 */
 export async function removeConnection(cwd, name) {
 	const clean = String(name ?? "").trim();
 	const { base, local } = await readConfig(cwd);
@@ -400,7 +361,6 @@ export async function removeConnection(cwd, name) {
 	return { name: clean, removedFrom: touched };
 }
 
-/** 切换 active（base 里的字段）。 */
 export async function setActive(cwd, name) {
 	const clean = String(name ?? "").trim();
 	const { base, doc } = await readConfig(cwd);
@@ -412,10 +372,6 @@ export async function setActive(cwd, name) {
 	return { active: clean };
 }
 
-/**
- * 确保 `.pi/sftp.local.json` 不会被提交。
- * 只在确实是 git 仓库（存在 .git）时动 .gitignore，且幂等：已有等价规则就不重复追加。
- */
 export async function ensureGitignore(cwd) {
 	const gitDir = path.join(cwd, ".git");
 	try {
@@ -448,7 +404,6 @@ export async function ensureGitignore(cwd) {
 	return { changed: true, file };
 }
 
-/** 配置里是否存在明文凭据（用于告警）。 */
 export function plaintextCredentials(doc) {
 	const out = [];
 	for (const [name, conn] of Object.entries(doc.connections)) {
@@ -460,7 +415,6 @@ export function plaintextCredentials(doc) {
 	return out;
 }
 
-/** 给界面/模型看的脱敏视图（绝不含明文）。 */
 export function publicConnection(conn) {
 	if (!conn) return null;
 	return {
@@ -493,7 +447,6 @@ export function publicConnection(conn) {
 	};
 }
 
-/** 引用 → 安全描述（`secret:xxx` / `env:XXX` / `plain` / 空）。 */
 function describeSafe(raw) {
 	if (!raw) return "";
 	if (!String(raw).startsWith("${")) return "plain";
@@ -501,10 +454,6 @@ function describeSafe(raw) {
 	return m ? `${m[1]}:${m[2]}` : "invalid";
 }
 
-/**
- * 从 VS Code 的 vscode-sftp 配置导入。
- * 返回归一化后的连接 + 需要写进加密机密的凭据（**明文不落 base 文件**）。
- */
 export async function importVscodeSftp(cwd) {
 	const src = path.join(cwd, ".vscode", "sftp.json");
 	const raw = await readJson(src);

@@ -1,18 +1,3 @@
-/* 网页元素拾取扩展 E2E：**真实的 picker bundle** + **真实的 background 模块** + **真实的
- * pi-web-ui 页面**，把整条链跑通：
- *
- *   夹具页上选元素 → 采集契约（选择器/命中的 CSS 行号/React 源码位置/样式子集）
- *   → toPrompt 渲染 → deliver → MAIN world 调 __piWebUiHost.compose
- *   → pi-web-ui 输入框真的出现那段 Markdown
- *
- * 为什么不加载真扩展：Chromium 137 起 `--load-extension` 已被上游移除（本机 Chrome 153
- * 实测 `chrome://extensions` 里装不上），自动化装扩展这条路没了。这里改用等价做法 ——
- * 注入 dist/picker.js 真身，只把 `chrome.*` 桥到 Node 里跑真 background 模块；被绕过的
- * 只有 chrome 管道本身，那部分由 `tests/unit/page-picker-background.test.ts` 用假 chrome
- * 覆盖。用户手动「加载已解压的扩展程序」不受影响（那不是命令行开关）。
- *
- * Run: npm run build:extension && npm run build && node tests/page-picker-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -74,14 +59,12 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// --------------------------------------------------------------------- 夹具站
 const fixture = createServer((req, res) => {
 	res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
 	res.end(FIXTURE_HTML);
 });
 await new Promise((r) => fixture.listen(FIXTURE_PORT, "127.0.0.1", r));
 
-// --------------------------------------------------------------------- pi-web-ui
 const base = mkdtempSync(join(tmpdir(), "piweb-picker-"));
 const workdir = join(base, "work");
 const dataDir = join(base, "data");
@@ -132,7 +115,6 @@ if (!up) {
 	process.exit(1);
 }
 
-// --------------------------------------------------------------------- 浏览器
 const browser = await chromium.launch({ executablePath: CHROME_PATH });
 const context = await browser.newContext();
 const piPage = await context.newPage();
@@ -146,12 +128,10 @@ await piPage.waitForFunction(
 	{ timeout: 20000 },
 );
 
-// 把**真实的** composeInPage 装进 pi-web-ui 页面（投递时由假 scripting 调它）
 await piPage.evaluate((fnText) => {
 	globalThis.__composeFunc = (0, eval)(`(${fnText})`);
 }, composeInPage.toString());
 
-// --------------------------------------------------------------------- 假 chrome
 const WEB_URL = `http://localhost:${PORT}/`;
 let tabs = [{ id: 1, windowId: 1, url: WEB_URL }];
 let delivered = [];
@@ -162,7 +142,6 @@ const fakeStorage = {
 	serverUrl: `http://localhost:${PORT}`,
 	token: "",
 	detail: "standard",
-	// 「发送什么」的多选（设置页勾的那几项）：场景 8 会改成「只要定位+源码」
 	sections: ["page", "selector", "source", "text", "rules", "styles", "skeleton"],
 	copyToClipboard: true,
 	screenshots: false,
@@ -174,16 +153,14 @@ globalThis.chrome = {
 		sync: {
 			get: async () => ({ ...fakeStorage }),
 			set: async (patch) => {
-				Object.assign(fakeStorage, patch); // 绑定会写 serverUrl：E2E 要看到它真的落盘
+				Object.assign(fakeStorage, patch);
 			},
 		},
 	},
 	runtime: { getURL: (path) => `chrome-extension://fake/${path}` },
 	tabs: {
-		// 真的像 Chrome 一样校验 match pattern（裸 origin 会让真浏览器抛 Invalid url pattern）
 		query: async (info = {}) => {
 			for (const p of info.url ?? []) {
-				// 像 Chrome 一样校验：match pattern 的 path 不能缺（裸 origin 会让真浏览器抛异常）
 				if (!/^https?:\/\/[^/]+\//.test(String(p))) throw new Error(`Invalid url pattern '${p}'`);
 			}
 			return tabs;
@@ -199,8 +176,7 @@ globalThis.chrome = {
 	permissions: { contains: async () => true, request: async () => true },
 	scripting: {
 		executeScript: async (injection) => {
-			if (injection.files) return [{}]; // 注入拾取器：测试里已经手动注入
-			// 投递：在真实 pi-web-ui 页面里跑真实 composeInPage
+			if (injection.files) return [{}];
 			const [text, attachments] = injection.args;
 			injectedTabIds.push(injection.target.tabId);
 			delivered.push({ text, attachments });
@@ -213,11 +189,7 @@ globalThis.chrome = {
 	},
 };
 
-/** 内容脚本 → background（真实 handleMessage）的回环。 */
 async function bridge(message) {
-	// Playwright 的 exposeFunction 偶尔会把页面上那条消息传成 undefined（参数里带了不可序列化的东西时）。
-	// 那是**测试桥**的局限，不是产品问题（真 chrome.runtime 下我们从不发无参消息）——
-	// 所以这里显式标出来，别让它以「断言读到 undefined」的形式炸掉整条 E2E。
 	if (message === undefined) console.warn("!! 测试桥收到无法序列化的消息（已按 __unserializable 记录）");
 	bridgeLog.push(message === undefined ? { type: "__unserializable" } : message);
 	return await new Promise((resolve) => {
@@ -253,7 +225,6 @@ const injectPicker = async () => {
 	await fx.waitForTimeout(150);
 };
 
-// ============================================================= 场景 1：单选 → 投递
 await injectPicker();
 check("注入后拾取器挂上（overlay host 存在）", (await fx.$("#pi-page-picker-host")) !== null);
 
@@ -325,16 +296,15 @@ check(
 );
 check("发送成功后拾取器自己收起了 overlay", (await fx.$("#pi-page-picker-host")) === null);
 
-// ============================================================= 场景 2：多选 + 备注
-await ta.fill(""); // 清空输入框，方便断言这一轮的效果
-await injectPicker(); // 重新注入 = 新一轮拾取（也验证了会自愈而不是叠出第二套 overlay）
+await ta.fill("");
+await injectPicker();
 const hosts = await fx.$$("#pi-page-picker-host");
 check("重复注入不叠出第二套 overlay", hosts.length === 1, `${hosts.length} 个`);
 
 await fx.click("#card");
-await fx.keyboard.press("Escape"); // 回到拾取态继续加
+await fx.keyboard.press("Escape");
 await fx.click("#card2", { modifiers: ["Shift"] });
-await fx.keyboard.press("Enter"); // 完成 → 编辑态
+await fx.keyboard.press("Enter");
 await fx.keyboard.press("Control+Enter");
 await fx.waitForTimeout(600);
 
@@ -353,9 +323,8 @@ check(
 );
 check("多选：渲染出两个区块", (delivered.at(-1)?.text.match(/#### 元素 \d/g) ?? []).length === 2, "");
 
-// ============================================================= 场景 3：找不到 pi-web-ui → 复制兜底
 await ta.fill("");
-tabs = []; // 假装用户把 pi-web-ui 页面关了
+tabs = [];
 const fallbackMsg = await bridge({ type: "page-picker:picked", payload: multi.payload });
 check(
 	"找不到 pi-web-ui 页面 → 不静默失败",
@@ -365,10 +334,9 @@ check(
 check("兜底把 Markdown 交回给页面（可复制/手动粘贴）", (fallbackMsg?.copy ?? "").includes("### 网页元素拾取"));
 check("输入框没有被写入（没有目标页面就别乱写）", (await ta.inputValue()) === "");
 
-// ============================================================= 场景 4：开了截图但截屏失败
 await ta.fill("");
 tabs = [{ id: 1, windowId: 1, url: WEB_URL }];
-fakeStorage.screenshots = true; // 设置里开了截图，但 captureVisibleTab 抛出（没有 activeTab）
+fakeStorage.screenshots = true;
 const shotFail = await bridge({ type: "page-picker:picked", payload: multi.payload });
 check("截图失败不影响投递（点了添加就必须进去）", shotFail?.ok === true, JSON.stringify(shotFail?.message));
 await fx.waitForTimeout(200);
@@ -379,13 +347,12 @@ check(
 	JSON.stringify(composer4.slice(0, 40)),
 );
 
-// ============================================================= 场景 5：多个标签页时投对地方
 await ta.fill("");
 injectedTabIds = [];
 tabs = [
-	{ id: 99, url: `http://127.0.0.1:${FIXTURE_PORT}/` }, // 正在调试的站点（不能往这注入）
-	{ id: 1, url: WEB_URL }, // 真正的 pi-web-ui
-	{ id: 98, url: `http://localhost:${PORT}/pi-other/` }, // 前缀相似的另一站（也不算）
+	{ id: 99, url: `http://127.0.0.1:${FIXTURE_PORT}/` },
+	{ id: 1, url: WEB_URL },
+	{ id: 98, url: `http://localhost:${PORT}/pi-other/` },
 ];
 const pickedRight = await bridge({ type: "page-picker:picked", payload: multi.payload });
 check(
@@ -393,7 +360,6 @@ check(
 	pickedRight?.ok === true && injectedTabIds.join(",") === "1",
 	`tab=${injectedTabIds.join(",")}`,
 );
-// compose 是同步调用的，但 React 的 setText 是异步提交 → 等它落进 DOM 再断言（别用 sleep）
 const landed = await piPage
 	.waitForFunction(() => document.querySelector(".inputbox textarea")?.value.includes("### 网页元素拾取"), null, {
 		timeout: 3000,
@@ -402,9 +368,6 @@ const landed = await piPage
 	.catch(() => false);
 check("内容真的进了 pi-web-ui 输入框", landed);
 
-// ============================================ 场景 6：在 pi-web-ui 本页上一键绑定服务地址
-// 远程/局域网部署的第一公里：地址是 IP:端口，不该逼用户去选项页手打。
-// 这里跑**真实的探测函数**（真 pi-web-ui 页面 / 真夹具页）+ **真实的绑定浮条 bundle**。
 const probeOnPi = await piPage.evaluate(detectPiWebUi);
 check("真实 pi-web-ui 页面被认出来", probeOnPi?.isPiWebUi === true, JSON.stringify(probeOnPi));
 const probeOnFixture = await fx.evaluate(detectPiWebUi);
@@ -414,7 +377,6 @@ check(
 	JSON.stringify(probeOnFixture),
 );
 
-// 站在「本机绑着 127，远程页面其实是 localhost:PORT」的处境上（最经典的错位场景）
 fakeStorage.serverUrl = "http://127.0.0.1:8787";
 await piPage.exposeFunction("__piBridge", bridge);
 await piPage.evaluate(() => {
@@ -425,7 +387,6 @@ await piPage.evaluate(() => {
 	};
 });
 await piPage.addScriptTag({ path: BIND_BUNDLE });
-// 浮条 host 本身是 0×0（内容挂在 shadow 里的 fixed 卡片上）→ 只能等 attached
 await piPage.waitForSelector("#pi-page-picker-bind-host", { state: "attached", timeout: 5000 });
 
 const barText = async () =>
@@ -465,12 +426,9 @@ check(
 );
 check(
 	"绑定消息带的是页面自己的地址（不依赖 tab.url 的权限）",
-	// 防御式取字段：页面在卸载/销毁边缘发消息时可能是空值，断言不该因此崩（那是测试自己炸，不是产品问题）
 	bridgeLog.some((m) => m?.type === "page-picker:bind" && m.url === WEB_URL),
 );
-// 再注入一次（= 又点了一次图标）：已经是同一个地址了，就不该再问「要不要绑」
 await piPage.addScriptTag({ path: BIND_BUNDLE });
-// 浮条 host 本身是 0×0（内容挂在 shadow 里的 fixed 卡片上）→ 只能等 attached
 await piPage.waitForSelector("#pi-page-picker-bind-host", { state: "attached", timeout: 5000 });
 await piPage.waitForTimeout(150);
 check(
@@ -484,7 +442,6 @@ check(
 	`${(await piPage.$$("#pi-page-picker-bind-host")).length} 条`,
 );
 
-// 绑定完必须**真的能投**（否则绑定只是改了个字符串）
 await ta.fill("");
 const afterBindDeliver = await bridge({ type: "page-picker:picked", payload: multi.payload });
 check(
@@ -502,9 +459,8 @@ check("绑定后的内容落在输入框里", landed2);
 
 check("夹具页全程无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
 
-// ====================== 场景 8：多选生效（「信息太多」时只发勾了的那几类）
 await ta.fill("");
-fakeStorage.sections = ["selector", "source"]; // 只要定位 + 源码位置
+fakeStorage.sections = ["selector", "source"];
 await injectPicker();
 await fx.click("#card");
 await fx.keyboard.press("Control+Enter");
@@ -520,11 +476,8 @@ check(
 	lean.split(String.fromCharCode(10)).slice(0, 3).join(" | "),
 );
 check("多选：Markdown 也真的投进了输入框", (await ta.inputValue()).includes("- 选择器："));
-fakeStorage.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"]; // 还原
+fakeStorage.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"];
 
-// ================================ 场景 7：浮条自己认页面（background 探测失败也不能「什么都没发生」）
-// 真动机：MAIN world 探测可能被 CSP/权限挡住 —— 那时 background 照样注入浮条，
-// 浮条自认不是 pi-web-ui 就得自己退场，并请 worker 补注入拾取器。
 fx.on("pageerror", (e) => jsErrors.push(String(e)));
 await fx.addScriptTag({ path: BIND_BUNDLE });
 await fx.waitForTimeout(400);
@@ -538,17 +491,12 @@ check(
 );
 check("夹具页仍然无 JS 报错", jsErrors.length === 0, jsErrors.slice(0, 2).join(" | "));
 
-// ==================== 场景 9：六个预设能**在拾取页面上**直接切（不用回扩展选项页）
-// 「这次只要源码位置」这种判断是站在页面上看着元素时才有的 —— 为了改一个勾选去开
-// chrome://extensions 太远。这里验收三件事：落盘（选项页会同步）、**已选元素按新档位重采**、
-// 真正发出去的 Markdown 跟着变。chip 在闭合 shadow 里（自动化只能走键盘 Alt+1~6），
-// 但两条路都汇到 applyPickOptions 同一个口上。
 await ta.fill("");
 fakeStorage.detail = "standard";
 fakeStorage.sections = ["page", "selector", "source", "text", "rules", "styles", "skeleton"];
 await injectPicker();
 await fx.click("#card");
-await fx.keyboard.press("Alt+1"); // 精简（compact）
+await fx.keyboard.press("Alt+1");
 await fx.waitForTimeout(250);
 check(
 	"页面上切预设 → 写回扩展设置（选项页会同步、下次拾取沿用）",

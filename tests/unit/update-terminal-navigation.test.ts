@@ -21,7 +21,6 @@ describe("update terminal navigation & selection (#832)", () => {
 			setDrawer(null);
 		};
 
-		// 1. Regular click on terminal view with 0 terminals: should create shell
 		handleViewChange("terminal");
 		expect(createShell).toHaveBeenCalledTimes(1);
 		expect(setView).toHaveBeenCalledWith("terminal");
@@ -29,7 +28,6 @@ describe("update terminal navigation & selection (#832)", () => {
 		createShell.mockClear();
 		setView.mockClear();
 
-		// 2. Jump from update with skipAutoCreate: should NOT create regular shell
 		handleViewChange("terminal", { skipAutoCreate: true });
 		expect(createShell).not.toHaveBeenCalled();
 		expect(terminalOpenRequested.current).toBe(false);
@@ -50,7 +48,6 @@ describe("update terminal navigation & selection (#832)", () => {
 			viewChanges.push({ view, opts });
 		});
 
-		// Emulate runUpdate logic with empty terminals
 		const chat = { ready: true, terminals: [] as any[], activeConversationId: "conv-1", state: { cwd: "/cwd" } };
 		const title = "系统更新";
 		const cmd = { name: title, command: "npm i -g pi-web-ui@latest", cwd: "${pwd}" };

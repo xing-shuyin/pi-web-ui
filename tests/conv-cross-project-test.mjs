@@ -1,11 +1,3 @@
-// Cross-project running-conversation visibility + switch:
-//
-//   A conversation streaming in project A is displaced to the background by
-//   set_cwd(B). The running-conversation list must still CONTAIN it (cwd = A),
-//   and clicking it (switch_conversation) must switch BOTH the conversation
-//   AND the active workspace back to A.
-//
-// Usage: npm run build && node tests/conv-cross-project-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,8 +29,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// --- mock OpenAI-completions SSE: "SLOW" prompts stream for ~2.5s so the
-//     conversation is still streaming when set_cwd displaces it ---
 const mock = createServer(async (req, res) => {
 	let body = "";
 	for await (const chunk of req) body += chunk;
@@ -138,9 +128,7 @@ const waitForPort = async (port, timeout = 15000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -226,7 +214,6 @@ try {
 	client.send({ type: "set_model", modelId: "main/cross-project-mock" });
 	await client.waitForState((state) => state.model?.id === "cross-project-mock");
 
-	// Seed project A with a real conversation (so new_chat produces a second one).
 	client.send({ type: "prompt", text: "seed" });
 	await client.waitForMessage((message) => message.role === "assistant");
 	const seedId = client.state.conversationId;
@@ -234,7 +221,6 @@ try {
 	client.send({ type: "new_chat" });
 	await client.waitForState((state) => state.conversationId !== seedId);
 
-	// Start a SLOW run in project A, then leave for project B while it streams.
 	client.send({ type: "prompt", text: "SLOW cross-project run" });
 	const streamingState = await client.waitForState((state) => state.isStreaming && state.conversationId !== seedId);
 	const aConvId = streamingState.conversationId;
@@ -244,17 +230,12 @@ try {
 	await client.waitForState((state) => state.cwd === projB && state.conversationId !== aConvId);
 	console.log(`     active now: cwd=${client.state.cwd} conversation=${client.state.conversationId}`);
 
-	// THE cross-project assertion: the displaced A conversation must STILL be
-	// listed (old behavior filtered it out because cwd ≠ current project).
 	await client.waitForType("conversations", (message) =>
 		message.conversations.some(
 			(conversation) => conversation.id === aConvId && conversation.cwd === projA && conversation.isStreaming,
 		),
 	);
 	check("A's streaming conversation stays visible after leaving the project", true);
-	// The conversation must already be NAMED from its first prompt (not "新对话"
-	// / "New chat"): naming happens at prompt start, so by the time the run is
-	// displaced the title is the typed text.
 	const named = client.conversations.find((c) => c.id === aConvId);
 	check(
 		"conversation is named from its first prompt immediately",
@@ -272,9 +253,6 @@ try {
 	);
 	check("A's conversation stays listed after the run finishes", true);
 
-	// Switching to it must switch BOTH the conversation AND the workspace.
-	// Baseline the file-listing count AFTER set_cwd(B)'s own listing has
-	// arrived, so the post-switch assertion only counts the new A listing.
 	await client.waitForType("files", () => true);
 	const filesBeforeSwitch = client.files.length;
 	client.send({ type: "switch_conversation", id: aConvId });
@@ -295,7 +273,6 @@ try {
 	);
 	check("the background response is still there after switching back", true);
 
-	// The project-switch side-effects fired: a fresh file listing was pushed.
 	const filesAfter = await client
 		.waitForType("files", () => client.files.length > filesBeforeSwitch)
 		.then(() => client.files.length);

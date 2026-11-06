@@ -1,19 +1,11 @@
 import type { DeviceTaskActivity, DeviceTaskProgress } from "../protocol.js";
 
-/**
- * Filter out thought/reasoning fragments.
- * Drops open or closed thought blocks entirely. If an open tag exists without closure,
- * the trailing fragment is discarded to prevent streaming leaks.
- */
 export function sanitizeTextForJournal(input: string): string {
 	if (!input) return "";
 	let text = input;
-	// Drop closed thought tags
 	text = text.replace(/<thought[\s\S]*?<\/thought>/gi, "");
 	text = text.replace(/<thinking[\s\S]*?<\/thinking>/gi, "");
-	// Drop unclosed trailing thought tags (streaming fragment)
 	text = text.replace(/<(thought|thinking)[\s\S]*$/gi, "");
-	// Drop credential/token patterns (best-effort defense in depth)
 	text = text.replace(
 		/((?:bearer|token|key|secret|password|passwd|credential|auth|api[-_]?key)[\s:="']{1,4})([A-Za-z0-9_\-./+=]{8,})/gi,
 		"$1[REDACTED]",
@@ -35,10 +27,6 @@ export interface SanitizedToolLifecycle {
 	durationMs?: number;
 }
 
-/**
- * Sanitize tool parameters into safe structural summaries.
- * Never outputs raw commands, raw file contents, or raw sensitive file paths.
- */
 export function sanitizeToolParameters(toolName: string, params: unknown): Record<string, unknown> | undefined {
 	if (!params || typeof params !== "object" || Array.isArray(params)) return;
 	const input = params as Record<string, unknown>;
@@ -69,7 +57,6 @@ export function sanitizeToolParameters(toolName: string, params: unknown): Recor
 			result.editCount = input.edits.length;
 		}
 	} else {
-		// Generic tool summary: count parameters without exposing unknown values
 		result.parameterCount = Object.keys(input).length;
 		result.action = `invoke_${toolName}`;
 	}
@@ -93,7 +80,6 @@ export function summarizeToolOutput(toolName: string, output: string, isError = 
 	return `[${toolName} completed: ${byteLen} bytes output]`;
 }
 
-/** Project tool lifecycle with strict parameter and credential redaction. */
 export function projectToolLifecycle(value: unknown): SanitizedToolLifecycle | undefined {
 	if (!value || typeof value !== "object") return;
 	const val = value as any;
@@ -112,7 +98,6 @@ export function projectToolLifecycle(value: unknown): SanitizedToolLifecycle | u
 		if (safeParams && Object.keys(safeParams).length > 0) lifecycle.parametersPreview = safeParams;
 	}
 	if (typeof val.output === "string") {
-		// Never leak raw read/bash/write outputs or environment secrets; emit safe structural summary
 		lifecycle.outputSnippet = summarizeToolOutput(val.toolName, val.output, phase === "failed");
 	}
 	if (typeof val.durationMs === "number" && Number.isFinite(val.durationMs) && val.durationMs >= 0) {
@@ -121,7 +106,6 @@ export function projectToolLifecycle(value: unknown): SanitizedToolLifecycle | u
 	return lifecycle;
 }
 
-/** Project explicitly allowed fields; never spread tool arguments or approval payloads. */
 export function projectTaskActivity(value: unknown): DeviceTaskActivity | undefined {
 	if (!value || typeof value !== "object") return;
 	const input = value as DeviceTaskActivity;

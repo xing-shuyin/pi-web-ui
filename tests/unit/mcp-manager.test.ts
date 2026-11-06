@@ -326,7 +326,6 @@ describe("mcp-manager", () => {
 		const dir = makeTempDir("mcp-test-");
 		try {
 			const file = join(dir, "mcp.json");
-			// 1. 写入标准 mcpServers 格式
 			writeMcpConfigFile(file, {
 				git: { command: "node", args: ["git.js"] },
 			});
@@ -335,7 +334,6 @@ describe("mcp-manager", () => {
 			expect(read1.legacy).toBe(false);
 			expect(read1.servers.git.command).toBe("node");
 
-			// 2. 写入遗留 servers 格式
 			writeMcpConfigFile(
 				file,
 				{
@@ -355,11 +353,9 @@ describe("mcp-manager", () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
-			// 写全局
 			writeMcpConfigFile(join(agentDir, "mcp.json"), {
 				globalSrv: { command: "node", args: ["g.js"], description: "Global Server" },
 			});
-			// 写项目级
 			writeMcpConfigFile(join(cwd, ".pi", "mcp.json"), {
 				projSrv: { command: "python", args: ["p.py"], description: "Project Server" },
 			});
@@ -386,7 +382,6 @@ describe("mcp-manager", () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
-			// 1. 新增全局服务器
 			const srv1: UiMcpServer = {
 				name: "test-global",
 				scope: "global",
@@ -400,7 +395,6 @@ describe("mcp-manager", () => {
 			const list1 = listAllMcpServers({ agentDir, cwd });
 			expect(list1.servers.find((s) => s.name === "test-global")?.scope).toBe("global");
 
-			// 2. 将其修改为项目级并改名
 			const srv2: UiMcpServer = {
 				name: "test-proj",
 				scope: "project",
@@ -418,9 +412,7 @@ describe("mcp-manager", () => {
 			expect(res2.ok).toBe(true);
 
 			const list2 = listAllMcpServers({ agentDir, cwd });
-			// 原全局应被删除
 			expect(list2.servers.find((s) => s.name === "test-global")).toBeUndefined();
-			// 新项目级应存在
 			const projHit = list2.servers.find((s) => s.name === "test-proj");
 			expect(projHit).toBeDefined();
 			expect(projHit?.scope).toBe("project");
@@ -435,25 +427,21 @@ describe("mcp-manager", () => {
 		const agentDir = makeTempDir("mcp-agent-");
 		const cwd = makeTempDir("mcp-proj-");
 		try {
-			// 写全局服务器
 			writeMcpConfigFile(join(agentDir, "mcp.json"), {
 				srv: { command: "node", args: ["s.js"], enabled: true },
 			});
 
-			// 切换停用
 			const togRes = toggleMcpServer({ agentDir, cwd, name: "srv", scope: "global", enabled: false });
 			expect(togRes.ok).toBe(true);
 
 			const afterTog = listAllMcpServers({ agentDir, cwd });
 			expect(afterTog.servers.find((s) => s.name === "srv")?.enabled).toBe(false);
 
-			// 项目级对全局服务器进行局部禁用覆盖
 			const projTog = toggleMcpServer({ agentDir, cwd, name: "srv", scope: "project", enabled: false });
 			expect(projTog.ok).toBe(true);
 			const projCfg = readMcpConfigFile(join(cwd, ".pi", "mcp.json"));
 			expect(projCfg.servers.srv?.enabled).toBe(false);
 
-			// 删除全局服务器
 			const delRes = deleteMcpServer({ agentDir, cwd, name: "srv", scope: "global" });
 			expect(delRes.ok).toBe(true);
 			const afterDel = listAllMcpServers({ agentDir, cwd });

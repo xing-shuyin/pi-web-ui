@@ -1,21 +1,8 @@
-/**
- * 契约 → Markdown（**纯函数**，是整个扩展最该被单测覆盖的一块）。
- *
- * 为什么要单独一层：采集器只管填数据、投递层只管送数据，**只有这里决定 AI 看到什么**。
- * 纯函数（无 DOM / 无 chrome API）才能把「上下文预算」这类规则用单测钉住。
- *
- * 输出纪律：
- * - 只输出**采集时真的拿到了的东西**（拿不到的行整条不出现，不留 `- 源码：undefined`）；
- * - 体积最小的排前面（选择器/源码/尺寸），体积大的（骨架、规则）能省则省；
- * - 一切路径/选择器走行内代码，长文本走截断。
- */
-
 import type { DetailLevel, ElementSnapshot, PickPayload, PickSection, PickedElement } from "./contract.js";
 import { sectionsForDepth } from "./contract.js";
 import { collapse, code, truncate } from "./text.js";
 import { getMessage } from "./i18n.js";
 
-/** 本次要渲染哪几类信息（新载荷看 `sections`；老载荷按 `detail` 推）。 */
 function sectionsOf(payload: PickPayload): Set<PickSection> {
 	const list = payload.sections ?? sectionsForDepth(payload.detail ?? "standard");
 	return new Set(list);
@@ -30,13 +17,10 @@ const FRAMEWORK_LABEL: Record<string, string> = {
 };
 
 export interface ToPromptOptions {
-	/** 最多完整渲染几个元素（默认 8）—— 超出的只留一行清单，避免一条消息撑爆上下文。 */
 	maxElements?: number;
-	/** 单个元素的文本最多几个字符（默认 400；精简档默认 160）。 */
 	maxText?: number;
 }
 
-/** 把一次拾取渲染成 Markdown；没有可用元素时返回空串（调用方据此拒收）。 */
 export function toPrompt(payload: PickPayload, opts: ToPromptOptions = {}): string {
 	const elements = (payload.elements ?? []).filter((e) => e?.snapshot);
 	if (elements.length === 0) return "";
@@ -46,16 +30,25 @@ export function toPrompt(payload: PickPayload, opts: ToPromptOptions = {}): stri
 	const shown = elements.slice(0, max);
 
 	const lines: string[] = [];
-	lines.push(`### ${getMessage("pickresult_title", [String(elements.length)], `网页元素拾取（${elements.length} 个元素）`)}`);
+	lines.push(
+		`### ${getMessage("pickresult_title", [String(elements.length)], `网页元素拾取（${elements.length} 个元素）`)}`,
+	);
 	lines.push("");
 	if (sections.has("page")) lines.push(...renderPage(payload));
-	if (payload.note?.trim()) lines.push(`- ${getMessage("pickresult_note", undefined, "整体说明：")}${collapse(payload.note)}`);
+	if (payload.note?.trim())
+		lines.push(`- ${getMessage("pickresult_note", undefined, "整体说明：")}${collapse(payload.note)}`);
 	lines.push("");
 	shown.forEach((el, i) => {
 		lines.push(...renderElement(el, level, i + 1, sections, opts));
 	});
 	if (elements.length > shown.length) {
-		lines.push(getMessage("pickresult_more", [String(elements.length - shown.length)], `（另有 ${elements.length - shown.length} 个已拾取元素未展开）`));
+		lines.push(
+			getMessage(
+				"pickresult_more",
+				[String(elements.length - shown.length)],
+				`（另有 ${elements.length - shown.length} 个已拾取元素未展开）`,
+			),
+		);
 	}
 	return lines
 		.join("\n")
@@ -67,11 +60,20 @@ function renderPage(payload: PickPayload): string[] {
 	const page = payload.page;
 	const out: string[] = [];
 	const title = page?.title?.trim();
-	out.push(`- ${getMessage("pickresult_page", undefined, "页面：")}${code(page?.url ?? "")}${title ? ` — ${collapse(title)}` : ""}`);
+	out.push(
+		`- ${getMessage("pickresult_page", undefined, "页面：")}${code(page?.url ?? "")}${title ? ` — ${collapse(title)}` : ""}`,
+	);
 	const vp = page?.viewport;
 	if (vp) {
-		const scheme = page.colorScheme === "dark" ? getMessage("pickresult_dark", undefined, "，深色") : page.colorScheme === "light" ? getMessage("pickresult_light", undefined, "，浅色") : "";
-		out.push(`- ${getMessage("pickresult_viewport", undefined, "视口：")}${round(vp.w)}×${round(vp.h)} @${vp.dpr}x${scheme}`);
+		const scheme =
+			page.colorScheme === "dark"
+				? getMessage("pickresult_dark", undefined, "，深色")
+				: page.colorScheme === "light"
+					? getMessage("pickresult_light", undefined, "，浅色")
+					: "";
+		out.push(
+			`- ${getMessage("pickresult_viewport", undefined, "视口：")}${round(vp.w)}×${round(vp.h)} @${vp.dpr}x${scheme}`,
+		);
 	}
 	const fw = page?.framework ? FRAMEWORK_LABEL[page.framework] : "";
 	if (fw) out.push(`- ${getMessage("pickresult_framework", undefined, "疑似框架：")}${fw}`);
@@ -88,7 +90,9 @@ function renderElement(
 	const snap = el.snapshot;
 	const maxText = Math.max(0, opts.maxText ?? (level === "compact" ? 160 : 400));
 	const out: string[] = [];
-	out.push(`#### ${getMessage("pickresult_element", [String(index)], `元素 ${index} ·`)} ${code(snap.tagSummary || `<${snap.tag}>`)}`);
+	out.push(
+		`#### ${getMessage("pickresult_element", [String(index)], `元素 ${index} ·`)} ${code(snap.tagSummary || `<${snap.tag}>`)}`,
+	);
 	out.push("");
 	if (sections.has("selector")) {
 		out.push(`- ${getMessage("pickresult_selector", undefined, "选择器：")}${code(snap.selector)}`);
@@ -113,9 +117,11 @@ function renderElement(
 		out.push("", getMessage("prompt_matchedCss", undefined, "命中的 CSS："), "", "```css", ...rules, "```");
 	}
 	const styles = sections.has("styles") ? renderStyles(snap) : "";
-	if (styles) out.push("", `${getMessage("pickresult_styles", undefined, "计算样式（仅与默认/继承值不同的）：")}${styles}`);
+	if (styles)
+		out.push("", `${getMessage("pickresult_styles", undefined, "计算样式（仅与默认/继承值不同的）：")}${styles}`);
 	const skeleton = sections.has("skeleton") ? snap.htmlSkeleton?.trim() : "";
-	if (skeleton) out.push("", getMessage("pickresult_skeleton", undefined, "HTML 骨架："), "", "```html", skeleton, "```");
+	if (skeleton)
+		out.push("", getMessage("pickresult_skeleton", undefined, "HTML 骨架："), "", "```html", skeleton, "```");
 
 	out.push("");
 	return out;
@@ -169,7 +175,6 @@ function renderStyles(snap: ElementSnapshot): string {
 	return code(entries.map(([k, v]) => `${k}: ${v}`).join("; "));
 }
 
-/** 数字取整（pct 保留 1 位）—— 小数点后一长串对 AI 没有任何意义。 */
 function round(n: number, digits = 0): number {
 	if (!Number.isFinite(n)) return 0;
 	const f = 10 ** digits;

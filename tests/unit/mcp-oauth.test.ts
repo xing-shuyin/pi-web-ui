@@ -1,8 +1,3 @@
-/**
- * MCP OAuth 凭据复用单测（Issue #786）：
- * 覆盖键口径、读凭据、过期/401 刷新、刷新令牌轮换、跨进程锁、坏文件容错，以及 McpClient 的
- * `Authorization` 头与 401→刷新→重试链路。全部本地跑（临时目录 + 本地 HTTP 夹具），零端口外部依赖。
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -165,9 +160,7 @@ describe("取 token：临近过期时刷新", () => {
 		expect(state.tokens?.access_token).toBe("access-new");
 		expect(state.tokens?.refresh_token).toBe("refresh-new");
 		expect(state.tokensExpireAt).toBeGreaterThan(Date.now() + 800_000);
-		// Windows reports emulated mode bits; POSIX permissions are only meaningful on Unix.
 		if (process.platform !== "win32") expect(statSync(storePath()).mode & 0o777).toBe(0o600);
-		// clientInformation / discovery 不被刷新覆盖
 		expect(state.clientInformation?.client_id).toBe("client-abc");
 		expect(state.discovery?.authorizationServerMetadata?.token_endpoint).toBe(TOKEN_ENDPOINT);
 	});
@@ -187,7 +180,6 @@ describe("取 token：临近过期时刷新", () => {
 		const options = { agentDir, name: "suno", serverUrl: SERVER_URL, fetch: impl };
 
 		expect(await getMcpAccessToken(options)).toBe("access-no-expiry");
-		// 旧的绝对过期时间必须被删掉：否则它一直是「已过期」，每个请求都会再刷一次
 		expect(readMcpAuthStore({ agentDir })[mcpAuthStoreKey("suno", SERVER_URL)].tokensExpireAt).toBeUndefined();
 
 		expect(await getMcpAccessToken(options)).toBe("access-no-expiry");
@@ -228,7 +220,6 @@ describe("取 token：临近过期时刷新", () => {
 		let lockHeldDuringTokenCall: boolean | undefined;
 		const { impl } = mockFetch(() => {
 			lockHeldDuringTokenCall = existsSync(`${storePath()}.lock`);
-			// pi 在这段时间登录另一台服务器：它自己持锁读-改-写整份库
 			const store = JSON.parse(readFileSync(storePath(), "utf8")) as Record<string, unknown>;
 			store[otherKey] = { tokens: { access_token: "other-token" } };
 			writeFileSync(storePath(), `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
@@ -237,12 +228,10 @@ describe("取 token：临近过期时刷新", () => {
 
 		await getMcpAccessToken({ agentDir, name: "suno", serverUrl: SERVER_URL, fetch: impl });
 
-		// 持锁跨越 20 s 的网络请求会让 pi 自己的 MCP 调用超时（它只重试 10 × 20 ms）
 		expect(lockHeldDuringTokenCall).toBe(false);
 		const store = readMcpAuthStore({ agentDir });
 		expect(store[otherKey].tokens?.access_token).toBe("other-token");
 		expect(store[mcpAuthStoreKey("suno", SERVER_URL)].tokens?.access_token).toBe("access-new");
-		// 锁已释放
 		expect(existsSync(`${storePath()}.lock`)).toBe(false);
 	});
 
@@ -336,7 +325,6 @@ describe("McpClient：OAuth 头与 401→刷新→重试", () => {
 			let body = "";
 			for await (const chunk of req) body += chunk;
 
-			// 令牌端点收的是表单（application/x-www-form-urlencoded），不能按 JSON 解析
 			if (req.url === "/token") {
 				res.setHeader("content-type", "application/json");
 				res.end(JSON.stringify({ access_token: validToken, expires_in: 900 }));
@@ -392,9 +380,7 @@ describe("McpClient：OAuth 头与 401→刷新→重试", () => {
 		for (const c of clients) {
 			try {
 				c.close();
-			} catch {
-				/* 已关 */
-			}
+			} catch {}
 		}
 		clients.length = 0;
 		await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -441,7 +427,6 @@ describe("McpClient：OAuth 头与 401→刷新→重试", () => {
 		expect(seenAuthorizations[0]).toBe("Bearer access-revoked");
 		expect(seenAuthorizations[1]).toBe("Bearer access-valid");
 		expect(c.getTools()).toHaveLength(1);
-		// 库被更新成新 token
 		expect(readMcpAuthStore({ agentDir })[mcpAuthStoreKey("suno", url)].tokens?.access_token).toBe("access-valid");
 	});
 

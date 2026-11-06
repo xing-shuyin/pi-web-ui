@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { FiVolume2 } from "react-icons/fi";
 import type { SoundKind, SoundSettings } from "../sounds";
-import { DEFAULT_TTS_SETTINGS, isTtsAvailable, resolveVoice, type TtsSettings } from "../tts";
+import { isTtsAvailable, type TtsSettings } from "../tts";
 import { useI18n, useT } from "../i18n";
 import {
 	getPluginTtsProvider,
@@ -13,7 +13,6 @@ import {
 interface SoundSettingsProps {
 	settings: SoundSettings;
 	onChange: (settings: SoundSettings) => void;
-	/** Play a preview cue (the actual synthesized sound). */
 	onPreview: (kind: SoundKind) => void;
 }
 
@@ -102,37 +101,10 @@ export function SoundSettingsPanel({ settings, onChange, onPreview }: SoundSetti
 	);
 }
 
-// ---------------------------------------------------------------------------
-// Text-to-speech (Settings → Sound & Voice → TTS block)
-// ---------------------------------------------------------------------------
-
 interface TtsSettingsProps {
 	settings: TtsSettings;
 	onChange: (settings: TtsSettings) => void;
-	/** Speak the sample line with current settings (preview button). */
 	onPreview: () => void;
-}
-
-/** Chrome populates getVoices() asynchronously; this hook re-reads on the change event.
- *  localService=false → the voice is synthesized remotely (needs network, e.g. Edge
- *  "Natural" voices); true → fully offline OS speech. Surfaced in the dropdown so
- *  users can tell the two apart. */
-function useVoices(): { voiceURI: string; lang: string; name: string; localService: boolean }[] {
-	const [voices, setVoices] = useState<{ voiceURI: string; lang: string; name: string; localService: boolean }[]>([]);
-	useEffect(() => {
-		if (!isTtsAvailable()) return;
-		const synth = window.speechSynthesis;
-		const read = () =>
-			setVoices(
-				synth
-					.getVoices()
-					.map((v) => ({ voiceURI: v.voiceURI, lang: v.lang, name: v.name, localService: v.localService })),
-			);
-		read();
-		synth.addEventListener?.("voiceschanged", read);
-		return () => synth.removeEventListener?.("voiceschanged", read);
-	}, []);
-	return voices;
 }
 
 function useTtsProviders(): PluginHostTtsProviderInfo[] {
@@ -148,33 +120,27 @@ function useTtsProviders(): PluginHostTtsProviderInfo[] {
 export function TtsSettingsPanel({ settings, onChange, onPreview }: TtsSettingsProps) {
 	const t = useT();
 	const { locale } = useI18n();
-	const browserVoices = useVoices();
 	const providers = useTtsProviders();
-
-	const isCustomEngine = Boolean(settings.engine && settings.engine !== "builtin");
-	const customProvider = isCustomEngine ? getPluginTtsProvider(settings.engine) : null;
-	const available = isCustomEngine ? Boolean(customProvider) : isTtsAvailable();
-
-	// 根据当前选定的引擎（内置 vs 插件提供者）动态获取可用音色列表
+	const engine = settings.engine || "builtin";
+	const supportsRate = providers.find((provider) => provider.id === engine)?.supportsRate !== false;
+	const available = isTtsAvailable() && providers.some((provider) => provider.id === engine);
 	const [providerVoices, setProviderVoices] = useState<{ voiceURI: string; name: string; lang?: string }[]>([]);
-
+	const [voiceError, setVoiceError] = useState("");
 	useEffect(() => {
-		if (!isCustomEngine || !customProvider?.getVoices) {
-			setProviderVoices([]);
-			return;
-		}
 		let cancelled = false;
-		Promise.resolve(customProvider.getVoices())
-			.then((res) => {
-				if (!cancelled && Array.isArray(res)) setProviderVoices(res);
+		setProviderVoices([]);
+		setVoiceError("");
+		Promise.resolve(getPluginTtsProvider(engine)?.getVoices?.())
+			.then((voices) => {
+				if (!cancelled) setProviderVoices(voices || []);
 			})
-			.catch(() => {
-				if (!cancelled) setProviderVoices([]);
+			.catch((error) => {
+				if (!cancelled) setVoiceError(error.message);
 			});
 		return () => {
 			cancelled = true;
 		};
-	}, [isCustomEngine, customProvider, settings.engine]);
+	}, [engine, available]);
 
 	const toggle = (patch: Partial<TtsSettings>) => onChange({ ...settings, ...patch });
 
@@ -183,6 +149,11 @@ export function TtsSettingsPanel({ settings, onChange, onPreview }: TtsSettingsP
 			<div className="dd-header">{t("ttsHeader")}</div>
 
 			{!available && <div className="sound-desc tts-unavailable">{t("ttsUnavailable")}</div>}
+			{voiceError && (
+				<div className="sound-desc" role="alert">
+					{voiceError}
+				</div>
+			)}
 
 			<label className={`sound-row sound-master ${available ? "" : "disabled"}`}>
 				<span className="sound-label">
@@ -198,17 +169,16 @@ export function TtsSettingsPanel({ settings, onChange, onPreview }: TtsSettingsP
 				/>
 			</label>
 
-			{/* 语音引擎选择：内置 SpeechSynthesis 或由插件注册的提供者 (如豆包语音) */}
 			{providers.length > 0 && (
 				<div className={`sound-volume ${available ? "" : "disabled"}`}>
 					<span className="sound-name">{t("ttsEngine")}</span>
 					<select
 						className="set-input tts-voice-select"
 						value={settings.engine || "builtin"}
-						disabled={!available}
+						disabled={!isTtsAvailable()}
 						onChange={(e) => toggle({ engine: e.target.value, voiceURI: "" })}
 					>
-						<option value="builtin">{t("ttsEngineBuiltin")}</option>
+						{!providers.some((provider) => provider.id === engine) && <option value={engine}>{engine}</option>}
 						{providers.map((p) => (
 							<option key={p.id} value={p.id}>
 								{locale === "zh" ? p.label : p.labelEn || p.label}
@@ -264,11 +234,11 @@ export function TtsSettingsPanel({ settings, onChange, onPreview }: TtsSettingsP
 					min={0.5}
 					max={2}
 					step={0.1}
-					value={settings.rate}
-					disabled={!available}
+					value={supportsRate ? settings.rate : 1}
+					disabled={!available || !supportsRate}
 					onChange={(e) => toggle({ rate: Number(e.target.value) })}
 				/>
-				<span className="sound-vol-num">{settings.rate.toFixed(1)}×</span>
+				<span className="sound-vol-num">{(supportsRate ? settings.rate : 1).toFixed(1)}×</span>
 			</div>
 
 			<div className={`sound-volume ${available ? "" : "disabled"}`}>
@@ -280,33 +250,14 @@ export function TtsSettingsPanel({ settings, onChange, onPreview }: TtsSettingsP
 					onChange={(e) => toggle({ voiceURI: e.target.value })}
 				>
 					<option value="">{t("ttsVoiceAuto")}</option>
-					{isCustomEngine
-						? providerVoices.map((v) => (
-								<option key={v.voiceURI} value={v.voiceURI}>
-									{v.name}
-									{v.lang ? ` (${v.lang})` : ""}
-								</option>
-							))
-						: browserVoices.map((v) => (
-								<option key={v.voiceURI} value={v.voiceURI}>
-									{v.name} ({v.lang}){v.localService ? "" : ` · ${t("ttsVoiceOnline")}`}
-								</option>
-							))}
+					{providerVoices.map((v) => (
+						<option key={v.voiceURI} value={v.voiceURI}>
+							{v.name}
+							{v.lang ? ` (${v.lang})` : ""}
+						</option>
+					))}
 				</select>
-				<button
-					type="button"
-					className="sound-preview tts-preview"
-					disabled={!available}
-					onClick={() => {
-						if (!isCustomEngine) {
-							if (settings.voiceURI && !resolveVoice(settings.voiceURI, browserVoices, navigator.language)) {
-								onChange({ ...DEFAULT_TTS_SETTINGS, ...settings, voiceURI: "" });
-								return;
-							}
-						}
-						onPreview();
-					}}
-				>
+				<button type="button" className="sound-preview tts-preview" disabled={!available} onClick={onPreview}>
 					{t("preview")}
 				</button>
 			</div>

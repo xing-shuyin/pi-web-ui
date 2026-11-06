@@ -35,7 +35,6 @@ export function parseStoredTemplate(value: unknown): StoredPromptTemplate {
 	return result;
 }
 
-/** Mutations read the latest file and commit atomically before returning new state. */
 export function registerPromptTemplateRoutes(app: Express, dataDir: string): void {
 	const file = join(dataDir, "prompt-templates.json");
 	const load = (): StoredPromptTemplate[] => {
@@ -57,7 +56,6 @@ export function registerPromptTemplateRoutes(app: Express, dataDir: string): voi
 		}
 	});
 	app.post("/api/prompt-templates", (req, res) => {
-		// Browser writes must be JSON, preventing cross-origin form submissions.
 		if (!req.is("application/json") || req.headers["sec-fetch-site"] === "cross-site") {
 			res.status(403).json({ error: "Cross-site template write rejected" });
 			return;

@@ -142,7 +142,6 @@ describe("Office gateway preload browser admission", () => {
 	);
 
 	it("rejects missing and duplicate Host headers", async () => {
-		// Newer Node versions reject missing Host in the parser before emitting request.
 		expect(await rawRequest(["Connection: close"])).toMatch(/^HTTP\/1\.1 (?:400|403) /);
 		expect(await rawRequest([`Host: 127.0.0.1:${port}`, `Host: 127.0.0.1:${port}`, "Connection: close"])).toContain(
 			"403 Forbidden",

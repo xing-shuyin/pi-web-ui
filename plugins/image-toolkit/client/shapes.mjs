@@ -1,18 +1,5 @@
-/**
- * 裁剪形状几何 —— 画布与服务端视图**共用同一份路径**，避免两边形状对不上。
- *
- * 统一用「命令数组」表达路径（只用到 M/L/C/Z，不用弧线，省得两边处理弧参数差异）：
- *   [{ c: "M", p: [x, y] }, { c: "C", p: [x1,y1,x2,y2,x,y] }, … { c: "Z", p: [] }]
- * 画布侧 traceCommands() 直连 ctx，覆盖层侧 toPathD() 转成 SVG 的 d 属性。
- *
- * 坐标一律按「外接矩形」(0,0)-(w,h) 归一，所以换比例/换尺寸形状自动跟着变形；
- * 心形与星形在 100×100 设计尺寸里定义，再按 (w/100, h/100) 映射过去。
- */
-
-/** 可选的裁剪形状（rect = 传统矩形，none 效果与它一致）。 */
 export const CROP_SHAPES = ["rect", "rounded", "ellipse", "circle", "diamond", "heart", "star"];
 
-/** 三次贝塞尔逼近 1/4 圆的经典系数。 */
 const K = 0.5522847498307936;
 
 /**
@@ -69,7 +56,6 @@ export function shapeCommands(shape, w, h, radiusPct = 12) {
 			];
 
 		case "heart": {
-			// 100×100 设计稿（下尖、双肩），再映射到外接矩形
 			const pts = [
 				{ c: "M", p: map(50, 92) },
 				{ c: "C", p: [...map(14, 68), ...map(4, 48), ...map(4, 34)] },
@@ -84,7 +70,6 @@ export function shapeCommands(shape, w, h, radiusPct = 12) {
 		}
 
 		case "star": {
-			// 五角星：外接圆半径 50、内接 19.1（黄金比），从正上方开始
 			const outer = 50;
 			const inner = outer * 0.382;
 			const cmds = [];
@@ -103,7 +88,6 @@ export function shapeCommands(shape, w, h, radiusPct = 12) {
 	}
 }
 
-/** 外接矩形本身。 */
 export function rectCommands(w, h) {
 	return [
 		{ c: "M", p: [0, 0] },
@@ -114,7 +98,6 @@ export function rectCommands(w, h) {
 	];
 }
 
-/** 命令数组 → canvas 路径（调用方自己 ctx.beginPath 也行，这里代劳）。 */
 export function traceCommands(ctx, cmds) {
 	ctx.beginPath();
 	for (const { c, p } of cmds) {
@@ -125,7 +108,6 @@ export function traceCommands(ctx, cmds) {
 	}
 }
 
-/** 命令数组 → SVG 的 d 属性字符串（SVG 允许隐式重复命令，用空格分隔参数即可）。 */
 export function toPathD(cmds) {
 	const num = (n) => String(Math.round(n * 100) / 100);
 	return cmds.map(({ c, p }) => (c === "Z" ? "Z" : `${c}${p.map(num).join(" ")}`)).join(" ");

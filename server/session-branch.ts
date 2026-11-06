@@ -1,32 +1,3 @@
-/**
- * Session branch evaluation, leaf calibration, and transcript topological reordering.
- *
- * Background (issue #567):
- * When multiple devices access the same session, or when extensions append metadata
- * (e.g. type: "custom" such as plannotator entries) pointing to an older ancestor node,
- * the appended entries appear at the physical tail of the JSONL file.
- *
- * In the SDK's SessionManager._buildIndex():
- *   for (const entry of this.fileEntries) {
- *     if (entry.type === "session") continue;
- *     this.byId.set(entry.id, entry);
- *     this.leafId = entry.id; // file tail becomes the active leaf!
- *   }
- *
- * If metadata was appended to an older branch (e.g. node 292 while the main branch
- * continued to 557), reopening the session or restarting the backend will restore
- * the older branch (292), making later task history (293..557) invisible even though
- * it is still safely stored in the JSONL file.
- *
- * This module provides:
- * 1. selectBestSessionLeaf: Evaluates branch candidates by message count, freshness,
- *    and depth, detecting metadata-only hijacking or stale branch reversion.
- * 2. calibrateSessionLeaf: In-memory leaf calibration for any SessionManager instance.
- * 3. reorderEntriesForMainBranch: Topological reordering of session entries to ensure
- *    the active main branch leaf resides at the physical tail of the transcript file
- *    without losing or modifying any custom/metadata entries.
- */
-
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export type AnySessionEntry =
@@ -67,9 +38,6 @@ function parseEntryTimestamp(ts?: unknown): number {
 	return 0;
 }
 
-/**
- * Identify all branch leaves and compute branch metrics (from root to leaf).
- */
 export function findBranchCandidates(entries: AnySessionEntry[]): BranchCandidate[] {
 	const validEntries: AnySessionEntry[] = [];
 	const byId = new Map<string, AnySessionEntry>();
@@ -100,9 +68,6 @@ export function findBranchCandidates(entries: AnySessionEntry[]): BranchCandidat
 	if (leaves.length === 0) return [];
 
 	const candidates: BranchCandidate[] = [];
-	// Shared ancestors are visited for every leaf. Cache by object (not ID, which
-	// may be duplicated), and only for this call so later entry edits stay visible.
-	// Path traversal and pathIds output still cost the sum of all branch depths.
 	const timestamps = new WeakMap<AnySessionEntry, number>();
 	const timestampOf = (entry: AnySessionEntry): number => {
 		const cached = timestamps.get(entry);
@@ -125,7 +90,7 @@ export function findBranchCandidates(entries: AnySessionEntry[]): BranchCandidat
 			cur = typeof node.parentId === "string" ? node.parentId : null;
 		}
 
-		path.reverse(); // root -> ... -> leaf
+		path.reverse();
 
 		let messageCount = 0;
 		let lastMessageTimestamp = 0;
@@ -156,9 +121,6 @@ export function findBranchCandidates(entries: AnySessionEntry[]): BranchCandidat
 	return candidates;
 }
 
-/**
- * Find the lowest common ancestor (LCA) entry ID of two branches.
- */
 function findLowestCommonAncestor(branchA: BranchCandidate, branchB: BranchCandidate): string | null {
 	const setA = new Set(branchA.pathIds);
 	let lca: string | null = null;
@@ -172,14 +134,6 @@ function findLowestCommonAncestor(branchA: BranchCandidate, branchB: BranchCandi
 	return lca;
 }
 
-/**
- * Select the best branch leaf from all branch candidates.
- *
- * If multiple leaves exist, compares the currently selected leaf against the candidate
- * pool. If the current leaf is on an abandoned metadata-only branch (e.g. extension
- * wrote to an older node after a completed task) or significantly lags behind the main
- * conversation in message count, selects the main branch leaf.
- */
 export function selectBestSessionLeaf(
 	entries: AnySessionEntry[],
 	currentLeafId?: string | null,
@@ -187,8 +141,6 @@ export function selectBestSessionLeaf(
 	let candidates = findBranchCandidates(entries);
 	if (candidates.length === 0) return null;
 
-	// An edit/reask explicitly discards the later history in this same file.
-	// Honor the latest durable selection, even when abandoned history is longer.
 	const reask = [...entries]
 		.reverse()
 		.find((entry) => entry.type === "custom" && entry.customType === "pi-web-ui:reask");
@@ -206,11 +158,6 @@ export function selectBestSessionLeaf(
 		};
 	}
 
-	// Sort candidates by preference:
-	// 1. Message count (descending)
-	// 2. Last message timestamp (descending)
-	// 3. Total entry depth (descending)
-	// 4. Leaf timestamp (descending)
 	const sorted = [...candidates].sort((a, b) => {
 		if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
 		if (b.lastMessageTimestamp !== a.lastMessageTimestamp) return b.lastMessageTimestamp - a.lastMessageTimestamp;
@@ -247,7 +194,6 @@ export function selectBestSessionLeaf(
 		};
 	}
 
-	// Check if current leaf is a hijacked/stale branch:
 	const lca = findLowestCommonAncestor(currentCandidate, bestCandidate);
 	const lcaIndexCurrent = lca ? currentCandidate.pathIds.indexOf(lca) : -1;
 	const currentEntriesAfterLca = lcaIndexCurrent >= 0 ? currentCandidate.pathIds.slice(lcaIndexCurrent + 1) : [];
@@ -271,9 +217,6 @@ export function selectBestSessionLeaf(
 		if (node?.type === "message") bestMessagesAfterLca += 1;
 	}
 
-	// Pattern A: Metadata-only branch hijacking (issue #567)
-	// Current branch has 0 messages after LCA (only custom / extension metadata),
-	// while best branch has real messages after LCA.
 	if (currentMessagesAfterLca === 0 && bestMessagesAfterLca > 0) {
 		return {
 			bestLeafId: bestCandidate.leafId,
@@ -283,7 +226,6 @@ export function selectBestSessionLeaf(
 		};
 	}
 
-	// Pattern B: Substantial message gap (stale branch restored after task completed elsewhere)
 	if (bestCandidate.messageCount > currentCandidate.messageCount) {
 		return {
 			bestLeafId: bestCandidate.leafId,
@@ -293,7 +235,6 @@ export function selectBestSessionLeaf(
 		};
 	}
 
-	// Otherwise, current branch has equal or valid intentional message history
 	return {
 		bestLeafId: currentCandidate.leafId,
 		currentLeafId,
@@ -301,9 +242,6 @@ export function selectBestSessionLeaf(
 	};
 }
 
-/**
- * Calibrate the active leaf of a SessionManager in memory.
- */
 export function calibrateSessionLeaf(sessionManager: {
 	getEntries(): AnySessionEntry[];
 	getLeafId(): string | null;
@@ -328,13 +266,6 @@ export function calibrateSessionLeaf(sessionManager: {
 	}
 }
 
-/**
- * Reorder entries topologically so that the main branch's leaf is at the tail of the transcript.
- *
- * Preserves all entries and valid parent-child relationships (every node still appears after
- * its parent). Side-branch metadata attached to older nodes is placed before the main branch's
- * continuing path so SDK SessionManager's sequential scan lands on the main branch leaf.
- */
 export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 	entries: T[],
 ): { entries: T[]; changed: boolean; reason?: string } {
@@ -356,10 +287,6 @@ export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 
 	const bestPathSet = new Set(bestCandidate.pathIds);
 
-	// Separate entries into:
-	// 1. Header (type === "session")
-	// 2. Entries on the best path
-	// 3. Entries on side branches
 	const headerEntries: T[] = [];
 	const sideEntries: T[] = [];
 	const mainEntries: T[] = [];
@@ -374,23 +301,14 @@ export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 		}
 	}
 
-	// If no side entries exist or main entries are empty, nothing to reorder
 	if (sideEntries.length === 0 || mainEntries.length === 0) {
 		return { entries, changed: false };
 	}
 
-	// We want to interleave side entries after their respective parent in main entries,
-	// BUT ensure that the continuation of the main branch ends with bestCandidate.leafId.
-	// A robust topological sort:
-	// Each side entry must come after its parent.
-	// Since side branches branched off an ancestor in mainEntries, we can place side entries
-	// as early as possible (immediately after their parent) so that the deep main branch entries
-	// remain at the end of the file.
 	const result: T[] = [...headerEntries];
 	const placedIds = new Set<string>();
 	const placedRefs = new Set<T>(headerEntries);
 
-	// Helper to place a side entry and its side descendants
 	const sideChildrenOf = new Map<string, T[]>();
 	for (const s of sideEntries) {
 		const pid = typeof s.parentId === "string" ? s.parentId : "";
@@ -438,12 +356,9 @@ export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 		}
 	}
 
-	// Any dangling side entries (including valid JSON entries without an `id` field, #601)
-	// are placed before the final main entry so that ZERO transcript lines are ever dropped.
 	for (const s of sideEntries) {
 		if (!placedRefs.has(s)) {
 			markPlaced(s);
-			// Insert before the last entry (which is the best leaf)
 			if (result.length > headerEntries.length + 1) {
 				result.splice(result.length - 1, 0, s);
 			} else {
@@ -452,7 +367,6 @@ export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 		}
 	}
 
-	// Verify that no entries were lost (#601) and the new last non-header entry with id is bestLeafId
 	if (result.length !== entries.length) {
 		return { entries, changed: false };
 	}
@@ -461,7 +375,6 @@ export function reorderEntriesForMainBranch<T extends AnySessionEntry>(
 	const successfullyReordered = newTail?.id === bestLeafId;
 
 	if (!successfullyReordered) {
-		// Fallback: don't alter if topological sort couldn't guarantee tail
 		return { entries, changed: false };
 	}
 

@@ -29,38 +29,29 @@ import { appSend } from "../app-globals";
 import { ProviderOAuthControls } from "./ProviderOAuthControls";
 
 interface ModelConfigModalProps {
-	/** Custom providers from agentDir/models.json. */
 	providers: UiProviderConfig[];
-	/** Built-in providers with supported authentication methods and current status. */
 	providerStatus: ProviderStatus[];
-	/** Stored API key names and active status per built-in provider. */
 	providerKeys: Record<string, ProviderKeyInfo[]>;
-	/** In-flight OAuth login interactions. */
 	providerOAuthFlows: ProviderOAuthFlowState[];
-	/** Last OAuth action result per provider. */
 	providerOAuthResults: Record<string, { ok: boolean; cancelled?: boolean; error?: string }>;
-	/** Last fetch_models probe result (matched by reqId, see useChat). */
 	fetchModelsResult?: {
 		reqId: number;
 		ok: boolean;
 		models?: UiModelConfigEntry[];
 		error?: string;
 	} | null;
-	/** Last test_model_connection result (matched by reqId). */
 	testModelConnectionResult?: {
 		reqId: number;
 		ok: boolean;
 		latencyMs?: number;
 		error?: string;
 	} | null;
-	/** Last enrich_models result (catalog params for draft rows, matched by reqId). */
 	enrichModelsResult?: {
 		reqId: number;
 		ok: boolean;
 		results?: UiEnrichResult[];
 		error?: string;
 	} | null;
-	/** Progress notification for enrich_models while downloading catalogs or matching. */
 	enrichModelsProgress?: {
 		reqId: number;
 		phase: "catalog" | "page" | "matching" | "aborted";
@@ -68,13 +59,11 @@ interface ModelConfigModalProps {
 		total?: number;
 		message?: string;
 	} | null;
-	/** Last refresh_builtin_models result (forced official-catalog refresh). */
 	refreshBuiltinResult?: {
 		reqId: number;
 		ok: boolean;
 		error?: string;
 	} | null;
-	/** Last refresh_provider_models result (saved-provider list refresh). */
 	refreshProviderResult?: {
 		reqId: number;
 		ok: boolean;
@@ -82,14 +71,11 @@ interface ModelConfigModalProps {
 		total?: number;
 		error?: string;
 	} | null;
-	/** Last append_builtin_model result (one model appended to a built-in
-	 *  provider's overlay entry). */
 	appendBuiltinResult?: {
 		reqId: number;
 		ok: boolean;
 		error?: string;
 	} | null;
-	/** Last clone_provider result (built-in → custom draft). */
 	cloneProviderResult?: {
 		reqId: number;
 		ok: boolean;
@@ -97,12 +83,13 @@ interface ModelConfigModalProps {
 		configs?: UiProviderConfig[];
 		error?: string;
 	} | null;
-	/** 全局默认模型（"provider/id"，null = 未设置，undefined = 功能隐藏）。 */
 	defaultModel?: string | null;
 	onClose: () => void;
 }
 
 const API_TYPES = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+
+let lastFetchModelsReqId = 0;
 
 interface QuickProviderPreset {
 	id: string;
@@ -337,9 +324,7 @@ function saveCustomThinkingPresets(presets: CustomThinkingPreset[]): void {
 	if (typeof localStorage === "undefined") return;
 	try {
 		localStorage.setItem(CUSTOM_THINKING_PRESETS_KEY, JSON.stringify(presets));
-	} catch {
-		// ignore
-	}
+	} catch {}
 }
 
 function validateJsonString(str: string): { valid: boolean; error?: string } {
@@ -362,8 +347,6 @@ interface DraftModel {
 	input: "text" | "text-image";
 	contextWindow: string;
 	maxTokens: string;
-	/** 模型级思考档位映射：前端不编辑，但必须原样带着往返（见 issue #771），
-	 *  否则「刷新 → 保存」会把网关自报的 xhigh/max 档位抹掉。 */
 	thinkingLevelMap?: UiThinkingLevelMap;
 	compat?: Record<string, unknown>;
 	customExtraBody?: string;
@@ -375,9 +358,7 @@ interface Draft {
 	name: string;
 	api: string;
 	baseUrl: string;
-	/** 输入缓冲：服务端不再下发明文 apiKey，非空才随 save_model_config 上送。 */
 	apiKey: string;
-	/** 服务端是否已保存密钥（决定 placeholder 与留空语义：留空 = 保持不变）。 */
 	hasApiKey: boolean;
 	authHeader: boolean;
 	models: DraftModel[];
@@ -438,7 +419,6 @@ function parseEnrichHints(text: string): Record<string, string> {
 	return out;
 }
 
-/** 候选模型采纳器弹窗 (Candidate Model Picker) */
 function CandidatePickerModal({
 	candidates,
 	preselectedIds,
@@ -446,7 +426,6 @@ function CandidatePickerModal({
 	onClose,
 }: {
 	candidates: UiModelConfigEntry[];
-	/** 表单里已有的模型 id：默认勾选它们（增量采纳 = 补新模型）。 */
 	preselectedIds?: string[];
 	onAdopt: (selected: UiModelConfigEntry[]) => void;
 	onClose: () => void;
@@ -454,12 +433,9 @@ function CandidatePickerModal({
 	const t = useT();
 	const [search, setSearch] = useState("");
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
-		// 已有模型默认勾选：采纳器的常见场景是「网关新上了几个模型」的增量采纳，
-		// 现有模型本来就要保留，全选会让用户每次手动取消一大片。
 		const all = new Set(candidates.map((c) => c.id));
 		const preset = (preselectedIds ?? []).map((id) => id.trim()).filter((id) => all.has(id));
 		if (preset.length > 0) return new Set(preset);
-		// 没有已保存的模型（新服务商）：默认勾选非 embedding / audio 的模型
 		const set = new Set<string>();
 		for (const c of candidates) {
 			const lower = c.id.toLowerCase();
@@ -472,7 +448,6 @@ function CandidatePickerModal({
 				set.add(c.id);
 			}
 		}
-		// 如果全被过滤了，则默认全选
 		if (set.size === 0) {
 			for (const c of candidates) set.add(c.id);
 		}
@@ -630,21 +605,18 @@ export function ModelConfigModal({
 }: ModelConfigModalProps) {
 	const t = useT();
 
-	// 导航状态：选中的是内置服务商 (builtin) 还是自定义服务商 (custom)
 	const [activeNav, setActiveNav] = useState<{ type: "builtin" | "custom"; id: string }>(() => {
 		if (providers.length > 0) return { type: "custom", id: providers[0].providerId };
 		if (providerStatus.length > 0) return { type: "builtin", id: providerStatus[0].id };
 		return { type: "custom", id: "" };
 	});
 
-	// 自定义服务商草稿
 	const [editing, setEditing] = useState<Draft | null>(() => {
 		if (providers.length > 0) return toDraft(providers[0]);
 		if (providerStatus.length > 0) return null;
 		return emptyDraft();
 	});
 
-	// Keep the open editor in sync with server pushes while preserving unsaved edits.
 	const previousProviders = useRef(providers);
 	useEffect(() => {
 		const previous = previousProviders.current;
@@ -662,24 +634,16 @@ export function ModelConfigModal({
 		});
 	}, [providers]);
 
-	// 候选模型采纳器弹窗状态
 	const [candidateList, setCandidateList] = useState<UiModelConfigEntry[] | null>(null);
 
-	// 连通性测试状态
 	const [testingConn, setTestingConn] = useState(false);
 	const [connReqId, setConnReqId] = useState(0);
 	const [connFeedback, setConnFeedback] = useState<{ ok: boolean; latencyMs?: number; error?: string } | null>(null);
 	const handledConnReq = useRef(0);
 
-	// 内置服务商追加 key 表单状态
 	const [addKeys, setAddKeys] = useState<Record<string, string>>({});
 	const [addKeyNames, setAddKeyNames] = useState<Record<string, string>>({});
 	const [addKeyBusy, setAddKeyBusy] = useState<string | null>(null);
-	// 审查 #13：添加密钥改为事件驱动收尾 —— 服务端 addProviderKey 成功后会主动
-	// listProviders()/listProviderKeys()（见 server/model-admin.ts），providerKeys
-	// 回包里对应 provider 的键列表引用变化即视为确认；1.5s 盲刷既有竞态（慢时
-	// 提前收尾丢更新）也从不校验结果。定时器只作 10s 超时兜底（复位 busy、
-	// 保留输入供重试，重复密钥/失败时服务端不推新列表正好落到这里）。
 	const addKeyPrevKeysRef = useRef(providerKeys);
 	const addKeyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(() => {
@@ -692,7 +656,6 @@ export function ModelConfigModal({
 		}
 		addKeyPrevKeysRef.current = providerKeys;
 	}, [providerKeys, addKeyBusy]);
-	// 卸载清理兜底定时器（审查 #5 同源）。
 	useEffect(
 		() => () => {
 			if (addKeyTimerRef.current) clearTimeout(addKeyTimerRef.current);
@@ -700,13 +663,10 @@ export function ModelConfigModal({
 		[],
 	);
 
-	// 获取模型列表状态
 	const [fetching, setFetching] = useState(false);
-	const [fetchReqId, setFetchReqId] = useState(0);
+	const pendingFetchReq = useRef<number | null>(null);
 	const [fetchMsg, setFetchMsg] = useState<{ ok: boolean; text: string } | null>(null);
-	const handledReq = useRef(0);
 
-	// 补参数状态
 	const [enriching, setEnriching] = useState(false);
 	const [enrichCancelling, setEnrichCancelling] = useState(false);
 	const [enrichReqId, setEnrichReqId] = useState(0);
@@ -715,7 +675,6 @@ export function ModelConfigModal({
 	const [hintText] = useState("");
 	const handledEnrichReq = useRef(0);
 
-	// 思考强度配置抽屉展开行索引
 	const [expandedThinkingIdx, setExpandedThinkingIdx] = useState<number | null>(null);
 	const [userPresets, setUserPresets] = useState<CustomThinkingPreset[]>(loadCustomThinkingPresets);
 	const [presetNameInput, setPresetNameInput] = useState("");
@@ -747,13 +706,11 @@ export function ModelConfigModal({
 		saveCustomThinkingPresets(updated);
 	};
 
-	// 刷新官方内置目录
 	const [builtinBusy, setBuiltinBusy] = useState(false);
 	const [builtinReqId, setBuiltinReqId] = useState(0);
 	const [builtinMsg, setBuiltinMsg] = useState<{ ok: boolean; text: string } | null>(null);
 	const handledBuiltinReq = useRef(0);
 
-	// 追加内置模型覆盖
 	const [appendingFor, setAppendingFor] = useState<string | null>(null);
 	const [appendId, setAppendId] = useState("");
 	const [appendName, setAppendName] = useState("");
@@ -764,22 +721,17 @@ export function ModelConfigModal({
 	const [appendMsg, setAppendMsg] = useState<{ ok: boolean; text: string } | null>(null);
 	const handledAppendReq = useRef(0);
 
-	// 克隆 / 快捷第二 key / 批量模式
 	const [_batch, setBatch] = useState<Draft[] | null>(null);
 	const [_batchKey, setBatchKey] = useState("");
 	const [_addKeyDraft, setAddKeyDraft] = useState<Draft | null>(null);
 
-	/** Saved-provider list refresh: in-flight flags per providerId + reqId echo. */
 	const [refreshing, setRefreshing] = useState<Record<string, boolean>>({});
 	const refreshReqId = useRef(0);
 	const handledRefreshReq = useRef(0);
-	/** Clone built-in → custom draft: in-flight flag + reqId echo. */
 	const [cloning, setCloning] = useState<string | null>(null);
 	const cloneReqId = useRef(0);
 	const handledCloneReq = useRef(0);
 
-	/** Re-fetch the SAVED provider's model list server-side (credentials stay
-	 *  on the server) and merge into its models.json entry. */
 	const refreshProvider = (providerId: string) => {
 		if (refreshing[providerId]) return;
 		const reqId = ++refreshReqId.current + Date.now();
@@ -793,7 +745,6 @@ export function ModelConfigModal({
 		setRefreshing({});
 	}, [refreshProviderResult]);
 
-	/** Ask the server to copy a built-in provider (baseUrl + model catalog) into an editable custom draft. */
 	const cloneBuiltin = (p: ProviderStatus) => {
 		if (cloning) return;
 		setCloning(p.id);
@@ -804,7 +755,6 @@ export function ModelConfigModal({
 		}
 	};
 
-	// 打开弹窗时刷新数据
 	useEffect(() => {
 		appSend({ type: "list_models_config" });
 		appSend({ type: "list_providers" });
@@ -812,7 +762,6 @@ export function ModelConfigModal({
 		appSend({ type: "list_provider_oauth_flows" });
 	}, []);
 
-	// 处理连通性测试结果
 	useEffect(() => {
 		if (!testModelConnectionResult || testModelConnectionResult.reqId === handledConnReq.current) return;
 		handledConnReq.current = testModelConnectionResult.reqId;
@@ -824,10 +773,9 @@ export function ModelConfigModal({
 		});
 	}, [testModelConnectionResult]);
 
-	// 处理 fetch_models 探测结果：弹出候选采纳器
 	useEffect(() => {
-		if (!fetchModelsResult || fetchModelsResult.reqId === handledReq.current) return;
-		handledReq.current = fetchModelsResult.reqId;
+		if (!fetchModelsResult || fetchModelsResult.reqId !== pendingFetchReq.current) return;
+		pendingFetchReq.current = null;
 		setFetching(false);
 		if (fetchModelsResult.ok && fetchModelsResult.models?.length) {
 			setCandidateList(fetchModelsResult.models);
@@ -840,7 +788,6 @@ export function ModelConfigModal({
 		}
 	}, [fetchModelsResult, t]);
 
-	// 处理 enrich_models 结果
 	useEffect(() => {
 		if (!enrichModelsResult || enrichModelsResult.reqId === handledEnrichReq.current) return;
 		handledEnrichReq.current = enrichModelsResult.reqId;
@@ -881,7 +828,6 @@ export function ModelConfigModal({
 		}
 	}, [enrichModelsResult, t]);
 
-	// 处理内置目录刷新结果
 	useEffect(() => {
 		if (!refreshBuiltinResult || refreshBuiltinResult.reqId === handledBuiltinReq.current) return;
 		handledBuiltinReq.current = refreshBuiltinResult.reqId;
@@ -893,7 +839,6 @@ export function ModelConfigModal({
 		}
 	}, [refreshBuiltinResult, t]);
 
-	// 处理追加模型结果
 	useEffect(() => {
 		if (!appendBuiltinResult || appendBuiltinResult.reqId === handledAppendReq.current) return;
 		handledAppendReq.current = appendBuiltinResult.reqId;
@@ -911,7 +856,6 @@ export function ModelConfigModal({
 		}
 	}, [appendBuiltinResult, t]);
 
-	// 处理克隆结果
 	useEffect(() => {
 		if (!cloneProviderResult || cloneProviderResult.reqId === handledCloneReq.current) return;
 		handledCloneReq.current = cloneProviderResult.reqId;
@@ -919,7 +863,6 @@ export function ModelConfigModal({
 		if (cloneProviderResult.ok) {
 			const cs = (cloneProviderResult as { configs?: UiProviderConfig[] }).configs;
 			if (cs && cs.length > 1) {
-				// 克隆草稿不带凭据（服务端保证），apiKey 缓冲天然为空、hasApiKey=false。
 				setBatch(cs.map((c) => toDraft(c)));
 				setBatchKey("");
 				return;
@@ -930,7 +873,6 @@ export function ModelConfigModal({
 		}
 	}, [cloneProviderResult]);
 
-	// 连通性测试执行
 	const runTestConnection = () => {
 		if (!editing) return;
 		const base = editing.baseUrl.trim();
@@ -947,14 +889,12 @@ export function ModelConfigModal({
 			reqId,
 			baseUrl: base,
 			apiKey: editing.apiKey.trim() || undefined,
-			// 留空且已存有密钥：带上 providerId 让服务端用保存的密钥探测
 			...(editing.apiKey.trim() ? {} : editing.hasApiKey ? { providerId: editing.providerId.trim() } : {}),
 			authHeader: editing.authHeader,
 			api: editing.api,
 		});
 	};
 
-	// 探测模型端点
 	const fetchModels = () => {
 		if (!editing) return;
 		const base = editing.baseUrl.trim();
@@ -965,21 +905,20 @@ export function ModelConfigModal({
 		if (fetching) return;
 		setFetching(true);
 		setFetchMsg(null);
-		const reqId = fetchReqId + 1;
-		setFetchReqId(reqId);
+		const reqId = Math.max(Date.now(), lastFetchModelsReqId + 1);
+		lastFetchModelsReqId = reqId;
+		pendingFetchReq.current = reqId;
 		appSend({
 			type: "fetch_models",
 			reqId,
 			baseUrl: base,
 			apiKey: editing.apiKey.trim() || undefined,
-			// 留空且已存有密钥：带上 providerId 让服务端用保存的密钥探测
 			...(editing.apiKey.trim() ? {} : editing.hasApiKey ? { providerId: editing.providerId.trim() } : {}),
 			authHeader: editing.authHeader,
 			api: editing.api,
 		});
 	};
 
-	// 采纳选中的候选模型
 	const adoptSelectedModels = (selected: UiModelConfigEntry[]) => {
 		if (!editing) return;
 		setEditing((prev) => {
@@ -995,7 +934,6 @@ export function ModelConfigModal({
 					input: s.input?.includes("image") ? "text-image" : "text",
 					contextWindow: s.contextWindow ? String(s.contextWindow) : "",
 					maxTokens: s.maxTokens ? String(s.maxTokens) : "",
-					// 探测时从网关元数据推导的档位映射跟着走，采纳后即可选 xhigh/max
 					...(s.thinkingLevelMap ? { thinkingLevelMap: s.thinkingLevelMap } : {}),
 				}));
 			return {
@@ -1006,7 +944,6 @@ export function ModelConfigModal({
 		setCandidateList(null);
 	};
 
-	// 补参数
 	const sendEnrich = () => {
 		if (!editing || enriching) return;
 		const ids = editing.models.map((m) => m.id.trim()).filter(Boolean);
@@ -1029,7 +966,6 @@ export function ModelConfigModal({
 		appSend({ type: "abort_enrich_models", reqId: enrichReqId });
 	};
 
-	// 快捷芯片填入
 	const applyQuickPreset = (preset: QuickProviderPreset) => {
 		setEditing((prev) => {
 			const pid = prev?.providerId.trim() || preset.id;
@@ -1048,7 +984,6 @@ export function ModelConfigModal({
 		setFetchMsg(null);
 	};
 
-	// 保存自定义服务商
 	const saveCustomProvider = () => {
 		if (!editing) return;
 		const providerId = editing.providerId.trim();
@@ -1062,8 +997,6 @@ export function ModelConfigModal({
 				input: m.input === "text-image" ? ["text", "image"] : undefined,
 				contextWindow: m.contextWindow ? Number(m.contextWindow) : undefined,
 				maxTokens: m.maxTokens ? Number(m.maxTokens) : undefined,
-				// 原样带回：服务端合并时「没带 = 保留磁盘值」，但草稿里带着更精确
-				// （编辑浏览器期间被刷新的档位不会丢）。
 				...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
 				...(m.compat ? { compat: m.compat } : {}),
 				...(m.customExtraBody?.trim() ? { customExtraBody: m.customExtraBody.trim() } : {}),
@@ -1073,8 +1006,6 @@ export function ModelConfigModal({
 			name: editing.name.trim() || undefined,
 			api: editing.api.trim() || undefined,
 			baseUrl: editing.baseUrl.trim() || undefined,
-			// 明文只在用户真的输入了新值时上送；留空 = 不带字段 = 服务端保留旧值
-			//（协议层面显式空串仍是"清除"，但表单留空语义是"保持不变"）。
 			...(editing.apiKey.trim() ? { apiKey: editing.apiKey.trim() } : {}),
 			authHeader: editing.authHeader || undefined,
 			models,
@@ -1107,7 +1038,6 @@ export function ModelConfigModal({
 		});
 	};
 
-	// 内置服务商 Key 操作
 	const addKey = (p: ProviderStatus) => {
 		const key = (addKeys[p.id] ?? "").trim();
 		if (!key || addKeyBusy) return;
@@ -1118,8 +1048,6 @@ export function ModelConfigModal({
 			apiKey: key,
 			name: (addKeyNames[p.id] ?? "").trim() || undefined,
 		});
-		// 10s 超时兜底：正常收尾由 providerKeys 回包驱动（见上方 effect）；
-		// 超时只复位 busy，不清输入 —— 用户可直接重试。
 		if (addKeyTimerRef.current) clearTimeout(addKeyTimerRef.current);
 		addKeyTimerRef.current = setTimeout(() => {
 			setAddKeyBusy((cur) => (cur === p.id ? null : cur));
@@ -1198,7 +1126,6 @@ export function ModelConfigModal({
 	return (
 		<div className="modal-backdrop" onClick={onClose}>
 			<div className="modal model-studio-modal" onClick={(e) => e.stopPropagation()}>
-				{/* 顶栏 */}
 				<div className="studio-header">
 					<div className="studio-header-left">
 						<div className="studio-header-icon-box">
@@ -1291,9 +1218,7 @@ export function ModelConfigModal({
 					</div>
 				)}
 
-				{/* 分栏主体 */}
 				<div className="model-studio-body">
-					{/* 左侧侧边栏 */}
 					<div className="model-studio-sidebar">
 						<div style={{ padding: "12px 10px 6px" }}>
 							<button
@@ -1311,7 +1236,6 @@ export function ModelConfigModal({
 							</button>
 						</div>
 
-						{/* 自定义服务商列表 */}
 						<div className="studio-sidebar-section">
 							<span className="studio-sidebar-title">{t("customProvidersCount", { n: providers.length })}</span>
 							{providers.length === 0 && (
@@ -1344,7 +1268,6 @@ export function ModelConfigModal({
 							})}
 						</div>
 
-						{/* 内置服务商列表 */}
 						<div className="studio-sidebar-section">
 							<span className="studio-sidebar-title">{t("builtinProvidersCount", { n: providerStatus.length })}</span>
 							{providerStatus.map((p) => {
@@ -1374,9 +1297,7 @@ export function ModelConfigModal({
 						</div>
 					</div>
 
-					{/* 右侧主工作区 */}
 					<div className="model-studio-main">
-						{/* 处于编辑/新建自定义服务商状态 */}
 						{editing && (
 							<div className="studio-card">
 								<div className="studio-card-head">
@@ -1412,7 +1333,6 @@ export function ModelConfigModal({
 										)}
 									</div>
 									<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-										{/* 连通性测试按钮 */}
 										<div className="conn-test-box">
 											<button
 												type="button"
@@ -1439,7 +1359,6 @@ export function ModelConfigModal({
 									</div>
 								</div>
 
-								{/* 快捷芯片区 */}
 								<div className="quick-chips-wrapper">
 									<span className="quick-chips-label">{t("quickPresetsLabel")}</span>
 									<div className="quick-chips-grid">
@@ -1457,7 +1376,6 @@ export function ModelConfigModal({
 									</div>
 								</div>
 
-								{/* 基础连接表单 */}
 								<div className="form-grid">
 									<label className="field">
 										<span className="field-label">
@@ -1507,7 +1425,6 @@ export function ModelConfigModal({
 											type="password"
 											value={editing.apiKey}
 											onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
-											// 明文不再回显：已保存时留空 = 保持不变
 											placeholder={editing.hasApiKey ? t("apiKeySavedHint") : t("apiKeyHint")}
 										/>
 									</label>
@@ -1521,7 +1438,6 @@ export function ModelConfigModal({
 									</label>
 								</div>
 
-								{/* 模型列表管理矩阵 */}
 								<div style={{ marginTop: 8 }}>
 									<div className="model-section-head">
 										<span className="form-section-title" style={{ fontSize: 13, fontWeight: 600 }}>
@@ -1571,11 +1487,9 @@ export function ModelConfigModal({
 										</div>
 									</div>
 
-									{/* 模型行列表 */}
 									<div className="model-matrix-list">
 										{editing.models.map((m, idx) => (
 											<div key={idx} className="model-matrix-card">
-												{/* 主行：模型 ID、显示名称与能力开关 */}
 												<div className="matrix-main-row">
 													<div className="matrix-input-group id-group">
 														<span className="matrix-input-prefix">
@@ -1665,9 +1579,7 @@ export function ModelConfigModal({
 													</div>
 												</div>
 
-												{/* 次行：规格控制条 (Spec Control Bar) */}
 												<div className="matrix-spec-bar">
-													{/* Context Window Combobox */}
 													<div className="spec-combobox">
 														<span className="spec-combobox-label">{t("contextWindowLabel")}</span>
 														<select
@@ -1697,7 +1609,6 @@ export function ModelConfigModal({
 														)}
 													</div>
 
-													{/* Max Tokens Combobox */}
 													<div className="spec-combobox">
 														<span className="spec-combobox-label">{t("maxOutputLabel")}</span>
 														<select
@@ -1727,7 +1638,6 @@ export function ModelConfigModal({
 														)}
 													</div>
 
-													{/* 快捷点击药丸 */}
 													<div className="matrix-spec-quick-pills">
 														{["32K", "128K", "200K"].map((lbl) => {
 															const match = CTX_PRESETS.find((p) => p.label === lbl);
@@ -1747,7 +1657,6 @@ export function ModelConfigModal({
 													</div>
 												</div>
 
-												{/* 展开的思考强度配置抽屉 */}
 												{m.reasoning && expandedThinkingIdx === idx && (
 													<div className="matrix-thinking-config-drawer">
 														<div className="thinking-drawer-header">
@@ -1774,7 +1683,6 @@ export function ModelConfigModal({
 															</div>
 														</div>
 
-														{/* 常见预设快捷套用 */}
 														<div className="thinking-presets-row">
 															<span className="thinking-presets-label">{t("thinkingQuickApply")}</span>
 															<div className="thinking-preset-pills">
@@ -1801,7 +1709,6 @@ export function ModelConfigModal({
 																	</button>
 																))}
 
-																{/* 用户自建命名预设 */}
 																{userPresets.map((preset) => (
 																	<span key={preset.id} className="param-pill user-preset-pill">
 																		<button
@@ -1834,12 +1741,9 @@ export function ModelConfigModal({
 																		</button>
 																	</span>
 																))}
-
-																{/* 存为新预设按钮已移至下方传输协议右侧，保持此行纯粹为预设选项 */}
 															</div>
 														</div>
 
-														{/* 进阶协议与参数透传 */}
 														<div className="thinking-advanced-row">
 															<div className="thinking-advanced-head">
 																<div className="thinking-format-selector">
@@ -1868,7 +1772,6 @@ export function ModelConfigModal({
 																	</select>
 																</div>
 
-																{/* 存为新预设操作区（右侧对齐） */}
 																{savingPresetForIdx === idx ? (
 																	<div className="save-preset-inline">
 																		<input
@@ -1946,7 +1849,6 @@ export function ModelConfigModal({
 															</div>
 														</div>
 
-														{/* 7 档细粒度多选与数值自定义 */}
 														<div className="thinking-levels-grid">
 															{THINKING_VALUES.map((lvl) => {
 																const map = m.thinkingLevelMap;
@@ -2019,7 +1921,6 @@ export function ModelConfigModal({
 							</div>
 						)}
 
-						{/* 处于查看官方内置服务商状态 */}
 						{activeNav.type === "builtin" &&
 							(() => {
 								const p = providerStatus.find((x) => x.id === activeNav.id);
@@ -2066,7 +1967,6 @@ export function ModelConfigModal({
 											</div>
 										</div>
 
-										{/* OAuth 登录交互 */}
 										{p.supportsOAuth && (
 											<ProviderOAuthControls
 												provider={p}
@@ -2075,7 +1975,6 @@ export function ModelConfigModal({
 											/>
 										)}
 
-										{/* 多密钥列表与管理 */}
 										{p.supportsApiKey && (
 											<div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 												<span style={{ fontSize: 12.5, fontWeight: 600 }}>{t("apiKeyManagement")}</span>
@@ -2107,7 +2006,6 @@ export function ModelConfigModal({
 													))}
 												</div>
 
-												{/* 添加新 Key */}
 												<div className="provider-add-key" style={{ marginTop: 6 }}>
 													<input
 														type="text"
@@ -2135,7 +2033,6 @@ export function ModelConfigModal({
 											</div>
 										)}
 
-										{/* 追加覆盖模型 */}
 										{appendingFor === p.id && (
 											<div
 												style={{
@@ -2188,7 +2085,6 @@ export function ModelConfigModal({
 					</div>
 				</div>
 
-				{/* 候选模型采纳器弹窗 */}
 				{candidateList && (
 					<CandidatePickerModal
 						candidates={candidateList}

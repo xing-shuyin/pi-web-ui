@@ -1,0 +1,27 @@
+{
+	"id": "github-workbench",
+	"name": "GitHub 工作台",
+	"nameEn": "GitHub Workbench",
+	"version": "0.1.4",
+	"icon": "🐙",
+	"iconSvg": "<svg stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\" viewBox=\"0 0 24 24\" stroke-linecap=\"round\" stroke-linejoin=\"round\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22\"/></svg>",
+	"description": "文件列表旁的 GitHub 工作台 Tab：集中查看 PR 与 Issue、切换个人待办、筛选搜索、引用到对话、交给 AI、评论及关闭／重新打开。复用本机 gh 登录，切换 Tab 保留草稿。",
+	"descriptionEn": "A GitHub sidebar tab next to Files with PRs, issues, personal inboxes and search. Read, quote into chat, delegate to AI, comment, close and reopen using your existing gh login. Tab switches preserve drafts.",
+	"apiVersion": 2,
+	"view": false,
+	"permissions": ["ui", "http"],
+	"ui": {
+		"rightpanel.tabs": [
+			{
+				"id": "workbench",
+				"label": "工作台",
+				"labelEn": "GitHub",
+				"hint": "GitHub 工作台",
+				"hintEn": "GitHub Workbench",
+				"order": 110,
+				"iconSvg": "<svg stroke=\"currentColor\" fill=\"none\" stroke-width=\"2\" viewBox=\"0 0 24 24\" stroke-linecap=\"round\" stroke-linejoin=\"round\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22\"/></svg>",
+				"kind": "page"
+			}
+		]
+	}
+}

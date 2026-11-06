@@ -1,9 +1,3 @@
-/**
- * pstack-skills-data.ts — Pstack 全部 58 个官方 Skills 数据清单。
- * 来源于 https://github.com/cursor/plugins/tree/main/pstack/skills
- * 包含严谨工程剧本、去 AI 味 (Unslop)、根因深挖、领域建模与多方案竞斗等。
- */
-
 import type { Translate } from "../../i18n";
 
 export type PstackCategory = "core" | "architecture" | "principles" | "quality" | "verification" | "communication";

@@ -1,29 +1,6 @@
 /* theme-name: 半透明 */
 /* theme-name-en: Translucent */
-/*
- * 半透明主题——专为聊天背景图（壁纸，issue #100）设计：
- * 调色板与默认暗色一致，但把所有底板统一降到半透明（顶栏/底栏/左右面板、
- * 卡片/控件/代码面、输入框盒子、终端视图都走同一 --wallpaper-panel-alpha），
- * 让壁纸从各处透出、整体融合成一张画。配壁纸用最佳；不配壁纸时这些区域会
- * 透出纯色底（--bg），观感略偏暗沉，属预期。
- *
- * 统一透图率：--wallpaper-panel-alpha: 45%（45% 容器色 + 55% 透图）。
- * 已覆盖的面：顶栏/底栏/左右面板、左右折叠按钮（.panel-collapse-btn /
- * .panel-rail）、工具调用卡及其参数/输出块（.toolcall / .toolcall-args pre /
- * .toolcall-output pre）、bash 块（.bashblock/.termline）、消息代码块
- * （.codeblock pre）、全部消息气泡（.thinking/.toolcall/.bashblock/
- * .skillcard/.attachcard/.queued-bubble/.retry-notice/.msg-collapsed（含 hover））、
- * 快捷短语（.quick-chip）、新对话提示词模板卡（.empty-template）、顶栏
- * chips / 视图切换（.chip/.view-switch）——走 styles.css
- * 的 --card-bg/--chip-bg/--inputbox-bg，随 --wallpaper-panel-alpha 统一联动；
- * 中间的聊天/消息区用 --msgs-bg（同式 45%），气泡立在统一玻璃面上略实
- * 一层形成层次。**下拉弹窗保持实色**：声音/语言/主题/模型选择/思考强度等
- * 点出来的 .dd-menu 背景用 --menu-bg（这里覆盖回 var(--bg-elev2) 实色，
- * 弹窗内容多为密集列表，实色保可读）。终端视图（xterm canvas/容器）读
- * --term-bg，这里同样设半透明。
- * 各变量都可单独覆盖回实色（如 var(--bg-elev)）即关闭对应面的透图；
- * --msgs-bg 覆盖回 transparent 可恢复「消息区全透、壁纸从卡片间隙露出」。
- */
+
 :root {
 	--switch-bg-off: #424754;
 	--switch-border-off: #8791a3;
@@ -69,23 +46,15 @@
 	--term-bright-cyan: #22d3ee;
 	--term-bright-white: #ffffff;
 
-	/* ---- 壁纸适配：三大区域（顶栏/底栏/左右面板）背景链式引用此变量，
-	   从默认 62% 降到 45% → 容器色更薄、图更透（45% 容器色 + 55% 透图）---- */
 	--wallpaper-panel-alpha: 45%;
-	/* 下拉弹窗（声音/语言/主题/模型/思考强度/版本更新）：实色底保密集列表可读
-	   （与 styles.css 默认一致，这里显式锁定，防止跟随壁纸半透）。 */
+
 	--menu-bg: var(--bg-elev2);
-	/* 压暗略放轻（默认 0.78）：让图更鲜活，文字靠压暗与半透明底板仍可读 */
+
 	--bg-image-dim: 0.72;
-	/* 输入框盒子：styles.css 默认已与控件级底板同式跟随 --wallpaper-panel-alpha，
-	   这里不单独覆盖；想比整体厚/薄就设一个独立值 */
-	/* 终端视图：xterm canvas + 容器都读 --term-bg，改成半透明随整体透图 */
+
 	--term-bg: color-mix(in srgb, #0b0d12 45%, transparent);
 }
 
-/* 快捷短语芯片：styles.css 给的是实色 --bg-elev（它现在压在消息正文上，要压得
-   住字），这里覆盖回同族半透底 —— 仍是「45% 容器色 + 55% 透图」，与顶栏 chips /
-   卡片一致（--card-bg 就是这个式子的卡片色版）。 */
 .quick-chip {
 	background: var(--card-bg);
 }

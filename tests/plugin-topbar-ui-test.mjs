@@ -1,17 +1,3 @@
-/* 浏览器 E2E（issue #146 + #152）：插件顶栏条目与「设置面板内后台安装」在真浏览器里的行为。
- *
- * 覆盖（零 token，本地假插件，不联网）：
- *   - manifest `ui.topbar` 声明的按钮渲染在宿主顶栏（旧的顶层 `manifest.topbar` 已不再解析）
- *   - 点击 → 宿主按需加载插件 client bundle → 插件接管的动作命中（onUiAction / 旧名 onTopbarAction）
- *   - 设置面板「界面插件」页出现「界面布局」管理段（隐藏/排序）
- *   - 插件市场出现「源码构建」（--build）勾选项
- *   - 卸载走后台作业：客户端发出 plugin_job、服务端回 start/log/done(ok)，
- *     **设置面板全程不关**（issue #152 的核心诉求），卸载完成后插件从列表消失
- *   - 页面无 JS 报错
- *
- * 缺 Chrome 自动 SKIP（与 fence-render-test 同约定）。运行：
- *   npm run build && node tests/plugin-topbar-ui-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +25,6 @@ const check = (name, cond) => {
 	}
 };
 
-// 假插件：view:false（不会被视图加载器提前加载）+ 一个 topbar 条目（动作要插件自己接管）
 const pdir = join(DATA_DIR, "plugins", "toptest");
 mkdirSync(join(pdir, "client"), { recursive: true });
 writeFileSync(
@@ -48,7 +33,6 @@ writeFileSync(
 		name: "Top Test",
 		version: "0.0.1",
 		view: false,
-		// UI 贡献需要能力声明（issue #146：host.ui 门控）
 		permissions: ["ui"],
 		ui: {
 			topbar: [
@@ -74,9 +58,7 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -98,9 +80,6 @@ async function main() {
 
 	await waitServer();
 	browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true });
-	// 宽视口：顶栏「放不下的自动进 ⋯」（#162）按**实测宽度**从尾部丢条目，
-	// 默认 1280×720 下这个插件条目会落进溢出菜单，而本用例要验的正是
-	// 「插件声明的按钮渲染在宿主顶栏」。
 	const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 	const errors = [];
 	const jobFrames = [];
@@ -120,14 +99,11 @@ async function main() {
 	});
 
 	await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
-	// 只认这个插件自己的按钮：`.plugin-topbar-item` 也被「⋯」溢出按钮复用，
-	// `.first()` 会拿到「⋯」（文字不是 Ping Me）而误判。
 	const pluginBtn = page.locator(".plugin-topbar-item", { hasText: "Ping Me" }).first();
 	await pluginBtn.waitFor({ timeout: 20000 }).catch(() => {});
 	const label = await pluginBtn.textContent().catch(() => "");
 	check("插件声明的顶栏按钮渲染在宿主顶栏", (label ?? "").includes("Ping Me"));
 
-	// 点击 → 宿主按需加载 plugin bundle（view:false 没被预加载）→ 动作被插件接管
 	await pluginBtn.click();
 	let actionOk = false;
 	for (let i = 0; i < 60; i++) {
@@ -139,8 +115,6 @@ async function main() {
 	}
 	check("点击后插件接管的动作被执行（按需加载 client bundle）", actionOk);
 
-	// 设置面板：顶栏条目管理段 + 源码构建开关
-	// 顶栏直流内不用原生 title（用 data-tip），title 只作旧构建回落。
 	const settingsBtn = page
 		.locator(
 			'button.chip[data-tip*="设置"], button.chip[data-tip*="Settings"], button[title*="设置"], button[title*="Settings"]',
@@ -148,19 +122,15 @@ async function main() {
 		.first();
 	if (await settingsBtn.count()) await settingsBtn.click();
 	await sleep(800);
-	// 按页签选择器点（`getByText` 可能命中页内文案而不是左侧导航的页签，点了不切页）。
 	const pluginsTab = page.locator(".settings-tab", { hasText: /界面插件|UI plugins/ }).first();
 	if (await pluginsTab.count()) await pluginsTab.click();
 	await sleep(600);
 	check("设置面板出现「界面布局」管理段", (await page.getByText("界面布局", { exact: false }).count()) > 0);
-	// 「源码构建」勾选项属于**市场**栏（默认子页签），所以要在切到「插件列表」之前断言。
 	check("插件市场出现「源码构建」勾选项", (await page.getByText("源码构建", { exact: false }).count()) > 0);
-	// 「界面插件」页有子页签：**插件市场**（默认）/ **插件列表**；插件行的更新/卸载按钮在「插件列表」那一栏。
 	const installedSub = page.locator(".set-subtab", { hasText: /插件列表|Plugin list/ }).first();
 	if (await installedSub.count()) await installedSub.click();
 	await sleep(600);
 
-	// 卸载走后台作业：面板不关、服务端回 start→log→done(ok)
 	const uninstallBtn = page.locator('button[title*="卸载"], button[title*="Uninstall"]').first();
 	check("插件列表有卸载按钮", (await uninstallBtn.count()) > 0);
 	if (await uninstallBtn.count()) {
@@ -180,7 +150,6 @@ async function main() {
 		check("设置面板全程没有关闭", (await page.getByText("界面插件", { exact: true }).count()) > 0);
 		let gone = false;
 		for (let i = 0; i < 40; i++) {
-			// 卸载成功后列表里不再有这台插件（= 结果可见）
 			if ((await page.getByText("Top Test", { exact: false }).count()) === 0) {
 				gone = true;
 				break;
@@ -208,18 +177,14 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (server?.pid) {
 		try {
 			process.kill(-server.pid, "SIGKILL");
 		} catch {
 			try {
 				server.kill("SIGKILL");
-			} catch {
-				/* already gone */
-			}
+			} catch {}
 		}
 	}
 	rmSync(base, { recursive: true, force: true });

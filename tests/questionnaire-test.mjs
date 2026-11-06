@@ -1,14 +1,3 @@
-/* Questionnaire E2E test: boots the compiled server, opens the built UI in
- * headless Chromium, and drives a REAL ask_user_question round-trip through
- * the browser dialog bridge:
- *
- *   1. prompt the agent to call ask_user_question
- *   2. the .dialog-inline panel must appear above the input (styling + options)
- *   3. clicking an option resolves the tool, panel closes, agent continues
- *   4. a second round is dismissed with Escape -> tool resolves as declined
- *
- * Requires a working model (deepseek) for the agent session.
- * Run:  npm run build && node questionnaire-test.mjs */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { freePort } from "./lib/port-utils.mjs";
 import { spawn } from "node:child_process";
@@ -18,8 +7,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
-// fileURLToPath（不是 URL.pathname）：Windows 上 ".pathname" 得到 "/E:/..."，
-// spawn 的 cwd 与脚本参数都不存在 → ENOENT，测试根本起不来。
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PORT = 30000 + Math.floor(Math.random() * 10000);
 const workdir = mkdtempSync(join(tmpdir(), "piweb-q-"));
@@ -35,12 +22,9 @@ server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
 	try {
-		// win32 没有负数 PID 的进程组，退回按端口清理。
 		if (process.platform === "win32") freePort(PORT);
 		else process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,20 +44,16 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-/** Wait until the agent finishes streaming (send button replaces the stop button). */
 async function waitIdle(page, timeout = 60_000) {
 	for (let i = 0; i < timeout / 500; i++) {
 		const sendBtn = await page.locator(".btn.send").count();
 		if (sendBtn > 0) {
-			// Let the tail of the run (final text, queue drain) settle.
 			await sleep(1500);
 			return true;
 		}
@@ -82,13 +62,11 @@ async function waitIdle(page, timeout = 60_000) {
 	return false;
 }
 
-/** Send a prompt via the chat input. */
 async function sendPrompt(page, text) {
 	await page.fill(".inputbox textarea", text);
 	await page.keyboard.press("Enter");
 }
 
-/** Wait for the last ask_user_question toolcall to reach 完成. */
 async function waitToolDone(page, timeout = 180_000) {
 	const tc = page.locator('.toolcall:has(.toolcall-name:text-is("ask_user_question"))');
 	await tc.last().waitFor({ state: "visible", timeout });
@@ -129,14 +107,12 @@ async function main() {
 	await page.waitForSelector(".topbar", { timeout: 5000 });
 	console.log("app booted");
 
-	// -- Round 1: answer the questionnaire -----------------------------------
 	console.log("round 1: answering the questionnaire…");
 	await sendPrompt(
 		page,
 		"请立即调用 ask_user_question 工具问我一个问题：「测试问题：1+1 等于几？」并给出两个选项：「等于 2」和「等于 3」。调用后等待我的回答，不要做其他事。",
 	);
 
-	// The inline panel must appear above the input (styling + options).
 	await page.waitForSelector(".dialog-inline", {
 		state: "visible",
 		timeout: 180_000,
@@ -146,8 +122,6 @@ async function main() {
 	const title = await page.locator(".dialog-title").textContent();
 	check("dialog shows the question", title?.includes("1+1") ?? false);
 
-	// rpc-fallback appends the "Type something." sentinel row, so a 2-option
-	// question renders as 3 selectable rows.
 	const optCount = await page.locator(".dialog-option").count();
 	check("dialog shows options (2 + Type something.)", optCount === 3);
 	const opts = await page.locator(".dialog-option").allTextContents();
@@ -165,8 +139,6 @@ async function main() {
 		);
 	}
 
-	// Non-modal: the panel must live inside the chat main column, sit above
-	// the input box, and leave the message list visible.
 	const mainPanel = page.locator(".main .dialog-inline");
 	check("panel is inside the chat main column", (await mainPanel.count()) === 1);
 	const panelBox = await page.locator(".dialog-inline").boundingBox();
@@ -178,7 +150,6 @@ async function main() {
 	check("panel sits above the input box", !!panelBox && !!inputBox && panelBox.y + panelBox.height <= inputBox.y + 2);
 	check("message list stays visible while asking", !!listBox && listBox.height > 0);
 
-	// Click the first option -> tool resolves, panel closes, agent continues.
 	await page.locator(".dialog-option").first().click();
 	await page.waitForSelector(".dialog-inline", {
 		state: "detached",
@@ -189,7 +160,6 @@ async function main() {
 	check("agent idle after round 1", await waitIdle(page));
 	console.log("round 1 done\n");
 
-	// -- Round 2: dismiss with Escape ----------------------------------------
 	console.log("round 2: dismissing with Escape…");
 	await sendPrompt(
 		page,
@@ -210,7 +180,6 @@ async function main() {
 	check("tool completed after cancel", await waitToolDone(page));
 	console.log("round 2 done\n");
 
-	// -- Summary -------------------------------------------------------------
 	if (consoleErrors.length > 0) {
 		console.log("console errors:", consoleErrors.slice(0, 5));
 	}

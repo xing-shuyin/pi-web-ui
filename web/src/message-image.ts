@@ -1,15 +1,3 @@
-/**
- * 整条消息卡片 → PNG → 系统剪贴板（issue #228「复制为图片」）。
- *
- * html-to-image 把 DOM 塞进 SVG foreignObject 再画到 canvas 上。两个坑叠在一起
- * 就会变成用户看到的「浅色主题黑底黑字 / 深紫气泡」：
- *   1. `backgroundColor` 选项若是 `color-mix(...)` / CSS 变量，canvas `fillStyle`
- *      解析失败，整张画布先被涂成黑；
- *   2. 气泡用的 `--accent-soft: rgba(..., 0.14)`、`--card-bg: color-mix(..., transparent)`
- *      仍带 alpha，画到黑画布上就变成深紫/泥灰，浅色主题的深字叠上去完全看不清。
- *
- * 导出前把计算色拍扁成不透明 rgb，画布底用主题实底，再交给 html-to-image。
- */
 interface Rgba {
 	r: number;
 	g: number;
@@ -20,14 +8,11 @@ interface Rgba {
 const LIGHT_FALLBACK = "#ffffff";
 const DARK_FALLBACK = "#1e1e1e";
 
-/** 工具条 / 块级复制键 / 流式光标 / 编辑器 / 导出勾选框是操作层，不进长图。 */
 export const EXPORT_CHROME_SELECTOR =
 	".msg-actions, .msg-text-copy, .chead-copy, .stream-cursor, .msg-editor, .msg-collapse-btn, .msg-export-check, .toolcall-kill, .toolcall-open";
 
-/** 浏览器 canvas 边长上限（Chrome/Edge 约 16384；超出 toBlob 会黑图或抛错）。 */
 const EXPORT_CANVAS_MAX_PX = 16384;
 
-/** 2x 优先；超限降到 1x；1x 仍超返回 0（调用方应拒复制）。 */
 export function pickExportPixelRatio(cssHeight: number, cssWidth = 800, desired = 2): number {
 	const maxDim = Math.max(cssHeight, cssWidth, 1);
 	if (maxDim * desired <= EXPORT_CANVAS_MAX_PX) return desired;
@@ -112,7 +97,6 @@ export function formatRgb(c: Rgba): string {
 	return `rgb(${r}, ${g}, ${b})`;
 }
 
-/** Porter-Duff src-over；bg 视为已经不透明。 */
 export function flattenOnto(fg: Rgba, bg: Rgba): Rgba {
 	const a = clamp(fg.a, 0, 1);
 	if (a <= 0) return { r: bg.r, g: bg.g, b: bg.b, a: bg.a };
@@ -125,7 +109,6 @@ export function flattenOnto(fg: Rgba, bg: Rgba): Rgba {
 	};
 }
 
-/** 解析失败或全透明 → 回落 backdrop（已拍扁）。永不返回 color-mix / 变量字符串。 */
 export function opaqueCss(color: string, backdrop: string): string {
 	const bg = parseCssColor(backdrop) ?? { r: 255, g: 255, b: 255, a: 1 };
 	const fg = parseCssColor(color);
@@ -159,10 +142,6 @@ function schemeFallback(): string {
 	return scheme.split(/\s+/).includes("light") ? LIGHT_FALLBACK : DARK_FALLBACK;
 }
 
-/**
- * 导出画布的不透明底：主题 --card-bg / --msgs-bg 拍到 --bg 上。
- * 浅色半透明卡片不再落到默认黑底。
- */
 export function resolveExportBackdrop(el?: HTMLElement | null): string {
 	const fallback = schemeFallback();
 	let pageBg = fallback;
@@ -177,9 +156,7 @@ export function resolveExportBackdrop(el?: HTMLElement | null): string {
 		const card = opaqueCss(cardRaw, pageBg);
 		const parsed = parseCssColor(card);
 		if (parsed && relativeLuminance(parsed) + parsed.a > 0) return card;
-	} catch {
-		/* probe 失败就往下走 DOM */
-	}
+	} catch {}
 
 	let cur: HTMLElement | null = el ?? null;
 	while (cur) {
@@ -207,10 +184,6 @@ function flattenColorValue(value: string, backdrop: string): string | null {
 	return formatRgb(flattenOnto(parsed, { ...bg, a: 1 }));
 }
 
-/**
- * 把 src 树上的计算色写到 dst（结构相同的 clone）上：半透明背景/文字/描边拍到
- * 最近的不透明祖先上，并关掉 backdrop-filter / mix-blend-mode（SVG 里会变成黑罩）。
- */
 function flattenPaintTree(src: Element, dst: Element, backdrop: string): void {
 	const cs = getComputedStyle(src);
 	const st = styled(dst);
@@ -266,7 +239,6 @@ interface ExportContentFilter {
 	includeTools?: boolean;
 }
 
-/** 默认去掉思考块 / 工具卡；打开对应开关才保留。flatten 之后再剥，避免和源 DOM 对不齐。 */
 export function applyExportContentFilter(root: HTMLElement, opts: ExportContentFilter = {}): void {
 	if (!opts.includeThinking) root.querySelectorAll(".thinking").forEach((n) => n.remove());
 	if (!opts.includeTools) root.querySelectorAll(".toolcall").forEach((n) => n.remove());

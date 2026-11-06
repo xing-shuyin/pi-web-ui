@@ -1,11 +1,4 @@
-# 仓库根 .gitattributes
-#
-# 为什么有构建产物进 git：插件是「整个目录复制到 <dataDir>/plugins/」安装的
-# （见各插件 README），所以自带的 client bundle / vendor bundle 必须随目录一起在仓库里，
-# 用户离线复制过去也能直接用。代价是审阅 diff 时同一份逻辑看两遍（src/ 与 bundle）。
-# 标成 linguist-generated 后 GitHub 默认折叠这些文件的 diff，也不计入语言统计。
 
-# ---- 本项目 esbuild/Vite 的产物（改 src/ 后要重新生成，CI 有守卫）------------
 plugins/db-client/client/entry.mjs linguist-generated=true
 plugins/vscode-editor/client/entry.mjs linguist-generated=true
 plugins/legado-web/server/engine.mjs linguist-generated=true
@@ -13,5 +6,10 @@ plugins/legado-web/client/app/assets/* linguist-generated=true
 plugins/mermaid/client/vendor/* linguist-generated=true
 plugins/run-trace/client/vendor/* linguist-generated=true
 
-# ---- 第三方原样入库（不是本项目源码，也不是本项目构建的）---------------------
 plugins/wechat-ilink/client/vendor/qrcode.js linguist-vendored=true
+
+*.txt text eol=lf
+*.gradle text eol=lf
+*.bat text eol=crlf
+
+plugins/legado-web/app/** whitespace=cr-at-eol

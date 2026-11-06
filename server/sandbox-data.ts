@@ -563,7 +563,6 @@ export class SandboxManager {
 					await mkdir(path);
 				});
 			}
-			// Keep the import baseline: subsequent previews continue to show the sandbox's changes.
 			return { sandbox: info, sourcePath: info.sourcePath, copiedFiles, deletedFiles };
 		} catch (error) {
 			const failures: unknown[] = [];

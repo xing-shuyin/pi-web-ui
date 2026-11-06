@@ -1,7 +1,3 @@
-/**
- * 长图导出对比度：半透明 / color-mix 必须拍成不透明 rgb，
- * 绝不能把 color-mix 字符串交给 canvas fillStyle（会变成黑底）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	EXPORT_CHROME_SELECTOR,
@@ -37,7 +33,6 @@ describe("flattenOnto / opaqueCss", () => {
 		const flat = flattenOnto(bubble, paper);
 		expect(isLightColor(flat)).toBe(true);
 		expect(relativeLuminance(flat)).toBeGreaterThan(0.7);
-		// 叠到黑底才会变暗——那是 bug 形态，这里断言我们没有那么做
 		const onBlack = flattenOnto(bubble, { r: 0, g: 0, b: 0, a: 1 });
 		expect(relativeLuminance(onBlack)).toBeLessThan(relativeLuminance(flat));
 	});

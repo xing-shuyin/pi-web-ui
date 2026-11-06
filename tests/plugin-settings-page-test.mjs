@@ -1,16 +1,3 @@
-/* 浏览器 E2E（issue #146 完整版）：插件自定义设置页（`settings.pages` 槽位）在真浏览器里的行为。
- *
- * 覆盖（零 token，本地假插件，不联网）：
- *   - manifest 的 `ui.settings` 条目变成设置面板左侧导航的一项（插件页）
- *   - 点开后由 PluginPage 挂载插件自己的 client bundle，画到 `.plugin-page-host` 里
- *   - `hidden: true` 的页面不出现在导航里（用户可在「界面布局」页放出来）
- *   - 离开该页时插件被**卸载**（mount() 返回的 cleanup 被调用；再点回来是第二次 mount）
- *   - 在「界面布局」里取消勾选该页 → 导航项消失、当前分区回落到默认页（不留白屏）
- *   - 页面无 JS 报错
- *
- * 缺 Chrome 自动 SKIP（与 fence-render-test / plugin-topbar-ui-test 同约定）。运行：
- *   npm run build && node tests/plugin-settings-page-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,9 +26,6 @@ const check = (name, cond) => {
 	}
 };
 
-// 假插件：view:false（不被视图加载器预加载）+ 两个 settings.pages 条目（一个正常、一个默认隐藏）。
-// client/entry.mjs 只干三件事：往画布写字、记 mount 次数、在 cleanup 里记卸载次数 ——
-// 「切走即卸载」这条契约只有数得出来才能算验过。
 const pdir = join(DATA_DIR, "plugins", "setpage");
 mkdirSync(join(pdir, "client"), { recursive: true });
 writeFileSync(
@@ -50,7 +34,6 @@ writeFileSync(
 		name: "Set Page Test",
 		version: "0.0.1",
 		view: false,
-		// UI 贡献需要能力声明（issue #146：host.ui 门控）
 		permissions: ["ui"],
 		ui: {
 			settings: [
@@ -84,24 +67,16 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-/** 左侧导航里有没有这一项（按文案）。 */
 function railTab(page, text) {
 	return page.locator(".settings-tab", { hasText: text }).first();
 }
 
-/**
- * 点一个元素：headless 下 `locator.click()` 在**顶栏**上偶发不达（悬停时子节点位移，
- * 事件没冒泡到按钮），而「按坐标派发真实鼠标事件」稳定复现用户行为 —— 这是本仓库
- * 浏览器 E2E 里踩过的坑，别改回 locator.click()。
- */
 async function tap(page, locator) {
 	await locator.waitFor({ state: "visible", timeout: 15000 });
 	await locator.scrollIntoViewIfNeeded();
@@ -110,13 +85,7 @@ async function tap(page, locator) {
 	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-/**
- * 打开设置面板。页面装载后可能**自愈重载一次**（服务端刚 rebuild 过，客户端拿到新构建
- * 自 reload，见 PR #144），重载会把刚打开的弹窗清掉 —— 所以这里带重试，别让一次重载
- * 判成功能坏了。
- */
 async function openSettings(page) {
-	// 顶栏直流内不用原生 title（用 data-tip），title 只作旧构建回落。
 	const btn = page
 		.locator(
 			'button.chip[data-tip*="设置"], button.chip[data-tip*="Settings"], button[title*="设置"], button[title*="Settings"]',
@@ -129,13 +98,11 @@ async function openSettings(page) {
 			if ((await page.locator(".settings-modal").count()) > 0) return true;
 			await sleep(200);
 		}
-		// 重载中/还在连：等页面重新可用再试
 		await page.waitForSelector(".chat-input, .inputbar, textarea", { timeout: 30000 }).catch(() => {});
 	}
 	return false;
 }
 
-/** 轮询等待条件成立（返回是否成立）。 */
 async function until(fn, tries = 60, gapMs = 200) {
 	for (let i = 0; i < tries; i++) {
 		if (await fn()) return true;
@@ -144,11 +111,6 @@ async function until(fn, tries = 60, gapMs = 200) {
 	return false;
 }
 
-/**
- * 等页面「安静」下来：装载后可能因为服务端刚 rebuild 而自愈重载一次（PR #144），
- * 重载会把刚打开的弹窗/刚挂的插件页全清掉。所以先等到连续 quietMs 没有任何导航，
- * 再等应用壳重新就绪 —— 之后的断言才不会被一次重载打断。
- */
 async function settle(page, quietMs = 2500) {
 	let last = Date.now();
 	const onNav = (f) => {
@@ -193,7 +155,6 @@ async function main() {
 	await page.waitForSelector(".chat-input, .inputbar, textarea", { timeout: 30000 });
 	await settle(page);
 
-	// ---- 打开设置面板：插件页应该在左侧导航里 -------------------------------
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
 
@@ -201,7 +162,6 @@ async function main() {
 	check("manifest 的 settings.pages 条目出现在设置面板导航里", appeared);
 	check("hidden: true 的插件页默认不在导航里", (await railTab(page, "Hidden Page").count()) === 0);
 
-	// ---- 点开插件页：PluginPage 挂载插件 bundle ---------------------------
 	await tap(page, railTab(page, "Set Test"));
 	const mounted = await until(
 		async () =>
@@ -213,7 +173,6 @@ async function main() {
 	);
 	check("点开后插件自己的 mount() 渲染到页面画布", mounted);
 
-	// ---- 切走再切回来：cleanup 被调用、第二次 mount ------------------------
 	await tap(page, page.locator(".settings-tab", { hasText: /系统提示词|System prompt/ }).first());
 	const left = await until(async () => (await page.locator(".plugin-page-host").count()) === 0, 20, 150);
 	check("切走后插件页从 DOM 里卸载", left);
@@ -224,8 +183,6 @@ async function main() {
 	const remounted = await until(async () => (await page.evaluate(() => globalThis.__setPageMounts || 0)) >= 2, 40, 150);
 	check("再点回来是重新挂载（不是一直留在 DOM 里）", remounted);
 
-	// ---- 布局页里把该页取消勾选：导航项消失 + 分区回落 --------------------
-	// 「界面布局」是**独立页签**（SettingsModal 的 { id: "layout" }），不再挂在「界面插件」下面。
 	await tap(page, page.locator(".settings-tab", { hasText: /界面布局|UI layout/ }).first());
 	const slotRow = page.locator(".set-ui-slot", { hasText: /设置页|Settings pages/ }).first();
 	const pageRow = slotRow.locator(".set-row", { hasText: "Set Test" }).first();
@@ -262,18 +219,14 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	if (server?.pid) {
 		try {
 			process.kill(-server.pid, "SIGKILL");
 		} catch {
 			try {
 				server.kill("SIGKILL");
-			} catch {
-				/* already gone */
-			}
+			} catch {}
 		}
 	}
 	freePort(PORT);

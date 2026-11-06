@@ -1,6 +1,3 @@
-/**
- * canvas-dispatch.ts — 画布协作 WebSocket 客户端消息分发器。
- */
 import type { ClientMessage, ServerMessage } from "../protocol.js";
 import { isSafeGraphId, listCanvasGraphs, loadCanvasGraph, saveCanvasGraph } from "./canvas-store.js";
 import { deleteCustomCard, listCustomCards } from "./canvas-cards.js";
@@ -40,9 +37,7 @@ export function handleCanvasMessage(
 		case "canvas_card_delete": {
 			try {
 				deleteCustomCard(dataDir, msg.id);
-			} catch {
-				// 非法 id 直接忽略
-			}
+			} catch {}
 			send({ type: "canvas_cards_state", cards: listCustomCards(dataDir) });
 			return true;
 		}
@@ -197,7 +192,6 @@ export function handleCanvasMessage(
 		}
 
 		case "canvas_review_node": {
-			// 审查门禁真动作：落盘持久化 + 广播，非本地假状态（#707）
 			if (!isSafeGraphId(msg.graphId)) return true;
 			try {
 				const graph = orchestrator.reviewNode(msg.graphId, msg.nodeId, msg.decision, msg.comment);

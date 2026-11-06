@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { writeJsonAtomicSync } from "../atomic-file.js";
 import type { CanvasGraph, CanvasGraphSummary } from "../protocol.js";
 
-/** Reliable first-run template: explicit input, implementation, verification, and human acceptance. */
 export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 	const now = Date.now();
 	return {
@@ -112,11 +111,8 @@ export function createDefaultCanvasGraph(id = "default"): CanvasGraph {
 	};
 }
 
-/** 画布图/节点 id 白名单：抵挡路径穿越（../）与 git 分支参数注入载体。
- *  限制字符集与长度，杜绝 join 拼接逃逸、worktree 目录逃逸、git 分支名注入。 */
 const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
-/** id 是否可安全用作文件名片段 / worktree 目录名 / git 分支名。 */
 export function isSafeGraphId(id: unknown): id is string {
 	return typeof id === "string" && SAFE_ID_RE.test(id);
 }
@@ -128,7 +124,6 @@ function assertSafeGraphId(id: string): void {
 		});
 }
 
-/** 确保画布存储目录存在 */
 function ensureCanvasDir(dataDir: string): string {
 	const dir = join(dataDir, "canvas");
 	if (!existsSync(dir)) {
@@ -137,12 +132,10 @@ function ensureCanvasDir(dataDir: string): string {
 	return dir;
 }
 
-/** 列出所有已保存的画布工程摘要 */
 export function listCanvasGraphs(dataDir: string): CanvasGraphSummary[] {
 	const dir = ensureCanvasDir(dataDir);
 	const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
 	if (files.length === 0) {
-		// 初始化默认画布
 		const def = createDefaultCanvasGraph();
 		saveCanvasGraph(dataDir, def);
 		return [
@@ -170,14 +163,11 @@ export function listCanvasGraphs(dataDir: string): CanvasGraphSummary[] {
 					updatedAt: content.updatedAt ?? Date.now(),
 				});
 			}
-		} catch {
-			// 跳过损坏的文件
-		}
+		} catch {}
 	}
 	return list.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-/** 读取指定画布工程 */
 export function loadCanvasGraph(dataDir: string, id: string): CanvasGraph {
 	assertSafeGraphId(id);
 	const dir = ensureCanvasDir(dataDir);
@@ -193,7 +183,6 @@ export function loadCanvasGraph(dataDir: string, id: string): CanvasGraph {
 	return JSON.parse(readFileSync(path, "utf8")) as CanvasGraph;
 }
 
-/** 保存或更新画布工程（全量拓扑写：rev +1） */
 export function saveCanvasGraph(
 	dataDir: string,
 	graph: CanvasGraph,
@@ -216,7 +205,6 @@ export function saveCanvasGraph(
 		return { conflict: true, graph: disk ?? graph };
 	}
 	if (disk) {
-		// Topology saves never replace authoritative execution state with a browser's stale snapshot.
 		graph.status = disk.status;
 		graph.run = disk.run;
 		const existingNodes = new Map(disk.nodes.map((node) => [node.id, node]));
@@ -254,12 +242,10 @@ const RUNTIME_FIELDS = [
 	"actualModel",
 ] as const;
 
-/** 运行态落盘：只合并运行字段，拓扑（nodes 增删/edges/坐标/指令）以磁盘版为准，防 stale 回滚（F1）。不推进 rev。 */
 export function saveCanvasRuntimeState(dataDir: string, runtime: CanvasGraph): void {
 	assertSafeGraphId(runtime.id);
 	const dir = ensureCanvasDir(dataDir);
 	const path = join(dir, `${runtime.id}.json`);
-	// Runtime updates never create a graph: deletion is authoritative.
 	if (!existsSync(path)) return;
 	let disk: CanvasGraph;
 	try {
@@ -286,11 +272,9 @@ export function saveCanvasRuntimeState(dataDir: string, runtime: CanvasGraph): v
 	disk.run = runtime.run;
 	disk.updatedAt = Date.now();
 	writeJsonAtomicSync(path, disk);
-	// 回填调用方，使广播带上最新 rev/拓扑
 	runtime.rev = disk.rev;
 }
 
-/** Called once when the server starts; persisted runs cannot still own a live engine session. */
 export function markInterruptedCanvasRuns(dataDir: string): void {
 	const dir = ensureCanvasDir(dataDir);
 	for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
@@ -319,7 +303,6 @@ export function markInterruptedCanvasRuns(dataDir: string): void {
 	}
 }
 
-/** 删除画布工程 */
 export function deleteCanvasGraph(dataDir: string, id: string): boolean {
 	assertSafeGraphId(id);
 	const dir = ensureCanvasDir(dataDir);

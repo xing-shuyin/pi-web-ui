@@ -1,8 +1,3 @@
-/**
- * issue #193：schedule 单 action 工具（create/list/cancel）。
- * 时间解析纯函数 + 工具 execute 直调（真 SchedulerStore 落临时 dataDir，
- * 不起 server、不调模型）：建任务默认绑定发起对话＋单次，列表/取消闭环。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,13 +24,13 @@ describe("parseScheduleSpec", () => {
 		expect(parseScheduleSpec("in 2d")).toEqual({ kind: "interval", spec: String(2 * 86_400_000) });
 		expect(parseScheduleSpec("45m")).toEqual({ kind: "interval", spec: String(45 * 60_000) });
 		expect(parseScheduleSpec("in 90s")).toEqual({ kind: "interval", spec: String(90_000) });
-		expect(parseScheduleSpec("30")).toEqual({ kind: "interval", spec: String(30 * 60_000) }); // 裸数字按分钟
+		expect(parseScheduleSpec("30")).toEqual({ kind: "interval", spec: String(30 * 60_000) });
 	});
 	it("非法写法抛错", () => {
 		expect(() => parseScheduleSpec("")).toThrow();
 		expect(() => parseScheduleSpec("明天早上")).toThrow();
 		expect(() => parseScheduleSpec("0 0")).toThrow();
-		expect(() => parseScheduleSpec("61 25 * * *")).toThrow(); // 5 段但非法 cron
+		expect(() => parseScheduleSpec("61 25 * * *")).toThrow();
 	});
 });
 
@@ -71,14 +66,12 @@ describe("AgentService.wakeConversation（无持有方路径）", () => {
 		expect(miss.ok).toBe(false);
 		expect(miss.error).toContain("不在运行中");
 		expect(await svc.wakeConversation("", "hi")).toMatchObject({ ok: false });
-		// issue #231：带稳定键也找不到 → 同样 miss（不 busy），调用方走视口回退
 		const miss2 = await svc.wakeConversation("c-nope", "hi", {
 			sessionFile: "/tmp/nope.jsonl",
 			cwd: dir,
 		});
 		expect(miss2.ok).toBe(false);
 		expect(miss2.busy).not.toBe(true);
-		// 视口回退：同项目无存活对话 → miss（不抛错）
 		const vp = await svc.wakeViewportInCwd(dir, "hi");
 		expect(vp.ok).toBe(false);
 		svc.quiesce();

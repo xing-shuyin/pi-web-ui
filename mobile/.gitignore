@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+android/.gradle/
+android/local.properties
+android/**/build/
+android/pi-push.properties
+android/app/oem-push.gradle
+ios/App/Pods/
+ios/App/build/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App/NativeConfig.xcconfig
+ios/App/App/capacitor.config.json
+android/app/src/main/assets/capacitor.config.json

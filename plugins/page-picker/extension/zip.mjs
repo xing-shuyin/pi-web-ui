@@ -31,7 +31,6 @@ export function crc32(bytes) {
 	return (crc ^ 0xffffffff) >>> 0;
 }
 
-/** 固定时间戳（DOS 格式）：2024-01-01 00:00:00，保证产物可复现。 */
 const DOS_TIME = 0;
 const DOS_DATE = ((2024 - 1980) << 9) | (1 << 5) | 1;
 
@@ -58,25 +57,25 @@ export function buildZip(entries) {
 
 		const local = new Uint8Array(30 + nameBytes.length);
 		const lv = new DataView(local.buffer);
-		lv.setUint32(0, 0x04034b50, true); // 本地文件头签名
-		lv.setUint16(4, 20, true); // 解压所需版本 2.0
-		lv.setUint16(6, 0x0800, true); // 标志位：文件名为 UTF-8
-		lv.setUint16(8, 0, true); // 压缩方法 0 = store
+		lv.setUint32(0, 0x04034b50, true);
+		lv.setUint16(4, 20, true);
+		lv.setUint16(6, 0x0800, true);
+		lv.setUint16(8, 0, true);
 		lv.setUint16(10, DOS_TIME, true);
 		lv.setUint16(12, DOS_DATE, true);
 		lv.setUint32(14, crc, true);
 		lv.setUint32(18, size, true);
 		lv.setUint32(22, size, true);
 		lv.setUint16(26, nameBytes.length, true);
-		lv.setUint16(28, 0, true); // extra 长度
+		lv.setUint16(28, 0, true);
 		local.set(nameBytes, 30);
 		locals.push(local, entry.data);
 
 		const central = new Uint8Array(46 + nameBytes.length);
 		const cv = new DataView(central.buffer);
-		cv.setUint32(0, 0x02014b50, true); // 中央目录签名
-		cv.setUint16(4, 20, true); // 打包者版本
-		cv.setUint16(6, 20, true); // 解压所需版本
+		cv.setUint32(0, 0x02014b50, true);
+		cv.setUint16(4, 20, true);
+		cv.setUint16(6, 20, true);
 		cv.setUint16(8, 0x0800, true);
 		cv.setUint16(10, 0, true);
 		cv.setUint16(12, DOS_TIME, true);
@@ -85,12 +84,12 @@ export function buildZip(entries) {
 		cv.setUint32(20, size, true);
 		cv.setUint32(24, size, true);
 		cv.setUint16(28, nameBytes.length, true);
-		cv.setUint16(30, 0, true); // extra
-		cv.setUint16(32, 0, true); // comment
-		cv.setUint16(34, 0, true); // 起始磁盘号
-		cv.setUint16(36, 0, true); // 内部属性
-		cv.setUint32(38, 0, true); // 外部属性
-		cv.setUint32(42, offset, true); // 本地头偏移
+		cv.setUint16(30, 0, true);
+		cv.setUint16(32, 0, true);
+		cv.setUint16(34, 0, true);
+		cv.setUint16(36, 0, true);
+		cv.setUint32(38, 0, true);
+		cv.setUint32(42, offset, true);
 		central.set(nameBytes, 46);
 		centrals.push(central);
 
@@ -100,7 +99,7 @@ export function buildZip(entries) {
 	const centralSize = centrals.reduce((n, c) => n + c.length, 0);
 	const eocd = new Uint8Array(22);
 	const ev = new DataView(eocd.buffer);
-	ev.setUint32(0, 0x06054b50, true); // 中央目录结束记录
+	ev.setUint32(0, 0x06054b50, true);
 	ev.setUint16(4, 0, true);
 	ev.setUint16(6, 0, true);
 	ev.setUint16(8, entries.length, true);
@@ -126,7 +125,6 @@ export function buildZip(entries) {
  */
 export function readZip(bytes) {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	// 从尾部找中央目录结束记录（可能有注释，最多回退 66KB）
 	let eocd = -1;
 	for (let i = bytes.length - 22; i >= 0 && i >= bytes.length - 22 - 65536; i--) {
 		if (view.getUint32(i, true) === 0x06054b50) {

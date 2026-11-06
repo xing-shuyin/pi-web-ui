@@ -8,7 +8,6 @@ type Request = Extract<
 type Attempt = { cwd: string; id?: string; cancelled: boolean; finishing?: Promise<void>; completed?: boolean };
 type Service = typeof login;
 
-/** One controller per requesting ClientSession; IDs never authorize another client. */
 export class McpOAuthUi {
 	private attempts = new Map<string, Attempt>();
 	private closed = false;
@@ -110,9 +109,7 @@ export class McpOAuthUi {
 			let recoverable = false;
 			try {
 				recoverable = !!attempt?.id && this.service.getMcpOAuthLoginStatus(attempt.id).status === "pending";
-			} catch {
-				/* Expired attempts are terminal. */
-			}
+			} catch {}
 			if ((msg.type === "mcp_oauth_finish" || msg.type === "mcp_oauth_status") && attempt?.id && recoverable) {
 				attempt.finishing = undefined;
 				send("pending", { id: attempt.id, error: "Invalid redirect URL. Paste the full callback URL and try again." });

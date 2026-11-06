@@ -1,6 +1,3 @@
-// 打开历史会话前的转录预处理基准：原流程（链修复 + 悬空检查各自同步整读，悬空检查逐行完整 JSON.parse）
-// 对比新流程（一次异步读 + 按需解析）。仅使用合成数据，不读取用户历史、不启动服务。
-// 用法：node --import tsx scripts/benchmark-transcript-open.mjs [MB]
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,7 +70,6 @@ function build() {
 }
 
 function legacy(file) {
-	// 原 repairSessionFile（首次，无缓存）+ 原 healDanglingToolCallFile（无缓存，逐行完整解析）
 	const raw1 = readFileSync(file, "utf8");
 	repairSessionTranscript(raw1);
 	const raw2 = readFileSync(file, "utf8");
@@ -108,7 +104,6 @@ try {
 		legacy(file);
 		t.legacy.push(performance.now() - s);
 
-		// 冷：每轮改写 mtime 让两份指纹都失效
 		writeFileSync(file, text);
 		s = performance.now();
 		await prepareTranscriptForOpen(file);

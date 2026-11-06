@@ -1,8 +1,3 @@
-/**
- * settings-reload failures must be visible (w18-reload):
- * applyRuntime() success → info notice; failure → console.error + error notice;
- * streaming → deferred with info notice and no reload call.
- */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { SettingsService, type SettingsHost } from "../../server/settings-service.js";
 import type { ClientStateStore } from "../../server/client-state.js";
@@ -140,10 +135,8 @@ describe("目标模式总开关 on→off", () => {
 		const svc = new SettingsService(host, templates);
 		await svc.set({ goalModeEnabled: false });
 		expect(cb).toHaveBeenCalledTimes(1);
-		// off→off 不重复触发
 		await svc.set({ goalModeEnabled: false });
 		expect(cb).toHaveBeenCalledTimes(1);
-		// off→on 不触发
 		await svc.set({ goalModeEnabled: true });
 		expect(cb).toHaveBeenCalledTimes(1);
 		expect(store.saved).toBe(3);
@@ -199,7 +192,6 @@ describe("SettingsService.applyRuntime", () => {
 			reloadSession: reload,
 		});
 		const svc = new SettingsService(host, templates);
-		// 模拟微任务间隙：刚进 applyRuntime 时 false，进 applyReload 时变为 true
 		streaming = true;
 		await (svc as unknown as { applyReload: () => Promise<void> }).applyReload();
 		expect(reload).not.toHaveBeenCalled();

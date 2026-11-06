@@ -1,20 +1,8 @@
-/**
- * db-client 插件客户端视图 —— 数据库连接管理/浏览界面。
- *
- * 布局：左侧连接列表（状态点 / 新建 / 编辑 / 测试 / 删除），右侧工作区：
- * - SQL 系（mysql/postgres/sqlite/sqlserver）：库下拉 → 表树（可筛选）→
- *   「数据」分页表格（点列头排序）｜「结构」列/索引/DDL｜「SQL」查询编辑器（Ctrl+Enter 运行）
- * - MongoDB：集合树 →「数据」文档列表（JSON 过滤条件）｜「结构」索引
- * - Redis：键模式扫描列表 → 值详情（TTL/大小/内容）+ 原始命令行
- *
- * 协议见 index.mjs：{action, reqId} 上行请求；res 响应 reqId 匹配；
- * event:"conn_closed" 定向推送；kind:"state" 广播（凭据脱敏）。
- */
-
 function esc(s) {
-	return String(s ?? "").replace(/[&<>"']/g, (c) => (
-		{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-	));
+	return String(s ?? "").replace(
+		/[&<>"']/g,
+		(c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+	);
 }
 
 let reqSeq = 0;
@@ -421,7 +409,6 @@ export default {
 		const kdText = $(".kd-text");
 		const pgInfo = $(".pginfo");
 
-		// ---- 手机端：连接抽屉 + 库表树折叠 --------------------------------------
 		const sideEl = $(".dbx-side");
 		const backdropEl = $(".dbx-backdrop");
 		const menuBtn = $(".btn-menu");
@@ -432,25 +419,28 @@ export default {
 		}
 		menuBtn.addEventListener("click", () => setDrawer(true));
 		backdropEl.addEventListener("click", () => setDrawer(false));
-		root.addEventListener("keydown", (ev) => { if (ev.key === "Escape") setDrawer(false); });
-		// 库表树折叠开关（桌面端 CSS display:none，窄屏下显示为数据区上方通栏按钮）
+		root.addEventListener("keydown", (ev) => {
+			if (ev.key === "Escape") setDrawer(false);
+		});
 		const treeToggle = document.createElement("button");
 		treeToggle.type = "button";
 		treeToggle.className = "dbx-tree-toggle";
 		treeEl.prepend(treeToggle);
 		function syncTreeToggle() {
 			const open = treeEl.classList.contains("open");
-			treeToggle.innerHTML = `<span>${open ? "▾" : "▸"}</span>`
-				+ `<span class="tn">${work?.curTable ? esc(`${work.curDb}.${work.curTable}`) : "选择数据表…"}</span>`;
+			treeToggle.innerHTML =
+				`<span>${open ? "▾" : "▸"}</span>` +
+				`<span class="tn">${work?.curTable ? esc(`${work.curDb}.${work.curTable}`) : "选择数据表…"}</span>`;
 		}
-		treeToggle.addEventListener("click", () => { treeEl.classList.toggle("open"); syncTreeToggle(); });
+		treeToggle.addEventListener("click", () => {
+			treeEl.classList.toggle("open");
+			syncTreeToggle();
+		});
 
-		// ---- 全局状态 --------------------------------------------------------
 		let state = { depsOk: true, depsInstalling: false, conns: [], active: [], types: {} };
-		let work = null; // 当前工作区：{connId, label, kind, dialect, dbs[], curDb, tables[], curTable, page:{no,size,total}, orderBy, dir}
+		let work = null;
 		let activeTab = "data";
 		let modalEditId = null;
-		// 初次同步库表树折叠按钮（必须在 work 声明之后，否则 TDZ 抛错导致挂载失败）
 		syncTreeToggle();
 
 		function toast(text, isErr) {
@@ -467,14 +457,15 @@ export default {
 			}, 3600);
 		}
 
-		// ---- 请求通道 --------------------------------------------------------
 		const pending = new Map();
 		function request(payload) {
 			const reqId = `r${++reqSeq}`;
 			return new Promise((resolve) => {
 				pending.set(reqId, resolve);
 				ctx.send({ ...payload, reqId });
-				setTimeout(() => { if (pending.delete(reqId)) resolve({ ok: false, error: "请求超时" }); }, 45000);
+				setTimeout(() => {
+					if (pending.delete(reqId)) resolve({ ok: false, error: "请求超时" });
+				}, 45000);
 			});
 		}
 		const offData = ctx.onData((p) => {
@@ -484,8 +475,6 @@ export default {
 				pending.delete(p.reqId);
 				return;
 			}
-			// 状态同步兼容两种形态：广播 {kind:"state", state} 与
-			// state 请求的定向响应 {res:true, action:"state", state}
 			if (p.kind === "state" || (p.res && p.action === "state" && p.state)) {
 				state = p.state;
 				renderConns();
@@ -499,7 +488,6 @@ export default {
 			}
 		});
 
-		// ---- 连接列表 --------------------------------------------------------
 		function renderDeps() {
 			depsEl.textContent = "";
 			if (state.depsOk) return;
@@ -520,10 +508,11 @@ export default {
 				const isActive = Boolean(work) && state.active.some((a) => a.connId === work.connId && a.hostId === c.id);
 				const row = document.createElement("div");
 				row.className = "dbx-crow" + (isActive ? " active" : "");
-				row.innerHTML = `<span class="dot ${isActive ? "on" : ""}"></span>`
-					+ `<span class="info"><span class="nm">${esc(c.name)}</span>`
-					+ `<span class="addr">${esc(connAddr(c))}</span></span>`
-					+ `<span class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">🗑</button></span>`;
+				row.innerHTML =
+					`<span class="dot ${isActive ? "on" : ""}"></span>` +
+					`<span class="info"><span class="nm">${esc(c.name)}</span>` +
+					`<span class="addr">${esc(connAddr(c))}</span></span>` +
+					`<span class="ops"><button data-op="edit" title="编辑">✎</button><button data-op="del" title="删除">🗑</button></span>`;
 				row.addEventListener("click", (ev) => {
 					const btn = ev.target.closest("button[data-op]");
 					if (!btn) return void openConn(c.id);
@@ -544,9 +533,11 @@ export default {
 		}
 
 		async function openConn(hostId) {
-			// 驱动缺失由服务端报友好错误（按类型判断），不在这里整体拦截
 			const r = await request({ action: "connect", id: hostId });
-			if (!r.ok) { toast(`连接失败：${r.error}`, true); return; }
+			if (!r.ok) {
+				toast(`连接失败：${r.error}`, true);
+				return;
+			}
 			setupWork(r.connId, r.label, r.kind, r.dialect);
 		}
 
@@ -557,21 +548,29 @@ export default {
 			renderConns();
 		}
 
-		// ---- 工作区 ----------------------------------------------------------
 		async function setupWork(connId, label, kind, dialect) {
 			work = {
-				connId, label, kind, dialect,
-				dbs: [], curDb: null,
-				tables: [], curTable: null, curTableKind: null,
+				connId,
+				label,
+				kind,
+				dialect,
+				dbs: [],
+				curDb: null,
+				tables: [],
+				curTable: null,
+				curTableKind: null,
 				page: { no: 0, size: 50, total: 0 },
-				orderBy: null, dir: "asc",
-				schema: null, pkCol: null, editable: false, docs: null,
+				orderBy: null,
+				dir: "asc",
+				schema: null,
+				pkCol: null,
+				editable: false,
+				docs: null,
 			};
 			lblEl.textContent = label;
 			activeTab = "data";
 			workEl.classList.remove("hidden");
 			phEl.classList.add("hidden");
-			// 面板可见性按 kind 调整
 			treeEl.classList.toggle("hidden", kind === "redis");
 			$(".pane-data").classList.toggle("hidden", kind === "redis");
 			schemaPane.classList.add("hidden");
@@ -596,10 +595,17 @@ export default {
 				work.curDb = pickDefaultDb(r.databases);
 			} catch (e) {
 				toast(`读取数据库列表失败：${e.message ?? e}`, true);
-				work.dbs = []; work.curDb = null;
+				work.dbs = [];
+				work.curDb = null;
 			}
-			dbSel.innerHTML = work.dbs.map((d) => `<option${d === work.curDb ? " selected" : ""}>${esc(d)}</option>`).join("");
-			if (kind === "redis") { void redisScan("*"); void refreshRedisMeta(); return; }
+			dbSel.innerHTML = work.dbs
+				.map((d) => `<option${d === work.curDb ? " selected" : ""}>${esc(d)}</option>`)
+				.join("");
+			if (kind === "redis") {
+				void redisScan("*");
+				void refreshRedisMeta();
+				return;
+			}
 			await refreshTables();
 		}
 
@@ -616,11 +622,13 @@ export default {
 		async function refreshTables() {
 			if (!work) return;
 			const r = await request({ action: "tables_list", connId: work.connId, db: work.curDb });
-			if (!r.ok) { toast(`读取表列表失败：${r.error}`, true); work.tables = []; }
-			else work.tables = r.tables;
+			if (!r.ok) {
+				toast(`读取表列表失败：${r.error}`, true);
+				work.tables = [];
+			} else work.tables = r.tables;
 			renderTables();
-			// 自动选中第一张表
-			if (!work.curTable && work.tables.length && work.kind !== "redis") selectTable(work.tables[0].name, work.tables[0].kind);
+			if (!work.curTable && work.tables.length && work.kind !== "redis")
+				selectTable(work.tables[0].name, work.tables[0].kind);
 		}
 
 		function renderTables() {
@@ -634,10 +642,15 @@ export default {
 				if (kw && !t.name.toLowerCase().includes(kw)) continue;
 				const row = document.createElement("div");
 				row.className = "dbx-trow" + (t.name === work.curTable ? " active" : "");
-				row.innerHTML = `<span>${t.kind === "view" ? "👁" : t.kind === "collection" ? "📄" : "▤"}</span>`
-					+ `<span class="tn" title="${esc(t.name)}">${esc(t.name)}</span>`
-					+ (t.approxRows > 0 ? `<span class="cnt">${fmtCount(t.approxRows)}</span>` : "")
-					+ (t.kind === "collection" ? '<span class="badge">coll</span>' : t.kind === "view" ? '<span class="badge">view</span>' : "");
+				row.innerHTML =
+					`<span>${t.kind === "view" ? "👁" : t.kind === "collection" ? "📄" : "▤"}</span>` +
+					`<span class="tn" title="${esc(t.name)}">${esc(t.name)}</span>` +
+					(t.approxRows > 0 ? `<span class="cnt">${fmtCount(t.approxRows)}</span>` : "") +
+					(t.kind === "collection"
+						? '<span class="badge">coll</span>'
+						: t.kind === "view"
+							? '<span class="badge">view</span>'
+							: "");
 				row.addEventListener("click", () => selectTable(t.name, t.kind));
 				tablesEl.appendChild(row);
 			}
@@ -693,16 +706,20 @@ export default {
 			else void loadData();
 		}
 
-		// ---- 数据页 ----------------------------------------------------------
 		async function loadData() {
 			if (!work || !work.curTable || work.kind === "redis") return;
 			statusLine.textContent = "加载中…";
 			gridHost.textContent = "";
 			const p = work.page;
 			const r = await request({
-				action: "page", connId: work.connId, db: work.curDb, table: work.curTable,
-				offset: p.no * p.size, limit: p.size,
-				orderBy: work.orderBy, dir: work.dir,
+				action: "page",
+				connId: work.connId,
+				db: work.curDb,
+				table: work.curTable,
+				offset: p.no * p.size,
+				limit: p.size,
+				orderBy: work.orderBy,
+				dir: work.dir,
 				filter: work.kind === "mongodb" ? docFilterInput.value : undefined,
 			});
 			if (!r.ok) {
@@ -720,8 +737,9 @@ export default {
 			renderGrid(gridHost, r.grid.columns, r.grid.rows, work.kind, r.grid);
 			const pages = Math.max(1, Math.ceil(p.total / p.size));
 			pgInfo.textContent = `第 ${p.no + 1}/${pages} 页`;
-			statusLine.textContent = `${work.curTable} · 共 ${fmtCount(p.total)} 行`
-				+ (r.grid.rows.length ? ` · 本页 ${r.grid.rows.length} 行` : "");
+			statusLine.textContent =
+				`${work.curTable} · 共 ${fmtCount(p.total)} 行` +
+				(r.grid.rows.length ? ` · 本页 ${r.grid.rows.length} 行` : "");
 			$(".pg-first").disabled = $(".pg-prev").disabled = p.no <= 0;
 			$(".pg-next").disabled = $(".pg-last").disabled = p.no >= pages - 1;
 		}
@@ -740,17 +758,26 @@ export default {
 			const tbl = document.createElement("table");
 			tbl.className = "dgrid";
 			const canSort = kind !== "mongodb" && kind !== "redis";
-			tbl.innerHTML = "<thead><tr>"
-				+ columns.map((c) => `<th class="${canSort ? "sortable" : ""}" data-col="${esc(c)}">${esc(c)}${work?.orderBy === c ? (work.dir === "desc" ? " ↓" : " ↑") : ""}</th>`).join("")
-				+ (canDel ? '<th class="ops-th"></th>' : "")
-				+ "</tr></thead>";
+			tbl.innerHTML =
+				"<thead><tr>" +
+				columns
+					.map(
+						(c) =>
+							`<th class="${canSort ? "sortable" : ""}" data-col="${esc(c)}">${esc(c)}${work?.orderBy === c ? (work.dir === "desc" ? " ↓" : " ↑") : ""}</th>`,
+					)
+					.join("") +
+				(canDel ? '<th class="ops-th"></th>' : "") +
+				"</tr></thead>";
 			if (canSort) {
 				tbl.querySelector("thead").addEventListener("click", (ev) => {
 					const th = ev.target.closest("th[data-col]");
 					if (!th || !work) return;
 					const col = th.dataset.col;
 					if (work.orderBy === col) work.dir = work.dir === "asc" ? "desc" : "asc";
-					else { work.orderBy = col; work.dir = "asc"; }
+					else {
+						work.orderBy = col;
+						work.dir = "asc";
+					}
 					work.page.no = 0;
 					void loadData();
 				});
@@ -758,17 +785,23 @@ export default {
 			const tb = document.createElement("tbody");
 			rows.forEach((row) => {
 				const tr = document.createElement("tr");
-				tr.innerHTML = row.map((v, ci) => {
-					const base = v === null
-						? '<td class="isnull">NULL</td>'
-						: `<td title="${esc(v)}">${esc(v)}</td>`;
-					return canEditCell && ci !== pkIdx
-						? base.replace("<td", `<td data-edit="1" data-col="${esc(columns[ci])}" data-pk="${esc(String(row[pkIdx] ?? ""))}"`)
-						: base;
-				}).join("")
-					+ (canDel ? '<td class="ops-cell">'
-						+ (kind === "mongodb" ? '<button data-op="docedit" title="编辑文档">✎</button>' : "")
-						+ '<button data-op="del" title="删除">🗑</button></td>' : "");
+				tr.innerHTML =
+					row
+						.map((v, ci) => {
+							const base = v === null ? '<td class="isnull">NULL</td>' : `<td title="${esc(v)}">${esc(v)}</td>`;
+							return canEditCell && ci !== pkIdx
+								? base.replace(
+										"<td",
+										`<td data-edit="1" data-col="${esc(columns[ci])}" data-pk="${esc(String(row[pkIdx] ?? ""))}"`,
+									)
+								: base;
+						})
+						.join("") +
+					(canDel
+						? '<td class="ops-cell">' +
+							(kind === "mongodb" ? '<button data-op="docedit" title="编辑文档">✎</button>' : "") +
+							'<button data-op="del" title="删除">🗑</button></td>'
+						: "");
 				tb.appendChild(tr);
 			});
 			tbl.appendChild(tb);
@@ -790,7 +823,6 @@ export default {
 			host.appendChild(tbl);
 		}
 
-		/** 双击单元格 → 行内输入框；Enter 提交 / Esc 或失焦取消 */
 		function startCellEdit(td, col, pkVal, orig) {
 			if (td.querySelector(".inline-edit")) return;
 			const input = document.createElement("input");
@@ -805,20 +837,32 @@ export default {
 				if (done) return;
 				done = true;
 				const val = input.value;
-				if (!commit || val === orig) { void loadData(); return; }
+				if (!commit || val === orig) {
+					void loadData();
+					return;
+				}
 				void commitCell(col, pkVal, val === "NULL" ? null : val);
 			};
 			input.addEventListener("keydown", (ev) => {
-				if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
-				else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+				if (ev.key === "Enter") {
+					ev.preventDefault();
+					finish(true);
+				} else if (ev.key === "Escape") {
+					ev.preventDefault();
+					finish(false);
+				}
 			});
 			input.addEventListener("blur", () => finish(false));
 		}
 
 		async function commitCell(col, pkVal, val) {
 			const r = await request({
-				action: "row_update", connId: work.connId, db: work.curDb, table: work.curTable,
-				pk: { col: work.pkCol, val: pkVal }, changes: { [col]: val },
+				action: "row_update",
+				connId: work.connId,
+				db: work.curDb,
+				table: work.curTable,
+				pk: { col: work.pkCol, val: pkVal },
+				changes: { [col]: val },
 			});
 			r.ok ? (toast("已保存"), void loadData()) : toast(`保存失败：${r.error}`, true);
 		}
@@ -829,34 +873,58 @@ export default {
 			if (work.kind === "mongodb") {
 				const idx = [...tr.parentNode.children].indexOf(tr);
 				if (!confirm("删除该文档？直接写库，不可撤销")) return;
-				r = await request({ action: "doc_delete", connId: work.connId, db: work.curDb, table: work.curTable, id: work.docs?.[idx]?._id });
+				r = await request({
+					action: "doc_delete",
+					connId: work.connId,
+					db: work.curDb,
+					table: work.curTable,
+					id: work.docs?.[idx]?._id,
+				});
 			} else {
 				const pkCell = tr.querySelector("td[data-pk]");
-				if (!pkCell) { toast("该表没有主键，无法定位行", true); return; }
+				if (!pkCell) {
+					toast("该表没有主键，无法定位行", true);
+					return;
+				}
 				if (!confirm("删除这一行？直接写库，不可撤销")) return;
-				r = await request({ action: "row_delete", connId: work.connId, db: work.curDb, table: work.curTable, pk: { col: work.pkCol, val: pkCell.dataset.pk } });
+				r = await request({
+					action: "row_delete",
+					connId: work.connId,
+					db: work.curDb,
+					table: work.curTable,
+					pk: { col: work.pkCol, val: pkCell.dataset.pk },
+				});
 			}
 			r.ok ? void loadData() : toast(`删除失败：${r.error}`, true);
 		}
 
-		/** 新增行/新文档弹层（复用一个动态弹窗） */
 		async function openInsertModal() {
 			if (!work) return;
 			rowErr.textContent = "";
-			if (work.kind === "mongodb") { openDocModal("insert"); return; }
+			if (work.kind === "mongodb") {
+				openDocModal("insert");
+				return;
+			}
 			if (!work.schema) {
 				const r = await request({ action: "describe", connId: work.connId, db: work.curDb, table: work.curTable });
-				if (!r.ok) { toast(`读取结构失败：${r.error}`, true); return; }
+				if (!r.ok) {
+					toast(`读取结构失败：${r.error}`, true);
+					return;
+				}
 				work.schema = r.describe;
 			}
 			rowTitle.textContent = `新增行 · ${work.curTable}`;
 			rowHint.classList.remove("hidden");
-			// 自增主键/序列默认列不需要手填
-			const cols = work.schema.columns.filter((c) =>
-				!(c.key === "PRI" && /int|serial/i.test(c.type)) && !(c.def && /nextval/i.test(c.def)));
-			rowBody.innerHTML = `<div class="flds">${cols.map((c) =>
-				`<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : " · 非空"}</small></label>`
-				+ `<input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? "留空=默认值" : "必填"}" />`).join("")}</div>`;
+			const cols = work.schema.columns.filter(
+				(c) => !(c.key === "PRI" && /int|serial/i.test(c.type)) && !(c.def && /nextval/i.test(c.def)),
+			);
+			rowBody.innerHTML = `<div class="flds">${cols
+				.map(
+					(c) =>
+						`<label>${esc(c.name)}<small>${esc(c.type)}${c.nullable ? "" : " · 非空"}</small></label>` +
+						`<input data-col="${esc(c.name)}" spellcheck="false" placeholder="${c.nullable ? "留空=默认值" : "必填"}" />`,
+				)
+				.join("")}</div>`;
 			rowModalBg.classList.remove("hidden");
 			rowBody.querySelector("input")?.focus();
 		}
@@ -865,7 +933,7 @@ export default {
 			if (!work) return;
 			rowErr.textContent = "";
 			rowHint.classList.add("hidden");
-			const doc = mode === "edit" ? work.docs?.[idx] ?? {} : {};
+			const doc = mode === "edit" ? (work.docs?.[idx] ?? {}) : {};
 			rowTitle.textContent = `${mode === "edit" ? "编辑文档" : "新文档"} · ${work.curTable}`;
 			rowBody.innerHTML = `<textarea class="jsonbox" spellcheck="false">${esc(JSON.stringify(doc, null, 2))}</textarea>`;
 			rowModalBg.dataset.mode = mode;
@@ -882,18 +950,41 @@ export default {
 				if (work.kind === "mongodb") {
 					const json = rowBody.querySelector(".jsonbox").value;
 					const mode = rowModalBg.dataset.mode || "insert";
-					r = mode === "edit"
-						? await request({ action: "doc_save", connId: work.connId, db: work.curDb, table: work.curTable, id: work.docs?.[Number(rowModalBg.dataset.idx)]?._id, docJson: json })
-						: await request({ action: "doc_insert", connId: work.connId, db: work.curDb, table: work.curTable, docJson: json });
+					r =
+						mode === "edit"
+							? await request({
+									action: "doc_save",
+									connId: work.connId,
+									db: work.curDb,
+									table: work.curTable,
+									id: work.docs?.[Number(rowModalBg.dataset.idx)]?._id,
+									docJson: json,
+								})
+							: await request({
+									action: "doc_insert",
+									connId: work.connId,
+									db: work.curDb,
+									table: work.curTable,
+									docJson: json,
+								});
 				} else {
 					const values = {};
 					for (const inp of rowBody.querySelectorAll("input[data-col]")) {
 						const v = inp.value.trim();
 						if (v !== "") values[inp.dataset.col] = v === "NULL" ? null : v;
 					}
-					r = await request({ action: "row_insert", connId: work.connId, db: work.curDb, table: work.curTable, values });
+					r = await request({
+						action: "row_insert",
+						connId: work.connId,
+						db: work.curDb,
+						table: work.curTable,
+						values,
+					});
 				}
-				if (!r.ok) { rowErr.textContent = r.error ?? "保存失败"; return; }
+				if (!r.ok) {
+					rowErr.textContent = r.error ?? "保存失败";
+					return;
+				}
 				rowModalBg.classList.add("hidden");
 				toast("已保存");
 				void loadData();
@@ -902,93 +993,140 @@ export default {
 			}
 		}
 
-		// 分页按钮
-		$(".pg-first").addEventListener("click", () => { work.page.no = 0; void loadData(); });
-		$(".pg-prev").addEventListener("click", () => { if (work.page.no > 0) { work.page.no--; void loadData(); } });
-		$(".pg-next").addEventListener("click", () => { work.page.no++; void loadData(); });
+		$(".pg-first").addEventListener("click", () => {
+			work.page.no = 0;
+			void loadData();
+		});
+		$(".pg-prev").addEventListener("click", () => {
+			if (work.page.no > 0) {
+				work.page.no--;
+				void loadData();
+			}
+		});
+		$(".pg-next").addEventListener("click", () => {
+			work.page.no++;
+			void loadData();
+		});
 		$(".pg-last").addEventListener("click", () => {
 			work.page.no = Math.max(0, Math.ceil(work.page.total / work.page.size) - 1);
 			void loadData();
 		});
-		btnFilter.addEventListener("click", () => { work.page.no = 0; void loadData(); });
+		btnFilter.addEventListener("click", () => {
+			work.page.no = 0;
+			void loadData();
+		});
 		$(".btn-insert").addEventListener("click", () => void openInsertModal());
 		rowModalBg.querySelector(".r-cancel").addEventListener("click", () => rowModalBg.classList.add("hidden"));
-		rowModalBg.addEventListener("click", (ev) => { if (ev.target === rowModalBg) rowModalBg.classList.add("hidden"); });
+		rowModalBg.addEventListener("click", (ev) => {
+			if (ev.target === rowModalBg) rowModalBg.classList.add("hidden");
+		});
 		rowModalBg.querySelector(".r-save").addEventListener("click", () => void saveRowModal());
 		$(".btn-save-key").addEventListener("click", () => void saveKeyValue());
 		docFilterInput.addEventListener("keydown", (ev) => {
-			if (ev.key === "Enter") { work.page.no = 0; void loadData(); }
+			if (ev.key === "Enter") {
+				work.page.no = 0;
+				void loadData();
+			}
 		});
 
-		// ---- 结构页 ----------------------------------------------------------
 		async function loadSchema() {
-			if (!work || !work.curTable) { ddlPre.textContent = "// 先在左侧选择一张表"; return; }
+			if (!work || !work.curTable) {
+				ddlPre.textContent = "// 先在左侧选择一张表";
+				return;
+			}
 			colsHost.innerHTML = "<div class='grid-empty'>加载中…</div>";
 			idxHost.textContent = "";
 			ddlPre.textContent = "";
 			const r = await request({ action: "describe", connId: work.connId, db: work.curDb, table: work.curTable });
-			if (!r.ok) { colsHost.innerHTML = `<div class="err-text">${esc(r.error)}</div>`; return; }
+			if (!r.ok) {
+				colsHost.innerHTML = `<div class="err-text">${esc(r.error)}</div>`;
+				return;
+			}
 			const d = r.describe;
 			colsHost.textContent = "";
 			if (d.columns.length) {
 				const t = document.createElement("table");
 				t.className = "mtable";
-				t.innerHTML = "<thead><tr><th>#</th><th>列名</th><th>类型</th><th>空</th><th>键</th><th>默认值</th><th>备注</th></tr></thead><tbody>"
-					+ d.columns.map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.name)}</td><td>${esc(c.type)}</td>`
-						+ `<td>${c.nullable ? "YES" : "NO"}</td><td>${c.key ? `<span class="keytag">${esc(c.key)}</span>` : ""}</td>`
-						+ `<td>${esc(c.def ?? "")}</td><td>${esc(c.comment || "")}</td></tr>`).join("")
-					+ "</tbody>";
+				t.innerHTML =
+					"<thead><tr><th>#</th><th>列名</th><th>类型</th><th>空</th><th>键</th><th>默认值</th><th>备注</th></tr></thead><tbody>" +
+					d.columns
+						.map(
+							(c, i) =>
+								`<tr><td>${i + 1}</td><td>${esc(c.name)}</td><td>${esc(c.type)}</td>` +
+								`<td>${c.nullable ? "YES" : "NO"}</td><td>${c.key ? `<span class="keytag">${esc(c.key)}</span>` : ""}</td>` +
+								`<td>${esc(c.def ?? "")}</td><td>${esc(c.comment || "")}</td></tr>`,
+						)
+						.join("") +
+					"</tbody>";
 				colsHost.appendChild(t);
 			} else colsHost.innerHTML = "<div class='grid-empty'>无固定列信息</div>";
 			idxHost.textContent = "";
 			if (d.indexes?.length) {
 				const t = document.createElement("table");
 				t.className = "mtable";
-				t.innerHTML = "<thead><tr><th>索引名</th><th>唯一</th><th>列 / 定义</th></tr></thead><tbody>"
-					+ d.indexes.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.unique ? "✓" : ""}</td><td>${esc(i.columns)}</td></tr>`).join("")
-					+ "</tbody>";
+				t.innerHTML =
+					"<thead><tr><th>索引名</th><th>唯一</th><th>列 / 定义</th></tr></thead><tbody>" +
+					d.indexes
+						.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.unique ? "✓" : ""}</td><td>${esc(i.columns)}</td></tr>`)
+						.join("") +
+					"</tbody>";
 				idxHost.appendChild(t);
 			} else idxHost.innerHTML = "<div class='grid-empty'>无索引</div>";
 			ddlPre.textContent = d.ddl || "-- 无 DDL 信息";
 		}
 
-		// ---- SQL 查询页 -------------------------------------------------------
 		async function runQuery() {
 			if (!work) return;
 			const sql = sqlBox.value.trim();
-			if (!sql) { toast("SQL 为空", true); return; }
+			if (!sql) {
+				toast("SQL 为空", true);
+				return;
+			}
 			qStatus.textContent = "执行中…";
 			qStatus.classList.remove("err-text");
 			qGridHost.textContent = "";
 			const r = await request({ action: "query_exec", connId: work.connId, db: work.curDb, sql });
-			if (!r.ok) { qStatus.textContent = `✗ ${r.error}`; qStatus.classList.add("err-text"); return; }
-			qStatus.textContent = `✓ ${r.grid.elapsedMs}ms`
-				+ (r.grid.total ? ` · ${r.grid.total} 行` : "")
-				+ (r.grid.affected ? ` · 影响 ${r.grid.affected} 行` : "");
+			if (!r.ok) {
+				qStatus.textContent = `✗ ${r.error}`;
+				qStatus.classList.add("err-text");
+				return;
+			}
+			qStatus.textContent =
+				`✓ ${r.grid.elapsedMs}ms` +
+				(r.grid.total ? ` · ${r.grid.total} 行` : "") +
+				(r.grid.affected ? ` · 影响 ${r.grid.affected} 行` : "");
 			renderGrid(qGridHost, r.grid.columns, r.grid.rows, work.kind);
 		}
 		$(".btn-run").addEventListener("click", () => void runQuery());
 		sqlBox.addEventListener("keydown", (ev) => {
-			if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") { ev.preventDefault(); void runQuery(); }
+			if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+				ev.preventDefault();
+				void runQuery();
+			}
 			if (ev.key === "Tab") {
 				ev.preventDefault();
 				sqlBox.setRangeText("  ", sqlBox.selectionStart, sqlBox.selectionEnd, "end");
 			}
 		});
 
-		// ---- Redis -----------------------------------------------------------
 		let curKey = null;
 		async function redisScan(pattern) {
 			keysList.innerHTML = "<div class='grid-empty'>扫描中…</div>";
 			const r = await request({ action: "redis_scan", connId: work.connId, pattern: pattern || "*", count: 300 });
-			if (!r.ok) { keysList.innerHTML = `<div class="err-text">${esc(r.error)}</div>`; return; }
+			if (!r.ok) {
+				keysList.innerHTML = `<div class="err-text">${esc(r.error)}</div>`;
+				return;
+			}
 			curKey = null;
 			setKeyEditor(false);
 			kdName.textContent = "";
 			kdInfo.textContent = "";
 			kdValue.textContent = "// 点击左侧键查看详情";
 			keysList.textContent = "";
-			if (!r.keys.length) { keysList.innerHTML = "<div class='grid-empty'>没有匹配的键</div>"; return; }
+			if (!r.keys.length) {
+				keysList.innerHTML = "<div class='grid-empty'>没有匹配的键</div>";
+				return;
+			}
 			for (const k of r.keys) {
 				const row = document.createElement("div");
 				row.className = "krow";
@@ -1011,7 +1149,12 @@ export default {
 			kdName.textContent = key;
 			kdInfo.textContent = "加载中…";
 			const r = await request({ action: "redis_key", connId: work.connId, key });
-			if (!r.ok) { setKeyEditor(null); kdValue.textContent = `✗ ${r.error}`; kdInfo.textContent = ""; return; }
+			if (!r.ok) {
+				setKeyEditor(null);
+				kdValue.textContent = `✗ ${r.error}`;
+				kdInfo.textContent = "";
+				return;
+			}
 			const d = r.detail;
 			kdInfo.textContent = `类型 ${d.type} · 大小 ${fmtCount(d.size)} · TTL ${d.ttl < 0 ? "∞" : `${d.ttl}s`}`;
 			const editable = d.type === "string" && !d.truncated;
@@ -1023,7 +1166,6 @@ export default {
 			}
 		}
 
-		/** 字符串键 → 可编辑 textarea；其余类型保持只读 pre */
 		function setKeyEditor(editable) {
 			kdValue.classList.toggle("hidden", Boolean(editable));
 			kdText.classList.toggle("hidden", !editable);
@@ -1043,7 +1185,9 @@ export default {
 		}
 
 		$(".btn-scan").addEventListener("click", () => void redisScan($(".pattern").value.trim()));
-		$(".pattern").addEventListener("keydown", (ev) => { if (ev.key === "Enter") void redisScan($(".pattern").value.trim()); });
+		$(".pattern").addEventListener("keydown", (ev) => {
+			if (ev.key === "Enter") void redisScan($(".pattern").value.trim());
+		});
 		$(".btn-del-key").addEventListener("click", async () => {
 			if (!curKey || !confirm(`删除键「${curKey}」？`)) return;
 			const r = await request({ action: "redis_del", connId: work.connId, key: curKey });
@@ -1060,9 +1204,10 @@ export default {
 			void refreshRedisMeta();
 		}
 		$(".btn-cmd").addEventListener("click", () => void runCmd());
-		$(".cmdline").addEventListener("keydown", (ev) => { if (ev.key === "Enter") void runCmd(); });
+		$(".cmdline").addEventListener("keydown", (ev) => {
+			if (ev.key === "Enter") void runCmd();
+		});
 
-		// ---- 顶栏动作 ---------------------------------------------------------
 		dbSel.addEventListener("change", () => void selectDb(dbSel.value));
 		filterInput.addEventListener("input", () => renderTables());
 		tabsEl.addEventListener("click", (ev) => {
@@ -1076,14 +1221,16 @@ export default {
 		});
 		$(".btn-refresh").addEventListener("click", async () => {
 			if (!work) return;
-			if (work.kind === "redis") { void redisScan($(".pattern").value.trim()); return; }
+			if (work.kind === "redis") {
+				void redisScan($(".pattern").value.trim());
+				return;
+			}
 			await refreshTables();
 			if (activeTab === "data") void loadData();
 			else if (activeTab === "schema") void loadSchema();
 		});
 		$('[data-act="add"]').addEventListener("click", () => openModal(null));
 
-		// ---- 连接表单弹层 ------------------------------------------------------
 		const TYPE_PORT = { mysql: 3306, postgres: 5432, sqlite: 0, sqlserver: 1433, mongodb: 27017, redis: 6379 };
 		const qf = (n) => modalBg.querySelector(`[name="${n}"]`);
 
@@ -1105,7 +1252,7 @@ export default {
 			qf("name").value = conn?.name ?? "";
 			const type = conn?.type ?? "mysql";
 			qf("type").value = type;
-			qf("type").disabled = Boolean(conn); // 类型不允许改
+			qf("type").disabled = Boolean(conn);
 			qf("host").value = conn?.host ?? "127.0.0.1";
 			qf("port").value = conn?.port ?? "";
 			qf("port").placeholder = TYPE_PORT[type] ? String(TYPE_PORT[type]) : "—";
@@ -1142,10 +1289,12 @@ export default {
 		}
 
 		modalBg.querySelector(".m-cancel").addEventListener("click", () => modalBg.classList.add("hidden"));
-		modalBg.addEventListener("click", (ev) => { if (ev.target === modalBg) modalBg.classList.add("hidden"); });
+		modalBg.addEventListener("click", (ev) => {
+			if (ev.target === modalBg) modalBg.classList.add("hidden");
+		});
 		modalBg.querySelector(".btn-test").addEventListener("click", async () => {
 			const body = collectForm(true);
-			if (modalEditId && !body.password) delete body.password; // 服务端沿用旧值
+			if (modalEditId && !body.password) delete body.password;
 			const btn = modalBg.querySelector(".btn-test");
 			btn.textContent = "测试中…";
 			const r = await request({ action: "test", conn: body });
@@ -1155,18 +1304,17 @@ export default {
 		modalBg.querySelector(".m-save").addEventListener("click", async () => {
 			const body = collectForm(true);
 			const r = await request({ action: "conns_save", conn: body });
-			if (!r.ok) { toast(`保存失败：${r.error}`, true); return; }
+			if (!r.ok) {
+				toast(`保存失败：${r.error}`, true);
+				return;
+			}
 			modalBg.classList.add("hidden");
 		});
 
-		// ---- 视图同步（多标签页共享 state 时保持高亮一致） ---------------------
 		function syncActiveView() {
 			if (work && !state.active.some((a) => a.connId === work.connId)) closeWork();
 		}
 
-		// ---- 启动 ------------------------------------------------------------
-		// 走 request() 带 reqId，避免响应被 onData 的 res 分支吞掉；
-		// onData 也已兼容无 reqId 响应（双保险）
 		void request({ action: "state" }).then((r) => {
 			if (r.ok && r.state) {
 				state = r.state;

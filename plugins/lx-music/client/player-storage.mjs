@@ -1,4 +1,3 @@
-// Persist only player data; signed stream URLs and live audio state are transient.
 export const PLAYER_STORAGE_KEY = "lx-music:player:v1";
 const lists = ["queue", "history", "favorites", "searchResults", "topChartSongs"];
 const choices = {

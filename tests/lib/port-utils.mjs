@@ -1,11 +1,6 @@
-/**
- * 跨平台测试辅助：端口探测与清理。
- * 替代 macOS/Linux 专属的 lsof（Windows 上不存在，导致整批测试无法运行）。
- */
 import { createConnection } from "node:net";
 import { execSync } from "node:child_process";
 
-/** TCP 连接探测：端口有监听时 resolve(true)，否则 false。 */
 export function portUp(port, host = "127.0.0.1", timeoutMs = 500) {
 	return new Promise((resolve) => {
 		const socket = createConnection({ port, host });
@@ -25,7 +20,6 @@ export function portUp(port, host = "127.0.0.1", timeoutMs = 500) {
 	});
 }
 
-/** 尽力清掉占用端口的进程（posix: lsof+kill；win32: netstat+taskkill）。 */
 export function freePort(port) {
 	try {
 		if (process.platform === "win32") {
@@ -42,9 +36,7 @@ export function freePort(port) {
 				if (pid !== String(process.pid)) {
 					try {
 						execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
-					} catch {
-						/* already gone */
-					}
+					} catch {}
 				}
 			}
 		} else {
@@ -53,7 +45,5 @@ export function freePort(port) {
 				shell: "/bin/bash",
 			});
 		}
-	} catch {
-		/* port already free */
-	}
+	} catch {}
 }

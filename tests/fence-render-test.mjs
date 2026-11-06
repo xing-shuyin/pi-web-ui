@@ -1,11 +1,3 @@
-/**
- * fenced-code 渲染插件 E2E：普通文本消息里出现 ```mermaid 围栏时，由
- * plugins/mermaid（renderer 插件）按需懒加载并渲染成 SVG；无插件认领的
- * ```plantuml 围栏回退普通代码块。
- *
- * 依赖外网（esm.sh CDN 拉取 mermaid 引擎）——CI/离线环境可能失败，可跳过。
- * Run: npm run build && node tests/fence-render-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { cpSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -23,7 +15,6 @@ const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-// Real-looking auth so the one-time setup modal doesn't block the UI.
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -38,7 +29,6 @@ writeFileSync(
 		},
 	}),
 );
-// 官方 mermaid renderer 插件（随仓库打包，测试时复制进临时 dataDir）。
 cpSync(join(fileURLToPath(new URL("..", import.meta.url)), "plugins", "mermaid"), join(dataDir, "plugins", "mermaid"), {
 	recursive: true,
 });
@@ -48,8 +38,6 @@ process.env.PI_WEB_CWD = workdir;
 process.env.PI_WEB_DATA_DIR = dataDir;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const CLIENT_ID = "fence-render-client";
-// seed 时发一条用户消息，模型 fastfail 立即返回错误——用户消息本身即时渲染。
-// 长上下文让主题切换测试能停在真实的非零阅读位置，而不是在列表顶部做平凡断言。
 const READING_CONTEXT = Array.from({ length: 80 }, (_, i) => `${i + 1}. Mermaid theme regression context`).join("\n");
 const MERMAID_TEXT = `${READING_CONTEXT}\n\n\`\`\`mermaid\nflowchart LR\n  A[开始] --> B[结束]\n\`\`\`\n`;
 const PLAIN_TEXT = "```plantuml\nA -> B\n```";
@@ -62,9 +50,7 @@ const server = spawn(
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -84,15 +70,12 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(200);
 	}
 	throw new Error("server did not start");
 }
 
-/** 种一条含 mermaid + plantuml 围栏的用户消息（快照落库，浏览器同 clientId 可见）。 */
 function seedMessage() {
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
@@ -107,7 +90,6 @@ function seedMessage() {
 			}
 			if (msg.type === "ready") {
 				ws.send(JSON.stringify({ type: "prompt", text: MERMAID_TEXT + PLAIN_TEXT }));
-				// 用户消息经 snapshot_delta 增量推送——每 1s 轮询 get_state 触发全量快照。
 				const poll = setInterval(() => ws.send(JSON.stringify({ type: "get_state" })), 1000);
 				setTimeout(() => clearInterval(poll), 15_000);
 			}
@@ -138,14 +120,12 @@ async function main() {
 
 	const browser = await chromium.launch({ executablePath: CHROME_PATH });
 	const page = await browser.newPage();
-	// 验证「插件自带引擎」：渲染期间不得请求外网 CDN（esm.sh）——vendor 本地加载。
 	const cdnHits = [];
 	page.on("request", (r) => {
 		if (r.url().includes("esm.sh") || r.url().includes("jsdelivr")) cdnHits.push(r.url());
 	});
 	await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
 
-	// 用户消息出现 → mermaid 围栏 → 插件按需加载（首次含 CDN import，给足时间）。
 	let svgOk = false;
 	let plainOk = false;
 	for (let i = 0; i < 120; i++) {
@@ -154,7 +134,6 @@ async function main() {
 			.evaluate(() => {
 				const svg = document.querySelector(".mermaid-block svg");
 				const hasSvg = !!svg && svg.getAttribute("width") !== "";
-				// plantuml 无插件认领 → 保持普通代码块（pre > code 含源码，无 svg）
 				const pre = [...document.querySelectorAll(".codeblock pre code")].find((c) => c.textContent.includes("A -> B"));
 				return { hasSvg, plain: !!pre };
 			})
@@ -169,7 +148,6 @@ async function main() {
 	console.log("  [cdnHits]", JSON.stringify(cdnHits));
 	check("渲染期间未请求外网 CDN（esm.sh/jsdelivr）——本地 vendor 生效", cdnHits.length === 0);
 
-	// 静态服务：插件 bundle 可经 /plugins/mermaid/client/ 拿到
 	const bundle = await page.evaluate(() =>
 		fetch("/plugins/mermaid/client/entry.mjs")
 			.then((r) => (r.ok ? r.text() : ""))
@@ -285,8 +263,6 @@ async function main() {
 			lightTheme.scrollTop === afterThemeSwitch.scrollTop,
 	);
 
-	// A rejected render must not poison the serialized queue: correcting the
-	// source in the same loaded plugin module must render successfully.
 	const recovery = await page.evaluate(async () => {
 		const mod = await import("/plugins/mermaid/client/entry.mjs?e=1");
 		const render = mod.default.renderers.mermaid;
@@ -307,7 +283,6 @@ async function main() {
 	check("非法源码修正后同一插件实例可恢复渲染", recovery.rejected && recovery.recovered);
 	check("失败与成功渲染均清理临时 DOM", recovery.orphans === 0);
 
-	// 手动复现一次 renderer 调用：区分「渲染本身失败」vs「管线挂接失败」
 	const manual = await page.evaluate(async () => {
 		try {
 			const mod = await import("/plugins/mermaid/client/entry.mjs?e=1");
@@ -352,9 +327,6 @@ async function main() {
 		typography.samples.length > 0 && typography.samples.every((sample) => sample.size === typography.diagramFontSize),
 	);
 
-	// Hold a completed dark render before PluginFenceBlock receives its element,
-	// switch to white, then release it. The host must replay the missed theme
-	// event after mounting instead of leaving the first SVG in the stale palette.
 	const racePage = await browser.newPage();
 	await racePage.route("**/plugins/mermaid/client/entry.mjs?*", async (route) => {
 		const response = await route.fetch();
@@ -438,7 +410,5 @@ main()
 	.finally(() => {
 		try {
 			process.kill(-server.pid, "SIGKILL");
-		} catch {
-			/* gone */
-		}
+		} catch {}
 	});

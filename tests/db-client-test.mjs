@@ -1,12 +1,3 @@
-/**
- * db-client 插件协议回归测试（零 token、自包含、零外部依赖）。
- *
- * SQLite 用 Node 内置 node:sqlite 走全链路：连接配置 CRUD（凭据脱敏）→ connect →
- * tables_list / describe / page（分页+排序）/ query_exec → 断开 → 事件 → 重连。
- * 不预装任何驱动（PI_DB_CLIENT_NO_AUTOINSTALL 阻止后台全量安装，测试机不出网）。
- *
- * 运行：先 npm run build:server，再 node tests/db-client-test.mjs
- */
 import { execFileSync, spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +19,6 @@ function fail(msg) {
 	process.exitCode = 1;
 }
 
-// ---- 布置插件目录（不带 node_modules） ---------------------------------------
 mkdirSync(plugDir, { recursive: true });
 for (const f of ["manifest.json", "index.mjs"]) cpSync(join(SRC, f), join(plugDir, f));
 mkdirSync(join(plugDir, "client"), { recursive: true });
@@ -38,7 +28,6 @@ if (!existsSync(join(plugDir, "client", "entry.mjs"))) {
 	process.exit(1);
 }
 
-// ---- 用内置 node:sqlite 造测试库 -------------------------------------------
 const dbFile = join(dataDir, "fixture.db");
 {
 	const { DatabaseSync } = await import("node:sqlite");
@@ -49,7 +38,6 @@ const dbFile = join(dataDir, "fixture.db");
 	db.close();
 }
 
-/** 连接 WS 并等 ready */
 function connect(clientId = "dbclient-test") {
 	return new Promise((resolve, reject) => {
 		const sock = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
@@ -69,7 +57,6 @@ function connect(clientId = "dbclient-test") {
 	});
 }
 
-/** 发 plugin_message 并等匹配 reqId 的 plugin_data 响应 */
 function rpc(sock, payload, timeoutMs = 20_000) {
 	const reqId = `t${++seq}`;
 	return new Promise((resolve, reject) => {
@@ -88,7 +75,6 @@ function rpc(sock, payload, timeoutMs = 20_000) {
 }
 let seq = 0;
 
-/** 等事件消息 */
 function waitEvent(sock, event, label, timeoutMs = 8000) {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error(`timeout waiting event ${label}`)), timeoutMs);
@@ -105,14 +91,11 @@ function waitEvent(sock, event, label, timeoutMs = 8000) {
 }
 
 try {
-	// 端口占用检查
 	try {
 		execFileSync("lsof", ["-ti", `:${PORT}`, "-sTCP:LISTEN"], { stdio: "pipe" });
 		console.error(`✗ port ${PORT} busy — abort`);
 		process.exit(1);
-	} catch {
-		/* free */
-	}
+	} catch {}
 
 	proc = spawn(serverPath, [join(import.meta.dirname, "..", "dist", "server", "index.js")], {
 		env: {
@@ -128,22 +111,18 @@ try {
 		serverLogs += d.toString();
 	});
 
-	// 等 /api/health 就绪
 	const deadline = Date.now() + 30_000;
 	while (true) {
 		try {
 			const r = await fetch(`${BASE}/api/health`);
 			if (r.ok) break;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 		if (Date.now() > deadline) throw new Error("server not ready in 30s");
 		await new Promise((r) => setTimeout(r, 300));
 	}
 
 	const sock = await connect();
 
-	// 1. 插件清单推送
 	const pluginsMsg = await new Promise((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error("timeout waiting plugins list")), 10_000);
 		const onMsg = (raw) => {
@@ -160,7 +139,6 @@ try {
 	if (!info) fail("插件清单缺少 db-client");
 	else if (!info.hasClient) fail("db-client 未探测到客户端 bundle");
 
-	// 2. state 初始为空 + 驱动可用性
 	{
 		const r = await rpc(sock, { action: "state" });
 		if (!r.ok) fail(`state 失败：${r.error}`);
@@ -171,7 +149,6 @@ try {
 		console.log("· state ok（depsAvail 按驱动粒度）");
 	}
 
-	// 3. conns_save（sqlite 无 host 也合法）
 	{
 		const r = await rpc(sock, { action: "conns_save", conn: { name: "测试库", type: "sqlite", file: dbFile } });
 		if (!r.ok) fail(`conns_save 失败：${r.error}`);
@@ -183,14 +160,12 @@ try {
 		console.log("· conns_save ok（脱敏回显）");
 	}
 
-	// 4. test 动作（表单测试）
 	{
 		const r = await rpc(sock, { action: "test", conn: { type: "sqlite", file: dbFile } });
 		if (!r.ok) fail(`test 失败：${r.error}`);
 		console.log("· test ok");
 	}
 
-	// 5. connect
 	let connId;
 	{
 		const r = await rpc(sock, { action: "connect", id: globalThis.connCfgId });
@@ -200,7 +175,6 @@ try {
 		console.log(`· connect ok（connId=${connId}）`);
 	}
 
-	// 6. tables_list
 	{
 		const r = await rpc(sock, { action: "tables_list", connId, db: "main" });
 		if (!r.ok) fail(`tables_list 失败：${r.error}`);
@@ -208,7 +182,6 @@ try {
 		console.log("· tables_list ok");
 	}
 
-	// 7. describe
 	{
 		const r = await rpc(sock, { action: "describe", connId, db: "main", table: "users" });
 		if (!r.ok) fail(`describe 失败：${r.error}`);
@@ -219,7 +192,6 @@ try {
 		console.log("· describe ok");
 	}
 
-	// 8. page 分页 + 排序
 	{
 		const r1 = await rpc(sock, { action: "page", connId, db: "main", table: "users", offset: 0, limit: 2 });
 		if (!r1.ok) fail(`page 失败：${r1.error}`);
@@ -240,7 +212,6 @@ try {
 		console.log("· page 分页/排序 ok");
 	}
 
-	// 9. query_exec 成功与失败路径
 	{
 		const r = await rpc(sock, { action: "query_exec", connId, db: "main", sql: "SELECT COUNT(*) AS n FROM users" });
 		if (!r.ok) fail(`query_exec 失败：${r.error}`);
@@ -251,7 +222,6 @@ try {
 		console.log("· query_exec 成功/失败路径 ok");
 	}
 
-	// 9.5 行编辑：page 响应带 editable/pkCol → update / insert / delete 全链路
 	{
 		const pg = await rpc(sock, { action: "page", connId, db: "main", table: "users", offset: 0, limit: 2 });
 		if (pg.ok && pg.grid.editable !== true) fail("sqlite page 应返回 editable:true");
@@ -303,7 +273,6 @@ try {
 		console.log("· 行编辑 update/insert/delete + 写语句 ok");
 	}
 
-	// 10. disconnect → conn_closed 事件
 	{
 		const evP = waitEvent(sock, "conn_closed", "conn_closed");
 		const r = await rpc(sock, { action: "disconnect", connId });
@@ -312,7 +281,6 @@ try {
 		console.log("· disconnect + conn_closed 事件 ok");
 	}
 
-	// 11. 已删连接的 connect 报错；重连正常
 	{
 		const again = await rpc(sock, { action: "connect", id: globalThis.connCfgId });
 		if (!again.ok) fail("重连失败");
@@ -321,7 +289,6 @@ try {
 		console.log("· 重连/未知连接报错 ok");
 	}
 
-	// 12. 静态服务：client bundle 可访问且不含服务端代码
 	{
 		const resp = await fetch(`${BASE}/plugins/${PLUGIN_ID}/client/entry.mjs`);
 		const text = await resp.text();
@@ -332,7 +299,6 @@ try {
 		console.log("· 静态服务/穿越拦截 ok");
 	}
 
-	// 13. conns_delete 清理
 	{
 		const r = await rpc(sock, { action: "conns_delete", id: globalThis.connCfgId });
 		if (!r.ok) fail(`conns_delete 失败：${r.error}`);
@@ -353,10 +319,7 @@ try {
 	if (proc) {
 		try {
 			process.kill(proc.pid, "SIGTERM");
-		} catch {
-			/* ignore */
-		}
-		// 等端口释放
+		} catch {}
 		for (let i = 0; i < 40; i++) {
 			await new Promise((r) => setTimeout(r, 250));
 			try {

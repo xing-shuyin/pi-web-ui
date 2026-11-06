@@ -31,10 +31,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const I18N_FILE = "web/src/i18n/messages";
 const LOCALES_DIR = "locales";
 
-/* ------------------------------------------------------------------ */
-/* 标点与繁中常用词回退规则                                             */
-/* ------------------------------------------------------------------ */
-
 const PUNCT_RULES = [
 	[/“([^”]*)”/g, "「$1」"],
 	[/([一-鿿])\s?\(([^()]*[一-鿿][^()]*)\)/g, "$1（$2）"],
@@ -85,7 +81,6 @@ function applyRules(str, rules) {
 	return res;
 }
 
-/** 尝试加载 OpenCC 转换器（若未安装或不可用则回退为 null）。 */
 async function loadOpenCc(repoRoot) {
 	try {
 		const openccMod = await import(pathToFileURL(join(repoRoot, "scripts/zh-tw-locale/opencc.mjs")).href);
@@ -136,8 +131,6 @@ async function loadOpenCc(repoRoot) {
 			hk: (text) => applyRules(applyRules(hkBase(text), hkPost), punctRules),
 		};
 	} catch (err) {
-		// OpenCC 缺失时回退到基于词汇表的规则转换，但必须明示：静默降级会让
-		// zh-TW/zh-HK 包带上未经转换的简体字（用户看不到原因）。
 		console.warn(
 			`[sync-locales] 警告：OpenCC 未加载（${err?.message ?? "未知错误"}），` +
 				`繁中包将回退到内置规则转换，可能有未转换的简体字残留。` +
@@ -227,7 +220,6 @@ export async function syncLocales(options = {}) {
 				} else if (pack.code === "zh-HK") {
 					newStrings[k] = opencc ? opencc.hk(zhVal) : applyRules(applyRules(zhVal, COMMON_S2T), PUNCT_RULES);
 				} else {
-					// 外语语言包：必须使用 en 的英文 fallback（严格禁止汉字残留）
 					newStrings[k] = enVal;
 				}
 			}
@@ -255,10 +247,6 @@ export async function syncLocales(options = {}) {
 		});
 
 		if (changed && !dryRun && !checkOnly) {
-			// 只重写 `strings`，其余顶层键**原样带回**：同一个语言包里还住着 `serverStrings`
-			// （服务端 pick() 的译文，见 server/i18n.ts）。以前这里手工重建对象、只写
-			// code/nativeName/version/strings，一次 `npm run i18n:sync` 就把整块服务端译文
-			// 静默删掉（pt/ja/tr 各丢 371/164/327 条，连带 locales 相关单测全红）。
 			const newPack = { ...pack, strings: newStrings };
 			writeFileSync(filePath, JSON.stringify(newPack, null, "\t") + "\n", "utf8");
 		}
@@ -276,10 +264,6 @@ export async function syncLocales(options = {}) {
 		hasChanges,
 	};
 }
-
-/* ------------------------------------------------------------------ */
-/* CLI 入口                                                            */
-/* ------------------------------------------------------------------ */
 
 async function main() {
 	const argv = process.argv.slice(2);

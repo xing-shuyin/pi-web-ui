@@ -18,7 +18,6 @@ export type SetupSaveResult =
 			saved: ServerFileConfig;
 	  };
 
-/** Validate a candidate without mutating runtime state; publish its token only after save succeeds. */
 export function saveSetupConfig(
 	input: unknown,
 	previous: ServerFileConfig,
@@ -47,7 +46,6 @@ export function saveSetupConfig(
 		else delete next[key];
 	}
 	if (body.port !== undefined && body.port !== "" && body.port !== null) {
-		// HTTP JSON inputs can include objects/arrays; never let coercion throw or accept booleans.
 		const p = typeof body.port === "string" || typeof body.port === "number" ? Number(body.port) : NaN;
 		if (!Number.isInteger(p) || p <= 0 || p > 65535) {
 			return { ok: false, status: 400, error: `port 必须是 1-65535：${String(body.port)}` };

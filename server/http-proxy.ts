@@ -22,7 +22,6 @@ export function proxyForwardPath(hit: ProxyHit, url: string): string {
 	return fwd || "/";
 }
 
-/** Forward plugin traffic and propagate cancellation without truncating successful responses. */
 export function proxyHttp(hit: ProxyHit, req: express.Request, res: express.Response): void {
 	if (hit.pluginId === "live-preview" && req.path === hit.prefix) {
 		res.redirect(302, `${hit.prefix}/${req.url.slice(req.path.length)}`);
@@ -128,7 +127,6 @@ export interface ProxyConfig {
 	envAllProxy?: string;
 }
 
-/** Read proxy settings from settings.json and environment. */
 export function resolveProxySettings(agentDir: string): ProxyConfig {
 	let httpProxy: string | undefined;
 	const settingsPath = join(agentDir, "settings.json");
@@ -138,9 +136,7 @@ export function resolveProxySettings(agentDir: string): ProxyConfig {
 			if (typeof parsed.httpProxy === "string" && parsed.httpProxy.trim()) {
 				httpProxy = parsed.httpProxy.trim();
 			}
-		} catch {
-			/* ignore parse error */
-		}
+		} catch {}
 	}
 
 	return {
@@ -171,8 +167,6 @@ export function initHttpProxy(agentDir: string): { active: boolean; proxyUrl?: s
 	}
 
 	try {
-		// Lazy-load undici so a missing optional dep never crashes server startup;
-		// proxy simply stays inactive with a warning.
 		let undici: typeof UndiciType;
 		try {
 			undici = createRequire(import.meta.url)("undici") as typeof UndiciType;

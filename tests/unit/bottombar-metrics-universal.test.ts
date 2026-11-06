@@ -1,8 +1,3 @@
-/**
- * bottombar-metrics-universal.test.ts — 通用 Agent 底座会话统计与底栏指标全链路单测。
- * 验证：底座优先规范化会话累计指标（Token、成本、缓存、上下文环），上层特定 Driver 遵循该规范。
- */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,9 +22,7 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		try {
 			rmSync(testAgentDir, { recursive: true, force: true });
 			rmSync(testDataDir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	it("底座初始会话具备标准的 stats 结构（零值与空上下文，展示占位符 — 而非错误数值）", () => {
@@ -58,7 +51,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		const state: UiState = snapshots[snapshots.length - 1].state;
 
-		// 验证底座标准化 stats 输出
 		expect(state.stats).toBeDefined();
 		expect(state.stats.totalMessages).toBe(0);
 		expect(state.stats.tokens).toEqual({
@@ -104,7 +96,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 			driver: mockDriver,
 		});
 
-		// 第一轮对话
 		await session.prompt("第一问");
 		capturedSink.onTurnComplete({
 			usage: {
@@ -122,8 +113,7 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		let snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		let state = snapshots[snapshots.length - 1].state;
 
-		// 验证第一轮底座累计与上下文占用
-		expect(state.stats.totalMessages).toBe(2); // 1 问 1 答
+		expect(state.stats.totalMessages).toBe(2);
 		expect(state.stats.tokens.input).toBe(1000);
 		expect(state.stats.tokens.output).toBe(200);
 		expect(state.stats.tokens.cacheRead).toBe(500);
@@ -131,12 +121,10 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		expect(state.stats.tokens.total).toBe(1200);
 		expect(state.stats.cost).toBe(0.05);
 
-		// 上下文占用 = (1000 + 500 + 100) prompt + 200 output = 1800
 		expect(state.stats.contextUsage.tokens).toBe(1800);
 		expect(state.stats.contextUsage.contextWindow).toBe(200_000);
 		expect(state.stats.contextUsage.percent).toBe(1);
 
-		// 第二轮对话
 		emitted.length = 0;
 		await session.prompt("第二问");
 		capturedSink.onTurnComplete({
@@ -155,7 +143,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		state = snapshots[snapshots.length - 1].state;
 
-		// 验证多轮累加：成本 0.05 + 0.08 = 0.13
 		expect(state.stats.totalMessages).toBe(4);
 		expect(state.stats.tokens.input).toBe(3000);
 		expect(state.stats.tokens.output).toBe(500);
@@ -163,7 +150,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		expect(state.stats.tokens.total).toBe(3500);
 		expect(state.stats.cost).toBeCloseTo(0.13, 5);
 
-		// 最新上下文占用 = (2000 + 1500) prompt + 300 output = 3800
 		expect(state.stats.contextUsage.tokens).toBe(3800);
 		expect(state.stats.contextUsage.percent).toBe(2);
 
@@ -188,11 +174,9 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 
 		await session.prompt("测试问题");
 
-		// 模拟 Claude Code CLI 输出的真实 result 帧
 		const activeTools = new Map<string, string>();
 		expect(sink).toBeDefined();
 
-		// 模拟 CLI 返回带有 total_cost_usd 与 4 桶 usage 的 result 事件
 		(driver as any).handleClaudeEvent(
 			{
 				type: "result",
@@ -215,7 +199,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 		const snapshots = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot");
 		const state: UiState = snapshots[snapshots.length - 1].state;
 
-		// 验证底栏指标全部有真实数据接入
 		expect(state.stats.cost).toBeCloseTo(0.14285, 5);
 		expect(state.stats.tokens.input).toBe(47500);
 		expect(state.stats.tokens.output).toBe(15);
@@ -252,7 +235,6 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 			driver: mockDriver,
 		});
 
-		// 会话 1
 		await session.prompt("会话 1 问题");
 		capturedSink.onTurnComplete({
 			usage: { inputTokens: 500, outputTokens: 100, costUSD: 0.02 },
@@ -265,20 +247,16 @@ describe("通用 Agent 底座会话统计与底栏指标适配", () => {
 			.state;
 		expect(state.stats.cost).toBe(0.02);
 
-		// 新建会话 2
 		await session.newChat();
 		session.flushSnapshot(true);
 		state = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot").pop()!
 			.state;
-		// 新会话初始成本为 0
 		expect(state.stats.cost).toBe(0);
 
-		// 切回会话 1
 		await session.switchConversation(conv1Id);
 		session.flushSnapshot(true);
 		state = emitted.filter((m): m is Extract<ServerMessage, { type: "snapshot" }> => m.type === "snapshot").pop()!
 			.state;
-		// 会话 1 成本正确恢复为 0.02
 		expect(state.stats.cost).toBe(0.02);
 
 		session.dispose();

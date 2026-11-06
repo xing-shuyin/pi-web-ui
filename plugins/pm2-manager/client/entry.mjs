@@ -1,23 +1,3 @@
-/**
- * pm2-manager 客户端入口 —— **无独立视图**（manifest `view:false`）：它作为宿主
- * 「后台任务」面板（BgTasksModal）的 `tasks.panel` 插槽内容内嵌渲染（同 settings.pages 的
- * 挂载口径），所以只提供 `mount(container)` —— 不要顶栏 tab、不要浮层。
- *
- * 与宿主自己的后台任务列表的关系：宿主列表负责「AI 起的裸进程（含遗留实例）」，
- * 这里只负责「pm2 托管的应用」那块（状态/CPU/内存/重启/时长 + 停止/重启/删除/日志 +
- * 未装 pm2 时一键安装）—— 同一个面板，各管一段，不重复列。
- *
- * 通道全部走插件的 HTTP 路由 `/plugins-api/pm2-manager/*`（host.route）：
- *   GET  /status  轮询（应用列表 + pm2 是否安装）
- *   POST /install 一键 `npm i -g pm2`
- *   POST /action  停止/重启/删除/看日志
- *
- * ⚠ `plugins_reload` 会让宿主丢掉旧 bundle 缓存并用 `?e=<epoch>` 重新 import：同一页里本模块
- * 会执行第二遍。挂载/卸载由宿主保证（面板关闭或重载都会调上一轮的 cleanup），因此清理只需在
- * mount 返回的 cleanup 里做（停轮询、拆 DOM），不需要顶层重入 hack。
- */
-
-/** 从 bundle 自己的 URL 推 API 前缀：<base>/plugins/pm2-manager/client/entry.mjs → <base>/plugins-api/pm2-manager */
 function resolveApiBase(importMetaUrl) {
 	const base = String(importMetaUrl);
 	const idx = base.indexOf("/plugins/");
@@ -163,9 +143,6 @@ function createApp(container) {
 	root.className = "pm2m-view";
 	container.appendChild(root);
 
-	// `loaded`：是否已有确定的 pm2 环境检测结论。
-	// 若存在模块级缓存，首帧直接视作 loaded，秒级呈现；
-	// 未有结论前不下任何结论（既不说没装、也不说没应用），避免环境检查结论闪烁。
 	let state = lastKnownState
 		? { ...lastKnownState, loaded: true, error: "" }
 		: { installed: false, version: "", apps: [], error: "", platform: "", loaded: false };
@@ -208,7 +185,6 @@ function createApp(container) {
 		}
 		parts.push(`<div class="pm2m-sec">${esc(t("appsTitle"))}</div>`);
 		if (!state.loaded) {
-			// 首次状态未到：中性占位，别抢答「没有托管任何应用」。
 			parts.push(`<div class="pm2m-empty">${esc(t("probing"))}</div>`);
 		} else if (!state.apps.length) {
 			parts.push(`<div class="pm2m-empty">${esc(t("empty"))}</div>`);
@@ -256,8 +232,6 @@ function createApp(container) {
 				};
 			}
 		} catch (err) {
-			// ⚠ 网络错误 / 服务端短暂无响应不等于「未安装 pm2」！
-			// 若之前尚未成功加载，不可盲目将 loaded 设为 true，否则会因 installed=false 误闪黄条。
 			state = { ...state, error: String(err?.message ?? err) };
 		}
 		render();
@@ -332,7 +306,6 @@ export default {
 		app.start();
 		return () => app.destroy();
 	},
-	/** 仅供单测重置模块缓存使用 */
 	_resetCache() {
 		lastKnownState = null;
 	},

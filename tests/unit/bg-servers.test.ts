@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { staleLeftovers, shouldTrackBackgroundServer } from "../../server/bg-servers.js";
 
-/** 构造一条 子→父 链的 parents 映射：args 为 [pid, parentPid] 数组。 */
 function parentsOf(entries: Array<[number, number]>): Map<number, number> {
 	return new Map(entries);
 }
@@ -26,7 +25,6 @@ describe("shouldTrackBackgroundServer", () => {
 	});
 
 	it("父链撞上服务器进程 → 记录（AI 直接 bash 拉起的服务）", () => {
-		// node(vite) ← bash ← node(server=SERVER)
 		const parents = parentsOf([
 			[7001, 7002],
 			[7002, SERVER],
@@ -35,22 +33,19 @@ describe("shouldTrackBackgroundServer", () => {
 	});
 
 	it("父链撞上本次 diff 的其他新 pid → 记录（中间层如 concurrently/npm 已脱离 bash）", () => {
-		// vite(node) ← npm(node, 也是新pid) ← bash 已退出(ppid 993 不存在/断链)
 		const parents = parentsOf([
 			[7001, 7005],
-			[7005, 9000], // 9000 不在映射 = bash 已退出
+			[7005, 9000],
 		]);
 		expect(shouldTrackBackgroundServer(7001, parents, new Set([7001, 7005]), SERVER)).toBe(true);
 	});
 
 	it("断链（父已退出/reparent）→ 保守记录", () => {
-		// nohup 起的 python：其父 bash 已退出，ppid 查不到
 		const parents = parentsOf([[8001, 88888]]);
 		expect(shouldTrackBackgroundServer(8001, parents, new Set([8001]), SERVER)).toBe(true);
 	});
 
 	it("完整父链回溯到系统根未命中 → 跳过（自己开的 Chrome）", () => {
-		// chrome ← explorer ← (拉平) ← 0/1
 		const parents = parentsOf([
 			[5001, 5002],
 			[5002, 5003],
@@ -67,12 +62,10 @@ describe("shouldTrackBackgroundServer", () => {
 			[0, 0],
 		]);
 		expect(shouldTrackBackgroundServer(5001, parents, new Set([5001]), SERVER)).toBe(false);
-		// 根 1 的父缺失但 cur===1 → 完整链，跳过
 		expect(shouldTrackBackgroundServer(5001, parentsOf([[5001, 1]]), new Set([5001]), SERVER)).toBe(false);
 	});
 
 	it("Playwright 拉的 Chrome：父链经 node 到服务器 → 记录", () => {
-		// chrome ← node(playwright) ← bash ← server
 		const parents = parentsOf([
 			[3001, 3002],
 			[3002, 3003],
@@ -82,7 +75,6 @@ describe("shouldTrackBackgroundServer", () => {
 	});
 
 	it("微信进程树（WeChatAppEx 等子进程，父链完整且不涉服务器）→ 跳过", () => {
-		// wechatappex ← wechatmain ← explorer ← ... ← 0
 		const parents = parentsOf([
 			[6001, 6002],
 			[6002, 6003],
@@ -103,8 +95,8 @@ describe("shouldTrackBackgroundServer", () => {
 	it("Issue #651：进程启动时间早于当前 bash 启动时刻 → 直接跳过（排除已有桌面软件/游戏）", () => {
 		const now = Date.now();
 		const bashStart = now;
-		const alreadyRunningCreated = bashStart - 60_000; // 1 分钟前启动的桌面客户端
-		const parents = parentsOf([[29356, 88888]]); // 断链的孤儿进程
+		const alreadyRunningCreated = bashStart - 60_000;
+		const parents = parentsOf([[29356, 88888]]);
 		expect(
 			shouldTrackBackgroundServer(29356, parents, new Set([29356]), SERVER, "custom_client.exe", {
 				createdMs: alreadyRunningCreated,
@@ -123,7 +115,7 @@ describe("shouldTrackBackgroundServer", () => {
 	});
 
 	it("Issue #651：断链但在 Program Files 目录下的桌面软件 → 跳过", () => {
-		const parents = parentsOf([[12640, 99999]]); // 99999 不在 parents
+		const parents = parentsOf([[12640, 99999]]);
 		expect(
 			shouldTrackBackgroundServer(12640, parents, new Set([12640]), SERVER, "app.exe", {
 				commandLine: '"C:\\Program Files\\SomeApp\\app.exe" --listen 51789',
@@ -133,19 +125,16 @@ describe("shouldTrackBackgroundServer", () => {
 
 	it("断链但为典型开发运行时（node, python 等）→ 保留收录（哪怕安装在 Program Files 或 AppData 下）", () => {
 		const parents = parentsOf([[8001, 88888]]);
-		// 官方 Windows 安装路径：C:\Program Files\nodejs\node.exe
 		expect(
 			shouldTrackBackgroundServer(8001, parents, new Set([8001]), SERVER, "node.exe", {
 				commandLine: '"C:\\Program Files\\nodejs\\node.exe" server.js',
 			}),
 		).toBe(true);
-		// 官方 Windows 安装路径：AppData\Local\Programs\Python
 		expect(
 			shouldTrackBackgroundServer(8001, parents, new Set([8001]), SERVER, "python.exe", {
 				commandLine: '"C:\\Users\\c\\AppData\\Local\\Programs\\Python\\Python312\\python.exe" -m http.server 8000',
 			}),
 		).toBe(true);
-		// 普通桌面软件（非开发工具运行时）位于 Program Files 必须排除
 		expect(
 			shouldTrackBackgroundServer(8001, parents, new Set([8001]), SERVER, "wps.exe", {
 				commandLine: '"C:\\Program Files\\Kingsoft\\WPS Office\\wps.exe"',

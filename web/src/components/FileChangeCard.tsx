@@ -42,7 +42,6 @@ export const FileChangeCard = memo(function FileChangeCard({
 		}
 	}, [details]);
 
-	// 全屏时监听 ESC 键关闭
 	useEffect(() => {
 		if (!isFullscreen) return;
 		const onKey = (e: KeyboardEvent) => {
@@ -77,7 +76,6 @@ export const FileChangeCard = memo(function FileChangeCard({
 		onOpenInspector?.();
 	};
 
-	// 解析完全失败或用户显式选择 raw 模式时，安全降级回原始文本
 	if (!data || viewMode === "raw") {
 		return (
 			<div className="file-diff-raw-wrap">
@@ -161,7 +159,6 @@ export const FileChangeCard = memo(function FileChangeCard({
 	return (
 		<>
 			<div className={`file-diff-card${isError ? " is-err" : ""}`}>
-				{/* 顶部工具条 */}
 				<div className="file-diff-toolbar">
 					<div className="file-diff-info">
 						<FiFileText className="file-diff-file-icon" />
@@ -252,11 +249,9 @@ export const FileChangeCard = memo(function FileChangeCard({
 					</div>
 				</div>
 
-				{/* 正文渲染区 */}
 				<div className="file-diff-body">{renderContent()}</div>
 			</div>
 
-			{/* 沉浸式全屏 Diff 审查浮层 */}
 			{isFullscreen &&
 				createPortal(
 					<div
@@ -384,7 +379,6 @@ export const FileChangeCard = memo(function FileChangeCard({
 	);
 });
 
-/** 写入新文件/读取文件的带行号高亮视图（不截断，直接展示全部内容） */
 export function WriteCodeView({ content, startLine = 1 }: { content: string; startLine?: number }) {
 	const lines = useMemo(() => (content ? content.split("\n") : []), [content]);
 
@@ -400,7 +394,6 @@ export function WriteCodeView({ content, startLine = 1 }: { content: string; sta
 	);
 }
 
-/** 统一差异 Unified Diff 视图（不截断，直接展示全部内容） */
 export function UnifiedDiffView({
 	hunks,
 	isStreaming,
@@ -437,7 +430,6 @@ export function UnifiedDiffView({
 	);
 }
 
-/** 单行 Diff 渲染，包含行号和词级高亮 tokens */
 function DiffLineRow({ line }: { line: DiffLine }) {
 	const gutter = line.type === "add" ? "+" : line.type === "del" ? "-" : " ";
 	const lineNum = line.type === "del" ? line.oldLineNum : line.newLineNum;
@@ -462,7 +454,6 @@ function DiffLineRow({ line }: { line: DiffLine }) {
 	);
 }
 
-/** 左右分屏 Split Diff 视图（VS Code 双窗格独立水平滚动 + 垂直同步 + 行号绝对锁定） */
 export function SplitDiffView({
 	hunks,
 	isStreaming,
@@ -509,7 +500,6 @@ export function SplitDiffView({
 		});
 	};
 
-	// 预先将每个 Hunk 的行转换为左右对齐对 (pairs)
 	const parsedHunks = useMemo(() => {
 		return hunks.map((hunk) => {
 			const pairs: Array<{ left?: DiffLine; right?: DiffLine }> = [];
@@ -541,7 +531,6 @@ export function SplitDiffView({
 
 	return (
 		<div className="diff-split-container">
-			{/* 左窗格：修改前 (Original / Before) - 独立水平滚动与吸底滚动条 */}
 			<div ref={leftColRef} className="diff-split-column left" onScroll={onLeftScroll}>
 				<div className="diff-split-pane-header">
 					<span className="diff-header-text">BEFORE (ORIGINAL)</span>
@@ -574,10 +563,8 @@ export function SplitDiffView({
 				</div>
 			</div>
 
-			{/* 中间垂直分割线 */}
 			<div className="diff-split-divider" />
 
-			{/* 右窗格：修改后 (Modified / After) - 独立水平滚动与吸底滚动条 */}
 			<div ref={rightColRef} className="diff-split-column right" onScroll={onRightScroll}>
 				<div className="diff-split-pane-header">
 					<span className="diff-header-text">AFTER (MODIFIED)</span>

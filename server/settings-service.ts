@@ -1,12 +1,5 @@
-/**
- * Settings service — 从 agent-service.ts 抽出（系统提示词 / 技能插件开关 /
- * 目标审查提示词 / 预设 / 视觉桥偏好）。设置持久化在 client-state.json 全局共享。
- *
- * 经 SettingsHost 回调与 ClientSession 解耦：本模块只管「设置状态 + 面板推送 +
- * 预设存取 + 何时需要 reload」，真正动 runtime 的 session.reload() 走宿主回调
- * （reloadSession 里还会刷新斜杠命令目录）。
- */
 import { existsSync, readFileSync } from "node:fs";
+import { normalizeNativeCliInheritModel, type NativeCliInheritModel } from "./engine-catalog.js";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
@@ -66,14 +59,12 @@ import {
 	type PresetSharePort,
 } from "./preset-share.js";
 
-/** ClientSession 提供给本服务的宿主能力（窄接口，便于独立测试）。 */
 export interface MarkerStateForSettings {
 	markersEnabled: boolean;
 	disabledMarkers: string[];
 	markers: import("./protocol.js").UiMarkerInfo[];
 }
 
-/** Reuse one port per conversation; callbacks must capture its runtime, not active. */
 export interface SettingsRuntimeTarget {
 	isStreaming: () => boolean;
 	reloadSession: () => Promise<void>;
@@ -85,55 +76,28 @@ export interface SettingsHost {
 	emit: (msg: ServerMessage) => void;
 	flushSnapshot: () => void;
 	isDisposed: () => boolean;
-	/** 当前活动对话的 session（未就绪时调用方自行 try/catch）。 */
 	getSession: () => AgentSession;
-	/** 会话工作区（磁盘校验“已删除的 skill”用）。 */
 	cwd: () => string;
-	/** pi 配置目录（<agentDir>/skills 是技能来源之一）。 */
 	agentDir: () => string;
-	/** Apply the execution owner's capability scope to disk discovery as well as loaded skills. */
 	filterDiskSkills?: (skills: DiscoveredSkill[]) => DiscoveredSkill[];
 	isStreaming: () => boolean;
-	/** session.reload() + 刷新斜杠命令目录。 */
 	reloadSession: () => Promise<void>;
-	/** 把设置面板的出错重试次数即时注入各会话（无需 reload；reload 后由
-	 *  调用方重放，见 agent-service applyRetryOverrides）。 */
 	applyRetryOverrides: () => void;
-	/** Replay current steering/follow-up queue modes on every live session. */
 	applyQueueModes?: () => void;
-	/** 把压缩软上限逐会话重算成 compaction reserveTokens 覆盖（各用自己当前模型
-	 *  与生效软上限，不累加、不残留；无需 reload；reload/建会话/换模型后由调用方
-	 *  重放，见 agent-service applyCompactionOverrides，issue #229/#773）。 */
 	applyCompactionOverrides: () => void;
-	/** 把 codemode 运行模式与内联预算即时注入各会话的 SettingsManager（无需 reload）。 */
 	applyCodemodeOverrides?: () => void;
-	/** 统一收口重放配置覆盖与工具门控（包含 retry/compaction/codemode 与 toolGating）。 */
 	applySessionOverrides?: () => void;
-	/** 把统一工具开关即时应用到活动会话的 ActiveSet（无需 reload；
-	 *  reload/创建后由调用方重放，见 agent-service applyToolGating）。 */
 	applyToolGating: () => void;
-	/** 当前会话提示词快照（设置面板预览用；会话未就绪时 full="" 且 texts={}）。
-	 *  full = 实际生效的完整系统提示词（组合模式 = 模板 + 各来源自动/覆盖内容渲染结果）；
-	 *  texts = 各来源 token 当前的默认（自动）内容（未覆盖时 {{token}} 展开值）；
-	 *  toolsSchema = 发给模型的 function-calling 工具定义（name/description/parameters）只读文本。 */
 	promptSnapshot: () => { full: string; texts: Record<string, string>; toolsSchema: string };
-	/** 可选：内置标记状态（设置面板展示用）。 */
 	getMarkerState?: () => MarkerStateForSettings;
-	/** 可选：当前对话的审批放行策略（「本对话全部允许 / 允许同类」的撤销区用；
-	 *  纯内存态，见 server/tool-approval.ts 的 ApprovalPolicy）。 */
 	getApprovalPolicy?: () => UiApprovalPolicyState;
-	/** 可选：目标模式总开关 on→off 时调 —— 停掉在飞的目标/调研（否则循环照跑照派）。 */
 	onGoalModeDisabled?: () => void;
-	/** 可选：历史对话列表过滤偏好（如 showForkedParentSessions）变化时立即重推历史列表。 */
 	onSessionsFilterChanged?: () => void;
-	/** 可选：查询 MCP 服务器列表与配置文件路径（设置面板展示）。 */
 	getMcpServers?: () => {
 		servers: import("./protocol.js").UiMcpServer[];
 		globalPath: string;
 		projectPath: string;
 	};
-	/** 可选：该客户端上报的原始 UI locale（"zh-TW" 等，未折叠）。内置子代理模板据此在
-	 *  设置面板显示繁中视图（见 localizeTemplate）；缺省 = 不做视图转换。 */
 	getLocale?: () => string | undefined;
 }
 
@@ -142,7 +106,6 @@ export class SettingsService {
 	private presets: SettingsPreset[];
 	private knownSkills = new Map<string, UiSkillInfo>();
 	private knownExtensions = new Map<string, UiExtensionInfo>();
-	/** 流式中改了需要 reload 的设置 → agent_end 后延迟应用（防拆毁运行中 run）。 */
 	private pendingReload = false;
 	private readonly pendingRuntimeReloads = new Set<SettingsRuntimeTarget>();
 	private unsubscribeSettings?: () => void;
@@ -153,16 +116,13 @@ export class SettingsService {
 
 	constructor(
 		private readonly host: SettingsHost,
-		/** 全局子代理模板库（所有客户端共享；模板改动无需 reload runtime）。 */
 		private readonly templates: SubagentTemplatesStore,
-		/** 全局审批规则库（所有客户端共享；修改实时生效无需 reload runtime）。 */
 		private readonly approvalRules?: ApprovalRulesStore,
 	) {
 		this.settings = host.stateStore.getSettings(host.clientId);
 		this.presets = host.stateStore.getPresets(host.clientId);
 	}
 
-	/** Immutable snapshot: repeated hot-path reads share the same detached object. */
 	get current(): ClientSettings {
 		return (
 			this.host.stateStore.getSettingsSnapshot?.(this.host.clientId) ??
@@ -170,7 +130,6 @@ export class SettingsService {
 		);
 	}
 
-	/** Call once after the host has assigned settingsSvc and finished initialization. */
 	subscribeSharedSettings(): void {
 		if (this.unsubscribeSettings || this.disposed) return;
 		this.sharedVersion = this.host.stateStore.getSettingsVersion();
@@ -191,7 +150,6 @@ export class SettingsService {
 		this.pendingRuntimeReloads.clear();
 	}
 
-	/** Apply a durable commit without saving it again. Serialize reloads; ignore stale deliveries. */
 	receiveSharedSettings(change: SharedSettingsChange): Promise<void> {
 		if (this.disposed || this.host.isDisposed() || change.version <= this.sharedVersion) return this.sharedQueue;
 		this.sharedVersion = change.version;
@@ -270,9 +228,6 @@ export class SettingsService {
 		}
 	}
 
-	/** Effective dev-no-cache: explicit setting wins, else source-tree default
-	 *  (ON from source, OFF for installs) — same rule as the index.html route.
-	 *  PI_WEB_DEV_CACHE=0/1 overrides either way. */
 	defaultDevNoCache(): boolean {
 		const env = process.env.PI_WEB_DEV_CACHE;
 		if (env !== undefined) return env !== "0";
@@ -301,8 +256,6 @@ export class SettingsService {
 		return v;
 	}
 
-	/** 判断某个 skill 名是否仍存在于磁盘任何来源（各类 Agent 项目区 / 全局 / 祖先 / npm 包等）。
-	 *  被禁用且文件已删除的名字不应再出现在设置面板，也不应留在持久化记录里。 */
 	private skillStillOnDisk(name: string): boolean {
 		return isSkillStillOnDisk(name, {
 			cwd: this.host.cwd(),
@@ -310,10 +263,6 @@ export class SettingsService {
 		});
 	}
 
-	/** 判断某个扩展 id 是否仍存在（loader 之外的兜底，供禁用残留清理用）：
-	 *  npm: 包 → 任一 npm 根还有目录，或还列在任一 settings.json packages 里
-	 *  （只删了 node_modules 但配置还在 = 保守保留，等下次 loader 同步）；
-	 *  路径型 → 文件/目录任一存在。空串一律不存在。 */
 	private extensionStillOnDisk(id: string): boolean {
 		if (!id) return false;
 		if (isInternalExtension({ path: id })) return false;
@@ -335,7 +284,6 @@ export class SettingsService {
 			return false;
 		}
 	}
-	/** 包名是否还列在全局/项目 settings.json 的 packages 里（文件缺失/坏 JSON 当没列）。 */
 	private packageStillListed(pkg: string): boolean {
 		const wanted = `npm:${pkg}`;
 		for (const file of [join(this.host.agentDir(), "settings.json"), join(this.host.cwd(), ".pi", "settings.json")]) {
@@ -350,7 +298,6 @@ export class SettingsService {
 		}
 		return false;
 	}
-	/** Discover disk resources and prune stale preferences only on explicit refresh. Never reloads. */
 	refreshResources(): void {
 		if (this.disposed || this.host.isDisposed()) return;
 		this.resetResourceCatalog();
@@ -366,15 +313,12 @@ export class SettingsService {
 			loadedSkillNames = new Set(loadedSkills.map((s) => s.name));
 			loadedExtNames = new Set(loadedExts.map((e) => extensionKey(e)));
 
-			// 实时全源磁盘扫描：动态发现外部新安装/更新的各类 Agent 全局与本地技能
 			const discoveredSkills = discoverDiskSkills({
 				cwd: this.host.cwd(),
 				agentDir: this.host.agentDir(),
 			});
 			const diskSkills = this.host.filterDiskSkills?.(discoveredSkills) ?? discoveredSkills;
 
-			// Rebuild membership from loaded and discovered resources so deleted
-			// disabled entries cannot keep themselves alive through the cache.
 			const keepSkills = new Set<string>([...loadedSkills.map((s) => s.name), ...diskSkills.map((s) => s.name)]);
 			const keepExts = new Set<string>([
 				...loadedExts.map((e) => extensionKey(e)),
@@ -418,13 +362,7 @@ export class SettingsService {
 					enabled: true,
 				});
 			}
-		} catch {
-			// Session not ready yet — keep whatever we already know.
-		}
-		// 清理“源文件已删除”的禁用残留记录：磁盘上已不存在的技能名从
-		// disabledSkills / reviewDisabledSkills 持久化记录中移除——否则每次
-		// 推送都会把已删除的 skill 以灰条形式永恒地补回面板（“关闭过的
-		// skill 被一直记录”）。session 未就绪时保守跳过。
+		} catch {}
 		if (loadedSkillNames !== null) {
 			const stale = [
 				...new Set([
@@ -446,12 +384,6 @@ export class SettingsService {
 				});
 			}
 		}
-		// Disabled entries that still exist on disk are re-added (with the
-		// last-known description) so they can be re-enabled; entries whose
-		// source file was deleted are dropped instead of being resurrected.
-		// disabledExtensions 同理：已卸载（loader 里没有、磁盘/配置里也没有）的扩展
-		// 从禁用记录里剔除并持久化 —— 否则卸载过的扩展以“已禁用”灰条永生（issue #192）。
-		// loadedExtNames 非 null 即 session 就绪；取不到（catch 分支）时保守跳过。
 		if (loadedExtNames !== null) {
 			const staleExts = this.settings.disabledExtensions.filter(
 				(id) => isInternalExtension({ path: id }) || (!loadedExtNames.has(id) && !this.extensionStillOnDisk(id)),
@@ -468,8 +400,6 @@ export class SettingsService {
 			if (!this.skillStillOnDisk(name)) continue;
 			this.knownSkills.set(name, { name, description: "", enabled: false });
 		}
-		// （上面的 stale 清理已把卸载项移出禁用记录；这里再按磁盘挡一次，
-		// session 未就绪跳过清理时也不复活幽灵。）
 		for (const id of this.settings.disabledExtensions) {
 			if (isInternalExtension({ path: id })) continue;
 			if (!this.knownExtensions.has(id)) {
@@ -495,7 +425,6 @@ export class SettingsService {
 		this.knownExtensions.clear();
 	}
 
-	/** Publish persisted preferences and the current in-memory resource catalog. No discovery, writes or reloads. */
 	push(): void {
 		if (this.disposed || this.host.isDisposed()) return;
 		this.resetResourceCatalog();
@@ -523,9 +452,7 @@ export class SettingsService {
 					enabled: true,
 				});
 			}
-		} catch {
-			// Session initialization may still be in progress.
-		}
+		} catch {}
 		const skills = [...this.knownSkills.values()]
 			.map((s) => ({ ...s, enabled: !disabledSkills.has(s.name) }))
 			.sort((a, b) => a.name.localeCompare(b.name));
@@ -536,9 +463,7 @@ export class SettingsService {
 			.filter((e) => !isInternalExtension({ path: e.id }) && !isInternalExtension({ path: e.path }))
 			.map((e) => ({ ...e, enabled: !disabledExts.has(e.id) }))
 			.sort((a, b) => a.name.localeCompare(b.name));
-		// 统一工具开关是单源（disabledAgentTools），遗留三开关推送时推导，保证面板一致。
 		const legacyTools = deriveLegacy(this.settings.disabledAgentTools ?? []);
-		// 当前会话提示词快照：完整生效文本 + 各来源默认（自动）内容（只读预览）。
 		const promptSnap = this.host.promptSnapshot();
 		const mcp = this.host.getMcpServers?.() ?? {
 			servers: [],
@@ -556,6 +481,7 @@ export class SettingsService {
 				toolPromptOverrides: { ...this.settings.toolPromptOverrides },
 				disabledAgentTools: [...normalizeDisabledAgentTools(this.settings.disabledAgentTools)],
 				disabledPluginTools: [...normalizeDisabledPluginTools(this.settings.disabledPluginTools)],
+				nativeCliInheritModel: { ...this.settings.nativeCliInheritModel },
 				terminalToolsEnabled: legacyTools.terminalToolsEnabled,
 				terminalBash: this.settings.terminalBash,
 				terminalBashIdleMs: this.settings.terminalBashIdleMs,
@@ -605,11 +531,8 @@ export class SettingsService {
 				skillsCatalogBudget: this.settings.skillsCatalogBudget,
 				skillsMaxFileBytes: this.settings.skillsMaxFileBytes,
 				skillsFullTextMaxBytes: this.settings.skillsFullTextMaxBytes,
-				// The composed system prompt actually in effect (read-only view).
 				effectiveSystemPrompt: promptSnap.full,
-				// 每个来源未覆盖时的默认（自动）内容（「各来源」行预览用）。
 				promptSourceDefaults: promptSnap.texts,
-				// 发给模型的工具 schema（name/description/parameters）—— 只读预览。
 				toolsSchema: promptSnap.toolsSchema,
 				visionBridgeDefaultPrompt: SYSTEM_PROMPT,
 				scmCommitMsgDefaultPrompt: COMMITMSG_SYSTEM_PROMPT,
@@ -655,7 +578,6 @@ export class SettingsService {
 		});
 	}
 
-	/** Vision-capable configured models, for the settings-panel picker. */
 	private collectVisionModels(): UiVisionBridgeModel[] {
 		try {
 			return findVisionModels(this.host.getSession().modelRuntime).map((m) => ({
@@ -664,12 +586,10 @@ export class SettingsService {
 				label: m.label,
 			}));
 		} catch {
-			// Session not ready yet — the picker stays empty until next push.
 			return [];
 		}
 	}
 
-	/** 已配置鉴权的全部模型（子代理模型选择器用；跟随视觉桥的收集方式但不限视觉）。 */
 	private collectSubagentModels(): UiVisionBridgeModel[] {
 		try {
 			const runtime = this.host.getSession().modelRuntime;
@@ -684,66 +604,48 @@ export class SettingsService {
 					});
 				}
 			}
-			// 稳定排序：provider 名 → 模型名。
 			return out.sort((a, b) =>
 				a.provider === b.provider ? a.label.localeCompare(b.label) : a.provider.localeCompare(b.provider),
 			);
 		} catch {
-			// Session not ready yet — the picker stays empty until next push.
 			return [];
 		}
 	}
 
-	/** Persist + apply a partial settings update (compose template / per-source
-	 *  overrides, skill/extension toggles). */
 	async set(partial: {
 		promptMode?: PromptMode;
 		customSystemPrompt?: string;
 		promptTemplate?: string;
 		promptOverrides?: Record<string, string>;
-		/** 逐工具文案覆盖（工具名 → description/promptSnippet/promptGuidelines；
-		 *  空字段/空对象 = 清除该项覆盖；只合并给出的键）。 */
 		toolPromptOverrides?: Record<string, UiToolPromptOverride>;
 		disabledSkills?: string[];
 		disabledExtensions?: string[];
-		/** 统一工具禁用名单（单源；遗留三开关与之双向同步）。 */
 		disabledAgentTools?: string[];
-		/** 插件 AI 工具禁用名单（live 生效，无需 reload）。 */
 		disabledPluginTools?: string[];
+		nativeCliInheritModel?: NativeCliInheritModel;
 		terminalToolsEnabled?: boolean;
 		terminalBash?: boolean;
 		terminalBashIdleMs?: number;
 		terminalBashMaxForegroundMs?: number;
 		toolWatchdogTimeoutMs?: number;
-		/** read 工具读目录开关（默认开；见 server/read-tool.ts）。运行时无需重载，
-		 *  覆盖定义每次调用实时读取。 */
 		readDirEnabled?: boolean;
-		/** 「后台任务」自动清理阈值（分钟；0 = 关，默认关）。 */
 		bgAutoCleanupMin?: number;
-		/** 工具延迟加载开关（默认开）：只影响新会话与之后的门控重放。 */
 		toolLazyLoading?: boolean;
-		/** codemode 执行模式："on"（常规模式，默认）| "only"（严格代码模式）。 */
 		codemodeMode?: "on" | "only";
-		/** codemode 系统提示词中内联工具声明的预算 Token（默认 3000）。 */
 		codemodeInlineBudget?: number;
-		/** 工具执行审批总开关（默认开；纯运行开关，每次审批实时读取，无需 reload）。 */
 		toolApprovalEnabled?: boolean;
 		editSoftEnabled?: boolean;
 		questionnaireEnabled?: boolean;
 		questionPresentation?: "queue" | "all" | "manual";
 		toolApprovalPresentation?: "queue" | "all" | "manual";
 		questionTimeoutSeconds?: number;
-		/** 同项目并行提醒开关（默认开；纯运行开关，下一轮即生效，无需 reload）。 */
 		parallelReminderEnabled?: boolean;
 		goalModeEnabled?: boolean;
 		thinkingWrap?: boolean;
 		toolsWrap?: boolean;
 		toolImagesEnabled?: boolean;
-		/** 消息列表尾部常驻渲染的消息条数（默认 15 = 与原硬编码一致；纯 UI 偏好）。 */
 		keepRecentMessages?: number;
-		/** 向上分页加载（反向分页）：默认只挂载最近消息、滚动/点击加载更早。纯 UI 偏好。 */
 		reversePagination?: boolean;
-		/** 历史对话列表中是否显示已被 fork 派生的父会话（默认 false = 仅显示链尾最新分支）。 */
 		showForkedParentSessions?: boolean;
 		retainFinishedConversations?: boolean;
 		openRecentSessionOnProjectSwitch?: boolean;
@@ -769,18 +671,23 @@ export class SettingsService {
 		quickAskThinking?: QuickAskSettings["quickAskThinking"];
 		quickAskSystemPrompt?: QuickAskSettings["quickAskSystemPrompt"];
 		quickAskExplainPrompt?: QuickAskSettings["quickAskExplainPrompt"];
+		quickAskTranslateEnabled?: QuickAskSettings["quickAskTranslateEnabled"];
+		quickAskTranslateTarget?: QuickAskSettings["quickAskTranslateTarget"];
+		quickAskTranslateStyle?: QuickAskSettings["quickAskTranslateStyle"];
+		quickAskTranslatePrompt?: QuickAskSettings["quickAskTranslatePrompt"];
+		quickAskShowOriginal?: QuickAskSettings["quickAskShowOriginal"];
+		quickAskReferenceMenus?: QuickAskSettings["quickAskReferenceMenus"];
+		quickAskConversationScope?: QuickAskSettings["quickAskConversationScope"];
+		quickAskFolderScope?: QuickAskSettings["quickAskFolderScope"];
 		planModePromptMode?: PromptMode;
 		planModePrompt?: string;
 		reviewPrompt?: string;
 		reviewDisabledSkills?: string[];
 		promptDisabled?: string[];
 		disabledPlugins?: string[];
-		/** 宿主 UI 布局偏好（插件 UI 贡献 + 内置条目的隐藏/排序/分组；纯 UI，per-client）。 */
 		uiLayout?: UiLayoutPrefs;
 		subagentDefaultModel?: string | null;
-		/** 子代理最大嵌套层数（0 = 不限制；派生时实时读取，只影响之后新派生的子代理，无需 reload）。 */
 		subagentMaxDepth?: number;
-		/** 子代理连续自动唤醒上限轮数（0 = 不限制，默认 5；实时生效，无需 reload）。 */
 		subagentAutoWakeMaxTurns?: number;
 		steeringMode?: QueueMode;
 		followUpMode?: QueueMode;
@@ -805,7 +712,6 @@ export class SettingsService {
 			partial.promptDisabled !== undefined ||
 			partial.disabledSkills !== undefined ||
 			partial.disabledExtensions !== undefined;
-		// 统一工具开关 live 生效（ActiveSet 加减，无需 reload），见末尾 applyToolGating。
 		const toolGatingChanged =
 			partial.disabledAgentTools !== undefined ||
 			partial.disabledPluginTools !== undefined ||
@@ -823,7 +729,6 @@ export class SettingsService {
 			next.promptTemplate = partial.promptTemplate;
 		}
 		if (partial.promptOverrides !== undefined) {
-			// 只合并给出的 key；空串 = 清除该来源覆盖。
 			const overrides = { ...next.promptOverrides };
 			for (const [k, v] of Object.entries(partial.promptOverrides)) {
 				if (v && v.trim()) overrides[k] = v;
@@ -833,7 +738,6 @@ export class SettingsService {
 		}
 		if (partial.promptDisabled !== undefined) next.promptDisabled = [...partial.promptDisabled];
 		if (partial.toolPromptOverrides !== undefined) {
-			// 逐工具合并：给出的键整体替换（归一化后为空 = 清除该工具覆盖）。
 			const overrides = { ...next.toolPromptOverrides };
 			const normalized = normalizeToolPromptOverrides(partial.toolPromptOverrides);
 			for (const key of Object.keys(partial.toolPromptOverrides)) {
@@ -848,16 +752,12 @@ export class SettingsService {
 		if (partial.disabledExtensions !== undefined) {
 			next.disabledExtensions = partial.disabledExtensions;
 		}
-		// 插件开关是纯 UI 隐藏（不进 needsReload——运行时无需重载）。
 		if (partial.disabledPlugins !== undefined) {
 			next.disabledPlugins = partial.disabledPlugins;
 		}
-		// UI 布局偏好只是渲染层的事（顶栏/底栏/右键菜单由前端拼），同样不需 reload。
 		if (partial.uiLayout !== undefined) {
 			next.uiLayout = normalizeUiLayout(partial.uiLayout);
 		}
-		// 统一工具开关：新字段优先；只给遗留单开关时折回新字段。两边写完再由
-		// deriveLegacy 回填遗留别名，保证内存/推送/落盘三处一致。
 		if (partial.disabledAgentTools !== undefined) {
 			next.disabledAgentTools = normalizeDisabledAgentTools(partial.disabledAgentTools);
 		}
@@ -881,6 +781,12 @@ export class SettingsService {
 			next.editSoftEnabled = legacy.editSoftEnabled;
 			next.questionnaireEnabled = legacy.questionnaireEnabled;
 		}
+		if (partial.nativeCliInheritModel !== undefined) {
+			next.nativeCliInheritModel = {
+				...before.nativeCliInheritModel,
+				...normalizeNativeCliInheritModel(partial.nativeCliInheritModel),
+			};
+		}
 		if (partial.terminalBash !== undefined) {
 			next.terminalBash = partial.terminalBash;
 		}
@@ -893,17 +799,12 @@ export class SettingsService {
 		if (partial.toolWatchdogTimeoutMs !== undefined) {
 			next.toolWatchdogTimeoutMs = normalizeToolWatchdogTimeoutMs(partial.toolWatchdogTimeoutMs);
 		}
-		// read 读目录开关：覆盖定义每次调用实时读取，改动即时生效，无需 reload。
 		if (partial.readDirEnabled !== undefined) {
 			next.readDirEnabled = partial.readDirEnabled;
 		}
-		// 「后台任务」自动清理阈值（分钟；0 = 关）：bg-servers 的定时器每轮实时读，即时生效。
 		if (partial.bgAutoCleanupMin !== undefined) {
 			next.bgAutoCleanupMin = normalizeBgCleanupMinutes(partial.bgAutoCleanupMin);
 		}
-		// 工具延迟加载开关（默认关，设置页可开）：门控每次实时读取，改动经 applyToolGating 重放生效
-		// （见 toolGatingChanged）——**只影响新会话与之后的门控重放**，已有对话的已加载
-		// 集合不会被反向清空（不想让在跑的对话凭空丢掉工具）。
 		if (partial.toolLazyLoading !== undefined) {
 			next.toolLazyLoading = partial.toolLazyLoading === true;
 		}
@@ -916,16 +817,12 @@ export class SettingsService {
 			next.codemodeInlineBudget = partial.codemodeInlineBudget;
 			codemodeChanged = true;
 		}
-		// 工具执行审批总开关：审批入口每次实时读取（askApproval 顶部门禁），无需 reload。
 		if (partial.toolApprovalEnabled !== undefined) {
 			next.toolApprovalEnabled = partial.toolApprovalEnabled;
 		}
-		// 目标模式总开关：运行时无需重载（goal bar / 服务端入口实时读取）。
-		// on→off 时立即停掉在飞的目标/调研 —— 不停的话循环照跑照派，开关名存实亡。
 		if (partial.goalModeEnabled !== undefined) {
 			next.goalModeEnabled = partial.goalModeEnabled;
 		}
-		// 同项目并行提醒开关：同上，发送入口逐轮实时读取，无需 reload。
 		if (partial.parallelReminderEnabled !== undefined) {
 			next.parallelReminderEnabled = partial.parallelReminderEnabled;
 		}
@@ -947,7 +844,6 @@ export class SettingsService {
 		if (partial.keepRecentMessages !== undefined) {
 			next.keepRecentMessages = normalizeKeepRecentMessages(partial.keepRecentMessages);
 		}
-		// 向上分页加载：前端 MessageList 实时读它（纯渲染策略），无需 reload runtime。
 		if (partial.reversePagination !== undefined) {
 			next.reversePagination = Boolean(partial.reversePagination);
 		}
@@ -965,8 +861,6 @@ export class SettingsService {
 			}
 			next.showForkedParentSessions = nextVal;
 		}
-		// 编排模式 / skill 全文注入：before_agent_start 逐 run 实时读取（agent-service
-		// composeInputs + 指导块追加），开关下一轮即生效，无需 reload runtime。
 		if (partial.skillsFullText !== undefined) {
 			next.skillsFullText = normalizeSkillList(partial.skillsFullText);
 		}
@@ -1020,7 +914,6 @@ export class SettingsService {
 			next.reviewDisabledSkills = partial.reviewDisabledSkills;
 		}
 		if (partial.subagentDefaultModel !== undefined) {
-			// 空串归一为 null（跟随主对话）；其余剥空白后存格式 provider/id。
 			const m = partial.subagentDefaultModel?.trim() ?? "";
 			next.subagentDefaultModel = m ? m : null;
 		}
@@ -1054,24 +947,16 @@ export class SettingsService {
 			next[key] = mode;
 		}
 		if (partial.retryMaxAttempts !== undefined) {
-			// 出错重试次数：持久化 + 即时注入各会话（SDK 在每次退避前都重读
-			// getRetrySettings，无需 reload runtime；见宿主 applyRetryOverrides）。
 			next.retryMaxAttempts = normalizeRetryMaxAttempts(partial.retryMaxAttempts);
 		}
 		if (partial.autoCompactionInstructions !== undefined) {
-			// 自动压缩附加指令：只影响软上限自动压缩（下一轮触发的 session.compact 即读到）。
 			next.autoCompactionInstructions = normalizeAutoCompactionInstructions(partial.autoCompactionInstructions);
 		}
 		if (partial.softCapTokens !== undefined || partial.softCapByModel !== undefined) {
-			// 压缩软上限：持久化 + 即时重算各会话的 compaction reserveTokens
-			// 覆盖（SDK 每次自动压缩检查前都重读 getCompactionSettings，无需
-			// reload；见宿主 applyCompactionOverrides，issue #229）。
 			if (partial.softCapTokens !== undefined) next.softCapTokens = normalizeSoftCapTokens(partial.softCapTokens);
 			if (partial.softCapByModel !== undefined) next.softCapByModel = normalizeSoftCapByModel(partial.softCapByModel);
-			// 底栏标记线读快照的 contextUsage.softCap——推一次快照让在线页即时看到。
 		}
 		if (partial.quickPhrases !== undefined) {
-			// 归一化：去空白/空项/重名，单条 ≤200 字，最多 30 条。纯 UI 偏好，不 reload。
 			const seen = new Set<string>();
 			next.quickPhrases = (Array.isArray(partial.quickPhrases) ? partial.quickPhrases : [])
 				.map((p) => String(p).trim().slice(0, 200))
@@ -1087,8 +972,6 @@ export class SettingsService {
 		if (partial.preserveDraftAcrossConversations !== undefined) {
 			next.preserveDraftAcrossConversations = Boolean(partial.preserveDraftAcrossConversations);
 		}
-		// 统一工具开关 live 生效（ActiveSet 加减；失败静默，下次创建/reload 重放）。
-		// 必须在 this.push() 前生效，保证 promptSnapshot 收集到的是最新的活跃工具集与完整提示词！
 		const patch: Partial<ClientSettings> = {};
 		for (const key of Object.keys(partial) as (keyof ClientSettings)[]) {
 			if (key in next && partial[key as keyof typeof partial] !== undefined) {
@@ -1119,7 +1002,6 @@ export class SettingsService {
 		if (needsReload) await this.applyRuntime();
 	}
 
-	/** 保存当前设置为命名预设（同名覆盖）。 */
 	async savePreset(name: string): Promise<void> {
 		const n = name.trim();
 		if (!n) {
@@ -1140,15 +1022,11 @@ export class SettingsService {
 		this.push();
 	}
 
-	/** 把当前设置快照成一条预设（名字由调用方给定）。
-	 *  **全量**：`ClientSettings` 的每个字段都进预设（字段清单/分组见 `server/preset-fields.ts`），
-	 *  导出/分享/导入共用同一张白名单；深层对象做一份拷贝，避免与当前设置共享引用。 */
 	private snapshotPreset(name: string): SettingsPreset {
 		const s = structuredClone(this.current) as ClientSettings;
 		return { ...s, name };
 	}
 
-	/** Replace the current settings with the named preset and apply it. */
 	async applyPreset(name: string, runtimeTarget?: SettingsRuntimeTarget): Promise<void> {
 		this.settings = this.current;
 		this.presets = this.host.stateStore.getPresets(this.host.clientId);
@@ -1162,7 +1040,6 @@ export class SettingsService {
 			});
 			return;
 		}
-		// 统一工具开关：新预设直接用它；旧预设（只有遗留两开关）按当前禁用名单折算。
 		const hasToolSettings = ["disabledAgentTools", "terminalToolsEnabled", "editSoftEnabled"].some((key) =>
 			Object.prototype.hasOwnProperty.call(p, key),
 		);
@@ -1174,8 +1051,6 @@ export class SettingsService {
 				}),
 		);
 		const presetLegacy = deriveLegacy(presetDisabled);
-		// 全量预设 = 当前设置叠加预设里**实际存在**的字段（缺字段保持当前值）。
-		// 旧预设（19 字段）、以及导入时只勾了一部分的预设，都靠这个 merge 落地。
 		const patch: Record<string, unknown> = { ...(p as unknown as Record<string, unknown>) };
 		delete patch.name;
 		delete patch.plugins;
@@ -1183,7 +1058,6 @@ export class SettingsService {
 		const prevShowForked = this.settings.showForkedParentSessions ?? false;
 		this.commitSettings({
 			...patch,
-			// 部分预设未携带工具字段时，保持当前设置；遗留别名仍统一派生。
 			...(hasToolSettings
 				? {
 						disabledAgentTools: presetDisabled,
@@ -1192,7 +1066,6 @@ export class SettingsService {
 					}
 				: {}),
 		});
-		// 统一收口重放配置覆盖与工具门控（包含 retry/compaction/codemode 与 toolGating）
 		if (this.host.applySessionOverrides) {
 			this.host.applySessionOverrides();
 		} else {
@@ -1209,23 +1082,16 @@ export class SettingsService {
 		await this.applyRuntime(true, runtimeTarget);
 	}
 
-	/** Remove a named preset. */
 	async deletePreset(name: string): Promise<void> {
 		this.presets = this.host.stateStore.getPresets(this.host.clientId).filter((p) => p.name !== name);
 		this.host.stateStore.savePresets(this.host.clientId, this.presets);
 		this.push();
 	}
 
-	/* ---------------------------------------------------------------- */
-	/* 预设分享：导出 / 导入 / 分享 / 社区目录（server/preset-share.ts）  */
-	/* ---------------------------------------------------------------- */
-
-	/** 当前客户端语言（服务端文案用；与 agent-service 同源）。 */
 	private get lang(): ServerLang {
 		return resolveServerLang(this.host.stateStore.get(this.host.clientId).locale);
 	}
 
-	/** 分享编排（server/preset-share.ts）需要的最小能力集合。 */
 	private sharePort(): PresetSharePort {
 		return {
 			lang: () => this.lang,
@@ -1249,33 +1115,26 @@ export class SettingsService {
 		};
 	}
 
-	/** 导出预设（name 命名的预设）或当前设置（source=current）为 JSON 文本。 */
 	async exportPreset(msg: Extract<ClientMessage, { type: "preset_export" }>): Promise<void> {
 		exportPresetVia(this.sharePort(), msg);
 	}
 
-	/** 解析导入的预设 JSON：dryRun = 只回预览（不落盘）；apply = 导入后立即应用。 */
 	async importPreset(msg: Extract<ClientMessage, { type: "preset_import" }>): Promise<void> {
 		await importPresetVia(this.sharePort(), msg);
 	}
 
-	/** 按网址导入（服务端抓取：避开浏览器 CORS；内网地址已拦截）。 */
 	async importPresetFromUrl(msg: Extract<ClientMessage, { type: "preset_import_url" }>): Promise<void> {
 		await importPresetFromUrlVia(this.sharePort(), msg);
 	}
 
-	/** 一键分享到社区共享仓库（gh issue create；gh 不可用时回落预填网页）。 */
 	async sharePreset(msg: Extract<ClientMessage, { type: "preset_share" }>): Promise<void> {
 		await sharePresetVia(this.sharePort(), msg);
 	}
 
-	/** 拉社区共享目录（5 分钟缓存；失败保留上一次成功的列表）。 */
 	async pushPresetCatalog(msg: Extract<ClientMessage, { type: "preset_catalog" }>): Promise<void> {
 		await pushPresetCatalogVia(this.sharePort(), msg);
 	}
 
-	/** Upsert 一个子代理模板（全局共享）。模板只影响未来派生的子代理，
-	 *  不需要 reload runtime —— 直接推送新设置状态即可。 */
 	async saveTemplate(template: Parameters<SubagentTemplatesStore["upsert"]>[0]): Promise<void> {
 		const err = this.templates.upsert(template);
 		if (err) {
@@ -1297,7 +1156,6 @@ export class SettingsService {
 		});
 	}
 
-	/** 删除一个子代理模板。 */
 	async deleteTemplate(name: string): Promise<void> {
 		this.templates.remove(name);
 		this.push();
@@ -1309,7 +1167,6 @@ export class SettingsService {
 		});
 	}
 
-	/** Upsert 一条审批规则（全局共享）。 */
 	async saveApprovalRule(rule: UiApprovalRule): Promise<void> {
 		if (!this.approvalRules) return;
 		const err = this.approvalRules.upsert(rule);
@@ -1331,7 +1188,6 @@ export class SettingsService {
 		});
 	}
 
-	/** 批量更新审批规则列表（重排或批量保存，全局共享）。 */
 	async saveApprovalRules(rules: UiApprovalRule[]): Promise<void> {
 		if (!this.approvalRules) return;
 		const err = this.approvalRules.saveAll(rules);
@@ -1353,7 +1209,6 @@ export class SettingsService {
 		});
 	}
 
-	/** 删除一条自定义审批规则。 */
 	async deleteApprovalRule(id: string): Promise<void> {
 		if (!this.approvalRules) return;
 		const ok = this.approvalRules.remove(id);
@@ -1375,7 +1230,6 @@ export class SettingsService {
 		});
 	}
 
-	/** 恢复某条内置审批规则到系统默认设定。 */
 	async resetBuiltinApprovalRule(id: string): Promise<void> {
 		if (!this.approvalRules) return;
 		const ok = this.approvalRules.resetBuiltin(id);
@@ -1397,11 +1251,6 @@ export class SettingsService {
 		});
 	}
 
-	/**
-	 * Make settings changes effective in the running runtime. The resource-loader
-	 * overrides read this.settings at call time, so a reload re-applies them.
-	 * Reloading mid-stream would tear down the in-flight run — defer instead.
-	 */
 	async applyRuntime(throwOnError = false, runtimeTarget?: SettingsRuntimeTarget): Promise<void> {
 		if (this.disposed || this.host.isDisposed()) return;
 		if ((runtimeTarget ?? this.host).isStreaming()) {
@@ -1417,7 +1266,6 @@ export class SettingsService {
 		await this.applyReload(throwOnError, runtimeTarget);
 	}
 
-	/** session.reload() + refresh the slash-command catalog + push state. */
 	private async applyReload(throwOnError = false, runtimeTarget?: SettingsRuntimeTarget): Promise<void> {
 		if (this.disposed || this.host.isDisposed()) return;
 		if ((runtimeTarget ?? this.host).isStreaming()) {

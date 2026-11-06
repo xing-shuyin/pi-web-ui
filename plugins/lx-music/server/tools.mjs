@@ -1,6 +1,3 @@
-/**
- * 供 AI 智能体调用的点歌与音乐播控工具
- */
 import { getTopListSongs, getPlaylistDetail, searchMusics } from "./music-sdk.mjs";
 
 export function createMusicTool(host, userApi) {

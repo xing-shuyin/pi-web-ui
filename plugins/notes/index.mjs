@@ -1,54 +1,28 @@
-/**
- * notes 服务端入口 —— 笔记 / 待办 / 提醒的**唯一事实源**。
- *
- * 分工：
- *   - 数据落 `<dataDir>/notes/store.json`（原子写：临时文件 + rename）。**不放插件目录**：
- *     `install --force` 更新插件会整目录替换，用户数据必须活在外面（与 legado-web 同口径）。
- *   - 提醒的定时**交给宿主** `host.schedule(cron, fn, { persistent: true })`：5 字段 cron、
- *     服务重启自动重建 + 漏跑补一次，且自动出现在顶栏「后台任务」面板 —— 自己写 setTimeout
- *     在重启后必丢。
- *   - 到点只做两件事：把提醒扔进「待送达队列」+ 库版本号 +1。**怎么提示人是浏览器的事**
- *     （站内通知条/桌面通知/提示音/浮窗，见 client/entry.mjs）—— 服务端进程没有窗口，
- *     `host.notify` 只对当时在线的页面有效，浏览器关着就等于没提示。
- *   - 浏览器侧只走 HTTP 路由（`/plugins-api/notes/*`，见 client/data.mjs 的说明）：
- *     `GET /store` 取快照、`GET /wait` 长轮询等变化、`POST /op` 改数据、`GET /export` 导出。
- *   - 1 个 AI 工具（notes，op 分流：list / note_add / note_update / todo / reminder）
- *     让 agent 自己记东西；3 个斜杠命令（/note /todo /remind）供用户手动快速捕获。
- *
- * 纯逻辑全在 client/store.mjs 与 client/cron.mjs（服务端 import 同一份文件）——
- * 服务端与浏览器对「一条提醒该什么时候响」不可能有第二种解释。
- */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import * as S from "./client/store.mjs";
 import { isSupportedEvery, MAX_EVERY_MINUTES, MIN_EVERY_MINUTES, parseCron } from "./client/cron.mjs";
 
-/** 长轮询挂住的最长时间（毫秒）。太短 = 请求风暴，太长 = 关服务时要等它。 */
 const WAIT_MS = 25_000;
-/** 同时挂着的长轮询上限（超过就立刻回，客户端会马上再问，不会积压连接）。 */
 const MAX_WAITERS = 40;
 
 export default {
 	activate(host) {
-		// ------------------------------------------------------------ 落盘
 		const dir = join(host.dataDir, "notes");
 		const file = join(dir, "store.json");
-		let readonly = false; // 隔离失败时进只读（宁可不写，也不能拿空库盖掉用户数据）
-		// Markdown 镜像的状态（声明必须在 activate 顶部：queueMirror 在启动时就可能被调到）
+		let readonly = false;
 		const MIRROR_INDEX = ".pi-notes-mirror.json";
 		let mirrorTimer = null;
 		let mirrorRunning = false;
 		let mirrorQueued = false;
 		let mirrorDenied = false;
-		let store = load(); // 注意：load() 里会写 readonly，声明必须在调用之前（否则 TDZ）
+		let store = load();
 
 		function load() {
 			try {
 				return S.normalizeStore(JSON.parse(readFileSync(file, "utf8")));
 			} catch (err) {
 				if (existsSync(file)) {
-					// 读得出来但坏掉（手改坏 / 半截写 / 别的版本写过）→ 先把它挪走再当空库起，
-					// 否则下面那次 persist() 会把用户的全部数据用空库盖掉、且没有备份。
 					const quarantine = `${file}.corrupt-${Date.now()}`;
 					try {
 						renameSync(file, quarantine);
@@ -58,7 +32,6 @@ export default {
 							err instanceof Error ? err.message : String(err),
 						);
 					} catch (e2) {
-						// 隔离都失败就**不要**落盘（persist() 会覆盖），只在内存里跑本次会话
 						host.log(
 							"error",
 							"笔记库解析失败且隔离失败，本次不写盘以免覆盖：",
@@ -83,7 +56,6 @@ export default {
 			}
 		}
 
-		/** 一次真正的改动：版本号 +1 → 落盘 → 唤醒所有长轮询 → 重建近处定时。 */
 		function commitChange() {
 			S.touch(store);
 			persist();
@@ -92,13 +64,9 @@ export default {
 			queueMirror("change");
 		}
 
-		// ------------------------------------------------------------ 长轮询
 		const waiters = new Set();
 
 		function snapshotPayload() {
-			// `next` 是服务端算好的「下次触发时刻」（客户端照它显示，不自己拿浏览器时区重算）；
-			// 库里已经存着 nextDue，这里只是把它摘出来（过期但没响的也照发 —— 那是「欠一次」，
-			// 下一秒扫描就会补上，界面不该显示成「不会触发」）。
 			const next = {};
 			for (const rem of store.reminders) {
 				if (!rem.enabled || !rem.nextDue) continue;
@@ -112,9 +80,7 @@ export default {
 			try {
 				clearTimeout(waiter.timer);
 				waiter.res.json(snapshotPayload());
-			} catch {
-				/* 连接已断 */
-			}
+			} catch {}
 		}
 
 		function flushWaiters() {
@@ -132,29 +98,15 @@ export default {
 				try {
 					clearTimeout(w.timer);
 					w.res.json({ ok: true, unchanged: true, store, now: Date.now() });
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 		}
 
-		// ------------------------------------------------------------ 提醒定时
-		// 只有一个定时器：每分钟扫一遍库（持久声明，重启自动重建 + 漏跑补一次）。
-		//
-		// 为什么不给每条提醒挂一个 host.schedule：宿主用 `setTimeout(next - now)` 引爆，
-		// 而 Node 的 setTimeout 延迟超过 2^31-1ms（≈24.8 天）会**溢出成 1ms**；同时宿主的
-		// nextCronFire 在「一年内找不到」时回一个 366 天后的哨兵值。于是
-		// `{type:"monthly", dom:31}`（下次 42 天）或 `0 9 1 1 *`（明年）这种完全合法的提醒
-		// 会让宿主陷入「1ms 后再触发 → 插件写盘 + 广播 → 再排下一次」的死循环（实测复现：
-		// TimeoutOverflowWarning + 每秒上千次触发）。自己算「该响的时刻」（reminder.nextDue，
-		// 持久化在库里）就不吃这个窗口限制，顺带拿到「停机期间错过的那一次下次启动补上」。
 		const nearTimers = new Map();
 		const SWEEP_ID = "sweep";
 		const SWEEP_SPEC = "* * * * *";
-		/** 近处精确定时的窗口（毫秒）：更远的交给每分钟的扫描，免得定时器数量随提醒数增长。 */
 		const NEAR_WINDOW_MS = 120_000;
 
-		/** 按当前库重建近处精确定时（2 分钟内要响的、以及已经到点还没响的）。 */
 		function refreshNearTimers() {
 			for (const [, t] of nearTimers) clearTimeout(t);
 			nearTimers.clear();
@@ -178,10 +130,6 @@ export default {
 			}
 		}
 
-		/**
-		 * 每分钟兜底扫描：所有「该响却还没响」的提醒（服务停机期间错过的也在内）。
-		 * 一次性提醒响完自停；重复提醒响完把 nextDue 推到下一跳；「稍后提醒」响完还原原档。
-		 */
 		function sweep() {
 			const now = Date.now();
 			let changed = false;
@@ -199,21 +147,15 @@ export default {
 		}
 
 		function fire(id) {
-			// 已经在别处响过的（扫描与近处定时撞上）不再重复推一次
 			const cur = S.findReminder(store, id);
 			if (!cur || !cur.enabled || !cur.nextDue) return;
-			if (new Date(cur.nextDue).getTime() > Date.now() + 1000) return; // 还没到点
+			if (new Date(cur.nextDue).getTime() > Date.now() + 1000) return;
 			const res = S.markFired(store, id);
 			if (!res.ok) return;
 			host.log("info", `提醒到点：${res.item.text}`);
 			commitChange();
 		}
 
-		// ------------------------------------------------------------ 操作
-		/**
-		 * 执行一个操作（HTTP 路由与 AI 工具、斜杠命令共用同一入口）。
-		 * 返回 { ok, result?, error? }；真正改动过数据时调用方负责 commitChange()。
-		 */
 		function runOp(op, payload = {}) {
 			switch (String(op ?? "")) {
 				case "note.save":
@@ -245,8 +187,6 @@ export default {
 					return { ok: true, result: { ok: true, acked: n }, changed: n > 0 };
 				}
 				case "store.import": {
-					// 先校验再动备份：否则一次垃圾导入会先把唯一一份备份覆盖成当前库，
-					// 紧接着导入失败 —— 等于把唯一的退路也烧了
 					const candidate = S.normalizeStore(payload.store);
 					if (!candidate.notes.length && !candidate.todos.length && !candidate.reminders.length) {
 						return { ok: false, error: "文件里没有可导入的条目" };
@@ -254,12 +194,10 @@ export default {
 					const backup = `${file}.bak`;
 					try {
 						writeFileSync(backup, JSON.stringify(store, null, "\t"), "utf8");
-					} catch {
-						/* 备份失败不阻断导入（用户自己点的操作，失败要说明） */
-					}
+					} catch {}
 					const res = S.importStore(store, payload.store, payload.mode === "replace" ? "replace" : "merge");
 					if (!res.ok) return { ok: false, error: res.error ?? "import failed" };
-					S.ensureNextDue(store, Date.now()); // 导进来的提醒要算出各自的下次时刻
+					S.ensureNextDue(store, Date.now());
 					return { ok: true, result: { ok: true, added: res.added, updated: res.updated, skipped: res.skipped ?? 0 } };
 				}
 				default:
@@ -276,9 +214,6 @@ export default {
 			return { ok: false, error: `${kind} not found` };
 		}
 
-		/** 跑一个操作并处理落盘/唤醒（op 里声明过 changed=false 的不重复落盘）。
-		 *  提醒的定时触发由每分钟 cron 巡检（host.schedule）负责，commitChange
-		 *  不接收任何「是否重建定时」参数——refreshNearTimers 只是近处的快速路径。 */
 		function apply(op, payload) {
 			const out = runOp(op, payload);
 			const changed = out.changed ?? out.ok;
@@ -286,7 +221,6 @@ export default {
 			return out;
 		}
 
-		// ------------------------------------------------------------ HTTP 路由
 		const offs = [];
 		const route = (method, path, handler) => {
 			offs.push(
@@ -307,8 +241,6 @@ export default {
 		route("GET", "/wait", (req, res) => {
 			const rev = Number(req.query?.rev);
 			if (waiters.size >= MAX_WAITERS) {
-				// 挂着的长轮询太多（多标签页/多设备）：立刻回，但让客户端等一下再来 ——
-				// 不然多出来的每个标签页都会变成一条自旋请求流，服务端每轮都要序列化整个库
 				res.json({ ...snapshotPayload(), retryAfterMs: 2000 });
 				return;
 			}
@@ -318,12 +250,9 @@ export default {
 			}
 			const waiter = { res, rev, timer: null };
 			waiter.timer = setTimeout(() => {
-				// 空转超时回**真快照**（带 next）：以前回 `next: {}` 会把客户端手里的
-				// 权威「下次触发」抹掉，界面上时间开始按浏览器时区乱算
 				waiters.delete(waiter);
 				respond(waiter);
 			}, WAIT_MS);
-			// 连接断了（用户关页/切网络）要立刻摘掉，否则定时器白挂着
 			req.on?.("close", () => {
 				waiters.delete(waiter);
 				clearTimeout(waiter.timer);
@@ -334,8 +263,6 @@ export default {
 		route("POST", "/op", (req, res) => {
 			const body = req.body && typeof req.body === "object" ? req.body : {};
 			const out = apply(body.op, body);
-			// 顺序要紧：snapshotPayload() 自带 `ok: true`，写在后面会把失败操作的 ok 覆盖成 true
-			// （客户端就永远看不到「保存失败」，只会静默什么都没发生）
 			res.json({ ...snapshotPayload(), ok: out.ok, error: out.error, result: out.result });
 		});
 
@@ -353,10 +280,8 @@ export default {
 			res.send(JSON.stringify(store, null, "\t"));
 		});
 
-		// ------------------------------------------------------------ 启动
-		if (!existsSync(file)) persist(); // 只在文件确实不存在时建（坏文件已在 load() 里隔离）
-		S.ensureNextDue(store, Date.now()); // 老数据/刚导入的提醒补上「下次该响的时刻」
-		// 每分钟的兜底扫描：声明持久，服务重启后自动重建（漏跑的那一次也能补）
+		if (!existsSync(file)) persist();
+		S.ensureNextDue(store, Date.now());
 		let offSweep = () => {};
 		try {
 			offSweep = host.schedule(SWEEP_SPEC, () => sweep(), {
@@ -366,14 +291,12 @@ export default {
 				catchUp: "once",
 			});
 		} catch (err) {
-			// 宿主对非法 cron/id 是抛错；一条定时排不上不该把整插件的路由/工具/命令全带走
 			host.log(
 				"error",
 				"每分钟巡检排不上，提醒不会自动触发（其它功能照常）：",
 				err instanceof Error ? err.message : String(err),
 			);
 		}
-		// 启动就扫一次：停机期间到点的提醒立刻补送（不必等下一个整分钟）
 		sweep();
 		refreshNearTimers();
 		queueMirror("startup", 1500);
@@ -382,7 +305,6 @@ export default {
 			`笔记库就绪：${store.notes.length} 篇笔记 / ${store.todos.length} 条待办 / ${store.reminders.length} 条提醒`,
 		);
 
-		// ------------------------------------------------------------ AI 工具
 		const ACTION_OR_INFER_DESC = "What to do. Optional: no action + no id = add; no action + id = update.";
 		const doList = (params) => listText(params || {});
 		const doNoteAdd = (params) => {
@@ -558,20 +480,7 @@ export default {
 			}),
 		];
 
-		// ------------------------------------------------------------ Markdown 镜像（可选）
-		// 用户在设置面板（manifest.settings）里开开关 + 填目录后，每次改动把库镜像成
-		// Markdown 文件写进那个目录 —— 给 Obsidian / git / 其它编辑器用。
-		//
-		// 三条纪律：
-		//   1. **只动自己写过的文件**：目录里留一份索引（.pi-notes-mirror.json）记着我们写过
-		//      哪些文件；清理只删索引里的，绝不碰用户目录里的其它东西。
-		//   2. 目录在工作区外要**用户点头**：host.fs.requestAccess 弹一次确认（授权持久），
-		//      被拒就停手并记日志，不反复弹。
-		//   3. 单飞 + 防抖：一次跑完再跑下一次，手快也不会写半截。
-
-		/** 文件名安全化：去掉路径分隔符/Windows 保留字符/控制字符，长度封顶（唯一性靠 id 后缀）。 */
 		function safeName(text, fallback = "note") {
-			// 反斜杠用 charCode 点出来：源码里写转义容易被各种补丁/编辑器通道吃掉（已踩过）
 			const BACKSLASH = String.fromCharCode(92);
 			const BAD = new Set(["/", ":", "*", "?", '"', "<", ">", "|", BACKSLASH]);
 			let cleaned = "";
@@ -590,7 +499,6 @@ export default {
 			return `${safeName(note.title, "note")}-${note.id.slice(-6)}.md`;
 		}
 
-		/** 一条笔记 → Markdown（front-matter 存 id/标签/时间，正文原样）。 */
 		function noteMarkdown(note) {
 			const title = note.title.replace(/[\r\n]+/g, " ");
 			const fm = [
@@ -634,7 +542,6 @@ export default {
 			return lines.join("\n");
 		}
 
-		/** 目录是否可用（必要时向用户要一次授权）。 */
 		async function ensureMirrorDir(dir) {
 			try {
 				const granted = (host.fs.authorizedDirs?.() ?? []).some((d) => d === dir);
@@ -642,7 +549,7 @@ export default {
 					if (mirrorDenied) return false;
 					const ok = await host.fs.requestAccess(dir, "把笔记镜像成 Markdown 文件到这个目录");
 					if (!ok) {
-						mirrorDenied = true; // 拒过一次就不反复烦用户（改设置或重启后再试）
+						mirrorDenied = true;
 						host.log("warn", `镜像目录未授权，已暂停镜像：${dir}`);
 						host.notify("warning", `笔记镜像需要目录授权：${dir}`);
 						return false;
@@ -656,7 +563,6 @@ export default {
 			}
 		}
 
-		/** 真的同步一次（单飞）：写笔记 + 两个汇总，清理自己写过但已不存在的文件。 */
 		async function mirrorOnce(reason) {
 			const settings = host.getSettings?.() ?? {};
 			if (settings.mirrorEnabled !== true) return;
@@ -677,7 +583,6 @@ export default {
 				wanted.set("_todos.md", todosMarkdown());
 				wanted.set("_reminders.md", remindersMarkdown());
 
-				// 上一轮写过的文件（索引读不到就当作「什么都不知道」，一个都不删）
 				let previous = [];
 				try {
 					const parsed = JSON.parse(await host.fs.readTextPath(join(dir, MIRROR_INDEX)));
@@ -701,9 +606,7 @@ export default {
 					try {
 						await host.fs.removePath(join(dir, name));
 						removed++;
-					} catch {
-						/* 文件可能已被用户自己删掉：不算错 */
-					}
+					} catch {}
 				}
 				await host.fs.writePath(
 					join(dir, MIRROR_INDEX),
@@ -724,7 +627,6 @@ export default {
 			}
 		}
 
-		/** 防抖排队（改动密集时只跑最后那一次）。未开启直接跳过，零开销。 */
 		function queueMirror(reason, delayMs = 3000) {
 			if ((host.getSettings?.() ?? {}).mirrorEnabled !== true) return;
 			if (mirrorTimer) clearTimeout(mirrorTimer);
@@ -735,13 +637,11 @@ export default {
 			mirrorTimer.unref?.();
 		}
 
-		// 设置面板里改了开关/目录 → 按新配置同步一次（用户点完保存就想看到结果）
 		const offSettings = host.onSettingsChanged?.(() => {
 			mirrorDenied = false;
 			queueMirror("settings", 200);
 		});
 
-		// ------------------------------------------------------------ 斜杠命令（零 token 的手动捕获）
 		const cmdOffs = [
 			host.registerCommand({
 				name: "note",
@@ -805,7 +705,6 @@ export default {
 			}),
 		];
 
-		// ------------------------------------------------------------ 辅助
 		function toStampOrNull(raw) {
 			const s = String(raw ?? "").trim();
 			if (!s) return null;
@@ -815,9 +714,7 @@ export default {
 			return S.nowStamp(ms);
 		}
 
-		/** 工具/命令参数 → schedule（认不出回 { error } 让人（模型）自己改）。 */
 		function buildSchedule(params) {
-			// 空字符串按「没给」算（模型常给 at: ""）；一个时间字段都没给 = 不改时间（update 用）
 			const given = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 			if (!["at", "daily_at", "weekly_at", "monthly_at", "cron", "every_minutes"].some((k) => given(params[k]))) {
 				return {};
@@ -929,8 +826,6 @@ export default {
 			const query = params.query === undefined ? "" : String(params.query);
 			const tag = params.tag === undefined ? "" : String(params.tag);
 			const lines = [];
-			// agenda：用户问「今天要做什么」时最该看的一屏 —— 逾期待办 + 今天 + 未来 7 天
-			// + 接下来 14 天的提醒（一次性提醒有过期未响的也算「欠着」）。
 			if (kind === "agenda") {
 				const now = Date.now();
 				const endToday = new Date(
@@ -1019,28 +914,21 @@ export default {
 			return line ? line.slice(0, 120) : "（空）";
 		}
 
-		// ------------------------------------------------------------ 卸载
 		return () => {
 			closeAllWaiters();
 			for (const [, t] of nearTimers) clearTimeout(t);
 			nearTimers.clear();
 			try {
 				offSweep?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			try {
 				offSettings?.();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			if (mirrorTimer) clearTimeout(mirrorTimer);
 			for (const off of [...toolOffs, ...cmdOffs, ...offs]) {
 				try {
 					off?.();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			persist();
 		};

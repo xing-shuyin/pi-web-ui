@@ -1,8 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	composeToComposer,
 	focusComposer,
+	getComposerTarget,
+	insertTextAtCursor,
 	isComposerReady,
+	registerComposerTarget,
+	registerInsertSink,
+	registerRemoveMentionSink,
+	removeMentionFromComposer,
 	registerAttachmentSink,
 	registerDraftSink,
 	registerFocusSink,
@@ -13,13 +19,17 @@ import {
 } from "../../web/src/composer-bridge.js";
 import type { DraftAttachment } from "../../web/src/composer-draft.js";
 
-/** 输入框注入桥的纪律：全有或全无（不会出现「附件加了、文本没加」的半截状态），
- *  以及「绝不覆盖用户正在打的内容」（并入动作由 sink 自己按 mergeRecalledDraft
- *  语义做，这里只锁桥的转发与拒收）。 */
-
 const shot: DraftAttachment = { path: "", name: "shot.png", mode: "inline", imageData: "AAA", key: "k1" };
 
-/** 装一个记账用的双 sink。 */
+function targetHarness() {
+	return {
+		compose: vi.fn(() => true),
+		insertText: vi.fn(() => true),
+		focus: vi.fn(() => true),
+		removeMention: vi.fn(() => true),
+	};
+}
+
 function harness() {
 	const drafts: string[] = [];
 	const attachments: DraftAttachment[][] = [];
@@ -32,6 +42,128 @@ function harness() {
 
 beforeEach(() => {
 	resetComposerSinks();
+});
+
+describe("active composer targets", () => {
+	it("routes references, literal insertion, focus and mention removal to the active target alone", () => {
+		const legacy = harness();
+		const oldFocus = vi.fn();
+		const oldInsert = vi.fn();
+		const oldRemove = vi.fn();
+		registerFocusSink(oldFocus);
+		registerInsertSink(oldInsert);
+		registerRemoveMentionSink(oldRemove);
+		const target = targetHarness();
+		registerComposerTarget(target);
+		const payload = { text: "  literal $(command)\n", attachments: [shot] };
+		expect(isComposerReady()).toBe(true);
+		expect(composeToComposer(payload)).toBe(true);
+		expect(insertTextAtCursor("@path with spaces ")).toBe(true);
+		expect(focusComposer()).toBe(true);
+		expect(removeMentionFromComposer("@path")).toBe(true);
+		expect(target.compose).toHaveBeenCalledExactlyOnceWith(payload);
+		expect(target.insertText).toHaveBeenCalledExactlyOnceWith("@path with spaces ");
+		expect(target.focus).toHaveBeenCalledOnce();
+		expect(target.removeMention).toHaveBeenCalledExactlyOnceWith("@path");
+		expect(legacy).toEqual({ drafts: [], attachments: [] });
+		expect(oldFocus).not.toHaveBeenCalled();
+		expect(oldInsert).not.toHaveBeenCalled();
+		expect(oldRemove).not.toHaveBeenCalled();
+	});
+
+	it("never falls back to hidden draft sinks when the target refuses delivery", () => {
+		const legacy = harness();
+		const oldFocus = vi.fn();
+		const oldInsert = vi.fn();
+		const oldRemove = vi.fn();
+		registerFocusSink(oldFocus);
+		registerInsertSink(oldInsert);
+		registerRemoveMentionSink(oldRemove);
+		const target = targetHarness();
+		for (const fn of Object.values(target)) fn.mockReturnValue(false);
+		registerComposerTarget(target);
+		expect(composeToComposer({ text: "private CLI input", attachments: [shot] })).toBe(false);
+		expect(insertTextAtCursor("literal")).toBe(false);
+		expect(focusComposer()).toBe(false);
+		expect(removeMentionFromComposer("@file")).toBe(false);
+		expect(legacy).toEqual({ drafts: [], attachments: [] });
+		expect([oldFocus, oldInsert, oldRemove].every((fn) => fn.mock.calls.length === 0)).toBe(true);
+	});
+
+	it("does not remove a mention in another draft when the target has no removal operation", () => {
+		const oldRemove = vi.fn();
+		registerRemoveMentionSink(oldRemove);
+		const { compose, insertText, focus } = targetHarness();
+		registerComposerTarget({ compose, insertText, focus });
+		expect(removeMentionFromComposer("@x")).toBe(false);
+		expect(oldRemove).not.toHaveBeenCalled();
+	});
+
+	it("works without any legacy sink and restores legacy delivery after cleanup", () => {
+		const target = targetHarness();
+		const cleanup = registerComposerTarget(target);
+		expect(isComposerReady()).toBe(true);
+		expect(composeToComposer({ attachments: [shot] })).toBe(true);
+		expect(target.compose).toHaveBeenCalledExactlyOnceWith({ text: "", attachments: [shot] });
+		const legacy = harness();
+		cleanup();
+		expect(getComposerTarget()).toBeNull();
+		expect(composeToComposer({ text: "back to chat" })).toBe(true);
+		expect(legacy.drafts).toEqual(["back to chat"]);
+	});
+
+	it("keeps a newer registration when an old view cleans up, including reused target objects", () => {
+		const target = targetHarness();
+		const cleanupOld = registerComposerTarget(target);
+		const cleanupNew = registerComposerTarget(target);
+		cleanupOld();
+		cleanupOld();
+		expect(getComposerTarget()).toBe(target);
+		expect(composeToComposer({ text: "new view" })).toBe(true);
+		cleanupNew();
+		expect(isComposerReady()).toBe(false);
+		expect(getComposerTarget()).toBeNull();
+	});
+
+	it("lets asynchronous attachment work retain the original conversation target", async () => {
+		const first = targetHarness();
+		const cleanupFirst = registerComposerTarget(first);
+		const captured = getComposerTarget();
+		const second = targetHarness();
+		registerComposerTarget(second);
+		cleanupFirst();
+		await Promise.resolve();
+		expect(captured?.compose({ attachments: [shot] })).toBe(true);
+		expect(first.compose).toHaveBeenCalledExactlyOnceWith({ attachments: [shot] });
+		expect(second.compose).not.toHaveBeenCalled();
+		expect(getComposerTarget()).toBe(second);
+	});
+
+	it("resets the active target and cannot let its old cleanup erase a later registration", () => {
+		const first = targetHarness();
+		const cleanup = registerComposerTarget(first);
+		resetComposerSinks();
+		expect(isComposerReady()).toBe(false);
+		expect(getComposerTarget()).toBeNull();
+		const second = targetHarness();
+		registerComposerTarget(second);
+		cleanup();
+		expect(getComposerTarget()).toBe(second);
+		expect(focusComposer()).toBe(true);
+		expect(first.focus).not.toHaveBeenCalled();
+		expect(second.focus).toHaveBeenCalledOnce();
+	});
+
+	it("continues rejecting empty payloads and normalizing malformed fields before target delivery", () => {
+		const target = targetHarness();
+		registerComposerTarget(target);
+		expect(composeToComposer({})).toBe(false);
+		expect(composeToComposer({ text: " \n\t" })).toBe(false);
+		expect(composeToComposer(null as never)).toBe(false);
+		expect(target.compose).not.toHaveBeenCalled();
+		expect(composeToComposer({ text: "ok", attachments: "bad" as never })).toBe(true);
+		expect(target.compose).toHaveBeenCalledExactlyOnceWith({ text: "ok", attachments: [] });
+	});
 });
 
 describe("composer-bridge", () => {

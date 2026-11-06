@@ -1,10 +1,3 @@
-/**
- * tests/unit/matrix-features.test.ts
- * Tests for Matrix Bot plugin (experimental):
- * - Pure helpers (marker stripping, accountId hashing, mention stripping)
- * - MatrixBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	extractMatrixText,
@@ -177,7 +170,6 @@ describe("MatrixBotBridge 双工逻辑测试", () => {
 			getConfig: () => ({ homeserverUrl: "https://matrix.org", accessToken: "token" }),
 		});
 
-		// 1. 过滤 m.notice 消息
 		await bridge.onInboundMessage("!room1:matrix.org", {
 			event_id: "$ev_notice",
 			sender: "@otherbot:matrix.org",
@@ -185,7 +177,6 @@ describe("MatrixBotBridge 双工逻辑测试", () => {
 		});
 		expect(chatSpy).not.toHaveBeenCalled();
 
-		// 2. 正常 m.text 消息触发
 		await bridge.onInboundMessage("!room1:matrix.org", {
 			event_id: "$ev_normal",
 			sender: "@alice:matrix.org",

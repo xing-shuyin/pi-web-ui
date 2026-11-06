@@ -100,7 +100,6 @@
 	--inputbox-bg: #efe7d3;
 }
 
-/* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
 	color: #3f372c;
 	background: #efe7d3;

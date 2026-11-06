@@ -1,13 +1,9 @@
-// Temp probe: DSH skills UI (#18) — validate filterSkillCatalogMessage (pure),
-// runtime skills/register + skills/list, and skills/set-disabled round-trip.
-// Zero key: no model needed (PI_WEB_DSH_DEBUG=1 enables skills/register).
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const JSONRPC_ENTRY = resolve(
 	HERE,
@@ -20,8 +16,6 @@ const JSONRPC_ENTRY = resolve(
 	"index.js",
 );
 
-// ---- 1. 纯函数单测：filterSkillCatalogMessage（直接从 goal-rpc.mjs 导入）----
-// 源码兜底路径按 dist 布局计算（up-4），直接导入前需让 JSONRPC_ENTRY 指向项目 node_modules。
 process.env.PI_WEB_DSH_JSONRPC_ENTRY = JSONRPC_ENTRY;
 const { filterSkillCatalogMessage } = await import(pathToFileURL(join(DSH_DIR, "runtime", "goal-rpc.mjs")).href);
 {
@@ -64,12 +58,10 @@ const { filterSkillCatalogMessage } = await import(pathToFileURL(join(DSH_DIR, "
 		console.error("FAIL filter markers:", text.slice(0, 200));
 		process.exit(1);
 	}
-	// 无禁用 → 原样返回。
 	if (filterSkillCatalogMessage(cat, new Set()) !== cat) {
 		console.error("FAIL no-op filter should return same message");
 		process.exit(1);
 	}
-	// 全部禁用 → 占位文本。
 	const allDisabled = filterSkillCatalogMessage(cat, new Set(["alpha", "beta", "gamma"]));
 	if (!allDisabled.content[0].text.includes("本会话无可启用技能")) {
 		console.error("FAIL all-disabled placeholder:", allDisabled.content[0].text.slice(0, 120));
@@ -78,7 +70,6 @@ const { filterSkillCatalogMessage } = await import(pathToFileURL(join(DSH_DIR, "
 	console.log("✓ filterSkillCatalogMessage 纯函数单测通过");
 }
 
-// ---- 2. 运行时：register → list → set-disabled 往返 ----
 const tmp = join(HERE, "..", "..", ".tmp-skills-probe");
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
@@ -140,9 +131,7 @@ const fail = (msg) => {
 	console.error("PROBE FAILED:", msg);
 	try {
 		proc.kill();
-	} catch {
-		/* already dead */
-	}
+	} catch {}
 	process.exit(1);
 };
 

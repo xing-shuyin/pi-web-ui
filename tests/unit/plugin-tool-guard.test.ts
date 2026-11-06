@@ -1,13 +1,3 @@
-/**
- * P1-5 拦截扩展点（类型化 Decision）单测。
- *
- * A. 纯函数（`server/plugin-tool-guard.ts`）：归一 / 阻断判定 / 阻断文本 /
- *    post 合并与封顶 / 超时弃权 / 参数封存。
- * B. 宿主接线（真实 `PluginManager` + 临时 plugins 目录）：`tools` 能力门控、
- *    pre 首个阻断胜出 + 抛错弃权、post 脱敏合并 + 抛错跳过、反激活后守卫消失。
- * C. `withToolGuard` 包装（`server/agent-service.ts`）：deny 跳过真执行、
- *    post 换正文、无 hook 时直通。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,10 +14,6 @@ import {
 } from "../../server/plugin-tool-guard.js";
 import { PluginManager, type PluginHost } from "../../server/plugins.js";
 import { withToolGuard } from "../../server/agent-service.js";
-
-// ---------------------------------------------------------------------------
-// A. 纯函数
-// ---------------------------------------------------------------------------
 
 describe("guard 纯函数", () => {
 	it("normalizePreDecision：void/垃圾→allow，只认三决策", () => {
@@ -103,10 +89,6 @@ describe("guard 纯函数", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// B. 宿主接线（真实 PluginManager）
-// ---------------------------------------------------------------------------
-
 let dir: string;
 let mgr: PluginManager;
 
@@ -165,7 +147,6 @@ describe("host.onToolPre/onToolPost 接线", () => {
 		);
 		const ok = await mgr.evaluateToolPre({ toolName: "bash", params: { command: "ls" } }, "zh");
 		expect(ok.verdict).toEqual({ decision: "allow" });
-		// read 不在条件里 → 放行
 		const read = await mgr.evaluateToolPre({ toolName: "read", params: { path: "rm -rf" } }, "zh");
 		expect(read.verdict).toEqual({ decision: "allow" });
 	});
@@ -180,7 +161,6 @@ describe("host.onToolPre/onToolPost 接线", () => {
 		);
 		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const r = await mgr.evaluateToolPre({ toolName: "bash", params: {} }, "zh");
-		// 前两个弃权，第三个 ask 阻断
 		expect(r.verdict.decision).toBe("ask");
 		expect(r.pluginId).toBe("flaky");
 		expect(errSpy).toHaveBeenCalled();
@@ -217,7 +197,6 @@ describe("host.onToolPre/onToolPost 接线", () => {
 	it("post：无守卫回 undefined；反激活后守卫消失", async () => {
 		await load("tmp", { permissions: ["tools"] }, `globalThis.__off = h.onToolPre(() => ({ decision: "deny" }));`);
 		expect((await mgr.evaluateToolPre({ toolName: "bash", params: {} }, "en")).verdict.decision).toBe("deny");
-		// 注销函数即撤
 		(globalThis as unknown as { __off: () => void }).__off();
 		expect((await mgr.evaluateToolPre({ toolName: "bash", params: {} }, "en")).verdict).toEqual({
 			decision: "allow",
@@ -225,10 +204,6 @@ describe("host.onToolPre/onToolPost 接线", () => {
 		expect(await mgr.evaluateToolPost({ toolName: "read", params: {}, result: { content: [] } }, "en")).toBeUndefined();
 	});
 });
-
-// ---------------------------------------------------------------------------
-// C. withToolGuard 包装
-// ---------------------------------------------------------------------------
 
 describe("withToolGuard 包装", () => {
 	const fakeDef = (text: string) =>

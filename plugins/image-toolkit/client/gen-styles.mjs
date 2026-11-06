@@ -1,6 +1,3 @@
-/**
- * image-toolkit 生图视图样式（注入到视图容器内，主题变量全走宿主 token）。
- */
 export const CSS = `
 .ig {
 	--ig-r: 12px;
@@ -181,16 +178,6 @@ export const CSS = `
 .ig-pickitem span { font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 大图查看 */
-.ig-lightbox { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; height: 100%; justify-content: center; }
-.ig-lb-stage { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
-.ig-lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: var(--ig-shadow); }
-.ig-lb-stage.zoom img { max-width: none; max-height: none; width: auto; height: auto; cursor: zoom-out; }
-.ig-lb-stage img { cursor: zoom-in; }
-.ig-lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--border, #262a35); background: rgba(13, 14, 18, .72); color: var(--text, #e6e8ef); cursor: pointer; font-size: 17px; display: grid; place-items: center; }
-.ig-lb-nav:hover { border-color: var(--accent, #8b5cf6); }
-.ig-lb-nav.prev { left: 8px; }
-.ig-lb-nav.next { right: 8px; }
-.ig-lb-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg-elev2, #1a1d26); border: 1px solid var(--border, #262a35); border-radius: 999px; padding: 6px 12px; max-width: 100%; }
 
 /* ---------- 提示条 ---------- */
 .ig-toast { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 80; pointer-events: none; }
@@ -214,6 +201,5 @@ export const CSS = `
 	.ig-svc-list { width: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border-soft, #1e2230); }
 	.ig-prompt { align-items: stretch; flex-direction: column; }
 	.ig-run { justify-content: center; }
-	.ig-lb-nav { width: 34px; height: 34px; }
 }
 `;

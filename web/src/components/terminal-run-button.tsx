@@ -8,11 +8,6 @@ interface RunInTerminalButtonProps {
 	title?: string;
 }
 
-/**
- * 代码块终端执行按钮：
- * 点击后将代码块提取规范化的命令发送至终端 Tab 运行，并自动切换至终端视图。
- * 点击后展示 1200ms 的对勾与提示状态反馈。
- */
 export const RunInTerminalButton = memo(function RunInTerminalButton({ code, title }: RunInTerminalButtonProps) {
 	const t = useT();
 	const [executed, setExecuted] = useState(false);

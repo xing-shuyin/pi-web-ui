@@ -12,6 +12,7 @@ import { PiPushPinFill, PiPushPinSlash } from "react-icons/pi";
 import { PluginIcon } from "../plugin-icon";
 import { useI18n } from "../i18n";
 import { useFloatingPanel } from "../use-floating-panel";
+import { excludeBuiltinModules } from "../../../server/builtin-modules";
 
 export interface PluginMenuRow {
 	id: string;
@@ -19,26 +20,19 @@ export interface PluginMenuRow {
 	icon?: string;
 	iconSvg?: string;
 	error?: string;
-	/** false = 纯渲染器插件（没有独立界面，钉不钉都没有 tab）。 */
 	view?: boolean;
-	/** 是否有可配置 schema */
 	hasSettings?: boolean;
 }
 
 export interface PluginMenuProps {
-	/** 触发器的视口矩形（点击时快照）。 */
 	anchorRect: { left: number; right: number; top: number; bottom: number };
-	/** 触发器本体（可能已随「⋯」菜单卸载，只用来忽略点在自己身上的 mousedown）。 */
 	anchorEl?: HTMLElement | null;
 	plugins: PluginMenuRow[];
-	/** 已经钉在顶栏上的插件 id。 */
 	pinnedIds: ReadonlySet<string>;
-	/** 插件视图的当前顺序（同时决定已钉 tab 在顶栏里的相对顺序）。 */
 	orderedPluginIds?: readonly string[];
 	onTogglePin: (pluginId: string, pinned: boolean) => void;
 	onReorder: (pluginIds: string[]) => void;
 	onOpenView: (pluginId: string) => void;
-	/** 打开集中插件配置与启用中心弹窗（可定位到指定插件） */
 	onOpenPluginSettings?: (pluginId?: string) => void;
 	onManagePlugins: () => void;
 	onClose: () => void;
@@ -74,13 +68,12 @@ export function PluginMenu({
 
 	const orderedPlugins = useMemo(() => {
 		const rank = new Map((orderedPluginIds ?? []).map((id, index) => [id, index]));
-		return plugins
+		return excludeBuiltinModules(plugins)
 			.map((plugin, index) => ({ plugin, index }))
 			.sort((a, b) => (rank.get(a.plugin.id) ?? 1_000_000 + a.index) - (rank.get(b.plugin.id) ?? 1_000_000 + b.index))
 			.map(({ plugin }) => plugin);
 	}, [plugins, orderedPluginIds]);
 
-	// 将插件清晰分组：带独立界面的应用视图 vs 扩展与后台组件
 	const { viewPlugins, extPlugins } = useMemo(() => {
 		const viewList: PluginMenuRow[] = [];
 		const extList: PluginMenuRow[] = [];
@@ -94,7 +87,6 @@ export function PluginMenu({
 		return { viewPlugins: viewList, extPlugins: extList };
 	}, [orderedPlugins]);
 
-	// 内容变化后重新实测浮层尺寸
 	useLayoutEffect(() => {
 		measure();
 	}, [orderedPlugins, measure]);
@@ -206,7 +198,6 @@ export function PluginMenu({
 				</button>
 
 				<div className="pm-row-actions">
-					{/* 配置小按钮：有 schema 则直达配置，没有但为扩展插件则提供集中设置入口 */}
 					{p.hasSettings && onOpenPluginSettings && (
 						<button
 							type="button"
@@ -221,7 +212,6 @@ export function PluginMenu({
 						</button>
 					)}
 
-					{/* 界面视图图钉 */}
 					{!noView && (
 						<button
 							type="button"
@@ -242,12 +232,11 @@ export function PluginMenu({
 
 	return createPortal(
 		<div ref={menuRef} className="pm-panel" role="menu" aria-label={t("pluginMenuTitle")} style={style}>
-			{/* 顶栏头部：标题、计数徽标以及快速打开插件设置 */}
 			<div className="pm-head" aria-hidden="true">
 				<div className="pm-head-left">
 					<FiBox className="pm-head-icon" aria-hidden />
 					<span className="pm-head-title">{t("pluginMenuTitle")}</span>
-					<span className="pm-head-count">{plugins.length}</span>
+					<span className="pm-head-count">{orderedPlugins.length}</span>
 				</div>
 				{onOpenPluginSettings && (
 					<button
@@ -266,11 +255,10 @@ export function PluginMenu({
 			</div>
 
 			<div className="pm-list">
-				{plugins.length === 0 ? (
+				{orderedPlugins.length === 0 ? (
 					<div className="pm-empty">{t("pluginMenuEmpty")}</div>
 				) : (
 					<>
-						{/* 功能界面分组 */}
 						{viewPlugins.length > 0 && (
 							<div className="pm-group">
 								{extPlugins.length > 0 && (
@@ -283,7 +271,6 @@ export function PluginMenu({
 							</div>
 						)}
 
-						{/* 扩展与后台组件分组 */}
 						{extPlugins.length > 0 && (
 							<div className="pm-group">
 								{viewPlugins.length > 0 && (
@@ -299,7 +286,6 @@ export function PluginMenu({
 				)}
 			</div>
 
-			{/* 底部操作区：插件设置（集中管理） + 管理插件（市场与完整设置） */}
 			<div className="pm-footer">
 				{onOpenPluginSettings && (
 					<button

@@ -29,22 +29,16 @@ interface DialogProps {
 	};
 }
 
-/** 识别选项是否为肯定动作（Yes / Allow / Approve / 是 等） */
 export function isAffirmativeOption(opt: string): boolean {
 	const trimmed = opt.trim().toLowerCase();
 	return /^(yes|allow|approve|confirm|ok|是|允许|同意|确认|放行)/i.test(trimmed);
 }
 
-/** 识别选项是否为否定动作（No / Deny / Reject / Cancel / 否 等） */
 export function isNegativeOption(opt: string): boolean {
 	const trimmed = opt.trim().toLowerCase();
 	return /^(no|deny|reject|cancel|block|否|拒绝|取消|阻止)/i.test(trimmed);
 }
 
-/**
- * 命令提示解析器：
- * 智能拆分 intro（引导语）、command（命令主体）与 outro（结尾问询），并嗅探高危指令。
- */
 export function parseCommandPrompt(text: string): {
 	hasRisk: boolean;
 	intro: string;
@@ -61,7 +55,6 @@ export function parseCommandPrompt(text: string): {
 			text,
 		);
 
-	// 1. 匹配显式 markdown 代码块 ```...```
 	const fenceMatch = text.match(/([\s\S]*?)```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```([\s\S]*)/);
 	if (fenceMatch) {
 		return {
@@ -72,7 +65,6 @@ export function parseCommandPrompt(text: string): {
 		};
 	}
 
-	// 2. 匹配连续命令行段落（包含行缩进或以常见命令/符号开头）
 	const lines = text.split("\n");
 	let cmdStart = -1;
 	let cmdEnd = -1;
@@ -121,7 +113,6 @@ export function parseCommandPrompt(text: string): {
 	return { hasRisk, intro: text, command: null, outro: "" };
 }
 
-/** 命令专用审计盒：等宽代码排版、行号高亮、一键复制、超长折叠与高危警告 */
 export function CommandInspectorBox({ command, hasRisk }: { command: string; hasRisk?: boolean }) {
 	const t = useT();
 	const { copied, copy } = useCopyFeedback({ duration: 2000 });
@@ -182,7 +173,6 @@ export function CommandInspectorBox({ command, hasRisk }: { command: string; has
 	);
 }
 
-/** 渲染提示文本或命令审计盒（系统交互禁用数学公式解析，杜绝 Shell 变量被误当成公式） */
 export function DialogPromptContent({
 	text,
 	structuredCode,
@@ -219,11 +209,6 @@ export function DialogPromptContent({
 	);
 }
 
-/**
- * 扩展 UI 对话框：
- * 采用三段式视窗架构（紧凑 Header + 独立可滚动 Body + 常驻 Footer 动作栏），
- * 集成命令专用审计盒（Command Inspector Box），支持单键直达（Y/N）与拒绝附言反馈闭环。
- */
 export function Dialog({ dialog }: DialogProps) {
 	const t = useT();
 	const [inputValue, setInputValue] = useState("");
@@ -264,7 +249,6 @@ export function Dialog({ dialog }: DialogProps) {
 		respond(negativeOpt);
 	};
 
-	// 键盘快捷键：上下箭头导航、回车提交、Y/N 快速选择
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			const tag = (e.target as HTMLElement)?.tagName;
@@ -311,7 +295,6 @@ export function Dialog({ dialog }: DialogProps) {
 
 	return (
 		<div className="dialog-inline" data-dialog-kind={dialog.kind}>
-			{/* 1. 紧凑单行顶栏 */}
 			<div className="dialog-head">
 				<span className="dialog-badge">{t("pluginRequest")}</span>
 				{headTitle && (
@@ -324,7 +307,6 @@ export function Dialog({ dialog }: DialogProps) {
 				</button>
 			</div>
 
-			{/* 2. 独立滚动正文区（任何长命令/长提示仅在此处滚动，绝对不挤压动作栏） */}
 			<div className="dialog-scroll-body">
 				{dialog.kind === "select" && <DialogPromptContent text={titleText} structuredCode={dialog.code} />}
 
@@ -360,7 +342,6 @@ export function Dialog({ dialog }: DialogProps) {
 				)}
 			</div>
 
-			{/* 3. 常驻底部动作栏（首屏立即可见，无需费力滚动到底部） */}
 			<div className="dialog-footer">
 				{dialog.kind === "select" && (
 					<>
@@ -387,7 +368,6 @@ export function Dialog({ dialog }: DialogProps) {
 							{options.length === 0 && <div className="dialog-hint">{t("noOptions")}</div>}
 						</div>
 
-						{/* 拒绝并说明原因反馈闭环 */}
 						{hasNegative && (
 							<div className="dialog-reject-box">
 								{!showRejectInput ? (

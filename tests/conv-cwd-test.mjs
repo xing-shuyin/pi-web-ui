@@ -1,12 +1,3 @@
-/**
- * Per-project conversation isolation + unlisted-idle dismissal:
- *
- *   conv1 (A, startup) → new_chat REUSES it while it is blank (ac5a4c8) →
- *   set_cwd(B) creates B's own conversation → set_cwd(A) creates a NEW A
- *   conversation (the old one was dismissed) → conversation ids never leak
- *   between projects, the running-conversation list stays empty (nothing was
- *   ever displaced while streaming), and the file tree follows the project.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -17,7 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = Number(process.argv[2] || 8898);
@@ -59,7 +49,6 @@ const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
 let seq = 0;
 const send = (msg) => ws.send(JSON.stringify({ ...msg, seq: ++seq }));
 
-// State mirrors
 let snapshot = null;
 let conversations = [];
 let files = null;
@@ -70,12 +59,10 @@ ws.on("message", (d) => {
 	try {
 		m = JSON.parse(d.toString());
 	} catch {
-		return; // malformed frame — ignore
+		return;
 	}
 	if (m.type === "snapshot") snapshot = m.state;
 	else if (m.type === "snapshot_delta") {
-		// Incremental checkpoint — merge like the frontend does (rev-chained,
-		// appended messages extend the array; light fields replace wholesale).
 		if (snapshot && snapshot.rev === m.baseRev) {
 			snapshot = {
 				...snapshot,
@@ -107,14 +94,11 @@ ws.on("open", () => {
 });
 await waitFor(() => snapshot !== null, "initial snapshot");
 
-// --- conv1 in A (server cwd) ---
 check("conv1 cwd = A", snapshot?.cwd === A, snapshot?.cwd);
 const conv1 = snapshot.conversationId;
 
-// --- new_chat: conv1 is BLANK → reused in place (ac5a4c8 semantics: the
-// active blank chat IS the new chat; clicking 新对话 must not pile up ids) ---
 send({ type: "new_chat" });
-await sleep(600); // any snapshot/delta would have arrived by now
+await sleep(600);
 const conv2 = snapshot.conversationId;
 check("new_chat reuses the blank active conversation (same id)", conv2 === conv1, `${conv1} → ${conv2}`);
 check("conv2 cwd = A", snapshot?.cwd === A);
@@ -125,7 +109,6 @@ check(
 	`${conversations.length} listed`,
 );
 
-// --- set_cwd(B): A's conv2 is dismissed (never ran); B gets its own conversation ---
 send({ type: "set_cwd", path: B });
 await waitFor(() => snapshot?.cwd === B, "cwd=B");
 const convB = snapshot.conversationId;
@@ -137,7 +120,6 @@ check(
 	files?.entries?.some((e) => e.name === "only-in-B.txt"),
 );
 
-// --- set_cwd(A): B's conv (never ran) is dismissed; A gets a NEW conversation ---
 send({ type: "set_cwd", path: A });
 await waitFor(() => snapshot?.cwd === A, "cwd=A");
 const convA2 = snapshot.conversationId;
@@ -152,7 +134,6 @@ check(
 	files?.entries?.some((e) => e.name === "only-in-A.txt"),
 );
 
-// --- set_cwd(B) again: B's previous conv was dismissed; a new one is created ---
 send({ type: "set_cwd", path: B });
 await waitFor(() => snapshot?.cwd === B && snapshot?.conversationId !== convB, "cwd=B again");
 check(
@@ -161,7 +142,6 @@ check(
 	`${convB} → ${snapshot?.conversationId}`,
 );
 
-// --- conversations summary: only current project, and nothing listed ---
 await sleep(300);
 check(
 	"conversations list stays empty (per-project + only listed)",

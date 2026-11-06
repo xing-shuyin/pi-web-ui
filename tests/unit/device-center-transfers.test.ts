@@ -355,7 +355,6 @@ describe("device collaboration service", () => {
 			return { id: uuid };
 		});
 
-		// 1. init
 		const initRes = await post({
 			action: "init",
 			manifest: {
@@ -375,7 +374,6 @@ describe("device collaboration service", () => {
 		const transferId = initData.transferId;
 		expect(typeof transferId).toBe("string");
 
-		// 2. chunk
 		const chunkRes = await post({
 			action: "chunk",
 			transferId,
@@ -394,7 +392,6 @@ describe("device collaboration service", () => {
 		expect(chunkData.chunkIndex).toBe(0);
 		expect(chunkData.percent).toBe(50);
 
-		// 3. status
 		const statusRes = await post({
 			action: "status",
 			transferId,
@@ -404,7 +401,6 @@ describe("device collaboration service", () => {
 		expect(statusData.status).toBe("staging");
 		expect(statusData.receivedChunks).toEqual([0]);
 
-		// 4. abort
 		const abortRes = await post({
 			action: "abort",
 			transferId,
@@ -425,7 +421,6 @@ describe("device collaboration service", () => {
 			return { id: "remote" };
 		}) as any);
 
-		// 1. Agent initializes chunked transfer (receipt created without row.job)
 		const initRes = await post({
 			action: "init",
 			manifest: {
@@ -443,7 +438,6 @@ describe("device collaboration service", () => {
 		const { transferId } = (await initRes.json()) as { transferId: string };
 		expect(typeof transferId).toBe("string");
 
-		// 2. User lists transfers
 		const listRes = await post.userList();
 		expect(listRes.status).toBe(200);
 		const listData = (await listRes.json()) as { transfers: any[] };
@@ -452,14 +446,12 @@ describe("device collaboration service", () => {
 		expect(item.applyStarted).toBe(false);
 		expect(item.status).toBe("interrupted");
 
-		// 3. User aborts this transfer via Web UI user route
 		const abortRes = await post.userAbort(transferId);
 		expect(abortRes.status).toBe(200);
 		const abortData = (await abortRes.json()) as any;
 		expect(abortData.status).toBe("cancelled");
 		expect(abortData.transferId).toBe(transferId);
 
-		// 4. Verify remote device received transfer_abort RPC
 		expect(f.relay.callDevice).toHaveBeenCalledWith(
 			"target",
 			"transfer_abort",
@@ -472,13 +464,11 @@ describe("device collaboration service", () => {
 			expect.anything(),
 		);
 
-		// 5. Subsequent user abort call is idempotent
 		const repeatRes = await post.userAbort(transferId);
 		expect(repeatRes.status).toBe(200);
 		const repeatData = (await repeatRes.json()) as any;
 		expect(repeatData.status).toBe("cancelled");
 
-		// 6. User listing confirms status is cancelled
 		const listAfterRes = await post.userList();
 		const listAfterData = (await listAfterRes.json()) as { transfers: any[] };
 		const itemAfter = listAfterData.transfers.find((t) => t.transferId === transferId);

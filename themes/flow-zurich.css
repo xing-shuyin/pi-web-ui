@@ -1,13 +1,7 @@
 /* theme-name: 极简行文 · 苏黎世纯黑 */
 /* theme-name-en: Pure Flow · Zurich Monochrome Pro */
 /* theme-group: builtin */
-/*
- * 极简行文 · 苏黎世纯黑（Zurich Monochrome Pro）
- * 灵感源自瑞士国际主义排版与绝对纯黑艺术：
- * 基于 OLED 纯黑实体画布，通过精密纯粹的单色灰阶与微内阴影雕刻，
- * 搭配极简钛白高对比主控按键与 0.5px 精密微线，
- * 打造如艺术画廊与顶配 Pro 硬件般的极致冷峻高级感。
- */
+
 :root {
 	color-scheme: dark;
 	--flow-shadow: #000000;
@@ -128,9 +122,6 @@
 
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   代码语法高亮（hljs）—— 瑞士单色与克制微光
-   ======================================================== */
 .hljs {
 	color: #ffffff;
 }

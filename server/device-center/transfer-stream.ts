@@ -36,13 +36,13 @@ export function isUuid(id: unknown): id is string {
 }
 
 export const CHUNKED_TRANSFER_LIMITS = Object.freeze({
-	chunkBytes: 32 * 1024, // 32 KiB default per chunk to stay well within bounded RPC packet budgets
-	minChunkBytes: 1024, // 1 KiB min
-	maxChunkBytes: 64 * 1024, // 64 KiB max per chunk
-	maxTransferBytes: 256 * 1024 * 1024, // 256 MiB total transfer size
+	chunkBytes: 32 * 1024,
+	minChunkBytes: 1024,
+	maxChunkBytes: 64 * 1024,
+	maxTransferBytes: 256 * 1024 * 1024,
 	maxFiles: 2048,
 	maxVisitedEntries: 16384,
-	maxStagedBytes: 512 * 1024 * 1024, // 512 MiB total staged storage
+	maxStagedBytes: 512 * 1024 * 1024,
 	maxStagedTransfers: 32,
 	exclusions: 256,
 	exclusionBytes: 16 * 1024,
@@ -79,7 +79,7 @@ export interface TransferChunkPayload {
 	offset: number;
 	size: number;
 	sha256: string;
-	data: string; // base64 encoded chunk data
+	data: string;
 }
 
 export interface TransferProgressState {
@@ -188,7 +188,6 @@ type InternalSession = {
 	cleanupPromise?: Promise<void>;
 };
 
-/** Prepares a chunked transfer manifest from source workspace. */
 export async function prepareChunkedTransfer({
 	root,
 	paths,
@@ -395,7 +394,6 @@ export async function prepareChunkedTransfer({
 	};
 }
 
-/** Reads a single chunk of data from source file, verifying against expected size or chunk checksum if provided. */
 export async function readChunkFromSource({
 	root,
 	path,
@@ -449,7 +447,6 @@ export async function readChunkFromSource({
 	}
 }
 
-/** Receiver instance supporting chunked transfer, resume, verification, and staging. */
 export function createChunkedTransferReceiver(config: { root: string; dataDir: string; allowReceive: boolean }) {
 	const root = resolve(config.root);
 	const dataDir = resolve(config.dataDir);
@@ -593,9 +590,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 		}
 	}
 
-	/** Scan storage to discover existing persisted sessions on startup for true cross-restart resume.
-	 * Checks safety chains, validates manifest schema & hashes without following symlinks,
-	 * verifies receivedChunks against physical files, and checks byte/session budgets. */
 	const initializedPromise = (async () => {
 		try {
 			await checkChain(storage, true);
@@ -614,12 +608,10 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					const parsedManifest = JSON.parse(manifestStr);
 					const manifest = validateChunkedManifest(parsedManifest);
 
-					// Hard binding: dirname must match transferId
 					if (name !== `transfer-${manifest.transferId}`) {
 						throw new Error("Directory name mismatch for transferId");
 					}
 
-					// Reject duplicate transferId directories
 					if (sessions.has(manifest.transferId)) {
 						throw new Error("Duplicate transferId directory detected");
 					}
@@ -672,7 +664,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 						error: typeof state.error === "string" ? state.error : undefined,
 					};
 
-					// Check quota limits on restart recovery
 					if (
 						sessions.size >= CHUNKED_TRANSFER_LIMITS.maxStagedTransfers ||
 						totalStagedBytes + manifest.totalBytes > CHUNKED_TRANSFER_LIMITS.maxStagedBytes
@@ -685,7 +676,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 
 					sessions.set(manifest.transferId, session);
 				} catch {
-					// Purge corrupt / invalid / symlinked directories safely
 					await rm(dir, { recursive: true, force: true }).catch(() => {});
 				}
 			}
@@ -693,7 +683,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 	})();
 
 	return {
-		/** Initialize a chunked transfer session from manifest */
 		initTransfer(
 			manifestInput: ChunkedTransferManifest,
 			{ signal }: { signal?: AbortSignal } = {},
@@ -703,10 +692,8 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				active(signal);
 				if (!allowReceive) throw new Error("Receiving files is disabled");
 
-				// Hard validation of manifest schema, hash, chunks and offsets
 				const manifest = validateChunkedManifest(manifestInput);
 
-				// Check if session already exists for resume
 				const existing = sessions.get(manifest.transferId);
 				if (existing) {
 					if (existing.manifest.manifestHash !== manifest.manifestHash)
@@ -737,7 +724,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				await mkdir(storage, { recursive: true, mode: 0o700 });
 				await checkChain(storage, false, signal);
 
-				// Strict sanitized directory name: transfer-<UUID>
 				const dir = join(storage, `transfer-${manifest.transferId}`);
 				await mkdir(dir, { recursive: true, mode: 0o700 });
 
@@ -782,16 +768,12 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 						percent: 0,
 					};
 				} catch (err) {
-					// Rollback staging and quota on failure
 					await rm(dir, { recursive: true, force: true }).catch(() => {});
 					throw err;
 				}
 			});
 		},
 
-		/** Writes a received chunk into persistent staging.
-		 * Validates chunk offsets, sizes against manifest, checks chunk hash before decode,
-		 * and persists state to disk BEFORE updating in-memory progress! */
 		writeChunk(chunk: TransferChunkPayload, { signal }: { signal?: AbortSignal } = {}): Promise<TransferProgressState> {
 			return serialized(async () => {
 				await initializedPromise;
@@ -810,7 +792,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				)
 					throw new Error("Invalid chunkIndex");
 
-				// Find file entry in manifest
 				const fileEntry = session.manifest.files.find((f) => f.path === chunk.path);
 				if (!fileEntry) throw new Error("Chunk path not in manifest");
 				if (
@@ -819,7 +800,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				)
 					throw new Error("Chunk index out of range for file");
 
-				// Derive expected offset and size from manifest; DO NOT trust client input
 				const expectedOffset = (chunk.chunkIndex - fileEntry.firstChunkIndex) * session.manifest.chunkSize;
 				const expectedSize = Math.min(session.manifest.chunkSize, fileEntry.size - expectedOffset);
 
@@ -831,13 +811,11 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				if (typeof chunk.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(chunk.sha256))
 					throw new Error("Invalid chunk sha256 checksum format");
 
-				// Length check before decoding base64 to prevent unbounded memory allocation
 				if (typeof chunk.data !== "string") throw new Error("Chunk data must be base64 string");
 				const expectedBase64Len = 4 * Math.ceil(expectedSize / 3);
 				if (chunk.data.length !== expectedBase64Len)
 					throw new Error(`Invalid chunk base64 data length: expected ${expectedBase64Len}, got ${chunk.data.length}`);
 
-				// If already received, verify checksum match
 				if (session.receivedChunks.has(chunk.chunkIndex)) {
 					const existingHash = session.chunkHashes.get(chunk.chunkIndex);
 					if (existingHash !== chunk.sha256) throw new Error("Duplicate chunk with mismatched checksum");
@@ -861,13 +839,11 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					};
 				}
 
-				// Decode and verify checksum
 				const dataBytes = Buffer.from(chunk.data, "base64");
 				if (dataBytes.length !== expectedSize) throw new Error("Decoded chunk size mismatch");
 				const computedHash = hash(dataBytes);
 				if (computedHash !== chunk.sha256) throw new Error("Chunk sha256 checksum mismatch");
 
-				// Write to staged file
 				const stagedFilePath = join(session.dir, "files", ...fileEntry.path.split("/"));
 				await mkdir(dirname(stagedFilePath), { recursive: true, mode: 0o700 });
 
@@ -880,7 +856,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					await fileHandle.close();
 				}
 
-				// Check if this file has completed all its chunks
 				let fileFinished = true;
 				for (let i = fileEntry.firstChunkIndex; i < fileEntry.firstChunkIndex + fileEntry.chunkCount; i++) {
 					if (i !== chunk.chunkIndex && !session.receivedChunks.has(i)) {
@@ -890,7 +865,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				}
 
 				if (fileFinished) {
-					// Verify entire file hash
 					const checkHandle = await open(stagedFilePath, constants.O_RDONLY);
 					const fileHasher = createHash("sha256");
 					try {
@@ -910,7 +884,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					}
 				}
 
-				// Persist state to disk BEFORE publishing to in-memory progress!
 				const nextReceivedChunks = new Set(session.receivedChunks);
 				nextReceivedChunks.add(chunk.chunkIndex);
 				const nextChunkHashes = new Map(session.chunkHashes);
@@ -923,14 +896,12 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				let nextBaselines: FileSnapshot[] | undefined = session.baselines;
 
 				if (nextReceivedChunks.size === session.manifest.totalChunks) {
-					// All chunks completed! Build preview
 					const { preview, baselines } = await makePreview(session.manifest, signal);
 					nextPreview = preview;
 					nextBaselines = baselines;
 					nextStatus = "staged";
 				}
 
-				// Write state to disk
 				const tempSession: InternalSession = {
 					...session,
 					receivedChunks: nextReceivedChunks,
@@ -942,7 +913,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				};
 				await persistState(tempSession);
 
-				// Disk state persisted successfully, now safely update in-memory session!
 				session.receivedChunks = nextReceivedChunks;
 				session.chunkHashes = nextChunkHashes;
 				session.receivedBytes = tempSession.receivedBytes;
@@ -971,7 +941,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 			});
 		},
 
-		/** Query status for resume / progress tracking */
 		getStatus(transferId: string): Promise<TransferProgressState> {
 			return serialized(async () => {
 				await initializedPromise;
@@ -996,7 +965,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 			});
 		},
 
-		/** Paginated file listing from manifest */
 		getFilePage(
 			transferId: string,
 			page = 1,
@@ -1028,7 +996,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 			});
 		},
 
-		/** Abort/cancel transfer. Quota is only returned AFTER physical disk IO cleanup completes! */
 		abortTransfer(transferId: string): Promise<{ ok: boolean }> {
 			return serialized(async () => {
 				await initializedPromise;
@@ -1041,14 +1008,12 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					return { ok: true };
 				}
 
-				// Physical cleanup must finish BEFORE returning quota!
 				const cleanup = (async () => {
 					try {
 						await checkChain(session.dir);
 						await rm(session.dir, { recursive: true, force: true });
 					} catch {
 					} finally {
-						// ONLY return staged quota after physical IO release!
 						totalStagedBytes = Math.max(0, totalStagedBytes - session.reservedBytes);
 						sessions.delete(transferId);
 					}
@@ -1059,7 +1024,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 			});
 		},
 
-		/** Preview a staged chunked transfer */
 		preview(transferId: string, { signal }: { signal?: AbortSignal } = {}): Promise<DeviceFilePreview> {
 			return serialized(async () => {
 				await initializedPromise;
@@ -1077,7 +1041,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 			});
 		},
 
-		/** Apply staged chunked files with explicit decisions using shared atomic metadata-preserving save */
 		apply({
 			transferId,
 			revision,
@@ -1142,7 +1105,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 					try {
 						const current = await readFileSnapshot(fileEntry.path, signal);
 						if (!current) {
-							// New file creation
 							const full = await target(fileEntry.path, signal);
 							await mkdir(dirname(full), { recursive: true, mode: 0o700 });
 							const h = await open(full, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
@@ -1154,7 +1116,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 							}
 							report.applied.push(fileEntry.path);
 						} else {
-							// Existing file overwrite with metadata preservation using shared implementation
 							const full = await target(fileEntry.path, signal);
 							await saveBytesPreservingMetadata({
 								path: full,
@@ -1172,7 +1133,6 @@ export function createChunkedTransferReceiver(config: { root: string; dataDir: s
 				session.status = "applied";
 				await persistState(session);
 
-				// Physical cleanup after successful apply, then release quota
 				try {
 					await checkChain(session.dir);
 					await rm(session.dir, { recursive: true, force: true });

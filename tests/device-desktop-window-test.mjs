@@ -1,4 +1,3 @@
-// Real browser interaction coverage for the shared frontend window; device transport is mocked.
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";

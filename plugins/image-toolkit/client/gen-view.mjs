@@ -1,6 +1,3 @@
-/**
- * image-toolkit 生图视图模块（可嵌入工作台或独立展示）。
- */
 import * as api from "./gen-api.mjs";
 import { baseName, copyText, el, fill, fmtBytes, fmtMs, fmtTime, linesToList, parseJsonField } from "./gen-dom.mjs";
 import { detectLang, makeT } from "./gen-i18n.mjs";
@@ -114,7 +111,6 @@ export function mountGenView(container, options = {}) {
 			refs: [],
 		},
 		pick: { open: false, dir: "", entries: [], error: "" },
-		lightbox: { open: false, index: 0, zoom: false },
 		toast: "",
 	};
 
@@ -182,9 +178,7 @@ export function mountGenView(container, options = {}) {
 				app.jobs = jobs;
 				renderFeed();
 			}
-		} catch {
-			/* 静默 */
-		}
+		} catch {}
 	}
 
 	const msgOf = (err) => (err instanceof Error ? err.message : String(err));
@@ -1077,22 +1071,49 @@ export function mountGenView(container, options = {}) {
 		fill(toastEl, el("div", { class: "ig-toast-card", text: app.toast }));
 	}
 
-	function imagePaths() {
-		const paths = [];
-		for (const job of app.jobs ?? []) {
-			for (const f of job.files ?? []) {
-				if (f.path && !paths.includes(f.path)) paths.push(f.path);
-			}
-		}
-		return paths;
-	}
-
 	function openLightbox(path) {
-		const paths = imagePaths();
-		app.lightbox.index = Math.max(0, paths.indexOf(path));
-		app.lightbox.open = true;
-		app.lightbox.zoom = false;
-		renderOverlay();
+		const accepted = window.__piWebUiHost?.openImagePreview?.({
+			src: api.imageUrl(path),
+			alt: baseName(path),
+			actions: [
+				{
+					id: "edit",
+					label: gt("gen.editInToolkit"),
+					closeOnSelect: true,
+					onSelect: () => options.onOpenInToolkit?.({ path, url: api.imageUrl(path) }),
+				},
+				{
+					id: "reference",
+					label: gt("gen.useAsRef"),
+					closeOnSelect: true,
+					onSelect: () => {
+						addReference(path);
+						toast(gt("gen.refsCount", { n: app.gen.refs.length }));
+					},
+				},
+				{
+					id: "copy",
+					label: gt("gen.copyPath"),
+					onSelect: async () => {
+						await copyText(path);
+						toast(gt("gen.copied"));
+					},
+				},
+				{
+					id: "download",
+					label: gt("gen.download"),
+					onSelect: () => {
+						const link = document.createElement("a");
+						link.href = api.imageUrl(path);
+						link.download = baseName(path);
+						document.body.append(link);
+						link.click();
+						link.remove();
+					},
+				},
+			],
+		});
+		if (!accepted) window.open(api.imageUrl(path), "_blank", "noopener,noreferrer");
 	}
 
 	function renderOverlay() {
@@ -1101,83 +1122,7 @@ export function mountGenView(container, options = {}) {
 			overlay.style.display = "flex";
 			return;
 		}
-		if (app.lightbox.open) {
-			renderLightbox();
-			overlay.style.display = "flex";
-			return;
-		}
 		overlay.style.display = "none";
-	}
-
-	function renderLightbox() {
-		const paths = imagePaths();
-		const path = paths[Math.min(app.lightbox.index, Math.max(0, paths.length - 1))];
-		if (!path) {
-			app.lightbox.open = false;
-			renderOverlay();
-			return;
-		}
-		const stage = el(
-			"div",
-			{ class: `ig-lb-stage${app.lightbox.zoom ? " zoom" : ""}` },
-			el("img", {
-				src: api.imageUrl(path),
-				alt: "",
-				onclick: () => {
-					app.lightbox.zoom = !app.lightbox.zoom;
-					renderOverlay();
-				},
-			}),
-		);
-		const bar = el(
-			"div",
-			{ class: "ig-lb-bar" },
-			el("span", { class: "ig-path", text: path }),
-			el("button", {
-				class: "ig-btn ig-small ig-primary",
-				text: gt("gen.editInToolkit"),
-				title: gt("gen.editInToolkitHint"),
-				onclick: () => {
-					app.lightbox.open = false;
-					renderOverlay();
-					options.onOpenInToolkit?.({ path, url: api.imageUrl(path) });
-				},
-			}),
-			el("button", {
-				class: "ig-btn ig-small",
-				text: gt("gen.useAsRef"),
-				title: gt("gen.useAsRefHint"),
-				onclick: () => {
-					addReference(path);
-					app.lightbox.open = false;
-					renderOverlay();
-					toast(gt("gen.refsCount", { n: app.gen.refs.length }));
-				},
-			}),
-			el("button", {
-				class: "ig-btn ig-small",
-				text: gt("gen.copyPath"),
-				onclick: async () => {
-					await copyText(path);
-					toast(gt("gen.copied"));
-				},
-			}),
-			el("a", {
-				class: "ig-btn ig-small",
-				href: api.imageUrl(path),
-				download: baseName(path),
-				text: gt("gen.download"),
-			}),
-			el("button", {
-				class: "ig-btn ig-small ig-ghost",
-				text: "✕",
-				onclick: () => {
-					app.lightbox.open = false;
-					renderOverlay();
-				},
-			}),
-		);
-		fill(overlay, el("div", { class: "ig-lightbox" }, stage, bar));
 	}
 
 	async function openRefPicker(dir = "") {

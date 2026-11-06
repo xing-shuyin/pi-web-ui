@@ -1,4 +1,3 @@
-/** B5：会话列表服务端分页（limit / hasMore / 按项目记住条数）+ 客户端 reducer 记录 hasMore。 */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +13,6 @@ const prevEnv = process.env.PI_CODING_AGENT_SESSION_DIR;
 
 beforeEach(() => {
 	for (const k of ["SESSION_LIST_DEFAULT", "SESSION_LIST_PARSE_LIMIT", "SESSION_LIST_MAX"]) saved[k] = CS[k];
-	// 缩小每页条数，避免测试里造几百个文件
 	CS.SESSION_LIST_DEFAULT = 5;
 	CS.SESSION_LIST_PARSE_LIMIT = 6;
 	CS.SESSION_LIST_MAX = 50;
@@ -78,7 +76,6 @@ describe("sessionListPayload", () => {
 		expect(all.sessions).toHaveLength(20);
 		expect(all.hasMore).toBe(false);
 
-		// 不带 limit 的后续推送（每轮对话后的自动刷新）沿用记住的条数，不缩回第一页
 		const again = await s.sessionListPayload(dir);
 		expect(again.sessions).toHaveLength(20);
 	});

@@ -118,7 +118,6 @@ describe("question queue compatibility and modes", () => {
 		click(container.querySelector(".question-option"));
 		click(container.querySelector(".dialog-submit"));
 		expect(sent).toEqual([expect.objectContaining({ id: first.id })]);
-		// A manual-mode settlement must not automatically open the next request.
 		act(() => root!.render(createElement(QuestionQueue, { questions: [second], mode: "manual" })));
 		expect(container.querySelector(".question-queue-dialog")).toBeNull();
 	});
@@ -173,7 +172,6 @@ describe("question queue compatibility and modes", () => {
 		expect(questionWaitTime(200_000, 100_000)).toBe("0:00");
 		expect(questionWaitTime(1000, 3_662_000)).toBe("1:01:01");
 
-		// When opened as a dialog, wait time renders inside dialog-head rather than outside the card
 		act(() => root!.render(createElement(QuestionQueue, { questions: [request({ createdAt: 10_000 })], mode: "all" })));
 		expect(container.querySelector(".question-queue-list")).toBeNull();
 		const headWait = container.querySelector(".dialog-head .question-queue-wait");

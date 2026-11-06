@@ -1,15 +1,3 @@
-/**
- * UniversalModelPicker.tsx — 全项目通用的模型选择菜单内容（自包含）。
- *
- * 整合原来散在三处的重复实现：
- * 1. 主对话 ModelThinking 的模型下拉菜单；
- * 2. 插件 ModelPickerModal 的模型列表；
- * 3. 目标栏 GoalBar 的两个简化模型下拉（审查者 / 执行者）。
- *
- * 统一能力：全局默认模型块、启用范围切换、刷新/管理入口、搜索过滤、
- * 服务商侧栏（含多 key）、使用次数排序、reasoning/vision 徽标。
- * 触发器（Dropdown 胶囊 / 弹窗 chrome / 空选项行）由调用方自理。
- */
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { FiRefreshCw, FiSearch, FiSettings } from "react-icons/fi";
 import type { ModelInfo, ProviderKeyInfo } from "../types";
@@ -18,7 +6,6 @@ import { useT } from "../i18n";
 import { loadModelUsage, sortByUsage } from "../model-usage";
 import { appSend } from "../app-globals";
 
-/** 宽松匹配模型 id：裸 id / provider/id / 后缀一致（弹窗旧逻辑口径）。 */
 export function matchesModelId(m: ModelInfo, currentModelId?: string | null): boolean {
 	if (!currentModelId) return false;
 	return (
@@ -32,30 +19,20 @@ export interface UniversalModelPickerProps {
 	models: ModelInfo[];
 	modelsLoading?: boolean;
 	providerKeys?: Record<string, ProviderKeyInfo[]>;
-	/** undefined = 不展示默认模型块与星标列（如目标栏只选执行模型时） */
 	defaultModel?: string | null;
 	currentModelId?: string | null;
-	/** 打开信号：true 的瞬间加载使用次数并触发 onEnsureModels，false 时重置过滤态 */
 	active: boolean;
 	onEnsureModels: () => void;
-	/** 额外的加载态（如下拉首次 list_models 未回），与 modelsLoading 取或 */
 	loading?: boolean;
 	onRefresh: () => void;
 	onManageModels?: () => void;
-	/** 行点击后的处理（菜单：set_model；弹窗：onSelect+onClose；目标栏：set_goal_prefs） */
 	onPickModel: (m: ModelInfo, key: ProviderKeyInfo | null) => void;
-	/** 默认模型星标可交互（主菜单）；缺省只展示（弹窗旧口径） */
 	onToggleDefault?: (m: ModelInfo, isDefault: boolean) => void;
-	/** 行高亮判定（缺省：id 匹配且 key 须为 active） */
 	isRowActive?: (m: ModelInfo, key: ProviderKeyInfo | null) => boolean;
-	/** 列表顶部额外行（如目标栏的「跟随主对话」空选项） */
 	extraTopRow?: ReactNode;
-	/** 滚动容器 ref（调用方做 scroll-into-view 时透传） */
 	listRef?: RefObject<HTMLDivElement | null>;
 	autoFocusSearch?: boolean;
-	/** 隐藏「可用模型」标题（弹窗 chrome 自带标题时） */
 	hideTitle?: boolean;
-	/** 弹窗式布局需要时覆盖 body / 滚动区样式 */
 	bodyStyle?: CSSProperties;
 	scrollStyle?: CSSProperties;
 }
@@ -89,7 +66,6 @@ export function UniversalModelPicker({
 	const ensureRef = useRef(onEnsureModels);
 	ensureRef.current = onEnsureModels;
 
-	// 打开瞬间：加载使用次数 + 确保模型列表；关闭时重置过滤态
 	useEffect(() => {
 		if (!active) {
 			setModelFilter("");
@@ -131,7 +107,6 @@ export function UniversalModelPicker({
 			counts.set(m.provider, (counts.get(m.provider) ?? 0) + 1);
 		}
 		const out: Array<{ provider: string; count: number; keyName: string | null }> = [];
-		// Sidebar filter entries sorted by provider name (与主菜单口径一致，确定性排序）。
 		for (const [provider, count] of [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
 			const keys = providerKeys[provider];
 			if (keys && keys.length > 1) {
@@ -234,8 +209,6 @@ export function UniversalModelPicker({
 					onChange={(e) => setModelFilter(e.target.value)}
 				/>
 			</div>
-			{/* Scrollable middle band — provider sidebar (left) + model list
-			    (right). The header/search above and footer below stay fixed. */}
 			<div className="dd-model-body" style={bodyStyle}>
 				{providerEntries.length > 1 && (
 					<div className="dd-provider-col">

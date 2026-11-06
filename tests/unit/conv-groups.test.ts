@@ -1,10 +1,3 @@
-/**
- * 左栏「运行的对话」分组（#140 的回归）：当前项目那组不显示组标题（项目名）。
- *
- * 关键回归：`set_cwd` / 跨项目切对话时，`conversations` 推送先到（activeId 已是
- * 新对话），带新 cwd 的快照后到 —— 中间那一帧只按 cwd 判定会把当前项目当成
- * 「别的项目」，顶上闪一下项目名再消失。含当前对话的组必须直接算当前项目。
- */
 import { describe, expect, it } from "vitest";
 import { buildConversationRows, groupConversations } from "../../web/src/conv-groups.js";
 import type { ConversationSummary } from "../../web/src/types.js";
@@ -31,8 +24,6 @@ describe("groupConversations", () => {
 	});
 
 	it("cwd 还没跟上、但 activeId 已在目标项目时，当前项目以 activeId 为准", () => {
-		// 切到 B 的那一帧：客户端 cwd 还是 A，列表里 active 已经是 B 的对话。
-		// 当前项目只能有一个（B）：A 那组是别的项目的后台运行，标题照旧显示。
 		const groups = groupConversations([conv("c1", A), conv("c2", B)], A, "c2");
 		expect(groups[0].cwd).toBe(B);
 		expect(groups[0].isCurrent).toBe(true);
@@ -58,7 +49,6 @@ describe("groupConversations", () => {
 		expect(groups).toHaveLength(1);
 		expect(groups[0].cwd).toBe(A);
 		expect(groups[0].convs.map((c) => c.id)).toEqual(["p", "s"]);
-		// 父组是当前项目（其中就有当前对话），所以不显示组标题
 		expect(groups[0].isCurrent).toBe(true);
 	});
 
@@ -67,7 +57,6 @@ describe("groupConversations", () => {
 		const child = conv("child", B, { isSubagent: true, parentId: "root" });
 		const grandchild = conv("grandchild", B, { isSubagent: true, parentId: "child", isStreaming: true });
 		const leaf = conv("leaf", "C:/worktree", { isSubagent: true, parentId: "grandchild", hasQuestion: true });
-		// Descendants can arrive before their ancestors in the running list.
 		const groups = groupConversations([leaf, grandchild, child, root], B, "leaf");
 		expect(groups).toHaveLength(1);
 		expect(groups[0]).toMatchObject({ cwd: A, isCurrent: true });
@@ -119,6 +108,21 @@ describe("groupConversations", () => {
 });
 
 describe("buildConversationRows (issue #564 子代理树展开与折叠)", () => {
+	it("保持输入的根对话顺序，常驻和运行标记不改变排位，子代理仍跟随父对话", () => {
+		const running = conv("running", A, { isStreaming: true });
+		const pinned = conv("pinned", A, { pinned: true });
+		const child = conv("child", A, { isSubagent: true, parentId: "pinned" });
+		const idle = conv("idle", A);
+		const rows = buildConversationRows([running, idle, pinned, child]);
+
+		expect(rows.map((row) => [row.c.id, row.depth])).toEqual([
+			["running", 0],
+			["idle", 0],
+			["pinned", 0],
+			["child", 1],
+		]);
+	});
+
 	it("默认未折叠时展开全部子代理行，深度与父子关系正确", () => {
 		const parent = conv("p1", A);
 		const kid1 = conv("k1", A, { isSubagent: true, parentId: "p1" });
@@ -151,7 +155,6 @@ describe("buildConversationRows (issue #564 子代理树展开与折叠)", () =>
 		const collapsed = new Set(["p1"]);
 		const rows = buildConversationRows([parent, kid1, kid2, kid3, standalone], collapsed);
 
-		// k1, k2, k3 被隐藏，只剩下 p1 和 standalone
 		expect(rows).toHaveLength(2);
 		expect(rows[0].c.id).toBe("p1");
 		expect(rows[0].hasKids).toBe(true);
@@ -170,13 +173,11 @@ describe("buildConversationRows (issue #564 子代理树展开与折叠)", () =>
 		const child = conv("c1", A, { isSubagent: true, parentId: "p1" });
 		const grandChild = conv("g1", A, { isSubagent: true, parentId: "c1", isStreaming: true });
 
-		// 1. 折叠根父：整棵树都被隐藏
 		const rowsRootCollapsed = buildConversationRows([parent, child, grandChild], new Set(["p1"]));
 		expect(rowsRootCollapsed).toHaveLength(1);
 		expect(rowsRootCollapsed[0].descendantCount).toBe(2);
 		expect(rowsRootCollapsed[0].hasStreaming).toBe(true);
 
-		// 2. 根父展开，仅折叠子代理：grandChild 被隐藏
 		const rowsChildCollapsed = buildConversationRows([parent, child, grandChild], new Set(["c1"]));
 		expect(rowsChildCollapsed).toHaveLength(2);
 		expect(rowsChildCollapsed[0].c.id).toBe("p1");

@@ -33,7 +33,6 @@ describe("theme generation and inherited button colors", () => {
 			});
 			for (const file of readdirSync(out)) {
 				const generated = readFileSync(join(out, file), "utf8");
-				// Formatting belongs to Prettier; compare tokens and structural tails separately.
 				expect(variables(generated), file).toEqual(variables(read(`themes/${file}`)));
 				for (const [token, value] of variables(generated)) {
 					if (!token.startsWith("--switch-")) {

@@ -2,9 +2,9 @@
 	"apiVersion": 2,
 	"name": "qq",
 	"nameEn": "QQ",
-	"version": "0.1.19",
-	"description": "QQ 机器人：腾讯官方开放平台 QQBot 出站 WebSocket 双工长连接（零公网 IP / 智能 Markdown 分块 / 多轮会话隔离）/ 图片语音视频文件双向富媒体（本地文件自动上传）/ 用户白名单准入 / AI qq 工具（密钥加密存储，零外部依赖）",
-	"descriptionEn": "QQ Bot: official Tencent QQBot outbound WebSocket duplex chat (zero public IP, structure-aware Markdown chunks, isolated multi-turn sessions), two-way image/voice/video/file media with automatic local-file upload, access control whitelist, and AI qq tool.",
+	"version": "0.2.0",
+	"description": "QQ 机器人：官方出站 WebSocket 双向对话、富媒体收发、用户白名单与 AI qq 工具；支持系统或插件 TTS 语音自动回复，可选择引擎、音色及语音和文字组合。密钥加密存储。",
+	"descriptionEn": "QQ Bot with outbound WebSocket chat, rich media, access control, and an AI qq tool. Automatic voice replies use the shared TTS center with selectable engines and voices, optional text, and encrypted credentials.",
 	"author": "pi-web-ui",
 	"homepage": "https://github.com/xing-shuyin/pi-web-ui/tree/main/plugins/qq",
 	"icon": "🐧",
@@ -79,6 +79,37 @@
 			"label": "强行注入电脑端当前打开的会话（遥控器模式）",
 			"default": false,
 			"hint": "开 = 手机 QQ 消息直接注入电脑当前打开的会话（当遥控器用）；关（推荐）= 独立专属 QQ 对话，互不干扰"
+		},
+		{
+			"key": "replyMode",
+			"type": "select",
+			"label": "自动回复方式",
+			"default": "text",
+			"options": ["text", "voice", "both"],
+			"hint": "text = 文字；voice = 语音；both = 语音和文字。单聊/群聊支持语音，频道及语音失败时发送文字。"
+		},
+		{
+			"key": "voiceEngine",
+			"type": "text",
+			"label": "语音回复引擎",
+			"default": "builtin",
+			"hint": "统一 TTS 中心的引擎 ID；在 QQ 工作台高级设置中可从已注册引擎选择，例如 builtin、doubao-tts、deepseek-tts。"
+		},
+		{
+			"key": "voiceSpeaker",
+			"type": "text",
+			"label": "语音回复音色",
+			"default": "",
+			"hint": "所选引擎的音色 ID；留空使用默认音色，QQ 工作台可列出并选择所有已注册音色。"
+		},
+		{
+			"key": "voiceRate",
+			"type": "number",
+			"label": "语音回复语速",
+			"default": 1,
+			"min": 0.5,
+			"max": 2,
+			"hint": "0.5–2 倍速；不支持语速调节的引擎使用固定语速。"
 		},
 		{
 			"key": "replyTimeoutSec",

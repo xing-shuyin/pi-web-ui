@@ -1,10 +1,7 @@
-/** Bound native shell output draining without changing shell selection (issue #794). */
 import { registerHooks } from "node:module";
 
 export const SENTINEL = "// pi-web-ui #794: bounded shell lifecycle v1";
 
-// Kept as JavaScript source because this compatibility patch runs inside the SDK.
-// The SDK still owns shell discovery, environment, process groups and tree killing.
 export const SHELL_WAIT_SOURCE = `function waitForShellLifecycle(child, { onData, signal, timeout, timeoutMs, kill }) {
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -114,7 +111,6 @@ export function patchBashProcessSource(source: string): {
 	return { code: `${code}\n${SENTINEL}\n${SHELL_WAIT_SOURCE}\n`, status: "patched" };
 }
 
-/* SDK sources are transformed in memory before compilation, never on disk. */
 export function registerBashProcessPatch(): void {
 	registerHooks({
 		load(url, context, nextLoad) {

@@ -142,13 +142,13 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			maxDispatchDepth: 64,
 			maxDispatchBudget: 256,
 			allowBotMentions: true,
-			groupContextBytes: 2097152, // 2 MiB
-			groupRetentionLimit: 20000, // 20k rows
-			fileSyncMaxBytes: 10737418240, // 10 GiB
+			groupContextBytes: 2097152,
+			groupRetentionLimit: 20000,
+			fileSyncMaxBytes: 10737418240,
 			fileSyncMaxFiles: 10000,
-			fileSyncStagedBytes: 53687091200, // 50 GiB
-			resourceLockDefaultTtlMs: 86400000, // 24 hours
-			blackboardMaxBytes: 4194304, // 4 MiB
+			fileSyncStagedBytes: 53687091200,
+			resourceLockDefaultTtlMs: 86400000,
+			blackboardMaxBytes: 4194304,
 			taskReportExcerptBytes: 524288,
 			maxResourceLocksPerTask: 256,
 			botMentionBudgetPerTurn: 10,
@@ -168,12 +168,10 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		const cookie = await f.register("retainer");
 		const dev = await f.pair(cookie, "Worker");
 
-		// Create room
 		const roomRes = await f.request("/api/rooms", { name: "Scale Room", botIds: [dev.botId] }, cookie);
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// Seed 800 messages into draft directly
 		await f.hub.store.transact((draft) => {
 			for (let i = 0; i < 800; i++) {
 				draft.messages.push({
@@ -188,11 +186,9 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			}
 		});
 
-		// Trigger post message which invokes retention trim
 		const sendRes = await f.request(`/api/rooms/${roomId}/messages`, { text: "Trigger trim" }, cookie);
 		expect(sendRes.status).toBe(200);
 
-		// With raised limit of 1200, 801 messages must NOT be pruned to 500!
 		const snapshot = f.hub.store.snapshot();
 		const roomMessages = snapshot.messages.filter((m) => m.roomId === roomId);
 		expect(roomMessages.length).toBe(801);
@@ -205,7 +201,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			defaultTtlMs: 60000,
 		});
 
-		// Acquire locks on manager1
 		const res1 = manager1.acquireLocks({
 			roomId: "room-persist-1",
 			taskId: "task-001",
@@ -214,7 +209,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		});
 		expect(res1.success).toBe(true);
 
-		// Second task conflicts
 		const resConflict = manager1.acquireLocks({
 			roomId: "room-persist-1",
 			taskId: "task-002",
@@ -224,20 +218,17 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(resConflict.success).toBe(false);
 		expect(resConflict.conflictingLocks).toEqual(["git:repo:main"]);
 
-		// Simulate restart: construct manager2 with same file
 		const manager2 = createHubLockManager({
 			persistPath: lockFile,
 			defaultTtlMs: 60000,
 		});
 
-		// Inspect lock info on manager2
 		const info = manager2.getRoomLockInfo("room-persist-1");
 		expect(info.activeLocks.map((l) => l.lockKey).sort()).toEqual(["git:repo:main", "workspace:packages/core"]);
 		expect(info.activeLocks.find((l) => l.lockKey === "git:repo:main")?.taskId).toBe("task-001");
 		expect(info.waitingQueue.length).toBe(1);
 		expect(info.waitingQueue[0].taskId).toBe("task-002");
 
-		// Release on manager2 promotes waiter
 		const promoted = manager2.releaseLocks("room-persist-1", "task-001");
 		expect(promoted).toEqual(["task-002"]);
 
@@ -251,12 +242,10 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		const dev1 = await f.pair(cookie, "WorkerA");
 		const dev2 = await f.pair(cookie, "WorkerB");
 
-		// Create room
 		const roomRes = await f.request("/api/rooms", { name: "Pipeline Room", botIds: [dev1.botId, dev2.botId] }, cookie);
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// Dispatch Task A
 		const taskARes = await f.request(
 			`/api/rooms/${roomId}/messages`,
 			{ text: "Step 1: Write Spec", targetBotIds: [dev1.botId] },
@@ -266,7 +255,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		const taskA = taskARes.body.tasks[0];
 		expect(taskA.status).toBe("queued");
 
-		// Dispatch Task B with dependency on Task A
 		const taskBRes = await f.request(
 			`/api/rooms/${roomId}/messages`,
 			{ text: "Step 2: Implement Code", targetBotIds: [dev2.botId], dependsOnTaskId: taskA.id },
@@ -278,7 +266,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(taskB.blockReason).toBe("dependency_waiting");
 		expect(taskB.dependsOnTaskId).toBe(taskA.id);
 
-		// Simulate Task A running then completed with report
 		const taskALease = f.hub.store.snapshot().tasks.find((task) => task.id === taskA.id)!;
 		await f.hub.acceptTaskEvent(dev1.deviceId, {
 			botId: dev1.botId,
@@ -298,7 +285,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 			report: "API Spec contract: export function calculateScore(): number",
 		});
 
-		// Verify Task B was automatically awakened into queued with Task A's output attached
 		const snapshot = f.hub.store.snapshot();
 		const updatedTaskB = snapshot.tasks.find((t) => t.id === taskB.id)!;
 		expect(updatedTaskB.status).toBe("queued");
@@ -324,11 +310,9 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(dispatchRes.status).toBe(200);
 		const task = dispatchRes.body.tasks[0];
 
-		// Steer on queued task should reject (only running allows steering)
 		const steerQueued = await f.request(`/api/rooms/${roomId}/tasks/${task.id}/steer`, { text: "Early steer" }, cookie);
 		expect(steerQueued.status).toBe(409);
 
-		// Transition to running
 		const taskLease = f.hub.store.snapshot().tasks.find((entry) => entry.id === task.id)!;
 		await f.hub.acceptTaskEvent(dev.deviceId, {
 			botId: dev.botId,
@@ -349,7 +333,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		const steerTask = vi.fn().mockResolvedValue({ steered: true });
 		f.hub.setRelay({ steerTask });
 
-		// Steer on running task through the actual relay boundary.
 		const steerRunning = await f.request(
 			`/api/rooms/${roomId}/tasks/${task.id}/steer`,
 			{ text: "Dynamic correction: skip slow tests" },
@@ -381,7 +364,6 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(afterCompletion.status).toBe(409);
 		expect(steerTask).toHaveBeenCalledTimes(1);
 
-		// Verify message was broadcast to room messages
 		const snapshot = f.hub.store.snapshot();
 		const steerMessage = snapshot.messages.find((m) => m.text.includes("Dynamic correction: skip slow tests"));
 		expect(steerMessage).toBeDefined();

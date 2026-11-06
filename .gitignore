@@ -1,38 +1,28 @@
-# Dependencies
 node_modules/
 
-# Build artifacts
 dist/
 web/dist/
 
-# OS files
 .DS_Store
 
-# pi agent data
 .pi/
 .pi-web/
 .pi-subagents/
-# 微信通道入站媒体落地目录（图片/文件下载解密后的本地副本）
 .pi-wechat-media/
-# QQ 通道入站媒体落地目录（图片/语音/视频/文件下载后的本地副本）
 .pi-qq-media/
 .tmp-test-data/
 update_err.txt
 update_out.txt
 
-# Editor data
 .vscode/
 
-# Git worktrees
 .worktrees/
 
-# Plugin dependencies (installed per-plugin)
 plugins/*/node_modules/
 plugins/*/package-lock.json
 plugins/voice-input/package*.json
 plugins/voice-input/whisper-cache/
 
-# 插件运行期数据与权限标记（用户数据与运行时产物不入库）
 plugins/*/storage/
 plugins/*/.pi-approved
 plugins/*/storage.json
@@ -47,28 +37,21 @@ plugins/*/*_session*
 plugins/*/artifacts/
 plugins/*/*.tar.gz
 
-# Scratch/test temp files
 tests/scratch/
 
-# 主题视觉审计产物（scripts/theme-audit.mjs + theme-diff.mjs 的截图/差异图）
 .theme-audit/
 
-# 误落仓库根的临时包（npm pack / 手工下载的 tgz）
 *.tgz
 
-# Python bytecode
 __pycache__/
 *.py[cod]
 .zcodeignore
 *.bak
 
-# pi-web-ui Electron 桌面版构建产物
 release/
 
-# 独立社区插件清单仓库工作区
 plugin-registry/
 
-# 本地临时调试截图
 dev/wechat-shot*.png
 *.png
 *.jpg
@@ -79,7 +62,6 @@ preview-*.html
 test-screenshots/
 generated/
 
-# 本地调试与运行时数据（不入库）
 /durable/
 *.sqlite
 *.sqlite-journal
@@ -89,10 +71,8 @@ provider-keys.json
 test-driver-prompt.ts
 capsule-palettes.html
 
-# 本地流水线实跑产物（画布 demo 任务与 AI 生成的 output，不入库）
 /pipelines/
 
-# 本地临时目录与调试产物（交付前就地清除，不入库）
 /.temp/
 /artifacts/
 /group-followup-*.log

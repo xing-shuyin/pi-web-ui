@@ -39,7 +39,7 @@ import { TextQuoteCard } from "./TextQuoteCard";
 import { Markdown, PluginWidgetBlock } from "./Markdown";
 import { StreamMarkdown } from "./StreamMarkdown";
 import { CollapsibleHead } from "./CollapsibleHead";
-import { appUrl } from "../base-url";
+import { appResourceCrossOrigin, appResourceUrl } from "../base-url";
 import type { EditPromptAttachment } from "../question-attachments";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallBlock, type ToolView } from "./ToolCallBlock";
@@ -73,12 +73,6 @@ import { BUILTIN_UI_ITEMS, type UiSlotEntry } from "../ui-slots";
 import { appSend, useAppField } from "../app-globals";
 import { isAbortedTurn } from "../aborted-turn";
 
-// ---------------------------------------------------------------------------
-// Narrowing guards. UiContentBlock is an open union (its last member is
-// `{ type: string; [k: string]: unknown }`), so plain `switch` narrowing does
-// not work — same pattern pi-vsc uses in shared/blocks.ts.
-// ---------------------------------------------------------------------------
-
 const INLINE_MARKER_TOKEN_RE = /\[\[\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*([A-Za-z][A-Za-z0-9_-]*)\s*:(.*?)\s*\]\]/g;
 const BUILTIN_INLINE_MARKER_TOOLS: ReadonlySet<string> = new Set([
 	"todo",
@@ -102,7 +96,6 @@ function buildTrailingIncompleteRegex(tools: Set<string>): RegExp {
 
 let trailingIncompleteInlineMarkerRe = buildTrailingIncompleteRegex(KNOWN_INLINE_MARKER_TOOLS);
 
-/** 同步当前已知的内联标记列表（通常随 settings.markers 更新）。 */
 export function syncKnownInlineMarkers(names: Iterable<string>): void {
 	const next = new Set<string>(BUILTIN_INLINE_MARKER_TOOLS);
 	for (const n of names) {
@@ -113,12 +106,6 @@ export function syncKnownInlineMarkers(names: Iterable<string>): void {
 	trailingIncompleteInlineMarkerRe = buildTrailingIncompleteRegex(KNOWN_INLINE_MARKER_TOOLS);
 }
 
-/**
- * 剥离助手回复中的内联状态标记（与服务端 stripMarkers 同构）。
- * 实时 message_delta 增量流直接拼接原始 token，前端渲染前同步剥离可避免：
- * 1) 流式打字期间裸露 [[conv:rename:...]] / [[action:suggest:...]]；
- * 2) 流式结束被服务端快照替换时因文本突变触发二次重排。
- */
 export function stripInlineMarkers(text: string, stripTrailingIncomplete = false): string {
 	if (!text || !text.includes("[[")) return text;
 	let out = text.replace(INLINE_MARKER_TOKEN_RE, (raw, tool: string, _op: string, body: string) => {
@@ -227,8 +214,6 @@ export function parseCollabMessage(text: string): CollabMeta | null {
 	return null;
 }
 
-/** Editor chip kind: raster image (thumb), restored upload (uploadPath),
- *  newly-added raw file (fileData) or workspace-path attachment. */
 type EditAttKind = "image" | "upload" | "file" | "path";
 function editAttKind(att: PromptAttachment): EditAttKind {
 	if (att.imageData || (att as EditPromptAttachment).imageUrl) return "image";
@@ -237,7 +222,6 @@ function editAttKind(att: PromptAttachment): EditAttKind {
 	return "path";
 }
 
-/** Tooltip label for an editor chip (reuses the chat-input attachment i18n). */
 function editAttLabel(att: PromptAttachment, t: Translate): string {
 	if (att.mode === "quote" && att.quote) return att.quote.text;
 	if (att.imageData || (att as EditPromptAttachment).imageUrl) return t("attachImage", { name: att.name ?? "image" });
@@ -256,12 +240,6 @@ function editAttLabel(att: PromptAttachment, t: Translate): string {
 	return t("attachContent", { path: base });
 }
 
-/**
- * 工具条图标：宿主的 icon 是**词表名**（`"edit"` / `"copy"`，见 ui-slots.ts 末尾那份词表），
- * 直接当文本画出来就是一个英文单词；插件条目的 icon 按协议本来就是 emoji / 单个符号。
- * 判定口径与 context-menu-state.ts 的 `contextMenuGlyph` 保持一致（那边画 unicode 字形，
- * 这边画 react-icons —— 本组件已经引了这几个图标，不为图标新增依赖）。
- */
 const SLOT_ICONS: Record<string, ReactNode> = {
 	edit: <FiEdit3 />,
 	copy: <FiCopy />,
@@ -275,18 +253,15 @@ const SLOT_ICONS: Record<string, ReactNode> = {
 	x: <FiX />,
 };
 
-/** 条目图标：词表命中 → react-icons；emoji/符号短串 → 原样文本；其余（含空）→ 通用图标。 */
 export function slotIcon(icon?: string): ReactNode {
 	const s = (icon ?? "").trim();
 	if (!s) return <FiZap />;
 	const known = SLOT_ICONS[s.toLowerCase()];
 	if (known) return known;
-	// 不含字母数字（纯 emoji / 符号）且长度 ≤ 4（emoji 带修饰符可能占 2 个 code unit）。
 	if (!/[\p{L}\p{N}]/u.test(s) && s.length <= 4) return <span className="msg-action-glyph">{s}</span>;
 	return <FiZap />;
 }
 
-/** 压成一行 + 截断（右键菜单的 target.label 用：菜单与读屏只该看到一小段纯文本）。 */
 function truncateText(text: string, max: number): string {
 	const flat = text.replace(/\s+/g, " ").trim();
 	return flat.length > max ? `${flat.slice(0, max)}…` : flat;
@@ -294,74 +269,35 @@ function truncateText(text: string, max: number): string {
 
 interface MessageProps {
 	message: UiMessage;
-	/** toolResult messages by toolCallId (precomputed in MessageList, memoized). */
 	toolResults: ReadonlyMap<string, UiMessage>;
 	liveOutputs: ReadonlyMap<string, { toolName: string; text: string }>;
-	/** tool_status entries (tool_execution_end) by toolCallId. */
 	toolStatuses: ReadonlyMap<string, ToolStatus>;
 	streaming: boolean;
-	/** True when this is the last rendered message (stream cursor + live blocks). */
 	isLast: boolean;
-	/** Edit-and-re-ask handler (user messages only). Stable identity — Message is memoized.
-	 *  Attachments are the images kept from the original message plus any newly
-	 *  pasted/dropped ones; they re-fill the visual context the fork drops. */
 	onEdit?: (messageId: string, text: string, attachments?: PromptAttachment[]) => void;
-	/** Original attachments attached to this question (precomputed in MessageList
-	 *  from the attachment-card run that follows it): pasted/uploaded images
-	 *  (imageData), uploaded files (uploadPath) and workspace-path attachments
-	 *  (path+mode) — restored in the editor because fork(entry.parent) drops
-	 *  the persisted attachment asides. */
 	questionAttachments?: PromptAttachment[];
 	messageLabel?: string;
-	/** Opens the nearest preceding user question, resolved against the full transcript. */
 	onRollbackEdit?: (messageId: string) => void;
 	canRollbackEdit?: boolean;
 	editRequest?: object;
-	/** Kill the running bash command from its tool card (agent run continues). */
 	onKillBash?: () => void;
-	/** Manually retry the last failed model call (red error on the LAST message
-	 *  while idle). Wired to the server `retry_last` message. */
 	onRetry?: () => void;
-	/** When set, shows a collapse button (message was expanded from the collapsed view). */
 	onCollapse?: (messageId: string) => void;
 
-	/** Question-nav tag (user questions only): ordinal, active highlight, jump. */
 	qnIndex?: number;
 	qnActive?: boolean;
 	onJump?: (messageId: string) => void;
-	/** 思考文本是否换行（设置面板开关；false = 不换行横向滚动）。 */
 	thinkingWrap?: boolean;
-	/** 工具调用是否默认展开（设置面板开关；false = 默认折叠）。 */
 	toolsWrap?: boolean;
-	/** 工具结果图片直接显示（设置面板开关；false = 不渲染缩略图）。 */
 	toolImages?: boolean;
-	/** 会话内搜索打开：强制展开思考/工具卡/附件卡/技能卡——折叠内容不在
-	 *  DOM，折叠层搜索索引搜到的词会“展开后看不到”。不改变用户折叠状态。 */
 	searchActive?: boolean;
-	/** 新插入的压缩摘要卡：首次渲染即自动展开一次，之后用户可手动收起
-	 *  （收起后不再自动打开）。 */
 	autoExpand?: boolean;
 
-	/** `message.actions` 槽位的最终条目（宿主用 buildUiSlots 算好）。
-	 *  **数组顺序 = 渲染顺序**（排序是宿主的活）。
-	 *  缺省（undefined）= 宿主还没接线 → 回落到内置的硬编码「编辑重问」，行为与旧版一致；
-	 *  传了（哪怕空数组）= 完全数据驱动（见 Message 里的 renderMessageActions）。
-	 *  提示：请把 `uiSlots["message.actions"]` 原样透传 —— Message 是 memo 的，中间
-	 *  `?? []` 新建数组会让整条消息每次渲染都白重建。 */
 	uiMessageActions?: UiSlotEntry[];
-	/** `contextmenu.message` 槽位的最终条目：右键消息时用它们弹宿主唯一的右键菜单。
-	 *  （ContextMenu 实例由 App 渲染，这里只负责 openContextMenu。） */
 	uiContextMessage?: UiSlotEntry[];
-	/** `contextmenu.toolcall` 槽位的最终条目：右键**工具卡的卡头**（工具名那一行）时用它们
-	 *  弹菜单（今天只有宿主内置的「显示工具详细信息」，插件也可贡献）。
-	 *  与 uiContextMessage 同一口径：数组顺序 = 渲染顺序，hidden 跳过。 */
 	uiContextToolCall?: UiSlotEntry[];
-	/** 工具卡底部操作条目（tool.card.footer 槽位）。 */
 	uiToolCardFooter?: UiSlotEntry[];
-	/** 点一个插件条目的回调（宿主按 kind 分发 view/action）。内置条目（host:msg-*）由本
-	 *  组件自己处理，不会走这里 —— 避免「宿主与组件都处理一遍」的双分发。 */
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
-	/** 只读模式（被折叠历史流渲染时使用）：隐藏编辑重问、回滚等操作。 */
 	readOnly?: boolean;
 }
 
@@ -398,14 +334,8 @@ export const Message = memo(function Message({
 	readOnly = false,
 }: MessageProps) {
 	const t = useT();
-	// Inline edit-and-re-ask editor (user messages only).
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState("");
-	// Attachments kept for the edited message: pre-filled from the original
-	// message's attachment cards (fork drops persisted asides — they live on
-	// the old branch past the fork point), extended by paste/drop. Mix of
-	// imageData (pasted images), uploadPath (restored uploads), fileData
-	// (newly added files) and path+mode (workspace attachments).
 	const [editAttachments, setEditAttachments] = useState<PromptAttachment[]>([]);
 	const [editDragOver, setEditDragOver] = useState(false);
 	const chatUploadMaxMb = useAppField("chatUploadMaxMb");
@@ -413,11 +343,8 @@ export const Message = memo(function Message({
 	const editReadId = useRef(0);
 	const [editReads, setEditReads] = useState<{ id: number; name: string; percent: number | null }[]>([]);
 	const finishEditRead = (id: number) => setEditReads((prev) => prev.filter((read) => read.id !== id));
-	// Transient inline notice for the editor (oversized/unreadable dropped
-	// files) — Message has no toast access, so it renders under the chips.
 	const [editNotice, setEditNotice] = useState<string | null>(null);
 	const editNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// 卸载时清掉未触发的复位定时器，避免组件销毁后还回调 setState。
 	useEffect(
 		() => () => {
 			if (editNoticeTimer.current) clearTimeout(editNoticeTimer.current);
@@ -429,20 +356,11 @@ export const Message = memo(function Message({
 		if (editNoticeTimer.current) clearTimeout(editNoticeTimer.current);
 		editNoticeTimer.current = setTimeout(() => setEditNotice((cur) => (cur === msg ? null : cur)), 4000);
 	};
-	// toolResult content is rendered inside its toolCall card — never standalone
-	// (otherwise the same output shows twice: formatted card + plain text).
 	if (message.role === "toolResult") return null;
-	// system 消息(prompt sections 内部差量)不同步到浏览器——服务端已过滤，
-	// 这里是兑底：旧快照/缓存里残留的也不画空泡。
 	if (message.role === "system") return null;
-	// Compaction summaries get a distinct collapsible card (the CLI's
-	// CompactionSummaryMessageComponent counterpart): a long summary dumped as
-	// a plain bubble buries what the compaction actually produced.
 	if (message.role === "compactionSummary") {
 		return <CompactionCard message={message} forceOpen={searchActive} autoExpand={autoExpand} />;
 	}
-	// Attached files are rendered as their own collapsible card, separate from
-	// the user message text.
 	const isFileAttachment = message.role === "custom" && message.customType === "file";
 	const fileQuote =
 		isFileAttachment && (message.details as { mode?: string })?.mode === "quote"
@@ -470,22 +388,14 @@ export const Message = memo(function Message({
 		message.role === "user" && Array.isArray(queuedAtts)
 			? queuedAtts.filter((a) => a.type !== "image" || !message.content.some((b) => b.type === "image"))
 			: [];
-	// Question text for the per-question tag's tooltip.
 	const userText = message.content
 		.map((b) => asText(b)?.text ?? "")
 		.filter(Boolean)
 		.join("\n");
-	// 右键菜单 target.label 用的单行纯文本（../copy-text 的去标记版本；
-	// truncateText 会把换行压成空格，菜单定位信息不该带换行/标记）。
-	// A user message whose text is a `<skill …>` block (the SDK's /skill:name
-	// expansion) renders as a compact collapsible skill card instead of dumping
-	// the whole SKILL.md into the user bubble — same as the pi CLI.
 	const skillBlock = message.role === "user" ? parseSkillBlock(userText) : null;
 	const questionText = skillBlock
 		? (skillBlock.userMessage ?? `skill:${skillBlock.name}`)
 		: userText.split("\n").join(" ").trim();
-	// Streaming bubble with no content yet (first token not arrived) — show a
-	// visible “thinking…” placeholder instead of an invisible empty bubble.
 	const isEmptyStreaming = streaming && isLast && message.role === "assistant" && message.content.length === 0;
 
 	const canEdit = !readOnly && message.role === "user" && !streaming && !isEmptyStreaming && !!onEdit;
@@ -494,8 +404,6 @@ export const Message = memo(function Message({
 	const deleteMessage = () => {
 		if (canDelete) appSend({ type: "delete_message", messageId: message.id });
 	};
-	/** Paste/drop handler inside the edit composer — same downscale pipeline
-	 *  as the main input bar so payloads stay under the server's cap. */
 	const addEditImageFiles = async (files: File[]) => {
 		const added: PromptAttachment[] = [];
 		for (const f of files) {
@@ -526,8 +434,6 @@ export const Message = memo(function Message({
 		}
 		if (added.length > 0) setEditAttachments((prev) => [...prev, ...added]);
 	};
-	/** Add a raw uploaded file (non-image, dropped in the editor) — read into
-	 *  base64 fileData, sharing the main input bar’s configured cap. */
 	const addEditFile = async (f: File) => {
 		if (f.size > chatUploadMaxMb * 1024 * 1024) {
 			pushEditNotice(t("fileTooLarge", { name: f.name, size: chatUploadMaxMb }));
@@ -569,8 +475,6 @@ export const Message = memo(function Message({
 			},
 		]);
 	};
-	/** Add any dropped file: raster images through the resize pipeline, all
-	 *  other files (incl. SVG) as raw uploads. */
 	const addEditDropFiles = async (files: File[]) => {
 		const imgs: File[] = [];
 		for (const f of files) {
@@ -594,7 +498,7 @@ export const Message = memo(function Message({
 			const restored = await Promise.all(
 				attachments.map(async ({ imageUrl, ...att }) => {
 					if (!imageUrl) return att;
-					const response = await fetch(appUrl(imageUrl));
+					const response = await fetch(appResourceUrl(imageUrl));
 					if (!response.ok) throw new Error(`Image load failed: ${response.status}`);
 					const blob = await response.blob();
 					const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -656,26 +560,15 @@ export const Message = memo(function Message({
 		void resend(text, editAttachments);
 	};
 
-	// ---- 宿主 UI 扩展点（issue #146）：message.actions 工具条 + contextmenu.message ----
-
-	/** `host:msg-copy` 的落点**不在** hover 工具条里，而是每个文本块上的复制键
-	 *  （`.msg-text-copy`：单行行内、多行右上浮层，复制的粒度是「块」而不是「整条消息」）。
-	 *  所以这里只取它的可见性：宿主（buildUiSlots）把它的 hidden 算好，本组件据此决定
-	 *  文本块上的复制键画不画 —— 这样「布局页里隐藏复制消息」才真的有效。
-	 *  宿主没传 entries（undefined）时保持旧行为：显示。 */
 	const copyAllowed = uiMessageActions
 		? uiMessageActions.some((e) => e?.id === "host:msg-copy" && e.hidden !== true)
 		: true;
 
-	// ---- 整条消息一键复制（issue #228）：纯文本 / Markdown / 长图 ----
 	const cardRef = useRef<HTMLDivElement>(null);
-	/** 最近一次整条复制的回显（成功 ✓ / 失败 title 报错），1.6s 后自动复位。 */
 	const [copyState, setCopyState] = useState<{ id: string; ok: boolean } | null>(null);
 	const exportImage = useExportImage();
 	const copyTimer = useRef(0);
 	const wholeMarkdown = messageMarkdown(message.content);
-	/** 只有人/助手消息的文本才值得整条复制（工具卡片、附件卡各有自己的复制键）。
-	 *  保持流式期间也有操作栏占位，杜绝流结束时突兀插入一整行高度导致内容上下跳动。 */
 	const canCopyWhole = (message.role === "assistant" || message.role === "user") && wholeMarkdown.length > 0;
 	const doWholeCopy = async (id: string) => {
 		try {
@@ -696,13 +589,8 @@ export const Message = memo(function Message({
 		}
 	};
 
-	/** 右键目标的可读名：消息纯文本截到 40 字；纯工具调用的助手消息没有文本，
-	 *  回落角色名 —— 菜单的定位信息（读屏 aria-label、宿主排障）不该是空的。 */
 	const ctxLabel = truncateText(messagePlainText(message.content), 40) || roleLabel(message.role, t);
 
-	// ---- 本地 TTS：消息工具条「朗读」按钮（host:msg-speak，复制三件套旁边） ----
-	// speaking 状态是浏览器级单例（tts.ts），这里只订阅；sourceId = 消息 id，
-	// 让「停止」只落在正在读的这一条上 —— 读着 A 时点 B 是改读 B，不是停止。
 	const [_ttsSpeaking, setTtsSpeaking] = useState(isSpeaking());
 	useEffect(() => onSpeakingChange(setTtsSpeaking), []);
 	const canSpeak =
@@ -716,14 +604,12 @@ export const Message = memo(function Message({
 			stopSpeaking();
 			return;
 		}
-		// 手动朗读是明确意图，不受设置里 enabled 门控；放宽至 5000 字符，避免在代码块前被 600 字硬截断。
 		speak(
 			stripMarkdownForSpeech(messagePlainText(message.content), 5000),
 			{ ...loadTtsSettings(), enabled: true },
 			message.id,
 		);
 	};
-	// 下拉复制菜单展开状态（点击外部或 Esc 关闭）
 	const [copyDropdownOpen, setCopyDropdownOpen] = useState(false);
 	const copyGroupRef = useRef<HTMLDivElement>(null);
 
@@ -748,8 +634,6 @@ export const Message = memo(function Message({
 			</MessageActionButton>
 		) : null;
 
-	/** 右键菜单兜底条目：直接取 BUILTIN_UI_ITEMS 的 contextmenu.message 内置清单
-	 *  （单源，勿在此手抄）——slot 数据未接线时也能弹出与正常路径一致的菜单。 */
 	const msgCtxFallback = (): UiSlotEntry[] =>
 		BUILTIN_UI_ITEMS.filter((b) => b.slot === "contextmenu.message").map((b) => ({
 			id: b.id,
@@ -767,11 +651,6 @@ export const Message = memo(function Message({
 			arrangedBy: [],
 		}));
 
-	/**
-	 * 右键消息 → 宿主的通用右键菜单（ContextMenu 实例由 App 渲染，这里负责准备 entries + onHostAction）。
-	 * 点在链接 / 输入框 或有文本选中时交回系统原生菜单（pre / code 不让路：整条复制与
-	 * 重问对代码块同样有用）；其余弹出消息操作菜单。
-	 */
 	const onMsgContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
 		const el = e.target;
 		if (el instanceof Element && el.closest("a, input, textarea, [contenteditable='true']")) return;
@@ -867,10 +746,6 @@ export const Message = memo(function Message({
 		});
 	};
 
-	/**
-	 * 聚合复制按钮（下拉格式：Markdown / 纯文本 / 长图 PNG）。
-	 * 点击主按钮直接复制最常用的 Markdown；点击小箭头展开下拉菜单选择其他格式。
-	 */
 	const renderCopyDropdown = (key: string, availableEntries?: UiSlotEntry[]): ReactNode => {
 		if (!canCopyWhole) return null;
 		const defs = [
@@ -981,7 +856,6 @@ export const Message = memo(function Message({
 			if (entry.id === "host:msg-copy") return;
 			const key = `${entry.id}#${i}`;
 			const label = entry.label || entry.id;
-			// 一键复制三件套：聚合为单个下拉按钮（首次遇到时渲染，其余跳过）。
 			if (
 				entry.id === "host:msg-copy-text" ||
 				entry.id === "host:msg-copy-markdown" ||
@@ -1138,15 +1012,9 @@ export const Message = memo(function Message({
 		return <div className={`msg-actions${copyDropdownOpen ? " has-open-dropdown" : ""}`}>{children}</div>;
 	};
 
-	// Goal-review verdict cards (server customType "goal-review") and wizard
-	// progress cards ("goal-wizard") get a distinct frame so they read as goal
-	// feedback rather than a plain plugin message.
 	const isGoalReview =
 		message.role === "custom" && (message.customType === "goal-review" || message.customType === "goal-wizard");
 	const isGoalWizard = message.role === "custom" && message.customType === "goal-wizard";
-	// 插件认领的自定义消息类型（messageWidget 泛化）：file / goal-review /
-	// goal-wizard 走上面的专属卡片，其余 customType 有插件认领时交 PluginWidgetBlock
-	// 渲染（载荷 JSON.stringify({customType, details})），原文做回退 children。
 	const isCustomWidget =
 		message.role === "custom" &&
 		!!message.customType &&
@@ -1162,19 +1030,8 @@ export const Message = memo(function Message({
 	const exportForceThinking = exportSelected && exportImage.includeThinking;
 	const exportForceTools = exportSelected && exportImage.includeTools;
 
-	// 消息级操作按钮（`.msg-actions`）只给「有正文的助手消息」与「用户消息」两种：
-	//   · 卡片头（思考 / 工具 / 附件 / 技能 / 压缩摘要）**一律只留自己的复制键**
-	//     （chead-copy：复制思考 / 复制参数）—— 不再挂整排消息级按钮，于是同一条
-	//     回复里两张 bash 卡长得一模一样，窄屏上右端按钮数也永远一致。
-	//   · 没有正文的消息（纯工具调用 / 纯思考 / 附件卡 / 插件消息）不渲染底部行：
-	//     `canCopyWhole`（整条复制三件套要正文）与 `canSpeak` 本来就为假，那一行
-	//     只剩「派生分支 / 回滚」这类对卡片无意义的按钮，而复制已在卡头。
 	const showMessageActions = !editing && (message.role === "user" || canCopyWhole);
 
-	// 按钮行锚点：助手消息把它插在**最后一个正文块之后**，而不是整条消息末尾 ——
-	// 模型常常「先说话、再发工具」，挂在末尾时按钮会被工具卡隔开，看着像属于工具卡
-	// （窄屏实报）。没有正文块 → anchorIndex = -1，退回消息末尾。
-	// 用户消息不锚：`.msg-user .msg-body` 是紫色气泡，插进去会坐到气泡里面。
 	const anchorIndex = useMemo(() => {
 		if (message.role !== "assistant") return -1;
 		for (let i = message.content.length - 1; i >= 0; i--) if (asText(message.content[i])) return i;
@@ -1291,6 +1148,10 @@ export const Message = memo(function Message({
 											/>
 										);
 									const kind = editAttKind(att);
+									const imageUrl = (att as EditPromptAttachment).imageUrl;
+									const imageSrc = imageUrl
+										? appResourceUrl(imageUrl)
+										: `data:${att.mimeType ?? "image/png"};base64,${att.imageData}`;
 									return (
 										<span
 											key={`${att.name ?? att.path ?? "att"}-${i}`}
@@ -1299,20 +1160,12 @@ export const Message = memo(function Message({
 										>
 											{kind === "image" ? (
 												<img
-													src={
-														(att as EditPromptAttachment).imageUrl
-															? appUrl((att as EditPromptAttachment).imageUrl!)
-															: `data:${att.mimeType ?? "image/png"};base64,${att.imageData}`
-													}
+													crossOrigin={appResourceCrossOrigin(imageSrc)}
+													src={imageSrc}
 													alt={att.name}
 													className="msg-editor-img-clickable"
 													title={t("toolImageZoom")}
-													onClick={() => {
-														const src = (att as EditPromptAttachment).imageUrl
-															? appUrl((att as EditPromptAttachment).imageUrl!)
-															: `data:${att.mimeType ?? "image/png"};base64,${att.imageData}`;
-														openImageLightbox({ src, alt: att.name });
-													}}
+													onClick={() => openImageLightbox({ src: imageSrc, alt: att.name })}
 												/>
 											) : (
 												<span className="msg-editor-file">
@@ -1376,7 +1229,7 @@ export const Message = memo(function Message({
 										if (f) images.push(f);
 									}
 								}
-								if (images.length === 0) return; // plain text paste
+								if (images.length === 0) return;
 								e.preventDefault();
 								void addEditImageFiles(images);
 							}}
@@ -1413,7 +1266,6 @@ export const Message = memo(function Message({
 				) : (
 					<>
 						{isAbortedTurn(message) ? (
-							// #575：用户停止 / 被抢占的回合是中性的收尾，不是报错——不红、不给「立刻重试」
 							<div className="msg-stopped" role="status">
 								{t("turnStopped")}
 							</div>
@@ -1421,8 +1273,6 @@ export const Message = memo(function Message({
 							message.errorMessage && (
 								<div className="msg-error">
 									<span className="msg-error-text">{message.errorMessage}</span>
-									{/* 最后一轮报错且已停止：给一个手动重试入口
-									（自动重试次数用完，服务端 retry_last 续跑一轮） */}
 									{isLast && !streaming && onRetry && (
 										<button type="button" className="msg-retry-btn" title={t("retryLastTip")} onClick={onRetry}>
 											<FiRefreshCw /> {t("retryNow")}
@@ -1439,18 +1289,18 @@ export const Message = memo(function Message({
 								{messageAttachments.map((att, i) => {
 									let previewImgSrc: string | undefined;
 									if (att.url) {
-										previewImgSrc = att.url.startsWith("/") ? appUrl(att.url) : att.url;
+										previewImgSrc = att.url.startsWith("/") ? appResourceUrl(att.url) : att.url;
 									} else if (att.type === "image" || att.type === "vision-bridge") {
 										const match = questionAttachments?.find(
 											(qa) => qa.name === att.name || qa.imageData || (qa as EditPromptAttachment).imageUrl,
 										) as EditPromptAttachment | undefined;
-										if (match?.imageUrl) previewImgSrc = appUrl(match.imageUrl);
+										if (match?.imageUrl) previewImgSrc = appResourceUrl(match.imageUrl);
 										else if (match?.imageData)
 											previewImgSrc = `data:${match.mimeType ?? "image/png"};base64,${match.imageData}`;
 										else {
 											const imgB = message.content.find((b) => b.type === "image") as { dataUrl?: string } | undefined;
 											if (imgB?.dataUrl)
-												previewImgSrc = imgB.dataUrl.startsWith("/") ? appUrl(imgB.dataUrl) : imgB.dataUrl;
+												previewImgSrc = imgB.dataUrl.startsWith("/") ? appResourceUrl(imgB.dataUrl) : imgB.dataUrl;
 										}
 									}
 									const hasPath = Boolean(
@@ -1571,8 +1421,6 @@ export const Message = memo(function Message({
 								))}
 							</PluginWidgetBlock>
 						) : (
-							// Block positions stay stable when stream-* becomes a persisted ID.
-							// Including message.id here remounts StreamMarkdown after finalization.
 							message.content.map((block, i) => (
 								<Fragment key={i}>
 									<Block
@@ -1618,12 +1466,10 @@ export const Message = memo(function Message({
 	);
 });
 
-/** Collapsible card for an attached file (customType "file"). */
 function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; forceOpen?: boolean }) {
 	const t = useT();
 	const [open, setOpen] = useState(false);
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
-	// 搜索期间 forceOpen 只是“视口展开”：内容进 DOM 让搜索高亮/定位可用
 	const shown = open || forceOpen;
 	const details = (message.details ?? {}) as {
 		name?: string;
@@ -1642,8 +1488,6 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 	const isBridged = details.mode === "bridged";
 	const isPage = details.mode === "page";
 	const isConversation = details.mode === "conversation";
-	// href 协议白名单（审查 #3）：网页附件的链接只放行 http/https，
-	// javascript:/data:/vbscript: 等危险 scheme 一律回落纯文本渲染。
 	const safePageHref = details.path && /^https?:\/\//i.test(details.path.trim()) ? details.path.trim() : null;
 
 	const text = message.content
@@ -1741,7 +1585,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 				(() => {
 					const imgSrc = image?.dataUrl
 						? image.dataUrl.startsWith("/")
-							? appUrl(image.dataUrl)
+							? appResourceUrl(image.dataUrl)
 							: image.dataUrl
 						: undefined;
 					return isBridged ? (
@@ -1750,6 +1594,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 							{imgSrc && (
 								<div className="attachcard-image">
 									<img
+										crossOrigin={appResourceCrossOrigin(imgSrc)}
 										src={imgSrc}
 										loading="lazy"
 										decoding="async"
@@ -1765,6 +1610,7 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 					) : imgSrc ? (
 						<div className="attachcard-image">
 							<img
+								crossOrigin={appResourceCrossOrigin(imgSrc)}
 								src={imgSrc}
 								loading="lazy"
 								decoding="async"
@@ -1796,8 +1642,6 @@ function AttachmentCard({ message, forceOpen = false }: { message: UiMessage; fo
 	);
 }
 
-/** Strip the <file path="..."> ``` ... ``` </file> or <vision-bridge> ...
- * </vision-bridge> wrapper for display. */
 function stripFileWrapper(text: string): string {
 	const m = text.match(/^\s*<file path="[^"]*"(?:\s+lines="[^"]*")?>\s*```\s*\n?([\s\S]*?)\n?```\s*<\/file>\s*$/);
 	if (m) return m[1].trim();
@@ -1805,12 +1649,6 @@ function stripFileWrapper(text: string): string {
 	return vb ? vb[1].trim() : text.trim();
 }
 
-/**
- * Collapsible card for a compaction summary — the web counterpart of the
- * CLI's CompactionSummaryMessageComponent. Collapsed shows "compacted from
- * N tokens" + expand affordance; expanded shows the full summary markdown
- * plus a hint that only recent messages stay in context.
- */
 function CompactionCard({
 	message,
 	forceOpen = false,
@@ -1823,8 +1661,6 @@ function CompactionCard({
 	const t = useT();
 	const [expanded, setExpanded] = useState(false);
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
-	// 新摘要到达自动展开一次：render 期间同步（仅上升沿开一次是受支持的
-	// React 模式），之后用户手动收起不再打扰。
 	const [prevAuto, setPrevAuto] = useState(autoExpand);
 	if (autoExpand !== prevAuto) {
 		setPrevAuto(autoExpand);
@@ -1979,12 +1815,6 @@ function CompactedHistoryStream({ messages }: { messages: UiMessage[] }) {
 	);
 }
 
-/**
- * Compact collapsible card for a skill invocation (the SDK's /skill:name
- * expansion) — the web counterpart of the CLI's SkillInvocationMessageComponent.
- * Collapsed shows a book icon + skill name + file path, expanded shows the
- * full SKILL.md content. The user's own question (args) renders separately.
- */
 function SkillCard({ block, forceOpen = false }: { block: SkillBlock; forceOpen?: boolean }) {
 	const t = useT();
 	const [expanded, setExpanded] = useState(false);
@@ -2057,30 +1887,18 @@ function Block({
 	toolStatuses: ReadonlyMap<string, ToolStatus>;
 	streaming: boolean;
 	isLast: boolean;
-	/** 当前块是否为消息内容数组中的最后一个块（非尾部块必定已生成完毕）。 */
 	isTrailingBlock?: boolean;
 	onKillBash?: () => void;
-	/** 思考文本是否换行（false = 不换行横向滚动）。 */
 	thinkingWrap?: boolean;
-	/** 工具调用是否默认展开（false = 默认折叠）。 */
 	toolsWrap?: boolean;
-	/** 工具结果图片直接显示（false = 不渲染缩略图）。 */
 	toolImages?: boolean;
-	/** 会话内搜索打开：强制展开思考/工具卡。 */
 	searchActive?: boolean;
-	/** 导出图勾了「包含思考」且本条被选中。 */
 	forceThinking?: boolean;
-	/** 导出图勾了「包含工具」且本条被选中。 */
 	forceTools?: boolean;
-	/** 消息角色 — assistant/user 的纯文本块显示复制按钮。 */
 	role?: UiMessage["role"];
-	/** 是否画文本块上的复制键（false = 宿主在布局里隐藏了 `host:msg-copy`）。 */
 	showCopy?: boolean;
-	/** `contextmenu.toolcall` 槽位的条目（工具卡右键菜单），原样透传给 ToolCallBlock。 */
 	uiContextToolCall?: UiSlotEntry[];
-	/** `tool.card.footer` 槽位的条目（工具卡底部内嵌操作栏）。 */
 	uiToolCardFooter?: UiSlotEntry[];
-	/** 插件条目动作分发（透传给 ToolCallBlock；内置的 host:tool-info 由它自己分派）。 */
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 }) {
 	const t = useT();
@@ -2090,9 +1908,6 @@ function Block({
 	const live = !!(rawText && streaming && isLast && isTrailing);
 	const liveRef = useRef(live);
 	liveRef.current = live;
-	// 标记此文本块是否在当前组件生命周期内曾作为实时流式生成过。
-	// 若曾参与流式，在流结束后保持当前已渲染的 StreamMarkdown DOM，
-	// 避免在打完字瞬间整树卸载替换为 Markdown 造成重排闪烁与高度跳动。
 	const wasLiveRef = useRef(live);
 	if (live) wasLiveRef.current = true;
 	const isHidden = () => typeof document !== "undefined" && document.hidden;
@@ -2116,9 +1931,6 @@ function Block({
 		const cleanedText = role === "user" ? rawText.text : stripInlineMarkers(rawText.text, live);
 		if (!cleanedText.trim()) return null;
 		const text = cleanedText === rawText.text ? rawText : { ...rawText, text: cleanedText };
-		// 单行消息：复制键不再用绝对定位压住文字，改成行内 flex 右键——与各 head
-		// 同样的 6px 间距、垂直居中、28px 尺寸。多行仍用右上浮层。
-		// showCopy=false：宿主在布局里隐藏了 host:msg-copy（那个条目的落点就是这里）。
 		const collab = role === "user" ? parseCollabMessage(rawText.text) : null;
 		const copyable = (role === "assistant" || role === "user") && showCopy !== false;
 		const oneLiner = copyable && !text.text.includes("\n") && !text.truncated;
@@ -2153,18 +1965,12 @@ function Block({
 					)}
 				</div>
 			) : role === "user" ? (
-				// 用户自己的气泡：保留输入/粘贴时的单个换行（CommonMark 软换行会把
-				// 多行纯文本折叠成连续文字）。助手消息仍走标准 markdown 段落语义。
 				<Markdown text={text.text} hardBreaks />
 			) : live || draining || wasLiveRef.current ? (
 				<StreamMarkdown text={text.text} finishing={!live && draining} onSettled={handleStreamSettled} />
 			) : (
 				<Markdown text={text.text} />
 			);
-		/** 复制键：多行时排在正文**前面**（触屏下它是 float:right，浮动元素必须
-		 *  是块级兄弟的前一个节点，正文的行盒才会绕开它 —— 见 styles.css 的
-		 *  `@media (hover: none)`）。桌面端它是绝对定位，DOM 顺序无视觉影响。
-		 *  单行时保持在正文后面（`.msg-text.single` 走流内 flex 的既有排法）。 */
 		const copyBtn = copyable ? (
 			<button
 				key="msg-text-copy"
@@ -2236,10 +2042,11 @@ function Block({
 
 	const image = asImage(block);
 	if (image && image.dataUrl) {
-		const src = image.dataUrl.startsWith("/") ? appUrl(image.dataUrl) : image.dataUrl;
+		const src = image.dataUrl.startsWith("/") ? appResourceUrl(image.dataUrl) : image.dataUrl;
 		return (
 			<div className="msg-image">
 				<img
+					crossOrigin={appResourceCrossOrigin(src)}
 					src={src}
 					loading="lazy"
 					decoding="async"

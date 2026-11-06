@@ -1,7 +1,3 @@
-/**
- * issue #226 单测：插件无头调用的工作目录校验（checkPluginCwd 纯函数）
- * + wechat-ilink 新增设置的 manifest 键位（防改名/误删导致设置面板对不上）。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

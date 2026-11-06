@@ -1,20 +1,3 @@
-// subagent-thinking — 子代理思考强度按模板生效（零 token，mock provider 回归）。
-//
-// 背景（issue #130）：模板原来只能固定模型、提示词与白名单，思考强度无法按角色分档 ——
-// 子代理一律吃 SDK 默认档，主对话正在用的强度也不影响它。现在 SubagentTemplate
-// 多了 thinkingLevel：模板指定 = 该角色固定档位；留空 = 跟随主对话当前强度
-// （与「空模型 = 跟随主对话模型」同语义）。
-//
-// 做法：mock provider（openai-completions，模型声明 reasoning: true）在主对话第一回合
-// 返回 3 个 subagent_spawn（分别用 high / 空 / max 三个模板）；探针扩展在
-// before_provider_request 里把 ctx.getThinkingLevel() 连同请求体里的角色标记写进日志。
-// 断言：
-//   1. 模板指定 high 的子代理 → high；
-//   2. 模板留空的子代理 → 主对话当前强度（测试里先把主对话设成 low），不是 SDK 默认；
-//   3. 模板指定 max 但模型只支持到 high → 收敛成 high（SDK clamp，不报错）；
-//   4. 主对话自己的强度没被这次派发改掉（仍 low）。
-//
-// 用法: npm run build:server && node tests/subagent-thinking-test.mjs
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,8 +23,6 @@ for (const dir of [projDir, dataDir, agentDir, extDir]) mkdirSync(dir, { recursi
 const MODEL_ID = "mock-reasoner";
 const CLIENT_ID = "subagent-thinking-client";
 
-/** 三个模板：固定 high / 留空（跟随主对话）/ 固定 max（模型只能到 high → 收敛）。
- *  名字同时用作探测标记：提示词里的 SPAWN_<NAME> 与系统提示词里的 ROLE_<NAME>。 */
 const TEMPLATE_NAMES = ["thinker", "inheritor", "clamped"];
 const TEMPLATES = [
 	{
@@ -80,11 +61,6 @@ const TEMPLATES = [
 ];
 writeFileSync(join(dataDir, "subagent-templates.json"), JSON.stringify(TEMPLATES, null, 2) + "\n");
 
-// ---------------------------------------------------------------------------
-// 探针扩展：每次发往 provider 的请求都记一条「角色 + 当前思考强度」。
-// 角色判定：请求体里同时出现工具结果（role=tool）= 主对话的收尾回合；
-// 否则看用户消息里的派单标记（子代理的提示词）；都不是 = 主对话首回合。
-// ---------------------------------------------------------------------------
 writeFileSync(
 	join(extDir, "thinking-probe.ts"),
 	`
@@ -117,9 +93,6 @@ export default function (pi: any) {
 `,
 );
 
-// ---------------------------------------------------------------------------
-// mock provider：主对话首回合回 3 个 subagent_spawn 工具调用；子代理那一回合回文本。
-// ---------------------------------------------------------------------------
 const sse = (res, chunks) => {
 	res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 	for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -164,8 +137,6 @@ const mock = createServer(async (req, res) => {
 	const userText = JSON.stringify(messages.filter((m) => m.role === "user"));
 	const hasToolResult = messages.some((m) => m.role === "tool");
 
-	// 子代理回合：模板提示词（ROLE_X）或派单标记（SPAWN_X）在场 → 回文本，绝不再派单
-	//（少一层防递归：标记匹配不上也不会变成无限派单）。
 	for (const name of TEMPLATE_NAMES) {
 		const mark = name.toUpperCase();
 		if (sysText.includes(`ROLE_${mark}`) || userText.includes(`SPAWN_${mark}`)) {
@@ -173,7 +144,6 @@ const mock = createServer(async (req, res) => {
 			return;
 		}
 	}
-	// 主对话首回合（还没有工具结果）→ 派 3 个子代理（每个模板一个）。
 	if (!hasToolResult) {
 		sse(res, [
 			delta(payload.model, {
@@ -183,7 +153,6 @@ const mock = createServer(async (req, res) => {
 		]);
 		return;
 	}
-	// 主对话收尾回合（3 个子代理都已启动）→ 直接结束。
 	sse(res, [delta(payload.model, { content: "MAIN_DONE" }), delta(payload.model, {}, "stop")]);
 });
 await new Promise((resolve) => mock.listen(MOCK_PORT, "127.0.0.1", resolve));
@@ -197,8 +166,6 @@ writeFileSync(
 				api: "openai-completions",
 				baseUrl: `http://127.0.0.1:${MOCK_PORT}`,
 				apiKey: "mock-key",
-				// reasoning: true = 支持 off…high；xhigh/max 需要 thinkingLevelMap 才可用，
-				// 所以 thinkingLevel: "max" 的模板会被 SDK 收敛到 high（断言 3）。
 				models: [
 					{
 						id: MODEL_ID,
@@ -214,16 +181,12 @@ writeFileSync(
 	}),
 );
 
-// ---------------------------------------------------------------------------
-// server
-// ---------------------------------------------------------------------------
 const repoRoot = realpathSync(new URL("../", import.meta.url));
 const server = spawn(process.execPath, ["dist/server/index.js"], {
 	cwd: repoRoot,
 	env: {
 		...process.env,
 		PI_WEB_PORT: String(PORT),
-		// 本测试只验其它功能；工具延迟加载默认开会让非核心工具不活跃，这里按部署默认关掉它。
 		PI_WEB_TOOL_LAZY_LOADING: "0",
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: projDir,
@@ -246,9 +209,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -317,22 +278,19 @@ try {
 	client.send({ type: "set_model", modelId: `mock/${MODEL_ID}` });
 	await client.waitForState((s) => s.model?.id === MODEL_ID);
 
-	// 主对话强度设成 low：留空模板的子代理应当继承它（而不是 SDK 默认档）。
 	client.send({ type: "set_thinking", level: "low" });
 	await client.waitForState((s) => s.thinkingLevel === "low");
 
 	client.send({ type: "prompt", text: "SPAWN_NOW" });
-	// 主对话收尾回合（3 个子代理都已启动并拿到工具结果）才产出 MAIN_DONE。
 	const finished = await client
 		.waitForState((s) => JSON.stringify(s.messages ?? []).includes("MAIN_DONE"))
 		.catch(() => null);
 	check("主对话收尾回合完成（3 个子代理都已启动）", !!finished);
 
-	await sleep(1500); // 等探针日志落盘
+	await sleep(1500);
 
 	const lines = (existsSync(LOG) ? readFileSync(LOG, "utf8") : "").split("\n").filter(Boolean);
 	console.log("  probe log:\n" + (lines.length ? lines.map((l) => "    " + l).join("\n") : "    (空)"));
-	// 防递归（本测试的夹具自身约束）：恰好 1 个主对话首回合 + 3 个子代理回合 + 1 个收尾回合。
 	const reqLines = lines.filter((l) => l.startsWith("REQ "));
 	check("派发没有意外递归（5 条请求）", reqLines.length === 5, `实际 ${reqLines.length} 条`);
 	const thinkingOf = (role) => {
@@ -366,9 +324,7 @@ try {
 } finally {
 	try {
 		ws?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	server.kill();
 	mock.close();
 	await sleep(300);

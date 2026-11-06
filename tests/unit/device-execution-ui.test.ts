@@ -103,7 +103,6 @@ describe("DeviceExecutionSettings Component", () => {
 		expect(String(calledUrl)).toContain("/api/device-center/execution-queue");
 		expect(calledInit?.credentials).toBe("same-origin");
 
-		// Verify state display
 		expect(container.textContent).toContain("执行调度与队列可观测");
 		expect(container.textContent).toContain("run-task");
 		expect(container.textContent).toContain("wait-tas");
@@ -128,14 +127,12 @@ describe("DeviceExecutionSettings Component", () => {
 
 		const { container } = await mount({ deviceId: "device-1", onNotice });
 
-		// Change active input using React-compatible setter
 		const activeInput = container.querySelector<HTMLInputElement>("#des-max-active");
 		expect(activeInput).not.toBeNull();
 		await act(async () => {
 			setInputValue(activeInput!, "8");
 		});
 
-		// Submit form
 		const form = container.querySelector<HTMLFormElement>("form");
 		expect(form).not.toBeNull();
 		await act(async () => {
@@ -173,7 +170,6 @@ describe("DeviceExecutionSettings Component", () => {
 
 		const { container } = await mount({ deviceId: "device-1", onNotice });
 
-		// Find cancel button in waiting table
 		const cancelBtn = container.querySelector<HTMLButtonElement>(".des-btn-danger-sm");
 		expect(cancelBtn).not.toBeNull();
 		expect(cancelBtn!.textContent).toBe("取消任务");
@@ -200,7 +196,7 @@ describe("DeviceExecutionSettings Component", () => {
 			const str = String(url);
 			if (str.includes("execution-queue")) {
 				signals.push(init?.signal as AbortSignal);
-				return new Promise<Response>(() => {}); // Never resolves to simulate pending network
+				return new Promise<Response>(() => {});
 			}
 			return response({});
 		});
@@ -223,14 +219,12 @@ describe("DeviceExecutionSettings Component", () => {
 		expect(signals.length).toBe(1);
 		expect(signals[0]!.aborted).toBe(false);
 
-		// Switch to a new deviceId
 		await act(async () => {
 			root.render(
 				createElement(LanguageProvider, null, createElement(DeviceExecutionSettings, { deviceId: "device-new" })),
 			);
 		});
 
-		// The previous in-flight request (signals[0]) MUST be aborted!
 		expect(signals[0]!.aborted).toBe(true);
 		expect(signals.length).toBe(2);
 		expect(signals[1]!.aborted).toBe(false);
@@ -248,14 +242,12 @@ describe("DeviceExecutionSettings Component", () => {
 
 		const { container } = await mount({ deviceId: "device-1" });
 
-		// 5 feature groups
 		expect(container.textContent).toContain("调度并发");
 		expect(container.textContent).toContain("任务派发与协作");
 		expect(container.textContent).toContain("群上下文与历史");
 		expect(container.textContent).toContain("文件同步配额");
 		expect(container.textContent).toContain("资源锁与黑板");
 
-		// All 14 inputs
 		const ids = [
 			"#des-max-active",
 			"#des-max-waiting",
@@ -308,7 +300,6 @@ describe("DeviceExecutionSettings Component", () => {
 		expect(waitingInput.value).toBe("64");
 		expect(mentionsInput.checked).toBe(true);
 
-		// Find and click the Reset Defaults button
 		const resetButtons = Array.from(container.querySelectorAll<HTMLButtonElement>("button"));
 		const resetDefaultsBtn = resetButtons.find((b) => b.textContent?.includes("恢复默认值"));
 		expect(resetDefaultsBtn).toBeDefined();

@@ -1,22 +1,9 @@
-/**
- * claude-code.ts — Anthropic Claude Code CLI 驱动实现。
- *
- * 通过子进程拉起官方 `claude` CLI（--output-format stream-json），
- * 实时将 Claude Code 输出的 NDJSON 事件流映射为 Universal 底座的 AgentEventSink 事件。
- *
- * 特性：
- *   1. 原生支持流式正文输出与 Thinking 思考过程；
- *   2. 自动捕获 Bash / View / Edit / Glob / Grep 等工具调用并折叠展示；
- *   3. 会话自动维护：每次对话通过 --resume <sessionId> 保持上下文连续；
- *   4. 支持用户中断（abort）时向进程发送中断信号；
- *   5. 环境容错：未安装 claude 时输出清晰友好的中英文引导提示。
- */
-
-import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { join } from "node:path";
+import { probeEngineCliVersion, resolveEngineCliLaunch } from "../../engine-cli.js";
 import { BaseAgentDriver, type AgentCapabilities, type AgentEventSink, type AgentTurnMeta } from "../driver-base.js";
 import type { PromptAttachment, SlashCommandInfo } from "../../protocol.js";
 import {
@@ -28,140 +15,19 @@ import { discoverDiskSkills } from "../../skill-discovery.js";
 import { formatUnavailableCanvasReference } from "../universal-attachments.js";
 
 export interface ClaudeCodeDriverOptions {
-	/** 自定义 claude 执行命令路径（默认 "claude"） */
 	executablePath?: string;
-	/** 额外传递给 claude CLI 的参数，如 ["--dangerously-skip-permissions"] */
 	extraArgs?: string[];
-	/** 默认使用的 Claude 模型，如 "claude-3-7-sonnet-20250219" */
 	defaultModel?: string;
-	/** Pi 智能体配置目录，用于读取 models.json、auth.json 与多密钥配置 */
 	agentDir?: string;
 }
 
-/**
- * 探测可执行文件路径：若传入了绝对路径或在系统 PATH 中找到则直接使用；
- * 若未找到（尤其在 macOS launchd/GUI 等精简 PATH 环境），则自动扫描系统及版本管理器的常见安装目录。
- */
-export function resolveClaudeExecutable(cmd = "claude"): string {
-	if (isAbsolute(cmd)) {
-		if (existsSync(cmd)) return cmd;
-		if (process.platform === "win32") {
-			for (const ext of [".cmd", ".exe", ".bat"]) {
-				if (existsSync(cmd + ext)) return cmd + ext;
-			}
-		}
-		return cmd;
-	}
-
-	const isWin = process.platform === "win32";
-	const exts = isWin ? [".cmd", ".exe", ".bat", ""] : [""];
-
-	// 1. 优先从当前 process.env.PATH 寻找
-	const pathDirs = (process.env.PATH || "").split(delimiter).filter(Boolean);
-	for (const dir of pathDirs) {
-		for (const ext of exts) {
-			const target = join(dir, cmd + ext);
-			if (existsSync(target)) return target;
-		}
-	}
-
-	// 2. 针对 macOS/Linux，自动扫描常见全局包管理器与 Homebrew 路径
-	if (!isWin) {
-		const home = homedir();
-		const candidateDirs = [
-			// macOS Homebrew (Apple Silicon & Intel)
-			"/opt/homebrew/bin",
-			"/usr/local/bin",
-			// 用户目录下的标准与包管理器 bin 路径
-			join(home, ".local", "bin"),
-			join(home, "bin"),
-			join(home, ".npm-global", "bin"),
-			join(home, ".config", "yarn", "global", "node_modules", ".bin"),
-			join(home, ".yarn", "bin"),
-			join(home, ".pnpm-global", "bin"),
-			join(home, "Library", "pnpm"),
-			join(home, ".bun", "bin"),
-			join(home, ".local", "share", "fnm", "current", "bin"),
-		];
-
-		// fnm 当前或各 node 版本的 bin 目录与 multishells
-		const fnmVersionsDir = join(home, ".local", "share", "fnm", "node-versions");
-		if (existsSync(fnmVersionsDir)) {
-			try {
-				const vers = readdirSync(fnmVersionsDir);
-				for (const v of vers) {
-					candidateDirs.push(join(fnmVersionsDir, v, "installation", "bin"));
-				}
-			} catch {
-				/* ignore */
-			}
-		}
-		const fnmStateDir = join(home, ".local", "state", "fnm_multishells");
-		if (existsSync(fnmStateDir)) {
-			try {
-				const shells = readdirSync(fnmStateDir);
-				for (const s of shells) {
-					candidateDirs.push(join(fnmStateDir, s, "bin"));
-				}
-			} catch {
-				/* ignore */
-			}
-		}
-
-		// nvm 当前或各 node 版本的 bin 目录
-		const nvmVersionsDir = join(home, ".nvm", "versions", "node");
-		if (existsSync(nvmVersionsDir)) {
-			try {
-				const vers = readdirSync(nvmVersionsDir);
-				for (const v of vers) {
-					candidateDirs.push(join(nvmVersionsDir, v, "bin"));
-				}
-			} catch {
-				/* ignore */
-			}
-		}
-
-		for (const dir of candidateDirs) {
-			const target = join(dir, cmd);
-			if (existsSync(target)) return target;
-		}
-	}
-
-	return cmd;
-}
-
-/**
- * 快速异步探测系统中是否安装了可用的 Claude Code CLI。
- */
-export async function probeClaudeCode(executablePath = "claude"): Promise<{
+export async function probeClaudeCode(executablePath?: string): Promise<{
 	installed: boolean;
 	version?: string;
 	error?: string;
 }> {
-	const resolvedPath = resolveClaudeExecutable(executablePath);
-	return new Promise((resolve) => {
-		try {
-			execFile(
-				resolvedPath,
-				["--version"],
-				{
-					timeout: 4000,
-					shell: process.platform === "win32",
-				},
-				(err, stdout) => {
-					if (err) {
-						resolve({ installed: false, error: err.message });
-					} else {
-						const v = stdout.trim();
-						resolve({ installed: true, version: v || undefined });
-					}
-				},
-			);
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			resolve({ installed: false, error: msg });
-		}
-	});
+	const { available, ...result } = await probeEngineCliVersion("claude", executablePath);
+	return { installed: available, ...result };
 }
 
 export class ClaudeCodeDriver extends BaseAgentDriver {
@@ -176,15 +42,13 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		supportsAskUser: false,
 	};
 
-	private readonly executablePath: string;
+	private readonly executablePath: string | undefined;
 	private readonly extraArgs: string[];
 	private readonly agentDir: string;
 	private currentModel: string;
 	private activeSessionId: string | null = null;
 	private activeProcess: ChildProcess | null = null;
 	private aborted = false;
-	/** 单槽回合代际（#702）：abort/新回合 +1；在途旧进程的迟到事件（close/stdout）一律按过期丢弃，
-	 *  不再清空新回合的 activeProcess、不再向旧 sink 误发输出。 */
 	private turnSeq = 0;
 	private lastErrorHint = "";
 	private turnHadText = false;
@@ -196,8 +60,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 	constructor(cwd: string, opts?: ClaudeCodeDriverOptions) {
 		super(cwd);
-		this.executablePath = resolveClaudeExecutable(opts?.executablePath ?? "claude");
-		// 默认添加 --dangerously-skip-permissions，防止无头模式下因等待交互式 y/n 确认导致整个生成假死
+		this.executablePath = opts?.executablePath;
 		this.extraArgs = opts?.extraArgs ?? ["--dangerously-skip-permissions"];
 		this.currentModel = opts?.defaultModel ?? "claude-3-7-sonnet-20250219";
 		this.agentDir = opts?.agentDir || process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
@@ -233,7 +96,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		this.seenToolStarts.clear();
 		this.seenToolEnds.clear();
 
-		// 格式化用户附件上下文
 		let finalPrompt = prompt;
 		if (attachments && attachments.length > 0) {
 			const notes: string[] = [];
@@ -258,13 +120,8 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 提示词通过 stdin 管道写入，argv 仅保留参数选项：
-		// 1. 规避 Windows 下 shell: true 拼接命令行导致的注入与 DEP0190 警告；
-		// 2. 杜绝 Windows cmd.exe 遇换行 (\n) 截断丢弃后续多行 prompt 的严重缺陷；
-		// 3. 避免单次 prompt 超出 Windows 命令行 8191 字符上限。
 		const args = ["-p", "--output-format", "stream-json", "--verbose", ...this.extraArgs];
 
-		// 解析目标模型与对应服务商凭据
 		let targetModel = this.currentModel;
 		let targetProvider: string | null = null;
 		let isOfficial = false;
@@ -298,14 +155,12 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		let proc: ChildProcess;
 		try {
-			proc = spawn(this.executablePath, args, {
+			const launch = resolveEngineCliLaunch("claude", { executablePath: this.executablePath, cwd: this.cwd });
+			proc = spawn(launch.file, [...launch.args, ...args], {
 				cwd: this.cwd,
 				env: spawnEnv,
-				// Windows 下处理 .cmd 包装脚本；Unix 下 detached 方便向进程组发送 SIGINT
-				shell: process.platform === "win32",
 				detached: process.platform !== "win32",
 			});
-			// 经 stdin 写入 prompt 并关闭管道，CLI 读完后流式处理
 			if (proc.stdin) {
 				proc.stdin.write(finalPrompt);
 				proc.stdin.end();
@@ -333,9 +188,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 				try {
 					const event = JSON.parse(trimmed) as Record<string, unknown>;
 					this.handleClaudeEvent(event, sink, activeToolJson);
-				} catch {
-					// 忽略非 JSON 行日志
-				}
+				} catch {}
 			});
 		}
 
@@ -388,7 +241,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		sink: AgentEventSink,
 		activeToolJson: Map<string, string>,
 	): void {
-		// 0. 支持解包 stream_event 包裹层（Claude Code 启用流式事件或内部代理时的标准结构）
 		if (event.type === "stream_event" && event.event && typeof event.event === "object") {
 			this.handleClaudeEvent(event.event as Record<string, unknown>, sink, activeToolJson);
 			return;
@@ -396,12 +248,10 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		const type = String(event.type ?? "");
 
-		// 1. 会话建立或恢复事件
 		if (type === "system" && typeof event.session_id === "string") {
 			this.activeSessionId = event.session_id;
 		}
 
-		// 1.1 assistant 完整消息（含思考、正文、工具调用、错误或合成响应）
 		if (type === "assistant") {
 			const msg = event.message as Record<string, unknown> | undefined;
 			if (msg && Array.isArray(msg.content)) {
@@ -431,7 +281,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 1.2 user 完整消息（Claude Code 执行工具后将 tool_result 以 user role 反馈）
 		if (type === "user") {
 			const msg = event.message as Record<string, unknown> | undefined;
 			if (msg && Array.isArray(msg.content)) {
@@ -452,7 +301,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 2. 流式 Content Block 增量
 		if (type === "content_block_delta") {
 			const delta = event.delta as Record<string, unknown> | undefined;
 			if (!delta) return;
@@ -468,7 +316,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 3. 工具调用开始 (content_block_start)
 		if (type === "content_block_start") {
 			const block = event.content_block as Record<string, unknown> | undefined;
 			if (block && block.type === "tool_use") {
@@ -482,7 +329,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 4. 工具调用直接触发 (完整块)
 		if (type === "tool_use") {
 			const callId = String(event.id ?? `tool_${Date.now()}`);
 			if (!this.seenToolStarts.has(callId)) {
@@ -493,7 +339,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 5. 工具执行结果
 		if (type === "tool_result") {
 			const toolId = String(event.tool_use_id ?? event.id ?? "");
 			if (toolId && !this.seenToolEnds.has(toolId)) {
@@ -504,7 +349,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 			}
 		}
 
-		// 6. 最终完成统计
 		if (type === "result") {
 			if (event.is_error && event.result) {
 				const resStr = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
@@ -539,15 +383,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		}
 	}
 
-	/**
-	 * 构建子进程环境变量。
-	 * 关键安全防线：原生环境隔离与防封号保障：
-	 * 1. 若为官方内置 Claude 模型（isOfficial）：严禁注入 models.json / auth.json / provider-keys.json
-	 *    中的任何 BaseURL、API Key 或 Auth Token，保证 100% 保持官方原生环境，完全交由 Claude Code
-	 *    自身的官方登录态（claude login OAuth 凭据，~/.claude.json）直接与 api.anthropic.com 通信；
-	 * 2. 仅当用户显式选择第三方自定义 Provider（!isOfficial 且 targetProvider 存在）时，
-	 *    才动态从配置解析中转 BaseURL 与 Key 注入环境变量。
-	 */
 	buildSpawnEnv(isOfficial: boolean, targetProvider: string | null): NodeJS.ProcessEnv {
 		const spawnEnv: NodeJS.ProcessEnv = {
 			...process.env,
@@ -583,7 +418,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 		if (this.activeProcess) {
 			try {
 				if (process.platform === "win32") {
-					// Windows 上 spawn 带有 shell 时通过 taskkill /t /f 终止整棵进程树
 					spawn("taskkill", ["/pid", String(this.activeProcess.pid), "/t", "/f"]);
 				} else {
 					try {
@@ -592,9 +426,7 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 						this.activeProcess.kill("SIGINT");
 					}
 				}
-			} catch {
-				/* best effort */
-			}
+			} catch {}
 			this.activeProcess = null;
 		}
 	}
@@ -609,7 +441,6 @@ export class ClaudeCodeDriver extends BaseAgentDriver {
 
 		if (!this.agentDir) return official;
 
-		// 仅继承 Claude / Anthropic 兼容协议的模型，过滤纯 OpenAI / Google 协议
 		const custom = listCustomModelsFromConfig(this.agentDir, (entry) =>
 			isModelProtocolSupportedByEngine("claude", entry),
 		);

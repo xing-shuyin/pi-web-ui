@@ -1,15 +1,3 @@
-/**
- * 渲染管线：把「一份参数 + 一张源图」变成一张画布（预览与导出共用同一套代码）。
- *
- * 顺序（顺序本身就是语义，改之前先想清楚）：
- *   旋转 90/翻转 → 任意角度（外接框扩张）→ 裁剪 → 缩放 → 线性调整（GPU filter）
- *   → 逐像素（gamma/锐化/暗角）→ 水印 → 边框/圆角
- *
- * 预览与导出的差别只有一个 `scale`：预览用 scale<1 在代理分辨率上跑（快），
- * 导出用 scale=1 全分辨率。所有「绝对像素」参数都乘 scale，百分比参数与
- * 分辨率无关（缩放/预览一致）。
- */
-
 import { shapeCommands, traceCommands } from "./shapes.mjs";
 
 export const DEFAULT_ADJUST = {
@@ -28,9 +16,7 @@ export const DEFAULT_ADJUST = {
 
 export const DEFAULT_FILTER = { radius: 0, borderWidth: 0, borderColor: "#ffffff" };
 
-/** 裁剪形状：rect = 传统矩形，其余按外接矩形变形（circle 在面板里会锁 1:1）。 */
 export const DEFAULT_CROP_SHAPE = "rect";
-/** 圆角矩形的半径（占短边百分比）。 */
 export const DEFAULT_CROP_RADIUS = 12;
 
 export const DEFAULT_WATERMARK = {
@@ -60,10 +46,8 @@ export const RATIOS = {
 	"2:3": 2 / 3,
 };
 
-/** 比例下拉的可选项（custom = 用 state.ratioW / ratioH 自己填）。 */
 export const RATIO_KEYS = ["free", "1:1", "4:3", "3:2", "16:9", "9:16", "3:4", "2:3", "custom"];
 
-/** 参数里的比例值 → 数字（null = 不锁比例）。custom 取 ratioW / ratioH，非法值当不锁。 */
 export function ratioOf(state) {
 	if (!state) return null;
 	if (state.ratio === "custom") {
@@ -74,7 +58,6 @@ export function ratioOf(state) {
 	return RATIOS[state.ratio] ?? null;
 }
 
-/** 一份全新的参数（跟随插件设置里的默认值）。 */
 export function defaultState(cfg = {}) {
 	const fmt = String(cfg.defaultFormat ?? "keep");
 	const q = Number(cfg.quality ?? 0.82);
@@ -93,10 +76,8 @@ export function defaultState(cfg = {}) {
 		cropShape: DEFAULT_CROP_SHAPE,
 		cropRadius: DEFAULT_CROP_RADIUS,
 		ratio: "free",
-		// 「自定义」比例时的 W:H（比例下拉选 custom 时生效）
 		ratioW: 16,
 		ratioH: 9,
-		// 「自定义」比例时的 W:H（比例下拉选 custom 时生效）
 		ratioW: 16,
 		ratioH: 9,
 		resize: {
@@ -127,13 +108,11 @@ export function createCanvas(w, h) {
 	return c;
 }
 
-/** 旋转 90°/翻转后的画布尺寸（不含任意角度）。 */
 export function rotatedSize(state, w, h) {
 	const t = ((Math.round(state.rotate90 / 90) % 4) + 4) % 4;
 	return t % 2 ? { width: h, height: w } : { width: w, height: h };
 }
 
-/** 任意角度旋转后的外接框尺寸（裁剪坐标就基于这个坐标系）。 */
 export function baseSize(state, w, h) {
 	const rs = rotatedSize(state, w, h);
 	const ang = ((state.angle || 0) * Math.PI) / 180;
@@ -145,7 +124,6 @@ export function baseSize(state, w, h) {
 	};
 }
 
-/** 目标缩放尺寸（源像素空间）；返回 null = 不缩放。 */
 export function targetSize(resize, w, h) {
 	if (!resize || resize.mode === "none") return null;
 	let tw = w;
@@ -174,12 +152,10 @@ export function targetSize(resize, w, h) {
 	th = Math.max(1, Math.round(th));
 	if (tw === w && th === h) return null;
 	if (resize.noUpscale !== false && (tw > w || th > h)) return null;
-	// 上限：单边 20000 / 总量 64MP，防手滑把浏览器打挂
 	const k = Math.min(1, 20000 / Math.max(tw, th), Math.sqrt(64_000_000 / (tw * th)));
 	return { width: Math.max(1, Math.round(tw * k)), height: Math.max(1, Math.round(th * k)) };
 }
 
-/** 线性调整 → canvas filter 字符串（GPU 免费做）。 */
 function colorFilter(a, scale) {
 	const p = [];
 	if (a.brightness !== 100) p.push(`brightness(${a.brightness}%)`);
@@ -209,7 +185,6 @@ function roundRectPath(ctx, x, y, w, h, r) {
 	ctx.closePath();
 }
 
-/** 逐像素：gamma（LUT）+ 暗角 + 锐化（unsharp mask）。 */
 function applyPixels(img, a, W, H) {
 	const d = img.data;
 	if (a.gamma !== 100) {
@@ -225,7 +200,6 @@ function applyPixels(img, a, W, H) {
 	if (a.sharpen) {
 		const amount = Math.min(1, a.sharpen / 100) * 1.6;
 		const copy = new Uint8ClampedArray(d);
-		// 3×3 均值模糊作为 unsharp 的低频项（横向一遍、纵向一遍，O(n)）
 		const tmp = new Uint8ClampedArray(d.length);
 		for (let y = 0; y < H; y++) {
 			for (let x = 0; x < W; x++) {
@@ -271,11 +245,6 @@ function applyPixels(img, a, W, H) {
 	}
 }
 
-/**
- * 裁剪形状遮罩：把画布按形状扣出来（形状外变透明；给了 background 则填底色，
- * JPEG 等无 alpha 格式走这条，不然透明区会变成黑块）。
- * 因为是非矩形，重采样后边缘由浏览器做抗锯齿，比手写描边干净。
- */
 function applyShapeMask(canvas, shape, radiusPct, background) {
 	const out = createCanvas(canvas.width, canvas.height);
 	const ctx = out.getContext("2d");
@@ -291,7 +260,6 @@ function applyShapeMask(canvas, shape, radiusPct, background) {
 	return out;
 }
 
-/** 水印文字里的变量替换（{name} {date} {w} {h}）。 */
 export function expandVars(text, vars = {}) {
 	return String(text ?? "").replace(/\{(name|date|w|h)\}/g, (_, k) => String(vars[k] ?? `{${k}}`));
 }
@@ -299,7 +267,6 @@ export function expandVars(text, vars = {}) {
 const FONT_STACK =
 	'"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif';
 
-/** 画水印（文字或图片；支持九宫格定位与平铺）。 */
 function drawWatermark(ctx, W, H, wm, vars) {
 	const minEdge = Math.min(W, H);
 	const margin = (Math.max(0, wm.margin) / 100) * minEdge;
@@ -341,7 +308,6 @@ function drawWatermark(ctx, W, H, wm, vars) {
 		ctx.save();
 		ctx.translate(x + tw / 2, y + th / 2);
 		if (wm.rotate) ctx.rotate((wm.rotate * Math.PI) / 180);
-		// 阴影保证浅色背景上也看得见（不透明度已经由 globalAlpha 控制）
 		ctx.shadowColor = "rgba(0,0,0,0.35)";
 		ctx.shadowBlur = size * 0.12;
 		ctx.fillText(text, 0, 0);
@@ -356,7 +322,6 @@ function drawWatermark(ctx, W, H, wm, vars) {
 	ctx.restore();
 }
 
-/** 九宫格位置：在可用宽高（W-内容宽、H-内容高）里返回左上角偏移。 */
 function positionOf(pos, availW, availH) {
 	const a = Math.max(0, availW);
 	const b = Math.max(0, availH);
@@ -397,7 +362,6 @@ export function renderToCanvas(src, state, opts = {}) {
 	ctx.imageSmoothingEnabled = true;
 	ctx.imageSmoothingQuality = state.resize?.smooth ?? "high";
 
-	// 背景：不透明输出 → state.background；否则任意角度旋转的填充色（可能透明）
 	const fill = opts.opaque ? state.background : state.angle ? state.angleBg : "";
 	if (fill) {
 		ctx.fillStyle = fill;
@@ -419,7 +383,6 @@ export function renderToCanvas(src, state, opts = {}) {
 		ctx.putImageData(id, 0, 0);
 	}
 
-	// 裁剪（坐标基于 baseSize 那个坐标系 → 乘 scale）
 	const crop = state.crop;
 	if (crop && crop.w > 0 && crop.h > 0) {
 		const cx = Math.round(crop.x * scale);
@@ -434,14 +397,12 @@ export function renderToCanvas(src, state, opts = {}) {
 		ctx = octx;
 	}
 
-	// 裁剪形状（椭圆/心形…）：在裁完的结果上按形状扣出来，再交给后面的缩放
 	const shape = state.cropShape ?? DEFAULT_CROP_SHAPE;
 	if (shape !== "rect" && shape !== "none") {
 		cv = applyShapeMask(cv, shape, state.cropRadius ?? DEFAULT_CROP_RADIUS, opts.opaque ? state.background : "");
 		ctx = cv.getContext("2d");
 	}
 
-	// 缩放（在源像素空间算目标，再乘 scale）
 	const curW = cv.width / scale;
 	const curH = cv.height / scale;
 	const target = targetSize(state.resize, curW, curH);
@@ -460,7 +421,6 @@ export function renderToCanvas(src, state, opts = {}) {
 		drawWatermark(ctx, cv.width, cv.height, wm, opts.vars);
 	}
 
-	// 边框 / 圆角（最后，避免被后来的缩放糊掉）
 	const f = state.filter ?? DEFAULT_FILTER;
 	if (f.radius > 0 || f.borderWidth > 0) {
 		const minEdge = Math.min(cv.width, cv.height);
@@ -486,13 +446,8 @@ export function renderToCanvas(src, state, opts = {}) {
 	return cv;
 }
 
-// ---------------------------------------------------------------------------
-// 编码
-// ---------------------------------------------------------------------------
-
 const MIME_OF = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp", avif: "image/avif" };
 
-/** 当前参数下的输出 MIME（keep = 跟随源格式，画布编不了的源格式回落 PNG）。 */
 export function outputMime(state, sourceType) {
 	const f = state.format;
 	if (f && f !== "keep") return MIME_OF[f] ?? "image/png";
@@ -502,7 +457,6 @@ export function outputMime(state, sourceType) {
 	return "image/png";
 }
 
-/** 不支持 alpha 的输出格式（透明区会被底色填掉）。 */
 export function isOpaqueFormat(mime) {
 	return mime === "image/jpeg";
 }
@@ -511,23 +465,17 @@ export function extOfMime(mime) {
 	return { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif" }[mime] ?? "png";
 }
 
-/**
- * 形状抠图需要 alpha：当前输出格式若不支持（JPEG），返回建议改用的格式，否则 null。
- * 抠掉的区域只能是「透明」或「底色」二选一，JPEG 只能给底色 —— 而选形状的人要的是透明。
- */
 export function alphaFixForShape(state, sourceType) {
 	if (!state || (state.cropShape ?? "rect") === "rect" || state.cropShape === "none") return null;
 	return isOpaqueFormat(outputMime(state, sourceType)) ? "png" : null;
 }
 
-/** 是否损失压缩（决定质量滑杆是否可用）。 */
 export function isLossy(mime) {
 	return mime === "image/jpeg" || mime === "image/webp" || mime === "image/avif";
 }
 
 const supportCache = new Map();
 
-/** 浏览器能否编码该格式（部分浏览器/版本没有 WebP 或 AVIF 编码器）。 */
 export function supportsMime(mime) {
 	if (supportCache.has(mime)) return supportCache.get(mime);
 	let ok = false;
@@ -541,7 +489,6 @@ export function supportsMime(mime) {
 	return ok;
 }
 
-/** canvas → Blob。 */
 export function encodeCanvas(canvas, mime, quality) {
 	return new Promise((resolve, reject) => {
 		canvas.toBlob(
@@ -552,10 +499,6 @@ export function encodeCanvas(canvas, mime, quality) {
 	});
 }
 
-/**
- * 目标体积：二分逼近质量；质量压到底仍超标时按面积比例降尺寸再压一次。
- * onStep(step) 用来给进度提示（最多 8 步）。
- */
 export async function encodeToTarget(canvas, mime, targetBytes, { quality = 0.82, onStep } = {}) {
 	let cur = canvas;
 	let best = await encodeCanvas(cur, mime, quality);
@@ -580,7 +523,6 @@ export async function encodeToTarget(canvas, mime, targetBytes, { quality = 0.82
 	}
 	if (hit) return { blob: hit.blob, quality: hit.quality, canvas: cur };
 
-	// 降尺寸重试（最多 2 轮）
 	for (let round = 0; round < 2; round++) {
 		const shrink = Math.sqrt(targetBytes / best.size) * 0.98;
 		const w = Math.max(1, Math.round(cur.width * shrink));

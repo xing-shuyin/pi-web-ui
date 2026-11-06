@@ -1,19 +1,3 @@
-/**
- * 工具延迟加载（load_tools）端到端回归 —— 零 token（本地 mock LLM，openai-completions SSE）。
- *
- * 验证四件事，最后一件是硬约束（缓存不能被我们打坏）：
- *   0. 按需加载**默认关**（#652 起）：显式打开后才只有核心工具（bash/read/edit/write）+
- *      load_tools 常驻；其余工具在系统提示词里**只有名字 + 一行摘要**（目录），没有 schema。
- *   1. 模型调 load_tools(["patch"]) 之后，patch 出现在下一次请求的 tools 里
- *      （参数 schema 到位），并能在同一对话后续轮次继续用。
- *   2. **系统提示词逐字节不变**：加载前后两次请求的 system 文本必须完全一致
- *      （它一变，供应商的前缀缓存就整段失效）；tools 数组只允许**追加**——
- *      第二次的 tools 必须以第一次的 tools 为前缀（顺序/内容都不许动）。
- *   3. 关掉开关后 load_tools 彻底不出现；模型直呼未加载工具时该工具**自动激活**，
- *      原样重试即成功（#652 的死路）。
- *
- * 端口 8975，临时 data-dir / 工作区 / agent 目录，结束自行清理。
- */
 import { createServer } from "node:http";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
@@ -41,7 +25,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// ── mock LLM：第 1 轮回 load_tools 工具调用，之后回纯文本 ──────────────────
 const requests = [];
 const delta = (model, d, finish = null) => ({
 	id: "chatcmpl-lazy",
@@ -67,9 +50,7 @@ const mock = createServer((req, res) => {
 		let payload = {};
 		try {
 			payload = JSON.parse(body || "{}");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		requests.push(payload);
 		const messages = Array.isArray(payload.messages) ? payload.messages : [];
 		const lastUser = messages.map((m) => m.role).lastIndexOf("user");
@@ -78,7 +59,6 @@ const mock = createServer((req, res) => {
 		const lastUserContent = messages[lastUser]?.content;
 		const lastUserText = typeof lastUserContent === "string" ? lastUserContent : JSON.stringify(lastUserContent ?? "");
 		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
-		// issue #652：模型**直接**调用目录里尚未加载的工具（不走 load_tools），然后原样重试一次。
 		const jit = lastUserText.includes("jit direct call");
 		const toolResults = tail.filter((m) => m.role === "tool").length;
 		const chunks = jit
@@ -169,7 +149,6 @@ ws.send(JSON.stringify({ type: "hello", clientId: randomUUID() }));
 for (let i = 0; i < 100 && !state?.conversationId; i++) await sleep(100);
 check("会话已就绪", Boolean(state?.conversationId), `conv=${state?.conversationId}`);
 
-/** 等一次模型请求（按索引）。 */
 async function waitRequest(index, timeout = 30000) {
 	const t0 = Date.now();
 	while (Date.now() - t0 < timeout && requests.length <= index) await sleep(100);
@@ -180,7 +159,6 @@ const systemText = (req) => {
 	const sys = (req?.messages ?? []).find((m) => m.role === "system" || m.role === "developer");
 	return typeof sys?.content === "string" ? sys.content : JSON.stringify(sys?.content ?? "");
 };
-/** 最后一条 tool 结果消息的文本。 */
 const lastToolText = (req) => {
 	const tools = (req?.messages ?? []).filter((m) => m.role === "tool");
 	const c = tools[tools.length - 1]?.content;
@@ -191,7 +169,6 @@ ws.send(JSON.stringify({ type: "set_model", modelId: "main/lazy-tools-mock" }));
 for (let i = 0; i < 100 && state?.model?.id !== "lazy-tools-mock"; i++) await sleep(100);
 check("已切到 mock 模型", state?.model?.id === "lazy-tools-mock", `model=${state?.model?.id}`);
 
-// 按需加载**默认关**（#652 起）：刚启动的实例应当已经把全部工具挂在活跃集里，没有 load_tools。
 ws.send(JSON.stringify({ type: "get_settings" }));
 for (let i = 0; i < 50 && typeof settings?.toolLazyLoading !== "boolean"; i++) await sleep(50);
 check(
@@ -203,8 +180,6 @@ check(
 	`lazy=${settings?.toolLazyLoading} tools=${state?.tools?.join(",")}`,
 );
 
-// 按需加载**默认关**（#652 起）：先显式打开，再验证「开」时的目录与缓存行为。
-// 新会话才有空种子（老会话按当时活跃集做种子，不会被反向清空），所以打开后另起一个对话。
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));
 for (let i = 0; i < 50 && settings?.toolLazyLoading !== true; i++) await sleep(50);
 check("默认关：显式打开按需加载后设置生效", settings?.toolLazyLoading === true, `value=${settings?.toolLazyLoading}`);
@@ -218,7 +193,6 @@ check(
 	`tools=${state?.tools?.join(",")}`,
 );
 
-// 模型列表里应该只有目录（名字 + 摘要），没有完整 schema。
 ws.send(JSON.stringify({ type: "prompt", text: "load the patch tool" }));
 const first = await waitRequest(0);
 check("已发出第一次模型请求", Boolean(first), `requests=${requests.length}`);
@@ -237,7 +211,6 @@ check(
 );
 check("系统提示词带「先 load_tools」的说明", /load_tools/.test(firstSystem));
 
-// 等 load_tools 执行完 → 第二次请求
 const second = await waitRequest(1);
 check("load_tools 执行后又发了一次请求", Boolean(second), `requests=${requests.length}`);
 const toolResult = (second?.messages ?? []).find((m) => m.role === "tool");
@@ -251,7 +224,6 @@ check(
 const secondTools = toolNames(second);
 check("patch 已被加载进 tools", secondTools.includes("patch"), secondTools.join(","));
 
-// 缓存硬约束：system 逐字节不变；tools 以前一次的为前缀（纯追加）。
 const secondSystem = systemText(second);
 check(
 	"加载前后系统提示词逐字节相同（不破坏前缀缓存）",
@@ -266,7 +238,6 @@ check(
 );
 check("加载后目录里 patch 的描述仍在提示词里（列表不随加载变化）", secondSystem.includes("- patch:"));
 
-// 设置快照里的生效提示词也保持稳定（设置页预览口径）。
 const promptBefore = settings?.effectiveSystemPrompt ?? "";
 ws.send(JSON.stringify({ type: "get_settings" }));
 await sleep(800);
@@ -276,9 +247,6 @@ check(
 	`len=${(settings?.effectiveSystemPrompt ?? "").length}`,
 );
 
-// ---------------------------------------------------------------------------
-// 验证：工具按需加载关闭时，绝不暴露 load_tools 工具
-// ---------------------------------------------------------------------------
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: false }));
 for (let i = 0; i < 50 && (state?.tools?.includes("load_tools") || settings?.toolLazyLoading !== false); i++) {
 	await sleep(50);
@@ -297,7 +265,6 @@ check(
 	`promptPreview=${(settings?.effectiveSystemPrompt ?? "").slice(0, 200)}...`,
 );
 
-// 发起一次新会话并请求模型，验证发给模型的 tools 和 systemPrompt 均无 load_tools
 ws.send(JSON.stringify({ type: "new_chat" }));
 const prevConv = state?.conversationId;
 for (let i = 0; i < 50 && state?.conversationId === prevConv; i++) await sleep(50);
@@ -324,9 +291,6 @@ check(
 	`system len=${thirdSystem.length}`,
 );
 
-// ---------------------------------------------------------------------------
-// 验证：模型直接调用目录里尚未加载的工具 → 自动激活，重试即成功（issue #652）
-// ---------------------------------------------------------------------------
 ws.send(JSON.stringify({ type: "set_settings", toolLazyLoading: true }));
 for (let i = 0; i < 50 && settings?.toolLazyLoading !== true; i++) await sleep(50);
 ws.send(JSON.stringify({ type: "new_chat" }));

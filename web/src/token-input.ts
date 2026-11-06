@@ -1,15 +1,3 @@
-/**
- * 用户输入的 token 数量字符串解析与回显格式化（纯函数，单测覆盖）。
- *
- * 支持：
- * - "300k" / "300K" -> 300,000
- * - "1.5m" / "1.5M" -> 1,500,000
- * - "300,000" / "300_000" -> 300,000
- * - "300000" -> 300,000
- * - 纯数字 <= 1000（如 300、128、64）：智能识别为 K tokens（300 -> 300,000）
- * - 空串 / 0 / 非法：返回 0
- */
-
 export function parseTokenInput(v: unknown): number {
 	if (v === null || v === undefined) return 0;
 	if (typeof v === "number") {
@@ -40,10 +28,6 @@ export function parseTokenInput(v: unknown): number {
 	return Math.min(10_000_000, Math.max(0, tokens));
 }
 
-/**
- * 格式化 token 数量为用户可读的输入回显（如 300000 -> "300k", 1000000 -> "1M"）。
- * 0 或空返回 ""。
- */
 export function formatTokenDraft(n: number | null | undefined): string {
 	if (!n || n <= 0 || !Number.isFinite(n)) return "";
 	if (n >= 1_000_000 && n % 100_000 === 0) {

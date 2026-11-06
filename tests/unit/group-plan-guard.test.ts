@@ -41,12 +41,10 @@ describe("group-plan-guard: Tool Calling Hard Guard", () => {
 	});
 
 	it("discriminates device_collab actions: allows read-only and blocks mutating actions", () => {
-		// Read-only actions allowed
 		expect(checkGroupTaskPlanGuard("device_collab", { action: "read_history" }, true)).toBeUndefined();
 		expect(checkGroupTaskPlanGuard("device_collab", { action: "context_metrics" }, true)).toBeUndefined();
 		expect(checkGroupTaskPlanGuard("device_collab", { action: "execution_guide" }, true)).toBeUndefined();
 
-		// Mutating / dispatch actions blocked
 		const syncDenial = checkGroupTaskPlanGuard("device_collab", { action: "sync_files" }, true);
 		expect(syncDenial).toBeDefined();
 		expect(syncDenial?.kind).toBe("write-tool");

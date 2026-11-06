@@ -1,11 +1,4 @@
-﻿# uia.ps1 — 无截图枚举桌面元素（Windows 自带 .NET UIAutomation，无第三方依赖）
-#
-# 用法:
-#   uia.ps1 -Scope foreground|desktop|window [-Title 窗口标题子串] [-Query 元素名子串]
-#           [-MaxNodes 300] [-MaxDepth 5]
-# 输出: UTF-8 JSON { ok, scope, root, nodes:[{id,name,type,aid,rect:{x,y,w,h},enabled}], truncated }
-# id 是本次 dump 内的索引路径（如 "0.2.1"），desktop_click/desktop_type 凭它定位。
-
+﻿
 param(
   [string]$Scope = "foreground",
   [string]$Title = "",
@@ -32,7 +25,6 @@ $nodes = New-Object System.Collections.Generic.List[object]
 $script:count = 0
 $script:truncated = $false
 
-# 进程名缓存（窗口按进程识别用，如微信 Weixin.exe；标题是昵称、每次都变，标题匹配不可靠）
 $procCache = @{}
 function Get-ProcName($procId) {
   if ($procCache.ContainsKey($procId)) { return $procCache[$procId] }
@@ -63,7 +55,6 @@ function Add-Tree($el, $depth, $path) {
   $proc = ""; $cls = ""; $hwnd = 0
   try { $proc = Get-ProcName $cur.ProcessId } catch {}
   try { $cls = [string]$cur.ClassName } catch {}
-  # 只有顶层窗口取句柄（截图按句柄精确定位到这一扇窗；普通控件读它会抛）
   if ($ctype -eq "Window") {
     try { $hwnd = [long]$el.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::NativeWindowHandleProperty) } catch {}
   }

@@ -1,15 +1,6 @@
-/**
- * universal-session.ts — 通用 Agent 会话控制器（实现 DispatchSession）。
- *
- * 职责：
- *   1. 桥接 BaseAgentDriver 与 Web 前端 Wire 协议；
- *   2. 自动维护严格线性的 UiMessage[] 历史与流式 streamingMessage；
- *   3. 60ms 节流下发 snapshot / message_delta，实现高帧率低开销的前端流式渲染；
- *   4. 无缝复用宿主 FilesService（文件树/预览/SCM/上传）、TerminalManager（终端）与 BgServerTracker（后台服务）。
- */
-
 import { startTurnTiming, finishTurnTiming } from "../turn-timing.js";
 import { normalizeQuickAskSettings } from "../quick-ask-settings.js";
+import { captureQuickAskConversation } from "../quick-ask-context.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -147,8 +138,6 @@ export class UniversalSession implements DispatchSession {
 	private conversations = new Map<string, UniversalConversation>();
 
 	public isStreaming = false;
-	/** 在途回合归属的会话 id（#700/#701）：prompt 开始时锚定，finalizeTurn 收尾时消费并清空。
-	 *  会话切换/回滚不再让流式回写与回合收尾锚错会话，避免跨对话内容污染落盘。 */
 	private turnConvId: string | null = null;
 	private turn: { conv: UniversalConversation; cwd: string } | null = null;
 	private projectGeneration = 0;
@@ -391,7 +380,6 @@ export class UniversalSession implements DispatchSession {
 		} else {
 			this.currentModel = (opts.driver as any).currentModel ?? "default";
 		}
-		// 恢复上次使用的模型（按引擎独立记录：项目记忆优先 > 全局默认）
 		const savedModel =
 			opts.stateStore?.getProjectModel(opts.clientId, opts.cwd, this.engine) ??
 			opts.stateStore?.getDefaultModel(this.engine);
@@ -399,7 +387,6 @@ export class UniversalSession implements DispatchSession {
 			this.currentModel = savedModel;
 		}
 
-		// 恢复思考强度记忆：模型专属记忆 > 全局默认 > 既有默认
 		const rememberedThinking = getModelThinkingLevelFromSettings(this.currentModel, this.agentDir);
 		if (rememberedThinking) {
 			this.thinkingLevel = rememberedThinking;
@@ -448,7 +435,6 @@ export class UniversalSession implements DispatchSession {
 			workspaceCwd: () => this.cwd,
 		});
 
-		// 加载现有会话或创建初始会话
 		const existing = this.store.listConversations(this.cwd);
 		if (existing.length > 0) {
 			for (const conv of existing) {
@@ -462,7 +448,6 @@ export class UniversalSession implements DispatchSession {
 			this.store.saveConversation(this.cwd, initialConv);
 		}
 
-		// 记录当前客户端访问的工作区
 		if (typeof this.stateStore?.remember === "function" && this.cwd) {
 			this.stateStore.remember(this.clientId, this.cwd);
 		}
@@ -480,7 +465,6 @@ export class UniversalSession implements DispatchSession {
 				.catch(() => {});
 		}
 
-		// 若驱动为 Claude Code，异步探测环境并下发安装指引
 		if (this.driver instanceof ClaudeCodeDriver) {
 			void probeClaudeCode().then((probe) => {
 				if (!probe.installed && !this.disposed) {
@@ -637,9 +621,7 @@ export class UniversalSession implements DispatchSession {
 		for (const sink of this.sinks) {
 			try {
 				sink(msg);
-			} catch {
-				/* ignore send error on broken pipe */
-			}
+			} catch {}
 		}
 	}
 
@@ -675,7 +657,6 @@ export class UniversalSession implements DispatchSession {
 				this.turnConvId === conv.id && this.pendingToolResults.length > 0
 					? [...conv.messages, ...this.pendingToolResults]
 					: conv.messages,
-			// 回合归属会话才携带流式态：切走后的前台会话快照不再混入后台回合内容（#701）
 			streamingMessage: !this.turnConvId || this.turnConvId === conv.id ? this.streamingMessage : null,
 			isStreaming: !this.turnConvId || this.turnConvId === conv.id ? this.isStreaming : false,
 			turnTiming: conv.turnTiming ?? null,
@@ -733,10 +714,6 @@ export class UniversalSession implements DispatchSession {
 		}, SNAPSHOT_INTERVAL_MS);
 	}
 
-	// ---------------------------------------------------------------------------
-	// 核心 Prompt 流程
-	// ---------------------------------------------------------------------------
-
 	private static isDefaultTitle(title?: string): boolean {
 		const t = (title ?? "").trim();
 		return !t || t === "新对话" || t === "New chat" || t === "New Chat" || t === "对话" || t === "Chat";
@@ -768,7 +745,6 @@ export class UniversalSession implements DispatchSession {
 				);
 				return;
 			}
-			// 插队（steer）：中断当前轮次并提交新问题
 			this.emitNotice(
 				"info",
 				"正在插队，中断当前生成并提交新问题...",
@@ -777,7 +753,6 @@ export class UniversalSession implements DispatchSession {
 			await this.abort();
 		}
 
-		// 1. 拦截与执行斜杠命令（内置 / 插件 / 驱动扩展 / 技能指令 / 子代理命令）
 		const slash = parseSlash(text);
 		if (slash) {
 			if (slash.name === "subagent" || slash.name.startsWith("subagent:")) {
@@ -835,7 +810,6 @@ export class UniversalSession implements DispatchSession {
 		this.turnConvId = conv.id;
 		const now = Date.now();
 
-		// 2. 扫描用户文本中的 @ 提及（文件路径与技能指令）
 		try {
 			const availableSkills = await this.collectUniversalSkills();
 			if (!isCurrent()) return;
@@ -843,7 +817,6 @@ export class UniversalSession implements DispatchSession {
 			const effectiveAttachments = [...(attachments ?? []), ...scanResult.detectedAttachments];
 			const finalPrompt = formatPromptWithSkills(text, scanResult.detectedSkills);
 
-			// 3. 自动根据首条提问为新会话命名（首条提问立即刷新左侧栏运行与历史列表）
 			const hasNoUserMessages = !conv.messages.some((m) => m.role === "user");
 			if (UniversalSession.isDefaultTitle(conv.title) && hasNoUserMessages && text.trim()) {
 				const trimmed = text.trim().replace(/\s+/g, " ");
@@ -858,7 +831,6 @@ export class UniversalSession implements DispatchSession {
 				void this.refreshSessions();
 			}
 
-			// 4. 插入用户消息以及附件卡片（保证 Web UI 附件卡片折叠呈现与历史复原）
 			const userMsg: UiMessage = {
 				id: `u-${now}-${randomUUID().slice(0, 6)}`,
 				role: "user",
@@ -879,10 +851,8 @@ export class UniversalSession implements DispatchSession {
 				this.store.saveConversation(this.cwd, conv);
 			}
 
-			// 用户发送了提示词，消费并清除当前会话的草稿
 			this.sessionDrafts.delete(conv.id);
 
-			// 确保底层驱动与当前对话的 driverSessionId 上下文同步（保证多轮对话连续且新建对话隔离）
 			if (conv.driverSessionId) {
 				await this.driver.resumeSession(conv.driverSessionId);
 				if (!isCurrent()) return;
@@ -895,7 +865,6 @@ export class UniversalSession implements DispatchSession {
 				}
 			}
 
-			// 3. 准备助手流式消息
 			const assistantMsgId = `a-${now}-${randomUUID().slice(0, 6)}`;
 			this.streamingThinking = "";
 			this.streamingText = "";
@@ -909,7 +878,6 @@ export class UniversalSession implements DispatchSession {
 
 			this.flushSnapshot();
 
-			// 4. 构建 AgentEventSink（时序保真：思考 -> 前置正文 -> 工具调用 -> 总结正文）
 			const sink: AgentEventSink = {
 				onSessionStarted: (sessionId) => {
 					conv.driverSessionId = sessionId;
@@ -946,8 +914,6 @@ export class UniversalSession implements DispatchSession {
 						argumentsText: JSON.stringify(args, null, 2),
 					};
 					this.streamingMessage.content.push(toolBlock);
-					// Publish the structural boundary before a following text/thinking delta.
-					// Otherwise the reducer can merge it into the block preceding this tool.
 					this.flushSnapshot();
 				},
 				onToolEnd: (callId: string, result: { output?: string; error?: string }) => {
@@ -1007,7 +973,6 @@ export class UniversalSession implements DispatchSession {
 		if (this.streamingText) {
 			content.push({ type: "text", text: this.streamingText });
 		}
-		// 保留之前追加的 toolCall blocks
 		for (const b of this.streamingMessage.content) {
 			if (b.type === "toolCall") {
 				content.push(b);
@@ -1050,7 +1015,6 @@ export class UniversalSession implements DispatchSession {
 			this.pendingToolResults = [];
 		}
 
-		// 累计会话统计与上下文占用（底座统一驱动底栏上下文环、Token 计数、缓存命中率与累计成本）
 		if (!conv.stats) {
 			conv.stats = {
 				tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
@@ -1082,7 +1046,6 @@ export class UniversalSession implements DispatchSession {
 			};
 		}
 
-		// 回写 Claude 分配的 session ID（保证多轮上下文连续）
 		if (typeof (this.driver as any).getActiveSessionId === "function") {
 			const activeSid = (this.driver as any).getActiveSessionId();
 			if (activeSid && conv.driverSessionId !== activeSid) {
@@ -1093,16 +1056,12 @@ export class UniversalSession implements DispatchSession {
 		finishTurnTiming(conv);
 		this.isStreaming = false;
 		this.streamingThinking = "";
-		// 先取本轮全文再清空：内联标记解析在清空之后读 streamingText，
-		// 条件恒为 false，[[conv:rename]]/[[action:suggest]] 在 universal
-		// 引擎（claude/durable 等驱动）下从不被解析。
 		const finalText = this.streamingText;
 		this.streamingText = "";
 		conv.updatedAt = Date.now();
 		if (!conv.isEphemeral) {
 			this.store.saveConversation(turn.cwd, conv);
 		}
-		// 解析本轮生成的内联标记（如 [[conv:rename:...]] / [[action:suggest:...]]）
 		if (finalText && finalText.includes("[[")) {
 			this.markerOrigins.set(conv.id, turn);
 			void this.markerSvc.handleAssistantText(conv.id, finalText);
@@ -1110,7 +1069,6 @@ export class UniversalSession implements DispatchSession {
 		this.flushSnapshot();
 		void this.refreshSessions();
 
-		// 检查排队消息并自动处理
 		if (!this.switchingProject && !this.disposed && this.followUpQueue.length > 0) {
 			const next = this.followUpQueue.shift()!;
 			this.flushSnapshot(true);
@@ -1121,7 +1079,6 @@ export class UniversalSession implements DispatchSession {
 	async abort(): Promise<void> {
 		if (this.abortPromise) return this.abortPromise;
 		if (!this.isStreaming) return;
-		// Install the gate before finalizeTurn can dispatch a queued prompt.
 		this.abortPromise = Promise.resolve().then(async () => {
 			this.finalizeTurn();
 			await this.driver.abort();
@@ -1140,7 +1097,6 @@ export class UniversalSession implements DispatchSession {
 
 	async retryLast(): Promise<void> {
 		const conv = this.activeConv;
-		// 找到最后一条 user 消息重新发送
 		for (let i = conv.messages.length - 1; i >= 0; i--) {
 			const m = conv.messages[i];
 			if (m.role === "user") {
@@ -1163,10 +1119,6 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
-	// ---------------------------------------------------------------------------
-	// 对话生命周期
-	// ---------------------------------------------------------------------------
-
 	async newChat(_preset?: string, ephemeral = false, onReady?: (id: string) => void): Promise<boolean | void> {
 		const newConv = this.createEmptyConversation("新对话", Boolean(ephemeral));
 		this.conversations.set(newConv.id, newConv);
@@ -1180,6 +1132,22 @@ export class UniversalSession implements DispatchSession {
 		return true;
 	}
 
+	async readQuickAskConversation(
+		source: import("../quick-ask-context.js").QuickAskConversationSource,
+		signal: AbortSignal,
+	): Promise<import("../quick-ask-context.js").QuickAskConversationSnapshot | undefined> {
+		signal.throwIfAborted();
+		const id = source.conversationId ?? source.sessionFile;
+		if (
+			!id ||
+			!/^[a-zA-Z0-9_-]+$/.test(id) ||
+			(source.conversationId && source.sessionFile && source.conversationId !== source.sessionFile)
+		)
+			return undefined;
+		const conv = this.conversations.get(id) ?? this.store.loadConversation(this.cwd, id);
+		return conv ? captureQuickAskConversation(conv.title, conv.id, conv.messages, this.cwd) : undefined;
+	}
+
 	async switchConversation(id: string): Promise<void> {
 		assertEngineWorkspaceSupported(this.sandboxes, this.cwd, this.engine);
 		let conv = this.conversations.get(id);
@@ -1189,7 +1157,6 @@ export class UniversalSession implements DispatchSession {
 		}
 		if (conv) {
 			this.activeConvId = conv.id;
-			// 同步底层驱动会话上下文（若存在）
 			if (conv.driverSessionId) {
 				await this.driver.resumeSession(conv.driverSessionId).catch(() => {});
 			}
@@ -1258,9 +1225,7 @@ export class UniversalSession implements DispatchSession {
 
 	async deleteSession(path: string): Promise<void> {
 		const targetId = path.trim() || this.activeConvId;
-		// 1. 从磁盘删除持久化会话记录
 		this.store.deleteConversation(this.cwd, targetId);
-		// 2. 若内存中存在该会话，将其从内存中移除
 		if (this.conversations.has(targetId)) {
 			await this.dismissConversation(targetId, true, true);
 		} else {
@@ -1273,7 +1238,6 @@ export class UniversalSession implements DispatchSession {
 		const conv = this.conversations.get(id);
 		if (!conv) return;
 
-		// 若指定 withFinishedSubagents，级联清理该父会话下的已结束子代理
 		if (withFinishedSubagents) {
 			const kids = Array.from(this.conversations.values()).filter(
 				(c) => c.isSubagent && c.subagentParentId === id && !c.subagentStreaming,
@@ -1283,12 +1247,10 @@ export class UniversalSession implements DispatchSession {
 			}
 		}
 
-		// 若清理的本身是运行中的子代理，立即中止并清理其驱动
 		if (conv.isSubagent && conv.subagentStreaming) {
 			await this.stopSubagent(id);
 		}
 
-		// 仅从运行中会话映射与草稿中移除，保留磁盘持久化记录（供历史面板随时回溯打开）
 		this.conversations.delete(id);
 		this.sessionDrafts.delete(id);
 
@@ -1355,7 +1317,6 @@ export class UniversalSession implements DispatchSession {
 			targetConv = this.activeConv;
 		}
 
-		// 回滚与在途回合互斥：先落定在途回合再截断，否则 finalize 与 slice 交错导致截断/错位（#700）
 		if (targetConv.id === this.activeConvId && (this.isStreaming || this.streamingMessage)) {
 			await this.abort();
 			targetConv = this.activeConv;
@@ -1368,7 +1329,6 @@ export class UniversalSession implements DispatchSession {
 			return;
 		}
 
-		// 回滚截断到该消息之前
 		targetConv.messages = targetConv.messages.slice(0, idx);
 		targetConv.updatedAt = Date.now();
 		if (!targetConv.isEphemeral) {
@@ -1428,16 +1388,13 @@ export class UniversalSession implements DispatchSession {
 			forkedConv.updatedAt = Date.now();
 		}
 
-		// 若底层驱动支持原生会话分叉（如 Durable 引擎的原生 CoW 分叉），保持事务级上下文关联
 		if (targetConv.driverSessionId && typeof this.driver.forkSession === "function") {
 			try {
 				const forkedSid = await this.driver.forkSession(targetConv.driverSessionId);
 				if (forkedSid) {
 					forkedConv.driverSessionId = forkedSid;
 				}
-			} catch {
-				/* fallback */
-			}
+			} catch {}
 		}
 
 		this.conversations.set(forkedConv.id, forkedConv);
@@ -1476,7 +1433,6 @@ export class UniversalSession implements DispatchSession {
 			return;
 		}
 
-		// Remove the question, its file asides and the abandoned suffix in place.
 		let cutIdx = idx;
 		while (
 			cutIdx > 0 &&
@@ -1486,8 +1442,6 @@ export class UniversalSession implements DispatchSession {
 			cutIdx--;
 		}
 		conv.messages.splice(cutIdx);
-		// Drivers expose no in-place history replacement. A fresh backend handle
-		// prevents resume from restoring the discarded suffix; the UI identity stays.
 		conv.driverSessionId = undefined;
 		const context = conv.messages.map((m) => `[${m.role}] ${messageTextWithQuotes(m)}`).join("\n");
 		conv.updatedAt = Date.now();
@@ -1498,7 +1452,6 @@ export class UniversalSession implements DispatchSession {
 		this.flushSnapshot(true);
 		void this.refreshSessions();
 
-		// Capture the destination before any asynchronous slash/skill lookup.
 		await this.prompt(text, attachments, undefined, conv, context ? `Previous conversation context:\n${context}` : "");
 	}
 
@@ -1542,7 +1495,6 @@ export class UniversalSession implements DispatchSession {
 		}));
 		this.send({ type: "conversations", conversations: convs, activeId: this.activeConvId });
 
-		// 左侧栏历史对话读取的是 sessions 消息（轻量临时子代理不污染长期历史列表）：
 		const sessionSummaries: SessionSummary[] = allList
 			.filter((c) => !c.isSubagent || !c.isEphemeral)
 			.map((c) => {
@@ -1567,7 +1519,6 @@ export class UniversalSession implements DispatchSession {
 		this.send({ type: "sessions", sessions: sessionSummaries });
 	}
 
-	/** 引擎自属的会话展示名解析回调（定制 Universal/Claude 的首条截断 + 自定义命名策略） */
 	resolveSessionDisplayName(conv: UniversalConversation, firstMsg: string): string {
 		if (conv.title && !UniversalSession.isDefaultTitle(conv.title)) {
 			return conv.title;
@@ -1667,10 +1618,6 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
-	// ---------------------------------------------------------------------------
-	// 文件、终端与 Git SCM 委托
-	// ---------------------------------------------------------------------------
-
 	async listFiles(path?: string): Promise<void> {
 		await this.files.listFiles(path);
 	}
@@ -1744,10 +1691,6 @@ export class UniversalSession implements DispatchSession {
 		return this.cwd;
 	}
 
-	// ---------------------------------------------------------------------------
-	// 后台服务生命周期委托
-	// ---------------------------------------------------------------------------
-
 	async killBackgroundServer(port?: number, _taskId?: string): Promise<boolean> {
 		if (port === undefined) return false;
 		const killed = await this.bg.killOne(port);
@@ -1774,10 +1717,6 @@ export class UniversalSession implements DispatchSession {
 		const minutes = Number.isFinite(override) && override > 0 ? override : 30;
 		return this.bg.cleanStale(minutes * 60_000, { manual: true });
 	}
-
-	// ---------------------------------------------------------------------------
-	// 模型与偏好控制
-	// ---------------------------------------------------------------------------
 
 	async listModels(): Promise<void> {
 		if (this.driver.listModels) {
@@ -1819,12 +1758,10 @@ export class UniversalSession implements DispatchSession {
 		if (this.driver.setModel) {
 			await this.driver.setModel(modelId);
 		}
-		// 优先恢复该模型的全局思考强度记忆或全局默认强度
 		const remembered = getModelThinkingLevelFromSettings(modelId, this.agentDir);
 		if (remembered) {
 			this.thinkingLevel = remembered;
 		}
-		// 校验并平滑适应新模型支持的思考强度
 		if (typeof this.driver.getSupportedThinkingLevels === "function") {
 			const supported = this.driver.getSupportedThinkingLevels(modelId);
 			if (supported.length > 0 && !supported.includes(this.thinkingLevel)) {
@@ -1867,7 +1804,6 @@ export class UniversalSession implements DispatchSession {
 		if (typeof this.driver.setThinkingLevel === "function") {
 			this.driver.setThinkingLevel(level);
 		}
-		// 同步持久化至全局 settings.json 的 modelThinkingLevels
 		if (this.currentModel) {
 			saveModelThinkingLevelToSettings(this.currentModel, level, this.agentDir);
 		}
@@ -1879,7 +1815,6 @@ export class UniversalSession implements DispatchSession {
 		if (this.switchingProject) throw new Error("Workspace switch already in progress");
 		this.switchingProject = true;
 		try {
-			// Finish the captured old turn before replacing the driver's workspace.
 			this.followUpQueue = [];
 			await this.abort();
 			for (const id of this.subagentDrivers.keys()) await this.stopSubagent(id);
@@ -1887,7 +1822,6 @@ export class UniversalSession implements DispatchSession {
 			this.cwd = path;
 			this.driver.setCwd(path);
 
-			// 切换工作区 CWD：清空旧目录会话缓存与草稿，并加载属于新目录的会话
 			this.conversations.clear();
 			this.sessionDrafts.clear();
 			const existing = this.store.listConversations(this.cwd);
@@ -1909,7 +1843,6 @@ export class UniversalSession implements DispatchSession {
 				this.stateStore.remember(this.clientId, path);
 			}
 			void this.pushProjects();
-			// 切换目录后恢复该目录按引擎隔离的项目记忆模型
 			const savedModel =
 				this.stateStore?.getProjectModel(this.clientId, path, this.engine) ??
 				this.stateStore?.getDefaultModel(this.engine);
@@ -1937,12 +1870,10 @@ export class UniversalSession implements DispatchSession {
 		this.flushSnapshot();
 	}
 
-	/** 获取通用底座持有的持久终端交互工具集 */
 	getTerminalTools(): ToolDefinition[] {
 		return makePersistentTerminalTools(this.terminals, this.cwd, () => this.lang as ServerLang);
 	}
 
-	/** 执行通用底座持久终端工具（供外部驱动或模型调用） */
 	async execTerminalTool(
 		name: string,
 		args: Record<string, unknown>,
@@ -2228,10 +2159,6 @@ export class UniversalSession implements DispatchSession {
 		await this.files.makeDir(path);
 	}
 
-	// ---------------------------------------------------------------------------
-	// 辅助方法与空实现
-	// ---------------------------------------------------------------------------
-
 	emitNotice(level: "info" | "warning" | "error", text: string, textEn?: string): void {
 		this.send({ type: "notice", level, text, textEn });
 	}
@@ -2271,9 +2198,7 @@ export class UniversalSession implements DispatchSession {
 						out.push({ id: dm.id, name: dm.name, provider: this.driver.id });
 					}
 				}
-			} catch {
-				/* ignore driver model query error */
-			}
+			} catch {}
 		}
 		return out;
 	}
@@ -2294,9 +2219,7 @@ export class UniversalSession implements DispatchSession {
 						});
 					}
 				}
-			} catch {
-				/* ignore driver skills query error */
-			}
+			} catch {}
 		}
 		this.skillsCache = out;
 		return out;
@@ -2341,9 +2264,7 @@ export class UniversalSession implements DispatchSession {
 		this.send({ type: "commands", commands: [], path: "" });
 	}
 
-	async saveCommands(_commands: CommandDef[]): Promise<void> {
-		/* no-op */
-	}
+	async saveCommands(_commands: CommandDef[]): Promise<void> {}
 
 	refreshSettings(): void {
 		this.pushSettings();
@@ -2361,6 +2282,7 @@ export class UniversalSession implements DispatchSession {
 			disabledExtensions: s?.disabledExtensions ?? [],
 			disabledAgentTools: [],
 			disabledPluginTools: [],
+			nativeCliInheritModel: { ...s?.nativeCliInheritModel },
 			terminalToolsEnabled: s?.terminalToolsEnabled ?? true,
 			terminalBash: s?.terminalBash ?? true,
 			terminalBashIdleMs: s?.terminalBashIdleMs ?? 3000,
@@ -2368,7 +2290,6 @@ export class UniversalSession implements DispatchSession {
 			toolWatchdogTimeoutMs: s?.toolWatchdogTimeoutMs ?? 1200000,
 			readDirEnabled: true,
 			bgAutoCleanupMin: s?.bgAutoCleanupMin ?? 0,
-			// 同一字段的含义在本引擎不适用（无 pi 工具注册面）：恒为 false 占位，保协议完整。
 			toolLazyLoading: false,
 			codemodeMode: "on",
 			codemodeInlineBudget: 3000,
@@ -2453,17 +2374,11 @@ export class UniversalSession implements DispatchSession {
 		this.pushSettings();
 	}
 
-	async reloadExtensions(): Promise<void> {
-		/* no-op */
-	}
+	async reloadExtensions(): Promise<void> {}
 
-	async checkUpdate(): Promise<void> {
-		/* no-op */
-	}
+	async checkUpdate(): Promise<void> {}
 
-	async checkUpdatesAll(): Promise<void> {
-		/* no-op */
-	}
+	async checkUpdatesAll(): Promise<void> {}
 
 	resolveDialog(id: number, value: string | boolean | null): void {
 		this.webUi.resolveDialog(id, value);
@@ -2482,7 +2397,6 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	installPiAgent(): Promise<void> {
-		/* no-op */
 		return Promise.resolve();
 	}
 
@@ -2602,17 +2516,14 @@ export class UniversalSession implements DispatchSession {
 	}
 
 	clearGoal(): Promise<void> {
-		/* no-op */
 		return Promise.resolve();
 	}
 
 	startGoalWizard(): Promise<void> {
-		/* no-op */
 		return Promise.resolve();
 	}
 
 	setGoalPrefs(): Promise<void> {
-		/* no-op */
 		return Promise.resolve();
 	}
 
@@ -2650,7 +2561,6 @@ export class UniversalSession implements DispatchSession {
 			this.emitNotice("error", `未找到名为「${name}」的设置预设`, `Settings preset "${name}" not found`);
 			return;
 		}
-		// Missing settings retain their current values; metadata never enters settings.
 		const { settings } = sanitizePresetSettings(found);
 		this.stateStore.saveSettings(this.clientId, settings);
 		this.pushSettings();
@@ -2881,11 +2791,6 @@ export class UniversalSession implements DispatchSession {
 		});
 	}
 
-	// ---------------------------------------------------------------------------
-	// 通用底座第一方子代理（Subagent）生命周期与调度管理
-	// ---------------------------------------------------------------------------
-
-	/** 统计当前活跃（流式运行中）的子代理数量 */
 	private getLiveSubagentsCount(): number {
 		let count = 0;
 		for (const conv of this.conversations.values()) {
@@ -2896,7 +2801,6 @@ export class UniversalSession implements DispatchSession {
 		return count;
 	}
 
-	/** 创建并启动一个子代理会话 */
 	async spawnSubagent(
 		prompt: string,
 		type: string,
@@ -2927,7 +2831,6 @@ export class UniversalSession implements DispatchSession {
 			);
 		}
 
-		// 检查并解析模板
 		let template: SubagentTemplate | undefined;
 		let effectivePrompt = prompt;
 		if (templateName) {
@@ -2989,7 +2892,6 @@ export class UniversalSession implements DispatchSession {
 		this.flushSnapshot();
 		void this.refreshSessions();
 
-		// 为该子代理创建独立的 Driver 实例
 		let subDriver: BaseAgentDriver;
 		if (this.driverFactory) {
 			subDriver = this.driverFactory(targetCwd);
@@ -3005,24 +2907,19 @@ export class UniversalSession implements DispatchSession {
 
 		this.subagentDrivers.set(convId, subDriver);
 
-		// 若驱动支持 setModel，应用子代理指定的模型
 		if (effectiveModel && subDriver.setModel) {
 			try {
 				await subDriver.setModel(effectiveModel);
-			} catch {
-				// 驱动不支持或模型设置失败时平滑降级
-			}
+			} catch {}
 		}
 
 		if (this.disposed || generation !== this.projectGeneration || this.subagentDrivers.get(convId) !== subDriver)
 			return { convId };
-		// 异步启动子代理执行流程
 		void this.runSubagent(convId, subDriver, effectivePrompt, targetCwd);
 
 		return { convId };
 	}
 
-	/** 后台异步执行子代理 Prompt */
 	private async runSubagent(convId: string, subDriver: BaseAgentDriver, prompt: string, cwd: string): Promise<void> {
 		const conv = this.conversations.get(convId);
 		if (!conv) return;
@@ -3056,7 +2953,6 @@ export class UniversalSession implements DispatchSession {
 					assistantMsg.content.push({ type: "thinking", thinking: delta });
 				}
 				if (this.activeConvId === convId) {
-					// Subagents stream through conv.messages snapshots, not the main turn's message.
 					this.scheduleThrottledSnapshot();
 				}
 			},
@@ -3118,9 +3014,7 @@ export class UniversalSession implements DispatchSession {
 				this.subagentDrivers.delete(convId);
 				try {
 					void subDriver.dispose();
-				} catch {
-					// 忽略 dispose 异常
-				}
+				} catch {}
 				this.notifySubagentWaitListeners();
 				this.flushSnapshot();
 				void this.refreshSessions();
@@ -3137,9 +3031,7 @@ export class UniversalSession implements DispatchSession {
 				this.subagentDrivers.delete(convId);
 				try {
 					void subDriver.dispose();
-				} catch {
-					// 忽略 dispose 异常
-				}
+				} catch {}
 				this.notifySubagentWaitListeners();
 				this.flushSnapshot();
 				void this.refreshSessions();
@@ -3173,7 +3065,6 @@ export class UniversalSession implements DispatchSession {
 		}
 	}
 
-	/** 获取单个子代理运行态快照结果 */
 	async getSubagentResult(convId: string): Promise<SubagentSnapshot> {
 		const conv = this.conversations.get(convId);
 		if (!conv || !conv.isSubagent) {
@@ -3182,7 +3073,6 @@ export class UniversalSession implements DispatchSession {
 		return this.subagentToSnapshot(conv);
 	}
 
-	/** 提取子代理会话的最终 assistant 正文输出 */
 	private extractSubagentOutput(conv: UniversalConversation): string {
 		const assistantMsgs = conv.messages.filter((m) => m.role === "assistant");
 		const pieces: string[] = [];
@@ -3196,7 +3086,6 @@ export class UniversalSession implements DispatchSession {
 		return pieces.join("\n").trim();
 	}
 
-	/** 将 UniversalConversation 转换成标准 SubagentSnapshot */
 	private subagentToSnapshot(conv: UniversalConversation): SubagentSnapshot {
 		const output = this.extractSubagentOutput(conv);
 		const state: SubagentState =
@@ -3220,7 +3109,6 @@ export class UniversalSession implements DispatchSession {
 		};
 	}
 
-	/** 停止指定的子代理运行 */
 	async stopSubagent(convId: string): Promise<void> {
 		const conv = this.conversations.get(convId);
 		if (!conv) return;
@@ -3236,9 +3124,7 @@ export class UniversalSession implements DispatchSession {
 			try {
 				await driver.abort();
 				void driver.dispose();
-			} catch {
-				// 忽略驱动中止失败
-			}
+			} catch {}
 		}
 
 		this.notifySubagentWaitListeners();
@@ -3246,7 +3132,6 @@ export class UniversalSession implements DispatchSession {
 		void this.refreshSessions();
 	}
 
-	/** 等待指定的子代理到达终态 */
 	async waitSubagents(timeoutSeconds?: number, runIds?: string[], callerId?: string): Promise<SubagentSnapshot[]> {
 		const waitCapMs = computeWaitCapMs();
 		const requestedMs =
@@ -3311,18 +3196,14 @@ export class UniversalSession implements DispatchSession {
 		});
 	}
 
-	/** 唤醒所有等待中的子代理监听者 */
 	private notifySubagentWaitListeners(): void {
 		for (const listener of this.subagentWaitListeners) {
 			try {
 				listener();
-			} catch {
-				// 忽略监听者异常
-			}
+			} catch {}
 		}
 	}
 
-	/** 列出子代理快照列表 */
 	listSubagents(scope: "all" | "subagent" | "persistent" = "all"): SubagentSnapshot[] {
 		const snaps: SubagentSnapshot[] = [];
 		for (const conv of this.conversations.values()) {
@@ -3334,7 +3215,6 @@ export class UniversalSession implements DispatchSession {
 		return snaps;
 	}
 
-	/** 向指定子代理发送引导/追加消息 */
 	async steerSubagent(convId: string, message: string): Promise<void> {
 		const conv = this.conversations.get(convId);
 		if (!conv || !conv.isSubagent) {
@@ -3350,7 +3230,6 @@ export class UniversalSession implements DispatchSession {
 		this.flushSnapshot();
 	}
 
-	/** 跨代理协作交接 */
 	async handoffSubagent(fromRunId: string, toRunId: string, payload: string): Promise<void> {
 		const fromConv = this.conversations.get(fromRunId);
 		const toConv = this.conversations.get(toRunId);
@@ -3370,7 +3249,6 @@ export class UniversalSession implements DispatchSession {
 		};
 		this.subagentHandoffs = recordSubagentHandoff(this.subagentHandoffs, record, 50);
 
-		// 向目标子代理注入交接卡片消息
 		const now = Date.now();
 		const fromType = fromConv?.subagentType ?? "peer";
 		toConv.messages.push({
@@ -3395,9 +3273,7 @@ export class UniversalSession implements DispatchSession {
 			try {
 				void driver.abort();
 				void driver.dispose();
-			} catch {
-				// 忽略驱动释放异常
-			}
+			} catch {}
 		}
 		this.subagentDrivers.clear();
 		this.subagentWaitListeners.clear();

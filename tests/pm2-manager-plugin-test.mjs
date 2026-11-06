@@ -1,19 +1,3 @@
-/**
- * pm2-manager 插件 E2E（零 token、自包含、独立临时 dataDir/端口）。
- *
- * 覆盖真实宿主接线（单测只到假宿主，manifest 是否被宿主接受、路由是否真挂上、
- * 激活是否真跑完，只有起真服务器才算数）：
- *   1. manifest 被接受：插件出现在 `plugins` 推送里且没有 error；
- *   2. `view:false`（没有独立面板）+ `ui["tasks.panel"]` 一条 kind=view（内嵌进宿主「后台任务」面板）；
- *   3. 服务端入口真激活（stdout 有 activated 日志，且无 [plugin:pm2-manager] 报错）；
- *   4. 三个 HTTP 路由可用：GET /status 回结构化状态、POST /action 的非法入参被挡（ok:false）、
- *      已删的 /scan 真回 404（遗留实例扫描交给宿主面板，不重复实现）；
- *   5. 未装 pm2 时面板拿到的是「可安装」状态而不是崩（status.installCommand 有值）。
- *
- * 插件**不接管 bash**：不订阅 onToolPre / onToolPost，不管 AI 怎么写后台命令。
- *
- * 运行：npm run build && node tests/pm2-manager-plugin-test.mjs（已进 tests/run-smoke.mjs）
- */
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +15,6 @@ const dataDir = join(root, "data");
 const work = join(root, "work");
 mkdirSync(work, { recursive: true });
 
-// 把仓库里的插件原样装进临时 dataDir（与用户从市场安装同一条路径：<dataDir>/plugins/<id>/）
 const srcPlugin = resolve(__dirname, "../plugins", PLUGIN_ID);
 const dstPlugin = join(dataDir, "plugins", PLUGIN_ID);
 mkdirSync(dirname(dstPlugin), { recursive: true });
@@ -46,7 +29,6 @@ const check = (name, ok, extra = "") => {
 let proc = null;
 let sock = null;
 let serverLog = "";
-/** 连接建立后收到的全部消息（plugins 这类推送可能在 hello 之前就到，先存下来再查）。 */
 const messages = [];
 
 const connect = (clientId) =>
@@ -70,7 +52,6 @@ const connect = (clientId) =>
 		});
 	});
 
-/** 先查已收到的，再等新的。 */
 const waitMsg = (pred, label, timeoutMs = 20_000) => {
 	const hit = messages.find(pred);
 	if (hit) return Promise.resolve(hit);
@@ -121,9 +102,7 @@ async function main() {
 	for (;;) {
 		try {
 			if ((await fetch(`${BASE}/api/health`)).ok) break;
-		} catch {
-			/* 还没起来 */
-		}
+		} catch {}
 		if (Date.now() - t0 > 30_000) throw new Error("server not ready");
 		await new Promise((r) => setTimeout(r, 300));
 	}
@@ -131,7 +110,6 @@ async function main() {
 
 	sock = await connect("pm2-manager-test");
 
-	// ── 1. 插件被宿主接受（plugins 推送里没有 error）──────────────────────────
 	const pluginsMsg = await waitMsg((m) => m.type === "plugins", "plugins", 10_000).catch(() => null);
 	const info = pluginsMsg?.plugins?.find((p) => p.id === PLUGIN_ID);
 	check(
@@ -142,7 +120,6 @@ async function main() {
 			: "未出现在 plugins 列表",
 	);
 
-	// ── 2. 内嵌进「后台任务」面板：view:false + tasks.panel 一条 kind=view ──────────────
 	sock.send(JSON.stringify({ type: "plugin_api_catalog", requestId: "cat-1" }));
 	const catMsg = await waitMsg(
 		(m) => m.type === "plugin_api_catalog_result" && m.requestId === "cat-1",
@@ -159,7 +136,6 @@ async function main() {
 		JSON.stringify(panelItem ? { kind: panelItem.kind, view: panelItem.view } : null),
 	);
 
-	// ── 3. 服务端入口真激活 ─────────────────────────────────────────────────
 	const tWaitActivated = Date.now();
 	while (!serverLog.includes("pm2-manager activated") && Date.now() - tWaitActivated < 5000) {
 		await new Promise((r) => setTimeout(r, 100));
@@ -170,7 +146,6 @@ async function main() {
 		.filter((line) => line.includes(`[plugin:${PLUGIN_ID}]`) && /error|invalid|ignored|failed|reject/i.test(line));
 	check("无插件运行时报错", pluginErrors.length === 0, pluginErrors.slice(0, 2).join(" | "));
 
-	// ── 4. HTTP 路由 ────────────────────────────────────────────────────────
 	const statusRes = await fetch(`${BASE}/plugins-api/${PLUGIN_ID}/status`);
 	const status = await statusRes.json().catch(() => null);
 	check(
@@ -202,20 +177,14 @@ main()
 	.finally(async () => {
 		try {
 			sock?.close();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		try {
 			proc?.kill();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		await new Promise((r) => setTimeout(r, 500));
 		try {
 			rmSync(root, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		console.log(failures === 0 ? "\npm2-manager 插件 E2E 全过" : `\npm2-manager 插件 E2E 失败 ${failures} 项`);
 		process.exit(failures === 0 ? 0 : 1);
 	});

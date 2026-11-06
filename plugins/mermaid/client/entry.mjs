@@ -1,14 +1,3 @@
-/**
- * Mermaid fenced-code renderer plugin.
- *
- * The engine is loaded lazily from the bundled vendor module, with a CDN
- * fallback for partial plugin installations. Rendering stays entirely client
- * side and the host falls back to the raw code block if rendering fails.
- */
-
-/** CDN 兜底地址：钉死与 client/vendor bundle 完全相同的精确版本（12.0.0）——
- *  浮动版本号会让兜底路径拉到行为不同的新版引擎（渲染/主题 API 可能漂移）。
- *  CDN 仅作降级用途，生产环境应带上 vendor bundle（见 README）。 */
 const CDN_URL = "https://esm.sh/mermaid@12.0.0";
 const THEME_CHANGE_EVENT = "pi-web-ui:theme-change";
 
@@ -29,7 +18,6 @@ function cssVar(name, fallback) {
 	return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
-/** Prefer an explicit color-scheme; use background luminance for legacy themes. */
 function isDarkTheme() {
 	const scheme = getComputedStyle(document.documentElement).colorScheme;
 	if (scheme.split(/\s+/).includes("dark")) return true;
@@ -78,7 +66,6 @@ function themeVariables(dark, fontSize) {
 
 let seq = 0;
 
-/** Give the root SVG a concrete width so wide diagrams scroll instead of shrink. */
 function preserveSvgWidth(svg) {
 	const match = svg.match(/<svg\b([^>]*)>/i);
 	if (!match) return svg;
@@ -98,7 +85,6 @@ function preserveSvgWidth(svg) {
 	return svg.replace(match[0], `<svg${sizedAttrs} width="${width}" style="${style}">`);
 }
 
-/** Mermaid configuration is global, so initialize and render must be atomic. */
 let renderQueue = Promise.resolve();
 
 function renderSvg(code) {
@@ -161,8 +147,6 @@ async function renderMermaid(code) {
 		renderSvg(code)
 			.then((rendered) => {
 				if (request !== themeRequest || !el.isConnected) return;
-				// Replace the SVG synchronously only after its replacement is complete,
-				// preserving the block height and reading position while rendering.
 				applyRenderedSvg(el, rendered);
 			})
 			.catch((err) => console.error("[plugin:mermaid] theme re-render failed:", err));

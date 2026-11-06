@@ -1,12 +1,3 @@
-/**
- * 「图标编辑」纯函数引擎单测（web/src/ui-layout-edit.ts）。
- *
- * 锁住的是**拖动 → 布局偏好**这条唯一落盘口径。这里出错的表现都很难排查：
- *   · `order` 忘了连带写目标栏其它条目 → 被拖条目跳到最前（ui-slots.ts 的 sortEntries：
- *     在 order 里的一律排在没列的之前），看起来「拖到哪儿都往最前跑」；
- *   · 换栏时不写 `slots` → 拖完弹回原栏；
- *   · 从托盘拖出来时不清 `hidden` → 拖了等于没拖。
- */
 import { describe, expect, it } from "vitest";
 import type { UiAlign, UiLayoutPrefs, UiSlotId } from "../../web/src/types.js";
 import type { UiSlotEntry } from "../../web/src/ui-slots.js";
@@ -37,7 +28,6 @@ function entry(id: string, slot: UiSlotId, opts: { hidden?: boolean; align?: UiA
 	};
 }
 
-/** 常用夹具：顶栏 a/b/c（c 在 end 段），底栏 d，左悬浮 e。 */
 function fixture() {
 	return collectIconEditItems({
 		"topbar.primary": [
@@ -100,7 +90,6 @@ describe("applyIconDrop", () => {
 		const buckets = fixture();
 		const next = applyIconDrop(undefined, buckets, { id: "c", slot: "topbar.primary", index: 0 });
 		expect(next.order).toEqual(["c", "a", "b"]);
-		// 栏内顺序变化不该动别的偏好。
 		expect(next.slots).toBe(undefined);
 		expect(next.align).toBe(undefined);
 		expect(next.hidden).toBe(undefined);
@@ -117,7 +106,6 @@ describe("applyIconDrop", () => {
 		const buckets = fixture();
 		const next = applyIconDrop(undefined, buckets, { id: "a", slot: "topbar.primary", align: "end", index: 1 });
 		expect(next.align).toEqual({ a: "end" });
-		// end 段 = c + a；其它段（start = b）跟在后面。
 		expect(next.order).toEqual(["c", "a", "b"]);
 	});
 
@@ -143,7 +131,6 @@ describe("applyIconDrop", () => {
 		const buckets = fixture();
 		const layout: UiLayoutPrefs = { order: ["e", "host:settings", "host:history"] };
 		const next = applyIconDrop(layout, buckets, { id: "c", slot: "topbar.primary", index: 0 });
-		// 顶栏整串被重写，非顶栏的历史顺序原样保留在前面。
 		expect(next.order).toEqual(["e", "host:settings", "host:history", "c", "a", "b"]);
 	});
 
@@ -184,7 +171,6 @@ describe("applyIconHide", () => {
 	});
 });
 
-/** 停靠栏的竖向 align 文案 + 编辑器的分段能力（见 SideDock / IconEditor）。 */
 describe("竖向栏（侧边停靠栏）", () => {
 	it("侧边栏是竖轴且可按段拖放，顶栏/底栏仍是横轴", () => {
 		const zones = Object.fromEntries(ICON_EDIT_ZONES.map((z) => [z.slot, z]));

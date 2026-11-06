@@ -1,15 +1,3 @@
-// refresh_provider_models — saved-provider list refresh test (zero token).
-//
-// Mock /models endpoint + a SAVED custom provider (written via
-// save_model_config with a manual model row). Then refresh:
-//   1. refresh_provider_result echoes reqId, ok, added, total
-//   2. merged entry keeps the manually-entered fields (name wins over fetched)
-//   3. newly-advertised ids are appended with endpoint metadata
-//   4. credentials stay server-side: probe carries Bearer <saved key> even
-//      though the browser never had it
-//   5. error path: unknown provider → ok:false
-//
-// Usage: npm run build && node tests/refresh-models-test.mjs [port]
 import WebSocket from "ws";
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync } from "node:fs";
@@ -28,7 +16,6 @@ mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-// Mock: first hit returns 2 models; after the "bump" flag returns 3 (one new).
 let bumped = false;
 const authSeen = [];
 const mock = createServer((req, res) => {
@@ -37,9 +24,8 @@ const mock = createServer((req, res) => {
 		const data = [
 			{
 				id: "mock-a",
-				context_window: 999999, // fetched metadata — must NOT override manual
+				context_window: 999999,
 				display_name: "Fetched A",
-				// 网关自报的思考档位 → 必须推导成 thinkingLevelMap 并落盘（#771）
 				reasoning_levels: ["low", "high", "xhigh"],
 			},
 			{ id: "mock-b" },
@@ -136,9 +122,7 @@ async function cleanup() {
 	clean = true;
 	try {
 		process.kill(server.pid, "SIGTERM");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	mock.close();
 }
 process.on("exit", cleanup);
@@ -149,7 +133,6 @@ try {
 	c.send({ type: "hello", clientId: "refresh-models-test" });
 	await c.waitFor("ready", 8000);
 
-	// 0) save a provider with ONE manual row (hand-tuned metadata)
 	c.send({
 		type: "save_model_config",
 		providerId: "my-provider",
@@ -170,7 +153,6 @@ try {
 	});
 	await c.waitFor("models_config", 10000, (m) => m.providers.some((p) => p.providerId === "my-provider"));
 
-	// 1) refresh #1 — fetched=[a,b], saved=[a] → b 新增；手填字段必须胜出
 	c.send({ type: "refresh_provider_models", providerId: "my-provider", reqId: 11 });
 	const r1 = await c.waitFor("refresh_provider_result", 15000, (m) => m.reqId === 11);
 	check("refresh ok, added=1, total=2", r1.ok && r1.added === 1 && r1.total === 2, JSON.stringify(r1));
@@ -188,7 +170,6 @@ try {
 		rowA.name === "Manual A" && rowA.contextWindow === 123456 && canonish(rowA.input) === canonish(["text"]),
 		JSON.stringify(rowA),
 	);
-	// #771：网关自报 reasoning_levels → 现有行补上 thinkingLevelMap（xhigh 否则永远选不到）
 	const expectedMapA = { minimal: null, low: "low", medium: null, high: "high", xhigh: "xhigh", max: null };
 	check(
 		"existing row gains derived thinkingLevelMap (xhigh/max open up)",
@@ -196,7 +177,6 @@ try {
 		JSON.stringify(rowA.thinkingLevelMap),
 	);
 
-	// 2) bump the mock to advertise a new id → appended with its metadata
 	bumped = true;
 	c.send({ type: "refresh_provider_models", providerId: "my-provider", reqId: 12 });
 	const r2 = await c.waitFor("refresh_provider_result", 15000, (m) => m.reqId === 12);
@@ -215,14 +195,12 @@ try {
 		JSON.stringify(rowNew?.thinkingLevelMap),
 	);
 
-	// 3) credentials stayed server-side: probe carried the SAVED key as Bearer
 	check(
 		"probe used saved apiKey (Bearer saved-secret-key)",
 		authSeen.some((a) => a === "Bearer saved-secret-key"),
 		JSON.stringify(authSeen),
 	);
 
-	// 4) error path: unknown provider
 	c.send({ type: "refresh_provider_models", providerId: "nope", reqId: 13 });
 	const r4 = await c.waitFor("refresh_provider_result", 10000, (m) => m.reqId === 13);
 	check("unknown provider → ok:false with error", !r4.ok && !!r4.error);

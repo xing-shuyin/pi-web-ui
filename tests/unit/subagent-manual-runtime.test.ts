@@ -7,9 +7,6 @@ import { UniversalSession } from "../../server/universal/universal-session.js";
 
 const proto = ClientSession.prototype as any;
 function harness() {
-	// 原型方法（subagentCurrentId / conversationStreaming / completionPending …）由
-	// fake-session 继承真实现，集合类字段（convs / pendingQuestions /
-	// conversationSettingsTargets …）由源码推导自动带上——这里只列本用例覆写的钩子。
 	const owner = fakeClientSession({
 		conv: { id: "active-elsewhere" },
 		communicationPending: () => false,
@@ -200,7 +197,6 @@ describe("manual task runtime", () => {
 		expect(root.session.sendUserMessage).toHaveBeenCalledOnce();
 		expect(owner.finalizeSubagentWorktree).toHaveBeenCalledOnce();
 
-		// A genuine new task resets the notification flags and task intent together.
 		a.session.isIdle = true;
 		a.subagentConsumedByParent = true;
 		a.subagentTask.completionRequested = true;

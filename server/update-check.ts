@@ -1,13 +1,3 @@
-/**
- * All-source update check: pi-web-ui itself, the installed pi core
- * (@earendil-works/pi-coding-agent — probed via `pi --version`, with a
- * vendored-copy fallback), the DIRECT pi extensions declared in
- * <agentDir>/npm/package.json (fallback: raw node_modules walk), plus the
- * git-source extensions declared in global/project settings.json (issue #178).
- * Pure logic lives here so it can be unit-tested with an injected fetcher
- * (and an injected pi-core probe); ClientSession only wires it to the wire
- * protocol.
- */
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync, existsSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -17,13 +7,10 @@ import { sdkCopies, type SdkCopy } from "./sdk-origin.js";
 
 const PI_CORE_PACKAGE = "@earendil-works/pi-coding-agent";
 
-/** npm 官方源；用户在 <agentDir>/npm/.npmrc 里配了镜像/私有源时会被覆盖（issue #151）。 */
 export const NPM_DEFAULT_REGISTRY = "https://registry.npmjs.org";
 const FETCH_TIMEOUT_MS = 8_000;
-/** Parallel registry lookups per batch. */
 const CONCURRENCY = 5;
 
-/** Simple numeric semver compare: >0 means a newer than b. */
 export function compareVersions(a: string, b: string): number {
 	const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
 	const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
@@ -35,14 +22,6 @@ export function compareVersions(a: string, b: string): number {
 	return 0;
 }
 
-/**
- * Parse `pi --version` stdout into a version string, or null. Two-stage:
- * prefer a line that is exactly the version (optional leading "v", optional
- * prerelease/build suffix) so a stdout preamble like "Update available:
- * 0.85.0" cannot forge it; otherwise fall back to the first loose
- * semver-looking token. The exact-line match keeps the FULL version incl.
- * prerelease (0.85.0-beta.1 stays 0.85.0-beta.1).
- */
 export function parsePiVersionOutput(stdout: string): string | null {
 	const exact = stdout.match(/^\s*v?(\d+\.\d+\.\d+(?:[-+][\w.]+)*)\s*$/m)?.[1];
 	if (exact) return exact;
@@ -59,11 +38,8 @@ export interface UpdateItem {
 	latestPublishedAt?: string | null;
 	upToDate: boolean;
 	error?: string;
-	/** git-extension only: `host/path` shorthand (prepend `git:` for the `pi update` command). */
 	source?: string;
-	/** plugin only: directory/install id, matches pluginId. */
 	pluginId?: string;
-	/** plugin only: whether this is a shipped built-in plugin. */
 	builtin?: boolean;
 }
 
@@ -71,43 +47,24 @@ export interface LocalPackage {
 	name: string;
 	version: string;
 	kind: UpdateItemKind;
-	/** Pre-flagged target (issue #533): an i18n key the caller cannot localize
-	 *  yet, resolved by checkAll into the item's `error`. Currently set only for
-	 *  a pi-core whose installed version could not be read. */
 	error?: string;
-	/** git-extension only: `host/path` shorthand (prepend `git:` for the `pi update` command). */
 	source?: string;
-	/** git-extension only: clone dir (<agentDir>/git/… or <projectCwd>/.pi/git/…). */
 	installDir?: string;
-	/** git-extension only: configured ref (`@…` suffix), if any. */
 	ref?: string | null;
 }
 
-/**
- * Enumerate installed pi packages for the "check all updates" list, matching
- * what the TUI shows: the DIRECT dependencies declared in
- * <agentDir>/npm/package.json, with each installed version resolved from
- * node_modules/<name>/package.json (not the manifest range). Transitive deps
- * are not listed.
- *
- * Fallback: when the manifest is missing/unreadable or declares no
- * dependencies, fall back to the historical raw node_modules walk.
- */
 export function listInstalledPackages(agentDir: string): LocalPackage[] {
 	const direct = readManifestDeps(agentDir);
 	if (direct) return direct;
 	return walkNodeModules(agentDir);
 }
 
-/** Direct deps from the npm manifest with installed versions, or null. */
 function readManifestDeps(agentDir: string): LocalPackage[] | null {
 	let manifest: { dependencies?: Record<string, string> } | null;
 	try {
 		manifest = JSON.parse(readFileSync(join(agentDir, "npm", "package.json"), "utf8")) as {
 			dependencies?: Record<string, string>;
 		} | null;
-		// Literal `null` parses fine but explodes on property access — treat as
-		// unreadable (fallback to the raw walk), per the documented contract.
 		if (!manifest || typeof manifest !== "object") return null;
 	} catch {
 		return null;
@@ -120,18 +77,11 @@ function readManifestDeps(agentDir: string): LocalPackage[] | null {
 	const out: LocalPackage[] = [];
 	for (const name of Object.keys(deps)) {
 		const item = readLocalPackage(join(root, ...name.split("/")));
-		// Broken/uninstalled entries are skipped (the registry never sees them).
 		if (item) out.push(item);
 	}
-	// Deterministic order (manifest key order is arbitrary).
 	return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-/**
- * Legacy fallback: raw walk of <agentDir>/npm/node_modules — top-level plain
- * names plus one level inside @scope dirs. Skips .bin, dotfiles and anything
- * without a readable package.json.
- */
 function walkNodeModules(agentDir: string): LocalPackage[] {
 	const root = join(agentDir, "npm", "node_modules");
 	const out: LocalPackage[] = [];
@@ -160,7 +110,6 @@ function walkNodeModules(agentDir: string): LocalPackage[] {
 			if (item) out.push(item);
 		}
 	}
-	// Deterministic order (readdir order is FS-dependent).
 	return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
@@ -174,26 +123,14 @@ function readLocalPackage(dir: string): LocalPackage | null {
 	}
 }
 
-// -- git-source extensions (issue #178) --------------------------------------
-// The panel historically enumerated only npm direct deps, so `git:` entries in
-// settings.json never appeared. pi core updates both (`updateConfiguredSources`
-// buckets npmCandidates/gitCandidates), keyed by normalized `git:host/path`.
-
 const execFileAsync = promisify(execFile);
-/** Matches pi core NETWORK_TIMEOUT_MS so slow forges degrade the same way. */
 const GIT_TIMEOUT_MS = 10_000;
 
 export interface GitExtensionSource {
 	host: string;
-	/** Normalized owner/repo (no .git suffix, no ref). */
 	path: string;
-	/** Configured ref (`@…` suffix), if any. Pinned refs are still checked:
-	 * core treats them as checkout targets to reconcile (package-manager
-	 * `updateConfiguredSources` comment), so a moved ref shows as an update. */
 	ref: string | null;
-	/** `host/path` — prepend `git:` for the `pi update` argument (issue #178 step 6). */
 	shorthand: string;
-	/** `git:host/path` — global/project dedupe key (mirrors core identity). */
 	identity: string;
 }
 
@@ -218,31 +155,22 @@ function normalizeGitRepo(host: string, path: string, ref: string | null): GitEx
 	};
 }
 
-/** Split `rest` (the part after the host) on the first `@` into path + ref. */
 function splitGitRef(rest: string): { path: string; ref: string | null } {
 	const at = rest.indexOf("@");
 	if (at < 0) return { path: rest, ref: null };
 	return { path: rest.slice(0, at), ref: rest.slice(at + 1) || null };
 }
 
-/**
- * Parse a settings `packages` entry into a git source, or null when it is not
- * one. Accepts the same shapes pi core does (`parseGitUrl`): `git:`-prefixed
- * shorthand/URLs plus bare explicit protocol URLs. `npm:`/local entries yield
- * null — they are handled by the npm enumeration, not here.
- */
 export function parseGitExtensionSource(entry: string): GitExtensionSource | null {
 	const trimmed = entry.trim();
 	if (!trimmed || trimmed.startsWith("npm:")) return null;
 	const url = trimmed.startsWith("git:") ? trimmed.slice(4).trim() : trimmed;
 	if (!url) return null;
-	// scp-like: git@host:owner/repo[.git][@ref]
 	const scp = url.match(/^git@([^:]+):(.+)$/);
 	if (scp) {
 		const { path, ref } = splitGitRef(scp[2]!);
 		return normalizeGitRepo(scp[1]!, path, ref);
 	}
-	// Explicit protocol URLs (bare or git:-prefixed).
 	if (/^(https?|ssh|git):\/\//i.test(url)) {
 		let host: string;
 		let rest: string;
@@ -256,7 +184,6 @@ export function parseGitExtensionSource(entry: string): GitExtensionSource | nul
 		const { path, ref } = splitGitRef(rest);
 		return normalizeGitRepo(host, path, ref);
 	}
-	// Shorthand only with an explicit git: prefix (bare `a/b` is a local path).
 	if (!trimmed.startsWith("git:")) return null;
 	const slash = url.indexOf("/");
 	if (slash < 0) return null;
@@ -266,10 +193,6 @@ export function parseGitExtensionSource(entry: string): GitExtensionSource | nul
 	return normalizeGitRepo(host, path, ref);
 }
 
-/**
- * Total switch for the git-source check (issue #178 step 8). `0/false/no/off`
- * disables it (large-monorepo escape hatch); unset or anything else enables.
- */
 export function isGitExtensionCheckEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 	const v = (env.PI_WEB_GIT_EXTENSION_CHECK ?? "").trim().toLowerCase();
 	return v !== "0" && v !== "false" && v !== "no" && v !== "off";
@@ -295,9 +218,6 @@ function readGitCloneNameVersion(installDir: string): { name?: string; version?:
 			name?: string;
 			version?: string;
 		};
-		// Name and version fall back independently: a clone with a version but
-		// no usable name still reports its version (name falls back to the
-		// source shorthand at the call site), and vice versa.
 		return {
 			...(typeof pkg.name === "string" && pkg.name ? { name: pkg.name } : {}),
 			...(typeof pkg.version === "string" && pkg.version ? { version: pkg.version } : {}),
@@ -348,8 +268,6 @@ export function listGitExtensions(
 	return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-/** Display form for git rows: `<version> (<short sha>)`, sha-only when the
- * clone has no readable package.json version (issue #178 step 5). */
 export function formatGitVersion(version: string, sha: string): string {
 	const short = sha.slice(0, 7);
 	return version && version !== "?" ? `${version} (${short})` : short;
@@ -371,11 +289,6 @@ export interface GitCheckResult {
 
 export type GitCheckFn = (installDir: string, ref?: string | null) => Promise<GitCheckResult>;
 
-/**
- * Patterns to query via `git ls-remote` for a requested ref name.
- * Full `refs/` paths are queried directly (with peeled tag fallback);
- * shorthand names look up branches, tags, and peeled tags.
- */
 export function buildLsRemotePatternsForRef(ref: string): string[] {
 	if (ref.startsWith("refs/")) {
 		return [ref, `${ref}^{}`];
@@ -383,14 +296,6 @@ export function buildLsRemotePatternsForRef(ref: string): string[] {
 	return [`refs/heads/${ref}`, `refs/tags/${ref}`, `refs/tags/${ref}^{}`, ref, `${ref}^{}`];
 }
 
-/**
- * Pick the remote commit SHA corresponding to a requested ref from `git ls-remote` output.
- *
- * Precedence:
- * 1. Full/explicit ref match (`refs/...^{}`, direct `refs/...`, or `HEAD`)
- * 2. Branch ref: `refs/heads/<ref>`
- * 3. Tag ref: peeled annotated tag (`refs/tags/<ref>^{}`) wins over lightweight tag (`refs/tags/<ref>`)
- */
 export function pickRemoteShaForRef(output: string, ref: string): string | null {
 	const map = new Map<string, string>();
 	for (const line of output.split(/\r?\n/)) {
@@ -399,15 +304,12 @@ export function pickRemoteShaForRef(output: string, ref: string): string | null 
 			map.set(match[2], match[1]);
 		}
 	}
-	// Full / explicit ref match
 	if (map.has(`${ref}^{}`)) return map.get(`${ref}^{}`)!;
 	if (map.has(ref)) return map.get(ref)!;
 
-	// Branch: refs/heads/<ref>
 	const branchRef = `refs/heads/${ref}`;
 	if (map.has(branchRef)) return map.get(branchRef)!;
 
-	// Tag: peeled tag wins over unpeeled tag
 	const peeledTagRef = `refs/tags/${ref}^{}`;
 	if (map.has(peeledTagRef)) return map.get(peeledTagRef)!;
 	const tagRef = `refs/tags/${ref}`;
@@ -416,13 +318,6 @@ export function pickRemoteShaForRef(output: string, ref: string): string | null 
 	return null;
 }
 
-/**
- * Compare a clone's HEAD against its remote (lightweight: `ls-remote` fetches
- * refs only, no objects). When a configured ref (`@...`) is given, the remote
- * benchmark is resolved from that ref (branch, tag, or commit sha) instead of
- * blindly comparing against the checked-out branch's upstream (issue #665).
- * When ref is absent, upstream branch wins when configured, else origin HEAD.
- */
 export async function defaultCheckGitExtension(installDir: string, ref?: string | null): Promise<GitCheckResult> {
 	const localSha = await runGit(["rev-parse", "HEAD"], installDir);
 	if (!/^[0-9a-f]{40}$/i.test(localSha)) throw new Error(`Bad local HEAD: ${localSha.slice(0, 20)}`);
@@ -440,17 +335,13 @@ export async function defaultCheckGitExtension(installDir: string, ref?: string 
 		}
 
 		if (!remoteSha && /^[0-9a-f]{7,40}$/i.test(targetRef)) {
-			// Commit SHA reference: if local HEAD already matches the requested SHA (prefix or exact),
-			// the clone is fully up to date.
 			if (localSha.toLowerCase().startsWith(targetRef.toLowerCase())) {
 				remoteSha = localSha;
 			} else {
 				try {
 					const parsed = await runGit(["rev-parse", `${targetRef}^{commit}`], installDir);
 					if (/^[0-9a-f]{40}$/i.test(parsed)) remoteSha = parsed;
-				} catch {
-					/* commit not present in local repo yet */
-				}
+				} catch {}
 				if (!remoteSha) remoteSha = targetRef;
 			}
 		}
@@ -470,9 +361,7 @@ export async function defaultCheckGitExtension(installDir: string, ref?: string 
 			const out = await runGit(["ls-remote", "origin", `refs/heads/${branch}`], installDir);
 			remoteSha = out.match(/^([0-9a-f]{40})\s+/m)?.[1] ?? null;
 		}
-	} catch {
-		/* no usable upstream — fall through to origin HEAD */
-	}
+	} catch {}
 	if (!remoteSha) {
 		const out = await runGit(["ls-remote", "origin", "HEAD"], installDir);
 		remoteSha = out.match(/^([0-9a-f]{40})\s+HEAD$/m)?.[1] ?? null;
@@ -481,21 +370,16 @@ export async function defaultCheckGitExtension(installDir: string, ref?: string 
 	return { localSha, remoteSha };
 }
 
-/** How long a pi probe result stays hot (mirrors ClientSession.piCliProbe). */
 const PI_PROBE_TTL_MS = 10_000;
 
 let piCoreProbe: { at: number; version: string | null } | null = null;
 
-/** Read a pi-core package.json's version, or null when absent, not ours, or
- *  unreadable. Shared by all resolution strategies below. */
 function readPiCoreVersionAt(pkgPath: string): string | null {
 	if (!existsSync(pkgPath)) return null;
 	try {
 		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { name?: string; version?: string };
 		if (pkg.name === PI_CORE_PACKAGE && pkg.version) return pkg.version;
-	} catch {
-		/* unreadable package.json */
-	}
+	} catch {}
 	return null;
 }
 
@@ -510,11 +394,6 @@ function versionFromSiblingNodeModules(bin: string): string | null {
 	return readPiCoreVersionAt(join(dirname(bin), "node_modules", ...PI_CORE_PACKAGE.split("/"), "package.json"));
 }
 
-/**
- * POSIX: `pi` is a symlink into <prefix>/node_modules/<pkg>/dist/bundle/cli.js
- * — realpath it and walk up (≤8 levels) until a package.json names our
- * package. Functionally unchanged from the original probe.
- */
 function versionFromSymlinkWalk(bin: string): string | null {
 	try {
 		let dir = dirname(realpathSync(bin));
@@ -525,22 +404,14 @@ function versionFromSymlinkWalk(bin: string): string | null {
 			if (parent === dir) break;
 			dir = parent;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return null;
 }
 
-/**
- * Attempt to resolve the installed @earendil-works/pi-coding-agent package version
- * from a candidate `pi` executable/script path.
- */
 function versionFromCandidate(bin: string): string | null {
-	// 1. Sibling layout: <binDir>/node_modules/<pkg>/package.json
 	const sib = versionFromSiblingNodeModules(bin);
 	if (sib) return sib;
 
-	// 2. .bin layout: if bin is inside a `.bin` folder, check sibling of `.bin` (which is node_modules)
 	const dir = dirname(bin);
 	const parent = dirname(dir);
 	if (dir.endsWith(".bin") || dir.endsWith(".bin\\") || dir.endsWith(".bin/")) {
@@ -548,7 +419,6 @@ function versionFromCandidate(bin: string): string | null {
 		if (parentNm) return parentNm;
 	}
 
-	// 3. Wrapper script content inspection (Windows .cmd / .ps1 or shell wrapper)
 	try {
 		const head = readFileSync(bin, "utf8").slice(0, 4096);
 		const m = head.match(/[^\r\n"']*@earendil-works[/\\]pi-coding-agent[^\r\n"']*/);
@@ -565,11 +435,8 @@ function versionFromCandidate(bin: string): string | null {
 				cur = p;
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 4. POSIX symlink walk
 	const sym = versionFromSymlinkWalk(bin);
 	if (sym) return sym;
 
@@ -635,13 +502,6 @@ export function readPiCoreVersionFromDisk(env: NodeJS.ProcessEnv = process.env):
 	return bestVersion;
 }
 
-/**
- * Default pi core probe: run the globally installed `pi --version`, memoized
- * machine-wide for PI_PROBE_TTL_MS so repeated collectTargets calls never
- * re-probe. Reads the version from disk (pi bin → realpath → package.json)
- * instead of spawning `pi --version`. FORK-FREE by design — see the note on
- * defaultProbePiCore.
- */
 export function defaultProbePiCore(env: NodeJS.ProcessEnv = process.env): string | null {
 	const now = Date.now();
 	const cached = piCoreProbe;
@@ -683,10 +543,6 @@ export function detectPiSdkSplit(
 	return { running: runningVersion, installed };
 }
 
-/**
- * Fallback when the CLI probe yields nothing: the version of the vendored pi
- * core copy in <agentDir>/npm/node_modules, or null if that is absent too.
- */
 function readVendoredPiCore(agentDir: string): string | null {
 	try {
 		const pkg = JSON.parse(
@@ -699,11 +555,6 @@ function readVendoredPiCore(agentDir: string): string | null {
 	}
 }
 
-/**
- * 宿主 SDK 及其 peer/内部包（@earendil-works/* / @mariozechner/*）：
- * 属于宿主引擎随核心一同分发或由别名提供的 SDK 内部构件，非用户安装的独立扩展组件；
- * 既不应在组件列表重复展示，也不能被 `pi update npm:<name>` 更新（会报 No matching package found，issue #393）。
- */
 export function isHostProvidedPackage(name: string): boolean {
 	return name === PI_CORE_PACKAGE || name.startsWith("@earendil-works/") || name.startsWith("@mariozechner/");
 }
@@ -724,10 +575,7 @@ export function collectTargets(
 ): LocalPackage[] {
 	const targets: LocalPackage[] = [{ name: "pi-web-ui", version: webuiVersion, kind: "webui" }];
 	const coreVersion = probePiCore() ?? readVendoredPiCore(agentDir);
-	// issue #533: keep the pi-core row even when the version is undetectable
 	// (e.g. unreadable global install) instead of silently dropping it — an
-	// honest "could not detect" row beats a missing one. checkAll resolves the
-	// key into the item's localized `error`.
 	targets.push({
 		name: PI_CORE_PACKAGE,
 		version: coreVersion ?? "unknown",
@@ -747,13 +595,8 @@ export type Fetcher = (
 	init?: { signal?: AbortSignal; headers?: Record<string, string> },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
-/** Default fetcher (real network). Tests inject a fake. */
 export const defaultFetcher: Fetcher = (url, init) => fetch(url, init) as unknown as ReturnType<Fetcher>;
 
-/**
- * 解析 .npmrc 文本里的全局 registry（`registry=<url>`，后出现的覆盖先出现的）。
- * 找不到返回 null（调用方回落 NPM_DEFAULT_REGISTRY）。引号与行尾 `/` 会被清理。
- */
 export function parseNpmrcRegistry(text: string): string | null {
 	let registry: string | null = null;
 	for (const raw of text.split(/\r?\n/)) {
@@ -772,10 +615,6 @@ export function parseNpmrcRegistry(text: string): string | null {
 	return registry;
 }
 
-/**
- * 从 .npmrc 文本里找出与 registry 同源的认证头（`//host/path:_authToken=` 优先，
- * 其次 `//host/path:_auth=`）。私有源检查更新时没有它会直接 401（issue #151）。
- */
 export function parseNpmrcAuth(text: string, registry: string): string | null {
 	let host: string;
 	try {
@@ -797,7 +636,6 @@ export function parseNpmrcAuth(text: string, registry: string): string | null {
 			.replace(/^["']|["']$/g, "")
 			.trim();
 		if (!value) continue;
-		// key 形如 //registry.example.com/:_authToken —— 取 // 与 : 之间的 host 比对
 		const keyHost = key.slice(2).split("/")[0]!.split(":")[0]!.toLowerCase();
 		if (keyHost !== host) continue;
 		if (/.:_authToken$/i.test(key)) token = value;
@@ -810,15 +648,9 @@ export function parseNpmrcAuth(text: string, registry: string): string | null {
 
 export interface NpmRegistryConfig {
 	registry: string;
-	/** Authorization 头（私有源 .npmrc 里配了 token 时才有）。 */
 	authHeader: string | null;
 }
 
-/**
- * 读取 <agentDir>/npm/.npmrc（`pi update --extensions` 经 npm 自动遵守的同一份），
- * 解析出检查更新该用的 registry + 认证头。文件不存在/不可读/无 registry 行时
- * 回落官方源（issue #151：镜像/私有源用户不再被卡在官方源上）。
- */
 export function resolveNpmRegistry(agentDir: string): NpmRegistryConfig {
 	try {
 		const text = readFileSync(join(agentDir, "npm", ".npmrc"), "utf8");
@@ -834,11 +666,6 @@ interface RegistryDoc {
 	time?: Record<string, string>;
 }
 
-/**
- * Look up one package's latest version + publish time in the npm registry.
- * registry/authHeader 默认官方源；镜像/私有源用户经 resolveNpmRegistry 传入
- * <agentDir>/npm/.npmrc 的配置（issue #151）。
- */
 export async function fetchLatest(
 	fetcher: Fetcher,
 	name: string,
@@ -858,21 +685,11 @@ export async function fetchLatest(
 	};
 }
 
-/**
- * Check every target: npm kinds against the registry, git-extension kinds
- * against their clone's remote (`ls-remote`, refs only). One failed lookup
- * degrades to an error item (upToDate: false) without failing the rest.
- * Results keep the input order. Bounded concurrency (CONCURRENCY) keeps
- * registry/remote load polite. The git checker is injectable for tests.
- */
 export async function checkAll(
 	targets: LocalPackage[],
 	fetcher: Fetcher = defaultFetcher,
-	/** 单项查询失败时的 error 文案语言（默认英文）。 */
 	lang?: () => ServerLang,
-	/** 镜像/私有源配置（默认官方源；调用方经 resolveNpmRegistry 传入 .npmrc，issue #151）。 */
 	registryConfig?: NpmRegistryConfig,
-	/** git 源远端比较（默认真 git；单测注入 fake，issue #178）。 */
 	gitCheck: GitCheckFn = defaultCheckGitExtension,
 ): Promise<UpdateItem[]> {
 	const l = lang?.() ?? "en";
@@ -903,9 +720,6 @@ export async function checkAll(
 			const i = cursor++;
 			const t = targets[i]!;
 			if (t.error) {
-				// Pre-flagged target (issue #533, e.g. undetectable pi-core
-				// version): `error` carries an i18n key resolved here so
-				// collectTargets stays language-free. No registry lookup.
 				results[i] = {
 					name: t.name,
 					kind: t.kind,
@@ -961,10 +775,6 @@ export async function checkAll(
 	return results;
 }
 
-/** Display order for the Component Updates panel: pi-web-ui and pi-core
- *  pinned at the top regardless of state, then out-of-date packages, then
- *  up-to-date ones, errors last. Stable within each bucket (Array.sort is
- *  stable) so registry order survives ties. */
 export function sortUpdateItems(items: UpdateItem[]): UpdateItem[] {
 	const kindRank = (k: UpdateItemKind): number =>
 		k === "webui" ? 0 : k === "pi-core" ? 1 : k === "engine" ? 2 : k === "plugin" ? 3 : 4;

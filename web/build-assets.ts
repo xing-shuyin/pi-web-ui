@@ -2,7 +2,6 @@ import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from
 import { join } from "node:path";
 import type { Plugin } from "vite";
 
-/** Keep one previous generation so open pages can still import their lazy chunks. */
 export function retainBuildAssets(outDir: string): Plugin {
 	const assetsDir = join(outDir, "assets");
 	const manifest = join(outDir, ".build-assets.json");
@@ -12,7 +11,6 @@ export function retainBuildAssets(outDir: string): Plugin {
 		name: "retain-build-assets",
 		apply: "build",
 		buildStart() {
-			// Older installations have no manifest: retain their existing assets once.
 			previous = existsSync(manifest)
 				? (JSON.parse(readFileSync(manifest, "utf8")) as string[])
 				: existsSync(assetsDir)

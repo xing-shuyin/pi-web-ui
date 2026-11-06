@@ -61,7 +61,6 @@ describe("plugin-sdk client-utils", () => {
 
 	it("safeSliceIndex: 不拆分 UTF-16 代理对 Emoji", () => {
 		const text = "Hello 🎉 World";
-		// '🎉' 的 UTF-16 编码占用 2 个代码单元，位于索引 6 和 7
 		const cutAtSurrogate = safeSliceIndex(text, 7);
 		expect(cutAtSurrogate).toBe(6);
 		const cutAfter = safeSliceIndex(text, 8);
@@ -79,13 +78,10 @@ describe("plugin-sdk client-utils", () => {
 			"\n",
 		);
 
-		// 限制单块较短以触发跨块
 		const chunks = chunkMarkdownText(md, 60);
 		expect(chunks.length).toBeGreaterThan(1);
-		// 第一个分块中打开了 ```typescript，应当在末尾闭合 ```
 		expect(chunks[0]).toContain("```typescript");
 		expect(chunks[0].endsWith("```")).toBe(true);
-		// 第二个分块应当重新以 ```typescript 开头
 		expect(chunks[1].startsWith("```typescript")).toBe(true);
 	});
 });

@@ -1,13 +1,11 @@
 import type { SandboxInfo } from "./protocol.js";
 import { evaluateSandboxJail } from "./sandbox-service.js";
 
-/** Only these host capabilities can be sealed. A matching name alone never grants trust. */
 const HOST_CAPABILITIES = new Set(["read", "write", "edit", "edit_soft", "patch", "present_files", "sandbox"]);
 
 type Definition = { name: string; execute: unknown };
 type Session = { getToolDefinition(name: string): Definition | undefined };
 
-/** Final SDK tool_call guard. Leases belong to the host wrappers, not this hook. */
 export function createSandboxRuntimeGate(getSandbox: () => SandboxInfo | undefined, cwd: string) {
 	const trusted = new Map<string, { definition: Definition; execute: unknown }>();
 	let session: Session | undefined;
@@ -38,7 +36,6 @@ export function createSandboxRuntimeGate(getSandbox: () => SandboxInfo | undefin
 	};
 }
 
-/** noExtensions alone still permits explicit paths; keep both locked across reloads. */
 export function sandboxExtensionOptions(sandbox: boolean) {
 	return sandbox ? { noExtensions: true, additionalExtensionPaths: [] as string[] } : {};
 }

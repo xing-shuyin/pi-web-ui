@@ -22,7 +22,6 @@ function fixture() {
 	const user = (text: string) => manager.appendMessage({ role: "user", content: text, timestamp: Date.now() });
 	user("retained question");
 	const question = user("original question");
-	// A real persisted SDK transcript; the model/network is outside this regression.
 	manager.appendMessage({
 		role: "assistant",
 		content: [{ type: "text", text: "scheduling" }],
@@ -226,7 +225,6 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const removed = await f.create("abandoned-call", true);
 		const foreign = fixture();
 		const foreignId = await foreign.create("abandoned-call");
-		// Delivery rebinding must not change the creation identity.
 		f.store.rebind(removed, { sessionFile: foreign.session.sessionFile, conversationId: "B" });
 		f.store.upsert({ id: "legacy", name: "legacy", cwd: f.dir, kind: "interval", spec: "60000", prompt: "legacy" });
 		await f.client.editMessage("question", "replacement");
@@ -292,7 +290,6 @@ describe("schedule provenance through real reask and scheduler persistence", () 
 		const fork = SessionManager.open(file);
 		expect(fork.getSessionFile()).not.toBe(f.session.sessionFile);
 		expect(f.store.list().map((t) => t.id)).toEqual([id]);
-		// Editing the fork cannot claim the original file's tasks.
 		expect(f.store.cancelUnstartedFromCalls(file, new Set(["fork-call"]))).toBe(0);
 	});
 

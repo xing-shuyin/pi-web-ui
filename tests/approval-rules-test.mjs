@@ -1,14 +1,3 @@
-// 审批规则自定义 —— 协议层回归（零 token）。
-//
-// 覆盖：
-//   1. settings_state 下发默认内置审批规则 (approvalRules)；
-//   2. save_approval_rule 新增一条自定义规则（如 deny docker rm），推回 settings_state 并在磁盘持久化；
-//   3. 重启服务后，自定义规则依然存在（持久化到 <dataDir>/approval-rules.json）；
-//   4. save_approval_rules 批量重排列表；
-//   5. delete_approval_rule 删除自定义规则，推回 settings_state；
-//   6. reset_builtin_approval_rule 恢复修改后的内置规则。
-//
-// Usage: node tests/approval-rules-test.mjs
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -104,7 +93,6 @@ async function main() {
 	await startServer(dataDir);
 	await sleep(300);
 
-	// ---- 1. 初始 settings_state 带 approvalRules ----
 	const c1 = await connect();
 	await c1.next((m) => m.type === "snapshot", "initial snapshot", 25000);
 	const s1 = await c1.next((m) => m.type === "settings_state", "initial settings_state", 25000);
@@ -113,7 +101,6 @@ async function main() {
 	const rmRf = s1.settings.approvalRules.find((r) => r.id === "builtin.bash.rm-rf");
 	check("内置 rm -rf 规则存在且 builtin=true", rmRf && rmRf.builtin === true);
 
-	// ---- 2. 新增自定义规则 ----
 	const customRule = {
 		id: "custom.test-docker",
 		enabled: true,
@@ -136,7 +123,6 @@ async function main() {
 		s2.settings.approvalRules.some((r) => r.id === "custom.test-docker"),
 	);
 
-	// ---- 3. 批量更新 save_approval_rules ----
 	const reversed = [...s2.settings.approvalRules].reverse();
 	c1.send({ type: "save_approval_rules", rules: reversed });
 	const s3 = await c1.next(
@@ -145,7 +131,6 @@ async function main() {
 	);
 	check("save_approval_rules 批量重排生效", s3.settings.approvalRules[0].id === reversed[0].id);
 
-	// ---- 4. 删除自定义规则 ----
 	c1.send({ type: "delete_approval_rule", id: "custom.test-docker" });
 	const s4 = await c1.next(
 		(m) => m.type === "settings_state" && !m.settings.approvalRules?.some((r) => r.id === "custom.test-docker"),
@@ -153,7 +138,6 @@ async function main() {
 	);
 	check("delete_approval_rule 删除成功", !s4.settings.approvalRules.some((r) => r.id === "custom.test-docker"));
 
-	// ---- 5. 重置内置规则 reset_builtin_approval_rule ----
 	c1.send({
 		type: "save_approval_rule",
 		rule: { ...rmRf, action: "allow", label: "已放行删除" },
@@ -192,9 +176,7 @@ try {
 } finally {
 	try {
 		server?.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);

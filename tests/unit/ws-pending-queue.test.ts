@@ -132,7 +132,6 @@ describe("client message envelope and type budgets", () => {
 		expect(isClientMessageEnvelope(Object.create({ type: "hello" }))).toBe(false);
 		expect(isClientMessageEnvelope({ type: "future_command", arbitrary: true })).toBe(true);
 		expect(isClientMessageEnvelope(Object.assign(Object.create(null), { type: "hello" }))).toBe(true);
-		// The envelope helper must not claim that command-specific fields were validated.
 		expect(isClientMessageEnvelope({ type: "prompt" })).toBe(true);
 	});
 

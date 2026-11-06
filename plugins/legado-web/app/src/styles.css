@@ -12,11 +12,11 @@ nav button.on { border-color: var(--acc); color: var(--acc); }
 input, textarea, select { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 button.go { background: var(--acc); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
 button.ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-/* 「AI 修复源」：稍作强调（不抢主按钮） */
+
 button.ghost.aifix { border-color: var(--acc); color: var(--acc); font-weight: 600; }
-/* 书源行的置顶（⭐/☆）：只占一个小按钮的位置 */
+
 button.ghost.star { border: none; padding: 2px 6px; font-size: 15px; line-height: 1.2; }
-/* 置顶的源：左侧一条强调色，扫一眼就能认出来 */
+
 .book.pinned { box-shadow: inset 3px 0 0 var(--acc); }
 button.ghost.aifix:hover { background: color-mix(in srgb, var(--acc) 14%, transparent); }
 .book { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
@@ -26,7 +26,7 @@ button.ghost.aifix:hover { background: color-mix(in srgb, var(--acc) 14%, transp
 .toc div:hover { background: var(--line); } .toc div.cur { color: var(--acc); font-weight: 700; }
 .content { font-size: 18px; line-height: 1.9; white-space: pre-wrap; }
 .content p { margin: .6em 0; }
-/* 章末导航：正文读到底就能直接翻章，不用滚回顶部 */
+
 .chapnav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
   margin: 26px 0 2px; padding-top: 14px; border-top: 1px solid var(--line); }
 .chapnav button.ghost { padding: 8px 18px; }

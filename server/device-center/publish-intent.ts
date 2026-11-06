@@ -4,10 +4,8 @@ import { canonicalizeJson } from "./work-contract.js";
 import { artifactRefsMatch } from "./delivery-subject.js";
 import { computeVerificationPlanDigest, hasVerifiedIntegration } from "./integration-verification.js";
 
-/** Leaves room for RPC envelope, original repository identity and relay metadata (512 KiB frame). */
 export const MAX_PUBLISH_INTENT_BYTES = 384 * 1024;
 
-/** Node-only. UTF-8, LF, controlled author/committer and stable parent order. */
 export function buildPublishCommit(intent: DevicePublishIntent): { raw: Buffer; candidateSha: string } {
 	if (intent.version !== 1 || (intent.objectFormat !== "sha1" && intent.objectFormat !== "sha256"))
 		invalid("commit builder version or format");
@@ -37,12 +35,10 @@ export function sealPublishIntent(facts: DevicePublishIntentFacts): DevicePublis
 	return validatePublishIntent(intent);
 }
 
-/** Returns an independently cloned, validated immutable value; throws on invalid wire data. */
 export function validatePublishIntent(value: unknown): DevicePublishIntent {
 	return validateIntent(value);
 }
 
-/** Scope is the original authenticated operation identity, never a caller-provided cwd. */
 export function assertPublishIntentScope(
 	intent: DevicePublishIntent,
 	scope: {
@@ -310,7 +306,6 @@ function validateIntent(value: unknown): DevicePublishIntent {
 		verificationPlan: intent.verificationPlan,
 		verification: intent.verification,
 	};
-	// Older verified integrations recorded the short branch; accept either original spelling.
 	if (
 		![intent.targetRef, intent.targetRef.slice(11)].some((targetBranch) =>
 			hasVerifiedIntegration({ ...integration, targetBranch } as any),

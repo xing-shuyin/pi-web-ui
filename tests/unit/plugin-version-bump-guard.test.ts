@@ -1,13 +1,3 @@
-/**
- * 插件版本号递增守卫测试 (Plugin Version Bump Guard)
- *
- * 守护原则：
- * 1. 所有内置官方插件必须声明符合 SemVer 格式的版本号；
- * 2. 凡是对插件实质性代码/功能进行的修改，必须严格递增 (bump) manifest.json 中的版本号；
- *    - 避免随宿主自动热同步（syncBuiltinPlugins: compareVersions(srcVer, tgtVer) > 0）失效；
- *    - 避免用户本地目录一直滞留在包含旧缺陷的插件代码上。
- * 3. 纯文档/说明类文件（README.md 等）改动豁免版本递增要求。
- */
 import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -18,10 +8,8 @@ import { compareVersions } from "../../server/plugin-updater.js";
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const PLUGINS_DIR = join(ROOT, "plugins");
 
-/** 豁免版本递增检查的文件后缀或路径（纯文档/配置说明） */
 const EXEMPT_DOC_PATTERNS = [/\/README\.md$/i, /\/rules\.md$/i, /\.md$/i, /\/\.gitignore$/i, /\/docs\//i];
 
-/** 检查文件路径是否属于文档类豁免文件 */
 export function isDocExempt(fileRelPath: string): boolean {
 	const norm = fileRelPath.replace(/\\/g, "/");
 	return EXEMPT_DOC_PATTERNS.some((p) => p.test(norm));
@@ -35,9 +23,6 @@ export interface Violation {
 	newVersion?: string | null;
 }
 
-/**
- * 核心校验函数：对比变更文件列表与版本变化，检测是否有“改了代码但未升级版本”的违规。
- */
 export function detectPluginVersionViolations(opts: {
 	changedFiles: string[];
 	getOldVersion: (id: string) => string | null;
@@ -46,24 +31,20 @@ export function detectPluginVersionViolations(opts: {
 }): Violation[] {
 	const violations: Violation[] = [];
 
-	// 按插件 id 分组收集代码修改
 	const pluginChanges = new Map<string, string[]>();
 
 	for (const f of opts.changedFiles) {
 		const norm = f.replace(/\\/g, "/");
-		// 匹配 plugins/<pluginId>/...
 		const match = norm.match(/^plugins\/([^/]+)\/(.+)$/);
 		if (!match) continue;
 
 		const pluginId = match[1]!;
 		const subPath = match[2]!;
 
-		// manifest.json 自身不作为“代码修改”，它是版本声明位
 		if (subPath === "manifest.json" || subPath === "extension/manifest.json") {
 			continue;
 		}
 
-		// 检查是否属于免检文档文件
 		if (isDocExempt(norm)) {
 			continue;
 		}
@@ -92,11 +73,9 @@ export function detectPluginVersionViolations(opts: {
 		}
 
 		if (!oldVer) {
-			// 新增插件，只要声明了新版本即可
 			continue;
 		}
 
-		// 必须严格递增：newVer > oldVer
 		if (compareVersions(newVer, oldVer) <= 0) {
 			violations.push({
 				pluginId,
@@ -120,7 +99,6 @@ describe("插件版本规范与递增守卫", () => {
 			const dir = join(PLUGINS_DIR, entry);
 			if (!statSync(dir).isDirectory()) continue;
 
-			// page-picker 是浏览器扩展，manifest 位于 extension/manifest.json
 			const manifestPath =
 				entry === "page-picker" ? join(dir, "extension", "manifest.json") : join(dir, "manifest.json");
 
@@ -133,7 +111,6 @@ describe("插件版本规范与递增守卫", () => {
 				`插件 ${entry} 的版本号 "${content.version}" 不符合 SemVer 格式 (x.y.z)`,
 			).toBe(true);
 
-			// 若插件根目录下有 package.json 且包含 version，必须与 manifest 一致
 			const pkgPath = join(dir, "package.json");
 			if (existsSync(pkgPath)) {
 				const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
@@ -188,7 +165,7 @@ describe("插件版本规范与递增守卫", () => {
 			const res = detectPluginVersionViolations({
 				changedFiles: ["plugins/sftp/client/entry.mjs", "plugins/notes/client/entry.mjs"],
 				getOldVersion: (id) => (id === "sftp" ? "0.2.0" : "0.2.0"),
-				getNewVersion: (id) => (id === "sftp" ? "0.3.0" : "0.2.0"), // notes 未递增
+				getNewVersion: (id) => (id === "sftp" ? "0.3.0" : "0.2.0"),
 			});
 			expect(res.length).toBe(1);
 			expect(res[0]?.pluginId).toBe("notes");
@@ -198,7 +175,6 @@ describe("插件版本规范与递增守卫", () => {
 	it("检查当前工作区（Working Tree / Staged）中修改的插件代码是否都已递增版本号", () => {
 		let diffFiles: string[] = [];
 		try {
-			// 获取相对于 HEAD 的工作区改动（含未暂存与已暂存）
 			const out = execSync("git diff --name-only HEAD", { cwd: ROOT, encoding: "utf8" });
 			diffFiles = out
 				.trim()
@@ -206,7 +182,6 @@ describe("插件版本规范与递增守卫", () => {
 				.map((s) => s.trim())
 				.filter(Boolean);
 		} catch {
-			// 在非 git 仓库或裸环境中安全跳过
 			return;
 		}
 

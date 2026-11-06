@@ -1,65 +1,5 @@
-/** Node-only plugin test harness. */
 import { resolve, sep } from "node:path";
 
-/**
- * createMockHost(overrides?) —— 插件本地单测 harness（使用 Node 原生路径解析，node:test / vitest 均可）。
- *
- * 返回与服务端 PluginHost 同语义的精简版可断言 mock：
- *
- *   import { describe, it } from "node:test";
- *   import assert from "node:assert/strict";
- *   import plugin from "./index.mjs";
- *   import { createMockHost } from "./sdk/testing.mjs";
- *
- *   const host = createMockHost({ settings: { tone: "full" } });
- *   await plugin.activate(host);
- *   assert.ok(host.calls.some((c) => c.method === "ui.register"));
- *
- * 约定：
- * - `host.calls`：每次 host 方法调用都记一条 `{ method, args, seq }`（嵌套按点分路径，
- *   如 `"ui.register"`、`"fs.readText"`、`"conversations.list"`；`log` 也记；
- *   `seq` 为本次记录窗口内的序号）。`host.mock.calls(method?)` 按方法名过滤（不传即全部）。
- * - `host.logs`：`host.log(level?, ...args)` 的分级条目 `{ level, text }`
- *  （首参是 debug|info|warn|error 之一即当级别，否则按 info；text 拼后截断 500 字符；
- *   error 级同时走 console.error，与宿主一致）。
- * - 注册/订阅类（onMessage/onAttach/onToolEvent/onRunEvent/onConversationChanged/
- *   onCwdChange/onSettingsChanged/onStats/onStreaming/events.on/fs.watch/ui.register/
- *   registerAgentTool/registerCommand/route/schedule/shortcuts.register/…）返回注销函数；
- *   传进来的 handler 按方法名存进 `host.mock.handlers[method]`，测试里用
- *   `host.mock.emit(method, ...args)` 主动触发（如模拟客户端上行消息；
- *   fs.watch(path, handler)/events.on(topic, handler)/shortcuts.register(key, handler)
- *   这类回调在第二参，照样存）。工具/命令/路由/定时任务的定义体另存进
- *   `host.mock.agentTools/commands/routes/schedules`（活数组，注销即摘除；
- *   工具的 execute 可直接调），定时回调不自动跑，用
- *   `await host.mock.fireSchedules()` 手动触发。`host.mock.emit` 是同步直调
- *   （异步 handler 用 `await host.mock.emitAsync(method, ...args)` 按序 await，
- *   返回各 handler 返回值；抛错即 reject，与同步版一致不吞错）。
- * - 无注入回退（与宿主无 provider/无注入时同语义）：conversations.list/search 回 []、
- *   get 回 null；prompt/steer/abortRun/chatWait/llm.complete/net.fetch/bash/scm 回
- *   `{ ok:false, ... }`；requestPermission 回 false；dialogs.select/input 回 `{ ok:false }`、
- *   confirm 回 false；notifyAction resolve null；models/searchProviders/composerProviders
- *   的 list 回 []；getActiveConversation 回 null；project.create 回 `{ ok:false }`。
- *   与真宿主的两处刻意差异（测试友好）：`chat()` 未注入时 resolve `{ ok:false }`
- *   而不是 reject（真宿主 reject，由 chatWait 包成 `{ ok:false }`）；`schedule()` 只记
- *   调用不设真定时器（单测不泄漏句柄）。`fs.read/readPath` 给空 Uint8Array
- *  （浏览器侧 import 本文件也安全，不碰 node:Buffer）。
- * - `storage`/`secrets` 是内存实现（get/set/delete/all、set/get/has/delete/list，照样进
- *   calls 记录）；`ensureDeps` 回 true；`ui.list()` 回 `{ items: [], arrange: [] }`。
- * - `overrides.settings` 是 getSettings() 返回的预设对象（同一引用，直接改即模拟变化；
- *   或走 `host.mock.setSettings(next)` 合并、`host.mock.emitSettings(next)` 合并 + 触发
- *   onSettingsChanged）。`overrides.cwd/dir/dataDir` 改标量；其余键整体替换对应方法
- *   （命名空间键如 `fs`/`ui`/`llm` 传对象 = 按子键合并覆盖）。被覆盖的方法**仍进**
- *   calls 记录（`log` 被覆盖时除外：logs 只由默认实现写）。
- * - `ui` 是内存注册表（同 id 覆盖、上限 32 条，off 只摘除本次注册的 id）：
- *   `list()` 真反映 register/update/remove/arrange，不再是固定空快照。
- * - `host.reset()` 只清空 calls + logs（原地清空，引用保持有效；settings/handlers/
- *   注册表这些 fake 状态保留——要全新状态就重新 createMockHost()，零成本）。
- * - `calls`/`logs`/`mock`/`reset` 是 harness 自身字段，不可被 overrides 覆盖（传了直接抛错）。
- * - 浏览器桥兼容：附带 `dialogs`/`notifyAction`/`shortcuts`/`searchProviders`/
- *   `composerProviders` 无注入回退实现，client 侧逻辑也能用同一个 mock 测。
- *
- * mock 只在 SDK 层：不断言、不碰 server/plugins.ts 运行时，只求“插件作者本地能跑”。
- */
 export function createMockHost(overrides) {
 	if (overrides === undefined || overrides === null) overrides = {};
 	if (typeof overrides !== "object" || Array.isArray(overrides)) {
@@ -73,6 +13,7 @@ export function createMockHost(overrides) {
 	const calls = [];
 	const logs = [];
 	const settingsState = { ...(isPlainObject(overrides.settings) ? overrides.settings : {}) };
+	const ttsEngines = new Map();
 	const handlerMap = new Map();
 	const handlersOf = (method) => {
 		let arr = handlerMap.get(method);
@@ -82,9 +23,6 @@ export function createMockHost(overrides) {
 		}
 		return arr;
 	};
-	// 订阅类：存 handler + 返回注销函数（调用本身由外层统一记进 calls）。
-	// handler 缺省取首参；fs.watch(path, handler) / events.on(topic, handler) /
-	// shortcuts.register(key, handler) 这类回调在第二参，用 sub(method, 1)。
 	const sub =
 		(method, argIndex = 0) =>
 		(...args) => {
@@ -118,9 +56,7 @@ export function createMockHost(overrides) {
 		if (level === "error") {
 			try {
 				console.error("[mock-host]", text);
-			} catch {
-				/* 打印失败不影响单测 */
-			}
+			} catch {}
 		}
 	};
 	const statImpl = (p) => ({
@@ -135,7 +71,6 @@ export function createMockHost(overrides) {
 	});
 	const storeMap = new Map();
 	const secretMap = new Map();
-	// fake 状态（reset() 不动它们；要全新状态就重新 createMockHost()）：
 	const uiItems = new Map();
 	const uiArrangeOps = [];
 	let uiAutoId = 0;
@@ -148,7 +83,6 @@ export function createMockHost(overrides) {
 	const effectStore = [];
 	const serviceMap = new Map();
 	const serviceListeners = new Map();
-	// 注册类：存定义体 + 返回只摘除本次注册的注销函数（与宿主同语义）。
 	const remember = (store, entry) => {
 		if (entry !== undefined) store.push(entry);
 		let done = false;
@@ -209,8 +143,6 @@ export function createMockHost(overrides) {
 		pickDirectory: async (opts) => ({ ok: true, path: opts?.initialPath || "/mock-workspace" }),
 		pickModel: async (opts) => ({ ok: true, modelId: opts?.currentModelId || "mock/test-model" }),
 		ui: {
-			// 内存注册表（同 id 覆盖、上限 32 条，与宿主合并语义同口径的精简版）：
-			// list() 真反映 register/update/remove，off() 只摘除本次注册的 id。
 			register: (items) => {
 				const list = Array.isArray(items) ? items : [items];
 				const added = [];
@@ -299,6 +231,35 @@ export function createMockHost(overrides) {
 				};
 			},
 		},
+		tts: {
+			registerEngine: (engine) => {
+				ttsEngines.set(engine.id, engine);
+				return () => {
+					if (ttsEngines.get(engine.id) === engine) ttsEngines.delete(engine.id);
+				};
+			},
+			listEngines: () =>
+				[...ttsEngines.values()].map(({ id, label, labelEn, supportsRate }) => ({
+					id,
+					label,
+					labelEn,
+					...(supportsRate === false ? { supportsRate: false } : {}),
+				})),
+			listVoices: async (id, options = {}) => {
+				const engine = ttsEngines.get(id);
+				if (!engine) throw new Error(`mock: TTS engine unavailable: ${id}`);
+				return engine.getVoices({ ...options, signal: options.signal ?? new AbortController().signal });
+			},
+			synthesize: async (request) => {
+				const engine = ttsEngines.get(request.engine || "builtin");
+				if (!engine) throw new Error(`mock: TTS engine unavailable: ${request.engine || "builtin"}`);
+				return engine.synthesize({
+					...request,
+					rate: request.rate ?? 1,
+					signal: request.signal ?? new AbortController().signal,
+				});
+			},
+		},
 		provide: (name, service) => host.services.provide(name, service),
 		get: (name) => host.services.get(name),
 		onService: (name, handler) => host.services.on(name, handler),
@@ -363,8 +324,6 @@ export function createMockHost(overrides) {
 			log: async () => okFalse("scm（只读 git 未接入）"),
 		},
 		bash: async () => ({ ok: false, output: "", error: "mock：未注入 bash" }),
-		// 只记调用不设真定时器（单测不泄漏句柄）；回调存进 mock.schedules，
-		// 测试里用 await host.mock.fireSchedules() 手动触发。
 		schedule: (spec, fn, opts) => remember(scheduleStore, { spec, fn, opts }),
 		models: {
 			list: () => [],
@@ -392,8 +351,6 @@ export function createMockHost(overrides) {
 			on: sub("events.on", 1),
 		},
 		log: logImpl,
-		// effect 栈：mock 里只记调用 + 返回可撤函数（真实宿主在反激活时逆序回卷）。
-		// 单测里测试 dispose 真跑的写法：拿到 off() 后调它，或断言 host.calls 里有 effect。
 		effect: (label, dispose) => {
 			const entry = { label, dispose };
 			return remember(effectStore, entry);
@@ -424,7 +381,6 @@ export function createMockHost(overrides) {
 				return { ready: true, downloading: false, progress: 100, downloaded: 0, total: 0, error: null };
 			},
 		},
-		// 浏览器桥兼容（client 侧逻辑单测也能用同一个 mock）：无注入回退语义。
 		dialogs: {
 			select: async () => ({ ok: false }),
 			confirm: async () => false,
@@ -455,36 +411,29 @@ export function createMockHost(overrides) {
 		calls,
 		logs,
 		mock: {
-			// 活视图：方法名 → 已注册 handler 数组（与注销函数联动）。
 			get handlers() {
 				const out = {};
 				for (const [k, v] of handlerMap) out[k] = v;
 				return out;
 			},
-			// 主动触发某订阅方法的 handlers（错误直接抛给测试，不吞）。
 			emit: (method, ...args) => {
 				for (const h of [...(handlerMap.get(method) ?? [])]) h(...args);
 			},
-			// 异步版：按注册顺序依次 await，返回各 handler 返回值（抛错即 reject，不吞）。
 			emitAsync: async (method, ...args) => {
 				const out = [];
 				for (const h of [...(handlerMap.get(method) ?? [])]) out.push(await h(...args));
 				return out;
 			},
-			// 按方法名过滤调用记录（不传即全部拷贝）。
 			calls: (method) => (method === undefined ? [...calls] : calls.filter((c) => c.method === method)),
-			// 合并预设（返回同一引用，getSettings() 读到的就是它）。
 			setSettings: (next) => {
 				if (isPlainObject(next)) Object.assign(settingsState, next);
 				return settingsState;
 			},
-			// 合并预设 + 触发 onSettingsChanged（模拟用户在设置面板保存）。
 			emitSettings: (next) => {
 				if (isPlainObject(next)) Object.assign(settingsState, next);
 				for (const h of [...(handlerMap.get("onSettingsChanged") ?? [])]) h(settingsState);
 				return settingsState;
 			},
-			// fake 状态活视图（注册表；注销即摘除；reset() 不动它们）。
 			get agentTools() {
 				return agentToolStore;
 			},
@@ -503,7 +452,6 @@ export function createMockHost(overrides) {
 			get schedules() {
 				return scheduleStore;
 			},
-			// 依次触发全部已登记的定时回调（返回各回调返回值；抛错即 reject）。
 			fireSchedules: () => Promise.all(scheduleStore.map((s) => s.fn())),
 		},
 		reset: () => {
@@ -512,8 +460,6 @@ export function createMockHost(overrides) {
 		},
 	};
 
-	// overrides：settings/cwd/dir/dataDir 已处理；其余键整体替换对应方法
-	// （命名空间键 fs/ui/llm/… 传对象 = 按子键合并覆盖）。替换后的方法仍进 calls 记录。
 	const namespaces = [
 		"llm",
 		"conversations",
@@ -545,7 +491,6 @@ export function createMockHost(overrides) {
 			host[key] = value;
 		}
 	}
-	// 记录层：所有 host 方法（mock/reset 除外）先记 calls 再委托。
 	const record =
 		(method, fn) =>
 		(...args) => {

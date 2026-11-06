@@ -1,8 +1,3 @@
-/**
- * Real browser regression: 右侧文件树「显示隐藏文件」开关。
- * 默认隐藏以 . 开头的条目；工具行上的开关可切换；偏好记在 localStorage（刷新后保持）。
- * Run after npm run build. No model requests.
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -53,9 +48,7 @@ try {
 				ready = true;
 				break;
 			}
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		if (server.exitCode !== null) throw new Error(`Server exited: ${log}`);
 		await sleep(200);
 	}
@@ -88,7 +81,6 @@ try {
 	await hideBtn.click();
 	await row(".secret.txt").waitFor({ state: "detached", timeout: 10000 });
 
-	// 偏好要能在刷新后保持（localStorage，每个浏览器各自记忆）。
 	await showBtn.click();
 	await row(".secret.txt").waitFor({ timeout: 10000 });
 	await page.reload();

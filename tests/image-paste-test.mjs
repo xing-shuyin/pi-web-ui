@@ -1,14 +1,3 @@
-/**
- * image-paste-test.mjs — 纯 WebSocket 冒烟测试：验证「粘贴图片」协议路径。
- *
- * 发送带 imageData（raw base64）附件的 prompt，验证：
- *   1. 服务端把它变成 image content 的 custom message（details.mode === "image"）
- *   2. 快照里该消息的 content 含 { type: "image", dataUrl: "data:image/..." }
- *   3. 超限图片（>2MB）被拒并回 notice
- *
- * 用法（需先有 server 在跑）:
- *   node image-paste-test.mjs   # 连 ws://localhost:${PORT:-8787}
- */
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 
@@ -18,7 +7,6 @@ const WS_URL = `ws://localhost:${PORT}/ws`;
 const clientId = randomUUID();
 const ws = new WebSocket(WS_URL);
 
-// 1x1 透明 PNG (base64)
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 let step = 0;
@@ -57,7 +45,6 @@ ws.on("message", (d) => {
 						size: 0,
 					},
 					{
-						// 超限：1.5MB 的假 base64（>2MB 解码后）→ 应回 warning notice
 						path: "",
 						imageData: "A".repeat(3 * 1024 * 1024),
 						mimeType: "image/png",
@@ -88,7 +75,6 @@ ws.on("message", (d) => {
 			log("notice:", m.level, m.text);
 		}
 	} else if (m.type === "heartbeat") {
-		// ignore
 	}
 
 	if (sawImageMsg && sawOversizeNotice) {

@@ -1,6 +1,3 @@
-/**
- * universal-skill-scanner.test.ts — 通用多智能体技能扫描维护体系单元测试。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import {
@@ -241,7 +238,6 @@ describe("Universal Multi-Agent Skills Scanner", () => {
 	});
 
 	it("Frontmatter 解析与边界回退", () => {
-		// 1. 标准 YAML frontmatter
 		const standard = `---
 name: my-awesome-skill
 description: Useful instructions for testing
@@ -256,7 +252,6 @@ Some content here.`;
 		expect(res1.disableModelInvocation).toBe(true);
 		expect(res1.allowedTools).toEqual(["bash", "read"]);
 
-		// 2. 缺少 description 时，回退取正文首段非标题文字
 		const noDesc = `---
 name: no-desc-skill
 ---
@@ -266,7 +261,6 @@ Another line.`;
 		expect(res2.name).toBe("no-desc-skill");
 		expect(res2.description).toBe("This is the first paragraph describing the skill.");
 
-		// 3. 无 frontmatter 时，回退提取 Markdown 一级标题
 		const pureMd = `# Specialized Diagnostic Protocol\nInstructions...`;
 		const res3 = parseSkillFrontmatter(pureMd, "fallback-file");
 		expect(res3.name).toBe("fallback-file");
@@ -274,12 +268,10 @@ Another line.`;
 	});
 
 	it("能够全源扫描识别来自各类 Agent 的技能（Pi, Claude, Agents, Cursor 等）", () => {
-		// 1. 本地 Pi 技能 (.pi/skills/pi-local/SKILL.md)
 		const piLocalDir = join(projectCwd, ".pi", "skills", "pi-local");
 		mkdirSync(piLocalDir, { recursive: true });
 		writeFileSync(join(piLocalDir, "SKILL.md"), `---\nname: pi-local\ndescription: Pi Project Skill\n---\nBody`);
 
-		// 2. 本地 Claude Code 技能 (.claude/skills/claude-helper.md)
 		const claudeProjectDir = join(projectCwd, ".claude", "skills");
 		mkdirSync(claudeProjectDir, { recursive: true });
 		writeFileSync(
@@ -287,7 +279,6 @@ Another line.`;
 			`---\nname: claude-helper\ndescription: Claude Helper Skill\n---\nBody`,
 		);
 
-		// 3. 本地 Universal Agent 技能 (.agents/skills/agent-arch/SKILL.md)
 		const agentLocalDir = join(projectCwd, ".agents", "skills", "agent-arch");
 		mkdirSync(agentLocalDir, { recursive: true });
 		writeFileSync(
@@ -295,7 +286,6 @@ Another line.`;
 			`---\nname: agent-arch\ndescription: Universal Agent Arch\n---\nBody`,
 		);
 
-		// 4. 全局 Claude Code 技能 (~/.claude/skills/claude-global.md)
 		const claudeGlobalDir = join(fakeHome, ".claude", "skills");
 		mkdirSync(claudeGlobalDir, { recursive: true });
 		writeFileSync(
@@ -303,7 +293,6 @@ Another line.`;
 			`---\nname: claude-global\ndescription: Global Claude Skill\n---\nBody`,
 		);
 
-		// 5. 全局 Cursor 技能 (~/.cursor/skills/cursor-debug/SKILL.md)
 		const cursorGlobalDir = join(fakeHome, ".cursor", "skills", "cursor-debug");
 		mkdirSync(cursorGlobalDir, { recursive: true });
 		writeFileSync(
@@ -335,7 +324,6 @@ Another line.`;
 	});
 
 	it("祖先链回溯发现仓库根目录的技能（Monorepo / Worktree 场景）", () => {
-		// 在 repo 根目录（projectCwd 的上一级）创建 .git 与 .pi/skills
 		const repoRoot = join(tempRoot, "workspace", "repo");
 		mkdirSync(join(repoRoot, ".git"), { recursive: true });
 		const rootSkillDir = join(repoRoot, ".pi", "skills", "repo-root-skill");
@@ -346,7 +334,7 @@ Another line.`;
 		);
 
 		const discovered = discoverDiskSkills({
-			cwd: projectCwd, // 子目录
+			cwd: projectCwd,
 			agentDir: fakeAgentDir,
 			includeHome: false,
 			scanAncestors: true,
@@ -359,7 +347,6 @@ Another line.`;
 	});
 
 	it("同名技能的优先级决议：项目级优先于全局级，Pi 优先于外部 Agent", () => {
-		// 在全局与本地同时放置同名技能 "code-reviewer"
 		const globalDir = join(fakeAgentDir, "skills", "code-reviewer");
 		mkdirSync(globalDir, { recursive: true });
 		writeFileSync(
@@ -419,7 +406,6 @@ Another line.`;
 	});
 
 	it("整合后的技能能被 skill 工具精确调用并读取正文，且支持维护报告查询", async () => {
-		// 创建一个真实的技能文件
 		const skillPath = join(projectCwd, ".agents", "skills", "test-agent-skill", "SKILL.md");
 		mkdirSync(join(projectCwd, ".agents", "skills", "test-agent-skill"), { recursive: true });
 		writeFileSync(
@@ -441,7 +427,6 @@ Another line.`;
 
 		const tool = makeSkillTool(mockHost, () => "zh");
 
-		// 1. 模型按名读取正文
 		const callRes = await tool.execute(
 			"call_1",
 			{ name: "test-agent-skill" },
@@ -453,7 +438,6 @@ Another line.`;
 		expect(content).toContain('<skill name="test-agent-skill"');
 		expect(content).toContain("Specialist Instructions");
 
-		// 2. 查看多智能体维护报告
 		const reportRes = await tool.execute("call_2", { action: "report" }, undefined as any, undefined as any, {} as any);
 		const reportText = (reportRes as any).content[0].text;
 		expect(reportText).toContain("跨智能体技能整合报告");
@@ -462,7 +446,6 @@ Another line.`;
 	});
 
 	it("通用维护工具层：scanAllAgentSkills, verifySkillFile 与 syncAgentSkills", () => {
-		// 创建一个合法技能与一个超限技能
 		const skillsDir = join(projectCwd, ".claude", "skills");
 		mkdirSync(skillsDir, { recursive: true });
 
@@ -470,9 +453,8 @@ Another line.`;
 		writeFileSync(validSkillFile, `---\nname: valid\ndescription: Good skill\n---\nInstructions`);
 
 		const oversizedSkillFile = join(skillsDir, "oversized.md");
-		writeFileSync(oversizedSkillFile, "A".repeat(9000)); // 超过 8KB
+		writeFileSync(oversizedSkillFile, "A".repeat(9000));
 
-		// 1. 扫描与维护报告
 		const scan = scanAllAgentSkills({ cwd: projectCwd, agentDir: fakeAgentDir, includeHome: false });
 		expect(scan.totalUnique).toBeGreaterThanOrEqual(2);
 		expect(scan.bySource.claude).toBeGreaterThanOrEqual(2);
@@ -481,7 +463,6 @@ Another line.`;
 		expect(report).toContain("跨智能体全源技能扫描与维护报告");
 		expect(report).toContain("CLAUDE:");
 
-		// 2. 健康检查
 		const health1 = verifySkillFile(validSkillFile);
 		expect(health1.valid).toBe(true);
 		expect(health1.exceedsBudget).toBe(false);
@@ -490,7 +471,6 @@ Another line.`;
 		expect(health2.valid).toBe(false);
 		expect(health2.exceedsBudget).toBe(true);
 
-		// 3. 跨 Agent 技能物理同步（将 Claude 技能同步至 .pi/skills）
 		const targetPiDir = join(projectCwd, ".pi", "skills");
 		const syncRes = syncAgentSkills({
 			cwd: projectCwd,

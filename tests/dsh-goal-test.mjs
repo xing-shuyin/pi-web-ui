@@ -1,13 +1,3 @@
-/**
- * dsh 引擎目标全链路测试（真 key 门控）——DSH 原生 goal 域经 WS 协议：
- *   set_goal → goal_status（进行中）→ round-driver 自动续轮 → 模型自判定
- *   complete → goal_status（✅ 已达成）→ clear_goal → 清空。
- *
- * 需要真实的 DeepSeek API key（<agentDir>/auth.json 的 deepseek.key 或
- * DEEPSEEK_API_KEY 环境变量）。无 key 时打印 SKIP 并退出 0（CI 不误报）。
- *
- * 用法：node tests/dsh-goal-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -21,7 +11,6 @@ const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
 const PORT = 8933;
 const CLIENT_ID = "dsh-goal-test";
 
-// 真 key 门控：auth.json 或环境变量。
 let key = process.env.DEEPSEEK_API_KEY;
 if (!key) {
 	try {
@@ -31,15 +20,12 @@ if (!key) {
 			const ds = auth.deepseek;
 			key = typeof ds === "string" ? ds : ds?.key;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 if (!key) {
 	console.log("⏭ SKIP：无 DeepSeek API key（需 ~/.pi/agent/auth.json 的 deepseek.key 或 DEEPSEEK_API_KEY）");
 	process.exit(0);
 }
-// 运行时树检测：无树/版本不兼容 → SKIP。
 let rtAvailable = false;
 let skipReason = "未找到 dsh 运行时树（需 npm i -g @deepseek-ai/dsh@0.1.5-rc.3 或 PI_WEB_DSH_RUNTIME）";
 try {
@@ -87,9 +73,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -131,7 +115,6 @@ function connect(clientId) {
 						}
 						const entry = { pred, resolve: null };
 						const t = setTimeout(() => {
-							// 超时：从 waiters 移除自己，避免 stale pred 静默消费后续新消息。
 							const k = waiters.indexOf(entry);
 							if (k >= 0) waiters.splice(k, 1);
 							rej(new Error("timeout waiting for message"));
@@ -156,10 +139,8 @@ async function main() {
 	await c.wait((m) => m.type === "goal_status");
 	console.log("attached");
 
-	// 等运行时就绪（boot ~1s），再设目标。
 	await sleep(2500);
 
-	// --- 1. set_goal → goal_status 流转（active → reviewing） ---
 	const t0 = Date.now();
 	c.send({
 		type: "set_goal",
@@ -180,7 +161,6 @@ async function main() {
 	check("set_goal → goal_status 进行中", activeSeen);
 	check("round-driver 自动续轮 → 模型完成 → verdict=pass", passSeen, `耗时 ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
-	// --- 2. clear_goal → 清空 ---
 	c.send({ type: "clear_goal" });
 	let cleared = false;
 	deadline = Date.now() + 10_000;

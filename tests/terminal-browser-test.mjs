@@ -1,6 +1,3 @@
-/* Browser smoke test: boots the compiled server, opens the built UI in headless
- * Chromium, and exercises the terminal view end-to-end.
- * Run:  npm run build && node terminal-browser-test.mjs */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { freePort } from "./lib/port-utils.mjs";
 import { spawn } from "node:child_process";
@@ -10,8 +7,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
-// fileURLToPath（不是 URL.pathname）：Windows 上 ".pathname" 得到 "/E:/..."，
-// spawn 的 cwd 与脚本参数都不存在 → ENOENT，测试根本起不来。
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PORT = 30000 + Math.floor(Math.random() * 10000);
 const workdir = mkdtempSync(join(tmpdir(), "piweb-ui-"));
@@ -29,18 +24,13 @@ server.on("error", (e) => console.error("[srv spawn error]", e));
 server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
 	try {
-		// win32 没有负数 PID 的进程组，退回按端口清理。
 		if (process.platform === "win32") freePort(PORT);
 		else process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	try {
 		rmSync(workdir, { recursive: true, force: true });
 		rmSync(dataDir, { recursive: true, force: true });
-	} catch {
-		/* best effort */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,9 +50,7 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -71,8 +59,6 @@ async function waitServer() {
 async function main() {
 	await waitServer();
 	const browser = await chromium.launch({
-		// The installed playwright-core wants a newer browser build; point it at
-		// the cached Chromium for Testing binary instead of downloading.
 		executablePath: CHROME_PATH,
 	});
 	const page = await browser.newPage({
@@ -85,17 +71,13 @@ async function main() {
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
 	await page.goto(`http://localhost:${PORT}/`);
-	// Wait for the session to be ready (hello/ready round-trip).
 	await page.waitForSelector(".boot-wait", { state: "hidden", timeout: 60000 });
 	await page.waitForSelector(".topbar", { timeout: 5000 });
 	console.log("app booted");
 
-	// -- folder path link (right panel) ---------------------------------------
 	{
 		const { mkdirSync } = await import("node:fs");
 		mkdirSync(join(workdir, "subdir"), { recursive: true });
-		// RightPanel refreshes automatically on mount and on fs.watch changes;
-		// there is no manual refresh button in the current UI.
 		await page.waitForSelector(".panel-right .file-item.dir", { timeout: 5000 });
 		await sleep(300);
 		const dirRow = page.locator(".file-item.dir", { hasText: "subdir" });
@@ -106,21 +88,16 @@ async function main() {
 		const chip = page.locator(".attach-chip", { hasText: "subdir" });
 		check("folder chip added to the input bar", (await chip.count()) === 1);
 		check("folder chip shows the folder icon", (await chip.textContent())?.includes("📁"));
-		// Remove it again so the rest of the test is unaffected.
 		await chip.locator(".attach-remove").click();
 	}
 
-	// Switch to the terminal view.
 	await page.click('.topbar-flow [role="tab"]:has-text("终端")');
 	await page.waitForSelector(".terminal-view", { timeout: 5000 });
 	check("terminal view renders", true);
-	// Opening the terminal view creates a default shell. Close it so the
-	// command-list assertions below exercise a single command terminal.
 	const initialShell = page.locator(".term-tab", { hasText: "终端 1" });
 	if (await initialShell.count()) await initialShell.locator(".term-tab-close").click();
 	await sleep(300);
 
-	// Add a command via the form.
 	await page.click(".term-commands .panel-new");
 	await page.fill("#cmd-name", "hello-test");
 	await page.fill("#cmd-command", "echo BROWSER_PTY_OK");
@@ -129,7 +106,6 @@ async function main() {
 	await sleep(500);
 	check("command saved into the list", (await page.textContent(".term-commands"))?.includes("hello-test"));
 
-	// commands.json must exist on disk with the expected shape.
 	const { existsSync, readFileSync } = await import("node:fs");
 	check("commands.json on disk", existsSync(join(workdir, ".pi", "commands.json")));
 	let onDisk = null;
@@ -140,7 +116,6 @@ async function main() {
 	}
 	check("disk commands[0].cwd is ${pwd}", onDisk?.commands?.[0]?.cwd === "${pwd}");
 
-	// Run it — a tab appears and the PTY banner/output shows.
 	await page.click(".cmd-run");
 	await page.waitForSelector(".term-tab", { timeout: 5000 });
 	check("terminal tab appears", true);
@@ -148,8 +123,6 @@ async function main() {
 	const termText = await page.textContent(".term-main");
 	check("command ran in terminal", termText?.includes("BROWSER_PTY_OK"));
 	check("banner shows command", termText?.includes("> echo BROWSER_PTY_OK"));
-	// Clicking the same command again must REUSE the same tab AND re-run it:
-	// the running process is interrupted and a fresh shell starts.
 	const termTextarea = page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first();
 	await termTextarea.click();
 	await page.keyboard.type("echo SH1=$$");
@@ -159,7 +132,7 @@ async function main() {
 	const sh1 = (before.match(/SH1=(\d+)/) ?? [])[1];
 	check("first shell pid captured", !!sh1);
 
-	await page.click(".cmd-run"); // re-run: interrupt + fresh shell in same tab
+	await page.click(".cmd-run");
 	await sleep(1500);
 	check("same command reuses the running tab", (await page.locator(".term-tab").count()) === 1);
 	const afterRun = await page.textContent(".term-main");
@@ -172,7 +145,6 @@ async function main() {
 	const sh2 = (after.match(/SH2=(\d+)/) ?? [])[1];
 	check("re-run spawns a fresh shell (old one interrupted)", !!sh1 && !!sh2 && sh1 !== sh2);
 
-	// After the command's shell exits, clicking again restarts the SAME tab.
 	await page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first().click();
 	await page.keyboard.type("exit");
 	await page.keyboard.press("Enter");
@@ -183,7 +155,6 @@ async function main() {
 	check("exited tab reused (still one tab)", (await page.locator(".term-tab").count()) === 1);
 	check("tab running again after re-run", (await page.locator(".term-tab-dot.run").count()) === 1);
 
-	// Type into the terminal through the xterm (paste into its hidden textarea).
 	const textarea = page.locator(".term-xterm:not(.hidden) .xterm-helper-textarea").first();
 	await textarea.click();
 	await page.keyboard.type("pwd");
@@ -192,26 +163,21 @@ async function main() {
 	const termText2 = await page.textContent(".term-main");
 	check("typing reaches the PTY", termText2?.includes(workdir));
 
-	// Open a second plain shell tab.
 	await page.click(".term-tabs-block .panel-new");
 	await page.waitForSelector(".term-tab >> nth=1", { timeout: 5000 });
 	await sleep(1500);
 	check("second tab + shell prompt", true);
 
-	// Switch back to chat view — terminals must SURVIVE (no unmount kill).
 	await page.click('.topbar-flow [role="tab"]:has-text("对话")');
 	await sleep(800);
 	await page.click('.topbar-flow [role="tab"]:has-text("终端")');
 	await sleep(800);
 	check("terminals survive view switch", (await page.locator(".term-tab").count()) === 2);
 
-	// Close one tab — the other stays.
 	await page.locator(".term-tab-close").first().click();
 	await sleep(800);
 	check("tab close removes one tab", (await page.locator(".term-tab").count()) === 1);
 
-	// Conversation-level persistence: an idle conversation with a terminal must
-	// remain switchable after creating a new chat, and its PTY/tab must return.
 	await page.click(".newchat");
 	await sleep(1800);
 	await page.click('.topbar-flow [role="tab"]:has-text("对话")');

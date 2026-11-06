@@ -1,35 +1,3 @@
-/**
- * server/approval-rules.ts
- *
- * 审批规则库与多维匹配引擎（Approval Rules Store & Match Engine）。
- *
- * 功能：
- * 1. 规则数据模型（ApprovalRule / UiApprovalRule）：
- *    - 工具名单（tools：["bash"]、["write", "edit"]、["*"]）
- *    - 匹配字段（field："command" | "path" | "params"）
- *    - 匹配方式（match："regex" | "glob" | "contains" | "prefix" | "outside_workspace"）
- *    - 命中动作（action："ask" | "deny" | "allow"）
- *      - "deny"：直接阻断执行并向模型报错（不弹窗、不产生 pending）
- *      - "ask"：触发人工协同审批（弹窗让用户决定，带档位可「允许同类」）
- *      - "allow"：免审直接放行（白名单，跳过后续规则与内置高危检测）
- *    - 启停开关（enabled）+ 内置标记（builtin）
- *    - 双语名称与拦截原因（label/labelEn, reason/reasonEn）
- *
- * 2. 匹配与判定纯函数（matchApprovalRule / evaluateApprovalRules）：
- *    - 优先级规则：
- *      先按规则列表自顶向下顺序遍历，遇到第一个匹配成功的启用规则即返回其判决；
- *      若命中 "allow"，直接免审放行；
- *      若命中 "deny"，直接拒绝执行；
- *      若命中 "ask"，挂起审批弹窗；
- *      若所有规则均未命中，回落至内置默认安全策略（兼容旧硬编码逻辑）。
- *
- * 3. 存储与多客户端同步（ApprovalRulesStore）：
- *    - 存储路径：<dataDir>/approval-rules.json（所有客户端共享同一份）
- *    - 播种 sidecar：<dataDir>/approval-rules.seeded.json（记录已播种过的内置规则 id，
- *      老用户删掉的内置规则不会在重启后复活；发版新增的内置规则可安全合并进老用户文件）。
- *    - 内存缓存 + 文件 mtime 感知，支持直接编辑 JSON 文件热生效。
- */
-
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-file.js";
@@ -40,29 +8,18 @@ import { conversationToolAllowed } from "./conversation-tool-names.js";
 export { DEFAULT_APPROVAL_RULES };
 import type { UiApprovalCategory } from "./protocol.js";
 
-/**
- * 检测命令字符串中是否包含 Shell 复合操作符或子命令执行结构（分号、逻辑与/或、管道、反引号、换行、$()）。
- * 用于白名单（allow）规则防止借由安全前缀在复合命令中夹带高危操作（Issue #722）。
- */
 export const SHELL_COMPOUND_OPERATOR_RE = /(?:[;&|`\n]|\$\()/;
 
 export function hasShellCompoundOperator(command: string): boolean {
 	return SHELL_COMPOUND_OPERATOR_RE.test(command);
 }
 
-/** 工具调用审批命中动作：需审批 / 直接拒绝 / 直接放行（白名单）。 */
 export type ApprovalRuleAction = "ask" | "deny" | "allow";
 
-/** 匹配字段。 */
 export type ApprovalRuleField = "command" | "path" | "params";
 
-/** 匹配方式。 */
 export type ApprovalRuleMatchKind = "regex" | "glob" | "contains" | "prefix" | "outside_workspace";
 
-/**
- * 跨平台判定 target 路径是否严格位于 root 目录内部或就是 root 本身。
- * 针对 Windows 盘符大小写不敏感及正反斜杠统一进行规范化，防止 .. 路径穿越逃逸。
- */
 export function isPathInsideRoot(target: string, root: string): boolean {
 	const fold = (p: string) => (process.platform === "win32" ? p.toLowerCase() : p);
 	const rel = relative(fold(resolve(root)), fold(resolve(target)));
@@ -71,53 +28,31 @@ export function isPathInsideRoot(target: string, root: string): boolean {
 	return rel !== ".." && !rel.startsWith(`..${sep}`) && !rel.startsWith("../");
 }
 
-/** 审批规则定义（也与 wire 协议 UiApprovalRule 同形）。 */
 export interface ApprovalRule {
-	/** 规则唯一标识（内置规则形如 "builtin.bash.rm-rf"，自定义规则形如 "custom.<uuid|slug>"）。 */
 	id: string;
-	/** 是否启用（默认 true；false = 停用跳过）。 */
 	enabled: boolean;
-	/** 适用的工具名列表，如 ["bash"]、["write", "edit", "edit_soft"]、["*"] 表示通配。 */
 	tools: string[];
-	/** 检查的参数字段：command | path | params（params 表示对参数 JSON 字符串全文匹配）。 */
 	field: ApprovalRuleField;
-	/** 匹配方式：regex（正则）| glob（通配符）| contains（包含子串）| prefix（前缀）| outside_workspace（工作区外）。 */
 	match: ApprovalRuleMatchKind;
-	/** 匹配目标值/模式串（match 为 outside_workspace 时此字段可空）。 */
 	value: string;
-	/** 命中后的动作：ask（弹窗审批）| deny（直接拒绝）| allow（免审放行）。 */
 	action: ApprovalRuleAction;
-	/** 规则显示名称（zh）。 */
 	label: string;
-	/** 规则英文名称（en；缺失时回落 label）。 */
 	labelEn?: string;
-	/** 拦截/拒绝时展示的人性化原因（zh）。 */
 	reason?: string;
-	/** 拦截/拒绝时展示的人性化原因（en）。 */
 	reasonEn?: string;
-	/** 对应的规则档位 id（用于「允许同类」；缺省时以 rule.id 为档位 id）。 */
 	categoryId?: string;
-	/** 是否为系统内置规则（true 时设置面板不可删除，但可编辑、停用或恢复默认）。 */
 	builtin?: boolean;
 }
 
-/** 规则判定结果。 */
 export interface RuleEvaluationResult {
-	/** 决策动作：ask（弹审批）| deny（直接阻断）| allow（白名单放行）| none（未命中规则）。 */
 	action: "ask" | "deny" | "allow" | "none";
-	/** 命中的规则。 */
 	matchedRule?: ApprovalRule;
-	/** 拦截/拒绝原因（zh）。 */
 	reason?: string;
-	/** 拦截/拒绝原因（en）。 */
 	reasonEn?: string;
-	/** 规则档位（用于「允许同类审批」）。 */
 	category?: UiApprovalCategory;
-	/** 命中的规则片段清单（issue #566，带条数上限与单条长度保护）。 */
 	hits?: RuleHitDetail[];
 }
 
-/** 规则命中区间详情（issue #566）。 */
 export interface RuleHitDetail {
 	ruleId: string;
 	label: string;
@@ -128,10 +63,6 @@ export interface RuleHitDetail {
 	text: string;
 }
 
-/**
- * 极简 glob 转 RegExp（只支持 * 单段、? 单字符、** 跨段）。
- * 纯函数，支持正反斜杠统一归一为 /。
- */
 export function globToRegex(pattern: string): RegExp {
 	const src = String(pattern ?? "")
 		.trim()
@@ -160,11 +91,6 @@ export function globToRegex(pattern: string): RegExp {
 	return new RegExp(`^${re}$`, "i");
 }
 
-/**
- * 从工具参数里取「这次调用动的是哪个文件」。SDK 内置 read/write/edit 用 `path`，read 还有
- * `file_path` 别名，部分扩展（如 pi-better-edit 的 edit）用 `file` —— 三种都认，否则叠在
- * 扩展实现之上的权限沙箱与审批规则会静默放行（取不到 → 空串 → 被判成工作区内）。
- */
 export function extractTargetPath(params: unknown): string {
 	if (!params || typeof params !== "object") return "";
 	const obj = params as Record<string, unknown>;
@@ -175,9 +101,6 @@ export function extractTargetPath(params: unknown): string {
 	return "";
 }
 
-/**
- * 从工具参数对象中提取待检查文本。
- */
 export function extractRuleFieldValue(field: ApprovalRuleField, toolName: string, params: unknown): string {
 	if (!params || typeof params !== "object") {
 		return typeof params === "string" ? params : "";
@@ -199,12 +122,6 @@ export function extractRuleFieldValue(field: ApprovalRuleField, toolName: string
 	return "";
 }
 
-/**
- * 单条规则针对具体工具调用的匹配详情判定（纯函数，issue #566）。
- * 匹配成功时返回匹配区间信息 { index, length, text }，否则返回 null。
- */
-/** 单条规则在一段字段文本里的全部命中区间（issue #578）。regex 规则逐次扫描、不只取首个。 */
-/** Keep persisted per-action rules scoped to exactly the corresponding merged action. */
 function legacyTerminalRuleCall(rule: ApprovalRule, toolName: string, params: unknown) {
 	if (toolName.trim().toLowerCase() !== "terminal" || !params || typeof params !== "object") return null;
 	const { action, ...legacyParams } = params as Record<string, unknown>;
@@ -246,7 +163,7 @@ export function matchApprovalRuleDetails(
 		const out: { index: number; length: number; text: string }[] = [];
 		for (let m = re.exec(fieldValue); m; m = re.exec(fieldValue)) {
 			if (m[0].length === 0) {
-				re.lastIndex++; // 空匹配推进一位，防死循环
+				re.lastIndex++;
 				continue;
 			}
 			out.push({ index: m.index, length: m[0].length, text: m[0] });
@@ -268,17 +185,14 @@ export function matchApprovalRuleDetail(
 	if (legacy) return matchApprovalRuleDetail(rule, legacy.toolName, legacy.params, cwd, workspaceRoots);
 	if (!rule.enabled) return null;
 
-	// 1. 工具名匹配
 	const targetTools = rule.tools.map((t) => t.trim().toLowerCase());
 	const toolMatches =
 		targetTools.includes("*") || conversationToolAllowed(new Set(targetTools), toolName.trim().toLowerCase());
 	if (!toolMatches) return null;
 
-	// 2. 特殊匹配方式：outside_workspace（工作区外路径）
 	if (rule.match === "outside_workspace") {
 		const targetPath = extractRuleFieldValue("path", toolName, params);
 		if (!targetPath) return null;
-		// 无论相对或绝对路径，统一经 resolve(cwd, targetPath) 规范化并消除 ".."
 		const abs = resolve(cwd, targetPath);
 		const allRoots = [resolve(cwd), ...workspaceRoots.map((r) => resolve(r))];
 		const inside = allRoots.some((r) => isPathInsideRoot(abs, r));
@@ -288,11 +202,9 @@ export function matchApprovalRuleDetail(
 		return null;
 	}
 
-	// 3. 提取字段文本
 	const fieldValue = extractRuleFieldValue(rule.field, toolName, params);
 	if (!fieldValue) return null;
 
-	// 4. 按 match kind 进行文本判定并提取命中区间
 	let matched: { index: number; length: number; text: string } | null = null;
 	switch (rule.match) {
 		case "regex": {
@@ -350,10 +262,6 @@ export function matchApprovalRuleDetail(
 
 	if (!matched) return null;
 
-	// 复合命令白名单防逃逸（Issue #722）：
-	// 当动作为 allow（免审放行）且字段为 command 时，如果整段命令包含复合操作符（; && || | \n $() `），
-	// 且该白名单匹配未完全覆盖整条命令输入，禁止仅凭前缀、子串或通配符放行整条复合命令，
-	// 防止如 `git status && rm -rf /` 借由安全前缀绕过后续的高危规则拦截。
 	if (
 		rule.action === "allow" &&
 		rule.field === "command" &&
@@ -366,9 +274,6 @@ export function matchApprovalRuleDetail(
 	return matched;
 }
 
-/**
- * 单条规则针对具体工具调用的匹配判定（纯函数）。
- */
 export function matchApprovalRule(
 	rule: ApprovalRule,
 	toolName: string,
@@ -379,9 +284,6 @@ export function matchApprovalRule(
 	return matchApprovalRuleDetail(rule, toolName, params, cwd, workspaceRoots) !== null;
 }
 
-/**
- * 完整评估规则列表对工具调用的决策（纯函数，按列表顺序首个匹配胜出，收集全部命中清单，issue #566）。
- */
 export function evaluateApprovalRules(
 	rules: ApprovalRule[],
 	toolName: string,
@@ -400,9 +302,7 @@ export function evaluateApprovalRules(
 	const hits: RuleHitDetail[] = [];
 
 	for (const rule of rules) {
-		// 同一规则可在一段命令里出现多次（如 `git reset --hard && git clean -fd`），全部列出（#578）。
 		for (const detail of matchApprovalRuleDetails(rule, toolName, params, cwd, workspaceRoots)) {
-			// A migrated allow must never preempt a new terminal deny/ask rule.
 			if (
 				!primary ||
 				(primary.action === "allow" &&
@@ -423,7 +323,6 @@ export function evaluateApprovalRules(
 				};
 			}
 			if (hits.length < 10) {
-				// 单条 text 超长时做截断，防止塞满 details 预算（硬限制 ≤64KB）
 				const safeText = detail.text.length > 200 ? `${detail.text.slice(0, 200)}…` : detail.text;
 				hits.push({
 					ruleId: rule.id,
@@ -457,7 +356,6 @@ export function checkBashCommandDanger(
 	return res.hits ?? [];
 }
 
-/** 归一化输入规则。脏数据或非法规则返回 null。 */
 export function normalizeApprovalRule(raw: unknown): ApprovalRule | null {
 	if (!raw || typeof raw !== "object") return null;
 	const o = raw as Record<string, unknown>;
@@ -490,7 +388,7 @@ export function normalizeApprovalRule(raw: unknown): ApprovalRule | null {
 		try {
 			new RegExp(value);
 		} catch {
-			return null; // 非法正则拒绝
+			return null;
 		}
 	}
 
@@ -517,7 +415,6 @@ export function normalizeApprovalRule(raw: unknown): ApprovalRule | null {
 	};
 }
 
-/** 全局审批规则库持久化与操作类。 */
 export class ApprovalRulesStore {
 	private rules: ApprovalRule[] | null = null;
 	private lastMtime = 0;
@@ -539,18 +436,14 @@ export class ApprovalRulesStore {
 					if (typeof item === "string" && item) out.add(item);
 				}
 			}
-		} catch {
-			// 文件不存在时返回空集合
-		}
+		} catch {}
 		return out;
 	}
 
 	private saveSeeded(names: Set<string>): void {
 		try {
 			writeJsonAtomicSync(this.seededPath(), [...names].sort());
-		} catch {
-			// best effort
-		}
+		} catch {}
 	}
 
 	private load(): ApprovalRule[] {
@@ -574,11 +467,9 @@ export class ApprovalRulesStore {
 				list = parsed.map(normalizeApprovalRule).filter((r): r is ApprovalRule => r !== null);
 			}
 		} catch {
-			// 文件不存在或格式损坏，以默认规则初始化
 			list = DEFAULT_APPROVAL_RULES.map((r) => ({ ...r, tools: [...r.tools] }));
 		}
 
-		// 检查播种：老用户新增内置规则自动合并
 		const seeded = this.loadSeeded();
 		const existingIds = new Set(list.map((r) => r.id));
 		let grown = false;
@@ -606,20 +497,14 @@ export class ApprovalRulesStore {
 			writeJsonAtomicSync(this.filePath, this.rules ?? []);
 			try {
 				this.lastMtime = statSync(this.filePath).mtimeMs;
-			} catch {
-				// ignore
-			}
-		} catch {
-			// best effort
-		}
+			} catch {}
+		} catch {}
 	}
 
-	/** 获取全部有效规则清单（深拷贝返回）。 */
 	list(): ApprovalRule[] {
 		return this.load().map((r) => ({ ...r, tools: [...r.tools] }));
 	}
 
-	/** Upsert 一条规则（同 id 替换，新 id 追加到列表末尾）。返回错误提示，成功返回 null。 */
 	upsert(input: unknown): string | null {
 		const rule = normalizeApprovalRule(input);
 		if (!rule) return "规则格式非法（缺少名称、工具列表或正则格式错误）";
@@ -627,7 +512,6 @@ export class ApprovalRulesStore {
 		const list = this.load();
 		const idx = list.findIndex((r) => r.id === rule.id);
 		if (idx >= 0) {
-			// 内置规则保留 builtin 标记
 			if (list[idx].builtin) {
 				rule.builtin = true;
 			}
@@ -639,7 +523,6 @@ export class ApprovalRulesStore {
 		return null;
 	}
 
-	/** 批量重排/替换整份规则（供前端拖拽排序后保存）。 */
 	saveAll(inputs: unknown[]): string | null {
 		if (!Array.isArray(inputs)) return "规则列表必须是数组";
 		const normalized: ApprovalRule[] = [];
@@ -653,11 +536,6 @@ export class ApprovalRulesStore {
 			normalized.push(r);
 		}
 
-		// 内置规则是安全底线：整表替换绝不能把它们裁掉（旧客户端 / 并发竞态都
-		// 可能送来缺内置规则的清单）。缺失的按默认定义补种、追加到队尾——与
-		// load/resetBuiltin 同口径；插队首会改变用户 allow 规则的 first-match
-		// 语义。id 命中内置定义的一律强制 builtin 标记（同 upsert 的保护），
-		// 防止 remove() 的内置不可删保护被绕过。
 		for (const def of DEFAULT_APPROVAL_RULES) {
 			if (!ids.has(def.id)) {
 				normalized.push({ ...def, tools: [...def.tools] });
@@ -673,19 +551,17 @@ export class ApprovalRulesStore {
 		return null;
 	}
 
-	/** 删除一条自定义规则（内置规则不可删除）。 */
 	remove(id: string): boolean {
 		const list = this.load();
 		const idx = list.findIndex((r) => r.id === id);
 		if (idx < 0) return false;
-		if (list[idx].builtin) return false; // 内置规则不许直接删除，只允许禁用
+		if (list[idx].builtin) return false;
 
 		list.splice(idx, 1);
 		this.persist();
 		return true;
 	}
 
-	/** 恢复某条内置规则到系统默认设定。 */
 	resetBuiltin(id: string): boolean {
 		const def = DEFAULT_APPROVAL_RULES.find((r) => r.id === id);
 		if (!def) return false;

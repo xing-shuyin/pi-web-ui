@@ -120,7 +120,6 @@ export class HubLockManager {
 			}
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-				// Ignore parse error on corrupt file, start fresh
 			}
 		}
 	}
@@ -138,9 +137,7 @@ export class HubLockManager {
 				}
 			}
 			writeJsonAtomicSync(this.persistPath, { version: 1, updatedAt: Date.now(), rooms: serializedRooms });
-		} catch {
-			// Best-effort atomic persist
-		}
+		} catch {}
 	}
 
 	private getOrCreateRoom(roomId: string): RoomLockState {
@@ -200,7 +197,6 @@ export class HubLockManager {
 			};
 		}
 
-		// No conflicts: acquire locks
 		const waiterIndex = roomState.waitingQueue.findIndex((w) => w.taskId === options.taskId);
 		if (waiterIndex >= 0) {
 			roomState.waitingQueue.splice(waiterIndex, 1);

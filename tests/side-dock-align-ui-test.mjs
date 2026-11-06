@@ -1,15 +1,3 @@
-/* 侧边停靠栏（SideDock）的**竖向三段**回归（issue：侧边按钮也要能指定靠上/靠下/居中）。
- *
- * 盯三条不变量（都是渲染几何，单测测不到）：
- *   1. `entry.align` 在左右停靠栏里读作**竖轴**：start 在上、center 正中、end 在下，
- *      且三颗药丸的竖向次序与设置页说的段一致；
- *   2. 药丸是**内容高**的贴边小药丸 —— 弹性格子被拉满整列，但药丸不许跟着被拉高
- *      （曾经一圈 1 个图标拓成一整条竖色块）；
- *   3. 折叠按钮只在**悬浮浮层**里出现（流内模式停靠栏只占一条窄边，收起省不下宽度还多
- *      一次点击）；悬浮模式折叠后只剩一个 22×22 的小按钮，再点即展开。
- *
- * 缺 Chrome 自动 SKIP。运行：npm run build && node tests/side-dock-align-ui-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -44,7 +32,6 @@ if (!CHROME_PATH) {
 	process.exit(0);
 }
 
-// 假插件：左右两侧各三条，align 分别是 start / center / end。
 const plugDir = join(DATA_DIR, "plugins", "docktest");
 mkdirSync(join(plugDir, "client"), { recursive: true });
 const items = (p) => [
@@ -64,7 +51,6 @@ writeFileSync(
 );
 writeFileSync(join(plugDir, "client", "entry.mjs"), "export default {};");
 
-/** 停靠栏形态是全局设置（client-state.json）：两轮各起一次服务，免得靠 UI 点开关。 */
 function seedPrefs(sideDockFloat) {
 	writeFileSync(
 		join(DATA_DIR, "client-state.json"),
@@ -83,7 +69,6 @@ async function startServer() {
 			PI_WEB_PORT: String(PORT),
 			PI_WEB_CWD: WORK,
 			PI_WEB_DATA_DIR: DATA_DIR,
-			// 只挂额外会话根：不污染真用户的 ~/.pi，也不会触发「首次配置」向导。
 			PI_CODING_AGENT_SESSION_DIR: join(AGENT_DIR, "sessions"),
 		},
 		stdio: ["ignore", "pipe", "pipe"],
@@ -94,9 +79,7 @@ async function startServer() {
 	for (let i = 0; i < 160; i++) {
 		try {
 			if ((await fetch(`http://localhost:${PORT}/api/health`)).ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -109,14 +92,11 @@ function killServer() {
 	} catch {
 		try {
 			server.kill("SIGKILL");
-		} catch {
-			/* already gone */
-		}
+		} catch {}
 	}
 	server = undefined;
 }
 
-/** 停靠栏的静态几何（在页面里跑）。 */
 const geoScript = () => {
 	const rect = (el) => {
 		const r = el.getBoundingClientRect();
@@ -152,7 +132,6 @@ async function openPage() {
 async function main() {
 	browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true });
 
-	// ── 流内模式（默认）──────────────────────────────────────────────
 	console.log("\n§1 流内：align 读作竖轴（靠上 / 居中 / 靠下）");
 	seedPrefs(false);
 	await startServer();
@@ -191,7 +170,6 @@ async function main() {
 	killServer();
 	await sleep(400);
 
-	// ── 悬浮模式 ────────────────────────────────────────────────────
 	console.log("\n§2 悬浮：折叠按钮只在这里出现，空白处不吃点击");
 	seedPrefs(true);
 	await startServer();
@@ -258,9 +236,7 @@ try {
 } finally {
 	try {
 		await browser?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	killServer();
 	freePort(PORT);
 	rmSync(base, { recursive: true, force: true });

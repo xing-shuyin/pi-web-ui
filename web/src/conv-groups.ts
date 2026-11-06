@@ -1,10 +1,3 @@
-/**
- * 左栏「运行的对话」的分组（跨项目）：当前项目排最前、不显示组标题（项目名），
- * 其余项目按路径稳定排序并挂上组标题。
- *
- * 抽成纯函数是为了那个「切项目时项目名闪一下」的坑（#140 的回归），有单测：
- * `tests/unit/conv-groups.test.ts`。
- */
 import type { ConversationSummary } from "./types";
 
 interface ConvGroup {
@@ -13,26 +6,12 @@ interface ConvGroup {
 	convs: ConversationSummary[];
 }
 
-/**
- * Group the (now cross-project) running-conversation list by workspace,
- * current project first, others in stable path order. Lets the left panel
- * disambiguate same-titled chats across projects and shows where each
- * background run lives.
- *
- * 「当前项目」取哪个信号：`set_cwd` / 跨项目切对话时，服务端先推 `conversations`
- * （activeId 已经是新项目的对话），带新 `cwd` 的快照随后才到 —— 两个信号不同时
- * 到达。所以**只要当前对话在列表里，就认它所在的分组为当前项目**（唯一），
- * `currentCwd` 只作为它不在列表里时（空白新对话）的回落。只按 `cwd` 判定的那一
- * 帧会把当前项目当成「别的项目」，于是它顶上闪一下项目名再消失（实测约 8ms 一帧，
- * 正是用户看到的那一跳）；同一组立即置顶，也免掉了随后的位置跳动。
- */
 export function groupConversations(
 	list: ConversationSummary[],
 	currentCwd: string,
 	activeConversationId: string,
 ): ConvGroup[] {
 	const byId = new Map(list.map((c) => [c.id, c]));
-	/** Resolve the whole ancestry before splitting the list into project groups. */
 	const resolvedCwds = new Map<string, string>();
 	const groupCwdOf = (c: ConversationSummary): string => {
 		const path: ConversationSummary[] = [];
@@ -47,7 +26,6 @@ export function groupConversations(
 			}
 			const cycleStart = positions.get(current.id);
 			if (cycleStart !== undefined) {
-				// Malformed cycles still share one deterministic group, regardless of list order.
 				const cycle = path.slice(cycleStart);
 				const anchor = cycle.reduce((a, b) => (a.id < b.id ? a : b));
 				groupCwd = anchor.cwd;
@@ -95,10 +73,6 @@ export interface ConvRowItem {
 	hasQuestion: boolean;
 }
 
-/**
- * 将同组内的对话按父子树展开成扁平渲染行列表（issue #564）。
- * 当父对话处于折叠状态时，其所有后代子代理从行列表中隐藏，并在父行上汇总后代计数与活跃状态。
- */
 export function buildConversationRows(
 	convs: ConversationSummary[],
 	collapsedParentIds: Set<string> = new Set(),

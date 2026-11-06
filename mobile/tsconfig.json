@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"resolveJsonModule": true,
+		"verbatimModuleSyntax": true,
+		"types": ["vite/client", "node"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"native/push/src/**/*.ts",
+		"../web/src/**/*.d.ts",
+		"vite.config.ts",
+		"capacitor.config.ts"
+	]
+}

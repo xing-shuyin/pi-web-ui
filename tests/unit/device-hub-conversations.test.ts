@@ -19,7 +19,6 @@ async function fixture(
 ) {
 	const dataDir = await mkdtemp(join(tmpdir(), "device-hub-test-"));
 	cleanups.push(() => rm(dataDir, { recursive: true, force: true }));
-	// Keep the first issued lease: later attempts must not refresh stale event fixtures.
 	const issuedLeases = new Map<string, { leaseToken: string | undefined; leaseGeneration: number | undefined }>();
 	const onTask = vi.fn<NonNullable<Parameters<typeof createDeviceHub>[0]["onTask"]>>((_deviceId, task) => {
 		if (!issuedLeases.has(task.id))

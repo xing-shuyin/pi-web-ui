@@ -1,7 +1,3 @@
-/**
- * model-resolver.test.ts — 通用模型解析器与跨引擎配置基础层单测。
- */
-
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,9 +23,7 @@ describe("model-resolver", () => {
 	afterEach(() => {
 		try {
 			rmSync(testAgentDir, { recursive: true, force: true });
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});
 
 	describe("stripJsonComments", () => {
@@ -235,7 +229,6 @@ describe("model-resolver", () => {
 			});
 
 			const models = await driver.listModels();
-			// 4 个官方内置 + 1 个自定义
 			expect(models.length).toBe(5);
 			expect(models.some((m) => m.id === "ccproxy/claude-3-7-sonnet")).toBe(true);
 			expect(models.find((m) => m.id === "ccproxy/claude-3-7-sonnet")?.name).toBe("Sonnet 3.7");

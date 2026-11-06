@@ -27,12 +27,6 @@ export interface NormalizedOutcome {
 	fingerprint: string;
 }
 
-/**
- * Deterministically compute outcome fingerprint digest (first 16 hex chars of SHA-256).
- * Pure function shared between Hub and Device endpoints to guarantee ACK binding.
- * When artifactDigest or execution/artifact proof facts are provided, they are incorporated
- * into the digest payload while preserving backward-compatibility for legacy 6-tuple payloads.
- */
 export function computeOutcomeFingerprint(
 	taskId: string,
 	attemptId: string,
@@ -58,7 +52,6 @@ export function computeOutcomeFingerprint(
 	return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }
 
-/** Compatibility for outcomes persisted or sent by older devices. */
 export function computeLegacyOutcomeFingerprint(
 	taskId: string,
 	attemptId: string,
@@ -75,11 +68,6 @@ export function computeLegacyOutcomeFingerprint(
 		.slice(0, 16);
 }
 
-/**
- * Normalize raw outcome fields (bounding report length, sanitizing error, canonicalizing metadata,
- * validating optional device artifact, and recording independent execution/artifact facts)
- * and generate deterministic fingerprint.
- */
 export function normalizeTaskOutcome(
 	taskId: string,
 	attemptId: string,
@@ -105,7 +93,6 @@ export function normalizeTaskOutcome(
 		if (!res.valid) {
 			throw new Error(`Invalid device artifact: ${res.reason}`);
 		}
-		// Deep clone and freeze to prevent caller alias mutation from corrupting recorded evidence
 		validArtifact = deepFreeze(structuredClone(res.artifact));
 	}
 

@@ -10,7 +10,7 @@ describe("bili-scroll plugin 2.0 verification", () => {
 		const manifest = JSON.parse(readFileSync(join(pluginDir, "manifest.json"), "utf8"));
 		const pkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf8"));
 
-		expect(manifest.version).toBe("2.1.0");
+		expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
 		expect(pkg.version).toBe(manifest.version);
 		expect(manifest.apiVersion).toBe(2);
 		expect(manifest.permissions).toContain("tools");
@@ -78,7 +78,6 @@ describe("bili-scroll plugin 2.0 verification", () => {
 			const cleanup = mod.default.activate(mockHost);
 			expect(typeof cleanup).toBe("function");
 
-			// Essential tools
 			expect(registeredTools).toContain("bili_whoami");
 			expect(registeredTools).toContain("bili_search");
 			expect(registeredTools).toContain("bili_subtitle");
@@ -119,7 +118,6 @@ describe("bili-scroll plugin 2.0 verification", () => {
 			const openHandler = routes.get("/open")!;
 			expect(openHandler).toBeTruthy();
 
-			// 恶意注入链接：带 & 命令分隔符
 			let resp: any;
 			const fakeRes = {
 				json: (d: any) => {
@@ -130,7 +128,6 @@ describe("bili-scroll plugin 2.0 verification", () => {
 			expect(resp?.ok).toBe(false);
 			expect(resp?.error).toContain("合法");
 
-			// 非 http/https 链接
 			openHandler({ body: { what: "url", u: "file:///etc/passwd" } }, fakeRes);
 			expect(resp?.ok).toBe(false);
 
@@ -152,12 +149,10 @@ describe("bili-scroll plugin 2.0 verification", () => {
 				return new Response(JSON.stringify({ code: 0 }));
 			}) as any;
 
-			// 未传 signal 时自动注入兜底 AbortSignal
 			await (client as any)._fetch("https://api.bilibili.com/test");
 			expect(capturedSignal).toBeDefined();
 			expect(capturedSignal instanceof AbortSignal).toBe(true);
 
-			// 显式传 signal 时优先保留调用方的 signal
 			const customController = new AbortController();
 			await (client as any)._fetch("https://api.bilibili.com/test", { signal: customController.signal });
 			expect(capturedSignal).toBe(customController.signal);

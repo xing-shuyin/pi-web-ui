@@ -6,7 +6,6 @@ import * as client from "../../plugin-sdk/client.mjs";
 import * as sdk from "../../plugin-sdk/index.mjs";
 import { createMockHost } from "../../plugin-sdk/testing.mjs";
 
-/** Browser files must form a self-contained graph inside the CLI's client copy list. */
 const SDK_DIR = "plugin-sdk";
 const CLI = "bin/pi-web-ui.mjs";
 const NODE_MODULES = new Set(builtinModules.map((name) => name.replace(/^node:/, "")));
@@ -22,7 +21,6 @@ function stripComments(src: string): string {
 	return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
-/** Static imports/re-exports, require, and literal dynamic imports all count. */
 function specifiers(src: string): string[] {
 	const code = stripComments(src);
 	const patterns = [

@@ -3,58 +3,55 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { exec } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
-// 导入 DeepSeek 模块
 import { createSession, postCompletion, buildRepeatPrompt } from "./lib/session.mjs";
 import { obtainPowHeader, POW_TARGET_COMPLETION } from "./lib/pow.mjs";
 import { synthesizeToWavBuffer } from "./lib/tts.mjs";
 
 const DOUBAO_SPEAKERS = {
-	yangguang: "zh_male_qingyiyuxuan_mars_bigtts", // 阳光阿辰
+	yangguang: "zh_male_qingyiyuxuan_mars_bigtts",
 	阳光青年: "zh_male_qingyiyuxuan_mars_bigtts",
 	阳光阿辰: "zh_male_qingyiyuxuan_mars_bigtts",
 
-	junyu: "zh_male_nuanxinshizhe_mars_bigtts", // 磁性俊宇
+	junyu: "zh_male_nuanxinshizhe_mars_bigtts",
 	磁性俊宇: "zh_male_nuanxinshizhe_mars_bigtts",
 
-	nanda: "zh_male_junlangxize_mars_bigtts", // 清爽男大
+	nanda: "zh_male_junlangxize_mars_bigtts",
 	清爽男大: "zh_male_junlangxize_mars_bigtts",
 
-	taozi: "zh_female_wenroutaozi_uranus_bigtts", // 温柔桃子
+	taozi: "zh_female_wenroutaozi_uranus_bigtts",
 	温柔桃子: "zh_female_wenroutaozi_uranus_bigtts",
 
-	tianmei: "zh_female_xiaohe_conversation_wvae_bigtts", // 阳光甜妹
+	tianmei: "zh_female_xiaohe_conversation_wvae_bigtts",
 	阳光甜妹: "zh_female_xiaohe_conversation_wvae_bigtts",
 
-	xiaotang: "zh_female_wenroutaozi_mars_bigtts", // 知性小棠
+	xiaotang: "zh_female_wenroutaozi_mars_bigtts",
 	知性小棠: "zh_female_wenroutaozi_mars_bigtts",
 
-	shuangkuai: "zh_female_beijingdaniu_mars_bigtts", // 北京大妞
+	shuangkuai: "zh_female_beijingdaniu_mars_bigtts",
 	北京大妞: "zh_female_beijingdaniu_mars_bigtts",
 
-	bazong: "ICL_e0b9b93ee322", // 冷酷霸总
+	bazong: "ICL_e0b9b93ee322",
 	冷酷霸总: "ICL_e0b9b93ee322",
 
-	bingjiao: "ICL_72afa6c5dc07", // 病娇少爷
+	bingjiao: "ICL_72afa6c5dc07",
 	病娇少爷: "ICL_72afa6c5dc07",
 };
 
 const DEEPSEEK_VOICES = {
-	echo: "echo", // 白浪 (明朗坚定男声)
+	echo: "echo",
 	白浪: "echo",
-	tide: "tide", // 暗潮 (低沉浑厚男声)
+	tide: "tide",
 	暗潮: "tide",
-	mira: "mira", // 贝壳 (百变活泼女声)
+	mira: "mira",
 	贝壳: "mira",
-	stella: "stella", // 海星 (俏皮甜美女声)
+	stella: "stella",
 	海星: "stella",
 };
 
 const DOUBAO_WS_URL = "wss://ws-samantha.doubao.com/samantha/audio/tts";
 
-/**
- * 纯 Node.js 生成标准 ZIP 压缩包
- */
 function createZip(files) {
 	const localHeaders = [];
 	const centralHeaders = [];
@@ -138,6 +135,7 @@ for (let n = 0; n < 256; n++) {
 
 export default {
 	activate(host) {
+		if (!host.tts) throw new Error("当前宿主缺少统一 TTS 中心，请更新 pi-web-ui");
 		const cookieFile = path.join(host.dir, "doubao_cookie.txt");
 		const legacyCookieFile = path.join(host.dir, "cookie.txt");
 		const dsTokenFile = path.join(host.dir, "deepseek_token.txt");
@@ -181,12 +179,12 @@ export default {
 			return stable;
 		}
 
-		// ── 1. 豆包语音合成 ──────────────────────────────────────────────
-		async function synthesizeDoubao(text, speakerKey = "yangguang", speed = 0, format = "aac") {
+		async function synthesizeDoubao(text, speakerKey = "yangguang", speed = 0, format = "aac", signal) {
+			const requestSignal = AbortSignal.any([AbortSignal.timeout(20000), ...(signal ? [signal] : [])]);
+			requestSignal.throwIfAborted();
 			const settings = host.getSettings?.() ?? {};
 			const apiKey = (settings.doubaoApiKey || "").trim();
 
-			// 官方 API 渠道 (Seed-TTS 2.0)
 			if (apiKey) {
 				const officialVoiceMap = {
 					yangguang: "BV007_streaming",
@@ -201,6 +199,7 @@ export default {
 
 				const res = await fetch("https://openspeech.bytedance.com/api/v1/tts", {
 					method: "POST",
+					signal: requestSignal,
 					headers: {
 						"x-api-key": apiKey,
 						"X-Api-Resource-Id": "seed-tts-2.0",
@@ -221,7 +220,6 @@ export default {
 				throw new Error(`火山引擎接口错误: ${json.message || JSON.stringify(json)}`);
 			}
 
-			// 网页端逆向渠道
 			const cookie = await readDoubaoCookie();
 			if (!cookie) {
 				throw new Error("尚未获取豆包登录凭据，请在浏览器中安装配套扩展并点击一键同步。");
@@ -259,100 +257,71 @@ export default {
 			const chunks = [];
 
 			return new Promise((resolve, reject) => {
-				let resolved = false;
+				requestSignal.throwIfAborted();
 				const WebSocketClient = globalThis.WebSocket;
-				if (!WebSocketClient) {
-					reject(new Error("当前 Node 环境不支持原生 WebSocket"));
-					return;
-				}
-
+				if (!WebSocketClient) throw new Error("当前 Node 环境不支持原生 WebSocket");
 				const ws = new WebSocketClient(wsUrl, {
-					headers: {
-						Origin: "https://www.doubao.com",
-						"User-Agent":
-							"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-						Cookie: cookie,
-					},
+					headers: { Origin: "https://www.doubao.com", "User-Agent": "Mozilla/5.0", Cookie: cookie },
 				});
 				ws.binaryType = "arraybuffer";
-
-				const timer = setTimeout(() => {
-					if (!resolved) {
-						resolved = true;
-						try {
-							ws.close();
-						} catch {}
-						reject(new Error("豆包语音合成连接超时"));
-					}
-				}, 20000);
-
+				let settled = false;
+				const finish = (error) => {
+					if (settled) return;
+					settled = true;
+					requestSignal.removeEventListener("abort", onAbort);
+					try {
+						ws.close();
+					} catch {}
+					if (error) reject(error);
+					else if (!chunks.length) reject(new Error("未能接收到音频数据"));
+					else resolve(Buffer.concat(chunks));
+				};
+				const onAbort = () => finish(requestSignal.reason);
+				requestSignal.addEventListener("abort", onAbort, { once: true });
 				ws.onopen = () => {
-					ws.send(JSON.stringify({ event: "text", text }));
-					ws.send(JSON.stringify({ event: "finish" }));
+					if (!settled) {
+						ws.send(JSON.stringify({ event: "text", text }));
+						ws.send(JSON.stringify({ event: "finish" }));
+					}
 				};
-
 				ws.onmessage = async (event) => {
+					if (settled) return;
 					if (typeof event.data === "string") {
+						let msg;
 						try {
-							const msg = JSON.parse(event.data);
-							if (msg.code === 710022002 || msg.message === "block") {
-								if (!resolved) {
-									resolved = true;
-									clearTimeout(timer);
-									try {
-										ws.close();
-									} catch {}
-									reject(
-										new Error("触发豆包网页频次拦截 (710022002 block)，请稍等几分钟冷却或在设置中配置官方 API Key。"),
-									);
-								}
-							} else if (msg.event === "error" || (msg.code && msg.code !== 0)) {
-								if (!resolved) {
-									resolved = true;
-									clearTimeout(timer);
-									try {
-										ws.close();
-									} catch {}
-									reject(new Error(msg.message || `豆包返回错误 (code: ${msg.code})`));
-								}
-							}
-						} catch {}
-					} else if (event.data instanceof ArrayBuffer) {
-						chunks.push(Buffer.from(event.data));
-					} else if (event.data && typeof event.data.arrayBuffer === "function") {
-						const ab = await event.data.arrayBuffer();
-						chunks.push(Buffer.from(ab));
+							msg = JSON.parse(event.data);
+						} catch {
+							return;
+						}
+						if (msg.code === 710022002 || msg.message === "block")
+							finish(new Error("触发豆包网页频次拦截，请稍后重试或配置官方 API Key"));
+						else if (msg.event === "error" || (msg.code && msg.code !== 0))
+							finish(new Error(msg.message || `豆包返回错误 (${msg.code})`));
+					} else {
+						try {
+							const buffer =
+								event.data instanceof ArrayBuffer
+									? Buffer.from(event.data)
+									: Buffer.from(await event.data.arrayBuffer());
+							if (!settled) chunks.push(buffer);
+						} catch (error) {
+							finish(error);
+						}
 					}
 				};
-
-				ws.onclose = () => {
-					if (!resolved) {
-						resolved = true;
-						clearTimeout(timer);
-						if (chunks.length > 0) resolve(Buffer.concat(chunks));
-						else reject(new Error("未能接收到音频数据"));
-					}
-				};
-
-				ws.onerror = (err) => {
-					if (!resolved) {
-						resolved = true;
-						clearTimeout(timer);
-						reject(new Error(`WebSocket 连接错误: ${err?.message || "网络握手失败"}`));
-					}
-				};
+				ws.onclose = () => finish();
+				ws.onerror = () => finish(new Error("豆包语音 WebSocket 连接失败"));
 			});
 		}
 
-		// ── 2. DeepSeek 官方语音合成（专属会话复用 + 防风控伪装模型） ──────
-		let dsQueue = Promise.resolve();
 		let dsLastCallTime = 0;
 
 		function hashToken(token) {
 			return crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 16);
 		}
 
-		async function getOrCreateDeepSeekSession(token) {
+		async function getOrCreateDeepSeekSession(token, signal) {
+			signal?.throwIfAborted();
 			try {
 				if (existsSync(dsSessionFile)) {
 					const info = JSON.parse(await fs.readFile(dsSessionFile, "utf-8"));
@@ -362,8 +331,7 @@ export default {
 				}
 			} catch {}
 
-			// 首次建立专属持久会话（长期保留在账号内，杜绝秒建秒删行为）
-			const session = await createSession({ token });
+			const session = await createSession({ token, signal });
 			const info = {
 				sessionId: session.id,
 				tokenHash: hashToken(token),
@@ -397,8 +365,7 @@ export default {
 			} catch {}
 		}
 
-		async function synthesizeDeepSeek(text, voiceKey = "echo") {
-			// 加入串行队列锁，避免并发请求产生机器脉冲
+		async function synthesizeDeepSeek(text, voiceKey = "echo", signal) {
 			const run = async () => {
 				const token = await readDeepSeekToken();
 				if (!token) {
@@ -407,33 +374,30 @@ export default {
 					);
 				}
 
-				// 拟人化间隔防抖：两次请求之间至少保留 400ms 间歇，杜绝无间隔高频并发
 				const now = Date.now();
 				const elapsed = now - dsLastCallTime;
 				if (elapsed < 400) {
-					await new Promise((r) => setTimeout(r, 400 - elapsed));
+					await delay(400 - elapsed, undefined, { signal });
 				}
 				dsLastCallTime = Date.now();
 
 				const voiceId = DEEPSEEK_VOICES[voiceKey] || "echo";
 
-				// 自动重试机制（会话过期或被手动删除时自愈重建）
 				let attempts = 0;
 				while (attempts < 2) {
 					attempts++;
-					const { sessionId, lastMessageId } = await getOrCreateDeepSeekSession(token);
+					signal?.throwIfAborted();
+					const { sessionId, lastMessageId } = await getOrCreateDeepSeekSession(token, signal);
 
 					try {
-						// 步骤 A：快速求解 PoW 算力证明 (~0.3秒)
 						const pow = await obtainPowHeader({
 							targetPath: POW_TARGET_COMPLETION,
 							token,
+							signal,
 						});
 
-						// 步骤 B：使用多变自然模板，避免机械重复 prompt 聚类
 						const prompt = buildRepeatPrompt(text);
 
-						// 步骤 C：直连 SSE 流生成复述，秒级捕获 response_message_id
 						const res = await postCompletion({
 							sessionId,
 							parentMessageId: lastMessageId,
@@ -442,6 +406,7 @@ export default {
 							token,
 							thinkingEnabled: false,
 							searchEnabled: false,
+							signal,
 						});
 
 						if (!res.ok) {
@@ -468,18 +433,16 @@ export default {
 							messageId = 2;
 						}
 
-						// 记录当前最新消息 ID 作为下一轮的 parentMessageId
 						await updateDeepSeekSessionMessage(sessionId, messageId, token);
 
-						// 步骤 D：调用官方 WebSocket 接收 PCM 流并封装为标准 WAV
 						const { wav } = await synthesizeToWavBuffer({
 							sessionId,
 							messageId,
 							token,
 							voice: voiceId,
+							signal,
 						});
 
-						// 核心重构：绝对不调用 deleteSession！专属会话长期复用，杜绝秒建秒删高危特征
 						return wav;
 					} catch (err) {
 						if (attempts < 2 && (err.message.includes("400") || err.message.includes("session"))) {
@@ -491,17 +454,9 @@ export default {
 				}
 			};
 
-			const next = dsQueue.then(run, run);
-			dsQueue = next.catch(() => {});
-			return next;
+			return run();
 		}
 
-		// ── 3. HTTP 路由 ────────────────────────────────────────────────
-		// 凭据同步接口（支持豆包与 DeepSeek 同时或分别同步）
-		// 跨域白名单：只允许本机受信来源调用本机 TTS 服务（豆包 cookie / DeepSeek token 都在
-		// 这里收，任意外站跨域读都会盗刷额度或投毒凭据）。允许：浏览器扩展
-		// （chrome-extension://*）、本机 WebUI（localhost / 127.0.0.1 / ::1 任意端口）与
-		// file:// 页面（Origin: null）；无 Origin 的同源/服务端调用一律视为受信。
 		function isTrustedOrigin(req) {
 			const origin = String(req?.headers?.origin ?? "");
 			if (!origin || origin === "null") return true;
@@ -570,12 +525,48 @@ export default {
 			res.end();
 		});
 
-		// 兼容旧接口
 		host.route("POST", "/sync-cookie", (req, res) => {
 			return host.handleHttp("tts", "POST", "/sync-credentials", req, res);
 		});
 
-		// 通用即时发音接口
+		const unregisterEngines = [
+			host.tts.registerEngine({
+				id: "doubao-tts",
+				label: "豆包语音",
+				labelEn: "Doubao Voice",
+				getVoices: () =>
+					Object.entries(DOUBAO_SPEAKERS)
+						.filter(([key]) => /^[a-z]/.test(key))
+						.map(([id, value]) => ({
+							id,
+							label:
+								Object.entries(DOUBAO_SPEAKERS).find(
+									([key, voice]) => /[\u4e00-\u9fff]/.test(key) && voice === value,
+								)?.[0] || id,
+							lang: "zh-CN",
+						})),
+				synthesize: async ({ text, voice, rate, signal }) => ({
+					buffer: await synthesizeDoubao(text, voice || "yangguang", (rate || 1) - 1, "aac", signal),
+					format: "aac",
+				}),
+			}),
+			host.tts.registerEngine({
+				id: "deepseek-tts",
+				label: "DeepSeek 语音",
+				labelEn: "DeepSeek Voice",
+				supportsRate: false,
+				getVoices: () =>
+					Object.entries(DEEPSEEK_VOICES)
+						.filter(([key]) => /[\u4e00-\u9fff]/.test(key))
+						.map(([label, id]) => ({ id, label, lang: "zh-CN" })),
+				synthesize: async ({ text, voice, signal }) => ({
+					buffer: await synthesizeDeepSeek(text, voice || "echo", signal),
+					format: "wav",
+				}),
+			}),
+		];
+		const engineId = (id) => (id === "doubao" || id === "deepseek" ? `${id}-tts` : id);
+
 		host.route("POST", "/speak", async (req, res) => {
 			try {
 				let body = req.body;
@@ -586,7 +577,7 @@ export default {
 				}
 				const text = String(body?.text || "").trim();
 				const engine = String(body?.engine || "doubao");
-				const speaker = String(body?.speaker || (engine === "deepseek" ? "echo" : "yangguang"));
+				const speaker = String(body?.speaker || "");
 				const speed = typeof body?.speed === "number" ? body.speed : 0;
 
 				if (!text) {
@@ -594,16 +585,12 @@ export default {
 					return res.end(JSON.stringify({ ok: false, error: "Text is empty" }));
 				}
 
-				let buf;
-				let format = "aac";
-
-				if (engine === "deepseek") {
-					buf = await synthesizeDeepSeek(text, speaker);
-					format = "wav";
-				} else {
-					buf = await synthesizeDoubao(text, speaker, speed, "aac");
-					format = "aac";
-				}
+				const { buffer: buf, format } = await host.tts.synthesize({
+					text,
+					engine: engineId(engine),
+					voice: speaker,
+					rate: 1 + speed,
+				});
 
 				res.writeHead(200, corsJson(req));
 				res.end(JSON.stringify({ ok: true, audioBase64: buf.toString("base64"), format }));
@@ -623,7 +610,6 @@ export default {
 			res.end();
 		});
 
-		// 重置专属会话接口
 		host.route("POST", "/reset-deepseek-session", async (req, res) => {
 			await clearDeepSeekSession();
 			host.log("已手动重置 DeepSeek 专属语音会话");
@@ -641,7 +627,6 @@ export default {
 			res.end();
 		});
 
-		// 目录与扩展下载
 		host.route("POST", "/open-folder", (req, res) => {
 			if (process.platform === "win32") exec(`explorer.exe "${extDir}"`);
 			else if (process.platform === "darwin") exec(`open "${extDir}"`);
@@ -678,30 +663,33 @@ export default {
 			}
 		});
 
-		// ── 4. AI Agent 工具注册 (唯一统一工具: tts) ─────────────────────────
 		host.registerAgentTool?.({
 			name: "tts",
 			label: "TTS 语音合成",
 			promptSnippet: "synthesize speech audio file from text",
-			description: "Synthesize speech audio from text using configured Doubao or DeepSeek official voice engine.",
+			description: "List TTS engines and voices or synthesize an audio file through the shared TTS center.",
 			parameters: {
 				type: "object",
 				properties: {
+					action: {
+						type: "string",
+						enum: ["synthesize", "list"],
+						description: "List engines/voices or synthesize audio (default).",
+					},
 					text: { type: "string", description: "Text to convert to speech audio" },
 					engine: {
 						type: "string",
-						enum: ["doubao", "deepseek"],
 						description:
-							"TTS engine to use (default: doubao or plugin setting). Note: deepseek simulates web sessions with ban risk; doubao is recommended.",
+							"Registered engine ID from action=list; defaults to plugin settings. Legacy doubao/deepseek IDs are accepted.",
 					},
+					rate: { type: "number", description: "Speech speed, 0.5 to 2 (default 1)." },
 					speaker: {
 						type: "string",
-						description:
-							"Voice style. Doubao: yangguang, junyu, nanda, taozi, tianmei. DeepSeek: echo, tide, mira, stella.",
+						description: "Voice ID from action=list with an engine, or omit to use the engine default.",
 					},
 					outFile: { type: "string", description: "Output path, e.g. voice.aac or voice.wav" },
 				},
-				required: ["text"],
+				required: [],
 			},
 			execute: async (...callArgs) => {
 				const args =
@@ -714,27 +702,29 @@ export default {
 							? callArgs[0]
 							: {};
 
+				if (args.action === "list") {
+					return args.engine
+						? { engine: engineId(args.engine), voices: await host.tts.listVoices(engineId(args.engine)) }
+						: { engines: host.tts.listEngines() };
+				}
 				const text = String(args.text || "").trim();
 				if (!text) {
 					throw new Error("Text parameter cannot be empty.");
 				}
 
 				const settings = host.getSettings?.() ?? {};
-				const defaultEngine = settings.defaultEngine === "deepseek" ? "deepseek" : "doubao";
-				const engine = args.engine === "deepseek" || args.engine === "doubao" ? args.engine : defaultEngine;
-				const speaker = String(args.speaker || (engine === "deepseek" ? "echo" : "yangguang"));
-
-				let buf;
-				let defaultExt = engine === "deepseek" ? "wav" : "aac";
-				if (engine === "deepseek") {
-					buf = await synthesizeDeepSeek(text, speaker);
-				} else {
-					buf = await synthesizeDoubao(text, speaker, 0, "aac");
-				}
+				const defaultEngine = String(settings.defaultEngine || "doubao");
+				const engine = engineId(args.engine || defaultEngine);
+				const speaker = String(args.speaker || "");
+				const { buffer: buf, format: defaultExt } = await host.tts.synthesize({
+					text,
+					engine,
+					voice: speaker,
+					rate: args.rate,
+					signal: callArgs[2],
+				});
 
 				const rawOut = args.outFile ? String(args.outFile).trim() : `tts_${Date.now()}.${defaultExt}`;
-				// outFile 外部可控（AI/命令/前端表单）：任何写法都必须落回 host.cwd 内，
-				//  防止 ../ 或绝对路径覆盖工作区外任意文件（持久化写面）。
 				const cwdBase = path.resolve(host.cwd);
 				const resolvedOut = path.isAbsolute(rawOut) ? path.resolve(rawOut) : path.resolve(cwdBase, rawOut);
 				const cwdPrefix = cwdBase.endsWith(path.sep) ? cwdBase : cwdBase + path.sep;
@@ -748,16 +738,23 @@ export default {
 			},
 		});
 
-		// ── 5. 前端 UI 状态交互 ─────────────────────────────────────────
 		const offMessage = host.onMessage(async (msg) => {
 			if (!msg) return;
 
-			if (msg.action === "get-status") {
+			if (msg.action === "get-voices") {
+				const engine = engineId(msg.engine || "builtin");
+				try {
+					host.broadcast({ type: "voices-response", engine, voices: await host.tts.listVoices(engine) });
+				} catch (error) {
+					host.broadcast({ type: "voices-response", engine, voices: [], error: error.message });
+				}
+			} else if (msg.action === "get-status") {
 				const doubaoCookie = await readDoubaoCookie();
 				const dsToken = await readDeepSeekToken();
 				const settings = host.getSettings?.() ?? {};
 				host.broadcast({
 					type: "status-response",
+					engines: host.tts.listEngines(),
 					hasDoubao: Boolean(doubaoCookie && doubaoCookie.includes("sessionid")),
 					hasDoubaoApiKey: Boolean(settings.doubaoApiKey?.trim()),
 					hasDeepseek: Boolean(dsToken && dsToken.length > 20),
@@ -765,18 +762,10 @@ export default {
 			} else if (msg.action === "test-speak") {
 				try {
 					const text = msg.text || "你好，这是语音合成试听。";
-					const engine = msg.engine === "deepseek" ? "deepseek" : "doubao";
-					const speaker = msg.speaker || (engine === "deepseek" ? "echo" : "yangguang");
+					const engine = msg.engine || "doubao";
+					const speaker = msg.speaker || "";
 
-					let buf;
-					let format = "aac";
-					if (engine === "deepseek") {
-						buf = await synthesizeDeepSeek(text, speaker);
-						format = "wav";
-					} else {
-						buf = await synthesizeDoubao(text, speaker, 0, "aac");
-						format = "aac";
-					}
+					const { buffer: buf, format } = await host.tts.synthesize({ text, engine: engineId(engine), voice: speaker });
 
 					host.broadcast({
 						type: "speak-result",
@@ -811,6 +800,7 @@ export default {
 
 		return () => {
 			offMessage?.();
+			unregisterEngines.forEach((off) => off());
 		};
 	},
 };

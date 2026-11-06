@@ -1,9 +1,3 @@
-/**
- * Goal bar — collapsed pill + upward dropdown UI test.
- * Verifies the idle state is a compact left-aligned pill, expanding opens the
- * editor, the model/rounds dropdowns open UPWARD (dd-up) without overflowing,
- * then setting a goal works. No model calls.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
@@ -13,7 +7,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -46,9 +39,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("server did not start");
 }
@@ -60,7 +51,6 @@ async function run() {
 	await page.goto(URL);
 	await page.waitForSelector(".goalbar", { timeout: 20000 });
 
-	// 1. Idle collapsed = compact pill, no bordered panel.
 	const pill = page.locator(".goalbar.collapsed, .goalbar-collapsed");
 	const pillCount = await pill.count();
 	check("idle shows compact pill (not panel)", pillCount > 0, `pillCount=${pillCount}`);
@@ -69,20 +59,17 @@ async function run() {
 		check("collapsed pill has no heavy border", hasBorder === "none", hasBorder);
 	}
 
-	// 2. Expand the editor.
 	await page.locator(".goalbar-hint").first().click();
 	await page.waitForSelector(".goalbar-input", { timeout: 8000 });
 	check("clicking pill opens editor", true);
 
-	// 3. Type a goal, then open the model dropdown; assert dd-up + upward anchored.
 	await page.locator(".goalbar-input").fill("做一个小工具");
-	const modelOpt = page.locator(".goalbar-opt").first(); // "审查模型" dropdown trigger
+	const modelOpt = page.locator(".goalbar-opt").first();
 	await modelOpt.click();
 	await page.waitForSelector(".dd-menu", { timeout: 8000 });
 	const ddUp = await page.locator(".goalbar .dropdown.dd-up .dd-menu").count();
 	check("model dropdown opens upward (dd-up)", ddUp > 0, `ddUp=${ddUp}`);
 	if (ddUp > 0) {
-		// The menu's bottom should be above the trigger (bottom > trigger's viewport top).
 		const pos = await page
 			.locator(".goalbar .dropdown.dd-up")
 			.first()
@@ -98,16 +85,13 @@ async function run() {
 			`bottom=${Math.round(pos.menuBottom)} vh=${pos.vh}`,
 		);
 	}
-	// Close the menu (Esc).
 	await page.keyboard.press("Escape");
 	await sleep(200);
 
-	// 4. Set the goal → active bar.
 	await page.locator(".goalbar-btn:not(.wizard)").click();
 	await page.waitForSelector(".goalbar-active", { timeout: 8000 });
 	check("active goal bar shown", true);
 
-	// 5. Collapse back via the chevron (idle pill returns).
 	await page.locator(".goalbar-x").click();
 	await page.waitForSelector(".goalbar-active", { state: "detached", timeout: 8000 });
 	const pillBack = await page.locator(".goalbar-collapsed").count();
@@ -117,9 +101,7 @@ async function run() {
 	await browser.close();
 	try {
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -127,8 +109,6 @@ run().catch((err) => {
 	console.error("test error:", err);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

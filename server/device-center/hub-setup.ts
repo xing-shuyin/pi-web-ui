@@ -11,7 +11,6 @@ export interface HubSetupInput {
 	allowRegistration: true;
 }
 
-/** Only literal bind addresses are accepted; deployment never invokes a shell. */
 export function validateHubSetup(input: unknown): HubSetupInput {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid installation options");
 	const value = input as Record<string, unknown>;
@@ -105,10 +104,7 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 				const terminate = (reason: string) => {
 					failure ??= new Error(reason);
 					if (forceTimer) return;
-					// IPC also cancels cooperatively on Windows, where SIGTERM forcibly kills.
 					if (child.connected) child.send({ type: "cancel-hub-operation" }, () => {});
-					// Native service-manager calls may block the CLI for up to 30 seconds.
-					// Let their timeout and the CLI's cooperative finally complete first.
 					forceTimer = setTimeout(() => child.kill("SIGKILL"), 45_000);
 				};
 				const abort = () => terminate("Hub operation cancelled; check hub status before retrying");
@@ -130,7 +126,6 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 				child.on("error", (error) => {
 					failure = error;
 				});
-				// Wait for actual process exit, not merely an abort notification.
 				child.on("close", (code) => {
 					clearTimeout(timeout);
 					clearTimeout(forceTimer);
@@ -140,7 +135,6 @@ export function installHubSetupRoutes(app: Express, dataDir: string, runner?: Ru
 					else resolve(output.slice(0, 16_384));
 				});
 			}));
-	// Mounted behind localOnly in local.ts: loopback Host/peer and same-origin writes.
 	app.get("/api/device-center/setup", (_req, res) => {
 		if (closed) {
 			res.status(503).json({ error: "Device center is shutting down" });

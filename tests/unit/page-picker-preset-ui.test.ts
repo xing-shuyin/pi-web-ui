@@ -12,19 +12,6 @@ import {
 } from "../../plugins/page-picker/extension/src/shared/contract.js";
 import { createPresetControls } from "../../plugins/page-picker/extension/src/content/preset-controls.js";
 
-/**
- * 拾取浮条上的「预设 + 逐项勾选」控件（内容脚本的 DOM 部件）。
- *
- * 为什么钉它：六个预设原来**只能在扩展选项页里点**，而「这次只要源码位置」这种判断恰恰是
- * 站在页面上看着元素时才有的 —— 现在这条路径挂在浮条上，它坏了就等于功能没做。
- * 两条最要紧的规矩：
- * - 控件**自己不藏状态**（长什么样全看 render(state)），否则会出现「浮条显示标准、
- *   实际发出去精简」；
- * - **不允许勾到一项不剩**（空列表在契约里会回落标准组合，用户会以为「我全取消了它还发」）。
- *
- * 这里用真 DOM（jsdom）点真按钮，而不是断言实现细节：点击 → 回调 → 再 render 的闭环才是有意义的那部分。
- */
-
 const standard = (): PickSection[] => [...sectionsForDepth("standard")];
 
 function mount(): {
@@ -60,7 +47,6 @@ const box = (key: PickSection): HTMLInputElement => {
 const panel = (): HTMLElement => document.querySelector<HTMLElement>(".sections") as HTMLElement;
 const summary = (): string => document.querySelector(".sump")?.textContent ?? "";
 
-/** 勾 / 取消勾一个 checkbox（真 DOM 事件，走控件自己的 change 处理）。 */
 function toggle(key: PickSection, on: boolean): void {
 	box(key).checked = on;
 	box(key).dispatchEvent(new Event("change"));
@@ -72,7 +58,6 @@ describe("预设表与纯逻辑（浮条与选项页共用）", () => {
 		const shorts = SECTION_PRESETS.map((p) => p.short);
 		expect(shorts.every((s) => s.trim().length > 0)).toBe(true);
 		expect(new Set(shorts).size).toBe(shorts.length);
-		// 短名要短到能塞进一排 chip
 		expect(shorts.every((s) => s.length <= 5)).toBe(true);
 	});
 
@@ -84,7 +69,6 @@ describe("预设表与纯逻辑（浮条与选项页共用）", () => {
 	});
 
 	it("applySectionToggle：加/删都对，且结果一律按 PICK_SECTIONS 规范排序", () => {
-		// 故意乱序传入：存储与「是不是某个预设」的比较都不该被顺序影响
 		expect(applySectionToggle(["source", "selector"], "text", true)).toEqual(["selector", "source", "text"]);
 		expect(applySectionToggle(standard(), "skeleton", false)).toEqual([
 			"page",
@@ -94,9 +78,7 @@ describe("预设表与纯逻辑（浮条与选项页共用）", () => {
 			"rules",
 			"styles",
 		]);
-		// 幂等：重复加不重复出现
 		expect(applySectionToggle(["selector"], "selector", true)).toEqual(["selector"]);
-		// 取消到空也要如实返回（由调用方决定要不要拒绝）
 		expect(applySectionToggle(["selector"], "selector", false)).toEqual([]);
 		expect(PICK_SECTIONS).toContain("skeleton");
 	});
@@ -111,12 +93,10 @@ describe("预设表与纯逻辑（浮条与选项页共用）", () => {
 	it("presetHotkeyIndex：Alt+1~6 认，别的组合键一概不认", () => {
 		expect(presetHotkeyIndex({ key: "1", code: "Digit1", altKey: true })).toBe(1);
 		expect(presetHotkeyIndex({ key: "6", code: "Digit6", altKey: true })).toBe(6);
-		// macOS：Option+1 打出来的是 ¡，key 不是数字，但 code 还是 Digit1
 		expect(presetHotkeyIndex({ key: "¡", code: "Digit1", altKey: true })).toBe(1);
-		// AZERTY 等布局：code 认不出时靠 key 兜底
 		expect(presetHotkeyIndex({ key: "3", code: "Numpad3", altKey: true })).toBe(3);
-		expect(presetHotkeyIndex({ key: "7", code: "Digit7", altKey: true })).toBe(0); // 只认 6 个预设
-		expect(presetHotkeyIndex({ key: "1", code: "Digit1" })).toBe(0); // 没有 Alt
+		expect(presetHotkeyIndex({ key: "7", code: "Digit7", altKey: true })).toBe(0);
+		expect(presetHotkeyIndex({ key: "1", code: "Digit1" })).toBe(0);
 		expect(presetHotkeyIndex({ key: "1", code: "Digit1", altKey: true, ctrlKey: true })).toBe(0);
 		expect(presetHotkeyIndex({ key: "1", code: "Digit1", altKey: true, metaKey: true })).toBe(0);
 	});
@@ -173,7 +153,6 @@ describe("浮条上的预设控件", () => {
 		controls.render({ detail: "standard", sections: standard(), notice: "没同步到扩展设置（这次的选择只在本页生效）" });
 		expect(summary()).toContain("⚠ 没同步到扩展设置");
 
-		// 下一次选择（成功时）不该还挂着上一条告警
 		controls.render({ detail: "standard", sections: standard() });
 		expect(summary()).not.toContain("⚠");
 	});
@@ -210,12 +189,10 @@ describe("浮条上的预设控件", () => {
 
 		toggle("selector", false);
 
-		expect(onToggleSection).not.toHaveBeenCalled(); // 状态没变
+		expect(onToggleSection).not.toHaveBeenCalled();
 		expect(onRefuseEmpty).toHaveBeenCalledWith("selector");
-		// 关键：UI 不能停在「看起来取消了」的假状态上（否则用户以为发的东西变了）
 		expect(box("selector").checked).toBe(true);
 
-		// 还有别的项时照常允许取消
 		controls.render({ detail: "standard", sections: ["selector", "source"] });
 		toggle("selector", false);
 		expect(onToggleSection).toHaveBeenCalledWith("selector", false);

@@ -1,8 +1,3 @@
-/**
- * webmail 插件特性回归测试：
- * 1. Issue #582：发信支持 HTML 正文（multipart/alternative，自动降级纯文本）
- * 2. 邮件阅读一键翻译功能与 action: "translate" 协议
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,13 +6,11 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 const PLUGIN = pathToFileURL(join(process.cwd(), "plugins/webmail/index.mjs")).href;
 
-// 避免自动 npm install
 process.env.npm_config_offline = "true";
 process.env.npm_config_registry = "http://127.0.0.1:9/";
 process.env.npm_config_audit = "false";
 process.env.npm_config_fund = "false";
 
-// 记录所有发送出去的邮件选项
 const sentMailOptions: Array<Record<string, unknown>> = [];
 
 vi.mock("nodemailer", () => ({
@@ -120,7 +113,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 		await sleep(150);
 
 		try {
-			// 保存 SMTP 配置使得发件可用
 			const sendMsg = messageHandler as ((msg: Record<string, unknown>, from?: string) => void) | null;
 			sendMsg?.({
 				action: "save_config",
@@ -131,20 +123,17 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			});
 			await sleep(100);
 
-			// 1. 验证 AI 工具注册
 			const mailTool = registeredTools.find((t) => t.name === "mail");
 			expect(mailTool).toBeDefined();
 			expect(mailTool?.description).toContain("optionally with an HTML alternative");
 			expect(mailTool?.parameters.properties.html).toBeDefined();
 			expect(mailTool?.parameters.properties.html.description).toContain("HTML body");
 
-			// 2. 测试拦截缺失参数
 			sentMailOptions.length = 0;
 			const missingRes = await mailTool!.execute("call_1", { action: "send", to: "test@example.com" });
 			expect(missingRes).toContain("发信需要");
 			expect(sentMailOptions.length).toBe(0);
 
-			// 3. 测试纯文本发信 (旧行为兼容)
 			sentMailOptions.length = 0;
 			const plainRes = await mailTool!.execute("call_2", {
 				action: "send",
@@ -157,7 +146,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			expect(sentMailOptions[0].text).toBe("Plain content");
 			expect(sentMailOptions[0].html).toBeUndefined();
 
-			// 4. 测试只有 html 参数时的发信 (Issue #582 核心需求：自动剥离标签生成纯文本降级)
 			sentMailOptions.length = 0;
 			const htmlOnlyRes = await mailTool!.execute("call_3", {
 				action: "send",
@@ -167,14 +155,11 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			});
 			expect(htmlOnlyRes).toContain("已发送至 recipient@example.com");
 			expect(sentMailOptions.length).toBe(1);
-			// 自动剥离标签作为纯文本降级兜底
 			expect(sentMailOptions[0].text).toContain("Metric");
 			expect(sentMailOptions[0].text).toContain("100");
 			expect(sentMailOptions[0].text).not.toContain("<table>");
-			// 同时附带 html 正文
 			expect(sentMailOptions[0].html).toBe("<table><tr><td>Metric</td><td>100</td></tr></table>");
 
-			// 5. 测试同时提供 body 与 html (完整 multipart/alternative)
 			sentMailOptions.length = 0;
 			await mailTool!.execute("call_4", {
 				action: "send",
@@ -187,7 +172,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			expect(sentMailOptions[0].text).toBe("Fallback plain text");
 			expect(sentMailOptions[0].html).toBe("<h1>Heading</h1><p>Paragraph</p>");
 
-			// 6. 测试防御性过滤：清除脚本与 javascript: 链接
 			sentMailOptions.length = 0;
 			await mailTool!.execute("call_5", {
 				action: "send",
@@ -199,7 +183,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			expect(sentMailOptions[0].html).not.toContain("javascript:");
 			expect(sentMailOptions[0].html).toContain("Clean");
 
-			// 7. 测试超大体积拦截
 			sentMailOptions.length = 0;
 			const hugeHtml = "a".repeat(260 * 1024);
 			await expect(
@@ -267,7 +250,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 		await sleep(100);
 
 		try {
-			// 1. 模拟大模型 LLM 直调翻译成功
 			broadcasts.length = 0;
 			const handler = messageHandler as unknown as (msg: Record<string, unknown>, from?: string) => void;
 			handler({
@@ -287,7 +269,6 @@ describe("webmail 特性测试 (Issue #582 与邮件翻译)", () => {
 			expect(llmTrans?.translatedSubject).toBe("健康检查");
 			expect(llmTrans?.translatedText).toBe("系统运行一切正常");
 
-			// 2. 模拟大模型调用失败，自动平滑回退到快速公共引擎
 			const originalFetch = globalThis.fetch;
 			globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
 				if (String(url).includes("translate.googleapis.com")) {

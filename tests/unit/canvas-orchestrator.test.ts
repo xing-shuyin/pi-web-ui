@@ -1,6 +1,3 @@
-/**
- * canvas-orchestrator.test.ts — 画布协作调度器与存储单元测试。
- */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +13,6 @@ import { CanvasOrchestrator } from "../../server/canvas/canvas-orchestrator.js";
 import { makeCanvasTool } from "../../server/canvas/canvas-agent-tool.js";
 import type { ServerMessage, CanvasNode, CanvasNodeRole, CanvasEdge, UiMessage } from "../../server/protocol.js";
 
-/** 测试用节点工厂：严格类型，避免隐式 any */
 function mkTestNode(id: string, role: CanvasNodeRole, extra?: Partial<CanvasNode>): CanvasNode {
 	return {
 		id,
@@ -79,7 +75,6 @@ describe("Canvas Store & Default Squad", () => {
 	});
 });
 
-/** Engine regressions own their fixture ids instead of depending on the shipped starter template. */
 function makeOrchestratorGraph(id: string) {
 	const graph = createDefaultCanvasGraph(id);
 	graph.nodes = [
@@ -116,12 +111,10 @@ describe("Canvas Orchestrator", () => {
 		saveCanvasGraph(tempDir, graph);
 
 		const feNode = graph.nodes.find((n) => n.id === "node_fe")!;
-		// 在测试环境下取消 worktree 以加速纯目录测试
 		feNode.useWorktree = false;
 
 		await orchestrator.runNode(graph, "node_fe");
 
-		// 检查状态变更为 done
 		expect(feNode.status).toBe("done");
 		expect(events.some((e) => e.type === "canvas_node_event" && e.event === "started")).toBe(true);
 		expect(events.some((e) => e.type === "canvas_node_event" && e.event === "done")).toBe(true);
@@ -176,7 +169,6 @@ describe("Canvas Orchestrator", () => {
 		node.cwd = ".";
 		saveCanvasGraph(tempDir, graph);
 
-		// 假引擎：prompt 期间追加一条带 errorMessage 的 assistant 回合（模拟 API 403）
 		const messages: UiMessage[] = [];
 		const fakeEngine = {
 			attach: async () => ({
@@ -219,7 +211,6 @@ describe("Canvas Orchestrator", () => {
 		node.cwd = ".";
 		saveCanvasGraph(tempDir, graph);
 
-		// 会话历史里留着上一轮失败（旧模型报的 403），本轮正常完成
 		const messages: UiMessage[] = [
 			{
 				id: "a-old",
@@ -231,8 +222,6 @@ describe("Canvas Orchestrator", () => {
 		];
 		const fakeEngine = {
 			attach: async (clientId: string, sink: (msg: unknown) => void) => {
-				// 真实服务端 attach 后会推带全量 history 的 snapshot（这里是旧模型留下的报错），
-				// 报错采集必须只认本轮新增消息，否则一启动就假失败。
 				sink({ type: "snapshot", clientId, state: { messages: [...messages] } });
 				return {
 					cwd: tempDir,
@@ -260,7 +249,6 @@ describe("Canvas Orchestrator", () => {
 	it("交付摘要取本轮 assistant 正文（无 message_delta 也不退化成占位文案）", async () => {
 		const graph = makeOrchestratorGraph("engine_reply_test");
 		graph.executionMode = "real";
-		// 只留源节点，避免下游真被拉起留下后台定时器
 		const node = graph.nodes.find((n) => n.id === "node_fe")!;
 		graph.nodes = [node];
 		graph.edges = [];
@@ -268,7 +256,6 @@ describe("Canvas Orchestrator", () => {
 		node.cwd = ".";
 		saveCanvasGraph(tempDir, graph);
 
-		// 不发 message_delta，只在快照里落正文（部分引擎/重连路径就是这么回的）
 		const messages: UiMessage[] = [];
 		const fakeEngine = {
 			attach: async () => ({
@@ -465,13 +452,10 @@ describe("Canvas Orchestrator", () => {
 		graph.edges = [loopEdge];
 		saveCanvasGraph(tempDir, graph);
 
-		// Direct private-helper coverage must model an admitted runtime.
 		(orchestrator as any).runningGraphs.set(graph.id, graph);
-		// 第 1 次流转：未达上限，currentLoopCount 递增到 2
 		await (orchestrator as any).handleDownstreamEdges(graph, graph.nodes[0], "reject");
 		expect(loopEdge.currentLoopCount).toBe(2);
 
-		// 第 2 次流转：currentLoopCount 达到上限 2，触发熔断
 		await (orchestrator as any).handleDownstreamEdges(graph, graph.nodes[0], "reject");
 		const revNode = graph.nodes.find((n) => n.id === "rev")!;
 		expect(revNode.status).toBe("waiting_approval");
@@ -486,7 +470,6 @@ describe("Canvas Orchestrator", () => {
 
 		const tool = makeCanvasTool({ dataDir: tempDir, lang: () => "zh" });
 
-		// 自环边
 		const selfRes = await tool.execute(
 			"call1",
 			{
@@ -501,7 +484,6 @@ describe("Canvas Orchestrator", () => {
 		);
 		expect(String((selfRes as any)?.content?.[0]?.text)).toContain("自环");
 
-		// 正常加边
 		const addRes = await tool.execute(
 			"call2",
 			{
@@ -516,7 +498,6 @@ describe("Canvas Orchestrator", () => {
 		);
 		expect(String((addRes as any)?.content?.[0]?.text)).toContain("已连边");
 
-		// 重复加边
 		const dupRes = await tool.execute(
 			"call3",
 			{
@@ -554,14 +535,12 @@ describe("Canvas Orchestrator", () => {
 			detach: () => {},
 		}));
 
-		// 1. 节点未运行状态下插话：应作为指令暂存落盘
 		await orch.steerNode(graph.id, "lead", "优先使用 Fastify 代替 Express");
 		const loaded = loadCanvasGraph(tempDir, graph.id);
 		expect(loaded.nodes[0].instruction).toContain("优先使用 Fastify");
 		const logIdle = orch.getNodeLog(graph.id, "lead");
 		expect(logIdle.some((e) => e.text.includes("已暂存为该节点下一次执行指令"))).toBe(true);
 
-		// 2. 节点运行时插话：应真正投递进底层会话 session.prompt()
 		const runPromise = orch.runNode(graph, "lead");
 		await new Promise((r) => setTimeout(r, 50));
 		await orch.steerNode(graph.id, "lead", "检测 3001 端口并释放");
@@ -576,7 +555,6 @@ describe("Canvas Orchestrator", () => {
 	it("resolveNodeCwd 完整支持远程 SSH 工作区项目与路径解析", async () => {
 		const orch = new CanvasOrchestrator(tempDir, tempDir);
 
-		// 1. 节点显式配置绝对 ssh:// URI：应直接原样返回，不走本地目录与 worktree
 		const sshNode = mkTestNode("ssh_node", "coder", {
 			cwd: "ssh://user@example.com:2222/var/www/my-project",
 			useWorktree: false,
@@ -584,12 +562,10 @@ describe("Canvas Orchestrator", () => {
 		const res1 = await orch.resolveNodeCwd(sshNode);
 		expect(res1).toBe("ssh://user@example.com:2222/var/www/my-project");
 
-		// 2. 运行基准 runBase 为远程 SSH URI 时，相对子目录应正确拼接入远端路径
 		const subNode = mkTestNode("sub_node", "coder", { cwd: "packages/api" });
 		const res2 = await orch.resolveNodeCwd(subNode, "ssh://user@example.com:2222/var/www/my-project");
 		expect(res2).toBe("ssh://user@example.com:2222/var/www/my-project/packages/api");
 
-		// 3. 空 cwd 自动回退为远程基准
 		const emptyNode = mkTestNode("empty_node", "coder", { cwd: "" });
 		const res3 = await orch.resolveNodeCwd(emptyNode, "ssh://user@example.com:2222/var/www/my-project");
 		expect(res3).toBe("ssh://user@example.com:2222/var/www/my-project");

@@ -1,15 +1,3 @@
-/**
- * edit_message attachments — protocol smoke test (issue #18, zero token).
- *
- * The edit/re-ask path now accepts optional `attachments` (the browser re-sends
- * the question's original image cards + newly pasted/dropped ones because the
- * fork drops persisted attachment asides). This test verifies:
- *   1. edit_message WITHOUT attachments (old clients) still parses and answers
- *      deterministically (unknown id → error notice).
- *   2. edit_message WITH attachments (incl. imageData/fileData) parses without
- *      a server-side TypeError — same deterministic unknown-id notice.
- * Full image round-trips need a real model and are covered manually.
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -49,9 +37,7 @@ async function startServer(dataDir) {
 		await sleep(250);
 		try {
 			if (await portUp(PORT)) return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("no server");
 }
@@ -103,7 +89,6 @@ function connect() {
 	});
 }
 
-// A tiny valid 1x1 PNG (base64, no data: prefix) as fake imageData.
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-edit-attach-"));
@@ -115,7 +100,6 @@ async function main() {
 	const c = await connect();
 	await c.next((m) => m.type === "snapshot" || m.type === "ready", "ready", 20000);
 
-	// -- old-protocol shape: no attachments field ----------------------------
 	c.send({
 		type: "edit_message",
 		messageId: "u-nonexistent",
@@ -128,7 +112,6 @@ async function main() {
 	);
 	check("edit_message without attachments parses & answers", n1.level === "error" || n1.level === "warning", n1.text);
 
-	// -- new shape: attachments incl. raw images -----------------------------
 	c.send({
 		type: "edit_message",
 		messageId: "u-nonexistent",
@@ -151,7 +134,6 @@ async function main() {
 	);
 	check("edit_message with attachments parses (no TypeError)", n2.level === "error" || n2.level === "warning", n2.text);
 
-	// Empty-text edit with attachments only is still rejected (text required).
 	c.send({
 		type: "edit_message",
 		messageId: "u-nonexistent",
@@ -165,7 +147,6 @@ async function main() {
 	);
 	check("empty text with attachments still rejected", !!n3);
 
-	// -- new shape: restored upload (uploadPath) + workspace-path attachment --
 	c.send({
 		type: "edit_message",
 		messageId: "u-nonexistent",
@@ -200,7 +181,5 @@ main()
 	.finally(() => {
 		try {
 			server?.kill("SIGTERM");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	});

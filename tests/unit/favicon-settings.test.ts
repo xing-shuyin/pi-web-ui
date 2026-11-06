@@ -103,7 +103,6 @@ describe("favicon-settings", () => {
 		it("包含背景矩形与正确的 fill 属性", () => {
 			const svg = generateFaviconSvg("#3b82f6");
 			expect(svg).toContain('<rect width="64" height="64" rx="14" fill="#3b82f6"/>');
-			// 深底背景配白色文字
 			expect(svg).toContain('fill="#ffffff"');
 		});
 

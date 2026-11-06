@@ -44,7 +44,6 @@ test("WinRT OCR recognizes Chinese and English text with accurate coords", async
 	if (process.platform !== "win32") return;
 	const testImg = join(tmpdir(), `test-ocr-${Date.now()}.png`);
 	try {
-		// 生成一张包含明确文字的图片
 		await runPsCode(`
 			Add-Type -AssemblyName System.Drawing
 			$bmp = New-Object System.Drawing.Bitmap(500, 200)
@@ -62,7 +61,6 @@ test("WinRT OCR recognizes Chinese and English text with accurate coords", async
 			$bmp.Dispose()
 		`);
 
-		// 使用 screenshot.ps1 中的 Run-Ocr
 		const jsonStr = await runPsCode(`
 			. '${SHOT_PS1.replace(/\\/g, "/")}'
 			$items = Run-Ocr '${testImg.replace(/\\/g, "/")}'
@@ -79,7 +77,6 @@ test("WinRT OCR recognizes Chinese and English text with accurate coords", async
 		expect(items).toBeInstanceOf(Array);
 		expect(items.length).toBeGreaterThan(0);
 
-		// 验证返回结构包含坐标和中心点
 		for (const it of items as any[]) {
 			expect(typeof it.text).toBe("string");
 			expect(typeof it.x).toBe("number");
@@ -92,7 +89,6 @@ test("WinRT OCR recognizes Chinese and English text with accurate coords", async
 			expect(Math.abs(it.cy - (it.y + Math.floor(it.h / 2)))).toBeLessThanOrEqual(1);
 		}
 
-		// 验证识别到了“发送消息”或“取消”或“Submit”
 		const allText = (items as any[]).map((it: any) => it.text).join(" ");
 		expect(allText).toMatch(/发送|消息|取消|Submit/);
 	} finally {
@@ -103,7 +99,6 @@ test("WinRT OCR recognizes Chinese and English text with accurate coords", async
 }, 45000);
 
 test("resolvePoint matches OCR text and converts to screen coords", () => {
-	// 模拟 index.mjs 中的 shots Map 和 resolvePoint 逻辑
 	const shots = new Map();
 	const shotKey = "s1";
 	shots.set(shotKey, {
@@ -147,21 +142,17 @@ test("resolvePoint matches OCR text and converts to screen coords", () => {
 		return { x: sx, y: sy, via: `截图 ${shot} ${viaText}图内(${imgX},${imgY})→屏幕(${sx},${sy})` };
 	}
 
-	// 1. 精确匹配
 	const pt1 = resolvePoint({ shot: "s1", text: "文件传输助手" });
 	expect(pt1.via).toContain("OCR文字「文件传输助手」中心(70,65)");
 	expect(pt1.x).toBe(Math.round(100 + (70 * 1920) / 1280));
 	expect(pt1.y).toBe(Math.round(200 + (65 * 1080) / 720));
 
-	// 2. 包含匹配
 	const pt2 = resolvePoint({ shot: "s1", text: "发送" });
 	expect(pt2.via).toContain("OCR文字「发送(S)」中心(1040,670)");
 	expect(pt2.x).toBe(Math.round(100 + (1040 * 1920) / 1280));
 
-	// 3. 去除空格匹配
 	const pt3 = resolvePoint({ shot: "s1", text: "搜索 联系人" });
 	expect(pt3.via).toContain("OCR文字「搜索联系人」中心(80,22)");
 
-	// 4. 找不到时抛出友好错误
 	expect(() => resolvePoint({ shot: "s1", text: "不存在的按钮" })).toThrow("未找到文字「不存在的按钮」");
 });

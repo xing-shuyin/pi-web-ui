@@ -1,20 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeTerminalBashTool, type TerminalManager } from "../../server/terminals.js";
 
-/** 终端接管 bash 的前置取值路径（issue #121）。
- *
- * `detectTrailingLimiter()` 对「没有尾部限输出管道」的命令返回 null（`date`、
- * `ls | head -5` 都算），而 issue #91 v2 的 hoist 重构把原本的可选链写成了
- * 非空断言 `limiter!.segment` —— 运行时直接 TypeError「Cannot read properties
- * of null (reading 'segment')」，几乎所有一次性 bash 调用全挂。
- *
- * 真 PTY 的端到端覆盖在 tests/terminal-bash-test.mjs；这里用桩 TerminalManager
- * 把流程顶到「命令已下发」这一步就收手（inputChecked 返回错误字符串 → 工具立即
- * 抛错返回），毫秒级、零 token、CI 必跑：只要 limiter 为 null 时再被裸解引用，
- * 抛出的就不会是这里的桩错误。 */
-
-/** 桩：create/suspendIdleWatch/endCursor/setSentinelPending 只求不炸，
- *  inputChecked 记下真正下发的命令行并回一个错误让工具立刻收手。 */
 function makeStub(): { mgr: TerminalManager; sent: string[] } {
 	const sent: string[] = [];
 	const mgr = {

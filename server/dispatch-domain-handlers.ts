@@ -1,19 +1,12 @@
-/**
- * dispatch-domain-handlers — WebSocket 客户端消息的领域分发路由处理器。
- *
- * 将 server/index.ts 中千行单体 switch-case 按业务领域横向解耦拆分：
- * - handleFileMessage: 文件树浏览、读写、检索、创建/重命名/删除/复制/路径补全、工作区根设置
- * - handleScmMessage: Git 状态查询、提交历史、文件差异、AI 提交信息生成
- * - handleBgServerMessage: 后台常驻服务管理与端口清理
- * - handlePresetAndDshMessage: 预设管理与分享、DSH 预设/补丁切换、审批规则与子代理模板持久化
- */
 import type { ClientMessage, ServerMessage } from "./protocol.js";
 import type { DispatchSession } from "./index.js";
 import { SchedulerValidationError, type SchedulerStore } from "./scheduler-tasks.js";
-import type { RemoteSshService } from "./remote-ssh-service.js";
+import { getGlobalRemoteSshService, isRemoteWorkspaceUri, type RemoteSshService } from "./remote-ssh-service.js";
+import { prepareRemoteNativeCliPaste } from "./native-cli-remote-files.js";
+import { remoteNativeCliCleanupQueue } from "./native-cli-remote-cleanup.js";
 import { normalizePathKey } from "./client-state.js";
+import { prepareNativeCliPaste, type NativeCliPasteContext } from "./native-cli.js";
 
-/** 文件与工作区相关操作 */
 export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): boolean {
 	switch (msg.type) {
 		case "list_files":
@@ -121,7 +114,6 @@ export function handleFileMessage(msg: ClientMessage, cs: DispatchSession): bool
 	}
 }
 
-/** Git / SCM 相关操作 */
 export function handleScmMessage(msg: ClientMessage, cs: DispatchSession, send: (msg: ServerMessage) => void): boolean {
 	switch (msg.type) {
 		case "scm_status":
@@ -163,7 +155,6 @@ export function handleScmMessage(msg: ClientMessage, cs: DispatchSession, send: 
 	}
 }
 
-/** 后台常驻任务与端口管理 */
 export function handleBgServerMessage(msg: ClientMessage, cs: DispatchSession): boolean {
 	switch (msg.type) {
 		case "kill_background_server":
@@ -186,7 +177,6 @@ export function handleBgServerMessage(msg: ClientMessage, cs: DispatchSession): 
 	}
 }
 
-/** 预设分享、DSH 预设与补丁、审批规则及模板持久化 */
 export function handlePresetAndDshMessage(msg: ClientMessage, cs: DispatchSession): boolean {
 	switch (msg.type) {
 		case "dsh_patches_list":
@@ -269,7 +259,6 @@ export function handlePresetAndDshMessage(msg: ClientMessage, cs: DispatchSessio
 	}
 }
 
-/** 模型管理、供应商配置、OAuth 及 API Key 相关操作 */
 export function handleModelAndProviderMessage(msg: ClientMessage, cs: DispatchSession): boolean {
 	switch (msg.type) {
 		case "list_models":
@@ -367,8 +356,11 @@ export function handleModelAndProviderMessage(msg: ClientMessage, cs: DispatchSe
 	}
 }
 
-/** 终端 (PTY) 管理与输入控制 */
-export function handleTerminalMessage(msg: ClientMessage, cs: DispatchSession): boolean {
+export function handleTerminalMessage(
+	msg: ClientMessage,
+	cs: DispatchSession,
+	context?: NativeCliPasteContext,
+): boolean {
 	switch (msg.type) {
 		case "terminal_attach": {
 			const tm = cs.findTerminalManager
@@ -381,20 +373,38 @@ export function handleTerminalMessage(msg: ClientMessage, cs: DispatchSession): 
 		}
 		case "terminal_create": {
 			const isAgentBash = msg.agentBash === true;
-			// 用户直接创建的终端（!agentBash）进入会话/工作区级用户终端管理器，
-			// 始终存活并全局显示，不受单个对话切换、生命周期与过滤影响；
-			// 仅 AI 内部接管的 bash 终端（agentBash: true）放入对应对话的终端管理器。
-			const tm = isAgentBash
+			const conversationOwned = msg.ownerKind === "conversation" || isAgentBash;
+			const cli = conversationOwned ? cs.getNativeCliConversation?.(msg.conversationId) : undefined;
+			if (
+				msg.ownerKind === "conversation" &&
+				!isAgentBash &&
+				(!msg.conversationId || cli?.terminalId !== msg.terminalId)
+			) {
+				context?.send({
+					type: "notice",
+					level: "error",
+					text: "CLI 终端不属于该对话",
+					textEn: "CLI terminal does not belong to this conversation",
+				});
+				return true;
+			}
+			const nativeCli = cli?.terminalId === msg.terminalId ? cli.config : msg.nativeCli;
+			const tm = conversationOwned
 				? cs.getTerminalManager(msg.conversationId)
 				: (cs.getUserTerminalManager?.() ?? cs.getTerminalManager(msg.conversationId));
 			if (tm) {
 				const createOpts =
-					msg.locale !== undefined || msg.agentBash !== undefined
-						? { locale: msg.locale, agentBash: msg.agentBash }
+					msg.locale !== undefined || msg.agentBash !== undefined || nativeCli !== undefined
+						? {
+								locale: msg.locale,
+								agentBash: msg.agentBash,
+								...(nativeCli !== undefined ? { nativeCli } : {}),
+							}
 						: undefined;
-				tm.create(
+				const create = nativeCli && tm.createNativeCli ? tm.createNativeCli.bind(tm) : tm.create.bind(tm);
+				void create(
 					msg.terminalId,
-					msg.cwd,
+					cli ? cs.getTerminalCwd(msg.conversationId) : msg.cwd,
 					msg.cols,
 					msg.rows,
 					cs.getTerminalCwd(msg.conversationId),
@@ -402,6 +412,141 @@ export function handleTerminalMessage(msg: ClientMessage, cs: DispatchSession): 
 					createOpts,
 				);
 			}
+			return true;
+		}
+		case "terminal_cli_control": {
+			if (!context) return true;
+			void (async () => {
+				try {
+					if (
+						typeof msg.requestId !== "string" ||
+						!msg.requestId ||
+						msg.requestId.length > 128 ||
+						/[\x00-\x1f\x7f-\x9f]/.test(msg.requestId)
+					)
+						throw new Error("Invalid CLI control request ID");
+					if (
+						msg.ownerKind !== "conversation" ||
+						typeof msg.conversationId !== "string" ||
+						!["detach", "reconnect", "stop"].includes(msg.action)
+					)
+						throw new Error("Invalid CLI control target or action");
+					const cli = cs.getNativeCliConversation?.(msg.conversationId);
+					if (!cli || cli.terminalId !== msg.terminalId || !cs.controlNativeCli)
+						throw new Error("CLI terminal does not belong to this conversation");
+					await cs.controlNativeCli(msg.conversationId, msg.terminalId, msg.action);
+					context.send({
+						type: "terminal_cli_control_result",
+						requestId: msg.requestId,
+						terminalId: msg.terminalId,
+						conversationId: msg.conversationId,
+						ok: true,
+					});
+				} catch (error) {
+					context.send({
+						type: "terminal_cli_control_result",
+						requestId: msg.requestId,
+						terminalId: msg.terminalId,
+						conversationId: msg.conversationId,
+						ok: false,
+						error: (error as Error).message,
+					});
+				}
+			})();
+			return true;
+		}
+		case "terminal_cli_paste": {
+			if (!context) return true;
+			void (async () => {
+				let cleanup: (() => Promise<void>) | undefined;
+				let cleanupRetained = false;
+				let stagedPaths: readonly string[] | undefined;
+				let remoteService: RemoteSshService | null = null;
+				let remoteCwd: string | undefined;
+				try {
+					if (
+						typeof msg.requestId !== "string" ||
+						!msg.requestId ||
+						msg.requestId.length > 128 ||
+						/[\x00-\x1f\x7f-\x9f]/.test(msg.requestId)
+					)
+						throw new Error("Invalid native CLI paste request ID");
+					const tm = cs.findTerminalManager
+						? cs.findTerminalManager(msg.terminalId, msg.conversationId, msg.ownerKind)
+						: msg.ownerKind === "client"
+							? cs.getUserTerminalManager?.()
+							: cs.getTerminalManager(msg.conversationId);
+					const captured = tm?.captureNativeCliPasteTarget?.(msg.terminalId);
+					const target = captured ?? tm?.getNativeCliTerminal?.(msg.terminalId);
+					if (!target) throw new Error("Native CLI terminal not found or its process has exited");
+					if (msg.attachments !== undefined && (!Array.isArray(msg.attachments) || msg.attachments.length > 32))
+						throw new Error("Invalid native CLI attachments (max 32)");
+					if (context.materializeAttachments && !captured)
+						throw new Error("Native CLI process identity cannot be captured");
+					const attachments = context.materializeAttachments
+						? await context.materializeAttachments(msg.attachments ?? [], msg.conversationId, msg.data)
+						: msg.attachments;
+					if (captured?.signal?.aborted)
+						throw new Error("Native CLI terminal exited or was restarted before this prompt was ready");
+					let text: string;
+					if (isRemoteWorkspaceUri(target.cwd)) {
+						remoteCwd = target.cwd;
+						remoteService = getGlobalRemoteSshService();
+						if (!remoteService || !captured?.retainCleanup) throw new Error("Remote CLI file service is unavailable");
+						const service = remoteService;
+						const prepared = await prepareRemoteNativeCliPaste(
+							{
+								cwd: target.cwd,
+								clientId: context.clientId,
+								dataDir: context.dataDir,
+								settings: context.settings,
+								service,
+								signal: captured.signal,
+								onCleanupFailure: (paths) => remoteNativeCliCleanupQueue.enqueue(service, target.cwd, paths),
+							},
+							msg.data,
+							attachments ?? [],
+						);
+						text = prepared.text;
+						stagedPaths = prepared.paths;
+						cleanup = async () => {
+							try {
+								await prepared.dispose();
+							} catch {
+								remoteNativeCliCleanupQueue.enqueue(service, target.cwd, prepared.paths);
+							}
+						};
+					} else text = prepareNativeCliPaste(msg.data, attachments, target.cwd, context);
+					if (cleanup) {
+						cleanupRetained = captured!.retainCleanup!(cleanup, stagedPaths);
+						if (!cleanupRetained) throw new Error("Native CLI exited before uploaded references could be retained");
+					}
+					const pasted = captured ? captured.paste(text) : tm?.pasteNativeCli?.(msg.terminalId, text);
+					if (!pasted) {
+						cleanupRetained = false;
+						throw new Error("Native CLI terminal exited or was restarted before this prompt was ready");
+					}
+					context.send({
+						type: "terminal_cli_paste_result",
+						requestId: msg.requestId,
+						terminalId: msg.terminalId,
+						ok: true,
+					});
+				} catch (err) {
+					const paths = (err as { paths?: unknown }).paths;
+					if (remoteService && remoteCwd && Array.isArray(paths) && paths.every((path) => typeof path === "string"))
+						remoteNativeCliCleanupQueue.enqueue(remoteService, remoteCwd, paths);
+					context.send({
+						type: "terminal_cli_paste_result",
+						requestId: msg.requestId,
+						terminalId: msg.terminalId,
+						ok: false,
+						error: (err as Error).message,
+					});
+				} finally {
+					if (cleanup && !cleanupRetained) await cleanup();
+				}
+			})();
 			return true;
 		}
 		case "terminal_input": {
@@ -433,7 +578,6 @@ export function handleTerminalMessage(msg: ClientMessage, cs: DispatchSession): 
 			return true;
 		}
 		case "run_command": {
-			// 用户从命令列表中运行的终端属于用户直接创建的终端
 			const tm = cs.getUserTerminalManager?.() ?? cs.getTerminalManager(msg.conversationId);
 			tm?.runCommand(msg.terminalId, msg.command, msg.cols, msg.rows, cs.getTerminalCwd(msg.conversationId));
 			return true;
@@ -443,7 +587,6 @@ export function handleTerminalMessage(msg: ClientMessage, cs: DispatchSession): 
 	}
 }
 
-/** 会话生命周期与分支管理相关操作 */
 export function handleSessionLifecycleMessage(
 	msg: ClientMessage,
 	cs: DispatchSession,
@@ -457,7 +600,8 @@ export function handleSessionLifecycleMessage(
 	clientId?: string,
 ): boolean {
 	switch (msg.type) {
-		case "new_chat": {
+		case "new_chat":
+		case "new_cli_chat": {
 			let acknowledged = false;
 			const acknowledge = (conversationId?: string) => {
 				if (!msg.requestId || acknowledged) return;
@@ -469,8 +613,22 @@ export function handleSessionLifecycleMessage(
 					...(conversationId ? { conversationId } : {}),
 				});
 			};
-			void cs
-				.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent)
+			if (msg.type === "new_cli_chat" && !cs.newCliChat) {
+				send?.({
+					type: "notice",
+					level: "error",
+					text: "当前会话引擎尚不支持独立 CLI 对话；请在标准 Pi 会话宿主中创建",
+					textEn:
+						"This conversation engine does not support independent CLI conversations yet; create one in the standard Pi session host",
+				});
+				acknowledge();
+				return true;
+			}
+			const pending =
+				msg.type === "new_cli_chat"
+					? cs.newCliChat?.(msg.config, msg.cwd, acknowledge)
+					: cs.newChat(msg.preset, msg.ephemeral, acknowledge, msg.independent);
+			void Promise.resolve(pending)
 				.then(() => acknowledge())
 				.catch(() => acknowledge());
 			return true;
@@ -495,7 +653,6 @@ export function handleSessionLifecycleMessage(
 			void cs.rollbackSession?.(msg.messageId, msg.conversationId, msg.restoreWorkspace);
 			return true;
 		case "list_sessions":
-			// B5：带 limit 的请求（左栏「显示更多」翻页）先记住该项目的条数，之后的自动刷新沿用它
 			if (typeof msg.limit === "number") cs.setSessionListLimit?.(msg.path ?? cs.cwd, msg.limit);
 			if (msg.path && normalizePathKey(msg.path) !== normalizePathKey(cs.cwd)) {
 				void cs.pushSessionsForCwd?.(msg.path);
@@ -554,7 +711,6 @@ export function handleSessionLifecycleMessage(
 	}
 }
 
-/** 任务执行计划（Plan Mode）与目标模式（Goal Mode）相关操作 */
 export function handlePlanAndGoalMessage(msg: ClientMessage, cs: DispatchSession): boolean {
 	switch (msg.type) {
 		case "set_goal":
@@ -609,7 +765,6 @@ export function handlePlanAndGoalMessage(msg: ClientMessage, cs: DispatchSession
 	}
 }
 
-/** 定时任务（Scheduler）相关操作 */
 export function handleScheduleMessage(
 	msg: ClientMessage,
 	scheduler: SchedulerStore,
@@ -684,7 +839,6 @@ export function handleScheduleMessage(
 	}
 }
 
-/** 设置面板、自定义斜杠命令与扩展重载相关操作 */
 export function handleSettingsMessage(
 	msg: ClientMessage,
 	cs: DispatchSession,
@@ -701,7 +855,6 @@ export function handleSettingsMessage(
 			cs.refreshSettings();
 			return true;
 		case "set_settings":
-			// SAFETY: Both dispatch engines validate the explicitly enumerated settings fields below.
 			void (cs as unknown as { setSettings: (p: Record<string, unknown>) => Promise<void> }).setSettings({
 				promptMode: msg.promptMode,
 				customSystemPrompt: msg.customSystemPrompt,
@@ -715,6 +868,7 @@ export function handleSettingsMessage(
 				disabledPluginTools: (msg as { disabledPluginTools?: string[] }).disabledPluginTools,
 				disabledPlugins: msg.disabledPlugins,
 				terminalToolsEnabled: msg.terminalToolsEnabled,
+				nativeCliInheritModel: msg.nativeCliInheritModel,
 				terminalBash: msg.terminalBash,
 				terminalBashIdleMs: msg.terminalBashIdleMs,
 				terminalBashMaxForegroundMs: (msg as { terminalBashMaxForegroundMs?: number }).terminalBashMaxForegroundMs,
@@ -734,7 +888,6 @@ export function handleSettingsMessage(
 				toolsWrap: msg.toolsWrap,
 				toolImagesEnabled: (msg as { toolImagesEnabled?: boolean }).toolImagesEnabled,
 				keepRecentMessages: (msg as { keepRecentMessages?: number }).keepRecentMessages,
-				// 向上分页加载：之前漏在白名单外，设置页的开关一直被静默丢弃（补回归见 message-window-test）。
 				reversePagination: (msg as { reversePagination?: boolean }).reversePagination,
 				showForkedParentSessions: (msg as { showForkedParentSessions?: boolean }).showForkedParentSessions,
 				retainFinishedConversations: msg.retainFinishedConversations,
@@ -758,6 +911,14 @@ export function handleSettingsMessage(
 				quickAskThinking: msg.quickAskThinking,
 				quickAskSystemPrompt: msg.quickAskSystemPrompt,
 				quickAskExplainPrompt: msg.quickAskExplainPrompt,
+				quickAskTranslateEnabled: msg.quickAskTranslateEnabled,
+				quickAskTranslateTarget: msg.quickAskTranslateTarget,
+				quickAskTranslateStyle: msg.quickAskTranslateStyle,
+				quickAskTranslatePrompt: msg.quickAskTranslatePrompt,
+				quickAskShowOriginal: msg.quickAskShowOriginal,
+				quickAskReferenceMenus: msg.quickAskReferenceMenus,
+				quickAskConversationScope: msg.quickAskConversationScope,
+				quickAskFolderScope: msg.quickAskFolderScope,
 				subagentDefaultModel: (msg as { subagentDefaultModel?: string | null }).subagentDefaultModel,
 				subagentMaxDepth: (msg as { subagentMaxDepth?: number }).subagentMaxDepth,
 				subagentAutoWakeMaxTurns: (msg as { subagentAutoWakeMaxTurns?: number }).subagentAutoWakeMaxTurns,
@@ -826,7 +987,6 @@ export function handleSettingsMessage(
 	}
 }
 
-/** 人机交互弹窗应答、审批授权响应、策略配置与浏览器页面调用回包 */
 export function handleInteractiveResponseMessage(
 	msg: ClientMessage,
 	cs: DispatchSession,
@@ -876,12 +1036,9 @@ export function handleInteractiveResponseMessage(
 		case "question_answer":
 			if (clientId && service.resolveSharedQuestion?.(clientId, msg.id, msg.answers, msg.cancelled, msg.cancelReason))
 				return true;
-			// 1. 优先尝试由当前会话直接解决（若当前客户端直接持有该问卷，即使携带了旧 owner 也能直接消费，防止因 orphan 认领/过户等导致 owner 不匹配）
 			if (cs.resolveQuestion?.(msg.id, msg.answers, msg.cancelled, msg.cancelReason)) return true;
-			// 2. 全局问卷直决：无需依赖 ownerId，全局根据唯一问卷 UUID 查找命中目标会话并 resolve
 			if (service.resolveGlobalQuestion?.(msg.id, msg.answers, msg.cancelled, msg.cancelReason)) return true;
 			if (msg.owner) {
-				// 跨页作答：答案转交持有方会话（本页不持有该问卷）。
 				if (typeof service.answerElsewhereQuestion === "function" && clientId) {
 					void service.answerElsewhereQuestion(
 						clientId,
@@ -919,8 +1076,6 @@ export function handleInteractiveResponseMessage(
 			});
 			return true;
 		case "page_response":
-			// 浏览器（page-picker 扩展经前端）对 browser_page 的回包：恢复挂起的
-			// pageCall；id 不匹配（超时后迟到/页面刷新）由 resolvePageCall 静默忽略。
 			cs.resolvePageCall?.(msg.id, msg.ok, msg.result, msg.error);
 			return true;
 		default:
@@ -928,7 +1083,6 @@ export function handleInteractiveResponseMessage(
 	}
 }
 
-/** 远程 SSH 连接、探针与目录浏览处理 */
 export function handleRemoteSshMessage(
 	msg: ClientMessage,
 	remoteSshSvc: RemoteSshService,

@@ -84,7 +84,6 @@ describe("work-contract: deep freeze and structured immutability", () => {
 		expect(contract.constraints).toEqual(["original-constraint"]);
 		expect(contract.acceptanceCriteria).toEqual(["original-criteria"]);
 
-		// Mutating frozen contract directly throws in strict mode
 		expect(() => {
 			(contract as any).goal = "changed";
 		}).toThrow();
@@ -269,19 +268,16 @@ describe("work-contract: code mode baseline and artifact rules", () => {
 
 		expect(validateDeviceArtifact(art).valid).toBe(true);
 
-		// Non-canonical base64 with spaces or invalid chars
 		const nonCanonical = { ...art, patchBase64: canonicalBase64 + "  \n" };
 		nonCanonical.digest = computeArtifactDigest(nonCanonical);
 		expect(validateDeviceArtifact(nonCanonical).valid).toBe(false);
 
-		// Mismatched patchSha256
 		const badHash = { ...art, patchSha256: "0".repeat(64) };
 		badHash.digest = computeArtifactDigest(badHash);
 		const badHashRes = validateDeviceArtifact(badHash);
 		expect(badHashRes.valid).toBe(false);
 		if (!badHashRes.valid) expect(badHashRes.reason).toMatch(/does not match patchBase64 content/);
 
-		// Exceeds 128 KiB
 		const hugePatch = Buffer.alloc(130 * 1024, "x");
 		const hugeArt = {
 			...art,
@@ -476,7 +472,7 @@ describe("work-contract: validateCodeArtifactOutcome", () => {
 				deviceId: "dev-100",
 				botId: "bot-100",
 				taskId: "task-100",
-				attemptId: "OLD-ATTEMPT", // Mismatch!
+				attemptId: "OLD-ATTEMPT",
 				contractDigest: contract.digest,
 				manifestDigest: manifest.digest,
 			},

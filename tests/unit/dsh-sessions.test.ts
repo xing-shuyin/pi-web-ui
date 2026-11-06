@@ -1,4 +1,3 @@
-/** sessionLogPreset 单测：回放定预设（selected 事件 > header > null）。纯函数。 */
 import { describe, expect, it, vi } from "vitest";
 import { DshClientSession } from "../../server/dsh/dsh-agent-service";
 import type { UiMessage, ServerMessage } from "../../server/protocol";
@@ -230,7 +229,6 @@ describe("DshClientSession 历史会话继承与模型选择持久化", () => {
 		expect(addedSessionId).toMatch(/^fork-/);
 		expect(addedReplay).toBe(false);
 		expect(forked.title).toBe("历史对话标题");
-		// 关键断言：fork 会话完整继承了原会话的消息列表与 id 集合
 		expect(forked.messages).toEqual(prevMessages);
 		expect(forked.messageIds.has("u-1")).toBe(true);
 		expect(forked.messageIds.has("a-1")).toBe(true);
@@ -261,13 +259,11 @@ describe("DshClientSession 历史会话继承与模型选择持久化", () => {
 			flushSnapshot: vi.fn(),
 		});
 
-		// 1. 设置全局默认模型
 		await DshClientSession.prototype.setDefaultModel.call(session, "deepseek/deepseek-v4-pro");
 		expect(savedDefault).toBe("deepseek/deepseek-v4-pro");
 		const defaultMsg1 = emitted.find((m) => m.type === "default_model");
 		expect(defaultMsg1).toEqual({ type: "default_model", modelId: "deepseek/deepseek-v4-pro" });
 
-		// 2. 清除全局默认模型
 		DshClientSession.prototype.clearDefaultModel.call(session);
 		expect(!savedDefault).toBe(true);
 		const defaultMsg2 = emitted.filter((m) => m.type === "default_model").pop();
@@ -310,7 +306,6 @@ describe("DshClientSession 历史会话继承与模型选择持久化", () => {
 			},
 		});
 
-		// 模拟 DSH 运行时回抛带有 [File reference: ...] 的正式 user/message 事件
 		(session as any).handleSessionEvent({
 			sessionId: "web-test-123",
 			event: {
@@ -327,7 +322,6 @@ describe("DshClientSession 历史会话继承与模型选择持久化", () => {
 			},
 		});
 
-		// 关键断言：消息数量必须依然为 1（绝不产生两条），且乐观占位消息被原地升级替换
 		expect(conv.messages).toHaveLength(1);
 		expect(conv.messages[0].id).toBe("u-real-user-msg-1");
 		expect(conv.messages[0].role).toBe("user");
@@ -351,12 +345,10 @@ describe("DshClientSession 历史会话继承与模型选择持久化", () => {
 			},
 		};
 
-		// 1. 提取原始文本时包含 reasoning，确保 MarkerService 能捕捉到重命名标记
 		const rawText = extractDshAssistantRawText(assistantData);
 		expect(rawText).toContain("[[conv:rename:vitest.config.ts 介绍]]");
 		expect(rawText).toContain("这是 Vitest 的配置文件");
 
-		// 2. 序列化给前端时，reasoning/thinking 块内部的 marker 必须被干净剥离，不残留代码
 		const blocks = serializeAssistantBlocks(assistantData.message.content as any);
 		expect(blocks).toHaveLength(2);
 		expect(blocks[0].type).toBe("thinking");

@@ -1,12 +1,3 @@
-/**
- * 插件后台任务协议测试（零 token、自包含）。
- *
- * 覆盖：host.registerBackgroundTask 注册的任务并入 bg_servers（taskId/plugin/
- * status 字段）；kill_background_server { taskId } 触发 stop 回调并移出列表；
- * 未知 taskId 静默失败不崩。
- *
- * 运行：先 npm run build:server，再 node tests/plugin-bgtask-test.mjs
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,7 +59,7 @@ function connect(clientId) {
 function waitFor(sock, pred, label, timeoutMs = 10_000) {
 	return new Promise((resolve2, reject) => {
 		const timer = setTimeout(() => {
-			sock.off("message", onMsg); // 超时也要清监听器，防泄漏堆积
+			sock.off("message", onMsg);
 			reject(new Error(`timeout waiting for ${label}`));
 		}, timeoutMs);
 		const onMsg = (raw) => {
@@ -108,8 +99,6 @@ try {
 
 	const sock = await connect("bgtask-test");
 
-	// -- 1. 任务注册后并入 bg_servers（插件异步激活，轮询到出现为止）--------------------
-	// 常驻收集器：每次 bg_servers 都记录最新列表（避免 waitFor 反复挂监听）。
 	let latestBg = [];
 	sock.on("message", (raw) => {
 		const m = JSON.parse(raw.toString());
@@ -129,10 +118,8 @@ try {
 		console.log(`✓ 插件任务并入后台面板：${JSON.stringify(task)}`);
 	}
 
-	// -- 2. update 刷新状态 ------------------------------------------------------------
 	sock.send(JSON.stringify({ type: "prompt", text: "/bgtask-update" }));
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "updated", "update notice");
-	// 命令返回的 notice 可能受会话就绪时序影响——直接等任务状态刷新的实际效果。
 	sock.send(JSON.stringify({ type: "prompt", text: "/bgtask-update" }));
 	let status2 = null;
 	for (let i = 0; i < 40 && status2 !== "每 30m"; i++) {
@@ -142,9 +129,7 @@ try {
 	if (status2 !== "每 30m") fail("status 未刷新");
 	else console.log("✓ task.update 刷新状态生效");
 
-	// -- 3. kill_background_server { taskId } → stop 回调 + 移出列表 ---------------------
 	sock.send(JSON.stringify({ type: "kill_background_server", taskId: "nightly" }));
-	// ① stop 回调在服务端进程 → 以 notice 作跨进程信号；② 列表随之移除
 	await waitFor(sock, (m) => m.type === "notice" && m.text === "task-stopped", "task-stopped notice");
 	let removed = false;
 	for (let i = 0; i < 40 && !removed; i++) {
@@ -154,7 +139,6 @@ try {
 	if (!removed) fail("任务未从列表移除");
 	else console.log("✓ kill taskId → stop 回调触发 + 移出列表");
 
-	// -- 4. 未知 taskId 不崩 -----------------------------------------------------------------
 	sock.send(JSON.stringify({ type: "kill_background_server", taskId: "ghost" }));
 	await new Promise((r) => setTimeout(r, 300));
 	console.log("✓ 未知 taskId 静默处理（进程存活）");

@@ -1,8 +1,3 @@
-/**
- * tool-args.ts 单测：卡头参数提示的安全提取。
- * 重点是「AI 把参数填错」的各类脏输入：非 JSON、半截 JSON、类型不对、超长、
- * 带控制字符、缺字段、脏 timeout 值——一律静默降级，绝不抛错。
- */
 import { describe, expect, it } from "vitest";
 import { parseDelegateArgs, resolveToolHeadline, shortenPath, toolArgHints } from "../../web/src/tool-args.js";
 
@@ -24,7 +19,7 @@ describe("toolArgHints — 脏输入不抛错", () => {
 			'["path", "x"]',
 			"{",
 			'{"path": }',
-			'{"path": "src/a', // 值本身被截断（流式中途）
+			'{"path": "src/a',
 		];
 		for (const v of cases) {
 			const h = toolArgHints(v);
@@ -37,7 +32,6 @@ describe("toolArgHints — 脏输入不抛错", () => {
 	it("半截 JSON 但 path 值已完整 → 仍能显示（流式体验）", () => {
 		expect(toolArgHints('{"path": "src/a.ts"').path).toBe("src/a.ts");
 		expect(toolArgHints('{"path": "src/a.ts", "content": "partial...').path).toBe("src/a.ts");
-		// 半截的 command 不显示（等 JSON 到齐，正文先回落 <pre>）
 		expect(toolArgHints('{"command": "npm test').command).toBeUndefined();
 	});
 
@@ -157,7 +151,6 @@ describe("toolArgHints — 命令行", () => {
 	it("超大参数不再解析 command（避免 write 的大 content 卡渲染）", () => {
 		const big = JSON.stringify({ command: "echo hi", content: "x".repeat(300 * 1024) });
 		expect(toolArgHints(big).command).toBeUndefined();
-		// 但路径仍能在前 256KB 里扫到
 		const bigWithPath = JSON.stringify({ path: "src/big.ts", content: "x".repeat(300 * 1024) });
 		expect(toolArgHints(bigWithPath).path).toBe("src/big.ts");
 	});

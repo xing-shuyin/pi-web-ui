@@ -1,16 +1,3 @@
-/**
- * 切项目时左栏「运行的对话」不许闪一下项目名（#140 的回归）。
- *
- * 场景：切项目会自动切到该项目的对话；如果切过去时那个项目只有一条对话（就是
- * 这条激活的），列表里就只有一组 —— 它顶上原来会闪出一行项目名再消失。原因是
- * `conversations` 推送（activeId 已是新项目的对话）先到、带新 `cwd` 的快照后到，
- * 只按 `cwd` 分组的那一帧把当前项目当成了「别的项目」。
- *
- * 这里用 MutationObserver 记录整个左栏的每一帧 DOM，逐帧断言「当前项目那组没有
- * 组标题」。零 token（本地 OpenAI 兼容 mock）。
- *
- * Run: npm run build && node tests/conv-group-flash-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { chromium } from "playwright-core";
@@ -37,10 +24,8 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// --- 即时回包的 mock 模型（每轮立刻结束，列表状态稳定便于观察）---
 const mock = createServer(async (req, res) => {
 	for await (const _chunk of req) {
-		/* drain */
 	}
 	res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 	const chunk = (content) =>
@@ -86,9 +71,7 @@ writeFileSync(
 const PORT = 8952;
 try {
 	await freePort(PORT);
-} catch {
-	/* port free */
-}
+} catch {}
 const server = spawn(process.execPath, ["dist/server/index.js"], {
 	cwd: ROOT,
 	env: {
@@ -113,20 +96,17 @@ try {
 	const skip = page.locator("button:has-text('跳过'), button:has-text('Skip')").first();
 	if (await skip.isVisible().catch(() => false)) await skip.click();
 
-	/** 发一条消息并等它跑完（mock 立即回包）。 */
 	const prompt = async (text) => {
 		await page.locator("textarea").first().fill(text);
 		await page.keyboard.press("Enter");
 		await sleep(2500);
 	};
-	/** 通过底栏 cwd 输入切项目。 */
 	const switchTo = async (path) => {
 		await page.locator(".status-cwd").click();
 		await page.locator(".status-cwd-input").fill(path);
 		await page.keyboard.press("Enter");
 		await sleep(3000);
 	};
-	/** 记录左栏每一帧的组标题（附当时的 cwd），返回取样函数。 */
 	const recordFrames = () =>
 		page.evaluate(() => {
 			window.__frames = [];
@@ -148,7 +128,6 @@ try {
 			})),
 		);
 
-	// 1. A 里聊一句 → 当前对话进列表（#140）
 	await prompt("A 里第一条消息");
 	await page.waitForSelector(".panel-convs .session-item", { timeout: 15000 });
 	const aFrames = await page.evaluate(() => {
@@ -161,14 +140,12 @@ try {
 	check("A 的当前对话进了「运行的对话」", aFrames.rows === 1, `rows=${aFrames.rows}`);
 	check("当前项目不显示组标题", aFrames.titles.length === 0, JSON.stringify(aFrames.titles));
 
-	// 2. 切到 B 并在 B 里聊一句（B 也有一条有内容的对话）
 	await switchTo(B);
 	await prompt("B 里第一条消息");
 	await page.waitForFunction(() => document.querySelectorAll(".panel-convs .session-item").length === 1, null, {
 		timeout: 15000,
 	});
 
-	// 3. B → A：逐帧看有没有项目名闪出来
 	await recordFrames();
 	await switchTo(A);
 	const backFrames = await page.evaluate(() => window.__frames);
@@ -183,7 +160,6 @@ try {
 		JSON.stringify(backFrames.slice(0, 3)),
 	);
 
-	// 4. A → B：反方向同样不许闪
 	await recordFrames();
 	await switchTo(B);
 	const forthFrames = await page.evaluate(() => window.__frames);
@@ -193,7 +169,6 @@ try {
 		JSON.stringify(forthFrames.filter((f) => f.titles.length > 0).slice(0, 3)),
 	);
 
-	// 5. 稳定态：B 的当前对话在列表里且没有组标题
 	const finalState = await page.evaluate(() => {
 		const root = document.querySelector(".panel-left");
 		return {

@@ -1,13 +1,3 @@
-/**
- * DSH 引擎浏览器 UI E2E（零 key、不起运行时 prompt）——验证 DSH 专属界面：
- *   1. 引擎徽标（engine=dsh → 「DSH」badge）
- *   2. 目标条（GoalBar）渲染
- *   3. 设置面板「界面插件」页签下的「DSH 用户补丁」区块（扫描 <dataDir>/dsh-patches）
- *   4. 设置面板「技能」页签下的 DSH 说明文案
- * 不调模型 → 无 token；运行时 boot 不需要 key（prompt 才需要）。
- *
- * 用法：node tests/dsh-ui-test.mjs   （先 npm run build）
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
@@ -30,7 +20,6 @@ function check(name, ok, extra = "") {
 }
 
 const dataDir = mkdtempSync(join(tmpdir(), "pi-web-dsh-ui-"));
-// 放一个无害 user patch（persona 覆盖），验证「DSH 用户补丁」区块能扫到并展示。
 const patchDir = join(dataDir, "dsh-patches");
 mkdirSync(patchDir, { recursive: true });
 writeFileSync(
@@ -63,9 +52,7 @@ async function startServer() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("server did not start");
 }
@@ -105,27 +92,21 @@ async function run() {
 	const page = await browser.newPage();
 	await page.goto(URL);
 
-	// 1. DSH 引擎徽标（ready(engine=dsh) 到达后 FooterBar 渲染）。
 	await page.locator(".engine-badge.engine-dsh").waitFor({ timeout: 20000 });
 	const badge = await page.locator(".engine-badge.engine-dsh").innerText();
 	check("DSH 引擎徽标显示", /DSH/i.test(badge.trim()), badge.trim());
 
-	// 2. 目标条渲染。
 	await page.locator(".goalbar, .goalbar-collapsed").first().waitFor({ timeout: 15000 });
 	const goalbarCount = await page.locator(".goalbar, .goalbar-collapsed").count();
 	check("目标条（GoalBar）渲染", goalbarCount > 0, `count=${goalbarCount}`);
 
-	// 3. 打开设置面板并验证 DSH 专属「补丁与市场」页签。
 	check("设置面板打开", await openSettings(page));
 	await page.waitForSelector(".settings-tab", { timeout: 10000 });
 	await tap(page, page.locator('.settings-tab[data-tab="extensions"]').first());
-	// 切换到「已安装」子选项卡
 	await tap(page, page.locator(".dsh-market-tab").nth(1));
-	// 补丁文件应在列表里展示（扫到 00-ui.patch.yml）。
 	await page.locator("text=00-ui.patch.yml").first().waitFor({ timeout: 10000 });
 	check("补丁文件 00-ui.patch.yml 展示", (await page.locator("text=00-ui.patch.yml").count()) > 0);
 
-	// 4. 设置面板 DSH 专属「预设与权限」页签。
 	await tap(page, page.locator('.settings-tab[data-tab="dsh-presets"]').first());
 	const presetSection = await page
 		.getByText(/新对话使用的预设|Preset for new chats|默认预设|Default preset/i)

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyHashlinePatch } from "../../server/hashline-engine.js";
 
-/** hashline insert 类 hunk（PUT <N / PUT >N）的锚点行重叠校验（audit fix #5）。
- *  旧实现只把 put/cut/paste_over 的行范围纳入 replacementSpans，insert 锚点
- *  不参与校验——组合补丁按行号降序 splice 时，锚点行若被 replace/cut 覆盖删除，
- *  插入位置会串位产出错误内容。 */
-
 const BASE = "line1\nline2\nline3\nline4\nline5\n";
 
 function run(patch: string): { report: ReturnType<typeof applyHashlinePatch>; written: string } {
@@ -22,28 +17,24 @@ function run(patch: string): { report: ReturnType<typeof applyHashlinePatch>; wr
 
 describe("hashline insert 锚点重叠校验（audit fix #5）", () => {
 	it("insert_before 锚点行落在 put_range 内 → 明确报错", () => {
-		// PUT <2 锚第 2 行；PUT 2.=3 覆盖第 2-3 行 → 重叠
 		const { report } = run("[a.txt]\nPUT <2:\n+inserted\nPUT 2.=3:\n+replaced2\n+replaced3\n");
 		expect(report.ok).toBe(false);
 		expect(report.summary).toContain("重叠");
 	});
 
 	it("insert_after 锚点行与 cut_range 重叠 → 明确报错", () => {
-		// PUT >4 锚第 4 行；CUT 4.=4 删除第 4 行 → 重叠
 		const { report } = run("[a.txt]\nPUT >4:\n+inserted\nCUT 4.=4\n");
 		expect(report.ok).toBe(false);
 		expect(report.summary).toContain("重叠");
 	});
 
 	it("两个 insert 锚在同一行 → 明确报错（执行顺序歧义）", () => {
-		// PUT <2 与 PUT >2 锚点同为第 2 行
 		const { report } = run("[a.txt]\nPUT <2:\n+one\nPUT >2:\n+two\n");
 		expect(report.ok).toBe(false);
 		expect(report.summary).toContain("重叠");
 	});
 
 	it("insert 锚点行与 replace 不重叠 → 正常应用，行号语义正确", () => {
-		// PUT <2（锚第 2 行）+ PUT 3.=3（替换第 3 行）：互不干扰
 		const { report, written } = run("[a.txt]\nPUT <2:\n+inserted\nPUT 3.=3:\n+replaced3\n");
 		expect(report.ok).toBe(true);
 		expect(written).toBe("line1\ninserted\nline2\nreplaced3\nline4\nline5\n");
@@ -56,7 +47,6 @@ describe("hashline insert 锚点重叠校验（audit fix #5）", () => {
 	});
 
 	it("尾部 $ 锚与最后一行的 replace 重叠 → 报错", () => {
-		// PUT >$ 锚第 5 行（文件共 5 行）；PUT 5.=5 覆盖第 5 行 → 重叠
 		const { report } = run("[a.txt]\nPUT >$:\n+tail-ins\nPUT 5.=5:\n+replaced5\n");
 		expect(report.ok).toBe(false);
 		expect(report.summary).toContain("重叠");

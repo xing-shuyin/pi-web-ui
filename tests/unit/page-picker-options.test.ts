@@ -4,22 +4,11 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeI18n } from "./fake-i18n.js";
 
-/**
- * 设置页的 `?bind=` 面板（从 pi-web-ui 页面上的浮条跳过来的那一步）。
- *
- * 为什么这条路径不能省：`chrome.permissions.request` 必须在**用户手势**里发出，而浮条的
- * 按钮点在网页上（content script 的 UI），浏览器不认 —— 于是「授权 + 绑定」只能落到这个
- * 页面上。它挂了，远程部署的用户就永远绑不上，所以按真 DOM（options.html 本体）+ 假 chrome
- * 钉住：预填地址 / 文案随授权状态变 / 点一下真的把 serverUrl 写进存储。
- */
-
-// jsdom 环境下 import.meta.url 不是 file: 协议（vitest 会换掉）—— 用仓库根拼路径（vitest 的 cwd 就是仓库根）
 const OPTIONS_HTML = readFileSync(join(process.cwd(), "plugins", "page-picker", "extension", "options.html"), "utf8");
 
 interface FakeChrome {
 	storage: {
 		sync: { get: () => Promise<Record<string, unknown>>; set: (v: Record<string, unknown>) => Promise<void> };
-		/** 配对表走 local（host 权限是本机的，配对跟着权限走）。 */
 		local: {
 			get: (keys: string[] | null) => Promise<Record<string, unknown>>;
 			set: (v: Record<string, unknown>) => Promise<void>;
@@ -33,7 +22,6 @@ interface FakeChrome {
 
 let stored: Record<string, unknown> = {};
 let granted = true;
-/** 发给 worker 的「配对表变了」消息（它据此装桥/卸桥）。 */
 let pairNotices: { removedOrigins?: string[] }[] = [];
 let openTabs: { id: number; url?: string }[] = [];
 
@@ -59,7 +47,6 @@ function fakeChrome(): FakeChrome {
 		},
 		permissions: {
 			contains: async () => granted,
-			// 「用户点了授权」：这次请求成功（真浏览器里就是权限对话框被确认）
 			request: async () => {
 				granted = true;
 				return true;
@@ -83,14 +70,12 @@ function fakeChrome(): FakeChrome {
 	return chrome;
 }
 
-/** 把 options.html 的 <main> 搬进 jsdom（脚本标签不执行：我们 import 的是源码模块）。 */
 function mountOptionsPage(search: string): void {
 	const main = /<main>([\s\S]*?)<\/main>/.exec(OPTIONS_HTML)?.[1] ?? "";
 	document.body.innerHTML = main.replace(/<script[\s\S]*?<\/script>/g, "");
 	globalThis.history.replaceState({}, "", `/options.html${search}`);
 }
 
-/** 等设置页的异步启动流程（load → refreshGrant → initBindPanel）跑完。 */
 const settle = async (): Promise<void> => {
 	for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -115,7 +100,6 @@ beforeEach(() => {
 });
 
 describe("options 页的「发送什么」（多选 + 预设）", () => {
-	/** 勾/取消勾某一项（真 DOM 里的 checkbox）。 */
 	const toggle = (key: string, on: boolean): void => {
 		const box = document.getElementById(`sec-${key}`) as HTMLInputElement;
 		box.checked = on;
@@ -168,7 +152,7 @@ describe("options 页的「发送什么」（多选 + 预设）", () => {
 
 		expect(checked()).toEqual(["page", "selector", "source", "text"]);
 		expect(stored.sections).toEqual(["page", "selector", "source", "text"]);
-		expect(stored.detail).toBe("compact"); // 预设同时决定采集深度
+		expect(stored.detail).toBe("compact");
 	});
 
 	it("全部取消 → 提示并回落标准组合（不静默变成「什么都不发」）", async () => {
@@ -181,7 +165,7 @@ describe("options 页的「发送什么」（多选 + 预设）", () => {
 		await settle();
 
 		expect(text("status")).toContain("至少要勾一项");
-		expect(JSON.stringify(stored.sections)).toContain("selector"); // 回落成标准组合
+		expect(JSON.stringify(stored.sections)).toContain("selector");
 	});
 
 	it("老设置里只有 detail → 按档位预勾（升级后行为不变）", async () => {
@@ -206,27 +190,27 @@ describe("options 页的 ?bind= 面板", () => {
 	});
 
 	it("?bind= 远程地址 → 预填地址 + 文案说清「会绑成什么」，已授权时按钮是「设为服务地址」", async () => {
-		mountOptionsPage("?bind=http%3A%2F%2F39.99.235.208%3A8787");
+		mountOptionsPage("?bind=http%3A%2F%2F203.0.113.10%3A8787");
 		fakeChrome();
 		await import("../../plugins/page-picker/extension/src/options.js");
 		await settle();
 
-		expect((document.getElementById("serverUrl") as HTMLInputElement).value).toBe("http://39.99.235.208:8787");
+		expect((document.getElementById("serverUrl") as HTMLInputElement).value).toBe("http://203.0.113.10:8787");
 		expect(hidden("bindPanel")).toBe(false);
-		expect(text("bindTitle")).toContain("http://39.99.235.208:8787");
+		expect(text("bindTitle")).toContain("http://203.0.113.10:8787");
 		expect(text("bindAccept")).toBe("设为服务地址");
 		expect(text("bindBody")).toContain("已授权");
 	});
 
 	it("没授权 → 按钮改成「授权并绑定」，文案点名要授权的 origin 模式", async () => {
 		granted = false;
-		mountOptionsPage("?bind=http%3A%2F%2F39.99.235.208%3A8787");
+		mountOptionsPage("?bind=http%3A%2F%2F203.0.113.10%3A8787");
 		fakeChrome();
 		await import("../../plugins/page-picker/extension/src/options.js");
 		await settle();
 
 		expect(text("bindAccept")).toBe("授权并绑定");
-		expect(text("bindBody")).toContain("http://39.99.235.208:8787/*");
+		expect(text("bindBody")).toContain("http://203.0.113.10:8787/*");
 	});
 
 	it("点「授权并绑定」→ 授权 + **真的写进存储**（这是用户唯一的目标）", async () => {
@@ -239,14 +223,14 @@ describe("options 页的 ?bind= 面板", () => {
 		(document.getElementById("bindAccept") as HTMLButtonElement).click();
 		await settle();
 
-		expect(stored.serverUrl).toBe("https://pi.example.com/pi"); // 归一过（去尾斜杠）
+		expect(stored.serverUrl).toBe("https://pi.example.com/pi");
 		expect(text("status")).toContain("已绑定");
-		expect(hidden("bindPanel")).toBe(true); // 绑完就收起，不让用户以为还没完成
+		expect(hidden("bindPanel")).toBe(true);
 	});
 
 	it("已经就是这个地址 → 不显示绑定按钮（没有可绑的东西）", async () => {
-		stored.serverUrl = "http://39.99.235.208:8787";
-		mountOptionsPage("?bind=http%3A%2F%2F39.99.235.208%3A8787%2F");
+		stored.serverUrl = "http://203.0.113.10:8787";
+		mountOptionsPage("?bind=http%3A%2F%2F203.0.113.10%3A8787%2F");
 		fakeChrome();
 		await import("../../plugins/page-picker/extension/src/options.js");
 		await settle();
@@ -256,7 +240,6 @@ describe("options 页的 ?bind= 面板", () => {
 	});
 });
 
-/** 每次 import 都会重跑模块顶层（buildSectionList + initBridgePanel + initAiPanel）—— 所以先挂 DOM 再 import。 */
 async function bootOptions(search = ""): Promise<void> {
 	mountOptionsPage(search);
 	fakeChrome();
@@ -264,7 +247,6 @@ async function bootOptions(search = ""): Promise<void> {
 	await settle();
 }
 
-/** 真 DOM 点击（两个面板的按钮都用它）。 */
 async function clickOptions(id: string): Promise<void> {
 	document.getElementById(id)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await settle();
@@ -315,7 +297,6 @@ describe("options 页的「页面桥」配对管理", () => {
 	it("不给授权 → 不落盘，并说清是哪一步缺了", async () => {
 		granted = false;
 		await boot();
-		// 假 chrome 默认 request 会成功；这里模拟「用户在权限对话框上点了取消」
 		(globalThis as Record<string, unknown>).chrome = {
 			...((globalThis as Record<string, unknown>).chrome as object),
 			permissions: { contains: async () => false, request: async () => false },
@@ -364,7 +345,7 @@ describe("options 页的「页面桥」配对管理", () => {
 
 		const opts = Array.from(document.querySelectorAll<HTMLOptionElement>("#piOrigins option"));
 		expect(opts.map((o) => o.value)).toEqual(["http://localhost:5173", "https://tools.example"]);
-		expect(opts[0].label).toBe("我的开发站"); // 标题比 origin 好认
+		expect(opts[0].label).toBe("我的开发站");
 	});
 
 	it("已经配过的 origin 也在候选里（它们不一定在「最近点过」列表里）", async () => {
@@ -379,7 +360,7 @@ describe("options 页的「页面桥」配对管理", () => {
 	it("从拾取浮条跳过来（?pair=）：预填本端 + 焦点放到另一端（少掉手打两个地址）", async () => {
 		await boot(`?pair=${encodeURIComponent("http://localhost:5173/app/")}`);
 
-		expect((document.getElementById("pairA") as HTMLInputElement).value).toBe("http://localhost:5173"); // 归一成 origin
+		expect((document.getElementById("pairA") as HTMLInputElement).value).toBe("http://localhost:5173");
 		expect(document.activeElement?.id).toBe("pairB");
 		expect(text("pairStatus")).toContain("已填入本页");
 	});
@@ -405,15 +386,14 @@ describe("options 页的「AI 操作页面」（授权管理）", () => {
 		await click("aiGrant");
 
 		expect(stored.aiPages).toEqual([{ origin: DEVELOP, title: "我的开发站", at: expect.any(String) }]);
-		expect(pairNotices).toHaveLength(1); // worker 靠这个立即把控制桥装上
+		expect(pairNotices).toHaveLength(1);
 		expect(text("aiStatus")).toContain("已授权");
 		expect(aiCards()).toHaveLength(1);
-		expect(text("aiList")).toContain("我的开发站"); // 显示标题而不是裸 origin
+		expect(text("aiList")).toContain("我的开发站");
 	});
 
 	it("没给 host 权限 → 不落盘，并说清缺的是授权", async () => {
 		await boot();
-		// 模拟用户在权限对话框上点了取消
 		(globalThis as Record<string, unknown>).chrome = {
 			...((globalThis as Record<string, unknown>).chrome as object),
 			permissions: { contains: async () => false, request: async () => false },
@@ -450,8 +430,8 @@ describe("options 页的「AI 操作页面」（授权管理）", () => {
 
 	it("总开关与 eval 开关真的落盘（模型能不能动手就看这两个）", async () => {
 		await boot();
-		expect((document.getElementById("aiControl") as HTMLInputElement).checked).toBe(true); // 默认开
-		expect((document.getElementById("allowEval") as HTMLInputElement).checked).toBe(false); // eval 默认关
+		expect((document.getElementById("aiControl") as HTMLInputElement).checked).toBe(true);
+		expect((document.getElementById("allowEval") as HTMLInputElement).checked).toBe(false);
 
 		const control = document.getElementById("aiControl") as HTMLInputElement;
 		control.checked = false;

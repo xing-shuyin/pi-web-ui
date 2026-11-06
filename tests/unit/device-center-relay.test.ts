@@ -193,14 +193,14 @@ describe("device reverse relay", () => {
 		const server = http.createServer();
 		const base = {
 			server,
-			publicUrl: "http://82.156.246.55:8790",
+			publicUrl: "http://198.51.100.10:8790",
 			authenticateDevice: () => false,
 			getAccount: () => null,
 			ownsDevice: () => false,
 		};
 		const relay = createDeviceRelay({ ...base, deviceDomain: "devices.example.com:8790" });
 		cleanup.push(() => relay.close());
-		expect(() => createDeviceRelay({ ...base, deviceDomain: "82.156.246.55:8791" })).toThrow("independent");
+		expect(() => createDeviceRelay({ ...base, deviceDomain: "198.51.100.10:8791" })).toThrow("independent");
 	});
 	it("allows only the exact desktop ticket redirect", async () => {
 		const f = await fixture();
@@ -558,8 +558,8 @@ describe("device reverse relay", () => {
 		}
 		expect(safePath("/api/device-center/rooms", "WS")).toBe(false);
 		expect(safePath("/api/device-center/rooms/team/messages", "GET")).toBe(false);
-		expect(checkedUrl("http://82.156.246.55:8790").origin).toBe("http://82.156.246.55:8790");
-		expect(checkedUrl("ws://82.156.246.55:8790").protocol).toBe("ws:");
+		expect(checkedUrl("http://198.51.100.10:8790").origin).toBe("http://198.51.100.10:8790");
+		expect(checkedUrl("ws://198.51.100.10:8790").protocol).toBe("ws:");
 		for (const url of ["file:///tmp/a", "http://user:password@example.com", "ws://example.com/#fragment"])
 			expect(() => checkedUrl(url)).toThrow();
 		expect(() => decodeChunk("!bad")).toThrow();

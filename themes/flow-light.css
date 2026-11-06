@@ -1,12 +1,7 @@
 /* theme-name: 极简行文 */
 /* theme-name-en: Pure Flow Light */
 /* theme-group: builtin */
-/*
- * 极简行文 · 浅色（Pure Flow Light & Borderless Canvas）—— 现代清澈素白/极简浅调版：
- * 深度复刻新一代 AI 桌面工作区（OpenAI Codex / ChatGPT Desktop）标志性的中性实体画布；
- * 搭配悬浮素白双层输入岛、纯黑高对比圆形动作按钮、经典电光蓝状态点睛与行书无外壳行内微胶囊流，
- * 纯净护眼、通透利落、无蓝绿偏色，回答如笔墨行书、一气呵成。
- */
+
 :root {
 	color-scheme: light;
 	--flow-shadow: rgba(17, 24, 39, 0.22);
@@ -125,9 +120,6 @@
 
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   代码语法高亮（hljs）—— 极简出版物浅亮色
-   ======================================================== */
 .hljs {
 	color: #1f2328;
 }
@@ -165,7 +157,6 @@
 	color: #116329;
 }
 
-/* 角标防白底白字：当 --accent 为深黑时，顶栏实体胶囊角标字体为白色（底栏透明徽标保持 var(--accent) 深色高对比） */
 .topbar .bar-item-badge:not(.bg-task-badge) {
 	color: #ffffff;
 }

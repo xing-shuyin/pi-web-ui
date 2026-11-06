@@ -1,10 +1,3 @@
-/**
- * tests/unit/feishu-features.test.ts
- * Tests for Feishu (Lark) plugin features:
- * - Pure helpers (signature, parsing, formatting, url protection)
- * - Server activate, AI tool registration, and client entry.
- */
-
 import { describe, expect, it, vi } from "vitest";
 import {
 	buildMessageContent,
@@ -23,18 +16,15 @@ describe("Feishu 纯函数工具库测试", () => {
 		const sig = signWebhook(1700000000, "my-secret-key");
 		expect(sig).toBeTruthy();
 		expect(typeof sig).toBe("string");
-		// 校验相同的输入产生确定性的 base64 结果
 		const sig2 = signWebhook(1700000000, "my-secret-key");
 		expect(sig).toBe(sig2);
 	});
 
 	it("parseFeishuMessageContent 正确解析文本、富文本 post 与交互卡片 interactive", () => {
-		// 1. text
 		const resText = parseFeishuMessageContent("text", JSON.stringify({ text: "Hello Feishu" }));
 		expect(resText.text).toBe("Hello Feishu");
 		expect(resText.subject).toBe("Hello Feishu");
 
-		// 2. post
 		const postPayload = {
 			zh_cn: {
 				title: "项目进展通报",
@@ -53,7 +43,6 @@ describe("Feishu 纯函数工具库测试", () => {
 		expect(resPost.text).toContain("[文档链接](https://example.com/doc)");
 		expect(resPost.text).toContain("@张三");
 
-		// 3. interactive card
 		const cardPayload = {
 			header: { title: { content: "构建状态更新" } },
 			elements: [{ tag: "markdown", content: "**Build succeeded** on branch `main`" }],
@@ -62,7 +51,6 @@ describe("Feishu 纯函数工具库测试", () => {
 		expect(resCard.subject).toBe("构建状态更新");
 		expect(resCard.text).toContain("**Build succeeded**");
 
-		// 4. image & file
 		const resImg = parseFeishuMessageContent("image", JSON.stringify({ image_key: "img_v2_123" }));
 		expect(resImg.subject).toBe("[图片消息]");
 
@@ -71,20 +59,17 @@ describe("Feishu 纯函数工具库测试", () => {
 	});
 
 	it("buildMessageContent 生成符合飞书开放平台标准的 JSON payload", () => {
-		// 1. text
 		const bText = buildMessageContent({ msgType: "text", text: "测试文本消息" });
 		expect(bText.msg_type).toBe("text");
 		const parsedText = JSON.parse(bText.content);
 		expect(parsedText.text).toBe("测试文本消息");
 
-		// 2. post
 		const bPost = buildMessageContent({ msgType: "post", title: "通报", text: "第一行\n第二行" });
 		expect(bPost.msg_type).toBe("post");
 		const parsedPost = JSON.parse(bPost.content);
 		expect(parsedPost.zh_cn.title).toBe("通报");
 		expect(parsedPost.zh_cn.content.length).toBe(2);
 
-		// 3. interactive card
 		const bCard = buildMessageContent({
 			msgType: "interactive",
 			title: "卡片标题",
@@ -190,12 +175,10 @@ describe("Feishu 插件激活与 AI 工具集成", () => {
 
 			await activate(mockHost);
 
-			// 1. 验证 feishu AI 工具
 			const tool = registeredTools.find((t) => t.name === "feishu");
 			expect(tool).toBeDefined();
 			expect(tool?.description).toContain("Feishu (Lark)");
 
-			// 2. 验证 tool 执行 webhook action
 			const webhookRes = await tool!.execute({
 				action: "webhook",
 				msg_type: "interactive",
@@ -205,14 +188,12 @@ describe("Feishu 插件激活与 AI 工具集成", () => {
 			const parsedRes = JSON.parse(webhookRes);
 			expect(parsedRes.success).toBe(true);
 
-			// 验证 fetch 确实带上了 HMAC 签名和 timestamp
 			expect(mockFetch).toHaveBeenCalled();
 			const callBody = JSON.parse(mockFetch.mock.calls[0][1]?.body as string);
 			expect(callBody.timestamp).toBeTruthy();
 			expect(callBody.sign).toBeTruthy();
 			expect(callBody.msg_type).toBe("interactive");
 
-			// 3. 验证 client message 处理
 			expect(clientMessageHandler).toBeDefined();
 			const stateReply = await new Promise<any>((resolve) => {
 				clientMessageHandler!({ type: "get_state" }, (res) => resolve(res));
@@ -267,19 +248,19 @@ describe("Feishu 轮询调度（0.103 审计修复）", () => {
 				log: vi.fn(),
 				notify: vi.fn(),
 			} as any);
-			await vi.advanceTimersByTimeAsync(1); // 首轮立即发起
+			await vi.advanceTimersByTimeAsync(1);
 			expect(mockFetch).toHaveBeenCalled();
 			const afterFirst = mockFetch.mock.calls.length;
 			expect(registerBackgroundTask).toHaveBeenCalledWith(
 				expect.objectContaining({ id: "feishu-poll", status: "每 15s" }),
 			);
-			await vi.advanceTimersByTimeAsync(15_000); // 一个周期后第二轮
+			await vi.advanceTimersByTimeAsync(15_000);
 			expect(mockFetch.mock.calls.length).toBeGreaterThan(afterFirst);
 			expect(typeof deactivate).toBe("function");
 			(deactivate as () => void)();
 			const beforeStop = mockFetch.mock.calls.length;
 			await vi.advanceTimersByTimeAsync(60_000);
-			expect(mockFetch.mock.calls.length).toBe(beforeStop); // 不再轮询
+			expect(mockFetch.mock.calls.length).toBe(beforeStop);
 		} finally {
 			vi.useRealTimers();
 			globalThis.fetch = originalFetch;

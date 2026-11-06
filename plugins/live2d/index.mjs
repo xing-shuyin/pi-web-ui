@@ -1,7 +1,3 @@
-/**
- * Live2D 看板娘服务端入口
- * 负责提供 AI 操控工具、HTTP 路由 API 以及状态事件双向同步
- */
 import fs from "node:fs/promises";
 import { existsSync, mkdirSync, createReadStream, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -19,9 +15,9 @@ function findZipEocd(buf) {
 }
 
 function extractZipBuffer(buf, targetDir) {
-	const MAX_ENTRIES = 20000; // 条目数上限：防 zip 炸弹（海量小文件撑爆目录项）
-	const MAX_FILE_BYTES = 512 * 1024 * 1024; // 单文件解压上限（Live2D 模型资源单文件极少超过此值）
-	const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // 解压总量上限：防 zip 炸弹（高压缩比）
+	const MAX_ENTRIES = 20000;
+	const MAX_FILE_BYTES = 512 * 1024 * 1024;
+	const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 	const eocd = findZipEocd(buf);
 	const cdCount = buf.readUInt16LE(eocd + 10);
 	const cdOffset = buf.readUInt32LE(eocd + 16);
@@ -48,7 +44,6 @@ function extractZipBuffer(buf, targetDir) {
 		const dataStart = lh + 30 + lhNameLen + lhExtraLen;
 		const raw = buf.subarray(dataStart, dataStart + compSize);
 
-		// 规范化后再判界：防 Windows 反斜杠/混合分隔符等 `..` 变体逃逸出 targetDir。
 		const outPath = path.resolve(targetDir, name);
 		const root = path.resolve(targetDir);
 		if (outPath !== root && !outPath.startsWith(root + path.sep)) continue;
@@ -62,7 +57,6 @@ function extractZipBuffer(buf, targetDir) {
 		if (method === 0) {
 			decompressed = raw;
 		} else if (method === 8) {
-			// maxOutputLength：节点侧硬上限，超限直接抛错而不是打爆内存。
 			decompressed = inflateRawSync(raw, { maxOutputLength: MAX_FILE_BYTES + 1 });
 		} else {
 			continue;
@@ -162,7 +156,6 @@ export default {
 			return list;
 		}
 
-		/** 递归查找目录下的 .model3.json 或 .model.json 配置文件 */
 		async function findModelConfig(dir) {
 			async function scan(currentDir, currentRel, depth) {
 				if (depth > 4) return null;
@@ -172,7 +165,6 @@ export default {
 				} catch {
 					return null;
 				}
-				// 优先查找当前层的配置文件
 				for (const ent of entries) {
 					if (ent.isFile()) {
 						const lower = ent.name.toLowerCase();
@@ -184,7 +176,6 @@ export default {
 						}
 					}
 				}
-				// 再递归查找子目录
 				for (const ent of entries) {
 					if (ent.isDirectory()) {
 						const nextRel = currentRel ? `${currentRel}/${ent.name}` : ent.name;
@@ -197,14 +188,12 @@ export default {
 			return await scan(dir, "", 1);
 		}
 
-		/** 读取 model json 并组装自定义模型对象 */
 		async function parseModelEntry(modelKey, targetDir, foundConfig, fallbackName) {
 			let content = {};
 			try {
 				content = JSON.parse(await fs.readFile(foundConfig.fullPath, "utf-8"));
 			} catch {}
 			const isCubism4 = foundConfig.relPath.toLowerCase().endsWith(".model3.json") || content.Version === 3;
-			// 模型包内 name 外部可控：剥掉 HTML 危险字符并限长，展示层仍会二次转义。
 			const rawName = String(
 				content.name || fallbackName || path.basename(foundConfig.fullPath).replace(/\.model(?:3)?\.json$/i, ""),
 			)
@@ -254,7 +243,6 @@ export default {
 
 		void loadState();
 
-		// ── 1. HTTP 路由 API ──────────────────────────────────────────
 		const unroutes = [];
 
 		function route(method, routePath, handler) {
@@ -271,7 +259,6 @@ export default {
 			unroutes.push(off);
 		}
 
-		// GET /models
 		route("GET", "/models", async (_req, res) => {
 			const models = await getAllModels();
 			res.json({
@@ -282,7 +269,6 @@ export default {
 			});
 		});
 
-		// GET /current-model
 		route("GET", "/current-model", async (_req, res) => {
 			res.json({
 				ok: true,
@@ -291,7 +277,6 @@ export default {
 			});
 		});
 
-		// GET /expressions
 		route("GET", "/expressions", async (req, res) => {
 			const modelKey = req.query?.model || currentState.currentModel;
 			const models = await getAllModels();
@@ -303,7 +288,6 @@ export default {
 			});
 		});
 
-		// POST /action (与 E:/live2d_pet 的 /action 协议全面兼容)
 		route("POST", "/action", async (req, res) => {
 			const payload = req.body || {};
 			const action = payload.action;
@@ -394,11 +378,9 @@ export default {
 			res.status(400).json({ ok: false, error: `unknown action: ${action}` });
 		});
 
-		// ── 静态托管用户上传的模型资源 GET /uploads/* ────────────────
 		route("GET", "/uploads/*", async (req, res) => {
 			const rawPath = req.pluginPath || req.url || "";
 			const rel = rawPath.replace(/^\/?(?:plugins-api\/live2d\/)?uploads\//, "");
-			// 规范化后必须仍在 uploadsDir 内：只剥开头 `..` 挡不住 `a/../../x` 中间段穿越。
 			const root = path.resolve(uploadsDir);
 			const fullPath = path.resolve(root, rel);
 			if (fullPath !== root && !fullPath.startsWith(root + path.sep)) {
@@ -442,8 +424,7 @@ export default {
 			stream.pipe(res);
 		});
 
-		// ── 上传 ZIP 模型压缩包 POST /upload-zip ────────────────────
-		const MAX_ZIP_BYTES = 1024 * 1024 * 1024; // 请求体上限 1GB：Live2D 模型包远小于此，纯防无界内存
+		const MAX_ZIP_BYTES = 1024 * 1024 * 1024;
 		route("POST", "/upload-zip", async (req, res) => {
 			const modelKey = "upload_" + Date.now();
 			const targetDir = path.join(uploadsDir, modelKey);
@@ -471,7 +452,6 @@ export default {
 				return res.status(400).json({ ok: false, error: "ZIP 解压失败: " + (err.message || String(err)) });
 			}
 
-			// 自动查找 .model3.json 或 .model.json
 			const found = await findModelConfig(targetDir);
 			if (!found) {
 				try {
@@ -496,7 +476,6 @@ export default {
 			res.json({ ok: true, model: entry });
 		});
 
-		// ── 文件夹单文件上传 POST /upload-file ──────────────────────
 		route("POST", "/upload-file", async (req, res) => {
 			const query = req.query || {};
 			const modelKey = String(query.key || "").replace(/[^a-zA-Z0-9_-]/g, "");
@@ -504,8 +483,6 @@ export default {
 			if (!modelKey || !relPath) {
 				return res.status(400).json({ ok: false, error: "missing key or relPath" });
 			}
-			// 只剥开头 `..` 挡不住 `a/../../x` 这类中间段穿越：规范化后必须仍在
-			// <uploadsDir>/<modelKey>/ 内，否则可借上传接口任意写盘（覆盖配置/脚本）。
 			const root = path.resolve(uploadsDir, modelKey);
 			const targetFile = path.resolve(root, relPath);
 			if (targetFile !== root && !targetFile.startsWith(root + path.sep)) {
@@ -525,7 +502,6 @@ export default {
 			res.json({ ok: true });
 		});
 
-		// ── 完成文件夹模型上传并建立配置 POST /finish-folder-upload ───
 		route("POST", "/finish-folder-upload", async (req, res) => {
 			const body = req.body || {};
 			const modelKey = String(body.key || "").replace(/[^a-zA-Z0-9_-]/g, "");
@@ -555,7 +531,6 @@ export default {
 			res.json({ ok: true, model: entry });
 		});
 
-		// ── 删除自定义模型 POST /delete-model ───────────────────────
 		route("POST", "/delete-model", async (req, res) => {
 			const body = req.body || {};
 			const key = body.key;
@@ -569,7 +544,6 @@ export default {
 			customs.splice(idx, 1);
 			await saveCustomModels(customs);
 
-			// 清理上传目录
 			const uploadTarget = path.join(uploadsDir, key);
 			if (existsSync(uploadTarget)) {
 				try {
@@ -589,7 +563,6 @@ export default {
 			res.json({ ok: true });
 		});
 
-		// ── 2. 注册 AI 操控工具 (Agent Tools) ────────────────────────
 		const untools = [];
 
 		if (typeof host.registerAgentTool === "function") {
@@ -788,7 +761,6 @@ export default {
 			);
 		}
 
-		// ── 2.5 注册内联状态标记（Inline Marker：[[live2d:thought:...]]）──
 		const unmarkers = [];
 		if (typeof host.registerMarker === "function") {
 			const off = host.registerMarker({
@@ -842,7 +814,6 @@ export default {
 			if (typeof off === "function") unmarkers.push(off);
 		}
 
-		// ── 3. 伴随 AI 会话运行事件的情绪联动 ──────────────────────
 		const unevents = [];
 		if (typeof host.onRunEvent === "function") {
 			const off = host.onRunEvent((event) => {
@@ -857,7 +828,6 @@ export default {
 			unevents.push(off);
 		}
 
-		// ── 4. 监听宿主插件配置变更 ──────────────────────────────────
 		const unset = [];
 		if (typeof host.onSettingsChanged === "function") {
 			const off = host.onSettingsChanged((settings) => {

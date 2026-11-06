@@ -2,7 +2,6 @@ import { groupDeviceToken, type GroupDevice } from "./device-group-messages";
 
 export type GroupMemberReference = { start: number; end: number; member: GroupDevice; conversationId?: string };
 
-/** One continued conversation per message; never silently discard another explicit target. */
 export function groupReferenceDestination(refs: GroupMemberReference[]): string | undefined {
 	const continued = refs.filter((ref) => ref.conversationId);
 	if (!continued.length) return undefined;
@@ -14,7 +13,6 @@ export function groupReferenceDestination(refs: GroupMemberReference[]): string 
 	return destination;
 }
 
-/** Preserve identity only for untouched mentions across a textarea edit. */
 export function updateGroupMemberReferences(
 	before: string,
 	after: string,
@@ -70,7 +68,6 @@ type Sink = (member: GroupDevice) => void;
 const pending = new Map<string, GroupDevice[]>();
 const sinks = new Map<string, Sink>();
 
-/** Keep references scoped to their group while navigation mounts its composer. */
 export function referenceGroupMember(roomId: string, member: GroupDevice): void {
 	const sink = sinks.get(roomId);
 	if (sink) sink(member);

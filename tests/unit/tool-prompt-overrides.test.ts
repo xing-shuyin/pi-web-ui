@@ -1,7 +1,3 @@
-/**
- * tool-prompt-overrides 单测：逐工具文案覆盖的归一化 + 会话打补丁（幂等/可复原）。
- * 零 token、零端口。会话用结构子集替身（不 import SDK）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	TOOL_PROMPT_DESCRIPTION_CAP,
@@ -28,7 +24,6 @@ it("migrates legacy terminal overrides deterministically before filtering known 
 	).toEqual({ terminal: { description: "merged" } });
 });
 
-/** 造一个 SDK 会话结构子集：注册表 + 出厂定义 + snippet/guidelines 表。 */
 function fakeSession() {
 	const registry = new Map<string, { name?: string; description?: string }>([
 		["bash", { name: "bash", description: "default bash" }],
@@ -139,7 +134,6 @@ describe("applyToolPromptOverrides", () => {
 		expect(registry.get("bash")!.description).toBe("custom bash");
 		expect(snippets.get("bash")).toBe("run it");
 		expect(guidelines.get("bash")).toEqual(["gg"]);
-		// 未覆盖的工具原样。
 		expect(registry.get("read")!.description).toBe("default read");
 		expect(snippets.get("read")).toBe("read files");
 	});
@@ -150,7 +144,6 @@ describe("applyToolPromptOverrides", () => {
 		applyToolPromptOverrides(session, { bash: { description: "custom2", promptSnippet: "s2" } });
 		expect(registry.get("bash")!.description).toBe("custom2");
 		expect(snippets.get("bash")).toBe("s2");
-		// 清空：回到默认，不层层叠字。
 		applyToolPromptOverrides(session, {});
 		expect(registry.get("bash")!.description).toBe("default bash");
 		expect(snippets.get("bash")).toBe("run shell");

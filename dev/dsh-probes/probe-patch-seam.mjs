@@ -1,12 +1,9 @@
-// Temp probe: user patch seam (<dataDir>/dsh-patches) — verify a user patch
-// overriding session persistence root actually redirects session JSONL.
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const HERE = resolve(import.meta.dirname ?? ".");
-// 探针住在 dev/dsh-probes/ 之后，DSH runtime 树仍在 server/dsh/ 下。
 const DSH_DIR = resolve(HERE, "..", "..", "server", "dsh");
 const KEY = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "auth.json"), "utf8")).deepseek.key;
 const JSONRPC_ENTRY = resolve(
@@ -126,14 +123,11 @@ try {
 		sessionId,
 		contentBlocks: [{ type: "text", text: "reply with OK only" }],
 	});
-	// Wait for the turn to complete (sessions land on disk at turn end).
 	for (let i = 0; i < 60 && !turnDone; i++) {
 		await new Promise((r) => setTimeout(r, 1000));
 	}
 	await new Promise((r) => setTimeout(r, 2000));
 	await req("shutdown", {});
-	// The marker dir must contain the persisted session JSONL if the user
-	// patch layer is actually applied (root was redirected by patch 02).
 	const { readdirSync, existsSync } = await import("node:fs");
 	const walk = (dir) => {
 		let found = [];

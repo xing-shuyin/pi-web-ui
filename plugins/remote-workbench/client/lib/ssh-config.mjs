@@ -1,4 +1,3 @@
-/** OpenSSH inventory discovery. Unsupported connection semantics are reported, never silently dropped. */
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +8,6 @@ export function expandHome(value) {
 	return /^~[/\\]/.test(s) ? path.join(os.homedir(), s.slice(2)) : s;
 }
 
-// Quotes, escaped whitespace and comments follow ssh_config token boundaries.
 export function tokenizeConfig(line) {
 	const tokens = [];
 	let token = "",
@@ -135,7 +133,6 @@ export function parseSshConfig(text, { username = os.userInfo().username } = {})
 	});
 }
 
-/** Expand local Include files in lexical order, with bounded recursion and bytes. */
 export async function scanLocalSshConfig(configPath = path.join(os.homedir(), ".ssh", "config")) {
 	const warnings = [];
 	const stack = new Set();

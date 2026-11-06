@@ -159,7 +159,7 @@ describe("remote workbench command runtime", () => {
 		const pending = f.commands.run({ host: "a", cmd: "sleep", timeout: 1 });
 		await settle();
 		vi.useFakeTimers();
-		/* timer was armed with real timers */ vi.useRealTimers();
+		vi.useRealTimers();
 		const r = await pending;
 		expect(r.timedOut).toBe(true);
 		expect(s.close).toHaveBeenCalled();

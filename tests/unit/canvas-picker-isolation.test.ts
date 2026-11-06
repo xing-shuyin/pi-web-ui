@@ -54,7 +54,6 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			root!.render(createElement(TestWrapper));
 		});
 
-		// DirectoryBrowser 挂在 body 的 portal 上
 		const closeBtn = document.body.querySelector(".cwd-close") as HTMLButtonElement;
 		const backdrop = document.body.querySelector(".status-cwd-backdrop") as HTMLDivElement;
 		const pickerPanel = document.body.querySelector(".cwd-picker") as HTMLDivElement;
@@ -63,7 +62,6 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 		expect(backdrop).toBeTruthy();
 		expect(pickerPanel).toBeTruthy();
 
-		// 测试 1：在关闭按钮上按下鼠标并松开（触发 pointerdown 与 click），父级画布不能收到 pointerdown
 		act(() => {
 			closeBtn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 			closeBtn.click();
@@ -71,13 +69,11 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 		expect(parentPointerDown).not.toHaveBeenCalled();
 		expect(onClose).toHaveBeenCalledTimes(1);
 
-		// 测试 2：在面板内部滚动滚轮，父级画布不应收到 wheel 事件
 		act(() => {
 			pickerPanel.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 100 }));
 		});
 		expect(parentWheel).not.toHaveBeenCalled();
 
-		// 测试 3：点击遮罩，父级画布不应收到 pointerdown，且正确触发关闭
 		act(() => {
 			backdrop.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 			backdrop.click();
@@ -120,13 +116,11 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 		const menuEl = document.body.querySelector(".dd-menu") as HTMLDivElement;
 		expect(menuEl).toBeTruthy();
 
-		// 在下拉菜单内按下鼠标（选模型或点搜索框）
 		act(() => {
 			menuEl.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
 		});
 		expect(parentPointerDown).not.toHaveBeenCalled();
 
-		// 在下拉菜单内滚动滚轮
 		act(() => {
 			menuEl.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 50 }));
 		});
@@ -166,14 +160,12 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			root!.render(createElement(TestPicker));
 		});
 
-		// 1. 点击展开新建输入行
 		const newBtn = document.body.querySelector(".cwd-toolbar .tool-new") as HTMLButtonElement;
 		expect(newBtn).toBeTruthy();
 		act(() => {
 			newBtn.click();
 		});
 
-		// 2. 找到输入框并输入项目名称
 		const input = document.body.querySelector(".cwd-newrow input") as HTMLInputElement;
 		expect(input).toBeTruthy();
 		act(() => {
@@ -182,14 +174,12 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			input.dispatchEvent(new Event("input", { bubbles: true }));
 		});
 
-		// 3. 点击“创建并打开”按钮
 		const createBtn = document.body.querySelector(".cwd-newrow .primary") as HTMLButtonElement;
 		expect(createBtn).toBeTruthy();
 		act(() => {
 			createBtn.click();
 		});
 
-		// 4. 应自动通过 appSend 发送 make_dir，并调用 onSelectDirectory
 		expect(sentMessages).toEqual([
 			{
 				type: "make_dir",
@@ -278,14 +268,12 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 
 		const newBtn = document.body.querySelector(".cwd-toolbar .tool-new") as HTMLButtonElement;
 		expect(newBtn).toBeTruthy();
-		// 不可用态走 aria-disabled（保留悬浮提示解释原因，而非原生 disabled 直接吞掉 hover）
 		expect(newBtn.getAttribute("aria-disabled")).toBe("true");
 		act(() => {
 			newBtn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 		});
 		const bubble = document.body.querySelector(".set-tip-bubble.open");
 		expect(bubble).toBeTruthy();
-		// 点击无效果：不会展开新建输入行
 		act(() => {
 			newBtn.click();
 		});
@@ -317,7 +305,6 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			root!.render(createElement(TestCanvas));
 		});
 
-		// Fresh Studio is empty until its correlated server load; explicitly add the node under test.
 		const addFirst = Array.from(document.body.querySelectorAll("button")).find((b) =>
 			b.textContent?.includes(en["canvas.studio.addFirstTeammate"]),
 		);
@@ -325,27 +312,22 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 		act(() => {
 			addFirst!.click();
 		});
-		// 找到一个节点卡片上的浏览图标按钮（UniversalPathPicker，纯图标）
 		const browseBtns = document.body.querySelectorAll(".universal-path-browse-btn");
 		expect(browseBtns.length).toBeGreaterThan(0);
 
-		// 点击第一个节点的浏览按钮，调起 ProjectPicker
 		act(() => {
 			(browseBtns[0] as HTMLButtonElement).click();
 		});
 
-		// 确认 ProjectPicker 已挂在 DOM 上
 		const picker = document.body.querySelector(".project-picker");
 		expect(picker).toBeTruthy();
 
-		// 点击展开新建项目行（工具栏 ➕ 图标）
 		const newBtn = document.body.querySelector(".cwd-toolbar .tool-new") as HTMLButtonElement;
 		expect(newBtn).toBeTruthy();
 		act(() => {
 			newBtn.click();
 		});
 
-		// 输入项目名称 "c"
 		const input = document.body.querySelector(".cwd-newrow input") as HTMLInputElement;
 		expect(input).toBeTruthy();
 		act(() => {
@@ -354,14 +336,12 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			input.dispatchEvent(new Event("input", { bubbles: true }));
 		});
 
-		// 点击“创建并打开”
 		const createBtn = document.body.querySelector(".cwd-newrow .primary") as HTMLButtonElement;
 		expect(createBtn).toBeTruthy();
 		act(() => {
 			createBtn.click();
 		});
 
-		// 验证：必须向服务端发送 make_dir，路径为 E:/t/c
 		const makeDirMsg = sentMessages.find((m) => m.type === "make_dir");
 		expect(makeDirMsg).toBeTruthy();
 		expect(makeDirMsg.path).toBe("E:/t/c");
@@ -394,12 +374,9 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			});
 
 			const jumps = document.body.querySelectorAll(".cwd-toolbar .cwd-jump");
-			// 工具栏共 7 个纯图标按钮：此电脑 / 用户 / 桌面 / 上级 / 加根 / 新建 / 选定
 			expect(jumps.length).toBe(7);
-			// 纯图标：按钮内无文字
 			expect((jumps[1] as HTMLButtonElement).textContent).toBe("");
 
-			// 点击“用户目录”跳转：输入框应切到 homeDir（防抖 complete_path 不在此断言）
 			act(() => {
 				(jumps[1] as HTMLButtonElement).click();
 			});
@@ -408,7 +385,6 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			expect(input.value).toBe("C:/Users/test");
 			expect((jumps[1] as HTMLButtonElement).classList.contains("active")).toBe(true);
 
-			// 悬浮即时气泡：同步弹出，文案带目标路径（无原生 title 延迟）
 			act(() => {
 				(jumps[1] as HTMLButtonElement).dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 			});
@@ -416,7 +392,6 @@ describe("Canvas & Picker 事件隔离与关闭防护", () => {
 			expect(bubble).toBeTruthy();
 			expect(bubble!.textContent).toContain("C:/Users/test");
 
-			// ".." 上级行：从用户目录点 .. 回到上层
 			const upRow = Array.from(document.body.querySelectorAll(".cwd-list .cwd-item .cwd-name")).find(
 				(el) => el.textContent === "..",
 			);

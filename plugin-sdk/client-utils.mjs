@@ -1,11 +1,4 @@
 /**
- * client-utils.mjs — pi-web-ui 插件客户端常用工具层。
- *
- * 供插件在 client/entry.mjs 或网页视图中复用，消除 HTML 转义与基础接口漂移面。
- * 纯 ESM，零依赖。
- */
-
-/**
  * 安全 HTML 实体转义。
  * @param {unknown} s 待转义内容
  * @returns {string} 转义后的 HTML 字符串

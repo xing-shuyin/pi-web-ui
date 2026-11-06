@@ -1,20 +1,6 @@
-/**
- * message-entry-resolver — 渲染态消息 ID 与 SessionManager 底层 Entry 节点的映射解析器。
- *
- * 负责：
- * - resolveUserMessageEntryId: 将前端渲染的消息 ID（u-<timestamp>-<seq>）映射回 SessionEntry ID
- * - resolveConversationMessageEntry: 将任何前端消息 ID（u-*, a-*, t-*, b-*, c-* 或原始 entry id）
- *   解析回当前分支上下文中的原始 SessionEntry。
- *
- * 从 agent-service.ts 抽出为独立模块。
- */
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { findEntryByUiId, type UiIdEntryLike, type AgentMessage } from "./serialize.js";
 
-/**
- * 将前端渲染的用户消息 ID（u-<timestamp>-<seq>）解析为底层 SessionEntry 的唯一 ID。
- * seq 用于解决同一毫秒内发出的多条用户消息（例如附件 aside 消息）。
- */
 export function resolveUserMessageEntryId(
 	contextEntries: Iterable<{ type?: string; message?: unknown; id: string }>,
 	messageId: string,
@@ -35,10 +21,6 @@ export function resolveUserMessageEntryId(
 	return null;
 }
 
-/**
- * 将任意渲染的消息 ID 解析为当前会话分支的 SessionEntry 节点。
- * 优先在上下文条目中比对 UI ID，未命中时通过 fallback 查整棵历史树。
- */
 export function resolveConversationMessageEntry(
 	contextEntries: SessionEntry[],
 	messageId: string,

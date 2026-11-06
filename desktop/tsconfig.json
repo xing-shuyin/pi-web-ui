@@ -3,10 +3,11 @@
 	"compilerOptions": {
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
-		"outDir": "../dist/desktop",
-		"rootDir": ".",
+		"outDir": "../dist",
+		"rootDir": "..",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"sourceMap": false,
 		"types": ["node", "electron"]
 	},
-	"include": ["main.ts", "preload.cts", "external-url.ts", "startup.ts", "portable.ts"]
+	"include": ["*.ts", "*.cts", "../browser/**/*.ts", "../browser/**/*.cts"]
 }

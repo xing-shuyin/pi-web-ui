@@ -1,4 +1,3 @@
-// MVP UI：书架 / 搜索 / 书源 / 阅读。四块，对应 Android 四个核心链路。
 import type { BookSource, Chapter, SearchBook } from './types'
 import { discoverBooks, getBookInfo, getChapterList, getContent, searchBooks } from './core/webBook'
 import { fetchText } from './core/request'
@@ -21,7 +20,6 @@ import {
 
 ;(window as unknown as { __ruleErrors: typeof ruleErrors }).__ruleErrors = ruleErrors
 
-/** 规则不兼容提示（数量 + 去控制台看 [规则失败] 行） */
 function ruleHint(): string {
   if (!ruleErrors.length) return ''
   const last = ruleErrors[ruleErrors.length - 1]!
@@ -43,7 +41,6 @@ function showTab(name: string) {
     const el = document.getElementById(`tab-${t}`)
     if (el) el.hidden = t !== name
   })
-  // 切页时顺手看一眼数据目录有没有被外部改过（AI 修完源、切回来就该看到新结果）
   void autoReloadIfStoreChanged()
 }
 
@@ -51,8 +48,6 @@ document.querySelectorAll('nav button').forEach((b) => {
   b.addEventListener('click', () => showTab((b as HTMLElement).dataset.tab!))
 })
 
-// ---------- 书源 ----------
-/** 书源列表的搜索词 / 「只看置顶」——模块级，重渲染不丢 */
 let srcSearch = ''
 let srcOnlyPinned = false
 let srcSearchTimer: number | null = null
@@ -73,12 +68,10 @@ function renderSources() {
     if (!q) return true
     return `${s.bookSourceName ?? ''} ${s.bookSourceUrl ?? ''} ${s.bookSourceGroup ?? ''}`.toLowerCase().includes(q)
   })
-  // 置顶的源排最前（其余保持文件里的顺序：稳定排序）
   if (pinnedSet.size) {
     const rank = (s: BookSource) => (pinnedSet.has(s.bookSourceUrl) ? 0 : 1)
     list.sort((a, b) => rank(a) - rank(b))
   }
-  // 统计只算“还在的源”（删过的源即便有残留记录也不算，否则顶栏数字不动）
   let dead = 0
   let ok = 0
   let suspect = 0
@@ -141,7 +134,6 @@ function renderSources() {
       }).join('') || '<p>暂无（可能被搜索词/置顶筛选挡掉了，或全部被隐藏：清空搜索、取消「只看置顶」与「隐藏废源」试试）。</p>'}
     </div>`
   const msg = $('#src-msg') as HTMLElement
-  // 「AI 新建书源」：只给一个网站链接，搜索/详情/目录/正文规则都交给 AI 自己抓页分析
   const aiUrl = $('#src-ai-url') as HTMLInputElement | null
   const askAiNewSource = () => {
     const raw = (aiUrl?.value ?? '').trim()
@@ -158,7 +150,6 @@ function renderSources() {
   aiUrl?.addEventListener('keydown', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') askAiNewSource()
   })
-  // 搜索：输入防抖重渲染（重建 innerHTML 会丢焦点，重渲染后把光标放回去）
   const searchEl = $('#src-search') as HTMLInputElement | null
   searchEl?.addEventListener('input', () => {
     const value = searchEl.value
@@ -173,7 +164,6 @@ function renderSources() {
       try {
         again?.setSelectionRange(caret, caret)
       } catch {
-        /* 类型不是 text 时忽略 */
       }
     }, 120)
   })
@@ -237,11 +227,11 @@ function renderSources() {
     let books = 0
     let removed = 0
     for (const u of deadUrls) {
-      if (!sourceStore.all().some((s) => s.bookSourceUrl === u)) continue // 已经删过的跳过
+      if (!sourceStore.all().some((s) => s.bookSourceUrl === u)) continue
       books += purgeSource(u)
       removed++
     }
-    renderAllViews() // 自动刷新：书源/搜索/检测/书架全刷（否则顶栏计数与检测页看着像没刷新）
+    renderAllViews()
     renderExplore()
     setStatus(`已删除 ${removed} 个废源${books ? `，同时从书架移出 ${books} 本` : ''}`)
   })
@@ -303,9 +293,7 @@ function renderSources() {
   })
 }
 
-// ---------- 搜索 ----------
 let lastResults: SearchBook[] = []
-/** 正在搜索（搜索中不自动重载页面数据：重渲染会把在飞的搜索结果列表打断） */
 let searching = false
 
 function renderSearch() {
@@ -356,7 +344,6 @@ async function runSearch(key: string) {
     box.innerHTML = `<span class="err">先去「书源」导入至少一个文本源</span>`
     return
   }
-  // 搜索范围：默认跳过废源；可选仅可用源 / 全部源
   const scopeMode = (document.getElementById('s-scope') as HTMLSelectElement | null)?.value ?? 'skip-dead'
   const recs = checkStore.all()
   const sources = all.filter((s) => {
@@ -385,7 +372,6 @@ async function runSearch(key: string) {
         paintResults()
         box.textContent = `已回 ${lastResults.length} 本，还剩 ${queue.length} 个源…`
       } catch {
-        /* 单源失败忽略 */
       }
     }
   })
@@ -412,7 +398,6 @@ function paintResults() {
   })
 }
 
-// ---------- 详情/目录 ----------
 let cur: SearchBook | null = null
 let chapters: Chapter[] = []
 
@@ -462,7 +447,6 @@ async function openDetail(b: SearchBook) {
   }
 }
 
-// ---------- 阅读 ----------
 let curIdx = 0
 
 async function renderReader(idx: number) {
@@ -473,8 +457,6 @@ async function renderReader(idx: number) {
   }
   curIdx = idx
   const total = chapters.length
-  // 章末导航（正文读到底直接翻章，不用滚回顶部）与顶栏同名按钮同规则：
-  // 走不通的方向直接置灰 + 末章写「已是最后一章」，不再点了没反应。
   const nav = chapterNavState(idx, total, cur.name)
   const hasPrev = nav.canPrev
   const hasNext = nav.canNext
@@ -514,17 +496,13 @@ async function renderReader(idx: number) {
   }
   $('#r-prev')?.addEventListener('click', goPrev)
   $('#r-next')?.addEventListener('click', goNext)
-  // 章末那一条：同一个动作（换章后 renderReader 会把页面滚回顶部）
   $('#r-prev2')?.addEventListener('click', goPrev)
   $('#r-next2')?.addEventListener('click', goNext)
   $('#r-toc2')?.addEventListener('click', () => {
-    toc.hidden = false // 目录在顶栏下方，展开后滚上去就能选章
+    toc.hidden = false
     window.scrollTo({ top: 0, behavior: 'smooth' })
   })
-  // 重读数据目录 + 按新规则重拉本章（AI 修完源不用去别的页面找刷新按钮）
   $('#r-reload')?.addEventListener('click', () => void refreshFromStore('刷新'))
-  // 阅读时随时删源 / 移出书架（“这本书打不开时就删掉这个源”）
-  // 删源就删书（书架上该源的书一并移出），并跳到「发现」换别的源重开
   $('#r-del-src')?.addEventListener('click', () => {
     const url = cur!.bookSourceUrl
     const src = sourceStore.all().find((s) => s.bookSourceUrl === url)
@@ -572,7 +550,6 @@ async function renderReader(idx: number) {
   }
 }
 
-// ---------- 书架 ----------
 function renderShelf() {
   const el = $('#tab-shelf')
   const list = shelfStore.all()
@@ -625,7 +602,6 @@ function renderShelf() {
   })
 }
 
-// ---------- 检测 ----------
 
 let checkResults: CheckResult[] = []
 let checking = false
@@ -686,7 +662,6 @@ function renderCheck() {
   })
   $('#c-refresh')?.addEventListener('click', () => void refreshFromStore('刷新数据'))
   $('#c-filter')?.addEventListener('change', paintCheck)
-  // 已有历史结果时直接展示
   if (!checkResults.length && Object.keys(cached).length) {
     const hist: CheckResult[] = []
     for (const s of sources) {
@@ -816,12 +791,10 @@ function paintCheck() {
   })
 }
 
-// ---------- 自动检测废源 ----------
 
 let scanning = false
 let scanStop = false
 
-/** 批量检测并标记废源；onlyUnchecked=true 时只测没检测过的源；mode: search=快、full=含可读性 */
 async function scanSources(onlyUnchecked = false, mode: CheckMode = 'search'): Promise<void> {
   if (scanning) return
   const all = sourceStore.all()
@@ -851,7 +824,6 @@ async function scanSources(onlyUnchecked = false, mode: CheckMode = 'search'): P
       const s = queue.shift()!
       let r: CheckResult
       try {
-        // 快速=连通+搜索（看站点死活）；完整=再跟详情/目录/正文（看能不能真读书）
         r = await checkSource(s, { key: '剑', mode })
       } catch {
         r = {
@@ -895,16 +867,13 @@ async function scanSources(onlyUnchecked = false, mode: CheckMode = 'search'): P
   paintCheck()
 }
 
-// ---------- 阅读失败自动记废源 ----------
 
-/** 这些原因属于源/站点层面失效（与具体书无关），直接判废源 */
 const DEAD_READ_REASON = /没有正文规则|不是正文而是站点提示|正文需要 WebJS|正文页异常|正文规则未解析|没有搜索规则|人机验证|网络不可达/
 
 function markDeadOnRead(reason: string): boolean {
   return DEAD_READ_REASON.test(reason)
 }
 
-/** 影响「能不能读」的字段指纹：只有这些变了，旧的废源/可疑结论才算过期 */
 function readabilityFingerprint(s: BookSource): string {
   return JSON.stringify({
     searchUrl: s.searchUrl,
@@ -917,13 +886,10 @@ function readabilityFingerprint(s: BookSource): string {
   })
 }
 
-/** 读不到的源：直接记为废源（隐藏+搜索跳过），并提示 */
 async function markUnreadable(sourceUrl: string, reason: string) {
   const src = sourceStore.all().find((s) => s.bookSourceUrl === sourceUrl)
   if (!src) return
   if (!DEAD_READ_REASON.test(reason)) return
-  // 磁盘上的规则可能已经是新的（AI 刚修完），页面内存还是旧的：
-  // 用旧规则失败不算数——直接重读新规则让用户重试，不记废源。
   try {
     const disk = await storeGet<BookSource[]>('sources')
     const fresh = Array.isArray(disk) ? disk.find((s) => s.bookSourceUrl === sourceUrl) : undefined
@@ -935,7 +901,6 @@ async function markUnreadable(sourceUrl: string, reason: string) {
       return
     }
   } catch {
-    /* 读不到磁盘就按老路走 */
   }
   const prev = checkStore.get(sourceUrl)
   if (prev?.kind === 'dead' && prev.reason === reason) return
@@ -953,7 +918,6 @@ async function markUnreadable(sourceUrl: string, reason: string) {
   )
 }
 
-// ---------- 发现 ----------
 
 let exSourceUrl = ''
 let exKinds: ExploreKind[] = []
@@ -961,14 +925,11 @@ let exKind: ExploreKind | null = null
 let exResults: SearchBook[] = []
 let exPage = 1
 let exLoading = false
-/** #ex-list 里现在显示的是「分类浏览」还是「关键词搜索」 */
 let exListMode: 'kind' | 'search' = 'kind'
 let exSearchKey = ''
 let exSearchInput = ''
-/** 发现页书源下拉的筛选词——模块级，重渲染不丢 */
 let exSourceFilter = ''
 
-/** 有发现规则的书源（默认为可用源） */
 function exploreSources(): BookSource[] {
   const recs = checkStore.all()
   const withExplore = sourceStore.all().filter((s) => (s.exploreUrl ?? '').trim() !== '')
@@ -976,13 +937,11 @@ function exploreSources(): BookSource[] {
   return usable.length ? usable : withExplore
 }
 
-/** 发现页书源下拉是否命中筛选词（名称 / 地址 / 分组） */
 function exSourceMatches(s: BookSource, q: string): boolean {
   if (!q) return true
   return `${s.bookSourceName ?? ''} ${s.bookSourceUrl ?? ''} ${s.bookSourceGroup ?? ''}`.toLowerCase().includes(q)
 }
 
-/** 组装发现页书源下拉的 options（置顶组在前；当前选中的源即使被筛掉也保留，避免选择丢失） */
 function buildExploreSourceOptions(
   srcs: BookSource[],
   pinnedSet: Set<string>,
@@ -996,7 +955,6 @@ function buildExploreSourceOptions(
     `<option value="${esc(s.bookSourceUrl)}" ${s.bookSourceUrl === currentUrl ? 'selected' : ''}>${star ? '⭐ ' : ''}${esc(s.bookSourceName)}</option>`
   let shown = pinned.length + others.length
   let extra = ''
-  // 当前选中的源被筛掉了：单独补一行，保证 select 的值不丢
   if (q && !pinned.some((s) => s.bookSourceUrl === currentUrl) && !others.some((s) => s.bookSourceUrl === currentUrl)) {
     const cur = srcs.find((s) => s.bookSourceUrl === currentUrl)
     if (cur) {
@@ -1012,7 +970,6 @@ function buildExploreSourceOptions(
   return { html, shown, total: srcs.length }
 }
 
-/** 只重绘书源下拉的选项 + 计数（筛选输入时调这个，不整页重渲染，否则输入框丢焦点） */
 function paintExploreSourceOptions(): void {
   const sel = document.getElementById('ex-source') as HTMLSelectElement | null
   const count = document.getElementById('ex-source-count')
@@ -1020,11 +977,9 @@ function paintExploreSourceOptions(): void {
   const srcs = exploreSources()
   const { html, shown, total } = buildExploreSourceOptions(srcs, prefsStore.pinnedSet(), exSourceUrl, exSourceFilter)
   sel.innerHTML = html || '<option value="" disabled>无匹配（Esc 清空筛选）</option>'
-  // 筛选后当前选中项若还在列表里，保持选中；不在则上面已补“当前”组
   try {
     sel.value = exSourceUrl
   } catch {
-    /* 无匹配时忽略 */
   }
   if (count) count.textContent = `${shown}/${total}`
 }
@@ -1040,7 +995,6 @@ function renderExplore() {
     exSourceUrl = srcs[0]!.bookSourceUrl
   }
   const cur = srcs.find((s) => s.bookSourceUrl === exSourceUrl)!
-  // 收藏（置顶）的源：下拉里单独一组放最前，「⭐ 常用」一行做成一键切换（不用每次下拉找）
   const pinnedSet = prefsStore.pinnedSet()
   const options = buildExploreSourceOptions(srcs, pinnedSet, exSourceUrl, exSourceFilter)
   const pinnedFull = srcs.filter((s) => pinnedSet.has(s.bookSourceUrl))
@@ -1076,13 +1030,11 @@ function renderExplore() {
     </div>
     <div class="card" id="ex-list"></div>`
 
-  // ⭐ 收藏当前源
   $('#ex-pin')?.addEventListener('click', () => {
     const now = prefsStore.togglePin(exSourceUrl)
     setStatus(now ? `已收藏「${cur.bookSourceName}」（下拉与「⭐ 常用」里排最前）` : `已取消收藏「${cur.bookSourceName}」`)
     renderExplore()
   })
-  // ⭐ 常用：一键切源
   el.querySelectorAll('[data-ex-pick]').forEach((b) => {
     b.addEventListener('click', () => {
       const url = (b as HTMLElement).dataset.exPick!
@@ -1096,7 +1048,6 @@ function renderExplore() {
       void loadKinds()
     })
   })
-  // 发现页直接搜这个源
   const exSearchEl = $('#ex-search') as HTMLInputElement | null
   const runExploreSearch = () => {
     const key = (exSearchEl?.value ?? '').trim()
@@ -1116,7 +1067,6 @@ function renderExplore() {
     renderExplore()
     void loadKinds()
   })
-  // 书源下拉筛选：只重绘 select 选项（不整页重渲染，输入框不丢焦点）
   const exSourceFilterEl = $('#ex-source-filter') as HTMLInputElement | null
   exSourceFilterEl?.addEventListener('input', () => {
     exSourceFilter = exSourceFilterEl.value
@@ -1129,7 +1079,6 @@ function renderExplore() {
       exSourceFilterEl.value = ''
       paintExploreSourceOptions()
     } else if (ke.key === 'Enter') {
-      // 回车：选中下拉里第一个可见选项并切源
       const sel = document.getElementById('ex-source') as HTMLSelectElement | null
       const first = sel?.querySelector('option:not([disabled])') as HTMLOptionElement | null
       if (first && first.value && first.value !== exSourceUrl) {
@@ -1207,12 +1156,10 @@ function paintKinds() {
       const t = (k.type ?? 'url').toLowerCase()
       const isUrl = t === 'url'
       if (isUrl) return `<button class="ghost" data-kind="${i}">${esc(k.title || '未命名')}</button>`
-      // 筛选控件：text/select/toggle/button
       if (t === 'text') {
         const v = String(info[k.title] ?? k.default ?? '')
         return `<label class="meta">${esc(k.title)} <input data-input="${i}" value="${esc(v)}" style="width:90px" /></label>`
       }
-      // select / toggle：点一下在 chars 里轮换
       const chars = (k.chars ?? []).filter((x): x is string => !!x)
       const cur = String(info[k.title] ?? k.default ?? chars[0] ?? '')
       return `<button class="ghost" data-cycle="${i}">${esc(k.title)}：${esc(cur)}</button>`
@@ -1233,14 +1180,12 @@ function paintKinds() {
       const idx = chars.indexOf(cur)
       const next = chars.length ? chars[(idx + 1) % chars.length]! : cur
       void info.put(k.title, next)
-      // 有 action 的按原版语义执行 JS（出错不影响使用）
       if (k.action) {
         const src = sourceStore.all().find((s) => s.bookSourceUrl === exSourceUrl)
         if (src) {
           try {
             evalJsRule(String(k.action), { baseUrl: exSourceUrl, source: src, infoMap: info }, getScope(exSourceUrl))
           } catch {
-            /* ignore */
           }
         }
       }
@@ -1318,7 +1263,6 @@ async function openKind(kind: ExploreKind) {
   }
 }
 
-/** 发现分类无结果且有规则失败 → 记可疑（便于发现某源的发现规则坏了） */
 function markIfUnusable(sourceUrl: string, kind: ExploreKind, count: number) {
   if (count > 0) return
   const used = ruleErrors.length
@@ -1336,7 +1280,6 @@ function markIfUnusable(sourceUrl: string, kind: ExploreKind, count: number) {
   })
 }
 
-/** 发现页直接搜当前源（不用切到「搜索」页）：结果就列在下面同一个列表里 */
 async function searchInExploreSource(key: string) {
   const list = $('#ex-list') as HTMLElement | null
   if (!key) {
@@ -1362,7 +1305,6 @@ async function searchInExploreSource(key: string) {
       found.length ? `搜索「${key}」：${found.length} 本（${src.bookSourceName}）` : `搜索「${key}」无结果（${src.bookSourceName}）`,
     )
     if (!found.length && list) {
-      // 搜索无结果往往是规则问题：给一条直达 AI 的路
       list.insertAdjacentHTML(
         'beforeend',
         `<div class="row" style="margin-top:8px">${aiFixButton({ scene: 'search', sourceUrl: src.bookSourceUrl, sourceName: src.bookSourceName, url: src.searchUrl, error: `搜索「${key}」无结果（未报错但没解析出书）` })}</div>`,
@@ -1431,20 +1373,14 @@ function paintExploreList() {
   $('#ex-next')?.addEventListener('click', () => void nextExplorePage())
 }
 
-// ---------- 删除书源（发现/阅读出错时随手删） ----------
 
-/**
- * 摘掉一个书源的全部痕迹：书源本体 + 该源的发现缓存 + 该源在书架上的书（“删源就删书”）。
- * 不负责渲染/提示，调用方自行 render；返回移出的书本数。
- */
 function purgeSource(url: string): number {
   sourceStore.remove(url)
-  checkStore.removeBySource(url) // 检测记录一并清：否则顶栏「废源 N」/检测页还挂着已删源
+  checkStore.removeBySource(url)
   clearExploreKindsCache(url)
   return shelfStore.removeBySource(url)
 }
 
-/** 删除一个书源（连同其检测记录/发现缓存/书架上的书），并刷新各页面 */
 function removeSource(url: string, opts: { confirmText?: string; refreshExplore?: boolean } = {}): boolean {
   const src = sourceStore.all().find((s) => s.bookSourceUrl === url)
   if (!src) return false
@@ -1460,7 +1396,6 @@ function removeSource(url: string, opts: { confirmText?: string; refreshExplore?
   return true
 }
 
-/** 删源/导入/检测这类改动后，把受影响的页一次全渲染（自动刷新，不靠用户手动 F5） */
 function renderAllViews() {
   renderSources()
   renderSearch()
@@ -1468,24 +1403,12 @@ function renderAllViews() {
   renderShelf()
 }
 
-/**
- * 手动刷新（兜底）：**从数据目录文件重读全部数据**再重渲染。
- * 用途：AI/工具直接改了 `sources.json`（或别处改了文件）后，页面内存镜像是旧的，
- * 自动刷新只能刷界面、刷不回文件内容；这时点一下「刷新」即可同步。
- *
- * 阅读页额外处理两件事：
- *   1) `ruleToc` 被改过 → 旧章节表作废，重拉目录（不然新目录规则永远用不上）；
- *   2) 书源已被删 → 清掉阅读页，不停在旧正文上。
- * 最后重调 renderReader → 会用新规则重拉当前章正文。
- */
 async function refreshFromStore(reason = '刷新', opts: { quiet?: boolean } = {}): Promise<string> {
   const srcBefore = cur ? sourceStore.all().find((s) => s.bookSourceUrl === cur!.bookSourceUrl) : undefined
   const tocBefore = JSON.stringify(srcBefore?.ruleToc ?? null)
   const idxBefore = curIdx
-  // 重读前记下各源「能不能读」指纹：AI 改过规则的源，旧的废源/可疑结论自动作废（见下）
   const fpBefore = new Map(sourceStore.all().map((s) => [s.bookSourceUrl, readabilityFingerprint(s)]))
   const mode = await hydrateFromBackend()
-  // 规则变了 → 旧结论过期：自动摘掉这些源的废源/可疑标记（AI 修完不用再手动「标回可用」）
   let unmarked = 0
   for (const s of sourceStore.all()) {
     const prev = fpBefore.get(s.bookSourceUrl)
@@ -1515,7 +1438,6 @@ async function refreshFromStore(reason = '刷新', opts: { quiet?: boolean } = {
     }
   }
   renderReader(cur ? Math.min(idxBefore, Math.max(0, chapters.length - 1)) : -1)
-  // quiet：不改状态栏（调用方自己写更贴切的提示，比如“检测到外部改动”），只把附注交回去
   if (opts.quiet) return note
   setStatus(
     `${reason}完成：书源 ${sourceStore.all().length} · 书架 ${shelfStore.all().length}${note} · 存${mode === 'browser' ? '仅内存（后端不可用！刷新会丢）' : '数据目录文件'}`,
@@ -1523,11 +1445,6 @@ async function refreshFromStore(reason = '刷新', opts: { quiet?: boolean } = {
   return note
 }
 
-/**
- * 数据目录被“外部”改过（AI 工具 / 另一个页面 / 手工编辑）→ 自动重读 + 重渲染。
- * 触发点：切页（showTab）、标签页/窗口重新可见。
- * 这时阅读页会顺带用新规则重拉当前章正文——“AI 修好了但页面还是旧的”就是这么解掉的。
- */
 let lastMetaCheck = 0
 let autoReloading = false
 async function autoReloadIfStoreChanged(): Promise<void> {
@@ -1551,14 +1468,12 @@ async function autoReloadIfStoreChanged(): Promise<void> {
   }
 }
 
-/** 删源就删书：阅读页正在看的这本也没了，清掉阅读态，避免停在已删源的旧正文上 */
 function clearReaderState() {
   cur = null
   chapters = []
   renderReader(-1)
 }
 
-/** 删源后跳回「发现」：被删的源正被查看时清掉其分类/结果缓存，避免残留；然后切页渲染 */
 function gotoExploreAfterRemove(url: string) {
   if (exSourceUrl === url) {
     exSourceUrl = ''
@@ -1576,7 +1491,6 @@ function esc(s: string): string {
   return (s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }
 
-// 启动：先同步本地文件存储（后端可用时），再渲染
 async function boot() {
   const mode = await hydrateFromBackend()
   renderSources()
@@ -1596,19 +1510,15 @@ async function boot() {
   void storageMode
 }
 
-// 存储写入降级时在状态栏说明（数据目录是唯一事实源，写入失败=只活在内存里）
 storageEvents.onDegraded = () => setStatus('存储：写入数据目录失败，数据只在内存里（刷新会丢）—— 请确认 pi-web-ui 服务在运行')
 
-// 「AI 修复源」按钮的点击代理（卡片重渲染也不用重绑）
 setAiFixStatusReporter(setStatus)
 installAiFixHandler()
 
-// 外部改了数据目录就自动重载：切回标签页 / 窗口重新获得焦点时各查一次（切页在 showTab 里查）
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) void autoReloadIfStoreChanged()
 })
 window.addEventListener('focus', () => void autoReloadIfStoreChanged())
-// 兜底轮询：不用点任何东西也能发现外部改动（隐藏时浏览器会自动降频；函数自带节流）
 setInterval(() => void autoReloadIfStoreChanged(), 15_000)
 
 void boot()

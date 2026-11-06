@@ -1,8 +1,3 @@
-/**
- * sdk-origin 单测（issue #260）：
- * 复刻「全局安装 + 自带副本」的目录布局，验证按 Node 的解析顺序列出副本、
- * 以及「被遮蔽的副本更新时给出提示」。
- */
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +7,6 @@ import { compareVersions, isBundledInUse, sdkCopies, sdkOriginNote } from "../..
 const PKG = "@earendil-works/pi-coding-agent";
 const roots: string[] = [];
 
-/** 造一个副本：<dir>/node_modules/@earendil-works/pi-coding-agent/package.json */
 function putCopy(dir: string, version: string): void {
 	const pkgDir = join(dir, "node_modules", PKG);
 	mkdirSync(pkgDir, { recursive: true });
@@ -31,8 +25,6 @@ afterEach(() => {
 
 describe("sdkCopies：按 Node 的解析顺序列出可被加载的副本", () => {
 	it("嵌套副本排在祖先副本之前（嵌套赢 = issue #260 的根因）", () => {
-		// <root>/node_modules/...            ← 全局根那份（用户升的）
-		// <root>/pi-web-ui/node_modules/...  ← pi-web-ui 自带那份（实际生效）
 		const root = makeTree();
 		putCopy(root, "0.86.1");
 		const app = join(root, "pi-web-ui");
@@ -135,7 +127,6 @@ describe("sdkCopies 全局与 PATH 探测 (issue #559, #562)", () => {
 		mkdirSync(binDir, { recursive: true });
 		putCopy(globalDir, "1.2.0");
 
-		// 在 binDir 中放置 pi 批处理/脚本，指向全局包
 		const isWin = process.platform === "win32";
 		const piCmd = join(binDir, isWin ? "pi.cmd" : "pi");
 		const targetPj = join(globalDir, "node_modules", PKG, "package.json");
@@ -145,7 +136,6 @@ describe("sdkCopies 全局与 PATH 探测 (issue #559, #562)", () => {
 			writeFileSync(piCmd, `#!/bin/sh\nexec node "${targetPj}" "$@"\n`);
 		}
 
-		// 一个独立的空项目 entry
 		const app = join(root, "app");
 		const entry = join(app, "dist", "server", "index.js");
 		mkdirSync(join(app, "dist", "server"), { recursive: true });

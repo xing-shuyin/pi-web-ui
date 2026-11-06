@@ -1,11 +1,3 @@
-/**
- * Goal wizard — live smoke test.
- *
- * Drives the collaborative target wizard over raw WebSocket: sends a raw
- * requirement, answers each dialog question (goal_ask) it pushes via
- * `dialog_response`, and verifies the refined goal gets auto-set.
- * Requires a working model (real LLM calls, small cost).
- */
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
@@ -14,7 +6,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -46,9 +37,7 @@ async function waitUp() {
 		try {
 			if (!(await portUp(PORT))) throw new Error("port not up");
 			return;
-		} catch {
-			/* retry */
-		}
+		} catch {}
 	}
 	throw new Error("no server");
 }
@@ -61,8 +50,6 @@ async function waitUp() {
 	const waiters = [];
 	ws.on("message", (d) => {
 		const m = JSON.parse(d.toString());
-		// Resolve pending waiters WITHOUT leaving the message in inbox (so it is
-		// not consumed twice). If no waiter matched, keep it in inbox for next().
 		let consumed = false;
 		for (let i = 0; i < waiters.length; i++) {
 			if (waiters[i](m)) {
@@ -106,7 +93,6 @@ async function waitUp() {
 		try {
 			msg = await next((m) => m.type === "dialog" || m.type === "goal_status" || m.type === "notice", "any", 15000);
 		} catch {
-			// inner timeout — check whether a goal was already set
 			msg = null;
 		}
 		if (!msg) {
@@ -121,7 +107,6 @@ async function waitUp() {
 			sawWizardActive = true;
 			answered += 1;
 			console.error(`[d] Q${answered} (id=${msg.id}) → ${(msg.args?.[0] || "?").toString().slice(0, 50)}`);
-			// Answer multiple-choice by picking the first option; else free text.
 			const opts = msg.args?.[0];
 			const val = Array.isArray(opts) && opts.length > 0 ? opts[0] : "都可以，你决定";
 			ws.send(JSON.stringify({ type: "dialog_response", id: msg.id, value: val }));
@@ -129,9 +114,6 @@ async function waitUp() {
 		if (msg.type === "goal_status" && msg.status.goal && !setGoalSeen) {
 			setGoalSeen = msg.status.goal;
 			console.error(`[d] goal set: ${msg.status.goal.slice(0, 60)}`);
-			// After goal set, the wizard should AUTO-KICK generation (no "开始吧").
-			// Wait a few seconds for the kick-off user message (# it's the marker
-			// text injected by startGoalWizard) to appear in a snapshot.
 			try {
 				const snap = await next(
 					(m) =>
@@ -162,16 +144,12 @@ async function waitUp() {
 	try {
 		ws.close();
 		server.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => {
 	console.error("ERR", e);
 	try {
 		server?.kill("SIGTERM");
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

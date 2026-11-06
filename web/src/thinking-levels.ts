@@ -1,15 +1,7 @@
-/**
- * 思考强度档位的前端清单与精准格式化（与 SDK 的 THINKING_LEVEL_OPTIONS 逐字一致）。
- *
- * 顶栏「模型 + 思考强度」下拉与设置面板的「子代理模板」编辑器共用同一份顺序。
- * 文案 key 约定：`thinking.<value>`（见 i18n.tsx）。
- */
 export const THINKING_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
-/** 单个档位字面量（"off" | "minimal" | … | "max"）。 */
 export type ThinkingValue = (typeof THINKING_VALUES)[number];
 
-/** 常见数值型 Token 预算（Claude / Gemini 官方标准） */
 export const PRESET_BUDGETS: Record<ThinkingValue, number | null> = {
 	off: 0,
 	minimal: 1024,
@@ -20,7 +12,6 @@ export const PRESET_BUDGETS: Record<ThinkingValue, number | null> = {
 	max: 64000,
 };
 
-/** 常见字符串档位（OpenAI o1/o3 官方标准） */
 export const PRESET_EFFORTS: Record<ThinkingValue, string | null> = {
 	off: null,
 	minimal: "low",
@@ -31,7 +22,6 @@ export const PRESET_EFFORTS: Record<ThinkingValue, string | null> = {
 	max: "high",
 };
 
-/** 常见预设模板（用于模型配置快速应用） */
 export interface ThinkingPresetProfile {
 	id: string;
 	name: string;
@@ -177,10 +167,6 @@ export const THINKING_PRESET_PROFILES: ThinkingPresetProfile[] = [
 	},
 ];
 
-/**
- * 格式化更精准的思考档位展示文案。
- * 若模型带有数字预算（如 8192 tokens），则附加 Token 数展示。
- */
 export function formatThinkingLevelText(
 	level: string,
 	baseLabel: string,
@@ -189,14 +175,12 @@ export function formatThinkingLevelText(
 ): string {
 	if (level === "off") return baseLabel;
 
-	// 若有显式映射的数值
 	if (mappedValue && /^\d+$/.test(String(mappedValue).trim())) {
 		const num = Number(mappedValue);
 		const k = num >= 1024 ? `${Math.round(num / 1024)}K` : `${num}`;
 		return `${baseLabel} (${k} tokens)`;
 	}
 
-	// 若已知是预算型模型，按默认预设标注
 	if (isTokenBudget && level in PRESET_BUDGETS) {
 		const budget = PRESET_BUDGETS[level as ThinkingValue];
 		if (budget && budget > 0) {

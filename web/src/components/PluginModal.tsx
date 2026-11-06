@@ -5,20 +5,12 @@ import { Modal } from "./Modal";
 import { useT } from "../i18n";
 
 interface PluginModalProps {
-	/** 已打开的 modal.dialog 条目（App 按 openModalId 解析，hidden 的打不开）。 */
 	entry: UiSlotEntry;
-	/** 该条目插件已加载的视图（kind="view" 用；还没加载好时为 undefined → 显示 loading）。 */
 	pluginView?: LoadedPluginView;
-	/** kind="action" 等非视图条目：点即分发（调用方决定关不关，一般是关）。 */
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 	onClose: () => void;
 }
 
-/**
- * 插件弹窗壳（`modal.dialog` 槽位的渲染层）。
- *
- * 统一接入 `<Modal>` 原语：接管 Portal、Esc 栈调度、滚动防穿透与无障碍支持。
- */
 export function PluginModal({ entry, pluginView, onUiAction, onClose }: PluginModalProps) {
 	const t = useT();
 	const label = entry.label || entry.id;

@@ -27,60 +27,37 @@ import {
 } from "../ui-layout-edit";
 
 interface IconEditorProps {
-	/** 合并引擎算好的全部槽位（含 hidden：托盘要用）。 */
 	slots: Record<UiSlotId, UiSlotEntry[]>;
-	/** 当前用户布局偏好（回应后由快照回程刷新）。 */
 	layout: UiLayoutPrefs | undefined;
-	/** 不参与编辑的 id（宿主传 HIDDEN_FROM_LAYOUT_ITEM_IDS）。 */
 	exclude?: ReadonlySet<string>;
 	onClose: () => void;
 }
 
-/** 当前落点：目标落区 + 目标段 + 插入下标（去掉被拖条目之后的序列）。 */
 interface DropTarget {
 	slot: string;
 	align?: UiAlign;
 	index: number;
 }
 
-/**
- * 图标编辑模式（从顶栏「⋯」菜单进入）：**直接拖动**图标改位置。
- *
- * 能改四件事（都写进同一份 `uiLayout` 偏好，与设置 → 界面布局页互通，见 ui-layout-edit.ts）：
- *   · 栏内前后顺序（order）
- *   · 所在段落 start/center/end（align，仅顶栏/底栏这类真分段的栏）
- *   · 所在栏（slots：顶栏 ↔ 底栏 ↔ 左右悬浮栏）
- *   · 拖进「待放回」托盘 = 隐藏（hidden）
- *
- * 拖拽为什么用 pointer 事件而不是 HTML5 DnD：DnD 在触屏上根本不触发（`dragstart` 不会来），
- * 而这套界面手机端同样要能用。pointer 事件 + `elementFromPoint` 一套代码两端通用；
- * 代价是插入位置要自己按条目矩形的中点算（见 pointToTarget）。
- */
 export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps) {
 	const t = useT();
 	const [dragId, setDragId] = useState<string | null>(null);
 	const [drop, setDrop] = useState<DropTarget | null>(null);
 	const buckets = useMemo(() => collectIconEditItems(slots, exclude), [slots, exclude]);
 
-	/* 拖拽过程中 window 监听器的闭包不会随渲染更新 —— 一切会被 handler 读到的值都走 ref。
-	   另外 pendingRef 是「乐观基线」：drop 后立刻再拖一次时，服务端快照可能还没回来，
-	   拿旧的 layout 当基线会把这中间的改动整份覆盖掉（set_settings 是全量替换 uiLayout）。 */
 	const dragRef = useRef<string | null>(null);
 	const dropRef = useRef<DropTarget | null>(null);
 	const bucketsRef = useRef(buckets);
 	const layoutRef = useRef(layout);
 	const pendingRef = useRef<UiLayoutPrefs | null>(null);
-	// 事件处理器（window 监听器）只能读 ref：在绘制后同步，不在 render 里写。
 	useLayoutEffect(() => {
 		bucketsRef.current = buckets;
 		layoutRef.current = layout;
 	});
-	// 快照回程 = 服务端已经吃下我们上一次的改动，乐观基线作废。
 	useEffect(() => {
 		pendingRef.current = null;
 	}, [layout]);
 
-	/** 指针下的落点：先在 DOM 里找落区，再按条目矩形中点算插入下标。 */
 	const pointToTarget = (x: number, y: number): DropTarget | null => {
 		const el = document.elementFromPoint(x, y) as HTMLElement | null;
 		const strip = el?.closest<HTMLElement>("[data-drop-slot]");
@@ -95,7 +72,6 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		let index = chips.length;
 		for (let i = 0; i < chips.length; i++) {
 			const r = chips[i]!.getBoundingClientRect();
-			// 换行后要按「先比行、行内比列」判，只比 x 会在第二行把落点算回第一行。
 			if (y < r.top) {
 				index = i;
 				break;
@@ -130,7 +106,6 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		appSend({ type: "set_settings", uiLayout: next });
 	};
 
-	// 拖拽期间的全局指针跟踪（只在真正按住某个条目时挂）。
 	useEffect(() => {
 		if (!dragId) return;
 		const onMove = (e: PointerEvent) => {
@@ -151,8 +126,6 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [dragId]);
 
-	// Escape 关面板。不上 window 自建监听：走 useEscapeKey（shortcut-stack）才能与其它浮层同栈，
-	// 「谁在最上面谁先吃 Esc」这套语义才成立。拖拽中吞掉这次 Esc（那一下是「放弃本次拖动」的意思更重）。
 	useEscapeKey(() => {
 		if (dragRef.current) return;
 		onClose();
@@ -181,7 +154,6 @@ export function IconEditor({ slots, layout, exclude, onClose }: IconEditorProps)
 		</button>
 	);
 
-	/** 一个落区（栏，或栏内的一个段落）。`align` 为 undefined = 不分段的栏。 */
 	const renderStrip = (slot: string, align: UiAlign | undefined, hint: string | null, entries: UiSlotEntry[]) => {
 		const active = drop?.slot === slot && (drop.align ?? null) === (align ?? null);
 		const children: ReactNode[] = entries.map(renderChip);

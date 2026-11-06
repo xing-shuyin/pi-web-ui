@@ -1,6 +1,5 @@
 import { dingJson } from "./media.mjs";
 
-/** DingTalk Stream gateway, no public inbound HTTP endpoint required. */
 export class DingTalkStream {
 	constructor({ config, onMessage, onState, log }) {
 		this.config = config;
@@ -76,7 +75,6 @@ export class DingTalkStream {
 			}
 			if (message.type !== "CALLBACK" || headers.topic !== "/v1.0/im/bot/messages/get") return;
 			const event = typeof message.data === "string" ? JSON.parse(message.data) : message.data;
-			// ACK before awaiting model/media work to prevent gateway redelivery.
 			socket.send(
 				JSON.stringify({
 					code: 200,

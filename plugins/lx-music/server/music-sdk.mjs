@@ -1,12 +1,8 @@
-/**
- * 音乐聚合 SDK —— 聚合酷我、酷狗、网易云、咪咕等多平台检索、歌词与音源解析
- */
 import https from "node:https";
 
 const DEFAULT_UA =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-/** 基础 HTTP 请求包装 */
 async function fetchJson(url, headers = {}) {
 	const res = await fetch(url, {
 		headers: {
@@ -19,7 +15,6 @@ async function fetchJson(url, headers = {}) {
 	return await res.json();
 }
 
-/** 格式化播放时长 mm:ss */
 function formatDuration(sec) {
 	const s = Math.floor(sec || 0);
 	const m = Math.floor(s / 60);
@@ -27,9 +22,6 @@ function formatDuration(sec) {
 	return `${String(m).padStart(2, "0")}:${String(rem).padStart(2, "0")}`;
 }
 
-// ========================
-// 1. 网易云音乐 (wy)
-// ========================
 export const wy = {
 	async search(keyword, page = 1, limit = 20) {
 		const offset = (page - 1) * limit;
@@ -49,7 +41,6 @@ export const wy = {
 	},
 
 	async getMusicUrl(songId) {
-		// 网易云标准公开外链
 		return `https://music.163.com/song/media/outer/url?id=${songId}.mp3`;
 	},
 
@@ -64,9 +55,9 @@ export const wy = {
 
 	async getTopList(type = "hot", limit = 30) {
 		const ids = {
-			hot: "3778678", // 热歌榜
-			soar: "19723756", // 飙升榜
-			new: "3779629", // 新歌榜
+			hot: "3778678",
+			soar: "19723756",
+			new: "3779629",
 		};
 		const playlistId = ids[type] || type || ids.hot;
 		return await this.getPlaylistSongs(playlistId, limit);
@@ -173,9 +164,6 @@ export const wy = {
 	},
 };
 
-// ========================
-// 2. 酷我音乐 (kw)
-// ========================
 export const kw = {
 	async search(keyword, page = 1, limit = 20) {
 		const pn = page - 1;
@@ -327,9 +315,6 @@ export const kw = {
 	},
 };
 
-// ========================
-// 3. 酷狗音乐 (kg)
-// ========================
 export const kg = {
 	async search(keyword, page = 1, limit = 20) {
 		const url = `http://songsearch.kugou.com/song_search_v2?platform=AndroidFilter&iscorrection=1&keyword=${encodeURIComponent(keyword)}&hifiquality=0&pagesize=${limit}&PrivilegeFilter=0&page=${page}`;
@@ -395,9 +380,9 @@ export const kg = {
 
 	async getTopList(type = "hot", limit = 50) {
 		const map = {
-			hot: "8888", // TOP500
-			soar: "6666", // 飙升榜
-			new: "31308", // 内地榜
+			hot: "8888",
+			soar: "6666",
+			new: "31308",
 		};
 		const rankid = map[type] || type || "8888";
 		const url = `http://mobilecdnbj.kugou.com/api/v3/rank/song?version=9108&ranktype=1&plat=0&pagesize=${limit}&area_code=1&page=1&rankid=${rankid}&with_res_tag=0&show_portrait_mv=1`;
@@ -476,9 +461,6 @@ export const kg = {
 	},
 };
 
-// ========================
-// 4. 咪咕音乐 (mg)
-// ========================
 export const mg = {
 	async search(keyword, page = 1, limit = 20) {
 		const url = `https://m.music.migu.cn/migu/remoting/scr_search_tag?rows=${limit}&type=2&keyword=${encodeURIComponent(keyword)}&pgc=${page}`;
@@ -510,9 +492,6 @@ export const mg = {
 	},
 };
 
-// ========================
-// 5. QQ 音乐 (tx)
-// ========================
 export const tx = {
 	async search(keyword, page = 1, limit = 20) {
 		const url = `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=${page}&n=${limit}&w=${encodeURIComponent(keyword)}&format=json`;
@@ -583,9 +562,9 @@ export const tx = {
 
 	async getTopList(type = "hot", limit = 50) {
 		const map = {
-			hot: "26", // 热歌榜
-			soar: "62", // 飙升榜
-			new: "27", // 新歌榜
+			hot: "26",
+			soar: "62",
+			new: "27",
 		};
 		const topid = map[type] || type || "26";
 		const url = `https://c.y.qq.com/v8/fcg-bin/fcg_v8_toplist_cp.fcg?g_tk=5381&uin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=h5&needNewCode=1&tpl=3&page=detail&type=top&topid=${topid}`;
@@ -725,7 +704,6 @@ export const tx = {
 	},
 };
 
-/** 统一调度门面 */
 export const sources = { wy, tx, kw, kg, mg };
 
 export async function searchMusics(source, keyword, page = 1, limit = 20) {
@@ -782,10 +760,6 @@ export async function getMusicPlayUrl(source, songId) {
 	return await handler.getMusicUrl(songId);
 }
 
-/**
- * 跨平台智能换源容灾匹配 (参考 enhanced 版 getOtherSource)
- * 当主源解析失败或无版权时，自动在其它可用源中检索同名歌曲并获取播放链接
- */
 export async function findCrossSourceMusicUrl(name, singer = "", excludeSource = "") {
 	if (!name) return null;
 	const cleanName = name.replace(/\([^)]*\)|\[[^\]]*\]/g, "").trim();
@@ -798,7 +772,6 @@ export async function findCrossSourceMusicUrl(name, singer = "", excludeSource =
 			const list = await searchMusics(src, query, 1, 5);
 			if (!list || !list.length) continue;
 
-			// 优先找歌名包含的条目
 			const match =
 				list.find(
 					(item) =>

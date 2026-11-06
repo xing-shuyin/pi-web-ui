@@ -199,10 +199,7 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			draft.tasks.push(sampleTask("room-1", "task-1", "completed"));
 		});
 
-		// Check WAL structure directly using HubTransactionLog
 		const wal = new HubTransactionLog({ walPath: join(dir, "hub-wal.jsonl") });
-		// After full normal projection, WAL is checkpointed (0 bytes).
-		// Let's verify append format by manual check
 		const record = await wal.append(
 			10,
 			{
@@ -212,6 +209,10 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 				bots: [],
 				sessions: [],
 				rooms: [{ id: "room-1", accountId: "account-1", name: "Room 1", botIds: [], createdAt: 1 }],
+				workItems: [],
+				workItemEvents: [],
+				routerJobs: [],
+				workItemOutbox: [],
 				receipts: [],
 				conversations: [],
 				deliveries: [],
@@ -246,8 +247,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			draft.rooms.push({ id: "room-cross", accountId: "account-1", name: "Cross", botIds: [], createdAt: 1 });
 		});
 
-		// Inject failure during projection of tasks (messages succeed, tasks fail)
-		// Access private logs via any for precise test fault injection
 		const logs = (store as unknown as { logs: { tasks: { commit: () => Promise<void> } } }).logs;
 		vi.spyOn(logs.tasks, "commit").mockRejectedValueOnce(new Error("Disk IO failure during tasks log commit"));
 
@@ -261,23 +260,18 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		expect(store.snapshot().tasks.map((t) => t.id)).toEqual(["task-committed"]);
 		expect(store.lastProjectionError).toEqual(new Error("Disk IO failure during tasks log commit"));
 
-		// WAL must NOT be dropped! It holds the authoritative commit record.
 		const walFile = join(dir, "hub-wal.jsonl");
 		const walStat = await stat(walFile);
 		expect(walStat.size).toBeGreaterThan(0);
 
-		// Now simulate process restart (reopen store from same dataDir)
 		const reopened = await DeviceHubStore.open(dir);
 		const snapshot = reopened.snapshot();
 
-		// The committed transaction must be fully recovered across all collections!
 		expect(snapshot.messages.map((m) => m.id)).toContain("msg-committed");
 		expect(snapshot.tasks.map((t) => t.id)).toContain("task-committed");
 
-		// After reopening, the catch-up projection completes and WAL is cleaned
 		expect((await stat(walFile)).size).toBe(0);
 
-		// Both partition logs now contain the data
 		expect(await logLines(dir, "messages", "room-cross")).toHaveLength(1);
 		expect(await logLines(dir, "tasks", "room-cross")).toHaveLength(1);
 
@@ -292,7 +286,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			draft.rooms.push({ id: "room-idx", accountId: "account-1", name: "Idx", botIds: [], createdAt: 1 });
 		});
 
-		// Make index path temporarily a directory to simulate atomic rename/sync failure
 		await rm(store.path);
 		await mkdir(store.path);
 
@@ -304,14 +297,11 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		expect(store.snapshot().messages.map((m) => m.id)).toEqual(["msg-wal-only"]);
 		expect(store.lastProjectionError).toBeDefined();
 
-		// Remove the blocking directory so recovery can persist index
 		await rm(store.path, { recursive: true });
 
-		// Reopen store: recovery must replay WAL and complete projection idempotently
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages.map((m) => m.id)).toContain("msg-wal-only");
 
-		// Log lines must not duplicate on idempotent replay
 		expect(await logLines(dir, "messages", "room-idx")).toHaveLength(1);
 
 		await reopened.close();
@@ -410,7 +400,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		await store.transact((draft) => {
 			draft.rooms.push({ id: "room-write", accountId: "account-1", name: "Write", botIds: [], createdAt: 1 });
 		});
-		// Retain a valid record before the failed append so rollback must preserve a nonzero prefix.
 		const logs = (store as unknown as { logs: { tasks: { commit: () => Promise<void> } } }).logs;
 		vi.spyOn(logs.tasks, "commit").mockRejectedValueOnce(new Error("projection offline"));
 		await store.transact((draft) => {
@@ -490,7 +479,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		const prototype = Object.getPrototypeOf(handle) as FileHandle;
 		await handle.close();
 		const sync = prototype.sync;
-		// FileHandle.close is an instance method; replace it on the handle that just fsynced the WAL.
 		vi.spyOn(prototype, "sync").mockImplementationOnce(async function (this: FileHandle) {
 			await sync.call(this);
 			const close = this.close.bind(this);
@@ -519,7 +507,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		});
 		await store.close();
 
-		// Append a valid transaction manually to WAL with seq=2 (checkpointSeq is 1), followed by a torn partial line
 		const wal = new HubTransactionLog({ walPath: join(dir, "hub-wal.jsonl") });
 		await wal.append(
 			2,
@@ -530,6 +517,10 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 				bots: [],
 				sessions: [],
 				rooms: [{ id: "room-tail", accountId: "account-1", name: "Tail", botIds: [], createdAt: 1 }],
+				workItems: [],
+				workItemEvents: [],
+				routerJobs: [],
+				workItemOutbox: [],
 				receipts: [],
 				conversations: [],
 				deliveries: [],
@@ -544,16 +535,13 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			},
 		);
 
-		// Append a partial cut-off line (torn tail)
 		const walPath = join(dir, "hub-wal.jsonl");
 		const currentWal = await readFile(walPath, "utf8");
 		await writeFile(walPath, `${currentWal}{"v":1,"seq":3,"time":123,"check`, "utf8");
 
-		// Reopen should detect torn tail, truncate it on disk, and recover msg-2 cleanly
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
 
-		// Store should accept new transactions normally after torn tail recovery
 		await reopened.transact((draft) => {
 			draft.messages.push(sampleMessage("room-tail", "msg-3", "after torn tail"));
 		});
@@ -572,11 +560,9 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 
 		const walPath = join(dir, "hub-wal.jsonl");
 
-		// Case 1: Corrupted JSON with newline (full line damaged)
 		await writeFile(walPath, `{"v":1,"seq":1,"corrupted-json":\n`, "utf8");
 		await expect(DeviceHubStore.open(dir)).rejects.toThrow(/Corrupted Hub transaction log.*invalid JSON/i);
 
-		// Case 2: Checksum mismatch (bit-rot or tampering)
 		const invalidChecksumLine =
 			JSON.stringify({
 				v: 1,
@@ -593,7 +579,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		await writeFile(walPath, invalidChecksumLine, "utf8");
 		await expect(DeviceHubStore.open(dir)).rejects.toThrow(/Corrupted Hub transaction log.*checksum mismatch/i);
 
-		// Case 3: Discontinuous sequence (e.g. seq 1 then seq 3)
 		const wal = new HubTransactionLog({ walPath });
 		await rm(walPath).catch(() => {});
 		await wal.append(1, { version: 2 } as any, {
@@ -601,7 +586,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			tasks: { upsert: [], deleteIds: [] },
 			conversationMessages: { upsert: [], deleteIds: [] },
 		});
-		// Manually append seq 3
 		const seq3Checksum = computeTransactionChecksum(3, 2000, { version: 2 } as any, {
 			messages: { upsert: [], deleteIds: [] },
 			tasks: { upsert: [], deleteIds: [] },
@@ -634,7 +618,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			draft.rooms.push({ id: "room-crash", accountId: "account-1", name: "Crash", botIds: [], createdAt: 1 });
 		});
 
-		// Stage an authoritative WAL entry without completing checkpoint (seq=2, checkpointSeq is 1)
 		const wal = new HubTransactionLog({ walPath: join(dir, "hub-wal.jsonl") });
 		await wal.append(
 			2,
@@ -645,6 +628,10 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 				bots: [],
 				sessions: [],
 				rooms: [{ id: "room-crash", accountId: "account-1", name: "Crash", botIds: [], createdAt: 1 }],
+				workItems: [],
+				workItemEvents: [],
+				routerJobs: [],
+				workItemOutbox: [],
 				receipts: [],
 				conversations: [],
 				deliveries: [],
@@ -659,20 +646,16 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			},
 		);
 
-		// First recovery: read-only to simulate inspect/crash right before projection catch-up
 		const read1 = await readPersistedHub(dir);
 		expect(read1.messages.map((m) => m.id)).toContain("msg-repeated");
 
-		// Second recovery: another inspect
 		const read2 = await readPersistedHub(dir);
 		expect(read2.messages.map((m) => m.id)).toEqual(read1.messages.map((m) => m.id));
 
-		// Third recovery: normal open that executes projection
 		const opened = await DeviceHubStore.open(dir);
 		expect(opened.snapshot().messages.map((m) => m.id)).toContain("msg-repeated");
 		await opened.close();
 
-		// Fourth recovery: subsequent open after clean projection
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages.map((m) => m.id)).toContain("msg-repeated");
 		expect(await logLines(dir, "messages", "room-crash")).toHaveLength(1);
@@ -729,8 +712,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			status: "interrupted",
 			leaseToken: "lease",
 		});
-		// The first load trims completed history to fit the protected task. Refill the window so the
-		// second load must apply retention to the now-interrupted task while its lease can still settle.
 		await first.transact((draft) => {
 			draft.tasks.push(sampleTask("room-grace", "completed-after-restart"));
 		});
@@ -753,7 +734,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 
 		expect(await logLines(dir, "messages", "room-delete")).toHaveLength(1);
 
-		// Delete room and clear its messages
 		await store.transact((draft) => {
 			draft.rooms = draft.rooms.filter((r) => r.id !== "room-delete");
 			draft.messages = [];
@@ -765,7 +745,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 
 		await store.close();
 
-		// Reopen and ensure deleted partition does not resurrect
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().rooms.some((r) => r.id === "room-delete")).toBe(false);
 		expect(reopened.snapshot().messages).toEqual([]);
@@ -781,7 +760,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		});
 		await store.close();
 
-		// Manually append a WAL transaction so there is unprojected state (seq=2, checkpointSeq is 1)
 		const wal = new HubTransactionLog({ walPath: join(dir, "hub-wal.jsonl") });
 		await wal.append(
 			2,
@@ -792,6 +770,10 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 				bots: [],
 				sessions: [],
 				rooms: [{ id: "room-ro", accountId: "account-1", name: "RO", botIds: [], createdAt: 1 }],
+				workItems: [],
+				workItemEvents: [],
+				routerJobs: [],
+				workItemOutbox: [],
 				receipts: [],
 				conversations: [],
 				deliveries: [],
@@ -806,7 +788,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 			},
 		);
 
-		// Inspection must leave torn tails, oversized partitions and orphan files untouched.
 		await writeFile(wal.walPath, '{"v":1,"seq":3', { flag: "a" });
 		await writeFile(join(dir, "hub-log", "messages", "room-ro.jsonl"), '{"v":1,"op":', { flag: "a" });
 		await writeFile(join(dir, "hub-log", "messages", "orphan.jsonl"), "orphan data");
@@ -825,7 +806,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		}
 		const filesBefore = await diskSnapshot(dir);
 
-		// Call readPersistedHub
 		const persisted = await readPersistedHub(dir);
 		expect(persisted.messages.map((m) => m.id)).toEqual(["msg-ro-1", "msg-ro-unprojected"]);
 
@@ -843,18 +823,13 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		const store = await DeviceHubStore.open(dir);
 		await store.transact((draft) => {
 			draft.rooms.push({ id: "room-queue", accountId: "account-1", name: "Queue", botIds: [], createdAt: 1 });
-			// 1. running task -> must be interrupted with recovery window
 			draft.tasks.push({ ...sampleTask("room-queue", "task-running", "running"), leaseToken: "lease-1" });
-			// 2. queued with leaseToken -> must be interrupted with recovery window
 			draft.tasks.push({ ...sampleTask("room-queue", "task-queued-leased", "queued"), leaseToken: "lease-2" });
-			// 3. queued with leaseGeneration -> must be interrupted with recovery window
 			draft.tasks.push({ ...sampleTask("room-queue", "task-queued-gen", "queued"), leaseGeneration: 1 });
-			// 4. queued without lease -> must be retained as queued for new dispatch
 			draft.tasks.push(sampleTask("room-queue", "task-queued-clean", "queued"));
 		});
 		await store.close();
 
-		// Reopen with retainUnleasedQueued: true
 		const reopened = await DeviceHubStore.open(dir, { retainUnleasedQueued: true });
 		const tasks = reopened.snapshot().tasks;
 
@@ -871,7 +846,6 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		expect(queuedGen.status).toBe("interrupted");
 		expect(queuedGen.recoveryUntil).toBeGreaterThan(Date.now());
 
-		// Clean queued task must stay queued without recovery grace window
 		const queuedClean = tasks.find((t) => t.id === "task-queued-clean")!;
 		expect(queuedClean.status).toBe("queued");
 		expect(queuedClean.recoveryUntil).toBeUndefined();

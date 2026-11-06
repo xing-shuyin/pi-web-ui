@@ -176,11 +176,9 @@ MV renamed.txt
 		const filePath = "diverged.txt";
 		const baseHash = store.record(filePath, base);
 
-		// 模拟外部并发修改了 header 行（在行号 1 处插入了一行），导致当前文本与 base 不一致
 		const currentOnDisk = "NEW_TOP_HEADER\nheader\nline A\nline B\nfooter\n";
 		writeFileSync(join(tempDir, filePath), currentOnDisk);
 
-		// 补丁是基于 baseHash 编写的，修改 line A/line B（原行 2~3）
 		const patch = `
 [${filePath}#${baseHash}]
 PUT 2.=3:

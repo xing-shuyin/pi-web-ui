@@ -1,16 +1,3 @@
-/**
- * md-toc —— 给 /md 预览页加一列「标题导航」（左侧目录 + 滚动高亮 + 点击跳转 + 拖动改宽 + 折叠）。
- *
- * 设计约束（都是刻意的）：
- *  1. 纯函数、零依赖：enhanceMarkdownHtml(html) → html，可直接单测，不需要服务/浏览器。
- *  2. 只做「字符串注入」，不碰 index.mjs 里的 markdown 解析逻辑；渲染器改字也不会连带失效，
- *     只要它还输出裸 <hN>…</hN>（本模块只在这一层做结构匹配）。
- *  3. 注入点找不到、或标题不足 2 个时**原样返回**（页面绝不因此坏掉）。
- *  4. 若正文自己已给标题写了 id（上游哪天内置目录也会长这样），整体让位：不叠加第二份导航。
- *  5. 不改文件名、不新增 HTTP 资源（页面自带 no-store），因此没有缓存失效问题。
- */
-
-/** 目录侧栏宽度：默认值 / 允许拖动范围（与客户端 JS 里的常量保持一致）。 */
 const W_DEFAULT = 260;
 const W_MIN = 180;
 const W_MAX = 560;
@@ -52,7 +39,6 @@ h1,h2,h3,h4,h5,h6{scroll-margin-top:16px}
 }
 `;
 
-/** 客户端脚本：开关 / 拖动调宽 / localStorage 记忆 / 滚动高亮 / 平滑跳转（原生 JS，无依赖）。 */
 const CLIENT_JS = `
 (function(){
   var KEY='pi-live-preview-toc', DEF={hidden:false,width:${W_DEFAULT}}, MIN=${W_MIN}, MAX=${W_MAX};
@@ -127,11 +113,6 @@ const CLIENT_JS = `
 })();
 `;
 
-/**
- * 自保：注入内容里若出现 style/script 的结束标签字面量，宿主元素会被提前结束
- * —— 踩过的坑：CSS 注释里写了一个 `</style>`，导致后面所有 CSS 变成页面正文（白屏级故障）。
- * 这里统一转义，单测里另有回归断言。
- */
 function escapeEndTags(s) {
 	return String(s).replace(/<\/(style|script)/gi, "<\\/$1");
 }
@@ -140,7 +121,6 @@ function escAttr(s) {
 	return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** 把标题内联 HTML 变成纯文本标签（保留已有实体，避免二次转义）。 */
 function labelOf(inner) {
 	const t = String(inner)
 		.replace(/<[^>]*>/g, "")
@@ -149,7 +129,6 @@ function labelOf(inner) {
 	return t || "未命名章节";
 }
 
-/** 生成锚点 id：保留 Unicode 字母/数字（中文原样），其余压成连字符；空则回落。 */
 function slugOf(label) {
 	const decoded = String(label)
 		.replace(/&amp;/g, "&")
@@ -176,10 +155,7 @@ function slugOf(label) {
 export function enhanceMarkdownHtml(html) {
 	const src = String(html ?? "");
 	if (!src) return src;
-	// 幂等护栏：已经注入过就原样返回（正常路径只调用一次，这条防重复注入出双份导航）。
 	if (src.includes('id="pmt"')) return src;
-	// 让位护栏：上游若已自带标题 id（多半也就自带目录了），我们绝不叠加第二份导航 —— 直接放行原样。
-	// 这保证「官方哪天内置了 TOC」时，本地补丁最坏也只是无效，而不是出现两份目录。
 	if (/<h[1-6][^>]*\sid\s*=/.test(src)) return src;
 
 	const heads = [];

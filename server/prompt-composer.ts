@@ -1,75 +1,44 @@
-/**
- * 主会话系统提示词 = 自由组合模板（compose）。
- *
- * 模板里的 `{{token}}` 在每次 agent run 前展开为对应「来源」的提示词块；每个
- * token 可单独覆盖——overrides 里有内容就用覆盖文本，否则用该来源的自动内容。
- * 这样既可自由排序/增删/穿插自己的话，也可只替换某一个来源而不影响其他自动段
- * （工具列表、项目上下文等仍由 SDK 用最新数据重新生成）。
- *
- * token 列表及默认顺序镜像 buildSystemPrompt（SDK dist/core/system-prompt.js）
- * 默认分支的拼装顺序：
- *     soul → tools → guidelines → pi_docs → append → persona → terminal →
- *     markers → context → skills → cwd
- *
- * （bash 管道限制不需要独立段：它属于 bash 工具的用法说明，已写进工具自身
- *  description，随工具走；compose 里不再单设 {{pipe}} 来源。）
- *
- * 本模块是纯函数（不 import SDK / node），浏览器端可复用（SettingsModal 需要
- * DEFAULT_PROMPT_TEMPLATE 与 token 元数据）。
- */
-
 import { getServerBlock, pick, type ServerLang } from "./i18n.js";
 
-/** 全部来源 token。默认模板顺序即此数组顺序。 */
 export const PROMPT_TOKENS = [
-	"soul", // 内置灵魂提示词（persona；有 SYSTEM.md 时其内容）
-	"tools", // Available tools 工具列表（仅延迟加载时展开；关闭时为空）
-	"guidelines", // Guidelines 行为准则段
-	"pi_docs", // Pi documentation 文档指引（指向 pi 包路径）
-	"append", // 追加段（APPEND_SYSTEM.md 内容；覆盖 = 自定义追加文字）
-	"persona", // Windows persona（仅 win32）
-	"terminal", // 终端工具使用引导（「终端工具」开关开时）
-	"markers", // 内置标记工具引导（markers 开启时）
-	"plugin_dev", // 插件开发指南（指导编写与定位 WebUI 插件，默认禁用）
-	"context", // 项目上下文 <project_context>（AGENTS.md 等）
-	"skills", // 技能段 <available_skills>
-	"cwd", // Current working directory 行
+	"soul",
+	"tools",
+	"guidelines",
+	"pi_docs",
+	"append",
+	"persona",
+	"terminal",
+	"markers",
+	"plugin_dev",
+	"context",
+	"skills",
+	"cwd",
 ] as const;
 
-/** 只读来源（设置面板只读展示、不提供覆盖输入）：这些 token 的内容由系统/环境
- *  在每次 run 时动态生成（工具集、项目文件、技能、工作目录、开关状态），用户无法
- *  在设置里预设其内容。反之 soul / guidelines / append 是用户内容层，可编辑。
- *  注意：只读是「设置面板 UI」层面；服务端 override 机制（renderPromptTemplate）
- *  仍保留，以兼容旧配置与编程调用。 */
 export const READONLY_PROMPT_SOURCES = [
-	"tools", // 工具列表（运行时时按已注册工具动态生成）
-	"pi_docs", // Pi 文档指引（指向已安装 pi 包路径，由安装位置决定）
-	"plugin_dev", // 插件开发指南（指向宿主插件目录、SDK 与文档物理路径）
-	"persona", // Windows persona（仅 win32，平台固定）
-	"terminal", // 终端工具使用引导（随「终端工具」开关）
-	"markers", // 内置标记工具引导（随 markers 开关）
-	"context", // 项目上下文（AGENTS.md / CLAUDE.md 收集结果）
-	"skills", // 技能段（来自环境/技能文件）
-	"cwd", // 当前工作目录
+	"tools",
+	"pi_docs",
+	"plugin_dev",
+	"persona",
+	"terminal",
+	"markers",
+	"context",
+	"skills",
+	"cwd",
 ] as const;
 
 export type PromptToken = (typeof PROMPT_TOKENS)[number];
 
-/** 默认不开启（需用户在设置中显式启用）的提示词 token 列表。 */
 export const DEFAULT_PROMPT_DISABLED: string[] = ["plugin_dev"];
 
-/** 仅当 token 是只读来源时返回 true（设置面板用于判断是否展示覆盖输入框）。 */
 export function isReadonlyPromptSource(token: string): boolean {
 	return (READONLY_PROMPT_SOURCES as readonly string[]).includes(token);
 }
 
-/** 默认模板：全部 token 按自然顺序以空行连接 —— 无覆盖、不改动时渲染结果 ≈
- *  SDK 默认拼装的完整提示词。 */
 export const DEFAULT_PROMPT_TEMPLATE = PROMPT_TOKENS.map((t) => `{{${t}}}`).join("\n\n");
 
 const TOKEN_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
 
-/** 模板里出现的全部 token（含未知名，供 UI 提示）。 */
 export function collectTemplateTokens(template: string): string[] {
 	const out: string[] = [];
 	for (const m of template.matchAll(TOKEN_RE)) {
@@ -78,100 +47,51 @@ export function collectTemplateTokens(template: string): string[] {
 	return out;
 }
 
-/** 空模板 = 默认模板。 */
 export function effectiveTemplate(template: string): string {
 	const t = (template ?? "").trim();
 	return t || DEFAULT_PROMPT_TEMPLATE;
 }
 
-/** 该来源是否有「自动内容」之外的覆盖。 */
 export function overrideOf(overrides: Record<string, string> | undefined, token: string): string {
 	const v = overrides?.[token];
 	return v && v.trim() ? v : "";
 }
 
-/** 组装每个来源的自动内容所需的全部输入（由 agent-service 在 run 时收集）。 */
 export interface PromptComposerInputs {
-	/** 当前工作目录（反斜杠会转正斜杠）。 */
 	cwd: string;
-	/** SYSTEM.md 文件内容（项目/全局，**原文**：不做 trim），存在时作为 {{soul}} 默认；
-	 *  缺省用内置默认。语义与 SDK 一致（issue #812）：
-	 *  - `undefined` / `""`（无文件、0 字节）→ 内置默认；
-	 *  - 纯空白文件（`" \n"`）→ **保留原文**（正文就等于空白，TUI 同语义）。
-	 *    旧实现的 `.trim()` 判定把纯空白文件当成「无文件」，既与 TUI 不一致，
-	 *    也是「SWITCH 到空白项目就意外重置」假象的来源。 */
 	systemPromptFile?: string;
-	/** 内置灵魂段落（无 SYSTEM.md 时 {{soul}} 的自动内容）。 */
 	builtinSoul: string;
-	/** 活动工具名。 */
 	selectedTools: string[];
-	/** 工具**延迟加载**模式：true 时 {{tools}} 列的是完整工具目录（catalogTools），
-	 *  并在末尾加一段**恒定**的提示说明「目录里的工具 schema 未附、用 load_tools 获取」。
-	 *  关键：这段文字不得随已加载集合变化 —— 系统提示词一变，供应商的前缀缓存（prompt
-	 *  cache）就整段失效（见 docs/tool-context-budget.md）。 */
 	lazy?: boolean;
-	/** 延迟加载时的工具目录（全部可用工具，顺序稳定 = 注册表顺序）。 */
 	catalogTools?: string[];
-	/** 活动工具的 prompt snippet（name → snippet）。 */
 	toolSnippets: Record<string, string>;
-	/** 工具参数签名简短说明（name → "(param1: hint, param2?: hint)"）。 */
 	toolSignatures?: Record<string, string>;
-	/** 活动工具聚合的 prompt guidelines。 */
 	toolGuidelines: string[];
-	/** Pi 包路径（README.md / docs / examples 目录）。 */
 	piReadme: string;
 	piDocs: string;
 	piExamples: string;
-	/** 插件开发指南与文档路径（提示词 plugin_dev 段落用）。 */
 	pluginDocs?: string;
-	/** 插件 SDK 目录路径（plugin-sdk/）。 */
 	pluginSdk?: string;
-	/** 插件存放物理目录（<dataDir>/plugins）。 */
 	pluginsDir?: string;
-	/** APPEND_SYSTEM.md 文件内容（SDK 追加段的 base；{{append}} 自动内容）。 */
 	appendFiles: string[];
-	/** Windows persona（非 win32 传空串 → {{persona}} 自动为空）。 */
 	windowsPersona: string;
-	/** 终端工具使用引导（「终端工具」关时传空串）。 */
 	terminalGuidance: string;
-	/** 标记工具引导（markers 关时为空串）。 */
 	markersGuidance: string;
-	/** 项目上下文文件（AGENTS.md 等，path + content）。 */
 	contextFiles: { path: string; content: string }[];
-	/** 可见技能（已按禁用集过滤、disableModelInvocation=false）。
-	 * content 缺省 = 只渲染名录（模型用 skill 工具按名自取全文）；skillsFullText 开时
-	 * agent-service 会把 SKILL.md 正文填进来，{{skills}} 展开为全文注入。 */
 	skills: { name: string; description: string; filePath: string; content?: string }[];
-	/** skill 全文注入名单（默认空 = 名录模式）。名单里的技能有 content 则按
-	 * 全文展开；无 content 的条目回落名录行。 */
 	skillsFullText?: readonly string[];
-	/** 技能名录单描述最大字符数截断（默认 250，0 = 不截断）。 */
 	skillsCatalogMaxDesc?: number;
-	/** 技能名录是否输出 <location> 物理路径行（默认 false = 节省上下文并防止路径泄露）。 */
 	skillsCatalogShowLocation?: boolean;
-	/** 技能名录总字符预算（默认 20000，超限自动降级为紧凑 names-only 模式）。 */
 	skillsCatalogBudget?: number;
-	/**
-	 * 服务端语言（issue #91）：面向模型的提示词段（soul / guidelines / pi_docs /
-	 * context / skills）按此选英文版/中文版。缺省 "en"（英文默认；非 zh 一律英文）。
-	 * 工具列表段（tools / toolsSchema）与 cwd 行本来就是英文，保持不动。
-	 * agent-service 接线：composeInputs 里填 getLang()。
-	 */
 	lang?: ServerLang;
 }
 
-/** 内置默认灵魂段落（buildSystemPrompt 默认分支的开头，与 SDK 同步维护）。 */
 export const BUILTIN_SOUL =
 	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
-/**
- * 内置默认灵魂段落的中文版（issue #91）：lang === "zh" 且调用方未自定义
- * builtinSoul 时 {{soul}} 用它。英文版 BUILTIN_SOUL 保持原样（英文默认）。
- */
 export const BUILTIN_SOUL_ZH =
 	"你是运行在 pi（一个编码智能体框架）中的专业编码助手。你通过读取文件、执行命令、编辑代码和新建文件来帮助用户。";
 
-/** Pi documentation 段模板 —— 与 SDK buildSystemPrompt 默认分支一致（路径由调用方注入）。 */
 export function buildPiDocsText(readme: string, docs: string, examples: string, lang: ServerLang = "en"): string {
 	if (lang === "zh") {
 		return [
@@ -197,7 +117,6 @@ export function buildPiDocsText(readme: string, docs: string, examples: string, 
 	].join("\n");
 }
 
-/** pi-web-ui 插件开发指南提示词段落（默认通过 promptDisabled 禁用，仅在用户显式开启时注入）。 */
 export function buildPluginDevText(inputs: PromptComposerInputs, lang: ServerLang = "en"): string {
 	const docsPath = inputs.pluginDocs || "docs/architecture-plugins.md";
 	const sdkPath = inputs.pluginSdk || "plugin-sdk";
@@ -232,8 +151,6 @@ export function buildPluginDevText(inputs: PromptComposerInputs, lang: ServerLan
 	].join("\n");
 }
 
-/** Guidelines 段：文件探索引导 + 工具 promptGuidelines（去重）+ 固定两行。
- *  与 buildSystemPrompt 默认分支的聚合规则一致。 */
 function buildGuidelinesText(inputs: PromptComposerInputs): string {
 	const lang: ServerLang = inputs.lang ?? "en";
 	const selected = new Set(inputs.selectedTools);
@@ -264,21 +181,12 @@ function buildGuidelinesText(inputs: PromptComposerInputs): string {
 	return `${pick(lang, "指导原则：", "Guidelines:", "prompt.guidelines.title")}\n${lines.map((l) => `- ${l}`).join("\n")}`;
 }
 
-/** 技能名录配置选项。 */
 export interface BuildSkillsTextOptions {
-	/** 单技能描述最大字符数截断（默认 250；<=0 表示不截断）。 */
 	maxDesc?: number;
-	/** 技能名录是否输出 <location> 物理路径行（默认 false）。 */
 	showLocation?: boolean;
-	/** 技能名录总字符预算（默认 20000 字符；<=0 表示不设上限）。超限自动降级为紧凑 names-only 模式。 */
 	budget?: number;
 }
 
-/** 技能段文本（不含前导空行）。
- * fullText = true 全员全文注入（oh-my-pi 式：标题 + 引用描述 + body 全文）；
- * 传技能名数组 = 只注入名单里的；content 缺失的条目回落列表行，不中断渲染。
- * 默认名录采用紧凑单行格式（- name: desc），抛弃多层 XML 标签通胀与多行冗余，
- * 默认不输出宿主 location 物理路径以节约 token 且避免路径泄露。 */
 export function buildSkillsText(
 	skills: PromptComposerInputs["skills"],
 	lang: ServerLang = "en",
@@ -295,7 +203,6 @@ export function buildSkillsText(
 	const showLocation = options?.showLocation ?? false;
 	const budget = options?.budget !== undefined ? options.budget : 20000;
 
-	// 单行化并截断描述文本
 	const formatDesc = (desc: string): string => {
 		const singleLine = desc.replace(/[\r\n]+/g, " ").trim();
 		if (maxDesc > 0 && singleLine.length > maxDesc) {
@@ -340,7 +247,6 @@ export function buildSkillsText(
 		lines.push("", "<available_skills>");
 
 		for (const skill of visible) {
-			// 全文模式且有内容：oh-my-pi 注入格式（### Skill: 名 / > 描述 / 全文）。
 			const inject = fullText === true || (Array.isArray(fullText) && fullText.includes(skill.name));
 			if (inject && skill.content?.trim()) {
 				lines.push(`### Skill: ${skill.name}`);
@@ -375,7 +281,6 @@ export function buildSkillsText(
 	return standardText;
 }
 
-/** 项目上下文块（不含前导空行）。 */
 function buildContextText(files: PromptComposerInputs["contextFiles"], lang: ServerLang = "en"): string {
 	if (files.length === 0) return "";
 	return [
@@ -389,15 +294,6 @@ function buildContextText(files: PromptComposerInputs["contextFiles"], lang: Ser
 	].join("\n");
 }
 
-/** 工具列表块：延迟加载时列完整目录 + load_tools 说明 + "In addition…" 句。
- * 非懒加载下平时省略目录省 token（全量 schema 已下发），但有 snippet 就必须列出：
- * 实测活体链路里 `load_tools` 被禁用使 disabledToolCount≥1，shouldRenderMainCompose
- * 恒为真，模型实际拿到的永远是我们自渲染的提示词而非 SDK 组装——藏目录等于把
- * promptSnippet 覆盖静默吞掉（含默认 snippet，见 tool-prompt-test）。
- *
- * 延迟加载下这里**只依赖目录本身**（不依赖「哪些已加载」）：系统提示词是供应商
- * 前缀缓存的第一段，只要它不变，加载工具造成的只是 tools 数组的追加（前缀不变的
- * 增量），缓存才不会被我们自已打坏。 */
 function buildToolsText(inputs: PromptComposerInputs, lang: ServerLang): string {
 	const listed = inputs.catalogTools ?? inputs.selectedTools;
 	const visible = listed.filter((n) => !!inputs.toolSnippets[n]);
@@ -426,15 +322,12 @@ function buildToolsText(inputs: PromptComposerInputs, lang: ServerLang): string 
 	return parts.join("\n\n");
 }
 
-/** 工具 schema 条目（发给模型的 function-calling 工具定义的最小字段）。 */
 export interface ToolSchemaEntry {
 	name: string;
 	description?: string;
 	parameters?: unknown;
 }
 
-/** 工具 schema 只读文本（设置面板「查看当前完整提示词」里展示发给模型的完整
- *  工具定义：name + description + parameters JSON Schema）。 */
 export function buildToolsSchemaText(tools: ToolSchemaEntry[]): string {
 	if (tools.length === 0) return "";
 	return tools
@@ -447,20 +340,14 @@ export function buildToolsSchemaText(tools: ToolSchemaEntry[]): string {
 		.join("\n\n");
 }
 
-/** 计算每个 token 的自动内容（无覆盖时的展开值）。 */
 export function resolveSectionTexts(inputs: PromptComposerInputs): Record<PromptToken, string> {
 	const cwd = inputs.cwd.replace(/\\/g, "/");
 	const lang: ServerLang = inputs.lang ?? "en";
-	// soul：用户 SYSTEM.md 优先（真值判定，与 SDK `if (customPrompt)` 同语义：
-	// 纯空白文件 = 空提示词，不是「没文件」）；无则按 lang 选内置默认（调用方
-	// 自定义的 builtinSoul 原样保留）。
 	const soulSource = inputs.systemPromptFile;
 	let soul = soulSource ? soulSource : inputs.builtinSoul;
 	if (lang === "zh" && soul === BUILTIN_SOUL) soul = BUILTIN_SOUL_ZH;
 	else if (soul === BUILTIN_SOUL)
 		soul = getServerBlock(lang, "prompt.soul", BUILTIN_SOUL_ZH.split("\n"), BUILTIN_SOUL.split("\n")).join("\n");
-	// 通用写作要求归 soul 段（原在 guidelines 末尾的两行固定文案移至此处，
-	// guidelines 只保留各工具 promptGuidelines 聚合 + 文件操作引导）。
 	soul = `${soul}\nBe concise in your responses\nShow file paths clearly when working with files`;
 	return {
 		soul,
@@ -482,8 +369,6 @@ export function resolveSectionTexts(inputs: PromptComposerInputs): Record<Prompt
 	};
 }
 
-/** 渲染模板：{{token}} → 覆盖文本（有）或自动内容（无/空覆盖）；未知名 token
- *  保留原文；没有 content 的 token 展开为空串。 */
 export function renderPromptTemplate(
 	template: string,
 	texts: Record<string, string>,
@@ -499,27 +384,18 @@ export function renderPromptTemplate(
 	});
 }
 
-/** 用默认模板渲染（不覆盖）——等价于「恢复默认」后的成品。 */
 export function renderDefaultPrompt(texts: Record<string, string>, disabled?: Set<string> | string[]): string {
 	return renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, texts, undefined, disabled);
 }
 
 const CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/gu;
 
-/** 粗略 token 估算（设置面板预览用，非精确分词，无 tokenizer 依赖）：
- *  CJK 字符（汉字/假名/谚文）≈ 1 token/字，其余字符 ≈ 1 token / 4 字符。 */
 export function estimatePromptTokens(text: string): number {
 	if (!text) return 0;
 	const cjk = text.match(CJK_RE)?.length ?? 0;
 	return Math.ceil(cjk + (text.length - cjk) / 4);
 }
 
-/** 把「早前扩展改过的提示词」拆成 SDK 原始提示词 + 扩展的首尾增补。
- *  before_agent_start 是链式的：我们是最后一个 handler，返回 systemPrompt 等于
- *  forceSystemPrompt 整体替换，会把别的扩展（如注入 <invoked_skill> 的）写进去的
- *  内容一起丢掉。只要原始提示词还原样嵌在里面（纯前置/后置增补），就能把增补摘出来
- *  重新套回我们的渲染结果上。摘不出来（中间插入 / 被整体替换）时返回 pre/post 为空、
- *  core 为当前文本 —— 调用方退回今天的行为，绝不把整段提示词翻倍。 */
 export function splitExtensionWrap(baseline: string, current: string): { pre: string; core: string; post: string } {
 	const at = baseline ? current.indexOf(baseline) : -1;
 	if (at === -1) return { pre: "", core: current, post: "" };

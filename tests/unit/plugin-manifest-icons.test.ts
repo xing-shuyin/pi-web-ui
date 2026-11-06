@@ -1,9 +1,3 @@
-/**
- * 插件图标单测：`plugins/<id>/manifest.json` 必须带非空顶层 `icon`
- *（顶栏 tab / 设置面板插件列表都靠它，缺了就是光秃秃的文字行）。
- * page-picker 是浏览器扩展（无 manifest.json），不在此列。
- * 已上市场目录（plugins/catalog.json）的插件，manifest 图标须与目录一致。
- */
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -54,7 +48,6 @@ describe("plugin manifest icons", () => {
 	it("所有内置业务插件均已在 catalog.json 市场清单中收录", () => {
 		const catalog = JSON.parse(readFileSync(join(pluginsDir, "catalog.json"), "utf8")) as { id: string }[];
 		const catalogIds = new Set(catalog.map((e) => e.id));
-		// demo-mailbox 纯为开发者示例模板，不进正式市场清单
 		const EXEMPTIONS = new Set(["demo-mailbox"]);
 
 		const list = manifests();

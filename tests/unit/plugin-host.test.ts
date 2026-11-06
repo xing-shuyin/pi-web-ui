@@ -9,8 +9,6 @@ import {
 import { registerAttachmentSink, registerDraftSink, resetComposerSinks } from "../../web/src/composer-bridge";
 import type { ClientMessage } from "../../web/src/types";
 
-/** 宿主 API 的时序纪律：new_chat 是异步的（`void cs.newChat()`），prompt 必须等
- *  对话真的切过去 / 本来就是空白对话，否则会落进旧对话。这些测试锁住这个顺序。 */
 interface Harness {
 	api: ReturnType<typeof createPluginHostApi>;
 	sent: ClientMessage[];
@@ -45,7 +43,6 @@ function harness(overrides: Partial<Parameters<typeof createPluginHostApi>[0]> =
 		isReady: () => ready,
 		setView: (v) => views.push(v),
 		getCwd: () => cwd,
-		// 多根 / 会话 API（宿主 API v6）：测试里用可变状态模拟快照。
 		getWorkspaceRoots: () => roots,
 		listSessions: () => [],
 		getConversationId: () => conversationId,
@@ -85,8 +82,6 @@ const waitFor = async (ok: () => boolean, ms = 1000) => {
 	return ok();
 };
 
-/** Harness 需要额外的注入点（多根 / 会话 API）—— 单独造一个带这些 mock 的实例，
- *  不动上面那个「最小 harness」（它的用例都在锁 startChat 的时序）。 */
 function harnessWith(overrides: {
 	pollMs?: number;
 	timeoutMs?: number;
@@ -103,8 +98,6 @@ function harnessWith(overrides: {
 	let conversationId: string | null = overrides.conversationId ?? "conv-1";
 	const roots = overrides.workspaceRoots ?? [];
 	const granted: string[] = [];
-	// set_cwd 是异步的（服务端确认后才落进快照）：这里在 send 时立刻回填 —— 测试里
-	// 就相当于「服务端马上切好了」，对应真实交互中最快的那种路径。
 	const api = createPluginHostApi({
 		send: (msg) => {
 			sent.push(msg);
@@ -148,14 +141,11 @@ describe("createPluginHostApi", () => {
 	it("startChat：等 cwd 切过去 + 等新对话就绪，再发 prompt", async () => {
 		const h = harness();
 		expect(h.api.startChat({ prompt: "修一下", cwd: "/plugin/dir" })).toBe(true);
-		// set_cwd 先发，prompt 还没有
 		expect(types(h.sent)).toEqual(["set_cwd"]);
-		// 宿主切完目录 → new_chat 发出
 		h.setCwd("/plugin/dir");
 		await waitFor(() => types(h.sent).includes("new_chat"));
 		expect(types(h.sent)).toEqual(["set_cwd", "new_chat"]);
 		expect(types(h.sent)).not.toContain("prompt");
-		// 新对话就绪（id 变了）→ 这时才发 prompt
 		h.setConversationId("conv-2");
 		await waitFor(() => types(h.sent).includes("prompt"));
 		expect(types(h.sent)).toEqual(["set_cwd", "new_chat", "prompt"]);
@@ -260,11 +250,9 @@ describe("createPluginHostApi.openSession（多根工作区 + 目录授权，iss
 		const h = harnessWith({ cwd: "/a", listProjects: ["/a"] });
 		const r = await h.api.openSession({ folders: ["/a", "/b", "/c"], newChat: false });
 		expect(r).toEqual({ ok: true, sessionId: "conv-1" });
-		// cwd 已经是 /a → 不重发 set_cwd；根在切项目之后写（服务端按项目存根）。
 		expect(types(h.sent)).toEqual(["set_workspace_roots"]);
 		const roots = h.sent.find((m) => m.type === "set_workspace_roots");
 		expect(roots && "roots" in roots ? roots.roots : null).toEqual(["/b", "/c"]);
-		// /b /c 不在最近项目/已授权里 → 每个都要用户点头（不给插件留侧门）。
 		expect(h.granted).toEqual(["/b", "/c"]);
 	});
 
@@ -273,7 +261,6 @@ describe("createPluginHostApi.openSession（多根工作区 + 目录授权，iss
 		await h.api.openSession({ cwd: "/b", folders: ["/b", "/c"], roots: ["/c", "/d"], newChat: false });
 		const roots = h.sent.find((m) => m.type === "set_workspace_roots");
 		expect(roots && "roots" in roots ? roots.roots : null).toEqual(["/c", "/d"]);
-		// 本次 cwd 变化也从快照侧被模拟成「已切好」：set_cwd 在最前。
 		expect(types(h.sent)[0]).toBe("set_cwd");
 	});
 
@@ -346,7 +333,6 @@ describe("createPluginHostApi.sessions（会话 API，宿主 API v6）", () => {
 });
 
 describe("createPluginHostApi.compose", () => {
-	/** 装上双 sink（模拟 App + ChatInput 已挂载）。 */
 	function mountComposer() {
 		const drafts: string[] = [];
 		registerDraftSink((t) => drafts.push(t));
@@ -369,7 +355,6 @@ describe("createPluginHostApi.compose", () => {
 		h.setReady(false);
 		expect(h.api.compose({ text: "### 元素\n看这个" })).toBe(true);
 		expect(drafts).toEqual(["### 元素\n看这个"]);
-		// 关键差异：startChat 此时拒收，compose 照收
 		expect(h.api.startChat({ prompt: "x" })).toBe(false);
 		expect(h.sent).toHaveLength(0);
 		resetComposerSinks();
@@ -437,7 +422,7 @@ describe("openModal/closeModal（宿主 API v10，modal.dialog 槽位）", () =>
 		const seen: string[] = [];
 		const { api } = modalHarness({ openModal: (id) => (seen.push(id), id === "plugin:ok") });
 		expect(api.openModal("plugin:ok")).toBe(true);
-		expect(api.openModal("  ")).toBe(false); // 空白 id 直接拒绝，不进注入
+		expect(api.openModal("  ")).toBe(false);
 		expect(api.openModal("plugin:nope")).toBe(false);
 		expect(seen).toEqual(["plugin:ok", "plugin:nope"]);
 		const throwing = modalHarness({
@@ -451,8 +436,8 @@ describe("openModal/closeModal（宿主 API v10，modal.dialog 槽位）", () =>
 		expect(throwing.api.openModal("plugin:x")).toBe(false);
 		expect(throwing.api.closeModal()).toBe(true);
 	});
-	it("宿主 API 版本已升到 v14（pickDirectory 与 pickModel 选择器通道）", () => {
-		expect(PLUGIN_HOST_API_VERSION).toBe(14);
+	it("宿主 API 版本已升到 v15（统一图片预览与 OCR 提供者）", () => {
+		expect(PLUGIN_HOST_API_VERSION).toBe(16);
 	});
 	it("pickDirectory 与 pickModel 转发调用到 deps", async () => {
 		const h = harness({
@@ -560,18 +545,10 @@ describe("createPluginHostApi.models + startChat/openSession 的 model（issue #
 	});
 });
 
-describe("createPluginHostApi.ttsProviders（宿主 API v12）", () => {
-	it("ttsProviders.register / list / 取消注册正常工作", () => {
+describe("createPluginHostApi.ttsProviders", () => {
+	it("exposes center engine metadata without a second registration channel", () => {
 		const { api } = harness();
-		const unreg = api.ttsProviders.register({
-			id: "mock-engine",
-			label: "Mock Engine",
-			play: () => () => {},
-		});
-		expect(api.ttsProviders.list()).toEqual(
-			expect.arrayContaining([{ id: "mock-engine", label: "Mock Engine", labelEn: undefined }]),
-		);
-		unreg();
-		expect(api.ttsProviders.list().find((p) => p.id === "mock-engine")).toBeUndefined();
+		expect(api.ttsProviders.list()).toContainEqual(expect.objectContaining({ id: "builtin" }));
+		expect(api.ttsProviders).not.toHaveProperty("register");
 	});
 });

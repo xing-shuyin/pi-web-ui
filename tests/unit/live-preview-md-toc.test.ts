@@ -1,8 +1,3 @@
-/**
- * /md 预览页「标题导航」的单测：用插件真实渲染产物对拍 md-toc.mjs 的字符串注入。
- * 覆盖：目录生成/去重、代码围栏不误判、让位护栏（正文自带标题 id 时不叠加）、
- * 锚点缺失时优雅降级、幂等、以及「注入内容不得含有裸 style/script 结束标签」的回归护栏。
- */
 import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "../../plugins/live-preview/index.mjs";
 import { enhanceMarkdownHtml } from "../../plugins/live-preview/md-toc.mjs";
@@ -48,7 +43,6 @@ describe("md-toc（/md 页标题导航）", () => {
 		expect(ids[5]).toBe("重复-3");
 		expect(ids[2]).toContain("中文小节");
 		expect(ids[2]).toContain("成本与峰谷");
-		// 6 个真实标题（围栏里那两个不算）。
 		expect(ids).toHaveLength(6);
 	});
 
@@ -92,7 +86,6 @@ describe("md-toc（/md 页标题导航）", () => {
 		expect(count(out, /<\/style>/gi)).toBe(1);
 		expect(count(out, /<\/script>/gi)).toBe(1);
 		expect(count(out, /<\/(style|script)/gi)).toBe(2);
-		// CSS 必须仍落在页面自己的 style 元素内（插在 </style> 之前）。
 		expect(out.lastIndexOf("#pmt-nav")).toBeLessThan(out.indexOf("</style>"));
 		expect(out).not.toMatch(/<\/script(?!>)/);
 	});

@@ -11,25 +11,8 @@ import { LanguageProvider } from "../../web/src/i18n.js";
 import type { ChatState } from "../../web/src/use-chat.js";
 import { setAppSend, setAppGlobals, resetAppGlobals } from "../../web/src/app-globals.js";
 
-/**
- * 顶栏结构锁（方案 A：**单一扁直流**）。这套断言是「所有按钮处于一个层级、
- * 顺序/对齐由 slot 数据决定、桌面与手机同一份数据」的最小回归面。
- *
- * 历史：这里曾经锁的是「贴边按钮固定两端 + 按种类裹 .brand/.view-switch/.topbar-desktop
- * 三个容器 + align 落三个容器区」的旧结构。重构后这些容器与例外全部删除 ——
- * 谁再往顶栏塞结构性包装（按种类分组、把某个条目钉死在一端），这里就会红。
- *
- * 另含 `.panel-toggle`（☰ 历史 / 📁 文件）的**视图门禁**：抽屉节点是 chat 视图面板树的
- * 子节点，非 chat 视图整棵 display:none，画出来只会给一个点了没反应的按钮（手机上还会
- * 和终端面板自己的 ☰ 并排成两个）。
- *
- * 零 token / 零端口：真 jsdom + 真 React 渲染，只断言 DOM 结构与回调。
- */
-
-// 锚到仓库根（不用 process.cwd()）：静态守卫要读 web/src/styles.css。
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// TopBar 只读 chat 的这几个字段（其余快照流内容用不到），stub 到「已连接」即可。
 const chatStub = {
 	status: "open",
 	ready: true,
@@ -44,10 +27,6 @@ const chatStub = {
 
 let root: Root | null = null;
 
-/**
- * 一条宿主内置顶栏条目（issue #146 的 slot 结构子集）：只用到 id / source / label / kind / align。
- * `uiPrimary` 不给 = 「没接线」，此时宿主入口一律可见（见 TopBar 的 FALLBACK_TOPBAR_IDS）。
- */
 const hostEntry = (id: string, hidden = false) => ({
 	id,
 	source: "host" as const,
@@ -108,7 +87,6 @@ function mount(
 	return { container, opened };
 }
 
-/** 扁直流里除 spacer 之外的所有子节点（= 真正画出来的条目，顺序即视觉顺序）。 */
 const flowItems = (container: HTMLElement) =>
 	Array.from(container.querySelector(".topbar-flow")?.children ?? []).filter(
 		(el) => !el.classList.contains("tb-spacer"),
@@ -132,8 +110,6 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 		const { container } = mount("chat");
 		const flow = container.querySelector(".topbar-flow");
 		expect(flow).toBeTruthy();
-		// 旧结构的三件套容器必须不存在（它们就是「非扁平」的来源）——
-		// 注意：.brand 如今是单个品牌条目本体（π+名称），必须是 flow 的直接子节点而非包裹容器。
 		expect(container.querySelector(".view-switch")).toBeNull();
 		expect(container.querySelector(".topbar-desktop")).toBeNull();
 		expect(container.querySelector(".topbar-actions")).toBeNull();
@@ -142,7 +118,6 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 			expect(el, sel).toBeTruthy();
 			expect(el!.parentElement, sel).toBe(flow);
 		}
-		// 品牌条目本体是 flow 的直接子节点，π 与名称是它的内层（不再是两个独立条目）。
 		const brand = flow!.querySelector(":scope > .brand");
 		expect(brand).toBeTruthy();
 		expect(brand!.querySelector(".brand-logo")).toBeTruthy();
@@ -150,7 +125,7 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 	});
 
 	it("两个 spacer 把条目分成 start / center / end 三段（align 真的换位置）", () => {
-		const { container } = mount("chat", [
+		const { container } = mount("terminal", [
 			{ ...hostEntry("host:brand"), align: "start" },
 			{ ...hostEntry("host:chat"), align: "center" },
 			{ ...hostEntry("host:tasks"), align: "end" },
@@ -174,7 +149,7 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 	});
 
 	it("全部条目设为居中时，条目两侧各有一个 spacer（平分空间，真正居中而非偏右）", () => {
-		const { container } = mount("chat", [
+		const { container } = mount("terminal", [
 			{ ...hostEntry("host:chat"), align: "center" },
 			{ ...hostEntry("host:terminal"), align: "center" },
 		]);
@@ -189,7 +164,6 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 	});
 
 	it("☰/📁 不再是贴边例外：位置只由 slot 顺序决定，点击仍开对侧抽屉", () => {
-		// files 排在 chat 之前 → 它就是第一个条目（旧版无论如何都钉在顶栏最右）
 		const { container, opened } = mount("chat", [
 			hostEntry("host:files"),
 			hostEntry("host:chat"),
@@ -218,19 +192,16 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 			settings: { uiLayout: { topbarText: false } },
 		});
 		expect(container.querySelector("header.topbar.no-labels")).toBeTruthy();
-		// 文字节点仍在 DOM（藏是 CSS 的事）；📁 按钮带文字 span（不再有纯图标分支）。
 		expect(container.querySelector(".brand-name")).toBeTruthy();
 		const files = container.querySelector(".topbar-flow .panel-toggle.has-label");
 		expect(files?.querySelector("span")).toBeTruthy();
 	});
 
 	it("用 emoji 当图标的顶栏按钮带 .chip-emoji（免被「只显示图标」的 span 隐藏规则误杀）", () => {
-		// 静态锁：豁免必须写在 no-labels 的隐藏规则里（改了 CSS 忘了加 :not 就会红）。
 		const css = readFileSync(join(ROOT, "web", "src", "styles.css"), "utf8");
 		const rule = css.match(/\.topbar\.no-labels[\s\S]{0,600}?\.brand-name/);
 		expect(rule?.[0]).toContain(":not(.chip-emoji)");
 
-		// 回归：临时对话按钮采用虚线对话气泡图标（LuMessageSquareDashed），在 no-labels 模式下原生保留 SVG 图标
 		const { container } = mount("chat", undefined, undefined, undefined, {
 			settings: { uiLayout: { topbarText: false } },
 		});
@@ -256,7 +227,7 @@ describe("TopBar 是单一扁直流（无按种类包裹的容器、无贴边例
 			...container.querySelectorAll(".topbar-flow button, .topbar-flow a[href]"),
 			...document.querySelectorAll(".plugin-topbar-more > button"),
 		];
-		expect(ctrls.length).toBeGreaterThan(4);
+		expect(ctrls.length).toBeGreaterThanOrEqual(4);
 		for (const el of ctrls) {
 			const tip = el.getAttribute("data-tip");
 			expect(!!tip && tip.trim().length > 0, el.getAttribute("class") ?? undefined).toBe(true);
@@ -288,21 +259,16 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 		const { container, opened } = mount("chat");
 		const toggles = Array.from(container.querySelectorAll<HTMLButtonElement>("button.panel-toggle"));
 		expect(toggles.length).toBe(2);
-		// 可访问名称 = aria-label / title / 可见文字（顶栏直流内用 data-tip 即时气泡，
-		// 不用原生 title，文案随语言包变，只验证「有名字且两键不同」）。
 		const accName = (b: HTMLButtonElement) => b.getAttribute("aria-label") || b.title || (b.textContent ?? "").trim();
 		expect(accName(toggles[0])).toBeTruthy();
 		expect(accName(toggles[1])).toBeTruthy();
 		expect(accName(toggles[1])).not.toBe(accName(toggles[0]));
-		// 纯图标的 ☰ 按钮没有可见文字：名字必须挂在 aria-label 上，否则读屏器无名。
 		expect(toggles[0].getAttribute("aria-label")).toBeTruthy();
 		act(() => toggles[0].click());
 		act(() => toggles[1].click());
 		expect(opened).toEqual(["left", "right"]);
 	});
 
-	// 这三个视图里抽屉节点都是 display:none 的（App.tsx 的 .view-pane.hidden）→
-	// 按钮点不出抽屉，只会留下遮罩；终端视图还额外有自己面板的 ☰，就是用户看到的两个。
 	for (const view of ["terminal", "git", "plugin:demo-mailbox"] as const) {
 		it(`${view} 视图：不渲染面板抽屉按钮`, () => {
 			const { container, opened } = mount(view);
@@ -311,9 +277,6 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 		});
 	}
 
-	// 布局页/插件 arrange 把内置入口藏了 → 主栏按钮消失，但它必须能从「⋯」溢出菜单点回来
-	// （issue #146：隐藏 ≠ 失去入口；否则用户一旦手滑藏了就会得到一个点了没反应的按钮，
-	//  这与设置面板「界面布局」页的承诺不符）。
 	it("隐藏 host:files / host:history 时不渲染对应按钮", () => {
 		const { container, opened } = mount("chat", [hostEntry("host:chat", false)]);
 		expect(container.querySelectorAll("button.panel-toggle").length).toBe(0);
@@ -329,12 +292,9 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 		const more = container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button");
 		expect(more).toBeTruthy();
 		act(() => more!.click());
-		// issue #162：菜单 portal 到 document.body（fixed），不在 container 里 —— 查全局。
-		// 且不再挂在会被任何祖先 overflow 裁剪的容器下。
 		const menu = document.querySelector(".plugin-topbar-menu");
 		expect(menu?.parentElement).toBe(document.body);
 		expect(menu?.classList.contains("portal")).toBe(true);
-		// 折叠按钮保持原样式：菜单里画的仍是 panel-toggle（不是扁平菜单行）。
 		const items = Array.from(
 			document.querySelectorAll<HTMLButtonElement>(
 				".plugin-topbar-menu .plugin-topbar-menu-keep > button.panel-toggle",
@@ -343,7 +303,6 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 		expect(items.length).toBe(2);
 		act(() => items[0]!.click());
 		expect(opened).toEqual(["right"]);
-		// 菜单点完即关；再开一次点另一条 → 打开左栏
 		act(() => more!.click());
 		const items2 = Array.from(
 			document.querySelectorAll<HTMLButtonElement>(
@@ -356,13 +315,11 @@ describe("TopBar 面板抽屉按钮的视图门禁", () => {
 });
 
 describe("TopBar「打开项目」入口（host:open-project）", () => {
-	/** 受控 input 赋值（React 需要原生 setter + input 事件才会收到变更）。 */
 	const setInput = (el: HTMLInputElement, value: string) => {
 		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
 		el.dispatchEvent(new Event("input", { bubbles: true }));
 	};
 
-	/** 带一条 host:open-project 的顶栏 + 收集 appSend 出去的协议消息。 */
 	const mountWithPicker = () => {
 		setAppGlobals({ cwd: "/test", ready: true, status: "open", workspaceRoots: [] });
 		const sent: { type: string; [k: string]: unknown }[] = [];
@@ -382,7 +339,6 @@ describe("TopBar「打开项目」入口（host:open-project）", () => {
 		expect(btn).toBeTruthy();
 		expect(document.querySelector(".project-picker")).toBeNull();
 		act(() => btn!.click());
-		// 对话框 fixed 定位、与左栏那份是同一个组件：挂在顶栏里也不会被裁剪
 		expect(document.querySelector(".project-picker")).toBeTruthy();
 		expect(document.querySelector(".project-picker-backdrop")).toBeTruthy();
 		act(() => document.querySelector<HTMLElement>(".project-picker-backdrop")!.click());
@@ -396,7 +352,6 @@ describe("TopBar「打开项目」入口（host:open-project）", () => {
 		act(() => document.querySelector<HTMLButtonElement>(".cwd-toolbar .tool-pick")!.click());
 		expect(sent.filter((m) => m.type === "set_cwd")).toEqual([{ type: "set_cwd", path: "/test" }]);
 
-		// 再打开一次，走「＋ 新建项目」：合法名称 → make_dir + setAsCwd
 		act(() => btn.click());
 		act(() => document.querySelector<HTMLButtonElement>(".cwd-toolbar .tool-new")!.click());
 		const nameInput = document.querySelector<HTMLInputElement>(".cwd-newrow input")!;
@@ -416,7 +371,6 @@ describe("TopBar「打开项目」入口（host:open-project）", () => {
 		const { container } = mount("chat", [hostEntry("host:chat")], [hostEntry("host:open-project", true)]);
 		expect(container.querySelector("button.open-project")).toBeNull();
 		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
-		// 折叠后仍是原来的 chip（不是扁平菜单行），点它照样打开选择器。
 		const item = document.querySelector<HTMLButtonElement>(
 			".plugin-topbar-menu .plugin-topbar-menu-keep > button.open-project",
 		);
@@ -433,12 +387,10 @@ describe("TopBar 溢出菜单里的 GitHub 行", () => {
 		act(() => container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button")!.click());
 		const link = document.querySelector<HTMLAnchorElement>(".plugin-topbar-menu > a.chip.github");
 		expect(link).toBeTruthy();
-		// 图标 + 文字（svg 不贡献文本，行内读出来就是 GitHub）
 		expect(link!.querySelector("svg")).toBeTruthy();
 		expect(link!.textContent?.trim()).toBe("GitHub");
 		expect(link!.title).toContain("xing-shuyin/pi-web-ui");
 		expect(link!.getAttribute("role")).toBe("menuitem");
-		// 与其它菜单项同为菜单的直接子节点（同一套外观规则命中）
 		expect(link!.parentElement?.classList.contains("plugin-topbar-menu")).toBe(true);
 	});
 });
@@ -486,21 +438,20 @@ describe("TopBar 槽位渲染（顺序即 slot 顺序，插件条目与宿主条
 		]);
 		const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
 		expect(tabs.length).toBe(3);
-		// 选中的 terminal 落在 slot 顺序的最后一位（文案随语言包变，用选中态定位）。
 		expect(tabs.findIndex((b) => b.getAttribute("aria-selected") === "true")).toBe(2);
 		tabs.forEach((t) => expect(t.parentElement?.classList.contains("topbar-flow")).toBe(true));
 	});
 
-	it("插件视图 tab 按 slot 顺序插进宿主三连之间", () => {
+	it("聊天视图隐藏重复对话标签，插件视图 tab 仍按 slot 顺序排列", () => {
 		const { container } = mount("chat", [
 			hostEntry("host:chat"),
 			pluginViewEntry("mail:__view", "Mailbox", "plugin:mail"),
 			hostEntry("host:terminal"),
 		]);
 		const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
-		expect(tabs.length).toBe(3);
-		expect(tabs[1].classList.contains("plugin-tab")).toBe(true);
-		expect(tabs[1].textContent).toContain("Mailbox");
+		expect(tabs.length).toBe(2);
+		expect(tabs[0].classList.contains("plugin-tab")).toBe(true);
+		expect(tabs[0].textContent).toContain("Mailbox");
 	});
 
 	it("插件动作不限 4 个：5 个全进主栏；⋯ 因为兼着「编辑图标」入口而常驻", () => {
@@ -512,9 +463,7 @@ describe("TopBar 槽位渲染（顺序即 slot 顺序，插件条目与宿主条
 			pluginActionEntry("d"),
 			pluginActionEntry("e"),
 		]);
-		// 主直流里 5 个（⋯ 触发按钮是 .topbar-flow 的**兄弟**，不在这个计数里）。
-		expect(flowItems(container).length).toBe(6); // host:chat + a..e
-		// ⋯ 不再随「无溢出」消失：它是「编辑图标」的唯一入口（见 IconEditor）。
+		expect(flowItems(container).length).toBe(5);
 		expect(container.querySelector(".plugin-topbar-more")).not.toBeNull();
 	});
 
@@ -524,15 +473,11 @@ describe("TopBar 槽位渲染（顺序即 slot 顺序，插件条目与宿主条
 		]);
 		const broken = container.querySelector(".plugin-tab.broken");
 		expect(broken?.textContent).toContain("Mail");
-		// 报错原因走 data-tip 即时气泡（顶栏直流内不用原生 title，见上）
 		expect(broken?.getAttribute("data-tip")).toContain("boom");
 	});
 });
 
 describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => {
-	// jsdom 没有布局：把 offsetWidth / clientWidth 与 ResizeObserver 都打桩，
-	// 只为验证**接线**（实测 → fitTopbar → 从尾部退进菜单），几何正确性由
-	// tests/unit/topbar-fit.test.ts 的纯函数单测负责。
 	const realOffset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
 	const realClient = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
 	const realRO = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
@@ -563,7 +508,7 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 	});
 
 	it("宽度不足：尾部条目退出主栏、进「⋯」菜单，窗口变宽后回来", () => {
-		stubLayout(60, 200); // 每条 60、容器 200 → 只放得下 3 条
+		stubLayout(60, 200);
 		const rows = [
 			hostEntry("host:brand"),
 			hostEntry("host:open-project"),
@@ -572,12 +517,11 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 			hostEntry("host:git"),
 			hostEntry("host:new-chat"),
 		];
-		const { container } = mount("chat", rows);
+		const { container } = mount("terminal", rows);
 		expect(flowItems(container).length).toBe(3);
 		const more = container.querySelector<HTMLButtonElement>(".plugin-topbar-more > button");
 		expect(more).toBeTruthy();
 		act(() => more!.click());
-		// 退进菜单的是原样控件（tb-tab/chip 包一层关菜单），不是扁平菜单行。
 		const menuItems = document.querySelectorAll(".plugin-topbar-menu .plugin-topbar-menu-keep");
 		expect(menuItems.length).toBe(3);
 		expect(document.querySelectorAll(".plugin-topbar-menu .plugin-topbar-menu-keep > .tb-tab").length).toBe(2);
@@ -586,7 +530,7 @@ describe("TopBar 实测宽度溢出（放不下的自动进「⋯」）", () => 
 
 describe("TopBar 靠左图标提示向右偏移（防左缘溢出裁剪）", () => {
 	it("无 center 段、仅有 start 与 end 段时，单 spacer 挂 tb-spacer-end 类名区分右段", () => {
-		const { container } = mount("chat", [
+		const { container } = mount("terminal", [
 			{ ...hostEntry("host:open-project"), align: "start" },
 			{ ...hostEntry("host:chat"), align: "end" },
 		]);

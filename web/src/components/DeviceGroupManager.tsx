@@ -3,9 +3,11 @@ import { FiCheck, FiEdit2, FiMessageSquare, FiPlus, FiRefreshCw, FiTrash2, FiUse
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
+import { GroupRouterSettings, type GroupRouterConfig } from "./GroupRouterSettings";
+import { GroupWorkItems } from "./GroupWorkItems";
 
 type Bot = { id: string; name: string; deviceId?: string; enabled: boolean; online?: boolean };
-type Room = { id: string; name: string; botIds: string[]; primaryBotId?: string };
+type Room = { id: string; name: string; botIds: string[]; primaryBotId?: string; router?: GroupRouterConfig };
 
 const DEVICE_GROUPS_CHANGED = "pi-web-ui:device-groups-changed";
 
@@ -25,7 +27,11 @@ async function groupApi<T>(path: string, signal: AbortSignal, body?: object): Pr
 	return data as T;
 }
 
-export function DeviceGroupManager() {
+export function DeviceGroupManager({ bindingKey = "" }: { bindingKey?: string }) {
+	return <DeviceGroupManagerContent key={bindingKey} />;
+}
+
+function DeviceGroupManagerContent() {
 	const { locale } = useI18n();
 	const zh = isZhLocale(locale);
 
@@ -36,29 +42,45 @@ export function DeviceGroupManager() {
 	const [notice, setNotice] = useState("");
 	const [refresh, setRefresh] = useState(0);
 
-	// 创建群聊状态
 	const [creating, setCreating] = useState(false);
 	const [createName, setCreateName] = useState("");
 	const [createBotIds, setCreateBotIds] = useState<string[]>([]);
 	const [createPrimaryBotId, setCreatePrimaryBotId] = useState("");
 
-	// 管理成员状态
 	const [managingRoomId, setManagingRoomId] = useState<string | null>(null);
 	const [memberBotIds, setMemberBotIds] = useState<string[]>([]);
 	const [memberPrimaryBotId, setMemberPrimaryBotId] = useState("");
 
-	// 重命名状态
 	const [renamingRoomId, setRenamingRoomId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
 
-	// 提交操作中
 	const [busy, setBusy] = useState(false);
 
+	const [selectedPanel, setSelectedPanel] = useState<{ roomId: string; kind: "router" | "work" } | null>(null);
+	const selectedRoom = rooms.find((room) => room.id === selectedPanel?.roomId);
 	const generation = useRef(0);
+	const listRequest = useRef<AbortController | null>(null);
+	const mutation = useRef<AbortController | null>(null);
+
+	function refreshGroups() {
+		++generation.current;
+		listRequest.current?.abort();
+		setRefresh((n) => n + 1);
+	}
+
+	function startMutation() {
+		mutation.current?.abort();
+		const controller = new AbortController();
+		mutation.current = controller;
+		return controller;
+	}
+
+	useEffect(() => () => mutation.current?.abort(), []);
 
 	useEffect(() => {
 		const token = ++generation.current;
 		const controller = new AbortController();
+		listRequest.current = controller;
 
 		async function load() {
 			try {
@@ -67,7 +89,11 @@ export function DeviceGroupManager() {
 					groupApi<{ bots: Bot[] }>("bots", controller.signal),
 				]);
 				if (generation.current !== token || controller.signal.aborted) return;
-				setRooms(Array.isArray(roomData.rooms) ? roomData.rooms : []);
+				const nextRooms = Array.isArray(roomData.rooms) ? roomData.rooms : [];
+				setRooms(nextRooms);
+				setSelectedPanel((previous) =>
+					previous && nextRooms.some((room) => room.id === previous.roomId) ? previous : null,
+				);
 				setBots(Array.isArray(botData.bots) ? botData.bots : []);
 				setError("");
 			} catch (cause) {
@@ -89,19 +115,18 @@ export function DeviceGroupManager() {
 	}, [refresh]);
 
 	useEffect(() => {
-		const handler = () => setRefresh((n) => n + 1);
+		const handler = () => refreshGroups();
 		window.addEventListener(DEVICE_GROUPS_CHANGED, handler);
 		return () => window.removeEventListener(DEVICE_GROUPS_CHANGED, handler);
 	}, []);
 
-	// 创建群聊
 	async function handleCreateGroup(e: React.FormEvent) {
 		e.preventDefault();
 		if (!createName.trim() || busy) return;
 		setBusy(true);
 		setError("");
 		setNotice("");
-		const controller = new AbortController();
+		const controller = startMutation();
 		try {
 			const expectedPrimary = createBotIds.includes(createPrimaryBotId) ? createPrimaryBotId : "";
 			const result = await groupApi<{ room: Room }>("rooms", controller.signal, {
@@ -109,6 +134,7 @@ export function DeviceGroupManager() {
 				botIds: createBotIds,
 				...(expectedPrimary ? { primaryBotId: expectedPrimary } : {}),
 			});
+			if (controller.signal.aborted) return;
 			setRooms((prev) => [...prev.filter((r) => r.id !== result.room.id), result.room]);
 			setCreating(false);
 			setCreateName("");
@@ -117,13 +143,12 @@ export function DeviceGroupManager() {
 			setNotice(zh ? "群聊创建成功" : "Group created successfully");
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setBusy(false);
+			if (!controller.signal.aborted) setBusy(false);
 		}
 	}
 
-	// 开始管理成员
 	function startManageMembers(room: Room) {
 		setManagingRoomId(room.id);
 		setMemberBotIds([...room.botIds]);
@@ -134,53 +159,52 @@ export function DeviceGroupManager() {
 		setNotice("");
 	}
 
-	// 保存成员设置
 	async function handleSaveMembers(roomId: string) {
 		if (busy) return;
 		setBusy(true);
 		setError("");
 		setNotice("");
-		const controller = new AbortController();
+		const controller = startMutation();
 		try {
 			const expectedPrimary = memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : null;
 			const result = await groupApi<{ room: Room }>(`rooms/${encodeURIComponent(roomId)}/members`, controller.signal, {
 				botIds: memberBotIds,
 				primaryBotId: expectedPrimary,
 			});
+			if (controller.signal.aborted) return;
 			setRooms((prev) => prev.map((r) => (r.id === roomId ? result.room : r)));
 			setManagingRoomId(null);
 			setNotice(zh ? "成员设置已保存" : "Members updated successfully");
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setBusy(false);
+			if (!controller.signal.aborted) setBusy(false);
 		}
 	}
 
-	// 重命名群聊
 	async function handleRename(roomId: string) {
 		if (!renameValue.trim() || busy) return;
 		setBusy(true);
 		setError("");
 		setNotice("");
-		const controller = new AbortController();
+		const controller = startMutation();
 		try {
 			await groupApi(`rooms/${encodeURIComponent(roomId)}/rename`, controller.signal, {
 				name: renameValue.trim(),
 			});
+			if (controller.signal.aborted) return;
 			setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, name: renameValue.trim() } : r)));
 			setRenamingRoomId(null);
 			setNotice(zh ? "群聊名称已更新" : "Group renamed successfully");
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setBusy(false);
+			if (!controller.signal.aborted) setBusy(false);
 		}
 	}
 
-	// 删除群聊
 	async function handleDelete(room: Room) {
 		if (busy) return;
 		if (!window.confirm(zh ? `确定删除群聊“${room.name}”？` : `Are you sure you want to delete "${room.name}"?`)) {
@@ -189,18 +213,20 @@ export function DeviceGroupManager() {
 		setBusy(true);
 		setError("");
 		setNotice("");
-		const controller = new AbortController();
+		const controller = startMutation();
 		try {
 			await groupApi(`rooms/${encodeURIComponent(room.id)}/delete`, controller.signal, {});
+			if (controller.signal.aborted) return;
+			setSelectedPanel((previous) => (previous?.roomId === room.id ? null : previous));
 			setRooms((prev) => prev.filter((r) => r.id !== room.id));
 			if (managingRoomId === room.id) setManagingRoomId(null);
 			if (renamingRoomId === room.id) setRenamingRoomId(null);
 			setNotice(zh ? "群聊已删除" : "Group deleted successfully");
 			window.dispatchEvent(new CustomEvent(DEVICE_GROUPS_CHANGED));
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : String(cause));
+			if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setBusy(false);
+			if (!controller.signal.aborted) setBusy(false);
 		}
 	}
 
@@ -241,7 +267,7 @@ export function DeviceGroupManager() {
 						type="button"
 						className="dc-icon-button"
 						aria-label={zh ? "刷新群聊" : "Refresh groups"}
-						onClick={() => setRefresh((n) => n + 1)}
+						onClick={refreshGroups}
 					>
 						<FiRefreshCw />
 					</button>
@@ -260,7 +286,6 @@ export function DeviceGroupManager() {
 				</p>
 			)}
 
-			{/* 新建群聊表单 */}
 			{creating && (
 				<form
 					className="dc-card"
@@ -350,7 +375,9 @@ export function DeviceGroupManager() {
 
 					{createBotIds.length > 0 && (
 						<div className="dc-field" style={{ marginBottom: "16px" }}>
-							<label htmlFor="dg-manager-new-primary">{zh ? "主 Bot" : "Primary Bot"}</label>
+							<label htmlFor="dg-manager-new-primary">
+								{zh ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
+							</label>
 							<select
 								id="dg-manager-new-primary"
 								value={createBotIds.includes(createPrimaryBotId) ? createPrimaryBotId : ""}
@@ -390,7 +417,6 @@ export function DeviceGroupManager() {
 				</form>
 			)}
 
-			{/* 管理成员面板 */}
 			{managingRoomId && (
 				<div
 					className="dc-card"
@@ -456,33 +482,37 @@ export function DeviceGroupManager() {
 						</div>
 					</div>
 
-					<div className="dc-field" style={{ marginBottom: "16px" }}>
-						<label htmlFor="dg-manager-edit-primary">{zh ? "主 Bot" : "Primary Bot"}</label>
-						<select
-							id="dg-manager-edit-primary"
-							value={memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : ""}
-							onChange={(e) => setMemberPrimaryBotId(e.target.value)}
-							disabled={busy}
-							style={{
-								width: "100%",
-								background: "var(--bg-elev)",
-								border: "1px solid var(--border)",
-								borderRadius: "6px",
-								padding: "6px 10px",
-								color: "var(--text)",
-								fontSize: "13px",
-							}}
-						>
-							<option value="">{zh ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
-							{bots
-								.filter((bot) => memberBotIds.includes(bot.id))
-								.map((bot) => (
-									<option key={bot.id} value={bot.id}>
-										{bot.name}
-									</option>
-								))}
-						</select>
-					</div>
+					{!rooms.find((room) => room.id === managingRoomId)?.router?.enabled && (
+						<div className="dc-field" style={{ marginBottom: "16px" }}>
+							<label htmlFor="dg-manager-edit-primary">
+								{zh ? "原主 Bot（Router 未启用时）" : "Legacy primary Bot (when Router is disabled)"}
+							</label>
+							<select
+								id="dg-manager-edit-primary"
+								value={memberBotIds.includes(memberPrimaryBotId) ? memberPrimaryBotId : ""}
+								onChange={(e) => setMemberPrimaryBotId(e.target.value)}
+								disabled={busy}
+								style={{
+									width: "100%",
+									background: "var(--bg-elev)",
+									border: "1px solid var(--border)",
+									borderRadius: "6px",
+									padding: "6px 10px",
+									color: "var(--text)",
+									fontSize: "13px",
+								}}
+							>
+								<option value="">{zh ? "不设置（需 @ Bot）" : "None (mention a Bot)"}</option>
+								{bots
+									.filter((bot) => memberBotIds.includes(bot.id))
+									.map((bot) => (
+										<option key={bot.id} value={bot.id}>
+											{bot.name}
+										</option>
+									))}
+							</select>
+						</div>
+					)}
 
 					<div className="dc-actions">
 						<button
@@ -501,7 +531,6 @@ export function DeviceGroupManager() {
 				</div>
 			)}
 
-			{/* 群聊列表 */}
 			{loading && <p role="status">{zh ? "加载中…" : "Loading…"}</p>}
 
 			{!loading && rooms.length === 0 && (
@@ -536,7 +565,12 @@ export function DeviceGroupManager() {
 													memberBots.length ? `: ${memberBots.map((b) => b.name).join(", ")}` : ""
 												}`}
 									</span>
-									{primaryBot && (
+									{room.router?.enabled && (
+										<span>
+											AI Router · {room.router.deviceId} · {room.router.model} · {room.router.thinkingLevel}
+										</span>
+									)}
+									{!room.router?.enabled && primaryBot && (
 										<span style={{ color: "var(--accent)" }}>
 											{zh ? `[主 Bot: ${primaryBot.name}]` : `[Primary: ${primaryBot.name}]`}
 										</span>
@@ -553,6 +587,22 @@ export function DeviceGroupManager() {
 								>
 									<FiMessageSquare aria-hidden />
 									{zh ? "打开聊天" : "Open chat"}
+								</button>
+								<button
+									type="button"
+									className="dc-button"
+									aria-expanded={selectedPanel?.roomId === room.id && selectedPanel.kind === "router"}
+									onClick={() => setSelectedPanel({ roomId: room.id, kind: "router" })}
+								>
+									AI Router
+								</button>
+								<button
+									type="button"
+									className="dc-button"
+									aria-expanded={selectedPanel?.roomId === room.id && selectedPanel.kind === "work"}
+									onClick={() => setSelectedPanel({ roomId: room.id, kind: "work" })}
+								>
+									{zh ? "工单与运行" : "Work items & runs"}
 								</button>
 								<button
 									type="button"
@@ -638,6 +688,46 @@ export function DeviceGroupManager() {
 					);
 				})}
 			</div>
+			{selectedRoom && selectedPanel && (
+				<section className="dc-card" aria-label={zh ? "群组设置" : "Group settings"}>
+					<div className="dg-heading">
+						<h3>{selectedRoom.name}</h3>
+						<div className="dc-actions">
+							<button
+								type="button"
+								className={`dc-button${selectedPanel.kind === "router" ? " is-primary" : ""}`}
+								aria-pressed={selectedPanel.kind === "router"}
+								onClick={() => setSelectedPanel({ roomId: selectedRoom.id, kind: "router" })}
+							>
+								AI Router
+							</button>
+							<button
+								type="button"
+								className={`dc-button${selectedPanel.kind === "work" ? " is-primary" : ""}`}
+								aria-pressed={selectedPanel.kind === "work"}
+								onClick={() => setSelectedPanel({ roomId: selectedRoom.id, kind: "work" })}
+							>
+								{zh ? "工单与运行" : "Work items & runs"}
+							</button>
+							<button type="button" className="dc-button" onClick={() => setSelectedPanel(null)}>
+								<FiX aria-hidden />
+								{zh ? "关闭" : "Close"}
+							</button>
+						</div>
+					</div>
+					{selectedPanel.kind === "router" ? (
+						<GroupRouterSettings
+							key={selectedRoom.id}
+							roomId={selectedRoom.id}
+							router={selectedRoom.router}
+							disabled={busy}
+							onSaved={refreshGroups}
+						/>
+					) : (
+						<GroupWorkItems key={selectedRoom.id} roomId={selectedRoom.id} disabled={busy} />
+					)}
+				</section>
+			)}
 		</section>
 	);
 }

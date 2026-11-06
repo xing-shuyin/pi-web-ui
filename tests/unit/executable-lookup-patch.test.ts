@@ -25,12 +25,6 @@ import {
 	SENTINEL,
 } from "../../server/patch-executable-lookup.js";
 
-/*
- * Header + lookup verbatim from @earendil-works/pi-coding-agent@1.1.0
- * (`dist/utils/shell.js`): the POSIX `which` child process, and a module header that
- * imports `existsSync` and has **no** `shellPathExists` helper. The patch may not borrow
- * any binding from the module it rewrites — 1.1.0 is the shape that caught exactly that.
- */
 const SHELL_SOURCE = `import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawn, spawnSync } from "child_process";
@@ -74,8 +68,6 @@ function findExecutableOnPath(executable) {
     return null;
 }`;
 
-/* Header + `commandExists` verbatim from @earendil-works/pi-coding-agent@1.1.0
- * (`dist/utils/tools-manager.js`). */
 const TOOLS_SOURCE = `import { spawnSync } from "child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
 import { arch, platform } from "os";
@@ -105,7 +97,6 @@ function tempDir(prefix = "exec-lookup-"): string {
 	return dir;
 }
 
-/** A directory with `name` as an executable script — the "later usable PATH entry". */
 function programDir(root: string, name: string): string {
 	const dir = join(root, `${name}-program`);
 	mkdirSync(dir, { recursive: true });
@@ -115,14 +106,12 @@ function programDir(root: string, name: string): string {
 	return dir;
 }
 
-/** A directory holding a subdirectory called `name`, which must never resolve. */
 function directoryEntry(root: string, name: string): string {
 	const dir = join(root, `${name}-dir`);
 	mkdirSync(join(dir, name), { recursive: true });
 	return dir;
 }
 
-/** A directory holding a non-executable file called `name`. */
 function inertEntry(root: string, name: string): string {
 	const dir = join(root, `${name}-inert`);
 	mkdirSync(dir, { recursive: true });
@@ -141,11 +130,6 @@ function declaration(code: string, name: string): string {
 
 let moduleCounter = 0;
 
-/**
- * Runs the patched lookup for real: the patch preamble plus the rewritten function are
- * written to a module and imported, so the test exercises actual filesystem semantics
- * instead of a hand-supplied helper or a text assertion.
- */
 async function runPatched<T>(code: string, functionName: string, prelude = ""): Promise<T> {
 	const start = code.indexOf(PREAMBLE_START);
 	const end = code.indexOf(PREAMBLE_END);
@@ -156,7 +140,6 @@ async function runPatched<T>(code: string, functionName: string, prelude = ""): 
 	return (await import(`${pathToFileURL(file).href}?v=${moduleCounter}`)) as T;
 }
 
-/** Runs `body` with PATH temporarily replaced — the patch reads `process.env.PATH`. */
 function withPath<T>(path: string, body: () => T): T {
 	const previous = process.env.PATH;
 	process.env.PATH = path;
@@ -176,7 +159,6 @@ describe("fork-free executable lookup patch", () => {
 		expect(result.code).toContain("__piWebExecDelimiter");
 		expect(result.code).toContain("__piWebExecProgram(candidate)");
 		expect(result.code).toContain(SENTINEL);
-		// untouched: the Windows branch, and the SDK's own helper (which 1.1.0 does not have)
 		expect(result.code).toContain('if (process.platform === "win32")');
 		expect(result.code).not.toContain("shellPathExists");
 	});
@@ -195,21 +177,15 @@ describe("fork-free executable lookup patch", () => {
 		mkdirSync(link);
 		symlinkSync(join(program, "bash"), join(link, "bash"));
 
-		// A directory and an inert file on PATH do not end the search: the resolver
-		// continues to the later entry that really is a program.
 		const resolved = withPath([asDirectory, inert, program].join(delimiter), () => findExecutableOnPath("bash"));
 		expect(resolved).toBe(join(program, "bash"));
 
-		// A symlink to a program is a program, and it wins over a later entry.
 		expect(withPath([asDirectory, inert, link, program].join(delimiter), () => findExecutableOnPath("bash"))).toBe(
 			join(link, "bash"),
 		);
 
-		// Nothing runnable anywhere: no candidate at all, so the SDK keeps its own
-		// fallbacks instead of being handed a path that cannot execute.
 		expect(withPath([asDirectory, inert].join(delimiter), () => findExecutableOnPath("bash"))).toBeNull();
 
-		// The resolved candidate is a path the kernel will actually run.
 		const run = spawnSync(resolved as string, [], { encoding: "utf-8", timeout: 10_000 });
 		expect(run.status).toBe(0);
 		expect(run.stdout).toBe("ok");
@@ -227,8 +203,6 @@ describe("fork-free executable lookup patch", () => {
 		const asDirectory = directoryEntry(root, "rg");
 		const inert = inertEntry(root, "rg");
 
-		// Existence alone used to be enough — `ensureTool` then claimed a tool whose
-		// subsequent spawn failed with ENOENT.
 		expect(withPath(asDirectory, () => commandExists("rg"))).toBe(false);
 		expect(withPath(inert, () => commandExists("rg"))).toBe(false);
 
@@ -236,7 +210,6 @@ describe("fork-free executable lookup patch", () => {
 			true,
 		);
 
-		// The tool the lookup just accepted is one a real invocation can run.
 		const run = spawnSync("rg", ["--version"], {
 			encoding: "utf-8",
 			timeout: 10_000,
@@ -257,21 +230,15 @@ describe("fork-free executable lookup patch", () => {
 		mkdirSync(rimraf);
 		writeFileSync(join(rimraf, "rg.exe"), "MZ");
 
-		// `process.platform` is shadowed inside the imported module: the Windows branch of
-		// the lookup runs against the real filesystem, without needing a Windows machine.
 		const winPrelude = (path: string) =>
 			`const process = { platform: "win32", env: { PATH: ${JSON.stringify(path)} } };`;
 		const lookup = (path: string) =>
 			runPatched<{ commandExists: (cmd: string) => boolean }>(patched.code, "commandExists", winPrelude(path));
 
-		// A directory named rg.exe is not a program.
 		expect((await lookup(asDirectory)).commandExists("rg")).toBe(false);
 
-		// A `.cmd` needs a shell to run; CreateProcess does not start it, so claiming it
-		// would be the very false positive this patch removes.
 		expect((await lookup(scriptOnly)).commandExists("rg")).toBe(false);
 
-		// The plain executable is found, on a later PATH entry as well.
 		expect((await lookup(`${asDirectory};${scriptOnly};${rimraf}`)).commandExists("rg")).toBe(true);
 	});
 
@@ -285,14 +252,11 @@ describe("fork-free executable lookup patch", () => {
 		const program = join(programDir(root, "mytool"), "mytool");
 		const inert = join(inertEntry(root, "othertool"), "othertool");
 
-		// An absolute path is answered by that path, whatever PATH says.
 		expect(withPath(inertEntry(root, "unrelated"), () => commandExists(program))).toBe(true);
 		expect(withPath(programDir(root, "unrelated"), () => commandExists(inert))).toBe(false);
 	});
 
 	it("does not let a regex literal hide a child process from the fork-free check", () => {
-		// A `}` inside a regex used to close the brace scan early, so the later spawnSync
-		// fell outside the extracted body and the lookup passed for fork-free.
 		const withRegex = `import { spawnSync } from "child_process";
 function commandExists(cmd) {
     if (process.env.PATH && /\\}/.test(cmd)) return false;
@@ -312,10 +276,6 @@ function commandExists(cmd) {
 	});
 
 	it("catches a `}`-only regex literal nested inside a block, not just at the top level", () => {
-		// The line-end rule alone only saves a `}` at depth 1. One level deeper the regex
-		// brace still shifted the depth, so the *nested* block's own `}` looked like the end
-		// of the function: the fork below fell outside the body and the lookup was reported
-		// as already fork-free (the one direction that must never happen).
 		const nestedRegex = `function commandExists(cmd) {
     const dirs = (process.env.PATH ?? "").split(":");
     if (dirs.length > 0) {
@@ -354,7 +314,6 @@ function commandExists(cmd) {
 }`;
 		expect(functionBody(mixed, "function commandExists")).toContain("spawnSync");
 		expect(patchExecutableLookupSource(mixed, "tools-manager").status).toBe("unsupported");
-		// Fork-free counterpart: the same shapes must not stop the positive verdict.
 		const forkFree = mixed.replace(
 			`const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
         return result.error === undefined || result.error === null;`,
@@ -378,15 +337,11 @@ function commandExists(cmd) {
 		] as const) {
 			if (!existsSync(join(sdk, file))) continue;
 			const status = patchExecutableLookupSource(readFileSync(join(sdk, file), "utf8"), target).status;
-			// A pristine copy patches; a copy a local patch script already made fork-free is a
-			// no-op. Anything unrecognized is exactly what the warning exists for.
 			expect([target, status === "unsupported" ? "unrecognized" : "recognized"]).toEqual([target, "recognized"]);
 		}
 	});
 
 	it("never reports an unrecognized rewrite as already fixed", () => {
-		// Only the spacing of the probe changes: the child process is still there, so this
-		// must not pass for a fork-free lookup (it used to say `already`).
 		const reformatted = TOOLS_SOURCE.replace("spawnSync(cmd,", "spawnSync (cmd,");
 		expect(reformatted).not.toBe(TOOLS_SOURCE);
 		expect(patchExecutableLookupSource(reformatted, "tools-manager")).toEqual({
@@ -397,7 +352,6 @@ function commandExists(cmd) {
 		const requoted = SHELL_SOURCE.replace('spawnSync("which"', "spawnSync( 'which'");
 		expect(patchExecutableLookupSource(requoted, "shell").status).toBe("unsupported");
 
-		// Comment-only drift is not an identification either.
 		const recommented = SHELL_SOURCE.replace("trust its output", "trust its output (unforked)");
 		expect(patchExecutableLookupSource(recommented, "shell").status).toBe("unsupported");
 
@@ -423,15 +377,11 @@ function commandExists(cmd) {
 `;
 		expect(patchExecutableLookupSource(forkFree, "shell")).toEqual({ code: forkFree, status: "already" });
 
-		// Not positively identified: no PATH scan, nothing recognizable.
 		const unrelatedPathScan = forkFree.replace(/process\.env\.PATH \?\? ""/, '"."');
 		expect(patchExecutableLookupSource(unrelatedPathScan, "shell").status).toBe("unsupported");
 	});
 
 	it("does not mistake the Windows `where` probe for the POSIX lookup still forking", () => {
-		// SDK shape with the POSIX branch already replaced by a PATH scan (a local patch, or
-		// upstream fixing it): the win32 early return keeps its `where` child process, which
-		// never runs on Android/Termux. That must read as fork-free, not as a warning.
 		const patchedPosix = SHELL_SOURCE.replace(
 			/ {4}\/\/ Unix: Use 'which'[\s\S]*?\n {4}catch \{\n {8}\/\/ Ignore errors\n {4}\}/,
 			`    // Unix: resolved from PATH (no child process)
@@ -455,7 +405,6 @@ function commandExists(cmd) {
 			status: "already",
 		});
 
-		// A fork in the POSIX part is still caught, however.
 		const stillForking = patchedPosix.replace(
 			"const candidate = join(directory, executable);",
 			'const candidate = spawnSync("which", [executable]);',

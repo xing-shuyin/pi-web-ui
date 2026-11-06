@@ -2,12 +2,6 @@ import { useEffect, useState } from "react";
 import { getDesktopPlatform, getDesktopWindowBridge, isDesktopShell } from "../desktop";
 import { isZhLocale, useI18n } from "../i18n";
 
-/**
- * 桌面端自定义窗口控制按钮（最小化、最大化/还原、关闭）。
- *
- * 仅在非 macOS（Windows / Linux）的桌面端 Electron 环境下渲染，
- * 视觉风格、尺寸高度、悬停高亮与顶栏左侧图标完全浑然一体。
- */
 export function WindowControls() {
 	const { locale } = useI18n();
 	const [isMaximized, setIsMaximized] = useState(false);

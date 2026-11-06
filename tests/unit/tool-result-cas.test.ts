@@ -27,7 +27,6 @@ describe("toolResult 图片的 CAS 内容寻址优化", () => {
 		expect(rec.url).toBe(`/api/attachment/${rec.hash}`);
 		expect(existsSync(rec.filePath)).toBe(true);
 
-		// 幂等写入，不产生异常
 		const rec2 = saveAttachmentSync(buf, "image/png");
 		expect(rec2.hash).toBe(rec.hash);
 	});
@@ -58,7 +57,6 @@ describe("toolResult 图片的 CAS 内容寻址优化", () => {
 		expect(imageBlock.dataUrl).toMatch(/^\/api\/attachment\/[a-f0-9]{64}$/);
 		expect(imageBlock.mimeType).toBe("image/png");
 
-		// 验证图片在附件库中可被读取
 		const hash = imageBlock.dataUrl.replace("/api/attachment/", "");
 		const rec = await findAttachment(hash);
 		expect(rec).not.toBeNull();

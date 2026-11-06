@@ -1,11 +1,3 @@
-/**
- * 目标审查回合硬闸门的纯函数单测（server/goal-review-gate.ts）。
- *
- * 口径：审查回合只许只读核实（read / grep / scm / 只读 bash / conversation_read）。
- * 写类、非常规 bash、派发类（D6：轮次由服务端控制）、向用户提问一律拒。
- *
- * 先例：tests/unit/plan-mode.test.ts、tests/unit/delegate-mode.test.ts（同一骨架）。
- */
 import { describe, expect, it } from "vitest";
 import { goalReviewDenial, shouldDeferPromptForReview } from "../../server/goal-review-gate.js";
 
@@ -22,10 +14,7 @@ describe("目标审查闸门 goalReviewDenial", () => {
 			expect(d!.reason).toContain("只回 verdict JSON");
 			expect(d!.reasonEn).toContain("verdict JSON");
 		}
-		// 回归 #436：eval 沙箱可写真实文件系统，审查回合只许只读核实。
 		expect(goalReviewDenial("eval", {})?.kind).toBe("write-tool");
-		// codemode 可嵌套调用写工具/命令，与 plan-mode/delegate-mode 同口径拦截
-		//（mcp_manage / sandbox 亦同批加入）
 		for (const name of ["codemode", "mcp_manage", "sandbox"]) {
 			expect(goalReviewDenial(name, {})?.kind, name).toBe("write-tool");
 		}
@@ -65,7 +54,6 @@ describe("目标审查闸门 goalReviewDenial", () => {
 	});
 
 	it("保守边界：带重定向的测试命令同样拒（与计划模式同一白名单，模型换写法即可）", () => {
-		// `2>&1` 命中写 shell token —— 审查者改写成 `npm test | tail -20` 就能过。
 		expect(goalReviewDenial("bash", { command: "npm test 2>&1 | tail -20" })?.kind).toBe("bash");
 	});
 
@@ -77,16 +65,12 @@ describe("目标审查闸门 goalReviewDenial", () => {
 	it("派发类工具一律拒（D6：轮次由服务端控制）", () => {
 		expect(goalReviewDenial("subagent", { action: "spawn" })?.kind).toBe("dispatch-tool");
 		expect(goalReviewDenial("subagent", { action: "wait_all" })?.kind).toBe("dispatch-tool");
-		// schedule 是真实注册的排程工具（单 action；#436 前名单里只有 schedule 等幽灵名）。
 		for (const name of ["delegate_task", "schedule"]) {
 			const d = goalReviewDenial(name, {});
 			expect(d?.kind, name).toBe("dispatch-tool");
 		}
 	});
 
-	// 回归 #436：名单以 server/tool-manager.ts 实际注册的工具名为事实源，
-	// 幽灵名（旧 subagent_* 拆分工具 / 协议消息名）清掉；subagent 本体由
-	// 按 action 的判定负责（见上）。
 	it("幽灵名不再误报", () => {
 		for (const ghost of [
 			"spawn",
@@ -115,17 +99,11 @@ describe("目标审查闸门 goalReviewDenial", () => {
 
 	it("审查回合插话顺延判定 shouldDeferPromptForReview", () => {
 		const base = { queue: false, text: "顺便问下", hasAttachments: false, awaitingVerdict: true };
-		// 纯文本 steer 插话 → 顺延（会污染 verdict）
 		expect(shouldDeferPromptForReview({ ...base, queue: false })).toBe(true);
-		// followUp（补充按钮）由 SDK 排在整轮结束后，本来就安全 → 不拦
 		expect(shouldDeferPromptForReview({ ...base, queue: true })).toBe(false);
-		// 非审查回合 → 不拦
 		expect(shouldDeferPromptForReview({ ...base, awaitingVerdict: false })).toBe(false);
-		// 带附件 → 不进顺延（调用方改响亮拒绝）
 		expect(shouldDeferPromptForReview({ ...base, queue: false, hasAttachments: true })).toBe(false);
-		// 斜杠命令直通（原生配置类不进模型）
 		expect(shouldDeferPromptForReview({ ...base, queue: false, text: "/compact" })).toBe(false);
-		// 空文本也顺延（与普通发送同口径，不过滤内容）
 		expect(shouldDeferPromptForReview({ ...base, text: "   " })).toBe(true);
 	});
 

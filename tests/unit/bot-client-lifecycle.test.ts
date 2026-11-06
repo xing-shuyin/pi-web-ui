@@ -19,8 +19,6 @@ function binding() {
 function daemon(clientId: string) {
 	const sink = vi.fn();
 	const sinks = new Set<unknown>([sink]);
-	// 实例字段（pending / sharedViewers / offlineSince …）由 fake-session 从生产源码
-	// 推导，新增字段自动带上默认值——不靠每个文件手补一行。
 	const cs = fakeClientSession({
 		detachSink: vi.fn((send: unknown) => sinks.delete(send)),
 		sinkCount: () => sinks.size,

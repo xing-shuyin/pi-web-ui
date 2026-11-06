@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isTouchFirstDevice, type TouchEnv } from "../../web/src/touch-device.js";
 
-/**
- * 回车语义 = f(设备类型)：触屏优先设备回车换行，其余回车发送。
- *
- * 回归重点：Windows 触屏笔记本 / 二合一的主指针常被判成 `(pointer: coarse)`，
- * 但它们有物理键盘，回车必须发送 —— 只看 coarse 会让这些用户“回车只换行、
- * 发不出去”（用户实测反馈）。
- */
 const env = (pointer: "coarse" | "fine", hover: "none" | "hover", userAgent: string, maxTouchPoints = 0): TouchEnv => ({
 	query: (media) =>
 		media === "(pointer: coarse)" ? pointer === "coarse" : media === "(hover: none)" ? hover === "none" : false,
@@ -37,7 +30,6 @@ describe("touch-first device detection", () => {
 	});
 
 	it("Windows 触屏设备（粗指针）仍然按桌面处理：回车发送", () => {
-		// 用户实测：Windows 二合一被判 coarse，回车只换行 → 必须排除 Windows。
 		expect(isTouchFirstDevice(env("coarse", "none", WIN, 10))).toBe(false);
 		expect(isTouchFirstDevice(env("coarse", "hover", WIN, 10))).toBe(false);
 	});
@@ -46,13 +38,13 @@ describe("touch-first device detection", () => {
 		expect(isTouchFirstDevice(env("fine", "hover", MAC, 0))).toBe(false);
 		expect(isTouchFirstDevice(env("fine", "hover", WIN, 0))).toBe(false);
 		expect(isTouchFirstDevice(env("coarse", "hover", LINUX, 0))).toBe(false);
-		expect(isTouchFirstDevice(env("coarse", "none", LINUX, 0))).toBe(false); // Linux 桌面
-		expect(isTouchFirstDevice(env("coarse", "none", CROS, 0))).toBe(false); // Chromebook 有键盘
+		expect(isTouchFirstDevice(env("coarse", "none", LINUX, 0))).toBe(false);
+		expect(isTouchFirstDevice(env("coarse", "none", CROS, 0))).toBe(false);
 	});
 
 	it("iPad 伪装成 Macintosh 时靠 maxTouchPoints 区分", () => {
-		expect(isTouchFirstDevice(env("coarse", "none", MAC, 0))).toBe(false); // 真 Mac
-		expect(isTouchFirstDevice(env("coarse", "none", MAC, 5))).toBe(true); // iPad
+		expect(isTouchFirstDevice(env("coarse", "none", MAC, 0))).toBe(false);
+		expect(isTouchFirstDevice(env("coarse", "none", MAC, 5))).toBe(true);
 	});
 
 	it("拿不到 matchMedia 的环境一律按桌面（可发送）", () => {

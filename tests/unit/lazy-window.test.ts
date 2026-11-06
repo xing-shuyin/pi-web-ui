@@ -25,7 +25,7 @@ describe("planWindow", () => {
 	it("缓冲带外的项进入 hide；视口上方者计入 shrinkAbove", () => {
 		const plan = planWindow([rect("above", -2000, -300), rect("below", 2600, 3000)], VIEW, new Set(), new Set());
 		expect(plan.hide).toEqual(["above", "below"]);
-		expect(plan.shrinkAbove).toBe(1700); // 只有上方那一条
+		expect(plan.shrinkAbove).toBe(1700);
 	});
 
 	it("跨视口边缘（部分可见）不算隐藏", () => {
@@ -62,15 +62,12 @@ describe("planWindow", () => {
 	it("迟滞安全区（Hysteresis）：离开挂载视口但在更宽卸载视口内的项保持渲染不被收起", () => {
 		const mountVp = { top: 0, bottom: 1000 };
 		const unmountVp = { top: -1000, bottom: 2000 };
-		// 项落在挂载视口之外，但仍在卸载视口内 [-1000, 2000]
 		const item = rect("mid", 1200, 1500);
 
-		// 如果它当前已经在显示中（hidden 为空），由于尚未超出 unmountVp，不应被 hide（杜绝边缘反复震荡）
 		const planMounted = planWindow([item], mountVp, new Set(), new Set(), unmountVp);
 		expect(planMounted.hide).toEqual([]);
 		expect(planMounted.show).toEqual([]);
 
-		// 只有当它完全离开更宽的 unmountVp 时（如 bottom <= -1000 或 top >= 2000），才进入 hide
 		const farItem = rect("far", 2100, 2400);
 		const planFar = planWindow([farItem], mountVp, new Set(), new Set(), unmountVp);
 		expect(planFar.hide).toEqual(["far"]);
@@ -98,8 +95,8 @@ describe("pickAlways", () => {
 		const always = pickAlways(msgs(["a", "b", "c", "d"]), new Map(), 200);
 		expect(always.has("d")).toBe(true);
 		expect(always.has("c")).toBe(true);
-		expect(always.has("b")).toBe(true); // 加到 b 时累计 144 仍未超
-		expect(always.has("a")).toBe(false); // 加 a 前累计 216 已超预算
+		expect(always.has("b")).toBe(true);
+		expect(always.has("a")).toBe(false);
 	});
 
 	it("单条巨型消息（实测高度超预算）只常驻它自己", () => {
@@ -118,7 +115,6 @@ describe("pickAlways", () => {
 			heights,
 			1600,
 		);
-		// big 实测 8000 → 累计已超预算，不再往前收；但 big 本身始终保留
 		expect([...always]).toEqual(["big"]);
 	});
 
@@ -153,7 +149,7 @@ describe("contentFingerprint", () => {
 					{ type: "image" },
 				],
 			}),
-		).toBe(2 + 3 + 1 + 2 + 1); // 图片按条计 1
+		).toBe(2 + 3 + 1 + 2 + 1);
 	});
 	it("编辑（长度变化）必然改变指纹", () => {
 		const before = contentFingerprint({ content: [{ type: "text", text: "hi" }] });
@@ -180,9 +176,9 @@ describe("getPlaceholderHeight", () => {
 	});
 	it("失效条目（set 后指纹不符）不污染占位高度", () => {
 		const c = new Map<string, HeightEntry>();
-		c.set("m1", { h: 2400, len: 5 }); // 用旧指纹写入
+		c.set("m1", { h: 2400, len: 5 });
 		expect(getPlaceholderHeight("m1", 9, c, 280)).toBe(280);
-		c.set("m1", { h: 2400, len: 9 }); // 新内容实测后恢复
+		c.set("m1", { h: 2400, len: 9 });
 		expect(getPlaceholderHeight("m1", 9, c, 280)).toBe(2400);
 	});
 });

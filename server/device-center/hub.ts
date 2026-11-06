@@ -112,9 +112,15 @@ import {
 } from "./task-settlement.js";
 import type { DeviceTaskEventFrame } from "../protocol.js";
 import { RELAY_LIMITS } from "./relay.js";
+import { createHubMobileApp, acceptMobileNotification, type NativeCapabilityRequest } from "./hub-mobile.js";
+import { createMobilePushService } from "../mobile-push.js";
+import { HubUpgradeError, type HubUpgradeManager } from "./hub-upgrade.js";
+import { installHubOrchestration } from "./hub-orchestration.js";
+import { queueRouterJob, nextRouterAction, type RouterJob } from "./group-router.js";
 
 export interface HubTaskEvent extends Omit<DeviceTaskEventFrame, "type"> {}
 export interface HubRelay {
+	createNativeCapability?: (request: NativeCapabilityRequest) => Promise<string | null>;
 	callDevice?: (
 		deviceId: string,
 		action: import("./relay.js").DeviceCommand,
@@ -127,14 +133,19 @@ export interface HubRelay {
 	) => boolean | Promise<boolean>;
 	cancelTask?: (deviceId: string, taskId: string, attemptId: string) => Promise<{ stopped: boolean }>;
 	steerTask?: (deviceId: string, taskId: string, attemptId: string, text: string) => Promise<{ steered: boolean }>;
-	handleOpen?: (req: Request, res: Response, deviceId: string) => Promise<void>;
+	handleOpen?: (
+		req: Request,
+		res: Response,
+		deviceId: string,
+		redirect?: boolean,
+		preferLan?: boolean,
+	) => Promise<void>;
 	handleRequest?: (req: IncomingMessage, res: ServerResponse) => boolean;
 	handleAliasOpen?: (req: IncomingMessage, res: ServerResponse, deviceId: string) => Promise<void>;
 	onRevoke?: (deviceId: string) => unknown;
 	onTask?: (deviceId: string, task: DeliveryTask) => unknown;
 }
 export interface DeviceHubOptions {
-	/** An already bound loopback server may be supplied by the in-process local Hub. */
 	server?: Server;
 	dataDir: string;
 	publicUrl: string;
@@ -142,6 +153,7 @@ export interface DeviceHubOptions {
 	pathAccess?: boolean;
 	portals?: DevicePortals;
 	allowRegistration?: boolean;
+	upgradeManager?: HubUpgradeManager;
 	relay?: HubRelay;
 	onRevoke?: (deviceId: string) => unknown;
 	onTask?: (deviceId: string, task: DeliveryTask) => unknown;
@@ -248,6 +260,20 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	};
 	const app = express();
 	app.disable("x-powered-by");
+	const loginLimit = new HubRateLimiter(10, 60000);
+	const mobilePush = createMobilePushService({ dataDir: options.dataDir });
+	const mobileApp = createHubMobileApp({
+		store,
+		publicUrl: options.publicUrl,
+		loginLimit,
+		mobilePush,
+		isOnline: (id) => options.isOnline?.(id) ?? false,
+		createCapability: (request) => options.relay?.createNativeCapability?.(request) ?? Promise.resolve(null),
+	});
+	app.use((req, res, next) => {
+		if (/^\/api\/(?:mobile-hub|mobile-push)(?:\/|$)/.test(req.path)) return mobileApp(req, res, next);
+		next();
+	});
 	app.use((req, _res, next) => {
 		if (!req.path.startsWith("/api/device-user/")) return next();
 		const deviceId = req.headers["x-device-id"];
@@ -268,6 +294,18 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				suffix,
 			);
 		const taskRoute = /^\/rooms\/[^/]+\/tasks\/[^/]+(?:\/(?:journal|report))?$/.test(suffix);
+		const orchestrationRoute =
+			/^\/(?:router-models|work-items(?:\/[^/]+)?|work-item-deliveries\/(?:claim|[^/]+\/(?:complete|fail))|rooms\/[^/]+\/(?:work-items(?:\/[^/]+)?|router\/jobs\/[^/]+\/retry))$/.test(
+				suffix,
+			);
+		if (
+			(orchestrationRoute && ["GET", "POST", "PATCH"].includes(req.method)) ||
+			(req.method === "POST" && /^\/rooms\/[^/]+$/.test(suffix))
+		) {
+			users.set(req, { device, account: { id: owner.id, username: owner.username } });
+			req.url = req.url.replace("/api/device-user/", "/api/");
+			return next();
+		}
 		const webhookRoute =
 			/^\/rooms\/[^/]+\/(?:webhooks(?:\/[^/]+(?:\/(?:delete|regenerate-token|test))?)?|hub-relay)$/.test(suffix);
 		if (!(
@@ -277,10 +315,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					webhookRoute ||
 					/^\/rooms\/[^/]+\/(?:events|interactions|transfers|locks|blackboard)$/.test(suffix) ||
 					/^\/rooms\/[^/]+\/transfers\/[^/]+\/preview$/.test(suffix) ||
-					["/devices", "/bots", "/rooms"].includes(suffix) ||
+					["/devices", "/bots", "/rooms", "/system/upgrade"].includes(suffix) ||
 					/^\/rooms\/[^/]+$/.test(suffix))) ||
 			(["POST", "PUT"].includes(req.method) &&
 				(suffix === "/rooms" ||
+					suffix === "/system/upgrade" ||
 					conversationRoute ||
 					webhookRoute ||
 					/^\/rooms\/[^/]+\/(messages|rename|members|clear|delete|interactions|canvas|blackboard(?:\/sections\/[^/]+)?)$/.test(
@@ -305,6 +344,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		agents.set(req, agent);
 		const suffix = req.path.slice("/api/agent".length);
 		if (
+			(req.method === "GET" && suffix === "/router/jobs/next") ||
+			(req.method === "POST" && /^\/router\/jobs\/[^/]+\/(?:complete|renew|fail)$/.test(suffix))
+		) {
+			req.url = req.url.replace("/api/agent/", "/api/");
+			return next();
+		}
+		if (
 			(req.method === "GET" &&
 				(["/devices", "/bots", "/rooms"].includes(suffix) ||
 					/^\/rooms\/[^/]+(?:\/(?:history|locks|blackboard(?:\/sections\/[^/]+)?))?$/.test(suffix) ||
@@ -318,7 +364,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(req.method === "PUT" && /^\/rooms\/[^/]+\/blackboard(?:\/sections\/[^/]+)?$/.test(suffix))
 		)
 			req.url = req.url.replace("/api/agent/", "/api/");
-		else if (!((suffix === "/transfers" && req.method === "POST") || (suffix === "/bots" && req.method === "PUT")))
+		else if (!(
+			(suffix === "/transfers" && req.method === "POST") ||
+			(suffix === "/bots" && req.method === "PUT") ||
+			(suffix === "/mobile-notifications" && req.method === "POST")
+		))
 			fail(404, "Agent route missing");
 		next();
 	});
@@ -344,6 +394,11 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (agents.has(req) && req.path === "/api/agent/transfers") return next();
 		if (
 			req.method === "POST" &&
+			(req.path === "/api/work-items/ingest" || /^\/api\/router\/jobs\/[^/]+\/complete$/.test(req.path))
+		)
+			return contractJson(req, res, next);
+		if (
+			req.method === "POST" &&
 			/^\/api\/rooms\/[^/]+\/(?:messages|tasks|conversations(?:\/[^/]+\/messages)?)$/.test(req.path)
 		)
 			return contractJson(req, res, next);
@@ -360,7 +415,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		}
 		json(req, res, next);
 	});
-	const loginLimit = new HubRateLimiter(10, 60000);
+	app.post("/api/agent/mobile-notifications", async (req, res) => {
+		const agent = agents.get(req)!;
+		if (store.getDeviceOwner(agent.device.id) !== agent.account.id) fail(401, "Device revoked");
+		const device = store.getDevice(agent.device.id)!;
+		await acceptMobileNotification(req.body, device, mobilePush);
+		res.json({ ok: true });
+	});
 	const pairLimit = new HubRateLimiter(20, 60000);
 	const pairs = new Map<
 		string,
@@ -396,7 +457,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			(options.deviceDomain ? `${origin.protocol}//${device.id}.${options.deviceDomain}` : null),
 		alias: options.portals?.getAlias(device.id) ?? null,
 	});
-	for (const route of ["/api/me", "/api/auth/me"]) app.get(route, (req, res) => res.json({ account: account(req) }));
+	const publicAccount = (current: { id: string; username: string }) => ({
+		...current,
+		canUpgradeHub: store.snapshot().accounts[0]?.id === current.id,
+	});
+	for (const route of ["/api/me", "/api/auth/me"])
+		app.get(route, (req, res) => res.json({ account: publicAccount(account(req)) }));
 	app.post("/api/auth/register", async (req, res) => {
 		if (!loginLimit.allow(ip(req))) fail(429, "Too many attempts");
 		if (options.allowRegistration === false) fail(403, "Registration disabled");
@@ -416,14 +482,13 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			return { id: entry.id, username };
 		});
 		res.setHeader("Set-Cookie", auth.cookie(sessionToken));
-		res.status(201).json({ account: created });
+		res.status(201).json({ account: publicAccount(created) });
 	});
 	app.post("/api/auth/login", async (req, res) => {
 		if (!loginLimit.allow(ip(req))) fail(429, "Too many attempts");
 		const username = text(req.body?.username, 64).trim().toLowerCase();
 		const password = text(req.body?.["pass" + "word"], 1024);
 		const entry = store.snapshot().accounts.find((item) => item.username === username);
-		// Run the same KDF for missing accounts, avoiding a cheap username oracle.
 		if (
 			!(await verifyPassword(password, entry?.passwordHash ?? `scrypt:${"0".repeat(32)}:${"0".repeat(128)}`)) ||
 			!entry
@@ -436,7 +501,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			draft.sessions.push({ accountId: entry.id, hash: hashSecret(sessionToken), expiresAt: Date.now() + SESSION_TTL });
 		});
 		res.setHeader("Set-Cookie", auth.cookie(sessionToken));
-		res.json({ account: { id: entry.id, username: entry.username } });
+		res.json({ account: publicAccount({ id: entry.id, username: entry.username }) });
 	});
 	app.post("/api/auth/logout", async (req, res) => {
 		const value = auth.getToken(req);
@@ -446,32 +511,32 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		res.setHeader("Set-Cookie", auth.cookie("", true));
 		res.json({ ok: true });
 	});
+	const upgradeOwner = (req: IncomingMessage) => {
+		const current = account(req);
+		if (store.snapshot().accounts[0]?.id !== current.id) fail(403, "Only the Hub owner can upgrade the service");
+		return current;
+	};
 	app.post("/api/system/upgrade", async (req, res) => {
-		let current: { id: string; username: string } | undefined;
+		const current = upgradeOwner(req);
+		if (!options.upgradeManager) fail(409, "Hub updates require an installed standalone service");
 		try {
-			current = account(req);
-		} catch {
-			const agent = await authenticateAgent(req);
-			if (agent) current = agent.account;
+			const job = await options.upgradeManager!.start(current.id);
+			res.setHeader("Cache-Control", "no-store");
+			res.status(202).json({ ok: true, job });
+		} catch (error) {
+			if (error instanceof HubUpgradeError) return res.status(error.status).json({ error: error.message });
+			throw error;
 		}
-		if (!current) fail(401, "Unauthorized");
-		res.json({ ok: true, message: "Hub upgrade initiated" });
-		setTimeout(async () => {
-			try {
-				const { spawn } = await import("node:child_process");
-				const { join } = await import("node:path");
-				const { getPkgRoot } = await import("../pkg-info.js");
-				const cliPath = join(getPkgRoot(), "bin", "pi-web-ui.mjs");
-				const child = spawn(process.execPath, [cliPath, "hub", "update"], {
-					detached: true,
-					stdio: "ignore",
-					windowsHide: true,
-				});
-				child.unref();
-			} catch {
-				/* ignore */
-			}
-		}, 500);
+	});
+	app.get("/api/system/upgrade", async (req, res) => {
+		upgradeOwner(req);
+		if (!options.upgradeManager) fail(409, "Hub updates require an installed standalone service");
+		const id = typeof req.query.id === "string" ? req.query.id : undefined;
+		if (id && !/^[a-f0-9-]{36}$/.test(id)) fail(400, "Invalid upgrade job ID");
+		const job = await options.upgradeManager!.status(id);
+		res.setHeader("Cache-Control", "no-store");
+		if (!job) return res.status(404).json({ error: "Hub upgrade job not found" });
+		res.json({ ok: true, job });
 	});
 	app.post("/api/pair/start", (req, res) => {
 		if (!pairLimit.allow(ip(req))) fail(429, "Too many attempts");
@@ -566,8 +631,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				room.botIds = room.botIds.filter((botId) => !removedBots.has(botId));
 				if (room.primaryBotId && removedBots.has(room.primaryBotId)) delete room.primaryBotId;
 			}
-			// A revoked device can no longer continue its conversations: close them now so the next turn
-			// reports a reason instead of a late 409 against a Bot that no longer exists.
 			for (const conversation of draft.conversations)
 				if (!conversation.closed && removedBots.has(conversation.botId)) {
 					conversation.closed = true;
@@ -1140,7 +1203,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.put("/api/rooms/:id/blackboard/sections/:sectionId", handleBlackboardSectionUpdate);
 	app.post("/api/rooms/:id/blackboard/sections/:sectionId", handleBlackboardSectionUpdate);
 
-	// === Group Webhooks ===
 	app.get("/api/rooms/:id/webhooks", (req, res) => {
 		const owner = account(req);
 		if (agents.has(req)) fail(403, "Webhook management requires a user session");
@@ -1355,7 +1417,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					if (settings.allowBotMentions) {
 						targets.push(...groupMentionTargets(content, activeRoom, draft.bots, settings.botMentionBudgetPerTurn));
 					}
-					if (!targets.length && activeRoom.primaryBotId) {
+					if (!targets.length && !activeRoom.router?.enabled && activeRoom.primaryBotId) {
 						if (
 							activeRoom.botIds.includes(activeRoom.primaryBotId) &&
 							validBot(draft, activeRoom.primaryBotId, activeRoom.accountId)
@@ -1442,6 +1504,18 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 
 			draft.tasks.push(...tasks);
 			draft.messages.push(message);
+			if (allowTrigger && !targets.length)
+				queueRouterJob(
+					draft,
+					{
+						accountId: activeRoom.accountId,
+						roomId: activeRoom.id,
+						eventKey: `webhook:${message.id}`,
+						trigger: { type: "webhook_message", messageId: message.id },
+						text: content,
+					},
+					now,
+				);
 			draft.receipts.push({
 				accountId: activeRoom.accountId,
 				roomId: activeRoom.id,
@@ -1463,6 +1537,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 							t.roomId === activeRoom.id &&
 							isTerminal(t.status) &&
 							!taskHasImmutableEvidence(t) &&
+							!draft.workItems.some((w) => w.taskIds.includes(t.id)) &&
 							!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
 					)
 					.slice(0, -getHistoryLimit())
@@ -1488,7 +1563,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 	});
 
-	// === Task Details, Journal, and Reports ===
 	app.get("/api/rooms/:id/tasks/:taskId", (req, res) => {
 		const acc = account(req);
 		const state = store.snapshot();
@@ -1720,9 +1794,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const direction = req.query.direction === "backward" ? "backward" : "forward";
 
 		const page = await taskJournalManager.getPage(task.id, acc.id, room.id, { cursor, limit, direction });
-		// The task exists but never wrote a journal segment (queued, failed before the first progress
-		// event, or created before the journal existed). An empty audit trail is a valid state, not a
-		// missing resource: 404 here made every such task render as a broken panel in the UI.
 		if (!page)
 			return res.json({
 				taskId: task.id,
@@ -1880,7 +1951,24 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 							status: 409,
 							code: "ACTIVE_TASKS",
 						});
-					if (operation === "delete") draft.rooms = draft.rooms.filter((r) => r.id !== room.id);
+					if (operation === "delete") {
+						draft.rooms = draft.rooms.filter((r) => r.id !== room.id);
+						draft.workItems = draft.workItems.filter((w) => w.roomId !== room.id);
+						draft.workItemEvents = draft.workItemEvents.filter((w) => w.roomId !== room.id);
+						draft.workItemOutbox = draft.workItemOutbox.filter((w) => w.roomId !== room.id);
+						draft.routerJobs = draft.routerJobs.filter((j) => j.roomId !== room.id);
+					} else {
+						room.routerRevision = (room.routerRevision ?? 0) + 1;
+						for (const job of draft.routerJobs.filter(
+							(j) => j.roomId === room.id && (j.status === "queued" || j.status === "running"),
+						)) {
+							job.status = "failed";
+							job.error = "Group history cleared";
+							job.updatedAt = Date.now();
+							delete job.leaseToken;
+							delete job.leaseExpiresAt;
+						}
+					}
 					draft.messages = draft.messages.filter((m) => m.roomId !== room.id);
 					draft.tasks = draft.tasks.filter((t) => t.roomId !== room.id);
 					draft.receipts = draft.receipts.filter((r) => r.roomId !== room.id);
@@ -1994,7 +2082,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/reconcile", async (req, res) => {
 		const owner = account(req);
 		const agent = agents.get(req);
-		// Historical queries keep the authenticated Bot identity even after its registry entry is disabled/deleted.
 		const actor = {
 			accountId: owner.id,
 			...(agent
@@ -2142,7 +2229,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					status: 409,
 					code: "ACTIVE_TASKS",
 				});
-			// Delivery/review records are the audit trail; deleting them is a separate, explicit decision.
 			if (conversationHasAuditRecords(draft, conversation.id))
 				fail(409, "Conversation has delivery history; audit records are retained");
 			dropConversationRecords(draft, conversation.id);
@@ -2574,448 +2660,462 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			...deliveryHistory(state, conversation.id),
 		});
 	});
-	app.post(
-		[
-			"/api/rooms/:id/messages",
-			"/api/rooms/:id/tasks",
-			"/api/rooms/:id/conversations",
-			"/api/rooms/:id/conversations/:conversationId/messages",
-		],
-		async (req, res) => {
-			const owner = account(req);
-			const content = text(req.body?.text);
-			const conversationApi = req.path.includes("/conversations");
-			const conversationId = req.params.conversationId;
-			const kind = req.body?.kind ?? "message";
-			const settings = currentSettings();
-			if (!["message", "request", "reply"].includes(kind)) fail(400, "Invalid message kind");
-			const requestId =
-				req.body?.requestId === undefined
-					? kind === "request"
-						? randomUUID()
-						: undefined
-					: text(req.body.requestId, 128);
-			if (kind === "reply" && !requestId) fail(400, "Reply requires requestId");
-			const targets = ids(
-				conversationApi ? (conversationId ? [] : [text(req.body?.targetBotId, 128)]) : (req.body?.targetBotIds ?? []),
-			);
-			const transfer = handoff(req.body?.handoff);
-			const parentTaskId = req.body?.parentTaskId === undefined ? undefined : text(req.body.parentTaskId, 128);
-			const attentionId = req.body?.attentionId === undefined ? undefined : text(req.body.attentionId, 128);
-			const key = req.body?.idempotencyKey === undefined ? randomUUID() : text(req.body.idempotencyKey, 128);
-			const planOnly = req.body?.planOnly === true;
-			const replyToMessageId =
-				req.body?.replyToMessageId === undefined ? undefined : text(req.body.replyToMessageId, 128);
-			const dependsOnTaskId = req.body?.dependsOnTaskId === undefined ? undefined : text(req.body.dependsOnTaskId, 128);
-			let resourceLocks: string[] | undefined;
+	const routerSources = new WeakMap<Request, RouterJob>();
+	const postRoomMessage = async (req: Request, res: Response) => {
+		const owner = account(req);
+		const routerSource = routerSources.get(req);
+		const content = text(req.body?.text);
+		const conversationApi = req.path.includes("/conversations");
+		const conversationId = req.params.conversationId;
+		const kind = req.body?.kind ?? "message";
+		const settings = currentSettings();
+		if (!["message", "request", "reply"].includes(kind)) fail(400, "Invalid message kind");
+		const requestId =
+			req.body?.requestId === undefined
+				? kind === "request"
+					? randomUUID()
+					: undefined
+				: text(req.body.requestId, 128);
+		if (kind === "reply" && !requestId) fail(400, "Reply requires requestId");
+		const targets = ids(
+			conversationApi ? (conversationId ? [] : [text(req.body?.targetBotId, 128)]) : (req.body?.targetBotIds ?? []),
+		);
+		const transfer = handoff(req.body?.handoff);
+		const parentTaskId = req.body?.parentTaskId === undefined ? undefined : text(req.body.parentTaskId, 128);
+		const attentionId = req.body?.attentionId === undefined ? undefined : text(req.body.attentionId, 128);
+		const key = req.body?.idempotencyKey === undefined ? randomUUID() : text(req.body.idempotencyKey, 128);
+		const planOnly = req.body?.planOnly === true;
+		const replyToMessageId =
+			req.body?.replyToMessageId === undefined ? undefined : text(req.body.replyToMessageId, 128);
+		const dependsOnTaskId = req.body?.dependsOnTaskId === undefined ? undefined : text(req.body.dependsOnTaskId, 128);
+		let resourceLocks: string[] | undefined;
+		try {
+			if (req.body?.resourceLocks !== undefined) {
+				resourceLocks = validateResourceLocks(req.body.resourceLocks);
+			}
+		} catch (err: any) {
+			fail(400, err?.message ?? "Invalid resourceLocks");
+		}
+
+		if (
+			req.body?.contract !== undefined &&
+			(!req.body.contract || typeof req.body.contract !== "object" || Array.isArray(req.body.contract))
+		)
+			fail(400, "Contract input must be a non-null object");
+		const rawExecutionMode = req.body?.executionMode;
+		const contractExecutionMode = req.body?.contract?.executionMode;
+		if (contractExecutionMode !== undefined && contractExecutionMode !== "chat" && contractExecutionMode !== "code")
+			fail(400, "Invalid contract executionMode: must be 'chat' or 'code'");
+		if (
+			rawExecutionMode !== undefined &&
+			contractExecutionMode !== undefined &&
+			rawExecutionMode !== contractExecutionMode
+		) {
+			fail(400, "executionMode conflicts with contract.executionMode.");
+		}
+		const executionMode: DeviceExecutionMode = rawExecutionMode ?? contractExecutionMode ?? "chat";
+		if (rawExecutionMode !== undefined && rawExecutionMode !== "chat" && rawExecutionMode !== "code") {
+			fail(400, "Invalid executionMode: must be 'chat' or 'code'");
+		}
+
+		let contract: DeviceWorkContract | undefined;
+		if (req.body?.contract !== undefined || executionMode === "code") {
 			try {
-				if (req.body?.resourceLocks !== undefined) {
-					resourceLocks = validateResourceLocks(req.body.resourceLocks);
-				}
+				const stableFallbackId = `contract-${createHash("sha256").update(`${owner.id}:${req.params.id}:${key}`).digest("hex").slice(0, 16)}`;
+				contract = createWorkContract(
+					{
+						id: req.body?.contract?.id ?? stableFallbackId,
+						...(req.body?.contract ?? {}),
+						executionMode,
+					},
+					content,
+				);
 			} catch (err: any) {
-				fail(400, err?.message ?? "Invalid resourceLocks");
+				fail(400, err?.message ?? "Invalid work contract");
 			}
+		}
 
+		const fingerprintFields = {
+			content,
+			attentionId,
+			targets,
+			conversationId,
+			kind,
+			requestId: req.body?.requestId,
+			transfer,
+			parentTaskId,
+			planOnly,
+			replyToMessageId,
+			resourceLocks,
+			executionMode,
+			contractDigest: contract?.digest,
+			contractId: contract?.id,
+			contractRevision: contract?.revision,
+			sourceDeviceId: (agents.get(req) ?? users.get(req))?.device.id,
+			sourceBotId: agents.has(req) ? req.body?.sourceBotId : undefined,
+			senderType: routerSource ? "router" : agents.has(req) ? "bot" : "human",
+		};
+		const fingerprint = hashSecret(JSON.stringify(fingerprintFields));
+		const legacyFingerprint =
+			executionMode === "chat" && !contract
+				? hashSecret(JSON.stringify({ ...fingerprintFields, executionMode: undefined }))
+				: undefined;
+		const matchesFingerprint = (stored: string | undefined) =>
+			stored === fingerprint || (legacyFingerprint !== undefined && stored === legacyFingerprint);
+		const result = await store.transact((draft) => {
+			const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
+			if (!room) fail(404, "Room missing");
+			if (routerSource)
+				nextRouterAction(
+					draft,
+					{
+						accountId: owner.id,
+						jobId: routerSource.id,
+						deviceId: routerSource.deviceId!,
+						leaseToken: routerSource.leaseToken!,
+					},
+					Date.now(),
+				);
+			const source = ownBot(req, draft);
+			const userSource = users.get(req)?.device;
+			let conversation = conversationId
+				? draft.conversations.find((c) => c.id === conversationId && c.roomId === room.id && c.accountId === owner.id)
+				: undefined;
+			if (conversationId && !conversation) fail(404, "Conversation missing");
+			if (conversation?.closed) fail(409, "Conversation is closed");
+			if (conversation) {
+				const bot = validBot(draft, conversation.botId, owner.id);
+				if (!bot || bot.revision !== conversation.botRevision || bot.deviceId !== conversation.deviceId)
+					fail(409, "Conversation Bot configuration changed");
+				targets.push(conversation.botId);
+			}
+			if (source && !room.botIds.includes(source.id)) fail(403, "Source Bot is not a room member");
+			if (replyToMessageId && !draft.messages.some((m) => m.id === replyToMessageId && m.roomId === room.id))
+				fail(400, "Reply target message is not in this room");
+			if (dependsOnTaskId && !draft.tasks.some((m) => m.id === dependsOnTaskId && m.roomId === room.id))
+				fail(400, "Dependency target task is not in this room");
+			const depTask = dependsOnTaskId ? draft.tasks.find((t) => t.id === dependsOnTaskId) : undefined;
+			const dependencyActive = Boolean(depTask);
+			const canParseMentions =
+				!routerSource && (!source || settings.allowBotMentions) && !conversationApi && !conversation && !targets.length;
+			if (canParseMentions)
+				targets.push(...groupMentionTargets(content, room, draft.bots, settings.botMentionBudgetPerTurn));
+			if (targets.some((id) => !room.botIds.includes(id) || !validBot(draft, id, owner.id)))
+				fail(400, "Invalid target Bot");
 			if (
-				req.body?.contract !== undefined &&
-				(!req.body.contract || typeof req.body.contract !== "object" || Array.isArray(req.body.contract))
-			)
-				fail(400, "Contract input must be a non-null object");
-			const rawExecutionMode = req.body?.executionMode;
-			const contractExecutionMode = req.body?.contract?.executionMode;
-			if (contractExecutionMode !== undefined && contractExecutionMode !== "chat" && contractExecutionMode !== "code")
-				fail(400, "Invalid contract executionMode: must be 'chat' or 'code'");
-			if (
-				rawExecutionMode !== undefined &&
-				contractExecutionMode !== undefined &&
-				rawExecutionMode !== contractExecutionMode
-			) {
-				fail(400, "executionMode conflicts with contract.executionMode.");
-			}
-			const executionMode: DeviceExecutionMode = rawExecutionMode ?? contractExecutionMode ?? "chat";
-			if (rawExecutionMode !== undefined && rawExecutionMode !== "chat" && rawExecutionMode !== "code") {
-				fail(400, "Invalid executionMode: must be 'chat' or 'code'");
-			}
-
-			let contract: DeviceWorkContract | undefined;
-			if (req.body?.contract !== undefined || executionMode === "code") {
-				try {
-					const stableFallbackId = `contract-${createHash("sha256").update(`${owner.id}:${req.params.id}:${key}`).digest("hex").slice(0, 16)}`;
-					contract = createWorkContract(
-						{
-							id: req.body?.contract?.id ?? stableFallbackId,
-							...(req.body?.contract ?? {}),
-							executionMode,
-						},
-						content,
-					);
-				} catch (err: any) {
-					fail(400, err?.message ?? "Invalid work contract");
-				}
-			}
-
-			const fingerprintFields = {
-				content,
-				attentionId,
-				targets,
-				conversationId,
-				kind,
-				requestId: req.body?.requestId,
-				transfer,
-				parentTaskId,
-				planOnly,
-				replyToMessageId,
-				resourceLocks,
-				executionMode,
-				contractDigest: contract?.digest,
-				contractId: contract?.id,
-				contractRevision: contract?.revision,
-				sourceDeviceId: (agents.get(req) ?? users.get(req))?.device.id,
-				sourceBotId: agents.has(req) ? req.body?.sourceBotId : undefined,
-				senderType: agents.has(req) ? "bot" : "human",
-			};
-			const fingerprint = hashSecret(JSON.stringify(fingerprintFields));
-			// v45 chat receipts predate the optional execution contract fields.
-			const legacyFingerprint =
-				executionMode === "chat" && !contract
-					? hashSecret(JSON.stringify({ ...fingerprintFields, executionMode: undefined }))
-					: undefined;
-			const matchesFingerprint = (stored: string | undefined) =>
-				stored === fingerprint || (legacyFingerprint !== undefined && stored === legacyFingerprint);
-			const result = await store.transact((draft) => {
-				const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
-				if (!room) fail(404, "Room missing");
-				const source = ownBot(req, draft);
-				const userSource = users.get(req)?.device;
-				let conversation = conversationId
-					? draft.conversations.find((c) => c.id === conversationId && c.roomId === room.id && c.accountId === owner.id)
-					: undefined;
-				if (conversationId && !conversation) fail(404, "Conversation missing");
-				if (conversation?.closed) fail(409, "Conversation is closed");
-				if (conversation) {
-					const bot = validBot(draft, conversation.botId, owner.id);
-					if (!bot || bot.revision !== conversation.botRevision || bot.deviceId !== conversation.deviceId)
-						fail(409, "Conversation Bot configuration changed");
-					targets.push(conversation.botId);
-				}
-				if (source && !room.botIds.includes(source.id)) fail(403, "Source Bot is not a room member");
-				if (replyToMessageId && !draft.messages.some((m) => m.id === replyToMessageId && m.roomId === room.id))
-					fail(400, "Reply target message is not in this room");
-				if (dependsOnTaskId && !draft.tasks.some((m) => m.id === dependsOnTaskId && m.roomId === room.id))
-					fail(400, "Dependency target task is not in this room");
-				const depTask = dependsOnTaskId ? draft.tasks.find((t) => t.id === dependsOnTaskId) : undefined;
-				const dependencyActive = Boolean(depTask);
-				// The Hub owns dispatch semantics: a human message that only names Bots in its text must not
-				// silently fall back to the primary Bot just because a client did not pre-resolve the mentions.
-				const canParseMentions =
-					(!source || settings.allowBotMentions) && !conversationApi && !conversation && !targets.length;
-				if (canParseMentions)
-					targets.push(...groupMentionTargets(content, room, draft.bots, settings.botMentionBudgetPerTurn));
-				if (targets.some((id) => !room.botIds.includes(id) || !validBot(draft, id, owner.id)))
-					fail(400, "Invalid target Bot");
-				if (
-					source &&
-					targets.length &&
-					!draft.tasks.some(
-						(t) =>
-							t.id === parentTaskId &&
-							t.botId === source.id &&
-							t.accountId === owner.id &&
-							t.roomId === room.id &&
-							(t.status === "running" || isTerminal(t.status)),
-					)
+				source &&
+				targets.length &&
+				!draft.tasks.some(
+					(t) =>
+						t.id === parentTaskId &&
+						t.botId === source.id &&
+						t.accountId === owner.id &&
+						t.roomId === room.id &&
+						(t.status === "running" || isTerminal(t.status)),
 				)
-					fail(400, "Device dispatch requires its own bound parent task");
-				{
-					const prior = draft.conversationMessages.find(
-						(m) =>
-							conversationId !== undefined &&
-							m.conversationId === conversationId &&
-							m.idempotencyKey === key &&
-							draft.conversations.some(
-								(c) => c.id === m.conversationId && c.roomId === room.id && c.accountId === owner.id,
-							),
-					);
-					if (prior) {
-						if (!matchesFingerprint(prior.fingerprint)) fail(409, "Idempotency key reused");
-						const priorTask = draft.tasks.find((t) => t.id === prior.taskId);
-						if (priorTask) {
-							if (
-								priorTask.contract?.digest !== contract?.digest ||
-								priorTask.contract?.revision !== contract?.revision ||
-								(priorTask.executionMode ?? "chat") !== executionMode
-							) {
-								fail(409, "Idempotency key reused with different contract");
-							}
-						}
-						return {
-							message: draft.messages.find((m) => m.taskIds.includes(prior.taskId)),
-							tasks: draft.tasks.filter((t) => t.id === prior.taskId),
-							duplicate: true,
-						};
-					}
-				}
-				const receipt = draft.receipts.find((r) => r.roomId === room.id && r.accountId === owner.id && r.key === key);
-				if (receipt) {
-					if (!matchesFingerprint(receipt.fingerprint)) fail(409, "Idempotency key reused");
-					const priorReceiptTask = draft.tasks.find((t) =>
-						draft.messages.find((m) => m.id === receipt.messageId)?.taskIds.includes(t.id),
-					);
-					if (priorReceiptTask) {
+			)
+				fail(400, "Device dispatch requires its own bound parent task");
+			{
+				const prior = draft.conversationMessages.find(
+					(m) =>
+						conversationId !== undefined &&
+						m.conversationId === conversationId &&
+						m.idempotencyKey === key &&
+						draft.conversations.some(
+							(c) => c.id === m.conversationId && c.roomId === room.id && c.accountId === owner.id,
+						),
+				);
+				if (prior) {
+					if (!matchesFingerprint(prior.fingerprint)) fail(409, "Idempotency key reused");
+					const priorTask = draft.tasks.find((t) => t.id === prior.taskId);
+					if (priorTask) {
 						if (
-							priorReceiptTask.contract?.digest !== contract?.digest ||
-							priorReceiptTask.contract?.revision !== contract?.revision ||
-							(priorReceiptTask.executionMode ?? "chat") !== executionMode
+							priorTask.contract?.digest !== contract?.digest ||
+							priorTask.contract?.revision !== contract?.revision ||
+							(priorTask.executionMode ?? "chat") !== executionMode
 						) {
 							fail(409, "Idempotency key reused with different contract");
 						}
 					}
 					return {
-						message: draft.messages.find((m) => m.id === receipt.messageId),
-						tasks: draft.tasks.filter((t) =>
-							draft.messages.find((m) => m.id === receipt.messageId)?.taskIds.includes(t.id),
-						),
+						message: draft.messages.find((m) => m.taskIds.includes(prior.taskId)),
+						tasks: draft.tasks.filter((t) => t.id === prior.taskId),
 						duplicate: true,
 					};
 				}
-
-				if (contract) {
-					assertNoApplyingIntegration(draft, owner.id, room.id, undefined, contract.id);
-					const existingTasks = draft.tasks.filter(
-						(t) => t.roomId === room.id && t.accountId === owner.id && t.contract?.id === contract!.id,
-					);
+			}
+			const receipt = draft.receipts.find((r) => r.roomId === room.id && r.accountId === owner.id && r.key === key);
+			if (receipt) {
+				if (!matchesFingerprint(receipt.fingerprint)) fail(409, "Idempotency key reused");
+				const priorReceiptTask = draft.tasks.find((t) =>
+					draft.messages.find((m) => m.id === receipt.messageId)?.taskIds.includes(t.id),
+				);
+				if (priorReceiptTask) {
 					if (
-						existingTasks.some(
-							(t) => t.contract!.revision === contract.revision && t.contract!.digest !== contract.digest,
-						)
-					)
-						fail(409, "Contract id and revision already bind different content");
-					// Queued leases and recovery represent live work. Replace only settled versions.
-					if (
-						existingTasks.some(
-							(t) =>
-								t.contract!.revision < contract.revision && (!isTerminal(t.status) || isRecoveringTask(t, Date.now())),
-						)
-					)
-						fail(409, "Cannot advance contract revision while an older revision is active");
-					if (depTask?.contract?.id === contract.id && depTask.contract.revision !== contract.revision)
-						fail(409, "A contract revision cannot inherit acceptance from a different revision");
-					for (const existing of existingTasks) {
-						if (existing.contract && existing.contract.revision > contract.revision) {
-							fail(
-								409,
-								`Contract '${contract.id}' already has a newer revision ${existing.contract.revision} (cannot submit older revision ${contract.revision})`,
-							);
-						}
+						priorReceiptTask.contract?.digest !== contract?.digest ||
+						priorReceiptTask.contract?.revision !== contract?.revision ||
+						(priorReceiptTask.executionMode ?? "chat") !== executionMode
+					) {
+						fail(409, "Idempotency key reused with different contract");
 					}
 				}
-				// Resolve implicit human targets after replay detection so retries remain stable across configuration changes.
-				if (!source && !conversationApi && !targets.length && room.primaryBotId) {
-					if (!room.botIds.includes(room.primaryBotId) || !validBot(draft, room.primaryBotId, owner.id))
-						fail(400, "Primary Bot is unavailable");
-					targets.push(room.primaryBotId);
-					const bot = validBot(draft, room.primaryBotId, owner.id)!;
-					conversation = draft.conversations
-						.filter(
-							(entry) =>
-								entry.roomId === room.id &&
-								entry.accountId === owner.id &&
-								entry.botId === bot.id &&
-								!entry.closed &&
-								entry.botRevision === bot.revision &&
-								entry.deviceId === bot.deviceId,
-						)
-						.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-				}
-				if (attentionId) {
-					if (source || !conversationId || !conversation || conversation.attention?.id !== attentionId)
-						fail(409, "Question changed or already answered");
-					delete conversation.attention;
-				}
-				if (kind === "reply") {
-					const request = draft.conversationMessages.find(
-						(m) =>
-							m.kind === "request" &&
-							m.requestId === requestId &&
-							draft.conversations.some(
-								(c) => c.id === m.conversationId && c.roomId === room.id && c.accountId === owner.id,
-							),
-					);
-					const requestedConversation = draft.conversations.find((c) => c.id === request?.conversationId);
-					if (
-						!request ||
-						!requestedConversation ||
-						source?.id !== requestedConversation.botId ||
-						!conversation ||
-						conversation.botId !== request.sourceBotId ||
-						conversation.id !== draft.tasks.find((t) => t.id === request.taskId)?.sourceConversationId ||
-						draft.tasks.find((t) => t.id === parentTaskId)?.conversationId !== request.conversationId
-					)
-						fail(403, "Reply must address the original requester from the requested Bot");
-					if (draft.tasks.some((t) => t.resultOfTaskId === request.taskId)) fail(409, "Request already completed");
-					if (
-						draft.conversationMessages.some(
-							(m) =>
-								m.kind === "reply" &&
-								m.requestId === requestId &&
-								m.idempotencyKey !== key &&
-								draft.conversations.some((c) => c.id === m.conversationId && c.roomId === room.id),
-						)
-					)
-						fail(409, "Request already answered");
-				}
+				return {
+					message: draft.messages.find((m) => m.id === receipt.messageId),
+					tasks: draft.tasks.filter((t) =>
+						draft.messages.find((m) => m.id === receipt.messageId)?.taskIds.includes(t.id),
+					),
+					duplicate: true,
+				};
+			}
+
+			if (contract) {
+				assertNoApplyingIntegration(draft, owner.id, room.id, undefined, contract.id);
+				const existingTasks = draft.tasks.filter(
+					(t) => t.roomId === room.id && t.accountId === owner.id && t.contract?.id === contract!.id,
+				);
 				if (
-					parentTaskId &&
-					!draft.tasks.some(
-						(t) =>
-							t.id === parentTaskId &&
-							t.roomId === room.id &&
-							t.accountId === owner.id &&
-							(isTerminal(t.status) || (source?.id === t.botId && t.status === "running")),
+					existingTasks.some(
+						(t) => t.contract!.revision === contract.revision && t.contract!.digest !== contract.digest,
 					)
 				)
-					fail(400, "Parent task must be terminal or the source device's running task in this room");
+					fail(409, "Contract id and revision already bind different content");
 				if (
-					kind === "request" &&
+					existingTasks.some(
+						(t) =>
+							t.contract!.revision < contract.revision && (!isTerminal(t.status) || isRecoveringTask(t, Date.now())),
+					)
+				)
+					fail(409, "Cannot advance contract revision while an older revision is active");
+				if (depTask?.contract?.id === contract.id && depTask.contract.revision !== contract.revision)
+					fail(409, "A contract revision cannot inherit acceptance from a different revision");
+				for (const existing of existingTasks) {
+					if (existing.contract && existing.contract.revision > contract.revision) {
+						fail(
+							409,
+							`Contract '${contract.id}' already has a newer revision ${existing.contract.revision} (cannot submit older revision ${contract.revision})`,
+						);
+					}
+				}
+			}
+			if (
+				!source &&
+				!routerSource &&
+				!conversationApi &&
+				!targets.length &&
+				!room.router?.enabled &&
+				room.primaryBotId
+			) {
+				if (!room.botIds.includes(room.primaryBotId) || !validBot(draft, room.primaryBotId, owner.id))
+					fail(400, "Primary Bot is unavailable");
+				targets.push(room.primaryBotId);
+				const bot = validBot(draft, room.primaryBotId, owner.id)!;
+				conversation = draft.conversations
+					.filter(
+						(entry) =>
+							entry.roomId === room.id &&
+							entry.accountId === owner.id &&
+							entry.botId === bot.id &&
+							!entry.closed &&
+							entry.botRevision === bot.revision &&
+							entry.deviceId === bot.deviceId,
+					)
+					.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+			}
+			if (attentionId) {
+				if (source || !conversationId || !conversation || conversation.attention?.id !== attentionId)
+					fail(409, "Question changed or already answered");
+				delete conversation.attention;
+			}
+			if (kind === "reply") {
+				const request = draft.conversationMessages.find(
+					(m) =>
+						m.kind === "request" &&
+						m.requestId === requestId &&
+						draft.conversations.some(
+							(c) => c.id === m.conversationId && c.roomId === room.id && c.accountId === owner.id,
+						),
+				);
+				const requestedConversation = draft.conversations.find((c) => c.id === request?.conversationId);
+				if (
+					!request ||
+					!requestedConversation ||
+					source?.id !== requestedConversation.botId ||
+					!conversation ||
+					conversation.botId !== request.sourceBotId ||
+					conversation.id !== draft.tasks.find((t) => t.id === request.taskId)?.sourceConversationId ||
+					draft.tasks.find((t) => t.id === parentTaskId)?.conversationId !== request.conversationId
+				)
+					fail(403, "Reply must address the original requester from the requested Bot");
+				if (draft.tasks.some((t) => t.resultOfTaskId === request.taskId)) fail(409, "Request already completed");
+				if (
 					draft.conversationMessages.some(
 						(m) =>
-							m.kind === "request" &&
+							m.kind === "reply" &&
 							m.requestId === requestId &&
+							m.idempotencyKey !== key &&
 							draft.conversations.some((c) => c.id === m.conversationId && c.roomId === room.id),
 					)
 				)
-					fail(409, "Request ID already exists");
-				const parent = parentTaskId ? draft.tasks.find((t) => t.id === parentTaskId) : undefined;
-				if (source && targets.length && (!parent || parent.botId !== source.id))
-					fail(400, "Device dispatch requires its own running or terminal parent task");
-				// Explicit human input grants a new lineage; autonomous work always inherits its real parent.
-				const root = parent ? draft.tasks.find((t) => t.id === (parent.rootTaskId ?? parent.id)) : undefined;
-				if (parent && targets.length && !root) fail(409, "Dispatch root expired");
-				const depth = parent ? (parent.dispatchDepth ?? 0) + 1 : 0;
-				if (planOnly && targets.some((id) => !validBot(draft, id, owner.id)?.tools?.includes("plan_update")))
-					fail(409, "Planning requires plan_update authorization in each Bot tool allowlist");
-				if (targets.length && depth > settings.maxDispatchDepth) fail(409, "Dispatch depth exhausted");
-				if (targets.length && (root?.dispatchCount ?? 0) + targets.length > settings.maxDispatchBudget)
-					fail(409, "Dispatch budget exhausted");
-				if (root && targets.length) root.dispatchCount = (root.dispatchCount ?? 0) + targets.length;
-				if (
-					draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length >
-					getHistoryLimit()
+					fail(409, "Request already answered");
+			}
+			if (
+				parentTaskId &&
+				!draft.tasks.some(
+					(t) =>
+						t.id === parentTaskId &&
+						t.roomId === room.id &&
+						t.accountId === owner.id &&
+						(isTerminal(t.status) || (source?.id === t.botId && t.status === "running")),
 				)
-					fail(409, "Too many active tasks");
-				if (
-					!conversation &&
-					draft.conversations.filter((c) => c.roomId === room.id && !c.closed).length + targets.length >
-						getHistoryLimit()
+			)
+				fail(400, "Parent task must be terminal or the source device's running task in this room");
+			if (
+				kind === "request" &&
+				draft.conversationMessages.some(
+					(m) =>
+						m.kind === "request" &&
+						m.requestId === requestId &&
+						draft.conversations.some((c) => c.id === m.conversationId && c.roomId === room.id),
 				)
-					fail(409, "Too many open conversations; stop or delete conversations to free capacity");
-				const now = Date.now();
-				const rootId = root?.id ?? randomUUID();
-				const isPipeline = targets.length > 1 && (req.body?.pipeline === true || content.includes("->"));
-				const tasks: HubTask[] = targets.map((botId, index) => {
-					const targetBot = validBot(draft, botId, owner.id)!;
-					let attenuatedTools: string[] | undefined;
-					if (source) {
-						const rawSourceTools = source.tools ?? [];
-						const sourceTools = parent?.attenuatedTools
-							? rawSourceTools.filter((t) => !parent.attenuatedTools!.includes(t))
-							: rawSourceTools;
-						const attenuated = computeAttenuatedTools(sourceTools, targetBot.tools ?? []);
-						if (attenuated.length > 0) {
-							attenuatedTools = attenuated;
-						}
-					}
-					const isWaitingInPipeline = isPipeline && index > 0;
-					return {
-						id: !root && index === 0 ? rootId : randomUUID(),
-						rootTaskId: rootId,
-						dispatchDepth: depth,
-						...(!root && index === 0 ? { dispatchCount: targets.length } : {}),
-						attemptId: randomUUID(),
-						roomId: room.id,
-						accountId: owner.id,
-						botId,
-						deviceId: targetBot.deviceId,
-						botRevision: targetBot.revision,
-						...(source ? { sourceBotId: source.id } : {}),
-						text: content,
-						status: isWaitingInPipeline
-							? ("waiting" as const)
-							: dependencyActive
-								? ("waiting" as const)
-								: ("queued" as const),
-						...(isWaitingInPipeline
-							? {
-									blockReason: "dependency" as const,
-									blockReasonDetail: "",
-								}
-							: dependencyActive
-								? {
-										blockReason: "dependency_waiting" as const,
-										blockReasonDetail: `Waiting for dependency task ${dependsOnTaskId}`,
-										dependsOnTaskId,
-									}
-								: dependsOnTaskId
-									? { dependsOnTaskId }
-									: {}),
-						createdAt: now,
-						updatedAt: now,
-						...(resourceLocks && resourceLocks.length ? { resourceLocks } : {}),
-						...(planOnly ? { planOnly: true, plan: { state: "draft", steps: [] } } : {}),
-						...(transfer ? { handoff: transfer } : {}),
-						...(parentTaskId ? { parentTaskId } : {}),
-						...(attenuatedTools ? { attenuatedTools } : {}),
-						executionMode,
-						...(contract ? { contract } : {}),
-					};
-				});
-				if (isPipeline) {
-					for (let i = 1; i < tasks.length; i++) {
-						const prev = tasks[i - 1];
-						tasks[i].dependsOnTaskId = prev.id;
-						tasks[i].blockReason = "dependency";
-						tasks[i].blockReasonDetail = `Waiting for prior pipeline task ${prev.id} (@${prev.botId})`;
+			)
+				fail(409, "Request ID already exists");
+			const parent = parentTaskId ? draft.tasks.find((t) => t.id === parentTaskId) : undefined;
+			if (source && targets.length && (!parent || parent.botId !== source.id))
+				fail(400, "Device dispatch requires its own running or terminal parent task");
+			const priorRouterTaskId = routerSource
+				? draft.messages.find((m) => m.routerJobId === routerSource.id && m.taskIds?.length)?.taskIds?.[0]
+				: undefined;
+			const priorRouterTask = priorRouterTaskId ? draft.tasks.find((t) => t.id === priorRouterTaskId) : undefined;
+			const root = parent
+				? draft.tasks.find((t) => t.id === (parent.rootTaskId ?? parent.id))
+				: priorRouterTask
+					? draft.tasks.find((t) => t.id === (priorRouterTask.rootTaskId ?? priorRouterTask.id))
+					: undefined;
+			if ((parent || priorRouterTaskId) && targets.length && !root) fail(409, "Dispatch root expired");
+			const depth = parent ? (parent.dispatchDepth ?? 0) + 1 : (priorRouterTask?.dispatchDepth ?? 0);
+			if (planOnly && targets.some((id) => !validBot(draft, id, owner.id)?.tools?.includes("plan_update")))
+				fail(409, "Planning requires plan_update authorization in each Bot tool allowlist");
+			if (targets.length && depth > settings.maxDispatchDepth) fail(409, "Dispatch depth exhausted");
+			if (targets.length && (root?.dispatchCount ?? 0) + targets.length > settings.maxDispatchBudget)
+				fail(409, "Dispatch budget exhausted");
+			if (root && targets.length) root.dispatchCount = (root.dispatchCount ?? 0) + targets.length;
+			if (draft.tasks.filter((t) => t.roomId === room.id && taskPending(t)).length + targets.length > getHistoryLimit())
+				fail(409, "Too many active tasks");
+			if (
+				!conversation &&
+				draft.conversations.filter((c) => c.roomId === room.id && !c.closed).length + targets.length > getHistoryLimit()
+			)
+				fail(409, "Too many open conversations; stop or delete conversations to free capacity");
+			const now = Date.now();
+			const rootId = root?.id ?? randomUUID();
+			const isPipeline = targets.length > 1 && (req.body?.pipeline === true || content.includes("->"));
+			const tasks: HubTask[] = targets.map((botId, index) => {
+				const targetBot = validBot(draft, botId, owner.id)!;
+				let attenuatedTools: string[] | undefined;
+				if (source) {
+					const rawSourceTools = source.tools ?? [];
+					const sourceTools = parent?.attenuatedTools
+						? rawSourceTools.filter((t) => !parent.attenuatedTools!.includes(t))
+						: rawSourceTools;
+					const attenuated = computeAttenuatedTools(sourceTools, targetBot.tools ?? []);
+					if (attenuated.length > 0) {
+						attenuatedTools = attenuated;
 					}
 				}
-				for (const task of tasks) {
-					task.kind = kind;
-					task.sourceConversationId = parent?.conversationId;
-					task.requestId = requestId;
-					const targetConv =
-						conversation && conversation.botId === task.botId
-							? conversation
-							: !source && !conversationApi && req.body?.newConversation !== true
-								? draft.conversations
-										.filter(
-											(entry) =>
-												entry.roomId === room.id &&
-												entry.accountId === owner.id &&
-												entry.botId === task.botId &&
-												!entry.closed &&
-												entry.botRevision === task.botRevision &&
-												entry.deviceId === task.deviceId,
-										)
-										.sort((a, b) => b.updatedAt - a.updatedAt)[0]
-								: undefined;
-					if (targetConv) {
-						task.conversationId = targetConv.id;
-						task.resume = task.executionMode !== "code";
-						advanceConversationTask(draft, targetConv, task);
-						targetConv.rootTaskId = task.rootTaskId!;
-						targetConv.updatedAt = now;
-						targetConv.dispatchDepth = depth;
-					} else establishConversation(draft, task);
-					recordConversationTurn(draft, task, key, fingerprint);
-				}
-				const messageText = isPipeline
-					? `${content}\n\n⛓️ **[流水线编排 / Pipeline Execution]**: ${targets.map((id) => `@${id}`).join(" ➔ ")}`
-					: content;
-				const message = {
-					id: randomUUID(),
+				const isWaitingInPipeline = isPipeline && index > 0;
+				return {
+					id: !root && index === 0 ? rootId : randomUUID(),
+					rootTaskId: rootId,
+					dispatchDepth: depth,
+					...(!root && index === 0 ? { dispatchCount: targets.length } : {}),
+					attemptId: randomUUID(),
 					roomId: room.id,
 					accountId: owner.id,
-					text: messageText,
-					sender: source
+					botId,
+					deviceId: targetBot.deviceId,
+					botRevision: targetBot.revision,
+					...(source ? { sourceBotId: source.id } : {}),
+					text: content,
+					status: isWaitingInPipeline
+						? ("waiting" as const)
+						: dependencyActive
+							? ("waiting" as const)
+							: ("queued" as const),
+					...(isWaitingInPipeline
+						? {
+								blockReason: "dependency" as const,
+								blockReasonDetail: "",
+							}
+						: dependencyActive
+							? {
+									blockReason: "dependency_waiting" as const,
+									blockReasonDetail: `Waiting for dependency task ${dependsOnTaskId}`,
+									dependsOnTaskId,
+								}
+							: dependsOnTaskId
+								? { dependsOnTaskId }
+								: {}),
+					createdAt: now,
+					updatedAt: now,
+					...(resourceLocks && resourceLocks.length ? { resourceLocks } : {}),
+					...(planOnly ? { planOnly: true, plan: { state: "draft", steps: [] } } : {}),
+					...(transfer ? { handoff: transfer } : {}),
+					...(parentTaskId ? { parentTaskId } : {}),
+					...(attenuatedTools ? { attenuatedTools } : {}),
+					executionMode,
+					...(contract ? { contract } : {}),
+				};
+			});
+			if (isPipeline) {
+				for (let i = 1; i < tasks.length; i++) {
+					const prev = tasks[i - 1];
+					tasks[i].dependsOnTaskId = prev.id;
+					tasks[i].blockReason = "dependency";
+					tasks[i].blockReasonDetail = `Waiting for prior pipeline task ${prev.id} (@${prev.botId})`;
+				}
+			}
+			for (const task of tasks) {
+				task.kind = kind;
+				task.sourceConversationId = parent?.conversationId;
+				task.requestId = requestId;
+				const targetConv =
+					conversation && conversation.botId === task.botId
+						? conversation
+						: !source && !conversationApi && req.body?.newConversation !== true
+							? draft.conversations
+									.filter(
+										(entry) =>
+											entry.roomId === room.id &&
+											entry.accountId === owner.id &&
+											entry.botId === task.botId &&
+											!entry.closed &&
+											entry.botRevision === task.botRevision &&
+											entry.deviceId === task.deviceId,
+									)
+									.sort((a, b) => b.updatedAt - a.updatedAt)[0]
+							: undefined;
+				if (targetConv) {
+					task.conversationId = targetConv.id;
+					task.resume = task.executionMode !== "code";
+					advanceConversationTask(draft, targetConv, task);
+					targetConv.rootTaskId = task.rootTaskId!;
+					targetConv.updatedAt = now;
+					targetConv.dispatchDepth = depth;
+				} else establishConversation(draft, task);
+				recordConversationTurn(draft, task, key, fingerprint);
+			}
+			const messageText = isPipeline
+				? `${content}\n\n⛓️ **[流水线编排 / Pipeline Execution]**: ${targets.map((id) => `@${id}`).join(" ➔ ")}`
+				: content;
+			const message = {
+				id: randomUUID(),
+				roomId: room.id,
+				accountId: owner.id,
+				text: messageText,
+				...(routerSource ? { routerJobId: routerSource.id } : {}),
+				sender: routerSource
+					? { type: "router" as const, id: `router:${room.id}`, name: "群组 AI", sourceDeviceId: routerSource.deviceId }
+					: source
 						? { type: "bot" as const, id: source.id, name: source.name, sourceDeviceId: source.deviceId }
 						: {
 								type: "human" as const,
@@ -3023,74 +3123,134 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 								name: userSource ? `${owner.username} · ${userSource.name}` : owner.username,
 								...(userSource ? { sourceDeviceId: userSource.id } : {}),
 							},
-					createdAt: now,
-					taskIds: tasks.map((t) => t.id),
-					targetBotIds: targets,
-					...(replyToMessageId ? { replyToMessageId } : {}),
-					...(tasks.length === 1 ? { conversationId: tasks[0].conversationId } : {}),
-					...(tasks.length ? { conversationIds: tasks.map((task) => task.conversationId!) } : {}),
-				};
-				// Freeze shared context before any recipient starts. Parallel answers cannot leak into siblings.
-				const context = tasks.length
-					? groupTaskContext(room, draft.bots, draft.messages, settings.groupContextBytes)
-					: undefined;
-				draft.tasks.push(...tasks);
-				draft.messages.push(message);
-				draft.receipts.push({
-					accountId: owner.id,
-					roomId: room.id,
-					key,
-					fingerprint,
-					messageId: message.id,
-					createdAt: message.createdAt,
-				});
-				const oldMessages = draft.messages.filter((m) => m.roomId === room.id).slice(0, -getHistoryLimit());
-				const removed = new Set(oldMessages.map((m) => m.id));
-				// Retention evicts messages, never the replay guard: a retry must not re-dispatch evicted work.
-				draft.messages = draft.messages.filter((m) => !removed.has(m.id));
-				trimRoomReceipts(draft, room.id);
-				const oldTasks = new Set(
-					draft.tasks
-						.filter(
-							(t) =>
-								t.roomId === room.id &&
-								isTerminal(t.status) &&
-								!taskHasImmutableEvidence(t) &&
-								!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
-						)
-						.slice(0, -getHistoryLimit())
-						.map((t) => t.id),
+				createdAt: now,
+				taskIds: tasks.map((t) => t.id),
+				targetBotIds: targets,
+				...(replyToMessageId ? { replyToMessageId } : {}),
+				...(tasks.length === 1 ? { conversationId: tasks[0].conversationId } : {}),
+				...(tasks.length ? { conversationIds: tasks.map((task) => task.conversationId!) } : {}),
+			};
+			const context = tasks.length
+				? groupTaskContext(room, draft.bots, draft.messages, settings.groupContextBytes)
+				: undefined;
+			draft.tasks.push(...tasks);
+			draft.messages.push(message);
+			if (!source && !routerSource && !targets.length)
+				queueRouterJob(
+					draft,
+					{
+						accountId: owner.id,
+						roomId: room.id,
+						eventKey: `message:${message.id}`,
+						trigger: { type: "human_message", messageId: message.id },
+						text: content,
+					},
+					now,
 				);
-				draft.tasks = draft.tasks.filter((t) => !oldTasks.has(t.id));
-				trimConversationHistory(draft, room.id);
-				trimClosedConversations(draft, room.id);
-				const settlement = settleTaskDependencies(draft, settlementContext());
-				return { message, tasks, duplicate: false, context, settlement };
+			draft.receipts.push({
+				accountId: owner.id,
+				roomId: room.id,
+				key,
+				fingerprint,
+				messageId: message.id,
+				createdAt: message.createdAt,
 			});
-			if (!result.duplicate) {
-				if (result.settlement) await publishSettlementEffects(result.settlement);
-				for (const task of result.tasks) {
-					if (task.status === "queued") await deliverTask(task, result.context);
-				}
-				if (result.message) {
-					dispatchGroupWebhook(store, req.params.id as string, "message", result.message);
-				}
+			const oldMessages = draft.messages.filter((m) => m.roomId === room.id).slice(0, -getHistoryLimit());
+			const removed = new Set(oldMessages.map((m) => m.id));
+			draft.messages = draft.messages.filter((m) => !removed.has(m.id));
+			trimRoomReceipts(draft, room.id);
+			const oldTasks = new Set(
+				draft.tasks
+					.filter(
+						(t) =>
+							t.roomId === room.id &&
+							isTerminal(t.status) &&
+							!taskHasImmutableEvidence(t) &&
+							!draft.workItems.some((w) => w.taskIds.includes(t.id)) &&
+							!draft.conversations.some((c) => c.rootTaskId === t.id || c.id === t.conversationId),
+					)
+					.slice(0, -getHistoryLimit())
+					.map((t) => t.id),
+			);
+			draft.tasks = draft.tasks.filter((t) => !oldTasks.has(t.id));
+			trimConversationHistory(draft, room.id);
+			trimClosedConversations(draft, room.id);
+			const settlement = settleTaskDependencies(draft, settlementContext());
+			return { message, tasks, duplicate: false, context, settlement };
+		});
+		if (!result.duplicate) {
+			if (result.settlement) await publishSettlementEffects(result.settlement);
+			for (const task of result.tasks) {
+				if (task.status === "queued") await deliverTask(task, result.context);
 			}
-			const state = store.snapshot();
-			res.json({
-				...(conversationApi
-					? {
-							conversation: state.conversations.find((c) => c.id === result.tasks[0]?.conversationId),
-							task: ((t) => (t ? publicTask(t) : undefined))(state.tasks.find((t) => t.id === result.tasks[0]?.id)),
-						}
-					: {}),
-				message: result.message,
-				tasks: result.tasks.map((task) =>
-					publicTask(state.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId) ?? task),
-				),
-			});
-		},
+			if (result.message) {
+				dispatchGroupWebhook(store, req.params.id as string, "message", result.message);
+			}
+		}
+		const state = store.snapshot();
+		res.json({
+			...(conversationApi
+				? {
+						conversation: state.conversations.find((c) => c.id === result.tasks[0]?.conversationId),
+						task: ((t) => (t ? publicTask(t) : undefined))(state.tasks.find((t) => t.id === result.tasks[0]?.id)),
+					}
+				: {}),
+			message: result.message,
+			tasks: result.tasks.map((task) =>
+				publicTask(state.tasks.find((entry) => entry.id === task.id && entry.attemptId === task.attemptId) ?? task),
+			),
+		});
+	};
+	app.post(
+		[
+			"/api/rooms/:id/messages",
+			"/api/rooms/:id/tasks",
+			"/api/rooms/:id/conversations",
+			"/api/rooms/:id/conversations/:conversationId/messages",
+		],
+		postRoomMessage,
 	);
+	installHubOrchestration({
+		app,
+		store,
+		actor(req) {
+			const owner = account(req);
+			return { accountId: owner.id, deviceId: (agents.get(req) ?? users.get(req))?.device.id, human: !agents.has(req) };
+		},
+		async getModels(_req, deviceId) {
+			if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
+			const result = await options.relay.callDevice(deviceId, "group_router_models", {});
+			return { deviceId, models: Array.isArray(result) ? result : ((result as any)?.models ?? []) };
+		},
+		async sendMessage(job, action, key) {
+			const state = store.snapshot(),
+				owner = state.accounts.find((a) => a.id === job.accountId),
+				device = state.devices.find((d) => d.id === job.deviceId && d.accountId === job.accountId);
+			if (!owner || !device) fail(403, "Router device revoked");
+			const parentId =
+				action.type === "dispatch" && job.trigger.type === "task_result" ? job.trigger.taskId : undefined;
+			const request = {
+				params: { id: job.roomId },
+				path: `/api/rooms/${job.roomId}/messages`,
+				body: {
+					text: action.text,
+					targetBotIds: action.type === "dispatch" ? [action.botId] : [],
+					idempotencyKey: key,
+					...(parentId ? { parentTaskId: parentId } : {}),
+					...(action.type === "dispatch" ? { executionMode: action.executionMode, contract: action.contract } : {}),
+				},
+			} as unknown as Request;
+			users.set(request, { device, account: { id: owner.id, username: owner.username } });
+			routerSources.set(request, job);
+			let response: any;
+			await postRoomMessage(request, {
+				json: (value: unknown) => {
+					response = value;
+				},
+			} as Response);
+			return response;
+		},
+	});
 	app.post("/api/devices/:id/remark", async (req, res) => {
 		const owner = account(req);
 		const id = String(req.params.id);
@@ -3176,9 +3336,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		}
 		if (users.has(req)) req.headers.origin = origin.origin;
 		if (!options.relay?.handleOpen) fail(503, "Relay unavailable");
-		await options.relay.handleOpen(req, res, String(req.params.id));
+		await options.relay.handleOpen(
+			req,
+			res,
+			String(req.params.id),
+			false,
+			users.has(req) && req.body?.preferLan === true,
+		);
 	});
-	// No catch-all: the runner mounts the UI after creation.
 	app.use((error: Error & { status?: number; code?: string }, _req: Request, res: Response, _next: NextFunction) => {
 		res.status(error.status ?? 500).json({
 			error: error.status && error.status < 500 ? error.message : "Storage or internal error",
@@ -3190,7 +3355,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (options.relay?.handleRequest?.(req, res)) return;
 		app(req, res);
 	});
-	// Accepted queued tasks remain in flight until a terminal event, including asynchronous relay delivery.
 	const deliveredTasks = new Set<string>();
 
 	async function releaseLocksAndWake(roomId: string, taskId: string) {
@@ -3428,8 +3592,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const taskState = committed.conversations.find((entry) => entry.id === task.conversationId)?.taskState;
 			const wire: DeliveryTask = {
 				...task,
-				// Runtime consumes sealed snapshots directly. Legacy copies would count
-				// their serialized size twice and can exceed the relay frame ceiling.
 				...(task.contextManifest ? {} : { context, taskState }),
 				executionMode: task.executionMode ?? task.contract?.executionMode ?? "chat",
 			};
@@ -3496,8 +3658,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 						entry.botId === event.botId &&
 						entry.accountId === device?.accountId,
 				);
-				// Settle identity and durable terminal conflicts first, so an obsolete
-				// artifact can receive a bound permanent rejection rather than retry forever.
 				const settled = settleTaskTerminalOutcome(
 					draft,
 					deviceId,
@@ -3579,7 +3739,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		return result.task!;
 	}
 
-	// Recover unissued work; outstanding leases must first claim within the recovery window.
 	const recovery = await store.transact((draft) =>
 		rescanReadyTasksOnRecovery(draft, Date.now(), 60_000, settlementContext()),
 	);
@@ -3857,7 +4016,6 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const room = state.rooms.find((r) => r.id === task.roomId && r.accountId === task.accountId);
 		if (!room) return;
 
-		// Deduplicate and enforce monotonic sequence if provided
 		if (typeof frame.sequence === "number" && Number.isSafeInteger(frame.sequence)) {
 			const seqKey = `${task.id}:${task.attemptId}`;
 			const prevSeq = toolLifecycleSeqs.get(seqKey);
@@ -3978,6 +4136,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			void reconcilePendingPublications();
 		},
 		async close() {
+			await mobilePush.dispose();
 			clearInterval(recoverySweepTimer);
 			lockManager.close();
 			await groupEvents.close();

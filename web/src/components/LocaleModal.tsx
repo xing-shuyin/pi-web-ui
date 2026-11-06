@@ -4,11 +4,6 @@ import { unregisterLocale, useI18n, useT, type LocalePackStatus } from "../i18n"
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 
-/**
- * 语言包管理 — 核心只随包发布中英，其余语言按需下载到服务端
- * <dataDir>/locales/<code>.json（仓库 locales/*.json，不进 npm）。
- * 手工放进去的同名 JSON 也会被识别（离线安装）。
- */
 export function LocaleModal({ onClose }: { onClose: () => void }) {
 	const t = useT();
 	const { locale, setLocale, reloadPacks } = useI18n();
@@ -42,9 +37,7 @@ export function LocaleModal({ onClose }: { onClose: () => void }) {
 				let msg = `HTTP ${res.status}`;
 				try {
 					msg = ((await res.json()) as { error?: string }).error ?? msg;
-				} catch {
-					/* keep status */
-				}
+				} catch {}
 				throw new Error(msg);
 			}
 			await reloadPacks();

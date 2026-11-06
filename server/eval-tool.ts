@@ -1,21 +1,3 @@
-/**
- * eval-tool.ts — 受控的持久代码求值沙箱工具（eval）。
- *
- * 背景与设计：
- *   AI 在面对需要快速计算、复杂数据处理（如解析庞大的 CSV/JSON 数据、统计指标计算）、
- *   算法推演或生成图表时，以往只能通过 `bash` 工具反复创建与删除临时脚本，且中间变量
- *   无法跨调用持久化。
- *
- *   借鉴 oh-my-pi (omp) 的 eval 工具经验，同时彻底规避其两大缺陷：
- *   1. 【工具挤占防范】：本工具默认关闭（defaultOn: false，opt-in），不挤占常规代码编写/检索；
- *   2. 【IPC 死锁防范】：采用轻量独立子进程驱动，输出独立缓冲，配以跨平台进程树硬超时查杀
- *      （Windows 下 taskkill /F /T，Unix 下 SIGKILL），杜绝子进程挂起与假死。
- *
- * 支持语言：
- *   - "py": Python 3（使用内置 ast 解析，支持多语句执行、最后表达式求值与变量保持）；
- *   - "js" / "ts": Node.js（基于 node:repl，支持 top-level await、变量保持与控制台捕获）。
- */
-
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -40,7 +22,6 @@ export interface EvalWorkerResult {
 	error: string | null;
 }
 
-/** 跨平台递归查杀进程树。 */
 export function killProcessTree(proc: ChildProcess): void {
 	if (!proc.pid) return;
 	if (process.platform === "win32") {
@@ -62,7 +43,6 @@ export function killProcessTree(proc: ChildProcess): void {
 	}
 }
 
-/** 探测系统可用的 Python 命令。 */
 function resolvePythonCmd(): string | null {
 	for (const cmd of ["python", "python3", "py"]) {
 		try {
@@ -212,7 +192,6 @@ rl.on("line", (line) => {
 });
 `;
 
-/** 排队中的一次内核请求（驱动协议是单槽的，串行消费；并行 tool call 自动排队）。 */
 interface PendingRequest {
 	req: { action: string; code?: string };
 	timeoutMs: number;
@@ -222,10 +201,6 @@ interface PendingRequest {
 	reject: (err: Error) => void;
 }
 
-/**
- * 净化 Eval 子进程环境变量：仅保留操作系统基础变量，剥离所有包含 key/token/secret/auth/cred 等敏感环境变量，
- * 杜绝沙箱脚本窃取宿主云凭据与 API Key。
- */
 export function sanitizeEvalEnv(sourceEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const allowedKeys = new Set([
 		"path",
@@ -277,12 +252,6 @@ export function sanitizeEvalEnv(sourceEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 	return cleanEnv;
 }
 
-/**
- * 传输层 ASCII 安全序列化：
- * 将所有非 ASCII 字符（> 0x7F，含中文、特殊符号与 Emoji 代理对）转义为标准 JSON \uXXXX 格式。
- * 纯 7-bit ASCII 传输流在跨平台任何操作系统本地代码页（如 Windows CP936/GBK/Shift-JIS）下
- * 绝不会发生反斜杠 0x5C 被多字节汉字首字节“吞噬”导致 JSON 结构损毁或崩溃的问题。
- */
 export function toAsciiJson(data: unknown): string {
 	const raw = JSON.stringify(data);
 	if (!/[^\x00-\x7F]/.test(raw)) {
@@ -291,7 +260,6 @@ export function toAsciiJson(data: unknown): string {
 	return raw.replace(/[^\x00-\x7F]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
-/** 单个持久内核工作进程包装。 */
 class EvalKernel {
 	private proc: ChildProcess | null = null;
 	private rl: readline.Interface | null = null;
@@ -313,8 +281,6 @@ class EvalKernel {
 			return;
 		}
 
-		// 沙箱边界：内核 cwd 是本会话的独立临时目录（不落在项目里），要读项目
-		// 文件时用驱动内注入的 PROJECT_DIR 显式拼绝对路径（两个 env 见下）。
 		const spawnOpts = {
 			cwd: this.workdir,
 			stdio: ["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"],
@@ -335,15 +301,11 @@ class EvalKernel {
 			}
 			this.proc = spawn(pyCmd, ["-X", "utf8", "-u", "-c", PYTHON_DRIVER_SCRIPT], spawnOpts);
 		} else {
-			// js / ts：独立 node -e 驱动，ts 时带 --experimental-strip-types 支持 TypeScript 原生剥离执行。
 			const nodeArgs =
 				this.language === "ts" ? ["--experimental-strip-types", "-e", NODE_DRIVER_SCRIPT] : ["-e", NODE_DRIVER_SCRIPT];
 			this.proc = spawn(process.execPath, nodeArgs, spawnOpts);
 		}
 
-		// stderr 必须持续排空：驱动只把用户的 print/console 劫进 StringIO，但
-		// os.write(2, …) / 原生扩展 / eval 里再 spawn 的子进程仍写真实 fd 2。
-		// piped stderr 无人读，写满 ~64KB 管道缓冲会把驱动挂住（表现为假超时）。
 		this.proc.stderr!.on("data", (chunk: Buffer) => {
 			this.stderrTail = (this.stderrTail + chunk.toString()).slice(-4000);
 		});
@@ -369,8 +331,6 @@ class EvalKernel {
 			this.pump();
 		});
 
-		// 代际守卫：killProc 之后旧进程的 exit/error 是「迟到的」，那时 this.proc
-		// 已指向新进程（或 null），绝不能让它污染新内核的状态。
 		const proc = this.proc;
 		proc.on("error", (err) => {
 			if (this.proc !== proc) return;
@@ -383,7 +343,6 @@ class EvalKernel {
 		});
 	}
 
-	/** 进程异常退出：结算在飞与排队中的请求（都当失败，不假装成功）。 */
 	private procDied(message: string): void {
 		if (this.current) {
 			const item = this.current;
@@ -425,7 +384,6 @@ class EvalKernel {
 				if (item.done) return;
 				if (this.current === item) {
 					this.current = null;
-					// 硬超时：杀进程树（不留孤儿），后续 pump 按需重启内核。
 					this.killProc();
 					this.pump();
 				}
@@ -436,7 +394,6 @@ class EvalKernel {
 		});
 	}
 
-	/** 串行消费队列：驱动协议一次只发一条请求。 */
 	private pump(): void {
 		if (this.current || this.queue.length === 0) return;
 		try {
@@ -465,7 +422,6 @@ class EvalKernel {
 		}
 	}
 
-	/** 结算一条请求（幂等；清定时器）。 */
 	private settle(item: PendingRequest, res: EvalWorkerResult): void {
 		if (item.done) return;
 		item.done = true;
@@ -473,7 +429,6 @@ class EvalKernel {
 		item.resolve(res);
 	}
 
-	/** 只杀进程（保留 workdir）：超时路径用，之后可原样重启内核。 */
 	private killProc(): void {
 		if (this.rl) {
 			this.rl.close();
@@ -504,7 +459,6 @@ class EvalKernel {
 	}
 }
 
-/** 会话级内核池（convId -> { py, js }）。 */
 const sessionKernels = new Map<string, Map<string, EvalKernel>>();
 
 function getKernel(sessionId: string, language: "py" | "js" | "ts", cwd: string): EvalKernel {
@@ -522,7 +476,6 @@ function getKernel(sessionId: string, language: "py" | "js" | "ts", cwd: string)
 	return kernel;
 }
 
-/** 销毁指定会话的求值沙箱进程。 */
 export function disposeEvalSession(sessionId: string): void {
 	const langMap = sessionKernels.get(sessionId);
 	if (langMap) {
@@ -533,7 +486,6 @@ export function disposeEvalSession(sessionId: string): void {
 	}
 }
 
-/** 清理全部求值沙箱。 */
 export function disposeAllEvalKernels(): void {
 	for (const langMap of sessionKernels.values()) {
 		for (const kernel of langMap.values()) {
@@ -586,11 +538,8 @@ export function makeEvalTool(opts: { cwd: string; ownerId?: string; lang?: () =>
 		execute: async (_id, params) => {
 			const lang = getLang();
 			let language: string = params.language ?? "py";
-			if (language === "python") language = "py"; // 常见笔误别名（issue #462）
+			if (language === "python") language = "py";
 			if (language !== "py" && language !== "js" && language !== "ts") {
-				// schema 已声明 enum(["py","js","ts"])（#417），但那只影响提示不拦运行时；
-				// getKernel 的 normLang 只映射 ts，其余任意值会原样建出名为它的 Node 内核，
-				// Python 代码被 node 执行报 JS 语法错且模型无从知道是键写错。
 				const text = pick(
 					lang,
 					`错误：language 仅支持 py / js / ts，收到「${language}」。`,

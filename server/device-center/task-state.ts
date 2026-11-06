@@ -61,7 +61,6 @@ export interface QueryReportChunkOptions {
 	reportRef?: string;
 }
 
-/** Pure deterministic chunk extractor for long reports/journals; never silences or drops boundaries. */
 export function queryTaskReportChunk(
 	taskId: string,
 	reportText: string,
@@ -78,17 +77,14 @@ export function queryTaskReportChunk(
 	const buf = Buffer.from(reportText, "utf8");
 	const totalBytes = buf.length;
 	let actualOffset = Math.min(offset, totalBytes);
-	// If actualOffset falls on a UTF-8 continuation byte, align backward to the code point start.
 	while (actualOffset > 0 && (buf[actualOffset] & 0xc0) === 0x80) {
 		actualOffset--;
 	}
 	const safeLimit = Math.max(1, Math.min(limit, 65536));
 	let end = Math.min(actualOffset + safeLimit, totalBytes);
-	// If end falls on a continuation byte, shrink backward to prevent exceeding safeLimit.
 	while (end > actualOffset && (buf[end] & 0xc0) === 0x80) {
 		end--;
 	}
-	// Fallback for single multi-byte code point exceeding safeLimit: advance to include it.
 	if (end === actualOffset && actualOffset < totalBytes) {
 		end++;
 		while (end < totalBytes && (buf[end] & 0xc0) === 0x80) {
@@ -125,7 +121,6 @@ export function queryTaskReportChunk(
 	};
 }
 
-/** Deterministic aggregation of task state without calling any external LLM summary. */
 export function buildDeterministicTaskSummary(
 	taskState: DeviceTaskState,
 	options?: { userConstraints?: string[]; maxConstraintBytes?: number },
@@ -223,14 +218,11 @@ const bounded = (text: string) => text.slice(0, TEXT_LIMIT);
 const terminal = (task: HubTask): task is HubTask & { status: "completed" | "failed" | "interrupted" } =>
 	["completed", "failed", "interrupted"].includes(task.status);
 
-/** A snapshot of canonical records, never a second task lifecycle. No historical events are inferred. */
 export function projectConversationState(state: HubState, conversation: HubConversation): ConversationTaskState {
 	const prior = conversation.taskState;
 	const tasks = state.tasks.filter((task) => task.conversationId === conversation.id);
 	const current = tasks.find((task) => task.id === conversation.latestTaskId);
 	const messages = state.conversationMessages.filter((message) => message.conversationId === conversation.id);
-	// rootTaskId tracks the dispatch budget chain and can change on a new human turn.
-	// Delegated conversations may also point at a root in a different conversation.
 	const initial = [
 		...tasks.map((task) => ({ text: task.text, createdAt: task.createdAt })),
 		...messages.map((message) => ({ text: message.text, createdAt: message.createdAt })),
@@ -294,7 +286,6 @@ export function projectConversationState(state: HubState, conversation: HubConve
 	};
 }
 
-/** Run after every canonical mutation and before persistence, including restart recovery. */
 export function reconcileConversationState(previous: HubState, next: HubState): void {
 	const oldConversations = new Map(previous.conversations.map((conversation) => [conversation.id, conversation]));
 	const oldMessages = new Set(previous.conversationMessages.map((message) => message.id));
@@ -303,7 +294,6 @@ export function reconcileConversationState(previous: HubState, next: HubState): 
 	const oldReviews = new Set(previous.reviews.map((review) => review.id));
 	for (const conversation of next.conversations) {
 		const before = oldConversations.get(conversation.id);
-		// Only reported fields may be explicitly changed; the rest is always derived here.
 		const reported = conversation.taskState?.reported;
 		conversation.taskState = before?.taskState;
 		const projected = projectConversationState(next, conversation);
@@ -337,7 +327,6 @@ export function reconcileConversationState(previous: HubState, next: HubState): 
 			(message) => message.conversationId === conversation.id && !oldMessages.has(message.id),
 		);
 		for (const message of newMessages) {
-			// Own execution reports are represented by the canonical task status transition.
 			const task = next.tasks.find((task) => task.id === message.taskId);
 			if (message.kind === "result" && (task?.kind !== "result" || message.sourceBotId === task.botId)) continue;
 			const type =
@@ -381,7 +370,6 @@ export function reconcileConversationState(previous: HubState, next: HubState): 
 			const humans = newMessages.filter(
 				(message) => !message.sourceBotId && message.kind === "message" && message.createdAt >= attention.createdAt,
 			);
-			// Ambiguous removal (close/cancel/replacement) must never invent a human decision.
 			const answer = !conversation.closed && !conversation.attention && humans.length === 1 ? humans[0] : undefined;
 			append(
 				"attention_resolved",

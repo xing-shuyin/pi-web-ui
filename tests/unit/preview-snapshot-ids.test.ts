@@ -1,4 +1,3 @@
-/** C4（服务端）：打开历史会话的预览消息 id 与首个快照一致，且种子不改变任何消息的 id。 */
 import { describe, expect, it } from "vitest";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
@@ -21,7 +20,6 @@ function fixture() {
 	const messages = [
 		{ role: "compactionSummary", summary: "earlier work", tokensBefore: 100, timestamp: 10 },
 		user("first", 100),
-		// 同一毫秒的多条用户消息（附件旁注）：seq 按同时间戳序号区分
 		user("aside one", 200),
 		user("aside two", 200),
 		assistant("working", 300, ["c1"]),
@@ -73,7 +71,6 @@ describe("previewWithSnapshotIds", () => {
 		const cs = fakeClientSession() as any;
 		const { messages, manager } = fixture();
 		const baseline = (cs.messagesOf(freshConv(messages, manager)) as { id: string }[]).map((m) => m.id);
-		// 同时间戳用户消息 seq 递增；历史压缩卡补在最前
 		expect(baseline).toContain("u-200-1");
 		expect(baseline).toContain("u-200-2");
 		expect(baseline).toContain("u-500-2");

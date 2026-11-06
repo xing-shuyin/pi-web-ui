@@ -1,9 +1,3 @@
-// 思考档位（models.json 模型级 thinkingLevelMap）回归 —— issue #771。
-//
-// pi-ai 的 getSupportedThinkingLevels() 只有在模型带 thinkingLevelMap 且 xhigh/max
-// 有显式映射时才开放这两个档位，所以自定义服务商（vLLM / 聚合网关）必须：
-//   1. 刷新模型列表时把网关自报的 reasoning_levels 推导成 thinkingLevelMap；
-//   2. 保存 / 合并 / 下发时保留该字段（不能被 UI 认识的字段白名单抹掉）。
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +33,6 @@ describe("buildThinkingLevelMapFromMeta", () => {
 			supported_reasoning_levels: [{ effort: "low" }, { effort: "high" }, { effort: "xhigh" }],
 		});
 		expect(map).toEqual({ minimal: null, low: "low", medium: null, high: "high", xhigh: "xhigh", max: null });
-		// off 永不隐藏：网关没报 none/off 时缺键（= 仍可选），不写 null
 		expect(map && "off" in map).toBe(false);
 	});
 
@@ -107,7 +100,6 @@ describe("sanitizeThinkingLevelMap", () => {
 	});
 });
 
-/** 覆盖内置 provider 的 models.json 条目：thinkingLevelMap 是 UI 不认识的字段。 */
 const storedEntry = {
 	api: "openai-completions",
 	baseUrl: "https://gateway.test/v1",
@@ -142,7 +134,6 @@ function makeHost(agentDir: string, notices: ServerMessage[]) {
 	} satisfies ModelAdminHost;
 }
 
-/** 表单只带 UI 认识的字段（前端草稿往返）。 */
 const formRows: UiModelConfigEntry[] = [{ id: "auto/deepseek-v4.1-flash", reasoning: true, contextWindow: 1000000 }];
 const formConfig: UiProviderConfig = {
 	providerId: "gateway",
@@ -181,7 +172,6 @@ describe("mergeProviderConfigEntry / 保存 / 下发往返", () => {
 			};
 			expect(written.providers.gateway.models[0].thinkingLevelMap).toEqual(storedEntry.models[0].thinkingLevelMap);
 
-			// listModelsConfig（saveModelConfig 尾部的 writeModelsConfigAndReload 会推一次）
 			const pushed = notices.filter((msg) => msg.type === "models_config").pop() as
 				{ providers: UiProviderConfig[] } | undefined;
 			expect(pushed?.providers[0].models[0].thinkingLevelMap).toEqual(storedEntry.models[0].thinkingLevelMap);

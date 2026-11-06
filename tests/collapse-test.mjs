@@ -1,7 +1,3 @@
-/* Collapse/lazy-render E2E: seeds a >30-message chat via WS (same clientId the
- * browser will use), then verifies old messages render as collapsed summary
- * rows and expand on click.
- * Run: npm run build && node collapse-test.mjs */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -18,9 +14,7 @@ const dataDir = join(base, "data");
 const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-// Real-looking auth so the one-time setup modal doesn't block the UI.
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
-// Tiny attachment files — each becomes one custom "file" message (aside).
 for (let i = 1; i <= 35; i++) {
 	writeFileSync(join(workdir, `seed-${String(i).padStart(2, "0")}.txt`), `seed content ${i}\n`);
 }
@@ -51,9 +45,7 @@ const server = spawn(
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -73,17 +65,12 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(200);
 	}
 	throw new Error("server did not start");
 }
 
-/** Seed a long chat instantly: one prompt with 35 attachments produces 35
- *  custom "file" messages + 1 user message = 36 messages (no need to wait for
- *  the model — the asides are appended immediately). */
 async function seedChat() {
 	return new Promise((resolve, reject) => {
 		const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
@@ -141,7 +128,6 @@ async function main() {
 		if (m.type() === "error") consoleErrors.push(m.text());
 	});
 	page.on("pageerror", (e) => consoleErrors.push(String(e)));
-	// Same clientId as the seeder → same session dir.
 	await page.addInitScript((id) => localStorage.setItem("pi-web-client-id", id), CLIENT_ID);
 
 	await page.goto(`http://localhost:${PORT}/`);
@@ -149,7 +135,6 @@ async function main() {
 	await page.waitForSelector(".msg", { timeout: 30000 });
 	console.log("app booted with 32 messages");
 
-	// -- collapsed rows -------------------------------------------------------
 	const collapsed = page.locator(".msg-collapsed");
 	const full = page.locator(".msg");
 	check("old messages render collapsed", (await collapsed.count()) > 0);
@@ -162,7 +147,6 @@ async function main() {
 	check("attachment messages collapse with file-name preview", (await attachmentRow.count()) > 0);
 	check("collapsed row offers 展开", firstCollapsedPreview.includes("展开"));
 
-	// -- expand on click ------------------------------------------------------
 	const beforeCount = await page.locator(".msg-collapsed").count();
 	await collapsed.first().click();
 	await page.waitForSelector(".msg .msg-collapse-btn", { timeout: 5000 });
@@ -178,12 +162,10 @@ async function main() {
 		.catch(() => null);
 	check("expanded message shows 收起 button", collapseBtn?.includes("收起") ?? false);
 
-	// -- collapse again -------------------------------------------------------
 	await page.locator(".msg .msg-collapse-btn").first().click();
 	await page.waitForSelector(".msg-collapsed", { timeout: 5000 });
 	check("收起 collapses the message back", (await collapsed.count()) > 0);
 
-	// -- no console errors ----------------------------------------------------
 	check("no page errors", consoleErrors.length === 0);
 	if (consoleErrors.length > 0) {
 		console.log("   console errors:", consoleErrors.slice(0, 3));

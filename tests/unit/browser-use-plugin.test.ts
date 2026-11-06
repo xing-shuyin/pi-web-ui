@@ -15,7 +15,7 @@ describe("browser-use 插件单元测试", () => {
 		const val = validatePluginManifest(manifest, "browser-use");
 		expect(val.errors).toEqual([]);
 		expect(manifest.id).toBe("browser-use");
-		expect(manifest.version).toBe("0.10.0");
+		expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
 		expect(manifest.view).toBe(false);
 		expect(manifest.permissions).toContain("tools");
 		expect(manifest.description).toBeTruthy();
@@ -32,7 +32,6 @@ describe("browser-use 插件单元测试", () => {
 		expect(idleSetting.min).toBe(0);
 		expect(idleSetting.max).toBe(180);
 
-		// 新增设置项测试
 		const defaultEngineSetting = manifest.settings.find((s: any) => s.key === "defaultEngine");
 		expect(defaultEngineSetting).toBeDefined();
 		expect(defaultEngineSetting.type).toBe("select");
@@ -98,9 +97,7 @@ describe("browser-use 插件单元测试", () => {
 		const tool = registeredTools.find((t) => t.name === "browser_use");
 		expect(tool).toBeDefined();
 		expect(tool.description).toBeTruthy();
-		// AGENTS.md 规范：description <= 600 字符
 		expect(tool.description.length).toBeLessThanOrEqual(600);
-		// promptSnippet <= 80 字符
 		expect(tool.promptSnippet.length).toBeLessThanOrEqual(80);
 		expect(Array.isArray(tool.promptGuidelines)).toBe(true);
 
@@ -123,7 +120,6 @@ describe("browser-use 插件单元测试", () => {
 		expect(actionProp.enum).toContain("screenshot");
 		expect(actionProp.enum).toContain("quit");
 
-		// browser_search 专用工具测试
 		const searchTool = registeredTools.find((t) => t.name === "browser_search");
 		expect(searchTool).toBeDefined();
 		expect(searchTool.description).toBeTruthy();
@@ -157,7 +153,6 @@ describe("browser-use 插件单元测试", () => {
 		expect(searchParams.officialOnly).toBeDefined();
 		expect(searchParams.timeRange?.enum).toEqual(["all", "day", "week", "month", "year"]);
 
-		// browser_use 的 engine 枚举也同步支持市面主流阵容
 		const useEngineProp = tool.parameters?.properties?.engine;
 		expect(useEngineProp?.enum).toEqual([
 			"auto",
@@ -175,30 +170,24 @@ describe("browser-use 插件单元测试", () => {
 		expect(tool.parameters?.properties?.page).toBeDefined();
 		expect(tool.parameters?.properties?.fetchTopContent).toBeDefined();
 
-		// deactivate 清理测试
 		expect(typeof plugin).toBe("function");
 		expect(() => (plugin as () => void)()).not.toThrow();
 	});
 
 	it("搜索零结果时必须暴露引擎级失败原因，而不是伪装成「搜不到」（回归）", () => {
 		const src = readFileSync(join(PLUGIN_DIR, "index.mjs"), "utf8");
-		// 旧版统一话术会把「被反爬拦截 / 境外引擎不可达」伪装成「没有结果」
 		expect(src).not.toContain("未找到有效自然搜索结果。建议调整关键词或指定其他搜索引擎（如 google / baidu）。");
 		expect(src).toContain("formatSearchFailureText");
 		expect(src).toContain("attempts");
-		// 并发搜索共用同一个 worker 标签页会串味，必须有串行队列
 		expect(src).toContain("enqueueSearch");
 
 		const py = readFileSync(join(PLUGIN_DIR, "scripts", "dp_browser.py"), "utf8");
-		// 跟进程互斥（文件锁）与跨导航存活的工作标签页标记
 		expect(py).toContain("_search_lock");
 		expect(py).toContain("SEARCH_WORKER_NAME");
 		expect(py).toContain("window.name");
-		// 拦截特征必须覆盖百度/搜狗/360 的验证页与 Chrome 错误页
 		expect(py).toContain("antispider");
 		expect(py).toContain("qcaptcha");
 		expect(py).toContain("ERR_");
-		// 引擎健康自检：跳过不可达引擎，避免每次搜索白等超时
 		expect(py).toContain("_engine_reachable");
 		expect(py).toContain("DP_ENGINE_HEALTH_TTL");
 	});

@@ -25,7 +25,6 @@ describe("resolveBackspaceMention", () => {
 		const subReport = { path: "方案/报告", name: "报告", mode: "reference" };
 		const atts = [rootReport, subReport];
 
-		// 光标在子目录提及后退格
 		const textSub = "请审阅 @方案/报告 ";
 		const resSub = resolveBackspaceMention(textSub, textSub.length, atts);
 		expect(resSub).not.toBeNull();
@@ -33,7 +32,6 @@ describe("resolveBackspaceMention", () => {
 		expect(resSub?.attachment).toBe(subReport);
 		expect(resSub?.attachment).not.toBe(rootReport);
 
-		// 光标在根目录提及后退格
 		const textRoot = "请审阅 @报告 ";
 		const resRoot = resolveBackspaceMention(textRoot, textRoot.length, atts);
 		expect(resRoot).not.toBeNull();
@@ -64,7 +62,6 @@ describe("resolveBackspaceMention", () => {
 		const subDoc = { path: "arch/doc", name: "doc", mode: "reference" };
 		const atts = [rootDoc, subDoc];
 
-		// 用户手输了 @arch/doc（尾部无空格）
 		const text = "参考 @arch/doc";
 		const res = resolveBackspaceMention(text, text.length, atts);
 		expect(res).not.toBeNull();

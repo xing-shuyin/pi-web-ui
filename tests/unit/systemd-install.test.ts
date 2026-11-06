@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("../../bin/pi-web-ui.mjs", import.meta.url), "utf8");
 
-/** Evaluate the actual CLI functions, not copies, without its main() or real sudo/systemctl calls. */
 function functionSource(name: string): string {
 	const start = source.indexOf(`function ${name}(`);
 	if (start < 0) throw new Error(`Missing CLI function: ${name}`);
@@ -88,7 +87,6 @@ function harness(
 			isWin: false,
 			NODE: "/home/installer/node/bin/node",
 			SERVER_ENTRY: "/home/installer/pkg/dist/server/index.js",
-			// 「优先用全局 pi SDK」钩子（issue #260）——buildUnit 会把它当 --import 写进 ExecStart。
 			SDK_HOOK: "/home/installer/pkg/dist/server/resolve-global-sdk.js",
 			HAS_SDK_HOOK: true,
 			console: { log: (value: string) => output.push(value) },
@@ -108,7 +106,6 @@ function environment(unit: string): Record<string, string> {
 	const result: Record<string, string> = {};
 	for (const line of unit.split("\n")) {
 		if (!line.startsWith("Environment=")) continue;
-		// Generated C-style escapes are a subset of JSON escapes; undo systemd %% specifiers too.
 		const assignment: string = JSON.parse(line.slice("Environment=".length));
 		const split = assignment.indexOf("=");
 		result[assignment.slice(0, split)] = assignment.slice(split + 1).replace(/%%/g, "%");
@@ -151,7 +148,6 @@ describe("Linux systemd installation", () => {
 		const h = harness({ PI_WEB_PORT: "8787" });
 		h.cli.installSystemd({ print: true });
 		const unit = h.output[0] ?? "";
-		// 钩子必须在服务入口之前作为 --import 传入，否则它无法抢在 SDK 静态 import 之前生效。
 		expect(unit).toContain(
 			`ExecStart="/home/installer/node/bin/node" --import "/home/installer/pkg/dist/server/resolve-global-sdk.js" "/home/installer/pkg/dist/server/index.js"`,
 		);
@@ -166,11 +162,9 @@ describe("Linux systemd installation", () => {
 			PI_WEB_PORT: port,
 			PI_WEB_HOST: "0.0.0.0",
 			PI_WEB_TOKEN: "test-only-token",
-			// issue #295：服务默认工作区不再是家目录本身（同步扫描落在 $HOME 上会被
-			// 坏挂载挂起整个事件循环），而是干净的 ~/pi-web-ui 子目录。
 			PI_WEB_CWD: "/home/installer/pi-web-ui",
 		});
-		expect(h.calls).toEqual([]); // --print never elevates or changes a service.
+		expect(h.calls).toEqual([]);
 	});
 	it.each(["1024", "8787", "65535"])("does not grant capabilities for port %s", (port) => {
 		const h = harness({ PI_WEB_PORT: port });
@@ -289,8 +283,6 @@ describe("service name validation (--name)", () => {
 		expect(h.cli.serviceName({ name: "A-1_z" })).toBe("A-1_z");
 		expect(h.cli.serviceName({ name: "a".repeat(64) })).toBe("a".repeat(64));
 	});
-	// name 被拼进 systemd unit 文件名 / Windows 脚本路径 / HKCU Run 键值名：
-	// 路径分隔符、引号、空白、越界长度都必须在入口被拒。
 	it.each(["", "-lead", "_lead", "has space", "has/slash", "..\\evil", 'q"uote', "a".repeat(65), "pi\nweb", "名前"])(
 		"rejects service name %j that could inject into unit paths or registry value names",
 		(bad) => {

@@ -24,7 +24,6 @@ describe("shortcut-stack (Escape key dispatcher)", () => {
 		const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
 		document.dispatchEvent(event);
 
-		// 只有栈顶的 second 消费了事件
 		expect(order).toEqual(["second"]);
 
 		unreg2();
@@ -40,7 +39,7 @@ describe("shortcut-stack (Escape key dispatcher)", () => {
 		});
 		const unreg2 = pushEscapeHandler(() => {
 			order.push("second (skipped)");
-			return false; // 放行给下层
+			return false;
 		});
 
 		const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
@@ -62,7 +61,6 @@ describe("shortcut-stack (Escape key dispatcher)", () => {
 			order.push("top");
 		});
 
-		// 注销 top
 		unreg2();
 
 		const event = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });

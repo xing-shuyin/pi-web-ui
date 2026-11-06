@@ -1,16 +1,9 @@
-/**
- * DSH 插件市场数据服务（对接 awesome-dsh-plugin / dsh-market 数据源）。
- *
- * 数据源：https://awesome-dsh-plugin.com/plugins.json
- * 缓存：<dataDir>/dsh-market-cache.json（默认 12 小时有效）
- * 离线兜底：内置热门精选插件列表，避免断网或首屏拉取受阻时白屏。
- */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DshMarketPlugin } from "../protocol.js";
 
 const DSH_MARKET_URL = "https://awesome-dsh-plugin.com/plugins.json";
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 小时
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface DshMarketDataResult {
 	count: number;
@@ -19,7 +12,6 @@ export interface DshMarketDataResult {
 	plugins: DshMarketPlugin[];
 }
 
-/** 内置精选种子插件列表（离线/首屏保底用）。 */
 const SEED_CATEGORIES: Record<string, { en: string; zh: string }> = {
 	model: { en: "Models & Providers", zh: "模型与账号接入" },
 	ui: { en: "UI Enhancements", zh: "UI 增强" },
@@ -145,11 +137,9 @@ interface RawMarketResponse {
 	plugins?: Record<string, any> | any[];
 }
 
-/** 读取或拉取 DSH 市场插件清单。 */
 export async function loadDshMarketData(dataDir: string, force = false): Promise<DshMarketDataResult> {
 	const cachePath = join(dataDir, "dsh-market-cache.json");
 
-	// 1. 若无需强制刷新，尝试读取有效本地缓存
 	if (!force && existsSync(cachePath)) {
 		try {
 			const raw = readFileSync(cachePath, "utf8");
@@ -162,12 +152,9 @@ export async function loadDshMarketData(dataDir: string, force = false): Promise
 					plugins: cached.plugins,
 				};
 			}
-		} catch {
-			/* 缓存损坏，继续走网络拉取 */
-		}
+		} catch {}
 	}
 
-	// 2. 尝试从远程 awesome-dsh-plugin 获取
 	try {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -208,7 +195,6 @@ export async function loadDshMarketData(dataDir: string, force = false): Promise
 				}
 			}
 
-			// 默认按热度降序排序：综合 Star 与下载量
 			pluginList.sort((a, b) => (b.downloads ?? 0) + (b.stars ?? 0) * 10 - ((a.downloads ?? 0) + (a.stars ?? 0) * 10));
 
 			const result: DshMarketDataResult = {
@@ -218,12 +204,9 @@ export async function loadDshMarketData(dataDir: string, force = false): Promise
 				plugins: pluginList,
 			};
 
-			// 写入缓存
 			try {
 				writeFileSync(cachePath, JSON.stringify({ ...result, savedAt: Date.now() }), "utf8");
-			} catch {
-				/* ignore write failure */
-			}
+			} catch {}
 
 			return result;
 		}
@@ -231,7 +214,6 @@ export async function loadDshMarketData(dataDir: string, force = false): Promise
 		console.warn(`[dsh-market] 拉取远程市场失败: ${(err as Error).message}，使用缓存或种子数据`);
 	}
 
-	// 3. 远程拉取失败时：使用过期缓存
 	if (existsSync(cachePath)) {
 		try {
 			const cached = JSON.parse(readFileSync(cachePath, "utf8"));
@@ -243,12 +225,9 @@ export async function loadDshMarketData(dataDir: string, force = false): Promise
 					plugins: cached.plugins,
 				};
 			}
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 
-	// 4. 终极回退：使用内置种子数据
 	return {
 		count: SEED_PLUGINS.length,
 		updated: new Date().toISOString().slice(0, 10),

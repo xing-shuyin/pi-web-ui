@@ -1,10 +1,3 @@
-/**
- * 性能预算回归门禁（Performance Budget E2E）：
- * 守护会话切换、列表渲染与交互的主线程响应预算，防止回归到历史出现的：
- *   1. useLayoutEffect 强制同步重排（Layout Thrashing）
- *   2. 同一帧级联二次整树渲染导致卡死 500ms
- *   3. 语法高亮自动检测正则回溯
- */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,9 +32,6 @@ await freePort(PORT);
 mkdirSync(WORK, { recursive: true });
 mkdirSync(AGENT_DIR, { recursive: true });
 
-// 种两个历史会话：
-// 1. 一个空/短对话
-// 2. 一个包含 35 条带代码围栏、工具调用的典型工业级历史会话
 function seedSession(id, messageCount) {
 	const sessionsDir = join(AGENT_DIR, "sessions");
 	mkdirSync(sessionsDir, { recursive: true });
@@ -139,7 +129,6 @@ try {
 	await page.goto(`http://localhost:${PORT}`, { waitUntil: "domcontentloaded" });
 	await page.waitForSelector(".session-item", { timeout: 15000 });
 
-	// 注入 LongTask 探针
 	await page.evaluate(() => {
 		window.__longTasks = [];
 		const obs = new PerformanceObserver((list) => {
@@ -150,7 +139,6 @@ try {
 		obs.observe({ entryTypes: ["longtask"] });
 	});
 
-	// 1. 查找大容量会话按钮并进行切换
 	const sessionItems = await page.$$(".session-item");
 	check("成功加载并渲染历史会话列表", sessionItems.length >= 2, `找到 ${sessionItems.length} 个会话`);
 
@@ -165,21 +153,17 @@ try {
 	check("定位到 35 条消息的大容量基准会话", !!targetButton);
 
 	if (targetButton) {
-		// 清空探针
 		await page.evaluate(() => (window.__longTasks = []));
 
 		const t0 = performance.now();
 		await targetButton.click();
-		await sleep(1000); // 等待首屏挂载与空闲调度
+		await sleep(1000);
 		const t1 = performance.now();
 
 		const longTasks = await page.evaluate(() => window.__longTasks);
 		const maxLongTask = longTasks.length > 0 ? Math.round(Math.max(...longTasks.map((t) => t.duration))) : 0;
 		const totalFreeze = Math.round(longTasks.reduce((acc, cur) => acc + cur.duration, 0));
 
-		// 门禁断言：
-		// 优化前：单次卡死 449ms，总卡死 509ms。
-		// 优化后门禁线：单次最大卡顿不得超过 150ms，总卡顿不得超过 200ms。
 		check(
 			"性能门禁：切换大容量会话单次最大卡顿 ≤ 150ms",
 			maxLongTask <= 150,
@@ -192,7 +176,6 @@ try {
 		);
 	}
 
-	// 2. 输入框高频打字卡顿门禁
 	const textarea = await page.locator("textarea").first();
 	await textarea.focus();
 	await page.evaluate(() => (window.__longTasks = []));

@@ -76,7 +76,6 @@ describe("Modal 全屏能力与交互", () => {
 		expect(modal?.classList.contains("has-fullscreen-toggle")).toBe(true);
 		expect(modal?.classList.contains("fullscreen")).toBe(false);
 
-		// 点击全屏
 		act(() => {
 			fullscreenBtn?.click();
 		});
@@ -85,7 +84,6 @@ describe("Modal 全屏能力与交互", () => {
 		expect(backdrop?.classList.contains("fullscreen")).toBe(true);
 		expect(onFullscreenChange).toHaveBeenCalledWith(true);
 
-		// 再次点击退出全屏
 		act(() => {
 			fullscreenBtn?.click();
 		});
@@ -145,22 +143,18 @@ describe("PluginFilePreview CSS 规则守护", () => {
 	const css = readFileSync(join(ROOT, "web/src/styles.css"), "utf8");
 
 	it("plugin-file-preview 必须显式声明 max-width 且突破 460px 限制", () => {
-		// 提取 .modal.plugin-file-preview 规则块
 		const match = css.match(/\.modal\.plugin-file-preview\s*\{([^}]+)\}/);
 		expect(match).not.toBeNull();
 		const block = match![1];
 
 		expect(block).toContain("max-width:");
-		// 不能是 460px
 		expect(block).not.toContain("max-width: 460px");
-		// 必须包含足够宽度的约束 (如 1400px)
 		expect(block).toMatch(/max-width:\s*min\(1[0-9]{3}px/);
 	});
 
 	it("必须支持全屏模式与无缝内容区填充", () => {
 		expect(css).toContain(".modal.plugin-file-preview.fullscreen");
 		expect(css).toContain(".modal-backdrop.fullscreen");
-		// 内容区 body 不能有四周的大 padding
 		const bodyMatch = css.match(/\.plugin-file-preview-body\s*\{([^}]+)\}/);
 		expect(bodyMatch).not.toBeNull();
 		expect(bodyMatch![1]).toContain("padding: 0;");

@@ -1,8 +1,3 @@
-/**
- * issue #192：已卸载的扩展不应以“已禁用”灰条永生在设置面板。
- * disabledExtensions 享受与 disabledSkills 同等的 stale 剔除：
- * loader 里没有、磁盘/配置里也没有 → 移出禁用记录并持久化，面板不再补回。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -63,7 +58,6 @@ beforeEach(() => {
 	cwd = join(dir, "proj");
 	mkdirSync(join(agentDir, "npm", "node_modules", "listed-pkg"), { recursive: true });
 	mkdirSync(cwd, { recursive: true });
-	// listed-pkg：node_modules 删了，但 settings.json packages 还留着 → 保守保留
 	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:listed-pkg"] }));
 	store = new ClientStateStore(join(dir, "client-state.json"));
 	emitted = [];
@@ -78,13 +72,7 @@ describe("disabledExtensions stale 剔除（issue #192）", () => {
 		const realPath = join(dir, "real-ext");
 		mkdirSync(realPath, { recursive: true });
 		store.saveSettings("test-client", {
-			disabledExtensions: [
-				"npm:loaded-pkg", // loader 里有 → 保留
-				"npm:listed-pkg", // settings.json 还列着 → 保留
-				"npm:gone-pkg", // 哪都没有 → 剔除
-				realPath, // 磁盘目录存在 → 保留
-				join(dir, "no-such-ext"), // 不存在 → 剔除
-			],
+			disabledExtensions: ["npm:loaded-pkg", "npm:listed-pkg", "npm:gone-pkg", realPath, join(dir, "no-such-ext")],
 		});
 		const svc = new SettingsService(
 			makeHost(makeSession([{ sourceInfo: { origin: "package", source: "npm:loaded-pkg" }, path: "/x" }])),
@@ -93,16 +81,13 @@ describe("disabledExtensions stale 剔除（issue #192）", () => {
 		svc.refreshResources();
 
 		expect([...svc.current.disabledExtensions].sort()).toEqual(["npm:loaded-pkg", "npm:listed-pkg", realPath].sort());
-		// 持久化同步
 		expect([...store.getSettings("test-client").disabledExtensions].sort()).toEqual(
 			["npm:loaded-pkg", "npm:listed-pkg", realPath].sort(),
 		);
-		// 面板不再补回幽灵
 		const ids = (lastSettingsState()?.extensions ?? []).map((e) => e.id);
 		expect(ids).not.toContain("npm:gone-pkg");
 		expect(ids).not.toContain(join(dir, "no-such-ext"));
 		expect(ids).toEqual(expect.arrayContaining(["npm:loaded-pkg", "npm:listed-pkg", realPath]));
-		// 被禁用的现存扩展仍以灰条展示（可重新启用）
 		const listed = (lastSettingsState()?.extensions ?? []).find((e) => e.id === "npm:listed-pkg");
 		expect(listed?.enabled).toBe(false);
 	});
@@ -114,9 +99,7 @@ describe("disabledExtensions stale 剔除（issue #192）", () => {
 			new SubagentTemplatesStore(join(dir, "templates.json")),
 		);
 		svc.refreshResources();
-		// 记录保留（不清）
 		expect(svc.current.disabledExtensions).toEqual(["npm:ghost-pkg"]);
-		// 但面板不补回（re-add 按磁盘挡）
 		const ids = (lastSettingsState()?.extensions ?? []).map((e) => e.id);
 		expect(ids).not.toContain("npm:ghost-pkg");
 	});
@@ -141,11 +124,9 @@ describe("disabledExtensions stale 剔除（issue #192）", () => {
 		);
 		svc.refreshResources();
 
-		// disabledExtensions 中残留的 <inline:...> 全部被剔除，只有合法的外部扩展保留
 		expect(svc.current.disabledExtensions).toEqual([realPath]);
 		expect(store.getSettings("test-client").disabledExtensions).toEqual([realPath]);
 
-		// 面板推送的 extensions 完全不包含任何 <inline:...> 或 hidden 扩展
 		const panelExts = lastSettingsState()?.extensions ?? [];
 		const ids = panelExts.map((e) => e.id);
 		expect(ids).toEqual([realPath]);

@@ -1,13 +1,3 @@
-/**
- * dsh 引擎工具桥测试（真 key 门控）——插件 registerAgentTool 工具经
- * tools/sync 注册进运行时，模型真实调用桥接工具，插件 execute 在服务端跑，
- * 结果经 tools/call-result 回传模型并出现在对话里。
- *
- * 需要一个在临时 dataDir 里种一个注册 test_echo 工具的最小插件。
- * 无 key / 无运行时树时打印 SKIP 并退出 0。
- *
- * 用法：node tests/dsh-tools-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -22,7 +12,6 @@ const PORT = 8940;
 const CLIENT_ID = "dsh-tools-test";
 const MARKER = "DSH_MARKER_13579";
 
-// 真 key 门控。
 let key = process.env.DEEPSEEK_API_KEY;
 if (!key) {
 	try {
@@ -32,9 +21,7 @@ if (!key) {
 			const ds = auth.deepseek;
 			key = typeof ds === "string" ? ds : ds?.key;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 if (!key) {
 	console.log("⏭ SKIP：无 DeepSeek API key（需 ~/.pi/agent/auth.json 的 deepseek.key 或 DEEPSEEK_API_KEY）");
@@ -69,7 +56,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// ---- 种一个注册 test_echo 工具的最小插件 ----
 const dataDir = mkdtempSync(join(tmpdir(), "dsh-tools-"));
 const plugDir = join(dataDir, "plugins", "glue-tool");
 mkdirSync(plugDir, { recursive: true });
@@ -114,9 +100,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -175,7 +159,6 @@ function connect(clientId) {
 	});
 }
 
-/** 从消息里提取全部文本（snapshot.state.messages / snapshot_delta.appended）。 */
 function allTexts(msg) {
 	const out = [];
 	const walk = (arr) => {
@@ -200,10 +183,8 @@ async function main() {
 	await c.wait((m) => m.type === "ready");
 	console.log("attached");
 
-	// 等运行时启动 + 工具桥 sync 完成（onStarted → syncPluginTools）。
 	await sleep(4000);
 
-	// 让模型调用桥接工具并把结果原样回传。
 	c.send({
 		type: "prompt",
 		text: `请调用 test_echo 工具，参数 message = ${MARKER}。工具跑完后，把工具返回的完整内容原样告诉我（不要加任何解释）。`,
@@ -213,7 +194,6 @@ async function main() {
 	const seen = { toolResultEcho: false, markerInConversation: false };
 	const markerSeen = {};
 	while (Date.now() - t0 < 120_000) {
-		// 逐个消费队列里的 snapshot/snapshot_delta，检查是否出现桥接工具结果。
 		const msg = await c.wait((m) => m.type === "snapshot" || m.type === "snapshot_delta", 1000).catch(() => null);
 		if (!msg) continue;
 		const text = allTexts(msg);
@@ -230,7 +210,6 @@ async function main() {
 
 	c.close();
 	server.kill();
-	// 给服务端一点时间优雅退出（避免清理残留）。
 	await sleep(300);
 	console.log(`\n===== dsh-tools ${failures === 0 ? "PASS" : `FAIL (${failures})`} =====`);
 	process.exit(failures ? 1 : 0);
@@ -240,8 +219,6 @@ main().catch((err) => {
 	console.error("✗ dsh-tools crashed:", err.message);
 	try {
 		server.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	process.exit(1);
 });

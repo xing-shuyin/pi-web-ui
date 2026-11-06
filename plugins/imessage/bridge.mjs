@@ -14,7 +14,6 @@ import {
 const execAsync = promisify(execFile);
 const THINKING = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
-// Normalize only the command token: paths, model IDs and prompts remain literal.
 function parseCommand(text) {
 	const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(text);
 	if (!match) return null;
@@ -22,7 +21,6 @@ function parseCommand(text) {
 	return cmd.startsWith("/") ? { cmd, arg: match[2] || "" } : null;
 }
 
-// Messages has no public inbound API. Read only the local database; never mutate it.
 export class IMessageBotBridge {
 	/** @param {{host?: any, getConfig?: any, log?: any, execFileImpl?: any, platform?: string}} options */
 	constructor({ host, getConfig, log, execFileImpl, platform = process.platform } = {}) {
@@ -124,7 +122,6 @@ export class IMessageBotBridge {
 			...[...this.pendingRuns.values()].map((run) => run.key),
 			...[...this.sessionRoutes.values()].map((route) => route.key).filter(Boolean),
 		]);
-		// Revoke captured work before yielding to shutdown or persistence.
 		for (const key of keys) {
 			this.sessionEpochs.set(key, (this.sessionEpochs.get(key) || 0) + 1);
 			this.cancelEpochs.set(key, (this.cancelEpochs.get(key) || 0) + 1);
@@ -246,7 +243,6 @@ export class IMessageBotBridge {
 			generation: this.generation,
 			cancelEpoch: this.cancelEpochs.get(key) || 0,
 		};
-		// Control commands must not wait for a chat receipt or attachment preparation.
 		if (
 			["/stop", "/abort", "/new", "/clear", "/reset", "/cwd", "/workspace", "/model", "/thinking"].includes(
 				parseCommand(text)?.cmd,
@@ -486,14 +482,12 @@ export class IMessageBotBridge {
 		}
 		if (cmd === "/model" || cmd === "/thinking") this.settings.set(key, opts);
 		this.cancelEpochs.set(key, cancelEpoch + 1);
-		// Detach the old queue; its captured epoch prevents stale work from dispatching.
 		this.queues.delete(key);
 		this.userConversations.delete(key);
 		this.sessionEpochs.set(key, (this.sessionEpochs.get(key) || 0) + 1);
 		for (const [identity, route] of this.sessionRoutes) {
 			if (route.key === key) this.sessionRoutes.delete(identity);
 		}
-		// Unbind synchronously: abortRun may emit events before its promise resolves.
 		for (const [token] of runs) {
 			this.pendingRuns.delete(token);
 			this.earlyRuns.delete(token);
@@ -516,7 +510,6 @@ export class IMessageBotBridge {
 				(failures.length ? `旧任务停止失败：${failures.join("；")}。旧任务已解绑，其回复将被忽略。` : ""),
 		);
 		if (isReset && arg) {
-			// Bypass command parsing and message-ID deduplication for the literal reset prompt.
 			await this.receive({}, { sender, key, target, generation, cancelEpoch: cancelEpoch + 1, literalText: arg });
 		}
 	}

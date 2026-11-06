@@ -9,7 +9,6 @@ import { chromium } from "playwright-core";
 import { CHROME_PATH } from "./lib/chrome.mjs";
 
 // Real installed runtime regression; no downloads, global build, or shared browser.
-// Run: node tests/office-canvas-test.mjs
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const dataDir = process.env.PI_WEB_DATA_DIR || path.join(os.homedir(), ".pi-web");
 const artifacts = [

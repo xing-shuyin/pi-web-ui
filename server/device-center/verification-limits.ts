@@ -1,4 +1,3 @@
-/** Shared deadlines for integration operations and each enclosing transport. */
 export const INTEGRATION_RPC_TIMEOUT_MS = 60_000;
 export const INTEGRATION_HTTP_TIMEOUT_MS = INTEGRATION_RPC_TIMEOUT_MS + 10_000;
 export const INTEGRATION_UI_TIMEOUT_MS = INTEGRATION_HTTP_TIMEOUT_MS + 10_000;

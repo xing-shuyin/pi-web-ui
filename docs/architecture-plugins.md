@@ -1,6 +1,22 @@
 # 插件系统
 
+语音引擎只向服务端 `host.tts.registerEngine()` 注册，系统播报、QQ 与其他工具统一通过 `host.tts` 调用。浏览器 `ttsProviders` 仅保留中心目录的只读入口，详见 [`architecture-tts.md`](architecture-tts.md)。
+
 > 可选界面组件，存放在 `<dataDir>/plugins/`。不装即不存在，attach 时热重扫。
+
+## GitHub 日常工作台
+
+`plugins/github-workbench/`（官方 catalog，v0.1.3）通过 `rightpanel.tabs` 在右侧「文件列表」旁提供带 GitHub SVG 图标的「工作台」Tab，与当前对话并排使用，复用服务机器的 `gh` 登录。窄侧栏采用列表／详情切换，容器宽度 ≥480px 时并排展示，类型分段按钮和可展开搜索适配侧栏宽度；样式统一使用宿主主题变量。Tab 卸载时只保留内存中的筛选、页码、选中项、滚动位置和分条目评论草稿，切回可恢复，刷新页面／重载插件后清空。读取请求随卸载取消；在途写入等待完成，跨挂载共享提交锁，避免重复评论。仓库自动识别与个人待办可独立使用；仓库待办、待我评审、分配给我、我创建的、提到我、自定义搜索均按更新时间分页。详情展示正文、最近一页评论及 PR 分支／合并状态／改动统计，支持引用到当前对话草稿、评论、关闭／重新打开。「引用到对话」与「交给 AI 处理」均只添加简短引用附件（类型、编号、仓库、链接），由用户填写处理要求并发送，已有正文和附件保留，同一引用自动去重。完整 diff、CI 与代码行评审由 GitHub 链接查看，AI 可按用户要求获取最新信息。
+
+事实源：`plugins/github-workbench/index.mjs`（异步 `gh api` 与已鉴权 HTTP 路由）、`client/entry.mjs`（Shadow DOM 工作台、Tab 状态恢复及宿主 `compose` 引用附件桥）、`client/styles.mjs`（主题与容器自适应样式）、`manifest.json`；安装与搜索语法见[插件 README](../plugins/github-workbench/README.md)。路由只包含 `/status`、`/items`、`/detail`、`/comment`、`/state`，写请求固定参数并以 JSON stdin 传内容，无 shell。所有外部文本转义，输入／输出／分页／超时有上限；插件卸载终止后端子进程，Tab 切换取消读取，过期详情响应不覆盖新选择，失败评论保留草稿，避免重复提交。客户端从 bundle URL 保留部署根路径；仅支持 github.com。定向守卫：`tests/unit/github-workbench.test.ts`、`tests/unit/github-workbench-client.test.ts`。
+
+## 图片预览与 OCR 提供者
+
+宿主桥 API v15 新增 `host.openImagePreview({src, alt?, onSaveAnnotation?, actions?})` 与 `host.imageOcrProviders.register({id, label, labelEn?, recognize})`。`recognize({src, signal, onProgress})` 返回 `Promise<{text:string}>`；进度为 0–1。注册返回注销函数，`list()` 仅返回 id/显示名。`onSaveAnnotation(dataUrl)` 仅在调用方能接收标注结果时提供，保存回调成功后关闭预览。`actions` 可传 `{id,label,onSelect,closeOnSelect?}` 在统一工具栏保留调用方的操作；图片工作台生图画廊用它保留编辑、参考图、复制路径、下载，删除旧的独立灯箱；旧宿主缺少桥 API 时回退新窗口原图。
+
+`web/src/image-ocr-providers.ts` 是客户端 OCR 注册单源，注册归属加载时的插件作用域；`plugin-loader.ts` 在禁用/卸载、重载纪元变化和加载失败时清理提供者；禁用移除 bundle 时递增导入缓存盐，确保同一纪元重新启用也会执行顶层注册，避免命中 ESM 缓存后提供者无法恢复。正在加载的已禁用插件不能迟到注册或重新进入已加载集合。共用 `ImageLightbox` 订阅该注册表并管理取消与迟到结果，插件不得忽略取消信号。`plugins/image-ocr` 以 `preload:true` 的无视图插件提供本地中英文识别，真正的引擎/字库懒加载，外层 Worker 的终止同时结束初始化与识别的子 Worker。首次使用需联网取得程序/字库，图片不上传至识别服务。
+
+预览里的 OCR 按钮始终可见；提供者缺失时，宿主复用现有插件安装后台作业安装官方插件，禁用的插件走设置启用，安装进度/错误保留在当前预览。完整入口和待发附件标注边界见 [`architecture-attachments.md`](architecture-attachments.md#统一图片预览ocr-与附件标注)。
 
 ## 生命周期约束
 
@@ -299,7 +315,7 @@ HTTP MCP 卡片的 OAuth 登录通过 `mcp_oauth_start {reqId,name,scope}` 发�
 
 **协议**：`UiPluginInfo` 新增 `renderers`/`view` 两个可选字段，随 plugins 清单推送。
 
-**分发**：插件不进 npm 包，随 GitHub 仓库分发——`pi-web-ui install <owner>/<repo>/<subdir>`
+**分发**：普通插件随 GitHub 仓库分发；Superagent 等明确随包的内置模块除外。普通插件使用 `pi-web-ui install <owner>/<repo>/<subdir>`
 （install 原生支持子路径 source）或复制目录到 `<dataDir>/plugins/`。需要大引擎的
 renderer 插件可自带 vendor（如 mermaid 插件 `vendor/mermaid.bundle.mjs`，构建产物随
 插件分发，本地优先加载、缺省回退 CDN）。
@@ -341,6 +357,12 @@ App 按 chat.plugins 动态 import 各插件的 client bundle（`/* @vite-ignore
 `syncPluginViews(plugins, epoch)` 统一同步注册表：清单消失/被禁用即卸载视图（调 cleanup）、epoch 变化清 failed 重拉 bundle。
 
 设置面板 ⚙ 有「界面插件」开关区（`set_settings.disabledPlugins`，持久化 client-state、纯 UI 隐藏不触发 runtime reload —— 被禁用的插件不算「界面布局」里的条目，它的贡献与 `arrange` 整份丢弃）+ **每行「更新/卸载」按钮**（更新需 CLI install 记录的来源 `.pi-source.json` → `UiPluginInfo.source`；两个操作都走**服务端后台作业** `plugin_job`，见下「插件市场」，不占用户终端、不关设置面板）+「界面布局」页（内置条目与插件条目的隐藏 / 排序 / 恢复，见「UI 扩展点（slot 框架）」）+「已授权目录」段（见「目录授权与跨目录 fs」）。
+
+## 常驻播放器：红果短剧
+
+`plugins/hongguo/` 将 [dsh-hongguo](https://github.com/frostming/dsh-hongguo) 移植到原生插件接口，支持搜索、选集、续播、自动连播以及悬浮 / 分屏切换。布局只使用 `dom.anchors().app`，同一个视频元素常驻，切换布局和对话不会重新加载视频。部署、FFmpeg、缓存及接口细节见 [红果短剧插件](plugin-hongguo.md)。
+
+常驻 `preload: true` 客户端可在默认导出中提供 `dispose(): void`。`plugin-loader.ts` 在插件禁用、移除、报错、epoch 重载以及异步加载结果过期时调用它；插件应暂停媒体、取消请求 / 订阅、移除浮层并恢复布局。无此方法的旧插件继续按原协议加载。
 
 ## 静态服务
 
@@ -957,3 +979,17 @@ const res = await host.openSession({ roots: ["/repo/a", "/repo/b"], prompt: "先
 | `page-picker-test.mjs`                     | 8900+/9400+ | page-picker 扩展 E2E：注入真实 `dist/picker.js` + 真实 background 模块 + 真实 pi-web-ui 页面（Chromium 137 起 `--load-extension` 已被上游移除，自动化装不了真扩展，只能走等价路线）：选择器 / 命中的 CSS 行号（Vite `data-vite-dev-id`）/ React 源码位置与调用链 / 样式子集（只留与默认值不同的项）/ Markdown 落进真输入框 / 多选不串味 / 找不到页面时复制兜底 / 截图失败不影响投递 / 真 pi-web-ui 页与任意页各自认定 + 真实 `dist/bind.js` 浮条绑定后照常投递                                                                                                                                                           |
 | `page-picker-ai-strip-test.mjs`            | 9600+       | 拾取浮层底部**常驻细条** E2E（真 Chrome + 真 `dist/picker.js`，无需服务端；断言前把闭合 shadow 临时改成 open —— 否则读不到细条）：拾取态就有「让 AI 操作本页…」/「与另一页配对…」/「退出」、点按钮真发 `grant-here`/`pair-here` 且有 toast、**细条不挡拾取**（点状态区穿透到背后元素）、进确认条细条让位、Esc 回拾取态、四种状态文案（未授权 / 已授权 / 总开关关着 / 查不到）                                                                                                                                                                                                                                            |
 | 单测 `plugin-version-bump-guard.test.ts`   | —           | 插件版本号递增守卫：所有官方内置插件必须具备符合 SemVer 的版本声明；修改插件代码/功能（非纯文档）必须递增 `manifest.json` 版本号，确保随宿主自动热同步（`syncBuiltinPlugins`）正常触发                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+
+## 群组工单宿主 API 与 Superagent 公开 Webhook
+
+`host.workItems`（契约见 `plugin-sdk/index.d.ts`）复用存量 `chat` 权限。宿主信任具备该权限的插件根据本地配置提交工单授权；外部 payload 不是授权来源。`server/plugins.ts` 注入插件自身的 `connectorId`，经 `server/device-center/local.ts` 转发到 Hub，在账号 / 群组与来源范围内处理，不由插件提供另一套模型或执行器。
+
+- `rooms`、`ingest`、`list`、`get`、`update`：映射房间、接收去重事件、读取工单及按业务 revision 更新；当前 `list` 返回首个有界预览页，不承诺全部历史。
+- `claimDelivery`、`completeDelivery`、`failDelivery`：领取持久 outbox、持租约确认或记录失败，由宿主安排后续重试。
+- 工单授权不替代每事件授权：未通过作者白名单的 followup 不能借已有 auto 工单执行，人工授权的 `authorizedEventId` 仅绑定当前最新事件。初始描述保持，followup 作为独立事件证据；task 结果不自动完成业务工单。
+
+Superagent 0.1.3 是宿主内置的 GitHub / 飞书渠道模块，内部复用插件运行时。后台 outbox 只轮询配置了房间映射和发送凭据的渠道；未配置时保持空闲，配置补全后自动恢复。轮询串行执行，正常每轮结束后等待 15 秒，宿主调用失败时指数退避至最长 5 分钟；同一轮故障只警告一次，恢复成功记录一次，诊断只包含可用的 HTTP 状态码与连接排查提示，不回显上游错误内容。卸载后不再排程、跨渠道领取或输出轮询日志。主站认证前只精确放行 `POST /api/superagent/webhooks/github` 与 `POST /api/superagent/webhooks/feishu`，转至插件对应路由并校验渠道签名。请求上限 **1 MiB**，宿主保存原始字节 Buffer（`req.rawBody`，rawBuffer 语义）供验签；插件不可用或原始字节不可用时拒绝。配置、工单管理和手动回写继续使用 `/plugins-api/superagent/*` 原有主站认证与插件校验，不能据此公开整个插件命名空间。
+
+UI 和远程设备路径沿用 `appUrl()` / 插件 `apiBase()`，保留应用根路径与认证。公开回调采用插件页面显示的可达 URL，不把远程页面根路径当作隐含中转。Superagent 目录进入 npm 发布白名单，`server/builtin-modules.ts` 声明宿主必需模块，由 `server/plugin-bundled.ts` 在扫描前离线准备，首次启动即可从 **设备连接与跨平台协作 → 外部渠道** 打开；无需额外安装或独立顶栏入口。`DeviceChannels` 通过现有作用域导入器与 `PluginView` 内嵌视图，沿用窄上下文与卸载清理，按 epoch 刷新并隔离过期加载；显式重试会更新 bundle 缓存盐。内置模块不会显示在普通插件市场、已安装列表、菜单、布局或权限列表；管理数量与更新提示也排除它，普通安装 / 更新 / 卸载及自定义同名覆盖入口拒绝操作。旧插件禁用 / 卸载记录不控制宿主模块，缺失文件会重新准备，既有设置和密钥保留。`<dataDir>/bundled-plugin-installs.json` 只继续控制普通可选预装插件的首次准备，不作为必需模块的安装依据。飞书支持明文或 AES 加密的签名 text 回调，超过 45 分钟无回执的不确定投递需人工核对；GitHub 通过稳定 comment marker 恢复重试。真实外部凭据与渠道未在本轮联通，mock 测试不代表上线。
+
+完整职责、群组顶部 AI Router / 工单抽屉用法、WAL 四集合、冻结 plan / lease / 配置 fence / effect receipts、分页与上下文预算见 [群组独立 AI Router 与 Superagent](group-orchestration.md)；渠道配置和支持范围见 [Superagent README](../plugins/superagent/README.md)。

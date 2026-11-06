@@ -84,7 +84,6 @@ function draftFields(draft: McpDraft): UiMcpServer {
 	};
 }
 
-/** The backend replaces configs. Carry forward untouched config fields, never runtime metadata. */
 export function serializeMcpDraft(draft: McpDraft): UiMcpServer {
 	const fields = draftFields(draft);
 	if (!draft.original) return fields;

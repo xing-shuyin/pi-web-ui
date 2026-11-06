@@ -28,13 +28,11 @@ describe("设置面板「界面布局」编辑图标入口", () => {
 	});
 
 	it("styles.css 中 IconEditor 的 z-index 高于模态遮罩（300），确保从设置弹窗打开时处于顶层", () => {
-		// 校验 .icon-editor-backdrop 的 z-index >= 301
 		const backdropMatch = STYLES_SRC.match(/\.icon-editor-backdrop\s*\{[^}]*z-index:\s*(\d+)/);
 		expect(backdropMatch).not.toBeNull();
 		const backdropZ = Number(backdropMatch![1]);
 		expect(backdropZ).toBeGreaterThan(300);
 
-		// 校验 .icon-editor 面板的 z-index >= backdropZ
 		const editorMatch = STYLES_SRC.match(/\.icon-editor\s*\{[^}]*z-index:\s*(\d+)/);
 		expect(editorMatch).not.toBeNull();
 		const editorZ = Number(editorMatch![1]);

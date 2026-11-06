@@ -56,7 +56,6 @@ const states = new Set([
 	"cancelled",
 ]);
 
-/** Validate untrusted graphs before rendering, persisting, or dispatching work. */
 export function assertCanvasGraph(value: unknown): asserts value is CanvasGraph {
 	if (!value || typeof value !== "object") throw new CanvasRuntimeError("Invalid canvas graph", "error.invalidGraph");
 	const g = value as CanvasGraph;

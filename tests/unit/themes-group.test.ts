@@ -12,7 +12,6 @@ describe("主题分组与现代经典主题测试", () => {
 		const classics = themes.filter((t) => t.group === "classic");
 		const builtins = themes.filter((t) => t.group === "builtin");
 
-		// 确保 13 套现代高品质经典主题均已就位并归为 classic 分组
 		const classicIds = classics.map((t) => t.id);
 		expect(classicIds).toContain("catppuccin");
 		expect(classicIds).toContain("catppuccin-latte");
@@ -28,7 +27,6 @@ describe("主题分组与现代经典主题测试", () => {
 		expect(classicIds).toContain("kanagawa-lotus");
 		expect(classicIds).toContain("ayu-light");
 
-		// 原生内置主题归为 builtin 分组
 		const builtinIds = builtins.map((t) => t.id);
 		expect(builtinIds).toContain("paper");
 		expect(builtinIds).toContain("white");
@@ -90,7 +88,6 @@ describe("主题分组与现代经典主题测试", () => {
 	it("解析 color-scheme 标注浅色/深色", () => {
 		const themes = listThemes(BUILTIN_DIR, USER_DIR);
 		const byId = new Map(themes.map((t) => [t.id, t]));
-		// 浅色经典主题
 		expect(byId.get("codex")?.scheme).toBe("light");
 		expect(byId.get("geist")?.scheme).toBe("light");
 		expect(byId.get("rose-pine-dawn")?.scheme).toBe("light");
@@ -98,11 +95,9 @@ describe("主题分组与现代经典主题测试", () => {
 		expect(byId.get("everforest-light")?.scheme).toBe("light");
 		expect(byId.get("kanagawa-lotus")?.scheme).toBe("light");
 		expect(byId.get("ayu-light")?.scheme).toBe("light");
-		// 深色经典主题
 		expect(byId.get("catppuccin")?.scheme).toBe("dark");
 		expect(byId.get("tokyo-night")?.scheme).toBe("dark");
 		expect(byId.get("one-dark")?.scheme).toBe("dark");
-		// 原生内置浅色/深色
 		expect(byId.get("paper")?.scheme).toBe("light");
 		expect(byId.get("flow-light")?.scheme).toBe("light");
 		expect(byId.get("flow-light")?.name).toBe("极简行文");
@@ -116,10 +111,8 @@ describe("主题分组与现代经典主题测试", () => {
 
 	it("暖纸主题 (paper.css) 已修复实底与高对比度弱文本", () => {
 		const paperCss = readFileSync(join(BUILTIN_DIR, "paper.css"), "utf8");
-		// 实底不透明：杜绝图片导出透光
 		expect(paperCss).toContain("--wallpaper-panel-alpha: 100%");
 		expect(paperCss).toContain("--card-bg: #fffdf6");
-		// WCAG AA 达标弱化文本与代码注释
 		expect(paperCss).toContain("--text-faint: #6c5a41");
 		expect(paperCss).toContain("color: #5f533e");
 	});
@@ -136,7 +129,6 @@ describe("主题分组与现代经典主题测试", () => {
 
 		for (const file of ["zhujian.css", "zhujian-dark.css"]) {
 			const css = readThemeCss(join(BUILTIN_DIR, file));
-			// 思考流 = 笺纸凹版卡片：边框 + 墨色代码底（!important 已随 CSS 分层重构移除，值一字未改）
 			expect(css).toContain(
 				".thinking {\n\tmargin: 6px 0;\n\tborder: 1px solid var(--border-soft);\n\tborder-radius: 4px;\n\tbackground: var(--code-bg);",
 			);

@@ -11,13 +11,12 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 			["c1", c1],
 			["c2", c2],
 		]);
-		cs.activeId = "c_deleted"; // 悬空的 ID
+		cs.activeId = "c_deleted";
 
-		// 访问 conv getter
 		const activeConv = cs.conv;
 		expect(activeConv).toBeDefined();
 		expect(["c1", "c2"]).toContain(activeConv.id);
-		expect(cs.activeId).toBe(activeConv.id); // 自动修复了 activeId
+		expect(cs.activeId).toBe(activeConv.id);
 	});
 
 	it("newChat 绝不复用标记为 transferring 的空白对话", async () => {
@@ -26,7 +25,6 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 		cs.convs = new Map();
 		cs.planManager = { getPlan: () => null };
 
-		// c1 是空白对话，但正在被过户 (transferring: true)
 		const c1 = {
 			id: "c1",
 			transferring: true,
@@ -37,7 +35,6 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 		cs.convs.set("c1", c1);
 		cs.activeId = "c1";
 
-		// mock displaceActive, makeTerminalManager, createAgentSessionRuntime 等
 		cs.displaceActive = vi.fn().mockReturnValue(null);
 		cs.nextConversationId = vi.fn().mockReturnValue("c2");
 		cs.makeTerminalManager = vi.fn().mockReturnValue({ list: () => [] });
@@ -61,15 +58,11 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 		}));
 		cs.makeConversation = makeConvMock;
 
-		// 模拟 dynamic import 的 createAgentSessionRuntime
 		vi.doMock("../../server/agent-service.js", async (importOriginal) => {
 			const mod = await importOriginal<any>();
 			return mod;
 		});
 
-		// 验证 isBlank 逻辑：如果 transferring 为 true，不能判定为可复用的空白会话
-		// 在 newChat 实现中，如果命中复用，它会直接 return true 而不会调用 cs.nextConversationId()
-		// 我们通过检查是否跳过了复用分支来验证
 		const isBlank = (c: any) => {
 			if (c.transferring) return false;
 			return c.session.getSessionStats().totalMessages === 0 && c.terminals.list().length === 0;
@@ -110,8 +103,8 @@ describe("过户后会话状态与自愈防护 (Takeover recovery and activeId s
 		const res = await ClientSession.prototype.detachTakeoverConversations.call(cs, ["c1"]);
 		expect(res.ok).toBe(true);
 		expect(newChatCalled).toBe(true);
-		expect(cs.convs.has("c1")).toBe(false); // c1 确实被移除了
-		expect(cs.convs.has(cs.activeId)).toBe(true); // activeId 指向了真实存在的新会话
+		expect(cs.convs.has("c1")).toBe(false);
+		expect(cs.convs.has(cs.activeId)).toBe(true);
 		expect(cs.activeId).toBe("c_new");
 	});
 

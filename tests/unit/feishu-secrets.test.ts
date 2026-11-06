@@ -1,8 +1,3 @@
-/**
- * tests/unit/feishu-secrets.test.ts
- * Tests for Feishu plugin secret storage, redaction, and merging.
- */
-
 import { describe, expect, it } from "vitest";
 import {
 	SECRET_APP_SECRET,
@@ -29,7 +24,6 @@ describe("Feishu 密钥管理与脱敏持久化测试", () => {
 		expect(redacted.hasWebhookSecret).toBe(true);
 		expect(redacted.appId).toBe("cli_123456");
 
-		// 外部标志位为 true 时同样正确标记
 		const fromStorage = { preset: "feishu", appId: "cli_123456" };
 		const redactedWithFlags = redactConfig(fromStorage, { hasAppSecret: true, hasWebhookSecret: false });
 		expect(redactedWithFlags.hasAppSecret).toBe(true);
@@ -67,7 +61,6 @@ describe("Feishu 密钥管理与脱敏持久化测试", () => {
 			webhookUrl: "https://open.feishu.cn/hook/123",
 		};
 
-		// 1. 前端留空：保留已有机密
 		const incomingEmpty = {
 			appId: "cli_123456",
 			appSecret: "",
@@ -78,7 +71,6 @@ describe("Feishu 密钥管理与脱敏持久化测试", () => {
 		expect(merged.appSecret).toBe("existing-app-secret");
 		expect(merged.webhookSecret).toBe("existing-hook-secret");
 
-		// 2. 前端输入新密码：覆盖旧机密
 		const incomingNew = {
 			appId: "cli_123456",
 			appSecret: "new-app-secret",
@@ -88,7 +80,6 @@ describe("Feishu 密钥管理与脱敏持久化测试", () => {
 		expect(mergedNew.appSecret).toBe("new-app-secret");
 		expect(mergedNew.webhookSecret).toBe("existing-hook-secret");
 
-		// 3. 前端显式请求清除机密
 		const incomingClear = {
 			appId: "cli_123456",
 			clearAppSecret: true,

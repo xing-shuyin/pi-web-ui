@@ -1,22 +1,7 @@
-/**
- * legado-web 的 AI 工具 —— 让 agent 能「知道规则、读到书源文件、跑链路找病因、改完再验」。
- *
- * 四个工具（都在 manifest.permissions 的 "tools" 族下注册）：
- *   legado_rules         规则语法/字段速查（rules.md，AI 的知识库）
- *   legado_book_sources  读书源文件：list / get / update / add / remove / unmark
- *                          （unmark=摘掉废源/可疑标记：修完源验证通过后调，否则页面默认隐藏废源）
- *   legado_source_probe  跑「连通→搜索→详情→目录→正文」，逐步回报请求与规则命中
- *   legado_run_rule      拿真实页体试跑一条规则（配合上一步定位坏规则）
- *
- * 写操作会 host.notify 提醒用户刷新阅读页（浏览器里那份是内存副本）。
- */
-
-/** 工具执行里统一抛错（宿主会转成 tool error 文本给模型）。 */
 const fail = (msg) => {
 	throw new Error(msg);
 };
 
-/** 定位书源：优先 bookSourceUrl 精确匹配，其次名字子串（返回全部候选）。 */
 function findSources(list, { url, name }) {
 	const u = String(url ?? "").trim();
 	if (u) {
@@ -61,7 +46,6 @@ const describeSource = (s, check) => ({
 		: undefined,
 });
 
-/** 深合并（只处理一层对象字段：ruleSearch/ruleBookInfo/ruleToc/ruleContent 等）。 */
 function mergeSource(target, patch) {
 	const out = { ...target };
 	const changed = [];
@@ -96,7 +80,6 @@ export function createTools({ host, store, engine, rulesText }) {
 		return rec && typeof rec === "object" ? rec : {};
 	};
 	const writeCheck = (rec) => store.write("check", rec);
-	/** 检测记录的键归一（去末尾 /#）：同址变体一起处理，对齐页面 checkStore.removeBySource */
 	const normCheckKey = (u) => String(u ?? "").replace(/[/#]+$/, "");
 
 	return [
@@ -213,7 +196,6 @@ export function createTools({ host, store, engine, rulesText }) {
 					return { ok: true, replaced: idx >= 0, total: list.length, note: "让用户刷新阅读页后生效" };
 				}
 
-				// get / update / remove 都要先定位
 				const hits = findSources(list, params);
 				if (!hits.length) fail(`没找到书源（url=${str(params.url) || "-"} name=${str(params.name) || "-"}）`);
 				if (hits.length > 1 && action !== "list")
@@ -262,8 +244,6 @@ export function createTools({ host, store, engine, rulesText }) {
 				}
 
 				if (action === "unmark") {
-					// 修完源验证通过后摘标记：页面默认隐藏废源/跳过废源，不摘用户会以为源丢了。
-					// 页面切页/轮询会自动重读文件，无需 notify 催刷新。
 					const rec = readCheck();
 					const gone = Object.keys(rec).filter((u) => normCheckKey(u) === normCheckKey(target.bookSourceUrl));
 					for (const u of gone) delete rec[u];

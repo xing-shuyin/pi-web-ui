@@ -1,10 +1,3 @@
-/* Smoke test for project memory + recent-project list + create and open project.
- * Usage:
- *   node projects-test.mjs phase1   # connect, switch cwd, check project list, test make_dir(setAsCwd: true)
- *   node projects-test.mjs phase2   # after server restart: cwd restored?
- *   node projects-test.mjs mkdir    # only test make_dir(setAsCwd: true) scenario
- * Note: requires a running server on ws://localhost:8791/ws
- */
 import { WebSocket } from "ws";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,7 +59,6 @@ async function phase1() {
 	const c = await connect();
 	c.send({ type: "hello", clientId: CLIENT_ID });
 	await c.wait((m) => m.type === "ready");
-	// First snapshot carries the initial cwd (sent right after ready).
 	const first = await c.wait((m) => m.type === "snapshot");
 	console.log("[1] initial cwd =", first.state.cwd);
 
@@ -82,7 +74,6 @@ async function phase1() {
 	if (!projs.projects.some((p) => p.path === PROJ_B)) {
 		throw new Error("FAIL: new cwd missing from project list");
 	}
-	// Explicit list_projects must also work.
 	c.send({ type: "list_projects" });
 	const projs2 = await c.wait((m) => m.type === "projects");
 	console.log(
@@ -143,7 +134,6 @@ async function phase2() {
 	if (restored.state.cwd !== PROJ_B) {
 		throw new Error(`FAIL: cwd not restored (got ${restored.state.cwd})`);
 	}
-	// The real browser client asks for the project list right after ready.
 	c.send({ type: "list_projects" });
 	const projs = await c.wait((m) => m.type === "projects");
 	console.log(

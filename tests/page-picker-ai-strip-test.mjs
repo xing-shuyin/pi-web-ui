@@ -1,20 +1,3 @@
-/* 浏览器 E2E：拾取浮层底部那条**常驻细条** —— 点一次扩展图标就能看见「让 AI 操作本页…」。
- *
- * 覆盖（零 token、不联网、不需要 pi-web-ui 服务端）：
- *   - 拾取态（还没点任何元素）细条就在，显示本页的授权状态（未授权 / 已授权 / 总开关关着 / 查不到）
- *   - 「让 AI 操作本页…」直接可用（原来它只在确认条里，必须先点一个元素）
- *   - 「与另一页配对…」/「退出」可用
- *   - 细条**不挡拾取**：除按钮外的区域点击照旧穿透到页面元素（点它正下方的元素能拾到）
- *   - 拾取元素 → 确认条出现、细条让位；Esc 回拾取态细条回来
- *   - 页面无 JS 报错
- *
- * 为什么要把 attachShadow 改成 open：拾取器刻意用**闭合** shadow（页面读不到它的 DOM，
- * 页面的 CSS/脚本也进不去），而这条细条的文案与按钮正是本次要验收的东西 —— 不放开的断言
- * 一条都写不了。这里改的只是「自动化能不能读」，`picker.ts` 里仍然是 `mode: "closed"`。
- *
- * 缺 Chrome 自动 SKIP（与其它浏览器 E2E 同约定）。运行：
- *   npm run build:extension && node tests/page-picker-ai-strip-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -70,7 +53,6 @@ page.on("pageerror", (e) => jsErrors.push(String(e)));
 
 await page.goto(PAGE_URL);
 
-/** 假 chrome（内容脚本用到的那一小面）+ 把闭合 shadow 放开，都必须在注入拾取器之前。 */
 await page.evaluate(() => {
 	const orig = Element.prototype.attachShadow;
 	Element.prototype.attachShadow = function (init) {
@@ -92,7 +74,6 @@ await page.evaluate(() => {
 	Object.defineProperty(globalThis, "chrome", { value: stub, configurable: true, writable: true });
 });
 
-/** 重新注入 = 新一轮拾取（先 Esc 正常退出，否则 runtime 会回「已经在拾取模式了」）。 */
 const inject = async (state) => {
 	await page.keyboard.press("Escape");
 	await page.waitForTimeout(120);
@@ -130,7 +111,6 @@ const confirmBar = () =>
 
 const sentTypes = () => page.evaluate(() => globalThis.__sent.map((m) => m.type));
 
-// ---------------------------------------------------------------- 场景 1：未授权
 console.log("\n[1] 点一次图标（拾取态）就能看见「让 AI 操作本页…」");
 await inject({ origin: "http://127.0.0.1:5173", authorized: false, aiControl: true });
 let s = await strip();
@@ -154,7 +134,6 @@ check(
 	}),
 );
 
-// ---------------------------------------------------------------- 场景 2：按钮真的能用
 console.log("\n[2] 细条上的按钮");
 await page.evaluate(() => {
 	document.getElementById("pi-page-picker-host").shadowRoot.querySelector(".mini button").click();
@@ -176,12 +155,11 @@ check(
 
 await page.evaluate(() => {
 	const buttons = document.getElementById("pi-page-picker-host").shadowRoot.querySelectorAll(".mini button");
-	buttons[1].click(); // 与另一页配对…
+	buttons[1].click();
 });
 await page.waitForTimeout(200);
 check("点「与另一页配对…」→ 请 worker 打开配对面板", (await sentTypes()).includes("page-picker:pair-here"));
 
-// ---------------------------------------------------------------- 场景 3：细条不挡拾取
 console.log("\n[3] 细条不挡页面：点它正下方的元素能拾到");
 const stripStatus = await page.evaluate(() => {
 	const host = document.getElementById("pi-page-picker-host");
@@ -213,7 +191,6 @@ await page.keyboard.press("Escape");
 await page.waitForTimeout(150);
 check("Esc 回拾取态：细条回来了", (await strip())?.hidden === false);
 
-// ---------------------------------------------------------------- 场景 4：状态文案（授权 / 总开关 / 查不到）
 console.log("\n[4] 细条报的状态");
 await inject({ origin: "http://127.0.0.1:5173", authorized: true, title: "开发预览页", aiControl: true });
 s = await strip();
@@ -224,7 +201,7 @@ await inject({ origin: "http://127.0.0.1:5173", authorized: true, aiControl: fal
 s = await strip();
 check("已授权但总开关关着 → 明说总开关（不然用户以为功能坏了）", s?.text.includes("总开关"), s?.text);
 
-await inject(undefined); // 后台不回（被回收/通道断）
+await inject(undefined);
 s = await strip();
 check(
 	"查不到状态 → 说「查不到」，不装成「未授权」",
@@ -232,11 +209,10 @@ check(
 	s?.text,
 );
 
-// ---------------------------------------------------------------- 场景 5：退出
 console.log("\n[5] 退出");
 await page.evaluate(() => {
 	const buttons = document.getElementById("pi-page-picker-host").shadowRoot.querySelectorAll(".mini button");
-	buttons[2].click(); // 退出
+	buttons[2].click();
 });
 await page.waitForTimeout(200);
 check("点「退出」→ 拾取浮层整个收掉", (await page.$("#pi-page-picker-host")) === null);

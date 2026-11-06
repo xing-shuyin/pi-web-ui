@@ -1,10 +1,3 @@
-/**
- * tests/unit/qq-features.test.ts
- * Tests for QQ Bot plugin:
- * - Pure helpers (marker stripping, accountId hashing, mention stripping)
- * - QqBotBridge duplex flow (whitelist, slash commands, chat dispatch, and run_end reply)
- */
-
 import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -764,7 +757,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		const convId = "conv_qq_long";
 		const identity = { clientId: "plugin:qq:long", sessionId: "qq-long" };
 
-		// 构造超过 3000 字的长回复，使其切为至少 2 块
 		const longReply = "A".repeat(3500);
 		runHandler!({
 			...identity,
@@ -799,16 +791,13 @@ describe("QqBotBridge 双工逻辑测试", () => {
 			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
 		});
 
-		// 初始状态：持有还有很长时间过期的 token
 		bridge.accessToken = "token_v1";
 		bridge.tokenExpiresAt = Date.now() + 7200 * 1000;
 
-		// 未到期调用：直接复用，不发起网络请求
 		const t1 = await bridge.ensureAccessToken();
 		expect(t1).toBe("token_v1");
 		expect(fetchMock).not.toHaveBeenCalled();
 
-		// 模拟 token 进入 5 分钟刷新余量区间
 		bridge.tokenExpiresAt = Date.now() + 60 * 1000;
 
 		const t2 = await bridge.ensureAccessToken();
@@ -840,7 +829,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		await activate(mockHost as any);
 		expect(clientHandler).toBeDefined();
 
-		// 测试 get_state 带 __rid
 		let replyData: any = null;
 		await clientHandler!({ type: "get_state", __rid: "qq-req-1" }, (res: any) => {
 			replyData = res;
@@ -850,7 +838,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		expect(replyData.__rid).toBe("qq-req-1");
 		expect(replyData.type).toBe("state");
 
-		// 测试 test_config 缺少密钥时报错并保留 __rid
 		let testReply: any = null;
 		await clientHandler!(
 			{
@@ -996,7 +983,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 			getConfig: () => ({ appId: "102030", clientSecret: "mock_secret" }),
 		});
 
-		// 1. 发送 /4 model deepseek/deepseek-chat
 		await bridge.onInboundMessage(
 			{
 				id: "msg_cmd_1",
@@ -1009,7 +995,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		expect(bridge.userModels.get(bridge.sessionPeer("USER_A", { channelId: "c_123" }))).toBe("deepseek/deepseek-chat");
 
-		// 2. 发送 /5 thinking high
 		await bridge.onInboundMessage(
 			{
 				id: "msg_cmd_2",
@@ -1022,7 +1007,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		expect(bridge.userThinkingLevels.get(bridge.sessionPeer("USER_A", { channelId: "c_123" }))).toBe("high");
 
-		// 3. 用户发送普通消息，验证 chatSpy 接收到了 model 与 thinkingLevel
 		await bridge.onInboundMessage(
 			{
 				id: "msg_cmd_3",
@@ -1074,7 +1058,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		await bridge.start();
 
-		// 1. QQ 端发一条消息建立绑定，并完成第一轮对话
 		await bridge.onInboundMessage(
 			{
 				id: "msg_in_1",
@@ -1085,14 +1068,12 @@ describe("QqBotBridge 双工逻辑测试", () => {
 			"AT_MESSAGE_CREATE",
 		);
 
-		// 第一轮 run 完成，从 pendingRuns 中出队
 		await runHandler!({ ...identity, type: "run_end" });
 
 		const chats = bridge.getRecentChats();
 		expect(chats.length).toBeGreaterThan(0);
 		expect(chats[0].lastUserText).toBe("同步测试提问");
 
-		// 2. 网页端沿稳定 session 续聊，先显式开始新一轮。
 		const webIdentity = { ...identity, clientId: "browser:sync" };
 		await runHandler!({ ...webIdentity, type: "run_start" });
 		await runHandler!({
@@ -1106,7 +1087,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		await runHandler!({ ...webIdentity, type: "run_end" });
 
-		// 3. 验证最终正文同步至原 QQ 频道。
 		expect(fetchMock).toHaveBeenCalledWith(
 			expect.stringContaining("/channels/c_sync_1/messages"),
 			expect.objectContaining({
@@ -1170,7 +1150,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		await bridge.start();
 
-		// 模拟用户在网页端自己的会话 (如 c14, c15) 产生事件
 		runHandler!({
 			conversationId: "conv_unrelated_web_chat_1",
 			type: "message",
@@ -1185,7 +1164,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 			type: "run_end",
 		});
 
-		// 校验：recentChats 绝不包含这条无关对话
 		const chats = bridge.getRecentChats();
 		expect(chats.find((c) => c.conversationId === "conv_unrelated_web_chat_1")).toBeUndefined();
 		expect(chats.length).toBe(0);
@@ -1210,7 +1188,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 		await bridge.start();
 
-		// 用户发问 "今日新闻"
 		await bridge.onInboundMessage(
 			{
 				id: "msg_in_single",
@@ -1222,19 +1199,16 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		);
 
 		const chats = bridge.getRecentChats();
-		// 严防双记录：无论运行中还是结束后，必须只有 1 条记录，且会话 ID 是真实返回的 c5
 		expect(chats.length).toBe(1);
 		expect(chats[0].conversationId).toBe("c5");
 		expect(chats[0].lastUserText).toBe("今日新闻");
 		expect([...bridge.userActiveConvs.values()]).toContain("c5");
 
-		// 运行结束
 		await runHandler!({
 			conversationId: "c5",
 			type: "run_end",
 		});
 
-		// 结束后 pendingRuns 完全清理
 		const tempId = `qq_${"E009F0BF1B068C38C46CF14EA50FCCA3".slice(-8)}_0`;
 		expect(bridge.pendingRuns.has(tempId)).toBe(false);
 		expect(bridge.pendingRuns.has("c5")).toBe(false);
@@ -1270,7 +1244,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		bridge.tokenExpiresAt = Date.now() + 3600 * 1000;
 		bridge.running = true;
 
-		// 触发网页端普通会话中的 ask_user_question
 		const args = JSON.stringify({
 			questions: [
 				{
@@ -1298,7 +1271,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 			}),
 		);
 
-		// 重复调用同一 toolCallId 应该防重跳过
 		fetchMock.mockClear();
 		await bridge.handleRunEvent({
 			conversationId: "web_conv_888",
@@ -1337,7 +1309,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 		bridge.tokenExpiresAt = Date.now() + 3600 * 1000;
 		bridge.running = true;
 
-		// 模拟网页端会话流程
 		await bridge.handleRunEvent({
 			conversationId: "web_conv_999",
 			type: "run_start",
@@ -1375,9 +1346,6 @@ describe("QqBotBridge 双工逻辑测试", () => {
 
 describe("QQ：对话被过户（改名 + 换客户端）后仍按 runId 回包", () => {
 	it("conversationId 改名、clientId 变成浏览器后，run_end 仍回复到原频道", async () => {
-		// 过户回归：用户在网页左栏点开 running 对话 = take_over_conversation —— 对话搬到浏览器
-		// 会话（clientId 变），目标会话已有同名 id（各会话独立从 c1 编号）时还会就地改名
-		// （conversationId 也变）。两个键全失效，只有 host.chat 回执里的 runId 不变。
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,

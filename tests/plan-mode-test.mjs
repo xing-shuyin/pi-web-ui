@@ -1,13 +1,3 @@
-/**
- * 计划模式（只规划不实施）端到端回归：
- *
- *   set_plan_mode{true} → 快照 planMode=true + notice
- *     → 模型调 write / bash 写命令 → 工具被服务端硬闸门拒（isError，details.planModeDenied）
- *     → 模型调只读命令（git status）→ 放行
- *   set_plan_mode{false} → 快照 planMode=false → write 恢复放行
- *
- * 零 token：本地 mock LLM（openai-completions SSE），只验接线与闸门。
- */
 import { createServer } from "node:http";
 import WebSocket from "ws";
 import { spawn } from "node:child_process";
@@ -28,7 +18,6 @@ function check(name, ok, extra = "") {
 	if (!ok) failures++;
 }
 
-// ── mock LLM：按脚本依次回工具调用 / 文本 ────────────────────────────────
 let script = [];
 const delta = (model, d, finish = null) => ({
 	id: "chatcmpl-mock",
@@ -74,7 +63,6 @@ const mockServer = createServer((req, res) => {
 		const payload = JSON.parse(body || "{}");
 		const messages = Array.isArray(payload.messages) ? payload.messages : [];
 		const model = payload.model ?? "mock-model";
-		// 只看最后一条 user 之后的尾巴：历史里的 tool 结果不该让本轮跳过脚本。
 		const lastUser = messages.map((m) => m.role).lastIndexOf("user");
 		const tail = messages.slice(lastUser + 1);
 		if (tail.some((m) => m.role === "tool")) {
@@ -137,9 +125,7 @@ const server = spawn("node", [join(REPO_ROOT, "dist/server/index.js")], {
 const cleanup = async () => {
 	try {
 		server.kill();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	mockServer.close();
 	await freePort(PORT);
 };
@@ -180,7 +166,6 @@ const waitFor = async (pred, what, timeout = 20000) => {
 };
 const msgText = (m) => (m?.content ?? []).map((b) => (typeof b?.text === "string" ? b.text : "")).join("");
 const lastReply = () => [...(snapshot?.messages ?? [])].reverse().find((m) => m.role === "assistant");
-/** 发一轮前的消息条数（用来只认本轮的新回包）。 */
 let mark = 0;
 const promptAndWait = async (text, what) => {
 	mark = (snapshot?.messages ?? []).length;
@@ -199,7 +184,6 @@ send({ type: "set_model", modelId: "mock/mock-model" });
 await sleep(500);
 
 try {
-	// ── 1. 开关：开 ───────────────────────────────────────────────────────
 	send({ type: "set_plan_mode", enabled: true });
 	await waitFor(() => snapshot?.planMode === true, "planMode=true in snapshot");
 	check("set_plan_mode{true} → 快照 planMode=true", snapshot?.planMode === true);
@@ -212,12 +196,10 @@ try {
 		Array.isArray(snapshot?.tools) && !snapshot.tools.includes("write") && !snapshot.tools.includes("edit"),
 	);
 
-	// ── 2. 硬闸门：write 被拒（从活跃集拿掉后即使强行调用也必定失败）───────
 	script = [{ name: "write", args: { path: "nope.txt", content: "x" } }];
 	const writeReply = await promptAndWait("写个文件", "write 被拒后模型回包");
 	check("write 在计划模式被拒", /计划模式|Plan mode|not found/.test(writeReply), writeReply.slice(0, 140));
 
-	// ── 3. 硬闸门：bash 写命令被拒 / 只读命令放行 ──────────────────────────
 	script = [{ name: "bash", args: { command: "rm -rf /tmp/nope" } }];
 	const bashWriteReply = await promptAndWait("删点东西", "bash 写命令回包");
 	check("bash 写命令被拒", /只允许只读命令|read-only commands/.test(bashWriteReply), bashWriteReply.slice(0, 140));
@@ -230,7 +212,6 @@ try {
 		readonlyReply.slice(0, 140),
 	);
 
-	// ── 4. 关掉计划模式：write 恢复放行 ───────────────────────────────────
 	send({ type: "set_plan_mode", enabled: false });
 	await waitFor(() => snapshot?.planMode === false, "planMode=false in snapshot");
 	check("set_plan_mode{false} → 快照 planMode=false", snapshot?.planMode === false);
@@ -240,7 +221,6 @@ try {
 	check("关闭后 write 不再被计划模式拒", !/计划模式|Plan mode/.test(afterOff), afterOff.slice(0, 140));
 	await waitFor(() => existsSync(join(workDir, "made-by-test.txt")), "文件真的落盘");
 
-	// ── 5. 落盘恢复：会话转录里有 plan/mode 条目 ───────────────────────────
 	const sessionsRoot = join(agentDir, "sessions");
 	let sawEntry = false;
 	const walk = (dir) => {

@@ -32,7 +32,6 @@ async function setup(saved = new Map<string, any>(), config: any = {}) {
 	bridge.reply = vi.fn(async (_target: any, _text: string) => {});
 	await bridge.restoreRoutes();
 	await bridge.start();
-	// Use the registered host listener; no poll or real Apple Messages sends.
 	if (bridge.pollTimer) clearInterval(bridge.pollTimer);
 	const event = async (type: string, identity: any, text?: string) =>
 		listener({ type, ...identity, ...(text === undefined ? {} : { message: { role: "assistant", content: text } }) });

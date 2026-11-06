@@ -91,8 +91,6 @@ describe("SFTP write cancellation and resource release", () => {
 		await expect(result).resolves.toBeUndefined();
 	});
 	it("resolves when ssh2 closes after _final without ever emitting finish", async () => {
-		// Real ssh2 SFTP WriteStream: `_final` calls destroy(), so Writable emits no `finish` —
-		// only `close`, right after the SFTP CLOSE acknowledgement.
 		const s = setup();
 		Object.defineProperty(s.stream, "_writableState", { value: { emitClose: false, finalCalled: false } });
 		const { result } = await s.start();

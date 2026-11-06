@@ -101,7 +101,6 @@ describe("final request group-context repair", () => {
 			{ messages: [startDelivery] },
 			{
 				model,
-				// AgentSession performs virtual routing and compaction at this boundary.
 				prepareRequest: ({ context: active }: any) => {
 					prepares++;
 					const messages = active.messages.filter((message: any) => message.customType !== GROUP_CONTEXT_CUSTOM_TYPE);
@@ -148,7 +147,6 @@ describe("final request group-context repair", () => {
 			},
 		);
 		for await (const _event of loop) {
-			/* drain SDK loop */
 		}
 		expect(prepares).toBe(2);
 		expect(requests).toHaveLength(2);

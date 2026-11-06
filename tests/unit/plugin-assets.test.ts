@@ -24,7 +24,6 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 	beforeAll(async () => {
 		testDir = mkdtempSync(join(tmpdir(), "pi-asset-test-"));
 
-		// 准备一个测试用标准 tar.gz 包，内含 artifacts/test-gateway.cjs
 		const packDir = join(testDir, "pack-src");
 		mkdirSync(join(packDir, "artifacts"), { recursive: true });
 		writeFileSync(join(packDir, "artifacts", "test-gateway.cjs"), 'console.log("ready");\n');
@@ -36,7 +35,6 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 		validTarGzBuf = readFileSync(tarOut);
 		validTarGzSha = createHash("sha256").update(validTarGzBuf).digest("hex");
 
-		// 搭建本地 mock HTTP 静态下载服务，模拟各种网络与 fallback 场景
 		mockServer = createServer((req, res) => {
 			const u = req.url ?? "";
 			if (u === "/ok.tar.gz") {
@@ -75,11 +73,9 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 		const rawUrls = ["https://github.com/foo/bar/releases/download/v1/asset.tar.gz"];
 		const candidates = buildAssetCandidateUrls(rawUrls);
 
-		// 应包含原始官方直链，并自动追加国内镜像回落
 		expect(candidates).toContain(rawUrls[0]);
 		expect(candidates.some((u) => u.includes("ghfast.top"))).toBe(true);
 
-		// 测试环境变量镜像前缀
 		process.env.PI_WEB_ASSET_MIRROR = "https://mirror.internal.org";
 		const customCandidates = buildAssetCandidateUrls(rawUrls);
 		expect(customCandidates[0]).toBe(
@@ -96,12 +92,10 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 			testFile: "test-gateway.cjs",
 		};
 
-		// 初始尚未存在
 		const s1 = getPluginAssetStatus(testDir, spec);
 		expect(s1.ready).toBe(false);
 		expect(s1.downloading).toBe(false);
 
-		// 手动放入标志文件
 		const targetDir = join(testDir, "artifacts");
 		mkdirSync(targetDir, { recursive: true });
 		writeFileSync(join(targetDir, "test-gateway.cjs"), "// mock");
@@ -114,15 +108,11 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 	});
 
 	it("ensurePluginAsset: SHA-256 强验签与多源回落", async () => {
-		// Exercise real tar with spaces and shell metacharacters in the plugin path.
 		const pluginDir = mkdtempSync(join(testDir, "plugin space & (runtime)-"));
 		const spec: PluginAssetSpec = {
 			id: "runtime-demo",
 			targetDir: "artifacts",
-			urls: [
-				`${mockServerBase}/fail-first.tar.gz`, // 模拟首源 500 失败
-				`${mockServerBase}/ok.tar.gz`, // 模拟第二源成功
-			],
+			urls: [`${mockServerBase}/fail-first.tar.gz`, `${mockServerBase}/ok.tar.gz`],
 			sha256: validTarGzSha,
 			testFile: "test-gateway.cjs",
 		};
@@ -140,7 +130,6 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 		expect(progressCalled).toBe(true);
 		expect(existsSync(join(pluginDir, "artifacts", "test-gateway.cjs"))).toBe(true);
 
-		// 再次调用命中缓存
 		const cached = await ensurePluginAsset(pluginDir, spec);
 		expect(cached.cached).toBe(true);
 	});
@@ -156,7 +145,6 @@ describe("plugin-assets 重资产流水线单元测试", () => {
 		};
 
 		await expect(ensurePluginAsset(pluginDir, spec)).rejects.toThrow(/SHA-256/);
-		// 目标目录绝不会被创建或解压
 		expect(existsSync(join(pluginDir, "artifacts"))).toBe(false);
 	});
 });

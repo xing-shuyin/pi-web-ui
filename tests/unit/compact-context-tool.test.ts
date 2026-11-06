@@ -31,11 +31,8 @@ describe("compact-context-tool", () => {
 		});
 
 		it("未传入范围且会话规模较小时，动态按比例保留避免 session too small", () => {
-			// 6000 tokens * 0.35 = 2100 tokens
 			expect(calculateEffectiveKeepRecentTokens(undefined, 6000)).toBe(2100);
-			// 2000 tokens * 0.35 = 700 < 1500，下限 1500
 			expect(calculateEffectiveKeepRecentTokens(undefined, 2000)).toBe(1500);
-			// 0 tokens 回退默认
 			expect(calculateEffectiveKeepRecentTokens(undefined, 0)).toBe(DEFAULT_KEEP_RECENT_TOKENS);
 		});
 	});

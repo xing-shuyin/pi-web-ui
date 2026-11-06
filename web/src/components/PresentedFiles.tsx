@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { FiCopy, FiDownload, FiExternalLink, FiEye, FiFolder } from "react-icons/fi";
 import { useT } from "../i18n";
 import { appSend } from "../app-globals";
+import { appResourceCrossOrigin } from "../base-url";
 import { DOWNLOAD_FILE_NOT_FOUND, downloadFile, downloadUrl } from "../download";
 import { isFilePreviewOpen, openFilePreview } from "../file-preview-bridge";
 import { isLoopbackAccess, resolveWorkspaceFileUrl } from "../workspace-file-url";
@@ -21,31 +22,10 @@ import { takeAutoOpen, usePresentAutoOpen } from "../present-settings";
 import { Markdown } from "./Markdown";
 import { useCopyFeedback } from "../use-copy-feedback";
 
-/**
- * present_files 工具的卡片正文。
- *
- * 数据来自两处（见 present-items.ts）：工具参数（一定在）+ 工具结果 details
- * （更准，可能缺）。渲染规则：
- *   - 图片 <img>、视频 <video controls>、音频 <audio controls> 直接在卡片里
- *     播/看（用户说的「图片视频等直接看」），点媒体本体 = 打开预览弹窗（大图
- *     与缩放都在那边）；
- *   - 文本类给开头摘录（服务端读的头 1200 字符），整份内容点「预览」；
- *   - 每行都有「预览 / 本地打开 / 在文件夹中显示 / 下载 / 复制路径」——
- *     「本地打开」「在文件夹中显示」与右栏文件树右键菜单**同一套协议**
- *     （file_open_default / file_reveal，下载走 /api/file?download=1），
- *     服务器在别的机器上时由服务端回 notice 报错；
- *   - 路径不存在（服务端 stat 失败）→ 红字提示，不给动作按钮。
- *
- * 自动打开预览弹窗（AI 标了 focus: true 的条目）走 present-settings 的三道闸：
- * 用户开了开关、卡片是刚发生的、这个 toolCallId 没开过。
- */
 interface PresentedFilesProps {
 	args: PresentArgs;
-	/** 工具结果 details（可能缺失/被体积闸门丢掉）。 */
 	details?: unknown;
-	/** 自动打开去重用的 toolCallId（工具结果消息的 toolCallId）。 */
 	toolCallId: string;
-	/** 工具结果时间戳：判断卡片是不是「刚发生」。 */
 	resultTimestamp?: number;
 }
 
@@ -64,7 +44,6 @@ export const PresentedFiles = memo(function PresentedFiles({
 
 	useEffect(() => {
 		if (!autoOpen || !focus || !toolCallId) return;
-		// 用户已经自己开着预览弹窗时不抢（只开一次、且只对刚发生的卡片）。
 		if (isFilePreviewOpen()) return;
 		if (!takeAutoOpen(toolCallId, resultTimestamp)) return;
 		openFilePreview({ path: focus.target, name: focus.name });
@@ -91,13 +70,11 @@ export const PresentedFiles = memo(function PresentedFiles({
 	);
 });
 
-/** 文件名悬浮提示：路径 + 修改时间（有的话）。 */
 function itemTitle(item: PresentCardItem): string {
 	if (typeof item.mtime !== "number") return item.path;
 	return `${item.path}\n${new Date(item.mtime).toLocaleString()}`;
 }
 
-/** 单行：文件头（图标/名字/说明/体积 + 动作）+ 媒体或摘录。 */
 function PresentRow({ item }: { item: PresentCardItem }) {
 	const t = useT();
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
@@ -214,6 +191,7 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 					onClick={() => openFilePreview(target)}
 				>
 					<img
+						crossOrigin={appResourceCrossOrigin(downloadUrl(item.target, false))}
 						src={downloadUrl(item.target, false)}
 						alt={item.name}
 						loading="lazy"
@@ -224,6 +202,7 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 			{media === "video" && (
 				<video
 					className="present-media-video"
+					crossOrigin={appResourceCrossOrigin(downloadUrl(item.target, false))}
 					src={downloadUrl(item.target, false)}
 					controls
 					preload="metadata"
@@ -233,6 +212,7 @@ function PresentRow({ item }: { item: PresentCardItem }) {
 			{media === "audio" && (
 				<audio
 					className="present-media-audio"
+					crossOrigin={appResourceCrossOrigin(downloadUrl(item.target, false))}
 					src={downloadUrl(item.target, false)}
 					controls
 					preload="metadata"

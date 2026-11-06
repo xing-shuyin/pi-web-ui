@@ -250,21 +250,17 @@ describe("ChatInput 回车语义与文案联动（issue #664）", () => {
 
 		typeText(c, "hello mod");
 
-		// 普通 Enter 不发送
 		pressKey(c, "Enter");
 		expect(onSent).not.toHaveBeenCalled();
 		expect(ta.value).toBe("hello mod");
 
-		// Shift+Enter 不发送
 		pressKey(c, "Enter", { shiftKey: true });
 		expect(onSent).not.toHaveBeenCalled();
 
-		// Ctrl+Enter 发送
 		pressKey(c, "Enter", { ctrlKey: true });
 		expect(onSent).toHaveBeenCalledTimes(1);
 		expect(ta.value).toBe("");
 
-		// 再测试 Cmd/Meta+Enter 发送
 		typeText(c, "hello mac");
 		pressKey(c, "Enter", { metaKey: true });
 		expect(onSent).toHaveBeenCalledTimes(2);
@@ -281,7 +277,6 @@ describe("ChatInput 回车语义与文案联动（issue #664）", () => {
 		});
 
 		typeText(c, "inputting");
-		// 模拟输入法组合状态
 		pressKey(c, "Enter", { isComposing: true, ctrlKey: true });
 		expect(onSent).not.toHaveBeenCalled();
 		expect(ta.value).toBe("inputting");

@@ -1,9 +1,3 @@
-/**
- * plugins/bili-scroll/bilibili-api.mjs
- * 纯 JS 实现的 Bilibili 官方 API 客户端
- * 无需 Python / uv 依赖，支持 Wbi 签名、扫码登录、搜索、详情、字幕提取、热门榜单、评论与收藏夹操作
- */
-
 import crypto from "node:crypto";
 import { DEFAULT_UA } from "./credentials.mjs?v=2.0.1";
 
@@ -70,9 +64,6 @@ export class BilibiliApiClient {
 		this.wbiExpiry = 0;
 	}
 
-	/** 统一带超时的 fetch：停滞连接按 undici 默认可拖 300 秒/请求，一轮巡检
-	 *  几十个请求全部裸奔会把 running 标志拖成长时间假性 busy。已有 signal 的
-	 *  调用（更长的图片下载）保留原值。 */
 	async _fetch(url, opts = {}) {
 		return fetch(url, { ...opts, signal: opts.signal ?? AbortSignal.timeout(15_000) });
 	}
@@ -96,16 +87,13 @@ export class BilibiliApiClient {
 				this.wbiExpiry = now + 12 * 3600 * 1000;
 				return this.wbiCache;
 			}
-		} catch {
-			// fallback default keys
-		}
+		} catch {}
 		return {
 			imgKey: "7cd084941338484aae1ad9425b84077c",
 			subKey: "4932caff0ff746eab6f01bf08b70ac45",
 		};
 	}
 
-	// ── 扫码登录 ──
 	async startLogin() {
 		const res = await this._fetch(
 			"https://passport.bilibili.com/x/passport-login/web/qrcode/generate?source=main-fe-header",
@@ -130,12 +118,9 @@ export class BilibiliApiClient {
 		let json = {};
 		try {
 			json = await res.json();
-		} catch {
-			// ignore empty body
-		}
+		} catch {}
 		const code = json.data?.code;
 		if (code === 0) {
-			// 从 Set-Cookie 提取凭据
 			const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
 			const jar = {};
 			for (const raw of setCookies) {
@@ -159,9 +144,7 @@ export class BilibiliApiClient {
 					});
 					const spiJson = await spiRes.json();
 					if (spiJson.data?.b_3) jar.buvid3 = spiJson.data.b_3;
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 			if (jar.sessdata) {
 				this.cred.save(jar);
@@ -177,7 +160,6 @@ export class BilibiliApiClient {
 		};
 	}
 
-	// ── 搜索视频 ──
 	async searchVideos(keyword, { page = 1, pageSize = 10, order = "totalrank" } = {}) {
 		const { imgKey, subKey } = await this.getWbiKeys();
 		const params = {
@@ -212,7 +194,6 @@ export class BilibiliApiClient {
 		}));
 	}
 
-	// ── 视频详情 ──
 	async getVideoInfo(bvid) {
 		const url = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`;
 		let res = await this._fetch(url, { headers: this.cred.getHeaders() }).catch(() => null);
@@ -262,7 +243,6 @@ export class BilibiliApiClient {
 		};
 	}
 
-	// ── 获取视频字幕（AI 字幕/UP 字幕） ──
 	async getVideoSubtitle(bvid, cidParam = 0) {
 		let cid = Number(cidParam);
 		let aid = 0;
@@ -289,7 +269,6 @@ export class BilibiliApiClient {
 			return { ok: false, bvid, error: "未找到有效的 cid" };
 		}
 
-		// 1. 尝试从 x/player/wbi/v2 拉取字幕
 		try {
 			const { imgKey, subKey } = await this.getWbiKeys();
 			const query = encWbi({ aid, cid, bvid }, imgKey, subKey);
@@ -337,11 +316,8 @@ export class BilibiliApiClient {
 					fullText: rawTexts.join(" "),
 				};
 			}
-		} catch {
-			// 继续回退
-		}
+		} catch {}
 
-		// 2. 尝试从 B 站官方 AI 总结提取要点 (Conclusion API)
 		try {
 			const cUrl = `https://api.bilibili.com/x/web-interface/view/conclusion/get?bvid=${encodeURIComponent(bvid)}&cid=${cid}`;
 			const cRes = await this._fetch(cUrl, { headers: this.cred.getHeaders() });
@@ -372,11 +348,8 @@ export class BilibiliApiClient {
 					fullText: `【AI智能总结】\n${summary}\n\n【核心大纲】\n${outline}`,
 				};
 			}
-		} catch {
-			// 继续回退
-		}
+		} catch {}
 
-		// 3. 无字幕且无 AI 总结时，回退提供完整视频简介
 		return {
 			ok: true,
 			bvid,
@@ -391,7 +364,6 @@ export class BilibiliApiClient {
 		};
 	}
 
-	// ── 热门视频 ──
 	async getPopularVideos({ pn = 1, ps = 20 } = {}) {
 		const url = `https://api.bilibili.com/x/web-interface/popular?pn=${Math.max(1, Number(pn) || 1)}&ps=${Math.max(1, Math.min(Number(ps) || 20, 50))}`;
 		const res = await this._fetch(url, { headers: this.cred.getHeaders() });
@@ -413,7 +385,6 @@ export class BilibiliApiClient {
 		}));
 	}
 
-	// ── 排行榜 ──
 	async getRankVideos({ rid = 0, type = "all" } = {}) {
 		const url = `https://api.bilibili.com/x/web-interface/ranking/v2?rid=${Number(rid) || 0}&type=${encodeURIComponent(type || "all")}`;
 		const res = await this._fetch(url, { headers: this.cred.getHeaders() });
@@ -434,23 +405,15 @@ export class BilibiliApiClient {
 		}));
 	}
 
-	/**
-	 * 解析视频 bvid 对应的数值型 aid
-	 * 优先走官方详情 API；若遭遇风控/限流，自动回退到视频网页 HTML 静态解析
-	 */
 	async resolveAid(bvid) {
 		const cleanBvid = String(bvid || "").trim();
 		if (!cleanBvid) throw new Error("缺少有效的视频 bvid");
 
-		// 1. 优先通过 getVideoInfo 获取
 		try {
 			const info = await this.getVideoInfo(cleanBvid);
 			if (info?.aid) return Number(info.aid);
-		} catch {
-			// fall through to backup extraction
-		}
+		} catch {}
 
-		// 2. 强力容灾回退：直接访问视频网页 HTML 匹配 aid（绕过 API 接口偶发的 -412 风控）
 		try {
 			const pageUrl = `https://www.bilibili.com/video/${encodeURIComponent(cleanBvid)}`;
 			const pageRes = await this._fetch(pageUrl, {
@@ -461,14 +424,11 @@ export class BilibiliApiClient {
 				const m = html.match(/"aid":\s*(\d+)/);
 				if (m && m[1]) return Number(m[1]);
 			}
-		} catch {
-			// ignore
-		}
+		} catch {}
 
 		throw new Error(`无法获取视频 ${cleanBvid} 的 aid`);
 	}
 
-	// ── 视频评论 ──
 	async getVideoComments(bvid, { page = 1, pageSize = 20, sort = 1 } = {}) {
 		let aid = 0;
 		try {
@@ -495,7 +455,6 @@ export class BilibiliApiClient {
 		}));
 	}
 
-	// ── 发表评论/回复 ──
 	async replyVideo(bvid, message, { rpid = 0, root = 0, parent = 0, signal } = {}) {
 		const cred = this.cred.load();
 		if (!cred || !cred.sessdata || !cred.bili_jct) {
@@ -538,7 +497,6 @@ export class BilibiliApiClient {
 		};
 	}
 
-	// ── 发送私信 ──
 	async sendMessage(receiverUid, text) {
 		const cred = this.cred.load();
 		if (!cred || !cred.sessdata || !cred.bili_jct) {
@@ -587,7 +545,6 @@ export class BilibiliApiClient {
 		};
 	}
 
-	// ── 获取视频的相关推荐视频（AI 漫游跳板） ──
 	async getRelatedVideos(bvid) {
 		if (!bvid) return [];
 		const url = `https://api.bilibili.com/x/web-interface/archive/related?bvid=${encodeURIComponent(bvid)}`;
@@ -611,7 +568,6 @@ export class BilibiliApiClient {
 		}));
 	}
 
-	// ── 获取 UP 主近期投稿（顺藤摸瓜漫游） ──
 	async getUpVideos(mid, ps = 10) {
 		if (!mid) return [];
 		const url = `https://api.bilibili.com/x/space/wbi/arc/search?mid=${encodeURIComponent(mid)}&ps=${Math.max(1, Math.min(Number(ps) || 10, 30))}&pn=1`;
@@ -637,7 +593,6 @@ export class BilibiliApiClient {
 		}
 	}
 
-	// ── 封面获取代理（防盗链） ──
 	async getCoverProxy(bvid) {
 		if (!/^BV[0-9A-Za-z]{10}$/.test(bvid)) return null;
 		try {

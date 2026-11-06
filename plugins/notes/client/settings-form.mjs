@@ -1,24 +1,6 @@
-/**
- * 设置表单（浮窗的设置覆盖层用，也是非紧凑布局那份界面的设置块）：通知开关 /
- * 语言 / 导入导出。
- *
- * 为什么单独成模块：这些开关存在浏览器 localStorage（prefs.mjs），跟「界面长什么样」
- * 无关 —— 无论从哪个入口打开设置，读写的都是同一份。
- *
- * 不做的两件事：
- *   - 不在这里存盘：读写都走 prefs.mjs（它是单源，两个界面同时开着也不会各存一份）。
- *   - 不做「重置浮窗位置」：那是浮窗自己的事，浮窗用 extra 参数把自己的按钮塞进来。
- */
 import { el } from "./dom.mjs";
 import { loadPrefs, savePrefs } from "./prefs.mjs";
 
-/**
- * 建表单。返回 { el, refresh }（refresh = 语言变了以后重画文案）。
- *   t        当前文案函数
- *   data     data.mjs 的数据客户端（导入导出走它）
- *   onNotify 提示文本（导入结果等）
- *   extra    额外的节点（浮窗的「重置位置」按钮等），放在最后一行
- */
 export function createSettings({ t, data, onNotify, extra = [] }) {
 	const root = el("div", { class: "nt-settings" });
 
@@ -38,9 +20,7 @@ export function createSettings({ t, data, onNotify, extra = [] }) {
 			if (typeof Notification === "undefined") return;
 			if (Notification.permission === "default") void Notification.requestPermission();
 			else if (Notification.permission === "denied") onNotify?.(t("settings.desktopDenied"));
-		} catch {
-			/* 不支持就算了 */
-		}
+		} catch {}
 	}
 
 	async function doImport(file) {

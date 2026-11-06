@@ -1,5 +1,3 @@
-// Issue #567 回归：跨设备打开历史会话自动过户（单 runtime）与陈旧元数据侧枝纠偏
-// Usage: node tests/cross-device-switch-session-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -96,9 +94,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/api/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -189,7 +185,6 @@ try {
 		return c;
 	};
 
-	// Part 1: Client A (手机端) 完成任务
 	clientA = await openClient("phone-client-567");
 	clientA.send({ type: "prompt", text: "task-from-phone" });
 	await clientA.waitForState((s) => s.isStreaming === false, 60000);
@@ -215,13 +210,10 @@ try {
 	const sessionFileA = clientA.state.sessionFile;
 	check("手机端 A 会话已持久化至 sessionFile", Boolean(sessionFileA), sessionFileA);
 
-	// Part 2: Client B (电脑端) 打开同一个 sessionFile (通过 switch_session，非 elsewhere 点击)
 	clientB = await openClient("computer-client-567");
 
-	// 电脑端直接打开该 sessionFile（用户在 History 列表中点击了该历史会话）
 	clientB.send({ type: "switch_session", path: sessionFileA });
 
-	// 验证：电脑端自动触发了 takeover，无需二次点击 elsewhere
 	{
 		const started = Date.now();
 		let restored = false;
@@ -239,7 +231,6 @@ try {
 		check("电脑端 switch_session 自动过户接管，完整显示手机端结果（issue #567）", restored);
 	}
 
-	// 验证 A 侧该会话已安全迁出（不会保留双 runtime）
 	{
 		const started = Date.now();
 		let goneFromA = false;
@@ -253,7 +244,6 @@ try {
 		check("手机端 A 的原会话已安全迁出，避免双 writer 冲突", goneFromA);
 	}
 
-	// Part 3: 验证损坏的历史文件自动拓扑纠偏与叶子校准（issue #567 确切现场）
 	const sessionDir = dirname(sessionFileA);
 	const corruptedFile = join(sessionDir, "corrupted-issue-567.jsonl");
 	const headerLine = JSON.stringify({ type: "session", version: 3, id: "corrupt-s1", cwd: workdir });
@@ -285,7 +275,6 @@ try {
 		timestamp: "2026-10-08T11:14:41.139Z",
 		message: { role: "assistant", content: [{ type: "text", text: "CORRUPTED-BRANCH-RESTORED-TARGET" }] },
 	});
-	// 尾部追加挂在 8775fb27 上的 custom entries
 	const plan1 = JSON.stringify({
 		type: "custom",
 		customType: "plannotator",
@@ -302,7 +291,6 @@ try {
 	});
 	writeFileSync(corruptedFile, [headerLine, m1, m2, m3, m4, plan1, plan2].join("\n") + "\n");
 
-	// Client B 打开该被损坏的文件
 	clientB.send({ type: "switch_session", path: corruptedFile });
 
 	{

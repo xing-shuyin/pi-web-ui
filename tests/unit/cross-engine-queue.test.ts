@@ -45,26 +45,20 @@ describe("跨引擎统一排队数据契约 (cross-engine-queue)", () => {
 			},
 		};
 
-		// 向后兼容旧视图
 		expect(snapshotQueue.steering).toEqual(["任务1"]);
 		expect(snapshotQueue.followUp).toEqual(["任务2"]);
 
-		// 新视图感知全局唯一 id
 		expect(snapshotQueue.entries?.steering[0]?.id).toBe("q-1");
 		expect(snapshotQueue.entries?.followUp[0]?.id).toBe("q-2");
 	});
 
 	it("Universal 引擎与 Pi 引擎统一按 ID 剔除：并发下标漂移时 100% 幂等精准", () => {
-		// 模拟用户排队 3 条相同文本的消息
 		const e1 = createQueuedEntry("重构", { id: "id-alpha" });
 		const e2 = createQueuedEntry("重构", { id: "id-beta" });
 		const e3 = createQueuedEntry("重构", { id: "id-gamma" });
 
 		let queue: QueuedMessageEntry[] = [e1, e2, e3];
 
-		// 模拟并发漂移：前端点击第二个气泡（id-beta），但在网络延迟期间第 0 个气泡已被消费出队，
-		// 前端传过来的 index=1 此时在当前队列里实际对应的是 id-gamma（第三个气泡）。
-		// 但只要协议携带了目标唯一 id: "id-beta"，就能精准删除 id-beta，而不会误删 id-gamma！
 		queue = removeQueuedEntry(queue, { id: "id-beta", text: "重构", index: 1 });
 
 		expect(queue.length).toBe(2);

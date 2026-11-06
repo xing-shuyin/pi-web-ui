@@ -1,24 +1,6 @@
-/**
- * server/delegate-mode.ts
- *
- * 审查者模式（自动委派 / delegate mode）：主对话**只审阅不施工**，活由服务端
- * 派给一个**常驻落盘执行对话**（每会话一个，跨轮复用）。
- *
- * 形态：会话级开关（`set_delegate_mode`）→ 开启后：
- *   1. 自动路由：用户在主对话发的每条 prompt，服务端直接转给执行对话执行
- *      （`ClientSession.dispatchToDelegate`），主对话这一轮**不跑模型**；
- *   2. 纯委派闸门：主对话的写类工具 / 非常规 bash / 派发类工具一律拒
- *      —— 即便模型自己想动手也过不去（与计划模式同一套 `withXGate` 骨架）。
- *
- * 与计划模式的关系：**互斥优先级**。计划模式开着的时候不自动派活（计划模式已经
- * 把 spawn/旁路工具全拒了，再自动派活就是死锁），由计划模式那一轮说了算。
- *
- * 判定全部是纯函数（无 IO），单测见 tests/unit/delegate-mode.test.ts。
- */
 import { bashCommandIsReadOnly, readOnlyToolCallAllowed, SESSION_DISPATCH_TOOLS } from "./plan-mode.js";
 import { isReadOnlyConversationAction, CONVERSATION_TOOL_NAMES } from "./conversation-tool-names.js";
 
-/** 审查者模式下确定禁止的工具名单（写 / 改 / 增删 / git 写 / 派发类）。 */
 export const DELEGATE_MODE_BLOCKED_TOOL_NAMES: readonly string[] = [
 	"write",
 	"create",
@@ -49,7 +31,6 @@ export const DELEGATE_MODE_BLOCKED_TOOL_NAMES: readonly string[] = [
 	"truncate",
 	"rename",
 	"git",
-	// 代码求值（eval 沙箱可写真实文件系统 —— 主对话只审阅不施工，#436）
 	"eval",
 	"codemode",
 	"mcp_manage",
@@ -65,20 +46,10 @@ export const DELEGATE_MODE_BLOCKED_TOOL_NAMES: readonly string[] = [
 
 const BLOCKED_TOOLS = new Set(DELEGATE_MODE_BLOCKED_TOOL_NAMES);
 
-/**
- * 审查者模式下也禁掉的「派发类」工具：派活是**服务端**的活（自动路由），
- * 模型再自己 spawn 一个只会绕开「一个常驻执行对话」这条语义线（多份上下文、
- * 多份配额、左栏一堆对话），而且落盘对话占项目会话名额。
- * 与计划模式禁它的理由不同：那边是「别绕开只读约束」，这边是「别绕开统一派活」。
- * 名单 = 三闸门共用的真实注册派发工具（SESSION_DISPATCH_TOOLS，#436 前是一堆
- * 幽灵名）+ subagent 整工具（这里不分 action，审查者对话一概不派不问）。
- */
 const DISPATCH_TOOLS = new Set([...SESSION_DISPATCH_TOOLS, ...CONVERSATION_TOOL_NAMES]);
 
-/** bash 家族（要逐条判命令是否只读）。 */
 const BASH_TOOLS = new Set(["bash", "shell", "sh", "zsh", "terminal_bash", "run_command", "exec"]);
 
-/** 从工具参数里取命令文本（各工具字段名不同）。 */
 function commandOf(params: unknown): string {
 	if (!params || typeof params !== "object") return "";
 	const p = params as Record<string, unknown>;
@@ -89,19 +60,12 @@ function commandOf(params: unknown): string {
 	return "";
 }
 
-/** 审查者模式对一次工具调用的裁决：undefined = 放行。 */
 export interface DelegationDenial {
 	reason: string;
 	reasonEn: string;
-	/** 归类，写进 details 供前端与回归判读。 */
 	kind: "write-tool" | "bash" | "dispatch-tool";
 }
 
-/**
- * 审查者模式闸门（纯函数）：命中即拒绝，并把「该干什么」告诉模型 ——
- * 提示词已经说明规则，这里再把可操作的下一步重复一遍（长任务里模型最容易
- * 「顺手改一下」，拒绝理由就是它唯一的纠偏机会）。
- */
 export function delegationDenial(toolName: string, params: unknown): DelegationDenial | undefined {
 	const name = (toolName ?? "").trim();
 	if (!name) return undefined;
@@ -149,7 +113,6 @@ export function delegationDenial(toolName: string, params: unknown): DelegationD
 	return undefined;
 }
 
-/** 审查者模式系统提示词段（英文：进入模型上下文，按工具提示词卫生口径只写英文）。 */
 export const DELEGATION_SYSTEM_PROMPT = [
 	"# Reviewer mode (you review; a server-side executor does the work)",
 	"Reviewer mode is on for this conversation. The server forwards every user request to ONE persistent executor conversation, and that conversation is the only one allowed to change anything.",
@@ -160,7 +123,6 @@ export const DELEGATION_SYSTEM_PROMPT = [
 	"- If plan mode is also on, plan mode wins: no dispatch happens and you produce the plan yourself.",
 ].join("\n");
 
-/** 拒给用户的界面文案（notice，zh + en 成对）。 */
 export function delegateNoticeText(enabled: boolean): { text: string; textEn: string } {
 	return enabled
 		? {

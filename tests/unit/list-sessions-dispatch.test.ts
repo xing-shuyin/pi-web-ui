@@ -37,7 +37,6 @@ describe("list_sessions dispatch and matching", () => {
 	});
 
 	it("isSessionMatchingProject accurately identifies sessions matching project slugs", () => {
-		// Windows path with short project name like E:\t -> slug --e--t--
 		expect(isSessionMatchingProject("C:/Users/c/.pi/agent/sessions/--e--t--/2026-03-31t11-00-00.jsonl", "E:/t")).toBe(
 			true,
 		);
@@ -45,12 +44,10 @@ describe("list_sessions dispatch and matching", () => {
 			isSessionMatchingProject("C:\\Users\\c\\.pi\\agent\\sessions\\--e--t--\\2026-03-31t11-00-00.jsonl", "E:\\t"),
 		).toBe(true);
 
-		// Windows path with desktop project
 		expect(
 			isSessionMatchingProject("C:/Users/c/.pi/agent/sessions/--c--users-c-desktop--/abc.jsonl", "C:/Users/c/Desktop"),
 		).toBe(true);
 
-		// 同前缀项目隔离校验（彻底杜绝 pi-web-ui 贪婪吞并同前缀项目如 pi-web-ui-site、pi-web-ui-plugins 会话）
 		expect(
 			isSessionMatchingProject(
 				"C:/Users/c/.pi/agent/sessions/--E--pi-web-ui-site--/2026-11-05T05-06-31-801Z_01a1aa19.jsonl",
@@ -76,7 +73,6 @@ describe("list_sessions dispatch and matching", () => {
 			),
 		).toBe(true);
 
-		// Linux / macOS 路径与前缀隔离
 		expect(
 			isSessionMatchingProject(
 				"/home/user/.pi/agent/sessions/--home-user-project-extra--/abc.jsonl",
@@ -87,7 +83,6 @@ describe("list_sessions dispatch and matching", () => {
 			isSessionMatchingProject("/home/user/.pi/agent/sessions/--home-user-project--/abc.jsonl", "/home/user/project"),
 		).toBe(true);
 
-		// 协议级权威单源校验（SessionSummary 携带 cwd 时的 O(1) 判定）
 		expect(
 			isSessionMatchingProject(
 				{
@@ -113,7 +108,6 @@ describe("list_sessions dispatch and matching", () => {
 			),
 		).toBe(false);
 
-		// Different project should not match
 		expect(isSessionMatchingProject("C:/Users/c/.pi/agent/sessions/--e--other--/abc.jsonl", "E:/t")).toBe(false);
 	});
 });

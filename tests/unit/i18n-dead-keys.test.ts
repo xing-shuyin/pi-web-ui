@@ -24,7 +24,6 @@ import { readCatalog } from "../../scripts/lib/i18n-catalog.mjs";
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const I18N = join(ROOT, "web/src/i18n.tsx");
 
-/** 不参与「引用」统计的路径：产物、依赖、语言包本体（是翻译不是引用）、一次性脚本。 */
 const SKIP = [
 	"/node_modules/",
 	"/dist/",
@@ -35,7 +34,6 @@ const SKIP = [
 	"/locales/",
 	"/web/src/i18n/messages/", // 所有语言的模块源码都是文案本体，不能证明 key 被使用
 	"/tests/scratch/",
-	// 插件自带的大 bundle / 扩展产物：由各自的 src 生成，扫了也没意义
 	"/plugins/legado-web/client/",
 	"/plugins/vscode-editor/client/",
 	"/plugins/db-client/client/",
@@ -54,7 +52,6 @@ function collectFiles(dir: string, out: string[] = []): string[] {
 	}
 	for (const e of entries) {
 		const p = join(dir, e.name);
-		// Exclude paths within this checkout, not a managed worktree's parent directory.
 		const norm = `/${relative(ROOT, p).replace(/\\/g, "/")}`;
 		if (SKIP.some((s) => norm.includes(s))) continue;
 		if (e.isDirectory()) collectFiles(p, out);
@@ -63,7 +60,6 @@ function collectFiles(dir: string, out: string[] = []): string[] {
 	return out;
 }
 
-/** 语料里出现过的 identifier / dotted identifier。 */
 function collectWords(): Set<string> {
 	const words = new Set<string>();
 	const wordRe = /[A-Za-z_$][\w$-]*(?:\.[A-Za-z_$][\w$-]*)*/g;
@@ -127,12 +123,9 @@ function canvasRuntimeKeys(source: string): Set<string> {
 	return out;
 }
 
-/** 由代码模板拼接出来的 key（不在语料里以字面量出现，但确实在用）。 */
 function dynamicKeys(): Set<string> {
 	const out = new Set<string>();
-	// `t(`thinking.${v}`)`，v ∈ THINKING_VALUES
 	for (const v of THINKING_VALUES) out.add(`thinking.${v}`);
-	// `tt(`promptTok_${tk}`)` / `tt(`promptTok_${tk}_desc`)`，tk ∈ PROMPT_TOKENS
 	for (const tk of PROMPT_TOKENS) {
 		out.add(`promptTok_${tk}`);
 		out.add(`promptTok_${tk}_desc`);

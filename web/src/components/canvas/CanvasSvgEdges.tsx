@@ -15,10 +15,8 @@ interface CanvasSvgEdgesProps {
 	edges: CanvasEdge[];
 	connectingSource: { nodeId: string; x: number; y: number; sourcePort?: string } | null;
 	mousePos: { x: number; y: number } | null;
-	/** 各节点字段端子实测纵坐标（相对卡片顶部，画布 px），缺失时回退 PORT_Y_OFFSET */
 	portPositions?: Record<string, Record<string, number>>;
 	onDeleteEdge: (edgeId: string) => void;
-	/** 双击改备注（Studio handleUpdateEdge） */
 	onUpdateEdge?: (edgeId: string, patch: Partial<CanvasEdge>) => void;
 }
 
@@ -34,7 +32,6 @@ export function CanvasSvgEdges({
 	const t = useT();
 	const edgeTypeLabels = getEdgeTypeLabels(t);
 	const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
-	/** 双击改备注：正在编辑的边 + 输入框草稿 */
 	const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 	const [editValue, setEditValue] = useState<string>("");
 	const editInputRef = useRef<HTMLInputElement | null>(null);
@@ -42,7 +39,6 @@ export function CanvasSvgEdges({
 		editInputRef.current?.focus();
 		editInputRef.current?.select();
 	}, [editingEdgeId]);
-	/** 悬停才出小按钮：当前指针所在的边 */
 	const [hoverEdgeId, setHoverEdgeId] = useState<string | null>(null);
 	const beginEdit = (edge: CanvasEdge) => {
 		setEditingEdgeId(edge.id);
@@ -56,7 +52,6 @@ export function CanvasSvgEdges({
 
 	return (
 		<svg className="canvas-svg-layer">
-			{/* 已建立的连线 */}
 			{edges.map((edge) => {
 				const source = nodeMap.get(edge.sourceNodeId);
 				const target = nodeMap.get(edge.targetNodeId);
@@ -67,7 +62,6 @@ export function CanvasSvgEdges({
 				const targetX = target.x;
 				const targetY = target.y + (portPositions?.[target.id]?.[edge.targetPort || "contract"] ?? PORT_Y_OFFSET);
 
-				// 优雅的水平束状起始切线，避免多线分叉时产生毛刺折角
 				const dx = Math.max(Math.abs(targetX - sourceX) * 0.45, 50);
 				const d = `M ${sourceX} ${sourceY} C ${sourceX + dx} ${sourceY}, ${targetX - dx} ${targetY}, ${targetX} ${targetY}`;
 				const midX = (sourceX + targetX) / 2;
@@ -105,12 +99,10 @@ export function CanvasSvgEdges({
 							beginEdit(edge);
 						}}
 					>
-						{/* 加粗透明命中区域，方便鼠标交互 */}
 						<path d={d} fill="none" stroke="transparent" strokeWidth="20" className="canvas-edge-hitbox">
 							<title>{t("canvas.edges.editHint")}</title>
 						</path>
 
-						{/* 运行中外光晕层 */}
 						{isSourceRunning && (
 							<path
 								d={d}
@@ -122,7 +114,6 @@ export function CanvasSvgEdges({
 							/>
 						)}
 
-						{/* 半透明底轨层 */}
 						<path
 							d={d}
 							fill="none"
@@ -132,7 +123,6 @@ export function CanvasSvgEdges({
 							className="canvas-edge-track"
 						/>
 
-						{/* 动态发光流动光粒子层 (Particle Flow Stream) */}
 						<path
 							d={d}
 							fill="none"
@@ -142,7 +132,6 @@ export function CanvasSvgEdges({
 							className={`canvas-edge-particles ${isSourceRunning ? "active" : "ambient"} ${isReview ? "review" : ""}`}
 						/>
 
-						{/* 连线中间信息胶囊 */}
 						{(hasEdgeLabel || isHoverEdge || isEditingEdge) && (
 							<foreignObject
 								x={midX - capsuleW / 2}
@@ -219,7 +208,6 @@ export function CanvasSvgEdges({
 				);
 			})}
 
-			{/* 正在拉取的临时连线 */}
 			{connectingSource && mousePos && (
 				<path
 					d={`M ${connectingSource.x} ${connectingSource.y} C ${connectingSource.x + 60} ${connectingSource.y}, ${mousePos.x - 60} ${mousePos.y}, ${mousePos.x} ${mousePos.y}`}

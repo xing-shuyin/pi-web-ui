@@ -1,4 +1,3 @@
-/** Node-only SDK test harness. */
 export {
 	createMockHost,
 	type MockHost,

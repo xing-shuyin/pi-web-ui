@@ -32,10 +32,9 @@ describe("foldedSearchText", () => {
 		expect(text).toContain("思考 BB");
 		expect(text).toContain("ask_user_question");
 		expect(text).toContain('{"question":"CC"}');
-		expect(text).toContain("工具输出结果文本 OUT"); // toolResult 并入宿主
+		expect(text).toContain("工具输出结果文本 OUT");
 		expect(text).toContain("ls DD");
 		expect(text).toContain("file EE");
-		// 顺序 = 内容块顺序：AA 在 BB 前
 		expect(text.indexOf("AA")).toBeLessThan(text.indexOf("BB"));
 		expect(text.indexOf("BB")).toBeLessThan(text.indexOf("CC"));
 	});
@@ -72,7 +71,7 @@ describe("collectFoldedHits", () => {
 	const messages = [
 		msg("folded-1", [{ type: "text", text: "这里有 NEEDLE 和 needle 还有 NEEDLE" }]),
 		msg("folded-2", [{ type: "thinking", thinking: "NEEDLE 只在思考里" }]),
-		msg("rendered-1", [{ type: "text", text: "NEEDLE 但这条已渲染" }]), // 不在 collapsedIds
+		msg("rendered-1", [{ type: "text", text: "NEEDLE 但这条已渲染" }]),
 		msg("folded-3", [{ type: "toolCall", id: "call-1", name: "bash", argumentsText: '{"command":"echo hi"}' }]),
 	];
 
@@ -81,7 +80,6 @@ describe("collectFoldedHits", () => {
 		expect(hits.get("folded-1")).toBe(3);
 		expect(hits.get("folded-2")).toBe(1);
 		expect(hits.get("rendered-1")).toBeUndefined();
-		// 宿主 toolResult 的文本也可命中
 		hits.set("folded-3", (hits.get("folded-3") ?? 0) + 0);
 	});
 

@@ -1,11 +1,3 @@
-/**
- * pi-core version probe on Windows (issue #533): npm's cmd-shim writes a
- * regular `pi` script, so the POSIX realpath walk misses the package one
- * level below <prefix>. These tests use real temp dirs (no node:fs mocking)
- * to prove the sibling `<prefix>/node_modules/<pkg>` layout resolves, that the
- * POSIX symlink walk still works, and that an unresolvable version yields an
- * honest "could not detect" pi-core row instead of dropping it.
- */
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +6,6 @@ import { checkAll, collectTargets, readPiCoreVersionFromDisk, type LocalPackage 
 
 const PI_CORE = "@earendil-works/pi-coding-agent";
 
-/** Write a minimal pi-core package.json and return its dir. */
 function writePiCorePackage(root: string, version: string): string {
 	const dir = join(root, "node_modules", "@earendil-works", "pi-coding-agent");
 	mkdirSync(dir, { recursive: true });
@@ -22,7 +13,6 @@ function writePiCorePackage(root: string, version: string): string {
 	return dir;
 }
 
-/** Run fn with PATH set to exactly `dirs`, restoring the old PATH afterwards. */
 function withPath<T>(dirs: string[], fn: () => T): T {
 	const prev = process.env.PATH;
 	process.env.PATH = dirs.join(delimiter);
@@ -43,14 +33,11 @@ function makeTmp(prefix: string): string {
 
 afterEach(() => {
 	while (tmpDirs.length > 0) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
-	// readPiCoreVersionFromDisk is stateless; defaultProbePiCore memoization is
-	// intentionally bypassed by testing the former directly.
 });
 
 describe("readPiCoreVersionFromDisk — sibling node_modules (Windows npm layout)", () => {
 	it("reads the version from <binDir>/node_modules even when `pi` is a regular file (not a symlink)", () => {
 		const prefix = makeTmp("pi-core-win-");
-		// npm's cmd-shim writes a plain shell script on Windows — regular file.
 		writeFileSync(
 			join(prefix, "pi"),
 			'#!/bin/sh\nbasedir=$(dirname "$0")\nexec node "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"\n',
@@ -64,7 +51,6 @@ describe("readPiCoreVersionFromDisk — sibling node_modules (Windows npm layout
 
 	it("skips unresolvable candidate in early PATH entry and resolves from later entry", () => {
 		const dummyDir = makeTmp("pi-dummy-");
-		// First entry has a pi file that doesn't point to pi-core
 		writeFileSync(join(dummyDir, "pi"), "#!/bin/sh\necho not-our-pi\n");
 
 		const validDir = makeTmp("pi-valid-");
@@ -94,12 +80,10 @@ describe("readPiCoreVersionFromDisk — sibling node_modules (Windows npm layout
 		);
 		writePiCorePackage(newerDir, "1.3.0");
 
-		// olderDir is first on PATH (simulating local node_modules/.bin shadowing global)
 		withPath([olderDir, newerDir], () => {
 			expect(readPiCoreVersionFromDisk()).toBe("1.3.0");
 		});
 
-		// reverse order also works
 		withPath([newerDir, olderDir], () => {
 			expect(readPiCoreVersionFromDisk()).toBe("1.3.0");
 		});
@@ -133,7 +117,6 @@ describe("readPiCoreVersionFromDisk — POSIX symlink walk (unchanged)", () => {
 		try {
 			symlinkSync(join(cliDir, "cli.js"), join(binDir, "pi"), "file");
 		} catch {
-			// Windows without developer mode / privileges: skip, don't fail.
 			return;
 		}
 
@@ -171,7 +154,6 @@ describe("checkAll — unknown pi-core hint reaches the panel item", () => {
 
 	it("resolves the key into a localized error without a registry lookup (en)", async () => {
 		const items = await checkAll([target(true)], okFetcher, () => "en");
-		// 断言「key 被解析成了英文文案」而不是具体措辞（措辞会调，key 不会）。
 		expect(items[0]!.error).not.toBe("pluginupdate.piCore.unknown");
 		expect(items[0]!.error).toContain("engine version");
 		expect(items[0]!.latest).toBeNull();

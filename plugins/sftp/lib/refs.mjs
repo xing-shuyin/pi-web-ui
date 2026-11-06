@@ -1,22 +1,5 @@
-/**
- * 凭据引用解析 —— 让 `.pi/sftp.json`（可能进版本库、可能被 AI 读写）里
- * **永不出现明文密码**。
- *
- * 支持四种写法：
- *   ${env:VAR_NAME}       环境变量（CI / shell 里注入）
- *   ${secret:name}        宿主加密机密（host.secrets，AES-256-GCM 存 <dataDir>，
- *                         跨机器拷走也解不开；`sftp_secret` 工具写的就是它）
- *   ${file:~/path/to/key} 从文件读（读到的首尾空白会被去掉，方便 `echo xxx > pass`）
- *   其它字符串             明文（可用，但会被告警；见 manifest 的 plaintextWarn）
- *
- * 写错前缀（比如 `${env}` 少了冒号、`${token:x}` 这种不认的 scheme）一律**报错**，
- * 不做静默回落 —— 否则一个拼错的环境变量会退化成「密码为空」的怪异失败。
- */
-
-/** 严格匹配一个完整引用。 */
 const REF = /^\$\{(env|secret|file):([^{}]*)\}$/;
 
-/** 是否写成了「看起来像引用」的样子（用于区分明文与拼错的引用）。 */
 export function looksLikeRef(v) {
 	return typeof v === "string" && v.trim().startsWith("${");
 }
@@ -40,7 +23,6 @@ export function parseRef(raw, label = "value") {
 	return { scheme: m[1], arg };
 }
 
-/** 给界面/模型看的**安全描述**（永不含明文）。 */
 export function describeRef(raw) {
 	if (!raw) return "";
 	const m = REF.exec(String(raw).trim());
@@ -73,7 +55,6 @@ export async function resolveRef(raw, ctx = {}) {
 		}
 		return { value: String(v), source: "secret" };
 	}
-	// file
 	const { readFile } = await import("node:fs/promises");
 	const os = await import("node:os");
 	const path = await import("node:path");

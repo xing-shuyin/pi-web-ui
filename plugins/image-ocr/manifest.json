@@ -1,0 +1,14 @@
+{
+	"apiVersion": 2,
+	"id": "image-ocr",
+	"name": "图片文字识别",
+	"nameEn": "Image OCR",
+	"version": "0.1.2",
+	"icon": "🔎",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 7V4h3m10 0h3v3m0 10v3h-3M7 20H4v-3M8 9h8M8 13h8M8 17h4\"/></svg>",
+	"view": false,
+	"preload": true,
+	"description": "在统一图片预览弹窗中识别并复制中英文文字。浏览器本地 OCR，无需 API Key；首次使用需联网下载引擎和字库。",
+	"descriptionEn": "Recognize and copy Chinese and English text from any image preview. Local browser OCR, no API key. First use downloads the engine and language data.",
+	"permissions": []
+}

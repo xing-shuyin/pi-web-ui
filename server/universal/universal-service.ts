@@ -1,12 +1,3 @@
-/**
- * universal-service.ts — 通用 Agent 引擎服务（实现 EngineService）。
- *
- * 职责：
- *   1. 接入 index.ts 的全局引擎分发层；
- *   2. 管理各浏览器客户端（clientId）的 UniversalSession 实例；
- *   3. 负责安静停机（quiesce）、状态汇总（serviceStatus）与生命周期销毁。
- */
-
 import { existsSync } from "node:fs";
 import type { EngineService, DispatchSession } from "../index.js";
 import type { ServerMessage, UiServiceInfo, AgentEngineCapabilities } from "../protocol.js";
@@ -52,7 +43,6 @@ export class UniversalAgentService implements EngineService {
 		this.engine = opts.engine ?? "claude";
 		this.store = new UniversalSessionStore(opts.dataDir, this.engine);
 		this.stateStore = opts.stateStore;
-		// 默认使用 MockDriver；接入 Claude Code 时可替换
 		this.driverFactory = opts.driverFactory ?? ((cwd: string) => new MockAgentDriver(cwd));
 	}
 
@@ -66,9 +56,7 @@ export class UniversalAgentService implements EngineService {
 					if (existsSync(saved.lastCwd)) {
 						effectiveCwd = saved.lastCwd;
 					}
-				} catch {
-					/* fallback */
-				}
+				} catch {}
 			}
 			if (typeof this.stateStore?.remember === "function") {
 				this.stateStore.remember(clientId, effectiveCwd);
@@ -120,9 +108,7 @@ export class UniversalAgentService implements EngineService {
 		this.sessions.clear();
 	}
 
-	recordInterruptedRuns(): void {
-		/* 通用底座基于线性落盘，重启后直接回放 JSON */
-	}
+	recordInterruptedRuns(): void {}
 
 	noteSocketOpen(): void {
 		this.socketCount++;
@@ -186,13 +172,9 @@ export class UniversalAgentService implements EngineService {
 		return 0;
 	}
 
-	applyPluginAgentTools(): void {
-		/* no-op */
-	}
+	applyPluginAgentTools(): void {}
 
-	applyPluginCommandCatalog(): void {
-		/* no-op */
-	}
+	applyPluginCommandCatalog(): void {}
 
 	applyPluginMarkers(): void {
 		for (const session of this.sessions.values()) {
@@ -200,9 +182,7 @@ export class UniversalAgentService implements EngineService {
 		}
 	}
 
-	refreshBackgroundServers(): void {
-		/* no-op */
-	}
+	refreshBackgroundServers(): void {}
 
 	async setLocale(clientId: string, locale: string): Promise<void> {
 		const session = this.sessions.get(clientId);

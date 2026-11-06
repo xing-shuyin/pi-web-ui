@@ -1,10 +1,4 @@
 /**
- * plugins/remote-workbench/client/lib/workspace-uri.mjs
- *
- * 远程工作区路径规范化与标准 URI 组装工具。
- */
-
-/**
  * 规范化用户输入的远程目录绝对路径。
  * - 空输入或 "~" 解析为主机用户的默认家目录（root 为 /root，普通用户为 /home/<username>）；
  * - "~/..." 解析为家目录下的相对路径；

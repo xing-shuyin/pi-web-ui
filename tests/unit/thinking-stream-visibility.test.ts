@@ -65,12 +65,10 @@ describe("Message content block trailing streaming gating", () => {
 		const streaming = true;
 		const isLast = true;
 
-		// Block 0: thinking (followed by toolCall)
 		const isTrailingBlock0 = 0 === messageContent.length - 1;
 		const isThinkingStreaming = streaming && isLast && isTrailingBlock0;
 		expect(isThinkingStreaming).toBe(false);
 
-		// Block 1: toolCall (trailing block)
 		const isTrailingBlock1 = 1 === messageContent.length - 1;
 		expect(isTrailingBlock1).toBe(true);
 	});

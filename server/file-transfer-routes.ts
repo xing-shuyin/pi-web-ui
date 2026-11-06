@@ -15,7 +15,6 @@ import {
 	shellQuotePosix,
 } from "./remote-ssh-service.js";
 
-/** Registered behind the host's authentication middleware; shared by Pi and DSH. */
 export function registerFileTransferRoutes(
 	app: Express,
 	getCwd: (clientId: string) => string | undefined,
@@ -60,7 +59,6 @@ export function registerFileTransferRoutes(
 		if (!w || (!allowRoot && w.rel === "")) throw new Error("Path outside workspace");
 		return w.abs;
 	}
-	// A cross-origin form cannot set this header. No CORS permission is granted.
 	app.use("/api/file-transfer", (req, res, next) => {
 		if (req.headers["x-file-operation"] !== "1") {
 			res.status(403).send("Missing file operation header");
@@ -155,10 +153,6 @@ export function registerFileTransferRoutes(
 					if (res.destroyed) throw new Error("Download cancelled");
 					if ((await stat(archive.path)).size > 200 * 1024 * 1024)
 						throw new Error("Temporary download exceeds 200 MiB; compress in place and download the archive instead");
-					// The callback runs on completion AND disconnect. Never expose a reusable temp URL.
-					// dotfiles: allow — issue #223：Express 5 的 send 默认 dotfiles=ignore，
-					// TMPDIR 等临时根位于隐藏目录下（如 ~/.cache）时下载会被判 404。
-					// 路径是服务端刚创建的受控临时包，放行安全。
 					await new Promise<void>((ok, fail) =>
 						res.download(archive.path, archive.name, { dotfiles: "allow" }, (err) => (err ? fail(err) : ok())),
 					);
@@ -174,8 +168,6 @@ export function registerFileTransferRoutes(
 			if (acquired && cwd) busy.delete(cwd);
 		}
 	});
-	// Reserve worst-case bytes for chunked requests before consuming their body.
-	// Local uploads stream to disk; SFTP's buffer-only API is bounded by the same budget.
 	const maxInFlight = 200 * 1024 * 1024;
 	let uploads = 0;
 	let inFlight = 0;
@@ -187,7 +179,6 @@ export function registerFileTransferRoutes(
 		const cancel = () => controller.abort();
 		res.on("close", cancel);
 		try {
-			// Resolve all client/path inputs before reading even the first body chunk.
 			const cwd = root(req);
 			const maxBytes = getMaxUploadBytes(String(req.query.clientId));
 			const name = safeEntryPath(typeof req.query.name === "string" ? req.query.name : "");
@@ -218,7 +209,6 @@ export function registerFileTransferRoutes(
 			reserved = budget;
 			if (!remote && !directory) {
 				await mkdir(dirname(dest), { recursive: true });
-				// Recheck after mkdir, then stage beside the destination (same volume).
 				await safeDestination(dir, name);
 				temp = join(dirname(dest), `.pi-upload-${randomUUID()}`);
 				handle = await open(temp, "wx", 0o600);
@@ -248,7 +238,6 @@ export function registerFileTransferRoutes(
 				handle = undefined;
 				await safeDestination(dir, name);
 				controller.signal.throwIfAborted();
-				// link fails with EEXIST even if a competing upload won after validation.
 				await link(temp!, dest);
 			}
 			res.json({ name });

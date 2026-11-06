@@ -1,12 +1,3 @@
-/**
- * durable-agent-service.ts — Pi Durable 独立智能体引擎顶层服务（实现 EngineService）。
- *
- * 职责：
- * 1. 管理 Pi Durable 驱动及会话调度；
- * 2. 借助通用宿主底座（UniversalSession）提供完整 160+ 个 Web UI 交互契约；
- * 3. 负责安静停机（quiesce）、状态汇总（serviceStatus）与生命周期销毁。
- */
-
 import { existsSync } from "node:fs";
 import type { EngineService, DispatchSession } from "../index.js";
 import type { ServerMessage, UiServiceInfo } from "../protocol.js";
@@ -50,9 +41,7 @@ export class DurableAgentService implements EngineService {
 					if (existsSync(saved.lastCwd)) {
 						effectiveCwd = saved.lastCwd;
 					}
-				} catch {
-					/* fallback */
-				}
+				} catch {}
 			}
 			if (typeof this.stateStore?.remember === "function") {
 				this.stateStore.remember(clientId, effectiveCwd);
@@ -99,9 +88,7 @@ export class DurableAgentService implements EngineService {
 		this.sessions.clear();
 	}
 
-	recordInterruptedRuns(): void {
-		// Durable 引擎自带事务级检查点，无需手动序列化内存临时态
-	}
+	recordInterruptedRuns(): void {}
 
 	noteSocketOpen(): void {
 		this.socketCount++;
@@ -165,17 +152,11 @@ export class DurableAgentService implements EngineService {
 		return 0;
 	}
 
-	applyPluginAgentTools(): void {
-		// 插件工具热重载通知
-	}
+	applyPluginAgentTools(): void {}
 
-	applyPluginCommandCatalog(): void {
-		// 斜杠命令热重载通知
-	}
+	applyPluginCommandCatalog(): void {}
 
-	applyPluginMarkers(): void {
-		// 插件标记热重载通知
-	}
+	applyPluginMarkers(): void {}
 
 	refreshBackgroundServers(): void {
 		for (const session of this.sessions.values()) {

@@ -1,11 +1,3 @@
-/**
- * dsh 引擎用户提问桥测试（真 key 门控）——模型 ask_user_question →
- * question_pending 通知 → 前端 question_answer 回答 → 模型收到答案继续。
- *
- * 需要真实的 DeepSeek API key。无 key 时打印 SKIP 并退出 0。
- *
- * 用法：node tests/dsh-question-test.mjs   （先 npm run build）
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -19,7 +11,6 @@ const REPO = fileURLToPath(new globalThis.URL("../", import.meta.url));
 const PORT = 8935;
 const CLIENT_ID = "dsh-question-test";
 
-// 真 key 门控。
 let key = process.env.DEEPSEEK_API_KEY;
 if (!key) {
 	try {
@@ -29,9 +20,7 @@ if (!key) {
 			const ds = auth.deepseek;
 			key = typeof ds === "string" ? ds : ds?.key;
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 if (!key) {
 	console.log("⏭ SKIP：无 DeepSeek API key（需 ~/.pi/agent/auth.json 的 deepseek.key 或 DEEPSEEK_API_KEY）");
@@ -84,9 +73,7 @@ for (let i = 0; i < 60; i++) {
 	await sleep(250);
 	try {
 		if (await portUp(PORT)) break;
-	} catch {
-		/* retry */
-	}
+	} catch {}
 	if (i === 59) {
 		console.error("✗ server 未在 15s 内启动");
 		server.kill();
@@ -153,13 +140,11 @@ async function main() {
 	console.log("attached");
 	await sleep(2500);
 
-	// prompt 引导模型提问（答案无歧义，模型大概率走提问）。
 	c.send({
 		type: "prompt",
 		text: "请用 ask_user_question 工具问我一个简单问题：'你最喜欢哪种颜色？'（选项红/蓝/绿），然后根据我的回答用一句话回应。",
 	});
 
-	// --- 1. 等 question_pending ---
 	const pending = await c.wait((m) => m.type === "question_pending", 90_000).catch(() => null);
 	check(
 		"模型 ask_user_question → question_pending",
@@ -173,7 +158,6 @@ async function main() {
 		process.exit(1);
 	}
 
-	// --- 2. question_answer 回答 ---
 	c.send({
 		type: "question_answer",
 		id: pending.id,
@@ -185,7 +169,6 @@ async function main() {
 	});
 	check("question_answer 已发送", true);
 
-	// --- 3. 模型收到答案继续（assistantMessageEvent text_delta，逐字推送） ---
 	const t0 = Date.now();
 	let repliedText = "";
 	while (Date.now() - t0 < 90_000 && repliedText.length < 4) {

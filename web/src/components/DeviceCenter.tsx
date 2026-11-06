@@ -4,14 +4,19 @@ import {
 	FiCopy,
 	FiExternalLink,
 	FiHelpCircle,
+	FiInbox,
+	FiUsers,
 	FiLink,
 	FiMonitor,
 	FiRefreshCw,
 	FiShield,
 } from "react-icons/fi";
 import { appUrl } from "../base-url";
+import { waitForHubUpgrade, type HubUpgradeStatus } from "../hub-upgrade";
 import { withToken } from "../auth-token";
-import { useLocale, useT } from "../i18n";
+import { isZhLocale, useLocale, useT } from "../i18n";
+import type { UiPluginInfo } from "../types";
+import { DeviceChannels } from "./DeviceChannels";
 import { LocalBots } from "./LocalBots";
 import { HubLink } from "./HubLink";
 import { DeviceCenterSetup } from "./DeviceCenterSetup";
@@ -240,21 +245,27 @@ function LocalDesktopSettings() {
 
 export function DeviceCenter({
 	pathCompletions = [],
+	plugins = [],
+	pluginsEpoch = 0,
 }: {
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
+	plugins?: UiPluginInfo[];
+	pluginsEpoch?: number;
 }) {
 	const t = useT();
+	const zh = isZhLocale(useLocale());
+	const [section, setSection] = useState<"devices" | "groups" | "channels">("devices");
 	const [status, setStatus] = useState<DeviceStatus | null>(null);
 	const [hubUrl, setHubUrl] = useState("");
 	const [name, setName] = useState("");
 	const [pairing, setPairing] = useState<Pairing | null>(null);
-	const [showPairing, setShowPairing] = useState(false);
 	const [now, setNow] = useState(Date.now());
 	const [busy, setBusy] = useState<"pair" | "permission" | "disconnect" | null>(null);
 	const [error, setError] = useState("");
 	const [statusError, setStatusError] = useState("");
 	const [notice, setNotice] = useState("");
 	const [hubUpgrading, setHubUpgrading] = useState(false);
+	const hubUpgradeActive = useRef(false);
 	const [localOnly, setLocalOnly] = useState(false);
 	const [loading, setLoading] = useState(true);
 	const alive = useRef(false);
@@ -470,23 +481,29 @@ export function DeviceCenter({
 		}
 	}
 	async function handleUpgradeHub() {
-		if (hubUpgrading || busy || !bound || !status?.hubUrl) return;
+		if (hubUpgradeActive.current || busy || !bound || !status?.hubUrl) return;
 		if (!window.confirm(t("deviceHubConfirmUpgrade"))) return;
+		const token = generation.current;
+		hubUpgradeActive.current = true;
 		setHubUpgrading(true);
 		setError("");
 		setNotice("");
 		try {
-			const res = await request<{ ok: boolean; message?: string }>("upgrade-hub", {});
-			if (res.ok) {
+			const res = await request<{ ok: boolean; job: HubUpgradeStatus }>("upgrade-hub", {});
+			if (!res.ok) throw new Error("Hub upgrade was not accepted");
+			await waitForHubUpgrade(res.job, {
+				isCurrent: () => valid(token),
+				poll: async (id) => (await request<{ job: HubUpgradeStatus }>("upgrade-hub-status", { id })).job,
+			});
+			if (valid(token)) {
 				setNotice(t("deviceHubUpgradeSuccess"));
 				await refresh();
-			} else {
-				throw new Error(res.message || "Upgrade failed");
 			}
 		} catch (cause) {
-			setError(explain(cause));
+			if (valid(token)) setError(cause instanceof Error ? cause.message : t("deviceHubNetworkError"));
 		} finally {
-			setHubUpgrading(false);
+			hubUpgradeActive.current = false;
+			if (valid(token)) setHubUpgrading(false);
 		}
 	}
 	async function copyCode() {
@@ -529,7 +546,27 @@ export function DeviceCenter({
 					</span>
 				</div>
 			</header>
-			<div className="dc-layout" style={{ display: "block" }}>
+			<div className="dc-layout">
+				<nav className="dc-sidebar" aria-label={zh ? "设备与协作导航" : "Devices and collaboration"}>
+					{(
+						[
+							["devices", FiMonitor, zh ? "设备与连接" : "Devices & connections"],
+							["groups", FiUsers, zh ? "群组与工单" : "Groups & work items"],
+							["channels", FiInbox, zh ? "外部渠道" : "External channels"],
+						] as const
+					).map(([id, Icon, label]) => (
+						<button
+							key={id}
+							type="button"
+							className={`dc-nav-item${section === id ? " is-active" : ""}`}
+							aria-pressed={section === id}
+							onClick={() => setSection(id)}
+						>
+							<Icon aria-hidden />
+							{label}
+						</button>
+					))}
+				</nav>
 				<main className="dc-content">
 					{loading && (
 						<div className="dc-loading" role="status">
@@ -557,253 +594,289 @@ export function DeviceCenter({
 							{notice}
 						</div>
 					)}
-					{!bound && (status || localOnly) && (
-						<DeviceCenterSetup
-							initialHubUrl={hubUrl}
-							onConnect={(url) => {
-								if (localOnly) {
-									setNotice(t("deviceHubLocalOnly"));
-									return;
-								}
-								dirty.current = true;
-								setHubUrl(url);
-								setShowPairing(true);
-							}}
+					{section !== "devices" && (!bound || localOnly) && (
+						<section className="dc-card">
+							<h2>
+								{section === "groups"
+									? zh
+										? "群组与工单"
+										: "Groups & work items"
+									: zh
+										? "外部渠道"
+										: "External channels"}
+							</h2>
+							<p>
+								{zh
+									? "先连接设备中心，再创建群组、配置群组 AI 并接入外部渠道。"
+									: "Connect to a device hub before creating groups, configuring group AI, and connecting external channels."}
+							</p>
+							<button type="button" className="dc-button is-primary" onClick={() => setSection("devices")}>
+								{zh ? "前往设备连接" : "Connect a device"}
+							</button>
+						</section>
+					)}
+					{section === "groups" && bound && !localOnly && (
+						<DeviceGroupManager key={`groups:${status?.hubUrl ?? ""}:${status?.deviceId ?? ""}`} />
+					)}
+					{section === "channels" && bound && !localOnly && (
+						<DeviceChannels
+							key={`channels:${status?.hubUrl ?? ""}:${status?.deviceId ?? ""}`}
+							plugin={plugins.find((plugin) => plugin.id === "superagent")}
+							epoch={pluginsEpoch}
+							onManageGroups={() => setSection("groups")}
 						/>
 					)}
-					{status && !localOnly && !bound && (
-						<section className="dc-card">
-							<div className="dc-card-header">
-								<span className="dc-icon">
-									<FiLink aria-hidden />
-								</span>
-								<div>
-									<h2>{t("deviceHubPairTitle")}</h2>
-									<p>{t("deviceHubPairHint")}</p>
-								</div>
-							</div>
-							<ol className="dc-steps">
-								{["deviceHubStepDetails", "deviceHubStepApprove", "deviceHubStepWait"].map((key, index) => (
-									<li
-										key={key}
-										className={pairing ? (index === 0 ? "is-complete" : "is-active") : index === 0 ? "is-active" : ""}
-									>
-										<span className="dc-step-number">
-											{pairing && index === 0 ? <FiCheck aria-hidden /> : index + 1}
-										</span>
-										<span>{t(key as "deviceHubStepDetails")}</span>
-									</li>
-								))}
-							</ol>
-							<form
-								className="dc-form"
-								onSubmit={(event) => {
-									event.preventDefault();
-									void pair();
-								}}
-							>
-								<div className="dc-field">
-									<label htmlFor="dc-hub-url">{t("deviceHubHubUrl")}</label>
-									<input
-										id="dc-hub-url"
-										type="url"
-										autoComplete="url"
-										required
-										placeholder={t("deviceHubHubPlaceholder")}
-										value={hubUrl}
-										disabled={!!pairing || !!busy}
-										onChange={(event) => {
-											dirty.current = true;
-											setHubUrl(event.target.value);
-										}}
-									/>
-								</div>
-								<div className="dc-field">
-									<label htmlFor="dc-device-name">{t("deviceHubName")}</label>
-									<input
-										id="dc-device-name"
-										maxLength={80}
-										required
-										autoComplete="off"
-										placeholder={t("deviceHubNamePlaceholder")}
-										value={name}
-										disabled={!!pairing || !!busy}
-										onChange={(event) => {
-											dirty.current = true;
-											setName(event.target.value);
-										}}
-									/>
-								</div>
-								{!pairing && (
-									<div className="dc-actions">
-										<button className="dc-button is-primary" type="submit" disabled={!!busy}>
+					{section === "devices" && (
+						<>
+							{!bound && (status || localOnly) && (
+								<DeviceCenterSetup
+									initialHubUrl={hubUrl}
+									onConnect={(url) => {
+										if (localOnly) {
+											setNotice(t("deviceHubLocalOnly"));
+											return;
+										}
+										dirty.current = true;
+										setHubUrl(url);
+									}}
+								/>
+							)}
+							{status && !localOnly && !bound && (
+								<section className="dc-card">
+									<div className="dc-card-header">
+										<span className="dc-icon">
 											<FiLink aria-hidden />
-											{t(busy ? "deviceHubWorking" : "deviceHubGetCode")}
-										</button>
+										</span>
+										<div>
+											<h2>{t("deviceHubPairTitle")}</h2>
+											<p>{t("deviceHubPairHint")}</p>
+										</div>
 									</div>
-								)}
-							</form>
-							{pairing && (
-								<div className="dc-pairing">
-									<span className="dc-code-label">{t("deviceHubCode")}</span>
-									<div className="dc-code-row">
-										<code className="dc-code">{pairing.code}</code>
-										<button
-											className="dc-icon-button"
-											type="button"
-											aria-label={t("deviceHubCopy")}
-											onClick={() => void copyCode()}
-										>
-											<FiCopy aria-hidden />
-										</button>
+									<ol className="dc-steps">
+										{["deviceHubStepDetails", "deviceHubStepApprove", "deviceHubStepWait"].map((key, index) => (
+											<li
+												key={key}
+												className={
+													pairing ? (index === 0 ? "is-complete" : "is-active") : index === 0 ? "is-active" : ""
+												}
+											>
+												<span className="dc-step-number">
+													{pairing && index === 0 ? <FiCheck aria-hidden /> : index + 1}
+												</span>
+												<span>{t(key as "deviceHubStepDetails")}</span>
+											</li>
+										))}
+									</ol>
+									<form
+										className="dc-form"
+										onSubmit={(event) => {
+											event.preventDefault();
+											void pair();
+										}}
+									>
+										<div className="dc-field">
+											<label htmlFor="dc-hub-url">{t("deviceHubHubUrl")}</label>
+											<input
+												id="dc-hub-url"
+												type="url"
+												autoComplete="url"
+												required
+												placeholder={t("deviceHubHubPlaceholder")}
+												value={hubUrl}
+												disabled={!!pairing || !!busy}
+												onChange={(event) => {
+													dirty.current = true;
+													setHubUrl(event.target.value);
+												}}
+											/>
+										</div>
+										<div className="dc-field">
+											<label htmlFor="dc-device-name">{t("deviceHubName")}</label>
+											<input
+												id="dc-device-name"
+												maxLength={80}
+												required
+												autoComplete="off"
+												placeholder={t("deviceHubNamePlaceholder")}
+												value={name}
+												disabled={!!pairing || !!busy}
+												onChange={(event) => {
+													dirty.current = true;
+													setName(event.target.value);
+												}}
+											/>
+										</div>
+										{!pairing && (
+											<div className="dc-actions">
+												<button className="dc-button is-primary" type="submit" disabled={!!busy}>
+													<FiLink aria-hidden />
+													{t(busy ? "deviceHubWorking" : "deviceHubGetCode")}
+												</button>
+											</div>
+										)}
+									</form>
+									{pairing && (
+										<div className="dc-pairing">
+											<span className="dc-code-label">{t("deviceHubCode")}</span>
+											<div className="dc-code-row">
+												<code className="dc-code">{pairing.code}</code>
+												<button
+													className="dc-icon-button"
+													type="button"
+													aria-label={t("deviceHubCopy")}
+													onClick={() => void copyCode()}
+												>
+													<FiCopy aria-hidden />
+												</button>
+											</div>
+											<div className="dc-pair-meta">
+												{t(seconds ? "deviceHubExpires" : "deviceHubExpired", { time: remaining })}
+											</div>
+											<div className="dc-actions">
+												{hubLink}
+												<button
+													type="button"
+													className="dc-button"
+													disabled={!!busy}
+													onClick={() => {
+														++generation.current;
+														setPairing(null);
+														setError("");
+														setNotice("");
+													}}
+												>
+													<FiRefreshCw aria-hidden />
+													{t("deviceHubNewCode")}
+												</button>
+											</div>
+											{seconds > 0 && (
+												<p className="dc-progress" role="status">
+													<FiRefreshCw aria-hidden />
+													{t("deviceHubWaiting")}
+												</p>
+											)}
+										</div>
+									)}
+								</section>
+							)}
+							{bound && status && !localOnly && (
+								<section className="dc-card">
+									<div className="dc-device-summary">
+										<span className="dc-device-icon">
+											<FiMonitor aria-hidden />
+										</span>
+										<div>
+											<h2>{status.remark?.trim() || status.name}</h2>
+											<p>
+												{status.remark?.trim()
+													? `${status.name} · ${t("deviceHubDeviceTitle")}`
+													: t("deviceHubDeviceTitle")}
+											</p>
+										</div>
 									</div>
-									<div className="dc-pair-meta">
-										{t(seconds ? "deviceHubExpires" : "deviceHubExpired", { time: remaining })}
-									</div>
-									<div className="dc-actions">
-										{hubLink}
+									<dl className="dc-details">
+										<div>
+											<dt>{t("deviceHubDeviceId")}</dt>
+											<dd>{status.deviceId}</dd>
+										</div>
+										<div>
+											<dt>{t("deviceHubHubUrl")}</dt>
+											<dd>{status.hubUrl}</dd>
+										</div>
+									</dl>
+									<div className="dc-actions" style={{ marginTop: "1rem" }}>
 										<button
 											type="button"
 											className="dc-button"
-											disabled={!!busy}
-											onClick={() => {
-												++generation.current;
-												setPairing(null);
-												setError("");
-												setNotice("");
-											}}
+											disabled={hubUpgrading || !!busy}
+											onClick={() => void handleUpgradeHub()}
 										>
-											<FiRefreshCw aria-hidden />
-											{t("deviceHubNewCode")}
+											<FiRefreshCw className={hubUpgrading ? "spin" : ""} aria-hidden />
+											{t(hubUpgrading ? "deviceHubUpgrading" : "deviceHubUpgradeAction")}
 										</button>
 									</div>
-									{seconds > 0 && (
-										<p className="dc-progress" role="status">
-											<FiRefreshCw aria-hidden />
-											{t("deviceHubWaiting")}
-										</p>
-									)}
-								</div>
+								</section>
 							)}
-						</section>
-					)}
-					{bound && status && !localOnly && (
-						<section className="dc-card">
-							<div className="dc-device-summary">
-								<span className="dc-device-icon">
-									<FiMonitor aria-hidden />
-								</span>
+							{bound && status?.hubUrl && status.deviceId && !localOnly && (
+								<DeviceDirectory
+									key={`directory:${status.hubUrl}:${status.deviceId}`}
+									hubUrl={status.hubUrl}
+									currentDeviceId={status.deviceId}
+								/>
+							)}
+							{!localOnly && (
+								<LocalBots
+									key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`}
+									pathCompletions={pathCompletions}
+								/>
+							)}
+							<LocalDesktopSettings />
+							{bound && status && !localOnly && (
+								<>
+									<section className="dc-card">
+										<div className="dc-card-header">
+											<span className="dc-icon">
+												<FiShield aria-hidden />
+											</span>
+											<div>
+												<h2>{t("deviceHubPermissions")}</h2>
+											</div>
+										</div>
+										<div className="dc-permission-row">
+											<div>
+												<h3 id="dc-permission-label">{t("deviceHubPermissionLabel")}</h3>
+												<p id="dc-permission-hint">{t("deviceHubPermissionHint")}</p>
+											</div>
+											<button
+												type="button"
+												className={`dc-toggle${status.allowExecution ? " is-on" : ""}`}
+												role="switch"
+												aria-checked={status.allowExecution}
+												aria-labelledby="dc-permission-label"
+												aria-describedby="dc-permission-hint"
+												disabled={!!busy}
+												onClick={() => void togglePermission()}
+											>
+												<span className="dc-toggle-thumb" />
+											</button>
+										</div>
+										<p className="dc-permission-state" role="status">
+											{t(
+												busy === "permission"
+													? "deviceHubSaving"
+													: status.allowExecution
+														? "deviceHubEnabled"
+														: "deviceHubReadOnly",
+											)}
+										</p>
+									</section>
+									<DeviceExecutionSettings hubUrl={status?.hubUrl} deviceId={status?.deviceId} onNotice={setNotice} />
+									<details className="dc-advanced">
+										<summary>{t("deviceHubAdvanced")}</summary>
+										<div className="dc-danger-zone">
+											<h3>{t("deviceHubDisconnect")}</h3>
+											<p>{t("deviceHubDisconnectHint")}</p>
+											<button
+												type="button"
+												className="dc-button is-danger"
+												disabled={!!busy}
+												onClick={() => void disconnect()}
+											>
+												{t(busy === "disconnect" ? "deviceHubWorking" : "deviceHubDisconnect")}
+											</button>
+										</div>
+									</details>
+								</>
+							)}
+							<aside className="dc-help">
+								<FiHelpCircle className="dc-help-icon" aria-hidden />
 								<div>
-									<h2>{status.remark?.trim() || status.name}</h2>
-									<p>
-										{status.remark?.trim()
-											? `${status.name} · ${t("deviceHubDeviceTitle")}`
-											: t("deviceHubDeviceTitle")}
-									</p>
+									<h3>{t("deviceHubHelpTitle")}</h3>
+									<p>{t("deviceHubHelpText")}</p>
 								</div>
-							</div>
-							<dl className="dc-details">
-								<div>
-									<dt>{t("deviceHubDeviceId")}</dt>
-									<dd>{status.deviceId}</dd>
-								</div>
-								<div>
-									<dt>{t("deviceHubHubUrl")}</dt>
-									<dd>{status.hubUrl}</dd>
-								</div>
-							</dl>
-							<div className="dc-actions" style={{ marginTop: "1rem" }}>
-								<button
-									type="button"
-									className="dc-button"
-									disabled={hubUpgrading || !!busy}
-									onClick={() => void handleUpgradeHub()}
-								>
-									<FiRefreshCw className={hubUpgrading ? "spin" : ""} aria-hidden />
-									{t(hubUpgrading ? "deviceHubUpgrading" : "deviceHubUpgradeAction")}
-								</button>
-							</div>
-						</section>
-					)}
-					{bound && status?.hubUrl && status.deviceId && !localOnly && (
-						<DeviceDirectory
-							key={`directory:${status.hubUrl}:${status.deviceId}`}
-							hubUrl={status.hubUrl}
-							currentDeviceId={status.deviceId}
-						/>
-					)}
-					{!localOnly && (
-						<LocalBots
-							key={`bots:${status?.hubUrl ?? ""}:${status?.deviceId ?? "unpaired"}`}
-							pathCompletions={pathCompletions}
-						/>
-					)}
-					{bound && !localOnly && <DeviceGroupManager />}
-					<LocalDesktopSettings />
-					{bound && status && !localOnly && (
-						<>
-							<section className="dc-card">
-								<div className="dc-card-header">
-									<span className="dc-icon">
-										<FiShield aria-hidden />
-									</span>
-									<div>
-										<h2>{t("deviceHubPermissions")}</h2>
-									</div>
-								</div>
-								<div className="dc-permission-row">
-									<div>
-										<h3 id="dc-permission-label">{t("deviceHubPermissionLabel")}</h3>
-										<p id="dc-permission-hint">{t("deviceHubPermissionHint")}</p>
-									</div>
-									<button
-										type="button"
-										className={`dc-toggle${status.allowExecution ? " is-on" : ""}`}
-										role="switch"
-										aria-checked={status.allowExecution}
-										aria-labelledby="dc-permission-label"
-										aria-describedby="dc-permission-hint"
-										disabled={!!busy}
-										onClick={() => void togglePermission()}
-									>
-										<span className="dc-toggle-thumb" />
-									</button>
-								</div>
-								<p className="dc-permission-state" role="status">
-									{t(
-										busy === "permission"
-											? "deviceHubSaving"
-											: status.allowExecution
-												? "deviceHubEnabled"
-												: "deviceHubReadOnly",
-									)}
-								</p>
-							</section>
-							<DeviceExecutionSettings hubUrl={status?.hubUrl} deviceId={status?.deviceId} onNotice={setNotice} />
-							<details className="dc-advanced">
-								<summary>{t("deviceHubAdvanced")}</summary>
-								<div className="dc-danger-zone">
-									<h3>{t("deviceHubDisconnect")}</h3>
-									<p>{t("deviceHubDisconnectHint")}</p>
-									<button
-										type="button"
-										className="dc-button is-danger"
-										disabled={!!busy}
-										onClick={() => void disconnect()}
-									>
-										{t(busy === "disconnect" ? "deviceHubWorking" : "deviceHubDisconnect")}
-									</button>
-								</div>
-							</details>
+							</aside>
 						</>
 					)}
-					<aside className="dc-help">
-						<FiHelpCircle className="dc-help-icon" aria-hidden />
-						<div>
-							<h3>{t("deviceHubHelpTitle")}</h3>
-							<p>{t("deviceHubHelpText")}</p>
-						</div>
-					</aside>
 				</main>
 			</div>
 		</section>

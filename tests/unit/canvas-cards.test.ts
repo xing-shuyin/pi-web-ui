@@ -1,6 +1,3 @@
-/**
- * canvas-cards.test.ts — 自定义卡片注册表单元测试（dataDir 隔离，不碰真实数据）。
- */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

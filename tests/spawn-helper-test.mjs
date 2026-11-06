@@ -1,10 +1,3 @@
-/**
- * spawn-helper permission self-heal test:
- *
- * Break the +x bit on the local node-pty spawn-helper, start the server,
- * create a terminal over WS, and verify the file is repaired to 0755 and
- * the terminal actually outputs (no "启动终端失败").
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -15,7 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = 8898;
@@ -36,7 +28,6 @@ try {
 	console.error(String(err?.message ?? err));
 	process.exit(1);
 }
-// Break the helper's execute bits (the npm-tarball failure mode).
 chmodSync(HELPER, 0o644);
 check("helper broken (0644) before test", (statSync(HELPER).mode & 0o111) === 0);
 
@@ -76,7 +67,6 @@ ws.send(
 	}),
 );
 
-// Wait for shell output (prompt) or failure.
 const t0 = Date.now();
 while (Date.now() - t0 < 15000) {
 	if (failed || output.length > 0) break;

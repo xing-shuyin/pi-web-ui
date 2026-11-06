@@ -1,9 +1,3 @@
-/**
- * Goal bar — rounds numeric input test.
- * Vacuum: open editor, enter a custom maxRounds value directly, confirm it is
- * accepted (sends set_goal_prefs) and renders as plain input (no dropdown).
- * No model calls.
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { portUp } from "./lib/port-utils.mjs";
 import { fileURLToPath } from "node:url";
@@ -13,7 +7,6 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 /* eslint-env node */
@@ -53,19 +46,15 @@ function check(name, ok, extra = "") {
 	await page.goto(URL);
 	await page.waitForSelector(".goalbar", { timeout: 20000 });
 
-	// Open editor.
 	await page.locator(".goalbar-hint").first().click();
 	await page.waitForSelector(".goalbar-input");
-	// The max-rounds control is a text input (not a dropdown).
 	const input = page.locator(".goalbar-round input");
 	check("maxRounds is a direct numeric input", (await input.count()) === 1);
 	if ((await input.count()) > 0) {
-		// Type a custom value and blur → persists as pref.
 		await input.fill("15");
 		await input.blur();
 		await sleep(300);
 		check("typed value accepted (10/15)", (await input.inputValue()) === "15", await input.inputValue());
-		// 0 = unlimited; clearing shows placeholder.
 		await input.fill("0");
 		await input.blur();
 		await sleep(200);

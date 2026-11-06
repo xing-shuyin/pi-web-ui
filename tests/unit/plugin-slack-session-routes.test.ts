@@ -57,9 +57,7 @@ async function harness(saved = new Map<string, any>()) {
 	};
 	const stop = await activate(host);
 	for (let i = 0; i < 15 && !listener; i++) await Promise.resolve();
-	// Drive the real Socket Mode callback installed by start().
 	const inbound = async (user: string, text: string, thread = "thread") => {
-		// Use the installed inbound implementation with the active bridge captured by start.
 		await activeBridge.onInboundEvent({
 			user,
 			channel: `channel-${user}`,
@@ -84,7 +82,6 @@ async function harness(saved = new Map<string, any>()) {
 }
 
 let capturedBridge: any;
-// Capture transport setup only; all dispatch, route persistence and event handling remain real.
 import { SlackBotBridge } from "../../plugins/slack/index.mjs";
 const originalConnect = SlackBotBridge.prototype.connectSocketMode;
 afterEach(() => {

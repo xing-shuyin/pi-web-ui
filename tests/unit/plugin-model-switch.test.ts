@@ -1,16 +1,6 @@
-/**
- * 无头路径的模型切换必须「失败即拒绝」（issue #226 的承诺）。
- *
- * 背景：ClientSession.setModel 为兼容 UI（面板要看到原因、调用方是
- * fire-and-forget，见 index.js 的 `void cs.setModel(...)`）把异常吞成 notice，
- * 永不 reject。于是 host.chat / 定时任务里 `try { await cs.setModel(m) } catch`
- * 的 catch 永不触发 —— 模型 ID 打错或没配密钥时，会静默按旧模型跑完整轮次。
- * switchModelOrThrow 用「复核当前模型」把这条路径变成响亮失败。
- */
 import { describe, expect, it } from "vitest";
 import { ClientSession } from "../../server/agent-service.js";
 
-/** 伪造 this：只用到 setModel 与 session.model 两处。 */
 function fakeCtx(setModel: (m: string) => Promise<void>, model: () => { provider: string; id: string } | null) {
 	const ctx = {
 		setModel,
@@ -35,7 +25,6 @@ describe("switchModelOrThrow", () => {
 	});
 
 	it("setModel 静默失败（吞异常，模型没变）→ 抛错，不静默按旧模型跑", async () => {
-		// 旧模型仍在：setModel 内部 catch 掉了错误，只有复核能发现。
 		const ctx = fakeCtx(
 			async () => {},
 			() => ({ provider: "my-relay", id: "deepseek-v4-flash" }),
@@ -57,7 +46,7 @@ describe("switchModelOrThrow", () => {
 	it("读不到当前模型（无活跃对话）→ 不阻断投递", async () => {
 		const ctx = fakeCtx(
 			async () => {},
-			() => null, // getter 抛 "no active conversation"
+			() => null,
 		);
 		await expect(call(ctx, "a/b")).resolves.toBeUndefined();
 	});

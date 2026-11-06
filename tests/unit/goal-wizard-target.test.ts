@@ -1,16 +1,3 @@
-/**
- * issue #292：目标调研跨会话落盘 + 原始草案卡片保留。
- *
- * 修的是两件事：
- *  1) setGoal 原来硬读 activeConv，调研跑完时若用户切走了就直接把结果丢掉
- *     （"已切换对话，目标调研结果已丢弃"）。现在可以 targetConvId 指定落点，
- *     调研结果落到"发起调研的那个对话"上。
- *  2) 调研开始先往发起对话推一张「原始目标草案」卡片，中断/取消后用户的原始
- *     输入仍然可见可复制（pushWizardCard 本来就发给发起对话，而不是当前对话）。
- *
- * 这里只覆盖 setGoal 的落点语义（纯逻辑、不碰模型）；startGoalWizard 的
- * 端到端流程见 tests/ 下的手工 smoke。
- */
 import { describe, expect, it, beforeEach } from "vitest";
 import {
 	GoalService,
@@ -41,8 +28,6 @@ const bootHost: GoalHost = {
 	cwd: () => "/tmp/proj",
 	gitDiff: async () => "",
 	goalModeEnabled: () => true,
-	// 目标模式 2.0：setGoal 在动目标状态前先查角色对话桥（缺桥 = 拒绝设目标），
-	// 所以这两个只做落点测试的 fake 也得把桥补上。
 	spawnRoleAgent: async () => "sa-exec",
 	waitRoleAgent: async () => "done",
 	sendRoleAgent: async () => true,
@@ -84,13 +69,12 @@ function makeService(): { svc: GoalService; convs: Map<string, GoalConversation>
 		flushSnapshot: () => {},
 		isDisposed: () => false,
 		quiesceBlocked: () => false,
-		activeConvId: () => "conv-a", // 用户停在 A
+		activeConvId: () => "conv-a",
 		activeConv: () => convs.get("conv-a")!,
 		getConv: (id) => convs.get(id),
 		cwd: () => "/tmp/proj",
 		gitDiff: async () => "",
 		goalModeEnabled: () => true,
-		// 同上：补角色对话桥，否则 setGoal 会在落点前就拒绝（那正是新语义）。
 		spawnRoleAgent: async () => "sa-exec",
 		waitRoleAgent: async () => "done",
 		sendRoleAgent: async () => true,
@@ -117,10 +101,8 @@ describe("setGoal 落点（issue #292）", () => {
 
 	it("targetConvId 指定落点：切走也能把调研结果写回发起对话", async () => {
 		const { svc, convs } = makeService();
-		// 用户在 B 里发起调研、然后切到 A（activeConvId = conv-a）
 		await svc.setGoal("提炼后的目标", { targetConvId: "conv-b", autoStart: false });
 		expect(convs.get("conv-b")!.goal.goal).toBe("提炼后的目标");
-		// goal 归属跟着落点走，不会被活动对话的 agent_end 消费掉
 		expect(convs.get("conv-b")!.goal.conversationId).toBe("conv-b");
 		expect(convs.get("conv-a")!.goal.goal).toBeNull();
 	});

@@ -1,14 +1,9 @@
-/**
- * Live2D WebGL 引擎包装层 (Pixi.js + pixi-live2d-display)
- * 本地依赖优先 + CDN 自动降级，支持 Cubism 2 / 3 / 4 模型
- */
 import { EMOTION_ALIAS_MAP } from "./models.mjs";
 import { AudioLipSyncEngine } from "./audio-lipsync.mjs";
 import { EyeBlinkEngine } from "./eye-blink.mjs";
 
 function loadScript(src) {
 	return new Promise((resolve, reject) => {
-		// 避免重复注入相同脚本
 		const existing = document.querySelector(`script[src="${src}"]`);
 		if (existing) {
 			if (existing.dataset.loaded === "true") return resolve();
@@ -34,27 +29,21 @@ export function ensureLive2dEngine(clientBase) {
 	if (engineReadyPromise) return engineReadyPromise;
 
 	engineReadyPromise = (async () => {
-		// 1. 尝试从本地 vendor 加载
 		try {
-			// Cubism 4 Core
 			if (!window.Live2DCubismCore) {
 				await loadScript(`${clientBase}/vendor/live2dcubismcore.min.js`);
 			}
-			// Cubism 2 Core
 			if (!window.Live2D) {
 				await loadScript(`${clientBase}/vendor/live2d.min.js`);
 			}
-			// Pixi.js
 			if (!window.PIXI) {
 				await loadScript(`${clientBase}/vendor/pixi.min.js`);
 			}
-			// pixi-live2d-display
 			if (!window.PIXI?.live2d?.Live2DModel) {
 				await loadScript(`${clientBase}/vendor/pixi-live2d-display.min.js`);
 			}
 		} catch (localErr) {
 			console.warn("[live2d] 本地 vendor 加载失败，回退 CDN：", localErr);
-			// 2. 回退 CDN
 			if (!window.Live2DCubismCore) {
 				await loadScript("https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2dcubismcore.min.js");
 			}
@@ -85,13 +74,12 @@ export class Live2DStage {
 		this.app = null;
 		this.model = null;
 		this.currentModelKey = "";
-		this.mode = options.mode || "mouse"; // "mouse" | "idle"
+		this.mode = options.mode || "mouse";
 		this.disposed = false;
 		this.expressions = [];
 		this.motions = [];
 		this._onMouseMove = this._handleMouseMove.bind(this);
 
-		// 音频口型对齐与自然眨眼引擎
 		this.audioSync = new AudioLipSyncEngine({
 			sensitivity: options.lipSyncSensitivity ?? 1.25,
 			voiceOnly: options.voiceOnly !== false,
@@ -150,13 +138,11 @@ export class Live2DStage {
 			const scaleY = this.canvas.height / rect.height;
 			const x = Math.floor((clientX - rect.left) * scaleX);
 			const y = Math.floor((clientY - rect.top) * scaleY);
-			// WebGL 纹理垂直 Y 轴从底部起算
 			const glY = this.canvas.height - y - 1;
 
 			if (x >= 0 && x < this.canvas.width && glY >= 0 && glY < this.canvas.height) {
 				const pixel = new Uint8Array(4);
 				gl.readPixels(x, glY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-				// pixel[3] 为 Alpha 灰度通道值，阈值取 16 过滤 WebGL 抗锯齿透明噪点
 				return pixel[3] < 16;
 			}
 		} catch {
@@ -171,7 +157,6 @@ export class Live2DStage {
 
 		this.currentModelKey = modelConfig.key || "";
 
-		// 先加载 Live2D 模型实例，成功后再替换旧模型，避免加载失败时导致舞台变空白
 		const Live2DModel = PIXI.live2d.Live2DModel;
 		const newModel = await Live2DModel.from(modelConfig.url, {
 			autoInteract: false,
@@ -182,7 +167,6 @@ export class Live2DStage {
 			return;
 		}
 
-		// 销毁旧模型
 		if (this.model) {
 			try {
 				this.app.stage.removeChild(this.model);
@@ -194,26 +178,21 @@ export class Live2DStage {
 		this.model = newModel;
 		this.app.stage.addChild(newModel);
 
-		// 设置锚点与居中缩放
 		newModel.anchor.set(0.5, 0.5);
 		const canvasW = this.canvas.width;
 		const canvasH = this.canvas.height;
 		newModel.x = canvasW / 2;
 		newModel.y = canvasH / 2 + (modelConfig.offsetY || 0);
 
-		// 计算最佳自适应缩放比
 		const fitScale = Math.min(canvasW / newModel.width, canvasH / newModel.height) * 0.95 * (modelConfig.scale || 1.0);
 		newModel.scale.set(fitScale, fitScale);
 		this.baseScale = fitScale;
 
-		// 提取该模型拥有的所有表情与动作
 		this.expressions = this._extractExpressions(newModel, modelConfig);
 		this.motions = this._extractMotions(newModel, modelConfig);
 
-		// 挂钩口型与眨眼更新管线
 		this._hookModelLipSyncAndBlink(newModel);
 
-		// 开启默认模式
 		this.setMode(this.mode);
 	}
 
@@ -221,7 +200,6 @@ export class Live2DStage {
 		const internal = model?.internalModel;
 		if (!internal) return;
 
-		// 避免重复绑定
 		if (this._onBeforeModelUpdate) {
 			internal.off?.("beforeModelUpdate", this._onBeforeModelUpdate);
 		}
@@ -235,13 +213,11 @@ export class Live2DStage {
 			const deltaMs = Math.max(1, Math.min(100, now - this._lastTickerTime));
 			this._lastTickerTime = now;
 
-			// 1. 自然与节拍眨眼驱动
 			if (this.eyeBlink) {
 				const blink = this.eyeBlink.update(deltaMs);
 				this._applyBlink(core, blink);
 			}
 
-			// 2. 音频音乐口型对齐驱动
 			if (this.audioSync) {
 				const mouthOpen = this.audioSync.update();
 				if (mouthOpen > 0.001 || this._lastMouthOpen > 0.001) {
@@ -249,7 +225,6 @@ export class Live2DStage {
 					this._lastMouthOpen = mouthOpen;
 				}
 
-				// 3. 伴随音乐节拍轻微律动微摆 (Groove)
 				if (this.audioSync.isPlaying()) {
 					if (this.audioSync.isBeat) {
 						this._beatGroove = 1.0;
@@ -266,7 +241,6 @@ export class Live2DStage {
 	}
 
 	_applyBlink(core, blink) {
-		// Cubism 4 Core
 		if (typeof core.setParameterValueById === "function") {
 			try {
 				let curL = core.getParameterValueById("ParamEyeLOpen");
@@ -277,7 +251,6 @@ export class Live2DStage {
 				core.setParameterValueById("ParamEyeLOpen", curL * blink.left);
 				core.setParameterValueById("ParamEyeROpen", curR * blink.right);
 
-				// 兜底其它可能在 eyeBlinkIds 中的特殊眼睛参数
 				const blinkIds = this.model?.internalModel?.eyeBlinkIds;
 				if (Array.isArray(blinkIds)) {
 					for (const id of blinkIds) {
@@ -291,7 +264,6 @@ export class Live2DStage {
 			return;
 		}
 
-		// Cubism 2 Core
 		if (typeof core.setParamFloat === "function") {
 			try {
 				let curL = typeof core.getParamFloat === "function" ? core.getParamFloat("PARAM_EYE_L_OPEN") : 1.0;
@@ -305,10 +277,7 @@ export class Live2DStage {
 	}
 
 	_applyMouth(core, mouthOpen) {
-		// 夸张放大一级, 让中小音量下嘴型依然清晰可见 (上限钳制 1.0)
-		// 基底只垫 0.03: VAD 关门时间奏真正闭嘴, 不会一直半张着
 		const v = Math.max(0.0, Math.min(1.0, mouthOpen * 1.25 + (mouthOpen > 0.03 ? 0.03 : 0)));
-		// Cubism 4 Core
 		if (typeof core.setParameterValueById === "function") {
 			try {
 				core.setParameterValueById("ParamMouthOpenY", v);
@@ -320,13 +289,10 @@ export class Live2DStage {
 						core.setParameterValueById(id, v);
 					}
 				}
-				// 注意: 不再每帧覆盖 ParamMouthForm, 该参数控制嘴角形态会被表情/动作接管,
-				// 强行写入会把嘴收窄反而让张嘴看起来不明显
 			} catch {}
 			return;
 		}
 
-		// Cubism 2 Core
 		if (typeof core.setParamFloat === "function") {
 			try {
 				core.setParamFloat("PARAM_MOUTH_OPEN_Y", v);
@@ -340,7 +306,6 @@ export class Live2DStage {
 	_applyBeatGroove(core, groove) {
 		const swayZ = Math.sin(performance.now() / 160) * groove * 1.5;
 		const swayX = Math.cos(performance.now() / 200) * groove * 0.8;
-		// Cubism 4 Core
 		if (typeof core.addParameterValueById === "function") {
 			try {
 				core.addParameterValueById("ParamAngleZ", swayZ);
@@ -348,7 +313,6 @@ export class Live2DStage {
 			} catch {}
 			return;
 		}
-		// Cubism 2 Core
 		if (typeof core.addToParamFloat === "function") {
 			try {
 				core.addToParamFloat("PARAM_ANGLE_Z", swayZ);
@@ -406,7 +370,6 @@ export class Live2DStage {
 		this.mode = mode;
 		if (!this.model) return;
 		if (mode === "idle") {
-			// 平滑回正视线
 			this.model.focus(this.canvas.width / 2, this.canvas.height / 2);
 		}
 	}
@@ -419,7 +382,6 @@ export class Live2DStage {
 		if (rect.width <= 0 || rect.height <= 0) return;
 
 		if (this.mode === "mouse") {
-			// 将鼠标在浏览器视口中的绝对坐标转为相对于 canvas 内部的坐标
 			const x = e.clientX - rect.left;
 			const y = e.clientY - rect.top;
 			this.model.focus(x, y);
@@ -452,12 +414,10 @@ export class Live2DStage {
 		} catch {}
 	}
 
-	/** 播放指定表情或根据语义别名匹配播放 */
 	playExpression(nameOrAlias) {
 		if (!this.model) return false;
 		let targetExp = nameOrAlias;
 
-		// 如果传入的是语义别名（如 happy, sad, angry），尝试匹配模型已有的表情
 		const lower = String(nameOrAlias).toLowerCase();
 		if (EMOTION_ALIAS_MAP[lower]) {
 			const candidates = EMOTION_ALIAS_MAP[lower];
@@ -469,7 +429,6 @@ export class Live2DStage {
 				}
 			}
 		} else {
-			// 模糊匹配现有表情
 			const found = this.expressions.find((e) => e.toLowerCase() === lower);
 			if (found) targetExp = found;
 		}
@@ -483,7 +442,6 @@ export class Live2DStage {
 		}
 	}
 
-	/** 播放指定动作（不区分大小写匹配实际动作名称） */
 	playMotion(group, index = 0) {
 		if (!this.model) return false;
 		let targetGroup = group;
@@ -501,7 +459,6 @@ export class Live2DStage {
 		}
 	}
 
-	/** 检测点击命中区域并触发互动 */
 	hitTest(clientX, clientY) {
 		if (!this.model) return null;
 		const rect = this.canvas.getBoundingClientRect();
@@ -519,7 +476,6 @@ export class Live2DStage {
 			}
 		} catch {}
 
-		// 默认区域粗略判定（上 35% 为头部，其余为身体）
 		const relY = y / rect.height;
 		return relY < 0.35 ? "head" : "body";
 	}

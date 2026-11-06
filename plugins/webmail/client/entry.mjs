@@ -1,12 +1,3 @@
-/**
- * webmail 客户端视图 —— 邮件管理界面。
- *
- * 布局：左侧邮件列表（工具栏 + 列表），右侧阅读区；设置与写信均为弹窗。
- * 纯 DOM 实现（不依赖主应用 React）。ctx.send() 上行 plugin_message，
- * ctx.onData() 订阅 plugin_data；协议见 index.mjs 的 onMessage 分支。
- * 样式自带 <style>，颜色走主应用的 CSS 变量（主题切换自动跟随）。
- */
-
 import { esc } from "@pi-web-ui/plugin-sdk/client";
 
 function fmtDate(iso) {
@@ -18,13 +9,11 @@ function fmtDate(iso) {
 		: d.toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** 从 URL 提取简短可读的品牌/主域名（如 url3243.email.openai.com -> openai.com）。 */
 function shortDomain(rawUrl) {
 	try {
 		const u = new URL(rawUrl);
 		const parts = u.hostname.replace(/^www\./i, "").split(".");
 		if (parts.length > 2) {
-			// 处理两级常见后缀如 .co.uk / .com.cn，否则取最后两段
 			const tail2 = parts.slice(-2).join(".");
 			if (/^(com|co|org|net|edu|gov)\.[a-z]{2}$/i.test(tail2) && parts.length >= 3) {
 				return parts.slice(-3).join(".");
@@ -37,17 +26,12 @@ function shortDomain(rawUrl) {
 	}
 }
 
-/**
- * 将单行邮件文本安全转义，并将 [https://...] 或裸 URL 转为精美的内联胶囊链接。
- */
 function renderInlineLinks(line) {
-	// 1. 剥除纯图片地址占位符 [https://.../logo.png]
 	const cleaned = String(line ?? "").replace(
 		/\[https?:\/\/[^\s\]]+\.(?:png|jpe?g|gif|svg|webp|ico)(?:\?[^\s\]]*)?\]/gi,
 		"",
 	);
 
-	// 2. 匹配 [https://...] 或裸露的 https://...
 	const urlRegex = /\[(https?:\/\/[^\s\]]+)\]|(https?:\/\/[^\s<>")\]]+)/gi;
 	let out = "";
 	let lastIdx = 0;
@@ -63,9 +47,6 @@ function renderInlineLinks(line) {
 	return out;
 }
 
-/**
- * 深度净化邮件文本（消除 &nbsp; 等 HTML 实体与 Steam 等邮件在纯文本中泄露的跨行 CSS 规则块）。
- */
 function cleanMailPlainText(raw) {
 	return String(raw ?? "")
 		.replace(/\r\n/g, "\n")
@@ -87,12 +68,6 @@ function cleanMailPlainText(raw) {
 		.trim();
 }
 
-/**
- * 将邮件纯文本格式化为复用宿主 .md 样式的结构化 HTML（零外部依赖）：
- * - 自动过滤纯文本降级残留的图片占位 URL、&nbsp; 实体与泄露的 CSS 块
- * - 将冗长的追踪链接折叠为紧凑胶囊芯片
- * - 识别段落、列表、引用块与签名档分隔线
- */
 function formatMailBody(text, truncated = false) {
 	const raw = cleanMailPlainText(text);
 	const lines = raw.split("\n");
@@ -116,11 +91,9 @@ function formatMailBody(text, truncated = false) {
 
 	for (const line of lines) {
 		const trimmed = line.trim();
-		// 若整行只是图片占位符，直接跳过
 		if (/^\[https?:\/\/[^\s\]]+\.(?:png|jpe?g|gif|svg|webp|ico)(?:\?[^\s\]]*)?\]$/i.test(trimmed)) {
 			continue;
 		}
-		// 签名档 / 页脚分隔线 (-- 或 ---)
 		if (/^(--+|___+|\*{3,})$/.test(trimmed)) {
 			flushPara();
 			closeList();
@@ -132,13 +105,11 @@ function formatMailBody(text, truncated = false) {
 			}
 			continue;
 		}
-		// 空行分段
 		if (!trimmed) {
 			flushPara();
 			closeList();
 			continue;
 		}
-		// 列表项 (* 或 - 或 •)
 		const listMatch = trimmed.match(/^([*\-•])\s+(.*)$/);
 		if (listMatch) {
 			flushPara();
@@ -149,7 +120,6 @@ function formatMailBody(text, truncated = false) {
 			blocks.push(`<li>${renderInlineLinks(listMatch[2])}</li>`);
 			continue;
 		}
-		// 引用行 (> )
 		if (trimmed.startsWith(">")) {
 			flushPara();
 			closeList();
@@ -464,7 +434,6 @@ export default {
 				{ val: "", text: "⚡ 快速引擎" },
 				{ val: "current", text: "🤖 当前会话模型" },
 			];
-			// 优先从主服务宿主桥（window.__piWebUiHost.models.list）与服务端上报合并模型列表
 			let hostModels = [];
 			try {
 				const hostBridge = ctx?.host || window.__piWebUiHost || window.__piPluginHost;
@@ -528,7 +497,6 @@ export default {
 		}
 
 		function fillSettings(cfg) {
-			// 服务端把 config 嵌在 state 里（state.config）——顶层 msg.config 恒为 undefined
 			cfg = cfg?.config ?? cfg;
 			if (!cfg) return;
 			const f = $(".cfg");
@@ -615,7 +583,6 @@ export default {
 </div>`;
 			}
 
-			// 原文正文区块：如果展示了译文且未展开对照原文，则折叠原文正文
 			const hideOrigBody = showTrans && !mail._showOrig;
 			const origHtml = hideOrigBody
 				? ""
@@ -653,7 +620,6 @@ ${origHtml}
 				quoteBtn.onclick = () => {
 					const rawContent =
 						showTrans && mail._translation?.translatedText ? mail._translation.translatedText : mail.text;
-					// 净化文本并将冗长的追踪 URL 简化为可读域名
 					const cleanBody = cleanMailPlainText(rawContent)
 						.replace(/\[https?:\/\/[^\s\]]+\.(?:png|jpe?g|gif|svg|webp|ico)(?:\?[^\s\]]*)?\]/gi, "")
 						.replace(/\[(https?:\/\/[^\s\]]+)\]/gi, (_, u) => `[${shortDomain(u)}](${u})`)
@@ -728,7 +694,6 @@ ${origHtml}
 				readerModelSel.onchange = (e) => {
 					const chosen = e.target.value;
 					st.transModel = chosen;
-					// 若已经翻译过，切换模型自动重译
 					if (mail._translation) {
 						triggerTranslate(chosen);
 					}
@@ -771,9 +736,7 @@ ${origHtml}
 						setTimeout(() => {
 							if (copyBtn) copyBtn.textContent = "复制译文";
 						}, 1500);
-					} catch {
-						/* 降级忽略 */
-					}
+					} catch {}
 				};
 			}
 
@@ -785,7 +748,6 @@ ${origHtml}
 				};
 			}
 
-			// 窄屏单列时列表在上、阅读区在下：选中后把阅读区滚入视野（桌面端不执行）
 			if (window.matchMedia("(max-width: 640px)").matches) r.scrollIntoView({ behavior: "smooth", block: "nearest" });
 		}
 
@@ -811,7 +773,6 @@ ${origHtml}
 			});
 		}
 
-		// ---- events ----
 		root.addEventListener("click", async (e) => {
 			const li = e.target.closest("ul.maillist li[data-uid]");
 			if (li) {
@@ -823,12 +784,10 @@ ${origHtml}
 			if (e.target.closest(".btn-refresh")) refreshList();
 			if (e.target.closest(".btn-compose")) openCompose();
 			if (e.target.closest(".btn-gear")) {
-				// 打开前重新拉一次状态：挂载时的首次回显可能早于服务端读完本地配置
 				ctx.send({ action: "get_state" });
 				openModal(".cfg-modal");
 			}
 			if (e.target.closest(".btn-update")) {
-				// 复用主应用的可见终端执行更新（与 SCM 提交/拉取同一条链路）
 				window.dispatchEvent(
 					new CustomEvent("pi-web-ui:plugin-run-command", {
 						detail: {
@@ -845,7 +804,6 @@ ${origHtml}
 				if (q) ctx.send({ action: "search", query: q, folder: $(".folder").value });
 				else refreshList();
 			}
-			// 弹窗：点背景或 ✕ 关闭
 			for (const sel of [".cfg-modal", ".compose-modal"]) {
 				const backdrop = $(sel);
 				if (e.target === backdrop || e.target.closest(".modal-close")) closeModal(sel);
@@ -869,7 +827,7 @@ ${origHtml}
 					port: Number(f.imapPort.value) || 993,
 					tls: f.imapTls.checked,
 					user: f.imapUser.value.trim(),
-					pass: f.imapPass.value || undefined, // 留空=沿用已存值
+					pass: f.imapPass.value || undefined,
 				},
 				smtp: {
 					host: f.smtpHost.value.trim(),
@@ -883,7 +841,6 @@ ${origHtml}
 				notifyEnabled: f.notifyEnabled.checked,
 				transModel: f.transModel?.value ?? "",
 			};
-			// 清掉 undefined 让服务端 merge 语义生效（空密码字段保留旧值）
 			for (const box of ["imap", "smtp"]) {
 				for (const k of Object.keys(cfg[box])) {
 					if (cfg[box][k] === undefined) delete cfg[box][k];
@@ -912,14 +869,13 @@ ${origHtml}
 			closeModal(".compose-modal");
 		});
 
-		// ---- server → view ----
 		const off = ctx.onData((payload) => {
 			const msg = payload ?? {};
 			switch (msg.kind) {
 				case "state":
 					if (Array.isArray(msg.state?.models)) st.availableModels = msg.state.models;
 					setStateChips(msg.state);
-					fillSettings(msg.state ?? msg.config); // config 嵌在 state 里
+					fillSettings(msg.state ?? msg.config);
 					break;
 				case "mails":
 					st.mails = msg.mails ?? [];

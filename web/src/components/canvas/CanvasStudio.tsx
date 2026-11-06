@@ -41,14 +41,12 @@ interface CanvasStudioProps {
 	send?: (msg: ClientMessage) => void;
 	lastMessage?: ServerMessage | null;
 	models?: ModelInfo[];
-	/** 全局默认模型（"provider/model-id" 格式），新节点与模板套用的首选模型 */
 	defaultModel?: string | null;
 	installedSkills?: { name: string; description: string }[];
 	projects?: ProjectSummary[];
 	workspaceRoots?: string[];
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
 	currentCwd?: string;
-	/** 是否为当前可见视图：切回画布时触发列表+当前工程刷新，免手动刷新 */
 	active?: boolean;
 }
 
@@ -71,7 +69,6 @@ export function CanvasStudio({
 	const clientRef = useRef<CanvasClient | null>(null);
 	const requestTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
-	// 画布工程全量状态
 	const [graph, setGraph] = useState<CanvasGraph>(() => ({
 		id: CanvasClient.readLastGraphId(),
 		name: t("canvas.studio.loading"),
@@ -86,34 +83,28 @@ export function CanvasStudio({
 	const initialLoadComplete = useRef(false);
 	const graphRef = useRef(graph);
 	graphRef.current = graph;
-	/** 当前工程 id 镜像：canvas_node_event 按 graphId 过滤，跨工程事件直接丢弃（#706） */
 	const graphIdRef = useRef(graph.id);
 	graphIdRef.current = graph.id;
 	const [graphList, setGraphList] = useState<CanvasGraphSummary[]>([]);
-	/** 自定义卡片（AI/用户沉淀，工具栏一键落图） */
 	const [customCards, setCustomCards] = useState<CanvasCustomCard[]>([]);
 	const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 	const [drawerNodeId, setDrawerNodeId] = useState<string | null>(null);
 	const [showTimeline, setShowTimeline] = useState(false);
 	const [smartPending, setSmartPending] = useState(false);
 	const [, setSmartDag] = useState<null>(null);
-	/** 节点对话流复用：entries=协同事件（steer/handoff/review/tool/error)，messages=与主对话同构的 UiMessage[] */
 	const [nodeLogEntries, setNodeLogEntries] = useState<Record<string, CanvasNodeLogEntry[]>>({});
 	const [nodeMessages, setNodeMessages] = useState<Record<string, UiMessage[]>>({});
 
-	// 视口平移与缩放 (Pan & Zoom)
 	const [viewport, setViewport] = useState({ x: 60, y: 60, zoom: 1 });
 	const [isPanning, setIsPanning] = useState(false);
 	const [panStart, setPanStart] = useState({ x: 0, y: 0, vpX: 0, vpY: 0 });
 
-	// 正在拉取的临时连线状态
 	const [connectingSource, setConnectingSource] = useState<{
 		nodeId: string;
 		x: number;
 		y: number;
 		sourcePort?: string;
 	} | null>(null);
-	/** 各节点字段端子实测纵坐标（相对各自卡片顶部，画布 px）：card 经 onPortPositions 上报，浅比较去重 */
 	const [portPositions, setPortPositions] = useState<Record<string, Record<string, number>>>({});
 	const handlePortPositions = useCallback((nodeId: string, positions: Record<string, number>) => {
 		setPortPositions((prev) => {
@@ -124,7 +115,6 @@ export function CanvasStudio({
 	}, []);
 	const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-	// 未保存更改追踪
 	const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 	const draftState = useRef(new CanvasDraftState(typeof localStorage === "undefined" ? undefined : localStorage));
 	draftState.current.setTranslate(t);
@@ -136,7 +126,6 @@ export function CanvasStudio({
 	viewportRef.current = viewport;
 	const incomingRef = useRef<(msg: ServerMessage) => void>(() => {});
 	const smartTextRef = useRef("");
-	/** 未保存标记镜像：远端推送（AI 改图广播）时有本地编辑则不覆盖，防丢用户改动 */
 	const unsavedRef = useRef(false);
 	useEffect(() => {
 		unsavedRef.current = hasUnsavedChanges;
@@ -163,7 +152,6 @@ export function CanvasStudio({
 	}, [graph.id, graph.nodes.length]);
 	const minimap = useMemo(() => computeMinimap(graph.nodes, 160, 100, nodeHeights), [graph.nodes, nodeHeights]);
 
-	// P0：撤销/重做栈（只记录结构性变更）
 	const historyRef = useRef(new HistoryStack(50));
 	const [, setHistoryVersion] = useState(0);
 	const pushHistory = useCallback((g: CanvasGraph) => {
@@ -189,8 +177,6 @@ export function CanvasStudio({
 		}
 	}, [graph.nodes, graph.edges]);
 
-	// 统一发送消息：优先走画布专用连接（回包就在这条连接上订阅，#switch-race）。
-	// 主 WS 只做工程 id 同步追踪，保证重连恢复当前工程（#704）。
 	const sendMessage = useCallback(
 		(msg: ClientMessage): boolean => {
 			if (msg.type === "canvas_load" && !msg.requestId) msg = draftState.current.beginLoad(msg.id, randomUuid());
@@ -219,7 +205,6 @@ export function CanvasStudio({
 		[propSend, t],
 	);
 
-	// 初始化专用连接并订阅消息
 	useEffect(() => {
 		const client = new CanvasClient();
 		clientRef.current = client;
@@ -249,7 +234,6 @@ export function CanvasStudio({
 		};
 	}, []);
 
-	/** 切回画布视图时刷新：拉工程列表 + 重载当前工程（AI 在别处改过也能看见） */
 	const prevActiveRef = useRef(active);
 	useEffect(() => {
 		const was = prevActiveRef.current;
@@ -375,7 +359,6 @@ export function CanvasStudio({
 			);
 			setViewport(next.viewport);
 		} else if (msg.type === "canvas_node_event") {
-			// 跨工程事件隔离：只处理当前画布工程的节点事件，非同工程直接丢弃（#706）
 			if (msg.graphId !== graphIdRef.current) return;
 			const { nodeId, currentAction, summary, error } = msg;
 			setGraph((prev) => {
@@ -432,7 +415,6 @@ export function CanvasStudio({
 	};
 
 	incomingRef.current = handleIncomingServerMessage;
-	// 也响应 props 传入的消息
 	useEffect(() => {
 		if (propLastMessage) {
 			handleIncomingServerMessage(propLastMessage);
@@ -451,7 +433,6 @@ export function CanvasStudio({
 		setHasUnsavedChanges(dirty);
 		if (dirty && !draftState.current.retain(current)) setSaveNotice(draftState.current.error);
 	}, [graph, viewport]);
-	// 自动保存（30 秒无操作后）
 	useEffect(() => {
 		if (
 			!hasUnsavedChanges ||
@@ -467,14 +448,11 @@ export function CanvasStudio({
 		return () => clearTimeout(timer);
 	}, [hasUnsavedChanges, graph, draftConflict]);
 
-	// 处理画布缩放 (以鼠标光标所在点为中心平滑缩放)
 	const handleWheel = useCallback((e: React.WheelEvent) => {
-		// 1. 如果事件目标不在画布容器的实际 DOM 树内（例如通过 Portal 渲染在 document.body 的目录选择器或模型菜单），坚决不拦截滚轮、不缩放画布
 		if (!canvasRef.current || !canvasRef.current.contains(e.target as Node)) {
 			return;
 		}
 
-		// 2. 如果事件发生在控件、卡片、抽屉面板、工具栏、下拉列表等内部，不缩放画布，保留组件自身默认滚动
 		const target = e.target as HTMLElement;
 		if (
 			target.closest(".canvas-node-card") ||
@@ -506,16 +484,13 @@ export function CanvasStudio({
 		});
 	}, []);
 
-	// 处理空白区域拖拽平移 (Pan)
 	const handleCanvasPointerDown = (e: React.PointerEvent) => {
-		if (e.button !== 0 && e.button !== 1) return; // 允许左键或中键拖拽画布
+		if (e.button !== 0 && e.button !== 1) return;
 
-		// 1. 如果事件目标不在画布容器的实际 DOM 树内（例如通过 Portal 渲染在 document.body 的弹窗、下拉菜单），坚决不处理、绝不捕获指针
 		if (!canvasRef.current || !canvasRef.current.contains(e.target as Node)) {
 			return;
 		}
 
-		// 2. 如果点击发生在节点卡片、工具栏、抽屉、端口、弹窗或各类交互控件上，坚决不触发画布平移
 		const target = e.target as HTMLElement;
 		if (
 			target.closest(".canvas-node-card") ||
@@ -535,7 +510,6 @@ export function CanvasStudio({
 			return;
 		}
 
-		// 点击空白区域取消节点选中
 		setSelectedNodeId(null);
 
 		setIsPanning(true);
@@ -544,7 +518,6 @@ export function CanvasStudio({
 	};
 
 	const handleCanvasPointerMove = (e: React.PointerEvent) => {
-		// 更新连线跟随鼠标位置
 		if (connectingSource && canvasRef.current) {
 			const rect = canvasRef.current.getBoundingClientRect();
 			const canvasX = (e.clientX - rect.left - viewport.x) / viewport.zoom;
@@ -558,7 +531,6 @@ export function CanvasStudio({
 	};
 
 	const handleCanvasPointerUp = (e: React.PointerEvent) => {
-		// 结束连线操作
 		if (connectingSource) {
 			const port = document
 				.elementFromPoint(e.clientX, e.clientY)
@@ -572,13 +544,10 @@ export function CanvasStudio({
 			setIsPanning(false);
 			try {
 				canvasRef.current?.releasePointerCapture(e.pointerId);
-			} catch {
-				// 忽略释放异常
-			}
+			} catch {}
 		}
 	};
 
-	// 连线操作：端子级（字段级）连线，起点带 sourcePort，终点带 targetPort
 	const handleStartConnect = useCallback((nodeId: string, outX: number, outY: number, sourcePort = "result") => {
 		setConnectingSource({ nodeId, x: outX, y: outY, sourcePort });
 	}, []);
@@ -591,7 +560,6 @@ export function CanvasStudio({
 				return;
 			}
 			const sourcePort = connectingSource.sourcePort || "result";
-			// 避免重复连线（同一对端子只连一次；不同端子可并存多条边）
 			const exists = graph.edges.some(
 				(e) =>
 					e.sourceNodeId === connectingSource.nodeId &&
@@ -600,7 +568,6 @@ export function CanvasStudio({
 					(e.targetPort || "contract") === targetPort,
 			);
 			if (!exists) {
-				// 端子优先定边类型：true/false/approve/reject 端子直接映射；否则按源角色兜底
 				const byPort: Record<string, CanvasEdge["type"]> = {
 					true: "condition_true",
 					false: "condition_false",
@@ -628,11 +595,8 @@ export function CanvasStudio({
 		[connectingSource, graph, pushHistory],
 	);
 
-	/** Only new Pi nodes may inherit the selected default. Explicit values, including engine default "", remain unchanged. */
 	const resolveNodeModel = useCallback((requested?: string): string => requested ?? defaultModel ?? "", [defaultModel]);
 
-	// 新增节点：支持从通用节点库按角色创建，优先使用全局默认模型。
-	// AI 指令（instruction）与角色预设一并落盘，可输入可复用。
 	const handleAddNode = useCallback(
 		(role: CanvasNodeRole = "coder") => {
 			const meta = ROLE_METAS[role];
@@ -664,7 +628,6 @@ export function CanvasStudio({
 		[graph, viewport, resolveNodeModel, currentCwd, pushHistory, t],
 	);
 
-	// 自定义卡片落图：标题/角色/指令/人设/模型/行为参数原样展开为普通节点
 	const handlePlaceCard = useCallback(
 		(card: CanvasCustomCard) => {
 			const nid = "n_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
@@ -691,7 +654,6 @@ export function CanvasStudio({
 		[graph, viewport, resolveNodeModel, currentCwd, pushHistory],
 	);
 
-	// 自定义卡片删除（服务端删 + 广播回 state）
 	const handleDeleteCard = useCallback(
 		(id: string) => {
 			sendMessage({ type: "canvas_card_delete", id });
@@ -699,7 +661,6 @@ export function CanvasStudio({
 		[sendMessage],
 	);
 
-	// 模板和导入工程保留显式模型及空字符串引擎默认值。
 	const handleApplyTemplate = useCallback(
 		(tmpl: CanvasGraph) => {
 			pushHistory(graph);
@@ -724,7 +685,6 @@ export function CanvasStudio({
 		[graph, pushHistory, resolveNodeModel, sendMessage, t],
 	);
 
-	// 每个节点已占用的端子（供卡片端子高亮）：in=被连入的 targetPort，out=被连出的 sourcePort
 	const activePortsByNode = useMemo(() => {
 		const map = new Map<string, { in: string[]; out: string[] }>();
 		for (const n of graph.nodes) map.set(n.id, { in: [], out: [] });
@@ -735,7 +695,6 @@ export function CanvasStudio({
 		return map;
 	}, [graph.nodes, graph.edges]);
 
-	// 每个节点的上游交付摘要（结束/汇聚卡片用来展示收到的输出）
 	const incomingPreviewByNode = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const e of graph.edges) {
@@ -746,7 +705,6 @@ export function CanvasStudio({
 		return map;
 	}, [graph.edges]);
 
-	// 更新单条连线（抽屉中重指定端子 / 类型）
 	const handleUpdateEdge = useCallback(
 		(edgeId: string, patch: Partial<CanvasEdge>) => {
 			pushHistory(graph);
@@ -759,7 +717,6 @@ export function CanvasStudio({
 		[graph, pushHistory],
 	);
 
-	// P2：导出 PNG / JSON / 导入 JSON
 	const exportRef = useRef<HTMLDivElement>(null);
 	const handleExportJSON = useCallback(() => {
 		const blob = new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" });
@@ -802,7 +759,6 @@ export function CanvasStudio({
 		input.click();
 	}, [handleApplyTemplate, t]);
 
-	// 复制/粘贴选中节点
 	const handleDuplicateNode = useCallback(() => {
 		if (!selectedNodeId) return;
 		const src = graph.nodes.find((n) => n.id === selectedNodeId);
@@ -826,7 +782,6 @@ export function CanvasStudio({
 		setGraph((p) => ({ ...p, nodes: autoLayout(p.nodes, p.edges, nodeHeights), updatedAt: Date.now() }));
 	}, [graph, pushHistory, nodeHeights]);
 
-	// 删除节点
 	const handleDeleteNode = useCallback(
 		(nodeId: string) => {
 			if (connectingSource?.nodeId === nodeId) {
@@ -850,7 +805,6 @@ export function CanvasStudio({
 		[graph, pushHistory, connectingSource, sendMessage],
 	);
 
-	// 删除连线
 	const handleDeleteEdge = useCallback(
 		(edgeId: string) => {
 			pushHistory(graph);
@@ -863,7 +817,6 @@ export function CanvasStudio({
 		[graph, pushHistory],
 	);
 
-	// 更新节点属性（本地乐观更新）
 	const handleUpdateNode = useCallback((nodeId: string, patch: Partial<CanvasNode>) => {
 		setGraph((prev) => ({
 			...prev,
@@ -871,12 +824,10 @@ export function CanvasStudio({
 		}));
 	}, []);
 
-	// 节点卡片拖拽开始前记录快照（支持拖动位置撤回）
 	const handleNodeDragStart = useCallback(() => {
 		pushHistory(graph);
 	}, [graph, pushHistory]);
 
-	// 保存工程
 	const handleSave = useCallback(() => {
 		if (draftState.current.unknownSaves.has(graphRef.current.id)) {
 			setSaveNotice(t("canvas.studio.unknownSaveResult"));
@@ -896,7 +847,6 @@ export function CanvasStudio({
 		}
 	}, [graph, viewport, sendMessage, draftConflict, t]);
 
-	// 创建新画布工程
 	const handleCreateGraph = useCallback(
 		(name: string) => {
 			const newGraph: CanvasGraph = {
@@ -927,11 +877,9 @@ export function CanvasStudio({
 		[sendMessage, t],
 	);
 
-	// 删除画布工程
 	const handleDeleteGraph = useCallback(
 		(id: string) => {
 			sendMessage({ type: "canvas_delete", id });
-			// 服务端会返回更新后的列表；如果删除的是当前工程，切换到列表中第一个
 			if (id === graph.id) {
 				const remaining = graphList.filter((g) => g.id !== id);
 				if (remaining.length > 0) {
@@ -942,7 +890,6 @@ export function CanvasStudio({
 		[sendMessage, graph.id, graphList],
 	);
 
-	// 重命名画布工程
 	const handleRenameGraph = useCallback(
 		(name: string) => {
 			const renamedGraph = { ...graph, name, updatedAt: Date.now() };
@@ -952,18 +899,13 @@ export function CanvasStudio({
 		[graph, sendMessage],
 	);
 
-	// Fit-to-View：自动缩放和平移以适配所有节点
 	const handleFitView = useCallback(() => {
 		const rect = canvasRef.current?.getBoundingClientRect();
 		if (rect) setViewport(fitCanvasViewport(graph.nodes, rect.width, rect.height, nodeHeights));
 	}, [graph.nodes, nodeHeights]);
 
-	// 启动单节点：直接用卡片内已填的 AI 指令 / 启动载荷启动（无弹窗）
 	const handleRunNodeDirect = useCallback(
 		(nodeId: string) => {
-			// 服务端 canvas_run_node 读的是**磁盘上的图**（loadCanvasGraph），而模型/指令/cwd
-			// 的修改只在本地乐观状态 + 30s 后自动保存 —— 不先刷盘就会用旧模型跑
-			// （典型现象：换成 Gemini 后仍报 opencode-go 的错）。
 			if (!isRoleImplemented(graph.nodes.find((n) => n.id === nodeId)?.role ?? "subflow")) {
 				setSaveNotice(t("canvas.studio.nodeUnavailable"));
 				return;
@@ -980,7 +922,6 @@ export function CanvasStudio({
 		[graph, sendMessage, handleSave, t],
 	);
 
-	// 停止单节点
 	const handleStopNode = useCallback(
 		(nodeId: string) => {
 			afterSaveRef.current = null;
@@ -989,7 +930,6 @@ export function CanvasStudio({
 		[graph.id, sendMessage],
 	);
 
-	// 全图启动
 	const handleRunAll = useCallback(() => {
 		if (graph.nodes.some((n) => !isRoleImplemented(n.role))) {
 			setSaveNotice(t("canvas.studio.graphUnavailable"));
@@ -1005,18 +945,15 @@ export function CanvasStudio({
 		} else action();
 	}, [graph, sendMessage, handleSave, t]);
 
-	// 全图停止
 	const handleStopAll = useCallback(() => {
 		afterSaveRef.current = null;
 		sendMessage({ type: "canvas_stop_all", graphId: graph.id });
 	}, [graph.id, sendMessage]);
 
-	// 重置全图状态
 	const handleResetStatus = useCallback(() => {
 		sendMessage({ type: "canvas_reset_status", graphId: graph.id });
 	}, [graph.id, sendMessage]);
 
-	// 实时插话 (Steer)
 	const handleSteer = useCallback(
 		(nodeId: string, message: string) => {
 			sendMessage({ type: "canvas_steer_node", graphId: graph.id, nodeId, message });
@@ -1024,7 +961,6 @@ export function CanvasStudio({
 		[graph.id, sendMessage],
 	);
 
-	// 审查门禁裁决（#707）：真协议动作 + 乐观本地回显，服务端回执 graph_state 校准
 	const handleReviewNode = useCallback(
 		(nodeId: string, decision: "approve" | "reject", comment?: string) => {
 			setGraph((prev) => ({
@@ -1065,7 +1001,6 @@ export function CanvasStudio({
 		[graph.id, sendMessage],
 	);
 
-	// 打开抽屉即拉取该节点的对话流 + 协同事件（复用当前对话流，调用/错误/协同清晰可见）
 	useEffect(() => {
 		if (drawerNodeId && graph.id) {
 			sendMessage({ type: "canvas_get_log", graphId: graph.id, nodeId: drawerNodeId });
@@ -1081,15 +1016,12 @@ export function CanvasStudio({
 		[graph.id, sendMessage],
 	);
 
-	// 全局键盘快捷键
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (!active || e.repeat || (e.target instanceof HTMLElement && e.target.isContentEditable)) return;
-			// 如果焦点在输入框里，不劫持快捷键
 			const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
 			if (tag === "input" || tag === "textarea" || tag === "select") return;
 
-			// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y → 撤销/重做
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
 				e.preventDefault();
 				if (e.shiftKey) handleRedo();
@@ -1101,34 +1033,29 @@ export function CanvasStudio({
 				handleRedo();
 				return;
 			}
-			// Ctrl+D → 复制选中节点
 			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
 				e.preventDefault();
 				handleDuplicateNode();
 				return;
 			}
-			// Ctrl+S / Cmd+S → 保存
 			if ((e.ctrlKey || e.metaKey) && e.key === "s") {
 				e.preventDefault();
 				handleSave();
 				return;
 			}
 
-			// Ctrl+0 → Fit to View
 			if ((e.ctrlKey || e.metaKey) && e.key === "0") {
 				e.preventDefault();
 				handleFitView();
 				return;
 			}
 
-			// Delete / Backspace → 删除选中节点
 			if ((e.key === "Delete" || e.key === "Backspace") && selectedNodeId) {
 				e.preventDefault();
 				handleDeleteNode(selectedNodeId);
 				return;
 			}
 
-			// Escape → 取消连线拉取 / 关闭抽屉 / 取消选中
 			if (e.key === "Escape") {
 				if (connectingSource) {
 					setConnectingSource(null);
@@ -1159,14 +1086,11 @@ export function CanvasStudio({
 		handleDuplicateNode,
 	]);
 
-	// 获取抽屉对应的当前节点对象
 	const drawerNode = graph.nodes.find((n) => n.id === drawerNodeId) || null;
 
-	// 缓存已有输入/输出连线的节点集合，供端口高亮展示
 	const incomingSet = useMemo(() => new Set(graph.edges.map((e) => e.targetNodeId)), [graph.edges]);
 	const outgoingSet = useMemo(() => new Set(graph.edges.map((e) => e.sourceNodeId)), [graph.edges]);
 
-	// 切换工程：先冻结自动保存避免旧图回写弹回 (#switch-race)
 	const handleSelectGraph = useCallback(
 		(id: string) => {
 			if (id === graphIdRef.current && !draftState.current.pendingLoad) return;
@@ -1208,7 +1132,6 @@ export function CanvasStudio({
 				setIsPanning(false);
 			}}
 		>
-			{/* 浮动顶栏控制条 */}
 			<CanvasToolbar
 				graph={graph}
 				graphList={graphList}
@@ -1238,7 +1161,6 @@ export function CanvasStudio({
 				hasUnsavedChanges={hasUnsavedChanges}
 			/>
 
-			{/* 可缩放平移的画布主容器 */}
 			<div
 				ref={exportRef}
 				className="canvas-transform-container"
@@ -1247,7 +1169,6 @@ export function CanvasStudio({
 					transformOrigin: "0 0",
 				}}
 			>
-				{/* 底层 SVG 连线图层 */}
 				<CanvasSvgEdges
 					nodes={graph.nodes}
 					edges={graph.edges}
@@ -1258,7 +1179,6 @@ export function CanvasStudio({
 					onUpdateEdge={handleUpdateEdge}
 				/>
 
-				{/* 顶层 HTML 节点组件图层 */}
 				<div className="canvas-nodes-layer">
 					{graph.nodes.map((node) => (
 						<CanvasNodeCard
@@ -1293,8 +1213,6 @@ export function CanvasStudio({
 				</div>
 			</div>
 
-			{/* 空画布引导状态 */}
-			{/* 左下统一底座：AI 生成 + 导入导出 */}
 			<div className="canvas-dock">
 				<CanvasAiBar
 					onApply={handleApplyTemplate}
@@ -1495,7 +1413,6 @@ export function CanvasStudio({
 					/>
 				</svg>
 			)}
-			{/* 单个数字员工审查与深控抽屉（仅选中节点时挂载） */}
 			{drawerNode && (
 				<CanvasNodeDrawer
 					node={drawerNode}

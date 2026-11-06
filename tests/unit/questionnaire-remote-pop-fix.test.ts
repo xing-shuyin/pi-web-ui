@@ -41,14 +41,12 @@ describe("远程项目/重连场景下的问卷防无限弹出回归测试", () 
 			);
 
 			expect(handled).toBe(true);
-			// 直接由当前会话消费
 			expect(resolveQuestionMock).toHaveBeenCalledWith(
 				"q-uuid-1",
 				[{ id: "q1", selected: ["opt1"] }],
 				undefined,
 				undefined,
 			);
-			// 不进入跨页转发
 			expect(answerElsewhereMock).not.toHaveBeenCalled();
 		});
 
@@ -127,7 +125,6 @@ describe("远程项目/重连场景下的问卷防无限弹出回归测试", () 
 
 	describe("前端 question-answer-relay 模糊匹配与防复活", () => {
 		it("服务端回包省略 owner 时，confirmQuestionAnswer 能通过 id 兜底清除已登记条目", () => {
-			// 前端作答提交，携带了 owner
 			sendQuestionAnswer({
 				type: "question_answer",
 				id: "q-test-1",
@@ -138,7 +135,6 @@ describe("远程项目/重连场景下的问卷防无限弹出回归测试", () 
 			expect(hasUnconfirmedAnswer("q-test-1", "owner-mac-client")).toBe(true);
 			expect(hasUnconfirmedAnswer("q-test-1")).toBe(true);
 
-			// 服务端 question_retracted 仅携带 id，未带 owner
 			confirmQuestionAnswer("q-test-1");
 			expect(unconfirmedAnswerCount()).toBe(0);
 			expect(hasUnconfirmedAnswer("q-test-1")).toBe(false);
@@ -165,7 +161,6 @@ describe("远程项目/重连场景下的问卷防无限弹出回归测试", () 
 				activeConversationId: "conv-1",
 			});
 
-			// 因为答案已登记待投，快照不得复活弹窗
 			expect(decision.changed).toBe(false);
 			expect(decision.question).toBeNull();
 		});
@@ -185,7 +180,6 @@ describe("远程项目/重连场景下的问卷防无限弹出回归测试", () 
 				activeConversationId: "conv-1",
 			});
 
-			// 必须立刻收起为 null
 			expect(decision.changed).toBe(true);
 			expect(decision.question).toBeNull();
 		});

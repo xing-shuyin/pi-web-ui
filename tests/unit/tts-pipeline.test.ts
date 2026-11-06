@@ -7,7 +7,7 @@ describe("StreamSentenceExtractor — 响应式流式断句管道", () => {
 		const extractor = new StreamSentenceExtractor((s) => sentences.push(s));
 
 		extractor.feed("你好，");
-		expect(sentences).toHaveLength(0); // 逗号未超过 25 字符阈值，不断句
+		expect(sentences).toHaveLength(0);
 
 		extractor.feed("你好，这是一个完整的句子。后续文本");
 		expect(sentences).toHaveLength(1);

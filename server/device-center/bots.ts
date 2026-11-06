@@ -83,7 +83,6 @@ function validate(input: LocalBot): LocalBot {
 	};
 }
 
-/** One instance per service data directory. Mutations and lease admission share one serial queue. */
 export async function createLocalBotRegistry(dataDir: string): Promise<LocalBotRegistry> {
 	await mkdir(dataDir, { recursive: true });
 	const directory = join(dataDir, "device-bots");

@@ -1,16 +1,7 @@
-/**
- * 远端文件操作 —— 给视图（远端文件树 / 编辑器）与 AI 工具用的 CRUD。
- *
- * 全部路径都是**远端绝对路径**（调用方负责拼 remotePath 前缀）。这里的守卫只管
- * 「远端侧不越界」：拒绝相对路径、拒绝 `..` 段（避免被当成路径穿越的跳板）；
- * 本地落盘的一侧由 engine/config 的 safeRel 负责。
- */
-
 import { renameRemote, sftpCall, isSafeRemoteName, makeRemoteMkdir } from "./engine.mjs";
 
 export const MAX_READ_BYTES = 2 * 1024 * 1024;
 
-/** 远端绝对路径校验：必须 `/` 开头且不含 `..` 段。 */
 export function assertRemotePath(p, label = "路径") {
 	const s = String(p ?? "").trim();
 	if (!s.startsWith("/")) throw new Error(`${label}必须是绝对路径（以 / 开头）：${s || "(空)"}`);
@@ -18,7 +9,6 @@ export function assertRemotePath(p, label = "路径") {
 	return s;
 }
 
-/** 列一个目录（非递归）。 */
 export async function remoteList(sftp, dir) {
 	const d = assertRemotePath(dir || "/", "目录");
 	const list = await sftpCall(sftp, "readdir", d);
@@ -28,7 +18,7 @@ export async function remoteList(sftp, dir) {
 		const attrs = f.attrs ?? {};
 		const isDir = typeof attrs.isDirectory === "function" ? attrs.isDirectory() : false;
 		const isFile = typeof attrs.isFile === "function" ? attrs.isFile() : !isDir;
-		if (!isDir && !isFile) continue; // 链接/套接字之类不给编辑
+		if (!isDir && !isFile) continue;
 		out.push({
 			name: f.filename,
 			type: isDir ? "dir" : "file",
@@ -41,7 +31,6 @@ export async function remoteList(sftp, dir) {
 	return out;
 }
 
-/** 读一个文件（带大小上限）。 */
 export async function remoteRead(sftp, p, maxBytes = MAX_READ_BYTES) {
 	const file = assertRemotePath(p);
 	const st = await sftpCall(sftp, "stat", file).catch(() => null);
@@ -53,7 +42,6 @@ export async function remoteRead(sftp, p, maxBytes = MAX_READ_BYTES) {
 	return { path: file, size: Number(st.size) || buf.length, data: buf };
 }
 
-/** 原子写（半成品 + rename），父目录自动补。 */
 export async function remoteWrite(sftp, p, data) {
 	const file = assertRemotePath(p);
 	const mkdirp = makeRemoteMkdir(sftp);
@@ -67,7 +55,6 @@ export async function remoteWrite(sftp, p, data) {
 	return { path: file, bytes: buf.length };
 }
 
-/** 递归建目录。 */
 export async function remoteMkdir(sftp, p) {
 	const dir = assertRemotePath(p, "目录");
 	const mkdirp = makeRemoteMkdir(sftp);
@@ -75,7 +62,6 @@ export async function remoteMkdir(sftp, p) {
 	return { path: dir };
 }
 
-/** 重命名 / 移动。 */
 export async function remoteMove(sftp, from, to) {
 	const a = assertRemotePath(from, "源路径");
 	const b = assertRemotePath(to, "目标路径");
@@ -107,7 +93,7 @@ export async function remoteRemove(sftp, p, { trash } = {}) {
 		try {
 			st = await sftpCall(sftp, "stat", abs);
 		} catch {
-			return; // 不存在视作已删
+			return;
 		}
 		const isDir = typeof st.isDirectory === "function" ? st.isDirectory() : false;
 		if (!isDir) {
@@ -119,7 +105,6 @@ export async function remoteRemove(sftp, p, { trash } = {}) {
 		const list = await sftpCall(sftp, "readdir", abs).catch(() => []);
 		const kids = (list ?? []).map((f) => f.filename).filter((n) => isSafeRemoteName(n));
 		for (const name of kids) await walk(`${abs.replace(/\/+$/, "")}/${name}`);
-		// 垃圾桶自身不递归（避免把自己删了一半）
 		if (trash && abs === String(trash.root).replace(/\/+$/, "")) return;
 		if (trash) await moveToTrash(abs, trash.root, trash.stamp);
 		else await sftpCall(sftp, "rmdir", abs).catch(() => {});

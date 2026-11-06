@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { encodeTerminalKey } from "../../server/terminals.js";
 
-/** 字节级断言 —— 命名键按名称路由，Ctrl/Alt 组合绝不回退成 “Ctrl+首字母”。 */
 describe("encodeTerminalKey", () => {
 	it("普通字符原样发送", () => {
 		expect(encodeTerminalKey("a")).toEqual({ data: "a" });

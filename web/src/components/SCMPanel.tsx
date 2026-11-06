@@ -1,17 +1,3 @@
-/* ------------------------------------------------------------------ */
-/* read-only git queries (server-side execFile)                        */
-/*                                                                     */
-/* The panel's status / diff / history queries go through the dedicated */
-/* scm_status / scm_filediff / scm_commit wire messages: the server runs */
-/* plain `git` via execFile (no shell — no prompts, no echo, no ANSI)   */
-/* and replies with structured JSON in scm_data. Requests are matched   */
-/* by reqId; every request is answered exactly once so the UI can never */
-/* get stuck "loading".                                                 */
-/*                                                                     */
-/* Write operations (commit / checkout / push / pull) still run in the  */
-/* visible terminal tab so the user sees exactly what happened.         */
-/* ------------------------------------------------------------------ */
-
 import {
 	type CSSProperties,
 	type PointerEvent as ReactPointerEvent,
@@ -40,16 +26,9 @@ import { appSend } from "../app-globals";
 import type { UiSlotEntry } from "../ui-slots";
 import { renderMergedToolbar } from "../slot-toolbar";
 
-/* ------------------------------------------------------------------ */
-/* data shapes                                                         */
-/* ------------------------------------------------------------------ */
-
 interface ScmFile {
-	/** Repo-relative path (unquoted). */
 	path: string;
-	/** porcelain index (staged) status letter. */
 	x: string;
-	/** porcelain worktree status letter. */
 	y: string;
 }
 
@@ -66,7 +45,6 @@ interface ScmStatus {
 interface ScmBranch {
 	name: string;
 	current: boolean;
-	/** Remote name for remote-tracking refs ("origin/main" → "origin"). */
 	remote?: string | boolean;
 }
 
@@ -77,7 +55,6 @@ interface ScmCommit {
 	date: string;
 	subject: string;
 	decorations: string;
-	/** The graph prefix emitted by `git log --graph` (for example `| * `). */
 	graph: string;
 }
 
@@ -108,14 +85,9 @@ interface ScmTerminalBridge {
 interface ScmPanelProps {
 	chat: ChatState;
 	terminal: ScmTerminalBridge;
-	/** True when this view is currently visible (drives auto-refresh). */
 	active: boolean;
-	/** Switch the top-level view to the terminal (write ops run there). */
 	onSwitchToTerminal: () => void;
-	/** `scm.toolbar` 槽位的最终条目（全量，含 hidden；宿主 chrome + 插件按槽位顺序合并渲染）。
-	 *  不传 = 未接线，回落默认顺序（与旧硬编码一致）。 */
 	uiScmToolbar?: UiSlotEntry[];
-	/** 点击一条工具条目：交回 App 分发给贡献它的插件（与顶栏 onUiAction 同通道）。 */
 	onUiAction?: (item: UiSlotEntry) => void;
 }
 
@@ -142,52 +114,36 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 	const [historyLoading, setHistoryLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notRepo, setNotRepo] = useState(false);
-	// 「AI 生成提交信息」：一次性补全耗时不定（秒级到十秒级），独立于 git
-	// 查询的 busy/error，错误展示在提交输入行下方（靠近触发按钮）。
 	const [genLoading, setGenLoading] = useState(false);
 	const [genError, setGenError] = useState<string | null>(null);
-	// 左栏（改动文件 / 提交历史）宽度：拖动分隔条调整、双击复位，跨会话记忆
-	// （issue #139）。存档只在拖动结束时写入，拖拽过程中只改内存状态。
 	const [sidebarWidth, setSidebarWidth] = useState(() =>
 		parseScmSidebarWidth(localStorage.getItem(SCM_SIDEBAR_WIDTH_KEY)),
 	);
 	const [commitMsg, setCommitMsg] = useState("");
-	// 提交树过滤框（纯前端过滤主题/作者/hash，随历史重查与切工作区重置）。
 	const [historyFilter, setHistoryFilter] = useState("");
-	// 提交信息历史（localStorage，最近 20 条）与 ↑/↓ 回溯游标。
 	const [commitHistory, setCommitHistory] = useState<string[]>(() => loadCommitHistory());
 	const recallRef = useRef<CommitRecallState>(COMMIT_RECALL_INITIAL);
 
-	/** Monotonic request id — responses are matched per pending slot below. */
 	const seqRef = useRef(0);
 	const statusReqRef = useRef(-1);
 	const diffReqRef = useRef(-1);
 	const commitReqRef = useRef(-1);
 	const historyReqRef = useRef(-1);
 	const genReqRef = useRef(-1);
-	/** Cwd the last refresh ran against — a workspace switch resets state. */
 	const lastCwdRef = useRef<string | undefined>(undefined);
-	/** The file whose diff is in flight (scm_data carries no request context). */
 	const selectedFileRef = useRef<ScmFile | null>(null);
-	/** Terminal tab list snapshot — detects git write-command completion. */
 	const prevTerminalsRef = useRef<TerminalMeta[]>([]);
 
-	// ---- 左栏宽度拖拽（issue #139）：量容器 → 夹取 → 松手写存档 ----
 	const sidebarWidthRef = useRef(sidebarWidth);
 	sidebarWidthRef.current = sidebarWidth;
-	/** `.scm-body`：拖拽时量它的宽度，给 diff 区留出最小宽度。 */
 	const bodyRef = useRef<HTMLDivElement | null>(null);
 
-	/** 记住宽度（拖动结束 / 双击复位时各写一次，过程中不写）。 */
 	const persistSidebarWidth = useCallback((width: number) => {
 		try {
 			localStorage.setItem(SCM_SIDEBAR_WIDTH_KEY, String(width));
-		} catch {
-			// 隐私模式 / 配额满：写不进去就只管本次会话
-		}
+		} catch {}
 	}, []);
 
-	/** 拖动分隔条：左栏右边界跟随指针，双击复位由分隔条的 onDoubleClick 负责。 */
 	const onDividerPointerDown = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
 			e.preventDefault();
@@ -212,17 +168,11 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		[persistSidebarWidth],
 	);
 
-	/** 双击分隔条 → 回默认宽度（同样写存档，刷新后不会又跳回拖出来的宽度）。 */
 	const resetSidebarWidth = useCallback(() => {
 		setSidebarWidth(SCM_SIDEBAR_DEFAULT);
 		persistSidebarWidth(SCM_SIDEBAR_DEFAULT);
 	}, [persistSidebarWidth]);
 
-	/**
-	 * Apply an scm_data response that matches one of our in-flight requests.
-	 * The server answers every request exactly once (ok or error), so loading
-	 * states always settle — no queues or timeouts needed on this side.
-	 */
 	const applyScmData = useCallback((data: Extract<ServerMessage, { type: "scm_data" }>) => {
 		if (data.reqId === statusReqRef.current) {
 			statusReqRef.current = -1;
@@ -311,17 +261,11 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		}
 	}, []);
 
-	// Responses arrive through chat.scmData — apply when the reqId matches.
 	useEffect(() => {
 		const data = chat.scmData;
 		if (data && data.type === "scm_data") applyScmData(data);
 	}, [chat.scmData, applyScmData]);
 
-	/**
-	 * Send an scm query and arm its pending slot. Returns false (without
-	 * arming anything) when the socket is gone — otherwise the missing
-	 * response would leave the spinner spinning forever.
-	 */
 	const sendScm = useCallback(
 		(
 			msg:
@@ -344,16 +288,10 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		[chat.ready, chat.status],
 	);
 
-	/* ------------------------------------------------------------------ */
-	/* status refresh + per-file diff                                      */
-	/* ------------------------------------------------------------------ */
-
 	const refresh = useCallback(
 		(manual = false, silent = false) => {
 			if (!chat.ready || chat.status !== "open") return;
 			if (!chat.state?.cwd) return;
-			// Workspace switch → reset stale selections so nothing from the
-			// previous repo leaks into the new one.
 			if (lastCwdRef.current !== undefined && lastCwdRef.current !== chat.state.cwd) {
 				setStatus(null);
 				setBranches([]);
@@ -411,10 +349,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		},
 		[sendScm],
 	);
-
-	/* ------------------------------------------------------------------ */
-	/* write operations → visible terminal tab                             */
-	/* ------------------------------------------------------------------ */
 
 	const runGitCommand = useCallback(
 		(title: string, command: string) => {
@@ -493,8 +427,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		if (!branchSel || notRepo) return;
 		const entry = branches.find((x) => x.name === branchSel);
 		if (entry?.remote && typeof entry.remote === "string") {
-			// Remote-tracking ref: create a local branch tracking it (falls back
-			// to a plain checkout when the local branch already exists).
 			const localName = branchSel.slice(entry.remote.length + 1);
 			runGitCommand("git checkout", `git checkout -b ${localName} ${branchSel} || git checkout ${branchSel}`);
 		} else {
@@ -505,9 +437,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 	const handlePush = useCallback(() => runGitCommand("git push", "git push"), [runGitCommand]);
 	const handlePull = useCallback(() => runGitCommand("git pull", "git pull"), [runGitCommand]);
 
-	/** 「AI 生成」：服务端用当前模型对暂存（无暂存则全部）改动做一次性补全，
-	 *  结果直接填进提交输入框（覆盖旧草稿——按钮语义就是“重新生成”）。
-	 *  进行中禁用按钮防止并发；失败错误显示在输入行下方。 */
 	const handleGenCommitMsg = useCallback(() => {
 		if (genLoading || notRepo || !chat.ready || chat.status !== "open") return;
 		setGenError(null);
@@ -518,36 +447,24 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		}
 	}, [genLoading, notRepo, chat.ready, chat.status, sendScm, t]);
 
-	/** Load the commit graph (lazy — only needed by the history tab). */
 	const loadHistory = useCallback(() => {
 		if (!sendScm({ type: "scm_history" }, historyReqRef)) {
 			historyReqRef.current = -1;
 		}
 	}, [sendScm]);
 
-	/* ------------------------------------------------------------------ */
-	/* lifecycle                                                          */
-	/* ------------------------------------------------------------------ */
-
-	// Auto-refresh when the panel becomes visible or the workspace changes
-	// (refresh reads the latest cwd, so this also covers project switches).
 	useEffect(() => {
 		if (active) refresh();
 	}, [active, refresh]);
 
-	// Lazy-load the commit graph when the history tab is opened.
 	useEffect(() => {
 		if (viewMode === "history" && status) loadHistory();
 	}, [viewMode, status, loadHistory]);
 
-	// Server pushed "the watched git dir changed" → re-query (fs.watch makes
-	// this instant for CLI/IDE changes; no polling needed when watch works).
 	useEffect(() => {
 		if (chat.scmDirty > 0 && active) refresh(false, true);
 	}, [chat.scmDirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
-	// Poll fallback: fs.watch can fail on some filesystems; also catches
-	// changes the watcher missed. Cheap — one execFile batch per interval.
 	useEffect(() => {
 		if (!active || !chat.ready || chat.status !== "open") return;
 		const timer = setInterval(() => {
@@ -557,9 +474,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		return () => clearInterval(timer);
 	}, [active, chat.ready, chat.status, refresh]);
 
-	// Auto-refresh when a git write command finishes in its terminal tab —
-	// the panel updates itself without the user having to switch views or
-	// hit refresh. Matches every SCM-generated write op ("git …" titles).
 	useEffect(() => {
 		const prev = prevTerminalsRef.current;
 		prevTerminalsRef.current = chat.terminals;
@@ -571,14 +485,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		});
 		if (finishedGitWrite && chat.ready && chat.status === "open") {
 			refresh(false, true);
-			// A finished write invalidates the loaded graph too.
 			if (viewMode === "history" && status) loadHistory();
 		}
 	}, [chat.terminals, active, chat.ready, chat.status, refresh, viewMode, status, loadHistory]);
-
-	/* ------------------------------------------------------------------ */
-	/* render                                                             */
-	/* ------------------------------------------------------------------ */
 
 	const kindLabels: Record<FileKind, string> = {
 		staged: t("scmStaged"),
@@ -587,7 +496,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		both: t("scmStagedUnstaged"),
 	};
 
-	// 提交树过滤（主题/作者/hash/decorations，空格分隔 AND；空查询原样返回）。
 	const filteredHistory = filterScmCommits(history, historyFilter);
 
 	const renderDiff = (text: string) => {
@@ -628,8 +536,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		);
 	};
 
-	/** ---- 槽位合并：头栏簇（视图 tab/刷新 + 插件）与分支行簇（分支/推送/提交…）分别按槽位排序；
-	 *  未接线用默认顺序（与旧硬编码一致）。分支名展示是纯信息（不进槽位），提交输入框可调序。 ---- */
 	const SCM_DEFAULT_ORDER = [
 		"host:scm-changes",
 		"host:scm-history",
@@ -658,15 +564,12 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 		"host:scm-commit",
 		"host:scm-commit-all",
 	];
-	/** 某簇要画的条目：该簇宿主 id + 头栏簇的插件条目（插件 historically 只落头栏，分支行保持宿主）。 */
 	const scmZone = (ids: string[], withPlugins: boolean): UiSlotEntry[] => {
 		const set = new Set(ids);
 		return allScmEntries.filter((e) => set.has(e.id) || (withPlugins && e.source !== "host"));
 	};
 	const scmShow = (id: string): boolean =>
 		uiScmToolbar === undefined || !uiScmToolbar.some((e) => e.id === id && e.hidden);
-	/** 布局页改名 / 插件 arrange 指定过文案（`labelExplicit`）→ 用那一条，否则内置 i18n 文案。
-	 *  内置条目一直画的是写死的 t(...)：不让位就等于「设置页里改了名，界面上没反应」。 */
 	const scmLabel = (id: string, fallback: string): string => {
 		const e = allScmEntries.find((x) => x.id === id);
 		return e?.labelExplicit ? e.label : fallback;
@@ -787,7 +690,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 				title={commitHistory.length > 0 ? t("scmCommitHistoryTip") : undefined}
 				onChange={(e) => {
 					setCommitMsg(e.target.value);
-					// 用户手动编辑即退出回溯态（草稿已无意义）。
 					recallRef.current = COMMIT_RECALL_INITIAL;
 				}}
 				onKeyDown={(e) => {
@@ -796,7 +698,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 						handleCommit();
 						return;
 					}
-					// ↑/↓ 回溯最近用过的提交信息（shell 风格；↑ 记住当前草稿，↓ 退回）。
 					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
 						const hit = cycleCommitRecall(
 							commitHistory,
@@ -859,14 +760,11 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 						{t("scmTitle")}
 					</span>
 					<div className="scm-view-tabs" role="tablist">
-						{/* 视图 tab 按槽位顺序（changes/history 互换）。 */}
 						{renderMergedToolbar(scmZone(["host:scm-changes", "host:scm-history"], false), scmHostNodes, onUiAction)}
 					</div>
-					{/* 刷新 + 插件按槽位顺序（插件 historically 落头栏）。 */}
 					{renderMergedToolbar(scmZone(["host:scm-refresh"], true), scmHostNodes, onUiAction)}
 				</div>
 
-				{/* branch + push/pull */}
 				<div className="scm-row">
 					<span className="scm-branch-current" title={t("scmCurrentBranch")}>
 						<FiGitBranch />
@@ -884,11 +782,9 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 							</span>
 						)}
 					</span>
-					{/* 分支行：分支选择/切换/推送/拉取/提交输入/AI 生成/提交/提交全部按槽位顺序（插件 historically 只落头栏）。 */}
 					{renderMergedToolbar(scmZone(SCM_ROW_IDS, false), scmHostNodes, onUiAction)}
 				</div>
 
-				{/* AI 生成提交信息的失败提示：紧贴触发它的按钮（点击关闭）。 */}
 				{genError && (
 					<div className="scm-gen-error" role="alert" title={t("close")} onClick={() => setGenError(null)}>
 						{genError}
@@ -896,7 +792,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 				)}
 			</div>
 
-			{/* body: files + diff */}
 			<div className="scm-body" ref={bodyRef} style={{ "--scm-sidebar-w": `${sidebarWidth}px` } as CSSProperties}>
 				{viewMode === "history" ? (
 					<div className="scm-history">
@@ -1023,7 +918,6 @@ export function ScmPanel({ chat, terminal, active, onSwitchToTerminal, uiScmTool
 					</div>
 				)}
 
-				{/* 左栏 ↔ diff 之间的拖拽分隔条（issue #139）。 */}
 				<div
 					className="scm-divider"
 					role="separator"

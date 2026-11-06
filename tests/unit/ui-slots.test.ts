@@ -1,14 +1,3 @@
-/**
- * 宿主 UI 扩展点引擎（web/src/ui-slots.ts，issue #146）单测。
- *
- * 锁的是**合并优先级**这条契约（宿主默认 < 插件贡献 < 插件 arrange < 用户偏好），
- * 以及布局页要用的审计字段（arrangedBy / userOverrides / movedFrom）。
- * 假数据自己构造（参考 plugin-topbar.test.ts）：UiPluginInfo 里只填本用例关心的字段。
- *
- * 另一个不变量：BUILTIN_UI_ITEMS 的 labelKey 必须真实存在于 zh 文案表里 ——
- * 内置条目表是「宿主入口的登记册」，key 打错 = 运行时显示成 key 本身，
- * 用一条断言把它挡在提交前（zh 表就是 i18n.tsx 里那份，见 locales.test.ts 同款导入）。
- */
 import { describe, expect, it } from "vitest";
 import {
 	BUILTIN_UI_ITEMS,
@@ -33,7 +22,6 @@ import { zh } from "../../web/src/i18n.js";
 
 const zhTable = zh as Record<string, string>;
 
-/** 一个只带 ui 贡献的插件假数据。 */
 function plugin(id: string, ui: UiPluginInfo["ui"], extra?: Partial<UiPluginInfo>): UiPluginInfo {
 	return {
 		id,
@@ -44,10 +32,8 @@ function plugin(id: string, ui: UiPluginInfo["ui"], extra?: Partial<UiPluginInfo
 	};
 }
 
-/** 测试用的 t()：直接回显 key —— 断言里就能看出「文案来自哪个 key」。 */
 const t = (key: string) => `#${key}`;
 
-/** 默认调用：中文界面 + 回显翻译。 */
 function build(plugins: UiPluginInfo[], opts?: Partial<Parameters<typeof buildUiSlots>[1]>) {
 	return buildUiSlots(plugins, { locale: "zh", t, ...opts });
 }
@@ -114,7 +100,6 @@ describe("BUILTIN_UI_ITEMS（宿主默认）", () => {
 
 	it("覆盖宿主既有入口（顶栏/底栏/右键菜单），且没有把 settings.pages 列成内置", () => {
 		const bySlot = (slot: UiSlotId) => BUILTIN_UI_ITEMS.filter((i) => i.slot === slot).map((i) => i.id);
-		// 顶栏：视图三连 + 搜索/浏览器/后台任务/设置/语言/主题/更新
 		expect(bySlot("topbar.primary")).toEqual(
 			expect.arrayContaining([
 				"host:chat",
@@ -128,7 +113,6 @@ describe("BUILTIN_UI_ITEMS（宿主默认）", () => {
 				"host:update",
 			]),
 		);
-		// 底栏：上下文/成本/缓存/消息数/主机指标/工作目录
 		expect(bySlot("bottombar")).toEqual(
 			expect.arrayContaining([
 				"host:ctx",
@@ -141,7 +125,6 @@ describe("BUILTIN_UI_ITEMS（宿主默认）", () => {
 		);
 		expect(bySlot("contextmenu.session").length).toBeGreaterThan(0);
 		expect(bySlot("contextmenu.file").length).toBeGreaterThan(0);
-		// 消息区右键菜单登记宿主操作项（复制/编辑/分支/回滚/朗读）
 		expect(bySlot("contextmenu.message").length).toBeGreaterThan(0);
 		expect(bySlot("settings.pages")).toEqual([]);
 	});
@@ -173,7 +156,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:new-ephemeral-chat",
 			"host:new-sandbox",
 			"host:files",
-			// order 200：尾部条目 = 实测溢出的第一顺位被收起者（见 BUILTIN_UI_ITEMS 注释）
 			"host:github",
 		]);
 		expect(ids(slots.bottombar)).toEqual([
@@ -206,13 +188,11 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			order: 59,
 			align: "end",
 		});
-		// 没用到的槽位是空数组（渲染层不必判空），且全部槽位都在
 		expect(Object.keys(slots)).toHaveLength(37);
 		expect(slots["composer.leading"]).toEqual([]);
-		// 输入框动作区有 7 个宿主内置（上传/模板/模型/思考/DSH×2/发送），发送簇 align=end
-		// （计划模式已搬到目标条 host:goal-plan）
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
+			"host:composer-screenshot",
 			"host:composer-templates",
 			"host:composer-model",
 			"host:composer-thinking",
@@ -224,10 +204,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		expect(slots["modal.dialog"]).toEqual([]);
 	});
 
-	/** 缺省收起 = 低频 / 有替代入口的条目落进顶栏「⋯」（App.tsx 把 hidden 的 primary 条目
-	 *  塞进 uiOverflow → 菜单里能点，菜单型条目在菜单里是整块组件，功能不少）。
-	 *  这条断言是「顶栏默认长什么样」的唯一入口 —— 想改默认口径就改这里与 BUILTIN_UI_ITEMS。 */
-	it("缺省收进「⋯」的 5 条 + 常驻的 18 条", () => {
+	it("缺省收进「⋯」的 5 条 + 常驻的 19 条", () => {
 		const slots = build([]);
 		const top = slots["topbar.primary"];
 		expect(top.filter((e) => e.hidden).map((e) => e.id)).toEqual([
@@ -237,8 +214,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:update",
 			"host:github",
 		]);
-		// 常驻 = 「切视图（chat/terminal/git/canvas/plugins/device-center） / 起新活（new-chat/new-ephemeral-chat/new-sandbox） /
-		// 看运行态（tasks） / 进设置（settings）」四类，加品牌、项目、搜索、面板开关
 		expect(top.filter((e) => !e.hidden).map((e) => e.id)).toEqual([
 			"host:history",
 			"host:brand",
@@ -259,8 +234,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			"host:new-sandbox",
 			"host:files",
 		]);
-		// 缺省收起是「内置默认」，不写成用户覆盖 —— 否则布局页会把它们标成「已自定义」，
-		// 「恢复」按钮还会把它们恢复成同一个值
 		for (const e of top) expect(e.userOverrides).toEqual([]);
 	});
 
@@ -324,7 +297,6 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 				arrange: [],
 			}),
 		]);
-		// 三个插件条目同权重 → 按声明顺序插在底栏最前（权重 1 < 内置的 5/10…）
 		expect(ids(slots.bottombar).slice(0, 3)).toEqual(["p:b", "p:a", "p:c"]);
 	});
 
@@ -339,9 +311,9 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 			}),
 		]);
 		expect(ids(slots["composer.leading"])).toEqual(["third:a", "third:b"]);
-		// leading 的贡献不串进 actions（actions 只有 7 个宿主内置）
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
+			"host:composer-screenshot",
 			"host:composer-templates",
 			"host:composer-model",
 			"host:composer-thinking",
@@ -360,6 +332,7 @@ describe("buildUiSlots / 第 1 层：宿主默认", () => {
 		]);
 		expect(ids(slots["composer.actions"])).toEqual([
 			"host:composer-upload",
+			"host:composer-screenshot",
 			"p:x",
 			"host:composer-templates",
 			"host:composer-model",
@@ -381,7 +354,6 @@ describe("buildUiSlots / 第 2 层：插件贡献", () => {
 				label: "更多",
 				order: 2,
 				kind: "menu",
-				// 子项的 slot 类型上也要求填（协议里由所在数组决定），实际渲染用父条目的槽位。
 				children: [{ id: "sub", slot: "topbar.primary", label: "子项", action: "alpha:sub" }],
 			},
 		],
@@ -391,15 +363,14 @@ describe("buildUiSlots / 第 2 层：插件贡献", () => {
 
 	it("全局 id = <pluginId>:<itemId>；文案随语言（无 labelEn 时回落 label）", () => {
 		const zhSlots = build([alpha, beta]);
-		// 只看插件自己的条目（内置条目增减不该震到插件断言）
 		expect(ids(zhSlots["topbar.primary"]).filter((id) => id.startsWith("alpha:"))).toEqual(["alpha:one", "alpha:menu"]);
 		const one = zhSlots["topbar.primary"].find((e) => e.id === "alpha:one");
 		expect(one?.label).toBe("一号");
 		expect(one?.source).toBe("plugin:alpha");
-		expect(one?.kind).toBe("action"); // 缺省 action
+		expect(one?.kind).toBe("action");
 		const enSlots = build([alpha, beta], { locale: "en" });
 		expect(enSlots["topbar.primary"].find((e) => e.id === "alpha:one")?.label).toBe("One");
-		expect(enSlots["topbar.primary"].find((e) => e.id === "alpha:menu")?.label).toBe("更多"); // beta/alpha 没写 labelEn → 回落 label
+		expect(enSlots["topbar.primary"].find((e) => e.id === "alpha:menu")?.label).toBe("更多");
 	});
 
 	it("插件条目进它声明的槽位；子项带在父条目上（子项不单列成挂载点条目）", () => {
@@ -408,7 +379,6 @@ describe("buildUiSlots / 第 2 层：插件贡献", () => {
 		const menu = slots["topbar.primary"].find((e) => e.id === "alpha:menu");
 		expect(menu?.kind).toBe("menu");
 		expect(menu?.children?.map((c) => [c.id, c.label, c.action])).toEqual([["alpha:menu#sub", "子项", "alpha:sub"]]);
-		// 子项不会变成顶层条目
 		expect(ids(slots["topbar.primary"]).some((id) => id.endsWith("#sub"))).toBe(false);
 	});
 
@@ -456,8 +426,7 @@ describe("buildUiSlots / 第 2 层：插件贡献", () => {
 		const slots = build([first, second]);
 		const entry = slots["topbar.primary"].find((e) => e.id === "p:x");
 		expect(entry?.label).toBe("新");
-		expect(entry?.icon).toBeUndefined(); // 覆盖是整条替换，旧 icon 不会残留
-		// 位置仍按首次声明：order 1 的它排在 order 20 的 chat 前面，而不是被挤到尾部
+		expect(entry?.icon).toBeUndefined();
 		const list = ids(slots["topbar.primary"]);
 		expect(list.indexOf("p:x")).toBeLessThan(list.indexOf("host:chat"));
 	});
@@ -499,7 +468,6 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 		expect(moved?.hidden).toBe(true);
 		expect(moved?.movedFrom).toBe("topbar.primary");
 		expect(moved?.arrangedBy).toEqual(["p"]);
-		// 没被 arrange 碰过的内置条目审计字段为空
 		expect(slots["topbar.primary"].find((e) => e.id === "host:terminal")?.arrangedBy).toEqual([]);
 	});
 
@@ -539,7 +507,7 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 		const chat = slots["topbar.primary"].find((e) => e.id === "host:chat");
 		expect(chat?.id).toBe("host:chat");
 		expect(chat?.hidden).toBe(false);
-		expect(chat?.label).toBe("#chat"); // label 没被改
+		expect(chat?.label).toBe("#chat");
 	});
 
 	it("arrange 不存在的 id 被忽略（不生成幽灵条目）", () => {
@@ -561,8 +529,8 @@ describe("buildUiSlots / 第 3 层：插件 arrange", () => {
 		const second = plugin("second", { items: [], arrange: [{ id: "beta:go", group: "g2" }] });
 		const slots = build([first, beta, second]);
 		const go = slots["topbar.primary"].find((e) => e.id === "beta:go");
-		expect(go?.group).toBe("g2"); // 后者覆盖前者
-		expect(go?.order).toBe(5); // 后者没提供 order → 保留前者的整理结果
+		expect(go?.group).toBe("g2");
+		expect(go?.order).toBe(5);
 		expect(go?.arrangedBy).toEqual(["first", "second"]);
 	});
 
@@ -599,7 +567,6 @@ describe("顶栏插件视图区段", () => {
 			{
 				layout: {
 					shown: ["run-trace:__view", "editor:__view"],
-					// 旧布局顺序只列了宿主条目，没有列新插件视图
 					order: ["host:chat", "host:terminal", "host:git"],
 				},
 			},
@@ -619,7 +586,6 @@ describe("顶栏插件视图区段", () => {
 			{
 				layout: {
 					shown: ["run-trace:__view", "editor:__view"],
-					// 用户将 run-trace:__view 显式移到了 host:chat 前面
 					order: ["run-trace:__view", "host:chat", "editor:__view"],
 				},
 			},
@@ -639,10 +605,8 @@ describe("buildUiSlots / 第 4 层：用户偏好（最高）", () => {
 	it("hidden/shown 互相覆盖：shown 后应用 → 显示赢（撤销必须生效）", () => {
 		const hiddenOnly = build([p], { layout: { hidden: ["p:x"] } });
 		expect(hiddenOnly["topbar.primary"].find((e) => e.id === "p:x")?.hidden).toBe(true);
-		// shown 覆盖插件声明的 hidden
 		const shown = build([p], { layout: { shown: ["p:x"] } });
 		expect(shown["topbar.primary"].find((e) => e.id === "p:x")?.hidden).toBe(false);
-		// 同时写了 hidden 与 shown → shown 赢
 		const both = build([p], { layout: { hidden: ["p:x"], shown: ["p:x"] } });
 		const entry = both["topbar.primary"].find((e) => e.id === "p:x");
 		expect(entry?.hidden).toBe(false);
@@ -658,7 +622,6 @@ describe("buildUiSlots / 第 4 层：用户偏好（最高）", () => {
 	it("order 列表：列出的按列表顺序排在最前，未列出的保持原顺序", () => {
 		const slots = build([], { layout: { order: ["host:github", "host:chat"] } });
 		expect(ids(slots["topbar.primary"]).slice(0, 2)).toEqual(["host:github", "host:chat"]);
-		// 其余仍按权重排：github/chat 置顶之后是 history(0) → brand(1) → open-project(3) …
 		expect(ids(slots["topbar.primary"]).slice(2, 5)).toEqual(["host:history", "host:brand", "host:open-project"]);
 		expect(slots["topbar.primary"].find((e) => e.id === "host:chat")?.userOverrides).toEqual(["order"]);
 	});
@@ -676,7 +639,7 @@ describe("buildUiSlots / 第 4 层：用户偏好（最高）", () => {
 		const chat = slots["topbar.primary"].find((e) => e.id === "host:chat");
 		expect(chat?.group).toBe("我的组");
 		expect(chat?.label).toBe("聊天");
-		expect(chat?.labelKey).toBe("chat"); // host 条目保留 key，便于渲染层自行翻译/恢复
+		expect(chat?.labelKey).toBe("chat");
 		expect(chat?.userOverrides).toEqual(["group", "label"]);
 		expect(slots["topbar.primary"].find((e) => e.id === "host:settings")?.userOverrides).toEqual(["label"]);
 	});
@@ -783,8 +746,8 @@ describe("restoreUiItem / restoreAllUi", () => {
 		const arr = plugin("a", { items: [], arrange: [{ id: "host:chat", hide: true }] });
 		const slots = build([arr], { layout: restored });
 		const chat = slots["topbar.primary"].find((e) => e.id === "host:chat");
-		expect(chat?.label).toBe("#chat"); // 用户文案已撤回
-		expect(chat?.hidden).toBe(true); // 插件 arrange 重新生效
+		expect(chat?.label).toBe("#chat");
+		expect(chat?.hidden).toBe(true);
 		expect(chat?.arrangedBy).toEqual(["a"]);
 	});
 
@@ -808,7 +771,6 @@ describe("品牌二合一（host:brand-logo/host:brand-name → host:brand）", 
 		expect(brand?.label).toBe("我的站");
 		expect(brand?.userOverrides).toEqual(expect.arrayContaining(["hidden", "order", "label"]));
 		expect(ids(slots["topbar.primary"]).slice(0, 2)).toEqual(["host:brand", "host:chat"]);
-		// 旧 id 不再登记为条目。
 		expect(slots["topbar.primary"].some((e) => e.id === "host:brand-logo" || e.id === "host:brand-name")).toBe(false);
 	});
 
@@ -834,7 +796,6 @@ describe("插件悬浮提示（hint / hintEn / arrange 覆盖）", () => {
 			slots["topbar.primary"].find((e) => e.id === `a:${id}`);
 		expect(find(zhSlots, "t")?.hint).toBe("看信");
 		expect(find(enSlots, "t")?.hint).toBe("Read mail");
-		// 只给一种语言 → 另一种回落它（否则非中文界面就静默没有提示）
 		expect(find(zhSlots, "only-en")?.hint).toBe("EN hint");
 		expect(find(enSlots, "only-en")?.hint).toBe("EN hint");
 	});
@@ -1046,13 +1007,10 @@ describe("withPluginViewItems（插件视图 tab 进槽位）", () => {
 				view: "plugin:mail",
 				order: 23,
 				align: "end",
-				// 插件视图 tab 默认不钉顶栏（顶栏只留一个插件面板入口），
-				// 用户钉住时才由 setPluginViewPinned 写进 layout.shown 翻出来。
 				hidden: true,
 			},
 		]);
 		expect(out[1]?.ui).toBeUndefined();
-		// 不改入参
 		expect(input[0]?.ui?.items).toEqual([]);
 	});
 
@@ -1123,11 +1081,8 @@ describe("插件视图的钉住开关（pluginViewItemId / setPluginViewPinned /
 
 	it("isPluginViewItem：只认「来源插件自己的那条 __view」，不误伤同后缀的其他条目", () => {
 		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:mail" })).toBe(true);
-		// id 恰好等于 source 的视图条目
 		expect(isPluginViewItem({ id: "mail:__view", source: "plugin:other" })).toBe(false);
-		// 宿主条目
 		expect(isPluginViewItem({ id: "host:git", source: "host" })).toBe(false);
-		// 插件贡献的普通条目，恰好也以 :__view 结尾（不误伤）
 		expect(isPluginViewItem({ id: "mail:list:__view", source: "plugin:mail" })).toBe(false);
 	});
 
@@ -1143,7 +1098,6 @@ describe("插件视图的钉住开关（pluginViewItemId / setPluginViewPinned /
 			hidden: ["host:sound", "mail:__view"],
 			shown: [],
 		});
-		// 其他字段原样保留（只动这一个 id）
 		const rich = { order: ["mail:__view"], labels: { "host:chat": "聊天" }, topbarText: false };
 		expect(setPluginViewPinned(rich, "mail", true)).toEqual({
 			order: ["mail:__view"],
@@ -1162,12 +1116,7 @@ describe("插件视图的钉住开关（pluginViewItemId / setPluginViewPinned /
 	});
 });
 
-// ---------------------------------------------------------------------------
-// P0-1：失败不许静默 —— buildUiSlots 的 diagnostics
-// ---------------------------------------------------------------------------
-
 describe("buildUiSlots —— diagnostics（P0-1）", () => {
-	/** 造一个最小插件对象（默认合法贡献）。 */
 	const plug = (id: string, ui?: UiPluginInfo["ui"], extra: Partial<UiPluginInfo> = {}): UiPluginInfo => ({
 		id,
 		name: id,
@@ -1206,9 +1155,7 @@ describe("buildUiSlots —— diagnostics（P0-1）", () => {
 			true,
 		);
 		expect(diagnostics.some((d) => d.entryId === "bad-when" && d.message.includes("totally.made.up"))).toBe(true);
-		// 已知的 when 值不诊断（只报不认识的）。
 		expect(diagnostics.some((d) => d.message.includes("message.hasSelection"))).toBe(false);
-		// 全部诊断都带 pluginId 归因。
 		expect(diagnostics.every((d) => d.pluginId === "p")).toBe(true);
 	});
 
@@ -1256,7 +1203,6 @@ describe("buildUiSlots —— diagnostics（P0-1）", () => {
 	});
 
 	it("同 id 重复声明 → 诊断；跨插件同 itemId 不误报", () => {
-		// 跨插件：全局 id 带插件前缀（<pluginId>:<itemId>），不同插件同 itemId 不该告警。
 		const cross: UiDiagnostic[] = [];
 		build(
 			[
@@ -1267,7 +1213,6 @@ describe("buildUiSlots —— diagnostics（P0-1）", () => {
 		);
 		expect(cross.filter((d) => d.message.includes("declared more than once"))).toEqual([]);
 
-		// 同一插件重复声明同一 id（manifest 基线 + 运行时注册合并后的常见形态）→ 一条诊断。
 		const same: UiDiagnostic[] = [];
 		build(
 			[

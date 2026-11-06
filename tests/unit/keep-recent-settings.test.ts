@@ -1,10 +1,3 @@
-/**
- * 消息列表尾部「常驻渲染窗口」可配置（keepRecentMessages）：
- *   1. 归一化：钳到 [5, 100]，脏值回落默认 15（= 原 KEEP_RECENT 硬编码值，默认行为不变）；
- *   2. ClientStateStore 落盘/加载保真 + 脏值在写入时就被钳制；
- *   3. SettingsService.set() 钳制并随 settings_state 下发；
- *   4. 纯 UI 偏好：预设快照不收录该字段。
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +24,6 @@ afterEach(() => {
 
 const templates = { list: () => [] } as unknown as import("../../server/subagent-templates.js").SubagentTemplatesStore;
 
-/** 最小可用 host：push() 里 getSession() 抛错被 catch，其余走存根。 */
 function makeHost(store: ClientStateStore): SettingsHost & { emitted: unknown[] } {
 	const emitted: unknown[] = [];
 	return {
@@ -78,7 +70,6 @@ describe("normalizeKeepRecentMessages", () => {
 		expect(normalizeKeepRecentMessages(KEEP_RECENT_MESSAGES_MAX)).toBe(KEEP_RECENT_MESSAGES_MAX);
 		expect(normalizeKeepRecentMessages(KEEP_RECENT_MESSAGES_MIN - 1)).toBe(KEEP_RECENT_MESSAGES_MIN);
 		expect(normalizeKeepRecentMessages(KEEP_RECENT_MESSAGES_MAX + 1)).toBe(KEEP_RECENT_MESSAGES_MAX);
-		// 负数先被钳到下限，而不是当成脏值回落默认
 		expect(normalizeKeepRecentMessages(-10)).toBe(KEEP_RECENT_MESSAGES_MIN);
 	});
 });
@@ -94,13 +85,11 @@ describe("ClientStateStore 持久化 keepRecentMessages", () => {
 		store.saveSettings("c", { keepRecentMessages: 42 });
 		expect(store.getSettings("c").keepRecentMessages).toBe(42);
 
-		// 覆盖式保存：999 → 100，1 → 5
 		store.saveSettings("c", { keepRecentMessages: 999 });
 		expect(store.getSettings("c").keepRecentMessages).toBe(KEEP_RECENT_MESSAGES_MAX);
 		store.saveSettings("c", { keepRecentMessages: 1 });
 		expect(store.getSettings("c").keepRecentMessages).toBe(KEEP_RECENT_MESSAGES_MIN);
 
-		// 不传该键时保留旧值（partial 合并语义）
 		store.saveSettings("c", { keepRecentMessages: 42 });
 		store.saveSettings("c", { thinkingWrap: true });
 		expect(store.getSettings("c").keepRecentMessages).toBe(42);
@@ -134,7 +123,6 @@ describe("SettingsService.set(keepRecentMessages)", () => {
 		expect(preset).toBeDefined();
 		expect((preset as { keepRecentMessages?: number }).keepRecentMessages).toBe(25);
 
-		// 应用预设覆盖当前值
 		await svc.set({ keepRecentMessages: 12 });
 		await svc.applyPreset("ui-preset");
 		expect(svc.current.keepRecentMessages).toBe(25);

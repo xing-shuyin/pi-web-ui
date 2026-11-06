@@ -53,7 +53,6 @@ export class DmService {
 		this.file = join(storageDir, "dm-service-state.json");
 		this.state = { version: 1, accounts: {} };
 		if (existsSync(this.file)) {
-			// Corrupt state must not reset send fences or quotas.
 			this.state = JSON.parse(readFileSync(this.file, "utf8"));
 			if (this.state.version !== 1 || !this.state.accounts || typeof this.state.accounts !== "object")
 				throw new Error("Invalid DM service state");
@@ -185,7 +184,6 @@ export class DmService {
 				const { recent, fresh } = await this._messages(cred, s.uid, peer.mark, signal);
 				if (!fresh.length) continue;
 				const last = fresh.at(-1);
-				// An outbound last message or unsupported inbound event does not trigger a reply.
 				if (last.fromMe || !fresh.some((m) => !m.fromMe && [1, 7, 8].includes(m.rawType))) {
 					peer.mark = last.key;
 					this._save();
@@ -223,14 +221,12 @@ export class DmService {
 					continue;
 				const current = await this.loadConfig();
 				if (current.dmWatch !== true || current.dmAutoReply !== true || String(myUid(this._cred())) !== self) break;
-				// Re-read before sending: do not reply over a newer human outbound/inbound.
 				const check = await fetchMessagePage(cred, s.uid, { size: 1, signal });
 				if (check.messages.at(-1)?.key !== last.key) continue;
 				signal.throwIfAborted();
 				peer.pending = { key: last.key, at: Date.now() };
 				account.used++;
 				this._save();
-				// A thrown/aborted request may have reached Bilibili. Retain the durable fence; never retry it automatically.
 				await sendDm(cred, s.uid, result.text.trim(), { signal });
 				peer.mark = last.key;
 				delete peer.pending;

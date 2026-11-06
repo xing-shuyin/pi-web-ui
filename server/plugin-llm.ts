@@ -1,20 +1,3 @@
-/**
- * 插件直调模型（host.llm.complete 的底层）：一次性的孤立无工具会话。
- *
- * 与审查循环的 reviewer 同一条 SDK 链路（createAgentSessionServices +
- * ModelRuntime.create + createAgentSessionFromServices + prompt +
- * getLastAssistantText + dispose），区别：
- * - `noTools: true` + skills 全剥：纯补全，无副作用、可预测花费；
- * - 调用方（agent-service.completeForPlugins）只给 cwd/agentDir/回落模型，
- *   并发与预算门在本文件内收敛。
- *
- * 约束（fail-closed，一律结构化返回、绝不抛错）：
- * - 输入封顶：prompt ≤ 8000 字、system ≤ 4000 字；
- * - 输出截断：maxChars 缺省 8000、上限 32000；
- * - 超时：缺省 90s、范围 5s–5min，超时即 dispose 掉会话；
- * - 并发：全局最多 4 路在飞，超了直接回 {ok:false}（插件侧重试，不排队——
- *   排队会把插件的 await 变成不定等待，调用方超时兜底更难写）。
- */
 import { join } from "node:path";
 import {
 	createAgentSessionFromServices,
@@ -24,29 +7,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { parseModelSpec } from "./attachments.js";
 
-/** host.llm.complete 的入参（插件侧形状，服务端再归一化）。 */
 export interface PluginLlmRequest {
-	/** 本次要模型做的事（必填）。 */
 	prompt: string;
-	/** 系统指令（可选；拼在 prompt 前面，会话仍带 SDK 默认系统提示）。 */
 	system?: string;
-	/** "provider/id"（可选；缺省 = 主会话当前模型，再缺省 = 会话默认模型）。 */
 	model?: string;
-	/** 输出截断字符数（缺省 8000，上限 32000）。 */
 	maxChars?: number;
-	/** 超时毫秒（缺省 90000，范围 5000–300000）。 */
 	timeoutMs?: number;
-	/** Canonical base64 JPEG/PNG/WebP; at most 8, 1 MiB each and 6 MiB total decoded. */
 	images?: Array<{ data: string; mimeType: string }>;
-	/** Host-only cancellation; never serialized. */
 	signal?: AbortSignal;
 }
 
-/** host.llm.complete 的回执。 */
 export type PluginLlmResult =
 	{ ok: true; text: string; model: string; usage?: { input: number; output: number } } | { ok: false; error: string };
 
-/** agent-service 提供的环境（cwd/agentDir/回落模型，全部只读快照）。 */
 export interface PluginLlmEnv {
 	cwd: string;
 	agentDir: string;
@@ -64,7 +37,6 @@ const MAX_INFLIGHT = 4;
 
 let inflight = 0;
 
-/** 当前在飞的孤立调用数（单测/诊断用）。 */
 export function llmInflight(): number {
 	return inflight;
 }
@@ -145,9 +117,7 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 		stopped = result;
 		try {
 			void abort?.().catch(() => {});
-		} catch {
-			/* best effort */
-		}
+		} catch {}
 		dispose?.();
 		resolveStop(result);
 	};
@@ -166,14 +136,12 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 			const services = await createAgentSessionServices({
 				cwd: env.cwd,
 				agentDir: env.agentDir,
-				// 技能全剥：纯补全不需要技能上下文（省 token，结果可预测）。
 				resourceLoaderOptions: {
 					skillsOverride: (res) => ({ ...res, skills: [] }),
 				},
 				modelRuntime,
 			});
 			if (stopped) return stopped;
-			// 模型：显式指定 > 主会话回落 > 会话默认（与 reviewer 同优先级）。
 			let model;
 			let modelName = "default";
 			const spec = parseModelSpec(req?.model);
@@ -190,7 +158,6 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 				services,
 				sessionManager: SessionManager.inMemory(env.cwd),
 				...(model ? { model } : {}),
-				// 全部工具关闭（"all"）：纯补全，无副作用（SDK 的 noTools 是 "builtin"|"all" 枚举）。
 				noTools: "all",
 			});
 			let disposed = false;
@@ -200,9 +167,7 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 				disposed = true;
 				try {
 					srv.session.dispose();
-				} catch {
-					/* dispose 尽力而为 */
-				}
+				} catch {}
 			};
 			if (stopped) {
 				dispose();
@@ -218,23 +183,14 @@ export async function completeWithIsolatedSession(env: PluginLlmEnv, req: Plugin
 			try {
 				const stats = srv.session.getSessionStats();
 				usage = { input: stats.tokens.input, output: stats.tokens.output };
-			} catch {
-				/* usage 尽力而为 */
-			}
+			} catch {}
 			return { ok: true, text: raw.slice(0, maxChars), model: modelName, ...(usage ? { usage } : {}) };
 		} finally {
-			// 正常结束与异常均回收；中断路径会提前 abort/dispose，迟到的会话也在这里回收。
 			try {
 				dispose?.();
-			} catch {
-				/* dispose 尽力而为 */
-			}
+			} catch {}
 		}
 	})();
-	// 并发计数跟**真实 run** 走，而不是外层函数的 finally：超时竞速返回后 run 还在飞，
-	// 计数必须继续占着 MAX_INFLIGHT 的位 —— 否则每次超时都「腾出」一路并发，
-	// 连续超时的插件能把在飞会话越堆越多，护栏失效。catch 挂在分支上兜住 run 的
-	// 拒绝（竞速已由 timer 赢时，外层 catch 不会再收到它）。
 	void run
 		.catch(() => {})
 		.finally(() => {

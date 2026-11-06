@@ -1,12 +1,4 @@
 /**
- * 极简 DOM 构造器（避免 innerHTML 拼接带来的转义问题）。
- *
- * 单独成模块是因为它被 app / panel / settings-form 三处共用，而 settings-form 又被
- * app 与 panel 共用 —— 留在 app.mjs 里会形成循环 import（虽然 ESM 循环通常能跑，
- * 但一个几行的工具函数不值得留这种隐式耦合）。
- */
-
-/**
  * @param {string} tag
  * @param {Record<string, unknown>} [props]  `class` / `text` / `style` / `dataset` /
  *   `onXxx`（事件）/ 其余按 DOM 属性或属性值写入（`value`/`checked`/`type` 这类直接赋值）

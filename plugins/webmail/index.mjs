@@ -1,17 +1,3 @@
-/**
- * webmail 服务端入口 —— 真实可用的 IMAP/SMTP 邮件管理插件。
- *
- * 能力：
- *  - 收件：IMAP（imapflow）列出/搜索/阅读/标记/删除邮件
- *  - 发件：SMTP（nodemailer）
- *  - 新邮件通知：周期轮询 INBOX 未读，新增即 host.notify + 推给插件视图
- *  - AI 工具：常驻经 host.registerAgentTool 注册，单个 action 式 `mail` 工具
- *    （action = list / read / search / send / manage / folders）。
- *
- * 凭据存 <dataDir>/plugins/webmail/config.json（本机明文，与 pi auth.json 同级安全模型）。
- * 依赖 imapflow/mailparser/nodemailer 不随包分发：首次激活尝试自动 npm 安装，
- * 失败时视图里会出现「安装依赖」按钮手动触发。
- */
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -19,9 +5,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const CONFIG_FILE = "config.json";
-/** 阅读正文上限（字符），防超大 HTML 撑爆上下文。 */
 const BODY_LIMIT = 16000;
-/** 搜索时最多拉取的信封数量。 */
 const SEARCH_SCAN = 1000;
 
 const DEFAULT_CONFIG = {
@@ -66,7 +50,6 @@ async function saveConfig(dir, cfg) {
 	await writeFile(join(dir, CONFIG_FILE), JSON.stringify(cfg, null, "\t"), "utf8");
 }
 
-/** 找到能用的 npm CLI：优先 require 解析 npm 包内的 cli.js（免 shell），退回 PATH。 */
 function resolveNpmCli() {
 	try {
 		return createRequire(import.meta.url).resolve("npm/bin/npm-cli.js");
@@ -80,7 +63,6 @@ export default {
 		const st = {
 			config: null,
 			client: null,
-			/** IMAP 操作互斥链（ImapFlow 连接上操作必须串行）。 */
 			chain: Promise.resolve(),
 			pollTimer: null,
 			pollBusy: false,
@@ -93,24 +75,13 @@ export default {
 			lastCheckAt: 0,
 			unseenTotal: 0,
 			toolUnregister: null,
-			/** registerBackgroundTask 的句柄（后台任务面板里的邮件轮询）。 */
 			bgTask: null,
 			availableModels: [],
 		};
 
-		// ------------------------------------------------------------------
-		// 配置与状态
-		// ------------------------------------------------------------------
-		// 机密存储：密码优先走宿主 host.secrets（AES-256-GCM 加密）；旧版宿主无此
-		// 设施、或写入失败（目录只读 / 磁盘满）时回退旧的明文 config.json 行为。
-		// 关键不变式：密码只要没确认存进机密，就绝不从内存/配置文件里抹掉——
-		// 否则会出现“保存后密码消失、IMAP 报 No password configured”。
 		const sec = host.secrets;
-		/** 机密写入是否降级到明文（只提示一次，不刷屏）。 */
 		let secretsDegradedWarned = false;
 
-		/** 写机密并回读校验：宿主的 set() 写盘失败时只记日志不抛错，
-		 *  只有回读到相同值才能确认真的存住了。失败返回 false → 调用方保留明文。 */
 		function storeSecret(name, value) {
 			if (!sec?.set || !value) return false;
 			try {
@@ -122,7 +93,6 @@ export default {
 			}
 		}
 
-		/** 机密不可用时提醒一次：密码仍会保存，但是明文存在 config.json。 */
 		function warnSecretsDegraded() {
 			if (secretsDegradedWarned) return;
 			secretsDegradedWarned = true;
@@ -134,8 +104,6 @@ export default {
 			);
 		}
 
-		/** 从 config.json 读非敏感字段后：把历史明文密码迁入机密（确认成功才从
-		 *  文件里剥离），再用机密回填内存副本（内存需要真实密码供 IMAP/SMTP 连接）。 */
 		async function loadConfigSecure() {
 			const cfg = await loadConfig(host.dir);
 			if (sec?.set) {
@@ -146,7 +114,6 @@ export default {
 				]) {
 					const legacy = cfg?.[sect]?.pass;
 					if (!legacy) continue;
-					// 校验通过才能剥离明文，否则迁移会把唯一的密码删掉。
 					if (storeSecret(secretName, legacy)) {
 						cfg[sect].pass = "";
 						migrated = true;
@@ -157,14 +124,13 @@ export default {
 				if (migrated) {
 					try {
 						await saveConfig(host.dir, cfg);
-					} catch {} // 剥离后的干净配置回写
+					} catch {}
 					host.log("已将明文密码迁移到加密存储");
 				}
 			}
 			return rehydrate(cfg);
 		}
 
-		/** 用已存机密补齐内存副本（不动用户刚输入的新值）。 */
 		function rehydrate(cfg) {
 			if (!sec?.get || !cfg) return cfg;
 			const ip = sec.get("imap_pass");
@@ -184,7 +150,6 @@ export default {
 				unseen: st.unseenTotal,
 				lastCheckAt: st.lastCheckAt,
 				notifyEnabled: c?.notifyEnabled !== false && Boolean(c?.imap?.host),
-				// 脱敏后的配置回显（密码不回传，只报是否存在）
 				config: {
 					imap: {
 						host: c?.imap?.host ?? "",
@@ -213,11 +178,8 @@ export default {
 		}
 
 		async function applyConfig(next) {
-			// 1) 密码语义：留空(undefined/"") = 沿用已存（内存 → 机密）；有值 = 更新。
 			next.imap.pass = next.imap.pass || st.config?.imap?.pass || sec?.get?.("imap_pass") || "";
 			next.smtp.pass = next.smtp.pass || st.config?.smtp?.pass || sec?.get?.("smtp_pass") || "";
-			// 2) 落盘副本：确认写进机密的密码才从 config.json 剥离；机密不可用/写失败
-			//    时保留明文（旧宿主行为）——宁可明文，不能丢密码。
 			const onDisk = structuredClone(next);
 			let degraded = false;
 			for (const [sect, secretName] of [
@@ -229,18 +191,14 @@ export default {
 				else degraded = true;
 			}
 			if (degraded && sec?.set) warnSecretsDegraded();
-			// 3) 内存副本始终持有真实密码（IMAP/SMTP 连接靠它）。
 			st.config = next;
 			await saveConfig(host.dir, onDisk);
-			if (!st.depsOk && next.imap?.host) installDeps(true); // 刚配置好账号但缺依赖 → 自动补装
+			if (!st.depsOk && next.imap?.host) installDeps(true);
 			restartPoller();
 			await refreshAiTools();
 			broadcastState();
 		}
 
-		// ------------------------------------------------------------------
-		// 依赖加载 / 自动安装
-		// ------------------------------------------------------------------
 		async function loadDeps() {
 			for (const name of ["imapflow", "mailparser", "nodemailer"]) {
 				try {
@@ -291,7 +249,7 @@ export default {
 				if (st.installChild === child) st.installChild = null;
 				if (ok) {
 					await loadDeps();
-					restartPoller(); // 依赖就绪后启动轮询
+					restartPoller();
 					await refreshAiTools();
 				}
 				host.notify(
@@ -304,9 +262,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------------
-		// IMAP 基础设施：互斥串行 + 惰性连接
-		// ------------------------------------------------------------------
 		function serialized(fn) {
 			if (st.dead) return Promise.reject(new Error("插件已停用"));
 			const run = st.chain.then(
@@ -332,9 +287,7 @@ export default {
 			if (c) {
 				try {
 					c.close();
-				} catch {
-					/* already dead */
-				}
+				} catch {}
 			}
 			if (why) host.log("连接断开:", why);
 		}
@@ -367,7 +320,6 @@ export default {
 			return client;
 		}
 
-		/** 打开 folder 并执行 fn（fn 内可用 client 的 mailbox 级 API），结束后释放锁。 */
 		async function withMailbox(folder, fn) {
 			const client = await ensureClient();
 			const lock = await client.getMailboxLock(folder || "INBOX");
@@ -399,9 +351,6 @@ export default {
 			};
 		}
 
-		// ------------------------------------------------------------------
-		// 邮件操作（UI 与 AI 工具共用同一套实现）
-		// ------------------------------------------------------------------
 		async function listMails({ folder = "INBOX", limit = 30, unseenOnly = false } = {}) {
 			return withMailbox(folder, async (client) => {
 				const box = client.mailbox;
@@ -428,47 +377,36 @@ export default {
 				.trim()
 				.toLowerCase();
 			if (!q) return [];
-			// 客户端过滤信封（subject/from/to），避开各家 IMAP SEARCH 方言差异
 			const pool = await listMails({ folder, limit: SEARCH_SCAN });
 			return pool
 				.filter((m) => [m.subject, m.from, m.fromName, m.to].some((s) => String(s).toLowerCase().includes(q)))
 				.slice(0, Math.min(Number(limit) || 20, 50));
 		}
 
-		/**
-		 * 深度清洗邮件纯文本（处理 Steam 等发件方在 text/plain 中残留的 &nbsp; 实体与泄露的 CSS 样式块）。
-		 */
 		function cleanMailPlainText(raw) {
-			return (
-				String(raw ?? "")
-					.replace(/\r\n/g, "\n")
-					// 1. 解码 HTML 命名与数字实体
-					.replace(/&nbsp;/gi, " ")
-					.replace(/&amp;/gi, "&")
-					.replace(/&lt;/gi, "<")
-					.replace(/&gt;/gi, ">")
-					.replace(/&quot;/gi, '"')
-					.replace(/&#39;|&apos;/gi, "'")
-					.replace(/&copy;/gi, "©")
-					.replace(/&ndash;/gi, "–")
-					.replace(/&mdash;/gi, "—")
-					.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-					.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-					// 2. 剥除 @media 块与发件方错误遗留在纯文本中的跨行 CSS 规则块（如 Steam 的 td, p, h1 { ... }）
-					.replace(/@media[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gi, "\n")
-					.replace(/(?:^|\n)[ \t]*(?:[a-z0-9_.*#\-:>+, \t]+\n)*[ \t]*[a-z0-9_.*#\-:>+, \t]+\{[^{}]*\}/gi, "\n")
-					// 3. 折叠连续空行與行尾空白
-					.replace(/[ \t]+\n/g, "\n")
-					.replace(/\n{3,}/g, "\n\n")
-					.trim()
-			);
+			return String(raw ?? "")
+				.replace(/\r\n/g, "\n")
+				.replace(/&nbsp;/gi, " ")
+				.replace(/&amp;/gi, "&")
+				.replace(/&lt;/gi, "<")
+				.replace(/&gt;/gi, ">")
+				.replace(/&quot;/gi, '"')
+				.replace(/&#39;|&apos;/gi, "'")
+				.replace(/&copy;/gi, "©")
+				.replace(/&ndash;/gi, "–")
+				.replace(/&mdash;/gi, "—")
+				.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+				.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+				.replace(/@media[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gi, "\n")
+				.replace(/(?:^|\n)[ \t]*(?:[a-z0-9_.*#\-:>+, \t]+\n)*[ \t]*[a-z0-9_.*#\-:>+, \t]+\{[^{}]*\}/gi, "\n")
+				.replace(/[ \t]+\n/g, "\n")
+				.replace(/\n{3,}/g, "\n\n")
+				.trim();
 		}
 
 		async function readMail({ folder = "INBOX", uid } = {}) {
 			if (!uid) throw new Error("缺少 uid");
 			return withMailbox(folder, async (client) => {
-				// 注意：第三个参数 {uid:true} 才表示按 UID 取信——放查询参数里
-				// 会被当成序号，导致“列表能看、点开未找到”（UID > 邮件总数时必现）。
 				const msg = await client.fetchOne(String(uid), { envelope: true, flags: true, source: true }, { uid: true });
 				if (!msg || !msg.source) throw new Error(`未找到 uid=${uid}`);
 				const meta = summarize(msg);
@@ -522,7 +460,6 @@ export default {
 			const list = (Array.isArray(uids) ? uids : [uids]).map(String);
 			if (list.length === 0) return { deleted: 0 };
 			return withMailbox(folder, async (client) => {
-				// 有废纸篓就移过去（可恢复），没有才硬删
 				let trash = null;
 				for await (const f of client.list()) {
 					if (f.specialUse === "\\Trash" || /^(trash|deleted|deleted messages|已删除)/i.test(f.path)) {
@@ -541,7 +478,6 @@ export default {
 			});
 		}
 
-		/** 简易剥离 HTML 标签生成兜底纯文本（用于只有 html 没有降级 body 时的回退）。 */
 		function stripHtmlTags(html) {
 			return String(html ?? "")
 				.replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -560,7 +496,6 @@ export default {
 				.trim();
 		}
 
-		/** 外发邮件正文体积上限（256KB）。 */
 		const SEND_BODY_LIMIT = 256 * 1024;
 
 		async function sendMail({ to, cc, subject, body, html } = {}) {
@@ -572,7 +507,6 @@ export default {
 			let textBody = body != null ? String(body) : "";
 			let htmlBody = html ? String(html) : undefined;
 
-			// 当只提供了 html 没有 body 时，剥离标签作为纯文本降级兜底
 			if (!textBody && htmlBody) {
 				textBody = stripHtmlTags(htmlBody);
 			}
@@ -584,7 +518,6 @@ export default {
 				throw new Error(`HTML 正文超出大小上限（${Math.round(SEND_BODY_LIMIT / 1024)}KB）`);
 			}
 
-			// 防御性过滤：剥除潜在恶意的 script 标签与伪协议链接
 			if (htmlBody) {
 				htmlBody = htmlBody
 					.replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -616,9 +549,6 @@ export default {
 			return { messageId: info.messageId, accepted: info.accepted };
 		}
 
-		// ------------------------------------------------------------------
-		// 邮件翻译支持（可选大模型 LLM 直调，回退 Google Translate / MyMemory）
-		// ------------------------------------------------------------------
 		async function refreshModels() {
 			try {
 				const list = await host.models?.list?.();
@@ -723,20 +653,12 @@ export default {
 			return translatedChunks.join("\n");
 		}
 
-		/**
-		 * 翻译前清洗与保护 URL：
-		 * 1) 剥除纯图片地址占位符 [https://.../logo.png]
-		 * 2) 将 [https://...] 或长 URL 替换为简短占位符 [[URL_N]]，避免长追踪码污染翻译或浪费 Token
-		 */
 		function protectUrlsForTranslation(rawText) {
 			const urls = [];
 			let cleaned = cleanMailPlainText(rawText)
-				// 移除单独成行或内联的纯图片资源占位 [https://.../xxx.png]
 				.replace(/\[https?:\/\/[^\s\]]+\.(?:png|jpe?g|gif|svg|webp|ico)(?:\?[^\s\]]*)?\]/gi, "")
-				// 折叠多余空行
 				.replace(/\n{3,}/g, "\n\n");
 
-			// 保护括起的链接 [https://...] 与裸露的 URL
 			cleaned = cleaned.replace(/\[https?:\/\/[^\s\]]+\]|https?:\/\/\S+/gi, (match) => {
 				const idx = urls.length;
 				urls.push(match);
@@ -760,7 +682,6 @@ export default {
 
 			const { cleaned: b, urls } = protectUrlsForTranslation(rawB);
 
-			// 自动判定目标语言：若未指定，采样判断是否含较多中文
 			let tl = targetLang;
 			if (!tl) {
 				const sample = `${s} ${b}`.slice(0, 300);
@@ -769,17 +690,14 @@ export default {
 				tl = isChinese ? "en" : "zh-CN";
 			}
 
-			// 选择翻译引擎：参数指定优先，其次看全局配置
 			const chosenModel = model !== undefined ? model : st.config?.transModel || "";
 			if (chosenModel && chosenModel !== "") {
-				// 选用大模型进行智能翻译
 				try {
 					let translatedSubject = "";
 					let translatedText = "";
 					let modelUsed = chosenModel;
 
 					if (s && b) {
-						// 标题与正文拼接一次调用大模型，节省 token 与时间
 						const combined = `<<SUBJECT>>\n${s}\n<</SUBJECT>>\n<<BODY>>\n${b}\n<</BODY>>`;
 						const res = await translateWithLlm(combined, tl, chosenModel);
 						modelUsed = res.model;
@@ -789,7 +707,6 @@ export default {
 							translatedSubject = matchSubj[1].trim();
 							translatedText = matchBody[1].trim();
 						} else {
-							// 降级分两段调
 							const [ts, tb] = await Promise.all([
 								translateWithLlm(s, tl, chosenModel),
 								translateWithLlm(b, tl, chosenModel),
@@ -819,7 +736,6 @@ export default {
 				}
 			}
 
-			// 快速公共免密翻译引擎（Google Translate gtx 优先，回退 MyMemory）
 			const [translatedSubject, translatedText] = await Promise.all([
 				s ? translateChunk(s, tl) : Promise.resolve(""),
 				b ? translateLongText(b, tl) : Promise.resolve(""),
@@ -840,9 +756,6 @@ export default {
 			}));
 		}
 
-		// ------------------------------------------------------------------
-		// 新邮件轮询通知
-		// ------------------------------------------------------------------
 		async function pollOnce() {
 			if (!st.config?.imap?.host || !st.depsOk || st.pollBusy) return;
 			st.pollBusy = true;
@@ -859,9 +772,7 @@ export default {
 							.filter((m) => fresh.includes(m.uid))
 							.slice(0, 3)
 							.map((m) => `${m.fromName || m.from}: ${m.subject}`);
-					} catch {
-						/* 拿不到主题就只报数量 */
-					}
+					} catch {}
 					if (st.config.notifyEnabled !== false) {
 						host.notify("info", `📬 ${fresh.length} 封新邮件${subjects.length ? ` — ${subjects.join(" · ")}` : ""}`);
 					}
@@ -893,8 +804,7 @@ export default {
 			const sec = Math.max(15, Math.floor(Number(st.config?.pollSec) || 60));
 			if (st.config?.imap?.host && st.depsOk) {
 				st.pollTimer = setInterval(() => void serialized(pollOnce).catch(() => {}), sec * 1000);
-				void serialized(pollOnce).catch(() => {}); // 立即来一轮
-				// 常驻任务进「后台任务」面板：可见 + 可一键停止轮询。
+				void serialized(pollOnce).catch(() => {});
 				if (st.bgTask) st.bgTask.update({ label: "📬 邮件轮询", status: `每 ${sec}s` });
 				else {
 					st.bgTask = host.registerBackgroundTask?.({
@@ -909,22 +819,17 @@ export default {
 					});
 				}
 			} else {
-				// 未配置/依赖未就绪：不轮询，任务移出面板（若有）。
 				st.bgTask?.unregister?.();
 				st.bgTask = null;
 				broadcastState();
 			}
 		}
 
-		// ------------------------------------------------------------------
-		// AI 工具注册（常驻，插件内无开关）
-		// ------------------------------------------------------------------
 		const FOLDER_PARAM = {
 			type: "string",
 			description: "Mailbox folder path, default INBOX",
 		};
 
-		/** 邮件一行摘要（list / search 共用）：#uid [未读] 日期 发件人 — 主题。 */
 		function describeMail(m) {
 			return `#${m.uid}${m.seen ? "" : " [未读]"} ${m.date.slice(0, 16).replace("T", " ")} ${m.fromName || m.from} — ${m.subject}`;
 		}
@@ -1050,9 +955,6 @@ export default {
 			}
 		}
 
-		// ------------------------------------------------------------------
-		// 视图消息协议
-		// ------------------------------------------------------------------
 		const offMsg = host.onMessage((payload, from) => {
 			const msg = payload ?? {};
 			switch (msg.action) {
@@ -1146,9 +1048,6 @@ export default {
 			}
 		});
 
-		// ------------------------------------------------------------------
-		// 启动
-		// ------------------------------------------------------------------
 		void (async () => {
 			try {
 				st.config = await loadConfigSecure();
@@ -1157,7 +1056,7 @@ export default {
 				if (st.dead) return;
 				await refreshModels();
 				if (st.dead) return;
-				if (!st.depsOk) installDeps(true); // 缺依赖就自动装，不等配置保存
+				if (!st.depsOk) installDeps(true);
 				await refreshAiTools();
 				if (st.dead) return;
 				restartPoller();
@@ -1168,8 +1067,6 @@ export default {
 			}
 		})();
 
-		// 新客户端接入时主动推送完整状态（服务端唯一事实源）；
-		// host.onAttach 在旧版宿主上不存在——可选链兼容，客户端拉取仍作兑底
 		const offAttach = host.onAttach?.((clientId) => {
 			host.sendTo(clientId, { kind: "state", state: publicState() });
 		});
@@ -1186,10 +1083,8 @@ export default {
 			} catch {}
 			if (st.pollTimer) clearInterval(st.pollTimer);
 			try {
-				st.installChild?.kill(); // 进行中的依赖安装一并终止，不残留写手
-			} catch {
-				/* already gone */
-			}
+				st.installChild?.kill();
+			} catch {}
 			dropClient();
 			host.log("deactivated");
 		};

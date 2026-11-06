@@ -1,13 +1,3 @@
-/**
- * 桌面通知纯函数单测（web/src/notify.ts）。
- *
- * 重点锁「抑制条件」：什么时候允许静默吞掉一条通知。
- * 这里的判据全部来自 Windows 实测（Win11 + Edge/Chrome，2026-09）：
- * 窗口最小化后 `document.hasFocus()` 仍是 true、`visibilityState` 仍是
- * "visible"，连 blur/visibilitychange 都不发 —— 只有原生窗口矩形会变
- * （screenX/screenY 飞到屏幕外的「最小化坐标」、outerWidth/Height 塌成标题栏）。
- * 之前「只看焦点」和「焦点 + 可见」两版都在最小化场景下把通知全吞了。
- */
 import { describe, expect, it, vi } from "vitest";
 import { loadSoundSettings } from "../../web/src/sounds.js";
 import {
@@ -103,15 +93,12 @@ describe("notification event preferences", () => {
 
 describe("isCollapsedWindow", () => {
 	it("Windows 实测的最小化矩形 → 判定为最小化", () => {
-		// Edge：screenX/Y = -21334，outerW/H 塌成 108×20。
 		expect(isCollapsedWindow({ screenX: -21334, screenY: -21333, outerWidth: 108, outerHeight: 20 })).toBe(true);
-		// Chrome：Win32 最小化坐标 -32000。
 		expect(isCollapsedWindow({ screenX: -32000, screenY: -32000, outerWidth: 160, outerHeight: 28 })).toBe(true);
 	});
 
 	it("普通窗口（包括屏幕左侧的多显示器布局）不算最小化", () => {
 		expect(isCollapsedWindow({ screenX: 10, screenY: 10, outerWidth: 1296, outerHeight: 808 })).toBe(false);
-		// 三台 4K 往左堆叠 ≈ -11520，阈值 -10000 以内不能误判成最小化。
 		expect(isCollapsedWindow({ screenX: -5760, screenY: 0, outerWidth: 1296, outerHeight: 808 })).toBe(false);
 		expect(isCollapsedWindow({ screenX: 0, screenY: -2160, outerWidth: 1296, outerHeight: 808 })).toBe(false);
 	});
@@ -127,7 +114,6 @@ describe("isCollapsedWindow", () => {
 
 describe("shouldSuppressNotify", () => {
 	it("最小化（Windows 上焦点/可见性都在骗人）→ 必须通知", () => {
-		// 核心回归：这条组合就是最小化窗口的真实快照。
 		expect(shouldSuppressNotify(presence({ minimized: true, windows: true }))).toBe(false);
 	});
 
@@ -166,7 +152,6 @@ describe("用户活动计时", () => {
 
 describe("notifyBlockReason", () => {
 	it("非浏览器环境（无 window）→ 判为不支持，而不是安全上下文问题", () => {
-		// node 单测环境没有 window / Notification。
 		expect(notificationsSupported()).toBe(false);
 		expect(notifyBlockReason()).toBe("unsupported");
 	});

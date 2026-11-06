@@ -8,7 +8,6 @@ function parentElement(node: Node): Element | null {
 	return node.nodeType === 1 ? (node as Element) : node.parentElement;
 }
 
-/** 只引用同一条消息的正文，避免把操作按钮与消息元信息带进上下文。 */
 export function readQuoteSelection(
 	root: HTMLElement,
 	selection: Selection | null,

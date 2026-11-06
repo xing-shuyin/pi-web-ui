@@ -24,9 +24,7 @@ import { HintTip } from "./HintTip";
 
 interface SchedulerPanelProps {
 	tasks: SchedulerTaskView[];
-	/** 当前项目（新建任务时一键填入）。 */
 	cwd: string;
-	/** 可选模型（与子代理模板编辑器同一来源：settings.subagentModels）。 */
 	models: UiVisionBridgeModel[];
 }
 
@@ -189,7 +187,6 @@ export function taskInputFromDraft(draft: Draft): SchedulerTaskInput {
 	};
 }
 
-/** 调度规格一句话（列表行展示用）。 */
 function specSummary(t: SchedulerTaskView, tr: ReturnType<typeof useT>): string {
 	if (t.kind === "interval") {
 		const min = Math.round(Number(t.spec) / 60000);
@@ -211,11 +208,6 @@ function formatTime(ts: number | null): string {
 	}
 }
 
-/**
- * 内置定时任务管理（issue #184）：任务列表（下次触发/上次状态/手动执行/
- * 启用停用/历史）+ 新建/编辑表单。全部经 schedule_* wire 消息走服务端
- * SchedulerStore（<dataDir>/scheduler-tasks.json 全局持久化）。
- */
 export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 	const t = useT();
 	const [draft, setDraft] = useState<Draft | null>(null);
@@ -241,7 +233,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 
 	useEscapeKey(() => setDraft(null), Boolean(draft));
 
-	// 打开面板即向服务端要一份新鲜列表（重连/别处改动后对齐）。
 	useEffect(() => {
 		appSend({ type: "schedule_list" });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -415,7 +406,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 								</button>
 							</div>
 							<div className="modal-body">
-								{/* 卡片 1：任务身份与执行目标 */}
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
@@ -510,7 +500,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 									)}
 								</div>
 
-								{/* 卡片 2：调度策略与触发预演 */}
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
@@ -521,7 +510,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 										</span>
 									</div>
 
-									{/* 常用预设快捷胶囊 */}
 									<div className="scheduler-field">
 										<label className="scheduler-field-label">常用频次快捷设定</label>
 										<div className="scheduler-pills">
@@ -573,7 +561,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 										</div>
 									</div>
 
-									{/* 自定义 Cron 或固定时间间隔展开行 */}
 									{draft.kind === "cron" && draft.preset === "custom" && (
 										<div className="scheduler-sub-row">
 											<div className="scheduler-field" style={{ flex: 1 }}>
@@ -603,7 +590,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 										</div>
 									)}
 
-									{/* 自然语言调度预览条 */}
 									{(() => {
 										const exp = explainSchedule(draft, t);
 										return (
@@ -622,7 +608,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 									})()}
 								</div>
 
-								{/* 卡片 3：给智能体的具体任务 Prompt */}
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">
@@ -662,7 +647,6 @@ export function SchedulerPanel({ tasks, cwd, models }: SchedulerPanelProps) {
 									/>
 								</div>
 
-								{/* 卡片 4：运行环境与容灾 */}
 								<div className="scheduler-card">
 									<div className="scheduler-card-head">
 										<span className="scheduler-card-title">

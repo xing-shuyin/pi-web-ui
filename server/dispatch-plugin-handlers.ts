@@ -1,16 +1,3 @@
-/**
- * dispatch-plugin-handlers — WebSocket 插件管理与生命周期事件分发路由处理器。
- *
- * 负责：
- * - 插件双向通信（plugin_message）与配置持久化（plugin_settings）
- * - 插件市场目录同步、添加与移除（plugin_catalog_*）
- * - 插件后台作业（安装/更新/卸载/取消及安装前检查，plugin_job_*）
- * - 插件 API 注册面只读目录（plugin_api_catalog）
- * - 插件特权目录授权、网络/LLM能力授权及撤销（plugin_path_* / plugin_permission_*）
- * - 特权 DOM 两步握手授权与应答（plugin_dom_consent_*）
- *
- * 从 server/index.ts 抽出为独立模块。
- */
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { WebSocket } from "ws";
@@ -256,9 +243,7 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					if (client.readyState === WebSocket.OPEN) {
 						try {
 							client.send(resolved);
-						} catch {
-							/* dead connection */
-						}
+						} catch {}
 					}
 				}
 				pending.resolve({ ok: msg.ok === true, remember: msg.remember === true });
@@ -279,9 +264,7 @@ export function handlePluginMessage(msg: ClientMessage, ctx: PluginDispatchConte
 					if (client.readyState === WebSocket.OPEN) {
 						try {
 							client.send(payload);
-						} catch {
-							/* dead connection */
-						}
+						} catch {}
 					}
 				}
 				return true;

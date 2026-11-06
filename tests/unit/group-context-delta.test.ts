@@ -134,7 +134,6 @@ describe("group context delivery planner", () => {
 		const aggregate = { ...second, messages: [...first.messages, ...delta.messages] };
 		const third = context([chunk("one"), chunk("two"), chunk("three")]);
 		expect(planGroupContext(third, aggregate).messages).toEqual([chunk("three")]);
-		// If compaction retained only the second chunk, the first must be sent again.
 		expect(planGroupContext(third, { ...second, messages: delta.messages }).messages).toEqual([
 			chunk("one"),
 			chunk("three"),

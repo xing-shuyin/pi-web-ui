@@ -47,38 +47,30 @@ export function TuiOverlayModal({ overlay }: TuiOverlayModalProps) {
 		term.open(container);
 		termRef.current = { term, fit };
 
-		// Initial ANSI content
 		if (overlay.initialAnsi) {
 			term.write(overlay.initialAnsi);
 		}
 
-		// Forward terminal input keystrokes to server
 		const dataSub = term.onData((data) => {
 			appSend({ type: "tui_overlay_input", id: overlay.id, data });
 		});
 
-		// Listen to live render updates from server
 		const renderSub = subscribeTuiOverlayRender((id, ansi) => {
 			if (id === overlay.id) {
 				term.write(ansi);
 			}
 		});
 
-		// Try fitting container size
 		try {
 			fit.fit();
-			// Always refresh after loading: renders may have arrived before mounting.
 			appSend({
 				type: "tui_overlay_resize",
 				id: overlay.id,
 				cols: term.cols,
 				rows: term.rows,
 			});
-		} catch {
-			// ignore fit error before layout settles
-		}
+		} catch {}
 
-		// Resize observer
 		const ro = new ResizeObserver(() => {
 			try {
 				fit.fit();
@@ -90,13 +82,10 @@ export function TuiOverlayModal({ overlay }: TuiOverlayModalProps) {
 						rows: term.rows,
 					});
 				}
-			} catch {
-				// ignore
-			}
+			} catch {}
 		});
 		ro.observe(container);
 
-		// Auto-focus after open
 		const timer = setTimeout(() => {
 			term.focus();
 		}, 50);

@@ -18,40 +18,32 @@ describe("双引擎并存与零重启热切换状态持久化 (ClientStateStore)
 		for (const d of dirs.splice(0)) {
 			try {
 				rmSync(d, { recursive: true, force: true });
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 	});
 
 	it("支持多标签页（不同 clientId）各自独立记忆 pi、dsh 与 claude 引擎，且新标签页默认跟随最近一次切换的全局引擎", () => {
 		const { store, filePath } = makeStore();
 
-		// 初始未设置时均为 undefined
 		expect(store.getDefaultEngine()).toBeUndefined();
 		expect(store.getClientEngine("tab-1")).toBeUndefined();
 		expect(store.getClientEngine("tab-2")).toBeUndefined();
 		expect(store.getClientEngine("tab-3")).toBeUndefined();
 
-		// 标签页 1 切换到 dsh，同时更新全局默认引擎为 dsh
 		store.saveClientEngine("tab-1", "dsh");
 		store.saveDefaultEngine("dsh");
 
-		// 标签页 2 切换到 claude，同时更新全局默认引擎为 claude
 		store.saveClientEngine("tab-2", "claude");
 		store.saveDefaultEngine("claude");
 
-		// 标签页 3 切换到 pi，同时更新全局默认引擎为 pi
 		store.saveClientEngine("tab-3", "pi");
 		store.saveDefaultEngine("pi");
 
-		// 三个标签页在内存中同时保持各自的引擎
 		expect(store.getClientEngine("tab-1")).toBe("dsh");
 		expect(store.getClientEngine("tab-2")).toBe("claude");
 		expect(store.getClientEngine("tab-3")).toBe("pi");
 		expect(store.getDefaultEngine()).toBe("pi");
 
-		// 重新从磁盘加载（模拟页面刷新或服务重启后读取同一份 client-state.json）
 		const reloaded = new ClientStateStore(filePath);
 		expect(reloaded.getClientEngine("tab-1")).toBe("dsh");
 		expect(reloaded.getClientEngine("tab-2")).toBe("claude");

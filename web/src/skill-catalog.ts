@@ -1,10 +1,3 @@
-/**
- * Skill 市场资源与链接清单
- *
- * 聚合官方标准规范、开放市场、社区精选与生态索引链接，
- * 供用户浏览、发现并在自己的智能体环境中按 SKILL.md 规范引入能力。
- */
-
 export type SkillMarketCategory = "official" | "marketplace" | "community" | "directory";
 
 export interface SkillMarketItem {
@@ -165,10 +158,6 @@ export const SKILL_MARKETS: SkillMarketItem[] = [
 	},
 ];
 
-/**
- * 历史/内置公共技能规约定义
- * 保留供画布工作流节点等内部配置与向后兼容引用。
- */
 export interface PublicSkill {
 	id: string;
 	name: string;

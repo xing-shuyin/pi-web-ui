@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyHashlinePatch, computeFileHash, HashlineSnapshotStore } from "../../server/hashline-engine.js";
 
-/** 大小写折叠行为仅 Windows 有意义（foldKey 按 platform 分支） */
 const itWin32 = process.platform === "win32" ? it : it.skip;
 
 describe("Hashline patch robustness", () => {
@@ -163,7 +162,6 @@ describe("Hashline patch robustness", () => {
 			writeFileSync(join(cwd, "tgt.txt"), "A\nB\nC\nD\nE\n");
 			const first = apply("[tgt.txt]\nPUT 1.=1:\n+A2\n");
 			const hash = first.results[0]?.newHash;
-			// 覆盖为不同行数（delta ≠ 0），锚点上下文彻底消失
 			writeFileSync(join(cwd, "tgt.txt"), "X1\nX2\nX3\nX4\nX5\nX6\n");
 			const r = apply(`[tgt.txt#${hash}]\nPUT 1.=1:\n+A3\n`);
 			expect(r.ok).toBe(false);
@@ -201,7 +199,6 @@ describe("Hashline patch robustness", () => {
 			writeFileSync(join(cwd, "g.txt"), "A\nB\nC\n");
 			const first = apply("[g.txt]\nPUT 1.=1:\n+A2\n");
 			const hash = first.results[0]?.newHash;
-			// 不同行数 + 上下文消失
 			writeFileSync(join(cwd, "g.txt"), "totally\ndifferent\nstuff\nmore\n");
 			const r = apply(`[g.txt#${hash}]\nPUT 2.=2:\n+B2\n`);
 			expect(r.ok).toBe(false);
@@ -213,7 +210,6 @@ describe("Hashline patch robustness", () => {
 			writeFileSync(join(cwd, "ao.txt"), "A\nB\nC\nD\nE\n");
 			const first = apply("[ao.txt]\nPUT 1.=1:\n+A2\n");
 			const hash = first.results[0]?.newHash;
-			// 多一行（delta=+1）：hunk1 在差异点之前可原样保留，hunk2 上下文消失须整体失败
 			writeFileSync(join(cwd, "ao.txt"), "A2\nB\nKEEPME\nD\nE\nEXTRA\n");
 			const r = apply(`[ao.txt#${hash}]\nPUT 1.=1:\n+TOP\nPUT 3.=3:\n+CHANGED\n`);
 			expect(r.ok).toBe(false);

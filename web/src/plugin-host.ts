@@ -1,49 +1,10 @@
+import { listPluginTtsProviders } from "./tts-client";
+export { getPluginTtsProvider, listPluginTtsProviders, onTtsProvidersChange } from "./tts-client";
 /// <reference lib="dom" />
-/**
- * 插件宿主动作桥（`window.__piWebUiHost`）。
- *
- * 插件的 client bundle 是运行时动态 import 的裸 ESM，**不能 import 应用内部模块**，
- * 但它有时需要主应用配合做动作（切视图、新建对话并把一段话作为用户消息发出去 ——
- * 例如 legado-web 插件的「AI 修复源」按钮）。这些动作走 window 上的单例：
- *
- *   window.__piWebUiHost = {
- *     version: 6,
- *     setView("chat" | "terminal" | "git" | `plugin:<id>`),
- *     startChat({ prompt, newChat?, cwd?, model? }) → boolean   // 已受理，动作在后台串行完成
- *     models.list() → PluginHostModelInfo[]           // 已配置的模型目录（issue #188）
- *     openSession({ cwd? | folders? | roots?, prompt?, newChat? }) → Promise<{ok, sessionId?, error?}>
- *     sessions: { list(), open(id) }                    // 会话列表 / 打开（宿主 API v2）
- *     compose({ text?, attachments? }) → boolean        // 放进输入框草稿，等用户自己发
- *     reloadCatalog(source, { install?, replace? }) → Promise<{ok, error?, entries?, installed?}>
- *     onUiAction(name, handler) → () => void            // 接管 UI 条目的动作（host.ui 框架）
- *     pageCall({ op, args?, target?, timeoutMs? }) → Promise<{ok, result?, error?}>
- *   }
- *
- * openSession 与 startChat 的差别：startChat 是「已受理」的短形式（向后兼容），
- * openSession 是它的可等待版本 —— 会做**目录授权**（不在最近项目里、也没授权过的
- * 目录先弹确认）、等 cwd/新对话真正就绪、回 sessionId，失败给结构化原因（issue #146）。
- * folders/roots 可给多个：第一个当 cwd，其余当**额外工作区根**（宿主侧多根：AI 仍只在
- * cwd 里干活，文件树与插件受支持路径可跨这些根），每个目录都要过授权确认这一关。
- *
- * reloadCatalog 是受支持的插件市场目录同步（issue #148）：不再依赖私有的浏览器事件
- * 与可见终端，服务端校验/原子写/可选安装后回执。
- *
- * pageCall 是「AI 操作页面」的通道：服务端把模型的动作（`page_request`）推过来，这里转给
- * **浏览器扩展**（page-picker 注入在页面主世界的 `window.__piBridge`），再把结果回给服务端。
- * 它不抛错，而是返回 `{ok:false,error}` —— 这个错误要原样写进工具结果里让模型看到。
- *
- * startChat 与 compose 是两条不同的路：前者“直接开一个新对话把话发出去”（脚本化），
- * 后者“把内容放进输入框草稿让用户补一句再发”（人在环中）—— 元素拾取这类需要用户
- * 补充描述的场景走 compose（见 composer-bridge.ts）。
- *
- * 时序坑：服务端的 `new_chat` 是异步的（`void cs.newChat()`），紧接着发 `prompt` 会落到
- * **旧对话**里（activeId 要等 runtime 建好才切）。所以这里串行等待：先等 cwd 切过去、
- * 再等对话变成空白（新对话就绪或本来就是空白对话），最后才发 prompt。
- *
- * 与 app-globals 的分工：那边放「状态 + 唯一的全局发送器」，这里放需要 React 侧
- * 注入实现（setView/chat 快照）的**跨边界动作**，两者都不吃快照流。
- */
+import { registerImageOcrProvider, listImageOcrProviders, type ImageOcrProvider } from "./image-ocr-providers";
+import { openImageLightbox, type ImageLightboxTarget } from "./image-lightbox-bridge";
 
+import type { BrowserHostBridge } from "../../browser/contracts";
 import type { AppSend } from "./app-globals";
 import { getCostCurrencySymbol, registerCostFormatter, setCostCurrencySymbol, type CostFormatter } from "./cost-format";
 import { composeToComposer, isComposerReady, type ComposerPayload } from "./composer-bridge";
@@ -54,32 +15,7 @@ import { randomUuid } from "./uuid";
 import { requestNewChat } from "./new-chat-request";
 
 const PLUGIN_HOST_GLOBAL = "__piWebUiHost";
-/** 宿主 API 版本：插件可用它判断宿主能力（> 本值表示宿主更新）。
- *  2 = 新增 `compose()`（注入输入框草稿）。
- *  3 = 新增 `pageCall()`（把模型的动作转给浏览器扩展，见 plugin-host 注释）。
- *  4 = 新增 `reloadCatalog()`（市场目录同步，issue #148）、`openSession()`
- *      （带目录授权的新会话，issue #146）与 `onTopbarAction()`（顶栏动作接管）。
- *  5 = 顶栏动作升级为通用 UI 动作 `onUiAction()`（slot 框架：顶栏/底栏/输入框/
- *      消息/右键菜单/设置页都能接管），`onTopbarAction` 保留为别名。
- *  6 = 新增 `sessions.list()/open()`（会话列表与打开）与 `openSession()` 的多根
- *      工作区（folders/roots 多目录 = cwd + 额外工作区根，issue #146 完整版）。
- *  7 = 新增 `dom.anchors()`（特权 DOM 插件的稳定挂载点：app/topbar/composer，
- *      见 `data-pi-anchor`；bundle 本身与页同源，document 原生可用，anchors 只是
- *      跨版本稳定的查询入口）。
- *  8 = 新增 `dialogs`（select/confirm/input，见 PluginHostDeps 的 dialogConfirm/
- *      select/input 注入）+ `notifyAction`（带动作的轻量通知）+ `shortcuts`
- *      （内存快捷键注册表）+ `searchProviders`（全局搜索提供者注册表）+
- *      `onTheme/onLocale/onViewChange`（主题/语言/视图订阅，App 经 emit* 触发）。
- *  9 = 新增 `composerProviders`（`@` 提及提供者注册表：ChatInput 的 `@` 浮层
- *      与 `/` 选择器共用一个浮层，按 kind 换内容）。
- *  10 = 新增 `openModal/closeModal`（`modal.dialog` 槽位：插件把 kind="view" 的条目
- *      按需弹成弹窗，同一时刻只开一个；Esc/点遮罩/✕ 关闭）。
- *  11 = 新增 `models.list()`（已配置的模型目录，issue #188）与
- *      `startChat/openSession` 的 `model` 选项（canonical `provider/model`：
- *      newChat 时先建新对话再切到该模型，不动旧对话的模型；非法 id 直接拒绝）。
- *  12 = 新增 `ttsProviders`（通用语音合成提供者注册表：供插件对接系统朗读与播报）。
- *  13 = 新增 `openFileContextMenu`（右键菜单 contextmenu.file 槽位通道：让插件文件树接入宿主统一右键菜单）。 */
-export const PLUGIN_HOST_API_VERSION = 14;
+export const PLUGIN_HOST_API_VERSION = 16;
 
 export interface PluginHostPickDirectoryOptions {
 	initialPath?: string;
@@ -108,7 +44,6 @@ export interface PluginHostPickModelResult {
 }
 
 interface PluginHostModelInfo {
-	/** canonical 模型 id（`provider/model`，与 set_model 的 modelId 同口径）。 */
 	id: string;
 	provider: string;
 	name?: string;
@@ -117,77 +52,44 @@ interface PluginHostModelInfo {
 }
 
 interface PluginHostStartChatOptions {
-	/** 要作为用户消息发出的文本（必填，空串直接拒绝）。 */
 	prompt: string;
-	/** 是否先新开一个对话，默认 true。 */
 	newChat?: boolean;
-	/** Completion of accepted delivery; false means creation, readiness or sending failed. */
 	onResult?: (ok: boolean) => void;
-	/** 新对话的工作目录（不给 = 不动；切目录失败或超时停止发送）。 */
 	cwd?: string;
-	/** 新对话要用的模型（canonical `provider/model`，须在 models.list() 里；
-	 *  非法 id 直接拒绝（startChat 回 false），不建对话、不动旧对话的模型。
-	 *  newChat 时：先建新对话、再把**新对话**切到该模型（旧对话的模型不动）；
-	 *  newChat=false 时：把当前对话切到该模型再发 prompt。不给 = 沿用当前行为。 */
 	model?: string;
 }
 
-/** 注入输入框草稿的内容（见 composer-bridge.ts 的 ComposerPayload）。 */
 type PluginHostComposeOptions = ComposerPayload;
 
-/** 打开一个「绑定到某个项目目录」的会话（issue #146）。 */
 interface PluginHostOpenSessionOptions {
-	/** 新会话的工作目录（绝对路径）。与 folders/roots 二选一（同时给 = cwd 优先，
-	 *  其余目录当作额外工作区根）。 */
 	cwd?: string;
-	/** 工作区目录列表（绝对路径）：第一个当 cwd，其余当**额外工作区根**（宿主侧多根）。 */
 	folders?: string[];
-	/** 额外工作区根（绝对路径，与 folders 同义；两个字段都给了就合并去重）。 */
 	roots?: string[];
-	/** 会话就绪后作为用户消息发出的文本（可选）。 */
 	prompt?: string;
-	/** 是否新开一个对话（默认 true；false = 在当前对话里切目录）。 */
 	newChat?: boolean;
-	/** 新对话要用的模型（canonical `provider/model`，须在 models.list() 里；
-	 *  非法时整个 openSession 回 {ok:false}，不建对话、不动旧对话的模型）。 */
 	model?: string;
 }
 
-/** 一个可供插件打开的会话（运行中的对话或历史会话）。 */
 export interface PluginHostSessionInfo {
-	/** 稳定 id：运行中的对话是 conversationId；历史会话是 session 文件路径。 */
 	id: string;
 	title: string;
-	/** 该会话所属的工作目录（绝对路径）。 */
 	cwd: string;
-	/** "running" = 本客户端已打开的对话（switchConversation）；
-	 *  "history" = 磁盘上的历史会话（switchSession）；
-	 *  "elsewhere" = 另一处客户端/插件通道运行中的会话（可自动过户接入）。 */
 	kind: "running" | "history" | "elsewhere";
 	owner?: string;
 	conversationId?: string;
-	/** Only false denotes a shared conversation that opens without ownership transfer. */
 	independent?: boolean;
-	/** 是否正在跑（运行中的对话才有意义）。 */
 	isStreaming?: boolean;
 }
 
-/** 会话 API（host.sessions，宿主 API v2）：列表 + 打开。 */
 interface PluginHostSessionsApi {
-	/** 可打开的会话列表（本客户端运行中的对话 + 当前项目的历史会话）。 */
 	list(): PluginHostSessionInfo[];
-	/** 打开一个会话（id 来自 list()）；与 openSession 同样带目录授权/切换等前置动作。 */
 	open(id: string): Promise<PluginHostOpenSessionResult>;
 }
 
-/** `{ok:true, sessionId}` 或 `{ok:false, error}`（错误原文回给插件，可用于提示用户）。 */
 type PluginHostOpenSessionResult = { ok: true; sessionId?: string } | { ok: false; error: string };
 
-/** 目录同步选项（host.reloadCatalog 的第二个参数）。 */
 interface PluginHostReloadCatalogOptions {
-	/** 顺手把条目安装/更新一遍（已装 = 更新，未装 = 安装）。 */
 	install?: boolean;
-	/** 整体替换用户自定义列表（默认合并/按 id upsert）。 */
 	replace?: boolean;
 }
 
@@ -195,90 +97,71 @@ type PluginHostReloadCatalogResult =
 	| { ok: true; entries?: UiPluginCatalogEntry[]; installed?: { id: string; ok: boolean; error?: string }[] }
 	| { ok: false; error: string };
 
-/** 顶栏条目的点击处理器（插件注册；itemId = manifest 里声明的条目 id）。
- *  kind="select" 的切换回传第二个参数 value（选中的 options value）；其余 kind 只传 itemId。 */
 type PluginTopbarActionHandler = (
 	itemId: string,
 	value?: string,
-	/** 右键菜单（contextmenu.*）点过来的目标：{ id: wire 路径, kind: file/dir/list…, label }；非菜单触发时缺席。 */
 	target?: { id: string; kind?: string; label?: string },
 ) => void;
 
-/** 特权 DOM 插件的稳定挂载点（`data-pi-anchor`，跨版本保持；宿主只保证这三个存在）。 */
 interface PluginHostDomAnchors {
-	/** 应用根（挂全局浮层/样式用；position:fixed 定位相对视口即可，不必真挂这里）。 */
 	app: Element | null;
-	/** 顶栏容器。 */
 	topbar: Element | null;
-	/** 输入框容器。 */
 	composer: Element | null;
 }
 
-/** 授权确认弹窗（宿主渲染；插件只拿到 Promise<boolean>）。 */
 interface PluginHostConfirmOptions {
-	/** 插件想打开会话/访问的工作目录（绝对路径）。 */
 	path: string;
 }
 
-/** 插件对话框的一个选项（host.dialogs.select 用，对齐扩展 ui.select）。 */
 interface PluginHostDialogSelectOption {
 	label: string;
 	description?: string;
 }
 
-/** host.dialogs.select 的入参。 */
 interface PluginHostDialogSelectOptions {
 	title: string;
 	options: PluginHostDialogSelectOption[];
 	multi?: boolean;
 }
 
-/** host.dialogs.confirm 的入参。 */
 interface PluginHostDialogConfirmOptions {
 	title: string;
 	detail?: string;
 }
 
-/** host.dialogs.input 的入参。 */
 interface PluginHostDialogInputOptions {
 	title: string;
 	placeholder?: string;
 	initial?: string;
 }
 
-/** notifyAction 上的一个动作按钮。resolve 时回的是用户点的 id。 */
 interface PluginHostNotifyActionItem {
 	id: string;
 	label: string;
 }
 
-/** host.notifyAction 的入参。 */
 interface PluginHostNotifyActionOptions {
 	text: string;
 	actions: PluginHostNotifyActionItem[];
 }
 
-/** 全局搜索的一条命中（host.searchProviders 注册的 provider 返回它）。 */
 interface PluginHostSearchResultItem {
 	title: string;
 	hint?: string;
 	action: string;
 }
 
-/** 一个全局搜索提供者（id 全局唯一，同 id 后注册的覆盖前面的）。 */
 interface PluginHostSearchProvider {
 	id: string;
 	label: string;
 	search: (q: string) => Promise<PluginHostSearchResultItem[]>;
 }
 
-/** searchProviders.list() 返回的轻量信息（不含 search 函数本身）。 */
 interface PluginHostSearchProviderInfo {
 	id: string;
 	label: string;
 }
 
-/** `@` 提及项可带的路径附件（点选后经宿主追加到输入框附件 chips）。 */
 interface PluginHostComposerAttachment {
 	path: string;
 	name?: string;
@@ -286,34 +169,28 @@ interface PluginHostComposerAttachment {
 	lines?: { start: number; end: number };
 }
 
-/** `@` 提及的一条命中：选中后把 text 写进光标处并追加 attachments。 */
 interface PluginHostComposerHit {
 	title: string;
 	hint?: string;
-	/** 写进输入框的文本（缺省 = title）。 */
 	text?: string;
 	attachments?: PluginHostComposerAttachment[];
 }
 
-/** 一个 `@` 提及提供者（id 全局唯一，同 id 后注册的覆盖前面的）。 */
 interface PluginHostComposerProvider {
 	id: string;
 	label: string;
 	search: (q: string) => Promise<PluginHostComposerHit[]>;
 }
 
-/** composerProviders.list() 返回的轻量信息（不含 search 函数本身）。 */
 interface PluginHostComposerProviderInfo {
 	id: string;
 	label: string;
 }
 
-/** 一个通用语音合成提供者（插件可注册它来接管系统朗读与播报）。 */
 export interface PluginHostTtsProvider {
 	id: string;
 	label: string;
 	labelEn?: string;
-	/** 播放指定文本。返回一个停止函数（若播放被主动取消或打断时调用）。 */
 	play: (params: {
 		text: string;
 		rate: number;
@@ -322,230 +199,136 @@ export interface PluginHostTtsProvider {
 		onEnd?: () => void;
 		onError?: (err: Error) => void;
 	}) => () => void;
-	/** 可选：列出该引擎支持的可用音色 */
 	getVoices?: () =>
 		Promise<{ voiceURI: string; name: string; lang?: string }[]> | { voiceURI: string; name: string; lang?: string }[];
 }
 
-/** ttsProviders.list() 返回的轻量信息。 */
 export interface PluginHostTtsProviderInfo {
+	supportsRate?: boolean;
 	id: string;
 	label: string;
 	labelEn?: string;
 }
 
-/** 主题/语言/视图变化的订阅回调。 */
 type PluginHostThemeHandler = (name: string) => void;
 type PluginHostLocaleHandler = (locale: string) => void;
 type PluginHostViewHandler = (view: string) => void;
-/** 快捷键触发回调（无参；keydown 事件本身不透给插件）。 */
 type PluginHostShortcutHandler = () => void;
 
 interface PluginHostApi {
 	version: number;
-	/** 切主视图（"chat" | "terminal" | "git" | `plugin:<id>`）。 */
 	setView(view: string): void;
-	/** 新建对话（可选切工作目录 + 可选定模型）并把 prompt 作为用户消息发出去。
-	 *  返回「已受理」；完整流程在后台串行完成（每步都有超时，超时也照发，不静默丢消息）。
-	 *  model 非法时直接回 false（不建对话、不动旧对话的模型）。 */
 	startChat(opts: PluginHostStartChatOptions): boolean;
-	/** 已配置的模型目录（issue #188）：给插件做真实的模型选择器用。
-	 *  id 是 canonical `provider/model`（与 startChat/openSession 的 model 同口径）。 */
 	models: {
 		list(): PluginHostModelInfo[];
-		/** 当前对话选中的模型 id（canonical `provider/model`，如 "openai-codex/gpt-5"；未选/无为 null）。 */
 		active(): string | null;
-		/** 监听模型切换事件（切换成功时立即通知插件）。返回取消函数。 */
 		onChange(handler: (modelId: string | null) => void): () => void;
 	};
-	/** 把内容放进**输入框草稿**（用户补一句话再自己发），返回是否受理。
-	 *  与 startChat 的差别：不要求连接就绪（草稿是本地状态，断线也能先攒着），
-	 *  但输入框还没挂载时返回 false；内容全空也返回 false。 */
 	compose(opts: PluginHostComposeOptions): boolean;
-	/** 打开一个绑定到指定项目目录的会话（可等待、带目录授权、回 sessionId）。
-	 *  folders/roots 可给多个：第一个当 cwd，其余当额外工作区根（宿主侧多根）。 */
 	openSession(opts: PluginHostOpenSessionOptions): Promise<PluginHostOpenSessionResult>;
-	/** 会话列表 / 打开（宿主 API v2）。只给「本客户端现在能打开的东西」，不编造。 */
 	sessions: PluginHostSessionsApi;
-	/** 获取最近项目路径列表（与左侧边栏「最近项目」一致）。 */
 	listProjects(): string[];
-	/** 同步插件市场目录（受支持路径，service 端原子写 + 可选安装 + 重载）。 */
 	reloadCatalog(source: string, options?: PluginHostReloadCatalogOptions): Promise<PluginHostReloadCatalogResult>;
-	/** 接管 UI 条目的动作（manifest "ui" 里那条目声明的 `action`，或 host.ui.register
-	 *  运行时注册的）：用户点击该条目时宿主回调到这里。返回取消注册函数。
-	 *  建议 action 名带插件前缀（`<pluginId>:<name>`）避免撞名。 */
 	onUiAction(name: string, handler: PluginTopbarActionHandler): () => void;
-	/** 打开一个 `modal.dialog` 槽位的条目（全局 id `<pluginId>:<itemId>`；
-	 *  不给 id 时打不开（返回 false），宿主不知道“是谁”在问。
-	 *  被用户隐藏（布局页勾掉）的条目同样打不开 —— 用户的隐藏就是不想看见。
-	 *  同一时刻只开一个：已开着时先关旧的再开新的，返回 true。 */
 	openModal(id: string): boolean;
-	/** 关掉当前打开的弹窗（没开着时同样返回 true，无害）。 */
 	closeModal(): boolean;
-	/** 旧名（= onUiAction）：最初只有顶栏动作时的写法，保留兼容。 */
 	onTopbarAction(name: string, handler: PluginTopbarActionHandler): () => void;
-	/** 让浏览器扩展操作**被授权的页面**（AI 操作页面的通道）。
-	 *  永远 resolve：失败原因放在 `{ok:false,error}` 里回给模型，不抛给调用方。 */
 	pageCall(opts: PluginHostPageCallOptions): Promise<PluginHostPageResult>;
-	/** 调起系统级目录浏览器弹窗选择文件夹（宿主 API v14）。 */
 	pickDirectory(opts?: PluginHostPickDirectoryOptions): Promise<PluginHostPickDirectoryResult>;
-	/** 调起系统级模型选择器弹窗选择模型（宿主 API v14）。 */
 	pickModel(opts?: PluginHostPickModelOptions): Promise<PluginHostPickModelResult>;
-	/** 特权 DOM 插件的稳定挂载点（需 manifest 声明 `dom` 能力并经用户授权；
-	 *  未授权时 bundle 根本下发不下来（403），调到这里说明已授权）。 */
 	dom: {
 		anchors(): PluginHostDomAnchors;
 	};
-	/** 插件对话框（宿主 API v8：select/confirm/input）。
-	 *  无注入 / 注入失败时静默回退（confirm 走 window.confirm，select/input
-	 *  直接回 ok:false），绝不抛错、不挡旧流程。 */
 	dialogs: {
 		select(opts: PluginHostDialogSelectOptions): Promise<{ ok: boolean; selected?: string[]; error?: string }>;
 		confirm(opts: PluginHostDialogConfirmOptions): Promise<boolean>;
 		input(opts: PluginHostDialogInputOptions): Promise<{ ok: boolean; value?: string }>;
 	};
-	/** 带动作的轻量通知（宿主 API v8）：resolve 用户点的 action id；
-	 *  无交互 / 无注入时 resolve null（未注入时先发一个 toast 回退信号）。 */
 	notifyAction(opts: PluginHostNotifyActionOptions): Promise<string | null>;
-	/** 键盘快捷键（宿主 API v8）：内存注册 + 全局 keydown。输入框聚焦时不触发
-	 *  （防劫持打字）；key 形如 "ctrl+shift+k"（大小写不敏感）。返回取消函数。 */
 	shortcuts: {
 		register(shortcut: string, handler: PluginHostShortcutHandler): () => void;
 	};
-	/** 全局搜索提供者（宿主 API v8）：纯内存注册表。GlobalSearchModal 如需接入
-	 *  可调 list() 枚举，本模块只管注册与列出。 */
 	searchProviders: {
 		register(provider: PluginHostSearchProvider): () => void;
 		list(): PluginHostSearchProviderInfo[];
 	};
-	/** `@` 提及提供者（宿主 API v9）：纯内存注册表。ChatInput 的 `@` 浮层与
-	 *  `/` 选择器共用一个浮层（kind 区分内容），本模块只管注册与列出。 */
 	composerProviders: {
 		register(provider: PluginHostComposerProvider): () => void;
 		list(): PluginHostComposerProviderInfo[];
 	};
-	/** 通用语音合成提供者（宿主 API v12）：插件可注册它来接管系统语音播报与朗读。 */
 	ttsProviders: {
-		register(provider: PluginHostTtsProvider): () => void;
 		list(): PluginHostTtsProviderInfo[];
 	};
-	/** 主题 / 语言 / 视图变化订阅（宿主 API v8）：App 侧经 emitPluginHostTheme /
-	 *  emitPluginHostLocale / emitPluginHostView 触发，这里只做订阅与分发。 */
+	openImagePreview(target: ImageLightboxTarget): boolean;
+	imageOcrProviders: {
+		register(provider: ImageOcrProvider): () => void;
+		list(): { id: string; label: string; labelEn?: string }[];
+	};
 	onTheme(handler: PluginHostThemeHandler): () => void;
 	onLocale(handler: PluginHostLocaleHandler): () => void;
 	onViewChange(handler: PluginHostViewHandler): () => void;
-	/** 打开文件右键菜单（contextmenu.file 槽位，宿主 API v13）。
-	 *  插件文件树（如 vscode-editor 本地树）可直接调用此方法呼出宿主统一右键菜单，
-	 *  自动包含宿主内置操作以及其他插件（如 @plugins/sftp）注册的全部动作。 */
 	openFileContextMenu?(opts: PluginHostFileContextMenuOptions): void;
-	/** 注册自定义成本格式化器（issue #607）：允许插件接管底栏/顶栏 host:cost 的货币符号与金额折算展示。返回取消函数。 */
 	setCostFormatter(formatter: CostFormatter | null): () => void;
-	/** 设置或读取成本显示的货币符号（默认 "$"；如设为 "¥"）。 */
 	setCostCurrency(symbol: string | null | undefined): void;
 	getCostCurrency(): string;
 }
 
-/** 模型想执行的一个页面动作（op 词表在扩展侧，服务端只透传）。 */
 interface PluginHostPageCallOptions {
 	op: string;
 	args?: Record<string, unknown>;
-	/** 目标页面 origin（有多个已授权页面时必填）。 */
 	target?: string;
 	timeoutMs?: number;
 }
 
-/** `{ok:true,result}` 或 `{ok:false,error}` —— 后者会变成模型看到的失败原因。 */
 type PluginHostPageResult = { ok: true; result?: unknown } | { ok: false; error: string };
 
-/** 扩展注入到页面主世界的桥（只用到 call 这一个方法）。 */
 interface PageBridgeLike {
 	call(req: { op: string; args?: unknown; to?: string; timeoutMs?: number }): Promise<unknown>;
 }
 
-/** 打开文件右键菜单的选项（host.openFileContextMenu 用）。 */
 export interface PluginHostFileContextMenuOptions {
-	/** 视口 X 坐标（如 MouseEvent.clientX）。 */
 	x: number;
-	/** 视口 Y 坐标（如 MouseEvent.clientY）。 */
 	y: number;
-	/** 文件或目录在工作区的相对路径（根目录可传 ""）。 */
 	path: string;
-	/** 类型："file" 文件 / "dir" 目录 / "list" 列表空白。缺省按 path 是否以 "/" 结尾推断。 */
 	kind?: "file" | "dir" | "list";
-	/** 显示名称（可选，缺省取路径末段）。 */
 	label?: string;
-	/** 宿主内置条目的自定处理器（可选；返回 true 表示已接管该动作）。 */
 	onHostAction?: (actionId: string, target: { id: string; kind?: string; label?: string }) => void | boolean;
 }
 
 interface PluginHostDeps {
-	/** 全局发送器（app-globals 的 appSend）。 */
 	send: AppSend;
-	/** 连接是否可用（WS 开着 + 已有快照）。false 时 startChat 直接拒绝。 */
 	isReady: () => boolean;
 	setView: (view: string) => void;
-	/** 当前工作目录（快照里的）。 */
 	getCwd: () => string;
-	/** 当前项目的额外工作区根（快照里的；空数组 = 单根）。 */
 	getWorkspaceRoots: () => string[];
-	/** 已配置的模型目录（快照外的 models 状态；缺省 = 空目录，model 选项一律拒绝）。 */
 	listModels?: () => PluginHostModelInfo[];
-	/** 当前对话的模型 id（canonical `provider/model`；快照里的 state.model.id）。 */
 	getCurrentModelId?: () => string | null;
-	/** 可打开的会话（host.sessions.list）：本客户端运行中的对话 + 当前项目历史会话。 */
 	listSessions: () => PluginHostSessionInfo[];
-	/** 当前活动对话 id（还没快照时为 null）。 */
 	getConversationId: () => string | null;
 	getConversationOwner?: () => string | null;
-	/** 当前对话是否还是空白（没有消息 = 它就是「新对话」，new_chat 不会换 id）。 */
 	isConversationBlank: () => boolean;
-	/** 轮询间隔 / 单步超时（测试可调小）。 */
 	pollMs?: number;
 	timeoutMs?: number;
-	/** 等扩展注入页面桥的窗口（默认 3000ms；测试调小，免得为了一个「没插桥」的分支等三秒）。 */
 	bridgeWaitMs?: number;
-	/** 用户「最近项目」列表：已在其中的目录视为用户已知，开会话时不再弹授权确认。 */
 	listProjects?: () => string[];
-	/** 本浏览器已授权给插件的目录（localStorage 持久化，按 pluginId 分键存储）。
-	 *  pluginId = 调用方归因（triggerPluginUiAction 派发期内挂上的）；拿不到时
-	 *  宿主回退到旧的全局键。 */
 	grantedPaths?: (pluginId?: string) => string[];
-	/** 记录一次目录授权（写入哪个键同样跟随 pluginId，缺省写旧全局键）。 */
 	grantPath?: (path: string, pluginId?: string) => void;
-	/** 请用户确认「插件想在这个目录开会话」（宿主渲染弹窗）。缺省 = 拒绝。 */
 	confirm?: (opts: PluginHostConfirmOptions) => Promise<boolean>;
-	/** 插件确认框的宿主实现（dialogs.confirm 用；缺省走 window.confirm 回退）。
-	 *  注：`confirm` 这个名字已被上面的目录授权占用，故确认框的注入叫
-	 *  `dialogConfirm`；三者（dialogConfirm/select/input）都绝不抛错。 */
 	dialogConfirm?: (opts: PluginHostDialogConfirmOptions) => Promise<boolean>;
-	/** 插件选择框的宿主实现（dialogs.select 用；缺省直接回 ok:false）。 */
 	select?: (opts: PluginHostDialogSelectOptions) => Promise<{ ok: boolean; selected?: string[]; error?: string }>;
-	/** 插件输入框的宿主实现（dialogs.input 用；缺省直接回 ok:false）。 */
 	input?: (opts: PluginHostDialogInputOptions) => Promise<{ ok: boolean; value?: string }>;
-	/** 带动作通知的宿主实现（notifyAction 用；未注入时回退为 toast 信号并 resolve null）。 */
 	notifyAction?: (opts: PluginHostNotifyActionOptions) => Promise<string | null>;
-	/** 按需加载某插件的客户端 bundle（顶栏动作可能来自还没加载过的插件）。 */
 	loadPluginBundle?: (pluginId: string) => Promise<boolean>;
-	/** 打开一个 `modal.dialog` 槽位的条目（全局 id `plugin:item`；缺省/非法/被隐藏返回 false）。 */
 	openModal?: (id: string) => boolean;
-	/** 关掉当前打开的弹窗（没开着也无害）。 */
 	closeModal?: () => void;
-	/** 打开文件右键菜单（contextmenu.file 槽位）。 */
 	openFileContextMenu?: (opts: PluginHostFileContextMenuOptions) => void;
-	/** 调起系统级目录浏览器弹窗选择文件夹的宿主实现。 */
 	pickDirectory?: (opts?: PluginHostPickDirectoryOptions) => Promise<PluginHostPickDirectoryResult>;
-	/** 调起系统级模型选择器弹窗选择模型的宿主实现。 */
 	pickModel?: (opts?: PluginHostPickModelOptions) => Promise<PluginHostPickModelResult>;
-	/** 目录同步的等待超时（默认 180s —— 带 install 的同步会跑真实安装）。 */
 	catalogTimeoutMs?: number;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** 等扩展把页面桥装上（MAIN world 注入是异步的，页面刚加载时可能还没有）。
- *
- * 为什么不一口气等很久：桥不在通常意味着**扩展没装 / 没启用 / 本页地址没绑**，那是配置问题，
- * 等再久也不会变好。给一个短窗口（默认 3s）盖住「刚刷新完」这一种情况即可。 */
 async function waitForPageBridge(timeoutMs = 3000): Promise<PageBridgeLike | null> {
 	const deadline = Date.now() + timeoutMs;
 	for (;;) {
@@ -556,26 +339,13 @@ async function waitForPageBridge(timeoutMs = 3000): Promise<PageBridgeLike | nul
 	}
 }
 
-/**
- * startChat 的模块级串行闸门（对照 plugin-loader.ts issue #268 的做法）：startChat
- * 是 fire-and-forget，「set_cwd/new_chat → waitFor → prompt」整段在后台跑；若 A 的
- * waitFor 等待期间 B 也 startChat，B 的 new_chat 会先改掉对话 id，A 醒来后把 prompt
- * 发进 B 刚开的新对话（串话）。前一个序列落定（prompt 已发出）之前，下一个只排队。
- * 闸门空闲时保持同步启动：set_cwd/new_chat 在受理的同一 tick 发出 —— 调用方提示的
- * 及时性与 plugin-host.test.ts 的同步断言都依赖这个时序，不能用纯 promise 链把
- * 首拍也推迟到微任务之后。
- */
 let startChatGate: Promise<void> = Promise.resolve();
-// 已受理但尚未落定的序列数。busy 布尔不够用：排队分支若不置 busy，第三个并发会
-// 在排队者运行期间误判空闲插队；若置了，上一个任务的落定回调又会把标志清掉。
-// 计数器由每个序列自己的落定回调递减，谁受理谁持有，中间落定不会放跑排队者。
 let startChatPending = 0;
 
 export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 	const pollMs = Math.max(1, Number(deps.pollMs ?? 100));
 	const timeoutMs = Math.max(pollMs, Number(deps.timeoutMs ?? 8000));
 
-	/** Wait for confirmed state; callers must stop on timeout. */
 	const waitFor = async (ok: () => boolean): Promise<boolean> => {
 		const deadline = Date.now() + timeoutMs;
 		for (;;) {
@@ -594,7 +364,6 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 		}
 	};
 
-	/** model 是否在已配置目录里（空串 = 没给，不校验）。 */
 	const isKnownModel = (model: string): boolean => {
 		if (!model) return true;
 		try {
@@ -604,8 +373,6 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 		}
 	};
 
-	/** 把当前（新）对话切到指定模型：发 set_model 后等快照里的 model.id 落定。
-	 *  模型确认超时后继续发送；服务端模型切换错误由其自身提示。 */
 	const applyModel = async (model: string): Promise<void> => {
 		if (!model) return;
 		deps.send({ type: "set_model", modelId: model });
@@ -643,7 +410,6 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			if (!prompt) return false;
 			if (!deps.isReady()) return false;
 			const model = String(opts?.model ?? "").trim();
-			// 非法模型直接拒绝：不发任何消息，不建对话、不动旧对话的模型。
 			if (model && !isKnownModel(model)) return false;
 			const exec = async (): Promise<void> => {
 				let ok = false;
@@ -652,21 +418,16 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 				} finally {
 					try {
 						opts?.onResult?.(ok);
-					} catch {
-						/* Consumer callbacks cannot block the queue. */
-					}
+					} catch {}
 				}
 			};
 			let task: Promise<void>;
 			if (startChatPending > 0) {
-				// 已有序列在跑或排队：链到队尾（含 prompt 发出）再启动，防 new_chat 插队串话。
 				task = startChatGate.then(exec);
 			} else {
-				// 闸门空闲：同步启动，保住「受理即发 set_cwd/new_chat」的既有时序。
 				task = exec();
 			}
 			startChatPending++;
-			// 闸门自身不因一次失败卡死（失败也不抛到调用方，fire-and-forget）。
 			startChatGate = task.then(
 				() => {
 					startChatPending--;
@@ -675,9 +436,7 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 					startChatPending--;
 				},
 			);
-			void task.catch(() => {
-				/* 发送失败已有各自的上层提示，这里不抛到调用方 */
-			});
+			void task.catch(() => {});
 			return true;
 		},
 		models: {
@@ -705,14 +464,10 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			if (typeof deps.closeModal !== "function") return true;
 			try {
 				deps.closeModal();
-			} catch {
-				/* 关弹窗失败不抛到插件，幂等语义：调了就当关了 */
-			}
+			} catch {}
 			return true;
 		},
 		async openSession(opts) {
-			// 调用方归因快照：入口先抓（之后的 confirm 是异步的，模块级作用域可能已被
-			// 并发派发覆盖），grantedPaths/grantPath 全程用这份快照归因到插件名下的键。
 			const caller = pluginApiCaller;
 			const folders = Array.isArray(opts?.folders)
 				? opts.folders.filter((f): f is string => typeof f === "string" && f.trim().length > 0).map((f) => f.trim())
@@ -720,18 +475,12 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			const extra = Array.isArray(opts?.roots)
 				? opts.roots.filter((f): f is string => typeof f === "string" && f.trim().length > 0).map((f) => f.trim())
 				: [];
-			// cwd 优先；没给就用 folders/roots 的第一个。剩下的目录当**额外工作区根**
-			// （宿主侧多根：AI 仍只在 cwd 里干活，文件树/插件受支持路径可跨这些根）。
 			const explicit = String(opts?.cwd ?? "").trim();
 			const all = [...new Set([...folders, ...extra])];
 			const target = explicit || all[0] || "";
 			if (!target) return { ok: false, error: "openSession 需要 cwd / folders / roots（绝对路径）" };
 			if (!deps.isReady()) return { ok: false, error: "尚未连接到服务器（还没有快照）" };
 			const roots = all.filter((p) => p !== target).slice(0, 7);
-			// 目录授权（issue #146 的硬性要求）：最近项目里的 = 用户自己用过的，
-			// 已授权过的（localStorage）= 以前确认过；其余都要用户当场点头。
-			// **额外根也要过这一关** —— 成了工作区根就意味着插件阅读它们不必再授权，
-			// 不能让插件拿 roots 当侧门。
 			const known = new Set([...(deps.listProjects?.() ?? []), ...(deps.grantedPaths?.(caller) ?? [])]);
 			for (const p of [target, ...roots]) {
 				if (known.has(p)) continue;
@@ -744,7 +493,6 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 				const arrived = await waitFor(() => deps.getCwd() === target);
 				if (!arrived) return { ok: false, error: `切换工作目录失败或超时：${target}` };
 			}
-			// 根在切项目**之后**写（服务端按项目存根，切 cwd 会换成目标项目自己那套）。
 			if (roots.length > 0 || deps.getWorkspaceRoots().length > 0) {
 				deps.send({ type: "set_workspace_roots", roots });
 			}
@@ -771,15 +519,12 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 		sessions: {
 			list: () => deps.listSessions(),
 			async open(id) {
-				// 调用方归因快照（同 openSession）：跨项目的目录授权记到插件名下的键。
 				const caller = pluginApiCaller;
 				const targetId = String(id ?? "").trim();
 				if (!targetId) return { ok: false, error: "sessions.open 需要一个会话 id（先调 list）" };
 				if (!deps.isReady()) return { ok: false, error: "尚未连接到服务器（还没有快照）" };
 				const info = deps.listSessions().find((s) => s.id === targetId);
 				if (!info) return { ok: false, error: `找不到会话：${targetId}` };
-				// 跨项目的历史会话：先切工作目录（服务端的 session 列表是按 cwd 扫的），
-				// 否则 switch_session 找不到目标文件。跑着的对话自带 cwd，切它就会连带切项目。
 				if (info.cwd && info.cwd !== deps.getCwd()) {
 					const known = new Set([...(deps.listProjects?.() ?? []), ...(deps.grantedPaths?.(caller) ?? [])]);
 					if (!known.has(info.cwd)) {
@@ -852,13 +597,19 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 		async pageCall(opts) {
 			const op = String(opts?.op ?? "").trim();
 			if (!op) return { ok: false, error: "pageCall 需要一个动作名（op）" };
-			// 桌面壳里没有 Chrome 扩展运行时，window.__piBridge 永远不会出现 ——
-			// 别让模型干等 3 秒桥超时，直接告诉它换路（改用网页版）。
+			const native = (window as unknown as { __piBrowser?: BrowserHostBridge }).__piBrowser;
+			if (native?.version === 1 && typeof native.pageCall === "function") {
+				try {
+					return await native.pageCall({ ...opts, op, timeoutMs: opts.timeoutMs ?? 30000 });
+				} catch (err) {
+					return { ok: false, error: err instanceof Error ? err.message : String(err) };
+				}
+			}
 			if (isDesktopShell()) {
 				return {
 					ok: false,
 					error:
-						"桌面版（Electron 外壳）不支持 browser_page：窗口里没有 Chrome 扩展运行时。请让用户改用系统浏览器打开同一个 pi-web-ui 地址（网页版）再试。/ The desktop app cannot run browser_page (no Chrome extension runtime); ask the user to open the same pi-web-ui address in a regular browser instead.",
+						"此桌面版尚未提供原生浏览器桥；请升级到支持 AI Browser 的桌面版，或在系统浏览器中使用 page-picker 扩展。/ Native browser bridge unavailable; upgrade the desktop app or use page-picker in a regular browser.",
 				};
 			}
 			const bridge = await waitForPageBridge(deps.bridgeWaitMs ?? 3000);
@@ -877,7 +628,6 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 				});
 				return result === undefined ? { ok: true } : { ok: true, result };
 			} catch (err) {
-				// 桥把对端/准入的失败原因包在 Error.message 里（见扩展的 bridge-page.ts）
 				return { ok: false, error: err instanceof Error ? err.message : String(err) };
 			}
 		},
@@ -934,9 +684,7 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 					if (typeof deps.dialogConfirm === "function") {
 						try {
 							return (await deps.dialogConfirm({ title, ...(detail ? { detail } : {}) })) === true;
-						} catch {
-							/* 注入失败 → 回退 window.confirm */
-						}
+						} catch {}
 					}
 					if (typeof window !== "undefined" && typeof window.confirm === "function") {
 						try {
@@ -983,14 +731,11 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			} catch {
 				return null;
 			}
-			// 未注入：发一个 toast 回退信号（App 后续可监听并转成真正的 toast），再 resolve null。
 			try {
 				if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
 					window.dispatchEvent(new CustomEvent(PLUGIN_TOAST_EVENT, { detail: { text } }));
 				}
-			} catch {
-				/* 非浏览器/事件不可用：静默跳过 */
-			}
+			} catch {}
 			return null;
 		},
 		shortcuts: {
@@ -1005,8 +750,12 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 			list: () => listPluginComposerProviders(),
 		},
 		ttsProviders: {
-			register: (provider) => registerPluginTtsProvider(provider),
 			list: () => listPluginTtsProviders(),
+		},
+		openImagePreview: openImageLightbox,
+		imageOcrProviders: {
+			register: (provider) => registerImageOcrProvider(provider, pluginScope),
+			list: () => listImageOcrProviders().map(({ id, label, labelEn }) => ({ id, label, labelEn })),
 		},
 		onTheme: (handler) => subscribePluginHostTheme(handler),
 		onLocale: (handler) => subscribePluginHostLocale(handler),
@@ -1022,29 +771,18 @@ export function createPluginHostApi(deps: PluginHostDeps): PluginHostApi {
 	};
 }
 
-/** 装上 / 卸下宿主 API（App 挂载时装，卸载时传 null 摘掉）。 */
 export function installPluginHostApi(api: PluginHostApi | null): void {
 	try {
 		const w = window as unknown as Record<string, unknown>;
 		if (api) w[PLUGIN_HOST_GLOBAL] = api;
 		else delete w[PLUGIN_HOST_GLOBAL];
-	} catch {
-		/* 非浏览器环境（单测）忽略 */
-	}
+	} catch {}
 }
 
-/* -------------------------------------------------------------------------- */
-/* 顶栏动作注册表（issue #146）                                                */
-/* -------------------------------------------------------------------------- */
-
-/** 插件的顶栏动作处理器：key = `${pluginId}:${action}`。 */
 const topbarHandlers = new Map<string, Set<PluginTopbarActionHandler>>();
 
-/** 当前「正在加载/挂载」的插件 id：这段时间里插件调 onTopbarAction 就绑到它名下。
- *  App 懒加载插件 bundle 时用 withPluginScopeAsync 括住，插件的模块顶层代码即可注册。 */
 let pluginScope: string | null = null;
 
-/** 异步版：等待 fn（通常是 `await import(bundle)`）期间保持作用域。 */
 export async function withPluginScopeAsync<T>(pluginId: string | null, fn: () => Promise<T>): Promise<T> {
 	const prev = pluginScope;
 	pluginScope = pluginId;
@@ -1055,14 +793,8 @@ export async function withPluginScopeAsync<T>(pluginId: string | null, fn: () =>
 	}
 }
 
-/** 当前正在被派发 UI 动作的插件 id：openSession/sessions.open 的目录授权按它把
- *  「用户确认过」记到该插件名下（localStorage 按插件分键），而不是所有插件共用。
- *  派发是同步的（fire 循环），方法入口先取快照，之后的 await 期间继续用快照 ——
- *  宿主桥是全局单例，除此之外架构上归因不了调用方（定时器/自挂监听里调 host 的
- *  插件拿不到归因，宿主回退旧全局键，见 App.tsx 的授权键注释）。 */
 let pluginApiCaller: string | undefined = undefined;
 
-/** 在指定插件的调用方作用域里同步执行 fn（异常原样抛出）。 */
 function withPluginApiCaller<T>(pluginId: string, fn: () => T): T {
 	const prev = pluginApiCaller;
 	pluginApiCaller = pluginId;
@@ -1073,7 +805,6 @@ function withPluginApiCaller<T>(pluginId: string, fn: () => T): T {
 	}
 }
 
-/** 注册一个顶栏动作处理器（pluginId 为 null = 全局注册）。返回取消注册函数。 */
 function registerPluginTopbarAction(
 	pluginId: string | null,
 	name: string,
@@ -1094,9 +825,6 @@ function registerPluginTopbarAction(
 	};
 }
 
-/** 触发一个 UI 动作：先找该插件名下的处理器，再找全局同名；都没有时按需加载
- *  插件的客户端 bundle（顶栏按钮可能来自一个还没被任何视图加载过的插件）后再试。
- *  返回是否真的调到了处理器（false = 插件没接管这个动作，宿主应给个提示）。 */
 export async function triggerPluginUiAction(
 	pluginId: string,
 	action: string,
@@ -1114,8 +842,6 @@ export async function triggerPluginUiAction(
 		// eslint-disable-next-line unicorn/no-useless-spread -- snapshot：handler 可能在回调里注销自己
 		for (const h of [...set]) {
 			try {
-				// 派发期间挂上调用方作用域：handler 里同步发起的 openSession/sessions.open
-				// 能归因到这个插件，目录授权记到它名下的键（见 pluginApiCaller 注释）。
 				withPluginApiCaller(pluginId, () => h(itemId, opts?.value, opts?.target));
 			} catch (err) {
 				console.error(`[plugin:${pluginId}] 顶栏动作 ${action} 抛错:`, err);
@@ -1138,19 +864,11 @@ export async function triggerPluginUiAction(
 	return false;
 }
 
-/* -------------------------------------------------------------------------- */
-/* 宿主 API v8：notifyAction 回退信号 / 快捷键 / 搜索提供者 / 主题订阅          */
-/* -------------------------------------------------------------------------- */
-
-/** notifyAction 未注入时的回退信号（App 后续可监听并转成真正的 toast；当前只求不抛错）。 */
 const PLUGIN_TOAST_EVENT = "pi-web-ui:toast";
-
-/* ---- 快捷键（内存注册表 + 全局 keydown） ---- */
 
 const shortcutHandlers = new Map<string, Set<PluginHostShortcutHandler>>();
 let shortcutListenerOn = false;
 
-/** 解析 "ctrl+shift+k"（大小写不敏感；修饰键固定顺序拼成规范形）。非法直接回 null。 */
 function parseShortcut(
 	raw: string,
 ): { combo: string; key: string; ctrl: boolean; shift: boolean; alt: boolean; meta: boolean } | null {
@@ -1168,17 +886,16 @@ function parseShortcut(
 		else if (p === "shift") shift = true;
 		else if (p === "alt" || p === "option") alt = true;
 		else if (p === "meta" || p === "cmd" || p === "command" || p === "win" || p === "super") meta = true;
-		else return null; // 未知修饰键：拒绝注册，不断言
+		else return null;
 	}
 	const key = parts[parts.length - 1] ?? "";
 	if (!key || ["ctrl", "control", "shift", "alt", "option", "meta", "cmd", "command", "win", "super"].includes(key)) {
-		return null; // 光有修饰键、没有主键：拒绝注册
+		return null;
 	}
 	const combo = `${ctrl ? "ctrl+" : ""}${shift ? "shift+" : ""}${alt ? "alt+" : ""}${meta ? "meta+" : ""}${key}`;
 	return { combo, key, ctrl, shift, alt, meta };
 }
 
-/** 当前焦点是否在输入框里（是 = 快捷键让路，防劫持打字）。 */
 function isTypingFocus(): boolean {
 	try {
 		if (typeof document === "undefined") return false;
@@ -1207,9 +924,7 @@ function onShortcutKeyDown(e: KeyboardEvent): void {
 				console.error("[plugin-host] 快捷键处理器抛错:", err);
 			}
 		}
-	} catch {
-		/* 绝不把异常漏到页面的按键链里 */
-	}
+	} catch {}
 }
 
 function ensureShortcutListener(): void {
@@ -1218,9 +933,7 @@ function ensureShortcutListener(): void {
 		if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
 		window.addEventListener("keydown", onShortcutKeyDown as EventListener);
 		shortcutListenerOn = true;
-	} catch {
-		/* 非浏览器环境：保持未安装状态，注册照收、只是永远不触发 */
-	}
+	} catch {}
 }
 
 function maybeDropShortcutListener(): void {
@@ -1228,13 +941,11 @@ function maybeDropShortcutListener(): void {
 	try {
 		window.removeEventListener("keydown", onShortcutKeyDown as EventListener);
 	} catch {
-		/* 忽略 */
 	} finally {
 		shortcutListenerOn = false;
 	}
 }
 
-/** 注册一个全局快捷键（key 形如 "ctrl+shift+k"，大小写不敏感）。返回取消函数。 */
 function registerPluginShortcut(shortcut: string, handler: PluginHostShortcutHandler): () => void {
 	if (typeof handler !== "function") return () => {};
 	const parsed = parseShortcut(shortcut);
@@ -1254,11 +965,8 @@ function registerPluginShortcut(shortcut: string, handler: PluginHostShortcutHan
 	};
 }
 
-/* ---- 全局搜索提供者（纯内存注册表） ---- */
-
 const searchProviderRegistry = new Map<string, PluginHostSearchProvider>();
 
-/** 注册一个搜索提供者（同 id 后注册的覆盖前面的）。返回取消函数。 */
 function registerPluginSearchProvider(provider: PluginHostSearchProvider): () => void {
 	const id = String(provider?.id ?? "").trim();
 	if (!id || typeof provider?.search !== "function") return () => {};
@@ -1269,16 +977,12 @@ function registerPluginSearchProvider(provider: PluginHostSearchProvider): () =>
 	};
 }
 
-/** 列出已注册的搜索提供者（轻量信息；GlobalSearchModal 如需接入调这里）。 */
 export function listPluginSearchProviders(): PluginHostSearchProviderInfo[] {
 	return [...searchProviderRegistry.values()].map((p) => ({ id: p.id, label: p.label }));
 }
 
-/* ---- `@` 提及提供者（纯内存注册表，与 searchProviders 同口径） ---- */
-
 const composerProviderRegistry = new Map<string, PluginHostComposerProvider>();
 
-/** 注册一个 `@` 提及提供者（同 id 后注册的覆盖前面的）。返回取消函数。 */
 function registerPluginComposerProvider(provider: PluginHostComposerProvider): () => void {
 	const id = String(provider?.id ?? "").trim();
 	if (!id || typeof provider?.search !== "function") return () => {};
@@ -1289,74 +993,17 @@ function registerPluginComposerProvider(provider: PluginHostComposerProvider): (
 	};
 }
 
-/** 列出已注册的 `@` 提及提供者（轻量信息；ChatInput 的 `@` 浮层调这里枚举）。 */
 export function listPluginComposerProviders(): PluginHostComposerProviderInfo[] {
 	return [...composerProviderRegistry.values()].map((p) => ({ id: p.id, label: p.label }));
 }
 
-/** 取一个 `@` 提及提供者的完整定义（含 search 函数；ChatInput 调 search 用）。 */
 export function getPluginComposerProvider(id: string): PluginHostComposerProvider | undefined {
 	return composerProviderRegistry.get(String(id ?? ""));
 }
 
-/** 取一个提供者的完整定义（含 search 函数；GlobalSearchModal 调 search 用）。 */
 export function getPluginSearchProvider(id: string): PluginHostSearchProvider | undefined {
 	return searchProviderRegistry.get(String(id ?? ""));
 }
-
-/* ---- 语音合成提供者（纯内存注册表，与 searchProviders 同口径） ---- */
-
-const ttsProviderRegistry = new Map<string, PluginHostTtsProvider>();
-const ttsProviderListeners = new Set<() => void>();
-
-/** 注册一个语音合成提供者（同 id 后注册的覆盖前面的）。返回取消函数。 */
-export function registerPluginTtsProvider(provider: PluginHostTtsProvider): () => void {
-	const id = String(provider?.id ?? "").trim();
-	if (!id || typeof provider?.play !== "function") return () => {};
-	const stored: PluginHostTtsProvider = {
-		id,
-		label: String(provider.label ?? id),
-		labelEn: provider.labelEn ? String(provider.labelEn) : undefined,
-		play: provider.play,
-		getVoices: provider.getVoices,
-	};
-	ttsProviderRegistry.set(id, stored);
-	for (const cb of ttsProviderListeners) {
-		try {
-			cb();
-		} catch {}
-	}
-	return () => {
-		if (ttsProviderRegistry.get(id) === stored) {
-			ttsProviderRegistry.delete(id);
-			for (const cb of ttsProviderListeners) {
-				try {
-					cb();
-				} catch {}
-			}
-		}
-	};
-}
-
-/** 列出已注册的语音合成提供者。 */
-export function listPluginTtsProviders(): PluginHostTtsProviderInfo[] {
-	return [...ttsProviderRegistry.values()].map((p) => ({ id: p.id, label: p.label, labelEn: p.labelEn }));
-}
-
-/** 取一个语音合成提供者的完整定义。 */
-export function getPluginTtsProvider(id: string): PluginHostTtsProvider | undefined {
-	return ttsProviderRegistry.get(String(id ?? ""));
-}
-
-/** 订阅 TTS 提供者列表变化。 */
-export function onTtsProvidersChange(cb: () => void): () => void {
-	ttsProviderListeners.add(cb);
-	return () => {
-		ttsProviderListeners.delete(cb);
-	};
-}
-
-/* ---- 主题 / 语言 / 视图订阅（简单集合 + 触发器） ---- */
 
 const themeListeners = new Set<PluginHostThemeHandler>();
 const localeListeners = new Set<PluginHostLocaleHandler>();
@@ -1370,7 +1017,6 @@ function onModelChange(handler: (modelId: string | null) => void): () => void {
 	};
 }
 
-/** 触发模型变更订阅（供 App 在模型切换后调用）。 */
 export function emitPluginHostModel(modelId: string | null): void {
 	for (const h of modelListeners) {
 		try {
@@ -1381,7 +1027,6 @@ export function emitPluginHostModel(modelId: string | null): void {
 	}
 }
 
-/** 订阅主题变化（返回取消函数；非函数直接回空函数，不抛错）。 */
 function subscribePluginHostTheme(handler: PluginHostThemeHandler): () => void {
 	if (typeof handler !== "function") return () => {};
 	themeListeners.add(handler);
@@ -1390,7 +1035,6 @@ function subscribePluginHostTheme(handler: PluginHostThemeHandler): () => void {
 	};
 }
 
-/** 订阅语言变化（返回取消函数）。 */
 function subscribePluginHostLocale(handler: PluginHostLocaleHandler): () => void {
 	if (typeof handler !== "function") return () => {};
 	localeListeners.add(handler);
@@ -1399,7 +1043,6 @@ function subscribePluginHostLocale(handler: PluginHostLocaleHandler): () => void
 	};
 }
 
-/** 订阅视图变化（返回取消函数）。 */
 function subscribePluginHostView(handler: PluginHostViewHandler): () => void {
 	if (typeof handler !== "function") return () => {};
 	viewListeners.add(handler);
@@ -1408,7 +1051,6 @@ function subscribePluginHostView(handler: PluginHostViewHandler): () => void {
 	};
 }
 
-/** 触发主题订阅（供 App 在主题切换后调用；单个 handler 抛错不影响其余）。 */
 export function emitPluginHostTheme(name: string): void {
 	const n = String(name ?? "");
 	for (const h of themeListeners) {
@@ -1420,7 +1062,6 @@ export function emitPluginHostTheme(name: string): void {
 	}
 }
 
-/** 触发语言订阅（供 App 在语言切换后调用）。 */
 export function emitPluginHostLocale(locale: string): void {
 	const l = String(locale ?? "");
 	for (const h of localeListeners) {
@@ -1432,7 +1073,6 @@ export function emitPluginHostLocale(locale: string): void {
 	}
 }
 
-/** 触发视图订阅（供 App 在切视图后调用）。 */
 export function emitPluginHostView(view: string): void {
 	const v = String(view ?? "");
 	for (const h of viewListeners) {
@@ -1444,14 +1084,9 @@ export function emitPluginHostView(view: string): void {
 	}
 }
 
-/* -------------------------------------------------------------------------- */
-/* 目录同步回执（use-chat 收到 plugin_catalog_sync_result 时转交这里）          */
-/* -------------------------------------------------------------------------- */
-
 type CatalogSyncResolver = (result: PluginHostReloadCatalogResult) => void;
 const pendingCatalogSync = new Map<string, CatalogSyncResolver>();
 
-/** use-chat 调用：把服务端的同步回执交给等待中的 reloadCatalog()（无等待者则丢弃）。 */
 export function resolveCatalogSyncResult(msg: {
 	requestId: string;
 	ok: boolean;

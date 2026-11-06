@@ -1,0 +1,372 @@
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import {
+	existsSync,
+	readFileSync,
+	writeFileSync,
+	renameSync,
+	mkdirSync,
+	rmSync,
+	openSync,
+	closeSync,
+	readdirSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { acquireHubLock, hubServicePlan, runManager, probeHub } from "./device-hub-cli.mjs";
+
+const SELF = fileURLToPath(import.meta.url);
+const PACKAGE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+export const UPGRADE_TIMEOUT_MS = 20 * 60_000;
+export const jobPathFor = (dataDir) => join(resolve(dataDir), "hub-upgrade.json");
+export function readUpgradeJob(path) {
+	if (!existsSync(path)) return undefined;
+	const job = JSON.parse(readFileSync(path, "utf8"));
+	if (
+		job.schemaVersion !== 1 ||
+		typeof job.id !== "string" ||
+		!/^[a-f0-9-]{36}$/.test(job.id) ||
+		!["queued", "running", "succeeded", "failed"].includes(job.state)
+	)
+		throw new Error("Invalid Hub upgrade job");
+	return job;
+}
+export function writeUpgradeJob(path, job) {
+	const temp = `${path}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(temp, `${JSON.stringify(job, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+		renameSync(temp, path);
+	} finally {
+		rmSync(temp, { force: true });
+	}
+}
+function planForJob(job) {
+	return hubServicePlan({ env: { ...process.env, PI_DEVICE_HUB_SERVICE_NAME: job.serviceName ?? "pi-device-hub" } });
+}
+function installedSettings(plan, job) {
+	if (!existsSync(plan.config)) throw new Error("Hub service is not installed; install it before updating");
+	const settings = JSON.parse(readFileSync(plan.config, "utf8"));
+	if (
+		job &&
+		(settings.PI_DEVICE_HUB_INSTANCE_ID !== job.instanceId ||
+			resolve(settings.PI_DEVICE_HUB_DATA_DIR) !== dirname(resolve(job.path)))
+	)
+		throw new Error("Upgrade job does not belong to this installed Hub");
+	return settings;
+}
+
+export function execute(file, args, { timeout = 10 * 60_000, logPath, env = process.env } = {}) {
+	return new Promise((resolveCommand, reject) => {
+		let output = "";
+		const fd = logPath ? openSync(logPath, "a", 0o600) : undefined;
+		let child;
+		try {
+			child = spawn(file, args, { env, windowsHide: true, stdio: ["ignore", fd ?? "pipe", fd ?? "pipe"] });
+		} catch (error) {
+			if (fd !== undefined) closeSync(fd);
+			return reject(error);
+		}
+		if (fd !== undefined) closeSync(fd);
+		for (const stream of [child.stdout, child.stderr])
+			stream?.on("data", (chunk) => {
+				output = (output + chunk).slice(-8192);
+			});
+		const timer = setTimeout(() => {
+			child.kill();
+			reject(new Error("Hub upgrade command timed out"));
+		}, timeout);
+		child.once("error", (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
+		child.once("exit", (code, signal) => {
+			clearTimeout(timer);
+			if (code === 0) resolveCommand(output.trim());
+			else
+				reject(
+					new Error(
+						`Hub upgrade command failed (${code ?? signal})${logPath ? `; see ${logPath}` : `: ${output.trim()}`}`,
+					),
+				);
+		});
+	});
+}
+export function independentWorkerPlan(
+	jobPath,
+	{ platform = process.platform, node = process.execPath, worker = SELF, id = randomUUID() } = {},
+) {
+	const args = [worker, "--run", resolve(jobPath)];
+	if (platform === "linux")
+		return {
+			file: "systemd-run",
+			args: ["--user", "--collect", `--unit=pi-device-hub-update-${id}`, "--property=Type=exec", node, ...args],
+		};
+	if (platform === "darwin")
+		return {
+			file: "launchctl",
+			args: ["submit", "-l", `com.xingshuyin.pi-device-hub-update-${id}`, "--", node, ...args],
+		};
+	if (platform === "win32") {
+		const task = `pi-device-hub-update-${id}`;
+		const quote = (s) => `'${s.replace(/'/g, "''")}'`;
+		const winArg = (s) => `"${s.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, "$1$1")}"`;
+		const script = `$ErrorActionPreference='Stop'; $a=New-ScheduledTaskAction -Execute ${quote(node)} -Argument ${quote(args.map(winArg).join(" "))}; $s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 20) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; $u=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name; Register-ScheduledTask -TaskName ${quote(task)} -Action $a -Settings $s -User $u -RunLevel Limited -Force | Out-Null; Start-ScheduledTask -TaskName ${quote(task)};`;
+		return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", script], task };
+	}
+	throw new Error(`Hub updates are unsupported on ${platform}`);
+}
+export async function launchUpgradeJob(
+	path,
+	{ plan, run = execute, probe = probeHub, sleep = delay, ...options } = {},
+) {
+	const job = readUpgradeJob(path);
+	if (!job || job.state !== "queued") throw new Error("Hub upgrade job is not queued");
+	plan ??= planForJob(job);
+	const settings = installedSettings(plan, { ...job, path });
+	const health = await probe(settings);
+	if (!health || health.instanceId !== job.instanceId || health.bootId !== job.fromBootId)
+		throw new Error("Hub process changed before upgrade submission");
+	const launch = independentWorkerPlan(path, { ...options, id: job.id });
+	await run(launch.file, launch.args, { timeout: 30_000 });
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		const current = readUpgradeJob(path);
+		if (current?.id !== job.id) throw new Error("Hub upgrade job changed during submission");
+		if (current.state === "failed") throw new Error(current.error || "Hub upgrade worker failed to start");
+		if (current.state !== "queued") return;
+		await sleep(100);
+	}
+	throw new Error("Hub upgrade worker did not start; inspect the system service manager");
+}
+function npmCli(node = process.execPath) {
+	const candidates = [
+		join(dirname(node), "node_modules/npm/bin/npm-cli.js"),
+		join(dirname(node), "../lib/node_modules/npm/bin/npm-cli.js"),
+	];
+	const path = candidates.find(existsSync);
+	if (!path) throw new Error("npm is required beside Node to update the Hub; install Node with npm and retry");
+	return path;
+}
+async function installRelease(
+	root,
+	{ source = `${PACKAGE.name}@latest`, executeCommand = execute, env = process.env, logPath } = {},
+) {
+	const release = join(root, "releases", randomUUID());
+	mkdirSync(release, { recursive: true, mode: 0o700 });
+	try {
+		await executeCommand(
+			process.execPath,
+			[
+				npmCli(),
+				"install",
+				"--prefix",
+				release,
+				"--omit=dev",
+				"--omit=optional",
+				"--ignore-scripts",
+				"--no-audit",
+				"--no-fund",
+				"--package-lock=false",
+				source,
+			],
+			{ env, logPath },
+		);
+		const rootPath = join(release, "node_modules", PACKAGE.name);
+		const pkg = JSON.parse(readFileSync(join(rootPath, "package.json"), "utf8"));
+		if (pkg.name !== PACKAGE.name || typeof pkg.version !== "string")
+			throw new Error("Installed Hub package identity does not match");
+		const entry = join(rootPath, "bin/pi-device-hub.mjs");
+		if (!existsSync(entry) || !existsSync(join(rootPath, "dist/server/device-center/main.js")))
+			throw new Error("Installed package is missing the standalone Hub build");
+		await executeCommand(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				`await import(${JSON.stringify(pathToFileURL(join(rootPath, "dist/server/device-center/main.js")).href)})`,
+			],
+			{ env, logPath, timeout: 30_000 },
+		);
+		return { root: release, entry, version: pkg.version };
+	} catch (error) {
+		rmSync(release, { recursive: true, force: true });
+		throw error;
+	}
+}
+export async function waitForRelease(
+	settings,
+	{ version, fromBootId, legacy = false, probe = probeHub, timeout = 30_000, sleep = delay } = {},
+) {
+	const deadline = Date.now() + timeout;
+	while (Date.now() < deadline) {
+		const health = await probe(settings);
+		if (
+			health &&
+			health.instanceId === settings.PI_DEVICE_HUB_INSTANCE_ID &&
+			health.allowRegistration === (settings.PI_DEVICE_HUB_ALLOW_REGISTRATION === "1") &&
+			(legacy || (health.version === version && typeof health.bootId === "string" && health.bootId !== fromBootId))
+		)
+			return health;
+		await sleep(250);
+	}
+	throw new Error(
+		`Updated Hub did not start with expected version ${version}; old healthy processes do not count as a successful upgrade`,
+	);
+}
+function retainWorkingReleases(plan, candidate, previousFile) {
+	const releases = join(plan.root, "releases");
+	if (resolve(dirname(candidate.root)) !== resolve(releases)) return;
+	const activePath = join(plan.root, "active-release.json");
+	let previous;
+	try {
+		previous = JSON.parse(readFileSync(activePath, "utf8")).current;
+	} catch {}
+	const previousText = previousFile.toString(process.platform === "win32" ? "utf16le" : "utf8");
+	const knownPrevious =
+		typeof previous === "string" && resolve(dirname(previous)) === resolve(releases) && previousText.includes(previous);
+	writeUpgradeJob(activePath, { current: candidate.root, ...(knownPrevious ? { previous } : {}) });
+	if (!knownPrevious) return;
+	for (const entry of readdirSync(releases, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !/^[a-f0-9-]{36}$/.test(entry.name)) continue;
+		const path = join(releases, entry.name);
+		if (path !== candidate.root && path !== previous) rmSync(path, { recursive: true, force: true });
+	}
+}
+export async function runUpgradeJob(
+	path,
+	{
+		plan,
+		install = installRelease,
+		run = runManager,
+		probe = probeHub,
+		wait = waitForRelease,
+		source = process.env.PI_DEVICE_HUB_UPDATE_SOURCE,
+		log = console.log,
+	} = {},
+) {
+	let job = readUpgradeJob(path);
+	if (!job || job.state !== "queued") throw new Error("Hub upgrade job is not queued");
+	plan ??= planForJob(job);
+	const update = (patch) => {
+		const current = readUpgradeJob(path);
+		if (current?.id !== job.id) throw new Error("Hub upgrade job was replaced");
+		job = { ...job, ...patch, updatedAt: Date.now() };
+		writeUpgradeJob(path, job);
+	};
+	let releaseLock;
+	let previousFile;
+	let changed = false;
+	let candidate;
+	try {
+		const settings = installedSettings(plan, { ...job, path });
+		releaseLock = acquireHubLock(plan.root);
+		update({ state: "running", phase: "installing" });
+		const before = await probe(settings);
+		if (!before || before.instanceId !== job.instanceId || (before.bootId ?? "legacy") !== job.fromBootId)
+			throw new Error("Hub ownership or process changed before upgrade");
+		previousFile = readFileSync(plan.file);
+		writeFileSync(join(plan.root, "service.previous"), previousFile, { mode: 0o600 });
+		const logPath = join(dirname(path), "hub-upgrade.log");
+		writeFileSync(logPath, `Hub upgrade ${job.id}\n`, { mode: 0o600 });
+		candidate = await install(plan.root, { source: settings.PI_DEVICE_HUB_UPDATE_SOURCE ?? source, logPath });
+		update({ phase: "restarting", targetVersion: candidate.version });
+		const next = hubServicePlan({ ...plan.serviceOptions, entry: candidate.entry });
+		const temp = `${plan.file}.${job.id}.tmp`;
+		writeFileSync(temp, process.platform === "win32" ? Buffer.from(`\uFEFF${next.content}`, "utf16le") : next.content, {
+			mode: 0o600,
+		});
+		renameSync(temp, plan.file);
+		changed = true;
+		for (const args of plan.commands.update) run(plan.manager, args);
+		const health = await wait(settings, { version: candidate.version, fromBootId: job.fromBootId, probe });
+		try {
+			retainWorkingReleases(plan, candidate, previousFile);
+		} catch (error) {
+			log(`Hub release cleanup deferred: ${error.message}`);
+		}
+		update({ state: "succeeded", phase: "completed", version: health.version, bootId: health.bootId });
+		log(`Hub upgraded to ${health.version}`);
+		return job;
+	} catch (error) {
+		let reason = error instanceof Error ? error.message : String(error);
+		if (changed && previousFile) {
+			try {
+				update({ phase: "rolling-back" });
+				const restore = `${plan.file}.${job.id}.rollback`;
+				writeFileSync(restore, previousFile, { mode: 0o600 });
+				renameSync(restore, plan.file);
+				for (const args of plan.commands.update) run(plan.manager, args);
+				const settings = installedSettings(plan, { ...job, path });
+				await wait(settings, {
+					version: job.fromVersion,
+					fromBootId: job.fromBootId,
+					legacy: job.fromVersion === "legacy",
+					probe,
+				});
+				reason += "; previous Hub service restored";
+			} catch (rollbackError) {
+				reason += `; rollback failed: ${rollbackError.message}. Inspect hub status --json and hub-upgrade.log`;
+			}
+		}
+		update({ state: "failed", phase: "failed", error: reason.slice(0, 4096) });
+		throw new Error(job.error);
+	} finally {
+		releaseLock?.();
+	}
+}
+export async function updateInstalledHub({ plan = hubServicePlan(), log = console.log, ...options } = {}) {
+	const settings = installedSettings(plan);
+	const lockRoot = join(settings.PI_DEVICE_HUB_DATA_DIR, "hub-upgrade-submission");
+	mkdirSync(lockRoot, { recursive: true, mode: 0o700 });
+	const releaseSubmission = acquireHubLock(lockRoot);
+	try {
+		const health = await (options.probe ?? probeHub)(settings);
+		if (!health || health.instanceId !== settings.PI_DEVICE_HUB_INSTANCE_ID)
+			throw new Error("A running Hub owned by the installed service is required before updating");
+		const path = jobPathFor(settings.PI_DEVICE_HUB_DATA_DIR);
+		const current = readUpgradeJob(path);
+		if (current && ["queued", "running"].includes(current.state) && Date.now() - current.createdAt < UPGRADE_TIMEOUT_MS)
+			throw new Error("Hub upgrade is already in progress");
+		const now = Date.now();
+		writeUpgradeJob(path, {
+			schemaVersion: 1,
+			id: randomUUID(),
+			state: "queued",
+			phase: "queued",
+			createdAt: now,
+			updatedAt: now,
+			instanceId: health.instanceId,
+			fromVersion: health.version ?? "legacy",
+			fromBootId: health.bootId ?? "legacy",
+			requestedBy: "local-cli",
+			...(settings.PI_DEVICE_HUB_SERVICE_NAME ? { serviceName: settings.PI_DEVICE_HUB_SERVICE_NAME } : {}),
+		});
+		return await runUpgradeJob(path, { ...options, plan, log });
+	} finally {
+		releaseSubmission();
+	}
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === SELF) {
+	const [mode, path, ...extra] = process.argv.slice(2);
+	try {
+		if (!["--launch", "--run"].includes(mode) || !path || extra.length)
+			throw new Error("Invalid Hub upgrade worker arguments");
+		if (mode === "--launch") await launchUpgradeJob(resolve(path));
+		else await runUpgradeJob(resolve(path));
+	} catch (error) {
+		console.error(`[hub-upgrade] ${error.message}`);
+		process.exitCode = 1;
+	} finally {
+		if (mode === "--run" && process.platform === "win32") {
+			try {
+				const job = readUpgradeJob(path);
+				if (job)
+					await execute("schtasks.exe", ["/Delete", "/TN", `pi-device-hub-update-${job.id}`, "/F"], {
+						timeout: 10_000,
+					});
+			} catch {}
+		}
+	}
+}

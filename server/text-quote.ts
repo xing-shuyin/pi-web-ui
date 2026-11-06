@@ -1,7 +1,6 @@
 export type { TextQuote } from "./protocol.js";
 import type { TextQuote } from "./protocol.js";
 
-/** 校验引用元数据，保留原文的换行和缩进。 */
 export function readTextQuote(value: unknown): TextQuote | null {
 	if (!value || typeof value !== "object") return null;
 	const q = value as Partial<TextQuote>;
@@ -22,7 +21,6 @@ export function readTextQuote(value: unknown): TextQuote | null {
 	};
 }
 
-/** JSON 字符串保留原文边界，引用中的换行不参与外层标记解析。 */
 export function formatTextQuote(quote: TextQuote): string {
 	return `<quoted-text>\n${JSON.stringify(quote)}\n</quoted-text>`;
 }
@@ -59,11 +57,6 @@ function escapeAttr(value: string): string {
 	return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/**
- * 流式中排队/插队发送时把文本、文本附件（文件/目录/网页/对话引用/视觉桥）、
- * 引用与图片标记格式化到同一条提示词中，避免使用 SDK 的 _pendingNextTurnMessages
- * 造成排队消息丢失附件以及泄露到后续提问。
- */
 export function formatStreamingPrompt(
 	text: string,
 	textAsides: readonly string[] = [],
@@ -100,10 +93,6 @@ export interface AsideMessageLike {
 	};
 }
 
-/**
- * 将附件消息（asides）解构为流式排队/插队可消费的载荷。
- * 统一作为单源解析，杜绝空闲/流式分支错位造成的丢图、漏附件与非视觉模型静默丢弃。
- */
 export function extractStreamingPayload(
 	asides: readonly AsideMessageLike[],
 	initialQuotes: readonly TextQuote[] = [],
@@ -167,7 +156,6 @@ export function extractStreamingPayload(
 	return { promptImages, textAsides, imageNames, quotes };
 }
 
-/** 排队项把引用与附件随提问一起保存；展示时拆分末尾的引用块与附件标记。 */
 export function splitQuotedPrompt(value: string): ParsedQuotedPrompt {
 	let text = value;
 	const quotes: TextQuote[] = [];

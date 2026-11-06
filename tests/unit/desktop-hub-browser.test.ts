@@ -55,6 +55,29 @@ describe("isolated Hub browser", () => {
 		expect(state.windows[2].loadURL).toHaveBeenCalledOnce();
 		expect(state.windows[1].options.webPreferences.partition).toBe(state.windows[0].options.webPreferences.partition);
 	});
+	it("reuses fresh LAN tickets and permits only the paired Hub and portal during fallback", async () => {
+		const open = createHubBrowser();
+		const url =
+			"http://localhost:8888/pi/device-lan/mac/__open?ticket=first&hub=https%3A%2F%2Fhub.example.com&portal=https%3A%2F%2Fhub.example.com%3A9000";
+		await open(url);
+		await open(url.replace("first", "fresh"));
+		await open(url + "&next=/desktop");
+		expect(state.windows).toHaveLength(2);
+		expect(state.windows[0].loadURL).toHaveBeenLastCalledWith(url.replace("first", "fresh"));
+		for (const event of ["will-navigate", "will-redirect"]) {
+			for (const target of [
+				"https://hub.example.com/device/mac/__open?ticket=fallback",
+				"https://hub.example.com:9000/__device/open?ticket=fallback",
+			]) {
+				const preventDefault = vi.fn();
+				state.windows[0].handlers[event]({ preventDefault }, target);
+				expect(preventDefault).not.toHaveBeenCalled();
+			}
+			const preventDefault = vi.fn();
+			state.windows[0].handlers[event]({ preventDefault }, "https://evil.example.com/");
+			expect(preventDefault).toHaveBeenCalledOnce();
+		}
+	});
 	it("reuses each origin while keeping Hub pages outside the local session and preload", async () => {
 		const open = createHubBrowser();
 		await open("http://hub.example.com:8790/");

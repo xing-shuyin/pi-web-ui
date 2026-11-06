@@ -1,8 +1,3 @@
-/**
- * 插件更新辅助单测：备份/回滚/prune + 远端 sha 对比（注入 fake exec；
- * 本地 git 仓库路径用无网络的 git ls-remote 验证真实流程）。
- * 毫秒级（git 调用 < 1s）、零 token。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +43,6 @@ describe("备份 / 回滚", () => {
 		const backups = listBackups(dataDir, "p1");
 		expect(backups.length).toBe(1);
 		expect(existsSync(join(dataDir, "plugin-backups", backups[0], "config.json"))).toBe(true);
-		// 再备 3 次 → 只留最近 3 份
 		for (let i = 0; i < 3; i++) ensureBackup(dataDir, "p1", { source: "x" });
 		expect(listBackups(dataDir, "p1").length).toBe(BACKUP_KEEP ?? 3);
 	});
@@ -74,7 +68,6 @@ describe("备份 / 回滚", () => {
 		mkdirSync(join(d, "whisper-cache"), { recursive: true });
 		writeFileSync(join(d, "whisper-cache/m.onnx"), "m");
 		ensureBackup(dataDir, "p1", { source: "x" });
-		// 当前目录变成 v2
 		writeFileSync(join(dataDir, "plugins", "p1", "index.mjs"), "// v2\n");
 		const ts = restoreBackup(dataDir, "p1");
 		expect(ts).toBeTruthy();
@@ -85,7 +78,6 @@ describe("备份 / 回滚", () => {
 	});
 });
 
-/** fake exec：像 git ls-remote 一样按 remote 返回 sha。 */
 function fakeExec(shaByRemote: Record<string, string>): Exec {
 	return async (_cmd, args) => {
 		const remote = args.find((a) => a && a !== "ls-remote" && a !== "HEAD" && !a.startsWith("-"));
@@ -134,7 +126,6 @@ describe("checkPluginUpdates", () => {
 		writeFileSync(join(dataDir, "plugins", "a", ".pi-git-sha"), "111111111111");
 		installPlugin("b", "1", "x/b");
 		writeFileSync(join(dataDir, "plugins", "b", ".pi-git-sha"), "222222222222");
-		// c：无本地 sha（手工装过的 GitHub 源）
 		installPlugin("c", "1", "x/c");
 		const exec = fakeExec({
 			"https://github.com/x/a.git": "3333333333333333333333333333333333333333",
@@ -213,7 +204,6 @@ describe("checkPluginUpdates", () => {
 			}
 			return { ok: false, json: async () => ({}) };
 		};
-		// 仓库 HEAD sha 变更为 999999999999，但插件版本仍为 0.2.1
 		const res = await checkPluginUpdates(
 			dataDir,
 			fakeExec({
@@ -226,13 +216,12 @@ describe("checkPluginUpdates", () => {
 		expect(p).toBeTruthy();
 		expect(p?.version).toBe("0.2.1");
 		expect(p?.latestVersion).toBe("0.2.1");
-		expect(p?.updatable).toBe(false); // 绝不误报！
+		expect(p?.updatable).toBe(false);
 	});
 
 	it("子目录源（monorepo）未能获取清单时不以仓库根 SHA 误报更新", async () => {
 		installPlugin("sub-plugin", "1.0.0", "xing-shuyin/pi-web-ui/plugins/sub-plugin");
 		writeFileSync(join(dataDir, "plugins", "sub-plugin", ".pi-git-sha"), "111111111111");
-		// 远端 fetch 失败（模拟断网或网络受限）
 		const fakeFetcher = async () => ({ ok: false, json: async () => ({}) });
 		const res = await checkPluginUpdates(
 			dataDir,

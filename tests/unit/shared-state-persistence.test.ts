@@ -50,7 +50,6 @@ afterEach(() => {
 	vi.mocked(fs.writeFileSync).mockReset();
 	for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-// Restore the real implementations before each case (mockReset clears implementations).
 beforeEach(async () => {
 	const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
 	vi.mocked(fs.renameSync).mockImplementation(actual.renameSync);
@@ -71,7 +70,7 @@ describe("atomic replacement failures", () => {
 		expect(() => writeAtomicSync(path, '{"new":true}')).toThrow(locked);
 		expect(readFileSync(path, "utf8")).toBe('{"old":true}');
 		expect(vi.mocked(fs.writeFileSync).mock.calls.every(([target]) => target !== path)).toBe(true);
-		expect(fs.renameSync).toHaveBeenCalledTimes(4); // first successful save + three attempts
+		expect(fs.renameSync).toHaveBeenCalledTimes(4);
 		expect(readdirSync(dirs[0])).toEqual(["state.json"]);
 	});
 	it("recovers from a transient rename failure", () => {
@@ -162,7 +161,7 @@ describe("shared settings subscriptions", () => {
 		const b = service(store, "b");
 		a.svc.subscribeSharedSettings();
 		b.svc.subscribeSharedSettings();
-		b.svc.subscribeSharedSettings(); // idempotent
+		b.svc.subscribeSharedSettings();
 		const save = vi.spyOn(store, "saveSettings");
 		const notices = vi.fn();
 		store.subscribeSettings(notices);

@@ -72,7 +72,6 @@ export interface QuarantinedTaskOutcome {
 }
 
 export const TASK_QUARANTINE_LIMITS = { maxEntries: 128, maxTotalBytes: 2 * 1024 * 1024 };
-/** Includes both outcome budgets, active leases and serialization overhead. */
 export const TASK_RECOVERY_STATE_MAX_BYTES = 8 * 1024 * 1024;
 
 export interface DeviceTaskRecoveryStateFile {
@@ -85,18 +84,17 @@ export interface DeviceTaskRecoveryStateFile {
 }
 
 export const TASK_RECOVERY_DEFAULTS = {
-	maxInactivityMs: 20 * 60 * 1000, // 20 minutes without activity (human waits pause this)
-	maxDurationMs: 0, // 0 = unbounded overall duration by default (honors long-running jobs)
-	renewIntervalMs: 15 * 1000, // 15 seconds lease heartbeat
-	recoveryWindowMs: 60 * 1000, // 60 seconds grace window after Hub restart
+	maxInactivityMs: 20 * 60 * 1000,
+	maxDurationMs: 0,
+	renewIntervalMs: 15 * 1000,
+	recoveryWindowMs: 60 * 1000,
 };
 
 export const TASK_OUTBOX_LIMITS = {
 	maxEntries: 128,
-	maxTotalBytes: 2 * 1024 * 1024, // 2 MiB bounded durable storage budget
+	maxTotalBytes: 2 * 1024 * 1024,
 };
 
-// Reserve worst-case JSON escaping, artifact patchBase64, plus bounded identity and metadata overhead before execution.
 export const TASK_ARTIFACT_WORST_CASE_BYTES = 256 * 1024;
 export const TASK_OUTBOX_RESERVATION_BYTES =
 	6 * (TASK_REPORT_BYTES + TASK_OUTCOME_ERROR_BYTES) + 16 * 1024 + TASK_ARTIFACT_WORST_CASE_BYTES;
@@ -177,12 +175,10 @@ function validateOutboxItem(item: unknown, deviceId: string): TaskOutboxEntry {
 	);
 
 	if (hasProofOrArtifact) {
-		// 当有新字段时必须且只能匹配 canonical 指纹，禁止降级到旧指纹
 		if (entry.fingerprint !== undefined && entry.fingerprint !== fingerprint) {
 			throw new Error("Invalid outbox outcome fingerprint (proof bound artifact requires canonical fingerprint)");
 		}
 	} else {
-		// 仅在无 artifact / proof 的旧项中允许 legacy 指纹
 		const legacyFingerprint = computeLegacyOutcomeFingerprint(
 			entry.taskId,
 			entry.attemptId,
@@ -238,15 +234,6 @@ function validateLeaseItem(item: unknown, deviceId: string): ActiveTaskLease {
 	return lease;
 }
 
-/**
- * Durable Task Recovery Manager:
- * 1. Single unified versioned recovery state file for active leases & terminal outbox.
- * 2. Atomic disk commit guarantees lease removal and terminal outcome entry happen in a single transaction.
- * 3. Double-crash safe recovery: never blindly re-runs side effects; safely interrupts orphans and preserves outcomes.
- * 4. Outcome immutability: identical retry is idempotent; conflicting outcome is strictly rejected.
- * 5. ACK binding: strictly requires matching outcome fingerprint to clear outbox.
- * 6. Hub fencing & isolation: leases carry leaseToken & generation into TaskOutboxEntry; entries are isolated per hubUrl.
- */
 export class TaskRecoveryManager {
 	private readonly statePath?: string;
 	private readonly legacyOutboxPath?: string;
@@ -313,7 +300,6 @@ export class TaskRecoveryManager {
 		if (this.loadError) {
 			throw new Error("Outbox persistence blocked: corrupted storage was preserved");
 		}
-		// v2 prevents older readers from silently discarding archived terminal evidence.
 		const text =
 			JSON.stringify({ ...state, version: 2, quarantine: state.quarantine ?? this.quarantine }, null, 2) + "\n";
 		if (Buffer.byteLength(text) > TASK_RECOVERY_STATE_MAX_BYTES)
@@ -326,7 +312,6 @@ export class TaskRecoveryManager {
 
 		let loadedState: DeviceTaskRecoveryStateFile | null = null;
 
-		// 1. Try reading the unified state file
 		try {
 			const raw = readFileSync(this.statePath, "utf8");
 			if (Buffer.byteLength(raw) > TASK_RECOVERY_STATE_MAX_BYTES) throw new Error("Recovery state capacity exceeded");
@@ -400,19 +385,16 @@ export class TaskRecoveryManager {
 				activeLeases: validLeases,
 			};
 
-			// Best-effort cleanup of any remaining legacy files
 			this.cleanupLegacyFiles();
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 				loadedState = null;
 			} else {
-				// State file exists but is corrupted: FAIL CLOSED and forbid overwrites
 				this.loadError = true;
 				return;
 			}
 		}
 
-		// 2. If unified state does not exist, migrate from legacy 2 files if present
 		if (loadedState === null) {
 			let legacyOutbox: TaskOutboxEntry[] = [];
 			let legacyLeases: ActiveTaskLease[] = [];
@@ -484,7 +466,6 @@ export class TaskRecoveryManager {
 			}
 		}
 
-		// Partition entries by hubUrl isolation
 		for (const entry of loadedState.outbox) {
 			if (this.matchesHub(entry.hubUrl)) {
 				this.outbox.set(entry.id, entry);
@@ -500,7 +481,6 @@ export class TaskRecoveryManager {
 			}
 		}
 
-		// 3. Crash detection: detect orphaned active leases for current hub from prior crash/restart
 		if (this.activeLeases.size > 0) {
 			const stored = Array.from(this.activeLeases.values());
 			const now = Date.now();
@@ -514,7 +494,6 @@ export class TaskRecoveryManager {
 
 				const outboxKey = this.leaseKey(lease.taskId, lease.attemptId);
 				const existingOutbox = this.outbox.get(outboxKey);
-				// If outbox already has a terminal outcome, NEVER overwrite it!
 				if (!existingOutbox) {
 					const report = "Execution safely halted on device process restart to prevent duplicate side effects.";
 					const error = "Device process restarted during execution";
@@ -541,7 +520,6 @@ export class TaskRecoveryManager {
 				}
 			}
 
-			// Atomic disk commit: empty activeLeases, augmented outbox in one shot, preserving other Hubs
 			const allOutbox = [...this.otherHubOutbox, ...Array.from(this.outbox.values()), ...newOutboxEntries];
 			const allLeases = [...this.otherHubLeases];
 			const nextState: DeviceTaskRecoveryStateFile = {
@@ -560,21 +538,13 @@ export class TaskRecoveryManager {
 		}
 	}
 
-	/** Get list of orphaned tasks halted at process startup. */
 	getHaltedOrphans(): ActiveTaskLease[] {
 		return structuredClone(this.haltedOrphans);
 	}
 
-	/**
-	 * Record a newly running task lease.
-	 * Rejects if (taskId, attemptId) has already been finalized in Outbox.
-	 * Rejects if an active lease is already registered for this task attempt.
-	 * Validates inputs before persisting to disk to prevent state corruption.
-	 */
 	recordTaskStart(
 		lease: Omit<ActiveTaskLease, "startedAt" | "lastActivityAt" | "lastRenewedActivityAt"> & { startedAt?: number },
 	): ActiveTaskLease {
-		// Strict pre-validation: reject invalid inputs BEFORE touching disk state
 		if (
 			!lease ||
 			typeof lease !== "object" ||
@@ -610,7 +580,6 @@ export class TaskRecoveryManager {
 			);
 		}
 
-		// Reject conflicting concurrent or prior attempts for the same taskId in active leases
 		for (const [existingKey, existingLease] of this.activeLeases) {
 			if (existingLease.taskId === lease.taskId) {
 				if (existingKey === key) {
@@ -653,9 +622,6 @@ export class TaskRecoveryManager {
 		return structuredClone(record);
 	}
 
-	/**
-	 * Record verified local activity (LLM streaming or tool invocation).
-	 */
 	recordActivity(taskId: string, attemptId: string): boolean {
 		const record = this.activeLeases.get(this.leaseKey(taskId, attemptId));
 		if (!record) return false;
@@ -663,9 +629,6 @@ export class TaskRecoveryManager {
 		return true;
 	}
 
-	/**
-	 * Remove active lease when task ends locally.
-	 */
 	removeActiveLease(taskId: string, attemptId: string): void {
 		const key = this.leaseKey(taskId, attemptId);
 		if (this.activeLeases.has(key)) {
@@ -686,25 +649,15 @@ export class TaskRecoveryManager {
 		}
 	}
 
-	/**
-	 * Get an active lease by taskId and attemptId.
-	 */
 	getActiveLease(taskId: string, attemptId: string): ActiveTaskLease | undefined {
 		const lease = this.activeLeases.get(this.leaseKey(taskId, attemptId));
 		return lease ? structuredClone(lease) : undefined;
 	}
 
-	/**
-	 * Get all active leases for current Hub (used for reconnection claim).
-	 */
 	getActiveLeases(): ActiveTaskLease[] {
 		return structuredClone(Array.from(this.activeLeases.values()));
 	}
 
-	/**
-	 * Prepare claim payload for all running tasks upon reconnection.
-	 * Strictly isolated to current Hub.
-	 */
 	prepareClaims(): DeviceTaskClaim[] {
 		const claims: DeviceTaskClaim[] = [];
 		for (const lease of this.activeLeases.values()) {
@@ -719,10 +672,6 @@ export class TaskRecoveryManager {
 		return claims;
 	}
 
-	/**
-	 * Prepare heartbeat renewal frames for tasks with verified recent activity.
-	 * monotonic activity progression: only true if new activity occurred since last renewal.
-	 */
 	prepareLeaseRenews(options?: { waitingForHumanTaskIds?: Set<string> }): DeviceTaskLeaseRenew[] {
 		const now = Date.now();
 		const renews: DeviceTaskLeaseRenew[] = [];
@@ -750,9 +699,6 @@ export class TaskRecoveryManager {
 		return renews;
 	}
 
-	/**
-	 * Check whether a task has timed out due to inactivity or hard duration ceiling.
-	 */
 	checkTaskTimeout(taskId: string, attemptId: string, isWaitingHuman = false): { expired: boolean; reason?: string } {
 		const lease = this.activeLeases.get(this.leaseKey(taskId, attemptId));
 		if (!lease) return { expired: false };
@@ -772,10 +718,6 @@ export class TaskRecoveryManager {
 		return { expired: false };
 	}
 
-	/**
-	 * Bounded capacity reservation guard: fail-closed before starting new execution
-	 * if the recovery outbox has reached its budget ceiling, preserving existing results.
-	 */
 	hasOutboxCapacity(): { available: boolean; reason?: string } {
 		const reservations = this.activeLeases.size + this.otherHubLeases.length;
 		const totalEntries = this.outbox.size + this.otherHubOutbox.length + reservations;
@@ -801,12 +743,6 @@ export class TaskRecoveryManager {
 		return { available: true };
 	}
 
-	/**
-	 * Enqueue task terminal outcome into durable outbox.
-	 * Atomically writes to unified state file and removes active lease in a single transaction.
-	 * Enforces outcome immutability: identical outcome is idempotent; conflicting outcome is rejected.
-	 * Carries leaseToken & leaseGeneration for Hub fencing.
-	 */
 	recordTaskFinish(
 		task: {
 			id: string;
@@ -863,8 +799,6 @@ export class TaskRecoveryManager {
 			this.quarantine.find((item) => this.matchesHub(item.outcome.hubUrl) && item.outcome.id === key)?.outcome;
 		if (existing) {
 			const targetDeviceId = task.deviceId || this.deviceId;
-			// Strict immutability: identical retry is idempotent; conflicting outcome is rejected.
-			// Lease fields must also be identical to prevent cross-generation outcome aliasing.
 			const leaseTokenMatches = leaseToken === undefined || existing.leaseToken === leaseToken;
 			const leaseGenMatches = leaseGeneration === undefined || existing.leaseGeneration === leaseGeneration;
 			const artifactMatches = existing.artifact?.digest === normalized.artifact?.digest;
@@ -931,7 +865,6 @@ export class TaskRecoveryManager {
 		)
 			throw new Error("Task outcome lease identity mismatch");
 
-		// Transactional commit: add outbox and remove active lease atomically in unified state
 		const nextOutbox = [...Array.from(this.outbox.values()), entry];
 		const allPending = [...this.otherHubOutbox, ...nextOutbox];
 		if (
@@ -955,31 +888,21 @@ export class TaskRecoveryManager {
 		};
 		this.writeStateToDiskSync(state);
 
-		// Disk succeeded; update memory
 		this.outbox.set(entry.id, entry);
 		this.activeLeases.delete(key);
 
 		return structuredClone(entry);
 	}
 
-	/**
-	 * List all pending outbox entries waiting for Hub ACK for the current Hub.
-	 */
 	getPendingOutbox(): TaskOutboxEntry[] {
 		return structuredClone(Array.from(this.outbox.values()));
 	}
 
-	/**
-	 * Find a pending outbox entry by taskId and attemptId.
-	 */
 	getPendingOutboxEntry(taskId: string, attemptId: string): TaskOutboxEntry | undefined {
 		const entry = this.outbox.get(this.leaseKey(taskId, attemptId));
 		return entry ? structuredClone(entry) : undefined;
 	}
 
-	/**
-	 * Mark attempt sent to Hub for backoff/tracking.
-	 */
 	markOutboxAttempt(id: string): void {
 		const entry = this.outbox.get(id);
 		if (entry) {
@@ -999,7 +922,6 @@ export class TaskRecoveryManager {
 		}
 	}
 
-	/** Durable rejected evidence remains inspectable and never participates in automatic replay. */
 	getQuarantinedOutcomes(): QuarantinedTaskOutcome[] {
 		return structuredClone(this.quarantine.filter((item) => this.matchesHub(item.outcome.hubUrl)));
 	}
@@ -1041,7 +963,6 @@ export class TaskRecoveryManager {
 			Buffer.byteLength(JSON.stringify(next)) > TASK_QUARANTINE_LIMITS.maxTotalBytes
 		)
 			return false;
-		// Commit archive + removal together. Keep all active leases and other hubs intact.
 		this.writeStateToDiskSync({
 			version: 2,
 			deviceId: this.deviceId,
@@ -1055,10 +976,6 @@ export class TaskRecoveryManager {
 		return true;
 	}
 
-	/**
-	 * Acknowledge outbox entry upon receiving task_result_ack from Hub.
-	 * Strictly requires matching outcome fingerprint; rejects clearing without or with mismatched fingerprint.
-	 */
 	ackOutbox(
 		taskId: string,
 		attemptId: string,

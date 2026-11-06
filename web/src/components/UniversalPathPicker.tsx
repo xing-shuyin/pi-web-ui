@@ -1,15 +1,3 @@
-/**
- * UniversalPathPicker.tsx — 全项目通用的工作区与目录路径选择组件（自包含）。
- *
- * 整合：
- * 1. 路径显示与直接编辑；
- * 2. 常用子目录推荐与最近项目 (projects) 下拉菜单；
- * 3. 内置 ProjectPicker 目录浏览器弹窗（含本地/远程 SSH 新建文件夹与新建项目）。
- *
- * 调用方只需传 cwd + onSelectCwd(+ 可选 projects/workspaceRoots/pathCompletions)，
- * 不必再在外层接线弹窗 state。仍在外层自管弹窗的旧调用处可继续传
- * onOpenProjectPicker（此时内置弹窗不再挂载）。
- */
 import { useState, useRef, useEffect } from "react";
 import type { ProjectSummary } from "../types";
 import { useT } from "../i18n";
@@ -20,22 +8,17 @@ import { TipButton } from "./HintTip";
 export interface UniversalPathPickerProps {
 	cwd: string;
 	onSelectCwd: (cwd: string) => void;
-	/** 旧式外接弹窗：传入则点击浏览按钮时调用它（内置弹窗不挂载）；缺省走内置 ProjectPicker */
 	onOpenProjectPicker?: () => void;
 	projects?: ProjectSummary[];
 	workspaceRoots?: string[];
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
-	/** folder=选目录（建完停留刷新）/project=选项目（建完即选），默认 project */
 	mode?: "folder" | "project";
-	/** cwd 为 "." 或空时的弹窗初始目录回退（如画布 currentCwd），缺省用 cwd 本身 */
 	baseCwd?: string;
-	/** 自定义创建：缺省走 DirectoryBrowser 内置回退（mkdir + 选中新目录） */
 	onCreateProject?: (path: string) => void;
 	className?: string;
 	placeholder?: string;
 	inputId?: string;
 	disabled?: boolean;
-	/** Apply typed paths on blur/Enter; menu and browser selections still apply immediately. */
 	commitOnBlur?: boolean;
 	localOnly?: boolean;
 	onPickerOpenChange?: (open: boolean) => void;
@@ -66,7 +49,6 @@ export function UniversalPathPicker({
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const t = useT();
 
-	// 点击外部自动关闭快捷菜单
 	useEffect(() => {
 		const handleOutside = (e: MouseEvent) => {
 			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -79,7 +61,6 @@ export function UniversalPathPicker({
 		}
 	}, [menuOpen]);
 
-	// 推荐常用子目录
 	const commonDirs = [
 		{ label: ". (当前项目根目录)", value: "." },
 		{ label: "web (前端目录)", value: "web" },
@@ -104,7 +85,6 @@ export function UniversalPathPicker({
 		}
 	};
 
-	// 弹窗初始目录：相对/缺省 cwd 回退到 baseCwd（旧中央弹窗的 currentCwd 回退语义）
 	const pickerCwd = cwd && cwd !== "." ? cwd : baseCwd || cwd || ".";
 
 	return (
@@ -219,7 +199,6 @@ export function UniversalPathPicker({
 				</div>
 			)}
 
-			{/* 自带弹窗：未外接 onOpenProjectPicker 时挂载，创建走内置回退或 onCreateProject */}
 			{!onOpenProjectPicker && pickerOpen && (
 				<ProjectPicker
 					portalContainer={wrapRef.current?.closest("dialog") ?? undefined}

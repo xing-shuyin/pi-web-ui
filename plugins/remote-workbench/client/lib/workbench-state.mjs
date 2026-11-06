@@ -1,4 +1,3 @@
-// Pure browser-side protocol helpers. No host credentials are persisted.
 export function appPath(ctx, path, moduleUrl = import.meta.url) {
 	if (typeof ctx.appUrl === "function") return ctx.appUrl(path);
 	const url = new URL(moduleUrl);
@@ -87,9 +86,7 @@ export function saveSessions(storage, key, shells) {
 					})),
 			),
 		);
-	} catch {
-		/* Storage may be disabled; live sessions still work. */
-	}
+	} catch {}
 }
 export function matchesHost(host, keyword, group = "", environment = "") {
 	return (

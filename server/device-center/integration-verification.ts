@@ -32,7 +32,6 @@ function hex(value: unknown, length: number, name: string): string {
 	if (typeof value !== "string" || !new RegExp(`^[a-f0-9]{${length}}$`).test(value)) fail(`Invalid ${name}`);
 	return value;
 }
-/** Only device facts enter the receipt; device-provided identity/digest/status alone has no authority. */
 export function validateVerificationFacts(
 	raw: unknown,
 	integration: DeviceIntegration,
@@ -53,7 +52,6 @@ export function validateVerificationFacts(
 		obj.materializedCommit !== integration.materializedCommit
 	)
 		fail("Verification subject mismatch");
-	// Artifact baselines remain SHA-1; legacy repositories may explicitly report SHA-256.
 	const objectLength = integration.objectFormat === "sha256" && !integration.artifactRef ? 64 : 40;
 	const treeBefore = hex(obj.treeBefore, objectLength, "treeBefore");
 	const treeAfter = hex(obj.treeAfter, objectLength, "treeAfter");

@@ -52,7 +52,6 @@ function validAlias(value: unknown): value is string {
 function validId(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0 && value.length <= 256 && !/[\x00-\x1f\x7f]/.test(value);
 }
-/** Comma-separated decimal ports; empty configuration disables portal allocation. */
 export function parsePortalPorts(value: string | undefined): number[] {
 	if (value === undefined || value.trim() === "") return [];
 	const parts = value.split(",").map((part) => part.trim());
@@ -62,7 +61,6 @@ export function parsePortalPorts(value: string | undefined): number[] {
 	return ports;
 }
 
-/** Single-process registry. Allocations are published only after atomic replacement succeeds. */
 export class DevicePortals {
 	private queue: Promise<unknown> = Promise.resolve();
 	private constructor(
@@ -168,7 +166,6 @@ export class DevicePortals {
 		const entry = this.state.allocations.find((item) => !item.retired && item.alias === alias);
 		return entry ? { deviceId: entry.deviceId, accountId: entry.accountId } : undefined;
 	}
-	/** Detached legacy origins only; path access must not enter the relay origin map. */
 	origins(): ReadonlyMap<string, string> {
 		const origins = new Map<string, string>();
 		if (this.pathAccess) return origins;

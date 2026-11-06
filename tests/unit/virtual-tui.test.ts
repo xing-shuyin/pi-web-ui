@@ -12,7 +12,6 @@ import type { ServerMessage } from "../../server/protocol.js";
 
 describe("TUI Theme and Affordances (Issue #588)", () => {
 	it("global theme is initialized so getSettingsListTheme() does not throw", () => {
-		// In Issue #588, calling getSettingsListTheme() threw 'Theme not initialized. Call initTheme() first.'
 		expect(() => getSettingsListTheme()).not.toThrow();
 		const listTheme = getSettingsListTheme();
 		expect(listTheme).toBeDefined();
@@ -41,7 +40,6 @@ describe("VirtualTerminal & ANSI Screen Formatting", () => {
 		const lines = ["Line 1", `Line 2 with ${CURSOR_MARKER}cursor`, "Line 3"];
 		const pos = extractCursorPosition(lines);
 		expect(pos).toEqual({ row: 1, col: 12 });
-		// Marker should be stripped from the line
 		expect(lines[1]).toBe("Line 2 with cursor");
 	});
 
@@ -57,7 +55,6 @@ describe("VirtualTerminal & ANSI Screen Formatting", () => {
 		expect(ansi).toContain("\x1b[H\x1b[?25l");
 		expect(ansi).toContain("Hello\x1b[K");
 		expect(ansi).toContain("World\x1b[K");
-		// Hardware cursor restored to row 2, col 5
 		expect(ansi).toContain("\x1b[2;6H\x1b[?25h");
 	});
 
@@ -120,19 +117,15 @@ describe("VirtualTuiBridge", () => {
 			},
 		});
 
-		// Initial render
 		expect(bridge.getInitialAnsi()).toContain("Frame 1");
 
-		// Feed input
 		bridge.feedInput("\x1b[A");
 		expect(receivedInput).toBe("\x1b[A");
 
-		// Trigger render
 		bridge.renderNow();
 		expect(renders.length).toBeGreaterThan(0);
 		expect(renders[0]).toContain("Frame 1");
 
-		// Finish
 		bridge.done("result-val");
 		expect(closed).toBe(true);
 		expect(disposed).toBe(true);
@@ -165,7 +158,6 @@ describe("WebUIContext.custom (Universal TUI Bridge)", () => {
 
 		const promise = ui.custom(
 			(_tui, _theme, _kb, _done) => {
-				// Component factory: in headless mode, this should never be stuck waiting for input
 				return {
 					render: () => ["headless"],
 					invalidate: () => {},
@@ -179,7 +171,6 @@ describe("WebUIContext.custom (Universal TUI Bridge)", () => {
 			},
 		);
 
-		// Must resolve promptly (no hang)
 		const res = await promise;
 		expect(res).toBeUndefined();
 		expect(handleGiven).toBe(true);
@@ -207,7 +198,6 @@ describe("WebUIContext.custom (Universal TUI Bridge)", () => {
 			};
 		});
 
-		// Check that tui_overlay_open was emitted
 		const openMsg = msgs.find((m) => m.type === "tui_overlay_open");
 		expect(openMsg).toBeDefined();
 		if (openMsg && openMsg.type === "tui_overlay_open") {
@@ -215,21 +205,17 @@ describe("WebUIContext.custom (Universal TUI Bridge)", () => {
 			expect(openMsg.cols).toBe(80);
 			expect(openMsg.initialAnsi).toContain("Line A");
 
-			// Simulate user keyboard input from web client
 			ui.handleTuiOverlayInput(openMsg.id, "q");
 			expect(inputData).toBe("q");
 
-			// Simulate user resize
 			ui.handleTuiOverlayResize(openMsg.id, 100, 30);
 
-			// Complete the interaction
 			doneCallback?.(42);
 		}
 
 		const result = await customPromise;
 		expect(result).toBe(42);
 
-		// Check that tui_overlay_close was emitted
 		const closeMsg = msgs.find((m) => m.type === "tui_overlay_close");
 		expect(closeMsg).toBeDefined();
 	});
@@ -252,7 +238,6 @@ describe("WebUIContext.custom (Universal TUI Bridge)", () => {
 		const openMsg = msgs.find((m) => m.type === "tui_overlay_open");
 		expect(openMsg).toBeDefined();
 		if (openMsg && openMsg.type === "tui_overlay_open") {
-			// Simulate user closing / canceling modal
 			ui.handleTuiOverlayCancel(openMsg.id);
 		}
 

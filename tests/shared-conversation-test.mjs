@@ -1,10 +1,3 @@
-/**
- * Shared conversations: real WebSocket, zero model requests, isolated server.
- *
- * Covers independent defaults, explicit sharing, stable owner/target routing,
- * viewer exit/reconnect, colliding per-owner c1 IDs, and shared history paging.
- * After the main build: PI_WEB_SMOKE_PREBUILT=1 node tests/shared-conversation-test.mjs
- */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
@@ -26,7 +19,6 @@ let server;
 let serverLog = "";
 let tmp;
 
-// Reserve a random loopback port >= 8900. Never free/kill an unrelated listener.
 async function randomPort() {
 	for (let attempt = 0; attempt < 30; attempt++) {
 		const port = randomInt(8900, 60_000);
@@ -81,7 +73,6 @@ async function connect(port, clientId) {
 		ws,
 		packets,
 		send(message) {
-			// This test must never submit a prompt or call any paid model.
 			assert.ok(
 				[
 					"hello",
@@ -353,7 +344,6 @@ try {
 	assert.equal((await snapshot(ownerA, (s) => local(s, ownerA))).sessionId, a.sessionId);
 	console.log("✓ independent:false opens in another browser without transferring ownership");
 
-	// Pin c1 and use ephemeral:true to bypass blank-chat reuse without prompting.
 	ownerA.send({ type: "pin_conversation", id: a.conversationId, pinned: true });
 	const otherA = await newChat(ownerA, undefined, true);
 	ownerA.send({ type: "pin_conversation", id: otherA.conversationId, pinned: true });
@@ -375,7 +365,6 @@ try {
 
 	await disconnect(viewer);
 	viewer = await connect(port, "shared-viewer");
-	// No open_shared_conversation replay: hello alone must restore the binding.
 	const restored = await snapshot(viewer, (s) => shared(s, viewer, ownerA, a.conversationId));
 	assert.equal(restored.sessionId, a.sessionId);
 	assert.equal(restored.model.id, "other-model");
@@ -397,7 +386,6 @@ try {
 	assert.equal((await snapshot(viewer, (s) => local(s, viewer))).sessionId, ownViewer.sessionId);
 	console.log("✓ viewer new_chat exits shared view and receives its own snapshot");
 
-	// Both owners take the same lifecycle steps, producing colliding history IDs.
 	const historyA = await openHistory(ownerA, seedA);
 	ownerB.send({ type: "pin_conversation", id: b.conversationId, pinned: true });
 	await newChat(ownerB, undefined, true);

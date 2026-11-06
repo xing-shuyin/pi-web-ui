@@ -28,7 +28,6 @@ function notify() {
 	}
 }
 
-/** Synchronizes room domain data without clobbering the user's active right tab selection. */
 export function setActiveGroupRoomData(data: ActiveGroupRoomData | null) {
 	if (!data) {
 		if (currentState !== null) {
@@ -65,7 +64,6 @@ export function setActiveGroupRoomData(data: ActiveGroupRoomData | null) {
 	notify();
 }
 
-/** Backward-compatible setter that preserves activeRightTab if already selected in the same room. */
 export function setActiveGroupState(state: ActiveGroupState | null) {
 	if (!state) {
 		setActiveGroupRoomData(null);

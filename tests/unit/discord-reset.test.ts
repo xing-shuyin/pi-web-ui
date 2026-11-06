@@ -192,7 +192,6 @@ describe("Discord reset lifecycle", () => {
 			bridge.reply = (DiscordBotBridge.prototype as any).reply;
 			const delivery = bridge.handleRunEvent({ type: "run_end", runId: oldRunId });
 			await started.promise;
-			// Command confirmations are irrelevant here; keep the real reply captured by delivery.
 			bridge.reply = vi.fn(async () => {});
 			await send(command);
 			first.resolve(new Response(JSON.stringify({ id: "sent" }), { status: 200 }));

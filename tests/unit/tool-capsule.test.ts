@@ -70,7 +70,6 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 		expect(card).not.toBeNull();
 		expect(card!.classList.contains("ok")).toBe(true);
 
-		// 常规展开态下挂载正文与输出 pre
 		expect(container.querySelector(".toolcall-body")).not.toBeNull();
 		expect(container.querySelector(".toolcall-output")).not.toBeNull();
 	});
@@ -81,18 +80,15 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 		expect(card).not.toBeNull();
 		expect(card.classList.contains("ok")).toBe(true);
 
-		// 折叠态下仅有单行卡头，正文零 DOM
 		expect(container.querySelector(".toolcall-body")).toBeNull();
 		expect(container.querySelector(".toolcall-output")).toBeNull();
 
-		// 点击卡头切换展开
 		const head = container.querySelector(".chead") as HTMLElement;
 		expect(head).not.toBeNull();
 		act(() => {
 			head.click();
 		});
 
-		// 展开后按需挂载正文与输出
 		expect(container.querySelector(".toolcall-body")).not.toBeNull();
 		expect(container.querySelector(".toolcall-output")).not.toBeNull();
 		expect(container.querySelector(".toolcall-output")?.textContent).toContain("On branch main");
@@ -105,11 +101,9 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 		expect(capsule).not.toBeNull();
 		expect(capsule!.classList.contains("ok")).toBe(true);
 
-		// 包含微胶囊外壳所必需的核心视觉要素
 		expect(container.querySelector(".toolcall-name")?.textContent).toBe("bash");
 		expect(container.querySelector(".toolcall-status")).not.toBeNull();
 
-		// 纯净外壳：绝不挂载几十 KB 的输出 DOM 与内部大树
 		expect(container.querySelector(".toolcall-body")).toBeNull();
 		expect(container.querySelector(".toolcall-output")).toBeNull();
 		expect(container.querySelector("pre.toolcall-output")).toBeNull();
@@ -122,15 +116,12 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 		const capsule = container.querySelector(".toolcall") as HTMLElement;
 		expect(capsule).not.toBeNull();
 
-		// 点击前检查器为空
 		expect(getToolInspectorState()).toBeNull();
 
-		// 点击微胶囊
 		act(() => {
 			capsule.click();
 		});
 
-		// 检查器被成功激活，且包含了完整的按需提取参数和输出
 		const inspectorState = getToolInspectorState();
 		expect(inspectorState).not.toBeNull();
 		expect(inspectorState!.name).toBe("bash");
@@ -179,13 +170,11 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 			capsule.click();
 		});
 
-		// 优先打开文件预览弹窗，且传入规范化的 target 与 name
 		expect(previewMock).toHaveBeenCalledTimes(1);
 		expect(previewMock).toHaveBeenCalledWith({
 			path: "E:/project/docs/architecture.png",
 			name: "architecture.png",
 		});
-		// 检查器不应被打开
 		expect(getToolInspectorState()).toBeNull();
 	});
 
@@ -234,7 +223,6 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 
 	it("Flow 极简行文模式下 present_files 无可预览条目或预览宿主未就绪时降级打开 ToolInspector", () => {
 		document.documentElement.dataset.theme = "flow";
-		// 不注册 preview host（或者都是 missing 条目）
 		const presentBlock: UiToolCallBlock = {
 			type: "toolCall",
 			id: "tc_present_3",
@@ -263,7 +251,6 @@ describe("工具微胶囊纯净轻量化与按需检查机制 (ToolCallCapsule)"
 			capsule.click();
 		});
 
-		// 无法预览时降级打开 ToolInspector
 		const state = getToolInspectorState();
 		expect(state).not.toBeNull();
 		expect(state!.name).toBe("present_files");

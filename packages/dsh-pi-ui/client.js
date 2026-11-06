@@ -1,10 +1,10 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-pi-ui',
-  factory(require) {
-    const React = require('react');
-    const { createElement: h, useState, useEffect, useRef, useCallback, useMemo } = React;
+	id: "@local/dsh-pi-ui",
+	factory(require) {
+		const React = require("react");
+		const { createElement: h, useState, useEffect, useRef, useCallback, useMemo } = React;
 
-    const CSS_STYLES = `
+		const CSS_STYLES = `
       .dsh-pi-strip-container {
         display: flex;
         flex-direction: column;
@@ -238,270 +238,353 @@ window.__ModuleLoader__.load({
       }
     `;
 
-    // LocalStorage helper for Notes
-    const NOTES_KEY = 'dsh_pi_notes_v1';
-    function loadNotes() {
-      try {
-        const raw = localStorage.getItem(NOTES_KEY);
-        if (!raw) return [
-          { id: '1', text: '欢迎使用 PI-UI 增强套件！随手捕捉灵感与备忘', done: false },
-          { id: '2', text: '点击右侧按钮可直接将笔记填入输入框', done: false }
-        ];
-        return JSON.parse(raw);
-      } catch  {
-        return [];
-      }
-    }
-    function saveNotes(notes) {
-      try {
-        localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-      } catch  {}
-    }
+		const NOTES_KEY = "dsh_pi_notes_v1";
+		function loadNotes() {
+			try {
+				const raw = localStorage.getItem(NOTES_KEY);
+				if (!raw)
+					return [
+						{ id: "1", text: "欢迎使用 PI-UI 增强套件！随手捕捉灵感与备忘", done: false },
+						{ id: "2", text: "点击右侧按钮可直接将笔记填入输入框", done: false },
+					];
+				return JSON.parse(raw);
+			} catch {
+				return [];
+			}
+		}
+		function saveNotes(notes) {
+			try {
+				localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+			} catch {}
+		}
 
-    // Default Quick Actions
-    const DEFAULT_PROMPTS = [
-      { id: 'plan', label: '📋 制定计划', prompt: '请先输出详细的实现分步计划、依赖关系和潜在风险评估，暂时不要编写具体代码。' },
-      { id: 'review', label: '🔍 代码审查', prompt: '请对当前工作区的改动或相关核心模块进行严格的代码质量、安全隐患与架构合理性审查。' },
-      { id: 'refactor', label: '⚡ 优化重构', prompt: '请分析现有代码结构的瓶颈，给出清晰的性能优化建议与重构方案。' },
-      { id: 'test', label: '🧪 编写单测', prompt: '请针对核心业务函数与边界情况编写完备的自动化单元测试用例。' },
-      { id: 'explain', label: '💬 解释逻辑', prompt: '请通俗易懂地梳理这段代码的核心逻辑、时序流转与关键设计决策。' },
-    ];
+		const DEFAULT_PROMPTS = [
+			{
+				id: "plan",
+				label: "📋 制定计划",
+				prompt: "请先输出详细的实现分步计划、依赖关系和潜在风险评估，暂时不要编写具体代码。",
+			},
+			{
+				id: "review",
+				label: "🔍 代码审查",
+				prompt: "请对当前工作区的改动或相关核心模块进行严格的代码质量、安全隐患与架构合理性审查。",
+			},
+			{ id: "refactor", label: "⚡ 优化重构", prompt: "请分析现有代码结构的瓶颈，给出清晰的性能优化建议与重构方案。" },
+			{ id: "test", label: "🧪 编写单测", prompt: "请针对核心业务函数与边界情况编写完备的自动化单元测试用例。" },
+			{ id: "explain", label: "💬 解释逻辑", prompt: "请通俗易懂地梳理这段代码的核心逻辑、时序流转与关键设计决策。" },
+		];
 
-    /**
-     * Quick Actions & Notes Dock (rendered in `conversation.input.dock`)
-     */
-    function QuickActionsDock(props) {
-      const { inputActions, useSession } = props;
-      const [notesOpen, setNotesOpen] = useState(false);
-      const [notes, setNotes] = useState(loadNotes);
-      const [newNoteText, setNewNoteText] = useState('');
+		function QuickActionsDock(props) {
+			const { inputActions, useSession } = props;
+			const [notesOpen, setNotesOpen] = useState(false);
+			const [notes, setNotes] = useState(loadNotes);
+			const [newNoteText, setNewNoteText] = useState("");
 
-      // Listen for custom toggle from footer bar
-      useEffect(() => {
-        const handler = () => setNotesOpen(prev => !prev);
-        window.addEventListener('dsh-pi-notes-toggle', handler);
-        return () => window.removeEventListener('dsh-pi-notes-toggle', handler);
-      }, []);
+			useEffect(() => {
+				const handler = () => setNotesOpen((prev) => !prev);
+				window.addEventListener("dsh-pi-notes-toggle", handler);
+				return () => window.removeEventListener("dsh-pi-notes-toggle", handler);
+			}, []);
 
-      const handleAddNote = useCallback(() => {
-        if (!newNoteText.trim()) return;
-        const next = [...notes, { id: String(Date.now()), text: newNoteText.trim(), done: false }];
-        setNotes(next);
-        saveNotes(next);
-        setNewNoteText('');
-      }, [newNoteText, notes]);
+			const handleAddNote = useCallback(() => {
+				if (!newNoteText.trim()) return;
+				const next = [...notes, { id: String(Date.now()), text: newNoteText.trim(), done: false }];
+				setNotes(next);
+				saveNotes(next);
+				setNewNoteText("");
+			}, [newNoteText, notes]);
 
-      const handleToggleDone = useCallback((id) => {
-        const next = notes.map(n => n.id === id ? { ...n, done: !n.done } : n);
-        setNotes(next);
-        saveNotes(next);
-      }, [notes]);
+			const handleToggleDone = useCallback(
+				(id) => {
+					const next = notes.map((n) => (n.id === id ? { ...n, done: !n.done } : n));
+					setNotes(next);
+					saveNotes(next);
+				},
+				[notes],
+			);
 
-      const handleDeleteNote = useCallback((id) => {
-        const next = notes.filter(n => n.id !== id);
-        setNotes(next);
-        saveNotes(next);
-      }, [notes]);
+			const handleDeleteNote = useCallback(
+				(id) => {
+					const next = notes.filter((n) => n.id !== id);
+					setNotes(next);
+					saveNotes(next);
+				},
+				[notes],
+			);
 
-      const handleInsertToDraft = useCallback((text) => {
-        if (inputActions && typeof inputActions.setDraft === 'function') {
-          inputActions.setDraft(text);
-        }
-      }, [inputActions]);
+			const handleInsertToDraft = useCallback(
+				(text) => {
+					if (inputActions && typeof inputActions.setDraft === "function") {
+						inputActions.setDraft(text);
+					}
+				},
+				[inputActions],
+			);
 
-      return h('div', { className: 'dsh-pi-strip-container' },
-        // Quick Action Chips Row
-        h('div', { className: 'dsh-pi-strip' },
-          // Notes toggle chip
-          h('button', {
-            type: 'button',
-            className: `dsh-pi-chip ${notesOpen ? 'dsh-pi-chip-accent' : ''}`,
-            onClick: () => setNotesOpen(!notesOpen),
-            title: '展开/收起随手记便签'
-          }, '📓 随手记' + (notes.length > 0 ? ` (${notes.filter(n => !n.done).length})` : '')),
+			return h(
+				"div",
+				{ className: "dsh-pi-strip-container" },
+				h(
+					"div",
+					{ className: "dsh-pi-strip" },
+					h(
+						"button",
+						{
+							type: "button",
+							className: `dsh-pi-chip ${notesOpen ? "dsh-pi-chip-accent" : ""}`,
+							onClick: () => setNotesOpen(!notesOpen),
+							title: "展开/收起随手记便签",
+						},
+						"📓 随手记" + (notes.length > 0 ? ` (${notes.filter((n) => !n.done).length})` : ""),
+					),
 
-          // Standard prompt chips
-          DEFAULT_PROMPTS.map(p =>
-            h('button', {
-              key: p.id,
-              type: 'button',
-              className: 'dsh-pi-chip',
-              onClick: () => handleInsertToDraft(p.prompt),
-              title: p.prompt
-            }, p.label)
-          )
-        ),
+					DEFAULT_PROMPTS.map((p) =>
+						h(
+							"button",
+							{
+								key: p.id,
+								type: "button",
+								className: "dsh-pi-chip",
+								onClick: () => handleInsertToDraft(p.prompt),
+								title: p.prompt,
+							},
+							p.label,
+						),
+					),
+				),
 
-        // Quick Notes Inline Drawer
-        notesOpen ? h('div', { className: 'dsh-pi-notes-drawer' },
-          h('div', { className: 'dsh-pi-notes-header' },
-            h('span', null, '📓 随手记与临时备忘'),
-            h('div', { className: 'dsh-pi-notes-actions' },
-              h('button', {
-                type: 'button',
-                className: 'dsh-pi-btn-sm',
-                onClick: () => setNotesOpen(false)
-              }, '✕ 收起')
-            )
-          ),
-          h('div', { className: 'dsh-pi-notes-list' },
-            notes.length === 0
-              ? h('div', { style: { padding: '8px', color: 'var(--dsw-alias-label-tertiary, #71717a)', fontSize: '12px' } }, '暂无笔记，在下方输入添加~')
-              : notes.map(n =>
-                  h('div', { key: n.id, className: 'dsh-pi-notes-item' },
-                    h('input', {
-                      type: 'checkbox',
-                      checked: n.done,
-                      onChange: () => handleToggleDone(n.id),
-                      style: { cursor: 'pointer' }
-                    }),
-                    h('span', {
-                      className: `dsh-pi-notes-item-text ${n.done ? 'done' : ''}`,
-                      title: n.text
-                    }, n.text),
-                    h('div', { style: { display: 'flex', gap: '4px' } },
-                      h('button', {
-                        type: 'button',
-                        className: 'dsh-pi-btn-sm',
-                        onClick: () => handleInsertToDraft(n.text),
-                        title: '将笔记内容填入输入框'
-                      }, '填入'),
-                      h('button', {
-                        type: 'button',
-                        className: 'dsh-pi-btn-sm',
-                        onClick: () => handleDeleteNote(n.id),
-                        title: '删除'
-                      }, '✕')
-                    )
-                  )
-                )
-          ),
-          h('div', { className: 'dsh-pi-notes-input-row' },
-            h('input', {
-              className: 'dsh-pi-notes-input',
-              placeholder: '记录一段新备忘，按回车添加...',
-              value: newNoteText,
-              onChange: (e) => setNewNoteText(e.target.value),
-              onKeyDown: (e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddNote();
-                }
-              }
-            }),
-            h('button', {
-              type: 'button',
-              className: 'dsh-pi-btn-sm',
-              style: { padding: '4px 10px' },
-              onClick: handleAddNote
-            }, '添加')
-          )
-        ) : null
-      );
-    }
+				notesOpen
+					? h(
+							"div",
+							{ className: "dsh-pi-notes-drawer" },
+							h(
+								"div",
+								{ className: "dsh-pi-notes-header" },
+								h("span", null, "📓 随手记与临时备忘"),
+								h(
+									"div",
+									{ className: "dsh-pi-notes-actions" },
+									h(
+										"button",
+										{
+											type: "button",
+											className: "dsh-pi-btn-sm",
+											onClick: () => setNotesOpen(false),
+										},
+										"✕ 收起",
+									),
+								),
+							),
+							h(
+								"div",
+								{ className: "dsh-pi-notes-list" },
+								notes.length === 0
+									? h(
+											"div",
+											{
+												style: { padding: "8px", color: "var(--dsw-alias-label-tertiary, #71717a)", fontSize: "12px" },
+											},
+											"暂无笔记，在下方输入添加~",
+										)
+									: notes.map((n) =>
+											h(
+												"div",
+												{ key: n.id, className: "dsh-pi-notes-item" },
+												h("input", {
+													type: "checkbox",
+													checked: n.done,
+													onChange: () => handleToggleDone(n.id),
+													style: { cursor: "pointer" },
+												}),
+												h(
+													"span",
+													{
+														className: `dsh-pi-notes-item-text ${n.done ? "done" : ""}`,
+														title: n.text,
+													},
+													n.text,
+												),
+												h(
+													"div",
+													{ style: { display: "flex", gap: "4px" } },
+													h(
+														"button",
+														{
+															type: "button",
+															className: "dsh-pi-btn-sm",
+															onClick: () => handleInsertToDraft(n.text),
+															title: "将笔记内容填入输入框",
+														},
+														"填入",
+													),
+													h(
+														"button",
+														{
+															type: "button",
+															className: "dsh-pi-btn-sm",
+															onClick: () => handleDeleteNote(n.id),
+															title: "删除",
+														},
+														"✕",
+													),
+												),
+											),
+										),
+							),
+							h(
+								"div",
+								{ className: "dsh-pi-notes-input-row" },
+								h("input", {
+									className: "dsh-pi-notes-input",
+									placeholder: "记录一段新备忘，按回车添加...",
+									value: newNoteText,
+									onChange: (e) => setNewNoteText(e.target.value),
+									onKeyDown: (e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											handleAddNote();
+										}
+									},
+								}),
+								h(
+									"button",
+									{
+										type: "button",
+										className: "dsh-pi-btn-sm",
+										style: { padding: "4px 10px" },
+										onClick: handleAddNote,
+									},
+									"添加",
+								),
+							),
+						)
+					: null,
+			);
+		}
 
-    /**
-     * Footer Bar (rendered in `conversation.composer.dock`)
-     */
-    function FooterBarDock(props) {
-      const { useSession, useProjection } = props;
-      const session = typeof useSession === 'function' ? useSession(s => s) : null;
-      const pressure = typeof useProjection === 'function' ? useProjection('contextPressure') : null;
-      const isRunning = Boolean(session?.running);
+		function FooterBarDock(props) {
+			const { useSession, useProjection } = props;
+			const session = typeof useSession === "function" ? useSession((s) => s) : null;
+			const pressure = typeof useProjection === "function" ? useProjection("contextPressure") : null;
+			const isRunning = Boolean(session?.running);
 
-      // Context meter calculations
-      const usedTokens = pressure?.projectedTokens ?? pressure?.pressureTokens ?? 0;
-      const contextWindow = pressure?.contextWindow ?? 1000000;
-      const percent = contextWindow > 0 ? Math.min(100, Math.round((usedTokens / contextWindow) * 100)) : 0;
+			const usedTokens = pressure?.projectedTokens ?? pressure?.pressureTokens ?? 0;
+			const contextWindow = pressure?.contextWindow ?? 1000000;
+			const percent = contextWindow > 0 ? Math.min(100, Math.round((usedTokens / contextWindow) * 100)) : 0;
 
-      // Color coding for context pressure
-      const barColor = percent > 85 ? '#ef4444' : percent > 60 ? '#f59e0b' : '#10b981';
+			const barColor = percent > 85 ? "#ef4444" : percent > 60 ? "#f59e0b" : "#10b981";
 
-      // Format token numbers (e.g. 12.4k, 1.2M)
-      const formatTokens = (val) => {
-        if (!val || val === 0) return '0';
-        if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
-        if (val >= 1000) return (val / 1000).toFixed(1) + 'k';
-        return String(val);
-      };
+			const formatTokens = (val) => {
+				if (!val || val === 0) return "0";
+				if (val >= 1000000) return (val / 1000000).toFixed(1) + "M";
+				if (val >= 1000) return (val / 1000).toFixed(1) + "k";
+				return String(val);
+			};
 
-      const handleToggleNotes = () => {
-        window.dispatchEvent(new CustomEvent('dsh-pi-notes-toggle'));
-      };
+			const handleToggleNotes = () => {
+				window.dispatchEvent(new CustomEvent("dsh-pi-notes-toggle"));
+			};
 
-      return h('div', { className: 'dsh-pi-footer' },
-        // Left section: Engine Badge & Status
-        h('div', { className: 'dsh-pi-footer-left' },
-          h('span', { className: 'dsh-pi-badge' },
-            h('span', { className: `dsh-pi-dot ${isRunning ? 'running' : ''}` }),
-            'DSH × PI-UI'
-          ),
-          h('span', { style: { fontSize: '11px', color: 'var(--dsw-alias-label-tertiary, #71717a)' } },
-            isRunning ? '⚡ 正在执行任务...' : '● 系统就绪'
-          )
-        ),
+			return h(
+				"div",
+				{ className: "dsh-pi-footer" },
+				h(
+					"div",
+					{ className: "dsh-pi-footer-left" },
+					h(
+						"span",
+						{ className: "dsh-pi-badge" },
+						h("span", { className: `dsh-pi-dot ${isRunning ? "running" : ""}` }),
+						"DSH × PI-UI",
+					),
+					h(
+						"span",
+						{ style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, #71717a)" } },
+						isRunning ? "⚡ 正在执行任务..." : "● 系统就绪",
+					),
+				),
 
-        // Right section: Token Meter & Notes Shortcut
-        h('div', { className: 'dsh-pi-footer-right' },
-          // Token meter
-          h('div', {
-            className: 'dsh-pi-meter',
-            title: `上下文窗口占用: ${usedTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${percent}%)`
-          },
-            h('span', { className: 'dsh-pi-text-mono' },
-              `${formatTokens(usedTokens)} / ${formatTokens(contextWindow)}`
-            ),
-            h('div', { className: 'dsh-pi-meter-bar' },
-              h('div', {
-                className: 'dsh-pi-meter-fill',
-                style: { width: `${Math.max(2, percent)}%`, backgroundColor: barColor }
-              })
-            ),
-            h('span', {
-              className: 'dsh-pi-text-mono',
-              style: { color: barColor, fontWeight: 600 }
-            }, `${percent}%`)
-          ),
+				h(
+					"div",
+					{ className: "dsh-pi-footer-right" },
+					h(
+						"div",
+						{
+							className: "dsh-pi-meter",
+							title: `上下文窗口占用: ${usedTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${percent}%)`,
+						},
+						h(
+							"span",
+							{ className: "dsh-pi-text-mono" },
+							`${formatTokens(usedTokens)} / ${formatTokens(contextWindow)}`,
+						),
+						h(
+							"div",
+							{ className: "dsh-pi-meter-bar" },
+							h("div", {
+								className: "dsh-pi-meter-fill",
+								style: { width: `${Math.max(2, percent)}%`, backgroundColor: barColor },
+							}),
+						),
+						h(
+							"span",
+							{
+								className: "dsh-pi-text-mono",
+								style: { color: barColor, fontWeight: 600 },
+							},
+							`${percent}%`,
+						),
+					),
 
-          // Quick notes button
-          h('button', {
-            type: 'button',
-            className: 'dsh-pi-btn-sm',
-            onClick: handleToggleNotes,
-            title: '打开随手记便签'
-          }, '📓 便签')
-        )
-      );
-    }
+					h(
+						"button",
+						{
+							type: "button",
+							className: "dsh-pi-btn-sm",
+							onClick: handleToggleNotes,
+							title: "打开随手记便签",
+						},
+						"📓 便签",
+					),
+				),
+			);
+		}
 
-    return {
-      inject: ['slots'],
-      apply(ctx) {
-        // 1. Inject Stylesheet with cleanup effect
-        ctx.effect(() => {
-          const styleEl = document.createElement('style');
-          styleEl.id = 'dsh-pi-ui-styles';
-          styleEl.textContent = CSS_STYLES;
-          document.head.appendChild(styleEl);
-          return () => {
-            styleEl.remove();
-          };
-        });
+		return {
+			inject: ["slots"],
+			apply(ctx) {
+				ctx.effect(() => {
+					const styleEl = document.createElement("style");
+					styleEl.id = "dsh-pi-ui-styles";
+					styleEl.textContent = CSS_STYLES;
+					document.head.appendChild(styleEl);
+					return () => {
+						styleEl.remove();
+					};
+				});
 
-        // 2. Register QuickActionsDock into conversation.input.dock
-        ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-          name: 'conversation.input.dock',
-          id: 'pi-quick-actions',
-          order: 5,
-        }, QuickActionsDock));
+				ctx.slots.inject("conversation.input.dock", () =>
+					ctx.slots.register(
+						{
+							name: "conversation.input.dock",
+							id: "pi-quick-actions",
+							order: 5,
+						},
+						QuickActionsDock,
+					),
+				);
 
-        // 3. Register FooterBarDock into conversation.composer.dock
-        ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-          name: 'conversation.composer.dock',
-          id: 'pi-footer-bar',
-          order: 2,
-        }, FooterBarDock));
-      },
-    };
-  },
+				ctx.slots.inject("conversation.composer.dock", () =>
+					ctx.slots.register(
+						{
+							name: "conversation.composer.dock",
+							id: "pi-footer-bar",
+							order: 2,
+						},
+						FooterBarDock,
+					),
+				);
+			},
+		};
+	},
 });

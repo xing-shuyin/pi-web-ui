@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// The host serves browser assets exclusively from the plugin's client directory.
 describe("Office browser module graph", () => {
 	it("keeps every relative module dependency inside the served client directory", () => {
 		const root = new URL("../../plugins/office/client/", import.meta.url);

@@ -33,9 +33,6 @@ import {
 import { detectPiWebUi } from "../../plugins/page-picker/extension/src/background.js";
 import type { ElementSnapshot } from "../../plugins/page-picker/extension/src/shared/contract.js";
 
-/** 页面元素拾取扩展的纯逻辑：定位串生成 / HTML 骨架 / 契约渲染成 Markdown。
- *  这些函数决定「AI 到底看到什么」，所以逐条钉住（体积与降级都在这里）。 */
-
 const mount = (html: string): void => {
 	document.body.innerHTML = html;
 };
@@ -98,8 +95,6 @@ describe("buildSelector", () => {
 	});
 
 	it("爬不上去（层数受限）→ 退到全 nth-of-type 路径（长但一定准）", () => {
-		// 四层同构：body 下两个 .a，各含两个 .b，各含一个 p —— 每一层都需要 nth-of-type 才分得开，
-		// maxDepth 只给 2 层就爬不到唯一的前缀
 		mount(
 			`<div class="a"><div class="b"><p>1</p></div><div class="b"><p>2</p></div></div>` +
 				`<div class="a"><div class="b"><p>3</p></div><div class="b"><p>4</p></div></div>`,
@@ -305,9 +300,6 @@ describe("toPrompt", () => {
 		expect(md).toContain("- DOM：`body > main > section.card`");
 	});
 
-	// ---------------------------------------------------------- 多选：发哪几类信息
-
-	/** 一份「什么都有」的快照：只要渲染层漏了一类，下面就能看出来。 */
 	const everything = (over = {}) =>
 		snap({
 			text: "卡片标题",
@@ -358,7 +350,7 @@ describe("toPrompt", () => {
 		const md = toPrompt(payload({ detail: "standard", elements: [{ snapshot: everything() }] }));
 		expect(md).toContain("- 页面：");
 		expect(md).toContain("命中的 CSS");
-		expect(md).not.toContain("- XPath："); // standard 不含 locator
+		expect(md).not.toContain("- XPath：");
 	});
 
 	it("命中的 CSS 带文件:行号，且是合法 css 围栏", () => {
@@ -468,7 +460,6 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 		expect(tabMatchesBase("https://host/pi/", base)).toBe(true);
 		expect(tabMatchesBase("https://host/pi/chat", base)).toBe(true);
 		expect(tabMatchesBase("https://host/pi?token=x", base)).toBe(true);
-		// 关键：这几个都不能算我们的页面（权限缺失时 tabs.query 会返回一堆无关标签页）
 		expect(tabMatchesBase("https://host/pi-other/", base)).toBe(false);
 		expect(tabMatchesBase("https://host/", base)).toBe(false);
 		expect(tabMatchesBase("http://localhost:5173/", base)).toBe(false);
@@ -476,15 +467,13 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 	});
 
 	it("originPattern 的结果一定是合法 match pattern（能直接交给 chrome.tabs.query）", () => {
-		// 真事故（0.2.0）：曾经把「裸 origin」也当成查询模式之一传进去，真 Chrome/Edge 直接抛
-		// `Invalid url pattern 'http://localhost:8787'`，而被 catch 成「没找到页面」。
 		expect(isValidMatchPattern(originPattern("http://localhost:8787"))).toBe(true);
 		expect(isValidMatchPattern(originPattern("https://pi.example.com/pi"))).toBe(true);
 		expect(isValidMatchPattern(originPattern("192.168.1.10:9000"))).toBe(true);
-		expect(isValidMatchPattern("http://localhost:8787")).toBe(false); // 裸 origin（无路径）→ 非法
-		expect(isValidMatchPattern("localhost:8787/*")).toBe(false); // 缺 scheme
+		expect(isValidMatchPattern("http://localhost:8787")).toBe(false);
+		expect(isValidMatchPattern("localhost:8787/*")).toBe(false);
 		expect(isValidMatchPattern("http://host")).toBe(false);
-		expect(isValidMatchPattern("http://*/*")).toBe(true); // 任意主机（manifest 里的预置权限就是这种）
+		expect(isValidMatchPattern("http://*/*")).toBe(true);
 		expect(isValidMatchPattern(undefined)).toBe(false);
 	});
 
@@ -497,8 +486,6 @@ describe("远程部署：地址归一 / 权限模式 / 标签页复核", () => {
 	});
 });
 
-// --------------------------------------------------------------- 多选：内容项与预设
-
 describe("内容项（sections）：预设 / 归一 / 反查", () => {
 	it("三个档位各自对应一套组合（老设置升级后行为不变）", () => {
 		expect(sectionsForDepth("compact")).toEqual(["page", "selector", "source", "text"]);
@@ -509,8 +496,8 @@ describe("内容项（sections）：预设 / 归一 / 反查", () => {
 	it("预设覆盖了「我不想要这么多」的常见组合（且不知道的项不会漏）", () => {
 		const ids = SECTION_PRESETS.map((p) => p.id);
 		expect(ids).toContain("lean");
-		expect(ids).toContain("source"); // 只改代码：选择器 + 源码
-		expect(ids).toContain("styles"); // 只排查样式
+		expect(ids).toContain("source");
+		expect(ids).toContain("styles");
 		for (const preset of SECTION_PRESETS) {
 			expect(preset.sections.length).toBeGreaterThan(0);
 			for (const key of preset.sections) expect(PICK_SECTIONS).toContain(key);
@@ -544,7 +531,7 @@ describe("采集层也按勾选项来（没勾的不采，不只是不渲染）"
 	it("只勾「定位」→ 不采文本/骨架/样式/规则/XPath（生成它们本身就不便宜）", () => {
 		const snap = snapshotElement(mountFull(), { detail: "standard", sections: ["selector"] });
 		expect(snap.selector).toBeTruthy();
-		expect(snap.rect).toBeTruthy(); // jsdom 没有布局，尺寸恒为 0：这里只保证「定位信息这一块仍在」
+		expect(snap.rect).toBeTruthy();
 		expect(snap.text).toBeUndefined();
 		expect(snap.htmlSkeleton).toBeUndefined();
 		expect(snap.styles).toBeUndefined();
@@ -555,7 +542,6 @@ describe("采集层也按勾选项来（没勾的不采，不只是不渲染）"
 
 	it("勾了「源码」→ 源码要采（即使没勾文本/骨架）", () => {
 		const el = mountFull();
-		// 造一个 React fiber：适配器靠 __reactFiber$ 前缀 + _debugSource 工作
 		(el as unknown as Record<string, unknown>)["__reactFiber$t"] = {
 			_debugSource: { fileName: "/src/Card.tsx", lineNumber: 12, columnNumber: 3 },
 			type: function Card() {},
@@ -581,20 +567,18 @@ describe("采集层也按勾选项来（没勾的不采，不只是不渲染）"
 	});
 });
 
-// --------------------------------------------------------------- 绑定服务（点图标认页面）
-
 describe("bindView（在 pi-web-ui 本页上问什么）", () => {
 	it("远程 IP + 端口 → 文案里两个地址都在，带主按钮", () => {
-		const view = bindView("http://39.99.235.208:8787/", "http://127.0.0.1:8787");
-		expect(view.base).toBe("http://39.99.235.208:8787");
+		const view = bindView("http://203.0.113.10:8787/", "http://127.0.0.1:8787");
+		expect(view.base).toBe("http://203.0.113.10:8787");
 		expect(view.same).toBe(false);
 		expect(view.bindLabel).toBe("设为服务地址");
 		expect(view.detail).toContain("http://127.0.0.1:8787");
-		expect(view.detail).toContain("http://39.99.235.208:8787");
+		expect(view.detail).toContain("http://203.0.113.10:8787");
 	});
 
 	it("页面带 ?token= / hash → 只留 origin（子路径保留：反代部署）", () => {
-		expect(bindView("http://39.99.235.208:8787/?token=x#/chat", "").base).toBe("http://39.99.235.208:8787");
+		expect(bindView("http://203.0.113.10:8787/?token=x#/chat", "").base).toBe("http://203.0.113.10:8787");
 		expect(bindView("https://host/pi/", "").base).toBe("https://host/pi");
 	});
 
@@ -606,7 +590,6 @@ describe("bindView（在 pi-web-ui 本页上问什么）", () => {
 	});
 
 	it("localhost 与 127.0.0.1 视为**不同**（匹配用的是字面串，不做别名推断）", () => {
-		// 想换地址？在页面上点一下图标就能重绑，没必要在两个回环别名之间“智能”猜测
 		expect(bindView("http://localhost:8787/", "http://127.0.0.1:8787").same).toBe(false);
 	});
 });

@@ -8,14 +8,6 @@ import { setAppSend } from "../../web/src/app-globals.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import { clearQuestionDraft } from "../../web/src/question-draft.js";
 
-/**
- * QuestionDialog 测试（jsdom）：验证
- *   1. 富渲染：question/detail 按 markdown（rawHtml），选项描述/预览富文本
- *   2. 向导式：一次只显示一题；单选点选项自动切下一题；末题按偏好自动提交或等待确认
- *   3. 上一步可回头修改；底部取消发送 cancelled 回答
- * 全部确定性、零 token、零模型 —— 不依赖 DSH 引擎是否真发 preview。
- */
-
 type Question = Parameters<typeof QuestionDialog>[0]["question"];
 
 const baseQuestion: Question = {
@@ -48,8 +40,6 @@ function mount(question: Question = baseQuestion, send: (msg: unknown) => boolea
 	document.body.appendChild(container);
 	root = createRoot(container);
 	const sent: unknown[] = [];
-	// 组件不再接 send prop——发消息走全局发送器（web/src/app-globals.ts 的 appSend），
-	// 测试在这里注入实现并记录（这也是全局化后组件可测的方式）。
 	setAppSend((msg) => {
 		sent.push(msg);
 		return send(msg);
@@ -76,7 +66,6 @@ function click(container: HTMLElement, sel: string | HTMLElement) {
 	});
 }
 
-/** 把 IME 预编辑文本写进 DOM（真实输入法走的是同一条 input 链路）。 */
 function setNativeValue(input: HTMLInputElement, value: string) {
 	const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
 	act(() => {
@@ -85,7 +74,6 @@ function setNativeValue(input: HTMLInputElement, value: string) {
 	});
 }
 
-/** 派发一个 keydown（默认 Enter），isComposing 可控。 */
 function pressEnter(input: HTMLInputElement, isComposing = false) {
 	act(() => {
 		input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing }));
@@ -93,7 +81,7 @@ function pressEnter(input: HTMLInputElement, isComposing = false) {
 }
 
 afterEach(() => {
-	setAppSend(null); // 断开全局发送器，避免串到下一个用例
+	setAppSend(null);
 	if (root) {
 		act(() => root!.unmount());
 		root = null;
@@ -127,13 +115,11 @@ describe("QuestionDialog rich rendering", () => {
 		const c = mount();
 		expect(c.container.querySelector(".question-preview")).toBeNull();
 
-		// 点击带 preview 的选项 A，停留当前题并展示预览。
 		click(c.container, ".question-option");
 
 		const preview = c.container.querySelector(".question-preview");
 		expect(preview).not.toBeNull();
 		expect(preview?.querySelector(".question-preview-label")?.textContent?.length).toBeGreaterThan(0);
-		// preview markdown 渲染：**preview A** → <strong>，列表 → <li>
 		expect(preview?.querySelector("strong")?.textContent).toBe("preview A");
 		expect(preview?.querySelectorAll("li").length).toBe(2);
 	});
@@ -145,20 +131,18 @@ describe("QuestionDialog wizard", () => {
 		expect(c.container.textContent).toContain("Q1");
 		expect(c.container.textContent).not.toContain("Q2");
 
-		click(c.container, ".question-option"); // 选第一题 A
+		click(c.container, ".question-option");
 
 		expect(c.container.textContent).toContain("Q2");
 		expect(c.container.textContent).not.toContain("Q1");
-		// 进度指示可见
 		expect(c.container.querySelector(".question-progress")?.textContent).toContain("2");
 		expect(c.container.textContent).toContain("2 /");
 	});
 
 	it("单选点选项即选中（标记 ●），上一步可返回并已记住选择", () => {
 		const c = mount(wizardQuestion);
-		click(c.container, ".question-option"); // 第一题选 A → 切到第二题
+		click(c.container, ".question-option");
 
-		// 回退后第一题仍在，且 A 已选中
 		click(c.container, ".dialog-prev");
 		expect(c.container.textContent).toContain("Q1");
 		const activeRows = c.container.querySelectorAll(".question-option.active").length;
@@ -174,8 +158,8 @@ describe("QuestionDialog wizard", () => {
 	it("开启偏好后最后一题点选自动提交全部答案", () => {
 		const c = mount(wizardQuestion);
 		click(c.container, ".question-auto-submit input");
-		click(c.container, ".question-option"); // Q1 → A
-		click(c.container, ".question-option"); // Q2 → X（最后一题 → 自动提交）
+		click(c.container, ".question-option");
+		click(c.container, ".question-option");
 
 		expect(c.sent).toHaveLength(1);
 		const msg = c.sent[0] as { type: string; answers: unknown[]; cancelled?: boolean };
@@ -301,19 +285,17 @@ describe("QuestionDialog wizard", () => {
 		};
 		const c = mount(q);
 		const opts = () => Array.from(c.container.querySelectorAll(".question-option")) as HTMLElement[];
-		click(c.container, ".question-option"); // 勾选 A
-		click(c.container, opts()[1]); // 勾选 B（仍在第一题）
+		click(c.container, ".question-option");
+		click(c.container, opts()[1]);
 		expect(c.container.textContent).toContain("M1");
 		expect(c.container.textContent).not.toContain("Q2");
 
-		// 下一题按钮可用 → 推进
 		const nextBtn = c.container.querySelector(".dialog-submit") as HTMLButtonElement;
 		expect(nextBtn.disabled).toBe(false);
 		click(c.container, ".dialog-submit");
 		expect(c.container.textContent).not.toContain("M1");
 		expect(c.container.textContent).toContain("Q2");
 
-		// 最后一题默认等待确认，保留前面多选答案。
 		click(c.container, ".question-option");
 		expect(c.sent).toHaveLength(0);
 		click(c.container, ".dialog-submit");
@@ -329,27 +311,21 @@ describe("QuestionDialog wizard", () => {
 		};
 		const c = mount(q);
 		const submit = c.container.querySelector(".dialog-submit") as HTMLButtonElement;
-		expect(submit.disabled).toBe(false); // 无选项 → 空提交允许
+		expect(submit.disabled).toBe(false);
 		click(c.container, ".dialog-submit");
 		expect(c.sent).toHaveLength(1);
 		const msg = c.sent[0] as { answers: unknown[]; cancelled?: boolean };
 		expect(msg.cancelled ?? false).toBe(false);
-		expect(msg.answers).toEqual([{ id: "fill", selected: [] }]); // 无 custom 键
+		expect(msg.answers).toEqual([{ id: "fill", selected: [] }]);
 	});
 
 	it("有选项但未选、也未填字：提交仍禁用（可选题≠可跳过）", () => {
 		const c = mount(baseQuestion);
 		const submit = c.container.querySelector(".dialog-submit") as HTMLButtonElement;
-		expect(submit.disabled).toBe(true); // 有选项仍须作答
+		expect(submit.disabled).toBe(true);
 	});
 });
 
-/**
- * 选项详情浮层回归：描述曾经是 `.question-option` 里的 absolute 层
- * （`bottom: calc(100% + 6px)`），被 `.dialog-inline{max-height:45vh; overflow-y:auto}`
- * 在上方裁掉、滚也滚不到。改用 HoverDetail（portal 到 body + fixed）后，
- * 浮层必须挂在对话框子树之外，才谈得上「不受任何祖先 overflow 裁剪」。
- */
 describe("QuestionDialog 选项详情浮层", () => {
 	const tip = () => document.body.querySelector(".question-desc-tip");
 
@@ -365,9 +341,8 @@ describe("QuestionDialog 选项详情浮层", () => {
 		const el = tip();
 		expect(el).not.toBeNull();
 		expect(el?.getAttribute("role")).toBe("tooltip");
-		// 关键：不在 .dialog-inline 内 —— 因此不受它的 max-height / overflow 裁剪
 		expect(c.container.querySelector(".question-desc-tip")).toBeNull();
-		expect(el?.querySelector("strong")?.textContent).toBe("A"); // "Opt **A**" 走 markdown
+		expect(el?.querySelector("strong")?.textContent).toBe("A");
 	});
 
 	it("指针移开后留宽限期再收起（浮层可悬停/滚动）", () => {
@@ -383,7 +358,7 @@ describe("QuestionDialog 选项详情浮层", () => {
 			act(() => {
 				row.dispatchEvent(new MouseEvent("mouseleave"));
 			});
-			expect(tip()).not.toBeNull(); // 宽限期内仍在（指针可移入浮层继续读）
+			expect(tip()).not.toBeNull();
 
 			act(() => {
 				vi.advanceTimersByTime(500);
@@ -405,9 +380,6 @@ describe("QuestionDialog 选项详情浮层", () => {
 			const inner = tip()?.querySelector("strong") as HTMLElement;
 			expect(inner).toBeTruthy();
 
-			// 浮层 portal 到 body，DOM 上不在选项行子树里 —— 指针移进浮层时锚点照样收到
-			// mouseleave，且实测它派发在浮层的 onMouseEnter 之后。以 relatedTarget 判定，
-			// 不能只看事件先后（否则宽限期定时器会把浮层关掉）。
 			act(() => {
 				row.dispatchEvent(new MouseEvent("mouseleave", { relatedTarget: inner }));
 			});
@@ -416,7 +388,6 @@ describe("QuestionDialog 选项详情浮层", () => {
 			});
 			expect(tip()).not.toBeNull();
 
-			// 真正离开（relatedTarget 落在浮层外）才收起。
 			act(() => {
 				row.dispatchEvent(new MouseEvent("mouseleave", { relatedTarget: row }));
 			});
@@ -527,12 +498,10 @@ describe("QuestionDialog 折叠与展开", () => {
 
 	it("折叠并重新展开后，用户输入与选项勾选状态完整保留", () => {
 		const { container } = mount(baseQuestion);
-		// 勾选选项 A
 		const optA = container.querySelector(".question-option") as HTMLElement;
 		click(container, optA);
 		expect(optA.classList.contains("active")).toBe(true);
 
-		// 输入自定义文本
 		const input = container.querySelector(".question-custom") as HTMLInputElement;
 		const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
 		act(() => {
@@ -540,11 +509,9 @@ describe("QuestionDialog 折叠与展开", () => {
 			input.dispatchEvent(new Event("change", { bubbles: true }));
 		});
 
-		// 折叠
 		click(container, ".dialog-toggle-collapse");
 		expect(container.querySelector(".set-section")).toBeNull();
 
-		// 重新展开
 		click(container, ".dialog-toggle-collapse");
 		const optAReopened = container.querySelector(".question-option") as HTMLElement;
 		expect(optAReopened.classList.contains("active")).toBe(true);
@@ -570,11 +537,9 @@ describe("QuestionDialog 折叠与展开", () => {
 			);
 		});
 
-		// 先折叠
 		click(container, ".dialog-toggle-collapse");
 		expect(container.querySelector(".dialog-inline")?.classList.contains("collapsed")).toBe(true);
 
-		// 收到新提问 id
 		const nextQuestion: Question = {
 			id: "q_next",
 			questions: [{ id: "step1", question: "Next question?" }],
@@ -596,11 +561,6 @@ describe("QuestionDialog 折叠与展开", () => {
 	});
 });
 
-/**
- * issue #560：macOS 中文输入法（鼠须管）下，「补充回答」输入框里敲英文按回车是**上屏**，
- * 不是提交。修复前只看 `e.key === "Enter"`，文字刚上屏就把问卷答案发给模型，面板随之收起
- * 且无法修改。本组用例锁住两条漏判路径（与 #248 同源）。
- */
 describe("QuestionDialog 输入法上屏回车不提交（issue #560）", () => {
 	it("组合态回车（isComposing=true）不提交，仅让文字上屏", () => {
 		const { container, sent } = mount(baseQuestion);
@@ -614,7 +574,6 @@ describe("QuestionDialog 输入法上屏回车不提交（issue #560）", () => 
 
 		expect(sent).toEqual([]);
 		expect(input.value).toBe("hello");
-		// 面板仍在（没有提交就没有收起）
 		expect(container.querySelector(".question-custom")).not.toBeNull();
 	});
 
@@ -640,10 +599,9 @@ describe("QuestionDialog 输入法上屏回车不提交（issue #560）", () => 
 		act(() => {
 			input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "hello" }));
 		});
-		pressEnter(input, false); // 上屏用
+		pressEnter(input, false);
 		expect(sent).toEqual([]);
 
-		// 等过 50ms 宽限期：跨过时间窗后同一个键就是正常提交
 		vi.useFakeTimers();
 		vi.setSystemTime(Date.now() + 1000);
 		pressEnter(input, false);

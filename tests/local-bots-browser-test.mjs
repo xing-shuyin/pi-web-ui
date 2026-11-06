@@ -1,6 +1,3 @@
-// Real React + directory browser + local Bot persistence; only capability catalogs are fixtures.
-// Parent builds dist once. This test NEVER starts a build, including when invoked directly.
-// Run: node tests/local-bots-browser-test.mjs
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -188,8 +185,6 @@ async function main() {
 		page.on("console", (message) => {
 			if (message.type() !== "error") return;
 			const url = message.location().url;
-			// The unpaired device center loads its hidden groups view, whose rooms API
-			// intentionally returns 409. Keep this single known non-Bot diagnostic explicit.
 			if (url === `${origin}/api/device-center/rooms` && message.text().includes("409 (Conflict)")) {
 				expectedUnpairedErrors.push(message.text());
 				return;
@@ -202,9 +197,7 @@ async function main() {
 					const packet = JSON.parse(String(payload));
 					if (["prompt", "steer", "follow_up"].includes(packet.type)) promptPackets.push(packet);
 					if (packet.type === "complete_path") directoryPackets.push(packet);
-				} catch {
-					/* WebSocket control frames have no JSON body. */
-				}
+				} catch {}
 			}),
 		);
 		await page.goto(`${origin}/?view=devices`);
@@ -232,7 +225,6 @@ async function main() {
 			"initial catalog cwd",
 		);
 		await form.getByRole("tab", { name: "Runtime", exact: true }).click();
-		// Browse a real child directory over the real application's WebSocket.
 		await form.locator(".universal-path-browse-btn").click();
 		const picker = page.locator(".project-picker");
 		await picker.waitFor({ state: "visible" });
@@ -316,14 +308,12 @@ async function main() {
 			.getByText(/Connect this server in MCP settings/)
 			.waitFor();
 		await form.locator(".dc-bot-catalog-tabs button").nth(1).click();
-		// Filtered bulk selection must select only the currently visible results.
 		await catalogs.nth(1).getByRole("button", { name: "Clear", exact: true }).click();
 		await catalogs.nth(1).getByRole("searchbox").fill("Review guide");
 		await catalogs.nth(1).getByRole("button", { name: "Select results", exact: true }).click();
 		await catalogs.nth(1).getByRole("searchbox").fill("");
 		assert.equal(await catalogs.nth(1).locator('input[type="checkbox"]:checked').count(), 1);
 		await form.locator(".dc-bot-catalog-tabs button").nth(0).click();
-		// Bulk selection must use catalog IDs, and Clear must reset even filtered selections.
 		await catalogs.nth(0).getByRole("button", { name: "Select all", exact: true }).click();
 		assert.equal(await catalogs.nth(0).locator('input[type="checkbox"]:checked').count(), 2);
 		await catalogs.nth(0).getByRole("button", { name: "Clear", exact: true }).click();
@@ -459,7 +449,6 @@ async function main() {
 			0,
 		);
 		await form.getByRole("tab", { name: "Runtime", exact: true }).click();
-		// Edit permissions and explicitly return to the inherited model.
 		await form.locator('button[aria-haspopup="dialog"]').click();
 		await models.getByRole("button", { name: "Inherit default model", exact: true }).click();
 		await form.getByRole("tab", { name: "Capabilities", exact: true }).click();
@@ -542,7 +531,6 @@ async function main() {
 		);
 		if (expectedUnpairedErrors.length)
 			console.log("NOTE: unpaired device center rooms endpoint returned its expected 409; no other browser errors");
-		// One report contains both unmodified real-app viewport captures.
 		const report = join(repo, "reports", "local-bots-picker.png");
 		await mkdir(dirname(report), { recursive: true });
 		const sheet = await context.newPage();

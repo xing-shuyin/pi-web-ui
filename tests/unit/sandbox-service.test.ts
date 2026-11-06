@@ -49,15 +49,12 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(mgr.getByCwd(sandbox.path)?.id).toBe(sandbox.id);
 		expect(mgr.getByCwd(join(sandbox.path, "nested", "dir"))?.id).toBe(sandbox.id);
 
-		// Convert to permanent
 		const persisted = mgr.persist(sandbox.id);
 		expect(persisted.ephemeral).toBe(false);
 
-		// Reload from disk registry
 		const mgr2 = new SandboxManager(dataDir);
 		expect(mgr2.get(sandbox.id)?.ephemeral).toBe(false);
 
-		// Destroy removes directory and registry entry
 		await mgr2.destroy(sandbox.id);
 		expect(existsSync(sandbox.path)).toBe(false);
 		expect(mgr2.list()).toHaveLength(0);
@@ -72,16 +69,13 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(copiedFiles).toBeGreaterThanOrEqual(2);
 		expect(existsSync(join(sandbox.path, "package.json"))).toBe(true);
 		expect(existsSync(join(sandbox.path, "src", "index.ts"))).toBe(true);
-		// Heavy cache dir node_modules is skipped
 		expect(existsSync(join(sandbox.path, "node_modules"))).toBe(false);
 
-		// Mutate file inside sandbox -> original sourceProjectDir is 100% untouched
 		writeFileSync(join(sandbox.path, "src", "index.ts"), "export const x = 999;\n", "utf-8");
 		writeFileSync(join(sandbox.path, "src", "new-file.ts"), "export const added = true;\n", "utf-8");
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 1;\n");
 		expect(existsSync(join(sourceProjectDir, "src", "new-file.ts"))).toBe(false);
 
-		// Promote to a new formal project directory
 		const formalDir = join(tempRoot, "promoted-app");
 		const promoted = await mgr.promote(sandbox.id, formalDir);
 		expect(promoted.copiedFiles).toBeGreaterThanOrEqual(3);
@@ -97,16 +91,13 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 1;\n");
 		expect(existsSync(join(sourceProjectDir, "src", "new-file.ts"))).toBe(false);
 
-		// Reset sandbox -> restores clean state from sourceProjectDir
 		await mgr.reset(sandbox.id);
 		expect(readFileSync(join(sandbox.path, "src", "index.ts"), "utf-8")).toBe("export const x = 1;\n");
 		expect(existsSync(join(sandbox.path, "src", "new-file.ts"))).toBe(false);
 
-		// Modify again and applyToSource -> updates sourceProjectDir while preserving .git and pruning deleted files
 		writeFileSync(join(sandbox.path, "src", "index.ts"), "export const x = 42;\n", "utf-8");
 		mkdirSync(join(sandbox.path, ".git"), { recursive: true });
 		writeFileSync(join(sandbox.path, ".git", "HEAD"), "corrupted\n", "utf-8");
-		// Remove package.json in sandbox -> applyToSource should prune it in sourceProjectDir as well
 		rmSync(join(sandbox.path, "package.json"));
 		const diff = await mgr.diffWithSource(sandbox.id);
 		await expect(mgr.applyToSource(sandbox.id)).rejects.toThrow(/revision required/i);
@@ -137,7 +128,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			ephemeral: true,
 		});
 
-		// 1. Local file access requires an explicitly trusted implementation.
 		expect(evaluateSandboxJail(sandbox, "write", { path: "src/index.ts" }, sandbox.path)).not.toBeNull();
 		expect(
 			evaluateSandboxJail(sandbox, "write", { path: "src/index.ts" }, sandbox.path, { trustedTool: false }),
@@ -152,7 +142,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			}),
 		).toBeNull();
 
-		// 2. Outside sandbox (../ traversal or sourceProjectDir) is hard-blocked
 		expect(isStrictlyInsideSandbox("../escape.txt", sandbox.path, sandbox.path)).toBe(false);
 		expect(
 			evaluateSandboxJail(sandbox, "write", { path: "../escape.txt" }, sandbox.path, { trustedTool: true }),
@@ -163,7 +152,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			}),
 		).not.toBeNull();
 
-		// 3. Patch tool path extraction and jail check
 		const safePatch =
 			"*** Begin Patch\n*** Update File: src/index.ts\n@@\n-export const x = 1;\n+export const x = 2;\n";
 		const evilPatch = "*** Begin Patch\n*** Add File: ../outside.ts\n+evil\n";
@@ -173,7 +161,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			evaluateSandboxJail(sandbox, "patch", { patch: evilPatch }, sandbox.path, { trustedTool: true }),
 		).not.toBeNull();
 
-		// Command and remote tools remain denied even when the host trusts their implementation.
 		for (const command of [
 			"npm test",
 			"echo ok > build.log",
@@ -196,7 +183,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			expect(evaluateSandboxJail(sandbox, tool, params, sandbox.path, { trustedTool: true })).not.toBeNull();
 		}
 
-		// 6. withSandboxJailGate wrapper blocks out-of-bounds execution
 		let executed = false;
 		const dummyWriteTool = {
 			name: "write",
@@ -289,7 +275,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 			() => "en",
 		);
 
-		// 1. Create imported sandbox and switch to it
 		const createRes = (await tool.execute(
 			"c1",
 			{ action: "create", mode: "import", name: "AI Refactor Lab", switchTo: true } as never,
@@ -301,11 +286,9 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		const sbxPath = createRes.details.sandbox.path;
 		expect(currentCwd).toBe(sbxPath);
 
-		// 2. Modify a file and add a new file inside the sandbox
 		writeFileSync(join(sbxPath, "src", "index.ts"), "export const x = 777;\n", "utf-8");
 		writeFileSync(join(sbxPath, "src", "helper.ts"), "export const h = 1;\n", "utf-8");
 
-		// Self lifecycle operations remain forbidden even when approval would succeed.
 		approvalAllow = true;
 		for (const action of ["reset", "destroy", "apply_to_source"] as const) {
 			const result = await tool.execute("self-" + action, { action, sandbox: sbxId }, undefined, undefined, {} as any);
@@ -319,9 +302,7 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 1;\n");
 		expect(existsSync(join(sourceProjectDir, "src", "helper.ts"))).toBe(false);
 
-		// Manage the sandbox from its source workspace.
 		currentCwd = sourceProjectDir;
-		// 3. Diff detects 1 added and 1 modified file
 		const diffRes = (await tool.execute(
 			"c2",
 			{ action: "diff", sandbox: sbxId } as never,
@@ -333,7 +314,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(diffRes.details.modified).toEqual(["src/index.ts"]);
 		expect(diffRes.details.deleted).toEqual([]);
 
-		// 4. apply_to_source is blocked when user denies approval
 		const deniedApply = (await tool.execute(
 			"c3",
 			{ action: "apply_to_source", sandbox: sbxId } as never,
@@ -345,7 +325,6 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(deniedApply.isError).toBe(true);
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 1;\n");
 
-		// 5. apply_to_source succeeds once user approves
 		approvalAllow = true;
 		const allowedApply = (await tool.execute(
 			"c4",
@@ -359,14 +338,12 @@ describe("SandboxManager & Hard Jail Isolation", () => {
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 777;\n");
 		expect(existsSync(join(sourceProjectDir, "src", "helper.ts"))).toBe(true);
 
-		// 6. Reset from the source discards sandbox-only edits.
 		writeFileSync(join(sbxPath, "src", "index.ts"), "sandbox-only\n");
 		const resetRes = await tool.execute("reset", { action: "reset", sandbox: sbxId }, undefined, undefined, {} as any);
 		expect(resetRes.isError).toBeUndefined();
 		expect(readFileSync(join(sbxPath, "src", "index.ts"), "utf-8")).toBe("export const x = 777;\n");
 		expect(readFileSync(join(sourceProjectDir, "src", "index.ts"), "utf-8")).toBe("export const x = 777;\n");
 
-		// 7. Destroy from source cleans up only the sandbox.
 		const destroyRes = (await tool.execute(
 			"c5",
 			{ action: "destroy", sandbox: sbxId } as never,

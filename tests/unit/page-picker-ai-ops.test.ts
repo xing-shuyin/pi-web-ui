@@ -3,18 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installBridgePage, invokeBridgeHandler } from "../../plugins/page-picker/extension/src/content/bridge-page.js";
 import { BUILTIN_OPS } from "../../plugins/page-picker/extension/src/shared/bridge.js";
 
-/**
- * AI 操作页面的**内置动作**（read / click / type / scroll / goto / wait / eval）。
- *
- * 为什么按真 jsdom 测（真 DOM、真事件）：这几个动作是模型唯一能碰到用户页面的手 ——
- * 选择器找错了、输入没触发 input 事件（React 受控组件会当没事发生）、wait 提前返回，
- * 都会表现为「模型说它点了，页面没动」。这些行为只有真 DOM 能钉住。
- *
- * 与 page-picker-bridge.test.ts 的分工：那边测**路由与准入**（谁能在哪个页面上跑什么），
- * 这里测**动作本身的语义**。
- */
-
-/** 装上「被授权给 AI」的桥（control: true → 带内置动作）。 */
 function boot(options: { control?: boolean; peers?: string[] } = {}): void {
 	document.documentElement.setAttribute("data-pi-bridge", "tok-ai");
 	installBridgePage({
@@ -24,7 +12,6 @@ function boot(options: { control?: boolean; peers?: string[] } = {}): void {
 	});
 }
 
-/** 跑一个内置动作（等价于 worker 注入 invokeBridgeHandler）。 */
 const run = (op: string, args?: Record<string, unknown>) =>
 	invokeBridgeHandler({ op, args, from: "http://127.0.0.1:8787", builtin: true });
 
@@ -124,8 +111,6 @@ describe("click / type（模型的手）", () => {
 		const events: string[] = [];
 		input.addEventListener("input", () => events.push("input"));
 		input.addEventListener("change", () => events.push("change"));
-		// 模拟「框架把实例上的 value 换成自己的访问器」：如果我们直接 `input.value = x`，
-		// 走的就是这个假 setter（真实 React 场景下等于什么都没输进去）
 		let instanceValueSet = 0;
 		Object.defineProperty(input, "value", {
 			configurable: true,
@@ -137,8 +122,8 @@ describe("click / type（模型的手）", () => {
 
 		const res = await run("type", { selector: "#name", text: "你好" });
 		expect(res.ok).toBe(true);
-		expect(instanceValueSet).toBe(0); // 没走实例上的 setter
-		expect(input.value).toBe(""); // 实例 getter 仍返回假值（证明我们写的是原型）
+		expect(instanceValueSet).toBe(0);
+		expect(input.value).toBe("");
 		expect(events).toEqual(["input", "change"]);
 	});
 
@@ -257,7 +242,6 @@ describe("eval（默认关，开了才到得了这里）", () => {
 	it("CSP 挡住 eval 时给一句能照做的建议", async () => {
 		boot();
 		const res = await run("eval", { code: "eval('1')" });
-		// jsdom 里通常能跑通；这里只要求：真被 CSP 挡时错误文案里带上「CSP」提示
 		if (!res.ok) expect(res.error).toMatch(/CSP|unsafe-eval/);
 	});
 });
@@ -334,7 +318,6 @@ describe("边界（这些决定了「模型不能干什么」）", () => {
 		expect(badge).not.toBeNull();
 		expect(badge?.shadowRoot?.textContent).toContain("AI 正在操作本页");
 		expect(badge?.shadowRoot?.textContent).toContain("click");
-		// 只报信、不拦截：不能挡页面本身的点击
 		expect(badge?.style.pointerEvents).toBe("none");
 	});
 

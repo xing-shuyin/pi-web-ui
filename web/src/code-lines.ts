@@ -1,11 +1,5 @@
 import { createElement, type ReactNode } from "react";
 
-/** Split a code element's children into per-logical-line node arrays so each
- *  line can render in its own gutter row (issue #36). rehype-highlight emits a
- *  flat list of text runs and token spans where newlines only live inside text
- *  nodes; a token span that somehow spans lines is cloned once per line so
- *  syntax highlighting survives the split. A trailing newline's phantom empty
- *  line is dropped (matches countLines). */
 export function splitCodeLines(node: ReactNode): ReactNode[][] {
 	const walk = (n: ReactNode): ReactNode[][] => {
 		if (typeof n === "string" || typeof n === "number") {

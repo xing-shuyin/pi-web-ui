@@ -93,12 +93,10 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 
 		await expect(verifyRepoRoot(dataDir)).rejects.toThrow("Directory is not a Git repository");
 
-		// Without origin, all sorted root commits contribute to a stable digest.
 		const rootCommitSha = await gitExec(repo, "rev-list", "--max-parents=0", "HEAD");
 		const canonicalId = await computeCanonicalRepositoryId(repo);
 		expect(canonicalId).toBe(`repo-${createHash("sha256").update(`roots:${rootCommitSha}`).digest("hex")}`);
 
-		// With remote origin, repoId is derived from normalized URL
 		await gitExec(repo, "remote", "add", "origin", "git@github.com:example/repo.git");
 		const canonicalWithRemote = await computeCanonicalRepositoryId(repo);
 		expect(canonicalWithRemote).toMatch(/^repo-[0-9a-f]{64}$/);
@@ -145,7 +143,6 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		const clone = join(dataDir, "clone");
 		await gitExec(dataDir, "clone", "--no-local", repo, clone);
 		await gitExec(clone, "remote", "remove", "origin");
-		// clone removes remote refs; make the second root reachable under a different ref.
 		await gitExec(clone, "update-ref", "refs/heads/independent", secondRoot);
 		expect(await computeCanonicalRepositoryId(clone)).toBe(rootsId);
 		await gitExec(dataDir, "init", "empty");
@@ -156,7 +153,6 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		const { repo, baseCommit, dataDir } = await fixtureRepo();
 		const marker = join(dataDir, "executed");
 		const command = `printf executed >> '${marker.replace(/\\/g, "/")}'`;
-		// Attributes activate filter commands when unchecked Git commands operate.
 		await writeFile(join(repo, ".gitattributes"), "*.ts filter=hostile\n*.txt text eol=lf ident\n");
 		await gitExec(repo, "add", ".gitattributes");
 		await gitExec(repo, "commit", "-m", "attributes");
@@ -166,7 +162,6 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 			included,
 			`[filter "hostile"]\n clean = ${command}\n smudge = ${command}\n process = ${command}\n required = true\n`,
 		);
-		// Filter commands exist only for linked worktrees, not the baseline config.
 		await gitExec(repo, "config", "includeIf.gitdir:**/worktrees/**.path", included);
 		await gitExec(repo, "config", "core.fsmonitor", command);
 		await writeFile(join(repo, ".git", "hooks", "post-checkout"), `#!/bin/sh\n${command}\n`, { mode: 0o755 });
@@ -190,14 +185,12 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		const { repo, dataDir } = await fixtureRepo();
 		await writeFile(join(repo, "src", "new.ts"), "const x = 1;\n");
 		await writeFile(join(repo, "src", "space name.ts"), "quoted paths\n");
-		await writeFile(join(repo, ".env"), "SECRET=123\n"); // ignored
+		await writeFile(join(repo, ".env"), "SECRET=123\n");
 		const tree = await snapshotTree(repo, dataDir);
 		expect(tree).toMatch(/^[0-9a-fA-F]{40}$/);
 
-		// Verified that user's index is still clean
 		const indexDiff = await gitExec(repo, "diff", "--cached");
 		expect(indexDiff).toBe("");
-		// Verified that ignored file was excluded
 		const treeContent = await gitExec(repo, "ls-tree", tree);
 		expect(treeContent).not.toContain(".env");
 		expect(treeContent).toContain("src");
@@ -213,15 +206,12 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		expect(identity.headCommit).toBe(baseCommit);
 		expect(identity.toplevel.toLowerCase()).toBe(worktreePath.toLowerCase());
 
-		// Rejects if attached to branch
 		await gitExec(worktreePath, "checkout", "-b", "attached-branch");
 		await expect(verifyWorktreeIdentity(worktreePath, repo)).rejects.toThrow("attached to branch");
 
-		// Detach HEAD again
 		await gitExec(worktreePath, "checkout", "--detach", baseCommit);
 		expect((await verifyWorktreeIdentity(worktreePath, repo)).isClean).toBe(true);
 
-		// Rejects if pointer has been substituted
 		await expect(verifyWorktreeIdentity(worktreePath, repo, undefined, join(dataDir, "fake-gitdir"))).rejects.toThrow(
 			"Worktree gitdir mismatch",
 		);
@@ -250,10 +240,8 @@ describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
 		]);
 		const patchBytes = Buffer.from(patchStr, "utf8");
 
-		// Verifying with legitimate outputTree succeeds
 		await expect(verifyPatchProducesTree(repo, baseCommit, patchBytes, outputTree, dataDir)).resolves.toBeUndefined();
 
-		// Verifying with counterfeit outputTree throws
 		const fakeTree = "0000000000000000000000000000000000000000";
 		await expect(verifyPatchProducesTree(repo, baseCommit, patchBytes, fakeTree, dataDir)).rejects.toThrow(
 			"Artifact patch does not produce declared outputTree",

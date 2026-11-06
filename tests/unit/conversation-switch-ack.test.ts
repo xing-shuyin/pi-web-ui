@@ -16,8 +16,6 @@ describe("returning from a shared view to the active local conversation", () => 
 
 		await client.switchConversation("local-conversation");
 
-		// The browser may still hold a remote conversation/revision, so a delta
-		// cannot restore it. Force a full snapshot before acknowledging completion.
 		expect(flushSnapshot).toHaveBeenCalledExactlyOnceWith(true);
 		expect(emit).toHaveBeenCalledExactlyOnceWith({
 			type: "transition_progress",

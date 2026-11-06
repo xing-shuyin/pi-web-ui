@@ -32,9 +32,7 @@ describe("banner-notice store", () => {
 		expect(getBanners()[0].title).toBe("对话 A");
 		expect(getBanners()[0].persistent).toBe(true);
 
-		// 快进 10 秒
 		vi.advanceTimersByTime(10000);
-		// 仍然存在
 		expect(getBanners()).toHaveLength(1);
 	});
 
@@ -48,11 +46,9 @@ describe("banner-notice store", () => {
 
 		expect(getBanners()).toHaveLength(1);
 
-		// 快进 2 秒，仍然存在
 		vi.advanceTimersByTime(2000);
 		expect(getBanners()).toHaveLength(1);
 
-		// 再快进 1.1 秒，已自动关闭
 		vi.advanceTimersByTime(1100);
 		expect(getBanners()).toHaveLength(0);
 	});
@@ -117,7 +113,6 @@ describe("banner-notice store", () => {
 
 		expect(getBanners()).toHaveLength(2);
 
-		// 用户切换到对话 1，移除对话 1 的横幅
 		dismissBanner("question-conv-1");
 
 		const remaining = getBanners();

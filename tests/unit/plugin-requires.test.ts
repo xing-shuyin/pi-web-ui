@@ -1,21 +1,9 @@
-/**
- * P2-8 插件依赖声明（manifest.requires）单测。
- *
- * A. 纯函数：`parseRequires` 归一 + `sortByRequires` 拓扑（保序/环检出/自依赖不死锁）。
- * B. 形状校验（`plugin-manifest-validate.ts`）：坏形状即错（P1-6 同源）。
- * C. 接线（真实 `PluginManager`）：缺失/失败/环/自依赖/hostApi/未知族/未声明族
- *    即拒+教学式错误；满足即激活；纯前端对端按存在满足；提供方被删后级联。
- */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PluginManager, parseRequires, sortByRequires, type PluginHost } from "../../server/plugins.js";
 import { validatePluginManifest } from "../../server/plugin-manifest-validate.js";
-
-// ---------------------------------------------------------------------------
-// A. 纯函数
-// ---------------------------------------------------------------------------
 
 describe("parseRequires / sortByRequires", () => {
 	it("非对象/空对象回 undefined；合法字段归一 + 截断", () => {
@@ -54,10 +42,6 @@ describe("parseRequires / sortByRequires", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// B. 形状校验
-// ---------------------------------------------------------------------------
-
 describe("requires 形状校验", () => {
 	it("非对象即错", () => {
 		expect(validatePluginManifest({ requires: "x" }, "x").errors.some((e) => e.path === "requires")).toBe(true);
@@ -81,10 +65,6 @@ describe("requires 形状校验", () => {
 		expect(many.warnings.some((w) => w.path === "requires.plugins")).toBe(true);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// C. 接线（真实 PluginManager）
-// ---------------------------------------------------------------------------
 
 let dir: string;
 let mgr: PluginManager;
@@ -196,7 +176,6 @@ describe("requires 语义判定", () => {
 		expect(await infoOf("prov")).toBeUndefined();
 		const cons = await infoOf("cons");
 		expect(cons?.error).toMatch(/prov/);
-		// 消费方实例已撤：host 残留不代表运行，loaded 行为错误占位
 		expect(cons?.diagnostics?.join("\n")).toMatch(/prov/);
 	});
 });

@@ -36,16 +36,6 @@ import {
 import { requestGrantHere, requestPairHere } from "../../plugins/page-picker/extension/src/content/pair-here.js";
 import { isValidMatchPattern, normalizeSettings } from "../../plugins/page-picker/extension/src/shared/settings.js";
 
-/**
- * 页面桥（跨页面读写）的决策逻辑，用假 chrome + 假 window 驱动，零浏览器：
- *
- *  - **准入**：谁在调用只看 `sender.tab.url`（消息体里的字段一律不作数 —— 否则 A 能冒充 B）；
- *            不在配对表里的 origin 一律拒绝；
- *  - **路由**：对端没打开 / 没注册 op / 结果太大 → 一句说明原因的错误，绝不静默；
- *  - **自包含**：页面侧的函数会被 `executeScript` 单独搬运到 MAIN world，引用任何模块作用域的
- *              东西都会在页面里变成 ReferenceError（这条必须钉死，否则「本地全绿、装进浏览器就废」）。
- */
-
 const A = "https://a.example";
 const B = "https://b.example";
 const C = "https://c.example";
@@ -78,14 +68,7 @@ describe("normalizeOrigin", () => {
 
 describe("normalizePairs", () => {
 	it("脏数据逐条丢弃，不因为一格坏数据整表失效", () => {
-		const out = normalizePairs([
-			{ a: A, b: B },
-			{ a: A, b: A }, // 自己配自己：无意义
-			{ a: "file:///x", b: B }, // 认不出的 origin
-			null,
-			"nonsense",
-			{ b: B }, // 缺一端
-		]);
+		const out = normalizePairs([{ a: A, b: B }, { a: A, b: A }, { a: "file:///x", b: B }, null, "nonsense", { b: B }]);
 		expect(out).toHaveLength(1);
 		expect(out[0]).toMatchObject({ a: A, b: B, enabled: true });
 	});
@@ -212,15 +195,11 @@ describe("upsertPair / removePair", () => {
 	});
 });
 
-// --------------------------------------------------------------------- 页面侧（MAIN world）
-
 interface FakePage {
 	sent: Record<string, unknown>[];
-	/** 冒充「页面收到了扩展回的 result」（走同一条 window.postMessage 通道）。 */
 	deliver(data: unknown): void;
 }
 
-/** 造一个够用的 MAIN world 环境：document（token 属性）+ postMessage + addEventListener。 */
 function fakePageWindow(token = "tok-1", origin = A): FakePage {
 	const g = globalThis as unknown as Record<string, unknown>;
 	const sent: Record<string, unknown>[] = [];
@@ -324,7 +303,7 @@ describe("installBridgePage（页面侧 API）", () => {
 		});
 		installBridgePage({ peers: [C], self: A });
 		const next = (globalThis as unknown as Record<string, any>).__piBridge;
-		expect(next).toBe(api); // 同一个对象：handler 不会被冲掉
+		expect(next).toBe(api);
 		expect(next.peers).toEqual([C]);
 		return next.__invoke("read", 42, B).then((res: Record<string, unknown>) => {
 			expect(res).toEqual({ ok: true, value: "ok" });
@@ -398,14 +377,10 @@ describe("invokeBridgeHandler（worker 注入进对端页面的那一端）", ()
 });
 
 it("页面侧的函数是自包含的（executeScript 只搬函数本身，引用模块作用域 = 页面里 ReferenceError）", () => {
-	// 这条测试用「把函数 toString 后重建」来模拟浏览器：任何对模块级绑定/import 的引用都会
-	// 在这里就抛 ReferenceError —— 而不是等装进浏览器才发现桥是哑的。
 	for (const fn of [installBridgePage, invokeBridgeHandler, uninstallBridgePage]) {
 		expect(() => new Function(`return (${fn.toString()})`)()).not.toThrow();
 	}
 });
-
-// ------------------------------------------------------------------ worker（假 chrome 驱动）
 
 interface FakeChrome {
 	storage: {
@@ -423,17 +398,14 @@ interface FakeChrome {
 		captureVisibleTab: ReturnType<typeof vi.fn>;
 	};
 	scripting: { executeScript: ReturnType<typeof vi.fn> };
-	/** 截图切页时要把窗口也提到前台。 */
 	windows: { update: ReturnType<typeof vi.fn> };
 	action: { setBadgeText: ReturnType<typeof vi.fn>; setTitle: ReturnType<typeof vi.fn> };
 	permissions: { contains: ReturnType<typeof vi.fn>; request: ReturnType<typeof vi.fn> };
 	runtime: { getURL: (path: string) => string; sendMessage: ReturnType<typeof vi.fn> };
 	i18n: ReturnType<typeof createFakeI18n>;
-	/** 存储的真实内容（断言用：配对表、配对候选都落在这里）。 */
 	store: Record<string, unknown>;
 }
 
-/** match pattern → 简单的 URL 前缀匹配（假 chrome 也要像真浏览器一样校验模式）。 */
 function matchesPattern(pattern: string, url: string): boolean {
 	const prefix = pattern.replace(/\*$/, "");
 	return url.startsWith(prefix);
@@ -443,20 +415,13 @@ function fakeChrome(
 	opts: {
 		tabs?: { id: number; url: string; windowId?: number; active?: boolean }[];
 		pairs?: unknown;
-		/** 被授权给 AI 操作的页面（storage.local 的 aiPages）。 */
 		aiPages?: unknown;
-		/** storage.sync 里要返回的设置（默认空 = 全默认值：aiControl 开、allowEval 关）。 */
 		settings?: Record<string, unknown>;
 		permissionGranted?: boolean;
-		/** 注入 MAIN world 调 handler 时对端返回什么（默认成功）。 */
 		peerResult?: unknown;
-		/** 第一次调对端返回的东西（用来模拟「桥还没装上 → 补装后成功」）。 */
 		firstPeerResult?: unknown;
-		/** 按 op 分别返回（截图会连调 metrics / read 两个动作）。 */
 		peerByOp?: Record<string, unknown>;
-		/** captureVisibleTab 给的图（默认一张假 JPEG data URL）。 */
 		visibleShot?: string;
-		/** 截图权限（<all_urls> 等价）给没给。默认给，单独测「没给」那条路。 */
 		shotPermission?: boolean;
 		injectThrows?: string;
 	} = {},
@@ -486,7 +451,6 @@ function fakeChrome(
 					if (!isValidMatchPattern(p)) throw new Error(`Invalid url pattern '${p}'`);
 				}
 				let list = opts.tabs ?? [];
-				// 截图要靠「当前活动标签页是谁」决定切不切页 —— 假 chrome 也得认这个语义
 				if (info.active === true) list = list.filter((t) => t.active === true);
 				if (patterns.length === 0) return list;
 				return list.filter((t) => patterns.some((p) => matchesPattern(p, t.url)));
@@ -516,7 +480,6 @@ function fakeChrome(
 		windows: { update: vi.fn(async () => ({})) },
 		action: { setBadgeText: vi.fn(async () => {}), setTitle: vi.fn(async () => {}) },
 		permissions: {
-			// 截图权限是 `http://*/*` 这类通配模式：假 chrome 也要分开答，否则测不出「没给权限」那条路
 			contains: vi.fn(async (p: { origins?: string[] } = {}) => {
 				const wantsShot = (p.origins ?? []).some((o) => /^https?:\/\/\*\//.test(o));
 				if (wantsShot) return opts.shotPermission ?? true;
@@ -526,7 +489,6 @@ function fakeChrome(
 		},
 		runtime: {
 			getURL: (path: string) => `chrome-extension://fake/${path}`,
-			// 模拟真 worker：content script 发来的消息交给真 handleMessage（sender 用假的页面身份）
 			sendMessage: vi.fn(
 				async (message: unknown) =>
 					await new Promise((resolve) => {
@@ -553,7 +515,6 @@ describe("handleBridgeCall（sender 是唯一可信的「你是谁」）", () =>
 
 	it("sender 的 origin 不在配对表 → 拒绝（哪怕消息体里自称是对端）", async () => {
 		fakeChrome({ pairs: [pair()], tabs: [{ id: 1, url: `${B}/x` }] });
-		// 关键：消息体里写着 to=B，但它自己（sender）是 C —— 只认 sender
 		const res = await handleBridgeCall({ op: "read", to: B }, { tab: { id: 9, url: `${C}/evil` } });
 		expect(res.ok).toBe(false);
 		expect(res.error).toContain("配对");
@@ -583,7 +544,7 @@ describe("handleBridgeCall（sender 是唯一可信的「你是谁」）", () =>
 			world: string;
 			args: unknown[];
 		};
-		expect(injection.target).toEqual({ tabId: 2 }); // 打在**对端**页面上
+		expect(injection.target).toEqual({ tabId: 2 });
 		expect(injection.world).toBe("MAIN");
 		expect(injection.args[0]).toMatchObject({ op: "orders", args: { day: 1 }, from: A });
 	});
@@ -600,7 +561,6 @@ describe("handleBridgeCall（sender 是唯一可信的「你是谁」）", () =>
 		});
 		const res = await handleBridgeCall({ op: "orders" }, { tab: { id: 1, url: `${A}/x` } });
 		expect(res).toEqual({ ok: true, value: "补装成功" });
-		// 补装 = 注入 content script + arm + 注入 MAIN 桥
 		const files = chrome.scripting.executeScript.mock.calls
 			.map(([injection]) => (injection as { files?: string[] }).files?.[0])
 			.filter(Boolean);
@@ -721,8 +681,6 @@ describe("syncBridges（注入时机）", () => {
 	});
 });
 
-// ------------------------------------------------------- 配对候选（地址不用手打）
-
 describe("配对候选（最近点过扩展图标的页面）", () => {
 	it("normalizeRecent：去重、非 http(s) 丢弃、按最近在前", () => {
 		const list = normalizeRecent([
@@ -734,7 +692,7 @@ describe("配对候选（最近点过扩展图标的页面）", () => {
 			"nope",
 		]);
 		expect(list.map((r) => r.origin)).toEqual(["http://a.example", "https://b.example"]);
-		expect(list[0].title).toBe("重复的"); // 同一 origin 出现两次 → 保留更新的那条
+		expect(list[0].title).toBe("重复的");
 		expect(normalizeRecent([{ origin: "http://x.example", title: "  空白标题  ", at: "t" }])[0].title).toBe("空白标题");
 	});
 
@@ -745,7 +703,7 @@ describe("配对候选（最近点过扩展图标的页面）", () => {
 		}));
 		const list = normalizeRecent(many);
 		expect(list).toHaveLength(MAX_RECENT);
-		expect(list[0].origin).toBe(`https://s${MAX_RECENT + 4}.example`); // 最近的在最前
+		expect(list[0].origin).toBe(`https://s${MAX_RECENT + 4}.example`);
 	});
 
 	it("同一个 origin 再点一次只提到最前，不产生重复项", () => {
@@ -784,7 +742,6 @@ describe("配对候选（最近点过扩展图标的页面）", () => {
 		const created = chrome.tabs.create.mock.calls[0]?.[0] as { url: string };
 		expect(created.url).toContain("options.html?pair=");
 		expect(decodeURIComponent(created.url)).toContain("http://localhost:5173");
-		// 顺手把它记成候选：用户不用再手打
 		expect(chrome.store.recentOrigins).toEqual([
 			{ origin: "http://localhost:5173", title: "http://localhost:5173", at: expect.any(String) },
 		]);
@@ -803,7 +760,6 @@ describe("配对候选（最近点过扩展图标的页面）", () => {
 		const chrome = fakeChrome({});
 		expect(await requestPairHere("http://localhost:5173/x")).toBe(true);
 
-		// worker 不在线（SW 被回收 / 通道断了）→ false，绝不抛给 UI
 		(chrome.runtime as unknown as Record<string, unknown>).sendMessage = async () => {
 			throw new Error("Extension context invalidated");
 		};
@@ -818,16 +774,12 @@ describe("配对候选（最近点过扩展图标的页面）", () => {
 	});
 });
 
-// ------------------------------------------- AI 操作页面（browser_page 工具的路由）
-
-/** pi-web-ui 宿主页面的地址（sender 用它 = 模型在动手）。 */
 const HOST = "http://127.0.0.1:8787/";
 const TARGET = "http://localhost:5173";
 
 const aiPage = (origin = TARGET, title = "开发站") => ({ origin, title, at: "2026-01-01T00:00:00.000Z" });
 const hostSender = { tab: { id: 9, url: HOST } };
 
-/** 最近一次 MAIN world 注入的入参（看 op/builtin/from）。 */
 function lastInjection(chrome: FakeChrome): { target: { tabId: number }; args: unknown[]; world?: string } {
 	return chrome.scripting.executeScript.mock.calls.at(-1)?.[0] as {
 		target: { tabId: number };
@@ -936,7 +888,7 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 		const res = await handleBridgeCall({ op: "read", args: { what: "text" } }, hostSender);
 		expect(res).toEqual({ ok: true, value: { text: "页面正文" } });
 		const injection = lastInjection(chrome);
-		expect(injection.target).toEqual({ tabId: 1 }); // 打在目标页，不是宿主页
+		expect(injection.target).toEqual({ tabId: 1 });
 		expect(injection.args[0]).toMatchObject({ op: "read", builtin: true, from: "http://127.0.0.1:8787" });
 	});
 
@@ -954,8 +906,8 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 		expect(res.ok).toBe(true);
 		expect(value).toMatchObject({ installed: true, aiControl: true, allowEval: false });
 		expect(value.pages).toEqual([{ origin: TARGET, title: "开发站", open: true }]);
-		expect(String(value.optionsUrl)).toContain("options.html"); // 入口按钮要跳到那里
-		expect(chrome.scripting.executeScript).not.toHaveBeenCalled(); // 不打扰页面
+		expect(String(value.optionsUrl)).toContain("options.html");
+		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
 	});
 
 	it("status 在总开关关着时也要能答（否则用户不知道去哪里打开）", async () => {
@@ -980,7 +932,6 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 	});
 
 	it("宿主页面的调用**不走配对表**：AI 授权表是它唯一的凭据", async () => {
-		// 配对表里有 HOST ↔ TARGET，但 AI 授权表是空的 → 应当被拒（而不是“借”配对放行）
 		fakeChrome({ pairs: [pair(HOST, TARGET)], tabs: [{ id: 1, url: `${TARGET}/x` }] });
 		const res = await handleBridgeCall({ op: "read" }, hostSender);
 		expect(res.ok).toBe(false);
@@ -988,7 +939,6 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 	});
 
 	it("普通页面的调用仍然走配对表：AI 授权表不参与", async () => {
-		// TARGET 被授权给 AI，但它自己（作为发送方）没跟任何人配对 → 拒绝
 		fakeChrome({ aiPages: [aiPage()], tabs: [{ id: 2, url: `${TARGET}/x` }] });
 		const res = await handleBridgeCall({ op: "read" }, { tab: { id: 2, url: `${TARGET}/x` } });
 		expect(res.ok).toBe(false);
@@ -997,7 +947,6 @@ describe("handleBridgeCall 的 AI 分支（模型在操作页面）", () => {
 });
 
 describe("shot（截图：切页 → 截 → 裁 → 切回）", () => {
-	/** 假的图片环境：service worker 里的 createImageBitmap / OffscreenCanvas（node 里没有）。 */
 	function fakeImageEnv(): void {
 		const g = globalThis as unknown as Record<string, unknown>;
 		g.createImageBitmap = async () => ({ width: 2400, height: 1600, close: () => {} });
@@ -1045,7 +994,6 @@ describe("shot（截图：切页 → 截 → 裁 → 切回）", () => {
 		const image = (res.value as { image: { dataUrl: string; mimeType: string } }).image;
 		expect(image.dataUrl.startsWith("data:image/jpeg;base64,")).toBe(true);
 		expect(image.mimeType).toBe("image/jpeg");
-		// 切过去、再切回来：顺序与目标都要对
 		const updates = chrome.tabs.update.mock.calls.map((c) => c as [number, { active: boolean }]);
 		expect(updates).toEqual([
 			[1, { active: true }],
@@ -1066,10 +1014,9 @@ describe("shot（截图：切页 → 截 → 裁 → 切回）", () => {
 		});
 		const res = await handleBridgeCall({ op: "shot", args: { selector: "#card" } }, hostSender);
 		expect(res.ok).toBe(true);
-		// 元素只占整屏一角 → 输出图应该明显小于整屏（说明真的裁了）
 		const image = (res.value as { image: { width: number; height: number } }).image;
 		expect(image.width).toBeLessThanOrEqual(200);
-		expect(chrome.tabs.update).not.toHaveBeenCalled(); // 目标页本来就是活动页 → 不该乱切
+		expect(chrome.tabs.update).not.toHaveBeenCalled();
 	});
 
 	it("selector 没匹上 → 失败（不静默给一张整屏图）", async () => {
@@ -1101,7 +1048,6 @@ describe("shot（截图：切页 → 截 → 裁 → 切回）", () => {
 		const res = await handleBridgeCall({ op: "shot" }, hostSender);
 		expect(res.ok).toBe(false);
 		expect(res.error).toContain("截不到");
-		// 关键：失败路径也必须把用户的浏览器切回原页
 		const updates = chrome.tabs.update.mock.calls.map((c) => c as [number, { active: boolean }]);
 		expect(updates.at(-1)).toEqual([2, { active: true }]);
 	});

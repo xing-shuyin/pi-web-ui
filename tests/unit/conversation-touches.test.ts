@@ -1,7 +1,3 @@
-/**
- * conversation-touches 单测：触碰文件集提取 / 交集 / 紧凑格式化。
- * 纯函数零 token；bash 解析是轻量分词器，只断言高置信度行为。
- */
 import { describe, expect, it } from "vitest";
 import {
 	bashWriteTargets,
@@ -131,7 +127,6 @@ describe("交集与格式化", () => {
 		expect(formatTouchEntry({ path: "a.ts", count: 1, lastTs: 0 })).toBe("a.ts");
 		expect(formatTouchEntry({ path: "a.ts", count: 3, lastTs: 0 })).toBe("a.ts ×3");
 		const long = `E:/very/long/project/dir/${"d/".repeat(30)}file.ts`;
-		// 路径本身超 60：保完整路径（只丢 ×N 后缀），不断半截路径。
 		expect(formatTouchEntry({ path: long, count: 2, lastTs: 0 })).toBe(long);
 	});
 	it("formatTouchesCompact 前 N 条 + 计数不断尾", () => {

@@ -1,7 +1,3 @@
-/**
- * CanvasNodeDrawer.tsx — 数字员工审查门禁与深度控制台弹窗 (Review Gate & Workspace Console)。
- * 方案 1: 工作台场景选项卡 (Workspace Tabs) 架构，彻底消除视域拥挤，每个场景独享 100% 宽幅空间。
- */
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useCopyFeedback } from "../../use-copy-feedback";
 import type { CanvasNode, CanvasEdge, CanvasNodeLogEntry, ModelInfo, ProjectSummary, UiMessage } from "../../types";
@@ -52,15 +48,12 @@ export interface CanvasNodeDrawerProps {
 	edges: CanvasEdge[];
 	allNodes: CanvasNode[];
 	models: ModelInfo[];
-	/** 全局默认模型（"provider/model-id"），列表中找不到节点模型时的显示回退 */
 	defaultModel?: string | null;
 	installedSkills?: { name: string; description: string }[];
 	projects: ProjectSummary[];
 	workspaceRoots?: string[];
 	pathCompletions?: { name: string; path: string; type: "dir" | "file" }[];
-	/** cwd 为 "." 时弹窗初始目录的回退（画布 currentCwd） */
 	baseCwd?: string;
-	/** 经画布通道下发 make_dir（缺省由通用选择器内置回退经主通道创建） */
 	onMakeDir?: (path: string) => void;
 	onClose: () => void;
 	onUpdate: (nodeId: string, patch: Partial<CanvasNode>) => void;
@@ -68,11 +61,9 @@ export interface CanvasNodeDrawerProps {
 	onStop: (nodeId: string) => void;
 	onSteer: (nodeId: string, message: string) => void;
 	onReview?: (nodeId: string, decision: "approve" | "reject", comment?: string) => void;
-	/** 复用的对话流：entries=协同事件，messages=与主对话同构 UiMessage[] */
 	logEntries?: CanvasNodeLogEntry[];
 	logMessages?: UiMessage[];
 	onClearLog?: (nodeId: string) => void;
-	/** 重指定连线端子/类型（Studio handleUpdateEdge） */
 	onUpdateEdge?: (edgeId: string, patch: Partial<CanvasEdge>) => void;
 }
 
@@ -114,7 +105,6 @@ export function CanvasNodeDrawer({
 	const { copied: copiedSummary, copy: copySummary } = useCopyFeedback({ duration: 2000 });
 	const logScrollRef = useRef<HTMLDivElement | null>(null);
 
-	// 根据当前节点状态智能感知默认激活的场景选项卡
 	const initialTab: CanvasDrawerTab = useMemo(() => {
 		if (node?.status === "waiting_approval") return "contracts";
 		if (
@@ -129,7 +119,6 @@ export function CanvasNodeDrawer({
 
 	const [activeTab, setActiveTab] = useState<CanvasDrawerTab>(initialTab);
 
-	// 节点状态变更时（例如转入待审批或运行），智能自动跳转到对应关键 Tab
 	useEffect(() => {
 		if (!node) return;
 		if (node.status === "waiting_approval") {
@@ -139,7 +128,6 @@ export function CanvasNodeDrawer({
 		}
 	}, [node?.id, node?.status]);
 
-	// 支持按 Escape 键退出全屏或关闭弹窗
 	useEffect(() => {
 		if (!node) return;
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -159,7 +147,6 @@ export function CanvasNodeDrawer({
 	const emptyToolStatuses: ReadonlyMap<string, any> = new Map();
 	const drawerCfg = ((node?.config ?? {}) as Record<string, string | number | boolean | undefined>) || {};
 
-	/** 专属参数单字段（抽屉样式）：全走 ROLE_FIELDS 总表，与卡片同构 */
 	const renderDrawerField = (f: RoleField) => {
 		const strVal = String(drawerCfg[f.key] ?? f.default ?? "");
 		const setF = (v: string | number | boolean) => onUpdate(node!.id, { config: { ...node!.config, [f.key]: v } });
@@ -266,7 +253,6 @@ export function CanvasNodeDrawer({
 		logScrollRef.current?.scrollTo({ top: logScrollRef.current.scrollHeight });
 	}, [logMessages.length, logEntries.length, logTab]);
 
-	// 解析出与 ModelThinking 兼容的当前模型对象：绝不杜撰，不存在时回退到全局默认/列表第一个
 	const selectedModelObj = useMemo(() => {
 		if (!node) return null;
 		const raw = node.model;
@@ -301,7 +287,6 @@ export function CanvasNodeDrawer({
 	const engineMeta = ENGINE_METAS[node.engine] || ENGINE_METAS.pi;
 	const roleMeta = ROLE_METAS[node.role] || ROLE_METAS.coder;
 
-	// 查询输入连线（上游契约）
 	const incomingEdges = edges.filter((e) => e.targetNodeId === node.id);
 	const outgoingEdges = edges.filter((e) => e.sourceNodeId === node.id);
 	const nodeMap = new Map(allNodes.map((n) => [n.id, n]));
@@ -334,7 +319,6 @@ export function CanvasNodeDrawer({
 				onWheel={(e) => e.stopPropagation()}
 				onClick={(e) => e.stopPropagation()}
 			>
-				{/* 弹窗头部：支持双击切换全屏 */}
 				<div
 					className="canvas-drawer-header"
 					onDoubleClick={(e) => {
@@ -390,7 +374,6 @@ export function CanvasNodeDrawer({
 					</div>
 				</div>
 
-				{/* 场景选项卡导航栏 (Workspace Tabs) */}
 				<div className="canvas-drawer-tabs-bar">
 					<button
 						type="button"
@@ -441,9 +424,7 @@ export function CanvasNodeDrawer({
 					</button>
 				</div>
 
-				{/* 弹窗内容区：四大场景选项卡各自独占 100% 宽幅视域 */}
 				<div className="canvas-drawer-body">
-					{/* Tab 1: 实时运行与控制台 (Live Console) */}
 					{activeTab === "console" && (
 						<div className="canvas-tab-panel canvas-tab-panel-console">
 							<div className="canvas-log-section">
@@ -531,7 +512,6 @@ export function CanvasNodeDrawer({
 								</div>
 							</div>
 
-							{/* 实时插话纠偏控制栏 */}
 							<div className="canvas-steer-section">
 								<div className="canvas-steer-bar">
 									<input
@@ -557,7 +537,6 @@ export function CanvasNodeDrawer({
 						</div>
 					)}
 
-					{/* Tab 2: AI 任务指令与人设 (Prompts & Instructions) */}
 					{activeTab === "prompts" && (
 						<div className="canvas-tab-panel canvas-tab-panel-prompts">
 							{roleCapabilityNotice(node.role, t) && (
@@ -584,7 +563,6 @@ export function CanvasNodeDrawer({
 							)}
 
 							<div className="canvas-prompts-grid">
-								{/* 左卡片：角色人设 System Prompt */}
 								<div className="canvas-prompt-card">
 									<div className="canvas-prompt-card-header">
 										<h4 className="canvas-section-title">🎭 {t("canvas.nodeDrawer.systemPrompt")}</h4>
@@ -599,7 +577,6 @@ export function CanvasNodeDrawer({
 									<p className="canvas-tip">{t("canvas.nodeDrawer.identityDefinesWhoItIsInstructionDefinesWhat")}</p>
 								</div>
 
-								{/* 右卡片：AI 任务指令 Instruction */}
 								<div className="canvas-prompt-card">
 									<div className="canvas-prompt-card-header">
 										<h4 className="canvas-section-title">🎯 {t("canvas.nodeDrawer.aIInstructionSavedWithGraph")}</h4>
@@ -667,10 +644,8 @@ export function CanvasNodeDrawer({
 						</div>
 					)}
 
-					{/* Tab 3: 上下游契约与审查门禁 (Contracts & Review) */}
 					{activeTab === "contracts" && (
 						<div className="canvas-tab-panel canvas-tab-panel-contracts">
-							{/* 任务交付物与审查门禁 (Review Gate) */}
 							<div className="canvas-review-gate-card">
 								<div className="canvas-summary-header">
 									<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -774,9 +749,7 @@ export function CanvasNodeDrawer({
 								)}
 							</div>
 
-							{/* 双列展示上游输入契约与下游去向交接 */}
 							<div className="canvas-contracts-grid">
-								{/* 上游前置契约 */}
 								<div className="canvas-contract-col">
 									<h4 className="canvas-section-title">
 										📥 {t("canvas.nodeDrawer.incomingContracts")}
@@ -828,7 +801,6 @@ export function CanvasNodeDrawer({
 									)}
 								</div>
 
-								{/* 下游交接 */}
 								<div className="canvas-contract-col">
 									<h4 className="canvas-section-title">
 										📤 {t("canvas.nodeDrawer.outgoingHandoffs")}
@@ -892,10 +864,8 @@ export function CanvasNodeDrawer({
 						</div>
 					)}
 
-					{/* Tab 4: 沙箱与物理环境 (Sandbox & Environment) */}
 					{activeTab === "env" && (
 						<div className="canvas-tab-panel canvas-tab-panel-env">
-							{/* 模型与思考强度配置（通用 ModelThinking 控件） */}
 							<div className="canvas-env-section-card">
 								<h4 className="canvas-section-title">🧠 {t("canvas.nodeDrawer.modelThinkingBudget")}</h4>
 								<p className="canvas-tip" style={{ marginBottom: 10 }}>
@@ -918,7 +888,6 @@ export function CanvasNodeDrawer({
 								/>
 							</div>
 
-							{/* 环境与物理目录（通用 UniversalPathPicker 控件） */}
 							<div className="canvas-env-section-card">
 								<h4 className="canvas-section-title">📂 {t("canvas.nodeDrawer.workspaceSandboxIsolation")}</h4>
 								<p className="canvas-tip" style={{ marginBottom: 10 }}>
@@ -968,7 +937,6 @@ export function CanvasNodeDrawer({
 								})()}
 							</div>
 
-							{/* Pstack 专项规约与工作依据详情 */}
 							{node.role === "pstack" &&
 								(() => {
 									const curSkillKey = String(drawerCfg.skill || "poteto-mode");
@@ -1018,7 +986,6 @@ export function CanvasNodeDrawer({
 									);
 								})()}
 
-							{/* Skill 角色：已安装与公开技能灵魂选择 */}
 							{node.role === "skill" &&
 								(() => {
 									const curSkill = String(drawerCfg.skillName || "");
@@ -1064,7 +1031,6 @@ export function CanvasNodeDrawer({
 					)}
 				</div>
 
-				{/* 弹窗底部控制 */}
 				<div className="canvas-drawer-footer">
 					<div className="canvas-drawer-footer-info">
 						<span style={{ fontSize: 11.5, color: "var(--text-faint)" }}>

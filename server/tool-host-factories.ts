@@ -1,11 +1,3 @@
-/**
- * tool-host-factories — 自定义工具宿主适配器工厂。
- *
- * 为 schedule_*、conversation_read、claim_files、compact_context、skill 等自定义工具
- * 提供纯净的宿主环境数据映射，隔离工具运行态接口与 ClientSession 内部会话存储。
- *
- * 从 agent-service.ts 抽出为独立模块。
- */
 import { readFileSync, statSync } from "node:fs";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizePathKey } from "./client-state.js";
@@ -22,7 +14,6 @@ import type { AgentMessage } from "./serialize.js";
 import type { Conversation } from "./agent-service.js";
 import { MAX_TRANSCRIPT_SCAN_BYTES, piSessionsRoot } from "./session-search.js";
 
-/** 创建 schedule_* 工具的数据宿主 */
 export function createScheduleToolHost(ctx: {
 	getSchedulerStore: () => SchedulerStore | undefined;
 	getCwd: () => string;
@@ -52,7 +43,6 @@ export function createScheduleToolHost(ctx: {
 	};
 }
 
-/** 创建 conversation_read 工具的数据宿主 */
 export function createConversationReadHost(ctx: {
 	getConversations: () => Iterable<Conversation>;
 	getConversation: (id: string) => Conversation | undefined;
@@ -78,9 +68,7 @@ export function createConversationReadHost(ctx: {
 				try {
 					messageCount = c.session.getSessionStats().totalMessages;
 					isStreaming = c.session.isStreaming;
-				} catch {
-					// 会话替换中——报默认值
-				}
+				} catch {}
 				out.push({
 					id: c.id,
 					title: c.title,
@@ -188,7 +176,6 @@ export function createConversationReadHost(ctx: {
 	};
 }
 
-/** 创建 claim_files 工具的数据宿主 */
 export function createClaimToolHost(ctx: {
 	resolveTarget: (ownerId?: string) => Conversation | undefined;
 	getActiveId: () => string;
@@ -207,7 +194,6 @@ export function createClaimToolHost(ctx: {
 	};
 }
 
-/** 创建 compact_context 工具的数据宿主 */
 export function createCompactContextHost(ctx: {
 	resolveTarget: (ownerId?: string) => Conversation | undefined;
 	getActiveId: () => string;
@@ -260,11 +246,9 @@ export function createCompactContextHost(ctx: {
 	};
 }
 
-/** 创建 skill 工具的数据宿主 */
 export function createSkillToolHost(ctx: {
 	resolveTarget: (ownerId?: string) => Conversation | undefined;
 	getDisabledSkills: () => string[];
-	/** 单文件正文上限（字节）的实时读取：跟随设置，未提供用工具默认。 */
 	getMaxFileBytes?: () => number;
 	ownerId?: string;
 }): SkillToolHost {

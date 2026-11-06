@@ -1,23 +1,3 @@
-/**
- * desktop-use/index.mjs — Windows/macOS 桌面控制插件（纯服务端插件，无 client/ 视图）。
- *
- * 元素定位优先走 Windows 自带的 UI Automation，辅以窗口截图和 OCR
- * （ps/uia.ps1 枚举控件名/类型/矩形，模型按 id 选），输入走 nut-js
- * （@nut-tree-fork/nut-js，模型点矩形中心），PowerShell SendInput 兜底。
- *
- * 依赖装卸（用户定稿）：
- * - 安装插件只拷文件（含 package.json，不含 node_modules，见 CLI 的
- *   PLUGIN_COPY_FILTER）；真正的 `npm install` 由本文件的 ensureDeps 在
- *   activate 后台自动跑（db-client 同款：目录锁 + npm-cli 直调 + 看门狗 +
- *   host.notify 进度，见下方）。装好前工具报“安装中稍后”，不静默失败。
- * - 卸载 = 整目录 rm（CLI uninstall），node_modules 在插件目录里，一起消失。
- *
- * 安全：读（desktop_elements/window-list）与写（click/type/key/focus）分工具，
- * 写工具各自可在设置 → 插件工具里单独关闭；promptGuidelines 要求模型先查后点、
- * 高危动作（关闭/删除/提交/付款）先向用户确认。id 必须来自 90 秒内的 dump，
- * 防止窗口挪走后点错地方。
- */
-
 import { execFile, spawn } from "node:child_process";
 import { runMac } from "./mac-backend.mjs";
 import { finitePoint, screenshotPoint, matchOcr, parseShortcut, scrollInput, tapKeys } from "./actions.mjs";
@@ -33,23 +13,15 @@ const UIA_PS1 = join(PS_DIR, "uia.ps1");
 const INPUT_PS1 = join(PS_DIR, "input.ps1");
 const SHOT_PS1 = join(PS_DIR, "screenshot.ps1");
 
-/** 运行时输入依赖（主用后端；PowerShell 兜底零依赖）。 */
 const DEPS = ["@nut-tree-fork/nut-js@^4.2.6"];
 const INSTALL_LOCK = ".pi-deps-lock";
 const LOCK_STALE_MS = 15 * 60 * 1000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 const UIA_TIMEOUT_MS = 45_000;
 const INPUT_TIMEOUT_MS = 20_000;
-/** dump 保鲜期：窗口会挪走/重绘，过期 id 不给点。 */
 const DUMP_TTL_MS = 90_000;
-/** 正文里的元素行数上限（dump 本身可存更多，防 token 爆炸）。 */
 const LIST_TEXT_CAP = 150;
 
-// ---------------------------------------------------------------------------
-// 解码：powershell.exe 按系统代码页输出（中文系统多为 GBK），ConvertTo-Json
-// 又不一定转义 CJK——严格 UTF-8 失败就按 GBK 解，再不行 latin1（与 text-sniff
-// 的 decodeText 同策略）。
-// ---------------------------------------------------------------------------
 function decode(buf) {
 	const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(String(buf ?? ""));
 	try {
@@ -102,9 +74,6 @@ function psArgs(obj) {
 	return out;
 }
 
-// ---------------------------------------------------------------------------
-// nut-js 键名按运行时实际枚举匹配（fork 各版 Key 命名可能漂移，不硬编码猜）。
-// ---------------------------------------------------------------------------
 function buildNutKeyMap(Key) {
 	const names = Object.keys(Key ?? {});
 	const find = (...cands) => {
@@ -144,16 +113,16 @@ export default {
 	activate(host) {
 		const st = {
 			dead: false,
-			nut: null, // { mouse, keyboard, Button, keyMap } | null
+			nut: null,
 			depsOk: false,
 			depsInstalling: false,
 			depsFailed: "",
 			probeError: "",
 			lastProbeAt: 0,
 			installer: null,
-			dumps: new Map(), // dumpKey -> { at, byId: Map(id -> {x,y,w,h,name,hwnd?}) }
+			dumps: new Map(),
 			shotSeq: 0,
-			shots: new Map(), // shotKey -> { at, winX, winY, winW, winH, imgW, imgH }
+			shots: new Map(),
 			dumpSeq: 0,
 			offs: [],
 		};
@@ -168,7 +137,6 @@ export default {
 				? runMac(script === UIA_PS1 ? "elements" : script === SHOT_PS1 ? "screenshot" : fields.Op, fields, options)
 				: runPs(script, psArgs(fields), options);
 
-		// ---- 依赖自安装（db-client 同款：目录锁 + npm-cli 直调 + 看门狗） ----
 		const req = createRequire(join(PLUGIN_DIR, "index.mjs"));
 
 		async function probeNut() {
@@ -200,19 +168,15 @@ export default {
 				const meta = JSON.parse(readFileSync(join(host.dir, INSTALL_LOCK), "utf8")) ?? {};
 				const at = Number(meta.at ?? 0);
 				if (!Number.isFinite(at) || Date.now() - at >= LOCK_STALE_MS) return false;
-				// 锁新鲜时再看持有者还活着没：进程已死（崩溃/被杀）=  stale 锁，直接回收，
-				// 否则一次被杀的安装会挡住后面 15 分钟的重试。
 				const pid = Number(meta.pid ?? 0);
 				if (Number.isFinite(pid) && pid > 0) {
 					try {
 						process.kill(pid, 0);
-						return true; // 还活着：真有人在装
+						return true;
 					} catch {
 						try {
 							rmSync(join(host.dir, INSTALL_LOCK), { force: true });
-						} catch {
-							/* ignore */
-						}
+						} catch {}
 						host.log("info", "desktop-use: 回收 stale 安装锁（持有进程已死）");
 						return false;
 					}
@@ -226,18 +190,14 @@ export default {
 		function resolveNpmCli() {
 			try {
 				return req.resolve("npm/bin/npm-cli.js");
-			} catch {
-				/* 插件不依赖 npm 包，常走下面 */
-			}
+			} catch {}
 			try {
 				const cands = [
 					join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
 					join(dirname(process.execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
 				];
 				for (const c of cands) if (existsSync(c)) return c;
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			return null;
 		}
 
@@ -252,19 +212,13 @@ export default {
 			host.notify("info", "🖱️ 桌面控制：正在安装输入依赖（首次约需 1～3 分钟）…");
 			try {
 				writeFileSync(join(host.dir, INSTALL_LOCK), JSON.stringify({ at: Date.now(), pid: process.pid }));
-			} catch {
-				/* 锁写失败也不挡安装 */
-			}
+			} catch {}
 			const finish = async (ok, why) => {
-				// 锁清理永远执行（deactivate 杀安装后进程可能直接退出，不清理就剩 stale 锁）
 				try {
 					rmSync(join(host.dir, INSTALL_LOCK), { force: true });
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				if (st.dead) return;
 				if (ok) {
-					// npm 刚退出时文件可能还被占用/被杀软扫着，立即探活可能误杀：等两轮再判
 					st.depsOk = await probeNut();
 					for (const wait of [3000, 8000]) {
 						if (st.depsOk || st.dead) break;
@@ -295,15 +249,11 @@ export default {
 			const timer = setTimeout(() => {
 				try {
 					child.kill("SIGTERM");
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				setTimeout(() => {
 					try {
 						child.kill("SIGKILL");
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 				}, 5000).unref?.();
 				finish(false, "安装超时");
 			}, INSTALL_TIMEOUT_MS);
@@ -324,7 +274,6 @@ export default {
 			child.on("exit", (code, signal) => once(code === 0, signal ? `npm 被终止（${signal}）` : `npm exit ${code}`));
 		}
 
-		// ---- 输入后端：nut-js 主用，PowerShell 兜底 ----
 		const needWinPs = () => {
 			requireWin();
 			if (isWin && (!existsSync(UIA_PS1) || !existsSync(INPUT_PS1))) {
@@ -332,15 +281,12 @@ export default {
 			}
 		};
 
-		/** 有 nut 且就绪 → true；安装中 → 抛“稍后”；失败/缺失 → false（走兜底）。 */
 		function nutReadyOrThrow() {
 			if (isMac) return false;
 			if (st.nut) return true;
 			if (st.depsInstalling) {
 				throw new Error("输入依赖正在安装（约 1～3 分钟），稍后重试；只读的元素查询（desktop_elements）不受影响。");
 			}
-			// 自愈：上次探活失败超过 60 秒就后台重探一次（npm 刚装完时的瞬时锁/杀软扫描会导致误判，
-			// 重启后模块其实已经可用，不必重装也不必重启服务）
 			if (!st.depsOk && Date.now() - st.lastProbeAt > 60_000) {
 				probeNut().then((ok2) => {
 					if (ok2 && !st.dead) {
@@ -454,7 +400,6 @@ export default {
 				await psInput("paste", { Text: text }, signal);
 				return { backend: "macos-native-unicode", chars: text.length };
 			}
-			// 中文/emoji 走剪贴板粘贴（SendInput 发不出 CJK；调用前须已聚焦目标）
 			if (!isAscii(text)) {
 				await psInput("paste", { Text: text }, signal);
 				return { backend: "powershell-paste", chars: text.length };
@@ -471,7 +416,6 @@ export default {
 			return { backend: "powershell-paste", chars: text.length };
 		}
 
-		// ---- dump 缓存：id 只在 90 秒内有效 ----
 		function rememberShot(info) {
 			const key = `s${++st.shotSeq}`;
 			st.shots.set(key, { at: Date.now(), ...info });
@@ -501,7 +445,6 @@ export default {
 		}
 
 		function resolvePoint({ dump, id, x, y, shot, text, occurrence }) {
-			// 截图坐标优先：shot 快照 + 图内像素/文字匹配 → 屏幕坐标（自绘界面唯一可靠的点法）
 			if (shot !== undefined && shot !== null && String(shot) !== "") {
 				const s = st.shots.get(String(shot));
 				if (!s) throw new Error("没有这张截图：先调 desktop_screenshot，再用它返回的 shot + 图内坐标或文字点。");
@@ -511,7 +454,6 @@ export default {
 				let imgY = y;
 				let viaText = "";
 
-				// 如果指定了 text，优先从 OCR 结果匹配文字坐标
 				if (text !== undefined && text !== null && String(text).trim() !== "") {
 					const q = String(text).trim();
 					const ocrList = s.ocr ?? [];
@@ -557,7 +499,6 @@ export default {
 				})
 				.join("\n");
 
-		// 共享参数块：坐标参数在 desktop_click / desktop_type 两处重复，统一一份（模型同时看到全部 schema）。
 		const POINT_PROPS = {
 			x: { type: "number", description: "in-image X with shot, else screen X" },
 			y: { type: "number", description: "in-image Y with shot, else screen Y" },
@@ -572,7 +513,6 @@ export default {
 			"Click one element at a time; verify with desktop_elements or desktop_screenshot after each click, no rapid-fire; see docs/app-playbook.md for common app patterns",
 		];
 
-		// ---- 工具注册 ----
 		const tools = [
 			{
 				name: "desktop_elements",
@@ -618,7 +558,6 @@ export default {
 							Process: p.process ?? "",
 							Query: p.query ?? "",
 							MaxNodes: maxNodes,
-							// Chromium 系控件嵌套深（地址栏常在 8 层左右），默认 8 层；desktop 只取顶层窗口
 							MaxDepth: scope === "desktop" ? 1 : 8,
 						},
 						{ signal },
@@ -936,7 +875,6 @@ export default {
 					const start = resolvePoint({ shot: p.shot, x: p.x, y: p.y });
 					const end = resolvePoint({ shot: p.shot, x: p.to_x, y: p.to_y });
 					signal?.throwIfAborted();
-					// Do not kill the helper while a button is held. Cancellation is observed after its bounded gesture releases it.
 					await psInput("drag", { X: start.x, Y: start.y, ToX: end.x, ToY: end.y, Duration: duration });
 					signal?.throwIfAborted();
 					return `已拖拽 (${start.x},${start.y}) → (${end.x},${end.y})。请重新截图验证。`;
@@ -1000,7 +938,6 @@ export default {
 			}
 		}
 
-		// 探活 nut；缺失则后台自安装（不挡 activate，工具调用时看状态）
 		if (isWin)
 			probeNut().then((ok) => {
 				if (st.dead) return;
@@ -1019,15 +956,11 @@ export default {
 				st.shots.clear();
 				try {
 					st.installer?.kill("SIGTERM");
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				for (const off of st.offs) {
 					try {
 						off?.();
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 				}
 			},
 		};

@@ -1,49 +1,15 @@
-/**
- * 扩展设置（纯逻辑：默认值 + 脏数据兜底 + 地址归一，可在单测里钉住）。
- *
- * 存储用 `chrome.storage.sync`（用户在 options 页改），读取一律过 `normalizeSettings` ——
- * 用户手输的地址、别处导入的旧配置都可能缺字段或类型不对，**绝不能因为一个错配置
- * 就让拾取整条链挂掉**（回落到默认值继续工作）。
- */
-
 import { isDetailLevel, normalizeSections, sectionsForDepth, type DetailLevel, type PickSection } from "./contract.js";
 
 export interface PickerSettings {
-	/** pi-web-ui 服务地址（含协议，末尾不带 /）。 */
 	serverUrl: string;
-	/** PI_WEB_TOKEN（服务端开了口令时必填）。 */
 	token: string;
-	/** 采集深浅（由预设决定；决定选择器/骨架的深度与文本长度）。 */
 	detail: DetailLevel;
-	/** 发送内容包含哪几类信息（可多选）。 */
 	sections: PickSection[];
-	/** 注入 pi-web-ui 输入框的同时，也把 Markdown 复制到剪贴板（兜底：注入失败时可以手贴）。 */
 	copyToClipboard: boolean;
-	/** 是否采集元素截图（走附件）。 */
 	screenshots: boolean;
-	/** 注入成功后是否把浏览器切到 pi-web-ui 标签页。 */
 	focusTarget: boolean;
-	/**
-	 * AI 操作页面总开关（模型经 `browser_page` 工具操作**已授权页面**的能力）。
-	 *
-	 * 默认开：能力本身还有两道门（页面要在扩展里被显式授权 + 那个地址的 host 权限要授过），
-	 * 所以不必再默认关上——用户装了这个开关只会构成「装了但不好用」。
-	 */
 	aiControl: boolean;
-	/**
-	 * 允许 AI 在页面里执行任意 JS（`eval` op）。**默认关**。
-	 *
-	 * read/click/type/scroll/goto/wait 都是「用页面自己会响应的事件做事」，误用最多点错一下；
-	 * eval 是「把页面交给一段别人写的脚本」——能改数据、能提交表单、能发请求。要它只能手动开。
-	 */
 	allowEval: boolean;
-	/**
-	 * 允许 AI 给页面截图（`shot` op）。**默认开**。
-	 *
-	 * 只读、不改页面状态，但它有个物理代价：`captureVisibleTab` 只能截**活动标签页**，
-	 * 所以扩展得先把目标页切到前台（截完立刻切回）——你的浏览器焦点会跳一下。
-	 * 嫌打扰就关掉它（关掉后模型只能靠 read 拿 DOM 文本）。
-	 */
 	allowShot: boolean;
 }
 
@@ -62,12 +28,6 @@ export const DEFAULT_SETTINGS: PickerSettings = {
 	allowShot: true,
 };
 
-/**
- * 地址归一：
- * - 去首尾空白、补 `http://`（用户习惯只打 `localhost:8787`）；
- * - 去掉末尾斜杠（拼 `/ws` 之类时才不会出双斜杠）；
- * - 解析不出 origin 就回落到默认地址（宁可打不开也不要一个畸形 URL 到处传）。
- */
 export function normalizeServerUrl(raw: unknown): string {
 	const text = typeof raw === "string" ? raw.trim() : "";
 	if (!text) return DEFAULT_SERVER_URL;
@@ -75,7 +35,6 @@ export function normalizeServerUrl(raw: unknown): string {
 	try {
 		const url = new URL(withScheme);
 		if (!url.hostname) return DEFAULT_SERVER_URL;
-		// 只保留 origin + 路径前缀（有些用户把 pi-web-ui 挂在子路径反代下）
 		const path = url.pathname.replace(/\/+$/, "");
 		return `${url.protocol}//${url.host}${path}`;
 	} catch {
@@ -83,7 +42,6 @@ export function normalizeServerUrl(raw: unknown): string {
 	}
 }
 
-/** 任意来源的对象 → 合法设置（缺项/类型错一律回落默认值）。 */
 export function normalizeSettings(raw: unknown): PickerSettings {
 	const src = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 	const detail = isDetailLevel(src.detail) ? src.detail : DEFAULT_SETTINGS.detail;
@@ -91,7 +49,6 @@ export function normalizeSettings(raw: unknown): PickerSettings {
 		serverUrl: normalizeServerUrl(src.serverUrl ?? DEFAULT_SETTINGS.serverUrl),
 		token: typeof src.token === "string" ? src.token.trim() : DEFAULT_SETTINGS.token,
 		detail,
-		// 老版本设置里没有 sections（只有 detail）→ 按那个档位推导，升级后行为不变
 		sections: src.sections === undefined ? sectionsForDepth(detail) : normalizeSections(src.sections),
 		copyToClipboard: bool(src.copyToClipboard, DEFAULT_SETTINGS.copyToClipboard),
 		screenshots: bool(src.screenshots, DEFAULT_SETTINGS.screenshots),
@@ -106,13 +63,6 @@ function bool(v: unknown, fallback: boolean): boolean {
 	return typeof v === "boolean" ? v : fallback;
 }
 
-/**
- * 该地址对应的 host 权限模式（`https://pi.example.com/*`）。
- *
- * 远程部署的关键：manifest 只预置了 localhost/127.0.0.1，其它地址必须由用户显式授权
- * （`chrome.permissions.request`）—— 否则 `chrome.tabs.query({url})` 的过滤会被**静默忽略**，
- * 返回一堆无关标签页，我们就可能把内容注入到别的页面上去。
- */
 export function originPattern(rawUrl: string): string {
 	try {
 		return `${new URL(normalizeServerUrl(rawUrl)).origin}/*`;
@@ -121,43 +71,22 @@ export function originPattern(rawUrl: string): string {
 	}
 }
 
-/**
- * 这个标签页是不是我们要找的 pi-web-ui（按地址前缀严格复核）。
- *
- * 为什么不能只信 `tabs.query({url})`：权限缺失时那个过滤条件会被忽略，返回全部标签页；
- * 只按「有 id 就算」挑第一个，会把内容注入到毫不相干的页面（比如你正在调试的站点本身）。
- * 子路径部署（`https://host/pi/`）也要认，但 `https://host/pi-other` 不算。
- */
 export function tabMatchesBase(tabUrl: string | undefined, base: string): boolean {
 	if (!tabUrl) return false;
 	const normalized = normalizeServerUrl(base);
 	if (tabUrl === normalized) return true;
 	if (tabUrl.startsWith(`${normalized}/`)) return true;
-	// 带查询串（?token=… 首次进入）也算同一个页面
 	return tabUrl.startsWith(`${normalized}?`);
 }
 
-/** 拼服务端地址（子路径部署也能用；path 以 / 开头）。 */
 export function serverUrl(settings: PickerSettings, path = "/"): string {
 	const base = normalizeServerUrl(settings.serverUrl);
 	const suffix = path.startsWith("/") ? path : `/${path}`;
 	return `${base}${suffix}`;
 }
 
-/**
- * Chrome 的 match pattern 校验（够用版）。
- *
- * 为什么要有这个函数：`chrome.tabs.query({ url: [...] })` 的过滤器必须是合法 match pattern，
- * 而 **裸 origin（`http://localhost:8787`，没有路径）会被直接抛异常**
- * （`Invalid url pattern 'http://localhost:8787'`）。这个异常很容易被 catch 成「没找到页面」，
- * 于是「页明明开着但投不过去」—— 0.2.0 真的踩了这个坑（假 chrome 不校验模式，测试全绿）。
- *
- * 所以：所有要交给 chrome.* 的模式都过 `originPattern()`；而测试里的假 chrome 也用这个
- * 函数校验入参，把这类坑钉在单测里（见 tests/unit/page-picker*.test.ts）。
- */
 export function isValidMatchPattern(pattern: unknown): boolean {
 	if (typeof pattern !== "string") return false;
-	// `<scheme>://<host>/<path…>`：path 可以只是一个 `/`，但不能缺
 	const m = /^(https?):\/\/([^/]*)\/(.*)$/.exec(pattern);
 	if (!m) return false;
 	const host = m[2];

@@ -1,6 +1,5 @@
 import type { DeviceTaskPlanReadyFrame, PlanStep } from "../protocol.js";
 
-/** Reject invalid plans whole; never turn truncated or defaulted steps into an approval target. */
 export function validateTaskPlan(value: unknown): DeviceTaskPlanReadyFrame["plan"] | undefined {
 	if (!value || typeof value !== "object") return;
 	const plan = value as Record<string, unknown>;

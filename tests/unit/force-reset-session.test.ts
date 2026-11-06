@@ -8,7 +8,6 @@ describe("Force-Reset Session Hijack Prevention & Ephemeral Capacity (#335)", ()
 	it("does not fallback to continueRecent when ownFile does not exist", async () => {
 		const tempCwd = mkdtempSync(join(tmpdir(), "pi-force-reset-test-"));
 		try {
-			// 在测试目录创建一个历史会话文件
 			const histSm = SessionManager.create(tempCwd);
 			const histFile = histSm.getSessionFile();
 			if (histFile) {
@@ -18,7 +17,6 @@ describe("Force-Reset Session Hijack Prevention & Ephemeral Capacity (#335)", ()
 			const continueRecentSpy = vi.spyOn(SessionManager, "continueRecent");
 			const createSpy = vi.spyOn(SessionManager, "create");
 
-			// 模拟 forceResetConversation 中当 ownFile 不存在时的重建逻辑
 			const ownFile: string | undefined = undefined;
 			const isEphemeral = false;
 

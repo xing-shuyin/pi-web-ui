@@ -12,7 +12,6 @@ export interface CanvasAiBarProps {
 	defaultCwd?: string;
 }
 
-/** 关键词 → 角色映射（中英同义词） */
 const RULES: { keys: string[]; role: CanvasNodeRole }[] = [
 	{ keys: ["调研", "搜索", "research", "search"], role: "researcher" },
 	{ keys: ["规划", "拆解", "plan"], role: "planner" },
@@ -23,7 +22,6 @@ const RULES: { keys: string[]; role: CanvasNodeRole }[] = [
 	{ keys: ["评估", "打分", "eval"], role: "evaluator" },
 	{ keys: ["审批", "人工", "approve", "human"], role: "human" },
 
-	// A keyword alone cannot safely configure a loop or branch.
 	{ keys: ["汇总", "合并", "merge"], role: "merge" },
 	{ keys: ["编码", "开发", "实现", "重构", "code", "coder", "实现"], role: "coder" },
 ];
@@ -36,7 +34,6 @@ export function pickRole(seg: string): CanvasNodeRole {
 	return "coder";
 }
 
-/** “调研-编码-审查” / “先A再B然后C” / 换行 / 逗号分段 */
 export function splitSteps(text: string): string[] {
 	return text
 		.split(/[\n；;。]+|[-–>→]+\s*|\s*(?:然后|接着|再|最后)\s*/g)
@@ -45,7 +42,6 @@ export function splitSteps(text: string): string[] {
 		.slice(0, 12);
 }
 
-/** P2：一句话生成 DAG（纯前端启发式，零 token、离线可用） */
 export function CanvasAiBar({
 	onApply,
 	onSmartGenerate,
@@ -63,7 +59,6 @@ export function CanvasAiBar({
 		if (steps.length === 0) return;
 		const nodes: CanvasNode[] = [];
 		const now = Date.now();
-		// 起始触发器
 		nodes.push({
 			id: `n_${now}_trigger`,
 			title: t("canvas.defaults.startNode"),

@@ -1,9 +1,3 @@
-/**
- * CanvasTypes.ts — 画布协作前端通用辅助函数与视觉配置。
- *
- * 对标 LangGraph / n8n / Dify / Coze 的前沿工作流范式：
- * 触发 → 规划 → 执行(Agent群) → 工具/知识 → 条件/循环 → 人工审批 → 汇聚 → 评估 → 结束。
- */
 import type { CanvasEngineId, CanvasNodeRole, CanvasNodeStatus } from "../../types";
 import type { Translate } from "../../i18n";
 import { getPstackSkills } from "./pstack-skills-data";
@@ -69,7 +63,6 @@ interface RoleMeta {
 	label: string;
 
 	icon: string;
-	/** 节点分组：trigger=触发输入 agent=智能体 logic=逻辑控制 data=工具数据 output=收尾输出 */
 	group: "trigger" | "agent" | "logic" | "data" | "output";
 	blurb: string;
 	defaultInstruction: string;
@@ -404,7 +397,6 @@ export function getRoleGroups(t: Translate): NodeGroupMeta[] {
 	];
 }
 
-/** 纯透传控制节点：无需启动 LLM 会话，直接标记完成并向下游透传摘要 */
 const PASSTHROUGH_ROLES: ReadonlySet<CanvasNodeRole> = new Set([
 	"condition",
 	"loop",
@@ -577,10 +569,6 @@ export function outPortLabel(key: string | undefined, t: Translate = untranslate
 	return labels[key] ?? key;
 }
 
-/** 按角色分型的专属参数表：每个角色只露自己的配置，不再所有节点一个样。
- *  - 卡片：Agent 类渲染为「角色专属参数」组；纯代码类渲染为 utility 专属区（含 config 端子）
- *  - 抽屉：控制参数区同表驱动，保持两端一致
- *  - 调度器：Agent 节点的非空配置会拼入提示词「本节点专属参数」，所见即所得 */
 type RoleFieldKind = "text" | "textarea" | "number" | "select" | "hint" | "boolean";
 
 export interface RoleField {
@@ -893,7 +881,6 @@ export function getRoleFields(t: Translate): Record<CanvasNodeRole, RoleField[]>
 	};
 }
 
-/** 每个角色的输入输出速查（卡片 ? 提示用）：输入要什么 / 输出给什么 / 一句话用法 */
 interface RoleIoHelp {
 	input: string;
 	output: string;
@@ -1050,7 +1037,6 @@ export function getRoleIoHelp(t: Translate): Record<CanvasNodeRole, RoleIoHelp> 
 	};
 }
 
-/** 取某角色可见的字段（含 showIf 联动显隐） */
 export function visibleRoleFields(
 	role: CanvasNodeRole,
 	config: Record<string, string | number | boolean | undefined> | undefined,
@@ -1062,10 +1048,8 @@ export function visibleRoleFields(
 	);
 }
 
-/** 节点输入与输出端口相对于节点顶部的 Y 轴圆心位置（单位 px） */
 export const PORT_Y_OFFSET = 72;
 
-/** These legacy roles only pass text through; no scheduler, endpoint or store exists. */
 export const UNIMPLEMENTED_ROLES: ReadonlySet<CanvasNodeRole> = new Set(["cron", "webhook", "memory", "subflow"]);
 export function isRoleImplemented(role: CanvasNodeRole): boolean {
 	return !UNIMPLEMENTED_ROLES.has(role);

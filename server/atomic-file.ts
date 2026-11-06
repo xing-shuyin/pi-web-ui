@@ -2,17 +2,8 @@ import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, statSync
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-/**
- * 跨平台安全原子写文件：先写临时文件再 renameSync，进程崩溃不留半截文件。
- * - tmp 文件位于目标文件同目录下（保证处于同物理卷，rename 为原子操作）；
- * - tmp 文件名携带 pid + 时间戳 + 随机串，防止同机多进程互踩；
- * - 临时占用导致 rename 失败时有限重试；最终失败抛出错误，绝不截断原文件；
- * - 确保无论成功失败，临时文件在 finally 中及时清理，杜绝残留 .tmp 垃圾文件。
- */
 export interface AtomicWriteOptions {
-	/** Mode for new files; preserve the existing file's mode when present. */
 	mode?: number;
-	/** Flush staged bytes before rename (does not promise directory/power-loss durability). */
 	fsync?: boolean;
 }
 
@@ -57,15 +48,46 @@ export function writeAtomicSync(
 	} finally {
 		try {
 			rmSync(tmp, { force: true });
-		} catch {
-			// ignore cleanup errors
-		}
+		} catch {}
 	}
 }
 
-/**
- * 原子写 JSON 辅助函数（默认 2 空格缩进 + 末尾换行）。
- */
+export function writeAtomicPortableSync(
+	fs: Pick<typeof import("node:fs"), "openSync" | "writeFileSync" | "closeSync" | "renameSync" | "rmSync">,
+	file: string,
+	data: string,
+	nonce: string,
+	mode = 0o600,
+): void {
+	if (!nonce || nonce.length > 128 || !/^[A-Za-z0-9_.-]+$/.test(nonce)) throw new Error("Invalid atomic-write nonce");
+	const temporary = `${file}.${nonce}.tmp`;
+	try {
+		const descriptor = fs.openSync(temporary, "wx", mode);
+		try {
+			fs.writeFileSync(descriptor, data, "utf8");
+		} finally {
+			fs.closeSync(descriptor);
+		}
+		for (let attempt = 0; ; attempt++) {
+			try {
+				fs.renameSync(temporary, file);
+				break;
+			} catch (error) {
+				if (attempt >= 2 || !["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? ""))
+					throw error;
+			}
+		}
+	} finally {
+		try {
+			fs.rmSync(temporary, { force: true });
+		} catch {}
+	}
+}
+
+export function portableAtomicWriteSyncSource(): string {
+	return `const writeAtomicPortable = (${writeAtomicPortableSync.toString()});`;
+}
+
 export function writeJsonAtomicSync(file: string, data: unknown, indent: number | string = 2): void {
 	const text = JSON.stringify(data, null, indent) + "\n";
 	writeAtomicSync(file, text);

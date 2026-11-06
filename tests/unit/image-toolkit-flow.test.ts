@@ -1,15 +1,4 @@
 // @vitest-environment jsdom
-/**
- * image-toolkit 图片流转与一体化布局单测 —— 真实 DOM 环境。
- *
- * 覆盖：
- *   1. workspace.readImage 返回 ArrayBuffer 且可被 Uint8Array 消费；
- *   2. util.basename 正确解析路径文件名；
- *   3. AI 生图 → 工具箱处理流转：onOpenInToolkit 正常拉取、建队列项、切回编辑模式；
- *   4. 工具箱 → AI 生图流转：useAsGenReference 导出加工后的画幅并存回临时参考图、投递参考图并切至生图模式；
- *   5. 一体化 Studio 导航：四模态平滑双向切换（edit / gen / svc / cfg），不丢顶栏、不陷死；
- *   6. 右侧参数面板动作区四层分级结构完整（hero / flow / batch / history）。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as ws from "../../plugins/image-toolkit/client/workspace.mjs";
 import { basename, el } from "../../plugins/image-toolkit/client/util.mjs";
@@ -124,24 +113,20 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 		const cleanup = view.mount(container, { onData: () => () => {} } as any);
 		if (cleanup) cleanups.push(cleanup);
 
-		// 顶栏常驻
 		const top = container.querySelector(".igt-top");
 		expect(top).toBeTruthy();
 
-		// 统一导航
 		const navTabs = [...container.querySelectorAll(".igt-nav-tab")];
 		expect(navTabs.length).toBe(4);
 		const modes = navTabs.map((t) => t.getAttribute("data-mode"));
 		expect(modes).toEqual(["edit", "gen", "svc", "cfg"]);
 
-		// 默认处于图片处理 (edit) 模式
 		expect(navTabs[0].classList.contains("on")).toBe(true);
 		const main = container.querySelector(".igt-main") as HTMLElement;
 		const genWrap = container.querySelector(".igt-gen-wrap") as HTMLElement;
 		expect(main.style.display).toBe("flex");
 		expect(genWrap.style.display).toBe("none");
 
-		// 右侧参数面板动作区分层结构
 		const actions = container.querySelector(".igt-actions");
 		expect(actions).toBeTruthy();
 		expect(actions!.querySelector(".igt-act-hero-row")).toBeTruthy();
@@ -149,7 +134,6 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 		expect(actions!.querySelector(".igt-act-batch-row")).toBeTruthy();
 		expect(actions!.querySelector(".igt-act-history-row")).toBeTruthy();
 
-		// 验证流转按钮「用作生图参考图」存在
 		const useAsRefBtn = actions!.querySelector(".igt-btn-flow");
 		expect(useAsRefBtn).toBeTruthy();
 	});
@@ -163,30 +147,25 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 		const main = container.querySelector(".igt-main") as HTMLElement;
 		const genWrap = container.querySelector(".igt-gen-wrap") as HTMLElement;
 
-		// 初始状态
 		expect(main.style.display).toBe("flex");
 		expect(genWrap.style.display).toBe("none");
 
-		// 切到 AI 生图
 		genTab.click();
 		expect(main.style.display).toBe("none");
 		expect(genWrap.style.display).toBe("flex");
 		expect(genTab.classList.contains("on")).toBe(true);
 		expect(editTab.classList.contains("on")).toBe(false);
 
-		// 切到服务商管理
 		svcTab.click();
 		expect(main.style.display).toBe("none");
 		expect(genWrap.style.display).toBe("flex");
 		expect(svcTab.classList.contains("on")).toBe(true);
 
-		// 切到设置
 		cfgTab.click();
 		expect(main.style.display).toBe("none");
 		expect(genWrap.style.display).toBe("flex");
 		expect(cfgTab.classList.contains("on")).toBe(true);
 
-		// 随时一键切回图片处理 (edit)
 		editTab.click();
 		expect(main.style.display).toBe("flex");
 		expect(genWrap.style.display).toBe("none");
@@ -195,7 +174,6 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 	});
 
 	it("图片流转：在 AI 生图页面点击「在图片工具箱处理」能顺利读取图片并切换到编辑状态", async () => {
-		// Mock 图片解码环境与 Canvas 渲染环境
 		vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 200, height: 150, close: vi.fn() }));
 		HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
 			drawImage: vi.fn(),
@@ -220,7 +198,6 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 			callback(new Blob([dummyPngBytes()], { type: "image/png" }));
 		};
 
-		// 模拟返回已生成的任务
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockImplementation(async (url: string) => {
@@ -303,39 +280,31 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 		const main = container.querySelector(".igt-main") as HTMLElement;
 		const genWrap = container.querySelector(".igt-gen-wrap") as HTMLElement;
 
-		// 1. 切换到生图页面
 		genTab.click();
 		expect(genWrap.style.display).toBe("flex");
 		expect(main.style.display).toBe("none");
 
-		// 等待异步加载渲染任务卡
 		for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 20));
 
-		// 检查生图卡片存在
 		const editInToolkitBtn = [...genWrap.querySelectorAll("button")].find(
 			(b) => b.textContent?.includes("进入处理") || b.textContent?.includes("Edit in Toolkit"),
 		);
 		expect(editInToolkitBtn).toBeTruthy();
 
-		// 2. 点击「进入处理」：触发图片流转进入图片工具箱
 		const readSpy = vi.spyOn(ws, "readImage");
 		editInToolkitBtn!.click();
 
-		// 等待读取与添加队列完成
 		await new Promise((r) => setTimeout(r, 60));
 
-		// 验证调用了 ws.readImage 并成功切回了编辑模式
 		expect(readSpy).toHaveBeenCalledWith("generated/robot.png");
 		expect(main.style.display).toBe("flex");
 		expect(genWrap.style.display).toBe("none");
 		expect(editTab.classList.contains("on")).toBe(true);
 
-		// 验证队列里已出现该图片
 		const queueItems = container.querySelectorAll(".igt-qitem");
 		expect(queueItems.length).toBe(1);
 		expect(container.textContent).toContain("robot.png");
 
-		// 3. 反向流转：在编辑模式中点击「用作生图参考图」，流转回 AI 生图
 		const saveSpy = vi.spyOn(ws, "saveImage");
 		const useAsRefBtn = container.querySelector(".igt-btn-flow") as HTMLButtonElement;
 		expect(useAsRefBtn).toBeTruthy();
@@ -343,12 +312,10 @@ describe("image-toolkit 视图外壳与一体化布局", () => {
 		useAsRefBtn.click();
 		await new Promise((r) => setTimeout(r, 60));
 
-		// 验证切回了 AI 生图模式
 		expect(main.style.display).toBe("none");
 		expect(genWrap.style.display).toBe("flex");
 		expect(genTab.classList.contains("on")).toBe(true);
 
-		// 验证参考图芯片在生图 dock 中已展示
 		expect(genWrap.textContent).toContain("robot.png");
 	});
 });

@@ -1,15 +1,3 @@
-/**
- * response-speed 服务端入口
- *
- * 核心功能：
- *  1. 统计 AI 响应速度（从向 AI 发起请求到收到回复的首包响应时间 TTFT）；
- *  2. 每个对话独立记录与统计，切换会话时底栏实时切换对应会话的测速；
- *  3. 不显示“响应中…”，始终直接显示该对话上一次的响应耗时（如：最新 450ms / 均速 560ms，初始为最新 -- / 均速 --）；
- *  4. 支持 AI 自循环的每一次循环独立测速（TTFT）；
- *  5. 提供 HTTP API 与 WebSocket 通道，供客户端查询历史与一键重置当前对话记录；
- *  6. 支持点击底栏查看当前对话统计看板明细与历史趋势。
- */
-
 const MAX_RECORDS_PER_CONV = 200;
 const MAX_CONVERSATIONS = 100;
 const STORAGE_KEY = "records_by_conv";
@@ -96,7 +84,6 @@ export function calcStats(records) {
 
 export default {
 	activate(host) {
-		/** 内存中的各对话记录缓存（conversationId -> Record[]） */
 		const recordsByConv = new Map();
 
 		try {
@@ -113,7 +100,6 @@ export default {
 					}
 				}
 			} else {
-				// 兼容并平滑迁移旧版单个全局数组存储
 				const legacy = host.storage?.get(LEGACY_STORAGE_KEY);
 				if (Array.isArray(legacy)) {
 					for (const r of legacy) {
@@ -129,7 +115,6 @@ export default {
 			recordsByConv.clear();
 		}
 
-		/** 活跃的回合追踪（conversationId -> { startTime: number }） */
 		const activeTurns = new Map();
 
 		function getRecords(convId) {
@@ -141,9 +126,7 @@ export default {
 			try {
 				const conv = clientId ? host.getActiveConversation?.({ clientId }) : host.getActiveConversation?.();
 				if (conv?.conversationId) return conv.conversationId;
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			return "default";
 		}
 
@@ -160,9 +143,7 @@ export default {
 					obj[cid] = list.slice(-MAX_RECORDS_PER_CONV);
 				}
 				host.storage?.set(STORAGE_KEY, obj);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
 		function refreshBottomBar(targetConvId) {
@@ -173,7 +154,6 @@ export default {
 			const avgStr = hasAvg ? formatDuration(stats.avgMs) : "--";
 			const latestStr = stats.latestMs !== null ? formatDuration(stats.latestMs) : "--";
 
-			// 精简为纯数值对比格式（如 12.7/14.3，空态为 --/--），鼠标悬浮展示详细解释
 			const compactLabel = `${formatCompactDuration(stats.latestMs)}/${formatCompactDuration(stats.avgMs)}`;
 
 			const hintZh =
@@ -227,7 +207,6 @@ export default {
 				refreshBottomBar(convId);
 			}
 
-			// 广播给所有已连接的前端客户端
 			const currentStats = calcStats(getRecords(convId));
 			try {
 				host.broadcast?.({
@@ -236,9 +215,7 @@ export default {
 					stats: currentStats,
 					latestRecord: item,
 				});
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 
 			return item;
 		}
@@ -256,15 +233,11 @@ export default {
 					stats: calcStats([]),
 					cleared: true,
 				});
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
-		// 初始刷新底栏状态
 		refreshBottomBar();
 
-		// 监听对话切换事件：当用户切换对话或新建对话时，底栏立即刷新为该对话的统计
 		host.onConversationChanged?.(() => {
 			const convId = getActiveConvId();
 			refreshBottomBar(convId);
@@ -274,12 +247,9 @@ export default {
 					conversationId: convId,
 					stats: calcStats(getRecords(convId)),
 				});
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 
-		// 新客户端接入时，主动推送一次当前对话的统计
 		host.onAttach?.((clientId) => {
 			const convId = getActiveConvId(clientId);
 			try {
@@ -288,12 +258,9 @@ export default {
 					conversationId: convId,
 					stats: calcStats(getRecords(convId)),
 				});
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		});
 
-		// 注册 HTTP API 路由
 		host.route?.("GET", "/stats", (req, res) => {
 			const queryConvId =
 				typeof req.query?.conversationId === "string" && req.query.conversationId.trim()
@@ -332,18 +299,14 @@ export default {
 			res.json({ ok: true, conversationId: convId });
 		});
 
-		// 服务端监听运行轨迹（精确覆盖首回合提问与 AI 自循环的每一次 turn）
 		host.onRunEvent?.((ev) => {
 			const convId = ev.conversationId || "default";
 
 			if (ev.type === "turn_start") {
-				// 无论首轮提问还是工具执行完毕后的自循环，每次 turn 开始即重置并开始独立测速计时
-				// 注意：不要显示“响应中…”，始终保持底栏显示上一次的时间
 				activeTurns.set(convId, {
 					startTime: ev.at || Date.now(),
 				});
 			} else if (ev.type === "turn_first_token") {
-				// 收到大模型首包响应（TTFT）
 				const turn = activeTurns.get(convId);
 				if (turn) {
 					activeTurns.delete(convId);
@@ -357,15 +320,12 @@ export default {
 					});
 				}
 			} else if (ev.type === "turn_end") {
-				// 本回合结束：若因异常中断未收到首包，清理该回合计时
 				activeTurns.delete(convId);
 			} else if (ev.type === "run_end") {
-				// 整个智能体任务运行结束：清理会话的回合追踪项
 				activeTurns.delete(convId);
 			}
 		});
 
-		// 监听底栏动作（广播给浏览器打开弹窗看板，若无浏览器接管则通过 host.notify 兜底）
 		host.onUiAction?.("response-speed:show-details", () => {
 			const convId = getActiveConvId();
 			const stats = calcStats(getRecords(convId));
@@ -375,11 +335,8 @@ export default {
 					conversationId: convId,
 					stats,
 				});
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 
-			// 如果当前会话无记录或作为通知兜底
 			if (stats.count === 0) {
 				host.notify?.(
 					"info",

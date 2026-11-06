@@ -1,15 +1,3 @@
-// 零 token 回归：**离线持有方**的 elsewhere 行（用户实测场景）。
-//
-// 场景：手机上 run 途中把页面关了 → run 在服务端继续跑 → run 结束 → 在电脑上开网页
-// 想打开这条对话。修复前：手机残骸 sinkCount=0 被 #291 跳过 → 左栏既没有「另一处」行
-// （不能过户），落地提示却让人「在左栏过户或从历史里打开」；从历史里打开等于给同一份
-// JSONL 造第二个 writer。
-//
-// 现在的口径：断连残骸在宽限期（PI_WEB_OFFLINE_ROWS_TTL_MS，本测试设 4s）内仍下发
-// 这些行（标 ownerOffline，可过户）；过期后自动消失（#291「不永久占位」仍成立）。
-//
-// 断言口：conversations 消息里的 elsewhere 数组（ownerOffline / owner / convId）。
-// Usage: npm run build && node tests/offline-takeover-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,9 +12,7 @@ const MOCK_PORT = PORT + 1;
 freePort(PORT);
 freePort(MOCK_PORT);
 
-/** 离线行宽限期（毫秒）——测试里压到 4 秒，好在一次冒烟里验「到期消失」。 */
 const OFFLINE_TTL_MS = 4_000;
-/** mock 每轮思考时长：要够长，好让「跑动途中关页面」可复现。 */
 const MOCK_DELAY_MS = 4_000;
 
 const base = mkdtempSync(join(tmpdir(), "pi-web-offline-takeover-"));
@@ -97,7 +83,6 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		PI_WEB_CWD: workdir,
 		PI_WEB_DATA_DIR: dataDir,
 		PI_CODING_AGENT_DIR: agentDir,
-		// 显式清空：测试必须与 ambient shell 的 PI_WEB_TOKEN 无关。
 		PI_WEB_TOKEN: "",
 		PI_WEB_PLUGIN_CATALOG_URL: "",
 		PI_WEB_OFFLINE_ROWS_TTL_MS: String(OFFLINE_TTL_MS),
@@ -115,9 +100,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/api/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -176,7 +159,6 @@ class Client {
 		}
 		throw new Error(`[${this.name}] timeout waiting for state ${label}`);
 	}
-	/** 轮询等 elsewhere 里出现/消失某行。 */
 	async waitRow(predicate, timeout = 15000) {
 		const started = Date.now();
 		while (Date.now() - started < timeout) {
@@ -233,12 +215,9 @@ try {
 		return c;
 	};
 
-	// 观察者先在线：会阻断「新页面认领断连残骸」那条路（认领要求没有别的在线浏览器），
-	// 逼出用户真正遇到的分支 —— 残骸只能靠 elsewhere 行 + 过户。
 	const observer = await openClient("observer-page");
 	check("观察者在线（阻断认领路径）", true);
 
-	// --- 阶段 1：手机 run 途中关页面 → 电脑端接管这条离线行（直接拿到完整转录）---
 	phone = await openClient("phone-page");
 	phone.send({ type: "prompt", text: "手机端发起的任务" });
 	await phone.waitForState((s) => s.isStreaming === true, 20000, "phone streaming");
@@ -278,12 +257,10 @@ try {
 		);
 	}
 
-	// --- 阶段 2：离线行宽限期到期自动消失（#291 的「残骸不永久占位」仍然成立）---
 	phone2 = await openClient("phone2-page");
 	phone2.send({ type: "prompt", text: "手机端第二段任务" });
 	await phone2.waitForState((s) => s.isStreaming === true, 20000, "phone2 streaming");
 	phone2.ws.close();
-	// 关页面时 run 还在跑：宽限期从「最后一次活动」起算，所以行必须撑到跑完那一刻之后。
 	const idleRow = await pc.waitRow((w) => w.owner === "phone2-page" && w.isStreaming === false, 30000);
 	check("run 跑完后离线行仍在下发（宽限期内可接管）", !!idleRow, `elsewhere=${JSON.stringify(pc.elsewhere)}`);
 	check("空闲离线行同样带过户定位", Boolean(idleRow?.owner && idleRow?.convId));

@@ -1,19 +1,6 @@
-/**
- * client-id-utils — 伪客户端 ID 判断与插件调用工作区校验。
- *
- * 负责：
- * - isPseudoClientId: 判断是否为插件或定时任务的无头伪客户端（sink 常驻）
- * - checkPluginCwd: 校验插件指定的工作目录合法性（防止 Windows SystemRoot 误操作）
- *
- * 从 agent-service.ts 抽出为独立模块。
- */
 import { statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
-/** issue #226：插件无头调用的工作目录校验（纯函数，可单测）。
- *  存在性语义与定时任务一致（须存在且为目录，不默默跑错目录）；另在
- *  Windows 下拒绝 SystemRoot 及其子树（如 C:\Windows\System32）——后台服务/
- *  快捷方式启动时宿主 cwd 常飘到 system32，直接跑就是高危误操作。 */
 export function checkPluginCwd(cwd: string): { ok: boolean; abs?: string; error?: string } {
 	const trimmed = String(cwd ?? "").trim();
 	if (!trimmed) return { ok: false, error: "工作目录为空" };
@@ -43,17 +30,14 @@ export function checkPluginCwd(cwd: string): { ok: boolean; abs?: string; error?
 	return { ok: true, abs };
 }
 
-/** Private Bot execution IDs carry process-local authority and must never join browser adoption. */
 export function isDeviceTaskClientId(id: string): boolean {
 	return id.startsWith("device-task-");
 }
 
-/** Private execution channels and pseudo clients cannot adopt or be adopted by browsers. */
 export function isOrphanAdoptionExcludedClientId(id: string): boolean {
 	return isDeviceTaskClientId(id) || isPseudoClientId(id);
 }
 
-/** 插件/调度/Canvas伪客户端：sink 常驻或后台辅助专用通道，不参与聊天会话认领与感知。 */
 export function isPseudoClientId(id: string): boolean {
 	return (
 		id.startsWith("plugin:") || id.startsWith("scheduler:") || id.startsWith("canvas:") || id.startsWith("canvas-")

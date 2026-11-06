@@ -18,7 +18,7 @@ describe("template commands", () => {
 		expect(expandTemplateCommand("/pr 798", [{ ...template, prompt: "Review" }])).toBe("Review\n\n798");
 	});
 	it("expands dynamic variables like date, time, and datetime", () => {
-		const fixedDate = new Date(2025, 4, 18, 14, 30, 45); // 2025-05-18 14:30:45
+		const fixedDate = new Date(2025, 4, 18, 14, 30, 45);
 		const timeTpl = {
 			id: "log",
 			command: "log",

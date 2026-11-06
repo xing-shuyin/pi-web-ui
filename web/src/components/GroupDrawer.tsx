@@ -7,9 +7,12 @@ import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
 import { GroupBlackboardView } from "./GroupBlackboardView";
 import { GroupWebhooks } from "./GroupWebhooks";
+import { GroupRouterSettings, type GroupRouterConfig } from "./GroupRouterSettings";
+import { GroupWorkItems } from "./GroupWorkItems";
 import { isZhLocale, useI18n } from "../i18n";
 
-export type GroupDrawerTab = "blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots" | "webhooks";
+export type GroupDrawerTab =
+	"blackboard" | "deliveries" | "transfers" | "canvas" | "presets" | "bots" | "webhooks" | "router" | "work-items";
 
 interface GroupDrawerProps {
 	isOpen: boolean;
@@ -17,7 +20,7 @@ interface GroupDrawerProps {
 	onClose: () => void;
 	onSelectTab?: (tab: GroupDrawerTab) => void;
 	roomId: string;
-	detail: GroupDetail | null;
+	detail: (GroupDetail & { room: { router?: GroupRouterConfig } }) | null;
 	devices: GroupDevice[];
 	members: GroupDevice[];
 	conversations: GroupBotConversation[];
@@ -60,6 +63,8 @@ export const GroupDrawer = memo(function GroupDrawer({
 	if (!isOpen) return null;
 
 	const titleMap: Record<GroupDrawerTab, { icon: string; title: string; badge?: number }> = {
+		router: { icon: "🧭", title: zh ? "群组 AI Router" : "Group AI Router" },
+		"work-items": { icon: "🗂", title: zh ? "群组工单与 Router 运行" : "Work Items & Router Runs" },
 		blackboard: {
 			icon: "📋",
 			title: zh ? "群组共享共识黑板" : "Group Shared Blackboard",
@@ -123,6 +128,28 @@ export const GroupDrawer = memo(function GroupDrawer({
 				</div>
 
 				<div className="group-drawer-body">
+					{activeTab === "router" && (
+						<div className="group-drawer-pane">
+							<GroupRouterSettings
+								key={roomId}
+								roomId={roomId}
+								router={detail?.room.router}
+								disabled={disabled}
+								onSaved={onRefreshGroup ?? noop}
+							/>
+						</div>
+					)}
+					{activeTab === "work-items" && (
+						<div className="group-drawer-pane">
+							<GroupWorkItems
+								key={roomId}
+								roomId={roomId}
+								tasks={detail?.tasks}
+								disabled={disabled}
+								onChanged={onRefreshGroup}
+							/>
+						</div>
+					)}
 					{activeTab === "blackboard" && (
 						<div className="group-drawer-pane">
 							<GroupBlackboardView
@@ -188,7 +215,7 @@ export const GroupDrawer = memo(function GroupDrawer({
 											<div className="grp-bot-title">
 												<span className={`grp-bot-indicator ${bot.online !== false ? "online" : "offline"}`} />
 												<strong>{bot.name}</strong>
-												{bot.id === detail?.room.primaryBotId && (
+												{!detail?.room.router?.enabled && bot.id === detail?.room.primaryBotId && (
 													<span className="grp-primary-badge">{zh ? "主协调" : "Primary"}</span>
 												)}
 											</div>

@@ -1,12 +1,3 @@
-/**
- * durable-models.ts — Pi Durable 引擎的全局模型继承与提供商装配器。
- *
- * 职责：
- * 1. 继承全局模型事实源：从 SDK ModelRuntime 与 models.json 聚合全量可用模型；
- * 2. 装配 @earendil-works/pi-ai 的 models 容器，注入内置与自定义 Providers（带 API Key 与 BaseURL）；
- * 3. 解析用户选择的 activeModel，传递给 Durable Conversation 运行时。
- */
-
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -35,14 +26,9 @@ export interface DurableModelInfo {
 	reasoning?: boolean;
 }
 
-/**
- * 聚合全局所有已鉴权、可用的模型名录（包括官方内置模型与用户自定义模型）。
- * 优先收录并前置展示 models.json 中的用户自定义服务商与模型。
- */
 export async function listGlobalAvailableModels(cwd: string, agentDir?: string): Promise<DurableModelInfo[]> {
 	const modelMap = new Map<string, DurableModelInfo>();
 
-	// 1. 优先收录 models.json 中的用户自定义模型（本地代理/自定义端点通常为首选活动端点）
 	try {
 		const customModels = listCustomModelsFromConfig(agentDir, (entry) =>
 			isProtocolSupportedByEngine("durable", entry.api, entry.providerId, entry.modelId),
@@ -59,11 +45,8 @@ export async function listGlobalAvailableModels(cwd: string, agentDir?: string):
 				});
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 2. 补充 SDK ModelRuntime 动态获取的官方与外部模型
 	try {
 		const piSdk = await import(/* webpackIgnore: true */ "@earendil-works/pi-coding-agent" as string).catch(() => null);
 
@@ -71,7 +54,6 @@ export async function listGlobalAvailableModels(cwd: string, agentDir?: string):
 			const services = await piSdk.createAgentSessionServices({ cwd, agentDir });
 			const available = await services.modelRuntime.getAvailable();
 			for (const m of available) {
-				// 严格按照实际协议类型进行过滤（绝不按模型名字猜测）
 				if (!isProtocolSupportedByEngine("durable", m.api, m.provider, m.id)) {
 					continue;
 				}
@@ -87,16 +69,11 @@ export async function listGlobalAvailableModels(cwd: string, agentDir?: string):
 				}
 			}
 		}
-	} catch {
-		/* SDK model runtime load failed, fall back to models.json */
-	}
+	} catch {}
 
 	return Array.from(modelMap.values());
 }
 
-/**
- * 为 Pi Durable Harness 装配并初始化全局模型服务（@earendil-works/pi-ai Models 实例）。
- */
 export async function setupDurableModels(agentDir?: string): Promise<any> {
 	const aiModule = await loadDurablePeerModule("@earendil-works/pi-ai", "models").catch(() => null);
 
@@ -106,7 +83,6 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 
 	const models = aiModule.createModels();
 
-	// 1. 尝试全量装载内置提供商（providers/all 包含 opencode-go、openrouter 等 42+ 个提供商）
 	try {
 		const allProvidersModule = await loadDurablePeerModule("@earendil-works/pi-ai", "providers/all").catch(() => null);
 		if (allProvidersModule && typeof allProvidersModule.builtinProviders === "function") {
@@ -117,11 +93,8 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				}
 			}
 		}
-	} catch {
-		/* ignore fallback to minimal builtins */
-	}
+	} catch {}
 
-	// 2. 兜底保障基础内置提供商
 	const fallbackBuiltinIds = ["openai", "anthropic", "google", "google-vertex", "mistral", "groq", "deepseek"];
 	for (const pid of fallbackBuiltinIds) {
 		if (models.providers && models.providers.has(pid)) continue;
@@ -136,12 +109,9 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 					models.setProvider(instance);
 				}
 			}
-		} catch {
-			/* provider loading skipped */
-		}
+		} catch {}
 	}
 
-	// 3. 继承持久化动态模型缓存 (~/.pi/agent/models-store.json)
 	let cachedProviders: Record<string, any> = {};
 	try {
 		const userAgentDir = agentDir || join(homedir(), ".pi", "agent");
@@ -184,11 +154,8 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				}
 			}
 		}
-	} catch {
-		/* dynamic models store read skipped */
-	}
+	} catch {}
 
-	// 4. 动态加载 models.json 中的自定义服务商与模型
 	try {
 		const { providers: customProviders } = readModelsJson(agentDir);
 		const implementations: Record<string, any> = {};
@@ -202,9 +169,7 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 			try {
 				const module = await loadDurablePeerModule("@earendil-works/pi-ai", `api/${protocol}.lazy`);
 				if (typeof module?.[factory] === "function") implementations[protocol] = module[factory]();
-			} catch {
-				/* An unavailable API must not suppress unrelated providers. */
-			}
+			} catch {}
 		}
 
 		for (const [providerId, pConfig] of Object.entries(customProviders)) {
@@ -269,8 +234,6 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				});
 
 				if (builtin) {
-					// Keep native authentication and operations (ADC/OAuth, images, discovery).
-					// Only explicit API overrides opt into a different SDK implementation.
 					const overridden = (model: any) =>
 						apiOverride ||
 						rawModels.some((m) => m.id === model.id && (m.type ?? "chat") === (model.type ?? "chat") && m.api);
@@ -289,11 +252,8 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				}
 			}
 		}
-	} catch {
-		/* custom provider setup skipped */
-	}
+	} catch {}
 
-	// 5. 为所有已注册 Provider 注入凭证与 BaseURL
 	try {
 		const { providers } = readModelsJson(agentDir);
 		if (models.providers && typeof models.providers.keys === "function") {
@@ -312,8 +272,6 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				if (p && (cred.baseUrl || cred.headers || pConfig?.api || pConfig?.models)) {
 					if (cred.baseUrl) p.baseUrl = cred.baseUrl;
 					if (cred.headers) p.headers = { ...p.headers, ...cred.headers };
-					// pi-ai streams consume model.baseUrl/headers, not provider metadata.
-					// Apply provider defaults before explicit per-model configuration.
 					const overrides: any[] = Array.isArray(pConfig?.models) ? pConfig.models : [];
 					for (const method of ["getModels", "getAllModels"]) {
 						if (typeof p[method] !== "function") continue;
@@ -341,16 +299,11 @@ export async function setupDurableModels(agentDir?: string): Promise<any> {
 				}
 			}
 		}
-	} catch {
-		/* credential hydration skipped */
-	}
+	} catch {}
 
 	return models;
 }
 
-/**
- * 将形如 "openai/gpt-4o" 或 "gpt-4o" 的模型标识解析为 Durable 引擎可识别的 provider 与 modelId。
- */
 export function resolveDurableModelChoice(
 	modelId?: string,
 	fallbackList?: DurableModelInfo[],
@@ -358,14 +311,12 @@ export function resolveDurableModelChoice(
 ): { provider: string; modelId: string } | undefined {
 	if (!modelId || !modelId.trim() || modelId === "default") {
 		if (fallbackList && fallbackList.length > 0) {
-			// 1. 优先在 fallbackList 中寻找用户在 models.json 里明确配置的自定义端点模型
 			const { providers: customConfig } = readModelsJson(agentDir);
 			const customFirst = fallbackList.find((m) => Object.prototype.hasOwnProperty.call(customConfig, m.provider));
 			if (customFirst) {
 				return { provider: customFirst.provider, modelId: customFirst.id.replace(`${customFirst.provider}/`, "") };
 			}
 
-			// 2. 其次寻找具备有效 baseUrl 或独立 apiKey 的可用模型
 			const configured = fallbackList.find((m) => {
 				const cred = resolveProviderCredential(agentDir, m.provider);
 				return Boolean(cred.baseUrl || cred.apiKey);
@@ -385,7 +336,6 @@ export function resolveDurableModelChoice(
 		};
 	}
 
-	// 若未带 provider 前缀，尝试在已知列表中寻找匹配项
 	if (fallbackList) {
 		const found = fallbackList.find((m) => m.id === trimmed || m.id.endsWith(`/${trimmed}`));
 		if (found) {
@@ -402,9 +352,6 @@ export function resolveDurableModelChoice(
 	};
 }
 
-/**
- * 根据模型配置（reasoning 与 thinkingLevelMap）解析支持的思考强度档位。
- */
 export function calculateSupportedThinkingLevels(modelDef?: {
 	reasoning?: boolean;
 	thinkingLevelMap?: Record<string, string | null>;
@@ -424,13 +371,9 @@ export function calculateSupportedThinkingLevels(modelDef?: {
 			return true;
 		});
 	}
-	// 默认具备 reasoning 能力时支持 off, minimal, low, medium, high
 	return ["off", "minimal", "low", "medium", "high"];
 }
 
-/**
- * 快速同步解析指定模型的思考能力（优先 models 容器，次之 models.json / models-store.json / cachedModels）。
- */
 export function resolveDurableThinkingLevels(
 	modelId?: string,
 	options?: {
@@ -446,19 +389,15 @@ export function resolveDurableThinkingLevels(
 	const provider = choice?.provider;
 	const bareModelId = choice?.modelId;
 
-	// 1. 尝试从已装配的 models 容器中取
 	if (options?.modelsContainer && typeof options.modelsContainer.getModel === "function" && provider && bareModelId) {
 		try {
 			const m = options.modelsContainer.getModel(provider, bareModelId);
 			if (m) {
 				return calculateSupportedThinkingLevels(m);
 			}
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 
-	// 2. 尝试从 models.json 中取
 	try {
 		const { providers } = readModelsJson(options?.agentDir);
 		if (provider && providers[provider]?.models && Array.isArray(providers[provider].models)) {
@@ -468,7 +407,6 @@ export function resolveDurableThinkingLevels(
 				return calculateSupportedThinkingLevels(found);
 			}
 		}
-		// 若按 provider 未匹配，遍历所有 provider 寻找裸模型 ID 匹配
 		for (const pConfig of Object.values(providers)) {
 			if (Array.isArray((pConfig as any)?.models)) {
 				const found = (pConfig as any).models.find((m: any) => m.id === bareModelId);
@@ -477,11 +415,8 @@ export function resolveDurableThinkingLevels(
 				}
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 3. 尝试从 models-store.json 中取
 	try {
 		const userAgentDir = options?.agentDir || join(homedir(), ".pi", "agent");
 		const storePath = join(userAgentDir, "models-store.json");
@@ -493,7 +428,6 @@ export function resolveDurableThinkingLevels(
 					return calculateSupportedThinkingLevels(found);
 				}
 			}
-			// 若按 provider 未匹配，遍历 store 所有 provider 寻找裸模型 ID 匹配
 			for (const pData of Object.values(store)) {
 				if (Array.isArray((pData as any)?.models)) {
 					const found = (pData as any).models.find((m: any) => m.id === bareModelId);
@@ -503,11 +437,8 @@ export function resolveDurableThinkingLevels(
 				}
 			}
 		}
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 
-	// 4. 尝试从 cachedModels 中取
 	if (options?.cachedModels && options.cachedModels.length > 0) {
 		const found = options.cachedModels.find(
 			(m) =>
@@ -520,6 +451,5 @@ export function resolveDurableThinkingLevels(
 		}
 	}
 
-	// 未明确识别或通用兜底
 	return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 }

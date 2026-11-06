@@ -1,9 +1,3 @@
-/* Source-control (Git) panel E2E test.
- * Boots the compiled server against a throwaway git repo and drives the real
- * browser UI: status list, per-file diff, commit through the terminal bridge,
- * clean-tree auto-refresh, branch switching, and the resizable left sidebar
- * (#139: drag the divider, width survives a reload, double-click resets).
- * Run:  npm run build && node scm-test.mjs */
 import { spawn, execSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,19 +6,17 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { CHROME_PATH } from "./lib/chrome.mjs";
 
-const here = dirname(dirname(fileURLToPath(import.meta.url))); // tests/ → repo root
-const NODE = realpathSync(process.execPath); // fnm shim → real installation
+const here = dirname(dirname(fileURLToPath(import.meta.url)));
+const NODE = realpathSync(process.execPath);
 
 const PORT = 31000 + Math.floor(Math.random() * 10000);
 const workdir = mkdtempSync(join(tmpdir(), "piweb-scm-"));
 const repo = join(workdir, "repo");
 const dataDir = join(workdir, "data");
-process.env.PI_WEB_CWD = repo; // the workspace the panel inspects
+process.env.PI_WEB_CWD = repo;
 process.env.PI_WEB_DATA_DIR = dataDir;
-// Chrome 路径逐平台探测（PI_WEB_CHROME 可覆盖；不再写死本机路径）
 const CHROME = CHROME_PATH;
 
-// ---- set up a throwaway git repo with a modification + an untracked file ----
 execSync("mkdir repo", { cwd: workdir, stdio: "ignore" });
 execSync("git init -b main", { cwd: repo, stdio: "ignore" });
 execSync("git config user.name scm-test", { cwd: repo, stdio: "ignore" });
@@ -32,7 +24,6 @@ execSync("git config user.email scm@test.local", { cwd: repo, stdio: "ignore" })
 writeFileSync(join(repo, "hello.txt"), "line one\nline two\n");
 execSync("git add hello.txt", { cwd: repo, stdio: "ignore" });
 execSync("git commit -m init", { cwd: repo, stdio: "ignore" });
-// working-tree change (tracked) + untracked file
 writeFileSync(join(repo, "hello.txt"), "line one\nline two\nline three\n");
 writeFileSync(join(repo, "newfile.txt"), "brand new\n");
 
@@ -48,14 +39,10 @@ server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	try {
 		rmSync(workdir, { recursive: true, force: true, maxRetries: 6, retryDelay: 300 });
-	} catch {
-		/* files still locked — OS temp cleanup will reclaim them */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -75,15 +62,13 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
 }
 
-const termOutput = new Map(); // terminalId -> text
+const termOutput = new Map();
 const notices = [];
 async function watchTerminalOutput() {
 	const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
@@ -133,19 +118,16 @@ async function main() {
 	await page.waitForSelector(".topbar", { timeout: 20000 });
 	await sleep(800);
 
-	// Dismiss the pi-setup modal if it shows (fresh env may not have agent config).
 	const skipBtn = page.locator("button:has-text('跳过'), button:has-text('Skip')").first();
 	if (await skipBtn.isVisible().catch(() => false)) {
 		await skipBtn.click();
 		await sleep(300);
 	}
 
-	// -- open the Git view ----------------------------------------------------
 	await page.click('.topbar-flow [role="tab"]:has-text("Git")');
 	await page.waitForSelector(".scm-view", { timeout: 5000 });
 	console.log("git view opened");
 
-	// -- status list shows the modified + untracked files ---------------------
 	let fileRows = null;
 	try {
 		fileRows = await waitFor(
@@ -167,11 +149,9 @@ async function main() {
 	}
 	check("status lists hello.txt + newfile.txt", fileRows.includes("hello.txt") && fileRows.includes("newfile.txt"));
 
-	// branch chip shows the current branch
 	const branchText = await page.locator(".scm-branch-current").textContent();
 	check("branch chip shows main", branchText?.includes("main"));
 
-	// -- per-file diff --------------------------------------------------------
 	await page.locator(".scm-file-path", { hasText: "hello.txt" }).click();
 	const diffText = await waitFor(
 		async () => {
@@ -192,7 +172,6 @@ async function main() {
 			.then((s) => s?.includes("hello.txt")),
 	);
 
-	// untracked file click → note, not a diff
 	await page.locator(".scm-file-path", { hasText: "newfile.txt" }).click();
 	await waitFor(
 		async () =>
@@ -202,7 +181,6 @@ async function main() {
 	);
 	check("untracked file shows note", true);
 
-	// -- commit through the terminal bridge (Commit All → git add -A && git commit) -----
 	await page.locator(".scm-commit-input").fill("my first commit");
 	await page.click('.scm-header button:has-text("全部提交"), .scm-header button:has-text("Commit All")');
 	await page.waitForSelector('.topbar-flow [role="tab"][aria-selected="true"]:has-text("终端")', {
@@ -212,7 +190,6 @@ async function main() {
 	await page.waitForSelector('.term-tab:has-text("git commit")', { timeout: 8000 });
 	check("terminal tab 'git commit' created", true);
 
-	// the commit must actually land (git add -A && git commit in the PTY)
 	await waitFor(
 		() => {
 			try {
@@ -226,11 +203,9 @@ async function main() {
 		"commit lands on disk",
 	);
 	check("commit landed with the right message", true);
-	// the commit ran through the terminal bridge — the tab shows the command
 	const tabTitle = await page.locator('.term-tab:has-text("git commit")').textContent();
 	check("commit tab shows the command", !!tabTitle);
 
-	// -- back to git view: auto-refresh → clean tree --------------------------
 	await page.click('.topbar-flow [role="tab"]:has-text("Git")');
 	await waitFor(
 		async () =>
@@ -244,8 +219,6 @@ async function main() {
 		execSync("git status --porcelain", { cwd: repo }).toString().trim() === "",
 	);
 
-	// -- resizable left sidebar (#139) ----------------------------------------
-	// 分隔条拖动改宽度 → 存档到 localStorage → 刷新后保持 → 双击复位。
 	await page.click('.topbar-flow [role="tab"]:has-text("Git")');
 	await page.waitForSelector(".scm-divider", { timeout: 5000 });
 	const readSidebarWidth = () =>
@@ -266,7 +239,6 @@ async function main() {
 	check("dragging the divider widens the sidebar (+120px)", Math.abs(draggedWidth - 420) <= 2, `width=${draggedWidth}`);
 	check("dragged width is persisted", (await readStoredWidth()) === String(draggedWidth));
 
-	// 刷新页面：宽度记忆生效（跨会话/跨刷新）
 	await page.reload();
 	await page.waitForSelector(".topbar", { timeout: 20000 });
 	await sleep(600);
@@ -278,13 +250,11 @@ async function main() {
 	const restoredWidth = await readSidebarWidth();
 	check("width survives a page reload", Math.abs(restoredWidth - draggedWidth) <= 2, `width=${restoredWidth}`);
 
-	// 双击复位 → 回到默认宽度，存档同步更新
 	await page.locator(".scm-divider").dblclick();
 	await sleep(200);
 	check("double-click resets to 300px", (await readSidebarWidth()) === 300);
 	check("reset is persisted too", (await readStoredWidth()) === "300");
 
-	// -- branch switching ------------------------------------------------------
 	execSync("git branch feature-x", { cwd: repo, stdio: "ignore" });
 	await page.click(".scm-title-row .panel-refresh");
 	await waitFor(
@@ -301,11 +271,9 @@ async function main() {
 	);
 	check("branch switched to feature-x", true);
 
-	// terminal tab for the checkout exists
 	await page.waitForSelector('.term-tab:has-text("git checkout")', { timeout: 8000 });
 	check("terminal tab 'git checkout' created", true);
 
-	// switch back and verify the panel shows the new branch
 	await page.click('.topbar-flow [role="tab"]:has-text("Git")');
 	await page.click(".scm-title-row .panel-refresh");
 	await waitFor(
@@ -320,9 +288,7 @@ async function main() {
 	ws.close();
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 	process.exit(process.exitCode ?? 0);
 }
 

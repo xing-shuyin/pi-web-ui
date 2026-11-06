@@ -37,6 +37,83 @@ function fixture() {
 
 afterEach(() => vi.useRealTimers());
 describe("shared conversation identity", () => {
+	it("opens independent and subagent notification targets without transferring their execution", () => {
+		const { service, owner, conversation, send } = fixture();
+		conversation.independent = true;
+		(conversation as any).isSubagent = true;
+		expect(service.openSharedConversation("viewer", "owner", "c1", send)).toBe(false);
+		expect(service.openSharedConversation("viewer", "owner", "c1", send, { readOnly: true })).toBe(true);
+		expect(owner.activeId).toBe("other");
+		expect(owner.convs.get("c1")).toBe(conversation);
+		expect(send).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "snapshot",
+				state: expect.objectContaining({
+					sharedConversation: { owner: "owner", conversationId: "c1", readOnly: true },
+				}),
+			}),
+		);
+		expect(service.dispatchSharedConversationMessage("viewer", { type: "get_state" })).toBe(true);
+		expect(service.sharedConversationTarget("viewer").readOnly).toBe(true);
+		service.closeSharedConversation("viewer");
+	});
+	it("rejects writes and control commands in a notification viewer", () => {
+		const { service, owner, send } = fixture();
+		service.openSharedConversation("viewer", "owner", "c1", send, { readOnly: true });
+		owner.createConversationFiles = vi.fn();
+		owner.controlNativeCli = vi.fn();
+		for (const message of [
+			{ type: "prompt", text: "continue" },
+			{ type: "abort" },
+			{ type: "write_file", path: "file", text: "changed" },
+			{ type: "terminal_create", terminalId: "pty", ownerKind: "conversation" },
+			{
+				type: "terminal_cli_control",
+				requestId: "stop",
+				terminalId: "pty",
+				ownerKind: "conversation",
+				conversationId: "c1",
+				action: "stop",
+			},
+			{ type: "set_approval_policy", policy: "always" },
+		])
+			expect(service.dispatchSharedConversationMessage("viewer", message)).toBe(true);
+		expect(owner.prompt).not.toHaveBeenCalled();
+		expect(owner.abortConversation).not.toHaveBeenCalled();
+		expect(owner.createConversationFiles).not.toHaveBeenCalled();
+		expect(owner.controlNativeCli).not.toHaveBeenCalled();
+		expect(send.mock.calls.filter(([message]: any) => message.type === "notice")).toHaveLength(6);
+		service.closeSharedConversation("viewer");
+	});
+	it("keeps existing question and approval replies available for the captured owner", () => {
+		const { service, send } = fixture();
+		service.openSharedConversation("viewer", "owner", "c1", send, { readOnly: true });
+		expect(
+			service.dispatchSharedConversationMessage("viewer", {
+				type: "question_answer",
+				id: "q",
+				owner: "owner",
+				answers: [],
+			}),
+		).toBe(false);
+		expect(
+			service.dispatchSharedConversationMessage("viewer", {
+				type: "tool_approval_response",
+				id: "a",
+				owner: "owner",
+				approved: true,
+			}),
+		).toBe(false);
+		expect(
+			service.dispatchSharedConversationMessage("viewer", {
+				type: "question_answer",
+				id: "q",
+				owner: "another-owner",
+				answers: [],
+			}),
+		).toBe(true);
+		service.closeSharedConversation("viewer");
+	});
 	it("opens a background target without migrating or activating it, and cleans subscriptions", () => {
 		const { service, owner, conversation, send } = fixture();
 		expect(service.openSharedConversation("viewer", "owner", "c1", send)).toBe(true);
@@ -148,7 +225,6 @@ describe("shared conversation identity", () => {
 		service.resumeSharedConversation("viewer", reconnected);
 		expect(reconnected).toHaveBeenCalledWith(expect.objectContaining({ type: "snapshot" }));
 		expect(owner.sinks.size).toBe(1);
-		// A delayed close from the old socket must not detach the new subscription.
 		service.detach("viewer", send);
 		expect(owner.sinks.size).toBe(1);
 		expect(owner.activeId).toBe("other");

@@ -1,42 +1,18 @@
-/**
- * Serializes pi SDK AgentMessage[] into the browser-friendly UiMessage[] shape
- * defined in protocol.ts. Keeps payloads bounded (tool outputs and text blocks
- * are truncated with a marker) so snapshots stay cheap to stream.
- */
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { TextQuote, UiContentBlock, UiImageBlock, UiMessage } from "./protocol.js";
 import { splitQuotedPrompt, type QueuedAttachmentMeta } from "./text-quote.js";
 import { saveAttachmentSync } from "./attachment-store.js";
 import { stripMarkers } from "./markers/index.js";
 
-/** AgentMessage is not re-exported from the package root; derive it from AgentSession. */
 export type AgentMessage = AgentSession["messages"][number];
 
 export const TEXT_CAP = 200_000;
 export const TOOL_OUTPUT_CAP = 100_000;
 export const ARGS_CAP = 200_000;
-/**
- * toolResult 里单张图片进快照的上限（dataUrl 字符数 ≈ 1.5MB 二进制）。
- * 视口/元素截图随便过；超大整页截图回落成占位文本（模型侧不受影响 —— 图它
- * 已经看过，只是浏览器这边的缩略图不带）。超限截断 base64 会得到一张坏图，
- * 所以是整张丢、不是截一半。
- */
 const TOOL_RESULT_IMAGE_CAP = 2_000_000;
-/** 单条 toolResult 最多带几张图进快照（防图片刷屏把快照撑爆）。 */
 const TOOL_RESULT_IMAGE_MAX = 8;
-/**
- * toolResult.details 的体积上限。details 是给 UI 用的结构化元数据（如
- * present_files 的卡片数据、ask_user_question 的答案），快照每 60ms 推一次，
- * 不能无节制。超过上限时**整个丢掉**（而不是截断 —— 截断后的 JSON 不可解析，
- * 前端还得写容错）；工具作者应自己封顶（见 present-files-tool.ts 的摘录预算）。
- */
 const TOOL_DETAILS_CAP = 64_000;
 
-/**
- * 对带有嵌套调用列表（如 codemode 的 details.calls）的 details 做安全预算裁剪。
- * 当 JSON 体积超过 TOOL_DETAILS_CAP（64KB）时，不直接丢弃整包，而是保留首尾
- * 关键调用并精简单项 args/error 长度，保证 UI 仍能渲染出调用树。
- */
 export function pruneCallsDetails(details: Record<string, unknown>, cap: number): Record<string, unknown> | undefined {
 	const rawCalls = details.calls;
 	if (!Array.isArray(rawCalls)) return undefined;
@@ -112,13 +88,6 @@ type ImageBlockLike = {
 	};
 };
 
-/**
- * SDK/工具的图片块 → 前端可直接 <img> 的 UiImageBlock。
- * Canonical ImageContent shape is { type, data, mimeType }; tolerate the
- * legacy { source } wrapper too.
- * cap: dataUrl 超过该字符数回 undefined（调用方按占位文本处理）；默认不限
- * （用户粘贴图走 image-paste 的缩放管线，尺寸本来就有界）。
- */
 function imageBlockToUi(b: unknown, cap = Number.POSITIVE_INFINITY): UiImageBlock | undefined {
 	const img = b as unknown as ImageBlockLike;
 	const src = img.source;
@@ -173,9 +142,6 @@ function serializeAssistantContent(
 			return { type: "text", text, truncated };
 		}
 		if (b.type === "thinking") {
-			// thinking 也走 TEXT_CAP：思维链没有长度保证（长任务能刷出远超正文的
-			// 体量），不截断会把快照推送撑爆。UiThinkingBlock 没有 truncated 字段
-			// （protocol 不动），截断语义靠 truncate 自带的 "… [truncated]" 尾标。
 			const { text } = truncate(b.thinking, TEXT_CAP);
 			return { type: "thinking", thinking: text };
 		}
@@ -196,17 +162,6 @@ function serializeAssistantContent(
 	});
 }
 
-/**
- * Hide transient LLM failures while an auto-retry is pending.
- *
- * The SDK finalizes the failed assistant message (message_end, then agent_end
- * with willRetry) BEFORE it slices the message out of state and backs off, so
- * a snapshot taken in between would paint a red error that vanishes one frame
- * later. While `retryActive` the trailing stopReason=error assistant messages
- * are intermediate state: dropped here (retry success → the user never sees
- * them; exhaustion → auto_retry_end clears the flag and the message renders
- * red permanently). Non-trailing content is never touched.
- */
 export function stripTransientRetryErrors(messages: UiMessage[], retryActive: boolean): UiMessage[] {
 	if (!retryActive) return messages;
 	let end = messages.length;
@@ -218,12 +173,6 @@ export function stripTransientRetryErrors(messages: UiMessage[], retryActive: bo
 	return end === messages.length ? messages : messages.slice(0, end);
 }
 
-/**
- * Single source for rendered message ids. Both serializeMessage (下发) and
- * resolveMessageEntry (解析) must derive ids through this function — recomputing
- * the format anywhere else is how the two sides drifted apart and fork/rollback
- * on assistant bubbles stopped resolving (issue #381).
- */
 export function uiMessageId(m: AgentMessage, seq: number): string {
 	switch (m.role) {
 		case "user":
@@ -245,8 +194,6 @@ export function uiMessageId(m: AgentMessage, seq: number): string {
 	}
 }
 
-/** Structural subset of SessionManager entries the matcher below needs
- *  (compatible with buildContextEntries() output without importing the SDK). */
 export interface UiIdEntryLike {
 	id: string;
 	type: string;
@@ -256,13 +203,6 @@ export interface UiIdEntryLike {
 	display?: boolean;
 }
 
-/**
- * Find the session entry a rendered message id points at, by re-deriving each
- * entry's rendered id through uiMessageId() — the same function serializeMessage
- * used to hand ids to the browser. `seqOf` supplies the per-message seq; the
- * caller injects its counter there (agent-service passes uiMessageKey().n, which
- * is exactly the counter serialization drew from — issue #381).
- */
 export function findEntryByUiId<T extends UiIdEntryLike>(
 	entries: T[],
 	messageId: string,
@@ -275,8 +215,6 @@ export function findEntryByUiId<T extends UiIdEntryLike>(
 			const m = entry.message;
 			let seq: number;
 			if (m.role === "user") {
-				// User ids count messages sharing a timestamp — mirrors the
-				// special-case in serializeCachedFor() (see its comment).
 				const ts = m.timestamp ?? 0;
 				seq = (userSeqByTs.get(ts) ?? 0) + 1;
 				userSeqByTs.set(ts, seq);
@@ -285,9 +223,6 @@ export function findEntryByUiId<T extends UiIdEntryLike>(
 			}
 			if (uiMessageId(m, seq) === messageId) return entry;
 		} else if (entry.type === "custom_message" && entry.display !== false) {
-			// Custom messages carry content/timestamp on the entry itself (no
-			// message object); rebuild the shape uiMessageId()/seqOf() key on —
-			// the same conversion createCustomMessage() uses on reload.
 			const m = {
 				role: "custom",
 				content: entry.content,
@@ -327,13 +262,6 @@ function serializeAssistantMessage(
 }
 
 export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null {
-	// SDK 的 system 消息是 prompt sections 的内部差量
-	// (content 空串 + sections 结构化内存)、compaction 的
-	// systemMessage 等——从来不面向用户。不过滤的话
-	// 会掉进 default 分支被序列化成 content: []
-	// 的空气泡、前端顶着 system 标题白显示一条
-	// (对话结束后底部冒出的空 SYSTEM 气泡就是它)。
-	// LLM 上下文不受影响——这里只决定浏览器看到什么。
 	if ((m as { role?: string }).role === "system") {
 		return null;
 	}
@@ -368,9 +296,6 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 			return serializeAssistantMessage(m, id);
 
 		case "toolResult": {
-			// 工具结果里的图片（web_shot 截图、read 读到的图……）要下发浏览器：
-			// 卡片里直接显示缩略图、点开放大（见 ToolCallBlock）。以前这里统一丢成
-			// "[image result]"，用户只能看到占位文本。超限/超数的图仍回落占位文本。
 			const textParts: string[] = [];
 			let textLength = 0;
 			let hasTextPart = false;
@@ -388,7 +313,6 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 				}
 			};
 			const appendText = (part: string) => {
-				// Empty parts still contribute join separators, even at the cap.
 				if (hasTextPart) appendChunk("\n");
 				hasTextPart = true;
 				appendChunk(part);
@@ -421,9 +345,6 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 				isError: m.isError,
 				timestamp: m.timestamp,
 			};
-			// 结构化元数据（tool result details）也要下发：present_files 的预览卡片
-			// 就靠它拿 kind/size/excerpt（前端不能靠再打一次 HTTP 才知类型），
-			// ask_user_question 同理。体积封顶，超限整丢（见 TOOL_DETAILS_CAP）。
 			if (m.details !== undefined) {
 				try {
 					const json = JSON.stringify(m.details);
@@ -433,9 +354,7 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 						const pruned = pruneCallsDetails(m.details as Record<string, unknown>, TOOL_DETAILS_CAP);
 						if (pruned) msg.details = pruned;
 					}
-				} catch {
-					// 循环引用等序列化不了的值：details 是附加信息，丢掉不影响消息本体。
-				}
+				} catch {}
 			}
 			return msg;
 		}
@@ -460,8 +379,6 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 		}
 
 		case "custom": {
-			// Third-party extension messages with display:false are UI-hidden
-			// (they still go into LLM context — the SDK handles that).
 			if ((m as { display?: boolean }).display === false) {
 				return null;
 			}
@@ -473,16 +390,11 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 				customType: m.customType,
 				timestamp: m.timestamp,
 			};
-			// custom details 与 toolResult 的 details 同一闸门（TOOL_DETAILS_CAP）：
-			// details 随每 60ms 一发的快照推送，扩展塞进来的大对象不能无节制；
-			// 超限/序列化失败整丢（截断后的 JSON 不可解析，前端还得写容错）。
 			const rawDetails = (m as { details?: unknown }).details;
 			if (rawDetails !== undefined) {
 				try {
 					if (JSON.stringify(rawDetails).length <= TOOL_DETAILS_CAP) msg.details = rawDetails;
-				} catch {
-					// 循环引用等序列化不了的值：details 是附加信息，丢掉不影响消息本体。
-				}
+				} catch {}
 			}
 			return msg;
 		}
@@ -518,18 +430,8 @@ export function serializeMessage(m: AgentMessage, seq: number): UiMessage | null
 	}
 }
 
-/**
- * Serialize the in-progress assistant message (agent.state.streamingMessage).
- *
- * Unlike persisted messages, the id must be STABLE across snapshots: the SDK
- * replaces the partial object on every stream event, so a seq-based id would
- * remount the React component (and collapse open thinking/tool blocks) every
- * 60ms. The timestamp is fixed at message creation, so `stream-<ts>` stays
- * constant for the whole stream.
- */
 export function serializeStreamingMessage(m: AgentMessage): UiMessage | null {
 	const id = `stream-${m.timestamp ?? 0}`;
-	// Streamed assistant blocks must be converted only once per snapshot.
 	if (m.role === "assistant") return serializeAssistantMessage(m, id, true);
 	const msg = serializeMessage(m, 0);
 	return msg ? { ...msg, id } : null;

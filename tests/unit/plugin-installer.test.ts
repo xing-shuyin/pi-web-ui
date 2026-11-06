@@ -1,14 +1,13 @@
-/**
- * 插件后台作业（server/plugin-installer.ts）单测：argv 构造与安全校验、忙/托管拒绝、
- * 输出行回传与 done 回执、非零退出码的失败回执、取消。
- *
- * 用一个假的「pkgRoot/bin/pi-web-ui.mjs」当 CLI：测试不联网、不碰真实插件目录。
- */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PluginInstaller, buildPluginJobArgs, confirmPluginInstall } from "../../server/plugin-installer.js";
+import {
+	PluginInstaller,
+	buildPluginJobArgs,
+	confirmPluginInstall,
+	inspectInstallSpec,
+} from "../../server/plugin-installer.js";
 import type { ServerMessage } from "../../server/protocol.js";
 
 let root: string;
@@ -26,6 +25,81 @@ beforeEach(() => {
 
 afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
+});
+
+describe("host-owned module lifecycle", () => {
+	it.each(["install", "update", "uninstall"] as const)("rejects %s before spawning a CLI", (action) => {
+		const installer = new PluginInstaller({ dataDir: root, pkgRoot: root, managed: false });
+		const emit = vi.fn();
+		const done = vi.fn();
+		for (const id of ["superagent", " Superagent "]) {
+			expect(installer.start({ jobId: "host", action, id, source: "a/b" }, { emit, done })).toMatchObject({
+				ok: false,
+				error: expect.stringContaining("managed by the host"),
+			});
+		}
+		expect(installer.busyJobId).toBeNull();
+		expect(emit).not.toHaveBeenCalled();
+		expect(done).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"host/superagent",
+		"host/repo/plugins/superagent/#main",
+		"https://github.com/host/repo/tree/main/plugins/superagent",
+	])("rejects module sources under an alias: %s", async (source) => {
+		expect(buildPluginJobArgs({ jobId: "host", action: "install", id: "alias", source }, root)).toHaveProperty("error");
+		const fetchImpl = vi.fn();
+		expect(await inspectInstallSpec(source, { pluginsDir: root, explicitId: "alias", fetchImpl })).toMatchObject({
+			problem: "invalid-spec",
+			detail: expect.stringContaining("managed by the host"),
+		});
+		expect(fetchImpl).not.toHaveBeenCalled();
+	});
+
+	it("rejects canonical local module paths and directory aliases", async () => {
+		const moduleDir = join(root, "superagent");
+		mkdirSync(moduleDir);
+		mkdirSync(join(root, "other"));
+		writeFileSync(join(moduleDir, "manifest.json"), JSON.stringify({ id: "alias", name: "Alias" }));
+		const alias = join(root, "alias");
+		symlinkSync(moduleDir, alias, process.platform === "win32" ? "junction" : "dir");
+		for (const source of [join(root, "other", "..", "superagent"), alias]) {
+			expect(
+				await inspectInstallSpec(source, { pluginsDir: join(root, "plugins"), explicitId: "third-party" }),
+			).toMatchObject({ problem: "invalid-spec" });
+		}
+		mkdirSync(join(root, "plugins"));
+		symlinkSync(moduleDir, join(root, "plugins", "alias"), process.platform === "win32" ? "junction" : "dir");
+		expect(buildPluginJobArgs({ jobId: "host", action: "uninstall", id: "alias" }, root)).toHaveProperty("error");
+	});
+
+	it("rejects a host manifest ID even if the source and explicit ID differ", async () => {
+		const source = join(root, "ordinary");
+		mkdirSync(source);
+		writeFileSync(
+			join(source, "manifest.json"),
+			JSON.stringify({ id: "superagent", name: "Host", builtinModule: false }),
+		);
+		expect(await inspectInstallSpec(source, { pluginsDir: join(root, "plugins"), explicitId: "alias" })).toMatchObject({
+			problem: "invalid-spec",
+		});
+		const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "superagent", name: "Host" })));
+		expect(
+			await inspectInstallSpec("a/b", { pluginsDir: join(root, "plugins"), explicitId: "alias", fetchImpl }),
+		).toMatchObject({ problem: "invalid-spec" });
+	});
+
+	it("rejects inferred IDs before already-installed handling and network probes", async () => {
+		mkdirSync(join(root, "superagent"));
+		const fetchImpl = vi.fn();
+		for (const force of [false, true]) {
+			expect(
+				await inspectInstallSpec("host/repo/plugins/superagent#main", { pluginsDir: root, force, fetchImpl }),
+			).toMatchObject({ problem: "invalid-spec" });
+		}
+		expect(fetchImpl).not.toHaveBeenCalled();
+	});
 });
 
 describe("buildPluginJobArgs", () => {
@@ -93,7 +167,6 @@ describe("PluginInstaller", () => {
 		expect(phases[0]).toBe("start");
 		expect(phases.at(-1)).toBe("done");
 		expect(msgs.some((m) => m.type === "plugin_job" && m.phase === "log" && m.line === "cloning…")).toBe(true);
-		// 作业结束后空闲
 		expect(installer.busyJobId).toBeNull();
 	});
 
@@ -112,7 +185,6 @@ describe("PluginInstaller", () => {
 	});
 
 	it("同一时刻只跑一个作业：第二个被拒（busy）", async () => {
-		// 这个 CLI 等到被取消才退出（给第二个请求留出窗口）。
 		const pkgRoot = makeFakeCli(`setTimeout(() => process.exit(0), 30000);`);
 		const installer = new PluginInstaller({ dataDir: join(root, "data"), pkgRoot, managed: false });
 		const first = new Promise<void>((resolve) => {
@@ -121,7 +193,6 @@ describe("PluginInstaller", () => {
 				{ emit: () => {}, done: () => resolve() },
 			);
 		});
-		// 等它真的起来
 		await new Promise((r) => setTimeout(r, 500));
 		expect(installer.busyJobId).toBe("busy1");
 		const second = installer.start(
@@ -130,7 +201,6 @@ describe("PluginInstaller", () => {
 		);
 		expect(second.ok).toBe(false);
 		expect(typeof second.error).toBe("string");
-		// 取消第一个，收尾（避免测试进程被 30s 定时器拖着）
 		expect(installer.cancel("busy1")).toBe(true);
 		await first;
 		expect(installer.busyJobId).toBeNull();
@@ -178,7 +248,6 @@ describe("环境隔离", () => {
 		const pkgRoot = makeFakeCli(
 			`import { writeFileSync } from "node:fs";writeFileSync(process.argv[2] ?? "x", String(process.env.PI_WEB_DATA_DIR ?? ""));process.exit(0);`,
 		);
-		// argv[2] 是 install 子命令——改把环境写到一个固定路径里更直接
 		const probe = join(root, "probe.txt");
 		writeFileSync(
 			join(pkgRoot, "bin", "pi-web-ui.mjs"),

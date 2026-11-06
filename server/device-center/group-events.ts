@@ -4,7 +4,6 @@ import type { DeviceHubStore } from "./store.js";
 import { projectTaskActivity, validTaskProgress } from "./task-progress.js";
 import type { createTaskJournalManager } from "./task-journal.js";
 
-/** Ephemeral progress, separate from durable task reports. Slow consumers reconnect. */
 export function createGroupEvents(store: DeviceHubStore, journalManager?: ReturnType<typeof createTaskJournalManager>) {
 	let closed = false;
 	const progress = new Map<string, DeviceTaskProgress>();
@@ -99,7 +98,6 @@ export function createGroupEvents(store: DeviceHubStore, journalManager?: Return
 			};
 			progress.set(task.id, p);
 
-			// Persist progress into durable journal
 			if (journalManager && !closed) {
 				const appendPromise = journalManager
 					.append(

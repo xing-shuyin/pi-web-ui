@@ -179,7 +179,6 @@ export class WhatsappBotBridge {
 		if (!event) return;
 		await this.restoreRoutes();
 		const key = sessionKey(event);
-		// Serialize a peer's configuration and dispatch; control commands must interrupt a pending dispatch.
 		const text = this.extractText(event).trim();
 		const control = [
 			"/new",
@@ -222,7 +221,6 @@ export class WhatsappBotBridge {
 		this.checkAccount();
 		if (cfg.allowedUsers?.length && !cfg.allowedUsers.map(String).includes(sender))
 			return this.reply(sender, "Access Restricted: contact the administrator.");
-		// Cloud API supports business-to-person delivery only; never leak a claimed group/thread reply into a DM.
 		if (event.groupId || (event.chatId && event.chatId !== sender) || event.threadId) {
 			this.status.lastError = "WhatsApp Cloud API does not support group/thread routing";
 			this.log("warn", this.status.lastError);

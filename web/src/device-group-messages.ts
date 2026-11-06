@@ -13,7 +13,6 @@ export type GroupDevice = {
 };
 export type GroupBotConversation = Pick<import("./types").DeviceConversation, "id" | "botId" | "name"> & {
 	status: string;
-	/** Bot registration changed (revision, device, membership); this conversation can no longer continue. */
 	stale?: boolean;
 	closedReason?: string;
 } & Partial<
@@ -113,12 +112,10 @@ export function groupDeviceToken(device: GroupDevice): string {
 	return `@${device.name}(${device.id})`;
 }
 
-/** Formats @name(uuid) mentions to clean @name for display, hiding ugly UUIDs. */
 export function formatGroupDisplayText(text: string): string {
 	return text.replace(/@([^\s()]+)\([a-f0-9-]{8,}\)/g, "@$1");
 }
 
-/** Separates bot prefix from task instruction for clean chip display. */
 export function formatGroupTaskChip(text: string, botName?: string): { botPrefix: string; summary: string } {
 	const cleaned = formatGroupDisplayText(text);
 	const match = cleaned.match(/^@([^\s()]+)\s*(.*)$/);
@@ -134,7 +131,6 @@ export function formatGroupTaskChip(text: string, botName?: string): { botPrefix
 	};
 }
 
-/** Formats raw technical execution failure reports into structured, human-readable markdown. */
 export function formatDeviceFailureReport(raw: string, zh = true): string {
 	if (!raw.includes("Device task failed")) return formatGroupDisplayText(raw);
 	const match = raw.match(/Device task failed\s*\[phase=([^;]+);\s*category=([^\]]+)\]\.\s*(.*)/s);
@@ -192,7 +188,6 @@ export function groupDeviceHits(devices: readonly GroupDevice[], query: string):
 			text: groupDeviceToken(d),
 		}));
 }
-/** Targets come only from explicit stable-id tokens, never ambiguous display names. */
 export function groupMessageTargets(text: string, devices: readonly GroupDevice[]): string[] {
 	return [...new Set(devices.filter((d) => text.includes(groupDeviceToken(d))).map((d) => d.id))];
 }
@@ -235,7 +230,6 @@ export function groupConversationState(
 		const isBot = message.sender.type === "bot";
 		const rawText = message.text;
 		let text = isBot ? formatDeviceFailureReport(rawText, zh) : formatGroupDisplayText(rawText);
-		// Replies stay anchored to the message they answer; retention may have evicted the parent.
 		const parent = message.replyToMessageId
 			? detail?.messages.find((entry) => entry.id === message.replyToMessageId)
 			: undefined;
@@ -254,8 +248,6 @@ export function groupConversationState(
 			labels.set(id, `${message.sender.name}${tag}`);
 			continue;
 		}
-		// Hub report messages link to tasks; human dispatch messages also carry taskIds.
-		// Match the stable Bot id too, never report text or display names.
 		const linkedTasks = (message.taskIds ?? [])
 			.map((taskId) => tasks.get(taskId))
 			.filter((task): task is GroupTask => !!task && task.botId === message.sender.id);

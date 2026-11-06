@@ -30,7 +30,6 @@ function documentKey(value) {
 }
 function loopbackOrigin(value) {
 	const url = new URL(value);
-	// Literal addresses only: never resolve a hostname supplied by a document.
 	if (
 		url.protocol !== "http:" ||
 		!["127.0.0.1", "[::1]"].includes(url.hostname) ||
@@ -53,7 +52,6 @@ function scopedPath(value, key, socket = false) {
 	)
 		fail("invalid document path");
 	const raw = value.split("?", 1)[0];
-	// Validate BEFORE URL normalizes dot segments. Repeated/encoded separators are forbidden.
 	const parts = raw.split("/").slice(1);
 	for (const part of parts) {
 		let decoded;
@@ -155,14 +153,10 @@ export function createCanvasTransport({
 			entry.wake?.();
 			try {
 				entry.ws.terminate?.();
-			} catch {
-				/* Already disposed. */
-			}
+			} catch {}
 			try {
 				entry.ws.close?.();
-			} catch {
-				/* Already closed. */
-			}
+			} catch {}
 		}
 		sockets.clear();
 	}
@@ -217,7 +211,6 @@ export function createCanvasTransport({
 		const isUpload = /\/universer-api\/stream\/file\/upload(?:\?|$)/u.test(path);
 		if (totalRequestBytes + bodyBytes > limits.maxTotalRequestBytes) fail("session request byte quota exceeded");
 		if (isUpload && uploadedBytes + bodyBytes > limits.maxUploadBytes) fail("session upload byte quota exceeded");
-		// Charge before dispatch and retain charges on cancellation/failure: upstream may have committed.
 		totalRequestBytes += bodyBytes;
 		if (isUpload) uploadedBytes += bodyBytes;
 		const response = await fetchImpl(origin + path, {
@@ -263,7 +256,6 @@ export function createCanvasTransport({
 		checkSignal(requestSignal);
 		let bytes = Buffer.concat(chunks, length);
 		const contentType = response.headers.get("content-type") || "application/octet-stream";
-		// Signed asset URLs must never expose the private gateway address to the child.
 		if (contentType.includes("json") && /\/file\/[^/]+\/sign-url(?:\?|$)/u.test(path)) {
 			const payload = JSON.parse(bytes.toString("utf8"));
 			if (typeof payload.url === "string") {
@@ -446,7 +438,6 @@ async function viewerBundle(viewerRoot) {
 	const cacheKey = `${root}:${stamp.size}:${stamp.mtimeMs}`;
 	if (bundleCache.has(cacheKey)) return bundleCache.get(cacheKey);
 	const pending = (async () => {
-		// esbuild is installed by host.ensureDeps, not needed merely to activate the plugin.
 		const { build } = await import("esbuild");
 		const result = await build({
 			entryPoints: [entry],
@@ -472,7 +463,6 @@ async function viewerBundle(viewerRoot) {
 						builder.onLoad({ filter: /\.js$/ }, async (args) => {
 							const file = await localFile(root, args.path);
 							let source = await readFile(file, "utf8");
-							// Vite preloads refer to split files; esbuild includes all literal dynamic imports.
 							if (source.includes("vite:preloadError")) {
 								const before = source;
 								source = source.replace(
@@ -514,7 +504,6 @@ async function viewerBundle(viewerRoot) {
 				await readFile(await localFile(root, resolve(root, name.replace(/^\/univer-viewer\//u, ""))), "utf8")
 			).replace(/\/\*[\s\S]*?\*\//gu, "");
 		}
-		// All shipped CSS resources are either embedded data URLs or local viewer resources.
 		const urls = [...css.matchAll(/url\(\s*["']?([^"')\s]+)["']?\s*\)/giu)];
 		for (const [full, url] of urls) {
 			if (url.startsWith("data:") || url.startsWith("#")) continue;
@@ -554,7 +543,6 @@ export async function buildRemoteCanvas({ viewerRoot, fileKey, unitId, lang = "e
 	const key = documentKey(fileKey);
 	if (unitId !== undefined && (typeof unitId !== "string" || !unitId || unitId.length > 256)) fail("invalid unit ID");
 	if (typeof lang !== "string" || !/^[A-Za-z-]{2,16}$/u.test(lang)) fail("invalid language");
-	// Check optional runtime dependency only when a canvas is actually requested.
 	await import("ws");
 	const { js, css } = await viewerBundle(viewerRoot);
 	const channel = randomBytes(24).toString("base64url");
@@ -582,8 +570,6 @@ export async function buildRemoteCanvas({ viewerRoot, fileKey, unitId, lang = "e
 function canvasBootstrap(config) {
 	const synthetic = new URL(config.href);
 	globalThis.__officeCanvasLocation = synthetic;
-	// SDK property names are obfuscated (window[decoder(n)][decoder(m)]), so adapt
-	// the Window object rather than only literal location.origin reads.
 	const windowMethods = new Map();
 	globalThis.__officeCanvasWindow = new Proxy(window, {
 		get(target, property) {
@@ -601,8 +587,6 @@ function canvasBootstrap(config) {
 			return Reflect.set(target, property, value, target);
 		},
 	});
-	// The shipped viewer already falls back from IndexedDB to Storage. In an opaque
-	// origin both native stores are denied: use a bounded, document-local memory store.
 	Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: undefined });
 	for (const name of ["localStorage", "sessionStorage"]) {
 		const values = new Map();
@@ -639,7 +623,6 @@ function canvasBootstrap(config) {
 		};
 		Object.defineProperty(globalThis, name, { configurable: true, value: memory });
 	}
-	// Opaque srcdoc cannot use history.replaceState with a normal URL. Keep viewer URL state local.
 	history.replaceState = (_state, _title, url) => {
 		if (url !== undefined) {
 			const next = new URL(url, synthetic);
@@ -1007,7 +990,6 @@ function canvasBootstrap(config) {
 		}
 	}
 	globalThis.WebSocket = CanvasSocket;
-	// Images inserted by the editor use signed gateway URLs. Hydrate them through the broker.
 	const nativeSet = Element.prototype.setAttribute;
 	const imageSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
 	async function image(element, value) {

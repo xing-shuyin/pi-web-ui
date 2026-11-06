@@ -1,0 +1,43 @@
+{
+	"id": "hongguo",
+	"name": "hongguo",
+	"nameEn": "hongguo",
+	"version": "0.1.3",
+	"icon": "📺",
+	"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"m10 8 6 4-6 4Z\"/></svg>",
+	"description": "短剧观看",
+	"descriptionEn": "Watch short dramas",
+	"apiVersion": 2,
+	"view": false,
+	"preload": true,
+	"permissions": ["ui", "http", "dom:anchor"],
+	"settings": [
+		{
+			"key": "ffmpegPath",
+			"type": "text",
+			"label": "FFmpeg 路径",
+			"labelEn": "FFmpeg path",
+			"default": "",
+			"hint": "留空自动查找；MP4 兼容处理和 HEIC 封面需要 FFmpeg。",
+			"hintEn": "Leave empty to detect automatically. MP4 compatibility conversion and HEIC covers require FFmpeg."
+		}
+	],
+	"ui": {
+		"topbar": [
+			{
+				"id": "toggle",
+				"label": "hongguo",
+				"labelEn": "hongguo",
+				"icon": "📺",
+				"iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"3\"/><path d=\"m10 8 6 4-6 4Z\"/></svg>",
+				"hint": "打开 hongguo，可选悬浮或分屏播放",
+				"hintEn": "Open Hongguo in floating or split view",
+				"kind": "action",
+				"action": "hongguo:toggle",
+				"align": "end",
+				"order": 44,
+				"group": "hongguo"
+			}
+		]
+	}
+}

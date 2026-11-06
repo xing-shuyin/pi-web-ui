@@ -37,7 +37,6 @@ export async function receiveMedia(host, cfg, message) {
 	const info = await response.json();
 	if (Number(info.file_size) > INBOUND_MEDIA_LIMIT) throw new Error("Inbound media exceeds 10 MiB limit");
 	const url = new URL(info.url);
-	// Never forward the access token to arbitrary URLs supplied by a webhook/API response.
 	if (
 		url.protocol !== "https:" ||
 		!(url.hostname === "fbsbx.com" || url.hostname.endsWith(".fbsbx.com") || url.hostname.endsWith(".facebook.com"))

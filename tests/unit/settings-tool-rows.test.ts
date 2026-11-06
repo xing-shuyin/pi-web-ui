@@ -1,11 +1,3 @@
-/**
- * 设置「工具」页覆盖率守卫（静态源码检查，不渲染 React）。
- *
- * 机制：设置页不再手写 ToggleRow——终端组与子代理组按名单循环，「其他」组按
- * OTHER_AGENT_TOOLS（= 目录过滤）循环，文案走目录项的 descKey/offHintKey。
- * 目录里加一行，页面自动多一行。
- * 全量「其他」组工具纯目录驱动，零手写例外。
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,7 +6,6 @@ import { zh } from "../../web/src/i18n.js";
 
 const SETTINGS_SRC = readFileSync(join(__dirname, "..", "..", "web", "src", "components", "SettingsModal.tsx"), "utf8");
 
-/** 循环渲染的两组（设置页只写名单，不逐个写行）。 */
 const LOOP_RENDERED = new Set<string>([...TERMINAL_TOOL_NAMES, ...SUBAGENT_TOOL_NAMES]);
 
 describe("设置「工具」页覆盖率", () => {

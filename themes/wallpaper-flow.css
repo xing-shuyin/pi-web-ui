@@ -1,10 +1,6 @@
 /* theme-name: 壁纸专属 · 极简行文 */
 /* theme-name-en: Wallpaper Pure Flow */
-/*
- * Wallpaper Engine 专属主题 —— 极简行文（Pure Flow & Borderless Canvas）：
- * 彻底消灭正文气泡外壳与边框背景，正文文字如同在壁纸画布上笔墨行书，
- * 采用微小紧致黑色阴影锁住边缘，极致紧凑排版让 AI 回答如行文般一气呵成。
- */
+
 :root {
 	color-scheme: dark;
 	--bg: #050507;
@@ -79,9 +75,6 @@
 }
 @import "./bases/flow-base.css";
 
-/* ========================================================
-   壁纸专属覆盖：完全透明化与毛玻璃渗透
-   ======================================================== */
 #root,
 .app,
 .layout,
@@ -123,7 +116,6 @@
 	background: rgba(255, 255, 255, 0.1);
 }
 
-/* 壁纸文字边缘锁边微小紧致阴影 */
 .msg-text,
 .msg-assistant .msg-text,
 .msg-assistant .msg-text p,
@@ -139,7 +131,6 @@
 		0 1px 1.5px rgba(0, 0, 0, 0.88);
 }
 
-/* 底栏指标文字微调提亮 */
 .statusbar .bar-item-host-metrics,
 .statusbar .bar-item-host-metrics *,
 .statusbar .status-host-metrics,
@@ -165,10 +156,6 @@
 	filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.95)) drop-shadow(0 1px 1.2px rgba(0, 0, 0, 0.85));
 }
 
-/* ========================================================
-   底部状态栏按钮同步极简行文（基线方案 C 纯平流）
-   与 flow-base 一致：按钮只走基线形态，不做提亮/描边/白字覆盖。
-   ======================================================== */
 .statusbar *,
 .footer-bar *,
 .footer * {
@@ -310,7 +297,7 @@
 	text-shadow: none;
 	box-shadow: none;
 }
-/* 右下角指标（主机 CPU/内存、工作区路径等）回归继承，不再强制白字锁边 */
+
 .statusbar-right,
 .statusbar-right *,
 .statusbar .bar-item-host-metrics,
@@ -325,7 +312,7 @@
 	opacity: 1;
 	text-shadow: none;
 }
-/* 底栏引擎选择器回归基线纯平微矩形 */
+
 .statusbar .engine-picker-btn,
 .footer .engine-picker-btn,
 .footer-bar .engine-picker-btn {
@@ -347,7 +334,6 @@
 	color: var(--text);
 }
 
-/* 语法高亮（hljs）—— 极简冷冽暗调 */
 .hljs {
 	color: #f2f2f2;
 }

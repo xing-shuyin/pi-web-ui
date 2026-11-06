@@ -8,26 +8,8 @@ import { LanguageProvider, useT } from "../../web/src/i18n.js";
 import { BUILTIN_UI_ITEMS, type UiSlotEntry } from "../../web/src/ui-slots.js";
 import type { UiMessage } from "../../web/src/types.js";
 
-/**
- * 消息级按钮的落点口径（简化版）：
- *
- *   · **所有卡头只有复制键**（思考 / 工具 / 附件 / 技能 / 压缩摘要）—— 卡头不再
- *     挂整排消息级按钮，`headExtra` 管道已删除（ThinkingBlock / ToolCallBlock
- *     里没有 `.chead-actions` 分支）。
- *   · **`.msg-actions` 行只给「有正文的助手消息」和「用户消息」**。没有正文的
- *     消息（纯工具调用 / 纯思考 / 附件卡 / 插件消息）不渲染：那一行只剩「派生分支 /
- *     回滚」这类对卡片无意义的按钮，复制已经在卡头。
- *   · **助手消息把这一行锚在最后一个正文块之后**（不是整条消息末尾）：模型常
- *     「先说话、再发工具」，挂末尾会被工具卡隔开，看着像属于工具卡。用户消息
- *     不锚（气泡里插按钮），无正文块才落末尾。
- *
- * 右键菜单（`contextmenu.toolcall` / `contextmenu.message`）保持全功能，不在本文件范围。
- */
-
 let root: Root | null = null;
 
-/** 宿主内置的 message.actions 条目（真实运行时 App 用 buildUiSlots 算好后透传；
- *  这里手搓一份等价的，让 Message 走数据驱动分支，而不是「宿主还没接线」的兜底。 */
 function Probe({
 	message,
 	showDelete = false,
@@ -178,7 +160,6 @@ describe("消息级按钮落点：卡头只复制，行给正文/用户消息", 
 	it("助手消息：按钮行锚在最后一个正文块之后，不被后面的工具卡隔开", () => {
 		const body = mount(withText).querySelector(".msg-body")!;
 		const kids = Array.from(body.children).map((el) => el.className);
-		// [文本块, 按钮行, 工具卡] —— 按钮行紧跟正文，且在 .toolcall 之前
 		expect(kids[0]).toContain("msg-text");
 		expect(kids[1]).toContain("msg-actions");
 		expect(kids[2]).toContain("toolcall");
@@ -196,7 +177,6 @@ describe("消息级按钮落点：卡头只复制，行给正文/用户消息", 
 		for (const msg of [toolOnly, thinkingOnly, withText, textOnly, userMessage]) {
 			expect(mount(msg).querySelector(".chead-actions")).toBeNull();
 		}
-		// 卡头右端只剩复制键
 		expect(mount(withText).querySelectorAll(".chead .chead-copy").length).toBeGreaterThan(0);
 	});
 });

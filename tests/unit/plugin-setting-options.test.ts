@@ -32,13 +32,11 @@ describe("pluginSelectValues", () => {
 		const vals = pluginSelectValues({ optionsFrom: "models" }, models, "anthropic/claude-sonnet-4");
 		expect(vals[0]).toBe("");
 		expect(vals).toContain("anthropic/claude-sonnet-4");
-		// 不重复：已在清单里的当前值不追加第二遍
 		expect(pluginSelectValues({ optionsFrom: "models" }, models, "xai/grok-4")).toEqual([
 			"",
 			"openai/gpt-5",
 			"xai/grok-4",
 		]);
-		// 静态清单同理（旧版本只有静态下拉，存值可能是手打的）
 		expect(pluginSelectValues({ options: ["dark"] }, [], "neon")).toEqual(["dark", "neon"]);
 	});
 

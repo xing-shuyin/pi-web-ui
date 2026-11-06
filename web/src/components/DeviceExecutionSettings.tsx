@@ -243,7 +243,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 		[request],
 	);
 
-	// Reset state and cancel in-flight queries when target binding changes
 	useEffect(() => {
 		alive.current = true;
 		generation.current++;
@@ -442,7 +441,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				</div>
 			)}
 
-			{/* 状态统计卡片 */}
 			<div className="des-stats-row">
 				<div className="des-stat-card">
 					<div className="des-stat-label">
@@ -472,7 +470,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				</div>
 			</div>
 
-			{/* 5 大功能分组配置表单 */}
 			<form className="des-form-card" onSubmit={(e) => void handleSave(e)}>
 				<div className="des-form-header">
 					<h4 className="des-form-title">{t("deviceExecQuotaTitle")}</h4>
@@ -490,7 +487,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 					</div>
 				</div>
 
-				{/* 1. 调度并发 */}
 				<div className="des-group">
 					<div className="des-group-header">
 						<FiCpu className="des-group-icon" />
@@ -574,7 +570,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 					</div>
 				</div>
 
-				{/* 2. 任务派发与协作 */}
 				<div className="des-group">
 					<div className="des-group-header">
 						<FiShare2 className="des-group-icon" />
@@ -633,7 +628,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 					</div>
 				</div>
 
-				{/* 3. 群上下文与历史 */}
 				<div className="des-group">
 					<div className="des-group-header">
 						<FiMessageSquare className="des-group-icon" />
@@ -681,7 +675,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 					</div>
 				</div>
 
-				{/* 4. 文件同步配额 */}
 				<div className="des-group">
 					<div className="des-group-header">
 						<FiFolder className="des-group-icon" />
@@ -750,7 +743,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 					</div>
 				</div>
 
-				{/* 5. 资源锁与黑板 */}
 				<div className="des-group">
 					<div className="des-group-header">
 						<FiLock className="des-group-icon" />
@@ -814,7 +806,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				</div>
 			</form>
 
-			{/* 隔离占槽警告 */}
 			{snapshot && snapshot.blocked && snapshot.blocked.length > 0 && (
 				<div className="des-section des-blocked-section">
 					<h4 className="des-section-title is-danger">
@@ -848,7 +839,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				</div>
 			)}
 
-			{/* 正在运行的任务 */}
 			<div className="des-section">
 				<h4 className="des-section-title">
 					<FiPlayCircle /> {t("deviceExecActiveTasks")} ({snapshot?.running?.length ?? 0})
@@ -883,7 +873,6 @@ export function DeviceExecutionSettings({ hubUrl, deviceId, onNotice }: Props) {
 				)}
 			</div>
 
-			{/* 等待队列 */}
 			<div className="des-section">
 				<h4 className="des-section-title">
 					<FiClock /> {t("deviceExecWaitingQueue")} ({snapshot?.waiting?.length ?? 0})

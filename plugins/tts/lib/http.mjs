@@ -1,17 +1,8 @@
-/**
- * HTTP 那一半：取票、列音色、切音色、下 demo。
- *
- * 全是公开 REST 接口，用 Node 22+ 的全局 fetch，不引第三方。
- * 注意服务端喜欢「HTTP 200 + 业务错误 JSON」这一套，所以不能靠状态码判断成败，
- * 必须解析 body 里的 code / data.biz_code。
- */
-
 import { ENDPOINTS, HTTP_BASE, VOICES, getVoice } from "./constants.mjs";
 import { DeepSeekTtsError, authError, codeHint, codeName, protocolError, usageError } from "./errors.mjs";
 
 export const TOKEN_ENV = "DS_TOKEN";
 
-/** 真实 Chrome 浏览器标准请求头（完全对齐官方前端网络指纹，彻底剔除脚本特征） */
 export function jsonHeaders(token, extra = {}) {
 	const h = {
 		"content-type": "application/json",
@@ -33,10 +24,6 @@ export function jsonHeaders(token, extra = {}) {
 	return h;
 }
 
-/**
- * 拿 token：显式传的优先，其次环境变量 DS_TOKEN。
- * 只读环境变量，绝不落盘、绝不打印。
- */
 export function resolveToken(explicit, env = process.env) {
 	const t = explicit ?? env?.[TOKEN_ENV] ?? null;
 	if (t === null || t === undefined) return null;
@@ -44,12 +31,10 @@ export function resolveToken(explicit, env = process.env) {
 	return s.length ? s : null;
 }
 
-/** 一个很松的合理性检查：64 字符不透明串（不是 JWT）。只用来提醒，不用来拦截。 */
 function looksLikeToken(token) {
 	return typeof token === "string" && token.length === 64;
 }
 
-/** 缺 token 的提示只写一份，库和 CLI 都从这拿，免得同一个错两种说法。 */
 export const MISSING_TOKEN_MESSAGE =
 	"缺少登录态：没有 userToken（DS_TOKEN 环境变量和 --token 都是空的）。" +
 	"取 userToken 的办法见 README 的「上手」一节 —— 本包不会去读你的浏览器数据。";
@@ -59,7 +44,6 @@ export function assertToken(token) {
 	return token;
 }
 
-/** 解析统一信封 {code, msg, data}。失败就抛，带上服务端原话。 */
 function unwrap(json, { what }) {
 	if (json === null || typeof json !== "object") {
 		throw protocolError(`${what}: 服务端返回的不是 JSON 对象`, undefined, { raw: json });
@@ -131,15 +115,6 @@ async function getJson(url, { token, signal, fetchImpl }) {
 	return { res, json };
 }
 
-/**
- * 取一张 tts 票。
- *
- * 官方：`http.post('/api/v0/auth/ticket', {context: withToken, json: {scope:'tts'}})`，
- * 然后取 `json.data.biz_data.ticket`。
- *
- * 票是一次性的：600 秒有效期内，同一张票第二次建 ws 会被服务端 1006 断掉、零帧。
- * 所以每次建连之前都要重新取一张，别缓存。
- */
 export async function issueTicket({ token, signal, fetchImpl = globalThis.fetch, baseUrl = HTTP_BASE } = {}) {
 	const t = assertToken(token);
 	const url = `${baseUrl}${ENDPOINTS.ticket}`;
@@ -166,7 +141,6 @@ export async function issueTicket({ token, signal, fetchImpl = globalThis.fetch,
 	};
 }
 
-/** 把接口返回的 voices[] 归一化成我们自己的形状。 */
 export function normalizeVoice(v) {
 	return {
 		id: v?.voice_id,
@@ -179,7 +153,6 @@ export function normalizeVoice(v) {
 	};
 }
 
-/** 取当前账号能看到的音色列表。官方前端就是这么映射的。 */
 export async function listVoices({ token, signal, fetchImpl = globalThis.fetch, baseUrl = HTTP_BASE } = {}) {
 	const t = assertToken(token);
 	const url = `${baseUrl}${ENDPOINTS.voices}`;
@@ -201,10 +174,6 @@ export async function listVoices({ token, signal, fetchImpl = globalThis.fetch, 
 	};
 }
 
-/**
- * 切音色。这是服务端会话级状态，切一次后面都算这个音色，直到你再切。
- * 返回的 biz_code: 0 成功 / 1 音色已下线 / 2 参数错（逆向备忘里记的，0 之外没见过）。
- */
 export async function setVoice({ voiceId, token, signal, fetchImpl = globalThis.fetch, baseUrl = HTTP_BASE } = {}) {
 	const t = assertToken(token);
 	if (!voiceId) throw usageError("setVoice 缺 voiceId");
@@ -223,16 +192,6 @@ export async function setVoice({ voiceId, token, signal, fetchImpl = globalThis.
 	return { code: bizCode, raw: json };
 }
 
-/**
- * 找某个音色某个语言的试听 demo 地址。
- *
- * 两条路：
- *  1. 有登录态 —— 调音色接口，直接读 demo_urls[lang]。这是唯一能覆盖全部音色/语言的办法。
- *  2. 没登录态 —— 只能查本包内置的那几个实测过的地址（目前只有 mira/zh 和 tide/zh）。
- *
- * CDN 文件名形如 <voice>_<lang>.<hash>.mp3，哈希是每个「音色+语言」组合一份、各不相同，
- * 所以没实测过的组合拼不出来，只能老实说没有。
- */
 export async function resolveDemoUrl({
 	voiceId,
 	lang = "zh",
@@ -271,7 +230,6 @@ export async function resolveDemoUrl({
 	);
 }
 
-/** 下载任意 URL 成 Buffer。 */
 async function fetchBinary(url, { signal, fetchImpl = globalThis.fetch, maxBytes } = {}) {
 	let res;
 	try {

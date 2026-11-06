@@ -1,5 +1,3 @@
-// 拷贝 DSH 运行时文件（launcher.mjs / cordis.yml / override.patch.yml）到
-// dist/server/dsh/runtime/ —— tsc 只编译 .ts，这些 .mjs/.yml 需要原样携带。
 import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

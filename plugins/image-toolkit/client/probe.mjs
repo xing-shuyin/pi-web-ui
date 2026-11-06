@@ -1,12 +1,3 @@
-/**
- * 浏览器侧图片信息：格式嗅探、EXIF 解析、直方图与主色调。
- * 全部在本地算，不发任何请求（EXIF 从原始字节解析，直方图/主色从代理像素统计）。
- */
-
-/** 魔数嗅探 → MIME（浏览器认得的常见图片；未知返回 ""）。
- *  边界都用「最短合法长度」：PNG 8 / JPEG 3 / GIF 6 / WebP 12 / BMP 2 / ISO-BMFF 12，
- *  刚好够的短缓冲区也要能认出来（不然截断文件会被当成未知）。
- */
 export function sniffType(bytes) {
 	const b = bytes;
 	if (!b || !b.length) return "";
@@ -31,16 +22,11 @@ export function sniffType(bytes) {
 	if (b.length >= 12 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp";
 	if (b.length >= 2 && b[0] === 0x42 && b[1] === 0x4d) return "image/bmp";
 	if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
-		// ISO-BMFF：avif / heic 共用 ftyp 头，用 brand 区分
 		const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
 		return brand.startsWith("avi") ? "image/avif" : "image/heic";
 	}
 	return "";
 }
-
-// ---------------------------------------------------------------------------
-// EXIF（JPEG APP1 + PNG eXIf）
-// ---------------------------------------------------------------------------
 
 const TAG_IFD0 = { 0x010f: "make", 0x0110: "model", 0x0112: "orientation", 0x0131: "software", 0x0132: "dateTime" };
 const TAG_EXIF = {
@@ -53,9 +39,7 @@ const TAG_EXIF = {
 	0xa433: "lensMake",
 };
 
-/** 定位 TIFF 头（JPEG 的 APP1 Exif、PNG 的 eXIf 块）；找不到返回 -1。 */
 function findTiff(bytes) {
-	// PNG：按块扫描找 eXIf（块数据本身就是 TIFF 段）
 	if (bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50) {
 		let p = 8;
 		while (p + 8 <= bytes.length) {
@@ -68,7 +52,6 @@ function findTiff(bytes) {
 		return -1;
 	}
 	if (!(bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8)) return -1;
-	// JPEG：扫 marker 到 SOS 为止
 	let i = 2;
 	while (i + 4 < bytes.length) {
 		if (bytes[i] !== 0xff) {
@@ -80,7 +63,7 @@ function findTiff(bytes) {
 			i += 2;
 			continue;
 		}
-		if (marker === 0xda) break; // 进入压缩数据，不看了
+		if (marker === 0xda) break;
 		const len = (bytes[i + 2] << 8) | bytes[i + 3];
 		if (marker === 0xe1) {
 			const start = i + 4;
@@ -90,7 +73,7 @@ function findTiff(bytes) {
 				bytes[start + 2] === 0x69 &&
 				bytes[start + 3] === 0x66
 			) {
-				return start + 6; // "Exif\0\0"
+				return start + 6;
 			}
 		}
 		i += 2 + len;
@@ -98,7 +81,6 @@ function findTiff(bytes) {
 	return -1;
 }
 
-/** 解析 TIFF（IFD0 + ExifIFD + GPS IFD）；失败一律返回 null，绝不抛错。 */
 export function parseExif(bytes) {
 	try {
 		const base = findTiff(bytes);
@@ -112,7 +94,6 @@ export function parseExif(bytes) {
 		if (u16(base + 2) !== 0x002a) return null;
 
 		const SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
-		/** 读一个 IFD 条目的值（返回字符串/数字/数字数组）。 */
 		const readValue = (type, count, valueOff) => {
 			const size = SIZE[type] ?? 1;
 			const total = size * count;
@@ -145,7 +126,6 @@ export function parseExif(bytes) {
 			return out.length === 1 ? out[0] : out;
 		};
 
-		/** 遍历一个 IFD，命中 tagNames 的写进 out；返回下一个 IFD 的偏移（若有）。 */
 		const readIfd = (offset, tagNames, out) => {
 			if (offset + 2 > bytes.length) return 0;
 			const count = u16(offset);
@@ -211,17 +191,11 @@ export function parseExif(bytes) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 直方图 / 主色调
-// ---------------------------------------------------------------------------
-
-/** 亮度直方图（256 桶，归一化 0..1）与主色调（4bit 分桶，按占比降序）。 */
 export function imageStats(imageData, colorCount = 6) {
 	const { data } = imageData;
 	const hist = new Float32Array(256);
 	const buckets = new Map();
 	let total = 0;
-	// 大图抽样：每 stride 个像素取一个，统计意义足够且快得多
 	const stride = Math.max(1, Math.floor((imageData.width * imageData.height) / 200_000)) * 4;
 	for (let i = 0; i + 3 < data.length; i += stride) {
 		const r = data[i];
@@ -258,7 +232,6 @@ export function imageStats(imageData, colorCount = 6) {
 	return { histogram: norm, colors };
 }
 
-/** 画直方图到 canvas（等比高度、主题色描边）。 */
 export function drawHistogram(canvas, hist, color) {
 	const ctx = canvas.getContext("2d");
 	const w = canvas.width;

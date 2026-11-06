@@ -1,10 +1,3 @@
-/**
- * MCP 服务器管理服务
- *
- * 负责 Pi 全局 (~/.pi/agent/mcp.json 或兼容 ~/.pi-web/mcp.json)
- * 与工作区项目级 (.pi/mcp.json) MCP 服务器配置的读写、合并与生命周期。
- */
-
 import { readFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -20,7 +13,6 @@ import {
 
 export { getGlobalMcpPath, getProjectMcpPath };
 
-/** 读取指定文件的 MCP 服务器配置 */
 export function readMcpConfigFile(filePath: string): {
 	servers: Record<string, McpServerSpec>;
 	raw: Record<string, unknown> | null;
@@ -44,7 +36,6 @@ export function readMcpConfigFile(filePath: string): {
 	}
 }
 
-/** Only ENOENT is an empty configuration. All other read/shape errors stop mutations. */
 function readWritableConfig(filePath: string): Record<string, unknown> | null {
 	try {
 		const raw = JSON.parse(readFileSync(filePath, "utf8"));
@@ -63,7 +54,6 @@ function readWritableConfig(filePath: string): Record<string, unknown> | null {
 	}
 }
 
-/** 写入指定文件的 MCP 服务器配置（保留除服务器清单以外的其它字段） */
 export function writeMcpConfigFile(
 	filePath: string,
 	servers: Record<string, McpServerSpec>,
@@ -88,12 +78,10 @@ function isRecord(value: unknown): value is Record<string, any> {
 	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-/** MCP configs and recovery intents may contain credentials. */
 function atomicWrite(filePath: string, value: unknown): void {
 	writeAtomicSync(filePath, JSON.stringify(value, null, 2) + "\n", { mode: 0o600, fsync: true });
 }
 
-/** Keep unrecognized server fields intact when editing a different entry. */
 function editableConfig(filePath: string) {
 	const cfg = readMcpConfigFile(filePath);
 	if (cfg.error) throw new Error(cfg.error);
@@ -107,12 +95,10 @@ function mutationError(error: unknown): { ok: false; error: string } {
 	return { ok: false, error: error instanceof Error ? error.message : String(error) };
 }
 
-/** 校验 MCP 服务器名称合法性（字母、数字、下划线、短横线） */
 export function isValidMcpServerName(name: string): boolean {
 	return /^[a-zA-Z0-9_-]+$/.test(name.trim());
 }
 
-/** 汇总查询全局与项目级配置列表，并结合 McpBridge 运行时状态组装 UiMcpServer 数组 */
 export function listAllMcpServers(opts: { agentDir?: string; cwd?: string; dataDir?: string; bridge?: McpBridge }): {
 	servers: UiMcpServer[];
 	globalPath: string;
@@ -132,7 +118,6 @@ export function listAllMcpServers(opts: { agentDir?: string; cwd?: string; dataD
 		if (cfg.error) result.push({ name: path, scope, enabled: false, status: "error", error: cfg.error });
 	}
 
-	// 全局服务器
 	for (const [name, spec] of Object.entries(globalCfg.servers)) {
 		const overridden = Object.hasOwn(projectCfg.servers, name);
 		const status = getRuntimeStatus(name, spec, overridden ? undefined : opts.bridge);
@@ -155,7 +140,6 @@ export function listAllMcpServers(opts: { agentDir?: string; cwd?: string; dataD
 		});
 	}
 
-	// 项目级服务器
 	for (const [name, spec] of Object.entries(projectCfg.servers)) {
 		const status = getRuntimeStatus(name, spec, opts.bridge);
 		result.push({
@@ -193,7 +177,6 @@ function getRuntimeStatus(
 	return bridge.getServerStatus(name);
 }
 
-/** 保存或更新 MCP 服务器 */
 export function saveMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
@@ -251,10 +234,6 @@ export function saveMcpServer(opts: {
 	}
 }
 
-/** Durable intent distinguishes a partially committed move from a name collision.
- * Retry the same save after restart to finish. Never roll back a committed target,
- * or delete an entry edited since the intent was recorded.
- */
 function migrateMcpServer(
 	sourcePath: string,
 	targetPath: string,
@@ -317,7 +296,6 @@ function migrateMcpServer(
 	return { ok: true };
 }
 
-/** 删除指定作用域下的 MCP 服务器 */
 export function deleteMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
@@ -344,7 +322,6 @@ export function deleteMcpServer(opts: {
 	}
 }
 
-/** 切换指定作用域下的 MCP 服务器启用/停用状态 */
 export function toggleMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
@@ -366,7 +343,6 @@ export function toggleMcpServer(opts: {
 			return { ok: true };
 		}
 
-		// 若在项目级切换全局服务器的启用状态（项目级覆盖）：写入仅带 enabled 的配置项
 		if (opts.scope === "project") {
 			const globalCfg = editableConfig(globalPath);
 			if (globalCfg.servers[name]) {
@@ -382,25 +358,19 @@ export function toggleMcpServer(opts: {
 	}
 }
 
-/** 从 npm 包名、URL 或命令自动推导合法的 MCP 服务器名称 */
 export function deriveMcpServerName(raw: string): string {
 	let s = String(raw ?? "").trim();
 	if (!s) return "";
-	// 如果是 URL，提取 hostname
 	if (/^https?:\/\//i.test(s)) {
 		try {
 			const u = new URL(s);
 			s = u.hostname;
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	} else {
-		// 去掉 npm 版本后缀（如 @scope/pkg@1.2.3 或 pkg@latest）
 		const atIdx = s.lastIndexOf("@");
 		if (atIdx > 0) {
 			s = s.slice(0, atIdx);
 		}
-		// 若为 @scope/pkg，取斜杠后半段；若后半段只是 "mcp" 或 "server"（如 @playwright/mcp），取 scope
 		if (s.startsWith("@") && s.includes("/")) {
 			const [scopePart, pkgPart] = s.slice(1).split("/", 2);
 			if (pkgPart && !/^(mcp|server|mcp-server)$/i.test(pkgPart)) {
@@ -409,7 +379,6 @@ export function deriveMcpServerName(raw: string): string {
 				s = scopePart;
 			}
 		}
-		// 剥离常见前后缀（保留非空主体）
 		const stripped = s.replace(/^(mcp-server-|server-|mcp-)/i, "").replace(/(-mcp-server|-server|-mcp)$/i, "");
 		if (stripped.trim()) {
 			s = stripped.trim();
@@ -421,25 +390,15 @@ export function deriveMcpServerName(raw: string): string {
 		.slice(0, 64);
 }
 
-/** 检查某个 MCP 是否已安装的返回结构 */
 export interface McpCheckResult {
-	/** 是否已在全局或项目中配置了匹配的 MCP 服务器 */
 	installed: boolean;
-	/** 匹配的主服务器当前是否处于 running 状态 */
 	running: boolean;
-	/** 匹配的主服务器是否已启用 */
 	enabled: boolean;
-	/** 最佳匹配的服务器详情（项目级优先于全局级） */
 	server: UiMcpServer | null;
-	/** 所有匹配的服务器列表 */
 	matches: UiMcpServer[];
-	/** 匹配服务器当前已握手的工具列表 */
 	tools: UiMcpToolInfo[];
 }
 
-/**
- * 检查某个 MCP 服务器是否已安装（支持按服务器名称、npm 包名、命令或 URL 匹配）。
- */
 export function checkMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
@@ -455,7 +414,6 @@ export function checkMcpServer(opts: {
 	const derived = deriveMcpServerName(q).toLowerCase();
 	const { servers } = listAllMcpServers(opts);
 
-	// 按匹配度打分：精确名 > 忽略大小写名 > 推导短名相等 > package/args/url/command 包含
 	const scored: Array<{ server: UiMcpServer; score: number }> = [];
 	for (const srv of servers) {
 		const nameLower = srv.name.toLowerCase();
@@ -480,7 +438,6 @@ export function checkMcpServer(opts: {
 			score = 50;
 		}
 		if (score > 0) {
-			// 同分时项目级优先、running 优先
 			if (srv.scope === "project") score += 2;
 			if (srv.status === "running") score += 1;
 			scored.push({ server: srv, score });
@@ -500,35 +457,20 @@ export function checkMcpServer(opts: {
 	};
 }
 
-/** 便捷安装 MCP 服务器的规格（支持 package 快捷方式、stdio command 或 http url） */
 export interface McpInstallSpec {
-	/** 服务器名称（省略时从 package / url / command 自动推导） */
 	name?: string;
-	/** npm 包名快捷安装（如 "@modelcontextprotocol/server-filesystem"），自动转为 npx -y <package> ...args */
 	package?: string;
-	/** 启动命令（stdio 模式，如 "npx" / "uvx" / "node"） */
 	command?: string;
-	/** 命令参数（若同时提供 package，则追加在 npx -y <package> 之后） */
 	args?: string[];
-	/** 工作目录（stdio 模式） */
 	cwd?: string;
-	/** 环境变量 */
 	env?: Record<string, string>;
-	/** 远端 URL（http / streamable-http 模式） */
 	url?: string;
-	/** 远端 HTTP 请求头 */
 	headers?: Record<string, string>;
-	/** 传输类型 */
 	type?: "stdio" | "http" | "streamable-http";
-	/** 超时毫秒数 */
 	timeout?: number;
-	/** 描述 */
 	description?: string;
-	/** 同名服务器已存在时是否覆盖（默认拒绝，防止静默吃掉用户手工配置） */
 	overwrite?: boolean;
-	/** 写入作用域：默认 "project"（.pi/mcp.json），可选 "global" */
 	scope?: McpScope;
-	/** 是否启用（默认 true） */
 	enabled?: boolean;
 }
 
@@ -542,9 +484,6 @@ export interface McpInstallResult {
 	error?: string;
 }
 
-/**
- * 便捷安装/配置一个 MCP 服务器并立即触发 McpBridge 热加载。
- */
 export async function installMcpServer(opts: {
 	agentDir?: string;
 	cwd?: string;
@@ -583,8 +522,6 @@ export async function installMcpServer(opts: {
 	}
 
 	const scope: McpScope = spec.scope === "global" ? "global" : "project";
-	// 重名保护：install 默认拒绝覆盖——promptGuidelines 里的"先 check"只是给模型
-	// 的建议，不拦运行时；静默覆盖会吃掉用户手工配置的同名条目（含私有 token env）
 	const existing = listAllMcpServers({ agentDir: opts.agentDir, cwd: opts.cwd, dataDir: opts.dataDir }).servers.find(
 		(s) => s.name === rawName && s.scope === scope,
 	);
@@ -624,9 +561,7 @@ export async function installMcpServer(opts: {
 	if (opts.bridge) {
 		try {
 			await opts.bridge.reload();
-		} catch {
-			/* bridge reload 内部已吞异常，兜底防御 */
-		}
+		} catch {}
 	}
 
 	const after = listAllMcpServers({

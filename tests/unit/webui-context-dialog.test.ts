@@ -39,19 +39,16 @@ describe("WebUIContext dialog responses contract (issue #747)", () => {
 		const emitted: ServerMessage[] = [];
 		const ctx = new WebUIContext((msg) => emitted.push(msg));
 
-		// OK case
 		const p1 = ctx.confirm("Delete", "Are you sure?");
 		const msg1 = emitted.find((m) => m.type === "dialog");
 		if (msg1 && msg1.type === "dialog") ctx.resolveDialog(msg1.id, true);
 		expect(await p1).toBe(true);
 
-		// Cancel case (false)
 		const p2 = ctx.confirm("Delete", "Are you sure?");
 		const msg2 = emitted.filter((m) => m.type === "dialog")[1];
 		if (msg2 && msg2.type === "dialog") ctx.resolveDialog(msg2.id, false);
 		expect(await p2).toBe(false);
 
-		// Dismiss case (null)
 		const p3 = ctx.confirm("Delete", "Are you sure?");
 		const msg3 = emitted.filter((m) => m.type === "dialog")[2];
 		if (msg3 && msg3.type === "dialog") ctx.resolveDialog(msg3.id, null);

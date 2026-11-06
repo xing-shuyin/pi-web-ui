@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 
-/** Browser links stay native; Electron opens a separate, unprivileged Hub window. */
 export function HubLink({ href, children }: { href: string; children: ReactNode }) {
 	const t = useT();
 	const [failed, setFailed] = useState(false);

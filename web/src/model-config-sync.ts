@@ -1,4 +1,3 @@
-/** Reconcile a server update without overwriting locally edited or deleted rows. */
 export function syncModelDraft<T extends { id: string }>(draft: T[], previous: T[], incoming: T[]): T[] {
 	if (JSON.stringify(draft) === JSON.stringify(previous)) return incoming;
 	const before = new Map(previous.map((model) => [model.id, model]));

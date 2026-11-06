@@ -46,7 +46,6 @@ describe("recordUnknownWsType", () => {
 		expect(r.warn).toBe(false);
 		expect(unknownWsCounts().size).toBe(MAX_UNKNOWN_WS_TYPES);
 		expect(unknownWsCounts().has("one-too-many")).toBe(false);
-		// 已有 key 不受上限影响，照常计数。
 		expect(recordUnknownWsType("t0", 0).count).toBe(2);
 	});
 });

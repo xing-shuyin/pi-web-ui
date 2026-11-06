@@ -149,7 +149,7 @@ describe("refresh cancellation isolation", () => {
 		const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
 			expect(init?.signal).toBeDefined();
 			entered.resolve();
-			return release.promise; // Deliberately ignores abort: commit still must be guarded.
+			return release.promise;
 		});
 		const pending = refreshMcpAccessToken({ ...options(controller.signal), fetch });
 		const rejected = expect(pending).rejects.toThrow();
@@ -291,7 +291,6 @@ describe("HTTP request auth lifecycle", () => {
 		expect(refreshSignal?.aborted).toBe(true);
 		release.resolve(json({ access_token: "late" }));
 		await vi.waitFor(() => expect((c as any).pending.size).toBe(0));
-		// Drain the late refresh's body/commit continuations before checking disk.
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(load()[key].tokens.access_token).toBe("old");
 		expect(fetch).toHaveBeenCalledTimes(phase === "401" ? 2 : 1);

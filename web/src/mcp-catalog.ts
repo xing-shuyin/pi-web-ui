@@ -1,11 +1,3 @@
-/**
- * 公开 MCP (Model Context Protocol) 核心服务器市场清单与平台资源
- *
- * 聚合官方标准规范、开放注册中心、开发者插件市场与社区精选列表链接，
- * 供用户浏览、发现并在自己的智能体环境中按 MCP 规范引入能力。
- * 全量市场链接均经自动化测试真实可访问（HTTP 200 OK）。
- */
-
 export type McpMarketCategory = "official" | "marketplace" | "community" | "directory";
 
 export interface McpMarketItem {
@@ -24,9 +16,6 @@ export interface McpMarketItem {
 }
 
 export const MCP_MARKETS: McpMarketItem[] = [
-	// ==========================================
-	// 1. 国内生态 / 中文精选 MCP 插件市场与列表
-	// ==========================================
 	{
 		id: "awesome-mcp-zh",
 		name: "Awesome MCP ZH (中文精选合集)",
@@ -75,9 +64,6 @@ export const MCP_MARKETS: McpMarketItem[] = [
 		tags: ["中文精选", "多语言库", "客户端", "开发指南"],
 	},
 
-	// ==========================================
-	// 2. 海外主流与开放注册插件市场（打开直接是 MCP 列表）
-	// ==========================================
 	{
 		id: "smithery-ai",
 		name: "Smithery.ai MCP Registry",
@@ -231,9 +217,6 @@ export const MCP_MARKETS: McpMarketItem[] = [
 	},
 ];
 
-/**
- * 公开 MCP (Model Context Protocol) 预设与本地配置模板（向后兼容）
- */
 export interface PublicMcpServer {
 	id: string;
 	name: string;

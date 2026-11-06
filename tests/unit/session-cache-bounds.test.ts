@@ -1,5 +1,4 @@
-/** Metadata LRU, invalidation and file-stat reuse; streaming search never retains full text. */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, statSync, utimesSync } from "node:fs";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { searchSessions } from "../../server/session-search.js";
@@ -7,11 +6,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ClientSession } from "../../server/agent-service.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
+import * as sessionListScan from "../../server/session-list-scan.js";
 
-// 私有静态字段/方法：运行时都挂在 class 上，经 cast 访问（同 fake-this 思路）
 const CS = ClientSession as unknown as Record<string, any>;
 
-/** fake this：loadSessionInfos / invalidateSessionInfos 只触静态缓存与 this.cwd。 */
 function svcWith(cwd: string) {
 	const svc = fakeClientSession() as { cwd: string };
 	svc.cwd = cwd;
@@ -46,7 +44,6 @@ const originalEnv = process.env.PI_CODING_AGENT_SESSION_DIR;
 
 beforeAll(() => {
 	tmp = mkdtempSync(join(tmpdir(), "piwui-session-cache-"));
-	// 小转录：全文远小于 256K 封顶
 	writeFileSync(
 		join(tmp, "a.jsonl"),
 		transcript("sess-a", [
@@ -54,8 +51,6 @@ beforeAll(() => {
 			{ role: "assistant", text: "hi there" },
 		]),
 	);
-	// 大转录：全文 > 256K 字符。首条消息（进 firstMessage 元信息）只含 head_marker，
-	// tail_marker 位于第二条消息尾部，不进入 firstMessage 元信息。
 	writeFileSync(
 		join(tmp, "big.jsonl"),
 		transcript("sess-big", [
@@ -86,7 +81,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	// 防止用例内对上限常量的临时改写泄漏
 	CS.SESSION_FILE_CACHE_MAX = 2048;
 	CS.SESSION_LIST_PARSE_LIMIT = 260;
 });
@@ -110,7 +104,6 @@ describe("列表模式提前停止解析（listOnly）", () => {
 						}),
 					].join("\n"),
 				);
-				// s11 最新，s0 最旧
 				const t = new Date(base + i * 1000);
 				utimesSync(p, t, t);
 			}
@@ -120,19 +113,15 @@ describe("列表模式提前停止解析（listOnly）", () => {
 			};
 			const listed = await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true });
 			const ids = listed.map((i) => i.id);
-			// 并发 4 的工作池最多多解析 3 个；无论如何不会扫完 12 个，且最新的两条一定在内
 			expect(ids.length).toBeGreaterThanOrEqual(2);
 			expect(ids.length).toBeLessThan(12);
 			expect(ids.slice(0, 2)).toEqual(["id-11", "id-10"]);
 			expect(CS.sessionInfosCache.get([...CS.sessionInfosCache.keys()][0]).complete).toBe(false);
 
-			// 再次列表请求：命中（不完整）缓存
 			expect(await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true })).toBe(listed);
-			// 全集请求（搜索 / 按 id 定位）：不得复用不完整缓存
 			const full = await proto.loadSessionInfos.call(svcWith(dir));
 			expect(full).toHaveLength(12);
 			expect(CS.sessionInfosCache.get([...CS.sessionInfosCache.keys()][0]).complete).toBe(true);
-			// 完整缓存可服务后续列表请求
 			expect(await proto.loadSessionInfos.call(svcWith(dir), undefined, { listOnly: true })).toBe(full);
 		} finally {
 			if (prevEnv === undefined) delete process.env.PI_CODING_AGENT_SESSION_DIR;
@@ -151,7 +140,7 @@ describe("sessionFileCache LRU（issue #440）", () => {
 		expect(CS.sessionFileCache.size).toBe(3);
 		CS.sessionFileCacheStore("k4", { mtime: 1, size: 1, info: dummyInfo("k4") });
 		expect(CS.sessionFileCache.size).toBe(3);
-		expect(CS.sessionFileCache.has("k1")).toBe(false); // 最旧被淘汰
+		expect(CS.sessionFileCache.has("k1")).toBe(false);
 		expect(CS.sessionFileCache.has("k4")).toBe(true);
 	});
 
@@ -160,7 +149,6 @@ describe("sessionFileCache LRU（issue #440）", () => {
 		CS.sessionFileCacheStore("k1", { mtime: 1, size: 1, info: dummyInfo("k1") });
 		CS.sessionFileCacheStore("k2", { mtime: 1, size: 1, info: dummyInfo("k2") });
 		CS.sessionFileCacheStore("k3", { mtime: 1, size: 1, info: dummyInfo("k3") });
-		// k1 命中 → 续期到最新端；再写入 k4 时被淘汰的是未命中的 k2
 		const hit = CS.sessionFileCacheLookup("k1");
 		expect(hit?.info.path).toBe("k1");
 		CS.sessionFileCacheStore("k4", { mtime: 1, size: 1, info: dummyInfo("k4") });
@@ -174,7 +162,6 @@ describe("sessionFileCache LRU（issue #440）", () => {
 describe("invalidateSessionInfos 清理语义（issue #440 后保持）", () => {
 	const p1 = resolve("/x/a.jsonl");
 	const p2 = resolve("/x/b.jsonl");
-	// private 方法：同 fake-this 模式经 cast 取原型实现
 	const invalidate = (ClientSession.prototype as unknown as Record<string, (this: unknown, filePath?: string) => void>)
 		.invalidateSessionInfos;
 
@@ -184,8 +171,54 @@ describe("invalidateSessionInfos 清理语义（issue #440 后保持）", () => 
 		CS.sessionInfosCache.set("somecwd", { infos: [], at: Date.now() });
 		invalidate.call(svcWith("/x"), p1);
 		expect(CS.sessionFileCache.has(p1)).toBe(false);
-		expect(CS.sessionFileCache.has(p2)).toBe(true); // 其他文件不受影响
+		expect(CS.sessionFileCache.has(p2)).toBe(true);
 		expect(CS.sessionInfosCache.size).toBe(0);
+	});
+
+	it("rebuilds pending history scans after deletion instead of republishing the deleted session", async () => {
+		const svc = svcWith(tmp) as any;
+		const deleted = resolve(tmp, "a.jsonl");
+		const scan = sessionListScan.scanSessionListInfo;
+		let started!: () => void;
+		const ready = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let blocked = false;
+		const spy = vi.spyOn(sessionListScan, "scanSessionListInfo").mockImplementation(async (...args) => {
+			const result = await scan(...args);
+			if (resolve(args[0]) === deleted && !blocked) {
+				blocked = true;
+				started();
+				await gate;
+			}
+			return result;
+		});
+		const pending = svc.loadSessionInfos(tmp, { listOnly: true });
+		try {
+			await ready;
+			rmSync(deleted);
+			svc.invalidateSessionInfos(deleted);
+			const refreshed = svc.loadSessionInfos(tmp, { listOnly: true });
+			release();
+			for (const infos of await Promise.all([pending, refreshed])) {
+				expect(infos.some((info: SessionInfo) => resolve(info.path) === deleted)).toBe(false);
+				expect(infos.some((info: SessionInfo) => info.path.endsWith("big.jsonl"))).toBe(true);
+			}
+			expect(CS.sessionFileCache.has(deleted)).toBe(false);
+			expect(
+				[...CS.sessionInfosCache.values()]
+					.flatMap((entry: any) => entry.infos)
+					.some((info) => resolve(info.path) === deleted),
+			).toBe(false);
+		} finally {
+			release();
+			await pending;
+			spy.mockRestore();
+		}
 	});
 
 	it("不带 filePath：只清列表缓存，文件元信息缓存保留", () => {
@@ -210,7 +243,7 @@ describe("转录全文拆分与按需加载（issue #440）", () => {
 		const a = infos.find((i) => i.id === "sess-a")!;
 		expect(a.firstMessage).toBe("hello world");
 		expect(a.messageCount).toBe(2);
-		expect(a.allMessagesText).toBe(""); // 拆分：列表不携带全文
+		expect(a.allMessagesText).toBe("");
 		const cached = CS.sessionFileCache.get(resolve(join(tmp, "a.jsonl")));
 		expect(cached?.info.allMessagesText).toBe("");
 		expect(cached?.mtime).toBeGreaterThan(0);
@@ -219,7 +252,6 @@ describe("转录全文拆分与按需加载（issue #440）", () => {
 	it("mtime/size 未变：重扫时复用缓存里的同一 info 对象（不重读盘）", async () => {
 		const proto = ClientSession.prototype as unknown as { loadSessionInfos: () => Promise<{ id: string }[]> };
 		const first = await proto.loadSessionInfos.call(svcWith(tmp));
-		// 只清列表 fridge，保留单文件缓存 → 第二次扫描应从 sessionFileCache 命中
 		CS.sessionInfosCache.clear();
 		const second = await proto.loadSessionInfos.call(svcWith(tmp));
 		expect(second.find((i) => i.id === "sess-a")).toBe(first.find((i) => i.id === "sess-a"));
@@ -243,7 +275,6 @@ describe("转录全文拆分与按需加载（issue #440）", () => {
 		const stat = statSync(path);
 		writeFileSync(path, "\n", { flag: "a" });
 		utimesSync(path, stat.atime, stat.mtime);
-		// Filesystem timestamp precision varies; pin the cached stat to the actual restored value.
 		CS.sessionFileCache.get(resolve(path)).mtime = statSync(path).mtimeMs;
 		CS.sessionInfosCache.clear();
 		const second = await proto.loadSessionInfos.call(svcWith(tmp));
@@ -258,7 +289,6 @@ describe("转录全文拆分与按需加载（issue #440）", () => {
 		const byText = await searchSessions(infos, "hi there");
 		expect(byText.map((hit) => hit.session.id)).toEqual(["sess-a"]);
 		expect(byText[0].anchors).toEqual([{ role: "assistant", timestamp: 1700000000000 }]);
-		// Same-size rewrite and restored mtime: a stale metadata object cannot serve body text.
 		writeFileSync(
 			path,
 			transcript("sess-a", [

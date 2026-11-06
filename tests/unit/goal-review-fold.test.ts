@@ -8,11 +8,6 @@ import { CollapsedMessage } from "../../web/src/components/CollapsedMessage.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { UiMessage } from "../../web/src/types.js";
 
-/**
- * 审查回合折叠：指令（含 [goal-review] 标记的 user 消息）与纯 verdict JSON
- * 默认折叠成摘要行（结论卡已有人话翻译，裸 JSON 只留审计入口）。
- */
-
 const user = (text: string): UiMessage =>
 	({ id: "u1", role: "user", content: [{ type: "text", text }] }) as unknown as UiMessage;
 const assistant = (text: string): UiMessage =>

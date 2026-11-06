@@ -1,19 +1,3 @@
-/**
- * delegate_task —— 结构化派单工具（oh-my-pi 委派协议的代码级硬化）。
- *
- * 背景：单纯靠提示词要求模型“派单写详细”是没有强制力的——模型糊弄也不会有
- * 任何后果。本工具把六段式派单格式写进参数 schema + 服务端校验：缺段/太短/
- * 模板不可用直接报错打回（错误文本留在上下文里，模型补全后重试）。
- *
- * 与 subagent_spawn 的关系：并存。subagent_spawn 是通用自由派单；delegate_task
- * 是走 specialist 模板的结构化派单（agent 必填且必须是启用的模板）。执行体复用
- * 同一条 spawn 通道（SubagentToolHost.spawnSubagent）：真子代理会话、白名单、
- * 模型优先级、左栏徽标、等待/改向/停止全套机制都不用重写。
- *
- * 纯函数（validateDelegation / buildDelegationPrompt）可单测；语言按 ServerLang
- * 切中英（section 头固定英文——子代理侧各模板早已习惯英文段头；面向派单者的
- * 错误文本走 pick，key 缺失时自动回落英文，见 server/i18n.ts）。
- */
 import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { pick, type ServerLang } from "./i18n.js";
@@ -21,17 +5,13 @@ import { DELEGATE_TASK_TOOL_NAME } from "./tool-manager.js";
 import { subagentTitle, type SubagentToolHost } from "./subagents.js";
 import { parseRequiredTools, resolveSecurityMode, type SubagentSpawnExtra } from "./subagent-security-gate.js";
 
-/** 工具名（唯一值在 tool-manager.ts；本别名保留：前端派单卡片与旧导入沿用它）。 */
 export const DELEGATE_TOOL_NAME = DELEGATE_TASK_TOOL_NAME;
 
-/** 各段最小长度（trim 后字符数）：TASK 必须具体，OUTCOME 必须可验收，其余段不许空着。 */
 const MIN_TASK = 20;
 const MIN_OUTCOME = 10;
 
-/** 六段的固定英文名（校验报错与拼装 prompt 共用，子代理侧无需翻译）。 */
 const SECTIONS = ["TASK", "EXPECTED OUTCOME", "REQUIRED TOOLS", "MUST DO", "MUST NOT DO", "CONTEXT"] as const;
 
-/** 归一化后的派单输入（执行前把脏参数洗成字符串；非字符串一律按缺失处理）。 */
 export interface DelegationInput {
 	agent: string;
 	task: string;
@@ -48,7 +28,6 @@ function str(v: unknown): string {
 	return typeof v === "string" ? v : "";
 }
 
-/** 把模型传进来的脏参数归一化（缺字段/错类型不抛错，交给校验报错）。 */
 export function normalizeDelegation(params: unknown): DelegationInput {
 	const p = (params && typeof params === "object" ? params : {}) as Record<string, unknown>;
 	return {
@@ -64,10 +43,6 @@ export function normalizeDelegation(params: unknown): DelegationInput {
 	};
 }
 
-/**
- * 校验派单输入；通过返回 null，否则返回直接回给模型的错误文本（已按 lang 选好语言）。
- * `usableNames` = 当前可用模板名（host.listTemplates()，只含 enabled 的）。
- */
 export function validateDelegation(
 	input: DelegationInput,
 	usableNames: string[],
@@ -105,7 +80,6 @@ export function validateDelegation(
 	return null;
 }
 
-/** 拼装发给子代理的标准六段 prompt（段头固定英文；收尾一行为汇报纪律）。 */
 export function buildDelegationPrompt(input: DelegationInput, lang: ServerLang = "en"): string {
 	const firstLine = input.task.split("\n")[0]?.trim().slice(0, 80) || input.agent;
 	const closer =
@@ -178,7 +152,6 @@ const delegateSchema = Type.Object({
 	),
 });
 
-/** 结构化派单工具：校验六段 → 拼装标准 prompt → 走 host.spawnSubagent 真子代理。 */
 export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => ServerLang): ToolDefinition {
 	const getLang: () => ServerLang = lang ?? host.lang ?? (() => "en");
 	const text = (t: string, details: unknown = {}): { content: { type: "text"; text: string }[]; details: unknown } => ({
@@ -216,8 +189,6 @@ export function makeDelegateTaskTool(host: SubagentToolHost, lang?: () => Server
 				allowedTools: parsedTools.allowedTools,
 				securityMode,
 			};
-			// 与 subagent_spawn 同理：spawn 通道是唯一的失败面（数量上限 / runtime
-			// 创建失败都经由 host 抛错），转成返回文本让 AI 能读到原因并修正重试。
 			let convId: string;
 			try {
 				convId = await host.spawnSubagent(

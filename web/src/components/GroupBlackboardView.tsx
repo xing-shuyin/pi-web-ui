@@ -202,7 +202,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 		return tabs;
 	}, [parsed.sections, zh]);
 
-	// Sync when props change if not editing
 	useEffect(() => {
 		if (!isEditing) {
 			setTitle(blackboard?.title ?? "");
@@ -249,7 +248,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 			const expectedVersion = blackboard?.version ?? 0;
 
 			if (activeTab !== "all") {
-				// 尝试单分区接口提交
 				let sectionSaved = false;
 				try {
 					const secRes = await fetch(
@@ -271,12 +269,9 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 					if (secRes.ok) {
 						sectionSaved = true;
 					}
-				} catch {
-					// Fall through to full blackboard sync
-				}
+				} catch {}
 
 				if (!sectionSaved) {
-					// 全量同步回写
 					const sectionTitle = activePresetDef
 						? zh
 							? activePresetDef.titleZh
@@ -317,7 +312,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 					}
 				}
 			} else {
-				// 全量保存
 				if (!content.trim()) {
 					setError(zh ? "黑板内容不能为空" : "Blackboard content cannot be empty");
 					setSaving(false);
@@ -398,7 +392,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 
 	return (
 		<div className="dg-blackboard-view">
-			{/* 顶部元信息与操作栏 */}
 			<div className="dg-blackboard-header">
 				<div className="dg-blackboard-meta">
 					<span className="dg-blackboard-badge" title={zh ? "黑板协议版本" : "Protocol version"}>
@@ -468,7 +461,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 				</div>
 			</div>
 
-			{/* 结构化分区页签栏 (Tabs) */}
 			<div className="dg-bb-tabs" role="tablist">
 				{availableTabs.map((tab) => {
 					const isActive = activeTab === tab.id;
@@ -502,7 +494,6 @@ export function GroupBlackboardView({ roomId, blackboard, disabled = false, onSa
 				</div>
 			)}
 
-			{/* 内容主体：编辑态与查看态 */}
 			{isEditing ? (
 				<div className="dg-blackboard-editor">
 					{activeTab === "all" ? (

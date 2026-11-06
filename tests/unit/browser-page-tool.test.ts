@@ -1,15 +1,3 @@
-/**
- * browser_page customTool + 页面调用桥单测（零 token / 零端口 / 零浏览器）。
- *
- * 覆盖：工具定义（名字、op 必填、args 只收已提供参数、timeoutMs 归一）、
- * execute 成功/失败、ClientSession.pageCall 的超时与无前端错误、resolvePageCall
- * 对未知 id 静默忽略、cancelPendingPageCalls、tool-manager 目录登记。
- *
- * 取舍说明：ClientSession 的构造函数要真起 SDK/文件监视/PTY，单测里造不出（也不
- * 该造）。这里改用 `fakeClientSession()` 只补上 pageCall 用到的
- * 那几个私有字段（disposed / sinks / pendingPageCalls / pageSeq），跑的是**真实**
- * 的 pageCall / resolvePageCall / cancelPendingPageCalls 实现，不是假替身。
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	ClientSession,
@@ -24,7 +12,6 @@ import {
 import { AGENT_TOOL_CATALOG, BROWSER_PAGE_TOOL_NAME, defaultDisabledAgentTools } from "../../server/tool-manager.js";
 import { fakeClientSession } from "../helpers/fake-session.js";
 
-/** 页面调用桥的真实实现 + 只补最小私有字段（见文件头取舍说明）。 */
 function pageBridge(opts: { sinks?: number; disposed?: boolean } = {}) {
 	const cs = fakeClientSession() as unknown as Record<string, unknown>;
 	cs.disposed = opts.disposed ?? false;
@@ -42,7 +29,6 @@ function pageBridge(opts: { sinks?: number; disposed?: boolean } = {}) {
 	return calls;
 }
 
-/** 构造最小 clientSession mock：记录收到的请求，返回预设结果。 */
 function mockSession(behave: (req: PageCallRequest) => Promise<PageCallResult>) {
 	const invoked = {
 		reqs: [] as PageCallRequest[],
@@ -76,7 +62,6 @@ describe("makeBrowserPageTool 工具定义", () => {
 			required: string[];
 		};
 		expect(parsed.required).toEqual(["op"]);
-		// schema 里的可选字段必须与 collectBrowserPageArgs 的白名单一致。
 		const argsKeys = Object.keys(
 			collectBrowserPageArgs({ what: 1, selector: 1, text: 1, url: 1, code: 1, all: 1, index: 1, maxEdge: 1 }),
 		).sort();
@@ -95,13 +80,20 @@ describe("makeBrowserPageTool 工具定义", () => {
 		expect(guidelines).toContain("browser_page");
 	});
 
+	it("提示词同时支持原生标签页和扩展，保留原 schema", () => {
+		const tool = makeBrowserPageTool(mockSession(async () => ({ ok: true })));
+		expect(tool.description).toContain("AI Browser");
+		expect(tool.description).toContain("page-picker");
+		expect(tool.description).toContain("snapshot");
+		expect((tool.promptGuidelines ?? []).join("\n")).toContain("tabId as target");
+	});
+
 	it("execute 只把已提供的参数收进 args，并带上 op/target/timeoutMs", async () => {
 		const session = mockSession(async () => ({ ok: true, result: "hi" }));
 		const tool = makeBrowserPageTool(session, "c7");
 		await tool.execute("t1", { op: "type", selector: "#q", text: "hello", index: 0 }, undefined, undefined, ctx);
 		const req = session.invoked.reqs[0];
 		expect(req.op).toBe("type");
-		// 提供的：selector/text/index；没提供的（what/url/code/all）不入包。
 		expect(req.args).toEqual({ selector: "#q", text: "hello", index: 0 });
 		expect(req.target).toBeUndefined();
 		expect(req.timeoutMs).toBe(30_000);
@@ -119,9 +111,9 @@ describe("makeBrowserPageTool 工具定义", () => {
 			ctx,
 		);
 		expect(session.invoked.reqs[0].target).toBe("https://a.test");
-		expect(session.invoked.reqs[0].timeoutMs).toBe(1_000); // 夹到下限
+		expect(session.invoked.reqs[0].timeoutMs).toBe(1_000);
 		await tool.execute("t2", { op: "read", timeoutMs: 999_999 }, undefined, undefined, ctx);
-		expect(session.invoked.reqs[1].timeoutMs).toBe(120_000); // 夹到上限
+		expect(session.invoked.reqs[1].timeoutMs).toBe(120_000);
 	});
 
 	it("op 空缺 / 空白 → 报错且不碰桥", async () => {
@@ -185,7 +177,6 @@ describe("纯格式化/归一（页面桥共用）", () => {
 	it("formatPageCallResult：空结果也有话说", () => {
 		expect(formatPageCallResult("")).toBe("(empty)");
 		expect(formatPageCallResult(null)).toBe("(no result)");
-		// 循环引用不炸工具调用。
 		const cyc: Record<string, unknown> = {};
 		cyc.self = cyc;
 		expect(formatPageCallResult(cyc)).toBe("[object Object]");
@@ -210,7 +201,6 @@ describe("ClientSession 页面调用桥", () => {
 		expect(bridge.pending().get(id)?.conversationId).toBe("c1");
 		bridge.resolvePageCall(id, true, { pages: ["x"] });
 		await expect(pending).resolves.toEqual({ ok: true, result: { pages: ["x"] } });
-		// 清理干净：不留下计时器/登记项。
 		expect(bridge.pending().size).toBe(0);
 		expect(vi.getTimerCount()).toBe(0);
 	});
@@ -235,7 +225,6 @@ describe("ClientSession 页面调用桥", () => {
 		const id = [...bridge.pending().keys()][0];
 		await vi.advanceTimersByTimeAsync(1_000);
 		await expect(pending).resolves.toMatchObject({ ok: false });
-		// 迟到回包：不抛错（这是正常竞态，不是 bug）。
 		expect(() => bridge.resolvePageCall(id, true, "late")).not.toThrow();
 		expect(() => bridge.resolvePageCall("p-999", true, "unknown")).not.toThrow();
 	});
@@ -295,19 +284,10 @@ describe("tool-manager 登记", () => {
 		expect(entry).toBeDefined();
 		expect(entry?.group).toBe("other");
 		expect(entry?.defaultOn).toBe(false);
-		// 默认关 = 在默认禁用名单里。
 		expect(defaultDisabledAgentTools()).toContain(BROWSER_PAGE_TOOL_NAME);
 	});
 });
 
-// ------------------------------------------------------------------ 截图（op:"shot"）
-
-/**
- * 截图这条路要回答一个体验问题：**主模型看不到图时谁来"看"**。
- * 规则：能看图就直接给 image block（当轮可见）；看不到就交给视觉桥转写成文字证据
- * （与用户粘贴图片同一套逻辑，设置里开着就自动生效）；连视觉桥也没有就把原因写进文本，
- * 而不是抛错让模型以为工具坏了。
- */
 describe('截图（op:"shot"）的结果怎么给模型', () => {
 	const shotResult = {
 		ok: true as const,
@@ -330,7 +310,6 @@ describe('截图（op:"shot"）的结果怎么给模型', () => {
 		)) as { content: Array<Record<string, unknown>> };
 		const image = out.content.find((c) => c.type === "image");
 		expect(image).toMatchObject({ type: "image", data: "QUJD", mimeType: "image/jpeg" });
-		// 说明文字里带上「截的是哪一页的哪个元素、多大」
 		const text = String(out.content[0]?.text ?? "");
 		expect(text).toContain("#card");
 		expect(text).toContain("800×600");
@@ -352,7 +331,7 @@ describe('截图（op:"shot"）的结果怎么给模型', () => {
 			{ op: "shot" },
 			undefined,
 		)) as { content: Array<{ text?: string }> };
-		expect(out.content).toHaveLength(1); // 没有 image block
+		expect(out.content).toHaveLength(1);
 		expect(out.content[0].text).toContain("<vision-bridge>");
 		expect(out.content[0].text).toContain("卡片标题");
 		expect(calls[0]).toMatchObject({ data: "QUJD", mimeType: "image/jpeg" });

@@ -1,14 +1,3 @@
-/* File-chat E2E test: boots the compiled server, opens the built UI in
- * headless Chrome, and drives drag-drop / upload of non-image files:
- *
- *   1. drag a small text file onto the input bar -> 📄 chip
- *   2. upload a binary file via the attach button -> second 📄 chip
- *   3. send -> both render as reference cards (path only, file content is
- *      never injected into the prompt)
- *
- * Works with system Chrome; no pi model auth needed (the file aside renders
- * even when the model call fails).
- * Run:  npm run build && node tests/file-upload-browser-test.mjs */
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,9 +21,7 @@ server.stderr.on("data", (d) => process.stdout.write(`[srv!] ${d}`));
 process.on("exit", () => {
 	try {
 		process.kill(-server.pid, "SIGKILL");
-	} catch {
-		/* gone */
-	}
+	} catch {}
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -54,9 +41,7 @@ async function waitServer() {
 		try {
 			const r = await fetch(`http://localhost:${PORT}/api/health`);
 			if (r.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		} catch {}
 		await sleep(250);
 	}
 	throw new Error("server did not start");
@@ -81,7 +66,6 @@ async function main() {
 	await page.waitForSelector(".topbar", { timeout: 5000 });
 	console.log("app booted");
 
-	// 1) Drag a small text file onto the input bar.
 	await page.evaluate(
 		async ({ name, text }) => {
 			const dt = new DataTransfer();
@@ -94,15 +78,12 @@ async function main() {
 	await page.waitForSelector(".attach-chip.file", { timeout: 8000 });
 	check("drag: 📄 text chip appeared", true);
 
-	// 2) Upload a binary file via the hidden file input.
 	const binFile = join(workdir, "data.bin");
 	writeFileSync(binFile, Buffer.from([0, 1, 2, 250, 251, 252, 253, 254, 255]));
 	await page.locator('input[type="file"]').setInputFiles(binFile);
 	await page.waitForTimeout(800);
 	check("upload: two 📄 chips", (await page.locator(".attach-chip.file").count()) === 2);
 
-	// 3) SVG must NOT go through the image pipeline (createImageBitmap can't
-	//    decode it) — it attaches as a plain file (📄 chip, not 🖼).
 	const svgFile = join(workdir, "logo.svg");
 	writeFileSync(
 		svgFile,
@@ -117,7 +98,6 @@ async function main() {
 			(await page.locator(".attach-chip.file").allTextContents()).some((t) => t.includes("logo.svg")),
 	);
 
-	// 4) Send; both files must be path references (content never injected).
 	await page.fill(".inputbox textarea", "看看这两个文件");
 	await page.keyboard.press("Enter");
 	await page.waitForSelector(".attachcard", { timeout: 20000 });

@@ -40,7 +40,6 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 	const [modalOpen, setModalOpen] = useState(false);
 	const [editingHook, setEditingHook] = useState<GroupWebhook | null>(null);
 
-	// Hub Relay State
 	const [hubStatusUrl, setHubStatusUrl] = useState("");
 	const [customRelayUrl, setCustomRelayUrl] = useState("");
 	const [showRelayConfig, setShowRelayConfig] = useState(false);
@@ -60,7 +59,6 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 		abortRef.current = controller;
 		try {
 			setError("");
-			// Fetch webhooks & room details
 			const [webhooksRes, roomRes, statusRes] = await Promise.all([
 				fetch(withToken(appUrl(`/api/device-center/rooms/${encodeURIComponent(roomId)}/webhooks`)), {
 					signal: controller.signal,
@@ -284,7 +282,6 @@ export function GroupWebhooks({ roomId, disabled = false }: GroupWebhooksProps) 
 				</div>
 			)}
 
-			{/* Hub Relay Base URL Settings Bar */}
 			<div className="group-webhook-relay-bar">
 				<div className="group-webhook-relay-info">
 					<FiGlobe className="icon-hub" />

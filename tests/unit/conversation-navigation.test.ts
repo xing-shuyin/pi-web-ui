@@ -3,9 +3,8 @@ import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { notifySessionSwitch, registerSessionSwitchSink, resetComposerSinks } from "../../web/src/composer-bridge";
 
-// Exercise the send path without mounting the application's socket/runtime tree.
 const source = readFileSync(new URL("../../web/src/use-chat.ts", import.meta.url), "utf8");
-const begin = source.indexOf("\t\t// Every conversation entry point");
+const begin = source.search(/if\s*\(\s*msg\.type === "new_chat" \|\|/);
 const end = source.indexOf('\t\tif (msg.type === "set_cwd" && msg.path)', begin);
 const navigation = source.slice(begin, end);
 
@@ -54,7 +53,6 @@ describe("conversation navigation from group view", () => {
 			conversationId: "c1",
 		};
 
-		// 1. 目标正是当前 sessionId
 		runInNewContext(transitionLogic, {
 			msg: { type: "switch_session", sessionId: "0191a07a-32d0-7208-b133-cf7870ab850e" },
 			curState,
@@ -62,7 +60,6 @@ describe("conversation navigation from group view", () => {
 		});
 		expect(dispatch).not.toHaveBeenCalled();
 
-		// 2. 目标是截断的前缀/短 UUID 子串
 		runInNewContext(transitionLogic, {
 			msg: { type: "switch_session", sessionId: "1a07a-32d0-7208-b133-cf7870ab850e" },
 			curState,
@@ -70,7 +67,6 @@ describe("conversation navigation from group view", () => {
 		});
 		expect(dispatch).not.toHaveBeenCalled();
 
-		// 3. 目标是不同会话时正常触发 transition_start
 		runInNewContext(transitionLogic, {
 			msg: { type: "switch_session", sessionId: "other-session-uuid" },
 			curState,

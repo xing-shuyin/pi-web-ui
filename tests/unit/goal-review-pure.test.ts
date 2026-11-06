@@ -1,11 +1,3 @@
-/**
- * 目标模式的纯函数单测（parseReviewerVerdict / buildDiffFingerprint）。
- *
- * 文件原名 goal-autonomous.test.ts：它测的是 v1 的「自治标记」路径
- * （isGoalCompletionSignal + 本地复刻的 review 策略），该路径已随目标模式 2.0
- * 删除；停滞/同错/熔断的真实逻辑现在由 server/goal-service.ts 的委托循环持有，
- * 行为级覆盖见 tests/unit/goal-delegated.test.ts。
- */
 import { describe, it, expect } from "vitest";
 import { parseReviewerVerdict, buildDiffFingerprint, GIT_DIFF_CAP } from "../../server/goal-service.js";
 
@@ -100,7 +92,6 @@ describe("目标审查未通过与终态保留 (Goal Review Retention)", () => {
 			status: "",
 		};
 
-		// 模拟达到最大轮数失败逻辑
 		const isLastRound = g.maxRounds > 0 && g.round >= g.maxRounds;
 		expect(isLastRound).toBe(true);
 
@@ -108,7 +99,6 @@ describe("目标审查未通过与终态保留 (Goal Review Retention)", () => {
 		g.verdict = "fail";
 		g.status = `已达最大轮数（${g.maxRounds}），目标仍未通过`;
 
-		// 核心断言：目标文本和会话 id 绝不能被抹杀为 null
 		expect(g.goal).toBe("实现高性能缓存模块并补全单测");
 		expect(g.conversationId).toBe("conv-123");
 		expect(g.verdict).toBe("fail");
@@ -139,13 +129,10 @@ describe("目标审查未通过与终态保留 (Goal Review Retention)", () => {
 			return !!(g.goal && !g.reviewing && g.verdict === "pending");
 		};
 
-		// 新设定目标：应当触发
 		expect(canTriggerReview({ goal: "test", reviewing: false, verdict: "pending" })).toBe(true);
 
-		// 失败终态：不应自动重复触发
 		expect(canTriggerReview({ goal: "test", reviewing: false, verdict: "fail" })).toBe(false);
 
-		// 熔断终态：不应自动重复触发
 		expect(canTriggerReview({ goal: "test", reviewing: false, verdict: "blocked" })).toBe(false);
 	});
 });

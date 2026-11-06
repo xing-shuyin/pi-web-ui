@@ -97,7 +97,6 @@ describe("workspace & session streaming transition", () => {
 					type: "message",
 					message: { role: "user", timestamp: 1700000001000, content: "Initial prompt" },
 				}),
-				// Large >512-byte assistant/toolResult message line
 				JSON.stringify({
 					type: "message",
 					message: {

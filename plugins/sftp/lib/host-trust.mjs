@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { saveTrustedHostKey } from "../../../plugin-sdk/ssh-host-trust.mjs";
 
-/** Short-lived challenges keep host keys server-side and bind consent to the originating workspace. */
 export function createTrustChallenges({ save = saveTrustedHostKey, now = Date.now } = {}) {
 	const pending = new Map();
 	function prune() {

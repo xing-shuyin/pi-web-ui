@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-/** Stage D：项目排序（加载按最近使用、会话期稳定、拖拽/键盘调整）、过滤框、键盘导航、
- *  重命名失焦提交 + 乐观显示、重命名时不出现 input 嵌套在 button 内。 */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -104,7 +102,6 @@ describe("项目排序", () => {
 		});
 		expect(projectOrder()).toEqual(["/w/new", "/w/mid", "/w/old"]);
 
-		// 会话期间 lastUsed 变化不重排（空间记忆稳定），新出现的项目追加到末尾
 		render({
 			projects: [
 				{ path: "/w/old", lastUsed: 9000 },
@@ -132,7 +129,6 @@ describe("项目排序", () => {
 		expect(projectOrder()).toEqual(["/w/b", "/w/c", "/w/a"]);
 		key(head(), "ArrowUp", { altKey: true });
 		expect(projectOrder()).toEqual(["/w/b", "/w/a", "/w/c"]);
-		// 不发任何服务端消息（只是本地视图顺序）
 		expect(
 			sent.filter(
 				(m) => (m as { type: string }).type !== "list_sessions" && (m as { type: string }).type !== "list_projects",
@@ -160,7 +156,6 @@ describe("项目排序", () => {
 				el.dispatchEvent(ev);
 			});
 		};
-		// jsdom 无布局：getBoundingClientRect 全 0，clientY=100 > 中线 → 落在目标之后
 		fire(headRowOf("/w/a"), "dragstart");
 		fire(nodeOf("/w/c"), "dragover");
 		fire(nodeOf("/w/c"), "drop");
@@ -198,7 +193,6 @@ describe("过滤框", () => {
 		expect(projectOrder()).toEqual([]);
 		expect(container.querySelector(".lp-filter-empty")).not.toBeNull();
 
-		// Escape 清空过滤
 		key(input, "Escape");
 		expect(input.value).toBe("");
 		expect(projectOrder()).toEqual(["/w/a", "/w/zeta"]);
@@ -287,13 +281,11 @@ describe("B5：显示更多向服务端翻页", () => {
 		setAppGlobals({ cwd: "/w/a", ready: true, status: "open", workspaceRoots: [] });
 		mount({ projects: [{ path: "/w/a", lastUsed: 2 }], sessions: mk(8), projectSessionsHasMore: { "/w/a": true } });
 		const more = () => container.querySelector<HTMLButtonElement>(".lp-show-more-row");
-		// 本地 8 条全部可见，但服务端还有更多 → 仍显示「显示更多」
 		expect(more()).not.toBeNull();
 		sent.length = 0;
 		act(() => more()!.click());
 		expect(sent).toContainEqual({ type: "list_sessions", path: "/w/a", limit: 400 });
 		expect(more()!.disabled).toBe(true);
-		// 服务端回推更大的一页 → 加载态解除，更多行可见
 		render({ sessions: mk(40), projectSessionsHasMore: {} });
 		expect(more()!.disabled).toBe(false);
 		expect(container.querySelectorAll(".lp-tree-session-item").length).toBe(28);

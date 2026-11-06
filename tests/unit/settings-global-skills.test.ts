@@ -27,7 +27,6 @@ function makeService(overrides: Partial<SettingsHost> = {}): SettingsService {
 		emit: (msg) => void emitted.push(msg),
 		flushSnapshot: () => {},
 		isDisposed: () => false,
-		// Disabled skills have already been filtered out by skillsOverride.
 		getSession: () =>
 			({
 				resourceLoader: {
@@ -174,7 +173,6 @@ describe("global .agents/skills settings (issue #669)", () => {
 		store.saveSettings("test-client", {
 			disabledSkills: [skillName, "deleted-test-skill"],
 		});
-		// Construct again to read the updated persisted settings.
 		const updated = makeService();
 		updated.refreshResources();
 		updated.refreshResources();
@@ -227,17 +225,14 @@ describe("global .agents/skills settings (issue #669)", () => {
 
 	it("dynamically discovers external newly-installed skills on disk even if loader hasn't reloaded", () => {
 		const svc = makeService();
-		// Initial push: no disk skills
 		svc.refreshResources();
 		let state = emitted.filter((msg) => msg.type === "settings_state").at(-1);
 		expect(state?.settings.skills.some((s: any) => s.name === "newly-installed")).toBe(false);
 
-		// Install new skill on disk externally
 		const base = join(home, ".agents", "skills", "newly-installed");
 		mkdirSync(base, { recursive: true });
 		writeFileSync(join(base, "SKILL.md"), `---\nname: newly-installed\ndescription: Dynamically installed\n---\nBody`);
 
-		// Next push: should immediately discover and include the new skill
 		svc.refreshResources();
 		state = emitted.filter((msg) => msg.type === "settings_state").at(-1);
 		expect(state?.settings.skills.some((s: any) => s.name === "newly-installed")).toBe(true);

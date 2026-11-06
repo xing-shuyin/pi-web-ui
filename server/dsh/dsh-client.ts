@@ -1,22 +1,3 @@
-/**
- * dsh-client.ts — stdio JSON-RPC 2.0 客户端 for the pi-web-ui DSH runtime
- * (server/dsh/runtime/launcher.mjs).
- *
- * 协议（每行一个紧凑 JSON 帧，见 dsh-sdk-jsonrpc-server）：
- *   client→server  initialize        → { serverInfo }
- *   client→server  session/prompt    → { messageId }（持久化入队回执）
- *   client→server  shutdown          → {}（运行时有序释放后 exit 0）
- *   server→client  session.event     （每个会话，全量持久事件）
- *   server→client  session.status    （running/idle 转换）
- *   server→client  subagent.started / subagent.finished
- *
- * 官方协议面限制（dsh 0.1.1-rc.2）：无 per-session close、无 prompt 取消、
- * 无 per-prompt 结果。因此：
- *   - 中止 = kill 进程树（会话 JSONL 在磁盘，进程重建不丢）
- *   - 换模型 = 重启运行时（model 在 initialize 固定）
- *   - 会话列表/回放 = 直读 JSONL（见 dsh-serialize.ts）
- */
-
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -26,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { bilingual } from "../i18n.js";
 import { resolveProviderCredential } from "../model-resolver.js";
 
-/** 项目依赖解析（tsc 编译后 dist/server/dsh/ 里向上找 node_modules）。 */
 const require = createRequire(import.meta.url);
 
 export class DshRpcError extends Error {
@@ -47,8 +27,6 @@ export class DshTransportError extends Error {
 	}
 }
 
-/** 读取 DeepSeek API key：<agentDir>/auth.json 的 deepseek.key（ds-web-ui 同款）。
- *  agentDir 缺省为 ~/.pi/agent（尊重 PI_CODING_AGENT_DIR 由调用方传入）。 */
 export function loadDeepSeekKey(agentDir?: string): string | undefined {
 	try {
 		const auth = JSON.parse(
@@ -63,31 +41,18 @@ export function loadDeepSeekKey(agentDir?: string): string | undefined {
 }
 
 export interface DshRuntimeOptions {
-	/** Host admission check, including implicit starts and restarts. */
 	beforeStart?: (cwd: string) => void;
-	/** Revoke bridged execution before kill/restart/close. */
 	onStopping?: () => void;
-	/** 智能体工作区（initialize.cwd + DSH_CWD）。 */
 	cwd: string;
-	/** provider 路由（deepseek-official）。 */
 	provider?: string;
-	/** 模型 id（deepseek-v4-flash / deepseek-v4-pro）。 */
 	model?: string;
-	/** 当前模型所属的服务商 id（如 antigravity-openai、deepseek 等）。 */
 	modelProvider?: string;
-	/** 每次请求输出上限。 */
 	maxTokens?: number;
-	/** DSH_SESSION_ROOT：JSONL 会话持久化根。 */
 	sessionRoot?: string;
-	/** pi-web-ui 数据目录（launcher 从中读 <dataDir>/dsh-patches/*.yml 用户 patch）。 */
 	dataDir?: string;
-	/** pi 配置目录（auth.json 所在；默认 ~/.pi/agent，尊重 PI_CODING_AGENT_DIR）。 */
 	agentDir?: string;
-	/** launcher.mjs 绝对路径（默认 server/dsh/runtime/launcher.mjs）。 */
 	launcher?: string;
-	/** 额外环境变量（DEEPSEEK_API_KEY 等）。 */
 	env?: Record<string, string | undefined>;
-	/** jsonrpc 插件入口（默认项目 node_modules）。 */
 	jsonrpcEntry?: string;
 }
 
@@ -96,7 +61,6 @@ interface PendingRequest {
 	reject: (e: Error) => void;
 }
 
-/** DSH Agent 预设（roster 名录行，字段以运行时树为准）。 */
 export interface DshAgentPreset {
 	id: string;
 	trust: "system" | "user";
@@ -107,10 +71,6 @@ export interface DshAgentPreset {
 	broken?: string;
 }
 
-/**
- * 一个 DSH 运行时子进程。start() 惰性 spawn + initialize 握手；
- * prompt() 按需隐式建会话；kill() 强杀进程树（中止）；restart() 换模型。
- */
 export class DshRuntime {
 	cwd: string;
 	provider: string;
@@ -121,7 +81,6 @@ export class DshRuntime {
 	private dataDir?: string;
 	private agentDir?: string;
 	private launcher: string;
-	/** 额外环境变量（可运行时修改：DSH_PERSONA 等由 launcher env 注入）。 */
 	env: Record<string, string | undefined>;
 	private jsonrpcEntry: string;
 
@@ -138,18 +97,13 @@ export class DshRuntime {
 	private disposed = false;
 	private initialized = false;
 
-	/** PI_WEB_DSH_DEBUG=1 时把 RPC 帧/生命周期事件打到 stderr（诊断用，默认关）。 */
 	private readonly debugEnabled = process.env.PI_WEB_DSH_DEBUG === "1";
 	private debug(...args: unknown[]): void {
 		if (this.debugEnabled) console.error("[dsh:client]", ...args);
 	}
 
-	/** 进程退出回调（kill/abort 后用于重 spawn 前清理）。
-	 *  intentional = 由 kill()/close() 主动触发（反之 = 意外崩溃，供 watchdog 判断）。 */
 	onExit: ((code: number | null, signal: string | null, intentional: boolean) => void) | null = null;
 
-	/** 每次成功 initialize 后触发（含初次启动 / 换模型重启 / watchdog 重启）。
-	 *  宿主用它重新注册一次性资源（如插件工具桥），因为重 spawn 后 ctx 是全新的。 */
 	onStarted: (() => void) | null = null;
 
 	constructor(opts: DshRuntimeOptions) {
@@ -172,7 +126,6 @@ export class DshRuntime {
 				try {
 					return require.resolve("@deepseek-ai/dsh-sdk-jsonrpc-server");
 				} catch {
-					// 回退：相对源码/编译目录向上找项目 node_modules。
 					return join(
 						resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
 						"node_modules",
@@ -186,7 +139,6 @@ export class DshRuntime {
 		this.env = opts.env ?? {};
 	}
 
-	/** 运行时子进程是否存活。 */
 	get alive(): boolean {
 		return !!this.proc && this.proc.exitCode === null;
 	}
@@ -195,7 +147,6 @@ export class DshRuntime {
 		return this.alive;
 	}
 
-	/** 解析当前激活模型对应的运行环境（BaseURL、API Key、CWD 等）与 bare model ID。 */
 	resolveRuntimeConfig(): {
 		env: NodeJS.ProcessEnv;
 		activeProvider: string;
@@ -214,8 +165,6 @@ export class DshRuntime {
 			activeProvider = "deepseek";
 		}
 
-		// 根据当前激活模型所属的 Provider（通过 resolveProviderCredential）
-		// 将对应的 BaseURL 注入到 DEEPSEEK_BASE_URL，将 API Key 注入到 DEEPSEEK_API_KEY
 		const cred = resolveProviderCredential(this.agentDir, activeProvider);
 		const deepseekKey = loadDeepSeekKey(this.agentDir);
 		const resolvedKey = cred.apiKey || (activeProvider === "deepseek" ? deepseekKey : undefined);
@@ -243,7 +192,6 @@ export class DshRuntime {
 		return this.stderrTail;
 	}
 
-	/** 启动子进程 + initialize 握手（幂等；并发调用共享同一个启动任务）。 */
 	start(): Promise<void> {
 		this.beforeStart?.(this.cwd);
 		if (this.disposed) {
@@ -263,8 +211,6 @@ export class DshRuntime {
 			throw new DshTransportError(bilingual(`launcher missing: ${this.launcher}`, `launcher 不存在: ${this.launcher}`));
 		}
 		if (!existsSync(this.jsonrpcEntry)) {
-			// 不写死版本号：依赖版本会随 package.json 升（见 docs/dsh-engine.md §1
-			// 「版本族」），写死的提示迟早骗人。报当前实际解析到的路径即可。
 			throw new DshTransportError(
 				bilingual(
 					`dsh-sdk-jsonrpc-server is not installed (missing ${this.jsonrpcEntry}). Run npm i (see docs/dsh-engine.md for the pinned version family) first`,
@@ -283,8 +229,6 @@ export class DshRuntime {
 			env,
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
-			// POSIX：独立进程组，硬中断时 SIGKILL(-pid) 一次带走运行时 + 它的
-			// bash/pwsh 子进程。
 			...(process.platform !== "win32" ? { detached: true } : {}),
 		});
 		const spawned = this.proc;
@@ -301,8 +245,6 @@ export class DshRuntime {
 			);
 		});
 		spawned.on("exit", (code, signal) => {
-			// 只处理当前 proc 的退出：kill/restart 后旧 proc 迟到的 exit 事件
-			// 不得 failPending（否则误伤新 initialize）也不得触发 watchdog。
 			if (this.proc !== spawned) return;
 			const intentional = this.closed;
 			this.debug("exit", { code, signal, intentional });
@@ -330,7 +272,6 @@ export class DshRuntime {
 				`[dsh] initialize 失败 (model=${bareModelId} cwd=${this.cwd}): ${(err as Error).message}` +
 					(this.stderrTail ? `\n  launcher stderr: ${this.stderrTail.slice(-600)}` : ""),
 			);
-			// initialize 失败：确认子进程已被清理，避免半死进程占着 stdin。
 			void this.kill();
 			throw err;
 		}
@@ -360,7 +301,7 @@ export class DshRuntime {
 			try {
 				msg = JSON.parse(line);
 			} catch {
-				continue; // 协议：畸形帧忽略
+				continue;
 			}
 			if (msg.id !== undefined && msg.id !== null) {
 				const p = this.pending.get(msg.id as number);
@@ -413,10 +354,6 @@ export class DshRuntime {
 		}
 	}
 
-	/**
-	 * 向一个会话排队 prompt。返回持久化收据 messageId（运行时接受即 resolve）。
-	 * 会话不存在时按需隐式创建。
-	 */
 	async prompt(sessionId: string, contentBlocks: unknown[]): Promise<string> {
 		await this.start();
 		const res = (await this._request("session/prompt", {
@@ -431,16 +368,10 @@ export class DshRuntime {
 		return res.messageId;
 	}
 
-	/** 设置通知处理器（session.event / session.status / subagent.*）。 */
 	onNotification(handler: (method: string, params: unknown) => void): void {
 		this.notificationHandler = handler;
 	}
 
-	// -----------------------------------------------------------------------
-	// goal RPC（goal-rpc.mjs wrapper 插件直连 DSH 原生 goal 域）
-	// -----------------------------------------------------------------------
-
-	/** 创建（或替换已完成的）目标并 arm；round-driver 自动续轮。返回原生 view。 */
 	async goalSet(sessionId: string, objective: string, maxGoalRounds?: number): Promise<unknown> {
 		await this.start();
 		return this._request("goal/set", {
@@ -450,25 +381,21 @@ export class DshRuntime {
 		});
 	}
 
-	/** 当前目标视图（{goal|null, activation}）。 */
 	async goalGet(sessionId: string): Promise<unknown> {
 		await this.start();
 		return this._request("goal/get", { sessionId });
 	}
 
-	/** 清除当前目标（保留 durable 墓碑与历史）。 */
 	async goalClear(sessionId: string): Promise<unknown> {
 		await this.start();
 		return this._request("goal/clear", { sessionId });
 	}
 
-	/** 恢复被 disarm 的目标（abort 重启运行时后轮次驱动停止）。 */
 	async goalResume(sessionId: string): Promise<unknown> {
 		await this.start();
 		return this._request("goal/resume", { sessionId });
 	}
 
-	/** P2-17 查询运行时模型目录（adapter 真实清单，含 inputModalities）。 */
 	async listModels(
 		provider = "deepseek-official",
 	): Promise<{ models: { id: string; name?: string; inputModalities?: string[] }[]; error?: string }> {
@@ -479,11 +406,6 @@ export class DshRuntime {
 		}>;
 	}
 
-	// -----------------------------------------------------------------------
-	// 附件 RPC（视觉桥）：base64 图片 ↔ durable ImageAttachmentRef
-	// -----------------------------------------------------------------------
-
-	/** 保存 base64 图片 → ImageAttachmentRef（供 prompt 的 image 块引用）。 */
 	async attachmentSave(
 		mediaType: string,
 		data: string,
@@ -497,13 +419,11 @@ export class DshRuntime {
 		}) as Promise<{ ref?: { attachmentId: string; mediaType: string } }>;
 	}
 
-	/** 按 ref 回读图片字节（base64），回放时补全前端显示。 */
 	async attachmentRead(ref: { attachmentId: string; mediaType: string }): Promise<{ mediaType: string; data: string }> {
 		await this.start();
 		return this._request("attachment/read", { ref }) as Promise<{ mediaType: string; data: string }>;
 	}
 
-	/** 回答模型提问（question.pending 通知的 id）。cancelled = 用户取消。 */
 	async answerQuestion(
 		id: string,
 		answers: { id: string; selected: string[]; custom?: string }[],
@@ -513,11 +433,6 @@ export class DshRuntime {
 		return this._request("question/answer", { id, answers, ...(cancelled ? { cancelled: true } : {}) });
 	}
 
-	// -----------------------------------------------------------------------
-	// 工具桥 RPC（#15 插件注入点）：sync 注册插件工具 / list 校验 / call-result 回传
-	// -----------------------------------------------------------------------
-
-	/** 把一批插件工具（name/description/parameters）注册为 DSH 原生工具。返回注册清单。 */
 	async syncTools(
 		tools: { name: string; description: string; parameters?: Record<string, unknown> }[],
 	): Promise<{ registered: string[]; count: number }> {
@@ -525,7 +440,6 @@ export class DshRuntime {
 		return this._request("tools/sync", { tools }) as Promise<{ registered: string[]; count: number }>;
 	}
 
-	/** 列出运行时当前可见的工具 schema（零 key 校验/调试用）。 */
 	async listTools(): Promise<{ tools: { name: string; description: string; parameters?: unknown }[] }> {
 		await this.start();
 		return this._request("tools/list", {}) as Promise<{
@@ -533,7 +447,6 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 检查并获取运行时当前的组装系统提示词、sections 明细和工具 schemas。 */
 	async inspectPrompt(sessionId?: string): Promise<{
 		prompt: string;
 		sections: { name: string; text: string; chars: number }[];
@@ -551,13 +464,11 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 回传一个桥接工具的执行结果（isError=true 时 result 为错误信息）。 */
 	async toolsCallResult(id: string, result: string, isError?: boolean): Promise<unknown> {
 		await this.start();
 		return this._request("tools/call-result", { id, result, ...(isError ? { isError: true } : {}) });
 	}
 
-	/** 调试/probe 用：触发一个桥接工具的完整往返（需运行时 PI_WEB_DSH_DEBUG=1）。 */
 	async invokeTool(
 		name: string,
 		args?: Record<string, unknown>,
@@ -566,11 +477,6 @@ export class DshRuntime {
 		return this._request("tools/invoke", { name, args }) as Promise<{ ok: boolean; value?: unknown; error?: string }>;
 	}
 
-	// -----------------------------------------------------------------------
-	// 技能 RPC（#18 技能启停 UI）：skills/list + skills/set-disabled
-	// -----------------------------------------------------------------------
-
-	/** 列出运行时当前可见技能（SkillRegistry.list）。 */
 	async listSkills(): Promise<{
 		skills: { name: string; description: string; invocation?: string }[];
 		error?: string;
@@ -582,17 +488,11 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 设置禁用技能集合（供晚 pre-step 钩子过滤 skill-catalog 消息）。 */
 	async setDisabledSkills(skills: string[]): Promise<{ disabled: string[] }> {
 		await this.start();
 		return this._request("skills/set-disabled", { skills }) as Promise<{ disabled: string[] }>;
 	}
 
-	// -----------------------------------------------------------------------
-	// Agent 预设 RPC（dsh-web 四模式；roster 缺失 = legacy，list 报 unavailable）
-	// -----------------------------------------------------------------------
-
-	/** 列出预设名录（字段以运行时树为准；unavailable = 回落 legacy 单组合）。 */
 	async listPresets(): Promise<{
 		presets: DshAgentPreset[];
 		defaultPreset: string;
@@ -610,13 +510,11 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 登记创建期预设（新会话首个 prompt 前调用；创建时消费）。 */
 	async assignPreset(sessionId: string, preset: string): Promise<{ ok: boolean }> {
 		await this.start();
 		return this._request("preset/assign", { sessionId, preset }) as Promise<{ ok: boolean }>;
 	}
 
-	/** 空白会话切换预设（首轮后锁；走 {ok:false,code,message} 信封，不抛 domain 错）。 */
 	async selectPreset(
 		sessionId: string,
 		preset: string,
@@ -630,7 +528,6 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 读一个会话的权限预设（官方 permissions projection 同源：options + currentValue）。 */
 	async getPermission(sessionId: string): Promise<{
 		options: { value: string; name: string; description?: string }[];
 		currentValue: string;
@@ -642,7 +539,6 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 按会话热切换权限预设（写会话日志，无需重启；走 {ok:false,code,message} 信封）。 */
 	async setPermission(
 		sessionId: string,
 		preset: string,
@@ -665,7 +561,6 @@ export class DshRuntime {
 		}>;
 	}
 
-	/** 优雅关闭：shutdown 握手 → stdin EOF → SIGTERM → SIGKILL 阶梯。 */
 	async close(): Promise<void> {
 		this.onStopping?.();
 		if (this.disposed) return;
@@ -678,14 +573,10 @@ export class DshRuntime {
 		}
 		try {
 			await this._request("shutdown", {}, 2000);
-		} catch {
-			/* fall through to kill ladder */
-		}
+		} catch {}
 		try {
 			proc.stdin!.end();
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 		await new Promise<void>((r) => {
 			const t = setTimeout(r, 1500);
 			proc.once("exit", () => {
@@ -696,17 +587,13 @@ export class DshRuntime {
 		if (proc.exitCode === null) {
 			try {
 				proc.kill("SIGTERM");
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			await this._waitExit(proc, 1500);
 		}
 		if (proc.exitCode === null) {
 			try {
 				proc.kill("SIGKILL");
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		this.proc = null;
 	}
@@ -721,10 +608,6 @@ export class DshRuntime {
 		});
 	}
 
-	/**
-	 * 强杀运行时子进程 + 整棵进程树，无 shutdown 握手（硬中止）。
-	 * win32: taskkill /pid X /T /F；posix: SIGKILL(-pid)（detached 进程组）。
-	 */
 	async kill(): Promise<void> {
 		this.onStopping?.();
 		const proc = this.proc;
@@ -785,28 +668,22 @@ export class DshRuntime {
 				} catch {
 					try {
 						proc.kill("SIGKILL");
-					} catch {
-						/* already dead */
-					}
+					} catch {}
 				}
 			}
 		} catch {
 			try {
 				proc.kill("SIGKILL");
-			} catch {
-				/* already dead */
-			}
+			} catch {}
 		}
 	}
 
-	/** 换模型：关掉当前运行时（若活着），下次 start() 用新 model 重新 spawn。 */
 	async restart(newModel?: string, newProvider?: string, cwd?: string): Promise<void> {
 		this.beforeStart?.(cwd ? resolve(cwd) : this.cwd);
 		const wasAlive = this.alive;
 		this.debug("restart", { newModel, newProvider, wasAlive });
 		if (wasAlive) {
 			await this.kill();
-			// 等旧进程真正退出（避免 pid 复用竞态）。
 			await new Promise((r) => setTimeout(r, 150));
 		}
 		if (newModel) {
@@ -827,7 +704,6 @@ export class DshRuntime {
 		if (wasAlive || cwd) await this.start();
 	}
 
-	/** stderr 尾部（诊断用）。 */
 	get stderr(): string {
 		return this.stderrTail;
 	}

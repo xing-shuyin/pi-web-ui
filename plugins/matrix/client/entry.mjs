@@ -1,8 +1,3 @@
-/**
- * plugins/matrix/client/entry.mjs
- * Matrix workspace and bot control panel for pi-web-ui (experimental).
- */
-
 export default {
 	async mount(el, ctx) {
 		const sendHost = async (type, payload = {}) => {

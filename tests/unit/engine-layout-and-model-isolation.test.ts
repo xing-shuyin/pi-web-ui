@@ -22,9 +22,7 @@ describe("engine layout sharing, history transition and model isolation", () => 
 	afterEach(() => {
 		try {
 			rmSync(testDir, { recursive: true, force: true });
-		} catch {
-			/* ignore cleanup errors */
-		}
+		} catch {}
 	});
 
 	describe("per-engine model isolation in ClientStateStore", () => {
@@ -32,12 +30,10 @@ describe("engine layout sharing, history transition and model isolation", () => 
 			const clientId = "client-alpha";
 			const cwd = join(testDir, "workspace-1");
 
-			// 分别为 pi, dsh, claude 保存不同的模型
 			stateStore.saveProjectModel(clientId, cwd, "anthropic/claude-3-7-sonnet", "pi");
 			stateStore.saveProjectModel(clientId, cwd, "deepseek/deepseek-chat", "dsh");
 			stateStore.saveProjectModel(clientId, cwd, "claude-code/claude-3-5-sonnet", "claude");
 
-			// 读出时各归各，绝不互相覆盖
 			expect(stateStore.getProjectModel(clientId, cwd, "pi")).toBe("anthropic/claude-3-7-sonnet");
 			expect(stateStore.getProjectModel(clientId, cwd, "dsh")).toBe("deepseek/deepseek-chat");
 			expect(stateStore.getProjectModel(clientId, cwd, "claude")).toBe("claude-code/claude-3-5-sonnet");
@@ -52,7 +48,6 @@ describe("engine layout sharing, history transition and model isolation", () => 
 			expect(stateStore.getDefaultModel("dsh")).toBe("deepseek/deepseek-reasoner");
 			expect(stateStore.getDefaultModel("claude")).toBe("claude-code/claude-3-7-sonnet");
 
-			// 无 engine 参数时回落到 pi 默认
 			expect(stateStore.getDefaultModel()).toBe("anthropic/claude-3-7-sonnet");
 		});
 	});
@@ -62,7 +57,6 @@ describe("engine layout sharing, history transition and model isolation", () => 
 			const clientId = "client-claude-test";
 			const cwd = join(testDir, "workspace-claude");
 
-			// 预设用户的自定义 UI 布局
 			stateStore.saveSettings(clientId, {
 				uiLayout: {
 					hidden: ["host:brand"],
@@ -82,7 +76,6 @@ describe("engine layout sharing, history transition and model isolation", () => 
 				engine: "claude",
 			});
 
-			// 新客户端接入 attachSink 时必须推 pushSettings()
 			const sinkMsgs: ServerMessage[] = [];
 			session.attachSink((msg) => sinkMsgs.push(msg));
 
@@ -112,7 +105,6 @@ describe("engine layout sharing, history transition and model isolation", () => 
 				engine: "claude",
 			});
 
-			// 先获取初始快照
 			session.flushSnapshot();
 			const snapshot = messages.find((m) => m.type === "snapshot");
 			expect(snapshot).toBeDefined();
@@ -121,15 +113,12 @@ describe("engine layout sharing, history transition and model isolation", () => 
 				expect(snapshot.state.sessionFile).toBe(snapshot.state.sessionId);
 			}
 
-			// 创建新对话以产生另一个可切换的历史会话
 			await session.newChat();
 
-			// 切换回前一个会话
 			const historyId = (snapshot as any).state.sessionId;
 			messages.length = 0;
 			await session.switchSession(historyId);
 
-			// 必须收到 transition_progress phase="done" 且 progress=100
 			const transitionDone = messages.find((m) => m.type === "transition_progress" && (m as any).phase === "done");
 			expect(transitionDone).toBeDefined();
 			expect((transitionDone as any).progress).toBe(100);
@@ -154,10 +143,8 @@ describe("engine layout sharing, history transition and model isolation", () => 
 			});
 
 			messages.length = 0;
-			// 发送首条提问（例如 "你好"）
 			await session.prompt("你好");
 
-			// 必须收到 conversations 广播，且其 active 对话 title 更新为 "你好"
 			const convMsg = messages.find((m) => m.type === "conversations");
 			expect(convMsg).toBeDefined();
 			if (convMsg && convMsg.type === "conversations") {
@@ -166,7 +153,6 @@ describe("engine layout sharing, history transition and model isolation", () => 
 				expect(activeConv?.title).toBe("你好");
 			}
 
-			// 必须收到 sessions 广播，且 displayName / name 均为 "你好"，不再是默认的 "新对话"
 			const sessMsg = messages.find((m) => m.type === "sessions");
 			expect(sessMsg).toBeDefined();
 			if (sessMsg && sessMsg.type === "sessions") {

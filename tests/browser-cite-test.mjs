@@ -1,16 +1,3 @@
-/* 「浏览器操作」引用到对话 E2E（page-picker 授权页面 → 一键放进输入框）。
- *
- * 锁住的行为（用户要求：输入网址太麻烦）：
- *   1. **只有一个已授权页面** → 顶栏按钮直接变成那个页面（标题），右侧另有 ▾ 开面板
- *   2. 点主体 → 输入框出现 `.attach-chip.page`（mode=page 的网页引用附件），并给一句轻提示
- *   3. 重复点同一个页面 → 去重（不会叠出两个 chip）
- *   4. 多个页面 → 回落到「浏览器操作 · N」，面板里每个页面都有「引用到对话」按钮
- *   5. chip 可删（走输入框原本的 ✕）
- *   6. 全程无 JS 报错
- *
- * 扩展桥是假的（`window.__piBridge.call` 直接回 status）：这里只测 pi-web-ui 这一侧。
- * Run: npm run build && node tests/browser-cite-test.mjs
- */
 import { CHROME_PATH } from "./lib/chrome.mjs";
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -29,7 +16,6 @@ const agentDir = join(base, "agent");
 mkdirSync(workdir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
-// 假 provider（黑洞端口）：只为让会话就绪、输入框可编辑，不会真发请求
 writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ fastfail: { type: "api_key", key: "dummy" } }));
 writeFileSync(
 	join(agentDir, "models.json"),
@@ -90,7 +76,6 @@ page.on("console", (m) => {
 	if (m.type() === "error") jsErrors.push(m.text());
 });
 
-// 假扩展桥：pi-web-ui 的 pageCall 就是从 window.__piBridge 取状态的
 await page.addInitScript(() => {
 	globalThis.__pageFixtures = { installed: true, aiControl: true, allowEval: false, pages: [] };
 	globalThis.__piBridge = {
@@ -119,7 +104,6 @@ const caretBtn = page.locator(".browser-control.caret");
 const panel = page.locator(".browser-control-modal");
 const refreshBtn = page.locator(".browser-control-modal .bc-actions button").nth(1);
 
-/** 改假桥的授权列表（页面侧状态不会自己变，之后要点「刷新状态」或等轮询）。 */
 const setPages = (pages) => page.evaluate((p) => void (globalThis.__pageFixtures.pages = p), pages);
 const countChips = () => chips.count();
 const waitChips = (n) =>
@@ -128,10 +112,8 @@ const waitChips = (n) =>
 		.then(() => true)
 		.catch(() => false);
 
-// 0) 没有任何授权 → 普通按钮（发现入口还在）
 check("未授权任何页面 → 普通「浏览器操作」按钮", (await normalBtn.count()) === 1, `${await normalBtn.count()} 个`);
 
-// 1) 授权一个页面 → 顶栏按钮直接变成它
 await setPages([PAGE_A]);
 await normalBtn.click();
 await panel.waitFor({ timeout: 5000 });
@@ -149,7 +131,6 @@ check(
 	await singleBtn.innerText().catch(() => "?"),
 );
 
-// 2) 点主体 → 网页引用 chip 进输入框
 await singleBtn.click();
 check("点击后输入框出现网页引用 chip", await waitChips(1), `${await countChips()} 个`);
 const chipClass = await chips.first().getAttribute("class");
@@ -158,16 +139,13 @@ check("chip 上显示页面标题", (await chips.first().innerText()).includes("
 check("引用不自动发送：输入框文本仍为空", (await page.locator(".inputbox textarea").inputValue()) === "");
 check("有轻提示告诉用户东西去哪儿了", (await page.locator(".bc-flash").count()) === 1);
 
-// 3) 重复引用同一个页面 → 去重
 await singleBtn.click();
 await sleep(250);
 check("重复引用同一页面 → 去重", (await countChips()) === 1, `${await countChips()} 个`);
 
-// 4) chip 可删
 await chips.first().locator(".attach-remove").click();
 check("chip 可删除", await waitChips(0), `${await countChips()} 个`);
 
-// 5) 授权两个页面 → 回落到「浏览器操作 · N」，面板里逐个引用
 await setPages([PAGE_A, PAGE_B]);
 await caretBtn.click();
 await panel.waitFor({ timeout: 5000 });

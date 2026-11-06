@@ -1,5 +1,3 @@
-// 簡中 → 台灣繁中（OpenCC twp + 後處理詞彙表 + 逐 key 手動覆寫）。
-// 用法：node convert.mjs <zh.json> <out.json> [glossary.mjs] [manual.json]
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { OpenCC } from "./opencc.mjs";

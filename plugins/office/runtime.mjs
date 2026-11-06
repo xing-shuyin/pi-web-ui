@@ -2,17 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-/** Stable key of the complete absolute path (never just the basename). */
 export function documentKey(absPath) {
 	return createHash("sha256").update(absPath).digest("hex");
 }
 
-/** Preview may read any local file; canonicalize without imposing workspace containment. */
 export function resolvePreviewPath(inputPath, cwd) {
 	return fs.realpathSync(path.resolve(cwd, inputPath));
 }
 
-/** Missing files have a null version; all other stat errors propagate. */
 export function fileVersion(filePath) {
 	try {
 		const { dev, ino, size, mtimeMs, ctimeMs } = fs.statSync(filePath);
@@ -32,7 +29,6 @@ function contained(candidate, root) {
 	return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-/** Resolve missing suffixes only after validating their nearest existing ancestor. */
 export function safeWorkspacePath(absPath, cwd) {
 	if (!path.isAbsolute(absPath) || !path.isAbsolute(cwd)) throw new TypeError("Absolute paths required");
 	const absolute = path.resolve(absPath);
@@ -47,7 +43,6 @@ export function safeWorkspacePath(absPath, cwd) {
 			return path.join(resolved, ...suffix);
 		} catch (error) {
 			if (error.code !== "ENOENT") throw error;
-			// A dangling symlink is not a safe missing directory or file.
 			try {
 				fs.lstatSync(ancestor);
 				throw new Error("Cannot resolve existing workspace path");
@@ -112,7 +107,6 @@ export function writeDocumentAtomic(
 				const staged = fs.fstatSync(fd);
 				if (staged.uid !== metadata.uid || staged.gid !== metadata.gid) fs.fchownSync(fd, metadata.uid, metadata.gid);
 			}
-			// chown can clear set-id bits; restore mode afterwards.
 			fs.fchmodSync(fd, mode);
 		}
 		fs.fsyncSync(fd);

@@ -11,7 +11,6 @@ import { getBotExecutionInstructions } from "./execution-instructions.js";
 import type { GroupTaskContext } from "./group-context.js";
 import { checkGroupTaskPlanGuard, isGroupToolForbiddenInPlanCatalog } from "./group-plan-guard.js";
 
-/** Process-local authority. Never accept a Bot configuration or capability over WS. */
 export interface BotExecutionCapability {
 	readonly bot: Readonly<LocalBot>;
 	readonly instructions: string;
@@ -25,7 +24,6 @@ export interface BotExecutionCapability {
 	readonly taskId?: string;
 	readonly attemptId?: string;
 	assertActive(): void;
-	/** Revalidate the registered capability and actual Git identity after awaits and before tools. */
 	assertWorkspace(cwd?: string): Promise<void>;
 	allowsToolRegistration(name: string): boolean;
 	allowsTool(name: string, params?: unknown): boolean;
@@ -34,9 +32,7 @@ export interface BotExecutionCapability {
 	revoke(): void;
 }
 const bindings = new Map<string, BotExecutionCapability>();
-// Exact locally constructed frames, scoped to one task capability and consumed by the WS gate.
 const interactionReplies = new Map<string, string>();
-// Advisory only: these tools can create execution contexts or mutate host policy.
 const highPrivilegeTools = new Set([
 	"bash",
 	"powershell",
@@ -58,12 +54,10 @@ const highPrivilegeTools = new Set([
 	"tool_search",
 ]);
 
-/** Catalog warning; authorization is determined solely by the configured whitelist. */
 export function isBotToolHighPrivilege(name: string): boolean {
 	return highPrivilegeTools.has(name) || name.startsWith("subagent_") || name.startsWith("team_");
 }
 
-/** Compute tools that must be stripped due to capability attenuation when a task is dispatched cross-bot. */
 export function computeAttenuatedTools(
 	sourceTools: readonly string[] | string[],
 	targetTools: readonly string[] | string[],
@@ -255,19 +249,16 @@ export function registerBotExecution(
 	};
 }
 
-/** A binding is removed only after the executor confirms its task has stopped. */
 export function isBotExecutionRegistered(clientId: string): boolean {
 	return bindings.has(clientId);
 }
 
-/** Unregistered private IDs fail closed, including after a server restart. */
 export function getBotExecution(clientId: string): BotExecutionCapability | undefined {
 	const binding = bindings.get(clientId);
 	if (!binding && clientId.startsWith("device-task-")) throw new Error("Unregistered Bot execution client");
 	return binding;
 }
 
-/** Executor uses only this control surface; all other public WS commands are denied. */
 export function botExecutionMessageAllowed(clientId: string, type: string, message?: unknown): boolean {
 	const capability = getBotExecution(clientId);
 	if (!capability) return true;
@@ -279,7 +270,6 @@ export function botExecutionMessageAllowed(clientId: string, type: string, messa
 	}
 	if (type === "question_answer" || type === "tool_approval_response") {
 		const expected = interactionReplies.get(clientId);
-		// A rejected frame cannot consume the grant for the legitimate reply.
 		if (!expected || JSON.stringify(message) !== expected) return false;
 		interactionReplies.delete(clientId);
 		return true;

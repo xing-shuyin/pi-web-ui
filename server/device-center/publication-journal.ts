@@ -45,7 +45,6 @@ interface JournalEvent {
 	hash: string;
 }
 const queues = new Map<string, Promise<unknown>>();
-/** One writer per data directory. Rejections do not poison subsequent read-only diagnostics. */
 export async function serializePublication<T>(dataDir: string, run: () => Promise<T>): Promise<T> {
 	const key = resolve(dataDir);
 	const pending = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(run);
@@ -101,7 +100,6 @@ function assertProof(intent: DevicePublishIntent, proof: DevicePublishReceipt | 
 	)
 		throw new Error("Publication journal proof identity mismatch");
 }
-/** Strict and bounded: unreadable, malformed and partial files are never interpreted as absence. */
 export async function readPublicationJournal(
 	dataDir: string,
 	input: DevicePublishIntent,
@@ -204,7 +202,6 @@ function parsePublicationJournal(raw: string, intent: DevicePublishIntent): Publ
 	}
 	return journal!;
 }
-/** Admission must consult the independent journal, even after sessions were removed. */
 export async function loadPublicationJournals(dataDir: string): Promise<PublicationJournal[]> {
 	const names = await inspectDirectory(dataDir, false);
 	const journals: PublicationJournal[] = [];
@@ -250,8 +247,6 @@ async function flushDirectory(path: string) {
 		handle = await open(path, "r");
 		await handle.sync();
 	} catch (error) {
-		// Windows cannot fsync directory handles. Files are fsynced: process-crash durability,
-		// with best-effort directory flushing, not a portable power-loss guarantee.
 		if (
 			process.platform !== "win32" ||
 			!["EPERM", "EISDIR", "EINVAL", "EBADF", "EACCES"].includes((error as NodeJS.ErrnoException).code ?? "")
@@ -307,7 +302,6 @@ export async function createPublicationJournal(
 	};
 	const event = { ...facts, hash: digest(facts) };
 	const line = JSON.stringify(event) + "\n";
-	// Reserve enough space for every terminal event before objects, refs or CAS are written.
 	if (Buffer.byteLength(line) > PUBLICATION_JOURNAL_LIMITS.headerBytes)
 		throw new Error("Publication journal intent exceeds reserved capacity");
 	parsePublicationJournal(line, intent);
@@ -323,7 +317,6 @@ export async function appendPublicationJournal(
 	const current = await readPublicationJournal(dataDir, journal.intent);
 	if (!current || current.hash !== journal.hash) throw new Error("Publication journal changed concurrently");
 	assertTransition(current, phase, proof?.receipt, proof?.stop, proof?.processStopped);
-	// Two slots always remain for a receipt and cancellation after any CAS start.
 	if (
 		current.sequence >=
 		PUBLICATION_JOURNAL_LIMITS.events - (phase === "cas_started" && !proof?.processStopped ? 5 : 1)

@@ -1,8 +1,3 @@
-/**
- * 壁纸设置纯函数单测（见 web/src/wallpaper.ts）。
- * 仅测 normalize/sanitize/cssEscape —— localStorage 与 DOM 操作在 node
- * 环境不可用，load/save/apply 都有 try/catch 或调用方保证，不在单测范围内。
- */
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_WALLPAPER_SETTINGS,

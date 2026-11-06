@@ -40,7 +40,6 @@ describe("saveUpload", () => {
 	it("落在 <dataDir>/uploads/<clientId>/ 且清洗文件名", () => {
 		const dataDir = tempDataDir();
 		const { abs, displayName } = saveUpload("client-1", '坏/名字:"x".txt', Buffer.from("hi"), dataDir);
-		// Windows 上 join 产生反斜杠，归一化后再比较
 		const norm = (p: string) => p.replace(/\\/g, "/");
 		expect(norm(abs).startsWith(norm(uploadsRoot(dataDir)) + "/client-1/")).toBe(true);
 		expect(displayName).not.toMatch(/[\\/:*?"<>|]/);
@@ -49,14 +48,10 @@ describe("saveUpload", () => {
 
 	it("clientId 必须匹配白名单，否则整条拒绝（不静默换 id）", () => {
 		const dataDir = tempDataDir();
-		// 路径穿越 / 绝对路径 / 空 / 超长 / 非法字符全部拒绝
 		for (const bad of ["../../evil", "..\\evil", "/abs", "C:\\abs", "", "a/b", "a b", "客户端", "x".repeat(129)]) {
 			expect(() => saveUpload(bad, "a.txt", Buffer.from("x"), dataDir)).toThrow();
 		}
-		// 拒绝后什么都没落盘（uploads 目录都不该被建出来）
 		expect(existsSync(uploadsRoot(dataDir))).toBe(false);
-		// 合法形态（字母数字 : _ -，1-128 长）照常工作；":" 形态合法性只在
-		// 模式层验证 —— Windows 目录名不允许 ":"，真实 clientId 是 UUID 无冒号
 		expect(CLIENT_ID_PATTERN.test("x:y")).toBe(true);
 		for (const ok of ["a", "client-1", "A_9", "z".repeat(128)]) {
 			const { abs } = saveUpload(ok, "a.txt", Buffer.from("x"), tempDataDir());
@@ -80,18 +75,17 @@ describe("cleanupUploads", () => {
 		const dataDir = tempDataDir();
 		const { abs: old } = saveUpload("c-old", "old.txt", Buffer.from("x"), dataDir);
 		const { abs: fresh } = saveUpload("c-new", "fresh.txt", Buffer.from("y"), dataDir);
-		// 把 old 的 mtime 拨回 30 天前
 		const past = new Date(Date.now() - 30 * 24 * 3600 * 1000);
 		utimesSync(old, past, past);
 
 		let r = await cleanupUploads(dataDir, 14);
 		expect(r.files).toBe(1);
-		expect(r.bytes).toBe(1); // "x"
-		expect(r.dirs).toBe(1); // c-old 空了被剪
+		expect(r.bytes).toBe(1);
+		expect(r.dirs).toBe(1);
 		expect(() => statSyncStrict(old)).toThrow();
 		expect(statSyncStrict(fresh).isFile()).toBe(true);
 
-		r = await cleanupUploads(dataDir, 0); // 关闭
+		r = await cleanupUploads(dataDir, 0);
 		expect(r.files).toBe(0);
 	});
 });

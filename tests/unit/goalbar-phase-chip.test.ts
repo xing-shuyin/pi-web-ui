@@ -7,18 +7,9 @@ import { GoalBar } from "../../web/src/components/GoalBar.js";
 import { LanguageProvider } from "../../web/src/i18n.js";
 import type { GoalStatus } from "../../web/src/types.js";
 
-/**
- * 目标条活跃芯片按循环相位显示：执行阶段写「执行中…」，审查阶段写「审查中…」。
- *
- * 之前芯片只看 `reviewing` 布尔值 —— 整个委托循环期间它恒为 true，
- * 于是执行者在干活时目标条也写着「审查中…」，与同一行的 detail「执行中（第 N 轮）…」
- * 自相矛盾。协议里的 `phase` 字段是有意为此准备的，前端一直没用。
- */
-
 let root: Root | null = null;
 
 function mount(goal: Partial<GoalStatus>) {
-	// 中文断言：jsdom 的 navigator.languages 默认英文，用存储键钉死 zh。
 	window.localStorage.setItem("pi-web-ui:lang", "zh");
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -153,7 +144,6 @@ describe("目标条历史下拉", () => {
 				),
 			);
 		});
-		// 展开编辑行（默认折叠只剩药丸）
 		const pill = container.querySelector(".goalbar-hint") as HTMLElement | null;
 		if (pill) act(() => pill.click());
 		return container;
@@ -180,7 +170,6 @@ describe("目标条历史下拉", () => {
 		const items = [...container.querySelectorAll(".dd-model-name")].map((e) => e.textContent ?? "");
 		expect(items.some((t) => t.includes("把 README 补全"))).toBe(true);
 		expect(items.some((t) => t.includes("修 flaky 单测"))).toBe(true);
-		// 点第二条 → 输入框被回填（不直接发送）
 		const second = [...container.querySelectorAll(".dd-model-cell")][1] as HTMLElement;
 		act(() => second.click());
 		const input = container.querySelector(".goalbar-input") as HTMLInputElement;

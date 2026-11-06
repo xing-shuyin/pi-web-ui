@@ -1,14 +1,3 @@
-/**
- * patch-tool.ts — 导出给 AI Agent 的结构化补丁工具（Hashline Patch Tool）。
- *
- * 核心设计：
- * - 解决标准 edit 工具容易因缩进幻觉、空白字符或行号漂移导致编辑失败的问题。
- * - 补丁语言基于 [path#TAG] 内容哈希锚点，支持精确行替换（PUT N.=M:）、
- *   语法块级替换（PUT N*:，自动匹配闭合括号/缩进）、行前/后插入（PUT <N: / PUT >N:）、
- *   剪切与寄存器粘贴（CUT / PUT @reg）、文件删除（REM）与重命名（MV）。
- * - 当文件被外部改动导致哈希不一致时，自动尝试 3-Way Merge 冲突自愈。
- */
-
 import { resolve } from "node:path";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -81,10 +70,6 @@ Success returns the next anchor tag and live LSP diagnostics.`,
 				};
 			}
 
-			// timeout 此前是死参数：schema 声明了 1-300 秒，execute 从未读取，大补丁
-			// 卡住只能等 20 分钟看门狗（issue #462）。这里用 Promise.race 实现真实
-			// 超时，覆盖 await 长尾（实时 LSP 诊断等）；applyHashlinePatch 是同步
-			// 本地文件操作，同步段无法被中断，race 只能兜异步部分。
 			const timeoutSec = params.timeout ? Math.min(Math.max(1, params.timeout), 300) : null;
 
 			const finish = async () => {
@@ -106,7 +91,6 @@ Success returns the next anchor tag and live LSP diagnostics.`,
 				}
 
 				const textOutput = [report.summary];
-				// 为成功修改的文件输出最新的头部标签，方便 Agent 连续进行下一步修改
 				for (const r of report.results) {
 					if (r.op !== "deleted" && r.newHash) {
 						const targetPath = r.newPath || r.filePath;

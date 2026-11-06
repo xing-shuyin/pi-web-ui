@@ -1,11 +1,3 @@
-/**
- * text-sniff — 文件预览相关的纯函数：扩展名分类、内容嗅探、文本解码
- * （UTF-8 → GBK → latin1 回退）、十六进制视图、行数统计。
- *
- * 全部无副作用、不碰 fs —— 便于单元测试（tests/unit/text-sniff.test.ts）。
- * 从 agent-service.ts 抽出，行为保持不变。
- */
-
 export type PreviewKind = "image" | "video" | "audio" | "text" | "none";
 
 const PREVIEW_IMAGE_EXTS = new Set([
@@ -23,12 +15,8 @@ const PREVIEW_IMAGE_EXTS = new Set([
 	"tiff",
 ]);
 const PREVIEW_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "mkv", "avi", "m4v", "ogv", "mpg", "mpeg", "wmv", "flv"]);
-/** 浏览器 <audio> 能直接播放的音频容器（present_files 的卡片与 /api/file 白名单
- *  共用这一份）：不在表里的（wma/aiff/midi/…）一律按二进制处理，让用户下载或
- *  本地打开，而不是给一个永远播不出来的播放器。 */
 const PREVIEW_AUDIO_EXTS = new Set(["mp3", "wav", "wave", "ogg", "oga", "opus", "m4a", "aac", "flac", "weba"]);
 const PREVIEW_TEXT_EXTS = new Set([
-	// code
 	"ts",
 	"tsx",
 	"js",
@@ -101,7 +89,6 @@ const PREVIEW_TEXT_EXTS = new Set([
 	"hrl",
 	"ml",
 	"mli",
-	// markup / config / data
 	"json",
 	"jsonc",
 	"json5",
@@ -142,14 +129,8 @@ const PREVIEW_TEXT_EXTS = new Set([
 	"s",
 ]);
 
-/**
- * Classify a file name into its preview category. Files with no extension
- * (README, Makefile, .gitignore, …) are treated as text. Everything not in an
- * allowlist (exe, jar, dll, zip, …) is "none" — never previewed.
- */
 export function previewKind(name: string): PreviewKind {
 	const dot = name.lastIndexOf(".");
-	// A leading dot with nothing after it (.gitignore, .env) counts as no ext.
 	const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 	if (PREVIEW_IMAGE_EXTS.has(ext)) return "image";
 	if (PREVIEW_VIDEO_EXTS.has(ext)) return "video";
@@ -158,23 +139,12 @@ export function previewKind(name: string): PreviewKind {
 	return "none";
 }
 
-/**
- * 扩展名是否为浏览器可直接播放的音频。与 previewKind 分开：预览弹窗的媒体分支
- * 只关心 image/video，音频得单独判一次；而 /api/file 的媒体白名单与
- * present_files 的卡片只需要一个「能不能 inline 播」的布尔判断。
- */
 export function isAudioFile(name: string): boolean {
 	const dot = name.lastIndexOf(".");
 	const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 	return PREVIEW_AUDIO_EXTS.has(ext);
 }
 
-/**
- * Content sniff for the preview: any data that has no NUL bytes and no
- * meaningful control-char ratio is treated as text — so files with unknown
- * or absent extensions (jsonl, .log.1, …) still open as text. NULs catch
- * zip/sqlite/png/… even when the extension claims text.
- */
 export function looksLikeText(buf: Buffer): boolean {
 	if (buf.length === 0) return true;
 	if (buf.includes(0)) return false;
@@ -182,29 +152,17 @@ export function looksLikeText(buf: Buffer): boolean {
 	let control = 0;
 	for (const ch of text) {
 		const c = ch.charCodeAt(0);
-		// Keep \t \n \f \r; everything else < 0x20 (including \b and \v) is binary-ish.
 		if (c < 0x20 && c !== 9 && c !== 10 && c !== 12 && c !== 13) control++;
 	}
 	return control / Math.max(text.length, 1) < 0.02;
 }
 
-/** Decode bytes: strict UTF-8 first (retrying with up to 3 truncated tail
- *  bytes removed for excerpt/preview buffers cut mid-character), falling back
- *  to GBK (Windows legacy Chinese files), then latin1 as a last resort — so
- *  previews and inline attachments never show mojibake for GBK/GB2312 files
- *  nor for truncated UTF-8 files (issue #392). */
 export function decodeText(buf: Buffer): string {
-	// `cut < buf.length` keeps the truncated-tail retry from eating the whole
-	// buffer: a 1–3 byte buffer of legacy bytes (GBK "中" = D6 D0) would
-	// otherwise trim down to an empty slice, decode "successfully" as UTF-8 and
-	// return "" — silently blanking every tiny non-UTF-8 preview.
 	for (let cut = 0; cut < 4 && cut < buf.length; cut++) {
 		const slice = cut === 0 ? buf : buf.subarray(0, buf.length - cut);
 		try {
 			return new TextDecoder("utf-8", { fatal: true }).decode(slice);
-		} catch {
-			// Tail byte might be cut mid-character; try trimming up to 3 bytes.
-		}
+		} catch {}
 	}
 	try {
 		return new TextDecoder("gbk").decode(buf);
@@ -213,9 +171,6 @@ export function decodeText(buf: Buffer): string {
 	}
 }
 
-/** Sniff an image MIME type from magic bytes (extension is only a hint).
- *  Returns null when the bytes don't look like a known raster format —
- *  callers keep such files as plain path references. */
 export function sniffImageMime(buf: Buffer, ext: string): string | null {
 	if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
 		return "image/png";
@@ -233,8 +188,6 @@ export function sniffImageMime(buf: Buffer, ext: string): string | null {
 		return "image/webp";
 	}
 	if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return "image/bmp";
-	// Unknown but raster-looking extension — trust the extension so existing
-	// image attachments keep working.
 	const known: Record<string, string> = {
 		".png": "image/png",
 		".jpg": "image/jpeg",
@@ -246,7 +199,6 @@ export function sniffImageMime(buf: Buffer, ext: string): string | null {
 	return known[ext] ?? null;
 }
 
-/** First few KB of binary data as a classic hex + ASCII dump (preview only). */
 export function hexDump(buf: Buffer, maxBytes = 4096): string {
 	const data = buf.subarray(0, Math.min(buf.length, maxBytes));
 	const rows: string[] = [];
@@ -259,12 +211,9 @@ export function hexDump(buf: Buffer, maxBytes = 4096): string {
 	return rows.join("\n");
 }
 
-/** Count lines in a buffer; a trailing newline terminates the last line
- *  instead of starting an empty one — matches the client preview's
- *  split-based line numbering. */
 export function countLines(buf: Buffer): number {
 	if (buf.length === 0) return 0;
-	const hasTrailingNewline = buf[buf.length - 1] === 10; /* \n */
+	const hasTrailingNewline = buf[buf.length - 1] === 10;
 	let lines = 0;
 	for (let i = 0; i < buf.length; i++) {
 		if (buf[i] === 10) lines++;

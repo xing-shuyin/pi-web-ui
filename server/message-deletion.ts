@@ -1,7 +1,6 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { isPromptAsideEntry } from "./attachments.js";
 
-/** Context entries retain tombstones; omit deleted messages before resolving UI IDs. */
 export function undeletedContextEntries(entries: SessionEntry[]): SessionEntry[] {
 	const edits = new Map<string, unknown>();
 	for (const entry of entries) {
@@ -10,7 +9,6 @@ export function undeletedContextEntries(entries: SessionEntry[]): SessionEntry[]
 	return entries.filter((entry) => edits.get(entry.id) !== null);
 }
 
-/** Keep deletion local to the selected message, including its attachment/tool records. */
 export function messageDeletionTargets(entries: SessionEntry[], targetId: string): string[] {
 	const visible = undeletedContextEntries(entries);
 	const index = visible.findIndex((entry) => entry.id === targetId);

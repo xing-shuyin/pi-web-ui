@@ -10,6 +10,7 @@
 - [三、UI 布局与样式规范](#三ui-布局与样式规范)
 - [四、架构与运行态约束](#四架构与运行态约束)
 - [五、其余边界（只在别处维护，见链接）](#五其余边界只在别处维护见链接)
+- [六、源码注释](#六源码注释)
 
 以下规则由历史线上问题与核心架构硬约束提炼而成，编写代码时必须严格遵守。
 
@@ -41,7 +42,9 @@
 
 > 共享基线是 `web/src/styles.css`；主题见 [`architecture-core.md`](architecture-core.md)「主题切换」。
 
-- **CSS 变量必须先定义后引用**：未定义的 `var(--x)` 会导致整条 CSS 声明失效；内联代码前景色与背景色对比度必须 ≥2:1（守卫：`tests/unit/css-tokens.test.ts`、`theme-inline-code-contrast.test.ts`）。
+- **项目选中态只跟随当前打开的项目**：运行中、未读状态通过项目徽标表达，不得为其他项目标题添加状态底色；保留普通悬停反馈。
+
+- **CSS 变量必须先定义后引用**：未定义的 `var(--x)` 会导致整条 CSS 声明失效；内联代码的 `--link-soft` 在 `--bg` 上须满足文字令牌的 ≥4:1 对比度门槛（守卫：`tests/unit/css-tokens.test.ts`、`theme-text-contrast.test.ts`；行内代码检查已并入文字令牌守卫）。
 - **强调色实底上的文字必须走 `--accent-contrast`**：`background: var(--accent)` 配 `color: #fff` 会在浅色强调主题（`flow`/`wallpaper-flow` 的纯白、`wallpaper-obsidian` 的 `#e2e8f0`、`aetheris`/`cyberpunk`/`nord` 等）变成白底白字，按钮直接隐形。前景一律写 `var(--accent-contrast, #fff)`；插件同理：若私设前缀别名（如 `--xxx-accent: var(--accent)`）**必须成对声明** `--xxx-accent-contrast: var(--accent-contrast, #fff)`，推荐直接复用宿主全局 `.btn.primary`，严禁私设单向底色别名而硬编码白字；半透明 `color-mix(… var(--accent) 30% …)` 染色底则用 `var(--text)`；主题若把 `--accent` 定成浅色，必须同时声明反色的 `--accent-contrast`（守卫：`tests/unit/accent-contrast.test.ts`、`semantic-contrast.test.ts` 动态符号追踪别名）。
 - **语义色实底同理走 `--on-*`**：`background: var(--green|--red|--amber|--blue|--send-blue|--stop-red)` 配 `color: #fff` 同样会隐形（默认主题 `--amber` 白字 1.67:1、`--green` 1.92:1、`--red` 2.77:1）。前景写 `var(--on-green|--on-red|--on-amber|--on-blue|--on-send-blue|--on-stop-red)`；状态色按「白/深取对比更高者」派生、动作色（blue/send/stop）白字 ≥3:1 就保留白字，主题侧由 `make-light-theme.mjs` 自动派生（守卫：`tests/unit/semantic-contrast.test.ts`）。
 - **主题的「文字令牌」必须有明暗下限**：`--text-faint`（3.05:1）、`--accent`（3.5:1）、`--amber/--green/--red/--blue/--link/--link-soft/--info-blue/--skill-blue/--auth-green/--plugin-purple/--amber-text/--red-text/--err-text/--md-strong/--code-text`（4.5:1）在 `--bg` 与 `--bg-elev2` 上必须够对比——亮色主题照抄深色默认值会让警告文字、状态 chip、链接整体糊掉（曾出现 `--plugin-purple` 1.50:1）。`make-light-theme.mjs` 的 `TEXT_FLOORS` 会自动保持色相压暗，手写主题自行声明（守卫：`tests/unit/theme-text-contrast.test.ts`）。
@@ -99,3 +102,9 @@
 | 画布版本、运行代次、产物隔离                                                  | [`architecture-canvas.md`](architecture-canvas.md)                     |
 | MCP 项目运行态                                                                | [`architecture-plugins.md`](architecture-plugins.md)「MCP 项目运行时」 |
 | 提示词模板与 `/命令`                                                          | [`development.md`](development.md)「提示词模板命令」                   |
+
+## 六、源码注释
+
+- 默认不写源码注释；删除复述代码、文件头介绍、分段标题、历史变更、临时说明和注释掉的废代码，避免过期说明误导后续判断。维护规则与架构说明放在对应 `docs/` 文档。
+- 保留许可证、类型与构建/检查指令、运行时读取的元数据，以及解释非显然安全边界或约束的简短说明；字符串、正则和模板里的文本按实际用途判断。
+- 测试按实际代码结构或稳定标识定位源码，不依赖普通注释的文字。

@@ -19,12 +19,6 @@ import { sectionsForDepth } from "../../plugins/page-picker/extension/src/shared
 import type { PiProbe } from "../../plugins/page-picker/extension/src/shared/bind.js";
 import { MAX_SHOT_EDGE, planCrop } from "../../plugins/page-picker/extension/src/shared/shot-crop.js";
 
-/** 扩展 service worker 的决策逻辑（用假 chrome 驱动，零浏览器）：
- *  - 投递：找到 pi-web-ui 标签页 → MAIN world 注入 → 调宿主的 compose
- *  - 找不到页面 / 宿主不支持 / 输入框没就绪 → **必须把 Markdown 交回给用户**（复制兜底），
- *    绝不出现「点了发送，什么都没发生」
- *  - 注入不了（chrome:// 等）→ 明确报错，不静默 */
-
 const snap = (tag = "section") => ({
 	tag,
 	classes: ["card"],
@@ -63,14 +57,10 @@ function fakeChrome(
 		injectResult?: unknown;
 		injectThrows?: string;
 		stored?: Record<string, unknown>;
-		/** `chrome.storage.local` 里的东西（AI 授权表 / 配对表都在这里）。 */
 		localStored?: Record<string, unknown>;
-		/** false = 没授权该地址（远程/局域网部署的第一步就是授权）。 */
 		permissionGranted?: boolean;
-		/** 探测注入（认页面）的返回值；undefined = 注不进去 → 走原来的拾取流程。 */
 		probe?: PiProbe;
 		probeThrows?: boolean;
-		/** `permissions.request` 的结果：true = 浏览器给了手势。 */
 		permissionRequest?: boolean;
 	} = {},
 ): FakeChrome {
@@ -87,10 +77,6 @@ function fakeChrome(
 		},
 		runtime: { getURL: vi.fn((path: string) => `chrome-extension://fake/${path}`) },
 		tabs: {
-			// 关键：假 chrome 也要像真 Chrome 一样**校验 match pattern**。
-			// `http://localhost:8787`（裸 origin，无路径）在真浏览器里会直接抛
-			// `Invalid url pattern`，而被 catch 成「没找到页面」—— 0.2.0 的投递失败就是这么来的，
-			// 当时假 chrome 不校验，测试全绿。
 			query: vi.fn(async (info: { url?: string | string[] } = {}) => {
 				const patterns = info.url == null ? [] : Array.isArray(info.url) ? info.url : [info.url];
 				for (const p of patterns) {
@@ -105,8 +91,6 @@ function fakeChrome(
 		scripting: {
 			executeScript: vi.fn(async (injection: { files?: string[]; func?: unknown; args?: unknown[] }) => {
 				if (opts.injectThrows) throw new Error(opts.injectThrows);
-				// files 注入（拾取器 / 绑定浮条）没有返回值；func 注入：带 args 的是投递（compose），
-				// 不带的是一次「这个页面是不是 pi-web-ui」的探测
 				if (injection.files) return [{}];
 				if (injection.args === undefined) {
 					if (opts.probeThrows) throw new Error("Cannot access a chrome:// URL");
@@ -170,7 +154,6 @@ describe("startPicking", () => {
 	});
 });
 
-/** 注入过的脚本文件名（拾取器 / 绑定浮条）。 */
 function injectedFiles(chrome: FakeChrome): string[] {
 	return chrome.scripting.executeScript.mock.calls
 		.map(([injection]) => (injection as { files?: string[] }).files?.[0])
@@ -178,7 +161,7 @@ function injectedFiles(chrome: FakeChrome): string[] {
 }
 
 describe("handleAction（点图标：先认页面，再决定注入什么）", () => {
-	const probe: PiProbe = { isPiWebUi: true, hasHost: true, url: "http://39.99.235.208:8787/" };
+	const probe: PiProbe = { isPiWebUi: true, hasHost: true, url: "http://203.0.113.10:8787/" };
 
 	it("当前页就是 pi-web-ui → 注入绑定浮条，**不注入拾取器**", async () => {
 		const chrome = fakeChrome({ probe });
@@ -193,8 +176,6 @@ describe("handleAction（点图标：先认页面，再决定注入什么）", (
 	});
 
 	it("detect 注不进去（chrome:// / 页面 CSP）→ **照样注入浮条让它自检**（不得到「点了没反应」）", async () => {
-		// 真实动机：MAIN world 注入可能被环境挡住，而文件注入（拾取器/浮条）一直是好用的；
-		// 那就把「认页面」这件事下放给浮条（它自己探 /api/health + DOM 兵形）
 		const chrome = fakeChrome({ probeThrows: true });
 		await handleAction({ id: 9 });
 		expect(injectedFiles(chrome)).toEqual(["dist/bind.js"]);
@@ -225,11 +206,11 @@ describe("injectBindBar", () => {
 describe("bindServer（把当前 pi-web-ui 页绑成服务地址）", () => {
 	it("已授权 → 写入**归一后**的地址（?token= / hash / 尾斜杠都不进设置）", async () => {
 		const chrome = fakeChrome({ permissionGranted: true });
-		const res = await bindServer("http://39.99.235.208:8787/?token=abc#/chat");
+		const res = await bindServer("http://203.0.113.10:8787/?token=abc#/chat");
 		expect(res.ok).toBe(true);
-		expect(res.base).toBe("http://39.99.235.208:8787");
-		expect(chrome.storage.sync.set).toHaveBeenCalledWith({ serverUrl: "http://39.99.235.208:8787" });
-		expect(chrome.permissions.request).not.toHaveBeenCalled(); // 已授权就不再烦用户
+		expect(res.base).toBe("http://203.0.113.10:8787");
+		expect(chrome.storage.sync.set).toHaveBeenCalledWith({ serverUrl: "http://203.0.113.10:8787" });
+		expect(chrome.permissions.request).not.toHaveBeenCalled();
 	});
 
 	it("没授权但浏览器给了手势 → 申请该 origin 的权限再存", async () => {
@@ -242,10 +223,10 @@ describe("bindServer（把当前 pi-web-ui 页绑成服务地址）", () => {
 
 	it("授权拿不到（页面上的点击给不了手势）→ **不写设置**，回 needAuth 让用户去选项页", async () => {
 		const chrome = fakeChrome({ permissionGranted: false, permissionRequest: false });
-		const res = await bindServer("http://39.99.235.208:8787");
+		const res = await bindServer("http://203.0.113.10:8787");
 		expect(res.ok).toBe(false);
 		expect(res.needAuth).toBe(true);
-		expect(res.message).toContain("http://39.99.235.208:8787/*");
+		expect(res.message).toContain("http://203.0.113.10:8787/*");
 		expect(chrome.storage.sync.set).not.toHaveBeenCalled();
 	});
 });
@@ -253,9 +234,9 @@ describe("bindServer（把当前 pi-web-ui 页绑成服务地址）", () => {
 describe("openOptionsFor", () => {
 	it("带 ?bind= 打开扩展自己的选项页（那里才有手势能授权）", async () => {
 		const chrome = fakeChrome();
-		await openOptionsFor("http://39.99.235.208:8787/?token=x");
+		await openOptionsFor("http://203.0.113.10:8787/?token=x");
 		expect(chrome.tabs.create).toHaveBeenCalledWith({
-			url: "chrome-extension://fake/options.html?bind=http%3A%2F%2F39.99.235.208%3A8787",
+			url: "chrome-extension://fake/options.html?bind=http%3A%2F%2F203.0.113.10%3A8787",
 		});
 	});
 });
@@ -391,7 +372,7 @@ describe("deliver", () => {
 		expect(res.ok).toBe(false);
 		expect(res.message).toContain("还没授权 https://pi.example.com/*");
 		expect(res.message).toContain("授权该地址");
-		expect(res.copy).toBe("# md"); // 兜底照样给
+		expect(res.copy).toBe("# md");
 		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
 	});
 
@@ -413,9 +394,6 @@ describe("deliver", () => {
 		expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ target: { tabId: 5 } }));
 	});
 
-	// 回归（0.2.0 真实事故）：tabs.query 的 url 过滤只能是合法 match pattern。
-	// 之前传的是 [`${base}/*`, base]，那个裸 origin 让真 Chrome/Edge 直接抛
-	// `Invalid url pattern` → 被 catch 成「没找到页面」→ 页明明开着却报「没找到」。
 	it("tabs.query 只拿到 **合法 match pattern**（裸 origin 会让真浏览器抛异常）", async () => {
 		const chrome = fakeChrome({ tabs: [{ id: 42, url: "http://127.0.0.1:8787/" }], injectResult: { ok: true } });
 		const res = await deliver(payload(), "# md", settings);
@@ -437,7 +415,6 @@ describe("deliver", () => {
 	});
 });
 
-/** 驱动 handleMessage 并把异步 respond 收成一个 promise。 */
 function ask<T>(message: unknown): Promise<T> {
 	return new Promise<T>((resolve) => {
 		handleMessage(message, {}, (response) => resolve(response as T));
@@ -450,7 +427,6 @@ describe("handleMessage", () => {
 		expect(handleMessage({ type: "page-picker:settings" }, {}, () => {})).toBe(true);
 		expect(await ask({ type: "page-picker:settings" })).toEqual({
 			detail: "full",
-			// 老设置里只有 detail → 按档位推出对应组合（升级后行为不变）
 			sections: sectionsForDepth("full"),
 			serverUrl: "http://127.0.0.1:8787",
 		});
@@ -481,7 +457,6 @@ describe("handleMessage", () => {
 			},
 		});
 		expect(await ask({ type: "page-picker:page-state", url: "http://localhost:5173/deep/link" })).toEqual({
-			// 归一化：带路径/查询串的页面地址也算同一个 origin
 			origin: "http://localhost:5173",
 			authorized: true,
 			title: "开发预览页",
@@ -503,10 +478,10 @@ describe("handleMessage", () => {
 		fakeChrome({ permissionGranted: true });
 		const res = await ask<{ ok: boolean; base: string }>({
 			type: "page-picker:bind",
-			url: "http://39.99.235.208:8787/",
+			url: "http://203.0.113.10:8787/",
 		});
 		expect(res.ok).toBe(true);
-		expect(res.base).toBe("http://39.99.235.208:8787");
+		expect(res.base).toBe("http://203.0.113.10:8787");
 	});
 
 	it("pick-anyway → 补注入拾取器（浮条上选「在本页拾取」）", async () => {
@@ -525,7 +500,6 @@ describe("handleMessage", () => {
 			detail: "compact",
 			sections: ["page", "selector", "source", "text"],
 		});
-		// 回给浮条的是**归一后**的结果，浮条照着它回显（否则会出现「显示的和生效的不一样」）
 		expect(res).toEqual({ ok: true, detail: "compact", sections: ["page", "selector", "source", "text"] });
 		expect(chrome.storage.sync.set).toHaveBeenCalledWith({
 			detail: "compact",
@@ -566,7 +540,7 @@ describe("handleMessage", () => {
 
 	it("open-options → 打开带 ?bind= 的选项页", async () => {
 		const chrome = fakeChrome();
-		await ask({ type: "page-picker:open-options", url: "http://39.99.235.208:8787/" });
+		await ask({ type: "page-picker:open-options", url: "http://203.0.113.10:8787/" });
 		expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
 	});
 
@@ -631,7 +605,7 @@ describe("planCrop（截图裁剪的坐标系）", () => {
 	});
 
 	it("元素只露出一角（可见面积太少）→ null", () => {
-		const mostlyBelow = { ...rect, y: 880, h: 200 }; // 只露出 20px
+		const mostlyBelow = { ...rect, y: 880, h: 200 };
 		expect(planCrop(mostlyBelow, { dpr: 1, imageW: 1440, imageH: 900 })).toBeNull();
 	});
 
@@ -683,7 +657,7 @@ describe("attachShots", () => {
 			{ id: 1 },
 			{ tabs: { captureVisibleTab: capture } },
 		);
-		expect(out).toBe(input); // 同一个引用：完全没动
+		expect(out).toBe(input);
 		expect(capture).not.toHaveBeenCalled();
 	});
 

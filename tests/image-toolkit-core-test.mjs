@@ -1,12 +1,3 @@
-/**
- * image-toolkit 内核单测（零 token、零网络、零第三方依赖）。
- *
- * 关键点：**所有 PNG/BMP/EXIF 夹具都在本文件里手工构造**（自己的 CRC32、自己的正向 filter、
- * 自己的 TIFF 写入器），绝不复用被测内核的编码器 —— 否则编码器写错时测试也会一起错放过。
- * 断言全部落在真实像素值上，不用「不抛错就算过」这种弱断言。
- *
- * 运行：node tests/image-toolkit-core-test.mjs
- */
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
@@ -62,10 +53,6 @@ async function checkAsync(name, fn) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 夹具工具（独立实现，不复用被测代码）
-// ---------------------------------------------------------------------------
-
 const CRC_TABLE = (() => {
 	const t = new Int32Array(256);
 	for (let n = 0; n < 256; n++) {
@@ -93,7 +80,6 @@ function pngChunk(type, data) {
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/** 低层 PNG 拼装：scanlines 里的每一项必须已经包含首个 filter 字节。 */
 function buildPng({ width, height, bitDepth, colorType, palette, trns, interlace = 0, scanlines }) {
 	const ihdr = Buffer.alloc(13);
 	ihdr.writeUInt32BE(width, 0);
@@ -111,7 +97,6 @@ function buildPng({ width, height, bitDepth, colorType, palette, trns, interlace
 	return Buffer.concat(parts);
 }
 
-/** 8 位 RGBA PNG（filter 0）。 */
 function pngRgba(width, height, pixels) {
 	const scanlines = [];
 	for (let y = 0; y < height; y++) {
@@ -136,7 +121,6 @@ function paethF(a, b, c) {
 	return c;
 }
 
-/** 正向 filter（与内核的反 filter 是两套独立实现）。 */
 function forwardFilter(type, cur, prev, bpp) {
 	const out = Buffer.alloc(cur.length);
 	for (let i = 0; i < cur.length; i++) {
@@ -154,7 +138,6 @@ function forwardFilter(type, cur, prev, bpp) {
 	return out;
 }
 
-/** 手工构造 bottom-up 24 位 BMP：rows 按图像从上到下的顺序给出（每行 [r,g,b]），本函数负责倒序写入。 */
 function buildBmp24(width, height, rows) {
 	const stride = ((width * 24 + 31) >> 5) * 4;
 	const fileSize = 54 + stride * height;
@@ -169,7 +152,7 @@ function buildBmp24(width, height, rows) {
 	buf.writeUInt16LE(24, 28);
 	buf.writeUInt32LE(stride * height, 34);
 	for (let row = 0; row < height; row++) {
-		const src = rows[height - 1 - row]; // bottom-up
+		const src = rows[height - 1 - row];
 		let p = 54 + row * stride;
 		for (let x = 0; x < width; x++) {
 			buf[p++] = src[x][2];
@@ -180,7 +163,6 @@ function buildBmp24(width, height, rows) {
 	return buf;
 }
 
-/** 手工构造 8 位调色板 BMP。 */
 function buildBmp8(width, height, palette, rows) {
 	const stride = ((width * 8 + 31) >> 5) * 4;
 	const off = 14 + 40 + 256 * 4;
@@ -210,8 +192,6 @@ function buildBmp8(width, height, palette, rows) {
 	}
 	return buf;
 }
-
-// ---- TIFF / EXIF 夹具：按固定布局写入，大端小端各一份 ----
 
 class Layout {
 	constructor(le) {
@@ -253,7 +233,6 @@ class Layout {
 		this.u16(off + 2, type);
 		this.u32(off + 4, count);
 		if (type === 3) {
-			// SHORT 内联：占用 4 字节的高 2 位（大端时在高位，小端时在低位）
 			this.u16(off + 8, valueOrOffset);
 		} else {
 			this.u32(off + 8, valueOrOffset);
@@ -264,7 +243,6 @@ class Layout {
 	}
 }
 
-/** 构造一份完整 EXIF TIFF（IFD0 + ExifIFD），le=true 用小端。 */
 function buildTiff(le) {
 	const L = new Layout(le);
 	const header = L.alloc(8);
@@ -272,7 +250,6 @@ function buildTiff(le) {
 	L.u16(header + 2, 42);
 	L.u32(header + 4, 8);
 
-	// IFD0：5 项
 	const ifd0 = L.alloc(2 + 5 * 12 + 4);
 	const dMake = L.alloc(8);
 	const dModel = L.alloc(7);
@@ -289,7 +266,6 @@ function buildTiff(le) {
 	L.ascii(dModel, "ModelX\0");
 	L.ascii(dDate, "2024:05:01 12:34:56\0");
 
-	// ExifIFD：5 项
 	const dExposure = L.alloc(8);
 	const dFnum = L.alloc(8);
 	const dFocal = L.alloc(8);
@@ -311,7 +287,6 @@ function buildTiff(le) {
 	return L.done();
 }
 
-/** 造一个带 EXIF + SOF0 的最小 JPEG（尺寸 48×32）。 */
 function buildJpegWithExif(le = false) {
 	const tiff = buildTiff(le);
 	const app1data = Buffer.concat([Buffer.from("Exif\0\0", "latin1"), tiff]);
@@ -324,13 +299,11 @@ function buildJpegWithExif(le = false) {
 	sof[1] = 0xc0;
 	sof.writeUInt16BE(sof.length - 2, 2);
 	sof[4] = 8;
-	sof.writeUInt16BE(32, 5); // height
-	sof.writeUInt16BE(48, 7); // width
+	sof.writeUInt16BE(32, 5);
+	sof.writeUInt16BE(48, 7);
 	sof[9] = 3;
 	return Buffer.concat([Buffer.from([0xff, 0xd8]), app1, app1data, sof, Buffer.from([0xff, 0xd9])]);
 }
-
-// ---- RgbaImage 工具 ----
 
 function makeImage(width, height, pixels, hasAlpha = true) {
 	const data = new Uint8Array(width * height * 4);
@@ -338,7 +311,6 @@ function makeImage(width, height, pixels, hasAlpha = true) {
 	return { width, height, data, hasAlpha, format: "rgba" };
 }
 
-/** 按 (x, y) → rgba 的函数直接生成大图（避免为每个像素建临时数组）。 */
 function makeImageBy(width, height, fn, hasAlpha = true) {
 	const data = new Uint8Array(width * height * 4);
 	for (let y = 0; y < height; y++) {
@@ -368,14 +340,12 @@ function assertSize(img, w, h, label = "") {
 	assert.equal(img.height, h, `${label} 高度`);
 }
 
-/** 4×4 渐变图：r = x*16, g = y*16, b = 100。 */
 function gradient4() {
 	const pixels = [];
 	for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) pixels.push([x * 16, y * 16, 100, 255]);
 	return makeImage(4, 4, pixels, false);
 }
 
-/** 2×2 四色图：A 红(0,0) B 绿(1,0) C 蓝(0,1) D 黄(1,1)。 */
 const RED = [255, 0, 0, 255];
 const GREEN = [0, 255, 0, 255];
 const BLUE = [0, 0, 255, 255];
@@ -383,10 +353,6 @@ const YELLOW = [255, 255, 0, 255];
 function quad() {
 	return makeImage(2, 2, [RED, GREEN, BLUE, YELLOW], false);
 }
-
-// ---------------------------------------------------------------------------
-// 1. sniffFormat
-// ---------------------------------------------------------------------------
 
 check("sniffFormat：png / jpeg / gif / webp / bmp / avif / svg 魔数各识别一次", () => {
 	assert.equal(sniffFormat(pngRgba(1, 1, [[1, 2, 3, 4]])), "png");
@@ -414,10 +380,6 @@ check("sniffFormat：png / jpeg / gif / webp / bmp / avif / svg 魔数各识别�
 	assert.equal(mimeForFormat("svg"), "image/svg+xml");
 	assert.equal(mimeForFormat("bogus"), "application/octet-stream");
 });
-
-// ---------------------------------------------------------------------------
-// 2. 自建 8 位 RGBA PNG：probe / decode / roundtrip
-// ---------------------------------------------------------------------------
 
 const fixtureA = {
 	width: 3,
@@ -479,11 +441,6 @@ await checkAsync("encodeImage(png, pngLevel:0)：高压缩级别与无压缩都�
 	}
 });
 
-// ---------------------------------------------------------------------------
-// 3. PNG 五种 filter
-// ---------------------------------------------------------------------------
-
-/** 4×4 RGB 图，5 行分别用 filter 0/1/2/3/4。 */
 function rgbRows4x4() {
 	const rows = [];
 	for (let y = 0; y < 4; y++) {
@@ -505,7 +462,7 @@ const pngFilters = buildPng({
 	bitDepth: 8,
 	colorType: 2,
 	scanlines: rgbRows.map((row, y) => {
-		const type = y; // 0,1,2,3,4
+		const type = y;
 		const filtered = forwardFilter(type, row, y === 0 ? null : rgbRows[y - 1], 3);
 		return Buffer.concat([Buffer.from([type]), filtered]);
 	}),
@@ -521,10 +478,6 @@ await checkAsync("PNG filter 1(Sub)/2(Up)/3(Average)/4(Paeth) 解码结果与原
 		}
 	}
 });
-
-// ---------------------------------------------------------------------------
-// 4. 调色板 + tRNS
-// ---------------------------------------------------------------------------
 
 const PALETTE = [];
 for (let i = 0; i < 16; i++) PALETTE.push((i * 16) % 256, (255 - i * 16) % 256, (i * 8) % 256);
@@ -566,7 +519,6 @@ const palettePng4 = buildPng({
 	colorType: 3,
 	palette: palette8,
 	trns: trns8,
-	// 每字节 2 个索引：1,2 / 3,4 / 5,6 / 7,8
 	scanlines: [Buffer.from([0, 0x12, 0x34, 0x56, 0x78])],
 });
 
@@ -578,7 +530,6 @@ await checkAsync("4 位调色板 PNG：位打包解包正确（含 alpha）", as
 });
 
 await checkAsync("16 位 RGBA PNG：用 257 倍数选值，缩放结果必须精确", async () => {
-	// 每通道 2 字节；0xFFFF→255、0x8080→128、0x4040→64
 	const line = Buffer.from([0, 0xff, 0xff, 0x80, 0x80, 0x00, 0x00, 0x40, 0x40]);
 	const png16 = buildPng({ width: 1, height: 1, bitDepth: 16, colorType: 6, scanlines: [line] });
 	const img = await decodeImage(png16);
@@ -587,7 +538,6 @@ await checkAsync("16 位 RGBA PNG：用 257 倍数选值，缩放结果必须精
 });
 
 await checkAsync("灰度 PNG（bitDepth 1，colorType 0）解码成 0/255", async () => {
-	// 1 位灰度 8×1：0b1010_1010
 	const png1 = buildPng({ width: 8, height: 1, bitDepth: 1, colorType: 0, scanlines: [Buffer.from([0, 0xaa])] });
 	const img = await decodeImage(png1);
 	for (let x = 0; x < 8; x++) {
@@ -595,10 +545,6 @@ await checkAsync("灰度 PNG（bitDepth 1，colorType 0）解码成 0/255", asyn
 		assertPixel(img, x, 0, [v, v, v, 255], "gray1");
 	}
 });
-
-// ---------------------------------------------------------------------------
-// 5. 隔行 PNG 抛错
-// ---------------------------------------------------------------------------
 
 await checkAsync("隔行 PNG（interlace=1）抛错且信息提到「隔行」", async () => {
 	const png = buildPng({
@@ -614,10 +560,6 @@ await checkAsync("隔行 PNG（interlace=1）抛错且信息提到「隔行」",
 		return true;
 	});
 });
-
-// ---------------------------------------------------------------------------
-// 6. BMP
-// ---------------------------------------------------------------------------
 
 await checkAsync("24 位/32 位 BMP roundtrip（编码 → 解码像素一致）", async () => {
 	const rgb = makeImage(
@@ -706,10 +648,6 @@ await checkAsync("手工 8 位调色板 BMP：调色板查表与 bottom-up 都�
 	assert.equal(probeImage(bmp).bitDepth, 8);
 });
 
-// ---------------------------------------------------------------------------
-// 7. resize
-// ---------------------------------------------------------------------------
-
 check("resizeImage：4×4 → 8×8 / 2×2 / 只给 width 时按比例算高", () => {
 	const g = gradient4();
 	const up = resizeImage(g, { width: 8 });
@@ -735,7 +673,6 @@ check("resizeImage 缩到 1×1 = 全图面积平均（渐变图取平均色）",
 	const one = resizeImage(gradient4(), { width: 1, height: 1 });
 	assertSize(one, 1, 1, "1×1");
 	assert.deepEqual(pixel(one, 0, 0), [24, 24, 100, 255], "4×4 平均色");
-	// 纯色缩放必须完全不变（面积平均无插值误差）
 	const flat = makeImage(
 		4,
 		4,
@@ -745,10 +682,6 @@ check("resizeImage 缩到 1×1 = 全图面积平均（渐变图取平均色）",
 	assert.deepEqual(pixel(resizeImage(flat, { width: 2, height: 2 }), 1, 1), [7, 200, 33, 255], "纯色下采样");
 	assert.deepEqual(pixel(resizeImage(flat, { width: 5, height: 5 }), 4, 4), [7, 200, 33, 255], "纯色上采样");
 });
-
-// ---------------------------------------------------------------------------
-// 8. crop / rotate / flip
-// ---------------------------------------------------------------------------
 
 check("cropImage：正向裁剪取到正确像素", () => {
 	const g = gradient4();
@@ -794,7 +727,6 @@ check("rotateImage：90 / 180 / 270 像素位置与画布尺寸都正确", () =>
 	assertPixel(r270, 0, 1, RED, "270");
 	assertPixel(r270, 1, 1, BLUE, "270");
 
-	// 非方形：3×2 → 90° 后 2×3
 	const wide = makeImage(
 		3,
 		2,
@@ -812,7 +744,6 @@ check("rotateImage：90 / 180 / 270 像素位置与画布尺寸都正确", () =>
 	assertSize(wide90, 2, 3, "3×2 → 90°");
 	assertPixel(wide90, 0, 0, [4, 4, 4, 255], "3×2 → 90°");
 	assertPixel(wide90, 1, 2, [3, 3, 3, 255], "3×2 → 90°");
-	// 就近取整到最近的 90：-90 → 270，100 → 90
 	assert.deepEqual(rotateImage(wide, -90).data, rotateImage(wide, 270).data, "-90 等价 270");
 	assert.deepEqual(rotateImage(wide, 100).data, rotateImage(wide, 90).data, "100 就近到 90");
 	assert.deepEqual(rotateImage(wide, 0).data, wide.data, "0 度原样");
@@ -835,7 +766,6 @@ check("flipImage：h 左右翻转、v 上下翻转", () => {
 });
 
 check("rotateArbitrary：任意角度 expand 扩画布、0/90 度近似恒等、背景填充生效", () => {
-	// 每个像素一个独立红值 40/80/120/160/200/240，便于辨认落位
 	const wide = makeImageBy(3, 2, (x, y) => [40 * (y * 3 + x + 1), 0, 0, 255], false);
 	const r0 = rotateArbitrary(wide, 0);
 	assertSize(r0, 3, 2, "0 度");
@@ -849,22 +779,16 @@ check("rotateArbitrary：任意角度 expand 扩画布、0/90 度近似恒等、
 		"45 度",
 	);
 	assertPixel(r45, 0, 0, [0, 0, 0, 0], "45 度角外为背景");
-	// 中心区域必须仍然拿到原图颜色（红通道 > 0）
 	assert.ok(pixel(r45, Math.floor(r45.width / 2), Math.floor(r45.height / 2))[0] > 0, "中心有内容");
 	const r90 = rotateArbitrary(wide, 90);
 	assertSize(r90, 2, 3, "90 度 expand");
 	assert.equal(pixel(r90, 0, 0)[0], 160, "90 度：左下角转到左上角");
 	assert.equal(pixel(r90, 1, 0)[0], 40, "90 度：左上角转到右上角");
 	assert.equal(pixel(r90, 1, 2)[0], 120, "90 度：右上角转到右下角");
-	// cos(90°) 在浮点下不是精确 0，边缘像素覆盖度略小于 1
 	assert.ok(pixel(r90, 1, 0)[3] >= 254, "90 度边缘像素仍接近不透明");
 	const sized = rotateArbitrary(wide, 30, { expand: false });
 	assertSize(sized, 3, 2, "expand:false 保持原尺寸");
 });
-
-// ---------------------------------------------------------------------------
-// 9. adjustImage
-// ---------------------------------------------------------------------------
 
 check("adjustImage：brightness=200 变亮且数值符合 (v*2-128)+128", () => {
 	const img = makeImage(
@@ -879,7 +803,6 @@ check("adjustImage：brightness=200 变亮且数值符合 (v*2-128)+128", () => 
 	const out = adjustImage(img, { brightness: 200 });
 	assertPixel(out, 0, 0, [200, 200, 200, 255], "brightness");
 	assertPixel(out, 1, 0, [128, 128, 128, 255], "brightness");
-	// 缺省参数 = 原样
 	assert.deepEqual(Array.from(adjustImage(img, {}).data), Array.from(img.data), "缺省不变");
 });
 
@@ -926,7 +849,6 @@ check("adjustImage：饱和度/色相/模糊/锐化/暗角/棕褐都能跑且结
 		for (let c = 0; c < 3; c++) assert.ok(out.data[i + c] >= 0 && out.data[i + c] <= 255, "通道范围");
 		assert.equal(out.data[i + 3], 255, "alpha 保持");
 	}
-	// 模糊会让纯色小块变平（中心附近趋同），暗角会让四角比中心暗
 	const flat = makeImage(
 		5,
 		5,
@@ -948,10 +870,6 @@ check("adjustImage：饱和度/色相/模糊/锐化/暗角/棕褐都能跑且结
 	assert.equal(pixel(vg, 4, 4)[0], 200, "暗角中心不衰减");
 });
 
-// ---------------------------------------------------------------------------
-// 10. roundCorners / addBorder / composite
-// ---------------------------------------------------------------------------
-
 check("roundCorners：四角透明、中心与边中点不变、半径自动夹到 min(w,h)/2", () => {
 	const white = makeImage(
 		16,
@@ -968,7 +886,6 @@ check("roundCorners：四角透明、中心与边中点不变、半径自动夹�
 	assert.deepEqual(pixel(rc, 8, 0), [255, 255, 255, 255], "上边中点不变");
 	assert.deepEqual(pixel(rc, 0, 8), [255, 255, 255, 255], "左边中点不变");
 	assertSize(rc, 16, 16, "roundCorners");
-	// 半径超过 min(w,h)/2 = 8 时自动夹取
 	assert.deepEqual(Array.from(roundCorners(white, 500).data), Array.from(roundCorners(white, 8).data), "半径夹取");
 	assert.deepEqual(Array.from(roundCorners(white, 0).data), Array.from(white.data), "半径 0 原样");
 	assert.throws(() => roundCorners(white, -1), /圆角半径/);
@@ -1027,10 +944,6 @@ check("compositeOverlay：不透明覆盖、半透明混合、负坐标与平铺
 	assert.throws(() => compositeOverlay(base, ov, { opacity: 2 }), /不透明度/);
 });
 
-// ---------------------------------------------------------------------------
-// 11. histogram / dominantColors
-// ---------------------------------------------------------------------------
-
 check("histogram：纯红图峰值在 r=255 / g=b=0，且峰值归一化为 1", () => {
 	const red = makeImage(
 		4,
@@ -1047,7 +960,6 @@ check("histogram：纯红图峰值在 r=255 / g=b=0，且峰值归一化为 1", 
 	assert.equal(h.g[0], 1, "绿峰在 0");
 	assert.equal(h.b[0], 1, "蓝峰在 0");
 	assert.equal(h.r[254], 0, "非峰值为 0");
-	// 亮度桶：0.2126*255 = 54.2
 	assert.equal(h.luma[Math.floor((0.2126 * 255 * 256) / 256)], 1, "亮度峰位置");
 	const half = histogram(
 		makeImage(
@@ -1100,10 +1012,6 @@ check("dominantColors：纯红图主色是红色且 share=1；双色图占比正
 	assert.equal(dominantColors(makeImage(1, 1, [[0, 0, 0, 0]], true)).length, 0, "全透明无主色");
 });
 
-// ---------------------------------------------------------------------------
-// 12. JPEG 注入相关
-// ---------------------------------------------------------------------------
-
 const jpegBuf = buildJpegWithExif(false);
 
 await checkAsync("JPEG 未注入：hasJpegCodec() 为 false，decode/encode 的错误信息都含 JPEG", async () => {
@@ -1143,10 +1051,6 @@ await checkAsync("JPEG 注入后：decode/encode 走注入的 codec，注入非�
 	assert.equal(hasJpegCodec(), false);
 });
 
-// ---------------------------------------------------------------------------
-// 13. probeImage 其余格式 + parseExif
-// ---------------------------------------------------------------------------
-
 check("probeImage：GIF / WEBP / BMP / AVIF / SVG / unknown", () => {
 	const gif = Buffer.alloc(13 + 1);
 	gif.write("GIF89a", 0, "latin1");
@@ -1166,7 +1070,7 @@ check("probeImage：GIF / WEBP / BMP / AVIF / SVG / unknown", () => {
 	webp.write("WEBP", 8, "latin1");
 	webp.write("VP8X", 12, "latin1");
 	webp.writeUInt32LE(10, 16);
-	webp[20] = 0x10; // alpha 位
+	webp[20] = 0x10;
 	webp.writeUIntLE(63, 24, 3);
 	webp.writeUIntLE(47, 27, 3);
 	const webpInfo = probeImage(webp);
@@ -1207,7 +1111,6 @@ check("probeImage：GIF / WEBP / BMP / AVIF / SVG / unknown", () => {
 	assert.equal(bmpInfo.bitDepth, 24);
 	assert.equal(bmpInfo.hasAlpha, false);
 
-	// AVIF：ftyp(avif) + meta 里的 ispe 盒 + alpha 关键字
 	const ftyp = Buffer.alloc(20);
 	ftyp.writeUInt32BE(20, 0);
 	ftyp.write("ftyp", 4, "latin1");
@@ -1318,18 +1221,11 @@ check("probeImage：带 EXIF 的 JPEG 仍能从 SOF0 读出宽高", () => {
 	assert.equal(info.aspect, 1.5);
 });
 
-// ---------------------------------------------------------------------------
-// 14. 参数校验
-// ---------------------------------------------------------------------------
-// 14. 取色与位置截图（pickColor）
-// ---------------------------------------------------------------------------
-
 check("pickColor：精确单点取色与丰富色彩表示", () => {
-	// 创建 10×10 图像，在 (3, 4) 放置纯红 [255, 0, 0, 255]，在 (5, 5) 放置半透明绿 [0, 200, 0, 128]
 	const img = makeImageBy(10, 10, (x, y) => {
 		if (x === 3 && y === 4) return [255, 0, 0, 255];
 		if (x === 5 && y === 5) return [0, 200, 0, 128];
-		return [20, 20, 20, 255]; // 黑色背景
+		return [20, 20, 20, 255];
 	});
 
 	const resRed = pickColor(img, { x: 3, y: 4, cropSize: 8, zoom: 2, marker: false });
@@ -1344,7 +1240,7 @@ check("pickColor：精确单点取色与丰富色彩表示", () => {
 	assert.equal(resRed.color.hsl.s, 100);
 	assert.equal(resRed.color.hsl.l, 50);
 	assert.ok(resRed.color.name.includes("red"));
-	assert.equal(resRed.cropImage.width, 16); // 8 * 2
+	assert.equal(resRed.cropImage.width, 16);
 	assert.equal(resRed.cropImage.height, 16);
 
 	const resGreen = pickColor(img, { x: 5, y: 5, cropSize: 8, zoom: 1 });
@@ -1357,13 +1253,12 @@ check("pickColor：精确单点取色与丰富色彩表示", () => {
 });
 
 check("pickColor：平滑采样与区域均值", () => {
-	// 创建 5×5 渐变图
 	const img = makeImageBy(5, 5, (x, y) => [x * 50, y * 50, 100, 255]);
 	const res = pickColor(img, { x: 2, y: 2, sampleRadius: 1 });
 	assert.ok(res.color.sampled);
 	assert.equal(res.color.sampleRegion.radius, 1);
 	assert.equal(res.color.sampleRegion.pixelCount, 9);
-	assert.equal(res.color.sampled.r, 100); // 50, 100, 150 的平均值
+	assert.equal(res.color.sampled.r, 100);
 	assert.equal(res.color.sampled.g, 100);
 });
 
@@ -1371,7 +1266,6 @@ check("pickColor：准星标记绝不遮挡目标像素自身", () => {
 	const img = makeImageBy(20, 20, (x, y) => (x === 10 && y === 10 ? [123, 234, 45, 255] : [0, 0, 0, 255]));
 	const res = pickColor(img, { x: 10, y: 10, cropSize: 16, zoom: 4, marker: true });
 	assert.equal(res.hasMarker, true);
-	// 目标像素在放大截图中的几何区域为 [targetInCrop.x * zoom, targetInCrop.y * zoom]，尺寸为 zoom×zoom
 	const tx = res.targetInCrop.x * res.zoom;
 	const ty = res.targetInCrop.y * res.zoom;
 	for (let dy = 0; dy < res.zoom; dy++) {
@@ -1393,7 +1287,6 @@ check("pickColor：越界坐标与非法参数抛出明确错误", () => {
 });
 
 check("pickColorsBatch：批量多点取色与拼接图输出", () => {
-	// 创建三色分区图：左红，中绿，右蓝
 	const img = makeImageBy(30, 10, (x) => {
 		if (x < 10) return [255, 0, 0, 255];
 		if (x < 20) return [0, 255, 0, 255];
@@ -1414,17 +1307,15 @@ check("pickColorsBatch：批量多点取色与拼接图输出", () => {
 });
 
 check("extractRegionPalette：全图/区域自动色板提取并定位代表像素", () => {
-	// 创建包含暗背景和两块不同色块的测试图（类似 UI 胶囊场景）
 	const img = makeImageBy(40, 20, (x, y) => {
-		if (x >= 5 && x < 15 && y >= 5 && y < 15) return [30, 144, 255, 255]; // 蓝色胶囊
-		if (x >= 25 && x < 35 && y >= 5 && y < 15) return [50, 205, 50, 255]; // 绿色胶囊
-		return [20, 20, 20, 255]; // 暗黑背景
+		if (x >= 5 && x < 15 && y >= 5 && y < 15) return [30, 144, 255, 255];
+		if (x >= 25 && x < 35 && y >= 5 && y < 15) return [50, 205, 50, 255];
+		return [20, 20, 20, 255];
 	});
 
 	const res = extractRegionPalette(img, { maxColors: 4, cropSize: 12, zoom: 2 });
 	assert.ok(res.colors.length >= 3, `提取出色板数量至少 3 种（实际：${res.colors.length}）`);
 	const hexes = res.colors.map((c) => c.color.hex.toLowerCase());
-	// 能够识别出深黑底色、蓝色、绿色
 	const hasBlue = hexes.some((h) => h.includes("1e90ff"));
 	const hasGreen = hexes.some((h) => h.includes("32cd32"));
 	const hasDark = hexes.some((h) => h.includes("141414"));
@@ -1432,15 +1323,12 @@ check("extractRegionPalette：全图/区域自动色板提取并定位代表像�
 	assert.ok(hasGreen, "提取出绿色特征色");
 	assert.ok(hasDark, "提取出暗黑背景色");
 
-	// 且每种特征色都自动找到了有效的代表像素坐标及带准星截图
 	for (const item of res.colors) {
 		assert.ok(Number.isFinite(item.coords.x) && Number.isFinite(item.coords.y));
 		assert.ok(item.cropImage.width > 0 && item.cropImage.height > 0);
 	}
 	assert.ok(res.contactSheet, "生成总览 Contact Sheet 图像");
 });
-
-// ---------------------------------------------------------------------------
 
 await checkAsync("非法参数都抛中文错误", async () => {
 	await assert.rejects(decodeImage(Buffer.alloc(0)), /数据为空/);
@@ -1465,10 +1353,6 @@ await checkAsync("非法参数都抛中文错误", async () => {
 	assert.throws(() => dominantColors(img, 0), /主色数量/);
 });
 
-// ---------------------------------------------------------------------------
-// 15. 大图性能
-// ---------------------------------------------------------------------------
-
 check("性能：2000×1500 上 resize + adjust（含预计算 LUT）耗时 < 2000ms", () => {
 	const w = 2000;
 	const h = 1500;
@@ -1487,7 +1371,5 @@ check("性能：2000×1500 上 resize + adjust（含预计算 LUT）耗时 < 200
 	assert.ok(ms2 < 2000, `全图调色耗时 ${ms2.toFixed(0)}ms 超过 2000ms`);
 	console.log(`    · 2000×1500 全图 adjust = ${ms2.toFixed(0)}ms`);
 });
-
-// ---------------------------------------------------------------------------
 
 console.log(`\n${process.exitCode ? "有失败项" : "全部通过"}：${passed} 项 ✓`);

@@ -1,24 +1,8 @@
 /// <reference lib="dom" />
-/**
- * 样式采集：只报「值得看的」属性，以及「哪条 CSS 命中了这个元素（哪个文件哪一行）」。
- *
- * 两个关键设计（否则这块就是纯噪音）：
- *
- * 1. **与默认值对比**，不是全量 dump。浏览器默认值不用手写表 —— 现场造一个同 tag 的
- *    空元素当探针（detached 也能 getComputedStyle），逐属性比；继承类属性（color /
- *    font-*）则与**父元素**比（相同说明就是继承来的，报它没意义）。这样每个元素通常
- *    只剩几行「作者真的动过」的差异。
- *
- * 2. **行号靠 Vite dev 的 `<style data-vite-dev-id>`**：该元素 textContent 与源文件
- *    逐字对应，于是 `textContent.indexOf(rule.selectorText)` 之前有几个换行就是源文件
- *    行号。外部 `<link>` 样式表拿不到偏移（CSSOM 不给），就只给文件不给行号 —— 宁可
- *    少给也不要给假的。
- */
 
 import type { MatchedRule } from "../shared/contract.js";
 import { collapse } from "../shared/text.js";
 
-/** 精简档：布局/排版/颜色/边框里最常出问题的那批。 */
 const CORE_PROPS = [
 	"display",
 	"position",
@@ -43,7 +27,6 @@ const CORE_PROPS = [
 	"grid-template-columns",
 ];
 
-/** 完整档：再加一层细粒度属性。 */
 const EXTRA_PROPS = [
 	"flex",
 	"flex-wrap",
@@ -71,7 +54,6 @@ const EXTRA_PROPS = [
 	"column-gap",
 ];
 
-/** 继承类属性：与父元素相同 = 继承来的，不报。 */
 const INHERITED = new Set([
 	"color",
 	"font-size",
@@ -94,11 +76,6 @@ function probeFor(tag: string, doc: Document): Element {
 	return probe;
 }
 
-/**
- * 计算样式子集：**只返回与默认/继承值不同的项**（作者真的动过的那些）。
- * width/height 故意不在列表里 —— 契约的 rect（尺寸）已经给了，重复报两遍是纯噪音。
- * @param opts.full 是否带 EXTRA_PROPS（full 档）
- */
 export function collectStyles(el: Element, opts: { full?: boolean } = {}): Record<string, string> {
 	const doc = el.ownerDocument;
 	const view = doc.defaultView;
@@ -122,10 +99,8 @@ export function collectStyles(el: Element, opts: { full?: boolean } = {}): Recor
 			const value = own.getPropertyValue(prop);
 			if (!value) continue;
 			if (INHERITED.has(prop)) {
-				// 与父级相同 → 继承来的，不是这个元素的问题，不报
 				if (parent && parent.getPropertyValue(prop) === value) continue;
 			} else if (probeStyle && probeStyle.getPropertyValue(prop) === value) {
-				// 与同 tag 空元素的默认值一致 → 没人动过它，不报（这是「只报差异」的全部依据）
 				continue;
 			}
 			out[prop] = collapse(value);
@@ -144,11 +119,6 @@ interface RuleHit {
 	score: number;
 }
 
-/**
- * 命中的 CSS 规则（按「真正改了多少我们关心的属性」排序，只留前几条）。
- *
- * @param maxRules 最多返回几条（默认 5）
- */
 export function collectMatchedRules(el: Element, maxRules = 5): MatchedRule[] {
 	const doc = el.ownerDocument;
 	const hits: RuleHit[] = [];
@@ -163,7 +133,7 @@ export function collectMatchedRules(el: Element, maxRules = 5): MatchedRule[] {
 		try {
 			rules = (sheet as CSSStyleSheet).cssRules;
 		} catch {
-			continue; // 跨域样式表读不到（SecurityError）→ 跳过，不影响其它表
+			continue;
 		}
 		if (!rules) continue;
 		const owner = sheet.ownerNode as HTMLElement | null;
@@ -195,7 +165,6 @@ function walkRules(
 	for (const rule of Array.from(rules)) {
 		const type = rule.constructor?.name ?? "";
 		if (type === "CSSMediaRule" || type === "CSSSupportsRule") {
-			// 只有当前真的生效的条件块才下钻（max-width 不匹配的那半边对我们没意义）
 			const cond = (rule as CSSMediaRule).conditionText ?? "";
 			if (type === "CSSMediaRule" && cond && view?.matchMedia && !view.matchMedia(cond).matches) continue;
 			const inner = (rule as CSSMediaRule).cssRules;
@@ -210,7 +179,7 @@ function walkRules(
 		try {
 			matched = el.matches(selector);
 		} catch {
-			continue; // 带 ::before 之类伪元素的选择器 → matches 会抛，跳过
+			continue;
 		}
 		if (!matched) continue;
 		const declarations = interestingDeclarations(style);
@@ -225,7 +194,6 @@ function walkRules(
 	}
 }
 
-/** 规则文本里「我们关心的」声明；全是无关属性（cursor/zoom…）的规则直接丢弃。 */
 function interestingDeclarations(rule: CSSStyleRule): { text: string; score: number } {
 	const known = new Set([...CORE_PROPS, ...EXTRA_PROPS]);
 	const parts: string[] = [];
@@ -240,7 +208,6 @@ function interestingDeclarations(rule: CSSStyleRule): { text: string; score: num
 	return { text: parts.join(";"), score };
 }
 
-/** 样式表对应的源文件：Vite dev 的 data-vite-dev-id 最准，否则用 link 的 href。 */
 function sourceFileOf(owner: HTMLElement | null): string | undefined {
 	if (!owner) return undefined;
 	const devId =
@@ -250,7 +217,6 @@ function sourceFileOf(owner: HTMLElement | null): string | undefined {
 	return href || undefined;
 }
 
-/** 在 `<style>` 的 textContent 里定位规则所在行（拿不到就返回空对象）。 */
 function lineOf(source: string, selector: string): { line?: number } {
 	if (!source) return {};
 	const at = source.indexOf(selector);

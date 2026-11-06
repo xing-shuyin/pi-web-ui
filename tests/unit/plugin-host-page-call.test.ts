@@ -2,22 +2,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PLUGIN_HOST_API_VERSION, createPluginHostApi } from "../../web/src/plugin-host";
 
-/**
- * 宿主桥的 `pageCall`：**模型的动作从这里进浏览器扩展**。
- *
- * 三条纪律（都是「不能让模型白等」）：
- * 1. 桥不在（扩展没装 / 没启用 / 本页地址没绑）→ 立刻给一句能照做的错，不要一直等；
- * 2. 桥在 → 把 op/args/目标原样交给它，成功后把结果回传；
- * 3. 桥抛错（页面没授权、动作失败）→ 把原因**原样**回传（它会变成模型看到的工具失败）。
- */
-
 function api(overrides: { bridgeWaitMs?: number } = {}) {
 	return createPluginHostApi({
 		send: () => true,
 		isReady: () => true,
 		setView: () => {},
 		getCwd: () => "",
-		// pageCall 不碰多根/会话，这里只补足 deps 形状（避免与真契约漂移）。
 		getWorkspaceRoots: () => [],
 		listSessions: () => [],
 		getConversationId: () => null,
@@ -26,7 +16,6 @@ function api(overrides: { bridgeWaitMs?: number } = {}) {
 	});
 }
 
-/** 装一个假的扩展桥（真桥是 page-picker 注入到页面主世界的 window.__piBridge）。 */
 function installBridge(impl?: (req: unknown) => Promise<unknown>): unknown[] {
 	const calls: unknown[] = [];
 	(globalThis as unknown as Record<string, unknown>).__piBridge = {
@@ -41,6 +30,8 @@ function installBridge(impl?: (req: unknown) => Promise<unknown>): unknown[] {
 
 afterEach(() => {
 	delete (globalThis as unknown as Record<string, unknown>).__piBridge;
+	delete (globalThis as unknown as Record<string, unknown>).__piBrowser;
+	delete (window as unknown as Record<string, unknown>).piDesktop;
 });
 
 describe("pageCall（模型 → 浏览器扩展）", () => {
@@ -53,8 +44,8 @@ describe("pageCall（模型 → 浏览器扩展）", () => {
 		const res = await api({ bridgeWaitMs: 5 }).pageCall({ op: "read" });
 		expect(res.ok).toBe(false);
 		if (!res.ok) {
-			expect(res.error).toContain("page-picker"); // 点名扩展
-			expect(res.error).toContain("刷新"); // 给下一步
+			expect(res.error).toContain("page-picker");
+			expect(res.error).toContain("刷新");
 		}
 	});
 
@@ -67,7 +58,6 @@ describe("pageCall（模型 → 浏览器扩展）", () => {
 			timeoutMs: 8000,
 		});
 		expect(res).toEqual({ ok: true, result: { title: "页面标题" } });
-		// 桥的参数名是 to（target 是工具/协议侧的叫法）
 		expect(calls[0]).toEqual({ op: "read", args: { what: "title" }, to: "http://localhost:5173", timeoutMs: 8000 });
 	});
 
@@ -89,6 +79,47 @@ describe("pageCall（模型 → 浏览器扩展）", () => {
 		const res = await api().pageCall({ op: "read" });
 		expect(res.ok).toBe(false);
 		if (!res.ok) expect(res.error).toContain("没打开");
+	});
+
+	it("原生桥在桌面壳优先路由并原样返回，不覆盖应用宿主对象", async () => {
+		(window as unknown as Record<string, unknown>).piDesktop = { isDesktop: true };
+		const calls = installBridge();
+		const pageCall = vi.fn(async () => ({ ok: true, result: { title: "Native" } }));
+		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 1, pageCall };
+		const req = { op: "read", args: { what: "title" }, target: "native-tab", timeoutMs: 8000 };
+		expect(await api().pageCall(req)).toEqual({ ok: true, result: { title: "Native" } });
+		expect(pageCall).toHaveBeenCalledWith(req);
+		expect(calls).toEqual([]);
+	});
+
+	it("原生失败和异常不重试扩展，保留真实原因", async () => {
+		const calls = installBridge();
+		const pageCall = vi.fn(async () => ({ ok: false, error: "Native target closed" }));
+		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 1, pageCall };
+		expect(await api().pageCall({ op: "read", target: "stale-tab" })).toEqual({
+			ok: false,
+			error: "Native target closed",
+		});
+		pageCall.mockRejectedValueOnce(new Error("Native disconnected"));
+		expect(await api().pageCall({ op: "read" })).toEqual({ ok: false, error: "Native disconnected" });
+		expect(calls).toEqual([]);
+	});
+
+	it("旧桌面壳无原生能力快速提示，不等待扩展桥", async () => {
+		(window as unknown as Record<string, unknown>).piDesktop = { isDesktop: true };
+		const calls = installBridge();
+		expect(await api().pageCall({ op: "pages" })).toMatchObject({
+			ok: false,
+			error: expect.stringContaining("Native browser bridge unavailable"),
+		});
+		expect(calls).toEqual([]);
+	});
+
+	it("不支持的原生桥版本在网页版保留扩展路径", async () => {
+		const calls = installBridge();
+		(globalThis as unknown as Record<string, unknown>).__piBrowser = { version: 2, pageCall: vi.fn() };
+		expect(await api().pageCall({ op: "pages" })).toEqual({ ok: true, result: { title: "页面标题" } });
+		expect(calls).toEqual([{ op: "pages" }]);
 	});
 
 	it("空 op → 直接拒（连桥都不去找）", async () => {

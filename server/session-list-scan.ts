@@ -1,39 +1,28 @@
-/**
- * 会话列表元信息扫描（左栏历史列表用）：字节级、可增量。
- *
- * 与 parseSessionInfoFast（列表模式）提取相同字段、同一套规则：
- * - session 头：id / cwd / timestamp / parentSession；session_info：最后一个非空 name；
- * - message：计数、最大 message.timestamp、第一条用户消息文本；
- * - 已拿到 id 与首条用户消息后，超过 512 字节、且不含 "session_info" 的长行不做 JSON.parse，
- *   只看行首判断是否 message 并取第一个数值型 "timestamp"。
- *
- * 相对原实现的改进：
- * 1. 按字节读取、按换行字节切行（UTF-8 中 0x0A 不会出现在多字节序列里），长行走快路径时
- *    完全不解码成字符串、也不经过逐字符的 base64 过滤器；
- * 2. 增量：记录最后一个完整行之后的字节偏移与两处指纹（文件头 + 偏移前一小段）。会话文件是
- *    追加写入的，再次扫描时若两处指纹未变，只解析新增的字节；文件被改写（链修复、截断等）
- *    指纹不符则整份重扫。末尾未写完的半行计入本次结果但不推进偏移，下次随完整行重读。
- */
 import { promises as fsPromises } from "node:fs";
 import { setImmediate } from "node:timers/promises";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
+import type { NativeCliConfig } from "./protocol.js";
+import { NATIVE_CLI_ENTRY, parseNativeCliMetadata } from "./native-cli.js";
+
+export interface SessionListInfo extends SessionInfo {
+	nativeCli?: NativeCliConfig;
+}
 
 const CHUNK_BYTES = 64 * 1024;
 const FAST_PATH_MIN_BYTES = 512;
 const HEAD_SIG_BYTES = 128;
 const TAIL_SIG_BYTES = 64;
-/** 需要完整解析的超长行先剔除内嵌 base64（"data":"…"），避免把图片载荷解析成对象。 */
 const STRIP_DATA_MIN_CHARS = 64 * 1024;
 const DATA_VALUE_RE = /"data"\s*:\s*"(?:[^"\\]|\\.)*"/g;
 
 export interface SessionListScanState {
-	/** 已完整消费到的字节偏移（最后一个换行之后）。 */
 	offset: number;
 	headSig: string;
 	tailSig: string;
 	id: string;
 	cwd: string;
 	name?: string;
+	nativeCli?: NativeCliConfig;
 	parentSessionPath?: string;
 	headerTime: number;
 	firstMessage: string;
@@ -44,13 +33,13 @@ export interface SessionListScanState {
 const COLON = 0x3a;
 const TIMESTAMP_KEY = Buffer.from('"timestamp"');
 const SESSION_INFO_KEY = Buffer.from('"session_info"');
+const NATIVE_CLI_KEY = Buffer.from(NATIVE_CLI_ENTRY);
 const MESSAGE_TYPE_RE = /"type"\s*:\s*"message"/;
 
 function isWs(b: number): boolean {
 	return b === 0x20 || b === 0x09 || b === 0x0d || b === 0x0a;
 }
 
-/** 等价于 /"timestamp"\s*:\s*(\d{10,16})/.exec(line) 的第一个匹配，直接在字节上找。 */
 function firstNumericTimestamp(line: Buffer): number | null {
 	let from = 0;
 	for (;;) {
@@ -89,7 +78,13 @@ type Fields = Omit<SessionListScanState, "offset" | "headSig" | "tailSig">;
 
 function applyLine(line: Buffer, st: Fields): void {
 	if (line.length === 0 || isBlank(line)) return;
-	if (st.id && st.firstMessage && line.length > FAST_PATH_MIN_BYTES && line.indexOf(SESSION_INFO_KEY) < 0) {
+	if (
+		st.id &&
+		st.firstMessage &&
+		line.length > FAST_PATH_MIN_BYTES &&
+		line.indexOf(SESSION_INFO_KEY) < 0 &&
+		line.indexOf(NATIVE_CLI_KEY) < 0
+	) {
 		const head = line.toString("utf8", 0, 140);
 		if (MESSAGE_TYPE_RE.test(head)) {
 			st.messageCount++;
@@ -114,6 +109,12 @@ function applyLine(line: Buffer, st: Fields): void {
 		if (typeof rec.parentSession === "string") st.parentSessionPath = rec.parentSession;
 	} else if (rec.type === "session_info") {
 		if (typeof rec.name === "string" && rec.name.trim()) st.name = rec.name.trim();
+	} else if (rec.type === "custom" && rec.customType === NATIVE_CLI_ENTRY) {
+		try {
+			st.nativeCli = parseNativeCliMetadata(rec.data);
+		} catch {
+			delete st.nativeCli;
+		}
 	} else if (rec.type === "message") {
 		st.messageCount++;
 		const msg = rec.message as Record<string, unknown> | null;
@@ -138,7 +139,7 @@ async function readSig(fh: fsPromises.FileHandle, position: number, length: numb
 	return buf.toString("base64", 0, bytesRead);
 }
 
-function toInfo(filePath: string, fileMtime: number, f: Fields): SessionInfo | null {
+function toInfo(filePath: string, fileMtime: number, f: Fields): SessionListInfo | null {
 	if (!f.id) return null;
 	const modified = f.lastActivityTime > 0 ? f.lastActivityTime : f.headerTime > 0 ? f.headerTime : fileMtime;
 	return {
@@ -146,26 +147,22 @@ function toInfo(filePath: string, fileMtime: number, f: Fields): SessionInfo | n
 		id: f.id,
 		cwd: f.cwd,
 		name: f.name,
+		...(f.nativeCli ? { nativeCli: f.nativeCli } : {}),
 		parentSessionPath: f.parentSessionPath,
 		created: new Date(f.headerTime || fileMtime),
 		modified: new Date(modified),
 		messageCount: f.messageCount,
-		firstMessage: f.firstMessage || "(no messages)",
+		firstMessage: f.firstMessage || (f.nativeCli ? "" : "(no messages)"),
 		allMessagesText: "",
 	};
 }
 
 export interface SessionListScanResult {
-	info: SessionInfo | null;
+	info: SessionListInfo | null;
 	state: SessionListScanState;
-	/** 本次实际解析的起始偏移（0 = 全量；> 0 = 增量）。 */
 	resumedFrom: number;
 }
 
-/**
- * 扫描会话文件的列表元信息。`prev` 为上次扫描的状态：文件只是被追加时，从上次偏移继续；
- * 否则整份重扫。返回 null 仅在文件不可读时。
- */
 export async function scanSessionListInfo(
 	filePath: string,
 	fileMtime: number,
@@ -222,7 +219,6 @@ export async function scanSessionListInfo(
 			headSig,
 			tailSig: await readSig(fh, committed - tailLen, tailLen),
 		};
-		// 末尾未写完的半行：计入本次结果，但不进入可续扫状态（下次随完整行重读）
 		let resultFields = fields;
 		if (pending.length > 0) {
 			resultFields = { ...fields };

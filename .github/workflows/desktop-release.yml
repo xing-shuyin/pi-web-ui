@@ -1,12 +1,5 @@
 name: Desktop installer
 
-# 打 tag 后构建桌面安装包（Windows/macOS/Linux），并挂到该 tag 的 GitHub Release 上
-# （Release 本体由 release-notes.yml 创建；两者同时被 tag 触发，这里会等它出现）。
-# 现在是无证书出包：
-#   - Windows：首启有 SmartScreen「未知发布者」提示（SignPath Foundation 获批后在本 workflow 签名）
-#   - macOS：dmg 未签名 → Gatekeeper 会拦，首次运行要右键→打开（SignPath 不管 mac）
-#   - Linux：AppImage 无签名概念
-# 手动跑（只出 workflow artifact、不动 Release 资产）：Actions → Desktop installer → Run workflow
 on:
   push:
     tags:
@@ -32,16 +25,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 桌面壳复用 dist/server + web/dist，所以先跑常规打包
       - name: Build (web + server)
         run: npm run build
 
       - name: Build desktop shell
         run: npm run build:desktop
 
-      # npmRebuild:false：node-pty 1.1.0 是 N-API 预编译，不需要按 Electron ABI 重编，
-      # 也就不用装 Visual Studio（见 desktop/electron-builder.yml 注释）。
-      # 产物名由 yml 的 artifactName 定（无空格，feed 与 asset 名一致，issue #180B）。
       - name: Package Windows installer
         run: npx electron-builder -c desktop/electron-builder.yml --win --publish never
 
@@ -49,12 +38,6 @@ jobs:
         shell: bash
         run: node scripts/make-portable.mjs --skip-pack --zip --with-git --with-node
 
-      # ───────────────────────────────────────────────────────────────────────────
-      # SignPath 签名流程：
-      # 1. 上传未签名的 exe 到 GitHub Artifact
-      # 2. 调 SignPath 官方 Action 提交签名并等待签名完成（测试期使用 test-signing 策略）
-      # 3. 用签名后的 exe 覆盖 release/ 下的文件，并刷新 .blockmap 与 latest.yml 哈希
-      # ───────────────────────────────────────────────────────────────────────────
       - name: Upload unsigned installer for signing
         id: upload-unsigned-artifact
         uses: actions/upload-artifact@v4
@@ -71,7 +54,6 @@ jobs:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: "3de26332-3db9-4d2a-b7cd-33ca0c263a6e"
           project-slug: "pi-web-ui"
-          # 注意：测试期使用 test-signing；SignPath 官方核验后导入正式证书再换为 release-signing
           signing-policy-slug: "test-signing"
           artifact-configuration-slug: "initial"
           github-artifact-id: ${{ steps.upload-unsigned-artifact.outputs.artifact-id }}
@@ -140,8 +122,6 @@ jobs:
       - name: Build desktop shell
         run: npm run build:desktop
 
-      # 未签名 dmg：macOS 用户首次运行需要 右键 → 打开（Gatekeeper）
-      # 产物含 dmg（手装）+ zip（electron-updater 原地更新只吃 zip，issue #180A）
       - name: Package macOS app (dmg + zip)
         run: npx electron-builder -c desktop/electron-builder.yml --mac --publish never
 

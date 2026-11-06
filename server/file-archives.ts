@@ -17,7 +17,6 @@ export function archiveName(path: string, directory: boolean, now = new Date()):
 	return `${basename(path)}${directory ? `-${time}` : ""}.tar.gz`;
 }
 
-/** Archive and upload paths are always relative, portable paths, never machine paths. */
 export function safeEntryPath(name: string): string {
 	const parts = name
 		.replace(/\\/g, "/")
@@ -43,7 +42,6 @@ export function safeEntryPath(name: string): string {
 	return parts.join("/");
 }
 
-/** Count implicit parent directories too, so deep paths cannot bypass the entry limit. */
 function trackEntry(paths: Set<string>, name: string): void {
 	let prefix = "";
 	for (const part of name.split("/")) {
@@ -62,7 +60,6 @@ async function maybeStat(path: string) {
 	}
 }
 
-/** Refuse symlinks in the destination, including existing parent directories. */
 export async function safeDestination(root: string, name: string): Promise<string> {
 	let path = root;
 	for (const part of safeEntryPath(name).split("/")) {
@@ -99,7 +96,6 @@ export async function createArchive(source: string, outputDir?: string): Promise
 	const dest = join(outputDir ?? dirname(abs), name);
 	let entries = 0;
 	let bytes = 0;
-	// Enumerate before creating the output: never include the archive itself.
 	const names: string[] = [];
 	const inodes = new Set<string>();
 	async function walk(path: string, name: string): Promise<void> {
@@ -116,7 +112,6 @@ export async function createArchive(source: string, outputDir?: string): Promise
 		if (info.isDirectory()) for (const child of await readdir(path)) await walk(join(path, child), `${name}/${child}`);
 	}
 	await walk(abs, basename(abs));
-	// Exclusive creation: never truncate an existing archive.
 	const handle = await open(dest, "wx", 0o600);
 	try {
 		const stream = tar.c({ gzip: true, cwd: dirname(abs), portable: true, strict: true, noDirRecurse: true }, names);
@@ -134,9 +129,6 @@ async function unzip(source: string, stage: string): Promise<void> {
 		yauzl.open(source, { lazyEntries: true, strictFileNames: true }, (err, z) => (err ? fail(err) : ok(z!))),
 	);
 	let count = 0;
-	// 全局实量字节计数：zip 头声明的 uncompressedSize 可被伪造（头写小、解压输出
-	// 无限膨胀的 zip 炸弹），上限必须按每个条目实际解压输出累加，超限抛错 ——
-	// extractArchive 的 finally 会清理临时目录。tar 分支不受影响。
 	const total = { bytes: 0 };
 	const paths = new Set<string>();
 	await new Promise<void>((ok, fail) => {
@@ -174,7 +166,6 @@ async function unpack(source: string, stage: string): Promise<void> {
 	if (/\.(?:tar|tar\.gz|tgz)$/i.test(source)) {
 		let count = 0;
 		let bytes = 0;
-		// Validate all headers before extracting anything, even into the private staging directory.
 		const seen = new Set<string>();
 		const paths = new Set<string>();
 		const parser = tar.t({
@@ -261,7 +252,6 @@ export async function extractArchive(
 			if (item.dir) await mkdir(item.dest, { recursive: true });
 			else if (item.exists && policy === "skip") skipped++;
 			else {
-				// Unlink instead of truncating: existing hardlinks must not change another file.
 				if (policy === "overwrite") await rm(item.dest, { force: true });
 				await copyFile(item.src, item.dest, constants.COPYFILE_EXCL);
 				written++;

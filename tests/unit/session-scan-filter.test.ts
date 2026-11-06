@@ -1,8 +1,6 @@
-/** B3：BinaryStringFilter 的跳跃式实现与原逐字符实现逐字节等价（含任意分块边界）。 */
 import { describe, expect, it } from "vitest";
 import { BinaryStringFilter } from "../../server/session-scan.js";
 
-/** 原实现（逐字符），原样保留作为差分基准。 */
 class LegacyBinaryStringFilter {
 	private inString = false;
 	private escaped = false;
@@ -91,7 +89,6 @@ function randomRecord(r: () => number): string {
 		return `"${k}"${sp}:${sp}${value()}`;
 	});
 	let line = `{${fields.join(",")}}`;
-	// 偶尔制造畸形行（字符串内换行、未闭合引号）
 	if (r() < 0.1) line = line.slice(0, Math.floor(r() * line.length));
 	return line;
 }
@@ -116,7 +113,6 @@ describe("BinaryStringFilter（跳跃式实现）", () => {
 			const input = Array.from({ length: 1 + Math.floor(r() * 6) }, () => randomRecord(r)).join(
 				r() < 0.5 ? "\n" : "\r\n",
 			);
-			// 随机切块（包括切在转义符、引号、代理对中间）
 			const chunks: string[] = [];
 			let i = 0;
 			while (i < input.length) {
@@ -131,7 +127,6 @@ describe("BinaryStringFilter（跳跃式实现）", () => {
 				expect({ seed, input, got }).toEqual({ seed, input, got: expected });
 			}
 		}
-		// 样本里必须有大量真正发生丢弃的输入，等价性检验才有意义
 		expect(discarded).toBeGreaterThan(500);
 	});
 });

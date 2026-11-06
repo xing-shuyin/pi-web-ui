@@ -1,6 +1,6 @@
 {
 	"name": "pi-web-ui",
-	"version": "0.117.0",
+	"version": "0.118.0",
 	"description": "Just open your browser to get all your work done — browser cockpit for AI coding agents (chat, code, files, terminal, Git in one tab)",
 	"license": "MIT",
 	"author": {
@@ -14,7 +14,8 @@
 	},
 	"bin": {
 		"pi-web-ui": "bin/pi-web-ui.mjs",
-		"piwebui": "bin/pi-web-ui.mjs"
+		"piwebui": "bin/pi-web-ui.mjs",
+		"pwu": "bin/pi-web-ui.mjs"
 	},
 	"main": "bin/pi-web-ui.mjs",
 	"files": [
@@ -27,8 +28,11 @@
 		"extensions/",
 		"plugin-sdk/",
 		"plugins/catalog.json",
+		"plugins/superagent/",
 		"docs/dsh-engine.md",
 		"docs/device-center.md",
+		"docs/group-orchestration.md",
+		"docs/hub-upgrade-release-testing.md",
 		"docs/device-desktop.md",
 		"docs/architecture-plugins.md",
 		"CHANGELOG.md",
@@ -86,7 +90,7 @@
 		"plugins:link": "node scripts/link-plugins.mjs",
 		"plugins:unlink": "node scripts/link-plugins.mjs --unlink",
 		"start": "node --import ./dist/server/resolve-global-sdk.js dist/server/index.js",
-		"build:desktop": "tsc -p desktop/tsconfig.json",
+		"build:desktop": "tsc -p desktop/tsconfig.json && node scripts/build-browser.mjs",
 		"desktop:dev": "npm run build:desktop && electron dist/desktop/main.js",
 		"desktop:dist": "npm run build && npm run build:desktop && electron-builder -c desktop/electron-builder.yml",
 		"desktop:portable": "npm run build && npm run build:desktop && node scripts/make-portable.mjs",

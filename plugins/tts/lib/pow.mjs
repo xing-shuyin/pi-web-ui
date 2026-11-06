@@ -1,26 +1,3 @@
-/**
- * 工作量证明（PoW）。
- *
- * 网页端发 /api/v0/chat/completion 之前必须过这一关：官方代码里拿到 challenge 之后
- * 如果解不出来，是**直接 return、根本不发请求**的。所以要往会话里塞消息，这步绕不过去。
- *
- * 流程（照抄 main.d69e3d8c16.js）：
- *   1. POST /api/v0/chat/create_pow_challenge  {"target_path":"/api/v0/chat/completion"}
- *      -> data.biz_data.challenge = {algorithm, challenge, salt, difficulty, signature, expire_at, expire_after}
- *   2. 找一个 i ∈ [0, difficulty)，使得 DeepSeekHashV1(prefix + String(i)) === challenge
- *      其中 prefix = salt + "_" + expire_at + "_"
- *   3. 请求头 X-DS-PoW-Response = base64(JSON({algorithm, challenge, salt, answer, signature, target_path}))
- *
- * 两个容易踩的点，都是实测出来的：
- *   - prefix 用的是 **expire_at**，不是 signature。官方代码把第 5 个实参写成了 expireAt
- *     （`})(e,r,n,i,s)` 而签名是 `(t,e,r,n,i)`），看着像笔误，但服务端显然按同样口径算，
- *     所以照抄。用 signature 拼 prefix 会永远解不出来。
- *   - 哈希是自定义的 DeepSeekHashV1，不是 SHA3-256。见 deepseek-hash.mjs。
- *
- * 编解码：btoa。platform=web 时 `base64Encode: btoa`，JSON 全是 ASCII，所以
- * Node 里 Buffer.from(json,'utf8').toString('base64') 等价。
- */
-
 import { HTTP_BASE } from "./constants.mjs";
 import { DeepSeekTtsError, protocolError, transportError, usageError } from "./errors.mjs";
 import { DEEPSEEK_HASH_NAME, deepseekHashHex } from "./deepseek-hash.mjs";
@@ -30,10 +7,8 @@ export const POW_HEADER = "X-DS-PoW-Response";
 export const POW_TARGET_COMPLETION = "/api/v0/chat/completion";
 export const POW_CHALLENGE_PATH = "/api/v0/chat/create_pow_challenge";
 
-/** 一晚上没解出来就别死磕了。官方 challenge 的 difficulty 是服务端给的，实测值未知。 */
 const DEFAULT_MAX_ITERATIONS = 5_000_000;
 
-/** 拼 prefix。再强调一次：用 expireAt，不是 signature。 */
 export function powPrefix({ salt, expireAt }) {
 	return `${salt}_${expireAt}_`;
 }
@@ -88,10 +63,6 @@ export function solvePowChallenge(challenge, { maxIterations = DEFAULT_MAX_ITERA
 	);
 }
 
-/**
- * 拼请求头。返回 [名字, 值]。
- * 官方就是 `[name, base64Encode(JSON.stringify({algorithm, challenge, salt, answer, signature, target_path}))]`。
- */
 export function buildPowHeader(challenge, answer, targetPath, encode = defaultBase64) {
 	const payload = {
 		algorithm: challenge.algorithm ?? DEEPSEEK_HASH_NAME,
@@ -108,7 +79,6 @@ export function defaultBase64(str) {
 	return Buffer.from(str, "utf8").toString("base64");
 }
 
-/** 取一张 challenge。 */
 export async function fetchPowChallenge({
 	targetPath = POW_TARGET_COMPLETION,
 	token,
@@ -154,7 +124,6 @@ export async function fetchPowChallenge({
 	return challenge;
 }
 
-/** 取 challenge + 解 + 拼头，一条龙。返回 {header:[name,value], challenge, answer, ...}。 */
 export async function obtainPowHeader({
 	targetPath = POW_TARGET_COMPLETION,
 	token,

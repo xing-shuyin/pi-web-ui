@@ -47,7 +47,6 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			store,
 			driver,
 			send: (wire) => {
-				// Match actual WS serialization: snapshots must not retain mutable server objects.
 				const msg = structuredClone(wire);
 				frames.push(msg);
 				if (msg.type === "snapshot") {
@@ -56,7 +55,6 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 						msg.state.streamingMessage?.id === ui.streamingMessage.id &&
 						JSON.stringify(ui.streamingMessage.content) !== JSON.stringify(msg.state.streamingMessage.content)
 					) {
-						// Structural tool additions are expected; already streamed text/thinking must not move.
 						const old = ui.streamingMessage.content.filter((b) => b.type !== "toolCall");
 						const next = msg.state.streamingMessage.content.filter((b) => b.type !== "toolCall");
 						if (JSON.stringify(old) !== JSON.stringify(next)) mismatches.push({ old, next });
@@ -83,7 +81,6 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 		sink.onThinkingDelta("plan");
 		sink.onTextDelta("before");
 		sink.onToolStart("one", "bash", { command: "one" });
-		// No timer opportunity between tool start and the next provider token.
 		sink.onThinkingDelta("reconsider");
 		sink.onThinkingDelta(" more");
 		sink.onToolEnd("one", { output: "first output" });
@@ -123,7 +120,6 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			childReady();
 			await done;
 		});
-		// Use the real subagent lifecycle with a deterministic provider.
 		(session as any).driverFactory = () => child;
 		const { convId } = await session.spawnSubagent("child task", "general", dir);
 		await ready;
@@ -192,7 +188,6 @@ describe("Universal multi-step stream / snapshot consistency (#801)", () => {
 			if (ending === "cancel") await session.abort();
 			else if (ending === "error") sink.onError("provider failed");
 			else sink.onTurnComplete();
-			// Late events from a settled/canceled driver cannot contaminate either conversation.
 			sink.onToolEnd("late", { output: "late output" });
 			sink.onThinkingDelta("late thinking");
 			expect(ui.messages.some((m) => m.role === "assistant" || m.role === "toolResult")).toBe(false);

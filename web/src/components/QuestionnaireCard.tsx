@@ -12,7 +12,6 @@ export interface QuestionnaireCardProps {
 	waiting?: boolean;
 }
 
-/** 从工具结果 details 或文本输出中安全提取 answers 列表 */
 function extractAnswers(details: unknown, output?: string): Map<string, QuestionAnswer> {
 	const map = new Map<string, QuestionAnswer>();
 	const rawAnswers = (details as { answers?: unknown })?.answers;
@@ -29,8 +28,6 @@ function extractAnswers(details: unknown, output?: string): Map<string, Question
 		if (map.size > 0) return map;
 	}
 
-	// 降级：从 output 文本按行提取
-	// 格式：`${q.header ?? q.id}: ${label}${custom ? ` (wrote: ${custom})` : ""}`
 	if (output && !output.includes("User cancelled")) {
 		const lines = output.split("\n").filter((l) => l.trim());
 		for (const line of lines) {
@@ -62,7 +59,6 @@ function extractAnswers(details: unknown, output?: string): Map<string, Question
 	return map;
 }
 
-/** 从取消错误信息中提取附言说明 */
 function extractRejectReason(output?: string): string | undefined {
 	if (!output) return undefined;
 	const m = /(?:User note \/ 附言|附言)[：:]\s*([^\n\r]+)/.exec(output);

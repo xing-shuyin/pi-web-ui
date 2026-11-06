@@ -21,11 +21,8 @@ describe("主题基底解耦与 @import 服务端内联体系", () => {
 	it("themes/bases/flow-base.css 存在且作为公共形态基底", () => {
 		expect(existsSync(FLOW_BASE_CSS)).toBe(true);
 		const baseContent = readFileSync(FLOW_BASE_CSS, "utf8");
-		// 包含正文无界微流核心排版
 		expect(baseContent).toContain(".msg-assistant .msg-body");
-		// 极简行文的「整回合一条行内流」容器（取代旧的 .turn-tools-trail）
 		expect(baseContent).toContain(".flow-turn");
-		// 主题能力声明：前端据它切换到按回合合并 + 行内流渲染
 		expect(baseContent).toContain("--flow-inline-stream: 1");
 		expect(baseContent).toContain(".toolcall");
 		expect(baseContent).toContain(".thinking");
@@ -35,11 +32,9 @@ describe("主题基底解耦与 @import 服务端内联体系", () => {
 		const flowRaw = readFileSync(FLOW_CSS, "utf8");
 		const lightRaw = readFileSync(FLOW_LIGHT_CSS, "utf8");
 
-		// 各自仅约 150-200 行，不再复制千行重复代码
 		expect(flowRaw.split("\n").length).toBeLessThan(250);
 		expect(lightRaw.split("\n").length).toBeLessThan(250);
 
-		// 正确声明了 @import 引用
 		expect(flowRaw).toMatch(/@import\s+["']\.\/bases\/flow-base\.css["']/);
 		expect(lightRaw).toMatch(/@import\s+["']\.\/bases\/flow-base\.css["']/);
 	});
@@ -62,14 +57,11 @@ describe("主题基底解耦与 @import 服务端内联体系", () => {
 			const css = readThemeCss(file);
 			expect(css.trimStart().startsWith("@layer theme {"), `${file} 未以 @layer theme { 开头`).toBe(true);
 			expect(css.trimEnd().endsWith("}"), `${file} 未正确闭合 @layer theme`).toBe(true);
-			// 只包最外层：递归内联进来的基底文件不得再套一层（嵌套层会让层序比较失效）
 			expect(css.match(/@layer\s+theme\s*\{/g)?.length ?? 0, `${file} 出现了多层 @layer theme 嵌套`).toBe(1);
-			// 内联进来的基底内容落在同一个 theme 层里
 			const body = css.slice(css.indexOf("{") + 1, css.lastIndexOf("}"));
 			expect(body).toContain(".msg-assistant .msg-body");
 		}
 
-		// 子文件（递归内联路径）自身不带层，否则会嵌套
 		const baseOnly = readThemeCss(FLOW_BASE_CSS, new Set<string>(), 1);
 		expect(baseOnly).not.toContain("@layer theme {");
 		expect(baseOnly).toContain(".msg-assistant .msg-body");
@@ -77,11 +69,9 @@ describe("主题基底解耦与 @import 服务端内联体系", () => {
 
 	it("flow-base.css 中主操作实底按钮与角标统一走语义变量，杜绝写死黑底黑字或白底白字", () => {
 		const baseContent = readFileSync(FLOW_BASE_CSS, "utf8");
-		// 发送按钮统一为强调色与反色前景（分层后不再依赖 !important，只校验声明本身）
 		expect(baseContent).toMatch(/\.inputbox \.btn\.send \{[^}]*background:\s*var\(--accent\)/);
 		expect(baseContent).toMatch(/color:\s*var\(--accent-contrast, #fff\)/);
 
-		// 顶栏角标走 --accent-contrast
 		expect(baseContent).toContain(".topbar .bar-item-badge:not(.bg-task-badge)");
 	});
 
@@ -96,13 +86,11 @@ describe("主题基底解耦与 @import 服务端内联体系", () => {
 		expect(zhupiBase).toContain(".toolcall .toolcall-spacer");
 		expect(zhujianBase).toContain(".toolcall .toolcall-spacer");
 
-		// zhupi.css / zhupi-dark.css 均精简且能正确展开
 		const inlinedZhupi = readThemeCss(ZHUPI_CSS);
 		const inlinedZhupiDark = readThemeCss(ZHUPI_DARK_CSS);
 		expect(inlinedZhupi).toContain(".toolcall .toolcall-spacer");
 		expect(inlinedZhupiDark).toContain(".toolcall .toolcall-spacer");
 
-		// zhujian.css / zhujian-dark.css 均精简且能正确展开
 		const inlinedZhujian = readThemeCss(ZHUJIAN_CSS);
 		const inlinedZhujianDark = readThemeCss(ZHUJIAN_DARK_CSS);
 		expect(inlinedZhujian).toContain(".toolcall .toolcall-spacer");

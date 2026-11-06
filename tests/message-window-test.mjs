@@ -1,19 +1,3 @@
-/**
- * 历史消息服务端按需加载（窗口化）—— 零 token 协议回归。
- *
- * 背景：前端「向上分页」只做到不渲染，数据仍全量下发；打开长对话因此要等一整份
- * 全量快照（实测 287 条 = 4MB）。窗口化把这份快照裁成尾部 N 条，更早的消息由
- * `load_earlier_messages` 按需拉（见 server/message-window.ts）。
- *
- * 本用例在**传输层**（WS 上看到的报文）验证：
- *   1. 打开长对话的首次快照只带尾部窗口，并回填 historyStart / historyTotal；
- *   2. `load_earlier_messages` 回的页与当前窗口**无缝相接**（不重叠、不缺口）；
- *   3. 翻过页之后再 `get_state`（重连/自愈路径）**不会把窗口推回去**——已加载的历史不丢；
- *   4. `all: true` 一路拉到最早，到底后回空页；
- *   5. 窗口化对**所有引擎生效**：它挂在每连接唯一的 send 漏斗上，不由引擎实现。
- *
- * 端口 8991，临时 data-dir / 工作区 / agent 目录，结束自行清理。
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -33,7 +17,6 @@ const DATA_DIR = join(BASE, "data");
 const AGENT_DIR = join(BASE, "agent");
 for (const d of [WORK, DATA_DIR, AGENT_DIR]) mkdirSync(d, { recursive: true });
 
-/** 尾部窗口条数：用例里取 10，这样 40 条历史一眼能看出裁剪与翻页。 */
 const WINDOW = 10;
 const TOTAL = 40;
 
@@ -43,7 +26,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-/** 造一份 40 条消息（user/assistant 交替）的会话转录。 */
 function seedLongSession() {
 	const dir = join(AGENT_DIR, "sessions");
 	mkdirSync(dir, { recursive: true });
@@ -75,7 +57,6 @@ function seedLongSession() {
 }
 
 const seedFile = seedLongSession();
-// 隔离 agent 目录要有 auth/models，否则首启弹「首次配置」挡路（零 token）。
 writeFileSync(join(AGENT_DIR, "auth.json"), JSON.stringify({ mock: { type: "api_key", key: "mock-key" } }));
 writeFileSync(
 	join(AGENT_DIR, "models.json"),
@@ -95,9 +76,7 @@ writeFileSync(
 await ensureBuild(REPO_ROOT, "message-window-test");
 try {
 	await freePort(PORT);
-} catch {
-	/* best effort */
-}
+} catch {}
 
 const server = spawn("node", ["dist/server/index.js"], {
 	cwd: REPO_ROOT,
@@ -148,7 +127,6 @@ await new Promise((r) => ws.once("open", r));
 ws.send(JSON.stringify({ type: "hello", clientId: randomUUID() }));
 for (let i = 0; i < 100 && !state?.conversationId; i++) await sleep(100);
 
-// ── 1. 打开长对话：首份快照只带尾部窗口 ──────────────────────────────────
 ws.send(JSON.stringify({ type: "switch_session", path: seedFile }));
 for (let i = 0; i < 100 && state?.sessionFile !== seedFile; i++) await sleep(100);
 check("已打开种子会话", state?.sessionFile === seedFile, `sessionFile=${state?.sessionFile}`);
@@ -165,7 +143,6 @@ check(
 	state?.messages?.at(-1)?.content?.[0]?.text,
 );
 
-// ── 2. load_earlier_messages：一页更早，且与当前窗口无缝相接 ──────────────
 ws.send(JSON.stringify({ type: "load_earlier_messages", count: WINDOW }));
 for (let i = 0; i < 100 && earlierPages.length === 0; i++) await sleep(50);
 let page = earlierPages[0];
@@ -182,10 +159,8 @@ check(
 	page?.messages?.at(-1)?.content?.[0]?.text,
 );
 
-// 客户端前插（与 web/src/use-chat.ts 的 reducer 同口径）
 state = { ...state, messages: [...(page?.messages ?? []), ...state.messages], historyStart: page?.historyStart };
 
-// ── 3. get_state（重连/自愈路径）不能把已翻过的窗口推回去 ────────────────
 ws.send(JSON.stringify({ type: "get_state" }));
 const startBefore = state.historyStart;
 for (let i = 0; i < 100 && state?.historyStart !== 0 && state?.messages?.length !== TOTAL - startBefore; i++)
@@ -196,7 +171,6 @@ check(
 	`start=${state?.historyStart} msgs=${state?.messages?.length}`,
 );
 
-// ── 4. all: true 一路拉到最早；到底后回空页 ──────────────────────────────
 ws.send(JSON.stringify({ type: "load_earlier_messages", all: true }));
 for (let i = 0; i < 100 && earlierPages.length < 2; i++) await sleep(50);
 page = earlierPages[1];
@@ -215,7 +189,6 @@ check(
 	`n=${page?.messages?.length}`,
 );
 
-// ── 5. 短对话不受影响（起点 0、条数不变）────────────────────────────────
 const beforeNew = state?.conversationId;
 ws.send(JSON.stringify({ type: "new_chat" }));
 for (let i = 0; i < 100 && state?.conversationId === beforeNew; i++) await sleep(50);
@@ -225,8 +198,6 @@ check(
 	`start=${state?.historyStart} msgs=${state?.messages?.length}`,
 );
 
-// ── 6. 设置开关能落下（回归：set_settings 白名单曾漏掉 reversePagination，设置页的
-//      「向上分页加载」被静默丢弃——那正是窗口化的前端配套开关）───────────────
 ws.send(JSON.stringify({ type: "set_settings", reversePagination: true }));
 for (let i = 0; i < 100 && settings?.reversePagination !== true; i++) await sleep(50);
 check("set_settings 能打开向上分页加载", settings?.reversePagination === true, `value=${settings?.reversePagination}`);
@@ -234,7 +205,6 @@ ws.send(JSON.stringify({ type: "set_settings", reversePagination: false }));
 for (let i = 0; i < 100 && settings?.reversePagination !== false; i++) await sleep(50);
 check("set_settings 能关回去", settings?.reversePagination === false, `value=${settings?.reversePagination}`);
 
-// ── 7. 自描述翻页：切回长会话后携带 conversationId + beforeId 精准定位 ─────
 const pagesLenBefore7 = earlierPages.length;
 ws.send(JSON.stringify({ type: "switch_session", path: seedFile }));
 for (let i = 0; i < 100 && (state?.conversationId === beforeNew || state?.messages?.length !== TOTAL); i++)
@@ -288,16 +258,12 @@ check("无效锚点保留已展开窗口", invalidPage?.historyStart === 0);
 
 try {
 	ws.close();
-} catch {
-	/* ignore */
-}
+} catch {}
 server.kill();
 await sleep(300);
 try {
 	server.kill("SIGKILL");
-} catch {
-	/* ignore */
-}
+} catch {}
 rmSync(BASE, { recursive: true, force: true });
 
 console.log(failures === 0 ? "\nmessage-window: all checks passed" : `\nmessage-window: ${failures} check(s) failed`);

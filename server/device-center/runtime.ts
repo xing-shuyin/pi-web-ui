@@ -69,7 +69,6 @@ function samePath(a?: string, b?: string): boolean {
 	return fold(a) === fold(b);
 }
 
-/** The task settled, but its executor has not confirmed that execution stopped. */
 export class DeviceTaskStopUnconfirmedError extends Error {
 	readonly stopUnconfirmed = true;
 	constructor(cause: unknown) {
@@ -109,7 +108,6 @@ export function createDeviceRuntime(options: {
 		try {
 			return JSON.parse(readFileSync(schedulerFile, "utf8"));
 		} catch {
-			// Corrupt or missing fairness state only means a restart starts with neutral fairness.
 			return undefined;
 		}
 	}
@@ -118,9 +116,7 @@ export function createDeviceRuntime(options: {
 		schedulerStatePending = false;
 		try {
 			writeJsonAtomicSync(schedulerFile, scheduler.snapshotState());
-		} catch {
-			/* fairness state is best-effort; never fail dispatch on persistence */
-		}
+		} catch {}
 	}
 	function scheduleSchedulerStateSave() {
 		if (!schedulerFile) return;
@@ -392,7 +388,6 @@ export function createDeviceRuntime(options: {
 			return Promise.reject(error);
 		}
 
-		// Detach all task data before the first await; wire objects must never remain mutable inputs.
 		task = structuredClone(task);
 		if (typeof task.leaseToken !== "string" || !task.leaseToken) {
 			return Promise.reject(new DeviceTaskError("Hub task lease grant required"));
@@ -487,7 +482,6 @@ export function createDeviceRuntime(options: {
 			attemptId: task.attemptId,
 		};
 
-		// Transactional Admission: reverse cleanup on any failure before execution starts
 		let leaseRecorded = false;
 		let activeItem: ReturnType<typeof scheduler.registerActive> | undefined;
 		try {
@@ -636,7 +630,6 @@ export function createDeviceRuntime(options: {
 				if (task.resume !== undefined && typeof task.resume !== "boolean")
 					throw new DeviceTaskError("Invalid resume flag");
 				if (task.resume && !task.conversationId) throw new DeviceTaskError("Resume conversation address required");
-				// Code turns always use fresh sessions and never read or overwrite chat resume ownership.
 				if (!isCode && task.conversationId !== undefined) {
 					if (!UUID.test(task.conversationId) || !transcriptFile || transcriptLoadError)
 						throw new DeviceTaskError("Persistent conversation storage unavailable or invalid address");
@@ -681,7 +674,6 @@ export function createDeviceRuntime(options: {
 					onFullReport(taskId, attemptId, fullReport) {
 						recovery.recordActivity(taskId, attemptId);
 						if (taskId !== task.id || attemptId !== task.attemptId) throw new Error("Report task binding mismatch");
-						// Persist the original before notifying transport or settling the task.
 						reportOutbox.capture(task, fullReport);
 						return callbacks?.onFullReport?.(taskId, attemptId, fullReport);
 					},
@@ -728,9 +720,6 @@ export function createDeviceRuntime(options: {
 							)
 								throw new DeviceTaskError("Conversation transcript ownership changed");
 							try {
-								// Fresh SDK sessions allocate a path before the first message creates
-								// the file. Bind it now so failed first turns remain recoverable.
-								// Existing resume paths must still refer to a real transcript.
 								if (resumePath && !statSync(path).isFile()) throw new Error();
 								const next = { ...transcripts, [task.conversationId]: { binding, path } };
 								writeJsonAtomicSync(transcriptFile!, next);
@@ -781,8 +770,6 @@ export function createDeviceRuntime(options: {
 						capturedArtifact = await captureTaskArtifact(workspaceHandle, workspaceBinding, taskSignal);
 						artifactProduced = true;
 					} catch (captureErr) {
-						// capture 失败不报 completed！
-						// 执行完成与 artifactProduced 是独立 facts（executionCompleted 可以 true artifact 不存在导致终态 failed）
 						const msg =
 							captureErr instanceof Error
 								? `Task artifact capture failed: ${captureErr.message}`
@@ -807,7 +794,6 @@ export function createDeviceRuntime(options: {
 						throw new DeviceTaskError("Conversation transcript unavailable after execution");
 					}
 				}
-				// A failed durable commit must retain the lease, never manufacture a second outcome.
 				publishingOutcome = true;
 				recovery.recordTaskFinish(outcomeTask, {
 					status: "completed",
@@ -826,7 +812,6 @@ export function createDeviceRuntime(options: {
 				} catch (stopError) {
 					failure = stopError;
 				}
-				// 若无法确认任务已停止，必须保留 active lease 和 blocked owner，绝不能持久化终态，破坏确认停止不变量
 				if (owner.blocked || failure instanceof DeviceTaskStopUnconfirmedError) {
 					throw failure;
 				}
@@ -849,8 +834,6 @@ export function createDeviceRuntime(options: {
 				} catch {}
 				for (const [id, bound] of sessions)
 					if (bound.taskId === task.id && bound.roomId === task.roomId) sessions.delete(id);
-				// 只能在 stoppedCleanly && !owner.blocked 时保守清理（无 force，dirty/额外commit会被保留）
-				// 若 stop 未确认，绝不能清理工作区，保留现场！
 				if (stoppedCleanly && !owner.blocked && workspaceHandle && workspaceBinding) {
 					try {
 						await cleanupTaskWorkspace(workspaceHandle, workspaceBinding, { force: false });

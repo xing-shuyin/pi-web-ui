@@ -16,13 +16,10 @@ describe("legado-web net SSRF guard", () => {
 	});
 
 	it("does not block 198.18.0.0/15 (Clash / TUN fake-ip) or public internet IPs", () => {
-		// 198.18.0.0/15 is reserved for benchmark, but widely used as Fake-IP pool in TUN proxies.
-		// Blocking it causes all public book sources to fail when proxy TUN is enabled.
 		expect(isPrivateHost("198.18.0.1")).toBe(false);
 		expect(isPrivateHost("198.18.1.74")).toBe(false);
 		expect(isPrivateHost("198.19.255.254")).toBe(false);
 
-		// Public internet
 		expect(isPrivateHost("8.8.8.8")).toBe(false);
 		expect(isPrivateHost("1.1.1.1")).toBe(false);
 	});

@@ -38,7 +38,7 @@ describe("issue #463: scheduler validation error localization", () => {
 				name: "task",
 				kind: "interval",
 				cwd: "/tmp",
-				spec: "100", // too short (< 5s)
+				spec: "100",
 				prompt: "hello",
 			});
 		} catch (err: any) {

@@ -1,6 +1,5 @@
 import type { DeviceTaskProgress } from "../../server/protocol";
 
-/** One visible group owns one stream; disposed connections cannot publish late events. */
 export function openGroupEventStream(
 	url: string,
 	callbacks: {
@@ -54,9 +53,7 @@ export function openGroupEventStream(
 				...(value.text !== undefined ? { text: value.text } : {}),
 				...(value.toolName !== undefined ? { toolName: value.toolName } : {}),
 			});
-		} catch {
-			/* the next full synchronization repairs malformed events */
-		}
+		} catch {}
 	});
 	return () => {
 		disposed = true;

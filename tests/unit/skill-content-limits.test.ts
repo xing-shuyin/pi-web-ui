@@ -1,10 +1,3 @@
-/**
- * #819：技能正文上限（单文件 / 全文注入总量）可配置。
- * 钉住三件事：
- *  1. 不传设置时行为与历史硬编码一致（8KB / 32KB）；
- *  2. 上限真的生效（单文件与总量两条路径）；
- *  3. 预算按 UTF-8 字节计 —— 中文技能以前按字符数扣预算，会被低估约 3 倍。
- */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,12 +62,10 @@ describe("fillSkillContents limits", () => {
 		const b = skillFile("b", ascii(600));
 		const out = fillSkillContents([a, b], ["a", "b"], { maxTotalBytes: 700 });
 		expect(out[0].content).toHaveLength(600);
-		// 剩 100 字节：截断到 100 而不是整段塞进去
 		expect(out[1].content).toHaveLength(100);
 	});
 
 	it("预算按 UTF-8 字节计（中文不再被低估 3 倍）", () => {
-		// 300 个汉字 = 900 字节；预算 900 只够第一个技能。
 		const cjk = "技".repeat(300);
 		const a = skillFile("cjk-a", cjk);
 		const b = skillFile("cjk-b", cjk);
@@ -84,7 +75,6 @@ describe("fillSkillContents limits", () => {
 	});
 
 	it("按预算截断多字节字符时不塞进 U+FFFD", () => {
-		// 每字 3 字节，预算 100 字节 → 截在字符中间；结果必须是干净的文本。
 		const a = skillFile("cjk-cut", "汉".repeat(50));
 		const out = fillSkillContents([a], ["cjk-cut"], { maxTotalBytes: 100 });
 		const content = out[0].content ?? "";

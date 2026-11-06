@@ -89,7 +89,7 @@ describe("terminal frontend lifecycle", () => {
 		expect(reduce(next, { type: "terminal_list", conversationId: "a", terminals: [] }).terminals).toEqual([]);
 	});
 
-	it("filters ordinary conversation terminals by ownership, never agentBash", () => {
+	it("retains authoritative owner metadata without inferring ownership from agentBash", () => {
 		const next = reduce(state(), {
 			type: "terminal_list",
 			conversationId: "other",
@@ -98,7 +98,10 @@ describe("terminal frontend lifecycle", () => {
 				meta("ordinary-agent", { ownerKind: "conversation", agentBash: false }),
 			],
 		});
-		expect(next.terminals.map((t) => t.id)).toEqual(["client"]);
+		expect(next.terminals.map((t) => t.id)).toEqual(["client", "ordinary-agent"]);
+		expect(next.terminals.filter((terminal) => terminal.ownerKind === "client").map((terminal) => terminal.id)).toEqual(
+			["client"],
+		);
 		expect(
 			reduce(state(), {
 				type: "terminal_list",
@@ -108,6 +111,18 @@ describe("terminal frontend lifecycle", () => {
 		).toHaveLength(1);
 	});
 
+	it("retains a target CLI list arriving before the conversation snapshot", () => {
+		const next = reduce(state(), {
+			type: "terminal_list",
+			conversationId: "target-cli",
+			terminals: [
+				meta("native", { ownerKind: "conversation", nativeCli: { preset: "claude" } }),
+				meta("unrelated-tool", { ownerKind: "conversation", agentBash: true }),
+			],
+		});
+		expect(next.terminals.map((terminal) => terminal.id)).toEqual(["native", "unrelated-tool"]);
+		expect(next.terminals[0].conversationId).toBe("target-cli");
+	});
 	it("exit and remove actions cannot affect another owner with the same ID", () => {
 		const initial = state([meta("same"), meta("same", { ownerKind: "conversation" })]);
 		const next = reduce(initial, {

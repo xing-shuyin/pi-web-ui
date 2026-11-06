@@ -6,8 +6,6 @@ import { StreamMarkdown } from "../../web/src/components/StreamMarkdown";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Exercise the real MarkdownBody/ReactMarkdown pipeline. Hidden documents bypass
-// smooth character pacing so these tests isolate segment identity and throttling.
 let container: HTMLDivElement;
 let root: Root;
 
@@ -37,7 +35,6 @@ describe("stream segment identity", () => {
 		const code = paragraph.querySelector("code")!;
 		expect(code.textContent).toBe("inline code");
 
-		// Both an empty tail and a new tail must retain the former active block.
 		render(`${first}\n\n${tail}`);
 		expect(container.querySelector("p")).toBe(paragraph);
 		expect(container.querySelector("code")).toBe(code);

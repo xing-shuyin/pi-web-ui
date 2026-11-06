@@ -7,7 +7,7 @@ const PAGE_BYTES = 24 * 1024;
 export interface GroupHistoryMessage {
 	id: string;
 	text: string;
-	sender: { type: "human" | "bot" | "webhook"; id: string; name: string };
+	sender: { type: "human" | "bot" | "webhook" | "router"; id: string; name: string };
 	createdAt: number;
 	targetBotIds?: string[];
 	replyToMessageId?: string;
@@ -50,8 +50,6 @@ function invalidCursor(): never {
 	throw Object.assign(new Error("History cursor expired or invalid; read the latest page again"), { status: 409 });
 }
 
-/** Stable message anchors survive appends. Clear/retention makes old anchors fail explicitly.
- * Oversized messages are paged in reverse text chunks, without dropping their middle. */
 export function groupHistoryPage(
 	roomId: string,
 	messages: readonly RoomMessage[],
@@ -105,7 +103,6 @@ export function groupHistoryPage(
 			continue;
 		}
 		if (page.messages.length) break;
-		// Keep the latest suffix of a large row; subsequent pages return every earlier chunk.
 		let low = 0,
 			high = end;
 		while (low < high) {
@@ -114,7 +111,6 @@ export function groupHistoryPage(
 			else low = mid + 1;
 		}
 		let start = low;
-		// Never divide a UTF-16 surrogate pair across chunks.
 		if (start > 0 && /[\uDC00-\uDFFF]/.test(row.text[start] ?? "")) start++;
 		if (start >= end || !fits([project(row, start, end)])) throw new Error("History metadata exceeds page budget");
 		page.messages.unshift(project(row, start, end));
@@ -128,14 +124,8 @@ export function groupHistoryPage(
 	return page;
 }
 
-/** Mention tokens look like `@Name` or `@Name(<uuid>)`; the canonical id form wins over a bare name. */
 const MENTION = /@([^\s()@]+)(?:\(([A-Za-z0-9-]{8,})\))?/g;
 
-/**
- * Resolve human @mentions against current room membership. The Hub owns dispatch semantics: clients may
- * send explicit target ids, but a message that only names Bots in its text must not silently fall back to
- * the primary Bot. Ambiguous names (two members sharing one) are ignored rather than guessed.
- */
 export function groupMentionTargets(text: string, room: Room, bots: readonly Bot[], limit?: number): string[] {
 	const members = room.botIds
 		.map((id) => ({ id, name: bots.find((bot) => bot.id === id)?.name?.trim() ?? "" }))
@@ -158,18 +148,13 @@ export function groupMentionTargets(text: string, room: Room, bots: readonly Bot
 	return limit && limit > 0 ? sorted.slice(0, limit) : sorted;
 }
 
-/**
- * Compact verbose technical execution errors and internal stack traces to free up valuable context budget.
- */
 export function compactHistoryNoise(text: string): string {
 	if (!text.includes("Device task failed") && !text.includes("Error:") && !text.includes("    at ")) {
 		return text;
 	}
-	// Extract structured summary from Device task failed reports, stripping giant Node/V8 stack traces
 	const failMatch = text.match(/Device task failed\s*\[phase=([^;]+);\s*category=([^\]]+)\]\.\s*(.*)/s);
 	if (failMatch) {
 		const [, phase, category, detail] = failMatch;
-		// Keep up to first 300 chars of detail, stripping stack frames
 		const cleanDetail = detail
 			.split("\n")
 			.filter((line) => !line.trim().startsWith("at ") && !line.includes("node:internal"))
@@ -178,7 +163,6 @@ export function compactHistoryNoise(text: string): string {
 			.slice(0, 300);
 		return `[Device task failed: phase=${phase}, category=${category}] ${cleanDetail || "Remote execution failed."}`;
 	}
-	// Strip giant stack frames from generic error logs in context
 	if (text.includes("    at ")) {
 		const lines = text.split("\n");
 		const filtered = lines.filter((l) => !l.trim().startsWith("at ") && !l.includes("node:internal"));
@@ -189,7 +173,6 @@ export function compactHistoryNoise(text: string): string {
 	return text;
 }
 
-/** Captured at dispatch, before any parallel recipient can publish a response. */
 export function groupTaskContext(
 	room: Room,
 	bots: readonly Bot[],
@@ -204,13 +187,11 @@ export function groupTaskContext(
 		throughMessageId: messages.filter((message) => message.roomId === room.id).at(-1)?.id ?? null,
 	};
 	const blackboardPayload = room.blackboard ? { blackboard: room.blackboard } : {};
-	// Allocate budget hierarchically: reserve space for metadata and blackboard consensus first.
 	const nonHistoryBytes = Buffer.byteLength(JSON.stringify({ ...metadata, ...blackboardPayload })) + 64;
 	const historyBudget = Math.max(512, budget - nonHistoryBytes);
 	let page = groupHistoryPage(room.id, messages, undefined, historyBudget);
 
 	let result: GroupTaskContext = { ...page, ...metadata, ...blackboardPayload };
-	// Ensure absolute compliance with the total budget ceiling even with JSON structure serialization overhead
 	while (Buffer.byteLength(JSON.stringify(result)) > budget && page.messages.length > 0) {
 		page = { ...page, messages: page.messages.slice(1), truncated: true };
 		result = { ...page, ...metadata, ...blackboardPayload };

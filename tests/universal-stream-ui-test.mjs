@@ -1,4 +1,3 @@
-// Real UniversalSession wire frames -> real chat reducer + MessageList in Chromium.
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -133,7 +132,6 @@ try {
 	assert.equal(await page.locator(".toolcall.err").count(), 1);
 	await page.waitForFunction(() => document.querySelector(".messages")?.textContent.includes("stable-9"));
 	await page.screenshot({ path: join(evidence, "02-multi-tool-thinking.png") });
-	// A user reading older content must keep their reading position during live tokens/snapshots.
 	await page.locator(".messages").hover();
 	await page.mouse.wheel(0, -600);
 	await page.waitForTimeout(150);

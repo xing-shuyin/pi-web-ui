@@ -1,22 +1,3 @@
-// subagent-ui-context — 子代理会话的扩展 UI 上下文（零 token，PR #128 回归）。
-//
-// 背景：子代理曾经只拿到 { theme, setStatus, setWidget, notify } 四个方法的 mock，
-// 扩展一旦调用 ExtensionUIContext 上的其他方法（setWorkingVisible / setToolsExpanded
-// / setTheme …）就 TypeError，服务端往浏览器推一条 error notice。改成完整
-// WebUIContext 后，又要保证它不会反过来出事：子代理没有浏览器面板，UI 输出必须
-// 掉在地上（不污染主对话的 widget/status），弹窗必须立刻按「取消」返回（照常挂
-// Promise 的话扩展会永久 await，只有 20 分钟的工具看门狗兜底）。
-//
-// 做法：临时 agentDir 装一个探针扩展，在 session_start 里把新 API 全调一遍，并把
-// 结果写进日志文件；主对话发一句话，让假模型回一个 subagent_spawn 工具调用，真起
-// 一个子代理。断言：
-//   1. 子代理真的跑完并产出文本；
-//   2. 主对话 + 子代理两次 session_start 都成功调用新 API（旧代码只有 1 条）；
-//   3. 没有 UI API 调用失败、没有 TypeError error notice；
-//   4. 子代理那次弹窗返回 null（headless 立即取消），而主对话那次仍是「没人答」（TIMEOUT）
-//      —— 证明只有子代理被 headless 化，挂浏览器的上下文照常桥接 dialog。
-//
-// 用法: npm run build:server && node tests/subagent-ui-context-test.mjs
 import { createServer } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,12 +22,8 @@ for (const dir of [projDir, dataDir, agentDir, extDir]) mkdirSync(dir, { recursi
 
 const MODEL_ID = "mock-model";
 const CLIENT_ID = "subagent-ui-context-client";
-/** 探针里弹窗的等待上限：headless 会立刻返回，挂浏览器的会一直没人答。 */
 const DIALOG_RACE_MS = 300;
 
-// ---------------------------------------------------------------------------
-// 探针扩展：session_start 里逐个调用扩展 UI API，结果写 PR128_PROBE_LOG。
-// ---------------------------------------------------------------------------
 writeFileSync(
 	join(extDir, "ui-probe.ts"),
 	`
@@ -98,10 +75,6 @@ export default function (pi: any) {
 `,
 );
 
-// ---------------------------------------------------------------------------
-// 假模型（openai-completions SSE）：主对话第一回合回 subagent_spawn，
-// 子代理那一回合（提示词带 SAY_OK）回最终文本。
-// ---------------------------------------------------------------------------
 const sse = (res, chunks) => {
 	res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 	for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -135,12 +108,10 @@ const mock = createServer(async (req, res) => {
 	const messages = Array.isArray(payload.messages) ? payload.messages : [];
 	const flat = JSON.stringify(messages);
 
-	// 子代理那一回合：提示词里带 SAY_OK → 直接回文本。
 	if (flat.includes("SAY_OK")) {
 		sse(res, [delta(payload.model, { content: "SUBAGENT_SMOKE_OK" }), delta(payload.model, {}, "stop")]);
 		return;
 	}
-	// 主对话第一回合（有 subagent 工具、还没有工具结果）→ 派一个子代理。
 	const hasSubagentTool = (payload.tools ?? []).some((t) => t?.function?.name === "subagent");
 	const hasToolResult = messages.some((m) => m.role === "tool");
 	if (hasSubagentTool && !hasToolResult) {
@@ -181,16 +152,12 @@ writeFileSync(
 	}),
 );
 
-// ---------------------------------------------------------------------------
-// server
-// ---------------------------------------------------------------------------
 const repoRoot = realpathSync(new URL("../", import.meta.url));
 const server = spawn(process.execPath, ["dist/server/index.js"], {
 	cwd: repoRoot,
 	env: {
 		...process.env,
 		PI_WEB_PORT: String(PORT),
-		// 本测试只验其它功能；工具延迟加载默认开会让非核心工具不活跃，这里按部署默认关掉它。
 		PI_WEB_TOOL_LAZY_LOADING: "0",
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: projDir,
@@ -213,9 +180,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -284,21 +249,19 @@ try {
 	client.send({ type: "set_model", modelId: `mock/${MODEL_ID}` });
 	await client.waitForState((s) => s.model?.id === MODEL_ID);
 
-	// 主对话 → 模型调 subagent_spawn → 子代理跑一轮。
 	client.send({ type: "prompt", text: "SPAWN_NOW" });
 	const finished = await client
 		.waitForState((s) => JSON.stringify(s.messages ?? []).includes("SUBAGENT_SMOKE_OK"), 60000)
 		.catch(() => null);
 	check("子代理跑完并产出文本（SUBAGENT_SMOKE_OK）", !!finished);
 
-	await sleep(2000); // 等 session_start 的日志落盘
+	await sleep(2000);
 
 	const lines = (existsSync(LOG) ? readFileSync(LOG, "utf8") : "").split("\n").filter(Boolean);
 	const okLines = lines.filter((l) => l.startsWith("OK "));
 	const errLines = lines.filter((l) => l.startsWith("ERR "));
 	console.log("  probe log:\n" + (lines.length ? lines.map((l) => "    " + l).join("\n") : "    (空)"));
 
-	// 两个会话（主对话 + 子代理）都调通了完整 ExtensionUIContext。
 	check(`主对话 + 子代理的扩展 session_start 都调通新 UI API`, okLines.length >= 2, `${okLines.length} 条 OK`);
 	check("没有 UI API 调用失败（旧 mock 在这里 TypeError）", errLines.length === 0, errLines.join(" | ") || "无 ERR");
 	check(
@@ -324,9 +287,7 @@ try {
 } finally {
 	try {
 		ws?.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	server.kill();
 	mock.close();
 	await sleep(300);

@@ -1,14 +1,3 @@
-/**
- * notes 插件的全部样式（一串 CSS，注入 <head> 一次）。
- *
- * 为什么不写在 mount 容器里：浮窗挂在 `data-pi-anchor="app"` 外（见 panel.mjs），
- * 样式必须全局可见，且视图与浮窗共用同一套类名。所有类名带 `nt-` 前缀避免撞主应用。
- *
- * 颜色一律走宿主主题变量（--bg / --bg-elev / --border / --text / --accent …，见
- * web/src/styles.css 的 :root），因此自动跟随深色/浅色/自定义主题；每一项都带
- * 硬编码兜底值，插件被单独打开（没有宿主变量）时也不会变成透明块。
- */
-
 export const CSS = `
 .nt-root, .nt-root * { box-sizing: border-box; }
 .nt-root {
@@ -387,7 +376,6 @@ export const CSS = `
 }
 `;
 
-/** 注入样式（幂等：同 id 已存在就跳过）。 */
 export function ensureStyles() {
 	try {
 		const doc = globalThis.document;
@@ -396,7 +384,5 @@ export function ensureStyles() {
 		el.id = "notes-plugin-css";
 		el.textContent = CSS;
 		doc.head.appendChild(el);
-	} catch {
-		/* 非浏览器环境（单测 import 本模块）→ 什么都不做 */
-	}
+	} catch {}
 }

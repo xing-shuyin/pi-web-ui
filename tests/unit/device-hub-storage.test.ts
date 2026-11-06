@@ -78,6 +78,10 @@ function legacyState(): HubState {
 		reviews: [],
 		deliveryReceipts: [],
 		integrations: [],
+		workItems: [],
+		workItemEvents: [],
+		routerJobs: [],
+		workItemOutbox: [],
 		accounts: [],
 		devices: [],
 		bots: [],
@@ -299,7 +303,6 @@ describe("hub append-log storage", () => {
 		expect(snapshot.tasks.map((entry) => entry.id)).toEqual(["task-legacy"]);
 		expect(snapshot.conversationMessages.map((entry) => entry.id)).toEqual(["conversation-message-legacy"]);
 		await store.close();
-		// The index keeps its schema but no longer carries the large collections.
 		const index = JSON.parse(await readFile(join(dir, "device-hub.json"), "utf8"));
 		expect(index.version).toBe(2);
 		expect(index.messages).toEqual([]);
@@ -309,7 +312,6 @@ describe("hub append-log storage", () => {
 		expect(await logLines(dir, "messages", "room-legacy")).toHaveLength(1);
 		expect(await logLines(dir, "tasks", "room-legacy")).toHaveLength(1);
 		expect(await logLines(dir, "conversation-messages", "conversation-legacy")).toHaveLength(1);
-		// A second open must not duplicate rows or require another migration write.
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages).toEqual(snapshot.messages);
 		expect(reopened.snapshot().tasks).toEqual(snapshot.tasks);
@@ -369,7 +371,6 @@ describe("hub append-log storage", () => {
 		});
 		await store.close();
 		const file = join(dir, "hub-log", "messages", "room-torn.jsonl");
-		// Simulate a crash mid-append: a partial JSON object without a trailing newline.
 		await writeFile(file, `${await readFile(file, "utf8")}{"v":1,"op":"upsert","val`, "utf8");
 		const reopened = await DeviceHubStore.open(dir);
 		expect(reopened.snapshot().messages.map((entry) => entry.id)).toEqual(["message-1"]);
@@ -394,7 +395,6 @@ describe("hub append-log storage", () => {
 			draft.messages = draft.messages.filter((entry) => !entry.id.startsWith("message-2"));
 			draft.messages = draft.messages.filter((entry) => Number(entry.id.split("-")[1]) >= 250);
 		});
-		// 300 deletions exceed the compaction threshold, so the file is rewritten with live rows only.
 		expect(await logLines(dir, "messages", "room-compact")).toHaveLength(200);
 		expect(store.snapshot().messages).toHaveLength(200);
 		const persisted = await readPersistedHub(dir);
@@ -483,8 +483,6 @@ describe("hub append-log storage", () => {
 		await store.transact((draft) => {
 			draft.rooms.push({ id: "room-fail", accountId: "account-1", name: "Fail", botIds: [], createdAt: 1 });
 		});
-		// A directory blocks WAL append before any projection can publish.
-		// Depending on the platform, open itself fails or write/rollback fail after open.
 		const walPath = store.wal.walPath;
 		await rm(walPath).catch(() => {});
 		await mkdir(walPath);

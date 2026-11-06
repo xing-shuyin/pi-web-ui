@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type MouseEventHandler } from "react";
 import { createPortal } from "react-dom";
-import { appUrl } from "../base-url";
+import { appBase, appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
 import { useFloatingPanel } from "../use-floating-panel";
 import { DeviceDirectory } from "./DeviceDirectory";
 
-/** Both bar renderers share the same device entry point. */
 export function BrandDeviceMenu({
 	label = "pi-web-ui",
 	barItem = false,
@@ -51,7 +50,6 @@ export function BrandDeviceMenu({
 					if (!paired) setOpen(false);
 				}
 			} catch {
-				// A temporary connection failure must not remove a known device entry.
 			} finally {
 				if (!stopped) timer = setTimeout(refresh, 15000);
 			}
@@ -67,7 +65,7 @@ export function BrandDeviceMenu({
 		<>
 			<img
 				className={barItem ? "brand-logo bar-item-brand-logo bar-item-icon" : "brand-logo"}
-				src={appUrl("/icons/icon-192.png")}
+				src={`${appBase()}icons/icon-192.png`}
 				alt="pi-web-ui"
 				width={26}
 				height={26}

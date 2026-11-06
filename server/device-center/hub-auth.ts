@@ -6,6 +6,29 @@ import { hashSecret } from "./store.js";
 export const SESSION_COOKIE = "__Host-device_hub";
 export const LOCAL_SESSION_COOKIE = "device_hub";
 export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+export const NATIVE_ORIGINS = ["capacitor://localhost", "https://localhost"] as const;
+export type NativeOrigin = (typeof NATIVE_ORIGINS)[number];
+export function nativeOrigin(value: unknown): value is NativeOrigin {
+	return NATIVE_ORIGINS.includes(value as NativeOrigin);
+}
+const NATIVE_TOKEN_PREFIX = "native.";
+export function createNativeAccountAuth(store: DeviceHubStore) {
+	function session(hash: string) {
+		const state = store.snapshot();
+		const current = state.sessions.find((entry) => entry.hash === hash && entry.expiresAt > Date.now());
+		const account = current && state.accounts.find((entry) => entry.id === current.accountId);
+		return account ? { account: { id: account.id, username: account.username }, hash } : null;
+	}
+	return {
+		createToken: () => NATIVE_TOKEN_PREFIX + randomBytes(32).toString("hex"),
+		getSession(req: IncomingMessage) {
+			const value = req.headers.authorization;
+			if (!value || !/^Bearer native\.[a-f0-9]{64}$/.test(value)) return null;
+			return session(hashSecret(value.slice(7)));
+		},
+		isActive: (hash: string, accountId: string) => session(hash)?.account.id === accountId,
+	};
+}
 function derive(password: string, salt: string): Promise<Buffer> {
 	return new Promise((resolve, reject) =>
 		scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 }, (error, key) => (error ? reject(error) : resolve(key))),
@@ -38,7 +61,7 @@ export function createAccountAuth(store: DeviceHubStore, publicUrl: string) {
 		},
 		getAccount(req: IncomingMessage): { id: string; username: string } | null {
 			const token = this.getToken(req);
-			if (!token || token.length > 256) return null;
+			if (!token || token.length > 256 || token.startsWith(NATIVE_TOKEN_PREFIX)) return null;
 			const state = store.snapshot();
 			const session = state.sessions.find((entry) => entry.hash === hashSecret(token) && entry.expiresAt > Date.now());
 			const account = session && state.accounts.find((entry) => entry.id === session.accountId);
@@ -47,7 +70,6 @@ export function createAccountAuth(store: DeviceHubStore, publicUrl: string) {
 	};
 }
 
-/** Bounded in-memory sliding window; trusts the socket address, never forwarded headers. */
 export class HubRateLimiter {
 	private entries = new Map<string, { count: number; expiresAt: number }>();
 	constructor(

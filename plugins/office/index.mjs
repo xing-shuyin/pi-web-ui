@@ -1,13 +1,3 @@
-/**
- * office 服务端运行时 —— 基于 Univer Canvas 引擎的高保真 Office 原生预览与编辑插件。
- *
- * 架构：
- * 1. 采用纯插件化解耦设计，不随 npm 发布大体积二进制包；
- * 2. 首次使用时支持按需自动流式下载解压 ~34MB 运行时资产（artifacts）；
- * 3. 按需拉起实例隔离的 Univer Gateway 守护进程（动态端口）；
- * 4. 注册 fileHandlers 提供本机 Canvas 编辑与远程结构化只读预览；
- * 5. 注册 AI 工具 office，支持结构化查询、读写与冲突检测导出。
- */
 import { spawn } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdtempSync } from "node:fs";
@@ -41,8 +31,6 @@ const UNIVER_ASSET_SPEC = {
 	description: "Univer Office 1:1 Canvas runtime rendering and editing gateway",
 };
 
-/** 工作区边界：relPath/targetPath 解析后必须落在 cwd 内，防越界读写
- *  （`../../secret` 之类可借路由读写工作区外任意文件）。 */
 export function assertInWorkspace(absPath, cwd) {
 	return safeWorkspacePath(absPath, cwd);
 }
@@ -124,7 +112,6 @@ export default {
 		let lastActivityTime = 0;
 		let idleTimer = null;
 
-		// 默认 15 分钟无活动自动休眠，释放系统内存与端口
 		const IDLE_TIMEOUT_MS = Math.max(
 			60_000,
 			Number(process.env.PI_WEB_OFFICE_IDLE_TIMEOUT_MS ?? 15 * 60 * 1000) || 15 * 60 * 1000,
@@ -222,14 +209,12 @@ export default {
 			return gatewayReady;
 		}
 
-		// 检查本地已有资产：遵循按需冷启动原则，初次加载时不强占后台进程
 		if (!existsSync(GATEWAY_ENTRY) || !existsSync(VIEWER_ROOT)) {
 			host.log("Univer 运行时资产尚未就绪，将在首次需要时按需下载（约 34MB）");
 		}
 
 		let activeDownloadPromise = null;
 
-		/** 确保运行时资产就绪（优先走宿主重资产流水线，支持国内镜像加速与 SHA-256 强校验） */
 		async function ensureRuntime() {
 			lifecycle.signal.throwIfAborted();
 			touchActivity();
@@ -278,7 +263,6 @@ export default {
 			return true;
 		}
 
-		// 内存缓存：filePath:mtime -> { univerPath, unitId }
 		const conversionCache = new Map();
 		const operationContext = new AsyncLocalStorage();
 		const operationQueues = new Map();
@@ -307,7 +291,6 @@ export default {
 			}
 		}
 
-		/** 将工作区 Office 文件转换并注册为 Univer Unit */
 		const pendingConversions = new Map();
 		const MAX_FILE_BYTES = 64 * 1024 * 1024;
 		const MAX_DOCUMENTS = 32;
@@ -421,7 +404,6 @@ export default {
 			return result;
 		}
 
-		/** 将 Univer 单元反向编译导出写回磁盘文件 */
 		async function saveUniverDoc(absPath, targetPath) {
 			return withDocument(absPath, (path) => exportDocument(path, targetPath));
 		}
@@ -483,7 +465,6 @@ export default {
 			return { ok: true, path: outPath, size: buf.length };
 		}
 
-		/** 在独立子进程中执行 Univer Worker 请求 */
 		async function runWorker(payload, timeoutMs = 20000) {
 			if (!existsSync(WORKER_ENTRY)) throw new Error("缺少 unit-content-worker.mjs 资产");
 			return new Promise((resolveResult, reject) => {
@@ -551,7 +532,6 @@ export default {
 			});
 		}
 
-		/** 结构化查询文档 */
 		async function inspectUniverDoc(absPath, query) {
 			return withDocument(absPath, (path) => inspectDocument(path, query));
 		}
@@ -572,7 +552,6 @@ export default {
 			return inspection?.ok === true && Object.hasOwn(inspection, "value") ? inspection.value : inspection;
 		}
 
-		/** 读取表格区域 */
 		async function readSheetRange(absPath, params) {
 			if (!/^[A-Z]{1,3}[1-9]\d{0,6}(?::[A-Z]{1,3}[1-9]\d{0,6})?$/i.test(params.range || ""))
 				throw new Error("A bounded cell range such as A1:D100 is required");
@@ -605,7 +584,6 @@ export default {
 			};
 		}
 
-		/** 在独立分支执行代码并 merge 写回 */
 		async function executeOnUniverDoc(absPath, code, options) {
 			return withDocument(absPath, (path) => executeDocument(path, code, options));
 		}
@@ -672,7 +650,6 @@ export default {
 			}
 		}
 
-		/** 便捷修改工作表 */
 		async function editSheetRange(absPath, params) {
 			if (
 				params.values &&
@@ -709,7 +686,6 @@ export default {
 			touch: touchActivity,
 		});
 
-		// 路由：查询运行时就绪状态与下载进度
 		function assertInWorkspaceLocal(absPath) {
 			if (typeof host.resolveInWorkspace === "function") {
 				const allowed = host.resolveInWorkspace(absPath);
@@ -762,7 +738,6 @@ export default {
 			});
 		});
 
-		// 路由：一键下载并激活运行时
 		host.route("POST", "/provision-runtime", async (_req, res) => {
 			try {
 				const current = host.assets?.status?.(UNIVER_ASSET_SPEC) || provisioningState;
@@ -778,7 +753,6 @@ export default {
 			}
 		});
 
-		// 路由：请求打开文件
 		host.route("GET", "/open", async (req, res) => {
 			try {
 				const relPath = String(req.query?.path ?? "").trim();
@@ -802,7 +776,6 @@ export default {
 			}
 		});
 
-		// 路由：保存写回磁盘
 		host.route("POST", "/save", async (req, res) => {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
@@ -817,7 +790,6 @@ export default {
 			}
 		});
 
-		// 路由：结构化检查
 		host.route("POST", "/inspect", async (req, res) => {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
@@ -842,7 +814,6 @@ export default {
 			}
 		});
 
-		// 路由：结构化编辑或 Facade 脚本
 		host.route("POST", "/edit", async (req, res) => {
 			try {
 				const relPath = String(req.body?.path ?? "").trim();
@@ -870,7 +841,6 @@ export default {
 			}
 		});
 
-		// 路由：列出工作区支持的文件
 		host.route("GET", "/list", async (_req, res) => {
 			try {
 				const supported = new Set([".pptx", ".xlsx", ".docx", ".csv", ".tsv"]);
@@ -891,7 +861,6 @@ export default {
 			}
 		});
 
-		// 注册 AI Agent 专用工具：office
 		host.registerTool?.({
 			name: "office",
 			description:

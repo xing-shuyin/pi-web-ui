@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-/** C4：打开历史会话的预览→快照交接沿用同一个 MessageList 实例，尾部同 id 消息不重挂载，
- *  更早的消息按会话首帧口径预置占位，而不是一次性全量挂载。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -115,14 +113,11 @@ describe("MessageList preview → snapshot handoff", () => {
 		expect(total(lifecycle.mounts)).toBe(16);
 
 		render(all, false);
-		// 探针按 id 计数必须真的取到了 id（防止断言空转）
 		expect(lifecycle.mounts.has("?")).toBe(false);
 		for (const m of tail) expect(lifecycle.mounts.get(m.id)).toBe(1);
-		// 尾部 16 条：零卸载、零重挂，DOM 节点就是原来那个
 		expect(total(lifecycle.unmounts)).toBe(0);
 		for (const m of tail) expect(lifecycle.mounts.get(m.id)).toBe(1);
 		expect(container.querySelector('[data-msg-id="a-99"]')).toBe(lastNode);
-		// 更早的 84 条不应在交接时全部真实挂载（窗口化占位）
 		const earlierMounted = all.slice(0, 84).filter((m) => (lifecycle.mounts.get(m.id) ?? 0) > 0).length;
 		expect(earlierMounted).toBeLessThan(84);
 	});

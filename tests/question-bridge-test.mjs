@@ -1,21 +1,3 @@
-// question-bridge — 标准 pi 引擎的 ask_user_question 问卷桥（零 token）。
-//
-// 本地假模型（openai-completions SSE）第一回合固定回一个 ask_user_question
-// 工具调用，第二回合把工具结果原样回显成 assistant 文本 —— 整条链路不需要真模型。
-//
-// 验证：
-//   1. 模型调 ask_user_question → question_queue（id + questions 透传）
-//   2. 快照携带 pendingQuestion（UiState）→ 重连/刷新能恢复对话框
-//      （第二个同 clientId 的连接 = 刷新页面；它的首帧快照必须带回问卷）
-//   3. 【本测试的核心】问卷豁免工具挂死看门狗：PI_WEB_TOOL_TIMEOUT_MS=2000，
-//      问卷挂着不答 5s 后仍然没有「工具执行超过…已自动终止」通知、run 还活着
-//      （改动前：2s 到点 abort 整轮对话）
-//   4. 问卷挂着不算「失联」：PI_WEB_STALL_NOTIFY_MS=2000，等待超过一个 stall
-//      检查周期（30s 定时器）也不会收到「无任何响应…可能已失联」警告
-//   5. 回答 → 工具结果回到模型（回显文本含所选 label 与自定义文本），
-//      快照的 pendingQuestion 清空
-//
-// 用法: node tests/question-bridge-test.mjs（已有构建时设置 PI_WEB_SMOKE_PREBUILT=1）
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,7 +14,6 @@ ensureBuild(repoRoot, "question-bridge-test");
 
 const PORT = Number(process.argv[2] || 8985);
 const MOCK_PORT = PORT + 1;
-// 上一轮残留的 server / mock 会占着端口（Windows 下进程组清理不适用）。
 freePort(PORT);
 freePort(MOCK_PORT);
 const base = mkdtempSync(join(tmpdir(), "pi-web-question-"));
@@ -43,9 +24,7 @@ mkdirSync(projDir, { recursive: true });
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(agentDir, { recursive: true });
 
-/** 问卷豁免看门狗的核心参数：2s 就该触发（若未被豁免）。 */
 const TOOL_TIMEOUT_MS = 2000;
-/** stall 检查定时器固定 30s 一轮，阈值压到 2s，等待一轮即可判定。 */
 const STALL_NOTIFY_MS = 2000;
 
 const CLIENT_ID = "question-bridge-client";
@@ -71,10 +50,6 @@ const check = (name, ok, extra = "") => {
 	if (!ok) failures++;
 };
 
-// ---------------------------------------------------------------------------
-// 假模型：第 1 回合（无 tool 消息）回 ask_user_question 工具调用；
-// 第 2 回合（messages 里已有 role=tool）把工具结果回显成 assistant 文本。
-// ---------------------------------------------------------------------------
 const sse = (res, chunks) => {
 	res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 	for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
@@ -111,7 +86,6 @@ const mock = createServer(async (req, res) => {
 	const messages = Array.isArray(payload.messages) ? payload.messages : [];
 	const toolMsg = [...messages].reverse().find((m) => m.role === "tool");
 
-	// 第二回合：模型看到工具结果 → 回显它（便于断言答案真的回到了模型）。
 	if (toolMsg) {
 		if (process.env.PI_WEB_TEST_DEBUG) console.error("[mock] tool result:", JSON.stringify(toolMsg.content));
 		sse(res, [
@@ -120,12 +94,10 @@ const mock = createServer(async (req, res) => {
 		]);
 		return;
 	}
-	// 没有工具定义的请求（标题生成/摘要等）→ 回普通文本，避免误触发问卷。
 	if (!Array.isArray(payload.tools) || payload.tools.length === 0) {
 		sse(res, [delta(payload.model, { content: "ok" }), delta(payload.model, {}, "stop")]);
 		return;
 	}
-	// 第一回合：调 ask_user_question。
 	sse(res, [
 		delta(payload.model, {
 			tool_calls: [
@@ -164,7 +136,6 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		PI_WEB_PORT: String(PORT),
 		PI_WEB_SDK: "bundled",
 		PI_WEB_TOKEN: "",
-		// 本测试只验其它功能；工具延迟加载默认开会让非核心工具不活跃，这里按部署默认关掉它。
 		PI_WEB_TOOL_LAZY_LOADING: "0",
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: projDir,
@@ -182,9 +153,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -201,7 +170,6 @@ class Client {
 			if (message.type === "snapshot") {
 				this.state = message.state;
 			} else if (message.type === "snapshot_delta" && this.state && this.state.rev === message.baseRev) {
-				// 与前端 use-chat 的 reducer 同样合并：appended 是增量追加的消息。
 				this.state = {
 					...this.state,
 					...message.state,
@@ -213,7 +181,6 @@ class Client {
 	send(message) {
 		this.ws.send(JSON.stringify(message));
 	}
-	/** 已收到的某类型消息（不移除）——用于「某类消息从未出现」的断言。 */
 	seen(type, predicate = () => true) {
 		return this.received.filter((m) => m.type === type && predicate(m));
 	}
@@ -261,7 +228,6 @@ const textOf = (messages) =>
 
 let wsA;
 let wsB;
-/** 诊断用：出错时打印最后看到的 state（CI 上超时也能定位）。 */
 let dbg;
 try {
 	await waitForPort(PORT);
@@ -285,7 +251,6 @@ try {
 		`id=${pending.id} n=${pending.questions?.length}`,
 	);
 
-	// 快照侧的事实源：重连的客户端靠它恢复对话框。
 	const stateWithQuestion = await a.waitForState((s) => s.pendingQuestion?.id === pending.id, 10000);
 	check(
 		"快照携带 pendingQuestion（id/题目与 question_queue 一致）",
@@ -293,9 +258,6 @@ try {
 		JSON.stringify(stateWithQuestion.pendingQuestion.questions?.map((q) => q.id)),
 	);
 
-	// 刷新页面 = 同 clientId 再连一条（sessionStorage 保留 clientId）。
-	// 服务端 attach 时的 flushSnapshot() 可能是增量快照（新 socket 没有 rev 链，
-	// 落不了地）——真实前端这时会按 rev 不匹配发 get_state 重同步，这里走同一条路。
 	const b = await connect(CLIENT_ID);
 	wsB = b.ws;
 	b.send({ type: "get_state" });
@@ -306,7 +268,6 @@ try {
 		reloadSnapshot.state.pendingQuestion?.id ?? "none",
 	);
 
-	// —— 核心：挂着不答，超过 PI_WEB_TOOL_TIMEOUT_MS 也不能被看门狗剁掉 ——
 	const waitStarted = Date.now();
 	await sleep(TOOL_TIMEOUT_MS + 3000);
 	const aborted = [...a.seen("notice"), ...b.seen("notice")].filter((m) =>
@@ -324,7 +285,6 @@ try {
 		`isStreaming=${midState.isStreaming}`,
 	);
 
-	// —— 等用户回答不算「失联」：跨过一个 30s 的 stall 检查周期 ——
 	const stallWaited = Date.now() - waitStarted;
 	if (stallWaited < 32_000) await sleep(32_000 - stallWaited);
 	const stallNotices = [...a.seen("notice"), ...b.seen("notice")].filter((m) =>
@@ -336,7 +296,6 @@ try {
 		stallNotices.map((m) => m.text).join("; ") || "无通知",
 	);
 
-	// —— 回答 → 工具结果回到模型 → pendingQuestion 清空 ——
 	a.send({
 		type: "question_answer",
 		id: pending.id,
@@ -348,8 +307,6 @@ try {
 	await a.waitForType("question_queue", (m) => !m.questions.some((q) => q.id === pending.id), 30000);
 	check("回答后问卷从项目队列移除", true);
 	const done = await a.waitForState(
-		// 等到第二回合（模型看到工具结果）真的落盘：仅看 isStreaming=false 会在
-		// 「工具结束→下一次请求」的空隙提前返回。
 		(s) => s.pendingQuestion == null && textOf(s.messages).includes("ANSWERED:"),
 		30000,
 	);
@@ -384,8 +341,6 @@ try {
 		wsB?.close();
 		server.kill("SIGTERM");
 		mock.close();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 }
 process.exit(failures === 0 ? 0 : 1);

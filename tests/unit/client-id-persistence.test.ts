@@ -18,19 +18,16 @@ describe("getClientId 跨刷新持久化守护", () => {
 
 	it("页面刷新但 sessionStorage 丢失时，能从 window.name 完美恢复", () => {
 		const id1 = getClientId();
-		// 模拟刷新：JS 内存缓存丢失，且 sessionStorage 被意外清空
 		_resetClientIdCacheForTest();
 		sessionStorage.clear();
 
 		const id2 = getClientId();
 		expect(id2).toBe(id1);
-		// 且恢复后会自动把 sessionStorage 重新补齐
 		expect(sessionStorage.getItem("pi-web-client-id")).toBe(id1);
 	});
 
 	it("window.name 被外部清空时，能从 sessionStorage 恢复", () => {
 		const id1 = getClientId();
-		// 模拟 window.name 丢失
 		_resetClientIdCacheForTest();
 		window.name = "";
 
@@ -55,7 +52,6 @@ describe("getClientId 跨刷新持久化守护", () => {
 	it("模拟新开标签页（window.name 与 sessionStorage 均为空），生成新客户端 ID", () => {
 		const id1 = getClientId();
 
-		// 模拟另一个标签页
 		_resetClientIdCacheForTest();
 		window.name = "";
 		sessionStorage.clear();

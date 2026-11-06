@@ -48,35 +48,24 @@ describe("decodeText", () => {
 
 	it("UTF-8 尾部截断 1~3 字节时不回退 GBK 乱码，仍正确解码前文 (issue #392)", () => {
 		const full = Buffer.from("这是一段超过截断限制的中文测试文本🎉", "utf8");
-		// 砍掉末尾 1 字节（落在 emoji 4 字节内）
 		expect(decodeText(full.subarray(0, full.length - 1))).toBe("这是一段超过截断限制的中文测试文本");
-		// 砍掉末尾 2 字节
 		expect(decodeText(full.subarray(0, full.length - 2))).toBe("这是一段超过截断限制的中文测试文本");
-		// 砍掉末尾 3 字节
 		expect(decodeText(full.subarray(0, full.length - 3))).toBe("这是一段超过截断限制的中文测试文本");
 
-		// 中文字符（3 字节）末尾被砍 1 字节和 2 字节
 		const chinese = Buffer.from("开发环境说明", "utf8");
 		expect(decodeText(chinese.subarray(0, chinese.length - 1))).toBe("开发环境说");
 		expect(decodeText(chinese.subarray(0, chinese.length - 2))).toBe("开发环境说");
 	});
 
 	it("GBK 字节回退到 GBK 解码（Windows 老中文文件）", () => {
-		const gbk = Buffer.from([
-			0xd6,
-			0xd0,
-			0xce,
-			0xc4, // "中文" in GBK
-		]);
+		const gbk = Buffer.from([0xd6, 0xd0, 0xce, 0xc4]);
 		expect(decodeText(gbk)).toBe("中文");
 	});
 
 	it("1~3 字节的非 UTF-8 小文件不会被截尾重试吃成空串", () => {
-		// 回归：截尾循环曾把 <=3 字节的 buffer 裁到长度 0，空 buffer 严格解码成功 → 返回 ""。
 		expect(decodeText(Buffer.from([0xd6, 0xd0]))).toBe("中");
 		expect(decodeText(Buffer.from([0xd6]))).toBe("\ufffd");
 		expect(decodeText(Buffer.from([0xd6, 0xd0, 0xce]))).toBe("中\ufffd");
-		// 空的 buffer 仍然是空串。
 		expect(decodeText(Buffer.alloc(0))).toBe("");
 	});
 });
@@ -118,7 +107,6 @@ describe("sniffImageMime", () => {
 describe("hexDump", () => {
 	it("行格式：偏移 + 十六进制 + ASCII", () => {
 		const out = hexDump(Buffer.from("AB"));
-		// offset 8 位十六进制 + 两空格 + hex(47 宽) + 两空格 + ascii
 		expect(out).toMatch(/^00000000  41 42\s+  AB$/);
 	});
 

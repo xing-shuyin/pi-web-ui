@@ -1,14 +1,9 @@
-/**
- * Live2D 看板娘插件客户端入口 (client/entry.mjs)
- * 常驻预加载运行时 (preload: true)，实现页面悬浮挂件、交互手势、AI 工具下发与情绪联动
- */
 import { detectLang, makeT } from "./i18n.mjs";
 import { getClientBase } from "./models.mjs";
 import { Live2DWidget } from "./widget.mjs";
 
 const RUNTIME_KEY = "__piLive2dRuntime";
 
-// ── 1. 重入安全保护：清理上一轮旧实例 ──────────────────────────
 const previous = globalThis[RUNTIME_KEY];
 if (previous?.destroy) {
 	try {
@@ -18,19 +13,16 @@ if (previous?.destroy) {
 	}
 }
 
-// ── 2. 国际化与宿主基础路径 ────────────────────────────────────
 const clientBase = getClientBase(import.meta.url);
 const currentLang = detectLang();
 const t = makeT(currentLang);
 
-// ── 3. 创建并挂载看板娘挂件 ──────────────────────────────────
 const widget = new Live2DWidget({
 	clientBase,
 	t,
 });
 void widget.start();
 
-// ── 4. 监听服务端消息广播 (plugin_data -> pi-web-ui:plugin-data) ──
 function onPluginData(e) {
 	const detail = e.detail;
 	if (detail?.pluginId !== "live2d") return;
@@ -122,7 +114,6 @@ function onPluginData(e) {
 
 window.addEventListener("pi-web-ui:plugin-data", onPluginData);
 
-// ── 5. 顶栏按钮动作与全局快捷键 (Alt+L) ────────────────────────
 function handleToggleOrUnlock() {
 	if (widget.config.clickThrough) {
 		widget.toggleClickThrough(false);
@@ -140,7 +131,6 @@ if (typeof hostBridge?.onUiAction === "function") {
 }
 
 const onKeyDown = (e) => {
-	// Alt+L 快速切换显示/隐藏或解除穿透
 	if (e.altKey && (e.key === "l" || e.key === "L")) {
 		e.preventDefault();
 		handleToggleOrUnlock();
@@ -148,7 +138,6 @@ const onKeyDown = (e) => {
 };
 window.addEventListener("keydown", onKeyDown);
 
-// ── 6. 注册生命周期与销毁清理 ──────────────────────────────────
 const runtime = {
 	widget,
 	toggle: handleToggleOrUnlock,

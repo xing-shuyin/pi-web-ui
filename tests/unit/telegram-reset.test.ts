@@ -68,7 +68,6 @@ it.each(["/reset", "/stop", "/MODEL p/m", "/thinking high", "/workspace"])(
 		await entered.promise;
 		const queued = bridge.onInboundMessage(message("discard me"));
 		await bridge.onInboundMessage(message(command === "/workspace" ? `${command} ${cwd}` : command));
-		// New dispatch must not wait for the old host.chat to return.
 		await bridge.onInboundMessage(message("fresh"));
 		expect(host.chat).toHaveBeenCalledTimes(2);
 		const fresh = host.chat.mock.calls[1][0];

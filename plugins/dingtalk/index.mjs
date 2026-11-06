@@ -1,11 +1,3 @@
-/**
- * plugins/dingtalk/index.mjs
- * DingTalk Open Platform & Bot integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto).
- * Inspired by dsh-im: duplex bot chat, structure-aware Markdown chunks,
- * isolated multi-turn sessions, slash commands, and webhook delivery.
- */
-
 import { createHash, createHmac } from "node:crypto";
 import { DingtalkBotBridge } from "./bridge.mjs";
 import { sendMedia } from "./media.mjs";
@@ -14,7 +6,6 @@ import { DingTalkStream } from "./stream.mjs";
 export const SECRET_APP_SECRET = "dingtalk.appSecret";
 export const SECRET_WEBHOOK_SECRET = "dingtalk.webhookSecret";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -23,7 +14,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from sender's staffId or openId. */
 export function peerAccountId(senderId, prefix = "dt") {
 	const raw = String(senderId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -31,18 +21,12 @@ export function peerAccountId(senderId, prefix = "dt") {
 	return `${prefix}_${hash}`;
 }
 
-/**
- * Sign DingTalk custom bot webhook with HMAC-SHA256.
- */
 export function signDingtalkWebhook(timestamp, secret) {
 	if (!secret) return "";
 	const stringToSign = `${timestamp}\n${secret}`;
 	return createHmac("sha256", secret).update(stringToSign).digest("base64");
 }
 
-/**
- * Builds DingTalk webhook URL with timestamp and sign if secret is configured.
- */
 export function buildSignedWebhookUrl(rawUrl, secret) {
 	const urlStr = String(rawUrl ?? "").trim();
 	if (!urlStr || !secret) return urlStr;
@@ -52,9 +36,6 @@ export function buildSignedWebhookUrl(rawUrl, secret) {
 	return `${urlStr}${delimiter}timestamp=${timestamp}&sign=${sign}`;
 }
 
-/**
- * Build DingTalk message payload for Webhook / SessionWebhook / OpenAPI.
- */
 export function buildDingtalkMessage({ msgType = "markdown", title = "通知", text = "" } = {}) {
 	const safeTitle = String(title || "通知").trim();
 	const safeText = String(text || "").trim();
@@ -66,7 +47,6 @@ export function buildDingtalkMessage({ msgType = "markdown", title = "通知", t
 		};
 	}
 
-	// Default to markdown
 	return {
 		msgtype: "markdown",
 		markdown: {
@@ -78,9 +58,6 @@ export function buildDingtalkMessage({ msgType = "markdown", title = "通知", t
 
 export { DingtalkBotBridge } from "./bridge.mjs";
 
-/**
- * Strip secrets from config before plaintext storage.
- */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.appSecret;
@@ -90,9 +67,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/**
- * Merge saved secrets into incoming config.
- */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingAppSecret = savedSecrets[SECRET_APP_SECRET] || prev.appSecret || "";
@@ -196,7 +170,6 @@ export default async function activate(host) {
 		return json.accessToken;
 	}
 
-	// Register AI tool "dingtalk" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "dingtalk",
 		description:
@@ -252,7 +225,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

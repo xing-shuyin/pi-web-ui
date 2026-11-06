@@ -140,17 +140,14 @@ describe("Group Blackboard Architecture", () => {
 		const bot1 = await pair(cookie, "WorkerBot1");
 		const bot2 = await pair(cookie, "OutsiderBot2");
 
-		// Create room with bot1 only
 		const roomRes = await request("/api/rooms", { name: "Architecture Working Group", botIds: [bot1.botId] }, cookie);
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// 1) 空黑板默认返回 null
 		const emptyRes = await request(`/api/rooms/${roomId}/blackboard`, undefined, cookie);
 		expect(emptyRes.status).toBe(200);
 		expect(emptyRes.body).toEqual({ blackboard: null });
 
-		// 2) 人类首次创建黑板（expectedVersion = 0）成功并初始化 version = 1
 		const createRes = await request(
 			`/api/rooms/${roomId}/blackboard`,
 			{
@@ -175,13 +172,11 @@ describe("Group Blackboard Architecture", () => {
 		});
 		expect(typeof createRes.body.blackboard.updatedAt).toBe("number");
 
-		// 再次读验证持久化
 		const readBackRes = await request(`/api/rooms/${roomId}/blackboard`, undefined, cookie);
 		expect(readBackRes.status).toBe(200);
 		expect(readBackRes.body.blackboard.version).toBe(1);
 		expect(readBackRes.body.blackboard.content).toBe("# System Consensus\nInitial architecture contract.");
 
-		// 3) Bot 通过 device_collab 读取黑板
 		const collabService1 = createDeviceCollabService({
 			getConfig: () => ({
 				hubUrl: publicUrl,
@@ -205,7 +200,6 @@ describe("Group Blackboard Architecture", () => {
 		expect(botReadResult.blackboard.version).toBe(1);
 		expect(botReadResult.blackboard.content).toBe("# System Consensus\nInitial architecture contract.");
 
-		// 4) Bot 乐观锁更新黑板（匹配 expectedVersion）成功，version 自增
 		const botUpdateResult = (await collabService1.execute(
 			"blackboard_update",
 			{
@@ -231,12 +225,11 @@ describe("Group Blackboard Architecture", () => {
 			},
 		});
 
-		// 5) 乐观锁版本冲突（expectedVersion 不匹配）返回 409
 		const conflictRes = await request(
 			`/api/agent/rooms/${roomId}/blackboard`,
 			{
 				sourceBotId: bot1.botId,
-				expectedVersion: 1, // 当前版本已是 2
+				expectedVersion: 1,
 				content: "Concurrent conflicting update",
 			},
 			"",
@@ -249,7 +242,6 @@ describe("Group Blackboard Architecture", () => {
 		expect(conflictRes.status).toBe(409);
 		expect(conflictRes.body.error).toBe("Version conflict");
 
-		// Bot 通过 collabService 遇到 409 冲突也会抛出错误
 		await expect(
 			collabService1.execute(
 				"blackboard_update",
@@ -264,8 +256,6 @@ describe("Group Blackboard Architecture", () => {
 			),
 		).rejects.toThrow();
 
-		// 6) 非群成员 Bot 试图读写黑板被拒绝（403）
-		// bot2 读黑板
 		const outsiderReadRes = await request(
 			`/api/agent/rooms/${roomId}/blackboard?sourceBotId=${bot2.botId}`,
 			undefined,
@@ -278,7 +268,6 @@ describe("Group Blackboard Architecture", () => {
 		);
 		expect(outsiderReadRes.status).toBe(403);
 
-		// bot2 写黑板
 		const outsiderWriteRes = await request(
 			`/api/agent/rooms/${roomId}/blackboard`,
 			{
@@ -295,7 +284,6 @@ describe("Group Blackboard Architecture", () => {
 		);
 		expect(outsiderWriteRes.status).toBe(403);
 
-		// 7) 超限内容被拦截
 		const hugeContent = "x".repeat(DEFAULT_EXECUTION_SETTINGS.blackboardMaxBytes + 1);
 		const oversizedRes = await request(
 			`/api/rooms/${roomId}/blackboard`,
@@ -309,7 +297,6 @@ describe("Group Blackboard Architecture", () => {
 		);
 		expect(oversizedRes.status).toBe(400);
 
-		// 控制字符内容被拦截
 		const controlCharRes = await request(
 			`/api/rooms/${roomId}/blackboard`,
 			{
@@ -322,7 +309,6 @@ describe("Group Blackboard Architecture", () => {
 		);
 		expect(controlCharRes.status).toBe(400);
 
-		// 8) 任务执行上下文中正确携带黑板内容
 		const latestBlackboard = (await request(`/api/rooms/${roomId}/blackboard`, undefined, cookie)).body.blackboard;
 		expect(latestBlackboard.version).toBe(2);
 
@@ -375,7 +361,6 @@ describe("Group Blackboard Architecture", () => {
 			registered.release();
 		}
 
-		// 无 title 时独立块正确呈现（无多余空格）
 		const noTitleRoom: Room = {
 			...fakeRoom,
 			blackboard: {

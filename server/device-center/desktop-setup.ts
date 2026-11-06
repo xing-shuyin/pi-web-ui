@@ -9,9 +9,7 @@ export function createDesktopSetup(options: { dataDir?: string; environmentEnabl
 	let storedEnabled = false;
 	try {
 		storedEnabled = JSON.parse(readFileSync(settingsFile, "utf8"))?.enabled === true;
-	} catch {
-		// Missing or unreadable settings leave desktop access disabled by default.
-	}
+	} catch {}
 	let closed = false;
 	return {
 		get enabled() {

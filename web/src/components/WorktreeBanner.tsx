@@ -3,7 +3,6 @@ import { FiArrowLeft, FiGitBranch, FiRefreshCw, FiTrash2 } from "react-icons/fi"
 import type { WorktreeInfo } from "../types";
 import { useT } from "../i18n";
 
-/** Refresh independently of the selected view so the project entry stays current. */
 export function useWorktreeRefresh(mainPath: string | undefined, onRefresh: () => void) {
 	useEffect(() => {
 		const refresh = () => {
@@ -47,7 +46,6 @@ export function WorktreeView({
 				...linked.map((row) => ({ ...row, isMain: false })),
 			]
 		: [];
-	// Some providers omit the active linked worktree from the sibling list.
 	if (worktree?.isLinkedWorktree && !rows.some((row) => row.path === worktree.currentPath)) {
 		rows.push({ path: worktree.currentPath, branch: worktree.branch, isMain: false, isDirty: undefined });
 	}

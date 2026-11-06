@@ -50,20 +50,16 @@ describe("TaskRecoveryManager unit tests", () => {
 		expect(lease.taskId).toBe("task-1");
 		expect(manager.getActiveLeases()).toHaveLength(1);
 
-		// Record activity
 		expect(manager.recordActivity("task-1", "att-1")).toBe(true);
 
-		// Prepare renews
 		const renews = manager.prepareLeaseRenews();
 		expect(renews).toHaveLength(1);
 		expect(renews[0].hasActivity).toBe(true);
 
-		// Second renew without new activity should have hasActivity: false
 		const secondRenews = manager.prepareLeaseRenews();
 		expect(secondRenews).toHaveLength(1);
 		expect(secondRenews[0].hasActivity).toBe(false);
 
-		// Record task finish into outbox
 		const outbox = manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "All done" },
@@ -71,17 +67,15 @@ describe("TaskRecoveryManager unit tests", () => {
 
 		expect(outbox.status).toBe("completed");
 		expect(outbox.report).toBe("All done");
-		expect(manager.getActiveLeases()).toHaveLength(0); // active lease removed
+		expect(manager.getActiveLeases()).toHaveLength(0);
 		expect(manager.getPendingOutbox()).toHaveLength(1);
 
-		// Duplicate finish with identical outcome is idempotent
 		const duplicate = manager.recordTaskFinish(
 			{ id: "task-1", attemptId: "att-1", botId: "bot-1", deviceId: "dev1", roomId: "room-1" },
 			{ status: "completed", report: "All done" },
 		);
 		expect(duplicate.id).toBe(outbox.id);
 
-		// Acknowledge outbox requires matching outcome fingerprint
 		expect(manager.ackOutbox("task-1", "att-1")).toBe(false);
 		expect(manager.ackOutbox("task-1", "att-1", "wrong-fp")).toBe(false);
 		expect(manager.ackOutbox("task-1", "att-1", outbox.fingerprint)).toBe(true);
@@ -92,7 +86,6 @@ describe("TaskRecoveryManager unit tests", () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-restart-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
-		// Stage an active lease file simulating a crash
 		const leaseFile = join(dir, "task-active-leases.json");
 		const now = Date.now();
 		writeFileSync(
@@ -122,9 +115,8 @@ describe("TaskRecoveryManager unit tests", () => {
 
 		expect(halted).toEqual(["orphan-task"]);
 		expect(manager.getHaltedOrphans()).toHaveLength(1);
-		expect(manager.getActiveLeases()).toHaveLength(0); // cleared
+		expect(manager.getActiveLeases()).toHaveLength(0);
 
-		// Outbox should contain the interrupted record
 		const pending = manager.getPendingOutbox();
 		expect(pending).toHaveLength(1);
 		expect(pending[0].taskId).toBe("orphan-task");
@@ -136,7 +128,6 @@ describe("TaskRecoveryManager unit tests", () => {
 		const dir = mkdtempSync(join(tmpdir(), "recovery-corrupt-"));
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
-		// Write invalid JSON to outbox file
 		writeFileSync(join(dir, "task-recovery-outbox.json"), "{ invalid json ");
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
@@ -236,7 +227,6 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 
 		await vi.waitFor(() => expect(f.relay.isOnline("dev1")).toBe(true));
 
-		// Dispatch task
 		const task = {
 			id: "task-rec-1",
 			attemptId: "att-rec-1",
@@ -249,15 +239,11 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 		expect(f.relay.sendTask("dev1", task)).toBe(true);
 		await taskRunning.promise;
 
-		// Task is running locally and recorded in recovery
 		expect(f.recovery.getActiveLeases()).toHaveLength(1);
 
-		// Disconnect network abruptly by terminating all sockets on server
 		const relayDevices = f.relay as any;
-		// Let connector simulate disconnect
-		(connector as any).close(); // Or close the socket directly
+		(connector as any).close();
 
-		// Recreate connector as if reconnecting
 		const reconnectedTaskFinish = deferred<string>();
 		const reconnector = createDeviceConnector({
 			hubUrl: f.origin,
@@ -270,7 +256,6 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 
 		await vi.waitFor(() => expect(f.relay.isOnline("dev1")).toBe(true));
 
-		// Verify that reconnect triggered task claim with stable attempt and lease
 		await vi.waitFor(() => expect(f.claims.length).toBeGreaterThanOrEqual(1));
 		const lastClaim = f.claims[f.claims.length - 1];
 		expect(lastClaim.taskId).toBe("task-rec-1");
@@ -279,7 +264,6 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 	});
 
 	it("replays pending durable outbox results on reconnect until ACKed", async () => {
-		// Model the persisted Hub receipt from the expected outcome, independently of the request fingerprint.
 		const committedTask: HubTask = {
 			id: "task-outbox-1",
 			attemptId: "att-out-1",
@@ -297,14 +281,12 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 		};
 		const f = await createFixture(committedTask);
 
-		// Pre-populate outbox with an interrupted or completed result
 		f.recovery.recordTaskFinish(
 			{ id: "task-outbox-1", attemptId: "att-out-1", botId: "bot1", deviceId: "dev1", roomId: "room1" },
 			{ status: "completed", report: "Pre-recorded finish" },
 		);
 		expect(f.recovery.getPendingOutbox()).toHaveLength(1);
 
-		// Connect device
 		const connector = createDeviceConnector({
 			hubUrl: f.origin,
 			deviceId: "dev1",
@@ -316,20 +298,18 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 
 		await vi.waitFor(() => expect(f.relay.isOnline("dev1")).toBe(true));
 
-		// Verify event was received by Hub
 		await vi.waitFor(() => expect(f.events.some((e) => e.taskId === "task-outbox-1")).toBe(true));
 		const event = f.events.find((e) => e.taskId === "task-outbox-1");
 		expect(event.status).toBe("completed");
 		expect(event.report).toBe("Pre-recorded finish");
 		expect(event.fingerprint).toBe(committedTask.outcomeFingerprint);
 
-		// Only the returned persisted receipt authorizes the relay ACK that clears the outbox.
 		await vi.waitFor(() => expect(f.recovery.getPendingOutbox()).toHaveLength(0));
 	});
 
 	it("aborts local task if Hub rejects claim on reconnect", async () => {
 		const f = await createFixture();
-		f.setClaimAcceptor(() => false); // Hub rejects claim
+		f.setClaimAcceptor(() => false);
 
 		let signalAborted = false;
 		const taskRunning = deferred<void>();
@@ -373,9 +353,7 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 		expect(f.relay.sendTask("dev1", task)).toBe(true);
 		await taskRunning.promise;
 
-		// Disconnect and reconnect to trigger claim rejection
-		f.relay.revoke("dev1"); // forces connection drop
-		// Connector will reconnect, send task_claim, get rejected, and abort the running task
+		f.relay.revoke("dev1");
 		await vi.waitFor(() => expect(signalAborted).toBe(true), { timeout: 3000 });
 	});
 });
@@ -388,7 +366,6 @@ describe("DeviceHub claimTask and lease renewal logic", () => {
 		const { DeviceHubStore } = await import("../../server/device-center/store.js");
 		const store = await DeviceHubStore.open(dir);
 
-		// Populate mock state with a running task with recoveryUntil set
 		await store.transact((draft) => {
 			draft.accounts.push({
 				id: "acc1",
@@ -447,7 +424,6 @@ describe("DeviceHub claimTask and lease renewal logic", () => {
 		});
 		cleanup.push(() => hub.close());
 
-		// 1. Lease token mismatch rejected
 		const rejectMismatch = await hub.claimTask("dev1", {
 			taskId: "task-hub-1",
 			attemptId: "att-hub-1",
@@ -457,7 +433,6 @@ describe("DeviceHub claimTask and lease renewal logic", () => {
 		expect(rejectMismatch.accepted).toBe(false);
 		expect(rejectMismatch.reason).toContain("Lease token mismatch");
 
-		// 2. Valid claim accepted during recovery window
 		const claimOk = await hub.claimTask("dev1", {
 			taskId: "task-hub-1",
 			attemptId: "att-hub-1",
@@ -466,12 +441,10 @@ describe("DeviceHub claimTask and lease renewal logic", () => {
 		});
 		expect(claimOk.accepted).toBe(true);
 
-		// Recovery window should now be cleared and task remains running
 		const taskAfterClaim = hub.store.snapshot().tasks.find((t) => t.id === "task-hub-1");
 		expect(taskAfterClaim?.recoveryUntil).toBeUndefined();
 		expect(taskAfterClaim?.status).toBe("running");
 
-		// 3. Lease renewal with activity succeeds
 		const renewOk = await hub.renewTaskLease("dev1", {
 			taskId: "task-hub-1",
 			attemptId: "att-hub-1",
@@ -481,7 +454,6 @@ describe("DeviceHub claimTask and lease renewal logic", () => {
 		});
 		expect(renewOk.accepted).toBe(true);
 
-		// 4. Mark task cancelRequested -> claim & renew must be rejected
 		await hub.store.transact((draft) => {
 			const t = draft.tasks.find((item) => item.id === "task-hub-1");
 			if (t) t.cancelRequested = true;
@@ -545,7 +517,6 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		});
 		cleanup.push(() => runtime.close());
 
-		// 1. Missing leaseToken rejected at admission
 		await expect(
 			runtime.onTask({
 				id: "t-missing-lease",
@@ -558,7 +529,6 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 			}),
 		).rejects.toThrow("Hub task lease grant required");
 
-		// 2. Valid lease admitted, executed, and recorded in outbox
 		const result = await runtime.onTask({
 			id: "t-valid-lease",
 			attemptId: "att-2",
@@ -573,10 +543,9 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 
 		expect(result).toBe("real result");
 
-		// Outbox should contain the completed result
 		const pendingOutbox = runtime.recovery.getPendingOutbox();
 		expect(pendingOutbox.some((e) => e.taskId === "t-valid-lease" && e.status === "completed")).toBe(true);
-		expect(runtime.recovery.getActiveLeases()).toHaveLength(0); // active lease cleaned
+		expect(runtime.recovery.getActiveLeases()).toHaveLength(0);
 	});
 
 	it("demonstrates exactly-once execution across network disconnect and Hub restart with recovery grace window", async () => {
@@ -586,7 +555,6 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		const { DeviceHubStore } = await import("../../server/device-center/store.js");
 		const { createDeviceHub } = await import("../../server/device-center/hub.js");
 
-		// Initialize store with state
 		const store = await DeviceHubStore.open(dir);
 		await store.transact((draft) => {
 			draft.accounts.push({
@@ -639,13 +607,11 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		});
 		await store.close();
 
-		// Start Hub 1
 		let hub = await createDeviceHub({
 			dataDir: dir,
 			publicUrl: "http://127.0.0.1:8787",
 		});
 
-		// Local Task Execution tracking
 		let executionCount = 0;
 		const taskUnblock = deferred<void>();
 		const localRecovery = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
@@ -671,7 +637,6 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 
 		const executionPromise = executeTaskLocally();
 
-		// Simulate Hub Restart: close Hub 1 and open Hub 2
 		await hub.close();
 
 		const hub2 = await createDeviceHub({
@@ -680,16 +645,13 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		});
 		cleanup.push(() => hub2.close());
 
-		// Hub 2 starts and assigns recovery window to running tasks
 		const taskInHub2 = hub2.store.snapshot().tasks.find((t) => t.id === "task-once-1");
 		expect(taskInHub2?.recoveryUntil).toBeDefined();
 
-		// Security assertion: public task projections MUST strip leaseToken
 		const { publicTask } = await import("../../server/device-center/store.js");
 		const exposedTask = publicTask(taskInHub2!);
 		expect((exposedTask as any).leaseToken).toBeUndefined();
 
-		// Reconnecting device claims task with stable token
 		const claims = localRecovery.prepareClaims();
 		expect(claims).toHaveLength(1);
 		expect(claims[0].leaseToken).toBe("stable-lease-token");
@@ -697,19 +659,15 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		const claimResult = await hub2.claimTask("dev1", claims[0]);
 		expect(claimResult.accepted).toBe(true);
 
-		// Verified that recovery window is cleared and status is preserved
 		const claimedTask = hub2.store.snapshot().tasks.find((t) => t.id === "task-once-1");
 		expect(claimedTask?.recoveryUntil).toBeUndefined();
 		expect(claimedTask?.status).toBe("running");
 
-		// Now local execution completes
 		taskUnblock.resolve();
 		await executionPromise;
 
-		// Task was executed exactly once
 		expect(executionCount).toBe(1);
 
-		// Local Outbox has completed result and reports it to Hub 2
 		const pending = localRecovery.getPendingOutbox();
 		expect(pending).toHaveLength(1);
 		expect(pending[0].status).toBe("completed");
@@ -735,7 +693,6 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
 
 		const manager = new TaskRecoveryManager({ dataDir: dir, deviceId: "dev1" });
-		// Fill up to 128 entries
 		for (let i = 0; i < 128; i++) {
 			manager.recordTaskFinish(
 				{ id: `t-${i}`, attemptId: `a-${i}`, botId: "b1", deviceId: "dev1", roomId: "r1" },

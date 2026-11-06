@@ -1,7 +1,3 @@
-/**
- * Live2D 看板娘双语国际化
- */
-
 const DICT = {
 	zh: {
 		"topbar.toggle": "显示/隐藏看板娘 (Alt+L)",

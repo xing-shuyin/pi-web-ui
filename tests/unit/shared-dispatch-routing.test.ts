@@ -67,6 +67,45 @@ describe("shared dispatch actual routes", () => {
 		expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: "notice", level: "error" }));
 		expect(owner.activeId).toBe("other");
 	});
+	it("leaves the shared view before creating a local CLI conversation", () => {
+		const service = fakeAgentService({
+			sharedConversationTarget: () => ({}),
+			closeSharedConversation: vi.fn(),
+		});
+		expect(
+			service.dispatchSharedConversationMessage("viewer", {
+				type: "new_cli_chat",
+				config: { preset: "claude" },
+				requestId: "create-cli",
+			}),
+		).toBe(false);
+		expect(service.closeSharedConversation).toHaveBeenCalledWith("viewer");
+	});
+	it("keeps client-owned native CLI operations on the viewer's dispatcher", () => {
+		const { owner, dispatch, send } = fixture();
+		owner.getTerminalManager = vi.fn();
+		const messages: ClientMessage[] = [
+			{
+				type: "terminal_create",
+				terminalId: "cli",
+				ownerKind: "client",
+				cwd: "/project",
+				cols: 80,
+				rows: 24,
+				nativeCli: { preset: "claude" },
+			},
+			{ type: "terminal_attach", terminalId: "cli", ownerKind: "client", cols: 80, rows: 24 },
+			{ type: "terminal_input", terminalId: "cli", ownerKind: "client", data: "\r" },
+			{ type: "terminal_cli_paste", terminalId: "cli", ownerKind: "client", requestId: "paste", data: "hello" },
+			{ type: "terminal_resize", terminalId: "cli", ownerKind: "client", cols: 120, rows: 30 },
+			{ type: "rename_terminal", terminalId: "cli", ownerKind: "client", title: "CLI" },
+			{ type: "terminal_kill", terminalId: "cli", ownerKind: "client" },
+		];
+		for (const message of messages) expect(dispatch(message)).toBe(false);
+		expect(owner.getTerminalManager).not.toHaveBeenCalled();
+		expect(send).not.toHaveBeenCalled();
+		expect(owner.activeId).toBe("other");
+	});
 	it("routes goals, wizard, prefs, preset and lifecycle explicitly without activation", async () => {
 		const { owner, conv, dispatch } = fixture();
 		for (const method of [

@@ -1,28 +1,3 @@
-/**
- * db-client 插件服务端 —— 数据库连接管理/浏览后端（参照 vscode-database-client 的核心体验）。
- *
- * 依赖驱动不随包分发：首次激活自动 npm 一次性安装
- * mysql2 / pg / better-sqlite3 / mssql / mongodb / ioredis 到插件目录（同 ssh/webmail 模式）。
- *
- * 职责：
- * - 连接配置 CRUD（存 conn.dir/db-connections.json，明文本机；回显脱敏只报 hasPass）
- * - 连接池：connId → 适配器实例；事件定向推给创建者 socket
- * - 统一适配器接口（按数据库类型分流）：
- *     listDatabases() / listTables(db) / describeTable(db,table)
- *     selectPage(db,table,{offset,limit,orderBy,dir,filter}) / query(db,sql)
- *   SQL 系（mysql/postgres/sqlserver/sqlite）走 SQL；mongodb 走 find+JSON 过滤；
- *   redis 单独一组动作（scan/key/del/原始命令）。
- *
- * 协议：上行 { action, reqId?, ... }；下行两类——
- *   响应 { res: true, reqId, ok, ... }（reqId 匹配）
- *   事件  { event: "conn_closed", ... }（sendTo 创建者）
- *   广播  { kind: "state", state }（连接列表 / 运行中连接 / 依赖状态，凭据脱敏）
- *
- * AI 工具：常驻经 host.registerAgentTool 注册
- *   db_connections / db_databases / db_tables / db_schema / db_rows / db_query /
- *   db_redis_keys / db_redis_get / db_redis_cmd（插件内无开关）。
- */
-
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -31,16 +6,16 @@ import { readFile as rf, writeFile as wf } from "node:fs/promises";
 
 const CONFIG_FILE = "db-connections.json";
 const DEPS = ["mysql2@^3", "pg@^8", "mssql@^12", "mongodb@^7", "ioredis@^6"];
-const MAX_CONNS = 32; // 连接配置上限
-const MAX_RUNTIME = 8; // 同时打开的连接数
-const OP_TIMEOUT_MS = 30_000; // 单次查询超时
+const MAX_CONNS = 32;
+const MAX_RUNTIME = 8;
+const OP_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 15_000;
 const MAX_PAGE_ROWS = 500;
 const MAX_QUERY_ROWS = 1000;
-const MAX_CELL_LEN = 4000; // 单元格序列化截断
-const INSTALL_LOCK = ".deps-install.lock"; // 跨激活期的安装互斥锁（见 installDeps）
-const INSTALL_TIMEOUT_MS = 20 * 60_000; // 安装看门狗：mssql 等大包首装要几分钟，20 分钟没完就判失败
-const INSTALL_LOCK_STALE_MS = 30 * 60_000; // 锁过期：上次崩溃残留的锁只拦 30 分钟
+const MAX_CELL_LEN = 4000;
+const INSTALL_LOCK = ".deps-install.lock";
+const INSTALL_TIMEOUT_MS = 20 * 60_000;
+const INSTALL_LOCK_STALE_MS = 30 * 60_000;
 
 export const DB_TYPES = {
 	mysql: { label: "MySQL", port: 3306 },
@@ -51,10 +26,6 @@ export const DB_TYPES = {
 	redis: { label: "Redis", port: 6379 },
 };
 
-// ---------------------------------------------------------------------------
-// 小工具
-// ---------------------------------------------------------------------------
-
 function withTimeout(promise, ms, label) {
 	return Promise.race([
 		promise,
@@ -62,10 +33,8 @@ function withTimeout(promise, ms, label) {
 	]);
 }
 
-/** 标识符方言引用（防注入：标识符一律过引号函数） */
 function qMysql(s) {
 	const str = String(s);
-	// 标识符（库名/表名/列名）只允许安全字符，防止转义被绕过导致 SQL 注入
 	if (!/^[A-Za-z0-9_$]+$/.test(str)) throw new Error(`非法标识符: ${str}`);
 	return "`" + str + "`";
 }
@@ -79,13 +48,11 @@ function qSqlite(s) {
 	return '"' + String(s).replace(/"/g, '""') + '"';
 }
 
-/** cmd/sh 引号：含空白或 shell 元字符才包一层，内层双引号翻倍（cmd 转义规则）。 */
 function winQuote(s) {
 	const t = String(s);
 	return /[\s"&'()<>^|]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 }
 
-/** 值统一序列化成可展示的 JSON 兼容标量 */
 function cellVal(v) {
 	if (v === null || v === undefined) return null;
 	if (typeof v === "number" || typeof v === "boolean") return v;
@@ -131,10 +98,6 @@ function parseJsonFilter(text) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 适配器工厂 —— 每种数据库一个 async 工厂，返回统一接口 + kind
-// ---------------------------------------------------------------------------
-
 async function mysqlAdapter(cfg) {
 	const mod = await import("mysql2/promise");
 	const mysql = mod.default ?? mod;
@@ -150,9 +113,6 @@ async function mysqlAdapter(cfg) {
 		CONNECT_TIMEOUT_MS + 3000,
 		"建立连接",
 	);
-	// #458：服务端掐连接（wait_timeout/重启/网络闪断）时会 emit error——无监听即
-	// ERR_UNHANDLED_ERROR 崩掉整个服务进程。静默兜底（与同文件 ioredis 同范式），
-	// 后续操作自身报错走正常工具回执。
 	(conn.connection ?? conn).on?.("error", () => {});
 	await conn.ping();
 	let curDb = null;
@@ -200,9 +160,7 @@ async function mysqlAdapter(cfg) {
 				const showSql = `SHOW CREATE TABLE ${qMysql(db)}.${qMysql(t)}`;
 				const [[row]] = await conn.query(showSql);
 				ddl = row["Create Table"] ?? row["Create View"] ?? "";
-			} catch {
-				/* 视图等场景失败可忽略 */
-			}
+			} catch {}
 			return {
 				columns: cols.map((c) => ({
 					name: c.name,
@@ -217,8 +175,6 @@ async function mysqlAdapter(cfg) {
 			};
 		},
 		async selectPage(db, t, opt) {
-			// mysql 数据页不支持 JSON filter（那是 mongodb 专属参数）
-			// 使用 mysql2 的 ?? 标识符占位符传参，避免将动态标识符直接拼入 SQL 字符串
 			const totalRes = await conn.query("SELECT COUNT(*) AS n FROM ??.??", [db, t]);
 			const total = Number(totalRes[0][0]?.n ?? 0);
 			const orderSql = opt.orderBy ? ` ORDER BY ?? ${opt.dir === "desc" ? "DESC" : "ASC"}` : "";
@@ -253,7 +209,6 @@ async function mysqlAdapter(cfg) {
 			const started = Date.now();
 			const [result] = await conn.query(sql);
 			if (Array.isArray(result)) {
-				// SELECT 结果集
 				const fields = result.length ? Object.keys(result[0]) : [];
 				return { total: result.length, affected: 0, elapsedMs: Date.now() - started, ...rowsToGrid(fields, result) };
 			}
@@ -283,9 +238,7 @@ async function mysqlAdapter(cfg) {
 		async close() {
 			try {
 				await conn.end();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		},
 	};
 }
@@ -307,7 +260,6 @@ async function postgresAdapter(cfg) {
 		let c = clients.get(name);
 		if (c) return c;
 		c = new Client({ ...base, database: name });
-		// #458：pg 后端重启/网络闪断会 emit error，无监听崩主进程（同 mysql/ioredis 兜底）。
 		c.on("error", () => {});
 		await withTimeout(c.connect(), CONNECT_TIMEOUT_MS + 3000, "建立连接");
 		clients.set(name, c);
@@ -444,9 +396,7 @@ async function postgresAdapter(cfg) {
 			for (const c of clients.values()) {
 				try {
 					await c.end();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 		},
 	};
@@ -455,7 +405,6 @@ async function postgresAdapter(cfg) {
 async function sqliteAdapter(cfg) {
 	if (!cfg.file || !String(cfg.file).trim()) throw new Error("SQLite 需要指定数据库文件路径");
 	if (!existsSync(String(cfg.file).trim())) throw new Error(`数据库文件不存在：${cfg.file}`);
-	// 用 Node 内置 node:sqlite（≥22.13 无需 flag），零原生依赖；可写打开（支持行编辑）
 	const mod = await import("node:sqlite");
 	const DatabaseSync = mod.DatabaseSync ?? mod.default?.DatabaseSync;
 	if (!DatabaseSync) throw new Error("当前 Node 不支持 node:sqlite（需 ≥22.13）");
@@ -463,13 +412,12 @@ async function sqliteAdapter(cfg) {
 	function all(sql, ...args) {
 		return db.prepare(sql).all(...args);
 	}
-	// 主键探测缓存：有 INTEGER/复合主键用之；无主键表回退 rowid（查询时以 __rid__ 列带出）
 	const pkCache = new Map();
 	function tablePk(t) {
 		if (pkCache.has(t)) return pkCache.get(t);
 		const info = all(`PRAGMA table_info(${qSqlite(t)})`);
 		const pks = info.filter((c) => Number(c.pk) > 0);
-		const col = pks.length === 1 ? pks[0].name : null; // 复合主键不支持行级定位
+		const col = pks.length === 1 ? pks[0].name : null;
 		pkCache.set(t, col);
 		return col;
 	}
@@ -560,9 +508,7 @@ async function sqliteAdapter(cfg) {
 		async close() {
 			try {
 				db.close();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		},
 	};
 }
@@ -586,7 +532,6 @@ async function mssqlAdapter(cfg) {
 		let p = pools.get(name);
 		if (p) return p;
 		p = new mssql.ConnectionPool({ ...baseCfg, database: name });
-		// #458：mssql 连接池 error 事件无监听同样崩主进程（同三家 SQL 兜底）。
 		p.on("error", () => {});
 		await withTimeout(p.connect(), CONNECT_TIMEOUT_MS + 5000, "建立连接");
 		pools.set(name, p);
@@ -594,7 +539,6 @@ async function mssqlAdapter(cfg) {
 	}
 	const main = await getPool(baseCfg.database);
 	async function qual(db, t) {
-		// 查真实 schema，避免写死 dbo
 		const r = await (
 			await getPool(db)
 		)
@@ -739,9 +683,7 @@ async function mssqlAdapter(cfg) {
 			for (const p of pools.values()) {
 				try {
 					await p.close();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 		},
 	};
@@ -750,9 +692,6 @@ async function mssqlAdapter(cfg) {
 async function mongoAdapter(cfg) {
 	const mod = await import("mongodb");
 	const MongoClient = mod.MongoClient ?? mod.default?.MongoClient;
-	// #458：MongoDB 默认主键就是 ObjectId——docSave/docDelete 必走 new ObjectId 分支，
-	// 只解构 MongoClient 时三处 `new ObjectId(v)` 运行时 100% 抛 ReferenceError（被
-	// catch 吞成普通错误回执，保存/删除从未可用）。
 	const ObjectId = mod.ObjectId ?? mod.default?.ObjectId;
 	let url = cfg.uri;
 	if (!url) {
@@ -782,9 +721,7 @@ async function mongoAdapter(cfg) {
 					unique: Boolean(i.unique),
 					columns: JSON.stringify(i.key),
 				}));
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			return { columns: [], indexes, ddl: `集合 ${db}.${t}（文档型无固定结构，请到「数据」页浏览）` };
 		},
 		async selectPage(db, t, opt) {
@@ -796,7 +733,6 @@ async function mongoAdapter(cfg) {
 				.skip(Math.max(Number(opt.offset) || 0, 0))
 				.limit(Math.min(Number(opt.limit) || 50, MAX_PAGE_ROWS))
 				.toArray();
-			// BSON → 纯 JSON（_id/日期等转字符串），同时保留结构化 docs 供编辑回写
 			const replacer = (_k, v) => {
 				if (v && typeof v === "object" && v._bsontype) {
 					if (typeof v.toString === "function" && v.toString !== Object.prototype.toString) return v.toString();
@@ -846,9 +782,7 @@ async function mongoAdapter(cfg) {
 		async close() {
 			try {
 				await client.close();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		},
 	};
 }
@@ -866,9 +800,7 @@ async function redisAdapter(cfg) {
 		retryStrategy: () => null,
 		lazyConnect: false,
 	});
-	cli.on("error", () => {
-		/* 静默，操作层报错 */
-	});
+	cli.on("error", () => {});
 	await withTimeout(cli.ping(), CONNECT_TIMEOUT_MS + 2000, "建立连接");
 
 	async function scanKeys(pattern, cursorIn, want) {
@@ -936,7 +868,6 @@ async function redisAdapter(cfg) {
 		return { type, ttl, size, value, truncated };
 	}
 
-	/** 简单命令行分词（支持单双引号） */
 	function tokenize(line) {
 		const out = [];
 		let cur = "",
@@ -990,9 +921,7 @@ async function redisAdapter(cfg) {
 		async close() {
 			try {
 				cli.disconnect();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		},
 	};
 }
@@ -1006,10 +935,6 @@ const ADAPTER_FACTORIES = {
 	redis: redisAdapter,
 };
 
-// ---------------------------------------------------------------------------
-// activate
-// ---------------------------------------------------------------------------
-
 const DRIVER_MODULE = {
 	mysql: "mysql2",
 	postgres: "pg",
@@ -1022,21 +947,17 @@ const DRIVER_MODULE = {
 export default {
 	activate(host) {
 		const st = {
-			conns: [], // 连接配置 [{id,name,type,host,port,user,password,database,file,uri,redisDb}]
-			toolUnregister: null, // AI 工具注销函数（deactivate 时清理）
-			runtime: new Map(), // connId → {connId, ownerId, hostId, label, adapter}
+			conns: [],
+			toolUnregister: null,
+			runtime: new Map(),
 			nextConnId: 1,
 			depsOk: false,
 			depsInstalling: false,
 			depsAvail: null,
-			installer: null, // 正在跑的 npm 子进程（关机/重载时杀掉，见返回的 cleanup）
-			dead: false, // deactivate 后置 true：迟到的子进程回调不再碰宿主
+			installer: null,
+			dead: false,
 		};
 
-		// ---- 配置持久化 -------------------------------------------------------
-		// 机密存储：连接密码按 conn id 走宿主 host.secrets（AES-256-GCM），
-		// db-connections.json 不再落明文；旧版宿主无此设施时回退旧行为。
-		// uri 里内嵌凭据的情况无法可靠拆分——仍在文件里，注释明示。
 		const sec = host.secrets;
 
 		async function loadConfig() {
@@ -1047,7 +968,6 @@ export default {
 				st.conns = [];
 			}
 			if (sec?.set) {
-				// 一次性迁移：历史明文密码 → 加密机密 + 文件剥离
 				let migrated = false;
 				for (const c of st.conns) {
 					if (c.password && c.id) {
@@ -1066,15 +986,13 @@ export default {
 				}
 			}
 			if (sec?.get) {
-				// 回填内存副本（驱动连接需要真实密码）
 				for (const c of st.conns) if (!c.password && c.id) c.password = sec.get(`conn:${c.id}`);
 			}
 		}
 		async function saveConfig() {
-			const conns = sec ? st.conns.map((c) => ({ ...c, password: undefined })) : st.conns; // 剥离密码后落盘
+			const conns = sec ? st.conns.map((c) => ({ ...c, password: undefined })) : st.conns;
 			await wf(join(host.dir, CONFIG_FILE), JSON.stringify({ conns }, null, "\t"), "utf8");
 		}
-		/** 保存/清除某个连接的密码机密（值真 → 写；显式 null → 删）。 */
 		function storeConnSecret(id, pwd) {
 			if (!sec || !id) return;
 			try {
@@ -1106,7 +1024,6 @@ export default {
 				depsAvail: st.depsAvail,
 				types: DB_TYPES,
 				conns: st.conns.map(publicConn),
-				// AI 打开的连接（ownerId __agent__）不计入，避免左栏状态点 confusion
 				active: [...st.runtime.values()]
 					.filter((r) => r.ownerId !== "__agent__")
 					.map((r) => ({ connId: r.connId, hostId: r.hostId, label: r.label })),
@@ -1124,9 +1041,7 @@ export default {
 			host.sendTo(clientId, { res: true, reqId, ok: false, action, error: String(error?.message ?? error) });
 		}
 
-		// ---- 依赖自动安装 -----------------------------------------------------
 		async function loadDeps() {
-			// 按驱动粒度探测可用性（只装了部分也能用对应类型）
 			const results = await Promise.all(
 				Object.entries(DRIVER_MODULE).map(async ([_type, name]) => {
 					try {
@@ -1143,7 +1058,6 @@ export default {
 			return st.depsOk;
 		}
 
-		/** 惰性重探测：手动 npm 装完驱动后无需重启服务即可被识别（模块导入有缓存，开销可忽略） */
 		async function refreshDeps() {
 			if (!st.depsOk && !st.depsInstalling) await loadDeps();
 		}
@@ -1151,32 +1065,22 @@ export default {
 		function resolveNpmCli() {
 			try {
 				return createRequire(import.meta.url).resolve("npm/bin/npm-cli.js");
-			} catch {
-				/* 插件不依赖 npm 包，常走下面 */
-			}
-			// node 可执行文件旁的 npm（Windows 标准安装 / fnm / nvm 布局）——
-			// 免 shell 直调：路径含空格也稳，服务 PATH 里没有 npm 也能装
+			} catch {}
 			try {
 				const cands = [
 					join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
 					join(dirname(process.execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
 				];
 				for (const c of cands) if (existsSync(c)) return c;
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 			return null;
 		}
 
-		/** 跨激活期的安装互斥：plugins_reload 会重建 activate 闭包，st 管不住——
-		    用目录锁防止两个 npm 同目录互踩。返回 true = 锁新鲜，别装。 */
 		function installLocked(dir) {
 			try {
 				const at = Number(JSON.parse(readFileSync(join(dir, INSTALL_LOCK), "utf8"))?.at ?? 0);
 				if (Number.isFinite(at) && Date.now() - at < INSTALL_LOCK_STALE_MS) return true;
-			} catch {
-				/* 无锁或已过期/损坏 */
-			}
+			} catch {}
 			return false;
 		}
 
@@ -1197,15 +1101,9 @@ export default {
 			host.notify("info", "🗄️ 数据库插件：开始安装驱动依赖（首次约需几分钟）…");
 			try {
 				writeFileSync(join(host.dir, INSTALL_LOCK), JSON.stringify({ at: Date.now(), pid: process.pid }));
-			} catch {
-				/* 锁写失败也不挡安装 */
-			}
+			} catch {}
 			const npmCli = resolveNpmCli();
 			const args = ["--prefix", host.dir, "install", ...DEPS, "--no-audit", "--no-fund"];
-			// Windows 上 npm 是 .cmd：优先 node 直调 npm-cli（免 shell）；实在找不到
-			// 才走 shell，且命令拼成单个字符串自行加引号——spawn(cmd, [...args],
-			// {shell:true}) 只做无转义拼接，目录含空格就会装错地方（Node 会报
-			// "arguments are not escaped, only concatenated" deprecation）。
 			const child = npmCli
 				? spawn(process.execPath, [npmCli, ...args], { stdio: ["ignore", "ignore", "pipe"] })
 				: spawn(`npm ${args.map((a) => winQuote(a)).join(" ")}`, [], {
@@ -1213,20 +1111,15 @@ export default {
 						shell: true,
 					});
 			st.installer = child;
-			// 安装看门狗：超时没装完就杀掉判失败，避免“驱动安装中…”永远转下去
 			const timer = setTimeout(() => {
 				host.log(`install timed out after ${INSTALL_TIMEOUT_MS / 60000}min, killing npm`);
 				try {
 					child.kill("SIGTERM");
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				setTimeout(() => {
 					try {
 						child.kill("SIGKILL");
-					} catch {
-						/* ignore */
-					}
+					} catch {}
 				}, 5000).unref?.();
 				finish(false, "安装超时");
 			}, INSTALL_TIMEOUT_MS);
@@ -1245,12 +1138,9 @@ export default {
 				if (st.installer === child) st.installer = null;
 				try {
 					rmSync(join(host.dir, INSTALL_LOCK), { force: true });
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				st.depsInstalling = false;
 				if (ok) await loadDeps();
-				// 取 stderr 最后一个非空行（通常是 npm error 摘要），避免只有干巴巴的 exit 码
 				const lastErr = errTail.split(/\r?\n/).filter(Boolean).pop() ?? "";
 				host.notify(
 					ok ? "success" : "error",
@@ -1262,7 +1152,6 @@ export default {
 			}
 		}
 
-		// ---- 连接管理 ---------------------------------------------------------
 		function getRuntime(connId) {
 			const r = st.runtime.get(connId);
 			if (!r) throw new Error(`连接不存在或已断开：${connId}`);
@@ -1295,8 +1184,6 @@ export default {
 			}
 		}
 
-		/** 就绪门：配置读取 + 驱动探测完成前，所有消息排队等待（避免 mount 即发的
-		    state 请求读到空列表、甚至保存时覆写未加载的配置） */
 		let readyPromise = null;
 		function ensureReady() {
 			if (!readyPromise) {
@@ -1314,14 +1201,6 @@ export default {
 			return readyPromise;
 		}
 
-		// ------------------------------------------------------------------
-		// 消息路由
-		// ------------------------------------------------------------------
-		/** 写/危险操作（按 connId 动连接的）——每次都留审计日志。
-		 *  归属校验的边界：ownerId 来自客户端 hello 自报的 clientId（服务端不认证），
-		 *  多标签共享口令下既可仿冒、且运行时池本来就是全标签共享的（publicState 广播
-		 *  所有 connId 给每个标签页），做 owner 相等拦截会打断正常跨标签使用——
-		 *  故退化为「connId 存在性校验（getRuntime 抛错）+ 写操作审计日志」。 */
 		const MUTATING_ACTIONS = new Set([
 			"disconnect",
 			"query_exec",
@@ -1359,7 +1238,6 @@ export default {
 			try {
 				switch (action) {
 					case "state": {
-						// 驱动状态可能已变（手动补装），回显前重探测一次
 						await refreshDeps();
 						return void respond(action, reqId, clientId, { state: publicState() });
 					}
@@ -1375,16 +1253,14 @@ export default {
 							const i = st.conns.findIndex((x) => x.id === c.id);
 							if (i < 0) throw new Error("连接不存在");
 							const old = st.conns[i];
-							// 密码语义不变：留空 = 沿用旧值；显式 null = 清除（同步删机密）
 							storeConnSecret(c.id, c.password === null ? null : c.password || undefined);
 							st.conns[i] = {
 								...old,
 								name: c.name ?? old.name,
-								type: old.type, // 类型不允许改（驱动语义差异大）
+								type: old.type,
 								host: c.type !== "sqlite" ? String(c.host ?? "").trim() : old.host,
 								port: Number(c.port) || old.port,
 								user: c.user ?? old.user,
-								// 凭据留空 = 沿用旧值；显式 null = 清除
 								password: c.password === null ? undefined : c.password || old.password,
 								database: c.database ?? old.database,
 								file: c.file ?? old.file,
@@ -1415,11 +1291,11 @@ export default {
 					}
 
 					case "conns_delete": {
-						await loadConfig(); // 尚未加载时先迁移+回填，避免残留机密孤儿
+						await loadConfig();
 						const before = st.conns.length;
 						st.conns = st.conns.filter((x) => x.id !== msg.id);
 						if (st.conns.length === before) throw new Error("连接不存在");
-						storeConnSecret(msg.id, null); // 机密随连接一起删
+						storeConnSecret(msg.id, null);
 						await saveConfig();
 						for (const r of [...st.runtime.values()]) if (r.hostId === msg.id) dropRuntime(r, "连接配置已删除");
 						broadcastAll();
@@ -1427,12 +1303,11 @@ export default {
 					}
 
 					case "test": {
-						// 表单测试：完整 conn 对象（编辑时密码留空则沿用已存值）
 						let cfg = { ...msg.conn };
 						if (cfg.id) {
 							const saved = st.conns.find((x) => x.id === cfg.id);
 							if (saved && !cfg.password) cfg.password = saved.password;
-							if (saved) cfg.type = saved.type; // 类型不可改
+							if (saved) cfg.type = saved.type;
 						}
 						cfg.port = Number(cfg.port) || DB_TYPES[cfg.type]?.port || 0;
 						const adapter = await openAdapter(cfg);
@@ -1445,7 +1320,6 @@ export default {
 						if (!cfg) throw new Error("连接不存在");
 						for (const r of st.runtime.values()) {
 							if (r.hostId === cfg.id) {
-								// 已开 → 直接复用
 								return void respond(action, reqId, clientId, {
 									connId: r.connId,
 									label: r.label,
@@ -1479,7 +1353,6 @@ export default {
 						return void respond(action, reqId, clientId, {});
 					}
 
-					// ---- 通用 SQL/NoSQL 浏览 ----
 					case "dbs_list": {
 						const r = getRuntime(msg.connId);
 						return void respond(action, reqId, clientId, {
@@ -1520,7 +1393,6 @@ export default {
 						return void respond(action, reqId, clientId, { grid });
 					}
 
-					// ---- 行编辑（SQL 系） ----
 					case "row_update": {
 						const r = getRuntime(msg.connId);
 						if (!r.adapter.updateRow) throw new Error("该数据源不支持行编辑");
@@ -1552,7 +1424,6 @@ export default {
 						return void respond(action, reqId, clientId, out);
 					}
 
-					// ---- MongoDB 文档编辑 ----
 					case "doc_save": {
 						const r = getRuntime(msg.connId);
 						if (!r.adapter.docSave) throw new Error("该数据源不支持文档编辑");
@@ -1576,7 +1447,6 @@ export default {
 						return void respond(action, reqId, clientId, out);
 					}
 
-					// ---- Redis 专属 ----
 					case "redis_scan": {
 						const r = getRuntime(msg.connId);
 						if (!r.adapter.scanKeys) throw new Error("该连接不是 Redis");
@@ -1626,12 +1496,6 @@ export default {
 			}
 		});
 
-		// ------------------------------------------------------------------
-		// AI 工具（常驻，插件内无开关）
-		// 说明：AI 传 connection=id 或名称；唯一连接时可省略自动选中。
-		// 复用 UI 的 runtime 池：已打开的连接直接复用，未打开的由 AI 按需打开
-		// （ownerId __agent__，不计入 publicState.active，UI 状态点不受影响）。
-		// ------------------------------------------------------------------
 		function resolveAiConn(ref) {
 			if (!st.conns.length) throw new Error("还没有保存任何数据库连接——请先在数据库面板新建连接");
 			const q = String(ref ?? "").trim();
@@ -1679,7 +1543,6 @@ export default {
 			throw new Error("请指定 database（可用 db_databases 先列出）");
 		}
 
-		/** 网格结果 → 紧凑文本（列头 + 制表分隔行，超 50 行截断报总数） */
 		function fmtGrid(grid, maxRows = 50) {
 			const cols = grid.columns ?? [];
 			const rows = grid.rows ?? [];
@@ -1694,7 +1557,6 @@ export default {
 			return [head, ...lines].filter((l) => l !== "").join("\n") || "(空结果)";
 		}
 
-		// 参数说明单源：9 个工具共享同一份连接/库参数（所有工具 schema 同时在上下文里，重复即为纯浪费）。
 		const CONN_PROP = {
 			connection: { type: "string", description: "Connection id or name; omit if only one connection exists" },
 		};
@@ -1923,7 +1785,6 @@ export default {
 			st.toolUnregister?.();
 			st.toolUnregister = null;
 			if (st.dead) return;
-			// 不卡 depsOk：sqlite 零依赖可用，缺驱动的连接在调用时报友好错误
 			if (host.registerAgentTool) {
 				const offs = aiTools().map((t) => host.registerAgentTool(t));
 				if (st.dead) {
@@ -1946,8 +1807,6 @@ export default {
 
 		void ensureReady();
 
-		// 新客户端接入时主动推送完整状态（服务端唯一事实源）；
-		// host.onAttach 在旧版宿主上不存在——可选链兼容，客户端拉取仍作兑底
 		const offAttach = host.onAttach?.((clientId) => {
 			void ensureReady().then(() => {
 				host.sendTo(clientId, { kind: "state", state: publicState() });
@@ -1966,28 +1825,19 @@ export default {
 			} catch {}
 			st.toolUnregister = null;
 			if (st.installer) {
-				// 关机/重载时正装着：杀掉安装子进程并同步清锁——否则残留的
-				// stderr 管道会拖住事件循环让关机 hang 住，强杀又留下半截
-				// node_modules；锁清掉后下次启动自动重装即可恢复。
 				try {
 					st.installer.kill("SIGTERM");
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 				st.installer = null;
 				st.depsInstalling = false;
 				try {
 					rmSync(join(host.dir, INSTALL_LOCK), { force: true });
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			for (const r of st.runtime.values()) {
 				try {
 					void r.adapter?.close?.();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			st.runtime.clear();
 		};

@@ -1,14 +1,4 @@
-﻿# screenshot.ps1 — 按窗口截图（Windows 自带 .NET，无第三方依赖）
-#
-# 优先 PrintWindow（窗口被遮挡/不在前台也能截，Qt 自绘窗口一般也行）；
-# 截出来是纯色就判空白，改用 flags=2（PW_RENDERFULLCONTENT）再试；
-# 还空白就报 blank（调用方先 desktop_window focus 到前台再截，BitBlt 只能截可见的）。
-#
-# 用法: screenshot.ps1 [-Title ..] [-Process ..] [-Hwnd ..] [-MaxWidth 1280] [-Out path]
-# 输出: UTF-8 JSON { ok, method, x, y, w, h, imgW, imgH, bytes, variance, blank, out }
-# x,y = 窗口左上角屏幕坐标（物理像素，与 UIA 矩形同一坐标系）；imgW/imgH = 下发图的尺寸；
-# 屏幕坐标 = (x + 图X * w / imgW, y + 图Y * h / imgH)。
-
+﻿
 param(
   [string]$Title = "",
   [string]$Process = "",
@@ -52,7 +42,6 @@ public static class Shot {
 
 function Out-Json($o) { $o | ConvertTo-Json -Compress | Write-Output }
 
-# OCR 辅助：WinRT Windows.Media.Ocr 原生离线识别图内文字与坐标
 function Run-Ocr($filePath) {
   $items = @()
   try {
@@ -147,7 +136,6 @@ function Run-Ocr($filePath) {
   return $items
 }
 
-# 物理像素（与 UIA 同坐标系；powershell 默认 DPI-unaware 会拿到虚拟化坐标）
 try { [void][Shot]::SetProcessDpiAwareness(2) } catch {}
 
 function Find-Window($title, $proc) {
@@ -162,10 +150,7 @@ function Find-Window($title, $proc) {
   return $found
 }
 
-# 采样统计：方差（纯色图≈0）+ 近黑比例（Qt 等自绘窗口 PrintWindow 常返回黑底+边框：
-# 方差被边框抬高，但黑像素占 97%+，必须判空白，否则下发一张黑图给模型看）
 function Test-Stats($bmp) {
-  # 只看中央 80%：窗口边框/阴影会抬高整图方差，中央纯黑才是真空白
   $x0 = [int]($bmp.Width * 0.1); $x1 = [int]($bmp.Width * 0.9)
   $y0 = [int]($bmp.Height * 0.1); $y1 = [int]($bmp.Height * 0.9)
   $step = 12
@@ -210,7 +195,6 @@ try {
       $stats = Test-Stats $bmp
       if (-not (Test-Blank $stats)) { $method = "printwindow:$flags"; break }
     }
-    # 还空白，且窗口正在前台：BitBlt 直接从屏幕拷
     if ($method -eq "") {
       $fg = [Shot]::GetForegroundWindow()
       if ($fg -eq $targetHwnd) {
@@ -233,9 +217,6 @@ try {
     exit 0
   }
 
-  # 鼠标光标：PrintWindow/BitBlt 都不会自带光标（BitBlt 没加 CAPTUREBLT），
-  # 而文本插入符（I-beam 的闪烁竖线）本来就是间歇显示的，截图时很可能正好处于熄灭相位。
-  # 这里把当前系统鼠标指针画进图里，并把坐标回给调用方，模型可据此确认上一次点击落点。
   $curDrawn = $false; $curX = 0; $curY = 0; $curInWin = $false
   try {
     $ci = New-Object Shot+CURSORINFO
@@ -265,8 +246,6 @@ try {
       }
     }
   } catch {}
-  # 兜底标记：指针隐藏/取不到句柄时（打字中 Windows 会藏指针），在指针位置画红圈+十字，
-  # 模型照样能确认上一次点击落点。红白双线保证深色 UI（微信深色模式）下也看得见。
   $curMarker = $false
   if ($curInWin -and -not $curDrawn) {
     try {
@@ -306,10 +285,8 @@ try {
   $final.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
   $bytes = (Get-Item $Out).Length
   $final.Dispose()
-  # 光标的图内坐标（随下发图缩放换算，模型可直接对照看落点）
   $curImgX = [int](($curX - $rc.L) * $imgW / $w); $curImgY = [int](($curY - $rc.T) * $imgH / $h)
 
-  # WinRT OCR 图内文字与像素坐标识别
   $ocrItems = @()
   if ($Ocr -ne 0) {
     $ocrItems = Run-Ocr $Out

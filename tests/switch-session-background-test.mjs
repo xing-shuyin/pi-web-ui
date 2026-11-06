@@ -1,7 +1,3 @@
-// Opening a persisted history session must not abort a response that is
-// already streaming in another conversation.
-//
-// Usage: npm run build && node tests/switch-session-background-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -116,9 +112,7 @@ const waitForPort = async (port, timeout = 15000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);

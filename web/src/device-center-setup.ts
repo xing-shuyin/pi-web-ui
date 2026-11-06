@@ -24,7 +24,6 @@ export interface HubSetupInput {
 	publicUrl: string;
 }
 
-/** Accept data only: these values are never interpolated into shell commands. */
 export function validateHubSetup(input: HubSetupInput): boolean {
 	if (!isBindHost(input.host)) return false;
 	if (!Number.isInteger(input.port) || input.port < 1024 || input.port > 65535) return false;
@@ -85,7 +84,6 @@ export interface RemoteHubSetupInput {
 	https: boolean;
 }
 
-/** Derive the public origin without accepting credentials, paths or shell syntax. */
 export function remoteHubSetup(input: RemoteHubSetupInput): HubSetupInput | null {
 	const hostname = (value: string) => {
 		if (value.includes(":")) return isBindHost(value) && !["::", "::1"].includes(value);
@@ -119,7 +117,6 @@ export function remoteHubSetup(input: RemoteHubSetupInput): HubSetupInput | null
 	};
 }
 
-/** Bounded, allowlisted context; no credentials, commands or arbitrary page state. */
 export function buildHubDeploymentPrompt(
 	input: HubSetupInput,
 	info: DeviceCenterSetupInfo | null,

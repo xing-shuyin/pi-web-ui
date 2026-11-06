@@ -2,16 +2,23 @@ import { BrowserWindow, Menu } from "electron";
 import { createHash } from "node:crypto";
 import { hubBrowserOrigin } from "./external-url.js";
 
-/** Remote Hub pages never receive the local application's preload or session. */
 export function createHubBrowser() {
 	const windows = new Map<string, BrowserWindow>();
 	return async (raw: string): Promise<boolean> => {
 		const origin = hubBrowserOrigin(raw);
 		if (!origin) throw new Error("Invalid device center URL");
 		const url = new URL(raw);
-		const deviceAccess = url.pathname === "/__device/open" || /^\/device\/[^/]+\/__open$/.test(url.pathname);
-		// Access tickets change on every click; reuse by device route and view, never by ticket.
-		const key = deviceAccess ? `${origin}${url.pathname}?next=${url.searchParams.get("next") || "/"}` : origin;
+		const lanAccess = /^\/(?:[A-Za-z0-9_-]+\/)*device-lan\/[^/]+\/__open$/.test(url.pathname);
+		const deviceAccess =
+			lanAccess || url.pathname === "/__device/open" || /^\/device\/[^/]+\/__open$/.test(url.pathname);
+		const fallbackOrigins = lanAccess
+			? [url.searchParams.get("hub"), url.searchParams.get("portal")]
+					.map(hubBrowserOrigin)
+					.filter((value): value is string => value !== null)
+			: [];
+		const key = deviceAccess
+			? `${origin}${url.pathname}?next=${url.searchParams.get("next") || "/"}&fallback=${fallbackOrigins.join(",")}`
+			: origin;
 		const existing = windows.get(key);
 		if (existing && !existing.isDestroyed()) {
 			if (existing.isMinimized()) existing.restore();
@@ -38,7 +45,10 @@ export function createHubBrowser() {
 		win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
 		win.webContents.session.setPermissionCheckHandler(() => false);
 		win.webContents.on("will-attach-webview", (event) => event.preventDefault());
-		const allowed = (url: string) => hubBrowserOrigin(url) === origin;
+		const allowed = (url: string) => {
+			const targetOrigin = hubBrowserOrigin(url);
+			return targetOrigin === origin || (targetOrigin !== null && fallbackOrigins.includes(targetOrigin));
+		};
 		win.webContents.on("will-navigate", (event, url) => {
 			if (!allowed(url)) event.preventDefault();
 		});

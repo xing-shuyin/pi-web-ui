@@ -26,7 +26,6 @@ describe("cleanupOrphanedSessionDirs 单元测试", () => {
 			writeFileSync(join(oldSub, "data.txt"), "hello");
 			writeFileSync(join(newSub, "data.txt"), "world");
 
-			// 把 old 目录修改时间调成 3 天前
 			const threeDaysAgo = (Date.now() - 3 * 24 * 3600_000) / 1000;
 			utimesSync(oldSub, threeDaysAgo, threeDaysAgo);
 			utimesSync(oldEph, threeDaysAgo, threeDaysAgo);

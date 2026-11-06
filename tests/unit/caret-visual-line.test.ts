@@ -2,13 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { caretRowFlags, caretVisualLineFlags, logicalLineFlags } from "../../web/src/caret-visual-line.js";
 
-/**
- * 输入框光标「视觉行」判定单测（issue #127）。
- *
- * jsdom 没有布局引擎（offsetTop/clientWidth 恒 0），所以这里锁的是**纯函数**与
- * **无布局时的回落**：真正的折行判定由 tests/composer-history-test.mjs 在真浏览器里锁。
- */
-
 const makeTa = (value: string, start = value.length, end = start): HTMLTextAreaElement => {
 	const ta = document.createElement("textarea");
 	ta.value = value;

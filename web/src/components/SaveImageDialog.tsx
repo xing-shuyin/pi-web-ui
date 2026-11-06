@@ -25,10 +25,6 @@ function queryMsgEl(id: string): HTMLElement | null {
 	);
 }
 
-/**
- * 右侧停靠的保存为图片面板。预览卡就是导出源。
- * 不用全屏 backdrop，以便对话里的勾选框还能点。
- */
 export function SaveImageDialog(): ReactNode {
 	const t = useT();
 	const exp = useExportImage();
@@ -51,8 +47,6 @@ export function SaveImageDialog(): ReactNode {
 		setError("");
 	}, [exp.open]);
 
-	// 审查 #12：Esc 改走 shortcut-stack 分层栈（与 Modal 同一调度）；
-	// 面板关着时不启用，不吞下层弹窗的 Esc。
 	useEscapeKey(() => {
 		closeExportImage();
 	}, exp.open);

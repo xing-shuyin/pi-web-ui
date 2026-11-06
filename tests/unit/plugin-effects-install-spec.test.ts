@@ -1,14 +1,3 @@
-/**
- * DSH 对照升级 P0-2 / P0-3 的服务端单测（零网络、零 token）：
- *
- *   A. PluginEffectStack —— 逆序回卷、单条撤销幂等、cleanup 抛错隔离与归因、
- *      release 后 size 归零（`activate → deactivate 后 effect 栈空`这条验收）。
- *   B. PluginManager 的 effect 接线 —— 真实激活一个插件（临时目录 + 真 import
- *      index.mjs），断言反激活后：AI 工具没了、命令没了、HTTP 路由 404、
- *      事件订阅不再被回调（不留孤儿），且 loaded 里不再有它。
- *   C. parseInstallSpec / inspectLocalInstallSpec —— 形状分类（github/npm/url/path/
- *      invalid）、已装判定、路径不存在，以及远端探测（用 fetch 替身，锁七种 problem）。
- */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,10 +11,6 @@ import {
 	suggestPluginId,
 } from "../../server/plugin-install-spec.js";
 import { PluginEffectStack, PluginManager, type PluginHost } from "../../server/plugins.js";
-
-// ---------------------------------------------------------------------------
-// A. effect 栈
-// ---------------------------------------------------------------------------
 
 describe("PluginEffectStack —— 可逆副作用", () => {
 	it("release 逆序回卷全部（后进先出）", () => {
@@ -47,7 +32,7 @@ describe("PluginEffectStack —— 可逆副作用", () => {
 		stack.add("a", () => order.push("a"));
 		const offB = stack.add("b", () => order.push("b"));
 		offB();
-		offB(); // 重复调用不该二次执行
+		offB();
 		expect(stack.labels()).toEqual(["a"]);
 		expect(stack.release()).toEqual([]);
 		expect(order).toEqual(["b", "a"]);
@@ -79,11 +64,6 @@ describe("PluginEffectStack —— 可逆副作用", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// B. PluginManager 反激活后不留孤儿
-// ---------------------------------------------------------------------------
-
-/** 写一个最小插件目录（index.mjs 注册工具/命令/路由/总线订阅 + 一个自建 interval）。 */
 function writePlugin(pluginsDir: string, id: string, body: string): void {
 	const dir = join(pluginsDir, id);
 	mkdirSync(dir, { recursive: true });
@@ -132,20 +112,15 @@ export default {
 		expect(list.some((p) => p.id === "eff" && !p.error)).toBe(true);
 		expect(mgr.getAgentTools().map((t) => t.name)).toContain("eff_tool");
 		expect(mgr.listCommands().map((c) => c.name)).toContain("effcmd");
-		// 事件订阅真的在：发一条，回调计数 +1。
 		mgr.busHandlers.get("demo:topic")!.forEach((h) => h({ topic: "demo:topic", from: "eff" }));
 		expect((globalThis as { __effBus?: number }).__effBus).toBe(1);
 
-		// 反激活（等价插件目录被删后的 ensureLoaded 分支）。
 		mgr["deactivateEntry"]("eff", mgr["loaded"].get("eff")!);
 
 		expect(mgr.getAgentTools().map((t) => t.name)).not.toContain("eff_tool");
 		expect(mgr.listCommands().map((c) => c.name)).not.toContain("effcmd");
-		// 总线订阅随反激活一起撤（不留孤儿：再发一条不再 +1）。
 		expect(mgr.busHandlers.has("demo:topic")).toBe(false);
-		// 插件自建的副作用也被回卷。
 		expect((globalThis as { __effIntervalCleared?: boolean }).__effIntervalCleared).toBe(true);
-		// 路由没了：handleHttp 命中 404。
 		let status = 0;
 		mgr.handleHttp(
 			"eff",
@@ -178,10 +153,6 @@ export default {
 		expect(mgr.listCommands()).toEqual([]);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// C. 安装前先读 spec
-// ---------------------------------------------------------------------------
 
 describe("parseInstallSpec —— 形状分类", () => {
 	it("owner/repo 与子目录/#ref", () => {
@@ -317,5 +288,4 @@ describe("manifestCandidateUrls / pickManifestFields", () => {
 	});
 });
 
-// 让测试里引用的类型不落空（PluginHost 只作类型锚点）。
 export type _HostAnchor = PluginHost;

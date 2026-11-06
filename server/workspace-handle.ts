@@ -38,10 +38,6 @@ export async function canonicalPath(path: string): Promise<string> {
 	}
 }
 
-/**
- * Execute Git asynchronously with isolated environment, no hooks, and strict timeout.
- * Strips any inherited GIT_* environment variables to prevent leaking caller context.
- */
 export async function git(
 	cwd: string,
 	args: string[],
@@ -82,13 +78,9 @@ export async function git(
 				},
 				(error, stdout) => (error ? reject(error) : done(stdout)),
 			);
-			child.stdin?.on("error", () => {
-				/* execFile reports process failure */
-			});
+			child.stdin?.on("error", () => {});
 			child.stdin?.end(stdin);
 		});
-	// Inspect all config scopes and disable every configured command filter.
-	// This includes globally installed LFS; snapshots contain exact local bytes.
 	let filters: string;
 	try {
 		filters = await execute(["config", "--null", "--get-regexp", "^filter\\..*\\.(clean|smudge|process)$"]);
@@ -114,10 +106,6 @@ export async function git(
 	return stdout;
 }
 
-/**
- * Build a Git tree without touching the user's index, branch, or commit history.
- * Uses a scratch index in dataDir. Gitignored files are excluded.
- */
 export async function snapshotTree(
 	cwd: string,
 	dataDir: string,
@@ -135,8 +123,6 @@ export async function snapshotTree(
 	await mkdir(scratch, { recursive: true });
 	const index = join(scratch, randomUUID());
 	try {
-		// Hash exact bytes, never `git add`: attributes (text/eol/ident/encoding)
-		// otherwise silently change the contents of a captured artifact.
 		await git(cwd, ["read-tree", seed], signal, index);
 		const tracked = await git(cwd, ["ls-files", "--stage", "-z"], signal, index);
 		const files = new Map<string, { mode: string; oid: string }>();
@@ -169,8 +155,6 @@ export async function snapshotTree(
 			let mode = original.mode;
 			let oid: string;
 			if (mode === "160000" && stat.isDirectory()) {
-				// Snapshot only the gitlink, never submodule contents. Uninitialized
-				// submodules resolve to the parent repository and retain their base oid.
 				const [top, head] = (await git(absolute, ["rev-parse", "--show-toplevel", "HEAD"], signal))
 					.trim()
 					.split(/\r?\n/);
@@ -195,8 +179,6 @@ export async function snapshotTree(
 			}
 			entries.push(`${mode} ${oid}\t${path}\0`);
 		}
-		// One Git process hashes the ordinary files. C-quoted paths support spaces,
-		// tabs and newlines without passing filenames through a shell.
 		if (rawFiles.length) {
 			const paths =
 				rawFiles
@@ -219,9 +201,6 @@ export async function snapshotTree(
 	}
 }
 
-/**
- * Verifies that candidatePath is a valid local Git repository and returns its canonical root.
- */
 export async function verifyRepoRoot(
 	candidatePath: string,
 	signal?: AbortSignal,
@@ -241,12 +220,6 @@ export async function verifyRepoRoot(
 	return { repoRoot: canonicalTop, commonDir: canonicalCommon };
 }
 
-/**
- * Network remote identity: preserve case-sensitive paths and strip credentials.
- * Default-port SSH/SCP and HTTPS share host/path identity; other transports,
- * local paths and file URLs are rejected rather than advertised across devices.
- * No URL redirects, host aliases, percent-decoding or path case-folding is inferred.
- */
 export function canonicalRemoteIdentity(remote: string): string {
 	const value = remote.trim();
 	let host: string;
@@ -276,7 +249,6 @@ export function canonicalRemoteIdentity(remote: string): string {
 	return JSON.stringify([transport, host, path]);
 }
 
-/** Public discovery API. Remote-less identity hashes all sorted reachable root commits, never local paths. */
 export async function computeCanonicalRepositoryId(repoRoot: string, signal?: AbortSignal): Promise<string> {
 	checkSignal(signal);
 	const canonical = await canonicalPath(resolve(repoRoot));
@@ -311,16 +283,6 @@ export interface WorktreeIdentity {
 	isClean: boolean;
 }
 
-/**
- * Deeply validates worktree identity:
- * - worktree path is absolute and canonical
- * - show-toplevel matches expected worktree path
- * - git-common-dir matches repoRoot git-common-dir
- * - gitdir file points back to worktree .git
- * - worktree is detached, not attached to any branch
- * - worktree is not the main repository
- * - if expectedGitDir is specified, strictly verifies gitDir matches
- */
 export async function verifyWorktreeIdentity(
 	worktreePath: string,
 	expectedRepoRoot: string,
@@ -387,7 +349,6 @@ export async function verifyWorktreeIdentity(
 		throw new Error("Worktree gitdir pointer mismatch: .git file redirect is altered");
 	}
 
-	// Verify detached HEAD
 	const currentBranch = (await git(canonicalWorktree, ["branch", "--show-current"], signal)).trim();
 	if (currentBranch.length > 0) {
 		throw new Error(`Worktree is attached to branch '${currentBranch}'; detached HEAD is strictly required`);
@@ -410,10 +371,6 @@ export async function verifyWorktreeIdentity(
 	};
 }
 
-/**
- * Applies a binary patch to a target worktree using git apply --binary.
- * Validates with --check first.
- */
 export async function applyBinaryPatch(worktreePath: string, patchBytes: Buffer, signal?: AbortSignal): Promise<void> {
 	checkSignal(signal);
 	if (!patchBytes.length) return;
@@ -426,10 +383,6 @@ export async function applyBinaryPatch(worktreePath: string, patchBytes: Buffer,
 	}
 }
 
-/**
- * Verifies with a scratch Git index in repoRoot that applying patchBytes to baseCommit
- * produces exactly the expectedOutputTree.
- */
 export async function verifyPatchProducesTree(
 	repoRoot: string,
 	baseCommit: string,
@@ -459,9 +412,6 @@ export async function verifyPatchProducesTree(
 	}
 }
 
-/**
- * Creates a detached worktree at worktreePath checked out at baseCommit.
- */
 export async function createDetachedWorktree(
 	repoRoot: string,
 	worktreePath: string,
@@ -474,15 +424,10 @@ export async function createDetachedWorktree(
 	if ((await canonicalPath(resolvedWorktree)) !== resolvedWorktree) {
 		throw new Error(`Worktree path is redirected: ${resolvedWorktree}`);
 	}
-	// Conditional includes can enable additional filters only inside the new
-	// worktree. Create metadata first, then inspect its own config before checkout.
 	await git(repoRoot, ["worktree", "add", "--detach", "--no-checkout", resolvedWorktree, baseCommit], signal);
 	await git(resolvedWorktree, ["reset", "--hard", baseCommit], signal);
 }
 
-/**
- * Removes a detached worktree cleanly or with force.
- */
 export async function removeDetachedWorktree(
 	repoRoot: string,
 	worktreePath: string,

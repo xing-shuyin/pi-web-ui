@@ -1,9 +1,3 @@
-/**
- * 视图通用工具：DOM 构建、体积/数字格式化、下载、剪贴板、store-only ZIP 打包。
- * 纯浏览器代码，不依赖主应用任何模块（插件 bundle 只能 import 相对路径）。
- */
-
-/** 极简 DOM 构建器：el("div", {class:"x", onclick:fn}, [child, "text"])。 */
 export function el(tag, attrs = {}, children = []) {
 	const node = document.createElement(tag);
 	for (const [k, v] of Object.entries(attrs)) {
@@ -33,7 +27,6 @@ export function clamp(v, lo, hi) {
 	return v < lo ? lo : v > hi ? hi : v;
 }
 
-/** 体积：1.2 KB / 3.45 MB。 */
 export function fmtBytes(n) {
 	if (!Number.isFinite(n)) return "?";
 	if (n < 1024) return `${n} B`;
@@ -45,7 +38,6 @@ export function fmtInt(n) {
 	return Number(n).toLocaleString("en-US");
 }
 
-/** 文件名（带扩展名）。 */
 export function basename(p) {
 	return (
 		String(p ?? "")
@@ -54,13 +46,11 @@ export function basename(p) {
 	);
 }
 
-/** 去掉扩展名的文件名。 */
 export function stem(name) {
 	const i = String(name).lastIndexOf(".");
 	return i > 0 ? String(name).slice(0, i) : String(name);
 }
 
-/** 扩展名（小写，不带点）。 */
 export function extOf(name) {
 	const i = String(name).lastIndexOf(".");
 	return i > 0
@@ -78,12 +68,10 @@ export function debounce(fn, ms) {
 	};
 }
 
-/** 让出一帧（大图导出时避免界面假死）。 */
 export function nextFrame() {
 	return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
-/** 触发一次下载。 */
 export function downloadBlob(blob, name) {
 	const url = URL.createObjectURL(blob);
 	const a = el("a", { href: url, download: name });
@@ -93,17 +81,12 @@ export function downloadBlob(blob, name) {
 	setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-/** 写图片到剪贴板（浏览器只允许 PNG）。 */
 export async function copyImageToClipboard(blob) {
 	if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
 		throw new Error("clipboard unsupported");
 	}
 	await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
 }
-
-// ---------------------------------------------------------------------------
-// ZIP（store-only，不压缩——图片本来就是压缩过的，省掉 deflate 的时间与代码）
-// ---------------------------------------------------------------------------
 
 const CRC_TABLE = (() => {
 	const t = new Uint32Array(256);
@@ -121,7 +104,6 @@ function crc32(u8) {
 	return (c ^ 0xffffffff) >>> 0;
 }
 
-/** DOS 时间/日期（ZIP 只用这两个 16 位字段）。 */
 function dosTime(d) {
 	return {
 		time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
@@ -129,10 +111,6 @@ function dosTime(d) {
 	};
 }
 
-/**
- * 打包成 ZIP Blob。files: [{ name, data: Uint8Array }]。
- * 同名的自动加 -1/-2，避免解压时互相覆盖。
- */
 export function makeZip(files) {
 	const enc = new TextEncoder();
 	const now = dosTime(new Date());
@@ -158,8 +136,8 @@ export function makeZip(files) {
 		const lv = new DataView(local.buffer);
 		lv.setUint32(0, 0x04034b50, true);
 		lv.setUint16(4, 20, true);
-		lv.setUint16(6, 0x0800, true); // UTF-8 文件名
-		lv.setUint16(8, 0, true); // store
+		lv.setUint16(6, 0x0800, true);
+		lv.setUint16(8, 0, true);
 		lv.setUint16(10, now.time, true);
 		lv.setUint16(12, now.date, true);
 		lv.setUint32(14, crc, true);

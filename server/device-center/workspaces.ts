@@ -19,7 +19,6 @@ function contains(root: string, target: string): boolean {
 	return !rel || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
 }
 
-/** Bot leases revalidate all path components before execution and file admission. */
 export async function validateDeviceProject(input: string, dataDir: string): Promise<string> {
 	if (typeof input !== "string" || !input || !isAbsolute(input)) invalid("Select an absolute project directory");
 	try {

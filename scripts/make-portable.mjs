@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * 便携版组装脚本。
- *
- * 作用：
- * 1. 将打包好的 win-unpacked 桌面主程序组装为完整的 PiWebUI-Portable 目录；
- * 2. 注入启动器脚本（PiPortable.bat / 启动Pi.bat）、多语言提示文件（checks/）、便携标记（Portable.flag）；
- * 3. 初始化自包含 data/ 目录与 runtime/git 占位结构；
- * 4. 可选生成便于分发的 zip 压缩包。
- */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +18,6 @@ const createZip = args.includes("--zip");
 const withGit = args.includes("--with-git") || process.env.PI_BUNDLE_PORTABLE_GIT === "1";
 const withNode = args.includes("--with-node") || process.env.PI_BUNDLE_PORTABLE_NODE === "1";
 
-// CVE-2025-66413（git clone NTLM 凭据泄露）修复版：git-for-windows 2.53.0(2) 起不受影响。
 const PORTABLE_GIT_URL =
 	"https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.2/PortableGit-2.53.0.2-64-bit.7z.exe";
 const PORTABLE_GIT_FILE = "PortableGit-2.53.0.2-64-bit.7z.exe";
@@ -43,7 +33,6 @@ function run(cmd) {
 async function main() {
 	console.log("=== 开始制作 Pi Web UI 便携版 ===");
 
-	// 1. 调用 electron-builder 打包最新代码到 win-unpacked（除非显式传入 --skip-pack）
 	if (!skipPack) {
 		console.log("[make-portable] 正在调用 electron-builder 打包最新构建到 win-unpacked...");
 		try {
@@ -62,11 +51,9 @@ async function main() {
 		process.exit(1);
 	}
 
-	// 2. 准备输出目录
 	console.log(`[make-portable] 目标便携目录: ${portableDir}`);
 	mkdirSync(portableDir, { recursive: true });
 
-	// 3. 复制 app 主程序（先清理旧版本，避免残留旧文件）
 	const targetAppDir = join(portableDir, "app");
 	console.log(`[make-portable] 正在同步桌面程序到 app/...`);
 	if (existsSync(targetAppDir)) {
@@ -75,7 +62,6 @@ async function main() {
 	mkdirSync(targetAppDir, { recursive: true });
 	cpSync(unpackedDir, targetAppDir, { recursive: true });
 
-	// 4. 复制启动器与说明文件
 	console.log(`[make-portable] 正在同步启动脚本与提示文件...`);
 	cpSync(join(launcherDir, "PiPortable.bat"), join(portableDir, "PiPortable.bat"));
 	cpSync(join(launcherDir, "启动Pi.bat"), join(portableDir, "启动Pi.bat"));
@@ -84,14 +70,12 @@ async function main() {
 	cpSync(join(launcherDir, "README.md"), join(portableDir, "README.md"));
 	cpSync(join(launcherDir, "checks"), join(portableDir, "checks"), { recursive: true });
 
-	// 5. 创建便携标记
 	writeFileSync(
 		join(portableDir, "Portable.flag"),
 		"# Pi Web UI Portable Mode Marker\n# This file signals the app to redirect all data paths locally.\n",
 		"utf8",
 	);
 
-	// 6. 初始化便携数据目录骨架（保持纯净空白，绝不夹带任何本机个人数据）
 	console.log(`[make-portable] 正在创建纯净数据隔离目录骨架...`);
 	const dataSubdirs = ["agent", "web", "git", "home", "workspace", "electron", "npm-global", "npm-cache"];
 	for (const sub of dataSubdirs) {
@@ -102,7 +86,6 @@ async function main() {
 		mkdirSync(targetDir, { recursive: true });
 	}
 
-	// 7. 处理 PortableGit
 	const runtimeGitDir = join(portableDir, "runtime", "git");
 	mkdirSync(runtimeGitDir, { recursive: true });
 
@@ -115,7 +98,6 @@ async function main() {
 			mkdirSync(cacheDir, { recursive: true });
 			const cacheArchive = join(cacheDir, PORTABLE_GIT_FILE);
 
-			// (1) 下载 PortableGit
 			if (!existsSync(cacheArchive) || readFileSync(cacheArchive).length < 50_000_000) {
 				console.log(`[make-portable] 正在下载 PortableGit (~60MB): ${PORTABLE_GIT_URL}`);
 				try {
@@ -131,7 +113,6 @@ async function main() {
 				console.log(`[make-portable] 复用已缓存的 PortableGit 安装包: ${cacheArchive}`);
 			}
 
-			// (2) 解压 PortableGit 到 runtime/git
 			console.log(`[make-portable] 正在解压 PortableGit 到 ${runtimeGitDir}...`);
 			let extractOk = false;
 			if (process.platform === "win32") {
@@ -141,9 +122,7 @@ async function main() {
 						stdio: "inherit",
 					});
 					extractOk = existsSync(gitExe);
-				} catch {
-					/* try 7z */
-				}
+				} catch {}
 			}
 			if (!extractOk) {
 				try {
@@ -152,9 +131,7 @@ async function main() {
 						stdio: "inherit",
 					});
 					extractOk = existsSync(gitExe);
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 
 			if (extractOk) {
@@ -173,7 +150,6 @@ async function main() {
 		);
 	}
 
-	// 8. 处理 PortableNode
 	const runtimeNodeDir = join(portableDir, "runtime", "node");
 	mkdirSync(runtimeNodeDir, { recursive: true });
 
@@ -186,7 +162,6 @@ async function main() {
 			mkdirSync(cacheDir, { recursive: true });
 			const cacheArchive = join(cacheDir, PORTABLE_NODE_FILE);
 
-			// (1) 下载 PortableNode
 			if (!existsSync(cacheArchive) || readFileSync(cacheArchive).length < 20_000_000) {
 				console.log(`[make-portable] 正在下载 Portable Node.js (~30MB): ${PORTABLE_NODE_URL}`);
 				try {
@@ -202,7 +177,6 @@ async function main() {
 				console.log(`[make-portable] 复用已缓存的 PortableNode 安装包: ${cacheArchive}`);
 			}
 
-			// (2) 解压 PortableNode 到 runtime/node
 			console.log(`[make-portable] 正在解压 PortableNode 到 ${runtimeNodeDir}...`);
 			const tempExtractDir = join(cacheDir, "node-extract-temp");
 			if (existsSync(tempExtractDir)) {
@@ -248,7 +222,6 @@ async function main() {
 			}
 
 			if (extractOk) {
-				// 提取内层文件夹（例如 node-v22.14.0-win-x64/）内容至 runtimeNodeDir
 				const items = readdirSync(tempExtractDir);
 				const subDir = items.find((item) => existsSync(join(tempExtractDir, item, "node.exe")));
 				const sourceDir = subDir ? join(tempExtractDir, subDir) : tempExtractDir;
@@ -262,8 +235,6 @@ async function main() {
 					console.warn(`⚠ PortableNode 解压未找到 node.exe，请检查源文件。`);
 				}
 			} else {
-				// 解压失败不应静默出包：内嵌 Node 缺失的便携包在目标机上直接起不来，
-				// CI 里也 check 不出来。fail-fast 让维护者在打包阶段就发现工具链问题。
 				throw new Error(
 					`PortableNode 解压未成功，请检查依赖工具（tar/7z/powershell/unzip）。` + ` 缓存归档：${cacheArchive}`,
 				);
@@ -281,7 +252,6 @@ async function main() {
 
 	console.log(`✔ 便携版制作完成: ${portableDir}`);
 
-	// 9. 可选压缩成 zip
 	if (createZip) {
 		const zipName = `pi-web-ui-desktop-${version}-portable.zip`;
 		const zipTarget = join(releaseDir, zipName);
@@ -290,7 +260,6 @@ async function main() {
 			if (existsSync(zipTarget)) {
 				rmSync(zipTarget, { force: true });
 			}
-			// 在 Windows 上尝试优先调用 7z / tar（传相对文件名避免 GNU tar 将盘符 D: 误当远程主机），若失败回落 powershell Compress-Archive
 			if (process.platform === "win32") {
 				let zipped = false;
 				try {

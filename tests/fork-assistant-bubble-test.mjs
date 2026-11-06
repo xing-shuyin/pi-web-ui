@@ -1,13 +1,3 @@
-// issue #381 regression: fork/rollback on an ASSISTANT bubble must resolve.
-// Historically the browser received ids from the serialize-side counter
-// (a-<ts>-<globalN>) while resolveMessageEntry() recomputed ids with its own
-// numbering (a-<ts>-<perTsSeq>) — assistant bubbles failed 100% of the time.
-//
-// Zero-token: a local mock OpenAI-completions endpoint produces real assistant
-// messages through the SDK. The server runs from source via tsx (no build —
-// AGENTS.md forbids `npm run build` while a server is live).
-//
-// Usage: node tests/fork-assistant-bubble-test.mjs [port]
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,7 +81,6 @@ writeFileSync(
 	}),
 );
 
-// tsx 起源码而不是 dist：本机可能有正在运行的服务，AGENTS.md 禁止此时 build。
 const server = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
 	cwd: repoRoot,
 	env: {
@@ -113,9 +102,7 @@ const waitForPort = async (port, timeout = 30000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -204,7 +191,6 @@ try {
 	client.send({ type: "set_model", modelId: "main/fork-assistant-mock" });
 	await client.waitForState((state) => state.model?.id === "fork-assistant-mock");
 
-	// 两轮问答 → 4 条消息气泡（user1, assistant1, user2, assistant2）
 	client.send({ type: "prompt", text: "第一个问题" });
 	await client.waitForMessage((m) => assistantText([m], "reply-one"));
 	client.send({ type: "prompt", text: "第二个问题" });
@@ -213,18 +199,14 @@ try {
 
 	const assistant1 = assistantText(client.messages, "reply-one");
 	if (!assistant1) throw new Error("assistant reply-one not rendered");
-	// 下发口径：assistant 的 id 序号取对话级全局计数器（system 内部消息也占
-	// 号，首轮助手通常落在 -2/-3）。旧解析口径（同时间戳序号）恒算成 -1——
-	// 若 id 意外回到 -1 即说明两套编号又分叉了。
 	if (!/^a-\d+-\d+$/.test(assistant1.id) || /^a-\d+-1$/.test(assistant1.id)) {
 		throw new Error(`assistant id should use the global counter (not a-<ts>-1), got ${assistant1.id}`);
 	}
 	console.log(`[1] assistant bubble rendered as ${assistant1.id}`);
 
-	// rollback：回滚到第一轮助手气泡 → 消息裁回 [user1, reply-one]
 	client.send({ type: "rollback_session", messageId: assistant1.id });
 	await client.waitForState((state) => state.messages.length === 2, 20000);
-	await sleep(300); // 给可能存在的错误 notice 留出到达窗口
+	await sleep(300);
 	if (client.sawErrorNotice()) throw new Error("rollback on assistant bubble failed to resolve");
 	const rolled = client.state.messages;
 	if (rolled.length !== 2 || !assistantText(rolled, "reply-one")) {
@@ -232,7 +214,6 @@ try {
 	}
 	console.log("[2] rollback to assistant bubble resolved and truncated to 2 messages");
 
-	// fork：从第一轮助手气泡派生（at = 含该消息）→ 自动切到新对话
 	const convBefore = client.state.conversationId;
 	client.send({ type: "fork_session", messageId: assistant1.id, position: "at" });
 	await client.waitForType(

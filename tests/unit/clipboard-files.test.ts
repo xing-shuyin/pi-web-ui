@@ -1,8 +1,3 @@
-/**
- * collectClipboardFiles 单测（web/src/clipboard-files.ts）。
- * 锁住三条不变量：只收 kind==="file" 的条目 / getAsFile 拿不到就跳过 /
- * items 没货时回落 files（且不重复计数）。
- */
 import { describe, expect, it } from "vitest";
 import { collectClipboardFiles } from "../../web/src/clipboard-files.js";
 

@@ -96,3 +96,13 @@ v0.116.0 的旧 `task-recovery-outbox.json` 在完成时未保存 leaseToken/gen
 - **入站 Webhook**：每个群组可创建多个入站端点，生成独立的安全 Token。外部系统（如 CI/CD、报警、脚本）向 `/api/rooms/:id/webhooks/incoming/:webhookId?token=...` 发送 HTTP POST JSON 请求（支持 `text`、`senderName`、`targetBotIds`、`replyToMessageId`）。若开启 `allowBotTrigger`（默认），外部消息按群规则自动分发给显式提及或主 Bot（`primaryBotId`），唤醒 Bot 执行任务并在群内协作。
 - **出站 Webhook**：群组可配置多个外部通知地址，订阅群事件（`message`、`task_completed`、`task_failed`、`delivery`）。事件产生时异步向外部发送 JSON 载荷；支持配置 `secret`，通过 `X-Pi-Signature: sha256=...` 附带 HMAC-SHA256 签名校验。出站请求带 5 秒超时保护与异常隔离，不阻断主流程。
 - **Hub 中转支持**：入站支持切换或配置公共 Hub 中转地址（`hubRelayBaseUrl`），外部请求由公网 Hub 集中接收并调度给内网设备上的 Bot；出站 Webhook 支持可选开关 `relayViaHub`，开启时由 Hub 服务器作为出口代理代发，关闭时供局域网内网直连模式使用。
+
+## 11. 群组独立 AI Router 与外部工单
+
+群组顶部 **AI Router** 可独立选择运行设备、`provider/id` 模型、思考级别及 `reply` / `dispatch` / `work_items` 工具。Router 理解消息和调度，Bot 在自身执行约束下完成任务；未启用时沿用 legacy 主 Bot 协作。Hub 可无 SDK 独立运行，模型推理由指定设备的 daemon `ModelRuntime` 提供，不依赖 active session 或项目执行工具。缺少配置、设备离线或模型不可用时明确报错。
+
+顶部**工单抽屉**展示有界分页的最近工单和 Router 运行，业务状态与多次 Bot 执行独立。工单、事件、Router jobs、回写 outbox 由 Hub WAL 持久化，通过业务 revision、冻结计划、租约 / 配置 fence 和持久动作回执恢复；失败运行可人工重试。清空群聊 fence 旧 plan 但保留工单，删除群组清理对应域记录。
+
+内置渠道模块 Superagent 0.1.3 将 GitHub / 飞书事件接入宿主工单服务并回写原线程。每个外部事件独立校验授权，auto 工单不授权未通过作者白名单的 followup；人工授权仅绑定当前最新 `authorizedEventId`。初始工单描述保留，后续事件追加为证据，关闭 / 重开 / 合并事件不自动等于业务完成。飞书支持明文或 AES 加密的签名 text 回调，投递不确定超过 45 分钟需人工核对；渠道 mock 测试不代表真实渠道已联通。
+
+统一入口是 **设备连接与跨平台协作**：设备与连接、群组与工单、外部渠道。群组列表内可直接管理 AI Router 和工单；渠道界面内嵌宿主模块，不再增加独立顶栏按钮，也不显示在普通插件列表、市场或插件开关中。完整职责、使用步骤、手动恢复、公开 webhook 边界、分页 / 上下文预算和恢复语义见 [群组独立 AI Router 与 Superagent](group-orchestration.md)；渠道配置字段见 [Superagent README](../plugins/superagent/README.md)。

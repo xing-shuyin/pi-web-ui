@@ -1,18 +1,3 @@
-/**
- * run-trace 服务端入口 —— 运行轨迹聚合（类 harness 轨迹视图的数据层）。
- *
- * 两路输入合一：
- *  1. 历史全量：host.getActiveConversation()（当前打开对话的全部消息 + 统计），
- *     定时 + 事件触发刷新——所以视图显示的是“打开对话的时间线”，不只收录插件
- *     安装后的运行，历史对话打开即有轨迹。
- *  2. 实时增量：host.onRunEvent（tool_start/tool_end 精确耗时/参数/结果，
- *     message/run_* 触发历史重拉）。
- *
- * 服务端是唯一事实源：新客户端接入经 onAttach 主动推 state。
- * 消息原文默认不下发——列表/时间轴只带摘要，详情按段按需拉（get_seg），
- * 单条消息可达 200K，下发全量会撑爆快照。
- */
-
 const SUMMARY_CAP = 300;
 const DETAIL_CAP = 8000;
 const PREVIEW_CAP = 4000;
@@ -21,12 +6,20 @@ const REFRESH_DEBOUNCE_MS = 300;
 const POLL_STREAMING_MS = 5000;
 const POLL_IDLE_MS = 30000;
 
-/** 疑似写文件的工具名（命中即从参数里抠路径，成功后追加 📝 文件段）。 */
 const WRITE_TOOL_RE = /edit|write|patch|apply|create|save|move|rename|delete|remove|mkdir/i;
-/** 只读工具名（展示用 📖，且不产文件段）。 */
 const READONLY_TOOL_RE = /^(read|get|list|glob|grep|search|show|cat|fetch|query)/i;
-/** 参数里可能装路径的键。 */
-const PATH_KEYS = new Set(["path", "file", "filepath", "filePath", "filename", "fileName", "paths", "files", "dir", "cwd"]);
+const PATH_KEYS = new Set([
+	"path",
+	"file",
+	"filepath",
+	"filePath",
+	"filename",
+	"fileName",
+	"paths",
+	"files",
+	"dir",
+	"cwd",
+]);
 
 function cut(s, cap) {
 	s = String(s ?? "");
@@ -39,16 +32,11 @@ function firstLine(s, cap = 100) {
 	return t.length <= cap ? t : `${t.slice(0, cap)}…`;
 }
 
-/** 文本类块（思考/回答）的估计生成耗时——assistant 消息时间戳是创建时刻
- *  （生成起点，见 transcript：总紧贴上一条 toolResult），文本只能向前排布；
- *  该估计用于在消息内部分块 + 超出下一条消息时刻时等比压缩
- *  （约 50 字/秒，最短 0.8s 保证可见，最长 120s 防止长文吞掉时间线）。 */
 export function estTextMs(chars) {
 	const n = Math.max(0, Number(chars) || 0);
 	return Math.min(120000, Math.max(800, Math.round(n * 20)));
 }
 
-/** 从工具参数 JSON 里抠文件路径（只看一层 + 数组一层，启发式）。 */
 export function extractPaths(argsText) {
 	const out = [];
 	try {
@@ -66,22 +54,17 @@ export function extractPaths(argsText) {
 			if (typeof v === "string") push(v);
 			else if (Array.isArray(v)) for (const x of v) push(x);
 		}
-	} catch {
-		/* 参数不可解析——无路径 */
-	}
+	} catch {}
 	return out;
 }
 
-/** 工具段标题（一眼看出在干什么）。 */
 export function toolHeadline(toolName, argsText) {
 	const name = String(toolName ?? "tool");
 	if (name === "bash") {
 		try {
 			const cmd = JSON.parse(String(argsText ?? "{}"))?.command;
 			if (cmd) return `bash · ${firstLine(cmd)}`;
-		} catch {
-			/* fallthrough */
-		}
+		} catch {}
 		return "bash";
 	}
 	const paths = extractPaths(argsText);
@@ -100,7 +83,6 @@ function blockText(blocks, type, field) {
 
 export default {
 	activate(host) {
-		/** convId → conv（含 segs/full/analysis/liveTools）。 */
 		const convs = new Map();
 		let activeId = null;
 		let refreshTimer = null;
@@ -110,10 +92,22 @@ export default {
 		const getConv = (id, title) => {
 			let c = convs.get(id);
 			if (!c) {
-				c = { id, title, active: false, isStreaming: false, segs: [], full: new Map(), analysis: null, liveTools: new Map(), updatedAt: 0 };
+				c = {
+					id,
+					title,
+					active: false,
+					isStreaming: false,
+					segs: [],
+					full: new Map(),
+					analysis: null,
+					liveTools: new Map(),
+					updatedAt: 0,
+				};
 				convs.set(id, c);
 				while (convs.size > MAX_CONVS) {
-					const oldest = [...convs.values()].filter((x) => x.id !== activeId).sort((a, b) => a.updatedAt - b.updatedAt)[0];
+					const oldest = [...convs.values()]
+						.filter((x) => x.id !== activeId)
+						.sort((a, b) => a.updatedAt - b.updatedAt)[0];
 					if (!oldest) break;
 					convs.delete(oldest.id);
 				}
@@ -138,18 +132,14 @@ export default {
 			else host.broadcast(payload);
 		};
 
-		/** UiMessage[] → 统一分段（history 部分）。返回 { segs, full, toolKeys }。 */
 		function buildHistory(messages, streamingMessage) {
 			const segs = [];
 			const full = new Map();
 			const toolKeys = new Set();
 			let turn = 0;
-			/** toolCallId → seg（等 toolResult 配对）。 */
 			const pending = new Map();
-			/** toolCallId → { argsText, ts }（算耗时/抠路径用）。 */
 			const callInfo = new Map();
 
-			/** 已落盘分段的最大结束时刻——文本块反推开始时刻时钳住，保证串行不重叠。 */
 			let prevEnd = 0;
 			const addSeg = (seg, detail) => {
 				segs.push(seg);
@@ -160,7 +150,6 @@ export default {
 			};
 
 			const all = streamingMessage ? [...(messages ?? []), { ...streamingMessage, _live: true }] : (messages ?? []);
-			/** 每条消息之后第一条带时间戳消息的时刻（生成窗口上限：生成必在其前完成）。 */
 			const nextTByMsg = new Map();
 			{
 				let nxt = undefined;
@@ -177,12 +166,22 @@ export default {
 					turn += 1;
 					const text = blockText(m.content, "text", "text").trim() || "(附件/空消息)";
 					addSeg(
-						{ key: `h-${m.id}`, kind: "user", lane: "input", t, end: t, title: `用户 · 第 ${turn} 轮`, summary: cut(text, SUMMARY_CAP), source: "用户", status: "done", turn, meta: { chars: text.length } },
+						{
+							key: `h-${m.id}`,
+							kind: "user",
+							lane: "input",
+							t,
+							end: t,
+							title: `用户 · 第 ${turn} 轮`,
+							summary: cut(text, SUMMARY_CAP),
+							source: "用户",
+							status: "done",
+							turn,
+							meta: { chars: text.length },
+						},
 						cut(text, DETAIL_CAP),
 					);
 				} else if (m.role === "assistant") {
-					// 文本块（思考/回答）只有完成时刻的时间戳：按字符量反推开始时刻，
-					// 让“思考→回答→工具调用”在时间轴上串行衔接，而不是零宽度叠在同一点。
 					const blocks = m.content ?? [];
 					const ests = [];
 					let totalEst = 0;
@@ -198,8 +197,6 @@ export default {
 						}
 					}
 					let cursor = Math.max(t, prevEnd);
-					// 生成窗口 [t, 下一条消息)：估计总时长超窗时等比压缩，保证文本块
-					// 落在窗口内、结束处正好衔接工具调用起点，形成串行时间线。
 					if (!live && totalEst > 0) {
 						const nextT = nextTByMsg.get(m);
 						const budget = nextT !== undefined ? Math.max(0, nextT - t) : Infinity;
@@ -217,7 +214,20 @@ export default {
 							const end = live ? t : start + Math.max(1, est);
 							cursor = end;
 							addSeg(
-								{ key: `h-${m.id}-${bi++}`, kind: "thinking", lane: "model", t: start, end, ...(live ? {} : { dur: Math.max(0, end - start) }), title: "思考", summary: cut(b.thinking.trim(), SUMMARY_CAP), source: "模型 · 思考", status: live ? "running" : "done", turn, meta: { chars: b.thinking.length } },
+								{
+									key: `h-${m.id}-${bi++}`,
+									kind: "thinking",
+									lane: "model",
+									t: start,
+									end,
+									...(live ? {} : { dur: Math.max(0, end - start) }),
+									title: "思考",
+									summary: cut(b.thinking.trim(), SUMMARY_CAP),
+									source: "模型 · 思考",
+									status: live ? "running" : "done",
+									turn,
+									meta: { chars: b.thinking.length },
+								},
 								cut(b.thinking, DETAIL_CAP),
 							);
 						} else if (b?.type === "text" && b.text?.trim()) {
@@ -226,11 +236,23 @@ export default {
 							const end = live ? t : start + Math.max(1, est);
 							cursor = end;
 							addSeg(
-								{ key: `h-${m.id}-${bi++}`, kind: "text", lane: "model", t: start, end, ...(live ? {} : { dur: Math.max(0, end - start) }), title: "回答", summary: cut(b.text.trim(), SUMMARY_CAP), source: "模型 · 回答", status: live ? "running" : "done", turn, meta: { chars: b.text.length } },
+								{
+									key: `h-${m.id}-${bi++}`,
+									kind: "text",
+									lane: "model",
+									t: start,
+									end,
+									...(live ? {} : { dur: Math.max(0, end - start) }),
+									title: "回答",
+									summary: cut(b.text.trim(), SUMMARY_CAP),
+									source: "模型 · 回答",
+									status: live ? "running" : "done",
+									turn,
+									meta: { chars: b.text.length },
+								},
 								cut(b.text, DETAIL_CAP),
 							);
 						} else if (b?.type === "toolCall" && b.id) {
-							// 进行中的调用已有 live 段（更精确）→ 历史只记索引，不重复建段。
 							if (liveTools(currentConvId, b.id)) {
 								callInfo.set(b.id, { argsText: b.argumentsText ?? "null", ts: Math.max(t, cursor) });
 								continue;
@@ -240,9 +262,22 @@ export default {
 							callInfo.set(b.id, { argsText, ts: toolT });
 							const readonly = READONLY_TOOL_RE.test(String(b.name ?? ""));
 							const seg = {
-								key: `h-${b.id}`, kind: "tool", lane: "tools", t: toolT, end: toolT, title: `${readonly ? "📖" : "🔧"} ${toolHeadline(b.name, argsText)}`,
-								summary: live ? "执行中…" : "（等待结果…）", source: `工具 · ${b.name}`, status: "running", turn,
-								meta: { tool: b.name, toolCallId: b.id, args: cut(argsText, PREVIEW_CAP), files: extractPaths(argsText) },
+								key: `h-${b.id}`,
+								kind: "tool",
+								lane: "tools",
+								t: toolT,
+								end: toolT,
+								title: `${readonly ? "📖" : "🔧"} ${toolHeadline(b.name, argsText)}`,
+								summary: live ? "执行中…" : "（等待结果…）",
+								source: `工具 · ${b.name}`,
+								status: "running",
+								turn,
+								meta: {
+									tool: b.name,
+									toolCallId: b.id,
+									args: cut(argsText, PREVIEW_CAP),
+									files: extractPaths(argsText),
+								},
 							};
 							toolKeys.add(b.id);
 							pending.set(b.id, seg);
@@ -259,28 +294,58 @@ export default {
 					if (seg) {
 						pending.delete(m.toolCallId);
 						seg.status = m.isError ? "error" : "done";
-						// 结果时间戳早于调用起点（文本块反推/压缩导致起点后移）时钳住，避免负时长。
 						seg.end = Math.max(m.timestamp ?? seg.t, seg.t);
-						const realDur = info && seg.end !== undefined && info.ts !== undefined ? Math.max(0, seg.end - info.ts) : undefined;
-						if (realDur !== undefined) { seg.dur = realDur; }
+						const realDur =
+							info && seg.end !== undefined && info.ts !== undefined ? Math.max(0, seg.end - info.ts) : undefined;
+						if (realDur !== undefined) {
+							seg.dur = realDur;
+						}
 						seg.title = `${m.isError ? "❌" : "✅"} ${toolHeadline(toolName, info?.argsText)}`;
-						seg.summary = cut(m.isError ? `失败${realDur !== undefined ? ` · ${(realDur / 1000).toFixed(1)}s` : ""}` : text.trim().slice(0, 200) || "完成", SUMMARY_CAP);
+						seg.summary = cut(
+							m.isError
+								? `失败${realDur !== undefined ? ` · ${(realDur / 1000).toFixed(1)}s` : ""}`
+								: text.trim().slice(0, 200) || "完成",
+							SUMMARY_CAP,
+						);
 						seg.meta = { ...(seg.meta ?? {}), result: cut(text, PREVIEW_CAP), dur: realDur };
 						full.set(seg.key, cut(text || "(无输出)", DETAIL_CAP));
 						if (seg.end > prevEnd) prevEnd = seg.end;
 					} else {
-						// 插件加载前已完成的历史调用（无 toolCall 块留存时）→ 独立段。
 						addSeg(
-							{ key: `h-${m.toolCallId}`, kind: "tool", lane: "tools", t, end: m.timestamp ?? t, ...(dur !== undefined ? { dur } : {}), title: `${m.isError ? "❌" : "✅"} ${toolName}`, summary: cut(text.trim().slice(0, 200) || (m.isError ? "失败" : "完成"), SUMMARY_CAP), source: `工具 · ${toolName}`, status: m.isError ? "error" : "done", turn, meta: { tool: toolName, toolCallId: m.toolCallId, result: cut(text, PREVIEW_CAP), dur } },
+							{
+								key: `h-${m.toolCallId}`,
+								kind: "tool",
+								lane: "tools",
+								t,
+								end: m.timestamp ?? t,
+								...(dur !== undefined ? { dur } : {}),
+								title: `${m.isError ? "❌" : "✅"} ${toolName}`,
+								summary: cut(text.trim().slice(0, 200) || (m.isError ? "失败" : "完成"), SUMMARY_CAP),
+								source: `工具 · ${toolName}`,
+								status: m.isError ? "error" : "done",
+								turn,
+								meta: { tool: toolName, toolCallId: m.toolCallId, result: cut(text, PREVIEW_CAP), dur },
+							},
 							cut(text || "(无输出)", DETAIL_CAP),
 						);
 					}
-					// 文件改动段：写类工具成功 → 从调用参数抠路径。
 					if (!m.isError && WRITE_TOOL_RE.test(String(toolName)) && !READONLY_TOOL_RE.test(String(toolName))) {
 						const files = extractPaths(info?.argsText);
 						if (files.length) {
 							addSeg(
-								{ key: `h-${m.toolCallId}-files`, kind: "file", lane: "tools", t, end: m.timestamp ?? t, title: `📝 改动 ${files.length} 个文件`, summary: files.slice(0, 3).join("、") + (files.length > 3 ? `（等 ${files.length} 个）` : ""), source: `工具 · ${toolName}`, status: "done", turn, meta: { tool: toolName, files } },
+								{
+									key: `h-${m.toolCallId}-files`,
+									kind: "file",
+									lane: "tools",
+									t,
+									end: m.timestamp ?? t,
+									title: `📝 改动 ${files.length} 个文件`,
+									summary: files.slice(0, 3).join("、") + (files.length > 3 ? `（等 ${files.length} 个）` : ""),
+									source: `工具 · ${toolName}`,
+									status: "done",
+									turn,
+									meta: { tool: toolName, files },
+								},
 								files.join("\n"),
 							);
 						}
@@ -288,19 +353,47 @@ export default {
 				} else if (m.role === "bashExecution") {
 					const b = (m.content ?? []).find((x) => x?.type === "bash") ?? {};
 					addSeg(
-						{ key: `h-${m.id}`, kind: "tool", lane: "tools", t, end: t, title: `${b.cancelled || (b.exitCode && b.exitCode !== 0) ? "❌" : "✅"} bash · ${firstLine(b.command)}`, summary: cut(String(b.output ?? "").trim().slice(0, 200) || "完成", SUMMARY_CAP), source: "工具 · bash", status: b.cancelled || (b.exitCode && b.exitCode !== 0) ? "error" : "done", turn, meta: { tool: "bash", command: cut(String(b.command ?? ""), PREVIEW_CAP), exitCode: b.exitCode } },
+						{
+							key: `h-${m.id}`,
+							kind: "tool",
+							lane: "tools",
+							t,
+							end: t,
+							title: `${b.cancelled || (b.exitCode && b.exitCode !== 0) ? "❌" : "✅"} bash · ${firstLine(b.command)}`,
+							summary: cut(
+								String(b.output ?? "")
+									.trim()
+									.slice(0, 200) || "完成",
+								SUMMARY_CAP,
+							),
+							source: "工具 · bash",
+							status: b.cancelled || (b.exitCode && b.exitCode !== 0) ? "error" : "done",
+							turn,
+							meta: { tool: "bash", command: cut(String(b.command ?? ""), PREVIEW_CAP), exitCode: b.exitCode },
+						},
 						`$ ${b.command ?? ""}\n${cut(String(b.output ?? ""), DETAIL_CAP)}`,
 					);
 				} else if (m.role === "compactionSummary" || m.role === "branchSummary") {
 					const text = blockText(m.content, "text", "text").trim();
 					if (text) {
 						addSeg(
-							{ key: `h-${m.id}`, kind: "system", lane: "model", t, end: t, title: m.role === "compactionSummary" ? "🗜️ 上下文压缩" : "🌿 分支摘要", summary: cut(text, SUMMARY_CAP), source: "系统", status: "done", turn, meta: { chars: text.length } },
+							{
+								key: `h-${m.id}`,
+								kind: "system",
+								lane: "model",
+								t,
+								end: t,
+								title: m.role === "compactionSummary" ? "🗜️ 上下文压缩" : "🌿 分支摘要",
+								summary: cut(text, SUMMARY_CAP),
+								source: "系统",
+								status: "done",
+								turn,
+								meta: { chars: text.length },
+							},
 							cut(text, DETAIL_CAP),
 						);
 					}
 				}
-				// toolResult 以外的 custom 等：已有归属段，不重复。
 			}
 			return { segs, full, toolKeys };
 		}
@@ -356,7 +449,6 @@ export default {
 			};
 		}
 
-		/** 从宿主拉当前对话并重建其时间线（去抖后调）。 */
 		function refresh() {
 			if (disposed) return;
 			let snap = null;
@@ -366,7 +458,7 @@ export default {
 				host.log("getActiveConversation failed:", err?.message ?? err);
 				return;
 			}
-			if (!snap) return; // 暂无对话（服务刚起/无会话）
+			if (!snap) return;
 			const c = getConv(snap.conversationId, snap.title);
 			const firstSeen = c.updatedAt === 0;
 			const becameActive = activeId !== c.id;
@@ -374,7 +466,6 @@ export default {
 			c.isStreaming = !!snap.isStreaming;
 			c.title = snap.title || c.title;
 			const { segs, full, toolKeys } = buildHistory(snap.messages, snap.streamingMessage);
-			// live 工具段：历史已收录（同 toolCallId）的退役，其余拼在末尾。
 			for (const [id] of c.liveTools) {
 				if (toolKeys.has(id)) c.liveTools.delete(id);
 			}
@@ -384,7 +475,6 @@ export default {
 			for (const s of live) if (s.detail !== undefined) c.full.set(s.key, s.detail);
 			c.analysis = computeAnalysis(c);
 			c.updatedAt = Date.now();
-			// 先构建（含分析）再广播——首条 state 即带完整分析。
 			if (becameActive) {
 				activeId = c.id;
 				for (const x of convs.values()) x.active = x.id === activeId;
@@ -410,17 +500,30 @@ export default {
 					const readonly = READONLY_TOOL_RE.test(String(ev.toolName ?? ""));
 					const headline = toolHeadline(ev.toolName, ev.argsText);
 					const seg = {
-						key: `L-${ev.toolCallId ?? `${Date.now()}`}`, kind: "tool", lane: "tools", t: ev.at,
-						end: ev.at, title: `${readonly ? "📖" : "🔧"} ${headline}`, headline,
-						summary: "执行中…", source: `工具 · ${ev.toolName}`, status: "running", turn: 0,
-						meta: { tool: ev.toolName, toolCallId: ev.toolCallId, args: cut(String(ev.argsText ?? "null"), PREVIEW_CAP), files: extractPaths(ev.argsText) },
+						key: `L-${ev.toolCallId ?? `${Date.now()}`}`,
+						kind: "tool",
+						lane: "tools",
+						t: ev.at,
+						end: ev.at,
+						title: `${readonly ? "📖" : "🔧"} ${headline}`,
+						headline,
+						summary: "执行中…",
+						source: `工具 · ${ev.toolName}`,
+						status: "running",
+						turn: 0,
+						meta: {
+							tool: ev.toolName,
+							toolCallId: ev.toolCallId,
+							args: cut(String(ev.argsText ?? "null"), PREVIEW_CAP),
+							files: extractPaths(ev.argsText),
+						},
 						detail: cut(String(ev.argsText ?? "null"), DETAIL_CAP),
 					};
 					if (ev.toolCallId) c.liveTools.set(ev.toolCallId, seg);
 					c.segs = [...c.segs, seg];
 					c.full.set(seg.key, seg.detail);
 					host.broadcast({ kind: "segs", convId: c.id, reset: false, segs: [seg] });
-					return; // tool_start 只增量，不重拉（历史此时还没有该调用）
+					return;
 				}
 				if (ev.type === "tool_end") {
 					const c = convs.get(ev.conversationId ?? "");
@@ -429,11 +532,16 @@ export default {
 						const secs = ev.durationMs !== undefined ? ` · ${(ev.durationMs / 1000).toFixed(1)}s` : "";
 						const preview = cut(String(ev.resultText ?? ""), DETAIL_CAP).trim();
 						const patch = {
-							status: ev.isError ? "error" : "done", end: ev.at,
+							status: ev.isError ? "error" : "done",
+							end: ev.at,
 							...(ev.durationMs !== undefined ? { dur: ev.durationMs } : {}),
 							title: `${ev.isError ? "❌" : "✅"} ${seg.headline ?? ev.toolName}`,
-							summary: cut(ev.isError ? `失败${secs}` : preview ? `${preview.slice(0, 200)}${secs}` : `完成${secs}`, SUMMARY_CAP),
-							source: seg.source, turn: seg.turn,
+							summary: cut(
+								ev.isError ? `失败${secs}` : preview ? `${preview.slice(0, 200)}${secs}` : `完成${secs}`,
+								SUMMARY_CAP,
+							),
+							source: seg.source,
+							turn: seg.turn,
 							meta: { ...(seg.meta ?? {}), result: cut(String(ev.resultText ?? ""), PREVIEW_CAP), dur: ev.durationMs },
 						};
 						Object.assign(seg, patch);
@@ -445,7 +553,6 @@ export default {
 					scheduleRefresh();
 					return;
 				}
-				// message / run_* / turn_* → 历史重拉（去抖）。
 				scheduleRefresh();
 			} catch (err) {
 				host.log("run event failed:", err?.message ?? err);
@@ -458,7 +565,6 @@ export default {
 				switch (msg.action) {
 					case "state":
 						pushState(from);
-						// 视图刚挂载：顺手拉一次当前对话（onAttach 已推过，此处补全 segs）。
 						scheduleRefresh();
 						break;
 					case "get_conv": {
@@ -477,9 +583,12 @@ export default {
 						const seg = c?.segs.find((s) => s.key === String(msg.key ?? ""));
 						if (c && seg && from) {
 							host.sendTo(from, {
-								kind: "seg_detail", convId: c.id, key: seg.key,
+								kind: "seg_detail",
+								convId: c.id,
+								key: seg.key,
 								detail: c.full.get(seg.key) ?? seg.summary ?? "",
-								seg, analysis: segAnalysis(c, seg),
+								seg,
+								analysis: segAnalysis(c, seg),
 							});
 						}
 						break;
@@ -500,7 +609,6 @@ export default {
 			}
 		});
 
-		/** 单段的分析（概述 tab 用）：工具段带本工具累计，普通段带定位。 */
 		function segAnalysis(c, seg) {
 			const a = c.analysis;
 			const total = c.segs.length || 1;
@@ -512,15 +620,17 @@ export default {
 			};
 			if (seg.kind === "tool" && seg.meta?.tool && a) {
 				const st = a.tools.find((x) => x.name === seg.meta.tool);
-				return { ...base, tool: st ?? { name: seg.meta.tool, calls: 1, ms: seg.dur ?? 0, errs: seg.status === "error" ? 1 : 0 }, convToolCalls: a.toolCalls, convToolMs: a.toolMs };
+				return {
+					...base,
+					tool: st ?? { name: seg.meta.tool, calls: 1, ms: seg.dur ?? 0, errs: seg.status === "error" ? 1 : 0 },
+					convToolCalls: a.toolCalls,
+					convToolMs: a.toolMs,
+				};
 			}
 			return base;
 		}
 
-		// 对话切换（点历史/切 running/新对话/切项目）→ 立即重拉，不等轮询。
-		const offConvChanged = host.onConversationChanged
-			? host.onConversationChanged(() => scheduleRefresh())
-			: () => {};
+		const offConvChanged = host.onConversationChanged ? host.onConversationChanged(() => scheduleRefresh()) : () => {};
 
 		const offAttach = host.onAttach((clientId) => {
 			try {
@@ -531,7 +641,6 @@ export default {
 			}
 		});
 
-		// 轮询：流式 5s / 空闲 30s（切对话、新开对话等外部变化兜底）。
 		const poll = () => {
 			if (disposed) return;
 			try {

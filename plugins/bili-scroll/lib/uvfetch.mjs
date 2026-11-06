@@ -1,7 +1,3 @@
-/**
- * plugins/bili-scroll/lib/uvfetch.mjs
- * 寻找本地 uv / Python 或在缺失时自动拉取单文件 uv
- */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -16,17 +12,12 @@ const ASSETS = {
 	linux: { name: "uv-x86_64-unknown-linux-gnu.tar.gz", bin: "uv" },
 };
 
-/** 探测系统现存的 uv 命令或二进制路径 */
 export function findSystemUv() {
-	// 1. PATH 优先
 	try {
 		const r = spawnSync("uv", ["--version"], { encoding: "utf8", windowsHide: true });
 		if (r.status === 0 && r.stdout) return "uv";
-	} catch {
-		// ignore
-	}
+	} catch {}
 
-	// 2. Windows 常见可执行路径
 	if (process.platform === "win32") {
 		const candidates = [
 			join(homedir(), ".local", "bin", "uv.exe"),
@@ -39,9 +30,7 @@ export function findSystemUv() {
 				try {
 					const r = spawnSync(c, ["--version"], { encoding: "utf8", windowsHide: true });
 					if (r.status === 0) return c;
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 		}
 
@@ -51,9 +40,7 @@ export function findSystemUv() {
 				const first = r.stdout.split(/\r?\n/)[0]?.trim();
 				if (first && existsSync(first)) return first;
 			}
-		} catch {
-			// ignore
-		}
+		} catch {}
 	} else {
 		const candidates = [
 			join(homedir(), ".local", "bin", "uv"),
@@ -66,24 +53,19 @@ export function findSystemUv() {
 				try {
 					const r = spawnSync(c, ["--version"], { encoding: "utf8" });
 					if (r.status === 0) return c;
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 		}
 	}
 	return null;
 }
 
-/** 探测系统现存的 Python 解释器 */
 export function findSystemPython() {
 	for (const cmd of ["python3", "python", "py"]) {
 		try {
 			const r = spawnSync(cmd, ["--version"], { encoding: "utf8", windowsHide: true });
 			if (r.status === 0) return cmd;
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 	return null;
 }
@@ -122,25 +104,18 @@ export function extractArchive(binName, archive, into) {
 				const hit = findBin(binName, into);
 				if (hit) return hit;
 			}
-		} catch {
-			// next
-		}
+		} catch {}
 	}
 	return null;
 }
 
-/**
- * 确保家目录或系统中有一份可用的 uv，优先使用本机已有 uv
- */
 export async function ensureUv({ dir, log = () => {} }) {
-	// 1. 先看系统是否已有 uv
 	const sysUv = findSystemUv();
 	if (sysUv) {
 		log(`检测到系统已就绪的 uv：${sysUv}`);
 		return sysUv;
 	}
 
-	// 2. 看目标目录中是否已有
 	const a = ASSETS[process.platform] || ASSETS.linux;
 	const target = join(dir, a.bin);
 	if (existsSync(target)) {
@@ -162,10 +137,7 @@ export async function ensureUv({ dir, log = () => {} }) {
 	if (process.platform === "win32") {
 		try {
 			const r = await fetch("https://mirrors.aliyun.com/pypi/simple/uv/");
-			// fallback check
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	for (const s of sources) {
@@ -184,9 +156,7 @@ export async function ensureUv({ dir, log = () => {} }) {
 			if (hit && existsSync(hit)) {
 				try {
 					rmSync(tmp, { recursive: true, force: true });
-				} catch {
-					// ignore
-				}
+				} catch {}
 				log(`✅ uv 下载并解压就绪：${hit}`);
 				return hit;
 			}
@@ -197,8 +167,6 @@ export async function ensureUv({ dir, log = () => {} }) {
 
 	try {
 		rmSync(tmp, { recursive: true, force: true });
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return null;
 }

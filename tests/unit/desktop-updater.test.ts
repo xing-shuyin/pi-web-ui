@@ -1,9 +1,3 @@
-/**
- * 桌面壳应用内更新桥单测（web/src/desktop-updater.ts，issue #180）。
- *
- * 只测纯函数 + 桥判定：hook 本体（useDesktopUpdater）要 React 运行时，
- * 不在这里测；主进程接线（desktop/main.ts）靠打包验证。
- */
 import { describe, expect, it } from "vitest";
 import {
 	desktopReleasesUrl,

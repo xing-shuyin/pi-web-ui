@@ -12,19 +12,6 @@ interface ToolApprovalDialogProps {
 	approval: UiToolApproval | null;
 }
 
-/**
- * 人机协同拦截与「改写执行」（Human-in-the-Loop: Edit & Run）审批弹窗。
- *
- * 当工具拦截层（ToolGuard / 权限沙箱）识别到高危操作或关键文件修改时弹出，
- * 用户可选择：
- * 1. 「批准」（Approve）：放行原参数执行；
- * 2. 「拒绝」（Deny）：阻断执行并将拒绝原因返回模型；
- * 3. 「修改并放行」（Edit & Run）：就地修改工具参数后提交执行；
- * 4. 「本对话允许同类」（Allow this kind）：批准 + 记住本对话内该规则档位，后续同类不再问；
- * 5. 「本对话全部允许」（Allow all）：批准 + 本对话内后续全部不再问。
- *
- * 后两个只在内存里（服务重启/新对话即恢复询问），撤销入口在 设置 →「工具」页。
- */
 export function ToolApprovalDialog({
 	approvals,
 	activeConversationId,
@@ -72,7 +59,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 	const t = useT();
 	const { locale } = useI18n();
 
-	// 本地编辑的参数文本（JSON 字符串）
 	const [paramsText, setParamsText] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
 	const [now, setNow] = useState(Date.now);
@@ -86,9 +72,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 
 	useEffect(() => {
 		if (approval) {
-			// 审查 #8：显示与提交保持同一形态 —— 对象参数 pretty JSON（提交时 parse），
-			// 空/缺失参数统一显示 "{}"（提交即 {}），字符串等原始值原样展示（提交时
-			// 原样回传），避免 JSON.stringify 给字符串套引号造成「看到的不等于提交的」。
 			const p = approval.params;
 			if (p !== null && p !== undefined && typeof p === "object") {
 				setParamsText(JSON.stringify(p, null, 2));
@@ -127,15 +110,11 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 
 	const handleEditAndRun = () => {
 		try {
-			// 审查 #8：提交形态与显示形态一一对应。服务端把 editedParams 当 unknown
-			// 直接作为 effectiveParams 执行（server/agent-service.ts `res.editedParams ?? params`），
-			// 字符串原样回传、空参数提交 {} 均兼容。
 			const p = approval.params;
 			let edited: unknown;
 			if (p !== null && p !== undefined && typeof p === "object") {
 				edited = JSON.parse(paramsText);
 			} else if (p === null || p === undefined) {
-				// 显示为 "{}"（JSON 对象），未改动提交即 {}；用户改动按解析结果提交。
 				edited = JSON.parse(paramsText);
 			} else {
 				edited = paramsText;
@@ -202,7 +181,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 				</div>
 
 				<div className="tool-info-body" style={{ padding: "16px 20px" }}>
-					{/* 嵌套调用来源提示 */}
 					{approval.parentTool === "codemode" && (
 						<div
 							style={{
@@ -223,7 +201,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 						</div>
 					)}
 
-					{/* 风险告警原因 */}
 					{(approval.reason || approval.reasonEn) && (
 						<div
 							style={{
@@ -239,9 +216,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 							}}
 						>
 							<div style={{ fontWeight: 600, marginBottom: 2 }}>{t("toolApprovalRiskAlert")}:</div>
-							{/* 文案随界面语言定：服务端两种语言都带（reason/reasonEn），中文界面用
-							    reason、其它语言用 reasonEn。之前写的是 `reason || reasonEn`，
-							    reason 恒存在 → 非中文界面也显示中文风险说明。 */}
 							<div>
 								{isZhLocale(locale) ? approval.reason || approval.reasonEn : approval.reasonEn || approval.reason}
 							</div>
@@ -251,7 +225,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 									{isZhLocale(locale) ? approval.category.label : approval.category.labelEn}
 								</div>
 							)}
-							{/* 命中高危规则清单（issue #566） */}
 							{approval.hits && approval.hits.length > 0 && (
 								<div className="approval-hits-panel">
 									<div className="approval-hits-title">
@@ -280,7 +253,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 						</div>
 					)}
 
-					{/* 高危命令即时高亮定位（issue #566，针对 bash 命令在 JSON 转义之外提供直观定位） */}
 					{approval.toolName === "bash" && typeof (approval.params as any)?.command === "string" && (
 						<div className="approval-cmd-preview">
 							<div className="approval-cmd-preview-label">{t("approvalCommandPreview")}:</div>
@@ -291,7 +263,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 						</div>
 					)}
 
-					{/* 参数就地修改编辑区域 */}
 					<div style={{ marginBottom: 16 }}>
 						<div
 							style={{
@@ -334,7 +305,6 @@ function ApprovalDialog({ approval, onDefer }: ToolApprovalDialogProps & { onDef
 						{parseError && <div style={{ color: "var(--red, #ef4444)", fontSize: 12, marginTop: 4 }}>{parseError}</div>}
 					</div>
 
-					{/* 动作按钮组：本对话允许同类 / 本对话全部允许 / 拒绝 / 批准 / 修改并放行 */}
 					<div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 10 }}>
 						{approval.category && (
 							<button

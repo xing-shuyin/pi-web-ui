@@ -71,7 +71,6 @@ function wrapRpcError(error: unknown): Error {
 export interface IntegrationActor {
 	accountId: string;
 	bot?: Bot;
-	/** Authenticated historical device identity, for read-only reconcile only. */
 	originalBot?: { id: string; deviceId: string; accountId: string };
 }
 export interface HubIntegrationDriver {
@@ -277,7 +276,6 @@ async function failed(
 		const record = draft.integrations.find((i) => i.id === before.id);
 		if (record?.publishReceipt) return;
 		if (record?.publishIntent && before.publishIntent?.digest === record.publishIntent.digest) {
-			// An RPC/Hub failure says nothing about whether the reserved CAS happened.
 			record.error = `Publication outcome unknown: ${sanitizePublicError(error)}`.slice(0, 300);
 			record.updatedAt = Date.now();
 			return;
@@ -491,7 +489,6 @@ export async function hubConfirmIntegration(
 	input: Record<string, unknown>,
 	driver?: HubIntegrationDriver,
 ): Promise<DeviceIntegration> {
-	// The synchronous WAL callback seals data only, before the first possible RPC.
 	const { before, dispatch } = await store.transact((draft) => {
 		const record = recordFor(draft, roomId, conversationId, integrationId, actor);
 		if (actor.originalBot) fail(403, "Historical actor is read-only");
@@ -594,7 +591,6 @@ export async function hubCancelIntegration(
 		if (["verifying", "failed", "verified"].includes(record.status) && !hasVerifiedIntegration(record))
 			record.verificationMayBeRunning = true;
 		const deviceId = cancellationDevice(draft, record, actor);
-		// Legacy jobs may be cleaned on their still-bound Bot/device without inventing verification proof.
 		record.targetDeviceId ??= deviceId;
 		if (record.status !== "cancelled") {
 			record.status = "cancelling";
@@ -667,7 +663,6 @@ async function mergePublicationResult(
 		if (!record || record.publishIntent?.digest !== intent.digest || record.publishIntent.id !== intent.id)
 			fail(409, "Publication intent changed");
 		validatePublishIntent(record.publishIntent);
-		// Match only the sealed operation. Current membership/review/task may have been revoked after CAS.
 		if (result.publishReceipt && !record.publishReceipt) record.publishReceipt = result.publishReceipt;
 		if (
 			result.publishObservation &&
@@ -762,7 +757,6 @@ export async function hubReconcileIntegration(
 ): Promise<DeviceIntegration> {
 	const before = recordFor(store.snapshot(), roomId, conversationId, id, actor);
 	historicalActor(before, actor);
-	// Legacy records carry no journal identity. Never synthesize a receipt or retry them.
 	if (!before.publishIntent) return structuredClone(before);
 	try {
 		const raw = await driverRequired(driver).callDeviceCommand(
@@ -826,7 +820,6 @@ export async function hubResumeIntegration(
 		driverRequired(driver);
 		record.status = "applying";
 		record.currentOpId = randomUUID();
-		// Consume the Hub's retry capability before dispatch. Device independently checks the durable journal.
 		record.publishObservation.retryable = false;
 		record.updatedAt = Date.now();
 		return structuredClone(record);
@@ -838,7 +831,6 @@ export async function hubResumeIntegration(
 const pendingRecovery = new WeakMap<HubStoreLike, Map<string, Promise<DeviceIntegration>>>();
 const recoveryBatches = new WeakMap<HubStoreLike, Promise<DeviceIntegration[]>>();
 const recoveryCursors = new WeakMap<HubStoreLike, Map<string, number>>();
-/** Startup/ready recovery only issues status queries. No implicit publication retry. */
 export async function reconcilePendingIntegrations(
 	store: HubStoreLike,
 	driver: HubIntegrationDriver,
@@ -902,7 +894,6 @@ async function runPendingRecovery(
 				try {
 					results.push(await operation);
 				} catch {
-					/* Keep unresolved evidence for the next read-only probe. */
 				} finally {
 					if (running!.get(key) === operation) running!.delete(key);
 				}

@@ -45,14 +45,11 @@ describe("DshClientSession 核心正确性测试 (Issue #741)", () => {
 
 		await (DshClientSession.prototype as any).promptConv.call(session, conv, "这是一条要失败的消息");
 
-		// 验证 1：乐观消息被回滚移除，消息列表不残留
 		expect(conv.messages?.length).toBe(0);
 		expect(conv.messageIds?.size).toBe(0);
 
-		// 验证 2：followUp 排队队列只回滚自身，原有的其他排队项完好无损
 		expect(conv.queue?.followUp).toEqual(["已有的一条排队文本"]);
 
-		// 验证 3：发出错误通知
 		const errNotices = emitted.filter(
 			(m) => (m as { type?: string }).type === "notice" && (m as { level?: string }).level === "error",
 		);
@@ -67,7 +64,6 @@ describe("DshClientSession 核心正确性测试 (Issue #741)", () => {
 			isStreaming: true,
 			messages: [],
 			messageIds: new Set<string>(),
-			// 模拟用户连续两次输入相同文本 "继续"
 			queue: { followUp: ["继续"] },
 			deltaSeq: 0,
 		};
@@ -88,10 +84,8 @@ describe("DshClientSession 核心正确性测试 (Issue #741)", () => {
 			emitConversations: vi.fn(),
 		});
 
-		// 再次发 "继续"，此时 followUp 会追加第 2 个 "继续"
 		await (DshClientSession.prototype as any).promptConv.call(session, conv, "继续");
 
-		// 成功后只应出队当前这一个，原有的第 1 个 "继续" 应当保留
 		expect(conv.queue?.followUp).toEqual(["继续"]);
 	});
 
@@ -113,7 +107,6 @@ describe("DshClientSession 核心正确性测试 (Issue #741)", () => {
 			writeFileSync(fActive, '{"event":"init"}');
 			writeFileSync(fExpired, '{"event":"init"}');
 
-			// 过期文件设为 100 天前
 			const hundredDaysAgo = (Date.now() - 100 * 24 * 3600_000) / 1000;
 			utimesSync(fExpired, hundredDaysAgo, hundredDaysAgo);
 

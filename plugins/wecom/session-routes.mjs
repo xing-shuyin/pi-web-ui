@@ -19,7 +19,6 @@ export const identityKey = (identity = {}) =>
 			? `owner:${JSON.stringify([identity.clientId, identity.conversationId])}`
 			: "";
 
-/** Plugin-local persistent scope identities. Local cN identifiers never confer ownership. */
 export class SessionRoutes {
 	constructor(host, getConfig, log) {
 		this.host = host;

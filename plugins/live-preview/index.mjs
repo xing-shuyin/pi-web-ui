@@ -1,25 +1,9 @@
-/**
- * live-preview 服务端入口 —— Live Server 式预览。
- *
- * 架构（通用代理方案）：
- *   内建静态服务器只绑 127.0.0.1:随机口（外部直连不可达也无妨），
- *   再经 host.registerProxy() 把 /liveserver 与 /md 两个前缀透传过去。
- *   去前缀转发保留了原始子路径，所以 html 里的相对路径（css/js/img）、
- *   Range 断点续传、SSE 自动刷新天然可用，无需重写页面。
- *
- * 根随 host.cwd 活值走：set_cwd 切项目后刷新预览即看新项目。
- * /md 的渲染产物会交给 md-toc.mjs 加一列「标题导航」（纯字符串注入，见该文件头）。
- * 反激活/卸载时关闭内建服务并注销前缀（宿主 releaseEntry 兜底）。
- */
-
 import { createServer } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { enhanceMarkdownHtml } from "./md-toc.mjs";
 
 const PREFIXES = ["/liveserver", "/md"];
-/** 预览文件上限 10MB（超了回 413，防大文件打爆内存）。 */
 const MAX_BYTES = 10 * 1024 * 1024;
-/** SSE/内页事件路径（任意目录层级后缀命中都算，见下）。 */
 const EVENTS_SUFFIX = "/__livepreview/events";
 
 const MIME = {
@@ -51,7 +35,6 @@ const MIME = {
 
 const TEXT_EXTS = new Set(["html", "htm", "css", "js", "mjs", "json", "svg", "txt", "md", "map"]);
 
-/** 纯函数：把 URL 路径洗成工作区相对路径；越界/非法返回 null。 */
 export function toRelPath(pathname) {
 	let p;
 	try {
@@ -63,7 +46,6 @@ export function toRelPath(pathname) {
 	if (!p.startsWith("/")) return null;
 	const segs = p.split("/").filter((s) => s && s !== ".");
 	if (p.includes("\\") || p.includes("\0") || segs.some((s) => s === "..")) return null;
-	// EVENTS_SUFFIX 允许出现在任意层级（iframe 子目录页的相对 SSE 回落）。
 	return segs.join("/");
 }
 
@@ -76,7 +58,6 @@ function escHtml(s) {
 	return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** 极简 Markdown → HTML（零依赖；代码围栏/标题/粗斜体/行内码/链接/图片/引用/列表/表格/分割线）。 */
 export function renderMarkdown(src, title) {
 	const lines = String(src ?? "")
 		.replace(/\r\n?/g, "\n")
@@ -93,12 +74,9 @@ export function renderMarkdown(src, title) {
 			listTag = "";
 		}
 	};
-	// #501：href/src 的 scheme 白名单——预览页与主应用同源，`javascript:` 链接一旦
-	// 可点击即等同主应用执行面。http/https/mailto 与相对路径放行，其余 scheme
-	// （javascript:、data:、vbscript: 等）一律置为失效锚点。与主应用 MdLink 对齐。
 	const safeUrl = (u) => {
 		const t = String(u).trim();
-		if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(t)) return t; // 无 scheme = 相对路径
+		if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(t)) return t;
 		return /^(https?:|mailto:)/i.test(t) ? t : "#";
 	};
 	const inline = (t) => {
@@ -229,7 +207,6 @@ function dirListing(rel, entries, prefix) {
 	return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>/${escHtml(rel)}</title><style>body{max-width:860px;margin:0 auto;padding:24px;font:15px/1.8 system-ui,sans-serif;background:#1e1e1e;color:#e8e8e8}a{color:#6cb6ff}</style></head><body><h2>/${escHtml(rel)} <span style="color:#888;font-size:13px">via ${escHtml(prefix)}</span></h2><ul>${rows}</ul></body></html>`;
 }
 
-/** 自动刷新脚本：meta 基址来自代理透传头（子路径反代也对），直连回环口时回落相对路径。 */
 function withReload(html, prefix, version) {
 	const snippet = reloadSnippet(prefix, version);
 	return /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, `${snippet}</body>`) : html + snippet;
@@ -253,7 +230,6 @@ export default {
 				return {};
 			}
 		};
-		// Separate bearer capability, revoked with this activation's proxy registrations.
 		const capabilityPrefix = `/__live-preview/${randomBytes(32).toString("hex")}`;
 		const state = { version: 0, sse: new Set() };
 		const bump = () => {
@@ -276,7 +252,6 @@ export default {
 			}, 300);
 		};
 
-		/** 内建静态服务处理器（收到的已是去前缀路径）。 */
 		async function handle(req, res) {
 			res.setHeader("Content-Security-Policy", "sandbox allow-scripts");
 			res.setHeader("X-Content-Type-Options", "nosniff");
@@ -294,7 +269,6 @@ export default {
 			}
 			const prefix = String(req.headers["x-pi-proxy-prefix"] ?? "");
 			if (PREFIXES.includes(prefix)) {
-				// The ordinary proxy is authenticated by the host. Drop query credentials.
 				res.writeHead(302, { Location: capabilityPrefix + pathname }).end();
 				return;
 			}
@@ -304,9 +278,7 @@ export default {
 				res.writeHead(403).end("invalid preview capability");
 				return;
 			}
-			// Opaque origins need CORS for modules and SSE; never allow credentials.
 			res.setHeader("Access-Control-Allow-Origin", "*");
-			// SSE：任意目录层级后缀命中（子目录页用相对地址回落时也可用）。
 			if (pathname === "/__livepreview/events" || pathname.endsWith(EVENTS_SUFFIX)) {
 				res.writeHead(200, {
 					"Content-Type": "text/event-stream; charset=utf-8",
@@ -324,7 +296,6 @@ export default {
 			}
 			const headOnly = req.method === "HEAD";
 			const send = (code, headers, buf) => {
-				// 单段 Range（视频拖进度条靠它）。
 				const range = String(req.headers.range ?? "");
 				const m = range.match(/^bytes=(\d*)-(\d*)$/);
 				if (m && buf && code === 200) {
@@ -352,7 +323,6 @@ export default {
 				res.writeHead(404).end("not found");
 				return;
 			}
-			// 目录：优先 index.html / index.htm，否则列目录。
 			if (st.type === "dir") {
 				if (!pathname.endsWith("/")) {
 					res.writeHead(302, { Location: `${prefix}${pathname}/` }).end();
@@ -366,9 +336,7 @@ export default {
 						const html = live ? withReload(text, prefix, state.version) : text;
 						send(200, { "Content-Type": MIME.html, "Cache-Control": "no-store" }, Buffer.from(html));
 						return;
-					} catch {
-						/* 换下一个 */
-					}
+					} catch {}
 				}
 				try {
 					const entries = await host.fs.list(rel || undefined);
@@ -382,7 +350,6 @@ export default {
 				}
 				return;
 			}
-			// 单文件：超限拒绝；md 渲染；html 注入刷新脚本；其余按扩展名 MIME。
 			if ((st.size ?? 0) > MAX_BYTES) {
 				res.writeHead(413).end("file too large for preview");
 				return;
@@ -438,7 +405,6 @@ export default {
 			stop: () => shutdown(),
 		});
 		if (task) off(() => task.unregister?.());
-		// 工作区文件变化 → 推 SSE 自动刷新（目录监听失败不阻断激活）。
 		try {
 			off(host.fs.watch(".", scheduleBump));
 		} catch (err) {
@@ -466,7 +432,6 @@ export default {
 					const rel = String(params?.path ?? "").replace(/^\/+/, "");
 					const seg = rel ? `/${rel.split("/").map(encodeURIComponent).join("/")}` : "/";
 					const primary = /\.md$/i.test(rel) ? `/md${seg}` : `/liveserver${seg}`;
-					// 末尾的确定性链接行：渲染出来是可点兜底，前端 effect 认它做自动打开标记。
 					const auto =
 						params?.open !== false && settings().autoOpen !== false ? `\n[🔗 已自动在浏览器打开](${primary})` : "";
 					const text = `预览地址（隔离沙箱）：\n- HTML：/liveserver${seg}\n- Markdown：/md${seg}\n当前工作区：${host.cwd}${auto}`;
@@ -482,23 +447,17 @@ export default {
 			for (const fn of cleanups.splice(0)) {
 				try {
 					fn();
-				} catch {
-					/* 注销失败忽略 */
-				}
+				} catch {}
 			}
 			for (const res of state.sse) {
 				try {
 					res.end();
-				} catch {
-					/* ignore */
-				}
+				} catch {}
 			}
 			state.sse.clear();
 			try {
 				server.close();
-			} catch {
-				/* already closed */
-			}
+			} catch {}
 		}
 		return shutdown;
 	},

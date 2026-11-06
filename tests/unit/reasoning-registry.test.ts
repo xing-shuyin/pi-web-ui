@@ -23,7 +23,7 @@ describe("reasoning-registry (权威模型推理规格与识别)", () => {
 		expect(o3?.thinkingLevelMap.low).toBe("low");
 		expect(o3?.thinkingLevelMap.medium).toBe("medium");
 		expect(o3?.thinkingLevelMap.high).toBe("high");
-		expect(o3?.thinkingLevelMap.off).toBeNull(); // o 系列官方不能关思考
+		expect(o3?.thinkingLevelMap.off).toBeNull();
 	});
 
 	it("精准识别 Gemini 2.0 / 2.5 Flash Thinking 预算模式", () => {

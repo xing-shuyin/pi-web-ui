@@ -9,6 +9,7 @@ import { GroupWorkspaceActions } from "./GroupWorkspaceActions";
 import { GroupCanvasBinding } from "./GroupCanvasBinding";
 import { GroupBotPresets } from "./GroupBotPresets";
 import { GroupDrawer, type GroupDrawerTab } from "./GroupDrawer";
+import type { GroupRouterConfig } from "./GroupRouterSettings";
 import { GroupSteerModal } from "./GroupSteerModal";
 import { appUrl } from "../base-url";
 import { openGroupEventStream, taskProgressMatches, acceptTaskProgress } from "../group-event-stream";
@@ -27,6 +28,7 @@ import {
 import { setActiveGroupRoomData } from "../group-active-context";
 
 type PersistentConversation = import("../device-group-messages").GroupBotConversation;
+type RouterGroupDetail = GroupDetail & { room: { router?: GroupRouterConfig } };
 
 class GroupRequestError extends Error {
 	constructor(
@@ -64,7 +66,6 @@ export function GroupConversation({
 	uiHeaderSlots?: UiSlotEntry[];
 	uiActionSlots?: UiSlotEntry[];
 }) {
-	// Key the entire stream/composer lifecycle by room, including in-flight mutations and drafts.
 	return (
 		<GroupRoom
 			key={roomId}
@@ -91,7 +92,7 @@ function GroupRoom({
 }) {
 	const { locale } = useI18n();
 	const zh = isZhLocale(locale);
-	const [detail, setDetail] = useState<GroupDetail | null>(null);
+	const [detail, setDetail] = useState<RouterGroupDetail | null>(null);
 	const devices: GroupDevice[] = detail?.bots ?? [];
 	const [error, setError] = useState("");
 	const [unavailable, setUnavailable] = useState(false);
@@ -150,7 +151,7 @@ function GroupRoom({
 			try {
 				const base = `rooms/${encodeURIComponent(roomId)}`;
 				const [room, list] = await Promise.allSettled([
-					request<GroupDetail>(base, signal),
+					request<RouterGroupDetail>(base, signal),
 					request<{ conversations: PersistentConversation[] }>(`${base}/conversations`, signal),
 				]);
 				if (generation.current !== token || signal.aborted) return;
@@ -253,10 +254,28 @@ function GroupRoom({
 			document.removeEventListener("visibilitychange", visibility);
 		};
 	}, [roomId, active, refresh]);
-	const { state, labels } = useMemo(
-		() => groupConversationState(roomId, detail, devices, zh),
-		[roomId, detail, devices, zh],
-	);
+	const { state, labels } = useMemo(() => {
+		const displayDetail = detail?.room.router?.enabled
+			? { ...detail, room: { ...detail.room, primaryBotId: undefined } }
+			: detail;
+		const result = groupConversationState(roomId, displayDetail, devices, zh);
+		const routerMessageIds = new Set(
+			(detail?.messages ?? [])
+				.filter((message) => String(message.sender.type) === "router")
+				.map((message) => `group-message:${message.id}`),
+		);
+		const displayLabels = new Map(result.labels);
+		for (const id of routerMessageIds) displayLabels.set(id, zh ? "群组 AI Router" : "Group AI Router");
+		return {
+			state: {
+				...result.state,
+				messages: result.state.messages.map((message) =>
+					routerMessageIds.has(message.id) ? { ...message, role: "assistant" as const } : message,
+				),
+			},
+			labels: displayLabels,
+		};
+	}, [roomId, detail, devices, zh]);
 	const t = useT();
 	const uiSlots = useMemo(() => {
 		return buildUiSlots([], {
@@ -354,7 +373,11 @@ function GroupRoom({
 		const planOnly = options?.planOnly === true;
 		const planningBots = selected
 			? members.filter((bot) => bot.id === selected.botId)
-			: members.filter((bot) => targets.includes(bot.id) || (!targets.length && bot.id === detail.room.primaryBotId));
+			: members.filter(
+					(bot) =>
+						targets.includes(bot.id) ||
+						(!targets.length && !detail.room.router?.enabled && bot.id === detail.room.primaryBotId),
+				);
 		if (planOnly && planningBots.some((bot) => !bot.tools?.includes("plan_update"))) {
 			setError(
 				zh
@@ -448,6 +471,31 @@ function GroupRoom({
 					)}
 				</div>
 				<div className="dg-head-nav">
+					<button
+						type="button"
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "router" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("router")}
+						title={
+							detail?.room.router?.enabled
+								? `${detail.room.router.deviceId} · ${detail.room.router.model} · ${detail.room.router.thinkingLevel}`
+								: zh
+									? "未启用 · 沿用原主 Bot 协作"
+									: "Disabled · legacy primary Bot routing"
+						}
+					>
+						<span className="dg-nav-icon">🧭</span>
+						<span className="dg-nav-text">
+							AI Router · {detail?.room.router?.enabled ? (zh ? "已启用" : "On") : zh ? "未启用" : "Off"}
+						</span>
+					</button>
+					<button
+						type="button"
+						className={`dg-nav-tab ${drawerOpen && drawerTab === "work-items" ? "active" : ""}`}
+						onClick={() => handleOpenDrawer("work-items")}
+					>
+						<span className="dg-nav-icon">🗂</span>
+						<span className="dg-nav-text">{zh ? "工单与运行" : "Work items & runs"}</span>
+					</button>
 					<button
 						type="button"
 						className={`dg-nav-tab ${drawerOpen && drawerTab === "blackboard" ? "active" : ""}`}
@@ -743,7 +791,13 @@ function GroupRoom({
 			/>
 			<ChatInput
 				groupDevices={members}
-				groupPrimaryBotName={members.find((bot) => bot.id === detail?.room.primaryBotId)?.name}
+				groupPrimaryBotName={
+					detail?.room.router?.enabled
+						? zh
+							? "群组 AI Router"
+							: "Group AI Router"
+						: members.find((bot) => bot.id === detail?.room.primaryBotId)?.name
+				}
 				groupConversations={conversations}
 				groupConversationError={conversationError}
 				onGroupSend={send}

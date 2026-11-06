@@ -8,7 +8,7 @@
 	--border: #26262e;
 	--border-soft: #1f1f26;
 	--text: #dadada;
-	--text-strong: #3c9185; /* 深色主题下，用主题色使粗体更明显 */
+	--text-strong: #3c9185;
 	--text-dim: #a8a8b3;
 	--text-faint: #6e6e7a;
 	--accent: #31ac9d;
@@ -19,7 +19,7 @@
 	--green: #2dd4bf;
 	--green-soft: #4ade801f;
 	--amber: #eab380;
-	/* 原样继承默认 --blue #3b82f6 时只有 4.30:1（正文升一档色阶后仍偏暗），单独声明 */
+
 	--blue: #4588f6;
 	--term-bg: #0b0b0e;
 	--term-fg: #ededf0;
@@ -72,7 +72,6 @@
 	--control-bg: #1c1c22;
 }
 
-/* ---- syntax highlighting (overrides static github-dark import) ---- */
 .hljs {
 	color: #d8d8e0;
 	background: transparent;
@@ -183,24 +182,20 @@
 	border-color: var(--accent);
 }
 
-/* 对话框内，附件引用卡虚线颜色 */
-/* 网页引用 */
 .attachcard.page {
 	border-color: #38bdf866;
 }
-/* 其他附件引用 */
+
 .attachcard {
 	border-color: #ff9c6266;
 }
 
-/* 背景色 */
-/* 统一对话、终端及 Git 侧栏背景色*/
 .term-side,
 .scm-view,
 .scm-diff-header {
 	background: #121215;
 }
-/* html 预览顶栏 */
+
 .fp-html-bar {
 	background: var(--accent-soft);
 }
@@ -216,17 +211,14 @@
 	box-shadow: 0 8px 22px #5dc7b040;
 }
 
-/* 正文 */
-/* 行内代码更显眼 */
 .msg-text code {
 	background: #303038;
 }
-/* 粗体用 --text-strong */
+
 strong {
 	color: var(--text-strong);
 }
 
-/* 调整 MD 文件预览样式 */
 .fp-markdown :not(pre) > code,
 .dialog-inline .md :not(pre) > code {
 	color: var(--text);

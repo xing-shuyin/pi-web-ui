@@ -1,8 +1,3 @@
-/**
- * plugins/dingtalk/client/entry.mjs
- * DingTalk (钉钉) workspace and bot control panel for pi-web-ui.
- */
-
 export default {
 	async mount(el, ctx) {
 		const sendHost = async (type, payload = {}) => {

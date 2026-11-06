@@ -20,8 +20,6 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-// Exercise real private methods and getters without starting the server or model runtime.
-// Only external side effects and operations beyond the behavior under test are replaced.
 function client(): any {
 	return Object.assign(fakeClientSession(), {
 		activeId: "A",
@@ -286,7 +284,6 @@ describe("approval lifecycle", () => {
 		expect(cs.auditLogger.record).not.toHaveBeenCalled();
 		expect(cs.emit).not.toHaveBeenCalled();
 		expect(a.pendingApprovals).toBeUndefined();
-		// The negative result is due to the missing owner, not an unconditional deny.
 		await expect(cs.askApproval("live", "bash", {}, "reason", undefined, "A")).resolves.toEqual({
 			decision: "approve",
 		});
@@ -401,12 +398,10 @@ describe("toolOverrideSpecs approval ownership after takeover", () => {
 					acquireExecution: () => () => {},
 				},
 			});
-			// Object.create does not initialize #lateGuard; no plugin hooks are needed here.
 			Object.defineProperty(owner, "lateToolGuard", { value: undefined });
 			Object.defineProperty(owner, "roots", { value: [a.cwd] });
 		}
 		const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "executed" }] });
-		// Runtime tools are constructed before the Conversation and session anchor are registered.
 		const anchor: { session?: typeof a.session } = {};
 		source.convs.delete(a.id);
 		const specs = source.toolOverrideSpecs(a.id, a.cwd, undefined, anchor);
@@ -428,7 +423,6 @@ describe("toolOverrideSpecs approval ownership after takeover", () => {
 		>;
 		const transfer = () => {
 			source.convs.delete("A");
-			// A's id collides on takeover and the source now has an unrelated A.
 			source.convs.set("A", conversation("A"));
 			a.id = "transferred-A";
 			destination.convs.set(a.id, a);
@@ -449,7 +443,6 @@ describe("toolOverrideSpecs approval ownership after takeover", () => {
 		"routes an existing %s wrapper to the current owner and forwards cancellation after takeover",
 		async (name) => {
 			const { source, destination, a, tool, params, execute, lookup, transfer } = fixture(name);
-			// Before transfer, no cross-client lookup result is needed: local session identity wins.
 			const before = tool.execute("before", params, undefined, undefined, {} as any);
 			await vi.waitFor(() => expect(a.pendingApprovals?.size).toBe(1));
 			expect(source.emit).toHaveBeenCalledWith(
@@ -548,6 +541,22 @@ describe("toolOverrideSpecs approval ownership after takeover", () => {
 });
 
 describe("conversation quota reservations", () => {
+	it("allows concurrent creation beyond 8 resident conversations by default", () => {
+		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", undefined);
+		const cs = client();
+		const cwd = conversation("A").cwd;
+		for (let i = 0; i < 16; i++) {
+			const conv = conversation(`existing-${i}`);
+			cs.convs.set(conv.id, conv);
+		}
+
+		const releaseSlots = Array.from({ length: 16 }, () => cs.reserveConversationSlot(cwd));
+		expect(cs.creatingConversations.get(cwd)).toBe(16);
+		expect(cs.convs.size).toBe(16);
+		for (const release of releaseSlots) release();
+		expect(cs.creatingConversations.size).toBe(0);
+	});
+
 	it("counts in-flight slots per project and releases each reservation only once", () => {
 		vi.stubEnv("PI_WEB_MAX_OPEN_CONVERSATIONS", "3");
 		const cs = client();
@@ -584,7 +593,6 @@ describe("plugin tool synchronization across sessions", () => {
 		const tool = { name: "plugin_probe", description: "Probe", execute: vi.fn() };
 		let tools = [tool];
 		cs.pluginToolsProvider = () => tools;
-		// Wrapping is unrelated to registry removal; keep provider filtering, conversion and diff real.
 		cs.wrapGenericTool = vi.fn((definition) => definition);
 		const a = { _customTools: [{ name: "read" }], _refreshToolRegistry: vi.fn() };
 		const b = { _customTools: [{ name: "read" }], _refreshToolRegistry: vi.fn() };
@@ -596,7 +604,6 @@ describe("plugin tool synchronization across sessions", () => {
 		expect(b._customTools.map((t) => t.name)).toEqual(["read", "plugin_probe"]);
 
 		// Removing the provider entry also empties the global plugin universe. Each session
-		// must retain its own previous names until its own next synchronization.
 		tools = [];
 		cs.syncPluginTools(a);
 		cs.syncPluginTools(b);

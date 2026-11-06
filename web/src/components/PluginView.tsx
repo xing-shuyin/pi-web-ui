@@ -7,11 +7,6 @@ interface PluginViewProps {
 	entry: LoadedPluginView;
 }
 
-/**
- * 插件视图宿主：一个薄 React 壳，把 DOM 容器 + 窄上下文交给插件的
- * mount()。切走时容器整体 display:none（不卸载，插件内部状态保留）；
- * 插件被移除/失败时才真正清理。
- */
 export function PluginView({ entry }: PluginViewProps) {
 	const ref = useRef<HTMLDivElement>(null);
 	const t = useT();

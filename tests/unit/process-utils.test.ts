@@ -1,10 +1,3 @@
-/**
- * 监听端口解析单测：`snapshotListeningPorts` 的跨平台文本解析。
- *
- * 为什么单独测：命令输出格式随平台/发行版变化，而这两种解析是「后台任务」面板
- * 唯一的发现通道 —— 解析错一列，功能静默失效（无报错、无输出、只是列表一直空）。
- * 真实命令行（带表头、IPv4/IPv6、`(LISTEN)` 在 NAME 里 / 自成最后一列）都覆盖。
- */
 import { describe, expect, it } from "vitest";
 import { parseLsofListening, parseNetstatListening } from "../../server/process-utils.js";
 
@@ -17,7 +10,6 @@ describe("parseNetstatListening", () => {
 			"  TCP    0.0.0.0:5173     0.0.0.0:0       LISTENING       12345",
 			"  TCP    127.0.0.1:8787   0.0.0.0:0       LISTENING       6789",
 			"  TCP    [::1]:9000       [::]:0          LISTENING       4321",
-			// 非 LISTENING 的连接不进表
 			"  TCP    127.0.0.1:54321  127.0.0.1:5173  ESTABLISHED     12345",
 			"  UDP    0.0.0.0:5353     *:*                             9999",
 		].join("\r\n");
@@ -66,7 +58,6 @@ describe("parseLsofListening", () => {
 	it("空输出 / 只有表头 / 端口越界不抛错", () => {
 		expect(parseLsofListening("").size).toBe(0);
 		expect(parseLsofListening(header).size).toBe(0);
-		// 端口 99999 越界 → 丢弃
 		expect(parseLsofListening(`${header}\nnode 1 u 3u IPv4 1 0t0 TCP *:99999`).size).toBe(0);
 	});
 });

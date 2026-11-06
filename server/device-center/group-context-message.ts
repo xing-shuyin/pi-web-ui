@@ -3,10 +3,6 @@ import { planGroupContext } from "./group-context-delta.js";
 
 export const GROUP_CONTEXT_CUSTOM_TYPE = "device-group-context";
 
-/** Counts history chunks, not unique IDs. All byte sizes are UTF-8, never tokens.
- * source/delivered/omitted bytes measure row.text only; payloadBytes measures the
- * exact injected JSON, including metadata. Repair sizes cover request-only injection.
- */
 export interface GroupContextMetrics {
 	version: 1;
 	sourceMessages: number;
@@ -22,7 +18,6 @@ export interface GroupContextMetrics {
 	repairBytes: number;
 }
 
-/** Pure measurement of a planner result; does not change coverage or drop rows. */
 export function extractGroupContextMetrics(
 	current: Readonly<GroupTaskContext>,
 	delivered: readonly GroupHistoryMessage[],
@@ -53,10 +48,8 @@ const METRIC_SESSION_LIMIT = 50;
 const METRIC_SAMPLE_LIMIT = 100;
 const metricSessions = new Map<string, GroupContextMetrics[]>();
 
-/** Process-local bounded diagnostics only; never used as delivery evidence. */
 export function recordGroupContextMetrics(sessionId: string, metrics: GroupContextMetrics): void {
 	const samples = metricSessions.get(sessionId) ?? [];
-	// Explicit scalar projection prevents extra caller properties retaining content/credentials.
 	samples.push({
 		version: 1,
 		sourceMessages: metrics.sourceMessages,
@@ -77,7 +70,6 @@ export function recordGroupContextMetrics(sessionId: string, metrics: GroupConte
 	if (metricSessions.size > METRIC_SESSION_LIMIT) metricSessions.delete(metricSessions.keys().next().value!);
 }
 
-/** Detached chronological snapshot; old sessions/samples may have been evicted. */
 export function getGroupContextMetrics(sessionId: string) {
 	return {
 		version: 1 as const,
@@ -86,7 +78,6 @@ export function getGroupContextMetrics(sessionId: string) {
 		sampleCount: metricSessions.get(sessionId)?.length ?? 0,
 		durableDeliveries: (metricSessions.get(sessionId) ?? []).filter((sample) => !sample.requestOnly).length,
 		requests: (metricSessions.get(sessionId) ?? []).filter((sample) => sample.requestOnly).length,
-		// Inspection stays small enough for tool receipts; counters cover the retained 100 samples.
 		lastSample: metricSessions.get(sessionId)?.at(-1) ? { ...metricSessions.get(sessionId)!.at(-1)! } : null,
 		samples: (metricSessions.get(sessionId) ?? []).slice(-10).map((sample) => ({ ...sample })),
 	};
@@ -144,8 +135,6 @@ function taskContext(value: unknown): value is GroupTaskContext {
 }
 
 function parseContext(content: unknown): GroupTaskContext | undefined {
-	// Custom messages can store either a string or text blocks. Images and other blocks
-	// cannot establish exact JSON delivery evidence; details never reach the model.
 	if (Array.isArray(content)) {
 		if (!content.every((block) => record(block) && block.type === "text" && typeof block.text === "string"))
 			return undefined;
@@ -180,7 +169,6 @@ function coverage(current: Readonly<GroupTaskContext>, messages: readonly unknow
 	const currentIds = new Set(current.messages.map((message) => message.id));
 	for (const message of messages) {
 		if (!record(message) || message.role !== "custom" || message.customType !== GROUP_CONTEXT_CUSTOM_TYPE) continue;
-		// Request repairs are never durable delivery evidence.
 		if (!request && record(message.details) && message.details.requestOnly === true) continue;
 		if (
 			botId !== undefined &&
@@ -190,8 +178,6 @@ function coverage(current: Readonly<GroupTaskContext>, messages: readonly unknow
 		const context = parseContext(message.content);
 		if (!context || context.roomId !== current.roomId) continue;
 		if (metadata(context) === metadata(current)) metadataPresent = true;
-		// Keep at most the current window's exact chunks, rather than accumulating the
-		// full session history. Let the planner define chunk equality in one place.
 		const candidates = context.messages.filter((row) => currentIds.has(row.id));
 		const missing = new Set(
 			planGroupContext(current, { ...context, throughMessageId: null, messages: candidates }).messages,
@@ -202,7 +188,6 @@ function coverage(current: Readonly<GroupTaskContext>, messages: readonly unknow
 	return { previous, metadataPresent };
 }
 
-/** Only active projected custom-message content establishes durable delivery coverage. */
 export function groupContextMessage(current: Readonly<GroupTaskContext>, messages: readonly unknown[], botId?: string) {
 	const planned = planGroupContext(current, coverage(current, messages, botId).previous);
 	const content = JSON.stringify(planned);
@@ -218,9 +203,6 @@ export function groupContextMessage(current: Readonly<GroupTaskContext>, message
 	};
 }
 
-/** Repair the final request after SDK compaction/routing, without altering the transcript.
- * Anchor continuity is irrelevant here: actual exact chunk coverage determines missing rows.
- */
 export function repairGroupContextRequest<T>(
 	current: Readonly<GroupTaskContext>,
 	messages: T[],

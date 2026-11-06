@@ -185,7 +185,6 @@ const parameters = Type.Object(
 );
 export type DeviceCollabInput = Static<typeof parameters>;
 export type DeviceCollabArgs = Omit<DeviceCollabInput, "action">;
-/** Authoritative identifiers captured from the executor task bound to an SDK session. */
 export interface DeviceCollabExecutionContext {
 	roomId: string;
 	taskId: string;
@@ -200,7 +199,6 @@ export interface DeviceCollabContext {
 	cwd: string;
 	sessionId?: string;
 }
-/** The controller must enforce the bound account/project and propagate signal to fetch. */
 export interface DeviceCollabService {
 	execute(
 		action: DeviceCollabAction,
@@ -398,7 +396,6 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 				"title",
 			].includes(key)
 		) {
-			// Validated together below, including required revision and at least one report field.
 			continue;
 		}
 		if (key === "criteriaResults") {
@@ -584,8 +581,6 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 	}
 }
 
-// Except for explicit conversation/history projections below, only structural identifiers/status/counts leave the service boundary. No raw replies,
-// file contents, credentials, endpoints, or arbitrary service error strings are exposed.
 const summaryKeys = new Set([
 	"id",
 	"deviceId",
@@ -679,7 +674,6 @@ function projectArtifactMetadata(value: unknown): Record<string, unknown> {
 		...(source.baseline ? { baseline: evidenceFields(source.baseline, ["repositoryId", "commit"]) } : {}),
 	};
 }
-/** Public immutable evidence identities; raw context and patch payloads require explicit reads. */
 export function projectExecutionEvidence(value: unknown): Record<string, unknown> {
 	const source = evidenceRecord(value);
 	const contract = evidenceRecord(source.contract);
@@ -752,7 +746,6 @@ export function projectBlackboard(value: unknown): Record<string, unknown> {
 	};
 }
 
-// Explicit schema projection prevents arbitrary Hub fields from leaking into tool results.
 export function projectTaskState(value: unknown): Record<string, unknown> {
 	const record = (v: unknown): Record<string, unknown> =>
 		v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -818,7 +811,6 @@ export function projectTaskState(value: unknown): Record<string, unknown> {
 				}
 			result.reported = projected;
 		}
-		// Keep the state usable even when multibyte reports exceed the wire budget.
 		const lists = [
 			result.decisions,
 			result.artifacts,
@@ -940,7 +932,6 @@ export function projectTaskState(value: unknown): Record<string, unknown> {
 	if (truncated) out.truncated = true;
 	return out;
 }
-// Project only public conversation context; private roots, fingerprints and credentials never pass through.
 function projectConversations(value: unknown): Record<string, unknown> {
 	const object = (item: unknown): Record<string, unknown> =>
 		item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
@@ -1234,7 +1225,6 @@ function projectConversations(value: unknown): Record<string, unknown> {
 		const items = source[key] as unknown[];
 		const projected: Record<string, unknown>[] = [];
 		out[key] = projected;
-		// Reserve space for each collection and prioritize recent context.
 		const selected = key === "conversations" ? items.slice(0, 100) : items.slice(-100).reverse();
 		for (const item of selected) {
 			projected.push(projectItem(item, fields, texts));
@@ -1263,7 +1253,6 @@ function projectConversations(value: unknown): Record<string, unknown> {
 	}
 	return out;
 }
-// Only numeric measurements and fixed mode values may leave the metrics boundary.
 function projectContextMetrics(value: unknown): Record<string, unknown> {
 	const record = (item: unknown): Record<string, unknown> =>
 		item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : {};
@@ -1300,7 +1289,6 @@ function projectContextMetrics(value: unknown): Record<string, unknown> {
 		samples: Array.isArray(source.samples) ? source.samples.slice(-10).map(sample) : [],
 	};
 }
-// History deliberately exposes bounded message text, never arbitrary response fields.
 function projectHistory(value: unknown): Record<string, unknown> {
 	const object = (item: unknown): Record<string, unknown> =>
 		item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : {};

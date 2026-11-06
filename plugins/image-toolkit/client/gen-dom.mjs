@@ -1,7 +1,3 @@
-/**
- * image-toolkit 生图视图 DOM 工具。
- */
-
 export function el(tag, props = {}, ...children) {
 	const node = document.createElement(tag);
 	const deferred = [];
@@ -62,9 +58,7 @@ export async function copyText(text) {
 	try {
 		await navigator.clipboard.writeText(s);
 		return true;
-	} catch {
-		/* 回退 */
-	}
+	} catch {}
 	try {
 		const ta = el("textarea", { style: { position: "fixed", opacity: "0" } });
 		ta.value = s;

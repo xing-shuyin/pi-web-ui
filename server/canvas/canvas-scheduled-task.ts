@@ -5,7 +5,6 @@ import type { CanvasOrchestrator } from "./canvas-orchestrator.js";
 import { isSafeGraphId, loadCanvasGraph } from "./canvas-store.js";
 import { assertCanvasGraph } from "./canvas-validation.js";
 
-/** Scheduling must never recreate a deleted default graph. */
 export function loadScheduledCanvas(dataDir: string, graphId: string) {
 	if (!isSafeGraphId(graphId)) throw new Error("Invalid canvas graph id");
 	if (!existsSync(join(dataDir, "canvas", `${graphId}.json`))) throw new Error(`Canvas graph not found: ${graphId}`);
@@ -19,7 +18,6 @@ export function validateScheduledCanvas(dataDir: string, task: SchedulerTask): v
 	if (task.target === "canvas") loadScheduledCanvas(dataDir, task.graphId ?? "");
 }
 
-/** Await the existing orchestrator and report its actual outcome, including approval pauses. */
 export async function executeScheduledCanvas(
 	dataDir: string,
 	orchestrator: Pick<CanvasOrchestrator, "runAll">,
@@ -32,7 +30,6 @@ export async function executeScheduledCanvas(
 		await orchestrator.runAll(graph, task.prompt || undefined, task.cwd);
 		runId = graph.run?.id;
 		if (!runId) throw new Error("Canvas run did not start");
-		// Read back authoritative state to detect deletion, cancellation, or replacement during execution.
 		const current = loadScheduledCanvas(dataDir, graphId);
 		if (current.run?.id !== runId) throw new Error("Canvas run was replaced before completion");
 		return {

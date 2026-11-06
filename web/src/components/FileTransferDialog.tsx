@@ -71,7 +71,7 @@ export function FileTransferDialog({
 			onClose();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
-			onComplete(); // A failed batch may still have uploaded/extracted some files.
+			onComplete();
 		} finally {
 			setBusy(false);
 		}

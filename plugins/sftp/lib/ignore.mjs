@@ -1,23 +1,6 @@
-/**
- * 排除规则（ignore / glob）—— 纯函数，无外部依赖，便于单测与复用。
- *
- * 语义对齐 gitignore 的**最后匹配者生效**：
- *   - 规则按声明顺序求值，`!rule` 取反（负向规则可以把前面忽略掉的东西放回来）；
- *   - 不含斜杠的规则（`dist`、`*.log`）在**任意层级**生效，并且同名的目录会连其下内容一起忽略；
- *   - `**` 跨层、`*` 不跨 `/`、`?` 匹配单个非 `/` 字符；
- *   - 规则两端的 `/` 会被剥掉（`/dist/` 等价于 `dist`）。
- *
- * 另外有一组**内部护栏**（INTERNAL_SEGMENTS）永远生效、且无法被用户负向规则放回：
- * 插件自己的垃圾桶（`.sftp-trash`）与临时文件（`.sftp-tmp`）绝不能再被同步回双方，
- * 否则「删掉→进垃圾桶→下次同步又把垃圾桶传上去」会自我循环。
- */
-
-/** 无论用户怎么配都不会被同步的目录名（路径里出现该段即忽略）。 */
 const INTERNAL_DIRS = new Set([".sftp-trash"]);
-/** 内部临时文件名前缀（`.sftp-tmp-<pid>-<n>-<原名>`：传输中途的半成品）。 */
 const INTERNAL_FILE_PREFIX = ".sftp-tmp";
 
-/** 单条 glob → RegExp。 */
 export function globToRegExp(pattern) {
 	let re = "";
 	for (let i = 0; i < pattern.length; i++) {
@@ -25,11 +8,10 @@ export function globToRegExp(pattern) {
 		if (c === "*") {
 			if (pattern[i + 1] === "*") {
 				i++;
-				// 尾部 `**`：跨层匹配剩余全部
 				if (i >= pattern.length - 1) re += ".*";
 				else if (pattern[i + 1] === "/") {
 					i++;
-					re += "(?:[^/]*/)*"; // `**/` 匹配零层或多层目录
+					re += "(?:[^/]*/)*";
 				} else re += ".*";
 			} else re += "[^/]*";
 		} else if (c === "?") re += "[^/]";
@@ -39,7 +21,6 @@ export function globToRegExp(pattern) {
 	return new RegExp(`^${re}$`);
 }
 
-/** 一条规则 → 需要全部试过的 RegExp 列表。 */
 function ruleToRegExps(raw) {
 	const pat = String(raw ?? "")
 		.trim()
@@ -48,11 +29,11 @@ function ruleToRegExps(raw) {
 	if (pat === "**") return [/.*/];
 	const list = [globToRegExp(pat)];
 	if (!pat.includes("/")) {
-		list.push(globToRegExp(`**/${pat}`)); // 任意层级的同名段
-		list.push(globToRegExp(`${pat}/**`)); // 顶层同名目录下的内容
-		list.push(globToRegExp(`**/${pat}/**`)); // 任意层级同名目录下的内容
+		list.push(globToRegExp(`**/${pat}`));
+		list.push(globToRegExp(`${pat}/**`));
+		list.push(globToRegExp(`**/${pat}/**`));
 	}
-	if (pat.endsWith("/**")) list.push(globToRegExp(pat.slice(0, -3))); // `a/**` 也忽略 a 本身
+	if (pat.endsWith("/**")) list.push(globToRegExp(pat.slice(0, -3)));
 	return list;
 }
 
@@ -80,7 +61,6 @@ export function compileIgnore(patterns) {
 	};
 }
 
-/** 路径是否落在插件内部护栏目录里（垃圾桶 / 临时区）。 */
 export function isInternalPath(rel) {
 	return String(rel ?? "")
 		.split("/")

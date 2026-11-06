@@ -1,18 +1,3 @@
-// 跨页作答 remote-answer（零 token）：别处会话的问卷在本页直接回答，不搬迁对话。
-//
-// 假模型（question-bridge 同款）：第 1 回合固定回 ask_user_question 工具调用，
-// 第 2 回合把工具结果回显成 assistant 文本。
-//
-// 验证：
-//   1. A 提问挂起时，B（全新页面，A 还在线）点 elsewhere 行的 `?`
-//      （peek_elsewhere_question）→ B 收到 elsewhere_question（同题目），
-//      本页弹框；A 的对话原地不动（未被过户）；
-//   2. B 跨页提交（question_answer 带 owner）→ A 的 run 继续（回显含答案），
-//      A 页问卷收起（question_retracted），B 页 elsewhere 角标消失；
-//   3. 问卷已不在时再 peek → 明确通知（答案不吞不丢）；
-//   4. 本页 answered 集合不受跨页 id 污染（回归：两边计数器都从 q1 起）。
-//
-// Usage: node tests/remote-answer-test.mjs [port]（已有构建时设置 PI_WEB_SMOKE_PREBUILT=1）
 import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -134,12 +119,10 @@ const server = spawn(process.execPath, ["dist/server/index.js"], {
 		...process.env,
 		PI_WEB_PORT: String(PORT),
 		PI_WEB_SDK: "bundled",
-		// 本测试只验其它功能；工具延迟加载默认开会让非核心工具不活跃，这里按部署默认关掉它。
 		PI_WEB_TOOL_LAZY_LOADING: "0",
 		PI_WEB_DATA_DIR: dataDir,
 		PI_WEB_CWD: workdir,
 		PI_CODING_AGENT_DIR: agentDir,
-		// 显式清空：测试必须与 ambient shell 的 PI_WEB_TOKEN 无关。
 		PI_WEB_TOKEN: "",
 	},
 	stdio: "ignore",
@@ -152,9 +135,7 @@ const waitForPort = async (port, timeout = 20000) => {
 		try {
 			const response = await fetch(`http://127.0.0.1:${port}/api/health`);
 			if (response.ok) return;
-		} catch {
-			/* starting */
-		}
+		} catch {}
 		await sleep(100);
 	}
 	throw new Error(`server did not start on ${port}`);
@@ -247,14 +228,11 @@ try {
 		return c;
 	};
 
-	// A 先上线待命；B 全新页面先看着（A 还空闲，elsewhere 应为空）。
 	clientA = await openClient("remote-A");
 	clientB = await openClient("remote-B", false);
-	await clientB.waitForType("conversations", () => true, 15000); // 首推到达
+	await clientB.waitForType("conversations", () => true, 15000);
 	check("A 空闲时 B 看不到 elsewhere", clientB.elsewhere.length === 0, JSON.stringify(clientB.elsewhere));
 
-	// A 提问挂起（run 阻塞在等人类回答）→ 已打开的 B 页必须实时看到 `?`。
-	// 回归：问卷挂起/解决不改变流式集合，签名不变就不推，别处页面永远看不到。
 	clientA.send({ type: "prompt", text: "先问我几个问题" });
 	const queueA = await clientA.waitForType(
 		"question_queue",
@@ -291,7 +269,6 @@ try {
 	check("B 收到问卷原文（本页弹框）", preview.id === pendingA.id, `id=${preview.id} owner=${preview.owner}`);
 	check("对话没被搬走（仍在 A 手里）", clientA.state.conversationId === convA, clientA.state.conversationId);
 
-	// B 跨页提交 → A 的 run 继续，A 页问卷收起，B 页角标消失。
 	clientB.send({
 		type: "question_answer",
 		id: preview.id,
@@ -350,7 +327,6 @@ try {
 		clientA.conversations.some((c) => c.id === convA),
 	);
 
-	// 问卷已不在时再 peek → 明确通知，不静默。
 	clientB.send({ type: "peek_elsewhere_question", owner: row.owner, id: row.convId });
 	const gone = await clientB.waitForType("notice", (m) => (m.text ?? "").includes("问卷已不在"), 15000);
 	check("问卷消失后 peek 给出明确通知", !!gone);

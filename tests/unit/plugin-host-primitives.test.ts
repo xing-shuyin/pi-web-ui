@@ -11,7 +11,6 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 		try {
 			const host = createMockHost({ cwd: tempDir });
 
-			// 1. 工作区内合法路径与根路径
 			const validRel = "src/index.ts";
 			const validAbs = host.resolveInWorkspace(validRel);
 			expect(validAbs).toBe(resolve(tempDir, validRel));
@@ -19,7 +18,6 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 			const rootAbs = host.resolveInWorkspace(".");
 			expect(rootAbs).toBe(resolve(tempDir));
 
-			// 2. 路径遍历逃逸（如 ../../secret）必须抛出 403 异常
 			expect(() => {
 				host.resolveInWorkspace("../../secret.txt");
 			}).toThrowError(/工作区/);
@@ -91,21 +89,17 @@ describe("插件宿主平台原语单测 (PluginHost Primitives)", () => {
 
 		const mgr = new PluginManager(tempDir, tempDir);
 		try {
-			// 注入多根工作区
 			mgr.notifyWorkspaceRoots([extraRoot]);
 			await mgr.ensureLoaded();
 			capturedHost = (globalThis as any).__testHost;
 			expect(capturedHost).toBeDefined();
 
-			// 主工作区路径
 			const mainFile = capturedHost!.resolveInWorkspace("hello.txt");
 			expect(mainFile).toBe(resolve(tempDir, "hello.txt"));
 
-			// 额外根工作区路径（多根工作区原生支持）
 			const extraFile = capturedHost!.resolveInWorkspace(join(extraRoot, "extra.txt"));
 			expect(extraFile).toBe(resolve(extraRoot, "extra.txt"));
 
-			// 越界路径抛 403
 			expect(() => {
 				capturedHost!.resolveInWorkspace(resolve(tempDir, "../escape.txt"));
 			}).toThrowError(/工作区/);

@@ -1,19 +1,3 @@
-/**
- * plugins/bili-scroll/duty.mjs
- * B站 AI 智能体巡检调度与全流程动作广播引擎 (2.0.0 真正 AI 研读版)
- *
- * 核心设计：
- * 1. 真正的 AI 研读：通过 host.llm.complete 或智能提取深度分析原文字幕，绝非死循环模板；
- * 2. 严格按《刷B站章程》（duty.md v3）执行，以字幕原文为事实源排雷；
- * 3. 判重表（seen.md）采用双表标准架构（评论记录表 + 看过的视频表）；
- * 4. 日报输出到 out/<日期>.md，段首严格写成 `### BV号`，三档位标准化（值得看/可以看/不值当）；
- * 5. 自动拆分单条笔记到 reports/<BV>-<日期>.md，方便 Obsidian 导入与单独查看；
- * 6. 投递方式默认 dmMode=only（只发私信，不打扰别人，≤500字人话推荐）；
- * 7. 支持自动收藏到指定收藏夹；
- * 8. 运行日志超过 2MB 自动轮转 duty.log.1；
- * 9. 全流程步骤透明发射广播给前端动作视窗。
- */
-
 import { readVideoContent } from "./lib/video-content.mjs";
 import {
 	appendFileSync,
@@ -87,16 +71,12 @@ export class BiliDutyEngine {
 		for (const fn of this.actionListeners) {
 			try {
 				fn(payload);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		if (typeof this.host.broadcast === "function") {
 			try {
 				this.host.broadcast({ type: "bili:action", action: payload });
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		this.appendLog(`[${payload.step || "ACTION"}] ${payload.message || ""}`);
 	}
@@ -130,9 +110,7 @@ export class BiliDutyEngine {
 					"",
 				].join("\n");
 				writeFileSync(this.seenFile, header, "utf8");
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 	}
 
@@ -144,9 +122,7 @@ export class BiliDutyEngine {
 				const text = readFileSync(file, "utf8");
 				const matches = text.matchAll(/BV[0-9A-Za-z]{10}/g);
 				for (const m of matches) set.add(m[0]);
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 		return set;
 	}
@@ -164,9 +140,7 @@ export class BiliDutyEngine {
 		try {
 			appendFileSync(this.seenFile, line, "utf8");
 			this.rotateSeenIfBig();
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	rotateSeenIfBig(limit = 1024 * 1024) {
@@ -193,17 +167,14 @@ export class BiliDutyEngine {
 				}
 			}
 
-			// 保留最近 1500 条视频记录
 			const keptVideoRows = videoRows.slice(-1500);
 
-			// 备份旧文件
 			const bak = `${this.seenFile}.1`;
 			try {
 				rmSync(bak, { force: true });
 			} catch {}
 			renameSync(this.seenFile, bak);
 
-			// 重建规范的 seen.md 表头与保留的最新记录
 			const reconstructed = [
 				"# 刷B站 · 判重表（宿主预建，那一轮只往后面追加）",
 				"",
@@ -220,9 +191,7 @@ export class BiliDutyEngine {
 				"",
 			].join("\n");
 			writeFileSync(this.seenFile, reconstructed, "utf8");
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	markCommentRecord(bvid, rpid, root = 0, snippet = "") {
@@ -234,9 +203,7 @@ export class BiliDutyEngine {
 		const line = `| ${bvid} | ${rpid} | ${root || 0} | ${time} | ${cleanSnippet} |\n`;
 		try {
 			appendFileSync(this.seenFile, line, "utf8");
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	appendLog(msg) {
@@ -245,9 +212,7 @@ export class BiliDutyEngine {
 		try {
 			appendFileSync(this.logFile, line, "utf8");
 			this.rotateLogIfBig();
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	rotateLogIfBig(limit = 2 * 1024 * 1024) {
@@ -256,14 +221,10 @@ export class BiliDutyEngine {
 			const bak = `${this.logFile}.1`;
 			try {
 				rmSync(bak, { force: true });
-			} catch {
-				// ignore
-			}
+			} catch {}
 			renameSync(this.logFile, bak);
 			appendFileSync(this.logFile, `${new Date().toISOString()}  日志超过 2MB，已轮转到 duty.log.1\n`, "utf8");
-		} catch {
-			// ignore
-		}
+		} catch {}
 	}
 
 	getRecentLog(maxLines = 150) {
@@ -354,7 +315,6 @@ export class BiliDutyEngine {
 		}
 	}
 
-	/** 拆分单条笔记到 reports/<BV>-<日期>.md，并镜像至自定义工作目录 */
 	syncSingleNotes(date = todayStr(), customWs = "") {
 		const reportFile = this.getReportPath(date);
 		if (!existsSync(reportFile)) return 0;
@@ -363,7 +323,6 @@ export class BiliDutyEngine {
 			const blocks = text.split(/\n(?=###\s*BV)/).filter((b) => /^###\s*BV/.test(b.trim()));
 			if (!blocks.length) return 0;
 
-			// 自定义工作区镜像目录（如 Obsidian 库下的 bili-notes/）
 			let wsNotesDir = "";
 			if (customWs && typeof customWs === "string" && existsSync(customWs)) {
 				wsNotesDir = join(customWs, "bili-notes");
@@ -391,9 +350,7 @@ export class BiliDutyEngine {
 				if (wsNotesDir) {
 					try {
 						writeFileSync(join(wsNotesDir, `${bvid}-${date}.md`), noteContent, "utf8");
-					} catch {
-						// ignore
-					}
+					} catch {}
 				}
 				count++;
 			}
@@ -407,12 +364,7 @@ export class BiliDutyEngine {
 		this.abortController.abort();
 	}
 
-	/**
-	 * 真正的 AI 研读大模型调用
-	 * 支持指定模型 (modelOverride) 与思考强度 (reasoningEffort)
-	 */
 	async _aiAnalyzeVideo(item, subText, persona = "", modelOverride = "", reasoningEffort = "medium") {
-		// 1. 如果宿主支持 host.llm.complete，优先调用真实大模型！
 		if (this.host.llm && typeof this.host.llm.complete === "function") {
 			try {
 				const content = String(subText || "").replace(/\[\d\d:\d\d\]/g, "");
@@ -481,7 +433,6 @@ export class BiliDutyEngine {
 			}
 		}
 
-		// 2. 智能抽取降级 (针对字幕内容的真实段落提取，绝不写死套话)
 		const clean = String(subText || "")
 			.replace(/\[\d\d:\d\d\]/g, "")
 			.replace(/\s+/g, " ")
@@ -516,9 +467,6 @@ export class BiliDutyEngine {
 		};
 	}
 
-	/**
-	 * 执行一轮巡检：全程动作实时发射广播给前端
-	 */
 	async runCuration({ force = false, trigger = "manual" } = {}) {
 		let settings = this.host.getSettings?.() || {};
 		const cfgFile = join(this.storageDir, "config.json");
@@ -553,7 +501,6 @@ export class BiliDutyEngine {
 		const st = this.getState();
 		this.saveState({ ...st, count: (st.count || 0) + 1, running: true, lastRun: new Date().toISOString() });
 
-		// 如果是手动强行跑且今日额度已满，给一个独立的批次额度（避免因已满而秒停）
 		const batchQuota = force && quota - already <= 0 ? Math.max(1, Math.min(quota, 5)) : Math.max(1, quota - already);
 
 		this.emitAction({
@@ -580,9 +527,6 @@ export class BiliDutyEngine {
 		};
 	}
 
-	/**
-	 * 真正的实时巡检流水线
-	 */
 	async _executeLiveLoop(settings, remainingQuota, today) {
 		const rawKeywords = String(settings.keywords || "DeepSeek,大模型,AI智能体,开源项目");
 		const kws = rawKeywords
@@ -603,7 +547,6 @@ export class BiliDutyEngine {
 
 		const candidates = [];
 
-		// 1. 检索视频
 		for (const kw of kws) {
 			if (candidates.length >= 25) break;
 			this.emitAction({
@@ -631,7 +574,6 @@ export class BiliDutyEngine {
 			}
 		}
 
-		// 补充热门
 		if (candidates.length < 10) {
 			this.emitAction({
 				step: "popular",
@@ -644,9 +586,7 @@ export class BiliDutyEngine {
 						candidates.push({ ...item, sourceKw: "全站热门" });
 					}
 				}
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 
 		this.emitAction({
@@ -657,7 +597,6 @@ export class BiliDutyEngine {
 		const pickedThisRound = [];
 		let skippedNoSubtitle = 0;
 
-		// 2. 逐一提取原文字幕并由 AI 研读
 		for (const item of candidates) {
 			this.abortController.signal.throwIfAborted();
 			if (pickedThisRound.length >= remainingQuota) {
@@ -668,7 +607,6 @@ export class BiliDutyEngine {
 				break;
 			}
 
-			// 黑名单过滤
 			const fullTitle = `${item.title} ${item.description || ""}`;
 			if (excludeWords.some((bad) => fullTitle.includes(bad))) {
 				this.emitAction({
@@ -714,7 +652,6 @@ export class BiliDutyEngine {
 					message: `  └─ 🤖 调用模型 [${modelName || "默认模型"}] 分析 ${rawSubtitleText.length} 字内容证据（来源：${subInfo.source}）。`,
 				});
 
-				// 真正的大模型研读
 				const aiAnalysis = await this._aiAnalyzeVideo(
 					item,
 					rawSubtitleText,
@@ -723,7 +660,6 @@ export class BiliDutyEngine {
 					effort,
 				);
 
-				// 如果 AI 判定不值当，跳过
 				if (aiAnalysis.tier === "不值当") {
 					this.emitAction({
 						step: "skip_unworthy",
@@ -758,7 +694,6 @@ export class BiliDutyEngine {
 					message: `🌟 【${aiAnalysis.tier}】已挑中 [${item.bvid}] 《${item.title.slice(0, 20)}...》!\n     💡 ${aiAnalysis.whyWorth}`,
 				});
 
-				// 🧭 核心漫游机制：顺藤摸瓜！根据优质视频的相关推荐 (Related Videos) 继续扩展探索
 				if (aiAnalysis.tier === "值得看" || aiAnalysis.tier === "可以看") {
 					try {
 						const related = await this.api.getRelatedVideos(item.bvid);
@@ -776,9 +711,7 @@ export class BiliDutyEngine {
 								message: `  └─ 🔀 【顺藤摸瓜漫游】根据当前视频，AI 探查到 ${related.length} 条算法推荐，顺流引入 ${newRelatedCount} 条深度关联候选！`,
 							});
 						}
-					} catch {
-						// ignore related error
-					}
+					} catch {}
 				}
 			} catch (err) {
 				this.emitAction({
@@ -790,7 +723,6 @@ export class BiliDutyEngine {
 		}
 
 		this.abortController.signal.throwIfAborted();
-		// 3. 写入 Markdown 日报（遵守 ### BV号 标准规范）
 		const reportPath = this.getReportPath(today);
 		let existing = "";
 		if (existsSync(reportPath)) {
@@ -822,12 +754,10 @@ export class BiliDutyEngine {
 		chunk += `\n*因无字幕跳过 ${skippedNoSubtitle} 条。*\n\n`;
 		writeFileSync(reportPath, existing + chunk, "utf8");
 
-		// 日报写盘成功后，再将本轮挑中视频记入 seen.md 判重表（避免写盘失败导致视频被永久排除）
 		for (const p of pickedThisRound) {
 			this.markSeenVideo(p.bvid, p.title, p.author, `收(${p.tier})`);
 		}
 
-		// 拆分单条笔记到 reports/<BV>-<日期>.md，并镜像至指定的 workspace/bili-notes
 		const syncedCount = this.syncSingleNotes(today, settings.workspace);
 		if (settings.workspace && existsSync(settings.workspace) && syncedCount > 0) {
 			this.emitAction({
@@ -836,7 +766,6 @@ export class BiliDutyEngine {
 			});
 		}
 
-		// 4. 归档到月度 digest/<月份>.md
 		const digestFile = join(this.digestDir, `${monthStr()}.md`);
 		let digestChunk = "";
 		for (const p of pickedThisRound) {
@@ -845,12 +774,9 @@ export class BiliDutyEngine {
 		if (digestChunk) {
 			try {
 				appendFileSync(digestFile, digestChunk, "utf8");
-			} catch {
-				// ignore
-			}
+			} catch {}
 		}
 
-		// 5. 投递处理（私信 vs 评论）
 		const dmMode = settings.dmMode || "only";
 		let targetUid = Number(settings.dmUid) || 0;
 		if (!targetUid && settings.mentionName) {
@@ -858,7 +784,6 @@ export class BiliDutyEngine {
 		}
 		this.abortController.signal.throwIfAborted();
 
-		// 私信投递
 		if ((dmMode === "only" || dmMode === "both") && targetUid > 0 && pickedThisRound.length > 0) {
 			try {
 				const dmItems = pickedThisRound.slice(0, 4).map((p) => `· ${p.title}\n  ${p.url}\n  ${p.whyWorth}`);
@@ -877,7 +802,6 @@ export class BiliDutyEngine {
 			}
 		}
 
-		// 公开评论（仅当 dmMode !== 'only' 且开启了 autoComment）
 		if (dmMode !== "only" && settings.autoComment && pickedThisRound.length > 0) {
 			const maxComments = Math.max(1, Math.min(Number(settings.commentPerRound) || 1, pickedThisRound.length));
 			const toComment = pickedThisRound.slice(0, maxComments);
@@ -887,7 +811,6 @@ export class BiliDutyEngine {
 					if (!p.comment) continue;
 					const mentionText = settings.mentionName ? `@${settings.mentionName.replace(/^@/, "")} ` : "";
 					let commentText = p.comment || p.whyWorth || "";
-					// 过滤掉内部机械汇报公文套话，转换为真诚自然的人类交流短评
 					commentText = commentText
 						.replace(/^视频重点阐述了[：:]\s*/, "")
 						.replace(/[，,]\s*具有针对性的参考价值[。.]?$/, "")
@@ -916,7 +839,6 @@ export class BiliDutyEngine {
 			}
 		}
 
-		// 6. 自动收藏处理（如果设置了 favFolderId）
 		const favFid = Number(settings.favFolderId) || 0;
 		if (favFid > 0 && pickedThisRound.length > 0) {
 			let favCount = 0;
@@ -924,9 +846,7 @@ export class BiliDutyEngine {
 				try {
 					const r = await this.favOps.addVideo(p.bvid, favFid);
 					if (r && r.ok) favCount++;
-				} catch {
-					// ignore
-				}
+				} catch {}
 			}
 			this.emitAction({
 				step: "fav_done",

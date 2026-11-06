@@ -1,12 +1,3 @@
-/**
- * plugins/discord/index.mjs
- * Discord Bot integration for pi-web-ui.
- * Zero external dependencies (built-in fetch + node:crypto + native WebSocket).
- * Inspired by dsh-im: outbound Gateway WebSocket duplex chat (zero public IP),
- * structure-aware Markdown chunks, isolated multi-turn sessions,
- * access control whitelist, and slash commands.
- */
-
 import { createHash } from "node:crypto";
 import { chunkMarkdownText } from "./markdown-chunks.mjs";
 import { installChannelBehavior, sendMedia } from "./channel-behavior.mjs";
@@ -14,7 +5,6 @@ import { installChannelBehavior, sendMedia } from "./channel-behavior.mjs";
 export const SECRET_BOT_TOKEN = "discord.botToken";
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
-/** Strips internal system markers from assistant response text before delivery. */
 export function stripInternalMarkers(text) {
 	return String(text ?? "")
 		.replace(/\[\[[A-Za-z][A-Za-z0-9_-]*:[^\]]*\]\]/g, "")
@@ -23,7 +13,6 @@ export function stripInternalMarkers(text) {
 		.trim();
 }
 
-/** Generates a stable, privacy-preserving accountId from Discord user ID. */
 export function peerAccountId(userId, prefix = "dc") {
 	const raw = String(userId ?? "").trim();
 	if (!raw) return `${prefix}_default`;
@@ -31,7 +20,6 @@ export function peerAccountId(userId, prefix = "dc") {
 	return `${prefix}_${hash}`;
 }
 
-/** Extract text content and strip bot mention tags (<@botId> or <@!botId>) from Discord message. */
 export function extractDiscordText(message, botId = "") {
 	let text = String(message?.content || "").trim();
 	if (!text) return "";
@@ -42,9 +30,6 @@ export function extractDiscordText(message, botId = "") {
 	return text;
 }
 
-/**
- * Discord REST API request helper.
- */
 export async function discordApi(token, method, path, payload = null, { timeoutMs = 15000 } = {}) {
 	if (!token) throw new Error("Discord Bot Token is required.");
 	const url = `${DISCORD_API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
@@ -72,9 +57,6 @@ export async function discordApi(token, method, path, payload = null, { timeoutM
 	return await res.json();
 }
 
-/**
- * DiscordBotBridge manages outbound Gateway WebSocket duplex exchange with Discord.
- */
 export class DiscordBotBridge {
 	/**
 	 * @param {object} options
@@ -96,8 +78,6 @@ export class DiscordBotBridge {
 
 		this.pendingRuns = new Map();
 		this.earlyRuns = new Map();
-		/** host.chat 回执的稳定 runId → pendingRuns 的 key（对话被过户 / 撞 id 改名后
-		 *  conversationId 会变，只有 runId 不变；Discord 靠它认领自己那一轮的回包）。 */
 		this.runIdIndex = new Map();
 		this.userConversations = new Map();
 		this.userWorkspaces = new Map();
@@ -105,7 +85,7 @@ export class DiscordBotBridge {
 		this.status = {
 			enabled: false,
 			connected: false,
-			state: "idle", // 'idle' | 'connecting' | 'connected' | 'error'
+			state: "idle",
 			botUsername: "",
 			messagesReceived: 0,
 			messagesReplied: 0,
@@ -183,7 +163,6 @@ export class DiscordBotBridge {
 		const cfg = this.getConfig();
 		if (!cfg.botToken) return;
 
-		// 1. Get Gateway URL
 		let gatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
 		try {
 			const gw = await discordApi(cfg.botToken, "GET", "/gateway/bot", null, { timeoutMs: 10000 });
@@ -243,7 +222,6 @@ export class DiscordBotBridge {
 		const { op, d, s, t } = packet;
 		if (typeof s === "number") this.lastSequence = s;
 
-		// Opcode 10: Hello -> start heartbeat and send Identify
 		if (op === 10) {
 			const interval = d?.heartbeat_interval || 41250;
 			if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
@@ -253,7 +231,6 @@ export class DiscordBotBridge {
 				}
 			}, interval);
 
-			// Identify: GUILD_MESSAGES(512) | DIRECT_MESSAGES(4096) | MESSAGE_CONTENT(32768) = 37376
 			const cfg = this.getConfig();
 			const identifyPayload = {
 				op: 2,
@@ -273,7 +250,6 @@ export class DiscordBotBridge {
 			return;
 		}
 
-		// Opcode 1: Heartbeat requested by server -> reply immediately
 		if (op === 1) {
 			if (this.ws && this.ws.readyState === 1) {
 				this.ws.send(JSON.stringify({ op: 1, d: this.lastSequence }));
@@ -281,7 +257,6 @@ export class DiscordBotBridge {
 			return;
 		}
 
-		// Opcode 0: Dispatch
 		if (op === 0) {
 			if (t === "READY") {
 				this.botUser = d?.user || {};
@@ -299,7 +274,6 @@ export class DiscordBotBridge {
 	}
 }
 
-/** Strip secrets from config before plaintext storage. */
 export function stripSecretsFromConfig(cfg) {
 	const c = { ...(cfg || {}) };
 	delete c.botToken;
@@ -307,7 +281,6 @@ export function stripSecretsFromConfig(cfg) {
 	return c;
 }
 
-/** Merge saved secrets into incoming config. */
 export function mergeSavedSecrets(incoming, prev = {}, savedSecrets = {}) {
 	const out = { ...(prev || {}), ...(incoming || {}) };
 	const existingBotToken = savedSecrets[SECRET_BOT_TOKEN] || prev.botToken || "";
@@ -353,7 +326,6 @@ export default async function activate(host) {
 		});
 	}
 
-	// Register AI tool "discord" adhering strictly to tool-prompt-hygiene
 	host.registerTool?.({
 		name: "discord",
 		description: "Send text and local media files to Discord channels; inspect bot status.",
@@ -405,7 +377,6 @@ export default async function activate(host) {
 		},
 	});
 
-	// Handle UI client messages
 	host.onClientMessage?.(async (msg, reply) => {
 		try {
 			switch (msg.type) {

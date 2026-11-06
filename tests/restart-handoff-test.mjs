@@ -1,11 +1,3 @@
-/**
- * Auto-restart handoff test (foreground path):
- *
- * 1. start instance A on PORT
- * 2. start instance B with PI_WEB_RESTART_CHILD=1 on the same PORT — it must
- *    WAIT (not crash with EADDRINUSE) until A releases the port
- * 3. kill A → B takes over and serves /api/health
- */
 import { portUp, freePort } from "./lib/port-utils.mjs";
 import { ensureBuild } from "./lib/ensure-build.mjs";
 import { fileURLToPath } from "node:url";
@@ -14,7 +6,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-// fileURLToPath: URL.pathname 在 Windows 下是 /E:/... 形式，直接当 cwd 会失败
 const REPO_ROOT = fileURLToPath(new globalThis.URL("../", import.meta.url));
 
 const PORT = Number(process.argv[2] || 8898);
@@ -47,7 +38,6 @@ const env = {
 	PI_WEB_CWD: PROJ,
 };
 
-// Instance A: the old process.
 const a = spawn("node", ["dist/server/index.js"], {
 	cwd: PROJ,
 	env,
@@ -58,7 +48,6 @@ check("instance A up", await portUp(PORT));
 const health = await fetch(`http://localhost:${PORT}/api/health`).then((r) => r.json().catch(() => null));
 check("A answers health", health?.ok === true);
 
-// Instance B: the auto-restart replacement. Must NOT crash — it waits.
 const b = spawn("node", ["dist/server/index.js"], {
 	cwd: PROJ,
 	env: { ...env, PI_WEB_RESTART_CHILD: "1" },
@@ -67,7 +56,6 @@ const b = spawn("node", ["dist/server/index.js"], {
 await sleep(2500);
 check("B did not crash while A holds the port", b.exitCode === null, `exitCode=${b.exitCode ?? "still running"}`);
 
-// Kill A → B should take over the port.
 a.kill("SIGKILL");
 const t0 = Date.now();
 let bUp = false;
@@ -79,15 +67,12 @@ while (Date.now() - t0 < 15000) {
 			bUp = true;
 			break;
 		}
-	} catch {
-		/* not up yet */
-	}
+	} catch {}
 	await sleep(300);
 }
 check("B took over the port after A exited", bUp);
 check("B still alive", b.exitCode === null, `exitCode=${b.exitCode}`);
 
-// Cleanup.
 try {
 	b.kill("SIGKILL");
 } catch {}

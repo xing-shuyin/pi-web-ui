@@ -134,13 +134,11 @@ describe("RunInTerminalButton 组件", () => {
 			command: "git status",
 		});
 
-		// 检查反馈状态（1200ms 内处于反馈态）
 		act(() => {
 			vi.advanceTimersByTime(600);
 		});
 		expect(btn.getAttribute("title")).toBeTruthy();
 
-		// 1200ms 后恢复
 		act(() => {
 			vi.advanceTimersByTime(700);
 		});

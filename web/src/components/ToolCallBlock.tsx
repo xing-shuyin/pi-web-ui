@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { appUrl } from "../base-url";
+import { openImageLightbox } from "../image-lightbox-bridge";
+import { appResourceCrossOrigin, appResourceUrl } from "../base-url";
 import {
 	FiArchive,
 	FiArrowRight,
@@ -41,7 +41,6 @@ import {
 import type { ToolStatus, UiImageBlock, UiMessage, UiToolCallBlock } from "../types";
 import { isZhLocale, useLocale, useT } from "../i18n";
 import { openContextMenu } from "../context-menu-state";
-// 工具定义说明弹窗（模块级 store：卡片只负责发打开请求，弹窗挂在 App 上）。
 import { openToolInfo } from "../tool-info-state";
 import { getToolInspectorState, isFlowMode, openToolInspector, updateToolInspectorLive } from "../tool-inspector-state";
 import { CollapsibleHead } from "./CollapsibleHead";
@@ -67,21 +66,14 @@ import { FileChangeCard } from "./FileChangeCard";
 import { parseFileMutationArgs } from "../file-diff";
 
 export interface ToolView {
-	/** Tool result message if the tool already finished. */
 	result?: UiMessage;
-	/** Live output accumulated from tool_delta while running. */
 	liveOutput?: string;
-	/** True when the session is streaming (tool may still be running). */
 	streaming: boolean;
-	/** Set the moment tool_execution_end fires (tool_status) — the command
-	 *  exited but the model hasn't responded yet. */
 	status?: ToolStatus;
 }
 
-/** Kill just the running bash command(s) — the agent run itself continues. */
 type KillBashHandler = () => void;
 
-/** 模块级静态工具图标节点表：整个生命周期仅创建一次，O(1) 查表复用引用，零 GC 与重排开销。 */
 const TOOL_ICONS: Record<string, ReactNode> = {
 	bash: <FiTerminal />,
 	delegate_task: <FiLayers />,
@@ -119,7 +111,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
 
 const DEFAULT_TOOL_ICON: ReactNode = <FiTool />;
 
-/** 模块级静态工具色系分类表：预拼好 className 字符串，渲染期 O(1) 查表零分配。 */
 const TOOL_ICON_CLASSES: Record<string, string> = {
 	bash: "toolcall-icon tc-tone-exec",
 	sftp: "toolcall-icon tc-tone-exec",
@@ -168,28 +159,15 @@ function toolIconClass(name: string): string {
 export interface ToolCallBlockProps {
 	block: UiToolCallBlock;
 	view: ToolView;
-	/** Kill the running bash command (bash cards only, while running). */
 	onKillBash?: KillBashHandler;
-	/** 设置面板「完整显示工具」开关：true（开）→ 工具始终完整展开；
-	 *  false（关）→ 默认折叠，点击展开。 */
 	wrap?: boolean;
-	/** 设置面板「直接显示工具结果图片」开关：false → 不渲染缩略图
-	 *  （快照仍带图；纯展示门，服务端不做开关分支）。 */
 	showImages?: boolean;
-	/** 会话内搜索打开时强制展开（折叠内容不在 DOM，搜索索引搜到的词会
-	 *  “展开后看不到”——见 ThinkingBlock.forceOpen）。 */
 	forceOpen?: boolean;
-	/** `contextmenu.toolcall` 槽位的最终条目（宿主用 buildUiSlots 算好）：右键**卡头**
-	 *  （工具名那一行）时弹宿主唯一的右键菜单。宿主内置的 `host:tool-info` 由本组件
-	 *  自己分派（打开定义弹窗），其余条目交回 onUiAction（插件动作）。 */
 	uiContextToolCall?: UiSlotEntry[];
-	/** 工具卡底部操作条目（tool.card.footer 槽位）。 */
 	uiToolCardFooter?: UiSlotEntry[];
-	/** 插件条目的动作分发（view 切视图 / action 交给插件）。 */
 	onUiAction?: (item: UiSlotEntry, value?: string) => void;
 }
 
-/** 极简行文（Flow）模式下尝试直接打开 present_files 的首选预览项，返回是否成功受理。 */
 function tryOpenPresentPreview(argumentsText: string | undefined, details: unknown): boolean {
 	const args = parsePresentArgs(argumentsText);
 	if (!args) return false;
@@ -199,11 +177,6 @@ function tryOpenPresentPreview(argumentsText: string | undefined, details: unkno
 	return openFilePreview({ path: target.target, name: target.name });
 }
 
-/**
- * 实时同步/流式响应检查器弹窗 Hook：
- * 若当前工具调用正在检查器弹窗（ToolInspectorModal）中打开，随增量输出与完成状态自动平滑更新，
- * 避免弹窗定格在点击那一刻的旧快照。
- */
 function useToolInspectorLiveSync({
 	blockId,
 	view,
@@ -282,7 +255,6 @@ function useToolInspectorLiveSync({
 	]);
 }
 
-/** 极简行文模式（Flow 模式）纯净轻量微胶囊外壳：零多余 DOM，点击按需提取数据并弹出居中检查器 */
 const ToolCallCapsule = memo(function ToolCallCapsule({
 	block,
 	view,
@@ -331,7 +303,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	const headline = resolveToolHeadline({ name: block.name, argumentsText: block.argumentsText, hints });
 	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
-	// 弹窗实时流式响应：若当前微胶囊正在检查器弹窗中打开，实时同步增量输出与状态平滑切换
 	useToolInspectorLiveSync({
 		blockId: block.id,
 		view,
@@ -346,7 +317,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 		t,
 	});
 
-	// 轻量检查输出类型（图片/Markdown），无需在每帧拼接和正则数万字的长文本
 	const hasImages = useMemo(() => {
 		const content = view.result?.content;
 		if (!Array.isArray(content)) return false;
@@ -408,7 +378,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	};
 
 	const handleOpenInspector = () => {
-		// 点击时按需提取并组装输出与参数，未点击时零多余开销
 		const currentRaw = view.result
 			? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
 			: (view.liveOutput ?? "");
@@ -457,7 +426,6 @@ const ToolCallCapsule = memo(function ToolCallCapsule({
 	};
 
 	const handleClick = (e?: React.MouseEvent | React.KeyboardEvent) => {
-		// 极简行文模式下，present_files 点击优先直接显示文件预览；按住 Alt 时仍可强制打开检查器
 		if (isPresent && !e?.altKey) {
 			if (tryOpenPresentPreview(block.argumentsText, view.result?.details)) {
 				return;
@@ -529,14 +497,9 @@ const ToolCallCard = memo(function ToolCallCard({
 }: ToolCallBlockProps & { rootRef: React.RefObject<HTMLDivElement | null> }) {
 	const t = useT();
 	const isZh = isZhLocale(useLocale());
-	// null = 未手动点过 → 跟随开关：wrap=true（开）→ 全部展开；wrap=false（关）→ 全部折叠。
-	// 与 ThinkingBlock 一致——开关切换时自动折叠/展开所有未手动点过的工具。
-	// 例外：present_files（展示文件）默认展开——它的正文就是内容本身（图片/视频
-	// 在折叠态下等于没展示），折叠开关的意图不是「把卡片藏起来」。
 	const [open, setOpen] = useState<boolean | null>(null);
 	const isPresent = block.name === PRESENT_FILES_TOOL_NAME;
 	const expanded = open ?? (isPresent ? true : wrap);
-	// 搜索期间 forceOpen 只是“视口展开”，用户 open 状态不受影响
 	const shown = expanded || forceOpen;
 	const { copied, copy } = useCopyFeedback({ duration: 1200 });
 
@@ -544,16 +507,12 @@ const ToolCallCard = memo(function ToolCallCard({
 	const isBash = block.name === "bash";
 	const isBashRunning = isBash && (running || !view.result);
 	const done = view.result !== undefined;
-	/** Command finished (tool_status fired) but the authoritative toolResult
-	 *  message hasn't landed in a snapshot yet — the model is still chewing on
-	 *  the result. */
 	const waitingModel = !view.result && !!view.status;
 	const isError = view.result?.isError ?? view.status?.isError ?? false;
 
 	const outputPreRef = useRef<HTMLPreElement>(null);
 	const outputStickRef = useRef(true);
 
-	// 惰性求值：仅在展开态（shown）时才拼接与正则大输出文本，折叠态零开销
 	const rawOutput = useMemo(() => {
 		if (!shown) return "";
 		return view.result
@@ -572,9 +531,6 @@ const ToolCallCard = memo(function ToolCallCard({
 		}
 	}, [shown, output, running, waitingModel]);
 
-	/** 工具结果里的图片（web_shot 截图、read 读到的图……）：开关开着就在卡片里
-	 *  直接出缩略图（折叠态也可见 —— 「直接显示出来」），点击进灯箱看大图。
-	 *  支持 data: 内联图与 CAS 附件短 URL（/api/attachment/）。 */
 	const resultImages = useMemo(() => {
 		if (!showImages) return [];
 		const content = view.result?.content ?? [];
@@ -586,16 +542,6 @@ const ToolCallCard = memo(function ToolCallCard({
 					((b as UiImageBlock).dataUrl as string).startsWith("/")),
 		);
 	}, [showImages, view.result]);
-
-	const [zoomed, setZoomed] = useState<string | null>(null);
-	useEffect(() => {
-		if (!zoomed) return;
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setZoomed(null);
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [zoomed]);
 
 	const isDelegate = block.name === "delegate_task";
 	const delegateArgs = useMemo(() => {
@@ -623,9 +569,7 @@ const ToolCallCard = memo(function ToolCallCard({
 		return parseFileMutationArgs(block.name, block.argumentsText, view.result?.details, output);
 	}, [isFileChange, block.name, block.argumentsText, view.result?.details, output]);
 
-	// 展示文件卡片：参数（路径清单）在流式期间可能是半截 JSON，解析失败就回落到原文展示
 	const hasImages = resultImages.length > 0;
-	// 轻量探测 Markdown 特征，避免全文本正则扫描
 	const hasMarkdown = useMemo(() => {
 		const content = view.result?.content;
 		if (!Array.isArray(content)) return false;
@@ -643,7 +587,6 @@ const ToolCallCard = memo(function ToolCallCard({
 		[isPresent, shown, block.argumentsText],
 	);
 
-	// 跳到子代理对话：首选结果 details 里的 convId（服务端拼装时写入）
 	const detailsConv =
 		isDelegate && view.result && typeof view.result.details === "object" && view.result.details !== null
 			? ((view.result.details as Record<string, unknown>).convId as string | undefined)
@@ -659,15 +602,9 @@ const ToolCallCard = memo(function ToolCallCard({
 		return undefined;
 	}, [isDelegate, detailsConv, view.result?.content]);
 
-	// 记录工具执行耗时：
-	// 1. 优先取 view.result?.durationMs（若服务端在 toolResult 消息上附带了耗时）
-	// 2. 其次取 view.status?.durationMs（流式阶段 tool_status 事件带回的实时耗时）
-	// 3. 用 ref 缓存曾经捕获到的 durationMs，确保 status 被 prune 或状态切到 done 后耗时不丢失
 	const durationMsRef = useRef<number | undefined>(undefined);
 	const statusDuration = view.status?.durationMs;
 	const resultDuration = (view.result as unknown as { durationMs?: number } | undefined)?.durationMs;
-	// 审查 #7：ref 缓存改在 effect 里写入 —— 渲染期写 ref 在并发渲染下时序不可靠，
-	// 提交后再写保证与真实提交内容一致。
 	useEffect(() => {
 		if (statusDuration !== undefined) durationMsRef.current = statusDuration;
 		if (typeof resultDuration === "number") durationMsRef.current = resultDuration;
@@ -687,12 +624,8 @@ const ToolCallCard = memo(function ToolCallCard({
 	const duration = (waitingModel || done) && durationMs !== undefined ? formatDuration(durationMs) : "";
 	if ((waitingModel || done) && duration) statusLabel = `${statusLabel} · ${duration}`;
 
-	// tool_status doesn't carry the exit code for successful bash runs (only
-	// failures embed "exited with code N" in the error text); show it when known.
 	const exitHint = waitingModel && view.status?.exitCode !== undefined ? `exit ${view.status.exitCode}` : "";
 
-	// 卡头右侧提示：统一通过元数据模型 resolveToolHeadline 解析，
-	// 任何工具均安全按需提取关键摘要，折叠态支持 bash 终端预览。
 	const hints = toolArgHints(block.argumentsText);
 	const bashCommand = block.name === "bash" ? hints.command : undefined;
 	const headline = resolveToolHeadline({
@@ -703,7 +636,6 @@ const ToolCallCard = memo(function ToolCallCard({
 	});
 	const inspectorTitle = headline ? `${block.name}(${headline.text})` : `${block.name}()`;
 
-	// 弹窗实时流式响应：若当前卡片正在检查器弹窗中打开，实时同步增量输出与状态平滑切换
 	useToolInspectorLiveSync({
 		blockId: block.id,
 		view,
@@ -724,22 +656,8 @@ const ToolCallCard = memo(function ToolCallCard({
 		}
 	};
 
-	/** 该槽位当前有没有可显示的东西：一条都没有就别抢浏览器菜单（同 Message.tsx 的口径：
-	 *  hidden 跳过、divider 不算内容）。 */
 	const ctxMenuAvailable = (uiContextToolCall ?? []).some((e) => e && e.hidden !== true && e.kind !== "divider");
 
-	/**
-	 * 右键**卡头**（工具名那一行）→ 宿主的通用右键菜单（contextmenu.toolcall 槽位）。
-	 *
-	 * 与 Message.tsx 的右键消息同款取舍：
-	 *  1. 点在 `pre` / `code` / `a` / `input` / `textarea` / contenteditable 上 —— 让浏览器菜单
-	 *     干活（复制代码、打开链接、系统粘贴），抢了是净损失（卡头里没有这些，但卡头是
-	 *     整张卡的一部分，展开后正文就在下方，保险起见仍然判一下）。
-	 *  2. 页面里已有选中文本 —— 用户正在选字准备复制，此时右键的意图是复制/搜索。
-	 *  3. 该槽位没有可用条目 —— 没有菜单可给，就别 preventDefault。
-	 * 其余情况 preventDefault + stopPropagation：工具卡自己的菜单优先，且不让事件冒到
-	 * 整条消息的右键处理上（否则会又弹一个消息菜单把它顶掉）。
-	 */
 	const onHeadContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
 		const el = e.target;
 		if (el instanceof Element && el.closest("pre, code, a, input, textarea, [contenteditable='true']")) return;
@@ -770,10 +688,8 @@ const ToolCallCard = memo(function ToolCallCard({
 			x: e.clientX,
 			y: e.clientY,
 			slot: "contextmenu.toolcall",
-			// target.id = 本次工具调用的 toolCallId（菜单条目的分派要靠它认工具）。
 			target: { id: block.id, kind: "toolcall", label: block.name },
 			entries,
-			// 宿主内置条目的分派器：工具名只有本组件知道，App 只知道插件动作。
 			onHostAction: (entry) => {
 				if (entry.id === "host:kill-bash") {
 					onKillBash?.();
@@ -792,7 +708,6 @@ const ToolCallCard = memo(function ToolCallCard({
 	const isFlow = false;
 
 	const handleOpenInspector = () => {
-		// 点击时按需提取并组装输出与参数，未点击时零多余开销
 		const currentRaw = view.result
 			? view.result.content.map((b) => (b.type === "text" ? b.text : "")).join("")
 			: (view.liveOutput ?? "");
@@ -963,8 +878,6 @@ const ToolCallCard = memo(function ToolCallCard({
 								<span>{t("delegateOpenSubagent")}</span>
 							</button>
 						)}
-						{/* 卡头右端**只有复制键**：消息级按钮一律落在消息底部的 .msg-actions 行
-				    （纯工具调用的消息没有正文，不渲染那一行）。 */}
 						<button
 							type="button"
 							className={`chead-copy toolcall-copy${copied ? " copied" : ""}`}
@@ -986,7 +899,7 @@ const ToolCallCard = memo(function ToolCallCard({
 				<div className="toolcall-images">
 					{resultImages.map((img, i) => {
 						const src = (img.dataUrl as string).startsWith("/")
-							? appUrl(img.dataUrl as string)
+							? appResourceUrl(img.dataUrl as string)
 							: (img.dataUrl as string);
 						return (
 							<button
@@ -997,34 +910,21 @@ const ToolCallCard = memo(function ToolCallCard({
 								aria-label={t("toolImageZoom")}
 								onClick={(e) => {
 									e.stopPropagation();
-									setZoomed(src);
+									openImageLightbox({ src, alt: `tool result image ${i + 1}` });
 								}}
 							>
-								<img src={src} loading="lazy" decoding="async" alt={`tool result image ${i + 1}`} />
+								<img
+									crossOrigin={appResourceCrossOrigin(src)}
+									src={src}
+									loading="lazy"
+									decoding="async"
+									alt={`tool result image ${i + 1}`}
+								/>
 							</button>
 						);
 					})}
 				</div>
 			)}
-			{zoomed &&
-				createPortal(
-					<div className="img-lightbox" role="dialog" aria-label={t("toolImageZoom")} onClick={() => setZoomed(null)}>
-						<button
-							type="button"
-							className="img-lightbox-close"
-							title={t("close")}
-							aria-label={t("close")}
-							onClick={(e) => {
-								e.stopPropagation();
-								setZoomed(null);
-							}}
-						>
-							<FiX />
-						</button>
-						<img src={zoomed} alt="tool result preview" />
-					</div>,
-					document.body,
-				)}
 			{!isFlow && shown && (
 				<div className="toolcall-body">
 					{isPresent && presentArgs ? (
@@ -1160,7 +1060,6 @@ export const ToolCallBlock = memo(function ToolCallBlock(props: ToolCallBlockPro
 	return <ToolCallCard {...props} rootRef={rootRef} />;
 });
 
-/** Pretty-print a bash tool call's command line as a terminal row. */
 export function TerminalCommand({ command }: { command: string }) {
 	return (
 		<div className="termline">
@@ -1170,7 +1069,6 @@ export function TerminalCommand({ command }: { command: string }) {
 	);
 }
 
-/** tool_search 结果展示：已被 BM25 检索并加载激活的工具名徽标列表 */
 export function ToolSearchDetails({ details }: { details?: unknown }) {
 	const t = useT();
 	const loaded = Array.isArray((details as { loaded?: unknown })?.loaded)
@@ -1191,7 +1089,6 @@ export function ToolSearchDetails({ details }: { details?: unknown }) {
 	);
 }
 
-/** 派单卡片正文：六段式结构化展示（只渲染非空段；脏参数解析出空对象时回落原文）。 */
 export function DelegateBrief({ args }: { args: Partial<Record<DelegateField | "agent" | "model", string>> }) {
 	const t = useT();
 	const sections: { field: DelegateField; label: string }[] = [
@@ -1226,7 +1123,6 @@ interface CodemodeCallItem {
 	cost?: number;
 }
 
-/** codemode 卡片正文：JavaScript 源码高亮 + 嵌套工具调用列表 + 选项标记 */
 export function CodemodeCard({
 	code,
 	options,
@@ -1243,7 +1139,6 @@ export function CodemodeCard({
 	const calls = Array.isArray(callDetails?.calls) ? callDetails.calls : [];
 	const fullOutputPath = typeof callDetails?.fullOutputPath === "string" ? callDetails.fullOutputPath : undefined;
 
-	// 识别 codemode 脚本输出中保存的图片：[Image saved to <path> (<mimeType>, <size>)]
 	const savedImages = useMemo(() => {
 		if (!output) return [];
 		const regex = /\[Image saved to (.*?) \((.*?)\)\]/g;
@@ -1334,7 +1229,6 @@ export function CodemodeCard({
 	);
 }
 
-/** "45ms" / "1.2s" / "1m 05s" — for tool execution duration. */
 export function formatDuration(ms?: number): string {
 	if (ms === undefined || ms < 0 || !Number.isFinite(ms)) return "";
 	if (ms < 1000) return `${Math.round(ms)}ms`;

@@ -129,12 +129,10 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 		const cookie = await register();
 		const bot = await pair(cookie, "Planner");
 
-		// 1. Create a room
 		const roomRes = await request("/api/rooms", { name: "Planning Room", botIds: [bot.botId] }, cookie);
 		expect(roomRes.status).toBe(201);
 		const roomId = roomRes.body.room.id;
 
-		// 2. String "false" must not be parsed as boolean true
 		const falseMsgRes = await request(
 			`/api/rooms/${roomId}/messages`,
 			{ text: "Not a plan", targetBotIds: [bot.botId], planOnly: "false" },
@@ -143,7 +141,6 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 		expect(falseMsgRes.status).toBe(200);
 		expect(falseMsgRes.body.tasks[0].planOnly).toBeUndefined();
 
-		// 3. Send message with strict planOnly: true
 		const planMsgRes = await request(
 			`/api/rooms/${roomId}/messages`,
 			{
@@ -170,11 +167,9 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 		);
 		expect(changedMode.status).toBe(409);
 
-		// 4. While in draft state, approve-plan fails (409)
 		const draftApprove = await request(`/api/rooms/${roomId}/tasks/${planTask.id}/approve-plan`, {}, cookie);
 		expect(draftApprove.status).toBe(409);
 
-		// 5. Bot / Agent cannot self-approve (must fail with 401/403/404)
 		const botSelfApprove = await request(`/api/rooms/${roomId}/tasks/${planTask.id}/approve-plan`, {}, "", {
 			Authorization: `Bearer ${bot.credential}`,
 			"X-Device-Id": bot.deviceId,
@@ -187,7 +182,6 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 		});
 		expect([401, 403, 404]).toContain(agentPrefixApprove.status);
 
-		// Report through the real Hub consumer and verify its committed result.
 		await hub.store.transact((draft) => {
 			draft.tasks.find((task) => task.id === planTask.id)!.status = "running";
 		});
@@ -209,7 +203,6 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 			draft.tasks.find((task) => task.id === planTask.id)!.status = "completed";
 		});
 
-		// 7. Human user approves the plan
 		const humanApprove = await request(`/api/device-user/rooms/${roomId}/tasks/${planTask.id}/approve-plan`, {}, "", {
 			Authorization: `Bearer ${bot.uiCredential}`,
 			"X-Device-Id": bot.deviceId,
@@ -219,22 +212,20 @@ describe("device center hub: Real planOnly HTTP & approve-plan Pipeline", () => 
 		expect(humanApprove.body.plan.state).toBe("approved");
 		expect(humanApprove.body.nextTaskId).toBeDefined();
 
-		// 8. Verify the atomically created nextTask in Hub storage
 		const snapshot = (hub as any).store.snapshot();
 		const approvedTask = snapshot.tasks.find((t: any) => t.id === planTask.id);
 		expect(approvedTask.plan.state).toBe("approved");
 
 		const nextTask = snapshot.tasks.find((t: any) => t.id === humanApprove.body.nextTaskId);
 		expect(nextTask).toBeDefined();
-		expect(nextTask.planOnly).toBe(false); // planOnly restriction lifted for actual execution
+		expect(nextTask.planOnly).toBe(false);
 		expect(nextTask.parentTaskId).toBe(planTask.id);
 		expect(nextTask.rootTaskId).toBe(planTask.rootTaskId);
 		expect(nextTask.dispatchDepth).toBe(planTask.dispatchDepth + 1);
 		expect(snapshot.tasks.find((task: any) => task.id === planTask.rootTaskId).dispatchCount).toBe(2);
-		expect(["queued", "failed"]).toContain(nextTask.status); // A fixture without a relay rejects delivery.
+		expect(["queued", "failed"]).toContain(nextTask.status);
 		expect(nextTask.conversationId).toBe(planTask.conversationId);
 
-		// 9. Repeated approval is rejected (409)
 		const duplicateApprove = await request(`/api/rooms/${roomId}/tasks/${planTask.id}/approve-plan`, {}, cookie);
 		expect(duplicateApprove.status).toBe(409);
 	});

@@ -1,11 +1,3 @@
-/**
- * 插件「组装项目」单测（server/plugin-project.ts，issue #146）。
- *
- * 覆盖三块：clone / 写文件 / git init 的正常路径，失败即停 + 日志保留，
- * 以及**路径越界防护**（`..`、绝对路径、符号链接/junction）。
- * 全程零网络：仓库都是临时目录里的本地 file:// 仓库；本机没有 git 则整块跳过
- * （纯函数那组不依赖 git，永远跑）。
- */
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -23,7 +15,6 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createProject, isInsideRoot, resolveInsideRoot } from "../../server/plugin-project.js";
 
-/** 本机有没有 git：没有就跳过需要真实 clone 的那组（CI 上 Windows/Linux 都带 git）。 */
 const hasGit = ((): boolean => {
 	try {
 		return spawnSync("git", ["--version"], { stdio: "ignore" }).status === 0;
@@ -33,7 +24,6 @@ const hasGit = ((): boolean => {
 })();
 
 let base: string;
-/** 授权目录（被测模块的 root）：base/ws。 */
 let ws: string;
 
 beforeEach(() => {
@@ -43,12 +33,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	// Windows 上 git 子进程刚退出时目录可能还锁着（EBUSY/EPERM）：带退避重试，
-	// 否则清理失败会盖掉真正的断言失败信息。
 	rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
-/** 跑一次真实 git（仅用于造 fixture 仓库）。 */
 function gitCli(args: string[], cwd: string) {
 	return spawnSync("git", args, {
 		cwd,
@@ -57,7 +44,6 @@ function gitCli(args: string[], cwd: string) {
 	});
 }
 
-/** commit 需要身份：用 `-c` 现传，不依赖（也不污染）用户全局 git 配置。 */
 const IDENTITY = [
 	"-c",
 	"user.email=pi-web-ui-test@example.com",
@@ -67,7 +53,6 @@ const IDENTITY = [
 	"commit.gpgsign=false",
 ];
 
-/** 造一个本地 git 仓库（一次提交），返回它的 file:// URL。 */
 function makeRepo(name: string, files: Record<string, string>): string {
 	const dir = join(base, "repos", name);
 	for (const [rel, content] of Object.entries(files)) {
@@ -81,15 +66,10 @@ function makeRepo(name: string, files: Record<string, string>): string {
 	return pathToFileURL(dir).href;
 }
 
-/**
- * 读 clone 出来的文件：git 在 Windows 上会按 core.autocrlf 把 LF 换成 CRLF，
- * 这是 git 的正常行为（本模块不覆盖用户的 git 配置），断言前统一归一。
- */
 function readText(p: string): string {
 	return readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 }
 
-/** 手动 commit（ref 那组造第二条分支用）。 */
 function commitAll(dir: string, message: string): void {
 	expect(gitCli([...IDENTITY, "add", "-A"], dir).status).toBe(0);
 	expect(gitCli([...IDENTITY, "commit", "--quiet", "-m", message], dir).status).toBe(0);
@@ -101,7 +81,6 @@ describe("路径判定（纯函数，不需要 git）", () => {
 		expect(isInsideRoot(ws, join(ws, "a", "b"))).toBe(true);
 		expect(isInsideRoot(ws, join(base, "outside"))).toBe(false);
 		expect(isInsideRoot(ws, join(ws, ".."))).toBe(false);
-		// 大小写只对 win32 无意义：那里 `E:\A` 与 `e:\a` 是同一个目录。
 		expect(isInsideRoot(ws, ws.toUpperCase())).toBe(process.platform === "win32");
 	});
 
@@ -113,7 +92,6 @@ describe("路径判定（纯函数，不需要 git）", () => {
 		expect(resolveInsideRoot(ws, join(base, "abs.txt"))).toBeNull();
 		expect(resolveInsideRoot(ws, "")).toBeNull();
 		if (process.platform === "win32") {
-			// 盘符绝对路径（POSIX 上它只是个含冒号的普通文件名，落在 root 里无害）。
 			expect(resolveInsideRoot(ws, "C:\\Windows\\evil.txt")).toBeNull();
 		}
 	});
@@ -136,7 +114,6 @@ describe.skipIf(!hasGit)("组装项目（本地 file:// 仓库，零网络）", 
 		const res = await createProject({ dir: ws, repos: [{ url }] });
 		expect(res.ok).toBe(true);
 		expect(existsSync(join(ws, "a.txt"))).toBe(true);
-		// 根目录本身不 mkdir、也不参与「目标已存在」判定（它当然存在）。
 		expect(res.log.some((l) => l.startsWith("mkdir"))).toBe(false);
 	});
 
@@ -152,12 +129,11 @@ describe.skipIf(!hasGit)("组装项目（本地 file:// 仓库，零网络）", 
 		expect(onFeature.ok).toBe(true);
 		expect(existsSync(join(ws, "feat", "feature-only.txt"))).toBe(true);
 
-		// 不传 ref 时 clone 跟随源仓库 HEAD（这里 HEAD 停在 feature 上），所以显式点名另一条分支。
 		const onDefault = await createProject({ dir: ws, repos: [{ url, subdir: "main", ref: defaultBranch }] });
 		expect(onDefault.ok).toBe(true);
 		expect(existsSync(join(ws, "main", "feature-only.txt"))).toBe(false);
 		expect(readText(join(ws, "main", "base.txt"))).toBe("base\n");
-	}, 30000); // 两次真实 clone（fixture + 组装），满负荷跑全量时 5s 默认超时不够
+	}, 30000);
 
 	it("files 写入：自动建中间目录、内容逐字节正确", async () => {
 		const res = await createProject({
@@ -167,7 +143,7 @@ describe.skipIf(!hasGit)("组装项目（本地 file:// 仓库，零网络）", 
 		expect(res.ok).toBe(true);
 		expect(readFileSync(join(ws, ".code-workspace"), "utf8")).toBe(`{ "folders": [] }\n`);
 		expect(readFileSync(join(ws, "deep", "a", "b", "中文.txt"), "utf8")).toBe("多字节内容 ✓\n");
-		expect(res.log).toContain("write deep/a/b/中文.txt"); // 日志里的相对路径统一 `/`
+		expect(res.log).toContain("write deep/a/b/中文.txt");
 	});
 
 	it("clone + 写文件 + git init 一条龙；进度回调与 log 一致", async () => {
@@ -182,7 +158,6 @@ describe.skipIf(!hasGit)("组装项目（本地 file:// 仓库，零网络）", 
 		expect(res.log).toContain("mkdir repo");
 		expect(res.log).toContain("write cfg/app.json");
 		expect(res.log).toContain("git init");
-		// git 自己的 stdout/stderr 也进日志（stderr 才是 git 的主输出通道）。
 		expect(res.log.some((l) => l.startsWith("git: "))).toBe(true);
 		expect(existsSync(join(ws, ".git"))).toBe(true);
 		expect(existsSync(join(ws, "repo", "a.txt"))).toBe(true);
@@ -229,9 +204,9 @@ describe.skipIf(!hasGit)("失败即停（ok:false + 可读原因 + 保留日志�
 			gitInit: true,
 		});
 		expect(res.ok).toBe(false);
-		expect(existsSync(join(ws, "one", "a.txt"))).toBe(true); // 已完成的步骤不回滚
+		expect(existsSync(join(ws, "one", "a.txt"))).toBe(true);
 		expect(res.log.join("\n")).toContain(`clone ${good} → one`);
-		expect(existsSync(join(ws, "cfg", "x.json"))).toBe(false); // 失败即停
+		expect(existsSync(join(ws, "cfg", "x.json"))).toBe(false);
 		expect(existsSync(join(ws, ".git"))).toBe(false);
 	});
 
@@ -276,7 +251,7 @@ describe.skipIf(!hasGit)("失败即停（ok:false + 可读原因 + 保留日志�
 		const absent = await createProject({ dir: missing, gitInit: true });
 		expect(absent.ok).toBe(false);
 		expect(absent.error).toContain("不存在");
-		expect(existsSync(missing)).toBe(false); // 不擅自创建用户没指定的新根
+		expect(existsSync(missing)).toBe(false);
 
 		const asFile = join(base, "file.txt");
 		writeFileSync(asFile, "x", "utf8");
@@ -323,7 +298,7 @@ describe.skipIf(!hasGit)("失败即停（ok:false + 可读原因 + 保留日志�
 		expect(big.ok).toBe(false);
 		expect(big.error).toContain("1MB");
 
-		expect(readdirSync(ws)).toEqual([]); // 校验失败不落任何文件
+		expect(readdirSync(ws)).toEqual([]);
 	});
 });
 
@@ -339,7 +314,6 @@ describe.skipIf(!hasGit)("路径越界防护", () => {
 		expect(res.error).toContain("越界");
 		expect(existsSync(escapeRel)).toBe(false);
 		expect(existsSync(escapeAbs)).toBe(false);
-		// 越界是**校验阶段**就拒的：连同一个 spec 里合法的那条也不写（不留半成品）。
 		expect(existsSync(join(ws, "ok.txt"))).toBe(false);
 		expect(readdirSync(ws)).toEqual([]);
 	});
@@ -360,7 +334,6 @@ describe.skipIf(!hasGit)("路径越界防护", () => {
 		try {
 			symlinkSync(outside, join(ws, "link"), process.platform === "win32" ? "junction" : "dir");
 		} catch {
-			// Windows 上没有开发者模式/权限建不了链接：跳过这条（其余越界防护不受影响）。
 			return;
 		}
 

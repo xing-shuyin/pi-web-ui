@@ -57,7 +57,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		await mkdir(dataDir, { recursive: true });
 		await mkdir(repoDir, { recursive: true });
 
-		// 初始化目标真实 Git 仓库
 		await runGit(repoDir, ["init"]);
 		await runGit(repoDir, ["branch", "-M", "main"]);
 		await runGit(repoDir, ["config", "user.name", "Test Runner"]);
@@ -65,13 +64,11 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		await runGit(repoDir, ["config", "commit.gpgSign", "false"]);
 		await runGit(repoDir, ["config", "core.autocrlf", "false"]);
 
-		// 创建初始提交
 		await writeFile(join(repoDir, "file.txt"), "Initial content\n", "utf8");
 		await runGit(repoDir, ["add", "file.txt"]);
 		await runGit(repoDir, ["commit", "-m", "Initial commit"]);
 		baseCommit = await runGit(repoDir, ["rev-parse", "HEAD"]);
 
-		// 创建开发分支并提交改动
 		await runGit(repoDir, ["checkout", "-b", "feature"]);
 		await writeFile(join(repoDir, "file.txt"), "Initial content\nAdded line by bot\n", "utf8");
 		await writeFile(join(repoDir, "test.js"), "console.log('CHECK_OK');\n", "utf8");
@@ -79,10 +76,8 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		await runGit(repoDir, ["commit", "-m", "Feature commit by bot"]);
 		devCommit = await runGit(repoDir, ["rev-parse", "HEAD"]);
 
-		// 保持在 detached HEAD 或非 main 分支，保证目标分支 main 未被检出
 		await runGit(repoDir, ["checkout", "--detach", baseCommit]);
 
-		// 初始化 Store
 		deliveryId = "del-test-1";
 		reviewId = "rev-test-1";
 
@@ -169,7 +164,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		await rm(testDir, { recursive: true, force: true }).catch(() => {});
 	});
 
-	// 模拟设备 Command RPC Driver
 	function createTestDriver() {
 		return {
 			callDeviceCommand: async (devId: string, action: string, payload: any, options?: { signal?: AbortSignal }) => {
@@ -255,7 +249,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
-		// 1. Prepare
 		const prep = await hubPrepareIntegration(
 			store,
 			roomId,
@@ -270,7 +263,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(prep.diff).toContain("Added line by bot");
 		expect(prep.targetBotRevision).toBe(1);
 
-		// 2. Verify: 显式指定验证命令
 		const verified = await hubVerifyIntegration(
 			store,
 			roomId,
@@ -286,7 +278,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(verified.validationCommands[0].status).toBe("passed");
 		expect(verified.validationCommands[0].output).toContain("CHECK_OK");
 
-		// 3. Confirm (Apply): 明确确认后写入目标分支
 		const applied = await hubConfirmIntegration(
 			store,
 			roomId,
@@ -300,15 +291,12 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(applied.status).toBe("applied");
 		expect(applied.newCommitSha).toBeDefined();
 
-		// 验证目标分支 HEAD 被原子更新
 		const newHead = await runGit(repoDir, ["rev-parse", "refs/heads/main"]);
 		expect(newHead).toBe(applied.newCommitSha);
 
-		// 验证目标分支内容已更新
 		const content = await runGit(repoDir, ["show", "refs/heads/main:file.txt"]);
 		expect(content).toContain("Added line by bot");
 
-		// 验证会话历史记录
 		const list = listIntegrations(store.snapshot(), conversationId);
 		expect(list).toHaveLength(1);
 		expect(list[0].status).toBe("applied");
@@ -337,13 +325,11 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
-		// 切到 main 分支修改同一文件制造冲突并提交
 		await runGit(repoDir, ["checkout", "main"]);
 		await writeFile(join(repoDir, "file.txt"), "Initial content\nConflicting line on main\n", "utf8");
 		await runGit(repoDir, ["add", "file.txt"]);
 		await runGit(repoDir, ["commit", "-m", "Conflicting commit on main"]);
 		const conflictingTargetSha = await runGit(repoDir, ["rev-parse", "HEAD"]);
-		// 切离 main 分支，保证 main 未被检出
 		await runGit(repoDir, ["checkout", "--detach", conflictingTargetSha]);
 
 		const prep = await hubPrepareIntegration(
@@ -364,7 +350,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
-		// 将验收改为 changes_requested
 		await store.transact((draft) => {
 			draft.reviews[0].verdict = "changes_requested";
 		});
@@ -397,14 +382,12 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(prep.status).toBe("prepared");
 
 		await hubVerifyIntegration(store, roomId, conversationId, prep.id, actor, { commands: ["node test.js"] }, driver);
-		// 在 prepare 之后，外部并发推进 main 分支
 		await writeFile(join(repoDir, "other.txt"), "concurrent change\n", "utf8");
 		await runGit(repoDir, ["add", "other.txt"]);
 		await runGit(repoDir, ["commit", "-m", "Concurrent advance on main"]);
 		const advancedCommit = await runGit(repoDir, ["rev-parse", "HEAD"]);
 		await runGit(repoDir, ["branch", "-f", "main", advancedCommit]);
 
-		// 尝试 Apply，CAS 应严格拒绝
 		await expect(
 			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
 		).rejects.toMatchObject({ code: "INTEGRATION_TARGET_MOVED", status: 409 });
@@ -420,7 +403,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
-		// 制造未提交的脏文件
 		await writeFile(join(repoDir, "dirty.txt"), "dirty untracked\n", "utf8");
 		await runGit(repoDir, ["add", "dirty.txt"]);
 
@@ -454,7 +436,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const cancelled = await hubCancelIntegration(store, roomId, conversationId, prep.id, actor, driver);
 		expect(cancelled.status).toBe("cancelled");
 
-		// 再次确认状态已持久化
 		const record = store.snapshot().integrations.find((it) => it.id === prep.id);
 		expect(record?.status).toBe("cancelled");
 	});
@@ -479,7 +460,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			const sessionsPath = join(dataDir, "integration-sessions.json");
 			const sessions = JSON.parse(await readFile(sessionsPath, "utf8"));
 			const oldSession = sessions.find((session: any) => session.integrationId === prep.id);
-			// Only prepared proves verification never began; failed needs an explicit positive stop marker.
 			if (status === "prepared") delete oldSession.verificationStopConfirmed;
 			else oldSession.verificationStopConfirmed = true;
 			delete oldSession.gitDir;
@@ -516,7 +496,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			driver,
 		);
 
-		// Record ownership is checked before terminal status, which requires neither a live device nor a driver.
 		await expect(
 			hubCancelIntegration(store, roomId, conversationId, prep.id, { accountId: "other-account" }),
 		).rejects.toMatchObject({ status: 404 });
@@ -539,7 +518,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 	it("rejects integration when device driver is offline (no Hub local fallback)", async () => {
 		const actor = { accountId };
 
-		// 没有传 driver
 		await expect(
 			hubPrepareIntegration(
 				store,
@@ -556,7 +534,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
-		// 以 '-' 开头的分支名
 		await expect(
 			hubPrepareIntegration(
 				store,
@@ -568,7 +545,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			),
 		).rejects.toThrow(/Invalid branch name/i);
 
-		// 路径穿越分支名
 		await expect(
 			hubPrepareIntegration(
 				store,
@@ -594,7 +570,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			driver,
 		);
 
-		// 验证阶段即拒绝污染工作树，不能产生可用于apply的receipt。
 		await expect(
 			hubVerifyIntegration(
 				store,
@@ -607,7 +582,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			),
 		).rejects.toThrow(/modified|changed|dirty|tree/i);
 
-		// Confirm 阶段应由 write-tree 检查出与 preparedTreeSha 不一致并拒绝！
 		await expect(
 			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
 		).rejects.toThrow(/successful real verification proof/i);
@@ -626,10 +600,8 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			driver,
 		);
 
-		// 模拟并发更新导致 opId 不匹配
 		const interceptedDriver = {
 			callDeviceCommand: async (devId: string, action: string, payload: any) => {
-				// 模拟外部并发修改了 store 中的 currentOpId
 				await store.transact((draft) => {
 					const it = draft.integrations.find((r) => r.id === prep.id);
 					if (it) it.currentOpId = "concurrent-different-op-id";
@@ -665,16 +637,13 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		);
 
 		await hubVerifyIntegration(store, roomId, conversationId, prep.id, actor, { commands: ["node test.js"] }, driver);
-		// 人类切回了 main 分支，此时目标分支被检出
 		await runGit(repoDir, ["checkout", "main"]);
 		await writeFile(join(repoDir, "file.txt"), "Human uncommitted critical work\n", "utf8");
 
-		// 尝试 Apply：严格拒绝，绝不使用 hard reset 抹掉人类的文件，且要求切离分支
 		await expect(
 			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
 		).rejects.toThrow(/uncommitted changes|dirty state|checked out/i);
 
-		// 人类文件必须毫发无损地保留在磁盘上！
 		const humanContent = await readFile(join(repoDir, "file.txt"), "utf8");
 		expect(humanContent).toBe("Human uncommitted critical work\n");
 	});
@@ -710,7 +679,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			{ signal: abortCtrl.signal },
 		);
 
-		// Cancel only after the owned command actually starts, not during Git identity checks.
 		const rejected = expect(verifyPromise).rejects.toThrow(/cancelled|aborted/i);
 		for (let i = 0; i < 200 && !existsSync(started); i++) await new Promise((resolve) => setTimeout(resolve, 25));
 		expect(existsSync(started)).toBe(true);
@@ -731,19 +699,16 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			driver,
 		);
 
-		// 检查磁盘上已生成持久化注册表
 		const persistedFile = join(dataDir, "integration-sessions.json");
 		expect(existsSync(persistedFile)).toBe(true);
 		const content = JSON.parse(await readFile(persistedFile, "utf8"));
 		expect(content).toHaveLength(1);
 		expect(content[0].integrationId).toBe(prep.id);
 
-		// 模拟孤儿工作树清理
 		const { recoverOrphanWorktrees } = await import("../../server/device-center/device-integration.js");
 		const res = await recoverOrphanWorktrees(dataDir, () => repoDir);
 		expect(res.recoveredCount).toBeGreaterThanOrEqual(1);
 
-		// 恢复清理后注册表应被清空
 		const afterContent = JSON.parse(await readFile(persistedFile, "utf8"));
 		expect(afterContent).toHaveLength(0);
 	});
@@ -777,10 +742,8 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 			{ commands: ["node test.js"] },
 			driver,
 		);
-		// 人类切到了 main 分支
 		await runGit(repoDir, ["checkout", "main"]);
 
-		// 首次 Apply：前置拦截 checked out 409，此时绝不执行 commit
 		let firstError: any;
 		try {
 			await hubConfirmIntegration(
@@ -799,10 +762,8 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(firstError?.status).toBe(409);
 		expect(await runGit(repoDir, ["rev-parse", "refs/heads/main"])).toBe(baseCommit);
 
-		// 人类切离 main 分支（切到 detached HEAD）
 		await runGit(repoDir, ["checkout", "--detach", baseCommit]);
 
-		// Repeated apply returns the reserved operation without dispatching, even after the obstacle is removed.
 		const existing = await hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, {}, driver);
 		expect(confirms).toBe(1);
 		await expect(
@@ -826,7 +787,6 @@ describe("device-hub-integration", { timeout: 30000 }, () => {
 		expect(retried.status).toBe("applied");
 		expect(retried.newCommitSha).toBeDefined();
 
-		// 验证目标分支内容真实更新
 		const content = await runGit(repoDir, ["show", "refs/heads/main:file.txt"]);
 		expect(content).toContain("Added line by bot");
 		const history = listIntegrations(store.snapshot(), conversationId);

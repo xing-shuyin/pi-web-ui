@@ -1,7 +1,3 @@
-/**
- * markers/index.ts — 聚合内置标记并提供便捷初始化。
- */
-
 import { registerMarker } from "./registry.js";
 import { notifyMarker } from "./builtins/notify.js";
 import { renameMarker } from "./builtins/rename.js";

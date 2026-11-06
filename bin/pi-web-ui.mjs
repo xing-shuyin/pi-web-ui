@@ -1,34 +1,8 @@
 #!/usr/bin/env node
-/**
- * pi-web-ui CLI.
- *
- *   pi-web-ui                              启动生产服务器（前台，Ctrl+C 停止，自动打开浏览器）
- *   pi-web-ui --engine dsh --port 9000 --cwd /path    同上，覆盖引擎/端口/工作目录/数据目录
- *   pi-web-ui --no-browser                 启动但不自动打开浏览器
- *   pi-web-ui --version | --help
- *   pi-web-ui server install [选项]         安装系统服务（开机自启）并启动
- *   pi-web-ui server shortcut [选项]        在桌面创建「一键启动」图标（启动服务并打开浏览器）
- *   pi-web-ui server uninstall [选项]       卸载系统服务（同时移除桌面图标）
- *   pi-web-ui server start|stop|restart|status [选项]
- *   pi-web-ui install <源> [选项]           安装 GitHub 上的界面插件（见下方「界面插件」）
- *   pi-web-ui plugins / uninstall <id>      列出 / 卸载界面插件
- *
- * 系统服务：
- *   - macOS   → launchd 用户代理，label 默认 com.xingshuyin.pi-web-ui
- *              （--name 自定义时 com.<name>.server），无需 sudo
- *   - Linux   → systemd 单元 <name>.service（/etc/systemd/system/，自动 sudo）
- *   - Windows → 登录自启 Run 键（HKCU，无需管理员）+ wscript 隐藏启动（无黑窗）；
- *              PowerShell 启动脚本 / VBS 启动器 / PID 文件生成在
- *              %APPDATA%\pi-web-ui\
- *
- * 环境变量（flag 优先，环境变量后备）：PI_WEB_PORT / PI_WEB_CWD / PI_WEB_DATA_DIR /
- * PI_WEB_ENGINE / PI_WEB_HOST / PI_CODING_AGENT_DIR；token 仅环境变量，不走命令行。
- */
 import { spawn, spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
 import { get as httpGet } from "node:http";
 import { createInterface } from "node:readline/promises";
-// Dispatch Hub before loading optional plugin/FRP dependencies or the server build.
 if (process.argv[2] === "hub") {
 	try {
 		const { runHubCliEntry } = await import("./device-hub-cli.mjs");
@@ -70,43 +44,32 @@ const {
 } = isHubCommand ? {} : await import("../dist/server/plugin-updater.js");
 
 const BIN_DIR = dirname(fileURLToPath(import.meta.url));
-/** <pkg>/dist/server/index.js — the actual server entry. */
 const SERVER_ENTRY = join(BIN_DIR, "..", "dist", "server", "index.js");
-/** 「机器上有更新的 pi 副本就跟随它」解析钩子（issue #260；#321 起默认启用）。
- *  必须早于任何 SDK 静态 import 加载 —— 所以每条启动路径都把它当 `--import` 传进去；
- *  PI_WEB_SDK=bundled 显式钉死自带副本（见 server/resolve-global-sdk.ts）。 */
 const SDK_HOOK = join(BIN_DIR, "..", "dist", "server", "resolve-global-sdk.js");
-/** dist 可能是旧构建（没有这个钩子文件）—— 只有文件在才注入：`--import <missing>` 会让
- *  CLI/服务直接起不来，那比少个开关严重得多。 */
 const HAS_SDK_HOOK = existsSync(SDK_HOOK);
 const NODE = process.execPath;
 let pkg = { version: "0.0.0" };
 try {
 	pkg = JSON.parse(readFileSync(join(BIN_DIR, "..", "package.json"), "utf8"));
-} catch {
-	// version is best-effort — the server itself doesn't need it
-}
+} catch {}
 
-/** Detect if the user prefers Chinese locale: POSIX env vars win, then Intl API fallback. */
 function isZhLang() {
 	const env = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || "";
 	if (env.startsWith("zh")) return true;
 	if (!env) {
 		try {
 			return Intl.DateTimeFormat().resolvedOptions().locale.startsWith("zh");
-		} catch {
-			/* ignore */
-		}
+		} catch {}
 	}
 	return false;
 }
 
-/** Resolved once: CLI messages below pick zh/en with `ZH ? zh : en` (only the chosen branch is evaluated). */
 const ZH = isZhLang();
 
 const HELP_ZH = `pi-web-ui v${pkg.version} — web chat for the pi coding agent
 
-用法:
+用法（pwu / piwebui / pi-web-ui 等价）:
+  pwu [目录]                             在指定目录启动（如 pwu .）；不能与 --cwd 同用
   pi-web-ui                               启动服务器（前台，Ctrl+C 停止，自动打开浏览器）
   pi-web-ui --engine dsh --port 9000 --cwd /path      启动并指定引擎 / 端口 / 工作目录 / 数据目录
   pi-web-ui --no-browser                  启动但不自动打开浏览器
@@ -172,7 +135,8 @@ FRP 内网穿透（将本地 pi-web-ui 服务端口通过 FRP 穿透转发到远
 
 const HELP_EN = `pi-web-ui v${pkg.version} — web chat for the pi coding agent
 
-Usage:
+Usage (pwu / piwebui / pi-web-ui are equivalent):
+  pwu [directory]                        Start in a directory (e.g. pwu .); cannot combine with --cwd
   pi-web-ui                               Start server (foreground, Ctrl+C to stop, auto-opens browser)
   pi-web-ui --engine dsh --port 9000 --cwd /path      Start with engine/port/cwd/data-dir overrides
   pi-web-ui --no-browser                   Start without auto-opening browser
@@ -240,7 +204,6 @@ Environment variables (flag takes precedence, env var as fallback):
 
 const HELP = isZhLang() ? HELP_ZH : HELP_EN;
 
-/** Minimum Node required by the pi SDK (its dist uses `import … with { type: "json" }`). */
 const NODE_MIN = [22, 19, 0];
 function checkNodeVersion() {
 	const v = process.versions.node.split(".").map(Number);
@@ -267,7 +230,6 @@ function fail(msg) {
 	process.exit(1);
 }
 
-/** Run a command, inheriting stdio; exits on failure unless ignoreError. */
 function run(cmd, args, { ignoreError = false, silent = false } = {}) {
 	const res = spawnSync(cmd, args, {
 		stdio: silent ? ["inherit", "ignore", "ignore"] : "inherit",
@@ -276,7 +238,6 @@ function run(cmd, args, { ignoreError = false, silent = false } = {}) {
 	return res;
 }
 
-/** Parse --flag value / --flag=value options; returns { opts, positionals }. */
 function parseFlags(argv) {
 	const opts = {
 		port: undefined,
@@ -384,11 +345,6 @@ function parseFlags(argv) {
 	return { opts, positionals };
 }
 
-// ---------------------------------------------------------------------------
-// 前台启动
-// ---------------------------------------------------------------------------
-
-/** Open a URL in the OS default browser; failures are ignored (best-effort). */
 function openBrowser(url) {
 	let res;
 	if (isMac) {
@@ -398,7 +354,6 @@ function openBrowser(url) {
 	} else {
 		res = spawnSync("xdg-open", [url], { stdio: "ignore" });
 	}
-	// spawnSync 不抛异常：命令缺失（headless 服务器）时在返回对象里带 error 字段。
 	if (res?.error) {
 		if (res.error.code === "ENOENT") {
 			console.warn(
@@ -414,13 +369,6 @@ function openBrowser(url) {
 	}
 }
 
-/**
- * Poll `url` until the server answers (or ~15s pass), then open it in the
- * default browser. The foreground server runs in this process, so the first
- * HTTP response is the "listening" signal; if the server crashes meanwhile
- * (e.g. port already taken), the pending timers die with the process and
- * nothing is opened.
- */
 function openBrowserWhenUp(url) {
 	const deadline = Date.now() + 15_000;
 	const attempt = () => {
@@ -449,9 +397,7 @@ function loadStoredFileToken(dataDir) {
 		const raw = readFileSync(join(dataDir, "server-config.json"), "utf8");
 		const parsed = JSON.parse(raw);
 		if (typeof parsed?.token === "string" && parsed.token.trim()) return parsed.token.trim();
-	} catch {
-		/* ignore */
-	}
+	} catch {}
 	return "";
 }
 
@@ -511,10 +457,6 @@ async function startForeground(opts) {
 	if (!opts.noBrowser) openBrowserWhenUp(url);
 }
 
-// ---------------------------------------------------------------------------
-// 系统服务管理
-// ---------------------------------------------------------------------------
-
 const isMac = process.platform === "darwin";
 const isLinux = process.platform === "linux";
 const isWin = process.platform === "win32";
@@ -527,7 +469,6 @@ function uid() {
 	}
 }
 
-/** launchd label / systemd unit name / Windows task name for a service name. */
 function serviceLabel(name) {
 	if (isMac) {
 		return name === "pi-web-ui" ? "com.xingshuyin.pi-web-ui" : `com.${name}.server`;
@@ -543,7 +484,6 @@ function systemdUnitPath(name) {
 	return `/etc/systemd/system/${name}.service`;
 }
 
-/** Windows: per-user config dir (%APPDATA%\pi-web-ui) holding the ps1/vbs launchers + pid file. */
 function winServiceDir() {
 	return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "pi-web-ui");
 }
@@ -564,22 +504,18 @@ function winTaskXmlPath(name) {
 	return join(winServiceDir(), `${name}.xml`);
 }
 
-/** Windows log file (per service name — multiple services must not share one log). */
 function winLogPath(name) {
 	return join(homedir(), name === "pi-web-ui" ? "pi-web-ui.log" : `pi-web-ui-${name}.log`);
 }
 
-/** True when a scheduled task with this name exists (schtasks exits 0). */
 function winTaskExists(name) {
 	return spawnSync("schtasks", ["/Query", "/TN", name], { stdio: "ignore" }).status === 0;
 }
 
-/** Windows: per-user autostart registry key (HKCU — writable without admin). */
 function winRunKeyName() {
 	return "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 }
 
-/** True when the per-user autostart Run key value exists. */
 function winRunKeyInstalled(name) {
 	return (
 		spawnSync("reg", ["query", `HKCU\\${winRunKeyName()}`, "/v", name], {
@@ -588,39 +524,26 @@ function winRunKeyInstalled(name) {
 	);
 }
 
-/** Set the per-user autostart Run key value (no admin needed for HKCU). */
 function winRunKeySet(name, value) {
 	run("reg", ["add", `HKCU\\${winRunKeyName()}`, "/v", name, "/t", "REG_SZ", "/d", value, "/f"], { silent: true });
 }
 
-/** Remove the per-user autostart Run key value (missing key is a no-op). */
 function winRunKeyDelete(name) {
 	run("reg", ["delete", `HKCU\\${winRunKeyName()}`, "/v", name, "/f"], { ignoreError: true, silent: true });
 }
 
-// ---------------------------------------------------------------------------
-// 桌面快捷方式（server shortcut）
-// ---------------------------------------------------------------------------
+const SHORTCUT_LNK_NAME = "pi-web-ui.lnk";
+const SHORTCUT_MAC_NAME = "pi-web-ui.command";
+const SHORTCUT_LINUX_NAME = "pi-web-ui.desktop";
 
-const SHORTCUT_LNK_NAME = "pi-web-ui.lnk"; // Windows 桌面快捷方式
-const SHORTCUT_MAC_NAME = "pi-web-ui.command"; // macOS 双击启动器
-const SHORTCUT_LINUX_NAME = "pi-web-ui.desktop"; // Linux 桌面图标
-
-/** 快捷方式图标（品牌 .ico，随包发布；.lnk / .desktop 指向它）。 */
-const APP_ICO_NAME = "pi-web-ui-logo.ico"; // 复制到用户目录后的稳定文件名（避开 pi-web-ui.ico —— Windows 对该路径有损坏的图标缓存残留，见 issue #xxx）
-const APP_ICO_SOURCE = join(BIN_DIR, "..", "web", "public", "icon.ico"); // 包内品牌图标源文件（10 帧多分辨率，DPI 密度帧保证桌面/任务栏各尺寸颜色不失真）
-/** Branded SVG logo (source of truth: web/public/favicon.svg) — used on Linux. */
+const APP_ICO_NAME = "pi-web-ui-logo.ico";
+const APP_ICO_SOURCE = join(BIN_DIR, "..", "web", "public", "icon.ico");
 const APP_SVG_PACKAGE = join(BIN_DIR, "..", "web", "public", "favicon.svg");
 
-/** Windows: per-user copy of the branded .ico (stable path for the .lnk icon). */
 function winIcoPath() {
 	return join(winServiceDir(), APP_ICO_NAME);
 }
 
-/** Full path to Windows PowerShell. Prefers pwsh.exe (PowerShell 7) when it is
- * resolvable on PATH: some machines ship Windows PowerShell 5.1 as a broken
- * stub whose launch fails silently, so probe for a working shell first and
- * fall back to the built-in path. */
 function winPowershell() {
 	const which = spawnSync("where.exe", ["pwsh.exe"], { encoding: "utf8" });
 	if (which.status === 0) {
@@ -630,28 +553,14 @@ function winPowershell() {
 	return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-/** Full path to wscript.exe — a console-free host (no conhost window, so no black
- * console box ever appears in the taskbar on double-click). Used as the .lnk target;
- * it launches the .ps1 hidden via a thin VBS launcher. */
 function winWscript() {
 	return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "wscript.exe");
 }
 
-/**
- * The node binary the launcher scripts must bake in: the executable this
- * process itself runs on. Under Bun this resolves to bun, so a Bun-hosted
- * install never bakes in pi.exe.
- */
 function resolveNode() {
 	return process.execPath;
 }
 
-/**
- * Resolve the real node binary. fnm/volta/nvm shims (e.g. fnm_multishells)
- * point into temp dirs that vanish when the installing shell exits — the
- * baked-in launcher scripts must use the stable real path instead.
- * Also applies resolveNode() so Bun-hosted pi never bakes in pi.exe.
- */
 function realNode() {
 	try {
 		return realpathSync(resolveNode());
@@ -660,22 +569,18 @@ function realNode() {
 	}
 }
 
-/** Windows: launcher ps1 the desktop .lnk runs (hidden). */
 function winShortcutPs1Path(name) {
 	return join(winServiceDir(), `${name}-shortcut.ps1`);
 }
 
-/** Windows: launcher vbs the desktop .lnk actually runs (wscript.exe, console-free). */
 function winShortcutVbsPath(name) {
 	return join(winServiceDir(), `${name}-shortcut.vbs`);
 }
 
-/** Windows: PID file of a shortcut-started (no scheduled task) instance. */
 function winPidFilePath(name) {
 	return join(winServiceDir(), `${name}.pid`);
 }
 
-/** Read the recorded PID of a shortcut-started Windows instance. */
 function winReadPid(name) {
 	try {
 		const pid = Number(readFileSync(winPidFilePath(name), "utf8").trim());
@@ -685,7 +590,6 @@ function winReadPid(name) {
 	}
 }
 
-/** True when a PID exists (signal 0; EPERM means exists but not ours). */
 function pidAlive(pid) {
 	if (!pid) return false;
 	try {
@@ -696,18 +600,10 @@ function pidAlive(pid) {
 	}
 }
 
-/** Single-quote a string for embedding in a POSIX shell script. */
 function shQuote(s) {
 	return "'" + s.replace(/'/g, `'\\''`) + "'";
 }
 
-/**
- * Windows shortcut launcher. Double-click the .lnk → this script runs hidden:
- * server already up → just open the browser; autostart service installed
- * (HKCU Run key + wscript/VBS launcher) → start it (manageable via `server
- * stop`); otherwise run the server in the foreground of this hidden window and
- * record its PID so `server stop` / `server uninstall` can terminate it too.
- */
 function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
 	const sets = Object.entries(env)
 		.map(([k, v]) => `$env:${k} = ${psQuote(v)}`)
@@ -764,22 +660,8 @@ function buildWinShortcutPs1(env, cwd, taskName, url, logPath, pidPath) {
 	].join("\r\n");
 }
 
-/**
- * Build the tiny VBS launcher that starts a .ps1 *without* creating any console
- * host: wscript.exe has no console, and WScript.Shell.Run(…, 0, False) launches
- * the child hidden and returns at once (0 = hidden window, False = don't wait).
- * Used by both the desktop .lnk and the logon autostart service. Note:
- * `powershell -WindowStyle Hidden` alone is unreliable when Windows itself
- * spawns the process (Task Scheduler) — the console window can still show;
- * this launcher never creates one at all.
- */
 function buildWinHiddenVbs(ps1Path) {
-	// 可执行文件必须带引号：winPowershell() 常返回 `C:\Program Files\PowerShell\7\pwsh.exe`，
-	// 含空格且未加引号时 WScript.Shell.Run 找不到文件，直接报 80070002（系统找不到指定的文件）。
 	const cmd = `"${winPowershell()}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${ps1Path}"`;
-	// VBScript 字符串没有 \" 转义（也没有 \uXXXX），内嵌引号必须写成 ""；
-	// 不能用 JSON.stringify —— 它输出 \" 会在 VBScript 里提前结束字符串（语句未结束 800A0401），
-	// 且会把非 ASCII 路径转成 \uXXXX 字面量（wscript 不识别，中文用户名直接变成乱码路径）。
 	const vbsCmd = cmd.replace(/"/g, '""');
 	return [
 		"Option Explicit",
@@ -792,18 +674,9 @@ function buildWinHiddenVbs(ps1Path) {
 	].join("\r\n");
 }
 
-/**
- * Create the Windows desktop .lnk via WScript.Shell COM (correct Desktop path
- * even with OneDrive redirection). Target is powershell.exe with
- * -WindowStyle Hidden so nothing flashes on double-click.
- */
 function installWinShortcut(opts) {
 	const { name, port, cwd, dataDir, engine, host, agentDir } = serviceOptions(opts);
 	const env = serviceEnv(port, cwd, dataDir, engine, host, agentDir);
-	// The server binds 127.0.0.1 by default; PowerShell 7's Invoke-WebRequest
-	// resolves `localhost` to ::1 first and hangs until TimeoutSec when nothing
-	// listens on IPv6, making the health probe misfire ("server not running").
-	// Pin the probe (and the opened URL) to the IPv4 loopback the server uses.
 	const url = `http://127.0.0.1:${port}`;
 	const ps1Path = winShortcutPs1Path(name);
 	const ps1 = buildWinShortcutPs1(env, cwd, name, url, winLogPath(name), winPidFilePath(name));
@@ -812,11 +685,9 @@ function installWinShortcut(opts) {
 		return;
 	}
 	mkdirSync(dirname(ps1Path), { recursive: true });
-	writeFileSync(ps1Path, "\uFEFF" + ps1, "utf8"); // PS 5.1 需要 BOM
-	// wscript host + VBS launcher: no console window / taskbar black box on double-click.
+	writeFileSync(ps1Path, "\uFEFF" + ps1, "utf8");
 	const vbsPath = winShortcutVbsPath(name);
-	writeFileSync(vbsPath, "\uFEFF" + buildWinHiddenVbs(ps1Path), "utf16le"); // wscript 只认 UTF-16/ANSI，UTF-8 BOM 会报“无效字符”，中文路径用 utf16le + BOM
-	// 把品牌图标准备好：复制到用户目录（.lnk 图标指向稳定路径）
+	writeFileSync(vbsPath, "\uFEFF" + buildWinHiddenVbs(ps1Path), "utf16le");
 	if (existsSync(APP_ICO_SOURCE)) {
 		copyFileSync(APP_ICO_SOURCE, winIcoPath());
 	} else {
@@ -866,7 +737,6 @@ function installWinShortcut(opts) {
 	console.log(ZH ? `   目录 : ${cwd}` : `   Directory : ${cwd}`);
 }
 
-/** macOS: double-clickable .command launcher (the .lnk equivalent). */
 function buildMacShortcut(label, plist, url, env) {
 	const exports = Object.entries(env)
 		.map(([k, v]) => `export ${k}=${shQuote(v)}`)
@@ -943,7 +813,6 @@ function installMacShortcut(opts) {
 	console.log(ZH ? `   目录 : ${cwd}` : `   Directory : ${cwd}`);
 }
 
-/** Linux: launcher script run by the .desktop icon. */
 function buildLinuxStartScript(unitName, url) {
 	const log = join(homedir(), ".local", "share", "pi-web-ui", "pi-web-ui.log");
 	const node = realNode();
@@ -984,7 +853,7 @@ function installLinuxShortcut(opts) {
 	const scriptDir = join(homedir(), ".local", "share", "pi-web-ui");
 	const scriptPath = join(scriptDir, `${name}-start.sh`);
 	const desktopPath = join(homedir(), "Desktop", SHORTCUT_LINUX_NAME);
-	const icoPath = join(scriptDir, APP_ICO_NAME); // 备用；优先 SVG
+	const icoPath = join(scriptDir, APP_ICO_NAME);
 	const svgPath = join(scriptDir, "pi-web-ui.svg");
 	const script = buildLinuxStartScript(name, url);
 	const desktopIcon = existsSync(APP_SVG_PACKAGE) ? svgPath : APP_ICO_NAME;
@@ -1004,14 +873,12 @@ Categories=Network;WebBrowser;
 		return;
 	}
 	mkdirSync(scriptDir, { recursive: true });
-	// 品牌图标（缺失时跳过，桌面自动回退默认图标）
 	if (existsSync(APP_SVG_PACKAGE)) copyFileSync(APP_SVG_PACKAGE, svgPath);
 	else if (existsSync(APP_ICO_SOURCE)) copyFileSync(APP_ICO_SOURCE, icoPath);
 	writeFileSync(scriptPath, script);
 	chmodSync(scriptPath, 0o755);
 	writeFileSync(desktopPath, desktop);
 	chmodSync(desktopPath, 0o755);
-	// GNOME 需要标记可信才能双击运行
 	run("gio", ["set", desktopPath, "metadata::trusted", "true"], {
 		ignoreError: true,
 		silent: true,
@@ -1026,7 +893,6 @@ Categories=Network;WebBrowser;
 	console.log(ZH ? `   目录 : ${cwd}` : `   Directory : ${cwd}`);
 }
 
-/** Remove desktop shortcut artifacts created by `server shortcut`. */
 function removeShortcut(name) {
 	if (isWin) {
 		for (const f of [winShortcutPs1Path(name), winShortcutVbsPath(name), winPidFilePath(name), winIcoPath()]) {
@@ -1057,20 +923,10 @@ function removeShortcut(name) {
 	}
 }
 
-/** Single-quote a string for embedding in a generated PowerShell script. */
 function psQuote(s) {
 	return "'" + s.replace(/'/g, "''") + "'";
 }
 
-/**
- * Build the PowerShell launcher the autostart service runs. Windows never sees
- * a console from it: the HKCU Run key launches wscript.exe → VBS → powershell
- * (hidden), so no black box can appear. The script sets the env, cd's to the
- * workspace, records its PID to <name>.pid (for `server stop`), then runs node
- * inside a watchdog loop — if node exits, it restarts after 10s (same
- * philosophy as launchd KeepAlive / systemd Restart=always). `server stop`
- * force-kills the recorded PID tree, which takes the loop down with it.
- */
 function buildWinStartPs1(env, cwd, logPath, pidPath) {
 	const sets = Object.entries(env)
 		.map(([k, v]) => `$env:${k} = ${psQuote(v)}`)
@@ -1098,7 +954,6 @@ function esc(s) {
 	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Start the autostart service now: wscript runs the VBS hidden and exits at once. */
 function launchWinService(vbsPath) {
 	const child = spawn(winWscript(), [vbsPath], {
 		detached: true,
@@ -1108,30 +963,20 @@ function launchWinService(vbsPath) {
 	child.unref();
 }
 
-/**
- * PID 文件记录的是看门狗 PowerShell 的 $PID（winPowershell() 可能选 pwsh.exe），
- * node 是它的子进程 —— 这三者是本服务实例的合理映像名。taskkill /T /F 是树级强杀，
- * PID 若已退出被系统复用就会误杀无辜进程，所以杀前必须核对映像名。
- */
 const WIN_SERVICE_IMAGE_RE = /^(powershell|pwsh|node)\.exe$/i;
 
-/** tasklist 查询 PID 对应的进程映像名；查询失败/无此进程返回 null（无法核实）。 */
 function winPidImageName(pid) {
 	const res = spawnSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { encoding: "utf8" });
 	if (res.status !== 0) return null;
 	const line = (res.stdout ?? "").split(/\r?\n/).find((l) => l.trim());
-	if (!line) return null; // tasklist 的 "INFO: 无任务" 输出没有 CSV 行
+	if (!line) return null;
 	return (line.match(/^"([^"]+)"/) ?? [])[1] ?? null;
 }
 
-/** Kill a running Windows instance via its PID file (whole tree). */
 function stopWinInstance(name) {
 	const pid = winReadPid(name);
 	if (pid) {
 		if (pidAlive(pid)) {
-			// PID 可能已退出并被系统复用给别的进程：杀前核对映像名，不符则警告并跳过，
-			// 绝不 taskkill /T /F 盲杀。macOS/Linux 无按 PID 杀的路径（launchctl/systemctl
-			// 按服务单元管理），只有 Windows 需要这道核对。
 			const image = winPidImageName(pid);
 			if (image === null) {
 				console.warn(
@@ -1150,7 +995,6 @@ function stopWinInstance(name) {
 					ignoreError: true,
 					silent: true,
 				});
-				// taskkill /F 异步生效：等到进程树真正退出（restart 需要避免端口竞争）
 				const deadline = Date.now() + 5000;
 				while (Date.now() < deadline && pidAlive(pid)) {
 					spawnSync("ping", ["-n", "2", "127.0.0.1"], { stdio: "ignore" });
@@ -1161,7 +1005,6 @@ function stopWinInstance(name) {
 	}
 }
 
-/** Build the launchd plist XML. */
 function buildPlist(label, cwd, env) {
 	const entries = Object.entries(env)
 		.map(([k, v]) => `    <key>${esc(k)}</key>\n    <string>${esc(v)}</string>`)
@@ -1206,23 +1049,14 @@ ${entries}
 `;
 }
 
-/** systemd quoted strings use C-style escapes; %% prevents specifier expansion. */
 function systemdQuote(value) {
 	return JSON.stringify(String(value)).replace(/%/g, "%%");
 }
 
-/**
- * systemd paths (WorkingDirectory=) must NOT be quoted: unlike Environment= and
- * ExecStart=, the path directives do not strip surrounding double quotes, so
- * WorkingDirectory="/home/me/work" makes systemd fail with "path is not absolute".
- * The whole (trimmed) value is the path, so inner spaces need no escaping —
- * only % has to be doubled to survive specifier expansion.
- */
 function systemdPath(value) {
 	return String(value).replace(/%/g, "%%");
 }
 
-/** Build the systemd unit file. */
 function buildUnit(cwd, env) {
 	const envLines = Object.entries(env)
 		.map(([k, v]) => `Environment=${systemdQuote(`${k}=${v}`)}`)
@@ -1250,29 +1084,18 @@ WantedBy=multi-user.target
 `;
 }
 
-/** If not root on Linux, re-exec the same server command through sudo. */
 function ensureRootForSystemctl() {
 	if (typeof process.getuid === "function" && process.getuid() === 0) return;
-	// process.argv = [node, <bin>, "server", <action>, ...rest] — forward
-	// everything after "server" so flags like --port/--cwd survive.
 	const res = spawnSync("sudo", [NODE, fileURLToPath(import.meta.url), "server", ...process.argv.slice(3)], {
 		stdio: "inherit",
 	});
 	process.exit(res.status ?? 1);
 }
 
-/** Resolve the effective HTTP port: --port > $PI_WEB_PORT > 8787. */
 function effectivePort(opts) {
 	return String(opts.port ?? process.env.PI_WEB_PORT ?? "8787");
 }
 
-/**
- * 服务名（--name）统一校验。name 会被原样拼进 systemd unit 文件名
- * (/etc/systemd/system/<name>.service)、Windows 启动脚本/PID 文件路径
- * (%APPDATA%\pi-web-ui\<name>.ps1) 与 HKCU Run 键值名 —— 不限字符集时，
- * 路径分隔符/引号/空格都能进这些拼接点（路径穿越或 unit 内容注入）。
- * 收紧为：字母或数字开头，仅字母/数字/-/_，最长 64 字符。
- */
 function serviceName(opts) {
 	const name = opts.name ?? "pi-web-ui";
 	if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name))
@@ -1284,19 +1107,12 @@ function serviceName(opts) {
 	return name;
 }
 
-/** Shared option normalization for install. */
 function serviceOptions(opts) {
 	const name = serviceName(opts);
 	const port = effectivePort(opts);
 	if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
 		fail(ZH ? `无效端口: ${port}` : `Invalid port: ${port}`);
 	}
-	// 服务默认工作区（issue #295）：安装命令的当前目录不可靠（例如 Windows 提权提示符
-	// 默认在 C:\WINDOWS\system32），且直接拿用户主目录当 agent cwd 会让 SDK 的
-	// resourceLoader.reload 等同步目录扫描落在 $HOME 上 —— 家目录下的 iCloud 占位符、
-	// 外部/网络卷坏挂载会让 scandir/open 在内核里挂起，整个事件循环假死（hello 后永远
-	// 收不到 ready）。默认落到干净的 ~/pi-web-ui 子目录（不存在即建）；显式 --cwd /
-	// PI_WEB_CWD 保持原语义（不存在则报错）。前台启动仍默认当前目录。
 	const explicitCwd = opts.cwd ?? process.env.PI_WEB_CWD;
 	const cwd = resolve(explicitCwd ?? join(homedir(), "pi-web-ui"));
 	if (explicitCwd) {
@@ -1310,7 +1126,6 @@ function serviceOptions(opts) {
 	} else if (process.env.PI_WEB_DATA_DIR) {
 		dataDir = resolve(process.env.PI_WEB_DATA_DIR);
 	}
-	// 引擎/监听地址/agent 配置目录：flag 优先，环境变量后备（token 不走命令行，仅环境变量）。
 	const engine = opts.engine ?? process.env.PI_WEB_ENGINE ?? "pi";
 	if (!["pi", "dsh", "claude", "codex", "durable"].includes(engine))
 		fail(
@@ -1328,16 +1143,10 @@ function serviceEnv(port, cwd, dataDir, engine, host, agentDir, service = {}) {
 		PI_WEB_PORT: port,
 		PI_WEB_CWD: cwd,
 	};
-	// 启动来源标记（见 server/launch-origin.ts）：只有真正被平台服务管理器托管的
-	// 启动器才写。桌面快捷方式 / .command 在「未安装服务」时是前台跑（退出不回来），
-	// 不能带这个标记，所以它们不传 service。已装好的老服务没有这两个变量，服务端
-	// 仍能靠运行时判据（XPC_SERVICE_NAME / INVOCATION_ID / PID 文件）认出来。
 	if (service.name) {
 		env.PI_WEB_LAUNCHED_BY = "service";
 		env.PI_WEB_SERVICE_NAME = service.name;
 	}
-	// Interactive Windows tasks inherit the user's PATH; only systemd/launchd
-	// run with a minimal environment that needs an explicit PATH.
 	if (!isWin) {
 		const defaultPath =
 			process.platform === "darwin"
@@ -1350,14 +1159,10 @@ function serviceEnv(port, cwd, dataDir, engine, host, agentDir, service = {}) {
 			env.PATH = currentPath;
 		}
 	}
-	// Same for the locale: launchd/systemd drop LANG/LC_ALL, and a C-locale
-	// shell garbles multibyte input in the terminal (UTF-8 continuation
-	// bytes 0x80–0x9F rendered as C1 control chars). Bake the installing
-	// shell's locale into the service env so spawned terminals are UTF-8.
 	if (!isWin && process.env.LANG) env.LANG = process.env.LANG;
 	if (!isWin && process.env.LC_ALL) env.LC_ALL = process.env.LC_ALL;
 	if (dataDir) env.PI_WEB_DATA_DIR = dataDir;
-	if (engine !== "pi") env.PI_WEB_ENGINE = engine; // 仅非默认引擎才烘焙，保持服务单元简洁
+	if (engine !== "pi") env.PI_WEB_ENGINE = engine;
 	if (host) env.PI_WEB_HOST = host;
 	if (agentDir) env.PI_CODING_AGENT_DIR = agentDir;
 	return env;
@@ -1372,7 +1177,6 @@ function installLaunchd(opts) {
 		console.log(`# ${plist}\n${content}`);
 		return;
 	}
-	// Unload any existing instance (ignore "not loaded"), then (re)install.
 	run("launchctl", ["bootout", `gui/${uid()}/${label}`], {
 		ignoreError: true,
 		silent: true,
@@ -1399,8 +1203,6 @@ function installLaunchd(opts) {
 	);
 }
 
-/** Elevate only the privileged operation, not the CLI that captures the user's environment.
- * Unit contents travel through stdin, never argv (which may expose the token via ps). */
 function runSystemdRoot(command, args, input) {
 	const root = typeof process.getuid === "function" && process.getuid() === 0;
 	const result = spawnSync(root ? command : "sudo", root ? args : ["--", command, ...args], {
@@ -1422,9 +1224,6 @@ function installSystemd(opts) {
 		console.log(`# ${unitPath}\n${content}`);
 		return;
 	}
-	// Generated units can contain credentials. install also corrects an existing unit's mode.
-	// Stage through a temp file: `install /dev/stdin` fails on some hosts (WSL) with
-	// ENXIO when stdin is a pipe rather than a tty.
 	const staged = join(tmpdir(), `pi-web-ui-${name}-${process.pid}.service`);
 	writeFileSync(staged, content, { mode: 0o600 });
 	try {
@@ -1434,7 +1233,6 @@ function installSystemd(opts) {
 	}
 	runSystemdRoot("systemctl", ["daemon-reload"]);
 	runSystemdRoot("systemctl", ["enable", `${name}.service`]);
-	// enable --now does not restart an already-active unit after configuration changes.
 	runSystemdRoot("systemctl", ["restart", `${name}.service`]);
 	console.log(
 		ZH ? `✅ 已安装并启动 systemd 服务 ${name}.service` : `✅ systemd service installed and started ${name}.service`,
@@ -1498,7 +1296,6 @@ function installWindows(opts) {
 	const pidPath = winPidFilePath(name);
 	const ps1 = buildWinStartPs1(env, cwd, winLogPath(name), pidPath);
 	const vbs = buildWinHiddenVbs(ps1Path);
-	// HKCU Run 键值：wscript.exe 以隐藏方式启动 VBS（无控制台，登录后自启）
 	const runValue = `"${winWscript()}" "${vbsPath}"`;
 	if (opts.print) {
 		console.log(`# ${ps1Path}\n${ps1}`);
@@ -1508,18 +1305,14 @@ function installWindows(opts) {
 		return;
 	}
 	mkdirSync(dirname(ps1Path), { recursive: true });
-	// UTF-8 with BOM: Windows PowerShell 5.1 misreads BOM-less UTF-8 as ANSI.
 	writeFileSync(ps1Path, "\uFEFF" + ps1, "utf8");
-	// wscript host + VBS launcher: no console window / taskbar black box ever.
-	writeFileSync(vbsPath, "\uFEFF" + vbs, "utf16le"); // wscript 只认 UTF-16/ANSI，UTF-8 BOM 会报“无效字符”
-	// 迁移：移除旧版 .cmd 包装与历史计划任务（普通用户下 schtasks 无法创建，改为 Run 键）。
+	writeFileSync(vbsPath, "\uFEFF" + vbs, "utf16le");
 	if (existsSync(winCmdPath(name))) rmSync(winCmdPath(name));
 	if (winTaskExists(name)) {
 		run("schtasks", ["/End", "/TN", name], {
 			ignoreError: true,
 			silent: true,
 		});
-		// /End 异步生效：稍候再删任务，避免新实例与旧实例端口竞争
 		spawnSync("ping", ["-n", "2", "127.0.0.1"], { stdio: "ignore" });
 		run("schtasks", ["/Delete", "/TN", name, "/F"], {
 			ignoreError: true,
@@ -1557,11 +1350,9 @@ function installWindows(opts) {
 function uninstallWindows(opts) {
 	const name = serviceName(opts);
 	winRunKeyDelete(name);
-	// 历史计划任务（旧版本 install 可能注册过）
 	if (winTaskExists(name)) {
 		run("schtasks", ["/Delete", "/TN", name, "/F"], { ignoreError: true });
 	}
-	// 运行中的实例（服务或快捷方式启动，均记录 PID 文件）
 	stopWinInstance(name);
 	for (const f of [winCmdPath(name), winPs1Path(name), winVbsPath(name), winTaskXmlPath(name)]) {
 		if (existsSync(f)) rmSync(f);
@@ -1575,15 +1366,6 @@ function uninstallWindows(opts) {
 	console.log(ZH ? `🗑  已移除桌面快捷方式` : `🗑  Desktop shortcut removed`);
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Local control socket (status / quiesce / unquiesce). The server listens on
-// a mode-0600 Unix socket (POSIX) or a named pipe (Windows) under its data
-// dir; same path rules as server/control-socket.ts so the CLI and server
-// always agree without sharing code.
-// ---------------------------------------------------------------------------
-
-/** Resolve the control socket path for the given options. */
 function controlPath(opts) {
 	const dir = opts.dataDir
 		? resolve(opts.dataDir)
@@ -1593,7 +1375,6 @@ function controlPath(opts) {
 	return isWin ? `\\\\.\\pipe\\pi-web-ui-${effectivePort(opts)}` : join(dir, "pi-web-ui.sock");
 }
 
-/** Send one control command to a RUNNING server; resolves null if unreachable. */
 function controlCommand(opts, cmd) {
 	const path = controlPath(opts);
 	return new Promise((resolvePromise) => {
@@ -1650,13 +1431,10 @@ function getLocalLanIpv4s() {
 				}
 			}
 		}
-	} catch {
-		// best-effort
-	}
+	} catch {}
 	return ips;
 }
 
-/** 格式化打印服务的访问链接（包含本机、局域网 IP 与 Token / Setup 入口） */
 function printServiceUrls(port, host, token = "") {
 	const tokenSuffix = token ? `?token=${token}` : "";
 	const isLoopback = !host || isLocalLoopback(host);
@@ -1694,7 +1472,6 @@ function printServiceUrls(port, host, token = "") {
 	);
 }
 
-/** 轮询等待后台服务就绪并打印包含实时 token 的访问信息 */
 async function printRunningServiceAccess(opts, host, fallbackToken = "") {
 	const t0 = Date.now();
 	let st = null;
@@ -1707,7 +1484,6 @@ async function printRunningServiceAccess(opts, host, fallbackToken = "") {
 	printServiceUrls(effectivePort(opts), host, token);
 }
 
-/** Append the live server status (via the control socket) to `server status`. */
 async function printLiveStatus(opts) {
 	const st = await controlCommand(opts, "status");
 	if (!st || !st.ok) {
@@ -1725,8 +1501,6 @@ async function printLiveStatus(opts) {
 	}
 	console.log(ZH ? `   版本 : ${st.version} · PID ${st.pid}` : `   Version   : ${st.version} · PID ${st.pid}`);
 	console.log(ZH ? `   目录 : ${st.cwd}` : `   Directory : ${st.cwd}`);
-	// 启动来源（server/launch-origin.ts）：有 supervisor = 这个进程退出后会被自动
-	// 拉起（server restart / 更新面板的「重启服务」才有意义）。
 	console.log(
 		ZH
 			? `   启动 : ${
@@ -1752,7 +1526,6 @@ async function printLiveStatus(opts) {
 	);
 }
 
-/** `server quiesce|unquiesce` — toggle the admission gate on a RUNNING server. */
 async function setQuiesce(opts, on) {
 	const st = await controlCommand(opts, on ? "quiesce" : "unquiesce");
 	if (!st || !st.ok) {
@@ -1859,7 +1632,7 @@ function controlService(action, opts) {
 
 	if (isWin) {
 		const installed = winRunKeyInstalled(name);
-		const legacy = !installed && winTaskExists(name); // 旧版计划任务安装（未迁移）
+		const legacy = !installed && winTaskExists(name);
 
 		if (action === "status") {
 			const pid = winReadPid(name);
@@ -1989,11 +1762,6 @@ function controlService(action, opts) {
 	);
 }
 
-// ---------------------------------------------------------------------------
-// 界面插件管理（<dataDir>/plugins/，从 GitHub 安装）
-// ---------------------------------------------------------------------------
-
-/** 合法插件 id（同 server/plugins.ts 的 ID_RE）。 */
 const PLUGIN_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 const PLUGIN_HELP = ZH
@@ -2092,7 +1860,6 @@ function pluginDataDir(opts) {
 	return resolve(opts.dataDir ?? process.env.PI_WEB_DATA_DIR ?? join(homedir(), ".pi-web"));
 }
 
-/** 解析安装源为 { owner, repo, ref, subpath, cloneUrl } 或本地路径；非法输入直接退出。 */
 function parsePluginSource(rawSpec) {
 	let spec = rawSpec.trim();
 	let ref;
@@ -2107,7 +1874,6 @@ function parsePluginSource(rawSpec) {
 			);
 		spec = spec.slice(0, hash).replace(/\/+$/, "");
 	}
-	// ssh 形式转 https 拉取（不要求本机配 ssh key）；URL 去掉协议前缀统一按路径段解析
 	const ssh = spec.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
 	if (ssh) [, , spec] = ssh;
 	else {
@@ -2116,7 +1882,6 @@ function parsePluginSource(rawSpec) {
 	}
 	const segs = spec.split("/").filter(Boolean);
 	if (segs.length < 2) {
-		// 单段名称（如 browser-use）：若本地随包官方插件或 catalog 存在该 id，自动补齐为官方插件源
 		if (segs.length === 1 && PLUGIN_ID_RE.test(segs[0])) {
 			const id = segs[0];
 			const pkgRoot = resolve(BIN_DIR, "..");
@@ -2157,12 +1922,11 @@ function parsePluginSource(rawSpec) {
 		if (!ref && segs.length > 3) ref = segs[3];
 		subpath = segs.slice(4).join("/") || undefined;
 	} else if (segs.length > 2) {
-		subpath = segs.slice(2).join("/"); // owner/repo/sub/dir —— 子目录写法
+		subpath = segs.slice(2).join("/");
 	}
 	return { owner, repo, ref, subpath, cloneUrl: `https://github.com/${owner}/${repo}.git` };
 }
 
-/** 清理临时目录下残留超过 1 小时的 pi-web-ui-plugin-* 安装目录。 */
 function cleanStalePluginTmpDirs() {
 	try {
 		const base = tmpdir();
@@ -2182,13 +1946,6 @@ function cleanStalePluginTmpDirs() {
 	} catch {}
 }
 
-/**
- * 尝试定位随包自带的内置官方插件目录。
- * 命中条件：
- *   1. 未开启强制远端拉取标志（opts.remote / PI_WEB_PLUGIN_FORCE_REMOTE）；
- *   2. 未显式指定非主干 git ref（除 main/master/HEAD 之外的 ref 说明用户想试特定提交）；
- *   3. 属于官方仓库（xing-shuyin/pi-web-ui）的 plugins/<id> 子路径，且随包目录存在合法 manifest.json。
- */
 function resolveLocalBuiltinPluginDir(rawSpec, src, opts = {}) {
 	if (opts.remote === true || process.env.PI_WEB_PLUGIN_FORCE_REMOTE === "1") return null;
 	if (src?.ref && src.ref !== "main" && src.ref !== "master" && src.ref !== "HEAD") return null;
@@ -2210,19 +1967,11 @@ function resolveLocalBuiltinPluginDir(rawSpec, src, opts = {}) {
 	return null;
 }
 
-/**
- * 把仓库拉到 tmpDir 并返回检出根目录。
- * 优化策略：
- *   1. 共享缓存复用：同一批量操作/同源仓库共享检出，增量 sparse-checkout add，杜绝反复 clone；
- *   2. 稀疏拉取（Sparse Checkout + Blobless filter）：只拉取元数据与目标子目录，免除全量下载数十兆整仓；
- *   3. 健壮降级：稀疏失败平滑降级常规 shallow clone，再失败回退 tarball 直连。
- */
 async function acquireRepo(src, tmpDir, opts = {}) {
 	const sharedCache = opts.sharedCache;
 	const cacheKey = sharedCache ? `${src.cloneUrl}#${src.ref || "HEAD"}` : null;
 	const normalizedSubpath = src.subpath ? src.subpath.split(/[\\/]/).filter(Boolean).join("/") : null;
 
-	// 1. 尝试从共享缓存中复用已有检出
 	if (sharedCache && cacheKey && sharedCache.has(cacheKey)) {
 		const cached = sharedCache.get(cacheKey);
 		if (existsSync(cached.dir)) {
@@ -2260,7 +2009,6 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 		const gitTimeout = Number(process.env.PI_WEB_GIT_TIMEOUT_MS) || 45_000;
 		const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" };
 
-		// 2. 稀疏拉取：当指定了 subpath 时，优先尝试 --filter=blob:none --sparse
 		if (normalizedSubpath) {
 			const sparseArgs = [
 				"-c",
@@ -2309,7 +2057,6 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 					}
 				}
 			}
-			// 稀疏拉取失败，清理已产生的残骸，准备降级
 			if (existsSync(dst)) {
 				try {
 					rmSync(dst, { recursive: true, force: true });
@@ -2320,7 +2067,6 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 			);
 		}
 
-		// 3. 常规 shallow clone（未指定 subpath 或稀疏拉取失败时的降级通路）
 		const args = ["-c", "connect.timeout=15", "clone", "--depth", "1", "--single-branch"];
 		if (src.ref) args.push("--branch", src.ref);
 		args.push(src.cloneUrl, dst);
@@ -2350,9 +2096,6 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 
 	const url = `https://codeload.github.com/${src.owner}/${src.repo}/tar.gz/${src.ref || "HEAD"}`;
 	console.log(ZH ? `· 下载 ${url}` : `· Downloading ${url}`);
-	// 注意：这里不用 fail()/process.exit —— async 上下文里还有未关闭的 socket 时
-	// 直接退出会触发 Windows libuv "UV_HANDLE_CLOSING" 断言崩溃；改为 throw，
-	// 由 pluginInstallCmd 捕获后设 exitCode 让事件循环自然排空。
 	let buf;
 	try {
 		const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(120_000) });
@@ -2377,7 +2120,6 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 	writeFileSync(join(tmpDir, "src.tar.gz"), buf);
 	const extractTo = join(tmpDir, "tar");
 	mkdirSync(extractTo, { recursive: true });
-	// 相对路径解压：win32 的 GNU tar 会把 "C:\..." 里的 C: 当远程主机（Cannot connect to C:）
 	const tarRes = spawnSync("tar", ["-xzf", "src.tar.gz", "-C", "tar"], {
 		cwd: tmpDir,
 		stdio: "inherit",
@@ -2398,13 +2140,12 @@ async function acquireRepo(src, tmpDir, opts = {}) {
 	return join(extractTo, entries[0]);
 }
 
-/** 在检出树里找包含 manifest.json 的目录（深度 ≤3，跳过 .git/node_modules）。 */
 function findManifestDirs(root) {
 	const hits = [];
 	const walk = (dir, depth) => {
 		if (existsSync(join(dir, "manifest.json"))) {
 			hits.push(dir);
-			return; // 目录本身是插件就不再往下搜嵌套插件
+			return;
 		}
 		if (depth >= 3) return;
 		for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -2416,7 +2157,6 @@ function findManifestDirs(root) {
 	return hits;
 }
 
-/** 定位插件根目录：显式子路径 > 根目录 manifest > 全树搜索（唯一命中才继续）。 */
 function locatePluginRoot(checkout, subpath, repoLabel) {
 	if (subpath) {
 		const dir = join(checkout, ...subpath.split("/"));
@@ -2447,14 +2187,6 @@ function locatePluginRoot(checkout, subpath, repoLabel) {
 	return hits[0];
 }
 
-/**
- * 插件的源码构建声明（--build，issue #150）：
- *   manifest.json: { "build": { "install"?: "npm install --ignore-scripts",
- *                               "command": "npm run build",
- *                               "outputs"?: ["index.mjs", "client/entry.mjs"] } }
- * 缺 command 时回落到 package.json 的 scripts.build；两者都没有 = 没声明构建方式。
- * 返回 null 表示该插件没声明构建（--build 会明确报错，而不是猜一个命令出来）。
- */
 function resolveBuildPlan(pluginRoot, manifest) {
 	const declared = manifest && typeof manifest.build === "object" && manifest.build ? manifest.build : null;
 	let command = declared && typeof declared.command === "string" ? declared.command.trim() : "";
@@ -2462,9 +2194,7 @@ function resolveBuildPlan(pluginRoot, manifest) {
 		try {
 			const pkg = JSON.parse(readFileSync(join(pluginRoot, "package.json"), "utf8"));
 			if (pkg?.scripts && typeof pkg.scripts.build === "string" && pkg.scripts.build.trim()) command = "npm run build";
-		} catch {
-			/* 没有 package.json */
-		}
+		} catch {}
 	}
 	if (!command) return null;
 	const install =
@@ -2478,17 +2208,11 @@ function resolveBuildPlan(pluginRoot, manifest) {
 	return { install, command, outputs };
 }
 
-/** 拷贝插件树时的过滤：不带 .git / node_modules（与安装同一套）。 */
 const PLUGIN_COPY_FILTER = (s) => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(s);
 
-/** 插件目录里「属于随包代码」的清单文件：升级时只删清单里的路径，插件自己的
- *  数据（db-connections.json 之类）不在清单里，因此不会被删（issue #813）。 */
 const SHIPPED_LIST = ".pi-files.json";
-/** 这些顶层目录就地保留：既免重下几百 MB 模型，也规避 Windows 下已加载的
- *  .node/.dll 被 rmSync 触发 EBUSY 导致更新失败。 */
 const PRESERVED_DIRS = new Set(["whisper-cache", "node_modules"]);
 
-/** 列出将要随包安装的相对路径（与 cpSync 同过滤）。 */
 function listShippedFiles(root) {
 	const out = [];
 	const walk = (dir, prefix) => {
@@ -2514,7 +2238,6 @@ function listShippedFiles(root) {
 	return out.sort();
 }
 
-/** 在给定目录跑一条外部命令（shell 执行，继承 stdio 让用户看到进度）。失败抛错。 */
 function runBuildCommand(cmd, cwd, label) {
 	console.log(`· ${label}: ${cmd}`);
 	const res = spawnSync(cmd, {
@@ -2532,13 +2255,6 @@ function runBuildCommand(cmd, cwd, label) {
 		);
 }
 
-/**
- * 隔离构建：把插件源码拷进临时目录 → 只在那里安装声明的构建依赖（默认
- * npm install --ignore-scripts：不执行任意生命周期脚本）→ 执行声明的构建命令 →
- * 校验产物齐全 → 返回可安装的目录。
- *
- * 全程不碰目标目录：构建失败时上一版插件原样还在（替换只在构建成功后才发生）。
- */
 function buildPluginSource(pluginRoot, tmpDir, manifest) {
 	const plan = resolveBuildPlan(pluginRoot, manifest);
 	if (!plan)
@@ -2567,16 +2283,6 @@ function buildPluginSource(pluginRoot, tmpDir, manifest) {
 	return buildDir;
 }
 
-/**
- * 构建决策（issue #165：--build 自动推断）。
- *
- * 只有源码、没有产物（index.mjs 与 client/entry.mjs 都缺）且存在可解析的构建声明 =
- * “不构建这次安装必死”，此前会直接自动构建；但构建命令来自远端 manifest/package.json，
- * 经 shell:true 执行属于任意命令执行面，非交互环境下静默跑等于替用户放行。
- * 收紧后（审计修复）：mode=auto 只表示“有构建声明且必要”，是否真正执行由
- * installOnePlugin 二次把关 —— 交互 TTY 且用户输入 y 才跑，否则跳过并警告。
- * --no-build 保留旧的“装个空目录”行为（脚本化镜像/检查用），并明确打印跳过原因。
- */
 function decideBuildAction({ pluginRoot, manifest, build, noBuild, isCatalog = false }) {
 	if (build && noBuild)
 		throw new Error(
@@ -2603,10 +2309,6 @@ function decideBuildAction({ pluginRoot, manifest, build, noBuild, isCatalog = f
 	return { mode: "none", plan };
 }
 
-/**
- * 交互确认：插件声明的构建命令将经 shell 在本机执行（install + command 都来自
- * 远端 manifest/package.json），必须用户显式输入 y 才跑。仅 TTY 下会被调用。
- */
 async function confirmSourceBuild(plan) {
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	try {
@@ -2622,11 +2324,6 @@ async function confirmSourceBuild(plan) {
 	}
 }
 
-/**
- * 装一个插件（单源模式与目录模式共用）：拉取/定位 → 读 manifest → 构建决策 →
- * 覆盖（备份+保留 config.json）→ 落盘 → 记录来源/sha。
- * 失败抛 Error（目录模式逐条 try/catch 继续下一条，单源模式由调用方转 fail）。
- */
 async function installOnePlugin({
 	rawSpec,
 	name,
@@ -2652,7 +2349,6 @@ async function installOnePlugin({
 	const isLocal = existsSync(localCandidate);
 	const src = isLocal ? null : parsePluginSource(rawSpec);
 
-	// 随包内置插件快速路径：若随包已自带官方插件且满足版本条件，优先走本地快速通路
 	const localBuiltinDir = isLocal ? null : resolveLocalBuiltinPluginDir(rawSpec, src, { remote });
 	let fastPathCandidate = null;
 	if (localBuiltinDir) {
@@ -2664,15 +2360,12 @@ async function installOnePlugin({
 		const id = name ?? fallbackId;
 		const target = join(pluginsDir, id);
 		if (!existsSync(target)) {
-			// 未安装：全新安装直接采用本地随包
 			fastPathCandidate = localBuiltinDir;
 		} else if (force) {
-			// 覆盖更新：对比随包版本与已装版本
 			try {
 				const tgtM = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
 				const srcM = JSON.parse(readFileSync(join(localBuiltinDir, "manifest.json"), "utf8"));
 				if (srcM?.version && tgtM?.version && compareVersions(srcM.version, tgtM.version) > 0) {
-					// 随包版本比已装版本更新（刚升级了主程序），优先直接使用本地随包
 					fastPathCandidate = localBuiltinDir;
 				}
 			} catch {}
@@ -2695,7 +2388,6 @@ async function installOnePlugin({
 			try {
 				checkout = await acquireRepo(src, tmp, { sharedCache });
 			} catch (err) {
-				// 若远端拉取失败，且属于官方插件，优雅回退到本地随包（离线与断网容错保护）
 				if (localBuiltinDir && existsSync(join(localBuiltinDir, "manifest.json"))) {
 					console.warn(
 						ZH
@@ -2720,8 +2412,6 @@ async function installOnePlugin({
 					: `manifest.json is not valid JSON: ${err?.message ?? err}`,
 			);
 		}
-		// 构建决策（issue #150 的 --build + issue #165 的自动推断）：构建在临时目录里完成，
-		// 成功后才进入覆盖流程——构建失败 = 目标目录完全没被动过（上一版插件照常可用）。
 		const decision = decideBuildAction({
 			pluginRoot,
 			manifest,
@@ -2729,9 +2419,6 @@ async function installOnePlugin({
 			noBuild: noBuild === true,
 			isCatalog,
 		});
-		// 授权把关（审计修复）：--build 显式传参行为不变；mode=auto 的构建命令来自
-		// 远端 manifest/package.json 且经 shell:true 执行 —— 非交互环境绝不自动跑
-		// （跳过并警告），交互 TTY 也要用户显式输入 y 才执行。
 		let authorized = decision.mode === "explicit";
 		if (decision.mode === "auto") {
 			if (!process.stdin.isTTY) {
@@ -2775,7 +2462,6 @@ async function installOnePlugin({
 					: "· Build skipped: no artifacts in directory, plugin will not load after install (re-install with authorization to build)",
 			);
 		}
-		// 默认 id：子目录名 > 仓库名 > 本地目录名
 		const sourceName = src?.subpath ? src.subpath.split("/").pop() : (src?.repo ?? localCandidate.split(/[\\/]/).pop());
 		const fallbackId =
 			String(manifest.id ?? sourceName)
@@ -2799,32 +2485,20 @@ async function installOnePlugin({
 						? `插件目录已存在：${target}\n  加 --force 覆盖，或用 --name <id> 换个名字。`
 						: `Plugin directory already exists: ${target}\n  Add --force to overwrite, or use --name <id> to choose a different name.`,
 				);
-			// 更新前备份旧版本（<dataDir>/plugin-backups/<id>-<ts>/，保留最近 3 份），
-			// 失败时自动回滚。备份与安装同 filter：不带 .git/node_modules。
 			backupTs = ensurePluginBackup(dataDir, id, { source: rawSpec });
-			// 插件凭据/加密机密/私有存储/运行时依赖声明不因升级丢失：先取出，拷完新文件后若新包未自带则原样放回
 			for (const fname of PRESERVED_FILES) {
 				try {
 					preservedData.set(fname, readFileSync(join(target, fname)));
-				} catch {
-					/* 无该文件 */
-				}
+				} catch {}
 			}
-			// 只删上一版**随包安装**的文件：插件把自己的数据写在插件目录里
-			// （db-client 的 db-connections.json、聊天记录、索引……）时，整目录清空会
-			// 把它们一起删掉（issue #813）。没有清单的老安装不敢猜，宁可少删：
-			// 残留的旧代码文件不会被加载，而删错的数据找不回来。
 			let previous = null;
 			try {
 				const raw = JSON.parse(readFileSync(join(target, SHIPPED_LIST), "utf8"));
 				if (Array.isArray(raw?.files)) previous = raw.files.filter((f) => typeof f === "string" && f);
-			} catch {
-				/* 老版本安装没留清单 */
-			}
+			} catch {}
 			if (previous) {
 				for (const rel of previous) {
 					const full = resolve(target, rel);
-					// 清单来自磁盘，越界路径一律忽略（不支持插件把文件删到目录外）。
 					if (!full.startsWith(target + sep)) continue;
 					if (PRESERVED_DIRS.has(relative(target, full).split(sep)[0])) continue;
 					rmSync(full, { recursive: true, force: true });
@@ -2841,7 +2515,6 @@ async function installOnePlugin({
 		try {
 			cpSync(installRoot, target, { recursive: true, filter: PLUGIN_COPY_FILTER });
 		} catch (err) {
-			// 拷贝失败 → 有备份则自动回滚，保持旧版本可用
 			if (backupTs && restorePluginBackup(dataDir, id)) {
 				throw new Error(
 					ZH
@@ -2860,33 +2533,21 @@ async function installOnePlugin({
 				writeFileSync(join(target, fname), buf);
 			}
 		}
-		// 记录来源 / 远端 sha / 随包文件清单。清单是下一次升级的删除依据：只删它，
-		// 插件自己写进目录的数据就不会被清空。
 		try {
 			writeFileSync(
 				join(target, SHIPPED_LIST),
 				JSON.stringify({ files: listShippedFiles(installRoot) }, null, 2) + "\n",
 			);
-		} catch {
-			/* 尽力而为：没有清单时下次升级退化为「不清理旧文件」 */
-		}
-		// 记录安装来源：设置面板「更新」按钮据此重跑同一条安装命令（--force 覆盖）。
+		} catch {}
 		try {
 			writeFileSync(join(target, ".pi-source.json"), JSON.stringify({ source: rawSpec }, null, 2) + "\n");
-		} catch {
-			/* 尽力而为：没有来源信息只是不显示更新按钮 */
-		}
-		// 记录本次安装的远端 sha（git ls-remote HEAD，离线也支持本地 git 源）：
-		// 供 `pi-web-ui plugins --check-updates` 对比更新。失败静默（无 sha = 保守可更新）。
+		} catch {}
 		try {
 			const sha = await resolveRemoteSha(rawSpec);
 			if (sha) writeFileSync(join(target, ".pi-git-sha"), sha + "\n");
-		} catch {
-			/* 尽力而为 */
-		}
+		} catch {}
 		return { id, target, manifest, buildMode: decision.mode };
 	} finally {
-		// 若当前 tmp 正在被 sharedCache 共享复用，不在此清理，留给批量操作统一释放
 		let isCached = false;
 		if (sharedCache) {
 			for (const c of sharedCache.values()) {
@@ -2899,29 +2560,16 @@ async function installOnePlugin({
 		if (!isCached) {
 			try {
 				rmSync(tmp, { recursive: true, force: true });
-			} catch {
-				/* Windows 等平台杀毒/进程占用可能抛 EBUSY，不应翻转已成功的安装 */
-			}
+			} catch {}
 		}
 	}
 }
 
-/**
- * 目录文档校验（issue #165 的 CLI --catalog）。
- *
- * 规则与 server/plugin-catalog.ts 的 toEntry 对齐（id 字符集、source 形状、字段裁剪），
- * 仅放宽一条：CLI 跑在使用者的本机信任上下文里，允许已存在的本地目录源（离线开发、
- * 本地目录同步）；服务端 toEntry（网络/插件触发）仍只收远端源。两边规则若漂移，
- * tests/plugin-catalog-cli-test.mjs 的行为断言会先响（离线全链路）。
- */
 function isCatalogEntrySource(s) {
 	if (!s || s.length > 300) return false;
-	// 本地目录：CLI 才放行（存在性检查，file:// 前缀兼容 install 单源写法）
 	try {
 		if (existsSync(resolve(s.replace(/^file:\/\//, "")))) return true;
-	} catch {
-		/* 非法路径字符：走下面的远端规则 */
-	}
+	} catch {}
 	if (/^https?:\/\//.test(s)) return true;
 	const spec = s.split("#")[0].replace(/\/+$/, "");
 	const segs = spec.split("/").filter(Boolean);
@@ -2939,9 +2587,7 @@ function deriveCatalogEntryId(rawId, source) {
 			const cleaned = base.replace(/[^A-Za-z0-9_-]/g, "-").replace(/^-+|-+$/g, "");
 			return cleaned || "plugin";
 		}
-	} catch {
-		/* 走远端规则 */
-	}
+	} catch {}
 	const spec = source.split("#")[0].replace(/\/+$/, "");
 	const segs = spec.split("/").filter(Boolean);
 	const last = segs.length >= 2 ? segs[segs.length - 1] : (segs[0] ?? "plugin");
@@ -2972,7 +2618,6 @@ function catalogEntryFromRaw(raw) {
 	};
 }
 
-/** 目录文档形状：JSON 数组或 {entries:[...]}；非法条目丢弃并计数（与服务端同语义）。 */
 function normalizeCatalogEntries(raw) {
 	const list = Array.isArray(raw)
 		? raw
@@ -2995,7 +2640,6 @@ function normalizeCatalogEntries(raw) {
 	return { entries, skipped };
 }
 
-/** 读目录文档：http(s) 拉取（30s 超时），其余当本地绝对路径（与服务端同口径）。 */
 async function readCatalogDocumentText(source) {
 	const src = String(source ?? "").trim();
 	if (!src)
@@ -3037,9 +2681,7 @@ function readCatalogFileEntries(customPath) {
 	try {
 		const raw = JSON.parse(readFileSync(customPath, "utf8"));
 		if (raw && typeof raw === "object" && Array.isArray(raw.entries)) return raw.entries;
-	} catch {
-		/* 无文件/坏文件 = 空列表 */
-	}
+	} catch {}
 	return [];
 }
 
@@ -3050,7 +2692,6 @@ function writeCatalogFileEntries(customPath, entries) {
 	renameSync(tmp, customPath);
 }
 
-/** install --catalog <url>：同步可安装列表 + 逐条安装/更新（单条失败不中断整批）。 */
 async function installCatalogCmd(opts) {
 	const dataDir = pluginDataDir(opts);
 	const customPath = join(dataDir, "plugin-catalog.json");
@@ -3069,7 +2710,6 @@ async function installCatalogCmd(opts) {
 	} catch (err) {
 		fail(`${err?.message ?? err}`);
 	}
-	// 到这里才动磁盘：形状不对的文档绝不覆盖有效列表（与服务端同纪律）。
 	if (opts.replace) {
 		writeCatalogFileEntries(customPath, entries);
 	} else {
@@ -3124,7 +2764,6 @@ async function installCatalogCmd(opts) {
 			}
 		}
 	} finally {
-		// 统一清理同批任务复用的共享缓存检出目录
 		for (const entry of sharedCache.values()) {
 			if (entry.tmpDir) {
 				try {
@@ -3141,25 +2780,14 @@ async function installCatalogCmd(opts) {
 	if (failCount) process.exitCode = 1;
 }
 
-// ---------------------------------------------------------------------------
-// 插件脚手架（plugin create）：生成最小可跑骨架
-// 形态 = <dataDir>/plugins/<id>/（manifest.json + index.mjs + client/entry.mjs），
-// 与 server/plugins.ts 的加载约定对齐；官方插件（plugins/demo-mailbox 等）可作参考。
-// ---------------------------------------------------------------------------
-
-/** 脚手架模板：minimal（零权限）| ui-slot | agent-tool | renderer（view:false）。 */
 const PLUGIN_TEMPLATES = ["minimal", "ui-slot", "agent-tool", "renderer"];
 
-/** 随包发布的 plugin-sdk 服务端文件：包含总入口、浏览器入口、工具函数与测试 harness。 */
 const PLUGIN_SDK_FILES = ["index.mjs", "client.mjs", "client-utils.mjs", "testing.mjs"];
 
-/** 拷进 client/sdk/ 的浏览器 SDK 文件清单（绝不含 testing.mjs 或任何 node 依赖）。 */
 const PLUGIN_SDK_CLIENT_FILES = ["client.mjs", "client-utils.mjs"];
 
-/** 浏览器端 client/sdk/index.mjs 的兼容入口内容（保证已有客户端无需修改）。 */
 const CLIENT_SDK_INDEX_COMPAT = `export * from "./client.mjs";\n`;
 
-/** 包内 plugin-sdk 文件清单（随包发布，见 package.json files）；缺任一 = 包不完整，按「无 SDK」处理。 */
 function pluginSdkSources() {
 	const dir = join(BIN_DIR, "..", "plugin-sdk");
 	const files = [];
@@ -3187,14 +2815,11 @@ function copyClientSdkInto(dir, sources) {
 		const src = map.get(name);
 		if (src && existsSync(src)) copyFileSync(src, join(dir, name));
 	}
-	// 浏览器端兼容入口：export * from "./client.mjs";
 	writeFileSync(join(dir, "index.mjs"), CLIENT_SDK_INDEX_COMPAT);
-	// 禁止 testing.mjs 或任何 Node 依赖进 client/sdk/，若有旧残留则清理
 	const testFile = join(dir, "testing.mjs");
 	if (existsSync(testFile)) rmSync(testFile, { force: true });
 }
 
-/** 各模板的 manifest.description（一句话说明骨架来源）。 */
 function scaffoldDescription(template) {
 	switch (template) {
 		case "ui-slot":
@@ -3208,17 +2833,12 @@ function scaffoldDescription(template) {
 	}
 }
 
-/** 模板的客户端是否 import SDK：**除 renderer 外都 import `./sdk/client.mjs`**（renderer 渲染器走裸 ESM）。
- *  决定 `client/sdk/` 要不要拷、README 怎么写；拷完还用 import-check 复验（模板以后改了也不漏）。 */
 function templateClientUsesSdk(template) {
 	return template !== "renderer";
 }
 
-/** 拼骨架文件：{ 相对路径: 内容 }。useSdk=false 时走无 SDK 导入的等价写法。
- *  withTest=true（且 useSdk）时多带 index.test.mjs（node --test + createMockHost 最小单测）。 */
 function buildPluginScaffold(id, template, useSdk, withTest = false) {
 	const sdkServer = useSdk ? `import { definePlugin } from "./sdk/index.mjs";\n\n` : "";
-	// 客户端 import 必须落在 client/ 内：宿主只暴露 /plugins/<id>/client/*（见 import-check）。
 	const sdkClient = useSdk ? `import { defineView, onUiAction } from "./sdk/client.mjs";\n\n` : "";
 	const wrapServer = (body) =>
 		useSdk ? `${sdkServer}export default definePlugin({\n${body}\n});\n` : `export default {\n${body}\n};\n`;
@@ -3234,8 +2854,6 @@ function buildPluginScaffold(id, template, useSdk, withTest = false) {
 		version: "0.1.0",
 		description: scaffoldDescription(template),
 		apiVersion: 2,
-		// apiVersion 2 **必须**声明 permissions（缺字段 = 宿主直接拒激活，issue #546 现场顺带发现）：
-		// 模板按需覆写（ui-slot → ["ui"]、agent-tool → ["tools"]），零能力的就是空数组。
 		permissions: [],
 	};
 
@@ -3359,7 +2977,6 @@ function buildPluginScaffold(id, template, useSdk, withTest = false) {
 				`\t\t};\n` +
 				`\t},`,
 		);
-		// 渲染器走裸 ESM（命中围栏才懒加载）：默认导出 { renderers }，不用 defineView。
 		clientJs =
 			`/**\n` +
 			` * ${id} —— fenced-code 渲染器（pi-web-ui plugin create 生成）。\n` +
@@ -3432,7 +3049,6 @@ function buildPluginScaffold(id, template, useSdk, withTest = false) {
 		"README.md": readme,
 	};
 	if (withTest && useSdk) {
-		// 最小单测：四个模板的 activate 都会 host.log("activated")，断言与模板无关。
 		out["index.test.mjs"] =
 			`/**\n` +
 			` * ${id} —— 最小单测（pi-web-ui plugin create --with-test 生成）。\n` +
@@ -3468,7 +3084,6 @@ function buildPluginScaffold(id, template, useSdk, withTest = false) {
 	return out;
 }
 
-/** 生成后的 manifest 基础校验（必填/口径）；返回 warnings（无则空数组）。 */
 function validateScaffoldManifest(manifest, dirName) {
 	const warnings = [];
 	for (const k of ["id", "name", "version", "description"]) {
@@ -3505,8 +3120,6 @@ function validateScaffoldManifest(manifest, dirName) {
 					: `manifest.permissions must be a string array (e.g. ["ui"])`,
 			);
 	}
-	// 与宿主同口径（server/plugin-manifest-validate.ts）：apiVersion 2 必须有 permissions 字段，
-	// 缺失 = 扫到就报错误、插件被拒（零能力也写 []）—— 骨架曾经漏写，装上去才发现。
 	if (manifest.apiVersion === 2 && manifest.permissions === undefined)
 		warnings.push(
 			ZH
@@ -3523,7 +3136,6 @@ function validateScaffoldManifest(manifest, dirName) {
 	return warnings;
 }
 
-/** 已装插件目录或文件里解析 SDK_VERSION（新单源在 client.mjs，兼容旧版在 index.mjs；老拷贝无此常量 → null）。 */
 function installedSdkVersion(dirOrFile) {
 	try {
 		const isDir = statSync(dirOrFile).isDirectory();
@@ -3542,7 +3154,6 @@ function installedSdkVersion(dirOrFile) {
 	}
 }
 
-/** 包内 SDK 版本（新单源：plugin-sdk/client.mjs 的 `export const SDK_VERSION`，兼容旧版 index.mjs）。 */
 function packageSdkVersion() {
 	const sources = pluginSdkSources();
 	if (!sources) {
@@ -3567,7 +3178,6 @@ function packageSdkVersion() {
 	);
 }
 
-/** 静态 import 自检问题的双语文案（create / upgrade-sdk 共用）。 */
 function importProblemText(p) {
 	if (p.kind === "escapes-client")
 		return ZH
@@ -3578,7 +3188,6 @@ function importProblemText(p) {
 		: `${p.file}: import "${p.spec}" target does not exist (${p.target}) — typo, or a missing vendored dependency?`;
 }
 
-/** 懒加载 import-check（随包发布，但裁剪包可能没有 → 跳自检而不是崩）。 */
 let importCheckModule;
 async function loadImportCheck() {
 	if (importCheckModule === undefined) {
@@ -3587,7 +3196,6 @@ async function loadImportCheck() {
 	return importCheckModule;
 }
 
-/** 刷新已装插件的 SDK 拷贝（服务端 `sdk/` + 客户端 `client/sdk/`，版本/文件对不上才拷）。 */
 async function pluginUpgradeSdkCmd(argv) {
 	const { opts, positionals } = parseFlags(argv);
 	if (opts.help || positionals.length > 1) {
@@ -3628,7 +3236,6 @@ async function pluginUpgradeSdkCmd(argv) {
 		const hasServerSdk = existsSync(serverSdkDir);
 		const hasClientSdk = existsSync(clientSdkDir);
 
-		// 客户端侧缺失但代码确实 import ./sdk/ → 补建（修好 issue #546 之前生成的插件）。
 		let wantsClientSdk = false;
 		if (!hasClientSdk) {
 			wantsClientSdk =
@@ -3641,7 +3248,6 @@ async function pluginUpgradeSdkCmd(argv) {
 			continue;
 		}
 
-		// 分别检测服务/客户端版本与缺文件
 		let serverStale = false;
 		if (hasServerSdk) {
 			const missingFiles = PLUGIN_SDK_FILES.some((name) => !existsSync(join(serverSdkDir, name)));
@@ -3719,7 +3325,6 @@ async function pluginUpgradeSdkCmd(argv) {
 				: `  ↳ ${id}: created the missing client/sdk/ (needed by the client-side ./sdk/ import)`,
 		);
 	for (const w of broken) console.log(`⚠ ${w}`);
-	// 顺带自检 import 越界/缺失（issue #546：客户端越界会让插件页整页空白，而服务端看不出来）。
 	if (importCheck) {
 		for (const id of targets) {
 			for (const p of importCheck.checkPluginImports(join(parentDir, id)).problems)
@@ -3769,16 +3374,12 @@ async function pluginCreateCmd(argv) {
 	const files = buildPluginScaffold(id, template, useSdk, wantTest && useSdk);
 	if (useSdk) copyServerSdkInto(join(target, "sdk"), sdkSources);
 	for (const [rel, content] of Object.entries(files)) writeFileSync(join(target, rel), content);
-	// 客户端侧的相对依赖必须落在 client/ 内（宿主只暴露 /plugins/<id>/client/*）：生成文件里
-	// 引到 client/ 内的 SDK 就把 SDK 也拷进 client/sdk/（renderer 模板客户端不用 SDK，不白拷）。
 	const importCheck = await loadImportCheck();
 	if (useSdk) {
-		// 模板按约定先拷（renderer 除外），再用扫描复验一遍 —— 模板以后加了客户端 SDK 引用也不会漏。
 		const scanned =
 			importCheck?.scanPluginImports(target).some((r) => r.client && r.target.startsWith("client/sdk/")) ?? false;
 		if (templateClientUsesSdk(template) || scanned) copyClientSdkInto(join(target, "client", "sdk"), sdkSources);
 	}
-	// 生成后校验：manifest 基础必填 + 生成文件的 node 语法检查 + 静态 import 自检。
 	let manifest;
 	try {
 		manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
@@ -3807,8 +3408,6 @@ async function pluginCreateCmd(argv) {
 					: `${rel} failed node --check (please check generated files)`,
 			);
 	}
-	// 静态 import 自检（issue #546）：客户端越界 / 目标缺失都会让插件在浏览器里整页空白，
-	// 而服务端看不出来 —— 在脚手架阶段就报出来。
 	if (importCheck) {
 		const { problems } = importCheck.checkPluginImports(target);
 		for (const p of problems) warnings.push(importProblemText(p));
@@ -3848,8 +3447,6 @@ async function pluginInstallCmd(argv) {
 		console.log(PLUGIN_HELP);
 		return;
 	}
-	// 目录同步模式（issue #165）：install --catalog <url> —— 读目录文档 → 校验 →
-	// 原子写盘 → 逐条安装/更新（与服务端 plugin-catalog-sync 同语义）。
 	if (opts.catalog !== undefined) {
 		if (positionals.length !== 0)
 			fail(
@@ -3943,7 +3540,6 @@ function pluginListCmd(argv) {
 		return;
 	}
 	const dataDir = pluginDataDir(opts);
-	// --rollback <id>：回滚到最近一份更新前备份
 	if (opts.rollback) {
 		const id = String(opts.rollback);
 		if (!PLUGIN_ID_RE.test(id)) fail(ZH ? `非法插件 id: ${id}` : `Invalid plugin id: ${id}`);
@@ -3968,7 +3564,6 @@ function pluginListCmd(argv) {
 		);
 		return;
 	}
-	// --check-updates：对比各插件记录的最后安装 sha 与远端 HEAD（git ls-remote）
 	if (opts.checkUpdates) {
 		return checkUpdatesCmd(dataDir).then(() => {});
 	}
@@ -3977,9 +3572,7 @@ function pluginListCmd(argv) {
 	let names = [];
 	try {
 		names = readdirSync(pluginsDir).sort();
-	} catch {
-		/* 目录不存在 = 未安装任何插件 */
-	}
+	} catch {}
 	for (const n of names) {
 		if (!PLUGIN_ID_RE.test(n)) continue;
 		try {
@@ -3988,7 +3581,7 @@ function pluginListCmd(argv) {
 				`  ${n.padEnd(24)} ${[m.name, m.version ? `v${m.version}` : "", m.description].filter(Boolean).join("  ")}`,
 			);
 		} catch {
-			continue; // 坏目录跳过
+			continue;
 		}
 	}
 	if (rows.length === 0) {
@@ -4211,16 +3804,35 @@ async function main() {
 		pluginListCmd(argv.slice(1));
 		return;
 	}
-	// One-shot server with optional --port/--cwd/--data-dir overrides.
 	const { opts, positionals } = parseFlags(argv);
 	if (opts.help) {
 		console.log(HELP);
 		return;
 	}
-	if (positionals.length > 0)
+	if (positionals.length > 1)
 		fail(
-			ZH ? `未知命令: ${positionals[0]}（--help 查看用法）` : `Unknown command: ${positionals[0]} (--help for usage)`,
+			ZH
+				? `未知命令: ${positionals.join(" ")}（--help 查看用法）`
+				: `Unknown command: ${positionals.join(" ")} (--help for usage)`,
 		);
+	if (positionals.length === 1) {
+		if (opts.cwd !== undefined) {
+			fail(ZH ? "目录参数不能与 --cwd 同时使用" : "Cannot combine a directory argument with --cwd");
+		}
+		const cwd = resolve(positionals[0]);
+		let isDirectory = false;
+		try {
+			isDirectory = statSync(cwd).isDirectory();
+		} catch {}
+		if (!isDirectory) {
+			fail(
+				ZH
+					? `目录不存在或不可访问: ${positionals[0]}`
+					: `Directory does not exist or is inaccessible: ${positionals[0]}`,
+			);
+		}
+		opts.cwd = cwd;
+	}
 	await startForeground(opts);
 }
 

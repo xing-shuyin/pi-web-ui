@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { computeFileHash, HashlineSnapshotStore } from "../../server/hashline-engine.js";
 
-/** 快照 store 的 LRU 驱逐（audit fix #11）：全局单例跨整个会话存活，
- *  反复编辑同一文件会让快照按编辑次数无界增长。 */
-
 describe("HashlineSnapshotStore LRU（audit fix #11）", () => {
 	it("单文件快照超过 200 条时驱逐最旧一代", () => {
 		const store = new HashlineSnapshotStore();
 		const firstHash = store.record("/a.ts", "v0");
 		for (let i = 1; i <= 200; i++) store.record("/a.ts", `v${i}`);
-		// 最早一代已被挤出，最新一代仍在
 		expect(store.get("/a.ts", firstHash)).toBeUndefined();
 		expect(store.get("/a.ts", computeFileHash("v200"))).toBe("v200");
 	});
@@ -18,11 +14,9 @@ describe("HashlineSnapshotStore LRU（audit fix #11）", () => {
 		const store = new HashlineSnapshotStore();
 		const keepHash = store.record("/a.ts", "keep");
 		for (let i = 0; i < 199; i++) store.record("/a.ts", `filler-${i}`);
-		// 命中一次把 keep 刷到 LRU 尾部，再写入一代也挤不掉它
 		expect(store.get("/a.ts", keepHash)).toBe("keep");
 		store.record("/a.ts", "newest");
 		expect(store.get("/a.ts", keepHash)).toBe("keep");
-		// 没有 refresh 的 filler-0 是最旧一代，被正常驱逐
 		expect(store.get("/a.ts", computeFileHash("filler-0"))).toBeUndefined();
 		expect(store.get("/a.ts", computeFileHash("filler-1"))).toBe("filler-1");
 	});
@@ -31,7 +25,6 @@ describe("HashlineSnapshotStore LRU（audit fix #11）", () => {
 		const store = new HashlineSnapshotStore();
 		store.record("/a.ts", "a-old");
 		for (let i = 0; i < 200; i++) store.record("/b.ts", `b-${i}`);
-		// b 文件填满 LRU 不影响 a 文件的快照
 		expect(store.get("/a.ts", computeFileHash("a-old"))).toBe("a-old");
 	});
 
@@ -39,7 +32,7 @@ describe("HashlineSnapshotStore LRU（audit fix #11）", () => {
 		const store = new HashlineSnapshotStore();
 		store.record("/a.ts", "same");
 		for (let i = 0; i < 199; i++) store.record("/a.ts", `f${i}`);
-		store.record("/a.ts", "same"); // 先删后插：refresh 而非新增
+		store.record("/a.ts", "same");
 		expect(store.get("/a.ts", computeFileHash("same"))).toBe("same");
 	});
 });

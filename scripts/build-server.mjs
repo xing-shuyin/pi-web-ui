@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-// tsc does not remove output for deleted sources. Rebuild the published tree cleanly.
 await rm(join(root, "dist/server"), { recursive: true, force: true });
 const exitCode = await new Promise((resolve, reject) => {
 	const child = spawn(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.server.json"], {

@@ -1,32 +1,16 @@
-/**
- * 语义色实底前景可读性体检（issue：绿/红/黄/蓝底上的白字几乎看不见）。
- *
- * 背景：状态徽标、goalbar 状态 chip、下载/复制图标反馈、上传发送按钮都是用
- * 「语义色实底 + 前景色」画的，前景在 CSS 里写死 `#fff`。但语义色在主题里普遍偏亮：
- * 默认主题 `--amber #fbbf24` 白字只有 1.67:1、`--green #34d399` 1.92:1、
- * `--red #f87171` 2.77:1；亮色主题更糟（catppuccin 的 `--amber #f9e2af` 1.27:1）。
- *
- * 正确写法：前景取 `--on-green / --on-red / --on-amber / --on-blue /
- * --on-send-blue / --on-stop-red`（styles.css `:root` 给默认值，主题按调色板覆盖）。
- *
- * 本测试是**静态**体检（零端口、零浏览器，CI 必跑），两道关：
- *   1. 每套主题：6 个 `--on-*` 令牌在各自语义色实底上对比度 >= 3.0（灾难性地板）；
- *   2. styles.css 与所有内置插件：不得出现「语义色实底 + 硬编码白字」。
- */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { contrast, parseHex } from "../helpers/theme-contrast.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const THEMES_DIR = join(ROOT, "themes");
 const PLUGINS_DIR = join(ROOT, "plugins");
 const STYLES_PATH = join(ROOT, "web", "src", "styles.css");
 
-/** 灾难性不可读的地板（与 accent-contrast / theme-inline-code 同口径）。 */
 const MIN_RATIO = 3.0;
 
-/** 语义色 → 实底上前景令牌 */
 const PAIRS = [
 	{ base: "--green", token: "--on-green" },
 	{ base: "--red", token: "--on-red" },
@@ -36,36 +20,13 @@ const PAIRS = [
 	{ base: "--stop-red", token: "--on-stop-red" },
 ];
 
-// ---------------------------------------------------------------- 颜色工具
-
-function parseHex(value: string | null | undefined): [number, number, number] | null {
-	const m = /^#([0-9a-f]{6})$/i.exec((value ?? "").trim());
-	if (!m) return null;
-	const n = parseInt(m[1]!, 16);
-	return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function luminance([r, g, b]: [number, number, number]): number {
-	const ch = [r, g, b].map((v) => v / 255).map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)));
-	return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
-}
-
-function contrast(a: [number, number, number], b: [number, number, number]): number {
-	const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-	return (hi! + 0.05) / (lo! + 0.05);
-}
-
-/** 从 CSS 文本里取某个十六进制令牌值（同名多次声明取第一次）。 */
 function tokenValue(css: string, token: string): string | null {
 	const m = new RegExp(token.replace(/[-]/g, "\\-") + "\\s*:\\s*(#[0-9a-fA-F]{6})\\b").exec(css);
 	return m ? m[1]! : null;
 }
 
-// ---------------------------------------------------------------- 静态扫描
-
 const WHITE_DECL = /(?:^|[\s;])color\s*:\s*(#fff(?:fff)?|white)\s*(?:!important)?\s*(?=;|$)/i;
 
-/** 动态匹配语义色实底变量（含原生与别名如 --nt-green）。 */
 function makeSemanticSolidRegex(text?: string): RegExp {
 	const names = new Set<string>(["green", "red", "amber", "blue", "send-blue", "stop-red"]);
 	if (text) {
@@ -82,14 +43,12 @@ function makeSemanticSolidRegex(text?: string): RegExp {
 	return new RegExp(`var\\(--(${pattern})\\s*(?:,[^)]*)?\\)`);
 }
 
-/** 取片段里最后一条 background 声明的值（层叠最后一条生效）。 */
 function lastBackground(fragment: string): string | null {
 	let last: string | null = null;
 	for (const m of fragment.matchAll(/(?:^|[\s;])background(?:-color)?\s*:\s*([^;]+)/gi)) last = m[1]!;
 	return last;
 }
 
-/** 该片段是否「语义色（或语义色半透明染色）作底 + 硬编码白字」。 */
 function findViolations(text: string): string[] {
 	const bad: string[] = [];
 	const semRegex = makeSemanticSolidRegex(text);
@@ -120,8 +79,6 @@ function walk(dir: string, out: string[] = []): string[] {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- 用例
 
 describe("语义色实底的前景对比度", () => {
 	const stylesCss = readFileSync(STYLES_PATH, "utf8");

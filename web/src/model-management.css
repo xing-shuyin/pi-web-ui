@@ -1,20 +1,3 @@
-/**
- * model-management.css — 模型管理体系与现代化 UI 样式规范 (Issue #278)
- *
- * 包含：
- * 1. 快捷供应商接入预设芯片 (Quick Provider Chips)
- * 2. 候选模型采纳器 (Candidate Model Picker)
- * 3. 连通性测试探针与延迟指示器 (Connection Test Probe)
- * 4. 模型定价与规格徽章 (Model Pricing & Spec Badges)
- * 5. 一体化模型思考胶囊控件 (ModelThinkingCapsule)
- * 6. 使用量与费用统计看板 (Usage & Cost Dashboard)
- * 7. 模型变体折叠与思考路由组件 (Variant Collapse & Effort Routing)
- *
- * 完全基于 pi-web-ui 标准设计变量（深色基线 + 自适应调色板），无额外外部依赖。
- */
-
-/* ------------------------------------------------------------ 1. Quick Provider Chips */
-
 .quick-chips-wrapper {
 	display: flex;
 	flex-direction: column;
@@ -89,8 +72,6 @@
 	border-radius: 4px;
 	margin-left: 2px;
 }
-
-/* ------------------------------------------------------------ 2. Candidate Model Picker */
 
 .candidate-picker-backdrop {
 	position: fixed;
@@ -272,8 +253,6 @@
 	background: var(--bg-elev);
 }
 
-/* ------------------------------------------------------------ 3. Connection Test Probe */
-
 .conn-test-box {
 	display: inline-flex;
 	align-items: center;
@@ -348,8 +327,6 @@
 	}
 }
 
-/* ------------------------------------------------------------ 4. Pricing & Spec Badges */
-
 .spec-badge {
 	display: inline-flex;
 	align-items: center;
@@ -389,7 +366,6 @@
 	background: var(--accent-soft);
 }
 
-/* 模型列表中的行内定价编辑器 */
 .pricing-inputs-row {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
@@ -422,8 +398,6 @@
 	font-family: var(--mono);
 }
 
-/* ------------------------------------------------------------ 5. ModelThinkingCapsule */
-
 .model-thinking-capsule {
 	display: inline-flex;
 	align-items: center;
@@ -434,14 +408,11 @@
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 	transition: all 0.15s ease;
 	user-select: none;
-	/* 窄容器（画布卡片/抽屉）里必须能收缩，否则整颗胶囊顶出父容器 */
+
 	max-width: 100%;
 	min-width: 0;
 }
 
-/* 收缩要落在「真 flex item」上：两段 trigger 都被 Dropdown 包了一层 .dropdown，
- * 而 flex item 默认 min-width:auto（= min-content），模型名不省略就会把
- * 思考强度段顶出容器（画布里表现为「极简」跑出卡片边界）。 */
 .model-thinking-capsule > .dropdown {
 	display: flex;
 	min-width: 0;
@@ -547,8 +518,6 @@
 	box-shadow: 0 0 6px var(--accent);
 }
 
-/* ------------------------------------------------------------ 6. Usage & Cost Dashboard */
-
 .usage-dashboard {
 	display: flex;
 	flex-direction: column;
@@ -598,7 +567,6 @@
 	color: var(--accent);
 }
 
-/* 7d / 30d 统计柱状图 */
 .trend-chart-container {
 	background: var(--bg-elev);
 	border: 1px solid var(--border-soft);
@@ -658,7 +626,6 @@
 	color: var(--text-faint);
 }
 
-/* GitHub 风格年度活跃热力图 */
 .heatmap-container {
 	background: var(--bg-elev);
 	border: 1px solid var(--border-soft);
@@ -698,8 +665,6 @@
 .heatmap-cell[data-level="4"] {
 	background: var(--accent);
 }
-
-/* ------------------------------------------------------------ 7. Variant Collapse & Effort Routing */
 
 .variant-group-card {
 	background: var(--bg-elev2);
@@ -758,8 +723,6 @@
 	background: var(--bg-elev2);
 }
 
-/* ------------------------------------------------------------ 8. Smart Select-or-Input (参数优先选择，兜底手输) */
-
 .smart-param-field {
 	display: flex;
 	flex-direction: column;
@@ -813,7 +776,6 @@
 	background: color-mix(in srgb, var(--amber) 10%, transparent);
 }
 
-/* 混合型选择输入框 (带快捷下拉的输入框) */
 .hybrid-select-input {
 	display: flex;
 	align-items: center;
@@ -852,8 +814,6 @@
 	max-width: 90px;
 }
 
-/* ------------------------------------------------------------ 9. Master-Detail Model Studio (分栏式模型工作台) */
-
 .modal.model-studio-modal {
 	max-width: 980px;
 	width: min(980px, 94vw);
@@ -866,7 +826,6 @@
 	padding: 0;
 }
 
-/* 顶栏优化 */
 .studio-header {
 	display: flex;
 	align-items: center;
@@ -1168,8 +1127,6 @@
 	}
 }
 
-/* ------------------------------------------------------------ 10. Refined Model Matrix Cards (精致模型矩阵卡片) */
-
 .model-matrix-list {
 	display: flex;
 	flex-direction: column;
@@ -1199,7 +1156,6 @@
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-/* 主行：模型 ID、显示名称与能力开关 */
 .matrix-main-row {
 	display: flex;
 	align-items: center;
@@ -1264,7 +1220,6 @@
 	opacity: 0.6;
 }
 
-/* 交互式能力标签开关 (Vision & Reasoning) */
 .matrix-toggles {
 	display: flex;
 	align-items: center;
@@ -1325,7 +1280,6 @@
 	border-color: rgba(248, 113, 113, 0.25);
 }
 
-/* 默认模型星标与指示器 */
 .matrix-star-btn {
 	display: inline-flex;
 	align-items: center;
@@ -1359,7 +1313,6 @@
 	font-size: 13px;
 }
 
-/* 下拉菜单行内的星标操作按钮 */
 .dd-star-btn {
 	display: inline-flex;
 	align-items: center;
@@ -1381,7 +1334,6 @@
 	opacity: 0.8;
 }
 
-/* 双类提权：盖过 .dd-item:hover .dd-star-btn（三类），hover 态无需提权。 */
 .dd-item:hover .dd-star-btn:hover {
 	opacity: 1;
 	color: var(--amber);
@@ -1393,7 +1345,6 @@
 	color: var(--amber);
 }
 
-/* 下拉菜单底部默认模型状态条 (Default Model Banner) */
 .dd-default-banner {
 	display: flex;
 	align-items: center;
@@ -1458,7 +1409,6 @@
 	color: var(--amber);
 }
 
-/* 次行：规格控制条 (Spec Control Bar) */
 .matrix-spec-bar {
 	display: flex;
 	align-items: center;
@@ -1532,7 +1482,6 @@
 	gap: 4px;
 }
 
-/* 思考强度档位与预算自定义抽屉 */
 .matrix-thinking-config-drawer {
 	margin-top: 8px;
 	padding: 10px 12px;
@@ -1639,7 +1588,6 @@
 	border-color: var(--accent);
 }
 
-/* 高级协议与原始参数透传 */
 .thinking-advanced-row {
 	display: flex;
 	flex-direction: column;
@@ -1728,7 +1676,6 @@
 	gap: 4px;
 }
 
-/* 聊天输入框内联自定义 Token 预算输入行 */
 .dd-custom-token-row {
 	padding: 8px 10px;
 	border-top: 1px solid var(--border-soft);

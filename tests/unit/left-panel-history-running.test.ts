@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationSummary, SessionSummary } from "../../server/protocol.js";
 
-/** 跨平台统一规范化转录/会话路径键（反斜杠转正、去末尾斜杠、小写） */
 function normalizeSessionPathKey(p?: string | null): string {
 	if (!p) return "";
 	return p.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -193,7 +192,6 @@ describe("历史会话运行态与去重逻辑", () => {
 			},
 		];
 
-		// 在 tab 模式（convTab !== "split"）
 		const convTab: string = "stream";
 		const collapseConvs = false;
 		const activeRunningFiles =

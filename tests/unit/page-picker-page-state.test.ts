@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { grantView, type PageState } from "../../plugins/page-picker/extension/src/shared/page-state.js";
 
-/**
- * 拾取浮层底部细条的状态文案（纯函数）。
- *
- * 为什么值得钉住：这块文案是「AI 能不能操作这一页」在用户面前的**唯一回话**。把
- * 「正在查」（undefined）和「查不到」（null）说成「未授权」，会让人在后台挂掉时白跑一趟
- * 设置页；总开关关着却说「已授权」，会让人以为功能坏了（点了按钮模型还是不动）。
- * 所以每个输入都要求有话说、且不撒谎。
- */
-
 const state = (over: Partial<PageState> = {}): PageState => ({
 	origin: "http://localhost:5173",
 	authorized: false,
@@ -29,7 +20,6 @@ describe("grantView", () => {
 		const view = grantView(null);
 		expect(view.status).toContain("查不到");
 		expect(view.status).not.toContain("未授权");
-		// 仍然给按钮：授权这条路本来就在扩展设置页完成，不依赖 worker 答这一嗓子
 		expect(view.label).toBe("让 AI 操作本页…");
 	});
 
