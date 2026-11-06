@@ -14,6 +14,8 @@
 	--accent: #31ac9d;
 	--accent-contrast: #17171c;
 	--accent-soft: #3a8c8a26;
+	--project-active-bg: var(--accent-soft);
+	--project-active-hover-bg: #3a8c8a4d;
 	--green: #2dd4bf;
 	--green-soft: #4ade801f;
 	--amber: #eab380;
@@ -178,7 +180,7 @@
 	border-color: #5dc7b073;
 }
 .topbar .chip.newchat:not(.ephemeral-chat-btn):not(.sandbox-chip) {
-	border-color: var(--accent) !important;
+	border-color: var(--accent);
 }
 
 /* 对话框内，附件引用卡虚线颜色 */
@@ -202,14 +204,6 @@
 .fp-html-bar {
 	background: var(--accent-soft);
 }
-/* 侧栏当前项目行 */
-.lp-project-head-row.active {
-	background: var(--accent-soft) !important;
-}
-.lp-project-head-row.active:hover {
-	background: #3a8c8a4d !important;
-}
-
 /* 输入框发送\停止按钮阴影 */
 .inputbox .btn.send,
 .inputbox .btn.stop,
