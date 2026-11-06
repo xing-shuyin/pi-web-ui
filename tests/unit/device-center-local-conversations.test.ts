@@ -5,6 +5,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installLocalDeviceCenter } from "../../server/device-center/local.js";
+import { createHash } from "node:crypto";
+import { computeArtifactDigest } from "../../server/device-center/work-contract.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -122,6 +124,155 @@ describe("local persistent conversation proxy", () => {
 		).toBe(403);
 		expect(received).toHaveLength(4);
 	});
+	it("forwards bounded artifact contracts through all task creation routes while keeping ordinary requests small", async () => {
+		const received: unknown[] = [];
+		const upstream = express();
+		upstream.use(express.json({ limit: "1mb" }));
+		upstream.use((req, res) => {
+			received.push(req.body);
+			res.json({ ok: true });
+		});
+		const hubUrl = await listen(createServer(upstream));
+		const dataDir = await mkdtemp(join(tmpdir(), "local-contract-capacity-"));
+		cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+		await writeFile(
+			join(dataDir, "device-center.json"),
+			JSON.stringify({
+				hubUrl,
+				deviceId: "source",
+				name: "Source",
+				credential: "agent-secret",
+				uiCredential: "ui-secret",
+				allowExecution: false,
+			}),
+		);
+		const app = express();
+		app.use(express.json({ limit: "1mb" }));
+		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
+		cleanup.push(() => local.close());
+		const base = await listen(createServer(app));
+		const patch = Buffer.alloc(64 * 1024, 7);
+		const inputArtifact = {
+			id: "artifact-1",
+			digest: "",
+			producer: {
+				deviceId: "producer-device",
+				botId: "producer-bot",
+				taskId: "producer-task",
+				attemptId: "producer-attempt",
+				contractDigest: "b".repeat(64),
+				manifestDigest: "c".repeat(64),
+			},
+			baseline: { repositoryId: "repo-1", commit: "a".repeat(40) },
+			inputTree: "d".repeat(40),
+			outputTree: "e".repeat(40),
+			patchBase64: patch.toString("base64"),
+			patchSha256: createHash("sha256").update(patch).digest("hex"),
+			createdAt: 1,
+		};
+		inputArtifact.digest = computeArtifactDigest(inputArtifact);
+		const contract = {
+			id: "contract-1",
+			revision: 1,
+			executionMode: "code",
+			baseline: inputArtifact.baseline,
+			inputArtifacts: [inputArtifact],
+		};
+		const post = (path: string, body: unknown) =>
+			fetch(`${base}/api/device-center/${path}`, {
+				method: "POST",
+				headers: { Origin: base, "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		for (const path of [
+			"rooms/team/messages",
+			"rooms/team/conversations",
+			"rooms/team/conversations/thread/messages",
+		]) {
+			const response = await post(path, { text: "Code task", executionMode: "code", contract });
+			expect(response.status).toBe(200);
+		}
+		expect(received).toHaveLength(3);
+		for (const body of received) expect(body).toMatchObject({ executionMode: "code", contract });
+		expect((await post("rooms/team/messages", { text: "x".repeat(40 * 1024) })).status).toBe(400);
+		expect(
+			(await post("rooms/team/messages", { text: "Code", contract: { ...contract, goal: "x".repeat(384 * 1024) } }))
+				.status,
+		).toBe(400);
+		expect(received).toHaveLength(3);
+	});
+
+	it("forwards exact artifact acceptance fields through the owner UI route and rejects forged receipts", async () => {
+		const received: { path: string; body: unknown; authorization: string | undefined }[] = [];
+		const upstream = express();
+		upstream.use(express.json());
+		upstream.use((req, res) => {
+			received.push({ path: req.path, body: req.body, authorization: req.headers.authorization });
+			if (req.path.endsWith("/verify") || req.path.endsWith("/cancel")) {
+				setTimeout(
+					() => res.json({ integration: { status: req.path.endsWith("/cancel") ? "cancelled" : "verified" } }),
+					16000,
+				);
+				return;
+			}
+			res.json({ ok: true });
+		});
+		const hubUrl = await listen(createServer(upstream));
+		const dataDir = await mkdtemp(join(tmpdir(), "local-artifact-acceptance-"));
+		cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+		await writeFile(
+			join(dataDir, "device-center.json"),
+			JSON.stringify({
+				hubUrl,
+				deviceId: "source",
+				name: "Source",
+				credential: "agent-fixture",
+				uiCredential: "owner-fixture",
+				allowExecution: true,
+			}),
+		);
+		const app = express();
+		app.use(express.json());
+		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
+		cleanup.push(() => local.close());
+		const base = `${await listen(createServer(app))}/api/device-center/rooms/team/conversations/thread`;
+		const post = (suffix: string, body: unknown) =>
+			fetch(`${base}/${suffix}`, {
+				method: "POST",
+				headers: { Origin: new URL(base).origin, "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		const delivery = { artifactTaskId: "captured-task", summary: "Captured artifact", idempotencyKey: "delivery-key" };
+		const review = {
+			deliveryId: "delivery",
+			artifactDigest: "a".repeat(64),
+			integrationId: "integration",
+			verificationDigest: "b".repeat(64),
+			criteriaResults: [{ criterionIndex: 0, verdict: "met", evidence: "Observed verification" }],
+			verdict: "accepted",
+			summary: "Reviewed",
+		};
+		expect((await post("deliveries", delivery)).status).toBe(200);
+		expect((await post("reviews", review)).status).toBe(200);
+		expect(received.map((item) => item.body)).toEqual([delivery, review]);
+		expect(received.every((item) => item.authorization === "Bearer owner-fixture")).toBe(true);
+		expect(received.every((item) => !item.path.includes("/agent/"))).toBe(true);
+		expect((await post("reviews", { ...review, verification: { status: "verified" } })).status).toBe(400);
+		expect((await post("deliveries", { ...delivery, artifactRef: { artifactDigest: "a".repeat(64) } })).status).toBe(
+			400,
+		);
+		expect(received).toHaveLength(2);
+		// Real HTTP response exceeds the ordinary 15-second proxy deadline.
+		const verified = await post("integrations/integration/verify", { commands: ["node check.cjs"] });
+		expect(verified.status).toBe(200);
+		expect(await verified.json()).toMatchObject({ integration: { status: "verified" } });
+		expect(received).toHaveLength(3);
+		const cancelled = await post("integrations/integration/cancel", {});
+		expect(cancelled.status).toBe(200);
+		expect(await cancelled.json()).toMatchObject({ integration: { status: "cancelled" } });
+		expect(received).toHaveLength(4);
+	}, 60000);
+
 	describe("error forwarding", () => {
 		it("keeps the hub status, message and code for every allowed failure class", async () => {
 			let reply: { status: number; body: unknown } = { status: 404, body: { error: "Task missing" } };

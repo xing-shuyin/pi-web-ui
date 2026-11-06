@@ -159,8 +159,7 @@ export function DeviceCenterSetup({
 		}
 	};
 	const updateHub = async () => {
-		if (locked.current || !local || !info || !loaded || metadataError || info.busy || busy || updating)
-			return;
+		if (locked.current || !local || !info || !loaded || metadataError || info.busy || busy || updating) return;
 		locked.current = true;
 		controller.current?.abort();
 		setUpdating(true);
@@ -316,11 +315,7 @@ export function DeviceCenterSetup({
 													{t("deviceSetupPair")}
 												</button>
 												{local && (
-													<button
-														className="dc-button"
-														disabled={busy || updating}
-														onClick={() => void updateHub()}
-													>
+													<button className="dc-button" disabled={busy || updating} onClick={() => void updateHub()}>
 														{t(updating ? "deviceSetupUpdating" : "deviceSetupUpdate")}
 													</button>
 												)}

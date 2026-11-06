@@ -137,11 +137,107 @@ export interface DeviceTaskLeaseResult {
 	accepted: boolean;
 	reason?: string;
 }
+
+export type DeviceExecutionMode = "chat" | "code";
+
+export interface DeviceArtifactProducer {
+	deviceId: string;
+	botId: string;
+	taskId: string;
+	attemptId: string;
+	contractDigest?: string;
+	manifestDigest?: string;
+}
+
+export interface DeviceArtifactBaseline {
+	repositoryId: string;
+	commit: string;
+}
+
+export interface DeviceArtifact {
+	id: string;
+	digest: string;
+	producer: DeviceArtifactProducer;
+	baseline?: DeviceArtifactBaseline;
+	inputTree?: string;
+	outputTree?: string;
+	patchBase64?: string;
+	patchSha256?: string;
+	createdAt: number;
+}
+
+export interface DeviceWorkContractInput {
+	id?: string;
+	revision?: number;
+	executionMode?: DeviceExecutionMode;
+	goal?: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+}
+
+export interface DeviceWorkContract {
+	id: string;
+	revision: number;
+	digest: string;
+	executionMode: DeviceExecutionMode;
+	goal: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+	createdAt?: number;
+}
+
+export interface ContextManifest {
+	version: 1;
+	digest: string;
+	contractId: string;
+	contractRevision: number;
+	contractDigest: string;
+	executionPolicy?: { deviceId: string; botId: string; botRevision: number };
+	context: unknown;
+	taskState?: unknown;
+	inputs?: unknown;
+	policyRef?: string;
+	truncationBudget?: number;
+	createdAt: number;
+}
+
+export interface DeviceTaskEventFrame {
+	type: "task_event";
+	taskId: string;
+	botId: string;
+	attemptId: string;
+	status: "running" | "completed" | "failed" | "interrupted";
+	leaseToken?: string;
+	leaseGeneration?: number;
+	report?: string;
+	error?: string;
+	reportMetadata?: DeviceTaskReportMetadata;
+	fingerprint?: string;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
+}
+export type DeviceTaskResultRejectReasonCode = "terminal_conflict" | "attempt_expired";
 export interface DeviceTaskResultAck {
 	taskId: string;
 	attemptId: string;
 	status: "completed" | "failed" | "interrupted";
 	fingerprint?: string;
+	accepted: boolean;
+	reason?: string;
+	/** A durable, immutable rejection of this incoming task/attempt/fingerprint. */
+	permanent?: boolean;
+	reasonCode?: DeviceTaskResultRejectReasonCode;
+	contractDigest?: string;
+	manifestDigest?: string;
+	artifactDigest?: string;
+}
+export interface DeviceTaskResultAckFrame extends DeviceTaskResultAck {
+	type: "task_result_ack";
 }
 
 export type DeviceDeliveryCheckInput = {
@@ -151,13 +247,33 @@ export type DeviceDeliveryCheckInput = {
 	exitCode?: number;
 };
 export type DeviceDeliveryCheck = DeviceDeliveryCheckInput & { source: "bot_reported" };
+export interface DeviceDeliveryArtifactRef {
+	artifactTaskId: string;
+	attemptId: string;
+	artifactId: string;
+	artifactDigest: string;
+	contractId: string;
+	contractRevision: number;
+	contractDigest: string;
+	manifestDigest: string;
+	baselineCommit: string;
+	repositoryId: string;
+	inputTree: string;
+	outputTree: string;
+}
+export interface DeviceReviewCriterionResult {
+	criterionIndex: number;
+	verdict: "met" | "not_met";
+	evidence: string;
+}
 export interface DeviceDeliveryRequest {
 	sourceBotId: string;
 	parentTaskId: string;
 	idempotencyKey: string;
-	repository: string;
-	baseCommit: string;
-	commit: string;
+	artifactTaskId?: string;
+	repository?: string;
+	baseCommit?: string;
+	commit?: string;
 	branch?: string;
 	summary: string;
 	checks: DeviceDeliveryCheckInput[];
@@ -165,8 +281,12 @@ export interface DeviceDeliveryRequest {
 }
 export interface DeviceDelivery extends Omit<
 	DeviceDeliveryRequest,
-	"sourceBotId" | "parentTaskId" | "idempotencyKey" | "checks" | "limitations"
+	"sourceBotId" | "parentTaskId" | "idempotencyKey" | "checks" | "limitations" | "repository" | "baseCommit"
 > {
+	repository: string;
+	baseCommit: string;
+	artifactRef?: DeviceDeliveryArtifactRef;
+	acceptanceCriteria?: string[];
 	id: string;
 	conversationId: string;
 	accountId: string;
@@ -182,11 +302,26 @@ export interface DeviceReviewRequest {
 	parentTaskId?: string;
 	idempotencyKey: string;
 	deliveryId: string;
-	commit: string;
+	commit?: string;
+	artifactDigest?: string;
+	integrationId?: string;
+	verificationDigest?: string;
+	criteriaResults?: DeviceReviewCriterionResult[];
 	verdict: "accepted" | "changes_requested";
 	summary: string;
 }
-export interface DeviceReview extends Pick<DeviceReviewRequest, "deliveryId" | "commit" | "verdict" | "summary"> {
+export interface DeviceReview extends Pick<
+	DeviceReviewRequest,
+	| "deliveryId"
+	| "commit"
+	| "verdict"
+	| "summary"
+	| "artifactDigest"
+	| "integrationId"
+	| "verificationDigest"
+	| "criteriaResults"
+> {
+	artifactRef?: DeviceDeliveryArtifactRef;
 	id: string;
 	conversationId: string;
 	accountId: string;
@@ -284,6 +419,15 @@ export interface RoomTaskCreateInput {
 	idempotencyKey?: string;
 	planOnly?: boolean;
 	replyToMessageId?: string;
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContractInput | DeviceWorkContract;
+	goal?: string;
+	constraints?: string[];
+	acceptanceCriteria?: string[];
+	baseline?: DeviceArtifactBaseline;
+	inputArtifacts?: DeviceArtifact[];
+	policyRef?: string;
+	truncationBudget?: number;
 }
 
 export interface GroupBlackboard {
@@ -389,6 +533,12 @@ export interface DeviceTask {
 	deviceName?: string;
 	text: string;
 	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContract;
+	contextManifest?: ContextManifest;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 	resourceLocks?: string[];
 	blockReason?: DeviceTaskBlockReason;
 	blockReasonDetail?: string;
@@ -415,6 +565,12 @@ export interface HubTask {
 	status: "queued" | "waiting" | "running" | "completed" | "failed" | "interrupted";
 	createdAt: number;
 	updatedAt: number;
+	executionMode?: DeviceExecutionMode;
+	contract?: DeviceWorkContract;
+	contextManifest?: ContextManifest;
+	artifact?: DeviceArtifact;
+	executionCompleted?: boolean;
+	artifactProduced?: boolean;
 	sourceBotId?: string;
 	sourceConversationId?: string;
 	conversationId?: string;
@@ -431,9 +587,15 @@ export interface HubTask {
 	blockReason?: DeviceTaskBlockReason;
 	blockReasonDetail?: string;
 	report?: string;
+	error?: string;
 	reportMetadata?: DeviceTaskReportMetadata;
 	cancelRequested?: boolean;
 	stopConfirmed?: boolean;
+	/** Immutable digest of the terminal outcome accepted by the Hub. */
+	outcomeFingerprint?: string;
+	/** Canonical wire content, independent of subsequently hydrated report metadata. */
+	outcomeCanonicalFingerprint?: string;
+	terminalAcceptedLeaseGeneration?: number;
 	leaseToken?: string;
 	leaseGeneration?: number;
 	lastHeartbeatAt?: number;
@@ -456,10 +618,12 @@ export interface DeviceTaskDetails {
 	}[];
 	deliveries: {
 		id: string;
-		commit: string;
+		commit?: string;
+		artifactRef?: DeviceDeliveryArtifactRef;
 		branch?: string;
 		summary: string;
 		passed: boolean;
+		reportedCheckCount?: number;
 	}[];
 	journalUnavailable?: boolean;
 }
@@ -483,16 +647,128 @@ export interface DeviceIntegrationValidationCommand {
 	output?: string;
 }
 
+export interface DeviceIntegrationVerificationPlan {
+	commands: string[];
+	digest: string;
+	authorizedByAccountId: string;
+	authorizedAt: number;
+}
+export interface DeviceIntegrationVerificationResult {
+	command: string;
+	status: "passed" | "failed";
+	exitCode: number;
+	outputDigest: string;
+	outputPreview: string;
+}
+export interface DeviceIntegrationVerificationFacts {
+	planDigest: string;
+	artifactDigest?: string;
+	materializedCommit: string;
+	treeBefore: string;
+	treeAfter: string;
+	results: DeviceIntegrationVerificationResult[];
+}
+export interface DeviceIntegrationVerification extends DeviceIntegrationVerificationFacts {
+	digest: string;
+	verifiedAt: number;
+}
+export type DeviceGitObjectFormat = "sha1" | "sha256";
+/** Sealed before dispatch. All authority and Git identity refer to the original operation. */
+export interface DevicePublishIntentFacts {
+	version: 1;
+	id: string;
+	accountId: string;
+	roomId: string;
+	conversationId: string;
+	integrationId: string;
+	targetDeviceId: string;
+	targetBotId: string;
+	targetBotRevision: number;
+	actor: { accountId: string; botId?: string; botRevision?: number; botDeviceId?: string; taskId?: string };
+	repositoryId: string;
+	objectFormat: DeviceGitObjectFormat;
+	targetRef: string;
+	expectedOld: string;
+	preparedTree: string;
+	materializedCommit: string;
+	createdAt: number;
+	delivery: { id: string; commit?: string; artifactRef?: DeviceDeliveryArtifactRef };
+	review: DeviceReview;
+	verificationPlan: DeviceIntegrationVerificationPlan;
+	verification: DeviceIntegrationVerification;
+}
+export interface DevicePublishIntent extends DevicePublishIntentFacts {
+	digest: string;
+	candidateSha: string;
+}
+/** Historical proof survives later authorization changes and branch movement. */
+export interface DevicePublishReceipt {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	outcome: "applied";
+	proof: "cas_exit" | "target_exact" | "target_descendant";
+	observedAt: number;
+	targetSha?: string;
+}
+export interface DevicePublishObservation {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	observedAt: number;
+	target: "candidate" | "descendant" | "expected_old" | "other" | "missing" | "unknown";
+	targetSha?: string;
+	phase: "absent" | "prepared" | "cas_started" | "cas_rejected" | "applied" | "closed" | "unknown";
+	/** True only when durable evidence proves CAS never started, or explicitly rejected and stopped. */
+	retryable: boolean;
+	error?: string;
+}
+export interface DevicePublishStop {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+	/** Durable fence blocks future writes, independently of any already-running child. */
+	closed: boolean;
+	stopConfirmed: boolean;
+	pastEffect: "applied" | "not_applied" | "unknown";
+	fencedAt: number;
+	/** Present only after the original operation is positively known to have stopped. */
+	stoppedAt?: number;
+}
+export interface DevicePublicationResult {
+	status: "applied" | "pending" | "cancelled";
+	publishReceipt?: DevicePublishReceipt;
+	publishObservation?: DevicePublishObservation;
+	publishStop?: DevicePublishStop;
+	cleanupPending?: boolean;
+}
+export interface DeviceIntegrationResumeRequest {
+	intentId: string;
+	intentDigest: string;
+	candidateSha: string;
+}
 export interface DeviceIntegration {
 	id: string;
 	accountId: string;
 	roomId: string;
 	conversationId: string;
 	deliveryId: string;
-	commit: string;
-	reviewId: string;
+	commit?: string;
+	reviewId?: string;
+	artifactRef?: DeviceDeliveryArtifactRef;
+	materializedCommit?: string;
+	preparedTree?: string;
+	objectFormat?: DeviceGitObjectFormat;
+	repositoryId?: string;
+	publishIntent?: DevicePublishIntent;
+	publishReceipt?: DevicePublishReceipt;
+	publishObservation?: DevicePublishObservation;
+	publishStop?: DevicePublishStop;
+	verificationPlan?: DeviceIntegrationVerificationPlan;
+	verification?: DeviceIntegrationVerification;
 	targetBotId: string;
 	targetBotRevision: number;
+	targetDeviceId?: string;
 	targetBranch: string;
 	expectedTargetSha: string;
 	newCommitSha?: string;
@@ -502,6 +778,8 @@ export interface DeviceIntegration {
 	validationCommands: DeviceIntegrationValidationCommand[];
 	error?: string;
 	cleanupPending?: boolean;
+	/** Preserved across RPC failures until the device positively proves execution stopped. */
+	verificationMayBeRunning?: boolean;
 	currentOpId?: string;
 	createdAt: number;
 	updatedAt: number;
@@ -528,6 +806,8 @@ export interface DeviceIntegrationResponse {
 
 export interface DeviceIntegrationListResponse {
 	integrations: DeviceIntegration[];
+	/** Authenticated human owner capability; retry safety is separately proven by the journal. */
+	canResumePublication?: boolean;
 }
 
 export type QueueMode = "all" | "one-at-a-time";

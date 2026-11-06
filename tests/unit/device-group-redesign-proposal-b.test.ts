@@ -279,14 +279,19 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(taskB.dependsOnTaskId).toBe(taskA.id);
 
 		// Simulate Task A running then completed with report
+		const taskALease = f.hub.store.snapshot().tasks.find((task) => task.id === taskA.id)!;
 		await f.hub.acceptTaskEvent(dev1.deviceId, {
 			botId: dev1.botId,
+			leaseToken: taskALease.leaseToken,
+			leaseGeneration: taskALease.leaseGeneration,
 			taskId: taskA.id,
 			attemptId: taskA.attemptId,
 			status: "running",
 		});
 		await f.hub.acceptTaskEvent(dev1.deviceId, {
 			botId: dev1.botId,
+			leaseToken: taskALease.leaseToken,
+			leaseGeneration: taskALease.leaseGeneration,
 			taskId: taskA.id,
 			attemptId: taskA.attemptId,
 			status: "completed",
@@ -324,8 +329,11 @@ describe("Device Group Architecture Redesign - Proposal B", () => {
 		expect(steerQueued.status).toBe(409);
 
 		// Transition to running
+		const taskLease = f.hub.store.snapshot().tasks.find((entry) => entry.id === task.id)!;
 		await f.hub.acceptTaskEvent(dev.deviceId, {
 			botId: dev.botId,
+			leaseToken: taskLease.leaseToken,
+			leaseGeneration: taskLease.leaseGeneration,
 			taskId: task.id,
 			attemptId: task.attemptId,
 			status: "running",

@@ -1,14 +1,49 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import type { DeviceIntegrationValidationCommand } from "../protocol.js";
+import type {
+	DeviceArtifact,
+	DevicePublishIntent,
+	DevicePublicationResult,
+	DeviceGitObjectFormat,
+	DeviceDeliveryArtifactRef,
+	DeviceIntegrationVerificationFacts,
+	DeviceIntegrationVerificationPlan,
+} from "../protocol.js";
+import {
+	canonicalPath,
+	computeCanonicalRepositoryId,
+	git,
+	safeId,
+	verifyPatchProducesTree,
+	verifyRepoRoot,
+	verifyWorktreeIdentity,
+	snapshotTree,
+} from "../workspace-handle.js";
+import { canonicalizeJson, validateDeviceArtifact } from "./work-contract.js";
+import {
+	runVerificationCommand,
+	validateLocalVerificationPlan,
+	VERIFICATION_COMMAND_TIMEOUT_MS,
+	VERIFICATION_TOTAL_TIMEOUT_MS,
+	VerificationStopUnconfirmedError,
+} from "./local-verification.js";
 import { integrationError } from "./integration-errors.js";
+import { readPublicationJournal } from "./publication-journal.js";
+import { assertPublishIntentScope, validatePublishIntent } from "./publish-intent.js";
+import {
+	cancelLocalPublication,
+	localPublicationStatus,
+	publishLocalIntent,
+	PublicationStopUnconfirmedError,
+	runPublicationGit,
+} from "./local-publication.js";
 
 const exec = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
-const COMMAND_TIMEOUT_MS = 60_000;
 const MAX_DIFF_BYTES = 64 * 1024;
 
 export interface DeviceIntegrationSession {
@@ -24,6 +59,19 @@ export interface DeviceIntegrationSession {
 	newCommitSha?: string;
 	applied?: boolean;
 	createdAt: number;
+	gitDir?: string;
+	commonDir?: string;
+	artifactRef?: DeviceDeliveryArtifactRef;
+	retainedRef?: string;
+	localVerification?: DeviceIntegrationVerificationFacts;
+	verifiedPlan?: DeviceIntegrationVerificationPlan;
+	stopUnconfirmed?: boolean;
+	verificationInFlight?: boolean;
+	verificationStopConfirmed?: boolean;
+	accountId?: string;
+	roomId?: string;
+	conversationId?: string;
+	targetDeviceId?: string;
 }
 
 /** 持久化会话映射表文件路径 */
@@ -58,20 +106,92 @@ export async function savePersistentSessions(
 	sessionsMap: Map<string, DeviceIntegrationSession>,
 ): Promise<void> {
 	const filePath = sessionsFilePath(dataDir);
-	const tempPath = `${filePath}.tmp.${Date.now()}`;
+	const tempPath = `${filePath}.tmp.${randomUUID()}`;
 	const data = Array.from(sessionsMap.values());
 	await writeFile(tempPath, JSON.stringify(data, null, 2), "utf8");
-	if (existsSync(filePath)) await unlink(filePath).catch(() => {});
 	const { rename } = await import("node:fs/promises");
-	await rename(tempPath, filePath).catch(async () => {
-		await writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
-		await unlink(tempPath).catch(() => {});
-	});
+	await rename(tempPath, filePath);
+}
+
+const sessionWrites = new Map<string, Promise<void>>();
+function persistSession(dataDir: string, integrationId: string, session?: DeviceIntegrationSession): Promise<void> {
+	const key = resolve(dataDir);
+	const snapshot = session && structuredClone(session);
+	const operation = (sessionWrites.get(key) ?? Promise.resolve())
+		.catch(() => {})
+		.then(async () => {
+			const sessions = await loadPersistentSessions(dataDir);
+			if (snapshot) sessions.set(integrationId, snapshot);
+			else sessions.delete(integrationId);
+			await savePersistentSessions(dataDir, sessions);
+		});
+	sessionWrites.set(key, operation);
+	void operation
+		.finally(() => {
+			if (sessionWrites.get(key) === operation) sessionWrites.delete(key);
+		})
+		.catch(() => {});
+	return operation;
 }
 
 /** 内存活跃会话映射及操作中断控制器 */
 const memorySessions = new Map<string, DeviceIntegrationSession>();
-const activeOperations = new Map<string, AbortController>();
+type IntegrationIdentity = {
+	integrationId: string;
+	targetBotId: string;
+	targetBotRevision: number;
+	repoRoot: string;
+	dataDir: string;
+};
+type LocalOperation = {
+	controller: AbortController;
+	identity: IntegrationIdentity;
+	done: Promise<unknown>;
+	blocked?: unknown;
+};
+const activeOperations = new Map<string, LocalOperation>();
+const sessionKey = (params: Pick<IntegrationIdentity, "dataDir" | "integrationId">) =>
+	JSON.stringify([resolve(params.dataDir), params.integrationId]);
+function sameIdentity(a: IntegrationIdentity, b: IntegrationIdentity) {
+	return (
+		a.targetBotId === b.targetBotId &&
+		a.targetBotRevision === b.targetBotRevision &&
+		resolve(a.repoRoot) === resolve(b.repoRoot)
+	);
+}
+function localOperation<T>(
+	params: IntegrationIdentity,
+	signal: AbortSignal | undefined,
+	run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+	safeId(params.integrationId, "integration");
+	const key = sessionKey(params);
+	if (activeOperations.has(key))
+		return Promise.reject(new Error("Integration operation already active or stop unconfirmed"));
+	const operation: LocalOperation = {
+		controller: new AbortController(),
+		identity: { ...params },
+		done: Promise.resolve(),
+	};
+	activeOperations.set(key, operation);
+	operation.done = Promise.resolve()
+		.then(() => run(AbortSignal.any([operation.controller.signal, ...(signal ? [signal] : [])])))
+		.catch(async (error) => {
+			if (error instanceof VerificationStopUnconfirmedError || error instanceof PublicationStopUnconfirmedError) {
+				operation.blocked = error;
+				const session = memorySessions.get(key);
+				if (session) {
+					session.stopUnconfirmed = true;
+					await persistSession(params.dataDir, params.integrationId, session).catch(() => {});
+				}
+			}
+			throw error;
+		})
+		.finally(() => {
+			if (!operation.blocked && activeOperations.get(key) === operation) activeOperations.delete(key);
+		});
+	return operation.done as Promise<T>;
+}
 
 function sanitizeError(error: unknown): string {
 	if (!error) return "Unknown error";
@@ -225,6 +345,10 @@ export async function runIsolatedGit(
 		"-c",
 		"core.autocrlf=false",
 		"-c",
+		"core.fsmonitor=false",
+		"-c",
+		"core.eol=lf",
+		"-c",
 		"core.quotepath=false",
 		...args,
 	];
@@ -322,8 +446,14 @@ export async function inspectLocalTarget(
 export async function safeRemoveWorktree(repoRoot: string, dataDir: string, worktreePath: string): Promise<void> {
 	if (!existsSync(worktreePath)) return;
 	const normalizedPath = worktreePath.replace(/\\/g, "/");
-	// 若处于未提交的预合并暂存态，先尝试安全 abort merge，还原工作树到干净状态
-	await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"]).catch(() => {});
+	const sessions = await loadPersistentSessions(dataDir);
+	const session = [...sessions.values()].find((item) => resolve(item.worktreePath) === resolve(worktreePath));
+	// Only discard the exact staged merge we prepared; preserve modified or unpinned workspaces.
+	if (session) {
+		if (session.stopUnconfirmed || session.verificationInFlight) throw new VerificationStopUnconfirmedError();
+		await assertPreparedTree(session, dataDir);
+		await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"]).catch(() => {});
+	}
 	try {
 		await runIsolatedGit(repoRoot, dataDir, ["worktree", "remove", normalizedPath]);
 	} catch (error) {
@@ -352,10 +482,20 @@ export async function recoverOrphanWorktrees(
 		const session = persisted.get(id);
 		const repoRoot = session?.repoRoot ?? repoRootFinder?.(id);
 
+		if (
+			!session ||
+			session.verificationStopConfirmed !== true ||
+			session.stopUnconfirmed ||
+			session?.verificationInFlight ||
+			activeOperations.has(sessionKey({ dataDir, integrationId: id }))
+		) {
+			pendingCount++;
+			continue;
+		}
 		if (repoRoot && existsSync(repoRoot)) {
 			try {
 				await safeRemoveWorktree(repoRoot, dataDir, fullPath);
-				persisted.delete(id);
+				await persistSession(dataDir, id);
 				recoveredCount++;
 			} catch {
 				pendingCount++;
@@ -364,7 +504,6 @@ export async function recoverOrphanWorktrees(
 			pendingCount++;
 		}
 	}
-	await savePersistentSessions(dataDir, persisted);
 	return { recoveredCount, pendingCount };
 }
 
@@ -377,16 +516,19 @@ async function getVerifiedSession(
 		targetBotRevision: number;
 		repoRoot: string;
 	},
+	allowUnpinned = false,
 ): Promise<DeviceIntegrationSession> {
-	let session = memorySessions.get(params.integrationId);
+	const key = sessionKey({ dataDir, integrationId: params.integrationId });
+	let session = memorySessions.get(key);
 	if (!session) {
 		const persisted = await loadPersistentSessions(dataDir);
 		session = persisted.get(params.integrationId);
-		if (session) memorySessions.set(params.integrationId, session);
+		if (session) memorySessions.set(key, session);
 	}
 	if (!session || !existsSync(session.worktreePath)) {
 		throw new Error("Active integration worktree session not found on this device");
 	}
+	if (session.stopUnconfirmed || session.verificationInFlight) throw new VerificationStopUnconfirmedError();
 	// 严格跨 Bot 隔离校验：防止 opaque ID 借由另一 Bot 的 lease 跨权操作
 	if (
 		session.targetBotId !== params.targetBotId ||
@@ -395,11 +537,25 @@ async function getVerifiedSession(
 	) {
 		throw new Error("Integration session Bot identity, revision or workspace mismatch");
 	}
+	if ((await verifyRepoRoot(params.repoRoot)).repoRoot !== (await canonicalPath(params.repoRoot)))
+		throw new Error("Integration Bot workspace must be the canonical repository root");
+	const identity = await verifyWorktreeIdentity(
+		session.worktreePath,
+		session.repoRoot,
+		undefined,
+		session.gitDir,
+		session.commonDir,
+	);
+	if (
+		(!allowUnpinned && (!session.gitDir || !session.commonDir)) ||
+		(identity.headCommit !== session.expectedTargetSha && identity.headCommit !== session.newCommitSha)
+	)
+		throw new Error("Integration workspace identity changed or unpinned session");
 	return session;
 }
 
 /** 设备本地：准备集成（创建隔离 worktree，尝试预合并并提取 diff 或冲突） */
-export async function devicePrepareIntegration(
+async function prepareIntegration(
 	params: {
 		integrationId: string;
 		targetBotId: string;
@@ -407,16 +563,36 @@ export async function devicePrepareIntegration(
 		repoRoot: string;
 		dataDir: string;
 		targetBranch: string;
-		commit: string;
+		commit?: string;
+		artifactRef?: DeviceDeliveryArtifactRef;
+		artifact?: DeviceArtifact;
+		accountId?: string;
+		roomId?: string;
+		conversationId?: string;
+		targetDeviceId?: string;
 	},
 	options?: { signal?: AbortSignal },
 ): Promise<{
 	status: "prepared" | "conflict";
+	materializedCommit?: string;
+	preparedTree?: string;
+	repositoryId?: string;
+	objectFormat?: DeviceGitObjectFormat;
 	expectedTargetSha: string;
 	conflicts?: string[];
 	diff?: string;
 }> {
-	const { integrationId, targetBotId, targetBotRevision, repoRoot, dataDir, targetBranch, commit } = params;
+	const { integrationId, targetBotId, targetBotRevision, dataDir, targetBranch } = params;
+	const repoRoot = await canonicalPath(params.repoRoot);
+	const repository = await verifyRepoRoot(repoRoot, options?.signal);
+	if (repository.repoRoot !== repoRoot)
+		throw new Error("Integration Bot workspace must be the canonical repository root");
+	const repositoryId = await computeCanonicalRepositoryId(repoRoot, options?.signal);
+	const objectFormat = (
+		await runPublicationGit(repoRoot, ["rev-parse", "--show-object-format"], { signal: options?.signal })
+	).stdout.trim() as DeviceGitObjectFormat;
+	let commit = params.commit;
+	let retainedRef: string | undefined;
 	const { headSha: expectedTargetSha, isDirty } = await inspectLocalTarget(repoRoot, dataDir, targetBranch, options);
 	if (isDirty) {
 		const statusRes = await runIsolatedGit(repoRoot, dataDir, ["status", "--porcelain"], GIT_TIMEOUT_MS, options).catch(
@@ -427,6 +603,57 @@ export async function devicePrepareIntegration(
 		);
 	}
 
+	if (params.artifactRef) {
+		const ref = params.artifactRef;
+		const checked = validateDeviceArtifact(params.artifact);
+		if (!checked.valid || !checked.artifact) throw new Error("Invalid artifact payload");
+		const artifact = checked.artifact;
+		if (
+			artifact.digest !== ref.artifactDigest ||
+			artifact.id !== ref.artifactId ||
+			artifact.producer.taskId !== ref.artifactTaskId ||
+			artifact.producer.attemptId !== ref.attemptId ||
+			artifact.producer.contractDigest !== ref.contractDigest ||
+			artifact.producer.manifestDigest !== ref.manifestDigest ||
+			artifact.baseline?.commit !== ref.baselineCommit ||
+			artifact.baseline.repositoryId !== ref.repositoryId ||
+			artifact.inputTree !== ref.inputTree ||
+			artifact.outputTree !== ref.outputTree
+		)
+			throw new Error("Artifact subject mismatch");
+		if ((await computeCanonicalRepositoryId(repoRoot, options?.signal)) !== ref.repositoryId)
+			throw new Error("Canonical repository identity mismatch");
+		if (expectedTargetSha !== ref.baselineCommit) throw new Error("Artifact target HEAD must equal baseline commit");
+		await verifyPatchProducesTree(
+			repoRoot,
+			ref.baselineCommit,
+			Buffer.from(artifact.patchBase64 ?? "", "base64"),
+			ref.outputTree,
+			dataDir,
+			options?.signal,
+		);
+		commit = (
+			await git(
+				repoRoot,
+				[
+					"-c",
+					"user.name=Device Hub Integration",
+					"-c",
+					"user.email=integration@local",
+					"commit-tree",
+					ref.outputTree,
+					"-p",
+					ref.baselineCommit,
+					"-m",
+					`Materialize artifact ${ref.artifactDigest}`,
+				],
+				options?.signal,
+			)
+		).trim();
+		retainedRef = `refs/pi/integrations/${safeId(integrationId)}/${randomUUID()}`;
+		await git(repoRoot, ["update-ref", retainedRef, commit], options?.signal);
+	}
+	if (!commit || !/^[a-f0-9]{40,64}$/i.test(commit)) throw new Error("Delivery commit required");
 	const commitValid = await runIsolatedGit(
 		repoRoot,
 		dataDir,
@@ -446,9 +673,7 @@ export async function devicePrepareIntegration(
 		throw new Error("Worktree path traversal attempt rejected");
 	}
 
-	if (existsSync(worktreePath)) {
-		await safeRemoveWorktree(repoRoot, dataDir, worktreePath).catch(() => {});
-	}
+	if (existsSync(worktreePath)) throw new Error("Integration worktree already exists; explicit cancellation required");
 
 	// 检出 expectedTargetSha 的 detached 隔离工作树
 	await runIsolatedGit(
@@ -459,6 +684,13 @@ export async function devicePrepareIntegration(
 		options,
 	);
 	await verifyGitAttributesSafe(worktreePath, dataDir);
+	const identity = await verifyWorktreeIdentity(
+		worktreePath,
+		repoRoot,
+		options?.signal,
+		undefined,
+		repository.commonDir,
+	);
 
 	const session: DeviceIntegrationSession = {
 		integrationId,
@@ -471,6 +703,15 @@ export async function devicePrepareIntegration(
 		deliveryCommit: commit,
 		preparedTreeSha: "",
 		createdAt: Date.now(),
+		gitDir: identity.gitDir,
+		commonDir: identity.commonDir,
+		artifactRef: params.artifactRef,
+		retainedRef,
+		verificationStopConfirmed: true,
+		accountId: params.accountId,
+		roomId: params.roomId,
+		conversationId: params.conversationId,
+		targetDeviceId: params.targetDeviceId,
 	};
 
 	try {
@@ -480,12 +721,12 @@ export async function devicePrepareIntegration(
 		const statRes = await runIsolatedGit(worktreePath, dataDir, ["diff", "--stat", "HEAD"], GIT_TIMEOUT_MS, options);
 		const treeRes = await runIsolatedGit(worktreePath, dataDir, ["write-tree"], GIT_TIMEOUT_MS, options);
 		session.preparedTreeSha = treeRes.stdout.trim();
+		if (params.artifactRef && session.preparedTreeSha !== params.artifactRef.outputTree)
+			throw new Error("Prepared tree does not match artifact outputTree");
 
 		// 保存到内存和持久化磁盘
-		memorySessions.set(integrationId, session);
-		const persisted = await loadPersistentSessions(dataDir);
-		persisted.set(integrationId, session);
-		await savePersistentSessions(dataDir, persisted);
+		memorySessions.set(sessionKey(params), session);
+		await persistSession(dataDir, integrationId, session);
 
 		const fullDiff = `${statRes.stdout}\n\n${diffRes.stdout}`.trim();
 		const diff =
@@ -493,6 +734,10 @@ export async function devicePrepareIntegration(
 		return {
 			status: "prepared",
 			expectedTargetSha,
+			materializedCommit: commit,
+			preparedTree: session.preparedTreeSha,
+			repositoryId,
+			objectFormat,
 			diff,
 		};
 	} catch (mergeError) {
@@ -521,87 +766,178 @@ export async function devicePrepareIntegration(
 			await runIsolatedGit(worktreePath, dataDir, ["merge", "--abort"], GIT_TIMEOUT_MS, options).catch(() => {});
 			return {
 				status: "conflict",
+				repositoryId,
+				objectFormat,
 				expectedTargetSha,
 				conflicts: conflictFiles,
 				diff,
 			};
 		}
 		await safeRemoveWorktree(repoRoot, dataDir, worktreePath).catch(() => {});
-		memorySessions.delete(integrationId);
+		memorySessions.delete(sessionKey(params));
 		throw mergeError;
 	}
 }
 
 /** 设备本地：在隔离 worktree 中执行显式选择的验证命令（全量透传 signal 并支持 cancel 中断） */
-export async function deviceVerifyIntegration(
-	params: {
-		integrationId: string;
-		targetBotId: string;
-		targetBotRevision: number;
-		repoRoot: string;
-		dataDir: string;
-		commands: string[];
+async function assertPreparedTree(
+	session: DeviceIntegrationSession,
+	dataDir: string,
+	signal?: AbortSignal,
+): Promise<string> {
+	const identity = await verifyWorktreeIdentity(
+		session.worktreePath,
+		session.repoRoot,
+		signal,
+		session.gitDir,
+		session.commonDir,
+	);
+	if (identity.headCommit !== session.expectedTargetSha && identity.headCommit !== session.newCommitSha)
+		throw new Error("Integration worktree HEAD changed");
+	if (session.artifactRef) {
+		const tree = (
+			await runIsolatedGit(
+				session.repoRoot,
+				dataDir,
+				["rev-parse", `${session.deliveryCommit}^{tree}`],
+				GIT_TIMEOUT_MS,
+				{ signal },
+			)
+		).stdout.trim();
+		const parent = (
+			await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", `${session.deliveryCommit}^`], GIT_TIMEOUT_MS, {
+				signal,
+			})
+		).stdout.trim();
+		const retained =
+			session.retainedRef &&
+			(
+				await runIsolatedGit(session.repoRoot, dataDir, ["rev-parse", session.retainedRef], GIT_TIMEOUT_MS, { signal })
+			).stdout.trim();
+		if (
+			tree !== session.artifactRef.outputTree ||
+			parent !== session.artifactRef.baselineCommit ||
+			retained !== session.deliveryCommit
+		)
+			throw new Error("Materialized artifact commit or retained ref changed");
+	}
+	const flags = (
+		await runIsolatedGit(session.worktreePath, dataDir, ["ls-files", "-v", "-z"], GIT_TIMEOUT_MS, { signal })
+	).stdout;
+	if (flags.split("\0").some((entry) => /^[a-zS] /.test(entry)))
+		throw new Error("Integration index has hidden assume-unchanged or skip-worktree flags");
+	const rawTree = await snapshotTree(
+		session.worktreePath,
+		dataDir,
+		signal,
+		"integration-indexes",
+		session.preparedTreeSha,
+	);
+	if (rawTree !== session.preparedTreeSha)
+		throw new Error("Integration prepared tree is dirty or changed (raw working tree byte mismatch)");
+	const unstaged = await runIsolatedGit(session.worktreePath, dataDir, ["diff", "--name-only"], GIT_TIMEOUT_MS, {
+		signal,
+	});
+	const untracked = await runIsolatedGit(
+		session.worktreePath,
+		dataDir,
+		["ls-files", "--others", "--exclude-standard"],
+		GIT_TIMEOUT_MS,
+		{ signal },
+	);
+	const tree = (
+		await runIsolatedGit(session.worktreePath, dataDir, ["write-tree"], GIT_TIMEOUT_MS, { signal })
+	).stdout.trim();
+	if (unstaged.stdout.trim() || untracked.stdout.trim() || !session.preparedTreeSha || tree !== session.preparedTreeSha)
+		throw new Error("Integration prepared tree is dirty or changed");
+	await verifyWorktreeIdentity(session.worktreePath, session.repoRoot, signal, session.gitDir, session.commonDir);
+	return tree;
+}
+
+async function assertTarget(session: DeviceIntegrationSession, dataDir: string, signal?: AbortSignal) {
+	const repo = await verifyRepoRoot(session.repoRoot, signal);
+	if (repo.commonDir !== session.commonDir || repo.repoRoot !== session.repoRoot)
+		throw new Error("Integration target repository identity changed");
+	const target = await inspectLocalTarget(session.repoRoot, dataDir, session.branch, { signal });
+	if (target.headSha !== session.expectedTargetSha) throw integrationError("INTEGRATION_TARGET_MOVED");
+	if (target.isDirty) throw new Error("Integration target dirty or moved");
+}
+
+async function verifyIntegration(
+	params: IntegrationIdentity & {
+		verificationPlan: DeviceIntegrationVerificationPlan;
+		artifactRef?: DeviceDeliveryArtifactRef;
+		materializedCommit: string;
+		preparedTree: string;
+		expectedTargetSha: string;
 	},
-	options?: { signal?: AbortSignal },
-): Promise<{
-	status: "verified" | "failed";
-	validationCommands: DeviceIntegrationValidationCommand[];
-}> {
+	options?: { signal?: AbortSignal; commandTimeoutMs?: number; totalTimeoutMs?: number },
+): Promise<DeviceIntegrationVerificationFacts & { status: "verified" | "failed" }> {
+	const plan = validateLocalVerificationPlan(params.verificationPlan);
 	const session = await getVerifiedSession(params.dataDir, params);
-
-	const opController = new AbortController();
-	activeOperations.set(params.integrationId, opController);
-	const effectiveSignal = options?.signal
-		? AbortSignal.any([options.signal, opController.signal])
-		: opController.signal;
-
-	const results: DeviceIntegrationValidationCommand[] = [];
-	let hasFailure = false;
+	if (session.localVerification) throw new Error("Successful verification is immutable; create another integration");
+	if (
+		params.materializedCommit !== session.deliveryCommit ||
+		params.preparedTree !== session.preparedTreeSha ||
+		params.expectedTargetSha !== session.expectedTargetSha ||
+		canonicalizeJson(params.artifactRef ?? null) !== canonicalizeJson(session.artifactRef ?? null)
+	)
+		throw new Error("Verification subject mismatch");
+	await assertTarget(session, params.dataDir, options?.signal);
+	const treeBefore = await assertPreparedTree(session, params.dataDir, options?.signal);
 	const env = await buildIsolatedEnv(params.dataDir);
-
+	const deadline = Date.now() + (options?.totalTimeoutMs ?? VERIFICATION_TOTAL_TIMEOUT_MS);
+	const results: DeviceIntegrationVerificationFacts["results"] = [];
+	session.verificationInFlight = true;
+	session.verificationStopConfirmed = false;
+	await persistSession(params.dataDir, params.integrationId, session);
+	let stopConfirmed = true;
 	try {
-		for (const cmd of params.commands) {
-			effectiveSignal.throwIfAborted();
-			const item: DeviceIntegrationValidationCommand = {
-				command: cmd,
-				status: "running",
-			};
-			try {
-				const { stdout, stderr } = await exec(cmd, {
+		for (const command of plan.commands) {
+			options?.signal?.throwIfAborted();
+			const remaining = deadline - Date.now();
+			if (remaining <= 0) throw new Error("Verification aggregate deadline exceeded");
+			results.push(
+				await runVerificationCommand(command, {
 					cwd: session.worktreePath,
-					timeout: COMMAND_TIMEOUT_MS,
-					shell: true,
-					windowsHide: true,
-					maxBuffer: 4 * 1024 * 1024,
 					env,
-					signal: effectiveSignal,
-				});
-				item.status = "passed";
-				item.exitCode = 0;
-				item.output = `${stdout ?? ""}\n${stderr ?? ""}`.trim().slice(0, 16 * 1024);
-			} catch (error) {
-				const err = error as { code?: number; stdout?: string; stderr?: string; message?: string; name?: string };
-				if (err.name === "AbortError" || effectiveSignal.aborted) {
-					throw new Error("Validation command execution was cancelled");
-				}
-				item.status = "failed";
-				item.exitCode = typeof err.code === "number" ? err.code : 1;
-				item.output = sanitizeError(`${err.stdout ?? ""}\n${err.stderr ?? ""}\n${err.message ?? ""}`).slice(
-					0,
-					16 * 1024,
-				);
-				hasFailure = true;
-			}
-			results.push(item);
-			if (hasFailure) break;
+					signal: options?.signal,
+					timeoutMs: Math.min(options?.commandTimeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_MS, remaining),
+				}),
+			);
 		}
-
-		return {
-			status: hasFailure ? "failed" : "verified",
-			validationCommands: results,
+		const treeAfter = await assertPreparedTree(session, params.dataDir, options?.signal);
+		await assertTarget(session, params.dataDir, options?.signal);
+		const facts: DeviceIntegrationVerificationFacts = {
+			planDigest: plan.digest,
+			artifactDigest: session.artifactRef?.artifactDigest,
+			materializedCommit: session.deliveryCommit,
+			treeBefore,
+			treeAfter,
+			results,
 		};
+		const status = results.every((result) => result.status === "passed" && result.exitCode === 0)
+			? "verified"
+			: "failed";
+		if (status === "verified") {
+			session.localVerification = structuredClone(facts);
+			session.verifiedPlan = plan;
+		}
+		return { status, ...facts };
+	} catch (error) {
+		if (error instanceof VerificationStopUnconfirmedError) {
+			stopConfirmed = false;
+			session.stopUnconfirmed = true;
+		}
+		throw error;
 	} finally {
-		activeOperations.delete(params.integrationId);
+		if (stopConfirmed) {
+			delete session.verificationInFlight;
+			session.verificationStopConfirmed = true;
+		}
+		await persistSession(params.dataDir, params.integrationId, session).catch((error) => {
+			if (stopConfirmed) throw error;
+		});
 	}
 }
 
@@ -615,201 +951,245 @@ export async function deviceVerifyIntegration(
  * 6. 执行原子 CAS update-ref 写入目标分支
  * 7. 若目标分支为 checked-out 分支，使用安全无覆盖 read-tree -u -m 同步当前工作区（绝不 hard reset！）
  */
-export async function deviceConfirmIntegration(
-	params: {
-		integrationId: string;
-		targetBotId: string;
-		targetBotRevision: number;
-		repoRoot: string;
-		dataDir: string;
-		deliveryId: string;
-		commit: string;
-		expectedTargetSha: string;
-	},
+type ConfirmIntegrationParams = IntegrationIdentity & {
+	deliveryId: string;
+	commit?: string;
+	materializedCommit?: string;
+	expectedTargetSha: string;
+	publishIntent?: DevicePublishIntent;
+	mode?: "first" | "resume";
+};
+async function confirmIntegration(
+	params: ConfirmIntegrationParams,
 	options?: { signal?: AbortSignal },
-): Promise<{
-	status: "applied";
-	newCommitSha: string;
-}> {
-	if (activeOperations.has(params.integrationId)) {
-		throw new Error("Integration is currently executing validation commands; cannot apply");
-	}
-
+): Promise<DevicePublicationResult & { newCommitSha?: string }> {
 	const session = await getVerifiedSession(params.dataDir, params);
-
-	// 1. 幂等性防护：若本地已记录 CAS applied 成功（如重试或重启确认），直接幂等返回已生效的新提交 SHA
-	if (session.applied && session.newCommitSha) {
-		return {
-			status: "applied",
-			newCommitSha: session.newCommitSha,
-		};
-	}
-
-	// 2. 前置安全校验：在任何 commit 操作前完成所有检查，确保 409 拒绝后重试保持干净幂等
-	// 2.1 检查目标分支在任何工作树中未被检出（前置拦截，防止 commit 后才报错导致切离重试无改动）
-	const wtList = await runIsolatedGit(
-		session.repoRoot,
-		params.dataDir,
-		["worktree", "list", "--porcelain"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	const targetBranchRef = `refs/heads/${session.branch}`;
-	for (const line of wtList.stdout.split("\n")) {
-		if (line.trim() === `branch ${targetBranchRef}`) {
-			throw integrationError("INTEGRATION_TARGET_CHECKED_OUT");
-		}
-	}
-
-	// 2.2 紧邻当下二次检查目标仓库 dirty 状态与目标分支 HEAD SHA
-	const { headSha: currentHeadSha, isDirty } = await inspectLocalTarget(
-		session.repoRoot,
-		params.dataDir,
-		session.branch,
-		options,
-	);
-	if (isDirty) {
-		throw new Error("Target repository has uncommitted changes (dirty state); cannot apply integration");
-	}
-	if (currentHeadSha !== params.expectedTargetSha || currentHeadSha !== session.expectedTargetSha) {
-		throw integrationError("INTEGRATION_TARGET_MOVED");
-	}
-
-	// 2.3 验证命令完整性校验：验证命令绝不能篡改代码或修改工作树内容
-	const unstaged = await runIsolatedGit(
-		session.worktreePath,
-		params.dataDir,
-		["diff", "--name-only"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	if (unstaged.stdout.trim().length > 0) {
-		throw new Error("Worktree content modified by validation commands; integration rejected for security");
-	}
-	const untracked = await runIsolatedGit(
-		session.worktreePath,
-		params.dataDir,
-		["ls-files", "--others", "--exclude-standard"],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-	if (untracked.stdout.trim().length > 0) {
-		throw new Error("Untracked files created by validation commands; integration rejected for security");
-	}
-	const treeRes = await runIsolatedGit(session.worktreePath, params.dataDir, ["write-tree"], GIT_TIMEOUT_MS, options);
-	const currentTreeSha = treeRes.stdout.trim();
-	if (session.preparedTreeSha && currentTreeSha !== session.preparedTreeSha) {
-		throw new Error(
-			"Worktree content tree SHA mismatch; validation commands altered repository contents, integration rejected for security",
-		);
-	}
-
-	// 3. 幂等生成或复用 merge commit
-	let newCommitSha = session.newCommitSha;
-	if (!newCommitSha) {
-		await runIsolatedGit(
-			session.worktreePath,
+	if (session.stopUnconfirmed) throw new VerificationStopUnconfirmedError();
+	const facts = session.localVerification;
+	const plan = validateLocalVerificationPlan(session.verifiedPlan);
+	if (
+		!facts ||
+		facts.planDigest !== plan.digest ||
+		facts.materializedCommit !== session.deliveryCommit ||
+		facts.artifactDigest !== session.artifactRef?.artifactDigest ||
+		facts.treeBefore !== session.preparedTreeSha ||
+		facts.treeAfter !== session.preparedTreeSha ||
+		facts.results.length !== plan.commands.length ||
+		!facts.results.every(
+			(result, index) =>
+				result.command === plan.commands[index] &&
+				result.status === "passed" &&
+				result.exitCode === 0 &&
+				/^[a-f0-9]{64}$/.test(result.outputDigest) &&
+				typeof result.outputPreview === "string",
+		)
+	)
+		throw new Error("Successful local verification receipt required");
+	const intent = validatePublishIntent(params.publishIntent);
+	if (
+		session.accountId &&
+		(session.accountId !== intent.accountId ||
+			session.roomId !== intent.roomId ||
+			session.conversationId !== intent.conversationId ||
+			session.targetDeviceId !== intent.targetDeviceId)
+	)
+		throw new Error("Publication original session scope mismatch");
+	assertPublishIntentScope(intent, {
+		accountId: intent.accountId,
+		integrationId: params.integrationId,
+		targetBotId: params.targetBotId,
+		targetBotRevision: params.targetBotRevision,
+	});
+	const deliveryCommit = params.materializedCommit ?? params.commit;
+	if (deliveryCommit !== session.deliveryCommit || intent.materializedCommit !== session.deliveryCommit)
+		throw new Error("Confirmation materialized commit mismatch");
+	if (
+		intent.delivery.id !== params.deliveryId ||
+		intent.expectedOld !== params.expectedTargetSha ||
+		intent.expectedOld !== session.expectedTargetSha ||
+		intent.preparedTree !== session.preparedTreeSha ||
+		intent.targetRef !== "refs/heads/" + session.branch
+	)
+		throw new Error("Publication intent does not match prepared integration");
+	const { digest: _digest, verifiedAt: _verifiedAt, ...intentFacts } = intent.verification;
+	if (
+		canonicalizeJson(intentFacts) !== canonicalizeJson(facts) ||
+		canonicalizeJson(intent.verificationPlan) !== canonicalizeJson(plan) ||
+		canonicalizeJson(intent.delivery.artifactRef ?? null) !== canonicalizeJson(session.artifactRef ?? null)
+	)
+		throw new Error("Publication intent local verification mismatch");
+	const verifiedRepo = await verifyRepoRoot(session.repoRoot, options?.signal);
+	const repositoryId = await computeCanonicalRepositoryId(session.repoRoot, options?.signal);
+	const format = (
+		await runPublicationGit(session.repoRoot, ["rev-parse", "--show-object-format"], { signal: options?.signal })
+	).stdout.trim();
+	if (repositoryId !== intent.repositoryId || format !== intent.objectFormat)
+		throw new Error("Publication intent repository identity mismatch");
+	const verify = async (signal: AbortSignal) => {
+		await assertPreparedTree(session, params.dataDir, signal);
+		const worktrees = await runIsolatedGit(
+			session.repoRoot,
 			params.dataDir,
-			[
-				"-c",
-				"user.name=Device Hub Integration",
-				"-c",
-				"user.email=integration@local",
-				"commit",
-				"-m",
-				`Merge delivery ${params.deliveryId.slice(0, 8)} (${params.commit.slice(0, 8)}) into ${session.branch}`,
-			],
+			["worktree", "list", "--porcelain"],
 			GIT_TIMEOUT_MS,
-			options,
+			{ signal },
 		);
-
-		const rev = await runIsolatedGit(
-			session.worktreePath,
-			params.dataDir,
-			["rev-parse", "HEAD"],
-			GIT_TIMEOUT_MS,
-			options,
-		);
-		newCommitSha = rev.stdout.trim();
-		if (!/^[a-f0-9]{40,64}$/i.test(newCommitSha)) {
-			throw new Error("Failed to resolve integrated commit SHA");
-		}
-
-		// 严格核验父提交链拓扑：HEAD^1 必须等于 expectedTargetSha，HEAD^2 必须等于 deliveryCommit
-		const p1 = (
-			await runIsolatedGit(session.worktreePath, params.dataDir, ["rev-parse", "HEAD^1"], GIT_TIMEOUT_MS, options)
-		).stdout.trim();
-		const p2 = (
-			await runIsolatedGit(session.worktreePath, params.dataDir, ["rev-parse", "HEAD^2"], GIT_TIMEOUT_MS, options)
-		).stdout.trim();
-		if (p1 !== session.expectedTargetSha || p2 !== params.commit) {
-			throw new Error("Integrated commit parent chain mismatch; foreign commits or altered ancestry detected");
-		}
-
-		session.newCommitSha = newCommitSha;
-		const persisted = await loadPersistentSessions(params.dataDir);
-		persisted.set(params.integrationId, session);
-		await savePersistentSessions(params.dataDir, persisted);
-	}
-
-	// 4. 执行原子 CAS update-ref 写入目标分支
-	await runIsolatedGit(
-		session.repoRoot,
-		params.dataDir,
-		["update-ref", `refs/heads/${session.branch}`, newCommitSha, params.expectedTargetSha],
-		GIT_TIMEOUT_MS,
-		options,
-	);
-
-	// 5. CAS 成功：立即落盘 applied receipt，保证掉电或崩溃不可重做
-	session.applied = true;
-	const persisted = await loadPersistentSessions(params.dataDir);
-	persisted.set(params.integrationId, session);
-	await savePersistentSessions(params.dataDir, persisted);
-
-	// 6. 工作树安全清理
-	let cleanupPending = false;
-	try {
-		await safeRemoveWorktree(session.repoRoot, params.dataDir, session.worktreePath);
-		memorySessions.delete(params.integrationId);
-		persisted.delete(params.integrationId);
-		await savePersistentSessions(params.dataDir, persisted);
-	} catch (cleanupErr) {
-		cleanupPending = true;
-		console.warn(`[IntegrationCleanup] Worktree cleanup deferred: ${sanitizeError(cleanupErr)}`);
-	}
-
-	return {
-		status: "applied",
-		newCommitSha,
-		...(cleanupPending ? { cleanupPending: true } : {}),
+		const checkedOut = worktrees.stdout
+			.split("\n")
+			.some((line) => line.startsWith("branch ") && line.slice(7).trim() === intent.targetRef);
+		if (checkedOut) throw integrationError("INTEGRATION_TARGET_CHECKED_OUT");
+		await assertTarget(session, params.dataDir, signal);
 	};
+	const result = await publishLocalIntent(
+		{
+			dataDir: params.dataDir,
+			publishIntent: intent,
+			mode: params.mode ?? "first",
+			repository: { ...verifiedRepo, repositoryId, objectFormat: intent.objectFormat },
+			verify,
+		},
+		options,
+	);
+	if (result.publishReceipt) {
+		session.newCommitSha = intent.candidateSha;
+		session.applied = true;
+		try {
+			await persistSession(params.dataDir, params.integrationId, session);
+			await cancelIntegration(params, { stopConfirmed: true });
+		} catch {
+			return { ...result, newCommitSha: intent.candidateSha, cleanupPending: true };
+		}
+		return { ...result, newCommitSha: intent.candidateSha };
+	}
+	return result;
 }
 
-/** 设备本地：取消集成并清理隔离工作树（中断在途命令并核验租约归属） */
-export async function deviceCancelIntegration(
-	params: {
-		integrationId: string;
-		targetBotId: string;
-		targetBotRevision: number;
-		repoRoot: string;
-		dataDir: string;
-	},
-	_options?: { signal?: AbortSignal },
+async function cancelIntegration(
+	params: IntegrationIdentity & { priorStatus?: string; verificationMayBeRunning?: boolean },
+	options?: { signal?: AbortSignal; stopConfirmed?: boolean },
 ): Promise<{ status: "cancelled" }> {
-	const activeOp = activeOperations.get(params.integrationId);
-	if (activeOp) {
-		activeOp.abort();
-		activeOperations.delete(params.integrationId);
+	const stored = (await loadPersistentSessions(params.dataDir)).get(params.integrationId);
+	if (
+		stored &&
+		(stored.targetBotId !== params.targetBotId ||
+			stored.targetBotRevision !== params.targetBotRevision ||
+			resolve(stored.repoRoot) !== resolve(params.repoRoot))
+	)
+		throw new Error("Integration cancellation identity mismatch");
+	if (
+		(stored ||
+			params.verificationMayBeRunning ||
+			["verifying", "verified", "failed"].includes(params.priorStatus ?? "")) &&
+		(params.verificationMayBeRunning || params.priorStatus !== "prepared") &&
+		!options?.stopConfirmed &&
+		stored?.verificationStopConfirmed !== true &&
+		!stored?.localVerification
+	) {
+		if (stored) {
+			stored.stopUnconfirmed = true;
+			await persistSession(params.dataDir, params.integrationId, stored).catch(() => {});
+		}
+		throw new VerificationStopUnconfirmedError();
 	}
-
-	const session = await getVerifiedSession(params.dataDir, params).catch(() => undefined);
-	if (session) {
-		await safeRemoveWorktree(session.repoRoot, params.dataDir, session.worktreePath);
-		memorySessions.delete(params.integrationId);
-		const persisted = await loadPersistentSessions(params.dataDir);
-		persisted.delete(params.integrationId);
-		await savePersistentSessions(params.dataDir, persisted);
+	const session = await getVerifiedSession(
+		params.dataDir,
+		params,
+		params.priorStatus === "prepared" || stored?.verificationStopConfirmed === true || !!stored?.localVerification,
+	).catch((error) => {
+		if (String(error).includes("not found")) return undefined;
+		throw error;
+	});
+	if (!session) {
+		const path = resolve(await getVerifiedWorktreesRoot(params.dataDir), `int-${safeId(params.integrationId)}`);
+		if (existsSync(path)) throw new VerificationStopUnconfirmedError();
+		if (stored) {
+			if (stored.retainedRef) {
+				const repo = await verifyRepoRoot(stored.repoRoot);
+				if (repo.commonDir !== stored.commonDir) throw new Error("Original integration repository identity changed");
+				await git(stored.repoRoot, ["update-ref", "-d", stored.retainedRef, stored.deliveryCommit]);
+			}
+			await persistSession(params.dataDir, params.integrationId);
+			memorySessions.delete(sessionKey(params));
+		}
+		return { status: "cancelled" };
 	}
+	await assertPreparedTree(session, params.dataDir);
+	await safeRemoveWorktree(session.repoRoot, params.dataDir, session.worktreePath);
+	if (session.retainedRef)
+		await git(session.repoRoot, ["update-ref", "-d", session.retainedRef, session.deliveryCommit]);
+	memorySessions.delete(sessionKey(params));
+	await persistSession(params.dataDir, params.integrationId);
 	return { status: "cancelled" };
+}
+
+export function devicePrepareIntegration(
+	params: Parameters<typeof prepareIntegration>[0],
+	options?: { signal?: AbortSignal },
+) {
+	params = structuredClone(params);
+	return localOperation(params, options?.signal, (signal) => prepareIntegration(params, { signal }));
+}
+export function deviceVerifyIntegration(
+	params: Parameters<typeof verifyIntegration>[0],
+	options?: Parameters<typeof verifyIntegration>[1],
+) {
+	params = structuredClone(params);
+	return localOperation(params, options?.signal, (signal) => verifyIntegration(params, { ...options, signal }));
+}
+export function deviceConfirmIntegration(
+	params: Parameters<typeof confirmIntegration>[0],
+	options?: { signal?: AbortSignal },
+) {
+	params = structuredClone(params);
+	return (async () => {
+		if (params.publishIntent) {
+			const journal = await readPublicationJournal(params.dataDir, params.publishIntent);
+			if (journal?.receipt || journal?.stop || journal?.phase === "cas_started") {
+				const result = await localPublicationStatus({ dataDir: params.dataDir, publishIntent: params.publishIntent });
+				return { ...result, ...(result.publishReceipt ? { newCommitSha: result.publishReceipt.candidateSha } : {}) };
+			}
+		}
+		return localOperation(params, options?.signal, (signal) => confirmIntegration(params, { signal }));
+	})();
+}
+export function devicePublicationStatus(params: { dataDir: string; publishIntent: DevicePublishIntent }) {
+	return localPublicationStatus(params);
+}
+export function deviceCancelPublication(params: {
+	dataDir: string;
+	publishIntent: DevicePublishIntent;
+}): Promise<DevicePublicationResult> {
+	const intent = validatePublishIntent(params.publishIntent);
+	const operation = activeOperations.get(sessionKey({ dataDir: params.dataDir, integrationId: intent.integrationId }));
+	// Install the publication fence synchronously even if confirmation has not reached its gate yet.
+	const cancellation = cancelLocalPublication(params);
+	operation?.controller.abort(new Error("Publication cancelled"));
+	return (async () => {
+		await operation?.done.catch(() => {});
+		const result = await cancellation;
+		if (operation?.blocked) return { ...result, cleanupPending: true };
+		const session =
+			memorySessions.get(sessionKey({ dataDir: params.dataDir, integrationId: intent.integrationId })) ??
+			(await loadPersistentSessions(params.dataDir)).get(intent.integrationId);
+		return { ...result, ...(session ? { cleanupPending: true } : {}) };
+	})();
+}
+
+export async function deviceCancelIntegration(
+	params: Parameters<typeof cancelIntegration>[0],
+	options?: { signal?: AbortSignal },
+) {
+	params = structuredClone(params);
+	const operation = activeOperations.get(sessionKey(params));
+	if (operation) {
+		if (!sameIdentity(operation.identity, params)) throw new Error("Integration cancellation identity mismatch");
+		operation.controller.abort(new Error("Integration cancelled"));
+		await operation.done.catch((error) => {
+			if (operation.blocked) throw error;
+		});
+		if (operation.blocked) throw operation.blocked;
+	}
+	return localOperation(params, options?.signal, () =>
+		cancelIntegration(params, { ...options, stopConfirmed: !!operation }),
+	);
 }

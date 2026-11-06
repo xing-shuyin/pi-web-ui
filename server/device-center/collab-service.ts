@@ -56,6 +56,8 @@ export function createDeviceCollabService(options: {
 					throw new Error("Parent task spoofing denied");
 				args.sourceBotId ??= bound?.botId;
 				args.roomId ??= bound?.roomId;
+				if (args.executionMode !== undefined || args.contract !== undefined)
+					validateDeviceCollabInput({ ...args, action });
 				if (
 					action === "conversation_attention" ||
 					action === "conversation_deliver" ||
@@ -64,6 +66,8 @@ export function createDeviceCollabService(options: {
 					action === "task_evidence"
 				)
 					args.conversationId ??= bound?.conversationId;
+				if (action === "conversation_deliver" || action === "conversation_review")
+					validateDeviceCollabInput({ ...args, action });
 				if (action === "reply_to_request") {
 					if (!bound || bound.kind !== "request" || !bound.sourceConversationId || !bound.requestId)
 						throw new Error("Incoming request binding required");
@@ -201,6 +205,7 @@ export function createDeviceCollabService(options: {
 						if (args.offset !== undefined) query.set("offset", String(args.offset));
 						if (args.limit !== undefined) query.set("limit", String(args.limit));
 						if (args.expectedDigest !== undefined) query.set("expectedDigest", args.expectedDigest);
+						if (args.evidenceKind !== undefined) query.set("evidenceKind", args.evidenceKind);
 						return await request(path, undefined, query);
 					}
 					case "list_bots": {
@@ -251,7 +256,9 @@ export function createDeviceCollabService(options: {
 							text: args.prompt,
 							sourceBotId: args.sourceBotId,
 							targetBotIds: [args.targetBotId],
-							idempotencyKey: randomUUID(),
+							idempotencyKey: args.idempotencyKey ?? randomUUID(),
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							...(parentTaskId ? { parentTaskId } : {}),
 							...(args.resourceLocks?.length ? { resourceLocks: args.resourceLocks } : {}),
 						});
@@ -271,23 +278,22 @@ export function createDeviceCollabService(options: {
 						if (
 							!args.conversationId ||
 							!parentTaskId ||
-							!args.repository ||
-							!args.baseCommit ||
-							!args.commit ||
 							!args.summary ||
-							!Array.isArray(args.checks)
+							(!args.artifactTaskId &&
+								(!args.repository || !args.baseCommit || !args.commit || !Array.isArray(args.checks)))
 						)
 							throw new Error("Delivery fields required");
 						const body: DeviceDeliveryRequest = {
 							sourceBotId: args.sourceBotId!,
 							parentTaskId,
 							idempotencyKey: args.idempotencyKey ?? randomUUID(),
+							artifactTaskId: args.artifactTaskId,
 							repository: args.repository,
 							baseCommit: args.baseCommit,
 							commit: args.commit,
 							branch: args.branch,
 							summary: args.summary,
-							checks: args.checks,
+							checks: args.checks ?? [],
 							limitations: args.limitations ?? [],
 						};
 						return await request(`${room()}/conversations/${encodeURIComponent(args.conversationId)}/deliveries`, body);
@@ -297,7 +303,7 @@ export function createDeviceCollabService(options: {
 							!args.conversationId ||
 							!parentTaskId ||
 							!args.deliveryId ||
-							!args.commit ||
+							(!args.commit && !args.artifactDigest) ||
 							!args.summary ||
 							!args.verdict
 						)
@@ -308,6 +314,10 @@ export function createDeviceCollabService(options: {
 							idempotencyKey: args.idempotencyKey ?? randomUUID(),
 							deliveryId: args.deliveryId,
 							commit: args.commit,
+							artifactDigest: args.artifactDigest,
+							integrationId: args.integrationId,
+							verificationDigest: args.verificationDigest,
+							criteriaResults: args.criteriaResults,
 							verdict: args.verdict,
 							summary: args.summary,
 						};
@@ -343,6 +353,8 @@ export function createDeviceCollabService(options: {
 						return await request(`${room()}/conversations`, {
 							targetBotId: args.targetBotId,
 							text: args.prompt,
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							...(args.kind ? { kind: args.kind } : {}),
 							...(args.requestId ? { requestId: args.requestId } : {}),
 							sourceBotId: args.sourceBotId,
@@ -359,6 +371,8 @@ export function createDeviceCollabService(options: {
 							throw new Error("Conversation fields required");
 						return await request(`${room()}/conversations/${encodeURIComponent(args.conversationId)}/messages`, {
 							text: args.message,
+							...(args.executionMode ? { executionMode: args.executionMode } : {}),
+							...(args.contract ? { contract: args.contract } : {}),
 							sourceBotId: args.sourceBotId,
 							parentTaskId,
 							kind: args.kind ?? "message",

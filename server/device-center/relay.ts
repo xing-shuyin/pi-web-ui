@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseReportMetadata } from "./report-metadata.js";
 import { integrationErrorFromCode } from "./integration-errors.js";
+import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verification-limits.js";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
@@ -8,9 +9,9 @@ import { WebSocket, WebSocketServer } from "ws";
 import { capabilityBase, createPortalResponse, parseDevicePath, portalHeaders, wrapperHtml } from "./path-portal.js";
 
 export const RELAY_LIMITS = {
-	frame: 128 * 1024,
+	frame: 512 * 1024,
 	chunk: 32 * 1024,
-	queue: 2 * 1024 * 1024,
+	queue: 4 * 1024 * 1024,
 	body: 64 * 1024 * 1024,
 	streams: 32,
 	cancellations: 16,
@@ -141,6 +142,7 @@ export const COMMANDS = [
 	"integration_prepare",
 	"integration_verify",
 	"integration_confirm",
+	"integration_publication_status",
 	"integration_cancel",
 ] as const;
 export type DeviceCommand = (typeof COMMANDS)[number];
@@ -176,13 +178,20 @@ export function createCommandChannel(
 		item.controller.abort();
 		if (error) item.reject?.(error);
 	}
-	function add(id: string, incoming: boolean) {
+	function add(id: string, incoming: boolean, action: DeviceCommand) {
 		if (ended || pending.size >= 4 || pending.has(id)) throw new Error("Command capacity exceeded");
-		const timer = setTimeout(() => {
-			sendFrame(ws, { type: "rpc_cancel", id });
-			const err = Object.assign(new Error("Command timed out"), { stopUnconfirmed: true });
-			remove(id, err);
-		}, 60_000);
+		const timer = setTimeout(
+			() => {
+				sendFrame(ws, { type: "rpc_cancel", id });
+				const err = Object.assign(new Error("Command timed out"), { stopUnconfirmed: true });
+				remove(id, err);
+			},
+			action === "integration_verify"
+				? VERIFICATION_RPC_TIMEOUT_MS
+				: action.startsWith("integration_")
+					? INTEGRATION_RPC_TIMEOUT_MS
+					: 60_000,
+		);
 		timer.unref();
 		const item = {
 			chunks: [] as Buffer[],
@@ -228,7 +237,7 @@ export function createCommandChannel(
 				const id = randomUUID();
 				let item: ReturnType<typeof add>;
 				try {
-					item = add(id, false);
+					item = add(id, false, action);
 				} catch (error) {
 					reject(error);
 					return;
@@ -273,7 +282,7 @@ export function createCommandChannel(
 					sendFrame(ws, { type: "rpc_error", id });
 					return true;
 				}
-				const item = add(id, true);
+				const item = add(id, true, frame.action as DeviceCommand);
 				item.action = frame.action as DeviceCommand;
 				return true;
 			}
@@ -293,7 +302,9 @@ export function createCommandChannel(
 			}
 			if (frame.type === "rpc_error") {
 				const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(frame.code) : undefined;
-				remove(id, safeError ?? new Error("Remote command rejected"));
+				const error = safeError ?? new Error("Remote command rejected");
+				if (frame.stopUnconfirmed === true) Object.assign(error, { stopUnconfirmed: true });
+				remove(id, error);
 				return true;
 			}
 			if (item.executing) throw new Error("Command already executing");
@@ -318,24 +329,34 @@ export function createCommandChannel(
 			item.executing = true;
 			const run = async () => {
 				let wasAborted = false;
+				let stopUnconfirmed = false;
 				const onAbort = () => {
 					wasAborted = true;
 				};
 				item.controller.signal.addEventListener("abort", onAbort, { once: true });
 				try {
 					const result = await handler!(item.action!, value, item.controller.signal);
+					const stop = result && typeof result === "object" && "publishStop" in result ? result.publishStop : undefined;
+					stopUnconfirmed =
+						!!stop && typeof stop === "object" && "stopConfirmed" in stop && stop.stopConfirmed === false;
+					if (stopUnconfirmed && (wasAborted || item.controller.signal.aborted) && pending.get(id) === item)
+						sendFrame(ws, { type: "rpc_error", id, stopUnconfirmed: true });
 					if (pending.get(id) !== item) return;
 					if (wasAborted || item.controller.signal.aborted) return;
 					await transmit(id, "rpc_response", result, item.controller.signal);
 				} catch (error) {
-					if (!wasAborted && !item.controller.signal.aborted && pending.get(id) === item) {
+					stopUnconfirmed =
+						!!error && typeof error === "object" && "stopUnconfirmed" in error && error.stopUnconfirmed === true;
+					if (stopUnconfirmed && pending.get(id) === item)
+						sendFrame(ws, { type: "rpc_error", id, stopUnconfirmed: true });
+					if (!stopUnconfirmed && !wasAborted && !item.controller.signal.aborted && pending.get(id) === item) {
 						const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
 						const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(code) : undefined;
 						sendFrame(ws, { type: "rpc_error", id, ...(safeError ? { code } : {}) });
 					}
 				} finally {
 					item.controller.signal.removeEventListener("abort", onAbort);
-					if (wasAborted || item.controller.signal.aborted) {
+					if (!stopUnconfirmed && (wasAborted || item.controller.signal.aborted)) {
 						sendFrame(ws, { type: "rpc_cancel_ack", id });
 					}
 					remove(id);
@@ -484,7 +505,10 @@ export interface DeviceRelayOptions {
 	) => string | { id: string } | null | undefined | Promise<string | { id: string } | null | undefined>;
 	ownsDevice: (accountId: string, deviceId: string) => boolean | Promise<boolean>;
 	getDeviceName?: (deviceId: string) => string | undefined;
-	onTaskEvent?: (deviceId: string, event: any) => void | Promise<void>;
+	onTaskEvent?: (
+		deviceId: string,
+		event: any,
+	) => void | import("./store.js").HubTask | Promise<void | import("./store.js").HubTask>;
 	onTaskProgress?: (deviceId: string, event: any) => void | Promise<void>;
 	onTaskInteractions?: (deviceId: string, event: any) => void | Promise<void>;
 	onTaskClaim?: (
@@ -504,11 +528,14 @@ export interface DeviceRelayOptions {
 		frame: import("../protocol.js").DeviceTaskPlanReadyFrame,
 	) => Promise<boolean> | boolean;
 	onTaskDisconnect?: (deviceId: string, taskId: string, attemptId: string) => void | Promise<void>;
+	onDeviceConnect?: (deviceId: string) => void | Promise<void>;
 }
 export interface RelayTaskBinding {
 	attemptId: string;
 	botId: string;
 	hasLease?: boolean;
+	leaseToken?: string;
+	leaseGeneration?: number;
 }
 
 export function createDeviceRelay(options: DeviceRelayOptions) {
@@ -638,7 +665,7 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 		for (const pending of entry.cancellations.values()) pending.finish(false);
 		entry.rpc.close();
 		entry.messages.close();
-		for (const [taskId, { attemptId, botId, hasLease }] of entry.tasks) {
+		for (const [taskId, { attemptId, botId, hasLease, leaseToken, leaseGeneration }] of entry.tasks) {
 			if (optionsDrop?.isRevoke || !hasLease) {
 				Promise.resolve()
 					.then(() =>
@@ -646,6 +673,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 							taskId,
 							botId,
 							attemptId,
+							leaseToken,
+							leaseGeneration,
 							status: "interrupted",
 							report: optionsDrop?.isRevoke
 								? "Device revoked; task interrupted."
@@ -1112,30 +1141,63 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 								throw new Error("Unknown task");
 							if (frame.reportMetadata !== undefined) frame.reportMetadata = parseReportMetadata(frame.reportMetadata);
 							const current = entry.tasks.get(taskId);
-							if (current && (current.attemptId !== attemptId || current.botId !== botId))
+							if (
+								current &&
+								(current.botId !== botId || (frame.status === "running" && current.attemptId !== attemptId))
+							)
 								throw new Error("Unknown task");
 							Promise.resolve()
 								.then(() => options.onTaskEvent?.(device, frame))
-								.then(() => {
-									if (devices.get(device) === entry) {
+								.then((committed) => {
+									if (devices.get(device) !== entry) return;
+									if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
 										const postCheck = entry.tasks.get(taskId);
-										if (postCheck && postCheck.attemptId === attemptId && postCheck.botId === botId) {
-											if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
-												entry.tasks.delete(taskId);
-											}
-										}
-										if (frame.status === "completed" || frame.status === "failed" || frame.status === "interrupted") {
+										if (postCheck?.attemptId === attemptId && postCheck.botId === botId) entry.tasks.delete(taskId);
+										if (
+											committed?.outcomeFingerprint &&
+											committed.id === taskId &&
+											committed.attemptId === attemptId &&
+											committed.botId === botId &&
+											committed.status === frame.status
+										)
 											sendFrame(ws, {
 												type: "task_result_ack",
-												taskId: frame.taskId,
-												attemptId: frame.attemptId,
-												status: frame.status,
-												...(typeof frame.fingerprint === "string" ? { fingerprint: frame.fingerprint } : {}),
+												taskId,
+												attemptId,
+												accepted: true,
+												status: committed.status,
+												fingerprint: committed.outcomeFingerprint,
+												artifactDigest: committed.artifact?.digest,
 											});
-										}
 									}
 								})
-								.catch(() => ws.terminate());
+								.catch((error: unknown) => {
+									const rejection = error as { permanent?: unknown; reasonCode?: unknown } | undefined;
+									if (
+										devices.get(device) === entry &&
+										frame.status !== "running" &&
+										rejection?.permanent === true &&
+										["terminal_conflict", "attempt_expired"].includes(String(rejection.reasonCode)) &&
+										typeof frame.fingerprint === "string"
+									) {
+										const pending = entry.tasks.get(taskId);
+										if (pending?.attemptId === attemptId && pending.botId === botId) entry.tasks.delete(taskId);
+										sendFrame(ws, {
+											type: "task_result_ack",
+											taskId,
+											attemptId,
+											accepted: false,
+											status: frame.status,
+											permanent: true,
+											reasonCode: rejection.reasonCode as import("../protocol.js").DeviceTaskResultRejectReasonCode,
+											fingerprint: frame.fingerprint,
+											artifactDigest:
+												typeof (frame.artifact as { digest?: unknown } | undefined)?.digest === "string"
+													? (frame.artifact as { digest: string }).digest
+													: undefined,
+										});
+									} else ws.terminate();
+								});
 							return;
 						}
 						// === Task Recovery / Reconnect Claim / Lease Renewal ===
@@ -1163,6 +1225,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 											attemptId: claim.attemptId,
 											botId: claim.botId,
 											hasLease: true,
+											leaseToken: claim.leaseToken,
+											leaseGeneration: claim.leaseGeneration,
 										});
 									}
 									sendFrame(ws, {
@@ -1257,6 +1321,9 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 					}
 				});
 				ws.on("close", () => drop(device, entry));
+				void Promise.resolve()
+					.then(() => options.onDeviceConnect?.(device))
+					.catch((cause) => console.warn("[DeviceRelay] Queued task recovery failed", cause));
 				ws.on("error", () => ws.terminate());
 			});
 		} catch {
@@ -1366,6 +1433,8 @@ export function createDeviceRelay(options: DeviceRelayOptions) {
 				attemptId: task.attemptId,
 				botId: task.botId,
 				hasLease: typeof task.leaseToken === "string" && !!task.leaseToken,
+				leaseToken: task.leaseToken,
+				leaseGeneration: task.leaseGeneration,
 			});
 			if (!sendFrame(entry.ws, { type: "task", task })) {
 				entry.tasks.delete(task.id);

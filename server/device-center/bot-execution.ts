@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+	isTrustedTaskWorkspaceCapability,
+	resolveTrustedTaskWorkspace,
+	type TaskWorkspaceCapability,
+} from "./task-workspace.js";
 import { isAbsolute, resolve } from "node:path";
 import type { ClientMessage } from "../protocol.js";
 import type { LocalBot } from "./bots.js";
@@ -14,7 +19,14 @@ export interface BotExecutionCapability {
 	readonly authorizedResumePath?: string;
 	readonly planOnly?: boolean;
 	readonly attenuatedTools?: readonly string[];
+	readonly executionCwd: string;
+	readonly executionMode?: "chat" | "code";
+	readonly workspaceHandleId?: string;
+	readonly taskId?: string;
+	readonly attemptId?: string;
 	assertActive(): void;
+	/** Revalidate the registered capability and actual Git identity after awaits and before tools. */
+	assertWorkspace(cwd?: string): Promise<void>;
 	allowsToolRegistration(name: string): boolean;
 	allowsTool(name: string, params?: unknown): boolean;
 	filterSkills<T extends { name: string }>(skills: T[]): T[];
@@ -69,6 +81,13 @@ export function registerBotExecution(
 		planOnly?: boolean;
 		attenuatedTools?: string[];
 		sourceBotId?: string;
+		executionCwd?: string;
+		executionMode?: "chat" | "code";
+		workspaceHandleId?: string;
+		workspaceCapability?: TaskWorkspaceCapability;
+		deviceId?: string;
+		taskId?: string;
+		attemptId?: string;
 	},
 ): {
 	clientId: string;
@@ -81,8 +100,36 @@ export function registerBotExecution(
 	}
 	if (authorizedResumePath !== undefined && !isAbsolute(authorizedResumePath))
 		throw new Error("Resume path must be absolute");
+	if (context?.executionMode === "code" && authorizedResumePath) {
+		throw new Error("Code execution mode refuses resuming old sessions in first slice");
+	}
+	if (context?.executionCwd !== undefined && !isAbsolute(context.executionCwd)) {
+		throw new Error("Execution cwd must be absolute");
+	}
 	const snapshot = structuredClone(bot);
 	snapshot.cwd = resolve(snapshot.cwd);
+	const executionCwd = context?.executionCwd ? resolve(context.executionCwd) : snapshot.cwd;
+	const code = context?.executionMode === "code";
+	const workspace = context?.workspaceCapability;
+	const workspaceBinding = Object.freeze({
+		deviceId: context?.deviceId ?? "",
+		botId: snapshot.id,
+		botRevision: snapshot.revision,
+		taskId: context?.taskId ?? "",
+		attemptId: context?.attemptId ?? "",
+	});
+	if (code) {
+		if (
+			!isTrustedTaskWorkspaceCapability(workspace) ||
+			!workspaceBinding.deviceId ||
+			!workspaceBinding.taskId ||
+			!workspaceBinding.attemptId ||
+			workspace.handleId !== context?.workspaceHandleId
+		)
+			throw new Error("Code execution requires a trusted task workspace capability");
+	} else if (executionCwd !== snapshot.cwd || context?.workspaceHandleId || workspace) {
+		throw new Error("Chat execution cwd must match the Bot project");
+	}
 	Object.freeze(snapshot.tools);
 	Object.freeze(snapshot.skills);
 	Object.freeze(snapshot.mcpServers);
@@ -131,8 +178,25 @@ export function registerBotExecution(
 		authorizedResumePath,
 		planOnly: context?.planOnly === true,
 		attenuatedTools: attenuatedList ? Object.freeze([...attenuatedList]) : undefined,
+		executionCwd,
+		executionMode: context?.executionMode ?? "chat",
+		workspaceHandleId: context?.workspaceHandleId,
+		taskId: context?.taskId,
+		attemptId: context?.attemptId,
 		assertActive() {
 			if (!active) throw new Error("Bot execution capability has been revoked");
+			if (code && !isTrustedTaskWorkspaceCapability(workspace))
+				throw new Error("Task workspace capability has expired");
+		},
+		async assertWorkspace(cwd = executionCwd) {
+			this.assertActive();
+			if (resolve(cwd) !== executionCwd) throw new Error("Bot execution cwd mismatch");
+			if (code) {
+				const actual = await resolveTrustedTaskWorkspace(workspace, workspaceBinding);
+				this.assertActive();
+				if (resolve(actual.cwd) !== executionCwd || resolve(actual.repoRoot) !== snapshot.cwd)
+					throw new Error("Task workspace identity mismatch");
+			}
 		},
 		allowsToolRegistration(name) {
 			if (attenuatedSet?.has(name)) return false;
@@ -222,6 +286,7 @@ export function botExecutionMessageAllowed(clientId: string, type: string, messa
 	}
 	if (type === "switch_session")
 		return (
+			capability.executionMode !== "code" &&
 			!!capability.authorizedResumePath &&
 			!!message &&
 			typeof message === "object" &&

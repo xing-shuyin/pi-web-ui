@@ -12,12 +12,16 @@ import { createLocalBotRegistry, type LocalBotRegistry, type LocalBotInput } fro
 import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSettings } from "./execution-settings.js";
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
+import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
+import { INTEGRATION_HTTP_TIMEOUT_MS, VERIFICATION_HTTP_TIMEOUT_MS } from "./verification-limits.js";
 
 export interface LocalDeviceConfig {
 	hubUrl: string;
 	name: string;
 	remark?: string;
 	deviceId: string;
+	/** Authenticated Hub owner; older configurations obtain it during Bot synchronization. */
+	accountId?: string;
 	credential: string;
 	uiCredential?: string;
 	allowExecution: boolean;
@@ -123,15 +127,23 @@ export async function installLocalDeviceCenter(options: Options) {
 	let localHub: Awaited<ReturnType<typeof createLocalDeviceHub>> | undefined;
 	let localStarting: Promise<void> | undefined;
 	const activeConfig = () => config ?? localHub?.config;
+	function forAgent(captured: LocalDeviceConfig) {
+		const { uiCredential: _uiCredential, ...agentConfig } = captured;
+		return {
+			...agentConfig,
+			get accountId() {
+				return captured.accountId;
+			},
+		};
+	}
 	async function ensureLocalHub() {
 		if (config || localHub || closed) return;
 		if (!localStarting) {
 			localStarting = (async () => {
 				const hub = await createLocalDeviceHub(options.dataDir, () => loadExecutionSettings(options.dataDir));
 				try {
-					const { uiCredential: _uiCredential, ...agentConfig } = hub.config;
 					localHub = hub;
-					connection = await options.connect(agentConfig, syncBots);
+					connection = await options.connect(forAgent(hub.config), syncBots);
 					await syncBots();
 				} catch (error) {
 					await connection?.close();
@@ -173,8 +185,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		localHub = undefined;
 		await bots.setScope(config ? JSON.stringify([config.hubUrl, config.deviceId]) : "unpaired");
 		if (config && !closed) {
-			const { uiCredential: _uiCredential, ...agentConfig } = config;
-			connection = await options.connect(agentConfig, syncBots);
+			connection = await options.connect(forAgent(config), syncBots);
 		}
 	}
 	async function syncBots() {
@@ -200,10 +211,19 @@ export async function installLocalDeviceCenter(options: Options) {
 				})),
 			}),
 		});
-		await response.body?.cancel();
-		if (!response.ok)
+		if (!response.ok) {
+			await response.body?.cancel();
 			throw new Error("Bot configuration saved locally, but Hub synchronization failed; retry after reconnecting");
+		}
+		// Only the authenticated Hub supplies the owner, never a publication command's wire scope.
+		const result = await response.json();
+		const accountId = result && typeof result === "object" && "accountId" in result ? result.accountId : undefined;
 		if (activeConfig() !== captured || closed) throw new Error("Device binding changed during Bot synchronization");
+		if (typeof accountId === "string" && accountId) {
+			if (captured.accountId && captured.accountId !== accountId) throw new Error("Device account binding changed");
+			// Legacy bindings are refreshed each connection; do not race pairing's serialized config writes.
+			if (!captured.accountId) captured.accountId = accountId;
+		}
 	}
 	async function hubRequest(hubUrl: string, path: string, body: unknown) {
 		const response = await fetch(`${hubUrl}${path}`, {
@@ -243,7 +263,8 @@ export async function installLocalDeviceCenter(options: Options) {
 				typeof value.name !== "string" ||
 				(value.remark !== undefined && typeof value.remark !== "string") ||
 				typeof value.allowExecution !== "boolean" ||
-				(value.uiCredential !== undefined && typeof value.uiCredential !== "string")
+				(value.uiCredential !== undefined && typeof value.uiCredential !== "string") ||
+				(value.accountId !== undefined && (typeof value.accountId !== "string" || !value.accountId))
 			)
 				throw new Error("Invalid saved device configuration");
 			config = { ...value, hubUrl: normalizeHubUrl(value.hubUrl) };
@@ -449,6 +470,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		}
 	});
 	function userRoute(method: "get" | "post", path: string, fields: string[]) {
+		const supportsContract = method === "post" && fields.includes("contract");
 		options.app[method](`/api/device-center/${path}`, async (req, res) => {
 			try {
 				await serialize(ensureLocalHub);
@@ -470,7 +492,8 @@ export async function installLocalDeviceCenter(options: Options) {
 					typeof body !== "object" ||
 					Array.isArray(body) ||
 					Object.keys(body).some((key) => !fields.includes(key)) ||
-					Buffer.byteLength(JSON.stringify(body)) > 32768)
+					Buffer.byteLength(JSON.stringify(body)) >
+						(supportsContract && body.contract !== undefined ? MAX_CONTRACT_REQUEST_BYTES : 32768))
 			)
 				return res.status(400).json({ code: "INVALID_BODY", error: "Invalid group request" });
 			const controller = new AbortController();
@@ -487,10 +510,16 @@ export async function installLocalDeviceCenter(options: Options) {
 				);
 				const queryIndex = req.url.indexOf("?");
 				const queryStr = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
+				const timeoutMs =
+					method === "post" && path.includes("/integrations")
+						? path.endsWith("/verify")
+							? VERIFICATION_HTTP_TIMEOUT_MS
+							: INTEGRATION_HTTP_TIMEOUT_MS
+						: 15000;
 				const response = await fetch(`${captured.hubUrl}/api/device-user/${suffix}${queryStr}`, {
 					method: method.toUpperCase(),
 					redirect: "error",
-					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]),
 					headers: {
 						"Content-Type": "application/json",
 						"X-Device-Id": captured.deviceId,
@@ -751,7 +780,15 @@ export async function installLocalDeviceCenter(options: Options) {
 	]);
 	userRoute("get", "rooms/:id/conversations", []);
 	userRoute("get", "rooms/:id/conversations/:conversationId", []);
-	userRoute("post", "rooms/:id/conversations", ["name", "targetBotId", "text", "idempotencyKey", "planOnly"]);
+	userRoute("post", "rooms/:id/conversations", [
+		"name",
+		"targetBotId",
+		"text",
+		"idempotencyKey",
+		"planOnly",
+		"executionMode",
+		"contract",
+	]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/messages", [
 		"text",
 		"kind",
@@ -759,8 +796,11 @@ export async function installLocalDeviceCenter(options: Options) {
 		"attentionId",
 		"idempotencyKey",
 		"planOnly",
+		"executionMode",
+		"contract",
 	]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/deliveries", [
+		"artifactTaskId",
 		"repository",
 		"baseCommit",
 		"commit",
@@ -773,6 +813,10 @@ export async function installLocalDeviceCenter(options: Options) {
 	userRoute("post", "rooms/:id/conversations/:conversationId/reviews", [
 		"deliveryId",
 		"commit",
+		"artifactDigest",
+		"integrationId",
+		"verificationDigest",
+		"criteriaResults",
 		"verdict",
 		"summary",
 		"idempotencyKey",
@@ -787,6 +831,12 @@ export async function installLocalDeviceCenter(options: Options) {
 	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/verify", ["commands"]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/apply", ["expectedTargetSha"]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/cancel", []);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/reconcile", []);
+	userRoute("post", "rooms/:id/conversations/:conversationId/integrations/:integrationId/resume", [
+		"intentId",
+		"intentDigest",
+		"candidateSha",
+	]);
 	userRoute("get", "rooms/:id/transfers", []);
 	userRoute("post", "rooms/:id/transfers/start", [
 		"sourceBotId",
@@ -816,6 +866,8 @@ export async function installLocalDeviceCenter(options: Options) {
 		"handoff",
 		"parentTaskId",
 		"planOnly",
+		"executionMode",
+		"contract",
 	]);
 	userRoute("get", "rooms/:id/webhooks", []);
 	userRoute("post", "rooms/:id/webhooks", [
@@ -887,6 +939,7 @@ export async function installLocalDeviceCenter(options: Options) {
 			hubUrl: pair.hubUrl,
 			name: pair.name,
 			deviceId: result.deviceId,
+			...(typeof result.accountId === "string" && result.accountId ? { accountId: result.accountId } : {}),
 			credential: result.credential,
 			uiCredential: result.uiCredential,
 			allowExecution: false,
@@ -953,8 +1006,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		getConfig() {
 			const current = activeConfig();
 			if (!current) return undefined;
-			const { uiCredential: _uiCredential, ...agentConfig } = current;
-			return agentConfig;
+			return forAgent(current);
 		},
 		async close() {
 			closed = true;

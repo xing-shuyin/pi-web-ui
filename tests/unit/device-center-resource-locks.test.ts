@@ -334,13 +334,18 @@ describe("Global Resource Locks", () => {
 			expect(lockInfo.waitingQueue[0].taskId).toBe(task2.id);
 
 			// 4. Bot A starts and completes Task 1
+			const task1Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task1.id)!;
 			await f.hub.acceptTaskEvent(devA.deviceId, {
+				leaseToken: task1Lease.leaseToken,
+				leaseGeneration: task1Lease.leaseGeneration,
 				taskId: task1.id,
 				attemptId: task1.attemptId,
 				botId: devA.botId,
 				status: "running",
 			});
 			await f.hub.acceptTaskEvent(devA.deviceId, {
+				leaseToken: task1Lease.leaseToken,
+				leaseGeneration: task1Lease.leaseGeneration,
 				taskId: task1.id,
 				attemptId: task1.attemptId,
 				botId: devA.botId,
@@ -360,13 +365,18 @@ describe("Global Resource Locks", () => {
 			expect(locksResAfter.body.waitingQueue).toHaveLength(0);
 
 			// 6. Bot B starts and completes Task 2
+			const task2Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task2.id)!;
 			await f.hub.acceptTaskEvent(devB.deviceId, {
+				leaseToken: task2Lease.leaseToken,
+				leaseGeneration: task2Lease.leaseGeneration,
 				taskId: task2.id,
 				attemptId: task2.attemptId,
 				botId: devB.botId,
 				status: "running",
 			});
 			await f.hub.acceptTaskEvent(devB.deviceId, {
+				leaseToken: task2Lease.leaseToken,
+				leaseGeneration: task2Lease.leaseGeneration,
 				taskId: task2.id,
 				attemptId: task2.attemptId,
 				botId: devB.botId,
@@ -408,13 +418,18 @@ describe("Global Resource Locks", () => {
 			expect(task2.status).toBe("waiting");
 
 			// Task 1 starts then fails
+			const task1Lease = f.hub.store.snapshot().tasks.find((task) => task.id === task1.id)!;
 			await f.hub.acceptTaskEvent(devA.deviceId, {
+				leaseToken: task1Lease.leaseToken,
+				leaseGeneration: task1Lease.leaseGeneration,
 				taskId: task1.id,
 				attemptId: task1.attemptId,
 				botId: devA.botId,
 				status: "running",
 			});
 			await f.hub.acceptTaskEvent(devA.deviceId, {
+				leaseToken: task1Lease.leaseToken,
+				leaseGeneration: task1Lease.leaseGeneration,
 				taskId: task1.id,
 				attemptId: task1.attemptId,
 				botId: devA.botId,

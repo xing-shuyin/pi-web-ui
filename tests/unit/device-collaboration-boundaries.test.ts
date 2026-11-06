@@ -13,6 +13,7 @@ import {
 	verifyNoExternalDrivers,
 	verifyGitAttributesSafe,
 	devicePrepareIntegration,
+	deviceVerifyIntegration,
 	deviceConfirmIntegration,
 	deviceCancelIntegration,
 	inspectLocalTarget,
@@ -25,7 +26,10 @@ import {
 	DeviceExecutionSettingsError,
 } from "../../server/device-center/execution-settings.js";
 import { DeviceTaskScheduler } from "../../server/device-center/task-scheduler.js";
+import { freezeVerificationPlan } from "../../server/device-center/integration-verification.js";
 import { createDeviceRuntime } from "../../server/device-center/runtime.js";
+import type { DeviceIntegration } from "../../server/protocol.js";
+import { intentForIntegration } from "../helpers/local-publication-fixture.js";
 
 const exec = promisify(execFile);
 
@@ -513,8 +517,8 @@ describe("device-collaboration-boundaries", () => {
 
 			const integrationId = "int-checkedout-test";
 
-			// 准备工作树
-			await devicePrepareIntegration({
+			// Complete real preparation and verification before exercising the publication guard.
+			const prepared = await devicePrepareIntegration({
 				integrationId,
 				targetBotId: "bot-1",
 				targetBotRevision: 1,
@@ -523,8 +527,57 @@ describe("device-collaboration-boundaries", () => {
 				targetBranch: "main",
 				commit: devCommit,
 			});
+			expect(prepared.status).toBe("prepared");
+			expect(prepared.materializedCommit).toMatch(/^[a-f0-9]{40,64}$/);
+			expect(prepared.preparedTree).toMatch(/^[a-f0-9]{40,64}$/);
 
+			const verificationPlan = freezeVerificationPlan(
+				[`node -e "require('node:fs').accessSync('feature-code.txt')"`],
+				"acc-1",
+			);
 			try {
+				const verified = await deviceVerifyIntegration({
+					integrationId,
+					targetBotId: "bot-1",
+					targetBotRevision: 1,
+					repoRoot: repoDir,
+					dataDir,
+					verificationPlan,
+					materializedCommit: prepared.materializedCommit!,
+					preparedTree: prepared.preparedTree!,
+					expectedTargetSha: baseSha,
+				});
+				expect(verified.status).toBe("verified");
+				expect(verified.results).toMatchObject([{ status: "passed", exitCode: 0 }]);
+				const integration: DeviceIntegration = {
+					id: integrationId,
+					accountId: "acc-1",
+					roomId: "room",
+					conversationId: "conversation",
+					deliveryId: "del-test",
+					commit: devCommit,
+					targetBotId: "bot-1",
+					targetBotRevision: 1,
+					targetDeviceId: "device",
+					targetBranch: "main",
+					expectedTargetSha: baseSha,
+					materializedCommit: prepared.materializedCommit,
+					preparedTree: prepared.preparedTree,
+					repositoryId: prepared.repositoryId,
+					objectFormat: prepared.objectFormat,
+					verificationPlan,
+					status: "verified",
+					validationCommands: [],
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				};
+				const publishIntent = intentForIntegration(integration, {
+					planDigest: verified.planDigest,
+					materializedCommit: verified.materializedCommit,
+					treeBefore: verified.treeBefore,
+					treeAfter: verified.treeAfter,
+					results: verified.results,
+				});
 				// 尝试对已检出的 main 分支进行 confirm，必须直接被安全拦截，提示切换分支
 				await expect(
 					deviceConfirmIntegration({
@@ -536,8 +589,10 @@ describe("device-collaboration-boundaries", () => {
 						deliveryId: "del-test",
 						commit: devCommit,
 						expectedTargetSha: baseSha,
+						publishIntent,
 					}),
 				).rejects.toMatchObject({ code: "INTEGRATION_TARGET_CHECKED_OUT", status: 409 });
+				expect(await runGit(repoDir, ["rev-parse", "main"])).toBe(baseSha);
 			} finally {
 				await deviceCancelIntegration({
 					integrationId,
@@ -547,6 +602,6 @@ describe("device-collaboration-boundaries", () => {
 					dataDir,
 				}).catch(() => {});
 			}
-		});
+		}, 60000);
 	});
 });

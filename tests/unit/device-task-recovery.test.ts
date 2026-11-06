@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeviceRelay } from "../../server/device-center/relay.js";
 import { createDeviceConnector } from "../../server/device-center/connector.js";
 import { TaskRecoveryManager } from "../../server/device-center/task-recovery.js";
-import type { DeviceTaskClaim, DeviceTaskLeaseRenew } from "../../server/protocol.js";
+import type { DeviceTaskClaim, DeviceTaskLeaseRenew, HubTask } from "../../server/protocol.js";
+import { computeOutcomeFingerprint } from "../../server/device-center/task-outcome.js";
 
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -80,8 +81,10 @@ describe("TaskRecoveryManager unit tests", () => {
 		);
 		expect(duplicate.id).toBe(outbox.id);
 
-		// Acknowledge outbox
-		expect(manager.ackOutbox("task-1", "att-1")).toBe(true);
+		// Acknowledge outbox requires matching outcome fingerprint
+		expect(manager.ackOutbox("task-1", "att-1")).toBe(false);
+		expect(manager.ackOutbox("task-1", "att-1", "wrong-fp")).toBe(false);
+		expect(manager.ackOutbox("task-1", "att-1", outbox.fingerprint)).toBe(true);
 		expect(manager.getPendingOutbox()).toHaveLength(0);
 	});
 
@@ -147,7 +150,7 @@ describe("TaskRecoveryManager unit tests", () => {
 });
 
 describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
-	async function createFixture() {
+	async function createFixture(committedTask?: HubTask) {
 		const server = http.createServer();
 		server.listen(0, "127.0.0.1");
 		await once(server, "listening");
@@ -170,6 +173,7 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 			ownsDevice: () => true,
 			onTaskEvent: (id, event) => {
 				events.push(event);
+				return committedTask;
 			},
 			onTaskClaim: (id, claim) => {
 				claims.push(claim);
@@ -275,7 +279,23 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 	});
 
 	it("replays pending durable outbox results on reconnect until ACKed", async () => {
-		const f = await createFixture();
+		// Model the persisted Hub receipt from the expected outcome, independently of the request fingerprint.
+		const committedTask: HubTask = {
+			id: "task-outbox-1",
+			attemptId: "att-out-1",
+			botId: "bot1",
+			botRevision: 1,
+			deviceId: "dev1",
+			accountId: "account",
+			roomId: "room1",
+			text: "work",
+			status: "completed",
+			report: "Pre-recorded finish",
+			createdAt: 1,
+			updatedAt: 2,
+			outcomeFingerprint: computeOutcomeFingerprint("task-outbox-1", "att-out-1", "completed", "Pre-recorded finish"),
+		};
+		const f = await createFixture(committedTask);
 
 		// Pre-populate outbox with an interrupted or completed result
 		f.recovery.recordTaskFinish(
@@ -301,8 +321,9 @@ describe("End-to-End Task Disconnect Recovery and Reconnect Claim", () => {
 		const event = f.events.find((e) => e.taskId === "task-outbox-1");
 		expect(event.status).toBe("completed");
 		expect(event.report).toBe("Pre-recorded finish");
+		expect(event.fingerprint).toBe(committedTask.outcomeFingerprint);
 
-		// Relay automatically sends task_result_ack upon terminal event, which clears outbox
+		// Only the returned persisted receipt authorizes the relay ACK that clears the outbox.
 		await vi.waitFor(() => expect(f.recovery.getPendingOutbox()).toHaveLength(0));
 	});
 
@@ -696,6 +717,8 @@ describe("Full real runtime admission and crash-safety lifecycle", () => {
 		await hub2.acceptTaskEvent("dev1", {
 			taskId: pending[0].taskId,
 			attemptId: pending[0].attemptId,
+			leaseToken: pending[0].leaseToken,
+			leaseGeneration: pending[0].leaseGeneration,
 			botId: pending[0].botId,
 			status: pending[0].status,
 			report: pending[0].report,

@@ -63,8 +63,9 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 			onTaskToolLifecycle: (id, frame) => hub!.acceptTaskToolLifecycle(id, frame),
 			onTaskPlanReady: (id, frame) => hub!.acceptTaskPlanReady(id, frame),
 			onTaskInteractions: (id, event) => hub!.acceptInteractions(id, event),
-			onTaskEvent: async (id, event) => {
-				await hub!.acceptTaskEvent(id, event);
+			onTaskEvent: (id, event) => hub!.acceptTaskEvent(id, event),
+			onDeviceConnect: async (id) => {
+				await Promise.all([hub!.resumeQueuedTasks(id), hub!.reconcilePendingPublications(id)]);
 			},
 			onTaskClaim: (id, claim) => hub!.claimTask(id, claim),
 			onTaskLeaseRenew: (id, renew) => hub!.renewTaskLease(id, renew),
@@ -72,6 +73,7 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 		});
 		hub.setRelay({
 			onTask: relay.sendTask,
+			cancelTask: relay.cancelTask,
 			answerInteraction: relay.answerInteraction,
 			onRevoke: relay.revoke,
 			handleRequest: relay.handleRequest,
@@ -87,6 +89,7 @@ export async function createLocalDeviceHub(dataDir: string, getSettings?: () => 
 			hubUrl,
 			name: hostname(),
 			deviceId,
+			accountId,
 			credential,
 			uiCredential,
 			allowExecution: true,

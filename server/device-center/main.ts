@@ -50,7 +50,10 @@ export async function startDeviceHub(env: NodeJS.ProcessEnv = process.env) {
 		getAccount: (req) => hub.getRelayAccount(req),
 		ownsDevice: (accountId, id) => hub.store.getDeviceOwner(id) === accountId,
 		getDeviceName: (id) => hub.store.getDevice(id)?.name,
-		onTaskEvent: (id, event) => hub.acceptTaskEvent(id, event).then(() => undefined),
+		onTaskEvent: (id, event) => hub.acceptTaskEvent(id, event),
+		onDeviceConnect: async (id) => {
+			await Promise.all([hub.resumeQueuedTasks(id), hub.reconcilePendingPublications(id)]);
+		},
 		onTaskInteractions: (id, event) => hub.acceptInteractions(id, event),
 		onTaskProgress: (id, event) => hub.acceptTaskProgress(id, event),
 		onTaskToolLifecycle: (id, frame) => hub.acceptTaskToolLifecycle(id, frame),

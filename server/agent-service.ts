@@ -3925,7 +3925,10 @@ export class ClientSession {
 	): Promise<ClientSession> {
 		const botExecution = getBotExecution(clientId);
 		botExecution?.assertActive();
-		if (botExecution) cwd = botExecution.bot.cwd;
+		if (botExecution) {
+			cwd = botExecution.executionCwd;
+			await botExecution.assertWorkspace(cwd);
+		}
 		const agentDir = process.env.PI_CODING_AGENT_DIR ?? getAgentDir();
 
 		const cs = new ClientSession(clientId, cwd, agentDir, stateStore);
@@ -4095,7 +4098,7 @@ export class ClientSession {
 		noSpawnTools?: boolean,
 	): CreateAgentSessionRuntimeFactory {
 		return async ({ cwd: effectiveCwd, sessionManager }) => {
-			this.botExecution?.assertActive();
+			if (this.botExecution) await this.botExecution.assertWorkspace(effectiveCwd);
 			const botEntry = sessionManager
 				.getEntries()
 				.find((entry) => entry.type === "custom" && entry.customType === "device-bot-execution");
@@ -4111,7 +4114,8 @@ export class ClientSession {
 					botId: this.botExecution.bot.id,
 					revision: this.botExecution.bot.revision,
 				});
-			if (this.botExecution && resolve(effectiveCwd) !== resolve(this.botExecution.bot.cwd))
+			const expectedBotCwd = this.botExecution?.executionCwd ?? this.botExecution?.bot.cwd;
+			if (this.botExecution && expectedBotCwd && resolve(effectiveCwd) !== resolve(expectedBotCwd))
 				throw new Error("Bot cwd is fixed");
 			const sandboxIdentity = this.sandboxes.getExecutionIdentity(effectiveCwd);
 			const releaseMcp =
@@ -4125,6 +4129,7 @@ export class ClientSession {
 							allowedServers: this.botExecution.bot.mcpServers,
 						});
 						await this.botMcpBridge.load();
+						await this.botExecution.assertWorkspace(effectiveCwd);
 					}
 				} else if (!sandboxIdentity) await ClientSession.mcpProjects?.prepare(effectiveCwd);
 				const sdkBuiltins = sandboxIdentity || this.botExecution ? [] : await getSdkBuiltinExtensionFactories();
@@ -4280,9 +4285,10 @@ export class ClientSession {
 								name: "pi-webui-sandbox-final-gate",
 								hidden: true,
 								factory: (pi) => {
-									pi.on("tool_call", (event) => {
+									pi.on("tool_call", async (event) => {
 										if (this.botExecution) {
 											try {
+												await this.botExecution.assertWorkspace(effectiveCwd);
 												const auth = this.botToolAuthorization(event.toolName, effectiveCwd, event.input);
 												if (!auth.allowed)
 													return { block: true, reason: auth.reason ?? "Tool is not authorized for this Bot" };
@@ -4488,6 +4494,7 @@ export class ClientSession {
 					}
 				}
 
+				await this.botExecution?.assertWorkspace(effectiveCwd);
 				const created = await createAgentSessionFromServices({
 					services,
 					sessionManager,
@@ -4857,6 +4864,12 @@ export class ClientSession {
 				});
 				// 桥接工具归属锚点：SDK 会话对象在本 runtime 生命周期内稳定，过户只搬对话
 				// 不改它（见 ClientSession.findConversationHome）。
+				try {
+					await this.botExecution?.assertWorkspace(effectiveCwd);
+				} catch (error) {
+					created.session.dispose();
+					throw error;
+				}
 				bridgeAnchor.session = created.session;
 				this.appliedPluginToolNames.set(
 					created.session,
@@ -10954,6 +10967,7 @@ export class ClientSession {
 			def = {
 				...def,
 				execute: async (...args) => {
+					await this.botExecution?.assertWorkspace(cwdOverride ?? this.cwd);
 					if (!this.botToolAllowed(def.name, cwdOverride, args[1]))
 						throw new Error("Tool is not authorized for this Bot");
 					return execute(...args);
@@ -11043,6 +11057,7 @@ export class ClientSession {
 				return {
 					...def,
 					execute: async (...args: Parameters<typeof execute>) => {
+						await this.botExecution?.assertWorkspace(cwd ?? this.cwd);
 						const current = this.executionMcpBridge(cwd ?? this.cwd)?.getTools() ?? [];
 						if (!current.includes(tool) || !this.botToolAllowed(tool.name, cwd, args[1]))
 							throw new Error("Bot MCP tool authorization expired");
@@ -11456,6 +11471,7 @@ export class ClientSession {
 		this.botExecution?.assertActive();
 		if (this.botExecution && text.trimStart().startsWith("/")) throw new Error("Bot slash commands are disabled");
 		const conv = targetConversation ?? this.conv;
+		if (this.botExecution) await this.botExecution.assertWorkspace(conv.cwd);
 		this.assertSubagentWorktreeAdmission(conv);
 		if (
 			!this.botExecution &&

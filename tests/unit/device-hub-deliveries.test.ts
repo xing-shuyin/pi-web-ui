@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DeviceHubStore, type HubState, type Bot } from "../../server/device-center/store.js";
@@ -244,10 +244,12 @@ describe("immutable development deliveries", () => {
 	});
 	it("does not publish when durable storage fails", async () => {
 		const { store, actor, input } = await fixture();
-		await rm(store.path);
-		await mkdir(store.path);
-		await expect(store.transact((s) => addDelivery(s, "room", "dev", actor, input))).rejects.toThrow();
+		vi.spyOn(store, "persist").mockRejectedValueOnce(new Error("precommit write failed"));
+		await expect(store.transact((s) => addDelivery(s, "room", "dev", actor, input))).rejects.toThrow(
+			"precommit write failed",
+		);
 		expect(store.snapshot().deliveries).toEqual([]);
+		expect(store.snapshot().deliveryReceipts).toEqual([]);
 	});
 	it("migrates old v2 stores without delivery fields", async () => {
 		const { store, dir } = await fixture();

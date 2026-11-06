@@ -1698,6 +1698,7 @@
 		gap: 0;
 		flex: 1;
 		min-width: 0;
+		margin-bottom: 0;
 		padding: 0 8px 0 4px;
 		border: none;
 		border-radius: 6px;
@@ -1735,6 +1736,7 @@
 		border: none;
 		box-shadow: none;
 		outline: none;
+
 		padding: 0 8px 0 4px;
 	}
 	.lp-project-header-item .lp-project-chevron {
@@ -36978,6 +36980,7 @@
 .lp-row .lp-project-header-item.active,
 .lp-row .lp-project-header-item.switching {
 	height: 28px;
+	flex: 1;
 	padding-left: 4px;
 	padding-right: 8px;
 	padding-top: 0;
@@ -37020,4 +37023,5 @@
 	border: none;
 	box-shadow: none;
 	outline: none;
+
 }
