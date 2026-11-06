@@ -5,12 +5,41 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildDelegationPrompt,
+	makeDelegateTaskTool,
 	normalizeDelegation,
 	validateDelegation,
 	type DelegationInput,
 } from "../../server/delegate-task.js";
 
+import { readFileSync } from "node:fs";
+import { registerServerStrings, unregisterServerStrings } from "../../server/i18n.js";
+
 const USABLE = ["oracle", "explore", "sisyphus-junior"];
+
+it("Russian delegation keeps tool restrictions, security mode and follow-up instructions", async () => {
+	const pack = JSON.parse(readFileSync(new URL("../../locales/ru.json", import.meta.url), "utf8"));
+	registerServerStrings("ru", pack.serverStrings);
+	try {
+		const host = {
+			listTemplates: () => [{ name: "oracle", securityMode: "readonly" }],
+			spawnSubagent: async () => "c-russian-delegate",
+		} as any;
+		const tool = makeDelegateTaskTool(host, () => "ru");
+		const result = await tool.execute("test", good(), undefined, undefined, { cwd: "/test" } as any);
+		const text = result.content
+			.filter((c) => c.type === "text")
+			.map((c) => c.text)
+			.join("\n");
+		expect(text).toContain("c-russian-delegate");
+		expect(text).toContain("read, grep");
+		expect(text).toContain("readonly");
+		expect(text).toContain('subagent(action="wait_all")');
+		expect(text).toContain('subagent(action="steer")');
+		expect(text).not.toMatch(/\{[\w.]+\}/);
+	} finally {
+		unregisterServerStrings("ru");
+	}
+});
 
 function good(over: Partial<DelegationInput> = {}): DelegationInput {
 	return {

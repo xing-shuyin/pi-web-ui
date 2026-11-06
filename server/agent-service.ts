@@ -1388,8 +1388,8 @@ export class ClientSession {
 				throw new Error(
 					pick(
 						this.getLang(),
-						`同时运行的子代理数量已达上限（${maxSubagents} 个），请先用 subagent_wait_all 等一部分完成、或用 subagent_stop 停掉不需要的再派发`,
-						`Active subagent limit reached (${maxSubagents} live). Wait for some with subagent_wait_all or stop unneeded ones with subagent_stop before spawning more`,
+						`同时运行的子代理数量已达上限（${maxSubagents} 个），请先用 subagent(action="wait_all") 等一部分完成、或用 subagent(action="stop") 停掉不需要的再派发`,
+						`Active subagent limit reached (${maxSubagents} live). Wait for some with subagent(action="wait_all") or stop unneeded ones with subagent(action="stop") before spawning more`,
 						"agent.subagent.limit.reached",
 						{ limit: maxSubagents },
 					),
