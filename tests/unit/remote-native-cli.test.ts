@@ -30,13 +30,30 @@ async function executable(relative: string, body = "#!/bin/sh\nexit 0\n") {
 	await fs.chmod(target, 0o755);
 	return posix(target);
 }
+function remoteEnv(extraEnv: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	for (const key of [
+		"NVM_DIR",
+		"NVM_BIN",
+		"FNM_DIR",
+		"FNM_MULTISHELL_PATH",
+		"VOLTA_HOME",
+		"PNPM_HOME",
+		"NPM_CONFIG_PREFIX",
+		"npm_config_prefix",
+		"XDG_DATA_HOME",
+	]) {
+		delete env[key];
+	}
+	return { ...env, HOME: posix(root), PATH: `${posix(root)}/bin:/usr/bin:/bin`, ...extraEnv };
+}
 function run(command: string, extraEnv: NodeJS.ProcessEnv = {}) {
 	return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
 		const child = spawn(
 			shell,
 			["-c", `PATH=${shellQuotePosix(`${posix(root)}/bin:/usr/bin:/bin`)}; export PATH; ${command}`],
 			{
-				env: { ...process.env, HOME: posix(root), PATH: `${posix(root)}/bin:/usr/bin:/bin`, ...extraEnv },
+				env: remoteEnv(extraEnv),
 				windowsHide: true,
 			},
 		);
@@ -144,6 +161,18 @@ describe("remote discovery scripts in a local POSIX shell", () => {
 		expect(result.map((item) => item.executable)).toEqual([pi, claude, codex, agy]);
 		expect(result.every((item) => item.available)).toBe(true);
 	});
+	it("uses explicitly configured remote tool-manager directories", async () => {
+		await executable("bin/uname", "#!/bin/sh\nprintf '%s\\n' Linux\n");
+		const codex = await executable("custom-nvm/versions/node/v24/bin/codex");
+		const claude = await executable("custom-pnpm/claude");
+		const service = {
+			execInWorkspace: (_uri: string, command: string) =>
+				run(command, { NVM_DIR: `${posix(root)}/custom-nvm`, PNPM_HOME: `${posix(root)}/custom-pnpm` }),
+		};
+		const result = await discoverRemoteNativeClis(service, uri);
+		expect(result.find((item) => item.preset === "codex")?.executable).toBe(codex);
+		expect(result.find((item) => item.preset === "claude")?.executable).toBe(claude);
+	});
 	it("finds fnm and pnpm and expands quoted custom ~/ paths safely", async () => {
 		await executable("bin/uname", "#!/bin/sh\nprintf '%s\\n' Linux\n");
 		const codex = await executable(".local/share/fnm/node-versions/v24/installation/bin/codex");
@@ -184,7 +213,7 @@ describe("remote discovery scripts in a local POSIX shell", () => {
 					shell,
 					["-c", `PATH=${shellQuotePosix(`${posix(root)}/bin:/usr/bin:/bin`)}; export PATH; ${command}`],
 					{
-						env: { ...process.env, HOME: posix(root), PATH: `${posix(root)}/bin:/usr/bin:/bin`, CONFLICT: "old-login" },
+						env: remoteEnv({ CONFLICT: "old-login" }),
 						windowsHide: true,
 					},
 				);
@@ -248,7 +277,7 @@ describe("remote discovery scripts in a local POSIX shell", () => {
 						cols: 80,
 						rows: 24,
 						cwd: root,
-						env: { ...process.env, HOME: posix(root), CONFLICT: "old-login" },
+						env: remoteEnv({ CONFLICT: "old-login" }),
 					},
 				);
 				const channel = Object.assign(new EventEmitter(), {
