@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { parseReportMetadata } from "./report-metadata.js";
 import { integrationErrorFromCode } from "./integration-errors.js";
+import { INTEGRATION_RPC_TIMEOUT_MS, VERIFICATION_RPC_TIMEOUT_MS } from "./verification-limits.js";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
@@ -176,13 +177,20 @@ export function createCommandChannel(
 		item.controller.abort();
 		if (error) item.reject?.(error);
 	}
-	function add(id: string, incoming: boolean) {
+	function add(id: string, incoming: boolean, action: DeviceCommand) {
 		if (ended || pending.size >= 4 || pending.has(id)) throw new Error("Command capacity exceeded");
-		const timer = setTimeout(() => {
-			sendFrame(ws, { type: "rpc_cancel", id });
-			const err = Object.assign(new Error("Command timed out"), { stopUnconfirmed: true });
-			remove(id, err);
-		}, 60_000);
+		const timer = setTimeout(
+			() => {
+				sendFrame(ws, { type: "rpc_cancel", id });
+				const err = Object.assign(new Error("Command timed out"), { stopUnconfirmed: true });
+				remove(id, err);
+			},
+			action === "integration_verify"
+				? VERIFICATION_RPC_TIMEOUT_MS
+				: action.startsWith("integration_")
+					? INTEGRATION_RPC_TIMEOUT_MS
+					: 60_000,
+		);
 		timer.unref();
 		const item = {
 			chunks: [] as Buffer[],
@@ -228,7 +236,7 @@ export function createCommandChannel(
 				const id = randomUUID();
 				let item: ReturnType<typeof add>;
 				try {
-					item = add(id, false);
+					item = add(id, false, action);
 				} catch (error) {
 					reject(error);
 					return;
@@ -273,7 +281,7 @@ export function createCommandChannel(
 					sendFrame(ws, { type: "rpc_error", id });
 					return true;
 				}
-				const item = add(id, true);
+				const item = add(id, true, frame.action as DeviceCommand);
 				item.action = frame.action as DeviceCommand;
 				return true;
 			}
@@ -293,7 +301,9 @@ export function createCommandChannel(
 			}
 			if (frame.type === "rpc_error") {
 				const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(frame.code) : undefined;
-				remove(id, safeError ?? new Error("Remote command rejected"));
+				const error = safeError ?? new Error("Remote command rejected");
+				if (frame.stopUnconfirmed === true) Object.assign(error, { stopUnconfirmed: true });
+				remove(id, error);
 				return true;
 			}
 			if (item.executing) throw new Error("Command already executing");
@@ -318,6 +328,7 @@ export function createCommandChannel(
 			item.executing = true;
 			const run = async () => {
 				let wasAborted = false;
+				let stopUnconfirmed = false;
 				const onAbort = () => {
 					wasAborted = true;
 				};
@@ -328,14 +339,18 @@ export function createCommandChannel(
 					if (wasAborted || item.controller.signal.aborted) return;
 					await transmit(id, "rpc_response", result, item.controller.signal);
 				} catch (error) {
-					if (!wasAborted && !item.controller.signal.aborted && pending.get(id) === item) {
+					stopUnconfirmed =
+						!!error && typeof error === "object" && "stopUnconfirmed" in error && error.stopUnconfirmed === true;
+					if (stopUnconfirmed && pending.get(id) === item)
+						sendFrame(ws, { type: "rpc_error", id, stopUnconfirmed: true });
+					if (!stopUnconfirmed && !wasAborted && !item.controller.signal.aborted && pending.get(id) === item) {
 						const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
 						const safeError = item.action?.startsWith("integration_") ? integrationErrorFromCode(code) : undefined;
 						sendFrame(ws, { type: "rpc_error", id, ...(safeError ? { code } : {}) });
 					}
 				} finally {
 					item.controller.signal.removeEventListener("abort", onAbort);
-					if (wasAborted || item.controller.signal.aborted) {
+					if (!stopUnconfirmed && (wasAborted || item.controller.signal.aborted)) {
 						sendFrame(ws, { type: "rpc_cancel_ack", id });
 					}
 					remove(id);

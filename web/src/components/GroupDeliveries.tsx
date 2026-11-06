@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { artifactRefsMatch, deliveryReviewMatches } from "../../../server/device-center/delivery-subject";
 import { appUrl } from "../base-url";
 import { withToken } from "../auth-token";
 import { isZhLocale, useI18n } from "../i18n";
 import { randomUuid } from "../uuid";
 import { groupAttention, groupAttentionLabel } from "../group-attention";
 import type { GroupBotConversation, GroupDevice } from "../device-group-messages";
-import type { DeviceDelivery, DeviceReview, DeviceReviewRequest } from "../types";
+import type { DeviceDelivery, DeviceIntegration, DeviceReview, DeviceReviewRequest } from "../types";
 import { GroupIntegration } from "./GroupIntegration";
 
 async function request<T>(path: string, signal: AbortSignal, body?: object): Promise<T> {
@@ -408,6 +409,11 @@ function DeliveryCard({
 	zh: boolean;
 }) {
 	const [saved, setSaved] = useState<DeviceReview | null>(null);
+	const [integration, setIntegration] = useState<DeviceIntegration | null>(null);
+	const [criteria, setCriteria] = useState<{ met: boolean; evidence: string }[]>([]);
+	useEffect(() => {
+		setCriteria([]);
+	}, [integration?.id, integration?.verification?.digest]);
 	const [summary, setSummary] = useState("");
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState("");
@@ -417,13 +423,36 @@ function DeliveryCard({
 	useEffect(() => {
 		if (disabled) controller.current?.abort();
 	}, [disabled]);
-	const matching = [...reviews, ...(saved ? [saved] : [])].filter(
-		(r) => r.deliveryId === delivery.id && r.commit === delivery.commit,
-	);
+	const matching = [...reviews, ...(saved ? [saved] : [])].filter((r) => deliveryReviewMatches(delivery, r));
+	const verified =
+		integration?.deliveryId === delivery.id &&
+		integration.status === "verified" &&
+		!!integration.verification?.digest &&
+		artifactRefsMatch(delivery.artifactRef, integration.artifactRef);
+	const criteriaComplete =
+		Array.isArray(delivery.acceptanceCriteria) &&
+		delivery.acceptanceCriteria!.every((_, index) => criteria[index]?.met && criteria[index]?.evidence.trim());
+	const canAccept = !delivery.artifactRef || (verified && criteriaComplete);
 	const review = matching.sort((a, b) => b.createdAt - a.createdAt)[0];
 	async function submit(verdict: DeviceReviewRequest["verdict"]) {
-		if (readOnly || disabled || controller.current || !summary.trim()) return;
-		const fingerprint = JSON.stringify([delivery.id, delivery.commit, verdict, summary.trim()]);
+		if (readOnly || disabled || controller.current || !summary.trim() || (verdict === "accepted" && !canAccept)) return;
+		const evidence = delivery.artifactRef
+			? {
+					artifactDigest: delivery.artifactRef.artifactDigest,
+					...(verdict === "accepted"
+						? {
+								integrationId: integration!.id,
+								verificationDigest: integration!.verification!.digest,
+								criteriaResults: delivery.acceptanceCriteria!.map((_, criterionIndex) => ({
+									criterionIndex,
+									verdict: "met" as const,
+									evidence: criteria[criterionIndex].evidence.trim(),
+								})),
+							}
+						: {}),
+				}
+			: { commit: delivery.commit };
+		const fingerprint = JSON.stringify([delivery.id, evidence, verdict, summary.trim()]);
 		if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: randomUuid() };
 		const current = new AbortController();
 		controller.current = current;
@@ -432,7 +461,7 @@ function DeliveryCard({
 		try {
 			const data = await request<{ review: DeviceReview }>(`${base}/reviews`, current.signal, {
 				deliveryId: delivery.id,
-				commit: delivery.commit,
+				...evidence,
 				verdict,
 				summary: summary.trim(),
 				idempotencyKey: retry.current.key,
@@ -470,10 +499,30 @@ function DeliveryCard({
 				<dd>{delivery.id}</dd>
 				<dt>{zh ? "仓库" : "Repository"}</dt>
 				<dd>{delivery.repository}</dd>
-				<dt>Commit SHA</dt>
-				<dd>
-					<code>{delivery.commit}</code>
-				</dd>
+				{delivery.commit && (
+					<>
+						<dt>Commit SHA</dt>
+						<dd>
+							<code>{delivery.commit}</code>
+						</dd>
+					</>
+				)}
+				{delivery.artifactRef && (
+					<>
+						<dt>{zh ? "产物" : "Artifact"}</dt>
+						<dd>{delivery.artifactRef.artifactId}</dd>
+						<dt>{zh ? "源码任务" : "Source task"}</dt>
+						<dd>{delivery.artifactRef.artifactTaskId}</dd>
+						<dt>{zh ? "内容摘要" : "Content digest"}</dt>
+						<dd>
+							<code>{delivery.artifactRef.artifactDigest}</code>
+						</dd>
+						<dt>{zh ? "文件树版本" : "File tree version"}</dt>
+						<dd>
+							<code>{delivery.artifactRef.outputTree}</code>
+						</dd>
+					</>
+				)}
 				<dt>{zh ? "基线 SHA" : "Base SHA"}</dt>
 				<dd>
 					<code>{delivery.baseCommit}</code>
@@ -521,9 +570,7 @@ function DeliveryCard({
 			{!readOnly && (
 				<form onSubmit={(event) => event.preventDefault()}>
 					<label>
-						{zh
-							? "人工验收意见（绑定以上交付版本与 SHA）"
-							: "Human review (bound to the delivery version and SHA above)"}
+						{zh ? "人工验收意见（对应以上交付版本）" : "Human review (for the delivery version above)"}
 						<textarea
 							value={summary}
 							onChange={(event) => setSummary(event.target.value)}
@@ -532,11 +579,55 @@ function DeliveryCard({
 							required
 						/>
 					</label>
+					{delivery.artifactRef && (
+						<fieldset disabled={disabled || pending || !verified}>
+							<legend>{zh ? "逐项验收" : "Acceptance criteria"}</legend>
+							<p>
+								{verified
+									? (zh ? "对应验证：" : "Reviewing verification: ") + integration!.id
+									: zh
+										? "请先展开验证与合并，完成验证后填写验收证据。"
+										: "Open Verify & merge and complete verification before entering acceptance evidence."}
+							</p>
+							{delivery.acceptanceCriteria?.map((criterion, index) => (
+								<div key={index}>
+									<label>
+										<input
+											type="checkbox"
+											checked={criteria[index]?.met ?? false}
+											onChange={(event) =>
+												setCriteria((prev) => {
+													const next = [...prev];
+													next[index] = { evidence: prev[index]?.evidence ?? "", met: event.target.checked };
+													return next;
+												})
+											}
+										/>
+										{criterion}
+									</label>
+									<label>
+										{zh ? "验收证据" : "Evidence"}
+										<textarea
+											value={criteria[index]?.evidence ?? ""}
+											maxLength={2000}
+											onChange={(event) =>
+												setCriteria((prev) => {
+													const next = [...prev];
+													next[index] = { met: prev[index]?.met ?? false, evidence: event.target.value };
+													return next;
+												})
+											}
+										/>
+									</label>
+								</div>
+							))}
+						</fieldset>
+					)}
 					<div className="gd-actions">
 						<button
 							type="button"
 							className="btn"
-							disabled={disabled || pending || !summary.trim()}
+							disabled={disabled || pending || !summary.trim() || !canAccept}
 							onClick={() => void submit("accepted")}
 						>
 							{zh ? "验收通过" : "Accept delivery"}
@@ -554,13 +645,14 @@ function DeliveryCard({
 					{error && <p role="alert">{error}</p>}
 				</form>
 			)}
-			{review && review.verdict === "accepted" && roomId && conversationId && (
+			{!readOnly && (delivery.artifactRef || review?.verdict === "accepted") && roomId && conversationId && (
 				<GroupIntegration
-					key={`${roomId}:${conversationId}:${delivery.id}:${review.id}`}
+					key={`${roomId}:${conversationId}:${delivery.id}`}
 					roomId={roomId}
 					conversationId={conversationId}
 					delivery={delivery}
 					review={review}
+					onIntegrationChange={setIntegration}
 					bots={bots}
 					disabled={disabled}
 					zh={zh}

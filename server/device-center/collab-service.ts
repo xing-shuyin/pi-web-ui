@@ -66,6 +66,8 @@ export function createDeviceCollabService(options: {
 					action === "task_evidence"
 				)
 					args.conversationId ??= bound?.conversationId;
+				if (action === "conversation_deliver" || action === "conversation_review")
+					validateDeviceCollabInput({ ...args, action });
 				if (action === "reply_to_request") {
 					if (!bound || bound.kind !== "request" || !bound.sourceConversationId || !bound.requestId)
 						throw new Error("Incoming request binding required");
@@ -276,23 +278,22 @@ export function createDeviceCollabService(options: {
 						if (
 							!args.conversationId ||
 							!parentTaskId ||
-							!args.repository ||
-							!args.baseCommit ||
-							!args.commit ||
 							!args.summary ||
-							!Array.isArray(args.checks)
+							(!args.artifactTaskId &&
+								(!args.repository || !args.baseCommit || !args.commit || !Array.isArray(args.checks)))
 						)
 							throw new Error("Delivery fields required");
 						const body: DeviceDeliveryRequest = {
 							sourceBotId: args.sourceBotId!,
 							parentTaskId,
 							idempotencyKey: args.idempotencyKey ?? randomUUID(),
+							artifactTaskId: args.artifactTaskId,
 							repository: args.repository,
 							baseCommit: args.baseCommit,
 							commit: args.commit,
 							branch: args.branch,
 							summary: args.summary,
-							checks: args.checks,
+							checks: args.checks ?? [],
 							limitations: args.limitations ?? [],
 						};
 						return await request(`${room()}/conversations/${encodeURIComponent(args.conversationId)}/deliveries`, body);
@@ -302,7 +303,7 @@ export function createDeviceCollabService(options: {
 							!args.conversationId ||
 							!parentTaskId ||
 							!args.deliveryId ||
-							!args.commit ||
+							(!args.commit && !args.artifactDigest) ||
 							!args.summary ||
 							!args.verdict
 						)
@@ -313,6 +314,10 @@ export function createDeviceCollabService(options: {
 							idempotencyKey: args.idempotencyKey ?? randomUUID(),
 							deliveryId: args.deliveryId,
 							commit: args.commit,
+							artifactDigest: args.artifactDigest,
+							integrationId: args.integrationId,
+							verificationDigest: args.verificationDigest,
+							criteriaResults: args.criteriaResults,
 							verdict: args.verdict,
 							summary: args.summary,
 						};

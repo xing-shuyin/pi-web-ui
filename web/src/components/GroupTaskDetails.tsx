@@ -305,13 +305,55 @@ export function GroupTaskDetails({ roomId, taskId, onClose }: GroupTaskDetailsPr
 									{details.deliveries.map((del) => (
 										<div key={del.id} className="gtd-delivery-item">
 											<div className="gtd-delivery-header">
-												<span className="gtd-commit-sha">{del.commit.slice(0, 8)}</span>
+												{del.commit && <span className="gtd-commit-sha">{del.commit.slice(0, 8)}</span>}
 												{del.branch && <span className="gtd-branch-chip">{del.branch}</span>}
-												<span className={del.passed ? "gtd-badge-completed" : "gtd-badge-failed"}>
-													{del.passed ? (zh ? "自检通过" : "Passed") : zh ? "自检未通过" : "Failed"}
+												<span
+													className={
+														del.reportedCheckCount === 0
+															? "gtd-badge-queued"
+															: del.passed
+																? "gtd-badge-completed"
+																: "gtd-badge-failed"
+													}
+												>
+													{del.reportedCheckCount === 0
+														? zh
+															? "未自报检查"
+															: "No reported checks"
+														: del.passed
+															? zh
+																? "自报检查通过"
+																: "Reported checks passed"
+															: zh
+																? "自报检查未通过"
+																: "Reported checks not passed"}
 												</span>
 											</div>
 											<div className="gtd-delivery-summary">{del.summary}</div>
+											{del.artifactRef && (
+												<>
+													<div className="gtd-field">
+														<span className="gtd-label">{zh ? "交付版本 ID:" : "Delivery version ID:"}</span>
+														<span className="gtd-value">{del.id}</span>
+													</div>
+													<div className="gtd-field">
+														<span className="gtd-label">{zh ? "产物:" : "Artifact:"}</span>
+														<span className="gtd-value">{del.artifactRef.artifactId}</span>
+													</div>
+													<div className="gtd-field">
+														<span className="gtd-label">{zh ? "源码任务:" : "Source task:"}</span>
+														<span className="gtd-value">{del.artifactRef.artifactTaskId}</span>
+													</div>
+													<div className="gtd-field">
+														<span className="gtd-label">{zh ? "内容摘要:" : "Content digest:"}</span>
+														<span className="gtd-value">{del.artifactRef.artifactDigest}</span>
+													</div>
+													<div className="gtd-field">
+														<span className="gtd-label">{zh ? "文件树版本:" : "File tree version:"}</span>
+														<span className="gtd-value">{del.artifactRef.outputTree}</span>
+													</div>
+												</>
+											)}
 										</div>
 									))}
 								</div>

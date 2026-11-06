@@ -9,6 +9,8 @@ import { TASK_REPORT_UPLOAD_JSON_BYTES } from "../payload-limits.js";
 import { parseReportMetadata, mergeTaskReportMetadata } from "./report-metadata.js";
 import { buildDeterministicTaskSummary, queryTaskReportChunk, type TaskReportEvidence } from "./task-state.js";
 import { addDelivery, addReview, deliveryHistory, deliverySummary } from "./hub-deliveries.js";
+import { assertNoApplyingIntegration, deriveArtifactSubject } from "./delivery-authority.js";
+import { artifactRefsMatch } from "./delivery-subject.js";
 import {
 	hubPrepareIntegration,
 	hubVerifyIntegration,
@@ -74,6 +76,8 @@ import {
 	contractInputReferences,
 	MAX_CONTRACT_REQUEST_BYTES,
 	validateCodeArtifactOutcome,
+	validateWorkContract,
+	canonicalizeJson,
 } from "./work-contract.js";
 import type { HubTask, Handoff, HubState } from "./store.js";
 import { createHubLockManager, validateResourceLocks } from "./hub-locks.js";
@@ -651,6 +655,23 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		});
 		const bots = await store.transact((draft) => {
 			if (!draft.devices.some((d) => d.id === device.id && d.accountId === owner.id)) fail(401, "Device revoked");
+			const changedBotIds = new Set(
+				draft.bots
+					.filter((bot) => {
+						if (bot.accountId !== owner.id || bot.deviceId !== device.id) return false;
+						const next = incoming.find((row) => row.id === bot.id);
+						return (
+							!next ||
+							next.revision !== bot.revision ||
+							next.enabled !== bot.enabled ||
+							(next.tools !== undefined && JSON.stringify(next.tools) !== JSON.stringify(bot.tools))
+						);
+					})
+					.map((bot) => bot.id),
+			);
+			for (const room of draft.rooms)
+				if (room.accountId === owner.id && room.botIds.some((id) => changedBotIds.has(id)))
+					assertNoApplyingIntegration(draft, owner.id, room.id);
 			if (
 				draft.tasks.some(
 					(task) =>
@@ -1360,9 +1381,12 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		const interactions = (state as any).interactions
 			? (state as any).interactions.filter((i: any) => i.taskId === task.id)
 			: [];
-		const deliveries = (state as any).deliveries
-			? (state as any).deliveries.filter((d: any) => d.taskId === task.id)
-			: [];
+		const deliveries = state.deliveries.filter(
+			(d) =>
+				d.accountId === acc.id &&
+				d.roomId === room.id &&
+				(d.taskId === task.id || d.artifactRef?.artifactTaskId === task.id),
+		);
 
 		res.json({
 			task: {
@@ -1399,12 +1423,14 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				decision: i.decision,
 			})),
 			journalUnavailable: groupEvents.isJournalUnavailable(task.id, task.attemptId),
-			deliveries: deliveries.map((d: any) => ({
+			deliveries: deliveries.map((d) => ({
 				id: d.id,
 				commit: d.commit,
+				artifactRef: d.artifactRef,
 				branch: d.branch,
 				summary: d.summary,
-				passed: d.checks?.every((c: any) => c.status === "passed") ?? true,
+				reportedCheckCount: d.checks.length,
+				passed: d.checks.length > 0 && d.checks.every((c) => c.status === "passed"),
 			})),
 		});
 	});
@@ -1697,6 +1723,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			const result = await store.transact((draft) => {
 				const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
 				if (!room) fail(404, "Room missing");
+				if (operation !== "rename") assertNoApplyingIntegration(draft, owner.id, room.id);
 				if (operation === "rename") room.name = text(req.body?.name, 128);
 				if (operation === "members") {
 					const members = ids(req.body?.botIds);
@@ -1778,7 +1805,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	});
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations", async (req, res) => {
 		const owner = account(req);
-		const actor = { accountId: owner.id };
+		const actor = { accountId: owner.id, bot: ownBot(req, store.snapshot()) };
 		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
 		const driver = {
 			callDeviceCommand: (id: string, a: string, p: unknown, opts?: { signal?: AbortSignal }) =>
@@ -1796,7 +1823,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	});
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/verify", async (req, res) => {
 		const owner = account(req);
-		const actor = { accountId: owner.id };
+		const actor = { accountId: owner.id, bot: ownBot(req, store.snapshot()) };
 		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
 		const driver = {
 			callDeviceCommand: (id: string, a: string, p: unknown, opts?: { signal?: AbortSignal }) =>
@@ -1815,7 +1842,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	});
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/apply", async (req, res) => {
 		const owner = account(req);
-		const actor = { accountId: owner.id };
+		const actor = { accountId: owner.id, bot: ownBot(req, store.snapshot()) };
 		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
 		const driver = {
 			callDeviceCommand: (id: string, a: string, p: unknown, opts?: { signal?: AbortSignal }) =>
@@ -1834,7 +1861,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 	});
 	app.post("/api/rooms/:id/conversations/:conversationId/integrations/:integrationId/cancel", async (req, res) => {
 		const owner = account(req);
-		const actor = { accountId: owner.id };
+		const actor = { accountId: owner.id, bot: ownBot(req, store.snapshot()) };
 		if (!options.relay?.callDevice) fail(503, "Device relay unavailable");
 		const driver = {
 			callDeviceCommand: (id: string, a: string, p: unknown, opts?: { signal?: AbortSignal }) =>
@@ -1858,6 +1885,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 			);
 			const room = draft.rooms.find((r) => r.id === req.params.id && r.accountId === owner.id);
 			if (!conversation || !room) fail(404, "Conversation missing");
+			assertNoApplyingIntegration(draft, owner.id, room.id);
 			const source = ownBot(req, draft);
 			if (source && (!room.botIds.includes(source.id) || conversation.botId !== source.id))
 				fail(403, "Bot may stop only its own conversation");
@@ -1928,6 +1956,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				(c) => c.id === req.params.conversationId && c.roomId === req.params.id && c.accountId === owner.id,
 			);
 			if (!room || !conversation) fail(404, "Conversation missing");
+			assertNoApplyingIntegration(draft, owner.id, room.id);
 			if (draft.tasks.some((t) => t.conversationId === conversation.id && taskPending(t)))
 				throw Object.assign(new Error("Stop the conversation before deleting it"), {
 					status: 409,
@@ -2054,7 +2083,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		if (!conversation) fail(404, "Conversation missing");
 
 		const evidenceKind = req.query.evidenceKind ?? "report";
-		if (evidenceKind !== "report" && evidenceKind !== "artifact") fail(400, "Invalid evidenceKind");
+		if (!["report", "artifact", "acceptance"].includes(evidenceKind as string)) fail(400, "Invalid evidenceKind");
 		const allowedQueries = [
 			"sourceBotId",
 			"taskId",
@@ -2067,6 +2096,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		];
 		for (const q of Object.keys(req.query)) {
 			if (!allowedQueries.includes(q)) fail(400, `Unknown query parameter: ${q}`);
+			if (typeof req.query[q] !== "string") fail(400, `Invalid query parameter: ${q}`);
 		}
 
 		let offset = 0;
@@ -2077,7 +2107,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 		let limit = 8192;
 		if (req.query.limit !== undefined) {
 			limit = Number(req.query.limit);
-			if (!Number.isSafeInteger(limit) || limit < 1 || limit > (evidenceKind === "artifact" ? 24 * 1024 : 65536))
+			if (!Number.isSafeInteger(limit) || limit < 1 || limit > (evidenceKind !== "report" ? 24 * 1024 : 65536))
 				fail(400, "Invalid limit");
 		}
 		const expectedDigest =
@@ -2087,16 +2117,82 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 					? req.query.digest
 					: undefined;
 
-		const taskId = typeof req.query.taskId === "string" ? req.query.taskId : conversation.latestTaskId;
-		const targetTask = state.tasks.find((t) => t.id === taskId && t.conversationId === conversation.id);
-		const deliveryId = typeof req.query.deliveryId === "string" ? req.query.deliveryId : undefined;
+		if (
+			req.query.expectedDigest !== undefined &&
+			req.query.digest !== undefined &&
+			req.query.expectedDigest !== req.query.digest
+		)
+			fail(409, "Conflicting evidence digest selectors");
+		const deliveryId = req.query.deliveryId === undefined ? undefined : text(req.query.deliveryId, 128).trim();
+		if (deliveryId === "") fail(400, "Invalid deliveryId");
 		const targetDelivery = deliveryId
-			? state.deliveries.find((d) => d.id === deliveryId && d.conversationId === conversation.id)
+			? state.deliveries.find(
+					(d) =>
+						d.id === deliveryId &&
+						d.conversationId === conversation.id &&
+						d.roomId === room.id &&
+						d.accountId === owner.id,
+				)
 			: undefined;
 
+		if (deliveryId && !targetDelivery) fail(404, "Delivery missing");
+		const boundArtifactTaskId = evidenceKind !== "report" ? targetDelivery?.artifactRef?.artifactTaskId : undefined;
+		if (evidenceKind !== "report" && targetDelivery && !boundArtifactTaskId)
+			fail(409, "Delivery has no artifact subject");
+		if (boundArtifactTaskId && req.query.taskId !== undefined && req.query.taskId !== boundArtifactTaskId)
+			fail(409, "Task conflicts with delivery artifact subject");
+		const taskId =
+			boundArtifactTaskId ?? (typeof req.query.taskId === "string" ? req.query.taskId : conversation.latestTaskId);
+		const targetTask = state.tasks.find(
+			(t) =>
+				t.id === taskId && t.conversationId === conversation.id && t.roomId === room.id && t.accountId === owner.id,
+		);
+		if (
+			evidenceKind !== "report" &&
+			targetDelivery?.artifactRef &&
+			(!targetTask ||
+				!artifactRefsMatch(
+					targetDelivery.artifactRef,
+					deriveArtifactSubject(state, targetTask, { allowSuperseded: true }),
+				))
+		)
+			fail(409, "Delivery artifact subject changed");
+		if (evidenceKind === "acceptance") {
+			if (!targetTask?.contract) fail(404, "Task acceptance contract missing");
+			const sealed = validateWorkContract(targetTask.contract);
+			if (!sealed.valid) fail(409, "Invalid sealed acceptance contract");
+			const contract = sealed.contract;
+			if (expectedDigest !== undefined && expectedDigest !== contract.digest)
+				fail(409, "Acceptance contract version digest mismatch");
+			const bytes = Buffer.from(canonicalizeJson(contract.acceptanceCriteria ?? []), "utf8");
+			if (offset > bytes.length) fail(400, "Invalid offset");
+			const end = Math.min(offset + limit, bytes.length);
+			res.json({
+				conversationId: conversation.id,
+				taskId,
+				...(deliveryId ? { deliveryId } : {}),
+				acceptance: {
+					contractId: contract.id,
+					contractRevision: contract.revision,
+					contractDigest: contract.digest,
+					criteriaDigest: createHash("sha256").update(bytes).digest("hex"),
+					criteriaCount: (contract.acceptanceCriteria ?? []).length,
+				},
+				content: {
+					encoding: "base64",
+					data: bytes.subarray(offset, end).toString("base64"),
+					offset,
+					limit,
+					totalBytes: bytes.length,
+					nextOffset: end < bytes.length ? end : null,
+					truncated: offset > 0 || end < bytes.length,
+				},
+			});
+			return;
+		}
 		if (evidenceKind === "artifact") {
 			if (!targetTask?.artifact) fail(404, "Task artifact missing");
-			if (expectedDigest && expectedDigest !== targetTask.artifact.digest)
+			if (expectedDigest !== undefined && expectedDigest !== targetTask.artifact.digest)
 				fail(409, "Artifact version digest mismatch");
 			const { patchBase64, ...artifact } = targetTask.artifact;
 			if (typeof patchBase64 !== "string") fail(404, "Artifact patch missing");
@@ -2504,6 +2600,7 @@ export async function createDeviceHub(options: DeviceHubOptions) {
 				}
 
 				if (contract) {
+					assertNoApplyingIntegration(draft, owner.id, room.id, undefined, contract.id);
 					const existingTasks = draft.tasks.filter(
 						(t) => t.roomId === room.id && t.accountId === owner.id && t.contract?.id === contract!.id,
 					);

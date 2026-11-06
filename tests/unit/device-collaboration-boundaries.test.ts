@@ -13,6 +13,7 @@ import {
 	verifyNoExternalDrivers,
 	verifyGitAttributesSafe,
 	devicePrepareIntegration,
+	deviceVerifyIntegration,
 	deviceConfirmIntegration,
 	deviceCancelIntegration,
 	inspectLocalTarget,
@@ -25,6 +26,7 @@ import {
 	DeviceExecutionSettingsError,
 } from "../../server/device-center/execution-settings.js";
 import { DeviceTaskScheduler } from "../../server/device-center/task-scheduler.js";
+import { freezeVerificationPlan } from "../../server/device-center/integration-verification.js";
 import { createDeviceRuntime } from "../../server/device-center/runtime.js";
 
 const exec = promisify(execFile);
@@ -513,8 +515,8 @@ describe("device-collaboration-boundaries", () => {
 
 			const integrationId = "int-checkedout-test";
 
-			// 准备工作树
-			await devicePrepareIntegration({
+			// Complete real preparation and verification before exercising the publication guard.
+			const prepared = await devicePrepareIntegration({
 				integrationId,
 				targetBotId: "bot-1",
 				targetBotRevision: 1,
@@ -523,8 +525,27 @@ describe("device-collaboration-boundaries", () => {
 				targetBranch: "main",
 				commit: devCommit,
 			});
+			expect(prepared.status).toBe("prepared");
+			expect(prepared.materializedCommit).toMatch(/^[a-f0-9]{40,64}$/);
+			expect(prepared.preparedTree).toMatch(/^[a-f0-9]{40,64}$/);
 
 			try {
+				const verified = await deviceVerifyIntegration({
+					integrationId,
+					targetBotId: "bot-1",
+					targetBotRevision: 1,
+					repoRoot: repoDir,
+					dataDir,
+					verificationPlan: freezeVerificationPlan(
+						[`node -e "require('node:fs').accessSync('feature-code.txt')"`],
+						"acc-1",
+					),
+					materializedCommit: prepared.materializedCommit!,
+					preparedTree: prepared.preparedTree!,
+					expectedTargetSha: baseSha,
+				});
+				expect(verified.status).toBe("verified");
+				expect(verified.results).toMatchObject([{ status: "passed", exitCode: 0 }]);
 				// 尝试对已检出的 main 分支进行 confirm，必须直接被安全拦截，提示切换分支
 				await expect(
 					deviceConfirmIntegration({
@@ -547,6 +568,6 @@ describe("device-collaboration-boundaries", () => {
 					dataDir,
 				}).catch(() => {});
 			}
-		});
+		}, 60000);
 	});
 });

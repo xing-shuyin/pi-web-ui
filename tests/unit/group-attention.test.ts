@@ -51,6 +51,47 @@ describe("group attention", () => {
 		expect(groupAttention({ ...conversation, latestReview: { ...review, deliveryId: "old" } })).toBe("awaiting_review");
 		expect(groupAttention({ ...conversation, latestReview: review })).toBeNull();
 	});
+	it("matches artifact subjects in full instead of matching two absent commits", () => {
+		const artifactRef = {
+			artifactTaskId: "source-task",
+			attemptId: "attempt",
+			artifactId: "artifact",
+			artifactDigest: "digest",
+			contractId: "contract",
+			contractRevision: 1,
+			contractDigest: "contract-digest",
+			manifestDigest: "manifest",
+			baselineCommit: delivery.baseCommit,
+			repositoryId: "repo",
+			inputTree: "input",
+			outputTree: "output",
+		};
+		const artifactDelivery = { ...delivery, commit: undefined, artifactRef };
+		const artifactReview = { ...review, commit: undefined, artifactRef, artifactDigest: artifactRef.artifactDigest };
+		const current = { ...conversation, latestDelivery: artifactDelivery };
+		expect(groupAttention({ ...current, latestReview: { ...review, commit: undefined } })).toBe("awaiting_review");
+		for (const [field, value] of Object.entries(artifactRef)) {
+			expect(
+				groupAttention({
+					...current,
+					latestReview: {
+						...artifactReview,
+						artifactRef: {
+							...artifactRef,
+							[field]: typeof value === "number" ? value + 1 : `${value}-other`,
+						},
+					},
+				}),
+			).toBe("awaiting_review");
+		}
+		expect(groupAttention({ ...current, latestReview: { ...artifactReview, artifactDigest: "other" } })).toBe(
+			"awaiting_review",
+		);
+		expect(groupAttention({ ...current, latestReview: { ...artifactReview, accountId: "other" } })).toBe(
+			"awaiting_review",
+		);
+		expect(groupAttention({ ...current, latestReview: artifactReview })).toBeNull();
+	});
 	it("uses the latest matching review, not array order or unrelated reviews", () => {
 		expect(
 			groupAttention({ ...conversation, reviews: [{ ...review, createdAt: 3, verdict: "changes_requested" }, review] }),

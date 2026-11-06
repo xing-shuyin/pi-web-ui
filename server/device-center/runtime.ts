@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { writeJsonAtomicSync } from "../atomic-file.js";
-import type { DeviceArtifact } from "../protocol.js";
-import { computeCanonicalRepositoryId, git } from "../workspace-handle.js";
+import type { DeviceArtifact, DeviceDeliveryArtifactRef, DeviceIntegrationVerificationPlan } from "../protocol.js";
+import { VerificationStopUnconfirmedError } from "./local-verification.js";
+import { canonicalPath, computeCanonicalRepositoryId, git, verifyRepoRoot } from "../workspace-handle.js";
 import type { LocalBotRegistry } from "./bots.js";
 import { createDeviceCollabService } from "./collab-service.js";
 import type { DeviceCollabExecutionContext } from "./collab-tool.js";
@@ -12,6 +13,7 @@ import {
 	deviceConfirmIntegration,
 	devicePrepareIntegration,
 	deviceVerifyIntegration,
+	loadPersistentSessions,
 } from "./device-integration.js";
 import { executionRoot, executionRootsOverlap } from "./execution-workspace.js";
 import { createDeviceTaskExecutor, type DeviceExecutorTask, type DeviceTaskExecutorOptions } from "./executor.js";
@@ -176,12 +178,34 @@ export function createDeviceRuntime(options: {
 			await entry.files.close();
 		}
 	}
-	async function acquire(botId: string, signal?: AbortSignal) {
+	async function acquire(botId: string, signal?: AbortSignal, cancellationId?: string) {
 		enabled(signal);
 		await sweep();
 		const lease = await bots.acquire(botId);
 		try {
 			enabled(signal);
+			if (options.dataDir) {
+				const pending = await loadPersistentSessions(options.dataDir);
+				for (const session of pending.values()) {
+					const legacyStopUnknown = session.verificationStopConfirmed !== true && !session.localVerification;
+					if (!session.verificationInFlight && !session.stopUnconfirmed && !legacyStopUnknown) continue;
+					if (
+						session.targetBotId !== botId &&
+						!executionRootsOverlap(executionRoot(session.repoRoot), executionRoot(lease.root))
+					)
+						continue;
+					const canCancel =
+						cancellationId === session.integrationId &&
+						((!session.verificationInFlight && !session.stopUnconfirmed && legacyStopUnknown) ||
+							[...active].some(
+								(owner) => !owner.blocked && owner.taskId === `integration:${cancellationId}` && owner.botId === botId,
+							));
+					if (!canCancel)
+						throw new DeviceTaskStopUnconfirmedError(
+							new Error("Integration process stop unconfirmed; workspace blocked"),
+						);
+				}
+			}
 			if ([...active].some((owner) => owner.blocked && conflicts(owner, { botId, root: executionRoot(lease.root) })))
 				throw new DeviceTaskError("Task stop unconfirmed; workspace blocked until service restart");
 			return lease;
@@ -812,8 +836,74 @@ export function createDeviceRuntime(options: {
 		owner.done = operation;
 		return track(operation);
 	}
+	async function ownerCleanup(command: Record<string, unknown>, signal: AbortSignal) {
+		if (!options.dataDir || typeof command.integrationId !== "string")
+			throw new Error("Original integration session required for owner cleanup");
+		const session = (await loadPersistentSessions(options.dataDir)).get(command.integrationId);
+		if (
+			!session ||
+			session.targetBotId !== command.targetBotId ||
+			session.targetBotRevision !== command.targetBotRevision
+		)
+			throw new Error("Original integration cleanup identity mismatch");
+		const identity = { botId: session.targetBotId, root: executionRoot(session.repoRoot) };
+		const existing = [...active].find(
+			(owner) => owner.taskId === `integration:${session.integrationId}` && owner.botId === session.targetBotId,
+		);
+		if ([...active].some((owner) => conflicts(owner, identity) && owner !== existing))
+			throw new Error("Target Bot or workspace is busy");
+		let owner: TaskOwner | undefined;
+		let item: ReturnType<typeof scheduler.registerActive> | undefined;
+		if (!existing) {
+			owner = {
+				...identity,
+				controller: new AbortController(),
+				taskId: `integration:${session.integrationId}`,
+				attemptId: randomUUID(),
+			};
+			item = scheduler.registerActive(
+				{
+					id: owner.taskId,
+					attemptId: owner.attemptId,
+					roomId: "integration",
+					botId: owner.botId,
+					botRevision: String(session.targetBotRevision),
+					root: owner.root,
+				},
+				owner.controller,
+			);
+			active.add(owner);
+		}
+		try {
+			return await deviceCancelIntegration(
+				{
+					integrationId: session.integrationId,
+					targetBotId: session.targetBotId,
+					targetBotRevision: session.targetBotRevision,
+					repoRoot: session.repoRoot,
+					dataDir: options.dataDir,
+					priorStatus: command.priorStatus as string | undefined,
+					verificationMayBeRunning: command.verificationMayBeRunning === true,
+				},
+				{ signal },
+			);
+		} catch (error) {
+			if (error instanceof VerificationStopUnconfirmedError && owner) {
+				owner.blocked = error;
+				scheduler.markBlocked(owner.taskId, owner.attemptId, error);
+			}
+			throw error;
+		} finally {
+			if (owner && !owner.blocked) {
+				if (item) scheduler.releaseActive(item);
+				active.delete(owner);
+				drain();
+			}
+		}
+	}
 	function onCommand(action: string, payload: unknown, signal: AbortSignal) {
-		const commandSignal = AbortSignal.any([signal, generation.signal]);
+		const integrationController = new AbortController();
+		const commandSignal = AbortSignal.any([signal, generation.signal, integrationController.signal]);
 		if (action === "transfer_fence") {
 			return track(
 				(async () => {
@@ -830,7 +920,14 @@ export function createDeviceRuntime(options: {
 			const command = payload as Record<string, unknown>;
 			if (typeof command.roomId !== "string" && !action.startsWith("integration_")) throw new Error("Room required");
 			if (typeof command.targetBotId !== "string" || !command.targetBotId) throw new Error("Target Bot required");
-			const lease = await acquire(command.targetBotId, commandSignal);
+			if (action === "integration_cancel" && command.ownerCleanup === true) return ownerCleanup(command, commandSignal);
+			const lease = await acquire(
+				command.targetBotId,
+				commandSignal,
+				action === "integration_cancel" ? String(command.integrationId) : undefined,
+			);
+			let integrationOwner: TaskOwner | undefined;
+			let integrationItem: ReturnType<typeof scheduler.registerActive> | undefined;
 			try {
 				if (
 					!action.startsWith("integration_")
@@ -838,6 +935,50 @@ export function createDeviceRuntime(options: {
 						: command.targetBotRevision !== undefined && command.targetBotRevision !== lease.bot.revision
 				)
 					throw new Error("Transfer Bot revision mismatch");
+				if (action.startsWith("integration_")) {
+					const repo = await verifyRepoRoot(lease.root, commandSignal);
+					if (repo.repoRoot !== (await canonicalPath(lease.root)))
+						throw new Error("Integration Bot workspace must be the canonical repository root");
+				}
+				if (
+					action === "integration_cancel" &&
+					[...active].some(
+						(owner) =>
+							conflicts(owner, { botId: lease.bot.id, root: executionRoot(lease.root) }) &&
+							owner.taskId !== `integration:${String(command.integrationId)}`,
+					)
+				)
+					throw new Error("Target Bot or workspace is busy");
+				if (
+					action.startsWith("integration_") &&
+					!(
+						action === "integration_cancel" &&
+						[...active].some(
+							(owner) =>
+								owner.taskId === `integration:${String(command.integrationId)}` && owner.botId === lease.bot.id,
+						)
+					)
+				) {
+					integrationOwner = {
+						controller: integrationController,
+						botId: lease.bot.id,
+						root: executionRoot(lease.root),
+						taskId: `integration:${String(command.integrationId)}`,
+						attemptId: randomUUID(),
+					};
+					integrationItem = scheduler.registerActive(
+						{
+							id: integrationOwner.taskId,
+							attemptId: integrationOwner.attemptId,
+							roomId: typeof command.roomId === "string" ? command.roomId : "integration",
+							botId: lease.bot.id,
+							botRevision: String(lease.bot.revision),
+							root: integrationOwner.root,
+						},
+						integrationController,
+					);
+					active.add(integrationOwner);
+				}
 				if (action === "integration_prepare") {
 					return await devicePrepareIntegration(
 						{
@@ -847,12 +988,15 @@ export function createDeviceRuntime(options: {
 							repoRoot: lease.root,
 							dataDir: options.dataDir ?? process.cwd(),
 							targetBranch: command.targetBranch as string,
-							commit: command.commit as string,
+							commit: command.commit as string | undefined,
+							artifactRef: command.artifactRef as DeviceDeliveryArtifactRef | undefined,
+							artifact: command.artifact as DeviceArtifact | undefined,
 						},
 						{ signal: commandSignal },
 					);
 				}
 				if (action === "integration_verify") {
+					if (!lease.bot.tools.includes("bash")) throw new Error("Target Bot bash command permission required");
 					return await deviceVerifyIntegration(
 						{
 							integrationId: command.integrationId as string,
@@ -860,7 +1004,11 @@ export function createDeviceRuntime(options: {
 							targetBotRevision: lease.bot.revision,
 							repoRoot: lease.root,
 							dataDir: options.dataDir ?? process.cwd(),
-							commands: command.commands as string[],
+							verificationPlan: command.verificationPlan as DeviceIntegrationVerificationPlan,
+							artifactRef: command.artifactRef as DeviceDeliveryArtifactRef | undefined,
+							materializedCommit: command.materializedCommit as string,
+							preparedTree: command.preparedTree as string,
+							expectedTargetSha: command.expectedTargetSha as string,
 						},
 						{ signal: commandSignal },
 					);
@@ -874,7 +1022,8 @@ export function createDeviceRuntime(options: {
 							repoRoot: lease.root,
 							dataDir: options.dataDir ?? process.cwd(),
 							deliveryId: command.deliveryId as string,
-							commit: command.commit as string,
+							commit: command.commit as string | undefined,
+							materializedCommit: command.materializedCommit as string | undefined,
 							expectedTargetSha: command.expectedTargetSha as string,
 						},
 						{ signal: commandSignal },
@@ -888,6 +1037,8 @@ export function createDeviceRuntime(options: {
 							targetBotRevision: lease.bot.revision,
 							repoRoot: lease.root,
 							dataDir: options.dataDir ?? process.cwd(),
+							priorStatus: command.priorStatus as string | undefined,
+							verificationMayBeRunning: command.verificationMayBeRunning === true,
 						},
 						{ signal: commandSignal },
 					);
@@ -1005,8 +1156,19 @@ export function createDeviceRuntime(options: {
 					}
 				}
 				throw new Error("Unsupported device command");
+			} catch (error) {
+				if (error instanceof VerificationStopUnconfirmedError && integrationOwner) {
+					integrationOwner.blocked = error;
+					scheduler.markBlocked(integrationOwner.taskId, integrationOwner.attemptId, error);
+				}
+				throw error;
 			} finally {
-				lease.release();
+				if (!integrationOwner?.blocked) {
+					lease.release();
+					if (integrationItem) scheduler.releaseActive(integrationItem);
+					if (integrationOwner) active.delete(integrationOwner);
+					drain();
+				}
 			}
 		})();
 		if (action.startsWith("transfer_") && action !== "transfer_fence") {

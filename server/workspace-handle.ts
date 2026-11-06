@@ -123,14 +123,21 @@ export async function snapshotTree(
 	dataDir: string,
 	signal?: AbortSignal,
 	namespace = join("canvas", "indexes"),
+	seed = "HEAD",
 ): Promise<string> {
+	if (
+		seed !== "HEAD" &&
+		(!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(seed) ||
+			(await git(cwd, ["cat-file", "-t", seed], signal)).trim() !== "tree")
+	)
+		throw new Error("Snapshot seed must be HEAD or a Git tree object ID");
 	const scratch = join(resolve(dataDir), namespace);
 	await mkdir(scratch, { recursive: true });
 	const index = join(scratch, randomUUID());
 	try {
 		// Hash exact bytes, never `git add`: attributes (text/eol/ident/encoding)
 		// otherwise silently change the contents of a captured artifact.
-		await git(cwd, ["read-tree", "HEAD"], signal, index);
+		await git(cwd, ["read-tree", seed], signal, index);
 		const tracked = await git(cwd, ["ls-files", "--stage", "-z"], signal, index);
 		const files = new Map<string, { mode: string; oid: string }>();
 		for (const entry of tracked.split("\0").filter(Boolean)) {
