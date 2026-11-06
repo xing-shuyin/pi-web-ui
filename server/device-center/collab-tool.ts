@@ -90,7 +90,9 @@ const parameters = Type.Object(
 		taskId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
 		summaryOnly: Type.Optional(Type.Boolean()),
 		expectedDigest: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-		evidenceKind: Type.Optional(Type.Union([Type.Literal("report"), Type.Literal("artifact")])),
+		evidenceKind: Type.Optional(
+			Type.Union([Type.Literal("report"), Type.Literal("artifact"), Type.Literal("acceptance")]),
+		),
 		kind: Type.Optional(Type.Union([Type.Literal("message"), Type.Literal("request"), Type.Literal("reply")])),
 		question: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
 		attentionKind: Type.Optional(Type.Union([Type.Literal("answer"), Type.Literal("decision")])),
@@ -116,6 +118,23 @@ const parameters = Type.Object(
 			),
 		),
 		limitations: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { maxItems: 50 })),
+		artifactTaskId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+		artifactDigest: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+		integrationId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+		verificationDigest: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+		criteriaResults: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{
+						criterionIndex: Type.Integer({ minimum: 0, maximum: 63 }),
+						verdict: Type.Union([Type.Literal("met"), Type.Literal("not_met")]),
+						evidence: Type.String({ minLength: 1, maxLength: 2000 }),
+					},
+					{ additionalProperties: false },
+				),
+				{ maxItems: 64 },
+			),
+		),
 		deliveryId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
 		verdict: Type.Optional(Type.Union([Type.Literal("accepted"), Type.Literal("changes_requested")])),
 		recursive: Type.Optional(Type.Boolean()),
@@ -273,6 +292,7 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 		"roomId",
 		"sourceBotId",
 		"conversationId",
+		"artifactTaskId",
 		"repository",
 		"baseCommit",
 		"commit",
@@ -289,6 +309,10 @@ const allowed: Record<DeviceCollabAction, string[]> = {
 		"conversationId",
 		"deliveryId",
 		"commit",
+		"artifactDigest",
+		"integrationId",
+		"verificationDigest",
+		"criteriaResults",
 		"verdict",
 		"summary",
 		"parentTaskId",
@@ -312,17 +336,8 @@ const required: Record<DeviceCollabAction, string[]> = {
 	reply_to_request: ["message"],
 	read_history: ["roomId", "sourceBotId"],
 	send_task: ["roomId", "sourceBotId", "targetBotId", "prompt"],
-	conversation_deliver: [
-		"roomId",
-		"sourceBotId",
-		"conversationId",
-		"repository",
-		"baseCommit",
-		"commit",
-		"summary",
-		"checks",
-	],
-	conversation_review: ["roomId", "sourceBotId", "conversationId", "deliveryId", "commit", "verdict", "summary"],
+	conversation_deliver: ["roomId", "sourceBotId", "conversationId", "summary"],
+	conversation_review: ["roomId", "sourceBotId", "conversationId", "deliveryId", "verdict", "summary"],
 	conversation_create: ["roomId", "sourceBotId", "targetBotId", "prompt"],
 	conversation_attention: ["roomId", "sourceBotId", "conversationId", "question", "attentionKind"],
 	conversation_read: ["roomId", "sourceBotId", "conversationId"],
@@ -334,8 +349,12 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 	if (input.action === "execution_guide" && !EXECUTION_GUIDE_TOPICS.includes(input.topic!))
 		throw new Error("Invalid execution guide topic.");
 	const fields = allowed[input.action];
-	if (input.evidenceKind === "artifact" && input.limit !== undefined && input.limit > 24 * 1024)
-		throw new Error("Artifact evidence limit must not exceed 24576 bytes.");
+	if (
+		(input.evidenceKind === "artifact" || input.evidenceKind === "acceptance") &&
+		input.limit !== undefined &&
+		input.limit > 24 * 1024
+	)
+		throw new Error("Paged evidence limit must not exceed 24576 bytes.");
 	if (input.executionMode !== undefined || input.contract !== undefined) {
 		if (input.executionMode !== undefined && input.executionMode !== "chat" && input.executionMode !== "code")
 			throw new Error("Invalid executionMode.");
@@ -356,7 +375,8 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 		if (!fields.includes(key)) throw new Error("Unsupported device_collab argument.");
 		if (key === "executionMode" || key === "contract") continue;
 		if (key === "evidenceKind") {
-			if (value !== "report" && value !== "artifact") throw new Error("Invalid evidenceKind.");
+			if (value !== "report" && value !== "artifact" && value !== "acceptance")
+				throw new Error("Invalid evidenceKind.");
 			continue;
 		}
 		if (
@@ -374,9 +394,30 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 			// Validated together below, including required revision and at least one report field.
 			continue;
 		}
-		if (key === "checks") {
+		if (key === "criteriaResults") {
+			if (!Array.isArray(value) || value.length > 64) throw new Error("Invalid criteria results.");
+			const seen = new Set<number>();
+			for (const criterion of value as NonNullable<DeviceCollabInput["criteriaResults"]>) {
+				if (
+					!criterion ||
+					typeof criterion !== "object" ||
+					Array.isArray(criterion) ||
+					Object.keys(criterion).some((field) => !["criterionIndex", "verdict", "evidence"].includes(field)) ||
+					!Number.isSafeInteger(criterion.criterionIndex) ||
+					criterion.criterionIndex < 0 ||
+					criterion.criterionIndex > 63 ||
+					seen.has(criterion.criterionIndex) ||
+					!["met", "not_met"].includes(criterion.verdict) ||
+					typeof criterion.evidence !== "string" ||
+					!criterion.evidence.trim() ||
+					criterion.evidence.length > 2000
+				)
+					throw new Error("Invalid criterion evidence.");
+				seen.add(criterion.criterionIndex);
+			}
+		} else if (key === "checks") {
 			if (!Array.isArray(value) || value.length > 50) throw new Error("Invalid checks.");
-			for (const check of value) {
+			for (const check of value as NonNullable<DeviceCollabInput["checks"]>) {
 				if (
 					!check ||
 					typeof check !== "object" ||
@@ -445,6 +486,30 @@ export function validateDeviceCollabInput(input: DeviceCollabInput): void {
 			throw new Error("Invalid device_collab argument value.");
 		}
 	}
+	if (input.action === "conversation_deliver") {
+		if (input.artifactTaskId) {
+			if ([input.repository, input.baseCommit, input.commit, input.branch].some((value) => value !== undefined))
+				throw new Error("Artifact delivery cannot include commit delivery fields.");
+		} else if ([input.repository, input.baseCommit, input.commit, input.checks].some((value) => value === undefined)) {
+			throw new Error("Commit delivery requires repository, baseCommit, commit and checks.");
+		}
+	}
+	if (input.action === "conversation_review") {
+		if (input.artifactDigest) {
+			if (input.commit !== undefined) throw new Error("Artifact review cannot include a commit.");
+			if (input.verdict === "accepted" && (!input.integrationId || !input.verificationDigest || !input.criteriaResults))
+				throw new Error("Artifact acceptance requires verified integration and criterion evidence.");
+			if (input.verdict === "accepted" && input.criteriaResults?.some((result) => result.verdict !== "met"))
+				throw new Error("Artifact acceptance requires every criterion to be met.");
+		} else if (
+			!input.commit ||
+			[input.integrationId, input.verificationDigest, input.criteriaResults].some((value) => value !== undefined)
+		) {
+			throw new Error("Review requires a commit or an exact artifact subject.");
+		}
+	}
+	for (const digest of [input.artifactDigest, input.verificationDigest])
+		if (digest !== undefined && !/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid evidence digest.");
 	for (const sha of [input.commit, input.baseCommit])
 		if (sha !== undefined && !/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(sha))
 			throw new Error("Full commit SHA required.");
@@ -832,7 +897,16 @@ export function projectTaskState(value: unknown): Record<string, unknown> {
 		};
 	}
 	Object.assign(out, projectExecutionEvidence(source));
-	if (source.artifact) Object.assign(out, pick(source, ["conversationId", "taskId"]));
+	if (source.artifact || source.acceptance)
+		Object.assign(out, pick(source, ["conversationId", "taskId", "deliveryId"]));
+	if (source.acceptance)
+		out.acceptance = pick(source.acceptance, [
+			"contractId",
+			"contractRevision",
+			"contractDigest",
+			"criteriaDigest",
+			"criteriaCount",
+		]);
 	if (source.content && typeof source.content === "object") {
 		const content = record(source.content);
 		if (content.encoding === "base64" && typeof content.data === "string") {
@@ -886,10 +960,96 @@ function projectConversations(value: unknown): Record<string, unknown> {
 		"summary",
 		"createdAt",
 	];
-	const reviewFields = ["id", "conversationId", "roomId", "deliveryId", "commit", "verdict", "summary", "createdAt"];
+	const reviewFields = [
+		"id",
+		"conversationId",
+		"roomId",
+		"deliveryId",
+		"commit",
+		"artifactDigest",
+		"integrationId",
+		"verificationDigest",
+		"verdict",
+		"summary",
+		"createdAt",
+	];
+	const artifactRefFields = [
+		"artifactTaskId",
+		"attemptId",
+		"artifactId",
+		"artifactDigest",
+		"contractId",
+		"contractRevision",
+		"contractDigest",
+		"manifestDigest",
+		"baselineCommit",
+		"repositoryId",
+		"inputTree",
+		"outputTree",
+	];
+	const projectArtifactRef = (value: unknown) => project(value, artifactRefFields);
+	const projectIntegration = (item: unknown) => {
+		const input = object(item);
+		const result = project(input, [
+			"id",
+			"deliveryId",
+			"reviewId",
+			"commit",
+			"materializedCommit",
+			"preparedTree",
+			"status",
+			"targetBotId",
+			"targetBotRevision",
+			"targetBranch",
+			"expectedTargetSha",
+			"newCommitSha",
+			"createdAt",
+			"updatedAt",
+		]);
+		if (input.artifactRef) result.artifactRef = projectArtifactRef(input.artifactRef);
+		if (input.verification) {
+			const verification = object(input.verification);
+			result.verification = project(verification, [
+				"digest",
+				"verifiedAt",
+				"planDigest",
+				"artifactDigest",
+				"contractDigest",
+				"manifestDigest",
+				"treeBefore",
+				"treeAfter",
+				"materializedCommit",
+			]);
+			(result.verification as Record<string, unknown>).results = (
+				Array.isArray(verification.results) ? verification.results : []
+			)
+				.slice(0, 8)
+				.map((item) => project(item, ["command", "status", "exitCode", "outputDigest"], ["command"]));
+		}
+		result.validationCommands = (Array.isArray(input.validationCommands) ? input.validationCommands : [])
+			.slice(0, 8)
+			.map((item) => project(item, ["command", "status", "exitCode", "outputDigest"], ["command"]));
+		return result;
+	};
 	const projectDelivery = (item: unknown) => {
 		const input = object(item);
 		const result = project(input, deliveryFields, ["summary", "repository"]);
+		if (input.artifactRef) result.artifactRef = projectArtifactRef(input.artifactRef);
+		if (Array.isArray(input.acceptanceCriteria)) {
+			const criteria: string[] = [];
+			for (const value of input.acceptanceCriteria.slice(0, 64)) {
+				if (typeof value !== "string") continue;
+				criteria.push(value);
+				if (Buffer.byteLength(JSON.stringify(criteria)) > 12000) {
+					criteria.pop();
+					break;
+				}
+			}
+			result.acceptanceCriteria = criteria;
+			result.acceptanceCriteriaCount = input.acceptanceCriteria.length;
+			result.acceptanceCriteriaTruncated = criteria.length < input.acceptanceCriteria.length;
+			if (result.acceptanceCriteriaTruncated) out.truncated = true;
+		}
 		const checks: Record<string, unknown>[] = [];
 		result.checks = checks;
 		for (const check of Array.isArray(input.checks) ? input.checks.slice(0, 50) : []) {
@@ -917,7 +1077,19 @@ function projectConversations(value: unknown): Record<string, unknown> {
 	};
 	const projectReview = (item: unknown) => {
 		const input = object(item);
-		return { ...project(input, reviewFields, ["summary"]), reviewer: project(input.reviewer, ["type", "id"]) };
+		const result = {
+			...project(input, reviewFields, ["summary"]),
+			reviewer: project(input.reviewer, ["type", "id"]),
+		} as Record<string, unknown>;
+		if (input.artifactRef) result.artifactRef = projectArtifactRef(input.artifactRef);
+		if (Array.isArray(input.criteriaResults))
+			result.criteriaResults = input.criteriaResults.slice(0, 64).map((item) => {
+				const criterion = object(item);
+				const evidence = typeof criterion.evidence === "string" ? criterion.evidence : "";
+				if (evidence.length > 160) out.truncated = true;
+				return { ...project(criterion, ["criterionIndex", "verdict"]), evidence: evidence.slice(0, 160) };
+			});
+		return result;
 	};
 	const conversationFields = [
 		"id",
@@ -943,6 +1115,7 @@ function projectConversations(value: unknown): Record<string, unknown> {
 				result.attention = project(input.attention, ["id", "taskId", "kind", "question", "createdAt"], ["question"]);
 			if (input.latestDelivery) result.latestDelivery = projectDelivery(input.latestDelivery);
 			if (input.latestReview) result.latestReview = projectReview(input.latestReview);
+			if (input.latestIntegration) result.latestIntegration = projectIntegration(input.latestIntegration);
 		}
 		return result;
 	};
@@ -1014,6 +1187,20 @@ function projectConversations(value: unknown): Record<string, unknown> {
 		}
 		if (key !== "conversations") projected.reverse();
 		if (items.length > projected.length) out.truncated = true;
+	}
+	if (Array.isArray(source.integrations)) {
+		const integrations: Record<string, unknown>[] = [];
+		out.integrations = integrations;
+		for (const item of source.integrations.slice(-10).reverse()) {
+			integrations.push(projectIntegration(item));
+			if (!fits() || Buffer.byteLength(JSON.stringify(integrations)) > 10000) {
+				integrations.pop();
+				out.truncated = true;
+				break;
+			}
+		}
+		integrations.reverse();
+		if (source.integrations.length > integrations.length) out.truncated = true;
 	}
 	return out;
 }

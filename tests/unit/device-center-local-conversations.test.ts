@@ -202,6 +202,77 @@ describe("local persistent conversation proxy", () => {
 		expect(received).toHaveLength(3);
 	});
 
+	it("forwards exact artifact acceptance fields through the owner UI route and rejects forged receipts", async () => {
+		const received: { path: string; body: unknown; authorization: string | undefined }[] = [];
+		const upstream = express();
+		upstream.use(express.json());
+		upstream.use((req, res) => {
+			received.push({ path: req.path, body: req.body, authorization: req.headers.authorization });
+			if (req.path.endsWith("/verify") || req.path.endsWith("/cancel")) {
+				setTimeout(
+					() => res.json({ integration: { status: req.path.endsWith("/cancel") ? "cancelled" : "verified" } }),
+					16000,
+				);
+				return;
+			}
+			res.json({ ok: true });
+		});
+		const hubUrl = await listen(createServer(upstream));
+		const dataDir = await mkdtemp(join(tmpdir(), "local-artifact-acceptance-"));
+		cleanup.push(() => rm(dataDir, { recursive: true, force: true }));
+		await writeFile(
+			join(dataDir, "device-center.json"),
+			JSON.stringify({
+				hubUrl,
+				deviceId: "source",
+				name: "Source",
+				credential: "agent-fixture",
+				uiCredential: "owner-fixture",
+				allowExecution: true,
+			}),
+		);
+		const app = express();
+		app.use(express.json());
+		const local = await installLocalDeviceCenter({ app, dataDir, connect: () => ({ close() {} }) });
+		cleanup.push(() => local.close());
+		const base = `${await listen(createServer(app))}/api/device-center/rooms/team/conversations/thread`;
+		const post = (suffix: string, body: unknown) =>
+			fetch(`${base}/${suffix}`, {
+				method: "POST",
+				headers: { Origin: new URL(base).origin, "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		const delivery = { artifactTaskId: "captured-task", summary: "Captured artifact", idempotencyKey: "delivery-key" };
+		const review = {
+			deliveryId: "delivery",
+			artifactDigest: "a".repeat(64),
+			integrationId: "integration",
+			verificationDigest: "b".repeat(64),
+			criteriaResults: [{ criterionIndex: 0, verdict: "met", evidence: "Observed verification" }],
+			verdict: "accepted",
+			summary: "Reviewed",
+		};
+		expect((await post("deliveries", delivery)).status).toBe(200);
+		expect((await post("reviews", review)).status).toBe(200);
+		expect(received.map((item) => item.body)).toEqual([delivery, review]);
+		expect(received.every((item) => item.authorization === "Bearer owner-fixture")).toBe(true);
+		expect(received.every((item) => !item.path.includes("/agent/"))).toBe(true);
+		expect((await post("reviews", { ...review, verification: { status: "verified" } })).status).toBe(400);
+		expect((await post("deliveries", { ...delivery, artifactRef: { artifactDigest: "a".repeat(64) } })).status).toBe(
+			400,
+		);
+		expect(received).toHaveLength(2);
+		// Real HTTP response exceeds the ordinary 15-second proxy deadline.
+		const verified = await post("integrations/integration/verify", { commands: ["node check.cjs"] });
+		expect(verified.status).toBe(200);
+		expect(await verified.json()).toMatchObject({ integration: { status: "verified" } });
+		expect(received).toHaveLength(3);
+		const cancelled = await post("integrations/integration/cancel", {});
+		expect(cancelled.status).toBe(200);
+		expect(await cancelled.json()).toMatchObject({ integration: { status: "cancelled" } });
+		expect(received).toHaveLength(4);
+	}, 60000);
+
 	describe("error forwarding", () => {
 		it("keeps the hub status, message and code for every allowed failure class", async () => {
 			let reply: { status: number; body: unknown } = { status: 404, body: { error: "Task missing" } };

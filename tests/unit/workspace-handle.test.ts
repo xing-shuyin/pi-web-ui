@@ -52,6 +52,23 @@ afterEach(async () => {
 });
 
 describe("workspace-handle neutral primitives", { timeout: 30_000 }, () => {
+	it("seeds raw snapshots from a validated prepared tree including newly tracked ignored paths", async () => {
+		const { repo, dataDir, baseCommit } = await fixtureRepo();
+		const headTree = await gitExec(repo, "rev-parse", "HEAD^{tree}");
+		await writeFile(join(repo, ".env"), "new ignored content\n");
+		await gitExec(repo, "add", "-f", ".env");
+		const preparedTree = await gitExec(repo, "write-tree");
+		expect(await snapshotTree(repo, dataDir)).toBe(headTree);
+		expect(await snapshotTree(repo, dataDir, undefined, "verification-indexes", preparedTree)).toBe(preparedTree);
+		await writeFile(join(repo, ".env"), "changed bytes\n");
+		expect(await snapshotTree(repo, dataDir, undefined, "verification-indexes", preparedTree)).not.toBe(preparedTree);
+		await expect(snapshotTree(repo, dataDir, undefined, "verification-indexes", "--reset")).rejects.toThrow(
+			"Snapshot seed",
+		);
+		await expect(snapshotTree(repo, dataDir, undefined, "verification-indexes", baseCommit)).rejects.toThrow(
+			"Snapshot seed",
+		);
+	});
 	it("validates identifiers and prevents path traversal", () => {
 		expect(safeId("valid-id_123.test")).toBe("valid-id_123.test");
 		expect(() => safeId("..")).toThrow();

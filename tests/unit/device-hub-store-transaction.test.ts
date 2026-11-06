@@ -23,6 +23,14 @@ async function dataDir(): Promise<string> {
 	return dir;
 }
 
+function transactionGate(): { promise: Promise<void>; open: () => void } {
+	let open!: () => void;
+	const promise = new Promise<void>((resolve) => {
+		open = resolve;
+	});
+	return { promise, open };
+}
+
 function sampleMessage(roomId: string, id: string, text: string): RoomMessage {
 	return {
 		id,
@@ -91,6 +99,95 @@ describe("Hub Transaction Log & Atomic Persistence", () => {
 		});
 		expect(store.snapshot().accounts[0].username).toBe("still writable");
 		await store.close();
+	});
+
+	it("rejects an uncloneable result before commit without changing state, sequences or listeners", async () => {
+		const dir = await dataDir();
+		const store = await DeviceHubStore.open(dir);
+		await store.transact((draft) => {
+			draft.accounts.push({ id: "owner", username: "owner", passwordHash: "", createdAt: 1 });
+			draft.rooms.push({ id: "room-result", accountId: "owner", name: "Original", botIds: [], createdAt: 1 });
+		});
+		const before = store.snapshot();
+		const sequences = store as unknown as { lastSeq: number; checkpointSeq: number };
+		const seqBefore = { lastSeq: sequences.lastSeq, checkpointSeq: sequences.checkpointSeq };
+		const indexBefore = await readFile(store.path, "utf8");
+		const walBefore = await readFile(store.wal.walPath, "utf8");
+		const notify = vi.fn();
+		store.subscribe(notify);
+		const persist = vi.spyOn(store, "persist");
+		const append = vi.spyOn(store.wal, "append");
+		await expect(
+			store.transact((draft) => {
+				draft.accounts[0].username = "must not commit";
+				draft.messages.push(sampleMessage("room-result", "uncommitted-result", "must not persist"));
+				return { account: draft.accounts[0], driver: { callDeviceCommand: () => {} } };
+			}),
+		).rejects.toMatchObject({ name: "DataCloneError" });
+		expect(persist).not.toHaveBeenCalled();
+		expect(append).not.toHaveBeenCalled();
+		expect(notify).not.toHaveBeenCalled();
+		expect(store.snapshot()).toEqual(before);
+		expect({ lastSeq: sequences.lastSeq, checkpointSeq: sequences.checkpointSeq }).toEqual(seqBefore);
+		expect(await readFile(store.path, "utf8")).toBe(indexBefore);
+		expect(await readFile(store.wal.walPath, "utf8")).toBe(walBefore);
+		await store.close();
+		const reopened = await DeviceHubStore.open(dir);
+		expect(reopened.snapshot().accounts).toEqual(before.accounts);
+		expect(reopened.snapshot().rooms).toEqual(before.rooms);
+		expect(reopened.snapshot().messages).toEqual(before.messages);
+		const restoredSequences = reopened as unknown as { lastSeq: number; checkpointSeq: number };
+		expect({ lastSeq: restoredSequences.lastSeq, checkpointSeq: restoredSequences.checkpointSeq }).toEqual(seqBefore);
+		await reopened.close();
+	});
+
+	it("detaches returned evidence before awaits so alias changes cannot disagree with durable facts", async () => {
+		const dir = await dataDir();
+		const store = await DeviceHubStore.open(dir);
+		const evidence = sampleMessage("room-alias-result", "proof-result", "accepted proof");
+		const expected = structuredClone(evidence);
+		const beforeCommit = transactionGate();
+		const allowCommit = transactionGate();
+		const afterPersist = transactionGate();
+		const allowResult = transactionGate();
+		const append = store.wal.append.bind(store.wal);
+		vi.spyOn(store.wal, "append").mockImplementationOnce(async (...args) => {
+			beforeCommit.open();
+			await allowCommit.promise;
+			return append(...args);
+		});
+		const persist = store.persist.bind(store);
+		vi.spyOn(store, "persist").mockImplementationOnce(async (...args) => {
+			await persist(...args);
+			afterPersist.open();
+			await allowResult.promise;
+		});
+		const pending = store.transact((draft) => {
+			draft.rooms.push({ id: "room-alias-result", accountId: "account-1", name: "Alias", botIds: [], createdAt: 1 });
+			draft.messages.push(evidence);
+			return { proof: evidence };
+		});
+		try {
+			await beforeCommit.promise;
+			evidence.text = "changed while WAL append awaits";
+			evidence.taskIds.push("injected-task");
+			allowCommit.open();
+			await afterPersist.promise;
+			evidence.text = "changed after durable commit";
+			evidence.sender.name = "changed after projection";
+			expect(store.snapshot().messages).toEqual([expected]);
+			expect((await readPersistedHub(dir)).messages).toEqual([expected]);
+		} finally {
+			allowCommit.open();
+			allowResult.open();
+		}
+		const result = await pending;
+		expect(result).toEqual({ proof: expected });
+		expect(result.proof).not.toBe(evidence);
+		await store.close();
+		const reopened = await DeviceHubStore.open(dir);
+		expect(reopened.snapshot().messages).toEqual([expected]);
+		await reopened.close();
 	});
 
 	it("WAL record acts as authoritative commit containing seq, index and diff", async () => {

@@ -13,6 +13,7 @@ import { loadExecutionSettings, saveExecutionSettings, type DeviceExecutionSetti
 import type { TaskSchedulerSnapshot } from "./task-scheduler.js";
 import { hostWithoutPort, isLoopbackHost } from "../host-guard.js";
 import { MAX_CONTRACT_REQUEST_BYTES } from "./work-contract.js";
+import { INTEGRATION_HTTP_TIMEOUT_MS, VERIFICATION_HTTP_TIMEOUT_MS } from "./verification-limits.js";
 
 export interface LocalDeviceConfig {
 	hubUrl: string;
@@ -490,10 +491,16 @@ export async function installLocalDeviceCenter(options: Options) {
 				);
 				const queryIndex = req.url.indexOf("?");
 				const queryStr = queryIndex >= 0 ? req.url.slice(queryIndex) : "";
+				const timeoutMs =
+					method === "post" && path.includes("/integrations")
+						? path.endsWith("/verify")
+							? VERIFICATION_HTTP_TIMEOUT_MS
+							: INTEGRATION_HTTP_TIMEOUT_MS
+						: 15000;
 				const response = await fetch(`${captured.hubUrl}/api/device-user/${suffix}${queryStr}`, {
 					method: method.toUpperCase(),
 					redirect: "error",
-					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+					signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]),
 					headers: {
 						"Content-Type": "application/json",
 						"X-Device-Id": captured.deviceId,
@@ -774,6 +781,7 @@ export async function installLocalDeviceCenter(options: Options) {
 		"contract",
 	]);
 	userRoute("post", "rooms/:id/conversations/:conversationId/deliveries", [
+		"artifactTaskId",
 		"repository",
 		"baseCommit",
 		"commit",
@@ -786,6 +794,10 @@ export async function installLocalDeviceCenter(options: Options) {
 	userRoute("post", "rooms/:id/conversations/:conversationId/reviews", [
 		"deliveryId",
 		"commit",
+		"artifactDigest",
+		"integrationId",
+		"verificationDigest",
+		"criteriaResults",
 		"verdict",
 		"summary",
 		"idempotencyKey",

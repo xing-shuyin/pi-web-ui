@@ -247,13 +247,33 @@ export type DeviceDeliveryCheckInput = {
 	exitCode?: number;
 };
 export type DeviceDeliveryCheck = DeviceDeliveryCheckInput & { source: "bot_reported" };
+export interface DeviceDeliveryArtifactRef {
+	artifactTaskId: string;
+	attemptId: string;
+	artifactId: string;
+	artifactDigest: string;
+	contractId: string;
+	contractRevision: number;
+	contractDigest: string;
+	manifestDigest: string;
+	baselineCommit: string;
+	repositoryId: string;
+	inputTree: string;
+	outputTree: string;
+}
+export interface DeviceReviewCriterionResult {
+	criterionIndex: number;
+	verdict: "met" | "not_met";
+	evidence: string;
+}
 export interface DeviceDeliveryRequest {
 	sourceBotId: string;
 	parentTaskId: string;
 	idempotencyKey: string;
-	repository: string;
-	baseCommit: string;
-	commit: string;
+	artifactTaskId?: string;
+	repository?: string;
+	baseCommit?: string;
+	commit?: string;
 	branch?: string;
 	summary: string;
 	checks: DeviceDeliveryCheckInput[];
@@ -261,8 +281,12 @@ export interface DeviceDeliveryRequest {
 }
 export interface DeviceDelivery extends Omit<
 	DeviceDeliveryRequest,
-	"sourceBotId" | "parentTaskId" | "idempotencyKey" | "checks" | "limitations"
+	"sourceBotId" | "parentTaskId" | "idempotencyKey" | "checks" | "limitations" | "repository" | "baseCommit"
 > {
+	repository: string;
+	baseCommit: string;
+	artifactRef?: DeviceDeliveryArtifactRef;
+	acceptanceCriteria?: string[];
 	id: string;
 	conversationId: string;
 	accountId: string;
@@ -278,11 +302,26 @@ export interface DeviceReviewRequest {
 	parentTaskId?: string;
 	idempotencyKey: string;
 	deliveryId: string;
-	commit: string;
+	commit?: string;
+	artifactDigest?: string;
+	integrationId?: string;
+	verificationDigest?: string;
+	criteriaResults?: DeviceReviewCriterionResult[];
 	verdict: "accepted" | "changes_requested";
 	summary: string;
 }
-export interface DeviceReview extends Pick<DeviceReviewRequest, "deliveryId" | "commit" | "verdict" | "summary"> {
+export interface DeviceReview extends Pick<
+	DeviceReviewRequest,
+	| "deliveryId"
+	| "commit"
+	| "verdict"
+	| "summary"
+	| "artifactDigest"
+	| "integrationId"
+	| "verificationDigest"
+	| "criteriaResults"
+> {
+	artifactRef?: DeviceDeliveryArtifactRef;
 	id: string;
 	conversationId: string;
 	accountId: string;
@@ -579,10 +618,12 @@ export interface DeviceTaskDetails {
 	}[];
 	deliveries: {
 		id: string;
-		commit: string;
+		commit?: string;
+		artifactRef?: DeviceDeliveryArtifactRef;
 		branch?: string;
 		summary: string;
 		passed: boolean;
+		reportedCheckCount?: number;
 	}[];
 	journalUnavailable?: boolean;
 }
@@ -606,16 +647,47 @@ export interface DeviceIntegrationValidationCommand {
 	output?: string;
 }
 
+export interface DeviceIntegrationVerificationPlan {
+	commands: string[];
+	digest: string;
+	authorizedByAccountId: string;
+	authorizedAt: number;
+}
+export interface DeviceIntegrationVerificationResult {
+	command: string;
+	status: "passed" | "failed";
+	exitCode: number;
+	outputDigest: string;
+	outputPreview: string;
+}
+export interface DeviceIntegrationVerificationFacts {
+	planDigest: string;
+	artifactDigest?: string;
+	materializedCommit: string;
+	treeBefore: string;
+	treeAfter: string;
+	results: DeviceIntegrationVerificationResult[];
+}
+export interface DeviceIntegrationVerification extends DeviceIntegrationVerificationFacts {
+	digest: string;
+	verifiedAt: number;
+}
 export interface DeviceIntegration {
 	id: string;
 	accountId: string;
 	roomId: string;
 	conversationId: string;
 	deliveryId: string;
-	commit: string;
-	reviewId: string;
+	commit?: string;
+	reviewId?: string;
+	artifactRef?: DeviceDeliveryArtifactRef;
+	materializedCommit?: string;
+	preparedTree?: string;
+	verificationPlan?: DeviceIntegrationVerificationPlan;
+	verification?: DeviceIntegrationVerification;
 	targetBotId: string;
 	targetBotRevision: number;
+	targetDeviceId?: string;
 	targetBranch: string;
 	expectedTargetSha: string;
 	newCommitSha?: string;
@@ -625,6 +697,8 @@ export interface DeviceIntegration {
 	validationCommands: DeviceIntegrationValidationCommand[];
 	error?: string;
 	cleanupPending?: boolean;
+	/** Preserved across RPC failures until the device positively proves execution stopped. */
+	verificationMayBeRunning?: boolean;
 	currentOpId?: string;
 	createdAt: number;
 	updatedAt: number;

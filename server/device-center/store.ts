@@ -605,6 +605,8 @@ export class DeviceHubStore {
 			if (typeof reconcileConversationState === "function") {
 				reconcileConversationState(this.state, draft);
 			}
+			// Reject uncloneable results before commit and detach returned evidence before any I/O awaits.
+			const detachedResult = structuredClone(result);
 
 			// Sequence and diff calculation
 			const nextSeq = this.lastSeq + 1;
@@ -623,7 +625,7 @@ export class DeviceHubStore {
 					/* notification cannot roll back a committed transaction */
 				}
 			}
-			return structuredClone(result);
+			return detachedResult;
 		});
 		this.tail = operation.catch(() => {});
 		return operation;

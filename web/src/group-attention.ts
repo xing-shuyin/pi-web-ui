@@ -1,3 +1,4 @@
+import { deliveryReviewMatches } from "../../server/device-center/delivery-subject";
 import type { GroupBotConversation } from "./device-group-messages";
 
 export type GroupAttention = "failed" | "interrupted" | "changes_requested" | "awaiting_review" | "answer" | "decision";
@@ -12,7 +13,7 @@ export function groupAttention(conversation: GroupBotConversation): GroupAttenti
 	const delivery = conversation.latestDelivery ?? conversation.deliveries?.at(-1);
 	if (!delivery) return null;
 	const reviews = [...(conversation.reviews ?? []), ...(conversation.latestReview ? [conversation.latestReview] : [])]
-		.filter((review) => review.deliveryId === delivery.id && review.commit === delivery.commit)
+		.filter((review) => deliveryReviewMatches(delivery, review))
 		.sort((a, b) => a.createdAt - b.createdAt);
 	const review = reviews.at(-1);
 	if (!review) return "awaiting_review";

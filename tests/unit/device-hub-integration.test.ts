@@ -20,6 +20,7 @@ import {
 	deviceCancelIntegration,
 } from "../../server/device-center/device-integration.js";
 import type { DeviceDelivery, DeviceReview } from "../../server/protocol.js";
+import { freezeVerificationPlan } from "../../server/device-center/integration-verification.js";
 
 const exec = promisify(execFile);
 
@@ -28,7 +29,7 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
 	return stdout.trim();
 }
 
-describe("device-hub-integration", () => {
+describe("device-hub-integration", { timeout: 30000 }, () => {
 	let testDir: string;
 	let dataDir: string;
 	let repoDir: string;
@@ -179,6 +180,8 @@ describe("device-hub-integration", () => {
 							dataDir,
 							targetBranch: payload.targetBranch,
 							commit: payload.commit,
+							artifactRef: payload.artifactRef,
+							artifact: payload.artifact,
 						},
 						options,
 					);
@@ -191,7 +194,11 @@ describe("device-hub-integration", () => {
 							targetBotRevision: payload.targetBotRevision ?? 1,
 							repoRoot: repoDir,
 							dataDir,
-							commands: payload.commands,
+							verificationPlan: payload.verificationPlan,
+							artifactRef: payload.artifactRef,
+							materializedCommit: payload.materializedCommit,
+							preparedTree: payload.preparedTree,
+							expectedTargetSha: payload.expectedTargetSha,
 						},
 						options,
 					);
@@ -206,6 +213,7 @@ describe("device-hub-integration", () => {
 							dataDir,
 							deliveryId: payload.deliveryId,
 							commit: payload.commit,
+							materializedCommit: payload.materializedCommit,
 							expectedTargetSha: payload.expectedTargetSha,
 						},
 						options,
@@ -219,6 +227,8 @@ describe("device-hub-integration", () => {
 							targetBotRevision: payload.targetBotRevision ?? 1,
 							repoRoot: repoDir,
 							dataDir,
+							priorStatus: payload.priorStatus,
+							verificationMayBeRunning: payload.verificationMayBeRunning,
 						},
 						options,
 					);
@@ -291,6 +301,25 @@ describe("device-hub-integration", () => {
 		expect(list[0].status).toBe("applied");
 	});
 
+	it("refuses legacy status-only verified records without actual verification evidence", async () => {
+		const driver = createTestDriver();
+		const prep = await hubPrepareIntegration(
+			store,
+			roomId,
+			conversationId,
+			{ accountId },
+			{ deliveryId, targetBotId: botId },
+			driver,
+		);
+		await store.transact((s) => {
+			s.integrations.find((i) => i.id === prep.id)!.status = "verified";
+		});
+		await expect(
+			hubConfirmIntegration(store, roomId, conversationId, prep.id, { accountId }, {}, driver),
+		).rejects.toThrow(/successful real verification proof/);
+		expect(await runGit(repoDir, ["rev-parse", "main"])).toBe(baseCommit);
+	});
+
 	it("detects real Git merge conflicts and extracts conflict preview", async () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
@@ -354,6 +383,7 @@ describe("device-hub-integration", () => {
 
 		expect(prep.status).toBe("prepared");
 
+		await hubVerifyIntegration(store, roomId, conversationId, prep.id, actor, { commands: ["node test.js"] }, driver);
 		// 在 prepare 之后，外部并发推进 main 分支
 		await writeFile(join(repoDir, "other.txt"), "concurrent change\n", "utf8");
 		await runGit(repoDir, ["add", "other.txt"]);
@@ -413,6 +443,39 @@ describe("device-hub-integration", () => {
 		expect(record?.status).toBe("cancelled");
 	});
 
+	it.each(["prepared", "failed"] as const)(
+		"cleans legacy %s with the original device binding and sufficient local stop evidence",
+		async (status) => {
+			const driver = createTestDriver();
+			const prep = await hubPrepareIntegration(
+				store,
+				roomId,
+				conversationId,
+				{ accountId },
+				{ deliveryId, targetBotId: botId },
+				driver,
+			);
+			await store.transact((s) => {
+				const old = s.integrations.find((i) => i.id === prep.id)!;
+				delete old.targetDeviceId;
+				old.status = status;
+			});
+			const sessionsPath = join(dataDir, "integration-sessions.json");
+			const sessions = JSON.parse(await readFile(sessionsPath, "utf8"));
+			const oldSession = sessions.find((session: any) => session.integrationId === prep.id);
+			// Only prepared proves verification never began; failed needs an explicit positive stop marker.
+			if (status === "prepared") delete oldSession.verificationStopConfirmed;
+			else oldSession.verificationStopConfirmed = true;
+			delete oldSession.gitDir;
+			delete oldSession.commonDir;
+			await writeFile(sessionsPath, JSON.stringify(sessions), "utf8");
+			const result = await hubCancelIntegration(store, roomId, conversationId, prep.id, { accountId }, driver);
+			expect(result.status).toBe("cancelled");
+			expect(result.verification).toBeUndefined();
+			expect(result.targetDeviceId).toBe(deviceId);
+		},
+	);
+
 	it("prevents cancel from overwriting an already applied terminal state (race condition defense)", async () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
@@ -426,6 +489,7 @@ describe("device-hub-integration", () => {
 			driver,
 		);
 
+		await hubVerifyIntegration(store, roomId, conversationId, prep.id, actor, { commands: ["node test.js"] }, driver);
 		await hubConfirmIntegration(
 			store,
 			roomId,
@@ -436,10 +500,24 @@ describe("device-hub-integration", () => {
 			driver,
 		);
 
-		// 已经被 applied 了，此时调用 cancel 应被拒绝或保持 applied
-		await expect(hubCancelIntegration(store, roomId, conversationId, prep.id, actor, driver)).rejects.toThrow(
-			/Already applied integration cannot be cancelled/i,
-		);
+		// Record ownership is checked before terminal status, which requires neither a live device nor a driver.
+		await expect(
+			hubCancelIntegration(store, roomId, conversationId, prep.id, { accountId: "other-account" }),
+		).rejects.toMatchObject({ status: 404 });
+		await expect(hubCancelIntegration(store, roomId, conversationId, prep.id, actor)).rejects.toMatchObject({
+			status: 409,
+			message: "Already applied integration cannot be cancelled",
+		});
+		let cancelCalls = 0;
+		await expect(
+			hubCancelIntegration(store, roomId, conversationId, prep.id, actor, {
+				callDeviceCommand: async () => {
+					cancelCalls++;
+					throw new Error("Unexpected cancellation RPC");
+				},
+			}),
+		).rejects.toThrow(/Already applied integration cannot be cancelled/i);
+		expect(cancelCalls).toBe(0);
 
 		const record = store.snapshot().integrations.find((it) => it.id === prep.id);
 		expect(record?.status).toBe("applied");
@@ -503,21 +581,23 @@ describe("device-hub-integration", () => {
 			driver,
 		);
 
-		// 恶意验证命令：在隔离工作树内篡改代码
-		await hubVerifyIntegration(
-			store,
-			roomId,
-			conversationId,
-			prep.id,
-			actor,
-			{ commands: ["node -e \"require('fs').writeFileSync('file.txt', 'HACKED')\""] },
-			driver,
-		);
+		// 验证阶段即拒绝污染工作树，不能产生可用于apply的receipt。
+		await expect(
+			hubVerifyIntegration(
+				store,
+				roomId,
+				conversationId,
+				prep.id,
+				actor,
+				{ commands: ["node -e \"require('fs').writeFileSync('file.txt', 'HACKED')\""] },
+				driver,
+			),
+		).rejects.toThrow(/modified|changed|dirty|tree/i);
 
 		// Confirm 阶段应由 write-tree 检查出与 preparedTreeSha 不一致并拒绝！
 		await expect(
 			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
-		).rejects.toThrow(/Worktree content modified by validation commands/i);
+		).rejects.toThrow(/successful real verification proof/i);
 	});
 
 	it("rejects commit when operation generation opId collides with concurrent operation", async () => {
@@ -555,7 +635,7 @@ describe("device-hub-integration", () => {
 				{ commands: ["node test.js"] },
 				interceptedDriver,
 			),
-		).rejects.toThrow(/Verification generation mismatch/i);
+		).rejects.toThrow(/operation generation or subject changed/i);
 	});
 
 	it("refuses to overwrite concurrent human edits on checked-out branch without hard reset", async () => {
@@ -571,6 +651,7 @@ describe("device-hub-integration", () => {
 			driver,
 		);
 
+		await hubVerifyIntegration(store, roomId, conversationId, prep.id, actor, { commands: ["node test.js"] }, driver);
 		// 人类切回了 main 分支，此时目标分支被检出
 		await runGit(repoDir, ["checkout", "main"]);
 		await writeFile(join(repoDir, "file.txt"), "Human uncommitted critical work\n", "utf8");
@@ -599,6 +680,8 @@ describe("device-hub-integration", () => {
 		);
 
 		const abortCtrl = new AbortController();
+		const started = join(testDir, "verify-started");
+		const command = `node -e "require('fs').writeFileSync('${started.replace(/\\/g, "/")}', 'started');setTimeout(() => console.log('FINISHED'), 10000)"`;
 		const verifyPromise = deviceVerifyIntegration(
 			{
 				integrationId: prep.id,
@@ -606,15 +689,20 @@ describe("device-hub-integration", () => {
 				targetBotRevision: 1,
 				repoRoot: repoDir,
 				dataDir,
-				commands: ["node -e \"setTimeout(() => console.log('FINISHED'), 10000)\""],
+				verificationPlan: freezeVerificationPlan([command], accountId),
+				materializedCommit: prep.materializedCommit!,
+				preparedTree: prep.preparedTree!,
+				expectedTargetSha: prep.expectedTargetSha,
 			},
 			{ signal: abortCtrl.signal },
 		);
 
-		// 100ms 后触发取消
-		setTimeout(() => abortCtrl.abort(), 100);
-
-		await expect(verifyPromise).rejects.toThrow(/cancelled/i);
+		// Cancel only after the owned command actually starts, not during Git identity checks.
+		const rejected = expect(verifyPromise).rejects.toThrow(/cancelled|aborted/i);
+		for (let i = 0; i < 200 && !existsSync(started); i++) await new Promise((resolve) => setTimeout(resolve, 25));
+		expect(existsSync(started)).toBe(true);
+		abortCtrl.abort();
+		await rejected;
 	});
 
 	it("persists sessions to disk and cleans up orphan worktrees on recovery", async () => {
@@ -647,7 +735,7 @@ describe("device-hub-integration", () => {
 		expect(afterContent).toHaveLength(0);
 	});
 
-	it("supports clean idempotent retry of the same record after switching away from checked-out branch", async () => {
+	it("requires a new verified integration after failed apply, preserving successful verification history", async () => {
 		const driver = createTestDriver();
 		const actor = { accountId };
 
@@ -660,6 +748,15 @@ describe("device-hub-integration", () => {
 			driver,
 		);
 
+		const firstVerified = await hubVerifyIntegration(
+			store,
+			roomId,
+			conversationId,
+			prep.id,
+			actor,
+			{ commands: ["node test.js"] },
+			driver,
+		);
 		// 人类切到了 main 分支
 		await runGit(repoDir, ["checkout", "main"]);
 
@@ -680,16 +777,29 @@ describe("device-hub-integration", () => {
 		}
 		expect(firstError?.message).toMatch(/checked out in a worktree/i);
 		expect(firstError?.status).toBe(409);
+		expect(await runGit(repoDir, ["rev-parse", "refs/heads/main"])).toBe(baseCommit);
 
 		// 人类切离 main 分支（切到 detached HEAD）
 		await runGit(repoDir, ["checkout", "--detach", baseCommit]);
 
-		// 同一 record 再次重试 Apply：前置条件满足，此时顺畅完成 commit 与 CAS update-ref！
+		// Failed records require a newly verified integration; status alone cannot authorize apply.
+		await expect(
+			hubConfirmIntegration(store, roomId, conversationId, prep.id, actor, { expectedTargetSha: baseCommit }, driver),
+		).rejects.toThrow(/successful real verification proof/);
+		const next = await hubPrepareIntegration(
+			store,
+			roomId,
+			conversationId,
+			actor,
+			{ deliveryId, targetBotId: botId },
+			driver,
+		);
+		await hubVerifyIntegration(store, roomId, conversationId, next.id, actor, { commands: ["node test.js"] }, driver);
 		const retried = await hubConfirmIntegration(
 			store,
 			roomId,
 			conversationId,
-			prep.id,
+			next.id,
 			actor,
 			{ expectedTargetSha: baseCommit },
 			driver,
@@ -701,5 +811,18 @@ describe("device-hub-integration", () => {
 		// 验证目标分支内容真实更新
 		const content = await runGit(repoDir, ["show", "refs/heads/main:file.txt"]);
 		expect(content).toContain("Added line by bot");
-	});
+		const history = listIntegrations(store.snapshot(), conversationId);
+		expect(history).toHaveLength(2);
+		expect(history.find((record) => record.id === prep.id)).toMatchObject({
+			status: "failed",
+			verification: { digest: firstVerified.verification!.digest },
+		});
+		expect(history.find((record) => record.id === next.id)).toMatchObject({
+			status: "applied",
+			newCommitSha: retried.newCommitSha,
+		});
+		expect(history.find((record) => record.id === next.id)!.verification!.digest).not.toBe(
+			firstVerified.verification!.digest,
+		);
+	}, 60_000);
 });

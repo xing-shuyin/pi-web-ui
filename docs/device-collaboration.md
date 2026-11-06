@@ -23,11 +23,25 @@
 
 契约 JSON 上限 256 KiB，Manifest 上限 96 KiB，契约创建请求上限 384 KiB；输入产物至多 8 份且受契约总量限制。已封存的 context/taskState 只随 Manifest 传输，外层不重复复制；派发前按完整 JSON 帧检查 512 KiB 上限，超限拒绝投递且不切断设备连接。输入产物携带内容与 SHA-256，不能引用发送设备的本地路径。每份输入补丁先证明其从声明基线生成的 outputTree，再按契约顺序合成；冲突、篡改或过大补丁明确失败。本批支持累计补丁的单父链与多个不重叠输入；将某祖先及已包含它的后继同时作为输入会显式冲突，不自动推断或去重依赖图。空补丁是合法的无修改产物。输出为从固定 baseline 到 outputTree 的累计 binary patch，同时记录本次执行的 inputTree；原始补丁上限 128 KiB。首次捕获固定产物身份与摘要，重发不得重新生成。Git retention ref 保留基线与产物对象，用户源 checkout 和 index 保持不变。准备与快照期间禁用 hooks、fsmonitor 以及所有配置来源的命令过滤器；快照按原始文件字节生成，避免隐式 clean/smudge 转换。
 
-执行结束、产物捕获、独立验证、交付接受是四类不同事实。本批仅记录 `executionCompleted`、`artifactProduced` 和产物内容，不因终态 `completed`、Bot 自报检查或已有 review 自动声明验证通过或交付接受。代码任务必须在确认执行器停止并成功捕获产物后才能报告完成；捕获失败仍可保存执行已结束这一事实。产物和证明进入持久 Outbox、终态指纹及 Hub 的不可变接纳记录，ACK 对应实际提交内容。
+执行结束、产物捕获、独立验证、交付接受是四类不同事实。代码执行阶段记录 `executionCompleted`、`artifactProduced` 和产物内容；独立验证与交付接受使用下节的 Integration / Review 证据闭环，不因终态 `completed` 或 Bot 自报检查自动成立。代码任务必须在确认执行器停止并成功捕获产物后才能报告完成；捕获失败仍可保存执行已结束这一事实。产物和证明进入持久 Outbox、终态指纹及 Hub 的不可变接纳记录，ACK 对应实际提交内容。
 
 若 Hub 已持久结算其他终态，或原 attempt 已永久失效，设备收到绑定原 task/attempt/status/fingerprint 的永久拒收回执后，将完整原结果与有限原因码原子移入持久隔离区；此后不继续重放该条，也不妨碍其他结果上传。字段或摘要不匹配、一般请求失败、网络错误与持久化错误不得触发隔离。隔离区独立限制为 128 条 / 2 MiB，满时保留原待发结果并拒绝继续清除；不会淘汰旧证据。统一 `task-recovery-state.json` 写为 version 2，兼容读取 version 1 及旧双文件状态，隔离区与活跃租约、待发结果同次原子提交，总状态文件上限 8 MiB。回退不认识 version 2 的旧设备代码前须备份并转换全部恢复状态，不能删除隔离区以绕过检查。
 
 所有显式契约任务及其会话（包括聊天契约、无产物的失败代码任务）均不受普通 500 条历史 / 已关闭会话裁剪影响，重启加载也必须保留；契约身份和最高版本不能因历史裁剪消失。普通无契约聊天仍按原策略保留。历史页面及工具结果只展示有界的契约、Manifest、产物身份与独立事实，原任务保留完整证据。`device_collab task_evidence` 使用 `evidenceKind: "artifact"`、`taskId`、`expectedDigest` 和字节 `offset` / `limit` 分页读取原始补丁；每页最多 24 KiB 原始字节，返回 base64 内容与补丁 SHA-256、产物摘要及来源 metadata。读取必须通过同账号、设备、群与会话校验，后续输入须重组完整内容并校验摘要。自动清理不得删除脏工作树或额外提交；已捕获产物的 retention refs 暂不自动过期，显式清空或删除群会清除 Hub 侧的契约、会话和证据记录并重置该群的业务版本权威，设备仓库中的保留对象需要另行显式维护。
+
+### 2.2 产物验证与按契约验收
+
+沿用 `Delivery → Integration → Review`，不另建验收集合。当前运行中的作者 Bot 可用 `conversation_deliver` 的 `artifactTaskId` 登记同一会话内、同 Bot / revision / 设备先前完成的代码产物；当前任务提供写入权限，已完成任务提供不可变产物身份，二者不得混用。Hub 从已提交任务派生 `artifactRef` 和封存的 `acceptanceCriteria`，不接受调用方自造引用、摘要、criteria 或验证结论。产物交付不需要也不伪造 commit；旧 commit 交付继续要求 repository、完整 baseCommit / commit 与自报 checks。
+
+产物可在验收前准备 Integration。设备核对规范仓库身份、基线、累计补丁与 outputTree，物化真实 Git commit 后复用现有临时合并与 CAS 适配器；本阶段要求目标分支 HEAD 等于产物基线，preparedTree 必须等于 outputTree，不自动 fetch、变基或合并已前进的目标。inputTree 仅用于审计，补丁始终从 baseline 重放。公开记录只携带产物引用和摘要，原始补丁仍经受控证据入口读取。`task_evidence` 按 deliveryId 读取产物时必须定位该交付的 artifactTaskId，显式 taskId / expectedDigest 冲突应拒绝。工具摘要保留每条完整条件并标明 `acceptanceCriteriaCount` / `acceptanceCriteriaTruncated`，不得把截短的条件当作完整要求。条件总量超出摘要预算时，用 `evidenceKind: "acceptance"`、deliveryId 和 `expectedDigest: artifactRef.contractDigest` 按字节分页读取封存数组的规范 JSON，每页至多 24 KiB；重组 base64 后验证 criteriaDigest，再解析全部条件。
+
+验证命令计划由已鉴权的账户所有者在验证界面首次明确提交并冻结，包含有序 commands、内容摘要、授权账号和时间；Bot 调用身份必须保留到 Hub 判定，不能将 Bot 请求当作账户所有者授权。Bot 只能重用既有且完全相同的授权计划。模型文本、自报 checks、补丁内的 package.json 或一个正确摘要都不产生命令授权。设备仍核对目标 Bot 的工具 / 命令权限、revision 和根占用；验证只运行受信计划中的前台命令，单条最多 300 秒、总计 600 秒，输出有界并记录摘要；RPC、代理与界面的截止时间统一由 `verification-limits.ts` 留出停止及传输余量。工作树不构成恶意代码安全沙盒。
+
+真实验证结果必须包含与计划完全同序同数量的检查、退出码、输出摘要、物化 commit，以及执行前后树身份。只有全部 exitCode=0、检查状态一致且前后树均等于 preparedTree 时，Hub 才能按白名单事实计算 verification 摘要。单独的 verified 状态、空检查或漏项不能构成凭证。每个 Integration 的成功凭证不可被重验覆盖；需要不同计划或重新验证时新建 Integration。
+
+独立 Review 必须绑定 delivery 的 artifactDigest、integrationId、verificationDigest 及同一契约 / Manifest。accepted 还须按封存 acceptanceCriteria 的索引逐项提交 `criteriaResults: { criterionIndex, verdict, evidence }`，完整覆盖且全部 met，作者不能评审自己的交付。changes_requested 可以先于成功验证，但仍绑定确切产物。契约升级、设备 / Bot revision / 群成员变化、错误产物或其他 Integration 的凭证不能为当前交付提供接受证明；纯 commit 相等或两个缺失 commit 相等都不能匹配产物 Review。
+
+确认集成的所有模式都要求真实成功凭证，不能从 prepared / failed 直接应用，也不将旧的无凭证 verified 标志升级成可信证据。产物还要求当前匹配的 accepted Review 与契约版本。开始 apply 前冻结证据身份，并阻止同一交付 / Review / 契约在 apply 期间被替换；每个异步边界重核 operation、成员身份与目标。设备确认前再次核对验证凭证、工作树、preparedTree 和目标 SHA。取消先中止并等待拥有的进程树停止，再清理；停止无法确认时保留根占用、Bot lease 和工作区，不报告成功或强制删除。账户所有者可按原持久会话身份取消旧集成，目标 Bot 被禁用、换 revision 或移出群不会授予新的执行权限，也不应阻止单纯停止与清理。升级前完全缺少明确停止标记和真实验证凭证的旧会话，会保守隔离对应 Bot / 根；只有 Hub 明确记录为 prepared、尚未启动验证的旧现场可按原身份取消。旧 failed 也可能来自未确认停止的超时，不能据此自动清理；其他不确定现场需要本机维护者核查，不自动删除或据缺标记放行新任务。完整发布意图日志及崩溃恢复属于后续阶段，本节不将 RPC 回包等同于新的完整发布事务。
 
 ## 3. Bot 注册表与持久会话
 

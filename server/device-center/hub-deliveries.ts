@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { DeviceDelivery, DeviceDeliveryCheck, DeviceReview } from "../protocol.js";
 import { hashSecret, type Bot, type HubState } from "./store.js";
+import { assertDeliveryAuthority, assertNoApplyingIntegration, deriveArtifactSubject } from "./delivery-authority.js";
+import { artifactRefsMatch, deliveryReviewMatches } from "./delivery-subject.js";
+import { hasVerifiedIntegration } from "./integration-verification.js";
 
 function fail(status: number, message: string): never {
 	throw Object.assign(new Error(message), { status });
@@ -143,6 +146,12 @@ function append<T extends DeviceDelivery | DeviceReview>(
 		)
 	)
 		fail(409, "New records require a running Bot task");
+	assertNoApplyingIntegration(
+		state,
+		actor.accountId,
+		state.conversations.find((c) => c.id === conversationId)!.roomId,
+		conversationId,
+	);
 	const record = create();
 	const history = [...state.deliveries, ...state.reviews].filter((r) => r.conversationId === conversationId);
 	if (
@@ -166,6 +175,7 @@ export function addDelivery(
 		"sourceBotId",
 		"parentTaskId",
 		"idempotencyKey",
+		"artifactTaskId",
 		"repository",
 		"baseCommit",
 		"commit",
@@ -205,17 +215,42 @@ export function addDelivery(
 	});
 	const limits = body.limitations ?? [];
 	if (!Array.isArray(limits) || limits.length > 32) fail(400, "Invalid limitations");
+	let subject: Pick<DeviceDelivery, "repository" | "baseCommit" | "commit" | "artifactRef" | "acceptanceCriteria">;
+	if (body.artifactTaskId !== undefined) {
+		if (body.repository !== undefined || body.baseCommit !== undefined || body.commit !== undefined)
+			fail(400, "Artifact delivery derives repository and baseline; commit is not an artifact tree");
+		const artifactTaskId = text(body.artifactTaskId, 128, "artifactTaskId");
+		const task = state.tasks.find(
+			(t) =>
+				t.id === artifactTaskId &&
+				t.accountId === actor.accountId &&
+				t.roomId === roomId &&
+				t.conversationId === conversationId &&
+				t.botId === actor.bot!.id &&
+				t.deviceId === actor.bot!.deviceId &&
+				t.botRevision === actor.bot!.revision,
+		);
+		if (!task) fail(409, "Artifact task must belong to the same author, device, revision and conversation");
+		const artifactRef = deriveArtifactSubject(state, task);
+		subject = {
+			artifactRef,
+			repository: artifactRef.repositoryId,
+			baseCommit: artifactRef.baselineCommit,
+			acceptanceCriteria: [...(task.contract!.acceptanceCriteria ?? [])],
+		};
+	} else
+		subject = { repository: repository(body.repository), baseCommit: sha(body.baseCommit), commit: sha(body.commit) };
 	const payload = {
 		taskId: text(body.parentTaskId, 128, "parentTaskId"),
-		repository: repository(body.repository),
-		baseCommit: sha(body.baseCommit),
-		commit: sha(body.commit),
+		...subject,
 		...(body.branch === undefined ? {} : { branch: text(body.branch, 256, "branch") }),
 		summary: text(body.summary, 8192, "summary"),
 		checks,
 		limitations: limits.map((s) => text(s, 2048, "limitation")),
 	};
-	if (Buffer.byteLength(JSON.stringify(payload)) > 24 * 1024) fail(413, "Delivery budget exceeded");
+	// The request budget covers author input; sealed Hub-derived criteria use the existing history budget.
+	const { acceptanceCriteria: _criteria, artifactRef: _artifactRef, ...requestPayload } = payload;
+	if (Buffer.byteLength(JSON.stringify(requestPayload)) > 24 * 1024) fail(413, "Delivery budget exceeded");
 	return append(state, "delivery", conversationId, key, actor, payload, () => ({
 		...payload,
 		id: randomUUID(),
@@ -239,6 +274,10 @@ export function addReview(
 		"idempotencyKey",
 		"deliveryId",
 		"commit",
+		"artifactDigest",
+		"integrationId",
+		"verificationDigest",
+		"criteriaResults",
 		"verdict",
 		"summary",
 	]);
@@ -247,15 +286,7 @@ export function addReview(
 		fail(400, "Human review cannot claim Bot identity");
 	const key = text(body.idempotencyKey, 128, "idempotencyKey");
 	const deliveryId = text(body.deliveryId, 128, "deliveryId");
-	const commit = sha(body.commit);
 	if (!["accepted", "changes_requested"].includes(body.verdict as string)) fail(400, "Invalid verdict");
-	const payload = {
-		deliveryId,
-		commit,
-		verdict: body.verdict as DeviceReview["verdict"],
-		summary: text(body.summary, 8192, "summary"),
-		...(actor.bot ? { taskId: text(body.parentTaskId, 128, "parentTaskId") } : {}),
-	};
 	const delivery = state.deliveries.find(
 		(d) =>
 			d.id === deliveryId &&
@@ -263,7 +294,103 @@ export function addReview(
 			d.roomId === roomId &&
 			d.accountId === actor.accountId,
 	);
-	if (!delivery || delivery.commit !== commit) fail(400, "Delivery and commit must match");
+	if (!delivery) fail(400, "Delivery missing");
+	const task = assertDeliveryAuthority(state, delivery);
+	let subject: Pick<
+		DeviceReview,
+		"commit" | "artifactDigest" | "artifactRef" | "integrationId" | "verificationDigest" | "criteriaResults"
+	>;
+	if (delivery.artifactRef) {
+		if (body.commit !== undefined || body.artifactDigest !== delivery.artifactRef.artifactDigest)
+			fail(400, "Review artifact digest must match delivery");
+		let criteriaResults: DeviceReview["criteriaResults"];
+		if (body.criteriaResults !== undefined) {
+			if (!Array.isArray(body.criteriaResults) || body.criteriaResults.length > 64)
+				fail(400, "Invalid criteria results");
+			criteriaResults = body.criteriaResults.map((value) => {
+				const item = object(value, ["criterionIndex", "verdict", "evidence"]);
+				if (
+					!Number.isSafeInteger(item.criterionIndex) ||
+					(item.criterionIndex as number) < 0 ||
+					(item.criterionIndex as number) >= (task!.contract!.acceptanceCriteria ?? []).length ||
+					!["met", "not_met"].includes(item.verdict as string)
+				)
+					fail(400, "Invalid criterion result");
+				return {
+					criterionIndex: item.criterionIndex as number,
+					verdict: item.verdict as "met" | "not_met",
+					evidence: text(item.evidence, 2000, "criterion evidence"),
+				};
+			});
+			if (new Set(criteriaResults.map((c) => c.criterionIndex)).size !== criteriaResults.length)
+				fail(400, "Duplicate criterion result");
+		}
+		const integrationId = body.integrationId === undefined ? undefined : text(body.integrationId, 128, "integrationId");
+		const verificationDigest =
+			body.verificationDigest === undefined ? undefined : text(body.verificationDigest, 64, "verificationDigest");
+		if (body.verdict === "accepted") {
+			const integration = state.integrations.find(
+				(i) =>
+					i.id === integrationId &&
+					i.accountId === actor.accountId &&
+					i.roomId === roomId &&
+					i.conversationId === conversationId &&
+					i.deliveryId === deliveryId,
+			);
+			const target =
+				integration &&
+				state.bots.find(
+					(b) =>
+						b.id === integration.targetBotId &&
+						b.accountId === actor.accountId &&
+						b.deviceId === integration.targetDeviceId &&
+						b.revision === integration.targetBotRevision &&
+						b.enabled,
+				);
+			if (
+				!integration ||
+				!target ||
+				!state.rooms.some((r) => r.id === roomId && r.accountId === actor.accountId && r.botIds.includes(target.id)) ||
+				!state.devices.some((d) => d.id === target.deviceId && d.accountId === actor.accountId) ||
+				!["verified", "applying", "applied"].includes(integration.status) ||
+				!hasVerifiedIntegration(integration) ||
+				!artifactRefsMatch(delivery.artifactRef, integration.artifactRef) ||
+				integration.verification!.digest !== verificationDigest
+			)
+				fail(409, "Accepted artifact review requires matching successful verification");
+			if (
+				!criteriaResults ||
+				criteriaResults.length !== (task!.contract!.acceptanceCriteria ?? []).length ||
+				criteriaResults.some((c) => c.verdict !== "met")
+			)
+				fail(400, "Accepted review must cover every sealed criterion");
+		}
+		subject = {
+			artifactRef: delivery.artifactRef,
+			artifactDigest: delivery.artifactRef.artifactDigest,
+			integrationId,
+			verificationDigest,
+			criteriaResults,
+		};
+	} else {
+		if (
+			body.artifactDigest !== undefined ||
+			body.integrationId !== undefined ||
+			body.verificationDigest !== undefined ||
+			body.criteriaResults !== undefined
+		)
+			fail(400, "Legacy review requires commit only");
+		const commit = sha(body.commit);
+		if (delivery.commit !== commit) fail(400, "Delivery and commit must match");
+		subject = { commit };
+	}
+	const payload = {
+		deliveryId,
+		...subject,
+		verdict: body.verdict as DeviceReview["verdict"],
+		summary: text(body.summary, 8192, "summary"),
+		...(actor.bot ? { taskId: text(body.parentTaskId, 128, "parentTaskId") } : {}),
+	};
 	if (actor.bot?.id === delivery.botId) fail(403, "Self review is forbidden");
 	return append(state, "review", conversationId, key, actor, payload, () => {
 		if (state.deliveries.filter((d) => d.conversationId === conversationId).at(-1)?.id !== deliveryId)
@@ -274,7 +401,7 @@ export function addReview(
 			roomId,
 			conversationId,
 			deliveryId,
-			commit,
+			...subject,
 			verdict: payload.verdict,
 			summary: payload.summary,
 			reviewer: actor.bot ? { type: "bot", id: actor.bot.id } : { type: "human", id: actor.accountId },
@@ -329,8 +456,9 @@ export function getAcceptedDeliveryForIntegration(
 	}
 	const reviews = state.reviews.filter((r) => r.deliveryId === deliveryId);
 	const latestReview = reviews.at(-1);
-	if (!latestReview || latestReview.verdict !== "accepted" || latestReview.commit !== latest.commit) {
-		fail(400, "Delivery has no accepted review for its commit");
+	assertDeliveryAuthority(state, latest);
+	if (!latestReview || latestReview.verdict !== "accepted" || !deliveryReviewMatches(latest, latestReview)) {
+		fail(400, "Delivery has no accepted review for its subject");
 	}
 	return { delivery: latest, review: latestReview };
 }
